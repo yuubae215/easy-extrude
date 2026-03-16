@@ -1,47 +1,45 @@
 # easy-extrude
 
-> **Face Extrude をもっと手軽に、もっと楽しく。**
+> **Face Extrude made simple, right in your browser.**
 
-3Dモデリングの「押し出し (Extrude)」操作をブラウザだけで誰でも直感的に体験できるWebアプリを目指しています。
-複雑なソフトウェア不要。開いてすぐ、3Dの世界へ。
+An interactive web app that lets anyone experience 3D "extrude" operations intuitively — no complex software required. Just open and create.
 
 **Live Demo:** https://yuubae215.github.io/easy-extrude/
 
 ---
 
-## これは何？
+## What is this?
 
-「Face Extrude」とは、3Dモデルの面 (Face) を選んで押し出す操作のことです。
-BlenderやMayaではおなじみのこの操作を、**ブラウザ上でEasyに**できるアプリを開発中です。
+"Face Extrude" is the operation of selecting a face on a 3D model and pushing it outward to create new geometry. It's a fundamental technique in tools like Blender and Maya — and we're bringing it to the **browser, the easy way**.
 
 ```
-クリックして面を選択 → ドラッグして押し出す → 3Dシェイプの完成！
+Click to select a face → Drag to extrude → Your 3D shape is ready!
 ```
 
 ---
 
-## 現在の状態
+## Current State
 
-Three.js + Vite で構築したインタラクティブな3Dシーンのプロトタイプです。
+A prototype interactive 3D scene built with Three.js + Vite.
 
-- ExtrudeGeometry による星・ハート・矢印の3Dシェイプ
-- OrbitControls によるマウス操作 (回転・ズーム・パン)
-- PointLight のアニメーション
-- パーティクルエフェクト
-- フォグ・グリッド表示
-
----
-
-## ロードマップ
-
-- [ ] 任意の2Dシェイプを描いてExtrude
-- [ ] 面セレクト → Face Extrude 操作
-- [ ] エクスポート機能 (OBJ / GLTF)
-- [ ] モバイル対応
+- 3D shapes (star, heart, arrow) using ExtrudeGeometry
+- Mouse controls via OrbitControls (rotate, zoom, pan)
+- Animated PointLight orbiting the scene
+- Floating particle effects
+- Fog and grid helpers
 
 ---
 
-## 開発に参加する
+## Roadmap
+
+- [ ] Draw any 2D shape and extrude it
+- [ ] Face selection → Face Extrude interaction
+- [ ] Export (OBJ / GLTF)
+- [ ] Mobile support
+
+---
+
+## Getting Started
 
 ```bash
 git clone https://github.com/yuubae215/easy-extrude.git
@@ -50,16 +48,16 @@ pnpm install
 pnpm dev
 ```
 
-開発サーバーが http://localhost:5173 で起動します。
+Dev server runs at http://localhost:5173
 
-## 技術スタック
+## Tech Stack
 
-| ツール | 役割 |
-|--------|------|
-| [Three.js](https://threejs.org/) | 3Dレンダリング |
-| [Vite](https://vitejs.dev/) | バンドラー・開発サーバー |
-| [pnpm](https://pnpm.io/) | パッケージマネージャー |
-| GitHub Actions | CI/CD → GitHub Pages 自動デプロイ |
+| Tool | Role |
+|------|------|
+| [Three.js](https://threejs.org/) | 3D rendering |
+| [Vite](https://vitejs.dev/) | Bundler & dev server |
+| [pnpm](https://pnpm.io/) | Package manager |
+| GitHub Actions | CI/CD → auto deploy to GitHub Pages |
 
 ---
 
