@@ -2,6 +2,7 @@
   "name": "easy-extrude",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@10.6.5",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

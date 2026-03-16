@@ -5,16 +5,17 @@ Three.js + Vite のサンプルプロジェクト。ExtrudeGeometry を使った
 ## 開発コマンド
 
 ```bash
-npm install        # 依存パッケージのインストール
-npm run dev        # 開発サーバー起動 (http://localhost:5173)
-npm run build      # 本番ビルド (dist/ に出力)
-npm run preview    # ビルド結果のプレビュー
+pnpm install       # 依存パッケージのインストール
+pnpm dev           # 開発サーバー起動 (http://localhost:5173)
+pnpm build         # 本番ビルド (dist/ に出力)
+pnpm preview       # ビルド結果のプレビュー
 ```
 
 ## 技術スタック
 
 - **Three.js** - 3Dレンダリング
 - **Vite** - バンドラー・開発サーバー
+- **pnpm** - パッケージマネージャー
 - **GitHub Actions** - CI/CD
 
 ## プロジェクト構成
