@@ -67,7 +67,12 @@ export function buildGeometry(corners) {
   const idx  = []
 
   FACES.forEach((face, fi) => {
-    const n = computeFaceNormal(corners, fi)
+    const rawN = computeFaceNormal(corners, fi)
+    const n    = computeOutwardFaceNormal(corners, fi)
+    // 反転判定: 外向き法線が raw 法線と逆向きならウィンディングも反転する。
+    // DoubleSide シェーダーは gl_FrontFacing=false のとき法線を自動反転するため、
+    // ウィンディングを揃えて常に gl_FrontFacing=true にすることでシェーディングを正確に保つ。
+    const inverted = n.dot(rawN) < 0
     face.corners.forEach((ci, vi) => {
       const i = (fi * 4 + vi) * 3
       const v = corners[ci]
@@ -75,7 +80,11 @@ export function buildGeometry(corners) {
       norm[i] = n.x; norm[i+1] = n.y; norm[i+2] = n.z
     })
     const b = fi * 4
-    idx.push(b, b+1, b+2,  b, b+2, b+3)
+    if (inverted) {
+      idx.push(b, b+2, b+1,  b, b+3, b+2)
+    } else {
+      idx.push(b, b+1, b+2,  b, b+2, b+3)
+    }
   })
 
   const geo = new THREE.BufferGeometry()
