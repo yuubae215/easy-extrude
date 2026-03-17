@@ -45,6 +45,21 @@ export function computeFaceNormal(corners, fi) {
   return new THREE.Vector3().crossVectors(ab, ad).normalize()
 }
 
+/**
+ * 面 fi の外向き法線ベクトルを計算する純粋関数
+ * 面が対面を超えて押し出された場合でも、重心から外向きになるよう符号を補正する
+ */
+export function computeOutwardFaceNormal(corners, fi) {
+  const n = computeFaceNormal(corners, fi)
+  const faceCorners = FACES[fi].corners
+  const faceCenter = faceCorners
+    .reduce((acc, ci) => acc.add(corners[ci]), new THREE.Vector3())
+    .divideScalar(faceCorners.length)
+  const objCentroid = getCentroid(corners)
+  if (faceCenter.sub(objCentroid).dot(n) < 0) n.negate()
+  return n
+}
+
 /** コーナー配列から BufferGeometry を構築する純粋関数 */
 export function buildGeometry(corners) {
   const pos  = new Float32Array(72) // 6 faces × 4 verts × 3

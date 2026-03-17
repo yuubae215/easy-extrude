@@ -5,7 +5,7 @@
  * 副作用: イベントリスナー登録・requestAnimationFrame・Model 状態の更新を行う。
  */
 import * as THREE from 'three'
-import { FACES, computeFaceNormal, getCentroid, toNDC } from '../model/CuboidModel.js'
+import { FACES, computeOutwardFaceNormal, getCentroid, toNDC } from '../model/CuboidModel.js'
 
 export class AppController {
   /**
@@ -202,7 +202,7 @@ export class AppController {
     this._faceDragging        = true
     this._dragFaceIdx         = hit.faceIdx
     this._controls.enabled    = false
-    this._dragNormal.copy(computeFaceNormal(this._corners, this._dragFaceIdx))
+    this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFaceIdx))
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
     this._dragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
