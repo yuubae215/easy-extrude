@@ -10,7 +10,7 @@ import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel
 export class MeshView {
   constructor(scene) {
     // Cuboid mesh
-    this.cuboidMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.3, metalness: 0.3 })
+    this.cuboidMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide })
     this.cuboid = new THREE.Mesh(new THREE.BufferGeometry(), this.cuboidMat)
     scene.add(this.cuboid)
 

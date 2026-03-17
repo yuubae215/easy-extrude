@@ -67,7 +67,7 @@ export function buildGeometry(corners) {
   const idx  = []
 
   FACES.forEach((face, fi) => {
-    const n = computeFaceNormal(corners, fi)
+    const n = computeOutwardFaceNormal(corners, fi)
     face.corners.forEach((ci, vi) => {
       const i = (fi * 4 + vi) * 3
       const v = corners[ci]
