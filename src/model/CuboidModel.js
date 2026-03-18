@@ -1,7 +1,7 @@
 /**
- * CuboidModel - 純粋データモデルと副作用のない純粋関数群
+ * CuboidModel - pure data model and side-effect-free pure functions
  *
- * 副作用なし。全関数は入力のみに基づいて値を返す。
+ * No side effects. Every function returns a value based solely on its arguments.
  */
 import * as THREE from 'three'
 
@@ -13,17 +13,17 @@ import * as THREE from 'three'
 //    |/    |/
 //    4─────5
 //
-// 面定義: 外側から見て CCW 順の 4 コーナーインデックス
+// Face definitions: 4 corner indices in CCW order as seen from outside
 export const FACES = [
-  { name: '前面 (+Z)', corners: [4, 5, 6, 7] }, // fi=0
-  { name: '背面 (-Z)', corners: [1, 0, 3, 2] }, // fi=1
-  { name: '上面 (+Y)', corners: [3, 7, 6, 2] }, // fi=2
-  { name: '下面 (-Y)', corners: [0, 1, 5, 4] }, // fi=3
-  { name: '右面 (+X)', corners: [5, 1, 2, 6] }, // fi=4
-  { name: '左面 (-X)', corners: [0, 4, 7, 3] }, // fi=5
+  { name: 'Front (+Z)', corners: [4, 5, 6, 7] }, // fi=0
+  { name: 'Back (-Z)',  corners: [1, 0, 3, 2] }, // fi=1
+  { name: 'Top (+Y)',   corners: [3, 7, 6, 2] }, // fi=2
+  { name: 'Bottom (-Y)', corners: [0, 1, 5, 4] }, // fi=3
+  { name: 'Right (+X)', corners: [5, 1, 2, 6] }, // fi=4
+  { name: 'Left (-X)',  corners: [0, 4, 7, 3] }, // fi=5
 ]
 
-/** 初期コーナー配列を生成する純粋ファクトリ */
+/** Pure factory that creates the initial corner array */
 export function createInitialCorners() {
   return [
     new THREE.Vector3(-1, -1, -1), // 0 back-bottom-left
@@ -37,7 +37,7 @@ export function createInitialCorners() {
   ]
 }
 
-/** 面 fi の法線ベクトルを計算する純粋関数 */
+/** Pure function that computes the normal vector of face fi */
 export function computeFaceNormal(corners, fi) {
   const [a, b, , d] = FACES[fi].corners
   const ab = new THREE.Vector3().subVectors(corners[b], corners[a])
@@ -46,8 +46,9 @@ export function computeFaceNormal(corners, fi) {
 }
 
 /**
- * 面 fi の外向き法線ベクトルを計算する純粋関数
- * 面が対面を超えて押し出された場合でも、重心から外向きになるよう符号を補正する
+ * Pure function that computes the outward-facing normal of face fi.
+ * Corrects sign so the normal always points away from the centroid,
+ * even when a face has been pushed past the opposite face.
  */
 export function computeOutwardFaceNormal(corners, fi) {
   const n = computeFaceNormal(corners, fi)
@@ -60,7 +61,7 @@ export function computeOutwardFaceNormal(corners, fi) {
   return n
 }
 
-/** コーナー配列から BufferGeometry を構築する純粋関数 */
+/** Pure function that builds a BufferGeometry from the corner array */
 export function buildGeometry(corners) {
   const pos  = new Float32Array(72) // 6 faces × 4 verts × 3
   const norm = new Float32Array(72)
@@ -69,9 +70,9 @@ export function buildGeometry(corners) {
   FACES.forEach((face, fi) => {
     const rawN = computeFaceNormal(corners, fi)
     const n    = computeOutwardFaceNormal(corners, fi)
-    // 反転判定: 外向き法線が raw 法線と逆向きならウィンディングも反転する。
-    // DoubleSide シェーダーは gl_FrontFacing=false のとき法線を自動反転するため、
-    // ウィンディングを揃えて常に gl_FrontFacing=true にすることでシェーディングを正確に保つ。
+    // Inversion check: if the outward normal is opposite to the raw normal, flip winding too.
+    // DoubleSide shading auto-flips the normal when gl_FrontFacing=false; by keeping winding
+    // consistent we ensure gl_FrontFacing=true so shading stays accurate.
     const inverted = n.dot(rawN) < 0
     face.corners.forEach((ci, vi) => {
       const i = (fi * 4 + vi) * 3
@@ -94,7 +95,7 @@ export function buildGeometry(corners) {
   return geo
 }
 
-/** 面ハイライト用の頂点位置配列を返す純粋関数 */
+/** Pure function that returns vertex positions for a face highlight quad */
 export function buildFaceHighlightPositions(corners, fi) {
   const pos = new Float32Array(12) // 4 verts × 3
   FACES[fi].corners.forEach((ci, vi) => {
@@ -105,14 +106,14 @@ export function buildFaceHighlightPositions(corners, fi) {
   return pos
 }
 
-/** コーナー配列の重心を返す純粋関数 */
+/** Pure function that returns the centroid of the corner array */
 export function getCentroid(corners) {
   const c = new THREE.Vector3()
   corners.forEach(v => c.add(v))
   return c.divideScalar(corners.length)
 }
 
-/** マウス座標を NDC に変換する純粋関数 */
+/** Pure function that converts mouse coordinates to NDC */
 export function toNDC(clientX, clientY, width, height) {
   return new THREE.Vector2(
     (clientX / width)  *  2 - 1,

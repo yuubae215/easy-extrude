@@ -1,7 +1,7 @@
 /**
- * UIView - DOM UI 要素の管理
+ * UIView - manages DOM UI elements
  *
- * 副作用: DOM 要素の生成・追加・スタイル変更を行う。
+ * Side effects: creates DOM elements, appends them, and modifies their styles.
  */
 export class UIView {
   constructor() {
@@ -33,8 +33,8 @@ export class UIView {
     })
     document.body.appendChild(this._infoEl)
 
-    this._btnObject = this._makeBtn('オブジェクト (O)')
-    this._btnFace   = this._makeBtn('面選択 (F)')
+    this._btnObject = this._makeBtn('Object (O)')
+    this._btnFace   = this._makeBtn('Face (F)')
     this._modeBarEl.appendChild(this._btnObject)
     this._modeBarEl.appendChild(this._btnFace)
 
@@ -70,33 +70,34 @@ export class UIView {
     return btn
   }
 
-  /** モード変更ボタンのコールバックを登録する */
+  /** Registers callbacks for mode-change button clicks */
   onModeChange(callback) {
     this._btnObject.addEventListener('click', () => callback('object'))
     this._btnFace.addEventListener('click',   () => callback('face'))
   }
 
-  /** アクティブモードに合わせてボタン外観と説明文を更新する */
+  /** Updates button appearance and info text to match the active mode */
   updateMode(mode) {
     const active   = { background: 'rgba(79,195,247,0.25)', color: '#4fc3f7', borderColor: '#4fc3f7' }
     const inactive = { background: 'rgba(0,0,0,0.6)',       color: '#aaa',    borderColor: '#555' }
     Object.assign(this._btnObject.style, mode === 'object' ? active : inactive)
     Object.assign(this._btnFace.style,   mode === 'face'   ? active : inactive)
     this._infoEl.innerHTML = mode === 'object'
-      ? 'クリック→選択 &nbsp;|&nbsp; 左ドラッグ→移動 &nbsp;|&nbsp; Ctrl+ドラッグ→Y軸回転 &nbsp;|&nbsp; 右ドラッグ→視点回転'
-      : '面ホバー→ハイライト &nbsp;|&nbsp; 左ドラッグ→面の押し出し &nbsp;|&nbsp; 右ドラッグ→視点回転'
+      ? 'Click→Select &nbsp;|&nbsp; Left-drag→Move &nbsp;|&nbsp; Ctrl+drag→Rotate Y &nbsp;|&nbsp; Right-drag→Orbit'
+        + '<br>G→Grab &nbsp;|&nbsp; G→X/Y/Z→Axis constraint &nbsp;|&nbsp; Type value→set distance &nbsp;|&nbsp; Enter/LClick→confirm &nbsp;|&nbsp; Esc/RClick→cancel'
+      : 'Hover face→highlight &nbsp;|&nbsp; Left-drag→Extrude &nbsp;|&nbsp; Right-drag→Orbit'
   }
 
-  /** ステータステキストを更新する */
+  /** Updates the status bar text */
   setStatus(text) {
     this._statusEl.textContent = text
   }
 
   /**
-   * 押し出し量ラベルを表示する
-   * @param {string} text - 表示テキスト
-   * @param {number} screenX - スクリーン座標 X (px)
-   * @param {number} screenY - スクリーン座標 Y (px)
+   * Shows the extrusion amount label at a screen position.
+   * @param {string} text - label text
+   * @param {number} screenX - screen X coordinate (px)
+   * @param {number} screenY - screen Y coordinate (px)
    */
   setExtrusionLabel(text, screenX, screenY) {
     this._extrusionLabelEl.textContent = text
@@ -105,17 +106,17 @@ export class UIView {
     this._extrusionLabelEl.style.display = 'block'
   }
 
-  /** 押し出し量ラベルを非表示にする */
+  /** Hides the extrusion amount label */
   clearExtrusionLabel() {
     this._extrusionLabelEl.style.display = 'none'
   }
 
-  /** canvas 要素のカーソルスタイルを変更する */
+  /** Sets the cursor style on the canvas element */
   setCursor(style) {
     if (this._canvas) this._canvas.style.cursor = style
   }
 
-  /** カーソル操作対象の canvas を設定する */
+  /** Sets the canvas element used for cursor changes */
   setCanvas(canvas) {
     this._canvas = canvas
   }

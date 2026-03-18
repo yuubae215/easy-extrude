@@ -1,7 +1,7 @@
 /**
- * SceneView - Three.js シーン・レンダラー・カメラ・コントロールの管理
+ * SceneView - manages the Three.js scene, renderer, camera, and controls
  *
- * 副作用: DOM 操作・WebGL 初期化・イベントリスナー登録を行う。
+ * Side effects: DOM manipulation, WebGL initialization, event listener registration.
  */
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -20,7 +20,7 @@ export class SceneView {
     this.camera.position.set(4, 3, 6)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
-    this.controls.enableDamping = true
+    this.controls.enableDamping = false
     // Left button is reserved for object/face operations; right button orbits the camera
     this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
 
@@ -50,7 +50,7 @@ export class SceneView {
     this.renderer.setSize(innerWidth, innerHeight)
   }
 
-  /** コントロール更新とレンダリングを行う (アニメーションループから呼ぶ) */
+  /** Updates controls and renders the scene (call from the animation loop) */
   render() {
     this.controls.update()
     this.renderer.render(this.scene, this.camera)

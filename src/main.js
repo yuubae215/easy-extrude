@@ -1,5 +1,5 @@
 /**
- * エントリーポイント - MVC コンポーネントを組み立てて起動する
+ * Entry point - assembles MVC components and starts the app
  */
 import { createInitialCorners } from './model/CuboidModel.js'
 import { SceneView }            from './view/SceneView.js'

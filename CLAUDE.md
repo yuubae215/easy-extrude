@@ -1,86 +1,92 @@
 # easy-extrude
 
-Three.js + Vite のサンプルプロジェクト。カスタム BufferGeometry による直方体のインタラクティブ編集シーン。GitHub Pages にデプロイ済み。
+Three.js + Vite sample project. An interactive editing scene for a cuboid built with custom BufferGeometry. Deployed to GitHub Pages.
 
-## 開発コマンド
+## Development commands
 
 ```bash
-pnpm install       # 依存パッケージのインストール
-pnpm dev           # 開発サーバー起動 (http://localhost:5173)
-pnpm build         # 本番ビルド (dist/ に出力)
-pnpm preview       # ビルド結果のプレビュー
+pnpm install       # install dependencies
+pnpm dev           # start dev server (http://localhost:5173)
+pnpm build         # production build (output to dist/)
+pnpm preview       # preview production build
 ```
 
-## 技術スタック
+## Tech stack
 
-- **Three.js** - 3Dレンダリング
-- **Vite** - バンドラー・開発サーバー
-- **pnpm** - パッケージマネージャー
+- **Three.js** - 3D rendering
+- **Vite** - bundler / dev server
+- **pnpm** - package manager
 - **GitHub Actions** - CI/CD
 
-## プロジェクト構成 (MVC アーキテクチャ)
+## Project structure (MVC architecture)
 
 ```
 easy-extrude/
-├── index.html                        # エントリーポイント
-├── vite.config.js                    # Vite設定 (base: '/easy-extrude/')
+├── index.html                        # entry point
+├── vite.config.js                    # Vite config (base: '/easy-extrude/')
 ├── package.json
 ├── src/
-│   ├── main.js                       # 起動エントリー: MVC を組み立てて start()
+│   ├── main.js                       # startup entry: assembles MVC and calls start()
 │   ├── model/
-│   │   └── CuboidModel.js            # 純粋関数のみ (副作用なし)
+│   │   └── CuboidModel.js            # pure functions only (no side effects)
 │   ├── view/
-│   │   ├── SceneView.js              # レンダラー・カメラ・コントロール・照明・グリッド
-│   │   ├── MeshView.js               # 直方体メッシュ・ワイヤーフレーム・面ハイライト
-│   │   └── UIView.js                 # DOM UI (モードボタン・ステータス・説明バー)
+│   │   ├── SceneView.js              # renderer, camera, controls, lighting, grid
+│   │   ├── MeshView.js               # cuboid mesh, wireframe, face highlight
+│   │   └── UIView.js                 # DOM UI (mode buttons, status bar, info bar)
 │   └── controller/
-│       └── AppController.js          # 入力処理・アニメーションループ・MV 連携
+│       └── AppController.js          # input handling, animation loop, MV wiring
 └── .github/
     └── workflows/
-        └── deploy.yml                # GitHub Pages デプロイワークフロー
+        └── deploy.yml                # GitHub Pages deploy workflow
 ```
 
-## MVC 設計方針
+## MVC design
 
-| レイヤー | ファイル | 責務 |
+| Layer | File | Responsibility |
 |---|---|---|
-| **Model** | `model/CuboidModel.js` | データ定義 (`FACES`, `createInitialCorners`) と純粋関数 (`buildGeometry`, `computeFaceNormal`, `computeOutwardFaceNormal`, `getCentroid`, `buildFaceHighlightPositions`, `toNDC`) |
-| **View** | `view/SceneView.js` | Three.js シーン・WebGL レンダラー・OrbitControls の初期化と `render()` |
-| **View** | `view/MeshView.js` | 直方体メッシュ・ワイヤーフレーム・BoxHelper・面ハイライト・押し出し表示ラインの更新 |
-| **View** | `view/UIView.js` | DOM 要素の生成・モードボタン・ステータス表示・押し出し量ラベル・カーソル変更 |
-| **Controller** | `controller/AppController.js` | マウス/キーボードイベント・レイキャスト・モード切替・アニメーションループ |
+| **Model** | `model/CuboidModel.js` | Data definitions (`FACES`, `createInitialCorners`) and pure functions (`buildGeometry`, `computeFaceNormal`, `computeOutwardFaceNormal`, `getCentroid`, `buildFaceHighlightPositions`, `toNDC`) |
+| **View** | `view/SceneView.js` | Three.js scene, WebGL renderer, OrbitControls initialization and `render()` |
+| **View** | `view/MeshView.js` | Cuboid mesh, wireframe, BoxHelper, face highlight, extrusion display line updates |
+| **View** | `view/UIView.js` | DOM element creation, mode buttons, status display, extrusion label, cursor changes |
+| **Controller** | `controller/AppController.js` | Mouse/keyboard events, raycasting, mode switching, animation loop |
 
-### 純粋関数と副作用の分離
+### Pure functions vs. side effects
 
-- **純粋関数** (`CuboidModel.js`): 引数のみに依存し外部状態を変更しない
-- **副作用** (View / Controller): DOM 操作・WebGL 描画・イベント登録・`requestAnimationFrame`
+- **Pure functions** (`CuboidModel.js`): depend only on their arguments; never mutate external state
+- **Side effects** (View / Controller): DOM manipulation, WebGL rendering, event registration, `requestAnimationFrame`
 
-## シーン内容
+## Scene features
 
-- **カスタム BufferGeometry** による直方体 (8 コーナー × 6 面)
-- **OrbitControls** によるマウス操作 (右ドラッグで視点回転)
-- **オブジェクトモード** (O キー): 左ドラッグで移動 / Ctrl+ドラッグで Y 軸回転
-- **面選択モード** (F キー): 面ホバーでハイライト / 左ドラッグで押し出し
-- **グリッドヘルパー** と **方向ライト**
+- **Custom BufferGeometry** cuboid (8 corners × 6 faces)
+- **OrbitControls** – right-drag to orbit the camera
+- **Object mode** (O key): left-drag to move / Ctrl+drag to rotate on Y axis
+- **Face select mode** (F key): hover to highlight / left-drag to extrude
+- **Blender-style grab** (G key, object mode only):
+  - G → start grab (object follows mouse on camera-facing plane)
+  - G → X / Y / Z → constrain to that axis (press same key again to release)
+  - Type digits while axis is constrained → set exact distance
+  - Enter or left-click → confirm; Esc or right-click → cancel
+- **GridHelper** and **DirectionalLight**
 
-## GitHub Pages デプロイ
+## GitHub Pages deployment
 
-`main` または `master` ブランチへの push で自動デプロイ。
+Automatically deploys on push to `main` or `master`.
 
-**ワークフロー:** `.github/workflows/deploy.yml`
+**Workflow:** `.github/workflows/deploy.yml`
 
-デプロイ先 URL: `https://yuubae215.github.io/easy-extrude/`
+Deploy URL: `https://yuubae215.github.io/easy-extrude/`
 
-### GitHub リポジトリ設定
+### Repository settings
 
-1. Settings → Pages → Source を **GitHub Actions** に設定
+1. Settings → Pages → Source: set to **GitHub Actions**
 
-## 変更時の注意
+## Notes for changes
 
-- `vite.config.js` の `base` はリポジトリ名と一致させること (`/easy-extrude/`)
-- Three.js の addons は `three/addons/...` からインポート
+- `vite.config.js` `base` must match the repository name (`/easy-extrude/`)
+- Three.js addons must be imported from `three/addons/...`
 
-## セッション履歴
+## Session history
 
-- **2026-03-17**: `src/main.js` を MVC パターンにリファクタリング。純粋関数と副作用を分離し、`model/` / `view/` / `controller/` に分割。セッション完了。
-- **2026-03-18**: ドキュメント更新。README.md を実装済み MVC 構成に合わせて全面改訂。CLAUDE.md の Model 純粋関数リストに `computeOutwardFaceNormal` を追記、MeshView・UIView の責務説明を実態に合わせて更新。
+- **2026-03-17**: Refactored `src/main.js` to MVC pattern. Separated pure functions from side effects into `model/` / `view/` / `controller/`. Session complete.
+- **2026-03-18**: Documentation update. Fully revised README.md to match the implemented MVC structure. Added `computeOutwardFaceNormal` to the Model pure function list in CLAUDE.md; updated MeshView and UIView responsibility descriptions to match reality.
+- **2026-03-18**: Added Blender-style grab controls (G/X/Y/Z, numeric input, confirm/cancel). Disabled OrbitControls inertia (enableDamping = false). Translated all in-repo text from Japanese to English.

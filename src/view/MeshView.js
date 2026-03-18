@@ -1,8 +1,8 @@
 /**
- * MeshView - Three.js メッシュ描画の管理
+ * MeshView - manages Three.js mesh rendering
  *
- * 副作用: Three.js オブジェクトの生成・シーンへの追加・ジオメトリ更新を行う。
- * 純粋なジオメトリ計算は CuboidModel の関数に委譲する。
+ * Side effects: creates Three.js objects, adds them to the scene, and updates geometry.
+ * Pure geometry calculations are delegated to CuboidModel functions.
  */
 import * as THREE from 'three'
 import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel.js'
@@ -45,7 +45,7 @@ export class MeshView {
     scene.add(this._extrusionLines)
   }
 
-  /** コーナー配列からジオメトリを再構築してメッシュへ反映する */
+  /** Rebuilds geometry from the corner array and applies it to the mesh */
   updateGeometry(corners) {
     const newGeo = buildGeometry(corners)
     this.cuboid.geometry.dispose()
@@ -54,29 +54,30 @@ export class MeshView {
     this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
   }
 
-  /** オブジェクト選択状態の外観を更新する */
+  /** Updates the visual appearance for object-selected state */
   setObjectSelected(sel) {
     this.cuboidMat.emissive.set(sel ? 0x112244 : 0x000000)
     this.boxHelper.visible = sel
     if (sel) this.boxHelper.update()
   }
 
-  /** BoxHelper を現在のジオメトリに合わせて更新する */
+  /** Updates the BoxHelper to match the current geometry */
   updateBoxHelper() {
     this.boxHelper.update()
   }
 
   /**
-   * 押し出し表示ラインを更新する (コの字 = 寸法線スタイル)
-   * 元の面中心のティック線 + 現在の面中心のティック線 + 両中心を結ぶ寸法線 の 3 本
-   * @param {THREE.Vector3[]} savedFaceCorners - ドラッグ開始時の面の 4 頂点
-   * @param {THREE.Vector3[]} currentFaceCorners - 現在の面の 4 頂点
+   * Updates the extrusion display lines (bracket / dimension-line style).
+   * Draws: arm from saved corner → tipS, span tipS → tipC, arm tipC → current corner.
+   * @param {THREE.Vector3[]} savedFaceCorners - 4 face vertices at drag start
+   * @param {THREE.Vector3[]} currentFaceCorners - 4 face vertices at current position
    */
   setExtrusionDisplay(savedFaceCorners, currentFaceCorners) {
-    // コの字形: 頂点 corners[0] を起点に corners[1] 方向へ固定長伸ばし、先端同士を棒で結ぶ
-    //   savedFaceCorners[0] ──────── tipS
-    //                                |  ← 寸法棒
-    //   currentFaceCorners[0] ────── tipC
+    // Bracket shape: extend from corners[0] in the corners[1] direction by a fixed length,
+    // then connect the two tips with a span segment.
+    //   savedFaceCorners[0]   ──────── tipS
+    //                                  |  ← span
+    //   currentFaceCorners[0] ──────── tipC
     const ARM_LEN = 0.5
     const armDir = new THREE.Vector3()
       .subVectors(savedFaceCorners[1], savedFaceCorners[0]).normalize()
@@ -84,7 +85,7 @@ export class MeshView {
     const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
 
     // 3 line segments × 2 points × 3 components = 18 floats
-    // [0] 腕1 (saved頂点 → tipS), [1] 棒 (tipS → tipC), [2] 腕2 (tipC → current頂点)
+    // [0] arm1 (saved corner → tipS), [1] span (tipS → tipC), [2] arm2 (tipC → current corner)
     const positions = new Float32Array(18)
     const s0 = savedFaceCorners[0]
     const c0 = currentFaceCorners[0]
@@ -100,15 +101,15 @@ export class MeshView {
     this._extrusionLines.visible = true
   }
 
-  /** 押し出し表示ラインを非表示にする */
+  /** Hides the extrusion display lines */
   clearExtrusionDisplay() {
     this._extrusionLines.visible = false
   }
 
   /**
-   * 面ハイライトを更新する
-   * @param {number|null} fi - 面インデックス。null でハイライトを消す
-   * @param {THREE.Vector3[]} corners - 現在のコーナー配列
+   * Updates the face highlight overlay.
+   * @param {number|null} fi - face index; null clears the highlight
+   * @param {THREE.Vector3[]} corners - current corner array
    */
   setFaceHighlight(fi, corners) {
     if (fi === null) {
