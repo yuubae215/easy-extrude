@@ -343,8 +343,11 @@ export class AppController {
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
       this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
       // Label sits at the midpoint of the span segment (same ARM_LEN=0.5 as MeshView)
+      const faceCentroid = new THREE.Vector3()
+      this._savedFaceCorners.forEach(v => faceCentroid.add(v))
+      faceCentroid.divideScalar(this._savedFaceCorners.length)
       const armDir = new THREE.Vector3()
-        .subVectors(this._savedFaceCorners[1], this._savedFaceCorners[0]).normalize()
+        .subVectors(this._savedFaceCorners[0], faceCentroid).normalize()
       const ARM_LEN = 0.5
       const tipS = this._savedFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
       const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
