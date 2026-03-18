@@ -34,6 +34,15 @@ export class MeshView {
       polygonOffset: true, polygonOffsetFactor: -1,
     }))
     scene.add(this.hlMesh)
+
+    // Extrusion display lines: original face outline (4 edges) + connectors to current face (4 edges)
+    this._extrusionLinesGeo = new THREE.BufferGeometry()
+    this._extrusionLines = new THREE.LineSegments(
+      this._extrusionLinesGeo,
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false }),
+    )
+    this._extrusionLines.visible = false
+    scene.add(this._extrusionLines)
   }
 
   /** コーナー配列からジオメトリを再構築してメッシュへ反映する */
@@ -55,6 +64,45 @@ export class MeshView {
   /** BoxHelper を現在のジオメトリに合わせて更新する */
   updateBoxHelper() {
     this.boxHelper.update()
+  }
+
+  /**
+   * 押し出し表示ラインを更新する (コの字 = 寸法線スタイル)
+   * 元の面中心のティック線 + 現在の面中心のティック線 + 両中心を結ぶ寸法線 の 3 本
+   * @param {THREE.Vector3[]} savedFaceCorners - ドラッグ開始時の面の 4 頂点
+   * @param {THREE.Vector3[]} currentFaceCorners - 現在の面の 4 頂点
+   */
+  setExtrusionDisplay(savedFaceCorners, currentFaceCorners) {
+    // コの字形: 頂点 corners[0] を起点に corners[1] 方向へ固定長伸ばし、先端同士を棒で結ぶ
+    //   savedFaceCorners[0] ──────── tipS
+    //                                |  ← 寸法棒
+    //   currentFaceCorners[0] ────── tipC
+    const ARM_LEN = 0.5
+    const armDir = new THREE.Vector3()
+      .subVectors(savedFaceCorners[1], savedFaceCorners[0]).normalize()
+    const tipS = savedFaceCorners[0].clone().addScaledVector(armDir,  ARM_LEN)
+    const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
+
+    // 3 line segments × 2 points × 3 components = 18 floats
+    // [0] 腕1 (saved頂点 → tipS), [1] 棒 (tipS → tipC), [2] 腕2 (tipC → current頂点)
+    const positions = new Float32Array(18)
+    const s0 = savedFaceCorners[0]
+    const c0 = currentFaceCorners[0]
+    positions[0]  = s0.x;  positions[1]  = s0.y;  positions[2]  = s0.z
+    positions[3]  = tipS.x; positions[4] = tipS.y; positions[5]  = tipS.z
+    positions[6]  = tipS.x; positions[7] = tipS.y; positions[8]  = tipS.z
+    positions[9]  = tipC.x; positions[10] = tipC.y; positions[11] = tipC.z
+    positions[12] = tipC.x; positions[13] = tipC.y; positions[14] = tipC.z
+    positions[15] = c0.x;  positions[16] = c0.y;  positions[17] = c0.z
+
+    this._extrusionLinesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    this._extrusionLinesGeo.attributes.position.needsUpdate = true
+    this._extrusionLines.visible = true
+  }
+
+  /** 押し出し表示ラインを非表示にする */
+  clearExtrusionDisplay() {
+    this._extrusionLines.visible = false
   }
 
   /**
