@@ -14,11 +14,12 @@ export class AppController {
    * @param {import('../view/MeshView.js').MeshView} meshView
    * @param {import('../view/UIView.js').UIView} uiView
    */
-  constructor(model, sceneView, meshView, uiView) {
+  constructor(model, sceneView, meshView, uiView, gizmoView = null) {
     this._corners   = model.corners
     this._sceneView = sceneView
     this._meshView  = meshView
     this._uiView    = uiView
+    this._gizmoView = gizmoView
 
     // Build initial geometry
     meshView.updateGeometry(this._corners)
@@ -468,6 +469,7 @@ export class AppController {
     const loop = () => {
       requestAnimationFrame(loop)
       this._sceneView.render()
+      if (this._gizmoView) this._gizmoView.update()
     }
     loop()
   }
