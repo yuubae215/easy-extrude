@@ -44,10 +44,10 @@ easy-extrude/
 
 | レイヤー | ファイル | 責務 |
 |---|---|---|
-| **Model** | `model/CuboidModel.js` | データ定義 (`FACES`, `createInitialCorners`) と純粋関数 (`buildGeometry`, `computeFaceNormal`, `getCentroid`, `buildFaceHighlightPositions`, `toNDC`) |
+| **Model** | `model/CuboidModel.js` | データ定義 (`FACES`, `createInitialCorners`) と純粋関数 (`buildGeometry`, `computeFaceNormal`, `computeOutwardFaceNormal`, `getCentroid`, `buildFaceHighlightPositions`, `toNDC`) |
 | **View** | `view/SceneView.js` | Three.js シーン・WebGL レンダラー・OrbitControls の初期化と `render()` |
-| **View** | `view/MeshView.js` | 直方体メッシュ・ワイヤーフレーム・BoxHelper・面ハイライトの更新 |
-| **View** | `view/UIView.js` | DOM 要素の生成・モードボタン・ステータス表示・カーソル変更 |
+| **View** | `view/MeshView.js` | 直方体メッシュ・ワイヤーフレーム・BoxHelper・面ハイライト・押し出し表示ラインの更新 |
+| **View** | `view/UIView.js` | DOM 要素の生成・モードボタン・ステータス表示・押し出し量ラベル・カーソル変更 |
 | **Controller** | `controller/AppController.js` | マウス/キーボードイベント・レイキャスト・モード切替・アニメーションループ |
 
 ### 純粋関数と副作用の分離
@@ -83,3 +83,4 @@ easy-extrude/
 ## セッション履歴
 
 - **2026-03-17**: `src/main.js` を MVC パターンにリファクタリング。純粋関数と副作用を分離し、`model/` / `view/` / `controller/` に分割。セッション完了。
+- **2026-03-18**: ドキュメント更新。README.md を実装済み MVC 構成に合わせて全面改訂。CLAUDE.md の Model 純粋関数リストに `computeOutwardFaceNormal` を追記、MeshView・UIView の責務説明を実態に合わせて更新。
