@@ -1,8 +1,8 @@
 /**
- * AppController - ユーザー入力の処理とアニメーションループの管理
+ * AppController - handles user input and manages the animation loop
  *
- * Model (CuboidModel) と View (SceneView / MeshView / UIView) を繋ぐ。
- * 副作用: イベントリスナー登録・requestAnimationFrame・Model 状態の更新を行う。
+ * Connects Model (CuboidModel) with View (SceneView / MeshView / UIView).
+ * Side effects: event listener registration, requestAnimationFrame, Model state updates.
  */
 import * as THREE from 'three'
 import { FACES, computeOutwardFaceNormal, getCentroid, toNDC } from '../model/CuboidModel.js'
@@ -20,13 +20,13 @@ export class AppController {
     this._meshView  = meshView
     this._uiView    = uiView
 
-    // 初期ジオメトリを構築
+    // Build initial geometry
     meshView.updateGeometry(this._corners)
 
-    // 選択モード
+    // Selection mode
     this._selectionMode = 'object'
 
-    // ── オブジェクトモード状態 ──────────────────────────────────────────
+    // ── Object mode state ─────────────────────────────────────────────────
     this._objSelected           = false
     this._objDragging           = false
     this._objCtrlDrag           = false
@@ -37,7 +37,7 @@ export class AppController {
     this._objRotateCentroid     = new THREE.Vector3()
     this._objRotateStartCorners = []
 
-    // ── 面モード状態 ────────────────────────────────────────────────────
+    // ── Face mode state ───────────────────────────────────────────────────
     this._hoveredFace      = null
     this._faceDragging     = false
     this._dragFaceIdx      = null
@@ -46,25 +46,26 @@ export class AppController {
     this._dragStart        = new THREE.Vector3()
     this._savedFaceCorners = []
 
-    // ── Blender スタイルグラブ状態 ────────────────────────────────────
-    // G キーで開始、X/Y/Z で軸制限、数値入力で移動量指定、Enter/左クリックで確定、Esc/右クリックでキャンセル
+    // ── Blender-style grab state ──────────────────────────────────────────
+    // G to start, X/Y/Z to constrain axis, type a value to set distance,
+    // Enter/LClick to confirm, Esc/RClick to cancel.
     this._grab = {
       active:       false,
       axis:         null,               // null | 'x' | 'y' | 'z'
       startMouse:   new THREE.Vector2(),
       startCorners: [],
       centroid:     new THREE.Vector3(),
-      dragPlane:    new THREE.Plane(),  // 自由移動用 (カメラ正面の平面)
+      dragPlane:    new THREE.Plane(),  // camera-facing plane for free grab
       startPoint:   new THREE.Vector3(),
-      inputStr:     '',                 // 数値入力バッファ
+      inputStr:     '',                 // numeric input buffer
       hasInput:     false,
     }
 
-    // レイキャスター
+    // Raycaster
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
 
-    // UI 連携
+    // UI wiring
     uiView.setCanvas(sceneView.renderer.domElement)
     uiView.onModeChange(mode => this.setMode(mode))
 
@@ -72,11 +73,11 @@ export class AppController {
     this.setMode('object')
   }
 
-  // ─── 便利ゲッター ──────────────────────────────────────────────────────────
+  // ─── Convenience getters ──────────────────────────────────────────────────
   get _camera()   { return this._sceneView.camera }
   get _controls() { return this._sceneView.controls }
 
-  // ─── イベントバインド ─────────────────────────────────────────────────────
+  // ─── Event binding ────────────────────────────────────────────────────────
   _bindEvents() {
     window.addEventListener('mousemove', e => this._onMouseMove(e))
     window.addEventListener('mousedown', e => this._onMouseDown(e))
@@ -84,7 +85,7 @@ export class AppController {
     window.addEventListener('keydown',   e => this._onKeyDown(e))
   }
 
-  // ─── レイキャスト ─────────────────────────────────────────────────────────
+  // ─── Raycasting ───────────────────────────────────────────────────────────
   _updateMouse(e) {
     const v = toNDC(e.clientX, e.clientY, innerWidth, innerHeight)
     this._mouse.copy(v)
@@ -102,8 +103,8 @@ export class AppController {
     return { faceIdx: Math.floor(hit.face.a / 4), point: hit.point }
   }
 
-  // ─── ユーティリティ ──────────────────────────────────────────────────────
-  /** 3D ワールド座標をスクリーン座標 (px) に変換する */
+  // ─── Utilities ────────────────────────────────────────────────────────────
+  /** Converts a 3D world position to screen coordinates (px) */
   _projectToScreen(position) {
     const v = position.clone().project(this._camera)
     return {
@@ -112,7 +113,7 @@ export class AppController {
     }
   }
 
-  // ─── モード管理 ───────────────────────────────────────────────────────────
+  // ─── Mode management ──────────────────────────────────────────────────────
   setMode(mode) {
     if (this._grab.active) this._cancelGrab()
     this._selectionMode = mode
@@ -123,7 +124,7 @@ export class AppController {
       this._hoveredFace  = null
       this._faceDragging = false
       this._dragFaceIdx  = null
-      this._uiView.setStatus(this._objSelected ? 'オブジェクト選択中' : '')
+      this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
     } else {
       this._setObjectSelected(false)
       this._objDragging = false
@@ -136,12 +137,12 @@ export class AppController {
   _setObjectSelected(sel) {
     this._objSelected = sel
     this._meshView.setObjectSelected(sel)
-    this._uiView.setStatus(sel ? 'オブジェクト選択中' : '')
+    this._uiView.setStatus(sel ? 'Object selected' : '')
   }
 
-  // ─── Blender スタイルグラブ ───────────────────────────────────────────────
+  // ─── Blender-style grab ───────────────────────────────────────────────────
 
-  /** G キーでグラブ開始 */
+  /** Starts grab mode (G key) */
   _startGrab() {
     if (!this._objSelected) return
 
@@ -153,12 +154,12 @@ export class AppController {
     this._grab.startCorners = this._corners.map(c => c.clone())
     this._grab.centroid.copy(getCentroid(this._corners))
 
-    // カメラ正面の平面 (重心を通る) を設定
+    // Set up camera-facing plane through the centroid
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
     this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, this._grab.centroid)
 
-    // 開始点 = 現在のマウスレイと平面の交点
+    // Start point = intersection of current mouse ray with the plane
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const pt = new THREE.Vector3()
     if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) {
@@ -171,17 +172,17 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /** グラブを確定して適用 */
+  /** Confirms and applies the grab */
   _confirmGrab() {
     if (!this._grab.active) return
     this._applyGrab()
     this._grab.active = false
     this._grab.axis   = null
     this._controls.enabled = true
-    this._uiView.setStatus(this._objSelected ? 'オブジェクト選択中' : '')
+    this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
   }
 
-  /** グラブをキャンセルして元の位置に戻す */
+  /** Cancels the grab and restores the original position */
   _cancelGrab() {
     if (!this._grab.active) return
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
@@ -190,10 +191,10 @@ export class AppController {
     this._grab.active = false
     this._grab.axis   = null
     this._controls.enabled = true
-    this._uiView.setStatus(this._objSelected ? 'オブジェクト選択中' : '')
+    this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
   }
 
-  /** 軸制限を設定 (同じ軸を再度押すと解除) */
+  /** Sets the axis constraint (pressing the same key again removes it) */
   _setGrabAxis(axis) {
     this._grab.axis     = (this._grab.axis === axis) ? null : axis
     this._grab.inputStr = ''
@@ -202,7 +203,7 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /** 軸方向の単位ベクトルを返す */
+  /** Returns the world-space unit vector for the given axis */
   _getAxisVec(axis) {
     return new THREE.Vector3(
       axis === 'x' ? 1 : 0,
@@ -211,7 +212,7 @@ export class AppController {
     )
   }
 
-  /** グラブの移動量を計算してコーナーに反映する */
+  /** Computes the grab offset and applies it to all corners */
   _applyGrab() {
     if (!this._grab.active) return
     if (this._grab.hasInput && this._grab.axis) {
@@ -225,7 +226,7 @@ export class AppController {
     this._meshView.updateBoxHelper()
   }
 
-  /** 数値入力によるグラブ移動 */
+  /** Applies grab offset from numeric input */
   _applyGrabFromInput() {
     const dist    = parseFloat(this._grab.inputStr) || 0
     const axisVec = this._getAxisVec(this._grab.axis)
@@ -234,7 +235,7 @@ export class AppController {
     })
   }
 
-  /** 自由グラブ: カメラ正面の平面上でマウスに追従 */
+  /** Free grab: follows the mouse on a camera-facing plane */
   _applyFreeGrab() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const pt = new THREE.Vector3()
@@ -246,17 +247,19 @@ export class AppController {
   }
 
   /**
-   * 軸制限グラブ: スクリーン上の軸方向への射影を使ってワールド移動量を計算する。
+   * Axis-constrained grab: projects mouse movement onto the screen-space
+   * representation of the world axis to derive the world-space distance.
    *
-   * 手順:
-   * 1. 重心と「重心 + 軸単位ベクトル」を NDC に投影し、スクリーン上の軸方向を得る。
-   * 2. マウス変位 (NDC) をその軸方向に射影して「NDC での移動量」を求める。
-   * 3. スクリーン上の 1 ワールド単位 = screenLen NDC 単位 で除算してワールド移動量を得る。
+   * Steps:
+   * 1. Project centroid and (centroid + axis unit vector) to NDC to get the
+   *    screen-space axis direction.
+   * 2. Project the mouse delta (NDC) onto that direction to get NDC movement.
+   * 3. Divide by the screen-space length per world unit to get world distance.
    */
   _applyAxisConstrainedGrab() {
     const axisVec = this._getAxisVec(this._grab.axis)
 
-    // 重心と重心+軸方向を NDC に投影
+    // Project centroid and centroid+axis to NDC
     const centerNDC  = this._grab.centroid.clone().project(this._camera)
     const axisEndNDC = this._grab.centroid.clone().add(axisVec).project(this._camera)
 
@@ -268,7 +271,7 @@ export class AppController {
     const axisNormX = dx / screenLen
     const axisNormY = dy / screenLen
 
-    // マウス変位 (NDC) を軸方向に射影 → ワールド距離に変換
+    // Project mouse delta (NDC) onto axis direction → convert to world distance
     const mdx  = this._mouse.x - this._grab.startMouse.x
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
@@ -278,18 +281,18 @@ export class AppController {
     })
   }
 
-  /** ステータスバーにグラブ中の情報を表示する */
+  /** Updates the status bar with current grab information */
   _updateGrabStatus() {
-    const axisLabel  = this._grab.axis ? ` ${this._grab.axis.toUpperCase()}軸` : ''
-    const inputLabel = this._grab.hasInput ? `  入力: ${this._grab.inputStr}_` : ''
-    this._uiView.setStatus(`移動中${axisLabel}${inputLabel}`)
+    const axisLabel  = this._grab.axis ? ` ${this._grab.axis.toUpperCase()}` : ''
+    const inputLabel = this._grab.hasInput ? `  input: ${this._grab.inputStr}_` : ''
+    this._uiView.setStatus(`Grab${axisLabel}${inputLabel}`)
   }
 
-  // ─── マウスイベント ───────────────────────────────────────────────────────
+  // ─── Mouse events ─────────────────────────────────────────────────────────
   _onMouseMove(e) {
     this._updateMouse(e)
 
-    // グラブ中はマウス移動に追従して即時反映
+    // During grab: update position in real time
     if (this._grab.active) {
       this._applyGrab()
       this._updateGrabStatus()
@@ -299,14 +302,14 @@ export class AppController {
     if (this._selectionMode === 'object') {
       if (this._objDragging) {
         if (this._objCtrlDrag) {
-          // 重心周りの Y 軸回転
+          // Rotate around centroid on the Y axis
           const angle = (e.clientX - this._objRotateStartX) * 0.01
           const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle)
           this._objRotateStartCorners.forEach((c, i) => {
             this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
           })
         } else {
-          // カメラ正面のドラッグ平面上で平行移動
+          // Translate on the camera-facing drag plane
           this._raycaster.setFromCamera(this._mouse, this._camera)
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
@@ -322,7 +325,7 @@ export class AppController {
       return
     }
 
-    // ── 面モード ────────────────────────────────────────────────────────
+    // ── Face mode ────────────────────────────────────────────────────────
     if (this._faceDragging) {
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
@@ -336,10 +339,10 @@ export class AppController {
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
       this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  Δ ${dist.toFixed(3)}`)
 
-      // 押し出し量表示: ホチキス状のラインとラベル
+      // Extrusion display: bracket-style lines + label
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
       this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
-      // ラベルは棒(tipS→tipC)の中点に置く (MeshView と同じ ARM_LEN=0.5 を使用)
+      // Label sits at the midpoint of the span segment (same ARM_LEN=0.5 as MeshView)
       const armDir = new THREE.Vector3()
         .subVectors(this._savedFaceCorners[1], this._savedFaceCorners[0]).normalize()
       const ARM_LEN = 0.5
@@ -352,7 +355,7 @@ export class AppController {
       return
     }
 
-    // 面ホバー検出
+    // Face hover detection
     const hit = this._hitFace()
     const fi  = hit ? hit.faceIdx : null
     if (fi !== this._hoveredFace) {
@@ -364,7 +367,7 @@ export class AppController {
   }
 
   _onMouseDown(e) {
-    // グラブ中: 左クリックで確定、右クリックでキャンセル
+    // During grab: left-click confirms, right-click cancels
     if (this._grab.active) {
       if (e.button === 0) { this._confirmGrab(); return }
       if (e.button === 2) { this._cancelGrab();  return }
@@ -397,7 +400,7 @@ export class AppController {
       return
     }
 
-    // ── 面モード ────────────────────────────────────────────────────────
+    // ── Face mode ────────────────────────────────────────────────────────
     const hit = this._hitFace()
     if (!hit) return
     this._faceDragging        = true
@@ -424,7 +427,7 @@ export class AppController {
   }
 
   _onKeyDown(e) {
-    // ── グラブ中のキー操作 ────────────────────────────────────────────
+    // ── Keys active during grab ───────────────────────────────────────────
     if (this._grab.active) {
       switch (e.key) {
         case 'x': case 'X': this._setGrabAxis('x'); return
@@ -433,7 +436,7 @@ export class AppController {
         case 'Enter':        this._confirmGrab();    return
         case 'Escape':       this._cancelGrab();     return
       }
-      // 軸指定中の数値入力
+      // Numeric input (only when an axis is constrained)
       if (this._grab.axis) {
         if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
           this._grab.inputStr += e.key
@@ -456,10 +459,10 @@ export class AppController {
           return
         }
       }
-      return  // グラブ中は他のキーを無視
+      return  // swallow all other keys during grab
     }
 
-    // ── 通常キー ─────────────────────────────────────────────────────
+    // ── Normal keys ───────────────────────────────────────────────────────
     if (e.key === 'o' || e.key === 'O') this.setMode('object')
     if (e.key === 'f' || e.key === 'F') this.setMode('face')
     if ((e.key === 'g' || e.key === 'G') && this._selectionMode === 'object' && this._objSelected) {
@@ -467,7 +470,7 @@ export class AppController {
     }
   }
 
-  // ─── アニメーションループ ─────────────────────────────────────────────────
+  // ─── Animation loop ───────────────────────────────────────────────────────
   start() {
     const loop = () => {
       requestAnimationFrame(loop)
