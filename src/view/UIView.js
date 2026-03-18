@@ -226,6 +226,7 @@ export class UIView {
           ['Ctrl+Drag', 'Rotate'],
           ['G', 'Grab'],
           ['G > X/Y/Z', 'Axis constraint'],
+          ['G > V', 'Set pivot'],
           ['N', 'Properties'],
         ]
       : [

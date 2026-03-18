@@ -5,7 +5,7 @@
  * Side effects: event listener registration, requestAnimationFrame, Model state updates.
  */
 import * as THREE from 'three'
-import { FACES, computeOutwardFaceNormal, getCentroid, toNDC } from '../model/CuboidModel.js'
+import { FACES, computeOutwardFaceNormal, getCentroid, toNDC, getPivotCandidates } from '../model/CuboidModel.js'
 
 export class AppController {
   /**
@@ -49,18 +49,29 @@ export class AppController {
 
     // ── Blender-style grab state ──────────────────────────────────────────
     // G to start, X/Y/Z to constrain axis, type a value to set distance,
-    // Enter/LClick to confirm, Esc/RClick to cancel.
+    // G > V to select pivot point, Enter/LClick to confirm, Esc/RClick to cancel.
     this._grab = {
-      active:       false,
-      axis:         null,               // null | 'x' | 'y' | 'z'
-      startMouse:   new THREE.Vector2(),
-      startCorners: [],
-      centroid:     new THREE.Vector3(),
-      dragPlane:    new THREE.Plane(),  // camera-facing plane for free grab
-      startPoint:   new THREE.Vector3(),
-      inputStr:     '',                 // numeric input buffer
-      hasInput:     false,
+      active:          false,
+      axis:            null,               // null | 'x' | 'y' | 'z'
+      startMouse:      new THREE.Vector2(),
+      startCorners:    [],
+      centroid:        new THREE.Vector3(),
+      pivot:           new THREE.Vector3(), // active pivot (default = centroid)
+      pivotLabel:      'Centroid',
+      dragPlane:       new THREE.Plane(),  // camera-facing plane through pivot
+      startPoint:      new THREE.Vector3(),
+      inputStr:        '',                 // numeric input buffer
+      hasInput:        false,
+      // Pivot select sub-mode (G > V)
+      pivotSelectMode: false,
+      hoveredPivotIdx: -1,
+      candidates:      [],
+      // Ctrl snap state
+      snapping:        false,
     }
+
+    // Ctrl key state (for snap-to-origin during grab)
+    this._ctrlHeld = false
 
     // Raycaster
     this._raycaster = new THREE.Raycaster()
@@ -84,6 +95,7 @@ export class AppController {
     window.addEventListener('mousedown', e => this._onMouseDown(e))
     window.addEventListener('mouseup',   e => this._onMouseUp(e))
     window.addEventListener('keydown',   e => this._onKeyDown(e))
+    window.addEventListener('keyup',     e => this._onKeyUp(e))
   }
 
   // ─── Raycasting ───────────────────────────────────────────────────────────
@@ -159,18 +171,22 @@ export class AppController {
   _startGrab() {
     if (!this._objSelected) return
 
-    this._grab.active       = true
-    this._grab.axis         = null
-    this._grab.inputStr     = ''
-    this._grab.hasInput     = false
+    this._grab.active          = true
+    this._grab.axis            = null
+    this._grab.inputStr        = ''
+    this._grab.hasInput        = false
+    this._grab.pivotSelectMode = false
+    this._grab.hoveredPivotIdx = -1
     this._grab.startMouse.copy(this._mouse)
     this._grab.startCorners = this._corners.map(c => c.clone())
     this._grab.centroid.copy(getCentroid(this._corners))
+    this._grab.pivot.copy(this._grab.centroid)
+    this._grab.pivotLabel = 'Centroid'
 
-    // Set up camera-facing plane through the centroid
+    // Set up camera-facing plane through the pivot
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
-    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, this._grab.centroid)
+    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, this._grab.pivot)
 
     // Start point = intersection of current mouse ray with the plane
     this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -178,7 +194,7 @@ export class AppController {
     if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) {
       this._grab.startPoint.copy(pt)
     } else {
-      this._grab.startPoint.copy(this._grab.centroid)
+      this._grab.startPoint.copy(this._grab.pivot)
     }
 
     this._controls.enabled = false
@@ -189,9 +205,11 @@ export class AppController {
   /** Confirms and applies the grab */
   _confirmGrab() {
     if (!this._grab.active) return
+    if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
     this._applyGrab()
     this._grab.active = false
     this._grab.axis   = null
+    this._meshView.clearPivotDisplay()
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
@@ -201,9 +219,11 @@ export class AppController {
   /** Cancels the grab and restores the original position */
   _cancelGrab() {
     if (!this._grab.active) return
+    if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
+    this._meshView.clearPivotDisplay()
     this._grab.active = false
     this._grab.axis   = null
     this._controls.enabled = true
@@ -246,6 +266,7 @@ export class AppController {
 
   /** Applies grab offset from numeric input */
   _applyGrabFromInput() {
+    this._grab.snapping = false
     const dist    = parseFloat(this._grab.inputStr) || 0
     const axisVec = this._getAxisVec(this._grab.axis)
     this._grab.startCorners.forEach((c, i) => {
@@ -258,7 +279,12 @@ export class AppController {
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const pt = new THREE.Vector3()
     if (!this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) return
-    const delta = pt.clone().sub(this._grab.startPoint)
+    let delta = pt.clone().sub(this._grab.startPoint)
+    if (this._ctrlHeld) {
+      delta = this._trySnapToOrigin(delta)
+    } else {
+      this._grab.snapping = false
+    }
     this._grab.startCorners.forEach((c, i) => {
       this._corners[i].copy(c).add(delta)
     })
@@ -269,7 +295,7 @@ export class AppController {
    * representation of the world axis to derive the world-space distance.
    *
    * Steps:
-   * 1. Project centroid and (centroid + axis unit vector) to NDC to get the
+   * 1. Project pivot and (pivot + axis unit vector) to NDC to get the
    *    screen-space axis direction.
    * 2. Project the mouse delta (NDC) onto that direction to get NDC movement.
    * 3. Divide by the screen-space length per world unit to get world distance.
@@ -277,9 +303,9 @@ export class AppController {
   _applyAxisConstrainedGrab() {
     const axisVec = this._getAxisVec(this._grab.axis)
 
-    // Project centroid and centroid+axis to NDC
-    const centerNDC  = this._grab.centroid.clone().project(this._camera)
-    const axisEndNDC = this._grab.centroid.clone().add(axisVec).project(this._camera)
+    // Project pivot and pivot+axis to NDC
+    const centerNDC  = this._grab.pivot.clone().project(this._camera)
+    const axisEndNDC = this._grab.pivot.clone().add(axisVec).project(this._camera)
 
     const dx        = axisEndNDC.x - centerNDC.x
     const dy        = axisEndNDC.y - centerNDC.y
@@ -294,25 +320,157 @@ export class AppController {
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
 
-    this._grab.startCorners.forEach((c, i) => {
-      this._corners[i].copy(c).addScaledVector(axisVec, dist)
-    })
+    if (this._ctrlHeld) {
+      const delta       = new THREE.Vector3().addScaledVector(axisVec, dist)
+      const snappedDelta = this._trySnapToOrigin(delta)
+      this._grab.startCorners.forEach((c, i) => {
+        this._corners[i].copy(c).add(snappedDelta)
+      })
+    } else {
+      this._grab.snapping = false
+      this._grab.startCorners.forEach((c, i) => {
+        this._corners[i].copy(c).addScaledVector(axisVec, dist)
+      })
+    }
   }
 
   /** Updates the status bar with current grab information */
   _updateGrabStatus() {
+    if (this._grab.pivotSelectMode) {
+      this._uiView.setStatus('Select Pivot Point  [click / Esc]')
+      return
+    }
     const axisLabel  = this._grab.axis ? ` ${this._grab.axis.toUpperCase()}` : ''
     const inputLabel = this._grab.hasInput ? `  input: ${this._grab.inputStr}_` : ''
-    this._uiView.setStatus(`Grab${axisLabel}${inputLabel}`)
+    const pivotStr   = this._grab.pivotLabel !== 'Centroid' ? `  [${this._grab.pivotLabel}]` : ''
+    const snapStr    = this._grab.snapping ? '  >> SNAP: World Origin' : ''
+    this._uiView.setStatus(`Grab${axisLabel}${inputLabel}${pivotStr}${snapStr}`)
+  }
+
+  // ─── Ctrl snap-to-origin ─────────────────────────────────────────────────
+
+  /**
+   * Checks if applying delta would bring the pivot within snap range of world origin.
+   * If so, returns a corrected delta that places the pivot exactly at the origin.
+   * Sets this._grab.snapping accordingly.
+   * @param {THREE.Vector3} delta
+   * @returns {THREE.Vector3}
+   */
+  _trySnapToOrigin(delta) {
+    const SNAP_PX  = 25
+    const ORIGIN   = new THREE.Vector3(0, 0, 0)
+    const pivotAfter = this._grab.pivot.clone().add(delta)
+
+    const pNDC = pivotAfter.clone().project(this._camera)
+    const oNDC = ORIGIN.clone().project(this._camera)
+    const px   = (pNDC.x + 1) / 2 * innerWidth
+    const py   = (-pNDC.y + 1) / 2 * innerHeight
+    const ox   = (oNDC.x + 1) / 2 * innerWidth
+    const oy   = (-oNDC.y + 1) / 2 * innerHeight
+
+    if (Math.hypot(px - ox, py - oy) < SNAP_PX) {
+      this._grab.snapping = true
+      return this._grab.pivot.clone().negate() // moves pivot exactly to origin
+    }
+    this._grab.snapping = false
+    return delta
+  }
+
+  // ─── Pivot point selection ────────────────────────────────────────────────
+
+  /** Enters pivot select sub-mode (V key during grab) */
+  _startPivotSelect() {
+    if (!this._grab.active || this._grab.pivotSelectMode) return
+    // Reset object to its position at grab start so it aligns with the candidates
+    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
+    this._meshView.updateGeometry(this._corners)
+    this._meshView.updateBoxHelper()
+    this._grab.pivotSelectMode = true
+    this._grab.hoveredPivotIdx = -1
+    this._grab.candidates = getPivotCandidates(this._grab.startCorners)
+    this._meshView.showPivotCandidates(this._grab.candidates)
+    this._updateGrabStatus()
+  }
+
+  /** Scans candidates and snaps highlight to the nearest one within threshold */
+  _updatePivotHover() {
+    const SNAP_PX = 30
+    let minDist    = Infinity
+    let closestIdx = -1
+    const mx = (this._mouse.x + 1) / 2 * innerWidth
+    const my = (-this._mouse.y + 1) / 2 * innerHeight
+    this._grab.candidates.forEach((c, i) => {
+      const ndc = c.position.clone().project(this._camera)
+      const sx  = (ndc.x + 1) / 2 * innerWidth
+      const sy  = (-ndc.y + 1) / 2 * innerHeight
+      const d   = Math.hypot(sx - mx, sy - my)
+      if (d < minDist) { minDist = d; closestIdx = i }
+    })
+    if (minDist <= SNAP_PX && closestIdx >= 0) {
+      this._grab.hoveredPivotIdx = closestIdx
+      const cand = this._grab.candidates[closestIdx]
+      this._meshView.setHoveredPivot(cand.position)
+      this._uiView.setStatus(`Pivot: ${cand.label}`)
+    } else {
+      this._grab.hoveredPivotIdx = -1
+      this._meshView.setHoveredPivot(null)
+      this._uiView.setStatus('Select Pivot Point  [click / Esc]')
+    }
+  }
+
+  /** Confirms the hovered pivot and returns to grab mode */
+  _confirmPivotSelect() {
+    const idx = this._grab.hoveredPivotIdx
+    if (idx >= 0) {
+      const cand = this._grab.candidates[idx]
+      this._grab.pivot.copy(cand.position)
+      this._grab.pivotLabel = cand.label
+      this._restartGrabFromPivot()
+    }
+    this._grab.pivotSelectMode = false
+    this._grab.hoveredPivotIdx = -1
+    this._meshView.clearPivotDisplay()
+    this._updateGrabStatus()
+  }
+
+  /** Cancels pivot select and returns to grab mode without changing pivot */
+  _cancelPivotSelect() {
+    this._grab.pivotSelectMode = false
+    this._grab.hoveredPivotIdx = -1
+    this._meshView.clearPivotDisplay()
+    this._updateGrabStatus()
+  }
+
+  /**
+   * Updates the drag plane and start point after a pivot change.
+   * Resets axis/input so the new grab starts cleanly from the current mouse position.
+   */
+  _restartGrabFromPivot() {
+    const pivot  = this._grab.pivot
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
+    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, pivot)
+    this._grab.startPoint.copy(pivot)
+    this._grab.axis     = null
+    this._grab.inputStr = ''
+    this._grab.hasInput = false
+    this._grab.startMouse.copy(this._mouse)
   }
 
   // ─── Mouse events ─────────────────────────────────────────────────────────
   _onMouseMove(e) {
     this._updateMouse(e)
 
-    // During grab: update position in real time
+    // During grab
     if (this._grab.active) {
+      if (this._grab.pivotSelectMode) {
+        this._updatePivotHover()
+        return
+      }
       this._applyGrab()
+      if (this._ctrlHeld) {
+        this._meshView.showSnapTarget(new THREE.Vector3(0, 0, 0), this._grab.snapping)
+      }
       this._updateGrabStatus()
       this._updateNPanel()
       return
@@ -381,8 +539,13 @@ export class AppController {
   }
 
   _onMouseDown(e) {
-    // During grab: left-click confirms, right-click cancels
+    // During grab
     if (this._grab.active) {
+      if (this._grab.pivotSelectMode) {
+        if (e.button === 0) { this._confirmPivotSelect(); return }
+        if (e.button === 2) { this._cancelPivotSelect();  return }
+        return
+      }
       if (e.button === 0) { this._confirmGrab(); return }
       if (e.button === 2) { this._cancelGrab();  return }
       return
@@ -450,10 +613,30 @@ export class AppController {
     }
   }
 
+  _onKeyUp(e) {
+    if (e.key === 'Control') {
+      this._ctrlHeld = false
+      if (this._grab.active && !this._grab.pivotSelectMode) {
+        this._grab.snapping = false
+        this._meshView.clearPivotDisplay()
+        this._updateGrabStatus()
+      }
+    }
+  }
+
   _onKeyDown(e) {
+    // Track Ctrl state
+    if (e.key === 'Control') this._ctrlHeld = true
+
     // ── Keys active during grab ───────────────────────────────────────────
     if (this._grab.active) {
+      // Pivot select sub-mode swallows all keys except Escape
+      if (this._grab.pivotSelectMode) {
+        if (e.key === 'Escape') this._cancelPivotSelect()
+        return
+      }
       switch (e.key) {
+        case 'v': case 'V': this._startPivotSelect(); return
         case 'x': case 'X': this._setGrabAxis('x'); return
         case 'y': case 'Y': this._setGrabAxis('y'); return
         case 'z': case 'Z': this._setGrabAxis('z'); return

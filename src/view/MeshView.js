@@ -43,6 +43,24 @@ export class MeshView {
     )
     this._extrusionLines.visible = false
     scene.add(this._extrusionLines)
+
+    // Pivot candidate dots (yellow, fixed screen size)
+    this._pivotPointsGeo = new THREE.BufferGeometry()
+    this._pivotPoints = new THREE.Points(
+      this._pivotPointsGeo,
+      new THREE.PointsMaterial({ color: 0xffeb3b, size: 7, sizeAttenuation: false, depthTest: false }),
+    )
+    this._pivotPoints.visible = false
+    scene.add(this._pivotPoints)
+
+    // Hovered pivot highlight (orange, larger)
+    this._hoveredPivotGeo = new THREE.BufferGeometry()
+    this._hoveredPivotPoints = new THREE.Points(
+      this._hoveredPivotGeo,
+      new THREE.PointsMaterial({ color: 0xff8c00, size: 14, sizeAttenuation: false, depthTest: false }),
+    )
+    this._hoveredPivotPoints.visible = false
+    scene.add(this._hoveredPivotPoints)
   }
 
   /** Rebuilds geometry from the corner array and applies it to the mesh */
@@ -124,6 +142,64 @@ export class MeshView {
   /** Hides the extrusion display lines */
   clearExtrusionDisplay() {
     this._extrusionLines.visible = false
+  }
+
+  /**
+   * Shows pivot candidate dots.
+   * @param {{ label: string, position: THREE.Vector3 }[]} candidates
+   */
+  showPivotCandidates(candidates) {
+    const positions = new Float32Array(candidates.length * 3)
+    candidates.forEach((c, i) => {
+      positions[i * 3]     = c.position.x
+      positions[i * 3 + 1] = c.position.y
+      positions[i * 3 + 2] = c.position.z
+    })
+    this._pivotPointsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    this._pivotPointsGeo.attributes.position.needsUpdate = true
+    this._pivotPoints.visible = true
+    this._hoveredPivotPoints.visible = false
+  }
+
+  /**
+   * Highlights the hovered pivot candidate; pass null to clear.
+   * @param {THREE.Vector3|null} position
+   */
+  setHoveredPivot(position) {
+    if (!position) {
+      this._hoveredPivotPoints.visible = false
+      return
+    }
+    const pos = new Float32Array([position.x, position.y, position.z])
+    this._hoveredPivotGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    this._hoveredPivotGeo.attributes.position.needsUpdate = true
+    this._hoveredPivotPoints.visible = true
+  }
+
+  /** Hides all pivot candidate display */
+  clearPivotDisplay() {
+    this._pivotPoints.visible = false
+    this._hoveredPivotPoints.visible = false
+  }
+
+  /**
+   * Shows a single snap target indicator (world origin during Ctrl+grab).
+   * @param {THREE.Vector3} position
+   * @param {boolean} snapping - true = orange (locked), false = yellow (in range)
+   */
+  showSnapTarget(position, snapping) {
+    const pos = new Float32Array([position.x, position.y, position.z])
+    if (snapping) {
+      this._hoveredPivotGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      this._hoveredPivotGeo.attributes.position.needsUpdate = true
+      this._hoveredPivotPoints.visible = true
+      this._pivotPoints.visible = false
+    } else {
+      this._pivotPointsGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      this._pivotPointsGeo.attributes.position.needsUpdate = true
+      this._pivotPoints.visible = true
+      this._hoveredPivotPoints.visible = false
+    }
   }
 
   /**

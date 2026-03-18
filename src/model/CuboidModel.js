@@ -122,3 +122,22 @@ export function toNDC(clientX, clientY, width, height) {
     (clientY / height) * -2 + 1,
   )
 }
+
+/**
+ * Pure function that returns all pivot point candidates.
+ * Includes the 8 corners, 6 face centers, and the world origin.
+ * @param {THREE.Vector3[]} corners
+ * @returns {{ label: string, position: THREE.Vector3 }[]}
+ */
+export function getPivotCandidates(corners) {
+  const candidates = []
+  corners.forEach((c, i) => candidates.push({ label: `Corner ${i}`, position: c.clone() }))
+  FACES.forEach(face => {
+    const center = face.corners
+      .reduce((acc, ci) => acc.add(corners[ci].clone()), new THREE.Vector3())
+      .divideScalar(face.corners.length)
+    candidates.push({ label: face.name, position: center })
+  })
+  candidates.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0) })
+  return candidates
+}
