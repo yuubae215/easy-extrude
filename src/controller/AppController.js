@@ -88,11 +88,23 @@ export class AppController {
     return { faceIdx: Math.floor(hit.face.a / 4), point: hit.point }
   }
 
+  // ─── ユーティリティ ──────────────────────────────────────────────────────
+  /** 3D ワールド座標をスクリーン座標 (px) に変換する */
+  _projectToScreen(position) {
+    const v = position.clone().project(this._camera)
+    return {
+      x: (v.x + 1) / 2 * innerWidth,
+      y: (-v.y + 1) / 2 * innerHeight,
+    }
+  }
+
   // ─── モード管理 ───────────────────────────────────────────────────────────
   setMode(mode) {
     this._selectionMode = mode
     if (mode === 'object') {
       this._meshView.setFaceHighlight(null, this._corners)
+      this._meshView.clearExtrusionDisplay()
+      this._uiView.clearExtrusionLabel()
       this._hoveredFace  = null
       this._faceDragging = false
       this._dragFaceIdx  = null
@@ -155,6 +167,17 @@ export class AppController {
       this._meshView.updateGeometry(this._corners)
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
       this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  Δ ${dist.toFixed(3)}`)
+
+      // 押し出し量表示: ホチキス状のラインとラベル
+      const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
+      this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
+      const savedCenter = this._savedFaceCorners
+        .reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(4)
+      const currentCenter = currentFaceCorners
+        .reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(4)
+      const midpoint = savedCenter.clone().add(currentCenter).multiplyScalar(0.5)
+      const screen = this._projectToScreen(midpoint)
+      this._uiView.setExtrusionLabel(`Δ ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
       return
     }
 
@@ -213,7 +236,13 @@ export class AppController {
   _onMouseUp(e) {
     if (e.button !== 0) return
     if (this._objDragging)  { this._objDragging  = false; this._objCtrlDrag = false; this._controls.enabled = true }
-    if (this._faceDragging) { this._faceDragging = false; this._dragFaceIdx = null;  this._controls.enabled = true }
+    if (this._faceDragging) {
+      this._faceDragging = false
+      this._dragFaceIdx  = null
+      this._controls.enabled = true
+      this._meshView.clearExtrusionDisplay()
+      this._uiView.clearExtrusionLabel()
+    }
   }
 
   _onKeyDown(e) {

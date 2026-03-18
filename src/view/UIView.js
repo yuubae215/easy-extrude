@@ -39,6 +39,24 @@ export class UIView {
     this._modeBarEl.appendChild(this._btnFace)
 
     this._canvas = null
+
+    // Extrusion label (floating, follows 3D midpoint projected to screen)
+    this._extrusionLabelEl = document.createElement('div')
+    Object.assign(this._extrusionLabelEl.style, {
+      position: 'fixed',
+      color: '#ffffff',
+      fontSize: '13px',
+      fontFamily: 'monospace',
+      background: 'rgba(0,0,0,0.72)',
+      padding: '3px 10px',
+      borderRadius: '4px',
+      border: '1px solid rgba(255,255,255,0.45)',
+      pointerEvents: 'none',
+      display: 'none',
+      transform: 'translate(-50%, -50%)',
+      whiteSpace: 'nowrap',
+    })
+    document.body.appendChild(this._extrusionLabelEl)
   }
 
   _makeBtn(label) {
@@ -72,6 +90,24 @@ export class UIView {
   /** ステータステキストを更新する */
   setStatus(text) {
     this._statusEl.textContent = text
+  }
+
+  /**
+   * 押し出し量ラベルを表示する
+   * @param {string} text - 表示テキスト
+   * @param {number} screenX - スクリーン座標 X (px)
+   * @param {number} screenY - スクリーン座標 Y (px)
+   */
+  setExtrusionLabel(text, screenX, screenY) {
+    this._extrusionLabelEl.textContent = text
+    this._extrusionLabelEl.style.left = `${screenX}px`
+    this._extrusionLabelEl.style.top  = `${screenY}px`
+    this._extrusionLabelEl.style.display = 'block'
+  }
+
+  /** 押し出し量ラベルを非表示にする */
+  clearExtrusionLabel() {
+    this._extrusionLabelEl.style.display = 'none'
   }
 
   /** canvas 要素のカーソルスタイルを変更する */
