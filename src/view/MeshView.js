@@ -203,6 +203,39 @@ export class MeshView {
   }
 
   /**
+   * Toggles mesh visibility.
+   * @param {boolean} visible
+   */
+  setVisible(visible) {
+    this.cuboid.visible    = visible
+    this.wireframe.visible = visible
+    if (!visible) {
+      this.boxHelper.visible = false
+      this.hlMesh.visible    = false
+    }
+  }
+
+  /**
+   * Removes all Three.js objects from the scene and disposes geometries.
+   * @param {THREE.Scene} scene
+   */
+  dispose(scene) {
+    scene.remove(this.cuboid)
+    scene.remove(this.wireframe)
+    scene.remove(this.boxHelper)
+    scene.remove(this.hlMesh)
+    scene.remove(this._extrusionLines)
+    scene.remove(this._pivotPoints)
+    scene.remove(this._hoveredPivotPoints)
+    this.cuboid.geometry.dispose()
+    this.wireframe.geometry.dispose()
+    this._hlGeo.dispose()
+    this._extrusionLinesGeo.dispose()
+    this._pivotPointsGeo.dispose()
+    this._hoveredPivotGeo.dispose()
+  }
+
+  /**
    * Updates the face highlight overlay.
    * @param {number|null} fi - face index; null clears the highlight
    * @param {THREE.Vector3[]} corners - current corner array

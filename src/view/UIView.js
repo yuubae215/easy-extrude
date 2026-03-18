@@ -227,6 +227,8 @@ export class UIView {
           ['G', 'Grab'],
           ['G > X/Y/Z', 'Axis constraint'],
           ['G > V', 'Set pivot'],
+          ['Shift+A', 'Add object'],
+          ['X', 'Delete'],
           ['N', 'Properties'],
         ]
       : [
