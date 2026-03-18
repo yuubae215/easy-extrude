@@ -73,27 +73,27 @@ export class MeshView {
    * @param {THREE.Vector3[]} currentFaceCorners - 現在の面の 4 頂点
    */
   setExtrusionDisplay(savedFaceCorners, currentFaceCorners) {
-    // 各面の中心
-    const savedCenter   = savedFaceCorners.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(4)
-    const currentCenter = currentFaceCorners.reduce((a, v) => a.add(v.clone()), new THREE.Vector3()).divideScalar(4)
-
-    // ティック方向: 面の最初のエッジを正規化して使う
-    const tick = new THREE.Vector3().subVectors(savedFaceCorners[1], savedFaceCorners[0]).normalize()
-    const tickHalfLen = 0.35
+    // コの字形: 頂点 corners[0] を起点に corners[1] 方向へ固定長伸ばし、先端同士を棒で結ぶ
+    //   savedFaceCorners[0] ──────── tipS
+    //                                |  ← 寸法棒
+    //   currentFaceCorners[0] ────── tipC
+    const ARM_LEN = 0.5
+    const armDir = new THREE.Vector3()
+      .subVectors(savedFaceCorners[1], savedFaceCorners[0]).normalize()
+    const tipS = savedFaceCorners[0].clone().addScaledVector(armDir,  ARM_LEN)
+    const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
 
     // 3 line segments × 2 points × 3 components = 18 floats
-    // [0] 元の面中心ティック, [1] 中心 → 中心の寸法線, [2] 現在の面中心ティック
+    // [0] 腕1 (saved頂点 → tipS), [1] 棒 (tipS → tipC), [2] 腕2 (tipC → current頂点)
     const positions = new Float32Array(18)
-    const sa = savedCenter.clone().addScaledVector(tick, -tickHalfLen)
-    const sb = savedCenter.clone().addScaledVector(tick,  tickHalfLen)
-    const ca = currentCenter.clone().addScaledVector(tick, -tickHalfLen)
-    const cb = currentCenter.clone().addScaledVector(tick,  tickHalfLen)
-    positions[0]  = sa.x; positions[1]  = sa.y; positions[2]  = sa.z
-    positions[3]  = sb.x; positions[4]  = sb.y; positions[5]  = sb.z
-    positions[6]  = savedCenter.x;   positions[7]  = savedCenter.y;   positions[8]  = savedCenter.z
-    positions[9]  = currentCenter.x; positions[10] = currentCenter.y; positions[11] = currentCenter.z
-    positions[12] = ca.x; positions[13] = ca.y; positions[14] = ca.z
-    positions[15] = cb.x; positions[16] = cb.y; positions[17] = cb.z
+    const s0 = savedFaceCorners[0]
+    const c0 = currentFaceCorners[0]
+    positions[0]  = s0.x;  positions[1]  = s0.y;  positions[2]  = s0.z
+    positions[3]  = tipS.x; positions[4] = tipS.y; positions[5]  = tipS.z
+    positions[6]  = tipS.x; positions[7] = tipS.y; positions[8]  = tipS.z
+    positions[9]  = tipC.x; positions[10] = tipC.y; positions[11] = tipC.z
+    positions[12] = tipC.x; positions[13] = tipC.y; positions[14] = tipC.z
+    positions[15] = c0.x;  positions[16] = c0.y;  positions[17] = c0.z
 
     this._extrusionLinesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     this._extrusionLinesGeo.attributes.position.needsUpdate = true

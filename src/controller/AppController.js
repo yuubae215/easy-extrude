@@ -171,15 +171,14 @@ export class AppController {
       // 押し出し量表示: ホチキス状のラインとラベル
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
       this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
-      const savedCenter = this._savedFaceCorners
-        .reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(4)
-      const currentCenter = currentFaceCorners
-        .reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(4)
-      // ラベルはコの字の縦棒の中点を、ティック方向にオフセットして横に置く
-      const tickDir = new THREE.Vector3()
+      // ラベルは棒(tipS→tipC)の中点に置く (MeshView と同じ ARM_LEN=0.5 を使用)
+      const armDir = new THREE.Vector3()
         .subVectors(this._savedFaceCorners[1], this._savedFaceCorners[0]).normalize()
-      const midpoint = savedCenter.clone().add(currentCenter).multiplyScalar(0.5)
-        .addScaledVector(tickDir, 0.5)
+      const ARM_LEN = 0.5
+      const tipS = this._savedFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
+      const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
+      const midpoint = tipS.clone().add(tipC).multiplyScalar(0.5)
+        .addScaledVector(armDir, 0.15)
       const screen = this._projectToScreen(midpoint)
       this._uiView.setExtrusionLabel(`Δ ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
       return
