@@ -175,7 +175,11 @@ export class AppController {
         .reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(4)
       const currentCenter = currentFaceCorners
         .reduce((acc, v) => acc.add(v), new THREE.Vector3()).divideScalar(4)
+      // ラベルはコの字の縦棒の中点を、ティック方向にオフセットして横に置く
+      const tickDir = new THREE.Vector3()
+        .subVectors(this._savedFaceCorners[1], this._savedFaceCorners[0]).normalize()
       const midpoint = savedCenter.clone().add(currentCenter).multiplyScalar(0.5)
+        .addScaledVector(tickDir, 0.5)
       const screen = this._projectToScreen(midpoint)
       this._uiView.setExtrusionLabel(`Δ ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
       return
