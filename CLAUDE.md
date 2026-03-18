@@ -47,7 +47,7 @@ easy-extrude/
 | **Model** | `model/CuboidModel.js` | Data definitions (`FACES`, `createInitialCorners`) and pure functions (`buildGeometry`, `computeFaceNormal`, `computeOutwardFaceNormal`, `getCentroid`, `buildFaceHighlightPositions`, `toNDC`) |
 | **View** | `view/SceneView.js` | Three.js scene, WebGL renderer, OrbitControls initialization and `render()` |
 | **View** | `view/MeshView.js` | Cuboid mesh, wireframe, BoxHelper, face highlight, extrusion display line updates |
-| **View** | `view/UIView.js` | DOM element creation, mode buttons, status display, extrusion label, cursor changes |
+| **View** | `view/UIView.js` | DOM element creation, header bar (mode dropdown), status display, bottom info bar, N panel, extrusion label, cursor changes |
 | **Controller** | `controller/AppController.js` | Mouse/keyboard events, raycasting, mode switching, animation loop |
 
 ### Pure functions vs. side effects
@@ -71,13 +71,13 @@ Right-handed system. Matches ROS REP-103. Three.js `camera.up` is set to `(0, 0,
 
 - **Custom BufferGeometry** cuboid (8 corners × 6 faces)
 - **OrbitControls** – right-drag to orbit the camera
-- **Object mode** (O key): left-drag to move / Ctrl+drag to rotate on Z axis (world up)
-- **Face select mode** (F key): hover to highlight / left-drag to extrude
-- **Blender-style grab** (G key, object mode only):
-  - G → start grab (object follows mouse on camera-facing plane)
-  - G → X / Y / Z → constrain to that axis (press same key again to release)
-  - Type digits while axis is constrained → set exact distance
-  - Enter or left-click → confirm; Esc or right-click → cancel
+- **Object Mode** (O key or Tab from Edit Mode):
+  - Left-drag to move / Ctrl+drag to rotate on Z axis (world up)
+  - Click to select / deselect
+  - G → Grab (Blender-style): X/Y/Z to constrain axis, type digits for exact distance, Enter/LClick confirm, Esc/RClick cancel
+- **Edit Mode** (E key or Tab from Object Mode): hover to highlight face / left-drag to extrude
+- **N Panel** (N key): toggle right-side properties panel showing Location (centroid) and Dimensions (bounding box)
+- **Blender-style header bar**: mode dropdown at top, bottom info bar with context-sensitive key hints
 - **GridHelper** and **DirectionalLight**
 
 ## GitHub Pages deployment
@@ -103,3 +103,4 @@ Deploy URL: `https://yuubae215.github.io/easy-extrude/`
 - **2026-03-18**: Documentation update. Fully revised README.md to match the implemented MVC structure. Added `computeOutwardFaceNormal` to the Model pure function list in CLAUDE.md; updated MeshView and UIView responsibility descriptions to match reality.
 - **2026-03-18**: Added Blender-style grab controls (G/X/Y/Z, numeric input, confirm/cancel). Disabled OrbitControls inertia (enableDamping = false). Translated all in-repo text from Japanese to English.
 - **2026-03-19**: Adopted ROS world frame (+X forward, +Y left, +Z up). Updated coordinate system in CuboidModel (face definitions, corner labels), SceneView (camera.up, grid rotation), AppController (Ctrl+drag rotation axis Y→Z), MeshView (extrusion arm axis preference), and GizmoView (top/bottom snap Z+/Z-).
+- **2026-03-19**: Blender-style UI overhaul. Added header bar with mode dropdown (Object Mode / Edit Mode), Tab key toggle, N panel (N key) for Location/Dimensions, bottom info bar with context-sensitive key hints. Renamed 'face' mode to 'edit'.

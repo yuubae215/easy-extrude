@@ -24,7 +24,7 @@ export class AppController {
     // Build initial geometry
     meshView.updateGeometry(this._corners)
 
-    // Selection mode
+    // Selection mode: 'object' | 'edit'
     this._selectionMode = 'object'
 
     // ── Object mode state ─────────────────────────────────────────────────
@@ -38,7 +38,7 @@ export class AppController {
     this._objRotateCentroid     = new THREE.Vector3()
     this._objRotateStartCorners = []
 
-    // ── Face mode state ───────────────────────────────────────────────────
+    // ── Edit mode (face extrude) state ────────────────────────────────────
     this._hoveredFace      = null
     this._faceDragging     = false
     this._dragFaceIdx      = null
@@ -114,6 +114,17 @@ export class AppController {
     }
   }
 
+  /** Computes centroid and bounding box dimensions, then updates the N panel */
+  _updateNPanel() {
+    if (!this._uiView.nPanelVisible) return
+    const centroid = getCentroid(this._corners)
+    const bMin = new THREE.Vector3(Infinity, Infinity, Infinity)
+    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
+    this._corners.forEach(c => { bMin.min(c); bMax.max(c) })
+    const dims = new THREE.Vector3().subVectors(bMax, bMin)
+    this._uiView.updateNPanel(centroid, dims)
+  }
+
   // ─── Mode management ──────────────────────────────────────────────────────
   setMode(mode) {
     if (this._grab.active) this._cancelGrab()
@@ -127,6 +138,7 @@ export class AppController {
       this._dragFaceIdx  = null
       this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
     } else {
+      // edit mode
       this._setObjectSelected(false)
       this._objDragging = false
       this._uiView.setStatus('')
@@ -170,6 +182,7 @@ export class AppController {
     }
 
     this._controls.enabled = false
+    this._uiView.setCursor('grabbing')
     this._updateGrabStatus()
   }
 
@@ -180,7 +193,9 @@ export class AppController {
     this._grab.active = false
     this._grab.axis   = null
     this._controls.enabled = true
+    this._uiView.setCursor('default')
     this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
+    this._updateNPanel()
   }
 
   /** Cancels the grab and restores the original position */
@@ -192,7 +207,9 @@ export class AppController {
     this._grab.active = false
     this._grab.axis   = null
     this._controls.enabled = true
+    this._uiView.setCursor('default')
     this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
+    this._updateNPanel()
   }
 
   /** Sets the axis constraint (pressing the same key again removes it) */
@@ -272,7 +289,7 @@ export class AppController {
     const axisNormX = dx / screenLen
     const axisNormY = dy / screenLen
 
-    // Project mouse delta (NDC) onto axis direction → convert to world distance
+    // Project mouse delta (NDC) onto axis direction -> convert to world distance
     const mdx  = this._mouse.x - this._grab.startMouse.x
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
@@ -297,6 +314,7 @@ export class AppController {
     if (this._grab.active) {
       this._applyGrab()
       this._updateGrabStatus()
+      this._updateNPanel()
       return
     }
 
@@ -320,13 +338,14 @@ export class AppController {
         }
         this._meshView.updateGeometry(this._corners)
         if (this._objSelected) this._meshView.updateBoxHelper()
+        this._updateNPanel()
       } else {
         this._uiView.setCursor(this._hitCuboid() ? 'pointer' : 'default')
       }
       return
     }
 
-    // ── Face mode ────────────────────────────────────────────────────────
+    // ── Edit mode (face extrude) ──────────────────────────────────────────
     if (this._faceDragging) {
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
@@ -338,7 +357,7 @@ export class AppController {
       })
       this._meshView.updateGeometry(this._corners)
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
-      this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  Δ ${dist.toFixed(3)}`)
+      this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  D ${dist.toFixed(3)}`)
 
       // Extrusion display: I-type dimension line + label at span midpoint
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
@@ -346,6 +365,7 @@ export class AppController {
       const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
       const screen = this._projectToScreen(labelPos)
       this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
+      this._updateNPanel()
       return
     }
 
@@ -378,6 +398,7 @@ export class AppController {
         this._objDragging       = true
         this._objCtrlDrag       = e.ctrlKey
         this._controls.enabled  = false
+        this._uiView.setCursor('grabbing')
         const camDir = new THREE.Vector3()
         this._camera.getWorldDirection(camDir)
         this._objDragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
@@ -394,12 +415,13 @@ export class AppController {
       return
     }
 
-    // ── Face mode ────────────────────────────────────────────────────────
+    // ── Edit mode (face extrude) ──────────────────────────────────────────
     const hit = this._hitFace()
     if (!hit) return
     this._faceDragging        = true
     this._dragFaceIdx         = hit.faceIdx
     this._controls.enabled    = false
+    this._uiView.setCursor('grabbing')
     this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFaceIdx))
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
@@ -410,13 +432,21 @@ export class AppController {
 
   _onMouseUp(e) {
     if (e.button !== 0) return
-    if (this._objDragging)  { this._objDragging  = false; this._objCtrlDrag = false; this._controls.enabled = true }
+    if (this._objDragging)  {
+      this._objDragging  = false
+      this._objCtrlDrag  = false
+      this._controls.enabled = true
+      this._uiView.setCursor(this._hitCuboid() ? 'pointer' : 'default')
+      this._updateNPanel()
+    }
     if (this._faceDragging) {
       this._faceDragging = false
       this._dragFaceIdx  = null
       this._controls.enabled = true
       this._meshView.clearExtrusionDisplay()
       this._uiView.clearExtrusionLabel()
+      this._uiView.setCursor('default')
+      this._updateNPanel()
     }
   }
 
@@ -457,8 +487,23 @@ export class AppController {
     }
 
     // ── Normal keys ───────────────────────────────────────────────────────
+    // Tab: toggle Object Mode <-> Edit Mode
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      this.setMode(this._selectionMode === 'object' ? 'edit' : 'object')
+      return
+    }
+    // N: toggle N panel
+    if (e.key === 'n' || e.key === 'N') {
+      this._uiView.toggleNPanel()
+      this._updateNPanel()
+      if (this._gizmoView) {
+        this._gizmoView.setRightOffset(this._uiView.nPanelVisible ? 216 : 16)
+      }
+      return
+    }
     if (e.key === 'o' || e.key === 'O') this.setMode('object')
-    if (e.key === 'f' || e.key === 'F') this.setMode('face')
+    if (e.key === 'e' || e.key === 'E') this.setMode('edit')
     if ((e.key === 'g' || e.key === 'G') && this._selectionMode === 'object' && this._objSelected) {
       this._startGrab()
     }

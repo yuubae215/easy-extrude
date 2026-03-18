@@ -35,7 +35,7 @@ export class GizmoView {
     this._canvas.height = SIZE
     Object.assign(this._canvas.style, {
       position:     'fixed',
-      top:          '16px',
+      top:          '46px',
       right:        '16px',
       borderRadius: '50%',
       background:   'rgba(24, 24, 40, 0.55)',
@@ -50,6 +50,11 @@ export class GizmoView {
     this._canvas.addEventListener('click',      e => this._onClick(e))
     this._canvas.addEventListener('mousemove',  e => this._onHover(e))
     this._canvas.addEventListener('mouseleave', () => { this._hovered = null; this.update() })
+  }
+
+  /** Adjusts the right offset to avoid overlapping the N panel */
+  setRightOffset(px) {
+    this._canvas.style.right = `${px}px`
   }
 
   // ── Projection ─────────────────────────────────────────────────────────────

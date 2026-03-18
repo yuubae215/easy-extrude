@@ -1,46 +1,168 @@
 /**
- * UIView - manages DOM UI elements
+ * UIView - manages DOM UI elements (Blender-style layout)
  *
  * Side effects: creates DOM elements, appends them, and modifies their styles.
  */
 export class UIView {
   constructor() {
-    // Mode bar (top-left)
-    this._modeBarEl = document.createElement('div')
-    Object.assign(this._modeBarEl.style, {
-      position: 'fixed', top: '20px', left: '20px',
-      display: 'flex', gap: '8px',
+    // ── Header bar (top, full width) ─────────────────────────────────────
+    this._headerEl = document.createElement('div')
+    Object.assign(this._headerEl.style, {
+      position: 'fixed', top: '0', left: '0', right: '0',
+      height: '36px',
+      background: '#2b2b2b',
+      borderBottom: '1px solid #1a1a1a',
+      display: 'flex', alignItems: 'center',
+      padding: '0 8px', gap: '4px',
+      zIndex: '100',
+      userSelect: 'none',
     })
-    document.body.appendChild(this._modeBarEl)
+    document.body.appendChild(this._headerEl)
 
-    // Status bar (top-center)
+    // ── Mode selector (dropdown) ──────────────────────────────────────────
+    this._modeSelectorEl = document.createElement('div')
+    Object.assign(this._modeSelectorEl.style, {
+      position: 'relative',
+      display: 'inline-block',
+    })
+
+    this._modeBtnEl = document.createElement('button')
+    Object.assign(this._modeBtnEl.style, {
+      padding: '4px 10px',
+      background: '#3c3c3c',
+      border: '1px solid #555',
+      borderRadius: '4px',
+      color: '#e8e8e8',
+      cursor: 'pointer',
+      fontSize: '13px',
+      fontFamily: 'sans-serif',
+      display: 'flex', alignItems: 'center', gap: '6px',
+    })
+    this._modeLabelEl = document.createElement('span')
+    this._modeLabelEl.textContent = 'Object Mode'
+    const arrowEl = document.createElement('span')
+    arrowEl.textContent = 'v'
+    Object.assign(arrowEl.style, { fontSize: '10px', opacity: '0.7' })
+    this._modeBtnEl.appendChild(this._modeLabelEl)
+    this._modeBtnEl.appendChild(arrowEl)
+
+    // Dropdown menu
+    this._modeDropdownEl = document.createElement('div')
+    Object.assign(this._modeDropdownEl.style, {
+      position: 'absolute',
+      top: '100%', left: '0',
+      background: '#2b2b2b',
+      border: '1px solid #555',
+      borderRadius: '4px',
+      overflow: 'hidden',
+      display: 'none',
+      zIndex: '200',
+      minWidth: '140px',
+      marginTop: '2px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+    })
+
+    const modeItems = [
+      { label: 'Object Mode', value: 'object', hint: 'Tab' },
+      { label: 'Edit Mode',   value: 'edit',   hint: 'Tab' },
+    ]
+    this._dropdownItems = []
+    modeItems.forEach(({ label, value, hint }) => {
+      const item = document.createElement('div')
+      Object.assign(item.style, {
+        padding: '7px 12px',
+        color: '#e8e8e8',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontFamily: 'sans-serif',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      })
+      const labelSpan = document.createElement('span')
+      labelSpan.textContent = label
+      const hintSpan = document.createElement('span')
+      hintSpan.textContent = hint
+      Object.assign(hintSpan.style, { color: '#888', fontSize: '11px' })
+      item.appendChild(labelSpan)
+      item.appendChild(hintSpan)
+      item.dataset.mode = value
+      item.addEventListener('mouseenter', () => { item.style.background = '#4a4a4a' })
+      item.addEventListener('mouseleave', () => { item.style.background = 'transparent' })
+      this._modeDropdownEl.appendChild(item)
+      this._dropdownItems.push(item)
+    })
+
+    this._modeSelectorEl.appendChild(this._modeBtnEl)
+    this._modeSelectorEl.appendChild(this._modeDropdownEl)
+    this._headerEl.appendChild(this._modeSelectorEl)
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      if (!this._modeSelectorEl.contains(e.target)) {
+        this._modeDropdownEl.style.display = 'none'
+      }
+    })
+
+    // ── Status bar (top-center, operation feedback) ───────────────────────
     this._statusEl = document.createElement('div')
     Object.assign(this._statusEl.style, {
-      position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+      position: 'fixed', top: '46px', left: '50%', transform: 'translateX(-50%)',
       color: '#ffeb3b', fontSize: '15px', fontFamily: 'sans-serif',
       background: 'rgba(0,0,0,0.55)', padding: '6px 16px', borderRadius: '6px',
       pointerEvents: 'none', minWidth: '120px', textAlign: 'center',
     })
     document.body.appendChild(this._statusEl)
 
-    // Info bar (bottom-center)
+    // ── Bottom info bar (full width) ──────────────────────────────────────
     this._infoEl = document.createElement('div')
     Object.assign(this._infoEl.style, {
-      position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
-      color: '#ccc', fontSize: '13px', fontFamily: 'sans-serif',
-      background: 'rgba(0,0,0,0.55)', padding: '8px 18px', borderRadius: '8px',
-      pointerEvents: 'none', textAlign: 'center', lineHeight: '1.6',
+      position: 'fixed', bottom: '0', left: '0', right: '0',
+      height: '26px',
+      background: '#1c1c1c',
+      borderTop: '1px solid #111',
+      display: 'flex', alignItems: 'center',
+      padding: '0 12px',
+      color: '#aaa', fontSize: '12px', fontFamily: 'sans-serif',
+      pointerEvents: 'none',
+      zIndex: '100',
+      gap: '0',
     })
     document.body.appendChild(this._infoEl)
 
-    this._btnObject = this._makeBtn('Object (O)')
-    this._btnFace   = this._makeBtn('Face (F)')
-    this._modeBarEl.appendChild(this._btnObject)
-    this._modeBarEl.appendChild(this._btnFace)
+    // ── N panel (right side, N-key toggle) ────────────────────────────────
+    this._nPanelVisible = false
+    this._nPanelEl = document.createElement('div')
+    Object.assign(this._nPanelEl.style, {
+      position: 'fixed', top: '36px', right: '0',
+      width: '200px',
+      background: '#2b2b2b',
+      borderLeft: '1px solid #1a1a1a',
+      color: '#e8e8e8',
+      fontFamily: 'sans-serif', fontSize: '12px',
+      display: 'none',
+      zIndex: '90',
+      bottom: '26px',
+      overflowY: 'auto',
+    })
 
-    this._canvas = null
+    // N panel tab header
+    const nTabEl = document.createElement('div')
+    Object.assign(nTabEl.style, {
+      padding: '6px 10px',
+      background: '#3a3a3a',
+      borderBottom: '1px solid #1a1a1a',
+      fontSize: '12px', fontWeight: 'bold',
+      color: '#e8e8e8',
+      letterSpacing: '0.05em',
+    })
+    nTabEl.textContent = 'Item'
+    this._nPanelEl.appendChild(nTabEl)
 
-    // Extrusion label (floating, follows 3D midpoint projected to screen)
+    this._nPanelContentEl = document.createElement('div')
+    this._nPanelEl.appendChild(this._nPanelContentEl)
+
+    document.body.appendChild(this._nPanelEl)
+
+    // ── Extrusion label (floating) ────────────────────────────────────────
     this._extrusionLabelEl = document.createElement('div')
     Object.assign(this._extrusionLabelEl.style, {
       position: 'fixed',
@@ -57,35 +179,86 @@ export class UIView {
       whiteSpace: 'nowrap',
     })
     document.body.appendChild(this._extrusionLabelEl)
+
+    this._canvas = null
+    this._modeChangeCallback = null
   }
 
-  _makeBtn(label) {
-    const btn = document.createElement('button')
-    btn.textContent = label
-    Object.assign(btn.style, {
-      padding: '7px 15px', borderRadius: '6px', border: '2px solid #555',
-      background: 'rgba(0,0,0,0.6)', color: '#aaa', cursor: 'pointer',
-      fontSize: '13px', fontFamily: 'sans-serif',
-    })
-    return btn
-  }
-
-  /** Registers callbacks for mode-change button clicks */
+  /** Registers callback for mode changes */
   onModeChange(callback) {
-    this._btnObject.addEventListener('click', () => callback('object'))
-    this._btnFace.addEventListener('click',   () => callback('face'))
+    this._modeChangeCallback = callback
+
+    this._modeBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const isOpen = this._modeDropdownEl.style.display !== 'none'
+      this._modeDropdownEl.style.display = isOpen ? 'none' : 'block'
+    })
+
+    this._dropdownItems.forEach(item => {
+      item.addEventListener('click', () => {
+        callback(item.dataset.mode)
+        this._modeDropdownEl.style.display = 'none'
+      })
+    })
   }
 
-  /** Updates button appearance and info text to match the active mode */
+  /** Updates mode button label, dropdown active state, and info bar */
   updateMode(mode) {
-    const active   = { background: 'rgba(79,195,247,0.25)', color: '#4fc3f7', borderColor: '#4fc3f7' }
-    const inactive = { background: 'rgba(0,0,0,0.6)',       color: '#aaa',    borderColor: '#555' }
-    Object.assign(this._btnObject.style, mode === 'object' ? active : inactive)
-    Object.assign(this._btnFace.style,   mode === 'face'   ? active : inactive)
-    this._infoEl.innerHTML = mode === 'object'
-      ? 'Click→Select &nbsp;|&nbsp; Left-drag→Move &nbsp;|&nbsp; Ctrl+drag→Rotate Y &nbsp;|&nbsp; Right-drag→Orbit'
-        + '<br>G→Grab &nbsp;|&nbsp; G→X/Y/Z→Axis constraint &nbsp;|&nbsp; Type value→set distance &nbsp;|&nbsp; Enter/LClick→confirm &nbsp;|&nbsp; Esc/RClick→cancel'
-      : 'Hover face→highlight &nbsp;|&nbsp; Left-drag→Extrude &nbsp;|&nbsp; Right-drag→Orbit'
+    const labels = { object: 'Object Mode', edit: 'Edit Mode' }
+    this._modeLabelEl.textContent = labels[mode] || mode
+
+    // Highlight active item in dropdown
+    this._dropdownItems.forEach(item => {
+      item.style.color = item.dataset.mode === mode ? '#4fc3f7' : '#e8e8e8'
+    })
+
+    this._setInfoText(mode)
+  }
+
+  _setInfoText(mode) {
+    this._infoEl.innerHTML = ''
+
+    const shortcuts = mode === 'object'
+      ? [
+          ['Tab', 'Edit Mode'],
+          ['Click', 'Select'],
+          ['Drag', 'Move'],
+          ['Ctrl+Drag', 'Rotate'],
+          ['G', 'Grab'],
+          ['G > X/Y/Z', 'Axis constraint'],
+          ['N', 'Properties'],
+        ]
+      : [
+          ['Tab', 'Object Mode'],
+          ['Hover', 'Highlight face'],
+          ['Drag', 'Extrude'],
+          ['N', 'Properties'],
+        ]
+
+    shortcuts.forEach(([key, desc], i) => {
+      if (i > 0) {
+        const sep = document.createElement('span')
+        sep.textContent = '  |  '
+        Object.assign(sep.style, { color: '#555' })
+        this._infoEl.appendChild(sep)
+      }
+      const keyEl = document.createElement('span')
+      keyEl.textContent = key
+      Object.assign(keyEl.style, {
+        background: '#444',
+        border: '1px solid #666',
+        borderRadius: '3px',
+        padding: '0 4px',
+        color: '#ddd',
+        fontSize: '11px',
+        marginRight: '3px',
+        fontFamily: 'monospace',
+      })
+      const descEl = document.createElement('span')
+      descEl.textContent = desc
+      this._infoEl.appendChild(keyEl)
+      this._infoEl.appendChild(descEl)
+    })
   }
 
   /** Updates the status bar text */
@@ -93,16 +266,92 @@ export class UIView {
     this._statusEl.textContent = text
   }
 
+  /** Returns true if the N panel is currently visible */
+  get nPanelVisible() {
+    return this._nPanelVisible
+  }
+
+  /** Toggles N panel visibility */
+  toggleNPanel() {
+    this._nPanelVisible = !this._nPanelVisible
+    this._nPanelEl.style.display = this._nPanelVisible ? 'block' : 'none'
+  }
+
+  /**
+   * Updates N panel content.
+   * @param {{ x: number, y: number, z: number }} centroid
+   * @param {{ x: number, y: number, z: number }} dimensions
+   */
+  updateNPanel(centroid, dimensions) {
+    if (!this._nPanelVisible) return
+
+    const row = (axis, color, val) => {
+      const r = document.createElement('div')
+      Object.assign(r.style, {
+        display: 'grid',
+        gridTemplateColumns: '18px 1fr',
+        gap: '2px 4px',
+        padding: '1px 0',
+        alignItems: 'center',
+      })
+      const axisEl = document.createElement('span')
+      axisEl.textContent = axis
+      Object.assign(axisEl.style, { color, fontWeight: 'bold', fontSize: '11px' })
+      const valEl = document.createElement('span')
+      valEl.textContent = val.toFixed(3)
+      Object.assign(valEl.style, {
+        background: '#383838',
+        border: '1px solid #444',
+        borderRadius: '3px',
+        padding: '2px 6px',
+        color: '#e8e8e8',
+        fontSize: '12px',
+        textAlign: 'right',
+        fontFamily: 'monospace',
+      })
+      r.appendChild(axisEl)
+      r.appendChild(valEl)
+      return r
+    }
+
+    const section = (title, rows) => {
+      const sec = document.createElement('div')
+      Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+      const titleEl = document.createElement('div')
+      titleEl.textContent = title
+      Object.assign(titleEl.style, {
+        color: '#aaa', fontSize: '11px',
+        textTransform: 'uppercase', letterSpacing: '0.05em',
+        marginBottom: '6px',
+      })
+      sec.appendChild(titleEl)
+      rows.forEach(r => sec.appendChild(r))
+      return sec
+    }
+
+    this._nPanelContentEl.innerHTML = ''
+    this._nPanelContentEl.appendChild(section('Location', [
+      row('X', '#e05252', centroid.x),
+      row('Y', '#6ab04c', centroid.y),
+      row('Z', '#4a9eed', centroid.z),
+    ]))
+    this._nPanelContentEl.appendChild(section('Dimensions', [
+      row('X', '#e05252', dimensions.x),
+      row('Y', '#6ab04c', dimensions.y),
+      row('Z', '#4a9eed', dimensions.z),
+    ]))
+  }
+
   /**
    * Shows the extrusion amount label at a screen position.
-   * @param {string} text - label text
-   * @param {number} screenX - screen X coordinate (px)
-   * @param {number} screenY - screen Y coordinate (px)
+   * @param {string} text
+   * @param {number} screenX
+   * @param {number} screenY
    */
   setExtrusionLabel(text, screenX, screenY) {
     this._extrusionLabelEl.textContent = text
-    this._extrusionLabelEl.style.left = `${screenX}px`
-    this._extrusionLabelEl.style.top  = `${screenY}px`
+    this._extrusionLabelEl.style.left    = `${screenX}px`
+    this._extrusionLabelEl.style.top     = `${screenY}px`
     this._extrusionLabelEl.style.display = 'block'
   }
 
