@@ -87,6 +87,8 @@ src/
 - [ ] Mobile support
 - [ ] Draw any 2D shape and extrude it
 
+See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed implementation plans.
+
 ---
 
 Made with Three.js
