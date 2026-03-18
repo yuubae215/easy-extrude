@@ -178,13 +178,11 @@ export class GizmoView {
     // Snap camera position along that axis direction from the orbit target
     this._camera.position.copy(target).addScaledVector(dir, dist)
 
-    // Fix up-vector: top/bottom views use -Z / +Z as up
-    if (key === 'Y+') {
-      this._camera.up.set(0, 0, -1)
-    } else if (key === 'Y-') {
-      this._camera.up.set(0, 0,  1)
+    // Fix up-vector: top/bottom views (Z+/Z-) use +X as screen-up; others keep +Z up
+    if (key === 'Z+' || key === 'Z-') {
+      this._camera.up.set(1, 0, 0)  // X (forward) points up on screen in top/bottom view
     } else {
-      this._camera.up.set(0, 1, 0)
+      this._camera.up.set(0, 0, 1)  // ROS convention: +Z is up for all horizontal views
     }
 
     this._camera.lookAt(target)

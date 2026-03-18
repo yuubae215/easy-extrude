@@ -303,9 +303,9 @@ export class AppController {
     if (this._selectionMode === 'object') {
       if (this._objDragging) {
         if (this._objCtrlDrag) {
-          // Rotate around centroid on the Y axis
+          // Rotate around centroid on the Z axis (ROS: +Z is up)
           const angle = (e.clientX - this._objRotateStartX) * 0.01
-          const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle)
+          const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
           this._objRotateStartCorners.forEach((c, i) => {
             this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
           })

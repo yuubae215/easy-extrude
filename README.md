@@ -23,11 +23,12 @@ Switch to Face mode → Hover to highlight a face → Drag to extrude → Your 3
 An interactive 3D scene built with Three.js + Vite (MVC architecture).
 
 - Custom **BufferGeometry** cuboid with 8 corners and 6 independently addressable faces
-- **Object mode** (`O` key): click to select, left-drag to move, Ctrl+drag to rotate around Y-axis
+- **Object mode** (`O` key): click to select, left-drag to move, Ctrl+drag to rotate around Z-axis (world up)
 - **Face mode** (`F` key): hover to highlight a face, left-drag to extrude along face normal
 - Extrusion dimension line with live `Δ` label while dragging
 - **OrbitControls**: right-drag to orbit camera, scroll to zoom
 - Grid helper and directional lighting
+- **ROS world frame**: +X forward, +Y left, +Z up (right-handed, same as ROS convention)
 
 ---
 

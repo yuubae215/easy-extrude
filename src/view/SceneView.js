@@ -17,7 +17,9 @@ export class SceneView {
     this.scene.background = new THREE.Color(0x1a1a2e)
 
     this.camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
-    this.camera.position.set(4, 3, 6)
+    this.camera.up.set(0, 0, 1)           // ROS convention: +Z is up
+    this.camera.position.set(6, -4, 3)    // front (+X), right (-Y), above (+Z)
+    this.camera.lookAt(0, 0, 0)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = false
@@ -33,12 +35,14 @@ export class SceneView {
   _setupLighting() {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.5))
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.5)
-    dirLight.position.set(5, 10, 5)
+    dirLight.position.set(5, -5, 10)  // front-right, high above (+Z up)
     this.scene.add(dirLight)
   }
 
   _setupGrid() {
+    // GridHelper is in XZ plane by default; rotate 90deg around X to put it in XY plane (Z=0 ground)
     const grid = new THREE.GridHelper(20, 20, 0x444466, 0x222244)
+    grid.rotation.x = Math.PI / 2
     grid.material.transparent = true
     grid.material.opacity = 0.4
     this.scene.add(grid)

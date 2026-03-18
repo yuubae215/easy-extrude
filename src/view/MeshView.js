@@ -80,11 +80,11 @@ export class MeshView {
     // Extrusion direction (saved → current)
     const extDir = new THREE.Vector3().subVectors(currentFaceCorners[0], savedFaceCorners[0]).normalize()
 
-    // Pick the world axis most perpendicular to extDir (prefer horizontal: X, then Z, then Y)
+    // Pick the world axis most perpendicular to extDir (prefer horizontal: X, then Y, then Z)
     const AXES = [
       new THREE.Vector3(1, 0, 0),
-      new THREE.Vector3(0, 0, 1),
       new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, 0, 1),
     ]
     let armDir = AXES[0]
     let minDot = Infinity

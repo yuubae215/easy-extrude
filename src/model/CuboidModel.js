@@ -6,34 +6,36 @@
 import * as THREE from 'three'
 
 //
-//      3─────2
-//     /|    /|    +Y up
-//    7─────6 |    +Z front
-//    | 0───|─1    +X right
+// ROS world frame: +X forward, +Y left, +Z up (right-handed)
+//
+//      6─────7
+//     /|    /|    +Z up
+//    5─────4 |    +Y left
+//    | 2───|─3    +X front (toward viewer)
 //    |/    |/
-//    4─────5
+//    1─────0
 //
 // Face definitions: 4 corner indices in CCW order as seen from outside
 export const FACES = [
-  { name: 'Front (+Z)', corners: [4, 5, 6, 7] }, // fi=0
-  { name: 'Back (-Z)',  corners: [1, 0, 3, 2] }, // fi=1
-  { name: 'Top (+Y)',   corners: [3, 7, 6, 2] }, // fi=2
-  { name: 'Bottom (-Y)', corners: [0, 1, 5, 4] }, // fi=3
-  { name: 'Right (+X)', corners: [5, 1, 2, 6] }, // fi=4
-  { name: 'Left (-X)',  corners: [0, 4, 7, 3] }, // fi=5
+  { name: 'Front (+X)', corners: [1, 2, 6, 5] }, // fi=0
+  { name: 'Back (-X)',  corners: [0, 4, 7, 3] }, // fi=1
+  { name: 'Top (+Z)',   corners: [4, 5, 6, 7] }, // fi=2
+  { name: 'Bottom (-Z)', corners: [1, 0, 3, 2] }, // fi=3
+  { name: 'Left (+Y)',  corners: [2, 3, 7, 6] }, // fi=4
+  { name: 'Right (-Y)', corners: [1, 5, 4, 0] }, // fi=5
 ]
 
 /** Pure factory that creates the initial corner array */
 export function createInitialCorners() {
   return [
-    new THREE.Vector3(-1, -1, -1), // 0 back-bottom-left
-    new THREE.Vector3( 1, -1, -1), // 1 back-bottom-right
-    new THREE.Vector3( 1,  1, -1), // 2 back-top-right
-    new THREE.Vector3(-1,  1, -1), // 3 back-top-left
-    new THREE.Vector3(-1, -1,  1), // 4 front-bottom-left
-    new THREE.Vector3( 1, -1,  1), // 5 front-bottom-right
-    new THREE.Vector3( 1,  1,  1), // 6 front-top-right
-    new THREE.Vector3(-1,  1,  1), // 7 front-top-left
+    new THREE.Vector3(-1, -1, -1), // 0 back-right-bottom
+    new THREE.Vector3( 1, -1, -1), // 1 front-right-bottom
+    new THREE.Vector3( 1,  1, -1), // 2 front-left-bottom
+    new THREE.Vector3(-1,  1, -1), // 3 back-left-bottom
+    new THREE.Vector3(-1, -1,  1), // 4 back-right-top
+    new THREE.Vector3( 1, -1,  1), // 5 front-right-top
+    new THREE.Vector3( 1,  1,  1), // 6 front-left-top
+    new THREE.Vector3(-1,  1,  1), // 7 back-left-top
   ]
 }
 
