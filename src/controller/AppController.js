@@ -1,33 +1,42 @@
 /**
  * AppController - handles user input and manages the animation loop
  *
- * Connects Model (CuboidModel) with View (SceneView / MeshView / UIView).
+ * Connects Model (CuboidModel) with View (SceneView / MeshView / UIView / OutlinerView).
  * Side effects: event listener registration, requestAnimationFrame, Model state updates.
  */
 import * as THREE from 'three'
-import { FACES, computeOutwardFaceNormal, getCentroid, toNDC, getPivotCandidates } from '../model/CuboidModel.js'
+import {
+  FACES,
+  createInitialCorners,
+  computeOutwardFaceNormal,
+  getCentroid,
+  toNDC,
+  getPivotCandidates,
+} from '../model/CuboidModel.js'
+import { MeshView } from '../view/MeshView.js'
 
 export class AppController {
   /**
-   * @param {{ corners: THREE.Vector3[] }} model
-   * @param {import('../view/SceneView.js').SceneView} sceneView
-   * @param {import('../view/MeshView.js').MeshView} meshView
-   * @param {import('../view/UIView.js').UIView} uiView
+   * @param {import('../view/SceneView.js').SceneView}     sceneView
+   * @param {import('../view/UIView.js').UIView}           uiView
+   * @param {import('../view/GizmoView.js').GizmoView}     gizmoView
+   * @param {import('../view/OutlinerView.js').OutlinerView} outlinerView
    */
-  constructor(model, sceneView, meshView, uiView, gizmoView = null) {
-    this._corners   = model.corners
-    this._sceneView = sceneView
-    this._meshView  = meshView
-    this._uiView    = uiView
-    this._gizmoView = gizmoView
+  constructor(sceneView, uiView, gizmoView = null, outlinerView = null) {
+    this._sceneView    = sceneView
+    this._uiView       = uiView
+    this._gizmoView    = gizmoView
+    this._outlinerView = outlinerView
 
-    // Build initial geometry
-    meshView.updateGeometry(this._corners)
+    // ── Multi-object scene state ───────────────────────────────────────────
+    // Each entry: { id, name, corners: THREE.Vector3[], meshView: MeshView }
+    this._objects  = new Map()
+    this._activeId = null
 
-    // Selection mode: 'object' | 'edit'
+    // ── Selection mode: 'object' | 'edit' ─────────────────────────────────
     this._selectionMode = 'object'
 
-    // ── Object mode state ─────────────────────────────────────────────────
+    // ── Object mode state ──────────────────────────────────────────────────
     this._objSelected           = false
     this._objDragging           = false
     this._objCtrlDrag           = false
@@ -38,7 +47,7 @@ export class AppController {
     this._objRotateCentroid     = new THREE.Vector3()
     this._objRotateStartCorners = []
 
-    // ── Edit mode (face extrude) state ────────────────────────────────────
+    // ── Edit mode (face extrude) state ─────────────────────────────────────
     this._hoveredFace      = null
     this._faceDragging     = false
     this._dragFaceIdx      = null
@@ -47,49 +56,149 @@ export class AppController {
     this._dragStart        = new THREE.Vector3()
     this._savedFaceCorners = []
 
-    // ── Blender-style grab state ──────────────────────────────────────────
-    // G to start, X/Y/Z to constrain axis, type a value to set distance,
-    // G > V to select pivot point, Enter/LClick to confirm, Esc/RClick to cancel.
+    // ── Blender-style grab state ───────────────────────────────────────────
     this._grab = {
       active:          false,
-      axis:            null,               // null | 'x' | 'y' | 'z'
+      axis:            null,
       startMouse:      new THREE.Vector2(),
       startCorners:    [],
       centroid:        new THREE.Vector3(),
-      pivot:           new THREE.Vector3(), // active pivot (default = centroid)
+      pivot:           new THREE.Vector3(),
       pivotLabel:      'Centroid',
-      dragPlane:       new THREE.Plane(),  // camera-facing plane through pivot
+      dragPlane:       new THREE.Plane(),
       startPoint:      new THREE.Vector3(),
-      inputStr:        '',                 // numeric input buffer
+      inputStr:        '',
       hasInput:        false,
-      // Pivot select sub-mode (G > V)
       pivotSelectMode: false,
       hoveredPivotIdx: -1,
       candidates:      [],
-      // Ctrl snap state
       snapping:        false,
     }
 
-    // Ctrl key state (for snap-to-origin during grab)
-    this._ctrlHeld = false
-
-    // Raycaster
+    this._ctrlHeld  = false
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
 
-    // UI wiring
+    // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
     uiView.onModeChange(mode => this.setMode(mode))
 
+    if (outlinerView) {
+      outlinerView.onSelect(id  => this._onOutlinerSelect(id))
+      outlinerView.onDelete(id  => this._deleteObject(id))
+      outlinerView.onAdd(()     => this._addObject())
+      outlinerView.onVisible((id, v) => this._setObjectVisible(id, v))
+    }
+
     this._bindEvents()
+
+    // Create the initial object
+    this._addObject()
     this.setMode('object')
+  }
+
+  // ─── Active-object accessors ──────────────────────────────────────────────
+
+  /** Returns the active object entry, or null if none */
+  get _activeObj() {
+    return this._activeId ? this._objects.get(this._activeId) ?? null : null
+  }
+
+  /** Returns the active object's corners array */
+  get _corners() {
+    return this._activeObj?.corners ?? []
+  }
+
+  /** Returns the active object's MeshView */
+  get _meshView() {
+    return this._activeObj?.meshView ?? null
   }
 
   // ─── Convenience getters ──────────────────────────────────────────────────
   get _camera()   { return this._sceneView.camera }
   get _controls() { return this._sceneView.controls }
 
-  // ─── Event binding ────────────────────────────────────────────────────────
+  // ─── Object management ────────────────────────────────────────────────────
+
+  _addObject() {
+    const idx  = this._objects.size
+    const id   = `obj_${idx}_${Date.now()}`
+    const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
+
+    const corners = createInitialCorners()
+    // Offset new objects so they don't stack exactly on top of each other
+    if (idx > 0) {
+      const step = idx * 0.5
+      corners.forEach(c => { c.x += step; c.y += step })
+    }
+
+    const meshView = new MeshView(this._sceneView.scene)
+    meshView.updateGeometry(corners)
+
+    this._objects.set(id, { id, name, corners, meshView })
+
+    if (this._outlinerView) this._outlinerView.addObject(id, name)
+
+    this._switchActiveObject(id, true)
+  }
+
+  _deleteObject(id) {
+    if (this._objects.size <= 1) return   // always keep at least one object
+
+    const obj = this._objects.get(id)
+    if (!obj) return
+
+    obj.meshView.dispose(this._sceneView.scene)
+    this._objects.delete(id)
+
+    if (this._outlinerView) this._outlinerView.removeObject(id)
+
+    if (this._activeId === id) {
+      const ids = [...this._objects.keys()]
+      this._switchActiveObject(ids[ids.length - 1], true)
+    }
+  }
+
+  /**
+   * Switches the active object without toggling selection.
+   * @param {string} id
+   * @param {boolean} select - whether to set _objSelected = true
+   */
+  _switchActiveObject(id, select = false) {
+    // Deselect / un-highlight previous
+    if (this._activeId && this._activeId !== id) {
+      const prev = this._objects.get(this._activeId)
+      if (prev) prev.meshView.setObjectSelected(false)
+    }
+
+    this._activeId    = id
+    this._objSelected = select
+
+    const obj = this._objects.get(id)
+    if (obj) obj.meshView.setObjectSelected(select)
+
+    if (this._outlinerView) this._outlinerView.setActive(id)
+    this._uiView.setStatus(select ? 'Object selected' : '')
+  }
+
+  _setObjectVisible(id, visible) {
+    const obj = this._objects.get(id)
+    if (!obj) return
+    obj.meshView.setVisible(visible)
+  }
+
+  /** Called when user clicks a row in the outliner */
+  _onOutlinerSelect(id) {
+    if (this._selectionMode === 'edit') this.setMode('object')
+    if (id !== this._activeId) {
+      this._switchActiveObject(id, true)
+    } else {
+      // Clicking the already-active row just re-selects it
+      this._setObjectSelected(true)
+    }
+  }
+
+  // ─── Event binding ─────────────────────────────────────────────────────────
   _bindEvents() {
     window.addEventListener('mousemove', e => this._onMouseMove(e))
     window.addEventListener('mousedown', e => this._onMouseDown(e))
@@ -98,26 +207,40 @@ export class AppController {
     window.addEventListener('keyup',     e => this._onKeyUp(e))
   }
 
-  // ─── Raycasting ───────────────────────────────────────────────────────────
+  // ─── Raycasting ────────────────────────────────────────────────────────────
   _updateMouse(e) {
     const v = toNDC(e.clientX, e.clientY, innerWidth, innerHeight)
     this._mouse.copy(v)
   }
 
-  _hitCuboid() {
+  /** Hits any visible object — returns { hit, obj } or null */
+  _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
-    const hits = this._raycaster.intersectObject(this._meshView.cuboid)
+    const meshes = [...this._objects.values()]
+      .filter(o => o.meshView.cuboid.visible)
+      .map(o => o.meshView.cuboid)
+    const hits = this._raycaster.intersectObjects(meshes)
+    if (!hits.length) return null
+    const hitMesh = hits[0].object
+    const obj = [...this._objects.values()].find(o => o.meshView.cuboid === hitMesh)
+    return obj ? { hit: hits[0], obj } : null
+  }
+
+  /** Hits only the active object's mesh */
+  _hitActiveCuboid() {
+    if (!this._activeObj) return null
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const hits = this._raycaster.intersectObject(this._activeObj.meshView.cuboid)
     return hits.length ? hits[0] : null
   }
 
   _hitFace() {
-    const hit = this._hitCuboid()
+    const hit = this._hitActiveCuboid()
     if (!hit) return null
     return { faceIdx: Math.floor(hit.face.a / 4), point: hit.point }
   }
 
-  // ─── Utilities ────────────────────────────────────────────────────────────
-  /** Converts a 3D world position to screen coordinates (px) */
+  // ─── Utilities ─────────────────────────────────────────────────────────────
   _projectToScreen(position) {
     const v = position.clone().project(this._camera)
     return {
@@ -126,24 +249,27 @@ export class AppController {
     }
   }
 
-  /** Computes centroid and bounding box dimensions, then updates the N panel */
   _updateNPanel() {
     if (!this._uiView.nPanelVisible) return
-    const centroid = getCentroid(this._corners)
+    const corners = this._corners
+    if (!corners.length) return
+    const centroid = getCentroid(corners)
     const bMin = new THREE.Vector3(Infinity, Infinity, Infinity)
     const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
-    this._corners.forEach(c => { bMin.min(c); bMax.max(c) })
+    corners.forEach(c => { bMin.min(c); bMax.max(c) })
     const dims = new THREE.Vector3().subVectors(bMax, bMin)
     this._uiView.updateNPanel(centroid, dims)
   }
 
-  // ─── Mode management ──────────────────────────────────────────────────────
+  // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
     if (this._grab.active) this._cancelGrab()
     this._selectionMode = mode
     if (mode === 'object') {
-      this._meshView.setFaceHighlight(null, this._corners)
-      this._meshView.clearExtrusionDisplay()
+      if (this._meshView) {
+        this._meshView.setFaceHighlight(null, this._corners)
+        this._meshView.clearExtrusionDisplay()
+      }
       this._uiView.clearExtrusionLabel()
       this._hoveredFace  = null
       this._faceDragging = false
@@ -161,13 +287,12 @@ export class AppController {
 
   _setObjectSelected(sel) {
     this._objSelected = sel
-    this._meshView.setObjectSelected(sel)
+    if (this._meshView) this._meshView.setObjectSelected(sel)
     this._uiView.setStatus(sel ? 'Object selected' : '')
   }
 
-  // ─── Blender-style grab ───────────────────────────────────────────────────
+  // ─── Blender-style grab ────────────────────────────────────────────────────
 
-  /** Starts grab mode (G key) */
   _startGrab() {
     if (!this._objSelected) return
 
@@ -183,12 +308,10 @@ export class AppController {
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.pivotLabel = 'Centroid'
 
-    // Set up camera-facing plane through the pivot
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
     this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, this._grab.pivot)
 
-    // Start point = intersection of current mouse ray with the plane
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const pt = new THREE.Vector3()
     if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) {
@@ -202,7 +325,6 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /** Confirms and applies the grab */
   _confirmGrab() {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
@@ -216,7 +338,6 @@ export class AppController {
     this._updateNPanel()
   }
 
-  /** Cancels the grab and restores the original position */
   _cancelGrab() {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
@@ -232,7 +353,6 @@ export class AppController {
     this._updateNPanel()
   }
 
-  /** Sets the axis constraint (pressing the same key again removes it) */
   _setGrabAxis(axis) {
     this._grab.axis     = (this._grab.axis === axis) ? null : axis
     this._grab.inputStr = ''
@@ -241,7 +361,6 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /** Returns the world-space unit vector for the given axis */
   _getAxisVec(axis) {
     return new THREE.Vector3(
       axis === 'x' ? 1 : 0,
@@ -250,7 +369,6 @@ export class AppController {
     )
   }
 
-  /** Computes the grab offset and applies it to all corners */
   _applyGrab() {
     if (!this._grab.active) return
     if (this._grab.hasInput && this._grab.axis) {
@@ -264,7 +382,6 @@ export class AppController {
     this._meshView.updateBoxHelper()
   }
 
-  /** Applies grab offset from numeric input */
   _applyGrabFromInput() {
     this._grab.snapping = false
     const dist    = parseFloat(this._grab.inputStr) || 0
@@ -274,7 +391,6 @@ export class AppController {
     })
   }
 
-  /** Free grab: follows the mouse on a camera-facing plane */
   _applyFreeGrab() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const pt = new THREE.Vector3()
@@ -290,20 +406,9 @@ export class AppController {
     })
   }
 
-  /**
-   * Axis-constrained grab: projects mouse movement onto the screen-space
-   * representation of the world axis to derive the world-space distance.
-   *
-   * Steps:
-   * 1. Project pivot and (pivot + axis unit vector) to NDC to get the
-   *    screen-space axis direction.
-   * 2. Project the mouse delta (NDC) onto that direction to get NDC movement.
-   * 3. Divide by the screen-space length per world unit to get world distance.
-   */
   _applyAxisConstrainedGrab() {
     const axisVec = this._getAxisVec(this._grab.axis)
 
-    // Project pivot and pivot+axis to NDC
     const centerNDC  = this._grab.pivot.clone().project(this._camera)
     const axisEndNDC = this._grab.pivot.clone().add(axisVec).project(this._camera)
 
@@ -315,13 +420,12 @@ export class AppController {
     const axisNormX = dx / screenLen
     const axisNormY = dy / screenLen
 
-    // Project mouse delta (NDC) onto axis direction -> convert to world distance
     const mdx  = this._mouse.x - this._grab.startMouse.x
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
 
     if (this._ctrlHeld) {
-      const delta       = new THREE.Vector3().addScaledVector(axisVec, dist)
+      const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
       const snappedDelta = this._trySnapToOrigin(delta)
       this._grab.startCorners.forEach((c, i) => {
         this._corners[i].copy(c).add(snappedDelta)
@@ -334,7 +438,6 @@ export class AppController {
     }
   }
 
-  /** Updates the status bar with current grab information */
   _updateGrabStatus() {
     if (this._grab.pivotSelectMode) {
       this._uiView.setStatus('Select Pivot Point  [click / Esc]')
@@ -347,18 +450,11 @@ export class AppController {
     this._uiView.setStatus(`Grab${axisLabel}${inputLabel}${pivotStr}${snapStr}`)
   }
 
-  // ─── Ctrl snap-to-origin ─────────────────────────────────────────────────
+  // ─── Ctrl snap-to-origin ──────────────────────────────────────────────────
 
-  /**
-   * Checks if applying delta would bring the pivot within snap range of world origin.
-   * If so, returns a corrected delta that places the pivot exactly at the origin.
-   * Sets this._grab.snapping accordingly.
-   * @param {THREE.Vector3} delta
-   * @returns {THREE.Vector3}
-   */
   _trySnapToOrigin(delta) {
-    const SNAP_PX  = 25
-    const ORIGIN   = new THREE.Vector3(0, 0, 0)
+    const SNAP_PX    = 25
+    const ORIGIN     = new THREE.Vector3(0, 0, 0)
     const pivotAfter = this._grab.pivot.clone().add(delta)
 
     const pNDC = pivotAfter.clone().project(this._camera)
@@ -370,18 +466,16 @@ export class AppController {
 
     if (Math.hypot(px - ox, py - oy) < SNAP_PX) {
       this._grab.snapping = true
-      return this._grab.pivot.clone().negate() // moves pivot exactly to origin
+      return this._grab.pivot.clone().negate()
     }
     this._grab.snapping = false
     return delta
   }
 
-  // ─── Pivot point selection ────────────────────────────────────────────────
+  // ─── Pivot point selection ─────────────────────────────────────────────────
 
-  /** Enters pivot select sub-mode (V key during grab) */
   _startPivotSelect() {
     if (!this._grab.active || this._grab.pivotSelectMode) return
-    // Reset object to its position at grab start so it aligns with the candidates
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
@@ -392,7 +486,6 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /** Scans candidates and snaps highlight to the nearest one within threshold */
   _updatePivotHover() {
     const SNAP_PX = 30
     let minDist    = Infinity
@@ -418,7 +511,6 @@ export class AppController {
     }
   }
 
-  /** Confirms the hovered pivot and returns to grab mode */
   _confirmPivotSelect() {
     const idx = this._grab.hoveredPivotIdx
     if (idx >= 0) {
@@ -433,7 +525,6 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /** Cancels pivot select and returns to grab mode without changing pivot */
   _cancelPivotSelect() {
     this._grab.pivotSelectMode = false
     this._grab.hoveredPivotIdx = -1
@@ -441,10 +532,6 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  /**
-   * Updates the drag plane and start point after a pivot change.
-   * Resets axis/input so the new grab starts cleanly from the current mouse position.
-   */
   _restartGrabFromPivot() {
     const pivot  = this._grab.pivot
     const camDir = new THREE.Vector3()
@@ -457,11 +544,10 @@ export class AppController {
     this._grab.startMouse.copy(this._mouse)
   }
 
-  // ─── Mouse events ─────────────────────────────────────────────────────────
+  // ─── Mouse events ──────────────────────────────────────────────────────────
   _onMouseMove(e) {
     this._updateMouse(e)
 
-    // During grab
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
         this._updatePivotHover()
@@ -479,14 +565,12 @@ export class AppController {
     if (this._selectionMode === 'object') {
       if (this._objDragging) {
         if (this._objCtrlDrag) {
-          // Rotate around centroid on the Z axis (ROS: +Z is up)
           const angle = (e.clientX - this._objRotateStartX) * 0.01
           const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
           this._objRotateStartCorners.forEach((c, i) => {
             this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
           })
         } else {
-          // Translate on the camera-facing drag plane
           this._raycaster.setFromCamera(this._mouse, this._camera)
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
@@ -498,12 +582,12 @@ export class AppController {
         if (this._objSelected) this._meshView.updateBoxHelper()
         this._updateNPanel()
       } else {
-        this._uiView.setCursor(this._hitCuboid() ? 'pointer' : 'default')
+        this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
       }
       return
     }
 
-    // ── Edit mode (face extrude) ──────────────────────────────────────────
+    // ── Edit mode ─────────────────────────────────────────────────────────
     if (this._faceDragging) {
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
@@ -517,7 +601,6 @@ export class AppController {
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
       this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  D ${dist.toFixed(3)}`)
 
-      // Extrusion display: I-type dimension line + label at span midpoint
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
       const { spanMid, armDir } = this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
       const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
@@ -527,7 +610,6 @@ export class AppController {
       return
     }
 
-    // Face hover detection
     const hit = this._hitFace()
     const fi  = hit ? hit.faceIdx : null
     if (fi !== this._hoveredFace) {
@@ -539,7 +621,6 @@ export class AppController {
   }
 
   _onMouseDown(e) {
-    // During grab
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
@@ -555,18 +636,26 @@ export class AppController {
     this._updateMouse(e)
 
     if (this._selectionMode === 'object') {
-      const hit = this._hitCuboid()
-      if (hit) {
-        if (!this._objSelected) this._setObjectSelected(true)
-        this._objDragging       = true
-        this._objCtrlDrag       = e.ctrlKey
-        this._controls.enabled  = false
+      const result = this._hitAnyObject()
+      if (result) {
+        const { hit, obj } = result
+        // Switch active object if a different one was clicked
+        if (obj.id !== this._activeId) {
+          this._switchActiveObject(obj.id, true)
+        } else if (!this._objSelected) {
+          this._setObjectSelected(true)
+        }
+        this._objDragging      = true
+        this._objCtrlDrag      = e.ctrlKey
+        this._controls.enabled = false
         this._uiView.setCursor('grabbing')
+
         const camDir = new THREE.Vector3()
         this._camera.getWorldDirection(camDir)
         this._objDragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
         this._objDragStart.copy(hit.point)
         this._objDragStartCorners = this._corners.map(c => c.clone())
+
         if (e.ctrlKey) {
           this._objRotateStartX = e.clientX
           this._objRotateCentroid.copy(getCentroid(this._corners))
@@ -578,12 +667,12 @@ export class AppController {
       return
     }
 
-    // ── Edit mode (face extrude) ──────────────────────────────────────────
+    // ── Edit mode ─────────────────────────────────────────────────────────
     const hit = this._hitFace()
     if (!hit) return
-    this._faceDragging        = true
-    this._dragFaceIdx         = hit.faceIdx
-    this._controls.enabled    = false
+    this._faceDragging     = true
+    this._dragFaceIdx      = hit.faceIdx
+    this._controls.enabled = false
     this._uiView.setCursor('grabbing')
     this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFaceIdx))
     const camDir = new THREE.Vector3()
@@ -595,11 +684,11 @@ export class AppController {
 
   _onMouseUp(e) {
     if (e.button !== 0) return
-    if (this._objDragging)  {
+    if (this._objDragging) {
       this._objDragging  = false
       this._objCtrlDrag  = false
       this._controls.enabled = true
-      this._uiView.setCursor(this._hitCuboid() ? 'pointer' : 'default')
+      this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
       this._updateNPanel()
     }
     if (this._faceDragging) {
@@ -625,12 +714,10 @@ export class AppController {
   }
 
   _onKeyDown(e) {
-    // Track Ctrl state
     if (e.key === 'Control') this._ctrlHeld = true
 
-    // ── Keys active during grab ───────────────────────────────────────────
+    // ── Keys active during grab ────────────────────────────────────────────
     if (this._grab.active) {
-      // Pivot select sub-mode swallows all keys except Escape
       if (this._grab.pivotSelectMode) {
         if (e.key === 'Escape') this._cancelPivotSelect()
         return
@@ -643,7 +730,6 @@ export class AppController {
         case 'Enter':        this._confirmGrab();    return
         case 'Escape':       this._cancelGrab();     return
       }
-      // Numeric input (only when an axis is constrained)
       if (this._grab.axis) {
         if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
           this._grab.inputStr += e.key
@@ -666,17 +752,15 @@ export class AppController {
           return
         }
       }
-      return  // swallow all other keys during grab
+      return
     }
 
-    // ── Normal keys ───────────────────────────────────────────────────────
-    // Tab: toggle Object Mode <-> Edit Mode
+    // ── Normal keys ────────────────────────────────────────────────────────
     if (e.key === 'Tab') {
       e.preventDefault()
       this.setMode(this._selectionMode === 'object' ? 'edit' : 'object')
       return
     }
-    // N: toggle N panel
     if (e.key === 'n' || e.key === 'N') {
       this._uiView.toggleNPanel()
       this._updateNPanel()
@@ -685,14 +769,30 @@ export class AppController {
       }
       return
     }
-    if (e.key === 'o' || e.key === 'O') this.setMode('object')
-    if (e.key === 'e' || e.key === 'E') this.setMode('edit')
-    if ((e.key === 'g' || e.key === 'G') && this._selectionMode === 'object' && this._objSelected) {
-      this._startGrab()
+    if (e.key === 'o' || e.key === 'O') { this.setMode('object'); return }
+    if (e.key === 'e' || e.key === 'E') { this.setMode('edit');   return }
+
+    if (this._selectionMode === 'object') {
+      // G: grab
+      if ((e.key === 'g' || e.key === 'G') && this._objSelected) {
+        this._startGrab()
+        return
+      }
+      // Shift+A: add new object
+      if (e.key === 'A' && e.shiftKey) {
+        e.preventDefault()
+        this._addObject()
+        return
+      }
+      // X / Delete: delete active object
+      if ((e.key === 'x' || e.key === 'X' || e.key === 'Delete') && this._objSelected) {
+        this._deleteObject(this._activeId)
+        return
+      }
     }
   }
 
-  // ─── Animation loop ───────────────────────────────────────────────────────
+  // ─── Animation loop ────────────────────────────────────────────────────────
   start() {
     const loop = () => {
       requestAnimationFrame(loop)
