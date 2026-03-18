@@ -73,14 +73,17 @@ export class MeshView {
    * @param {THREE.Vector3[]} currentFaceCorners - 4 face vertices at current position
    */
   setExtrusionDisplay(savedFaceCorners, currentFaceCorners) {
-    // Bracket shape: extend from corners[0] in the corners[1] direction by a fixed length,
+    // Bracket shape: extend from corners[0] outward (away from face centroid) by a fixed length,
     // then connect the two tips with a span segment.
     //   savedFaceCorners[0]   ──────── tipS
     //                                  |  ← span
     //   currentFaceCorners[0] ──────── tipC
     const ARM_LEN = 0.5
+    const faceCentroid = new THREE.Vector3()
+    savedFaceCorners.forEach(v => faceCentroid.add(v))
+    faceCentroid.divideScalar(savedFaceCorners.length)
     const armDir = new THREE.Vector3()
-      .subVectors(savedFaceCorners[1], savedFaceCorners[0]).normalize()
+      .subVectors(savedFaceCorners[0], faceCentroid).normalize()
     const tipS = savedFaceCorners[0].clone().addScaledVector(armDir,  ARM_LEN)
     const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
 
