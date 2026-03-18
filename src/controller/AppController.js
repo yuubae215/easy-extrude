@@ -46,6 +46,20 @@ export class AppController {
     this._dragStart        = new THREE.Vector3()
     this._savedFaceCorners = []
 
+    // ── Blender スタイルグラブ状態 ────────────────────────────────────
+    // G キーで開始、X/Y/Z で軸制限、数値入力で移動量指定、Enter/左クリックで確定、Esc/右クリックでキャンセル
+    this._grab = {
+      active:       false,
+      axis:         null,               // null | 'x' | 'y' | 'z'
+      startMouse:   new THREE.Vector2(),
+      startCorners: [],
+      centroid:     new THREE.Vector3(),
+      dragPlane:    new THREE.Plane(),  // 自由移動用 (カメラ正面の平面)
+      startPoint:   new THREE.Vector3(),
+      inputStr:     '',                 // 数値入力バッファ
+      hasInput:     false,
+    }
+
     // レイキャスター
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
@@ -100,6 +114,7 @@ export class AppController {
 
   // ─── モード管理 ───────────────────────────────────────────────────────────
   setMode(mode) {
+    if (this._grab.active) this._cancelGrab()
     this._selectionMode = mode
     if (mode === 'object') {
       this._meshView.setFaceHighlight(null, this._corners)
@@ -124,9 +139,162 @@ export class AppController {
     this._uiView.setStatus(sel ? 'オブジェクト選択中' : '')
   }
 
+  // ─── Blender スタイルグラブ ───────────────────────────────────────────────
+
+  /** G キーでグラブ開始 */
+  _startGrab() {
+    if (!this._objSelected) return
+
+    this._grab.active       = true
+    this._grab.axis         = null
+    this._grab.inputStr     = ''
+    this._grab.hasInput     = false
+    this._grab.startMouse.copy(this._mouse)
+    this._grab.startCorners = this._corners.map(c => c.clone())
+    this._grab.centroid.copy(getCentroid(this._corners))
+
+    // カメラ正面の平面 (重心を通る) を設定
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
+    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, this._grab.centroid)
+
+    // 開始点 = 現在のマウスレイと平面の交点
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const pt = new THREE.Vector3()
+    if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) {
+      this._grab.startPoint.copy(pt)
+    } else {
+      this._grab.startPoint.copy(this._grab.centroid)
+    }
+
+    this._controls.enabled = false
+    this._updateGrabStatus()
+  }
+
+  /** グラブを確定して適用 */
+  _confirmGrab() {
+    if (!this._grab.active) return
+    this._applyGrab()
+    this._grab.active = false
+    this._grab.axis   = null
+    this._controls.enabled = true
+    this._uiView.setStatus(this._objSelected ? 'オブジェクト選択中' : '')
+  }
+
+  /** グラブをキャンセルして元の位置に戻す */
+  _cancelGrab() {
+    if (!this._grab.active) return
+    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
+    this._meshView.updateGeometry(this._corners)
+    this._meshView.updateBoxHelper()
+    this._grab.active = false
+    this._grab.axis   = null
+    this._controls.enabled = true
+    this._uiView.setStatus(this._objSelected ? 'オブジェクト選択中' : '')
+  }
+
+  /** 軸制限を設定 (同じ軸を再度押すと解除) */
+  _setGrabAxis(axis) {
+    this._grab.axis     = (this._grab.axis === axis) ? null : axis
+    this._grab.inputStr = ''
+    this._grab.hasInput = false
+    this._applyGrab()
+    this._updateGrabStatus()
+  }
+
+  /** 軸方向の単位ベクトルを返す */
+  _getAxisVec(axis) {
+    return new THREE.Vector3(
+      axis === 'x' ? 1 : 0,
+      axis === 'y' ? 1 : 0,
+      axis === 'z' ? 1 : 0,
+    )
+  }
+
+  /** グラブの移動量を計算してコーナーに反映する */
+  _applyGrab() {
+    if (!this._grab.active) return
+    if (this._grab.hasInput && this._grab.axis) {
+      this._applyGrabFromInput()
+    } else if (this._grab.axis) {
+      this._applyAxisConstrainedGrab()
+    } else {
+      this._applyFreeGrab()
+    }
+    this._meshView.updateGeometry(this._corners)
+    this._meshView.updateBoxHelper()
+  }
+
+  /** 数値入力によるグラブ移動 */
+  _applyGrabFromInput() {
+    const dist    = parseFloat(this._grab.inputStr) || 0
+    const axisVec = this._getAxisVec(this._grab.axis)
+    this._grab.startCorners.forEach((c, i) => {
+      this._corners[i].copy(c).addScaledVector(axisVec, dist)
+    })
+  }
+
+  /** 自由グラブ: カメラ正面の平面上でマウスに追従 */
+  _applyFreeGrab() {
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const pt = new THREE.Vector3()
+    if (!this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) return
+    const delta = pt.clone().sub(this._grab.startPoint)
+    this._grab.startCorners.forEach((c, i) => {
+      this._corners[i].copy(c).add(delta)
+    })
+  }
+
+  /**
+   * 軸制限グラブ: スクリーン上の軸方向への射影を使ってワールド移動量を計算する。
+   *
+   * 手順:
+   * 1. 重心と「重心 + 軸単位ベクトル」を NDC に投影し、スクリーン上の軸方向を得る。
+   * 2. マウス変位 (NDC) をその軸方向に射影して「NDC での移動量」を求める。
+   * 3. スクリーン上の 1 ワールド単位 = screenLen NDC 単位 で除算してワールド移動量を得る。
+   */
+  _applyAxisConstrainedGrab() {
+    const axisVec = this._getAxisVec(this._grab.axis)
+
+    // 重心と重心+軸方向を NDC に投影
+    const centerNDC  = this._grab.centroid.clone().project(this._camera)
+    const axisEndNDC = this._grab.centroid.clone().add(axisVec).project(this._camera)
+
+    const dx        = axisEndNDC.x - centerNDC.x
+    const dy        = axisEndNDC.y - centerNDC.y
+    const screenLen = Math.sqrt(dx * dx + dy * dy)
+    if (screenLen < 1e-4) return
+
+    const axisNormX = dx / screenLen
+    const axisNormY = dy / screenLen
+
+    // マウス変位 (NDC) を軸方向に射影 → ワールド距離に変換
+    const mdx  = this._mouse.x - this._grab.startMouse.x
+    const mdy  = this._mouse.y - this._grab.startMouse.y
+    const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
+
+    this._grab.startCorners.forEach((c, i) => {
+      this._corners[i].copy(c).addScaledVector(axisVec, dist)
+    })
+  }
+
+  /** ステータスバーにグラブ中の情報を表示する */
+  _updateGrabStatus() {
+    const axisLabel  = this._grab.axis ? ` ${this._grab.axis.toUpperCase()}軸` : ''
+    const inputLabel = this._grab.hasInput ? `  入力: ${this._grab.inputStr}_` : ''
+    this._uiView.setStatus(`移動中${axisLabel}${inputLabel}`)
+  }
+
   // ─── マウスイベント ───────────────────────────────────────────────────────
   _onMouseMove(e) {
     this._updateMouse(e)
+
+    // グラブ中はマウス移動に追従して即時反映
+    if (this._grab.active) {
+      this._applyGrab()
+      this._updateGrabStatus()
+      return
+    }
 
     if (this._selectionMode === 'object') {
       if (this._objDragging) {
@@ -196,6 +364,13 @@ export class AppController {
   }
 
   _onMouseDown(e) {
+    // グラブ中: 左クリックで確定、右クリックでキャンセル
+    if (this._grab.active) {
+      if (e.button === 0) { this._confirmGrab(); return }
+      if (e.button === 2) { this._cancelGrab();  return }
+      return
+    }
+
     if (e.button !== 0) return
     this._updateMouse(e)
 
@@ -249,8 +424,47 @@ export class AppController {
   }
 
   _onKeyDown(e) {
+    // ── グラブ中のキー操作 ────────────────────────────────────────────
+    if (this._grab.active) {
+      switch (e.key) {
+        case 'x': case 'X': this._setGrabAxis('x'); return
+        case 'y': case 'Y': this._setGrabAxis('y'); return
+        case 'z': case 'Z': this._setGrabAxis('z'); return
+        case 'Enter':        this._confirmGrab();    return
+        case 'Escape':       this._cancelGrab();     return
+      }
+      // 軸指定中の数値入力
+      if (this._grab.axis) {
+        if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
+          this._grab.inputStr += e.key
+          this._grab.hasInput  = true
+          this._applyGrab()
+          this._updateGrabStatus()
+          return
+        }
+        if (e.key === '-' && this._grab.inputStr.length === 0) {
+          this._grab.inputStr = '-'
+          this._grab.hasInput = true
+          this._updateGrabStatus()
+          return
+        }
+        if (e.key === 'Backspace') {
+          this._grab.inputStr = this._grab.inputStr.slice(0, -1)
+          this._grab.hasInput = this._grab.inputStr.length > 0 && this._grab.inputStr !== '-'
+          this._applyGrab()
+          this._updateGrabStatus()
+          return
+        }
+      }
+      return  // グラブ中は他のキーを無視
+    }
+
+    // ── 通常キー ─────────────────────────────────────────────────────
     if (e.key === 'o' || e.key === 'O') this.setMode('object')
     if (e.key === 'f' || e.key === 'F') this.setMode('face')
+    if ((e.key === 'g' || e.key === 'G') && this._selectionMode === 'object' && this._objSelected) {
+      this._startGrab()
+    }
   }
 
   // ─── アニメーションループ ─────────────────────────────────────────────────

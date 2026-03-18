@@ -20,7 +20,7 @@ export class SceneView {
     this.camera.position.set(4, 3, 6)
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
-    this.controls.enableDamping = true
+    this.controls.enableDamping = false
     // Left button is reserved for object/face operations; right button orbits the camera
     this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
 

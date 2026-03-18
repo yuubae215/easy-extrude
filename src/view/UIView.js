@@ -84,6 +84,7 @@ export class UIView {
     Object.assign(this._btnFace.style,   mode === 'face'   ? active : inactive)
     this._infoEl.innerHTML = mode === 'object'
       ? 'クリック→選択 &nbsp;|&nbsp; 左ドラッグ→移動 &nbsp;|&nbsp; Ctrl+ドラッグ→Y軸回転 &nbsp;|&nbsp; 右ドラッグ→視点回転'
+        + '<br>G→グラブ移動 &nbsp;|&nbsp; G→X/Y/Z→軸制限 &nbsp;|&nbsp; 数値入力→距離指定 &nbsp;|&nbsp; Enter/左クリック→確定 &nbsp;|&nbsp; Esc/右クリック→キャンセル'
       : '面ホバー→ハイライト &nbsp;|&nbsp; 左ドラッグ→面の押し出し &nbsp;|&nbsp; 右ドラッグ→視点回転'
   }
 
