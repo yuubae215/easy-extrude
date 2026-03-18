@@ -339,22 +339,12 @@ export class AppController {
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
       this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  Δ ${dist.toFixed(3)}`)
 
-      // Extrusion display: bracket-style lines + label
+      // Extrusion display: I-type dimension line + label at span midpoint
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
-      this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
-      // Label sits at the midpoint of the span segment (same ARM_LEN=0.5 as MeshView)
-      const faceCentroid = new THREE.Vector3()
-      this._savedFaceCorners.forEach(v => faceCentroid.add(v))
-      faceCentroid.divideScalar(this._savedFaceCorners.length)
-      const armDir = new THREE.Vector3()
-        .subVectors(this._savedFaceCorners[0], faceCentroid).normalize()
-      const ARM_LEN = 0.5
-      const tipS = this._savedFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
-      const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
-      const midpoint = tipS.clone().add(tipC).multiplyScalar(0.5)
-        .addScaledVector(armDir, 0.15)
-      const screen = this._projectToScreen(midpoint)
-      this._uiView.setExtrusionLabel(`Δ ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
+      const { spanMid, armDir } = this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
+      const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
+      const screen = this._projectToScreen(labelPos)
+      this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
       return
     }
 

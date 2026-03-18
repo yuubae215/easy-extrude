@@ -67,41 +67,58 @@ export class MeshView {
   }
 
   /**
-   * Updates the extrusion display lines (bracket / dimension-line style).
-   * Draws: arm from saved corner → tipS, span tipS → tipC, arm tipC → current corner.
+   * Updates the extrusion display lines (I-type dimension line).
+   * Shape:  tick ─── span ─── tick  (like ├────────┤)
    * @param {THREE.Vector3[]} savedFaceCorners - 4 face vertices at drag start
    * @param {THREE.Vector3[]} currentFaceCorners - 4 face vertices at current position
+   * @returns {{ spanMid: THREE.Vector3, armDir: THREE.Vector3 }}
    */
   setExtrusionDisplay(savedFaceCorners, currentFaceCorners) {
-    // Bracket shape: extend from corners[0] outward (away from face centroid) by a fixed length,
-    // then connect the two tips with a span segment.
-    //   savedFaceCorners[0]   ──────── tipS
-    //                                  |  ← span
-    //   currentFaceCorners[0] ──────── tipC
-    const ARM_LEN = 0.5
-    const faceCentroid = new THREE.Vector3()
-    savedFaceCorners.forEach(v => faceCentroid.add(v))
-    faceCentroid.divideScalar(savedFaceCorners.length)
-    const armDir = new THREE.Vector3()
-      .subVectors(savedFaceCorners[0], faceCentroid).normalize()
-    const tipS = savedFaceCorners[0].clone().addScaledVector(armDir,  ARM_LEN)
-    const tipC = currentFaceCorners[0].clone().addScaledVector(armDir, ARM_LEN)
+    const ARM_LEN  = 0.5
+    const TICK_HALF = 0.18
 
-    // 3 line segments × 2 points × 3 components = 18 floats
-    // [0] arm1 (saved corner → tipS), [1] span (tipS → tipC), [2] arm2 (tipC → current corner)
+    // Extrusion direction (saved → current)
+    const extDir = new THREE.Vector3().subVectors(currentFaceCorners[0], savedFaceCorners[0]).normalize()
+
+    // Pick the world axis most perpendicular to extDir (prefer horizontal: X, then Z, then Y)
+    const AXES = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 1, 0),
+    ]
+    let armDir = AXES[0]
+    let minDot = Infinity
+    for (const axis of AXES) {
+      const d = Math.abs(extDir.dot(axis))
+      if (d < minDot) { minDot = d; armDir = axis }
+    }
+
+    // Span endpoints: offset from edge midpoints by ARM_LEN along armDir
+    const edgeMidS = new THREE.Vector3().addVectors(savedFaceCorners[0], savedFaceCorners[1]).multiplyScalar(0.5)
+    const edgeMidC = new THREE.Vector3().addVectors(currentFaceCorners[0], currentFaceCorners[1]).multiplyScalar(0.5)
+    const tipS = edgeMidS.clone().addScaledVector(armDir, ARM_LEN)
+    const tipC = edgeMidC.clone().addScaledVector(armDir, ARM_LEN)
+
+    // I-type: tick at tipS + span tipS→tipC + tick at tipC
+    // 3 segments × 2 points × 3 floats = 18 floats
+    const tickS0 = tipS.clone().addScaledVector(armDir, -TICK_HALF)
+    const tickS1 = tipS.clone().addScaledVector(armDir,  TICK_HALF)
+    const tickC0 = tipC.clone().addScaledVector(armDir, -TICK_HALF)
+    const tickC1 = tipC.clone().addScaledVector(armDir,  TICK_HALF)
+
     const positions = new Float32Array(18)
-    const s0 = savedFaceCorners[0]
-    const c0 = currentFaceCorners[0]
-    positions[0]  = s0.x;  positions[1]  = s0.y;  positions[2]  = s0.z
-    positions[3]  = tipS.x; positions[4] = tipS.y; positions[5]  = tipS.z
-    positions[6]  = tipS.x; positions[7] = tipS.y; positions[8]  = tipS.z
-    positions[9]  = tipC.x; positions[10] = tipC.y; positions[11] = tipC.z
-    positions[12] = tipC.x; positions[13] = tipC.y; positions[14] = tipC.z
-    positions[15] = c0.x;  positions[16] = c0.y;  positions[17] = c0.z
+    positions[0]  = tickS0.x; positions[1]  = tickS0.y; positions[2]  = tickS0.z
+    positions[3]  = tickS1.x; positions[4]  = tickS1.y; positions[5]  = tickS1.z
+    positions[6]  = tipS.x;   positions[7]  = tipS.y;   positions[8]  = tipS.z
+    positions[9]  = tipC.x;   positions[10] = tipC.y;   positions[11] = tipC.z
+    positions[12] = tickC0.x; positions[13] = tickC0.y; positions[14] = tickC0.z
+    positions[15] = tickC1.x; positions[16] = tickC1.y; positions[17] = tickC1.z
 
     this._extrusionLinesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     this._extrusionLinesGeo.attributes.position.needsUpdate = true
     this._extrusionLines.visible = true
+
+    return { spanMid: tipS.clone().add(tipC).multiplyScalar(0.5), armDir }
   }
 
   /** Hides the extrusion display lines */
