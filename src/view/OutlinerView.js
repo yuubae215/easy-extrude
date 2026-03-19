@@ -78,12 +78,13 @@ export class OutlinerView {
     document.body.appendChild(this._el)
 
     // ── State ──────────────────────────────────────────────────────────────
-    this._items       = new Map()  // id → { rowEl, eyeEl, visible }
+    this._items       = new Map()  // id → { rowEl, eyeEl, nameEl, visible }
     this._activeId    = null
     this._onSelectCb  = null
     this._onDeleteCb  = null
     this._onAddCb     = null
     this._onVisibleCb = null
+    this._onRenameCb  = null
 
     this._addBtn.addEventListener('click', () => {
       if (this._onAddCb) this._onAddCb()
@@ -97,13 +98,20 @@ export class OutlinerView {
   onDelete(cb)  { this._onDeleteCb  = cb }
   onAdd(cb)     { this._onAddCb     = cb }
   onVisible(cb) { this._onVisibleCb = cb }
+  onRename(cb)  { this._onRenameCb  = cb }
 
   // ─── Object management ────────────────────────────────────────────────────
 
   addObject(id, name) {
-    const { rowEl, eyeEl } = this._createRow(id, name)
+    const { rowEl, eyeEl, nameEl } = this._createRow(id, name)
     this._listEl.appendChild(rowEl)
-    this._items.set(id, { rowEl, eyeEl, visible: true })
+    this._items.set(id, { rowEl, eyeEl, nameEl, visible: true })
+  }
+
+  /** Updates the displayed name of an object row */
+  setObjectName(id, name) {
+    const item = this._items.get(id)
+    if (item) item.nameEl.textContent = name
   }
 
   removeObject(id) {
@@ -219,6 +227,43 @@ export class OutlinerView {
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
 
+    // Double-click on name → inline rename
+    nameEl.addEventListener('dblclick', (e) => {
+      e.stopPropagation()
+      const input = document.createElement('input')
+      Object.assign(input.style, {
+        flex: '1',
+        background: '#1a1a2e',
+        border: '1px solid #4fc3f7',
+        borderRadius: '2px',
+        color: '#e8e8e8',
+        fontSize: '12px',
+        fontFamily: 'sans-serif',
+        padding: '0 3px',
+        outline: 'none',
+        minWidth: '0',
+      })
+      input.value = nameEl.textContent
+      nameEl.replaceWith(input)
+      input.focus()
+      input.select()
+
+      const commit = () => {
+        const newName = input.value.trim() || nameEl.textContent
+        nameEl.textContent = newName
+        input.replaceWith(nameEl)
+        if (this._onRenameCb) this._onRenameCb(id, newName)
+      }
+      const cancel = () => { input.replaceWith(nameEl) }
+
+      input.addEventListener('blur', commit)
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); input.blur() }
+        if (ev.key === 'Escape') { input.removeEventListener('blur', commit); cancel() }
+        ev.stopPropagation()
+      })
+    })
+
     rowEl.addEventListener('mouseenter', () => {
       if (id !== this._activeId) rowEl.style.background = 'rgba(255,255,255,0.05)'
       eyeEl.style.opacity = '1'
@@ -233,6 +278,6 @@ export class OutlinerView {
       if (this._onSelectCb) this._onSelectCb(id)
     })
 
-    return { rowEl, eyeEl }
+    return { rowEl, eyeEl, nameEl }
   }
 }
