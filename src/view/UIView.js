@@ -182,7 +182,15 @@ export class UIView {
 
     this._canvas = null
     this._modeChangeCallback = null
+    this._onNameChangeCb = null
+    this._onDescriptionChangeCb = null
   }
+
+  /** Registers callback for name changes from the N panel */
+  onNameChange(callback) { this._onNameChangeCb = callback }
+
+  /** Registers callback for description changes from the N panel */
+  onDescriptionChange(callback) { this._onDescriptionChangeCb = callback }
 
   /** Registers callback for mode changes */
   onModeChange(callback) {
@@ -284,8 +292,10 @@ export class UIView {
    * Updates N panel content.
    * @param {{ x: number, y: number, z: number }} centroid
    * @param {{ x: number, y: number, z: number }} dimensions
+   * @param {string} [name]
+   * @param {string} [description]
    */
-  updateNPanel(centroid, dimensions) {
+  updateNPanel(centroid, dimensions, name = '', description = '') {
     if (!this._nPanelVisible) return
 
     const row = (axis, color, val) => {
@@ -332,7 +342,83 @@ export class UIView {
       return sec
     }
 
+    // ── Name section ──────────────────────────────────────────────────────
+    const nameSection = document.createElement('div')
+    Object.assign(nameSection.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+    const nameTitleEl = document.createElement('div')
+    nameTitleEl.textContent = 'Name'
+    Object.assign(nameTitleEl.style, {
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+      marginBottom: '6px',
+    })
+    const nameInputEl = document.createElement('input')
+    nameInputEl.type = 'text'
+    nameInputEl.value = name
+    Object.assign(nameInputEl.style, {
+      width: '100%',
+      boxSizing: 'border-box',
+      background: '#383838',
+      border: '1px solid #444',
+      borderRadius: '3px',
+      padding: '3px 6px',
+      color: '#e8e8e8',
+      fontSize: '12px',
+      fontFamily: 'sans-serif',
+      outline: 'none',
+    })
+    nameInputEl.addEventListener('focus', () => { nameInputEl.style.borderColor = '#4fc3f7' })
+    nameInputEl.addEventListener('blur', () => {
+      nameInputEl.style.borderColor = '#444'
+      if (this._onNameChangeCb) this._onNameChangeCb(nameInputEl.value.trim() || name)
+    })
+    nameInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { nameInputEl.blur(); e.stopPropagation() }
+      if (e.key === 'Escape') { nameInputEl.value = name; nameInputEl.blur(); e.stopPropagation() }
+      e.stopPropagation()
+    })
+    nameSection.appendChild(nameTitleEl)
+    nameSection.appendChild(nameInputEl)
+
+    // ── Description section ───────────────────────────────────────────────
+    const descSection = document.createElement('div')
+    Object.assign(descSection.style, { padding: '8px 10px 6px' })
+    const descTitleEl = document.createElement('div')
+    descTitleEl.textContent = 'Description'
+    Object.assign(descTitleEl.style, {
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+      marginBottom: '6px',
+    })
+    const descTextareaEl = document.createElement('textarea')
+    descTextareaEl.value = description
+    descTextareaEl.rows = 4
+    Object.assign(descTextareaEl.style, {
+      width: '100%',
+      boxSizing: 'border-box',
+      background: '#383838',
+      border: '1px solid #444',
+      borderRadius: '3px',
+      padding: '3px 6px',
+      color: '#e8e8e8',
+      fontSize: '12px',
+      fontFamily: 'sans-serif',
+      outline: 'none',
+      resize: 'vertical',
+      lineHeight: '1.5',
+    })
+    descTextareaEl.placeholder = 'Add a description...'
+    descTextareaEl.addEventListener('focus', () => { descTextareaEl.style.borderColor = '#4fc3f7' })
+    descTextareaEl.addEventListener('blur', () => {
+      descTextareaEl.style.borderColor = '#444'
+      if (this._onDescriptionChangeCb) this._onDescriptionChangeCb(descTextareaEl.value)
+    })
+    descTextareaEl.addEventListener('keydown', (e) => { e.stopPropagation() })
+    descSection.appendChild(descTitleEl)
+    descSection.appendChild(descTextareaEl)
+
     this._nPanelContentEl.innerHTML = ''
+    this._nPanelContentEl.appendChild(nameSection)
     this._nPanelContentEl.appendChild(section('Location', [
       row('X', '#e05252', centroid.x),
       row('Y', '#6ab04c', centroid.y),
@@ -343,6 +429,7 @@ export class UIView {
       row('Y', '#6ab04c', dimensions.y),
       row('Z', '#4a9eed', dimensions.z),
     ]))
+    this._nPanelContentEl.appendChild(descSection)
   }
 
   /**

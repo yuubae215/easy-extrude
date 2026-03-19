@@ -88,7 +88,16 @@ export class AppController {
       outlinerView.onDelete(id  => this._deleteObject(id))
       outlinerView.onAdd(()     => this._addObject())
       outlinerView.onVisible((id, v) => this._setObjectVisible(id, v))
+      outlinerView.onRename((id, name) => this._renameObject(id, name))
     }
+
+    uiView.onNameChange(name => {
+      if (this._activeId) this._renameObject(this._activeId, name)
+    })
+    uiView.onDescriptionChange(desc => {
+      const obj = this._activeObj
+      if (obj) obj.description = desc
+    })
 
     this._bindEvents()
 
@@ -135,7 +144,7 @@ export class AppController {
     const meshView = new MeshView(this._sceneView.scene)
     meshView.updateGeometry(corners)
 
-    this._objects.set(id, { id, name, corners, meshView })
+    this._objects.set(id, { id, name, description: '', corners, meshView })
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 
@@ -179,12 +188,21 @@ export class AppController {
 
     if (this._outlinerView) this._outlinerView.setActive(id)
     this._uiView.setStatus(select ? 'Object selected' : '')
+    this._updateNPanel()
   }
 
   _setObjectVisible(id, visible) {
     const obj = this._objects.get(id)
     if (!obj) return
     obj.meshView.setVisible(visible)
+  }
+
+  _renameObject(id, name) {
+    const obj = this._objects.get(id)
+    if (!obj || !name) return
+    obj.name = name
+    if (this._outlinerView) this._outlinerView.setObjectName(id, name)
+    if (id === this._activeId) this._updateNPanel()
   }
 
   /** Called when user clicks a row in the outliner */
@@ -258,7 +276,8 @@ export class AppController {
     const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
     corners.forEach(c => { bMin.min(c); bMax.max(c) })
     const dims = new THREE.Vector3().subVectors(bMax, bMin)
-    this._uiView.updateNPanel(centroid, dims)
+    const obj = this._activeObj
+    this._uiView.updateNPanel(centroid, dims, obj?.name ?? '', obj?.description ?? '')
   }
 
   // ─── Mode management ───────────────────────────────────────────────────────
