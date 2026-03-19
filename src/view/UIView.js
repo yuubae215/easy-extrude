@@ -95,22 +95,28 @@ export class UIView {
     this._modeSelectorEl.appendChild(this._modeDropdownEl)
     this._headerEl.appendChild(this._modeSelectorEl)
 
+    // ── Header status (centered within header bar) ────────────────────────
+    this._headerStatusEl = document.createElement('div')
+    Object.assign(this._headerStatusEl.style, {
+      position: 'absolute',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '2px',
+      fontSize: '13px',
+      fontFamily: 'monospace',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    })
+    this._headerEl.appendChild(this._headerStatusEl)
+
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
       if (!this._modeSelectorEl.contains(e.target)) {
         this._modeDropdownEl.style.display = 'none'
       }
     })
-
-    // ── Status bar (top-center, operation feedback) ───────────────────────
-    this._statusEl = document.createElement('div')
-    Object.assign(this._statusEl.style, {
-      position: 'fixed', top: '46px', left: '50%', transform: 'translateX(-50%)',
-      color: '#ffeb3b', fontSize: '15px', fontFamily: 'sans-serif',
-      background: 'rgba(0,0,0,0.55)', padding: '6px 16px', borderRadius: '6px',
-      pointerEvents: 'none', minWidth: '120px', textAlign: 'center',
-    })
-    document.body.appendChild(this._statusEl)
 
     // ── Bottom info bar (full width) ──────────────────────────────────────
     this._infoEl = document.createElement('div')
@@ -272,9 +278,43 @@ export class UIView {
     })
   }
 
-  /** Updates the status bar text */
+  /**
+   * Updates the header status with plain text.
+   * @param {string} text
+   */
   setStatus(text) {
-    this._statusEl.textContent = text
+    this._headerStatusEl.innerHTML = ''
+    if (!text) return
+    const span = document.createElement('span')
+    span.textContent = text
+    Object.assign(span.style, { color: '#c8c8c8' })
+    this._headerStatusEl.appendChild(span)
+  }
+
+  /**
+   * Updates the header status with rich colored segments.
+   * Each part: { text: string, color?: string, bold?: boolean, dim?: boolean }
+   * Segments are separated by a dimmed `·` dot.
+   * @param {{ text: string, color?: string, bold?: boolean }[]} parts
+   */
+  setStatusRich(parts) {
+    this._headerStatusEl.innerHTML = ''
+    parts.forEach((part, i) => {
+      if (i > 0) {
+        const sep = document.createElement('span')
+        sep.textContent = '·'
+        Object.assign(sep.style, { color: '#4a4a4a', margin: '0 4px' })
+        this._headerStatusEl.appendChild(sep)
+      }
+      const span = document.createElement('span')
+      span.textContent = part.text
+      Object.assign(span.style, {
+        color: part.color ?? '#c8c8c8',
+        fontWeight: part.bold ? 'bold' : 'normal',
+        letterSpacing: part.bold ? '0.02em' : 'normal',
+      })
+      this._headerStatusEl.appendChild(span)
+    })
   }
 
   /** Returns true if the N panel is currently visible */
