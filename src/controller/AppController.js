@@ -187,7 +187,14 @@ export class AppController {
     if (obj) obj.meshView.setObjectSelected(select)
 
     if (this._outlinerView) this._outlinerView.setActive(id)
-    this._uiView.setStatus(select ? 'Object selected' : '')
+    if (select && obj) {
+      this._uiView.setStatusRich([
+        { text: obj.name, bold: true, color: '#e8e8e8' },
+        { text: 'selected', color: '#888' },
+      ])
+    } else {
+      this._uiView.setStatus('')
+    }
     this._updateNPanel()
   }
 
@@ -293,7 +300,14 @@ export class AppController {
       this._hoveredFace  = null
       this._faceDragging = false
       this._dragFaceIdx  = null
-      this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
+      if (this._objSelected && this._activeObj) {
+        this._uiView.setStatusRich([
+          { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
+          { text: 'selected', color: '#888' },
+        ])
+      } else {
+        this._uiView.setStatus('')
+      }
     } else {
       // edit mode
       this._setObjectSelected(false)
@@ -307,7 +321,14 @@ export class AppController {
   _setObjectSelected(sel) {
     this._objSelected = sel
     if (this._meshView) this._meshView.setObjectSelected(sel)
-    this._uiView.setStatus(sel ? 'Object selected' : '')
+    if (sel && this._activeObj) {
+      this._uiView.setStatusRich([
+        { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
+        { text: 'selected', color: '#888' },
+      ])
+    } else {
+      this._uiView.setStatus('')
+    }
   }
 
   // ─── Blender-style grab ────────────────────────────────────────────────────
@@ -459,14 +480,31 @@ export class AppController {
 
   _updateGrabStatus() {
     if (this._grab.pivotSelectMode) {
-      this._uiView.setStatus('Select Pivot Point  [click / Esc]')
+      this._uiView.setStatusRich([
+        { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
+        { text: 'Click to confirm', color: '#aaa' },
+        { text: 'Esc to cancel', color: '#666' },
+      ])
       return
     }
-    const axisLabel  = this._grab.axis ? ` ${this._grab.axis.toUpperCase()}` : ''
-    const inputLabel = this._grab.hasInput ? `  input: ${this._grab.inputStr}_` : ''
-    const pivotStr   = this._grab.pivotLabel !== 'Centroid' ? `  [${this._grab.pivotLabel}]` : ''
-    const snapStr    = this._grab.snapping ? '  >> SNAP: World Origin' : ''
-    this._uiView.setStatus(`Grab${axisLabel}${inputLabel}${pivotStr}${snapStr}`)
+
+    const AXIS_COLORS = { x: '#e05252', y: '#6ab04c', z: '#4a9eed' }
+    const parts = [{ text: 'Grab', bold: true, color: '#ffffff' }]
+
+    if (this._grab.axis) {
+      parts.push({ text: this._grab.axis.toUpperCase(), bold: true, color: AXIS_COLORS[this._grab.axis] })
+    }
+    if (this._grab.hasInput) {
+      parts.push({ text: this._grab.inputStr + '_', color: '#ffeb3b' })
+    }
+    if (this._grab.pivotLabel !== 'Centroid') {
+      parts.push({ text: this._grab.pivotLabel, color: '#888' })
+    }
+    if (this._grab.snapping) {
+      parts.push({ text: 'Snap: Origin', bold: true, color: '#ff9800' })
+    }
+
+    this._uiView.setStatusRich(parts)
   }
 
   // ─── Ctrl snap-to-origin ──────────────────────────────────────────────────
@@ -522,11 +560,18 @@ export class AppController {
       this._grab.hoveredPivotIdx = closestIdx
       const cand = this._grab.candidates[closestIdx]
       this._meshView.setHoveredPivot(cand.position)
-      this._uiView.setStatus(`Pivot: ${cand.label}`)
+      this._uiView.setStatusRich([
+        { text: 'Pivot', color: '#aaa' },
+        { text: cand.label, bold: true, color: '#ffeb3b' },
+      ])
     } else {
       this._grab.hoveredPivotIdx = -1
       this._meshView.setHoveredPivot(null)
-      this._uiView.setStatus('Select Pivot Point  [click / Esc]')
+      this._uiView.setStatusRich([
+        { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
+        { text: 'Click to confirm', color: '#aaa' },
+        { text: 'Esc to cancel', color: '#666' },
+      ])
     }
   }
 
@@ -618,7 +663,11 @@ export class AppController {
       })
       this._meshView.updateGeometry(this._corners)
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
-      this._uiView.setStatus(`${FACES[this._dragFaceIdx].name}  D ${dist.toFixed(3)}`)
+      this._uiView.setStatusRich([
+        { text: 'Extrude', bold: true, color: '#ffffff' },
+        { text: FACES[this._dragFaceIdx].name, color: '#4fc3f7' },
+        { text: `D: ${dist.toFixed(3)}`, color: '#ffeb3b' },
+      ])
 
       const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
       const { spanMid, armDir } = this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
@@ -634,7 +683,15 @@ export class AppController {
     if (fi !== this._hoveredFace) {
       this._hoveredFace = fi
       this._meshView.setFaceHighlight(fi, this._corners)
-      this._uiView.setStatus(fi !== null ? FACES[fi].name : '')
+      if (fi !== null) {
+        this._uiView.setStatusRich([
+          { text: 'Face', color: '#888' },
+          { text: FACES[fi].name, color: '#e8e8e8' },
+          { text: 'Drag to extrude', color: '#555' },
+        ])
+      } else {
+        this._uiView.setStatus('')
+      }
       this._uiView.setCursor(fi !== null ? 'pointer' : 'default')
     }
   }
