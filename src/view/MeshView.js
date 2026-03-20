@@ -292,6 +292,7 @@ export class MeshView {
    * @param {THREE.Vector3[]} corners - current corner array
    */
   setFaceHighlight(fi, corners) {
+    this.hlMesh.visible = (fi !== null)
     if (fi === null) {
       this._hlGeo.setIndex([])
       this._hlGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))

@@ -157,6 +157,9 @@ export class AppController {
   _addObject(type = 'box') {
     if (type === 'sketch') { this._addSketchObject(); return }
 
+    // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
+    if (this._selectionMode === 'edit') this.setMode('object')
+
     const idx  = this._objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
@@ -179,6 +182,9 @@ export class AppController {
   }
 
   _addSketchObject() {
+    // Exit current mode cleanly before switching active object
+    if (this._selectionMode === 'edit') this.setMode('object')
+
     const idx  = this._objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = `Sketch.${String(idx).padStart(3, '0')}`
@@ -196,6 +202,12 @@ export class AppController {
 
   _deleteObject(id) {
     if (this._objects.size <= 1) return   // always keep at least one object
+
+    // If deleting the active object while in Edit Mode, exit cleanly first
+    // (setMode operates on the active meshView, so must be called before dispose)
+    if (id === this._activeId && this._selectionMode === 'edit') {
+      this.setMode('object')
+    }
 
     const obj = this._objects.get(id)
     if (!obj) return
@@ -342,19 +354,36 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
+    // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._grab.active) this._cancelGrab()
-    this._cleanupEditSubstate()
-    this._selectionMode = mode
-    if (mode === 'object') {
-      if (this._meshView) {
-        this._meshView.setFaceHighlight(null, this._corners)
-        this._meshView.clearExtrusionDisplay()
-        this._meshView.clearSketchRect()
-      }
-      this._uiView.clearExtrusionLabel()
-      this._hoveredFace  = null
+    if (this._faceDragging) {
       this._faceDragging = false
       this._dragFaceIdx  = null
+      if (this._meshView) this._meshView.clearExtrusionDisplay()
+      this._uiView.clearExtrusionLabel()
+    }
+    if (this._objDragging) {
+      this._objDragging = false
+      this._objCtrlDrag = false
+    }
+
+    // ── Clear all edit visual state on the current active object ───────────
+    if (this._meshView) {
+      this._meshView.setFaceHighlight(null, this._corners)
+      this._meshView.clearExtrusionDisplay()
+      this._meshView.clearSketchRect()
+    }
+    this._uiView.clearExtrusionLabel()
+    this._hoveredFace  = null
+    this._faceDragging = false
+    this._dragFaceIdx  = null
+
+    // ── Substate reset and mode dispatch ───────────────────────────────────
+    this._cleanupEditSubstate()
+    this._selectionMode = mode
+    this._controls.enabled = true
+
+    if (mode === 'object') {
       if (this._objSelected && this._activeObj) {
         this._uiView.setStatusRich([
           { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
@@ -375,7 +404,6 @@ export class AppController {
         this._enterEditMode3D()
       }
     }
-    this._controls.enabled = true
   }
 
   _cleanupEditSubstate() {
