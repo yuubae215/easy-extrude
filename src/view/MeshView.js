@@ -44,43 +44,91 @@ export class MeshView {
     this._extrusionLines.visible = false
     scene.add(this._extrusionLines)
 
-    // Pivot candidate dots (yellow, fixed screen size)
-    this._pivotPointsGeo = new THREE.BufferGeometry()
-    this._pivotPoints = new THREE.Points(
-      this._pivotPointsGeo,
-      new THREE.PointsMaterial({ color: 0xffeb3b, size: 7, sizeAttenuation: false, depthTest: false }),
-    )
-    this._pivotPoints.visible = false
-    scene.add(this._pivotPoints)
+    // ── Pivot candidate shapes: ○ Vertex, △ Edge, □ Face (yellow, hollow) ──
+    const _texCircle   = MeshView._makeShapeTexture('circle')
+    const _texTriangle = MeshView._makeShapeTexture('triangle')
+    const _texSquare   = MeshView._makeShapeTexture('square')
 
-    // Hovered pivot highlight (orange, larger)
-    this._hoveredPivotGeo = new THREE.BufferGeometry()
-    this._hoveredPivotPoints = new THREE.Points(
-      this._hoveredPivotGeo,
-      new THREE.PointsMaterial({ color: 0xff8c00, size: 14, sizeAttenuation: false, depthTest: false }),
-    )
-    this._hoveredPivotPoints.visible = false
-    scene.add(this._hoveredPivotPoints)
+    const _makePivotMat = (tex) => new THREE.PointsMaterial({
+      color: 0xffeb3b, size: 14, sizeAttenuation: false, depthTest: false,
+      map: tex, transparent: true, alphaTest: 0.05,
+    })
+    this._pivotVertGeo = new THREE.BufferGeometry()
+    this._pivotVertPoints = new THREE.Points(this._pivotVertGeo, _makePivotMat(_texCircle))
+    this._pivotVertPoints.visible = false
+    scene.add(this._pivotVertPoints)
+
+    this._pivotEdgeGeo = new THREE.BufferGeometry()
+    this._pivotEdgePoints = new THREE.Points(this._pivotEdgeGeo, _makePivotMat(_texTriangle))
+    this._pivotEdgePoints.visible = false
+    scene.add(this._pivotEdgePoints)
+
+    this._pivotFaceGeo = new THREE.BufferGeometry()
+    this._pivotFacePoints = new THREE.Points(this._pivotFaceGeo, _makePivotMat(_texSquare))
+    this._pivotFacePoints.visible = false
+    scene.add(this._pivotFacePoints)
+
+    // Hovered pivot highlight (orange, larger) — same shape per type
+    const _makeHovMat = (tex) => new THREE.PointsMaterial({
+      color: 0xff8c00, size: 20, sizeAttenuation: false, depthTest: false,
+      map: tex, transparent: true, alphaTest: 0.05,
+    })
+    this._hovPivotVertGeo = new THREE.BufferGeometry()
+    this._hovPivotVertPoints = new THREE.Points(this._hovPivotVertGeo, _makeHovMat(_texCircle))
+    this._hovPivotVertPoints.visible = false
+    scene.add(this._hovPivotVertPoints)
+
+    this._hovPivotEdgeGeo = new THREE.BufferGeometry()
+    this._hovPivotEdgePoints = new THREE.Points(this._hovPivotEdgeGeo, _makeHovMat(_texTriangle))
+    this._hovPivotEdgePoints.visible = false
+    scene.add(this._hovPivotEdgePoints)
+
+    this._hovPivotFaceGeo = new THREE.BufferGeometry()
+    this._hovPivotFacePoints = new THREE.Points(this._hovPivotFaceGeo, _makeHovMat(_texSquare))
+    this._hovPivotFacePoints.visible = false
+    scene.add(this._hovPivotFacePoints)
 
     // ── Modern snap indicators ─────────────────────────────────────────────
 
-    // All snap candidates — small type-colored dots (vertexColors)
-    this._snapCandidatesGeo = new THREE.BufferGeometry()
-    this._snapCandidates = new THREE.Points(
-      this._snapCandidatesGeo,
-      new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, depthTest: false, vertexColors: true, transparent: true, opacity: 0.55 }),
-    )
-    this._snapCandidates.visible = false
-    scene.add(this._snapCandidates)
+    // Snap candidates — hollow shapes per type (○ Vertex, △ Edge, □ Face)
+    const _makeSnapCandMat = (tex) => new THREE.PointsMaterial({
+      size: 12, sizeAttenuation: false, depthTest: false,
+      map: tex, vertexColors: true, transparent: true, alphaTest: 0.05, opacity: 0.65,
+    })
+    this._snapVertCandGeo = new THREE.BufferGeometry()
+    this._snapVertCandidates = new THREE.Points(this._snapVertCandGeo, _makeSnapCandMat(_texCircle))
+    this._snapVertCandidates.visible = false
+    scene.add(this._snapVertCandidates)
 
-    // Locked snap target — large bright type-colored dot
-    this._snapLockedGeo = new THREE.BufferGeometry()
-    this._snapLocked = new THREE.Points(
-      this._snapLockedGeo,
-      new THREE.PointsMaterial({ size: 16, sizeAttenuation: false, depthTest: false, vertexColors: true }),
-    )
-    this._snapLocked.visible = false
-    scene.add(this._snapLocked)
+    this._snapEdgeCandGeo = new THREE.BufferGeometry()
+    this._snapEdgeCandidates = new THREE.Points(this._snapEdgeCandGeo, _makeSnapCandMat(_texTriangle))
+    this._snapEdgeCandidates.visible = false
+    scene.add(this._snapEdgeCandidates)
+
+    this._snapFaceCandGeo = new THREE.BufferGeometry()
+    this._snapFaceCandidates = new THREE.Points(this._snapFaceCandGeo, _makeSnapCandMat(_texSquare))
+    this._snapFaceCandidates.visible = false
+    scene.add(this._snapFaceCandidates)
+
+    // Locked snap target — large bright hollow shape per type
+    const _makeSnapLockMat = (tex, color) => new THREE.PointsMaterial({
+      color, size: 20, sizeAttenuation: false, depthTest: false,
+      map: tex, transparent: true, alphaTest: 0.05,
+    })
+    this._snapLockedVertGeo = new THREE.BufferGeometry()
+    this._snapLockedVert = new THREE.Points(this._snapLockedVertGeo, _makeSnapLockMat(_texCircle,   0x69f0ae))
+    this._snapLockedVert.visible = false
+    scene.add(this._snapLockedVert)
+
+    this._snapLockedEdgeGeo = new THREE.BufferGeometry()
+    this._snapLockedEdge = new THREE.Points(this._snapLockedEdgeGeo, _makeSnapLockMat(_texTriangle, 0xffd740))
+    this._snapLockedEdge.visible = false
+    scene.add(this._snapLockedEdge)
+
+    this._snapLockedFaceGeo = new THREE.BufferGeometry()
+    this._snapLockedFace = new THREE.Points(this._snapLockedFaceGeo, _makeSnapLockMat(_texSquare,   0x4fc3f7))
+    this._snapLockedFace.visible = false
+    scene.add(this._snapLockedFace)
 
     // Snap guide line — pivot → locked target
     this._snapLineGeo = new THREE.BufferGeometry()
@@ -239,41 +287,86 @@ export class MeshView {
   }
 
   /**
-   * Shows pivot candidate dots.
-   * @param {{ label: string, position: THREE.Vector3 }[]} candidates
+   * Creates a canvas texture for a hollow shape (circle/triangle/square).
+   * The shape is drawn as a white outline on a transparent background.
+   * @param {'circle'|'triangle'|'square'} shape
+   * @returns {THREE.CanvasTexture}
    */
-  showPivotCandidates(candidates) {
-    const positions = new Float32Array(candidates.length * 3)
-    candidates.forEach((c, i) => {
-      positions[i * 3]     = c.position.x
-      positions[i * 3 + 1] = c.position.y
-      positions[i * 3 + 2] = c.position.z
-    })
-    this._pivotPointsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    this._pivotPointsGeo.attributes.position.needsUpdate = true
-    this._pivotPoints.visible = true
-    this._hoveredPivotPoints.visible = false
+  static _makeShapeTexture(shape) {
+    const S = 32, h = S / 2, m = 4
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = S
+    const ctx = canvas.getContext('2d')
+    ctx.strokeStyle = 'white'
+    ctx.lineWidth = 3
+    if (shape === 'circle') {
+      ctx.beginPath()
+      ctx.arc(h, h, h - m, 0, Math.PI * 2)
+      ctx.stroke()
+    } else if (shape === 'triangle') {
+      ctx.beginPath()
+      ctx.moveTo(h, m)
+      ctx.lineTo(S - m, S - m)
+      ctx.lineTo(m, S - m)
+      ctx.closePath()
+      ctx.stroke()
+    } else {
+      ctx.strokeRect(m, m, S - m * 2, S - m * 2)
+    }
+    return new THREE.CanvasTexture(canvas)
   }
 
   /**
-   * Highlights the hovered pivot candidate; pass null to clear.
-   * @param {THREE.Vector3|null} position
+   * Shows pivot candidate shapes split by type (○ vertex, △ edge, □ face).
+   * @param {{ label: string, position: THREE.Vector3, type: string }[]} candidates
    */
-  setHoveredPivot(position) {
-    if (!position) {
-      this._hoveredPivotPoints.visible = false
-      return
+  showPivotCandidates(candidates) {
+    const byType = { vertex: [], edge: [], face: [] }
+    for (const c of candidates) byType[c.type]?.push(c.position)
+
+    const _upload = (geo, pts, points) => {
+      if (!pts.length) { points.visible = false; return }
+      const arr = new Float32Array(pts.length * 3)
+      pts.forEach((p, i) => { arr[i*3] = p.x; arr[i*3+1] = p.y; arr[i*3+2] = p.z })
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+      geo.attributes.position.needsUpdate = true
+      points.visible = true
     }
-    const pos = new Float32Array([position.x, position.y, position.z])
-    this._hoveredPivotGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    this._hoveredPivotGeo.attributes.position.needsUpdate = true
-    this._hoveredPivotPoints.visible = true
+    _upload(this._pivotVertGeo, byType.vertex, this._pivotVertPoints)
+    _upload(this._pivotEdgeGeo, byType.edge,   this._pivotEdgePoints)
+    _upload(this._pivotFaceGeo, byType.face,   this._pivotFacePoints)
+    this._hovPivotVertPoints.visible = false
+    this._hovPivotEdgePoints.visible = false
+    this._hovPivotFacePoints.visible = false
+  }
+
+  /**
+   * Highlights the hovered pivot candidate with the correct shape; pass null to clear.
+   * @param {{ position: THREE.Vector3, type: string }|null} cand
+   */
+  setHoveredPivot(cand) {
+    this._hovPivotVertPoints.visible = false
+    this._hovPivotEdgePoints.visible = false
+    this._hovPivotFacePoints.visible = false
+    if (!cand) return
+    const geoMap = { vertex: this._hovPivotVertGeo, edge: this._hovPivotEdgeGeo, face: this._hovPivotFaceGeo }
+    const ptMap  = { vertex: this._hovPivotVertPoints, edge: this._hovPivotEdgePoints, face: this._hovPivotFacePoints }
+    const geo = geoMap[cand.type]; const points = ptMap[cand.type]
+    if (!geo) return
+    const pos = new Float32Array([cand.position.x, cand.position.y, cand.position.z])
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.attributes.position.needsUpdate = true
+    points.visible = true
   }
 
   /** Hides all pivot candidate display */
   clearPivotDisplay() {
-    this._pivotPoints.visible = false
-    this._hoveredPivotPoints.visible = false
+    this._pivotVertPoints.visible = false
+    this._pivotEdgePoints.visible = false
+    this._pivotFacePoints.visible = false
+    this._hovPivotVertPoints.visible = false
+    this._hovPivotEdgePoints.visible = false
+    this._hovPivotFacePoints.visible = false
   }
 
   // ── Modern snap display ──────────────────────────────────────────────────
@@ -283,46 +376,55 @@ export class MeshView {
     vertex: new THREE.Color(0x69f0ae),
     edge:   new THREE.Color(0xffd740),
     face:   new THREE.Color(0x4fc3f7),
-    origin: new THREE.Color(0xe040fb),
   }
 
   /**
-   * Shows all snap candidates as small type-colored dots.
+   * Shows all snap candidates as hollow shapes: ○ vertex, △ edge, □ face.
    * @param {{ position: THREE.Vector3, type: string }[]} targets
    */
   showSnapCandidates(targets) {
-    if (!targets.length) { this._snapCandidates.visible = false; return }
-    const positions = new Float32Array(targets.length * 3)
-    const colors    = new Float32Array(targets.length * 3)
-    targets.forEach((t, i) => {
-      positions[i * 3]     = t.position.x
-      positions[i * 3 + 1] = t.position.y
-      positions[i * 3 + 2] = t.position.z
-      const c = MeshView._SNAP_COLOR[t.type] ?? MeshView._SNAP_COLOR.vertex
-      colors[i * 3]     = c.r
-      colors[i * 3 + 1] = c.g
-      colors[i * 3 + 2] = c.b
-    })
-    this._snapCandidatesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    this._snapCandidatesGeo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
-    this._snapCandidatesGeo.attributes.position.needsUpdate = true
-    this._snapCandidates.visible = true
+    const byType = { vertex: [], edge: [], face: [] }
+    for (const t of targets) byType[t.type]?.push(t.position)
+
+    const _upload = (type, geo, points) => {
+      const pts = byType[type]
+      if (!pts.length) { points.visible = false; return }
+      const c = MeshView._SNAP_COLOR[type]
+      const arr = new Float32Array(pts.length * 3)
+      const col = new Float32Array(pts.length * 3)
+      pts.forEach((p, i) => {
+        arr[i*3] = p.x; arr[i*3+1] = p.y; arr[i*3+2] = p.z
+        col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b
+      })
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+      geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+      geo.attributes.position.needsUpdate = true
+      points.visible = true
+    }
+    _upload('vertex', this._snapVertCandGeo, this._snapVertCandidates)
+    _upload('edge',   this._snapEdgeCandGeo, this._snapEdgeCandidates)
+    _upload('face',   this._snapFaceCandGeo, this._snapFaceCandidates)
   }
 
   /**
-   * Shows the locked snap indicator (large dot + guide line from pivot).
+   * Shows the locked snap indicator (hollow shape + guide line from pivot).
    * @param {THREE.Vector3} position - snap target position
-   * @param {string}        type     - 'vertex'|'edge'|'face'|'origin'
+   * @param {string}        type     - 'vertex'|'edge'|'face'
    * @param {THREE.Vector3} pivot    - grab pivot (guide line start)
    */
   showSnapLocked(position, type, pivot) {
-    const c = MeshView._SNAP_COLOR[type] ?? MeshView._SNAP_COLOR.vertex
+    this._snapLockedVert.visible = false
+    this._snapLockedEdge.visible = false
+    this._snapLockedFace.visible = false
+    const lockedMap = { vertex: [this._snapLockedVertGeo, this._snapLockedVert],
+                        edge:   [this._snapLockedEdgeGeo, this._snapLockedEdge],
+                        face:   [this._snapLockedFaceGeo, this._snapLockedFace] }
+    const entry = lockedMap[type] ?? lockedMap.vertex
+    const [geo, points] = entry
     const posArr = new Float32Array([position.x, position.y, position.z])
-    const colArr = new Float32Array([c.r, c.g, c.b])
-    this._snapLockedGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
-    this._snapLockedGeo.setAttribute('color',    new THREE.BufferAttribute(colArr, 3))
-    this._snapLockedGeo.attributes.position.needsUpdate = true
-    this._snapLocked.visible = true
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+    geo.attributes.position.needsUpdate = true
+    points.visible = true
 
     const linePos = new Float32Array([
       pivot.x,    pivot.y,    pivot.z,
@@ -333,37 +435,23 @@ export class MeshView {
     this._snapLine.visible = true
   }
 
-  /** Hides the locked snap dot and guide line only. */
+  /** Hides the locked snap shape and guide line only. */
   clearSnapLocked() {
-    this._snapLocked.visible = false
-    this._snapLine.visible   = false
+    this._snapLockedVert.visible = false
+    this._snapLockedEdge.visible = false
+    this._snapLockedFace.visible = false
+    this._snapLine.visible       = false
   }
 
   /** Hides all snap candidate and locked-target visuals. */
   clearSnapDisplay() {
-    this._snapCandidates.visible = false
-    this._snapLocked.visible     = false
-    this._snapLine.visible       = false
-  }
-
-  /**
-   * Shows a single snap target indicator (world origin during Ctrl+grab).
-   * @param {THREE.Vector3} position
-   * @param {boolean} snapping - true = orange (locked), false = yellow (in range)
-   */
-  showSnapTarget(position, snapping) {
-    const pos = new Float32Array([position.x, position.y, position.z])
-    if (snapping) {
-      this._hoveredPivotGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-      this._hoveredPivotGeo.attributes.position.needsUpdate = true
-      this._hoveredPivotPoints.visible = true
-      this._pivotPoints.visible = false
-    } else {
-      this._pivotPointsGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-      this._pivotPointsGeo.attributes.position.needsUpdate = true
-      this._pivotPoints.visible = true
-      this._hoveredPivotPoints.visible = false
-    }
+    this._snapVertCandidates.visible = false
+    this._snapEdgeCandidates.visible = false
+    this._snapFaceCandidates.visible = false
+    this._snapLockedVert.visible     = false
+    this._snapLockedEdge.visible     = false
+    this._snapLockedFace.visible     = false
+    this._snapLine.visible           = false
   }
 
   /**

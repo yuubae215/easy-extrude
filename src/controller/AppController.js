@@ -924,11 +924,11 @@ export class AppController {
     this._updateGrabStatus()
   }
 
-  // ─── Geometry snap (replaces snap-to-origin) ──────────────────────────────
+  // ─── Geometry snap ─────────────────────────────────────────────────────────
 
   /**
    * Attempts to snap the grab pivot to the nearest geometry element.
-   * Snap candidates: World origin + all Vertex positions + all Edge midpoints.
+   * Snap candidates: all Vertex positions, Edge midpoints, Face centers.
    * @param {THREE.Vector3} delta  current free delta
    * @returns {THREE.Vector3}  snapped or original delta
    */
@@ -944,9 +944,6 @@ export class AppController {
 
     const camMat = this._camera.matrixWorldInverse
     for (const t of targets) {
-      // In autoSnap (G→V) mode: skip world origin — only snap to actual geometry
-      if (this._grab.autoSnap && t.type === 'origin') continue
-
       // Skip targets behind the camera (camera-space z >= 0 means behind)
       const camPos = t.position.clone().applyMatrix4(camMat)
       if (camPos.z >= 0) continue
@@ -1016,7 +1013,7 @@ export class AppController {
     if (minDist <= SNAP_PX && closestIdx >= 0) {
       this._grab.hoveredPivotIdx = closestIdx
       const cand = this._grab.candidates[closestIdx]
-      this._meshView.setHoveredPivot(cand.position)
+      this._meshView.setHoveredPivot(cand)
       this._uiView.setStatusRich([
         { text: 'Pivot', color: '#aaa' },
         { text: cand.label, bold: true, color: '#ffeb3b' },

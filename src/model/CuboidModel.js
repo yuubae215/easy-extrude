@@ -154,19 +154,15 @@ export function buildCuboidFromRect(p1, p2, height) {
  * @param {'all'|'vertex'|'edge'|'face'} [mode='all']
  *   'vertex' — Vertex positions only
  *   'edge'   — Edge midpoints only
- *   'face'   — Face centers + World origin
+ *   'face'   — Face centers
  *   'all'    — all of the above
- * @returns {{ label: string, position: THREE.Vector3 }[]}
+ * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
  */
 export function collectSnapTargets(objects, mode = 'all') {
   const doVert  = mode === 'all' || mode === 'vertex'
   const doEdge  = mode === 'all' || mode === 'edge'
   const doFace  = mode === 'all' || mode === 'face'
   const targets = []
-
-  if (doFace) {
-    targets.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0), type: 'origin' })
-  }
 
   for (const obj of objects.values()) {
     if (!obj.vertices) continue
@@ -207,48 +203,48 @@ const PIVOT_EDGE_PAIRS = [
 /**
  * Pivot candidates: 8 vertices only.
  * @param {THREE.Vector3[]} corners
- * @returns {{ label: string, position: THREE.Vector3 }[]}
+ * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
  */
 export function getVertexPivotCandidates(corners) {
-  return corners.map((c, i) => ({ label: `Vertex ${i}`, position: c.clone() }))
+  return corners.map((c, i) => ({ label: `Vertex ${i}`, position: c.clone(), type: 'vertex' }))
 }
 
 /**
  * Pivot candidates: 12 edge midpoints only.
  * @param {THREE.Vector3[]} corners
- * @returns {{ label: string, position: THREE.Vector3 }[]}
+ * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
  */
 export function getEdgePivotCandidates(corners) {
   return PIVOT_EDGE_PAIRS.map(([a, b], i) => ({
     label: `Edge ${i}`,
     position: corners[a].clone().add(corners[b]).multiplyScalar(0.5),
+    type: 'edge',
   }))
 }
 
 /**
- * Pivot candidates: 6 face centers + World origin.
+ * Pivot candidates: 6 face centers.
  * @param {THREE.Vector3[]} corners
- * @returns {{ label: string, position: THREE.Vector3 }[]}
+ * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
  */
 export function getFacePivotCandidates(corners) {
-  const candidates = FACES.map(face => {
+  return FACES.map(face => {
     const center = face.corners
       .reduce((acc, ci) => acc.add(corners[ci].clone()), new THREE.Vector3())
       .divideScalar(face.corners.length)
-    return { label: face.name, position: center }
+    return { label: face.name, position: center, type: 'face' }
   })
-  candidates.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0) })
-  return candidates
 }
 
 /**
- * Pivot candidates: all of the above combined (8 vertices + 6 face centers + World origin).
+ * Pivot candidates: all of the above combined (8 vertices + 12 edge midpoints + 6 face centers).
  * @param {THREE.Vector3[]} corners
- * @returns {{ label: string, position: THREE.Vector3 }[]}
+ * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
  */
 export function getPivotCandidates(corners) {
   return [
     ...getVertexPivotCandidates(corners),
+    ...getEdgePivotCandidates(corners),
     ...getFacePivotCandidates(corners),
   ]
 }
