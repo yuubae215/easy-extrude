@@ -5,6 +5,35 @@ Claude must follow these when modifying code in this repository.
 
 ---
 
+## Maintenance guidelines
+
+### What belongs here
+
+- Rules learned from **real bugs** (not hypothetical ones)
+- Policies where violating them causes **hard-to-find state inconsistencies**
+- Ownership contracts between classes/modules that aren't obvious from the code
+- Decisions that were **consciously chosen** over a simpler alternative
+
+Do NOT add: general best practices, things already obvious from the code,
+or temporary notes about in-progress work (use a task/plan for those).
+
+### When to update
+
+| Trigger | Action |
+|---------|--------|
+| A bug was caused by violating an implicit rule | Add the rule here |
+| A new ADR establishes a coding contract | Summarize the contract here, link the ADR |
+| An existing rule turns out to be wrong or too narrow | Update or remove it |
+| A rule is already enforced by the code itself (e.g. type system) | Remove it — code is the source of truth |
+
+### How to update
+
+1. Add/edit the relevant section below
+2. Commit together with the code change that motivated it
+3. If the rule is substantial, create an ADR first and link it here
+
+---
+
 ## Mode transition policy (ADR-008)
 
 `AppController.setMode(mode)` is the **single entry point** for all mode transitions.
