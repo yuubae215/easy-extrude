@@ -129,6 +129,8 @@ export class AppController {
       snappedTarget:   null,
       /** Snap target filter: 'all'|'vertex'|'edge'|'face' */
       snapMode:        'all',
+      /** All snap candidates from last _trySnapToGeometry call (for display) */
+      snapTargets:     [],
     }
 
     this._ctrlHeld  = false
@@ -697,6 +699,7 @@ export class AppController {
     this._grab.pivotSelectMode = false
     this._grab.hoveredPivotIdx = -1
     this._grab.snapMode        = 'all'
+    this._grab.snapTargets     = []
     this._grab.startMouse.copy(this._mouse)
     this._grab.startCorners = this._corners.map(c => c.clone())
     this._grab.centroid.copy(getCentroid(this._corners))
@@ -729,6 +732,7 @@ export class AppController {
     this._grab.autoSnap      = false
     this._grab.snappedTarget = null
     this._meshView.clearPivotDisplay()
+    this._meshView.clearSnapDisplay()
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -742,6 +746,7 @@ export class AppController {
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
     this._meshView.clearPivotDisplay()
+    this._meshView.clearSnapDisplay()
     this._grab.active        = false
     this._grab.axis          = null
     this._grab.autoSnap      = false
@@ -884,6 +889,7 @@ export class AppController {
     const pScreen    = this._projectToScreen(pivotAfter)
 
     const targets  = collectSnapTargets(this._scene.objects, this._grab.snapMode)
+    this._grab.snapTargets = targets  // cache for candidate display
     let bestDist   = SNAP_PX
     let bestTarget = null
 
@@ -977,7 +983,7 @@ export class AppController {
     this._grab.snapMode      = mode
     this._grab.snapping      = false
     this._grab.snappedTarget = null
-    this._meshView.clearPivotDisplay()
+    this._meshView.clearSnapLocked()
     this._updateGrabStatus()
   }
 
@@ -1025,10 +1031,19 @@ export class AppController {
         return
       }
       this._applyGrab()
-      if ((this._ctrlHeld || this._grab.autoSnap) && this._grab.snapping && this._grab.snappedTarget) {
-        this._meshView.showSnapTarget(this._grab.snappedTarget.position, true)
+      if (this._ctrlHeld || this._grab.autoSnap) {
+        this._meshView.showSnapCandidates(this._grab.snapTargets)
+        if (this._grab.snapping && this._grab.snappedTarget) {
+          this._meshView.showSnapLocked(
+            this._grab.snappedTarget.position,
+            this._grab.snappedTarget.type,
+            this._grab.pivot,
+          )
+        } else {
+          this._meshView.clearSnapLocked()
+        }
       } else {
-        this._meshView.clearPivotDisplay()
+        this._meshView.clearSnapDisplay()
       }
       this._updateGrabStatus()
       this._updateNPanel()

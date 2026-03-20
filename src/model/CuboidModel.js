@@ -165,7 +165,7 @@ export function collectSnapTargets(objects, mode = 'all') {
   const targets = []
 
   if (doFace) {
-    targets.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0) })
+    targets.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0), type: 'origin' })
   }
 
   for (const obj of objects.values()) {
@@ -173,14 +173,14 @@ export function collectSnapTargets(objects, mode = 'all') {
 
     if (doVert) {
       for (const v of obj.vertices) {
-        targets.push({ label: `${obj.name} Vertex`, position: v.position })
+        targets.push({ label: `${obj.name} Vertex`, position: v.position, type: 'vertex' })
       }
     }
 
     if (doEdge && obj.edges) {
       for (const e of obj.edges) {
         const mid = e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
-        targets.push({ label: `${obj.name} Edge`, position: mid })
+        targets.push({ label: `${obj.name} Edge`, position: mid, type: 'edge' })
       }
     }
 
@@ -189,7 +189,7 @@ export function collectSnapTargets(objects, mode = 'all') {
         const center = f.vertices
           .reduce((acc, v) => acc.add(v.position), new THREE.Vector3())
           .divideScalar(f.vertices.length)
-        targets.push({ label: `${obj.name} ${f.name}`, position: center })
+        targets.push({ label: `${obj.name} ${f.name}`, position: center, type: 'face' })
       }
     }
   }
