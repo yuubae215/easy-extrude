@@ -49,6 +49,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-20**: DDD Phase 5-2 — ステータスバーをイベント駆動に部分移行。`_refreshObjectModeStatus()` 新設、`objectRenamed` 購読でリネーム時の自動更新。Grab後の固定文字列バグ修正。
 - **2026-03-20**: DDD Phase 4 — `EventEmitter` 新設。`SceneService` を Observable に変更し `objectAdded`, `objectRemoved`, `objectRenamed`, `activeChanged` イベントを emit。AppController がイベント購読で OutlinerView を自動同期。直接 View 呼び出しをコントローラから削除。ADR-013 作成。
 - **2026-03-20**: ドメインモデル設計 — 「次元と動詞」モデルを確立。Sketch→Cuboid エンティティ差し替えパターン、グラフ基底ジオメトリの方向性を ADR-012 (Proposed) として記録。ロードマップを Phase 4–6 に更新。
 - **2026-03-20**: バグ修正 — Sketch に `move()`/`extrudeFace()` が欠落し Extrude 後の Grab・面押し出しが動かない問題を修正。MENTAL_MODEL に次元遷移契約を追加。

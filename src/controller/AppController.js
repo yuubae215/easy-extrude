@@ -38,7 +38,12 @@ export class AppController {
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => outlinerView?.addObject(obj.id, obj.name))
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
-    this._service.on('objectRenamed', (id, nm)  => outlinerView?.setObjectName(id, nm))
+    this._service.on('objectRenamed', (id, nm)  => {
+      outlinerView?.setObjectName(id, nm)
+      if (id === this._scene.activeId && this._scene.selectionMode === 'object') {
+        this._refreshObjectModeStatus()
+      }
+    })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
@@ -220,14 +225,7 @@ export class AppController {
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
 
-    if (select && obj) {
-      this._uiView.setStatusRich([
-        { text: obj.name, bold: true, color: '#e8e8e8' },
-        { text: 'selected', color: '#888' },
-      ])
-    } else {
-      this._uiView.setStatus('')
-    }
+    this._refreshObjectModeStatus()
     this._updateNPanel()
   }
 
@@ -325,6 +323,20 @@ export class AppController {
     this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '')
   }
 
+  // ─── Status bar helpers ────────────────────────────────────────────────────
+
+  /** Single source of truth for "X selected" / '' status in Object Mode. */
+  _refreshObjectModeStatus() {
+    if (!this._objSelected || !this._activeObj) {
+      this._uiView.setStatus('')
+      return
+    }
+    this._uiView.setStatusRich([
+      { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
+      { text: 'selected', color: '#888' },
+    ])
+  }
+
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
     // ── Cancel all in-progress operations ──────────────────────────────────
@@ -357,14 +369,7 @@ export class AppController {
     this._controls.enabled = true
 
     if (mode === 'object') {
-      if (this._objSelected && this._activeObj) {
-        this._uiView.setStatusRich([
-          { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
-          { text: 'selected', color: '#888' },
-        ])
-      } else {
-        this._uiView.setStatus('')
-      }
+      this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
     } else {
       // edit mode — dispatch on dimension
@@ -518,14 +523,7 @@ export class AppController {
   _setObjectSelected(sel) {
     this._objSelected = sel
     if (this._meshView) this._meshView.setObjectSelected(sel)
-    if (sel && this._activeObj) {
-      this._uiView.setStatusRich([
-        { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
-        { text: 'selected', color: '#888' },
-      ])
-    } else {
-      this._uiView.setStatus('')
-    }
+    this._refreshObjectModeStatus()
   }
 
   // ─── Blender-style grab ────────────────────────────────────────────────────
@@ -571,7 +569,7 @@ export class AppController {
     this._meshView.clearPivotDisplay()
     this._controls.enabled = true
     this._uiView.setCursor('default')
-    this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
+    this._refreshObjectModeStatus()
     this._updateNPanel()
   }
 
@@ -586,7 +584,7 @@ export class AppController {
     this._grab.axis   = null
     this._controls.enabled = true
     this._uiView.setCursor('default')
-    this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
+    this._refreshObjectModeStatus()
     this._updateNPanel()
   }
 
