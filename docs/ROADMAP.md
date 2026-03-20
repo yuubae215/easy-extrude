@@ -61,6 +61,10 @@ OrbitControls already handles 2-finger orbit and pinch-to-zoom natively. The mai
 
 | Item | Date |
 |------|------|
+| DDD Phase 4 — Domain events (EventEmitter); SceneService observable (ADR-013) | 2026-03-20 |
+| DDD Phase 3 — SceneService ApplicationService layer (ADR-011) | 2026-03-20 |
+| DDD Phase 2 — Domain entity behaviour methods (ADR-010) | 2026-03-20 |
+| DDD Phase 1 — Typed domain entities Cuboid / Sketch (ADR-009) | 2026-03-20 |
 | Method B: Sketch → Extrude (ADR-002) + Edit Mode 2D/3D dispatch (ADR-004) | 2026-03-20 |
 | Custom BufferGeometry cuboid + Face Extrude | 2026-03-17 |
 | MVC refactor (Model / View / Controller separation) | 2026-03-17 |
