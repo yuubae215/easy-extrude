@@ -46,5 +46,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 Full log → `docs/SESSION_LOG.md`
 
 - **2026-03-20**: Added `.claude/commands/adr.md` (`/adr` slash command). Added document navigation guide to CLAUDE.md. Refactored CLAUDE.md to agent-instructions-only format; moved full session history to `docs/SESSION_LOG.md`.
-- **2026-03-20**: Architecture design session (no implementation). Voxel-based modeling, two modeling methods (Primitive Box / Sketch→Extrude), middle-click orbit (ADR-003), Edit Mode adapts to object type (ADR-004), object hierarchy 1D/2D/3D (ADR-005). ADR-001–006 created. `docs/ROADMAP.md` revised.
+- **2026-03-20**: Architecture design session. ADR-001–006 created. `docs/ROADMAP.md` revised.
+- **2026-03-20**: Implemented ADR-001 (VoxelModel), ADR-003 (middle-click orbit), voxel object system (2×2×2 box default, integer-snap face extrude). Migrated AppController from corners to VoxelShape. MeshView updated to voxel geometry API.
 - **2026-03-19**: Blender-style UI overhaul (header bar, N panel, bottom info bar, `setStatusRich`). ROS world frame adopted. Grab controls added (G/X/Y/Z, numeric input).

@@ -10,10 +10,7 @@ This project is a **voxel-based modeling application**. All shapes are axis-alig
 
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
-| 🔴 High | Voxel shape model (`VoxelShape`, `computeExposedFaces`, `buildGeometryFromVoxels`) | Medium | ADR-001 |
-| 🔴 High | Method A: Primitive Box (Shift+A → Add Box) | Low | ADR-002 |
 | 🔴 High | Method B: Sketch → Extrude (2D cell paint → 3D voxel) | Medium | ADR-002 |
-| 🔴 High | Orbit control → middle-click | Low | ADR-003 |
 | 🔴 High | Edit Mode adapts to object type (2D/3D dispatch) | Medium | ADR-004 |
 | 🟡 Medium | Object hierarchy + Outliner tree view | Medium | ADR-005 |
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
@@ -71,3 +68,6 @@ OrbitControls already handles 2-finger orbit and pinch-to-zoom natively. The mai
 | Blender-style UI (header bar, N panel, bottom info bar) | 2026-03-19 |
 | Colored status display (`setStatusRich`) | 2026-03-19 |
 | Voxel-based architecture design + ADRs | 2026-03-20 |
+| VoxelModel (`VoxelShape`, `computeExposedFaces`, `buildGeometryFromVoxels`, `extrudeVoxelFace`) | 2026-03-20 |
+| Voxel object system: objects now 2x2x2 voxel boxes, edit mode uses integer-snap extrude | 2026-03-20 |
+| Orbit control migrated to middle-click drag (ADR-003) | 2026-03-20 |

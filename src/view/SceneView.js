@@ -23,8 +23,8 @@ export class SceneView {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = false
-    // Left button is reserved for object/face operations; right button orbits the camera
-    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+    // ADR-003: middle-drag = orbit, right-click = cancel/context (handled by AppController)
+    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: null }
 
     this._setupLighting()
     this._setupGrid()

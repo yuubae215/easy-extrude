@@ -1,25 +1,27 @@
 /**
  * AppController - handles user input and manages the animation loop
  *
- * Connects Model (CuboidModel) with View (SceneView / MeshView / UIView / OutlinerView).
- * Side effects: event listener registration, requestAnimationFrame, Model state updates.
+ * Connects VoxelModel with View (SceneView / MeshView / UIView / OutlinerView).
+ * Side effects: event listener registration, requestAnimationFrame, model state updates.
  */
 import * as THREE from 'three'
 import {
-  FACES,
-  createInitialCorners,
-  computeOutwardFaceNormal,
-  getCentroid,
+  createBoxVoxels,
+  cloneVoxelShape,
+  extrudeVoxelFace,
+  computeExposedFaces,
+  getVoxelCentroid,
+  getVoxelBoundingBox,
+  getVoxelPivotCandidates,
   toNDC,
-  getPivotCandidates,
-} from '../model/CuboidModel.js'
+} from '../model/VoxelModel.js'
 import { MeshView } from '../view/MeshView.js'
 
 export class AppController {
   /**
-   * @param {import('../view/SceneView.js').SceneView}     sceneView
-   * @param {import('../view/UIView.js').UIView}           uiView
-   * @param {import('../view/GizmoView.js').GizmoView}     gizmoView
+   * @param {import('../view/SceneView.js').SceneView}       sceneView
+   * @param {import('../view/UIView.js').UIView}             uiView
+   * @param {import('../view/GizmoView.js').GizmoView}       gizmoView
    * @param {import('../view/OutlinerView.js').OutlinerView} outlinerView
    */
   constructor(sceneView, uiView, gizmoView = null, outlinerView = null) {
@@ -29,7 +31,7 @@ export class AppController {
     this._outlinerView = outlinerView
 
     // ── Multi-object scene state ───────────────────────────────────────────
-    // Each entry: { id, name, corners: THREE.Vector3[], meshView: MeshView }
+    // Each entry: { id, name, description, voxelShape, exposedFaces, meshView }
     this._objects  = new Map()
     this._activeId = null
 
@@ -37,31 +39,30 @@ export class AppController {
     this._selectionMode = 'object'
 
     // ── Object mode state ──────────────────────────────────────────────────
-    this._objSelected           = false
-    this._objDragging           = false
-    this._objCtrlDrag           = false
-    this._objDragPlane          = new THREE.Plane()
-    this._objDragStart          = new THREE.Vector3()
-    this._objDragStartCorners   = []
-    this._objRotateStartX       = 0
-    this._objRotateCentroid     = new THREE.Vector3()
-    this._objRotateStartCorners = []
+    this._objSelected       = false
+    this._objDragging       = false
+    this._objDragPlane      = new THREE.Plane()
+    this._objDragStart      = new THREE.Vector3()
+    this._objDragStartOffset = new THREE.Vector3()
 
     // ── Edit mode (face extrude) state ─────────────────────────────────────
-    this._hoveredFace      = null
-    this._faceDragging     = false
-    this._dragFaceIdx      = null
-    this._dragNormal       = new THREE.Vector3()
-    this._dragPlane        = new THREE.Plane()
-    this._dragStart        = new THREE.Vector3()
-    this._savedFaceCorners = []
+    this._hoveredFace     = null   // index into exposedFaces array
+    this._faceDragging    = false
+    this._dragFaceDir     = { dx: 0, dy: 0, dz: 0 }
+    this._dragNormal      = new THREE.Vector3()
+    this._dragPlane       = new THREE.Plane()
+    this._dragStart       = new THREE.Vector3()
+    this._savedVoxelShape = null   // deep clone at drag start
+    this._savedFaceVerts  = []     // 4 THREE.Vector3 — face verts at drag start
+    this._savedFaceName   = ''
+    this._lastDragSteps   = 0
 
     // ── Blender-style grab state ───────────────────────────────────────────
     this._grab = {
       active:          false,
       axis:            null,
       startMouse:      new THREE.Vector2(),
-      startCorners:    [],
+      startOffset:     new THREE.Vector3(),
       centroid:        new THREE.Vector3(),
       pivot:           new THREE.Vector3(),
       pivotLabel:      'Centroid',
@@ -84,11 +85,11 @@ export class AppController {
     uiView.onModeChange(mode => this.setMode(mode))
 
     if (outlinerView) {
-      outlinerView.onSelect(id  => this._onOutlinerSelect(id))
-      outlinerView.onDelete(id  => this._deleteObject(id))
-      outlinerView.onAdd(()     => this._addObject())
+      outlinerView.onSelect(id      => this._onOutlinerSelect(id))
+      outlinerView.onDelete(id      => this._deleteObject(id))
+      outlinerView.onAdd(()         => this._addObject())
       outlinerView.onVisible((id, v) => this._setObjectVisible(id, v))
-      outlinerView.onRename((id, name) => this._renameObject(id, name))
+      outlinerView.onRename((id, n)  => this._renameObject(id, n))
     }
 
     uiView.onNameChange(name => {
@@ -108,17 +109,14 @@ export class AppController {
 
   // ─── Active-object accessors ──────────────────────────────────────────────
 
-  /** Returns the active object entry, or null if none */
   get _activeObj() {
     return this._activeId ? this._objects.get(this._activeId) ?? null : null
   }
 
-  /** Returns the active object's corners array */
-  get _corners() {
-    return this._activeObj?.corners ?? []
+  get _voxelShape() {
+    return this._activeObj?.voxelShape ?? null
   }
 
-  /** Returns the active object's MeshView */
   get _meshView() {
     return this._activeObj?.meshView ?? null
   }
@@ -134,17 +132,18 @@ export class AppController {
     const id   = `obj_${idx}_${Date.now()}`
     const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
 
-    const corners = createInitialCorners()
-    // Offset new objects so they don't stack exactly on top of each other
+    // Start as a 2x2x2 voxel box centered at origin
+    const voxelShape = createBoxVoxels(2, 2, 2)
     if (idx > 0) {
       const step = idx * 0.5
-      corners.forEach(c => { c.x += step; c.y += step })
+      voxelShape.offset.x += step
+      voxelShape.offset.y += step
     }
 
-    const meshView = new MeshView(this._sceneView.scene)
-    meshView.updateGeometry(corners)
+    const meshView    = new MeshView(this._sceneView.scene)
+    const exposedFaces = meshView.updateGeometryFromVoxelShape(voxelShape)
 
-    this._objects.set(id, { id, name, description: '', corners, meshView })
+    this._objects.set(id, { id, name, description: '', voxelShape, exposedFaces, meshView })
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 
@@ -152,7 +151,7 @@ export class AppController {
   }
 
   _deleteObject(id) {
-    if (this._objects.size <= 1) return   // always keep at least one object
+    if (this._objects.size <= 1) return
 
     const obj = this._objects.get(id)
     if (!obj) return
@@ -168,13 +167,7 @@ export class AppController {
     }
   }
 
-  /**
-   * Switches the active object without toggling selection.
-   * @param {string} id
-   * @param {boolean} select - whether to set _objSelected = true
-   */
   _switchActiveObject(id, select = false) {
-    // Deselect / un-highlight previous
     if (this._activeId && this._activeId !== id) {
       const prev = this._objects.get(this._activeId)
       if (prev) prev.meshView.setObjectSelected(false)
@@ -212,15 +205,26 @@ export class AppController {
     if (id === this._activeId) this._updateNPanel()
   }
 
-  /** Called when user clicks a row in the outliner */
   _onOutlinerSelect(id) {
     if (this._selectionMode === 'edit') this.setMode('object')
     if (id !== this._activeId) {
       this._switchActiveObject(id, true)
     } else {
-      // Clicking the already-active row just re-selects it
       this._setObjectSelected(true)
     }
+  }
+
+  // ─── Geometry rebuild ─────────────────────────────────────────────────────
+
+  /**
+   * Rebuilds mesh geometry from obj.voxelShape, updates exposedFaces and BoxHelper.
+   * @param {{ voxelShape, exposedFaces, meshView }} obj
+   */
+  _rebuildMesh(obj) {
+    if (!obj) return
+    const exposedFaces = obj.meshView.updateGeometryFromVoxelShape(obj.voxelShape)
+    obj.exposedFaces   = exposedFaces
+    obj.meshView.updateBoxHelper()
   }
 
   // ─── Event binding ─────────────────────────────────────────────────────────
@@ -238,7 +242,6 @@ export class AppController {
     this._mouse.copy(v)
   }
 
-  /** Hits any visible object — returns { hit, obj } or null */
   _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const meshes = [...this._objects.values()]
@@ -251,7 +254,6 @@ export class AppController {
     return obj ? { hit: hits[0], obj } : null
   }
 
-  /** Hits only the active object's mesh */
   _hitActiveCuboid() {
     if (!this._activeObj) return null
     this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -259,6 +261,10 @@ export class AppController {
     return hits.length ? hits[0] : null
   }
 
+  /**
+   * Returns { faceIdx, point } where faceIdx indexes into activeObj.exposedFaces,
+   * or null if no hit.
+   */
   _hitFace() {
     const hit = this._hitActiveCuboid()
     if (!hit) return null
@@ -276,14 +282,12 @@ export class AppController {
 
   _updateNPanel() {
     if (!this._uiView.nPanelVisible) return
-    const corners = this._corners
-    if (!corners.length) return
-    const centroid = getCentroid(corners)
-    const bMin = new THREE.Vector3(Infinity, Infinity, Infinity)
-    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
-    corners.forEach(c => { bMin.min(c); bMax.max(c) })
-    const dims = new THREE.Vector3().subVectors(bMax, bMin)
-    const obj = this._activeObj
+    const shape = this._voxelShape
+    if (!shape) return
+    const { min, max } = getVoxelBoundingBox(shape)
+    const centroid = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5)
+    const dims     = new THREE.Vector3().subVectors(max, min)
+    const obj      = this._activeObj
     this._uiView.updateNPanel(centroid, dims, obj?.name ?? '', obj?.description ?? '')
   }
 
@@ -293,13 +297,12 @@ export class AppController {
     this._selectionMode = mode
     if (mode === 'object') {
       if (this._meshView) {
-        this._meshView.setFaceHighlight(null, this._corners)
+        this._meshView.clearFaceHighlight()
         this._meshView.clearExtrusionDisplay()
       }
       this._uiView.clearExtrusionLabel()
       this._hoveredFace  = null
       this._faceDragging = false
-      this._dragFaceIdx  = null
       if (this._objSelected && this._activeObj) {
         this._uiView.setStatusRich([
           { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
@@ -335,6 +338,8 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
+    const shape = this._voxelShape
+    if (!shape) return
 
     this._grab.active          = true
     this._grab.axis            = null
@@ -343,8 +348,8 @@ export class AppController {
     this._grab.pivotSelectMode = false
     this._grab.hoveredPivotIdx = -1
     this._grab.startMouse.copy(this._mouse)
-    this._grab.startCorners = this._corners.map(c => c.clone())
-    this._grab.centroid.copy(getCentroid(this._corners))
+    this._grab.startOffset.copy(shape.offset)
+    this._grab.centroid.copy(getVoxelCentroid(shape))
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.pivotLabel = 'Centroid'
 
@@ -381,12 +386,12 @@ export class AppController {
   _cancelGrab() {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
-    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
-    this._meshView.clearPivotDisplay()
+    const shape = this._voxelShape
+    if (shape) shape.offset.copy(this._grab.startOffset)
+    this._rebuildMesh(this._activeObj)
     this._grab.active = false
     this._grab.axis   = null
+    this._meshView.clearPivotDisplay()
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._uiView.setStatus(this._objSelected ? 'Object selected' : '')
@@ -418,17 +423,15 @@ export class AppController {
     } else {
       this._applyFreeGrab()
     }
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
+    this._rebuildMesh(this._activeObj)
   }
 
   _applyGrabFromInput() {
     this._grab.snapping = false
     const dist    = parseFloat(this._grab.inputStr) || 0
     const axisVec = this._getAxisVec(this._grab.axis)
-    this._grab.startCorners.forEach((c, i) => {
-      this._corners[i].copy(c).addScaledVector(axisVec, dist)
-    })
+    const shape   = this._voxelShape
+    if (shape) shape.offset.copy(this._grab.startOffset).addScaledVector(axisVec, dist)
   }
 
   _applyFreeGrab() {
@@ -441,9 +444,8 @@ export class AppController {
     } else {
       this._grab.snapping = false
     }
-    this._grab.startCorners.forEach((c, i) => {
-      this._corners[i].copy(c).add(delta)
-    })
+    const shape = this._voxelShape
+    if (shape) shape.offset.copy(this._grab.startOffset).add(delta)
   }
 
   _applyAxisConstrainedGrab() {
@@ -464,17 +466,16 @@ export class AppController {
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
 
+    const shape = this._voxelShape
+    if (!shape) return
+
     if (this._ctrlHeld) {
       const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
       const snappedDelta = this._trySnapToOrigin(delta)
-      this._grab.startCorners.forEach((c, i) => {
-        this._corners[i].copy(c).add(snappedDelta)
-      })
+      shape.offset.copy(this._grab.startOffset).add(snappedDelta)
     } else {
       this._grab.snapping = false
-      this._grab.startCorners.forEach((c, i) => {
-        this._corners[i].copy(c).addScaledVector(axisVec, dist)
-      })
+      shape.offset.copy(this._grab.startOffset).addScaledVector(axisVec, dist)
     }
   }
 
@@ -533,12 +534,13 @@ export class AppController {
 
   _startPivotSelect() {
     if (!this._grab.active || this._grab.pivotSelectMode) return
-    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
+    // Restore to startOffset so pivot candidates reflect the unmodified shape bounds
+    const shape = this._voxelShape
+    if (shape) shape.offset.copy(this._grab.startOffset)
+    this._rebuildMesh(this._activeObj)
     this._grab.pivotSelectMode = true
     this._grab.hoveredPivotIdx = -1
-    this._grab.candidates = getPivotCandidates(this._grab.startCorners)
+    this._grab.candidates      = getVoxelPivotCandidates(this._voxelShape)
     this._meshView.showPivotCandidates(this._grab.candidates)
     this._updateGrabStatus()
   }
@@ -628,22 +630,14 @@ export class AppController {
 
     if (this._selectionMode === 'object') {
       if (this._objDragging) {
-        if (this._objCtrlDrag) {
-          const angle = (e.clientX - this._objRotateStartX) * 0.01
-          const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
-          this._objRotateStartCorners.forEach((c, i) => {
-            this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
-          })
-        } else {
-          this._raycaster.setFromCamera(this._mouse, this._camera)
-          const pt = new THREE.Vector3()
-          if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
-            const delta = pt.clone().sub(this._objDragStart)
-            this._objDragStartCorners.forEach((c, i) => this._corners[i].copy(c).add(delta))
-          }
+        this._raycaster.setFromCamera(this._mouse, this._camera)
+        const pt = new THREE.Vector3()
+        if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
+          const delta = pt.clone().sub(this._objDragStart)
+          const shape = this._voxelShape
+          if (shape) shape.offset.copy(this._objDragStartOffset).add(delta)
         }
-        this._meshView.updateGeometry(this._corners)
-        if (this._objSelected) this._meshView.updateBoxHelper()
+        this._rebuildMesh(this._activeObj)
         this._updateNPanel()
       } else {
         this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
@@ -656,21 +650,30 @@ export class AppController {
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
       if (!this._raycaster.ray.intersectPlane(this._dragPlane, pt)) return
-      const dist   = pt.clone().sub(this._dragStart).dot(this._dragNormal)
-      const offset = this._dragNormal.clone().multiplyScalar(dist)
-      FACES[this._dragFaceIdx].corners.forEach((ci, i) => {
-        this._corners[ci].copy(this._savedFaceCorners[i]).add(offset)
-      })
-      this._meshView.updateGeometry(this._corners)
-      this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
+
+      const dist  = pt.clone().sub(this._dragStart).dot(this._dragNormal)
+      const steps = Math.round(dist)
+
+      if (steps !== this._lastDragSteps) {
+        this._lastDragSteps = steps
+        const newShape = extrudeVoxelFace(this._savedVoxelShape, this._dragFaceDir, steps)
+        this._activeObj.voxelShape = newShape
+        const exposedFaces = this._meshView.updateGeometryFromVoxelShape(newShape)
+        this._activeObj.exposedFaces = exposedFaces
+      }
+
+      const currentFaceVerts = this._savedFaceVerts.map(v =>
+        v.clone().addScaledVector(this._dragNormal, this._lastDragSteps))
+      this._meshView.setFaceHighlightFromVerts(currentFaceVerts)
+
       this._uiView.setStatusRich([
         { text: 'Extrude', bold: true, color: '#ffffff' },
-        { text: FACES[this._dragFaceIdx].name, color: '#4fc3f7' },
-        { text: `D: ${dist.toFixed(3)}`, color: '#ffeb3b' },
+        { text: this._savedFaceName, color: '#4fc3f7' },
+        { text: `D: ${dist.toFixed(3)} [${this._lastDragSteps}]`, color: '#ffeb3b' },
       ])
 
-      const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
-      const { spanMid, armDir } = this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
+      const { spanMid, armDir } = this._meshView.setExtrusionDisplay(
+        this._savedFaceVerts, currentFaceVerts)
       const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
       const screen = this._projectToScreen(labelPos)
       this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
@@ -678,18 +681,21 @@ export class AppController {
       return
     }
 
+    // Hover — update face highlight
     const hit = this._hitFace()
     const fi  = hit ? hit.faceIdx : null
     if (fi !== this._hoveredFace) {
       this._hoveredFace = fi
-      this._meshView.setFaceHighlight(fi, this._corners)
-      if (fi !== null) {
+      const faces = this._activeObj?.exposedFaces
+      if (fi !== null && faces?.[fi]) {
+        this._meshView.setFaceHighlightFromVerts(faces[fi].verts)
         this._uiView.setStatusRich([
           { text: 'Face', color: '#888' },
-          { text: FACES[fi].name, color: '#e8e8e8' },
+          { text: faces[fi].name, color: '#e8e8e8' },
           { text: 'Drag to extrude', color: '#555' },
         ])
       } else {
+        this._meshView.clearFaceHighlight()
         this._uiView.setStatus('')
       }
       this._uiView.setCursor(fi !== null ? 'pointer' : 'default')
@@ -715,14 +721,12 @@ export class AppController {
       const result = this._hitAnyObject()
       if (result) {
         const { hit, obj } = result
-        // Switch active object if a different one was clicked
         if (obj.id !== this._activeId) {
           this._switchActiveObject(obj.id, true)
         } else if (!this._objSelected) {
           this._setObjectSelected(true)
         }
-        this._objDragging      = true
-        this._objCtrlDrag      = e.ctrlKey
+        this._objDragging = true
         this._controls.enabled = false
         this._uiView.setCursor('grabbing')
 
@@ -730,13 +734,7 @@ export class AppController {
         this._camera.getWorldDirection(camDir)
         this._objDragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
         this._objDragStart.copy(hit.point)
-        this._objDragStartCorners = this._corners.map(c => c.clone())
-
-        if (e.ctrlKey) {
-          this._objRotateStartX = e.clientX
-          this._objRotateCentroid.copy(getCentroid(this._corners))
-          this._objRotateStartCorners = this._corners.map(c => c.clone())
-        }
+        this._objDragStartOffset.copy(this._voxelShape.offset)
       } else {
         this._setObjectSelected(false)
       }
@@ -746,34 +744,44 @@ export class AppController {
     // ── Edit mode ─────────────────────────────────────────────────────────
     const hit = this._hitFace()
     if (!hit) return
-    this._faceDragging     = true
-    this._dragFaceIdx      = hit.faceIdx
+    const { faceIdx, point } = hit
+    const faces = this._activeObj?.exposedFaces
+    if (!faces?.[faceIdx]) return
+
+    const faceDesc = faces[faceIdx]
+    this._faceDragging    = true
+    this._dragFaceDir     = faceDesc.dir
+    this._dragNormal.set(faceDesc.dir.dx, faceDesc.dir.dy, faceDesc.dir.dz)
+    this._savedVoxelShape = cloneVoxelShape(this._activeObj.voxelShape)
+    this._savedFaceVerts  = faceDesc.verts.map(v => v.clone())
+    this._savedFaceName   = faceDesc.name
+    this._lastDragSteps   = 0
     this._controls.enabled = false
     this._uiView.setCursor('grabbing')
-    this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFaceIdx))
+
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
-    this._dragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
-    this._dragStart.copy(hit.point)
-    this._savedFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci].clone())
+    this._dragPlane.setFromNormalAndCoplanarPoint(camDir, point)
+    this._dragStart.copy(point)
   }
 
   _onMouseUp(e) {
     if (e.button !== 0) return
     if (this._objDragging) {
-      this._objDragging  = false
-      this._objCtrlDrag  = false
+      this._objDragging      = false
       this._controls.enabled = true
       this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
       this._updateNPanel()
     }
     if (this._faceDragging) {
       this._faceDragging = false
-      this._dragFaceIdx  = null
       this._controls.enabled = true
       this._meshView.clearExtrusionDisplay()
       this._uiView.clearExtrusionLabel()
       this._uiView.setCursor('default')
+      // Force hover re-detection on next mouse move
+      this._hoveredFace = null
+      this._meshView.clearFaceHighlight()
       this._updateNPanel()
     }
   }
@@ -849,18 +857,15 @@ export class AppController {
     if (e.key === 'e' || e.key === 'E') { this.setMode('edit');   return }
 
     if (this._selectionMode === 'object') {
-      // G: grab
       if ((e.key === 'g' || e.key === 'G') && this._objSelected) {
         this._startGrab()
         return
       }
-      // Shift+A: add new object
       if (e.key === 'A' && e.shiftKey) {
         e.preventDefault()
         this._addObject()
         return
       }
-      // X / Delete: delete active object
       if ((e.key === 'x' || e.key === 'X' || e.key === 'Delete') && this._objSelected) {
         this._deleteObject(this._activeId)
         return
