@@ -11,17 +11,13 @@
 import * as THREE from 'three'
 import {
   FACES,
-  createInitialCorners,
   buildCuboidFromRect,
   computeOutwardFaceNormal,
   getCentroid,
   toNDC,
   getPivotCandidates,
 } from '../model/CuboidModel.js'
-import { SceneModel } from '../model/SceneModel.js'
-import { MeshView } from '../view/MeshView.js'
-import { Cuboid } from '../domain/Cuboid.js'
-import { Sketch } from '../domain/Sketch.js'
+import { SceneService } from '../service/SceneService.js'
 
 export class AppController {
   /**
@@ -36,8 +32,8 @@ export class AppController {
     this._gizmoView    = gizmoView
     this._outlinerView = outlinerView
 
-    // ── Domain state (SceneModel owns objects, activeId, mode) ────────────
-    this._scene = new SceneModel()
+    // ── Application service (owns SceneModel aggregate root) ─────────────
+    this._service = new SceneService(sceneView.scene)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     this._sketch = {
@@ -126,6 +122,11 @@ export class AppController {
     this.setMode('object')
   }
 
+  // ─── Domain state shorthand ───────────────────────────────────────────────
+
+  /** Shorthand to access SceneModel through the ApplicationService. */
+  get _scene() { return this._service.scene }
+
   // ─── Active-object accessors ──────────────────────────────────────────────
 
   /** Returns the active object entry, or null if none */
@@ -159,43 +160,22 @@ export class AppController {
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
-    const idx  = this._scene.objects.size
-    const id   = `obj_${idx}_${Date.now()}`
-    const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
+    const obj = this._service.createCuboid()
 
-    const corners = createInitialCorners()
-    // Offset new objects so they don't stack exactly on top of each other
-    if (idx > 0) {
-      const step = idx * 0.5
-      corners.forEach(c => { c.x += step; c.y += step })
-    }
+    if (this._outlinerView) this._outlinerView.addObject(obj.id, obj.name)
 
-    const meshView = new MeshView(this._sceneView.scene)
-    meshView.updateGeometry(corners)
-
-    this._scene.addObject(new Cuboid(id, name, corners, meshView))
-
-    if (this._outlinerView) this._outlinerView.addObject(id, name)
-
-    this._switchActiveObject(id, true)
+    this._switchActiveObject(obj.id, true)
   }
 
   _addSketchObject() {
     // Exit current mode cleanly before switching active object
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
-    const idx  = this._scene.objects.size
-    const id   = `obj_${idx}_${Date.now()}`
-    const name = `Sketch.${String(idx).padStart(3, '0')}`
+    const obj = this._service.createSketch()
 
-    const meshView = new MeshView(this._sceneView.scene)
-    meshView.setVisible(false)  // no geometry yet
+    if (this._outlinerView) this._outlinerView.addObject(obj.id, obj.name)
 
-    this._scene.addObject(new Sketch(id, name, meshView))
-
-    if (this._outlinerView) this._outlinerView.addObject(id, name)
-
-    this._switchActiveObject(id, true)
+    this._switchActiveObject(obj.id, true)
     this.setMode('edit')  // enters Edit Mode · 2D
   }
 
@@ -208,17 +188,19 @@ export class AppController {
       this.setMode('object')
     }
 
-    const obj = this._scene.getObject(id)
-    if (!obj) return
+    if (!this._scene.getObject(id)) return
 
-    obj.meshView.dispose(this._sceneView.scene)
-    this._scene.removeObject(id)
+    const wasActive = this._scene.activeId === id
+    const nextId = wasActive
+      ? [...this._scene.objects.keys()].find(k => k !== id)
+      : null
+
+    this._service.deleteObject(id)
 
     if (this._outlinerView) this._outlinerView.removeObject(id)
 
-    if (this._scene.activeId === id) {
-      const ids = [...this._scene.objects.keys()]
-      this._switchActiveObject(ids[ids.length - 1], true)
+    if (wasActive && nextId) {
+      this._switchActiveObject(nextId, true)
     }
   }
 
@@ -253,15 +235,11 @@ export class AppController {
   }
 
   _setObjectVisible(id, visible) {
-    const obj = this._scene.getObject(id)
-    if (!obj) return
-    obj.meshView.setVisible(visible)
+    this._service.setObjectVisible(id, visible)
   }
 
   _renameObject(id, name) {
-    const obj = this._scene.getObject(id)
-    if (!obj || !name) return
-    obj.rename(name)
+    this._service.renameObject(id, name)
     if (this._outlinerView) this._outlinerView.setObjectName(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
   }
