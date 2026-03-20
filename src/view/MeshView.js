@@ -61,6 +61,23 @@ export class MeshView {
     )
     this._hoveredPivotPoints.visible = false
     scene.add(this._hoveredPivotPoints)
+
+    // Sketch rect preview (ground-plane rectangle outline + fill)
+    this._sketchRectGeo = new THREE.BufferGeometry()
+    this._sketchRectLines = new THREE.LineLoop(
+      this._sketchRectGeo,
+      new THREE.LineBasicMaterial({ color: 0x4fc3f7, depthTest: false }),
+    )
+    this._sketchRectLines.visible = false
+    scene.add(this._sketchRectLines)
+
+    this._sketchFillGeo = new THREE.BufferGeometry()
+    this._sketchFill = new THREE.Mesh(
+      this._sketchFillGeo,
+      new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false }),
+    )
+    this._sketchFill.visible = false
+    scene.add(this._sketchFill)
   }
 
   /** Rebuilds geometry from the corner array and applies it to the mesh */
@@ -216,6 +233,36 @@ export class MeshView {
   }
 
   /**
+   * Shows a sketch rectangle preview on the XY ground plane.
+   * @param {THREE.Vector3} p1 - first corner (XY)
+   * @param {THREE.Vector3} p2 - opposite corner (XY)
+   * @param {number} [z=0.001] - Z offset above ground to avoid z-fighting
+   */
+  showSketchRect(p1, p2, z = 0.001) {
+    const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x)
+    const minY = Math.min(p1.y, p2.y), maxY = Math.max(p1.y, p2.y)
+    const positions = new Float32Array([
+      minX, minY, z,
+      maxX, minY, z,
+      maxX, maxY, z,
+      minX, maxY, z,
+    ])
+    this._sketchRectGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    this._sketchRectGeo.attributes.position.needsUpdate = true
+    this._sketchRectLines.visible = true
+    this._sketchFillGeo.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3))
+    this._sketchFillGeo.setIndex([0, 1, 2, 0, 2, 3])
+    this._sketchFillGeo.attributes.position.needsUpdate = true
+    this._sketchFill.visible = true
+  }
+
+  /** Hides the sketch rect preview */
+  clearSketchRect() {
+    this._sketchRectLines.visible = false
+    this._sketchFill.visible = false
+  }
+
+  /**
    * Removes all Three.js objects from the scene and disposes geometries.
    * @param {THREE.Scene} scene
    */
@@ -227,12 +274,16 @@ export class MeshView {
     scene.remove(this._extrusionLines)
     scene.remove(this._pivotPoints)
     scene.remove(this._hoveredPivotPoints)
+    scene.remove(this._sketchRectLines)
+    scene.remove(this._sketchFill)
     this.cuboid.geometry.dispose()
     this.wireframe.geometry.dispose()
     this._hlGeo.dispose()
     this._extrusionLinesGeo.dispose()
     this._pivotPointsGeo.dispose()
     this._hoveredPivotGeo.dispose()
+    this._sketchRectGeo.dispose()
+    this._sketchFillGeo.dispose()
   }
 
   /**

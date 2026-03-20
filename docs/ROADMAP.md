@@ -10,8 +10,8 @@ This project is a **cuboid-based modeling application**. Each shape is a deforma
 
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
-| 🔴 High | Method B: Sketch → Extrude (2D rect → Cuboid) | Medium | ADR-002 |
-| 🔴 High | Edit Mode adapts to object type (2D/3D dispatch) | Medium | ADR-004 |
+| ~~🔴 High~~ | ~~Method B: Sketch → Extrude (2D rect → Cuboid)~~ | ~~Medium~~ | ADR-002 (done 2026-03-20) |
+| ~~🔴 High~~ | ~~Edit Mode adapts to object type (2D/3D dispatch)~~ | ~~Medium~~ | ADR-004 (done 2026-03-20) |
 | 🟡 Medium | Object hierarchy + Outliner tree view | Medium | ADR-005 |
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
@@ -61,6 +61,7 @@ OrbitControls already handles 2-finger orbit and pinch-to-zoom natively. The mai
 
 | Item | Date |
 |------|------|
+| Method B: Sketch → Extrude (ADR-002) + Edit Mode 2D/3D dispatch (ADR-004) | 2026-03-20 |
 | Custom BufferGeometry cuboid + Face Extrude | 2026-03-17 |
 | MVC refactor (Model / View / Controller separation) | 2026-03-17 |
 | Blender-style Grab controls (G/X/Y/Z, numeric input) | 2026-03-18 |

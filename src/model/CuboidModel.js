@@ -124,6 +124,31 @@ export function toNDC(clientX, clientY, width, height) {
 }
 
 /**
+ * Pure function that builds a corners[8] array from a 2D rect + height.
+ * p1, p2 are XY positions (z ignored). height is in world Z units.
+ * The resulting cuboid sits on Z=0 (or below if height is negative).
+ * @param {THREE.Vector3} p1
+ * @param {THREE.Vector3} p2
+ * @param {number} height
+ * @returns {THREE.Vector3[]}
+ */
+export function buildCuboidFromRect(p1, p2, height) {
+  const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x)
+  const minY = Math.min(p1.y, p2.y), maxY = Math.max(p1.y, p2.y)
+  const zMin = Math.min(0, height), zMax = Math.max(0, height)
+  return [
+    new THREE.Vector3(minX, minY, zMin), // 0 back-right-bottom
+    new THREE.Vector3(maxX, minY, zMin), // 1 front-right-bottom
+    new THREE.Vector3(maxX, maxY, zMin), // 2 front-left-bottom
+    new THREE.Vector3(minX, maxY, zMin), // 3 back-left-bottom
+    new THREE.Vector3(minX, minY, zMax), // 4 back-right-top
+    new THREE.Vector3(maxX, minY, zMax), // 5 front-right-top
+    new THREE.Vector3(maxX, maxY, zMax), // 6 front-left-top
+    new THREE.Vector3(minX, maxY, zMax), // 7 back-left-top
+  ]
+}
+
+/**
  * Pure function that returns all pivot point candidates.
  * Includes the 8 corners, 6 face centers, and the world origin.
  * @param {THREE.Vector3[]} corners

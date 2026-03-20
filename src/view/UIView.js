@@ -216,41 +216,63 @@ export class UIView {
     })
   }
 
-  /** Updates mode button label, dropdown active state, and info bar */
-  updateMode(mode) {
-    const labels = { object: 'Object Mode', edit: 'Edit Mode' }
-    this._modeLabelEl.textContent = labels[mode] || mode
+  /**
+   * Updates mode button label, dropdown active state, and info bar.
+   * @param {'object'|'edit'} mode
+   * @param {'2d'|'3d'|null} [subtype]
+   */
+  updateMode(mode, subtype = null) {
+    let label = { object: 'Object Mode', edit: 'Edit Mode' }[mode] || mode
+    if (mode === 'edit' && subtype) label += ` \u00b7 ${subtype.toUpperCase()}`
+    this._modeLabelEl.textContent = label
 
     // Highlight active item in dropdown
     this._dropdownItems.forEach(item => {
       item.style.color = item.dataset.mode === mode ? '#4fc3f7' : '#e8e8e8'
     })
 
-    this._setInfoText(mode)
+    this._setInfoText(mode, subtype)
   }
 
-  _setInfoText(mode) {
+  _setInfoText(mode, subtype = null) {
     this._infoEl.innerHTML = ''
 
-    const shortcuts = mode === 'object'
-      ? [
-          ['Tab', 'Edit Mode'],
-          ['Click', 'Select'],
-          ['Drag', 'Move'],
-          ['Ctrl+Drag', 'Rotate'],
-          ['G', 'Grab'],
-          ['G > X/Y/Z', 'Axis constraint'],
-          ['G > V', 'Set pivot'],
-          ['Shift+A', 'Add object'],
-          ['X', 'Delete'],
-          ['N', 'Properties'],
-        ]
-      : [
-          ['Tab', 'Object Mode'],
-          ['Hover', 'Highlight face'],
-          ['Drag', 'Extrude'],
-          ['N', 'Properties'],
-        ]
+    let shortcuts
+    if (mode === 'object') {
+      shortcuts = [
+        ['Tab', 'Edit Mode'],
+        ['Click', 'Select'],
+        ['Drag', 'Move'],
+        ['Ctrl+Drag', 'Rotate'],
+        ['G', 'Grab'],
+        ['G > X/Y/Z', 'Axis constraint'],
+        ['G > V', 'Set pivot'],
+        ['Shift+A', 'Add'],
+        ['X', 'Delete'],
+        ['N', 'Properties'],
+      ]
+    } else if (subtype === '2d') {
+      shortcuts = [
+        ['Tab', 'Object Mode'],
+        ['Drag', 'Draw rectangle'],
+        ['Enter', 'Extrude'],
+        ['Esc', 'Cancel'],
+      ]
+    } else if (subtype === '2d-extrude') {
+      shortcuts = [
+        ['Drag', 'Set height'],
+        ['0-9', 'Type height'],
+        ['Enter', 'Confirm'],
+        ['Esc', 'Back to sketch'],
+      ]
+    } else {
+      shortcuts = [
+        ['Tab', 'Object Mode'],
+        ['Hover', 'Highlight face'],
+        ['Drag', 'Extrude'],
+        ['N', 'Properties'],
+      ]
+    }
 
     shortcuts.forEach(([key, desc], i) => {
       if (i > 0) {
@@ -276,6 +298,94 @@ export class UIView {
       this._infoEl.appendChild(keyEl)
       this._infoEl.appendChild(descEl)
     })
+  }
+
+  /**
+   * Shows an Add menu popup at screen position (x, y).
+   * @param {number} x - screen X
+   * @param {number} y - screen Y
+   * @param {() => void} onBox
+   * @param {() => void} onSketch
+   */
+  showAddMenu(x, y, onBox, onSketch) {
+    this.hideAddMenu()
+    const menu = document.createElement('div')
+    Object.assign(menu.style, {
+      position: 'fixed',
+      left: `${x}px`,
+      top: `${y}px`,
+      background: '#2b2b2b',
+      border: '1px solid #555',
+      borderRadius: '4px',
+      zIndex: '300',
+      minWidth: '120px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      overflow: 'hidden',
+    })
+    const title = document.createElement('div')
+    Object.assign(title.style, {
+      padding: '5px 10px 4px',
+      fontSize: '11px',
+      color: '#888',
+      borderBottom: '1px solid #444',
+      fontFamily: 'sans-serif',
+      letterSpacing: '0.04em',
+      textTransform: 'uppercase',
+    })
+    title.textContent = 'Add'
+    menu.appendChild(title)
+
+    const items = [
+      { label: 'Box', hint: 'Shift+A', cb: onBox },
+      { label: 'Sketch', hint: '', cb: onSketch },
+    ]
+    items.forEach(({ label, hint, cb }) => {
+      const item = document.createElement('div')
+      Object.assign(item.style, {
+        padding: '7px 12px',
+        color: '#e8e8e8',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontFamily: 'sans-serif',
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: '16px',
+      })
+      const labelEl = document.createElement('span')
+      labelEl.textContent = label
+      item.appendChild(labelEl)
+      if (hint) {
+        const hintEl = document.createElement('span')
+        hintEl.textContent = hint
+        Object.assign(hintEl.style, { color: '#888', fontSize: '11px' })
+        item.appendChild(hintEl)
+      }
+      item.addEventListener('mouseenter', () => { item.style.background = '#4a4a4a' })
+      item.addEventListener('mouseleave', () => { item.style.background = 'transparent' })
+      item.addEventListener('click', () => { this.hideAddMenu(); cb() })
+      menu.appendChild(item)
+    })
+
+    document.body.appendChild(menu)
+    this._addMenuEl = menu
+
+    // Close on outside click
+    this._addMenuCloseHandler = (e) => {
+      if (!menu.contains(e.target)) this.hideAddMenu()
+    }
+    setTimeout(() => document.addEventListener('click', this._addMenuCloseHandler), 0)
+  }
+
+  /** Removes the Add menu if visible */
+  hideAddMenu() {
+    if (this._addMenuEl) {
+      this._addMenuEl.remove()
+      this._addMenuEl = null
+    }
+    if (this._addMenuCloseHandler) {
+      document.removeEventListener('click', this._addMenuCloseHandler)
+      this._addMenuCloseHandler = null
+    }
   }
 
   /**

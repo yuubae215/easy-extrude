@@ -8,6 +8,7 @@ import * as THREE from 'three'
 import {
   FACES,
   createInitialCorners,
+  buildCuboidFromRect,
   computeOutwardFaceNormal,
   getCentroid,
   toNDC,
@@ -35,6 +36,26 @@ export class AppController {
 
     // ── Selection mode: 'object' | 'edit' ─────────────────────────────────
     this._selectionMode = 'object'
+
+    // ── Edit substate: null | '3d' | '2d-sketch' | '2d-extrude' ──────────
+    this._editSubstate = null
+
+    // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
+    this._sketch = {
+      drawing: false,
+      p1: null,  // THREE.Vector3 ground-plane point
+      p2: null,  // THREE.Vector3 ground-plane point
+    }
+    this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
+
+    // ── Sketch-to-cuboid extrude state ─────────────────────────────────────
+    this._extrudePhase = {
+      dragPlane:  new THREE.Plane(),
+      startPoint: new THREE.Vector3(),
+      height:     0,
+      inputStr:   '',
+      hasInput:   false,
+    }
 
     // ── Object mode state ──────────────────────────────────────────────────
     this._objSelected           = false
@@ -129,7 +150,13 @@ export class AppController {
 
   // ─── Object management ────────────────────────────────────────────────────
 
-  _addObject() {
+  /**
+   * Adds a new object of the given type.
+   * @param {'box'|'sketch'} [type='box']
+   */
+  _addObject(type = 'box') {
+    if (type === 'sketch') { this._addSketchObject(); return }
+
     const idx  = this._objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
@@ -144,11 +171,27 @@ export class AppController {
     const meshView = new MeshView(this._sceneView.scene)
     meshView.updateGeometry(corners)
 
-    this._objects.set(id, { id, name, description: '', corners, meshView })
+    this._objects.set(id, { id, name, description: '', corners, dimension: 3, meshView })
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 
     this._switchActiveObject(id, true)
+  }
+
+  _addSketchObject() {
+    const idx  = this._objects.size
+    const id   = `obj_${idx}_${Date.now()}`
+    const name = `Sketch.${String(idx).padStart(3, '0')}`
+
+    const meshView = new MeshView(this._sceneView.scene)
+    meshView.setVisible(false)  // no geometry yet
+
+    this._objects.set(id, { id, name, description: '', corners: [], dimension: 2, sketchRect: null, meshView })
+
+    if (this._outlinerView) this._outlinerView.addObject(id, name)
+
+    this._switchActiveObject(id, true)
+    this.setMode('edit')  // enters Edit Mode · 2D
   }
 
   _deleteObject(id) {
@@ -276,6 +319,17 @@ export class AppController {
 
   _updateNPanel() {
     if (!this._uiView.nPanelVisible) return
+    const obj = this._activeObj
+    if (!obj) return
+
+    if (obj.dimension === 2 && obj.sketchRect) {
+      const { p1, p2 } = obj.sketchRect
+      const centroid = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
+      const dims = new THREE.Vector3(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y), 0)
+      this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '')
+      return
+    }
+
     const corners = this._corners
     if (!corners.length) return
     const centroid = getCentroid(corners)
@@ -283,18 +337,19 @@ export class AppController {
     const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
     corners.forEach(c => { bMin.min(c); bMax.max(c) })
     const dims = new THREE.Vector3().subVectors(bMax, bMin)
-    const obj = this._activeObj
-    this._uiView.updateNPanel(centroid, dims, obj?.name ?? '', obj?.description ?? '')
+    this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '')
   }
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
     if (this._grab.active) this._cancelGrab()
+    this._cleanupEditSubstate()
     this._selectionMode = mode
     if (mode === 'object') {
       if (this._meshView) {
         this._meshView.setFaceHighlight(null, this._corners)
         this._meshView.clearExtrusionDisplay()
+        this._meshView.clearSketchRect()
       }
       this._uiView.clearExtrusionLabel()
       this._hoveredFace  = null
@@ -308,14 +363,158 @@ export class AppController {
       } else {
         this._uiView.setStatus('')
       }
+      this._uiView.updateMode('object')
     } else {
-      // edit mode
+      // edit mode — dispatch on dimension
       this._setObjectSelected(false)
       this._objDragging = false
-      this._uiView.setStatus('')
+      const dim = this._activeObj?.dimension ?? 3
+      if (dim === 2) {
+        this._enterEditMode2D()
+      } else {
+        this._enterEditMode3D()
+      }
     }
     this._controls.enabled = true
-    this._uiView.updateMode(mode)
+  }
+
+  _cleanupEditSubstate() {
+    this._editSubstate = null
+    this._sketch.drawing = false
+    this._sketch.p1 = null
+    this._sketch.p2 = null
+    this._extrudePhase.hasInput = false
+    this._extrudePhase.inputStr = ''
+    this._extrudePhase.height = 0
+  }
+
+  _enterEditMode2D() {
+    this._editSubstate = '2d-sketch'
+    this._uiView.setStatus('')
+    this._uiView.updateMode('edit', '2d')
+    // Restore existing sketch rect if any
+    const obj = this._activeObj
+    if (obj?.sketchRect) {
+      this._sketch.p1 = obj.sketchRect.p1.clone()
+      this._sketch.p2 = obj.sketchRect.p2.clone()
+      this._meshView.showSketchRect(this._sketch.p1, this._sketch.p2)
+      this._uiView.setStatusRich([
+        { text: 'Sketch', bold: true, color: '#4fc3f7' },
+        { text: 'Drag to redraw · Enter to extrude', color: '#888' },
+      ])
+    } else {
+      this._uiView.setStatusRich([
+        { text: 'Sketch', bold: true, color: '#4fc3f7' },
+        { text: 'Click and drag to draw rectangle', color: '#888' },
+      ])
+    }
+  }
+
+  _enterEditMode3D() {
+    this._editSubstate = '3d'
+    this._uiView.setStatus('')
+    this._uiView.updateMode('edit', '3d')
+  }
+
+  _enterExtrudePhase() {
+    if (!this._sketch.p1 || !this._sketch.p2) return
+    this._editSubstate = '2d-extrude'
+    this._extrudePhase.height = 1
+    this._extrudePhase.inputStr = ''
+    this._extrudePhase.hasInput = false
+
+    // Drag plane at sketch center, with horizontal normal (allows Z variation on mouse move)
+    const p1 = this._sketch.p1, p2 = this._sketch.p2
+    const sketchCenter = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
+    camDir.z = 0
+    if (camDir.lengthSq() < 0.001) camDir.set(1, 0, 0)
+    camDir.normalize()
+    this._extrudePhase.dragPlane.setFromNormalAndCoplanarPoint(camDir, sketchCenter)
+
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const pt = new THREE.Vector3()
+    if (this._raycaster.ray.intersectPlane(this._extrudePhase.dragPlane, pt)) {
+      this._extrudePhase.startPoint.copy(pt)
+    } else {
+      this._extrudePhase.startPoint.copy(sketchCenter)
+    }
+
+    // Show cuboid mesh for preview
+    if (this._meshView) this._meshView.setVisible(true)
+    this._applyExtrudePreview()
+    this._uiView.updateMode('edit', '2d-extrude')
+    this._updateExtrudePhaseStatus()
+  }
+
+  _applyExtrudePreview() {
+    const height = this._extrudePhase.hasInput
+      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      : this._extrudePhase.height
+    const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
+    this._meshView.updateGeometry(corners)
+    this._meshView.showSketchRect(this._sketch.p1, this._sketch.p2)
+
+    // Show extrusion label
+    const labelPos = new THREE.Vector3(
+      (this._sketch.p1.x + this._sketch.p2.x) / 2,
+      (this._sketch.p1.y + this._sketch.p2.y) / 2,
+      height / 2,
+    )
+    const screen = this._projectToScreen(labelPos)
+    this._uiView.setExtrusionLabel(`H ${Math.abs(height).toFixed(3)}`, screen.x, screen.y)
+  }
+
+  _confirmExtrudePhase() {
+    const height = this._extrudePhase.hasInput
+      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      : this._extrudePhase.height
+    if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
+
+    const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
+    const obj = this._activeObj
+    obj.corners = corners
+    obj.dimension = 3
+    obj.sketchRect = { p1: this._sketch.p1.clone(), p2: this._sketch.p2.clone() }
+
+    this._meshView.updateGeometry(corners)
+    this._meshView.setVisible(true)
+    this._meshView.clearSketchRect()
+    this._uiView.clearExtrusionLabel()
+
+    this._uiView.setStatusRich([
+      { text: 'Extruded', color: '#6ab04c' },
+      { text: 'Edit Mode · 3D', bold: true, color: '#e8e8e8' },
+    ])
+    this._cleanupEditSubstate()
+    this._enterEditMode3D()
+  }
+
+  _cancelExtrudePhase() {
+    // Return to sketch phase
+    this._uiView.clearExtrusionLabel()
+    if (this._meshView) {
+      this._meshView.setVisible(false)
+      this._meshView.clearSketchRect()
+    }
+    this._extrudePhase.hasInput = false
+    this._extrudePhase.inputStr = ''
+    this._extrudePhase.height = 0
+    this._enterEditMode2D()
+  }
+
+  _updateExtrudePhaseStatus() {
+    const height = this._extrudePhase.hasInput
+      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      : this._extrudePhase.height
+    const parts = [{ text: 'Extrude', bold: true, color: '#ffffff' }]
+    if (this._extrudePhase.hasInput) {
+      parts.push({ text: this._extrudePhase.inputStr + '_', color: '#ffeb3b' })
+    } else {
+      parts.push({ text: `H: ${height.toFixed(3)}`, color: '#ffeb3b' })
+    }
+    this._uiView.setStatusRich(parts)
   }
 
   _setObjectSelected(sel) {
@@ -651,7 +850,34 @@ export class AppController {
       return
     }
 
-    // ── Edit mode ─────────────────────────────────────────────────────────
+    // ── Edit mode · 2D sketch ─────────────────────────────────────────────
+    if (this._editSubstate === '2d-sketch') {
+      if (this._sketch.drawing) {
+        const pt = new THREE.Vector3()
+        this._raycaster.setFromCamera(this._mouse, this._camera)
+        if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) {
+          this._sketch.p2 = pt.clone()
+          this._meshView.showSketchRect(this._sketch.p1, this._sketch.p2)
+        }
+      }
+      return
+    }
+
+    // ── Edit mode · 2D extrude ────────────────────────────────────────────
+    if (this._editSubstate === '2d-extrude') {
+      if (!this._extrudePhase.hasInput) {
+        const pt = new THREE.Vector3()
+        this._raycaster.setFromCamera(this._mouse, this._camera)
+        if (this._raycaster.ray.intersectPlane(this._extrudePhase.dragPlane, pt)) {
+          this._extrudePhase.height = pt.z - this._extrudePhase.startPoint.z
+        }
+      }
+      this._applyExtrudePreview()
+      this._updateExtrudePhaseStatus()
+      return
+    }
+
+    // ── Edit mode · 3D face extrude ───────────────────────────────────────
     if (this._faceDragging) {
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
@@ -711,6 +937,19 @@ export class AppController {
     if (e.button !== 0) return
     this._updateMouse(e)
 
+    // ── Sketch drawing ────────────────────────────────────────────────────
+    if (this._editSubstate === '2d-sketch') {
+      const pt = new THREE.Vector3()
+      this._raycaster.setFromCamera(this._mouse, this._camera)
+      if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) {
+        this._sketch.drawing = true
+        this._sketch.p1 = pt.clone()
+        this._sketch.p2 = pt.clone()
+        this._controls.enabled = false
+      }
+      return
+    }
+
     if (this._selectionMode === 'object') {
       const result = this._hitAnyObject()
       if (result) {
@@ -760,6 +999,26 @@ export class AppController {
 
   _onMouseUp(e) {
     if (e.button !== 0) return
+    if (this._sketch.drawing) {
+      this._sketch.drawing = false
+      this._controls.enabled = true
+      // Save rect to object
+      if (this._sketch.p1 && this._sketch.p2) {
+        const obj = this._activeObj
+        if (obj) {
+          const dx = Math.abs(this._sketch.p2.x - this._sketch.p1.x)
+          const dy = Math.abs(this._sketch.p2.y - this._sketch.p1.y)
+          if (dx > 0.01 || dy > 0.01) {
+            obj.sketchRect = { p1: this._sketch.p1.clone(), p2: this._sketch.p2.clone() }
+            this._uiView.setStatusRich([
+              { text: 'Sketch', bold: true, color: '#4fc3f7' },
+              { text: 'Press Enter to extrude · Drag to redraw', color: '#888' },
+            ])
+          }
+        }
+      }
+      return
+    }
     if (this._objDragging) {
       this._objDragging  = false
       this._objCtrlDrag  = false
@@ -831,6 +1090,48 @@ export class AppController {
       return
     }
 
+    // ── Sketch phase keys ──────────────────────────────────────────────────
+    if (this._editSubstate === '2d-sketch') {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (this._sketch.p1 && this._sketch.p2) {
+          const dx = Math.abs(this._sketch.p2.x - this._sketch.p1.x)
+          const dy = Math.abs(this._sketch.p2.y - this._sketch.p1.y)
+          if (dx > 0.01 || dy > 0.01) this._enterExtrudePhase()
+        }
+        return
+      }
+      if (e.key === 'Escape') { this.setMode('object'); return }
+      return
+    }
+
+    // ── Extrude-from-sketch phase keys ─────────────────────────────────────
+    if (this._editSubstate === '2d-extrude') {
+      if (e.key === 'Enter') { e.preventDefault(); this._confirmExtrudePhase(); return }
+      if (e.key === 'Escape') { this._cancelExtrudePhase(); return }
+      if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
+        this._extrudePhase.inputStr += e.key
+        this._extrudePhase.hasInput = true
+        this._applyExtrudePreview()
+        this._updateExtrudePhaseStatus()
+        return
+      }
+      if (e.key === '-' && this._extrudePhase.inputStr.length === 0) {
+        this._extrudePhase.inputStr = '-'
+        this._extrudePhase.hasInput = true
+        this._updateExtrudePhaseStatus()
+        return
+      }
+      if (e.key === 'Backspace') {
+        this._extrudePhase.inputStr = this._extrudePhase.inputStr.slice(0, -1)
+        this._extrudePhase.hasInput = this._extrudePhase.inputStr.length > 0 && this._extrudePhase.inputStr !== '-'
+        this._applyExtrudePreview()
+        this._updateExtrudePhaseStatus()
+        return
+      }
+      return
+    }
+
     // ── Normal keys ────────────────────────────────────────────────────────
     if (e.key === 'Tab') {
       e.preventDefault()
@@ -854,10 +1155,15 @@ export class AppController {
         this._startGrab()
         return
       }
-      // Shift+A: add new object
+      // Shift+A: show Add menu
       if (e.key === 'A' && e.shiftKey) {
         e.preventDefault()
-        this._addObject()
+        const screenX = (this._mouse.x + 1) / 2 * innerWidth
+        const screenY = (-this._mouse.y + 1) / 2 * innerHeight
+        this._uiView.showAddMenu(screenX, screenY,
+          () => this._addObject('box'),
+          () => this._addObject('sketch'),
+        )
         return
       }
       // X / Delete: delete active object
