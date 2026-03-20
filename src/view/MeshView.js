@@ -62,6 +62,35 @@ export class MeshView {
     this._hoveredPivotPoints.visible = false
     scene.add(this._hoveredPivotPoints)
 
+    // ── Modern snap indicators ─────────────────────────────────────────────
+
+    // All snap candidates — small type-colored dots (vertexColors)
+    this._snapCandidatesGeo = new THREE.BufferGeometry()
+    this._snapCandidates = new THREE.Points(
+      this._snapCandidatesGeo,
+      new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, depthTest: false, vertexColors: true, transparent: true, opacity: 0.55 }),
+    )
+    this._snapCandidates.visible = false
+    scene.add(this._snapCandidates)
+
+    // Locked snap target — large bright type-colored dot
+    this._snapLockedGeo = new THREE.BufferGeometry()
+    this._snapLocked = new THREE.Points(
+      this._snapLockedGeo,
+      new THREE.PointsMaterial({ size: 16, sizeAttenuation: false, depthTest: false, vertexColors: true }),
+    )
+    this._snapLocked.visible = false
+    scene.add(this._snapLocked)
+
+    // Snap guide line — pivot → locked target
+    this._snapLineGeo = new THREE.BufferGeometry()
+    this._snapLine = new THREE.Line(
+      this._snapLineGeo,
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthTest: false }),
+    )
+    this._snapLine.visible = false
+    scene.add(this._snapLine)
+
     // Sketch rect preview (ground-plane rectangle outline + fill)
     this._sketchRectGeo = new THREE.BufferGeometry()
     this._sketchRectLines = new THREE.LineLoop(
@@ -245,6 +274,76 @@ export class MeshView {
   clearPivotDisplay() {
     this._pivotPoints.visible = false
     this._hoveredPivotPoints.visible = false
+  }
+
+  // ── Modern snap display ──────────────────────────────────────────────────
+
+  /** Color per snap target type */
+  static _SNAP_COLOR = {
+    vertex: new THREE.Color(0x69f0ae),
+    edge:   new THREE.Color(0xffd740),
+    face:   new THREE.Color(0x4fc3f7),
+    origin: new THREE.Color(0xe040fb),
+  }
+
+  /**
+   * Shows all snap candidates as small type-colored dots.
+   * @param {{ position: THREE.Vector3, type: string }[]} targets
+   */
+  showSnapCandidates(targets) {
+    if (!targets.length) { this._snapCandidates.visible = false; return }
+    const positions = new Float32Array(targets.length * 3)
+    const colors    = new Float32Array(targets.length * 3)
+    targets.forEach((t, i) => {
+      positions[i * 3]     = t.position.x
+      positions[i * 3 + 1] = t.position.y
+      positions[i * 3 + 2] = t.position.z
+      const c = MeshView._SNAP_COLOR[t.type] ?? MeshView._SNAP_COLOR.vertex
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    })
+    this._snapCandidatesGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    this._snapCandidatesGeo.setAttribute('color',    new THREE.BufferAttribute(colors,    3))
+    this._snapCandidatesGeo.attributes.position.needsUpdate = true
+    this._snapCandidates.visible = true
+  }
+
+  /**
+   * Shows the locked snap indicator (large dot + guide line from pivot).
+   * @param {THREE.Vector3} position - snap target position
+   * @param {string}        type     - 'vertex'|'edge'|'face'|'origin'
+   * @param {THREE.Vector3} pivot    - grab pivot (guide line start)
+   */
+  showSnapLocked(position, type, pivot) {
+    const c = MeshView._SNAP_COLOR[type] ?? MeshView._SNAP_COLOR.vertex
+    const posArr = new Float32Array([position.x, position.y, position.z])
+    const colArr = new Float32Array([c.r, c.g, c.b])
+    this._snapLockedGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3))
+    this._snapLockedGeo.setAttribute('color',    new THREE.BufferAttribute(colArr, 3))
+    this._snapLockedGeo.attributes.position.needsUpdate = true
+    this._snapLocked.visible = true
+
+    const linePos = new Float32Array([
+      pivot.x,    pivot.y,    pivot.z,
+      position.x, position.y, position.z,
+    ])
+    this._snapLineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3))
+    this._snapLineGeo.attributes.position.needsUpdate = true
+    this._snapLine.visible = true
+  }
+
+  /** Hides the locked snap dot and guide line only. */
+  clearSnapLocked() {
+    this._snapLocked.visible = false
+    this._snapLine.visible   = false
+  }
+
+  /** Hides all snap candidate and locked-target visuals. */
+  clearSnapDisplay() {
+    this._snapCandidates.visible = false
+    this._snapLocked.visible     = false
+    this._snapLine.visible       = false
   }
 
   /**
