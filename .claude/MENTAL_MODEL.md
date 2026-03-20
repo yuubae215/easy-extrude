@@ -55,6 +55,23 @@ Applies to: any function that adds objects, deletes the active object, or switch
 3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFaceIdx`, `_cleanupEditSubstate()`)
 4. Dispatch to new mode
 
+## Entity dimension transition contract
+
+`Sketch.dimension` transitions from `2` to `3` after extrusion (`sketch.extrude(height)`).
+Once promoted to 3D, a `Sketch` must behave identically to a `Cuboid` — it needs the same
+operation methods that AppController calls on any 3D object.
+
+**Rule**: whenever `dimension` can reach a new value, all methods required in that state
+must be present on the entity. The controller dispatches on `dimension` but does **not**
+check the entity type — it calls `move()` / `extrudeFace()` unconditionally on any 3D object.
+
+Methods required for `dimension === 3`:
+- `move(startCorners, delta)`
+- `extrudeFace(fi, savedFaceCorners, normal, dist)`
+
+Bug that motivated this rule: `Sketch` was missing `move()` and `extrudeFace()` after extrusion,
+causing silent failures when trying to Grab or extrude faces on a sketch-created object.
+
 ## MeshView visual state ownership
 
 Each `visible` flag in `MeshView` has a single owner. Never set it elsewhere.

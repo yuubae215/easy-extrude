@@ -7,7 +7,7 @@
  * Note: `meshView` is co-located on the entity for now.
  * View/model separation completes in Phase 4 (domain events).
  */
-import { buildCuboidFromRect } from '../model/CuboidModel.js'
+import { buildCuboidFromRect, FACES } from '../model/CuboidModel.js'
 
 export class Sketch {
   /**
@@ -32,6 +32,31 @@ export class Sketch {
   /** Renames the entity. */
   rename(name) {
     this.name = name
+  }
+
+  /**
+   * Translates all corners from `startCorners` by `delta`.
+   * Available once the sketch has been extruded (dimension === 3).
+   * @param {import('three').Vector3[]} startCorners  snapshot taken before drag
+   * @param {import('three').Vector3}  delta
+   */
+  move(startCorners, delta) {
+    startCorners.forEach((c, i) => { this.corners[i].copy(c).add(delta) })
+  }
+
+  /**
+   * Applies a face extrusion offset in-place.
+   * Available once the sketch has been extruded (dimension === 3).
+   * @param {number} fi  face index (0–5)
+   * @param {import('three').Vector3[]} savedFaceCorners  4 corners snapshot before drag
+   * @param {import('three').Vector3}  normal  outward face normal (unit vector)
+   * @param {number} dist  signed extrusion distance
+   */
+  extrudeFace(fi, savedFaceCorners, normal, dist) {
+    const offset = normal.clone().multiplyScalar(dist)
+    FACES[fi].corners.forEach((ci, i) => {
+      this.corners[ci].copy(savedFaceCorners[i]).add(offset)
+    })
   }
 
   /**
