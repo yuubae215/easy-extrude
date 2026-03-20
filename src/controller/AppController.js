@@ -35,6 +35,12 @@ export class AppController {
     // ── Application service (owns SceneModel aggregate root) ─────────────
     this._service = new SceneService(sceneView.scene)
 
+    // ── Domain event subscriptions — keep View in sync with domain state ──
+    this._service.on('objectAdded',   obj       => outlinerView?.addObject(obj.id, obj.name))
+    this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
+    this._service.on('objectRenamed', (id, nm)  => outlinerView?.setObjectName(id, nm))
+    this._service.on('activeChanged', id        => outlinerView?.setActive(id))
+
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     this._sketch = {
       drawing: false,
@@ -100,11 +106,11 @@ export class AppController {
     uiView.onModeChange(mode => this.setMode(mode))
 
     if (outlinerView) {
-      outlinerView.onSelect(id  => this._onOutlinerSelect(id))
-      outlinerView.onDelete(id  => this._deleteObject(id))
-      outlinerView.onAdd(()     => this._addObject())
-      outlinerView.onVisible((id, v) => this._setObjectVisible(id, v))
-      outlinerView.onRename((id, name) => this._renameObject(id, name))
+      outlinerView.onSelect( id       => this._onOutlinerSelect(id))
+      outlinerView.onDelete( id       => this._deleteObject(id))
+      outlinerView.onAdd(  ()         => this._addObject())
+      outlinerView.onVisible((id, v)  => this._setObjectVisible(id, v))
+      outlinerView.onRename( (id, nm) => this._renameObject(id, nm))
     }
 
     uiView.onNameChange(name => {
@@ -161,9 +167,6 @@ export class AppController {
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
     const obj = this._service.createCuboid()
-
-    if (this._outlinerView) this._outlinerView.addObject(obj.id, obj.name)
-
     this._switchActiveObject(obj.id, true)
   }
 
@@ -172,9 +175,6 @@ export class AppController {
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
     const obj = this._service.createSketch()
-
-    if (this._outlinerView) this._outlinerView.addObject(obj.id, obj.name)
-
     this._switchActiveObject(obj.id, true)
     this.setMode('edit')  // enters Edit Mode · 2D
   }
@@ -197,8 +197,6 @@ export class AppController {
 
     this._service.deleteObject(id)
 
-    if (this._outlinerView) this._outlinerView.removeObject(id)
-
     if (wasActive && nextId) {
       this._switchActiveObject(nextId, true)
     }
@@ -216,13 +214,12 @@ export class AppController {
       if (prev) prev.meshView.setObjectSelected(false)
     }
 
-    this._scene.setActiveId(id)
+    this._service.setActiveObject(id)
     this._objSelected = select
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
 
-    if (this._outlinerView) this._outlinerView.setActive(id)
     if (select && obj) {
       this._uiView.setStatusRich([
         { text: obj.name, bold: true, color: '#e8e8e8' },
@@ -240,7 +237,6 @@ export class AppController {
 
   _renameObject(id, name) {
     this._service.renameObject(id, name)
-    if (this._outlinerView) this._outlinerView.setObjectName(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
   }
 

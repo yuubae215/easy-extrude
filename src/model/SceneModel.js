@@ -96,14 +96,4 @@ export class SceneModel {
     this._editSubstate = substate
   }
 
-  /**
-   * Renames the SceneObject with the given id.
-   * No-ops if the id is unknown or the name is empty.
-   * @param {string} id
-   * @param {string} name
-   */
-  renameObject(id, name) {
-    const obj = this._objects.get(id)
-    if (obj && name) obj.name = name
-  }
 }
