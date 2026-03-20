@@ -149,6 +149,36 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Duplicates a Cuboid, giving it new ids and a slight XY offset.
+   * No-ops if id is unknown or refers to a Sketch.
+   * Emits: 'objectAdded'
+   * @param {string} id
+   * @returns {import('../domain/Cuboid.js').Cuboid|null}
+   */
+  duplicateCuboid(id) {
+    const src = this._model.getObject(id)
+    if (!(src instanceof Cuboid)) return null
+
+    const idx    = this._model.objects.size
+    const newId   = `obj_${idx}_${Date.now()}`
+    const newName = `${src.name}.copy`
+
+    const offset = 0.5
+    const vertices = src.vertices.map((v, i) => {
+      const pos = v.position.clone()
+      pos.x += offset
+      pos.y += offset
+      return new Vertex(`${newId}_v${i}`, pos)
+    })
+
+    const cuboid = new Cuboid(newId, newName, vertices, new MeshView(this._threeScene))
+    cuboid.meshView.updateGeometry(cuboid.corners)
+    this._model.addObject(cuboid)
+    this.emit('objectAdded', cuboid)
+    return cuboid
+  }
+
+  /**
    * Sets the visibility of an entity's mesh.
    * No-ops if id is unknown.
    * @param {string} id

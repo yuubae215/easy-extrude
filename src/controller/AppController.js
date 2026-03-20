@@ -150,6 +150,7 @@ export class AppController {
     }
 
     this._ctrlHeld  = false
+
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
 
@@ -252,6 +253,23 @@ export class AppController {
     if (wasActive && nextId) {
       this._switchActiveObject(nextId, true)
     }
+  }
+
+  /**
+   * Duplicates the active Cuboid, makes the copy active, and immediately
+   * starts a grab so the user can position it (Blender Shift+D behaviour).
+   * No-ops if there is no active object or it is a Sketch.
+   */
+  _duplicateObject() {
+    const id = this._scene.activeId
+    if (!id) return
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    const copy = this._service.duplicateCuboid(id)
+    if (!copy) return
+    this._selectedIds.clear()
+    this._selectedIds.add(copy.id)
+    this._switchActiveObject(copy.id, true)
+    this._startGrab()
   }
 
   /**
@@ -841,6 +859,7 @@ export class AppController {
     this._grab.centroid.copy(getCentroid(this._corners))
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.pivotLabel = 'Centroid'
+    this._grab.autoSnap   = false
 
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
@@ -1717,6 +1736,12 @@ export class AppController {
     if (e.key === 'e' || e.key === 'E') { this.setMode('edit');   return }
 
     if (this._scene.selectionMode === 'object') {
+      // Shift+D: duplicate active object and immediately grab (Blender-style)
+      if (e.key === 'D' && e.shiftKey && this._objSelected) {
+        e.preventDefault()
+        this._duplicateObject()
+        return
+      }
       // G: grab
       if ((e.key === 'g' || e.key === 'G') && this._objSelected) {
         this._startGrab()
