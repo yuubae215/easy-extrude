@@ -149,20 +149,106 @@ export function buildCuboidFromRect(p1, p2, height) {
 }
 
 /**
- * Pure function that returns all pivot point candidates.
- * Includes the 8 corners, 6 face centers, and the world origin.
+ * Collects snap target positions from a scene objects map.
+ * @param {Map<string, import('../domain/Cuboid.js').Cuboid | import('../domain/Sketch.js').Sketch>} objects
+ * @param {'all'|'vertex'|'edge'|'face'} [mode='all']
+ *   'vertex' — Vertex positions only
+ *   'edge'   — Edge midpoints only
+ *   'face'   — Face centers + World origin
+ *   'all'    — all of the above
+ * @returns {{ label: string, position: THREE.Vector3 }[]}
+ */
+export function collectSnapTargets(objects, mode = 'all') {
+  const doVert  = mode === 'all' || mode === 'vertex'
+  const doEdge  = mode === 'all' || mode === 'edge'
+  const doFace  = mode === 'all' || mode === 'face'
+  const targets = []
+
+  if (doFace) {
+    targets.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0) })
+  }
+
+  for (const obj of objects.values()) {
+    if (!obj.vertices) continue
+
+    if (doVert) {
+      for (const v of obj.vertices) {
+        targets.push({ label: `${obj.name} Vertex`, position: v.position })
+      }
+    }
+
+    if (doEdge && obj.edges) {
+      for (const e of obj.edges) {
+        const mid = e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
+        targets.push({ label: `${obj.name} Edge`, position: mid })
+      }
+    }
+
+    if (doFace && obj.faces) {
+      for (const f of obj.faces) {
+        const center = f.vertices
+          .reduce((acc, v) => acc.add(v.position), new THREE.Vector3())
+          .divideScalar(f.vertices.length)
+        targets.push({ label: `${obj.name} ${f.name}`, position: center })
+      }
+    }
+  }
+
+  return targets
+}
+
+// 12 unique edges of a cuboid defined by corner index pairs (matches Cuboid.js EDGE_PAIRS)
+const PIVOT_EDGE_PAIRS = [
+  [0, 1], [1, 2], [2, 3], [3, 0],  // bottom ring
+  [4, 5], [5, 6], [6, 7], [7, 4],  // top ring
+  [0, 4], [1, 5], [2, 6], [3, 7],  // vertical pillars
+]
+
+/**
+ * Pivot candidates: 8 vertices only.
+ * @param {THREE.Vector3[]} corners
+ * @returns {{ label: string, position: THREE.Vector3 }[]}
+ */
+export function getVertexPivotCandidates(corners) {
+  return corners.map((c, i) => ({ label: `Vertex ${i}`, position: c.clone() }))
+}
+
+/**
+ * Pivot candidates: 12 edge midpoints only.
+ * @param {THREE.Vector3[]} corners
+ * @returns {{ label: string, position: THREE.Vector3 }[]}
+ */
+export function getEdgePivotCandidates(corners) {
+  return PIVOT_EDGE_PAIRS.map(([a, b], i) => ({
+    label: `Edge ${i}`,
+    position: corners[a].clone().add(corners[b]).multiplyScalar(0.5),
+  }))
+}
+
+/**
+ * Pivot candidates: 6 face centers + World origin.
+ * @param {THREE.Vector3[]} corners
+ * @returns {{ label: string, position: THREE.Vector3 }[]}
+ */
+export function getFacePivotCandidates(corners) {
+  const candidates = FACES.map(face => {
+    const center = face.corners
+      .reduce((acc, ci) => acc.add(corners[ci].clone()), new THREE.Vector3())
+      .divideScalar(face.corners.length)
+    return { label: face.name, position: center }
+  })
+  candidates.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0) })
+  return candidates
+}
+
+/**
+ * Pivot candidates: all of the above combined (8 vertices + 6 face centers + World origin).
  * @param {THREE.Vector3[]} corners
  * @returns {{ label: string, position: THREE.Vector3 }[]}
  */
 export function getPivotCandidates(corners) {
-  const candidates = []
-  corners.forEach((c, i) => candidates.push({ label: `Corner ${i}`, position: c.clone() }))
-  FACES.forEach(face => {
-    const center = face.corners
-      .reduce((acc, ci) => acc.add(corners[ci].clone()), new THREE.Vector3())
-      .divideScalar(face.corners.length)
-    candidates.push({ label: face.name, position: center })
-  })
-  candidates.push({ label: 'World Origin', position: new THREE.Vector3(0, 0, 0) })
-  return candidates
+  return [
+    ...getVertexPivotCandidates(corners),
+    ...getFacePivotCandidates(corners),
+  ]
 }

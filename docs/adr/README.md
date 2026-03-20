@@ -25,6 +25,7 @@
 | [ADR-011](ADR-011-application-service-scene-service.md) | **ApplicationService 層の導入 — SceneService (DDD Phase 3)** | Accepted | 2026-03-20 | ADR-009, ADR-010 |
 | [ADR-012](ADR-012-graph-based-geometry-model.md) | **グラフ基底ジオメトリモデル (Vertex / Edge / Face / Solid)** | Accepted | 2026-03-20 | ADR-005, ADR-009, ADR-011 |
 | [ADR-013](ADR-013-domain-events-scene-service-observable.md) | **ドメインイベント — SceneService を Observable に (DDD Phase 4)** | Accepted | 2026-03-20 | ADR-011, ADR-010 |
+| [ADR-014](ADR-014-edit-mode-sub-element-selection.md) | **Edit Mode Sub-Element Selection (DDD Phase 6)** | Accepted | 2026-03-20 | ADR-004, ADR-012 |
 
 ## 新しいADRを追加するには
 

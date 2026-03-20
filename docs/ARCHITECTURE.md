@@ -189,6 +189,7 @@ Cuboid  = { vertices: Vertex[8], faces: Face[6], edges: Edge[12], ... }
 | **Phase 5-1** | `Vertex` 層を追加。`Cuboid.vertices: Vertex[8]` (ADR-012) | 完了 2026-03-20 |
 | **Phase 5-2** | ステータスバーをイベント駆動に移行 | 完了 2026-03-20 |
 | **Phase 5-3** | `Edge` / `Face` 層、`dimension` 廃止、統一選択モデル基盤 (ADR-012) | 完了 2026-03-20 |
+| **Phase 6** | Sub-element selection (1/2/3 キー)、Grab snap 全ジオメトリ対応 (ADR-014) | 完了 2026-03-20 |
 
 ---
 

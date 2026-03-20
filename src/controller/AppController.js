@@ -15,6 +15,10 @@ import {
   getCentroid,
   toNDC,
   getPivotCandidates,
+  getVertexPivotCandidates,
+  getEdgePivotCandidates,
+  getFacePivotCandidates,
+  collectSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService } from '../service/SceneService.js'
 import { Sketch }       from '../domain/Sketch.js'
@@ -85,6 +89,21 @@ export class AppController {
     this._dragStart        = new THREE.Vector3()
     this._savedFaceCorners = []
 
+    // ── Edit mode sub-element selection state (Phase 6) ────────────────────
+    /** @type {'vertex'|'edge'|'face'} */
+    this._editSelectMode         = 'face'
+    /** @type {import('../graph/Vertex.js').Vertex|null} */
+    this._hoveredVertex          = null
+    /** @type {import('../graph/Edge.js').Edge|null} */
+    this._hoveredEdge            = null
+    /** Pending state for click-vs-drag detection in Edit Mode face */
+    this._editDragPending        = false
+    this._editDragStartPx        = { x: 0, y: 0 }
+    /** @type {import('../graph/Face.js').Face|null} */
+    this._editDragPendingFace    = null
+    /** @type {import('three').Vector3|null} */
+    this._editDragPendingHitPt   = null
+
     // ── Blender-style grab state ───────────────────────────────────────────
     this._grab = {
       active:          false,
@@ -101,7 +120,15 @@ export class AppController {
       pivotSelectMode: false,
       hoveredPivotIdx: -1,
       candidates:      [],
+      /** Current candidate filter in pivot select mode: 'all'|'vertex'|'edge'|'face' */
+      pivotMode:       'all',
       snapping:        false,
+      /** Set to true after G->V pivot confirm; enables auto-snap without Ctrl */
+      autoSnap:        false,
+      /** The snap target currently locked to, or null */
+      snappedTarget:   null,
+      /** Snap target filter: 'all'|'vertex'|'edge'|'face' */
+      snapMode:        'all',
     }
 
     this._ctrlHeld  = false
@@ -341,6 +368,126 @@ export class AppController {
     ])
   }
 
+  // ─── Edit mode sub-element helpers (Phase 6) ─────────────────────────────
+
+  /** Status bar for Edit Mode · 3D showing current sub-element mode. */
+  _refreshEditModeStatus() {
+    const LABEL = { vertex: 'Vertex', edge: 'Edge', face: 'Face' }
+    const COLOR = { vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
+    const m = this._editSelectMode
+    this._uiView.setStatusRich([
+      { text: 'Edit', color: '#888' },
+      { text: LABEL[m], bold: true, color: COLOR[m] },
+      { text: '1 Vertex  2 Edge  3 Face', color: '#444' },
+    ])
+  }
+
+  /** Switches the sub-element mode and clears stale hover state. */
+  _setEditSelectMode(mode) {
+    this._editSelectMode = mode
+    this._hoveredFace   = null
+    this._hoveredVertex = null
+    this._hoveredEdge   = null
+    if (this._meshView) {
+      this._meshView.setFaceHighlight(null, this._corners)
+      this._meshView.clearVertexHover()
+      this._meshView.clearEdgeHover()
+    }
+    this._uiView.setCursor('default')
+    this._refreshEditModeStatus()
+  }
+
+  /**
+   * Projects a world position to screen pixels.
+   * @param {import('three').Vector3} pos3d
+   * @returns {{ x: number, y: number }}
+   */
+  _toScreenPx(pos3d) {
+    const v = pos3d.clone().project(this._camera)
+    return {
+      x: (v.x + 1) / 2 * innerWidth,
+      y: (-v.y + 1) / 2 * innerHeight,
+    }
+  }
+
+  /**
+   * Finds the vertex of the active object nearest to screen position (mx, my).
+   * @param {number} mx  screen x in pixels
+   * @param {number} my  screen y in pixels
+   * @param {number} [maxPx=15]  max pixel radius
+   * @returns {import('../graph/Vertex.js').Vertex|null}
+   */
+  _findNearestVertex(mx, my, maxPx = 15) {
+    const obj = this._activeObj
+    if (!obj?.vertices) return null
+    let best = null, bestDist = maxPx
+    for (const v of obj.vertices) {
+      const s = this._toScreenPx(v.position)
+      const d = Math.hypot(s.x - mx, s.y - my)
+      if (d < bestDist) { bestDist = d; best = v }
+    }
+    return best
+  }
+
+  /**
+   * Finds the edge of the active object nearest to screen position (mx, my)
+   * by comparing to each edge's midpoint.
+   * @param {number} mx
+   * @param {number} my
+   * @param {number} [maxPx=15]
+   * @returns {import('../graph/Edge.js').Edge|null}
+   */
+  _findNearestEdge(mx, my, maxPx = 15) {
+    const obj = this._activeObj
+    if (!obj?.edges) return null
+    let best = null, bestDist = maxPx
+    for (const e of obj.edges) {
+      const mid = e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
+      const s = this._toScreenPx(mid)
+      const d = Math.hypot(s.x - mx, s.y - my)
+      if (d < bestDist) { bestDist = d; best = e }
+    }
+    return best
+  }
+
+  /**
+   * Handles a click in Edit Mode · 3D — updates editSelection and visuals.
+   * @param {boolean} shift  whether Shift was held
+   */
+  _handleEditClick(shift) {
+    const sel = this._scene.editSelection
+    let element = null
+
+    if (this._editSelectMode === 'face')   element = this._hoveredFace
+    else if (this._editSelectMode === 'vertex') element = this._hoveredVertex
+    else if (this._editSelectMode === 'edge')   element = this._hoveredEdge
+
+    if (!element) {
+      if (!shift) this._scene.clearEditSelection()
+    } else {
+      if (shift) {
+        if (sel.has(element)) sel.delete(element)
+        else                  sel.add(element)
+      } else {
+        this._scene.clearEditSelection()
+        sel.add(element)
+      }
+    }
+
+    this._meshView.updateEditSelection(sel, this._corners)
+
+    const count = sel.size
+    if (count > 0) {
+      const LABEL = { vertex: 'vertex', edge: 'edge', face: 'face' }
+      this._uiView.setStatusRich([
+        { text: String(count), bold: true, color: '#e8e8e8' },
+        { text: `${LABEL[this._editSelectMode]}${count > 1 ? 's' : ''} selected`, color: '#888' },
+      ])
+    } else {
+      this._refreshEditModeStatus()
+    }
+  }
+
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
     // ── Cancel all in-progress operations ──────────────────────────────────
@@ -361,11 +508,19 @@ export class AppController {
       this._meshView.setFaceHighlight(null, this._corners)
       this._meshView.clearExtrusionDisplay()
       this._meshView.clearSketchRect()
+      this._meshView.clearVertexHover()
+      this._meshView.clearEdgeHover()
+      this._meshView.clearEditSelection()
     }
     this._uiView.clearExtrusionLabel()
-    this._hoveredFace  = null
-    this._faceDragging = false
-    this._dragFace     = null
+    this._hoveredFace        = null
+    this._hoveredVertex      = null
+    this._hoveredEdge        = null
+    this._faceDragging       = false
+    this._dragFace           = null
+    this._editDragPending    = false
+    this._editDragPendingFace = null
+    this._scene.clearEditSelection()
 
     // ── Substate reset and mode dispatch ───────────────────────────────────
     this._cleanupEditSubstate()
@@ -421,8 +576,9 @@ export class AppController {
 
   _enterEditMode3D() {
     this._scene.setEditSubstate('3d')
-    this._uiView.setStatus('')
+    this._editSelectMode = 'face'
     this._uiView.updateMode('edit', '3d')
+    this._refreshEditModeStatus()
   }
 
   _enterExtrudePhase() {
@@ -540,6 +696,7 @@ export class AppController {
     this._grab.hasInput        = false
     this._grab.pivotSelectMode = false
     this._grab.hoveredPivotIdx = -1
+    this._grab.snapMode        = 'all'
     this._grab.startMouse.copy(this._mouse)
     this._grab.startCorners = this._corners.map(c => c.clone())
     this._grab.centroid.copy(getCentroid(this._corners))
@@ -567,8 +724,10 @@ export class AppController {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
     this._applyGrab()
-    this._grab.active = false
-    this._grab.axis   = null
+    this._grab.active        = false
+    this._grab.axis          = null
+    this._grab.autoSnap      = false
+    this._grab.snappedTarget = null
     this._meshView.clearPivotDisplay()
     this._controls.enabled = true
     this._uiView.setCursor('default')
@@ -583,8 +742,10 @@ export class AppController {
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
     this._meshView.clearPivotDisplay()
-    this._grab.active = false
-    this._grab.axis   = null
+    this._grab.active        = false
+    this._grab.axis          = null
+    this._grab.autoSnap      = false
+    this._grab.snappedTarget = null
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -632,10 +793,11 @@ export class AppController {
     const pt = new THREE.Vector3()
     if (!this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) return
     let delta = pt.clone().sub(this._grab.startPoint)
-    if (this._ctrlHeld) {
-      delta = this._trySnapToOrigin(delta)
+    if (this._ctrlHeld || this._grab.autoSnap) {
+      delta = this._trySnapToGeometry(delta)
     } else {
-      this._grab.snapping = false
+      this._grab.snapping      = false
+      this._grab.snappedTarget = null
     }
     this._activeObj.move(this._grab.startCorners, delta)
   }
@@ -658,22 +820,26 @@ export class AppController {
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
 
-    if (this._ctrlHeld) {
+    if (this._ctrlHeld || this._grab.autoSnap) {
       const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
-      const snappedDelta = this._trySnapToOrigin(delta)
+      const snappedDelta = this._trySnapToGeometry(delta)
       this._activeObj.move(this._grab.startCorners, snappedDelta)
     } else {
-      this._grab.snapping = false
+      this._grab.snapping      = false
+      this._grab.snappedTarget = null
       this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(dist))
     }
   }
 
   _updateGrabStatus() {
     if (this._grab.pivotSelectMode) {
+      const MODE_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
+      const MODE_COLOR = { all: '#aaa', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
+      const m = this._grab.pivotMode ?? 'all'
       this._uiView.setStatusRich([
         { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
-        { text: 'Click to confirm', color: '#aaa' },
-        { text: 'Esc to cancel', color: '#666' },
+        { text: MODE_LABEL[m], color: MODE_COLOR[m] },
+        { text: '1 Vertex  2 Edge  3 Face', color: '#444' },
       ])
       return
     }
@@ -690,32 +856,50 @@ export class AppController {
     if (this._grab.pivotLabel !== 'Centroid') {
       parts.push({ text: this._grab.pivotLabel, color: '#888' })
     }
-    if (this._grab.snapping) {
-      parts.push({ text: 'Snap: Origin', bold: true, color: '#ff9800' })
+    if (this._grab.snapping && this._grab.snappedTarget) {
+      parts.push({ text: `Snap: ${this._grab.snappedTarget.label}`, bold: true, color: '#ff9800' })
+    } else if (this._grab.autoSnap || this._ctrlHeld) {
+      const SNAP_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
+      const SNAP_COLOR = { all: '#80cbc4', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
+      const sm = this._grab.snapMode ?? 'all'
+      const prefix = this._grab.autoSnap ? 'Auto Snap' : 'Snap'
+      parts.push({ text: `${prefix} [${SNAP_LABEL[sm]}]`, color: SNAP_COLOR[sm] })
+      parts.push({ text: '1 V  2 E  3 F', color: '#444' })
     }
 
     this._uiView.setStatusRich(parts)
   }
 
-  // ─── Ctrl snap-to-origin ──────────────────────────────────────────────────
+  // ─── Geometry snap (replaces snap-to-origin) ──────────────────────────────
 
-  _trySnapToOrigin(delta) {
+  /**
+   * Attempts to snap the grab pivot to the nearest geometry element.
+   * Snap candidates: World origin + all Vertex positions + all Edge midpoints.
+   * @param {THREE.Vector3} delta  current free delta
+   * @returns {THREE.Vector3}  snapped or original delta
+   */
+  _trySnapToGeometry(delta) {
     const SNAP_PX    = 25
-    const ORIGIN     = new THREE.Vector3(0, 0, 0)
     const pivotAfter = this._grab.pivot.clone().add(delta)
+    const pScreen    = this._projectToScreen(pivotAfter)
 
-    const pNDC = pivotAfter.clone().project(this._camera)
-    const oNDC = ORIGIN.clone().project(this._camera)
-    const px   = (pNDC.x + 1) / 2 * innerWidth
-    const py   = (-pNDC.y + 1) / 2 * innerHeight
-    const ox   = (oNDC.x + 1) / 2 * innerWidth
-    const oy   = (-oNDC.y + 1) / 2 * innerHeight
+    const targets  = collectSnapTargets(this._scene.objects, this._grab.snapMode)
+    let bestDist   = SNAP_PX
+    let bestTarget = null
 
-    if (Math.hypot(px - ox, py - oy) < SNAP_PX) {
-      this._grab.snapping = true
-      return this._grab.pivot.clone().negate()
+    for (const t of targets) {
+      const s = this._projectToScreen(t.position)
+      const d = Math.hypot(pScreen.x - s.x, pScreen.y - s.y)
+      if (d < bestDist) { bestDist = d; bestTarget = t }
     }
-    this._grab.snapping = false
+
+    if (bestTarget) {
+      this._grab.snapping      = true
+      this._grab.snappedTarget = bestTarget
+      return bestTarget.position.clone().sub(this._grab.pivot)
+    }
+    this._grab.snapping      = false
+    this._grab.snappedTarget = null
     return delta
   }
 
@@ -727,9 +911,29 @@ export class AppController {
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
     this._grab.pivotSelectMode = true
+    this._grab.pivotMode       = 'all'
     this._grab.hoveredPivotIdx = -1
     this._grab.candidates = getPivotCandidates(this._grab.startCorners)
     this._meshView.showPivotCandidates(this._grab.candidates)
+    this._updateGrabStatus()
+  }
+
+  /**
+   * Filters pivot candidates by sub-element type and refreshes the display.
+   * @param {'all'|'vertex'|'edge'|'face'} mode
+   */
+  _setPivotCandidateMode(mode) {
+    this._grab.pivotMode = mode
+    const corners = this._grab.startCorners
+    const candidates =
+      mode === 'vertex' ? getVertexPivotCandidates(corners) :
+      mode === 'edge'   ? getEdgePivotCandidates(corners)   :
+      mode === 'face'   ? getFacePivotCandidates(corners)   :
+                          getPivotCandidates(corners)
+    this._grab.candidates      = candidates
+    this._grab.hoveredPivotIdx = -1
+    this._meshView.showPivotCandidates(candidates)
+    this._meshView.setHoveredPivot(null)
     this._updateGrabStatus()
   }
 
@@ -765,6 +969,18 @@ export class AppController {
     }
   }
 
+  /**
+   * Changes the snap target filter during grab and resets the current snap lock.
+   * @param {'all'|'vertex'|'edge'|'face'} mode
+   */
+  _setSnapMode(mode) {
+    this._grab.snapMode      = mode
+    this._grab.snapping      = false
+    this._grab.snappedTarget = null
+    this._meshView.clearPivotDisplay()
+    this._updateGrabStatus()
+  }
+
   _confirmPivotSelect() {
     const idx = this._grab.hoveredPivotIdx
     if (idx >= 0) {
@@ -772,6 +988,7 @@ export class AppController {
       this._grab.pivot.copy(cand.position)
       this._grab.pivotLabel = cand.label
       this._restartGrabFromPivot()
+      this._grab.autoSnap = true  // auto-snap enabled after pivot selection
     }
     this._grab.pivotSelectMode = false
     this._grab.hoveredPivotIdx = -1
@@ -808,8 +1025,10 @@ export class AppController {
         return
       }
       this._applyGrab()
-      if (this._ctrlHeld) {
-        this._meshView.showSnapTarget(new THREE.Vector3(0, 0, 0), this._grab.snapping)
+      if ((this._ctrlHeld || this._grab.autoSnap) && this._grab.snapping && this._grab.snappedTarget) {
+        this._meshView.showSnapTarget(this._grab.snappedTarget.position, true)
+      } else {
+        this._meshView.clearPivotDisplay()
       }
       this._updateGrabStatus()
       this._updateNPanel()
@@ -892,21 +1111,92 @@ export class AppController {
       return
     }
 
-    const hit  = this._hitFace()
-    const face = hit?.face ?? null
-    if (face !== this._hoveredFace) {
-      this._hoveredFace = face
-      this._meshView.setFaceHighlight(face?.index ?? null, this._corners)
-      if (face) {
-        this._uiView.setStatusRich([
-          { text: 'Face', color: '#888' },
-          { text: face.name, color: '#e8e8e8' },
-          { text: 'Drag to extrude', color: '#555' },
-        ])
-      } else {
-        this._uiView.setStatus('')
+    // Pending drag: check if movement threshold crossed (face mode only)
+    if (this._editDragPending) {
+      const mx   = (this._mouse.x + 1) / 2 * innerWidth
+      const my   = (-this._mouse.y + 1) / 2 * innerHeight
+      const dist = Math.hypot(mx - this._editDragStartPx.x, my - this._editDragStartPx.y)
+      if (dist >= 5 && this._editDragPendingFace) {
+        // Commit to face extrude drag
+        this._editDragPending  = false
+        this._faceDragging     = true
+        this._dragFace         = this._editDragPendingFace
+        this._uiView.setCursor('grabbing')
+        this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFace.index))
+        const camDir = new THREE.Vector3()
+        this._camera.getWorldDirection(camDir)
+        this._dragPlane.setFromNormalAndCoplanarPoint(camDir, this._editDragPendingHitPt)
+        this._dragStart.copy(this._editDragPendingHitPt)
+        this._savedFaceCorners = this._dragFace.vertices.map(v => v.position.clone())
+      } else if (dist >= 5) {
+        // Moved too much without a draggable target — cancel pending
+        this._editDragPending = false
+        if (this._editDragPendingFace) this._controls.enabled = true
       }
-      this._uiView.setCursor(face !== null ? 'pointer' : 'default')
+      return
+    }
+
+    // ── Hover detection per sub-element mode ──────────────────────────────
+    if (this._editSelectMode === 'face') {
+      const hit  = this._hitFace()
+      const face = hit?.face ?? null
+      if (face !== this._hoveredFace) {
+        this._hoveredFace = face
+        this._meshView.setFaceHighlight(face?.index ?? null, this._corners)
+        if (face) {
+          this._uiView.setStatusRich([
+            { text: 'Face', color: '#888' },
+            { text: face.name, color: '#e8e8e8' },
+            { text: 'Click select  Drag extrude', color: '#555' },
+          ])
+        } else {
+          this._refreshEditModeStatus()
+        }
+        this._uiView.setCursor(face ? 'pointer' : 'default')
+      }
+      return
+    }
+
+    const mx = (this._mouse.x + 1) / 2 * innerWidth
+    const my = (-this._mouse.y + 1) / 2 * innerHeight
+
+    if (this._editSelectMode === 'vertex') {
+      const v = this._findNearestVertex(mx, my)
+      if (v !== this._hoveredVertex) {
+        this._hoveredVertex = v
+        if (v) {
+          this._meshView.showVertexHover(v)
+          this._uiView.setStatusRich([
+            { text: 'Vertex', bold: true, color: '#69f0ae' },
+            { text: 'Click to select', color: '#555' },
+          ])
+          this._uiView.setCursor('pointer')
+        } else {
+          this._meshView.clearVertexHover()
+          this._refreshEditModeStatus()
+          this._uiView.setCursor('default')
+        }
+      }
+      return
+    }
+
+    if (this._editSelectMode === 'edge') {
+      const e = this._findNearestEdge(mx, my)
+      if (e !== this._hoveredEdge) {
+        this._hoveredEdge = e
+        if (e) {
+          this._meshView.showEdgeHover(e)
+          this._uiView.setStatusRich([
+            { text: 'Edge', bold: true, color: '#ffd740' },
+            { text: 'Click to select', color: '#555' },
+          ])
+          this._uiView.setCursor('pointer')
+        } else {
+          this._meshView.clearEdgeHover()
+          this._refreshEditModeStatus()
+          this._uiView.setCursor('default')
+        }
+      }
     }
   }
 
@@ -971,18 +1261,20 @@ export class AppController {
     }
 
     // ── Edit mode ─────────────────────────────────────────────────────────
-    const hit = this._hitFace()
-    if (!hit) return
-    this._faceDragging     = true
-    this._dragFace         = hit.face
-    this._controls.enabled = false
-    this._uiView.setCursor('grabbing')
-    this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFace.index))
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    this._dragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
-    this._dragStart.copy(hit.point)
-    this._savedFaceCorners = this._dragFace.vertices.map(v => v.position.clone())
+    const mxPx = (this._mouse.x + 1) / 2 * innerWidth
+    const myPx = (-this._mouse.y + 1) / 2 * innerHeight
+    this._editDragStartPx = { x: mxPx, y: myPx }
+
+    if (this._editSelectMode === 'face') {
+      const hit = this._hitFace()
+      this._editDragPending      = true
+      this._editDragPendingFace  = hit?.face ?? null
+      this._editDragPendingHitPt = hit?.point.clone() ?? null
+      if (hit) this._controls.enabled = false  // prevent orbit while holding face
+    } else {
+      // vertex / edge: select on mousedown (no drag-to-extrude)
+      this._handleEditClick(e.shiftKey)
+    }
   }
 
   _onMouseUp(e) {
@@ -1014,6 +1306,12 @@ export class AppController {
       this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
       this._updateNPanel()
     }
+    if (this._editDragPending) {
+      // Button released without committing to a drag — treat as a click
+      this._editDragPending = false
+      if (this._editDragPendingFace) this._controls.enabled = true
+      this._handleEditClick(e.shiftKey)
+    }
     if (this._faceDragging) {
       this._faceDragging = false
       this._dragFace     = null
@@ -1028,8 +1326,10 @@ export class AppController {
   _onKeyUp(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = false
-      if (this._grab.active && !this._grab.pivotSelectMode) {
-        this._grab.snapping = false
+      if (this._grab.active && !this._grab.pivotSelectMode && !this._grab.autoSnap) {
+        // Only clear snap when autoSnap is not keeping it active
+        this._grab.snapping      = false
+        this._grab.snappedTarget = null
         this._meshView.clearPivotDisplay()
         this._updateGrabStatus()
       }
@@ -1043,6 +1343,9 @@ export class AppController {
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
         if (e.key === 'Escape') this._cancelPivotSelect()
+        if (e.key === '1') { this._setPivotCandidateMode('vertex'); return }
+        if (e.key === '2') { this._setPivotCandidateMode('edge');   return }
+        if (e.key === '3') { this._setPivotCandidateMode('face');   return }
         return
       }
       switch (e.key) {
@@ -1052,6 +1355,9 @@ export class AppController {
         case 'z': case 'Z': this._setGrabAxis('z'); return
         case 'Enter':        this._confirmGrab();    return
         case 'Escape':       this._cancelGrab();     return
+        case '1': this._setSnapMode('vertex'); return
+        case '2': this._setSnapMode('edge');   return
+        case '3': this._setSnapMode('face');   return
       }
       if (this._grab.axis) {
         if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
@@ -1118,6 +1424,13 @@ export class AppController {
         return
       }
       return
+    }
+
+    // ── Sub-element mode switching (Edit Mode · 3D only) ──────────────────
+    if (this._scene.selectionMode === 'edit' && this._scene.editSubstate === '3d') {
+      if (e.key === '1') { this._setEditSelectMode('vertex'); return }
+      if (e.key === '2') { this._setEditSelectMode('edge');   return }
+      if (e.key === '3') { this._setEditSelectMode('face');   return }
     }
 
     // ── Normal keys ────────────────────────────────────────────────────────

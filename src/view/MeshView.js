@@ -78,6 +78,54 @@ export class MeshView {
     )
     this._sketchFill.visible = false
     scene.add(this._sketchFill)
+
+    // ── Sub-element selection visuals (Phase 6) ───────────────────────────
+
+    // Hover vertex indicator (white, 12px)
+    this._hoverVertGeo = new THREE.BufferGeometry()
+    this._hoverVertPoints = new THREE.Points(
+      this._hoverVertGeo,
+      new THREE.PointsMaterial({ color: 0xffffff, size: 12, sizeAttenuation: false, depthTest: false }),
+    )
+    this._hoverVertPoints.visible = false
+    scene.add(this._hoverVertPoints)
+
+    // Selected vertices (cyan, 8px)
+    this._selVertGeo = new THREE.BufferGeometry()
+    this._selVertPoints = new THREE.Points(
+      this._selVertGeo,
+      new THREE.PointsMaterial({ color: 0x00e5ff, size: 8, sizeAttenuation: false, depthTest: false }),
+    )
+    this._selVertPoints.visible = false
+    scene.add(this._selVertPoints)
+
+    // Hover edge indicator (white)
+    this._hoverEdgeGeo = new THREE.BufferGeometry()
+    this._hoverEdgeLines = new THREE.LineSegments(
+      this._hoverEdgeGeo,
+      new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false }),
+    )
+    this._hoverEdgeLines.visible = false
+    scene.add(this._hoverEdgeLines)
+
+    // Selected edges (cyan)
+    this._selEdgeGeo = new THREE.BufferGeometry()
+    this._selEdgeLines = new THREE.LineSegments(
+      this._selEdgeGeo,
+      new THREE.LineBasicMaterial({ color: 0x00e5ff, depthTest: false }),
+    )
+    this._selEdgeLines.visible = false
+    scene.add(this._selEdgeLines)
+
+    // Selected faces highlight (cyan tint, separate from hover hlMesh)
+    this._selFaceHlGeo = new THREE.BufferGeometry()
+    this._selFaceMesh = new THREE.Mesh(this._selFaceHlGeo, new THREE.MeshBasicMaterial({
+      color: 0x00e5ff, transparent: true, opacity: 0.28,
+      depthTest: false, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2,
+    }))
+    this._selFaceMesh.visible = false
+    scene.add(this._selFaceMesh)
   }
 
   /** Rebuilds geometry from the corner array and applies it to the mesh */
@@ -276,6 +324,11 @@ export class MeshView {
     scene.remove(this._hoveredPivotPoints)
     scene.remove(this._sketchRectLines)
     scene.remove(this._sketchFill)
+    scene.remove(this._hoverVertPoints)
+    scene.remove(this._selVertPoints)
+    scene.remove(this._hoverEdgeLines)
+    scene.remove(this._selEdgeLines)
+    scene.remove(this._selFaceMesh)
     this.cuboid.geometry.dispose()
     this.wireframe.geometry.dispose()
     this._hlGeo.dispose()
@@ -284,6 +337,115 @@ export class MeshView {
     this._hoveredPivotGeo.dispose()
     this._sketchRectGeo.dispose()
     this._sketchFillGeo.dispose()
+    this._hoverVertGeo.dispose()
+    this._selVertGeo.dispose()
+    this._hoverEdgeGeo.dispose()
+    this._selEdgeGeo.dispose()
+    this._selFaceHlGeo.dispose()
+  }
+
+  // ── Sub-element hover / selection visuals (Phase 6) ──────────────────────
+
+  /**
+   * Shows a hover indicator on a single vertex.
+   * @param {import('../graph/Vertex.js').Vertex} vertex
+   */
+  showVertexHover(vertex) {
+    const pos = new Float32Array([vertex.position.x, vertex.position.y, vertex.position.z])
+    this._hoverVertGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    this._hoverVertGeo.attributes.position.needsUpdate = true
+    this._hoverVertPoints.visible = true
+  }
+
+  /** Hides the vertex hover indicator. */
+  clearVertexHover() {
+    this._hoverVertPoints.visible = false
+  }
+
+  /**
+   * Shows a hover indicator on a single edge.
+   * @param {import('../graph/Edge.js').Edge} edge
+   */
+  showEdgeHover(edge) {
+    const pos = new Float32Array([
+      edge.v0.position.x, edge.v0.position.y, edge.v0.position.z,
+      edge.v1.position.x, edge.v1.position.y, edge.v1.position.z,
+    ])
+    this._hoverEdgeGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    this._hoverEdgeGeo.attributes.position.needsUpdate = true
+    this._hoverEdgeLines.visible = true
+  }
+
+  /** Hides the edge hover indicator. */
+  clearEdgeHover() {
+    this._hoverEdgeLines.visible = false
+  }
+
+  /**
+   * Renders all selected sub-elements (vertices, edges, faces).
+   * Duck-typing is used to distinguish element types without domain imports.
+   * @param {Set} selection  SceneModel.editSelection
+   * @param {import('three').Vector3[]} corners  current corner array of active object
+   */
+  updateEditSelection(selection, corners) {
+    const verts = [], edges = [], faceIndices = []
+    for (const el of selection) {
+      if ('v0' in el)                              edges.push(el)
+      else if (Array.isArray(el.vertices))         faceIndices.push(el.index)
+      else                                         verts.push(el)
+    }
+
+    // Selected vertices
+    if (verts.length) {
+      const pos = new Float32Array(verts.length * 3)
+      verts.forEach((v, i) => {
+        pos[i * 3] = v.position.x; pos[i * 3 + 1] = v.position.y; pos[i * 3 + 2] = v.position.z
+      })
+      this._selVertGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      this._selVertGeo.attributes.position.needsUpdate = true
+      this._selVertPoints.visible = true
+    } else {
+      this._selVertPoints.visible = false
+    }
+
+    // Selected edges
+    if (edges.length) {
+      const pos = new Float32Array(edges.length * 6)
+      edges.forEach((e, i) => {
+        pos[i * 6]     = e.v0.position.x; pos[i * 6 + 1] = e.v0.position.y; pos[i * 6 + 2] = e.v0.position.z
+        pos[i * 6 + 3] = e.v1.position.x; pos[i * 6 + 4] = e.v1.position.y; pos[i * 6 + 5] = e.v1.position.z
+      })
+      this._selEdgeGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      this._selEdgeGeo.attributes.position.needsUpdate = true
+      this._selEdgeLines.visible = true
+    } else {
+      this._selEdgeLines.visible = false
+    }
+
+    // Selected faces
+    if (faceIndices.length && corners) {
+      const vPos = new Float32Array(faceIndices.length * 12) // 4 verts * 3 coords
+      const idx  = []
+      faceIndices.forEach((fi, i) => {
+        const facePos = buildFaceHighlightPositions(corners, fi)
+        vPos.set(facePos, i * 12)
+        const b = i * 4
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3)
+      })
+      this._selFaceHlGeo.setAttribute('position', new THREE.BufferAttribute(vPos, 3))
+      this._selFaceHlGeo.setIndex(idx)
+      this._selFaceHlGeo.attributes.position.needsUpdate = true
+      this._selFaceMesh.visible = true
+    } else {
+      this._selFaceMesh.visible = false
+    }
+  }
+
+  /** Hides all selection highlight visuals. */
+  clearEditSelection() {
+    this._selVertPoints.visible  = false
+    this._selEdgeLines.visible   = false
+    this._selFaceMesh.visible    = false
   }
 
   /**

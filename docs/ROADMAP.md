@@ -61,6 +61,7 @@ OrbitControls already handles 2-finger orbit and pinch-to-zoom natively. The mai
 
 | Item | Date |
 |------|------|
+| DDD Phase 6 — Sub-element selection (1/2/3 keys); Grab snap expanded to all geometry (ADR-014) | 2026-03-20 |
 | DDD Phase 5-3 — Edge/Face graph objects; unified selection model; dimension field removed (ADR-012) | 2026-03-20 |
 | DDD Phase 5-2 — Event-driven status bar; _refreshObjectModeStatus() | 2026-03-20 |
 | DDD Phase 5-1 — Vertex layer in graph model (ADR-012) | 2026-03-20 |
