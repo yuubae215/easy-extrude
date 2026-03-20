@@ -52,25 +52,24 @@ Applies to: any function that adds objects, deletes the active object, or switch
 `setMode()` guarantees, in order:
 1. Cancel in-progress operations (grab, face drag, object drag)
 2. Clear active object visual state (`setFaceHighlight(null)`, `clearExtrusionDisplay()`, `clearSketchRect()`)
-3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFaceIdx`, `_cleanupEditSubstate()`)
-4. Dispatch to new mode
+3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFace`, `_cleanupEditSubstate()`)
+4. Dispatch to new mode — `instanceof Sketch` → Edit 2D, otherwise → Edit 3D
 
-## Entity dimension transition contract
+## Entity type contract (ADR-012, Phase 5-3)
 
-`Sketch.dimension` transitions from `2` to `3` after extrusion (`sketch.extrude(height)`).
-Once promoted to 3D, a `Sketch` must behave identically to a `Cuboid` — it needs the same
-operation methods that AppController calls on any 3D object.
+**Rule**: entity *type* (not a `dimension` field) determines which operations are available.
+`instanceof Sketch` = 2D unextruded. `instanceof Cuboid` = 3D.
 
-**Rule**: whenever `dimension` can reach a new value, all methods required in that state
-must be present on the entity. The controller dispatches on `dimension` but does **not**
-check the entity type — it calls `move()` / `extrudeFace()` unconditionally on any 3D object.
+`Sketch.extrude(height)` does **not** mutate the Sketch. It returns a new `Cuboid` reusing
+the same `id`, `name`, and `meshView`. `SceneService.extrudeSketch(id, height)` performs the
+swap in SceneModel; after the swap `scene.activeObject` returns the Cuboid automatically.
 
-Methods required for `dimension === 3`:
-- `move(startCorners, delta)`
-- `extrudeFace(fi, savedFaceCorners, normal, dist)`
+`extrudeFace` signature: `(face: Face, savedFaceCorners, normal, dist)` — callers pass a
+`Face` object (`_dragFace`), not an index. Face.index is used where an index is still needed
+(e.g. `MeshView.setFaceHighlight`).
 
-Bug that motivated this rule: `Sketch` was missing `move()` and `extrudeFace()` after extrusion,
-causing silent failures when trying to Grab or extrude faces on a sketch-created object.
+`Cuboid` must always have: `move()`, `extrudeFace(face, ...)`, `faces: Face[6]`, `edges: Edge[12]`.
+`Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
 
 ## MeshView visual state ownership
 

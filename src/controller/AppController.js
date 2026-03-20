@@ -10,7 +10,6 @@
  */
 import * as THREE from 'three'
 import {
-  FACES,
   buildCuboidFromRect,
   computeOutwardFaceNormal,
   getCentroid,
@@ -18,6 +17,7 @@ import {
   getPivotCandidates,
 } from '../model/CuboidModel.js'
 import { SceneService } from '../service/SceneService.js'
+import { Sketch }       from '../domain/Sketch.js'
 
 export class AppController {
   /**
@@ -75,9 +75,11 @@ export class AppController {
     this._objRotateStartCorners = []
 
     // ── Edit mode (face extrude) state ─────────────────────────────────────
+    /** @type {import('../graph/Face.js').Face|null} */
     this._hoveredFace      = null
     this._faceDragging     = false
-    this._dragFaceIdx      = null
+    /** @type {import('../graph/Face.js').Face|null} */
+    this._dragFace         = null
     this._dragNormal       = new THREE.Vector3()
     this._dragPlane        = new THREE.Plane()
     this._dragStart        = new THREE.Vector3()
@@ -288,7 +290,9 @@ export class AppController {
   _hitFace() {
     const hit = this._hitActiveCuboid()
     if (!hit) return null
-    return { faceIdx: Math.floor(hit.face.a / 4), point: hit.point }
+    const fi   = Math.floor(hit.face.a / 4)
+    const face = this._activeObj?.faces?.[fi] ?? null
+    return face ? { face, point: hit.point } : null
   }
 
   // ─── Utilities ─────────────────────────────────────────────────────────────
@@ -305,7 +309,7 @@ export class AppController {
     const obj = this._activeObj
     if (!obj) return
 
-    if (obj.dimension === 2 && obj.sketchRect) {
+    if (obj instanceof Sketch && obj.sketchRect) {
       const { p1, p2 } = obj.sketchRect
       const centroid = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
       const dims = new THREE.Vector3(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y), 0)
@@ -343,7 +347,7 @@ export class AppController {
     if (this._grab.active) this._cancelGrab()
     if (this._faceDragging) {
       this._faceDragging = false
-      this._dragFaceIdx  = null
+      this._dragFace     = null
       if (this._meshView) this._meshView.clearExtrusionDisplay()
       this._uiView.clearExtrusionLabel()
     }
@@ -361,7 +365,7 @@ export class AppController {
     this._uiView.clearExtrusionLabel()
     this._hoveredFace  = null
     this._faceDragging = false
-    this._dragFaceIdx  = null
+    this._dragFace     = null
 
     // ── Substate reset and mode dispatch ───────────────────────────────────
     this._cleanupEditSubstate()
@@ -372,11 +376,10 @@ export class AppController {
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
     } else {
-      // edit mode — dispatch on dimension
+      // edit mode — dispatch on entity type
       this._setObjectSelected(false)
       this._objDragging = false
-      const dim = this._activeObj?.dimension ?? 3
-      if (dim === 2) {
+      if (this._activeObj instanceof Sketch) {
         this._enterEditMode2D()
       } else {
         this._enterEditMode3D()
@@ -478,10 +481,10 @@ export class AppController {
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
-    const obj = this._activeObj
-    const corners = obj.extrude(height)
+    const cuboid = this._service.extrudeSketch(this._scene.activeId, height)
+    if (!cuboid) return
 
-    this._meshView.updateGeometry(corners)
+    this._meshView.updateGeometry(cuboid.corners)
     this._meshView.setVisible(true)
     this._meshView.clearSketchRect()
     this._uiView.clearExtrusionLabel()
@@ -871,16 +874,16 @@ export class AppController {
       const pt = new THREE.Vector3()
       if (!this._raycaster.ray.intersectPlane(this._dragPlane, pt)) return
       const dist = pt.clone().sub(this._dragStart).dot(this._dragNormal)
-      this._activeObj.extrudeFace(this._dragFaceIdx, this._savedFaceCorners, this._dragNormal, dist)
+      this._activeObj.extrudeFace(this._dragFace, this._savedFaceCorners, this._dragNormal, dist)
       this._meshView.updateGeometry(this._corners)
-      this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
+      this._meshView.setFaceHighlight(this._dragFace.index, this._corners)
       this._uiView.setStatusRich([
         { text: 'Extrude', bold: true, color: '#ffffff' },
-        { text: FACES[this._dragFaceIdx].name, color: '#4fc3f7' },
+        { text: this._dragFace.name, color: '#4fc3f7' },
         { text: `D: ${dist.toFixed(3)}`, color: '#ffeb3b' },
       ])
 
-      const currentFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci])
+      const currentFaceCorners = this._dragFace.vertices.map(v => v.position)
       const { spanMid, armDir } = this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
       const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
       const screen = this._projectToScreen(labelPos)
@@ -889,21 +892,21 @@ export class AppController {
       return
     }
 
-    const hit = this._hitFace()
-    const fi  = hit ? hit.faceIdx : null
-    if (fi !== this._hoveredFace) {
-      this._hoveredFace = fi
-      this._meshView.setFaceHighlight(fi, this._corners)
-      if (fi !== null) {
+    const hit  = this._hitFace()
+    const face = hit?.face ?? null
+    if (face !== this._hoveredFace) {
+      this._hoveredFace = face
+      this._meshView.setFaceHighlight(face?.index ?? null, this._corners)
+      if (face) {
         this._uiView.setStatusRich([
           { text: 'Face', color: '#888' },
-          { text: FACES[fi].name, color: '#e8e8e8' },
+          { text: face.name, color: '#e8e8e8' },
           { text: 'Drag to extrude', color: '#555' },
         ])
       } else {
         this._uiView.setStatus('')
       }
-      this._uiView.setCursor(fi !== null ? 'pointer' : 'default')
+      this._uiView.setCursor(face !== null ? 'pointer' : 'default')
     }
   }
 
@@ -971,15 +974,15 @@ export class AppController {
     const hit = this._hitFace()
     if (!hit) return
     this._faceDragging     = true
-    this._dragFaceIdx      = hit.faceIdx
+    this._dragFace         = hit.face
     this._controls.enabled = false
     this._uiView.setCursor('grabbing')
-    this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFaceIdx))
+    this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFace.index))
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
     this._dragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
     this._dragStart.copy(hit.point)
-    this._savedFaceCorners = FACES[this._dragFaceIdx].corners.map(ci => this._corners[ci].clone())
+    this._savedFaceCorners = this._dragFace.vertices.map(v => v.position.clone())
   }
 
   _onMouseUp(e) {
@@ -1013,7 +1016,7 @@ export class AppController {
     }
     if (this._faceDragging) {
       this._faceDragging = false
-      this._dragFaceIdx  = null
+      this._dragFace     = null
       this._controls.enabled = true
       this._meshView.clearExtrusionDisplay()
       this._uiView.clearExtrusionLabel()

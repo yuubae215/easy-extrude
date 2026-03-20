@@ -131,6 +131,24 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Extrudes a Sketch into a Cuboid and replaces it in the scene.
+   * The Sketch entity is discarded; the returned Cuboid reuses the same id,
+   * name, and MeshView so the Outliner requires no update.
+   * No-ops if the id does not refer to a Sketch.
+   * @param {string} id
+   * @param {number} height  signed extrusion height in world Z units
+   * @returns {import('../domain/Cuboid.js').Cuboid|null}
+   */
+  extrudeSketch(id, height) {
+    const sketch = this._model.getObject(id)
+    if (!(sketch instanceof Sketch)) return null
+    const cuboid = sketch.extrude(height)
+    this._model.removeObject(id)
+    this._model.addObject(cuboid)
+    return cuboid
+  }
+
+  /**
    * Sets the visibility of an entity's mesh.
    * No-ops if id is unknown.
    * @param {string} id

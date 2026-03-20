@@ -1,6 +1,6 @@
 # ADR-012: グラフ基底ジオメトリモデル (Vertex / Edge / Face / Solid)
 
-- **Status**: Accepted (Phase 5-1 にて Vertex 層を実装。Edge / Face / 選択モデルは次フェーズ)
+- **Status**: Accepted (Phase 5-1: Vertex 層実装済み。Phase 5-3: Edge / Face / 選択モデル基盤・dimension 廃止 実装済み)
 - **Date**: 2026-03-20
 - **References**: ADR-005, ADR-009, ADR-011
 
@@ -90,8 +90,18 @@ FACES[i].corners     →  Face[i].vertices  (頂点インデックス参照)
 `get corners()` ゲッターが `Vector3[]` を返すことで `CuboidModel.js` / `MeshView` / `AppController` は無変更。
 `SceneService.createCuboid()` が `Vertex[]` を生成して `Cuboid` に渡す。
 
-### 残り作業 (次フェーズ)
+### Phase 5-3 (完了 2026-03-20)
 
-- `Edge`, `Face` 明示オブジェクトの追加
-- 統一選択モデル `Set<Vertex | Edge | Face>` の実装
-- `dimension` フィールドの廃止とエンティティ型への振る舞い委譲
+`src/graph/Edge.js`, `src/graph/Face.js` を新設。
+
+`Cuboid` に `faces: Face[6]`, `edges: Edge[12]` を追加（コンストラクタで FACES 定義から自動構築）。
+`extrudeFace(fi, ...)` を `extrudeFace(face, ...)` に変更し、Face.vertices を直接操作。
+
+`Sketch.extrude()` が突然変異せず新しい `Cuboid` を返すように変更（動詞パターンに準拠）。
+`SceneService.extrudeSketch(id, height)` が Sketch を Cuboid に置換。
+
+`dimension` フィールドを `Cuboid` / `Sketch` から廃止。
+`AppController.setMode()` / `_updateNPanel()` の分岐が `instanceof Sketch` に変更。
+
+`AppController._hoveredFace` / `_dragFace` を `Face|null` に変更（統一選択モデルの基盤）。
+`SceneModel.editSelection: Set<Vertex|Edge|Face>` を追加（空 Set として初期化）。

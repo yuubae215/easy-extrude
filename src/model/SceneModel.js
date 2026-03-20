@@ -23,6 +23,13 @@ export class SceneModel {
 
     /** @type {null|'3d'|'2d-sketch'|'2d-extrude'} */
     this._editSubstate = null
+
+    /**
+     * Unified selection set for Edit Mode.
+     * Contains the currently selected Vertex, Edge, and/or Face objects.
+     * @type {Set<import('../graph/Vertex.js').Vertex | import('../graph/Edge.js').Edge | import('../graph/Face.js').Face>}
+     */
+    this._editSelection = new Set()
   }
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -43,6 +50,9 @@ export class SceneModel {
 
   /** Current edit substate: null | '3d' | '2d-sketch' | '2d-extrude'. */
   get editSubstate() { return this._editSubstate }
+
+  /** Current unified edit selection (Vertex | Edge | Face objects). */
+  get editSelection() { return this._editSelection }
 
   /**
    * Returns the SceneObject for the given id, or null if not found.
@@ -94,6 +104,19 @@ export class SceneModel {
    */
   setEditSubstate(substate) {
     this._editSubstate = substate
+  }
+
+  /**
+   * Replaces the edit selection with a new Set.
+   * @param {Set} set
+   */
+  setEditSelection(set) {
+    this._editSelection = set
+  }
+
+  /** Clears all items from the edit selection. */
+  clearEditSelection() {
+    this._editSelection.clear()
   }
 
 }
