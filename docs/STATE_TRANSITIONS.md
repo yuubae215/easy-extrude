@@ -10,7 +10,7 @@ easy-extrude のモード状態遷移を記録する。
 `SceneModel.selectionMode` が持つ 2 値の状態機械。
 
 ```
-              Tab / O key            Tab / E key
+                    Tab
   ┌─────────────────────────────────────────────────┐
   |                                                 |
   v                                                 |
@@ -161,20 +161,25 @@ GRAB ACTIVE (grab.active = true)
 
 ## フェイス押し出し状態機械
 
-Edit Mode · 3D でのフェイスドラッグ操作。
+Edit Mode · 3D でのフェイス押し出し操作。
 
 ```
-EDIT MODE · 3D
+EDIT MODE · 3D (face mode)
     |
     マウス移動 → _hitFace() → setFaceHighlight(fi)
     |
-    左ボタン押下 (face hit あり) → _faceDragging = true
+    左クリック → _handleEditClick() → editSelection に Face 追加
+    |
+    E キー (face が 1 つ以上選択済み) → _startFaceExtrude(face)
     |
     v
-FACE DRAGGING (faceDragging = true)
+FACE EXTRUDE ACTIVE (faceExtrude.active = true)
     |
-    |── マウス移動 → コーナー更新 + setExtrusionDisplay() + setExtrusionLabel()
-    └── 左ボタン解放 → _faceDragging = false → clearExtrusionDisplay()
+    |── マウス移動 → 距離計算 + _applyFaceExtrude() + setExtrusionLabel()
+    |── Ctrl 押し → _trySnapFaceExtrude() でジオメトリスナップ
+    |── 数値キー → _applyFaceExtrudeFromInput() (数値入力モード)
+    |── Enter / 左クリック → _confirmFaceExtrude() → EDIT MODE · 3D
+    └── Escape / 右クリック → _cancelFaceExtrude() → コーナー復元 → EDIT MODE · 3D
 ```
 
 ---

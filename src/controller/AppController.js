@@ -23,6 +23,7 @@ import {
 } from '../model/CuboidModel.js'
 import { SceneService } from '../service/SceneService.js'
 import { Sketch }       from '../domain/Sketch.js'
+import { Face }         from '../graph/Face.js'
 
 export class AppController {
   /**
@@ -91,31 +92,34 @@ export class AppController {
     }
     this._rectSelEl = this._createRectSelEl()
 
-    // ── Edit mode (face extrude) state ─────────────────────────────────────
+    // ── Edit mode hover state ───────────────────────────────────────────────
     /** @type {import('../graph/Face.js').Face|null} */
     this._hoveredFace      = null
-    this._faceDragging     = false
-    /** @type {import('../graph/Face.js').Face|null} */
-    this._dragFace         = null
-    this._dragNormal       = new THREE.Vector3()
-    this._dragPlane        = new THREE.Plane()
-    this._dragStart        = new THREE.Vector3()
-    this._savedFaceCorners = []
 
     // ── Edit mode sub-element selection state (Phase 6) ────────────────────
     /** @type {'vertex'|'edge'|'face'} */
-    this._editSelectMode         = 'face'
+    this._editSelectMode = 'face'
     /** @type {import('../graph/Vertex.js').Vertex|null} */
-    this._hoveredVertex          = null
+    this._hoveredVertex  = null
     /** @type {import('../graph/Edge.js').Edge|null} */
-    this._hoveredEdge            = null
-    /** Pending state for click-vs-drag detection in Edit Mode face */
-    this._editDragPending        = false
-    this._editDragStartPx        = { x: 0, y: 0 }
-    /** @type {import('../graph/Face.js').Face|null} */
-    this._editDragPendingFace    = null
-    /** @type {import('three').Vector3|null} */
-    this._editDragPendingHitPt   = null
+    this._hoveredEdge    = null
+
+    // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
+    this._faceExtrude = {
+      active:        false,
+      /** @type {import('../graph/Face.js').Face|null} */
+      face:          null,
+      savedCorners:  [],
+      normal:        new THREE.Vector3(),
+      dist:          0,
+      dragPlane:     new THREE.Plane(),
+      startPoint:    new THREE.Vector3(),
+      inputStr:      '',
+      hasInput:      false,
+      snapping:      false,
+      snappedTarget: null,
+      snapTargets:   [],
+    }
 
     // ── Blender-style grab state ───────────────────────────────────────────
     this._grab = {
@@ -530,12 +534,7 @@ export class AppController {
   setMode(mode) {
     // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._grab.active) this._cancelGrab()
-    if (this._faceDragging) {
-      this._faceDragging = false
-      this._dragFace     = null
-      if (this._meshView) this._meshView.clearExtrusionDisplay()
-      this._uiView.clearExtrusionLabel()
-    }
+    if (this._faceExtrude.active) this._cancelFaceExtrude()
     if (this._objDragging) {
       this._objDragging = false
       this._objCtrlDrag = false
@@ -551,13 +550,9 @@ export class AppController {
       this._meshView.clearEditSelection()
     }
     this._uiView.clearExtrusionLabel()
-    this._hoveredFace        = null
-    this._hoveredVertex      = null
-    this._hoveredEdge        = null
-    this._faceDragging       = false
-    this._dragFace           = null
-    this._editDragPending    = false
-    this._editDragPendingFace = null
+    this._hoveredFace   = null
+    this._hoveredVertex = null
+    this._hoveredEdge   = null
     this._scene.clearEditSelection()
 
     // ── Substate reset and mode dispatch ───────────────────────────────────
@@ -1098,6 +1093,133 @@ export class AppController {
     this._updateGrabStatus()
   }
 
+  // ─── Face extrude (E key) ──────────────────────────────────────────────────
+
+  _startFaceExtrude(face) {
+    const fe = this._faceExtrude
+    fe.active        = true
+    fe.face          = face
+    fe.savedCorners  = face.vertices.map(v => v.position.clone())
+    fe.dist          = 0
+    fe.inputStr      = ''
+    fe.hasInput      = false
+    fe.snapping      = false
+    fe.snappedTarget = null
+    fe.normal.copy(computeOutwardFaceNormal(this._corners, face.index))
+    const center = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
+    fe.dragPlane.setFromNormalAndCoplanarPoint(camDir, center)
+    const pt = new THREE.Vector3()
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    fe.startPoint.copy(this._raycaster.ray.intersectPlane(fe.dragPlane, pt) ? pt : center)
+    this._controls.enabled = false
+    this._updateFaceExtrudeStatus()
+  }
+
+  _applyFaceExtrude() {
+    const { face, savedCorners, normal, dist } = this._faceExtrude
+    this._activeObj.extrudeFace(face, savedCorners, normal, dist)
+    this._meshView.updateGeometry(this._corners)
+    this._meshView.setFaceHighlight(face.index, this._corners)
+    const currentFaceCorners = face.vertices.map(v => v.position)
+    const { spanMid, armDir } = this._meshView.setExtrusionDisplay(savedCorners, currentFaceCorners)
+    const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
+    const screen = this._projectToScreen(labelPos)
+    this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
+    this._updateNPanel()
+  }
+
+  _applyFaceExtrudeFromInput() {
+    this._faceExtrude.snapping = false
+    this._faceExtrude.dist = parseFloat(this._faceExtrude.inputStr) || 0
+    this._applyFaceExtrude()
+  }
+
+  _confirmFaceExtrude() {
+    this._faceExtrude.active = false
+    this._controls.enabled = true
+    this._meshView.clearExtrusionDisplay()
+    this._meshView.clearSnapDisplay()
+    this._uiView.clearExtrusionLabel()
+    this._updateNPanel()
+    this._refreshEditModeStatus()
+  }
+
+  _cancelFaceExtrude() {
+    const { face, savedCorners, normal } = this._faceExtrude
+    if (face) {
+      this._activeObj.extrudeFace(face, savedCorners, normal, 0)
+      this._meshView.updateGeometry(this._corners)
+      this._meshView.setFaceHighlight(face.index, this._corners)
+    }
+    this._faceExtrude.active = false
+    this._controls.enabled = true
+    this._meshView.clearExtrusionDisplay()
+    this._meshView.clearSnapDisplay()
+    this._uiView.clearExtrusionLabel()
+    this._refreshEditModeStatus()
+  }
+
+  _updateFaceExtrudeStatus() {
+    const fe = this._faceExtrude
+    const parts = [
+      { text: 'Extrude', bold: true, color: '#ffffff' },
+      { text: fe.face?.name ?? '', color: '#4fc3f7' },
+    ]
+    if (fe.hasInput) {
+      parts.push({ text: fe.inputStr + '_', color: '#ffeb3b' })
+    } else {
+      parts.push({ text: `D: ${fe.dist.toFixed(3)}`, color: '#ffeb3b' })
+    }
+    if (fe.snapping && fe.snappedTarget) {
+      parts.push({ text: `Snap: ${fe.snappedTarget.label}`, bold: true, color: '#ff9800' })
+    }
+    parts.push({ text: 'Enter confirm  Esc cancel', color: '#444' })
+    this._uiView.setStatusRich(parts)
+  }
+
+  /**
+   * Snaps face extrude distance to nearest geometry element projected onto the face normal.
+   * @param {number} dist  raw extrude distance
+   * @returns {number}  snapped or original distance
+   */
+  _trySnapFaceExtrude(dist) {
+    const SNAP_PX = 25
+    const fe      = this._faceExtrude
+    const center  = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
+    const posAfter = center.clone().addScaledVector(fe.normal, dist)
+
+    // Compare snap targets to the mouse cursor, not the face center
+    const mx = (this._mouse.x + 1) / 2 * innerWidth
+    const my = (-this._mouse.y + 1) / 2 * innerHeight
+
+    const geoTargets   = collectSnapTargets(this._scene.objects, 'all', new Set([this._scene.activeId]))
+    const worldTargets = collectWorldSnapTargets(posAfter)
+    const targets      = [...geoTargets, ...worldTargets]
+    fe.snapTargets = targets
+    let bestDist   = SNAP_PX
+    let bestTarget = null
+
+    const camMat = this._camera.matrixWorldInverse
+    for (const t of targets) {
+      const camPos = t.position.clone().applyMatrix4(camMat)
+      if (camPos.z >= 0) continue
+      const s = this._projectToScreen(t.position)
+      const d = Math.hypot(mx - s.x, my - s.y)
+      if (d < bestDist) { bestDist = d; bestTarget = t }
+    }
+
+    if (bestTarget) {
+      fe.snapping      = true
+      fe.snappedTarget = bestTarget
+      return bestTarget.position.clone().sub(center).dot(fe.normal)
+    }
+    fe.snapping      = false
+    fe.snappedTarget = null
+    return dist
+  }
+
   // ─── Geometry snap ─────────────────────────────────────────────────────────
 
   /**
@@ -1346,52 +1468,28 @@ export class AppController {
       return
     }
 
-    // ── Edit mode · 3D face extrude ───────────────────────────────────────
-    if (this._faceDragging) {
+    // ── Face extrude mode (E key) ─────────────────────────────────────────
+    if (this._faceExtrude.active) {
+      if (this._faceExtrude.hasInput) return
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
-      if (!this._raycaster.ray.intersectPlane(this._dragPlane, pt)) return
-      const dist = pt.clone().sub(this._dragStart).dot(this._dragNormal)
-      this._activeObj.extrudeFace(this._dragFace, this._savedFaceCorners, this._dragNormal, dist)
-      this._meshView.updateGeometry(this._corners)
-      this._meshView.setFaceHighlight(this._dragFace.index, this._corners)
-      this._uiView.setStatusRich([
-        { text: 'Extrude', bold: true, color: '#ffffff' },
-        { text: this._dragFace.name, color: '#4fc3f7' },
-        { text: `D: ${dist.toFixed(3)}`, color: '#ffeb3b' },
-      ])
-
-      const currentFaceCorners = this._dragFace.vertices.map(v => v.position)
-      const { spanMid, armDir } = this._meshView.setExtrusionDisplay(this._savedFaceCorners, currentFaceCorners)
-      const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
-      const screen = this._projectToScreen(labelPos)
-      this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
-      this._updateNPanel()
-      return
-    }
-
-    // Pending drag: check if movement threshold crossed (face mode only)
-    if (this._editDragPending) {
-      const mx   = (this._mouse.x + 1) / 2 * innerWidth
-      const my   = (-this._mouse.y + 1) / 2 * innerHeight
-      const dist = Math.hypot(mx - this._editDragStartPx.x, my - this._editDragStartPx.y)
-      if (dist >= 5 && this._editDragPendingFace) {
-        // Commit to face extrude drag
-        this._editDragPending  = false
-        this._faceDragging     = true
-        this._dragFace         = this._editDragPendingFace
-        this._uiView.setCursor('grabbing')
-        this._dragNormal.copy(computeOutwardFaceNormal(this._corners, this._dragFace.index))
-        const camDir = new THREE.Vector3()
-        this._camera.getWorldDirection(camDir)
-        this._dragPlane.setFromNormalAndCoplanarPoint(camDir, this._editDragPendingHitPt)
-        this._dragStart.copy(this._editDragPendingHitPt)
-        this._savedFaceCorners = this._dragFace.vertices.map(v => v.position.clone())
-      } else if (dist >= 5) {
-        // Moved too much without a draggable target — cancel pending
-        this._editDragPending = false
-        if (this._editDragPendingFace) this._controls.enabled = true
+      if (!this._raycaster.ray.intersectPlane(this._faceExtrude.dragPlane, pt)) return
+      const rawDist = pt.clone().sub(this._faceExtrude.startPoint).dot(this._faceExtrude.normal)
+      this._faceExtrude.dist = this._trySnapFaceExtrude(rawDist)
+      this._applyFaceExtrude()
+      // snap visuals
+      const fe = this._faceExtrude
+      this._meshView.showSnapCandidates(fe.snapTargets)
+      if (fe.snapping && fe.snappedTarget) {
+        const faceCenterAfter = fe.savedCorners
+          .reduce((a, c) => a.add(c), new THREE.Vector3())
+          .divideScalar(fe.savedCorners.length)
+          .addScaledVector(fe.normal, fe.dist)
+        this._meshView.showSnapLocked(fe.snappedTarget.position, fe.snappedTarget.type, faceCenterAfter)
+      } else {
+        this._meshView.clearSnapLocked()
       }
+      this._updateFaceExtrudeStatus()
       return
     }
 
@@ -1403,10 +1501,11 @@ export class AppController {
         this._hoveredFace = face
         this._meshView.setFaceHighlight(face?.index ?? null, this._corners)
         if (face) {
+          const hasSel = [...this._scene.editSelection].some(x => x instanceof Face)
           this._uiView.setStatusRich([
             { text: 'Face', color: '#888' },
             { text: face.name, color: '#e8e8e8' },
-            { text: 'Click select  Drag extrude', color: '#555' },
+            { text: hasSel ? 'E to extrude' : 'Click to select', color: '#555' },
           ])
         } else {
           this._refreshEditModeStatus()
@@ -1468,6 +1567,12 @@ export class AppController {
       }
       if (e.button === 0) { this._confirmGrab(); return }
       if (e.button === 2) { this._cancelGrab();  return }
+      return
+    }
+
+    if (this._faceExtrude.active) {
+      if (e.button === 0) { this._confirmFaceExtrude(); return }
+      if (e.button === 2) { this._cancelFaceExtrude();  return }
       return
     }
 
@@ -1543,21 +1648,8 @@ export class AppController {
       return
     }
 
-    // ── Edit mode ─────────────────────────────────────────────────────────
-    const mxPx = (this._mouse.x + 1) / 2 * innerWidth
-    const myPx = (-this._mouse.y + 1) / 2 * innerHeight
-    this._editDragStartPx = { x: mxPx, y: myPx }
-
-    if (this._editSelectMode === 'face') {
-      const hit = this._hitFace()
-      this._editDragPending      = true
-      this._editDragPendingFace  = hit?.face ?? null
-      this._editDragPendingHitPt = hit?.point.clone() ?? null
-      if (hit) this._controls.enabled = false  // prevent orbit while holding face
-    } else {
-      // vertex / edge: select on mousedown (no drag-to-extrude)
-      this._handleEditClick(e.shiftKey)
-    }
+    // ── Edit mode: click to select sub-elements ───────────────────────────
+    this._handleEditClick(e.shiftKey)
   }
 
   _onMouseUp(e) {
@@ -1596,29 +1688,13 @@ export class AppController {
       this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
       this._updateNPanel()
     }
-    if (this._editDragPending) {
-      // Button released without committing to a drag — treat as a click
-      this._editDragPending = false
-      if (this._editDragPendingFace) this._controls.enabled = true
-      this._handleEditClick(e.shiftKey)
-    }
-    if (this._faceDragging) {
-      this._faceDragging = false
-      this._dragFace     = null
-      this._controls.enabled = true
-      this._meshView.clearExtrusionDisplay()
-      this._uiView.clearExtrusionLabel()
-      this._uiView.setCursor('default')
-      this._updateNPanel()
-    }
   }
 
   _onKeyUp(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = false
-      if (this._grab.active && !this._grab.pivotSelectMode) {
-        this._updateGrabStatus()
-      }
+      if (this._grab.active && !this._grab.pivotSelectMode) this._updateGrabStatus()
+      if (this._faceExtrude.active) this._updateFaceExtrudeStatus()
     }
   }
 
@@ -1712,11 +1788,43 @@ export class AppController {
       return
     }
 
+    // ── Face extrude keys (Edit Mode · 3D) ────────────────────────────────
+    if (this._faceExtrude.active) {
+      if (e.key === 'Enter')  { e.preventDefault(); this._confirmFaceExtrude(); return }
+      if (e.key === 'Escape') { this._cancelFaceExtrude(); return }
+      if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
+        this._faceExtrude.inputStr += e.key
+        this._faceExtrude.hasInput  = true
+        this._applyFaceExtrudeFromInput()
+        this._updateFaceExtrudeStatus()
+        return
+      }
+      if (e.key === '-' && this._faceExtrude.inputStr.length === 0) {
+        this._faceExtrude.inputStr = '-'
+        this._faceExtrude.hasInput = true
+        this._updateFaceExtrudeStatus()
+        return
+      }
+      if (e.key === 'Backspace') {
+        this._faceExtrude.inputStr = this._faceExtrude.inputStr.slice(0, -1)
+        this._faceExtrude.hasInput = this._faceExtrude.inputStr.length > 0 && this._faceExtrude.inputStr !== '-'
+        this._applyFaceExtrudeFromInput()
+        this._updateFaceExtrudeStatus()
+        return
+      }
+      return
+    }
+
     // ── Sub-element mode switching (Edit Mode · 3D only) ──────────────────
     if (this._scene.selectionMode === 'edit' && this._scene.editSubstate === '3d') {
       if (e.key === '1') { this._setEditSelectMode('vertex'); return }
       if (e.key === '2') { this._setEditSelectMode('edge');   return }
       if (e.key === '3') { this._setEditSelectMode('face');   return }
+      if ((e.key === 'e' || e.key === 'E') && this._editSelectMode === 'face') {
+        const selected = [...this._scene.editSelection].filter(x => x instanceof Face)
+        if (selected.length > 0) this._startFaceExtrude(selected[0])
+        return
+      }
     }
 
     // ── Normal keys ────────────────────────────────────────────────────────
@@ -1733,8 +1841,6 @@ export class AppController {
       }
       return
     }
-    if (e.key === 'o' || e.key === 'O') { this.setMode('object'); return }
-    if (e.key === 'e' || e.key === 'E') { this.setMode('edit');   return }
 
     if (this._scene.selectionMode === 'object') {
       // Shift+D: duplicate active object and immediately grab (Blender-style)
