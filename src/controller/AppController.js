@@ -1141,6 +1141,9 @@ export class AppController {
     this._controls.enabled = true
     this._meshView.clearExtrusionDisplay()
     this._meshView.clearSnapDisplay()
+    this._meshView.setFaceHighlight(null, this._corners)
+    this._scene.editSelection.clear()
+    this._meshView.updateEditSelection(this._scene.editSelection, this._corners)
     this._uiView.clearExtrusionLabel()
     this._updateNPanel()
     this._refreshEditModeStatus()
