@@ -49,6 +49,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-20**: DDD Phase 2 — `Cuboid`/`Sketch` にビヘイビアメソッド追加 (`rename`, `move`, `extrudeFace`, `extrude`)。AppController のドメインロジックをエンティティへ移管。ADR-010 作成。
 - **2026-03-20**: DDD Phase 1 — `src/domain/Cuboid.js` / `src/domain/Sketch.js` を新設。plain object 生成を typed entity に置き換え。ADR-009 作成。
 - **2026-03-20**: MVC refactor — extracted `SceneModel` from `AppController`. Domain state (`_objects`, `_activeId`, `_selectionMode`, `_editSubstate`) now lives in `src/model/SceneModel.js`. Added `docs/ARCHITECTURE.md` and `docs/STATE_TRANSITIONS.md`.
 - **2026-03-20**: Bug fixes + ADR-008 (Mode Transition State Machine). `setMode()` now fully cancels in-progress ops and clears visual state before transitioning. `_addObject`, `_deleteObject` guard against Edit Mode. `MeshView.setFaceHighlight` owns `hlMesh.visible`.

@@ -1,15 +1,14 @@
 /**
  * Sketch — domain entity representing a 2D rectangular sketch.
  *
- * After extrusion, `dimension` is promoted to 3 and `corners`/`sketchRect`
- * are populated in-place (Phase 1 behaviour).
- * Phase 2 will introduce an explicit `extrude()` method that returns a Cuboid.
- *
- * DDD Phase 1: typed entity with guaranteed field shape.
+ * DDD Phase 2: behaviour methods own the mutation logic that previously
+ * lived in AppController.
  *
  * Note: `meshView` is co-located on the entity for now.
  * View/model separation completes in Phase 4 (domain events).
  */
+import { buildCuboidFromRect } from '../model/CuboidModel.js'
+
 export class Sketch {
   /**
    * @param {string} id
@@ -28,5 +27,24 @@ export class Sketch {
     this.sketchRect  = null
     /** @type {import('../view/MeshView.js').MeshView} */
     this.meshView    = meshView
+  }
+
+  /** Renames the entity. */
+  rename(name) {
+    this.name = name
+  }
+
+  /**
+   * Extrudes the current `sketchRect` to a cuboid in-place.
+   * Promotes `dimension` to 3 and populates `corners`.
+   * Requires `sketchRect` to be set before calling.
+   * @param {number} height  signed extrusion height in world Z units
+   * @returns {import('three').Vector3[]}  the new corners array
+   */
+  extrude(height) {
+    const corners = buildCuboidFromRect(this.sketchRect.p1, this.sketchRect.p2, height)
+    this.corners   = corners
+    this.dimension = 3
+    return corners
   }
 }

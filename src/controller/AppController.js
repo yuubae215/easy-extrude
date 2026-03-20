@@ -259,8 +259,9 @@ export class AppController {
   }
 
   _renameObject(id, name) {
-    if (!this._scene.getObject(id) || !name) return
-    this._scene.renameObject(id, name)
+    const obj = this._scene.getObject(id)
+    if (!obj || !name) return
+    obj.rename(name)
     if (this._outlinerView) this._outlinerView.setObjectName(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
   }
@@ -498,11 +499,8 @@ export class AppController {
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
-    const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
     const obj = this._activeObj
-    obj.corners = corners
-    obj.dimension = 3
-    obj.sketchRect = { p1: this._sketch.p1.clone(), p2: this._sketch.p2.clone() }
+    const corners = obj.extrude(height)
 
     this._meshView.updateGeometry(corners)
     this._meshView.setVisible(true)
@@ -651,9 +649,7 @@ export class AppController {
     this._grab.snapping = false
     const dist    = parseFloat(this._grab.inputStr) || 0
     const axisVec = this._getAxisVec(this._grab.axis)
-    this._grab.startCorners.forEach((c, i) => {
-      this._corners[i].copy(c).addScaledVector(axisVec, dist)
-    })
+    this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(dist))
   }
 
   _applyFreeGrab() {
@@ -666,9 +662,7 @@ export class AppController {
     } else {
       this._grab.snapping = false
     }
-    this._grab.startCorners.forEach((c, i) => {
-      this._corners[i].copy(c).add(delta)
-    })
+    this._activeObj.move(this._grab.startCorners, delta)
   }
 
   _applyAxisConstrainedGrab() {
@@ -692,14 +686,10 @@ export class AppController {
     if (this._ctrlHeld) {
       const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
       const snappedDelta = this._trySnapToOrigin(delta)
-      this._grab.startCorners.forEach((c, i) => {
-        this._corners[i].copy(c).add(snappedDelta)
-      })
+      this._activeObj.move(this._grab.startCorners, snappedDelta)
     } else {
       this._grab.snapping = false
-      this._grab.startCorners.forEach((c, i) => {
-        this._corners[i].copy(c).addScaledVector(axisVec, dist)
-      })
+      this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(dist))
     }
   }
 
@@ -864,7 +854,7 @@ export class AppController {
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
             const delta = pt.clone().sub(this._objDragStart)
-            this._objDragStartCorners.forEach((c, i) => this._corners[i].copy(c).add(delta))
+            this._activeObj.move(this._objDragStartCorners, delta)
           }
         }
         this._meshView.updateGeometry(this._corners)
@@ -908,11 +898,8 @@ export class AppController {
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
       if (!this._raycaster.ray.intersectPlane(this._dragPlane, pt)) return
-      const dist   = pt.clone().sub(this._dragStart).dot(this._dragNormal)
-      const offset = this._dragNormal.clone().multiplyScalar(dist)
-      FACES[this._dragFaceIdx].corners.forEach((ci, i) => {
-        this._corners[ci].copy(this._savedFaceCorners[i]).add(offset)
-      })
+      const dist = pt.clone().sub(this._dragStart).dot(this._dragNormal)
+      this._activeObj.extrudeFace(this._dragFaceIdx, this._savedFaceCorners, this._dragNormal, dist)
       this._meshView.updateGeometry(this._corners)
       this._meshView.setFaceHighlight(this._dragFaceIdx, this._corners)
       this._uiView.setStatusRich([
