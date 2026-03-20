@@ -49,6 +49,8 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-20**: ドメインモデル設計 — 「次元と動詞」モデルを確立。Sketch→Cuboid エンティティ差し替えパターン、グラフ基底ジオメトリの方向性を ADR-012 (Proposed) として記録。ロードマップを Phase 4–6 に更新。
+- **2026-03-20**: バグ修正 — Sketch に `move()`/`extrudeFace()` が欠落し Extrude 後の Grab・面押し出しが動かない問題を修正。MENTAL_MODEL に次元遷移契約を追加。
 - **2026-03-20**: DDD Phase 3 — `SceneService` (ApplicationService) を新設。エンティティ生成・CRUD を AppController から分離。AppController は入力ハンドリングに専念。ADR-011 作成。
 - **2026-03-20**: DDD Phase 2 — `Cuboid`/`Sketch` にビヘイビアメソッド追加 (`rename`, `move`, `extrudeFace`, `extrude`)。AppController のドメインロジックをエンティティへ移管。ADR-010 作成。
 - **2026-03-20**: DDD Phase 1 — `src/domain/Cuboid.js` / `src/domain/Sketch.js` を新設。plain object 生成を typed entity に置き換え。ADR-009 作成。
