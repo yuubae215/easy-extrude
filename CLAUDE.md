@@ -36,6 +36,31 @@ pnpm preview   # preview production build
 **ROS world frame** (+X forward, +Y left, +Z up). Right-handed. Matches ROS REP-103.
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
+## Coding policies
+
+These rules were learned from bugs and are mandatory. Violating them causes hard-to-find state inconsistencies.
+
+### Mode transitions must always go through `setMode()`
+
+`AppController.setMode(mode)` is the **single entry point** for all mode transitions (see ADR-008).
+Before calling `_switchActiveObject()`, always call `setMode('object')` first if `_selectionMode === 'edit'`.
+This ensures the current active object's visual state is cleaned up before the switch.
+
+```js
+// Correct pattern when switching active objects from any mode
+if (this._selectionMode === 'edit') this.setMode('object')
+// ... then _switchActiveObject(newId, true)
+```
+
+Applies to: any new function that adds objects, deletes the active object, or switches the active object.
+
+### `MeshView` visual state ownership
+
+Each visual element in `MeshView` must have a single owner responsible for its `visible` flag:
+- `hlMesh.visible` — owned by `setFaceHighlight()`. Never set it elsewhere.
+- `wireframe.visible` / `cuboid.visible` — owned by `setVisible()`.
+- `boxHelper.visible` — owned by `setObjectSelected()`.
+
 ## Notes for changes
 
 - `vite.config.js` `base` must match the repo name (`/easy-extrude/`)
