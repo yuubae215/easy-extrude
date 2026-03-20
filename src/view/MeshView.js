@@ -48,6 +48,7 @@ export class MeshView {
     const _texCircle   = MeshView._makeShapeTexture('circle')
     const _texTriangle = MeshView._makeShapeTexture('triangle')
     const _texSquare   = MeshView._makeShapeTexture('square')
+    const _texDiamond  = MeshView._makeShapeTexture('diamond')
 
     const _makePivotMat = (tex) => new THREE.PointsMaterial({
       color: 0xffeb3b, size: 14, sizeAttenuation: false, depthTest: false,
@@ -110,6 +111,11 @@ export class MeshView {
     this._snapFaceCandidates.visible = false
     scene.add(this._snapFaceCandidates)
 
+    this._snapWorldCandGeo = new THREE.BufferGeometry()
+    this._snapWorldCandidates = new THREE.Points(this._snapWorldCandGeo, _makeSnapCandMat(_texDiamond))
+    this._snapWorldCandidates.visible = false
+    scene.add(this._snapWorldCandidates)
+
     // Locked snap target — large bright hollow shape per type
     const _makeSnapLockMat = (tex, color) => new THREE.PointsMaterial({
       color, size: 20, sizeAttenuation: false, depthTest: false,
@@ -129,6 +135,11 @@ export class MeshView {
     this._snapLockedFace = new THREE.Points(this._snapLockedFaceGeo, _makeSnapLockMat(_texSquare,   0x4fc3f7))
     this._snapLockedFace.visible = false
     scene.add(this._snapLockedFace)
+
+    this._snapLockedWorldGeo = new THREE.BufferGeometry()
+    this._snapLockedWorld = new THREE.Points(this._snapLockedWorldGeo, _makeSnapLockMat(_texDiamond, 0xffffff))
+    this._snapLockedWorld.visible = false
+    scene.add(this._snapLockedWorld)
 
     // Snap guide line — pivot → locked target
     this._snapLineGeo = new THREE.BufferGeometry()
@@ -287,9 +298,9 @@ export class MeshView {
   }
 
   /**
-   * Creates a canvas texture for a hollow shape (circle/triangle/square).
+   * Creates a canvas texture for a hollow shape (circle/triangle/square/diamond).
    * The shape is drawn as a white outline on a transparent background.
-   * @param {'circle'|'triangle'|'square'} shape
+   * @param {'circle'|'triangle'|'square'|'diamond'} shape
    * @returns {THREE.CanvasTexture}
    */
   static _makeShapeTexture(shape) {
@@ -308,6 +319,14 @@ export class MeshView {
       ctx.moveTo(h, m)
       ctx.lineTo(S - m, S - m)
       ctx.lineTo(m, S - m)
+      ctx.closePath()
+      ctx.stroke()
+    } else if (shape === 'diamond') {
+      ctx.beginPath()
+      ctx.moveTo(h, m)
+      ctx.lineTo(S - m, h)
+      ctx.lineTo(h, S - m)
+      ctx.lineTo(m, h)
       ctx.closePath()
       ctx.stroke()
     } else {
@@ -376,6 +395,7 @@ export class MeshView {
     vertex: new THREE.Color(0x69f0ae),
     edge:   new THREE.Color(0xffd740),
     face:   new THREE.Color(0x4fc3f7),
+    world:  new THREE.Color(0xffffff),
   }
 
   /**
@@ -383,7 +403,7 @@ export class MeshView {
    * @param {{ position: THREE.Vector3, type: string }[]} targets
    */
   showSnapCandidates(targets) {
-    const byType = { vertex: [], edge: [], face: [] }
+    const byType = { vertex: [], edge: [], face: [], world: [] }
     for (const t of targets) byType[t.type]?.push(t.position)
 
     const _upload = (type, geo, points) => {
@@ -401,9 +421,10 @@ export class MeshView {
       geo.attributes.position.needsUpdate = true
       points.visible = true
     }
-    _upload('vertex', this._snapVertCandGeo, this._snapVertCandidates)
-    _upload('edge',   this._snapEdgeCandGeo, this._snapEdgeCandidates)
-    _upload('face',   this._snapFaceCandGeo, this._snapFaceCandidates)
+    _upload('vertex', this._snapVertCandGeo,   this._snapVertCandidates)
+    _upload('edge',   this._snapEdgeCandGeo,   this._snapEdgeCandidates)
+    _upload('face',   this._snapFaceCandGeo,   this._snapFaceCandidates)
+    _upload('world',  this._snapWorldCandGeo,  this._snapWorldCandidates)
   }
 
   /**
@@ -413,12 +434,14 @@ export class MeshView {
    * @param {THREE.Vector3} pivot    - grab pivot (guide line start)
    */
   showSnapLocked(position, type, pivot) {
-    this._snapLockedVert.visible = false
-    this._snapLockedEdge.visible = false
-    this._snapLockedFace.visible = false
-    const lockedMap = { vertex: [this._snapLockedVertGeo, this._snapLockedVert],
-                        edge:   [this._snapLockedEdgeGeo, this._snapLockedEdge],
-                        face:   [this._snapLockedFaceGeo, this._snapLockedFace] }
+    this._snapLockedVert.visible  = false
+    this._snapLockedEdge.visible  = false
+    this._snapLockedFace.visible  = false
+    this._snapLockedWorld.visible = false
+    const lockedMap = { vertex: [this._snapLockedVertGeo,  this._snapLockedVert],
+                        edge:   [this._snapLockedEdgeGeo,  this._snapLockedEdge],
+                        face:   [this._snapLockedFaceGeo,  this._snapLockedFace],
+                        world:  [this._snapLockedWorldGeo, this._snapLockedWorld] }
     const entry = lockedMap[type] ?? lockedMap.vertex
     const [geo, points] = entry
     const posArr = new Float32Array([position.x, position.y, position.z])
@@ -437,21 +460,24 @@ export class MeshView {
 
   /** Hides the locked snap shape and guide line only. */
   clearSnapLocked() {
-    this._snapLockedVert.visible = false
-    this._snapLockedEdge.visible = false
-    this._snapLockedFace.visible = false
-    this._snapLine.visible       = false
+    this._snapLockedVert.visible  = false
+    this._snapLockedEdge.visible  = false
+    this._snapLockedFace.visible  = false
+    this._snapLockedWorld.visible = false
+    this._snapLine.visible        = false
   }
 
   /** Hides all snap candidate and locked-target visuals. */
   clearSnapDisplay() {
-    this._snapVertCandidates.visible = false
-    this._snapEdgeCandidates.visible = false
-    this._snapFaceCandidates.visible = false
-    this._snapLockedVert.visible     = false
-    this._snapLockedEdge.visible     = false
-    this._snapLockedFace.visible     = false
-    this._snapLine.visible           = false
+    this._snapVertCandidates.visible  = false
+    this._snapEdgeCandidates.visible  = false
+    this._snapFaceCandidates.visible  = false
+    this._snapWorldCandidates.visible = false
+    this._snapLockedVert.visible      = false
+    this._snapLockedEdge.visible      = false
+    this._snapLockedFace.visible      = false
+    this._snapLockedWorld.visible     = false
+    this._snapLine.visible            = false
   }
 
   /**

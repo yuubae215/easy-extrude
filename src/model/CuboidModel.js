@@ -156,15 +156,17 @@ export function buildCuboidFromRect(p1, p2, height) {
  *   'edge'   — Edge midpoints only
  *   'face'   — Face centers
  *   'all'    — all of the above
+ * @param {Set<string>} [excludeIds=new Set()] — object IDs to skip (e.g. objects currently being grabbed)
  * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
  */
-export function collectSnapTargets(objects, mode = 'all') {
+export function collectSnapTargets(objects, mode = 'all', excludeIds = new Set()) {
   const doVert  = mode === 'all' || mode === 'vertex'
   const doEdge  = mode === 'all' || mode === 'edge'
   const doFace  = mode === 'all' || mode === 'face'
   const targets = []
 
-  for (const obj of objects.values()) {
+  for (const [id, obj] of objects.entries()) {
+    if (excludeIds.has(id)) continue
     if (!obj.vertices) continue
 
     if (doVert) {
@@ -191,6 +193,21 @@ export function collectSnapTargets(objects, mode = 'all') {
   }
 
   return targets
+}
+
+/**
+ * Returns world-space snap targets: world origin + projections onto X/Y/Z axes.
+ * Axis targets are the closest point on each axis to pivotAfter.
+ * @param {THREE.Vector3} pivotAfter  projected pivot position (pivot + current delta)
+ * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
+ */
+export function collectWorldSnapTargets(pivotAfter) {
+  return [
+    { label: 'World Origin', position: new THREE.Vector3(0, 0, 0),                              type: 'world' },
+    { label: 'X Axis',       position: new THREE.Vector3(pivotAfter.x, 0,            0),         type: 'world' },
+    { label: 'Y Axis',       position: new THREE.Vector3(0,            pivotAfter.y, 0),         type: 'world' },
+    { label: 'Z Axis',       position: new THREE.Vector3(0,            0,            pivotAfter.z), type: 'world' },
+  ]
 }
 
 // 12 unique edges of a cuboid defined by corner index pairs (matches Cuboid.js EDGE_PAIRS)

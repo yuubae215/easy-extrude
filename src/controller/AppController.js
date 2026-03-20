@@ -19,6 +19,7 @@ import {
   getEdgePivotCandidates,
   getFacePivotCandidates,
   collectSnapTargets,
+  collectWorldSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService } from '../service/SceneService.js'
 import { Sketch }       from '../domain/Sketch.js'
@@ -1053,11 +1054,8 @@ export class AppController {
     if (this._grab.snapping && this._grab.snappedTarget) {
       parts.push({ text: `Snap: ${this._grab.snappedTarget.label}`, bold: true, color: '#ff9800' })
     } else if (this._grab.autoSnap) {
-      const SNAP_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-      const SNAP_COLOR = { all: '#80cbc4', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
-      const sm = this._grab.snapMode ?? 'all'
-      parts.push({ text: `Auto Snap [${SNAP_LABEL[sm]}]`, color: SNAP_COLOR[sm] })
-      parts.push({ text: '1 V  2 E  3 F', color: '#444' })
+      parts.push({ text: 'Auto Snap [World]', color: '#80cbc4' })
+      parts.push({ text: 'Origin / X / Y / Z', color: '#444' })
     } else if (this._ctrlHeld) {
       parts.push({ text: `Grid: ${this._grab.gridSize}`, bold: true, color: '#80cbc4' })
       parts.push({ text: 'Scroll to change', color: '#444' })
@@ -1113,7 +1111,10 @@ export class AppController {
     const pivotAfter = this._grab.pivot.clone().add(delta)
     const pScreen    = this._projectToScreen(pivotAfter)
 
-    const targets  = collectSnapTargets(this._scene.objects, this._grab.snapMode)
+    const grabbedIds   = new Set(this._grab.allStartCorners.keys())
+    const geoTargets   = collectSnapTargets(this._scene.objects, this._grab.snapMode, grabbedIds)
+    const worldTargets = collectWorldSnapTargets(pivotAfter)
+    const targets      = [...geoTargets, ...worldTargets]
     this._grab.snapTargets = targets  // cache for candidate display
     let bestDist   = SNAP_PX
     let bestTarget = null
