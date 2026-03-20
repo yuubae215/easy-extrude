@@ -1,23 +1,14 @@
 /**
  * SceneModel - domain state for the 3D editor scene.
  *
- * Owns the collection of SceneObjects and the current editor mode.
+ * Owns the collection of domain entities and the current editor mode.
  * Pure state container with no Three.js side-effects and no view calls.
  *
- * DDD note: This is the aggregate root for the scene. In future iterations,
- * SceneObject entries will evolve into rich domain entities (Cuboid, Sketch)
- * with their own behaviour methods, and SceneModel will become a proper
- * repository / application service boundary.
+ * DDD note (Phase 1): SceneObject is now a union of typed domain entities
+ * (Cuboid | Sketch) defined in src/domain/. SceneModel acts as the aggregate
+ * root / in-memory repository. Phase 3 will formalize this boundary.
  *
- * @typedef {{
- *   id:          string,
- *   name:        string,
- *   description: string,
- *   dimension:   1|2|3,
- *   corners:     import('three').Vector3[],
- *   sketchRect:  {p1: import('three').Vector3, p2: import('three').Vector3}|null,
- *   meshView:    import('../view/MeshView.js').MeshView,
- * }} SceneObject
+ * @typedef {import('../domain/Cuboid.js').Cuboid | import('../domain/Sketch.js').Sketch} SceneObject
  */
 export class SceneModel {
   constructor() {

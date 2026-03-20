@@ -20,6 +20,8 @@ import {
 } from '../model/CuboidModel.js'
 import { SceneModel } from '../model/SceneModel.js'
 import { MeshView } from '../view/MeshView.js'
+import { Cuboid } from '../domain/Cuboid.js'
+import { Sketch } from '../domain/Sketch.js'
 
 export class AppController {
   /**
@@ -171,7 +173,7 @@ export class AppController {
     const meshView = new MeshView(this._sceneView.scene)
     meshView.updateGeometry(corners)
 
-    this._scene.addObject({ id, name, description: '', corners, dimension: 3, meshView })
+    this._scene.addObject(new Cuboid(id, name, corners, meshView))
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 
@@ -189,7 +191,7 @@ export class AppController {
     const meshView = new MeshView(this._sceneView.scene)
     meshView.setVisible(false)  // no geometry yet
 
-    this._scene.addObject({ id, name, description: '', corners: [], dimension: 2, sketchRect: null, meshView })
+    this._scene.addObject(new Sketch(id, name, meshView))
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 

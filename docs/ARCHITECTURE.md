@@ -126,8 +126,8 @@ XY 平面 (Z=0) がグラウンドプレーン。
 
 | フェーズ | 内容 |
 |---------|------|
-| **Phase 0 (現在)** | SceneModel が状態コンテナ。AppController がビジネスロジックを保持 |
-| **Phase 1** | SceneObject を `Cuboid` / `Sketch` ドメインエンティティに分化。`src/domain/` を新設 |
+| ~~**Phase 0**~~ | ~~SceneModel が状態コンテナ。AppController がビジネスロジックを保持~~ (完了 2026-03-20) |
+| **Phase 1 (現在)** | SceneObject を `Cuboid` / `Sketch` ドメインエンティティに分化。`src/domain/` を新設 (完了 2026-03-20, ADR-009) |
 | **Phase 2** | ドメインエンティティが自身の操作メソッドを持つ (extrude, move, rename 等) |
 | **Phase 3** | `SceneModel` をリポジトリ + アグリゲートルートに昇格。ApplicationService 層を追加 |
 | **Phase 4** | ドメインイベント (EventEmitter) を使い View が Model を直接購読 |
