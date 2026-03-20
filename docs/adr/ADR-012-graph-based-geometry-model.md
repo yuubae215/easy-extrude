@@ -1,6 +1,6 @@
 # ADR-012: グラフ基底ジオメトリモデル (Vertex / Edge / Face / Solid)
 
-- **Status**: Proposed
+- **Status**: Accepted (Phase 5-1 にて Vertex 層を実装。Edge / Face / 選択モデルは次フェーズ)
 - **Date**: 2026-03-20
 - **References**: ADR-005, ADR-009, ADR-011
 
@@ -82,7 +82,16 @@ FACES[i].corners     →  Face[i].vertices  (頂点インデックス参照)
 - `MeshView` の `BufferGeometry` 構築ロジックも対応が必要
 - 移行コストが大きいため、既存機能が安定した段階で着手する
 
-## 実装タイミング
+## 実装状況
 
-現行の Cuboid / Sketch エンティティが安定し、Edit Mode の基本操作 (面押し出し・Grab) が
-完成した後のフェーズで着手する。それまでは現行モデルを維持する。
+### Phase 5-1 (完了 2026-03-20)
+
+`src/graph/Vertex.js` を新設。`Cuboid.vertices` / `Sketch.vertices` が `Vertex[8]` を保持。
+`get corners()` ゲッターが `Vector3[]` を返すことで `CuboidModel.js` / `MeshView` / `AppController` は無変更。
+`SceneService.createCuboid()` が `Vertex[]` を生成して `Cuboid` に渡す。
+
+### 残り作業 (次フェーズ)
+
+- `Edge`, `Face` 明示オブジェクトの追加
+- 統一選択モデル `Set<Vertex | Edge | Face>` の実装
+- `dimension` フィールドの廃止とエンティティ型への振る舞い委譲

@@ -23,7 +23,7 @@
 | [ADR-009](ADR-009-domain-entity-types-cuboid-sketch.md) | **ドメインエンティティ型: Cuboid / Sketch** | Accepted | 2026-03-20 | ADR-002, ADR-005, ADR-007 |
 | [ADR-010](ADR-010-domain-entity-behaviour-methods.md) | **ドメインエンティティ振る舞いメソッド (DDD Phase 2)** | Accepted | 2026-03-20 | ADR-009 |
 | [ADR-011](ADR-011-application-service-scene-service.md) | **ApplicationService 層の導入 — SceneService (DDD Phase 3)** | Accepted | 2026-03-20 | ADR-009, ADR-010 |
-| [ADR-012](ADR-012-graph-based-geometry-model.md) | **グラフ基底ジオメトリモデル (Vertex / Edge / Face / Solid)** | Proposed | 2026-03-20 | ADR-005, ADR-009, ADR-011 |
+| [ADR-012](ADR-012-graph-based-geometry-model.md) | **グラフ基底ジオメトリモデル (Vertex / Edge / Face / Solid)** | Accepted | 2026-03-20 | ADR-005, ADR-009, ADR-011 |
 | [ADR-013](ADR-013-domain-events-scene-service-observable.md) | **ドメインイベント — SceneService を Observable に (DDD Phase 4)** | Accepted | 2026-03-20 | ADR-011, ADR-010 |
 
 ## 新しいADRを追加するには

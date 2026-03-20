@@ -4,6 +4,7 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-20**: DDD Phase 5-1 — グラフ基底ジオメトリ移行。`src/graph/Vertex.js` 新設。`Cuboid.vertices` / `Sketch.vertices` が `Vertex[8]` を保持し `get corners()` ゲッターで後方互換を維持。`CuboidModel.js` / `MeshView` / `AppController` は無変更。ADR-012 を Accepted に更新。
 - **2026-03-20**: DDD Phase 5-2 — ステータスバーをイベント駆動に部分移行。`_refreshObjectModeStatus()` ヘルパーを新設し "X selected" ロジックを単一箇所に集約。`objectRenamed` イベントを購読してリネーム時もステータスバーを自動更新。`_confirmGrab` / `_cancelGrab` の固定文字列 "Object selected" バグを合わせて修正。
 - **2026-03-20**: DDD Phase 1 — `src/domain/Cuboid.js` と `src/domain/Sketch.js` を新設し、SceneObject の plain object 生成を typed entity に置き換え。ADR-009 作成。ARCHITECTURE.md の DDD 移行フェーズを Phase 1 に更新。
 - **2026-03-17**: Refactored `src/main.js` to MVC pattern. Separated pure functions from side effects into `model/` / `view/` / `controller/`. Session complete.

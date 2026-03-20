@@ -27,6 +27,7 @@ import { MeshView } from '../view/MeshView.js'
 import { Cuboid } from '../domain/Cuboid.js'
 import { Sketch } from '../domain/Sketch.js'
 import { createInitialCorners } from '../model/CuboidModel.js'
+import { Vertex } from '../graph/Vertex.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -56,16 +57,15 @@ export class SceneService extends EventEmitter {
     const id   = `obj_${idx}_${Date.now()}`
     const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
 
-    const corners = createInitialCorners()
+    const positions = createInitialCorners()
     if (idx > 0) {
       const step = idx * 0.5
-      corners.forEach(c => { c.x += step; c.y += step })
+      positions.forEach(c => { c.x += step; c.y += step })
     }
 
-    const meshView = new MeshView(this._threeScene)
-    meshView.updateGeometry(corners)
-
-    const cuboid = new Cuboid(id, name, corners, meshView)
+    const vertices = positions.map((pos, i) => new Vertex(`${id}_v${i}`, pos))
+    const cuboid   = new Cuboid(id, name, vertices, new MeshView(this._threeScene))
+    cuboid.meshView.updateGeometry(cuboid.corners)
     this._model.addObject(cuboid)
     this.emit('objectAdded', cuboid)
     return cuboid
