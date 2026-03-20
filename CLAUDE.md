@@ -2,6 +2,32 @@
 
 Three.js + Vite sample project. An interactive editing scene for a cuboid built with custom BufferGeometry. Deployed to GitHub Pages.
 
+## Document navigation (read this at every session start)
+
+Before writing or modifying any code, consult the relevant documents below.
+Use the index to decide what to read — do not guess at design decisions.
+
+| Trigger keyword in prompt | What to read first |
+|---------------------------|--------------------|
+| architecture / design / why | `docs/adr/README.md` → follow relevant ADR links |
+| new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
+| mouse / keyboard / controls / orbit | ADR-003, ADR-006 |
+| mode / edit mode / object mode / sketch | ADR-002, ADR-004 |
+| object / hierarchy / 1D / 2D / 3D | ADR-005 |
+| voxel / shape / geometry / extrude | ADR-001, ADR-002 |
+| mobile / touch / pointer | `docs/ROADMAP.md` (Mobile Support section) |
+| ADR / decision record | `docs/adr/README.md` (full index) |
+
+**Slash command:** `/adr <topic>` — searches the ADR index and returns relevant decisions.
+
+### When to create a new ADR
+
+Create a new ADR (and update `docs/adr/README.md`) when:
+- A significant design choice is made that is non-obvious or hard to reverse
+- An existing ADR is superseded (update its status field, add a new ADR)
+
+Do NOT create an ADR for implementation details or bug fixes.
+
 ## Development commands
 
 ```bash
