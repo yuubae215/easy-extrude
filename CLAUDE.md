@@ -9,12 +9,14 @@ Before writing or modifying any code, consult the relevant documents.
 
 | Trigger in prompt | Read first |
 |-------------------|-----------|
-| architecture / design / why | `docs/adr/README.md` → follow ADR links |
+| architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
+| state machine / mode transition / state | `docs/STATE_TRANSITIONS.md`, ADR-008 |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
 | controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
 | mode / edit mode / object mode / sketch | ADR-002, ADR-004, ADR-008 |
 | object / hierarchy / 1D / 2D / 3D | ADR-005 |
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
+| SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
 | mobile / touch | `docs/ROADMAP.md` (Mobile Support section) |
 
 **`/adr <topic>`** — slash command to search the ADR index.
@@ -47,6 +49,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-20**: MVC refactor — extracted `SceneModel` from `AppController`. Domain state (`_objects`, `_activeId`, `_selectionMode`, `_editSubstate`) now lives in `src/model/SceneModel.js`. Added `docs/ARCHITECTURE.md` and `docs/STATE_TRANSITIONS.md`.
 - **2026-03-20**: Bug fixes + ADR-008 (Mode Transition State Machine). `setMode()` now fully cancels in-progress ops and clears visual state before transitioning. `_addObject`, `_deleteObject` guard against Edit Mode. `MeshView.setFaceHighlight` owns `hlMesh.visible`.
 - **2026-03-20**: Added `.claude/commands/adr.md` (`/adr` slash command). Added document navigation guide to CLAUDE.md. Refactored CLAUDE.md to agent-instructions-only format; moved full session history to `docs/SESSION_LOG.md`.
 - **2026-03-20**: Architecture design session. ADR-001–006 created. `docs/ROADMAP.md` revised.

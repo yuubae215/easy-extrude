@@ -1,8 +1,12 @@
 /**
- * AppController - handles user input and manages the animation loop
+ * AppController - handles user input and coordinates the animation loop.
  *
- * Connects Model (CuboidModel) with View (SceneView / MeshView / UIView / OutlinerView).
- * Side effects: event listener registration, requestAnimationFrame, Model state updates.
+ * Connects SceneModel (domain state) with the View layer (SceneView / MeshView /
+ * UIView / OutlinerView). Owns only transient interaction state (drag, hover,
+ * grab, sketch phase, etc.) — persistent domain state lives in SceneModel.
+ *
+ * Side effects: event listener registration, requestAnimationFrame, SceneModel
+ * and View mutations.
  */
 import * as THREE from 'three'
 import {
@@ -14,13 +18,14 @@ import {
   toNDC,
   getPivotCandidates,
 } from '../model/CuboidModel.js'
+import { SceneModel } from '../model/SceneModel.js'
 import { MeshView } from '../view/MeshView.js'
 
 export class AppController {
   /**
-   * @param {import('../view/SceneView.js').SceneView}     sceneView
-   * @param {import('../view/UIView.js').UIView}           uiView
-   * @param {import('../view/GizmoView.js').GizmoView}     gizmoView
+   * @param {import('../view/SceneView.js').SceneView}       sceneView
+   * @param {import('../view/UIView.js').UIView}             uiView
+   * @param {import('../view/GizmoView.js').GizmoView}       gizmoView
    * @param {import('../view/OutlinerView.js').OutlinerView} outlinerView
    */
   constructor(sceneView, uiView, gizmoView = null, outlinerView = null) {
@@ -29,16 +34,8 @@ export class AppController {
     this._gizmoView    = gizmoView
     this._outlinerView = outlinerView
 
-    // ── Multi-object scene state ───────────────────────────────────────────
-    // Each entry: { id, name, corners: THREE.Vector3[], meshView: MeshView }
-    this._objects  = new Map()
-    this._activeId = null
-
-    // ── Selection mode: 'object' | 'edit' ─────────────────────────────────
-    this._selectionMode = 'object'
-
-    // ── Edit substate: null | '3d' | '2d-sketch' | '2d-extrude' ──────────
-    this._editSubstate = null
+    // ── Domain state (SceneModel owns objects, activeId, mode) ────────────
+    this._scene = new SceneModel()
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     this._sketch = {
@@ -113,7 +110,7 @@ export class AppController {
     }
 
     uiView.onNameChange(name => {
-      if (this._activeId) this._renameObject(this._activeId, name)
+      if (this._scene.activeId) this._renameObject(this._scene.activeId, name)
     })
     uiView.onDescriptionChange(desc => {
       const obj = this._activeObj
@@ -131,17 +128,17 @@ export class AppController {
 
   /** Returns the active object entry, or null if none */
   get _activeObj() {
-    return this._activeId ? this._objects.get(this._activeId) ?? null : null
+    return this._scene.activeObject
   }
 
   /** Returns the active object's corners array */
   get _corners() {
-    return this._activeObj?.corners ?? []
+    return this._scene.activeObject?.corners ?? []
   }
 
   /** Returns the active object's MeshView */
   get _meshView() {
-    return this._activeObj?.meshView ?? null
+    return this._scene.activeObject?.meshView ?? null
   }
 
   // ─── Convenience getters ──────────────────────────────────────────────────
@@ -158,9 +155,9 @@ export class AppController {
     if (type === 'sketch') { this._addSketchObject(); return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
-    if (this._selectionMode === 'edit') this.setMode('object')
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
 
-    const idx  = this._objects.size
+    const idx  = this._scene.objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
 
@@ -174,7 +171,7 @@ export class AppController {
     const meshView = new MeshView(this._sceneView.scene)
     meshView.updateGeometry(corners)
 
-    this._objects.set(id, { id, name, description: '', corners, dimension: 3, meshView })
+    this._scene.addObject({ id, name, description: '', corners, dimension: 3, meshView })
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 
@@ -183,16 +180,16 @@ export class AppController {
 
   _addSketchObject() {
     // Exit current mode cleanly before switching active object
-    if (this._selectionMode === 'edit') this.setMode('object')
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
 
-    const idx  = this._objects.size
+    const idx  = this._scene.objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = `Sketch.${String(idx).padStart(3, '0')}`
 
     const meshView = new MeshView(this._sceneView.scene)
     meshView.setVisible(false)  // no geometry yet
 
-    this._objects.set(id, { id, name, description: '', corners: [], dimension: 2, sketchRect: null, meshView })
+    this._scene.addObject({ id, name, description: '', corners: [], dimension: 2, sketchRect: null, meshView })
 
     if (this._outlinerView) this._outlinerView.addObject(id, name)
 
@@ -201,24 +198,24 @@ export class AppController {
   }
 
   _deleteObject(id) {
-    if (this._objects.size <= 1) return   // always keep at least one object
+    if (this._scene.objects.size <= 1) return   // always keep at least one object
 
     // If deleting the active object while in Edit Mode, exit cleanly first
     // (setMode operates on the active meshView, so must be called before dispose)
-    if (id === this._activeId && this._selectionMode === 'edit') {
+    if (id === this._scene.activeId && this._scene.selectionMode === 'edit') {
       this.setMode('object')
     }
 
-    const obj = this._objects.get(id)
+    const obj = this._scene.getObject(id)
     if (!obj) return
 
     obj.meshView.dispose(this._sceneView.scene)
-    this._objects.delete(id)
+    this._scene.removeObject(id)
 
     if (this._outlinerView) this._outlinerView.removeObject(id)
 
-    if (this._activeId === id) {
-      const ids = [...this._objects.keys()]
+    if (this._scene.activeId === id) {
+      const ids = [...this._scene.objects.keys()]
       this._switchActiveObject(ids[ids.length - 1], true)
     }
   }
@@ -230,15 +227,15 @@ export class AppController {
    */
   _switchActiveObject(id, select = false) {
     // Deselect / un-highlight previous
-    if (this._activeId && this._activeId !== id) {
-      const prev = this._objects.get(this._activeId)
+    if (this._scene.activeId && this._scene.activeId !== id) {
+      const prev = this._scene.getObject(this._scene.activeId)
       if (prev) prev.meshView.setObjectSelected(false)
     }
 
-    this._activeId    = id
+    this._scene.setActiveId(id)
     this._objSelected = select
 
-    const obj = this._objects.get(id)
+    const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
 
     if (this._outlinerView) this._outlinerView.setActive(id)
@@ -254,23 +251,22 @@ export class AppController {
   }
 
   _setObjectVisible(id, visible) {
-    const obj = this._objects.get(id)
+    const obj = this._scene.getObject(id)
     if (!obj) return
     obj.meshView.setVisible(visible)
   }
 
   _renameObject(id, name) {
-    const obj = this._objects.get(id)
-    if (!obj || !name) return
-    obj.name = name
+    if (!this._scene.getObject(id) || !name) return
+    this._scene.renameObject(id, name)
     if (this._outlinerView) this._outlinerView.setObjectName(id, name)
-    if (id === this._activeId) this._updateNPanel()
+    if (id === this._scene.activeId) this._updateNPanel()
   }
 
   /** Called when user clicks a row in the outliner */
   _onOutlinerSelect(id) {
-    if (this._selectionMode === 'edit') this.setMode('object')
-    if (id !== this._activeId) {
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    if (id !== this._scene.activeId) {
       this._switchActiveObject(id, true)
     } else {
       // Clicking the already-active row just re-selects it
@@ -296,13 +292,13 @@ export class AppController {
   /** Hits any visible object — returns { hit, obj } or null */
   _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
-    const meshes = [...this._objects.values()]
+    const meshes = [...this._scene.objects.values()]
       .filter(o => o.meshView.cuboid.visible)
       .map(o => o.meshView.cuboid)
     const hits = this._raycaster.intersectObjects(meshes)
     if (!hits.length) return null
     const hitMesh = hits[0].object
-    const obj = [...this._objects.values()].find(o => o.meshView.cuboid === hitMesh)
+    const obj = [...this._scene.objects.values()].find(o => o.meshView.cuboid === hitMesh)
     return obj ? { hit: hits[0], obj } : null
   }
 
@@ -380,7 +376,7 @@ export class AppController {
 
     // ── Substate reset and mode dispatch ───────────────────────────────────
     this._cleanupEditSubstate()
-    this._selectionMode = mode
+    this._scene.setSelectionMode(mode)
     this._controls.enabled = true
 
     if (mode === 'object') {
@@ -407,7 +403,7 @@ export class AppController {
   }
 
   _cleanupEditSubstate() {
-    this._editSubstate = null
+    this._scene.setEditSubstate(null)
     this._sketch.drawing = false
     this._sketch.p1 = null
     this._sketch.p2 = null
@@ -417,7 +413,7 @@ export class AppController {
   }
 
   _enterEditMode2D() {
-    this._editSubstate = '2d-sketch'
+    this._scene.setEditSubstate('2d-sketch')
     this._uiView.setStatus('')
     this._uiView.updateMode('edit', '2d')
     // Restore existing sketch rect if any
@@ -439,14 +435,14 @@ export class AppController {
   }
 
   _enterEditMode3D() {
-    this._editSubstate = '3d'
+    this._scene.setEditSubstate('3d')
     this._uiView.setStatus('')
     this._uiView.updateMode('edit', '3d')
   }
 
   _enterExtrudePhase() {
     if (!this._sketch.p1 || !this._sketch.p2) return
-    this._editSubstate = '2d-extrude'
+    this._scene.setEditSubstate('2d-extrude')
     this._extrudePhase.height = 1
     this._extrudePhase.inputStr = ''
     this._extrudePhase.hasInput = false
@@ -853,7 +849,7 @@ export class AppController {
       return
     }
 
-    if (this._selectionMode === 'object') {
+    if (this._scene.selectionMode === 'object') {
       if (this._objDragging) {
         if (this._objCtrlDrag) {
           const angle = (e.clientX - this._objRotateStartX) * 0.01
@@ -879,7 +875,7 @@ export class AppController {
     }
 
     // ── Edit mode · 2D sketch ─────────────────────────────────────────────
-    if (this._editSubstate === '2d-sketch') {
+    if (this._scene.editSubstate === '2d-sketch') {
       if (this._sketch.drawing) {
         const pt = new THREE.Vector3()
         this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -892,7 +888,7 @@ export class AppController {
     }
 
     // ── Edit mode · 2D extrude ────────────────────────────────────────────
-    if (this._editSubstate === '2d-extrude') {
+    if (this._scene.editSubstate === '2d-extrude') {
       if (!this._extrudePhase.hasInput) {
         const pt = new THREE.Vector3()
         this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -966,7 +962,7 @@ export class AppController {
     this._updateMouse(e)
 
     // ── Sketch drawing ────────────────────────────────────────────────────
-    if (this._editSubstate === '2d-sketch') {
+    if (this._scene.editSubstate === '2d-sketch') {
       const pt = new THREE.Vector3()
       this._raycaster.setFromCamera(this._mouse, this._camera)
       if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) {
@@ -978,12 +974,12 @@ export class AppController {
       return
     }
 
-    if (this._selectionMode === 'object') {
+    if (this._scene.selectionMode === 'object') {
       const result = this._hitAnyObject()
       if (result) {
         const { hit, obj } = result
         // Switch active object if a different one was clicked
-        if (obj.id !== this._activeId) {
+        if (obj.id !== this._scene.activeId) {
           this._switchActiveObject(obj.id, true)
         } else if (!this._objSelected) {
           this._setObjectSelected(true)
@@ -1119,7 +1115,7 @@ export class AppController {
     }
 
     // ── Sketch phase keys ──────────────────────────────────────────────────
-    if (this._editSubstate === '2d-sketch') {
+    if (this._scene.editSubstate === '2d-sketch') {
       if (e.key === 'Enter') {
         e.preventDefault()
         if (this._sketch.p1 && this._sketch.p2) {
@@ -1134,7 +1130,7 @@ export class AppController {
     }
 
     // ── Extrude-from-sketch phase keys ─────────────────────────────────────
-    if (this._editSubstate === '2d-extrude') {
+    if (this._scene.editSubstate === '2d-extrude') {
       if (e.key === 'Enter') { e.preventDefault(); this._confirmExtrudePhase(); return }
       if (e.key === 'Escape') { this._cancelExtrudePhase(); return }
       if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
@@ -1163,7 +1159,7 @@ export class AppController {
     // ── Normal keys ────────────────────────────────────────────────────────
     if (e.key === 'Tab') {
       e.preventDefault()
-      this.setMode(this._selectionMode === 'object' ? 'edit' : 'object')
+      this.setMode(this._scene.selectionMode === 'object' ? 'edit' : 'object')
       return
     }
     if (e.key === 'n' || e.key === 'N') {
@@ -1177,7 +1173,7 @@ export class AppController {
     if (e.key === 'o' || e.key === 'O') { this.setMode('object'); return }
     if (e.key === 'e' || e.key === 'E') { this.setMode('edit');   return }
 
-    if (this._selectionMode === 'object') {
+    if (this._scene.selectionMode === 'object') {
       // G: grab
       if ((e.key === 'g' || e.key === 'G') && this._objSelected) {
         this._startGrab()
@@ -1196,7 +1192,7 @@ export class AppController {
       }
       // X / Delete: delete active object
       if ((e.key === 'x' || e.key === 'X' || e.key === 'Delete') && this._objSelected) {
-        this._deleteObject(this._activeId)
+        this._deleteObject(this._scene.activeId)
         return
       }
     }
