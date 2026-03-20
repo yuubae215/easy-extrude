@@ -74,9 +74,21 @@ export class AppController {
     this._objDragPlane          = new THREE.Plane()
     this._objDragStart          = new THREE.Vector3()
     this._objDragStartCorners   = []
+    /** @type {Map<string, import('three').Vector3[]>} corners snapshot for each selected object at drag start */
+    this._objDragAllStartCorners = new Map()
     this._objRotateStartX       = 0
     this._objRotateCentroid     = new THREE.Vector3()
     this._objRotateStartCorners = []
+
+    // ── Rectangle selection state ──────────────────────────────────────────
+    /** @type {Set<string>} IDs of all currently selected objects (multi-select) */
+    this._selectedIds = new Set()
+    this._rectSel = {
+      active:    false,
+      startPx:   { x: 0, y: 0 },
+      currentPx: { x: 0, y: 0 },
+    }
+    this._rectSelEl = this._createRectSelEl()
 
     // ── Edit mode (face extrude) state ─────────────────────────────────────
     /** @type {import('../graph/Face.js').Face|null} */
@@ -110,6 +122,8 @@ export class AppController {
       axis:            null,
       startMouse:      new THREE.Vector2(),
       startCorners:    [],
+      /** @type {Map<string, import('three').Vector3[]>} corners snapshot for all selected objects */
+      allStartCorners: new Map(),
       centroid:        new THREE.Vector3(),
       pivot:           new THREE.Vector3(),
       pivotLabel:      'Centroid',
@@ -537,6 +551,7 @@ export class AppController {
       this._uiView.updateMode('object')
     } else {
       // edit mode — dispatch on entity type
+      this._clearObjectSelection()
       this._setObjectSelected(false)
       this._objDragging = false
       if (this._activeObj instanceof Sketch) {
@@ -690,6 +705,118 @@ export class AppController {
     this._refreshObjectModeStatus()
   }
 
+  // ─── Rectangle selection helpers ──────────────────────────────────────────
+
+  /** Creates the CSS overlay <div> used to draw the selection rectangle. */
+  _createRectSelEl() {
+    const el = document.createElement('div')
+    Object.assign(el.style, {
+      position:       'fixed',
+      pointerEvents:  'none',
+      display:        'none',
+      zIndex:         '50',
+      boxSizing:      'border-box',
+    })
+    document.body.appendChild(el)
+    return el
+  }
+
+  /** Updates the overlay position/style to reflect the current drag rectangle. */
+  _updateRectSelDisplay() {
+    const { startPx, currentPx } = this._rectSel
+    const isRight = currentPx.x >= startPx.x
+    const x = Math.min(startPx.x, currentPx.x)
+    const y = Math.min(startPx.y, currentPx.y)
+    const w = Math.abs(currentPx.x - startPx.x)
+    const h = Math.abs(currentPx.y - startPx.y)
+    Object.assign(this._rectSelEl.style, {
+      display:     'block',
+      left:        x + 'px',
+      top:         y + 'px',
+      width:       w + 'px',
+      height:      h + 'px',
+      border:      '1px ' + (isRight ? 'solid' : 'dashed') + ' ' + (isRight ? '#4fc3f7' : '#ffa726'),
+      background:  isRight ? 'rgba(79,195,247,0.05)' : 'rgba(255,167,38,0.05)',
+    })
+  }
+
+  /** Clears visual selection highlight for all currently selected objects. */
+  _clearObjectSelection() {
+    for (const id of this._selectedIds) {
+      const obj = this._scene.getObject(id)
+      if (obj) obj.meshView.setObjectSelected(false)
+    }
+    this._selectedIds.clear()
+  }
+
+  /**
+   * Finalizes the rectangle selection.
+   * Right-drag (x increases): enclosed-only mode.
+   * Left-drag (x decreases): touch mode (any overlap counts).
+   */
+  _finalizeRectSelection() {
+    const { startPx, currentPx } = this._rectSel
+    const w = Math.abs(currentPx.x - startPx.x)
+    const h = Math.abs(currentPx.y - startPx.y)
+
+    // Tiny movement — treat as deselect click
+    if (w < 3 && h < 3) {
+      this._clearObjectSelection()
+      this._setObjectSelected(false)
+      return
+    }
+
+    const isRight = currentPx.x >= startPx.x
+    const minX = Math.min(startPx.x, currentPx.x)
+    const minY = Math.min(startPx.y, currentPx.y)
+    const maxX = Math.max(startPx.x, currentPx.x)
+    const maxY = Math.max(startPx.y, currentPx.y)
+
+    const matched = []
+    for (const obj of this._scene.objects.values()) {
+      if (!obj.meshView.cuboid.visible) continue
+      const pts = obj.corners.map(c => this._toScreenPx(c))
+
+      if (isRight) {
+        // Enclosed: every projected corner must be inside the rect
+        if (pts.every(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)) {
+          matched.push(obj)
+        }
+      } else {
+        // Touch: object screen-bounding-box overlaps the rect
+        const bMinX = Math.min(...pts.map(p => p.x))
+        const bMaxX = Math.max(...pts.map(p => p.x))
+        const bMinY = Math.min(...pts.map(p => p.y))
+        const bMaxY = Math.max(...pts.map(p => p.y))
+        if (bMinX <= maxX && bMaxX >= minX && bMinY <= maxY && bMaxY >= minY) {
+          matched.push(obj)
+        }
+      }
+    }
+
+    // Clear previous multi-selection then apply new one
+    this._clearObjectSelection()
+    if (matched.length === 0) {
+      this._setObjectSelected(false)
+      return
+    }
+
+    for (const obj of matched) {
+      obj.meshView.setObjectSelected(true)
+      this._selectedIds.add(obj.id)
+    }
+
+    // Make the first matched object active
+    const first = matched[0]
+    if (first.id !== this._scene.activeId) {
+      // Deselect previous active's box-helper (already handled above)
+      this._service.setActiveObject(first.id)
+    }
+    this._objSelected = true
+    this._refreshObjectModeStatus()
+    this._updateNPanel()
+  }
+
   // ─── Blender-style grab ────────────────────────────────────────────────────
 
   _startGrab() {
@@ -705,6 +832,12 @@ export class AppController {
     this._grab.snapTargets     = []
     this._grab.startMouse.copy(this._mouse)
     this._grab.startCorners = this._corners.map(c => c.clone())
+    // Snapshot corners of every selected object for multi-object grab
+    this._grab.allStartCorners = new Map()
+    for (const id of this._selectedIds) {
+      const selObj = this._scene.getObject(id)
+      if (selObj) this._grab.allStartCorners.set(id, selObj.corners.map(c => c.clone()))
+    }
     this._grab.centroid.copy(getCentroid(this._corners))
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.pivotLabel = 'Centroid'
@@ -745,9 +878,15 @@ export class AppController {
   _cancelGrab() {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
-    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
+    // Restore all selected objects to their pre-grab positions
+    for (const [id, startCorners] of this._grab.allStartCorners) {
+      const selObj = this._scene.getObject(id)
+      if (selObj) {
+        startCorners.forEach((c, i) => selObj.corners[i].copy(c))
+        selObj.meshView.updateGeometry(selObj.corners)
+        selObj.meshView.updateBoxHelper()
+      }
+    }
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
     this._grab.active        = false
@@ -785,15 +924,33 @@ export class AppController {
     } else {
       this._applyFreeGrab()
     }
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
+    // Update geometry for all selected objects
+    for (const id of this._selectedIds) {
+      const selObj = this._scene.getObject(id)
+      if (selObj) {
+        selObj.meshView.updateGeometry(selObj.corners)
+        selObj.meshView.updateBoxHelper()
+      }
+    }
+  }
+
+  /**
+   * Applies `delta` to the active object and all other selected objects.
+   * Uses each object's own startCorners snapshot from `_grab.allStartCorners`.
+   * @param {import('three').Vector3} delta
+   */
+  _applyGrabDeltaToAll(delta) {
+    for (const [id, startCorners] of this._grab.allStartCorners) {
+      const selObj = this._scene.getObject(id)
+      if (selObj) selObj.move(startCorners, delta)
+    }
   }
 
   _applyGrabFromInput() {
     this._grab.snapping = false
     const dist    = parseFloat(this._grab.inputStr) || 0
     const axisVec = this._getAxisVec(this._grab.axis)
-    this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(dist))
+    this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
   }
 
   _applyFreeGrab() {
@@ -811,7 +968,7 @@ export class AppController {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
     }
-    this._activeObj.move(this._grab.startCorners, delta)
+    this._applyGrabDeltaToAll(delta)
   }
 
   _applyAxisConstrainedGrab() {
@@ -835,17 +992,17 @@ export class AppController {
     if (this._grab.autoSnap) {
       const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
       const snappedDelta = this._trySnapToGeometry(delta)
-      this._activeObj.move(this._grab.startCorners, snappedDelta)
+      this._applyGrabDeltaToAll(snappedDelta)
     } else if (this._ctrlHeld) {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
       const g           = this._grab.gridSize
       const snappedDist = Math.round(dist / g) * g
-      this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(snappedDist))
+      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(snappedDist))
     } else {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
-      this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(dist))
+      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
     }
   }
 
@@ -1105,6 +1262,11 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
+      if (this._rectSel.active) {
+        this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
+        this._updateRectSelDisplay()
+        return
+      }
       if (this._objDragging) {
         if (this._objCtrlDrag) {
           const angle = (e.clientX - this._objRotateStartX) * 0.01
@@ -1112,16 +1274,24 @@ export class AppController {
           this._objRotateStartCorners.forEach((c, i) => {
             this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
           })
+          this._meshView.updateGeometry(this._corners)
+          if (this._objSelected) this._meshView.updateBoxHelper()
         } else {
           this._raycaster.setFromCamera(this._mouse, this._camera)
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
             const delta = pt.clone().sub(this._objDragStart)
-            this._activeObj.move(this._objDragStartCorners, delta)
+            // Move all selected objects by the same delta
+            for (const [id, startCorners] of this._objDragAllStartCorners) {
+              const selObj = this._scene.getObject(id)
+              if (selObj) {
+                selObj.move(startCorners, delta)
+                selObj.meshView.updateGeometry(selObj.corners)
+                selObj.meshView.updateBoxHelper()
+              }
+            }
           }
         }
-        this._meshView.updateGeometry(this._corners)
-        if (this._objSelected) this._meshView.updateBoxHelper()
         this._updateNPanel()
       } else {
         this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
@@ -1301,12 +1471,32 @@ export class AppController {
       const result = this._hitAnyObject()
       if (result) {
         const { hit, obj } = result
-        // Switch active object if a different one was clicked
-        if (obj.id !== this._scene.activeId) {
-          this._switchActiveObject(obj.id, true)
-        } else if (!this._objSelected) {
-          this._setObjectSelected(true)
+        if (!this._selectedIds.has(obj.id)) {
+          // Clicked an unselected object — clear previous selection, select only this
+          this._clearObjectSelection()
+          if (obj.id !== this._scene.activeId) {
+            this._switchActiveObject(obj.id, true)
+          } else if (!this._objSelected) {
+            this._setObjectSelected(true)
+          }
+          this._selectedIds.add(obj.id)
+        } else {
+          // Clicked an already-selected object — keep all selected, update active
+          if (obj.id !== this._scene.activeId) {
+            this._service.setActiveObject(obj.id)
+            this._objSelected = true
+            this._refreshObjectModeStatus()
+            this._updateNPanel()
+          }
         }
+
+        // Snapshot corners of every selected object for this drag
+        this._objDragAllStartCorners = new Map()
+        for (const id of this._selectedIds) {
+          const selObj = this._scene.getObject(id)
+          if (selObj) this._objDragAllStartCorners.set(id, selObj.corners.map(c => c.clone()))
+        }
+
         this._objDragging      = true
         this._objCtrlDrag      = e.ctrlKey
         this._controls.enabled = false
@@ -1324,7 +1514,11 @@ export class AppController {
           this._objRotateStartCorners = this._corners.map(c => c.clone())
         }
       } else {
-        this._setObjectSelected(false)
+        // No object hit — start rectangle selection
+        this._rectSel.active    = true
+        this._rectSel.startPx   = { x: e.clientX, y: e.clientY }
+        this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
+        this._controls.enabled  = false
       }
       return
     }
@@ -1366,6 +1560,13 @@ export class AppController {
           }
         }
       }
+      return
+    }
+    if (this._rectSel.active) {
+      this._rectSel.active = false
+      this._rectSelEl.style.display = 'none'
+      this._controls.enabled = true
+      this._finalizeRectSelection()
       return
     }
     if (this._objDragging) {
