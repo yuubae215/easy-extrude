@@ -1,41 +1,41 @@
 # ADR-002: Two Modeling Methods (Primitive Box vs. Sketch → Extrude)
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Accepted (updated 2026-03-20 — VoxelShape → CuboidShape)
 
 ---
 
 ## Context
 
-Users need two distinct ways to create 3D shapes, reflecting common modeling workflows:
+ユーザーは2通りの方法で3Dシェイプを作成できる必要がある：
 
-1. Start directly from a 3D primitive (fast, common case)
-2. Define a 2D footprint first, then extrude into 3D (useful for floor plans, cross-sections)
+1. 3Dプリミティブから直接始める（最速・最多用途）
+2. 2Dフットプリント（矩形）を先に定義し、高さ方向に押し出す（平面図・断面図ワークフロー）
 
-After extrusion, both paths should arrive at the **same Edit Mode** with the same face-push/pull controls.
+どちらの方法も最終的に **同一の Edit Mode**（フェイスプッシュ/プル）に到達する。
 
 ## Decision
 
 ### Method A — Primitive Box
 
-- `Shift+A` → "Add Box" → prompts for W × H × D (in grid units)
-- Places a box of that size as a `VoxelShape`
-- Immediately enters Edit Mode on the new object
+- `Shift+A` → "Add Box" → 既定サイズ（2×2×2）の Cuboid を配置
+- 新しいオブジェクトは `corners[8]` で表現される直方体
+- 配置直後に Edit Mode に入る
 
 ### Method B — Sketch → Extrude
 
-- `Shift+A` → "Add Sketch" → enters Edit Mode on a new, empty 2D Sketch object
-- **Sketch phase:** left-click/drag to paint grid cells on the XY ground plane
-- **Extrude phase:** press Enter → drag vertically (or type a number) to set height in grid units
-- Result: a `VoxelShape` (columns of voxels under each painted cell)
-- Immediately continues in Edit Mode (3D) on the extruded shape
+- `Shift+A` → "Add Sketch" → 空の 2D Sketch オブジェクトを作成し、Edit Mode · 2D に入る
+- **Sketch フェーズ:** XY グラウンドプレーン上でクリック→ドラッグして矩形を描く（2コーナー指定）
+- **Extrude フェーズ:** Enter → マウスを上方向にドラッグ（または数値入力）で高さを指定
+- 結果: 矩形フットプリント × 高さ から `corners[8]` の Cuboid が生成される
+- そのまま Edit Mode (3D) に継続して入る
 
 ### Shared Edit Phase
 
-Both methods produce a `VoxelShape`. Edit Mode operates identically:
-- Hover over an exposed face → highlight
-- Drag face outward → add a voxel layer
-- Drag face inward → remove a voxel layer
+どちらも `corners[8]` の CuboidShape を生成する。Edit Mode の操作は共通：
+- フェイスをホバー → ハイライト
+- フェイスを外向きにドラッグ → 押し出し（フェイスの4コーナーを法線方向に移動）
+- フェイスを内向きにドラッグ → 押し込み
 
 ```
 Method A:  Add Box ─────────────────────→ Edit Mode (3D)
@@ -45,6 +45,6 @@ Method B:  Add Sketch → Sketch Phase → Extrude Phase → Edit Mode (3D)
 
 ## Consequences
 
-- No separate "Sketch Mode" in the mode system; Edit Mode adapts to object type (see ADR-004)
-- The 2D Sketch object type is preserved after extrusion (non-destructive), allowing later re-edit of the footprint
-- `extrudeProfile(cells2D, height)` is a pure Model function that produces a `VoxelShape`
+- Edit Mode は Sketch/Box 問わず同じフェイス操作（ADR-004 参照）
+- Sketch オブジェクトは矩形定義のみ保持（2コーナー）、非破壊再編集は ADR-005 階層で実現予定
+- `buildCuboidFromRect(minXY, maxXY, height)` は純粋関数として Model 層に実装

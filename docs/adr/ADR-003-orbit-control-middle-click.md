@@ -1,7 +1,7 @@
 # ADR-003: Orbit Control Migrated to Middle-Click
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Rejected — Voxelモデルと同時に実装されたがリバート済み。Right-drag orbit を維持する（現行実装）。
 
 ---
 

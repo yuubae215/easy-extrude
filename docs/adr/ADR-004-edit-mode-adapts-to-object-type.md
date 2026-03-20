@@ -1,49 +1,48 @@
 # ADR-004: Edit Mode Adapts to Object Type
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Accepted (updated 2026-03-20 — VoxelShape → CuboidShape)
 
 ---
 
 ## Context
 
-The application needs to support editing objects of different dimensionalities (1D, 2D, 3D). A naive approach would introduce separate named modes for each type ("Sketch Mode", "Draw Mode", etc.), increasing the number of modes users must learn.
+異なる次元のオブジェクト（1D, 2D, 3D）を編集するために、モードごとに別名（"Sketch Mode" 等）を用意すると学習コストが増える。
 
 ## Decision
 
-Keep exactly **two top-level modes**: Object Mode and Edit Mode.
+トップレベルのモードは **Object Mode と Edit Mode の2つだけ** に保つ。
 
-Edit Mode's behaviour automatically adapts based on the **type of the selected object**:
+Edit Mode の動作は選択オブジェクトのタイプ（`dimension`）に応じて自動的に変わる：
 
-| Selected Object Type | Edit Mode Behaviour |
-|---------------------|---------------------|
-| **3D** (VoxelShape / Box) | Face hover + push/pull (current extrude behaviour) |
-| **2D** (Sketch) | Grid cell paint/erase on XY plane |
-| **1D** (MeasureLine, future) | Endpoint drag |
+| 選択オブジェクトタイプ | Edit Mode の動作 |
+|----------------------|-----------------|
+| **3D** (CuboidShape) | フェイスホバー + プッシュ/プル |
+| **2D** (Sketch / 矩形) | XY 平面上で矩形を描く（2コーナー指定） |
+| **1D** (MeasureLine, 将来) | エンドポイントドラッグ |
 
 ```
 Object Mode  ──Tab──→  Edit Mode
-                           ├── if 3D selected: face extrude
-                           ├── if 2D selected: cell paint
+                           ├── if 3D selected: face push/pull
+                           ├── if 2D selected: rect sketch
                            └── if 1D selected: endpoint drag
 ```
 
-The mode indicator in the header bar shows the compound state:
+ヘッダーバーのモード表示はサブタイプを含む：
 - `Edit Mode · 3D`
 - `Edit Mode · 2D`
 - `Edit Mode · 1D`
 
-### Extrude transition (2D → 3D)
+### Extrude 遷移 (2D → 3D)
 
-When a 2D Sketch object is in Edit Mode and the user presses Enter to confirm the sketch:
-1. The sketch enters Extrude phase (height input) — still within Edit Mode
-2. On extrude confirm, a new 3D VoxelShape object is created as a child of the sketch
-3. Edit Mode seamlessly continues on the new 3D object
-4. Status bar shows: `"Extruded → Edit Mode · 3D"`
+2D Sketch オブジェクトが Edit Mode にあり、ユーザーが Enter を押したとき：
+1. Extrude フェーズ（高さ入力）に移行 — Edit Mode の内側
+2. 確定で `corners[8]` の CuboidShape が生成される
+3. そのまま Edit Mode · 3D に継続
+4. ステータスバー: `"Extruded → Edit Mode · 3D"`
 
 ## Consequences
 
-- Users learn one shortcut (`Tab`) for all object types
-- AppController requires a dispatch on object type at the Edit Mode entry point
-- UIView status display needs to reflect the compound mode string
-- No "Sketch Mode" key binding needed; reduces cognitive load
+- ユーザーが覚えるショートカットは `Tab` の1つだけ
+- AppController は Edit Mode 入口でオブジェクトタイプに応じてディスパッチが必要
+- UIView のステータス表示は `Edit Mode · 2D / 3D` のコンパウンド文字列を扱う

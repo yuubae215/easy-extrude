@@ -1,7 +1,12 @@
 # ADR-001: Voxel-based Shape Representation
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Superseded by ADR-007
+
+---
+
+> Voxel（単位立方体の集合）を採用する方針だったが、設計をCuboidベースに変更したため ADR-007 に置き換えた。
+> 内容は歴史的記録として残す。
 
 ---
 

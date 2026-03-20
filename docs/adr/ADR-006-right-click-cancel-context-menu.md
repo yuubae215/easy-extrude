@@ -1,43 +1,43 @@
 # ADR-006: Right-Click as Cancel / Context Menu
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Accepted (updated 2026-03-20 — Voxel固有記述を除去)
 
 ---
 
 ## Context
 
-Right-click is currently used inconsistently: OrbitControls interprets it as orbit (right-drag), and AppController uses it to cancel Grab mode. This creates UX friction — especially in Sketch Mode where right-click should erase cells.
+右クリックは OrbitControls が「右ドラッグ = カメラオービット」として使い、
+AppController が「Grab キャンセル = 右クリック」として使っており、役割が競合している。
 
-Freeing right-drag for orbit is addressed in ADR-003 (orbit → middle-click). This ADR defines what right-click *does* after that change.
+現行実装では `controls.mouseButtons = { RIGHT: THREE.MOUSE.ROTATE }` のため、
+右ドラッグはオービットだが、Grab 中は AppController が右クリックをキャンセルとして横取りする。
 
 ## Decision
 
-Right-click behaviour is **context-sensitive** based on whether an operation is in progress:
+右クリックの動作は **操作中かどうか** に応じてコンテキストセンシティブとする：
 
-| State | Right-click action |
-|-------|-------------------|
-| Operation in progress (Grab, Extrude, Sketch) | **Cancel** the operation |
-| Nothing in progress, object hovered | **Context menu** (future) |
-| Nothing in progress, empty space clicked | **Deselect** (Object Mode) |
+| 状態 | 右クリック動作 |
+|------|--------------|
+| 操作中（Grab, Extrude, Sketch） | 現在の操作を **キャンセル** |
+| 操作なし・オブジェクトホバー中 | **コンテキストメニュー**（将来実装） |
+| 操作なし・空白クリック | **選択解除**（Object Mode） |
+| 操作なし | OrbitControls に委譲（右ドラッグ = オービット） |
 
-### Sketch Mode specifics
+### 現行のオービット競合について
 
-In Edit Mode · 2D (sketch cell painting):
-- Right-click drag → **erase cells** (paint in erase mode)
-- This is consistent with common pixel/voxel editors
+- OrbitControls が右ドラッグをオービットとして処理している
+- AppController の `mousedown (button 2)` は Grab 中のみキャンセルに使う
+- 操作中でない右ドラッグは OrbitControls がオービットとして処理する（意図的な共存）
+- 将来コンテキストメニューを実装する際は `contextmenu` イベントで `e.preventDefault()` が必要
 
-### Implementation note
+### Sketch Mode
 
-`contextmenu` browser event must be suppressed (`e.preventDefault()`) in all cases where the app handles right-click itself, to avoid the OS context menu appearing.
+Edit Mode · 2D（矩形スケッチ）では：
+- 右クリック → スケッチ操作のキャンセル（描画中の矩形を破棄）
 
 ## Consequences
 
-- Right-click is now fully consistent: it always means "cancel / undo this action" or opens a context menu
-- No more confusion between orbit-drag and cancel
-- Context menu (right-click → menu) is a **future feature** — the architecture reserves it but does not implement it now
-- Mobile: long-press may trigger `contextmenu` on some browsers; suppress with `e.preventDefault()` in the `contextmenu` handler
-
-## References
-
-- ADR-003 (orbit → middle-click, which enables this ADR)
+- 右クリックは一貫して「キャンセル / コンテキストメニュー」の意味を持つ
+- コンテキストメニューは将来機能 — アーキテクチャは予約済み
+- モバイルでのロングプレス = `contextmenu` 発火に注意（`e.preventDefault()` 必要）

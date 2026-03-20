@@ -5,7 +5,7 @@
  * Pure geometry calculations are delegated to CuboidModel functions.
  */
 import * as THREE from 'three'
-import { buildGeometryFromVoxels } from '../model/VoxelModel.js'
+import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel.js'
 
 export class MeshView {
   constructor(scene) {
@@ -63,17 +63,13 @@ export class MeshView {
     scene.add(this._hoveredPivotPoints)
   }
 
-  /**
-   * Rebuilds geometry from a VoxelShape and applies it to the mesh.
-   * @returns {FaceDescriptor[]} exposed faces (index matches Math.floor(hit.face.a / 4))
-   */
-  updateGeometryFromVoxelShape(shape) {
-    const { geometry, exposedFaces } = buildGeometryFromVoxels(shape)
+  /** Rebuilds geometry from the corner array and applies it to the mesh */
+  updateGeometry(corners) {
+    const newGeo = buildGeometry(corners)
     this.cuboid.geometry.dispose()
-    this.cuboid.geometry = geometry
+    this.cuboid.geometry = newGeo
     this.wireframe.geometry.dispose()
-    this.wireframe.geometry = new THREE.EdgesGeometry(geometry, 1)
-    return exposedFaces
+    this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
   }
 
   /** Updates the visual appearance for object-selected state */
@@ -240,25 +236,20 @@ export class MeshView {
   }
 
   /**
-   * Updates the face highlight overlay using 4 vertex positions directly.
-   * @param {THREE.Vector3[]|null} verts - 4 vertices; null clears the highlight
+   * Updates the face highlight overlay.
+   * @param {number|null} fi - face index; null clears the highlight
+   * @param {THREE.Vector3[]} corners - current corner array
    */
-  setFaceHighlightFromVerts(verts) {
-    if (!verts) {
-      this.clearFaceHighlight()
+  setFaceHighlight(fi, corners) {
+    if (fi === null) {
+      this._hlGeo.setIndex([])
+      this._hlGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
       return
     }
-    const pos = new Float32Array(12)
-    verts.forEach((v, i) => { pos[i*3] = v.x; pos[i*3+1] = v.y; pos[i*3+2] = v.z })
+    const pos = buildFaceHighlightPositions(corners, fi)
     this._hlGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     this._hlGeo.setIndex([0, 1, 2,  0, 2, 3])
     this._hlGeo.attributes.position.needsUpdate = true
     this._hlGeo.computeBoundingSphere()
-  }
-
-  /** Clears the face highlight overlay. */
-  clearFaceHighlight() {
-    this._hlGeo.setIndex([])
-    this._hlGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
   }
 }
