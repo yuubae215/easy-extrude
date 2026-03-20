@@ -131,6 +131,8 @@ export class AppController {
       snapMode:        'all',
       /** All snap candidates from last _trySnapToGeometry call (for display) */
       snapTargets:     [],
+      /** Grid snap unit size (Ctrl during grab). Cycled with Ctrl+Wheel. */
+      gridSize:        1,
     }
 
     this._ctrlHeld  = false
@@ -287,6 +289,7 @@ export class AppController {
     window.addEventListener('mouseup',   e => this._onMouseUp(e))
     window.addEventListener('keydown',   e => this._onKeyDown(e))
     window.addEventListener('keyup',     e => this._onKeyUp(e))
+    window.addEventListener('wheel',     e => this._onWheel(e), { passive: false })
   }
 
   // ─── Raycasting ────────────────────────────────────────────────────────────
@@ -798,8 +801,12 @@ export class AppController {
     const pt = new THREE.Vector3()
     if (!this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) return
     let delta = pt.clone().sub(this._grab.startPoint)
-    if (this._ctrlHeld || this._grab.autoSnap) {
+    if (this._grab.autoSnap) {
       delta = this._trySnapToGeometry(delta)
+    } else if (this._ctrlHeld) {
+      delta = this._applyGridSnapToDelta(delta)
+      this._grab.snapping      = false
+      this._grab.snappedTarget = null
     } else {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
@@ -825,10 +832,16 @@ export class AppController {
     const mdy  = this._mouse.y - this._grab.startMouse.y
     const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
 
-    if (this._ctrlHeld || this._grab.autoSnap) {
+    if (this._grab.autoSnap) {
       const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
       const snappedDelta = this._trySnapToGeometry(delta)
       this._activeObj.move(this._grab.startCorners, snappedDelta)
+    } else if (this._ctrlHeld) {
+      this._grab.snapping      = false
+      this._grab.snappedTarget = null
+      const g           = this._grab.gridSize
+      const snappedDist = Math.round(dist / g) * g
+      this._activeObj.move(this._grab.startCorners, axisVec.clone().multiplyScalar(snappedDist))
     } else {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
@@ -863,16 +876,52 @@ export class AppController {
     }
     if (this._grab.snapping && this._grab.snappedTarget) {
       parts.push({ text: `Snap: ${this._grab.snappedTarget.label}`, bold: true, color: '#ff9800' })
-    } else if (this._grab.autoSnap || this._ctrlHeld) {
+    } else if (this._grab.autoSnap) {
       const SNAP_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
       const SNAP_COLOR = { all: '#80cbc4', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
       const sm = this._grab.snapMode ?? 'all'
-      const prefix = this._grab.autoSnap ? 'Auto Snap' : 'Snap'
-      parts.push({ text: `${prefix} [${SNAP_LABEL[sm]}]`, color: SNAP_COLOR[sm] })
+      parts.push({ text: `Auto Snap [${SNAP_LABEL[sm]}]`, color: SNAP_COLOR[sm] })
       parts.push({ text: '1 V  2 E  3 F', color: '#444' })
+    } else if (this._ctrlHeld) {
+      parts.push({ text: `Grid: ${this._grab.gridSize}`, bold: true, color: '#80cbc4' })
+      parts.push({ text: 'Scroll to change', color: '#444' })
     }
 
     this._uiView.setStatusRich(parts)
+  }
+
+  // ─── Grid snap (Ctrl during grab) ─────────────────────────────────────────
+
+  /** Grid sizes cycled by Ctrl+Wheel during grab */
+  static get GRID_SIZES() { return [0.1, 0.25, 0.5, 1, 2.5, 5, 10] }
+
+  /**
+   * Rounds a delta vector to the nearest multiple of the current grid size.
+   * @param {THREE.Vector3} delta
+   * @returns {THREE.Vector3}
+   */
+  _applyGridSnapToDelta(delta) {
+    const g = this._grab.gridSize
+    return new THREE.Vector3(
+      Math.round(delta.x / g) * g,
+      Math.round(delta.y / g) * g,
+      Math.round(delta.z / g) * g,
+    )
+  }
+
+  _onWheel(e) {
+    if (!this._grab.active || !this._ctrlHeld) return
+    e.preventDefault()
+    const sizes = AppController.GRID_SIZES
+    const idx   = sizes.indexOf(this._grab.gridSize)
+    // fall back to nearest index if current size not in list
+    const cur   = idx >= 0 ? idx : sizes.findIndex(s => s >= this._grab.gridSize) || 0
+    const next  = e.deltaY > 0
+      ? Math.min(cur + 1, sizes.length - 1)
+      : Math.max(cur - 1, 0)
+    this._grab.gridSize = sizes[next]
+    this._applyGrab()
+    this._updateGrabStatus()
   }
 
   // ─── Geometry snap (replaces snap-to-origin) ──────────────────────────────
@@ -893,7 +942,15 @@ export class AppController {
     let bestDist   = SNAP_PX
     let bestTarget = null
 
+    const camMat = this._camera.matrixWorldInverse
     for (const t of targets) {
+      // In autoSnap (G→V) mode: skip world origin — only snap to actual geometry
+      if (this._grab.autoSnap && t.type === 'origin') continue
+
+      // Skip targets behind the camera (camera-space z >= 0 means behind)
+      const camPos = t.position.clone().applyMatrix4(camMat)
+      if (camPos.z >= 0) continue
+
       const s = this._projectToScreen(t.position)
       const d = Math.hypot(pScreen.x - s.x, pScreen.y - s.y)
       if (d < bestDist) { bestDist = d; bestTarget = t }
@@ -1031,7 +1088,7 @@ export class AppController {
         return
       }
       this._applyGrab()
-      if (this._ctrlHeld || this._grab.autoSnap) {
+      if (this._grab.autoSnap) {
         this._meshView.showSnapCandidates(this._grab.snapTargets)
         if (this._grab.snapping && this._grab.snappedTarget) {
           this._meshView.showSnapLocked(
@@ -1341,11 +1398,7 @@ export class AppController {
   _onKeyUp(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = false
-      if (this._grab.active && !this._grab.pivotSelectMode && !this._grab.autoSnap) {
-        // Only clear snap when autoSnap is not keeping it active
-        this._grab.snapping      = false
-        this._grab.snappedTarget = null
-        this._meshView.clearPivotDisplay()
+      if (this._grab.active && !this._grab.pivotSelectMode) {
         this._updateGrabStatus()
       }
     }
