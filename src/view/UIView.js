@@ -3,19 +3,35 @@
  *
  * Side effects: creates DOM elements, appends them, and modifies their styles.
  */
+
+/** SVG icon strings for the mobile toolbar. Pass as `icon` in setMobileToolbar buttons. */
+export const ICONS = {
+  add:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  edit:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  delete:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
+  back:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`,
+  confirm: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  cancel:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+  extrude: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="7"/><polyline points="6 13 12 7 18 13"/><rect x="4" y="19" width="16" height="3" rx="1.5" fill="currentColor" stroke="none"/></svg>`,
+  vertex:  `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>`,
+  edge:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="4" cy="12" r="3"/><circle cx="20" cy="12" r="3"/><rect x="7" y="11" width="10" height="2" rx="1"/></svg>`,
+  face:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>`,
+}
+
 export class UIView {
   constructor() {
     // ── Header bar (top, full width) ─────────────────────────────────────
     this._headerEl = document.createElement('div')
     Object.assign(this._headerEl.style, {
       position: 'fixed', top: '0', left: '0', right: '0',
-      height: '36px',
-      background: '#2b2b2b',
-      borderBottom: '1px solid #1a1a1a',
+      height: '40px',
+      background: '#242424',
+      borderBottom: '1px solid #141414',
       display: 'flex', alignItems: 'center',
-      padding: '0 8px', gap: '4px',
+      padding: '0 8px', gap: '6px',
       zIndex: '100',
       userSelect: 'none',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
     })
     document.body.appendChild(this._headerEl)
 
@@ -29,20 +45,21 @@ export class UIView {
     this._modeBtnEl = document.createElement('button')
     Object.assign(this._modeBtnEl.style, {
       padding: '4px 10px',
-      background: '#3c3c3c',
-      border: '1px solid #555',
-      borderRadius: '4px',
-      color: '#e8e8e8',
+      background: '#383838',
+      border: '1px solid #4a4a4a',
+      borderRadius: '6px',
+      color: '#e0e0e0',
       cursor: 'pointer',
       fontSize: '13px',
-      fontFamily: 'sans-serif',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
       display: 'flex', alignItems: 'center', gap: '6px',
+      whiteSpace: 'nowrap',
     })
     this._modeLabelEl = document.createElement('span')
     this._modeLabelEl.textContent = 'Object Mode'
     const arrowEl = document.createElement('span')
-    arrowEl.textContent = 'v'
-    Object.assign(arrowEl.style, { fontSize: '10px', opacity: '0.7' })
+    arrowEl.textContent = '▾'
+    Object.assign(arrowEl.style, { fontSize: '12px', opacity: '0.6' })
     this._modeBtnEl.appendChild(this._modeLabelEl)
     this._modeBtnEl.appendChild(arrowEl)
 
@@ -97,51 +114,52 @@ export class UIView {
     // ── Hamburger button (mobile only — opens Outliner drawer) ────────────
     this._hamburgerBtn = document.createElement('button')
     Object.assign(this._hamburgerBtn.style, {
-      padding: '4px 10px',
+      padding: '6px',
       background: 'transparent',
       border: 'none',
-      color: '#e8e8e8',
+      color: '#c0c0c0',
       cursor: 'pointer',
       fontSize: '18px',
       lineHeight: '1',
       display: 'none',
-      marginRight: '4px',
+      marginRight: '2px',
+      borderRadius: '6px',
     })
-    this._hamburgerBtn.textContent = '☰'
+    this._hamburgerBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`
     this._headerEl.appendChild(this._hamburgerBtn)
 
     this._headerEl.appendChild(this._modeSelectorEl)
 
-    // ── Header status (centered within header bar) ────────────────────────
+    // ── Header status (centered within header bar via flex) ───────────────
     this._headerStatusEl = document.createElement('div')
     Object.assign(this._headerStatusEl.style, {
-      position: 'absolute',
-      left: '50%',
-      transform: 'translateX(-50%)',
+      flex: '1',
       display: 'flex',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: '2px',
-      fontSize: '13px',
-      fontFamily: 'monospace',
+      fontSize: '12px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
       pointerEvents: 'none',
-      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      minWidth: '0',
     })
     this._headerEl.appendChild(this._headerStatusEl)
 
     // ── N-panel toggle button (mobile only — opens N panel drawer) ────────
     this._nToggleBtn = document.createElement('button')
     Object.assign(this._nToggleBtn.style, {
-      padding: '4px 10px',
+      padding: '6px',
       background: 'transparent',
       border: 'none',
-      color: '#e8e8e8',
+      color: '#c0c0c0',
       cursor: 'pointer',
-      fontSize: '16px',
       lineHeight: '1',
-      marginLeft: 'auto',
       display: 'none',
+      borderRadius: '6px',
+      flexShrink: '0',
     })
-    this._nToggleBtn.textContent = '⊞'
+    this._nToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`
     this._headerEl.appendChild(this._nToggleBtn)
 
     // Close dropdown on outside click
@@ -171,7 +189,7 @@ export class UIView {
     this._nPanelVisible = false
     this._nPanelEl = document.createElement('div')
     Object.assign(this._nPanelEl.style, {
-      position: 'fixed', top: '36px', right: '0',
+      position: 'fixed', top: '40px', right: '0',
       width: '200px',
       background: '#2b2b2b',
       borderLeft: '1px solid #1a1a1a',
@@ -206,7 +224,7 @@ export class UIView {
     this._backdropCb = null
     Object.assign(this._backdrop.style, {
       position: 'fixed',
-      top: '36px', bottom: '26px', left: '0', right: '0',
+      top: '40px', bottom: '26px', left: '0', right: '0',
       background: 'rgba(0,0,0,0.5)',
       zIndex: '80',
       display: 'none',
@@ -219,13 +237,15 @@ export class UIView {
       position: 'fixed',
       bottom: '26px',   // sits on top of info bar
       left: '0', right: '0',
-      height: '52px',
-      background: '#222',
-      borderTop: '1px solid #333',
+      height: '60px',
+      background: 'rgba(26, 26, 28, 0.95)',
+      borderTop: '1px solid rgba(255,255,255,0.08)',
+      backdropFilter: 'blur(12px)',
+      WebkitBackdropFilter: 'blur(12px)',
       display: 'none',   // shown only on mobile
       alignItems: 'center',
       justifyContent: 'center',
-      gap: '8px',
+      gap: '6px',
       padding: '0 12px',
       zIndex: '95',
     })
@@ -731,41 +751,60 @@ export class UIView {
    * Renders the mobile floating toolbar with the given buttons.
    * Only visible on mobile (<768px). Ignored on desktop.
    *
+   * `icon` can be a plain string (emoji/text) or an SVG string starting with `<svg`.
+   *
    * @param {Array<{icon: string, label: string, onClick: () => void, active?: boolean, danger?: boolean, disabled?: boolean}>} buttons
    */
   setMobileToolbar(buttons) {
     this._mobileToolbarEl.innerHTML = ''
     buttons.forEach(({ icon, label, onClick, active = false, danger = false, disabled = false }) => {
       const btn = document.createElement('button')
+      const bg     = disabled ? 'transparent'             : active ? 'rgba(79,195,247,0.15)' : danger ? 'rgba(192,57,43,0.18)' : 'rgba(255,255,255,0.06)'
+      const border  = disabled ? 'rgba(255,255,255,0.06)' : active ? 'rgba(79,195,247,0.5)'  : danger ? 'rgba(231,76,60,0.5)'  : 'rgba(255,255,255,0.12)'
+      const color   = disabled ? '#484848'                : active ? '#4fc3f7'                : danger ? '#e74c3c'               : '#d8d8d8'
       Object.assign(btn.style, {
-        display:        'flex',
-        flexDirection:  'column',
-        alignItems:     'center',
-        justifyContent: 'center',
-        gap:            '2px',
-        padding:        '4px 10px',
-        minWidth:       '44px',
-        minHeight:      '44px',
-        background:     disabled ? '#2a2a2a' : active ? '#3a6a9a' : danger ? '#6a2a2a' : '#333',
-        border:         `1px solid ${disabled ? '#3a3a3a' : active ? '#4a9eed' : danger ? '#c0392b' : '#555'}`,
-        borderRadius:   '6px',
-        color:          disabled ? '#555'    : active ? '#4fc3f7' : danger ? '#e74c3c' : '#e8e8e8',
-        cursor:         disabled ? 'default' : 'pointer',
-        fontSize:       '18px',
-        lineHeight:     '1',
-        fontFamily:     'sans-serif',
-        userSelect:     'none',
+        display:          'flex',
+        flexDirection:    'column',
+        alignItems:       'center',
+        justifyContent:   'center',
+        gap:              '3px',
+        padding:          '6px 12px',
+        minWidth:         '52px',
+        minHeight:        '48px',
+        background:       bg,
+        border:           `1px solid ${border}`,
+        borderRadius:     '10px',
+        color,
+        cursor:           disabled ? 'default' : 'pointer',
+        lineHeight:       '1',
+        fontFamily:       'system-ui, -apple-system, sans-serif',
+        userSelect:       'none',
         WebkitUserSelect: 'none',
+        transition:       'background 0.15s, border-color 0.15s',
+        flexShrink:       '1',
       })
+
       const iconEl = document.createElement('span')
-      iconEl.textContent = icon
-      iconEl.style.fontSize = '18px'
+      Object.assign(iconEl.style, {
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: '20px', height: '20px',
+      })
+      if (typeof icon === 'string' && icon.startsWith('<svg')) {
+        iconEl.innerHTML = icon
+      } else {
+        iconEl.textContent = icon
+        iconEl.style.fontSize = '18px'
+      }
 
       const labelEl = document.createElement('span')
       labelEl.textContent = label
-      labelEl.style.fontSize = '9px'
-      labelEl.style.opacity = '0.75'
-      labelEl.style.letterSpacing = '0.02em'
+      Object.assign(labelEl.style, {
+        fontSize:      '9px',
+        fontWeight:    '500',
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        opacity:       disabled ? '0.35' : '0.7',
+      })
 
       btn.appendChild(iconEl)
       btn.appendChild(labelEl)

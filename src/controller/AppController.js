@@ -24,6 +24,7 @@ import {
 import { SceneService } from '../service/SceneService.js'
 import { Sketch }       from '../domain/Sketch.js'
 import { Face }         from '../graph/Face.js'
+import { ICONS }        from '../view/UIView.js'
 
 export class AppController {
   /**
@@ -448,16 +449,16 @@ export class AppController {
 
     if (this._grab.active) {
       this._uiView.setMobileToolbar([
-        { icon: '✓', label: 'Confirm', onClick: () => this._confirmGrab() },
-        { icon: '✕', label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
       ])
       return
     }
 
     if (this._faceExtrude.active) {
       this._uiView.setMobileToolbar([
-        { icon: '✓', label: 'Confirm', onClick: () => this._confirmFaceExtrude() },
-        { icon: '✕', label: 'Cancel',  onClick: () => this._cancelFaceExtrude(), danger: true },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmFaceExtrude() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelFaceExtrude(), danger: true },
       ])
       return
     }
@@ -468,15 +469,15 @@ export class AppController {
       const hasObj = this._objSelected
       this._uiView.setMobileToolbar([
         {
-          icon: '＋', label: 'Add',
+          icon: ICONS.add, label: 'Add',
           onClick: () => this._uiView.showAddMenu(
             window.innerWidth / 2, window.innerHeight / 2,
             () => this._addObject('box'),
             () => this._addObject('sketch'),
           ),
         },
-        { icon: '⊞', label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !hasObj },
-        { icon: '🗑', label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
+        { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !hasObj },
+        { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
       ])
       return
     }
@@ -488,16 +489,16 @@ export class AppController {
         (Math.abs(this._sketch.p2.x - this._sketch.p1.x) > 0.01 ||
          Math.abs(this._sketch.p2.y - this._sketch.p1.y) > 0.01)
       this._uiView.setMobileToolbar([
-        { icon: '←', label: 'Object',  onClick: () => this.setMode('object') },
-        { icon: '✓', label: 'Extrude', onClick: () => this._enterExtrudePhase(), disabled: !hasRect },
+        { icon: ICONS.back,    label: 'Object',  onClick: () => this.setMode('object') },
+        { icon: ICONS.extrude, label: 'Extrude', onClick: () => this._enterExtrudePhase(), disabled: !hasRect },
       ])
       return
     }
 
     if (substate === '2d-extrude') {
       this._uiView.setMobileToolbar([
-        { icon: '✓', label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
-        { icon: '✕', label: 'Cancel',  onClick: () => this._cancelExtrudePhase(), danger: true },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelExtrudePhase(), danger: true },
       ])
       return
     }
@@ -508,12 +509,12 @@ export class AppController {
       const em         = this._editSelectMode
       const hasFaceSel = em === 'face' && [...this._scene.editSelection].some(x => x instanceof Face)
       this._uiView.setMobileToolbar([
-        { icon: '←', label: 'Object', onClick: () => this.setMode('object') },
-        { icon: '·', label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
-        { icon: '─', label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
-        { icon: '▢', label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
+        { icon: ICONS.back,    label: 'Object', onClick: () => this.setMode('object') },
+        { icon: ICONS.vertex,  label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
+        { icon: ICONS.edge,    label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
+        { icon: ICONS.face,    label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
         {
-          icon: '↑', label: 'Extrude',
+          icon: ICONS.extrude, label: 'Extrude',
           onClick: () => {
             const sel = [...this._scene.editSelection].filter(x => x instanceof Face)
             if (sel.length > 0) this._startFaceExtrude(sel[0])
