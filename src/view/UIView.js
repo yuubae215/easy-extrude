@@ -514,6 +514,40 @@ export class UIView {
     })
   }
 
+  /**
+   * Shows a brief toast notification at the bottom of the screen.
+   * @param {string} message
+   * @param {{ type?: 'info'|'warn'|'error', duration?: number }} [options]
+   */
+  showToast(message, { type = 'info', duration = 2500 } = {}) {
+    const colors = { info: '#4a90d9', warn: '#d9a84a', error: '#d94a4a' }
+    const el = document.createElement('div')
+    el.textContent = message
+    Object.assign(el.style, {
+      position: 'fixed',
+      bottom: '64px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: '#2a2a2a',
+      color: '#e8e8e8',
+      border: `1px solid ${colors[type]}`,
+      borderRadius: '8px',
+      padding: '8px 16px',
+      fontSize: '13px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      zIndex: '9999',
+      pointerEvents: 'none',
+      opacity: '1',
+      transition: 'opacity 0.3s',
+      whiteSpace: 'nowrap',
+    })
+    document.body.appendChild(el)
+    setTimeout(() => {
+      el.style.opacity = '0'
+      el.addEventListener('transitionend', () => el.remove())
+    }, duration)
+  }
+
   /** Returns true if the N panel is currently visible */
   get nPanelVisible() {
     return this._nPanelVisible

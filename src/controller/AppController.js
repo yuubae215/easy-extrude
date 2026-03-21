@@ -269,7 +269,10 @@ export class AppController {
   }
 
   _deleteObject(id) {
-    if (this._scene.objects.size <= 1) return   // always keep at least one object
+    if (this._scene.objects.size <= 1) {
+      this._uiView.showToast('シーンに最低1つのオブジェクトが必要です', { type: 'warn' })
+      return
+    }
 
     // If deleting the active object while in Edit Mode, exit cleanly first
     // (setMode operates on the active meshView, so must be called before dispose)
