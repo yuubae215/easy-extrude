@@ -179,6 +179,32 @@ export class AppController {
       if (obj) obj.description = desc
     })
 
+    // ── Mobile drawer coordination ─────────────────────────────────────────
+    uiView.onOutlinerToggle(() => {
+      if (!outlinerView) return
+      if (outlinerView.isDrawerOpen) {
+        outlinerView.closeDrawer()
+        uiView.hideBackdrop()
+      } else {
+        if (uiView.nPanelVisible) this._toggleNPanel()
+        outlinerView.openDrawer()
+        uiView.showBackdrop(() => outlinerView.closeDrawer())
+      }
+    })
+
+    uiView.onNPanelToggle(() => {
+      if (outlinerView?.isDrawerOpen) {
+        outlinerView.closeDrawer()
+        uiView.hideBackdrop()
+      }
+      this._toggleNPanel()
+      if (uiView.nPanelVisible) {
+        uiView.showBackdrop(() => this._toggleNPanel())
+      } else {
+        uiView.hideBackdrop()
+      }
+    })
+
     this._bindEvents()
 
     // Create the initial object
@@ -306,6 +332,16 @@ export class AppController {
   _renameObject(id, name) {
     this._service.renameObject(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
+  }
+
+  /** Toggles N panel visibility and updates gizmo offset (desktop only) */
+  _toggleNPanel() {
+    this._uiView.toggleNPanel()
+    this._updateNPanel()
+    if (this._gizmoView) {
+      const mobile = window.innerWidth < 768
+      this._gizmoView.setRightOffset(!mobile && this._uiView.nPanelVisible ? 216 : 16)
+    }
   }
 
   /** Called when user clicks a row in the outliner */
@@ -1837,11 +1873,7 @@ export class AppController {
       return
     }
     if (e.key === 'n' || e.key === 'N') {
-      this._uiView.toggleNPanel()
-      this._updateNPanel()
-      if (this._gizmoView) {
-        this._gizmoView.setRightOffset(this._uiView.nPanelVisible ? 216 : 16)
-      }
+      this._toggleNPanel()
       return
     }
 

@@ -93,6 +93,23 @@ export class UIView {
 
     this._modeSelectorEl.appendChild(this._modeBtnEl)
     this._modeSelectorEl.appendChild(this._modeDropdownEl)
+
+    // ── Hamburger button (mobile only — opens Outliner drawer) ────────────
+    this._hamburgerBtn = document.createElement('button')
+    Object.assign(this._hamburgerBtn.style, {
+      padding: '4px 10px',
+      background: 'transparent',
+      border: 'none',
+      color: '#e8e8e8',
+      cursor: 'pointer',
+      fontSize: '18px',
+      lineHeight: '1',
+      display: 'none',
+      marginRight: '4px',
+    })
+    this._hamburgerBtn.textContent = '☰'
+    this._headerEl.appendChild(this._hamburgerBtn)
+
     this._headerEl.appendChild(this._modeSelectorEl)
 
     // ── Header status (centered within header bar) ────────────────────────
@@ -110,6 +127,22 @@ export class UIView {
       whiteSpace: 'nowrap',
     })
     this._headerEl.appendChild(this._headerStatusEl)
+
+    // ── N-panel toggle button (mobile only — opens N panel drawer) ────────
+    this._nToggleBtn = document.createElement('button')
+    Object.assign(this._nToggleBtn.style, {
+      padding: '4px 10px',
+      background: 'transparent',
+      border: 'none',
+      color: '#e8e8e8',
+      cursor: 'pointer',
+      fontSize: '16px',
+      lineHeight: '1',
+      marginLeft: 'auto',
+      display: 'none',
+    })
+    this._nToggleBtn.textContent = '⊞'
+    this._headerEl.appendChild(this._nToggleBtn)
 
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
@@ -168,6 +201,18 @@ export class UIView {
 
     document.body.appendChild(this._nPanelEl)
 
+    // ── Backdrop (mobile drawers) ─────────────────────────────────────────
+    this._backdrop   = document.createElement('div')
+    this._backdropCb = null
+    Object.assign(this._backdrop.style, {
+      position: 'fixed',
+      top: '36px', bottom: '26px', left: '0', right: '0',
+      background: 'rgba(0,0,0,0.5)',
+      zIndex: '80',
+      display: 'none',
+    })
+    document.body.appendChild(this._backdrop)
+
     // ── Extrusion label (floating) ────────────────────────────────────────
     this._extrusionLabelEl = document.createElement('div')
     Object.assign(this._extrusionLabelEl.style, {
@@ -190,6 +235,10 @@ export class UIView {
     this._modeChangeCallback = null
     this._onNameChangeCb = null
     this._onDescriptionChangeCb = null
+
+    // Apply initial mobile layout and listen for resize
+    this._applyMobileLayout()
+    window.addEventListener('resize', () => this._applyMobileLayout())
   }
 
   /** Registers callback for name changes from the N panel */
@@ -435,8 +484,57 @@ export class UIView {
   /** Toggles N panel visibility */
   toggleNPanel() {
     this._nPanelVisible = !this._nPanelVisible
-    this._nPanelEl.style.display = this._nPanelVisible ? 'block' : 'none'
+    if (this._isMobile()) {
+      this._nPanelEl.style.transform = this._nPanelVisible ? 'translateX(0)' : 'translateX(100%)'
+    } else {
+      this._nPanelEl.style.display = this._nPanelVisible ? 'block' : 'none'
+    }
   }
+
+  // ─── Mobile layout ─────────────────────────────────────────────────────────
+
+  _isMobile() { return window.innerWidth < 768 }
+
+  _applyMobileLayout() {
+    const mobile = this._isMobile()
+    this._hamburgerBtn.style.display = mobile ? 'block' : 'none'
+    this._nToggleBtn.style.display   = mobile ? 'block' : 'none'
+    if (mobile) {
+      Object.assign(this._nPanelEl.style, {
+        display:    'block',
+        transition: 'transform 0.25s ease',
+        transform:  this._nPanelVisible ? 'translateX(0)' : 'translateX(100%)',
+      })
+    } else {
+      Object.assign(this._nPanelEl.style, {
+        display:    this._nPanelVisible ? 'block' : 'none',
+        transition: '',
+        transform:  'none',
+      })
+    }
+  }
+
+  /** Shows the backdrop; calls onClose when user taps it */
+  showBackdrop(onClose) {
+    this._backdrop.style.display = 'block'
+    this._backdropCb = () => { this.hideBackdrop(); onClose?.() }
+    this._backdrop.addEventListener('click', this._backdropCb, { once: true })
+  }
+
+  /** Hides the backdrop */
+  hideBackdrop() {
+    this._backdrop.style.display = 'none'
+    if (this._backdropCb) {
+      this._backdrop.removeEventListener('click', this._backdropCb)
+      this._backdropCb = null
+    }
+  }
+
+  /** Registers callback for Outliner hamburger button tap (mobile) */
+  onOutlinerToggle(cb) { this._hamburgerBtn.addEventListener('click', cb) }
+
+  /** Registers callback for N-panel toggle button tap (mobile) */
+  onNPanelToggle(cb) { this._nToggleBtn.addEventListener('click', cb) }
 
   /**
    * Updates N panel content.
