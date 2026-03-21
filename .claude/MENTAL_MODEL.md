@@ -212,7 +212,25 @@ the entire centered toolbar shifts left/right, making tapping unreliable.
 | Edit 2D      | ← Object · Extrude                                  |
 | Edit 3D      | ← Object · Vertex · Edge · Face · Extrude           |
 | Grab active  | ✓ Confirm · ✕ Cancel                               |
-| Face extrude | ✓ Confirm · ✕ Cancel                               |
+| Face extrude | (same as Edit 3D — no separate state)               |
+
+Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No
+Confirm/Cancel toolbar state is shown because the user's finger is occupied with the drag.
+Extrude button stays in the toolbar but is `disabled` while `_faceExtrude.active` to
+prevent re-triggering.
+
+## Mobile status is shown as a canvas overlay pill, not in the header
+
+On desktop the status text lives in `_headerStatusEl` (centered in the header bar).
+On mobile the header is too narrow (hamburger + mode button + N-panel toggle already
+fill it), so `_headerStatusEl` is hidden and `_canvasStatusEl` (a semi-transparent pill
+floating at `top: 48px`, below the header) is shown instead.
+
+`setStatus()` and `setStatusRich()` always update both elements; CSS visibility controlled
+by `_applyMobileLayout()` determines which one is visible.
+
+The Nodes button (`_nodeEditorBtn`) is desktop-only and is hidden on mobile because
+NodeEditorView is not optimised for small screens and requires a BFF connection.
 
 ## Toast must be positioned above the mobile toolbar
 

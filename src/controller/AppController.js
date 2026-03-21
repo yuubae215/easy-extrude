@@ -459,16 +459,6 @@ export class AppController {
       return
     }
 
-    if (this._faceExtrude.active) {
-      // On mobile, lifting the finger auto-confirms (pointerup wasDragging guard).
-      // Confirm button is therefore redundant. Show an indicator + Cancel only.
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.extrude, label: 'Extrude', indicator: true },
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelFaceExtrude(), danger: true },
-      ])
-      return
-    }
-
     if (mode === 'object') {
       // Always show the same 4 buttons; Edit/Move/Delete are disabled when no
       // object is selected. Fixed count prevents layout shifts on selection.
@@ -525,7 +515,8 @@ export class AppController {
             const sel = [...this._scene.editSelection].filter(x => x instanceof Face)
             if (sel.length > 0) this._startFaceExtrude(sel[0])
           },
-          disabled: !hasFaceSel,
+          // Also disabled while an extrude is already in progress (mid-drag)
+          disabled: !hasFaceSel || this._faceExtrude.active,
         },
       ])
     }
