@@ -463,7 +463,10 @@ export class AppController {
     }
 
     if (mode === 'object') {
-      const buttons = [
+      // Always show the same 4 buttons; Edit/Move/Delete are disabled when no
+      // object is selected. Fixed count prevents layout shifts on selection.
+      const hasObj = this._objSelected
+      this._uiView.setMobileToolbar([
         {
           icon: '＋', label: 'Add',
           onClick: () => this._uiView.showAddMenu(
@@ -472,27 +475,23 @@ export class AppController {
             () => this._addObject('sketch'),
           ),
         },
-        { icon: '⊞', label: 'Edit', onClick: () => this.setMode('edit') },
-      ]
-      if (this._objSelected) {
-        buttons.push({ icon: 'G',  label: 'Grab',   onClick: () => this._startGrab() })
-        buttons.push({ icon: '🗑', label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true })
-      }
-      this._uiView.setMobileToolbar(buttons)
+        { icon: '⊞', label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !hasObj },
+        { icon: '↔', label: 'Move',   onClick: () => this._startGrab(),                                        disabled: !hasObj },
+        { icon: '🗑', label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
+      ])
       return
     }
 
     if (substate === '2d-sketch') {
+      // Always show ← first so its position never shifts. Extrude is disabled
+      // until a rectangle has been drawn.
       const hasRect = this._sketch.p1 && this._sketch.p2 &&
         (Math.abs(this._sketch.p2.x - this._sketch.p1.x) > 0.01 ||
          Math.abs(this._sketch.p2.y - this._sketch.p1.y) > 0.01)
-      const buttons = [
-        { icon: '←', label: 'Object', onClick: () => this.setMode('object') },
-      ]
-      if (hasRect) {
-        buttons.unshift({ icon: '✓', label: 'Extrude', onClick: () => this._enterExtrudePhase() })
-      }
-      this._uiView.setMobileToolbar(buttons)
+      this._uiView.setMobileToolbar([
+        { icon: '←', label: 'Object',  onClick: () => this.setMode('object') },
+        { icon: '✓', label: 'Extrude', onClick: () => this._enterExtrudePhase(), disabled: !hasRect },
+      ])
       return
     }
 
@@ -505,24 +504,24 @@ export class AppController {
     }
 
     if (substate === '3d') {
-      const em          = this._editSelectMode
-      const hasFaceSel  = em === 'face' && [...this._scene.editSelection].some(x => x instanceof Face)
-      const buttons = [
+      // Always show all 5 buttons; Extrude is disabled until a face is selected.
+      // Fixed count prevents layout shifts when a face is selected.
+      const em         = this._editSelectMode
+      const hasFaceSel = em === 'face' && [...this._scene.editSelection].some(x => x instanceof Face)
+      this._uiView.setMobileToolbar([
         { icon: '←', label: 'Object', onClick: () => this.setMode('object') },
         { icon: '·', label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
         { icon: '─', label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
         { icon: '▢', label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
-      ]
-      if (hasFaceSel) {
-        buttons.push({
-          icon: 'E', label: 'Extrude',
+        {
+          icon: '↑', label: 'Extrude',
           onClick: () => {
             const sel = [...this._scene.editSelection].filter(x => x instanceof Face)
             if (sel.length > 0) this._startFaceExtrude(sel[0])
           },
-        })
-      }
-      this._uiView.setMobileToolbar(buttons)
+          disabled: !hasFaceSel,
+        },
+      ])
     }
   }
 
@@ -1719,6 +1718,12 @@ export class AppController {
       return
     }
 
+    // Only process events that target the canvas. Toolbar button taps are
+    // handled by the buttons' own click listeners, not via pointer events.
+    // Without this guard, button taps trigger _handleEditClick which clears
+    // face selection before the button's click handler fires (e.g. Extrude).
+    if (e.target !== this._sceneView.renderer.domElement) return
+
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
@@ -1839,9 +1844,13 @@ export class AppController {
 
   _onPointerUp(e) {
     if (e.button !== 0) return
-    if (this._activeDragPointerId === e.pointerId) this._activeDragPointerId = null
+    // wasDragging: a canvas drag started for this pointer (via _onPointerDown)
+    const wasDragging = this._activeDragPointerId === e.pointerId
+    if (wasDragging) this._activeDragPointerId = null
     if (this._faceExtrude.active) {
-      this._confirmFaceExtrude()
+      // Only confirm when a canvas drag was started; prevents double-confirm
+      // when the mobile Confirm toolbar button fires both pointerup and click.
+      if (wasDragging) this._confirmFaceExtrude()
       return
     }
     if (this._sketch.drawing) {
