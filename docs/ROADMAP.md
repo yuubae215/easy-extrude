@@ -37,16 +37,17 @@ BFF (Node.js) — auth, aggregation, routing
 | Existing frontend behaviour unchanged | Client-complete fallback while BFF is wired up | ADR-015 |
 | **`VITE_BFF_URL` env var** | GitHub Pages cannot run server-side code. BFF must be deployed separately (Railway / Render / Fly.io etc.). `BffClient` baseUrl should default to `import.meta.env.VITE_BFF_URL \|\| '/api'` so the production frontend points to the hosted BFF while the dev Vite proxy still works. | ADR-015 |
 
-### Phase B — Geometry Service + WebSocket + Node Editor prototype ★ UX checkpoint *(next)*
+### Phase B — Geometry Service + WebSocket + Node Editor prototype ★ UX checkpoint ✅ *2026-03-21*
 
 | Task | Details | ADR |
 |------|---------|-----|
-| Extract Geometry Service | Geometry graph evaluation migrated server-side | ADR-015 |
-| WebSocket session (BFF ↔ Frontend) | Operation-based messages (`graph.node.connect`, `geometry.update`) | ADR-015 |
-| Delta-sync protocol on reconnect | Session vs persistence policy; patch vs full-state messages | ADR-016 (open) |
-| Node Editor UI prototype | Visual DAG editing; nodes stream geometry results via WebSocket | ADR-016 |
-| STEP import prototype | `occt-import-js` in Geometry Service; file upload REST + WebSocket progress | ADR-015 |
-| TransformGraph → DAG | Add OperationNodes (cycle detection policy) | ADR-016 |
+| Extract Geometry Service | `server/src/geometry/` — OperationGraph (DAG), nodeTypes, evaluator, meshEncoder | ADR-017 |
+| WebSocket session (BFF ↔ Frontend) | `ws` on `/api/ws`; SessionManager; operation-based messages | ADR-017 |
+| Delta-sync protocol on reconnect | `session.resume` → `graph.snapshot` full-state (delta-patch deferred to Phase C) | ADR-017 |
+| Node Editor UI prototype | `NodeEditorView` — SVG DAG panel, draggable nodes, param editor, STEP trigger | ADR-017 |
+| STEP import prototype | `POST /api/import/step` (multer); `import.step` WS message; `occt-import-js` lazy-load | ADR-017 |
+| TransformGraph → DAG | OperationGraph extends TransformGraph with cycle detection (DFS), topo-sort | ADR-017 |
+| BffClient WebSocket | `WsChannel` class; `openWs()`/`closeWs()`; `SceneService.openGeometryChannel()` | ADR-017 |
 | **★ UX validation checkpoint** | Evaluate: latency feel, Node Editor usability, STEP import UX. Decide pivot direction for Phase C+. | — |
 
 ### Phase C+ — Post-validation (direction TBD after Phase B checkpoint)
@@ -90,6 +91,7 @@ Candidate tasks (held, not committed):
 
 | Item | Date |
 |------|------|
+| BFF Phase B — Geometry Service (DAG evaluator), WebSocket session (ADR-017), Node Editor UI prototype, STEP import (REST + WS), BffClient WsChannel | 2026-03-21 |
 | BFF Phase A — Express BFF scaffold, SQLite scene persistence, TransformGraph storage (ADR-016), BffClient, SceneSerializer, Vite proxy, pnpm workspace | 2026-03-21 |
 | Mobile touch support — Pointer Events API, `_activeDragPointerId`, mobile toolbar, canvas target guard, touch hover sync, face-extrude confirm on `pointerup` | 2026-03-21 |
 | Architecture design — BFF + microservices strategy, transform graph (SE(3) tree, ROS frames, quaternions) | 2026-03-21 (ADR-015, ADR-016) |

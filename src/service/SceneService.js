@@ -14,6 +14,10 @@
  * the BFF REST API. All existing local operations remain unchanged —
  * disconnected (BFF unavailable) mode works exactly as before.
  *
+ * BFF Phase B (ADR-017): WebSocket geometry streaming via `openGeometryChannel()`.
+ * When connected, geometry.update messages from the Geometry Service are applied
+ * to the matching scene object's MeshView automatically.
+ *
  * Events emitted:
  *   'objectAdded'   (obj: SceneObject)
  *   'objectRemoved' (id: string)
@@ -26,6 +30,7 @@
  *  - Callers (AppController) interact with domain state through `service.scene`
  *    for reads and through service methods for writes.
  */
+import { Vector3 } from 'three'
 import { EventEmitter } from '../core/EventEmitter.js'
 import { SceneModel } from '../model/SceneModel.js'
 import { MeshView } from '../view/MeshView.js'
@@ -33,7 +38,7 @@ import { Cuboid } from '../domain/Cuboid.js'
 import { Sketch } from '../domain/Sketch.js'
 import { createInitialCorners } from '../model/CuboidModel.js'
 import { Vertex } from '../graph/Vertex.js'
-import { BffClient, BffUnavailableError } from './BffClient.js'
+import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
 import { serializeScene, deserializeScene } from './SceneSerializer.js'
 
 export class SceneService extends EventEmitter {
@@ -48,6 +53,10 @@ export class SceneService extends EventEmitter {
     this._bff        = null
     /** Server-assigned scene id when synced with the BFF. */
     this._remoteId   = null
+    /** @type {WsChannel|null} */
+    this._wsChannel  = null
+    /** Unsubscribe functions for active WS handlers. */
+    this._wsUnsubs   = []
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -69,6 +78,72 @@ export class SceneService extends EventEmitter {
 
   /** true when BFF connection is active. */
   get bffConnected() { return this._bff !== null }
+
+  // ── WebSocket Geometry Service (ADR-017, Phase B) ──────────────────────────
+
+  /**
+   * Opens a WebSocket channel to the BFF Geometry Service.
+   * On `session.ready`, sends `session.resume` with the current remote scene id
+   * so the server restores graph state from the DB.
+   *
+   * `geometry.update` messages are automatically applied to matching MeshView instances.
+   * Callers can also subscribe to the underlying WsChannel via `sceneService.wsChannel`.
+   *
+   * No-ops if BFF is not connected or WS is already open.
+   * @returns {WsChannel|null}
+   */
+  openGeometryChannel() {
+    if (!this._bff) return null
+    this._wsChannel = this._bff.openWs()
+
+    const unsubReady = this._wsChannel.on('session.ready', () => {
+      if (this._remoteId) {
+        this._wsChannel.send('session.resume', { sceneId: this._remoteId })
+      }
+    })
+
+    const unsubGeom = this._wsChannel.on('geometry.update', (payload) => {
+      this._applyGeometryUpdate(payload)
+    })
+
+    const unsubClose = this._wsChannel.on('close', () => {
+      console.warn('[SceneService] WS channel closed')
+      this.emit('wsDisconnected')
+    })
+
+    this._wsUnsubs = [unsubReady, unsubGeom, unsubClose]
+    this.emit('wsConnected')
+    return this._wsChannel
+  }
+
+  /** Closes the WebSocket channel and cleans up handlers. */
+  closeGeometryChannel() {
+    this._wsUnsubs.forEach(fn => fn())
+    this._wsUnsubs = []
+    this._bff?.closeWs()
+    this._wsChannel = null
+  }
+
+  /** Returns the active WsChannel, or null if not opened. */
+  get wsChannel() { return this._wsChannel }
+
+  /** true when the geometry WebSocket channel is open. */
+  get wsConnected() { return this._wsChannel?.isOpen ?? false }
+
+  /**
+   * Applies a geometry.update message from the Geometry Service to the matching
+   * scene object's MeshView.
+   * @param {{ objectId: string, positions: number[], normals: number[], indices: number[] }} payload
+   */
+  _applyGeometryUpdate({ objectId, positions, normals, indices }) {
+    const obj = this._model.getObject(objectId)
+    if (!obj) return
+    // Convert flat arrays to Three.js-compatible typed arrays and update geometry
+    const corners = _positionsToCorners(positions)
+    if (corners) {
+      obj.meshView.updateGeometry(corners)
+    }
+  }
 
   /**
    * Saves the current scene to the BFF.
@@ -296,4 +371,25 @@ export class SceneService extends EventEmitter {
     if (!obj) return
     obj.meshView.setVisible(visible)
   }
+}
+
+// ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Converts a flat positions array (from Geometry Service) to a corners array
+ * compatible with MeshView.updateGeometry (expects THREE.Vector3[]).
+ *
+ * Only handles the 8-corner cuboid case (24 floats). For non-cuboid geometry
+ * (STEP imports etc.) returns null; full BufferGeometry update is Phase C work.
+ *
+ * @param {number[]} positions  flat [x0,y0,z0, x1,y1,z1, ...]
+ * @returns {import('three').Vector3[]|null}
+ */
+function _positionsToCorners(positions) {
+  if (positions.length !== 24) return null
+  const corners = []
+  for (let i = 0; i < 8; i++) {
+    corners.push(new Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]))
+  }
+  return corners
 }
