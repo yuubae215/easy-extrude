@@ -8,9 +8,10 @@
 
 ## Context
 
-DDD Phase 5-3 で `Vertex`, `Edge`, `Face` オブジェクトと `SceneModel.editSelection: Set<Vertex|Edge|Face>` を導入したが、実際の選択操作には接続されていなかった。
+DDD Phase 5-3 introduced `Vertex`, `Edge`, `Face` objects and `SceneModel.editSelection: Set<Vertex|Edge|Face>`,
+but they were not yet wired to actual selection operations.
 
-また Grab + Ctrl のスナップ機能が World 原点のみに限定されており、利便性が低かった。
+Also, Grab + Ctrl snapping was limited to the world origin only, making it impractical.
 
 ---
 
@@ -18,63 +19,63 @@ DDD Phase 5-3 で `Vertex`, `Edge`, `Face` オブジェクトと `SceneModel.edi
 
 ### 1. Sub-element mode switching — 1 / 2 / 3 keys
 
-Edit Mode · 3D で以下のキーを割り当てる:
+Assign the following keys in Edit Mode · 3D:
 
-| キー | モード |
-|------|--------|
+| Key | Mode |
+|-----|------|
 | `1` | Vertex mode |
 | `2` | Edge mode |
-| `3` | Face mode (デフォルト) |
+| `3` | Face mode (default) |
 
-Blender の Numpad 1/2/3 相当。`V`/`E`/`F` は Grab 中の V キー (pivot select) と
-競合するため使用しない。
+Equivalent to Blender's Numpad 1/2/3. `V`/`E`/`F` are not used because `V` conflicts with
+the V key (pivot select) during Grab.
 
 ### 2. Click-vs-drag separation (Face mode)
 
-Face mode では mousedown で即 drag 開始していた従来の動作を変更:
+Changed from the previous behaviour of immediately starting a drag on mousedown in Face mode:
 
-- `mousedown` → `_editDragPending = true` (状態を保留)
-- `mousemove` で 5px 以上移動 AND hovered face あり → face extrude drag 開始
-- `mouseup` でまだ pending → クリックとして扱い `_handleEditClick()` 実行
+- `mousedown` → `_editDragPending = true` (hold state in pending)
+- `mousemove` moving more than 5px AND hovered face exists → start face extrude drag
+- `mouseup` while still pending → treat as a click, execute `_handleEditClick()`
 
-Vertex / Edge mode では drag なし、`mousedown` で即 `_handleEditClick()`。
+In Vertex / Edge mode there is no drag; `mousedown` immediately fires `_handleEditClick()`.
 
 ### 3. Selection semantics
 
-- クリック → `editSelection` を 1 要素に置き換え
-- Shift+クリック → `editSelection` にトグル（追加 or 除去）
-- 空白クリック → `editSelection` をクリア
+- Click → replace `editSelection` with 1 element
+- Shift+Click → toggle in `editSelection` (add or remove)
+- Click empty space → clear `editSelection`
 
 ### 4. Hover detection
 
-| モード | 検出方法 |
-|--------|---------|
-| face | raycasting（既存） |
-| vertex | 各 `Vertex.position` をスクリーン投影 → 最近傍（15px 閾値） |
-| edge | 各 `Edge` の midpoint をスクリーン投影 → 最近傍（15px 閾値） |
+| Mode | Detection method |
+|------|-----------------|
+| face | Raycasting (existing) |
+| vertex | Project each `Vertex.position` to screen → nearest (15px threshold) |
+| edge | Project each `Edge` midpoint to screen → nearest (15px threshold) |
 
-### 5. Grab snap expansion (Grab Snap 改善)
+### 5. Grab snap expansion
 
-`_trySnapToOrigin` を `_trySnapToGeometry` に置き換え:
+Replace `_trySnapToOrigin` with `_trySnapToGeometry`:
 
-- スナップ候補: World 原点 + 全 Cuboid の Vertex + 全 Edge 中点
-- `_grab.autoSnap: boolean` を追加:
-  - G→V でピボット確定後に `true` にセット
-  - `autoSnap = true` の間は Ctrl なしで自動スナップ発動
-  - Ctrl 離しても `autoSnap` は維持（Grab 終了時にリセット）
-- Ctrl 押下時もスナップ発動（既存動作を拡張）
+- Snap candidates: world origin + all Cuboid Vertices + all Edge midpoints
+- Add `_grab.autoSnap: boolean`:
+  - Set to `true` after confirming a G→V pivot
+  - While `autoSnap = true`, snap fires automatically without Ctrl
+  - `autoSnap` is maintained even when Ctrl is released (reset when Grab ends)
+- Snap also fires on Ctrl press (extends existing behaviour)
 
 ---
 
 ## Rejected Alternatives
 
-- **V/E/F キー**: `V` が Grab 中の pivot select に使用済み。Grab 非アクティブ時のみ使う設計も可能だが、一貫性のため 1/2/3 を採用。
-- **Ctrl を離したら autoSnap をリセット**: 忘れやすいという元の問題を再発させるため却下。
+- **V/E/F keys**: `V` is already used for pivot select during Grab. A design that only activates it when Grab is not active is possible, but 1/2/3 was chosen for consistency.
+- **Reset autoSnap when Ctrl is released**: Rejected because it would reintroduce the original problem of forgetting to hold Ctrl.
 
 ---
 
 ## Consequences
 
-- `editSelection` が実際の操作に接続され、Multi-face / Multi-vertex 選択の基盤が完成
-- Grab snap が全ジオメトリに対応し、精密な配置が容易になる
-- Face drag はクリックが先に割り込まないよう pending パターンで分離
+- `editSelection` is now wired to actual operations, completing the foundation for multi-face / multi-vertex selection
+- Grab snap covers all geometry, making precise placement easy
+- Face drag is separated from click via the pending pattern so click doesn't interrupt drag prematurely

@@ -1,105 +1,105 @@
 # Architecture
 
-easy-extrude は MVC パターンで構成された Web ベースの 3D モデリングアプリ。
-将来的なドメイン駆動設計（DDD）への移行を見据えて、段階的に整理している。
+easy-extrude is a web-based 3D modeling app built on the MVC pattern,
+being incrementally refactored toward Domain-Driven Design (DDD).
 
 ---
 
-## 全体構成
+## Overview
 
 ```
 src/
-  main.js                      # エントリポイント: MVC を組み立てて start()
+  main.js                      # Entry point: assembles MVC and calls start()
   domain/
-    Cuboid.js                  # ドメインエンティティ: 3D キュービック (faces, edges 保持)
-    Sketch.js                  # ドメインエンティティ: 2D スケッチ (未押し出し状態のみ)
+    Cuboid.js                  # Domain entity: 3D cuboid (holds faces, edges)
+    Sketch.js                  # Domain entity: 2D sketch (unextruded state only)
   graph/
-    Vertex.js                  # グラフ基底: 頂点 { id, position: Vector3 }
-    Edge.js                    # グラフ基底: 辺 { id, v0: Vertex, v1: Vertex }
-    Face.js                    # グラフ基底: 面 { id, vertices: Vertex[4], name, index }
+    Vertex.js                  # Graph primitive: vertex { id, position: Vector3 }
+    Edge.js                    # Graph primitive: edge { id, v0: Vertex, v1: Vertex }
+    Face.js                    # Graph primitive: face { id, vertices: Vertex[4], name, index }
   model/
-    CuboidModel.js             # 純粋関数: ジオメトリ計算 (ステートレス)
-    SceneModel.js              # 集約ルート: シーンオブジェクト + モード状態 + editSelection
+    CuboidModel.js             # Pure functions: geometry computation (stateless)
+    SceneModel.js              # Aggregate root: scene objects + mode state + editSelection
   service/
-    SceneService.js            # ApplicationService: エンティティ生成・CRUD・extrudeSketch
+    SceneService.js            # ApplicationService: entity creation, CRUD, extrudeSketch
   view/
-    SceneView.js               # Three.js シーン / カメラ / レンダラー
-    MeshView.js                # オブジェクトごとのメッシュと視覚状態
-    UIView.js                  # DOM UI (ヘッダー / N パネル / ステータスバー)
-    GizmoView.js               # ワールド軸ギズモ (右上)
-    OutlinerView.js            # シーン階層サイドバー (左)
+    SceneView.js               # Three.js scene / camera / renderer
+    MeshView.js                # Per-object mesh and visual state
+    UIView.js                  # DOM UI (header / N panel / status bar)
+    GizmoView.js               # World-axis gizmo (top-right)
+    OutlinerView.js            # Scene hierarchy sidebar (left)
   controller/
-    AppController.js           # 入力ハンドリング + View 調整
+    AppController.js           # Input handling + view coordination
 ```
 
 ---
 
-## レイヤー責任
+## Layer Responsibilities
 
 ### Model
 
-| モジュール | 責任 |
-|-----------|------|
-| `CuboidModel.js` | 純粋関数のみ。副作用なし。ジオメトリ構築・法線計算・座標変換 |
-| `SceneModel.js` | ドメイン状態を保持。`_objects` / `_activeId` / `_selectionMode` / `_editSubstate` / `_editSelection` |
+| Module | Responsibility |
+|--------|---------------|
+| `CuboidModel.js` | Pure functions only. No side effects. Geometry construction, normal computation, coordinate transforms. |
+| `SceneModel.js` | Holds domain state: `_objects` / `_activeId` / `_selectionMode` / `_editSubstate` / `_editSelection` |
 
-`SceneModel` は Three.js に依存しない純粋な状態コンテナ。
-DDD 移行時にエンティティ（Cuboid, Sketch）とリポジトリに分化する予定。
+`SceneModel` is a pure state container with no dependency on Three.js.
+It will split into entities (Cuboid, Sketch) and a repository during future DDD migration.
 
 ### View
 
-| モジュール | 責任 |
-|-----------|------|
-| `SceneView` | Three.js の初期化 (レンダラー / カメラ / OrbitControls / グリッド / 照明) |
-| `MeshView` | 1 オブジェクト = 1 MeshView。メッシュ / ワイヤーフレーム / ハイライト / スケッチ矩形を所有 |
-| `UIView` | Blender 風 DOM UI。`setStatusRich()` / `updateNPanel()` / `showAddMenu()` 等 |
-| `GizmoView` | 右上の小キャンバスに軸ギズモを描画。クリックでカメラスナップ |
-| `OutlinerView` | 左サイドバー。オブジェクト一覧・可視切替・削除・リネームのコールバックを提供 |
+| Module | Responsibility |
+|--------|---------------|
+| `SceneView` | Three.js initialisation (renderer / camera / OrbitControls / grid / lighting) |
+| `MeshView` | 1 object = 1 MeshView. Owns mesh / wireframe / highlight / sketch rect |
+| `UIView` | Blender-style DOM UI. `setStatusRich()` / `updateNPanel()` / `showAddMenu()` etc. |
+| `GizmoView` | Draws axis gizmo on a small canvas (top-right). Click to snap camera. |
+| `OutlinerView` | Left sidebar. Provides callbacks for object list, visibility toggle, delete, rename. |
 
-**ビジュアル状態の所有権** (ADR-008 の契約):
+**Visual state ownership** (ADR-008 contract):
 
-| 要素 | 所有者 |
-|------|--------|
+| Element | Owner |
+|---------|-------|
 | `hlMesh.visible` | `setFaceHighlight()` |
 | `cuboid.visible` / `wireframe.visible` | `setVisible()` |
 | `boxHelper.visible` | `setObjectSelected()` |
 
 ### Controller
 
-`AppController` の責任:
+`AppController` responsibilities:
 
-- DOM イベントのバインドと分岐 (`_bindEvents`)
-- インタラクション状態の保持 (ドラッグ・ホバー・グラブ・スケッチフェーズ等)
-- `SceneModel` のドメイン状態を読み書き
-- View を呼び出して描画を更新
-- アニメーションループ (`start()`)
-- `setMode()` — モード遷移の唯一の入口 (ADR-008)
-
----
-
-## データフロー
-
-```
-ユーザー入力
-    |
-    v
-AppController (_onMouseDown / _onKeyDown 等)
-    |-- SceneModel を更新 (addObject / setMode / setActiveId 等)
-    |-- View を直接呼び出し (meshView.updateGeometry / uiView.setStatus 等)
-    |
-    v
-requestAnimationFrame ループ
-    |-- SceneView.render()  → Three.js がメッシュを描画
-    |-- GizmoView.update()  → ギズモを再描画
-```
-
-View はコントローラからのみ更新される (View は Model を直接参照しない)。
+- Bind and dispatch DOM events (`_bindEvents`)
+- Hold interaction state (drag, hover, grab, sketch phase, etc.)
+- Read/write `SceneModel` domain state
+- Call Views to update rendering
+- Animation loop (`start()`)
+- `setMode()` — sole entry point for mode transitions (ADR-008)
 
 ---
 
-## SceneObject の構造
+## Data Flow
 
-SceneObject は `Cuboid` または `Sketch` のいずれか。型（`instanceof`）が振る舞いを決定する。
+```
+User input
+    |
+    v
+AppController (_onMouseDown / _onKeyDown etc.)
+    |-- Update SceneModel (addObject / setMode / setActiveId etc.)
+    |-- Call Views directly (meshView.updateGeometry / uiView.setStatus etc.)
+    |
+    v
+requestAnimationFrame loop
+    |-- SceneView.render()  → Three.js renders meshes
+    |-- GizmoView.update()  → Redraws gizmo
+```
+
+Views are updated only by the controller (Views do not reference the Model directly).
+
+---
+
+## SceneObject Structure
+
+A SceneObject is either a `Cuboid` or a `Sketch`. The type (`instanceof`) determines available operations.
 
 **Cuboid** (3D):
 ```javascript
@@ -107,33 +107,33 @@ SceneObject は `Cuboid` または `Sketch` のいずれか。型（`instanceof`
   id:          string,            // "obj_0_1234567890"
   name:        string,            // "Cube", "Cube.001"
   description: string,
-  vertices:    Vertex[8],         // グラフ基底頂点; get corners() で Vector3[] に投影
-  faces:       Face[6],           // 明示的な面オブジェクト (ADR-012)
-  edges:       Edge[12],          // 明示的な辺オブジェクト (ADR-012)
+  vertices:    Vertex[8],         // Graph-based vertices; get corners() projects to Vector3[]
+  faces:       Face[6],           // Explicit face objects (ADR-012)
+  edges:       Edge[12],          // Explicit edge objects (ADR-012)
   meshView:    MeshView,
 }
 ```
 
-**Sketch** (2D、未押し出し):
+**Sketch** (2D, unextruded):
 ```javascript
 {
   id:          string,            // "obj_0_1234567890"
   name:        string,            // "Sketch.001"
   description: string,
-  sketchRect:  { p1, p2 } | null, // 描画された矩形
+  sketchRect:  { p1, p2 } | null, // Drawn rectangle
   meshView:    MeshView,
 }
 ```
 
-`Sketch.extrude(height)` は `Sketch` を変異させず新しい `Cuboid` を返す。
-`SceneService.extrudeSketch(id, height)` が Sketch を Cuboid に置換する。
+`Sketch.extrude(height)` does not mutate the Sketch; it returns a new `Cuboid`.
+`SceneService.extrudeSketch(id, height)` replaces the Sketch with the Cuboid in the scene.
 
 ---
 
-## 座標系
+## Coordinate System
 
-**ROS ワールドフレーム (+X 前, +Y 左, +Z 上)**。右手系。Three.js の `camera.up = (0,0,1)`。
-XY 平面 (Z=0) がグラウンドプレーン。
+**ROS world frame (+X forward, +Y left, +Z up)**. Right-handed. Three.js `camera.up = (0,0,1)`.
+XY plane (Z=0) is the ground plane.
 
 ```
       6─────7
@@ -146,24 +146,24 @@ XY 平面 (Z=0) がグラウンドプレーン。
 
 ---
 
-## ドメインモデル — 次元と動詞
+## Domain Model — Dimensions and Verbs
 
-エンティティは「次元」で分類し、操作は「次元を上げる動詞」として定義する。
-型（`instanceof`）が振る舞いを決定し、`dimension` フィールドは持たない（ADR-012 Phase 5-3 にて廃止）。
+Entities are classified by dimension; operations are defined as verbs that raise the dimension.
+Type (`instanceof`) determines behaviour; there is no `dimension` field (removed in ADR-012 Phase 5-3).
 
-| 次元 | エンティティ | 生成する動詞 |
-|------|-------------|-------------|
-| 0D   | `Vertex`          | — |
-| 1D   | `Edge`            | — |
-| 2D   | `Face` / `Sketch` | **Sketch**: 矩形を描画 |
-| 3D   | `Cuboid`          | **Extrude**: `Sketch.extrude(h)` → 新 Cuboid |
+| Dimension | Entity | Creating verb |
+|-----------|--------|---------------|
+| 0D | `Vertex` | — |
+| 1D | `Edge` | — |
+| 2D | `Face` / `Sketch` | **Sketch**: draw a rectangle |
+| 3D | `Cuboid` | **Extrude**: `Sketch.extrude(h)` → new Cuboid |
 
-動詞はエンティティを突然変異させず、**上位次元の新エンティティを返す**。
-`SceneService` が旧エンティティを削除し、新エンティティを同一 ID で登録する。
+Verbs do not mutate entities; they **return a new entity of higher dimension**.
+`SceneService` deletes the old entity and registers the new one under the same ID.
 
-これにより「ステートが遷移したのにメソッドがついてこない」問題が構造上起こり得ない。
+This structurally prevents the "state transitioned but methods didn't follow" problem.
 
-### グラフ基底モデル (ADR-012)
+### Graph-based model (ADR-012)
 
 ```
 Vertex  = { id, position: Vector3 }
@@ -172,30 +172,30 @@ Face    = { id, vertices: Vertex[4], name, index }
 Cuboid  = { vertices: Vertex[8], faces: Face[6], edges: Edge[12], ... }
 ```
 
-`Face` / `Edge` が明示的に存在することで、将来の G→V / G→E / G→F 選択モデルの基盤となる。
-`SceneModel.editSelection: Set<Vertex|Edge|Face>` として統一選択セットを保持する。
+Explicit `Face` / `Edge` objects form the foundation for future G→V / G→E / G→F selection models.
+`SceneModel.editSelection: Set<Vertex|Edge|Face>` holds the unified selection set.
 
 ---
 
-## DDD 移行ロードマップ
+## DDD Migration Roadmap
 
-| フェーズ | 内容 | 状態 |
-|---------|------|------|
-| **Phase 0** | SceneModel が状態コンテナ。AppController がビジネスロジックを保持 | 完了 2026-03-20 |
-| **Phase 1** | `Cuboid` / `Sketch` ドメインエンティティを新設 (ADR-009) | 完了 2026-03-20 |
-| **Phase 2** | ドメインエンティティが操作メソッドを持つ (ADR-010) | 完了 2026-03-20 |
-| **Phase 3** | `SceneService` (ApplicationService) を新設 (ADR-011) | 完了 2026-03-20 |
-| **Phase 4** | ドメインイベント — `SceneService` が Observable に (ADR-013) | 完了 2026-03-20 |
-| **Phase 5-1** | `Vertex` 層を追加。`Cuboid.vertices: Vertex[8]` (ADR-012) | 完了 2026-03-20 |
-| **Phase 5-2** | ステータスバーをイベント駆動に移行 | 完了 2026-03-20 |
-| **Phase 5-3** | `Edge` / `Face` 層、`dimension` 廃止、統一選択モデル基盤 (ADR-012) | 完了 2026-03-20 |
-| **Phase 6** | Sub-element selection (1/2/3 キー)、Grab snap 全ジオメトリ対応 (ADR-014) | 完了 2026-03-20 |
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **Phase 0** | SceneModel as state container. AppController holds business logic. | Done 2026-03-20 |
+| **Phase 1** | New `Cuboid` / `Sketch` domain entities (ADR-009) | Done 2026-03-20 |
+| **Phase 2** | Domain entities own behaviour methods (ADR-010) | Done 2026-03-20 |
+| **Phase 3** | New `SceneService` (ApplicationService) (ADR-011) | Done 2026-03-20 |
+| **Phase 4** | Domain events — `SceneService` becomes Observable (ADR-013) | Done 2026-03-20 |
+| **Phase 5-1** | Added `Vertex` layer. `Cuboid.vertices: Vertex[8]` (ADR-012) | Done 2026-03-20 |
+| **Phase 5-2** | Status bar migrated to event-driven updates | Done 2026-03-20 |
+| **Phase 5-3** | `Edge` / `Face` layer, `dimension` removed, unified selection model foundation (ADR-012) | Done 2026-03-20 |
+| **Phase 6** | Sub-element selection (1/2/3 keys), Grab snap across all geometry (ADR-014) | Done 2026-03-20 |
 
 ---
 
-## 関連ドキュメント
+## Related Documents
 
-- `docs/adr/README.md` — アーキテクチャ決定記録の索引
-- `docs/STATE_TRANSITIONS.md` — モード状態遷移の詳細
-- `docs/ROADMAP.md` — 機能ロードマップ
-- `.claude/MENTAL_MODEL.md` — バグから学んだコーディングポリシー
+- `docs/adr/README.md` — Architecture Decision Record index
+- `docs/STATE_TRANSITIONS.md` — Mode state transition details
+- `docs/ROADMAP.md` — Feature roadmap
+- `.claude/MENTAL_MODEL.md` — Coding policies learned from bugs

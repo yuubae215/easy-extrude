@@ -1,6 +1,6 @@
-# ADR-012: グラフ基底ジオメトリモデル (Vertex / Edge / Face / Solid)
+# ADR-012: Graph-based Geometry Model (Vertex / Edge / Face / Solid)
 
-- **Status**: Accepted (Phase 5-1: Vertex 層実装済み。Phase 5-3: Edge / Face / 選択モデル基盤・dimension 廃止 実装済み)
+- **Status**: Accepted (Phase 5-1: Vertex layer implemented. Phase 5-3: Edge / Face / selection model foundation / dimension removal implemented)
 - **Date**: 2026-03-20
 - **References**: ADR-005, ADR-009, ADR-011
 
@@ -8,22 +8,22 @@
 
 ## Context
 
-現在の `Cuboid` エンティティは 8頂点を `corners: Vector3[8]` として持ち、面は
-`FACES[i].corners` (頂点インデックスの配列) で暗黙的に定義されている。
-`Sketch` は `sketchRect: { p1, p2 }` という独自表現を持つ。
+The current `Cuboid` entity holds 8 vertices as `corners: Vector3[8]`, with faces
+implicitly defined by `FACES[i].corners` (arrays of vertex indices).
+`Sketch` uses its own `sketchRect: { p1, p2 }` representation.
 
-この設計では:
-- 頂点・辺・面の選択が統一的に表現できない (G→V, G→E 等の操作が追加しにくい)
-- `dimension` フィールドで型を切り替えるため、ステート遷移とメソッドセットの乖離が起きやすい
-  (実際に発生したバグ: Sketch に `move()` / `extrudeFace()` が欠落)
+This design has the following drawbacks:
+- Vertex, edge, and face selection cannot be expressed uniformly (operations like G→V, G→E are hard to add)
+- Switching types via a `dimension` field makes it easy for state transitions and method sets to diverge
+  (an actual bug: `move()` / `extrudeFace()` were missing on Sketch)
 
 ---
 
 ## Decision
 
-将来フェーズで、すべてのジオメトリエンティティをグラフ構造の上に構築する。
+In future phases, build all geometry entities on top of a graph structure.
 
-### 基底グラフ
+### Base Graph
 
 ```
 Vertex  = { id, position: Vector3 }
@@ -31,77 +31,77 @@ Edge    = { id, v0: Vertex, v1: Vertex }
 Face    = { id, vertices: Vertex[N] }   // N=4 for quads
 ```
 
-### 次元エンティティ
+### Dimensional Entities
 
-| 次元 | エンティティ | 構成 |
-|------|-------------|------|
-| 0D | `Vertex` | 1点 |
-| 1D | `Edge` | Vertex × 2 |
-| 2D | `Face` | Edge の閉じたサイクル |
-| 3D | `Cuboid` | Face の閉じた多面体 (6面 × 4頂点) |
+| Dimension | Entity | Composition |
+|-----------|--------|-------------|
+| 0D | `Vertex` | 1 point |
+| 1D | `Edge` | 2 Vertices |
+| 2D | `Face` | Closed cycle of Edges |
+| 3D | `Cuboid` | Closed polyhedron of Faces (6 faces × 4 vertices) |
 
-### 動詞 (次元を上げる操作)
+### Verbs (operations that raise dimension)
 
-| 動詞 | 変換 | 説明 |
-|------|------|------|
-| `Sketch` | 1D → 2D | Vertex pair から Face を生成 |
-| `Extrude` | 2D → 3D | Face から Cuboid を生成 |
+| Verb | Transform | Description |
+|------|-----------|-------------|
+| `Sketch` | 1D → 2D | Creates a Face from a Vertex pair |
+| `Extrude` | 2D → 3D | Creates a Cuboid from a Face |
 
-動詞は元エンティティを突然変異させず、上位次元の新エンティティを返す。
-`SceneService` が旧エンティティを削除し、同一 ID で新エンティティを登録する。
+Verbs do not mutate the source entity; they return a new entity of higher dimension.
+`SceneService` deletes the old entity and registers the new one under the same ID.
 
-### 選択モデルの統一
+### Unified Selection Model
 
 ```js
 selection: Set<Vertex | Edge | Face>
 ```
 
-G→V (頂点選択), G→E (辺選択), G→F (面選択) が同一の選択システムで動作する。
-現在の Edit Mode の「face hover / face drag」はこのモデルの Face 選択の特殊ケースになる。
+G→V (vertex selection), G→E (edge selection), G→F (face selection) all operate on the same selection system.
+The current Edit Mode "face hover / face drag" becomes a special case of Face selection in this model.
 
-### 現状との対応
+### Mapping from Current Implementation
 
 ```
 corners: Vector3[8]  →  Vertex[8]
-FACES[i].corners     →  Face[i].vertices  (頂点インデックス参照)
-（Edge は暗黙）      →  Edge[] として明示
+FACES[i].corners     →  Face[i].vertices  (vertex index references)
+(implicit edges)     →  Edge[] made explicit
 ```
 
 ---
 
 ## Consequences
 
-**良い点**
-- 頂点・辺・面レベルの選択・操作が統一的に実装できる
-- `dimension` フィールドが不要になり、エンティティ型が振る舞いを決定する
-- 「ステートが遷移したのにメソッドがついてこない」問題が構造上起こり得ない
-- Blender の BMesh に近いモデルになり、将来的な機能拡張との整合性が高まる
+**Benefits**
+- Vertex, edge, and face level selection and manipulation can be implemented uniformly
+- The `dimension` field is no longer needed; entity type determines behaviour
+- The "state transitioned but methods didn't follow" problem is structurally impossible
+- The model becomes closer to Blender's BMesh, improving compatibility with future feature extensions
 
-**制約・コスト**
-- 現行の `corners[8]` / `FACES` ベースのジオメトリ計算 (`CuboidModel.js`) を全面的に書き直す必要がある
-- `MeshView` の `BufferGeometry` 構築ロジックも対応が必要
-- 移行コストが大きいため、既存機能が安定した段階で着手する
+**Constraints / Costs**
+- The current `corners[8]` / `FACES`-based geometry computation (`CuboidModel.js`) needs a full rewrite
+- `MeshView`'s `BufferGeometry` construction logic also needs updating
+- Migration cost is high; start after existing functionality stabilises
 
-## 実装状況
+## Implementation Status
 
-### Phase 5-1 (完了 2026-03-20)
+### Phase 5-1 (Done 2026-03-20)
 
-`src/graph/Vertex.js` を新設。`Cuboid.vertices` / `Sketch.vertices` が `Vertex[8]` を保持。
-`get corners()` ゲッターが `Vector3[]` を返すことで `CuboidModel.js` / `MeshView` / `AppController` は無変更。
-`SceneService.createCuboid()` が `Vertex[]` を生成して `Cuboid` に渡す。
+Added `src/graph/Vertex.js`. `Cuboid.vertices` / `Sketch.vertices` hold `Vertex[8]`.
+The `get corners()` getter returns `Vector3[]`, keeping `CuboidModel.js` / `MeshView` / `AppController` unchanged.
+`SceneService.createCuboid()` generates `Vertex[]` and passes them to `Cuboid`.
 
-### Phase 5-3 (完了 2026-03-20)
+### Phase 5-3 (Done 2026-03-20)
 
-`src/graph/Edge.js`, `src/graph/Face.js` を新設。
+Added `src/graph/Edge.js`, `src/graph/Face.js`.
 
-`Cuboid` に `faces: Face[6]`, `edges: Edge[12]` を追加（コンストラクタで FACES 定義から自動構築）。
-`extrudeFace(fi, ...)` を `extrudeFace(face, ...)` に変更し、Face.vertices を直接操作。
+Added `faces: Face[6]`, `edges: Edge[12]` to `Cuboid` (auto-built from FACES definitions in constructor).
+Changed `extrudeFace(fi, ...)` to `extrudeFace(face, ...)`, operating directly on `Face.vertices`.
 
-`Sketch.extrude()` が突然変異せず新しい `Cuboid` を返すように変更（動詞パターンに準拠）。
-`SceneService.extrudeSketch(id, height)` が Sketch を Cuboid に置換。
+Changed `Sketch.extrude()` to return a new `Cuboid` without mutation (conforming to the verb pattern).
+`SceneService.extrudeSketch(id, height)` replaces the Sketch with the Cuboid.
 
-`dimension` フィールドを `Cuboid` / `Sketch` から廃止。
-`AppController.setMode()` / `_updateNPanel()` の分岐が `instanceof Sketch` に変更。
+Removed the `dimension` field from `Cuboid` / `Sketch`.
+Branches in `AppController.setMode()` / `_updateNPanel()` changed to use `instanceof Sketch`.
 
-`AppController._hoveredFace` / `_dragFace` を `Face|null` に変更（統一選択モデルの基盤）。
-`SceneModel.editSelection: Set<Vertex|Edge|Face>` を追加（空 Set として初期化）。
+Changed `AppController._hoveredFace` / `_dragFace` to `Face|null` (foundation for the unified selection model).
+Added `SceneModel.editSelection: Set<Vertex|Edge|Face>` (initialised as empty Set).

@@ -4,18 +4,18 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
-- **2026-03-21**: アーキテクチャ設計セッション（実装なし）。BFF + マイクロサービス構成を策定。
-  - **方針**: フロントエンドを View + Controller のみに限定。ドメイン計算・永続化の知識をゼロにする。ジオメトリグラフ評価・STEP インポート・Node Editor 計算をサーバー側 Geometry Service に集約し、Three.js レンダリングの FPS を安定させる。
-  - **BFF**: Node.js。REST（シーン CRUD・認証）と WebSocket（ジオメトリストリーム・Node Editor グラフ評価・インポート進捗）を使い分ける。
-  - **マイクロサービス**: Scene Service（シーン CRUD + DB）/ User Service（認証・プロファイル）/ Geometry Service（グラフ評価・STEP インポート・OBJ/GLTF エクスポート）。
-  - **WebSocket メッセージ**: 操作ベース（Operation-based）。フロント → BFF がグラフ操作、BFF → フロントが計算済みジオメトリ（positions/indices/normals）をストリーム。
-  - **段階的移行**: Phase A（BFF スケルトン + REST シーン保存）→ B（Geometry Service + WebSocket + Node Editor プロト）→ C（STEP インポート）→ D（フロント完全 Thin Client 化）。
-  - **STEP インポート方針**: Phase B は `occt-import-js`（WASM、テッセレーション結果のみ）で素早くプロト。B-rep 位相アクセスが必要になれば `opencascade.js` または Python サービス（cadquery / pythonOCC）へ移行。
-  - **トランスフォームグラフ**: シーンオブジェクト間の位置・姿勢関係を SE(3) ツリーで表現。TransformNode（objectId, translation, quaternion）+ TransformEdge（parentId, childId, constraint="fixed"）。ROS ワールドフレーム・クォータニオンを採用。将来は OperationNode を追加して DAG（Node Editor）へ拡張。
-  - **ADR**: ADR-015（BFF + マイクロサービス）、ADR-016（トランスフォームグラフ）を Proposed で作成。
-- **2026-03-20**: DDD Phase 5-1 — グラフ基底ジオメトリ移行。`src/graph/Vertex.js` 新設。`Cuboid.vertices` / `Sketch.vertices` が `Vertex[8]` を保持し `get corners()` ゲッターで後方互換を維持。`CuboidModel.js` / `MeshView` / `AppController` は無変更。ADR-012 を Accepted に更新。
-- **2026-03-20**: DDD Phase 5-2 — ステータスバーをイベント駆動に部分移行。`_refreshObjectModeStatus()` ヘルパーを新設し "X selected" ロジックを単一箇所に集約。`objectRenamed` イベントを購読してリネーム時もステータスバーを自動更新。`_confirmGrab` / `_cancelGrab` の固定文字列 "Object selected" バグを合わせて修正。
-- **2026-03-20**: DDD Phase 1 — `src/domain/Cuboid.js` と `src/domain/Sketch.js` を新設し、SceneObject の plain object 生成を typed entity に置き換え。ADR-009 作成。ARCHITECTURE.md の DDD 移行フェーズを Phase 1 に更新。
+- **2026-03-21**: Architecture design session (no implementation). BFF + microservices strategy established.
+  - **Direction**: Limit frontend to View + Controller only. Zero knowledge of domain computation or persistence. Consolidate geometry graph evaluation, STEP import, and Node Editor computation in a server-side Geometry Service to stabilize Three.js rendering FPS.
+  - **BFF**: Node.js. REST (scene CRUD, auth) and WebSocket (geometry stream, Node Editor graph evaluation, import progress) used according to purpose.
+  - **Microservices**: Scene Service (scene CRUD + DB) / User Service (auth + profile) / Geometry Service (graph evaluation, STEP import, OBJ/GLTF export).
+  - **WebSocket messages**: Operation-based. Front → BFF sends graph operations; BFF → Front streams computed geometry (positions/indices/normals).
+  - **Phased migration**: Phase A (BFF skeleton + REST scene save) → B (Geometry Service + WebSocket + Node Editor prototype) → C (STEP import) → D (frontend fully thin client).
+  - **STEP import strategy**: Phase B prototypes quickly with `occt-import-js` (WASM, tessellation results only). Migrate to `opencascade.js` or a Python service (cadquery / pythonOCC) if B-rep topology access is needed.
+  - **Transform graph**: Scene object spatial relationships represented as an SE(3) tree. TransformNode (objectId, translation, quaternion) + TransformEdge (parentId, childId, constraint="fixed"). Uses ROS world frame and quaternions. Future: add OperationNodes to extend to a DAG (Node Editor).
+  - **ADRs**: ADR-015 (BFF + microservices) and ADR-016 (transform graph) created as Proposed.
+- **2026-03-20**: DDD Phase 5-1 — Graph-based geometry migration. Added `src/graph/Vertex.js`. `Cuboid.vertices` / `Sketch.vertices` hold `Vertex[8]`; `get corners()` getter maintains backward compatibility. `CuboidModel.js` / `MeshView` / `AppController` unchanged. Updated ADR-012 to Accepted.
+- **2026-03-20**: DDD Phase 5-2 — Partially migrated status bar to event-driven updates. Added `_refreshObjectModeStatus()` helper to centralize "X selected" logic. Subscribed to `objectRenamed` event for automatic status bar refresh on rename. Fixed stuck "Object selected" string bug in `_confirmGrab` / `_cancelGrab`.
+- **2026-03-20**: DDD Phase 1 — Added `src/domain/Cuboid.js` and `src/domain/Sketch.js`; replaced plain object creation for SceneObjects with typed entities. Created ADR-009. Updated DDD migration phase in ARCHITECTURE.md to Phase 1.
 - **2026-03-17**: Refactored `src/main.js` to MVC pattern. Separated pure functions from side effects into `model/` / `view/` / `controller/`. Session complete.
 - **2026-03-18**: Documentation update. Fully revised README.md to match the implemented MVC structure. Added `computeOutwardFaceNormal` to the Model pure function list in CLAUDE.md; updated MeshView and UIView responsibility descriptions to match reality.
 - **2026-03-18**: Added Blender-style grab controls (G/X/Y/Z, numeric input, confirm/cancel). Disabled OrbitControls inertia (enableDamping = false). Translated all in-repo text from Japanese to English.

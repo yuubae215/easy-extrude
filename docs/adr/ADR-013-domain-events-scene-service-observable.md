@@ -1,4 +1,4 @@
-# ADR-013: ドメインイベント — SceneService を Observable に (DDD Phase 4)
+# ADR-013: Domain Events — Making SceneService Observable (DDD Phase 4)
 
 - **Status**: Accepted
 - **Date**: 2026-03-20
@@ -8,47 +8,47 @@
 
 ## Context
 
-DDD Phase 3 (ADR-011) までで `SceneService` が ApplicationService として確立された。
-しかし `AppController` は依然として、ドメイン操作のたびに View を直接呼び出していた。
+Through DDD Phase 3 (ADR-011), `SceneService` was established as an ApplicationService.
+However, `AppController` was still calling Views directly after every domain operation.
 
 ```js
-// Phase 3 まで — AppController._addObject
+// Up to Phase 3 — AppController._addObject
 const obj = this._service.createCuboid()
-this._outlinerView.addObject(obj.id, obj.name)  // ← 直接呼び出し
+this._outlinerView.addObject(obj.id, obj.name)  // ← direct call
 this._switchActiveObject(obj.id, true)
 ```
 
-この結合により AppController はドメイン操作の「通知バス」になっており、
-View の増減に応じて AppController を修正する必要があった。
+This coupling made AppController a "notification bus" for domain operations,
+requiring AppController to be modified whenever a View was added or removed.
 
 ---
 
 ## Decision
 
-`SceneService` を `EventEmitter` のサブクラスとし、状態変更時にドメインイベントを emit する。
+Make `SceneService` a subclass of `EventEmitter`, emitting domain events on state changes.
 
 ```
 src/
   core/
-    EventEmitter.js   # NEW: 最小限の pub/sub ユーティリティ
+    EventEmitter.js   # NEW: minimal pub/sub utility
   service/
-    SceneService.js   # EventEmitter を継承、イベント emit を追加
+    SceneService.js   # Extends EventEmitter, adds event emitting
   controller/
-    AppController.js  # イベント購読に切り替え、直接 View 呼び出しを削除
+    AppController.js  # Switches to event subscriptions, removes direct View calls
 ```
 
-### SceneService が emit するイベント
+### Events emitted by SceneService
 
-| イベント名      | 引数               | 発火タイミング                        |
-|---------------|-------------------|-------------------------------------|
-| `objectAdded`   | `obj: SceneObject`  | `createCuboid()` / `createSketch()` 完了後 |
-| `objectRemoved` | `id: string`        | `deleteObject()` 完了後              |
-| `objectRenamed` | `id, name: string`  | `renameObject()` 完了後              |
-| `activeChanged` | `id: string\|null`  | `setActiveObject()` 完了後           |
+| Event name | Arguments | Fired when |
+|------------|-----------|------------|
+| `objectAdded` | `obj: SceneObject` | After `createCuboid()` / `createSketch()` completes |
+| `objectRemoved` | `id: string` | After `deleteObject()` completes |
+| `objectRenamed` | `id, name: string` | After `renameObject()` completes |
+| `activeChanged` | `id: string\|null` | After `setActiveObject()` completes |
 
-### AppController の変化
+### Changes to AppController
 
-コンストラクタでイベントを購読し、OutlinerView を自動同期する。
+Subscribe to events in the constructor and auto-sync OutlinerView.
 
 ```js
 this._service.on('objectAdded',   obj      => outlinerView?.addObject(obj.id, obj.name))
@@ -57,27 +57,25 @@ this._service.on('objectRenamed', (id, nm) => outlinerView?.setObjectName(id, nm
 this._service.on('activeChanged', id       => outlinerView?.setActive(id))
 ```
 
-`_addObject` / `_deleteObject` / `_switchActiveObject` / `_renameObject` から
-対応する直接 View 呼び出しを削除。
+Remove the corresponding direct View calls from `_addObject` / `_deleteObject` / `_switchActiveObject` / `_renameObject`.
 
-`_switchActiveObject` は `this._scene.setActiveId(id)` の代わりに
-`this._service.setActiveObject(id)` を呼ぶ。
+`_switchActiveObject` calls `this._service.setActiveObject(id)` instead of `this._scene.setActiveId(id)`.
 
-### SceneModel の変化
+### Changes to SceneModel
 
-`renameObject` ファサードメソッドを削除（SceneService が `obj.rename()` を直接呼ぶため、
-Phase 3 から事実上デッドコードだった）。
+Remove the `renameObject` facade method (it had been effectively dead code since Phase 3,
+as SceneService calls `obj.rename()` directly).
 
 ---
 
 ## Consequences
 
-**良い点**
-- AppController は View の具体型を知らずにドメイン操作を行える
-- 新しい View (例: プロパティパネル) を追加する際、AppController を修正せずにイベント購読だけで対応できる
-- SceneService がドメイン状態の唯一の公式ゲートウェイになった
+**Benefits**
+- AppController can perform domain operations without knowing the concrete View types
+- Adding a new View (e.g. a property panel) requires only subscribing to events, without modifying AppController
+- SceneService is now the sole official gateway for domain state
 
-**制約**
-- UIView へのステータスバー更新は依然として AppController が直接担う
-  (これはインタラクション状態 — grab/hover — に依存するため、モデルイベントに馴染まない)
-- イベントはすべて同期ディスパッチ。非同期イベントが必要になった場合は EventEmitter を拡張する
+**Constraints**
+- Status bar updates in UIView are still handled directly by AppController
+  (these depend on interaction state — grab/hover — which doesn't map well to model events)
+- All events are synchronously dispatched. Extend EventEmitter if async events are needed
