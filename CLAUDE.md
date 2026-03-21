@@ -49,6 +49,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-21**: アーキテクチャ設計 — BFF + マイクロサービス構成を策定。フロントを View + Controller に限定し、ジオメトリ計算・STEP インポートをサーバー側に集約する方針を決定。Node.js BFF / REST+WebSocket / Geometry Service（サーバー側グラフ計算）の構成を ADR-015 に記録。トランスフォームグラフ（SE(3) ツリー、ROS フレーム、クォータニオン）を ADR-016 に記録。STEP インポートは Phase B で `occt-import-js` から着手し、B-rep アクセスが必要になれば `opencascade.js` または Python サービスへ移行する方針を確認。
 - **2026-03-20**: DDD Phase 5-1 — `src/graph/Vertex.js` 新設。`Cuboid`/`Sketch` が `vertices: Vertex[]` を保持し `get corners()` で後方互換。ADR-012 Accepted。
 - **2026-03-20**: DDD Phase 6 — Sub-element selection 実装。`1`/`2`/`3` キーで Vertex / Edge / Face モード切り替え。Click で `editSelection` 更新、Shift+Click でトグル。Face mode はクリック vs ドラッグを pending パターンで分離。Grab snap を `_trySnapToGeometry` に拡張（全 Vertex・Edge 中点・Origin）。G→V ピボット確定後に `autoSnap = true` で Ctrl 不要のスナップ。ADR-014 作成。
 - **2026-03-20**: DDD Phase 5-3 — `src/graph/Edge.js`, `src/graph/Face.js` 新設。`Cuboid` に `faces: Face[6]`, `edges: Edge[12]` を追加。`Sketch.extrude()` が突然変異せず新 `Cuboid` を返す設計に変更。`SceneService.extrudeSketch()` でエンティティ置換。`dimension` フィールドを廃止し `instanceof Sketch` で型判定。`AppController._hoveredFace`/`_dragFace` を `Face|null` に変更。`SceneModel.editSelection: Set<Vertex|Edge|Face>` を追加。ADR-012 完了。
