@@ -460,8 +460,10 @@ export class AppController {
     }
 
     if (this._faceExtrude.active) {
+      // On mobile, lifting the finger auto-confirms (pointerup wasDragging guard).
+      // Confirm button is therefore redundant. Show an indicator + Cancel only.
       this._uiView.setMobileToolbar([
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmFaceExtrude() },
+        { icon: ICONS.extrude, label: 'Extrude', indicator: true },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelFaceExtrude(), danger: true },
       ])
       return
@@ -1330,7 +1332,10 @@ export class AppController {
     if (fe.snapping && fe.snappedTarget) {
       parts.push({ text: `Snap: ${fe.snappedTarget.label}`, bold: true, color: '#ff9800' })
     }
-    parts.push({ text: 'Enter confirm  Esc cancel', color: '#444' })
+    const hint = window.innerWidth < 768
+      ? 'Release to confirm'
+      : 'Enter confirm  Esc cancel'
+    parts.push({ text: hint, color: '#444' })
     this._uiView.setStatusRich(parts)
   }
 

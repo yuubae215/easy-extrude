@@ -857,11 +857,11 @@ export class UIView {
    */
   setMobileToolbar(buttons) {
     this._mobileToolbarEl.innerHTML = ''
-    buttons.forEach(({ icon, label, onClick, active = false, danger = false, disabled = false }) => {
-      const btn = document.createElement('button')
-      const bg     = disabled ? 'transparent'             : active ? 'rgba(79,195,247,0.15)' : danger ? 'rgba(192,57,43,0.18)' : 'rgba(255,255,255,0.06)'
-      const border  = disabled ? 'rgba(255,255,255,0.06)' : active ? 'rgba(79,195,247,0.5)'  : danger ? 'rgba(231,76,60,0.5)'  : 'rgba(255,255,255,0.12)'
-      const color   = disabled ? '#484848'                : active ? '#4fc3f7'                : danger ? '#e74c3c'               : '#d8d8d8'
+    buttons.forEach(({ icon, label, onClick, active = false, danger = false, disabled = false, indicator = false }) => {
+      const btn = document.createElement(indicator ? 'div' : 'button')
+      const bg     = indicator ? 'rgba(79,195,247,0.06)' : disabled ? 'transparent'             : active ? 'rgba(79,195,247,0.15)' : danger ? 'rgba(192,57,43,0.18)' : 'rgba(255,255,255,0.06)'
+      const border  = indicator ? 'rgba(79,195,247,0.18)' : disabled ? 'rgba(255,255,255,0.06)' : active ? 'rgba(79,195,247,0.5)'  : danger ? 'rgba(231,76,60,0.5)'  : 'rgba(255,255,255,0.12)'
+      const color   = indicator ? '#4fc3f7'               : disabled ? '#484848'                : active ? '#4fc3f7'                : danger ? '#e74c3c'               : '#d8d8d8'
       Object.assign(btn.style, {
         display:          'flex',
         flexDirection:    'column',
@@ -875,7 +875,7 @@ export class UIView {
         border:           `1px solid ${border}`,
         borderRadius:     '10px',
         color,
-        cursor:           disabled ? 'default' : 'pointer',
+        cursor:           'default',
         lineHeight:       '1',
         fontFamily:       'system-ui, -apple-system, sans-serif',
         userSelect:       'none',
@@ -883,6 +883,7 @@ export class UIView {
         transition:       'background 0.15s, border-color 0.15s',
         flexShrink:       '1',
       })
+      if (!indicator) btn.style.cursor = disabled ? 'default' : 'pointer'
 
       const iconEl = document.createElement('span')
       Object.assign(iconEl.style, {
@@ -903,12 +904,12 @@ export class UIView {
         fontWeight:    '500',
         letterSpacing: '0.04em',
         textTransform: 'uppercase',
-        opacity:       disabled ? '0.35' : '0.7',
+        opacity:       (disabled && !indicator) ? '0.35' : '0.7',
       })
 
       btn.appendChild(iconEl)
       btn.appendChild(labelEl)
-      if (!disabled) btn.addEventListener('click', onClick)
+      if (!disabled && !indicator) btn.addEventListener('click', onClick)
       this._mobileToolbarEl.appendChild(btn)
     })
   }
