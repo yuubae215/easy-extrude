@@ -194,6 +194,34 @@ export class UIView {
       if (this._nodeEditorToggle) this._nodeEditorToggle()
     })
 
+    // ── Canvas status overlay (mobile only — floats below header on canvas) ─
+    this._canvasStatusEl = document.createElement('div')
+    Object.assign(this._canvasStatusEl.style, {
+      position: 'fixed',
+      top: '48px',
+      left: '0', right: '0',
+      display: 'none',
+      justifyContent: 'center',
+      pointerEvents: 'none',
+      zIndex: '90',
+    })
+    this._canvasStatusPillEl = document.createElement('div')
+    Object.assign(this._canvasStatusPillEl.style, {
+      background: 'rgba(20,20,20,0.75)',
+      borderRadius: '14px',
+      padding: '4px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '2px',
+      fontSize: '12px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      overflow: 'hidden',
+      maxWidth: '90vw',
+      whiteSpace: 'nowrap',
+    })
+    this._canvasStatusEl.appendChild(this._canvasStatusPillEl)
+    document.body.appendChild(this._canvasStatusEl)
+
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
       if (!this._modeSelectorEl.contains(e.target)) {
@@ -513,11 +541,16 @@ export class UIView {
    */
   setStatus(text) {
     this._headerStatusEl.innerHTML = ''
+    this._canvasStatusPillEl.innerHTML = ''
     if (!text) return
-    const span = document.createElement('span')
-    span.textContent = text
-    Object.assign(span.style, { color: '#c8c8c8' })
-    this._headerStatusEl.appendChild(span)
+    const mkSpan = (parent) => {
+      const span = document.createElement('span')
+      span.textContent = text
+      Object.assign(span.style, { color: '#c8c8c8' })
+      parent.appendChild(span)
+    }
+    mkSpan(this._headerStatusEl)
+    mkSpan(this._canvasStatusPillEl)
   }
 
   /**
@@ -527,23 +560,27 @@ export class UIView {
    * @param {{ text: string, color?: string, bold?: boolean }[]} parts
    */
   setStatusRich(parts) {
-    this._headerStatusEl.innerHTML = ''
-    parts.forEach((part, i) => {
-      if (i > 0) {
-        const sep = document.createElement('span')
-        sep.textContent = '·'
-        Object.assign(sep.style, { color: '#4a4a4a', margin: '0 4px' })
-        this._headerStatusEl.appendChild(sep)
-      }
-      const span = document.createElement('span')
-      span.textContent = part.text
-      Object.assign(span.style, {
-        color: part.color ?? '#c8c8c8',
-        fontWeight: part.bold ? 'bold' : 'normal',
-        letterSpacing: part.bold ? '0.02em' : 'normal',
+    const fill = (parent) => {
+      parent.innerHTML = ''
+      parts.forEach((part, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span')
+          sep.textContent = '·'
+          Object.assign(sep.style, { color: '#4a4a4a', margin: '0 4px' })
+          parent.appendChild(sep)
+        }
+        const span = document.createElement('span')
+        span.textContent = part.text
+        Object.assign(span.style, {
+          color: part.color ?? '#c8c8c8',
+          fontWeight: part.bold ? 'bold' : 'normal',
+          letterSpacing: part.bold ? '0.02em' : 'normal',
+        })
+        parent.appendChild(span)
       })
-      this._headerStatusEl.appendChild(span)
-    })
+    }
+    fill(this._headerStatusEl)
+    fill(this._canvasStatusPillEl)
   }
 
   /**
@@ -635,6 +672,11 @@ export class UIView {
     this._hamburgerBtn.style.display = mobile ? 'block' : 'none'
     this._nToggleBtn.style.display   = mobile ? 'block' : 'none'
     this._mobileToolbarEl.style.display = mobile ? 'flex' : 'none'
+    // Nodes button is desktop-only (NodeEditorView is not mobile-optimised)
+    this._nodeEditorBtn.style.display = mobile ? 'none' : 'flex'
+    // On mobile, status moves to the canvas overlay pill; hide it from header
+    this._headerStatusEl.style.display = mobile ? 'none' : 'flex'
+    this._canvasStatusEl.style.display = mobile ? 'flex' : 'none'
     if (mobile) {
       Object.assign(this._nPanelEl.style, {
         display:    'block',
