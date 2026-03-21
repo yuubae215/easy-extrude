@@ -178,6 +178,24 @@ the entire centered toolbar shifts left/right, making tapping unreliable.
 | Grab active  | ✓ Confirm · ✕ Cancel                               |
 | Face extrude | ✓ Confirm · ✕ Cancel                               |
 
+## Toast must be positioned above the mobile toolbar
+
+The mobile floating toolbar occupies `bottom: 26px` with `height: 60px`, so its top edge is
+at **86px** from the bottom of the viewport. The info bar occupies `bottom: 0, height: 26px`.
+
+`showToast()` uses a **fixed** `bottom` value. If that value is ≤ 86px the toast appears
+underneath (or partially inside) the mobile toolbar, making it invisible to the user even
+though it has `zIndex: 9999`.
+
+**Rule**: `showToast` must call `_isMobile()` and use a larger `bottom` on mobile:
+
+```js
+const bottomPx = this._isMobile() ? '96px' : '64px'
+```
+
+If the mobile toolbar height or position ever changes, update both the toolbar CSS and
+this constant together.
+
 ## MeshView.dispose() must mirror the constructor exactly
 
 Every `scene.add(object)` call in the `MeshView` constructor MUST have a matching
