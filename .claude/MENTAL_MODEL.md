@@ -177,3 +177,19 @@ the entire centered toolbar shifts left/right, making tapping unreliable.
 | Edit 3D      | ← Object · Vertex · Edge · Face · Extrude           |
 | Grab active  | ✓ Confirm · ✕ Cancel                               |
 | Face extrude | ✓ Confirm · ✕ Cancel                               |
+
+## MeshView.dispose() must mirror the constructor exactly
+
+Every `scene.add(object)` call in the `MeshView` constructor MUST have a matching
+`scene.remove(object)` in `dispose()`, and every `new THREE.BufferGeometry()` stored on
+`this` must have a matching `geometry.dispose()`.
+
+Root cause of the ghost-object bug: the pivot/snap system was refactored from two
+properties (`_pivotPoints`, `_hoveredPivotPoints`) to per-type objects (`_pivotVertPoints`,
+`_pivotEdgePoints`, etc.), but `dispose()` still referenced the old names. Because
+`undefined.dispose()` throws, `SceneService.deleteObject()` aborted before calling
+`removeObject()` and `emit('objectRemoved')` — leaving the object in the model (outliner
+intact, snap candidates still active) while only the main mesh was visually removed.
+
+**Rule**: whenever you add a new Three.js object to the scene in the constructor, immediately
+add the corresponding `scene.remove()` and `.dispose()` calls to `dispose()` in the same commit.
