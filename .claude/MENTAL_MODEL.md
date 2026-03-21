@@ -55,6 +55,23 @@ Applies to: any function that adds objects, deletes the active object, or switch
 3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFace`, `_cleanupEditSubstate()`)
 4. Dispatch to new mode — `instanceof Sketch` → Edit 2D, otherwise → Edit 3D
 
+## _objSelected must be restored when returning to Object mode
+
+`_setObjectSelected(false)` is called on every Edit Mode entry. When `setMode('object')`
+is called to return from Edit Mode, `_objSelected` stays `false` unless explicitly restored.
+
+**Rule**: in the `mode === 'object'` branch of `setMode()`, if `_activeObj` exists and
+`_objSelected` is `false`, restore it to `true` and call `meshView.setObjectSelected(true)`.
+Without this, the mobile toolbar's Edit and Delete buttons stay disabled even though the
+object is still active.
+
+```js
+if (this._activeObj && !this._objSelected) {
+  this._objSelected = true
+  this._activeObj.meshView.setObjectSelected(true)
+}
+```
+
 ## Entity type contract (ADR-012, Phase 5-3)
 
 **Rule**: entity *type* (not a `dimension` field) determines which operations are available.
