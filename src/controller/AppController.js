@@ -1850,6 +1850,20 @@ export class AppController {
       }
     }
     this._handleEditClick(e.shiftKey)
+
+    // Mobile: auto-start face extrude immediately after a face tap, so the
+    // user can drag to set the distance without pressing the Extrude button.
+    // (Only fires when a face was selected without Shift — not for multi-select.)
+    if (window.innerWidth < 768 &&
+        this._scene.editSubstate === '3d' &&
+        this._editSelectMode === 'face' &&
+        !e.shiftKey) {
+      const faces = [...this._scene.editSelection].filter(x => x instanceof Face)
+      if (faces.length > 0) {
+        this._startFaceExtrude(faces[0])
+        this._activeDragPointerId = e.pointerId
+      }
+    }
   }
 
   _onPointerUp(e) {

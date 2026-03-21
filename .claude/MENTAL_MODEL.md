@@ -72,6 +72,25 @@ if (this._activeObj && !this._objSelected) {
 }
 ```
 
+## Mobile face-tap auto-starts extrude (no Extrude button needed)
+
+On mobile (`window.innerWidth < 768`), tapping a face in Edit 3D / face-select mode
+immediately calls `_startFaceExtrude(face)` and sets `_activeDragPointerId`.
+This mirrors how Grab works — select + drag in one gesture.
+
+**Rule**: the auto-start fires at the bottom of `_onPointerDown`, *after*
+`_handleEditClick`, only when:
+- `window.innerWidth < 768`
+- `editSubstate === '3d'` and `_editSelectMode === 'face'`
+- `!e.shiftKey` (shift-tap is for multi-select, not extrude)
+- at least one Face is in `editSelection` after the click
+
+`_activeDragPointerId` must be set here too (same pointer id) so that
+`_onPointerUp`'s `wasDragging` guard fires `_confirmFaceExtrude` correctly.
+
+The Extrude toolbar button is kept (maintains fixed button count) and doubles as
+a re-trigger after Cancel or for edge cases where auto-start did not fire.
+
 ## Entity type contract (ADR-012, Phase 5-3)
 
 **Rule**: entity *type* (not a `dimension` field) determines which operations are available.
