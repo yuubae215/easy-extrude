@@ -731,11 +731,11 @@ export class UIView {
    * Renders the mobile floating toolbar with the given buttons.
    * Only visible on mobile (<768px). Ignored on desktop.
    *
-   * @param {Array<{icon: string, label: string, onClick: () => void, active?: boolean, danger?: boolean}>} buttons
+   * @param {Array<{icon: string, label: string, onClick: () => void, active?: boolean, danger?: boolean, disabled?: boolean}>} buttons
    */
   setMobileToolbar(buttons) {
     this._mobileToolbarEl.innerHTML = ''
-    buttons.forEach(({ icon, label, onClick, active = false, danger = false }) => {
+    buttons.forEach(({ icon, label, onClick, active = false, danger = false, disabled = false }) => {
       const btn = document.createElement('button')
       Object.assign(btn.style, {
         display:        'flex',
@@ -746,11 +746,11 @@ export class UIView {
         padding:        '4px 10px',
         minWidth:       '44px',
         minHeight:      '44px',
-        background:     active  ? '#3a6a9a' : danger ? '#6a2a2a' : '#333',
-        border:         `1px solid ${active ? '#4a9eed' : danger ? '#c0392b' : '#555'}`,
+        background:     disabled ? '#2a2a2a' : active ? '#3a6a9a' : danger ? '#6a2a2a' : '#333',
+        border:         `1px solid ${disabled ? '#3a3a3a' : active ? '#4a9eed' : danger ? '#c0392b' : '#555'}`,
         borderRadius:   '6px',
-        color:          active  ? '#4fc3f7' : danger ? '#e74c3c' : '#e8e8e8',
-        cursor:         'pointer',
+        color:          disabled ? '#555'    : active ? '#4fc3f7' : danger ? '#e74c3c' : '#e8e8e8',
+        cursor:         disabled ? 'default' : 'pointer',
         fontSize:       '18px',
         lineHeight:     '1',
         fontFamily:     'sans-serif',
@@ -769,7 +769,7 @@ export class UIView {
 
       btn.appendChild(iconEl)
       btn.appendChild(labelEl)
-      btn.addEventListener('click', onClick)
+      if (!disabled) btn.addEventListener('click', onClick)
       this._mobileToolbarEl.appendChild(btn)
     })
   }

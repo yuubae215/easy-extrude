@@ -126,3 +126,54 @@ Only `_objDragging` and `_sketch.drawing` legitimately need `_controls.enabled =
 
 When a second touch arrives while rect selection is active, cancel the rect selection and
 clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture.
+
+## Canvas target guard in _onPointerDown
+
+`_onPointerDown` is registered on `window` to support drag-outside-canvas. This means it
+also fires for taps on toolbar buttons, overlay menus, and other UI elements.
+
+Without a canvas guard, tapping a toolbar button fires `_handleEditClick` (which clears
+face/vertex/edge selection) **before** the button's `click` handler fires — because
+`pointerdown` precedes `click`. The classic failure: tapping the mobile Extrude button
+clears the face selection, so the `click` handler finds nothing to extrude.
+
+**Rule**: add a canvas target check immediately after the secondary-touch guard:
+
+```js
+if (e.target !== this._sceneView.renderer.domElement) return
+```
+
+This guard goes **before** the grab/faceExtrude active checks so that toolbar buttons
+always fall through to their own `click` listeners instead.
+
+## Face extrude confirm requires a canvas drag (wasDragging)
+
+`_onPointerUp` on `window` fires for toolbar button taps too. Without a guard,
+tapping the mobile Confirm button produces both a `pointerup` (which calls
+`_confirmFaceExtrude` via `_onPointerUp`) **and** a `click` (which calls it again via
+`onClick`), causing a double-confirm.
+
+**Rule**: only confirm face extrude in `_onPointerUp` when `_activeDragPointerId` was
+set for that pointer (i.e. a canvas drag was started in `_onPointerDown`):
+
+```js
+const wasDragging = this._activeDragPointerId === e.pointerId
+if (wasDragging) this._activeDragPointerId = null
+if (this._faceExtrude.active && wasDragging) { this._confirmFaceExtrude(); return }
+```
+
+## Mobile toolbar must have a fixed button count per mode
+
+If buttons appear or disappear based on sub-state (e.g. Extrude only when face selected),
+the entire centered toolbar shifts left/right, making tapping unreliable.
+
+**Rule**: every mode shows a **fixed set** of buttons. Unavailable actions use
+`disabled: true` (grayed out, no click handler) instead of being hidden.
+
+| Mode         | Buttons (always shown)                              |
+|--------------|-----------------------------------------------------|
+| Object       | Add · Edit · Move · Delete                          |
+| Edit 2D      | ← Object · Extrude                                  |
+| Edit 3D      | ← Object · Vertex · Edge · Face · Extrude           |
+| Grab active  | ✓ Confirm · ✕ Cancel                               |
+| Face extrude | ✓ Confirm · ✕ Cancel                               |
