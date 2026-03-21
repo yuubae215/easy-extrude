@@ -520,33 +520,62 @@ export class UIView {
    * @param {{ type?: 'info'|'warn'|'error', duration?: number }} [options]
    */
   showToast(message, { type = 'info', duration = 2500 } = {}) {
-    const colors = { info: '#4a90d9', warn: '#d9a84a', error: '#d94a4a' }
-    const el = document.createElement('div')
-    el.textContent = message
+    const colors = { info: '#4a90d9', warn: '#e6a020', error: '#e05252' }
+    const color = colors[type]
     // On mobile the floating toolbar occupies bottom 26–86px, so lift the toast above it.
     const bottomPx = this._isMobile() ? '96px' : '64px'
+
+    const el = document.createElement('div')
     Object.assign(el.style, {
       position: 'fixed',
       bottom: bottomPx,
       left: '50%',
-      transform: 'translateX(-50%)',
-      background: '#2a2a2a',
-      color: '#e8e8e8',
-      border: `1px solid ${colors[type]}`,
-      borderRadius: '8px',
-      padding: '8px 16px',
+      transform: 'translateX(-50%) translateY(20px)',
+      opacity: '0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      background: 'rgba(28, 28, 32, 0.85)',
+      backdropFilter: 'blur(12px)',
+      webkitBackdropFilter: 'blur(12px)',
+      color: '#f0f0f0',
+      borderRadius: '12px',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderLeft: `3px solid ${color}`,
+      padding: '10px 18px',
       fontSize: '13px',
       fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontWeight: '450',
+      letterSpacing: '0.01em',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
       zIndex: '9999',
       pointerEvents: 'none',
-      opacity: '1',
-      transition: 'opacity 0.3s',
+      transition: 'opacity 0.25s ease, transform 0.25s ease',
       whiteSpace: 'nowrap',
     })
+
+    // Colored dot indicator
+    const dot = document.createElement('span')
+    Object.assign(dot.style, {
+      width: '6px',
+      height: '6px',
+      borderRadius: '50%',
+      background: color,
+      flexShrink: '0',
+    })
+    el.appendChild(dot)
+    el.appendChild(document.createTextNode(message))
+
     document.body.appendChild(el)
+    // Slide in on next frame so the initial state is painted first
+    requestAnimationFrame(() => {
+      el.style.opacity = '1'
+      el.style.transform = 'translateX(-50%) translateY(0)'
+    })
     setTimeout(() => {
       el.style.opacity = '0'
-      el.addEventListener('transitionend', () => el.remove())
+      el.style.transform = 'translateX(-50%) translateY(20px)'
+      el.addEventListener('transitionend', () => el.remove(), { once: true })
     }, duration)
   }
 
