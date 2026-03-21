@@ -1,4 +1,4 @@
-# ADR-016: トランスフォームグラフ — シーンオブジェクト間の位置・姿勢関係
+# ADR-016: Transform Graph — Spatial Relationships Between Scene Objects
 
 - **Status**: Proposed
 - **Date**: 2026-03-21
@@ -8,80 +8,80 @@
 
 ## Context
 
-ADR-015 で導入する BFF + マイクロサービス構成では、Geometry Service がシーンの
-ジオメトリグラフを管理する。その第一歩として、シーンオブジェクト間の**位置と姿勢の関係**
-（相対トランスフォーム）をグラフ構造で表現する必要がある。
+The BFF + microservices architecture introduced in ADR-015 has the Geometry Service managing
+the scene's geometry graph. As a first step, the **spatial position and orientation relationships**
+(relative transforms) between scene objects need to be expressed as a graph structure.
 
-現在のフロントエンドはオブジェクトをワールド座標で独立して管理しており、
-オブジェクト間の親子関係・拘束関係を表現する仕組みがない。
+The current frontend manages objects independently in world coordinates,
+with no mechanism to express parent-child or constraint relationships between objects.
 
-将来的には Blender の Geometry Nodes のように、オブジェクト間の依存関係や
-パラメトリック演算をノードとして視覚的に編集できる **Node Editor** へ拡張したい。
-今回の設計はその基盤となる。
+In the future, we want to extend to a **Node Editor** where dependency relationships and
+parametric operations between objects can be visually edited — like Blender's Geometry Nodes.
+This design forms the foundation for that.
 
 ---
 
 ## Decision
 
-### 1. SE(3) トランスフォームツリーとして表現する
+### 1. Represent as an SE(3) transform tree
 
-シーンの空間関係を **有向木（ツリー）** で表現する。
-各ノードは親ノードからの相対トランスフォーム (SE(3)) を保持する。
+Express the scene's spatial relationships as a **directed tree**.
+Each node holds a relative transform (SE(3)) from its parent node.
 
 ```
 world (root)
   ├── tnode_A  [translation: [1,0,0], rotation: identity]
-  │     └── tnode_B  [translation: [0,2,0], rotation: quat]   ← A原点からの相対
+  │     └── tnode_B  [translation: [0,2,0], rotation: quat]   ← relative to A origin
   └── tnode_C  [translation: [0,0,0], rotation: identity]
 ```
 
-座標系は既存の **ROS ワールドフレーム (+X 前, +Y 左, +Z 上)** を維持する（ADR-008）。
-回転は **クォータニオン [qx, qy, qz, qw]** で表現し、ジンバルロックを避ける。
+The coordinate system maintains the existing **ROS world frame (+X forward, +Y left, +Z up)** (ADR-008).
+Rotation is expressed as **quaternions [qx, qy, qz, qw]** to avoid gimbal lock.
 
-### 2. データ構造
+### 2. Data structures
 
 #### TransformNode
 
 ```jsonc
 {
   "id": "tnode_001",
-  "objectId": "obj_0_xxx",          // SceneObject の ID (null = 仮想ノード)
+  "objectId": "obj_0_xxx",          // SceneObject ID (null = virtual node)
   "label": "Cuboid_A",
   "transform": {
-    "translation": [1.0, 0.0, 0.0], // 親ノード原点からの相対位置 (m)
-    "rotation":    [0.0, 0.0, 0.0, 1.0]  // クォータニオン [qx, qy, qz, qw]
+    "translation": [1.0, 0.0, 0.0], // Relative position from parent node origin (m)
+    "rotation":    [0.0, 0.0, 0.0, 1.0]  // Quaternion [qx, qy, qz, qw]
   }
 }
 ```
 
-`objectId: null` の仮想ノードはグループやアセンブリの軸足として使える（将来対応）。
+A virtual node with `objectId: null` can be used as a pivot for groups or assemblies (future).
 
 #### TransformEdge
 
 ```jsonc
 {
   "id": "tedge_001",
-  "parentId": "tnode_world",    // 親 TransformNode の id ("world" = ルート)
+  "parentId": "tnode_world",    // Parent TransformNode id ("world" = root)
   "childId":  "tnode_001",
-  "constraint": "fixed"         // 現フェーズは "fixed" のみ
+  "constraint": "fixed"         // Only "fixed" in the current phase
 }
 ```
 
-#### constraint の拡張予定（Node Editor フェーズ）
+#### Planned constraint extensions (Node Editor phase)
 
-| 値 | 意味 |
-|----|------|
-| `"fixed"` | 相対トランスフォームを固定（現フェーズ） |
-| `"revolute"` | 1軸回転自由度（将来） |
-| `"prismatic"` | 1軸並進自由度（将来） |
-| `"free"` | 6自由度（将来：組み立てシミュレーション用） |
+| Value | Meaning |
+|-------|---------|
+| `"fixed"` | Fixed relative transform (current phase) |
+| `"revolute"` | 1-axis rotational DOF (future) |
+| `"prismatic"` | 1-axis translational DOF (future) |
+| `"free"` | 6 DOF (future: for assembly simulation) |
 
-### 3. 永続化フォーマット（Geometry Service の DB スキーマ）
+### 3. Persistence format (Geometry Service DB schema)
 
-グラフは **隣接リスト** で保存する。
+The graph is stored as an **adjacency list**.
 
 ```jsonc
-// Scene ドキュメント（例: MongoDB / PostgreSQL JSON カラム）
+// Scene document (e.g. MongoDB / PostgreSQL JSON column)
 {
   "sceneId": "scene_xxx",
   "transformGraph": {
@@ -91,58 +91,58 @@ world (root)
 }
 ```
 
-Phase A（REST によるシーン保存）でこの形式をそのまま永続化する。
-Phase B（Node Editor）でノード種別を拡張し DAG（有向非巡回グラフ）へ移行する。
+Persist directly in this format in Phase A (REST scene save).
+Extend node types to a DAG (directed acyclic graph) in Phase B (Node Editor).
 
-### 4. Node Editor への拡張パス
+### 4. Extension path to Node Editor
 
-現在の TransformNode / TransformEdge は、Node Editor の初期形態に相当する。
-将来は OperationNode（STEP インポート・ブール演算・パラメトリック修飾子）を追加し、
-ジオメトリをノード間でストリームとして流す構成に拡張する。
+The current TransformNode / TransformEdge correspond to the initial form of the Node Editor.
+In the future, add OperationNodes (STEP import, boolean operations, parametric modifiers)
+and extend to a configuration where geometry flows between nodes as streams.
 
 ```
-現在 (Phase A):
+Current (Phase A):
   TransformNode ─(fixed)─→ TransformNode
 
-将来 (Node Editor):
+Future (Node Editor):
   StepImportNode ──┐
                    ├─→ BooleanOpNode ─→ TransformNode
   CuboidNode ──────┘
 ```
 
-OperationNode の出力ジオメトリは WebSocket 経由でフロントエンドにストリームされる（ADR-015）。
+OperationNode output geometry is streamed to the frontend via WebSocket (ADR-015).
 
-### 5. フロントエンドへの影響
+### 5. Frontend impact
 
-Phase A では `SceneService` が BFF の REST エンドポイントからトランスフォームグラフを
-取得し、`SceneModel` に反映するだけでよい。フロントエンドはグラフ構造を**読み取り専用**
-で受け取り、Three.js の Object3D 階層に変換して描画する。
+In Phase A, `SceneService` only needs to fetch the transform graph from the BFF REST endpoint
+and apply it to `SceneModel`. The frontend receives the graph structure **read-only**
+and converts it to a Three.js Object3D hierarchy for rendering.
 
-グラフ編集操作（親子付け・トランスフォーム変更）は BFF 経由で Geometry Service に
-送り、更新済みグラフを受け取る形にする（フロントに書き込みロジックを持たせない）。
+Graph editing operations (parenting, transform changes) are sent to the Geometry Service via BFF,
+and the updated graph is received in response (no write logic on the frontend).
 
 ---
 
 ## Consequences
 
-### 良い点
+### Benefits
 
-- ROS TF / URDF と同じ思想のため、将来ロボティクス用途との統合が容易。
-- クォータニオン表現により ROS フレームとの変換が直接対応できる。
-- 隣接リスト形式はグラフの増減に柔軟で、Node Editor 拡張時にノード種別を追加しやすい。
-- `objectId: null` の仮想ノードでグループ化・アセンブリ軸を将来追加できる。
+- Same philosophy as ROS TF / URDF, making future robotics integration straightforward.
+- Quaternion representation maps directly to/from ROS frame conversions.
+- Adjacency list format is flexible for graph additions/removals and easy to extend with node types for the Node Editor.
+- Virtual nodes with `objectId: null` allow future grouping and assembly pivots.
 
-### トレードオフ・制約
+### Trade-offs / Constraints
 
-- **ツリーのみ（現フェーズ）**: 現在は厳密なツリー構造のみ対応。
-  DAG（共有サブグラフ）が必要になった時点で ADR を追加し設計を拡張する。
-- **ワールド座標への変換コスト**: 深いツリーでは全祖先のトランスフォーム合成が必要。
-  Geometry Service 側でキャッシュする（フロントは合成済み座標を受け取る）。
-- **WebSocket 同期設計は Phase B で別 ADR**: 接続断・再接続時の差分同期プロトコル、
-  グラフ状態のセッション vs 永続化の方針は Phase B の ADR で決定する。
+- **Tree only (current phase)**: Only strict tree structure is supported currently.
+  Add an ADR and extend the design when DAG (shared subgraphs) becomes needed.
+- **World coordinate transform cost**: Deep trees require composing all ancestor transforms.
+  Cache computed coordinates on the Geometry Service side (frontend receives pre-composed coordinates).
+- **WebSocket sync design is a Phase B ADR**: Delta-sync protocol on disconnect/reconnect,
+  and session vs persistence policy for graph state, will be decided in Phase B ADR.
 
-### 未決事項（Phase B で継続検討）
+### Open questions (continued in Phase B)
 
-- OperationNode の永続化フォーマット（DAG エッジのサイクル検出ポリシー）
-- WebSocket メッセージでのグラフ差分表現（full-state vs patch）
-- STEP インポートで得た B-rep 位相情報をグラフにどう組み込むか
+- Persistence format for OperationNode (cycle detection policy for DAG edges)
+- Graph delta representation in WebSocket messages (full-state vs patch)
+- How to incorporate B-rep topology from STEP import into the graph

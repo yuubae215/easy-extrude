@@ -1,43 +1,43 @@
 # ADR-006: Right-Click as Cancel / Context Menu
 
 **Date:** 2026-03-20
-**Status:** Accepted (updated 2026-03-20 — Voxel固有記述を除去)
+**Status:** Accepted (updated 2026-03-20 — removed voxel-specific descriptions)
 
 ---
 
 ## Context
 
-右クリックは OrbitControls が「右ドラッグ = カメラオービット」として使い、
-AppController が「Grab キャンセル = 右クリック」として使っており、役割が競合している。
+The right mouse button is used by OrbitControls for "right-drag = camera orbit" and by
+AppController for "Grab cancel = right-click", causing a role conflict.
 
-現行実装では `controls.mouseButtons = { RIGHT: THREE.MOUSE.ROTATE }` のため、
-右ドラッグはオービットだが、Grab 中は AppController が右クリックをキャンセルとして横取りする。
+In the current implementation `controls.mouseButtons = { RIGHT: THREE.MOUSE.ROTATE }`,
+so right-drag is orbit, but AppController intercepts right-click as a cancel during Grab.
 
 ## Decision
 
-右クリックの動作は **操作中かどうか** に応じてコンテキストセンシティブとする：
+Right-click behaviour is **context-sensitive** depending on whether an operation is in progress:
 
-| 状態 | 右クリック動作 |
-|------|--------------|
-| 操作中（Grab, Extrude, Sketch） | 現在の操作を **キャンセル** |
-| 操作なし・オブジェクトホバー中 | **コンテキストメニュー**（将来実装） |
-| 操作なし・空白クリック | **選択解除**（Object Mode） |
-| 操作なし | OrbitControls に委譲（右ドラッグ = オービット） |
+| State | Right-click behaviour |
+|-------|-----------------------|
+| Operation in progress (Grab, Extrude, Sketch) | **Cancel** the current operation |
+| No operation, hovering an object | **Context menu** (future implementation) |
+| No operation, clicking empty space | **Deselect** (Object Mode) |
+| No operation | Delegate to OrbitControls (right-drag = orbit) |
 
-### 現行のオービット競合について
+### Current Orbit Conflict
 
-- OrbitControls が右ドラッグをオービットとして処理している
-- AppController の `mousedown (button 2)` は Grab 中のみキャンセルに使う
-- 操作中でない右ドラッグは OrbitControls がオービットとして処理する（意図的な共存）
-- 将来コンテキストメニューを実装する際は `contextmenu` イベントで `e.preventDefault()` が必要
+- OrbitControls handles right-drag as orbit
+- AppController's `mousedown (button 2)` is used for cancel only during Grab
+- Right-drag when no operation is active is handled by OrbitControls as orbit (intentional coexistence)
+- When implementing the context menu in the future, `e.preventDefault()` on the `contextmenu` event will be needed
 
 ### Sketch Mode
 
-Edit Mode · 2D（矩形スケッチ）では：
-- 右クリック → スケッチ操作のキャンセル（描画中の矩形を破棄）
+In Edit Mode · 2D (rectangle sketch):
+- Right-click → cancel the sketch operation (discard the rectangle being drawn)
 
 ## Consequences
 
-- 右クリックは一貫して「キャンセル / コンテキストメニュー」の意味を持つ
-- コンテキストメニューは将来機能 — アーキテクチャは予約済み
-- モバイルでのロングプレス = `contextmenu` 発火に注意（`e.preventDefault()` 必要）
+- Right-click consistently means "cancel / context menu"
+- Context menu is a future feature — the architecture reserves the slot
+- On mobile, long-press fires `contextmenu` — `e.preventDefault()` is required

@@ -5,8 +5,8 @@
 
 ---
 
-> Voxel（単位立方体の集合）を採用する方針だったが、設計をCuboidベースに変更したため ADR-007 に置き換えた。
-> 内容は歴史的記録として残す。
+> The initial approach adopted voxels (a set of unit cubes), but the design was changed to a cuboid-based model and superseded by ADR-007.
+> The contents are preserved as a historical record.
 
 ---
 

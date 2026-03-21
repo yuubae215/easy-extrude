@@ -7,32 +7,32 @@
 
 ## Context
 
-アプリは単一オブジェクト編集から複数オブジェクトのシーン編集に進化している。
-オブジェクトは次元（dimensionality）を持ち、階層（グループ・親子）に整理できる必要がある。
+The app is evolving from single-object editing to multi-object scene editing.
+Objects have a dimensionality and need to be organised into a hierarchy (groups, parent-child).
 
 ## Decision
 
-### オブジェクトタイプ分類
+### Object Type Classification
 
-全シーンオブジェクトは `dimension` プロパティを持つ：
+All scene objects have a `dimension` property:
 
-| Dimension | 型の例 | データ | Edit Mode の動作 |
-|-----------|--------|--------|-----------------|
-| `1D` | MeasureLine | 2エンドポイント | エンドポイントドラッグ |
-| `2D` | Sketch | `{ min: Vector2, max: Vector2 }` (矩形2コーナー) | 矩形描画 |
-| `3D` | Box, ExtrudedShape | `corners: THREE.Vector3[8]` | フェイスプッシュ/プル |
+| Dimension | Example types | Data | Edit Mode behaviour |
+|-----------|--------------|------|---------------------|
+| `1D` | MeasureLine | 2 endpoints | Endpoint drag |
+| `2D` | Sketch | `{ min: Vector2, max: Vector2 }` (2-corner rectangle) | Rectangle drawing |
+| `3D` | Box, ExtrudedShape | `corners: THREE.Vector3[8]` | Face push/pull |
 
-### オブジェクトデータ構造
+### Object Data Structure
 
 ```javascript
 SceneObject = {
-  id:        string,           // 例: "obj_0_1742394000000"
-  name:      string,           // 例: "Wall_A"
+  id:        string,           // e.g. "obj_0_1742394000000"
+  name:      string,           // e.g. "Wall_A"
   dimension: 1 | 2 | 3,
   shape:     CuboidShape | SketchRect | LineShape,
   visible:   boolean,
   locked:    boolean,
-  children:  SceneObject[],    // グループ / 親子
+  children:  SceneObject[],    // group / parent-child
 }
 
 // 3D shape
@@ -40,20 +40,20 @@ CuboidShape = {
   corners: THREE.Vector3[8],   // CCW winding, ROS world frame
 }
 
-// 2D shape (Sketch フットプリント)
+// 2D shape (Sketch footprint)
 SketchRect = {
   min: THREE.Vector2,
   max: THREE.Vector2,
 }
 ```
 
-### 階層
+### Hierarchy
 
-- オブジェクトはグループ化できる（空の親 + 子）
-- 2D Sketch とその押し出し後の 3D 子を親子にすることで非破壊履歴を実現（将来）
-- Outliner パネルがツリーを表示
+- Objects can be grouped (empty parent + children)
+- Making a 2D Sketch and its extruded 3D child a parent-child pair enables non-destructive history (future)
+- The Outliner panel displays the tree
 
-### Outliner 表示例
+### Outliner Display Example
 
 ```
 Scene
@@ -62,13 +62,13 @@ Scene
 │   ├── [3D] Column
 │   └── [2D] Footprint
 ├── [3D] Floor
-└── [1D] Width_ref      <- 将来
+└── [1D] Width_ref      <- future
 ```
 
-アイコンで次元を区別：立方体(3D)、四角(2D)、線(1D)。
+Icons distinguish dimensions: cube (3D), square (2D), line (1D).
 
 ## Consequences
 
-- `dimension` フィールドが Edit Mode ディスパッチを駆動（ADR-004）
-- Outliner の現行フラット実装は `parentId` 参照で階層拡張可能
-- 1D オブジェクトはバックログ — アーキテクチャは対応済みだが実装は未定
+- The `dimension` field drives Edit Mode dispatch (ADR-004)
+- The Outliner's current flat implementation can be extended to a hierarchy via `parentId` references
+- 1D objects are backlogged — the architecture supports them but the implementation is TBD

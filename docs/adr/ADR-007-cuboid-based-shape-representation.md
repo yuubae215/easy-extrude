@@ -8,22 +8,22 @@
 
 ## Context
 
-ADR-001 では Voxel（単位立方体の集合）を採用した。しかしユーザーの実際のユースケースは
-「**直方体（Cuboid）を配置し、フェイスを押し出して変形させる**」であり、
-unit-cube グリッドの細粒度は不要だった。
+ADR-001 adopted voxels (a set of unit cubes). However, the actual user workflow is
+**"place a cuboid and deform it by pushing/pulling faces"**, and the fine granularity
+of a unit-cube grid was unnecessary.
 
-Voxel モデルと Cuboid モデルの違い：
+Differences between the voxel and cuboid models:
 
 | | Voxel | Cuboid |
 |--|-------|--------|
-| 形状表現 | 単位立方体の集合 (`Map<key, {ix,iy,iz}>`) | 8コーナー頂点 (`THREE.Vector3[8]`) |
-| フェイス押し出し | 単位グリッドのレイヤー追加/削除 | フェイスの4頂点を法線方向に移動 |
-| 変形の粒度 | 整数ステップ（1単位） | 連続値（浮動小数点） |
-| 形状の種類 | L字・T字など任意の積み重ね | 単一の変形可能な六面体 |
+| Shape representation | Set of unit cubes (`Map<key, {ix,iy,iz}>`) | 8 corner vertices (`THREE.Vector3[8]`) |
+| Face extrude | Add/remove a layer of unit-grid cubes | Move the 4 face vertices in the normal direction |
+| Deformation granularity | Integer steps (1 unit) | Continuous values (floating point) |
+| Shape variety | L-shape, T-shape, arbitrary stacking | Single deformable hexahedron |
 
 ## Decision
 
-**Cuboid-based 表現**を採用する。3D オブジェクトは 8コーナー頂点による変形可能な直方体で表現する。
+Adopt **cuboid-based representation**. 3D objects are represented as deformable cuboids with 8 corner vertices.
 
 ```javascript
 CuboidShape = {
@@ -31,7 +31,7 @@ CuboidShape = {
 }
 ```
 
-コーナーのラベルと配置：
+Corner labels and layout:
 
 ```
       6─────7
@@ -42,7 +42,7 @@ CuboidShape = {
     1─────0
 ```
 
-フェイス定義（各フェイスは 4コーナーのインデックス、外向きCCW）：
+Face definitions (each face: 4 corner indices, outward-facing CCW):
 
 ```javascript
 FACES = [
@@ -55,34 +55,34 @@ FACES = [
 ]
 ```
 
-### フェイス押し出し
+### Face Extrude
 
-フェイス `fi` を押し出す = そのフェイスの4コーナーを法線方向に `delta` だけ移動する：
+Extruding face `fi` = move its 4 corners by `delta` in the normal direction:
 
 ```javascript
-// Model 純粋関数
+// Model pure function
 function extrudeFace(corners, fi, delta) → THREE.Vector3[8]
 ```
 
-### 初期形状
+### Initial Shape
 
-新規オブジェクトは `createInitialCorners()` で 2×2×2 の単位直方体（原点中心）として作成される。
+New objects are created as a 2×2×2 unit cuboid centred at the origin via `createInitialCorners()`.
 
 ## Consequences
 
-**メリット：**
-- 単一オブジェクト = 単一の直方体。データ構造がシンプル
-- フェイス押し出しは頂点移動だけで実現（整数スナップ不要）
-- 浮動小数点精度でスムーズな変形が可能
-- コード量が少ない（`CuboidModel.js` の純粋関数群で完結）
+**Benefits:**
+- One object = one cuboid. Simple data structure.
+- Face extrude achieved by vertex movement alone (no integer snapping needed)
+- Smooth deformation with floating-point precision
+- Small code footprint (contained in the pure functions of `CuboidModel.js`)
 
-**トレードオフ：**
-- L字・T字などの複合形状は **複数の Cuboid オブジェクトを並べる** ことで表現する
-  （単一 Cuboid の変形では凸でない形状は作れない）
-- Sketch → Extrude の結果は常に直方体（矩形フットプリント × 高さ）
+**Trade-offs:**
+- Composite shapes (L-shape, T-shape, etc.) are represented by **placing multiple Cuboid objects**
+  (a single Cuboid deformation cannot produce non-convex shapes)
+- Sketch → Extrude always produces a cuboid (rectangular footprint × height)
 
 ## References
 
-- ADR-001（Superseded）
-- ADR-002（Two modeling methods — Method B も直方体を生成）
-- ADR-005（オブジェクト階層 — `CuboidShape` の定義）
+- ADR-001 (Superseded)
+- ADR-002 (Two modeling methods — Method B also produces a cuboid)
+- ADR-005 (Object hierarchy — defines `CuboidShape`)

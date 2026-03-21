@@ -1,4 +1,4 @@
-# ADR-011: ApplicationService 層の導入 — SceneService (DDD Phase 3)
+# ADR-011: Introducing the ApplicationService Layer — SceneService (DDD Phase 3)
 
 - **Status**: Accepted
 - **Date**: 2026-03-20
@@ -8,60 +8,61 @@
 
 ## Context
 
-DDD Phase 2 (ADR-010) までで、ドメインエンティティ (`Cuboid` / `Sketch`) が自身の振る舞いメソッドを持つようになった。しかし `AppController` は依然として:
+Through DDD Phase 2 (ADR-010), domain entities (`Cuboid` / `Sketch`) gained their own behaviour methods.
+However, `AppController` still:
 
-1. エンティティのファクトリ責任 (`new Cuboid(...)`, `new MeshView(...)`) を持つ
-2. `SceneModel` への直接的な CRUD 操作 (`addObject` / `removeObject`) を担う
-3. 入力ハンドリング、モード遷移、View 更新という本来の責務と混在する
+1. Owns entity factory responsibilities (`new Cuboid(...)`, `new MeshView(...)`)
+2. Handles direct CRUD operations on `SceneModel` (`addObject` / `removeObject`)
+3. Mixes these with its primary responsibilities of input handling, mode transitions, and view updates
 
-このため AppController は「ユーザー入力に反応するコントローラ」と「ドメイン操作を行うサービス」の2つの役割を持っていた。
+This left AppController playing two roles: "controller reacting to user input" and "service performing domain operations".
 
 ---
 
 ## Decision
 
-`src/service/SceneService.js` を ApplicationService として新設し、エンティティ生成と CRUD 操作をここに集約する。
+Create `src/service/SceneService.js` as an ApplicationService and consolidate entity creation and CRUD operations there.
 
 ```
 src/
   service/
     SceneService.js   # NEW: ApplicationService
   model/
-    SceneModel.js     # Aggregate Root (変更なし)
+    SceneModel.js     # Aggregate Root (unchanged)
   domain/
     Cuboid.js
     Sketch.js
   controller/
-    AppController.js  # 入力ハンドリングのみに専念
+    AppController.js  # Focused solely on input handling
 ```
 
-### SceneService の責務
+### SceneService responsibilities
 
-| 操作 | メソッド |
-|------|---------|
-| Cuboid 生成 + 登録 | `createCuboid()` |
-| Sketch 生成 + 登録 | `createSketch()` |
-| エンティティ削除 + MeshView 破棄 | `deleteObject(id)` |
-| リネーム (エンティティへ委譲) | `renameObject(id, name)` |
-| 可視切替 (MeshView へ委譲) | `setObjectVisible(id, visible)` |
-| 集約ルートの読み取り | `get scene()` → SceneModel |
+| Operation | Method |
+|-----------|--------|
+| Create and register Cuboid | `createCuboid()` |
+| Create and register Sketch | `createSketch()` |
+| Delete entity + dispose MeshView | `deleteObject(id)` |
+| Rename (delegated to entity) | `renameObject(id, name)` |
+| Toggle visibility (delegated to MeshView) | `setObjectVisible(id, visible)` |
+| Read aggregate root | `get scene()` → SceneModel |
 
-### AppController の変化
+### Changes to AppController
 
 - `this._scene = new SceneModel()` → `this._service = new SceneService(sceneView.scene)`
-- `get _scene()` ショートハンドを追加し、SceneModel への読み取りアクセスを維持
-- `_addObject` / `_deleteObject` / `_renameObject` / `_setObjectVisible` が `this._service.*` を呼ぶだけになる
-- `new Cuboid`, `new Sketch`, `new MeshView` の直接インスタンス化が AppController から消える
+- Add `get _scene()` shorthand to maintain read access to SceneModel
+- `_addObject` / `_deleteObject` / `_renameObject` / `_setObjectVisible` simply call `this._service.*`
+- Direct instantiation of `new Cuboid`, `new Sketch`, `new MeshView` removed from AppController
 
 ---
 
 ## Consequences
 
-**良い点**
-- AppController の責務が「入力 → サービス呼び出し → View 更新」に絞られる
-- エンティティ生成ロジックが SceneService に集約され、テスト容易性が向上する
-- Phase 4 (ドメインイベント) の準備として、SceneModel をサービス経由でのみ変更するパターンが確立される
+**Benefits**
+- AppController's responsibility is narrowed to "input → service call → view update"
+- Entity creation logic is consolidated in SceneService, improving testability
+- Establishes the pattern of modifying SceneModel only through the service, in preparation for Phase 4 (domain events)
 
-**制約**
-- `MeshView` 生成に Three.js シーンが必要なため、SceneService は Three.js シーンへの参照を持つ
-- Phase 4 (ドメインイベント) で View/Model 分離が完成するまで、この結合は残る
+**Constraints**
+- SceneService holds a reference to the Three.js scene because MeshView creation requires it
+- This coupling remains until the View/Model separation is completed in Phase 4 (domain events)

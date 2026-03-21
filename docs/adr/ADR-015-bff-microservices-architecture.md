@@ -1,4 +1,4 @@
-# ADR-015: BFF + マイクロサービスアーキテクチャ
+# ADR-015: BFF + Microservices Architecture
 
 - **Status**: Proposed
 - **Date**: 2026-03-20
@@ -8,147 +8,146 @@
 
 ## Context
 
-現在の easy-extrude はブラウザ完結のシングルページアプリケーションである。
-ドメインエンティティ（Cuboid / Sketch / Vertex / Edge / Face）の生成・計算・状態管理を
-すべてクライアント側の JavaScript で行っている。
+easy-extrude is currently a browser-only single-page application.
+All domain entity creation, computation, and state management (Cuboid / Sketch / Vertex / Edge / Face)
+is performed in client-side JavaScript.
 
-この設計には以下の課題がある：
+This design has the following challenges:
 
-1. **UX 劣化リスク**: ジオメトリグラフ評価・STEP インポートなど計算量の多い処理が
-   メインスレッドをブロックし、Three.js レンダーループの FPS を低下させる。
+1. **UX degradation risk**: Compute-heavy operations such as geometry graph evaluation and STEP import
+   block the main thread and degrade Three.js render loop FPS.
 
-2. **フロントエンドの肥大化**: ドメインロジックが View / Controller と同一プロセスに
-   混在することで、責務の分離が崩れやすい。ADR-011 の ApplicationService 層を設けても
-   「重い計算をどこで走らせるか」という問題は解決されない。
+2. **Frontend bloat**: Domain logic co-existing in the same process as View / Controller breaks
+   the separation of concerns. Even with the ApplicationService layer from ADR-011,
+   the question of "where to run heavy computation" remains unsolved.
 
-3. **将来機能への対応困難**:
-   - **Node Editor 風ジオメトリグラフ編集**: ノード間の依存伝播・再評価を
-     ブラウザ内でリアクティブに行うと、複雑なグラフでは顕著に遅くなる。
-   - **STEP / IGES インポート**: CAD カーネルの処理は数十〜数百 MB のメモリを要し、
-     ブラウザ内 WASM で対応するより専用サービスに委ねる方が現実的。
-   - **永続化・共有**: シーンデータや計算済みジオメトリをサーバー側 DB に保存し、
-     URL 共有・履歴管理・将来のコラボレーションを可能にしたい。
+3. **Difficulty handling future features**:
+   - **Node Editor-style geometry graph editing**: Reactive dependency propagation and re-evaluation
+     between nodes would become noticeably slow for complex graphs if done in the browser.
+   - **STEP / IGES import**: CAD kernel processing requires tens to hundreds of MB of memory;
+     it is more practical to delegate to a dedicated service than to handle it with in-browser WASM.
+   - **Persistence and sharing**: Scene data and computed geometry should be stored in a server-side DB
+     to enable URL sharing, history management, and future collaboration.
 
-4. **リポジトリロジックの排除**: フロントエンドに CRUD・楽観的ロック・排他制御などの
-   永続化ロジックを持たせたくない。View と Controller の役割に専念させる。
+4. **Eliminate repository logic**: The frontend should not hold persistence logic
+   (CRUD, optimistic locking, exclusive control). It should focus solely on View and Controller roles.
 
 ---
 
 ## Decision
 
-### 1. BFF (Backend for Frontend) を中間層として導入する
+### 1. Introduce BFF (Backend for Frontend) as an intermediate layer
 
-フロントエンドは **BFF のみ** を知る。マイクロサービスへの直接アクセスは行わない。
+The frontend knows only the **BFF**. It does not access microservices directly.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Browser — easy-extrude                                      │
 │  View (Three.js) + Controller (AppController)               │
-│  ドメイン計算・DB・排他制御の知識をゼロにする                  │
+│  Zero knowledge of domain computation, DB, or concurrency   │
 └───────────────┬─────────────────────────────────────────────┘
                 │  REST (CRUD)
                 │  WebSocket (Geometry Stream)
                 ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  BFF Server (Node.js)                                        │
-│  ・JWT 認証ゲートウェイ                                       │
-│  ・REST ルーティング → 各マイクロサービスへプロキシ            │
-│  ・WebSocket セッション管理 → Geometry Service へ委譲         │
-│  ・レスポンス形状をフロントエンド用に整形（アグリゲーション）   │
-│  ・楽観的ロック（ETag / If-Match）の検証                      │
+│  · JWT authentication gateway                               │
+│  · REST routing → proxy to each microservice                │
+│  · WebSocket session management → delegate to Geometry Svc  │
+│  · Shape responses for frontend (aggregation)               │
+│  · Optimistic locking (ETag / If-Match) validation          │
 └──────┬──────────────┬──────────────┬───────────────────────┘
        │              │              │
        ▼              ▼              ▼
 ┌────────────┐ ┌────────────┐ ┌──────────────────────────────┐
 │  Scene     │ │  User      │ │  Geometry Service             │
-│  Service   │ │  Service   │ │  ・ジオメトリグラフ評価        │
-│  シーン    │ │  認証 /    │ │  ・Node Editor グラフ計算     │
-│  CRUD + DB │ │  プロファイ│ │  ・STEP / IGES インポート     │
-│            │ │  ル        │ │  ・OBJ / GLTF エクスポート    │
+│  Service   │ │  Service   │ │  · Geometry graph evaluation  │
+│  Scene     │ │  Auth /    │ │  · Node Editor graph compute  │
+│  CRUD + DB │ │  Profile   │ │  · STEP / IGES import         │
+│            │ │            │ │  · OBJ / GLTF export          │
 └────────────┘ └────────────┘ └──────────────────────────────┘
 ```
 
-### 2. 通信プロトコルの使い分け
+### 2. Protocol selection by use case
 
-| 用途 | プロトコル | 理由 |
-|------|-----------|------|
-| シーン保存・読み込み | REST (HTTP) | 単発リクエスト、キャッシュ制御が容易 |
-| ユーザー認証 | REST (HTTP) | 標準的な JWT フロー |
-| ジオメトリグラフ操作 | **WebSocket** | 操作→計算→結果のラウンドトリップが頻発するため |
-| Node Editor ノード評価 | **WebSocket** | グラフ変更の伝播をストリームで受け取る必要がある |
-| STEP / GLTF インポート | REST (multipart) + WebSocket progress | ファイル送信は REST、進捗は WebSocket |
+| Use case | Protocol | Reason |
+|----------|----------|--------|
+| Scene save / load | REST (HTTP) | One-shot requests, easy cache control |
+| User authentication | REST (HTTP) | Standard JWT flow |
+| Geometry graph operations | **WebSocket** | Frequent round-trips: operation → compute → result |
+| Node Editor node evaluation | **WebSocket** | Need to receive graph change propagation as a stream |
+| STEP / GLTF import | REST (multipart) + WebSocket progress | File upload via REST, progress via WebSocket |
 
-### 3. フロントエンドの責務を View + Controller に限定する
+### 3. Limit frontend responsibility to View + Controller
 
 ```
-現在 (クライアント完結)
+Current (client-complete)
   AppController → SceneService → Cuboid / Sketch / Vertex / Edge / Face
-                                 ↑ ドメイン計算がここで走る
+                                 ↑ domain computation runs here
 
-導入後 (Thin Client)
+After introduction (Thin Client)
   AppController → SceneService → BFF (REST / WebSocket)
-                  ↑ ローカルには「表示用キャッシュ」のみ保持
-                    ドメイン計算・永続化の知識ゼロ
+                  ↑ locally holds only "display cache"
+                    zero knowledge of domain computation or persistence
 ```
 
-`SceneService` は HTTP / WebSocket クライアントとなり、
-レスポンスから受け取ったジオメトリデータを `SceneModel` に反映する責務のみを持つ。
-ドメインエンティティ（Cuboid / Sketch 等）はサーバー側で生成・評価される。
+`SceneService` becomes an HTTP / WebSocket client and its only responsibility is
+to apply geometry data received in responses to `SceneModel`.
+Domain entities (Cuboid / Sketch, etc.) are created and evaluated on the server side.
 
-### 4. WebSocket メッセージ設計方針
+### 4. WebSocket message design principles
 
-メッセージは **操作ベース (Operation-based)** とする。
+Messages are **operation-based**.
 
 ```jsonc
-// フロント → BFF: グラフ操作
+// Front → BFF: graph operation
 { "op": "graph.node.connect", "sessionId": "...", "payload": { "from": "v3", "to": "e7" } }
 
-// BFF → フロント: 計算結果（ジオメトリストリーム）
+// BFF → Front: computation result (geometry stream)
 { "type": "geometry.update", "objectId": "obj_0_xxx",
   "payload": { "positions": [...], "indices": [...], "normals": [...] } }
 
-// BFF → フロント: 進捗通知
+// BFF → Front: progress notification
 { "type": "import.progress", "jobId": "...", "percent": 42 }
 ```
 
-### 5. 段階的移行戦略
+### 5. Phased migration strategy
 
-現在のクライアント完結動作を壊さず段階的に移行する。
+Migrate incrementally without breaking the current client-complete behaviour.
 
-| フェーズ | 内容 |
-|---------|------|
-| **Phase A** | BFF スケルトン構築。シーン保存・読み込みのみ REST で実装。フロント既存動作は維持 |
-| **Phase B** | Geometry Service を分離。WebSocket セッション確立。Node Editor UI のプロトタイプ |
-| **Phase C** | STEP インポートサービス追加。フロントのドメインエンティティをキャッシュ専用に縮小 |
-| **Phase D** | フロントエンドを完全 Thin Client 化。Cuboid / Sketch のドメイン計算を全廃 |
+| Phase | Description |
+|-------|-------------|
+| **Phase A** | Build BFF skeleton. Implement scene save/load via REST only. Existing frontend behaviour maintained. |
+| **Phase B** | Extract Geometry Service. Establish WebSocket session. Prototype Node Editor UI. |
+| **Phase C** | Add STEP import service. Shrink frontend domain entities to cache-only. |
+| **Phase D** | Fully thin-client frontend. Eliminate all domain computation from Cuboid / Sketch. |
 
 ---
 
 ## Consequences
 
-### 良い点
+### Benefits
 
-- フロントエンドがドメイン計算から解放され、Three.js レンダリングに専念できる。
-  FPS の安定性が向上し、複雑なシーンでも UX が落ちない。
-- Geometry Service を独立スケールできる（重い STEP 変換だけ別インスタンスに振る等）。
-- BFF がアグリゲーション・認証・形状整形を一手に引き受けるため、
-  フロントのコードがマイクロサービスの内部変更に影響されない。
-- STEP / IGES / GLTF など CAD ライブラリをサーバー側に閉じ込めることで、
-  ブラウザバンドルを軽量に保てる。
+- The frontend is freed from domain computation and can focus on Three.js rendering.
+  FPS stability improves; UX does not degrade for complex scenes.
+- Geometry Service can be scaled independently (e.g. route heavy STEP conversions to separate instances).
+- BFF handles aggregation, authentication, and response shaping in one place,
+  so frontend code is insulated from internal microservice changes.
+- Keeping CAD libraries (STEP / IGES / GLTF) server-side keeps the browser bundle lightweight.
 
-### トレードオフ・制約
+### Trade-offs / Constraints
 
-- **レイテンシ**: グラフ操作ごとにネットワークラウンドトリップが発生する。
-  オフライン動作が必要な場合は別途検討する（現時点では対象外）。
-- **移行コスト**: Phase D まで完全移行するには現在のフロントドメイン層の大幅な改修が必要。
-  Phase A から段階的に進める。
-- **WebSocket 状態管理**: サーバー側のセッション・グラフ状態を永続化する設計が別途必要。
-  接続断・再接続時の整合性ポリシーは Phase B で ADR を追加する。
-- **テスト戦略**: フロントの単体テスト対象が View / Controller に絞られる一方、
-  Geometry Service のテストが重要になる。サービス境界での契約テストを検討する。
+- **Latency**: A network round-trip occurs for each graph operation.
+  Offline operation would require a separate design (out of scope currently).
+- **Migration cost**: Full migration to Phase D requires substantial rework of the current frontend domain layer.
+  Progress incrementally from Phase A.
+- **WebSocket state management**: A separate design is needed for persisting server-side session and graph state.
+  Consistency policy on disconnect / reconnect will be addressed in Phase B ADR.
+- **Test strategy**: Frontend unit tests focus on View / Controller, while
+  Geometry Service tests become critical. Consider contract tests at service boundaries.
 
-### 未決事項（Phase B で継続検討）
+### Open questions (continued in Phase B)
 
-- Node Editor のグラフ状態はサーバー側 DB に持つか、セッション中のみインメモリか
-- WebSocket 接続断時の再接続・差分同期プロトコル
-- Geometry Service の計算グラフ表現（DAG）の永続化フォーマット
+- Should Node Editor graph state be held in a server-side DB or in-memory for the session only?
+- Reconnect and delta-sync protocol on WebSocket disconnect
+- Persistence format for Geometry Service computation graph (DAG)
