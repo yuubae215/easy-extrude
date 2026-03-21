@@ -500,24 +500,12 @@ export class AppController {
     }
 
     if (substate === '3d') {
-      // Always show all 5 buttons; Extrude is disabled until a face is selected.
-      // Fixed count prevents layout shifts when a face is selected.
-      const em         = this._editSelectMode
-      const hasFaceSel = em === 'face' && [...this._scene.editSelection].some(x => x instanceof Face)
+      const em = this._editSelectMode
       this._uiView.setMobileToolbar([
-        { icon: ICONS.back,    label: 'Object', onClick: () => this.setMode('object') },
-        { icon: ICONS.vertex,  label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
-        { icon: ICONS.edge,    label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
-        { icon: ICONS.face,    label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
-        {
-          icon: ICONS.extrude, label: 'Extrude',
-          onClick: () => {
-            const sel = [...this._scene.editSelection].filter(x => x instanceof Face)
-            if (sel.length > 0) this._startFaceExtrude(sel[0])
-          },
-          // Also disabled while an extrude is already in progress (mid-drag)
-          disabled: !hasFaceSel || this._faceExtrude.active,
-        },
+        { icon: ICONS.back,   label: 'Object', onClick: () => this.setMode('object') },
+        { icon: ICONS.vertex, label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
+        { icon: ICONS.edge,   label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
+        { icon: ICONS.face,   label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
       ])
     }
   }

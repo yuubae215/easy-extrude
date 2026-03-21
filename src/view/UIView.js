@@ -383,6 +383,8 @@ export class UIView {
 
   _setInfoText(mode, subtype = null) {
     this._infoEl.innerHTML = ''
+    // On mobile the footer shows live status text instead of keyboard hints.
+    if (this._isMobile()) return
 
     let shortcuts
     if (mode === 'object') {
@@ -542,6 +544,7 @@ export class UIView {
   setStatus(text) {
     this._headerStatusEl.innerHTML = ''
     this._canvasStatusPillEl.innerHTML = ''
+    if (this._isMobile()) this._infoEl.innerHTML = ''
     if (!text) return
     const mkSpan = (parent) => {
       const span = document.createElement('span')
@@ -551,6 +554,7 @@ export class UIView {
     }
     mkSpan(this._headerStatusEl)
     mkSpan(this._canvasStatusPillEl)
+    if (this._isMobile()) mkSpan(this._infoEl)
   }
 
   /**
@@ -581,6 +585,7 @@ export class UIView {
     }
     fill(this._headerStatusEl)
     fill(this._canvasStatusPillEl)
+    if (this._isMobile()) fill(this._infoEl)
   }
 
   /**
@@ -671,12 +676,15 @@ export class UIView {
     const mobile = this._isMobile()
     this._hamburgerBtn.style.display = mobile ? 'block' : 'none'
     this._nToggleBtn.style.display   = mobile ? 'block' : 'none'
+    this._nToggleBtn.style.marginLeft = mobile ? 'auto' : ''
     this._mobileToolbarEl.style.display = mobile ? 'flex' : 'none'
     // Nodes button is desktop-only (NodeEditorView is not mobile-optimised)
     this._nodeEditorBtn.style.display = mobile ? 'none' : 'flex'
-    // On mobile, status moves to the canvas overlay pill; hide it from header
+    // On mobile, status moves to the footer info bar; hide the header status and canvas pill
     this._headerStatusEl.style.display = mobile ? 'none' : 'flex'
-    this._canvasStatusEl.style.display = mobile ? 'flex' : 'none'
+    this._canvasStatusEl.style.display = 'none'
+    // Center the footer status text on mobile
+    this._infoEl.style.justifyContent = mobile ? 'center' : 'flex-start'
     if (mobile) {
       Object.assign(this._nPanelEl.style, {
         display:    'block',

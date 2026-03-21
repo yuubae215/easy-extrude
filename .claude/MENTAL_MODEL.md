@@ -109,7 +109,7 @@ this._handleEditClick(e.shiftKey)
 ### Gesture-Based Interaction Priority (Mobile)
 
 - **Principle**: Mobile interactions should prioritize combined gesture flows (tap + drag) over multi-step button clicks for primary spatial actions.
-- **Concrete Rule**: On mobile (`innerWidth < 768`), tapping a face in Edit 3D auto-starts extrude. In `_onPointerDown`, after `_handleEditClick`, call `_startFaceExtrude(face)` and set `_activeDragPointerId`. The auto-start fires only when: `editSubstate === '3d'`, `_editSelectMode === 'face'`, `!e.shiftKey`, and at least one Face is in `editSelection` after the click. The Extrude toolbar button is kept (`disabled: true` during the drag) to maintain fixed button count.
+- **Concrete Rule**: On mobile (`innerWidth < 768`), tapping a face in Edit 3D auto-starts extrude. In `_onPointerDown`, after `_handleEditClick`, call `_startFaceExtrude(face)` and set `_activeDragPointerId`. The auto-start fires only when: `editSubstate === '3d'`, `_editSelectMode === 'face'`, `!e.shiftKey`, and at least one Face is in `editSelection` after the click. Face extrude is a gesture-only operation — there is no Extrude toolbar button in Edit 3D.
 
 ### Interaction Confirmation Lifecycle
 
@@ -149,11 +149,10 @@ if (e.target !== this._sceneView.renderer.domElement) return
 |------|------------------------|
 | Object | Add · Edit · Delete |
 | Edit 2D | ← Object · Extrude |
-| Edit 3D | ← Object · Vertex · Edge · Face · Extrude |
+| Edit 3D | ← Object · Vertex · Edge · Face |
 | Grab active | ✓ Confirm · ✕ Cancel |
-| Face extrude | (same as Edit 3D — no separate state) |
 
-Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). The Extrude button stays visible but `disabled` while `_faceExtrude.active` to prevent re-triggering.
+Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No Extrude button is shown in Edit 3D.
 
 ### Viewport-Aware Z-Index and Positioning
 
@@ -164,7 +163,7 @@ Face extrude on mobile is a gesture-only operation (tap → drag → release = c
 const bottomPx = this._isMobile() ? '96px' : '64px'
 ```
 
-On mobile, status text uses `_canvasStatusEl` (a semi-transparent pill at `top: 48px`) instead of `_headerStatusEl`, because the mobile header is too narrow. `setStatus()` and `setStatusRich()` always update both elements; `_applyMobileLayout()` controls which is visible via CSS. The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile.
+On mobile, status text is shown in the footer info bar (`_infoEl`) instead of the header or canvas pill, because the mobile header is too narrow and keyboard hints are irrelevant on touch. `setStatus()` and `setStatusRich()` update `_infoEl` on mobile; `_setInfoText()` is a no-op on mobile. The `_canvasStatusEl` pill is always hidden (the footer replaces it on mobile; the header status replaces it on desktop). The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile. The N-panel toggle button (`_nToggleBtn`) uses `marginLeft: auto` on mobile to stay right-aligned in the header.
 
 ---
 
