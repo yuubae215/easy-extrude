@@ -16,44 +16,7 @@ This project is a **cuboid-based modeling application**. Each shape is a deforma
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
 | 🟡 Medium | Export (OBJ / GLTF) | Low | — |
-| 🟢 Low | Mobile / touch support | Medium | See below |
 | 🟢 Low | 1D objects: MeasureLine, reference line | Medium | ADR-005 |
-
----
-
-## Mobile Support (Backlog · Low Priority)
-
-**Goal:** Allow cuboid editing and scene navigation on smartphones and tablets.
-
-### Challenge: no middle mouse button on touch
-
-The desktop scheme uses right-drag for orbit. Touch devices have no right button.
-
-### Proposed touch mapping
-
-| Gesture | Action |
-|---------|--------|
-| 1-finger drag | Edit action (extrude face / sketch rect) |
-| 2-finger drag | Orbit camera |
-| Pinch | Zoom |
-| Long-press | Context menu (replaces right-click) |
-| Tap | Select / confirm |
-
-OrbitControls already handles 2-finger orbit and pinch-to-zoom natively. The main work is routing single-finger drag to edit actions while letting 2-finger gestures pass through to OrbitControls.
-
-### Implementation notes
-
-- Replace `mousedown/mousemove/mouseup` with **Pointer Events API** (`pointerdown`, `pointermove`, `pointerup`) — unifies mouse, touch, stylus
-- Track `_activeDragPointerId`; ignore secondary pointers during an edit drag
-- Suppress browser context menu on long-press: `contextmenu` → `e.preventDefault()`
-- Add `touch-action: none` CSS on canvas
-- Ensure all UI tap targets >= 44x44 px
-- Verify `renderer.setPixelRatio(window.devicePixelRatio)` for HiDPI screens
-
-### Key risks
-
-- Long-press context menu conflicts with hold-to-drag on some Android browsers
-- Alt+left-drag (orbit fallback for trackpad users) may be worth adding simultaneously
 
 ---
 
@@ -61,6 +24,7 @@ OrbitControls already handles 2-finger orbit and pinch-to-zoom natively. The mai
 
 | Item | Date |
 |------|------|
+| Mobile touch support — Pointer Events API, `_activeDragPointerId`, mobile toolbar, canvas target guard, touch hover sync, face-extrude confirm on `pointerup` | 2026-03-21 |
 | DDD Phase 6 — Sub-element selection (1/2/3 keys); Grab snap expanded to all geometry (ADR-014) | 2026-03-20 |
 | DDD Phase 5-3 — Edge/Face graph objects; unified selection model; dimension field removed (ADR-012) | 2026-03-20 |
 | DDD Phase 5-2 — Event-driven status bar; _refreshObjectModeStatus() | 2026-03-20 |
