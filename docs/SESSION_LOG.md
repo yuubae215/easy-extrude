@@ -4,6 +4,11 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-21**: Bug fixes — Selection highlight, blue flash, extrude confirm, and OrbitControls.
+  - **Face highlight on touch**: `_handleEditClick` used `_hoveredFace` which is only set by `_onPointerMove`; on touch devices `pointermove` does not fire before `pointerdown`, so the value was always null. Fixed by doing a fresh raycast (face / vertex / edge) at the top of `_onPointerDown` before calling `_handleEditClick`.
+  - **Full-screen blue flash**: `<canvas>` lacked `-webkit-tap-highlight-color: transparent`; iOS/Android displayed a full-screen blue tap highlight on every canvas touch. Added to `index.html`.
+  - **Face extrude confirmed at dist=0 on touch**: `_onPointerDown` called `_confirmFaceExtrude()` immediately for any left-click while `_faceExtrude.active`. On mobile the first canvas touch (intended to start a drag) confirmed with no movement. Fixed by deferring confirm to `_onPointerUp`; `_onPointerDown` now only sets `_activeDragPointerId` so `_onPointerMove` can update distance during the drag.
+  - **OrbitControls blocked by rect selection**: Starting rect selection set `_controls.enabled = false`, which prevented right-click orbit (desktop) and two-finger orbit/dolly (mobile) from working. Fixed by not disabling controls for rect selection (orbit uses separate input and does not conflict). Added second-touch cancellation of rect selection so two-finger orbit can take over cleanly.
 - **2026-03-21**: Architecture design session (no implementation). BFF + microservices strategy established.
   - **Direction**: Limit frontend to View + Controller only. Zero knowledge of domain computation or persistence. Consolidate geometry graph evaluation, STEP import, and Node Editor computation in a server-side Geometry Service to stabilize Three.js rendering FPS.
   - **BFF**: Node.js. REST (scene CRUD, auth) and WebSocket (geometry stream, Node Editor graph evaluation, import progress) used according to purpose.

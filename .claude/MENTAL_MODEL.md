@@ -80,3 +80,49 @@ Each `visible` flag in `MeshView` has a single owner. Never set it elsewhere.
 | `hlMesh.visible` | `setFaceHighlight()` |
 | `cuboid.visible` / `wireframe.visible` | `setVisible()` |
 | `boxHelper.visible` | `setObjectSelected()` |
+
+## Touch hover sync before edit click
+
+`_hoveredFace`, `_hoveredVertex`, `_hoveredEdge` are updated only in `_onPointerMove`.
+On touch devices `pointermove` does **not** fire before `pointerdown`, so these are null
+when the user taps. `_onPointerDown` must re-run the hit test before calling
+`_handleEditClick`, or touch taps will never select sub-elements.
+
+```js
+// Required pattern at the bottom of _onPointerDown (edit mode path)
+if (this._scene.editSubstate === '3d') {
+  if (this._editSelectMode === 'face') {
+    const hit = this._hitFace()
+    this._hoveredFace = hit?.face ?? null
+    this._meshView.setFaceHighlight(this._hoveredFace?.index ?? null, this._corners)
+  } // likewise for vertex / edge
+}
+this._handleEditClick(e.shiftKey)
+```
+
+## Face extrude confirm on pointerup, not pointerdown
+
+`_confirmFaceExtrude()` is called in `_onPointerUp`, **not** `_onPointerDown`.
+
+Reason: on mobile, the first canvas touch after `_startFaceExtrude()` is the *start* of a
+drag intended to set the distance. Confirming on `pointerdown` would lock in dist=0 before
+any movement. The correct flow is: pointerdown → set `_activeDragPointerId` →
+`_onPointerMove` updates dist → `_onPointerUp` confirms.
+
+On desktop this feels identical to the old click-to-confirm UX (confirm fires on release).
+
+Do **not** move confirm back to `_onPointerDown`.
+
+## OrbitControls must stay enabled during rect selection
+
+`_controls.enabled = false` must **not** be set when starting rect selection.
+
+Reason: orbit (right-click drag on desktop, two-finger on mobile) uses separate input that
+does not conflict with rect selection (left-click / single-finger). Disabling controls
+blocks orbit even though the inputs are mutually exclusive.
+
+Only `_objDragging` and `_sketch.drawing` legitimately need `_controls.enabled = false`
+(they capture the left/single-finger input fully and must prevent orbit from also reacting).
+
+When a second touch arrives while rect selection is active, cancel the rect selection and
+clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture.

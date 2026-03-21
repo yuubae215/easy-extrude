@@ -1708,7 +1708,16 @@ export class AppController {
 
   _onPointerDown(e) {
     // Ignore secondary touches while an edit drag is already active
-    if (this._activeDragPointerId !== null && e.pointerType === 'touch') return
+    if (this._activeDragPointerId !== null && e.pointerType === 'touch') {
+      // Second finger while rect selection is active: cancel rect sel so
+      // OrbitControls can handle the two-finger orbit/dolly gesture.
+      if (this._rectSel.active) {
+        this._rectSel.active = false
+        this._rectSelEl.style.display = 'none'
+        this._activeDragPointerId = null
+      }
+      return
+    }
 
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
@@ -1722,8 +1731,13 @@ export class AppController {
     }
 
     if (this._faceExtrude.active) {
-      if (e.button === 0) { this._confirmFaceExtrude(); return }
-      if (e.button === 2) { this._cancelFaceExtrude();  return }
+      if (e.button === 0) {
+        // Don't confirm immediately — let pointermove update the distance,
+        // then confirm on pointerup. This allows touch-drag to set distance.
+        this._activeDragPointerId = e.pointerId
+        return
+      }
+      if (e.button === 2) { this._cancelFaceExtrude(); return }
       return
     }
 
@@ -1792,23 +1806,44 @@ export class AppController {
           this._objRotateStartCorners = this._corners.map(c => c.clone())
         }
       } else {
-        // No object hit — start rectangle selection
+        // No object hit — start rectangle selection.
+        // Do NOT disable _controls here: orbit (right-click / two-finger) uses
+        // separate buttons/fingers and must remain available simultaneously.
         this._rectSel.active    = true
         this._rectSel.startPx   = { x: e.clientX, y: e.clientY }
         this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
-        this._controls.enabled  = false
         this._activeDragPointerId = e.pointerId
       }
       return
     }
 
     // ── Edit mode: click to select sub-elements ───────────────────────────
+    // Refresh hover state for touch (pointermove may not fire before pointerdown on touch devices)
+    if (this._scene.editSubstate === '3d') {
+      if (this._editSelectMode === 'face') {
+        const hit = this._hitFace()
+        this._hoveredFace = hit?.face ?? null
+        this._meshView.setFaceHighlight(this._hoveredFace?.index ?? null, this._corners)
+      } else if (this._editSelectMode === 'vertex') {
+        const mx = (this._mouse.x + 1) / 2 * innerWidth
+        const my = (-this._mouse.y + 1) / 2 * innerHeight
+        this._hoveredVertex = this._findNearestVertex(mx, my)
+      } else if (this._editSelectMode === 'edge') {
+        const mx = (this._mouse.x + 1) / 2 * innerWidth
+        const my = (-this._mouse.y + 1) / 2 * innerHeight
+        this._hoveredEdge = this._findNearestEdge(mx, my)
+      }
+    }
     this._handleEditClick(e.shiftKey)
   }
 
   _onPointerUp(e) {
     if (e.button !== 0) return
     if (this._activeDragPointerId === e.pointerId) this._activeDragPointerId = null
+    if (this._faceExtrude.active) {
+      this._confirmFaceExtrude()
+      return
+    }
     if (this._sketch.drawing) {
       this._sketch.drawing = false
       this._controls.enabled = true
