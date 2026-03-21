@@ -695,6 +695,12 @@ export class AppController {
     this._controls.enabled = true
 
     if (mode === 'object') {
+      // Restore selection state when returning from Edit Mode — the active
+      // object is still valid but _objSelected was cleared on Edit entry.
+      if (this._activeObj && !this._objSelected) {
+        this._objSelected = true
+        this._activeObj.meshView.setObjectSelected(true)
+      }
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
       this._updateMobileToolbar()
