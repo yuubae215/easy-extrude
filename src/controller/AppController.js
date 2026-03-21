@@ -476,7 +476,6 @@ export class AppController {
           ),
         },
         { icon: '⊞', label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !hasObj },
-        { icon: '↔', label: 'Move',   onClick: () => this._startGrab(),                                        disabled: !hasObj },
         { icon: '🗑', label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
       ])
       return

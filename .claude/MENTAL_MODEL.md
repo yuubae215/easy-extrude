@@ -172,7 +172,7 @@ the entire centered toolbar shifts left/right, making tapping unreliable.
 
 | Mode         | Buttons (always shown)                              |
 |--------------|-----------------------------------------------------|
-| Object       | Add · Edit · Move · Delete                          |
+| Object       | Add · Edit · Delete                                 |
 | Edit 2D      | ← Object · Extrude                                  |
 | Edit 3D      | ← Object · Vertex · Edge · Face · Extrude           |
 | Grab active  | ✓ Confirm · ✕ Cancel                               |
