@@ -9,7 +9,7 @@ export class OutlinerView {
     this._el = document.createElement('div')
     Object.assign(this._el.style, {
       position: 'fixed',
-      top: '36px',
+      top: '40px',
       left: '0',
       width: '180px',
       bottom: '26px',
