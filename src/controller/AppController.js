@@ -21,10 +21,11 @@ import {
   collectSnapTargets,
   collectWorldSnapTargets,
 } from '../model/CuboidModel.js'
-import { SceneService } from '../service/SceneService.js'
-import { Sketch }       from '../domain/Sketch.js'
-import { Face }         from '../graph/Face.js'
-import { ICONS }        from '../view/UIView.js'
+import { SceneService }    from '../service/SceneService.js'
+import { Sketch }          from '../domain/Sketch.js'
+import { Face }            from '../graph/Face.js'
+import { ICONS }           from '../view/UIView.js'
+import { NodeEditorView }  from '../view/NodeEditorView.js'
 
 export class AppController {
   /**
@@ -2079,6 +2080,29 @@ export class AppController {
     }
   }
 
+  // ── BFF + Node Editor initialisation (Phase B, ADR-017) ──────────────────
+
+  /**
+   * Initialises BFF connection and opens the WebSocket Geometry Service channel.
+   * Called asynchronously from start() — non-blocking; app works without BFF.
+   */
+  async _initBff() {
+    await this._service.connectBff()
+    if (!this._service.bffConnected) return
+
+    // Open WebSocket geometry channel
+    this._service.openGeometryChannel()
+
+    // Wire up Node Editor
+    this._nodeEditorView = new NodeEditorView(document.body, this._service)
+    this._uiView.onNodeEditorToggle(() => {
+      const visible = this._nodeEditorView.toggle()
+      // Visual feedback on header button
+      const btn = this._uiView._nodeEditorBtn
+      if (btn) btn.style.borderColor = visible ? '#3a7bd5' : '#3a3a3a'
+    })
+  }
+
   // ─── Animation loop ────────────────────────────────────────────────────────
   start() {
     const loop = () => {
@@ -2087,5 +2111,10 @@ export class AppController {
       if (this._gizmoView) this._gizmoView.update()
     }
     loop()
+
+    // Non-blocking BFF + Node Editor setup (Phase B)
+    this._initBff().catch(err => {
+      console.warn('[AppController] BFF init failed (offline mode):', err.message)
+    })
   }
 }

@@ -4,6 +4,19 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-21**: BFF Phase B implementation — Geometry Service + WebSocket + Node Editor prototype (ADR-017).
+  - **Geometry Service** (`server/src/geometry/`): `OperationGraph` DAG class (cycle detection via DFS, topo-sort), per-node evaluators (`cuboid`, `sketch`, `extrude`, `stepImport`, `transform`), `meshEncoder` for wire-protocol encoding.
+  - **WebSocket session** (`server/src/ws/sessionManager.js`): `createSession`/`handleMessage`; operations: `session.resume`, `graph.node.add/remove`, `graph.edge.add/remove`, `graph.node.setParam`, `import.step`; graph auto-saved to DB on each mutation.
+  - **BFF upgraded** (`server/index.js`): `http.createServer` + `WebSocketServer`; upgrade at `/api/ws`; health phase bumped to `'B'`; json limit raised to 50 MB.
+  - **STEP import** (`server/src/routes/import.js`): `POST /api/import/step` multipart via multer; `occt-import-js` lazy-loaded (stub response if unavailable); WS `import.step` message also supported.
+  - **BffClient** extended: `WsChannel` class (typed `send`/`on`), `openWs()`/`closeWs()`, `importStep(File)`.
+  - **SceneService** extended: `openGeometryChannel()` — opens WS, handles `geometry.update` to apply server geometry to MeshView; emits `wsConnected`/`wsDisconnected`.
+  - **NodeEditorView** (`src/view/NodeEditorView.js`): SVG DAG panel (fixed bottom-right), draggable nodes, Bezier edges, params sidebar with live number inputs, STEP import file picker trigger.
+  - **UIView**: header "Nodes" toggle button wired via `onNodeEditorToggle()`.
+  - **AppController**: `_initBff()` async bootstrap — BFF connect → WS open → Node Editor mount.
+  - **Vite proxy**: `/api/ws` → `ws://localhost:3001` WebSocket proxy added.
+  - **ADR-017** created and indexed.
+
 - **2026-03-21**: BFF Phase A implementation — Express BFF scaffold + SQLite scene persistence.
   - **server/** package created (Node.js / Express / better-sqlite3 / jsonwebtoken).
   - **SQLite schema**: `scenes` table stores full scene JSON (objects[] + transformGraph) per ADR-016.
