@@ -4,6 +4,15 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-21**: アーキテクチャ設計セッション（実装なし）。BFF + マイクロサービス構成を策定。
+  - **方針**: フロントエンドを View + Controller のみに限定。ドメイン計算・永続化の知識をゼロにする。ジオメトリグラフ評価・STEP インポート・Node Editor 計算をサーバー側 Geometry Service に集約し、Three.js レンダリングの FPS を安定させる。
+  - **BFF**: Node.js。REST（シーン CRUD・認証）と WebSocket（ジオメトリストリーム・Node Editor グラフ評価・インポート進捗）を使い分ける。
+  - **マイクロサービス**: Scene Service（シーン CRUD + DB）/ User Service（認証・プロファイル）/ Geometry Service（グラフ評価・STEP インポート・OBJ/GLTF エクスポート）。
+  - **WebSocket メッセージ**: 操作ベース（Operation-based）。フロント → BFF がグラフ操作、BFF → フロントが計算済みジオメトリ（positions/indices/normals）をストリーム。
+  - **段階的移行**: Phase A（BFF スケルトン + REST シーン保存）→ B（Geometry Service + WebSocket + Node Editor プロト）→ C（STEP インポート）→ D（フロント完全 Thin Client 化）。
+  - **STEP インポート方針**: Phase B は `occt-import-js`（WASM、テッセレーション結果のみ）で素早くプロト。B-rep 位相アクセスが必要になれば `opencascade.js` または Python サービス（cadquery / pythonOCC）へ移行。
+  - **トランスフォームグラフ**: シーンオブジェクト間の位置・姿勢関係を SE(3) ツリーで表現。TransformNode（objectId, translation, quaternion）+ TransformEdge（parentId, childId, constraint="fixed"）。ROS ワールドフレーム・クォータニオンを採用。将来は OperationNode を追加して DAG（Node Editor）へ拡張。
+  - **ADR**: ADR-015（BFF + マイクロサービス）、ADR-016（トランスフォームグラフ）を Proposed で作成。
 - **2026-03-20**: DDD Phase 5-1 — グラフ基底ジオメトリ移行。`src/graph/Vertex.js` 新設。`Cuboid.vertices` / `Sketch.vertices` が `Vertex[8]` を保持し `get corners()` ゲッターで後方互換を維持。`CuboidModel.js` / `MeshView` / `AppController` は無変更。ADR-012 を Accepted に更新。
 - **2026-03-20**: DDD Phase 5-2 — ステータスバーをイベント駆動に部分移行。`_refreshObjectModeStatus()` ヘルパーを新設し "X selected" ロジックを単一箇所に集約。`objectRenamed` イベントを購読してリネーム時もステータスバーを自動更新。`_confirmGrab` / `_cancelGrab` の固定文字列 "Object selected" バグを合わせて修正。
 - **2026-03-20**: DDD Phase 1 — `src/domain/Cuboid.js` と `src/domain/Sketch.js` を新設し、SceneObject の plain object 生成を typed entity に置き換え。ADR-009 作成。ARCHITECTURE.md の DDD 移行フェーズを Phase 1 に更新。
