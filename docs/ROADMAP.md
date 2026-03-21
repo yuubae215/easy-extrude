@@ -8,8 +8,12 @@ This project is a **cuboid-based modeling application**. Each shape is a deforma
 
 ## BFF + Microservices Migration (ADR-015)
 
-The architecture evolves in 4 phases from a browser-only SPA to a thin-client frontend
+The architecture evolves incrementally from a browser-only SPA toward a thin-client frontend
 backed by a BFF and dedicated microservices.
+
+**Phase B ends with a UX validation checkpoint.**
+Phases C and D are intentionally left open — the direction will be decided based on learnings
+from that checkpoint (pivot if needed).
 
 ```
 Browser (View + Controller)
@@ -32,7 +36,7 @@ BFF (Node.js) — auth, aggregation, routing
 | `SceneService` → HTTP client | Replace in-memory CRUD with BFF REST calls | ADR-015 |
 | Existing frontend behaviour unchanged | Client-complete fallback while BFF is wired up | ADR-015 |
 
-### Phase B — Geometry Service + WebSocket + Node Editor prototype
+### Phase B — Geometry Service + WebSocket + Node Editor prototype ★ UX checkpoint
 
 | Task | Details | ADR |
 |------|---------|-----|
@@ -42,23 +46,28 @@ BFF (Node.js) — auth, aggregation, routing
 | Node Editor UI prototype | Visual DAG editing; nodes stream geometry results via WebSocket | ADR-016 |
 | STEP import prototype | `occt-import-js` in Geometry Service; file upload REST + WebSocket progress | ADR-015 |
 | TransformGraph → DAG | Add OperationNodes (cycle detection policy) | ADR-016 |
+| **★ UX validation checkpoint** | Evaluate: latency feel, Node Editor usability, STEP import UX. Decide pivot direction for Phase C+. | — |
 
-### Phase C — STEP import + frontend entity shrink
+### Phase C+ — Post-validation (direction TBD after Phase B checkpoint)
 
-| Task | Details | ADR |
-|------|---------|-----|
-| STEP import production-ready | Migrate to `opencascade.js` or Python service if B-rep access needed | ADR-015 |
-| B-rep topology → graph | Incorporate STEP faces/edges into TransformGraph | ADR-016 (open) |
-| Frontend domain entities → cache-only | Cuboid / Sketch / Vertex / Edge / Face hold display data only | ADR-015 |
-| GLTF / OBJ export (Geometry Service) | Keep CAD libs server-side; frontend bundle stays lightweight | ADR-015 |
+> **Decide after Phase B UX validation.** Possible directions:
+>
+> - **Continue as planned** — STEP import production, frontend entity shrink, fully thin client (original Phase C/D)
+> - **Pivot: focus on Node Editor UX** — double down on visual graph editing; defer STEP/thin-client
+> - **Pivot: simplify backend** — collapse Geometry Service back into BFF if WebSocket latency hurts UX
+> - **Other** — based on user feedback from the prototype
 
-### Phase D — Fully thin client
+Candidate tasks (held, not committed):
 
-| Task | Details | ADR |
-|------|---------|-----|
-| Remove all domain computation from frontend | AppController → SceneService → BFF only | ADR-015 |
-| Frontend unit tests — View / Controller only | Contract tests at BFF service boundaries | ADR-015 |
-| Independent Geometry Service scaling | Route heavy STEP conversions to separate instances | ADR-015 |
+| Candidate Task | Original Phase | ADR |
+|---------------|----------------|-----|
+| STEP import production-ready | C | ADR-015 |
+| B-rep topology → graph | C | ADR-016 (open) |
+| Frontend domain entities → cache-only | C | ADR-015 |
+| GLTF / OBJ export (Geometry Service) | C | ADR-015 |
+| Remove all domain computation from frontend | D | ADR-015 |
+| Frontend unit tests — View / Controller only | D | ADR-015 |
+| Independent Geometry Service scaling | D | ADR-015 |
 
 ---
 
