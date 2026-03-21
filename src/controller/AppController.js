@@ -1722,8 +1722,13 @@ export class AppController {
     }
 
     if (this._faceExtrude.active) {
-      if (e.button === 0) { this._confirmFaceExtrude(); return }
-      if (e.button === 2) { this._cancelFaceExtrude();  return }
+      if (e.button === 0) {
+        // Don't confirm immediately — let pointermove update the distance,
+        // then confirm on pointerup. This allows touch-drag to set distance.
+        this._activeDragPointerId = e.pointerId
+        return
+      }
+      if (e.button === 2) { this._cancelFaceExtrude(); return }
       return
     }
 
@@ -1803,12 +1808,32 @@ export class AppController {
     }
 
     // ── Edit mode: click to select sub-elements ───────────────────────────
+    // Refresh hover state for touch (pointermove may not fire before pointerdown on touch devices)
+    if (this._scene.editSubstate === '3d') {
+      if (this._editSelectMode === 'face') {
+        const hit = this._hitFace()
+        this._hoveredFace = hit?.face ?? null
+        this._meshView.setFaceHighlight(this._hoveredFace?.index ?? null, this._corners)
+      } else if (this._editSelectMode === 'vertex') {
+        const mx = (this._mouse.x + 1) / 2 * innerWidth
+        const my = (-this._mouse.y + 1) / 2 * innerHeight
+        this._hoveredVertex = this._findNearestVertex(mx, my)
+      } else if (this._editSelectMode === 'edge') {
+        const mx = (this._mouse.x + 1) / 2 * innerWidth
+        const my = (-this._mouse.y + 1) / 2 * innerHeight
+        this._hoveredEdge = this._findNearestEdge(mx, my)
+      }
+    }
     this._handleEditClick(e.shiftKey)
   }
 
   _onPointerUp(e) {
     if (e.button !== 0) return
     if (this._activeDragPointerId === e.pointerId) this._activeDragPointerId = null
+    if (this._faceExtrude.active) {
+      this._confirmFaceExtrude()
+      return
+    }
     if (this._sketch.drawing) {
       this._sketch.drawing = false
       this._controls.enabled = true
