@@ -213,6 +213,24 @@ export class UIView {
     })
     document.body.appendChild(this._backdrop)
 
+    // ── Mobile floating toolbar (visible only on mobile) ─────────────────
+    this._mobileToolbarEl = document.createElement('div')
+    Object.assign(this._mobileToolbarEl.style, {
+      position: 'fixed',
+      bottom: '26px',   // sits on top of info bar
+      left: '0', right: '0',
+      height: '52px',
+      background: '#222',
+      borderTop: '1px solid #333',
+      display: 'none',   // shown only on mobile
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '8px',
+      padding: '0 12px',
+      zIndex: '95',
+    })
+    document.body.appendChild(this._mobileToolbarEl)
+
     // ── Extrusion label (floating) ────────────────────────────────────────
     this._extrusionLabelEl = document.createElement('div')
     Object.assign(this._extrusionLabelEl.style, {
@@ -499,6 +517,7 @@ export class UIView {
     const mobile = this._isMobile()
     this._hamburgerBtn.style.display = mobile ? 'block' : 'none'
     this._nToggleBtn.style.display   = mobile ? 'block' : 'none'
+    this._mobileToolbarEl.style.display = mobile ? 'flex' : 'none'
     if (mobile) {
       Object.assign(this._nPanelEl.style, {
         display:    'block',
@@ -706,5 +725,52 @@ export class UIView {
   /** Sets the canvas element used for cursor changes */
   setCanvas(canvas) {
     this._canvas = canvas
+  }
+
+  /**
+   * Renders the mobile floating toolbar with the given buttons.
+   * Only visible on mobile (<768px). Ignored on desktop.
+   *
+   * @param {Array<{icon: string, label: string, onClick: () => void, active?: boolean, danger?: boolean}>} buttons
+   */
+  setMobileToolbar(buttons) {
+    this._mobileToolbarEl.innerHTML = ''
+    buttons.forEach(({ icon, label, onClick, active = false, danger = false }) => {
+      const btn = document.createElement('button')
+      Object.assign(btn.style, {
+        display:        'flex',
+        flexDirection:  'column',
+        alignItems:     'center',
+        justifyContent: 'center',
+        gap:            '2px',
+        padding:        '4px 10px',
+        minWidth:       '44px',
+        minHeight:      '44px',
+        background:     active  ? '#3a6a9a' : danger ? '#6a2a2a' : '#333',
+        border:         `1px solid ${active ? '#4a9eed' : danger ? '#c0392b' : '#555'}`,
+        borderRadius:   '6px',
+        color:          active  ? '#4fc3f7' : danger ? '#e74c3c' : '#e8e8e8',
+        cursor:         'pointer',
+        fontSize:       '18px',
+        lineHeight:     '1',
+        fontFamily:     'sans-serif',
+        userSelect:     'none',
+        WebkitUserSelect: 'none',
+      })
+      const iconEl = document.createElement('span')
+      iconEl.textContent = icon
+      iconEl.style.fontSize = '18px'
+
+      const labelEl = document.createElement('span')
+      labelEl.textContent = label
+      labelEl.style.fontSize = '9px'
+      labelEl.style.opacity = '0.75'
+      labelEl.style.letterSpacing = '0.02em'
+
+      btn.appendChild(iconEl)
+      btn.appendChild(labelEl)
+      btn.addEventListener('click', onClick)
+      this._mobileToolbarEl.appendChild(btn)
+    })
   }
 }
