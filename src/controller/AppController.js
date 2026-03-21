@@ -270,7 +270,7 @@ export class AppController {
 
   _deleteObject(id) {
     if (this._scene.objects.size <= 1) {
-      this._uiView.showToast('シーンに最低1つのオブジェクトが必要です', { type: 'warn' })
+      this._uiView.showToast('Scene must contain at least one object', { type: 'warn' })
       return
     }
 
