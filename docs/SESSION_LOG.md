@@ -4,6 +4,17 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-21**: BFF Phase A implementation — Express BFF scaffold + SQLite scene persistence.
+  - **server/** package created (Node.js / Express / better-sqlite3 / jsonwebtoken).
+  - **SQLite schema**: `scenes` table stores full scene JSON (objects[] + transformGraph) per ADR-016.
+  - **REST API**: `GET/POST /api/scenes`, `GET/PUT/DELETE /api/scenes/:id`, `GET /api/health`, `GET /api/auth/token` (dev JWT).
+  - **JWT middleware** (`src/middleware/auth.js`): Phase A accepts requests without token in dev; enforce with `BFF_REQUIRE_AUTH=true`.
+  - **TransformGraph persistence**: `SceneSerializer.serializeScene()` emits a `TransformNode[]` + `TransformEdge[]` (fixed, world-root) per scene object; `deserializeScene()` reconstructs Cuboid / Sketch domain entities from BFF response.
+  - **BffClient** (`src/service/BffClient.js`): fetch wrapper with `BffUnavailableError` for graceful fallback.
+  - **SceneService** extended: `connectBff()`, `saveScene()`, `loadScene(id)`, `listScenes()` — existing local operations unchanged.
+  - **Vite proxy**: `/api` proxied to `http://localhost:3001` in dev (`vite.config.js`).
+  - **pnpm workspace**: `pnpm-workspace.yaml` + root scripts `server:install`, `server:dev`, `server:start`.
+  - ADR-015 and ADR-016 updated from Proposed → Accepted.
 - **2026-03-21**: Bug fixes — Selection highlight, blue flash, extrude confirm, and OrbitControls.
   - **Face highlight on touch**: `_handleEditClick` used `_hoveredFace` which is only set by `_onPointerMove`; on touch devices `pointermove` does not fire before `pointerdown`, so the value was always null. Fixed by doing a fresh raycast (face / vertex / edge) at the top of `_onPointerDown` before calling `_handleEditClick`.
   - **Full-screen blue flash**: `<canvas>` lacked `-webkit-tap-highlight-color: transparent`; iOS/Android displayed a full-screen blue tap highlight on every canvas touch. Added to `index.html`.

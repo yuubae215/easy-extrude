@@ -1,7 +1,8 @@
 # ADR-016: Transform Graph — Spatial Relationships Between Scene Objects
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-03-21
+- **Implemented (Phase A)**: 2026-03-21
 - **References**: ADR-012, ADR-015
 
 ---

@@ -58,6 +58,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-21**: BFF Phase A — Express BFF (`server/`) + SQLite scene persistence. `BffClient`, `SceneSerializer`, `SceneService.connectBff/saveScene/loadScene/listScenes`. Vite proxy for `/api`. pnpm workspace. ADR-015 + ADR-016 Accepted.
 - **2026-03-21**: Bug fixes — face highlight on touch (fresh raycast in `_onPointerDown`), full-screen blue flash (`-webkit-tap-highlight-color`), face extrude confirmed at dist=0 on touch (deferred confirm to `_onPointerUp`), OrbitControls blocked by rect selection (`_controls` no longer disabled for rect sel; second-touch cancels rect sel).
 - **2026-03-21**: Architecture design — BFF + microservices strategy established. Decided to limit the frontend to View + Controller only, consolidating geometry computation and STEP import on the server side. Node.js BFF / REST+WebSocket / Geometry Service (server-side graph computation) recorded in ADR-015. Transform graph (SE(3) tree, ROS frames, quaternions) recorded in ADR-016. STEP import to start with `occt-import-js` in Phase B, migrating to `opencascade.js` or a Python service if B-rep access is needed.
 - **2026-03-20**: DDD Phase 5-1 — Added `src/graph/Vertex.js`. `Cuboid`/`Sketch` hold `vertices: Vertex[]` with `get corners()` for backward compatibility. ADR-012 Accepted.

@@ -9,6 +9,11 @@
  * whenever scene state changes. Subscribers (e.g. OutlinerView) react to
  * these events instead of being called directly by AppController.
  *
+ * BFF Phase A (ADR-015): optional BFF integration via `connectBff()`.
+ * When connected, `saveScene()` / `loadScene()` / `listScenes()` delegate to
+ * the BFF REST API. All existing local operations remain unchanged —
+ * disconnected (BFF unavailable) mode works exactly as before.
+ *
  * Events emitted:
  *   'objectAdded'   (obj: SceneObject)
  *   'objectRemoved' (id: string)
@@ -28,6 +33,8 @@ import { Cuboid } from '../domain/Cuboid.js'
 import { Sketch } from '../domain/Sketch.js'
 import { createInitialCorners } from '../model/CuboidModel.js'
 import { Vertex } from '../graph/Vertex.js'
+import { BffClient, BffUnavailableError } from './BffClient.js'
+import { serializeScene, deserializeScene } from './SceneSerializer.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -36,6 +43,106 @@ export class SceneService extends EventEmitter {
   constructor(threeScene) {
     super()
     this._threeScene = threeScene
+    this._model      = new SceneModel()
+    /** @type {BffClient|null} */
+    this._bff        = null
+    /** Server-assigned scene id when synced with the BFF. */
+    this._remoteId   = null
+  }
+
+  // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
+
+  /**
+   * Initialises the BFF client. Safe to call before/after object operations.
+   * Attempts to fetch a dev token; silently skips on network error.
+   * @param {string} [baseUrl]  defaults to '/api'
+   */
+  async connectBff(baseUrl = '/api') {
+    this._bff = new BffClient(baseUrl)
+    try {
+      await this._bff.fetchToken()
+    } catch {
+      // BFF unreachable — stay in local-only mode
+      this._bff = null
+    }
+  }
+
+  /** true when BFF connection is active. */
+  get bffConnected() { return this._bff !== null }
+
+  /**
+   * Saves the current scene to the BFF.
+   * Creates a new scene record on the first call; updates it on subsequent calls.
+   * No-ops gracefully when BFF is not connected.
+   * @param {string} [name]  scene name (defaults to 'Untitled')
+   * @returns {Promise<string|null>}  server-assigned scene id, or null on error
+   */
+  async saveScene(name = 'Untitled') {
+    if (!this._bff) return null
+    const data = serializeScene(this._model)
+    try {
+      if (this._remoteId) {
+        await this._bff.updateScene(this._remoteId, { name, data })
+        return this._remoteId
+      }
+      const result = await this._bff.saveScene({ name, data })
+      this._remoteId = result.id
+      return result.id
+    } catch (err) {
+      if (err instanceof BffUnavailableError) {
+        console.warn('[SceneService] BFF unavailable — save skipped:', err.cause)
+        return null
+      }
+      throw err
+    }
+  }
+
+  /**
+   * Loads a scene from the BFF and replaces the current scene.
+   * All existing objects are disposed first. Emits objectAdded for each loaded entity.
+   * @param {string} sceneId
+   * @returns {Promise<boolean>}  true on success
+   */
+  async loadScene(sceneId) {
+    if (!this._bff) return false
+    try {
+      const remote = await this._bff.getScene(sceneId)
+      this._clearScene()
+      const { entities } = deserializeScene(remote.data, this._threeScene)
+      for (const entity of entities) {
+        this._model.addObject(entity)
+        this.emit('objectAdded', entity)
+      }
+      this._remoteId = sceneId
+      return true
+    } catch (err) {
+      if (err instanceof BffUnavailableError) {
+        console.warn('[SceneService] BFF unavailable — load skipped:', err.cause)
+        return false
+      }
+      throw err
+    }
+  }
+
+  /**
+   * Returns the list of scenes stored on the BFF (metadata only).
+   * @returns {Promise<{ id, name, created_at, updated_at }[]>}
+   */
+  async listScenes() {
+    if (!this._bff) return []
+    try {
+      return await this._bff.listScenes()
+    } catch (err) {
+      if (err instanceof BffUnavailableError) return []
+      throw err
+    }
+  }
+
+  /** Disposes all objects and resets the model (local). */
+  _clearScene() {
+    for (const obj of this._model.objects.values()) {
+      obj.meshView.dispose(this._threeScene)
+    }
     this._model = new SceneModel()
   }
 
