@@ -1708,7 +1708,16 @@ export class AppController {
 
   _onPointerDown(e) {
     // Ignore secondary touches while an edit drag is already active
-    if (this._activeDragPointerId !== null && e.pointerType === 'touch') return
+    if (this._activeDragPointerId !== null && e.pointerType === 'touch') {
+      // Second finger while rect selection is active: cancel rect sel so
+      // OrbitControls can handle the two-finger orbit/dolly gesture.
+      if (this._rectSel.active) {
+        this._rectSel.active = false
+        this._rectSelEl.style.display = 'none'
+        this._activeDragPointerId = null
+      }
+      return
+    }
 
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
@@ -1797,11 +1806,12 @@ export class AppController {
           this._objRotateStartCorners = this._corners.map(c => c.clone())
         }
       } else {
-        // No object hit — start rectangle selection
+        // No object hit — start rectangle selection.
+        // Do NOT disable _controls here: orbit (right-click / two-finger) uses
+        // separate buttons/fingers and must remain available simultaneously.
         this._rectSel.active    = true
         this._rectSel.startPx   = { x: e.clientX, y: e.clientY }
         this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
-        this._controls.enabled  = false
         this._activeDragPointerId = e.pointerId
       }
       return
