@@ -22,7 +22,13 @@ Update the session history for the current session.
    - Replace the oldest of the current 3 with the new entry if needed.
    - If the new entry is the same date as an existing one, prepend it above that entry and drop the now-fourth entry.
 
-5. **Commit**
-   - Stage: `git add CLAUDE.md docs/SESSION_LOG.md`
+5. **Review `.claude/MENTAL_MODEL.md` for missing rules**
+   - For each bug fix in this session, ask: "Did this bug reveal an implicit rule that isn't already in MENTAL_MODEL?"
+   - Check the "What belongs here" criteria: real bug, hard-to-find state issue, non-obvious ownership contract, or conscious design choice over a simpler alternative.
+   - If any rules are missing, add them now. When in doubt, add — omissions are harder to recover from than extras.
+   - If MENTAL_MODEL was updated, include it in the staged files below.
+
+6. **Commit**
+   - Stage: `git add CLAUDE.md docs/SESSION_LOG.md .claude/MENTAL_MODEL.md`
    - Commit message: `docs: update session log YYYY-MM-DD`
    - Push to the current branch.

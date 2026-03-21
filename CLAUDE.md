@@ -24,6 +24,15 @@ Before writing or modifying any code, consult the relevant documents.
 Create a new ADR when a design choice is non-obvious or hard to reverse.
 Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 
+## After fixing a bug
+
+After every bug fix, **before committing**, ask:
+> "Did this bug exist because an implicit rule was missing or misunderstood?"
+
+If yes → add the rule to `.claude/MENTAL_MODEL.md` in the same commit.
+Use the criteria in MENTAL_MODEL's "What belongs here" section.
+When in doubt, add it — stale entries are easier to clean up than missing ones.
+
 ## Development commands
 
 ```bash
