@@ -25,7 +25,7 @@ BFF (Node.js) — auth, aggregation, routing
    └── Geometry Service — graph eval, STEP import, export
 ```
 
-### Phase A — BFF skeleton + Scene persistence *(next)*
+### Phase A — BFF skeleton + Scene persistence ✅ *2026-03-21*
 
 | Task | Details | ADR |
 |------|---------|-----|
@@ -35,8 +35,9 @@ BFF (Node.js) — auth, aggregation, routing
 | TransformGraph persistence | Adjacency list: `TransformNode[]` + `TransformEdge[]`; ROS frame + quaternions | ADR-016 |
 | `SceneService` → HTTP client | Replace in-memory CRUD with BFF REST calls | ADR-015 |
 | Existing frontend behaviour unchanged | Client-complete fallback while BFF is wired up | ADR-015 |
+| **`VITE_BFF_URL` env var** | GitHub Pages cannot run server-side code. BFF must be deployed separately (Railway / Render / Fly.io etc.). `BffClient` baseUrl should default to `import.meta.env.VITE_BFF_URL \|\| '/api'` so the production frontend points to the hosted BFF while the dev Vite proxy still works. | ADR-015 |
 
-### Phase B — Geometry Service + WebSocket + Node Editor prototype ★ UX checkpoint
+### Phase B — Geometry Service + WebSocket + Node Editor prototype ★ UX checkpoint *(next)*
 
 | Task | Details | ADR |
 |------|---------|-----|
@@ -89,6 +90,7 @@ Candidate tasks (held, not committed):
 
 | Item | Date |
 |------|------|
+| BFF Phase A — Express BFF scaffold, SQLite scene persistence, TransformGraph storage (ADR-016), BffClient, SceneSerializer, Vite proxy, pnpm workspace | 2026-03-21 |
 | Mobile touch support — Pointer Events API, `_activeDragPointerId`, mobile toolbar, canvas target guard, touch hover sync, face-extrude confirm on `pointerup` | 2026-03-21 |
 | Architecture design — BFF + microservices strategy, transform graph (SE(3) tree, ROS frames, quaternions) | 2026-03-21 (ADR-015, ADR-016) |
 | DDD Phase 6 — Sub-element selection (1/2/3 keys); Grab snap expanded to all geometry (ADR-014) | 2026-03-20 |

@@ -1,7 +1,8 @@
 # ADR-015: BFF + Microservices Architecture
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-03-20
+- **Implemented (Phase A)**: 2026-03-21
 - **References**: ADR-011, ADR-012, ADR-013
 
 ---
