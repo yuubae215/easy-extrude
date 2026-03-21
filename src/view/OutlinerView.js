@@ -89,9 +89,42 @@ export class OutlinerView {
     this._addBtn.addEventListener('click', () => {
       if (this._onAddCb) this._onAddCb()
     })
+
+    // ── Mobile drawer ──────────────────────────────────────────────────────
+    this._drawerOpen = false
+    this._applyLayout()
+    window.addEventListener('resize', () => this._applyLayout())
   }
 
   get width() { return 180 }
+
+  // ─── Mobile drawer ─────────────────────────────────────────────────────────
+
+  _isMobile() { return window.innerWidth < 768 }
+
+  _applyLayout() {
+    if (this._isMobile()) {
+      Object.assign(this._el.style, {
+        transition: 'transform 0.25s ease',
+        transform: this._drawerOpen ? 'translateX(0)' : 'translateX(-100%)',
+      })
+    } else {
+      Object.assign(this._el.style, {
+        transition: '',
+        transform: 'translateX(0)',
+      })
+      this._drawerOpen = false
+    }
+  }
+
+  openDrawer()  { this._drawerOpen = true;  this._el.style.transform = 'translateX(0)' }
+  closeDrawer() { this._drawerOpen = false; this._el.style.transform = 'translateX(-100%)' }
+  toggleDrawer() {
+    if (this._drawerOpen) this.closeDrawer(); else this.openDrawer()
+    return this._drawerOpen
+  }
+
+  get isDrawerOpen() { return this._drawerOpen }
 
   // ─── Callbacks ────────────────────────────────────────────────────────────
   onSelect(cb)  { this._onSelectCb  = cb }
