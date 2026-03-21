@@ -14,8 +14,8 @@ Claude must follow these when modifying code in this repository.
 - Ownership contracts between classes/modules that aren't obvious from the code
 - Decisions that were **consciously chosen** over a simpler alternative
 
-Do NOT add: general best practices, things already obvious from the code,
-or temporary notes about in-progress work (use a task/plan for those).
+> Do NOT add: general best practices, things already obvious from the code,
+> or temporary notes about in-progress work (use a task/plan for those).
 
 ### When to update
 
@@ -28,18 +28,18 @@ or temporary notes about in-progress work (use a task/plan for those).
 
 ### How to update
 
-1. Add/edit the relevant section below
-2. Commit together with the code change that motivated it
-3. If the rule is substantial, create an ADR first and link it here
+1. Add/edit the relevant section below using the **Principle + Concrete Rule** format.
+2. Commit together with the code change that motivated it.
+3. If the rule is substantial, create an ADR first and link it here.
 
 ---
 
-## Mode transition policy (ADR-008)
+## 1. Architecture & State Management
 
-`AppController.setMode(mode)` is the **single entry point** for all mode transitions.
+### Mode Transition Flow (ADR-008)
 
-Before calling `_switchActiveObject()`, always call `setMode('object')` first if `_selectionMode === 'edit'`.
-This ensures the current active object's visual state is cleaned up before the switch.
+- **Principle**: State transitions must flow through a single source of truth to ensure thorough cleanup of the previous state and proper initialization of the next.
+- **Concrete Rule**: `AppController.setMode(mode)` is the single entry point. Before calling `_switchActiveObject()`, always call `setMode('object')` first if `_selectionMode === 'edit'`. This guarantees in-progress operations are canceled and visual states (`setFaceHighlight(null)`, `clearExtrusionDisplay()`, `clearSketchRect()`) are cleared before the active object is swapped.
 
 ```js
 // Correct pattern when switching active objects from any mode
@@ -47,23 +47,16 @@ if (this._selectionMode === 'edit') this.setMode('object')
 // ... then _switchActiveObject(newId, true)
 ```
 
-Applies to: any function that adds objects, deletes the active object, or switches the active object.
-
 `setMode()` guarantees, in order:
 1. Cancel in-progress operations (grab, face drag, object drag)
-2. Clear active object visual state (`setFaceHighlight(null)`, `clearExtrusionDisplay()`, `clearSketchRect()`)
+2. Clear active object visual state
 3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFace`, `_cleanupEditSubstate()`)
 4. Dispatch to new mode — `instanceof Sketch` → Edit 2D, otherwise → Edit 3D
 
-## _objSelected must be restored when returning to Object mode
+### State Restoration on Mode Exit
 
-`_setObjectSelected(false)` is called on every Edit Mode entry. When `setMode('object')`
-is called to return from Edit Mode, `_objSelected` stays `false` unless explicitly restored.
-
-**Rule**: in the `mode === 'object'` branch of `setMode()`, if `_activeObj` exists and
-`_objSelected` is `false`, restore it to `true` and call `meshView.setObjectSelected(true)`.
-Without this, the mobile toolbar's Edit and Delete buttons stay disabled even though the
-object is still active.
+- **Principle**: Temporary state changes made by a specific mode must be explicitly reverted when exiting that mode to prevent UI desync.
+- **Concrete Rule**: `_objSelected` is set to `false` when entering Edit Mode. When returning to Object mode via `setMode('object')`, if `_activeObj` exists, you must manually restore `_objSelected = true` and call `meshView.setObjectSelected(true)`. Without this, the mobile toolbar's Edit and Delete buttons stay disabled.
 
 ```js
 if (this._activeObj && !this._objSelected) {
@@ -72,44 +65,19 @@ if (this._activeObj && !this._objSelected) {
 }
 ```
 
-## Mobile face-tap auto-starts extrude (no Extrude button needed)
+### Entity Capability Contracts (ADR-012, Phase 5-3)
 
-On mobile (`window.innerWidth < 768`), tapping a face in Edit 3D / face-select mode
-immediately calls `_startFaceExtrude(face)` and sets `_activeDragPointerId`.
-This mirrors how Grab works — select + drag in one gesture.
+- **Principle**: Determine available operations by the entity's class type, not a scalar property (like `dimension`). Immutable operations should return new instances and swap them in the model rather than mutating the original.
+- **Concrete Rule**: `instanceof Sketch` = 2D unextruded; `instanceof Cuboid` = 3D. `Sketch.extrude(height)` does **not** mutate the Sketch — it returns a new `Cuboid` reusing the same `id`, `name`, and `meshView`. Call `SceneService.extrudeSketch(id, height)` to perform the swap in `SceneModel`.
 
-**Rule**: the auto-start fires at the bottom of `_onPointerDown`, *after*
-`_handleEditClick`, only when:
-- `window.innerWidth < 768`
-- `editSubstate === '3d'` and `_editSelectMode === 'face'`
-- `!e.shiftKey` (shift-tap is for multi-select, not extrude)
-- at least one Face is in `editSelection` after the click
+  - `extrudeFace` signature: `(face: Face, savedFaceCorners, normal, dist)` — callers pass a `Face` object (`_dragFace`), not an index. `Face.index` is used where an index is still needed (e.g. `MeshView.setFaceHighlight`).
+  - `Cuboid` must always have: `move()`, `extrudeFace(face, ...)`, `faces: Face[6]`, `edges: Edge[12]`.
+  - `Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
 
-`_activeDragPointerId` must be set here too (same pointer id) so that
-`_onPointerUp`'s `wasDragging` guard fires `_confirmFaceExtrude` correctly.
+### Visual State Ownership
 
-The Extrude toolbar button is kept (maintains fixed button count) and doubles as
-a re-trigger after Cancel or for edge cases where auto-start did not fire.
-
-## Entity type contract (ADR-012, Phase 5-3)
-
-**Rule**: entity *type* (not a `dimension` field) determines which operations are available.
-`instanceof Sketch` = 2D unextruded. `instanceof Cuboid` = 3D.
-
-`Sketch.extrude(height)` does **not** mutate the Sketch. It returns a new `Cuboid` reusing
-the same `id`, `name`, and `meshView`. `SceneService.extrudeSketch(id, height)` performs the
-swap in SceneModel; after the swap `scene.activeObject` returns the Cuboid automatically.
-
-`extrudeFace` signature: `(face: Face, savedFaceCorners, normal, dist)` — callers pass a
-`Face` object (`_dragFace`), not an index. Face.index is used where an index is still needed
-(e.g. `MeshView.setFaceHighlight`).
-
-`Cuboid` must always have: `move()`, `extrudeFace(face, ...)`, `faces: Face[6]`, `edges: Edge[12]`.
-`Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
-
-## MeshView visual state ownership
-
-Each `visible` flag in `MeshView` has a single owner. Never set it elsewhere.
+- **Principle**: Each visual flag must have exactly one mutator function to prevent race conditions and scattered state updates.
+- **Concrete Rule**: Never set `visible` flags in `MeshView` outside their designated owners:
 
 | Element | Owner |
 |---------|-------|
@@ -117,12 +85,14 @@ Each `visible` flag in `MeshView` has a single owner. Never set it elsewhere.
 | `cuboid.visible` / `wireframe.visible` | `setVisible()` |
 | `boxHelper.visible` | `setObjectSelected()` |
 
-## Touch hover sync before edit click
+---
 
-`_hoveredFace`, `_hoveredVertex`, `_hoveredEdge` are updated only in `_onPointerMove`.
-On touch devices `pointermove` does **not** fire before `pointerdown`, so these are null
-when the user taps. `_onPointerDown` must re-run the hit test before calling
-`_handleEditClick`, or touch taps will never select sub-elements.
+## 2. Events & Interaction (Touch/Pointer)
+
+### Touch vs. Pointer Event Asymmetry
+
+- **Principle**: Do not rely on `pointermove` firing before `pointerdown` for hover states or hit-testing, as touch devices combine these into a single tap interaction.
+- **Concrete Rule**: In `_onPointerDown`, you must manually re-run hit tests (e.g. `_hitFace()`) before calling `_handleEditClick`. Otherwise, touch taps will never successfully select sub-elements like faces or vertices.
 
 ```js
 // Required pattern at the bottom of _onPointerDown (edit mode path)
@@ -136,61 +106,15 @@ if (this._scene.editSubstate === '3d') {
 this._handleEditClick(e.shiftKey)
 ```
 
-## Face extrude confirm on pointerup, not pointerdown
+### Gesture-Based Interaction Priority (Mobile)
 
-`_confirmFaceExtrude()` is called in `_onPointerUp`, **not** `_onPointerDown`.
+- **Principle**: Mobile interactions should prioritize combined gesture flows (tap + drag) over multi-step button clicks for primary spatial actions.
+- **Concrete Rule**: On mobile (`innerWidth < 768`), tapping a face in Edit 3D auto-starts extrude. In `_onPointerDown`, after `_handleEditClick`, call `_startFaceExtrude(face)` and set `_activeDragPointerId`. The auto-start fires only when: `editSubstate === '3d'`, `_editSelectMode === 'face'`, `!e.shiftKey`, and at least one Face is in `editSelection` after the click. The Extrude toolbar button is kept (`disabled: true` during the drag) to maintain fixed button count.
 
-Reason: on mobile, the first canvas touch after `_startFaceExtrude()` is the *start* of a
-drag intended to set the distance. Confirming on `pointerdown` would lock in dist=0 before
-any movement. The correct flow is: pointerdown → set `_activeDragPointerId` →
-`_onPointerMove` updates dist → `_onPointerUp` confirms.
+### Interaction Confirmation Lifecycle
 
-On desktop this feels identical to the old click-to-confirm UX (confirm fires on release).
-
-Do **not** move confirm back to `_onPointerDown`.
-
-## OrbitControls must stay enabled during rect selection
-
-`_controls.enabled = false` must **not** be set when starting rect selection.
-
-Reason: orbit (right-click drag on desktop, two-finger on mobile) uses separate input that
-does not conflict with rect selection (left-click / single-finger). Disabling controls
-blocks orbit even though the inputs are mutually exclusive.
-
-Only `_objDragging` and `_sketch.drawing` legitimately need `_controls.enabled = false`
-(they capture the left/single-finger input fully and must prevent orbit from also reacting).
-
-When a second touch arrives while rect selection is active, cancel the rect selection and
-clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture.
-
-## Canvas target guard in _onPointerDown
-
-`_onPointerDown` is registered on `window` to support drag-outside-canvas. This means it
-also fires for taps on toolbar buttons, overlay menus, and other UI elements.
-
-Without a canvas guard, tapping a toolbar button fires `_handleEditClick` (which clears
-face/vertex/edge selection) **before** the button's `click` handler fires — because
-`pointerdown` precedes `click`. The classic failure: tapping the mobile Extrude button
-clears the face selection, so the `click` handler finds nothing to extrude.
-
-**Rule**: add a canvas target check immediately after the secondary-touch guard:
-
-```js
-if (e.target !== this._sceneView.renderer.domElement) return
-```
-
-This guard goes **before** the grab/faceExtrude active checks so that toolbar buttons
-always fall through to their own `click` listeners instead.
-
-## Face extrude confirm requires a canvas drag (wasDragging)
-
-`_onPointerUp` on `window` fires for toolbar button taps too. Without a guard,
-tapping the mobile Confirm button produces both a `pointerup` (which calls
-`_confirmFaceExtrude` via `_onPointerUp`) **and** a `click` (which calls it again via
-`onClick`), causing a double-confirm.
-
-**Rule**: only confirm face extrude in `_onPointerUp` when `_activeDragPointerId` was
-set for that pointer (i.e. a canvas drag was started in `_onPointerDown`):
+- **Principle**: Continuous drag interactions must lock in their final value on release (`pointerup`), not on initial touch (`pointerdown`), to correctly capture the movement delta.
+- **Concrete Rule**: `_confirmFaceExtrude()` belongs in `_onPointerUp`. Only confirm if `_activeDragPointerId === e.pointerId` (meaning a canvas drag actually occurred). This prevents double-confirms when the user taps toolbar buttons. Do **not** move confirm back to `_onPointerDown`.
 
 ```js
 const wasDragging = this._activeDragPointerId === e.pointerId
@@ -198,70 +122,55 @@ if (wasDragging) this._activeDragPointerId = null
 if (this._faceExtrude.active && wasDragging) { this._confirmFaceExtrude(); return }
 ```
 
-## Mobile toolbar must have a fixed button count per mode
+### Global Event vs. UI Event Delegation
 
-If buttons appear or disappear based on sub-state (e.g. Extrude only when face selected),
-the entire centered toolbar shifts left/right, making tapping unreliable.
+- **Principle**: Global `window` listeners must explicitly ignore pointer events originating from UI overlays to avoid intercepting and canceling clicks meant for buttons.
+- **Concrete Rule**: In `_onPointerDown`, immediately check `if (e.target !== this._sceneView.renderer.domElement) return` before processing grabs or extrudes. This guard goes **before** the grab/faceExtrude active checks so that toolbar button taps fall through to their own `click` listeners. Without this, `_handleEditClick` fires on every toolbar tap and clears face/vertex/edge selection before the button's `click` handler runs.
 
-**Rule**: every mode shows a **fixed set** of buttons. Unavailable actions use
-`disabled: true` (grayed out, no click handler) instead of being hidden.
+```js
+if (e.target !== this._sceneView.renderer.domElement) return
+```
 
-| Mode         | Buttons (always shown)                              |
-|--------------|-----------------------------------------------------|
-| Object       | Add · Edit · Delete                                 |
-| Edit 2D      | ← Object · Extrude                                  |
-| Edit 3D      | ← Object · Vertex · Edge · Face · Extrude           |
-| Grab active  | ✓ Confirm · ✕ Cancel                               |
-| Face extrude | (same as Edit 3D — no separate state)               |
+### Input Method Mutually Exclusive States
 
-Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No
-Confirm/Cancel toolbar state is shown because the user's finger is occupied with the drag.
-Extrude button stays in the toolbar but is `disabled` while `_faceExtrude.active` to
-prevent re-triggering.
+- **Principle**: Only disable global camera controls when a specific operation fully consumes the same input gesture (e.g. single-finger drag).
+- **Concrete Rule**: Do **not** set `_controls.enabled = false` for rect selection. Rect selection uses 1-finger/left-click; Orbit uses 2-finger/right-click — they are mutually exclusive inputs. Cancel rect selection only if a second touch arrives, then clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture. Only `_objDragging` and `_sketch.drawing` legitimately need `_controls.enabled = false`.
 
-## Mobile status is shown as a canvas overlay pill, not in the header
+---
 
-On desktop the status text lives in `_headerStatusEl` (centered in the header bar).
-On mobile the header is too narrow (hamburger + mode button + N-panel toggle already
-fill it), so `_headerStatusEl` is hidden and `_canvasStatusEl` (a semi-transparent pill
-floating at `top: 48px`, below the header) is shown instead.
+## 3. UI & Layout Adaptability
 
-`setStatus()` and `setStatusRich()` always update both elements; CSS visibility controlled
-by `_applyMobileLayout()` determines which one is visible.
+### Mobile Toolbar Stability
 
-The Nodes button (`_nodeEditorBtn`) is desktop-only and is hidden on mobile because
-NodeEditorView is not optimised for small screens and requires a BFF connection.
+- **Principle**: Mobile UI elements must maintain consistent layout dimensions and button placements to prevent misclicks caused by layout shifts during state changes.
+- **Concrete Rule**: Every mode must show a **fixed set** of buttons. Use `disabled: true` instead of hiding buttons that are temporarily unavailable.
 
-## Toast must be positioned above the mobile toolbar
+| Mode | Buttons (always shown) |
+|------|------------------------|
+| Object | Add · Edit · Delete |
+| Edit 2D | ← Object · Extrude |
+| Edit 3D | ← Object · Vertex · Edge · Face · Extrude |
+| Grab active | ✓ Confirm · ✕ Cancel |
+| Face extrude | (same as Edit 3D — no separate state) |
 
-The mobile floating toolbar occupies `bottom: 26px` with `height: 60px`, so its top edge is
-at **86px** from the bottom of the viewport. The info bar occupies `bottom: 0, height: 26px`.
+Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). The Extrude button stays visible but `disabled` while `_faceExtrude.active` to prevent re-triggering.
 
-`showToast()` uses a **fixed** `bottom` value. If that value is ≤ 86px the toast appears
-underneath (or partially inside) the mobile toolbar, making it invisible to the user even
-though it has `zIndex: 9999`.
+### Viewport-Aware Z-Index and Positioning
 
-**Rule**: `showToast` must call `_isMobile()` and use a larger `bottom` on mobile:
+- **Principle**: Floating UI elements must dynamically adjust their spatial positioning to avoid colliding with or being hidden behind device-specific layouts (like mobile toolbars).
+- **Concrete Rule**: The mobile floating toolbar's top edge is at **86px** from the bottom (`bottom: 26px` + `height: 60px`). `showToast()` must check `_isMobile()` and set `bottom: 96px` (instead of the desktop `64px`) so it appears above the toolbar. If the toolbar height or position changes, update both the toolbar CSS and this constant together.
 
 ```js
 const bottomPx = this._isMobile() ? '96px' : '64px'
 ```
 
-If the mobile toolbar height or position ever changes, update both the toolbar CSS and
-this constant together.
+On mobile, status text uses `_canvasStatusEl` (a semi-transparent pill at `top: 48px`) instead of `_headerStatusEl`, because the mobile header is too narrow. `setStatus()` and `setStatusRich()` always update both elements; `_applyMobileLayout()` controls which is visible via CSS. The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile.
 
-## MeshView.dispose() must mirror the constructor exactly
+---
 
-Every `scene.add(object)` call in the `MeshView` constructor MUST have a matching
-`scene.remove(object)` in `dispose()`, and every `new THREE.BufferGeometry()` stored on
-`this` must have a matching `geometry.dispose()`.
+## 4. Memory Management (Three.js)
 
-Root cause of the ghost-object bug: the pivot/snap system was refactored from two
-properties (`_pivotPoints`, `_hoveredPivotPoints`) to per-type objects (`_pivotVertPoints`,
-`_pivotEdgePoints`, etc.), but `dispose()` still referenced the old names. Because
-`undefined.dispose()` throws, `SceneService.deleteObject()` aborted before calling
-`removeObject()` and `emit('objectRemoved')` — leaving the object in the model (outliner
-intact, snap candidates still active) while only the main mesh was visually removed.
+### Object Lifecycle Symmetry
 
-**Rule**: whenever you add a new Three.js object to the scene in the constructor, immediately
-add the corresponding `scene.remove()` and `.dispose()` calls to `dispose()` in the same commit.
+- **Principle**: Every dynamic memory allocation or scene addition must have a strictly enforced, symmetrical teardown in its disposal method to prevent memory leaks and ghost objects.
+- **Concrete Rule**: In `MeshView`, every `scene.add()` or `new THREE.BufferGeometry()` in the constructor MUST have a matching `scene.remove()` and `.dispose()` in `dispose()`. Missing this breaks `SceneService.deleteObject()` — if `dispose()` throws (e.g. accessing a renamed property that is now `undefined`), `removeObject()` and `emit('objectRemoved')` never run, leaving the object in the model (outliner intact, snap candidates still active) while only the main mesh is visually removed. Whenever you add a new Three.js object in the constructor, add the teardown in the same commit.
