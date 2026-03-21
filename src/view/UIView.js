@@ -529,7 +529,9 @@ export class UIView {
       position: 'fixed',
       bottom: bottomPx,
       left: '50%',
-      transform: 'translateX(-50%)',
+      // Start below the visible area for slide-in
+      transform: 'translateX(-50%) translateY(20px)',
+      opacity: '0',
       background: '#2a2a2a',
       color: '#e8e8e8',
       border: `1px solid ${colors[type]}`,
@@ -539,14 +541,19 @@ export class UIView {
       fontFamily: 'system-ui, -apple-system, sans-serif',
       zIndex: '9999',
       pointerEvents: 'none',
-      opacity: '1',
-      transition: 'opacity 0.3s',
+      transition: 'opacity 0.25s ease, transform 0.25s ease',
       whiteSpace: 'nowrap',
     })
     document.body.appendChild(el)
+    // Slide in on next frame so the initial state is painted first
+    requestAnimationFrame(() => {
+      el.style.opacity = '1'
+      el.style.transform = 'translateX(-50%) translateY(0)'
+    })
     setTimeout(() => {
       el.style.opacity = '0'
-      el.addEventListener('transitionend', () => el.remove())
+      el.style.transform = 'translateX(-50%) translateY(20px)'
+      el.addEventListener('transitionend', () => el.remove(), { once: true })
     }, duration)
   }
 
