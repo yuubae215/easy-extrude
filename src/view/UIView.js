@@ -523,9 +523,11 @@ export class UIView {
     const colors = { info: '#4a90d9', warn: '#d9a84a', error: '#d94a4a' }
     const el = document.createElement('div')
     el.textContent = message
+    // On mobile the floating toolbar occupies bottom 26–86px, so lift the toast above it.
+    const bottomPx = this._isMobile() ? '96px' : '64px'
     Object.assign(el.style, {
       position: 'fixed',
-      bottom: '64px',
+      bottom: bottomPx,
       left: '50%',
       transform: 'translateX(-50%)',
       background: '#2a2a2a',
