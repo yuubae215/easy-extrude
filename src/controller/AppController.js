@@ -159,6 +159,10 @@ export class AppController {
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
 
+    // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
+    /** @type {number|null} pointerId of the active edit drag; null when idle */
+    this._activeDragPointerId = null
+
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
     uiView.onModeChange(mode => this.setMode(mode))
@@ -357,12 +361,15 @@ export class AppController {
 
   // ─── Event binding ─────────────────────────────────────────────────────────
   _bindEvents() {
-    window.addEventListener('mousemove', e => this._onMouseMove(e))
-    window.addEventListener('mousedown', e => this._onMouseDown(e))
-    window.addEventListener('mouseup',   e => this._onMouseUp(e))
-    window.addEventListener('keydown',   e => this._onKeyDown(e))
-    window.addEventListener('keyup',     e => this._onKeyUp(e))
-    window.addEventListener('wheel',     e => this._onWheel(e), { passive: false })
+    // Pointer Events unify mouse, touch, and stylus input
+    window.addEventListener('pointermove', e => this._onPointerMove(e))
+    window.addEventListener('pointerdown', e => this._onPointerDown(e))
+    window.addEventListener('pointerup',   e => this._onPointerUp(e))
+    window.addEventListener('keydown',     e => this._onKeyDown(e))
+    window.addEventListener('keyup',       e => this._onKeyUp(e))
+    window.addEventListener('wheel',       e => this._onWheel(e), { passive: false })
+    // Prevent browser context menu on long-press (touch) and right-click
+    window.addEventListener('contextmenu', e => e.preventDefault())
   }
 
   // ─── Raycasting ────────────────────────────────────────────────────────────
@@ -432,6 +439,93 @@ export class AppController {
     this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '')
   }
 
+  // ─── Mobile toolbar ────────────────────────────────────────────────────────
+
+  /** Rebuilds the mobile floating toolbar to reflect current app state. */
+  _updateMobileToolbar() {
+    const mode     = this._scene.selectionMode
+    const substate = this._scene.editSubstate
+
+    if (this._grab.active) {
+      this._uiView.setMobileToolbar([
+        { icon: '✓', label: 'Confirm', onClick: () => this._confirmGrab() },
+        { icon: '✕', label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
+      ])
+      return
+    }
+
+    if (this._faceExtrude.active) {
+      this._uiView.setMobileToolbar([
+        { icon: '✓', label: 'Confirm', onClick: () => this._confirmFaceExtrude() },
+        { icon: '✕', label: 'Cancel',  onClick: () => this._cancelFaceExtrude(), danger: true },
+      ])
+      return
+    }
+
+    if (mode === 'object') {
+      const buttons = [
+        {
+          icon: '＋', label: 'Add',
+          onClick: () => this._uiView.showAddMenu(
+            window.innerWidth / 2, window.innerHeight / 2,
+            () => this._addObject('box'),
+            () => this._addObject('sketch'),
+          ),
+        },
+        { icon: '⊞', label: 'Edit', onClick: () => this.setMode('edit') },
+      ]
+      if (this._objSelected) {
+        buttons.push({ icon: 'G',  label: 'Grab',   onClick: () => this._startGrab() })
+        buttons.push({ icon: '🗑', label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true })
+      }
+      this._uiView.setMobileToolbar(buttons)
+      return
+    }
+
+    if (substate === '2d-sketch') {
+      const hasRect = this._sketch.p1 && this._sketch.p2 &&
+        (Math.abs(this._sketch.p2.x - this._sketch.p1.x) > 0.01 ||
+         Math.abs(this._sketch.p2.y - this._sketch.p1.y) > 0.01)
+      const buttons = [
+        { icon: '←', label: 'Object', onClick: () => this.setMode('object') },
+      ]
+      if (hasRect) {
+        buttons.unshift({ icon: '✓', label: 'Extrude', onClick: () => this._enterExtrudePhase() })
+      }
+      this._uiView.setMobileToolbar(buttons)
+      return
+    }
+
+    if (substate === '2d-extrude') {
+      this._uiView.setMobileToolbar([
+        { icon: '✓', label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
+        { icon: '✕', label: 'Cancel',  onClick: () => this._cancelExtrudePhase(), danger: true },
+      ])
+      return
+    }
+
+    if (substate === '3d') {
+      const em          = this._editSelectMode
+      const hasFaceSel  = em === 'face' && [...this._scene.editSelection].some(x => x instanceof Face)
+      const buttons = [
+        { icon: '←', label: 'Object', onClick: () => this.setMode('object') },
+        { icon: '·', label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
+        { icon: '─', label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
+        { icon: '▢', label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
+      ]
+      if (hasFaceSel) {
+        buttons.push({
+          icon: 'E', label: 'Extrude',
+          onClick: () => {
+            const sel = [...this._scene.editSelection].filter(x => x instanceof Face)
+            if (sel.length > 0) this._startFaceExtrude(sel[0])
+          },
+        })
+      }
+      this._uiView.setMobileToolbar(buttons)
+    }
+  }
+
   // ─── Status bar helpers ────────────────────────────────────────────────────
 
   /** Single source of truth for "X selected" / '' status in Object Mode. */
@@ -473,6 +567,7 @@ export class AppController {
     }
     this._uiView.setCursor('default')
     this._refreshEditModeStatus()
+    this._updateMobileToolbar()
   }
 
   /**
@@ -564,6 +659,7 @@ export class AppController {
     } else {
       this._refreshEditModeStatus()
     }
+    this._updateMobileToolbar()
   }
 
   // ─── Mode management ───────────────────────────────────────────────────────
@@ -599,6 +695,7 @@ export class AppController {
     if (mode === 'object') {
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
+      this._updateMobileToolbar()
     } else {
       // edit mode — dispatch on entity type
       this._clearObjectSelection()
@@ -642,6 +739,7 @@ export class AppController {
         { text: 'Click and drag to draw rectangle', color: '#888' },
       ])
     }
+    this._updateMobileToolbar()
   }
 
   _enterEditMode3D() {
@@ -649,6 +747,7 @@ export class AppController {
     this._editSelectMode = 'face'
     this._uiView.updateMode('edit', '3d')
     this._refreshEditModeStatus()
+    this._updateMobileToolbar()
   }
 
   _enterExtrudePhase() {
@@ -681,6 +780,7 @@ export class AppController {
     this._applyExtrudePreview()
     this._uiView.updateMode('edit', '2d-extrude')
     this._updateExtrudePhaseStatus()
+    this._updateMobileToolbar()
   }
 
   _applyExtrudePreview() {
@@ -753,6 +853,7 @@ export class AppController {
     this._objSelected = sel
     if (this._meshView) this._meshView.setObjectSelected(sel)
     this._refreshObjectModeStatus()
+    this._updateMobileToolbar()
   }
 
   // ─── Rectangle selection helpers ──────────────────────────────────────────
@@ -908,6 +1009,7 @@ export class AppController {
     this._controls.enabled = false
     this._uiView.setCursor('grabbing')
     this._updateGrabStatus()
+    this._updateMobileToolbar()
   }
 
   _confirmGrab() {
@@ -924,6 +1026,7 @@ export class AppController {
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateNPanel()
+    this._updateMobileToolbar()
   }
 
   _cancelGrab() {
@@ -948,6 +1051,7 @@ export class AppController {
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateNPanel()
+    this._updateMobileToolbar()
   }
 
   _setGrabAxis(axis) {
@@ -1151,6 +1255,7 @@ export class AppController {
     fe.startPoint.copy(this._raycaster.ray.intersectPlane(fe.dragPlane, pt) ? pt : center)
     this._controls.enabled = false
     this._updateFaceExtrudeStatus()
+    this._updateMobileToolbar()
   }
 
   _applyFaceExtrude() {
@@ -1183,6 +1288,7 @@ export class AppController {
     this._uiView.clearExtrusionLabel()
     this._updateNPanel()
     this._refreshEditModeStatus()
+    this._updateMobileToolbar()
   }
 
   _cancelFaceExtrude() {
@@ -1198,6 +1304,7 @@ export class AppController {
     this._meshView.clearSnapDisplay()
     this._uiView.clearExtrusionLabel()
     this._refreshEditModeStatus()
+    this._updateMobileToolbar()
   }
 
   _updateFaceExtrudeStatus() {
@@ -1413,8 +1520,10 @@ export class AppController {
     this._grab.startMouse.copy(this._mouse)
   }
 
-  // ─── Mouse events ──────────────────────────────────────────────────────────
-  _onMouseMove(e) {
+  // ─── Pointer events (mouse + touch + stylus) ──────────────────────────────
+  _onPointerMove(e) {
+    // During a drag, only process the pointer that started it
+    if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
     this._updateMouse(e)
 
     if (this._grab.active) {
@@ -1597,7 +1706,10 @@ export class AppController {
     }
   }
 
-  _onMouseDown(e) {
+  _onPointerDown(e) {
+    // Ignore secondary touches while an edit drag is already active
+    if (this._activeDragPointerId !== null && e.pointerType === 'touch') return
+
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
@@ -1627,6 +1739,7 @@ export class AppController {
         this._sketch.p1 = pt.clone()
         this._sketch.p2 = pt.clone()
         this._controls.enabled = false
+        this._activeDragPointerId = e.pointerId
       }
       return
     }
@@ -1664,6 +1777,7 @@ export class AppController {
         this._objDragging      = true
         this._objCtrlDrag      = e.ctrlKey
         this._controls.enabled = false
+        this._activeDragPointerId = e.pointerId
         this._uiView.setCursor('grabbing')
 
         const camDir = new THREE.Vector3()
@@ -1683,6 +1797,7 @@ export class AppController {
         this._rectSel.startPx   = { x: e.clientX, y: e.clientY }
         this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
         this._controls.enabled  = false
+        this._activeDragPointerId = e.pointerId
       }
       return
     }
@@ -1691,8 +1806,9 @@ export class AppController {
     this._handleEditClick(e.shiftKey)
   }
 
-  _onMouseUp(e) {
+  _onPointerUp(e) {
     if (e.button !== 0) return
+    if (this._activeDragPointerId === e.pointerId) this._activeDragPointerId = null
     if (this._sketch.drawing) {
       this._sketch.drawing = false
       this._controls.enabled = true
@@ -1708,6 +1824,7 @@ export class AppController {
               { text: 'Sketch', bold: true, color: '#4fc3f7' },
               { text: 'Press Enter to extrude · Drag to redraw', color: '#888' },
             ])
+            this._updateMobileToolbar()
           }
         }
       }
@@ -1724,6 +1841,7 @@ export class AppController {
       this._objDragging  = false
       this._objCtrlDrag  = false
       this._controls.enabled = true
+      this._activeDragPointerId = null
       this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
       this._updateNPanel()
     }
