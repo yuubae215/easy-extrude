@@ -1,39 +1,39 @@
-# Domain Layer — 純粋エンティティ
+# Domain Layer — Pure Entities
 
-**責務**: ビジネスロジックとドメインエンティティの表現。
+**Responsibility**: Represent business logic and domain entities.
 
-ファイル: `Cuboid.js`, `Sketch.js`, `ImportedMesh.js`
+Files: `Cuboid.js`, `Sketch.js`, `ImportedMesh.js`
 
 ---
 
-## Meta Model: 完全な純粋性
+## Meta Model: Complete Purity
 
-このレイヤーのコードは **副作用を持ってはならない**。
+Code in this layer **must have no side effects**.
 
-| 禁止事項 | 理由 |
-|----------|------|
-| `import` from `three` | Three.js はレンダリング副作用。View 層の責務。 |
-| `window`, `document` への参照 | DOM は副作用。Controller/View の責務。 |
-| `fetch`, WebSocket, DB | I/O は副作用。Service 層の責務。 |
-| 外部状態の直接変更 | 予測不能な副作用。Service 経由で行う。 |
+| Prohibited | Reason |
+|------------|--------|
+| `import` from `three` | Three.js is a rendering side effect — belongs in View. |
+| References to `window` / `document` | DOM is a side effect — belongs in Controller/View. |
+| `fetch`, WebSocket, DB | I/O is a side effect — belongs in Service. |
+| Direct mutation of external state | Creates unpredictable side effects — go through Service. |
 
-## 依存方向
+## Dependency Direction
 
 ```
 Domain ← Model ← Service ← Controller ← View
 ```
 
-Domain は何にも依存しない。他の全層が Domain に依存する。
+Domain depends on nothing. Every other layer depends on Domain.
 
-## エンティティ契約 (ADR-009, ADR-010, ADR-012)
+## Entity Capability Contracts (ADR-009, ADR-010, ADR-012)
 
-- `instanceof Sketch` = 2D 未押し出し。操作: `extrude(height)`, `rename(name)`
-- `instanceof Cuboid` = 3D。操作: `move()`, `extrudeFace(face, ...)`, `rename(name)`
-- `instanceof ImportedMesh` = 任意三角形メッシュ（読み取り専用ジオメトリ）。操作: `rename(name)` のみ
-- `Sketch.extrude()` はミューテーションせず新しい `Cuboid` を返す
-- エンティティの型判定には `instanceof` を使い、`dimension` スカラーは使わない
+- `instanceof Sketch` = 2D, not yet extruded. Operations: `extrude(height)`, `rename(name)`
+- `instanceof Cuboid` = 3D. Operations: `move()`, `extrudeFace(face, ...)`, `rename(name)`
+- `instanceof ImportedMesh` = arbitrary triangle mesh (read-only geometry). Operations: `rename(name)` only
+- `Sketch.extrude()` must **not** mutate the Sketch — it returns a new `Cuboid`
+- Use `instanceof` for entity type dispatch; never use the `dimension` scalar
 
-## 楽観的ロック注記
+## Concurrency Note
 
-エンティティは `isProcessing` フラグを持たない。ロック管理は Service 層の責務。
-詳細は `docs/CONCURRENCY.md` §4 参照。
+Entities do not hold `isProcessing` flags. Lock management is the Service
+layer's responsibility. See `docs/CONCURRENCY.md` §4.

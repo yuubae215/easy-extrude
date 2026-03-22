@@ -1,48 +1,50 @@
-# View Layer — Three.js & DOM レンダリング
+# View Layer — Three.js & DOM Rendering
 
-**責務**: レンダリング、Three.js シーン管理、DOM UI。
+**Responsibility**: Rendering, Three.js scene management, DOM UI.
 
-ファイル: `MeshView.js`, `ImportedMeshView.js`, `SceneView.js`, `UIView.js`,
+Files: `MeshView.js`, `ImportedMeshView.js`, `SceneView.js`, `UIView.js`,
 `OutlinerView.js`, `GizmoView.js`, `NodeEditorView.js`
 
 ---
 
-## Meta Model: 副作用の集積地
+## Meta Model: The Side-Effect Sink
 
-View 層は Three.js・DOM 操作という「副作用の塊」である。
+The View layer is the designated home for Three.js and DOM side effects.
 
-| 許可 | 禁止 |
-|------|------|
-| `THREE.*` の直接操作 | ドメインロジック（`Cuboid.extrude()` 等の再実装） |
-| `document.*` の操作 | `SceneModel` への直接書き込み |
-| ビジュアル状態の保持 | Service メソッドの直接呼び出し（Controller 経由） |
+| Permitted | Prohibited |
+|-----------|------------|
+| Direct `THREE.*` manipulation | Domain logic (re-implementing `Cuboid.extrude()`, etc.) |
+| `document.*` operations | Direct writes to `SceneModel` |
+| Holding visual state | Calling Service methods directly (go through Controller) |
 
-## ビジュアル状態の所有権 (MENTAL_MODEL §1)
+## Visual State Ownership (MENTAL_MODEL §1)
 
-各ビジュアルフラグは **唯一の mutator 関数**が所有する:
+Each visual flag has **exactly one mutator method**:
 
-| 要素 | 所有者（メソッド） |
-|------|------------------|
+| Element | Owner method |
+|---------|-------------|
 | `hlMesh.visible` | `setFaceHighlight()` |
 | `cuboid.visible` / `wireframe.visible` | `setVisible()` |
 | `boxHelper.visible` | `setObjectSelected()` |
 
-これらのフラグを所有者メソッド以外から変更してはならない。
+Never set these flags outside their designated owner.
 
-## メモリ管理の対称性 (MENTAL_MODEL §4)
+## Memory Management Symmetry (MENTAL_MODEL §4)
 
-`constructor` 内の全 `scene.add()` と `new THREE.BufferGeometry()` は
-`dispose()` に対応する `scene.remove()` と `.dispose()` を持つこと。
-同じコミットで追加・削除を対称に実装する。
+Every `scene.add()` and `new THREE.BufferGeometry()` in the constructor must
+have a matching `scene.remove()` and `.dispose()` in `dispose()`. Add teardown
+in the same commit as the allocation.
 
-## モバイル UI の安定性 (MENTAL_MODEL §3)
+## Mobile UI Stability (MENTAL_MODEL §3)
 
-- 各モードで表示するボタンセットは固定。非活性時は `disabled` を使い `hidden` にしない。
-- `showToast()` は `_isMobile()` を確認して `bottom` を調整する（モバイル: `96px`）。
+- The visible button set is fixed per mode. Use `disabled` instead of hiding
+  buttons that are temporarily unavailable.
+- `showToast()` must check `_isMobile()` and set `bottom: 96px` (desktop:
+  `64px`) so the toast appears above the mobile toolbar.
 
-## 楽観的ロックの視覚フィードバック
+## Lock Feedback (Concurrency)
 
-Service 層が `isProcessing = true` を emit した場合、View は対象オブジェクトへの
-ポインターイベントを無効化し、ローディング UI を表示する責務を持つ。
-`isProcessing` フラグの判定ロジックは View に書かず、Controller から View へ
-メソッド呼び出しで委譲する。詳細は `docs/CONCURRENCY.md` §4 参照。
+When the Service emits `isProcessing = true`, the View is responsible for
+disabling pointer events on the affected object and showing a loading
+indicator. The `isProcessing` check logic must not live in the View — it is
+delegated via a Controller method call. See `docs/CONCURRENCY.md` §4.

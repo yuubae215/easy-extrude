@@ -1,52 +1,56 @@
-# Service Layer — 副作用・調整・ロック管理
+# Service Layer — Side Effects, Coordination & Lock Management
 
-**責務**: エンティティの永続化 (CRUD)、ドメイン間調整、BFF 通信、ロック管理。
+**Responsibility**: Entity persistence (CRUD), cross-domain coordination,
+BFF communication, and lock management.
 
-ファイル: `SceneService.js`, `SceneSerializer.js`, `BffClient.js`
+Files: `SceneService.js`, `SceneSerializer.js`, `BffClient.js`
 
 ---
 
-## Meta Model: 副作用を許容する唯一の内部層
+## Meta Model: The Permitted Side-Effect Boundary
 
-Service 層は「副作用」を許容する。ただし Three.js レンダリングは View 層の責務。
+The Service layer is the only internal layer that may produce side effects.
+Three.js rendering, however, remains the View layer's responsibility.
 
-| 許可 | 禁止 |
-|------|------|
-| `SceneModel` の読み書き | `THREE.Mesh` の直接生成 |
+| Permitted | Prohibited |
+|-----------|------------|
+| Read/write `SceneModel` | Direct `THREE.Mesh` creation |
 | `fetch` / WebSocket | `document.querySelector` |
-| `EventEmitter.emit()` | ビジネスロジックの外部ロケーション（Domain 層へ） |
-| ロックフラグ管理 | エンティティ上の `isProcessing` フラグ（Service が持つ） |
+| `EventEmitter.emit()` | Business logic duplicated outside Domain |
+| Lock flag management | `isProcessing` flags on entities (Service owns them) |
 
-## Observable パターン (ADR-013)
+## Observable Pattern (ADR-013)
 
-`SceneService` はイベントを emit する:
+`SceneService` emits events:
 - `objectAdded`, `objectRemoved`, `objectRenamed`, `activeChanged`
 
-Controller は subscribe してのみ View を更新する。Service から直接 View を呼ばない。
+The Controller subscribes and updates the View only in response to these
+events. The Service must never call View methods directly.
 
-## ロック管理の責務
+## Lock Ownership
 
-### 楽観的ロック（高頻度操作）
-Grab / 選択更新などのリアルタイム操作はロックなし。Service は即座に `SceneModel` へコミットする。
+### Optimistic lock (high-frequency operations)
+Grab / selection updates are lock-free. The Service commits to `SceneModel`
+immediately, without waiting.
 
-### 悲観的ロック（整合性クリティカル操作）
+### Pessimistic lock (consistency-critical operations)
 ```js
-async function heavyServiceOperation(id) {
+async heavyServiceOperation(id) {
   this._isProcessing = true
   try {
-    // ... 複数エンティティにまたがる不可分な処理
+    // ... atomic work spanning multiple entities
   } finally {
     this._isProcessing = false
     this.emit('processingDone')
   }
 }
 ```
-`isProcessing` は Service が保持し、View が監視してUIを無効化する。
+`isProcessing` is owned by the Service and observed by the View to disable UI.
+See `docs/CONCURRENCY.md` §3–4.
 
-詳細は `docs/CONCURRENCY.md` §3–4 参照。
+## Entity Factory Ownership (ADR-011)
 
-## エンティティ生成 (ADR-011)
-
-エンティティの `new Cuboid()` / `new Sketch()` / `new ImportedMesh()` は必ず
-`SceneService` 内のファクトリメソッド（`createBox`, `createSketch`,
-`createImportedMesh`）経由で行う。Controller や View から直接 `new` しない。
+`new Cuboid()` / `new Sketch()` / `new ImportedMesh()` must always go through
+factory methods in `SceneService` (`createBox`, `createSketch`,
+`createImportedMesh`). Controllers and Views must never call `new` directly on
+domain entities.

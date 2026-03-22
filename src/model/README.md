@@ -1,38 +1,39 @@
-# Model Layer — 純粋計算ロジック & アプリケーション状態
+# Model Layer — Pure Computation & Application State
 
-**責務**: ジオメトリ計算（ステートレス純粋関数）とシーン状態の集約ルート。
+**Responsibility**: Geometry computation (stateless pure functions) and the
+scene-state aggregate root.
 
-ファイル: `CuboidModel.js`, `SceneModel.js`
+Files: `CuboidModel.js`, `SceneModel.js`
 
 ---
 
-## Meta Model: 計算と状態の分離
+## Meta Model: Separate Computation from State
 
-| ファイル | 分類 | ルール |
-|----------|------|--------|
-| `CuboidModel.js` | 純粋計算 | 副作用禁止。同じ入力に対して常に同じ出力を返すこと。 |
-| `SceneModel.js` | 集約ルート（状態） | ドメインオブジェクトの正規コレクション。Three.js 禁止。 |
+| File | Classification | Rule |
+|------|---------------|------|
+| `CuboidModel.js` | Pure computation | No side effects. Same input must always produce the same output. |
+| `SceneModel.js` | Aggregate root (state) | Canonical collection of domain objects. No Three.js. |
 
-## CuboidModel の純粋性制約
+## CuboidModel Purity Constraint
 
 ```js
-// Good — 純粋関数
+// Good — pure function
 export function computeGeometry(params) { return { vertices, indices } }
 
-// Bad — 副作用あり（禁止）
+// Bad — side effect (forbidden)
 export function computeGeometry(params) {
-  scene.add(new THREE.Mesh(...))  // Three.js 参照 → View 層へ移動せよ
+  scene.add(new THREE.Mesh(...))  // Three.js reference → move to View layer
 }
 ```
 
-## SceneModel の集約ルール (ADR-008)
+## SceneModel Aggregate Rules (ADR-008)
 
-- `SceneModel` はドメインエンティティの唯一の正規コレクション
-- モードとサブステート (`selectionMode`, `editSubstate`) の正規ソース
-- `setMode()` を経由しない状態遷移は禁止（`MENTAL_MODEL.md` §1 参照）
+- `SceneModel` is the single canonical collection of domain entities
+- It is the canonical source for mode and substate (`selectionMode`, `editSubstate`)
+- State transitions that bypass `setMode()` are forbidden (see `MENTAL_MODEL.md` §1)
 
-## 楽観的ロック注記
+## Concurrency Note
 
-高頻度な `editSelection` 更新はロックフリー（楽観的ロック）。
-重い整合性操作（エクスポート等）では Service 層が `isProcessing` フラグを管理する。
-詳細は `docs/CONCURRENCY.md` §2–3 参照。
+High-frequency `editSelection` updates are lock-free (optimistic). Heavy
+consistency-critical operations (e.g. export) have their `isProcessing` flag
+managed by the Service layer. See `docs/CONCURRENCY.md` §2–3.
