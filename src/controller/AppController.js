@@ -57,6 +57,9 @@ export class AppController {
       }
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
+    this._service.on('geometryError', ({ message }) =>
+      this._uiView.showToast(`Geometry error: ${message}`)
+    )
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     this._sketch = {
@@ -805,8 +808,9 @@ export class AppController {
   }
 
   _applyExtrudePreview() {
+    const parsed = parseFloat(this._extrudePhase.inputStr)
     const height = this._extrudePhase.hasInput
-      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
     const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
     this._meshView.updateGeometry(corners)
@@ -823,8 +827,9 @@ export class AppController {
   }
 
   _confirmExtrudePhase() {
+    const parsed = parseFloat(this._extrudePhase.inputStr)
     const height = this._extrudePhase.hasInput
-      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
@@ -858,8 +863,9 @@ export class AppController {
   }
 
   _updateExtrudePhaseStatus() {
+    const parsed = parseFloat(this._extrudePhase.inputStr)
     const height = this._extrudePhase.hasInput
-      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
     const parts = [{ text: 'Extrude', bold: true, color: '#ffffff' }]
     if (this._extrudePhase.hasInput) {
@@ -1128,7 +1134,12 @@ export class AppController {
 
   _applyGrabFromInput() {
     this._grab.snapping = false
-    const dist    = parseFloat(this._grab.inputStr) || 0
+    const parsed = parseFloat(this._grab.inputStr)
+    if (this._grab.inputStr && isNaN(parsed)) {
+      this._uiView.showToast('Invalid number')
+      return
+    }
+    const dist    = isNaN(parsed) ? 0 : parsed
     const axisVec = this._getAxisVec(this._grab.axis)
     this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
   }
@@ -1298,7 +1309,12 @@ export class AppController {
 
   _applyFaceExtrudeFromInput() {
     this._faceExtrude.snapping = false
-    this._faceExtrude.dist = parseFloat(this._faceExtrude.inputStr) || 0
+    const parsed = parseFloat(this._faceExtrude.inputStr)
+    if (this._faceExtrude.inputStr && isNaN(parsed)) {
+      this._uiView.showToast('Invalid number')
+      return
+    }
+    this._faceExtrude.dist = isNaN(parsed) ? 0 : parsed
     this._applyFaceExtrude()
   }
 

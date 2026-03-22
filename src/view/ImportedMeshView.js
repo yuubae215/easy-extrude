@@ -44,6 +44,10 @@ export class ImportedMeshView {
    * @param {number[]} indices    flat triangle index array (may be empty)
    */
   updateGeometryBuffers(positions, normals, indices) {
+    if (positions.length % 3 !== 0) {
+      console.warn('[ImportedMeshView] positions.length is not a multiple of 3 — skipping update')
+      return
+    }
     this._geo.setAttribute(
       'position',
       new THREE.Float32BufferAttribute(positions, 3),

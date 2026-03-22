@@ -237,6 +237,10 @@ async function handleStepImport(session, { jobId, filename, data: base64 }) {
         const pos = face.position?.array ?? []
         const nrm = face.normal?.array   ?? []
         const idx = face.index?.array    ?? []
+        if (pos.length === 0 || pos.length % 3 !== 0) {
+          console.warn(`[SessionManager] STEP face has invalid position array (length=${pos.length}) — skipping`)
+          continue
+        }
         positions.push(...pos)
         normals.push(...nrm)
         indices.push(...idx.map(i => i + offset))

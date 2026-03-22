@@ -157,6 +157,7 @@ export class SceneService extends EventEmitter {
         obj.meshView.updateGeometryBuffers(positions, normals, indices)
       } catch (err) {
         console.error('[SceneService] Failed to apply geometry update:', err)
+        this.emit('geometryError', { objectId, message: err.message })
       }
       return
     }
