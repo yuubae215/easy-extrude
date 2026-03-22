@@ -143,14 +143,17 @@ if (e.target !== this._sceneView.renderer.domElement) return
 ### Mobile Toolbar Stability
 
 - **Principle**: Mobile UI elements must maintain consistent layout dimensions and button placements to prevent misclicks caused by layout shifts during state changes.
-- **Concrete Rule**: Every mode must show a **fixed set** of buttons. Use `disabled: true` instead of hiding buttons that are temporarily unavailable.
+- **Concrete Rule**: Every mode must show exactly **4 slots** (the width of Edit 3D, the widest mode). Within a mode, use `disabled: true` for temporarily unavailable actions. For modes that have fewer than 4 actions, pad with `{ spacer: true }` invisible placeholders so the total slot count stays 4 and the toolbar width never changes.
 
-| Mode | Buttons (always shown) |
-|------|------------------------|
-| Object | Add · Edit · Delete |
-| Edit 2D | ← Object · Extrude |
-| Edit 3D | ← Object · Vertex · Edge · Face |
-| Grab active | ✓ Confirm · ✕ Cancel |
+| Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
+|------|--------|--------|--------|--------|
+| Object | Add | Edit | Delete | *(spacer)* |
+| Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* |
+| Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* |
+| Edit 3D | ← Object | Vertex | Edge | Face |
+| Grab active | Confirm | Cancel | *(spacer)* | *(spacer)* |
+
+`{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
 Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No Extrude button is shown in Edit 3D.
 

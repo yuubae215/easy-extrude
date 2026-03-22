@@ -909,7 +909,18 @@ export class UIView {
    */
   setMobileToolbar(buttons) {
     this._mobileToolbarEl.innerHTML = ''
-    buttons.forEach(({ icon, label, onClick, active = false, danger = false, disabled = false, indicator = false }) => {
+    buttons.forEach(({ icon, label, onClick, active = false, danger = false, disabled = false, indicator = false, spacer = false }) => {
+      if (spacer) {
+        const placeholder = document.createElement('div')
+        Object.assign(placeholder.style, {
+          minWidth:   '52px',
+          minHeight:  '48px',
+          visibility: 'hidden',
+          flexShrink: '1',
+        })
+        this._mobileToolbarEl.appendChild(placeholder)
+        return
+      }
       const btn = document.createElement(indicator ? 'div' : 'button')
       const bg     = indicator ? 'rgba(79,195,247,0.06)' : disabled ? 'transparent'             : active ? 'rgba(79,195,247,0.15)' : danger ? 'rgba(192,57,43,0.18)' : 'rgba(255,255,255,0.06)'
       const border  = indicator ? 'rgba(79,195,247,0.18)' : disabled ? 'rgba(255,255,255,0.06)' : active ? 'rgba(79,195,247,0.5)'  : danger ? 'rgba(231,76,60,0.5)'  : 'rgba(255,255,255,0.12)'
