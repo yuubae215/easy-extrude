@@ -1,7 +1,21 @@
-# easy-extrude
+# 🏛️ easy-extrude — Core Architecture & Meta Mental Model
 
 Voxel-based 3D modeling app built with Three.js + Vite. Deployed to GitHub Pages.
 For project structure, MVC design, and features see `README.md`.
+
+## Constitutional Rules (read before any code change)
+
+1. **DDD Entity Core** — the design center is always the domain entities in
+   `src/domain/`. All other layers depend inward; domain depends on nothing.
+2. **Pure / Side-Effect Separation** — every function and class must be clearly
+   categorised as either a *pure computation* (deterministic, no I/O) or a
+   *side-effectful operation* (DOM, Three.js, network, state mutation). Never mix.
+3. **MVC coordination** — the Controller is thin; it translates input events
+   into Model/Service calls and View updates. Business logic lives in Domain;
+   rendering in View.
+4. **Concurrency strategy** — distinguish *optimistic* (real-time, non-blocking)
+   from *pessimistic* (consistency-critical, blocking) locking before
+   implementing any async or high-frequency operation. See `docs/CONCURRENCY.md`.
 
 ## Document navigation
 
@@ -18,6 +32,8 @@ Before writing or modifying any code, consult the relevant documents.
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
 | SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
 | mobile / touch | `docs/ROADMAP.md` (Mobile Support section) |
+| concurrency / async / locking / isProcessing | `docs/CONCURRENCY.md` |
+| validation / process / agent workflow / meta | `.claude/PROCESS_NOTES.md` |
 
 **`/adr <topic>`** — slash command to search the ADR index.
 
@@ -48,6 +64,7 @@ pnpm preview   # preview production build
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 @.claude/MENTAL_MODEL.md
+@.claude/PROCESS_NOTES.md
 
 ## Notes for changes
 
@@ -58,9 +75,9 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-22**: Validation framework — `/validate-all` slash command (`.claude/commands/validate-all.md`) orchestrating parallel SQA/QC/ADR/UX across all files. Full-repo run: 0 ADR violations, 3 CRITICAL SQA in `sessionManager.js` (un-awaited async). Phase C focused re-run: 3 ADR gaps (ImportedMesh entity, ws events, early-return pattern), silent Grab/Tab failure on ImportedMesh. Report: `docs/validation/2026-03-22-full-repo-validation.md`.
 - **2026-03-22**: BFF Phase C — `ImportedMeshView` (arbitrary triangle mesh, no edit mesh), `ImportedMesh` domain entity (`rename()` only), `SceneService.createImportedMesh()` + `_applyGeometryUpdate()` routing (auto-create on unknown objectId; `updateGeometryBuffers` for ImportedMesh), `OutlinerView.addObject(type)` (gray icon for 'imported'), `AppController` guards (Edit Mode + Grab blocked; mobile Edit button disabled).
 - **2026-03-21**: BFF Phase B — Geometry Service (`server/src/geometry/` DAG evaluator), WebSocket session (`/api/ws`, `SessionManager`), STEP import (`POST /api/import/step`), `WsChannel` + `BffClient.openWs()`, `SceneService.openGeometryChannel()`, `NodeEditorView` (SVG DAG panel), UIView header Nodes button, ADR-017 Accepted.
-- **2026-03-21**: BFF Phase A — Express BFF (`server/`) + SQLite scene persistence. `BffClient`, `SceneSerializer`, `SceneService.connectBff/saveScene/loadScene/listScenes`. Vite proxy for `/api`. pnpm workspace. ADR-015 + ADR-016 Accepted.
 - **2026-03-21**: Bug fixes — face highlight on touch (fresh raycast in `_onPointerDown`), full-screen blue flash (`-webkit-tap-highlight-color`), face extrude confirmed at dist=0 on touch (deferred confirm to `_onPointerUp`), OrbitControls blocked by rect selection (`_controls` no longer disabled for rect sel; second-touch cancels rect sel).
 - **2026-03-21**: Architecture design — BFF + microservices strategy established. Decided to limit the frontend to View + Controller only, consolidating geometry computation and STEP import on the server side. Node.js BFF / REST+WebSocket / Geometry Service (server-side graph computation) recorded in ADR-015. Transform graph (SE(3) tree, ROS frames, quaternions) recorded in ADR-016. STEP import to start with `occt-import-js` in Phase B, migrating to `opencascade.js` or a Python service if B-rep access is needed.
 - **2026-03-20**: DDD Phase 5-1 — Added `src/graph/Vertex.js`. `Cuboid`/`Sketch` hold `vertices: Vertex[]` with `get corners()` for backward compatibility. ADR-012 Accepted.
