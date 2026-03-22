@@ -1,7 +1,21 @@
-# easy-extrude
+# 🏛️ easy-extrude — Core Architecture & Meta Mental Model
 
 Voxel-based 3D modeling app built with Three.js + Vite. Deployed to GitHub Pages.
 For project structure, MVC design, and features see `README.md`.
+
+## Constitutional Rules (read before any code change)
+
+1. **DDD Entity Core** — the design center is always the domain entities in
+   `src/domain/`. All other layers depend inward; domain depends on nothing.
+2. **Pure / Side-Effect Separation** — every function and class must be clearly
+   categorised as either a *pure computation* (deterministic, no I/O) or a
+   *side-effectful operation* (DOM, Three.js, network, state mutation). Never mix.
+3. **MVC coordination** — the Controller is thin; it translates input events
+   into Model/Service calls and View updates. Business logic lives in Domain;
+   rendering in View.
+4. **Concurrency strategy** — distinguish *optimistic* (real-time, non-blocking)
+   from *pessimistic* (consistency-critical, blocking) locking before
+   implementing any async or high-frequency operation. See `docs/CONCURRENCY.md`.
 
 ## Document navigation
 
@@ -18,6 +32,7 @@ Before writing or modifying any code, consult the relevant documents.
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
 | SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
 | mobile / touch | `docs/ROADMAP.md` (Mobile Support section) |
+| concurrency / async / locking / isProcessing | `docs/CONCURRENCY.md` |
 | validation / process / agent workflow / meta | `.claude/PROCESS_NOTES.md` |
 
 **`/adr <topic>`** — slash command to search the ADR index.
