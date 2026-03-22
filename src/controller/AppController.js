@@ -23,6 +23,7 @@ import {
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
 import { Sketch }          from '../domain/Sketch.js'
+import { ImportedMesh }    from '../domain/ImportedMesh.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -44,7 +45,10 @@ export class AppController {
     this._service = new SceneService(sceneView.scene)
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
-    this._service.on('objectAdded',   obj       => outlinerView?.addObject(obj.id, obj.name))
+    this._service.on('objectAdded',   obj       => {
+      const type = obj instanceof ImportedMesh ? 'imported' : 'cuboid'
+      outlinerView?.addObject(obj.id, obj.name, type)
+    })
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
     this._service.on('objectRenamed', (id, nm)  => {
       outlinerView?.setObjectName(id, nm)
@@ -462,7 +466,8 @@ export class AppController {
     if (mode === 'object') {
       // Always show the same 4 buttons; Edit/Move/Delete are disabled when no
       // object is selected. Fixed count prevents layout shifts on selection.
-      const hasObj = this._objSelected
+      const hasObj      = this._objSelected
+      const canEdit     = hasObj && !(this._activeObj instanceof ImportedMesh)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -472,7 +477,7 @@ export class AppController {
             () => this._addObject('sketch'),
           ),
         },
-        { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !hasObj },
+        { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
         { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
       ])
       return
@@ -648,6 +653,9 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
+    // ImportedMesh is read-only — silently block Edit Mode entry
+    if (mode === 'edit' && this._activeObj instanceof ImportedMesh) return
+
     // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._grab.active) this._cancelGrab()
     if (this._faceExtrude.active) this._cancelFaceExtrude()
@@ -962,6 +970,7 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
+    if (this._activeObj instanceof ImportedMesh) return
 
     this._grab.active          = true
     this._grab.axis            = null

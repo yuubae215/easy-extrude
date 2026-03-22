@@ -40,6 +40,8 @@ import { createInitialCorners } from '../model/CuboidModel.js'
 import { Vertex } from '../graph/Vertex.js'
 import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
 import { serializeScene, deserializeScene } from './SceneSerializer.js'
+import { ImportedMesh } from '../domain/ImportedMesh.js'
+import { ImportedMeshView } from '../view/ImportedMeshView.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -133,12 +135,26 @@ export class SceneService extends EventEmitter {
   /**
    * Applies a geometry.update message from the Geometry Service to the matching
    * scene object's MeshView.
+   *
+   * Phase C: If the objectId is not yet registered in the SceneModel, an
+   * ImportedMesh is auto-created (thin-client entity for server-side geometry).
+   *
    * @param {{ objectId: string, positions: number[], normals: number[], indices: number[] }} payload
    */
   _applyGeometryUpdate({ objectId, positions, normals, indices }) {
-    const obj = this._model.getObject(objectId)
-    if (!obj) return
-    // Convert flat arrays to Three.js-compatible typed arrays and update geometry
+    let obj = this._model.getObject(objectId)
+
+    // Auto-create an ImportedMesh when the server references an unknown object
+    if (!obj) {
+      obj = this.createImportedMesh(objectId, `Import_${objectId}`)
+    }
+
+    if (obj instanceof ImportedMesh) {
+      obj.meshView.updateGeometryBuffers(positions, normals, indices)
+      return
+    }
+
+    // Cuboid path: convert flat position array to corner Vector3 array
     const corners = _positionsToCorners(positions)
     if (corners) {
       obj.meshView.updateGeometry(corners)
@@ -358,6 +374,24 @@ export class SceneService extends EventEmitter {
     this._model.addObject(cuboid)
     this.emit('objectAdded', cuboid)
     return cuboid
+  }
+
+  /**
+   * Creates a thin-client ImportedMesh entity + ImportedMeshView and registers
+   * it in the scene. Used by _applyGeometryUpdate when the server references an
+   * object that does not yet exist locally.
+   *
+   * Emits: 'objectAdded'
+   * @param {string} id    object id (matches the server-side objectId)
+   * @param {string} name  display name
+   * @returns {import('../domain/ImportedMesh.js').ImportedMesh}
+   */
+  createImportedMesh(id, name) {
+    const meshView = new ImportedMeshView(this._threeScene)
+    const entity   = new ImportedMesh(id, name, meshView)
+    this._model.addObject(entity)
+    this.emit('objectAdded', entity)
+    return entity
   }
 
   /**
