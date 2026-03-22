@@ -153,15 +153,22 @@ if (e.target !== this._sceneView.renderer.domElement) return
 
 | Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
 |------|--------|--------|--------|--------|
-| Object | Add | Edit | Delete | *(spacer)* |
+| Object | Add | Edit | Grab | Delete |
 | Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* |
 | Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* |
 | Edit 3D | ← Object | Vertex | Edge | Face |
-| Grab active | Confirm | Cancel | *(spacer)* | *(spacer)* |
+| Grab active | Confirm | Stack | Cancel | *(spacer)* |
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
+Grab and Edit are disabled for `ImportedMesh`; Grab is additionally disabled for `MeasureLine`. All four Object-mode slots have consistent disabled states so slot positions never shift.
+
 Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No Extrude button is shown in Edit 3D.
+
+### Stack Mode (Grab)
+
+- **Principle**: When stacking objects, the Z position should be determined by what is physically below the grabbed object, not by cursor height.
+- **Concrete Rule**: Stack mode is toggled with **S** during grab (or the Stack toolbar button on mobile). When active, `_applyStackSnap()` runs after the normal grab movement each frame. It casts downward rays (`(0,0,-1)`) from the 4 bottom-face corners + centroid of the grabbed object and finds the highest intersection among non-grabbed objects. If a surface is found **below** the object (zOffset > 0), it shifts all grabbed objects' vertex positions by `+zOffset` so the bottom face rests exactly on that surface. Only upward correction is applied — the grabbed object is never pushed downward by stacking. The `_grab.stacking` flag tracks whether a stack surface was found this frame and drives the "Stack: ON" status indicator.
 
 ### Viewport-Aware Z-Index and Positioning
 

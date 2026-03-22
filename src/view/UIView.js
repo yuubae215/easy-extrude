@@ -16,6 +16,8 @@ export const ICONS = {
   vertex:  `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>`,
   edge:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="4" cy="12" r="3"/><circle cx="20" cy="12" r="3"/><rect x="7" y="11" width="10" height="2" rx="1"/></svg>`,
   face:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>`,
+  grab:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V7a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v4"/><path d="M14 10V5a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v5"/><path d="M10 9.5V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v10"/><path d="M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8H12a8 8 0 0 1-8-8v-5a2 2 0 1 1 4 0"/></svg>`,
+  stack:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="18" height="6" rx="1.5"/><rect x="5" y="8" width="14" height="5" rx="1"/><line x1="12" y1="3" x2="12" y2="8"/><polyline points="9 5 12 2 15 5"/></svg>`,
 }
 
 export class UIView {
