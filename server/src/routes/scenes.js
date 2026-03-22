@@ -17,12 +17,12 @@ import { listScenes, getScene, createScene, updateScene, deleteScene } from '../
 export const scenesRouter = Router()
 
 // GET /api/scenes
-scenesRouter.get('/', (_req, res) => {
-  res.json(listScenes())
+scenesRouter.get('/', async (_req, res) => {
+  res.json(await listScenes())
 })
 
 // POST /api/scenes
-scenesRouter.post('/', (req, res) => {
+scenesRouter.post('/', async (req, res) => {
   const { name, data } = req.body ?? {}
 
   if (typeof name !== 'string' || !name.trim()) {
@@ -41,19 +41,19 @@ scenesRouter.post('/', (req, res) => {
   }
 
   const id = `scene_${uuidv4().replace(/-/g, '').slice(0, 16)}`
-  const meta = createScene({ id, name: name.trim(), data })
+  const meta = await createScene({ id, name: name.trim(), data })
   res.status(201).json({ ...meta, data })
 })
 
 // GET /api/scenes/:id
-scenesRouter.get('/:id', (req, res) => {
-  const scene = getScene(req.params.id)
+scenesRouter.get('/:id', async (req, res) => {
+  const scene = await getScene(req.params.id)
   if (!scene) return res.status(404).json({ error: 'Scene not found' })
   res.json(scene)
 })
 
 // PUT /api/scenes/:id
-scenesRouter.put('/:id', (req, res) => {
+scenesRouter.put('/:id', async (req, res) => {
   const { name, data } = req.body ?? {}
   const patch = {}
 
@@ -72,14 +72,14 @@ scenesRouter.put('/:id', (req, res) => {
     patch.data = data
   }
 
-  const result = updateScene(req.params.id, patch)
+  const result = await updateScene(req.params.id, patch)
   if (!result) return res.status(404).json({ error: 'Scene not found' })
   res.json(result)
 })
 
 // DELETE /api/scenes/:id
-scenesRouter.delete('/:id', (req, res) => {
-  const deleted = deleteScene(req.params.id)
+scenesRouter.delete('/:id', async (req, res) => {
+  const deleted = await deleteScene(req.params.id)
   if (!deleted) return res.status(404).json({ error: 'Scene not found' })
   res.status(204).end()
 })
