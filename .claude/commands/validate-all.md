@@ -98,3 +98,47 @@ ranked by severity.
 /validate-all src/view/     # scope to one directory
 /validate-all src/service/SceneService.js   # single file
 ```
+
+---
+
+## Process lessons (updated as experience accumulates)
+
+### 2026-03-22 — Broad scan misses focused details
+
+**Observation**: The first full-repo run (35+ files per agent) found 15 issues.
+A follow-up focused run on 5 Phase C files found 9 additional issues that the
+broad run missed.
+
+**Root cause**: When an agent reads 35+ files, context budget is dominated by
+file content. Each file receives proportionally less "attention" for nuanced
+checklist items. The broad run confirms coarse-grained contracts ("does
+ImportedMesh follow ADR-011?") but misses subtle ones ("does the ADR *text*
+still accurately describe the entity union after Phase C added a third type?").
+
+**Recommended two-pass pattern**:
+
+1. **Pass 1 — broad scan** (`/validate-all`): catches structural violations,
+   obvious missing patterns, and security issues. Sufficient for most CI-style
+   checks.
+
+2. **Pass 2 — focused drill-down** (`/sqa <file>`, `/adr-validate <file>`,
+   etc.): run on any feature area that was recently added or significantly
+   changed (e.g., after each BFF Phase). Focus on:
+   - Newly introduced entity types or ADR-adjacent design choices
+   - Files where the broad scan found 0 issues but the feature is complex
+   - ADR gaps: ask "does the ADR *text* still describe reality, or just the intent?"
+
+**Trigger for Pass 2**: after any session that introduces a new domain entity,
+a new service method, or a new interaction pattern not covered by existing ADRs.
+
+### General heuristics
+
+- **ADR gaps vs ADR violations**: broad scans reliably catch *violations*
+  (code that contradicts an ADR). They are weaker at catching *gaps* (ADR text
+  that no longer describes the full reality). Gaps require reading the ADR prose
+  carefully alongside the new code, which needs a focused run.
+
+- **UX silent failures need focused review**: subtle UX regressions like "key
+  shortcut consumed but no-ops silently" require tracing a specific control flow
+  path. Broad UX scans confirm existing patterns pass; they rarely surface new
+  missing-feedback cases introduced by feature guards.
