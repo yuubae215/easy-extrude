@@ -18,6 +18,7 @@ Before writing or modifying any code, consult the relevant documents.
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
 | SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
 | mobile / touch | `docs/ROADMAP.md` (Mobile Support section) |
+| validation / process / agent workflow / meta | `.claude/PROCESS_NOTES.md` |
 
 **`/adr <topic>`** — slash command to search the ADR index.
 
@@ -48,6 +49,7 @@ pnpm preview   # preview production build
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 @.claude/MENTAL_MODEL.md
+@.claude/PROCESS_NOTES.md
 
 ## Notes for changes
 
