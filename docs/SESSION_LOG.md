@@ -4,6 +4,12 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-22**: Validation framework — designed and executed full-repository SQA/QC/ADR/UX validation.
+  - Created `/validate-all` slash command (`.claude/commands/validate-all.md`) that orchestrates all four validators in parallel against the entire codebase (not just recently changed files).
+  - Full-repo run (35 files, 15 ADRs): 0 ADR violations; 3 CRITICAL SQA issues in `server/src/ws/sessionManager.js` (un-awaited async DB calls causing data loss and crashes); 2 QC issues (layer violation in `SceneSerializer`, visual state ownership in `MeshView`); 4 UX issues (mobile toolbar count, A11Y labels).
+  - Phase C focused re-run (`ImportedMesh`, `ImportedMeshView`, `SceneService`, `OutlinerView`, `AppController`): 3 additional SQA, 3 QC, 3 ADR gaps (ImportedMesh entity type uncovered by ADR-009; `wsConnected`/`wsDisconnected` not in ADR-013; early-return guard pattern not in ADR-008), 3 UX issues (silent Grab/Tab failure on ImportedMesh; colour-only read-only indicator in Outliner).
+  - Report saved to `docs/validation/2026-03-22-full-repo-validation.md`. Total: 24 actionable items, 3 critical.
+
 - **2026-03-21**: BFF Phase B implementation — Geometry Service + WebSocket + Node Editor prototype (ADR-017).
   - **Geometry Service** (`server/src/geometry/`): `OperationGraph` DAG class (cycle detection via DFS, topo-sort), per-node evaluators (`cuboid`, `sketch`, `extrude`, `stepImport`, `transform`), `meshEncoder` for wire-protocol encoding.
   - **WebSocket session** (`server/src/ws/sessionManager.js`): `createSession`/`handleMessage`; operations: `session.resume`, `graph.node.add/remove`, `graph.edge.add/remove`, `graph.node.setParam`, `import.step`; graph auto-saved to DB on each mutation.
