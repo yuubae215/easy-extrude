@@ -75,6 +75,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-22**: MeasureLine snap measure tool — `MeasureLine` domain entity, `MeasureLineView` (dashed amber line + HTML distance label), `SceneService.createMeasureLine()`, measure placement mode in `AppController` (M key + Shift+A → Measure; V/E/F snap; click p1 → click p2 → confirm); Outliner ↔ amber icon; animation-loop label refresh. MENTAL_MODEL updated.
 - **2026-03-22**: Mobile toolbar button count unification (#17) — `{ spacer: true }` in `UIView.setMobileToolbar`; all modes padded to 4 slots in `AppController._updateMobileToolbar` (Object: 3+1 spacer; Edit 2D/Grab: 2+2 spacers; Edit 3D: unchanged). Eliminates layout-shift mis-taps on mode transition. MENTAL_MODEL updated with 4-slot table.
 - **2026-03-22**: Validation improvement plan (Priority 7) — `isNaN` guards for `parseFloat` in AppController; STEP face validation in `import.js`/`sessionManager.js`; `SceneService` emits `'geometryError'`; `ImportedMeshView` guards `positions.length % 3`. Item #17 (mobile toolbar count) deferred.
 - **2026-03-22**: Validation review & improvement plan — executed Phases A–F (24 items). CRITICAL async fixes in `sessionManager.js`; JSON.parse guards; WsChannel cleanup; layer fix (`_deserializeEntities`); ADR-008/009/013 gaps; UX toasts + A11Y ARIA labels. Plan: `docs/validation/2026-03-22-improvement-plan.md`.
