@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-22**: Validation review & improvement plan — reviewed `docs/validation/2026-03-22-full-repo-validation.md` (24 actionable items: 3 critical server async bugs, 2 high unguarded JSON.parse, 3 medium state-consistency, 5 QC/layer, 3 ADR gaps, 7 UX/A11Y). Produced prioritised 6-phase improvement plan at `docs/validation/2026-03-22-improvement-plan.md`.
+
 - **2026-03-22**: Validation framework — designed and executed full-repository SQA/QC/ADR/UX validation.
   - Created `/validate-all` slash command (`.claude/commands/validate-all.md`) that orchestrates all four validators in parallel against the entire codebase (not just recently changed files).
   - Full-repo run (35 files, 15 ADRs): 0 ADR violations; 3 CRITICAL SQA issues in `server/src/ws/sessionManager.js` (un-awaited async DB calls causing data loss and crashes); 2 QC issues (layer violation in `SceneSerializer`, visual state ownership in `MeshView`); 4 UX issues (mobile toolbar count, A11Y labels).
