@@ -50,7 +50,7 @@ BFF (Node.js) — auth, aggregation, routing
 | BffClient WebSocket | `WsChannel` class; `openWs()`/`closeWs()`; `SceneService.openGeometryChannel()` | ADR-017 |
 | **★ UX validation checkpoint** | Evaluate: latency feel, Node Editor usability, STEP import UX. Decide pivot direction for Phase C+. | — |
 
-### Phase C — STEP reference geometry + Cuboid coexistence
+### Phase C — STEP reference geometry + Cuboid coexistence ✅ *2026-03-22*
 
 **Goal**: STEPファイルをインポートしてシーンに参照ジオメトリとして表示しつつ、
 同一シーンで Cuboid のモデリングを続けられるようにする。
@@ -112,6 +112,7 @@ Candidate tasks:
 
 | Item | Date |
 |------|------|
+| BFF Phase C — ImportedMesh thin-client entity, ImportedMeshView, SceneService.createImportedMesh(), _applyGeometryUpdate() routing, OutlinerView type icon, AppController guards | 2026-03-22 |
 | BFF Phase B — Geometry Service (DAG evaluator), WebSocket session (ADR-017), Node Editor UI prototype, STEP import (REST + WS), BffClient WsChannel | 2026-03-21 |
 | BFF Phase A — Express BFF scaffold, SQLite scene persistence, TransformGraph storage (ADR-016), BffClient, SceneSerializer, Vite proxy, pnpm workspace | 2026-03-21 |
 | Mobile touch support — Pointer Events API, `_activeDragPointerId`, mobile toolbar, canvas target guard, touch hover sync, face-extrude confirm on `pointerup` | 2026-03-21 |
