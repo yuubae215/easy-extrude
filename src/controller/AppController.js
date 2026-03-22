@@ -482,6 +482,8 @@ export class AppController {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
+        { spacer: true },
+        { spacer: true },
       ])
       return
     }
@@ -502,6 +504,7 @@ export class AppController {
         },
         { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
         { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
+        { spacer: true },
       ])
       return
     }
@@ -515,6 +518,8 @@ export class AppController {
       this._uiView.setMobileToolbar([
         { icon: ICONS.back,    label: 'Object',  onClick: () => this.setMode('object') },
         { icon: ICONS.extrude, label: 'Extrude', onClick: () => this._enterExtrudePhase(), disabled: !hasRect },
+        { spacer: true },
+        { spacer: true },
       ])
       return
     }
@@ -523,6 +528,8 @@ export class AppController {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelExtrudePhase(), danger: true },
+        { spacer: true },
+        { spacer: true },
       ])
       return
     }
