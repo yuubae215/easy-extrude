@@ -61,6 +61,14 @@ importRouter.post('/step', upload.single('file'), async (req, res) => {
         const pos = face.position?.array ?? []
         const nrm = face.normal?.array   ?? []
         const idx = face.index?.array    ?? []
+        if (pos.length === 0) {
+          console.warn(`[import] mesh face has empty position array — skipping`)
+          continue
+        }
+        if (pos.length % 3 !== 0) {
+          console.warn(`[import] mesh face position.length (${pos.length}) is not a multiple of 3 — skipping`)
+          continue
+        }
         positions.push(...pos)
         normals.push(...nrm)
         indices.push(...idx.map(i => i + offset))

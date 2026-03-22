@@ -39,7 +39,7 @@ import { Sketch } from '../domain/Sketch.js'
 import { createInitialCorners } from '../model/CuboidModel.js'
 import { Vertex } from '../graph/Vertex.js'
 import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
-import { serializeScene, deserializeScene } from './SceneSerializer.js'
+import { serializeScene } from './SceneSerializer.js'
 import { ImportedMesh } from '../domain/ImportedMesh.js'
 import { ImportedMeshView } from '../view/ImportedMeshView.js'
 
@@ -96,6 +96,7 @@ export class SceneService extends EventEmitter {
    */
   openGeometryChannel() {
     if (!this._bff) return null
+    if (this._wsChannel?.isOpen) return this._wsChannel
     this._wsChannel = this._bff.openWs()
 
     const unsubReady = this._wsChannel.on('session.ready', () => {
@@ -156,6 +157,7 @@ export class SceneService extends EventEmitter {
         obj.meshView.updateGeometryBuffers(positions, normals, indices)
       } catch (err) {
         console.error('[SceneService] Failed to apply geometry update:', err)
+        this.emit('geometryError', { objectId, message: err.message })
       }
       return
     }
@@ -205,7 +207,7 @@ export class SceneService extends EventEmitter {
     try {
       const remote = await this._bff.getScene(sceneId)
       this._clearScene()
-      const { entities } = deserializeScene(remote.data, this._threeScene)
+      const entities = this._deserializeEntities(remote.data)
       for (const entity of entities) {
         this._model.addObject(entity)
         this.emit('objectAdded', entity)
@@ -233,6 +235,41 @@ export class SceneService extends EventEmitter {
       if (err instanceof BffUnavailableError) return []
       throw err
     }
+  }
+
+  /**
+   * Reconstructs live domain entities from a plain-JSON scene DTO.
+   * Kept in SceneService so entity creation (new Cuboid/Sketch/MeshView)
+   * stays within the service boundary (ADR-011).
+   * @param {object} data  Parsed `data` field from BFF
+   * @returns {(Cuboid|Sketch)[]}
+   */
+  _deserializeEntities(data) {
+    const entities = []
+    for (const dto of (data.objects ?? [])) {
+      if (dto.type === 'Cuboid') {
+        const vertices = dto.vertices.map(v =>
+          new Vertex(v.id, new Vector3(v.x, v.y, v.z))
+        )
+        const cuboid = new Cuboid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+        cuboid.description = dto.description ?? ''
+        cuboid.meshView.updateGeometry(cuboid.corners)
+        entities.push(cuboid)
+      } else if (dto.type === 'Sketch') {
+        const meshView = new MeshView(this._threeScene)
+        meshView.setVisible(false)
+        const sketch = new Sketch(dto.id, dto.name, meshView)
+        sketch.description = dto.description ?? ''
+        if (dto.sketchRect) {
+          sketch.sketchRect = {
+            p1: new Vector3(dto.sketchRect.p1.x, dto.sketchRect.p1.y, dto.sketchRect.p1.z),
+            p2: new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z),
+          }
+        }
+        entities.push(sketch)
+      }
+    }
+    return entities
   }
 
   /** Disposes all objects and resets the model (local). */

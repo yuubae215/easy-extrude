@@ -46,7 +46,7 @@ export class AppController {
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
-      const type = obj instanceof ImportedMesh ? 'imported' : 'cuboid'
+      const type = obj instanceof ImportedMesh ? 'imported' : obj instanceof Sketch ? 'sketch' : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type)
     })
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
@@ -57,6 +57,9 @@ export class AppController {
       }
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
+    this._service.on('geometryError', ({ message }) =>
+      this._uiView.showToast(`Geometry error: ${message}`)
+    )
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     this._sketch = {
@@ -370,15 +373,35 @@ export class AppController {
 
   // ─── Event binding ─────────────────────────────────────────────────────────
   _bindEvents() {
-    // Pointer Events unify mouse, touch, and stylus input
-    window.addEventListener('pointermove', e => this._onPointerMove(e))
-    window.addEventListener('pointerdown', e => this._onPointerDown(e))
-    window.addEventListener('pointerup',   e => this._onPointerUp(e))
-    window.addEventListener('keydown',     e => this._onKeyDown(e))
-    window.addEventListener('keyup',       e => this._onKeyUp(e))
-    window.addEventListener('wheel',       e => this._onWheel(e), { passive: false })
-    // Prevent browser context menu on long-press (touch) and right-click
-    window.addEventListener('contextmenu', e => e.preventDefault())
+    // Store bound references so dispose() can remove them.
+    this._handlers = {
+      pointermove: e => this._onPointerMove(e),
+      pointerdown: e => this._onPointerDown(e),
+      pointerup:   e => this._onPointerUp(e),
+      keydown:     e => this._onKeyDown(e),
+      keyup:       e => this._onKeyUp(e),
+      wheel:       e => this._onWheel(e),
+      contextmenu: e => e.preventDefault(),
+    }
+    window.addEventListener('pointermove', this._handlers.pointermove)
+    window.addEventListener('pointerdown', this._handlers.pointerdown)
+    window.addEventListener('pointerup',   this._handlers.pointerup)
+    window.addEventListener('keydown',     this._handlers.keydown)
+    window.addEventListener('keyup',       this._handlers.keyup)
+    window.addEventListener('wheel',       this._handlers.wheel, { passive: false })
+    window.addEventListener('contextmenu', this._handlers.contextmenu)
+  }
+
+  dispose() {
+    if (!this._handlers) return
+    window.removeEventListener('pointermove', this._handlers.pointermove)
+    window.removeEventListener('pointerdown', this._handlers.pointerdown)
+    window.removeEventListener('pointerup',   this._handlers.pointerup)
+    window.removeEventListener('keydown',     this._handlers.keydown)
+    window.removeEventListener('keyup',       this._handlers.keyup)
+    window.removeEventListener('wheel',       this._handlers.wheel)
+    window.removeEventListener('contextmenu', this._handlers.contextmenu)
+    this._handlers = null
   }
 
   // ─── Raycasting ────────────────────────────────────────────────────────────
@@ -653,8 +676,11 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh is read-only — silently block Edit Mode entry
-    if (mode === 'edit' && this._activeObj instanceof ImportedMesh) return
+    // ImportedMesh is read-only — block Edit Mode entry and notify the user
+    if (mode === 'edit' && this._activeObj instanceof ImportedMesh) {
+      this._uiView.showToast('Imported geometry is read-only')
+      return
+    }
 
     // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._grab.active) this._cancelGrab()
@@ -782,8 +808,9 @@ export class AppController {
   }
 
   _applyExtrudePreview() {
+    const parsed = parseFloat(this._extrudePhase.inputStr)
     const height = this._extrudePhase.hasInput
-      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
     const corners = buildCuboidFromRect(this._sketch.p1, this._sketch.p2, height)
     this._meshView.updateGeometry(corners)
@@ -800,8 +827,9 @@ export class AppController {
   }
 
   _confirmExtrudePhase() {
+    const parsed = parseFloat(this._extrudePhase.inputStr)
     const height = this._extrudePhase.hasInput
-      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
@@ -835,8 +863,9 @@ export class AppController {
   }
 
   _updateExtrudePhaseStatus() {
+    const parsed = parseFloat(this._extrudePhase.inputStr)
     const height = this._extrudePhase.hasInput
-      ? (parseFloat(this._extrudePhase.inputStr) || 0)
+      ? (isNaN(parsed) ? 0 : parsed)
       : this._extrudePhase.height
     const parts = [{ text: 'Extrude', bold: true, color: '#ffffff' }]
     if (this._extrudePhase.hasInput) {
@@ -970,7 +999,10 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
-    if (this._activeObj instanceof ImportedMesh) return
+    if (this._activeObj instanceof ImportedMesh) {
+      this._uiView.showToast('Imported geometry is read-only')
+      return
+    }
 
     this._grab.active          = true
     this._grab.axis            = null
@@ -1102,7 +1134,12 @@ export class AppController {
 
   _applyGrabFromInput() {
     this._grab.snapping = false
-    const dist    = parseFloat(this._grab.inputStr) || 0
+    const parsed = parseFloat(this._grab.inputStr)
+    if (this._grab.inputStr && isNaN(parsed)) {
+      this._uiView.showToast('Invalid number')
+      return
+    }
+    const dist    = isNaN(parsed) ? 0 : parsed
     const axisVec = this._getAxisVec(this._grab.axis)
     this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
   }
@@ -1272,7 +1309,12 @@ export class AppController {
 
   _applyFaceExtrudeFromInput() {
     this._faceExtrude.snapping = false
-    this._faceExtrude.dist = parseFloat(this._faceExtrude.inputStr) || 0
+    const parsed = parseFloat(this._faceExtrude.inputStr)
+    if (this._faceExtrude.inputStr && isNaN(parsed)) {
+      this._uiView.showToast('Invalid number')
+      return
+    }
+    this._faceExtrude.dist = isNaN(parsed) ? 0 : parsed
     this._applyFaceExtrude()
   }
 
@@ -2047,8 +2089,14 @@ export class AppController {
 
     // ── Normal keys ────────────────────────────────────────────────────────
     if (e.key === 'Tab') {
-      e.preventDefault()
-      this.setMode(this._scene.selectionMode === 'object' ? 'edit' : 'object')
+      // Only prevent default when the mode transition will actually occur.
+      // For ImportedMesh, setMode('edit') is a no-op — swallow the key only
+      // when switching to object mode or when the active object is editable.
+      const enteringEdit = this._scene.selectionMode === 'object'
+      if (!enteringEdit || !(this._activeObj instanceof ImportedMesh)) {
+        e.preventDefault()
+        this.setMode(enteringEdit ? 'edit' : 'object')
+      }
       return
     }
     if (e.key === 'n' || e.key === 'N') {

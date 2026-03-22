@@ -85,9 +85,16 @@ export class WsChannel {
   /** Whether the underlying WebSocket is currently open. */
   get isOpen() { return this._open }
 
-  /** Closes the WebSocket connection. */
+  /** Closes the WebSocket connection and removes all native event listeners. */
   close() {
-    this._ws?.close()
+    if (this._ws) {
+      this._ws.removeEventListener('open',    this._onWsOpen)
+      this._ws.removeEventListener('message', this._onWsMessage)
+      this._ws.removeEventListener('close',   this._onWsClose)
+      this._ws.removeEventListener('error',   this._onWsError)
+      this._ws.close()
+      this._ws = null
+    }
   }
 
   // ── Internals ──────────────────────────────────────────────────────────────
@@ -102,27 +109,24 @@ export class WsChannel {
     }
     this._ws = ws
 
-    ws.addEventListener('open', () => {
-      this._open = true
-      this._emit('open', {})
-    })
-
-    ws.addEventListener('message', (event) => {
+    this._onWsOpen    = () => { this._open = true; this._emit('open', {}) }
+    this._onWsMessage = (event) => {
       let msg
       try { msg = JSON.parse(event.data) } catch { return }
       const { type, sessionId, payload = {} } = msg
       if (sessionId) this._sessionId = sessionId
       this._emit(type, payload)
-    })
-
-    ws.addEventListener('close', (event) => {
+    }
+    this._onWsClose = (event) => {
       this._open = false
       this._emit('close', { code: event.code, reason: event.reason })
-    })
+    }
+    this._onWsError = () => { this._emit('error', { message: 'WebSocket error' }) }
 
-    ws.addEventListener('error', () => {
-      this._emit('error', { message: 'WebSocket error' })
-    })
+    ws.addEventListener('open',    this._onWsOpen)
+    ws.addEventListener('message', this._onWsMessage)
+    ws.addEventListener('close',   this._onWsClose)
+    ws.addEventListener('error',   this._onWsError)
   }
 
   _emit(type, payload) {

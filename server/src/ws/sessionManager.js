@@ -107,7 +107,7 @@ async function handleResume(session, { sceneId }) {
 
   let row
   try {
-    row = getScene(sceneId)
+    row = await getScene(sceneId)
   } catch (err) {
     session.sendError('DB_ERROR', err.message, 'session.resume')
     return
@@ -118,7 +118,7 @@ async function handleResume(session, { sceneId }) {
     return
   }
 
-  const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data
+  const data = row.data
   session.graph   = OperationGraph.fromJSON(data.operationGraph ?? {})
   session.sceneId = sceneId
 
@@ -237,6 +237,10 @@ async function handleStepImport(session, { jobId, filename, data: base64 }) {
         const pos = face.position?.array ?? []
         const nrm = face.normal?.array   ?? []
         const idx = face.index?.array    ?? []
+        if (pos.length === 0 || pos.length % 3 !== 0) {
+          console.warn(`[SessionManager] STEP face has invalid position array (length=${pos.length}) — skipping`)
+          continue
+        }
         positions.push(...pos)
         normals.push(...nrm)
         indices.push(...idx.map(i => i + offset))
@@ -280,14 +284,14 @@ function _streamGeometry(session, results) {
 }
 
 /** Persists the current graph state back to the scene DB (fire-and-forget). */
-function _autosave(session) {
+async function _autosave(session) {
   if (!session.sceneId || !session.graph) return
   try {
-    const row  = getScene(session.sceneId)
+    const row  = await getScene(session.sceneId)
     if (!row) return
-    const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data
+    const data = row.data
     data.operationGraph = session.graph.toJSON()
-    updateScene(session.sceneId, { data })
+    await updateScene(session.sceneId, { data })
   } catch (err) {
     console.warn('[SessionManager] autosave failed:', err.message)
   }
