@@ -42,6 +42,8 @@ import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
 import { serializeScene } from './SceneSerializer.js'
 import { ImportedMesh } from '../domain/ImportedMesh.js'
 import { ImportedMeshView } from '../view/ImportedMeshView.js'
+import { MeasureLine } from '../domain/MeasureLine.js'
+import { MeasureLineView } from '../view/MeasureLineView.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -432,6 +434,29 @@ export class SceneService extends EventEmitter {
   createImportedMesh(id, name) {
     const meshView = new ImportedMeshView(this._threeScene)
     const entity   = new ImportedMesh(id, name, meshView)
+    this._model.addObject(entity)
+    this.emit('objectAdded', entity)
+    return entity
+  }
+
+  /**
+   * Creates a MeasureLine entity + MeasureLineView and registers it in the scene.
+   *
+   * @param {THREE.Vector3} p1         start endpoint (world space)
+   * @param {THREE.Vector3} p2         end endpoint (world space)
+   * @param {THREE.Camera}  camera     used by MeasureLineView for label projection
+   * @param {THREE.WebGLRenderer} renderer  used for canvas bounds
+   * @param {HTMLElement}   container  DOM element for the HTML label
+   * @returns {import('../domain/MeasureLine.js').MeasureLine}
+   */
+  createMeasureLine(p1, p2, camera, renderer, container) {
+    const idx  = this._model.objects.size
+    const id   = `ml_${idx}_${Date.now()}`
+    const name = `Measure.${String(idx).padStart(3, '0')}`
+
+    const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
+    const entity   = new MeasureLine(id, name, p1, p2, meshView)
+    meshView.update(p1, p2)
     this._model.addObject(entity)
     this.emit('objectAdded', entity)
     return entity

@@ -138,7 +138,7 @@ export class OutlinerView {
   /**
    * @param {string} id
    * @param {string} name
-   * @param {'cuboid'|'sketch'|'imported'} [type='cuboid']
+   * @param {'cuboid'|'sketch'|'imported'|'measure'} [type='cuboid']
    */
   addObject(id, name, type = 'cuboid') {
     const { rowEl, eyeEl, nameEl } = this._createRow(id, name, type)
@@ -198,12 +198,18 @@ export class OutlinerView {
       lineHeight: '1',
     })
 
-    // Mesh icon — blue for editable objects, gray for read-only imports
+    // Mesh icon — blue for editable objects, gray for read-only imports, amber for measure
     const iconEl = document.createElement('span')
-    iconEl.textContent = '⬡'
-    if (type === 'imported') iconEl.title = 'Imported mesh (read-only)'
+    if (type === 'measure') {
+      iconEl.textContent = '↔'
+      iconEl.title = 'Measure line'
+    } else {
+      iconEl.textContent = '⬡'
+      if (type === 'imported') iconEl.title = 'Imported mesh (read-only)'
+    }
+    const iconColor = type === 'imported' ? '#888888' : type === 'measure' ? '#f9a825' : '#4fc3f7'
     Object.assign(iconEl.style, {
-      color: type === 'imported' ? '#888888' : '#4fc3f7',
+      color: iconColor,
       fontSize: '12px',
       flexShrink: '0',
       lineHeight: '1',

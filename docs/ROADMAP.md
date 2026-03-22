@@ -98,11 +98,11 @@ Candidate tasks:
 
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
+| 🔴 High | MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement | Medium | ADR-005 |
 | 🟡 Medium | Object hierarchy + Outliner tree view | Medium | ADR-005 |
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
 | 🟡 Medium | Export (OBJ / GLTF) | Low | Phase C via Geometry Service |
-| 🟢 Low | 1D objects: MeasureLine, reference line | Medium | ADR-005 |
 | 🟢 Low | Assembly groups (virtual TransformNode pivot) | Medium | ADR-016 |
 | 🟢 Low | Revolute / prismatic constraints in Node Editor | High | ADR-016 |
 
@@ -112,6 +112,7 @@ Candidate tasks:
 
 | Item | Date |
 |------|------|
+| MeasureLine — 1D measure tool: M key / Shift+A → Measure; V/E/F snap during placement; amber dashed line + HTML distance label; Outliner ↔ icon | 2026-03-22 |
 | BFF Phase C — ImportedMesh thin-client entity, ImportedMeshView, SceneService.createImportedMesh(), _applyGeometryUpdate() routing, OutlinerView type icon, AppController guards | 2026-03-22 |
 | BFF Phase B — Geometry Service (DAG evaluator), WebSocket session (ADR-017), Node Editor UI prototype, STEP import (REST + WS), BffClient WsChannel | 2026-03-21 |
 | BFF Phase A — Express BFF scaffold, SQLite scene persistence, TransformGraph storage (ADR-016), BffClient, SceneSerializer, Vite proxy, pnpm workspace | 2026-03-21 |

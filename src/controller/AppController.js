@@ -24,6 +24,7 @@ import {
 import { SceneService }    from '../service/SceneService.js'
 import { Sketch }          from '../domain/Sketch.js'
 import { ImportedMesh }    from '../domain/ImportedMesh.js'
+import { MeasureLine }     from '../domain/MeasureLine.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -46,7 +47,13 @@ export class AppController {
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
-      const type = obj instanceof ImportedMesh ? 'imported' : obj instanceof Sketch ? 'sketch' : 'cuboid'
+      const type = obj instanceof ImportedMesh
+        ? 'imported'
+        : obj instanceof MeasureLine
+          ? 'measure'
+          : obj instanceof Sketch
+            ? 'sketch'
+            : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type)
     })
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
@@ -60,6 +67,25 @@ export class AppController {
     this._service.on('geometryError', ({ message }) =>
       this._uiView.showToast(`Geometry error: ${message}`)
     )
+
+    // ── Measure placement state ────────────────────────────────────────────
+    // Active while the user is placing a MeasureLine (M key / Add → Measure).
+    // Phase 1: waiting for first click (p1 = null)
+    // Phase 2: p1 set, waiting for second click (preview line shown)
+    this._measure = {
+      active:       false,
+      /** @type {THREE.Vector3|null} fixed first endpoint */
+      p1:           null,
+      /** @type {THREE.Vector3|null} live cursor position (snapped) */
+      p2:           null,
+      /** @type {{label:string, position:THREE.Vector3, type:string}[]} */
+      snapTargets:  [],
+      snapping:     false,
+      /** @type {{label:string, position:THREE.Vector3, type:string}|null} */
+      snappedTarget: null,
+      /** Three.js Line for preview before entity is created */
+      previewLine:  null,
+    }
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     this._sketch = {
@@ -255,10 +281,11 @@ export class AppController {
 
   /**
    * Adds a new object of the given type.
-   * @param {'box'|'sketch'} [type='box']
+   * @param {'box'|'sketch'|'measure'} [type='box']
    */
   _addObject(type = 'box') {
-    if (type === 'sketch') { this._addSketchObject(); return }
+    if (type === 'sketch')  { this._addSketchObject();    return }
+    if (type === 'measure') { this._startMeasurePlacement(); return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
@@ -274,6 +301,123 @@ export class AppController {
     const obj = this._service.createSketch()
     this._switchActiveObject(obj.id, true)
     this.setMode('edit')  // enters Edit Mode · 2D
+  }
+
+  /** Enters measure placement mode: click p1, then p2 to create a MeasureLine. */
+  _startMeasurePlacement() {
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    this._measure.active       = true
+    this._measure.p1           = null
+    this._measure.p2           = null
+    this._measure.snapTargets  = []
+    this._measure.snapping     = false
+    this._measure.snappedTarget = null
+    this._uiView.setCursor('crosshair')
+    this._updateMeasureStatus()
+    this._updateMobileToolbar()
+  }
+
+  _cancelMeasure() {
+    if (!this._measure.active) return
+    this._measure.active       = false
+    this._measure.p1           = null
+    this._measure.p2           = null
+    this._measure.snapping     = false
+    this._measure.snappedTarget = null
+    this._measure.snapTargets  = []
+    if (this._measure.previewLine) {
+      this._sceneView.scene.remove(this._measure.previewLine)
+      this._measure.previewLine.geometry.dispose()
+      this._measure.previewLine.material.dispose()
+      this._measure.previewLine = null
+    }
+    this._meshView?.clearSnapDisplay()
+    this._uiView.setCursor('default')
+    this._refreshObjectModeStatus()
+    this._updateMobileToolbar()
+  }
+
+  _updateMeasureStatus() {
+    if (!this._measure.active) return
+    if (!this._measure.p1) {
+      this._uiView.setStatusRich([
+        { text: 'Measure', bold: true, color: '#f9a825' },
+        { text: 'Click to set start point', color: '#888' },
+        { text: 'ESC cancel', color: '#444' },
+      ])
+    } else {
+      const parts = [
+        { text: 'Measure', bold: true, color: '#f9a825' },
+        { text: 'Click to set end point', color: '#888' },
+      ]
+      if (this._measure.p2) {
+        const d = this._measure.p1.distanceTo(this._measure.p2)
+        const f = d < 1 ? `${(d * 100).toFixed(1)} cm` : `${d.toFixed(3)} m`
+        parts.push({ text: f, bold: true, color: '#f9a825' })
+      }
+      if (this._measure.snapping && this._measure.snappedTarget) {
+        parts.push({ text: `Snap: ${this._measure.snappedTarget.label}`, color: '#ff9800' })
+      }
+      parts.push({ text: 'ESC cancel', color: '#444' })
+      this._uiView.setStatusRich(parts)
+    }
+  }
+
+  /**
+   * Finds the nearest V/E/F snap target to the current mouse cursor.
+   * Returns the snapped world position (or ground-plane fallback).
+   * Also updates this._measure.snapping / snappedTarget / snapTargets.
+   */
+  _measurePickPoint() {
+    const SNAP_PX = 25
+    const mx = (this._mouse.x + 1) / 2 * innerWidth
+    const my = (-this._mouse.y + 1) / 2 * innerHeight
+
+    const targets = collectSnapTargets(this._scene.objects, 'all')
+    this._measure.snapTargets = targets
+
+    let bestDist   = SNAP_PX
+    let bestTarget = null
+    const camMat = this._camera.matrixWorldInverse
+    for (const t of targets) {
+      const camPos = t.position.clone().applyMatrix4(camMat)
+      if (camPos.z >= 0) continue
+      const s = this._projectToScreen(t.position)
+      const d = Math.hypot(mx - s.x, my - s.y)
+      if (d < bestDist) { bestDist = d; bestTarget = t }
+    }
+
+    if (bestTarget) {
+      this._measure.snapping      = true
+      this._measure.snappedTarget = bestTarget
+      return bestTarget.position.clone()
+    }
+
+    // Fallback: intersect ground plane (Z=0)
+    this._measure.snapping      = false
+    this._measure.snappedTarget = null
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const pt = new THREE.Vector3()
+    if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) return pt
+    return null
+  }
+
+  /** Builds or updates the dashed preview line shown during measure placement phase 2. */
+  _updateMeasurePreview(p1, p2) {
+    const pts = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]
+    if (!this._measure.previewLine) {
+      const geo  = new THREE.BufferGeometry()
+      const mat  = new THREE.LineDashedMaterial({
+        color: 0xf9a825, dashSize: 0.15, gapSize: 0.08, depthTest: false,
+      })
+      this._measure.previewLine = new THREE.Line(geo, mat)
+      this._measure.previewLine.renderOrder = 1
+      this._sceneView.scene.add(this._measure.previewLine)
+    }
+    const geo = this._measure.previewLine.geometry
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    geo.attributes.position.needsUpdate = true
+    this._measure.previewLine.computeLineDistances()
   }
 
   _deleteObject(id) {
@@ -414,7 +558,7 @@ export class AppController {
   _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const meshes = [...this._scene.objects.values()]
-      .filter(o => o.meshView.cuboid.visible)
+      .filter(o => !(o instanceof MeasureLine) && o.meshView.cuboid?.visible)
       .map(o => o.meshView.cuboid)
     const hits = this._raycaster.intersectObjects(meshes)
     if (!hits.length) return null
@@ -500,6 +644,7 @@ export class AppController {
             window.innerWidth / 2, window.innerHeight / 2,
             () => this._addObject('box'),
             () => this._addObject('sketch'),
+            () => this._addObject('measure'),
           ),
         },
         { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
@@ -683,9 +828,9 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh is read-only — block Edit Mode entry and notify the user
-    if (mode === 'edit' && this._activeObj instanceof ImportedMesh) {
-      this._uiView.showToast('Imported geometry is read-only')
+    // ImportedMesh and MeasureLine are read-only — block Edit Mode entry and notify the user
+    if (mode === 'edit' && (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine)) {
+      this._uiView.showToast('This object type is read-only')
       return
     }
 
@@ -1006,8 +1151,8 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
-    if (this._activeObj instanceof ImportedMesh) {
-      this._uiView.showToast('Imported geometry is read-only')
+    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine) {
+      this._uiView.showToast('This object type is read-only')
       return
     }
 
@@ -1602,6 +1747,33 @@ export class AppController {
       return
     }
 
+    // ── Measure placement hover ───────────────────────────────────────────
+    if (this._measure.active) {
+      const pt = this._measurePickPoint()
+      if (pt) {
+        this._measure.p2 = pt
+        // Show snap candidates on the active object's mesh view (if any)
+        if (this._meshView) {
+          this._meshView.showSnapCandidates(this._measure.snapTargets)
+          if (this._measure.snapping && this._measure.snappedTarget) {
+            this._meshView.showSnapLocked(
+              this._measure.snappedTarget.position,
+              this._measure.snappedTarget.type,
+              pt,
+            )
+          } else {
+            this._meshView.clearSnapLocked()
+          }
+        }
+        // Phase 2: draw preview line
+        if (this._measure.p1) {
+          this._updateMeasurePreview(this._measure.p1, pt)
+        }
+      }
+      this._updateMeasureStatus()
+      return
+    }
+
     if (this._scene.selectionMode === 'object') {
       if (this._rectSel.active) {
         this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
@@ -1795,6 +1967,50 @@ export class AppController {
         return
       }
       if (e.button === 2) { this._cancelFaceExtrude(); return }
+      return
+    }
+
+    // ── Measure placement clicks ──────────────────────────────────────────
+    if (this._measure.active) {
+      if (e.button === 2) { this._cancelMeasure(); return }
+      if (e.button === 0) {
+        const pt = this._measurePickPoint()
+        if (!pt) return
+        if (!this._measure.p1) {
+          // Phase 1 → Phase 2: record start point
+          this._measure.p1 = pt.clone()
+          this._updateMeasureStatus()
+        } else {
+          // Phase 2: record end point → create entity
+          const p2 = pt.clone()
+          if (this._measure.previewLine) {
+            this._sceneView.scene.remove(this._measure.previewLine)
+            this._measure.previewLine.geometry.dispose()
+            this._measure.previewLine.material.dispose()
+            this._measure.previewLine = null
+          }
+          this._meshView?.clearSnapDisplay()
+          this._measure.active = false
+          const p1 = this._measure.p1
+          this._measure.p1 = null
+          this._measure.p2 = null
+          this._measure.snapTargets  = []
+          this._measure.snapping     = false
+          this._measure.snappedTarget = null
+          // Create entity via service
+          const obj = this._service.createMeasureLine(
+            p1, p2,
+            this._camera,
+            this._sceneView.renderer,
+            document.body,
+          )
+          this._switchActiveObject(obj.id, true)
+          this._uiView.setCursor('default')
+          this._refreshObjectModeStatus()
+          this._updateMobileToolbar()
+        }
+        return
+      }
       return
     }
 
@@ -2013,6 +2229,12 @@ export class AppController {
       return
     }
 
+    // ── Measure placement keys ─────────────────────────────────────────────
+    if (this._measure.active) {
+      if (e.key === 'Escape') { this._cancelMeasure(); return }
+      return
+    }
+
     // ── Sketch phase keys ──────────────────────────────────────────────────
     if (this._scene.editSubstate === '2d-sketch') {
       if (e.key === 'Enter') {
@@ -2100,7 +2322,8 @@ export class AppController {
       // For ImportedMesh, setMode('edit') is a no-op — swallow the key only
       // when switching to object mode or when the active object is editable.
       const enteringEdit = this._scene.selectionMode === 'object'
-      if (!enteringEdit || !(this._activeObj instanceof ImportedMesh)) {
+      const isReadOnly = this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine
+      if (!enteringEdit || !isReadOnly) {
         e.preventDefault()
         this.setMode(enteringEdit ? 'edit' : 'object')
       }
@@ -2112,6 +2335,11 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
+      // M: start measure placement
+      if (e.key === 'm' || e.key === 'M') {
+        this._startMeasurePlacement()
+        return
+      }
       // Shift+D: duplicate active object and immediately grab (Blender-style)
       if (e.key === 'D' && e.shiftKey && this._objSelected) {
         e.preventDefault()
@@ -2131,6 +2359,7 @@ export class AppController {
         this._uiView.showAddMenu(screenX, screenY,
           () => this._addObject('box'),
           () => this._addObject('sketch'),
+          () => this._addObject('measure'),
         )
         return
       }
@@ -2171,6 +2400,10 @@ export class AppController {
       requestAnimationFrame(loop)
       this._sceneView.render()
       if (this._gizmoView) this._gizmoView.update()
+      // Keep MeasureLine HTML labels positioned over the correct screen pixel
+      for (const obj of this._scene.objects.values()) {
+        if (obj instanceof MeasureLine) obj.meshView.updateLabelPosition()
+      }
     }
     loop()
 
