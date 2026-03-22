@@ -142,6 +142,8 @@ export class SceneService extends EventEmitter {
    * @param {{ objectId: string, positions: number[], normals: number[], indices: number[] }} payload
    */
   _applyGeometryUpdate({ objectId, positions, normals, indices }) {
+    if (!objectId || !Array.isArray(positions)) return
+
     let obj = this._model.getObject(objectId)
 
     // Auto-create an ImportedMesh when the server references an unknown object
@@ -150,7 +152,11 @@ export class SceneService extends EventEmitter {
     }
 
     if (obj instanceof ImportedMesh) {
-      obj.meshView.updateGeometryBuffers(positions, normals, indices)
+      try {
+        obj.meshView.updateGeometryBuffers(positions, normals, indices)
+      } catch (err) {
+        console.error('[SceneService] Failed to apply geometry update:', err)
+      }
       return
     }
 
