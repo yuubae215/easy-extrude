@@ -135,8 +135,13 @@ export class OutlinerView {
 
   // ─── Object management ────────────────────────────────────────────────────
 
-  addObject(id, name) {
-    const { rowEl, eyeEl, nameEl } = this._createRow(id, name)
+  /**
+   * @param {string} id
+   * @param {string} name
+   * @param {'cuboid'|'sketch'|'imported'} [type='cuboid']
+   */
+  addObject(id, name, type = 'cuboid') {
+    const { rowEl, eyeEl, nameEl } = this._createRow(id, name, type)
     this._listEl.appendChild(rowEl)
     this._items.set(id, { rowEl, eyeEl, nameEl, visible: true })
   }
@@ -171,7 +176,7 @@ export class OutlinerView {
 
   // ─── Row builder ──────────────────────────────────────────────────────────
 
-  _createRow(id, name) {
+  _createRow(id, name, type = 'cuboid') {
     const rowEl = document.createElement('div')
     Object.assign(rowEl.style, {
       display: 'flex',
@@ -193,11 +198,11 @@ export class OutlinerView {
       lineHeight: '1',
     })
 
-    // Mesh icon
+    // Mesh icon — blue for editable objects, gray for read-only imports
     const iconEl = document.createElement('span')
     iconEl.textContent = '⬡'
     Object.assign(iconEl.style, {
-      color: '#4fc3f7',
+      color: type === 'imported' ? '#888888' : '#4fc3f7',
       fontSize: '12px',
       flexShrink: '0',
       lineHeight: '1',

@@ -1,0 +1,102 @@
+/**
+ * ImportedMeshView — thin-client view for arbitrary triangle meshes received
+ * from the Geometry Service (Phase C, ADR-017).
+ *
+ * Unlike MeshView (Cuboid), this view:
+ *  - Accepts raw positions/normals/indices from the server (no local geometry computation).
+ *  - Has no edit mesh, no face highlight, no pivot / snap indicators.
+ *  - Exposes the same minimal interface used by AppController and SceneService
+ *    (setVisible, setObjectSelected, dispose, no-op edit stubs).
+ *
+ * The mesh property is named `cuboid` to stay API-compatible with the raycasting
+ * in AppController._hitAnyObject() / _hitActiveCuboid().
+ */
+import * as THREE from 'three'
+
+export class ImportedMeshView {
+  /**
+   * @param {THREE.Scene} scene  Three.js scene to add objects to
+   */
+  constructor(scene) {
+    this._geo = new THREE.BufferGeometry()
+    this._mat = new THREE.MeshStandardMaterial({
+      color: 0x888888,
+      roughness: 0.5,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+    })
+
+    /** Named `cuboid` for API compatibility with AppController raycasting. */
+    this.cuboid = new THREE.Mesh(this._geo, this._mat)
+    scene.add(this.cuboid)
+
+    this.boxHelper = new THREE.BoxHelper(this.cuboid, 0xaaaaaa)
+    this.boxHelper.visible = false
+    scene.add(this.boxHelper)
+  }
+
+  // ── Geometry update ─────────────────────────────────────────────────────────
+
+  /**
+   * Replaces the mesh geometry with data received from the Geometry Service.
+   * @param {number[]} positions  flat [x,y,z, ...] array
+   * @param {number[]} normals    flat [nx,ny,nz, ...] array (may be empty)
+   * @param {number[]} indices    flat triangle index array (may be empty)
+   */
+  updateGeometryBuffers(positions, normals, indices) {
+    this._geo.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(positions, 3),
+    )
+    if (normals && normals.length) {
+      this._geo.setAttribute(
+        'normal',
+        new THREE.Float32BufferAttribute(normals, 3),
+      )
+    } else {
+      this._geo.deleteAttribute('normal')
+      this._geo.computeVertexNormals()
+    }
+    if (indices && indices.length) {
+      this._geo.setIndex(indices)
+    } else {
+      this._geo.setIndex(null)
+    }
+    this._geo.computeBoundingSphere()
+    this.boxHelper.update()
+  }
+
+  // ── Visual state ────────────────────────────────────────────────────────────
+
+  /** Shows or hides the mesh. */
+  setVisible(visible) {
+    this.cuboid.visible = visible
+  }
+
+  /** Shows or hides the BoxHelper selection outline. */
+  setObjectSelected(sel) {
+    this.boxHelper.visible = sel
+  }
+
+  // ── Edit-mode no-ops (keeps AppController.setMode() safe) ──────────────────
+
+  setFaceHighlight()     {}
+  clearExtrusionDisplay() {}
+  clearSketchRect()      {}
+  clearVertexHover()     {}
+  clearEdgeHover()       {}
+  clearEditSelection()   {}
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────────
+
+  /**
+   * Removes all Three.js objects from the scene and disposes GPU resources.
+   * @param {THREE.Scene} scene
+   */
+  dispose(scene) {
+    scene.remove(this.cuboid)
+    scene.remove(this.boxHelper)
+    this._geo.dispose()
+    this._mat.dispose()
+  }
+}

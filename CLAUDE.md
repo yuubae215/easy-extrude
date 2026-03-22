@@ -58,6 +58,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-22**: BFF Phase C — `ImportedMeshView` (arbitrary triangle mesh, no edit mesh), `ImportedMesh` domain entity (`rename()` only), `SceneService.createImportedMesh()` + `_applyGeometryUpdate()` routing (auto-create on unknown objectId; `updateGeometryBuffers` for ImportedMesh), `OutlinerView.addObject(type)` (gray icon for 'imported'), `AppController` guards (Edit Mode + Grab blocked; mobile Edit button disabled).
 - **2026-03-21**: BFF Phase B — Geometry Service (`server/src/geometry/` DAG evaluator), WebSocket session (`/api/ws`, `SessionManager`), STEP import (`POST /api/import/step`), `WsChannel` + `BffClient.openWs()`, `SceneService.openGeometryChannel()`, `NodeEditorView` (SVG DAG panel), UIView header Nodes button, ADR-017 Accepted.
 - **2026-03-21**: BFF Phase A — Express BFF (`server/`) + SQLite scene persistence. `BffClient`, `SceneSerializer`, `SceneService.connectBff/saveScene/loadScene/listScenes`. Vite proxy for `/api`. pnpm workspace. ADR-015 + ADR-016 Accepted.
 - **2026-03-21**: Bug fixes — face highlight on touch (fresh raycast in `_onPointerDown`), full-screen blue flash (`-webkit-tap-highlight-color`), face extrude confirmed at dist=0 on touch (deferred confirm to `_onPointerUp`), OrbitControls blocked by rect selection (`_controls` no longer disabled for rect sel; second-touch cancels rect sel).
