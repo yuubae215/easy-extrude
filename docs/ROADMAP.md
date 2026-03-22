@@ -50,23 +50,44 @@ BFF (Node.js) — auth, aggregation, routing
 | BffClient WebSocket | `WsChannel` class; `openWs()`/`closeWs()`; `SceneService.openGeometryChannel()` | ADR-017 |
 | **★ UX validation checkpoint** | Evaluate: latency feel, Node Editor usability, STEP import UX. Decide pivot direction for Phase C+. | — |
 
-### Phase C+ — Post-validation (direction TBD after Phase B checkpoint)
+### Phase C — STEP reference geometry + Cuboid coexistence
 
-> **Decide after Phase B UX validation.** Possible directions:
->
-> - **Continue as planned** — STEP import production, frontend entity shrink, fully thin client (original Phase C/D)
-> - **Pivot: focus on Node Editor UX** — double down on visual graph editing; defer STEP/thin-client
-> - **Pivot: simplify backend** — collapse Geometry Service back into BFF if WebSocket latency hurts UX
-> - **Other** — based on user feedback from the prototype
+**Goal**: STEPファイルをインポートしてシーンに参照ジオメトリとして表示しつつ、
+同一シーンで Cuboid のモデリングを続けられるようにする。
+ImportedMesh はサーバー評価結果をフロントエンドで表示するだけの thin-client エンティティ（編集不可）。
+Cuboid は引き続き thick-client（ローカル編集）。
 
-Candidate tasks (held, not committed):
+> **前提**: Phase B UX チェックポイントをクリア済み。Phase B の WebSocket + Geometry Service は継続利用。
+
+| Task | Details | ADR |
+|------|---------|-----|
+| `ImportedMeshView` | 任意三角メッシュ（positions/normals/indices）を Three.js BufferGeometry で表示。BoxHelper・visibility のみ管理。編集用メッシュは持たない。 | — |
+| `ImportedMesh` ドメインエンティティ | `id`, `name`, `meshView: ImportedMeshView` を保持。メソッドは `rename()` のみ。`instanceof ImportedMesh` で Cuboid/Sketch と区別。 | — |
+| `SceneService.createImportedMesh()` | ImportedMesh + ImportedMeshView を生成し SceneModel に登録。`objectAdded` を emit。 | — |
+| `SceneService._applyGeometryUpdate()` 修正 | objectId が SceneModel 未登録 → `createImportedMesh()` で自動生成。`ImportedMesh` なら `meshView.updateGeometryBuffers()` を呼び出す。`_positionsToCorners()` の null パスを利用。 | — |
+| `OutlinerView` の型アイコン対応 | `addObject(id, name, type)` に type 引数を追加。`'imported'` → `⬡` を灰色で表示（Cuboid の水色と区別）。Edit ボタンは disabled。 | — |
+| `AppController` の ImportedMesh 対応 | Object Mode での選択・Grab は無効。削除は可能。Edit Mode への遷移ガード（`instanceof ImportedMesh` → enter edit を skip）。 | — |
+
+**スコープ外 (Phase D に延期)**:
+- STEP ジオメトリのシーン永続化（SceneSerializer 拡張 / scene.data への geometry 埋め込み）
+- Node Editor での DAG トポロジー編集（ノード・エッジの追加/削除）
+- Delta-sync（現状は full-graph snapshot のまま）
+- Multi-instance BFF / Redis セッション共有
+
+### Phase D — Post-C (direction TBD after Phase C checkpoint)
+
+> **Phase C 完了後に優先度を決定する。**
+
+Candidate tasks:
 
 | Candidate Task | Original Phase | ADR |
 |---------------|----------------|-----|
-| STEP import production-ready | C | ADR-015 |
+| STEP ジオメトリの永続化（SceneSerializer 拡張） | C→D | ADR-015 |
 | B-rep topology → graph | C | ADR-016 (open) |
 | Frontend domain entities → cache-only | C | ADR-015 |
 | GLTF / OBJ export (Geometry Service) | C | ADR-015 |
+| Node Editor — DAG トポロジー編集 UI | C | ADR-017 |
+| Delta-sync プロトコル (JSON Patch) | C | ADR-017 |
 | Remove all domain computation from frontend | D | ADR-015 |
 | Frontend unit tests — View / Controller only | D | ADR-015 |
 | Independent Geometry Service scaling | D | ADR-015 |
