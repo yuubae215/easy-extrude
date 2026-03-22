@@ -116,6 +116,9 @@ dist
 # DynamoDB Local files
 .dynamodb/
 
+# BFF SQLite database (runtime data)
+server/data/
+
 # Firebase cache directory
 .firebase/
 
