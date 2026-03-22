@@ -16,11 +16,8 @@
  * { type: 'Sketch', id, name, description,
  *   sketchRect: { p1: {x,y,z}, p2: {x,y,z} } | null }
  */
-import { Vector3 } from 'three'
 import { Cuboid }  from '../domain/Cuboid.js'
 import { Sketch }  from '../domain/Sketch.js'
-import { Vertex }  from '../graph/Vertex.js'
-import { MeshView } from '../view/MeshView.js'
 
 // ── Serialise ─────────────────────────────────────────────────────────────────
 
@@ -87,42 +84,3 @@ export function serializeScene(scene) {
   }
 }
 
-// ── Deserialise ───────────────────────────────────────────────────────────────
-
-/**
- * Reconstructs live domain entities from a plain-JSON scene payload.
- * New MeshView instances are created for each entity.
- *
- * @param {object} data          Parsed scene `data` field from BFF
- * @param {import('three').Scene} threeScene  Three.js scene for MeshView
- * @returns {{ entities: (Cuboid|Sketch)[], activeId: string|null }}
- */
-export function deserializeScene(data, threeScene) {
-  const entities = []
-
-  for (const dto of (data.objects ?? [])) {
-    if (dto.type === 'Cuboid') {
-      const vertices = dto.vertices.map(v =>
-        new Vertex(v.id, new Vector3(v.x, v.y, v.z))
-      )
-      const cuboid = new Cuboid(dto.id, dto.name, vertices, new MeshView(threeScene))
-      cuboid.description = dto.description ?? ''
-      cuboid.meshView.updateGeometry(cuboid.corners)
-      entities.push(cuboid)
-    } else if (dto.type === 'Sketch') {
-      const meshView = new MeshView(threeScene)
-      meshView.setVisible(false)
-      const sketch = new Sketch(dto.id, dto.name, meshView)
-      sketch.description = dto.description ?? ''
-      if (dto.sketchRect) {
-        sketch.sketchRect = {
-          p1: new Vector3(dto.sketchRect.p1.x, dto.sketchRect.p1.y, dto.sketchRect.p1.z),
-          p2: new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z),
-        }
-      }
-      entities.push(sketch)
-    }
-  }
-
-  return { entities }
-}

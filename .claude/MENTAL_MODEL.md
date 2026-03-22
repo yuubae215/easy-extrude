@@ -167,7 +167,40 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
 
 ---
 
+## 3.5 Server-Side Async (Node.js BFF)
+
+### All DB calls must be awaited
+
+- **Principle**: Async DB operations that are called without `await` silently return a Promise, not the data. The caller then operates on a Promise object, causing crashes (JSON.parse of an object) or silent data loss.
+- **Concrete Rule**: Every call to `sceneStore.getScene()`, `sceneStore.updateScene()`, `sceneStore.createScene()`, and `sceneStore.deleteScene()` **must** be `await`ed. Functions that call these must themselves be declared `async`. Fire-and-forget wrappers (like `_autosave`) must be `async` and must wrap all `await` calls in `try/catch` so that the caller's promise chain is never rejected unexpectedly.
+
+```js
+// WRONG — row is a Promise object, not scene data
+const row = getScene(sceneId)
+JSON.parse(row.data)  // throws — row.data is undefined
+
+// CORRECT
+const row = await getScene(sceneId)
+```
+
+### Unguarded JSON.parse in DB layer
+
+- **Principle**: A single malformed row in the database causes an unhandled rejection that crashes the current WebSocket handler or request — with no error returned to the client.
+- **Concrete Rule**: Any `JSON.parse(row.data)` call in `sceneStore.js` must be wrapped in `try/catch` and re-throw a structured error so callers receive a meaningful error object instead of a generic `SyntaxError`.
+
+---
+
 ## 4. Memory Management (Three.js)
+
+### WsChannel Native Event Listener Cleanup
+
+- **Principle**: Native `WebSocket.addEventListener` callbacks are not automatically removed when the socket is closed, so re-opening a channel without removing old listeners causes two handlers to fire for every server message.
+- **Concrete Rule**: In `WsChannel._connect()`, save each bound handler as an instance property (`_onWsOpen`, `_onWsMessage`, `_onWsClose`, `_onWsError`). In `close()`, call `this._ws.removeEventListener(...)` for all four before calling `this._ws.close()`. Set `this._ws = null` after closing.
+
+### Read-Only Entity Early-Return Must Show Feedback
+
+- **Principle**: When an operation is silently blocked for a read-only entity type (`ImportedMesh`), the user sees no indication that the shortcut was consumed. This breaks the "shortcut → visible effect" contract.
+- **Concrete Rule**: Any early-return that blocks `setMode('edit')` or `_startGrab()` for `ImportedMesh` must call `this._uiView.showToast('Imported geometry is read-only')` before returning. The Tab key handler must additionally guard `e.preventDefault()` so the browser's own Tab behavior is not suppressed when no mode transition occurs.
 
 ### Object Lifecycle Symmetry
 

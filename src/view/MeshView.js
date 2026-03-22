@@ -488,6 +488,9 @@ export class MeshView {
     this.cuboid.visible    = visible
     this.wireframe.visible = visible
     if (!visible) {
+      // Direct mutation is safe here: hiding the whole object overrides any
+      // sub-element state. The visual-state owners (setObjectSelected,
+      // setFaceHighlight) remain authoritative for show paths.
       this.boxHelper.visible = false
       this.hlMesh.visible    = false
     }

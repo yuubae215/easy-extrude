@@ -35,7 +35,13 @@ export async function getScene(id) {
   const rs = await db.execute({ sql: 'SELECT * FROM scenes WHERE id = ?', args: [id] })
   if (rs.rows.length === 0) return null
   const row = rs.rows[0]
-  return { id: row.id, name: row.name, data: JSON.parse(row.data), created_at: row.created_at, updated_at: row.updated_at }
+  let data
+  try {
+    data = JSON.parse(row.data)
+  } catch (err) {
+    throw new Error(`Scene ${id}: stored data is not valid JSON — ${err.message}`)
+  }
+  return { id: row.id, name: row.name, data, created_at: row.created_at, updated_at: row.updated_at }
 }
 
 /**

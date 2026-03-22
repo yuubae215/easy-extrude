@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-22**: Validation review & improvement plan — executed all 6 phases of `docs/validation/2026-03-22-improvement-plan.md` (24 items). Phase A: awaited `getScene`/`updateScene` in `sessionManager.js`; made `_autosave` async. Phase B: wrapped `JSON.parse` in `sceneStore.getScene()`. Phase C: re-entry guard for `SceneService.openGeometryChannel()`; `WsChannel.close()` removes native event listeners; `AppController.dispose()` unregisters window listeners. Phase D: moved `deserializeScene` into `SceneService._deserializeEntities()` (layer fix); fixed `MeshView.setVisible()` comment; fixed `Sketch` → `'sketch'` outliner type. Phase E: ADR-009 ImportedMesh addendum; ADR-013 `wsConnected`/`wsDisconnected` events; ADR-008 early-return contract. Phase F: `showToast` on Grab/Edit block for ImportedMesh; Tab `preventDefault` guard; A11Y ARIA labels (GizmoView, UIView, OutlinerView delete button; icon `title`). Updated MENTAL_MODEL (server async rules + WsChannel cleanup + read-only feedback).
+
 - **2026-03-22**: Validation review & improvement plan — reviewed `docs/validation/2026-03-22-full-repo-validation.md` (24 actionable items: 3 critical server async bugs, 2 high unguarded JSON.parse, 3 medium state-consistency, 5 QC/layer, 3 ADR gaps, 7 UX/A11Y). Produced prioritised 6-phase improvement plan at `docs/validation/2026-03-22-improvement-plan.md`.
 
 - **2026-03-22**: Validation framework — designed and executed full-repository SQA/QC/ADR/UX validation.

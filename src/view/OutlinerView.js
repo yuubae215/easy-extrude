@@ -201,6 +201,7 @@ export class OutlinerView {
     // Mesh icon — blue for editable objects, gray for read-only imports
     const iconEl = document.createElement('span')
     iconEl.textContent = '⬡'
+    if (type === 'imported') iconEl.title = 'Imported mesh (read-only)'
     Object.assign(iconEl.style, {
       color: type === 'imported' ? '#888888' : '#4fc3f7',
       fontSize: '12px',
@@ -243,9 +244,10 @@ export class OutlinerView {
     })
 
     // Delete button
-    const delEl = document.createElement('span')
+    const delEl = document.createElement('button')
     delEl.textContent = '✕'
     delEl.title = 'Delete'
+    delEl.setAttribute('aria-label', 'Delete')
     Object.assign(delEl.style, {
       color: '#888',
       fontSize: '10px',

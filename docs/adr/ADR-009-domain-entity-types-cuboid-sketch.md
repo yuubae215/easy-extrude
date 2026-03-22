@@ -51,3 +51,15 @@ that removes it belongs to Phase 4 (domain events / observer pattern).
   `sketch.extrude(height)` method that returns a `Cuboid`.
 - `instanceof Cuboid` / `instanceof Sketch` can replace `dimension === 2/3`
   checks when Phase 2 methods are introduced.
+
+**Phase C addendum (BFF):** A third read-only entity type `ImportedMesh`
+(`src/domain/ImportedMesh.js`) was introduced for server-computed geometry
+that cannot be edited locally. The `SceneObject` union is now
+`Cuboid | Sketch | ImportedMesh`. `ImportedMesh` is:
+- **Thin-client** — no edit graph, no Vertex/Edge/Face graph. Only `rename()` is supported.
+- **Auto-created** — `SceneService._applyGeometryUpdate()` calls
+  `createImportedMesh()` when a `geometry.update` message arrives for an
+  unknown `objectId`. No explicit `createImportedMesh()` call is required
+  from the controller.
+- **Guard pattern** — `setMode('edit')` and `_startGrab()` in AppController
+  check `instanceof ImportedMesh` and early-return (see ADR-008 addendum).

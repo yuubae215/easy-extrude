@@ -92,8 +92,27 @@ Visibility is always determined by `setFaceHighlight`, independent of the `setVi
 - **Safety net for future features**: When adding a new object-switching code path,
   simply follow the rule of calling `setMode('object')` first
 
+**Phase C addendum — read-only entity early-return:**
+
+`setMode('edit')` contains an early-return for `ImportedMesh` entities:
+
+```js
+if (this._activeObj instanceof ImportedMesh) {
+  this._uiView.showToast('Imported geometry is read-only')
+  return
+}
+```
+
+**Contract**: An entity type may early-return `setMode('edit')` **only when**:
+1. All in-progress operations (grab, face drag) are independently blocked for that type,
+   so the cleanup sequence (step 1 above) is guaranteed to be a no-op at the call site.
+2. No mode-state (`_selectionMode`, `_editSubstate`) has been mutated before the return.
+
+If either condition is not met, run the full cleanup sequence instead of early-returning.
+
 ## References
 
 - ADR-002 (Sketch→Extrude workflow)
 - ADR-004 (Edit Mode dimension dispatch)
 - ADR-005 (Object hierarchy and dimension)
+- ADR-009 (Domain entity types — includes ImportedMesh addendum)

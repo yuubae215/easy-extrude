@@ -41,10 +41,12 @@ src/
 
 | Event name | Arguments | Fired when |
 |------------|-----------|------------|
-| `objectAdded` | `obj: SceneObject` | After `createCuboid()` / `createSketch()` completes |
+| `objectAdded` | `obj: SceneObject` | After `createCuboid()` / `createSketch()` / `createImportedMesh()` completes |
 | `objectRemoved` | `id: string` | After `deleteObject()` completes |
 | `objectRenamed` | `id, name: string` | After `renameObject()` completes |
 | `activeChanged` | `id: string\|null` | After `setActiveObject()` completes |
+| `wsConnected` | _(none)_ | After `openGeometryChannel()` opens the WS connection (BFF Phase B) |
+| `wsDisconnected` | _(none)_ | When the WS channel is closed by the server or network (BFF Phase B) |
 
 ### Changes to AppController
 

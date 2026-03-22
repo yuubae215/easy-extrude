@@ -33,6 +33,8 @@ export class GizmoView {
     this._canvas = document.createElement('canvas')
     this._canvas.width  = SIZE
     this._canvas.height = SIZE
+    this._canvas.setAttribute('role', 'img')
+    this._canvas.setAttribute('aria-label', 'World orientation gizmo: click an axis to snap the camera')
     Object.assign(this._canvas.style, {
       position:     'fixed',
       top:          '46px',
