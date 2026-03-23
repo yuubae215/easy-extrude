@@ -103,6 +103,7 @@ Candidate tasks:
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
 | 🟡 Medium | Export (OBJ / GLTF) | Low | Phase C via Geometry Service |
+| 🟢 Low | CoordinateFrame relative-transform editing via Node Editor (Phase B) — expose `translation`/`rotation` fields as editable Node Editor parameters; allow nested frames (frame→frame hierarchy); DAG support per ADR-016 | High | ADR-016, ADR-018 |
 | 🟢 Low | Assembly groups (virtual TransformNode pivot) | Medium | ADR-016 |
 | 🟢 Low | Revolute / prismatic constraints in Node Editor | High | ADR-016 |
 

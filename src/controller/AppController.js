@@ -24,8 +24,9 @@ import {
 import { SceneService }    from '../service/SceneService.js'
 import { Cuboid }          from '../domain/Cuboid.js'
 import { Sketch }          from '../domain/Sketch.js'
-import { ImportedMesh }    from '../domain/ImportedMesh.js'
-import { MeasureLine }     from '../domain/MeasureLine.js'
+import { ImportedMesh }      from '../domain/ImportedMesh.js'
+import { MeasureLine }       from '../domain/MeasureLine.js'
+import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -52,10 +53,12 @@ export class AppController {
         ? 'imported'
         : obj instanceof MeasureLine
           ? 'measure'
-          : obj instanceof Sketch
-            ? 'sketch'
-            : 'cuboid'
-      outlinerView?.addObject(obj.id, obj.name, type)
+          : obj instanceof CoordinateFrame
+            ? 'frame'
+            : obj instanceof Sketch
+              ? 'sketch'
+              : 'cuboid'
+      outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
     })
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
     this._service.on('objectRenamed', (id, nm)  => {
@@ -297,17 +300,34 @@ export class AppController {
 
   /**
    * Adds a new object of the given type.
-   * @param {'box'|'sketch'|'measure'} [type='box']
+   * @param {'box'|'sketch'|'measure'|'frame'} [type='box']
    */
   _addObject(type = 'box') {
-    if (type === 'sketch')  { this._addSketchObject();    return }
+    if (type === 'sketch')  { this._addSketchObject();     return }
     if (type === 'measure') { this._startMeasurePlacement(); return }
+    if (type === 'frame')   { this._addCoordinateFrame();  return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
     const obj = this._service.createCuboid()
     this._switchActiveObject(obj.id, true)
+  }
+
+  /**
+   * Adds a CoordinateFrame as a child of the currently active geometry object.
+   * No-ops with a toast if no suitable parent is selected.
+   */
+  _addCoordinateFrame() {
+    const parentId = this._scene.activeId
+    const parent   = parentId ? this._scene.getObject(parentId) : null
+    if (!parent || parent instanceof CoordinateFrame) {
+      this._uiView.showToast('Select a geometry object first to add a coordinate frame', { type: 'warn' })
+      return
+    }
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    const frame = this._service.createCoordinateFrame(parentId)
+    if (frame) this._switchActiveObject(frame.id, true)
   }
 
   // ── STEP import ─────────────────────────────────────────────────────────────
@@ -448,11 +468,13 @@ export class AppController {
     this._measure.snapping     = false
     this._measure.snappedTarget = null
     // Snap display requires a MeshView with THREE.Points infrastructure.
-    // MeasureLineView has no-op stubs, so fall back to any non-MeasureLine object's view.
+    // MeasureLineView and CoordinateFrameView have no snap display infrastructure.
+    // Fall back to any real MeshView-backed object for snap candidate rendering.
     const activeObj = this._scene.activeObject
-    this._measure.snapMeshView = (activeObj && !(activeObj instanceof MeasureLine))
+    const _isSnapCapable = o => !(o instanceof MeasureLine) && !(o instanceof CoordinateFrame)
+    this._measure.snapMeshView = (activeObj && _isSnapCapable(activeObj))
       ? activeObj.meshView
-      : ([...this._scene.objects.values()].find(o => !(o instanceof MeasureLine))?.meshView ?? null)
+      : ([...this._scene.objects.values()].find(_isSnapCapable)?.meshView ?? null)
     this._uiView.setCursor('crosshair')
     this._updateMeasureStatus()
     this._updateMobileToolbar()
@@ -607,9 +629,18 @@ export class AppController {
   }
 
   _deleteObject(id) {
-    if (this._scene.objects.size <= 1) {
-      this._uiView.showToast('Scene must contain at least one object', { type: 'warn' })
-      return
+    const target = this._scene.getObject(id)
+    if (!target) return
+
+    // Frames are always deletable.  Geometry objects require at least one
+    // other geometry object to remain in the scene.
+    if (!(target instanceof CoordinateFrame)) {
+      const geometryCount = [...this._scene.objects.values()]
+        .filter(o => !(o instanceof CoordinateFrame)).length
+      if (geometryCount <= 1) {
+        this._uiView.showToast('Scene must contain at least one object', { type: 'warn' })
+        return
+      }
     }
 
     // If deleting the active object while in Edit Mode, exit cleanly first
@@ -618,11 +649,19 @@ export class AppController {
       this.setMode('object')
     }
 
-    if (!this._scene.getObject(id)) return
-
     const wasActive = this._scene.activeId === id
+
+    // Determine next active object: prefer geometry objects over frames.
     const nextId = wasActive
-      ? [...this._scene.objects.keys()].find(k => k !== id)
+      ? (
+          // First try another geometry object
+          [...this._scene.objects.entries()].find(
+            ([k, o]) => k !== id && !(o instanceof CoordinateFrame),
+          )?.[0]
+          // Fall back to any object (e.g. another frame)
+          ?? [...this._scene.objects.keys()].find(k => k !== id)
+          ?? null
+        )
       : null
 
     this._service.deleteObject(id)
@@ -823,18 +862,22 @@ export class AppController {
       // Always show the same 4 buttons; Edit/Delete are disabled when no
       // object is selected. Fixed count prevents layout shifts on selection.
       const hasObj  = this._objSelected
-      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
+      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame)
       const canGrab = hasObj
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
-          onClick: () => this._uiView.showAddMenu(
-            window.innerWidth / 2, window.innerHeight / 2,
-            () => this._addObject('box'),
-            () => this._addObject('sketch'),
-            () => this._addObject('measure'),
-            () => this._triggerStepImport(),
-          ),
+          onClick: () => {
+            const canAddFrame = this._objSelected && !(this._activeObj instanceof CoordinateFrame)
+            this._uiView.showAddMenu(
+              window.innerWidth / 2, window.innerHeight / 2,
+              () => this._addObject('box'),
+              () => this._addObject('sketch'),
+              () => this._addObject('measure'),
+              () => this._triggerStepImport(),
+              canAddFrame ? () => this._addObject('frame') : undefined,
+            )
+          },
         },
         { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
         { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
@@ -1017,8 +1060,12 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh and MeasureLine have no vertex graph — Edit Mode is not supported
-    if (mode === 'edit' && (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine)) {
+    // ImportedMesh, MeasureLine, and CoordinateFrame have no vertex graph — Edit Mode is not supported
+    if (mode === 'edit' && (
+      this._activeObj instanceof ImportedMesh ||
+      this._activeObj instanceof MeasureLine  ||
+      this._activeObj instanceof CoordinateFrame
+    )) {
       this._uiView.showToast('Edit Mode is not available for this object type')
       return
     }
@@ -1884,7 +1931,7 @@ export class AppController {
   _startPivotSelect() {
     if (!this._grab.active || this._grab.pivotSelectMode) return
     // Pivot selection uses Cuboid-specific vertex geometry — skip for non-Cuboid types.
-    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine) return
+    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine || this._activeObj instanceof CoordinateFrame) return
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
@@ -2308,8 +2355,8 @@ export class AppController {
           }
         }
 
-        // MeasureLine cannot be dragged
-        if (obj instanceof MeasureLine) {
+        // MeasureLine and CoordinateFrame cannot be dragged
+        if (obj instanceof MeasureLine || obj instanceof CoordinateFrame) {
           return
         }
 
@@ -2322,7 +2369,7 @@ export class AppController {
 
         this._objDragging      = true
         // Ctrl+drag (rotate) only works for locally-editable objects (Cuboid).
-        this._objCtrlDrag      = e.ctrlKey && !(obj instanceof ImportedMesh) && !(obj instanceof MeasureLine)
+        this._objCtrlDrag      = e.ctrlKey && !(obj instanceof ImportedMesh) && !(obj instanceof MeasureLine) && !(obj instanceof CoordinateFrame)
         this._controls.enabled = false
         this._activeDragPointerId = e.pointerId
         this._uiView.setCursor('grabbing')
@@ -2594,7 +2641,7 @@ export class AppController {
       // For ImportedMesh, setMode('edit') is a no-op — swallow the key only
       // when switching to object mode or when the active object is editable.
       const enteringEdit = this._scene.selectionMode === 'object'
-      const isReadOnly = this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine
+      const isReadOnly = this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine || this._activeObj instanceof CoordinateFrame
       if (!enteringEdit || !isReadOnly) {
         e.preventDefault()
         this.setMode(enteringEdit ? 'edit' : 'object')
@@ -2628,11 +2675,13 @@ export class AppController {
         e.preventDefault()
         const screenX = (this._mouse.x + 1) / 2 * innerWidth
         const screenY = (-this._mouse.y + 1) / 2 * innerHeight
+        const canAddFrame = this._objSelected && !(this._activeObj instanceof CoordinateFrame)
         this._uiView.showAddMenu(screenX, screenY,
           () => this._addObject('box'),
           () => this._addObject('sketch'),
           () => this._addObject('measure'),
           () => this._triggerStepImport(),
+          canAddFrame ? () => this._addObject('frame') : undefined,
         )
         return
       }
@@ -2676,6 +2725,37 @@ export class AppController {
       // Keep MeasureLine HTML labels positioned over the correct screen pixel
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine) obj.meshView.updateLabelPosition()
+      }
+      // Sync CoordinateFrame positions every frame.
+      //
+      // Position model: worldPos = parentCentroid + translation
+      //
+      // Two paths:
+      //  a) Frame is being grabbed → move() already updated _worldPos.
+      //     Back-derive the new translation so the offset is preserved when
+      //     the parent moves later.
+      //  b) Frame is not grabbed  → recompute worldPos from parentCentroid +
+      //     translation (frame follows parent).
+      //
+      // Either way, meshView.updatePosition(_worldPos) is called at the end.
+      const grabbedFrameIds = this._grab.active ? this._grab.allStartCorners : new Map()
+      for (const obj of this._scene.objects.values()) {
+        if (!(obj instanceof CoordinateFrame)) continue
+        const parent = this._scene.getObject(obj.parentId)
+        if (!parent || parent.corners.length === 0) continue
+
+        const parentCentroid = new THREE.Vector3()
+        for (const c of parent.corners) parentCentroid.add(c)
+        parentCentroid.divideScalar(parent.corners.length)
+
+        if (grabbedFrameIds.has(obj.id)) {
+          // (a) Grabbed: _worldPos already updated by move(). Sync translation.
+          obj.translation.copy(obj._worldPos).sub(parentCentroid)
+        } else {
+          // (b) Not grabbed: follow parent, keep translation offset.
+          obj._worldPos.copy(parentCentroid).add(obj.translation)
+        }
+        obj.meshView.updatePosition(obj._worldPos)
       }
     }
     loop()
