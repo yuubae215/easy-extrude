@@ -316,6 +316,7 @@ export class SceneService extends EventEmitter {
     cuboid.meshView.updateGeometry(cuboid.corners)
     this._model.addObject(cuboid)
     this.emit('objectAdded', cuboid)
+    this.createCoordinateFrame(id, 'Origin')
     return cuboid
   }
 
@@ -401,6 +402,7 @@ export class SceneService extends EventEmitter {
     const cuboid = sketch.extrude(height)
     this._model.removeObject(id)
     this._model.addObject(cuboid)
+    this.createCoordinateFrame(id, 'Origin')
     return cuboid
   }
 
@@ -431,6 +433,7 @@ export class SceneService extends EventEmitter {
     cuboid.meshView.updateGeometry(cuboid.corners)
     this._model.addObject(cuboid)
     this.emit('objectAdded', cuboid)
+    this.createCoordinateFrame(newId, 'Origin')
     return cuboid
   }
 
@@ -493,13 +496,13 @@ export class SceneService extends EventEmitter {
    * @param {string} parentObjectId
    * @returns {CoordinateFrame|null}
    */
-  createCoordinateFrame(parentObjectId) {
+  createCoordinateFrame(parentObjectId, overrideName = null) {
     const parent = this._model.getObject(parentObjectId)
     if (!parent || parent instanceof MeasureLine || parent instanceof ImportedMesh) return null
 
     const idx  = this._model.objects.size
     const id   = `frame_${idx}_${Date.now()}`
-    const name = `Frame.${String(idx).padStart(3, '0')}`
+    const name = overrideName ?? `Frame.${String(idx).padStart(3, '0')}`
 
     const meshView = new CoordinateFrameView(this._threeScene)
     const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)

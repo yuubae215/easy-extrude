@@ -6,8 +6,9 @@
  *   Y → green  (+Y left)
  *   Z → blue   (+Z up)
  *
+ * Each axis has a matching text label sprite (X / Y / Z) positioned just
+ * past the arrowhead so the reference direction is immediately readable.
  * A small white sphere marks the origin point.
- * A wireframe sphere is shown when the frame is selected.
  *
  * Interface contract:
  *   - No `cuboid` property (returns null) → not raycast-able.
@@ -20,11 +21,40 @@
  */
 import * as THREE from 'three'
 
-const AXIS_LENGTH    = 0.5   // arrow shaft + head combined (world units)
-const HEAD_LENGTH    = 0.12
-const HEAD_WIDTH     = 0.06
-const ORIGIN_RADIUS  = 0.04
-const SELECTION_R    = 0.14
+const AXIS_LENGTH   = 0.5   // arrow shaft + head combined (world units)
+const HEAD_LENGTH   = 0.12
+const HEAD_WIDTH    = 0.06
+const ORIGIN_RADIUS = 0.04
+const LABEL_OFFSET  = AXIS_LENGTH + 0.09  // just past the arrowhead tip
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a canvas-texture sprite for an axis label (e.g. "X", "Y", "Z").
+ * @param {string} letter   single character
+ * @param {number} hexColor  e.g. 0xff4444
+ * @returns {THREE.Sprite}
+ */
+function makeAxisLabel(letter, hexColor) {
+  const size   = 64
+  const canvas = document.createElement('canvas')
+  canvas.width  = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, size, size)
+  ctx.fillStyle = `#${hexColor.toString(16).padStart(6, '0')}`
+  ctx.font          = `bold ${Math.round(size * 0.72)}px sans-serif`
+  ctx.textAlign     = 'center'
+  ctx.textBaseline  = 'middle'
+  ctx.fillText(letter, size / 2, size / 2)
+  const tex = new THREE.CanvasTexture(canvas)
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true })
+  const sprite = new THREE.Sprite(mat)
+  sprite.scale.set(0.18, 0.18, 1)
+  return sprite
+}
+
+// ── Class ──────────────────────────────────────────────────────────────────
 
 export class CoordinateFrameView {
   /**
@@ -50,15 +80,13 @@ export class CoordinateFrameView {
       new THREE.Vector3(0, 0, 1), ZERO, AXIS_LENGTH, 0x4488ff, HEAD_LENGTH, HEAD_WIDTH,
     )
 
-    // ── Selection indicator (wireframe sphere) ────────────────────────────
-    const ringGeo = new THREE.SphereGeometry(SELECTION_R, 12, 12)
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xff8c69,
-      wireframe: true,
-      transparent: true,
-      opacity: 0,
-    })
-    this._selectionRing = new THREE.Mesh(ringGeo, ringMat)
+    // ── Axis labels (X / Y / Z sprites) ───────────────────────────────────
+    this._labelX = makeAxisLabel('X', 0xff4444)
+    this._labelX.position.set(LABEL_OFFSET, 0, 0)
+    this._labelY = makeAxisLabel('Y', 0x44cc44)
+    this._labelY.position.set(0, LABEL_OFFSET, 0)
+    this._labelZ = makeAxisLabel('Z', 0x4488ff)
+    this._labelZ.position.set(0, 0, LABEL_OFFSET)
 
     // ── Group ──────────────────────────────────────────────────────────────
     this._group = new THREE.Group()
@@ -67,7 +95,9 @@ export class CoordinateFrameView {
       this._arrowX,
       this._arrowY,
       this._arrowZ,
-      this._selectionRing,
+      this._labelX,
+      this._labelY,
+      this._labelZ,
     )
 
     scene.add(this._group)
@@ -114,8 +144,6 @@ export class CoordinateFrameView {
    * @param {boolean} selected
    */
   setObjectSelected(selected) {
-    this._selectionRing.material.opacity = selected ? 0.55 : 0
-
     const depthTest   = !selected
     const renderOrder =  selected ? 1 : 0
 
@@ -125,10 +153,12 @@ export class CoordinateFrameView {
       arrow.line.renderOrder        = renderOrder
       arrow.cone.renderOrder        = renderOrder
     }
-    this._originSphere.material.depthTest  = depthTest
-    this._originSphere.renderOrder         = renderOrder
-    this._selectionRing.material.depthTest = depthTest
-    this._selectionRing.renderOrder        = renderOrder
+    for (const label of [this._labelX, this._labelY, this._labelZ]) {
+      label.material.depthTest = depthTest
+      label.renderOrder        = renderOrder
+    }
+    this._originSphere.material.depthTest = depthTest
+    this._originSphere.renderOrder        = renderOrder
   }
 
   /**
@@ -140,24 +170,28 @@ export class CoordinateFrameView {
     this._group.traverse(obj => {
       if (obj.geometry) obj.geometry.dispose()
       if (obj.material) {
-        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose())
-        else obj.material.dispose()
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose() })
+        } else {
+          if (obj.material.map) obj.material.map.dispose()
+          obj.material.dispose()
+        }
       }
     })
   }
 
   // ── No-op interface (MENTAL_MODEL §1) ────────────────────────────────────
-  setFaceHighlight()     {}
+  setFaceHighlight()      {}
   clearExtrusionDisplay() {}
-  clearSketchRect()      {}
-  clearVertexHover()     {}
-  clearEdgeHover()       {}
-  clearEditSelection()   {}
-  clearPivotDisplay()    {}
-  clearSnapDisplay()     {}
-  showSnapCandidates()   {}
-  showSnapLocked()       {}
-  clearSnapLocked()      {}
-  updateGeometry()       {}
-  updateBoxHelper()      {}
+  clearSketchRect()       {}
+  clearVertexHover()      {}
+  clearEdgeHover()        {}
+  clearEditSelection()    {}
+  clearPivotDisplay()     {}
+  clearSnapDisplay()      {}
+  showSnapCandidates()    {}
+  showSnapLocked()        {}
+  clearSnapLocked()       {}
+  updateGeometry()        {}
+  updateBoxHelper()       {}
 }

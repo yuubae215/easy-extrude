@@ -110,7 +110,9 @@ this._measure.snapMeshView = null
 ### CoordinateFrame Depth Rendering Policy
 
 - **Principle**: Gizmo-style objects (axes, labels) that float at a point in world space can be completely hidden by surrounding geometry, making them invisible when the user is trying to manipulate them. Always-on-top rendering avoids this but pollutes the viewport with floating arrows when frames are idle.
-- **Concrete Rule**: `CoordinateFrameView.setObjectSelected()` applies a **selection-gated depth override**: when selected → `depthTest: false` + `renderOrder: 1` on all arrow and sphere materials (frame always visible through geometry); when deselected → `depthTest: true` + `renderOrder: 0` (frame may be occluded, acceptable since the user is not interacting with it). This is a **conscious choice over** (a) always-on-top (too noisy when many idle frames exist) and (b) X-ray dual-pass rendering (ArrowHelper clone overhead, complex dispose path).
+- **Concrete Rule**: `CoordinateFrameView.setObjectSelected()` applies a **selection-gated depth override**: when selected → `depthTest: false` + `renderOrder: 1` on arrows, axis label sprites, and origin sphere (frame always visible through geometry); when deselected → `depthTest: true` + `renderOrder: 0` (frame may be occluded, acceptable since the user is not interacting with it). This is a **conscious choice over** (a) always-on-top (too noisy when many idle frames exist) and (b) X-ray dual-pass rendering (ArrowHelper clone overhead, complex dispose path).
+- **No selection ring**: the orange wireframe selection sphere was removed. Selection state is conveyed solely by the depth override (arrows pop to the front when selected).
+- **Axis label sprites** (`_labelX/Y/Z`): `THREE.Sprite` with `CanvasTexture` bearing the letter in the axis colour. Positioned at `AXIS_LENGTH + 0.09` along each axis so the letter sits just past the arrowhead. Must be included in the `depthTest`/`renderOrder` loop and their `material.map` must be disposed in `dispose()`.
 
 ```js
 // In setObjectSelected(selected):
@@ -120,9 +122,17 @@ for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
   arrow.line.material.depthTest = depthTest;  arrow.line.renderOrder = renderOrder
   arrow.cone.material.depthTest = depthTest;  arrow.cone.renderOrder = renderOrder
 }
+for (const label of [this._labelX, this._labelY, this._labelZ]) {
+  label.material.depthTest = depthTest;  label.renderOrder = renderOrder
+}
 this._originSphere.material.depthTest = depthTest
 this._originSphere.renderOrder        = renderOrder
 ```
+
+### Auto Origin Frame on 3D Object Creation
+
+- **Principle**: Every 3D geometry object should have a visible origin coordinate frame so the user can immediately read its reference direction.
+- **Concrete Rule**: `SceneService.createCuboid()`, `SceneService.extrudeSketch()`, and `SceneService.duplicateCuboid()` each call `this.createCoordinateFrame(id, 'Origin')` after registering the new `Cuboid` in the model. The frame is named `'Origin'` (fixed string) to distinguish it from manually-added frames (named `'Frame.XXX'`). `createCoordinateFrame` accepts an optional second parameter `overrideName` for this purpose. Sketches do NOT get an origin frame (they are 2D and have no meaningful reference direction until extruded).
 
 ### Visual State Ownership
 
