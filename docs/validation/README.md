@@ -1,12 +1,12 @@
 # Validation Reports
 
-各フェーズ完了時に実施した SQA / QC / ADR / UX バリデーションの記録。
+Records of SQA / QC / ADR / UX validation runs conducted upon completion of each phase.
 
 ## Index
 
 | Date | Phase | SQA | QC | ADR | UX | Report |
 |------|-------|-----|----|-----|----|--------|
-| 2026-03-22 | BFF Phase C — ImportedMesh thin-client entity | 3 issues (0C/0H/2M/1L) | 3 issues | ADR-018 推奨 | 2 issues | [report](2026-03-22-phase-c.md) |
+| 2026-03-22 | BFF Phase C — ImportedMesh thin-client entity | 3 issues (0C/0H/2M/1L) | 3 issues | ADR-018 recommended | 2 issues | [report](2026-03-22-phase-c.md) |
 
 ## How to add a new report
 
