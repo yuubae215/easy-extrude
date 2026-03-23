@@ -88,6 +88,15 @@ export class CoordinateFrameView {
     this._group.position.copy(position)
   }
 
+  /**
+   * Applies a world-space rotation quaternion to the frame's axes.
+   * Called by AppController after rotate operations (R key).
+   * @param {import('three').Quaternion} quaternion
+   */
+  updateRotation(quaternion) {
+    this._group.quaternion.copy(quaternion)
+  }
+
   /** @param {boolean} visible */
   setVisible(visible) {
     this._group.visible = visible
@@ -95,10 +104,31 @@ export class CoordinateFrameView {
 
   /**
    * Highlights the frame when it is the active/selected object.
+   *
+   * Selected   → depthTest: false + renderOrder: 1 so the frame always renders
+   *              on top of any overlapping geometry (Option A).
+   * Deselected → depthTest: true (default) so the frame is naturally occluded
+   *              by surrounding geometry (Option C — hidden is acceptable when
+   *              not interacting with the frame).
+   *
    * @param {boolean} selected
    */
   setObjectSelected(selected) {
     this._selectionRing.material.opacity = selected ? 0.55 : 0
+
+    const depthTest   = !selected
+    const renderOrder =  selected ? 1 : 0
+
+    for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
+      arrow.line.material.depthTest = depthTest
+      arrow.cone.material.depthTest = depthTest
+      arrow.line.renderOrder        = renderOrder
+      arrow.cone.renderOrder        = renderOrder
+    }
+    this._originSphere.material.depthTest  = depthTest
+    this._originSphere.renderOrder         = renderOrder
+    this._selectionRing.material.depthTest = depthTest
+    this._selectionRing.renderOrder        = renderOrder
   }
 
   /**

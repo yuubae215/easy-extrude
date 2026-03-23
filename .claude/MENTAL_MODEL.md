@@ -48,7 +48,7 @@ if (this._selectionMode === 'edit') this.setMode('object')
 ```
 
 `setMode()` guarantees, in order:
-1. Cancel in-progress operations (grab, face drag, object drag)
+1. Cancel in-progress operations (grab, rotate, face drag, object drag)
 2. Clear active object visual state
 3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFace`, `_cleanupEditSubstate()`)
 4. Dispatch to new mode — `instanceof Sketch` → Edit 2D, otherwise → Edit 3D
@@ -75,7 +75,7 @@ if (this._activeObj && !this._objSelected) {
   - `Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
   - `MeasureLine` holds two `THREE.Vector3` endpoints (`p1`, `p2`) and a `MeasureLineView`. It has no `vertices`/`edges`/`faces` graph and must be excluded from `collectSnapTargets` loops and `_hitAnyObject` raycasting (guard with `instanceof MeasureLine`). Edit Mode is blocked; **Grab (move) is allowed** — `corners` returns `[p1, p2]` and `move(startCorners, delta)` translates both endpoints. `MeasureLineView.updateGeometry([p1, p2])` calls `update(p1, p2)` to refresh the line and label. Pointer drag is not available (no `cuboid` raycasting surface); use G key.
   - `ImportedMesh` has a synthetic 8-corner AABB (`_corners8`, initialised from geometry bounding box by `SceneService` after `updateGeometryBuffers`). **Grab and pointer drag are allowed** — `move(startCorners, delta)` updates `_corners8`; `ImportedMeshView.updateGeometry(corners)` computes the centroid and sets `cuboid.position = centroid − originalCenter`. Edit Mode is blocked.
-  - `CoordinateFrame` is a named reference frame child of a geometry object (ADR-018). It has no vertex/edge/face graph and no raycasting surface (`cuboid = null`). **Grab (G key) is allowed** — `corners` returns `[this._worldPos]` (mutable reference to cached world position); `move(startCorners, delta)` updates `_worldPos`. The animation loop keeps `_worldPos = parentCentroid + translation`; while the frame is grabbed it back-derives `translation = _worldPos − parentCentroid` so the offset persists for subsequent parent moves. Edit Mode, pointer drag, Ctrl+drag rotation, pivot selection, and stack mode remain blocked. `CoordinateFrameView` implements the full `MeshView` no-op interface (including `updateBoxHelper`). Deletion of a parent object cascades to delete its child `CoordinateFrame`s (`SceneService.deleteObject` calls `SceneModel.getChildren`).
+  - `CoordinateFrame` is a named reference frame child of any geometry object or another `CoordinateFrame` (ADR-018 Phase A, ADR-019 Phase B). It has no vertex/edge/face graph and no raycasting surface (`cuboid = null`). **Grab (G key) and Rotate (R key) are allowed.** `corners` returns `[this._worldPos]`; `move(startCorners, delta)` updates `_worldPos`; `CoordinateFrameView.updateRotation(quaternion)` applies the quaternion to the root `THREE.Group`. The animation loop processes frames in **topological order** (shallow before deep) so nested frame chains propagate in a single pass. `_rotate.startRot` saves the quaternion on R-key press; cancel restores it. Edit Mode, pointer drag, Ctrl+drag rotation, pivot selection, and stack mode remain blocked. `CoordinateFrameView` implements the full `MeshView` no-op interface (including `updateBoxHelper`). Deletion of a parent cascades recursively (`SceneService.deleteObject` calls itself for each child, `OutlinerView.removeObject` also recurses).
   - Ctrl+drag rotation and pivot selection (`_startPivotSelect`) are blocked for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame` (no local vertex geometry to rotate/pivot).
   - The "no Edit Mode" guard applies to `setMode('edit')` for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`.
 
@@ -106,6 +106,23 @@ this._measure.snapMeshView = null
 
 - **Principle**: HTML labels that overlay a Three.js canvas must be repositioned every animation frame because the camera may have moved.
 - **Concrete Rule**: `MeasureLineView.updateLabelPosition()` must be called once per frame from the animation loop for every `MeasureLine` in the scene. The label uses `position: fixed` and is projected from world-space midpoint via `Vector3.project(camera)`. It is appended to `document.body` and removed in `dispose()`.
+
+### CoordinateFrame Depth Rendering Policy
+
+- **Principle**: Gizmo-style objects (axes, labels) that float at a point in world space can be completely hidden by surrounding geometry, making them invisible when the user is trying to manipulate them. Always-on-top rendering avoids this but pollutes the viewport with floating arrows when frames are idle.
+- **Concrete Rule**: `CoordinateFrameView.setObjectSelected()` applies a **selection-gated depth override**: when selected → `depthTest: false` + `renderOrder: 1` on all arrow and sphere materials (frame always visible through geometry); when deselected → `depthTest: true` + `renderOrder: 0` (frame may be occluded, acceptable since the user is not interacting with it). This is a **conscious choice over** (a) always-on-top (too noisy when many idle frames exist) and (b) X-ray dual-pass rendering (ArrowHelper clone overhead, complex dispose path).
+
+```js
+// In setObjectSelected(selected):
+const depthTest   = !selected       // false when selected → always on top
+const renderOrder =  selected ? 1 : 0
+for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
+  arrow.line.material.depthTest = depthTest;  arrow.line.renderOrder = renderOrder
+  arrow.cone.material.depthTest = depthTest;  arrow.cone.renderOrder = renderOrder
+}
+this._originSphere.material.depthTest = depthTest
+this._originSphere.renderOrder        = renderOrder
+```
 
 ### Visual State Ownership
 

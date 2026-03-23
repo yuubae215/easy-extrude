@@ -101,6 +101,12 @@ export class OutlinerView {
     this._onAddCb     = null
     this._onVisibleCb = null
     this._onRenameCb  = null
+    /**
+     * Maps childId → parentId for depth computation without querying SceneModel.
+     * Used by _getDepth() to support multi-level indentation (ADR-019).
+     * @type {Map<string, string>}
+     */
+    this._parentMap   = new Map()
 
     this._addBtn.addEventListener('click', () => {
       if (this._onAddCb) this._onAddCb()
@@ -154,8 +160,8 @@ export class OutlinerView {
   /**
    * Adds an object row to the outliner list.
    * When parentId is provided, the row is inserted as a child of that parent,
-   * indented visually and positioned directly below the parent (and after any
-   * existing siblings with the same parentId).
+   * indented visually and positioned after all existing descendants of that parent.
+   * Supports arbitrary nesting depth (ADR-019 Phase B).
    *
    * @param {string} id
    * @param {string} name
@@ -163,22 +169,22 @@ export class OutlinerView {
    * @param {string|null} [parentId=null]
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
-    const { rowEl, eyeEl, nameEl, triEl } = this._createRow(id, name, type, parentId !== null)
+    const depth = parentId ? this._getDepth(parentId) + 1 : 0
+    const { rowEl, eyeEl, nameEl, triEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
-      // Find insertion point: after the parent row and after any existing siblings.
+      // Find insertion point: after the entire subtree rooted at parentId so
+      // the new child appears below all existing descendants (not just siblings).
       const parentItem = this._items.get(parentId)
       if (parentItem) {
-        let insertAfter = parentItem.rowEl
-        for (const item of this._items.values()) {
-          if (item.parentId === parentId) insertAfter = item.rowEl
-        }
+        const insertAfter = this._getLastDescendantEl(parentId)
         insertAfter.insertAdjacentElement('afterend', rowEl)
         // Show parent's expand triangle in orange to signal it has children.
         this._setParentIndicator(parentId, true)
       } else {
         this._listEl.appendChild(rowEl)
       }
+      this._parentMap.set(id, parentId)
     } else {
       this._listEl.appendChild(rowEl)
     }
@@ -193,20 +199,18 @@ export class OutlinerView {
   }
 
   /**
-   * Removes an object row.  Any child rows (same parentId) are also removed.
+   * Removes an object row and all of its descendants recursively.
    * If the removed object was a child, updates the parent's triangle indicator.
+   * Supports nested frame hierarchies (ADR-019).
    * @param {string} id
    */
   removeObject(id) {
     const item = this._items.get(id)
     if (!item) return
 
-    // Cascade: remove children first.
+    // Cascade: recursively remove all descendants before removing this item.
     for (const [childId, child] of this._items) {
-      if (child.parentId === id) {
-        child.rowEl.remove()
-        this._items.delete(childId)
-      }
+      if (child.parentId === id) this.removeObject(childId)
     }
 
     // Update parent indicator if this child was the last one.
@@ -217,6 +221,7 @@ export class OutlinerView {
       if (remainingSiblings.length === 0) this._setParentIndicator(item.parentId, false)
     }
 
+    this._parentMap.delete(id)
     item.rowEl.remove()
     this._items.delete(id)
   }
@@ -256,15 +261,52 @@ export class OutlinerView {
   // ─── Row builder ──────────────────────────────────────────────────────────
 
   /**
+   * Returns the depth of a given parent in the hierarchy.
+   * Depth 0 means the parent is a root-level object (no parent itself).
+   * @param {string} parentId
+   * @returns {number}
+   */
+  _getDepth(parentId) {
+    let depth = 0
+    let id = parentId
+    while (id) {
+      depth++
+      id = this._parentMap.get(id) ?? null
+    }
+    // depth counts the number of ancestors of parentId, so a direct child of
+    // parentId would be at depth+1, but we return parentId's own depth here.
+    // Callers add 1 to get the child's depth.
+    return depth
+  }
+
+  /**
+   * Returns the DOM element of the last descendant in the subtree rooted at parentId,
+   * or the parent's own rowEl if it has no children.  Used to find the correct
+   * insertion point when adding a new child so it appears below all existing descendants.
+   * @param {string} parentId
+   * @returns {HTMLElement}
+   */
+  _getLastDescendantEl(parentId) {
+    let lastEl = this._items.get(parentId)?.rowEl
+    for (const [childId, child] of this._items) {
+      if (child.parentId === parentId) {
+        const childLastEl = this._getLastDescendantEl(childId)
+        if (childLastEl) lastEl = childLastEl
+      }
+    }
+    return lastEl
+  }
+
+  /**
    * @param {string}  id
    * @param {string}  name
    * @param {string}  type
-   * @param {boolean} isChild  true when this row has a parentId
+   * @param {number}  depth  0 = root, 1 = first child level, 2 = second, etc.
    */
-  _createRow(id, name, type = 'cuboid', isChild = false) {
+  _createRow(id, name, type = 'cuboid', depth = 0) {
     const rowEl = document.createElement('div')
-    // Child rows get extra left padding for visual indentation.
-    const leftPad = isChild ? '28px' : '16px'
+    // Each depth level adds 12 px of left padding.
+    const leftPad = `${16 + depth * 12}px`
     Object.assign(rowEl.style, {
       display: 'flex',
       alignItems: 'center',
@@ -277,7 +319,7 @@ export class OutlinerView {
 
     // Expand triangle (visual only; turns orange when parent has children)
     const triEl = document.createElement('span')
-    if (isChild) {
+    if (depth > 0) {
       // Child rows show a connector glyph instead of a triangle.
       triEl.textContent = '└'
       Object.assign(triEl.style, {
