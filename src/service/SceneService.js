@@ -145,7 +145,7 @@ export class SceneService extends EventEmitter {
    * @param {{ objectId: string, positions: number[], normals: number[], indices: number[] }} payload
    */
   _applyGeometryUpdate({ objectId, positions, normals, indices }) {
-    if (!objectId || !Array.isArray(positions)) return
+    if (!objectId || !positions?.length) return
 
     let obj = this._model.getObject(objectId)
 

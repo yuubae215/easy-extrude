@@ -37,11 +37,14 @@ export class WsChannel {
    * @param {string} url  WebSocket URL, e.g. ws://localhost:3001/api/ws
    */
   constructor(url) {
-    this._url      = url
-    this._ws       = null
-    this._handlers = /** @type {Map<string, Function[]>} */ (new Map())
-    this._sessionId = null
-    this._open     = false
+    this._url             = url
+    this._ws              = null
+    this._handlers        = /** @type {Map<string, Function[]>} */ (new Map())
+    this._sessionId       = null
+    this._open            = false
+    this._manuallyClosed  = false
+    this._reconnectDelay  = 1000   // ms; doubles on each failure, caps at 30 s
+    this._reconnectTimer  = null
     this._connect()
   }
 
@@ -85,8 +88,16 @@ export class WsChannel {
   /** Whether the underlying WebSocket is currently open. */
   get isOpen() { return this._open }
 
-  /** Closes the WebSocket connection and removes all native event listeners. */
+  /** Permanently closes the channel. No auto-reconnect after this. */
   close() {
+    this._manuallyClosed = true
+    clearTimeout(this._reconnectTimer)
+    this._destroySocket()
+  }
+
+  // ── Internals ──────────────────────────────────────────────────────────────
+
+  _destroySocket() {
     if (this._ws) {
       this._ws.removeEventListener('open',    this._onWsOpen)
       this._ws.removeEventListener('message', this._onWsMessage)
@@ -97,19 +108,22 @@ export class WsChannel {
     }
   }
 
-  // ── Internals ──────────────────────────────────────────────────────────────
-
   _connect() {
     let ws
     try {
       ws = new WebSocket(this._url)
     } catch (err) {
       this._emit('error', { message: err.message })
+      this._scheduleReconnect()
       return
     }
     this._ws = ws
 
-    this._onWsOpen    = () => { this._open = true; this._emit('open', {}) }
+    this._onWsOpen = () => {
+      this._open = true
+      this._reconnectDelay = 1000  // reset backoff on successful connect
+      this._emit('open', {})
+    }
     this._onWsMessage = (event) => {
       let msg
       try { msg = JSON.parse(event.data) } catch { return }
@@ -120,6 +134,7 @@ export class WsChannel {
     this._onWsClose = (event) => {
       this._open = false
       this._emit('close', { code: event.code, reason: event.reason })
+      if (!this._manuallyClosed) this._scheduleReconnect()
     }
     this._onWsError = () => { this._emit('error', { message: 'WebSocket error' }) }
 
@@ -127,6 +142,16 @@ export class WsChannel {
     ws.addEventListener('message', this._onWsMessage)
     ws.addEventListener('close',   this._onWsClose)
     ws.addEventListener('error',   this._onWsError)
+  }
+
+  _scheduleReconnect() {
+    if (this._manuallyClosed) return
+    console.log(`[WsChannel] Reconnecting in ${this._reconnectDelay}ms…`)
+    this._reconnectTimer = setTimeout(() => {
+      this._destroySocket()
+      this._reconnectDelay = Math.min(this._reconnectDelay * 2, 30_000)
+      this._connect()
+    }, this._reconnectDelay)
   }
 
   _emit(type, payload) {
@@ -247,9 +272,11 @@ export class BffClient {
    * @param {File} file  browser File object
    * @returns {Promise<{ jobId: string, filename: string, status: string, mesh: object }>}
    */
-  async importStep(file) {
+  async importStep(file, { scale = 1, sessionId = null } = {}) {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('scale', String(scale))
+    if (sessionId) formData.append('sessionId', sessionId)
 
     const url     = this._base + '/import/step'
     const headers = {}

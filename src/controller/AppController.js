@@ -66,15 +66,27 @@ export class AppController {
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
     this._service.on('geometryApplied', ({ objectId }) => {
+      this._importProgressUnsub?.(); this._importProgressUnsub = null
+      this._uiView.hideImportProgress()
       const obj = this._scene.getObject(objectId)
       const sphere = obj?.meshView?.cuboid?.geometry?.boundingSphere
       if (sphere && sphere.radius > 0) {
         this._sceneView.fitCameraToSphere(sphere.center, sphere.radius)
       }
     })
-    this._service.on('geometryError', ({ message }) =>
+    this._service.on('geometryError', ({ message }) => {
+      this._importProgressUnsub?.(); this._importProgressUnsub = null
+      this._uiView.hideImportProgress()
       this._uiView.showToast(`Geometry error: ${message}`)
-    )
+    })
+    this._service.on('wsDisconnected', () => {
+      // If an import was in progress when the server dropped, clear it and notify.
+      if (this._importProgressUnsub) {
+        this._importProgressUnsub(); this._importProgressUnsub = null
+        this._uiView.hideImportProgress()
+        this._uiView.showToast('サーバーとの接続が切れました。インポートを再試行してください。', { type: 'error', duration: 5000 })
+      }
+    })
 
     // ── Measure placement state ────────────────────────────────────────────
     // Active while the user is placing a MeasureLine (M key / Add → Measure).
@@ -205,6 +217,9 @@ export class AppController {
       stacking:        false,
     }
 
+    /** Unsubscribe function for the active import.progress WS listener, or null */
+    this._importProgressUnsub = null
+
     this._ctrlHeld  = false
 
     this._raycaster = new THREE.Raycaster()
@@ -322,28 +337,34 @@ export class AppController {
       const scale = await this._showUnitDialog()
       if (scale === null) return  // user cancelled
 
-      const ws = this._service.wsChannel
-      if (!ws) {
-        // Fall back to REST upload
-        try {
-          if (!this._service._bff) return
-          const result = await this._service._bff.importStep(file)
-          console.log('[AppController] STEP import result (REST):', result)
-        } catch (err) {
-          console.error('[AppController] STEP import error:', err)
-        }
+      if (!this._service._bff) {
+        this._uiView.showToast('サーバーに接続されていません', { type: 'warn' })
         return
       }
-      // Send via WebSocket
-      const reader = new FileReader()
-      reader.onload = () => {
-        const base64 = btoa(
-          new Uint8Array(reader.result).reduce((s, b) => s + String.fromCharCode(b), '')
-        )
-        const jobId = `job_${Date.now()}`
-        ws.send('import.step', { jobId, filename: file.name, data: base64, scale })
+
+      // Always upload via REST (multipart/form-data) to avoid WS payload size limits.
+      // Pass sessionId so the server can stream import.progress events back over WS.
+      const ws        = this._service.wsChannel
+      const sessionId = ws?.sessionId ?? null
+
+      if (ws) {
+        this._importProgressUnsub = ws.on('import.progress', ({ percent, status }) => {
+          this._uiView.showImportProgress(percent, status)
+        })
       }
-      reader.readAsArrayBuffer(file)
+
+      this._uiView.showImportProgress(0, 'Uploading…')
+      try {
+        await this._service._bff.importStep(file, { scale, sessionId })
+        // Progress overlay is hidden by geometryApplied / geometryError handlers.
+        // If WS is not connected (REST-only mode), hide it now.
+        if (!ws) this._uiView.hideImportProgress()
+      } catch (err) {
+        this._importProgressUnsub?.(); this._importProgressUnsub = null
+        this._uiView.hideImportProgress()
+        this._uiView.showToast('Import failed', { type: 'error' })
+        console.error('[AppController] STEP import error:', err)
+      }
     })
     input.click()
   }

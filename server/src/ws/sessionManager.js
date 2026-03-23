@@ -66,6 +66,40 @@ export function removeSession(sessionId) {
 }
 
 /**
+ * Sends a typed message to a specific session by sessionId.
+ * No-op if the session does not exist or the socket is not open.
+ * @param {string} sessionId
+ * @param {string} type
+ * @param {object} [payload]
+ */
+export function sendToSession(sessionId, type, payload = {}) {
+  sessions.get(sessionId)?.send(type, payload)
+}
+
+/**
+ * Adds a StepImportNode to the session graph and streams geometry.update.
+ * Called from the REST import route after STEP parsing is complete.
+ * No-op if the session does not exist.
+ * @param {string} sessionId
+ * @param {{ filename: string, positions: number[], normals: number[], indices: number[] }} geom
+ */
+export function applyStepImportToSession(sessionId, { filename, positions, normals, indices }) {
+  const session = sessions.get(sessionId)
+  if (!session) return
+  _ensureGraph(session, 'import.step')
+
+  const node = session.graph.addNode({
+    type: 'stepImport',
+    label: filename,
+    params: { filename },
+  })
+  node.cachedGeometry = { positions, normals, indices }
+  session.send('graph.node.add', { node })
+  _streamGeometry(session, new Map([[node.id, node.cachedGeometry]]))
+  _autosave(session)
+}
+
+/**
  * Dispatches an incoming message to the correct handler.
  * @param {Session} session
  * @param {string} raw  raw JSON string from the WebSocket

@@ -663,6 +663,113 @@ export class UIView {
     }, duration)
   }
 
+  // ── STEP import progress overlay ───────────────────────────────────────────
+
+  /**
+   * Shows (or updates) a progress overlay at the bottom-center of the screen.
+   * @param {number} percent  0–100
+   * @param {string} status   short status label
+   */
+  showImportProgress(percent, status) {
+    if (!this._importProgressEl) {
+      const bottomPx = this._isMobile() ? '96px' : '64px'
+
+      const el = document.createElement('div')
+      Object.assign(el.style, {
+        position:       'fixed',
+        bottom:         bottomPx,
+        left:           '50%',
+        transform:      'translateX(-50%)',
+        background:     'rgba(28, 28, 32, 0.92)',
+        backdropFilter: 'blur(12px)',
+        webkitBackdropFilter: 'blur(12px)',
+        color:          '#f0f0f0',
+        borderRadius:   '12px',
+        border:         '1px solid rgba(255,255,255,0.08)',
+        borderLeft:     '3px solid #4a90d9',
+        padding:        '12px 20px',
+        fontSize:       '12px',
+        fontFamily:     'system-ui, -apple-system, sans-serif',
+        boxShadow:      '0 8px 32px rgba(0,0,0,0.45)',
+        zIndex:         '9998',
+        pointerEvents:  'none',
+        minWidth:       '240px',
+        display:        'flex',
+        flexDirection:  'column',
+        gap:            '8px',
+        opacity:        '0',
+        transition:     'opacity 0.2s ease',
+      })
+
+      const labelRow = document.createElement('div')
+      Object.assign(labelRow.style, {
+        display:        'flex',
+        alignItems:     'center',
+        justifyContent: 'space-between',
+        gap:            '12px',
+      })
+
+      const icon = document.createElement('span')
+      icon.textContent = '⏳'
+      icon.style.fontSize = '13px'
+
+      const statusEl = document.createElement('span')
+      statusEl.style.flex = '1'
+      statusEl._isStatus = true
+
+      const pctEl = document.createElement('span')
+      pctEl.style.color = '#aad4f5'
+      pctEl.style.fontVariantNumeric = 'tabular-nums'
+      pctEl._isPct = true
+
+      labelRow.append(icon, statusEl, pctEl)
+
+      const track = document.createElement('div')
+      Object.assign(track.style, {
+        height:       '3px',
+        borderRadius: '2px',
+        background:   'rgba(255,255,255,0.12)',
+        overflow:     'hidden',
+      })
+
+      const fill = document.createElement('div')
+      Object.assign(fill.style, {
+        height:     '100%',
+        width:      '0%',
+        borderRadius: '2px',
+        background: '#4a90d9',
+        transition: 'width 0.3s ease',
+      })
+      fill._isFill = true
+      track.appendChild(fill)
+
+      el.append(labelRow, track)
+      document.body.appendChild(el)
+      this._importProgressEl = el
+
+      requestAnimationFrame(() => { el.style.opacity = '1' })
+    }
+
+    const el     = this._importProgressEl
+    const statusEl = el.querySelector('[data-role="status"]') ??
+                     [...el.querySelectorAll('span')].find(s => s._isStatus)
+    const pctEl    = [...el.querySelectorAll('span')].find(s => s._isPct)
+    const fillEl   = [...el.querySelectorAll('div')].find(d => d._isFill)
+
+    if (statusEl) statusEl.textContent = status ?? 'Importing…'
+    if (pctEl)    pctEl.textContent    = `${Math.round(percent ?? 0)}%`
+    if (fillEl)   fillEl.style.width   = `${Math.min(100, Math.max(0, percent ?? 0))}%`
+  }
+
+  /** Removes the import progress overlay. */
+  hideImportProgress() {
+    if (!this._importProgressEl) return
+    const el = this._importProgressEl
+    this._importProgressEl = null
+    el.style.opacity = '0'
+    el.addEventListener('transitionend', () => el.remove(), { once: true })
+  }
+
   /** Returns true if the N panel is currently visible */
   get nPanelVisible() {
     return this._nPanelVisible
