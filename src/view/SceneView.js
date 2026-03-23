@@ -59,6 +59,31 @@ export class SceneView {
     this.renderer.setSize(innerWidth, innerHeight)
   }
 
+  /**
+   * Repositions the camera to frame a bounding sphere.
+   * Updates OrbitControls target and expands near/far clip planes as needed.
+   * @param {THREE.Vector3} center
+   * @param {number} radius
+   */
+  fitCameraToSphere(center, radius) {
+    const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov * 0.5)
+    const dist = (radius / Math.sin(halfFovRad)) * 1.3
+
+    // Keep current orbital direction, move to new distance from center
+    const dir = this.camera.position.clone().sub(this.controls.target)
+    if (dir.lengthSq() < 1e-10) dir.set(1, -0.7, 0.5) // fallback direction
+    dir.normalize().multiplyScalar(dist)
+    this.camera.position.copy(center).add(dir)
+
+    this.controls.target.copy(center)
+    this.controls.update()
+
+    // Expand clip planes to encompass the scene
+    this.camera.near = Math.min(0.01, radius * 0.001)
+    this.camera.far  = Math.max(this.camera.far, dist * 2 + radius * 4)
+    this.camera.updateProjectionMatrix()
+  }
+
   /** Updates controls and renders the scene (call from the animation loop) */
   render() {
     this.controls.update()

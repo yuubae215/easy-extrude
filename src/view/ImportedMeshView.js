@@ -66,7 +66,10 @@ export class ImportedMeshView {
     } else {
       this._geo.setIndex(null)
     }
+    this._geo.computeBoundingBox()
     this._geo.computeBoundingSphere()
+    const s = this._geo.boundingSphere
+    if (s) console.log(`[ImportedMeshView] bounding sphere: center=(${s.center.x.toFixed(2)}, ${s.center.y.toFixed(2)}, ${s.center.z.toFixed(2)}) r=${s.radius.toFixed(2)}`)
     this.boxHelper.update()
   }
 

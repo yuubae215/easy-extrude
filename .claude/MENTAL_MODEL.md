@@ -74,6 +74,7 @@ if (this._activeObj && !this._objSelected) {
   - `Cuboid` must always have: `move()`, `extrudeFace(face, ...)`, `faces: Face[6]`, `edges: Edge[12]`.
   - `Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
   - `MeasureLine` holds two `THREE.Vector3` endpoints (`p1`, `p2`) and a `MeasureLineView`. It has no `vertices`/`edges`/`faces` graph and must be excluded from `collectSnapTargets` loops and `_hitAnyObject` raycasting (guard with `instanceof MeasureLine`). Edit Mode and Grab are blocked for MeasureLine.
+  - `ImportedMesh` has no `corners` property (no vertex graph). Any code path that iterates over selected objects and accesses `.corners` must guard with `selObj.corners` or skip with `instanceof ImportedMesh`. The read-only guard (`instanceof ImportedMesh || instanceof MeasureLine`) must be applied to **all three** interaction paths: Grab (G key), Edit Mode (Tab/E), **and** `_objDragging` (pointer drag). Missing the pointer drag path causes a `TypeError: Cannot read properties of undefined (reading 'map')` crash when clicking an ImportedMesh.
 
 ### MeasureLineView No-Op Interface Completeness
 
@@ -249,6 +250,22 @@ await db.batch(['CREATE TABLE IF NOT EXISTS ...'], 'write')
 
 - **Principle**: A single malformed row in the database causes an unhandled rejection that crashes the current WebSocket handler or request — with no error returned to the client.
 - **Concrete Rule**: Any `JSON.parse(row.data)` call in `sceneStore.js` must be wrapped in `try/catch` and re-throw a structured error so callers receive a meaningful error object instead of a generic `SyntaxError`.
+
+### occt-import-js Geometry Structure
+
+- **Principle**: `mesh.faces` in the occt-import-js result is **face-group metadata** (index ranges + per-face colour), not per-face geometry buffers. Accessing `face.position?.array` on these entries always returns `undefined`, silently producing zero vertices while the mesh count appears non-zero.
+- **Concrete Rule**: Extract geometry at the **mesh level**, not the face level:
+  ```js
+  const pos = mesh.attributes?.position?.array ?? []  // Float32Array
+  const nrm = mesh.attributes?.normal?.array   ?? []  // Float32Array
+  const idx = mesh.index?.array                ?? []  // Uint32Array
+  ```
+  Use `mesh.faces` only for per-face colour/material lookups. Never use `push(...typedArray)` for large arrays — iterate with a `for` loop to avoid "Maximum call stack size exceeded".
+
+### Camera Far Clip and Fit for Imported Geometry
+
+- **Principle**: The default camera `far = 100` is sized for hand-built voxel scenes. STEP files from real CAD tools routinely have bounding sphere radii in the hundreds or thousands of units (mm-scale parts). Geometry beyond `far` is clipped and invisible with no error.
+- **Concrete Rule**: After any `updateGeometryBuffers` call for an `ImportedMesh`, call `SceneView.fitCameraToSphere(sphere.center, sphere.radius)` to reposition the camera and dynamically expand `camera.far` to `max(current far, dist×2 + radius×4)`. The trigger is the `geometryApplied` event emitted by `SceneService`. Never hard-code `camera.far` — let `fitCameraToSphere` expand it on demand.
 
 ---
 

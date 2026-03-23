@@ -198,7 +198,7 @@ function handleSetParam(session, { nodeId, param, value }) {
   _autosave(session)
 }
 
-async function handleStepImport(session, { jobId, filename, data: base64 }) {
+async function handleStepImport(session, { jobId, filename, data: base64, scale = 1 }) {
   if (!_ensureGraph(session, 'import.step')) return
 
   session.send('import.progress', { jobId, percent: 0, status: 'started' })
@@ -229,23 +229,41 @@ async function handleStepImport(session, { jobId, filename, data: base64 }) {
       return
     }
 
-    // Flatten all mesh data from the STEP result
+    console.log(`[SessionManager] STEP parse success: ${result.meshes?.length ?? 0} mesh(es)`)
+    if (result.meshes?.length > 0) {
+      const m0 = result.meshes[0]
+      console.log('[SessionManager] mesh[0] keys:', Object.keys(m0))
+      if (m0.attributes) console.log('[SessionManager] mesh[0].attributes keys:', Object.keys(m0.attributes))
+    }
+
+    // Flatten all mesh data from the STEP result.
+    // occt-import-js stores geometry at mesh level (mesh.attributes / mesh.index),
+    // NOT at face level. mesh.faces is face-group metadata (color ranges only).
     const positions = [], normals = [], indices = []
-    let offset = 0
+    let vertexOffset = 0
     for (const mesh of result.meshes ?? []) {
-      for (const face of mesh.faces ?? []) {
-        const pos = face.position?.array ?? []
-        const nrm = face.normal?.array   ?? []
-        const idx = face.index?.array    ?? []
-        if (pos.length === 0 || pos.length % 3 !== 0) {
-          console.warn(`[SessionManager] STEP face has invalid position array (length=${pos.length}) — skipping`)
-          continue
-        }
-        positions.push(...pos)
-        normals.push(...nrm)
-        indices.push(...idx.map(i => i + offset))
-        offset += pos.length / 3
+      const pos = mesh.attributes?.position?.array ?? []
+      const nrm = mesh.attributes?.normal?.array   ?? []
+      const idx = mesh.index?.array                ?? []
+      if (pos.length === 0 || pos.length % 3 !== 0) {
+        console.warn(`[SessionManager] mesh has invalid position array (length=${pos.length}) — skipping`)
+        continue
       }
+      for (let i = 0; i < pos.length; i++) positions.push(pos[i])
+      for (let i = 0; i < nrm.length; i++) normals.push(nrm[i])
+      for (let i = 0; i < idx.length; i++) indices.push(idx[i] + vertexOffset)
+      vertexOffset += pos.length / 3
+    }
+    // Apply unit scale if requested (e.g. mm→m: scale=0.001)
+    const s = typeof scale === 'number' && isFinite(scale) && scale !== 1 ? scale : null
+    if (s !== null) {
+      for (let i = 0; i < positions.length; i++) positions[i] *= s
+    }
+    console.log(`[SessionManager] Extracted: ${positions.length / 3} vertices, ${indices.length / 3} triangles${s !== null ? ` (scale ×${s})` : ''}`)
+
+    if (positions.length === 0) {
+      session.sendError('STEP_EMPTY', 'STEP file produced no geometry — check server log for details', 'import.step')
+      return
     }
 
     // Add a StepImportNode to the graph

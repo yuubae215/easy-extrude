@@ -54,26 +54,26 @@ importRouter.post('/step', upload.single('file'), async (req, res) => {
       return res.status(422).json({ error: 'STEP parsing failed', jobId })
     }
 
+    // occt-import-js stores geometry at mesh level (mesh.attributes / mesh.index),
+    // NOT at face level. mesh.faces is face-group metadata (color ranges only).
     const positions = [], normals = [], indices = []
-    let offset = 0
+    let vertexOffset = 0
     for (const mesh of result.meshes ?? []) {
-      for (const face of mesh.faces ?? []) {
-        const pos = face.position?.array ?? []
-        const nrm = face.normal?.array   ?? []
-        const idx = face.index?.array    ?? []
-        if (pos.length === 0) {
-          console.warn(`[import] mesh face has empty position array — skipping`)
-          continue
-        }
-        if (pos.length % 3 !== 0) {
-          console.warn(`[import] mesh face position.length (${pos.length}) is not a multiple of 3 — skipping`)
-          continue
-        }
-        positions.push(...pos)
-        normals.push(...nrm)
-        indices.push(...idx.map(i => i + offset))
-        offset += pos.length / 3
+      const pos = mesh.attributes?.position?.array ?? []
+      const nrm = mesh.attributes?.normal?.array   ?? []
+      const idx = mesh.index?.array                ?? []
+      if (pos.length === 0) {
+        console.warn(`[import] mesh has empty position array — skipping`)
+        continue
       }
+      if (pos.length % 3 !== 0) {
+        console.warn(`[import] mesh position.length (${pos.length}) is not a multiple of 3 — skipping`)
+        continue
+      }
+      for (let i = 0; i < pos.length; i++) positions.push(pos[i])
+      for (let i = 0; i < nrm.length; i++) normals.push(nrm[i])
+      for (let i = 0; i < idx.length; i++) indices.push(idx[i] + vertexOffset)
+      vertexOffset += pos.length / 3
     }
 
     res.json({ jobId, filename, status: 'done', mesh: { positions, normals, indices } })

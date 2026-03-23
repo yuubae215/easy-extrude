@@ -65,6 +65,13 @@ export class AppController {
       }
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
+    this._service.on('geometryApplied', ({ objectId }) => {
+      const obj = this._scene.getObject(objectId)
+      const sphere = obj?.meshView?.cuboid?.geometry?.boundingSphere
+      if (sphere && sphere.radius > 0) {
+        this._sceneView.fitCameraToSphere(sphere.center, sphere.radius)
+      }
+    })
     this._service.on('geometryError', ({ message }) =>
       this._uiView.showToast(`Geometry error: ${message}`)
     )
@@ -1167,7 +1174,9 @@ export class AppController {
     const matched = []
     for (const obj of this._scene.objects.values()) {
       if (!obj.meshView.cuboid.visible) continue
-      const pts = obj.corners.map(c => this._toScreenPx(c))
+      const corners = obj.corners ?? _meshBboxCorners(obj)
+      if (!corners || corners.length === 0) continue
+      const pts = corners.map(c => this._toScreenPx(c))
 
       if (isRight) {
         // Enclosed: every projected corner must be inside the rect
@@ -2182,11 +2191,17 @@ export class AppController {
           }
         }
 
+        // Read-only objects (ImportedMesh, MeasureLine) cannot be dragged
+        if (obj instanceof ImportedMesh || obj instanceof MeasureLine) {
+          this._uiView.showToast('Imported geometry is read-only')
+          return
+        }
+
         // Snapshot corners of every selected object for this drag
         this._objDragAllStartCorners = new Map()
         for (const id of this._selectedIds) {
           const selObj = this._scene.getObject(id)
-          if (selObj) this._objDragAllStartCorners.set(id, selObj.corners.map(c => c.clone()))
+          if (selObj?.corners) this._objDragAllStartCorners.set(id, selObj.corners.map(c => c.clone()))
         }
 
         this._objDragging      = true
@@ -2552,4 +2567,31 @@ export class AppController {
       console.warn('[AppController] BFF init failed (offline mode):', err.message)
     })
   }
+}
+
+// ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Returns 8 AABB corners for objects that don't have a `corners` property
+ * (e.g. ImportedMesh). Falls back to empty array if bounding box is unavailable.
+ * @param {object} obj  scene entity
+ * @returns {THREE.Vector3[]}
+ */
+function _meshBboxCorners(obj) {
+  const geo = obj.meshView?.cuboid?.geometry
+  if (!geo) return []
+  geo.computeBoundingBox()
+  const box = geo.boundingBox
+  if (!box || box.isEmpty()) return []
+  const { min, max } = box
+  return [
+    new THREE.Vector3(min.x, min.y, min.z),
+    new THREE.Vector3(max.x, min.y, min.z),
+    new THREE.Vector3(max.x, max.y, min.z),
+    new THREE.Vector3(min.x, max.y, min.z),
+    new THREE.Vector3(min.x, min.y, max.z),
+    new THREE.Vector3(max.x, min.y, max.z),
+    new THREE.Vector3(max.x, max.y, max.z),
+    new THREE.Vector3(min.x, max.y, max.z),
+  ]
 }
