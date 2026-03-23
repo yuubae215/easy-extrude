@@ -157,6 +157,8 @@ export class SceneService extends EventEmitter {
     if (obj instanceof ImportedMesh) {
       try {
         obj.meshView.updateGeometryBuffers(positions, normals, indices)
+        // Initialise synthetic AABB corners so grab/move operations work.
+        obj.initCorners(obj.meshView.getInitialCorners8())
         this.emit('geometryApplied', { objectId })
       } catch (err) {
         console.error('[SceneService] Failed to apply geometry update:', err)

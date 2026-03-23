@@ -33,6 +33,14 @@ export class ImportedMeshView {
     this.boxHelper = new THREE.BoxHelper(this.cuboid, 0xaaaaaa)
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
+
+    /**
+     * Centre of the geometry's bounding box in local geometry space (i.e. with
+     * cuboid.position = 0,0,0).  Set once the first geometry is loaded.
+     * Used by updateGeometry() to convert corner positions → a position offset.
+     * @type {THREE.Vector3 | null}
+     */
+    this._originalCenter = null
   }
 
   // ── Geometry update ─────────────────────────────────────────────────────────
@@ -70,6 +78,59 @@ export class ImportedMeshView {
     this._geo.computeBoundingSphere()
     const s = this._geo.boundingSphere
     if (s) console.log(`[ImportedMeshView] bounding sphere: center=(${s.center.x.toFixed(2)}, ${s.center.y.toFixed(2)}, ${s.center.z.toFixed(2)}) r=${s.radius.toFixed(2)}`)
+    // Capture original geometry centre for updateGeometry() position mapping.
+    if (this._geo.boundingBox) {
+      this._originalCenter = new THREE.Vector3()
+      this._geo.boundingBox.getCenter(this._originalCenter)
+    }
+    this.boxHelper.update()
+  }
+
+  // ── Move support ─────────────────────────────────────────────────────────────
+
+  /**
+   * Returns the 8 bounding-box corners in world space (respects current
+   * cuboid.position offset).  Used by SceneService to initialise ImportedMesh
+   * corners after geometry is first loaded.
+   * @returns {THREE.Vector3[]}
+   */
+  getInitialCorners8() {
+    const bb = this._geo.boundingBox
+    if (!bb) return []
+    const pos = this.cuboid.position
+    const { min, max } = bb
+    const corners = []
+    for (let xi = 0; xi < 2; xi++) {
+      for (let yi = 0; yi < 2; yi++) {
+        for (let zi = 0; zi < 2; zi++) {
+          corners.push(new THREE.Vector3(
+            (xi ? max.x : min.x) + pos.x,
+            (yi ? max.y : min.y) + pos.y,
+            (zi ? max.z : min.z) + pos.z,
+          ))
+        }
+      }
+    }
+    return corners
+  }
+
+  /**
+   * Applies a new set of 8 synthetic corners to the mesh position.
+   * The centroid of the 8 corners defines the new world-space centre of the
+   * mesh; cuboid.position is set to (newCentre − originalGeometryCentre).
+   * @param {THREE.Vector3[]} corners
+   */
+  updateGeometry(corners) {
+    if (!corners || corners.length === 0 || !this._originalCenter) return
+    const newCenter = corners.reduce(
+      (acc, c) => acc.add(c), new THREE.Vector3(),
+    ).divideScalar(corners.length)
+    this.cuboid.position.copy(newCenter).sub(this._originalCenter)
+    this.boxHelper.update()
+  }
+
+  /** Refreshes the BoxHelper outline after an external position change. */
+  updateBoxHelper() {
     this.boxHelper.update()
   }
 
@@ -99,10 +160,15 @@ export class ImportedMeshView {
     const bb = this._geo.boundingBox
     if (!bb) return []
 
+    // Offset all snap targets by the current mesh position (set via updateGeometry).
+    const off = this.cuboid.position
     const { min, max } = bb
-    const cx = (min.x + max.x) / 2
-    const cy = (min.y + max.y) / 2
-    const cz = (min.z + max.z) / 2
+    const mnx = min.x + off.x, mxx = max.x + off.x
+    const mny = min.y + off.y, mxy = max.y + off.y
+    const mnz = min.z + off.z, mxz = max.z + off.z
+    const cx = (mnx + mxx) / 2
+    const cy = (mny + mxy) / 2
+    const cz = (mnz + mxz) / 2
     const targets = []
 
     if (doVert) {
@@ -113,9 +179,9 @@ export class ImportedMeshView {
             targets.push({
               label: `${name} Vertex`,
               position: new THREE.Vector3(
-                xi ? max.x : min.x,
-                yi ? max.y : min.y,
-                zi ? max.z : min.z,
+                xi ? mxx : mnx,
+                yi ? mxy : mny,
+                zi ? mxz : mnz,
               ),
               type: 'vertex',
             })
@@ -128,20 +194,20 @@ export class ImportedMeshView {
       // 12 bounding-box edge midpoints
       const edgeMids = [
         // Bottom face (z=min)
-        new THREE.Vector3(cx,    min.y, min.z),
-        new THREE.Vector3(cx,    max.y, min.z),
-        new THREE.Vector3(min.x, cy,    min.z),
-        new THREE.Vector3(max.x, cy,    min.z),
+        new THREE.Vector3(cx,  mny, mnz),
+        new THREE.Vector3(cx,  mxy, mnz),
+        new THREE.Vector3(mnx, cy,  mnz),
+        new THREE.Vector3(mxx, cy,  mnz),
         // Top face (z=max)
-        new THREE.Vector3(cx,    min.y, max.z),
-        new THREE.Vector3(cx,    max.y, max.z),
-        new THREE.Vector3(min.x, cy,    max.z),
-        new THREE.Vector3(max.x, cy,    max.z),
+        new THREE.Vector3(cx,  mny, mxz),
+        new THREE.Vector3(cx,  mxy, mxz),
+        new THREE.Vector3(mnx, cy,  mxz),
+        new THREE.Vector3(mxx, cy,  mxz),
         // Vertical edges
-        new THREE.Vector3(min.x, min.y, cz),
-        new THREE.Vector3(max.x, min.y, cz),
-        new THREE.Vector3(min.x, max.y, cz),
-        new THREE.Vector3(max.x, max.y, cz),
+        new THREE.Vector3(mnx, mny, cz),
+        new THREE.Vector3(mxx, mny, cz),
+        new THREE.Vector3(mnx, mxy, cz),
+        new THREE.Vector3(mxx, mxy, cz),
       ]
       for (const p of edgeMids) {
         targets.push({ label: `${name} Edge`, position: p, type: 'edge' })
@@ -151,12 +217,12 @@ export class ImportedMeshView {
     if (doFace) {
       // 6 bounding-box face centers
       const faceCenters = [
-        new THREE.Vector3(min.x, cy,    cz),
-        new THREE.Vector3(max.x, cy,    cz),
-        new THREE.Vector3(cx,    min.y, cz),
-        new THREE.Vector3(cx,    max.y, cz),
-        new THREE.Vector3(cx,    cy,    min.z),
-        new THREE.Vector3(cx,    cy,    max.z),
+        new THREE.Vector3(mnx, cy,  cz),
+        new THREE.Vector3(mxx, cy,  cz),
+        new THREE.Vector3(cx,  mny, cz),
+        new THREE.Vector3(cx,  mxy, cz),
+        new THREE.Vector3(cx,  cy,  mnz),
+        new THREE.Vector3(cx,  cy,  mxz),
       ]
       for (const p of faceCenters) {
         targets.push({ label: `${name} Face`, position: p, type: 'face' })

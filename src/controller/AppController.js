@@ -824,7 +824,7 @@ export class AppController {
       // object is selected. Fixed count prevents layout shifts on selection.
       const hasObj  = this._objSelected
       const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
-      const canGrab = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
+      const canGrab = hasObj && !(this._activeObj instanceof MeasureLine)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -1342,8 +1342,8 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
-    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine) {
-      this._uiView.showToast('This object type is read-only')
+    if (this._activeObj instanceof MeasureLine) {
+      this._uiView.showToast('This object type cannot be moved')
       return
     }
 
@@ -1888,6 +1888,8 @@ export class AppController {
 
   _startPivotSelect() {
     if (!this._grab.active || this._grab.pivotSelectMode) return
+    // Pivot selection uses Cuboid-specific vertex geometry — skip for ImportedMesh.
+    if (this._activeObj instanceof ImportedMesh) return
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
@@ -2311,9 +2313,8 @@ export class AppController {
           }
         }
 
-        // Read-only objects (ImportedMesh, MeasureLine) cannot be dragged
-        if (obj instanceof ImportedMesh || obj instanceof MeasureLine) {
-          this._uiView.showToast('Imported geometry is read-only')
+        // MeasureLine cannot be dragged
+        if (obj instanceof MeasureLine) {
           return
         }
 
@@ -2325,7 +2326,8 @@ export class AppController {
         }
 
         this._objDragging      = true
-        this._objCtrlDrag      = e.ctrlKey
+        // Ctrl+drag (rotate) only works for locally-editable objects (Cuboid).
+        this._objCtrlDrag      = e.ctrlKey && !(obj instanceof ImportedMesh)
         this._controls.enabled = false
         this._activeDragPointerId = e.pointerId
         this._uiView.setCursor('grabbing')
