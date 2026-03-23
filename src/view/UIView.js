@@ -393,13 +393,13 @@ export class UIView {
     if (mode === 'object') {
       shortcuts = [
         ['Tab', 'Edit Mode'],
-        ['Click', 'Select'],
-        ['Drag', 'Move'],
-        ['Ctrl+Drag', 'Rotate'],
         ['G', 'Grab'],
-        ['G > X/Y/Z', 'Axis constraint'],
-        ['G > V', 'Set pivot'],
+        ['G > X/Y/Z', 'Axis'],
+        ['G > S', 'Stack'],
+        ['G > V', 'Pivot'],
         ['Shift+A', 'Add'],
+        ['Shift+D', 'Duplicate'],
+        ['M', 'Measure'],
         ['X', 'Delete'],
         ['N', 'Properties'],
       ]
@@ -420,8 +420,11 @@ export class UIView {
     } else {
       shortcuts = [
         ['Tab', 'Object Mode'],
-        ['Hover', 'Highlight face'],
-        ['Drag', 'Extrude'],
+        ['1', 'Vertex'],
+        ['2', 'Edge'],
+        ['3', 'Face'],
+        ['E', 'Extrude face'],
+        ['Shift+Click', 'Multi-select'],
         ['N', 'Properties'],
       ]
     }
