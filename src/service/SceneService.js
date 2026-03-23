@@ -341,7 +341,7 @@ export class SceneService extends EventEmitter {
 
   /**
    * Disposes the entity's MeshView and removes it from the scene.
-   * If the deleted object has child CoordinateFrames, they are cascade-deleted first.
+   * Child CoordinateFrames (including nested children) are cascade-deleted first.
    * No-ops if the id is unknown.
    * Emits: 'objectRemoved' (for the object and each cascaded child)
    * @param {string} id
@@ -350,11 +350,10 @@ export class SceneService extends EventEmitter {
     const obj = this._model.getObject(id)
     if (!obj) return
 
-    // Cascade: delete any child CoordinateFrames before removing the parent.
+    // Cascade: recursively delete children before removing the parent.
+    // Supports nested frame hierarchies (frame→frame chains, ADR-019).
     for (const child of this._model.getChildren(id)) {
-      child.meshView.dispose(this._threeScene)
-      this._model.removeObject(child.id)
-      this.emit('objectRemoved', child.id)
+      this.deleteObject(child.id)
     }
 
     obj.meshView.dispose(this._threeScene)
@@ -483,8 +482,12 @@ export class SceneService extends EventEmitter {
    * position updates are performed by the AppController animation loop so the
    * frame tracks the parent even when it is grabbed/moved.
    *
+   * Phase B (ADR-019): CoordinateFrame parents are allowed, enabling nested
+   * frame hierarchies (frame→frame chains).  MeasureLine and ImportedMesh
+   * are not valid parents (no spatial centroid suitable for a child frame).
+   *
    * No-ops (returns null) if parentObjectId is unknown or refers to a
-   * CoordinateFrame itself (frames cannot be parents of other frames in Phase A).
+   * MeasureLine or ImportedMesh.
    *
    * Emits: 'objectAdded'
    * @param {string} parentObjectId
@@ -492,7 +495,7 @@ export class SceneService extends EventEmitter {
    */
   createCoordinateFrame(parentObjectId) {
     const parent = this._model.getObject(parentObjectId)
-    if (!parent || parent instanceof CoordinateFrame) return null
+    if (!parent || parent instanceof MeasureLine || parent instanceof ImportedMesh) return null
 
     const idx  = this._model.objects.size
     const id   = `frame_${idx}_${Date.now()}`

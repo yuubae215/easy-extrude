@@ -4,6 +4,15 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-23**: CoordinateFrame Phase B — nested hierarchy + rotation editing (ADR-019) — Designed and implemented Option B for coordinate frames.
+  - **ADR-019 created**: documents nested frame chains (frame→frame), R-key rotation, multi-level Outliner indentation, and DAG deferral to Phase C.
+  - **Nested frames**: `SceneService.createCoordinateFrame` now accepts any parent except `MeasureLine`/`ImportedMesh` (previously blocked on `CoordinateFrame`). `deleteObject` is now recursive so nested subtrees are fully cascade-deleted. `_addCoordinateFrame` and `canAddFrame` (Shift+A menu + mobile toolbar) updated to match.
+  - **R-key rotation**: new `_rotate` state in `AppController` (symmetric to `_grab`). `_startRotate` / `_applyRotate` / `_confirmRotate` / `_cancelRotate` / `_updateRotateStatus` added. Mouse-driven screen-plane rotation with optional X/Y/Z world-axis constraint; numeric degree input (same pattern as Grab). Cancel restores `_rotate.startRot`. `setMode()` now also calls `_cancelRotate`. Click/RMB confirm/cancel in `_onPointerDown`.
+  - **`CoordinateFrameView.updateRotation(quaternion)`**: applies quaternion to the root `THREE.Group`; arrows and origin sphere rotate as a rigid body.
+  - **Topological sort in animation loop**: frames are now sorted by ancestor depth before position propagation, ensuring nested chain correctness in one pass.
+  - **OutlinerView multi-level indentation**: `_parentMap` tracks child→parent; `_getDepth` walks ancestors; `_getLastDescendantEl` finds subtree tail for correct DOM insertion; `_createRow` now takes `depth` (integer) instead of `isChild` (boolean), adding 12 px per level. `removeObject` now recurses to clean up nested children.
+  - MENTAL_MODEL updated: CoordinateFrame capability contract revised (Grab + Rotate, nested parents, topological sort, recursive cascade).
+
 - **2026-03-23**: Move support for ImportedMesh and MeasureLine — Removed read-only Grab/drag guards for both entity types. `ImportedMesh`: added synthetic 8-corner AABB (`_corners8`) + `initCorners()` + `move()` to domain entity; `ImportedMeshView` gains `updateGeometry(corners)` (centroid → `cuboid.position` offset), `updateBoxHelper()`, `getInitialCorners8()`, and position-aware snap targets; `SceneService` calls `initCorners()` after geometry load. `MeasureLine`: `corners` getter returns `[p1, p2]`; `move()` translates both endpoints; `MeasureLineView` gains `updateGeometry([p1,p2])` and `updateBoxHelper()`. `AppController`: pivot selection and Ctrl+drag rotation blocked for both types; pointer drag blocked for MeasureLine (no raycasting surface — G key only); mobile `canGrab` now true for all object types; Edit Mode toast updated. MENTAL_MODEL entity capability contracts revised.
 
 - **2026-03-23**: STEP import end-to-end fix + unit conversion dialog — Four bugs fixed and one feature added.

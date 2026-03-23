@@ -88,6 +88,15 @@ export class CoordinateFrameView {
     this._group.position.copy(position)
   }
 
+  /**
+   * Applies a world-space rotation quaternion to the frame's axes.
+   * Called by AppController after rotate operations (R key).
+   * @param {import('three').Quaternion} quaternion
+   */
+  updateRotation(quaternion) {
+    this._group.quaternion.copy(quaternion)
+  }
+
   /** @param {boolean} visible */
   setVisible(visible) {
     this._group.visible = visible
