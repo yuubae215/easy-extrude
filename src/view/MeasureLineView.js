@@ -177,6 +177,9 @@ export class MeasureLineView {
   clearEditSelection()   {}
   clearPivotDisplay()    {}
   clearSnapDisplay()     {}
+  showSnapCandidates()   {}
+  showSnapLocked()       {}
+  clearSnapLocked()      {}
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
