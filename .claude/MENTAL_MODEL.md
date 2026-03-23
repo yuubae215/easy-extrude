@@ -231,6 +231,20 @@ JSON.parse(row.data)  // throws — row.data is undefined
 const row = await getScene(sceneId)
 ```
 
+### PRAGMA journal_mode Must Not Run Inside a Transaction
+
+- **Principle**: `@libsql/client`'s `db.batch()` wraps all statements in a transaction. SQLite forbids switching journal mode (`PRAGMA journal_mode = WAL`) from within a transaction, so including the PRAGMA in `batch()` causes a `LibsqlBatchError` at startup.
+- **Concrete Rule**: Always `await db.execute('PRAGMA journal_mode = WAL')` as a standalone call *before* any `db.batch()`. Schema-creation DDL (`CREATE TABLE IF NOT EXISTS`) is safe inside `batch()`.
+
+```js
+// WRONG — throws LibsqlBatchError on startup
+await db.batch(['PRAGMA journal_mode = WAL', 'CREATE TABLE IF NOT EXISTS ...'], 'write')
+
+// CORRECT
+await db.execute('PRAGMA journal_mode = WAL')
+await db.batch(['CREATE TABLE IF NOT EXISTS ...'], 'write')
+```
+
 ### Unguarded JSON.parse in DB layer
 
 - **Principle**: A single malformed row in the database causes an unhandled rejection that crashes the current WebSocket handler or request — with no error returned to the client.

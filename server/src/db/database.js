@@ -23,8 +23,10 @@ mkdirSync(DATA_DIR, { recursive: true })
 const DB_PATH = join(DATA_DIR, 'scenes.db')
 export const db = createClient({ url: `file:${DB_PATH}` })
 
+// PRAGMA journal_mode cannot run inside a transaction — execute separately first
+await db.execute('PRAGMA journal_mode = WAL')
+
 await db.batch([
-  'PRAGMA journal_mode = WAL',
   `CREATE TABLE IF NOT EXISTS scenes (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
