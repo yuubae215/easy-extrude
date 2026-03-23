@@ -89,14 +89,30 @@ Example Outliner rendering:
 | Delete | ✓ (parent deletion cascades) |
 | Visibility toggle | ✓ |
 | Edit Mode | ✗ (no vertex graph) |
-| Grab / G key | ✗ (position = parent centroid, Phase A) |
+| Grab / G key | ✓ — moves the `translation` offset relative to parent |
 | Pointer drag | ✗ (no cuboid raycasting surface) |
 | Ctrl+drag rotation | ✗ |
 | Stack mode | ✗ |
-| Snap target | ✗ (no corners) |
+| Snap target | ✗ (corners returns [_worldPos] for grab only, not snap) |
 
-The frame's world position is recomputed every animation frame from its
-parent's centroid, so it follows the parent through Grab moves.
+#### Position model
+
+```
+_worldPos  = parentCentroid + translation   (recomputed every frame)
+translation = _worldPos − parentCentroid    (back-derived after each Grab)
+```
+
+When the frame is **not** being grabbed, the animation loop recomputes
+`_worldPos = parentCentroid + translation` so the frame follows its parent
+with the current offset.
+
+When the frame **is** being grabbed, `move()` updates `_worldPos` directly;
+the animation loop then back-derives `translation = _worldPos − parentCentroid`,
+so the new offset is remembered for subsequent parent moves.
+
+`corners` returns `[this._worldPos]` (mutable reference) so the standard Grab
+machinery (startCorners save, cancel restore, drag-plane centroid) works without
+modification.
 
 ### 5. Cascade deletion
 

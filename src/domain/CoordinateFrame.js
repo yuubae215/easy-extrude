@@ -2,23 +2,30 @@
  * CoordinateFrame - a named reference frame attached to a parent object's origin.
  *
  * Represents an SE(3) coordinate frame that is a child of a geometry object.
- * The frame's world position is derived from its parent object's centroid.
- * In the Outliner, CoordinateFrames appear indented under their parent object,
- * expressing the spatial hierarchy.
+ * The frame's world position is derived from its parent object's centroid plus
+ * a relative `translation` offset.  In the Outliner, CoordinateFrames appear
+ * indented under their parent, expressing the spatial hierarchy.
  *
  * Type guard: instanceof CoordinateFrame
  *
  * Capability matrix (Phase A):
  *   - Edit Mode:         blocked (no vertex graph)
- *   - Grab/Move (G key): blocked (position is parent-derived)
+ *   - Grab/Move (G key): allowed — moves the translation offset relative to parent
  *   - Pointer drag:      blocked (no cuboid raycasting surface)
  *   - Ctrl+drag rotate:  blocked
  *   - Rename:            allowed
  *   - Delete:            allowed (also deleted on parent deletion — cascade)
  *
- * This entity forms the first layer of the ADR-016 transform graph on the
- * frontend — a SceneObject hierarchy that parallels the TransformNode tree
- * managed by the Geometry Service.
+ * Position model
+ * ─────────────
+ *   _worldPos  = parentCentroid + translation   (kept in sync by animation loop)
+ *   translation = _worldPos − parentCentroid    (updated after each Grab move)
+ *
+ * The animation loop always recomputes `_worldPos` so the frame follows its
+ * parent when the parent is grabbed/moved.  When the user grabs the frame
+ * itself, `move()` updates `_worldPos`; the next animation-loop tick derives
+ * the new `translation` from the difference, preserving the offset for
+ * subsequent parent moves.
  *
  * @see ADR-016, ADR-018
  */
@@ -39,8 +46,9 @@ export class CoordinateFrame {
     this.meshView = meshView
 
     /**
-     * Relative translation from parent origin (world units).
+     * Relative translation from parent centroid (world units).
      * Default: zero vector (frame origin coincides with parent centroid).
+     * Updated by the animation loop after each Grab move.
      * @type {Vector3}
      */
     this.translation = new Vector3()
@@ -48,25 +56,46 @@ export class CoordinateFrame {
     /**
      * Relative rotation from parent orientation.
      * Default: identity quaternion (frame axes aligned with world axes).
+     * Phase B: exposed for Node-Editor editing.
      * @type {Quaternion}
      */
     this.rotation = new Quaternion()
+
+    /**
+     * Cached world-space position.  Mutated directly by `move()` and
+     * recomputed by the AppController animation loop.  Returned by `corners`
+     * so the standard Grab machinery works without modification.
+     * @type {Vector3}
+     */
+    this._worldPos = new Vector3()
   }
 
   /** @param {string} name */
   rename(name) { this.name = name }
 
   /**
-   * CoordinateFrame has no geometric extent.
-   * Returns an empty array so collectSnapTargets / corner-based ops skip it.
-   * @returns {import('three').Vector3[]}
+   * Returns [_worldPos] — a single-element array holding a reference to the
+   * frame's mutable world-position vector.
+   *
+   * Conventions shared with the Grab system:
+   *  - `startCorners = corners.map(c => c.clone())` saves [_worldPos.clone()]
+   *  - `move(startCorners, delta)` updates _worldPos in-place
+   *  - Cancel: `corners[0].copy(saved)` = `_worldPos.copy(saved)` ✓
+   *  - `getCentroid(corners)` = _worldPos, which is world-space ✓ (correct drag plane)
+   *
+   * @returns {[Vector3]}
    */
-  get corners() { return [] }
+  get corners() { return [this._worldPos] }
 
   /**
-   * Position is managed by the parent object — move() is intentionally a no-op
-   * in Phase A.  Phase B will allow relative-transform editing via the
-   * Node Editor.
+   * Translates the frame by `delta` from its grab-start position.
+   * `_worldPos` is updated in-place; the animation loop derives the new
+   * `translation` offset from `_worldPos − parentCentroid` on the next tick.
+   *
+   * @param {[Vector3]} startCorners  saved [_worldPos] at grab start
+   * @param {Vector3}   delta         world-space movement vector
    */
-  move() {}
+  move(startCorners, delta) {
+    this._worldPos.copy(startCorners[0]).add(delta)
+  }
 }

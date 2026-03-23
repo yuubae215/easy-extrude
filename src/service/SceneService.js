@@ -501,12 +501,14 @@ export class SceneService extends EventEmitter {
     const meshView = new CoordinateFrameView(this._threeScene)
     const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)
 
-    // Initialise position at parent centroid.
+    // Initialise _worldPos and visual position at parent centroid.
+    // translation = (0,0,0) so the frame starts exactly at the parent origin.
     const corners = parent.corners
     if (corners.length > 0) {
       const centroid = new Vector3()
       for (const c of corners) centroid.add(c)
       centroid.divideScalar(corners.length)
+      frame._worldPos.copy(centroid)
       meshView.updatePosition(centroid)
     }
 

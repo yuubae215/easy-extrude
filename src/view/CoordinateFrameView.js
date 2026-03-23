@@ -129,4 +129,5 @@ export class CoordinateFrameView {
   showSnapLocked()       {}
   clearSnapLocked()      {}
   updateGeometry()       {}
+  updateBoxHelper()      {}
 }

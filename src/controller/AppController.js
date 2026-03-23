@@ -863,7 +863,7 @@ export class AppController {
       // object is selected. Fixed count prevents layout shifts on selection.
       const hasObj  = this._objSelected
       const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame)
-      const canGrab = hasObj && !(this._activeObj instanceof CoordinateFrame)
+      const canGrab = hasObj
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -1389,11 +1389,6 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
-    // CoordinateFrame position is derived from its parent — grab is blocked in Phase A.
-    if (this._activeObj instanceof CoordinateFrame) {
-      this._uiView.showToast('Coordinate frame position is managed by its parent object')
-      return
-    }
     this._grab.active          = true
     this._grab.axis            = null
     this._grab.inputStr        = ''
@@ -2731,18 +2726,36 @@ export class AppController {
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine) obj.meshView.updateLabelPosition()
       }
-      // Sync CoordinateFrame positions to their parent's centroid each frame so
-      // frames follow their parent when it is grabbed or moved.
+      // Sync CoordinateFrame positions every frame.
+      //
+      // Position model: worldPos = parentCentroid + translation
+      //
+      // Two paths:
+      //  a) Frame is being grabbed → move() already updated _worldPos.
+      //     Back-derive the new translation so the offset is preserved when
+      //     the parent moves later.
+      //  b) Frame is not grabbed  → recompute worldPos from parentCentroid +
+      //     translation (frame follows parent).
+      //
+      // Either way, meshView.updatePosition(_worldPos) is called at the end.
+      const grabbedFrameIds = this._grab.active ? this._grab.allStartCorners : new Map()
       for (const obj of this._scene.objects.values()) {
-        if (obj instanceof CoordinateFrame) {
-          const parent = this._scene.getObject(obj.parentId)
-          if (parent && parent.corners.length > 0) {
-            const centroid = new THREE.Vector3()
-            for (const c of parent.corners) centroid.add(c)
-            centroid.divideScalar(parent.corners.length)
-            obj.meshView.updatePosition(centroid)
-          }
+        if (!(obj instanceof CoordinateFrame)) continue
+        const parent = this._scene.getObject(obj.parentId)
+        if (!parent || parent.corners.length === 0) continue
+
+        const parentCentroid = new THREE.Vector3()
+        for (const c of parent.corners) parentCentroid.add(c)
+        parentCentroid.divideScalar(parent.corners.length)
+
+        if (grabbedFrameIds.has(obj.id)) {
+          // (a) Grabbed: _worldPos already updated by move(). Sync translation.
+          obj.translation.copy(obj._worldPos).sub(parentCentroid)
+        } else {
+          // (b) Not grabbed: follow parent, keep translation offset.
+          obj._worldPos.copy(parentCentroid).add(obj.translation)
         }
+        obj.meshView.updatePosition(obj._worldPos)
       }
     }
     loop()
