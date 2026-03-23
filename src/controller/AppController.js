@@ -638,11 +638,10 @@ export class AppController {
     }
 
     if (mode === 'object') {
-      // Always show the same 4 buttons; disabled when no object is selected.
-      // Fixed count prevents layout shifts on selection.
-      const hasObj   = this._objSelected
-      const canEdit  = hasObj && !(this._activeObj instanceof ImportedMesh)
-      const canGrab  = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
+      // Always show the same 4 buttons; Edit/Delete are disabled when no
+      // object is selected. Fixed count prevents layout shifts on selection.
+      const hasObj  = this._objSelected
+      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -653,9 +652,9 @@ export class AppController {
             () => this._addObject('measure'),
           ),
         },
-        { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),   disabled: !canEdit },
-        { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab(),      disabled: !canGrab },
+        { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
         { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
+        { spacer: true },
       ])
       return
     }

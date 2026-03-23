@@ -153,7 +153,7 @@ if (e.target !== this._sceneView.renderer.domElement) return
 
 | Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
 |------|--------|--------|--------|--------|
-| Object | Add | Edit | Grab | Delete |
+| Object | Add | Edit | Delete | *(spacer)* |
 | Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* |
 | Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* |
 | Edit 3D | ← Object | Vertex | Edge | Face |
@@ -164,6 +164,7 @@ if (e.target !== this._sceneView.renderer.domElement) return
 Grab and Edit are disabled for `ImportedMesh`; Grab is additionally disabled for `MeasureLine`. All four Object-mode slots have consistent disabled states so slot positions never shift.
 
 Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No Extrude button is shown in Edit 3D.
+Grab on mobile is also a gesture (touch object → drag) — no toolbar button needed. Stack is an explicit constraint mode, so it has a dedicated toolbar button.
 
 ### Stack Mode (Grab)
 
