@@ -50,7 +50,23 @@ Use the Read tool on every identified file.
 
 - [ ] No off-by-one errors in index loops over `faces[6]` or `edges[12]`.
 - [ ] Geometry functions in `CuboidModel.js` are pure (no side effects, no `this`).
-- [ ] `instanceof` type guards match MENTAL_MODEL §1 contracts (`instanceof Sketch` = 2D, `instanceof Cuboid` = 3D).
+- [ ] `instanceof` type guards match MENTAL_MODEL §1 contracts (`instanceof Sketch` = 2D, `instanceof Cuboid` = 3D, `instanceof ImportedMesh` / `instanceof MeasureLine` = read-only).
+- [ ] Every code path that accesses `.corners` on a selected object guards with `selObj.corners` or `instanceof ImportedMesh` check — `ImportedMesh` has no vertex graph.
+- [ ] Every code path that calls `setMode('edit')` or `_startGrab()` for `ImportedMesh` / `MeasureLine` emits a `showToast('Imported geometry is read-only')` before returning.
+
+#### G. Server-Side Async (Node.js BFF) — MENTAL_MODEL §3.5
+
+- [ ] Every call to `sceneStore.getScene()`, `sceneStore.updateScene()`, `sceneStore.createScene()`, `sceneStore.deleteScene()` is `await`ed. Functions calling these are declared `async`.
+- [ ] Fire-and-forget wrappers (e.g. `_autosave`) are `async` and wrap all `await` calls in `try/catch`.
+- [ ] `PRAGMA journal_mode = WAL` is run as a standalone `await db.execute(...)` call, **not** inside `db.batch()`.
+- [ ] `JSON.parse(row.data)` in the DB layer is wrapped in `try/catch` and re-throws a structured error.
+- [ ] `occt-import-js` geometry is extracted at the mesh level (`mesh.attributes?.position?.array`), not at `mesh.faces[n].position` which is always `undefined`.
+- [ ] After `updateGeometryBuffers` for an `ImportedMesh`, `SceneView.fitCameraToSphere()` is triggered (via `geometryApplied` event) to prevent far-clip cutoff.
+
+#### H. Memory Management — WsChannel
+
+- [ ] In `WsChannel._connect()`, bound event handlers are stored as instance properties (`_onWsOpen`, `_onWsMessage`, `_onWsClose`, `_onWsError`).
+- [ ] In `WsChannel.close()`, all four handlers are removed via `removeEventListener` before `ws.close()` and `this._ws = null`.
 
 ### 4. Report findings
 
