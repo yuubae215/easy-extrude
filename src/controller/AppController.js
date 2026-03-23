@@ -88,6 +88,8 @@ export class AppController {
       previewLine:  null,
       /** True while the user is holding a pointer down to snap a point */
       pressing:     false,
+      /** MeshView used for snap candidate display (may differ from _meshView when active obj is MeasureLine) */
+      snapMeshView: null,
     }
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
@@ -319,6 +321,12 @@ export class AppController {
     this._measure.snapTargets  = []
     this._measure.snapping     = false
     this._measure.snappedTarget = null
+    // Snap display requires a MeshView with THREE.Points infrastructure.
+    // MeasureLineView has no-op stubs, so fall back to any non-MeasureLine object's view.
+    const activeObj = this._scene.activeObject
+    this._measure.snapMeshView = (activeObj && !(activeObj instanceof MeasureLine))
+      ? activeObj.meshView
+      : ([...this._scene.objects.values()].find(o => !(o instanceof MeasureLine))?.meshView ?? null)
     this._uiView.setCursor('crosshair')
     this._updateMeasureStatus()
     this._updateMobileToolbar()
@@ -339,7 +347,8 @@ export class AppController {
       this._measure.previewLine.material.dispose()
       this._measure.previewLine = null
     }
-    this._meshView?.clearSnapDisplay()
+    this._measure.snapMeshView?.clearSnapDisplay()
+    this._measure.snapMeshView = null
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
@@ -366,7 +375,8 @@ export class AppController {
         this._measure.previewLine.material.dispose()
         this._measure.previewLine = null
       }
-      this._meshView?.clearSnapDisplay()
+      this._measure.snapMeshView?.clearSnapDisplay()
+      this._measure.snapMeshView  = null
       this._measure.active        = false
       const p1                    = this._measure.p1
       this._measure.p1            = null
@@ -1893,17 +1903,18 @@ export class AppController {
       const pt = this._measurePickPoint()
       if (pt) {
         this._measure.p2 = pt
-        // Show snap candidates on the active object's mesh view (if any)
-        if (this._meshView) {
-          this._meshView.showSnapCandidates(this._measure.snapTargets)
+        // Show snap candidates via snapMeshView (a real MeshView, not MeasureLineView)
+        const smv = this._measure.snapMeshView
+        if (smv) {
+          smv.showSnapCandidates(this._measure.snapTargets)
           if (this._measure.snapping && this._measure.snappedTarget) {
-            this._meshView.showSnapLocked(
+            smv.showSnapLocked(
               this._measure.snappedTarget.position,
               this._measure.snappedTarget.type,
               pt,
             )
           } else {
-            this._meshView.clearSnapLocked()
+            smv.clearSnapLocked()
           }
         }
         // Phase 2: draw preview line
