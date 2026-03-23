@@ -2,7 +2,7 @@
 
 **Responsibility**: Represent business logic and domain entities.
 
-Files: `Cuboid.js`, `Sketch.js`, `ImportedMesh.js`
+Files: `Cuboid.js`, `Sketch.js`, `ImportedMesh.js`, `MeasureLine.js`
 
 ---
 
@@ -30,6 +30,7 @@ Domain depends on nothing. Every other layer depends on Domain.
 - `instanceof Sketch` = 2D, not yet extruded. Operations: `extrude(height)`, `rename(name)`
 - `instanceof Cuboid` = 3D. Operations: `move()`, `extrudeFace(face, ...)`, `rename(name)`
 - `instanceof ImportedMesh` = arbitrary triangle mesh (read-only geometry). Operations: `rename(name)` only
+- `instanceof MeasureLine` = two-point measurement annotation. Holds `p1`, `p2` (`THREE.Vector3`) and a `MeasureLineView`. Operations: none beyond display. Has **no** vertex/edge/face graph.
 - `Sketch.extrude()` must **not** mutate the Sketch — it returns a new `Cuboid`
 - Use `instanceof` for entity type dispatch; never use the `dimension` scalar
 
