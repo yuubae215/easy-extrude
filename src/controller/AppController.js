@@ -22,6 +22,7 @@ import {
   collectWorldSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
+import { Cuboid }          from '../domain/Cuboid.js'
 import { Sketch }          from '../domain/Sketch.js'
 import { ImportedMesh }    from '../domain/ImportedMesh.js'
 import { MeasureLine }     from '../domain/MeasureLine.js'
@@ -187,6 +188,10 @@ export class AppController {
       snapTargets:     [],
       /** Grid snap unit size (Ctrl during grab). Cycled with Ctrl+Wheel. */
       gridSize:        1,
+      /** When true, grabbed object snaps Z so its bottom rests on the top surface below. */
+      stackMode:       false,
+      /** True when stacking is actively snapping Z this frame. */
+      stacking:        false,
     }
 
     this._ctrlHeld  = false
@@ -625,18 +630,18 @@ export class AppController {
     if (this._grab.active) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
+        { icon: ICONS.stack,   label: 'Stack',   onClick: () => this._toggleStackMode(), active: this._grab.stackMode },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
-        { spacer: true },
         { spacer: true },
       ])
       return
     }
 
     if (mode === 'object') {
-      // Always show the same 4 buttons; Edit/Move/Delete are disabled when no
+      // Always show the same 4 buttons; Edit/Delete are disabled when no
       // object is selected. Fixed count prevents layout shifts on selection.
-      const hasObj      = this._objSelected
-      const canEdit     = hasObj && !(this._activeObj instanceof ImportedMesh)
+      const hasObj  = this._objSelected
+      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -1203,6 +1208,8 @@ export class AppController {
     this._grab.axis          = null
     this._grab.autoSnap      = false
     this._grab.snappedTarget = null
+    this._grab.stackMode     = false
+    this._grab.stacking      = false
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
     this._controls.enabled = true
@@ -1230,6 +1237,8 @@ export class AppController {
     this._grab.axis          = null
     this._grab.autoSnap      = false
     this._grab.snappedTarget = null
+    this._grab.stackMode     = false
+    this._grab.stacking      = false
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -1262,6 +1271,12 @@ export class AppController {
     } else {
       this._applyFreeGrab()
     }
+    // Stack snap: adjust Z so grabbed objects rest on top of any object below
+    if (this._grab.stackMode) {
+      this._applyStackSnap()
+    } else {
+      this._grab.stacking = false
+    }
     // Update geometry for all selected objects
     for (const id of this._selectedIds) {
       const selObj = this._scene.getObject(id)
@@ -1270,6 +1285,76 @@ export class AppController {
         selObj.meshView.updateBoxHelper()
       }
     }
+  }
+
+  /** Toggles stacking mode on/off during an active grab. */
+  _toggleStackMode() {
+    this._grab.stackMode = !this._grab.stackMode
+    this._grab.stacking  = false
+    this._applyGrab()
+    this._updateGrabStatus()
+    this._updateMobileToolbar()
+  }
+
+  /**
+   * Stack snap: after all grab movement is applied, cast downward rays from the
+   * bottom face of the active grabbed object. If another object is directly below,
+   * shift all grabbed objects upward so the bottom face rests on that surface.
+   *
+   * Must be called after `_applyGrabDeltaToAll()` has updated vertex positions.
+   */
+  _applyStackSnap() {
+    const grabbed = this._activeObj
+    if (!(grabbed instanceof Cuboid)) { this._grab.stacking = false; return }
+
+    // Find bottom Z of the grabbed object
+    const gCorners = grabbed.corners
+    let gZMin = Infinity
+    gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
+
+    // Collect meshes from non-grabbed objects (excluding MeasureLine)
+    const grabbedIds = new Set(this._selectedIds)
+    const targetMeshes = [...this._scene.objects.values()]
+      .filter(o => !grabbedIds.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
+      .map(o => o.meshView.cuboid)
+
+    if (!targetMeshes.length) { this._grab.stacking = false; return }
+
+    // Sample the bottom face: 4 corners at gZMin + centroid
+    const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < 0.001)
+    const center = new THREE.Vector3()
+    bottomCorners.forEach(c => center.add(c))
+    center.divideScalar(bottomCorners.length || 1)
+
+    const origins = [...bottomCorners, center]
+    const downDir = new THREE.Vector3(0, 0, -1)
+    const stackRay = new THREE.Raycaster()
+
+    // Cast downward from slightly above bottom face; find highest hit
+    let highestHitZ = null
+    for (const origin of origins) {
+      stackRay.set(new THREE.Vector3(origin.x, origin.y, gZMin + 0.001), downDir)
+      const hits = stackRay.intersectObjects(targetMeshes)
+      if (hits.length > 0) {
+        const hz = hits[0].point.z
+        if (highestHitZ === null || hz > highestHitZ) highestHitZ = hz
+      }
+    }
+
+    if (highestHitZ === null) { this._grab.stacking = false; return }
+
+    const zOffset = highestHitZ - gZMin
+    // Only snap when below or touching (don't push object down)
+    if (zOffset <= 0.001) { this._grab.stacking = false; return }
+
+    // Apply additional Z shift to all selected objects' vertex positions directly
+    for (const id of this._selectedIds) {
+      const selObj = this._scene.getObject(id)
+      if (selObj instanceof Cuboid) {
+        selObj.corners.forEach(c => { c.z += zOffset })
+      }
+    }
+    this._grab.stacking = true
   }
 
   /**
@@ -1373,6 +1458,13 @@ export class AppController {
     }
     if (this._grab.pivotLabel !== 'Centroid') {
       parts.push({ text: this._grab.pivotLabel, color: '#888' })
+    }
+    if (this._grab.stackMode) {
+      if (this._grab.stacking) {
+        parts.push({ text: 'Stack: ON', bold: true, color: '#a5d6a7' })
+      } else {
+        parts.push({ text: 'Stack', color: '#4caf50' })
+      }
     }
     if (this._grab.snapping && this._grab.snappedTarget) {
       parts.push({ text: `Snap: ${this._grab.snappedTarget.label}`, bold: true, color: '#ff9800' })
@@ -2198,6 +2290,7 @@ export class AppController {
         case 'x': case 'X': this._setGrabAxis('x'); return
         case 'y': case 'Y': this._setGrabAxis('y'); return
         case 'z': case 'Z': this._setGrabAxis('z'); return
+        case 's': case 'S': this._toggleStackMode(); return
         case 'Enter':        this._confirmGrab();    return
         case 'Escape':       this._cancelGrab();     return
         case '1': this._setSnapMode('vertex'); return
