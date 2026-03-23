@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-23**: CoordinateFrame visibility fix — `CoordinateFrameView.setObjectSelected()` now toggles depth rendering based on selection state: selected → `depthTest: false` + `renderOrder: 1` on all axis arrow / origin-sphere materials so the frame always renders in front of any overlapping geometry; deselected → normal depth testing so the frame is naturally occluded (acceptable when not being interacted with). Balances discoverability (always visible when active) with visual cleanliness (no floating axes cluttering the viewport when idle).
+
 - **2026-03-23**: CoordinateFrame Phase B — nested hierarchy + rotation editing (ADR-019) — Designed and implemented Option B for coordinate frames.
   - **ADR-019 created**: documents nested frame chains (frame→frame), R-key rotation, multi-level Outliner indentation, and DAG deferral to Phase C.
   - **Nested frames**: `SceneService.createCoordinateFrame` now accepts any parent except `MeasureLine`/`ImportedMesh` (previously blocked on `CoordinateFrame`). `deleteObject` is now recursive so nested subtrees are fully cascade-deleted. `_addCoordinateFrame` and `canAddFrame` (Shift+A menu + mobile toolbar) updated to match.

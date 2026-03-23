@@ -107,6 +107,23 @@ this._measure.snapMeshView = null
 - **Principle**: HTML labels that overlay a Three.js canvas must be repositioned every animation frame because the camera may have moved.
 - **Concrete Rule**: `MeasureLineView.updateLabelPosition()` must be called once per frame from the animation loop for every `MeasureLine` in the scene. The label uses `position: fixed` and is projected from world-space midpoint via `Vector3.project(camera)`. It is appended to `document.body` and removed in `dispose()`.
 
+### CoordinateFrame Depth Rendering Policy
+
+- **Principle**: Gizmo-style objects (axes, labels) that float at a point in world space can be completely hidden by surrounding geometry, making them invisible when the user is trying to manipulate them. Always-on-top rendering avoids this but pollutes the viewport with floating arrows when frames are idle.
+- **Concrete Rule**: `CoordinateFrameView.setObjectSelected()` applies a **selection-gated depth override**: when selected → `depthTest: false` + `renderOrder: 1` on all arrow and sphere materials (frame always visible through geometry); when deselected → `depthTest: true` + `renderOrder: 0` (frame may be occluded, acceptable since the user is not interacting with it). This is a **conscious choice over** (a) always-on-top (too noisy when many idle frames exist) and (b) X-ray dual-pass rendering (ArrowHelper clone overhead, complex dispose path).
+
+```js
+// In setObjectSelected(selected):
+const depthTest   = !selected       // false when selected → always on top
+const renderOrder =  selected ? 1 : 0
+for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
+  arrow.line.material.depthTest = depthTest;  arrow.line.renderOrder = renderOrder
+  arrow.cone.material.depthTest = depthTest;  arrow.cone.renderOrder = renderOrder
+}
+this._originSphere.material.depthTest = depthTest
+this._originSphere.renderOrder        = renderOrder
+```
+
 ### Visual State Ownership
 
 - **Principle**: Each visual flag must have exactly one mutator function to prevent race conditions and scattered state updates.
