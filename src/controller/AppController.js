@@ -86,6 +86,8 @@ export class AppController {
       snappedTarget: null,
       /** Three.js Line for preview before entity is created */
       previewLine:  null,
+      /** True while the user is holding a pointer down to snap a point */
+      pressing:     false,
     }
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
@@ -330,6 +332,7 @@ export class AppController {
     this._measure.snapping     = false
     this._measure.snappedTarget = null
     this._measure.snapTargets  = []
+    this._measure.pressing     = false
     if (this._measure.previewLine) {
       this._sceneView.scene.remove(this._measure.previewLine)
       this._measure.previewLine.geometry.dispose()
@@ -340,6 +343,48 @@ export class AppController {
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
+  }
+
+  /**
+   * Confirms the current snapped cursor position as a measure point.
+   * Phase 1: sets p1. Phase 2: creates the MeasureLine entity.
+   * Called from _onPointerUp so mobile users can hold-to-snap before releasing.
+   */
+  _confirmMeasurePoint() {
+    const pt = this._measurePickPoint()
+    if (!pt) return
+    if (!this._measure.p1) {
+      // Phase 1 → Phase 2: record start point
+      this._measure.p1 = pt.clone()
+      this._updateMeasureStatus()
+    } else {
+      // Phase 2: record end point → create entity
+      const p2 = pt.clone()
+      if (this._measure.previewLine) {
+        this._sceneView.scene.remove(this._measure.previewLine)
+        this._measure.previewLine.geometry.dispose()
+        this._measure.previewLine.material.dispose()
+        this._measure.previewLine = null
+      }
+      this._meshView?.clearSnapDisplay()
+      this._measure.active        = false
+      const p1                    = this._measure.p1
+      this._measure.p1            = null
+      this._measure.p2            = null
+      this._measure.snapTargets   = []
+      this._measure.snapping      = false
+      this._measure.snappedTarget = null
+      const obj = this._service.createMeasureLine(
+        p1, p2,
+        this._camera,
+        this._sceneView.renderer,
+        document.body,
+      )
+      this._switchActiveObject(obj.id, true)
+      this._uiView.setCursor('default')
+      this._refreshObjectModeStatus()
+      this._updateMobileToolbar()
+    }
   }
 
   _updateMeasureStatus() {
@@ -488,6 +533,7 @@ export class AppController {
 
     this._refreshObjectModeStatus()
     this._updateNPanel()
+    this._updateMobileToolbar()
   }
 
   _setObjectVisible(id, visible) {
@@ -641,7 +687,8 @@ export class AppController {
       // Always show the same 4 buttons; Edit/Delete are disabled when no
       // object is selected. Fixed count prevents layout shifts on selection.
       const hasObj  = this._objSelected
-      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh)
+      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
+      const canGrab = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -654,7 +701,7 @@ export class AppController {
         },
         { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
         { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
-        { spacer: true },
+        { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canGrab },
       ])
       return
     }
@@ -2066,41 +2113,10 @@ export class AppController {
     if (this._measure.active) {
       if (e.button === 2) { this._cancelMeasure(); return }
       if (e.button === 0) {
-        const pt = this._measurePickPoint()
-        if (!pt) return
-        if (!this._measure.p1) {
-          // Phase 1 → Phase 2: record start point
-          this._measure.p1 = pt.clone()
-          this._updateMeasureStatus()
-        } else {
-          // Phase 2: record end point → create entity
-          const p2 = pt.clone()
-          if (this._measure.previewLine) {
-            this._sceneView.scene.remove(this._measure.previewLine)
-            this._measure.previewLine.geometry.dispose()
-            this._measure.previewLine.material.dispose()
-            this._measure.previewLine = null
-          }
-          this._meshView?.clearSnapDisplay()
-          this._measure.active = false
-          const p1 = this._measure.p1
-          this._measure.p1 = null
-          this._measure.p2 = null
-          this._measure.snapTargets  = []
-          this._measure.snapping     = false
-          this._measure.snappedTarget = null
-          // Create entity via service
-          const obj = this._service.createMeasureLine(
-            p1, p2,
-            this._camera,
-            this._sceneView.renderer,
-            document.body,
-          )
-          this._switchActiveObject(obj.id, true)
-          this._uiView.setCursor('default')
-          this._refreshObjectModeStatus()
-          this._updateMobileToolbar()
-        }
+        // Hold to snap, release to confirm — handled in _onPointerUp.
+        // This lets mobile users slide their finger to the snap target before lifting.
+        this._measure.pressing = true
+        this._activeDragPointerId = e.pointerId
         return
       }
       return
@@ -2218,6 +2234,17 @@ export class AppController {
 
   _onPointerUp(e) {
     if (e.button !== 0) return
+
+    // ── Measure point confirmation (hold-to-snap, release-to-confirm) ─────
+    if (this._measure.active && this._measure.pressing) {
+      if (this._activeDragPointerId === e.pointerId) {
+        this._activeDragPointerId = null
+        this._measure.pressing    = false
+        this._confirmMeasurePoint()
+      }
+      return
+    }
+
     // wasDragging: a canvas drag started for this pointer (via _onPointerDown)
     const wasDragging = this._activeDragPointerId === e.pointerId
     if (wasDragging) this._activeDragPointerId = null
