@@ -153,7 +153,7 @@ if (e.target !== this._sceneView.renderer.domElement) return
 
 | Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
 |------|--------|--------|--------|--------|
-| Object | Add | Edit | Delete | *(spacer)* |
+| Object | Add | Edit | Delete | Stack |
 | Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* |
 | Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* |
 | Edit 3D | ← Object | Vertex | Edge | Face |
@@ -161,10 +161,17 @@ if (e.target !== this._sceneView.renderer.domElement) return
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
-Grab and Edit are disabled for `ImportedMesh`; Grab is additionally disabled for `MeasureLine`. All four Object-mode slots have consistent disabled states so slot positions never shift.
+Grab, Edit, and Stack are disabled for `ImportedMesh` and `MeasureLine`. Delete remains enabled for all object types including `MeasureLine`. All four Object-mode slots maintain consistent disabled states so slot positions never shift.
+
+The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `_startGrab()` does not reset `stackMode`, so the pre-set is respected. `_confirmGrab()` and `_cancelGrab()` reset it to `false` when the grab ends.
 
 Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No Extrude button is shown in Edit 3D.
-Grab on mobile is also a gesture (touch object → drag) — no toolbar button needed. Stack is an explicit constraint mode, so it has a dedicated toolbar button.
+Grab on mobile is also a gesture (touch object → drag) — no toolbar button needed. Stack is an explicit constraint mode, so it has a dedicated toolbar button (Object mode: pre-grab toggle; Grab active mode: mid-grab toggle).
+
+### Measure Point Placement (Mobile: Hold-to-Snap, Release-to-Confirm)
+
+- **Principle**: On touch devices, placement of a single point requires the user to see snap feedback before committing. A tap-and-release offers no time to adjust; hold-and-release does.
+- **Concrete Rule**: Measure point confirmation happens in `_onPointerUp`, not `_onPointerDown`. On `pointerdown`, set `_measure.pressing = true` and `_activeDragPointerId`. On `pointerup`, if `_measure.pressing && _activeDragPointerId === e.pointerId`, call `_confirmMeasurePoint()`. During the hold, `_onPointerMove` continues updating snap candidates so the user sees live snap feedback. `_cancelMeasure()` also resets `pressing = false`.
 
 ### Stack Mode (Grab)
 
