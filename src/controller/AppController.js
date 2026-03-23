@@ -824,7 +824,7 @@ export class AppController {
       // object is selected. Fixed count prevents layout shifts on selection.
       const hasObj  = this._objSelected
       const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
-      const canGrab = hasObj && !(this._activeObj instanceof MeasureLine)
+      const canGrab = hasObj
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -1017,9 +1017,9 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh and MeasureLine are read-only — block Edit Mode entry and notify the user
+    // ImportedMesh and MeasureLine have no vertex graph — Edit Mode is not supported
     if (mode === 'edit' && (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine)) {
-      this._uiView.showToast('This object type is read-only')
+      this._uiView.showToast('Edit Mode is not available for this object type')
       return
     }
 
@@ -1342,11 +1342,6 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
-    if (this._activeObj instanceof MeasureLine) {
-      this._uiView.showToast('This object type cannot be moved')
-      return
-    }
-
     this._grab.active          = true
     this._grab.axis            = null
     this._grab.inputStr        = ''
@@ -1888,8 +1883,8 @@ export class AppController {
 
   _startPivotSelect() {
     if (!this._grab.active || this._grab.pivotSelectMode) return
-    // Pivot selection uses Cuboid-specific vertex geometry — skip for ImportedMesh.
-    if (this._activeObj instanceof ImportedMesh) return
+    // Pivot selection uses Cuboid-specific vertex geometry — skip for non-Cuboid types.
+    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine) return
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
     this._meshView.updateGeometry(this._corners)
     this._meshView.updateBoxHelper()
@@ -2327,7 +2322,7 @@ export class AppController {
 
         this._objDragging      = true
         // Ctrl+drag (rotate) only works for locally-editable objects (Cuboid).
-        this._objCtrlDrag      = e.ctrlKey && !(obj instanceof ImportedMesh)
+        this._objCtrlDrag      = e.ctrlKey && !(obj instanceof ImportedMesh) && !(obj instanceof MeasureLine)
         this._controls.enabled = false
         this._activeDragPointerId = e.pointerId
         this._uiView.setCursor('grabbing')

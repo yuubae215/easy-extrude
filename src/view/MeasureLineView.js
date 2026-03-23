@@ -167,6 +167,23 @@ export class MeasureLineView {
     if (sel) this.boxHelper.update()
   }
 
+  // ── Move support ───────────────────────────────────────────────────────────
+
+  /**
+   * Called by AppController after move() to refresh the line and label.
+   * corners = [p1, p2] — exactly two Vector3s.
+   * @param {THREE.Vector3[]} corners
+   */
+  updateGeometry(corners) {
+    if (!corners || corners.length < 2) return
+    this.update(corners[0], corners[1])
+  }
+
+  /** Refreshes the BoxHelper outline (called by AppController after confirm/cancel grab). */
+  updateBoxHelper() {
+    if (this.boxHelper.visible) this.boxHelper.update()
+  }
+
   // ── Edit-mode no-ops (keeps AppController.setMode() safe) ─────────────────
 
   setFaceHighlight()     {}
