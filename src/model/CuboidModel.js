@@ -167,7 +167,16 @@ export function collectSnapTargets(objects, mode = 'all', excludeIds = new Set()
 
   for (const [id, obj] of objects.entries()) {
     if (excludeIds.has(id)) continue
-    if (!obj.vertices) continue
+
+    // Objects without a vertex graph (e.g. ImportedMesh) may still expose
+    // bounding-box snap points via meshView.getSnapTargets().
+    if (!obj.vertices) {
+      if (typeof obj.meshView?.getSnapTargets === 'function') {
+        const pts = obj.meshView.getSnapTargets(obj.name, { doVert, doEdge, doFace })
+        targets.push(...pts)
+      }
+      continue
+    }
 
     if (doVert) {
       for (const v of obj.vertices) {

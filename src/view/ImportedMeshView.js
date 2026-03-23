@@ -85,14 +85,100 @@ export class ImportedMeshView {
     this.boxHelper.visible = sel
   }
 
+  // ── Snap targets (bounding-box based) ──────────────────────────────────────
+
+  /**
+   * Returns snap targets derived from the bounding box of the imported mesh.
+   * Snap types mirror those of Cuboid: corners → 'vertex', edge midpoints → 'edge',
+   * face centers → 'face'.
+   * @param {string} name  Object name used for target labels
+   * @param {{ doVert: boolean, doEdge: boolean, doFace: boolean }} modes
+   * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
+   */
+  getSnapTargets(name, { doVert, doEdge, doFace }) {
+    const bb = this._geo.boundingBox
+    if (!bb) return []
+
+    const { min, max } = bb
+    const cx = (min.x + max.x) / 2
+    const cy = (min.y + max.y) / 2
+    const cz = (min.z + max.z) / 2
+    const targets = []
+
+    if (doVert) {
+      // 8 bounding-box corners
+      for (let xi = 0; xi < 2; xi++) {
+        for (let yi = 0; yi < 2; yi++) {
+          for (let zi = 0; zi < 2; zi++) {
+            targets.push({
+              label: `${name} Vertex`,
+              position: new THREE.Vector3(
+                xi ? max.x : min.x,
+                yi ? max.y : min.y,
+                zi ? max.z : min.z,
+              ),
+              type: 'vertex',
+            })
+          }
+        }
+      }
+    }
+
+    if (doEdge) {
+      // 12 bounding-box edge midpoints
+      const edgeMids = [
+        // Bottom face (z=min)
+        new THREE.Vector3(cx,    min.y, min.z),
+        new THREE.Vector3(cx,    max.y, min.z),
+        new THREE.Vector3(min.x, cy,    min.z),
+        new THREE.Vector3(max.x, cy,    min.z),
+        // Top face (z=max)
+        new THREE.Vector3(cx,    min.y, max.z),
+        new THREE.Vector3(cx,    max.y, max.z),
+        new THREE.Vector3(min.x, cy,    max.z),
+        new THREE.Vector3(max.x, cy,    max.z),
+        // Vertical edges
+        new THREE.Vector3(min.x, min.y, cz),
+        new THREE.Vector3(max.x, min.y, cz),
+        new THREE.Vector3(min.x, max.y, cz),
+        new THREE.Vector3(max.x, max.y, cz),
+      ]
+      for (const p of edgeMids) {
+        targets.push({ label: `${name} Edge`, position: p, type: 'edge' })
+      }
+    }
+
+    if (doFace) {
+      // 6 bounding-box face centers
+      const faceCenters = [
+        new THREE.Vector3(min.x, cy,    cz),
+        new THREE.Vector3(max.x, cy,    cz),
+        new THREE.Vector3(cx,    min.y, cz),
+        new THREE.Vector3(cx,    max.y, cz),
+        new THREE.Vector3(cx,    cy,    min.z),
+        new THREE.Vector3(cx,    cy,    max.z),
+      ]
+      for (const p of faceCenters) {
+        targets.push({ label: `${name} Face`, position: p, type: 'face' })
+      }
+    }
+
+    return targets
+  }
+
   // ── Edit-mode no-ops (keeps AppController.setMode() safe) ──────────────────
 
-  setFaceHighlight()     {}
+  setFaceHighlight()      {}
   clearExtrusionDisplay() {}
-  clearSketchRect()      {}
-  clearVertexHover()     {}
-  clearEdgeHover()       {}
-  clearEditSelection()   {}
+  clearSketchRect()       {}
+  clearVertexHover()      {}
+  clearEdgeHover()        {}
+  clearEditSelection()    {}
+  clearPivotDisplay()     {}
+  showSnapCandidates()    {}
+  showSnapLocked()        {}
+  clearSnapLocked()       {}
+  clearSnapDisplay()      {}
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
