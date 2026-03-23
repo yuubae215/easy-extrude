@@ -75,6 +75,28 @@ if (this._activeObj && !this._objSelected) {
   - `Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
   - `MeasureLine` holds two `THREE.Vector3` endpoints (`p1`, `p2`) and a `MeasureLineView`. It has no `vertices`/`edges`/`faces` graph and must be excluded from `collectSnapTargets` loops and `_hitAnyObject` raycasting (guard with `instanceof MeasureLine`). Edit Mode and Grab are blocked for MeasureLine.
 
+### MeasureLineView No-Op Interface Completeness
+
+- **Principle**: Every method called via `_meshView` in `AppController` must exist on `MeasureLineView` (as a no-op if not applicable), or any code path that reaches it when a `MeasureLine` is active will throw `TypeError` and silently abort the handler.
+- **Concrete Rule**: Whenever a new method is added to `MeshView` and called through `_meshView` in `AppController`, add the same method as a no-op `(){}` to `MeasureLineView`. The current required no-op list: `setFaceHighlight`, `clearExtrusionDisplay`, `clearSketchRect`, `clearVertexHover`, `clearEdgeHover`, `clearEditSelection`, `clearPivotDisplay`, `clearSnapDisplay`, `showSnapCandidates`, `showSnapLocked`, `clearSnapLocked`. Missing `showSnapCandidates`/`showSnapLocked`/`clearSnapLocked` caused a `TypeError` in `_onPointerMove` that prevented the preview guide from rendering on the second (and any subsequent) measure placement.
+
+### Measure Snap Display Must Not Depend on Active MeshView
+
+- **Principle**: Snap candidate display relies on `THREE.Points` objects owned by a specific `MeshView` instance. If the active object is a `MeasureLine`, `_meshView` returns `MeasureLineView` which has no such infrastructure — calling snap display methods on it is a no-op, so candidates are invisible.
+- **Concrete Rule**: `_measure.snapMeshView` is set in `_startMeasurePlacement()` to a real `MeshView` (falls back to any non-`MeasureLine` object's view when the active object is a `MeasureLine`). All snap display calls during measure placement use `_measure.snapMeshView`, not `_meshView`. Clear `_measure.snapMeshView` (and call `clearSnapDisplay()` on it) in both `_cancelMeasure()` and `_confirmMeasurePoint()` Phase 2.
+
+```js
+// _startMeasurePlacement()
+const activeObj = this._scene.activeObject
+this._measure.snapMeshView = (activeObj && !(activeObj instanceof MeasureLine))
+  ? activeObj.meshView
+  : ([...this._scene.objects.values()].find(o => !(o instanceof MeasureLine))?.meshView ?? null)
+
+// cleanup in _cancelMeasure() / _confirmMeasurePoint() Phase 2
+this._measure.snapMeshView?.clearSnapDisplay()
+this._measure.snapMeshView = null
+```
+
 ### MeasureLineView Label Lifecycle
 
 - **Principle**: HTML labels that overlay a Three.js canvas must be repositioned every animation frame because the camera may have moved.
