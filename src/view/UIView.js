@@ -462,8 +462,9 @@ export class UIView {
    * @param {() => void} onBox
    * @param {() => void} onSketch
    * @param {() => void} [onMeasure]
+   * @param {() => void} [onImportStep]
    */
-  showAddMenu(x, y, onBox, onSketch, onMeasure) {
+  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep) {
     this.hideAddMenu()
     const menu = document.createElement('div')
     Object.assign(menu.style, {
@@ -492,9 +493,10 @@ export class UIView {
     menu.appendChild(title)
 
     const items = [
-      { label: 'Box',     hint: 'Shift+A', cb: onBox },
-      { label: 'Sketch',  hint: '',        cb: onSketch },
-      ...(onMeasure ? [{ label: 'Measure', hint: 'M', cb: onMeasure }] : []),
+      { label: 'Box',         hint: 'Shift+A', cb: onBox },
+      { label: 'Sketch',      hint: '',        cb: onSketch },
+      ...(onMeasure     ? [{ label: 'Measure',      hint: 'M', cb: onMeasure }]     : []),
+      ...(onImportStep  ? [{ label: 'Import STEP',  hint: '',  cb: onImportStep }]  : []),
     ]
     items.forEach(({ label, hint, cb }) => {
       const item = document.createElement('div')

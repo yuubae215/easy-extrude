@@ -113,23 +113,11 @@ export class NodeEditorView {
     panel.appendChild(header)
     this._wsStatus = header.querySelector('#ne-ws-status')
 
-    // ── Toolbar ────────────────────────────────────────────────────────────
-    const toolbar = document.createElement('div')
-    toolbar.style.cssText = `
-      position: absolute; top: 28px; left: 0; right: 200px; height: 28px;
-      background: #0f3460;
-      display: flex; align-items: center; padding: 0 8px; gap: 6px;
-      border-bottom: 1px solid #1a1a2e;
-    `
-    const btnImport = this._makeBtn('Import STEP', () => this._triggerStepImport())
-    toolbar.appendChild(btnImport)
-    panel.appendChild(toolbar)
-
     // ── SVG canvas ─────────────────────────────────────────────────────────
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     svg.style.cssText = `
-      position: absolute; top: 56px; left: 0; right: 200px; bottom: 0;
-      width: calc(100% - 200px); height: calc(100% - 56px);
+      position: absolute; top: 28px; left: 0; right: 200px; bottom: 0;
+      width: calc(100% - 200px); height: calc(100% - 28px);
       cursor: default; overflow: hidden;
     `
     svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
@@ -149,17 +137,6 @@ export class NodeEditorView {
     panel.appendChild(params)
 
     this._container.appendChild(panel)
-  }
-
-  _makeBtn(label, onClick) {
-    const btn = document.createElement('button')
-    btn.textContent = label
-    btn.style.cssText = `
-      background: #0d2137; color: #aaa; border: 1px solid #3a7bd5;
-      padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;
-    `
-    btn.addEventListener('click', onClick)
-    return btn
   }
 
   // ── Rendering ───────────────────────────────────────────────────────────────
@@ -328,137 +305,6 @@ export class NodeEditorView {
     const ws = this._service.wsChannel
     if (!ws) { console.warn('[NodeEditor] No WS channel'); return }
     ws.send('graph.node.setParam', { nodeId, param, value })
-  }
-
-  // ── STEP import ─────────────────────────────────────────────────────────────
-
-  _triggerStepImport() {
-    const input = document.createElement('input')
-    input.type = 'file'; input.accept = '.stp,.step,.STP,.STEP'
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0]
-      if (!file) return
-
-      const scale = await this._showUnitDialog()
-      if (scale === null) return  // user cancelled
-
-      const ws = this._service.wsChannel
-      if (!ws) {
-        // Fall back to REST upload
-        try {
-          if (!this._service._bff) return
-          const result = await this._service._bff.importStep(file)
-          console.log('[NodeEditor] STEP import result (REST):', result)
-        } catch (err) {
-          console.error('[NodeEditor] STEP import error:', err)
-        }
-        return
-      }
-      // Send via WebSocket
-      const reader = new FileReader()
-      reader.onload = () => {
-        const base64 = btoa(
-          new Uint8Array(reader.result).reduce((s, b) => s + String.fromCharCode(b), '')
-        )
-        const jobId = `job_${Date.now()}`
-        ws.send('import.step', { jobId, filename: file.name, data: base64, scale })
-      }
-      reader.readAsArrayBuffer(file)
-    })
-    input.click()
-  }
-
-  /**
-   * Shows a modal dialog for unit scale selection.
-   * Resolves with the numeric scale factor, or null if the user cancels.
-   * @returns {Promise<number|null>}
-   */
-  _showUnitDialog() {
-    return new Promise((resolve) => {
-      const UNITS = [
-        { label: 'No conversion  (1 : 1)',    value: 1 },
-        { label: 'mm  →  m       (÷ 1000)',   value: 0.001 },
-        { label: 'm   →  mm      (× 1000)',   value: 1000 },
-        { label: 'cm  →  m       (÷ 100)',    value: 0.01 },
-        { label: 'inch →  m      (× 0.0254)', value: 0.0254 },
-        { label: 'inch →  mm     (× 25.4)',   value: 25.4 },
-      ]
-
-      // ── Overlay ──
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      // ── Dialog box ──
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:320px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      // Title
-      const title = document.createElement('div')
-      title.textContent = 'Import STEP — Unit Conversion'
-      title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(title)
-
-      // Label
-      const lbl = document.createElement('div')
-      lbl.textContent = 'Scale'
-      lbl.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px'
-      dlg.appendChild(lbl)
-
-      // Select
-      const sel = document.createElement('select')
-      sel.style.cssText = [
-        'width:100%;background:#0d1a26;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;padding:6px 8px;font-family:monospace;font-size:12px',
-        'cursor:pointer;outline:none',
-      ].join(';')
-      UNITS.forEach((u, i) => {
-        const opt = document.createElement('option')
-        opt.value = i
-        opt.textContent = u.label
-        sel.appendChild(opt)
-      })
-      dlg.appendChild(sel)
-
-      // Buttons
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnImport = document.createElement('button')
-      btnImport.textContent = 'Import'
-      btnImport.style.cssText = [
-        'padding:6px 14px;background:#e67e22;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnImport)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => {
-        document.body.removeChild(overlay)
-        resolve(result)
-      }
-
-      btnCancel.addEventListener('click', () => close(null))
-      btnImport.addEventListener('click', () => close(UNITS[sel.value].value))
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-    })
   }
 
   // ── WebSocket events ────────────────────────────────────────────────────────
