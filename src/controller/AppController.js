@@ -1377,10 +1377,12 @@ export class AppController {
     const downDir = new THREE.Vector3(0, 0, -1)
     const stackRay = new THREE.Raycaster()
 
-    // Cast downward from slightly above bottom face; find highest hit
+    // Cast downward from well above the scene; find the highest surface hit at (x,y).
+    // Using gZMin+ε as origin would miss surfaces above the current bottom face.
+    const RAY_TOP = 10000
     let highestHitZ = null
     for (const origin of origins) {
-      stackRay.set(new THREE.Vector3(origin.x, origin.y, gZMin + 0.001), downDir)
+      stackRay.set(new THREE.Vector3(origin.x, origin.y, RAY_TOP), downDir)
       const hits = stackRay.intersectObjects(targetMeshes)
       if (hits.length > 0) {
         const hz = hits[0].point.z
@@ -1391,8 +1393,8 @@ export class AppController {
     if (highestHitZ === null) { this._grab.stacking = false; return }
 
     const zOffset = highestHitZ - gZMin
-    // Only snap when below or touching (don't push object down)
-    if (zOffset <= 0.001) { this._grab.stacking = false; return }
+    // Skip if already resting on the surface (within 1mm tolerance)
+    if (Math.abs(zOffset) < 0.001) { this._grab.stacking = false; return }
 
     // Apply additional Z shift to all selected objects' vertex positions directly
     for (const id of this._selectedIds) {
@@ -1933,11 +1935,18 @@ export class AppController {
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
             const delta = pt.clone().sub(this._objDragStart)
-            // Move all selected objects by the same delta
+            // Apply delta to all selected objects
             for (const [id, startCorners] of this._objDragAllStartCorners) {
               const selObj = this._scene.getObject(id)
+              if (selObj) selObj.move(startCorners, delta)
+            }
+            // Stack snap: after XY movement, adjust Z so the object rests on
+            // the highest surface directly below it (same logic as _grab path).
+            if (this._grab.stackMode) this._applyStackSnap()
+            // Update geometry for all dragged objects
+            for (const [id] of this._objDragAllStartCorners) {
+              const selObj = this._scene.getObject(id)
               if (selObj) {
-                selObj.move(startCorners, delta)
                 selObj.meshView.updateGeometry(selObj.corners)
                 selObj.meshView.updateBoxHelper()
               }
