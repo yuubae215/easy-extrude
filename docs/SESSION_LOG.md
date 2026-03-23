@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-23**: Mobile Stack snap fix + footer keybinding update — Fixed `_applyStackSnap()` silently doing nothing on mobile: the call existed in the `_grab.active` (G-key) path but was missing from the `_objDragging` (touch-drag) path in `_onPointerMove`; added it to the touch-drag branch. Also updated `UIView._setInfoText()` footer hints to match current features: Object mode adds `G>S` Stack, `Shift+D` Duplicate, `M` Measure (removed obvious Click/Drag/Ctrl+Drag); Edit 3D now shows `1/2/3` (Vertex/Edge/Face mode), `E` (Extrude face), `Shift+Click` (Multi-select). MENTAL_MODEL `_objDragging` rule confirmed present.
+
 - **2026-03-22**: Mobile toolbar button count unification (validation report #17) — added `{ spacer: true }` placeholder support to `UIView.setMobileToolbar` (renders as `visibility: hidden` div); padded all modes to 4 slots in `AppController._updateMobileToolbar` (Object: 3+1 spacer; Edit 2D sketch/extrude + Grab active: 2+2 spacers; Edit 3D: unchanged). Eliminates toolbar-width layout shifts on mode transition. Updated MENTAL_MODEL rule with full 4-slot table.
 
 - **2026-03-22**: Validation improvement plan — Priority 7 (LOW) items #22-25: explicit `isNaN` checks replacing `parseFloat || 0` in AppController (apply functions show toast on invalid input); STEP face position validation in `import.js` + `sessionManager.js` (skip empty/malformed faces); `SceneService` emits `'geometryError'` event on buffer update failure; `ImportedMeshView.updateGeometryBuffers()` guards `positions.length % 3`. Item #17 (mobile toolbar count) deferred to next session.
