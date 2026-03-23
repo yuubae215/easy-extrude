@@ -29,6 +29,7 @@ This directory records the project's design decisions.
 | [ADR-015](ADR-015-bff-microservices-architecture.md) | **BFF + Microservices Architecture** | Accepted | 2026-03-20 | ADR-011, ADR-012, ADR-013 |
 | [ADR-016](ADR-016-transform-graph-scene-relationships.md) | **Transform Graph — Spatial Relationships Between Scene Objects** | Accepted | 2026-03-21 | ADR-012, ADR-015 |
 | [ADR-017](ADR-017-websocket-session-geometry-service.md) | **WebSocket Session Design and Geometry Service (Phase B)** | Accepted | 2026-03-21 | ADR-015, ADR-016 |
+| [ADR-018](ADR-018-coordinate-frame-entity.md) | **Coordinate Frame Entity — Object Origin Hierarchy** | Accepted | 2026-03-23 | ADR-005, ADR-009, ADR-011, ADR-013, ADR-016 |
 
 ## How to Add a New ADR
 

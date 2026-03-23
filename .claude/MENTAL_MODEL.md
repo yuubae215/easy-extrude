@@ -75,8 +75,9 @@ if (this._activeObj && !this._objSelected) {
   - `Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
   - `MeasureLine` holds two `THREE.Vector3` endpoints (`p1`, `p2`) and a `MeasureLineView`. It has no `vertices`/`edges`/`faces` graph and must be excluded from `collectSnapTargets` loops and `_hitAnyObject` raycasting (guard with `instanceof MeasureLine`). Edit Mode is blocked; **Grab (move) is allowed** — `corners` returns `[p1, p2]` and `move(startCorners, delta)` translates both endpoints. `MeasureLineView.updateGeometry([p1, p2])` calls `update(p1, p2)` to refresh the line and label. Pointer drag is not available (no `cuboid` raycasting surface); use G key.
   - `ImportedMesh` has a synthetic 8-corner AABB (`_corners8`, initialised from geometry bounding box by `SceneService` after `updateGeometryBuffers`). **Grab and pointer drag are allowed** — `move(startCorners, delta)` updates `_corners8`; `ImportedMeshView.updateGeometry(corners)` computes the centroid and sets `cuboid.position = centroid − originalCenter`. Edit Mode is blocked.
-  - Ctrl+drag rotation and pivot selection (`_startPivotSelect`) are blocked for both `ImportedMesh` and `MeasureLine` (no local vertex geometry to rotate/pivot).
-  - The "no Edit Mode" guard (`instanceof ImportedMesh || instanceof MeasureLine`) applies only to `setMode('edit')`.
+  - `CoordinateFrame` is a named reference frame child of a geometry object (ADR-018). It has no vertex/edge/face graph and no raycasting surface (`cuboid = null`). **All interactive operations are blocked in Phase A**: Edit Mode, Grab/Move (position = parent centroid, synced each animation frame), pointer drag, Ctrl+drag rotation, pivot selection, stack mode. Only Rename, Delete, and Outliner selection work. `CoordinateFrameView` implements the full `MeshView` no-op interface. Deletion of a parent object cascades to delete its child `CoordinateFrame`s (`SceneService.deleteObject` calls `SceneModel.getChildren`). `canGrab` on the mobile toolbar is `false` for `CoordinateFrame`; `_startGrab()` has an early-return guard with a toast.
+  - Ctrl+drag rotation and pivot selection (`_startPivotSelect`) are blocked for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame` (no local vertex geometry to rotate/pivot).
+  - The "no Edit Mode" guard applies to `setMode('edit')` for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`.
 
 ### MeasureLineView No-Op Interface Completeness
 
@@ -91,9 +92,10 @@ if (this._activeObj && !this._objSelected) {
 ```js
 // _startMeasurePlacement()
 const activeObj = this._scene.activeObject
-this._measure.snapMeshView = (activeObj && !(activeObj instanceof MeasureLine))
+const _isSnapCapable = o => !(o instanceof MeasureLine) && !(o instanceof CoordinateFrame)
+this._measure.snapMeshView = (activeObj && _isSnapCapable(activeObj))
   ? activeObj.meshView
-  : ([...this._scene.objects.values()].find(o => !(o instanceof MeasureLine))?.meshView ?? null)
+  : ([...this._scene.objects.values()].find(_isSnapCapable)?.meshView ?? null)
 
 // cleanup in _cancelMeasure() / _confirmMeasurePoint() Phase 2
 this._measure.snapMeshView?.clearSnapDisplay()

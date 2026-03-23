@@ -44,6 +44,8 @@ import { ImportedMesh } from '../domain/ImportedMesh.js'
 import { ImportedMeshView } from '../view/ImportedMeshView.js'
 import { MeasureLine } from '../domain/MeasureLine.js'
 import { MeasureLineView } from '../view/MeasureLineView.js'
+import { CoordinateFrame } from '../domain/CoordinateFrame.js'
+import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -339,13 +341,22 @@ export class SceneService extends EventEmitter {
 
   /**
    * Disposes the entity's MeshView and removes it from the scene.
+   * If the deleted object has child CoordinateFrames, they are cascade-deleted first.
    * No-ops if the id is unknown.
-   * Emits: 'objectRemoved'
+   * Emits: 'objectRemoved' (for the object and each cascaded child)
    * @param {string} id
    */
   deleteObject(id) {
     const obj = this._model.getObject(id)
     if (!obj) return
+
+    // Cascade: delete any child CoordinateFrames before removing the parent.
+    for (const child of this._model.getChildren(id)) {
+      child.meshView.dispose(this._threeScene)
+      this._model.removeObject(child.id)
+      this.emit('objectRemoved', child.id)
+    }
+
     obj.meshView.dispose(this._threeScene)
     this._model.removeObject(id)
     this.emit('objectRemoved', id)
@@ -463,6 +474,45 @@ export class SceneService extends EventEmitter {
     this._model.addObject(entity)
     this.emit('objectAdded', entity)
     return entity
+  }
+
+  /**
+   * Creates a CoordinateFrame entity attached to the given parent object.
+   *
+   * The frame is positioned at the parent's centroid on creation.  Subsequent
+   * position updates are performed by the AppController animation loop so the
+   * frame tracks the parent even when it is grabbed/moved.
+   *
+   * No-ops (returns null) if parentObjectId is unknown or refers to a
+   * CoordinateFrame itself (frames cannot be parents of other frames in Phase A).
+   *
+   * Emits: 'objectAdded'
+   * @param {string} parentObjectId
+   * @returns {CoordinateFrame|null}
+   */
+  createCoordinateFrame(parentObjectId) {
+    const parent = this._model.getObject(parentObjectId)
+    if (!parent || parent instanceof CoordinateFrame) return null
+
+    const idx  = this._model.objects.size
+    const id   = `frame_${idx}_${Date.now()}`
+    const name = `Frame.${String(idx).padStart(3, '0')}`
+
+    const meshView = new CoordinateFrameView(this._threeScene)
+    const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)
+
+    // Initialise position at parent centroid.
+    const corners = parent.corners
+    if (corners.length > 0) {
+      const centroid = new Vector3()
+      for (const c of corners) centroid.add(c)
+      centroid.divideScalar(corners.length)
+      meshView.updatePosition(centroid)
+    }
+
+    this._model.addObject(frame)
+    this.emit('objectAdded', frame)
+    return frame
   }
 
   /**

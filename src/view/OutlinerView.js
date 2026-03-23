@@ -2,6 +2,12 @@
  * OutlinerView - Blender-style left sidebar showing the scene object hierarchy
  *
  * Side effects: creates DOM elements, appends them to document.body.
+ *
+ * Hierarchy support (ADR-018):
+ *   addObject(id, name, type, parentId) — when parentId is provided the row
+ *   is inserted as an indented child directly below its parent (and after any
+ *   existing siblings).  The parent row's triangle indicator turns orange to
+ *   show it has children.  Removing a parent also removes all child rows.
  */
 export class OutlinerView {
   constructor() {
@@ -78,7 +84,17 @@ export class OutlinerView {
     document.body.appendChild(this._el)
 
     // ── State ──────────────────────────────────────────────────────────────
-    this._items       = new Map()  // id → { rowEl, eyeEl, nameEl, visible }
+    /**
+     * @type {Map<string, {
+     *   rowEl: HTMLElement,
+     *   eyeEl: HTMLElement,
+     *   nameEl: HTMLElement,
+     *   triEl: HTMLElement,
+     *   visible: boolean,
+     *   parentId: string|null
+     * }>}
+     */
+    this._items       = new Map()
     this._activeId    = null
     this._onSelectCb  = null
     this._onDeleteCb  = null
@@ -136,14 +152,38 @@ export class OutlinerView {
   // ─── Object management ────────────────────────────────────────────────────
 
   /**
+   * Adds an object row to the outliner list.
+   * When parentId is provided, the row is inserted as a child of that parent,
+   * indented visually and positioned directly below the parent (and after any
+   * existing siblings with the same parentId).
+   *
    * @param {string} id
    * @param {string} name
-   * @param {'cuboid'|'sketch'|'imported'|'measure'} [type='cuboid']
+   * @param {'cuboid'|'sketch'|'imported'|'measure'|'frame'} [type='cuboid']
+   * @param {string|null} [parentId=null]
    */
-  addObject(id, name, type = 'cuboid') {
-    const { rowEl, eyeEl, nameEl } = this._createRow(id, name, type)
-    this._listEl.appendChild(rowEl)
-    this._items.set(id, { rowEl, eyeEl, nameEl, visible: true })
+  addObject(id, name, type = 'cuboid', parentId = null) {
+    const { rowEl, eyeEl, nameEl, triEl } = this._createRow(id, name, type, parentId !== null)
+
+    if (parentId) {
+      // Find insertion point: after the parent row and after any existing siblings.
+      const parentItem = this._items.get(parentId)
+      if (parentItem) {
+        let insertAfter = parentItem.rowEl
+        for (const item of this._items.values()) {
+          if (item.parentId === parentId) insertAfter = item.rowEl
+        }
+        insertAfter.insertAdjacentElement('afterend', rowEl)
+        // Show parent's expand triangle in orange to signal it has children.
+        this._setParentIndicator(parentId, true)
+      } else {
+        this._listEl.appendChild(rowEl)
+      }
+    } else {
+      this._listEl.appendChild(rowEl)
+    }
+
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, visible: true, parentId })
   }
 
   /** Updates the displayed name of an object row */
@@ -152,9 +192,33 @@ export class OutlinerView {
     if (item) item.nameEl.textContent = name
   }
 
+  /**
+   * Removes an object row.  Any child rows (same parentId) are also removed.
+   * If the removed object was a child, updates the parent's triangle indicator.
+   * @param {string} id
+   */
   removeObject(id) {
     const item = this._items.get(id)
-    if (item) { item.rowEl.remove(); this._items.delete(id) }
+    if (!item) return
+
+    // Cascade: remove children first.
+    for (const [childId, child] of this._items) {
+      if (child.parentId === id) {
+        child.rowEl.remove()
+        this._items.delete(childId)
+      }
+    }
+
+    // Update parent indicator if this child was the last one.
+    if (item.parentId) {
+      const remainingSiblings = [...this._items.values()].filter(
+        i => i.parentId === item.parentId && i !== item,
+      )
+      if (remainingSiblings.length === 0) this._setParentIndicator(item.parentId, false)
+    }
+
+    item.rowEl.remove()
+    this._items.delete(id)
   }
 
   setActive(id) {
@@ -174,40 +238,89 @@ export class OutlinerView {
     item.eyeEl.title = visible ? 'Hide' : 'Show'
   }
 
+  // ─── Internal helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Updates the expand-triangle colour of a parent row.
+   * Orange = has children; dark grey = no children.
+   * @param {string} parentId
+   * @param {boolean} hasChildren
+   */
+  _setParentIndicator(parentId, hasChildren) {
+    const parentItem = this._items.get(parentId)
+    if (!parentItem) return
+    parentItem.triEl.style.color    = hasChildren ? '#cc7a00' : '#444'
+    parentItem.triEl.style.fontSize = hasChildren ? '9px'     : '8px'
+  }
+
   // ─── Row builder ──────────────────────────────────────────────────────────
 
-  _createRow(id, name, type = 'cuboid') {
+  /**
+   * @param {string}  id
+   * @param {string}  name
+   * @param {string}  type
+   * @param {boolean} isChild  true when this row has a parentId
+   */
+  _createRow(id, name, type = 'cuboid', isChild = false) {
     const rowEl = document.createElement('div')
+    // Child rows get extra left padding for visual indentation.
+    const leftPad = isChild ? '28px' : '16px'
     Object.assign(rowEl.style, {
       display: 'flex',
       alignItems: 'center',
-      padding: '3px 4px 3px 16px',
+      padding: `3px 4px 3px ${leftPad}`,
       cursor: 'pointer',
       gap: '4px',
       background: 'transparent',
       borderBottom: '1px solid transparent',
     })
 
-    // Expand triangle (visual only)
+    // Expand triangle (visual only; turns orange when parent has children)
     const triEl = document.createElement('span')
-    triEl.textContent = '▶'
-    Object.assign(triEl.style, {
-      color: '#444',
-      fontSize: '8px',
-      flexShrink: '0',
-      lineHeight: '1',
-    })
-
-    // Mesh icon — blue for editable objects, gray for read-only imports, amber for measure
-    const iconEl = document.createElement('span')
-    if (type === 'measure') {
-      iconEl.textContent = '↔'
-      iconEl.title = 'Measure line'
+    if (isChild) {
+      // Child rows show a connector glyph instead of a triangle.
+      triEl.textContent = '└'
+      Object.assign(triEl.style, {
+        color: '#555',
+        fontSize: '10px',
+        flexShrink: '0',
+        lineHeight: '1',
+        marginLeft: '-14px',
+        marginRight: '2px',
+      })
     } else {
-      iconEl.textContent = '⬡'
-      if (type === 'imported') iconEl.title = 'Imported mesh (read-only)'
+      triEl.textContent = '▶'
+      Object.assign(triEl.style, {
+        color: '#444',
+        fontSize: '8px',
+        flexShrink: '0',
+        lineHeight: '1',
+      })
     }
-    const iconColor = type === 'imported' ? '#888888' : type === 'measure' ? '#f9a825' : '#4fc3f7'
+
+    // Icon
+    const iconEl = document.createElement('span')
+    let iconText  = '⬡'
+    let iconTitle = ''
+    let iconColor = '#4fc3f7'
+
+    if (type === 'measure') {
+      iconText  = '↔'
+      iconTitle = 'Measure line'
+      iconColor = '#f9a825'
+    } else if (type === 'imported') {
+      iconTitle = 'Imported mesh (read-only)'
+      iconColor = '#888888'
+    } else if (type === 'frame') {
+      iconText  = '⊕'
+      iconTitle = 'Coordinate frame'
+      iconColor = '#a0c8ff'
+    } else if (type === 'sketch') {
+      iconColor = '#80cbc4'
+    }
+
+    iconEl.textContent = iconText
+    if (iconTitle) iconEl.title = iconTitle
     Object.assign(iconEl.style, {
       color: iconColor,
       fontSize: '12px',
@@ -324,6 +437,6 @@ export class OutlinerView {
       if (this._onSelectCb) this._onSelectCb(id)
     })
 
-    return { rowEl, eyeEl, nameEl }
+    return { rowEl, eyeEl, nameEl, triEl }
   }
 }
