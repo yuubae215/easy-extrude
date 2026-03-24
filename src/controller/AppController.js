@@ -267,6 +267,46 @@ export class AppController {
       const obj = this._activeObj
       if (obj) obj.description = desc
     })
+    uiView.onFramePositionChange((axis, val) => {
+      const frame = this._activeObj
+      if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
+      const parent = this._scene.getObject(frame.parentId)
+      if (!parent || parent.corners.length === 0) return
+      const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
+      const parentCentroid = getCentroid(parent.corners)
+      // val is in parent's local space; convert to world-space translation
+      const localPos = frame.translation.clone().applyQuaternion(parentRot.clone().conjugate())
+      localPos[axis] = val
+      frame.translation.copy(localPos).applyQuaternion(parentRot)
+      frame._worldPos.copy(parentCentroid).add(frame.translation)
+      frame.meshView.updatePosition(frame._worldPos)
+    })
+    uiView.onFrameRotationChange((axis, val) => {
+      const frame = this._activeObj
+      if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
+      const parent = this._scene.getObject(frame.parentId)
+      const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
+      // val is local Euler degrees; rebuild local quaternion then convert to world
+      const localRot = parentRot.clone().conjugate().multiply(frame.rotation)
+      const localEuler = new THREE.Euler().setFromQuaternion(localRot, 'XYZ')
+      localEuler[axis] = THREE.MathUtils.degToRad(val)
+      localRot.setFromEuler(localEuler)
+      frame.rotation.copy(parentRot.clone().multiply(localRot))
+      frame.meshView.updateRotation(frame.rotation)
+    })
+    uiView.onLocationChange((axis, val) => {
+      const obj = this._activeObj
+      if (!obj || typeof obj.move !== 'function') return
+      const corners = this._corners
+      if (!corners.length) return
+      const currentCentroid = getCentroid(corners)
+      const delta = new THREE.Vector3()
+      delta[axis] = val - currentCentroid[axis]
+      const startCorners = corners.map(c => c.clone())
+      obj.move(startCorners, delta)
+      obj.meshView.updateGeometry(corners)
+      if (this._objSelected) obj.meshView.updateBoxHelper()
+    })
 
     // ── Mobile drawer coordination ─────────────────────────────────────────
     uiView.onOutlinerToggle(() => {
@@ -741,6 +781,11 @@ export class AppController {
 
     this._service.setActiveObject(id)
     this._objSelected = select
+    // Keep _selectedIds in sync so grab / pointer-drag work after outliner selection
+    if (select) {
+      this._selectedIds.clear()
+      this._selectedIds.add(id)
+    }
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
@@ -862,6 +907,26 @@ export class AppController {
     const obj = this._activeObj
     if (!obj) return
 
+    if (obj instanceof CoordinateFrame) {
+      if (obj.name === 'Origin') {
+        // Origin is always at (0,0,0) in parent space — locked display
+        this._uiView.updateNPanelForFrame({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, obj.name, true)
+        return
+      }
+      // Non-Origin frame: show position/rotation in parent's local coordinate system
+      const parent = this._scene.getObject(obj.parentId)
+      const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
+      const localPos = obj.translation.clone().applyQuaternion(parentRot.clone().conjugate())
+      const localRot  = parentRot.clone().conjugate().multiply(obj.rotation)
+      const euler = new THREE.Euler().setFromQuaternion(localRot, 'XYZ')
+      this._uiView.updateNPanelForFrame(localPos, {
+        x: THREE.MathUtils.radToDeg(euler.x),
+        y: THREE.MathUtils.radToDeg(euler.y),
+        z: THREE.MathUtils.radToDeg(euler.z),
+      }, obj.name, false)
+      return
+    }
+
     if (obj instanceof Sketch && obj.sketchRect) {
       const { p1, p2 } = obj.sketchRect
       const centroid = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
@@ -877,7 +942,8 @@ export class AppController {
     const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
     corners.forEach(c => { bMin.min(c); bMax.max(c) })
     const dims = new THREE.Vector3().subVectors(bMax, bMin)
-    this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '')
+    const locationEditable = typeof obj.move === 'function' && !(obj instanceof CoordinateFrame)
+    this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', { locationEditable })
   }
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────
@@ -1808,11 +1874,31 @@ export class AppController {
   _applyAxisConstrainedGrab() {
     const axisVec = this._getAxisVec(this._grab.axis)
 
-    const centerNDC  = this._grab.pivot.clone().project(this._camera)
-    const axisEndNDC = this._grab.pivot.clone().add(axisVec).project(this._camera)
+    // Compute the screen-space direction of the world axis using the analytic
+    // Jacobian of the perspective projection, evaluated at the grab pivot.
+    //
+    // The previous approach projected (pivot + axisVec) to NDC and subtracted
+    // project(pivot). When the camera is close to the object, (pivot + axisVec)
+    // can land behind the camera. THREE.js perspective division by a negative W
+    // flips the NDC sign, reversing the apparent axis direction and causing the
+    // object to move opposite to the cursor.
+    //
+    // The Jacobian d(ndc)/dt at t=0 is computed entirely at the pivot point
+    // (always in front of the camera), so it is immune to this sign-flip.
+    //
+    // Derivation for perspective projection  ndc.x = x_c * f_x / (−z_c):
+    //   dx_ndc/dt = f_x * (v_x * (−z_c) − x_c * v_z) / z_c²
+    //   dy_ndc/dt = f_y * (v_y * (−z_c) − y_c * v_z) / z_c²
+    // where (x_c, y_c, z_c) = pivot in camera space, (v_x, v_y, v_z) = axis
+    // in camera space, and z_c < 0 for points in front of the camera.
+    const P_c = this._grab.pivot.clone().applyMatrix4(this._camera.matrixWorldInverse)
+    const v_c = axisVec.clone().transformDirection(this._camera.matrixWorldInverse)
+    const f_y = 1 / Math.tan(THREE.MathUtils.degToRad(this._camera.fov * 0.5))
+    const f_x = f_y / this._camera.aspect
+    const z   = P_c.z    // negative for in-front points
 
-    const dx        = axisEndNDC.x - centerNDC.x
-    const dy        = axisEndNDC.y - centerNDC.y
+    const dx        = f_x * (v_c.x * (-z) - P_c.x * v_c.z) / (z * z)
+    const dy        = f_y * (v_c.y * (-z) - P_c.y * v_c.z) / (z * z)
     const screenLen = Math.sqrt(dx * dx + dy * dy)
     if (screenLen < 1e-4) return
 

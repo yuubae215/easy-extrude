@@ -336,6 +336,9 @@ export class UIView {
     this._modeChangeCallback = null
     this._onNameChangeCb = null
     this._onDescriptionChangeCb = null
+    this._onFramePositionChangeCb = null
+    this._onFrameRotationChangeCb = null
+    this._onLocationChangeCb = null
 
     // Apply initial mobile layout and listen for resize
     this._applyMobileLayout()
@@ -347,6 +350,18 @@ export class UIView {
 
   /** Registers callback for description changes from the N panel */
   onDescriptionChange(callback) { this._onDescriptionChangeCb = callback }
+
+  /** Registers callback for CoordinateFrame position changes from the N panel.
+   *  cb(axis: 'x'|'y'|'z', value: number) */
+  onFramePositionChange(callback) { this._onFramePositionChangeCb = callback }
+
+  /** Registers callback for CoordinateFrame rotation changes from the N panel.
+   *  cb(axis: 'x'|'y'|'z', valueDeg: number) */
+  onFrameRotationChange(callback) { this._onFrameRotationChangeCb = callback }
+
+  /** Registers callback for geometry object location changes from the N panel.
+   *  cb(axis: 'x'|'y'|'z', value: number) */
+  onLocationChange(callback) { this._onLocationChangeCb = callback }
 
   /** Registers callback for mode changes */
   onModeChange(callback) {
@@ -850,9 +865,46 @@ export class UIView {
    * @param {{ x: number, y: number, z: number }} dimensions
    * @param {string} [name]
    * @param {string} [description]
+   * @param {{ locationEditable?: boolean }} [options]
    */
-  updateNPanel(centroid, dimensions, name = '', description = '') {
+  updateNPanel(centroid, dimensions, name = '', description = '', options = {}) {
     if (!this._nPanelVisible) return
+    const { locationEditable = false } = options
+
+    const editRow = (axis, color, val, onChange) => {
+      const r = document.createElement('div')
+      Object.assign(r.style, {
+        display: 'grid', gridTemplateColumns: '18px 1fr',
+        gap: '2px 4px', padding: '1px 0', alignItems: 'center',
+      })
+      const axisEl = document.createElement('span')
+      axisEl.textContent = axis
+      Object.assign(axisEl.style, { color, fontWeight: 'bold', fontSize: '11px' })
+      const inputEl = document.createElement('input')
+      inputEl.type = 'number'
+      inputEl.step = '0.001'
+      inputEl.value = val.toFixed(3)
+      Object.assign(inputEl.style, {
+        width: '100%', boxSizing: 'border-box',
+        background: '#383838', border: '1px solid #444', borderRadius: '3px',
+        padding: '2px 6px', color: '#e8e8e8', fontSize: '12px',
+        textAlign: 'right', fontFamily: 'monospace', outline: 'none',
+      })
+      inputEl.addEventListener('focus', () => { inputEl.style.borderColor = '#4fc3f7' })
+      inputEl.addEventListener('blur', () => {
+        inputEl.style.borderColor = '#444'
+        const v = parseFloat(inputEl.value)
+        if (!isNaN(v)) onChange(v)
+      })
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { inputEl.blur(); e.stopPropagation() }
+        if (e.key === 'Escape') { inputEl.value = val.toFixed(3); inputEl.blur(); e.stopPropagation() }
+        e.stopPropagation()
+      })
+      r.appendChild(axisEl)
+      r.appendChild(inputEl)
+      return r
+    }
 
     const row = (axis, color, val) => {
       const r = document.createElement('div')
@@ -973,12 +1025,16 @@ export class UIView {
     descSection.appendChild(descTitleEl)
     descSection.appendChild(descTextareaEl)
 
+    const locRow = locationEditable
+      ? (axis, color, val) => editRow(axis, color, val, v => { if (this._onLocationChangeCb) this._onLocationChangeCb(axis.toLowerCase(), v) })
+      : row
+
     this._nPanelContentEl.innerHTML = ''
     this._nPanelContentEl.appendChild(nameSection)
     this._nPanelContentEl.appendChild(section('Location', [
-      row('X', '#e05252', centroid.x),
-      row('Y', '#6ab04c', centroid.y),
-      row('Z', '#4a9eed', centroid.z),
+      locRow('X', '#e05252', centroid.x),
+      locRow('Y', '#6ab04c', centroid.y),
+      locRow('Z', '#4a9eed', centroid.z),
     ]))
     this._nPanelContentEl.appendChild(section('Dimensions', [
       row('X', '#e05252', dimensions.x),
@@ -986,6 +1042,140 @@ export class UIView {
       row('Z', '#4a9eed', dimensions.z),
     ]))
     this._nPanelContentEl.appendChild(descSection)
+  }
+
+  /**
+   * Updates the N panel for a CoordinateFrame.
+   * @param {{x:number,y:number,z:number}} pos       position to display (local or world)
+   * @param {{x:number,y:number,z:number}} eulerDeg  rotation in degrees (XYZ order)
+   * @param {string} name
+   * @param {boolean} [locked]  when true, values are read-only (Origin frame)
+   */
+  updateNPanelForFrame(pos, eulerDeg, name, locked = false) {
+    if (!this._nPanelVisible) return
+
+    const row = (axis, color, val) => {
+      const r = document.createElement('div')
+      Object.assign(r.style, {
+        display: 'grid', gridTemplateColumns: '18px 1fr',
+        gap: '2px 4px', padding: '1px 0', alignItems: 'center',
+      })
+      const axisEl = document.createElement('span')
+      axisEl.textContent = axis
+      Object.assign(axisEl.style, { color, fontWeight: 'bold', fontSize: '11px' })
+      const valEl = document.createElement('span')
+      valEl.textContent = typeof val === 'number' ? val.toFixed(3) : val
+      Object.assign(valEl.style, {
+        background: '#2a2a2a', border: '1px solid #333', borderRadius: '3px',
+        padding: '2px 6px', color: '#888', fontSize: '12px',
+        textAlign: 'right', fontFamily: 'monospace',
+      })
+      r.appendChild(axisEl)
+      r.appendChild(valEl)
+      return r
+    }
+
+    const editRow = (axis, color, val, onChange) => {
+      const r = document.createElement('div')
+      Object.assign(r.style, {
+        display: 'grid', gridTemplateColumns: '18px 1fr',
+        gap: '2px 4px', padding: '1px 0', alignItems: 'center',
+      })
+      const axisEl = document.createElement('span')
+      axisEl.textContent = axis
+      Object.assign(axisEl.style, { color, fontWeight: 'bold', fontSize: '11px' })
+      const inputEl = document.createElement('input')
+      inputEl.type = 'number'
+      inputEl.step = '0.001'
+      inputEl.value = val.toFixed(3)
+      Object.assign(inputEl.style, {
+        width: '100%', boxSizing: 'border-box',
+        background: '#383838', border: '1px solid #444', borderRadius: '3px',
+        padding: '2px 6px', color: '#e8e8e8', fontSize: '12px',
+        textAlign: 'right', fontFamily: 'monospace', outline: 'none',
+      })
+      inputEl.addEventListener('focus', () => { inputEl.style.borderColor = '#4fc3f7' })
+      inputEl.addEventListener('blur', () => {
+        inputEl.style.borderColor = '#444'
+        const v = parseFloat(inputEl.value)
+        if (!isNaN(v)) onChange(v)
+      })
+      inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { inputEl.blur(); e.stopPropagation() }
+        if (e.key === 'Escape') { inputEl.value = val.toFixed(3); inputEl.blur(); e.stopPropagation() }
+        e.stopPropagation()
+      })
+      r.appendChild(axisEl)
+      r.appendChild(inputEl)
+      return r
+    }
+
+    const section = (title, rows) => {
+      const sec = document.createElement('div')
+      Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+      const titleEl = document.createElement('div')
+      titleEl.textContent = title
+      Object.assign(titleEl.style, {
+        color: '#aaa', fontSize: '11px',
+        textTransform: 'uppercase', letterSpacing: '0.05em',
+        marginBottom: '6px',
+      })
+      sec.appendChild(titleEl)
+      rows.forEach(r => sec.appendChild(r))
+      return sec
+    }
+
+    // Name section
+    const nameSection = document.createElement('div')
+    Object.assign(nameSection.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+    const nameTitleEl = document.createElement('div')
+    nameTitleEl.textContent = 'Name'
+    Object.assign(nameTitleEl.style, {
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+      marginBottom: '6px',
+    })
+    const nameInputEl = document.createElement('input')
+    nameInputEl.type = 'text'
+    nameInputEl.value = name
+    Object.assign(nameInputEl.style, {
+      width: '100%', boxSizing: 'border-box',
+      background: '#383838', border: '1px solid #444', borderRadius: '3px',
+      padding: '3px 6px', color: '#e8e8e8', fontSize: '12px',
+      fontFamily: 'sans-serif', outline: 'none',
+    })
+    nameInputEl.addEventListener('focus', () => { nameInputEl.style.borderColor = '#4fc3f7' })
+    nameInputEl.addEventListener('blur', () => {
+      nameInputEl.style.borderColor = '#444'
+      if (this._onNameChangeCb) this._onNameChangeCb(nameInputEl.value.trim() || name)
+    })
+    nameInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { nameInputEl.blur(); e.stopPropagation() }
+      if (e.key === 'Escape') { nameInputEl.value = name; nameInputEl.blur(); e.stopPropagation() }
+      e.stopPropagation()
+    })
+    nameSection.appendChild(nameTitleEl)
+    nameSection.appendChild(nameInputEl)
+
+    const locRow = locked
+      ? (ax, col, _v) => row(ax, col, 0)
+      : (ax, col, val) => editRow(ax, col, val, v => { if (this._onFramePositionChangeCb) this._onFramePositionChangeCb(ax.toLowerCase(), v) })
+    const rotRow = locked
+      ? (ax, col, _v) => row(ax, col, 0)
+      : (ax, col, val) => editRow(ax, col, val, v => { if (this._onFrameRotationChangeCb) this._onFrameRotationChangeCb(ax.toLowerCase(), v) })
+
+    this._nPanelContentEl.innerHTML = ''
+    this._nPanelContentEl.appendChild(nameSection)
+    this._nPanelContentEl.appendChild(section('Location', [
+      locRow('X', '#e05252', pos.x),
+      locRow('Y', '#6ab04c', pos.y),
+      locRow('Z', '#4a9eed', pos.z),
+    ]))
+    this._nPanelContentEl.appendChild(section('Rotation', [
+      rotRow('X', '#e05252', eulerDeg.x),
+      rotRow('Y', '#6ab04c', eulerDeg.y),
+      rotRow('Z', '#4a9eed', eulerDeg.z),
+    ]))
   }
 
   /**
