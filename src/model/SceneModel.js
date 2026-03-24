@@ -63,6 +63,25 @@ export class SceneModel {
     return this._objects.get(id) ?? null
   }
 
+  /**
+   * Returns all objects whose `parentId` matches the given id.
+   * Used to find child CoordinateFrames of a geometry object.
+   * @param {string} parentId
+   * @returns {SceneObject[]}
+   */
+  getChildren(parentId) {
+    return [...this._objects.values()].filter(o => o.parentId === parentId)
+  }
+
+  /**
+   * Returns all objects that have no parent (parentId is falsy).
+   * Root objects sit at the top level of the scene hierarchy.
+   * @returns {SceneObject[]}
+   */
+  getRoots() {
+    return [...this._objects.values()].filter(o => !o.parentId)
+  }
+
   // ── Commands ───────────────────────────────────────────────────────────────
 
   /**

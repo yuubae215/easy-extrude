@@ -2,14 +2,14 @@
  * MeasureLine — domain entity for a 1D measurement line.
  *
  * Stores two world-space endpoints and exposes a `distance` getter.
- * Immutable geometry after creation (endpoints are set during placement).
- * Editing endpoints via Edit Mode · 1D is a planned future extension.
+ * The line can be moved as a whole via Grab (G key); the distance is preserved.
+ * Editing individual endpoints via Edit Mode · 1D is a planned future extension.
  *
  * Type identity:
- *   `instanceof MeasureLine` → read-only 1D measurement; limited Edit Mode.
+ *   `instanceof MeasureLine` → 1D measurement; move OK, no Edit Mode.
  *   `instanceof Cuboid`      → locally-editable deformable box.
  *   `instanceof Sketch`      → 2D sketch awaiting extrusion.
- *   `instanceof ImportedMesh`→ server-side read-only geometry.
+ *   `instanceof ImportedMesh`→ server-side geometry; move OK, no Edit Mode.
  */
 import * as THREE from 'three'
 
@@ -36,9 +36,28 @@ export class MeasureLine {
     return this.p1.distanceTo(this.p2)
   }
 
+  /**
+   * Returns [p1, p2] as the canonical "corners" used by the grab/drag system.
+   * p1 and p2 are the actual mutable Vector3 instances (not copies), so the
+   * cancel-grab restore path (`corners[i].copy(saved)`) works correctly.
+   * @returns {THREE.Vector3[]}
+   */
+  get corners() { return [this.p1, this.p2] }
+
   /** Renames the entity. */
   rename(name) {
     this.name = name
+  }
+
+  /**
+   * Translates both endpoints by delta (same API as Cuboid.move).
+   * AppController calls meshView.updateGeometry() separately after this.
+   * @param {THREE.Vector3[]} startCorners  [p1_snap, p2_snap] taken at drag start
+   * @param {THREE.Vector3}   delta         displacement from start
+   */
+  move(startCorners, delta) {
+    this.p1.copy(startCorners[0]).add(delta)
+    this.p2.copy(startCorners[1]).add(delta)
   }
 
   /**

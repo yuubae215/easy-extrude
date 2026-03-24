@@ -463,8 +463,9 @@ export class UIView {
    * @param {() => void} onSketch
    * @param {() => void} [onMeasure]
    * @param {() => void} [onImportStep]
+   * @param {() => void} [onFrame]  shown only when a geometry object is active
    */
-  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep) {
+  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame) {
     this.hideAddMenu()
     const menu = document.createElement('div')
     Object.assign(menu.style, {
@@ -493,10 +494,11 @@ export class UIView {
     menu.appendChild(title)
 
     const items = [
-      { label: 'Box',         hint: 'Shift+A', cb: onBox },
-      { label: 'Sketch',      hint: '',        cb: onSketch },
-      ...(onMeasure     ? [{ label: 'Measure',      hint: 'M', cb: onMeasure }]     : []),
-      ...(onImportStep  ? [{ label: 'Import STEP',  hint: '',  cb: onImportStep }]  : []),
+      { label: 'Box',              hint: 'Shift+A', cb: onBox },
+      { label: 'Sketch',           hint: '',        cb: onSketch },
+      ...(onMeasure    ? [{ label: 'Measure',          hint: 'M', cb: onMeasure }]    : []),
+      ...(onFrame      ? [{ label: 'Coordinate Frame', hint: '',  cb: onFrame }]      : []),
+      ...(onImportStep ? [{ label: 'Import STEP',      hint: '',  cb: onImportStep }] : []),
     ]
     items.forEach(({ label, hint, cb }) => {
       const item = document.createElement('div')

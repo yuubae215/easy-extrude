@@ -48,7 +48,7 @@ if (this._selectionMode === 'edit') this.setMode('object')
 ```
 
 `setMode()` guarantees, in order:
-1. Cancel in-progress operations (grab, face drag, object drag)
+1. Cancel in-progress operations (grab, rotate, face drag, object drag)
 2. Clear active object visual state
 3. Reset controller state (`_hoveredFace`, `_faceDragging`, `_dragFace`, `_cleanupEditSubstate()`)
 4. Dispatch to new mode — `instanceof Sketch` → Edit 2D, otherwise → Edit 3D
@@ -73,8 +73,11 @@ if (this._activeObj && !this._objSelected) {
   - `extrudeFace` signature: `(face: Face, savedFaceCorners, normal, dist)` — callers pass a `Face` object (`_dragFace`), not an index. `Face.index` is used where an index is still needed (e.g. `MeshView.setFaceHighlight`).
   - `Cuboid` must always have: `move()`, `extrudeFace(face, ...)`, `faces: Face[6]`, `edges: Edge[12]`.
   - `Sketch` only needs: `extrude(height)`, `rename(name)`, `sketchRect`.
-  - `MeasureLine` holds two `THREE.Vector3` endpoints (`p1`, `p2`) and a `MeasureLineView`. It has no `vertices`/`edges`/`faces` graph and must be excluded from `collectSnapTargets` loops and `_hitAnyObject` raycasting (guard with `instanceof MeasureLine`). Edit Mode and Grab are blocked for MeasureLine.
-  - `ImportedMesh` has no `corners` property (no vertex graph). Any code path that iterates over selected objects and accesses `.corners` must guard with `selObj.corners` or skip with `instanceof ImportedMesh`. The read-only guard (`instanceof ImportedMesh || instanceof MeasureLine`) must be applied to **all three** interaction paths: Grab (G key), Edit Mode (Tab/E), **and** `_objDragging` (pointer drag). Missing the pointer drag path causes a `TypeError: Cannot read properties of undefined (reading 'map')` crash when clicking an ImportedMesh.
+  - `MeasureLine` holds two `THREE.Vector3` endpoints (`p1`, `p2`) and a `MeasureLineView`. It has no `vertices`/`edges`/`faces` graph and must be excluded from `collectSnapTargets` loops and `_hitAnyObject` raycasting (guard with `instanceof MeasureLine`). Edit Mode is blocked; **Grab (move) is allowed** — `corners` returns `[p1, p2]` and `move(startCorners, delta)` translates both endpoints. `MeasureLineView.updateGeometry([p1, p2])` calls `update(p1, p2)` to refresh the line and label. Pointer drag is not available (no `cuboid` raycasting surface); use G key.
+  - `ImportedMesh` has a synthetic 8-corner AABB (`_corners8`, initialised from geometry bounding box by `SceneService` after `updateGeometryBuffers`). **Grab and pointer drag are allowed** — `move(startCorners, delta)` updates `_corners8`; `ImportedMeshView.updateGeometry(corners)` computes the centroid and sets `cuboid.position = centroid − originalCenter`. Edit Mode is blocked.
+  - `CoordinateFrame` is a named reference frame child of any geometry object or another `CoordinateFrame` (ADR-018 Phase A, ADR-019 Phase B). It has no vertex/edge/face graph and no raycasting surface (`cuboid = null`). **Grab (G key) and Rotate (R key) are allowed.** `corners` returns `[this._worldPos]`; `move(startCorners, delta)` updates `_worldPos`; `CoordinateFrameView.updateRotation(quaternion)` applies the quaternion to the root `THREE.Group`. The animation loop processes frames in **topological order** (shallow before deep) so nested frame chains propagate in a single pass. `_rotate.startRot` saves the quaternion on R-key press; cancel restores it. Edit Mode, pointer drag, Ctrl+drag rotation, pivot selection, and stack mode remain blocked. `CoordinateFrameView` implements the full `MeshView` no-op interface (including `updateBoxHelper`). Deletion of a parent cascades recursively (`SceneService.deleteObject` calls itself for each child, `OutlinerView.removeObject` also recurses).
+  - Ctrl+drag rotation and pivot selection (`_startPivotSelect`) are blocked for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame` (no local vertex geometry to rotate/pivot).
+  - The "no Edit Mode" guard applies to `setMode('edit')` for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`.
 
 ### MeasureLineView No-Op Interface Completeness
 
@@ -89,9 +92,10 @@ if (this._activeObj && !this._objSelected) {
 ```js
 // _startMeasurePlacement()
 const activeObj = this._scene.activeObject
-this._measure.snapMeshView = (activeObj && !(activeObj instanceof MeasureLine))
+const _isSnapCapable = o => !(o instanceof MeasureLine) && !(o instanceof CoordinateFrame)
+this._measure.snapMeshView = (activeObj && _isSnapCapable(activeObj))
   ? activeObj.meshView
-  : ([...this._scene.objects.values()].find(o => !(o instanceof MeasureLine))?.meshView ?? null)
+  : ([...this._scene.objects.values()].find(_isSnapCapable)?.meshView ?? null)
 
 // cleanup in _cancelMeasure() / _confirmMeasurePoint() Phase 2
 this._measure.snapMeshView?.clearSnapDisplay()
@@ -102,6 +106,33 @@ this._measure.snapMeshView = null
 
 - **Principle**: HTML labels that overlay a Three.js canvas must be repositioned every animation frame because the camera may have moved.
 - **Concrete Rule**: `MeasureLineView.updateLabelPosition()` must be called once per frame from the animation loop for every `MeasureLine` in the scene. The label uses `position: fixed` and is projected from world-space midpoint via `Vector3.project(camera)`. It is appended to `document.body` and removed in `dispose()`.
+
+### CoordinateFrame Depth Rendering Policy
+
+- **Principle**: Gizmo-style objects (axes, labels) that float at a point in world space can be completely hidden by surrounding geometry, making them invisible when the user is trying to manipulate them. Always-on-top rendering avoids this but pollutes the viewport with floating arrows when frames are idle.
+- **Concrete Rule**: `CoordinateFrameView.setObjectSelected()` applies a **selection-gated depth override**: when selected → `depthTest: false` + `renderOrder: 1` on arrows, axis label sprites, and origin sphere (frame always visible through geometry); when deselected → `depthTest: true` + `renderOrder: 0` (frame may be occluded, acceptable since the user is not interacting with it). This is a **conscious choice over** (a) always-on-top (too noisy when many idle frames exist) and (b) X-ray dual-pass rendering (ArrowHelper clone overhead, complex dispose path).
+- **No selection ring**: the orange wireframe selection sphere was removed. Selection state is conveyed solely by the depth override (arrows pop to the front when selected).
+- **Axis label sprites** (`_labelX/Y/Z`): `THREE.Sprite` with `CanvasTexture` bearing the letter in the axis colour. Positioned at `AXIS_LENGTH + 0.09` along each axis so the letter sits just past the arrowhead. Must be included in the `depthTest`/`renderOrder` loop and their `material.map` must be disposed in `dispose()`.
+
+```js
+// In setObjectSelected(selected):
+const depthTest   = !selected       // false when selected → always on top
+const renderOrder =  selected ? 1 : 0
+for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
+  arrow.line.material.depthTest = depthTest;  arrow.line.renderOrder = renderOrder
+  arrow.cone.material.depthTest = depthTest;  arrow.cone.renderOrder = renderOrder
+}
+for (const label of [this._labelX, this._labelY, this._labelZ]) {
+  label.material.depthTest = depthTest;  label.renderOrder = renderOrder
+}
+this._originSphere.material.depthTest = depthTest
+this._originSphere.renderOrder        = renderOrder
+```
+
+### Auto Origin Frame on 3D Object Creation
+
+- **Principle**: Every 3D geometry object should have a visible origin coordinate frame so the user can immediately read its reference direction.
+- **Concrete Rule**: `SceneService.createCuboid()`, `SceneService.extrudeSketch()`, and `SceneService.duplicateCuboid()` each call `this.createCoordinateFrame(id, 'Origin')` after registering the new `Cuboid` in the model. The frame is named `'Origin'` (fixed string) to distinguish it from manually-added frames (named `'Frame.XXX'`). `createCoordinateFrame` accepts an optional second parameter `overrideName` for this purpose. Sketches do NOT get an origin frame (they are 2D and have no meaningful reference direction until extruded).
 
 ### Visual State Ownership
 

@@ -23,10 +23,14 @@ Only load the full text of relevant ADRs (to avoid unnecessary reads).
 |---|---|
 | `src/controller/AppController.js` | ADR-008, ADR-006, ADR-003 |
 | `src/domain/Cuboid.js`, `src/domain/Sketch.js` | ADR-009, ADR-010, ADR-012 |
+| `src/domain/ImportedMesh.js` | ADR-009, ADR-015 (read-only, no vertex graph) |
+| `src/domain/MeasureLine.js` | ADR-009, ADR-014 (not editable, no graph) |
 | `src/graph/Vertex.js`, `Edge.js`, `Face.js` | ADR-012 |
 | `src/model/SceneModel.js` | ADR-005, ADR-008, ADR-014 |
 | `src/service/SceneService.js` | ADR-011, ADR-013, ADR-015 |
 | `src/view/MeshView.js` | ADR-008 (visual state ownership) |
+| `src/view/ImportedMeshView.js` | ADR-008, ADR-015 |
+| `src/view/MeasureLineView.js` | ADR-008 (no-op interface completeness) |
 | `src/view/UIView.js` | ADR-002, ADR-004 |
 | `server/` | ADR-015, ADR-016, ADR-017 |
 | Any new modeling/geometry code | ADR-007 (cuboid representation, not voxel) |
