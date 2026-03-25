@@ -108,7 +108,7 @@ CoordinateFrame (Entity)
   Fields (domain invariants):
     id, name, parentId
     translation: Vector3   — offset from parent centroid
-    rotation: Quaternion   — relative orientation (intrinsic XYZ Euler)
+    rotation: Quaternion   — relative orientation (intrinsic ZYX = extrinsic XYZ = RPY)
 
 SceneService
   _worldPoseCache: Map<frameId, { position: Vector3, quaternion: Quaternion }>
@@ -211,18 +211,18 @@ classDiagram
     }
 
     SceneModel "1" *-- "0..*" Solid : contains
-    SceneModel "1" *-- "0..*" Profile : contains (transient)
+    SceneModel "1" *-- "0..*" Profile : contains, transient
     SceneModel "1" *-- "0..*" CoordinateFrame : contains
     SceneModel "1" *-- "0..*" MeasureLine : contains
     SceneModel "1" *-- "0..*" ImportedMesh : contains
 
-    Solid "1" <-- "1..*" CoordinateFrame : parentId (auto: Origin frame)
-    CoordinateFrame "1" <-- "0..*" CoordinateFrame : parentId (nested)
+    Solid "1" <-- "1..*" CoordinateFrame : parentId, auto-Origin
+    CoordinateFrame "1" <-- "0..*" CoordinateFrame : parentId, nested
 
-    Profile ..> Solid : extrude() produces
+    Profile ..> Solid : extrude produces
 
-    SceneService --> CoordinateFrame : reads translation + rotation
-    SceneService --> "_worldPoseCache" : writes world pose
+    SceneService --> CoordinateFrame : reads translation and rotation
+    SceneService ..> SceneService : writes worldPoseCache
 ```
 
 ### Aggregate boundaries
@@ -264,13 +264,22 @@ graph TD
 
 ## Capability Matrix
 
-| Entity | Edit Mode | Grab/Move | Pointer drag | Ctrl+drag rot | Face Extrude | Persistent |
-|--------|-----------|-----------|-------------|----------------|-------------|------------|
-| `Solid` | ✓ (3D) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `Profile` | ✓ (2D) | ✗ | ✗ | ✗ | ✗ | ✗ (transient) |
-| `CoordinateFrame` | ✗ | ✓ (G) | ✗ | ✗ | ✗ | ✓ |
-| `MeasureLine` | ✗ | ✓ (G) | ✗ | ✗ | ✗ | ✓ |
-| `ImportedMesh` | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
+Two distinct rotation operations exist in the editor:
+
+| Operation | Trigger | Description |
+|-----------|---------|-------------|
+| **Rotate (R key)** | R → axis (X/Y/Z) → drag or type degrees | Applies a rotation to the selected object using R key workflow |
+| **Ctrl+drag rotation** | Ctrl + pointer drag on canvas | Freeform rotation using mouse; based on local vertex geometry |
+
+| Entity | Edit Mode | Grab/Move | Pointer drag | Rotate (R key) | Ctrl+drag rot | Face Extrude | Persistent |
+|--------|-----------|-----------|-------------|----------------|---------------|-------------|------------|
+| `Solid` | ✓ (3D) | ✓ | ✓ | ✗ | ✓ | ✓ | ✓ |
+| `Profile` | ✓ (2D) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ transient |
+| `CoordinateFrame` | ✗ | ✓ (G) | ✗ | ✓ (R) | ✗ | ✗ | ✓ |
+| `MeasureLine` | ✗ | ✓ (G) | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `ImportedMesh` | ✗ | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+
+> Note: `Solid` does not currently support R key rotation. Ctrl+drag rotation relies on local vertex geometry and is therefore blocked for `CoordinateFrame`, `MeasureLine`, and `ImportedMesh`.
 
 ---
 
@@ -286,6 +295,17 @@ graph TD
   direct entity mutation in the animation loop
 - `CoordinateFrameView.update(worldPos, worldQuat)` signature changed to accept
   explicit arguments instead of reading from entity
+- **Euler convention corrected**: `CoordinateFrame` rotation display changes from
+  `Euler('XYZ')` (intrinsic XYZ = extrinsic ZYX) to `Euler('ZYX')` (intrinsic ZYX
+  = extrinsic XYZ = RPY), matching the ROS REP-103 convention already adopted for
+  the world frame. Affected sites: `CoordinateFrame.js` JSDoc,
+  `AppController.js` (`setFromQuaternion` calls), `UIView.js` N-panel label.
+  N-panel label changes from "Rotation (Local · XYZ)" to "Rotation (Local · RPY)".
+
+  | Convention | Three.js order | Meaning |
+  |-----------|---------------|---------|
+  | ~~intrinsic XYZ~~ (old) | `'XYZ'` | X first on body axis → extrinsic ZYX |
+  | **intrinsic ZYX** (new) | `'ZYX'` | Yaw→Pitch→Roll on body axes = **ROS RPY** |
 
 ### Deferred (follow-up ADRs)
 
