@@ -86,7 +86,7 @@ LocalGeometry
 | Entity | Why excluded |
 |--------|-------------|
 | `ImportedMesh` | No local graph; geometry lives on server; only a synthetic AABB proxy exists client-side |
-| `CoordinateFrame` | Not a shape; represents SE(3) transform only — `translation: Vector3` + `rotation: Quaternion` |
+| `CoordinateFrame` | Not a boundary-representation graph. Its graph is a **pose tree**: nodes are named SE(3) poses, edges are `parentId` links forming a kinematic chain. This is structurally distinct from a shape boundary graph. |
 
 ### 2. Unify field vocabulary across all LocalGeometry entities
 
@@ -148,15 +148,76 @@ interface LocalGeometry {
 The two-axis matrix below is now the canonical classification. Both axes are
 orthogonal and together are exhaustive over all current entity types:
 
-|  | **Local graph** | **Proxy (AABB)** | **SE(3) transform** |
-|--|----------------|-----------------|---------------------|
-| **Shape (persistent)** | `Solid` | `ImportedMesh` | — |
-| **Reference** | — | — | `CoordinateFrame` |
+|  | **Boundary Graph** (V/E/F) | **Pose Graph** (SE(3) tree) | **Proxy** (AABB) |
+|--|---------------------------|----------------------------|-----------------|
+| **Shape (persistent)** | `Solid` | — | `ImportedMesh` |
+| **Reference** | — | `CoordinateFrame` | — |
 | **Annotation** | `MeasureLine` | — | — |
 | **Draft (transient)** | `Profile` | — | — |
 
-*Structural axis (columns)*: how geometry is represented in the client.
+*Structural axis (columns)*: how the entity is represented in the client domain.
 *Semantic axis (rows)*: what domain role the entity plays.
+
+`CoordinateFrame` is correctly a **Pose Graph** node, not a scalar SE(3) value,
+because multiple frames linked by `parentId` form a kinematic tree — a graph
+whose nodes are named poses and whose edges are parent-child transform
+relationships.
+
+### 5. CoordinateFrame as Pose Graph — Positioning use case
+
+#### Structure
+
+A `CoordinateFrame` represents a **named pose** (position + orientation)
+attached to a parent geometry object or another frame. The collection of all
+frames in a scene forms a **pose graph**:
+
+```
+Nodes:  CoordinateFrame instances (each carries SE(3) relative to its parent)
+Edges:  parentId links (intra-object: Solid → Frame, Frame → Frame)
+Root:   Geometry object (Solid / ImportedMesh) acts as the implicit root node
+```
+
+The origin frame (auto-created at object creation) shares the geometry's
+reference point. Additional named frames define other **attachment points** on
+the same object — each at an offset (translation + rotation) from the origin.
+
+#### Positioning use case
+
+Two objects are **positioned relative to each other** by declaring that one of
+their attachment-point frames coincides with a frame on the other object.
+
+```
+Solid_A
+  └─ CoordinateFrame "Origin"   ← geometry reference (world position of A)
+  └─ CoordinateFrame "Grip_A"   ← attachment point offset from Origin
+
+Solid_B
+  └─ CoordinateFrame "Origin"
+  └─ CoordinateFrame "Mount_A"  ← attachment point on B
+
+Positioning constraint:
+  Grip_A.worldPose == Mount_A.worldPose
+  → defines the relative transform between Solid_A and Solid_B
+```
+
+This is equivalent to:
+- ROS TF: `lookupTransform(Grip_A, Mount_A)` → identity when mated
+- CAD assembly mate: "coincident frames" constraint
+
+#### Domain model implication
+
+The coincidence relationship is a **cross-object edge** added to the otherwise
+intra-object pose tree. It is not yet implemented; the current pose tree is
+intra-object only. When implemented, it would be expressed as a `Constraint`
+entity or a `matchedFrameId` field on `CoordinateFrame`:
+
+```js
+// future — not part of this ADR
+CoordinateFrame {
+  ...
+  matchedFrameId?: string   // null = free, string = mated to this frame's id
+}
+```
 
 ### 5. Revise the Capability Matrix (MECE)
 
@@ -254,11 +315,13 @@ classDiagram
     }
 
     class CoordinateFrame {
+        <<Pose Graph node>>
         +id: string
         +name: string
         +parentId: string
         +translation: Vector3
         +rotation: Quaternion
+        +matchedFrameId: string
         +corners() Vector3[]
         +move(startCorners, delta)
         +rename(name)
@@ -291,8 +354,9 @@ classDiagram
     SceneModel *-- "0..*" CoordinateFrame
     SceneModel *-- "0..*" ImportedMesh
 
-    Solid <-- CoordinateFrame : parentId
+    Solid <-- CoordinateFrame : parentId, intra-object
     CoordinateFrame <-- CoordinateFrame : parentId, nested
+    CoordinateFrame "0..1" ..> "0..1" CoordinateFrame : matchedFrameId, future
     Profile ..> Solid : extrude produces
 ```
 
@@ -324,6 +388,10 @@ migration phase to avoid breaking all call sites at once. They are marked
 - `Profile` vertex-level sub-element selection (Edit 2D → vertex drag) — the
   graph structure makes this straightforward in a future ADR
 - `MeasureLine` endpoint drag via Edit Mode — same graph foundation supports it
+- **Assembly constraints / Frame coincidence** — adding cross-object pose-graph
+  edges (`matchedFrameId`) to express positional mating between two objects.
+  Requires a separate ADR covering: constraint representation, solver strategy
+  (propagate world poses from constraints), and UI for defining mates.
 
 ### ADRs updated
 
