@@ -22,8 +22,8 @@ import {
   collectWorldSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
-import { Cuboid }          from '../domain/Cuboid.js'
-import { Sketch }          from '../domain/Sketch.js'
+import { Solid }           from '../domain/Solid.js'
+import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
@@ -55,7 +55,7 @@ export class AppController {
           ? 'measure'
           : obj instanceof CoordinateFrame
             ? 'frame'
-            : obj instanceof Sketch
+            : obj instanceof Profile
               ? 'sketch'
               : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
@@ -285,8 +285,10 @@ export class AppController {
       const localPos = frame.translation.clone().applyQuaternion(parentRot.clone().conjugate())
       localPos[axis] = val
       frame.translation.copy(localPos).applyQuaternion(parentRot)
-      frame._worldPos.copy(parentCentroid).add(frame.translation)
-      frame.meshView.updatePosition(frame._worldPos)
+      const newWorldPos = parentCentroid.clone().add(frame.translation)
+      const cacheEntry = this._service.worldPoseOf(frame.id)
+      if (cacheEntry) cacheEntry.position.copy(newWorldPos)
+      frame.meshView.updatePosition(newWorldPos)
     })
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
@@ -295,7 +297,7 @@ export class AppController {
       const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
       // val is local Euler degrees; rebuild local quaternion then convert to world
       const localRot = parentRot.clone().conjugate().multiply(frame.rotation)
-      const localEuler = new THREE.Euler().setFromQuaternion(localRot, 'XYZ')
+      const localEuler = new THREE.Euler().setFromQuaternion(localRot, 'ZYX')
       localEuler[axis] = THREE.MathUtils.degToRad(val)
       localRot.setFromEuler(localEuler)
       frame.rotation.copy(parentRot.clone().multiply(localRot))
@@ -381,14 +383,14 @@ export class AppController {
    * @param {'box'|'sketch'|'measure'|'frame'} [type='box']
    */
   _addObject(type = 'box') {
-    if (type === 'sketch')  { this._addSketchObject();     return }
+    if (type === 'sketch')  { this._addProfileObject();    return }
     if (type === 'measure') { this._startMeasurePlacement(); return }
     if (type === 'frame')   { this._addCoordinateFrame();  return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
-    const obj = this._service.createCuboid()
+    const obj = this._service.createSolid()
     this._switchActiveObject(obj.id, true)
   }
 
@@ -535,11 +537,11 @@ export class AppController {
 
   // ────────────────────────────────────────────────────────────────────────────
 
-  _addSketchObject() {
+  _addProfileObject() {
     // Exit current mode cleanly before switching active object
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
-    const obj = this._service.createSketch()
+    const obj = this._service.createProfile()
     this._switchActiveObject(obj.id, true)
     this.setMode('edit')  // enters Edit Mode · 2D
   }
@@ -763,15 +765,15 @@ export class AppController {
   }
 
   /**
-   * Duplicates the active Cuboid, makes the copy active, and immediately
+   * Duplicates the active Solid, makes the copy active, and immediately
    * starts a grab so the user can position it (Blender Shift+D behaviour).
-   * No-ops if there is no active object or it is a Sketch.
+   * No-ops if there is no active object or it is a Profile.
    */
   _duplicateObject() {
     const id = this._scene.activeId
     if (!id) return
     if (this._scene.selectionMode === 'edit') this.setMode('object')
-    const copy = this._service.duplicateCuboid(id)
+    const copy = this._service.duplicateSolid(id)
     if (!copy) return
     this._selectedIds.clear()
     this._selectedIds.add(copy.id)
@@ -904,7 +906,7 @@ export class AppController {
   }
 
   /** Hits only the active object's mesh */
-  _hitActiveCuboid() {
+  _hitActiveSolid() {
     if (!this._activeObj) return null
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const hits = this._raycaster.intersectObject(this._activeObj.meshView.cuboid)
@@ -912,7 +914,7 @@ export class AppController {
   }
 
   _hitFace() {
-    const hit = this._hitActiveCuboid()
+    const hit = this._hitActiveSolid()
     if (!hit) return null
     const fi   = Math.floor(hit.face.a / 4)
     const face = this._activeObj?.faces?.[fi] ?? null
@@ -936,7 +938,7 @@ export class AppController {
     if (obj instanceof CoordinateFrame) {
       if (obj.name === 'Origin') {
         // Origin is fixed at parent centroid — show world position, locked (no local offset)
-        const wp = obj._worldPos
+        const wp = this._service.worldPoseOf(obj.id)?.position ?? obj.translation
         this._uiView.updateNPanelForFrame(
           { x: wp.x, y: wp.y, z: wp.z },
           { x: 0, y: 0, z: 0 },
@@ -950,7 +952,7 @@ export class AppController {
       const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
       const localPos = obj.translation.clone().applyQuaternion(parentRot.clone().conjugate())
       const localRot  = parentRot.clone().conjugate().multiply(obj.rotation)
-      const euler = new THREE.Euler().setFromQuaternion(localRot, 'XYZ')
+      const euler = new THREE.Euler().setFromQuaternion(localRot, 'ZYX')
       this._uiView.updateNPanelForFrame(localPos, {
         x: THREE.MathUtils.radToDeg(euler.x),
         y: THREE.MathUtils.radToDeg(euler.y),
@@ -959,7 +961,7 @@ export class AppController {
       return
     }
 
-    if (obj instanceof Sketch && obj.sketchRect) {
+    if (obj instanceof Profile && obj.sketchRect) {
       const { p1, p2 } = obj.sketchRect
       const centroid = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
       const dims = new THREE.Vector3(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y), 0)
@@ -1256,7 +1258,7 @@ export class AppController {
       this._clearObjectSelection()
       this._setObjectSelected(false)
       this._objDragging = false
-      if (this._activeObj instanceof Sketch) {
+      if (this._activeObj instanceof Profile) {
         this._enterEditMode2D()
       } else {
         this._enterEditMode3D()
@@ -1364,7 +1366,7 @@ export class AppController {
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
-    const cuboid = this._service.extrudeSketch(this._scene.activeId, height)
+    const cuboid = this._service.extrudeProfile(this._scene.activeId, height)
     if (!cuboid) return
 
     this._meshView.updateGeometry(cuboid.corners)
@@ -1660,7 +1662,13 @@ export class AppController {
       const selObj = this._scene.getObject(id)
       if (selObj) this._grab.allStartCorners.set(id, selObj.corners.map(c => c.clone()))
     }
-    this._grab.centroid.copy(getCentroid(this._corners))
+    // For CoordinateFrame, corners = [translation] (parent-relative offset).
+    // Use the world position from the cache so the drag plane passes through
+    // the frame's actual world location (ADR-020).
+    const grabCenter = (this._activeObj instanceof CoordinateFrame)
+      ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
+      : getCentroid(this._corners)
+    this._grab.centroid.copy(grabCenter)
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.pivotLabel = 'Centroid'
     this._grab.autoSnap   = false
@@ -1748,7 +1756,7 @@ export class AppController {
 
     // Compute the screen-space angle from the projected frame origin to the mouse.
     // This allows the mouse-driven angle to be relative to where it started.
-    const projected = frame._worldPos.clone().project(this._camera)
+    const projected = (this._service.worldPoseOf(frame.id)?.position ?? frame.translation).clone().project(this._camera)
     this._rotate.startAngle = Math.atan2(
       this._mouse.y - projected.y,
       this._mouse.x - projected.x,
@@ -1800,7 +1808,7 @@ export class AppController {
     // Recompute start angle with new axis
     const frame = this._activeObj
     if (frame instanceof CoordinateFrame) {
-      const projected = frame._worldPos.clone().project(this._camera)
+      const projected = (this._service.worldPoseOf(frame.id)?.position ?? frame.translation).clone().project(this._camera)
       this._rotate.startAngle = Math.atan2(
         this._mouse.y - projected.y,
         this._mouse.x - projected.x,
@@ -1825,7 +1833,7 @@ export class AppController {
     } else {
       // Mouse-driven: measure signed angle from start to current mouse position.
       // Negated so that moving the mouse CCW around the frame rotates CCW (natural tracking).
-      const projected = frame._worldPos.clone().project(this._camera)
+      const projected = (this._service.worldPoseOf(frame.id)?.position ?? frame.translation).clone().project(this._camera)
       const currentAngle = Math.atan2(
         this._mouse.y - projected.y,
         this._mouse.x - projected.x,
@@ -1926,7 +1934,7 @@ export class AppController {
    */
   _applyStackSnap() {
     const grabbed = this._activeObj
-    if (!(grabbed instanceof Cuboid)) { this._grab.stacking = false; return }
+    if (!(grabbed instanceof Solid)) { this._grab.stacking = false; return }
 
     // Find bottom Z of the grabbed object
     const gCorners = grabbed.corners
@@ -1973,7 +1981,7 @@ export class AppController {
     // Apply additional Z shift to all selected objects' vertex positions directly
     for (const id of this._selectedIds) {
       const selObj = this._scene.getObject(id)
-      if (selObj instanceof Cuboid) {
+      if (selObj instanceof Solid) {
         selObj.corners.forEach(c => { c.z += zOffset })
       }
     }
@@ -2888,7 +2896,7 @@ export class AppController {
           const dx = Math.abs(this._sketch.p2.x - this._sketch.p1.x)
           const dy = Math.abs(this._sketch.p2.y - this._sketch.p1.y)
           if (dx > 0.01 || dy > 0.01) {
-            obj.sketchRect = { p1: this._sketch.p1.clone(), p2: this._sketch.p2.clone() }
+            obj.setRect(this._sketch.p1, this._sketch.p2)
             this._uiView.setStatusRich([
               { text: 'Sketch', bold: true, color: '#4fc3f7' },
               { text: 'Press Enter to extrude · Drag to redraw', color: '#888' },
@@ -3188,53 +3196,10 @@ export class AppController {
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine) obj.meshView.updateLabelPosition()
       }
-      // Sync CoordinateFrame positions every frame.
-      //
-      // Position model: worldPos = parentCentroid + translation
-      //
-      // Two paths:
-      //  a) Frame is being grabbed → move() already updated _worldPos.
-      //     Back-derive the new translation so the offset is preserved when
-      //     the parent moves later.
-      //  b) Frame is not grabbed  → recompute worldPos from parentCentroid +
-      //     translation (frame follows parent).
-      //
-      // Either way, meshView.updatePosition(_worldPos) is called at the end.
-      //
-      // Frames are processed in topological order (parents before children)
-      // so that nested frame chains (ADR-019) propagate correctly in one pass.
-      const grabbedFrameIds = this._grab.active ? this._grab.allStartCorners : new Map()
-      const allFrames = [...this._scene.objects.values()].filter(o => o instanceof CoordinateFrame)
-      const depthCache = new Map()
-      const getFrameDepth = (frame) => {
-        if (depthCache.has(frame.id)) return depthCache.get(frame.id)
-        const parent = this._scene.getObject(frame.parentId)
-        const d = (parent instanceof CoordinateFrame) ? getFrameDepth(parent) + 1 : 0
-        depthCache.set(frame.id, d)
-        return d
-      }
-      allFrames.sort((a, b) => getFrameDepth(a) - getFrameDepth(b))
-
-      for (const obj of allFrames) {
-        const parent = this._scene.getObject(obj.parentId)
-        if (!parent || parent.corners.length === 0) continue
-
-        const parentCentroid = new THREE.Vector3()
-        for (const c of parent.corners) parentCentroid.add(c)
-        parentCentroid.divideScalar(parent.corners.length)
-
-        if (grabbedFrameIds.has(obj.id)) {
-          // (a) Grabbed: _worldPos already updated by move(). Sync translation.
-          obj.translation.copy(obj._worldPos).sub(parentCentroid)
-        } else {
-          // (b) Not grabbed: follow parent, keep translation offset.
-          obj._worldPos.copy(parentCentroid).add(obj.translation)
-        }
-        obj.meshView.updatePosition(obj._worldPos)
-        // Update connection line from parent origin (geometry centroid or parent frame)
-        // to this frame's world position — parentCentroid is already computed above
-        obj.meshView.updateConnectionLine(parentCentroid)
-      }
+      // Sync CoordinateFrame world poses every frame (ADR-020).
+      // SceneService._updateWorldPoses() computes worldPos = parentCentroid + translation
+      // in topological order and updates the _worldPoseCache + meshView.updatePosition.
+      this._service._updateWorldPoses()
     }
     loop()
 

@@ -2,9 +2,11 @@
  * CoordinateFrame - a named reference frame attached to a parent object's origin.
  *
  * Represents an SE(3) coordinate frame that is a child of a geometry object.
- * The frame's world position is derived from its parent object's centroid plus
- * a relative `translation` offset.  In the Outliner, CoordinateFrames appear
- * indented under their parent, expressing the spatial hierarchy.
+ * Its world pose is derived by SceneService._updateWorldPoses() each frame and
+ * cached in SceneService._worldPoseCache — it does NOT live on this entity.
+ *
+ * Domain invariants (stored on entity): parentId, translation, rotation.
+ * Derived state (service-owned): world position, world quaternion.
  *
  * Type guard: instanceof CoordinateFrame
  *
@@ -22,21 +24,30 @@
  *   Right-handed convention — positive angle = counter-clockwise when the
  *   thumb points along the positive axis.
  *
- *   Displayed in the N panel as intrinsic Euler XYZ (degrees).
- *   "Intrinsic XYZ" means: first rotate around local X, then local Y, then
- *   local Z.  Equivalent Three.js order string: 'XYZ'.
+ *   Displayed in the N panel as intrinsic ZYX Euler = extrinsic XYZ = ROS RPY (degrees).
+ *   "Intrinsic ZYX" means: first rotate around local Z (yaw), then local Y (pitch),
+ *   then local X (roll). This is the ROS RPY convention.
+ *   Equivalent Three.js order string: 'ZYX'.
  *   Conversion:
- *     display → storage:  new THREE.Euler(rx, ry, rz, 'XYZ')  → quaternion
- *     storage → display:  euler.setFromQuaternion(q, 'XYZ')   → degrees
+ *     display → storage:  new THREE.Euler(rx, ry, rz, 'ZYX')  → quaternion
+ *     storage → display:  euler.setFromQuaternion(q, 'ZYX')   → degrees
  *
  * Translation representation:
  *   `this.translation` is a world-space offset from the parent centroid.
  *   Origin frame: translation = (0,0,0) always (locked in N panel).
  *   Non-origin frames: translation can be any Vector3; edited via G key or
  *   the N panel Location (Local) fields.
- *   Local-to-world: worldPos = parentCentroid + translation
- *   N panel shows localPos = translation rotated into the parent's local frame
- *   (i.e. applyQuaternion(parentRot.conjugate())).
+ *   World pose: SceneService._worldPoseCache[id].position = parentCentroid + translation
+ *
+ * ─── Grab / move mechanics ───────────────────────────────────────────────────
+ *   `get corners()` returns `[this.translation]` — a single-element array.
+ *   The grab system saves `[translation.clone()]` at grab-start; on cancel it
+ *   restores `translation.copy(saved)`. SceneService._updateWorldPoses() then
+ *   recomputes the correct world position from the restored translation.
+ *
+ *   NOTE: The drag plane center in AppController._startGrab() must use
+ *   SceneService.worldPoseOf(frame.id).position (not translation) so the plane
+ *   passes through the frame's actual world position.
  *
  * ─── Capability matrix ───────────────────────────────────────────────────────
  *   Edit Mode:         blocked (no vertex graph)
@@ -47,17 +58,7 @@
  *   Rename:            allowed
  *   Delete:            allowed (also deleted on parent deletion — cascade)
  *
- * ─── Position model ──────────────────────────────────────────────────────────
- *   _worldPos  = parentCentroid + translation   (kept in sync by animation loop)
- *   translation = _worldPos − parentCentroid    (updated after each Grab move)
- *
- * The animation loop always recomputes `_worldPos` so the frame follows its
- * parent when the parent is grabbed/moved.  When the user grabs the frame
- * itself, `move()` updates `_worldPos`; the next animation-loop tick derives
- * the new `translation` from the difference, preserving the offset for
- * subsequent parent moves.
- *
- * @see ADR-016, ADR-018
+ * @see ADR-020, ADR-016, ADR-018
  */
 import { Vector3, Quaternion } from 'three'
 
@@ -78,7 +79,7 @@ export class CoordinateFrame {
     /**
      * Relative translation from parent centroid (world units).
      * Default: zero vector (frame origin coincides with parent centroid).
-     * Updated by the animation loop after each Grab move.
+     * Updated by Grab (move()), N-panel edits, and world-pose back-derivation.
      * @type {Vector3}
      */
     this.translation = new Vector3()
@@ -90,42 +91,40 @@ export class CoordinateFrame {
      * @type {Quaternion}
      */
     this.rotation = new Quaternion()
-
-    /**
-     * Cached world-space position.  Mutated directly by `move()` and
-     * recomputed by the AppController animation loop.  Returned by `corners`
-     * so the standard Grab machinery works without modification.
-     * @type {Vector3}
-     */
-    this._worldPos = new Vector3()
   }
 
   /** @param {string} name */
   rename(name) { this.name = name }
 
   /**
-   * Returns [_worldPos] — a single-element array holding a reference to the
-   * frame's mutable world-position vector.
+   * Returns [this.translation] — a single-element array holding a reference
+   * to the frame's mutable translation vector.
    *
-   * Conventions shared with the Grab system:
-   *  - `startCorners = corners.map(c => c.clone())` saves [_worldPos.clone()]
-   *  - `move(startCorners, delta)` updates _worldPos in-place
-   *  - Cancel: `corners[0].copy(saved)` = `_worldPos.copy(saved)` ✓
-   *  - `getCentroid(corners)` = _worldPos, which is world-space ✓ (correct drag plane)
+   * Used by the grab system for save/restore (cancel restores translation):
+   *  - `startCorners = corners.map(c => c.clone())` saves [translation.clone()]
+   *  - `move(startCorners, delta)` updates translation in-place
+   *  - Cancel: `corners[0].copy(saved)` = `translation.copy(saved)` ✓
+   *
+   * NOTE: getCentroid(corners) = translation, not world position.
+   * AppController._startGrab() special-cases CoordinateFrame to use
+   * SceneService.worldPoseOf(id).position for the drag plane center.
    *
    * @returns {[Vector3]}
    */
-  get corners() { return [this._worldPos] }
+  get corners() { return [this.translation] }
 
   /**
-   * Translates the frame by `delta` from its grab-start position.
-   * `_worldPos` is updated in-place; the animation loop derives the new
-   * `translation` offset from `_worldPos − parentCentroid` on the next tick.
+   * Translates the frame by `delta` from its grab-start translation.
+   * `translation` is a world-space offset from parent centroid, so adding a
+   * world-space `delta` directly is correct.
    *
-   * @param {[Vector3]} startCorners  saved [_worldPos] at grab start
+   * SceneService._updateWorldPoses() picks up the updated translation on the
+   * next frame and recomputes the world pose in the cache.
+   *
+   * @param {[Vector3]} startCorners  saved [translation] at grab start
    * @param {Vector3}   delta         world-space movement vector
    */
   move(startCorners, delta) {
-    this._worldPos.copy(startCorners[0]).add(delta)
+    this.translation.copy(startCorners[0]).add(delta)
   }
 }

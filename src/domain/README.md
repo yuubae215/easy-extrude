@@ -2,7 +2,7 @@
 
 **Responsibility**: Represent business logic and domain entities.
 
-Files: `Cuboid.js`, `Sketch.js`, `ImportedMesh.js`, `MeasureLine.js`
+Files: `Solid.js`, `Profile.js`, `ImportedMesh.js`, `MeasureLine.js`, `CoordinateFrame.js`
 
 ---
 
@@ -25,14 +25,45 @@ Domain ← Model ← Service ← Controller ← View
 
 Domain depends on nothing. Every other layer depends on Domain.
 
-## Entity Capability Contracts (ADR-009, ADR-010, ADR-012)
+## Entity Taxonomy (ADR-020, ADR-021)
 
-- `instanceof Sketch` = 2D, not yet extruded. Operations: `extrude(height)`, `rename(name)`
-- `instanceof Cuboid` = 3D. Operations: `move()`, `extrudeFace(face, ...)`, `rename(name)`
-- `instanceof ImportedMesh` = arbitrary triangle mesh (read-only geometry). Operations: `rename(name)` only
-- `instanceof MeasureLine` = two-point measurement annotation. Holds `p1`, `p2` (`THREE.Vector3`) and a `MeasureLineView`. Operations: none beyond display. Has **no** vertex/edge/face graph.
-- `Sketch.extrude()` must **not** mutate the Sketch — it returns a new `Cuboid`
-- Use `instanceof` for entity type dispatch; never use the `dimension` scalar
+```
+SceneObject (union)
+  ├─ Geometry        — occupies 3D space; user-visible shape
+  │   ├─ Solid         (deformable 3D solid; editable; LocalGeometry)
+  │   └─ ImportedMesh  (server-computed read-only geometry)
+  ├─ Frame           — SE(3) reference frame; no intrinsic shape
+  │   └─ CoordinateFrame
+  ├─ Annotation      — measurement overlay; LocalGeometry
+  │   └─ MeasureLine
+  └─ Draft           — transient 2D cross-section; LocalGeometry
+      └─ Profile
+```
+
+## Entity Capability Contracts (ADR-009, ADR-010, ADR-012, ADR-020)
+
+- `instanceof Profile` = 2D, not yet extruded. Operations: `setRect(p1,p2)`, `extrude(height)`, `rename(name)`
+- `instanceof Solid` = 3D solid. Operations: `move()`, `extrudeFace(face, ...)`, `rename(name)`
+- `instanceof ImportedMesh` = arbitrary triangle mesh (read-only geometry). Operations: `move()`, `rename(name)`
+- `instanceof MeasureLine` = two-point measurement annotation. LocalGeometry: `vertices[2]`, `edges[1]`. Operations: `move()`, `setEndpoints()`, `rename(name)`
+- `instanceof CoordinateFrame` = SE(3) named reference frame. Operations: `move()`, `rename(name)`. World pose managed by `SceneService._worldPoseCache`.
+- `Profile.extrude()` must **not** mutate the Profile — it returns a new `Solid`
+- Use `instanceof` for entity type dispatch; never use a `dimension` scalar
+
+## LocalGeometry Interface (ADR-021)
+
+`Solid`, `Profile`, and `MeasureLine` all implement the LocalGeometry interface:
+
+```js
+interface LocalGeometry {
+  vertices: Vertex[]
+  edges:    Edge[]
+  faces:    Face[]   // empty for 1D and 2D entities
+  get corners(): Vector3[]
+  rename(name: string): void
+  move(startCorners: Vector3[], delta: Vector3): void
+}
+```
 
 ## Concurrency Note
 

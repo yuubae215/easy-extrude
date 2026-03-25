@@ -1048,7 +1048,7 @@ export class UIView {
    * Updates the N panel for a CoordinateFrame.
    * @param {{x:number,y:number,z:number}} pos       world position for Origin frames;
    *                                                  local position (parent-relative) for others
-   * @param {{x:number,y:number,z:number}} eulerDeg  rotation in degrees, intrinsic Euler XYZ order
+   * @param {{x:number,y:number,z:number}} eulerDeg  rotation in degrees, intrinsic ZYX = extrinsic XYZ = ROS RPY order
    * @param {string} name
    * @param {boolean} [locked]  when true, values are read-only (Origin frame)
    */
@@ -1172,7 +1172,7 @@ export class UIView {
       locRow('Y', '#6ab04c', pos.y),
       locRow('Z', '#4a9eed', pos.z),
     ]))
-    this._nPanelContentEl.appendChild(section('Rotation (Local · XYZ)', [
+    this._nPanelContentEl.appendChild(section('Rotation (Local · RPY)', [
       rotRow('X', '#e05252', eulerDeg.x),
       rotRow('Y', '#6ab04c', eulerDeg.y),
       rotRow('Z', '#4a9eed', eulerDeg.z),

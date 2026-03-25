@@ -1,5 +1,8 @@
 /**
- * Cuboid — domain entity representing a 3D deformable box.
+ * Solid — domain entity representing a 3D deformable solid body.
+ *
+ * Renamed from `Cuboid` (ADR-020): the entity is not necessarily box-shaped;
+ * it is a general 3D solid body with a boundary graph (vertices / edges / faces).
  *
  * DDD Phase 2: behaviour methods own the mutation logic that previously
  * lived in AppController.
@@ -7,9 +10,11 @@
  * Graph model (ADR-012):
  *   Phase 5-1: geometry stored as Vertex[8]; `get corners()` provides backward compat.
  *   Phase 5-3: explicit Face[6] and Edge[12] objects; `dimension` field removed —
- *              entity type (instanceof Cuboid) now carries the dimensional identity.
+ *              entity type (instanceof Solid) now carries the dimensional identity.
  *
  * Note: `meshView` is co-located on the entity for now.
+ *
+ * @see ADR-020, ADR-012, ADR-009
  */
 import { FACES } from '../model/CuboidModel.js'
 import { Face }  from '../graph/Face.js'
@@ -23,7 +28,7 @@ const EDGE_PAIRS = [
   [0, 4], [1, 5], [2, 6], [3, 7],  // vertical
 ]
 
-export class Cuboid {
+export class Solid {
   /**
    * @param {string} id
    * @param {string} name

@@ -9,15 +9,15 @@
  *   transformGraph: { nodes: TransformNode[], edges: TransformEdge[] }  // ADR-016
  * }
  *
- * SceneObjectDTO (Cuboid):
- * { type: 'Cuboid', id, name, description, vertices: [{ id, x, y, z }] }
+ * SceneObjectDTO (Solid):
+ * { type: 'Solid', id, name, description, vertices: [{ id, x, y, z }] }
  *
- * SceneObjectDTO (Sketch):
- * { type: 'Sketch', id, name, description,
+ * SceneObjectDTO (Profile):
+ * { type: 'Profile', id, name, description,
  *   sketchRect: { p1: {x,y,z}, p2: {x,y,z} } | null }
  */
-import { Cuboid }  from '../domain/Cuboid.js'
-import { Sketch }  from '../domain/Sketch.js'
+import { Solid }    from '../domain/Solid.js'
+import { Profile }  from '../domain/Profile.js'
 
 // ── Serialise ─────────────────────────────────────────────────────────────────
 
@@ -32,9 +32,9 @@ export function serializeScene(scene) {
   const objects = []
 
   for (const obj of scene.objects.values()) {
-    if (obj instanceof Cuboid) {
+    if (obj instanceof Solid) {
       objects.push({
-        type: 'Cuboid',
+        type: 'Solid',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
@@ -45,10 +45,10 @@ export function serializeScene(scene) {
           z:  v.position.z,
         })),
       })
-    } else if (obj instanceof Sketch) {
+    } else if (obj instanceof Profile) {
       const sr = obj.sketchRect
       objects.push({
-        type:        'Sketch',
+        type:        'Profile',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
@@ -83,4 +83,3 @@ export function serializeScene(scene) {
     transformGraph: { nodes, edges },
   }
 }
-
