@@ -107,27 +107,22 @@ this._measure.snapMeshView = null
 - **Principle**: HTML labels that overlay a Three.js canvas must be repositioned every animation frame because the camera may have moved.
 - **Concrete Rule**: `MeasureLineView.updateLabelPosition()` must be called once per frame from the animation loop for every `MeasureLine` in the scene. The label uses `position: fixed` and is projected from world-space midpoint via `Vector3.project(camera)`. It is appended to `document.body` and removed in `dispose()`.
 
-### CoordinateFrame Depth Rendering Policy
+### CoordinateFrame Depth Rendering and Visibility Policy
 
-- **Principle**: Gizmo-style objects (axes, labels) that float at a point in world space can be completely hidden by surrounding geometry, making them invisible when the user is trying to manipulate them. Always-on-top rendering avoids this but pollutes the viewport with floating arrows when frames are idle.
-- **Concrete Rule**: `CoordinateFrameView.setObjectSelected()` applies a **selection-gated depth override**: when selected → `depthTest: false` + `renderOrder: 1` on arrows, axis label sprites, and origin sphere (frame always visible through geometry); when deselected → `depthTest: true` + `renderOrder: 0` (frame may be occluded, acceptable since the user is not interacting with it). This is a **conscious choice over** (a) always-on-top (too noisy when many idle frames exist) and (b) X-ray dual-pass rendering (ArrowHelper clone overhead, complex dispose path).
+- **Principle**: Gizmo-style objects (axes, labels) cause visual noise when always visible, and are buried inside parent geometry when idle. Frames should only appear when the user is actively working with them.
+- **Concrete Rule — parent-gated visibility**: `CoordinateFrameView` is `visible = false` by default. `setParentSelected(true)` is called by `AppController._setChildFramesVisible()` whenever the parent object is selected; `setParentSelected(false)` hides it when the parent is deselected. `setParentSelected(true)` also applies X-ray (`depthTest: false`, `renderOrder: 1`) so the frame is always visible through the parent geometry.
+- **Concrete Rule — self-selection depth override**: `setObjectSelected(selected)` applies a depth override when the frame itself is the active object. It does NOT change `visible` — visibility is owned by `setParentSelected` and `setVisible`.
+- **Visibility ownership table** (CoordinateFrame-specific):
+
+| Trigger | Method | Effect |
+|---------|--------|--------|
+| Parent object selected/deselected | `setParentSelected(bool)` | `visible` on/off + X-ray on |
+| Frame itself selected/deselected | `setObjectSelected(bool)` | X-ray depth/renderOrder only |
+| Outliner eye icon | `setVisible(bool)` | `visible` on/off |
+
+- **`_setChildFramesVisible(parentId, visible)`** in `AppController` is the single entry point that iterates `SceneModel.getChildren(parentId)` and calls `setParentSelected` on each `CoordinateFrame` child. It is called in: `_switchActiveObject`, `setMode('object')` restoration, `_setObjectSelected`, `_clearObjectSelection`, and rect-selection matched loop.
 - **No selection ring**: the orange wireframe selection sphere was removed. Selection state is conveyed solely by the depth override (arrows pop to the front when selected).
 - **Axis label sprites** (`_labelX/Y/Z`): `THREE.Sprite` with `CanvasTexture` bearing the letter in the axis colour. Positioned at `AXIS_LENGTH + 0.09` along each axis so the letter sits just past the arrowhead. Must be included in the `depthTest`/`renderOrder` loop and their `material.map` must be disposed in `dispose()`.
-
-```js
-// In setObjectSelected(selected):
-const depthTest   = !selected       // false when selected → always on top
-const renderOrder =  selected ? 1 : 0
-for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
-  arrow.line.material.depthTest = depthTest;  arrow.line.renderOrder = renderOrder
-  arrow.cone.material.depthTest = depthTest;  arrow.cone.renderOrder = renderOrder
-}
-for (const label of [this._labelX, this._labelY, this._labelZ]) {
-  label.material.depthTest = depthTest;  label.renderOrder = renderOrder
-}
-this._originSphere.material.depthTest = depthTest
-this._originSphere.renderOrder        = renderOrder
-```
 
 ### Auto Origin Frame on 3D Object Creation
 

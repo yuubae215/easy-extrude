@@ -777,6 +777,7 @@ export class AppController {
     if (this._scene.activeId && this._scene.activeId !== id) {
       const prev = this._scene.getObject(this._scene.activeId)
       if (prev) prev.meshView.setObjectSelected(false)
+      this._setChildFramesVisible(this._scene.activeId, false)
     }
 
     this._service.setActiveObject(id)
@@ -789,6 +790,7 @@ export class AppController {
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
+    if (select) this._setChildFramesVisible(id, true)
 
     this._refreshObjectModeStatus()
     this._updateNPanel()
@@ -1210,6 +1212,7 @@ export class AppController {
       if (this._activeObj && !this._objSelected) {
         this._objSelected = true
         this._activeObj.meshView.setObjectSelected(true)
+        this._setChildFramesVisible(this._scene.activeId, true)
       }
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
@@ -1373,6 +1376,7 @@ export class AppController {
   _setObjectSelected(sel) {
     this._objSelected = sel
     if (this._meshView) this._meshView.setObjectSelected(sel)
+    this._setChildFramesVisible(this._scene.activeId, sel)
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
   }
@@ -1412,11 +1416,27 @@ export class AppController {
     })
   }
 
+  /**
+   * Shows or hides child CoordinateFrames of a parent object.
+   * Called whenever a parent object's selection state changes.
+   * @param {string|null} parentId
+   * @param {boolean} visible
+   */
+  _setChildFramesVisible(parentId, visible) {
+    if (!parentId) return
+    for (const child of this._scene.getChildren(parentId)) {
+      if (child instanceof CoordinateFrame) {
+        child.meshView.setParentSelected(visible)
+      }
+    }
+  }
+
   /** Clears visual selection highlight for all currently selected objects. */
   _clearObjectSelection() {
     for (const id of this._selectedIds) {
       const obj = this._scene.getObject(id)
       if (obj) obj.meshView.setObjectSelected(false)
+      this._setChildFramesVisible(id, false)
     }
     this._selectedIds.clear()
   }
@@ -1477,6 +1497,7 @@ export class AppController {
 
     for (const obj of matched) {
       obj.meshView.setObjectSelected(true)
+      this._setChildFramesVisible(obj.id, true)
       this._selectedIds.add(obj.id)
     }
 

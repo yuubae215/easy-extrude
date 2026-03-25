@@ -100,6 +100,7 @@ export class CoordinateFrameView {
       this._labelZ,
     )
 
+    this._group.visible = false  // hidden until parent object is selected
     scene.add(this._group)
   }
 
@@ -130,6 +131,27 @@ export class CoordinateFrameView {
   /** @param {boolean} visible */
   setVisible(visible) {
     this._group.visible = visible
+  }
+
+  /**
+   * Shows or hides the frame based on whether its parent object is selected.
+   * When shown, applies X-ray (depthTest: false) so the frame is always visible
+   * through the parent geometry.
+   * @param {boolean} selected
+   */
+  setParentSelected(selected) {
+    this._group.visible = selected
+    if (selected) {
+      for (const arrow of [this._arrowX, this._arrowY, this._arrowZ]) {
+        arrow.line.material.depthTest = false; arrow.line.renderOrder = 1
+        arrow.cone.material.depthTest = false; arrow.cone.renderOrder = 1
+      }
+      for (const label of [this._labelX, this._labelY, this._labelZ]) {
+        label.material.depthTest = false; label.renderOrder = 1
+      }
+      this._originSphere.material.depthTest = false
+      this._originSphere.renderOrder        = 1
+    }
   }
 
   /**
