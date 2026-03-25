@@ -1502,8 +1502,7 @@ export class AppController {
       const f = this._scene.getObject(fid)
       if (!f) continue
       f.meshView.showFull()
-      const parent = this._scene.getObject(f.parentId)
-      if (parent instanceof CoordinateFrame) f.meshView.showConnection(false)
+      f.meshView.showConnection(false)   // always draw line to parent (geometry or frame)
     }
   }
 
@@ -1531,12 +1530,9 @@ export class AppController {
       const isSelected = fid === frameId
       if (isSelected) f.meshView.showFull()
       else            f.meshView.showDimmed()
-      // Connection line: full opacity if this frame is the selected one
-      // (its line goes TO it from its parent), dimmed otherwise
-      const parent = this._scene.getObject(f.parentId)
-      if (parent instanceof CoordinateFrame) {
-        f.meshView.showConnection(!isSelected)
-      }
+      // Connection line to parent (geometry centroid or parent frame).
+      // Full opacity for the selected frame's own line; dimmed for others.
+      f.meshView.showConnection(!isSelected)
     }
   }
 
@@ -3226,10 +3222,9 @@ export class AppController {
           obj._worldPos.copy(parentCentroid).add(obj.translation)
         }
         obj.meshView.updatePosition(obj._worldPos)
-        // Update connection line endpoints for frames whose parent is also a frame
-        if (parent instanceof CoordinateFrame) {
-          obj.meshView.updateConnectionLine(parent._worldPos)
-        }
+        // Update connection line from parent origin (geometry centroid or parent frame)
+        // to this frame's world position — parentCentroid is already computed above
+        obj.meshView.updateConnectionLine(parentCentroid)
       }
     }
     loop()
