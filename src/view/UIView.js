@@ -1031,7 +1031,7 @@ export class UIView {
 
     this._nPanelContentEl.innerHTML = ''
     this._nPanelContentEl.appendChild(nameSection)
-    this._nPanelContentEl.appendChild(section('Location', [
+    this._nPanelContentEl.appendChild(section('Location (World)', [
       locRow('X', '#e05252', centroid.x),
       locRow('Y', '#6ab04c', centroid.y),
       locRow('Z', '#4a9eed', centroid.z),
@@ -1046,8 +1046,9 @@ export class UIView {
 
   /**
    * Updates the N panel for a CoordinateFrame.
-   * @param {{x:number,y:number,z:number}} pos       position to display (local or world)
-   * @param {{x:number,y:number,z:number}} eulerDeg  rotation in degrees (XYZ order)
+   * @param {{x:number,y:number,z:number}} pos       world position for Origin frames;
+   *                                                  local position (parent-relative) for others
+   * @param {{x:number,y:number,z:number}} eulerDeg  rotation in degrees, intrinsic Euler XYZ order
    * @param {string} name
    * @param {boolean} [locked]  when true, values are read-only (Origin frame)
    */
@@ -1158,20 +1159,20 @@ export class UIView {
     nameSection.appendChild(nameInputEl)
 
     const locRow = locked
-      ? (ax, col, _v) => row(ax, col, 0)
+      ? (ax, col, val) => row(ax, col, val)
       : (ax, col, val) => editRow(ax, col, val, v => { if (this._onFramePositionChangeCb) this._onFramePositionChangeCb(ax.toLowerCase(), v) })
     const rotRow = locked
-      ? (ax, col, _v) => row(ax, col, 0)
+      ? (ax, col, val) => row(ax, col, val)
       : (ax, col, val) => editRow(ax, col, val, v => { if (this._onFrameRotationChangeCb) this._onFrameRotationChangeCb(ax.toLowerCase(), v) })
 
     this._nPanelContentEl.innerHTML = ''
     this._nPanelContentEl.appendChild(nameSection)
-    this._nPanelContentEl.appendChild(section('Location', [
+    this._nPanelContentEl.appendChild(section(locked ? 'Location (World)' : 'Location (Local)', [
       locRow('X', '#e05252', pos.x),
       locRow('Y', '#6ab04c', pos.y),
       locRow('Z', '#4a9eed', pos.z),
     ]))
-    this._nPanelContentEl.appendChild(section('Rotation', [
+    this._nPanelContentEl.appendChild(section('Rotation (Local · XYZ)', [
       rotRow('X', '#e05252', eulerDeg.x),
       rotRow('Y', '#6ab04c', eulerDeg.y),
       rotRow('Z', '#4a9eed', eulerDeg.z),

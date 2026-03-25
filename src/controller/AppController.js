@@ -935,8 +935,14 @@ export class AppController {
 
     if (obj instanceof CoordinateFrame) {
       if (obj.name === 'Origin') {
-        // Origin is always at (0,0,0) in parent space — locked display
-        this._uiView.updateNPanelForFrame({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, obj.name, true)
+        // Origin is fixed at parent centroid — show world position, locked (no local offset)
+        const wp = obj._worldPos
+        this._uiView.updateNPanelForFrame(
+          { x: wp.x, y: wp.y, z: wp.z },
+          { x: 0, y: 0, z: 0 },
+          obj.name,
+          true
+        )
         return
       }
       // Non-Origin frame: show position/rotation in parent's local coordinate system
@@ -1762,6 +1768,7 @@ export class AppController {
     this._rotate.inputStr = ''
     this._rotate.hasInput = false
     this._refreshObjectModeStatus()
+    this._updateNPanel()
   }
 
   /**
@@ -1817,12 +1824,13 @@ export class AppController {
       angle = isNaN(parsed) ? 0 : parsed * (Math.PI / 180)
     } else {
       // Mouse-driven: measure signed angle from start to current mouse position.
+      // Negated so that moving the mouse CCW around the frame rotates CCW (natural tracking).
       const projected = frame._worldPos.clone().project(this._camera)
       const currentAngle = Math.atan2(
         this._mouse.y - projected.y,
         this._mouse.x - projected.x,
       )
-      angle = currentAngle - this._rotate.startAngle
+      angle = this._rotate.startAngle - currentAngle
     }
 
     // Build axis vector: world axis when constrained, view-direction when free.
@@ -2453,6 +2461,7 @@ export class AppController {
 
     if (this._rotate.active) {
       this._applyRotate()
+      this._updateNPanel()
       return
     }
 

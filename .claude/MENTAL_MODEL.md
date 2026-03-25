@@ -136,6 +136,24 @@ this._measure.snapMeshView = null
 - **Principle**: Every 3D geometry object should have a visible origin coordinate frame so the user can immediately read its reference direction.
 - **Concrete Rule**: `SceneService.createCuboid()`, `SceneService.extrudeSketch()`, and `SceneService.duplicateCuboid()` each call `this.createCoordinateFrame(id, 'Origin')` after registering the new `Cuboid` in the model. The frame is named `'Origin'` (fixed string) to distinguish it from manually-added frames (named `'Frame.XXX'`). `createCoordinateFrame` accepts an optional second parameter `overrideName` for this purpose. Sketches do NOT get an origin frame (they are 2D and have no meaningful reference direction until extruded).
 
+### N Panel Read-Only Rows Must Render the Passed Value
+
+- **Principle**: A display-layer function that ignores its data arguments and renders a hardcoded constant is a silent data-loss bug: the controller passes correct values but the UI always shows wrong ones.
+- **Concrete Rule**: In `UIView.updateNPanelForFrame`, the `locked` branch of `locRow` and `rotRow` must pass the `val` argument through to `row()`, not substitute `0`. Example: `(ax, col, val) => row(ax, col, val)`, NOT `(ax, col, _v) => row(ax, col, 0)`. The Origin frame shows world position (non-zero) in the locked Location row; always derive displayed values from what the caller passes.
+
+### Mouse-Driven Rotation Angle Sign Convention
+
+- **Principle**: The direction mapping from screen-space cursor angle to 3D rotation must match user expectation: moving the cursor clockwise around the frame should rotate the frame in a visually consistent direction.
+- **Concrete Rule**: In `_applyRotate()`, use `angle = this._rotate.startAngle - currentAngle` (NOT `currentAngle - startAngle`). The `atan2`-based `currentAngle` increases when the cursor moves CCW on screen; subtracting from `startAngle` inverts this so the physical rotation tracks the cursor correctly. This affects only the mouse-driven path; numeric input (`this._rotate.hasInput`) uses the parsed degree value directly and is unaffected.
+
+```js
+// WRONG — rotation appears reversed on screen
+angle = currentAngle - this._rotate.startAngle
+
+// CORRECT
+angle = this._rotate.startAngle - currentAngle
+```
+
 ### Visual State Ownership
 
 - **Principle**: Each visual flag must have exactly one mutator function to prevent race conditions and scattered state updates.

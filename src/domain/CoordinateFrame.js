@@ -8,16 +8,46 @@
  *
  * Type guard: instanceof CoordinateFrame
  *
- * Capability matrix (Phase A):
- *   - Edit Mode:         blocked (no vertex graph)
- *   - Grab/Move (G key): allowed — moves the translation offset relative to parent
- *   - Pointer drag:      blocked (no cuboid raycasting surface)
- *   - Ctrl+drag rotate:  blocked
- *   - Rename:            allowed
- *   - Delete:            allowed (also deleted on parent deletion — cascade)
+ * ─── Coordinate system conventions ──────────────────────────────────────────
  *
- * Position model
- * ─────────────
+ * World frame (ROS REP-103, right-handed):
+ *   +X  forward
+ *   +Y  left
+ *   +Z  up
+ *   Ground plane = XY plane (Z = 0)
+ *   camera.up = (0, 0, 1)  (Three.js)
+ *
+ * Rotation representation:
+ *   Stored internally as a unit quaternion (`this.rotation: THREE.Quaternion`).
+ *   Right-handed convention — positive angle = counter-clockwise when the
+ *   thumb points along the positive axis.
+ *
+ *   Displayed in the N panel as intrinsic Euler XYZ (degrees).
+ *   "Intrinsic XYZ" means: first rotate around local X, then local Y, then
+ *   local Z.  Equivalent Three.js order string: 'XYZ'.
+ *   Conversion:
+ *     display → storage:  new THREE.Euler(rx, ry, rz, 'XYZ')  → quaternion
+ *     storage → display:  euler.setFromQuaternion(q, 'XYZ')   → degrees
+ *
+ * Translation representation:
+ *   `this.translation` is a world-space offset from the parent centroid.
+ *   Origin frame: translation = (0,0,0) always (locked in N panel).
+ *   Non-origin frames: translation can be any Vector3; edited via G key or
+ *   the N panel Location (Local) fields.
+ *   Local-to-world: worldPos = parentCentroid + translation
+ *   N panel shows localPos = translation rotated into the parent's local frame
+ *   (i.e. applyQuaternion(parentRot.conjugate())).
+ *
+ * ─── Capability matrix ───────────────────────────────────────────────────────
+ *   Edit Mode:         blocked (no vertex graph)
+ *   Grab/Move (G key): allowed — moves the translation offset relative to parent
+ *   Rotate  (R key):   allowed — modifies rotation quaternion around chosen axis
+ *   Pointer drag:      blocked (no cuboid raycasting surface)
+ *   Ctrl+drag rotate:  blocked
+ *   Rename:            allowed
+ *   Delete:            allowed (also deleted on parent deletion — cascade)
+ *
+ * ─── Position model ──────────────────────────────────────────────────────────
  *   _worldPos  = parentCentroid + translation   (kept in sync by animation loop)
  *   translation = _worldPos − parentCentroid    (updated after each Grab move)
  *

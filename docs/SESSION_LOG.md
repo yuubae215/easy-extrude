@@ -4,6 +4,13 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-25**: CoordinateFrame N panel UX + coordinate convention docs — Three improvements and two bug fixes.
+  - **R-key realtime update**: `_updateNPanel()` now called on every `_onPointerMove` during rotate (same as Grab), and also in `_confirmRotate()`. Previously the N panel Rotation fields only updated after confirmation.
+  - **Disambiguated section labels**: geometry objects show `Location (World)`; CoordinateFrame shows `Location (Local)` / `Rotation (Local · XYZ)` (intrinsic Euler XYZ, degrees); Origin frame shows `Location (World)` with actual world position.
+  - **Coordinate convention JSDoc** added to `CoordinateFrame.js`: ROS REP-103 world frame (+X forward, +Y left, +Z up), quaternion right-hand rule, intrinsic Euler XYZ display convention, translation/N-panel correspondence.
+  - **Bug fix — Origin shows zeros**: `UIView.updateNPanelForFrame` `locked` branch used hardcoded `0` instead of the passed `val`; AppController was passing `_worldPos` correctly but UIView discarded it. Fixed `locRow`/`rotRow` locked paths to pass `val` through.
+  - **Bug fix — rotation direction reversed**: `_applyRotate` mouse-driven angle used `currentAngle - startAngle`; must be `startAngle - currentAngle` so cursor movement direction matches visual rotation direction. MENTAL_MODEL updated with both rules.
+
 - **2026-03-23**: CoordinateFrame visibility fix — `CoordinateFrameView.setObjectSelected()` now toggles depth rendering based on selection state: selected → `depthTest: false` + `renderOrder: 1` on all axis arrow / origin-sphere materials so the frame always renders in front of any overlapping geometry; deselected → normal depth testing so the frame is naturally occluded (acceptable when not being interacted with). Balances discoverability (always visible when active) with visual cleanliness (no floating axes cluttering the viewport when idle).
 
 - **2026-03-23**: CoordinateFrame Phase B — nested hierarchy + rotation editing (ADR-019) — Designed and implemented Option B for coordinate frames.
