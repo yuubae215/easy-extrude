@@ -101,6 +101,14 @@ export class CoordinateFrameView {
     )
 
     this._group.visible = false  // hidden until parent object is selected
+
+    /**
+     * Dashed line from parent CoordinateFrame origin to this frame's origin.
+     * Null until showConnection() is called for the first time.
+     * @type {THREE.Line|null}
+     */
+    this._connectionLine = null
+
     scene.add(this._group)
   }
 
@@ -155,6 +163,51 @@ export class CoordinateFrameView {
   }
 
   /**
+   * Shows the dashed connection line from the parent CoordinateFrame origin
+   * to this frame's origin.  Lazily creates the Three.js Line on first call.
+   * Endpoints are updated every frame via updateConnectionLine().
+   */
+  showConnection() {
+    if (!this._connectionLine) {
+      const positions = new Float32Array(6)   // 2 points × 3 coords
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      const mat = new THREE.LineDashedMaterial({
+        color:     0x999999,
+        dashSize:  0.06,
+        gapSize:   0.04,
+        depthTest: false,
+      })
+      this._connectionLine = new THREE.Line(geo, mat)
+      this._connectionLine.renderOrder = 1
+      this._connectionLine.visible     = false
+      this._scene.add(this._connectionLine)
+    }
+    this._connectionLine.visible = true
+  }
+
+  /** Hides the connection line without disposing it. */
+  hideConnection() {
+    if (this._connectionLine) this._connectionLine.visible = false
+  }
+
+  /**
+   * Updates both endpoints of the connection line.
+   * Called every animation frame from AppController when the parent is also
+   * a CoordinateFrame.  Safe to call even when the line is invisible.
+   * @param {THREE.Vector3} parentWorldPos  world position of the parent frame's origin
+   */
+  updateConnectionLine(parentWorldPos) {
+    if (!this._connectionLine) return
+    const attr = this._connectionLine.geometry.attributes.position
+    attr.setXYZ(0, parentWorldPos.x, parentWorldPos.y, parentWorldPos.z)
+    const p = this._group.position
+    attr.setXYZ(1, p.x, p.y, p.z)
+    attr.needsUpdate = true
+    this._connectionLine.computeLineDistances()
+  }
+
+  /**
    * Highlights the frame when it is the active/selected object.
    *
    * Selected   → depthTest: false + renderOrder: 1 so the frame always renders
@@ -181,6 +234,10 @@ export class CoordinateFrameView {
     }
     this._originSphere.material.depthTest = depthTest
     this._originSphere.renderOrder        = renderOrder
+
+    // Highlight the selected frame's origin: gold sphere + scale-up
+    this._originSphere.material.color.setHex(selected ? 0xffcc00 : 0xffffff)
+    this._originSphere.scale.setScalar(selected ? 1.6 : 1.0)
   }
 
   /**
@@ -200,6 +257,12 @@ export class CoordinateFrameView {
         }
       }
     })
+    if (this._connectionLine) {
+      scene.remove(this._connectionLine)
+      this._connectionLine.geometry.dispose()
+      this._connectionLine.material.dispose()
+      this._connectionLine = null
+    }
   }
 
   // ── No-op interface (MENTAL_MODEL §1) ────────────────────────────────────

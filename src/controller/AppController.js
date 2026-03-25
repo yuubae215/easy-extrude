@@ -223,6 +223,13 @@ export class AppController {
     /** Unsubscribe function for the active import.progress WS listener, or null */
     this._importProgressUnsub = null
 
+    /**
+     * Set of CoordinateFrame IDs currently visible because of frame-chain selection.
+     * Cleared by _hideFrameChain(). Used to restore correct visibility on deselect.
+     * @type {Set<string>}
+     */
+    this._activeFrameChain = new Set()
+
     // ── CoordinateFrame rotate state (R key, ADR-019 Phase B) ─────────────
     // Symmetric to _grab but applies a quaternion rotation to CoordinateFrame.rotation.
     this._rotate = {
@@ -730,6 +737,11 @@ export class AppController {
 
     const wasActive = this._scene.activeId === id
 
+    // If deleting the active frame, hide its chain before the view is disposed
+    if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
+      this._hideFrameChain()
+    }
+
     // Determine next active object: prefer geometry objects over frames.
     const nextId = wasActive
       ? (
@@ -776,8 +788,14 @@ export class AppController {
     // Deselect / un-highlight previous
     if (this._scene.activeId && this._scene.activeId !== id) {
       const prev = this._scene.getObject(this._scene.activeId)
-      if (prev) prev.meshView.setObjectSelected(false)
-      this._setChildFramesVisible(this._scene.activeId, false)
+      if (prev) {
+        prev.meshView.setObjectSelected(false)
+        if (prev instanceof CoordinateFrame) {
+          this._hideFrameChain()
+        } else {
+          this._setChildFramesVisible(this._scene.activeId, false)
+        }
+      }
     }
 
     this._service.setActiveObject(id)
@@ -790,7 +808,13 @@ export class AppController {
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
-    if (select) this._setChildFramesVisible(id, true)
+    if (select) {
+      if (obj instanceof CoordinateFrame) {
+        this._showFrameChain(id)
+      } else {
+        this._setChildFramesVisible(id, true)
+      }
+    }
 
     this._refreshObjectModeStatus()
     this._updateNPanel()
@@ -1212,7 +1236,11 @@ export class AppController {
       if (this._activeObj && !this._objSelected) {
         this._objSelected = true
         this._activeObj.meshView.setObjectSelected(true)
-        this._setChildFramesVisible(this._scene.activeId, true)
+        if (this._activeObj instanceof CoordinateFrame) {
+          this._showFrameChain(this._scene.activeId)
+        } else {
+          this._setChildFramesVisible(this._scene.activeId, true)
+        }
       }
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
@@ -1376,7 +1404,15 @@ export class AppController {
   _setObjectSelected(sel) {
     this._objSelected = sel
     if (this._meshView) this._meshView.setObjectSelected(sel)
-    this._setChildFramesVisible(this._scene.activeId, sel)
+    if (this._scene.activeId) {
+      const active = this._scene.getObject(this._scene.activeId)
+      if (active instanceof CoordinateFrame) {
+        if (sel) this._showFrameChain(this._scene.activeId)
+        else this._hideFrameChain()
+      } else {
+        this._setChildFramesVisible(this._scene.activeId, sel)
+      }
+    }
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
   }
@@ -1431,12 +1467,77 @@ export class AppController {
     }
   }
 
+  /**
+   * Collects all CoordinateFrame IDs in the chain rooted at `frameId`:
+   *   - ancestors: walk up through CoordinateFrame parents (stop at geometry)
+   *   - self: frameId itself
+   *   - descendants: all CoordinateFrame children/grandchildren recursively
+   * @param {string} frameId
+   * @returns {Set<string>}
+   */
+  _collectFrameChain(frameId) {
+    const chain = new Set()
+    // Walk ancestors through CoordinateFrame parents
+    let current = this._scene.getObject(frameId)
+    while (current instanceof CoordinateFrame) {
+      chain.add(current.id)
+      current = this._scene.getObject(current.parentId)
+    }
+    // Walk descendants recursively
+    const addDescendants = (id) => {
+      for (const child of this._scene.getChildren(id)) {
+        if (child instanceof CoordinateFrame) {
+          chain.add(child.id)
+          addDescendants(child.id)
+        }
+      }
+    }
+    addDescendants(frameId)
+    return chain
+  }
+
+  /**
+   * Shows all frames in the chain of `frameId` (ancestors + self + descendants),
+   * applies X-ray rendering, and draws connection lines between parent-child frames.
+   * @param {string} frameId
+   */
+  _showFrameChain(frameId) {
+    const chain = this._collectFrameChain(frameId)
+    this._activeFrameChain = chain
+    for (const fid of chain) {
+      const f = this._scene.getObject(fid)
+      if (!f) continue
+      f.meshView.setParentSelected(true)
+      // Draw connection line from parent frame to this frame
+      const parent = this._scene.getObject(f.parentId)
+      if (parent instanceof CoordinateFrame) {
+        f.meshView.showConnection()
+      }
+    }
+  }
+
+  /**
+   * Hides all frames that were shown by _showFrameChain and clears connection lines.
+   * Safe to call when _activeFrameChain is empty (no-op).
+   */
+  _hideFrameChain() {
+    const chain = this._activeFrameChain
+    this._activeFrameChain = new Set()
+    for (const fid of chain) {
+      const f = this._scene.getObject(fid)
+      if (!f) continue  // already deleted
+      f.meshView.setParentSelected(false)
+      f.meshView.hideConnection()
+    }
+  }
+
   /** Clears visual selection highlight for all currently selected objects. */
   _clearObjectSelection() {
+    if (this._activeFrameChain.size > 0) this._hideFrameChain()
     for (const id of this._selectedIds) {
       const obj = this._scene.getObject(id)
       if (obj) obj.meshView.setObjectSelected(false)
-      this._setChildFramesVisible(id, false)
+      if (!(obj instanceof CoordinateFrame)) this._setChildFramesVisible(id, false)
     }
     this._selectedIds.clear()
   }
@@ -3100,6 +3201,10 @@ export class AppController {
           obj._worldPos.copy(parentCentroid).add(obj.translation)
         }
         obj.meshView.updatePosition(obj._worldPos)
+        // Update connection line endpoints for frames whose parent is also a frame
+        if (parent instanceof CoordinateFrame) {
+          obj.meshView.updateConnectionLine(parent._worldPos)
+        }
       }
     }
     loop()
