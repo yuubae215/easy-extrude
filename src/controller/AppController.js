@@ -1453,71 +1453,95 @@ export class AppController {
   }
 
   /**
-   * Shows or hides child CoordinateFrames of a parent object.
-   * Called whenever a parent object's selection state changes.
+   * Collects ALL CoordinateFrame IDs in the frame tree rooted at `parentId`
+   * (any object type).  Recurses through all levels of CoordinateFrame children.
+   * @param {string} parentId
+   * @returns {Set<string>}
+   */
+  _collectAllDescendantFrames(parentId) {
+    const result = new Set()
+    const recurse = (id) => {
+      for (const child of this._scene.getChildren(id)) {
+        if (child instanceof CoordinateFrame) {
+          result.add(child.id)
+          recurse(child.id)
+        }
+      }
+    }
+    recurse(parentId)
+    return result
+  }
+
+  /**
+   * Shows or hides the frame tree attached to a geometry object.
+   * `visible = true`  → showFull() on all frames + connection lines (full opacity)
+   * `visible = false` → _hideFrameChain()
+   *
+   * Used when the GEOMETRY PARENT is selected/deselected (not a frame).
    * @param {string|null} parentId
    * @param {boolean} visible
    */
   _setChildFramesVisible(parentId, visible) {
     if (!parentId) return
-    for (const child of this._scene.getChildren(parentId)) {
-      if (child instanceof CoordinateFrame) {
-        child.meshView.setParentSelected(visible)
-      }
+    if (visible) {
+      this._showGeometryFrameTree(parentId)
+    } else {
+      this._hideFrameChain()
     }
   }
 
   /**
-   * Collects all CoordinateFrame IDs in the chain rooted at `frameId`:
-   *   - ancestors: walk up through CoordinateFrame parents (stop at geometry)
-   *   - self: frameId itself
-   *   - descendants: all CoordinateFrame children/grandchildren recursively
-   * @param {string} frameId
-   * @returns {Set<string>}
+   * Shows all CoordinateFrame descendants of a geometry object at full opacity.
+   * Called when the geometry parent is selected (no specific frame is active).
+   * @param {string} geoId
    */
-  _collectFrameChain(frameId) {
-    const chain = new Set()
-    // Walk ancestors through CoordinateFrame parents
-    let current = this._scene.getObject(frameId)
-    while (current instanceof CoordinateFrame) {
-      chain.add(current.id)
-      current = this._scene.getObject(current.parentId)
-    }
-    // Walk descendants recursively
-    const addDescendants = (id) => {
-      for (const child of this._scene.getChildren(id)) {
-        if (child instanceof CoordinateFrame) {
-          chain.add(child.id)
-          addDescendants(child.id)
-        }
-      }
-    }
-    addDescendants(frameId)
-    return chain
-  }
-
-  /**
-   * Shows all frames in the chain of `frameId` (ancestors + self + descendants),
-   * applies X-ray rendering, and draws connection lines between parent-child frames.
-   * @param {string} frameId
-   */
-  _showFrameChain(frameId) {
-    const chain = this._collectFrameChain(frameId)
-    this._activeFrameChain = chain
-    for (const fid of chain) {
+  _showGeometryFrameTree(geoId) {
+    const treeIds = this._collectAllDescendantFrames(geoId)
+    this._activeFrameChain = treeIds
+    for (const fid of treeIds) {
       const f = this._scene.getObject(fid)
       if (!f) continue
-      f.meshView.setParentSelected(true)
-      // Draw connection line from parent frame to this frame
+      f.meshView.showFull()
+      const parent = this._scene.getObject(f.parentId)
+      if (parent instanceof CoordinateFrame) f.meshView.showConnection(false)
+    }
+  }
+
+  /**
+   * Shows the full frame tree of the geometry root that `frameId` belongs to.
+   * The selected frame is shown at full opacity; all other frames are dimmed.
+   * Connection lines between parent-child frame pairs are drawn; the line to
+   * the selected frame is full opacity, others are dimmed.
+   * @param {string} frameId  ID of the active CoordinateFrame
+   */
+  _showFrameChain(frameId) {
+    // Find geometry root (walk up through CoordinateFrame parents)
+    let geoRoot = this._scene.getObject(frameId)
+    while (geoRoot instanceof CoordinateFrame) {
+      geoRoot = this._scene.getObject(geoRoot.parentId)
+    }
+    if (!geoRoot) return
+
+    const treeIds = this._collectAllDescendantFrames(geoRoot.id)
+    this._activeFrameChain = treeIds
+
+    for (const fid of treeIds) {
+      const f = this._scene.getObject(fid)
+      if (!f) continue
+      const isSelected = fid === frameId
+      if (isSelected) f.meshView.showFull()
+      else            f.meshView.showDimmed()
+      // Connection line: full opacity if this frame is the selected one
+      // (its line goes TO it from its parent), dimmed otherwise
       const parent = this._scene.getObject(f.parentId)
       if (parent instanceof CoordinateFrame) {
-        f.meshView.showConnection()
+        f.meshView.showConnection(!isSelected)
       }
     }
   }
 
   /**
-   * Hides all frames that were shown by _showFrameChain and clears connection lines.
+   * Hides all frames in _activeFrameChain and clears connection lines.
    * Safe to call when _activeFrameChain is empty (no-op).
    */
   _hideFrameChain() {
@@ -1525,19 +1549,20 @@ export class AppController {
     this._activeFrameChain = new Set()
     for (const fid of chain) {
       const f = this._scene.getObject(fid)
-      if (!f) continue  // already deleted
-      f.meshView.setParentSelected(false)
+      if (!f) continue  // already deleted — skip (view already disposed)
+      f.meshView.hide()
       f.meshView.hideConnection()
     }
   }
 
   /** Clears visual selection highlight for all currently selected objects. */
   _clearObjectSelection() {
-    if (this._activeFrameChain.size > 0) this._hideFrameChain()
+    // Always hide any visible frame tree first (_hideFrameChain handles both
+    // geometry-tree and frame-chain visibility in _activeFrameChain)
+    this._hideFrameChain()
     for (const id of this._selectedIds) {
       const obj = this._scene.getObject(id)
       if (obj) obj.meshView.setObjectSelected(false)
-      if (!(obj instanceof CoordinateFrame)) this._setChildFramesVisible(id, false)
     }
     this._selectedIds.clear()
   }

@@ -111,16 +111,23 @@ this._measure.snapMeshView = null
 
 - **Principle**: Gizmo-style objects (axes, labels) cause visual noise when always visible, and are buried inside parent geometry when idle. Frames should only appear when the user is actively working with them.
 - **Concrete Rule — parent-gated visibility**: `CoordinateFrameView` is `visible = false` by default. `setParentSelected(true)` is called by `AppController._setChildFramesVisible()` whenever the parent object is selected; `setParentSelected(false)` hides it when the parent is deselected. `setParentSelected(true)` also applies X-ray (`depthTest: false`, `renderOrder: 1`) so the frame is always visible through the parent geometry.
-- **Concrete Rule — self-selection depth override**: `setObjectSelected(selected)` applies a depth override when the frame itself is the active object. It does NOT change `visible` — visibility is owned by `setParentSelected` and `setVisible`.
+- **Concrete Rule — self-selection highlight**: `setObjectSelected(selected)` ONLY changes the origin sphere color (gold `#ffcc00` + scale 1.6× when selected, white + 1.0× when not). It does NOT change `visible` or `depthTest` — those are managed by `showFull`/`showDimmed`/`hide`.
 - **Visibility ownership table** (CoordinateFrame-specific):
 
 | Trigger | Method | Effect |
 |---------|--------|--------|
-| Parent object selected/deselected | `setParentSelected(bool)` | `visible` on/off + X-ray on |
-| Frame itself selected/deselected | `setObjectSelected(bool)` | X-ray depth/renderOrder only |
+| Geometry parent selected | `showFull()` | visible + full opacity + X-ray |
+| Frame selected (active frame in tree) | `showFull()` + `setObjectSelected(true)` | visible + full opacity + X-ray + gold sphere |
+| Non-selected frame in same tree | `showDimmed()` | visible + 0.30 opacity + X-ray (de-emphasised) |
+| Frame/geometry deselected | `hide()` | `visible = false` |
 | Outliner eye icon | `setVisible(bool)` | `visible` on/off |
+| Connection line (child → parent frame) | `showConnection(dimmed)` / `hideConnection()` | dashed line between frame origins |
 
-- **`_setChildFramesVisible(parentId, visible)`** in `AppController` is the single entry point that iterates `SceneModel.getChildren(parentId)` and calls `setParentSelected` on each `CoordinateFrame` child. It is called in: `_switchActiveObject`, `setMode('object')` restoration, `_setObjectSelected`, `_clearObjectSelection`, and rect-selection matched loop.
+- **Frame tree visibility entry points** in `AppController`:
+  - `_showGeometryFrameTree(geoId)` — called when a geometry object is selected. Collects ALL descendant CoordinateFrames via `_collectAllDescendantFrames`, calls `showFull()` on each, shows connection lines at full opacity. Stores IDs in `_activeFrameChain`.
+  - `_showFrameChain(frameId)` — called when a CoordinateFrame is selected. Walks up to find the geometry root, then shows the entire frame tree: selected frame via `showFull()` (full opacity + gold sphere), all others via `showDimmed()` (0.30 opacity). Connection line to the selected frame is full opacity; all others are dimmed.
+  - `_hideFrameChain()` — hides all frames in `_activeFrameChain` via `hide()` + `hideConnection()`. Called on deselect, switch, edit-mode entry.
+  - `_setChildFramesVisible(parentId, visible)` — thin wrapper: `true` → `_showGeometryFrameTree`, `false` → `_hideFrameChain`.
 - **No selection ring**: the orange wireframe selection sphere was removed. Selection state is conveyed solely by the depth override (arrows pop to the front when selected).
 - **Axis label sprites** (`_labelX/Y/Z`): `THREE.Sprite` with `CanvasTexture` bearing the letter in the axis colour. Positioned at `AXIS_LENGTH + 0.09` along each axis so the letter sits just past the arrowhead. Must be included in the `depthTest`/`renderOrder` loop and their `material.map` must be disposed in `dispose()`.
 
