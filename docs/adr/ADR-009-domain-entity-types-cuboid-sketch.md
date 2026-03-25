@@ -1,6 +1,6 @@
 # ADR-009 — Domain Entity Types: Cuboid and Sketch
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-020 (entities renamed: `Cuboid` → `Solid`, `Sketch` → `Profile`)
 **Date:** 2026-03-20
 **References:** ADR-002, ADR-005, ADR-007, docs/ARCHITECTURE.md
 

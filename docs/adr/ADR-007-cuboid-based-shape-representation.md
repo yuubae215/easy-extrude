@@ -1,7 +1,7 @@
 # ADR-007: Cuboid-based Shape Representation
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Partially superseded by ADR-020 (entity renamed `Cuboid` → `Solid`)
 **Supersedes:** ADR-001
 
 ---
