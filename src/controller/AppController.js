@@ -244,6 +244,8 @@ export class AppController {
       inputStr:   '',
       /** True when the user has typed at least one digit. */
       hasInput:   false,
+      /** Degree increment for Ctrl snap. Cycled with Ctrl+Wheel. */
+      stepSize:   1,
     }
 
     this._ctrlHeld  = false
@@ -2043,6 +2045,11 @@ export class AppController {
         this._mouse.x - projected.x,
       )
       angle = this._rotate.startAngle - currentAngle
+      // Ctrl: snap to stepSize degree increments
+      if (this._ctrlHeld) {
+        const stepRad = this._rotate.stepSize * (Math.PI / 180)
+        angle = Math.round(angle / stepRad) * stepRad
+      }
     }
 
     // Build axis vector: world axis when constrained, view-direction when free.
@@ -2074,6 +2081,9 @@ export class AppController {
     }
     if (this._rotate.hasInput) {
       parts.push({ text: this._rotate.inputStr + '°_', color: '#ffeb3b' })
+    } else if (this._ctrlHeld) {
+      parts.push({ text: `Step: ${this._rotate.stepSize}°`, bold: true, color: '#80cbc4' })
+      parts.push({ text: 'Scroll to change', color: '#444' })
     }
     parts.push({ text: 'Enter confirm  Esc cancel', color: '#444' })
     this._uiView.setStatusRich(parts)
@@ -2339,6 +2349,9 @@ export class AppController {
   /** Grid sizes cycled by Ctrl+Wheel during grab */
   static get GRID_SIZES() { return [0.1, 0.25, 0.5, 1, 2.5, 5, 10] }
 
+  /** Angle step sizes (degrees) cycled by Ctrl+Wheel during rotate */
+  static get ANGLE_STEPS() { return [1, 5, 10, 15, 22.5, 45, 90] }
+
   /**
    * Rounds a delta vector to the nearest multiple of the current grid size.
    * @param {THREE.Vector3} delta
@@ -2354,6 +2367,19 @@ export class AppController {
   }
 
   _onWheel(e) {
+    if (this._rotate.active && this._ctrlHeld) {
+      e.preventDefault()
+      const steps = AppController.ANGLE_STEPS
+      const idx   = steps.indexOf(this._rotate.stepSize)
+      const cur   = idx >= 0 ? idx : (steps.findIndex(s => s >= this._rotate.stepSize) || 0)
+      const next  = e.deltaY > 0
+        ? Math.min(cur + 1, steps.length - 1)
+        : Math.max(cur - 1, 0)
+      this._rotate.stepSize = steps[next]
+      this._applyRotate()
+      this._updateRotateStatus()
+      return
+    }
     if (!this._grab.active || !this._ctrlHeld) return
     e.preventDefault()
     const sizes = AppController.GRID_SIZES
@@ -3133,11 +3159,21 @@ export class AppController {
       this._ctrlHeld = false
       if (this._grab.active && !this._grab.pivotSelectMode) this._updateGrabStatus()
       if (this._faceExtrude.active) this._updateFaceExtrudeStatus()
+      if (this._rotate.active && !this._rotate.hasInput) {
+        this._applyRotate()
+        this._updateRotateStatus()
+      }
     }
   }
 
   _onKeyDown(e) {
-    if (e.key === 'Control') this._ctrlHeld = true
+    if (e.key === 'Control') {
+      this._ctrlHeld = true
+      if (this._rotate.active && !this._rotate.hasInput) {
+        this._applyRotate()
+        this._updateRotateStatus()
+      }
+    }
 
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
     if (this._rotate.active) {
