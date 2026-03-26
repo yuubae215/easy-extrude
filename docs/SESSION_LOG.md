@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-26**: Dev environment startup order — added `pnpm dev:all` script (`package.json`) using `concurrently` + `wait-on` (new devDependencies). Starts the BFF on port 3001 first; Vite launches only after `wait-on tcp:localhost:3001` resolves, guaranteeing WebSocket connections succeed on startup.
+
 - **2026-03-26**: Documentation maintenance — updated four core docs to reflect ADR-020/021 entity renames and recent feature work. `README.md`: project structure updated (`Cuboid`→`Solid`, `Sketch`→`Profile`), all new entity/view/service files added, Features/Key Bindings/Tech Stack sections expanded, ADR range updated to ADR-001…ADR-021. `docs/ARCHITECTURE.md`: source tree, Layer Responsibilities, and SceneObject structure rewritten; Domain Model section recast as Boundary Graph / Pose Graph / Proxy taxonomy (ADR-020/021); DDD Phase 7 row added. `docs/ROADMAP.md`: Phase C translated from Japanese to English; ~10 Completed entries added for 2026-03-23–26 work; Backlog cleaned up. `docs/adr/README.md`: ADR-009 marked as superseded by ADR-020.
 
 - **2026-03-26**: ADR-020/ADR-021 implementation + Save/Load Scene UI + load-scene bug fixes.
