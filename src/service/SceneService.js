@@ -215,14 +215,16 @@ export class SceneService extends EventEmitter {
    * Loads a scene from the BFF and replaces the current scene.
    * All existing objects are disposed first. Emits objectAdded for each loaded entity.
    * @param {string} sceneId
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} [viewContext]
+   *   Required only when the scene contains MeasureLine objects (for label rendering).
    * @returns {Promise<boolean>}  true on success
    */
-  async loadScene(sceneId) {
+  async loadScene(sceneId, viewContext = {}) {
     if (!this._bff) return false
     try {
       const remote = await this._bff.getScene(sceneId)
       this._clearScene()
-      const entities = this._deserializeEntities(remote.data)
+      const entities = this._deserializeEntities(remote.data, viewContext)
       for (const entity of entities) {
         this._model.addObject(entity)
         this.emit('objectAdded', entity)
@@ -257,9 +259,10 @@ export class SceneService extends EventEmitter {
    * Kept in SceneService so entity creation (new Solid/Profile/MeshView)
    * stays within the service boundary (ADR-011).
    * @param {object} data  Parsed `data` field from BFF
-   * @returns {(Solid|Profile)[]}
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} viewContext
+   * @returns {(Solid|Profile|MeasureLine|CoordinateFrame)[]}
    */
-  _deserializeEntities(data) {
+  _deserializeEntities(data, viewContext = {}) {
     const entities = []
     for (const dto of (data.objects ?? [])) {
       // Accept both new ('Solid') and legacy ('Cuboid') type strings
@@ -283,16 +286,40 @@ export class SceneService extends EventEmitter {
           profile.setRect(p1, p2)
         }
         entities.push(profile)
+      } else if (dto.type === 'MeasureLine') {
+        const { camera, renderer, container = document.body } = viewContext
+        if (!camera || !renderer) continue  // skip if no view context
+        const p1 = new Vector3(dto.p1.x, dto.p1.y, dto.p1.z)
+        const p2 = new Vector3(dto.p2.x, dto.p2.y, dto.p2.z)
+        const v0 = new Vertex(`${dto.id}_v0`, p1)
+        const v1 = new Vertex(`${dto.id}_v1`, p2)
+        const e0 = new Edge(`${dto.id}_e0`, v0, v1)
+        const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
+        const entity   = new MeasureLine(dto.id, dto.name, [v0, v1], [e0], meshView)
+        meshView.update(entity.p1, entity.p2)
+        entities.push(entity)
+      } else if (dto.type === 'CoordinateFrame') {
+        const meshView = new CoordinateFrameView(this._threeScene)
+        const frame    = new CoordinateFrame(dto.id, dto.name, dto.parentId, meshView)
+        if (dto.translation) {
+          frame.translation.set(dto.translation.x, dto.translation.y, dto.translation.z)
+        }
+        if (dto.rotation) {
+          frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
+        }
+        entities.push(frame)
       }
     }
     return entities
   }
 
-  /** Disposes all objects and resets the model (local). */
+  /** Disposes all objects and resets the model (local). Emits objectRemoved for each. */
   _clearScene() {
-    for (const obj of this._model.objects.values()) {
+    for (const [id, obj] of this._model.objects) {
       obj.meshView.dispose(this._threeScene)
+      this.emit('objectRemoved', id)
     }
+    this._worldPoseCache.clear()
     this._model = new SceneModel()
   }
 

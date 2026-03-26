@@ -477,7 +477,11 @@ export class AppController {
     }
     const id = await this._showSceneListDialog(scenes)
     if (id === null) return
-    const ok = await this._service.loadScene(id)
+    const ok = await this._service.loadScene(id, {
+      camera:    this._camera,
+      renderer:  this._sceneView.renderer,
+      container: document.body,
+    })
     if (ok) {
       this._uiView.showToast('Scene loaded')
       this._switchActiveObject(null)
