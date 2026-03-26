@@ -61,6 +61,8 @@ export class UIView {
     const arrowEl = document.createElement('span')
     arrowEl.textContent = '▾'
     Object.assign(arrowEl.style, { fontSize: '12px', opacity: '0.6' })
+    this._modeBtnEl.setAttribute('aria-haspopup', 'listbox')
+    this._modeBtnEl.setAttribute('aria-expanded', 'false')
     this._modeBtnEl.appendChild(this._modeLabelEl)
     this._modeBtnEl.appendChild(arrowEl)
 
@@ -278,6 +280,7 @@ export class UIView {
     document.addEventListener('click', (e) => {
       if (!this._modeSelectorEl.contains(e.target)) {
         this._modeDropdownEl.style.display = 'none'
+        this._modeBtnEl.setAttribute('aria-expanded', 'false')
       }
     })
 
@@ -420,12 +423,14 @@ export class UIView {
       e.stopPropagation()
       const isOpen = this._modeDropdownEl.style.display !== 'none'
       this._modeDropdownEl.style.display = isOpen ? 'none' : 'block'
+      this._modeBtnEl.setAttribute('aria-expanded', isOpen ? 'false' : 'true')
     })
 
     this._dropdownItems.forEach(item => {
       item.addEventListener('click', () => {
         callback(item.dataset.mode)
         this._modeDropdownEl.style.display = 'none'
+        this._modeBtnEl.setAttribute('aria-expanded', 'false')
       })
     })
   }
@@ -517,6 +522,44 @@ export class UIView {
       this._infoEl.appendChild(keyEl)
       this._infoEl.appendChild(descEl)
     })
+  }
+
+  /**
+   * Appends (or replaces) an extra shortcut hint at the end of the info bar.
+   * Idempotent — subsequent calls replace the previous extra hint.
+   * No-op on mobile (info bar shows live status there).
+   * Pass null/undefined to remove the extra hint.
+   * @param {string|null} key
+   * @param {string} [desc]
+   */
+  appendInfoHint(key, desc) {
+    if (this._isMobile()) return
+    // Remove any previously-appended extra hint group
+    this._infoEl.querySelectorAll('[data-extra-hint]').forEach(el => el.remove())
+    if (!key) return
+    const sep = document.createElement('span')
+    sep.textContent = '  |  '
+    sep.dataset.extraHint = '1'
+    Object.assign(sep.style, { color: '#555' })
+    this._infoEl.appendChild(sep)
+    const keyEl = document.createElement('span')
+    keyEl.textContent = key
+    keyEl.dataset.extraHint = '1'
+    Object.assign(keyEl.style, {
+      background: '#444',
+      border: '1px solid #666',
+      borderRadius: '3px',
+      padding: '0 4px',
+      color: '#ddd',
+      fontSize: '11px',
+      marginRight: '3px',
+      fontFamily: 'monospace',
+    })
+    const descEl = document.createElement('span')
+    descEl.textContent = desc
+    descEl.dataset.extraHint = '1'
+    this._infoEl.appendChild(keyEl)
+    this._infoEl.appendChild(descEl)
   }
 
   /**

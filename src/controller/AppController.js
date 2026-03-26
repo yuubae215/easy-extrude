@@ -521,6 +521,7 @@ export class AppController {
       const input = document.createElement('input')
       input.type = 'text'
       input.value = placeholder
+      input.setAttribute('aria-label', label)
       input.style.cssText = [
         'width:100%;box-sizing:border-box;background:#0d1a26;color:#ecf0f1',
         'border:1px solid #3a4a5a;border-radius:4px;padding:6px 8px',
@@ -592,12 +593,27 @@ export class AppController {
       let selectedId = null
 
       const list = document.createElement('div')
+      list.setAttribute('role', 'listbox')
+      list.setAttribute('aria-label', 'Saved scenes')
       list.style.cssText = [
         'max-height:240px;overflow-y:auto;border:1px solid #3a4a5a;border-radius:4px',
       ].join(';')
 
+      const selectRow = (row, id) => {
+        list.querySelectorAll('[role="option"]').forEach(r => {
+          r.style.background = ''
+          r.setAttribute('aria-selected', 'false')
+        })
+        row.style.background = '#2980b9'
+        row.setAttribute('aria-selected', 'true')
+        selectedId = id
+      }
+
       scenes.forEach((scene) => {
         const row = document.createElement('div')
+        row.setAttribute('role', 'option')
+        row.setAttribute('tabindex', '0')
+        row.setAttribute('aria-selected', 'false')
         row.style.cssText = [
           'padding:8px 10px;cursor:pointer;font-size:12px',
           'border-bottom:1px solid #2a3a4a;display:flex;justify-content:space-between;align-items:center',
@@ -616,13 +632,9 @@ export class AppController {
         row.appendChild(nameEl)
         row.appendChild(dateEl)
 
-        row.addEventListener('click', () => {
-          list.querySelectorAll('[data-id]').forEach(r => {
-            r.style.background = ''
-            r.style.color = ''
-          })
-          row.style.background = '#2980b9'
-          selectedId = scene.id
+        row.addEventListener('click', () => selectRow(row, scene.id))
+        row.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectRow(row, scene.id) }
         })
 
         list.appendChild(row)
@@ -1193,6 +1205,16 @@ export class AppController {
     const mode     = this._scene.selectionMode
     const substate = this._scene.editSubstate
 
+    if (this._measure.active) {
+      this._uiView.setMobileToolbar([
+        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelMeasure(), danger: true },
+        { spacer: true },
+        { spacer: true },
+        { spacer: true },
+      ])
+      return
+    }
+
     if (this._grab.active) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
@@ -1208,7 +1230,9 @@ export class AppController {
       // object is selected. Fixed count prevents layout shifts on selection.
       const hasObj  = this._objSelected
       const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame)
-      const canGrab = hasObj
+      const canStack = hasObj
+        && !(this._activeObj instanceof ImportedMesh)
+        && !(this._activeObj instanceof MeasureLine)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -1226,7 +1250,7 @@ export class AppController {
         },
         { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
         { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
-        { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canGrab },
+        { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
     }
@@ -1279,6 +1303,10 @@ export class AppController {
       { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
       { text: 'selected', color: '#888' },
     ])
+    this._uiView.appendInfoHint(
+      this._activeObj instanceof CoordinateFrame ? 'R' : null,
+      'Rotate',
+    )
   }
 
   // ─── Edit mode sub-element helpers (Phase 6) ─────────────────────────────
@@ -3342,15 +3370,8 @@ export class AppController {
 
     // ── Normal keys ────────────────────────────────────────────────────────
     if (e.key === 'Tab') {
-      // Only prevent default when the mode transition will actually occur.
-      // For ImportedMesh, setMode('edit') is a no-op — swallow the key only
-      // when switching to object mode or when the active object is editable.
-      const enteringEdit = this._scene.selectionMode === 'object'
-      const isReadOnly = this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine || this._activeObj instanceof CoordinateFrame
-      if (!enteringEdit || !isReadOnly) {
-        e.preventDefault()
-        this.setMode(enteringEdit ? 'edit' : 'object')
-      }
+      e.preventDefault()
+      this.setMode(this._scene.selectionMode === 'object' ? 'edit' : 'object')
       return
     }
     if (e.key === 'n' || e.key === 'N') {
