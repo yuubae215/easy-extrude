@@ -11,8 +11,8 @@
  *
  * Type identity:
  *   `instanceof ImportedMesh` → imported geometry; move OK, no Edit Mode.
- *   `instanceof Cuboid`       → locally-editable deformable box.
- *   `instanceof Sketch`       → 2D sketch awaiting extrusion.
+ *   `instanceof Solid`        → locally-editable deformable 3D solid.
+ *   `instanceof Profile`      → 2D cross-section awaiting extrusion.
  */
 import * as THREE from 'three'
 

@@ -25,7 +25,7 @@
  *   'activeChanged' (id: string|null)
  *
  * Rules:
- *  - SceneService is the ONLY place that calls new Cuboid / new Sketch / new MeshView.
+ *  - SceneService is the ONLY place that calls new Solid / new Profile / new MeshView.
  *  - SceneService is the ONLY place that calls SceneModel.addObject / removeObject.
  *  - Callers (AppController) interact with domain state through `service.scene`
  *    for reads and through service methods for writes.
@@ -34,10 +34,11 @@ import { Vector3 } from 'three'
 import { EventEmitter } from '../core/EventEmitter.js'
 import { SceneModel } from '../model/SceneModel.js'
 import { MeshView } from '../view/MeshView.js'
-import { Cuboid } from '../domain/Cuboid.js'
-import { Sketch } from '../domain/Sketch.js'
+import { Solid }   from '../domain/Solid.js'
+import { Profile } from '../domain/Profile.js'
 import { createInitialCorners } from '../model/CuboidModel.js'
 import { Vertex } from '../graph/Vertex.js'
+import { Edge }   from '../graph/Edge.js'
 import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
 import { serializeScene } from './SceneSerializer.js'
 import { ImportedMesh } from '../domain/ImportedMesh.js'
@@ -63,6 +64,13 @@ export class SceneService extends EventEmitter {
     this._wsChannel  = null
     /** Unsubscribe functions for active WS handlers. */
     this._wsUnsubs   = []
+    /**
+     * World pose cache for CoordinateFrame entities (ADR-020).
+     * Populated by _updateWorldPoses() each animation frame.
+     * Source of truth for world position; never stored on the entity itself.
+     * @type {Map<string, { position: import('three').Vector3, quaternion: import('three').Quaternion }>}
+     */
+    this._worldPoseCache = new Map()
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -207,14 +215,16 @@ export class SceneService extends EventEmitter {
    * Loads a scene from the BFF and replaces the current scene.
    * All existing objects are disposed first. Emits objectAdded for each loaded entity.
    * @param {string} sceneId
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} [viewContext]
+   *   Required only when the scene contains MeasureLine objects (for label rendering).
    * @returns {Promise<boolean>}  true on success
    */
-  async loadScene(sceneId) {
+  async loadScene(sceneId, viewContext = {}) {
     if (!this._bff) return false
     try {
       const remote = await this._bff.getScene(sceneId)
       this._clearScene()
-      const entities = this._deserializeEntities(remote.data)
+      const entities = this._deserializeEntities(remote.data, viewContext)
       for (const entity of entities) {
         this._model.addObject(entity)
         this.emit('objectAdded', entity)
@@ -246,44 +256,70 @@ export class SceneService extends EventEmitter {
 
   /**
    * Reconstructs live domain entities from a plain-JSON scene DTO.
-   * Kept in SceneService so entity creation (new Cuboid/Sketch/MeshView)
+   * Kept in SceneService so entity creation (new Solid/Profile/MeshView)
    * stays within the service boundary (ADR-011).
    * @param {object} data  Parsed `data` field from BFF
-   * @returns {(Cuboid|Sketch)[]}
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} viewContext
+   * @returns {(Solid|Profile|MeasureLine|CoordinateFrame)[]}
    */
-  _deserializeEntities(data) {
+  _deserializeEntities(data, viewContext = {}) {
     const entities = []
     for (const dto of (data.objects ?? [])) {
-      if (dto.type === 'Cuboid') {
+      // Accept both new ('Solid') and legacy ('Cuboid') type strings
+      if (dto.type === 'Solid' || dto.type === 'Cuboid') {
         const vertices = dto.vertices.map(v =>
           new Vertex(v.id, new Vector3(v.x, v.y, v.z))
         )
-        const cuboid = new Cuboid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
-        cuboid.description = dto.description ?? ''
-        cuboid.meshView.updateGeometry(cuboid.corners)
-        entities.push(cuboid)
-      } else if (dto.type === 'Sketch') {
+        const solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+        solid.description = dto.description ?? ''
+        solid.meshView.updateGeometry(solid.corners)
+        entities.push(solid)
+      // Accept both new ('Profile') and legacy ('Sketch') type strings
+      } else if (dto.type === 'Profile' || dto.type === 'Sketch') {
         const meshView = new MeshView(this._threeScene)
         meshView.setVisible(false)
-        const sketch = new Sketch(dto.id, dto.name, meshView)
-        sketch.description = dto.description ?? ''
+        const profile = new Profile(dto.id, dto.name, meshView)
+        profile.description = dto.description ?? ''
         if (dto.sketchRect) {
-          sketch.sketchRect = {
-            p1: new Vector3(dto.sketchRect.p1.x, dto.sketchRect.p1.y, dto.sketchRect.p1.z),
-            p2: new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z),
-          }
+          const p1 = new Vector3(dto.sketchRect.p1.x, dto.sketchRect.p1.y, dto.sketchRect.p1.z)
+          const p2 = new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z)
+          profile.setRect(p1, p2)
         }
-        entities.push(sketch)
+        entities.push(profile)
+      } else if (dto.type === 'MeasureLine') {
+        const { camera, renderer, container = document.body } = viewContext
+        if (!camera || !renderer) continue  // skip if no view context
+        const p1 = new Vector3(dto.p1.x, dto.p1.y, dto.p1.z)
+        const p2 = new Vector3(dto.p2.x, dto.p2.y, dto.p2.z)
+        const v0 = new Vertex(`${dto.id}_v0`, p1)
+        const v1 = new Vertex(`${dto.id}_v1`, p2)
+        const e0 = new Edge(`${dto.id}_e0`, v0, v1)
+        const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
+        const entity   = new MeasureLine(dto.id, dto.name, [v0, v1], [e0], meshView)
+        meshView.update(entity.p1, entity.p2)
+        entities.push(entity)
+      } else if (dto.type === 'CoordinateFrame') {
+        const meshView = new CoordinateFrameView(this._threeScene)
+        const frame    = new CoordinateFrame(dto.id, dto.name, dto.parentId, meshView)
+        if (dto.translation) {
+          frame.translation.set(dto.translation.x, dto.translation.y, dto.translation.z)
+        }
+        if (dto.rotation) {
+          frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
+        }
+        entities.push(frame)
       }
     }
     return entities
   }
 
-  /** Disposes all objects and resets the model (local). */
+  /** Disposes all objects and resets the model (local). Emits objectRemoved for each. */
   _clearScene() {
-    for (const obj of this._model.objects.values()) {
+    for (const [id, obj] of this._model.objects) {
       obj.meshView.dispose(this._threeScene)
+      this.emit('objectRemoved', id)
     }
+    this._worldPoseCache.clear()
     this._model = new SceneModel()
   }
 
@@ -292,15 +328,78 @@ export class SceneService extends EventEmitter {
   /** Read access to the aggregate root (SceneModel). */
   get scene() { return this._model }
 
+  // ── World pose query (ADR-020) ─────────────────────────────────────────────
+
+  /**
+   * Returns the cached world pose for a CoordinateFrame, or null if unknown.
+   * The cache is populated by _updateWorldPoses() each animation frame.
+   * @param {string} frameId
+   * @returns {{ position: import('three').Vector3, quaternion: import('three').Quaternion }|null}
+   */
+  worldPoseOf(frameId) {
+    return this._worldPoseCache.get(frameId) ?? null
+  }
+
+  /**
+   * Recomputes and caches the world pose for every CoordinateFrame in the scene.
+   * Must be called once per animation frame (from AppController animation loop).
+   *
+   * Position model: worldPos = parentCentroid + translation
+   *
+   * Frames are processed in topological order (shallow before deep) so nested
+   * frame chains (ADR-019) propagate correctly in a single pass.
+   * Since move() now directly updates `translation`, no grabbed/not-grabbed
+   * branching is needed — worldPos is always derived from translation.
+   */
+  _updateWorldPoses() {
+    const allFrames = [...this._model.objects.values()].filter(o => o instanceof CoordinateFrame)
+
+    // Topological sort: parents before children (by depth)
+    const depthCache = new Map()
+    const getDepth = (frame) => {
+      if (depthCache.has(frame.id)) return depthCache.get(frame.id)
+      const parent = this._model.getObject(frame.parentId)
+      const d = (parent instanceof CoordinateFrame) ? getDepth(parent) + 1 : 0
+      depthCache.set(frame.id, d)
+      return d
+    }
+    allFrames.sort((a, b) => getDepth(a) - getDepth(b))
+
+    for (const frame of allFrames) {
+      const parent = this._model.getObject(frame.parentId)
+      if (!parent || parent.corners.length === 0) continue
+
+      // Compute parent centroid inline (parent.corners may be from any LocalGeometry type)
+      const parentCentroid = new Vector3()
+      for (const c of parent.corners) parentCentroid.add(c)
+      parentCentroid.divideScalar(parent.corners.length)
+
+      const worldPos = parentCentroid.clone().add(frame.translation)
+
+      // Update cache
+      const entry = this._worldPoseCache.get(frame.id)
+      if (entry) {
+        entry.position.copy(worldPos)
+        // quaternion is the same object as frame.rotation — no copy needed
+      } else {
+        this._worldPoseCache.set(frame.id, { position: worldPos.clone(), quaternion: frame.rotation })
+      }
+
+      // Update view
+      frame.meshView.updatePosition(worldPos)
+      frame.meshView.updateConnectionLine(parentCentroid)
+    }
+  }
+
   // ── Use cases ──────────────────────────────────────────────────────────────
 
   /**
-   * Creates a new Cuboid entity + MeshView, registers it in the scene, and returns it.
+   * Creates a new Solid entity + MeshView, registers it in the scene, and returns it.
    * Offsets successive objects so they do not stack.
    * Emits: 'objectAdded'
-   * @returns {import('../domain/Cuboid.js').Cuboid}
+   * @returns {import('../domain/Solid.js').Solid}
    */
-  createCuboid() {
+  createSolid() {
     const idx  = this._model.objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
@@ -312,32 +411,32 @@ export class SceneService extends EventEmitter {
     }
 
     const vertices = positions.map((pos, i) => new Vertex(`${id}_v${i}`, pos))
-    const cuboid   = new Cuboid(id, name, vertices, new MeshView(this._threeScene))
-    cuboid.meshView.updateGeometry(cuboid.corners)
-    this._model.addObject(cuboid)
-    this.emit('objectAdded', cuboid)
+    const solid    = new Solid(id, name, vertices, new MeshView(this._threeScene))
+    solid.meshView.updateGeometry(solid.corners)
+    this._model.addObject(solid)
+    this.emit('objectAdded', solid)
     this.createCoordinateFrame(id, 'Origin')
-    return cuboid
+    return solid
   }
 
   /**
-   * Creates a new Sketch entity + MeshView (hidden until drawn), registers it,
+   * Creates a new Profile entity + MeshView (hidden until drawn), registers it,
    * and returns it.
    * Emits: 'objectAdded'
-   * @returns {import('../domain/Sketch.js').Sketch}
+   * @returns {import('../domain/Profile.js').Profile}
    */
-  createSketch() {
+  createProfile() {
     const idx  = this._model.objects.size
     const id   = `obj_${idx}_${Date.now()}`
     const name = `Sketch.${String(idx).padStart(3, '0')}`
 
     const meshView = new MeshView(this._threeScene)
-    meshView.setVisible(false)  // no geometry until the sketch is drawn
+    meshView.setVisible(false)  // no geometry until the profile is drawn
 
-    const sketch = new Sketch(id, name, meshView)
-    this._model.addObject(sketch)
-    this.emit('objectAdded', sketch)
-    return sketch
+    const profile = new Profile(id, name, meshView)
+    this._model.addObject(profile)
+    this.emit('objectAdded', profile)
+    return profile
   }
 
   /**
@@ -359,6 +458,7 @@ export class SceneService extends EventEmitter {
 
     obj.meshView.dispose(this._threeScene)
     this._model.removeObject(id)
+    this._worldPoseCache.delete(id)
     this.emit('objectRemoved', id)
   }
 
@@ -388,34 +488,34 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Extrudes a Sketch into a Cuboid and replaces it in the scene.
-   * The Sketch entity is discarded; the returned Cuboid reuses the same id,
+   * Extrudes a Profile into a Solid and replaces it in the scene.
+   * The Profile entity is discarded; the returned Solid reuses the same id,
    * name, and MeshView so the Outliner requires no update.
-   * No-ops if the id does not refer to a Sketch.
+   * No-ops if the id does not refer to a Profile.
    * @param {string} id
    * @param {number} height  signed extrusion height in world Z units
-   * @returns {import('../domain/Cuboid.js').Cuboid|null}
+   * @returns {import('../domain/Solid.js').Solid|null}
    */
-  extrudeSketch(id, height) {
-    const sketch = this._model.getObject(id)
-    if (!(sketch instanceof Sketch)) return null
-    const cuboid = sketch.extrude(height)
+  extrudeProfile(id, height) {
+    const profile = this._model.getObject(id)
+    if (!(profile instanceof Profile)) return null
+    const solid = profile.extrude(height)
     this._model.removeObject(id)
-    this._model.addObject(cuboid)
+    this._model.addObject(solid)
     this.createCoordinateFrame(id, 'Origin')
-    return cuboid
+    return solid
   }
 
   /**
-   * Duplicates a Cuboid, giving it new ids and a slight XY offset.
-   * No-ops if id is unknown or refers to a Sketch.
+   * Duplicates a Solid, giving it new ids and a slight XY offset.
+   * No-ops if id is unknown or refers to a non-Solid.
    * Emits: 'objectAdded'
    * @param {string} id
-   * @returns {import('../domain/Cuboid.js').Cuboid|null}
+   * @returns {import('../domain/Solid.js').Solid|null}
    */
-  duplicateCuboid(id) {
+  duplicateSolid(id) {
     const src = this._model.getObject(id)
-    if (!(src instanceof Cuboid)) return null
+    if (!(src instanceof Solid)) return null
 
     const idx    = this._model.objects.size
     const newId   = `obj_${idx}_${Date.now()}`
@@ -429,12 +529,12 @@ export class SceneService extends EventEmitter {
       return new Vertex(`${newId}_v${i}`, pos)
     })
 
-    const cuboid = new Cuboid(newId, newName, vertices, new MeshView(this._threeScene))
-    cuboid.meshView.updateGeometry(cuboid.corners)
-    this._model.addObject(cuboid)
-    this.emit('objectAdded', cuboid)
+    const solid = new Solid(newId, newName, vertices, new MeshView(this._threeScene))
+    solid.meshView.updateGeometry(solid.corners)
+    this._model.addObject(solid)
+    this.emit('objectAdded', solid)
     this.createCoordinateFrame(newId, 'Origin')
-    return cuboid
+    return solid
   }
 
   /**
@@ -470,9 +570,14 @@ export class SceneService extends EventEmitter {
     const id   = `ml_${idx}_${Date.now()}`
     const name = `Measure.${String(idx).padStart(3, '0')}`
 
+    // Build Vertex + Edge graph before constructing the entity (ADR-021)
+    const v0 = new Vertex(`${id}_v0`, p1.clone())
+    const v1 = new Vertex(`${id}_v1`, p2.clone())
+    const e0 = new Edge(`${id}_e0`, v0, v1)
+
     const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
-    const entity   = new MeasureLine(id, name, p1, p2, meshView)
-    meshView.update(p1, p2)
+    const entity   = new MeasureLine(id, name, [v0, v1], [e0], meshView)
+    meshView.update(entity.p1, entity.p2)
     this._model.addObject(entity)
     this.emit('objectAdded', entity)
     return entity
@@ -507,14 +612,14 @@ export class SceneService extends EventEmitter {
     const meshView = new CoordinateFrameView(this._threeScene)
     const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)
 
-    // Initialise _worldPos and visual position at parent centroid.
+    // Initialise the world pose cache and visual position at parent centroid.
     // translation = (0,0,0) so the frame starts exactly at the parent origin.
     const corners = parent.corners
     if (corners.length > 0) {
       const centroid = new Vector3()
       for (const c of corners) centroid.add(c)
       centroid.divideScalar(corners.length)
-      frame._worldPos.copy(centroid)
+      this._worldPoseCache.set(frame.id, { position: centroid.clone(), quaternion: frame.rotation })
       meshView.updatePosition(centroid)
     }
 

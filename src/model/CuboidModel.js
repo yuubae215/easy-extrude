@@ -150,7 +150,7 @@ export function buildCuboidFromRect(p1, p2, height) {
 
 /**
  * Collects snap target positions from a scene objects map.
- * @param {Map<string, import('../domain/Cuboid.js').Cuboid | import('../domain/Sketch.js').Sketch>} objects
+ * @param {Map<string, import('../domain/Solid.js').Solid | import('../domain/Profile.js').Profile>} objects
  * @param {'all'|'vertex'|'edge'|'face'} [mode='all']
  *   'vertex' — Vertex positions only
  *   'edge'   — Edge midpoints only

@@ -351,3 +351,27 @@ await db.batch(['CREATE TABLE IF NOT EXISTS ...'], 'write')
 
 - **Principle**: Every dynamic memory allocation or scene addition must have a strictly enforced, symmetrical teardown in its disposal method to prevent memory leaks and ghost objects.
 - **Concrete Rule**: In `MeshView`, every `scene.add()` or `new THREE.BufferGeometry()` in the constructor MUST have a matching `scene.remove()` and `.dispose()` in `dispose()`. Missing this breaks `SceneService.deleteObject()` — if `dispose()` throws (e.g. accessing a renamed property that is now `undefined`), `removeObject()` and `emit('objectRemoved')` never run, leaving the object in the model (outliner intact, snap candidates still active) while only the main mesh is visually removed. Whenever you add a new Three.js object in the constructor, add the teardown in the same commit.
+
+### _clearScene Must Emit objectRemoved Before Swapping Model
+
+- **Principle**: Replacing `this._model` in `_clearScene()` without emitting `objectRemoved` for each object causes an invisible split-brain state: the new model is empty, but the OutlinerView retains stale DOM rows and `AppController._activeObj` may hold references to disposed objects.
+- **Concrete Rule**: `_clearScene()` must iterate `this._model.objects` **before** the swap, call `obj.meshView.dispose(threeScene)` and `this.emit('objectRemoved', id)` for every entry, then clear `_worldPoseCache`, and only then replace `this._model = new SceneModel()`. Failure to emit causes the Outliner to show deleted objects after a scene load (the "default Cube stays visible" bug).
+
+```js
+// CORRECT
+_clearScene() {
+  for (const [id, obj] of this._model.objects) {
+    obj.meshView.dispose(this._threeScene)
+    this.emit('objectRemoved', id)
+  }
+  this._worldPoseCache.clear()
+  this._model = new SceneModel()
+}
+```
+
+### SceneSerializer Must Handle Every Entity Type Explicitly
+
+- **Principle**: Silently skipping an entity type in `serializeScene()` causes that type to disappear on the next load with no error. This is a silent data-loss bug — the save succeeds, the load succeeds, but objects are gone.
+- **Concrete Rule**: Every domain entity class added to `SceneModel` (e.g. `Solid`, `Profile`, `MeasureLine`, `CoordinateFrame`, `ImportedMesh`) must be explicitly handled in `serializeScene()` — either serialized with a matching `_deserializeEntities` branch, or skipped with a comment explaining why (e.g. `// ImportedMesh: geometry must be re-imported`). Verify that new entity types are covered in SceneSerializer in the same commit they are added to the domain layer.
+
+

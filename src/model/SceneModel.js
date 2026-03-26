@@ -4,11 +4,11 @@
  * Owns the collection of domain entities and the current editor mode.
  * Pure state container with no Three.js side-effects and no view calls.
  *
- * DDD note (Phase 1): SceneObject is now a union of typed domain entities
- * (Cuboid | Sketch) defined in src/domain/. SceneModel acts as the aggregate
- * root / in-memory repository. Phase 3 will formalize this boundary.
+ * DDD note (Phase 1+): SceneObject is a union of typed domain entities
+ * (Solid | Profile | ImportedMesh | MeasureLine | CoordinateFrame) defined
+ * in src/domain/. SceneModel acts as the aggregate root / in-memory repository.
  *
- * @typedef {import('../domain/Cuboid.js').Cuboid | import('../domain/Sketch.js').Sketch} SceneObject
+ * @typedef {import('../domain/Solid.js').Solid | import('../domain/Profile.js').Profile | import('../domain/ImportedMesh.js').ImportedMesh | import('../domain/MeasureLine.js').MeasureLine | import('../domain/CoordinateFrame.js').CoordinateFrame} SceneObject
  */
 export class SceneModel {
   constructor() {

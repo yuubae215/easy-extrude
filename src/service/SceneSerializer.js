@@ -9,15 +9,26 @@
  *   transformGraph: { nodes: TransformNode[], edges: TransformEdge[] }  // ADR-016
  * }
  *
- * SceneObjectDTO (Cuboid):
- * { type: 'Cuboid', id, name, description, vertices: [{ id, x, y, z }] }
+ * SceneObjectDTO (Solid):
+ * { type: 'Solid', id, name, description, vertices: [{ id, x, y, z }] }
  *
- * SceneObjectDTO (Sketch):
- * { type: 'Sketch', id, name, description,
+ * SceneObjectDTO (Profile):
+ * { type: 'Profile', id, name, description,
  *   sketchRect: { p1: {x,y,z}, p2: {x,y,z} } | null }
+ *
+ * SceneObjectDTO (MeasureLine):
+ * { type: 'MeasureLine', id, name, p1: {x,y,z}, p2: {x,y,z} }
+ *
+ * SceneObjectDTO (CoordinateFrame):
+ * { type: 'CoordinateFrame', id, name, parentId,
+ *   translation: {x,y,z}, rotation: {x,y,z,w} }
+ *
+ * ImportedMesh is intentionally skipped — geometry must be re-imported.
  */
-import { Cuboid }  from '../domain/Cuboid.js'
-import { Sketch }  from '../domain/Sketch.js'
+import { Solid }            from '../domain/Solid.js'
+import { Profile }          from '../domain/Profile.js'
+import { MeasureLine }      from '../domain/MeasureLine.js'
+import { CoordinateFrame }  from '../domain/CoordinateFrame.js'
 
 // ── Serialise ─────────────────────────────────────────────────────────────────
 
@@ -32,9 +43,9 @@ export function serializeScene(scene) {
   const objects = []
 
   for (const obj of scene.objects.values()) {
-    if (obj instanceof Cuboid) {
+    if (obj instanceof Solid) {
       objects.push({
-        type: 'Cuboid',
+        type: 'Solid',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
@@ -45,10 +56,10 @@ export function serializeScene(scene) {
           z:  v.position.z,
         })),
       })
-    } else if (obj instanceof Sketch) {
+    } else if (obj instanceof Profile) {
       const sr = obj.sketchRect
       objects.push({
-        type:        'Sketch',
+        type:        'Profile',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
@@ -57,7 +68,34 @@ export function serializeScene(scene) {
           p2: { x: sr.p2.x, y: sr.p2.y, z: sr.p2.z },
         } : null,
       })
+    } else if (obj instanceof MeasureLine) {
+      objects.push({
+        type: 'MeasureLine',
+        id:   obj.id,
+        name: obj.name,
+        p1:   { x: obj.p1.x, y: obj.p1.y, z: obj.p1.z },
+        p2:   { x: obj.p2.x, y: obj.p2.y, z: obj.p2.z },
+      })
+    } else if (obj instanceof CoordinateFrame) {
+      objects.push({
+        type:     'CoordinateFrame',
+        id:       obj.id,
+        name:     obj.name,
+        parentId: obj.parentId,
+        translation: {
+          x: obj.translation.x,
+          y: obj.translation.y,
+          z: obj.translation.z,
+        },
+        rotation: {
+          x: obj.rotation.x,
+          y: obj.rotation.y,
+          z: obj.rotation.z,
+          w: obj.rotation.w,
+        },
+      })
     }
+    // ImportedMesh: intentionally skipped — geometry must be re-imported from file.
   }
 
   // Phase A: no real transform-graph editing yet; emit a node per object.
@@ -83,4 +121,3 @@ export function serializeScene(scene) {
     transformGraph: { nodes, edges },
   }
 }
-
