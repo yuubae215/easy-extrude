@@ -456,6 +456,206 @@ export class AppController {
     input.click()
   }
 
+  // ── Save / Load scene ──────────────────────────────────────────────────────
+
+  async _saveScene() {
+    const name = await this._showInputDialog('Save Scene', 'Scene name:', 'Untitled')
+    if (name === null) return
+    const id = await this._service.saveScene(name)
+    if (id) {
+      this._uiView.showToast(`Saved: "${name}"`)
+    } else {
+      this._uiView.showToast('Save failed', { type: 'error' })
+    }
+  }
+
+  async _loadScene() {
+    const scenes = await this._service.listScenes()
+    if (!scenes || scenes.length === 0) {
+      this._uiView.showToast('No saved scenes', { type: 'warn' })
+      return
+    }
+    const id = await this._showSceneListDialog(scenes)
+    if (id === null) return
+    const ok = await this._service.loadScene(id)
+    if (ok) {
+      this._uiView.showToast('Scene loaded')
+      this._switchActiveObject(null)
+    } else {
+      this._uiView.showToast('Load failed', { type: 'error' })
+    }
+  }
+
+  /** Shows a text-input dialog. Resolves with the trimmed string, or null if cancelled. */
+  _showInputDialog(title, label, placeholder = '') {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div')
+      overlay.style.cssText = [
+        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
+        'display:flex;align-items:center;justify-content:center;z-index:9999',
+      ].join(';')
+
+      const dlg = document.createElement('div')
+      dlg.style.cssText = [
+        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
+        'padding:20px 24px;min-width:300px;color:#ecf0f1;font-family:monospace',
+        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
+      ].join(';')
+
+      const titleEl = document.createElement('div')
+      titleEl.textContent = title
+      titleEl.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
+      dlg.appendChild(titleEl)
+
+      const lbl = document.createElement('div')
+      lbl.textContent = label
+      lbl.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px'
+      dlg.appendChild(lbl)
+
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.value = placeholder
+      input.style.cssText = [
+        'width:100%;box-sizing:border-box;background:#0d1a26;color:#ecf0f1',
+        'border:1px solid #3a4a5a;border-radius:4px;padding:6px 8px',
+        'font-family:monospace;font-size:12px;outline:none',
+      ].join(';')
+      dlg.appendChild(input)
+
+      const btnRow = document.createElement('div')
+      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
+
+      const btnCancel = document.createElement('button')
+      btnCancel.textContent = 'Cancel'
+      btnCancel.style.cssText = [
+        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
+      ].join(';')
+
+      const btnSave = document.createElement('button')
+      btnSave.textContent = 'Save'
+      btnSave.style.cssText = [
+        'padding:6px 14px;background:#2980b9;color:#fff;border:none',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
+      ].join(';')
+
+      btnRow.appendChild(btnCancel)
+      btnRow.appendChild(btnSave)
+      dlg.appendChild(btnRow)
+      overlay.appendChild(dlg)
+      document.body.appendChild(overlay)
+
+      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
+      btnCancel.addEventListener('click', () => close(null))
+      btnSave.addEventListener('click', () => close(input.value.trim() || placeholder))
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') close(input.value.trim() || placeholder)
+        if (e.key === 'Escape') close(null)
+      })
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
+      input.focus()
+      input.select()
+    })
+  }
+
+  /**
+   * Shows a list-selection dialog for saved scenes.
+   * Resolves with the selected scene id, or null if cancelled.
+   * @param {{ id: string, name: string, updated_at: string }[]} scenes
+   */
+  _showSceneListDialog(scenes) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div')
+      overlay.style.cssText = [
+        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
+        'display:flex;align-items:center;justify-content:center;z-index:9999',
+      ].join(';')
+
+      const dlg = document.createElement('div')
+      dlg.style.cssText = [
+        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
+        'padding:20px 24px;min-width:320px;max-width:480px;color:#ecf0f1;font-family:monospace',
+        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
+      ].join(';')
+
+      const titleEl = document.createElement('div')
+      titleEl.textContent = 'Load Scene'
+      titleEl.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
+      dlg.appendChild(titleEl)
+
+      let selectedId = null
+
+      const list = document.createElement('div')
+      list.style.cssText = [
+        'max-height:240px;overflow-y:auto;border:1px solid #3a4a5a;border-radius:4px',
+      ].join(';')
+
+      scenes.forEach((scene) => {
+        const row = document.createElement('div')
+        row.style.cssText = [
+          'padding:8px 10px;cursor:pointer;font-size:12px',
+          'border-bottom:1px solid #2a3a4a;display:flex;justify-content:space-between;align-items:center',
+        ].join(';')
+        row.dataset.id = scene.id
+
+        const nameEl = document.createElement('span')
+        nameEl.textContent = scene.name
+        nameEl.style.cssText = 'color:#ecf0f1;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
+
+        const dateEl = document.createElement('span')
+        const d = new Date(scene.updated_at)
+        dateEl.textContent = isNaN(d) ? '' : d.toLocaleDateString()
+        dateEl.style.cssText = 'color:#7f8c8d;font-size:10px;margin-left:8px;flex-shrink:0'
+
+        row.appendChild(nameEl)
+        row.appendChild(dateEl)
+
+        row.addEventListener('click', () => {
+          list.querySelectorAll('[data-id]').forEach(r => {
+            r.style.background = ''
+            r.style.color = ''
+          })
+          row.style.background = '#2980b9'
+          selectedId = scene.id
+        })
+
+        list.appendChild(row)
+      })
+
+      dlg.appendChild(list)
+
+      const btnRow = document.createElement('div')
+      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
+
+      const btnCancel = document.createElement('button')
+      btnCancel.textContent = 'Cancel'
+      btnCancel.style.cssText = [
+        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
+      ].join(';')
+
+      const btnLoad = document.createElement('button')
+      btnLoad.textContent = 'Load'
+      btnLoad.style.cssText = [
+        'padding:6px 14px;background:#2980b9;color:#fff;border:none',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
+      ].join(';')
+
+      btnRow.appendChild(btnCancel)
+      btnRow.appendChild(btnLoad)
+      dlg.appendChild(btnRow)
+      overlay.appendChild(dlg)
+      document.body.appendChild(overlay)
+
+      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
+      btnCancel.addEventListener('click', () => close(null))
+      btnLoad.addEventListener('click', () => close(selectedId))
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
+    })
+  }
+
+  // ── Unit selection dialog ──────────────────────────────────────────────────
+
   /** Shows a modal dialog for unit scale selection. Resolves with scale factor or null if cancelled. */
   _showUnitDialog() {
     return new Promise((resolve) => {
@@ -3184,6 +3384,12 @@ export class AppController {
       const btn = this._uiView._nodeEditorBtn
       if (btn) btn.style.borderColor = visible ? '#3a7bd5' : '#3a3a3a'
     })
+
+    // Enable Save/Load buttons now that BFF is connected
+    this._uiView.enableSaveLoad(
+      () => this._saveScene(),
+      () => this._loadScene(),
+    )
   }
 
   // ─── Animation loop ────────────────────────────────────────────────────────
