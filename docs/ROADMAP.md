@@ -101,6 +101,7 @@ Candidate tasks:
 
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
+| 🔴 High | **Undo / Redo (Ctrl+Z / Ctrl+Y)** — Command Pattern; Phase 1: Move + Delete; Phase 2: FaceExtrude + SketchExtrude; Phase 3: Rename + FrameRotate | High | ADR-022 |
 | 🔴 High | MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement | Medium | ADR-005 |
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
@@ -109,6 +110,35 @@ Candidate tasks:
 | 🟢 Low | Node Editor — expose CoordinateFrame `translation`/`rotation` as editable node parameters | Medium | ADR-016, ADR-018 |
 | 🟢 Low | Assembly groups (virtual TransformNode pivot) | Medium | ADR-016 |
 | 🟢 Low | Revolute / prismatic constraints in Node Editor | High | ADR-016 |
+
+## UX Polish backlog
+
+UXバリデーション (2026-03-26) で特定されたバグ修正・改善候補。
+バグ修正は GitHub Issues #69–#73 でも追跡。
+
+### バグ修正（Issues）
+
+| Priority | Item | Issue | Complexity |
+|----------|------|-------|-----------|
+| 🔴 High | Tab key shows no toast when Edit Mode blocked for read-only objects | [#69](https://github.com/yuubae215/easy-extrude/issues/69) | Low |
+| 🔴 High | Stack button incorrectly enabled for ImportedMesh / MeasureLine | [#70](https://github.com/yuubae215/easy-extrude/issues/70) | Low |
+| 🟡 Medium | No cancel button in mobile toolbar during measure placement | [#71](https://github.com/yuubae215/easy-extrude/issues/71) | Low |
+| 🟡 Medium | R key (Rotate CoordinateFrame) missing from Object mode status bar hints | [#72](https://github.com/yuubae215/easy-extrude/issues/72) | Low |
+| 🟢 Low | Modal dialogs lack label associations and keyboard navigation | [#73](https://github.com/yuubae215/easy-extrude/issues/73) | Medium |
+
+### 改善提案
+
+| Priority | Item | Complexity | Notes |
+|----------|------|-----------|-------|
+| 🟡 Medium | **A-1: Context-sensitive status bar** — active object 型に応じてフッターのヒントを動的切替 (CoordinateFrame 選択時に `R Rotate` 追加、ImportedMesh 選択時に read-only 注記) | Low | `_refreshObjectModeStatus()` + `UIView._setInfoText()` 引数拡張 |
+| 🟡 Medium | **A-2: Grab 中の現在座標表示** — Grab 中のステータスバーにセントロイド座標 `X:1.25 Y:0.00 Z:0.50` を追加表示 | Low | `_updateGrabStatus()` のみ変更 |
+| 🟢 Low | **A-3: CoordinateFrame 回転円弧ガイド** — R キー中に回転軸を示す円弧を Three.js でオーバーレイ表示 | Medium | 新規 Three.js ジオメトリが必要 |
+| 🟢 Low | **B-1: 初回オンボーディングオーバーレイ (Mobile)** — 初回起動時のみジェスチャーヒントを3秒表示、localStorage でフラグ保存 | Low | — |
+| 🟢 Low | **B-2: 長押しコンテキストメニュー (Mobile)** — オブジェクトを500ms長押しで Grab / Delete / Rename のクイックメニュー表示 | Medium | `pointerdown` + タイマーで実装 |
+| 🟢 Low | **B-3: 計測ラベルのタップ操作** — MeasureLine 距離ラベルのタップでクリップボードコピー or 単位変換 | Low | `MeasureLineView` + クリックハンドラ |
+| 🟢 Low | **C-1: Measure Panel** — N パネルに全 MeasureLine を一覧化、名前付け・CSV 出力対応 | High | UIView + OutlinerView 拡張 |
+| 🟢 Low | **C-2: スナップグリッド可視化** — Ctrl+Grab 中にグリッド線をオーバーレイ表示 | Medium | Three.js GridHelper サブセット |
+| 🟢 Low | **C-3: CoordinateFrame TF 木ビジュアライザ** — 3D ビューポート内でフレーム間の親子関係を矢印で表示 | High | ADR-018, ADR-019 |
 
 ---
 
