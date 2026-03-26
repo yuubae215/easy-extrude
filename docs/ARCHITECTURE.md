@@ -1,7 +1,7 @@
 # Architecture
 
 easy-extrude is a web-based 3D modeling app built on the MVC pattern,
-being incrementally refactored toward Domain-Driven Design (DDD).
+incrementally refactored toward Domain-Driven Design (DDD).
 
 ---
 
@@ -9,27 +9,36 @@ being incrementally refactored toward Domain-Driven Design (DDD).
 
 ```
 src/
-  main.js                      # Entry point: assembles MVC and calls start()
+  main.js                         # Entry point: assembles MVC and calls start()
   domain/
-    Cuboid.js                  # Domain entity: 3D cuboid (holds faces, edges)
-    Sketch.js                  # Domain entity: 2D sketch (unextruded state only)
+    Solid.js                      # Domain entity: 3D deformable solid (ADR-020)
+    Profile.js                    # Domain entity: 2D cross-section profile (ADR-020)
+    MeasureLine.js                # Domain entity: 1D distance annotation
+    CoordinateFrame.js            # Domain entity: named SE(3) reference frame (ADR-018/019)
+    ImportedMesh.js               # Domain entity: read-only server-computed geometry
   graph/
-    Vertex.js                  # Graph primitive: vertex { id, position: Vector3 }
-    Edge.js                    # Graph primitive: edge { id, v0: Vertex, v1: Vertex }
-    Face.js                    # Graph primitive: face { id, vertices: Vertex[4], name, index }
+    Vertex.js                     # Graph primitive: vertex { id, position: Vector3 }
+    Edge.js                       # Graph primitive: edge { id, v0: Vertex, v1: Vertex }
+    Face.js                       # Graph primitive: face { id, vertices: Vertex[4], name, index }
   model/
-    CuboidModel.js             # Pure functions: geometry computation (stateless)
-    SceneModel.js              # Aggregate root: scene objects + mode state + editSelection
+    CuboidModel.js                # Pure functions: geometry computation (stateless)
+    SceneModel.js                 # Aggregate root: scene objects + mode state + editSelection
   service/
-    SceneService.js            # ApplicationService: entity creation, CRUD, extrudeSketch
+    SceneService.js               # ApplicationService: entity creation, CRUD, observable events
+    SceneSerializer.js            # Scene save / load: domain → JSON round-trip
+    BffClient.js                  # REST + WebSocket client for BFF (WsChannel)
   view/
-    SceneView.js               # Three.js scene / camera / renderer
-    MeshView.js                # Per-object mesh and visual state
-    UIView.js                  # DOM UI (header / N panel / status bar)
-    GizmoView.js               # World-axis gizmo (top-right)
-    OutlinerView.js            # Scene hierarchy sidebar (left)
+    SceneView.js                  # Three.js scene / camera / renderer
+    MeshView.js                   # Per-object mesh and visual state
+    CoordinateFrameView.js        # Axis arrows + origin sphere; depth rendering; rotation
+    ImportedMeshView.js           # Triangle mesh (BufferGeometry); updateGeometryBuffers()
+    MeasureLineView.js            # Dashed line + distance label; no-op MeshView interface
+    NodeEditorView.js             # SVG DAG panel; draggable nodes; STEP import trigger
+    UIView.js                     # DOM UI (header / N panel / status bar / mobile toolbar)
+    GizmoView.js                  # World-axis gizmo (top-right)
+    OutlinerView.js               # Scene hierarchy sidebar; multi-level indentation
   controller/
-    AppController.js           # Input handling + view coordination
+    AppController.js              # Input handling + view coordination
 ```
 
 ---
@@ -44,17 +53,20 @@ src/
 | `SceneModel.js` | Holds domain state: `_objects` / `_activeId` / `_selectionMode` / `_editSubstate` / `_editSelection` |
 
 `SceneModel` is a pure state container with no dependency on Three.js.
-It will split into entities (Cuboid, Sketch) and a repository during future DDD migration.
 
 ### View
 
 | Module | Responsibility |
 |--------|---------------|
-| `SceneView` | Three.js initialisation (renderer / camera / OrbitControls / grid / lighting) |
-| `MeshView` | 1 object = 1 MeshView. Owns mesh / wireframe / highlight / sketch rect |
-| `UIView` | Blender-style DOM UI. `setStatusRich()` / `updateNPanel()` / `showAddMenu()` etc. |
+| `SceneView` | Three.js initialisation (renderer / camera / OrbitControls / grid / lighting); `fitCameraToSphere()` |
+| `MeshView` | 1 Solid/Profile = 1 MeshView. Owns mesh / wireframe / highlight / snap display |
+| `CoordinateFrameView` | Axis arrows + origin sphere. Depth override (X-ray) when selected. `updateRotation(q)` |
+| `ImportedMeshView` | Thin-client triangle mesh. `updateGeometryBuffers(pos, nrm, idx)`. No edit geometry |
+| `MeasureLineView` | Dashed amber line + HTML distance label. Implements no-op MeshView interface |
+| `NodeEditorView` | SVG DAG panel. Draggable nodes, param editor, STEP import trigger, unit dialog |
+| `UIView` | Blender-style DOM UI. `setStatusRich()` / `updateNPanel()` / `showAddMenu()` / `enableSaveLoad()` |
 | `GizmoView` | Draws axis gizmo on a small canvas (top-right). Click to snap camera. |
-| `OutlinerView` | Left sidebar. Provides callbacks for object list, visibility toggle, delete, rename. |
+| `OutlinerView` | Left sidebar. Multi-level indentation for nested frames. Visibility toggle, delete, rename. |
 
 **Visual state ownership** (ADR-008 contract):
 
@@ -99,34 +111,66 @@ Views are updated only by the controller (Views do not reference the Model direc
 
 ## SceneObject Structure
 
-A SceneObject is either a `Cuboid` or a `Sketch`. The type (`instanceof`) determines available operations.
+The type (`instanceof`) determines available operations. There is no `dimension` field (removed in ADR-012).
 
-**Cuboid** (3D):
+**Solid** (3D, ADR-020):
 ```javascript
 {
-  id:          string,            // "obj_0_1234567890"
-  name:        string,            // "Cube", "Cube.001"
-  description: string,
-  vertices:    Vertex[8],         // Graph-based vertices; get corners() projects to Vector3[]
-  faces:       Face[6],           // Explicit face objects (ADR-012)
-  edges:       Edge[12],          // Explicit edge objects (ADR-012)
-  meshView:    MeshView,
+  id:       string,       // "obj_0_1234567890"
+  name:     string,       // "Cube", "Cube.001"
+  vertices: Vertex[8],    // LocalGeometry graph; get corners() → Vector3[]
+  faces:    Face[6],      // ADR-012
+  edges:    Edge[12],     // ADR-012
+  meshView: MeshView,
 }
 ```
 
-**Sketch** (2D, unextruded):
+**Profile** (2D, unextruded, ADR-020):
 ```javascript
 {
-  id:          string,            // "obj_0_1234567890"
-  name:        string,            // "Sketch.001"
-  description: string,
-  sketchRect:  { p1, p2 } | null, // Drawn rectangle
-  meshView:    MeshView,
+  id:       string,       // "obj_0_1234567890"
+  name:     string,       // "Sketch.001"
+  vertices: Vertex[4],    // LocalGeometry graph (ADR-021)
+  edges:    Edge[4],      // LocalGeometry graph (ADR-021)
+  meshView: MeshView,
 }
 ```
 
-`Sketch.extrude(height)` does not mutate the Sketch; it returns a new `Cuboid`.
-`SceneService.extrudeSketch(id, height)` replaces the Sketch with the Cuboid in the scene.
+**MeasureLine** (1D annotation):
+```javascript
+{
+  id:       string,
+  name:     string,
+  vertices: Vertex[2],    // [start, end]; LocalGeometry graph (ADR-021)
+  edges:    Edge[1],
+  meshView: MeasureLineView,
+}
+```
+
+**CoordinateFrame** (Pose Graph node, ADR-018/019/020):
+```javascript
+{
+  id:          string,
+  name:        string,    // "Origin" (auto) or "Frame.001" (manual)
+  parentId:    string,    // parent object/frame id
+  translation: Vector3,   // local translation relative to parent
+  rotation:    Quaternion,// local rotation relative to parent (ROS RPY convention)
+  meshView:    CoordinateFrameView,
+}
+```
+World pose is derived by `SceneService._worldPoseCache` (topological sort), not stored on the entity.
+
+**ImportedMesh** (thin client, read-only):
+```javascript
+{
+  id:      string,
+  name:    string,
+  meshView: ImportedMeshView, // geometry streamed from server via WebSocket
+}
+```
+
+`Profile.extrude(height)` does not mutate the Profile; it returns a new `Solid`.
+`SceneService.extrudeSketch(id, height)` replaces the Profile with the Solid in the scene.
 
 ---
 
@@ -146,22 +190,36 @@ XY plane (Z=0) is the ground plane.
 
 ---
 
-## Domain Model — Dimensions and Verbs
+## Domain Model — Entity Taxonomy (ADR-020/021)
 
-Entities are classified by dimension; operations are defined as verbs that raise the dimension.
-Type (`instanceof`) determines behaviour; there is no `dimension` field (removed in ADR-012 Phase 5-3).
+Entities fall into two graphs: **Boundary Graph** (local geometry) and **Pose Graph** (spatial relationships).
+Type (`instanceof`) determines behaviour; there is no `dimension` field.
 
-| Dimension | Entity | Creating verb |
-|-----------|--------|---------------|
-| 0D | `Vertex` | — |
-| 1D | `Edge` | — |
-| 2D | `Face` / `Sketch` | **Sketch**: draw a rectangle |
-| 3D | `Cuboid` | **Extrude**: `Sketch.extrude(h)` → new Cuboid |
+### Boundary Graph — LocalGeometry interface (ADR-021)
+
+All local-geometry entities share `vertices[]`, `edges[]`, `faces[]` and `corners` / `move()`:
+
+| Dimension | Entity | Creating verb | vertices | edges | faces |
+|-----------|--------|---------------|----------|-------|-------|
+| 0D | `Vertex` | — | — | — | — |
+| 1D | `MeasureLine` | **Measure** (M key) | 2 | 1 | 0 |
+| 2D | `Profile` | **Sketch**: draw a rectangle | 4 | 4 | 0 |
+| 3D | `Solid` | **Extrude**: `Profile.extrude(h)` → new Solid | 8 | 12 | 6 |
 
 Verbs do not mutate entities; they **return a new entity of higher dimension**.
 `SceneService` deletes the old entity and registers the new one under the same ID.
 
-This structurally prevents the "state transitioned but methods didn't follow" problem.
+### Pose Graph — CoordinateFrame (ADR-018/019/020)
+
+`CoordinateFrame` is a named SE(3) node in a kinematic tree (not a LocalGeometry entity).
+- `parentId` links form the tree; depth-first topological sort propagates poses in one pass.
+- World pose is cached in `SceneService._worldPoseCache` — never stored on the entity.
+- Named frames on a geometry enable assembly-mate-style positioning (future: `matchedFrameId`).
+
+### Proxy entity — ImportedMesh
+
+`ImportedMesh` is a thin-client placeholder for server-evaluated geometry.
+It has no local vertex/edge/face graph; geometry lives on the server and is streamed via WebSocket.
 
 ### Graph-based model (ADR-012)
 
@@ -169,10 +227,11 @@ This structurally prevents the "state transitioned but methods didn't follow" pr
 Vertex  = { id, position: Vector3 }
 Edge    = { id, v0: Vertex, v1: Vertex }
 Face    = { id, vertices: Vertex[4], name, index }
-Cuboid  = { vertices: Vertex[8], faces: Face[6], edges: Edge[12], ... }
+Solid   = { vertices: Vertex[8], faces: Face[6], edges: Edge[12], ... }
+Profile = { vertices: Vertex[4], edges: Edge[4], ... }
+MeasureLine = { vertices: Vertex[2], edges: Edge[1], ... }
 ```
 
-Explicit `Face` / `Edge` objects form the foundation for future G→V / G→E / G→F selection models.
 `SceneModel.editSelection: Set<Vertex|Edge|Face>` holds the unified selection set.
 
 ---
@@ -190,12 +249,14 @@ Explicit `Face` / `Edge` objects form the foundation for future G→V / G→E / 
 | **Phase 5-2** | Status bar migrated to event-driven updates | Done 2026-03-20 |
 | **Phase 5-3** | `Edge` / `Face` layer, `dimension` removed, unified selection model foundation (ADR-012) | Done 2026-03-20 |
 | **Phase 6** | Sub-element selection (1/2/3 keys), Grab snap across all geometry (ADR-014) | Done 2026-03-20 |
+| **Phase 7** | Entity taxonomy redesign — `Cuboid`→`Solid`, `Sketch`→`Profile`; unified LocalGeometry interface for `MeasureLine`/`Profile`; `CoordinateFrame._worldPos` moved to `SceneService._worldPoseCache`; Euler convention corrected to ROS RPY (ADR-020, ADR-021) | Done 2026-03-26 |
 
 ---
 
 ## Related Documents
 
-- `docs/adr/README.md` — Architecture Decision Record index
+- `docs/adr/README.md` — Architecture Decision Record index (ADR-001 … ADR-021)
 - `docs/STATE_TRANSITIONS.md` — Mode state transition details
-- `docs/ROADMAP.md` — Feature roadmap
+- `docs/ROADMAP.md` — BFF migration roadmap and feature backlog
+- `docs/CONCURRENCY.md` — Optimistic vs pessimistic locking strategy
 - `.claude/MENTAL_MODEL.md` — Coding policies learned from bugs

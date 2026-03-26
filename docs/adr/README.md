@@ -20,7 +20,7 @@ This directory records the project's design decisions.
 | [ADR-006](ADR-006-right-click-cancel-context-menu.md) | Right-Click = Cancel / Context Menu | Accepted | 2026-03-20 | — |
 | [ADR-007](ADR-007-cuboid-based-shape-representation.md) | **Cuboid-based Shape Representation** | Accepted | 2026-03-20 | ADR-001 |
 | [ADR-008](ADR-008-mode-transition-state-machine.md) | **Mode Transition State Machine — Logical Consistency Policy** | Accepted | 2026-03-20 | ADR-002, ADR-004 |
-| [ADR-009](ADR-009-domain-entity-types-cuboid-sketch.md) | **Domain Entity Types: Cuboid / Sketch** | Accepted | 2026-03-20 | ADR-002, ADR-005, ADR-007 |
+| [ADR-009](ADR-009-domain-entity-types-cuboid-sketch.md) | **Domain Entity Types: Cuboid / Sketch** | **Superseded by ADR-020** (renamed to Solid / Profile) | 2026-03-20 | ADR-002, ADR-005, ADR-007, ADR-020 |
 | [ADR-010](ADR-010-domain-entity-behaviour-methods.md) | **Domain Entity Behaviour Methods (DDD Phase 2)** | Accepted | 2026-03-20 | ADR-009 |
 | [ADR-011](ADR-011-application-service-scene-service.md) | **Introducing the ApplicationService Layer — SceneService (DDD Phase 3)** | Accepted | 2026-03-20 | ADR-009, ADR-010 |
 | [ADR-012](ADR-012-graph-based-geometry-model.md) | **Graph-based Geometry Model (Vertex / Edge / Face / Solid)** | Accepted | 2026-03-20 | ADR-005, ADR-009, ADR-011 |

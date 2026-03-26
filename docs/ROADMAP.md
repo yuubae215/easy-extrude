@@ -1,8 +1,8 @@
 # Roadmap
 
-## Design Direction (2026-03-20)
+## Design Direction (2026-03-20, updated 2026-03-26)
 
-This project is a **cuboid-based modeling application**. Each shape is a deformable box defined by 8 corner vertices. Complex scenes are built by placing and deforming multiple cuboid objects. See `docs/adr/` for detailed design decisions.
+This project is a **solid-body modeling application**. Each shape is a deformable solid defined by a LocalGeometry graph (vertices / edges / faces). Complex scenes are built by placing and deforming multiple solid objects alongside coordinate frames and measurement annotations. See `docs/adr/` for detailed design decisions.
 
 ---
 
@@ -50,29 +50,32 @@ BFF (Node.js) — auth, aggregation, routing
 | BffClient WebSocket | `WsChannel` class; `openWs()`/`closeWs()`; `SceneService.openGeometryChannel()` | ADR-017 |
 | **★ UX validation checkpoint** | Evaluate: latency feel, Node Editor usability, STEP import UX. Decide pivot direction for Phase C+. | — |
 
-### Phase C — STEP reference geometry + Cuboid coexistence ✅ *2026-03-22*
+### Phase C — STEP reference geometry + Solid coexistence ✅ *2026-03-22*
 
-**Goal**: STEPファイルをインポートしてシーンに参照ジオメトリとして表示しつつ、
-同一シーンで Cuboid のモデリングを続けられるようにする。
-ImportedMesh はサーバー評価結果をフロントエンドで表示するだけの thin-client エンティティ（編集不可）。
-Cuboid は引き続き thick-client（ローカル編集）。
+**Goal**: Import STEP files and display them in the scene as reference geometry while continuing
+to model with Solid objects in the same scene.
+`ImportedMesh` is a thin-client entity — it only displays server-evaluated geometry (read-only).
+Solid objects remain thick-client (local editing).
 
-> **前提**: Phase B UX チェックポイントをクリア済み。Phase B の WebSocket + Geometry Service は継続利用。
+> **Prerequisite**: Phase B UX checkpoint cleared. Phase B WebSocket + Geometry Service continues.
 
 | Task | Details | ADR |
 |------|---------|-----|
-| `ImportedMeshView` | 任意三角メッシュ（positions/normals/indices）を Three.js BufferGeometry で表示。BoxHelper・visibility のみ管理。編集用メッシュは持たない。 | — |
-| `ImportedMesh` ドメインエンティティ | `id`, `name`, `meshView: ImportedMeshView` を保持。メソッドは `rename()` のみ。`instanceof ImportedMesh` で Cuboid/Sketch と区別。 | — |
-| `SceneService.createImportedMesh()` | ImportedMesh + ImportedMeshView を生成し SceneModel に登録。`objectAdded` を emit。 | — |
-| `SceneService._applyGeometryUpdate()` 修正 | objectId が SceneModel 未登録 → `createImportedMesh()` で自動生成。`ImportedMesh` なら `meshView.updateGeometryBuffers()` を呼び出す。`_positionsToCorners()` の null パスを利用。 | — |
-| `OutlinerView` の型アイコン対応 | `addObject(id, name, type)` に type 引数を追加。`'imported'` → `⬡` を灰色で表示（Cuboid の水色と区別）。Edit ボタンは disabled。 | — |
-| `AppController` の ImportedMesh 対応 | Object Mode での選択・Grab は無効。削除は可能。Edit Mode への遷移ガード（`instanceof ImportedMesh` → enter edit を skip）。 | — |
+| `ImportedMeshView` | Display arbitrary triangle mesh (positions/normals/indices) via Three.js BufferGeometry. Manages BoxHelper and visibility only; no edit mesh. | — |
+| `ImportedMesh` domain entity | Holds `id`, `name`, `meshView: ImportedMeshView`. Methods: `rename()`, `move()`. Distinguished from Solid/Profile via `instanceof ImportedMesh`. | — |
+| `SceneService.createImportedMesh()` | Create ImportedMesh + ImportedMeshView and register in SceneModel. Emits `objectAdded`. | — |
+| `SceneService._applyGeometryUpdate()` | If objectId not in SceneModel → auto-create via `createImportedMesh()`. For ImportedMesh → call `meshView.updateGeometryBuffers()`. | — |
+| `OutlinerView` type icons | Added `type` argument to `addObject(id, name, type)`. `'imported'` → `⬡` in grey (distinct from Solid blue). Edit button disabled. | — |
+| `AppController` ImportedMesh guards | Edit Mode transition blocked with toast. Grab (G key) and pointer drag allowed. Ctrl+drag rotation and pivot selection blocked. | — |
+| `SceneView.fitCameraToSphere()` | Repositions camera and expands `camera.far` after geometry load. Triggered by `geometryApplied` event. | — |
+| Unit conversion dialog | `NodeEditorView._showUnitDialog()` — 6 scale presets (mm→m, etc.) applied server-side before streaming. | — |
+| occt-import-js API fix | Geometry extracted at mesh level (`mesh.attributes.position.array`), not face level. | — |
 
-**スコープ外 (Phase D に延期)**:
-- STEP ジオメトリのシーン永続化（SceneSerializer 拡張 / scene.data への geometry 埋め込み）
-- Node Editor での DAG トポロジー編集（ノード・エッジの追加/削除）
-- Delta-sync（現状は full-graph snapshot のまま）
-- Multi-instance BFF / Redis セッション共有
+**Out of scope (deferred to Phase D)**:
+- STEP geometry scene persistence (SceneSerializer extension / embedding geometry in scene.data)
+- Node Editor DAG topology editing (add/remove nodes and edges)
+- Delta-sync protocol (currently full-graph snapshot only)
+- Multi-instance BFF / Redis session sharing
 
 ### Phase D — Post-C (direction TBD after Phase C checkpoint)
 
@@ -99,11 +102,11 @@ Candidate tasks:
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
 | 🔴 High | MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement | Medium | ADR-005 |
-| 🟡 Medium | Object hierarchy + Outliner tree view | Medium | ADR-005 |
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
-| 🟡 Medium | Export (OBJ / GLTF) | Low | Phase C via Geometry Service |
-| 🟢 Low | CoordinateFrame relative-transform editing via Node Editor (Phase B) — expose `translation`/`rotation` fields as editable Node Editor parameters; allow nested frames (frame→frame hierarchy); DAG support per ADR-016 | High | ADR-016, ADR-018 |
+| 🟡 Medium | Export (OBJ / GLTF) | Low | Phase D via Geometry Service |
+| 🟢 Low | CoordinateFrame assembly-mate positioning — `matchedFrameId` field; declare frame coincidence to drive object placement | High | ADR-021 |
+| 🟢 Low | Node Editor — expose CoordinateFrame `translation`/`rotation` as editable node parameters | Medium | ADR-016, ADR-018 |
 | 🟢 Low | Assembly groups (virtual TransformNode pivot) | Medium | ADR-016 |
 | 🟢 Low | Revolute / prismatic constraints in Node Editor | High | ADR-016 |
 
@@ -113,7 +116,18 @@ Candidate tasks:
 
 | Item | Date |
 |------|------|
-| MeasureLine — 1D measure tool: M key / Shift+A → Measure; V/E/F snap during placement; amber dashed line + HTML distance label; Outliner ↔ icon | 2026-03-22 |
+| Entity taxonomy redesign — `Cuboid`→`Solid`, `Sketch`→`Profile`; LocalGeometry unified interface for MeasureLine/Profile; `CoordinateFrame._worldPos` → `SceneService._worldPoseCache`; Euler convention → ROS RPY (ADR-020, ADR-021) | 2026-03-26 |
+| Save/Load Scene UI — header buttons, `enableSaveLoad()`, `_saveScene()`/`_loadScene()` dialogs; `_clearScene()` now emits `objectRemoved`; SceneSerializer handles CoordinateFrame + MeasureLine | 2026-03-26 |
+| CoordinateFrame N panel UX — R-key updates N panel in realtime; Location/Rotation labels clarified (World vs Local, RPY); Origin frame shows actual world position; two bug fixes | 2026-03-25 |
+| CoordinateFrame Phase B — nested frame hierarchy (frame→frame), R-key rotation (X/Y/Z axis + numeric input), `CoordinateFrameView.updateRotation()`, topological-sort animation loop, Outliner multi-level indentation, recursive cascade delete (ADR-019) | 2026-03-23 |
+| CoordinateFrame Phase A — attach named SE(3) frames to geometry objects; auto Origin frame on Solid creation; Outliner indentation; parent-gated visibility (X-ray when selected) (ADR-018) | 2026-03-23 |
+| Move support for ImportedMesh and MeasureLine — synthetic AABB corners + `move()` for ImportedMesh; `corners`/`move()` for MeasureLine; `updateGeometry()`/`updateBoxHelper()` on both views | 2026-03-23 |
+| STEP import end-to-end — occt-import-js API fix (geometry at mesh level); camera far-clip / fitCameraToSphere; `_finalizeRectSelection` ImportedMesh guard; unit conversion dialog | 2026-03-23 |
+| Server startup fix — `PRAGMA journal_mode = WAL` moved out of `db.batch()` into standalone `db.execute()` | 2026-03-23 |
+| Measure guide + snap display fix — MeasureLineView no-op interface completeness; `_measure.snapMeshView` for snap display fallback when active object is MeasureLine | 2026-03-23 |
+| Mobile Stack snap fix + footer keybinding update | 2026-03-23 |
+| Mobile toolbar 4-slot unification — `{ spacer: true }` placeholder; all modes padded to 4 slots | 2026-03-22 |
+| MeasureLine — 1D measure tool: M key / Shift+A → Measure; V/E/F snap during placement; amber dashed line + HTML distance label; Outliner icon | 2026-03-22 |
 | BFF Phase C — ImportedMesh thin-client entity, ImportedMeshView, SceneService.createImportedMesh(), _applyGeometryUpdate() routing, OutlinerView type icon, AppController guards | 2026-03-22 |
 | BFF Phase B — Geometry Service (DAG evaluator), WebSocket session (ADR-017), Node Editor UI prototype, STEP import (REST + WS), BffClient WsChannel | 2026-03-21 |
 | BFF Phase A — Express BFF scaffold, SQLite scene persistence, TransformGraph storage (ADR-016), BffClient, SceneSerializer, Vite proxy, pnpm workspace | 2026-03-21 |

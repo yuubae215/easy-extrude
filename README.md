@@ -2,7 +2,7 @@
 
 > **Face Extrude made simple, right in your browser.**
 
-An interactive web app for 3D modeling — sketch shapes, extrude them, and sculpt faces.
+An interactive web app for 3D modeling — sketch shapes, extrude them, sculpt faces, measure distances, and import STEP geometry.
 Works on desktop and mobile. No installation required.
 
 **Live Demo:** https://yuubae215.github.io/easy-extrude/
@@ -21,14 +21,18 @@ Shift+A → Add Sketch → Draw rectangle → Enter → Drag height → Enter �
 
 ## Features
 
-- **Sketch → Extrude** workflow: draw a 2D rectangle on the ground plane, extrude it into a 3D cuboid
-- **Add Box**: instantly place a default cuboid
+- **Sketch → Extrude** workflow: draw a 2D rectangle on the ground plane, extrude it into a 3D solid
+- **Add Box**: instantly place a default solid object
 - **Object Mode**: click to select, left-drag to move, Ctrl+drag to rotate around Z-axis
 - **Edit Mode (3D)**: switch sub-element selection between Vertex / Edge / Face (keys `1` / `2` / `3`)
   - Hover to highlight a face, click to select, `E` key (or mobile button) to extrude along normal
   - Live extrusion distance label while dragging
 - **Grab** (`G` key): move objects with optional axis lock (X/Y/Z), numeric input, and origin snap (Ctrl)
-- **Outliner**: scene hierarchy sidebar — rename objects, toggle visibility, delete
+- **Measure tool** (`M` key): place two snapped endpoints; renders amber dashed line + live distance label
+- **Coordinate Frames** (`Shift+A → Frame`): attach named SE(3) reference frames to objects; supports nested hierarchy and `R`-key rotation
+- **STEP import**: import STEP files via the Node Editor; server-side tessellation streamed over WebSocket
+- **Save / Load scene**: persist and restore scene state via BFF REST API
+- **Outliner**: scene hierarchy sidebar — rename objects, toggle visibility, delete; multi-level indentation for nested frames
 - **Rectangle selection**: drag on empty space to select multiple objects (enclosed or touch)
 - **OrbitControls**: right-drag / two-finger to orbit, scroll / pinch to zoom
 - **Mobile toolbar**: fixed floating buttons adapt to current mode; all gestures use Pointer Events
@@ -60,27 +64,36 @@ pnpm preview  # Preview the build locally
 
 ```
 src/
-├── main.js                    # Entry point: assembles layers and calls start()
+├── main.js                       # Entry point: assembles layers and calls start()
 ├── domain/
-│   ├── Cuboid.js              # Domain entity: 3D cuboid (vertices, faces, edges, behaviour)
-│   └── Sketch.js              # Domain entity: 2D sketch (draw → extrude)
+│   ├── Solid.js                  # Domain entity: 3D deformable solid (vertices, faces, edges)
+│   ├── Profile.js                # Domain entity: 2D cross-section profile (draw → extrude)
+│   ├── MeasureLine.js            # Domain entity: 1D distance annotation (p1, p2 endpoints)
+│   ├── CoordinateFrame.js        # Domain entity: named SE(3) reference frame (pose graph node)
+│   └── ImportedMesh.js           # Domain entity: read-only server-computed geometry (thin client)
 ├── graph/
-│   ├── Vertex.js              # { id, position: Vector3 }
-│   ├── Edge.js                # { id, v0: Vertex, v1: Vertex }
-│   └── Face.js                # { id, vertices: Vertex[4], name, index }
+│   ├── Vertex.js                 # { id, position: Vector3 }
+│   ├── Edge.js                   # { id, v0: Vertex, v1: Vertex }
+│   └── Face.js                   # { id, vertices: Vertex[4], name, index }
 ├── model/
-│   ├── CuboidModel.js         # Pure functions: geometry computation (stateless)
-│   └── SceneModel.js          # Aggregate root: objects + mode state + editSelection
+│   ├── CuboidModel.js            # Pure functions: geometry computation (stateless)
+│   └── SceneModel.js             # Aggregate root: objects + mode state + editSelection
 ├── service/
-│   └── SceneService.js        # ApplicationService: entity creation, CRUD, observable events
+│   ├── SceneService.js           # ApplicationService: entity creation, CRUD, observable events
+│   ├── SceneSerializer.js        # Scene save / load: domain → JSON round-trip
+│   └── BffClient.js              # REST + WebSocket client for BFF (WsChannel)
 ├── view/
-│   ├── SceneView.js           # Renderer, camera, OrbitControls, lighting, grid
-│   ├── MeshView.js            # Per-object mesh, wireframe, face highlight, sketch rect
-│   ├── UIView.js              # DOM UI: header, N panel, status bar, mobile toolbar
-│   ├── GizmoView.js           # World-axis gizmo (top-right corner)
-│   └── OutlinerView.js        # Scene hierarchy sidebar (left panel)
+│   ├── SceneView.js              # Renderer, camera, OrbitControls, lighting, grid
+│   ├── MeshView.js               # Per-object mesh, wireframe, face highlight, sketch rect
+│   ├── CoordinateFrameView.js    # Axis arrows + origin sphere; depth rendering; rotation
+│   ├── ImportedMeshView.js       # Triangle mesh (BufferGeometry); updateGeometryBuffers()
+│   ├── MeasureLineView.js        # Dashed line + distance label; no-op MeshView interface
+│   ├── NodeEditorView.js         # SVG DAG panel; draggable nodes; STEP import trigger
+│   ├── UIView.js                 # DOM UI: header, N panel, status bar, mobile toolbar
+│   ├── GizmoView.js              # World-axis gizmo (top-right corner)
+│   └── OutlinerView.js           # Scene hierarchy sidebar; multi-level indentation
 └── controller/
-    └── AppController.js       # Input handling (Pointer Events), animation loop, MV coordination
+    └── AppController.js          # Input handling (Pointer Events), animation loop, MV coordination
 ```
 
 See `docs/ARCHITECTURE.md` for layer responsibilities and DDD migration status.
@@ -92,11 +105,15 @@ See `docs/ARCHITECTURE.md` for layer responsibilities and DDD migration status.
 | Key | Action |
 |-----|--------|
 | `Tab` | Toggle Object ↔ Edit Mode |
-| `Shift+A` | Add menu (Box / Sketch) |
-| `G` | Grab (move) selected object |
+| `Shift+A` | Add menu (Box / Sketch / Measure / Frame) |
+| `G` | Grab (move) selected object; `X`/`Y`/`Z` to lock axis |
+| `R` | Rotate selected coordinate frame; `X`/`Y`/`Z` to lock axis |
+| `M` | Start measure placement |
+| `S` | Toggle Stack mode during Grab |
+| `Shift+D` | Duplicate selected object |
 | `X` / `Delete` | Delete selected object |
 | `E` | Extrude selected face (Edit Mode · 3D) |
-| `1` / `2` / `3` | Vertex / Edge / Face sub-element mode |
+| `1` / `2` / `3` | Vertex / Edge / Face sub-element mode (Edit Mode · 3D) |
 | `Enter` | Confirm operation |
 | `Escape` | Cancel operation |
 
@@ -108,7 +125,11 @@ See `docs/ARCHITECTURE.md` for layer responsibilities and DDD migration status.
 |------|------|
 | [Three.js](https://threejs.org/) | 3D rendering |
 | [Vite](https://vitejs.dev/) | Bundler & dev server |
-| [pnpm](https://pnpm.io/) | Package manager |
+| [pnpm](https://pnpm.io/) | Package manager (workspace) |
+| Node.js / Express | BFF server (scene persistence, geometry service) |
+| SQLite / libsql | Scene storage (server-side) |
+| WebSocket (`ws`) | Real-time geometry streaming (BFF ↔ frontend) |
+| occt-import-js | Server-side STEP tessellation |
 | GitHub Actions | CI/CD → auto deploy to GitHub Pages |
 
 ---
@@ -120,7 +141,7 @@ See `docs/ARCHITECTURE.md` for layer responsibilities and DDD migration status.
 | `docs/ARCHITECTURE.md` | Layer responsibilities, DDD migration status, coordinate system |
 | `docs/STATE_TRANSITIONS.md` | Mode state machine, mobile input flow, toolbar states |
 | `docs/ROADMAP.md` | Feature backlog and completed items |
-| `docs/adr/` | Architecture Decision Records (ADR-001 … ADR-016) |
+| `docs/adr/` | Architecture Decision Records (ADR-001 … ADR-021) |
 | `.claude/MENTAL_MODEL.md` | Coding policies learned from real bugs |
 
 ---
