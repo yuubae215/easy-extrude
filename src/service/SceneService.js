@@ -509,6 +509,16 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Removes the cached world pose for an entity, forcing recomputation on the
+   * next animation frame.  Call after directly mutating a CoordinateFrame's
+   * position/rotation without going through move() or rotate() (e.g. undo/redo).
+   * @param {string} id
+   */
+  invalidateWorldPose(id) {
+    this._worldPoseCache.delete(id)
+  }
+
+  /**
    * Removes an entity from the model WITHOUT disposing its meshView.
    * Used by undo/redo to detach an entity while keeping it alive for re-insertion.
    * Emits: 'objectRemoved'

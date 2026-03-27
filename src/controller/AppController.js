@@ -35,6 +35,8 @@ import { createMoveCommand }          from '../command/MoveCommand.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
+import { createRenameCommand }        from '../command/RenameCommand.js'
+import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 
 export class AppController {
   /**
@@ -1099,8 +1101,13 @@ export class AppController {
   }
 
   _renameObject(id, name) {
+    const oldName = this._scene.getObject(id)?.name
+    if (!oldName || oldName === name) return
     this._service.renameObject(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
+    // ── Record undo snapshot (ADR-022 Phase 4) ────────────────────────────
+    const cmd = createRenameCommand(id, oldName, name, this._service)
+    this._commandStack.push(cmd)
   }
 
   /** Toggles N panel visibility and updates gizmo offset (desktop only) */
@@ -2001,7 +2008,7 @@ export class AppController {
     }
     if (endCornersMap.size > 0) {
       const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
-      const cmd = createMoveCommand(label, this._grab.allStartCorners, endCornersMap, this._scene)
+      const cmd = createMoveCommand(label, this._grab.allStartCorners, endCornersMap, this._scene, this._service)
       this._commandStack.push(cmd)
     }
 
@@ -2081,6 +2088,18 @@ export class AppController {
   _confirmRotate() {
     if (!this._rotate.active) return
     this._applyRotate()
+    // ── Record undo snapshot (ADR-022 Phase 4) ────────────────────────────
+    if (this._activeObj instanceof CoordinateFrame) {
+      const frame = this._activeObj
+      const endQuat = frame.rotation.clone()
+      if (!endQuat.equals(this._rotate.startRot)) {
+        const cmd = createFrameRotateCommand(
+          frame, this._rotate.startRot.clone(), endQuat, this._service,
+          () => this._updateNPanel(),
+        )
+        this._commandStack.push(cmd)
+      }
+    }
     this._rotate.active   = false
     this._rotate.axis     = null
     this._rotate.inputStr = ''
@@ -2554,7 +2573,7 @@ export class AppController {
       const activeId = this._scene.activeId
       const endCornersMap   = new Map([[activeId, this._corners.map(c => c.clone())]])
       const startCornersMap = new Map([[activeId, this._faceExtrude.allStartCorners]])
-      const cmd = createMoveCommand('Face Extrude', startCornersMap, endCornersMap, this._scene)
+      const cmd = createMoveCommand('Face Extrude', startCornersMap, endCornersMap, this._scene, this._service)
       this._commandStack.push(cmd)
     }
 
