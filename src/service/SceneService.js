@@ -502,8 +502,45 @@ export class SceneService extends EventEmitter {
     const solid = profile.extrude(height)
     this._model.removeObject(id)
     this._model.addObject(solid)
+    this.emit('objectRemoved', id)
+    this.emit('objectAdded', solid)
     this.createCoordinateFrame(id, 'Origin')
     return solid
+  }
+
+  /**
+   * Removes the cached world pose for an entity, forcing recomputation on the
+   * next animation frame.  Call after directly mutating a CoordinateFrame's
+   * position/rotation without going through move() or rotate() (e.g. undo/redo).
+   * @param {string} id
+   */
+  invalidateWorldPose(id) {
+    this._worldPoseCache.delete(id)
+  }
+
+  /**
+   * Removes an entity from the model WITHOUT disposing its meshView.
+   * Used by undo/redo to detach an entity while keeping it alive for re-insertion.
+   * Emits: 'objectRemoved'
+   * @param {string} id
+   */
+  detachObject(id) {
+    const obj = this._model.getObject(id)
+    if (!obj) return
+    this._model.removeObject(id)
+    this._worldPoseCache.delete(id)
+    this.emit('objectRemoved', id)
+  }
+
+  /**
+   * Re-inserts a previously detached entity into the model.
+   * Does NOT re-add children — caller is responsible for re-inserting children if needed.
+   * Emits: 'objectAdded'
+   * @param {object} entity  A domain entity (Solid, Profile, etc.)
+   */
+  reattachObject(entity) {
+    this._model.addObject(entity)
+    this.emit('objectAdded', entity)
   }
 
   /**

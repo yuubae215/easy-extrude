@@ -30,6 +30,13 @@ import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
+import { CommandStack }              from '../service/CommandStack.js'
+import { createMoveCommand }          from '../command/MoveCommand.js'
+import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
+import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
+import { createDeleteCommand }        from '../command/DeleteCommand.js'
+import { createRenameCommand }        from '../command/RenameCommand.js'
+import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 
 export class AppController {
   /**
@@ -46,6 +53,9 @@ export class AppController {
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
     this._service = new SceneService(sceneView.scene)
+
+    // ── Undo / Redo command history (ADR-022) ─────────────────────────────
+    this._commandStack = new CommandStack()
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
@@ -393,6 +403,22 @@ export class AppController {
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
     const obj = this._service.createSolid()
+
+    // ── Record undo snapshot (ADR-022 Phase 3) ────────────────────────────
+    const childrenRefs = [...this._collectAllDescendantFrames(obj.id)]
+      .map(fid => this._scene.getObject(fid)).filter(Boolean)
+    const cmd = createAddSolidCommand(
+      obj, childrenRefs, this._service,
+      ()   => {
+        // onAfterUndo: switch active to any remaining geometry object
+        const nextId = [...this._scene.objects.entries()]
+          .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
+        if (nextId) this._switchActiveObject(nextId, true)
+      },
+      (id) => this._switchActiveObject(id, true),
+    )
+    this._commandStack.push(cmd)
+
     this._switchActiveObject(obj.id, true)
   }
 
@@ -485,6 +511,7 @@ export class AppController {
       container: document.body,
     })
     if (ok) {
+      this._commandStack.clear()
       this._uiView.showToast('Scene loaded')
       this._switchActiveObject(null)
     } else {
@@ -957,9 +984,13 @@ export class AppController {
 
     const wasActive = this._scene.activeId === id
 
-    // If deleting the active frame, hide its chain before the view is disposed
+    // If deleting the active frame, hide its chain before detaching
     if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
       this._hideFrameChain()
+    }
+    // If deleting a geometry object with visible child frames, hide them first
+    if (wasActive && !(target instanceof CoordinateFrame)) {
+      this._setChildFramesVisible(id, false)
     }
 
     // Determine next active object: prefer geometry objects over frames.
@@ -975,7 +1006,31 @@ export class AppController {
         )
       : null
 
-    this._service.deleteObject(id)
+    // ── Soft-delete for undo support (ADR-022 Phase 3) ────────────────────
+    const childrenRefs = [...this._collectAllDescendantFrames(id)]
+      .map(fid => this._scene.getObject(fid)).filter(Boolean)
+
+    // Detach children first (deepest last, though frames rarely nest >1 deep)
+    for (let i = childrenRefs.length - 1; i >= 0; i--) {
+      this._service.detachObject(childrenRefs[i].id)
+    }
+    this._service.detachObject(id)
+    target.meshView.setVisible(false)
+
+    const cmd = createDeleteCommand(
+      target, childrenRefs, this._service,
+      // onAfterUndo: switch active to the restored entity
+      (restoredId) => this._switchActiveObject(restoredId, true),
+      // onAfterRedo: switch active to next available object
+      (deletedId)  => {
+        const nxt = [...this._scene.objects.entries()]
+          .find(([k, o]) => k !== deletedId && !(o instanceof CoordinateFrame))?.[0]
+          ?? [...this._scene.objects.keys()].find(k => k !== deletedId)
+          ?? null
+        if (nxt) this._switchActiveObject(nxt, true)
+      },
+    )
+    this._commandStack.push(cmd)
 
     if (wasActive && nextId) {
       this._switchActiveObject(nextId, true)
@@ -1046,8 +1101,13 @@ export class AppController {
   }
 
   _renameObject(id, name) {
+    const oldName = this._scene.getObject(id)?.name
+    if (!oldName || oldName === name) return
     this._service.renameObject(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
+    // ── Record undo snapshot (ADR-022 Phase 4) ────────────────────────────
+    const cmd = createRenameCommand(id, oldName, name, this._service)
+    this._commandStack.push(cmd)
   }
 
   /** Toggles N panel visibility and updates gizmo offset (desktop only) */
@@ -1600,8 +1660,18 @@ export class AppController {
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
+    // Capture Profile ref before the swap for undo (ADR-022 Phase 2)
+    const profileRef = this._scene.getObject(this._scene.activeId)
+
     const cuboid = this._service.extrudeProfile(this._scene.activeId, height)
     if (!cuboid) return
+
+    // ── Record undo snapshot ──────────────────────────────────────────────
+    const cmd = createExtrudeSketchCommand(
+      profileRef, height, this._service,
+      (id) => { this._switchActiveObject(id, true) },
+    )
+    this._commandStack.push(cmd)
 
     this._meshView.updateGeometry(cuboid.corners)
     this._meshView.setVisible(true)
@@ -1929,6 +1999,19 @@ export class AppController {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
     this._applyGrab()
+
+    // ── Record undo snapshot (ADR-022 Phase 1) ────────────────────────────
+    const endCornersMap = new Map()
+    for (const id of this._selectedIds) {
+      const obj = this._scene.getObject(id)
+      if (obj) endCornersMap.set(id, obj.corners.map(c => c.clone()))
+    }
+    if (endCornersMap.size > 0) {
+      const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
+      const cmd = createMoveCommand(label, this._grab.allStartCorners, endCornersMap, this._scene, this._service)
+      this._commandStack.push(cmd)
+    }
+
     this._grab.active        = false
     this._grab.axis          = null
     this._grab.autoSnap      = false
@@ -2005,6 +2088,18 @@ export class AppController {
   _confirmRotate() {
     if (!this._rotate.active) return
     this._applyRotate()
+    // ── Record undo snapshot (ADR-022 Phase 4) ────────────────────────────
+    if (this._activeObj instanceof CoordinateFrame) {
+      const frame = this._activeObj
+      const endQuat = frame.rotation.clone()
+      if (!endQuat.equals(this._rotate.startRot)) {
+        const cmd = createFrameRotateCommand(
+          frame, this._rotate.startRot.clone(), endQuat, this._service,
+          () => this._updateNPanel(),
+        )
+        this._commandStack.push(cmd)
+      }
+    }
     this._rotate.active   = false
     this._rotate.axis     = null
     this._rotate.inputStr = ''
@@ -2429,6 +2524,7 @@ export class AppController {
     fe.active        = true
     fe.face          = face
     fe.savedCorners  = face.vertices.map(v => v.position.clone())
+    fe.allStartCorners = this._corners.map(c => c.clone())   // full Solid snapshot for undo (ADR-022)
     fe.dist          = 0
     fe.inputStr      = ''
     fe.hasInput      = false
@@ -2472,6 +2568,15 @@ export class AppController {
   }
 
   _confirmFaceExtrude() {
+    // ── Record undo snapshot (ADR-022 Phase 2) ────────────────────────────
+    if (this._scene.activeId) {
+      const activeId = this._scene.activeId
+      const endCornersMap   = new Map([[activeId, this._corners.map(c => c.clone())]])
+      const startCornersMap = new Map([[activeId, this._faceExtrude.allStartCorners]])
+      const cmd = createMoveCommand('Face Extrude', startCornersMap, endCornersMap, this._scene, this._service)
+      this._commandStack.push(cmd)
+    }
+
     this._faceExtrude.active = false
     this._controls.enabled = true
     this._meshView.clearExtrusionDisplay()
@@ -3201,6 +3306,24 @@ export class AppController {
         this._applyRotate()
         this._updateRotateStatus()
       }
+    }
+
+    // ── Undo / Redo (ADR-022) ──────────────────────────────────────────────
+    // Intercept Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z before any operation-specific
+    // key handlers so they don't mis-fire as grab-axis or rotate-axis keys.
+    if (e.ctrlKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y')) {
+      e.preventDefault()
+      if (!this._grab.active && !this._rotate.active && !this._faceExtrude.active) {
+        const isUndo = e.key === 'z' && !e.shiftKey
+        if (isUndo) {
+          const cmd = this._commandStack.undo()
+          if (cmd) this._uiView.showToast(`Undo: ${cmd.label}`)
+        } else {
+          const cmd = this._commandStack.redo()
+          if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
+        }
+      }
+      return
     }
 
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
