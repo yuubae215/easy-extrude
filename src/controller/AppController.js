@@ -33,6 +33,8 @@ import { NodeEditorView }  from '../view/NodeEditorView.js'
 import { CommandStack }              from '../service/CommandStack.js'
 import { createMoveCommand }          from '../command/MoveCommand.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
+import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
+import { createDeleteCommand }        from '../command/DeleteCommand.js'
 
 export class AppController {
   /**
@@ -399,6 +401,22 @@ export class AppController {
     if (this._scene.selectionMode === 'edit') this.setMode('object')
 
     const obj = this._service.createSolid()
+
+    // ── Record undo snapshot (ADR-022 Phase 3) ────────────────────────────
+    const childrenRefs = [...this._collectAllDescendantFrames(obj.id)]
+      .map(fid => this._scene.getObject(fid)).filter(Boolean)
+    const cmd = createAddSolidCommand(
+      obj, childrenRefs, this._service,
+      ()   => {
+        // onAfterUndo: switch active to any remaining geometry object
+        const nextId = [...this._scene.objects.entries()]
+          .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
+        if (nextId) this._switchActiveObject(nextId, true)
+      },
+      (id) => this._switchActiveObject(id, true),
+    )
+    this._commandStack.push(cmd)
+
     this._switchActiveObject(obj.id, true)
   }
 
@@ -964,9 +982,13 @@ export class AppController {
 
     const wasActive = this._scene.activeId === id
 
-    // If deleting the active frame, hide its chain before the view is disposed
+    // If deleting the active frame, hide its chain before detaching
     if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
       this._hideFrameChain()
+    }
+    // If deleting a geometry object with visible child frames, hide them first
+    if (wasActive && !(target instanceof CoordinateFrame)) {
+      this._setChildFramesVisible(id, false)
     }
 
     // Determine next active object: prefer geometry objects over frames.
@@ -982,7 +1004,31 @@ export class AppController {
         )
       : null
 
-    this._service.deleteObject(id)
+    // ── Soft-delete for undo support (ADR-022 Phase 3) ────────────────────
+    const childrenRefs = [...this._collectAllDescendantFrames(id)]
+      .map(fid => this._scene.getObject(fid)).filter(Boolean)
+
+    // Detach children first (deepest last, though frames rarely nest >1 deep)
+    for (let i = childrenRefs.length - 1; i >= 0; i--) {
+      this._service.detachObject(childrenRefs[i].id)
+    }
+    this._service.detachObject(id)
+    target.meshView.setVisible(false)
+
+    const cmd = createDeleteCommand(
+      target, childrenRefs, this._service,
+      // onAfterUndo: switch active to the restored entity
+      (restoredId) => this._switchActiveObject(restoredId, true),
+      // onAfterRedo: switch active to next available object
+      (deletedId)  => {
+        const nxt = [...this._scene.objects.entries()]
+          .find(([k, o]) => k !== deletedId && !(o instanceof CoordinateFrame))?.[0]
+          ?? [...this._scene.objects.keys()].find(k => k !== deletedId)
+          ?? null
+        if (nxt) this._switchActiveObject(nxt, true)
+      },
+    )
+    this._commandStack.push(cmd)
 
     if (wasActive && nextId) {
       this._switchActiveObject(nextId, true)
