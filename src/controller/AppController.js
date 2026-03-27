@@ -30,8 +30,9 @@ import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
-import { CommandStack }      from '../service/CommandStack.js'
-import { createMoveCommand } from '../command/MoveCommand.js'
+import { CommandStack }              from '../service/CommandStack.js'
+import { createMoveCommand }          from '../command/MoveCommand.js'
+import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 
 export class AppController {
   /**
@@ -1606,8 +1607,18 @@ export class AppController {
       : this._extrudePhase.height
     if (Math.abs(height) < 0.001) { this._cancelExtrudePhase(); return }
 
+    // Capture Profile ref before the swap for undo (ADR-022 Phase 2)
+    const profileRef = this._scene.getObject(this._scene.activeId)
+
     const cuboid = this._service.extrudeProfile(this._scene.activeId, height)
     if (!cuboid) return
+
+    // ── Record undo snapshot ──────────────────────────────────────────────
+    const cmd = createExtrudeSketchCommand(
+      profileRef, height, this._service,
+      (id) => { this._switchActiveObject(id, true) },
+    )
+    this._commandStack.push(cmd)
 
     this._meshView.updateGeometry(cuboid.corners)
     this._meshView.setVisible(true)
@@ -2448,6 +2459,7 @@ export class AppController {
     fe.active        = true
     fe.face          = face
     fe.savedCorners  = face.vertices.map(v => v.position.clone())
+    fe.allStartCorners = this._corners.map(c => c.clone())   // full Solid snapshot for undo (ADR-022)
     fe.dist          = 0
     fe.inputStr      = ''
     fe.hasInput      = false
@@ -2491,6 +2503,15 @@ export class AppController {
   }
 
   _confirmFaceExtrude() {
+    // ── Record undo snapshot (ADR-022 Phase 2) ────────────────────────────
+    if (this._scene.activeId) {
+      const activeId = this._scene.activeId
+      const endCornersMap   = new Map([[activeId, this._corners.map(c => c.clone())]])
+      const startCornersMap = new Map([[activeId, this._faceExtrude.allStartCorners]])
+      const cmd = createMoveCommand('Face Extrude', startCornersMap, endCornersMap, this._scene)
+      this._commandStack.push(cmd)
+    }
+
     this._faceExtrude.active = false
     this._controls.enabled = true
     this._meshView.clearExtrusionDisplay()
