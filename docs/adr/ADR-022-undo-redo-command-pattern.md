@@ -1,7 +1,7 @@
 # ADR-022 — Undo / Redo via Command Pattern
 
 **Date:** 2026-03-26
-**Status:** Proposed
+**Status:** Accepted
 **Related:** ADR-008 (Mode Transition), ADR-010 (Domain Entity Behaviour), ADR-011 (SceneService), ADR-012 (Graph Model)
 
 ---

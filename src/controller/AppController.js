@@ -30,6 +30,8 @@ import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
+import { CommandStack }      from '../service/CommandStack.js'
+import { createMoveCommand } from '../command/MoveCommand.js'
 
 export class AppController {
   /**
@@ -46,6 +48,9 @@ export class AppController {
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
     this._service = new SceneService(sceneView.scene)
+
+    // ── Undo / Redo command history (ADR-022) ─────────────────────────────
+    this._commandStack = new CommandStack()
 
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
@@ -485,6 +490,7 @@ export class AppController {
       container: document.body,
     })
     if (ok) {
+      this._commandStack.clear()
       this._uiView.showToast('Scene loaded')
       this._switchActiveObject(null)
     } else {
@@ -1929,6 +1935,19 @@ export class AppController {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
     this._applyGrab()
+
+    // ── Record undo snapshot (ADR-022 Phase 1) ────────────────────────────
+    const endCornersMap = new Map()
+    for (const id of this._selectedIds) {
+      const obj = this._scene.getObject(id)
+      if (obj) endCornersMap.set(id, obj.corners.map(c => c.clone()))
+    }
+    if (endCornersMap.size > 0) {
+      const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
+      const cmd = createMoveCommand(label, this._grab.allStartCorners, endCornersMap, this._scene)
+      this._commandStack.push(cmd)
+    }
+
     this._grab.active        = false
     this._grab.axis          = null
     this._grab.autoSnap      = false
@@ -3201,6 +3220,24 @@ export class AppController {
         this._applyRotate()
         this._updateRotateStatus()
       }
+    }
+
+    // ── Undo / Redo (ADR-022) ──────────────────────────────────────────────
+    // Intercept Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z before any operation-specific
+    // key handlers so they don't mis-fire as grab-axis or rotate-axis keys.
+    if (e.ctrlKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y')) {
+      e.preventDefault()
+      if (!this._grab.active && !this._rotate.active && !this._faceExtrude.active) {
+        const isUndo = e.key === 'z' && !e.shiftKey
+        if (isUndo) {
+          const cmd = this._commandStack.undo()
+          if (cmd) this._uiView.showToast(`Undo: ${cmd.label}`)
+        } else {
+          const cmd = this._commandStack.redo()
+          if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
+        }
+      }
+      return
     }
 
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
