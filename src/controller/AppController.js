@@ -201,6 +201,8 @@ export class AppController {
       startCorners:    [],
       /** @type {Map<string, import('three').Vector3[]>} corners snapshot for all selected objects */
       allStartCorners: new Map(),
+      /** @type {Map<string, import('three').Vector3[]>} corners at the start of the current drag segment (touch re-grab) */
+      segmentStartCorners: new Map(),
       centroid:        new THREE.Vector3(),
       pivot:           new THREE.Vector3(),
       pivotLabel:      'Centroid',
@@ -2055,6 +2057,11 @@ export class AppController {
       const selObj = this._scene.getObject(id)
       if (selObj) this._grab.allStartCorners.set(id, selObj.corners.map(c => c.clone()))
     }
+    // segmentStartCorners tracks the start of each individual drag segment (touch).
+    // Initially identical to allStartCorners; re-snapshotted on each touch re-down.
+    this._grab.segmentStartCorners = new Map(
+      [...this._grab.allStartCorners.entries()].map(([id, cs]) => [id, cs.map(c => c.clone())])
+    )
     // For CoordinateFrame, corners = [translation] (parent-relative offset).
     // Use the world position from the cache so the drag plane passes through
     // the frame's actual world location (ADR-020).
@@ -2420,7 +2427,7 @@ export class AppController {
    * @param {import('three').Vector3} delta
    */
   _applyGrabDeltaToAll(delta) {
-    for (const [id, startCorners] of this._grab.allStartCorners) {
+    for (const [id, startCorners] of this._grab.segmentStartCorners) {
       const selObj = this._scene.getObject(id)
       if (selObj) selObj.move(startCorners, delta)
     }
@@ -3184,9 +3191,30 @@ export class AppController {
       }
       if (e.button === 0) {
         if (e.pointerType === 'touch') {
-          // On touch: start a drag so pointermove updates position; confirm on pointerup.
-          // Without this, the first canvas tap after entering grab via the long-press
-          // context menu immediately confirms at the starting position.
+          // On touch: checkpoint the current position as the start of a new drag
+          // segment, then track the pointer. Grab stays active until Confirm is pressed.
+          this._grab.segmentStartCorners = new Map()
+          for (const id of this._selectedIds) {
+            const selObj = this._scene.getObject(id)
+            if (selObj) this._grab.segmentStartCorners.set(id, selObj.corners.map(c => c.clone()))
+          }
+          this._grab.startCorners = this._corners.map(c => c.clone())
+          const grabCenter = (this._activeObj instanceof CoordinateFrame)
+            ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
+            : getCentroid(this._corners)
+          this._grab.centroid.copy(grabCenter)
+          this._grab.pivot.copy(grabCenter)
+          const camDir = new THREE.Vector3()
+          this._camera.getWorldDirection(camDir)
+          this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
+          this._raycaster.setFromCamera(this._mouse, this._camera)
+          const _segPt = new THREE.Vector3()
+          if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, _segPt)) {
+            this._grab.startPoint.copy(_segPt)
+          } else {
+            this._grab.startPoint.copy(grabCenter)
+          }
+          this._grab.startMouse.copy(this._mouse)
           this._activeDragPointerId = e.pointerId
           return
         }
@@ -3386,10 +3414,9 @@ export class AppController {
     const wasDragging = this._activeDragPointerId === e.pointerId
     if (wasDragging) this._activeDragPointerId = null
     if (this._grab.active) {
-      // Touch grab: confirm on release (pointerdown only started the drag).
-      // Toolbar Confirm button calls _confirmGrab() directly; wasDragging is false
-      // for that path (toolbar tap never sets _activeDragPointerId), so no double-confirm.
-      if (wasDragging) this._confirmGrab()
+      // Touch grab: keep grab active after finger release.
+      // The object stays at the dragged position; user confirms via the Confirm button.
+      // Multiple drag segments are supported before confirming.
       return
     }
     if (this._faceExtrude.active) {
