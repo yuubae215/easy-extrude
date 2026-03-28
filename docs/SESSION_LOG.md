@@ -4,6 +4,12 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-28**: Mobile UX Phase 1 — Undo/Redo buttons, Duplicate, Onboarding overlay, tap=orbit interaction model.
+  - **A-1 Undo/Redo header buttons**: `UIView` gains `_undoBtn`/`_redoBtn` (mobile-only, shown via `_applyMobileLayout`), `onUndoClick`/`onRedoClick` callbacks, and `setUndoRedoEnabled(canUndo, canRedo)`. `AppController._refreshUndoRedoState()` called from `_updateMobileToolbar()` and the Ctrl+Z/Y keyboard handler.
+  - **A-2 Duplicate button**: Object mode toolbar expanded from 4 → 5 slots (`Add | Dup | Edit | Delete | Stack`). `ICONS.duplicate` SVG added. Dup disabled for `Profile`, `ImportedMesh`, `MeasureLine`, `CoordinateFrame`.
+  - **C-1 Onboarding overlay**: `UIView.showOnboardingIfNeeded()` — mobile-only, skipped if `localStorage.ee_onboarded === '1'`. Shows 4 gesture hints (SVG icons + Japanese labels); auto-dismisses after 4 s or on tap. Called from `AppController.start()`.
+  - **Touch gesture model overhaul**: single-finger drag now always orbits (OrbitControls); `_objDragging` and rect selection are mouse-only. Long press ≥ 400 ms on a selected object triggers `_startGrab()`. `_longPress.{ timer, pointerId, startX, startY }` state added; cancelled in `_onPointerMove` (> 8 px movement) or `_onPointerUp` (quick release). MENTAL_MODEL updated (Mobile Toolbar Stability table updated to 5-slot Object mode; new "Mobile Touch Gesture Model" rule added; Stack Mode note updated).
+
 - **2026-03-27**: ADR-022 Undo/Redo via Command Pattern — full implementation across 4 phases. ADR-022 status `Proposed` → `Accepted`.
   - **Phase 1 — CommandStack + MoveCommand (Grab/FaceExtrude)**: New `src/service/CommandStack.js` (`push`, `undo`, `redo`, `clear`, `canUndo/canRedo`, `MAX=50`). New `src/command/MoveCommand.js` (`createMoveCommand`): corner-snapshot strategy (`THREE.Vector3[]` clones) applied to Grab (`_confirmGrab`) and FaceExtrude (`_confirmFaceExtrude`). Ctrl+Z/Y/Shift+Z handler added to `_onKeyDown` (guarded against grab/rotate/faceExtrude active states; Ctrl+Z during grab axis-set conflict fixed). `_commandStack.clear()` on `_loadScene()`.
   - **Phase 2 — ExtrudeSketchCommand (Profile↔Solid entity swap)**: New `src/command/ExtrudeSketchCommand.js`. `extrudeProfile()` now emits `objectRemoved`/`objectAdded` events (previously silent swap caused Outliner type-icon staleness). Undo uses `detachObject` + `reattachObject(profileRef)` + `meshView.setVisible(false)` to restore Profile without GPU reallocation.

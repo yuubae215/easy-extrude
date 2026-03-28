@@ -267,6 +267,17 @@ export class AppController {
     /** @type {number|null} pointerId of the active edit drag; null when idle */
     this._activeDragPointerId = null
 
+    // ── Long-press detection for touch Grab (object mode) ─────────────────
+    // On touch, single-finger drag orbits the camera. A long press (≥ 400 ms
+    // without significant movement) on a selected object triggers Grab mode.
+    this._longPress = {
+      /** @type {ReturnType<typeof setTimeout>|null} */
+      timer:     null,
+      pointerId: null,
+      startX:    0,
+      startY:    0,
+    }
+
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
     uiView.onModeChange(mode => this.setMode(mode))
@@ -353,6 +364,19 @@ export class AppController {
       } else {
         uiView.hideBackdrop()
       }
+    })
+
+    uiView.onUndoClick(() => {
+      if (this._grab.active || this._rotate.active || this._faceExtrude.active) return
+      const cmd = this._commandStack.undo()
+      if (cmd) this._uiView.showToast(`Undo: ${cmd.label}`)
+      this._refreshUndoRedoState()
+    })
+    uiView.onRedoClick(() => {
+      if (this._grab.active || this._rotate.active || this._faceExtrude.active) return
+      const cmd = this._commandStack.redo()
+      if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
+      this._refreshUndoRedoState()
     })
 
     this._bindEvents()
@@ -1260,8 +1284,17 @@ export class AppController {
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────
 
+  /** Syncs the enabled/disabled state of the mobile header Undo/Redo buttons. */
+  _refreshUndoRedoState() {
+    this._uiView.setUndoRedoEnabled(
+      this._commandStack.canUndo,
+      this._commandStack.canRedo,
+    )
+  }
+
   /** Rebuilds the mobile floating toolbar to reflect current app state. */
   _updateMobileToolbar() {
+    this._refreshUndoRedoState()
     const mode     = this._scene.selectionMode
     const substate = this._scene.editSubstate
 
@@ -1286,10 +1319,11 @@ export class AppController {
     }
 
     if (mode === 'object') {
-      // Always show the same 4 buttons; Edit/Delete are disabled when no
-      // object is selected. Fixed count prevents layout shifts on selection.
-      const hasObj  = this._objSelected
-      const canEdit = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame)
+      // 5-slot layout: Add | Dup | Edit | Delete | Stack
+      // All slots always present; unavailable actions are disabled to prevent layout shifts.
+      const hasObj   = this._objSelected
+      const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile)
+      const canEdit  = canDup
       const canStack = hasObj
         && !(this._activeObj instanceof ImportedMesh)
         && !(this._activeObj instanceof MeasureLine)
@@ -1308,9 +1342,10 @@ export class AppController {
             )
           },
         },
-        { icon: ICONS.edit,   label: 'Edit',   onClick: () => this.setMode('edit'),                                     disabled: !canEdit },
-        { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj, disabled: !hasObj },
-        { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
+        { icon: ICONS.duplicate, label: 'Dup',    onClick: () => this._duplicateObject(),                                        disabled: !canDup },
+        { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
+        { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
+        { icon: ICONS.stack,     label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
     }
@@ -2826,6 +2861,17 @@ export class AppController {
 
   // ─── Pointer events (mouse + touch + stylus) ──────────────────────────────
   _onPointerMove(e) {
+    // Cancel long-press grab if the finger moved more than 8 px
+    if (this._longPress.timer !== null && e.pointerId === this._longPress.pointerId) {
+      const dx = e.clientX - this._longPress.startX
+      const dy = e.clientY - this._longPress.startY
+      if (dx * dx + dy * dy > 64) {
+        clearTimeout(this._longPress.timer)
+        this._longPress.timer = null
+        this._longPress.pointerId = null
+      }
+    }
+
     // During a drag, only process the pointer that started it
     if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
     this._updateMouse(e)
@@ -3156,7 +3202,26 @@ export class AppController {
           return
         }
 
-        // Snapshot corners of every selected object for this drag
+        if (e.pointerType === 'touch') {
+          // On touch, single-finger drag always orbits.
+          // A long press (≥ 400 ms, < 8 px movement) on a selected object
+          // starts Grab so the user can reposition it.
+          if (this._objSelected && this._selectedIds.has(obj.id)) {
+            this._longPress.pointerId = e.pointerId
+            this._longPress.startX    = e.clientX
+            this._longPress.startY    = e.clientY
+            this._longPress.timer = setTimeout(() => {
+              this._longPress.timer = null
+              if (this._longPress.pointerId === e.pointerId) {
+                this._longPress.pointerId = null
+                this._startGrab()
+              }
+            }, 400)
+          }
+          return
+        }
+
+        // Snapshot corners of every selected object for this drag (mouse only)
         this._objDragAllStartCorners = new Map()
         for (const id of this._selectedIds) {
           const selObj = this._scene.getObject(id)
@@ -3182,7 +3247,9 @@ export class AppController {
           this._objRotateStartCorners = this._corners.map(c => c.clone())
         }
       } else {
-        // No object hit — start rectangle selection.
+        // No object hit — start rectangle selection (mouse only).
+        // On touch, empty-space drag is orbit via OrbitControls.
+        if (e.pointerType === 'touch') return
         // Do NOT disable _controls here: orbit (right-click / two-finger) uses
         // separate buttons/fingers and must remain available simultaneously.
         this._rectSel.active    = true
@@ -3229,6 +3296,13 @@ export class AppController {
 
   _onPointerUp(e) {
     if (e.button !== 0) return
+
+    // Cancel long-press timer on release (quick tap — don't start Grab)
+    if (this._longPress.timer !== null && e.pointerId === this._longPress.pointerId) {
+      clearTimeout(this._longPress.timer)
+      this._longPress.timer = null
+      this._longPress.pointerId = null
+    }
 
     // ── Measure point confirmation (hold-to-snap, release-to-confirm) ─────
     if (this._measure.active && this._measure.pressing) {
@@ -3322,6 +3396,7 @@ export class AppController {
           const cmd = this._commandStack.redo()
           if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
         }
+        this._refreshUndoRedoState()
       }
       return
     }
@@ -3592,6 +3667,9 @@ export class AppController {
       this._service._updateWorldPoses()
     }
     loop()
+
+    // Show first-run gesture hints on mobile
+    this._uiView.showOnboardingIfNeeded()
 
     // Non-blocking BFF + Node Editor setup (Phase B)
     this._initBff().catch(err => {

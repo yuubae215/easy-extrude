@@ -253,24 +253,43 @@ if (e.target !== this._sceneView.renderer.domElement) return
 ### Mobile Toolbar Stability
 
 - **Principle**: Mobile UI elements must maintain consistent layout dimensions and button placements to prevent misclicks caused by layout shifts during state changes.
-- **Concrete Rule**: Every mode must show exactly **4 slots** (the width of Edit 3D, the widest mode). Within a mode, use `disabled: true` for temporarily unavailable actions. For modes that have fewer than 4 actions, pad with `{ spacer: true }` invisible placeholders so the total slot count stays 4 and the toolbar width never changes.
+- **Concrete Rule**: Each mode shows a fixed number of slots. Object mode uses **5 slots** (widest); Edit 3D uses **4 slots**. Within a mode, use `disabled: true` for temporarily unavailable actions. Pad with `{ spacer: true }` invisible placeholders so the slot count stays constant and the toolbar width never changes.
 
-| Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 |
-|------|--------|--------|--------|--------|
-| Object | Add | Edit | Delete | Stack |
-| Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* |
-| Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* |
-| Edit 3D | ← Object | Vertex | Edge | Face |
-| Grab active | Confirm | Stack | Cancel | *(spacer)* |
+| Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 | Slot 5 |
+|------|--------|--------|--------|--------|--------|
+| Object | Add | Dup | Edit | Delete | Stack |
+| Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* | — |
+| Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* | — |
+| Edit 3D | ← Object | Vertex | Edge | Face | — |
+| Grab active | Confirm | Stack | Cancel | *(spacer)* | — |
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
-Grab, Edit, and Stack are disabled for `ImportedMesh` and `MeasureLine`. Delete remains enabled for all object types including `MeasureLine`. All four Object-mode slots maintain consistent disabled states so slot positions never shift.
+Dup, Edit, and Stack are disabled for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`. Dup is additionally disabled for `Profile`. Delete remains enabled for all object types. All Object-mode slots maintain consistent disabled states so slot positions never shift.
 
 The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `_startGrab()` does not reset `stackMode`, so the pre-set is respected. `_confirmGrab()` and `_cancelGrab()` reset it to `false` when the grab ends.
 
-Face extrude on mobile is a gesture-only operation (tap → drag → release = confirm). No Extrude button is shown in Edit 3D.
-Grab on mobile is also a gesture (touch object → drag) — no toolbar button needed. Stack is an explicit constraint mode, so it has a dedicated toolbar button (Object mode: pre-grab toggle; Grab active mode: mid-grab toggle).
+Face extrude on mobile is a gesture-only operation (tap face → drag → release = confirm). No Extrude button is shown in Edit 3D.
+
+### Mobile Touch Gesture Model (2026-03-28)
+
+- **Principle**: On mobile, the primary navigation gesture (one-finger drag) must always orbit the camera. Intercepting it for object dragging makes navigation unreliable and forces two-step flows to do basic panning.
+- **Concrete Rule**: Touch (`e.pointerType === 'touch'`) in Object mode:
+  - **Quick tap on object** → selection (unchanged).
+  - **One-finger drag anywhere** → orbit via OrbitControls (no `_objDragging`, no rect selection).
+  - **Long press ≥ 400 ms, < 8 px movement on a *selected* object** → `_startGrab()`. Timer stored in `_longPress.{ timer, pointerId, startX, startY }`. Cancelled in `_onPointerMove` (threshold exceeded) or `_onPointerUp` (quick release).
+  - **Touch on empty space** → orbit (no rect selection started).
+  - Rect selection and `_objDragging` are mouse-only paths.
+
+```js
+// _longPress timer pattern (Object mode, touch hit):
+if (e.pointerType === 'touch') {
+  if (this._objSelected && this._selectedIds.has(obj.id)) {
+    this._longPress.timer = setTimeout(() => { this._startGrab() }, 400)
+  }
+  return  // no drag setup
+}
+```
 
 ### Measure Point Placement (Mobile: Hold-to-Snap, Release-to-Confirm)
 
@@ -282,7 +301,7 @@ Grab on mobile is also a gesture (touch object → drag) — no toolbar button n
 - **Principle**: When stacking objects, the Z position should be determined by what is physically below the grabbed object, not by cursor height.
 - **Concrete Rule**: Stack mode is toggled with **S** during grab (or the Stack toolbar button on mobile). When active, `_applyStackSnap()` runs after the normal movement each frame — both during `_grab.active` (G-key path) **and** during `_objDragging` (touch-drag path). It casts downward rays (`(0,0,-1)`) from **Z=10000** (not from the object's current bottom) from the 4 bottom-face corners + centroid, and finds the highest surface among non-grabbed objects. `zOffset = highestHitZ - gZMin`; if `|zOffset| >= 0.001`, all selected objects' vertex Z is shifted by `zOffset` so the bottom face rests exactly on that surface. The `_grab.stacking` flag tracks whether a snap surface was found this frame.
 - **Why ray origin must be HIGH_Z**: casting from `gZMin + ε` misses surfaces whose top face is *above* the grabbed object's current bottom (e.g. target is taller than where we're dragging from). Starting from Z=10000 ensures the ray finds the topmost surface at (x,y) regardless of current object height.
-- **Why _objDragging path**: on mobile, touch-dragging an object uses `_objDragging`, not `_grab.active`. Stack snap must be called in both paths or it silently does nothing on mobile.
+- **Why _objDragging path**: on desktop, mouse-dragging an object uses `_objDragging`, not `_grab.active`. Stack snap must be called in both paths. Note: touch no longer uses `_objDragging` (2026-03-28 — single-finger touch orbits; Grab via long-press uses `_grab.active`). The `_objDragging` path therefore only fires on desktop mouse drag.
 
 ### Viewport-Aware Z-Index and Positioning
 

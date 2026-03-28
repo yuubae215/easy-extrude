@@ -6,17 +6,20 @@
 
 /** SVG icon strings for the mobile toolbar. Pass as `icon` in setMobileToolbar buttons. */
 export const ICONS = {
-  add:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-  edit:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
-  delete:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
-  back:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`,
-  confirm: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
-  cancel:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
-  extrude: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="7"/><polyline points="6 13 12 7 18 13"/><rect x="4" y="19" width="16" height="3" rx="1.5" fill="currentColor" stroke="none"/></svg>`,
-  vertex:  `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>`,
-  edge:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="4" cy="12" r="3"/><circle cx="20" cy="12" r="3"/><rect x="7" y="11" width="10" height="2" rx="1"/></svg>`,
-  face:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>`,
-  stack:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="18" height="6" rx="1.5"/><rect x="5" y="8" width="14" height="5" rx="1"/><line x1="12" y1="3" x2="12" y2="8"/><polyline points="9 5 12 2 15 5"/></svg>`,
+  add:      `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  edit:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  duplicate:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>`,
+  delete:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
+  back:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`,
+  confirm:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  cancel:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+  extrude:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="7"/><polyline points="6 13 12 7 18 13"/><rect x="4" y="19" width="16" height="3" rx="1.5" fill="currentColor" stroke="none"/></svg>`,
+  vertex:   `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>`,
+  edge:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="4" cy="12" r="3"/><circle cx="20" cy="12" r="3"/><rect x="7" y="11" width="10" height="2" rx="1"/></svg>`,
+  face:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>`,
+  stack:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="18" height="6" rx="1.5"/><rect x="5" y="8" width="14" height="5" rx="1"/><line x1="12" y1="3" x2="12" y2="8"/><polyline points="9 5 12 2 15 5"/></svg>`,
+  undo:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>`,
+  redo:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4"/></svg>`,
 }
 
 export class UIView {
@@ -131,6 +134,31 @@ export class UIView {
     this._hamburgerBtn.setAttribute('aria-label', 'Toggle outliner')
     this._hamburgerBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`
     this._headerEl.appendChild(this._hamburgerBtn)
+
+    // ── Undo / Redo buttons (mobile only) ────────────────────────────────────
+    const _mkHistBtn = (icon, label) => {
+      const btn = document.createElement('button')
+      Object.assign(btn.style, {
+        padding: '5px 7px',
+        background: 'transparent',
+        border: '1px solid #3a3a3a',
+        borderRadius: '6px',
+        color: '#c0c0c0',
+        cursor: 'pointer',
+        lineHeight: '1',
+        display: 'none',   // shown only on mobile via _applyMobileLayout
+        flexShrink: '0',
+        alignItems: 'center',
+        justifyContent: 'center',
+      })
+      btn.setAttribute('aria-label', label)
+      btn.innerHTML = icon
+      return btn
+    }
+    this._undoBtn = _mkHistBtn(ICONS.undo, 'Undo')
+    this._redoBtn = _mkHistBtn(ICONS.redo, 'Redo')
+    this._headerEl.appendChild(this._undoBtn)
+    this._headerEl.appendChild(this._redoBtn)
 
     this._headerEl.appendChild(this._modeSelectorEl)
 
@@ -708,6 +736,75 @@ export class UIView {
   }
 
   /**
+   * Shows the first-run gesture hint overlay on mobile.
+   * Skipped if the user has already dismissed it (localStorage flag).
+   * The overlay auto-dismisses after 4 s or on any tap.
+   */
+  showOnboardingIfNeeded() {
+    if (!this._isMobile()) return
+    if (localStorage.getItem('ee_onboarded') === '1') return
+
+    const overlay = document.createElement('div')
+    Object.assign(overlay.style, {
+      position:        'fixed',
+      inset:           '0',
+      background:      'rgba(0,0,0,0.72)',
+      zIndex:          '500',
+      display:         'flex',
+      flexDirection:   'column',
+      alignItems:      'center',
+      justifyContent:  'center',
+      gap:             '28px',
+      padding:         '32px',
+      fontFamily:      'system-ui, -apple-system, sans-serif',
+      color:           '#e8e8e8',
+      userSelect:      'none',
+      WebkitUserSelect:'none',
+    })
+
+    const hints = [
+      { svg: `<svg width="44" height="44" viewBox="0 0 44 44" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round"><circle cx="22" cy="14" r="5"/><path d="M22 19 Q16 28 18 38"/><path d="M22 19 Q28 28 26 38"/></svg>`,  text: 'ドラッグ  →  視点回転' },
+      { svg: `<svg width="44" height="44" viewBox="0 0 44 44" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round"><circle cx="14" cy="14" r="4"/><circle cx="30" cy="14" r="4"/><path d="M14 18 Q14 32 14 36"/><path d="M30 18 Q30 32 30 36"/><path d="M10 24 L34 24" stroke-dasharray="3 3"/></svg>`, text: 'ピンチ  →  ズーム' },
+      { svg: `<svg width="44" height="44" viewBox="0 0 44 44" fill="none" stroke="#81c784" stroke-width="2" stroke-linecap="round"><circle cx="22" cy="22" r="7" stroke-dasharray="2 2"/><circle cx="22" cy="22" r="2" fill="#81c784" stroke="none"/><line x1="22" y1="6" x2="22" y2="14"/><line x1="22" y1="30" x2="22" y2="38"/><line x1="6" y1="22" x2="14" y2="22"/><line x1="30" y1="22" x2="38" y2="22"/></svg>`, text: 'タップ  →  オブジェクト選択' },
+      { svg: `<svg width="44" height="44" viewBox="0 0 44 44" fill="none" stroke="#ffb74d" stroke-width="2" stroke-linecap="round"><rect x="8" y="28" width="28" height="10" rx="2"/><circle cx="22" cy="14" r="5"/><line x1="22" y1="19" x2="22" y2="28"/></svg>`, text: '長押し  →  移動 (Grab)' },
+    ]
+
+    hints.forEach(({ svg, text }) => {
+      const row = document.createElement('div')
+      Object.assign(row.style, {
+        display: 'flex', alignItems: 'center', gap: '18px',
+        width: '100%', maxWidth: '280px',
+      })
+      const icon = document.createElement('div')
+      icon.innerHTML = svg
+      icon.style.flexShrink = '0'
+      const label = document.createElement('span')
+      label.textContent = text
+      Object.assign(label.style, { fontSize: '15px', lineHeight: '1.4' })
+      row.appendChild(icon)
+      row.appendChild(label)
+      overlay.appendChild(row)
+    })
+
+    const dismiss = document.createElement('div')
+    dismiss.textContent = 'タップして閉じる'
+    Object.assign(dismiss.style, {
+      marginTop: '8px', fontSize: '13px', color: '#888',
+    })
+    overlay.appendChild(dismiss)
+
+    const close = () => {
+      localStorage.setItem('ee_onboarded', '1')
+      overlay.remove()
+    }
+    overlay.addEventListener('pointerdown', close, { once: true })
+    const timer = setTimeout(close, 4000)
+    overlay.addEventListener('pointerdown', () => clearTimeout(timer), { once: true })
+
+    document.body.appendChild(overlay)
+  }
+
+  /**
    * Shows a brief toast notification at the bottom of the screen.
    * @param {string} message
    * @param {{ type?: 'info'|'warn'|'error', duration?: number }} [options]
@@ -901,6 +998,8 @@ export class UIView {
   _applyMobileLayout() {
     const mobile = this._isMobile()
     this._hamburgerBtn.style.display = mobile ? 'block' : 'none'
+    this._undoBtn.style.display = mobile ? 'flex' : 'none'
+    this._redoBtn.style.display = mobile ? 'flex' : 'none'
     this._nToggleBtn.style.display   = mobile ? 'block' : 'none'
     this._nToggleBtn.style.marginLeft = mobile ? 'auto' : ''
     this._mobileToolbarEl.style.display = mobile ? 'flex' : 'none'
@@ -947,6 +1046,27 @@ export class UIView {
 
   /** Registers callback for N-panel toggle button tap (mobile) */
   onNPanelToggle(cb) { this._nToggleBtn.addEventListener('click', cb) }
+
+  /** Registers undo callback for the mobile header undo button. */
+  onUndoClick(cb) { this._undoBtn.addEventListener('click', cb) }
+
+  /** Registers redo callback for the mobile header redo button. */
+  onRedoClick(cb) { this._redoBtn.addEventListener('click', cb) }
+
+  /**
+   * Updates the enabled/disabled visual state of the mobile undo/redo buttons.
+   * @param {boolean} canUndo
+   * @param {boolean} canRedo
+   */
+  setUndoRedoEnabled(canUndo, canRedo) {
+    const apply = (btn, enabled) => {
+      btn.style.color  = enabled ? '#c0c0c0' : '#484848'
+      btn.style.borderColor = enabled ? '#3a3a3a' : '#2a2a2a'
+      btn.style.cursor = enabled ? 'pointer' : 'default'
+    }
+    apply(this._undoBtn, canUndo)
+    apply(this._redoBtn, canRedo)
+  }
 
   /** Registers callback for Node Editor toggle button (header bar, Phase B) */
   onNodeEditorToggle(cb) { this._nodeEditorToggle = cb }
