@@ -224,25 +224,34 @@ this._handleEditClick(e.shiftKey)
 ### Interaction Confirmation Lifecycle
 
 - **Principle**: Continuous drag interactions must lock in their final value on release (`pointerup`), not on initial touch (`pointerdown`), to correctly capture the movement delta.
-- **Concrete Rule**: `_confirmFaceExtrude()` and `_confirmGrab()` (touch path) both belong in `_onPointerUp`. Only confirm if `_activeDragPointerId === e.pointerId` (meaning a canvas drag actually occurred). This prevents double-confirms when the user taps toolbar buttons. Do **not** move confirm back to `_onPointerDown`.
+- **Concrete Rule**: `_confirmFaceExtrude()` belongs in `_onPointerUp` (confirmed on finger-lift). **`_confirmGrab()` on touch is toolbar-only** — `_onPointerUp` does NOT call it; grab stays active across multiple drag segments until the user presses Confirm. Do **not** move `_confirmFaceExtrude()` to `_onPointerDown`.
 
-  For **Grab on touch**: `_onPointerDown` with `e.pointerType === 'touch'` sets `_activeDragPointerId` and returns (no immediate confirm). `_onPointerUp` calls `_confirmGrab()` when `wasDragging`. The toolbar Confirm button calls `_confirmGrab()` directly via `onClick`; its `pointerdown` is blocked by the canvas guard so `_activeDragPointerId` is never set for that path — no double-confirm.
+  For **Grab on touch**: each `_onPointerDown` with `e.pointerType === 'touch'` re-snapshots `_grab.segmentStartCorners` / `startPoint` / `dragPlane` from the current object position and camera, then sets `_activeDragPointerId`. `_onPointerUp` does nothing — grab stays active. The toolbar Confirm button calls `_confirmGrab()` directly; no double-confirm risk because `_activeDragPointerId` is never set for toolbar taps (canvas guard).
+
+  For **FaceExtrude on touch**: `_onPointerDown` sets `_activeDragPointerId`; `_onPointerUp` calls `_confirmFaceExtrude()` when `wasDragging`.
 
 ```js
-// _onPointerDown — touch grab path
+// _onPointerDown — touch grab path (re-snapshot segment start)
 if (this._grab.active && e.button === 0 && e.pointerType === 'touch') {
+  this._grab.segmentStartCorners = new Map(/* current corners of all selected */)
+  // also update startPoint, dragPlane, startMouse from current state
   this._activeDragPointerId = e.pointerId
-  return  // confirm on pointerup
+  return  // confirm via Confirm button only
 }
 
-// _onPointerUp
-const wasDragging = this._activeDragPointerId === e.pointerId
-if (wasDragging) this._activeDragPointerId = null
+// _onPointerUp — grab stays active
 if (this._grab.active) {
-  if (wasDragging) this._confirmGrab()
-  return
+  return  // do NOT call _confirmGrab() here
 }
 ```
+
+### Grab State: allStartCorners vs segmentStartCorners
+
+- **Principle**: A multi-drag grab (multiple finger-lift + re-touch cycles before confirming) needs two distinct corner snapshots: one for undo/cancel anchoring, and one for per-segment drag delta calculation.
+- **Concrete Rule**:
+  - `_grab.allStartCorners` — snapshot taken once in `_startGrab()`. Used by `_cancelGrab()` (restore to original) and `_confirmGrab()` (undo command "before" state). **Never updated mid-grab.**
+  - `_grab.segmentStartCorners` — snapshot taken in `_startGrab()` (initially = `allStartCorners`) **and re-taken on every touch re-down** during grab. Used by `_applyGrabDeltaToAll()` so the drag delta is measured from the current position, not the original. Updating only `segmentStartCorners` (not `allStartCorners`) ensures cancel/undo always revert to the pre-grab origin.
+  - `_applyGrabDeltaToAll(delta)` must iterate `segmentStartCorners`, not `allStartCorners`.
 
 ### Global Event vs. UI Event Delegation
 

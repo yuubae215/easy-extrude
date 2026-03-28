@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-28**: Bugfix — touch Grab confirmed on every finger-lift instead of waiting for Confirm button. `_onPointerUp` called `_confirmGrab()` whenever `wasDragging`; removed auto-confirm so grab stays active across multiple drag segments. Added `_grab.segmentStartCorners` (per-segment drag calculation anchor, re-snapshotted on each touch re-down) separate from `_grab.allStartCorners` (undo/cancel anchor, set once in `_startGrab`). `_applyGrabDeltaToAll` now uses `segmentStartCorners`. MENTAL_MODEL updated: "Interaction Confirmation Lifecycle" rule revised; new "Grab State: allStartCorners vs segmentStartCorners" rule added.
+
 - **2026-03-28**: Bugfix — mobile Grab mode immediately cancelled after long-press context menu. `_onPointerDown` was calling `_confirmGrab()` on the first canvas tap (`e.button === 0` is always true for touch), confirming at the starting position before any drag. Fixed: touch path sets `_activeDragPointerId` and defers confirmation to `_onPointerUp` (same pattern as face extrude). `AppController.js`; MENTAL_MODEL "Interaction Confirmation Lifecycle" rule extended to cover Grab on touch.
 
 - **2026-03-28**: Mobile UX Phase 2 + orbit control bugfix.
