@@ -834,9 +834,10 @@ export class AppController {
     this._measure.snapMeshView = (activeObj && _isSnapCapable(activeObj))
       ? activeObj.meshView
       : ([...this._scene.objects.values()].find(_isSnapCapable)?.meshView ?? null)
-    // On mobile, disable orbit so single-finger touch places measure points
-    // instead of orbiting the camera.
-    if (window.innerWidth < 768) this._controls.enabled = false
+    // On touch devices, disable orbit so single-finger touch places measure
+    // points instead of orbiting the camera.  Use (pointer: coarse) rather
+    // than innerWidth so that tablets and landscape phones are also covered.
+    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = false
     this._uiView.setCursor('crosshair')
     this._updateMeasureStatus()
     this._updateMobileToolbar()
@@ -859,7 +860,7 @@ export class AppController {
     }
     this._measure.snapMeshView?.clearSnapDisplay()
     this._measure.snapMeshView = null
-    if (window.innerWidth < 768) this._controls.enabled = true
+    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
@@ -902,7 +903,7 @@ export class AppController {
         document.body,
       )
       this._switchActiveObject(obj.id, true)
-      if (window.innerWidth < 768) this._controls.enabled = true
+      if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
       this._uiView.setCursor('default')
       this._refreshObjectModeStatus()
       this._updateMobileToolbar()
