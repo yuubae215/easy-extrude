@@ -265,7 +265,7 @@ if (e.target !== this._sceneView.renderer.domElement) return
 ### Input Method Mutually Exclusive States
 
 - **Principle**: Only disable global camera controls when a specific operation fully consumes the same input gesture (e.g. single-finger drag).
-- **Concrete Rule**: Do **not** set `_controls.enabled = false` for rect selection. Rect selection uses 1-finger/left-click; Orbit uses 2-finger/right-click — they are mutually exclusive inputs. Cancel rect selection only if a second touch arrives, then clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture. Only `_objDragging` and `_sketch.drawing` legitimately need `_controls.enabled = false`.
+- **Concrete Rule**: Do **not** set `_controls.enabled = false` for rect selection. Rect selection uses 1-finger/left-click; Orbit uses 2-finger/right-click — they are mutually exclusive inputs. Cancel rect selection only if a second touch arrives, then clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture. Operations that **do** need `_controls.enabled = false` on mobile (single-finger gesture conflicts): `_objDragging`, `_sketch.drawing`, and **Measure point placement** (`_measure.active`). `_startMeasurePlacement()` disables controls when `window.innerWidth < 768`; `_cancelMeasure()` and `_confirmMeasurePoint()` Phase 2 re-enable them.
 
 ---
 
