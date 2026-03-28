@@ -114,13 +114,13 @@ Candidate tasks:
 
 Mobile UX Phase 1 was completed 2026-03-28. Remaining items are grouped by phase.
 
-### Phase 2 — Core mobile operations
+### Phase 2 — Core mobile operations ✅ *2026-03-28*
 
 | Priority | Item | Complexity | Notes |
 |----------|------|-----------|-------|
-| 🟡 Medium | **Measure tool quick-access** — Measure ボタンをツールバーまたは Add の最上位に昇格。現状は Add メニュー奥に埋もれており発見しにくい | Low | Add メニュー UI 変更 or 専用ツールバー枠 |
-| 🟡 Medium | **Frame Rotate ボタン** — CoordinateFrame 選択中に Object モードツールバーを動的切替: `Rotate \| Grab \| Delete \| Add Frame`. R キー相当をモバイルで提供 | Low | `_updateMobileToolbar()` の型条件分岐を拡張 |
-| 🟡 Medium | **長押しコンテキストメニュー** — 長押し 400 ms 後に「Grab / Duplicate / Delete / Rename」のポップアップを表示。選択済みオブジェクト上の長押し現在は直接 Grab 起動するが、複数操作を選ばせる UI に格上げ | Medium | `_longPress` タイマーを流用; ポップアップ DOM を UIView に追加 |
+| ✅ | **Measure tool quick-access** — Add メニューの先頭に Measure を昇格。`showAddMenu` のアイテム順を Measure → Box → Sketch → Frame → Import STEP に変更。 | Low | `UIView.showAddMenu` アイテム並び替え |
+| ✅ | **Frame Rotate ボタン** — CoordinateFrame 選択中は Object モードツールバーを専用 5 スロットに切替: `Rotate \| Grab \| Delete \| Add Frame \| spacer`. `ICONS.rotate`, `ICONS.grab`, `ICONS.frame` を追加。 | Low | `_updateMobileToolbar()` の CoordinateFrame 分岐 |
+| ✅ | **長押しコンテキストメニュー** — 長押し 400 ms 後に「Grab / Duplicate / Delete / Rename」のポップアップを表示。`UIView.showContextMenu(x,y,items)` + `UIView.hideContextMenu()` + `UIView.showRenameDialog(name,cb)` 追加。`_showLongPressContextMenu(x,y,obj)` がメニューを組み立て。 | Medium | `_longPress` タイマーを流用 |
 
 ### Phase 3 — Advanced touch controls
 

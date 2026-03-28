@@ -1284,6 +1284,47 @@ export class AppController {
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────
 
+  /**
+   * Shows the long-press context menu near the touch point.
+   * Items vary by object type — only operations valid for `obj` are listed.
+   * @param {number} x - client X of the touch
+   * @param {number} y - client Y of the touch
+   * @param obj - the domain entity that was long-pressed
+   */
+  _showLongPressContextMenu(x, y, obj) {
+    const id = obj.id
+    const canDup = !(obj instanceof ImportedMesh) && !(obj instanceof Profile)
+    const items = [
+      {
+        label: 'Grab',
+        onClick: () => this._startGrab(),
+      },
+      ...(canDup ? [{
+        label: 'Duplicate',
+        onClick: () => this._duplicateObject(),
+      }] : []),
+      {
+        label: 'Rename',
+        onClick: () => this._promptRename(id),
+      },
+      {
+        label: 'Delete',
+        danger: true,
+        onClick: () => this._deleteObject(id),
+      },
+    ]
+    this._uiView.showContextMenu(x, y, items)
+  }
+
+  /** Opens the rename prompt for the given object id (shared helper). */
+  _promptRename(id) {
+    const obj = this._scene.getObject(id)
+    if (!obj) return
+    this._uiView.showRenameDialog(obj.name, (name) => {
+      if (name) this._renameObject(id, name)
+    })
+  }
+
   /** Syncs the enabled/disabled state of the mobile header Undo/Redo buttons. */
   _refreshUndoRedoState() {
     this._uiView.setUndoRedoEnabled(
@@ -1319,9 +1360,22 @@ export class AppController {
     }
 
     if (mode === 'object') {
+      const hasObj = this._objSelected
+
+      // CoordinateFrame gets a specialised toolbar: Rotate | Grab | Delete | Add Frame
+      if (hasObj && this._activeObj instanceof CoordinateFrame) {
+        this._uiView.setMobileToolbar([
+          { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._startRotate() },
+          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
+          { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
+          { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._addObject('frame') },
+          { spacer: true },
+        ])
+        return
+      }
+
       // 5-slot layout: Add | Dup | Edit | Delete | Stack
       // All slots always present; unavailable actions are disabled to prevent layout shifts.
-      const hasObj   = this._objSelected
       const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile)
       const canEdit  = canDup
       const canStack = hasObj
@@ -3205,7 +3259,7 @@ export class AppController {
         if (e.pointerType === 'touch') {
           // On touch, single-finger drag always orbits.
           // A long press (≥ 400 ms, < 8 px movement) on a selected object
-          // starts Grab so the user can reposition it.
+          // opens a context menu with common actions (Grab, Duplicate, Delete, Rename).
           if (this._objSelected && this._selectedIds.has(obj.id)) {
             this._longPress.pointerId = e.pointerId
             this._longPress.startX    = e.clientX
@@ -3214,7 +3268,11 @@ export class AppController {
               this._longPress.timer = null
               if (this._longPress.pointerId === e.pointerId) {
                 this._longPress.pointerId = null
-                this._startGrab()
+                this._showLongPressContextMenu(
+                  this._longPress.startX,
+                  this._longPress.startY,
+                  obj,
+                )
               }
             }, 400)
           }

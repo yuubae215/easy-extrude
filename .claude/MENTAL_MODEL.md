@@ -257,7 +257,8 @@ if (e.target !== this._sceneView.renderer.domElement) return
 
 | Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 | Slot 5 |
 |------|--------|--------|--------|--------|--------|
-| Object | Add | Dup | Edit | Delete | Stack |
+| Object (generic) | Add | Dup | Edit | Delete | Stack |
+| Object (CoordinateFrame selected) | Rotate | Grab | Delete | Add Frame | *(spacer)* |
 | Edit 2D sketch | ← Object | Extrude | *(spacer)* | *(spacer)* | — |
 | Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* | — |
 | Edit 3D | ← Object | Vertex | Edge | Face | — |
@@ -267,29 +268,45 @@ if (e.target !== this._sceneView.renderer.domElement) return
 
 Dup, Edit, and Stack are disabled for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`. Dup is additionally disabled for `Profile`. Delete remains enabled for all object types. All Object-mode slots maintain consistent disabled states so slot positions never shift.
 
+**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout (Rotate|Grab|Delete|Add Frame|spacer) rather than disabling individual generic slots.
+
 The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `_startGrab()` does not reset `stackMode`, so the pre-set is respected. `_confirmGrab()` and `_cancelGrab()` reset it to `false` when the grab ends.
 
 Face extrude on mobile is a gesture-only operation (tap face → drag → release = confirm). No Extrude button is shown in Edit 3D.
 
-### Mobile Touch Gesture Model (2026-03-28)
+### Mobile Touch Gesture Model (2026-03-28, updated Phase 2)
 
 - **Principle**: On mobile, the primary navigation gesture (one-finger drag) must always orbit the camera. Intercepting it for object dragging makes navigation unreliable and forces two-step flows to do basic panning.
 - **Concrete Rule**: Touch (`e.pointerType === 'touch'`) in Object mode:
   - **Quick tap on object** → selection (unchanged).
   - **One-finger drag anywhere** → orbit via OrbitControls (no `_objDragging`, no rect selection).
-  - **Long press ≥ 400 ms, < 8 px movement on a *selected* object** → `_startGrab()`. Timer stored in `_longPress.{ timer, pointerId, startX, startY }`. Cancelled in `_onPointerMove` (threshold exceeded) or `_onPointerUp` (quick release).
+  - **Long press ≥ 400 ms, < 8 px movement on a *selected* object** → `_showLongPressContextMenu()` with options Grab / Duplicate / Delete / Rename. Timer stored in `_longPress.{ timer, pointerId, startX, startY }`. Cancelled in `_onPointerMove` (threshold exceeded) or `_onPointerUp` (quick release).
   - **Touch on empty space** → orbit (no rect selection started).
   - Rect selection and `_objDragging` are mouse-only paths.
+- **OrbitControls config**: `touches.ONE` must be `THREE.TOUCH.ROTATE` (not `null`). AppController returns early for touch so OrbitControls gets all single-finger events.
 
 ```js
 // _longPress timer pattern (Object mode, touch hit):
 if (e.pointerType === 'touch') {
   if (this._objSelected && this._selectedIds.has(obj.id)) {
-    this._longPress.timer = setTimeout(() => { this._startGrab() }, 400)
+    this._longPress.timer = setTimeout(() => {
+      this._showLongPressContextMenu(startX, startY, obj)
+    }, 400)
   }
   return  // no drag setup
 }
 ```
+
+### Long-Press Context Menu
+
+- **Principle**: A single long-press action (previously direct Grab) is too opaque for first-time users. Presenting a small action popup provides discovery and reduces misfire risk.
+- **Concrete Rule**: `_showLongPressContextMenu(x, y, obj)` calls `UIView.showContextMenu(x, y, items)`. Items shown depend on entity type:
+  - **Grab** — always shown (all non-MeasureLine/non-CoordinateFrame objects can be grabbed).
+  - **Duplicate** — hidden for `ImportedMesh` and `Profile` (read-only or un-extruded).
+  - **Rename** — always shown (calls `_promptRename(id)` → `UIView.showRenameDialog()`).
+  - **Delete** — always shown (danger style).
+- `UIView.showContextMenu` is dismissed on any outside `pointerdown` via a one-shot handler. `UIView.hideContextMenu()` is safe to call multiple times.
+- `UIView.showRenameDialog(currentName, callback)` renders an inline modal (not `window.prompt`) with an auto-focused input, OK/Cancel buttons, and Enter/Escape keyboard support.
 
 ### Measure Point Placement (Mobile: Hold-to-Snap, Release-to-Confirm)
 

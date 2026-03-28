@@ -20,6 +20,10 @@ export const ICONS = {
   stack:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="18" height="6" rx="1.5"/><rect x="5" y="8" width="14" height="5" rx="1"/><line x1="12" y1="3" x2="12" y2="8"/><polyline points="9 5 12 2 15 5"/></svg>`,
   undo:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>`,
   redo:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4"/></svg>`,
+  rotate:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6"/><path d="M21.34 15.57a10 10 0 1 1-.57-8.38"/></svg>`,
+  measure:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="3"/><line x1="3" y1="13" x2="7" y2="13"/><line x1="7" y1="9" x2="11" y2="9"/><line x1="11" y1="5" x2="15" y2="5"/></svg>`,
+  frame:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><line x1="12" y1="12" x2="19" y2="12" stroke="#e05252"/><line x1="12" y1="12" x2="8.5" y2="8.5" stroke="#52e052"/><line x1="12" y1="12" x2="12" y2="5" stroke="#5252e0"/></svg>`,
+  grab:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M6 14a4 4 0 0 0 2.83 3.83L10 18h4l1.17-.17A4 4 0 0 0 18 14v-2H6v2z"/></svg>`,
 }
 
 export class UIView {
@@ -629,9 +633,9 @@ export class UIView {
     menu.appendChild(title)
 
     const items = [
+      ...(onMeasure    ? [{ label: 'Measure',          hint: 'M', cb: onMeasure }]    : []),
       { label: 'Box',              hint: 'Shift+A', cb: onBox },
       { label: 'Sketch',           hint: '',        cb: onSketch },
-      ...(onMeasure    ? [{ label: 'Measure',          hint: 'M', cb: onMeasure }]    : []),
       ...(onFrame      ? [{ label: 'Coordinate Frame', hint: '',  cb: onFrame }]      : []),
       ...(onImportStep ? [{ label: 'Import STEP',      hint: '',  cb: onImportStep }] : []),
     ]
@@ -682,6 +686,159 @@ export class UIView {
       document.removeEventListener('click', this._addMenuCloseHandler)
       this._addMenuCloseHandler = null
     }
+  }
+
+  /**
+   * Shows a floating context menu near (x, y).
+   * `items` is an array of `{ label, onClick, danger? }`.
+   * Automatically dismissed on outside tap/click.
+   * @param {number} x - client X
+   * @param {number} y - client Y
+   * @param {Array<{label: string, onClick: () => void, danger?: boolean}>} items
+   */
+  showContextMenu(x, y, items) {
+    this.hideContextMenu()
+    const menu = document.createElement('div')
+    Object.assign(menu.style, {
+      position: 'fixed',
+      background: '#2b2b2b',
+      border: '1px solid #555',
+      borderRadius: '10px',
+      zIndex: '400',
+      minWidth: '160px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+      overflow: 'hidden',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+    })
+    items.forEach(({ label, onClick, danger = false }) => {
+      const item = document.createElement('button')
+      Object.assign(item.style, {
+        display: 'block',
+        width: '100%',
+        padding: '13px 18px',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        color: danger ? '#e74c3c' : '#e8e8e8',
+        cursor: 'pointer',
+        fontSize: '15px',
+        textAlign: 'left',
+        fontFamily: 'inherit',
+      })
+      item.textContent = label
+      item.addEventListener('pointerdown', (e) => { e.stopPropagation() })
+      item.addEventListener('click', () => { this.hideContextMenu(); onClick() })
+      menu.appendChild(item)
+    })
+    // Remove bottom border from last item
+    if (menu.lastElementChild) menu.lastElementChild.style.borderBottom = 'none'
+
+    // Position: prefer above finger, shift left so it doesn't clip right edge
+    const W = window.innerWidth, H = window.innerHeight
+    const estH = items.length * 50
+    const left = Math.min(x - 80, W - 180)
+    const top  = y - estH - 12 < 40 ? y + 12 : y - estH - 12
+    menu.style.left = `${Math.max(8, left)}px`
+    menu.style.top  = `${Math.max(48, top)}px`
+
+    document.body.appendChild(menu)
+    this._contextMenuEl = menu
+
+    this._contextMenuCloseHandler = (e) => {
+      if (!menu.contains(e.target)) this.hideContextMenu()
+    }
+    setTimeout(() => document.addEventListener('pointerdown', this._contextMenuCloseHandler), 0)
+  }
+
+  /** Removes the context menu if visible */
+  hideContextMenu() {
+    if (this._contextMenuEl) {
+      this._contextMenuEl.remove()
+      this._contextMenuEl = null
+    }
+    if (this._contextMenuCloseHandler) {
+      document.removeEventListener('pointerdown', this._contextMenuCloseHandler)
+      this._contextMenuCloseHandler = null
+    }
+  }
+
+  /**
+   * Shows a small inline rename dialog with the given current name pre-filled.
+   * Calls `callback(newName)` when confirmed; calls `callback(null)` on cancel.
+   * @param {string} currentName
+   * @param {(name: string|null) => void} callback
+   */
+  showRenameDialog(currentName, callback) {
+    const overlay = document.createElement('div')
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: '0',
+      background: 'rgba(0,0,0,0.55)',
+      zIndex: '500',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    })
+
+    const box = document.createElement('div')
+    Object.assign(box.style, {
+      background: '#2b2b2b',
+      border: '1px solid #555',
+      borderRadius: '12px',
+      padding: '20px 20px 16px',
+      minWidth: '260px',
+      maxWidth: '90vw',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+    })
+
+    const title = document.createElement('div')
+    title.textContent = 'Rename'
+    Object.assign(title.style, { color: '#aaa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' })
+
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.value = currentName
+    Object.assign(input.style, {
+      display: 'block', width: '100%', boxSizing: 'border-box',
+      background: '#1e1e1e', border: '1px solid #555', borderRadius: '6px',
+      color: '#e8e8e8', fontSize: '15px', padding: '8px 10px',
+      fontFamily: 'inherit', outline: 'none', marginBottom: '14px',
+    })
+
+    const row = document.createElement('div')
+    Object.assign(row.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' })
+
+    const mkBtn = (text, primary) => {
+      const b = document.createElement('button')
+      b.textContent = text
+      Object.assign(b.style, {
+        padding: '8px 18px', borderRadius: '7px', border: 'none', cursor: 'pointer',
+        fontSize: '14px', fontFamily: 'inherit',
+        background: primary ? '#4fc3f7' : 'rgba(255,255,255,0.08)',
+        color: primary ? '#111' : '#d8d8d8',
+        fontWeight: primary ? '600' : '400',
+      })
+      return b
+    }
+    const btnCancel = mkBtn('Cancel', false)
+    const btnOk     = mkBtn('OK', true)
+    row.appendChild(btnCancel)
+    row.appendChild(btnOk)
+
+    box.appendChild(title)
+    box.appendChild(input)
+    box.appendChild(row)
+    overlay.appendChild(box)
+    document.body.appendChild(overlay)
+
+    const close = (val) => { overlay.remove(); callback(val) }
+    btnCancel.addEventListener('click', () => close(null))
+    btnOk.addEventListener('click',     () => close(input.value.trim() || currentName))
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); close(input.value.trim() || currentName) }
+      if (e.key === 'Escape') { close(null) }
+    })
+
+    requestAnimationFrame(() => { input.focus(); input.select() })
   }
 
   /**

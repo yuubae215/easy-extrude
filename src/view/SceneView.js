@@ -25,8 +25,9 @@ export class SceneView {
     this.controls.enableDamping = false
     // Left button is reserved for object/face operations; right button orbits the camera
     this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
-    // Touch: 1-finger is reserved for edit actions; 2-finger orbit+zoom
-    this.controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE }
+    // Touch: 1-finger orbits (AppController returns early for touch to let
+    // OrbitControls handle it); 2-finger dolly+rotate
+    this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }
 
     // Prevent browser scroll/pan interference on the canvas
     this.renderer.domElement.style.touchAction = 'none'

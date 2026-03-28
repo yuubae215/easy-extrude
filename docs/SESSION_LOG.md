@@ -4,6 +4,12 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-28**: Mobile UX Phase 2 + orbit control bugfix.
+  - **Bugfix — single-finger orbit**: `SceneView.controls.touches.ONE` was `null` (OrbitControls silently ignoring single-finger touch). Phase 1 updated AppController to return early for touch, but forgot to set `ONE: THREE.TOUCH.ROTATE`. Fixed in `SceneView.js`.
+  - **Phase 2-A — Measure quick-access**: `UIView.showAddMenu` items reordered: Measure first, then Box, Sketch, Frame, Import STEP. Measure is now the most visible item in the Add menu.
+  - **Phase 2-B — Frame Rotate button**: When a `CoordinateFrame` is selected, `_updateMobileToolbar()` now switches to a specialised 5-slot layout: `Rotate | Grab | Delete | Add Frame | spacer`. New icons: `ICONS.rotate`, `ICONS.grab`, `ICONS.frame`. MENTAL_MODEL toolbar table updated.
+  - **Phase 2-C — Long-press context menu**: Long press (≥ 400 ms, < 8 px) on a selected object now opens a floating `UIView.showContextMenu(x, y, items)` popup with options: Grab / Duplicate (Solid only) / Rename / Delete. Previously triggered `_startGrab()` directly. New methods: `UIView.showContextMenu`, `UIView.hideContextMenu`, `UIView.showRenameDialog(currentName, cb)` (inline modal, not `window.prompt`). `AppController._showLongPressContextMenu(x, y, obj)` assembles the items. `AppController._promptRename(id)` shared rename helper. MENTAL_MODEL updated with new "Long-Press Context Menu" rule.
+
 - **2026-03-28**: Mobile UX Phase 1 — Undo/Redo buttons, Duplicate, Onboarding overlay, tap=orbit interaction model.
   - **A-1 Undo/Redo header buttons**: `UIView` gains `_undoBtn`/`_redoBtn` (mobile-only, shown via `_applyMobileLayout`), `onUndoClick`/`onRedoClick` callbacks, and `setUndoRedoEnabled(canUndo, canRedo)`. `AppController._refreshUndoRedoState()` called from `_updateMobileToolbar()` and the Ctrl+Z/Y keyboard handler.
   - **A-2 Duplicate button**: Object mode toolbar expanded from 4 → 5 slots (`Add | Dup | Edit | Delete | Stack`). `ICONS.duplicate` SVG added. Dup disabled for `Profile`, `ImportedMesh`, `MeasureLine`, `CoordinateFrame`.
