@@ -224,12 +224,24 @@ this._handleEditClick(e.shiftKey)
 ### Interaction Confirmation Lifecycle
 
 - **Principle**: Continuous drag interactions must lock in their final value on release (`pointerup`), not on initial touch (`pointerdown`), to correctly capture the movement delta.
-- **Concrete Rule**: `_confirmFaceExtrude()` belongs in `_onPointerUp`. Only confirm if `_activeDragPointerId === e.pointerId` (meaning a canvas drag actually occurred). This prevents double-confirms when the user taps toolbar buttons. Do **not** move confirm back to `_onPointerDown`.
+- **Concrete Rule**: `_confirmFaceExtrude()` and `_confirmGrab()` (touch path) both belong in `_onPointerUp`. Only confirm if `_activeDragPointerId === e.pointerId` (meaning a canvas drag actually occurred). This prevents double-confirms when the user taps toolbar buttons. Do **not** move confirm back to `_onPointerDown`.
+
+  For **Grab on touch**: `_onPointerDown` with `e.pointerType === 'touch'` sets `_activeDragPointerId` and returns (no immediate confirm). `_onPointerUp` calls `_confirmGrab()` when `wasDragging`. The toolbar Confirm button calls `_confirmGrab()` directly via `onClick`; its `pointerdown` is blocked by the canvas guard so `_activeDragPointerId` is never set for that path — no double-confirm.
 
 ```js
+// _onPointerDown — touch grab path
+if (this._grab.active && e.button === 0 && e.pointerType === 'touch') {
+  this._activeDragPointerId = e.pointerId
+  return  // confirm on pointerup
+}
+
+// _onPointerUp
 const wasDragging = this._activeDragPointerId === e.pointerId
 if (wasDragging) this._activeDragPointerId = null
-if (this._faceExtrude.active && wasDragging) { this._confirmFaceExtrude(); return }
+if (this._grab.active) {
+  if (wasDragging) this._confirmGrab()
+  return
+}
 ```
 
 ### Global Event vs. UI Event Delegation

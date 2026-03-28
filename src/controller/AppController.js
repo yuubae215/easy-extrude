@@ -3182,7 +3182,17 @@ export class AppController {
         if (e.button === 2) { this._cancelPivotSelect();  return }
         return
       }
-      if (e.button === 0) { this._confirmGrab(); return }
+      if (e.button === 0) {
+        if (e.pointerType === 'touch') {
+          // On touch: start a drag so pointermove updates position; confirm on pointerup.
+          // Without this, the first canvas tap after entering grab via the long-press
+          // context menu immediately confirms at the starting position.
+          this._activeDragPointerId = e.pointerId
+          return
+        }
+        this._confirmGrab()
+        return
+      }
       if (e.button === 2) { this._cancelGrab();  return }
       return
     }
@@ -3375,6 +3385,13 @@ export class AppController {
     // wasDragging: a canvas drag started for this pointer (via _onPointerDown)
     const wasDragging = this._activeDragPointerId === e.pointerId
     if (wasDragging) this._activeDragPointerId = null
+    if (this._grab.active) {
+      // Touch grab: confirm on release (pointerdown only started the drag).
+      // Toolbar Confirm button calls _confirmGrab() directly; wasDragging is false
+      // for that path (toolbar tap never sets _activeDragPointerId), so no double-confirm.
+      if (wasDragging) this._confirmGrab()
+      return
+    }
     if (this._faceExtrude.active) {
       // Only confirm when a canvas drag was started; prevents double-confirm
       // when the mobile Confirm toolbar button fires both pointerup and click.
