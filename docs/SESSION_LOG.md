@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-28**: Bugfix — mobile Grab mode immediately cancelled after long-press context menu. `_onPointerDown` was calling `_confirmGrab()` on the first canvas tap (`e.button === 0` is always true for touch), confirming at the starting position before any drag. Fixed: touch path sets `_activeDragPointerId` and defers confirmation to `_onPointerUp` (same pattern as face extrude). `AppController.js`; MENTAL_MODEL "Interaction Confirmation Lifecycle" rule extended to cover Grab on touch.
+
 - **2026-03-28**: Mobile UX Phase 2 + orbit control bugfix.
   - **Bugfix — single-finger orbit**: `SceneView.controls.touches.ONE` was `null` (OrbitControls silently ignoring single-finger touch). Phase 1 updated AppController to return early for touch, but forgot to set `ONE: THREE.TOUCH.ROTATE`. Fixed in `SceneView.js`.
   - **Phase 2-A — Measure quick-access**: `UIView.showAddMenu` items reordered: Measure first, then Box, Sketch, Frame, Import STEP. Measure is now the most visible item in the Add menu.
