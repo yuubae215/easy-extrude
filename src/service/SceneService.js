@@ -40,7 +40,7 @@ import { createInitialCorners } from '../model/CuboidModel.js'
 import { Vertex } from '../graph/Vertex.js'
 import { Edge }   from '../graph/Edge.js'
 import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
-import { serializeScene } from './SceneSerializer.js'
+import { serializeScene, base64ToF32, base64ToU32 } from './SceneSerializer.js'
 import { ImportedMesh } from '../domain/ImportedMesh.js'
 import { ImportedMeshView } from '../view/ImportedMeshView.js'
 import { MeasureLine } from '../domain/MeasureLine.js'
@@ -297,6 +297,19 @@ export class SceneService extends EventEmitter {
         const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
         const entity   = new MeasureLine(dto.id, dto.name, [v0, v1], [e0], meshView)
         meshView.update(entity.p1, entity.p2)
+        entities.push(entity)
+      } else if (dto.type === 'ImportedMesh') {
+        const meshView  = new ImportedMeshView(this._threeScene)
+        const entity    = new ImportedMesh(dto.id, dto.name, meshView)
+        const positions = base64ToF32(dto.positions)
+        const normals   = dto.normals  ? base64ToF32(dto.normals)  : null
+        const indices   = dto.indices  ? base64ToU32(dto.indices)  : null
+        meshView.updateGeometryBuffers(positions, normals, indices)
+        if (dto.offset) {
+          meshView.cuboid.position.set(dto.offset.x, dto.offset.y, dto.offset.z)
+          meshView.updateBoxHelper()
+        }
+        entity.initCorners(meshView.getInitialCorners8())
         entities.push(entity)
       } else if (dto.type === 'CoordinateFrame') {
         const meshView = new CoordinateFrameView(this._threeScene)

@@ -134,6 +134,26 @@ export class ImportedMeshView {
     this.boxHelper.update()
   }
 
+  /**
+   * Returns the raw geometry buffers and current position offset for serialization.
+   * positions / normals are Float32Array; indices is Uint32Array (may be null).
+   * offset is the current cuboid.position (world-space translation applied via updateGeometry).
+   * @returns {{ positions: Float32Array, normals: Float32Array|null, indices: Uint32Array|null, offset: {x:number,y:number,z:number} } | null}
+   */
+  getGeometryBuffers() {
+    const posAttr = this._geo.attributes.position
+    if (!posAttr) return null
+    const nrmAttr  = this._geo.attributes.normal ?? null
+    const idxAttr  = this._geo.index ?? null
+    const pos      = this.cuboid.position
+    return {
+      positions: new Float32Array(posAttr.array),
+      normals:   nrmAttr ? new Float32Array(nrmAttr.array) : null,
+      indices:   idxAttr ? new Uint32Array(idxAttr.array)  : null,
+      offset:    { x: pos.x, y: pos.y, z: pos.z },
+    }
+  }
+
   // ── Visual state ────────────────────────────────────────────────────────────
 
   /** Shows or hides the mesh. */
@@ -146,12 +166,12 @@ export class ImportedMeshView {
     this.boxHelper.visible = sel
   }
 
-  // ── Snap targets (bounding-box based) ──────────────────────────────────────
+  // ── Snap targets ────────────────────────────────────────────────────────────
 
   /**
-   * Returns snap targets derived from the bounding box of the imported mesh.
-   * Snap types mirror those of Cuboid: corners → 'vertex', edge midpoints → 'edge',
-   * face centers → 'face'.
+   * Returns snap targets for the imported mesh.
+   * Vertices: actual geometry vertex positions (world space).
+   * Edges / Faces: bounding-box midpoints and centers (AABB approximation).
    * @param {string} name  Object name used for target labels
    * @param {{ doVert: boolean, doEdge: boolean, doFace: boolean }} modes
    * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
@@ -172,20 +192,20 @@ export class ImportedMeshView {
     const targets = []
 
     if (doVert) {
-      // 8 bounding-box corners
-      for (let xi = 0; xi < 2; xi++) {
-        for (let yi = 0; yi < 2; yi++) {
-          for (let zi = 0; zi < 2; zi++) {
-            targets.push({
-              label: `${name} Vertex`,
-              position: new THREE.Vector3(
-                xi ? mxx : mnx,
-                yi ? mxy : mny,
-                zi ? mxz : mnz,
-              ),
-              type: 'vertex',
-            })
-          }
+      // Actual mesh vertex positions (world space) from the geometry buffer.
+      const posAttr = this._geo.attributes.position
+      if (posAttr) {
+        const ox = off.x, oy = off.y, oz = off.z
+        for (let i = 0, n = posAttr.count; i < n; i++) {
+          targets.push({
+            label:    `${name} Vertex`,
+            position: new THREE.Vector3(
+              posAttr.getX(i) + ox,
+              posAttr.getY(i) + oy,
+              posAttr.getZ(i) + oz,
+            ),
+            type: 'vertex',
+          })
         }
       }
     }
