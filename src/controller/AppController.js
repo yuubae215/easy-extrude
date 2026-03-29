@@ -1729,6 +1729,7 @@ export class AppController {
     this._uiView.updateMode('edit', '2d-extrude')
     this._updateExtrudePhaseStatus()
     this._updateMobileToolbar()
+    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = false
   }
 
   _applyExtrudePreview() {
@@ -1779,6 +1780,7 @@ export class AppController {
       { text: 'Extruded', color: '#6ab04c' },
       { text: 'Edit Mode · 3D', bold: true, color: '#e8e8e8' },
     ])
+    this._controls.enabled = true
     this._cleanupEditSubstate()
     this._enterEditMode3D()
   }
@@ -1793,6 +1795,7 @@ export class AppController {
     this._extrudePhase.hasInput = false
     this._extrudePhase.inputStr = ''
     this._extrudePhase.height = 0
+    this._controls.enabled = true
     this._enterEditMode2D()
   }
 
@@ -3258,6 +3261,12 @@ export class AppController {
     if (e.button !== 0) return
     this._updateMouse(e)
 
+    // ── 2D extrude height drag ────────────────────────────────────────────
+    if (this._scene.editSubstate === '2d-extrude') {
+      this._activeDragPointerId = e.pointerId
+      return
+    }
+
     // ── Sketch drawing ────────────────────────────────────────────────────
     if (this._scene.editSubstate === '2d-sketch') {
       const pt = new THREE.Vector3()
@@ -3384,7 +3393,7 @@ export class AppController {
     // Mobile: auto-start face extrude immediately after a face tap, so the
     // user can drag to set the distance without pressing the Extrude button.
     // (Only fires when a face was selected without Shift — not for multi-select.)
-    if (window.innerWidth < 768 &&
+    if (window.matchMedia('(pointer: coarse)').matches &&
         this._scene.editSubstate === '3d' &&
         this._editSelectMode === 'face' &&
         !e.shiftKey) {

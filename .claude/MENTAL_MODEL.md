@@ -219,7 +219,7 @@ this._handleEditClick(e.shiftKey)
 ### Gesture-Based Interaction Priority (Mobile)
 
 - **Principle**: Mobile interactions should prioritize combined gesture flows (tap + drag) over multi-step button clicks for primary spatial actions.
-- **Concrete Rule**: On mobile (`innerWidth < 768`), tapping a face in Edit 3D auto-starts extrude. In `_onPointerDown`, after `_handleEditClick`, call `_startFaceExtrude(face)` and set `_activeDragPointerId`. The auto-start fires only when: `editSubstate === '3d'`, `_editSelectMode === 'face'`, `!e.shiftKey`, and at least one Face is in `editSelection` after the click. Face extrude is a gesture-only operation — there is no Extrude toolbar button in Edit 3D.
+- **Concrete Rule**: On touch devices (`matchMedia('(pointer: coarse)')`), tapping a face in Edit 3D auto-starts extrude. In `_onPointerDown`, after `_handleEditClick`, call `_startFaceExtrude(face)` and set `_activeDragPointerId`. The auto-start fires only when: `editSubstate === '3d'`, `_editSelectMode === 'face'`, `!e.shiftKey`, and at least one Face is in `editSelection` after the click. Face extrude is a gesture-only operation — there is no Extrude toolbar button in Edit 3D.
 
 ### Interaction Confirmation Lifecycle
 
@@ -265,7 +265,7 @@ if (e.target !== this._sceneView.renderer.domElement) return
 ### Input Method Mutually Exclusive States
 
 - **Principle**: Only disable global camera controls when a specific operation fully consumes the same input gesture (e.g. single-finger drag).
-- **Concrete Rule**: Do **not** set `_controls.enabled = false` for rect selection. Rect selection uses 1-finger/left-click; Orbit uses 2-finger/right-click — they are mutually exclusive inputs. Cancel rect selection only if a second touch arrives, then clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture. Operations that **do** need `_controls.enabled = false` on mobile (single-finger gesture conflicts): `_objDragging`, `_sketch.drawing`, and **Measure point placement** (`_measure.active`). `_startMeasurePlacement()` disables controls when `window.matchMedia('(pointer: coarse)').matches`; `_cancelMeasure()` and `_confirmMeasurePoint()` Phase 2 re-enable them. **Do NOT use `window.innerWidth < 768` for this check** — iPads report `innerWidth = 768` in portrait (not `< 768`), and large phones in landscape may exceed 768 px, leaving OrbitControls erroneously active on those devices.
+- **Concrete Rule**: Do **not** set `_controls.enabled = false` for rect selection. Rect selection uses 1-finger/left-click; Orbit uses 2-finger/right-click — they are mutually exclusive inputs. Cancel rect selection only if a second touch arrives, then clear `_activeDragPointerId` so OrbitControls can take over the two-finger gesture. Operations that **do** need `_controls.enabled = false` on mobile (single-finger gesture conflicts): `_objDragging`, `_sketch.drawing`, **Measure point placement** (`_measure.active`), and **2D extrude height drag** (`editSubstate === '2d-extrude'`). `_enterExtrudePhase()` disables controls when `window.matchMedia('(pointer: coarse)').matches`; `_confirmExtrudePhase()` and `_cancelExtrudePhase()` re-enable unconditionally. `_onPointerDown` for `2d-extrude` sets `_activeDragPointerId` and returns early to prevent sub-element selection logic from running. **Do NOT use `window.innerWidth < 768` for any OrbitControls check** — iPads report `innerWidth = 768` in portrait (not `< 768`), and large phones in landscape may exceed 768 px, leaving OrbitControls erroneously active on those devices.
 
 ---
 
