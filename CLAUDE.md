@@ -31,7 +31,11 @@ Before writing or modifying any code, consult the relevant documents.
 | object / hierarchy / 1D / 2D / 3D | ADR-005 |
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
 | SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
-| mobile / touch | `docs/ROADMAP.md` (Mobile Support section) |
+| mobile / touch / gesture / pointer / OrbitControls | ADR-023, `.claude/mental_model/2_interaction.md` |
+| mobile toolbar / slot / spacer / UI layout | ADR-024, `.claude/mental_model/3_ui_layout.md` |
+| entity capability / instanceof / MeasureLine / ImportedMesh / CoordinateFrame | `.claude/mental_model/1_architecture.md` |
+| visual flag / meshview / dispose / memory / Three.js cleanup | `.claude/mental_model/4_memory_management.md` |
+| BFF / sceneStore / database / WebSocket / occt / STEP import | `.claude/mental_model/3b_server_async.md` |
 | concurrency / async / locking / isProcessing | `docs/CONCURRENCY.md` |
 | validation / process / agent workflow / meta | `.claude/PROCESS_NOTES.md` |
 
@@ -45,7 +49,8 @@ Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 After every bug fix, **before committing**, ask:
 > "Did this bug exist because an implicit rule was missing or misunderstood?"
 
-If yes → add the rule to `.claude/MENTAL_MODEL.md` in the same commit.
+If yes → add the rule to the relevant `.claude/mental_model/*.md` detail file,
+then update the summary row in `.claude/MENTAL_MODEL.md` index.
 Use the criteria in MENTAL_MODEL's "What belongs here" section.
 When in doubt, add it — stale entries are easier to clean up than missing ones.
 
@@ -75,13 +80,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-03-29**: Documentation — MENTAL_MODEL.md (40.7k) split into 6.9k lean index + 4 detail files under `.claude/mental_model/`; CLAUDE.md navigation table updated with per-section pointers. ADR-023 (Mobile Input Model) and ADR-024 (Mobile Toolbar Architecture) created to formally record mobile UX design decisions. `docs/adr/README.md` index and `docs/ROADMAP.md` Mobile UX section updated.
 - **2026-03-29**: Bugfix — OrbitControls remained active during 2D extrude height-drag and face-extrude auto-start on touch devices. `_enterExtrudePhase()` now disables `_controls.enabled` on `matchMedia('(pointer: coarse)')` devices; confirm/cancel re-enable unconditionally. `_onPointerDown` gained a `2d-extrude` early-return to prevent sub-element selection logic. Face-extrude auto-start guard corrected from `innerWidth < 768` to `matchMedia`. MENTAL_MODEL updated.
 - **2026-03-28**: Bugfix — OrbitControls remained active during Measure mode on mobile, causing single-finger touch to orbit instead of placing measure points. `_startMeasurePlacement()` now disables `_controls.enabled` when `window.innerWidth < 768`; `_cancelMeasure()` and `_confirmMeasurePoint()` Phase 2 re-enable it. MENTAL_MODEL updated.
-- **2026-03-28**: Bugfix — touch Grab confirmed on every finger-lift. Removed auto-confirm from `_onPointerUp`; grab now stays active until Confirm button is pressed. Added `_grab.segmentStartCorners` (per-drag-segment anchor for delta calculation) separate from `_grab.allStartCorners` (undo/cancel anchor). MENTAL_MODEL updated with revised "Interaction Confirmation Lifecycle" and new "Grab State: allStartCorners vs segmentStartCorners" rules.
-- **2026-03-20**: MVC refactor — extracted `SceneModel` from `AppController`. Domain state (`_objects`, `_activeId`, `_selectionMode`, `_editSubstate`) now lives in `src/model/SceneModel.js`. Added `docs/ARCHITECTURE.md` and `docs/STATE_TRANSITIONS.md`.
-- **2026-03-20**: Bug fixes + ADR-008 (Mode Transition State Machine). `setMode()` now fully cancels in-progress ops and clears visual state before transitioning. `_addObject`, `_deleteObject` guard against Edit Mode. `MeshView.setFaceHighlight` owns `hlMesh.visible`.
-- **2026-03-20**: Added `.claude/commands/adr.md` (`/adr` slash command). Added document navigation guide to CLAUDE.md. Refactored CLAUDE.md to agent-instructions-only format; moved full session history to `docs/SESSION_LOG.md`.
-- **2026-03-20**: Architecture design session. ADR-001–006 created. `docs/ROADMAP.md` revised.
-- **2026-03-20**: Implemented ADR-002 (Sketch→Extrude) and ADR-004 (Edit Mode 2D/3D dispatch). Shift+A shows Add menu (Box/Sketch). Sketch workflow: draw rect on ground plane → Enter → drag/type height → Enter → Edit Mode · 3D. Objects carry `dimension: 2|3`.
-- **2026-03-20**: Implemented ADR-001 (VoxelModel), ADR-003 (middle-click orbit), voxel object system (2×2×2 box default, integer-snap face extrude). (Reverted; cuboid-based model restored.)
-- **2026-03-19**: Blender-style UI overhaul (header bar, N panel, bottom info bar, `setStatusRich`). ROS world frame adopted. Grab controls added (G/X/Y/Z, numeric input).

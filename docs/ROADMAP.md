@@ -112,6 +112,10 @@ Candidate tasks:
 
 ## Mobile UX backlog
 
+Mobile UX design decisions are formally documented in:
+- **ADR-023** — Mobile Input Model (touch gesture model, device detection, OrbitControls strategy, confirmation lifecycle)
+- **ADR-024** — Mobile Toolbar Architecture (fixed-slot layout, spacer pattern, mode-specific layouts)
+
 Mobile UX Phase 1 was completed 2026-03-28. Remaining items are grouped by phase.
 
 ### Phase 2 — Core mobile operations ✅ *2026-03-28*

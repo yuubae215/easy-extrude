@@ -34,6 +34,8 @@ This directory records the project's design decisions.
 | [ADR-020](ADR-020-domain-entity-taxonomy-redesign.md) | **Domain Entity Taxonomy Redesign — Solid / Profile / Frame / Annotation** | Accepted | 2026-03-25 | ADR-007, ADR-009, ADR-010, ADR-012, ADR-018, ADR-019 |
 | [ADR-021](ADR-021-unified-local-geometry-graph-interface.md) | **Unified Local-Geometry Graph Interface — extend graph model to MeasureLine and Profile** | Accepted | 2026-03-25 | ADR-012, ADR-020 |
 | [ADR-022](ADR-022-undo-redo-command-pattern.md) | **Undo / Redo via Command Pattern** | Accepted | 2026-03-26 | ADR-008, ADR-010, ADR-011, ADR-012 |
+| [ADR-023](ADR-023-mobile-input-model.md) | **Mobile Input Model — Touch Gesture Model and Device Detection** | Accepted | 2026-03-29 | ADR-003, ADR-006, ADR-014 |
+| [ADR-024](ADR-024-mobile-toolbar-architecture.md) | **Mobile Toolbar Architecture — Fixed-Slot Layout and Context-Sensitive Actions** | Accepted | 2026-03-29 | ADR-008, ADR-023 |
 
 ## How to Add a New ADR
 
