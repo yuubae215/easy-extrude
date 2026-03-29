@@ -12,10 +12,12 @@ import http   from 'node:http'
 import express from 'express'
 import cors    from 'cors'
 import { WebSocketServer } from 'ws'
+import swaggerUi from 'swagger-ui-express'
 import { jwtMiddleware }  from './src/middleware/auth.js'
 import { scenesRouter }   from './src/routes/scenes.js'
 import { authRouter }     from './src/routes/auth.js'
 import { importRouter }   from './src/routes/import.js'
+import { openApiSpec }    from './src/openapi.js'
 import { createSession, removeSession, handleMessage } from './src/ws/sessionManager.js'
 
 const PORT = process.env.PORT ?? 3001
@@ -25,6 +27,10 @@ const app  = express()
 
 app.use(cors({ origin: true, credentials: true }))
 app.use(express.json({ limit: '50mb' }))
+
+// ── Swagger UI (no auth required) ────────────────────────────────────────────
+
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
 
 // ── Public routes (no auth required) ─────────────────────────────────────────
 

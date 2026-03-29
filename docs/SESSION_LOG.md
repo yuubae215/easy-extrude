@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-29**: Feature — Swagger UI added to BFF. Installed `swagger-ui-express` v5; created `server/src/openapi.js` with an OpenAPI 3.0 spec covering all BFF endpoints (auth, scenes CRUD, import/step, health); mounted at `GET /api/docs` (public, no auth). JWT BearerAuth security scheme and dev-token flow documented in the UI.
+
 - **2026-03-29**: Documentation — MENTAL_MODEL restructured; ADR-023/024 for mobile UX added.
   - `MENTAL_MODEL.md` (40.7k chars) split into a 6.9k lean index-with-summary-tables at `.claude/MENTAL_MODEL.md` and four detail files under `.claude/mental_model/` (`1_architecture.md`, `2_interaction.md`, `3_ui_layout.md`, `3b_server_async.md`, `4_memory_management.md`). Detail files are not auto-included; loaded on demand. CLAUDE.md navigation table updated with per-section pointers.
   - **ADR-023 (Mobile Input Model)** — formally records: single-finger = orbit policy, long-press context menu model, `matchMedia('(pointer: coarse)')` device detection rationale (and why `innerWidth < 768` is wrong), OrbitControls disable strategy table, face extrude gesture-only confirmation flow, Grab multi-segment + toolbar-only confirm lifecycle, Measure hold-to-snap placement model.
