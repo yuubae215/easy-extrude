@@ -2184,6 +2184,7 @@ export class AppController {
       this._mouse.x - projected.x,
     )
 
+    this._controls.enabled = false
     this._updateRotateStatus()
   }
 
@@ -2209,6 +2210,7 @@ export class AppController {
     this._rotate.axis     = null
     this._rotate.inputStr = ''
     this._rotate.hasInput = false
+    this._controls.enabled = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
   }
@@ -2227,6 +2229,7 @@ export class AppController {
     this._rotate.axis     = null
     this._rotate.inputStr = ''
     this._rotate.hasInput = false
+    this._controls.enabled = true
     this._refreshObjectModeStatus()
   }
 
