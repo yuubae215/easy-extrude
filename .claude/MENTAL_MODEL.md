@@ -444,6 +444,11 @@ _clearScene() {
 ### SceneSerializer Must Handle Every Entity Type Explicitly
 
 - **Principle**: Silently skipping an entity type in `serializeScene()` causes that type to disappear on the next load with no error. This is a silent data-loss bug — the save succeeds, the load succeeds, but objects are gone.
-- **Concrete Rule**: Every domain entity class added to `SceneModel` (e.g. `Solid`, `Profile`, `MeasureLine`, `CoordinateFrame`, `ImportedMesh`) must be explicitly handled in `serializeScene()` — either serialized with a matching `_deserializeEntities` branch, or skipped with a comment explaining why (e.g. `// ImportedMesh: geometry must be re-imported`). Verify that new entity types are covered in SceneSerializer in the same commit they are added to the domain layer.
+- **Concrete Rule**: Every domain entity class added to `SceneModel` (e.g. `Solid`, `Profile`, `MeasureLine`, `CoordinateFrame`, `ImportedMesh`) must be explicitly handled in `serializeScene()` — either serialized with a matching `_deserializeEntities` branch, or skipped with a comment explaining why. Verify that new entity types are covered in SceneSerializer in the same commit they are added to the domain layer.
+
+### ImportedMesh Serialization: Base64 Typed Arrays + Position Offset
+
+- **Principle**: Raw Float32/Uint32 buffers cannot be stored directly in JSON. Base64 encoding is used so geometry survives round-trip through the BFF DB without loss.
+- **Concrete Rule**: `serializeScene()` encodes the three buffers via `f32ToBase64` / `u32ToBase64` (helpers in `SceneSerializer.js`) and stores `offset: {x,y,z}` for the current `cuboid.position`. On deserialization, `base64ToF32` / `base64ToU32` reconstruct the typed arrays, `updateGeometryBuffers()` re-creates the `BufferGeometry`, then `cuboid.position` is manually restored from `offset` **before** calling `initCorners(getInitialCorners8())`. This order matters: `getInitialCorners8()` reads `cuboid.position`, so setting the offset first ensures AABB corners are world-correct.
 
 
