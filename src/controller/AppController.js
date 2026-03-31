@@ -3818,12 +3818,17 @@ export class AppController {
   _exportSceneJson() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     const filename  = `scene-${timestamp}.json`
-    downloadSceneJson(
-      this._scene,
-      (id) => this._service.worldPoseOf(id),
-      filename,
-    )
-    this._uiView.showToast(`Exported: ${filename}`)
+    try {
+      downloadSceneJson(
+        this._scene,
+        (id) => this._service.worldPoseOf(id),
+        filename,
+      )
+      this._uiView.showToast(`Exported: ${filename}`)
+    } catch (err) {
+      console.error('[AppController] Export failed:', err)
+      this._uiView.showToast('Export failed', { type: 'error' })
+    }
   }
 }
 
