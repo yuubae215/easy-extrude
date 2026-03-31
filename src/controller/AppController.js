@@ -37,6 +37,7 @@ import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
+import { downloadSceneJson }          from '../service/SceneExporter.js'
 
 export class AppController {
   /**
@@ -3521,6 +3522,13 @@ export class AppController {
       return
     }
 
+    // ── Ctrl+E: export scene JSON ─────────────────────────────────────────
+    if (e.ctrlKey && (e.key === 'e' || e.key === 'E')) {
+      e.preventDefault()
+      this._exportSceneJson()
+      return
+    }
+
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
     if (this._rotate.active) {
       switch (e.key) {
@@ -3791,10 +3799,36 @@ export class AppController {
     // Show first-run gesture hints on mobile
     this._uiView.showOnboardingIfNeeded()
 
+    // Wire Export JSON button
+    this._uiView.onExportJson(() => this._exportSceneJson())
+
     // Non-blocking BFF + Node Editor setup (Phase B)
     this._initBff().catch(err => {
       console.warn('[AppController] BFF init failed (offline mode):', err.message)
     })
+  }
+
+  // ── Scene JSON export ─────────────────────────────────────────────────────
+
+  /**
+   * Serialises the current scene to a JSON file and triggers a browser download.
+   * Includes geometry, bounding boxes, face normals, coordinate frames with world
+   * poses, measurement distances, and metadata for every scene object.
+   */
+  _exportSceneJson() {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const filename  = `scene-${timestamp}.json`
+    try {
+      downloadSceneJson(
+        this._scene,
+        (id) => this._service.worldPoseOf(id),
+        filename,
+      )
+      this._uiView.showToast(`Exported: ${filename}`)
+    } catch (err) {
+      console.error('[AppController] Export failed:', err)
+      this._uiView.showToast('Export failed', { type: 'error' })
+    }
   }
 }
 

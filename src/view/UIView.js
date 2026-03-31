@@ -280,6 +280,39 @@ export class UIView {
       if (this._nodeEditorToggle) this._nodeEditorToggle()
     })
 
+    // ── Export JSON button ────────────────────────────────────────────────────
+    this._exportJsonBtn = document.createElement('button')
+    Object.assign(this._exportJsonBtn.style, {
+      padding: '4px 8px',
+      background: 'transparent',
+      border: '1px solid #3a3a3a',
+      borderRadius: '5px',
+      color: '#aaa',
+      cursor: 'pointer',
+      fontSize: '11px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      lineHeight: '1',
+      flexShrink: '0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+    })
+    this._exportJsonBtn.title = 'Export scene as JSON (Ctrl+E)'
+    this._exportJsonBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Export
+    `
+    this._headerEl.appendChild(this._exportJsonBtn)
+    /** @type {Function|null} Export JSON callback (set by AppController). */
+    this._onExportJson = null
+    this._exportJsonBtn.addEventListener('click', () => {
+      if (this._onExportJson) this._onExportJson()
+    })
+
     // ── Canvas status overlay (mobile only — floats below header on canvas) ─
     this._canvasStatusEl = document.createElement('div')
     Object.assign(this._canvasStatusEl.style, {
@@ -1227,6 +1260,9 @@ export class UIView {
 
   /** Registers callback for Node Editor toggle button (header bar, Phase B) */
   onNodeEditorToggle(cb) { this._nodeEditorToggle = cb }
+
+  /** Registers callback for Export JSON button (header bar). */
+  onExportJson(cb) { this._onExportJson = cb }
 
   /**
    * Shows Save/Load buttons in the header and registers their callbacks.
