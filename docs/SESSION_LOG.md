@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-03-31**: Feature — Scene JSON export. New `src/service/SceneExporter.js` (pure computation) serialises the live SceneModel into a structured JSON snapshot: Solid (8 vertices, 6 face normals + centers, AABB, centroid), Profile (sketchRect p1/p2, AABB), MeasureLine (endpoints + distance), CoordinateFrame (translation, quaternion, Euler ZYX in degrees, world position + rotation from the per-frame cache), ImportedMesh (AABB, offset). Every geometry object includes an `attachedFrames` array for its child frames. Header "Export" button and `Ctrl+E` shortcut added; download via Blob + `<a download>` with no BFF dependency. `_exportSceneJson()` wrapped in try/catch with error toast surfaced on failure.
+
 - **2026-03-29**: Bugfix — OrbitControls remained active during CoordinateFrame Rotate mode. `_startRotate()` was missing `this._controls.enabled = false`; `_confirmRotate()` and `_cancelRotate()` were missing the re-enable. Fixed in `AppController.js`. MENTAL_MODEL "Input Method Mutually Exclusive States" rule updated to include `_rotate.active` and `_grab.active` in the disable list, with the general pattern documented.
 
 - **2026-03-29**: Feature — Swagger UI added to BFF. Installed `swagger-ui-express` v5; created `server/src/openapi.js` with an OpenAPI 3.0 spec covering all BFF endpoints (auth, scenes CRUD, import/step, health); mounted at `GET /api/docs` (public, no auth). JWT BearerAuth security scheme and dev-token flow documented in the UI.
