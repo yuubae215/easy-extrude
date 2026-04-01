@@ -1,6 +1,6 @@
 # Mental Model: Memory Management (Three.js)
 
-Detail file for `.claude/MENTAL_MODEL.md` Section 4.
+Detail file for `docs/CODE_CONTRACTS.md` Section 4.
 
 ---
 

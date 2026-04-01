@@ -15,35 +15,35 @@ Each entry represents a value that was tested against reality and held.
 | Document | Answers | Trigger | Granularity |
 |----------|---------|---------|-------------|
 | **`PHILOSOPHY.md`** (this file) | *Why* we make these choices | Same root value violated in 2+ unrelated contexts | Abstract — a named value with examples |
-| **`MENTAL_MODEL.md`** | *What* rule applies in a specific area | A bug revealed an implicit rule | Concrete — a specific method or class contract |
-| **`PROCESS_NOTES.md`** | *How* to work on this codebase | A workflow pattern proved more reliable | Procedural — steps, commands, agent strategies |
+| **`CODE_CONTRACTS.md`** | *What* rule applies in a specific area | A bug revealed an implicit rule | Concrete — a specific method or class contract |
+| **`DEVELOPMENT.md`** | *How* to work on this codebase | A workflow pattern proved more reliable | Procedural — steps, commands, agent strategies |
 
-A principle belongs here only if it explains the **spirit** behind multiple MENTAL_MODEL rules.
-If a rule applies to one file or one class, it belongs in MENTAL_MODEL, not here.
+A principle belongs here only if it explains the **spirit** behind multiple CODE_CONTRACTS rules.
+If a rule applies to one file or one class, it belongs in CODE_CONTRACTS, not here.
 
 ### What belongs here
 
 - Values discovered through **recurring pain** — not hypothetical wisdom
 - Reasoning that was **actively debated** before a direction was chosen
-- Root causes shared by **two or more MENTAL_MODEL rules** in unrelated areas
+- Root causes shared by **two or more CODE_CONTRACTS rules** in unrelated areas
 - Guidance that shapes **how a new contributor thinks**, not just what they do
 
 **Do NOT add:**
 - General software engineering best practices not specific to this project
-- Rules about a single class or module (use MENTAL_MODEL instead)
-- Workflow or agent patterns (use PROCESS_NOTES instead)
+- Rules about a single class or module (use CODE_CONTRACTS instead)
+- Workflow or agent patterns (use DEVELOPMENT instead)
 - In-progress notes or tentative ideas (use a task/plan instead)
 
 ### When to update
 
 | Trigger | Action |
 |---------|--------|
-| The same root value was violated in 2+ unrelated files or features | Extract a principle; link to the MENTAL_MODEL rules it underlies |
+| The same root value was violated in 2+ unrelated files or features | Extract a principle; link to the CODE_CONTRACTS rules it underlies |
 | A design debate resolved with a non-obvious conclusion | Encode the reasoning here so future contributors don't reopen it |
 | A principle's wording led to a wrong implementation | Clarify the wording; add a "not this" counterexample |
 | Experience reveals a principle applies more broadly than written | Widen its scope; update examples |
 | A principle is now enforced structurally (type system, linter) | **Retire it** — structure is the source of truth, prose is redundant |
-| A principle is really a single code rule | Move it to MENTAL_MODEL; remove from here |
+| A principle is really a single code rule | Move it to CODE_CONTRACTS; remove from here |
 
 ### How to update
 
@@ -75,7 +75,7 @@ Every critical state transition has exactly one designated entry point. Never by
 - Bypassing creates split-brain: the model and view believe different modes are active —
   the resulting bugs are non-deterministic and nearly impossible to reproduce.
 
-*Underlies MENTAL_MODEL rules: Mode Transition Flow, CommandStack push() vs execute()*
+*Underlies CODE_CONTRACTS rules: Mode Transition Flow, CommandStack push() vs execute()*
 
 ---
 
@@ -87,7 +87,7 @@ What an entity *can do* is determined by its runtime type (`instanceof`), not by
 - When a type changes, its capabilities change — the type system enforces the contract.
 - UI availability (Grab, Edit, Dup) is derived from type, not from ad-hoc flags.
 
-*Underlies MENTAL_MODEL rules: Entity Capability Contracts, MeasureLineView No-Op Interface*
+*Underlies CODE_CONTRACTS rules: Entity Capability Contracts, MeasureLineView No-Op Interface*
 
 ---
 
@@ -100,7 +100,7 @@ operation (DOM, Three.js, storage, mutation). Never mix the two in one function.
 - Views and Controllers own all side effects; the domain layer owns none.
 - Mixed functions are untestable, non-composable, and the source of the hardest bugs.
 
-*Underlies MENTAL_MODEL rules: Visual State Ownership, Pure / Side-Effect Separation*
+*Underlies CODE_CONTRACTS rules: Visual State Ownership, Pure / Side-Effect Separation*
 
 ---
 
@@ -113,7 +113,7 @@ Each piece of visual state is written by exactly one method. No scattered assign
 - When two code paths both write a flag, the last write wins unpredictably.
   Ownership eliminates this class of race entirely.
 
-*Underlies MENTAL_MODEL rules: Visual State Ownership*
+*Underlies CODE_CONTRACTS rules: Visual State Ownership*
 
 ---
 
@@ -125,7 +125,7 @@ Views and Controllers subscribe to domain events. They do not hold back-referenc
 - `OutlinerView` reacts to events — it does not poll or reference `SceneModel` directly.
 - Direct references couple modules; events decouple them, making each independently testable.
 
-*Underlies MENTAL_MODEL rules: Entity Swap Must Emit Events, _clearScene Emit Order*
+*Underlies CODE_CONTRACTS rules: Entity Swap Must Emit Events, _clearScene Emit Order*
 
 ---
 
@@ -137,7 +137,7 @@ Transformation verbs produce a new entity without mutating the source.
 - `SceneService.extrudeSketch()` performs the model swap — the domain method stays pure.
 - Immutable transformations make undo/redo natural and eliminate hidden mutation bugs.
 
-*Underlies MENTAL_MODEL rules: Entity Swap Must Emit Events, Soft-Delete Pattern*
+*Underlies CODE_CONTRACTS rules: Entity Swap Must Emit Events, Soft-Delete Pattern*
 
 ---
 
@@ -156,7 +156,7 @@ Decide whether an operation is *optimistic* (prioritise responsiveness) or
 - Pessimistic operations set `isProcessing = true`, disable input, and show a spinner.
 - Mixing strategies produces either a frozen UI or silent data corruption.
 
-*Underlies MENTAL_MODEL rules: `isProcessing` flag, Concurrency strategy (CLAUDE.md)*
+*Underlies CODE_CONTRACTS rules: `isProcessing` flag, Concurrency strategy (CLAUDE.md)*
 
 ---
 
@@ -168,7 +168,7 @@ Decide whether an operation is *optimistic* (prioritise responsiveness) or
 - Fire-and-forget wrappers (e.g. `_autosave`) wrap the `await` in `try/catch`.
 - A forgotten `await` delivers a Promise to `JSON.parse` — a silent crash with no stack trace.
 
-*Underlies MENTAL_MODEL rules: All DB calls must be awaited, PRAGMA journal_mode*
+*Underlies CODE_CONTRACTS rules: All DB calls must be awaited, PRAGMA journal_mode*
 
 ---
 
@@ -182,7 +182,7 @@ Every `scene.add()` has a matching `scene.remove()` + `.dispose()` in the same c
 - `_clearScene()` emits `objectRemoved` for each object *before* swapping the model.
 - Broken symmetry leaves ghost objects: invisible in the scene, still alive in memory and logic.
 
-*Underlies MENTAL_MODEL rules: Object Lifecycle Symmetry, _clearScene Emit Order*
+*Underlies CODE_CONTRACTS rules: Object Lifecycle Symmetry, _clearScene Emit Order*
 
 ---
 
@@ -194,7 +194,7 @@ Preserve undo capability by keeping deleted entities alive but invisible until t
 - `dispose()` is called only in cascade-delete and `_clearScene()`.
 - The command stack limit (MAX=50) bounds the invisible mesh count automatically.
 
-*Underlies MENTAL_MODEL rules: Soft-Delete Pattern*
+*Underlies CODE_CONTRACTS rules: Soft-Delete Pattern*
 
 ---
 
@@ -208,7 +208,7 @@ Every blocked operation must surface to the user. A silent no-op is never accept
 - An early-return that blocks an operation always shows `showToast()` first.
 - "Keyboard shortcut consumed but nothing happened" is the worst UX bug: the user thinks the app is broken.
 
-*Underlies MENTAL_MODEL rules: Unguarded JSON.parse, Read-Only Entity Early-Return*
+*Underlies CODE_CONTRACTS rules: Unguarded JSON.parse, Read-Only Entity Early-Return*
 
 ---
 
@@ -222,7 +222,7 @@ Primary spatial operations complete in a single unbroken gesture, not a multi-st
 - Gestures are *discovered*, not read from a manual — the best design teaches itself.
 - A button sequence that takes 3 taps to do what one drag can do is 3x the friction.
 
-*Underlies MENTAL_MODEL rules: Gesture-Based Interaction Priority, Interaction Confirmation Lifecycle*
+*Underlies CODE_CONTRACTS rules: Gesture-Based Interaction Priority, Interaction Confirmation Lifecycle*
 
 ---
 
@@ -233,7 +233,7 @@ Touch devices do not fire `pointermove` before `pointerdown`. Never assume hover
 - `_onPointerDown` always re-runs `_hitFace()` before edit selection logic, regardless of `_hoveredFace`.
 - Violating this means touch taps never select sub-elements — a complete silent failure.
 
-*Underlies MENTAL_MODEL rules: Touch vs. Pointer Asymmetry*
+*Underlies CODE_CONTRACTS rules: Touch vs. Pointer Asymmetry*
 
 ---
 
@@ -245,7 +245,7 @@ Disable OrbitControls only when a specific operation fully consumes the same inp
 - Measure placement and Grab DO disable OrbitControls (both consume 1-finger-drag).
 - Unnecessary disabling traps the user — they cannot navigate and cannot understand why.
 
-*Underlies MENTAL_MODEL rules: OrbitControls Disable Strategy*
+*Underlies CODE_CONTRACTS rules: OrbitControls Disable Strategy*
 
 ---
 
@@ -260,7 +260,7 @@ Mobile toolbar button positions must never shift between states.
 - Absent slots are padded with `{ spacer: true }` invisible placeholders.
 - A shifting button triggers an accidental tap on the wrong action — data loss risk.
 
-*Underlies MENTAL_MODEL rules: Mobile Toolbar Stability*
+*Underlies CODE_CONTRACTS rules: Mobile Toolbar Stability*
 
 ---
 
@@ -272,7 +272,7 @@ Secondary actions are better discovered through contextual gestures than memoris
 - Fewer visible buttons reduce cognitive load without reducing capability.
 - Menu items are filtered by entity type — the context menu is smart, not generic.
 
-*Underlies MENTAL_MODEL rules: Long-Press Context Menu*
+*Underlies CODE_CONTRACTS rules: Long-Press Context Menu*
 
 ---
 
@@ -287,7 +287,7 @@ If the behaviour does not apply, implement a no-op.
 - A missing method produces a `TypeError` that silently aborts the input handler — no error log, no user feedback.
 - When a new method is added to `MeshView`, all sibling Views receive a no-op in the same commit.
 
-*Underlies MENTAL_MODEL rules: MeasureLineView No-Op Interface*
+*Underlies CODE_CONTRACTS rules: MeasureLineView No-Op Interface*
 
 ---
 
@@ -300,7 +300,7 @@ corresponding domain events — `objectRemoved` before the swap, `objectAdded` a
 - Without events, `OutlinerView` and `AppController` diverge from the model state invisibly.
 - Every direct `addObject()` / `removeObject()` call is a suspect — verify it emits.
 
-*Underlies MENTAL_MODEL rules: Entity Swap Must Emit Events, _clearScene Emit Order*
+*Underlies CODE_CONTRACTS rules: Entity Swap Must Emit Events, _clearScene Emit Order*
 
 ---
 
@@ -312,11 +312,11 @@ The code, ADRs, and mental model must stay in sync. A partially updated codebase
 broken codebase — the undocumented part will cause the next bug.
 
 - After every bug fix, ask: *"Did this bug exist because an implicit rule was missing?"*
-- If yes → add the rule to `MENTAL_MODEL.md` before committing the fix.
+- If yes → add the rule to `CODE_CONTRACTS.md` before committing the fix.
 - After every design decision, ask: *"Will a future contributor understand why we chose this?"*
 - If no → write the principle here or in an ADR before the session ends.
 
-*Underlies MENTAL_MODEL rules: Documentation Drift, PROCESS_NOTES two-pass pattern*
+*Underlies CODE_CONTRACTS rules: Documentation Drift, DEVELOPMENT two-pass pattern*
 
 ---
 
@@ -327,9 +327,9 @@ For verification, give an agent a small named file list rather than `src/**/*.js
 - A broad scan of 35 files spreads context thin; subtle issues receive proportionally less attention.
 - Run broad validators in parallel (structural violations), then focused validators sequentially
   on recently changed files (ADR text drift, silent UX failures).
-- This is Pass 1 → Pass 2 in the two-pass pattern (see `PROCESS_NOTES.md`).
+- This is Pass 1 → Pass 2 in the two-pass pattern (see `DEVELOPMENT.md`).
 
-*Underlies PROCESS_NOTES rules: Two-pass pattern, Focused Agents > Broad Agents*
+*Underlies DEVELOPMENT rules: Two-pass pattern, Focused Agents > Broad Agents*
 
 ---
 
@@ -355,5 +355,5 @@ For verification, give an agent a small named file list rather than `src/**/*.js
 | 16 | Discovery Is a Design Deliverable | UI | Long-Press Context Menu |
 | 17 | Polymorphic Interfaces Must Be Complete | Contracts | MeasureLineView No-Op Interface |
 | 18 | Emit the Event, Then Perform the Swap | Contracts | Entity Swap Emit |
-| 19 | Documentation Drift Is a Bug | Living Docs | MENTAL_MODEL maintenance, ADR drift |
-| 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | PROCESS_NOTES two-pass pattern |
+| 19 | Documentation Drift Is a Bug | Living Docs | CODE_CONTRACTS maintenance, ADR drift |
+| 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | DEVELOPMENT two-pass pattern |
