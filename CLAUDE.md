@@ -80,6 +80,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-04-01**: Bugfix — Mobile header overflow. Export/Import buttons clipped on narrow screens; replaced with `_moreMenuBtn` (⋯) dropdown on mobile. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. MENTAL_MODEL §3 updated.
 - **2026-04-01**: Feature — Scene JSON import. `SceneImporter.js` (pure parse/validate); `SceneService.importFromJson()` for all entity types with merge/ID-remap support; `SceneExporter.js` upgraded to v1.1 with ImportedMesh geometry buffers (Base64); Import button + `Ctrl+I` + `showImportModal()` (Clear / Merge / Cancel) in UIView.
 - **2026-03-31**: Feature — Scene JSON export. New `SceneExporter.js` pure module; header "Export" button + `Ctrl+E`. Exports Solid/Profile/MeasureLine/CoordinateFrame (with Euler ZYX + world pose)/ImportedMesh with AABB, face normals, attached frames. Browser download via Blob; no BFF dependency.
-- **2026-03-29**: Bugfix — OrbitControls remained active during CoordinateFrame Rotate mode. `_startRotate()` was missing `this._controls.enabled = false`; `_confirmRotate()` and `_cancelRotate()` were missing the re-enable. MENTAL_MODEL "Input Method Mutually Exclusive States" rule updated to include Rotate and Grab in the disable list.
