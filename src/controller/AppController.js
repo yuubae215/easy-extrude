@@ -38,7 +38,7 @@ import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
-import { SetLynchClassCommand }       from '../command/SetLynchClassCommand.js'
+import { createSetLynchClassCommand } from '../command/SetLynchClassCommand.js'
 import { downloadSceneJson }          from '../service/SceneExporter.js'
 import { parseImportJson }            from '../service/SceneImporter.js'
 import { UrbanPolyline } from '../domain/UrbanPolyline.js'
@@ -353,7 +353,7 @@ export class AppController {
     uiView.onLynchClassChange(lynchClass => {
       const obj = this._activeObj
       if (!obj) return
-      const cmd = new SetLynchClassCommand(obj.id, obj.lynchClass ?? null, lynchClass ?? null, this._service)
+      const cmd = createSetLynchClassCommand(obj.id, obj.lynchClass ?? null, lynchClass ?? null, this._service)
       this._commandStack.push(cmd)
     })
     uiView.onFramePositionChange((axis, val) => {
