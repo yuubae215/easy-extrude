@@ -52,6 +52,9 @@ import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
 import { UrbanPolyline } from '../domain/UrbanPolyline.js'
 import { UrbanPolygon }  from '../domain/UrbanPolygon.js'
 import { UrbanMarker }   from '../domain/UrbanMarker.js'
+import { UrbanPolylineView } from '../view/UrbanPolylineView.js'
+import { UrbanPolygonView }  from '../view/UrbanPolygonView.js'
+import { UrbanMarkerView }   from '../view/UrbanMarkerView.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -328,6 +331,35 @@ export class SceneService extends EventEmitter {
           frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
         }
         entities.push(frame)
+      } else if (dto.type === 'UrbanPolyline') {
+        const { renderer = null } = viewContext
+        const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
+        const meshView = new UrbanPolylineView(this._threeScene, points, dto.lynchClass ?? null, renderer)
+        const entity   = UrbanPolyline.fromPoints(dto.id, dto.name, points, meshView)
+        entity.description = dto.description ?? ''
+        entity.lynchClass  = dto.lynchClass  ?? null
+        if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+        entities.push(entity)
+      } else if (dto.type === 'UrbanPolygon') {
+        const { renderer = null } = viewContext
+        const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
+        const meshView = new UrbanPolygonView(this._threeScene, points, dto.lynchClass ?? null, renderer)
+        const entity   = UrbanPolygon.fromPoints(dto.id, dto.name, points, meshView)
+        entity.description = dto.description ?? ''
+        entity.lynchClass  = dto.lynchClass  ?? null
+        if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+        entities.push(entity)
+      } else if (dto.type === 'UrbanMarker') {
+        const { camera = null, renderer = null, container = document.body } = viewContext
+        const point  = new Vector3(dto.vertex.x, dto.vertex.y, dto.vertex.z)
+        const meshView = new UrbanMarkerView(
+          this._threeScene, camera, container, renderer, point, dto.name, dto.lynchClass ?? null,
+        )
+        const entity  = UrbanMarker.fromPoint(dto.id, dto.name, point, meshView)
+        entity.description = dto.description ?? ''
+        entity.lynchClass  = dto.lynchClass  ?? null
+        if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass, entity.name)
+        entities.push(entity)
       }
     }
     return entities
@@ -464,6 +496,41 @@ export class SceneService extends EventEmitter {
         frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
       }
       return frame
+    }
+
+    if (dto.type === 'UrbanPolyline') {
+      const { renderer = null } = viewContext
+      const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
+      const meshView = new UrbanPolylineView(this._threeScene, points, dto.lynchClass ?? null, renderer)
+      const entity   = UrbanPolyline.fromPoints(newId, dto.name ?? 'Polyline', points, meshView)
+      entity.description = dto.description ?? ''
+      entity.lynchClass  = dto.lynchClass  ?? null
+      if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+      return entity
+    }
+
+    if (dto.type === 'UrbanPolygon') {
+      const { renderer = null } = viewContext
+      const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
+      const meshView = new UrbanPolygonView(this._threeScene, points, dto.lynchClass ?? null, renderer)
+      const entity   = UrbanPolygon.fromPoints(newId, dto.name ?? 'Polygon', points, meshView)
+      entity.description = dto.description ?? ''
+      entity.lynchClass  = dto.lynchClass  ?? null
+      if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+      return entity
+    }
+
+    if (dto.type === 'UrbanMarker') {
+      const { camera = null, renderer = null, container = document.body } = viewContext
+      const point    = new Vector3(dto.vertex.x, dto.vertex.y, dto.vertex.z)
+      const meshView = new UrbanMarkerView(
+        this._threeScene, camera, container, renderer, point, dto.name ?? 'Marker', dto.lynchClass ?? null,
+      )
+      const entity   = UrbanMarker.fromPoint(newId, dto.name ?? 'Marker', point, meshView)
+      entity.description = dto.description ?? ''
+      entity.lynchClass  = dto.lynchClass  ?? null
+      if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass, entity.name)
+      return entity
     }
 
     return null
@@ -670,15 +737,16 @@ export class SceneService extends EventEmitter {
 
   /**
    * Creates an UrbanPolyline from an ordered array of points and adds it to the scene.
-   * The meshView is null until the rendering layer (UrbanPolylineView) is implemented.
    * Emits: 'objectAdded'
    * @param {import('three').Vector3[]} points  N ≥ 2 ordered points
    * @param {string} [name]
+   * @param {import('three').WebGLRenderer} [renderer]
    * @returns {UrbanPolyline}
    */
-  createUrbanPolyline(points, name) {
-    const id  = `urban_poly_${Date.now()}`
-    const obj = UrbanPolyline.fromPoints(id, name ?? 'Polyline', points, null)
+  createUrbanPolyline(points, name, renderer) {
+    const id      = `urban_poly_${Date.now()}`
+    const meshView = new UrbanPolylineView(this._threeScene, points, null, renderer ?? null)
+    const obj     = UrbanPolyline.fromPoints(id, name ?? 'Polyline', points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj
@@ -690,11 +758,13 @@ export class SceneService extends EventEmitter {
    * Emits: 'objectAdded'
    * @param {import('three').Vector3[]} points  N ≥ 3 points in ring order
    * @param {string} [name]
+   * @param {import('three').WebGLRenderer} [renderer]
    * @returns {UrbanPolygon}
    */
-  createUrbanPolygon(points, name) {
-    const id  = `urban_area_${Date.now()}`
-    const obj = UrbanPolygon.fromPoints(id, name ?? 'Polygon', points, null)
+  createUrbanPolygon(points, name, renderer) {
+    const id      = `urban_area_${Date.now()}`
+    const meshView = new UrbanPolygonView(this._threeScene, points, null, renderer ?? null)
+    const obj     = UrbanPolygon.fromPoints(id, name ?? 'Polygon', points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj
@@ -705,11 +775,17 @@ export class SceneService extends EventEmitter {
    * Emits: 'objectAdded'
    * @param {import('three').Vector3} point  anchor position
    * @param {string} [name]
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} [viewContext]
    * @returns {UrbanMarker}
    */
-  createUrbanMarker(point, name) {
-    const id  = `urban_mark_${Date.now()}`
-    const obj = UrbanMarker.fromPoint(id, name ?? 'Marker', point, null)
+  createUrbanMarker(point, name, viewContext = {}) {
+    const id      = `urban_mark_${Date.now()}`
+    const markerName = name ?? 'Marker'
+    const { camera = null, renderer = null, container = document.body } = viewContext
+    const meshView = new UrbanMarkerView(
+      this._threeScene, camera, container, renderer, point, markerName, null,
+    )
+    const obj = UrbanMarker.fromPoint(id, markerName, point, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj

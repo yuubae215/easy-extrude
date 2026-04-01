@@ -45,6 +45,7 @@ src/
 | `objectRemoved` | `id: string` | After `deleteObject()` completes |
 | `objectRenamed` | `id, name: string` | After `renameObject()` completes |
 | `activeChanged` | `id: string\|null` | After `setActiveObject()` completes |
+| `objectLynchClassChanged` | `id, lynchClass: string\|null` | After `setLynchClass()` / `SetLynchClassCommand` completes |
 | `wsConnected` | _(none)_ | After `openGeometryChannel()` opens the WS connection (BFF Phase B) |
 | `wsDisconnected` | _(none)_ | When the WS channel is closed by the server or network (BFF Phase B) |
 

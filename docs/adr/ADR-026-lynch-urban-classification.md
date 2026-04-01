@@ -177,8 +177,9 @@ model.
 - **Positive:** Three-type design follows the natural Lynch topology: linear /
   areal / point — future geometry editing (Edit Mode for polylines, polygon
   reshaping) has a clear structural hook.
-- **Neutral:** No views (`UrbanPolylineView` etc.) exist yet; `meshView` is
-  `null` until the rendering layer is implemented.
+- **Positive:** `UrbanPolylineView`, `UrbanPolygonView`, and `UrbanMarkerView`
+  are fully implemented (rendering layer complete). `meshView` is populated on
+  creation; HTML label labels are updated each animation frame.
 - **Neutral:** Node is fixed to `UrbanMarker` (point geometry). If area-type
   Nodes (e.g. large plazas) are needed in the future, `UrbanPolygon` can also
   accept `lynchClass = 'Node'` — the registry `geometry` field is the only

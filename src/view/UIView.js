@@ -4,6 +4,7 @@
  * Side effects: creates DOM elements, appends them, and modifies their styles.
  */
 import { IFC_CLASSES, IFC_CLASS_MAP } from '../domain/IFCClassRegistry.js'
+import { getLynchClassesByGeometry, LYNCH_CLASS_MAP } from '../domain/LynchClassRegistry.js'
 
 /** SVG icon strings for the mobile toolbar. Pass as `icon` in setMobileToolbar buttons. */
 export const ICONS = {
@@ -607,6 +608,10 @@ export class UIView {
    *  cb(ifcClass: string|null)  — null means "clear classification" */
   onIfcClassChange(callback) { this._onIfcClassChangeCb = callback }
 
+  /** Registers callback for Lynch class changes from the N panel.
+   *  cb(lynchClass: string|null)  — null means "clear classification" */
+  onLynchClassChange(callback) { this._onLynchClassChangeCb = callback }
+
   /** Registers callback for mode changes */
   onModeChange(callback) {
     this._modeChangeCallback = callback
@@ -764,7 +769,17 @@ export class UIView {
    * @param {() => void} [onImportStep]
    * @param {() => void} [onFrame]  shown only when a geometry object is active
    */
-  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame) {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {() => void} onBox
+   * @param {() => void} onSketch
+   * @param {() => void} [onMeasure]
+   * @param {() => void} [onImportStep]
+   * @param {() => void} [onFrame]
+   * @param {{ onPath?: () => void, onEdge?: () => void, onDistrict?: () => void, onNode?: () => void, onLandmark?: () => void }} [urban]
+   */
+  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame, urban) {
     this.hideAddMenu()
     const menu = document.createElement('div')
     Object.assign(menu.style, {
@@ -775,7 +790,7 @@ export class UIView {
       border: '1px solid #555',
       borderRadius: '4px',
       zIndex: '300',
-      minWidth: '120px',
+      minWidth: '140px',
       boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
       overflow: 'hidden',
     })
@@ -792,14 +807,7 @@ export class UIView {
     title.textContent = 'Add'
     menu.appendChild(title)
 
-    const items = [
-      ...(onMeasure    ? [{ label: 'Measure',          hint: 'M', cb: onMeasure }]    : []),
-      { label: 'Box',              hint: 'Shift+A', cb: onBox },
-      { label: 'Sketch',           hint: '',        cb: onSketch },
-      ...(onFrame      ? [{ label: 'Coordinate Frame', hint: '',  cb: onFrame }]      : []),
-      ...(onImportStep ? [{ label: 'Import STEP',      hint: '',  cb: onImportStep }] : []),
-    ]
-    items.forEach(({ label, hint, cb }) => {
+    const makeItem = (label, hint, cb, extra = '') => {
       const item = document.createElement('div')
       Object.assign(item.style, {
         padding: '7px 12px',
@@ -812,7 +820,7 @@ export class UIView {
         gap: '16px',
       })
       const labelEl = document.createElement('span')
-      labelEl.textContent = label
+      labelEl.textContent = label + extra
       item.appendChild(labelEl)
       if (hint) {
         const hintEl = document.createElement('span')
@@ -822,9 +830,66 @@ export class UIView {
       }
       item.addEventListener('mouseenter', () => { item.style.background = '#4a4a4a' })
       item.addEventListener('mouseleave', () => { item.style.background = 'transparent' })
-      item.addEventListener('click', () => { this.hideAddMenu(); cb() })
-      menu.appendChild(item)
-    })
+      if (cb) item.addEventListener('click', () => { this.hideAddMenu(); cb() })
+      return item
+    }
+
+    const items = [
+      ...(onMeasure    ? [{ label: 'Measure',          hint: 'M', cb: onMeasure }]    : []),
+      { label: 'Box',              hint: 'Shift+A', cb: onBox },
+      { label: 'Sketch',           hint: '',        cb: onSketch },
+      ...(onFrame      ? [{ label: 'Coordinate Frame', hint: '',  cb: onFrame }]      : []),
+      ...(onImportStep ? [{ label: 'Import STEP',      hint: '',  cb: onImportStep }] : []),
+    ]
+    items.forEach(({ label, hint, cb }) => menu.appendChild(makeItem(label, hint, cb)))
+
+    // ── Urban submenu ─────────────────────────────────────────────────────────
+    if (urban) {
+      const sep = document.createElement('div')
+      Object.assign(sep.style, { height: '1px', background: '#3a3a3a', margin: '2px 0' })
+      menu.appendChild(sep)
+
+      // Urban submenu header
+      const urbanHeader = makeItem('Urban ▶', '', null)
+      Object.assign(urbanHeader.style, { color: '#80cbc4' })
+      menu.appendChild(urbanHeader)
+
+      // Sub-items container (shown/hidden on click)
+      const subContainer = document.createElement('div')
+      subContainer.style.display = 'none'
+      Object.assign(subContainer.style, { background: '#232323' })
+
+      const URBAN_ITEMS = [
+        { label: '⟿ Urban Path',     color: '#4A90D9', cb: urban.onPath },
+        { label: '⟿ Urban Edge',     color: '#E74C3C', cb: urban.onEdge },
+        { label: '⬡ Urban District', color: '#27AE60', cb: urban.onDistrict },
+        { label: '⬤ Urban Node',     color: '#F39C12', cb: urban.onNode },
+        { label: '⬤ Urban Landmark', color: '#9B59B6', cb: urban.onLandmark },
+      ]
+      URBAN_ITEMS.forEach(({ label, color, cb }) => {
+        if (!cb) return
+        const subItem = document.createElement('div')
+        Object.assign(subItem.style, {
+          padding: '6px 12px 6px 22px',
+          color,
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontFamily: 'sans-serif',
+        })
+        subItem.textContent = label
+        subItem.addEventListener('mouseenter', () => { subItem.style.background = '#3a3a3a' })
+        subItem.addEventListener('mouseleave', () => { subItem.style.background = 'transparent' })
+        subItem.addEventListener('click', () => { this.hideAddMenu(); cb() })
+        subContainer.appendChild(subItem)
+      })
+
+      urbanHeader.addEventListener('click', () => {
+        const shown = subContainer.style.display !== 'none'
+        subContainer.style.display = shown ? 'none' : 'block'
+      })
+
+      menu.appendChild(subContainer)
+    }
 
     document.body.appendChild(menu)
     this._addMenuEl = menu
@@ -1500,7 +1565,11 @@ export class UIView {
    */
   updateNPanel(centroid, dimensions, name = '', description = '', options = {}) {
     if (!this._nPanelVisible) return
-    const { locationEditable = false, ifcClass = undefined, showIfcClass = false } = options
+    const {
+      locationEditable = false,
+      ifcClass = undefined, showIfcClass = false,
+      lynchClass = undefined, showLynchClass = false, lynchGeometry = null,
+    } = options
 
     const editRow = (axis, color, val, onChange) => {
       const r = document.createElement('div')
@@ -1662,6 +1731,12 @@ export class UIView {
       ifcSection = this._buildIfcClassSection(ifcClass ?? null)
     }
 
+    // ── Lynch Class section (only for Urban entities) ─────────────────────
+    let lynchSection = null
+    if (showLynchClass) {
+      lynchSection = this._buildLynchClassSection(lynchClass ?? null, lynchGeometry)
+    }
+
     const locRow = locationEditable
       ? (axis, color, val) => editRow(axis, color, val, v => { if (this._onLocationChangeCb) this._onLocationChangeCb(axis.toLowerCase(), v) })
       : row
@@ -1678,7 +1753,8 @@ export class UIView {
       row('Y', '#6ab04c', dimensions.y),
       row('Z', '#4a9eed', dimensions.z),
     ]))
-    if (ifcSection) this._nPanelContentEl.appendChild(ifcSection)
+    if (ifcSection)   this._nPanelContentEl.appendChild(ifcSection)
+    if (lynchSection) this._nPanelContentEl.appendChild(lynchSection)
     this._nPanelContentEl.appendChild(descSection)
   }
 
@@ -1755,6 +1831,226 @@ export class UIView {
 
     sec.appendChild(rowEl)
     return sec
+  }
+
+  /**
+   * Builds the Lynch Class section for the N-panel (Urban entities only).
+   * Shows a coloured badge for the current class and a button to open the picker.
+   * @param {string|null} currentClass
+   * @param {'polyline'|'polygon'|'marker'|null} geometry  filter for the picker
+   * @returns {HTMLElement}
+   * @private
+   */
+  _buildLynchClassSection(currentClass, geometry) {
+    const sec = document.createElement('div')
+    Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+
+    const titleEl = document.createElement('div')
+    titleEl.textContent = 'Lynch Class'
+    Object.assign(titleEl.style, {
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+      marginBottom: '6px',
+    })
+    sec.appendChild(titleEl)
+
+    const rowEl = document.createElement('div')
+    Object.assign(rowEl.style, { display: 'flex', gap: '6px', alignItems: 'center' })
+
+    const badgeEl = document.createElement('span')
+    this._refreshLynchBadge(badgeEl, currentClass)
+    Object.assign(badgeEl.style, {
+      flex: '1', minWidth: '0',
+      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    })
+
+    const changeBtn = document.createElement('button')
+    changeBtn.textContent = currentClass ? 'Change' : 'Set'
+    Object.assign(changeBtn.style, {
+      padding: '2px 7px',
+      background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
+      color: '#e8e8e8', fontSize: '11px', cursor: 'pointer',
+      flexShrink: '0', fontFamily: 'sans-serif',
+    })
+    changeBtn.addEventListener('mouseenter', () => { changeBtn.style.background = '#4a4a4a' })
+    changeBtn.addEventListener('mouseleave', () => { changeBtn.style.background = '#3c3c3c' })
+    changeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this._openLynchPicker(badgeEl, changeBtn, geometry)
+    })
+
+    rowEl.appendChild(badgeEl)
+    rowEl.appendChild(changeBtn)
+
+    if (currentClass) {
+      const clearBtn = document.createElement('button')
+      clearBtn.textContent = '✕'
+      clearBtn.title = 'Clear Lynch class'
+      Object.assign(clearBtn.style, {
+        padding: '2px 5px',
+        background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
+        color: '#aaa', fontSize: '11px', cursor: 'pointer',
+        flexShrink: '0',
+      })
+      clearBtn.addEventListener('mouseenter', () => { clearBtn.style.background = '#4a4a4a' })
+      clearBtn.addEventListener('mouseleave', () => { clearBtn.style.background = '#3c3c3c' })
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this._refreshLynchBadge(badgeEl, null)
+        changeBtn.textContent = 'Set'
+        clearBtn.remove()
+        if (this._onLynchClassChangeCb) this._onLynchClassChangeCb(null)
+      })
+      rowEl.appendChild(clearBtn)
+    }
+
+    sec.appendChild(rowEl)
+    return sec
+  }
+
+  /**
+   * Updates the visual state of a Lynch badge element.
+   * @param {HTMLElement} badgeEl
+   * @param {string|null} lynchClass
+   * @private
+   */
+  _refreshLynchBadge(badgeEl, lynchClass) {
+    const entry = lynchClass ? LYNCH_CLASS_MAP.get(lynchClass) : null
+    if (entry) {
+      badgeEl.textContent = entry.label
+      Object.assign(badgeEl.style, {
+        display: 'inline-block',
+        background: entry.color + '33',
+        border: `1px solid ${entry.color}`,
+        borderRadius: '3px',
+        padding: '2px 6px',
+        color: entry.color,
+        fontSize: '11px',
+        fontWeight: 'bold',
+        fontFamily: 'sans-serif',
+      })
+    } else {
+      badgeEl.textContent = 'Not set'
+      Object.assign(badgeEl.style, {
+        display: 'inline-block',
+        background: 'transparent',
+        border: '1px solid #444',
+        borderRadius: '3px',
+        padding: '2px 6px',
+        color: '#666',
+        fontSize: '11px',
+        fontWeight: 'normal',
+        fontFamily: 'sans-serif',
+      })
+    }
+  }
+
+  /**
+   * Opens the Lynch class picker overlay anchored near the N-panel.
+   * @param {HTMLElement} badgeEl   badge to update on selection
+   * @param {HTMLElement} changeBtn button to update label
+   * @param {'polyline'|'polygon'|'marker'|null} geometry  filter valid classes
+   * @private
+   */
+  _openLynchPicker(badgeEl, changeBtn, geometry) {
+    const existing = document.getElementById('_lynchPickerOverlay')
+    if (existing) { existing.remove(); return }
+
+    const overlay = document.createElement('div')
+    overlay.id = '_lynchPickerOverlay'
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      top: '40px',
+      right: '200px',
+      width: '230px',
+      maxHeight: '320px',
+      background: '#252525',
+      border: '1px solid #555',
+      borderRadius: '5px',
+      zIndex: '200',
+      display: 'flex',
+      flexDirection: 'column',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+      overflow: 'hidden',
+    })
+
+    // Title
+    const headerEl = document.createElement('div')
+    headerEl.textContent = 'Lynch Classification'
+    Object.assign(headerEl.style, {
+      padding: '8px 10px 6px',
+      color: '#ccc', fontSize: '12px', fontFamily: 'sans-serif',
+      borderBottom: '1px solid #3a3a3a', flexShrink: '0',
+    })
+    overlay.appendChild(headerEl)
+
+    // List
+    const listEl = document.createElement('div')
+    Object.assign(listEl.style, { overflowY: 'auto', flex: '1', padding: '4px 6px 8px' })
+    overlay.appendChild(listEl)
+
+    const entries = geometry ? getLynchClassesByGeometry(geometry) : []
+    if (entries.length === 0) {
+      const emptyEl = document.createElement('div')
+      emptyEl.textContent = 'No classes available for this geometry type.'
+      Object.assign(emptyEl.style, { color: '#666', fontSize: '11px', padding: '8px 4px' })
+      listEl.appendChild(emptyEl)
+    }
+
+    for (const entry of entries) {
+      const itemEl = document.createElement('div')
+      Object.assign(itemEl.style, {
+        display: 'flex', alignItems: 'center', gap: '8px',
+        padding: '5px 6px', borderRadius: '3px', cursor: 'pointer',
+      })
+      itemEl.addEventListener('mouseenter', () => { itemEl.style.background = 'rgba(255,255,255,0.07)' })
+      itemEl.addEventListener('mouseleave', () => { itemEl.style.background = 'transparent' })
+
+      const colorDot = document.createElement('span')
+      Object.assign(colorDot.style, {
+        width: '10px', height: '10px', borderRadius: '2px',
+        background: entry.color, flexShrink: '0',
+        display: 'inline-block',
+      })
+
+      const labelEl = document.createElement('div')
+      Object.assign(labelEl.style, { flex: '1', minWidth: '0' })
+
+      const nameEl = document.createElement('div')
+      nameEl.textContent = entry.label
+      Object.assign(nameEl.style, {
+        color: entry.color, fontSize: '12px', fontWeight: 'bold', fontFamily: 'sans-serif',
+      })
+
+      const descEl = document.createElement('div')
+      descEl.textContent = entry.description
+      Object.assign(descEl.style, {
+        color: '#777', fontSize: '10px', fontFamily: 'sans-serif',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      })
+
+      labelEl.appendChild(nameEl)
+      labelEl.appendChild(descEl)
+      itemEl.appendChild(colorDot)
+      itemEl.appendChild(labelEl)
+
+      itemEl.addEventListener('click', () => {
+        this._refreshLynchBadge(badgeEl, entry.name)
+        changeBtn.textContent = 'Change'
+        overlay.remove()
+        if (this._onLynchClassChangeCb) this._onLynchClassChangeCb(entry.name)
+      })
+
+      listEl.appendChild(itemEl)
+    }
+
+    document.body.appendChild(overlay)
+
+    // Close on outside click
+    const close = (e) => {
+      if (!overlay.contains(e.target)) { overlay.remove(); document.removeEventListener('pointerdown', close) }
+    }
+    setTimeout(() => document.addEventListener('pointerdown', close), 0)
   }
 
   /**
