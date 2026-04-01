@@ -16,6 +16,7 @@ src/
     MeasureLine.js                # Domain entity: 1D distance annotation
     CoordinateFrame.js            # Domain entity: named SE(3) reference frame (ADR-018/019)
     ImportedMesh.js               # Domain entity: read-only server-computed geometry
+    IFCClassRegistry.js           # IFC semantic class registry (ADR-025)
   graph/
     Vertex.js                     # Graph primitive: vertex { id, position: Vector3 }
     Edge.js                       # Graph primitive: edge { id, v0: Vertex, v1: Vertex }
@@ -23,9 +24,20 @@ src/
   model/
     CuboidModel.js                # Pure functions: geometry computation (stateless)
     SceneModel.js                 # Aggregate root: scene objects + mode state + editSelection
+  command/
+    MoveCommand.js                # Undo/redo: object move (Grab, Face Extrude) (ADR-022)
+    AddSolidCommand.js            # Undo/redo: add solid (ADR-022)
+    DeleteCommand.js              # Undo/redo: soft-delete (ADR-022)
+    ExtrudeSketchCommand.js       # Undo/redo: Profile → Solid entity swap (ADR-022)
+    RenameCommand.js              # Undo/redo: rename (ADR-022)
+    FrameRotateCommand.js         # Undo/redo: CoordinateFrame rotation (ADR-022)
+    SetIfcClassCommand.js         # Undo/redo: IFC class assignment (ADR-025)
   service/
     SceneService.js               # ApplicationService: entity creation, CRUD, observable events
-    SceneSerializer.js            # Scene save / load: domain → JSON round-trip
+    SceneSerializer.js            # Scene save / load: domain → JSON round-trip (BFF)
+    SceneExporter.js              # Export scene to JSON file (pure computation)
+    SceneImporter.js              # Import scene from JSON file (pure computation)
+    CommandStack.js               # Undo/redo stack (MAX=50) (ADR-022)
     BffClient.js                  # REST + WebSocket client for BFF (WsChannel)
   view/
     SceneView.js                  # Three.js scene / camera / renderer
@@ -250,13 +262,17 @@ MeasureLine = { vertices: Vertex[2], edges: Edge[1], ... }
 | **Phase 5-3** | `Edge` / `Face` layer, `dimension` removed, unified selection model foundation (ADR-012) | Done 2026-03-20 |
 | **Phase 6** | Sub-element selection (1/2/3 keys), Grab snap across all geometry (ADR-014) | Done 2026-03-20 |
 | **Phase 7** | Entity taxonomy redesign — `Cuboid`→`Solid`, `Sketch`→`Profile`; unified LocalGeometry interface for `MeasureLine`/`Profile`; `CoordinateFrame._worldPos` moved to `SceneService._worldPoseCache`; Euler convention corrected to ROS RPY (ADR-020, ADR-021) | Done 2026-03-26 |
+| **Phase 8** | Undo / Redo via Command Pattern — `CommandStack`, `MoveCommand`, `AddSolidCommand`, `DeleteCommand` (soft-delete), `ExtrudeSketchCommand`, `RenameCommand`, `FrameRotateCommand` (ADR-022) | Done 2026-03-27 |
+| **Phase 9** | Mobile UX — touch gesture model (single-finger orbit, long-press Grab), mobile toolbar fixed-slot layout, `_moreMenuBtn` header overflow fix (ADR-023, ADR-024) | Done 2026-03-29 |
+| **Phase 10** | IFC semantic classification — `IFCClassRegistry`, `SetIfcClassCommand`; N-panel class picker for Solid / ImportedMesh (ADR-025) | Done 2026-04-01 |
 
 ---
 
 ## Related Documents
 
-- `docs/adr/README.md` — Architecture Decision Record index (ADR-001 … ADR-021)
+- `docs/adr/README.md` — Architecture Decision Record index (ADR-001 … ADR-025)
 - `docs/STATE_TRANSITIONS.md` — Mode state transition details
 - `docs/ROADMAP.md` — BFF migration roadmap and feature backlog
 - `docs/CONCURRENCY.md` — Optimistic vs pessimistic locking strategy
-- `.claude/MENTAL_MODEL.md` — Coding policies learned from bugs
+- `docs/CODE_CONTRACTS.md` — Coding rules derived from real bugs (index + detail files)
+- `docs/PHILOSOPHY.md` — Design principles distilled from post-mortems and ADRs

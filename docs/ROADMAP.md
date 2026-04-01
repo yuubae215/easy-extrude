@@ -1,6 +1,6 @@
 # Roadmap
 
-## Design Direction (2026-03-20, updated 2026-03-26)
+## Design Direction (2026-03-20, updated 2026-04-01)
 
 This project is a **solid-body modeling application**. Each shape is a deformable solid defined by a LocalGeometry graph (vertices / edges / faces). Complex scenes are built by placing and deforming multiple solid objects alongside coordinate frames and measurement annotations. See `docs/adr/` for detailed design decisions.
 
@@ -159,6 +159,12 @@ Bugs are also tracked on GitHub Issues #69–#73.
 
 | Item | Date |
 |------|------|
+| IFC semantic classification — `IFCClassRegistry`, `SetIfcClassCommand`; N-panel IFC class picker (dropdown) for Solid and ImportedMesh; `Ctrl+Z` undoable; `SceneSerializer` and `SceneExporter` include `ifcClass` field (ADR-025) | 2026-04-01 |
+| Documentation — `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` created (Japanese → English); Mermaid `block-beta` diagrams; `CLAUDE.md` change-impact matrix added | 2026-04-01 |
+| Documentation — `docs/PHILOSOPHY.md` created: 20 design principles distilled from MENTAL_MODEL, PROCESS_NOTES, and ADRs; doc-structure refactored (MENTAL_MODEL → CODE_CONTRACTS + DEVELOPMENT + PHILOSOPHY) | 2026-04-01 |
+| Bugfix — Mobile header overflow: Export/Import buttons replaced by `_moreMenuBtn` (⋯) dropdown on mobile; `_headerStatusEl` uses `visibility:hidden` to remain a flex spacer | 2026-04-01 |
+| Scene JSON import — `SceneImporter.js` (pure: parse/validate JSON v1.0 and v1.1); `SceneService.importFromJson()` reconstructs all entity types; merge mode remaps IDs; `UIView` gains Import header button + `showImportModal()`; `Ctrl+I` shortcut | 2026-04-01 |
+| Scene JSON export — `SceneExporter.js` (pure computation); downloads structured JSON snapshot; geometry Base64-encoded for ImportedMesh; `UIView` gains Export header button; `Ctrl+E` shortcut | 2026-03-31 |
 | Swagger UI — `swagger-ui-express` v5; OpenAPI 3.0 spec for all BFF endpoints mounted at `GET /api/docs`; JWT BearerAuth security scheme and dev-token flow documented | 2026-03-29 |
 | Mobile UX documentation — ADR-023 (Mobile Input Model: touch gesture model, device detection, OrbitControls strategy, confirmation lifecycle); ADR-024 (Mobile Toolbar Architecture: fixed-slot layout, spacer pattern, mode-specific layouts); MENTAL_MODEL.md split into 6.9k index + 4 detail files | 2026-03-29 |
 | OrbitControls bugfix — OrbitControls now disabled during 2D extrude height-drag and face-extrude auto-start on touch (coarse pointer) devices; `_onPointerDown` gained `2d-extrude` early-return; face-extrude auto-start guard corrected from `innerWidth < 768` to `matchMedia` | 2026-03-29 |
