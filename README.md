@@ -30,6 +30,10 @@ Shift+A → Add Sketch → Draw rectangle → Enter → Drag height → Enter �
 - **Grab** (`G` key): move objects with optional axis lock (X/Y/Z), numeric input, and origin snap (Ctrl)
 - **Measure tool** (`M` key): place two snapped endpoints; renders amber dashed line + live distance label
 - **Coordinate Frames** (`Shift+A → Frame`): attach named SE(3) reference frames to objects; supports nested hierarchy and `R`-key rotation
+- **IFC classification**: assign IFC class (IfcWall, IfcBeam, etc.) to Solid and ImportedMesh objects; stored in `IFCClassRegistry`
+- **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`): full command history for Move, Grab, Face Extrude, Add, Delete, Rename, Rotate, Sketch Extrude
+- **Export scene** (`Ctrl+E`): download scene as structured JSON (geometry, frames, annotations)
+- **Import scene** (`Ctrl+I`): load a previously exported JSON; Clear or Merge mode
 - **STEP import**: import STEP files via the Node Editor; server-side tessellation streamed over WebSocket
 - **Save / Load scene**: persist and restore scene state via BFF REST API
 - **Outliner**: scene hierarchy sidebar — rename objects, toggle visibility, delete; multi-level indentation for nested frames
@@ -70,7 +74,8 @@ src/
 │   ├── Profile.js                # Domain entity: 2D cross-section profile (draw → extrude)
 │   ├── MeasureLine.js            # Domain entity: 1D distance annotation (p1, p2 endpoints)
 │   ├── CoordinateFrame.js        # Domain entity: named SE(3) reference frame (pose graph node)
-│   └── ImportedMesh.js           # Domain entity: read-only server-computed geometry (thin client)
+│   ├── ImportedMesh.js           # Domain entity: read-only server-computed geometry (thin client)
+│   └── IFCClassRegistry.js       # IFC semantic class registry (IfcWall, IfcBeam, …)
 ├── graph/
 │   ├── Vertex.js                 # { id, position: Vector3 }
 │   ├── Edge.js                   # { id, v0: Vertex, v1: Vertex }
@@ -78,9 +83,20 @@ src/
 ├── model/
 │   ├── CuboidModel.js            # Pure functions: geometry computation (stateless)
 │   └── SceneModel.js             # Aggregate root: objects + mode state + editSelection
+├── command/
+│   ├── MoveCommand.js            # Undo/redo: object move (Grab, Face Extrude)
+│   ├── AddSolidCommand.js        # Undo/redo: add solid
+│   ├── DeleteCommand.js          # Undo/redo: soft-delete
+│   ├── ExtrudeSketchCommand.js   # Undo/redo: Profile → Solid entity swap
+│   ├── RenameCommand.js          # Undo/redo: rename
+│   ├── FrameRotateCommand.js     # Undo/redo: CoordinateFrame rotation
+│   └── SetIfcClassCommand.js     # Undo/redo: IFC class assignment
 ├── service/
 │   ├── SceneService.js           # ApplicationService: entity creation, CRUD, observable events
-│   ├── SceneSerializer.js        # Scene save / load: domain → JSON round-trip
+│   ├── SceneSerializer.js        # Scene save / load: domain → JSON round-trip (BFF)
+│   ├── SceneExporter.js          # Export scene to JSON file (pure computation)
+│   ├── SceneImporter.js          # Import scene from JSON file (pure computation)
+│   ├── CommandStack.js           # Undo/redo stack (MAX=50)
 │   └── BffClient.js              # REST + WebSocket client for BFF (WsChannel)
 ├── view/
 │   ├── SceneView.js              # Renderer, camera, OrbitControls, lighting, grid
@@ -116,6 +132,10 @@ See `docs/ARCHITECTURE.md` for layer responsibilities and DDD migration status.
 | `1` / `2` / `3` | Vertex / Edge / Face sub-element mode (Edit Mode · 3D) |
 | `Enter` | Confirm operation |
 | `Escape` | Cancel operation |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| `Ctrl+E` | Export scene as JSON |
+| `Ctrl+I` | Import scene from JSON |
 
 ---
 
@@ -141,8 +161,12 @@ See `docs/ARCHITECTURE.md` for layer responsibilities and DDD migration status.
 | `docs/ARCHITECTURE.md` | Layer responsibilities, DDD migration status, coordinate system |
 | `docs/STATE_TRANSITIONS.md` | Mode state machine, mobile input flow, toolbar states |
 | `docs/ROADMAP.md` | Feature backlog and completed items |
-| `docs/adr/` | Architecture Decision Records (ADR-001 … ADR-021) |
-| `.claude/MENTAL_MODEL.md` | Coding policies learned from real bugs |
+| `docs/SCREEN_DESIGN.md` | Information architecture; what shows on screen in each mode |
+| `docs/LAYOUT_DESIGN.md` | UI layout dimensions, z-index, responsive breakpoints, toolbar slots |
+| `docs/EVENTS.md` | Domain events, keyboard shortcuts, pointer/touch events |
+| `docs/CODE_CONTRACTS.md` | Coding rules derived from real bugs (index + detail files) |
+| `docs/PHILOSOPHY.md` | Design principles distilled from post-mortems and ADRs |
+| `docs/adr/` | Architecture Decision Records (ADR-001 … ADR-025) |
 
 ---
 

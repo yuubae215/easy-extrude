@@ -32,17 +32,18 @@ OBJECT MODE  ──────────────────────�
 ## Edit Mode Substates
 
 State machine held in `SceneModel.editSubstate`.
-The initial substate when entering EDIT MODE is determined by `activeObject.dimension`.
+The initial substate when entering EDIT MODE is determined by the active object's runtime type
+(`instanceof Solid` → 3D, `instanceof Profile` → 2D). There is no `dimension` field (removed in ADR-012).
 
 ```
 Enter EDIT MODE
     |
     v
-dimension == 3 ?─────> EDIT · 3D ('3d')
+instanceof Solid ?───> EDIT · 3D ('3d')
     |                       |
     | No                    | Tab / O key / setMode('object')
     |                       v
-dimension == 2 ?─────> OBJECT MODE
+instanceof Profile ?──> OBJECT MODE
     |
     v
 EDIT · 2D-SKETCH ('2d-sketch')
