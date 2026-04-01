@@ -55,19 +55,23 @@ Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 When a new requirement arrives, update **all** documents marked ✅ below.
 Documents marked ⚠️ need review but may not require changes.
 
-| Requirement type | STATE_TRANSITIONS | SCREEN_DESIGN | LAYOUT_DESIGN | EVENTS | ARCHITECTURE | ADR | MENTAL_MODEL |
-|------------------|:-----------------:|:-------------:|:-------------:|:------:|:------------:|:---:|:------------:|
-| **新しいモード / サブステートを追加** | ✅ | ✅ (全エリア) | ✅ (ツールバースロット) | ✅ (keyboard) | ⚠️ | ✅ ADR-008 更新 | ⚠️ §1 |
-| **既存モードにサブ操作を追加** (grab, measure など) | ✅ (FSM 追加) | ✅ (ステータスバー・ツールバー行) | ⚠️ (スロット数変化なら ✅) | ✅ (pointer/keyboard 節) | — | ⚠️ | ⚠️ §2 |
-| **新しいエンティティ型を追加** (domain entity) | ⚠️ | ✅ (N パネル・アウトライナー行) | — | ✅ (objectAdded など) | ✅ (taxonomy 表) | ✅ 新 ADR | ✅ §1 |
-| **新しい UI 画面 / パネルを追加** | ⚠️ | ✅ (画面 ID 追加) | ✅ (寸法・z-index) | ✅ (UI events 節) | — | ⚠️ | ⚠️ §3 |
-| **キーボードショートカットを追加 / 変更** | — | ✅ (ステータスバー欄) | — | ✅ (keyboard 表) | — | — | — |
-| **モバイル操作 / ジェスチャーを追加** | ✅ (touch FSM) | ✅ (モバイル差分表) | ✅ (ツールバースロット) | ✅ (touch 節) | — | ✅ ADR-023/024 更新 | ✅ §2, §3 |
-| **レイアウト寸法 / z-index 変更** | — | ⚠️ | ✅ | — | — | — | ✅ §3 |
-| **新しいドメインイベントを追加** | — | — | — | ✅ (domain events 節) | ⚠️ | ⚠️ ADR-013 | — |
-| **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 |
-| **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 |
-| **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (下記ルール参照) |
+| Requirement type | STATE_TRANSITIONS | SCREEN_DESIGN | LAYOUT_DESIGN | EVENTS | ARCHITECTURE | ADR | MENTAL_MODEL | PHILOSOPHY |
+|------------------|:-----------------:|:-------------:|:-------------:|:------:|:------------:|:---:|:------------:|:----------:|
+| **新しいモード / サブステートを追加** | ✅ | ✅ (全エリア) | ✅ (ツールバースロット) | ✅ (keyboard) | ⚠️ | ✅ ADR-008 更新 | ⚠️ §1 | — |
+| **既存モードにサブ操作を追加** (grab, measure など) | ✅ (FSM 追加) | ✅ (ステータスバー・ツールバー行) | ⚠️ (スロット数変化なら ✅) | ✅ (pointer/keyboard 節) | — | ⚠️ | ⚠️ §2 | — |
+| **新しいエンティティ型を追加** (domain entity) | ⚠️ | ✅ (N パネル・アウトライナー行) | — | ✅ (objectAdded など) | ✅ (taxonomy 表) | ✅ 新 ADR | ✅ §1 | ⚠️ (§2 Type contract) |
+| **新しい UI 画面 / パネルを追加** | ⚠️ | ✅ (画面 ID 追加) | ✅ (寸法・z-index) | ✅ (UI events 節) | — | ⚠️ | ⚠️ §3 | — |
+| **キーボードショートカットを追加 / 変更** | — | ✅ (ステータスバー欄) | — | ✅ (keyboard 表) | — | — | — | — |
+| **モバイル操作 / ジェスチャーを追加** | ✅ (touch FSM) | ✅ (モバイル差分表) | ✅ (ツールバースロット) | ✅ (touch 節) | — | ✅ ADR-023/024 更新 | ✅ §2, §3 | ⚠️ (§V Interaction) |
+| **レイアウト寸法 / z-index 変更** | — | ⚠️ | ✅ | — | — | — | ✅ §3 | — |
+| **新しいドメインイベントを追加** | — | — | — | ✅ (domain events 節) | ⚠️ | ⚠️ ADR-013 | — | — |
+| **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 | — |
+| **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 | — |
+| **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (下記ルール参照) | ⚠️ (下記ルール参照) |
+
+> **PHILOSOPHY column rule**: mark ⚠️ only when the same root value has been
+> violated in **two or more unrelated contexts**. A single bug → MENTAL_MODEL.
+> A recurring pattern across contexts → extract or update a PHILOSOPHY principle.
 
 ### 更新チェックリスト (コードを書く前に実行)
 
@@ -82,13 +86,22 @@ Documents marked ⚠️ need review but may not require changes.
 
 ## After fixing a bug
 
-After every bug fix, **before committing**, ask:
+After every bug fix, **before committing**, ask these two questions in order:
+
+**Q1 — Rule missing?**
 > "Did this bug exist because an implicit rule was missing or misunderstood?"
 
 If yes → add the rule to the relevant `.claude/mental_model/*.md` detail file,
 then update the summary row in `.claude/MENTAL_MODEL.md` index.
 Use the criteria in MENTAL_MODEL's "What belongs here" section.
 When in doubt, add it — stale entries are easier to clean up than missing ones.
+
+**Q2 — Pattern repeating?**
+> "Have we violated the same *underlying value* in two or more unrelated places?"
+
+If yes → this signals a missing or under-specified principle in `docs/PHILOSOPHY.md`.
+Either add a new principle or sharpen an existing one. Link it to the MENTAL_MODEL
+rules it underlies. See PHILOSOPHY's "When to update" table for exact triggers.
 
 ## Development commands
 
@@ -112,6 +125,8 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 - `vite.config.js` `base` must match the repo name (`/easy-extrude/`)
 - Three.js addons must be imported from `three/addons/...`
 
+@docs/PHILOSOPHY.md
+
 ## Session history
 
 Full log → `docs/SESSION_LOG.md`
@@ -119,3 +134,4 @@ Full log → `docs/SESSION_LOG.md`
 - **2026-04-01**: Documentation — Translated `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` from Japanese to English; replaced ASCII-art layout diagrams with Mermaid `block-beta` diagrams.
 - **2026-04-01**: Documentation — `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` を新規作成。`CLAUDE.md` に変更影響マトリクスと更新チェックリストを追加。
 - **2026-04-01**: Bugfix — Mobile header overflow. Export/Import buttons clipped on narrow screens; replaced with `_moreMenuBtn` (⋯) dropdown on mobile. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. MENTAL_MODEL §3 updated.
+- **2026-04-01**: Documentation — Created `docs/PHILOSOPHY.md`: 20 principles in English distilled from MENTAL_MODEL, PROCESS_NOTES, and ADRs. Added maintenance lifecycle (triggers, lifecycle states, three-document hierarchy table). Added PHILOSOPHY column to Design change impact matrix and two-question post-mortem protocol to "After fixing a bug".

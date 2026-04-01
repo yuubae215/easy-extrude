@@ -1,312 +1,359 @@
-# easy-extrude フィロソフィ
+# Philosophy — easy-extrude
 
-このリポジトリで積み重ねてきた設計判断・バグ修正・プロセス改善から蒸留した、
-実践的な指針の集まりです。
+Principles distilled from real design decisions, bug fixes, and post-mortems.
+Each entry represents a value that was tested against reality and held.
 
-> フィロソフィは知識として理解するのではなく、日々のコードレビュー・設計判断・
-> ドキュメント更新において実践していくことが何よりも大切です。
-
----
-
-## I. 設計哲学（アーキテクチャ）
-
-### 1. 唯一の入口を守れ — Single Source of Truth
-
-重要な状態遷移には、必ず一つの正式な入口がある。それを迂回しない。
-
-- `setMode()` はモード遷移の唯一の入口。  
-- edit モードから `_switchActiveObject()` を呼ぶ前に、必ず `setMode('object')` を経由する。
-- 迂回すると「モデルとビューが異なるモードを信じている」状態が生まれ、再現困難なバグになる。
+> Philosophy is not knowledge to be understood — it is a standard to be practised
+> in every code review, design decision, and document update.
 
 ---
 
-### 2. 型が能力を語る — Capability Over Classification
+## Maintenance guidelines
 
-エンティティが「何をできるか」は、プロパティ値ではなく `instanceof` で判断する。
+### Where this fits in the documentation hierarchy
 
-- `dimension` フィールドや文字列タグで分岐しない。`instanceof Solid` で分岐する。
-- 型が変わればできることも変わる——その対応関係は型システムが保証する。
-- UI の有効/無効（Grab・Edit・Dup）も型から導く。
+| Document | Answers | Trigger | Granularity |
+|----------|---------|---------|-------------|
+| **`PHILOSOPHY.md`** (this file) | *Why* we make these choices | Same root value violated in 2+ unrelated contexts | Abstract — a named value with examples |
+| **`MENTAL_MODEL.md`** | *What* rule applies in a specific area | A bug revealed an implicit rule | Concrete — a specific method or class contract |
+| **`PROCESS_NOTES.md`** | *How* to work on this codebase | A workflow pattern proved more reliable | Procedural — steps, commands, agent strategies |
 
----
+A principle belongs here only if it explains the **spirit** behind multiple MENTAL_MODEL rules.
+If a rule applies to one file or one class, it belongs in MENTAL_MODEL, not here.
 
-### 3. 純粋と副作用を混ぜるな — Pure / Side-Effect Separation
+### What belongs here
 
-「計算」と「操作」は別物。一つの関数に両方を持ち込まない。
+- Values discovered through **recurring pain** — not hypothetical wisdom
+- Reasoning that was **actively debated** before a direction was chosen
+- Root causes shared by **two or more MENTAL_MODEL rules** in unrelated areas
+- Guidance that shapes **how a new contributor thinks**, not just what they do
 
-- `CuboidModel.js` は純粋な幾何計算だけを持つ。Three.js も DOM も触れない。
-- 副作用（描画・イベント・ストレージ）は View・Controller・Service 層が担う。
-- 混在した関数はテストできず、バグの震源になる。
+**Do NOT add:**
+- General software engineering best practices not specific to this project
+- Rules about a single class or module (use MENTAL_MODEL instead)
+- Workflow or agent patterns (use PROCESS_NOTES instead)
+- In-progress notes or tentative ideas (use a task/plan instead)
 
----
+### When to update
 
-### 4. 視覚状態には必ず所有者を — Visual State Ownership
+| Trigger | Action |
+|---------|--------|
+| The same root value was violated in 2+ unrelated files or features | Extract a principle; link to the MENTAL_MODEL rules it underlies |
+| A design debate resolved with a non-obvious conclusion | Encode the reasoning here so future contributors don't reopen it |
+| A principle's wording led to a wrong implementation | Clarify the wording; add a "not this" counterexample |
+| Experience reveals a principle applies more broadly than written | Widen its scope; update examples |
+| A principle is now enforced structurally (type system, linter) | **Retire it** — structure is the source of truth, prose is redundant |
+| A principle is really a single code rule | Move it to MENTAL_MODEL; remove from here |
 
-`visible` や `material` への書き込みは、専用メソッド以外から行わない。
+### How to update
 
-- `hlMesh.visible` は `setFaceHighlight()` だけが書く。  
-- `boxHelper.visible` は `setObjectSelected()` だけが書く。
-- 複数箇所から書いた瞬間に「最後の書き込みが勝つ」競合が生まれる。
+1. Identify which existing principle (if any) the trigger relates to.
+   Be conservative — a sharper existing principle beats a new one.
+2. If adding: write in the format **Title — Subtitle**, then *what it means*,
+   *how it manifests in this codebase*, and *why it matters*.
+3. Add or update the row in the **Index** table at the bottom of this file.
+4. Commit together with the code change or post-mortem that motivated it.
+   The commit message should name the principle.
 
----
+### Lifecycle states
 
-### 5. ドメインイベントで繋ぐ、参照で繋がない — Domain Events, Not Direct References
-
-View と Controller はモデルを直接監視しない。イベントを購読する。
-
-- `SceneService` が `objectAdded` / `objectRemoved` / `objectRenamed` を発火する。
-- `OutlinerView` はイベントに反応する——モデルへの直参照は持たない。
-- 直参照はモジュール間の結合を高め、テストと変更を難しくする。
-
----
-
-### 6. 変換動詞は新インスタンスを返す — Entity Swap Returns New Instance
-
-「変換」は元のエンティティを壊さずに新しいエンティティを返す。
-
-- `Profile.extrude(height)` は新しい `Solid` を返す。Profile は変更されない。
-- `SceneService.extrudeSketch()` がモデル内でスワップを担う。
-- イミュータブルな変換は、取り消しと再実行の両方を自然に支える。
-
----
-
-## II. 並行性と非同期
-
-### 7. 楽観と悲観を意識的に選べ — Optimistic vs Pessimistic Locking
-
-「応答性」と「一貫性」のどちらを優先するかを、実装前に決める。
-
-| 戦略 | 適用例 |
-|------|-------|
-| 楽観（non-blocking） | オブジェクトドラッグ・カメラ操作・サブ要素選択 |
-| 悲観（blocking） | ブーリアン演算・シーン保存・ファイルインポート |
-
-- 悲観ロック時は `isProcessing = true` を立て、入力を無効化し、スピナーを表示する。
-- 戦略を混同すると、UI が固まるか、データが静かに壊れるかのどちらかになる。
+| State | Meaning |
+|-------|---------|
+| *(no mark)* | Active — practised and relevant |
+| ✗ Retired | Superseded or encoded structurally; kept as history |
 
 ---
 
-### 8. await を一層に一つ — One Await Per Layer
+## I. Design Philosophy
 
-非同期 DB・ネットワーク呼び出しは必ず `await` する。Promise をデータとして渡さない。
+### 1. One Authoritative Entry Point
 
-- `sceneStore.*()` の呼び出しはすべて `await` する。
-- `await` を含む関数は `async` で宣言する。
-- fire-and-forget ラッパー（`_autosave` など）も `try/catch` で包む。
-- `await` を忘れると `JSON.parse` に Promise が渡って静かにクラッシュする。
+Every critical state transition has exactly one designated entry point. Never bypass it.
 
----
+- `setMode()` is the sole entry point for all mode transitions.
+- Before calling `_switchActiveObject()` from edit mode, always pass through `setMode('object')`.
+- Bypassing creates split-brain: the model and view believe different modes are active —
+  the resulting bugs are non-deterministic and nearly impossible to reproduce.
 
-## III. メモリとライフサイクル
-
-### 9. 確保と解放は対称に — Memory Symmetry
-
-`scene.add()` には必ず対応する `scene.remove()` と `.dispose()` がある。
-
-- 同じコミットで追加と削除の両方を書く。
-- `_clearScene()` は `objectRemoved` イベントを発火してからモデルを差し替える。
-- 非対称な解放はゴーストオブジェクトを生む——不可視だが、まだメモリと論理の中にいる。
+*Underlies MENTAL_MODEL rules: Mode Transition Flow, CommandStack push() vs execute()*
 
 ---
 
-### 10. 削除は「軟削除」で、消去は後で — Soft-Delete for Undo
+### 2. Type Is the Capability Contract
 
-Undo を可能にするために、削除したエンティティはすぐに解放しない。
+What an entity *can do* is determined by its runtime type (`instanceof`), not by a property value.
 
-- `_deleteObject()` は `detachObject()` と `setVisible(false)` を呼ぶ。`dispose()` は呼ばない。
-- `dispose()` を呼ぶのは cascade-delete と `_clearScene()` だけ。
-- コマンドスタックの上限（MAX=50）が、不可視メッシュの蓄積量を自然に制御する。
+- Never branch on a `dimension` field or string tag. Branch on `instanceof Solid`.
+- When a type changes, its capabilities change — the type system enforces the contract.
+- UI availability (Grab, Edit, Dup) is derived from type, not from ad-hoc flags.
 
----
-
-### 11. ラベルはフレームごとに追う — Label Lifecycle Sync
-
-3D オブジェクトと連動する HTML オーバーレイは、毎フレーム再配置する。
-
-- `MeasureLineView.updateLabelPosition()` をアニメーションループで毎フレーム呼ぶ。
-- カメラが動いた後に追随しないラベルは「壊れた UI」に見える。
-- `dispose()` では DOM から取り除く。
+*Underlies MENTAL_MODEL rules: Entity Capability Contracts, MeasureLineView No-Op Interface*
 
 ---
 
-## IV. エラーとフィードバック
+### 3. Separate Pure Computation from Side Effects
 
-### 12. 静かな失敗を許すな — Unguarded JSON.parse is Silent Data Loss
+Every function is either a pure computation (deterministic, no I/O) or a side-effectful
+operation (DOM, Three.js, storage, mutation). Never mix the two in one function.
 
-外部から来るすべての入力には防衛的なガードをつける。エラーは明示的に。
+- `CuboidModel.js` contains only geometry arithmetic — no Three.js, no DOM.
+- Views and Controllers own all side effects; the domain layer owns none.
+- Mixed functions are untestable, non-composable, and the source of the hardest bugs.
 
-- `JSON.parse(row.data)` はすべて `try/catch` で包む。
-- 読み取り専用エンティティで操作をブロックするときは、必ず `showToast()` で伝える。
-- 「ショートカットキーが消費されたが何も起きない」は最悪の UX バグである。
-
----
-
-### 13. 読み取り専用であることは伝える義務がある — Read-Only Feedback is Mandatory
-
-操作がブロックされる理由をユーザーは知る権利がある。
-
-- `setMode('edit')` が ImportedMesh で拒否されるなら、必ず `showToast('Imported geometry is read-only')` を表示する。
-- 初期 return / early return の前に、必ずフィードバックを置く。
-- フィードバックなしの early return はユーザーを孤独にする。
+*Underlies MENTAL_MODEL rules: Visual State Ownership, Pure / Side-Effect Separation*
 
 ---
 
-## V. インタラクション設計
+### 4. Every Visual Flag Has One Owner
 
-### 14. ジェスチャーを一歩とせよ — Gesture Over Steps
+Each piece of visual state is written by exactly one method. No scattered assignments.
 
-主要な空間操作は、複数ステップのボタン列ではなく、単一の連続ジェスチャーで完結させる。
+- `hlMesh.visible` is written only by `setFaceHighlight()`.
+- `boxHelper.visible` is written only by `setObjectSelected()`.
+- When two code paths both write a flag, the last write wins unpredictably.
+  Ownership eliminates this class of race entirely.
 
-- モバイルの面押し出し：タップ → ドラッグ → 離す = 確定（ワンアクション）。
-- 独立した「押し出し」ボタンは不要。
-- ジェスチャーは「発見」される——手順書なしで学べる操作が最良の設計。
-
----
-
-### 15. タッチは hover を経由しない — Hover + Tap Asymmetry
-
-タッチデバイスは `pointerdown` の前に `pointermove` を発火しない。hover 前提を排除する。
-
-- `_onPointerDown` の中で、常に `_hitFace()` を再実行してから選択処理に進む。
-- hover 状態を touch tap のトリガーとして使わない。
-- この非対称性を無視すると、タッチでサブ要素が一切選択できなくなる。
+*Underlies MENTAL_MODEL rules: Visual State Ownership*
 
 ---
 
-### 16. 操作が衝突するときだけ無効化する — Disable Responsibly
+### 5. Communicate Through Events, Not References
 
-カメラ操作（OrbitControls）を無効化するのは、その操作と入力ジェスチャーが本当に衝突する場合だけ。
+Views and Controllers subscribe to domain events. They do not hold back-references into the model.
 
-- 矩形選択は無効化しない（1 本指、Orbit は 2 本指）。
-- 計測点配置と Grab は無効化する（1 本指ドラッグを専有）。
-- 不必要な無効化はナビゲーションを壊し、ユーザーを閉じ込める。
+- `SceneService` emits `objectAdded`, `objectRemoved`, `objectRenamed`, `geometryApplied`.
+- `OutlinerView` reacts to events — it does not poll or reference `SceneModel` directly.
+- Direct references couple modules; events decouple them, making each independently testable.
 
----
-
-## VI. UI とレイアウト
-
-### 17. スロット数は固定せよ — Layout Slot Stability
-
-モバイルツールバーのボタン位置は、状態が変わっても動かさない。
-
-- 各モードのスロット数を固定する（Object=5, Edit 3D=4）。
-- 一時的に使えないアクションは `disabled: true` にする——削除はしない。
-- `{ spacer: true }` プレースホルダーで空きスロットを埋める。
-- ボタンがずれると、指の下で別のアクションが起動する。
+*Underlies MENTAL_MODEL rules: Entity Swap Must Emit Events, _clearScene Emit Order*
 
 ---
 
-### 18. 発見を設計する — Context Menu Discovers Actions
+### 6. Transformations Return New Instances
 
-ツールバーに並べるよりも、コンテキストメニューで発見させる方が良い場合がある。
+Transformation verbs produce a new entity without mutating the source.
 
-- ロングプレス（≥400ms、8px 未満の移動）→ Grab / Duplicate / Rename / Delete を表示。
-- Grab をメインツールバーに出さなくても、ユーザーは自然に見つける。
-- メニュー項目はエンティティ型でフィルタリングする（ImportedMesh には Duplicate を出さない）。
+- `Profile.extrude(height)` returns a new `Solid`. The Profile is unchanged.
+- `SceneService.extrudeSketch()` performs the model swap — the domain method stays pure.
+- Immutable transformations make undo/redo natural and eliminate hidden mutation bugs.
 
----
-
-## VII. 座標系と精度
-
-### 19. ROS の世界座標系に従え — Euler Convention Standardization
-
-Euler 角は ROS RPY 規約（内因性 ZYX）で統一する。
-
-- `euler.setFromQuaternion(q, 'ZYX')` を使う。`'XYZ'` は使わない。
-- N パネルのラベルは「RPY」と表記する。
-- この規約を誤ると、ロボティクスに慣れたユーザーが角度の読み方を間違える。
+*Underlies MENTAL_MODEL rules: Entity Swap Must Emit Events, Soft-Delete Pattern*
 
 ---
 
-### 20. スタックスナップのレイ原点は高く — Ray Origin Height Matters
+## II. Concurrency
 
-スタックスナップのレイは Z=10000 から下向きに飛ばす。オブジェクトの現在高さから飛ばさない。
+### 7. Choose Your Locking Strategy Before You Write Code
 
-- `_applyStackSnap()` はレイ原点を `(x, y, 10000)` に固定する。
-- 低い原点では、Grab 中のオブジェクトより背の高い面を見つけられない。
+Decide whether an operation is *optimistic* (prioritise responsiveness) or
+*pessimistic* (prioritise consistency) before implementation — not ad hoc.
 
----
+| Strategy | When to use | Examples |
+|----------|-------------|---------|
+| Optimistic (non-blocking) | User needs immediate feedback | Object drag, camera orbit, sub-element selection |
+| Pessimistic (blocking) | Data integrity is critical | Boolean ops, scene save/load, file import |
 
-## VIII. インタフェース設計
+- Pessimistic operations set `isProcessing = true`, disable input, and show a spinner.
+- Mixing strategies produces either a frozen UI or silent data corruption.
 
-### 21. ポリモーフィズムの契約を完全に守れ — No-Op Interface Completeness
-
-多態参照で呼ばれるメソッドは、すべての具象型に実装する。該当しないなら no-op で。
-
-- `MeasureLineView` は `MeshView` の全メソッドを no-op として実装する。
-- 欠落したメソッドは `TypeError` を起こし、入力ハンドラを静かに中断させる。
-- `MeshView` に新メソッドを追加したら、すべての兄弟 View に no-op を追加する。
+*Underlies MENTAL_MODEL rules: `isProcessing` flag, Concurrency strategy (CLAUDE.md)*
 
 ---
 
-### 22. イベントを発火してからスワップせよ — Emit Before Swap
+### 8. Every Async Call Must Be Awaited at Its Layer
 
-エンティティを差し替えるときは、必ず `objectRemoved` → 差し替え → `objectAdded` の順序で。
+`await` every DB and network call. Never let a Promise pass through as data.
 
-- `extrudeSketch()` は `objectRemoved` + `objectAdded` を発火する——単なるスワップではない。
-- イベントなしのスワップは OutlinerView とモデルの整合を静かに壊す。
-- 「直接 `addObject()` / `removeObject()` を呼ぶ場所」はすべて疑う。
+- Every `sceneStore.*()` call is `await`ed; the enclosing function is `async`.
+- Fire-and-forget wrappers (e.g. `_autosave`) wrap the `await` in `try/catch`.
+- A forgotten `await` delivers a Promise to `JSON.parse` — a silent crash with no stack trace.
 
----
-
-## IX. プロセス哲学
-
-### 23. ドキュメントの乖離はバグである — Documentation Drift is a Bug
-
-コード・ADR・メンタルモデルは三位一体。どれかだけ更新することは「半分のバグ修正」に過ぎない。
-
-- バグ修正後に問う：「この暗黙のルールがドキュメントになかったからバグが起きたのか？」
-- Yes なら → `mental_model/*.md` にルールを追加し、`MENTAL_MODEL.md` インデックスを更新してからコミット。
-- コードは自己文書化しない——意図は書かれて初めて伝わる。
+*Underlies MENTAL_MODEL rules: All DB calls must be awaited, PRAGMA journal_mode*
 
 ---
 
-### 24. 広い視点の後に深い視点で — Two-Pass Validation
+## III. Memory and Lifecycle
 
-検証は「広いスキャン」と「焦点スキャン」の二段階で行う。
+### 9. Allocations and Deallocations Are Symmetric
 
-- **Pass 1（広い）**: すべてのバリデーターを並列実行 → 構造的違反・明らかな欠落を検出。
-- **Pass 2（焦点）**: 直近に変更したファイルに対して `/sqa`・`/adr-validate` を単独実行 → ADR テキストの乖離・UX サイレント失敗を検出。
-- 35 ファイルを一度に読む広いスキャンは、微妙な問題を見逃す。
+Every `scene.add()` has a matching `scene.remove()` + `.dispose()` in the same class.
 
----
+- The teardown lives in the same file as the allocation — written in the same commit.
+- `_clearScene()` emits `objectRemoved` for each object *before* swapping the model.
+- Broken symmetry leaves ghost objects: invisible in the scene, still alive in memory and logic.
 
-### 25. 焦点を絞ったエージェントが深く見る — Focused Agents Over Broad Agents
-
-検証・調査タスクにおいて、エージェントには広いグロブよりも具体的なファイル名を渡す。
-
-- `src/**/*.js` より `src/view/MeasureLineView.js, src/controller/AppController.js` の方が信頼度の高い結果を返す。
-- コンテキスト予算は有限——ファイル数を絞れば、一ファイルあたりの注意量が増える。
-- 並列実行（広い）→ 逐次実行（焦点）の順序で進める。
+*Underlies MENTAL_MODEL rules: Object Lifecycle Symmetry, _clearScene Emit Order*
 
 ---
 
-## まとめ
+### 10. Delete Softly; Dispose Late
 
-| # | フィロソフィ | 層 |
-|---|------------|-----|
-| 1 | 唯一の入口を守れ | アーキテクチャ |
-| 2 | 型が能力を語る | ドメイン設計 |
-| 3 | 純粋と副作用を混ぜるな | アーキテクチャ |
-| 4 | 視覚状態には必ず所有者を | View |
-| 5 | ドメインイベントで繋ぐ | アーキテクチャ |
-| 6 | 変換動詞は新インスタンスを返す | ドメイン |
-| 7 | 楽観と悲観を意識的に選べ | 並行性 |
-| 8 | await を一層に一つ | 非同期 |
-| 9 | 確保と解放は対称に | メモリ |
-| 10 | 削除は「軟削除」で、消去は後で | ライフサイクル |
-| 11 | ラベルはフレームごとに追う | アニメーション |
-| 12 | 静かな失敗を許すな | エラー処理 |
-| 13 | 読み取り専用であることは伝える義務がある | UX |
-| 14 | ジェスチャーを一歩とせよ | インタラクション |
-| 15 | タッチは hover を経由しない | インタラクション |
-| 16 | 操作が衝突するときだけ無効化する | インタラクション |
-| 17 | スロット数は固定せよ | モバイル UI |
-| 18 | 発見を設計する | UX |
-| 19 | ROS の世界座標系に従え | 座標系 |
-| 20 | スタックスナップのレイ原点は高く | 精度 |
-| 21 | ポリモーフィズムの契約を完全に守れ | インタフェース |
-| 22 | イベントを発火してからスワップせよ | 一貫性 |
-| 23 | ドキュメントの乖離はバグである | プロセス |
-| 24 | 広い視点の後に深い視点で | 検証 |
-| 25 | 焦点を絞ったエージェントが深く見る | 検証 |
+Preserve undo capability by keeping deleted entities alive but invisible until the undo stack releases them.
+
+- `_deleteObject()` calls `detachObject()` (remove from model) + `setVisible(false)` (keep GPU resources).
+- `dispose()` is called only in cascade-delete and `_clearScene()`.
+- The command stack limit (MAX=50) bounds the invisible mesh count automatically.
+
+*Underlies MENTAL_MODEL rules: Soft-Delete Pattern*
+
+---
+
+## IV. Error Handling and Feedback
+
+### 11. Silent Failures Are the Hardest Bugs
+
+Every blocked operation must surface to the user. A silent no-op is never acceptable.
+
+- `JSON.parse(row.data)` is always wrapped in `try/catch` — malformed data throws, not crashes.
+- An early-return that blocks an operation always shows `showToast()` first.
+- "Keyboard shortcut consumed but nothing happened" is the worst UX bug: the user thinks the app is broken.
+
+*Underlies MENTAL_MODEL rules: Unguarded JSON.parse, Read-Only Entity Early-Return*
+
+---
+
+## V. Interaction Design
+
+### 12. One Continuous Gesture Over Multiple Button Steps
+
+Primary spatial operations complete in a single unbroken gesture, not a multi-step button sequence.
+
+- Mobile face extrude: tap → drag → release = done (one action, no separate confirm button).
+- Gestures are *discovered*, not read from a manual — the best design teaches itself.
+- A button sequence that takes 3 taps to do what one drag can do is 3x the friction.
+
+*Underlies MENTAL_MODEL rules: Gesture-Based Interaction Priority, Interaction Confirmation Lifecycle*
+
+---
+
+### 13. Touch Does Not Pass Through Hover
+
+Touch devices do not fire `pointermove` before `pointerdown`. Never assume hover state precedes a tap.
+
+- `_onPointerDown` always re-runs `_hitFace()` before edit selection logic, regardless of `_hoveredFace`.
+- Violating this means touch taps never select sub-elements — a complete silent failure.
+
+*Underlies MENTAL_MODEL rules: Touch vs. Pointer Asymmetry*
+
+---
+
+### 14. Disable Controls Only When Input Truly Conflicts
+
+Disable OrbitControls only when a specific operation fully consumes the same input gesture.
+
+- Rect selection does NOT disable OrbitControls (uses 1-finger; orbit uses 2-finger).
+- Measure placement and Grab DO disable OrbitControls (both consume 1-finger-drag).
+- Unnecessary disabling traps the user — they cannot navigate and cannot understand why.
+
+*Underlies MENTAL_MODEL rules: OrbitControls Disable Strategy*
+
+---
+
+## VI. UI Stability
+
+### 15. Toolbar Slots Are Fixed; Buttons Are Not Removed
+
+Mobile toolbar button positions must never shift between states.
+
+- Each mode has a fixed slot count (Object = 5, Edit 3D = 4).
+- Temporarily unavailable actions use `disabled: true` — never removal.
+- Absent slots are padded with `{ spacer: true }` invisible placeholders.
+- A shifting button triggers an accidental tap on the wrong action — data loss risk.
+
+*Underlies MENTAL_MODEL rules: Mobile Toolbar Stability*
+
+---
+
+### 16. Discovery Is a Design Deliverable
+
+Secondary actions are better discovered through contextual gestures than memorised toolbar positions.
+
+- Long-press (≥ 400 ms, < 8 px movement) reveals Grab / Duplicate / Rename / Delete.
+- Fewer visible buttons reduce cognitive load without reducing capability.
+- Menu items are filtered by entity type — the context menu is smart, not generic.
+
+*Underlies MENTAL_MODEL rules: Long-Press Context Menu*
+
+---
+
+## VII. Interface Contracts
+
+### 17. Polymorphic Interfaces Must Be Complete
+
+Every method called through a polymorphic reference must exist on all concrete types.
+If the behaviour does not apply, implement a no-op.
+
+- `MeasureLineView` implements every `MeshView` method as a no-op.
+- A missing method produces a `TypeError` that silently aborts the input handler — no error log, no user feedback.
+- When a new method is added to `MeshView`, all sibling Views receive a no-op in the same commit.
+
+*Underlies MENTAL_MODEL rules: MeasureLineView No-Op Interface*
+
+---
+
+### 18. Emit the Event, Then Perform the Swap
+
+When an entity is replaced outside the standard create/delete path, always emit the
+corresponding domain events — `objectRemoved` before the swap, `objectAdded` after.
+
+- `extrudeSketch()` emits both events. It does not silently swap the model.
+- Without events, `OutlinerView` and `AppController` diverge from the model state invisibly.
+- Every direct `addObject()` / `removeObject()` call is a suspect — verify it emits.
+
+*Underlies MENTAL_MODEL rules: Entity Swap Must Emit Events, _clearScene Emit Order*
+
+---
+
+## VIII. Living Documentation
+
+### 19. Documentation Drift Is a Bug
+
+The code, ADRs, and mental model must stay in sync. A partially updated codebase is a partially
+broken codebase — the undocumented part will cause the next bug.
+
+- After every bug fix, ask: *"Did this bug exist because an implicit rule was missing?"*
+- If yes → add the rule to `MENTAL_MODEL.md` before committing the fix.
+- After every design decision, ask: *"Will a future contributor understand why we chose this?"*
+- If no → write the principle here or in an ADR before the session ends.
+
+*Underlies MENTAL_MODEL rules: Documentation Drift, PROCESS_NOTES two-pass pattern*
+
+---
+
+### 20. Narrow Focus Finds What Broad Scans Miss
+
+For verification, give an agent a small named file list rather than `src/**/*.js`.
+
+- A broad scan of 35 files spreads context thin; subtle issues receive proportionally less attention.
+- Run broad validators in parallel (structural violations), then focused validators sequentially
+  on recently changed files (ADR text drift, silent UX failures).
+- This is Pass 1 → Pass 2 in the two-pass pattern (see `PROCESS_NOTES.md`).
+
+*Underlies PROCESS_NOTES rules: Two-pass pattern, Focused Agents > Broad Agents*
+
+---
+
+## Index
+
+| # | Principle | Chapter | Underlies |
+|---|-----------|---------|-----------|
+| 1 | One Authoritative Entry Point | Design | Mode Transition Flow, CommandStack |
+| 2 | Type Is the Capability Contract | Design | Entity Capability Contracts, No-Op Interface |
+| 3 | Separate Pure Computation from Side Effects | Design | Visual State Ownership, Pure/Side-Effect |
+| 4 | Every Visual Flag Has One Owner | Design | Visual State Ownership |
+| 5 | Communicate Through Events, Not References | Design | Entity Swap Emit, _clearScene Order |
+| 6 | Transformations Return New Instances | Design | Entity Swap, Soft-Delete |
+| 7 | Choose Your Locking Strategy Before You Write Code | Concurrency | isProcessing, CONCURRENCY.md |
+| 8 | Every Async Call Must Be Awaited at Its Layer | Concurrency | DB calls, PRAGMA |
+| 9 | Allocations and Deallocations Are Symmetric | Memory | Object Lifecycle Symmetry |
+| 10 | Delete Softly; Dispose Late | Memory | Soft-Delete Pattern |
+| 11 | Silent Failures Are the Hardest Bugs | Errors | JSON.parse guard, Read-Only Early-Return |
+| 12 | One Continuous Gesture Over Multiple Button Steps | Interaction | Gesture Priority, Confirmation Lifecycle |
+| 13 | Touch Does Not Pass Through Hover | Interaction | Touch vs. Pointer Asymmetry |
+| 14 | Disable Controls Only When Input Truly Conflicts | Interaction | OrbitControls Disable Strategy |
+| 15 | Toolbar Slots Are Fixed; Buttons Are Not Removed | UI | Mobile Toolbar Stability |
+| 16 | Discovery Is a Design Deliverable | UI | Long-Press Context Menu |
+| 17 | Polymorphic Interfaces Must Be Complete | Contracts | MeasureLineView No-Op Interface |
+| 18 | Emit the Event, Then Perform the Swap | Contracts | Entity Swap Emit |
+| 19 | Documentation Drift Is a Bug | Living Docs | MENTAL_MODEL maintenance, ADR drift |
+| 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | PROCESS_NOTES two-pass pattern |
