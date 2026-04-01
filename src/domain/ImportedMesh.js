@@ -26,6 +26,8 @@ export class ImportedMesh {
     this.id       = id
     this.name     = name
     this.meshView = meshView
+    /** @type {string|null} IFC4 class name (e.g. 'IfcWall'); null = unclassified. @see ADR-025 */
+    this.ifcClass = null
     /** @type {THREE.Vector3[]} synthetic 8 AABB corners for grab/drag — set by initCorners() */
     this._corners8 = []
   }

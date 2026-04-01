@@ -37,6 +37,7 @@ import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
+import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
 import { downloadSceneJson }          from '../service/SceneExporter.js'
 import { parseImportJson }            from '../service/SceneImporter.js'
 
@@ -71,6 +72,7 @@ export class AppController {
               ? 'sketch'
               : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
+      if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
     })
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
     this._service.on('objectRenamed', (id, nm)  => {
@@ -80,6 +82,9 @@ export class AppController {
       }
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
+    this._service.on('objectIfcClassChanged', (id, ifcClass) => {
+      outlinerView?.setObjectIfcClass(id, ifcClass)
+    })
     this._service.on('geometryApplied', ({ objectId }) => {
       this._importProgressUnsub?.(); this._importProgressUnsub = null
       this._uiView.hideImportProgress()
@@ -300,6 +305,13 @@ export class AppController {
     uiView.onDescriptionChange(desc => {
       const obj = this._activeObj
       if (obj) obj.description = desc
+    })
+    uiView.onIfcClassChange(ifcClass => {
+      const obj = this._activeObj
+      if (!obj) return
+      const cmd = createSetIfcClassCommand(obj.id, obj.ifcClass ?? null, ifcClass ?? null, this._service)
+      this._commandStack.push(cmd)
+      this._updateNPanel()
     })
     uiView.onFramePositionChange((axis, val) => {
       const frame = this._activeObj
@@ -1289,7 +1301,12 @@ export class AppController {
     corners.forEach(c => { bMin.min(c); bMax.max(c) })
     const dims = new THREE.Vector3().subVectors(bMax, bMin)
     const locationEditable = typeof obj.move === 'function' && !(obj instanceof CoordinateFrame)
-    this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', { locationEditable })
+    const showIfcClass = obj instanceof Solid || obj instanceof ImportedMesh
+    this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', {
+      locationEditable,
+      showIfcClass,
+      ifcClass: showIfcClass ? (obj.ifcClass ?? null) : undefined,
+    })
   }
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────

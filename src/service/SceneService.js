@@ -19,10 +19,11 @@
  * to the matching scene object's MeshView automatically.
  *
  * Events emitted:
- *   'objectAdded'   (obj: SceneObject)
- *   'objectRemoved' (id: string)
- *   'objectRenamed' (id: string, name: string)
- *   'activeChanged' (id: string|null)
+ *   'objectAdded'          (obj: SceneObject)
+ *   'objectRemoved'        (id: string)
+ *   'objectRenamed'        (id: string, name: string)
+ *   'objectIfcClassChanged' (id: string, ifcClass: string|null)
+ *   'activeChanged'        (id: string|null)
  *
  * Rules:
  *  - SceneService is the ONLY place that calls new Solid / new Profile / new MeshView.
@@ -272,6 +273,7 @@ export class SceneService extends EventEmitter {
         )
         const solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
         solid.description = dto.description ?? ''
+        solid.ifcClass    = dto.ifcClass    ?? null
         solid.meshView.updateGeometry(solid.corners)
         entities.push(solid)
       // Accept both new ('Profile') and legacy ('Sketch') type strings
@@ -301,6 +303,7 @@ export class SceneService extends EventEmitter {
       } else if (dto.type === 'ImportedMesh') {
         const meshView  = new ImportedMeshView(this._threeScene)
         const entity    = new ImportedMesh(dto.id, dto.name, meshView)
+        entity.ifcClass = dto.ifcClass ?? null
         const positions = base64ToF32(dto.positions)
         const normals   = dto.normals  ? base64ToF32(dto.normals)  : null
         const indices   = dto.indices  ? base64ToU32(dto.indices)  : null
@@ -395,6 +398,7 @@ export class SceneService extends EventEmitter {
       )
       const solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
       solid.description = dto.description ?? ''
+      solid.ifcClass    = dto.ifcClass    ?? null
       solid.meshView.updateGeometry(solid.corners)
       return solid
     }
@@ -430,6 +434,7 @@ export class SceneService extends EventEmitter {
       if (!dto.geometry?.positions) return null   // v1.0 export — no buffers, skip
       const meshView  = new ImportedMeshView(this._threeScene)
       const entity    = new ImportedMesh(newId, dto.name ?? 'ImportedMesh', meshView)
+      entity.ifcClass = dto.ifcClass ?? null
       const positions = base64ToF32(dto.geometry.positions)
       const normals   = dto.geometry.normals ? base64ToF32(dto.geometry.normals) : null
       const indices   = dto.geometry.indices ? base64ToU32(dto.geometry.indices) : null
@@ -621,6 +626,22 @@ export class SceneService extends EventEmitter {
     if (!obj || !name) return
     obj.rename(name)
     this.emit('objectRenamed', id, name)
+  }
+
+  /**
+   * Assigns an IFC4 class to a Solid or ImportedMesh entity.
+   * Pass null to clear the classification.
+   * No-ops if id is unknown or the entity type does not support classification.
+   * Emits: 'objectIfcClassChanged'
+   * @param {string} id
+   * @param {string|null} ifcClass  e.g. 'IfcWall', or null to unclassify
+   */
+  setIfcClass(id, ifcClass) {
+    const obj = this._model.getObject(id)
+    if (!obj) return
+    if (!(obj instanceof Solid) && !(obj instanceof ImportedMesh)) return
+    obj.ifcClass = ifcClass ?? null
+    this.emit('objectIfcClassChanged', id, obj.ifcClass)
   }
 
   /**

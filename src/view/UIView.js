@@ -3,6 +3,7 @@
  *
  * Side effects: creates DOM elements, appends them, and modifies their styles.
  */
+import { IFC_CLASSES, IFC_CLASS_MAP } from '../domain/IFCClassRegistry.js'
 
 /** SVG icon strings for the mobile toolbar. Pass as `icon` in setMobileToolbar buttons. */
 export const ICONS = {
@@ -577,6 +578,7 @@ export class UIView {
     this._onFramePositionChangeCb = null
     this._onFrameRotationChangeCb = null
     this._onLocationChangeCb = null
+    this._onIfcClassChangeCb = null
 
     // Apply initial mobile layout and listen for resize
     this._applyMobileLayout()
@@ -600,6 +602,10 @@ export class UIView {
   /** Registers callback for geometry object location changes from the N panel.
    *  cb(axis: 'x'|'y'|'z', value: number) */
   onLocationChange(callback) { this._onLocationChangeCb = callback }
+
+  /** Registers callback for IFC class changes from the N panel.
+   *  cb(ifcClass: string|null)  — null means "clear classification" */
+  onIfcClassChange(callback) { this._onIfcClassChangeCb = callback }
 
   /** Registers callback for mode changes */
   onModeChange(callback) {
@@ -1494,7 +1500,7 @@ export class UIView {
    */
   updateNPanel(centroid, dimensions, name = '', description = '', options = {}) {
     if (!this._nPanelVisible) return
-    const { locationEditable = false } = options
+    const { locationEditable = false, ifcClass = undefined, showIfcClass = false } = options
 
     const editRow = (axis, color, val, onChange) => {
       const r = document.createElement('div')
@@ -1650,6 +1656,12 @@ export class UIView {
     descSection.appendChild(descTitleEl)
     descSection.appendChild(descTextareaEl)
 
+    // ── IFC Class section (only for Solid / ImportedMesh) ────────────────────
+    let ifcSection = null
+    if (showIfcClass) {
+      ifcSection = this._buildIfcClassSection(ifcClass ?? null)
+    }
+
     const locRow = locationEditable
       ? (axis, color, val) => editRow(axis, color, val, v => { if (this._onLocationChangeCb) this._onLocationChangeCb(axis.toLowerCase(), v) })
       : row
@@ -1666,7 +1678,270 @@ export class UIView {
       row('Y', '#6ab04c', dimensions.y),
       row('Z', '#4a9eed', dimensions.z),
     ]))
+    if (ifcSection) this._nPanelContentEl.appendChild(ifcSection)
     this._nPanelContentEl.appendChild(descSection)
+  }
+
+  /**
+   * Builds the IFC Class section for the N-panel.
+   * Shows a coloured badge for the current class and a button to open the picker.
+   * @param {string|null} currentClass
+   * @returns {HTMLElement}
+   * @private
+   */
+  _buildIfcClassSection(currentClass) {
+    const sec = document.createElement('div')
+    Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+
+    const titleEl = document.createElement('div')
+    titleEl.textContent = 'IFC Class'
+    Object.assign(titleEl.style, {
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+      marginBottom: '6px',
+    })
+    sec.appendChild(titleEl)
+
+    // ── Current class badge + change button ───────────────────────────────
+    const rowEl = document.createElement('div')
+    Object.assign(rowEl.style, { display: 'flex', gap: '6px', alignItems: 'center' })
+
+    const badgeEl = document.createElement('span')
+    this._refreshIfcBadge(badgeEl, currentClass)
+    Object.assign(badgeEl.style, {
+      flex: '1', minWidth: '0',
+      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    })
+
+    const changeBtn = document.createElement('button')
+    changeBtn.textContent = currentClass ? 'Change' : 'Set'
+    Object.assign(changeBtn.style, {
+      padding: '2px 7px',
+      background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
+      color: '#e8e8e8', fontSize: '11px', cursor: 'pointer',
+      flexShrink: '0', fontFamily: 'sans-serif',
+    })
+    changeBtn.addEventListener('mouseenter', () => { changeBtn.style.background = '#4a4a4a' })
+    changeBtn.addEventListener('mouseleave', () => { changeBtn.style.background = '#3c3c3c' })
+    changeBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this._openIfcPicker(badgeEl, changeBtn)
+    })
+
+    rowEl.appendChild(badgeEl)
+    rowEl.appendChild(changeBtn)
+
+    if (currentClass) {
+      const clearBtn = document.createElement('button')
+      clearBtn.textContent = '✕'
+      clearBtn.title = 'Clear IFC class'
+      Object.assign(clearBtn.style, {
+        padding: '2px 5px',
+        background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
+        color: '#aaa', fontSize: '11px', cursor: 'pointer',
+        flexShrink: '0',
+      })
+      clearBtn.addEventListener('mouseenter', () => { clearBtn.style.background = '#4a4a4a' })
+      clearBtn.addEventListener('mouseleave', () => { clearBtn.style.background = '#3c3c3c' })
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this._refreshIfcBadge(badgeEl, null)
+        changeBtn.textContent = 'Set'
+        clearBtn.remove()
+        if (this._onIfcClassChangeCb) this._onIfcClassChangeCb(null)
+      })
+      rowEl.appendChild(clearBtn)
+    }
+
+    sec.appendChild(rowEl)
+    return sec
+  }
+
+  /**
+   * Updates the visual state of an IFC badge element.
+   * @param {HTMLElement} badgeEl
+   * @param {string|null} ifcClass
+   * @private
+   */
+  _refreshIfcBadge(badgeEl, ifcClass) {
+    // Import lazily to avoid circular deps — registry is pure data.
+    const entry = this._ifcClassEntry(ifcClass)
+    if (entry) {
+      badgeEl.textContent = entry.label
+      Object.assign(badgeEl.style, {
+        display: 'inline-block',
+        background: entry.color + '33',  // 20% opacity fill
+        border: `1px solid ${entry.color}`,
+        borderRadius: '3px',
+        padding: '2px 6px',
+        color: entry.color,
+        fontSize: '11px',
+        fontWeight: 'bold',
+        fontFamily: 'sans-serif',
+      })
+    } else {
+      badgeEl.textContent = 'Not set'
+      Object.assign(badgeEl.style, {
+        display: 'inline-block',
+        background: 'transparent',
+        border: '1px solid #444',
+        borderRadius: '3px',
+        padding: '2px 6px',
+        color: '#666',
+        fontSize: '11px',
+        fontWeight: 'normal',
+        fontFamily: 'sans-serif',
+      })
+    }
+  }
+
+  /**
+   * Returns the IFC class entry for a given class name, or null.
+   * @param {string|null} name
+   * @returns {import('../domain/IFCClassRegistry.js').IFCClassEntry|null}
+   * @private
+   */
+  _ifcClassEntry(name) {
+    if (!name) return null
+    return IFC_CLASS_MAP.get(name) ?? null
+  }
+
+  /**
+   * Opens the IFC class picker overlay anchored near the N-panel.
+   * @param {HTMLElement} badgeEl   badge to update on selection
+   * @param {HTMLElement} changeBtn button to update label
+   * @private
+   */
+  _openIfcPicker(badgeEl, changeBtn) {
+    // Remove any existing picker
+    const existing = document.getElementById('_ifcPickerOverlay')
+    if (existing) { existing.remove(); return }
+
+    const overlay = document.createElement('div')
+    overlay.id = '_ifcPickerOverlay'
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      top: '40px',
+      right: '200px',
+      width: '220px',
+      maxHeight: '420px',
+      background: '#252525',
+      border: '1px solid #555',
+      borderRadius: '5px',
+      zIndex: '200',
+      display: 'flex',
+      flexDirection: 'column',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+      overflow: 'hidden',
+    })
+
+    // Search input
+    const searchInput = document.createElement('input')
+    searchInput.type = 'text'
+    searchInput.placeholder = 'Search IFC class…'
+    Object.assign(searchInput.style, {
+      margin: '8px', padding: '4px 8px',
+      background: '#383838', border: '1px solid #555', borderRadius: '3px',
+      color: '#e8e8e8', fontSize: '12px', fontFamily: 'sans-serif',
+      outline: 'none', flexShrink: '0',
+    })
+    searchInput.addEventListener('focus', () => { searchInput.style.borderColor = '#4fc3f7' })
+    searchInput.addEventListener('blur', () => { searchInput.style.borderColor = '#555' })
+    searchInput.addEventListener('keydown', e => { e.stopPropagation() })
+    overlay.appendChild(searchInput)
+
+    // List container
+    const listEl = document.createElement('div')
+    Object.assign(listEl.style, { overflowY: 'auto', flex: '1', padding: '0 4px 6px' })
+    overlay.appendChild(listEl)
+
+    const renderList = (filter) => {
+      listEl.innerHTML = ''
+      // Import the IFC class registry
+      const buildItems = (IFC_CLASSES, IFC_CLASS_MAP) => {
+        const groups = new Map()
+        for (const entry of IFC_CLASSES) {
+          const label = entry.label.toLowerCase()
+          const name  = entry.name.toLowerCase()
+          if (filter && !label.includes(filter) && !name.includes(filter)) continue
+          if (!groups.has(entry.group)) groups.set(entry.group, [])
+          groups.get(entry.group).push(entry)
+        }
+
+        for (const [groupName, entries] of groups) {
+          if (!filter) {
+            const groupHeader = document.createElement('div')
+            groupHeader.textContent = groupName
+            Object.assign(groupHeader.style, {
+              padding: '4px 6px 2px',
+              color: '#777', fontSize: '10px',
+              textTransform: 'uppercase', letterSpacing: '0.07em',
+              marginTop: '4px',
+            })
+            listEl.appendChild(groupHeader)
+          }
+          for (const entry of entries) {
+            const itemEl = document.createElement('div')
+            Object.assign(itemEl.style, {
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '4px 8px', borderRadius: '3px',
+              cursor: 'pointer', userSelect: 'none',
+            })
+            const colorDot = document.createElement('span')
+            Object.assign(colorDot.style, {
+              width: '10px', height: '10px', borderRadius: '2px',
+              background: entry.color, flexShrink: '0',
+              border: '1px solid rgba(255,255,255,0.15)',
+            })
+            const labelEl = document.createElement('span')
+            labelEl.textContent = entry.label
+            Object.assign(labelEl.style, { color: '#e0e0e0', fontSize: '12px', fontFamily: 'sans-serif' })
+            const nameEl = document.createElement('span')
+            nameEl.textContent = entry.name
+            Object.assign(nameEl.style, {
+              color: '#666', fontSize: '10px', fontFamily: 'monospace',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1',
+              textAlign: 'right',
+            })
+            itemEl.appendChild(colorDot)
+            itemEl.appendChild(labelEl)
+            itemEl.appendChild(nameEl)
+            itemEl.addEventListener('mouseenter', () => { itemEl.style.background = 'rgba(255,255,255,0.07)' })
+            itemEl.addEventListener('mouseleave', () => { itemEl.style.background = 'transparent' })
+            itemEl.addEventListener('click', () => {
+              overlay.remove()
+              this._refreshIfcBadge(badgeEl, entry.name)
+              changeBtn.textContent = 'Change'
+              if (this._onIfcClassChangeCb) this._onIfcClassChangeCb(entry.name)
+            })
+            listEl.appendChild(itemEl)
+          }
+        }
+        if (listEl.children.length === 0) {
+          const empty = document.createElement('div')
+          empty.textContent = 'No results'
+          Object.assign(empty.style, { padding: '8px', color: '#666', fontSize: '12px', textAlign: 'center' })
+          listEl.appendChild(empty)
+        }
+      }
+
+      buildItems(IFC_CLASSES, IFC_CLASS_MAP)
+    }
+
+    renderList('')
+    searchInput.addEventListener('input', () => renderList(searchInput.value.trim().toLowerCase()))
+
+    document.body.appendChild(overlay)
+    searchInput.focus()
+
+    // Close on outside click
+    const onOutside = (e) => {
+      if (!overlay.contains(e.target)) {
+        overlay.remove()
+        document.removeEventListener('pointerdown', onOutside, true)
+      }
+    }
+    document.addEventListener('pointerdown', onOutside, true)
   }
 
   /**
