@@ -1,358 +1,349 @@
-# 画面情報設計 (Screen Information Architecture)
+# Screen Information Architecture
 
-easy-extrude の各画面で表示される情報の構造と内容を定義する。
+Defines the structure and content of information displayed on each screen of easy-extrude.
 
-> **このドキュメントを更新するタイミング**
-> - 新しいモード / サブステートを追加したとき
-> - 既存モードのツールバー・ステータスバー・N パネル内容が変わったとき
-> - 新しいエンティティ型を追加して N パネルやアウトライナーの表示が変わったとき
-> - モバイルとデスクトップの差分が生じたとき
-
----
-
-## 画面一覧
-
-| 画面 ID | 名称 | 遷移条件 |
-|---------|------|----------|
-| `S-01` | Object Mode (無選択) | 起動時 / Escape / Tab |
-| `S-02` | Object Mode (オブジェクト選択) | オブジェクトクリック |
-| `S-03` | Object Mode (CoordinateFrame 選択) | CoordinateFrame クリック |
-| `S-04` | Edit Mode · 2D Sketch | Profile 選択 + Tab |
-| `S-05` | Edit Mode · 2D Extrude | Sketch 確定 → Enter |
-| `S-06` | Edit Mode · 3D (Solid 編集) | Solid 選択 + Tab |
-| `S-07` | Grab 操作中 | G キー / 長押し |
-| `S-08` | Face Extrude 操作中 | Edit 3D + 面選択 + E キー |
-| `S-09` | Measure 配置中 | M キー |
-| `S-10` | 矩形選択中 (デスクトップのみ) | 空白ドラッグ |
+> **When to update this document**
+> - When adding a new mode or sub-state
+> - When the toolbar, status bar, or N panel content changes in an existing mode
+> - When adding a new entity type that changes the N panel or Outliner display
+> - When a difference arises between mobile and desktop
 
 ---
 
-## 情報エリアの定義
+## Screen List
 
-各画面は以下の 5 つの情報エリアで構成される。
+| Screen ID | Name | Transition Condition |
+|-----------|------|---------------------|
+| `S-01` | Object Mode (no selection) | On startup / Escape / Tab |
+| `S-02` | Object Mode (object selected) | Click on object |
+| `S-03` | Object Mode (CoordinateFrame selected) | Click on CoordinateFrame |
+| `S-04` | Edit Mode · 2D Sketch | Select Profile + Tab |
+| `S-05` | Edit Mode · 2D Extrude | Confirm Sketch → Enter |
+| `S-06` | Edit Mode · 3D (Solid editing) | Select Solid + Tab |
+| `S-07` | Grab in progress | G key / long press |
+| `S-08` | Face Extrude in progress | Edit 3D + select face + E key |
+| `S-09` | Measure placement in progress | M key |
+| `S-10` | Rect selection in progress (desktop only) | Drag on empty space |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  [A] ヘッダー                                                    │
-└─────────────────────────────────────────────────────────────────┘
-┌──────────┬──────────────────────────────────────┬──────────────┐
-│ [B]      │                                      │ [D]          │
-│ アウト   │      [C] 3D ビューポート              │ N パネル     │
-│ ライナー │           (キャンバス)                │ (プロパティ) │
-│          │                                      │              │
-└──────────┴──────────────────────────────────────┴──────────────┘
-┌─────────────────────────────────────────────────────────────────┐
-│  [E] ステータスバー / フッター                                   │
-└─────────────────────────────────────────────────────────────────┘
-┌─────────────────────────────────────────────────────────────────┐
-│  [F] モバイルツールバー (モバイルのみ)                           │
-└─────────────────────────────────────────────────────────────────┘
+---
+
+## Information Area Definitions
+
+Each screen is composed of the following information areas.
+
+```mermaid
+block-beta
+  columns 3
+  A["[A] Header"]:3
+  B["[B]\nOutliner"] C["[C] 3D Viewport\n(Canvas)"] D["[D]\nN Panel\n(Properties)"]
+  E["[E] Status Bar / Footer"]:3
+  F["[F] Mobile Toolbar\n(mobile only)"]:3
 ```
 
 ---
 
-## 画面別情報定義
+## Per-Screen Information Definitions
 
-### S-01: Object Mode (無選択)
+### S-01: Object Mode (no selection)
 
-#### [A] ヘッダー
-| 要素 | 内容 |
-|------|------|
-| モードセレクター | `Object Mode ▾` |
-| ステータス | (空白) |
-| ヘッダーアクション | Save / Load / Export / Import (デスクトップ) / `⋯` メニュー (モバイル) |
+#### [A] Header
+| Element | Content |
+|---------|---------|
+| Mode selector | `Object Mode ▾` |
+| Status | (empty) |
+| Header actions | Save / Load / Export / Import (desktop) / `⋯` menu (mobile) |
 
-#### [B] アウトライナー
-- シーン内全オブジェクトのリストを表示
-- 各行: アイコン + 名前 + 可視性トグル
-- アクティブ行: ハイライト表示
-- CoordinateFrame はインデント付きで親オブジェクト下に表示
+#### [B] Outliner
+- Lists all objects in the scene
+- Each row: icon + name + visibility toggle
+- Active row: highlighted
+- CoordinateFrames displayed indented under their parent object
 
-#### [C] 3D ビューポート
-- グリッド平面 (Z=0) を表示
-- 全オブジェクトのメッシュを表示 (選択なし)
-- 右上: 軸ギズモ (X/Y/Z ラベル付きミニアクシス)
+#### [C] 3D Viewport
+- Shows the ground grid plane (Z=0)
+- Displays all object meshes (no selection)
+- Top-right: Axis gizmo (mini-axis with X/Y/Z labels)
 
-#### [D] N パネル
-- 内容なし (オブジェクト未選択のため非表示または空)
+#### [D] N Panel
+- Empty (no object selected; hidden or blank)
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
 G = Grab   M = Measure   Shift+A = Add   Ctrl+Z = Undo
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | + Add | 有効 |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | + Add | enabled |
 | 2 | Edit | disabled |
 | 3 | Delete | disabled |
 
 ---
 
-### S-02: Object Mode (オブジェクト選択)
+### S-02: Object Mode (object selected)
 
-#### [A] ヘッダー
-| 要素 | 内容 |
-|------|------|
-| モードセレクター | `Object Mode ▾` |
-| ステータス | オブジェクト名 (デスクトップ: ヘッダー内, モバイル: visibility:hidden でスペーサー維持) |
+#### [A] Header
+| Element | Content |
+|---------|---------|
+| Mode selector | `Object Mode ▾` |
+| Status | Object name (desktop: in header center; mobile: `visibility:hidden` to preserve spacer) |
 
-#### [B] アウトライナー
-- 選択オブジェクトの行がハイライト
+#### [B] Outliner
+- Selected object row highlighted
 
-#### [C] 3D ビューポート
-- 選択オブジェクトに白いバウンディングボックス (`boxHelper`) を表示
-- 選択オブジェクトの CoordinateFrame が X-ray 表示
+#### [C] 3D Viewport
+- White bounding box (`boxHelper`) on selected object
+- Selected object's CoordinateFrame shown in X-ray
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
-| Name | テキスト入力 (ダブルクリックで編集) |
-| Description | テキストエリア |
-| Location (World) | X / Y / Z (読み取り専用数値) |
-| Rotation (RPY) | R / P / Y, 単位: deg (読み取り専用, ZYX オイラー順) |
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
+| Name | Text input (editable on double-click) |
+| Description | Textarea |
+| Location (World) | X / Y / Z (read-only numbers) |
+| Rotation (RPY) | R / P / Y, unit: deg (read-only, ZYX Euler order) |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
 G = Grab   Tab = Edit   Shift+D = Duplicate   X = Delete   M = Measure
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | + Add | 有効 |
-| 2 | Edit | 有効 |
-| 3 | Delete | 有効 |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | + Add | enabled |
+| 2 | Edit | enabled |
+| 3 | Delete | enabled |
 
 ---
 
-### S-03: Object Mode (CoordinateFrame 選択)
+### S-03: Object Mode (CoordinateFrame selected)
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
-| Name | テキスト入力 |
-| Location (Local) | X / Y / Z (ローカル座標) |
-| Rotation (RPY) | R / P / Y, 単位: deg (ZYX オイラー順) |
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
+| Name | Text input |
+| Location (Local) | X / Y / Z (local coordinates) |
+| Rotation (RPY) | R / P / Y, unit: deg (ZYX Euler order) |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
 R = Rotate   G = Grab   Delete   Shift+A = Add Frame
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | Rotate | 有効 |
-| 2 | Grab | 有効 |
-| 3 | Delete | 有効 |
-| 4 | Add Frame | 有効 |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | Rotate | enabled |
+| 2 | Grab | enabled |
+| 3 | Delete | enabled |
+| 4 | Add Frame | enabled |
 | 5 | (spacer) | — |
 
 ---
 
 ### S-04: Edit Mode · 2D Sketch
 
-#### [C] 3D ビューポート
-- グリッド平面上に矩形プレビューを表示 (ドラッグ中)
-- スナップポイントがある場合は黄色マーカーを表示
+#### [C] 3D Viewport
+- Shows rectangle preview on the ground plane (while dragging)
+- Yellow marker shown when a snap point is available
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
-| Name | オブジェクト名 |
-| Area | 矩形面積 (m²) |
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
+| Name | Object name |
+| Area | Rectangle area (m²) |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
-ドラッグして矩形を描く。Enter で押し出し
+Drag to draw a rectangle. Enter to extrude.
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | ← Object | 有効 |
-| 2 | Extrude | disabled (面積 > 0.01 になると有効化) |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | ← Object | enabled |
+| 2 | Extrude | disabled (enabled when area > 0.01) |
 
 ---
 
 ### S-05: Edit Mode · 2D Extrude
 
-#### [C] 3D ビューポート
-- スケッチ矩形が底面に固定
-- 高さに応じたプレビュー直方体を表示
-- 押し出し距離ラベルを 3D 空間にオーバーレイ表示
+#### [C] 3D Viewport
+- Sketch rectangle locked at the base
+- Preview cuboid shown at current height
+- Extrusion distance label overlaid in 3D space
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
-| Name | オブジェクト名 |
-| Height | 押し出し高さ (m, 編集可能) |
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
+| Name | Object name |
+| Height | Extrusion height (m, editable) |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
-高さ: 1.00 m   Enter で確定 / Escape でキャンセル
+Height: 1.00 m   Enter to confirm / Escape to cancel
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | ✓ Confirm | 有効 |
-| 2 | ✕ Cancel | 有効 |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | ✓ Confirm | enabled |
+| 2 | ✕ Cancel | enabled |
 
 ---
 
-### S-06: Edit Mode · 3D (Solid 編集)
+### S-06: Edit Mode · 3D (Solid editing)
 
-#### [C] 3D ビューポート
-- サブ要素 (頂点 / 辺 / 面) がホバー・選択に応じて色変化
-  - ホバー面: 薄い水色ハイライト
-  - 選択面: 濃い水色
-  - 頂点: 黄色球
-  - 辺: 黄色ライン
+#### [C] 3D Viewport
+- Sub-elements (vertices / edges / faces) change color on hover and selection:
+  - Hovered face: light cyan highlight
+  - Selected face: deep cyan
+  - Vertex: yellow sphere
+  - Edge: yellow line
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
-| Name | オブジェクト名 |
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
+| Name | Object name |
 | Sub Mode | Vertex / Edge / Face |
-| Selected | 選択サブ要素名 / 数量 |
+| Selected | Selected sub-element name / count |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
 1 = Vertex   2 = Edge   3 = Face   E = Extrude   Ctrl = Snap
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | ← Object | 有効 |
-| 2 | Vertex | 有効 / アクティブ強調 |
-| 3 | Edge | 有効 / アクティブ強調 |
-| 4 | Face | 有効 / アクティブ強調 |
-| 5 | Extrude | disabled (面選択時に有効化) |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | ← Object | enabled |
+| 2 | Vertex | enabled / active emphasis |
+| 3 | Edge | enabled / active emphasis |
+| 4 | Face | enabled / active emphasis |
+| 5 | Extrude | disabled (enabled when face selected) |
 
 ---
 
-### S-07: Grab 操作中
+### S-07: Grab in progress
 
-#### [C] 3D ビューポート
-- オブジェクトが移動に追従
-- 軸ロック時: 拘束軸に赤/緑/青ラインを表示
-- Stack モード ON: オブジェクト下に投影線を表示
-- Ctrl スナップ時: スナップターゲットに黄色マーカー
+#### [C] 3D Viewport
+- Object follows cursor movement
+- Axis lock active: red/green/blue line along the constrained axis
+- Stack mode ON: projection line shown below object
+- Ctrl snap: yellow marker on snap target
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
 | Axis | X / Y / Z / Free |
 | Snap | Off / Geometry |
 | Stack | Off / On |
-| Delta | Δx, Δy, Δz (現在の移動量) |
+| Delta | Δx, Δy, Δz (current displacement) |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
-X/Y/Z = 軸ロック   V = Pivot 選択   Ctrl = スナップ   S = Stack   Enter = 確定
+X/Y/Z = Axis lock   V = Pivot select   Ctrl = Snap   S = Stack   Enter = Confirm
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | ✓ Confirm | 有効 |
-| 2 | Stack | 有効 |
-| 3 | ✕ Cancel | 有効 |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | ✓ Confirm | enabled |
+| 2 | Stack | enabled |
+| 3 | ✕ Cancel | enabled |
 
 ---
 
-### S-08: Face Extrude 操作中
+### S-08: Face Extrude in progress
 
-#### [C] 3D ビューポート
-- 選択面が面法線方向に押し出されるプレビューを表示
-- 押し出し距離ラベルをオーバーレイ表示
-- Ctrl スナップ時: スナップターゲットに黄色マーカー
+#### [C] 3D Viewport
+- Preview of selected face extruding along its normal
+- Extrusion distance label overlaid
+- Ctrl snap: yellow marker on snap target
 
-#### [D] N パネル
-| フィールド | 表示内容 |
-|------------|---------|
-| Face | 選択面名 |
-| Distance | 押し出し距離 (m) |
+#### [D] N Panel
+| Field | Content |
+|-------|---------|
+| Face | Selected face name |
+| Distance | Extrusion distance (m) |
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
-距離: 0.50 m   Ctrl = スナップ   Enter = 確定 / Escape = キャンセル
+Distance: 0.50 m   Ctrl = Snap   Enter = Confirm / Escape = Cancel
 ```
 
-#### [F] モバイルツールバー
-| スロット | ボタン | 状態 |
-|----------|--------|------|
-| 1 | ✓ Confirm | 有効 |
-| 2 | ✕ Cancel | 有効 |
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | ✓ Confirm | enabled |
+| 2 | ✕ Cancel | enabled |
 
 ---
 
-### S-09: Measure 配置中
+### S-09: Measure placement in progress
 
-#### [C] 3D ビューポート
-**フェーズ 1 (p1 未確定)**
-- カーソル付近のスナップ候補に黄色マーカー
+#### [C] 3D Viewport
+**Phase 1 (p1 not yet confirmed)**
+- Yellow marker on snap candidate near cursor
 
-**フェーズ 2 (p1 確定済み)**
-- p1 マーカー (固定)
-- p2 候補マーカー (ライブ追従)
-- p1-p2 間のプレビューライン + 距離ラベル
+**Phase 2 (p1 confirmed)**
+- p1 marker (fixed)
+- p2 candidate marker (live tracking)
+- Preview line between p1–p2 with distance label
 
-#### [E] ステータスバー
+#### [E] Status Bar
 ```
-頂点/辺/面にスナップ。クリックで確定 / Escape でキャンセル
-```
-
----
-
-### S-10: 矩形選択中 (デスクトップのみ)
-
-#### [C] 3D ビューポート
-- 半透明の青い矩形オーバーレイを表示 (ドラッグ追従)
-- 矩形内オブジェクトはハイライト
-
-#### [E] ステータスバー
-```
-ドラッグして複数選択
+Snap to vertex/edge/face. Click to confirm / Escape to cancel.
 ```
 
 ---
 
-## 情報の優先度定義
+### S-10: Rect selection in progress (desktop only)
 
-各エリアの情報優先度 (ユーザーが最も注目するもの → 最後):
+#### [C] 3D Viewport
+- Semi-transparent blue rectangle overlay (follows drag)
+- Objects inside the rectangle are highlighted
 
-1. **3D ビューポート** — リアルタイムフィードバック (最優先)
-2. **ステータスバー / ヘッダーステータス** — 操作ガイダンス
-3. **ツールバー** — 利用可能なアクション
-4. **N パネル** — 精密な数値情報
-5. **アウトライナー** — シーン構造の把握
-
----
-
-## モバイル向け情報の変更点
-
-| 情報エリア | デスクトップ | モバイル |
-|------------|-------------|---------|
-| Export / Import | ヘッダーボタン | `⋯` ドロップダウン |
-| ヘッダーステータス | ヘッダー中央 | `visibility:hidden` (スペーサー維持) |
-| ステータス文字列 | ヘッダー内 | フッター (`_infoEl`) |
-| アウトライナー | 常時表示 (左サイドバー) | ハンバーガーメニューから開くドロワー |
-| N パネル | 常時表示 (右サイドバー) | N ボタンから開くドロワー |
-| ツールバー | 非表示 | 画面下部固定 86px |
-| コンテキストメニュー | 右クリック | 長押し (400ms+, 移動 < 8px) |
+#### [E] Status Bar
+```
+Drag to multi-select
+```
 
 ---
 
-## 関連ドキュメント
+## Information Priority Definitions
 
-- `docs/STATE_TRANSITIONS.md` — 状態遷移の詳細
-- `docs/LAYOUT_DESIGN.md` — レイアウト寸法・配置
-- `docs/EVENTS.md` — イベント一覧
-- `docs/adr/ADR-008-mode-transition-state-machine.md` — モード遷移 ADR
-- `docs/adr/ADR-023-mobile-input-model.md` — モバイル入力モデル
-- `docs/adr/ADR-024-mobile-toolbar-architecture.md` — モバイルツールバー
+Priority of information in each area (highest user attention → lowest):
+
+1. **3D Viewport** — real-time feedback (highest priority)
+2. **Status Bar / Header Status** — operation guidance
+3. **Toolbar** — available actions
+4. **N Panel** — precise numeric information
+5. **Outliner** — scene structure overview
+
+---
+
+## Mobile Information Differences
+
+| Information Area | Desktop | Mobile |
+|-----------------|---------|--------|
+| Export / Import | Header buttons | `⋯` dropdown |
+| Header status | Center of header | `visibility:hidden` (preserves spacer) |
+| Status string | In header | Footer (`_infoEl`) |
+| Outliner | Always visible (left sidebar) | Drawer opened via hamburger menu |
+| N Panel | Always visible (right sidebar) | Drawer opened via N button |
+| Toolbar | Hidden | Fixed at bottom, 86px tall |
+| Context menu | Right-click | Long press (400ms+, movement < 8px) |
+
+---
+
+## Related Documents
+
+- `docs/STATE_TRANSITIONS.md` — state transition details
+- `docs/LAYOUT_DESIGN.md` — layout dimensions and placement
+- `docs/EVENTS.md` — event reference
+- `docs/adr/ADR-008-mode-transition-state-machine.md` — mode transition ADR
+- `docs/adr/ADR-023-mobile-input-model.md` — mobile input model
+- `docs/adr/ADR-024-mobile-toolbar-architecture.md` — mobile toolbar

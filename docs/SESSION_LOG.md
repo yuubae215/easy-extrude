@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-04-01**: Documentation — Translated `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, and `docs/EVENTS.md` from Japanese to English. Replaced ASCII-art layout diagrams in SCREEN_DESIGN and LAYOUT_DESIGN with Mermaid `block-beta` diagrams (information areas, desktop layout, mobile layout); non-layout ASCII art (N panel fields, Outliner rows, z-index stack) kept as code blocks.
+
 - **2026-04-01**: Documentation — 画面情報設計・レイアウト設計・イベント設計書を新規作成。`docs/SCREEN_DESIGN.md`（10画面の情報エリア定義）、`docs/LAYOUT_DESIGN.md`（寸法・z-index 階層・モバイルツールバースロット設計）、`docs/EVENTS.md`（ドメインイベント・ポインター・キーボード・タッチ・UI イベント全網羅）を追加。あわせて `CLAUDE.md` に「要求タイプ → 更新すべき設計書」の変更影響マトリクスと4ステップ更新チェックリストを追加。各設計書の冒頭に「いつ更新するか」のトリガーを明記。
 
 - **2026-04-01**: Bugfix — Mobile header overflow: Export/Import buttons were clipped on narrow screens because `_nToggleBtn`'s `marginLeft:auto` consumed all remaining flex space. Replaced both buttons on mobile with a single `_moreMenuBtn` (⋯) that opens a dropdown containing Export and Import. `_headerStatusEl` changed from `display:none` to `visibility:hidden` on mobile so it still acts as a `flex:1` spacer, right-aligning ⋯ and N without needing `marginLeft:auto`. MENTAL_MODEL §3 and `3_ui_layout.md` updated with "Mobile Header Overflow" rule.
