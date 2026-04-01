@@ -23,6 +23,7 @@ Before writing or modifying any code, consult the relevant documents.
 
 | Trigger in prompt | Read first |
 |-------------------|-----------|
+| philosophy / principles / why we do it this way | `docs/PHILOSOPHY.md` |
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
 | state machine / mode transition / state | `docs/STATE_TRANSITIONS.md`, ADR-008 |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
