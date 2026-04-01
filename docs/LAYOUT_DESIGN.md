@@ -1,301 +1,239 @@
-# レイアウト設計 (Layout Design)
+# Layout Design
 
-easy-extrude の UI コンポーネントの配置・寸法・レスポンシブ対応を定義する。
+Defines the placement, dimensions, and responsive behavior of UI components in easy-extrude.
 
-> **このドキュメントを更新するタイミング**
-> - コンポーネントの寸法・position・z-index を変更したとき
-> - 新しい UI 要素 (パネル、ドロワー、モーダルなど) を追加したとき
-> - モバイルツールバーのスロット数や並びが変わったとき
-> - レスポンシブブレークポイントを変更したとき
-
----
-
-## レスポンシブブレークポイント
-
-| 区分 | 条件 | 主な変更点 |
-|------|------|----------|
-| **デスクトップ** | `window.innerWidth >= 768` | サイドバー常時表示、ツールバー非表示 |
-| **モバイル** | `window.innerWidth < 768` | サイドバーをドロワー化、ツールバー表示 |
-
-> タッチ入力の判定は `matchMedia('(pointer: coarse)')` を使用する。
-> `innerWidth` によるサイズ判定とは独立している。
+> **When to update this document**
+> - When changing the dimensions, position, or z-index of a component
+> - When adding a new UI element (panel, drawer, modal, etc.)
+> - When the number or order of slots in the mobile toolbar changes
+> - When changing responsive breakpoints
 
 ---
 
-## デスクトップレイアウト
+## Responsive Breakpoints
 
-```
-0px ──────────────────────────────────────── 100vw
-│
-▼ 0px
-┌─────────────────────────────────────────────────────────────┐  ← z:100
-│  HEADER (fixed, h:40px)                                     │
-│  [≡] [↶] [↷] [Mode▾] ─── status ─── [Export][Import][Save]│
-└─────────────────────────────────────────────────────────────┘
-▼ 40px
-┌──────────┬─────────────────────────────────┬───────────────┐
-│OUTLINER  │                                 │  N PANEL      │
-│(fixed,   │     3D VIEWPORT (canvas)        │  (fixed,      │
-│ w:200px) │     position: absolute          │   w:240px)    │
-│          │     top:40px, bottom:0          │               │
-│ z:100    │     left:200px                  │   z:100       │
-│          │     right:240px                 │               │
-│          │                                 │               │
-│          │                    ┌──────────┐ │               │
-│          │                    │  GIZMO   │ │               │
-│          │                    │ (96×96px)│ │               │
-│          │                    │ top-right│ │               │
-│          │                    └──────────┘ │               │
-└──────────┴─────────────────────────────────┴───────────────┘
-▼ 100vh - 24px
-┌─────────────────────────────────────────────────────────────┐  ← z:100
-│  STATUS BAR (fixed, h:24px)                                 │
-│  キーヒント / 操作ガイダンス                                  │
-└─────────────────────────────────────────────────────────────┘
-▼ 100vh
+| Category | Condition | Key Changes |
+|----------|-----------|-------------|
+| **Desktop** | `window.innerWidth >= 768` | Sidebars always visible, toolbar hidden |
+| **Mobile** | `window.innerWidth < 768` | Sidebars become drawers, toolbar shown |
+
+> Touch input detection uses `matchMedia('(pointer: coarse)')`.
+> This is independent of the `innerWidth` size check.
+
+---
+
+## Desktop Layout
+
+```mermaid
+block-beta
+  columns 3
+  header["HEADER\nfixed, h:40px, z:100\n[≡] [↶] [↷] [Mode▾] — status — [Export][Import][Save]"]:3
+  outliner["OUTLINER\nfixed, w:200px\nz:100"] viewport["3D VIEWPORT (canvas)\nabsolute\ntop:40px, bottom:24px\nleft:200px, right:240px\n\nGizmo 96×96px (top-right)"] npanel["N PANEL\nfixed, w:240px\nz:100"]
+  statusbar["STATUS BAR\nfixed, h:24px, z:100 — key hints / operation guidance"]:3
 ```
 
-### コンポーネント寸法 (デスクトップ)
+### Component Dimensions (Desktop)
 
-| コンポーネント | 寸法 | 位置 | z-index |
-|---------------|------|------|---------|
+| Component | Size | Position | z-index |
+|-----------|------|----------|---------|
 | Header | w:100vw, h:40px | fixed top:0 left:0 | 100 |
 | Outliner sidebar | w:200px, h:calc(100vh-64px) | fixed top:40px left:0 | 100 |
 | N Panel sidebar | w:240px, h:calc(100vh-64px) | fixed top:40px right:0 | 100 |
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:248px | 50 |
-| Toast | w:auto, max-w:320px | fixed bottom:32px, 中央揃え | 150 |
-| Context menu | w:auto | absolute (カーソル位置) | 200 |
-| Mode dropdown | w:140px | absolute (ボタン直下) | 200 |
+| Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
+| Context menu | w:auto | absolute (cursor position) | 200 |
+| Mode dropdown | w:140px | absolute (below button) | 200 |
 
 ---
 
-## モバイルレイアウト
+## Mobile Layout
 
-```
-0px ──────────────── 100vw
-│
-▼ 0px
-┌──────────────────────────────────┐  ← z:100
-│  HEADER (fixed, h:40px)          │
-│  [≡][↶][↷][Mode▾]···[status]···[⋯][N]│
-│        ↑↑                            │
-│        UndoRedo                       │
-└──────────────────────────────────┘
-▼ 40px
-┌──────────────────────────────────┐
-│                                  │
-│   3D VIEWPORT (canvas)           │
-│   top:40px                       │
-│   bottom:86px (toolbar height)   │
-│   w:100vw                        │
-│                                  │
-│              ┌──────────┐        │
-│              │  GIZMO   │        │
-│              │ (96×96px)│        │
-│              │ top-right│        │
-│              └──────────┘        │
-│                                  │
-└──────────────────────────────────┘
-▼ 100vh - 86px
-┌──────────────────────────────────┐
-│  INFO BAR (fixed, h:26px)        │  ← z:100
-│  (モバイルのステータステキスト)   │
-└──────────────────────────────────┘
-▼ 100vh - 60px
-┌──────────────────────────────────┐  ← z:100
-│  MOBILE TOOLBAR (fixed, h:60px)  │
-│  [Btn1]  [Btn2]  [Btn3]  [Btn4] │
-└──────────────────────────────────┘
-▼ 100vh
-
-
-── ドロワー (オーバーレイ) ──────────────────
-
-OUTLINER DRAWER (スライドイン、左から)
-  position: fixed
-  top:40px, bottom:0, left:0
-  w:200px
-  z:110  ← ヘッダーより上
-
-N PANEL DRAWER (スライドイン、右から)
-  position: fixed
-  top:40px, bottom:0, right:0
-  w:240px
-  z:110
+```mermaid
+block-beta
+  columns 1
+  header["HEADER\nfixed, h:40px, z:100\n[≡][↶][↷][Mode▾] · · · [status] · · · [⋯][N]"]
+  viewport["3D VIEWPORT (canvas)\ntop:40px, bottom:86px, w:100vw\n\nGizmo 96×96px (top-right)"]
+  infobar["INFO BAR\nfixed, h:26px, z:100\n(mobile status text)"]
+  toolbar["MOBILE TOOLBAR\nfixed, h:60px, z:100\n[Btn1]  [Btn2]  [Btn3]  [Btn4]"]
 ```
 
-### コンポーネント寸法 (モバイル)
+**Drawers (overlay, not in main flow):**
 
-| コンポーネント | 寸法 | 位置 | z-index |
-|---------------|------|------|---------|
+- **Outliner Drawer** — slides in from left: `fixed top:40px bottom:0 left:0`, w:200px, z:110
+- **N Panel Drawer** — slides in from right: `fixed top:40px bottom:0 right:0`, w:240px, z:110
+
+### Component Dimensions (Mobile)
+
+| Component | Size | Position | z-index |
+|-----------|------|----------|---------|
 | Header | w:100vw, h:40px | fixed top:0 left:0 | 100 |
 | 3D Canvas | w:100vw, h:calc(100vh-126px) | top:40px | 0 |
 | Info bar | w:100vw, h:26px | fixed bottom:60px left:0 | 100 |
 | Mobile toolbar | w:100vw, h:60px | fixed bottom:0 left:0 | 100 |
 | Outliner drawer | w:200px, h:calc(100vh-40px) | fixed top:40px left:0 | 110 |
 | N Panel drawer | w:240px, h:calc(100vh-40px) | fixed top:40px right:0 | 110 |
-| Toast | w:auto, max-w:280px | fixed bottom:**96px**, 中央揃え | 150 |
-| Context menu | w:auto | absolute (タップ位置) | 200 |
+| Toast | w:auto, max-w:280px | fixed bottom:**96px**, centered | 150 |
+| Context menu | w:auto | absolute (tap position) | 200 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:8px | 50 |
 
-> **Toast の bottom** はツールバー (60px) + 余白 (36px) = **96px** を確保すること。
-> デスクトップ (ツールバーなし) は bottom:32px。
+> **Toast bottom** must be toolbar (60px) + margin (36px) = **96px**.
+> On desktop (no toolbar): bottom:32px.
 
 ---
 
-## ヘッダー内部レイアウト
+## Header Internal Layout
 
-### デスクトップ
+### Desktop
 ```
 [≡] [↶↷] │ [Mode▾] │ ──flex:1── status ──flex:1── │ [Export] [Import] [Save/Load]
 ```
 
-### モバイル
+### Mobile
 ```
-[≡] [↶↷] │ [Mode▾] │ visibility:hidden(flex:1スペーサー) │ [⋯] [N]
+[≡] [↶↷] │ [Mode▾] │ visibility:hidden (flex:1 spacer) │ [⋯] [N]
 ```
 
-- `_headerStatusEl` は `display:none` ではなく **`visibility:hidden`** を使う。
-  → `flex:1` スペーサーとして機能し続けるため。`display:none` にするとレイアウトが崩れる。
+- `_headerStatusEl` must use **`visibility:hidden`**, not `display:none`.
+  → It must continue to function as a `flex:1` spacer. Using `display:none` breaks the layout.
 
 ---
 
-## モバイルツールバー スロット設計
+## Mobile Toolbar Slot Design
 
-ツールバーは状態ごとに **固定スロット数** を維持する。
-スロットが埋まらない場合は `{spacer: true}` で埋め、レイアウトシフトを防ぐ。
+The toolbar maintains a **fixed slot count** per state.
+Empty slots are filled with `{spacer: true}` to prevent layout shifts.
 
-| アプリ状態 | スロット1 | スロット2 | スロット3 | スロット4 | スロット5 |
-|-----------|---------|---------|---------|---------|---------|
+| App State | Slot 1 | Slot 2 | Slot 3 | Slot 4 | Slot 5 |
+|-----------|--------|--------|--------|--------|--------|
 | grab.active | ✓ Confirm | Stack | ✕ Cancel | — | — |
 | faceExtrude.active | ✓ Confirm | ✕ Cancel | — | — | — |
-| **Object Mode** (無選択) | + Add | Edit(disabled) | Delete(disabled) | — | — |
-| **Object Mode** (選択あり) | + Add | Edit | Delete | — | — |
-| **Object Mode** (Frame 選択) | Rotate | Grab | Delete | Add Frame | spacer |
-| Edit · 2D-Sketch | ← Object | Extrude(disabled) | — | — | — |
+| **Object Mode** (no selection) | + Add | Edit (disabled) | Delete (disabled) | — | — |
+| **Object Mode** (selection) | + Add | Edit | Delete | — | — |
+| **Object Mode** (Frame selected) | Rotate | Grab | Delete | Add Frame | spacer |
+| Edit · 2D-Sketch | ← Object | Extrude (disabled) | — | — | — |
 | Edit · 2D-Extrude | ✓ Confirm | ✕ Cancel | — | — | — |
-| Edit · 3D | ← Object | Vertex | Edge | Face | Extrude(disabled*) |
+| Edit · 3D | ← Object | Vertex | Edge | Face | Extrude (disabled*) |
 
-`*` Face が editSelection に含まれると Extrude が有効化される。
-
----
-
-## z-index 階層
-
-```
-z:200  ── モーダルダイアログ (リネーム, 単位変換)
-        ── ドロップダウンメニュー (モードセレクター, ⋯メニュー, 追加メニュー, コンテキストメニュー)
-
-z:150  ── Toast 通知
-
-z:110  ── ドロワー (Outliner, N Panel) ← ヘッダー上に重なる
-
-z:100  ── ヘッダー (fixed top)
-        ── モバイルツールバー (fixed bottom)
-        ── ステータスバー / Info bar (fixed bottom)
-
-z:50   ── ギズモ (Three.js canvas 上のオーバーレイ)
-
-z:10   ── Three.js ラベル (MeasureLine 距離ラベル)
-
-z:0    ── 3D キャンバス (Three.js renderer)
-```
+`*` Extrude is enabled when a face is included in editSelection.
 
 ---
 
-## N パネル 内部レイアウト
+## z-index Hierarchy
+
+```
+z:200  ── Modal dialogs (rename, unit conversion)
+        ── Dropdown menus (mode selector, ⋯ menu, add menu, context menu)
+
+z:150  ── Toast notifications
+
+z:110  ── Drawers (Outliner, N Panel) ← overlaps header
+
+z:100  ── Header (fixed top)
+        ── Mobile toolbar (fixed bottom)
+        ── Status bar / Info bar (fixed bottom)
+
+z:50   ── Gizmo (overlay on Three.js canvas)
+
+z:10   ── Three.js labels (MeasureLine distance labels)
+
+z:0    ── 3D canvas (Three.js renderer)
+```
+
+---
+
+## N Panel Internal Layout
 
 ```
 ┌─────────────────────────────────┐
-│  [×] Close (モバイルのみ)        │
+│  [×] Close (mobile only)        │
 ├─────────────────────────────────┤
-│  ITEM  プロパティグループ        │
+│  ITEM  Property Group           │
 │  ─────────────────────────────  │
-│  Name:                           │
+│  Name:                          │
 │  ┌───────────────────────────┐  │
 │  │ Cube                      │  │
 │  └───────────────────────────┘  │
-│  Description:                    │
+│  Description:                   │
 │  ┌───────────────────────────┐  │
 │  │                           │  │
 │  └───────────────────────────┘  │
 ├─────────────────────────────────┤
 │  TRANSFORM  ─────────────────── │
-│  Location (World):               │
-│  X: [  1.00]  Y: [  0.00]       │
-│  Z: [  0.00]                     │
-│  Rotation (RPY, deg):            │
-│  R: [  0.0]  P: [  0.0]         │
-│  Y: [  0.0]                      │
+│  Location (World):              │
+│  X: [  1.00]  Y: [  0.00]      │
+│  Z: [  0.00]                    │
+│  Rotation (RPY, deg):           │
+│  R: [  0.0]  P: [  0.0]        │
+│  Y: [  0.0]                     │
 └─────────────────────────────────┘
 ```
 
-- 数値フィールドは読み取り専用 (直接編集不可)
-- N パネルの幅: 240px
-- グループ見出しは `font-size:11px, opacity:0.6`
+- Numeric fields are read-only (not directly editable)
+- N Panel width: 240px
+- Group headings: `font-size:11px, opacity:0.6`
 
 ---
 
-## アウトライナー 内部レイアウト
+## Outliner Internal Layout
 
 ```
 ┌─────────────────────────────────┐
-│  SCENE HIERARCHY                 │
+│  SCENE HIERARCHY                │
 ├─────────────────────────────────┤
-│  □ Cube           [○] [✕]       │  ← Solid
-│  □ Cube.001       [○] [✕]       │  ← Solid
-│    ├ ⊕ Origin    [○] [✕]       │  ← CoordinateFrame (indent 12px)
-│    └ ⊕ Frame.001 [○] [✕]       │  ← CoordinateFrame (indent 12px)
-│  ⊡ Sketch.001     [○] [✕]      │  ← Profile
-│  ── Measure.001   [○] [✕]      │  ← MeasureLine
-│  ▲ Import.001     [○] [✕]      │  ← ImportedMesh
+│  □ Cube           [○] [✕]      │  ← Solid
+│  □ Cube.001       [○] [✕]      │  ← Solid
+│    ├ ⊕ Origin    [○] [✕]      │  ← CoordinateFrame (indent 12px)
+│    └ ⊕ Frame.001 [○] [✕]      │  ← CoordinateFrame (indent 12px)
+│  ⊡ Sketch.001     [○] [✕]     │  ← Profile
+│  ── Measure.001   [○] [✕]     │  ← MeasureLine
+│  ▲ Import.001     [○] [✕]     │  ← ImportedMesh
 └─────────────────────────────────┘
 ```
 
-- アイコン凡例: `□` Solid / `⊡` Profile / `──` MeasureLine / `⊕` CoordinateFrame / `▲` ImportedMesh
-- インデント: CoordinateFrame は親の下に 12px インデント
-- 行の高さ: 28px
-- アクティブ行: `background: #3d3d6b`
+- Icon legend: `□` Solid / `⊡` Profile / `──` MeasureLine / `⊕` CoordinateFrame / `▲` ImportedMesh
+- Indent: CoordinateFrame indented 12px under its parent
+- Row height: 28px
+- Active row: `background: #3d3d6b`
 
 ---
 
-## カラーパレット
+## Color Palette
 
-| 用途 | カラー |
-|------|--------|
-| 背景 (ヘッダー, パネル) | `#242424` |
-| 背景 (セカンダリ) | `#2b2b2b` |
-| 背景 (ボタン) | `#383838` |
-| ボーダー | `#4a4a4a` |
-| テキスト (プライマリ) | `#e0e0e0` |
-| テキスト (セカンダリ) | `#888888` |
-| アクセント (選択中) | `#3d3d6b` / `#5c5cff` |
-| 危険 (Delete) | `#c04040` |
-| 成功 (Confirm) | `#3a7a3a` |
-| 3D 面ハイライト | 水色 (Three.js マテリアル) |
-| Measure ライン | アンバー (#f5a623) |
-| CoordinateFrame 軸 | X:赤 `#e05252` / Y:緑 `#52e052` / Z:青 `#5252e0` |
-
----
-
-## アニメーション・トランジション
-
-| 要素 | アニメーション | duration |
-|------|-------------|---------|
-| ドロワー スライドイン/アウト | `transform: translateX()` | 200ms ease |
-| ドロップダウン 表示/非表示 | `display: block/none` (即時) | — |
-| Toast 表示 | `opacity: 0 → 1` | 150ms |
-| Toast 非表示 | 5000ms 後に `opacity: 1 → 0` | 300ms |
-| ボタン ホバー | `background` 変化 | 即時 |
+| Usage | Color |
+|-------|-------|
+| Background (header, panels) | `#242424` |
+| Background (secondary) | `#2b2b2b` |
+| Background (buttons) | `#383838` |
+| Border | `#4a4a4a` |
+| Text (primary) | `#e0e0e0` |
+| Text (secondary) | `#888888` |
+| Accent (selected) | `#3d3d6b` / `#5c5cff` |
+| Danger (Delete) | `#c04040` |
+| Success (Confirm) | `#3a7a3a` |
+| 3D face highlight | Cyan (Three.js material) |
+| Measure line | Amber (`#f5a623`) |
+| CoordinateFrame axes | X: red `#e05252` / Y: green `#52e052` / Z: blue `#5252e0` |
 
 ---
 
-## 関連ドキュメント
+## Animations & Transitions
 
-- `docs/SCREEN_DESIGN.md` — 各画面の情報設計
-- `docs/STATE_TRANSITIONS.md` — 状態遷移
-- `docs/adr/ADR-023-mobile-input-model.md` — モバイル入力モデル
-- `docs/adr/ADR-024-mobile-toolbar-architecture.md` — モバイルツールバー設計方針
-- `.claude/mental_model/3_ui_layout.md` — UI レイアウトのコーディングルール
+| Element | Animation | Duration |
+|---------|-----------|----------|
+| Drawer slide in/out | `transform: translateX()` | 200ms ease |
+| Dropdown show/hide | `display: block/none` (immediate) | — |
+| Toast appear | `opacity: 0 → 1` | 150ms |
+| Toast disappear | after 5000ms: `opacity: 1 → 0` | 300ms |
+| Button hover | `background` change | immediate |
+
+---
+
+## Related Documents
+
+- `docs/SCREEN_DESIGN.md` — per-screen information architecture
+- `docs/STATE_TRANSITIONS.md` — state transitions
+- `docs/adr/ADR-023-mobile-input-model.md` — mobile input model
+- `docs/adr/ADR-024-mobile-toolbar-architecture.md` — mobile toolbar architecture
+- `.claude/mental_model/3_ui_layout.md` — UI layout coding rules
