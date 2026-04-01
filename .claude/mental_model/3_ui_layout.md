@@ -83,4 +83,8 @@ if (e.pointerType === 'touch') {
 const bottomPx = this._isMobile() ? '96px' : '64px'
 ```
 
-On mobile, status text is shown in the footer info bar (`_infoEl`) instead of the header or canvas pill, because the mobile header is too narrow and keyboard hints are irrelevant on touch. `setStatus()` and `setStatusRich()` update `_infoEl` on mobile; `_setInfoText()` is a no-op on mobile. The `_canvasStatusEl` pill is always hidden (the footer replaces it on mobile; the header status replaces it on desktop). The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile. The N-panel toggle button (`_nToggleBtn`) uses `marginLeft: auto` on mobile to stay right-aligned in the header.
+On mobile, status text is shown in the footer info bar (`_infoEl`) instead of the header or canvas pill, because the mobile header is too narrow and keyboard hints are irrelevant on touch. `setStatus()` and `setStatusRich()` update `_infoEl` on mobile; `_setInfoText()` is a no-op on mobile. The `_canvasStatusEl` pill is always hidden (the footer replaces it on mobile; the header status replaces it on desktop). The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile.
+
+**Mobile header right-alignment**: `_headerStatusEl` uses `visibility: hidden` (not `display: none`) on mobile so it still acts as a `flex: 1` spacer, pushing the right-side buttons (⋯ and N) to the far right without needing `marginLeft: auto` on any individual button.
+
+**Export/Import on mobile**: `_exportJsonBtn` and `_importJsonBtn` are hidden on mobile. They are replaced by `_moreMenuBtn` (⋯), a single overflow button that opens a dropdown containing Export and Import. This keeps the header width within the mobile viewport. The ⋯ button is inserted into the flex header before `_nToggleBtn`, giving the order: `⋯ | N` at the right edge.

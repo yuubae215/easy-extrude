@@ -199,6 +199,94 @@ export class UIView {
     this._nToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`
     this._headerEl.appendChild(this._nToggleBtn)
 
+    // ── More (⋯) button (mobile only — overflow menu for Export/Import) ──────
+    this._moreMenuBtn = document.createElement('button')
+    Object.assign(this._moreMenuBtn.style, {
+      padding: '6px',
+      background: 'transparent',
+      border: 'none',
+      color: '#c0c0c0',
+      cursor: 'pointer',
+      lineHeight: '1',
+      display: 'none',   // shown only on mobile via _applyMobileLayout
+      borderRadius: '6px',
+      flexShrink: '0',
+      alignItems: 'center',
+      justifyContent: 'center',
+    })
+    this._moreMenuBtn.setAttribute('aria-label', 'More file actions')
+    this._moreMenuBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`
+    // Insert before the N-panel toggle so visual order is: ⋯ | N
+    this._headerEl.insertBefore(this._moreMenuBtn, this._nToggleBtn)
+
+    // Dropdown panel anchored to top-right, below the header
+    this._moreMenuDropdown = document.createElement('div')
+    Object.assign(this._moreMenuDropdown.style, {
+      position: 'fixed',
+      top: '40px',
+      right: '8px',
+      background: '#2b2b2b',
+      border: '1px solid #555',
+      borderRadius: '6px',
+      overflow: 'hidden',
+      display: 'none',
+      zIndex: '200',
+      minWidth: '160px',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+    })
+    document.body.appendChild(this._moreMenuDropdown)
+
+    const _mkMoreItem = (label, svgHtml) => {
+      const item = document.createElement('button')
+      Object.assign(item.style, {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        width: '100%',
+        padding: '10px 14px',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: '1px solid #3a3a3a',
+        color: '#e0e0e0',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        textAlign: 'left',
+      })
+      item.innerHTML = `${svgHtml}<span>${label}</span>`
+      item.addEventListener('pointerenter', () => { item.style.background = '#3a3a3a' })
+      item.addEventListener('pointerleave', () => { item.style.background = 'transparent' })
+      return item
+    }
+    const _exportSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
+    const _importSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 14 12 9 17 14"/><line x1="12" y1="9" x2="12" y2="21"/></svg>`
+
+    const moreExportItem = _mkMoreItem('Export', _exportSvg)
+    moreExportItem.addEventListener('click', () => {
+      this._moreMenuDropdown.style.display = 'none'
+      if (this._onExportJson) this._onExportJson()
+    })
+    this._moreMenuDropdown.appendChild(moreExportItem)
+
+    const moreImportItem = _mkMoreItem('Import', _importSvg)
+    moreImportItem.style.borderBottom = 'none'
+    moreImportItem.addEventListener('click', () => {
+      this._moreMenuDropdown.style.display = 'none'
+      if (this._onImportJson) this._onImportJson()
+    })
+    this._moreMenuDropdown.appendChild(moreImportItem)
+
+    this._moreMenuBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const isOpen = this._moreMenuDropdown.style.display !== 'none'
+      this._moreMenuDropdown.style.display = isOpen ? 'none' : 'block'
+    })
+    document.addEventListener('click', (e) => {
+      if (!this._moreMenuBtn.contains(e.target)) {
+        this._moreMenuDropdown.style.display = 'none'
+      }
+    })
+
     // ── Save / Load buttons (BFF-gated — hidden until connectBff succeeds) ──
     this._saveBtnEl = document.createElement('button')
     Object.assign(this._saveBtnEl.style, {
@@ -1223,13 +1311,20 @@ export class UIView {
     this._hamburgerBtn.style.display = mobile ? 'block' : 'none'
     this._undoBtn.style.display = mobile ? 'flex' : 'none'
     this._redoBtn.style.display = mobile ? 'flex' : 'none'
-    this._nToggleBtn.style.display   = mobile ? 'block' : 'none'
-    this._nToggleBtn.style.marginLeft = mobile ? 'auto' : ''
+    this._nToggleBtn.style.display = mobile ? 'block' : 'none'
+    this._nToggleBtn.style.marginLeft = ''
+    // ⋯ overflow menu is mobile-only; Export/Import buttons are desktop-only
+    this._moreMenuBtn.style.display = mobile ? 'flex' : 'none'
+    this._exportJsonBtn.style.display = mobile ? 'none' : 'flex'
+    this._importJsonBtn.style.display = mobile ? 'none' : 'flex'
     this._mobileToolbarEl.style.display = mobile ? 'flex' : 'none'
     // Nodes button is desktop-only (NodeEditorView is not mobile-optimised)
     this._nodeEditorBtn.style.display = mobile ? 'none' : 'flex'
-    // On mobile, status moves to the footer info bar; hide the header status and canvas pill
-    this._headerStatusEl.style.display = mobile ? 'none' : 'flex'
+    // On mobile, status moves to the footer info bar.
+    // Keep headerStatusEl as a flex:1 spacer (visibility:hidden) so ⋯ and N
+    // buttons remain right-aligned without needing marginLeft:auto.
+    this._headerStatusEl.style.display = 'flex'
+    this._headerStatusEl.style.visibility = mobile ? 'hidden' : 'visible'
     this._canvasStatusEl.style.display = 'none'
     // Center the footer status text on mobile
     this._infoEl.style.justifyContent = mobile ? 'center' : 'flex-start'
