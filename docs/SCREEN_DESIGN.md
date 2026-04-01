@@ -33,11 +33,11 @@ Each screen is composed of the following information areas.
 
 ```mermaid
 block-beta
-  columns 5
-  A["[A] Header"]:5
-  B["[B] Outliner\nObjects list\nVisibility toggles\nActive highlight\nHierarchy (indent)"] C["[C] 3D Viewport (Canvas)\nMeshes · Grid plane (Z=0)\nBounding box · X-ray frame\nSub-element highlights\nOverlays · Gizmo (top-right)"]:3 D["[D] N Panel\nName · Description\nLocation (World)\nRotation (RPY)\nSub Mode / Selection"]
-  E["[E] Status Bar / Footer"]:5
-  F["[F] Mobile Toolbar (mobile only)"]:5
+  columns 3
+  A["[A] Header"]:3
+  B["[B]\nOutliner"] C["[C] 3D Viewport\n(Canvas)"] D["[D]\nN Panel\n(Properties)"]
+  E["[E] Status Bar / Footer"]:3
+  F["[F] Mobile Toolbar\n(mobile only)"]:3
 ```
 
 ---
