@@ -97,6 +97,46 @@ Candidate tasks:
 
 ---
 
+---
+
+## Lynch Urban Elements — 2D Map Classification (ADR-026)
+
+New 2D entity types for city-scale urban morphology based on Kevin Lynch's
+*The Image of the City* (1960).  Domain layer (entities, registry, service,
+serializer) is complete.  The phases below cover the rendering and UI layers.
+
+### Phase 1 — Rendering layer ★ prerequisite for all UI
+
+| Task | Details | ADR |
+|------|---------|-----|
+| `UrbanPolylineView` | Three.js `Line2` (fat line) with configurable stroke color; BoxHelper for selection | ADR-026 |
+| `UrbanPolygonView` | Three.js `Line2` closed ring + translucent fill `Mesh` (ShapeGeometry); BoxHelper | ADR-026 |
+| `UrbanMarkerView` | Three.js `Sprite` or `Mesh` (flat circle / diamond); label HTML overlay | ADR-026 |
+| Wire views into `SceneService.create*` | Replace `meshView = null` with constructed view; add scene.add / dispose | ADR-026 |
+| `AppController` instanceof guards | Grab (G key) allowed; Edit Mode blocked (no sub-element editing yet); Stack blocked | ADR-026 |
+
+### Phase 2 — Classification UI (N-panel + Outliner)
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Outliner type icons | `⟿` for UrbanPolyline, `⬡` for UrbanPolygon, `⬤` for UrbanMarker | ADR-026 |
+| Outliner Lynch class badge | Coloured badge (Lynch color) next to name when `lynchClass` is set | ADR-026 |
+| N-panel "Lynch Class" section | Badge + Set/Change button + clear button; shown for all three Urban entity types | ADR-026 |
+| Lynch class picker overlay | Grouped list filtered by geometry type (`getLynchClassesByGeometry`); search input | ADR-026 |
+| `SetLynchClassCommand` wired to controller | `AppController` subscribes `objectLynchClassChanged`; forwards to OutlinerView | ADR-026 |
+
+### Phase 3 — Creation UX
+
+| Task | Details | ADR |
+|------|---------|-----|
+| "Urban" submenu in Add menu (Shift+A) | Entries: Urban Path, Urban Edge, Urban District, Urban Node, Urban Landmark | ADR-026 |
+| UrbanPolyline placement mode | Click to place vertices; Enter/RMB to confirm; Escape to cancel | ADR-026 |
+| UrbanPolygon placement mode | Click to place ring vertices; auto-close on first vertex or Enter | ADR-026 |
+| UrbanMarker placement mode | Single click to place; immediate confirm | ADR-026 |
+| Mobile toolbar for Urban placement | Fixed-slot layout during placement; Cancel in last slot | ADR-024, ADR-026 |
+
+---
+
 ## Backlog (frontend features)
 
 | Priority | Item | Complexity | ADR / Notes |

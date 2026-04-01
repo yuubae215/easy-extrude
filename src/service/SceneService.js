@@ -19,11 +19,12 @@
  * to the matching scene object's MeshView automatically.
  *
  * Events emitted:
- *   'objectAdded'          (obj: SceneObject)
- *   'objectRemoved'        (id: string)
- *   'objectRenamed'        (id: string, name: string)
- *   'objectIfcClassChanged' (id: string, ifcClass: string|null)
- *   'activeChanged'        (id: string|null)
+ *   'objectAdded'               (obj: SceneObject)
+ *   'objectRemoved'             (id: string)
+ *   'objectRenamed'             (id: string, name: string)
+ *   'objectIfcClassChanged'     (id: string, ifcClass: string|null)
+ *   'objectLynchClassChanged'   (id: string, lynchClass: string|null)
+ *   'activeChanged'             (id: string|null)
  *
  * Rules:
  *  - SceneService is the ONLY place that calls new Solid / new Profile / new MeshView.
@@ -48,6 +49,9 @@ import { MeasureLine } from '../domain/MeasureLine.js'
 import { MeasureLineView } from '../view/MeasureLineView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
+import { UrbanPolyline } from '../domain/UrbanPolyline.js'
+import { UrbanPolygon }  from '../domain/UrbanPolygon.js'
+import { UrbanMarker }   from '../domain/UrbanMarker.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -642,6 +646,73 @@ export class SceneService extends EventEmitter {
     if (!(obj instanceof Solid) && !(obj instanceof ImportedMesh)) return
     obj.ifcClass = ifcClass ?? null
     this.emit('objectIfcClassChanged', id, obj.ifcClass)
+  }
+
+  // ── Lynch urban classification (ADR-026) ──────────────────────────────────
+
+  /**
+   * Assigns a Lynch class to an UrbanPolyline, UrbanPolygon, or UrbanMarker.
+   * Pass null to clear the classification.
+   * No-ops if id is unknown or the entity type does not support Lynch classification.
+   * Emits: 'objectLynchClassChanged'
+   * @param {string} id
+   * @param {string|null} lynchClass  e.g. 'Path', 'District', or null to unclassify
+   */
+  setLynchClass(id, lynchClass) {
+    const obj = this._model.getObject(id)
+    if (!obj) return
+    if (!(obj instanceof UrbanPolyline) &&
+        !(obj instanceof UrbanPolygon)  &&
+        !(obj instanceof UrbanMarker))  return
+    obj.lynchClass = lynchClass ?? null
+    this.emit('objectLynchClassChanged', id, obj.lynchClass)
+  }
+
+  /**
+   * Creates an UrbanPolyline from an ordered array of points and adds it to the scene.
+   * The meshView is null until the rendering layer (UrbanPolylineView) is implemented.
+   * Emits: 'objectAdded'
+   * @param {import('three').Vector3[]} points  N ≥ 2 ordered points
+   * @param {string} [name]
+   * @returns {UrbanPolyline}
+   */
+  createUrbanPolyline(points, name) {
+    const id  = `urban_poly_${Date.now()}`
+    const obj = UrbanPolyline.fromPoints(id, name ?? 'Polyline', points, null)
+    this._model.addObject(obj)
+    this.emit('objectAdded', obj)
+    return obj
+  }
+
+  /**
+   * Creates an UrbanPolygon from an ordered ring of points and adds it to the scene.
+   * The polygon is implicitly closed; do NOT repeat the first point at the end.
+   * Emits: 'objectAdded'
+   * @param {import('three').Vector3[]} points  N ≥ 3 points in ring order
+   * @param {string} [name]
+   * @returns {UrbanPolygon}
+   */
+  createUrbanPolygon(points, name) {
+    const id  = `urban_area_${Date.now()}`
+    const obj = UrbanPolygon.fromPoints(id, name ?? 'Polygon', points, null)
+    this._model.addObject(obj)
+    this.emit('objectAdded', obj)
+    return obj
+  }
+
+  /**
+   * Creates an UrbanMarker at the given anchor point and adds it to the scene.
+   * Emits: 'objectAdded'
+   * @param {import('three').Vector3} point  anchor position
+   * @param {string} [name]
+   * @returns {UrbanMarker}
+   */
+  createUrbanMarker(point, name) {
+    const id  = `urban_mark_${Date.now()}`
+    const obj = UrbanMarker.fromPoint(id, name ?? 'Marker', point, null)
+    this._model.addObject(obj)
+    this.emit('objectAdded', obj)
+    return obj
   }
 
   /**

@@ -339,6 +339,189 @@ Priority of information in each area (highest user attention → lowest):
 
 ---
 
+---
+
+## Lynch Urban Object Screens (planned — ADR-026)
+
+The three new 2D entity types (`UrbanPolyline`, `UrbanPolygon`, `UrbanMarker`)
+follow the same Object Mode screen structure as existing entities.  This section
+documents the **planned** UX differences from S-02 (Object Mode, object selected).
+
+> These screens are not yet implemented.  Rendering layer (Phase 1) is required
+> first.  See `docs/ROADMAP.md` — Lynch Urban Elements Phase 1–3.
+
+---
+
+### S-11: Object Mode (UrbanPolyline selected)
+
+#### [B] Outliner
+- Icon: `⟿` (linear path icon) in Lynch color (`#4A90D9` for Path, `#E74C3C` for Edge)
+- Lynch class badge displayed when `lynchClass` is set (same position as IFC badge)
+
+#### [C] 3D Viewport
+- Bounding box (`boxHelper`) on selected entity
+- Polyline rendered as thick colored line (Lynch color); unclassified = grey
+
+#### [D] N Panel
+
+| Field | Content |
+|-------|---------|
+| Name | Text input |
+| Description | Textarea |
+| **Lynch Class** | Coloured badge (`Path` / `Edge`) or "Not set" (muted grey) |
+|  | `Set / Change` button → opens Lynch picker (filtered to `geometry = 'polyline'`) |
+|  | `✕` button → clears classification |
+| Vertex count | N vertices (read-only) |
+
+**Lynch Class picker (polyline filter):**
+Shows only `Path` and `Edge` entries from `LynchClassRegistry`.
+Each row: colored square + label + description.
+
+#### [E] Status Bar
+```
+G = Grab   X = Delete   Lynch class: Path / Edge
+```
+
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | Grab | enabled |
+| 2 | Lynch | enabled (opens Lynch class picker) |
+| 3 | Delete | enabled |
+| 4 | (spacer) | — |
+
+---
+
+### S-12: Object Mode (UrbanPolygon selected)
+
+#### [B] Outliner
+- Icon: `⬡` (hexagon — areal region) in Lynch color (`#27AE60` for District)
+- Lynch class badge when classified
+
+#### [C] 3D Viewport
+- Bounding box on selected entity
+- Polygon rendered as thick colored closed ring + translucent fill; unclassified = grey
+
+#### [D] N Panel
+
+| Field | Content |
+|-------|---------|
+| Name | Text input |
+| Description | Textarea |
+| **Lynch Class** | Coloured badge (`District`) or "Not set" |
+|  | `Set / Change` button → opens Lynch picker (filtered to `geometry = 'polygon'`) |
+|  | `✕` button → clears classification |
+| Vertex count | N vertices (read-only) |
+| Area (approx.) | Signed XY area m² (read-only, Shoelace formula) |
+
+**Lynch Class picker (polygon filter):**
+Shows only `District`.
+
+#### [E] Status Bar
+```
+G = Grab   X = Delete   Lynch class: District
+```
+
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | Grab | enabled |
+| 2 | Lynch | enabled |
+| 3 | Delete | enabled |
+| 4 | (spacer) | — |
+
+---
+
+### S-13: Object Mode (UrbanMarker selected)
+
+#### [B] Outliner
+- Icon: `⬤` (filled circle — point marker) in Lynch color (`#F39C12` Node, `#9B59B6` Landmark)
+- Lynch class badge when classified
+
+#### [C] 3D Viewport
+- Bounding box on selected entity
+- Marker rendered as colored sprite/circle with label; unclassified = grey
+
+#### [D] N Panel
+
+| Field | Content |
+|-------|---------|
+| Name | Text input |
+| Description | Textarea |
+| **Lynch Class** | Coloured badge (`Node` / `Landmark`) or "Not set" |
+|  | `Set / Change` button → opens Lynch picker (filtered to `geometry = 'marker'`) |
+|  | `✕` button → clears classification |
+| Location (World) | X / Y / Z (read-only) |
+
+**Lynch Class picker (marker filter):**
+Shows `Node` and `Landmark`.
+
+#### [E] Status Bar
+```
+G = Grab   X = Delete   Lynch class: Node / Landmark
+```
+
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | Grab | enabled |
+| 2 | Lynch | enabled |
+| 3 | Delete | enabled |
+| 4 | (spacer) | — |
+
+---
+
+### S-14: Urban Placement — UrbanPolyline
+
+Entered via Add menu → "Urban Path" or "Urban Edge".
+
+#### [C] 3D Viewport
+- Already-placed vertices shown as small circles connected by preview line
+- Cursor snaps to nearest geometry (V/E/F snap, same as Measure tool)
+- Mouse hover shows candidate next vertex
+
+#### [D] N Panel
+- Vertex count: live counter
+
+#### [E] Status Bar
+```
+Click to add point. Enter / RMB = confirm. Escape = cancel.
+```
+
+#### [F] Mobile Toolbar
+| Slot | Button | State |
+|------|--------|-------|
+| 1 | Confirm | enabled (≥ 2 vertices) |
+| 2 | Undo pt | enabled |
+| 3 | (spacer) | — |
+| 4 | Cancel | enabled |
+
+---
+
+### S-15: Urban Placement — UrbanPolygon
+
+#### [C] 3D Viewport
+- Vertices + preview ring; auto-close highlight when hovering near first vertex
+
+#### [E] Status Bar
+```
+Click to add point. Click first point / Enter = close. Escape = cancel.
+```
+
+---
+
+### S-16: Urban Placement — UrbanMarker
+
+#### [C] 3D Viewport
+- Single marker preview follows cursor (snaps to geometry)
+
+#### [E] Status Bar
+```
+Click to place marker. Escape = cancel.
+```
+
+---
+
 ## Related Documents
 
 - `docs/STATE_TRANSITIONS.md` — state transition details
