@@ -68,7 +68,7 @@ function base64ToU32(b64) {
   return new Uint32Array(bytes.buffer)
 }
 
-export { base64ToF32, base64ToU32 }
+export { f32ToBase64, u32ToBase64, base64ToF32, base64ToU32 }
 
 // ── Serialise ─────────────────────────────────────────────────────────────────
 

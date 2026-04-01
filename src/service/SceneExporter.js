@@ -16,7 +16,7 @@
  *  - "Profile"         — 2-D sketch rect (p1/p2 + bounding box)
  *  - "MeasureLine"     — two endpoints + computed distance
  *  - "CoordinateFrame" — SE(3) frame relative to parent; world pose included when cached
- *  - "ImportedMesh"    — server-computed mesh; AABB from synthetic corners + offset
+ *  - "ImportedMesh"    — server-computed mesh; AABB from synthetic corners + offset + base64 geometry buffers
  *
  * Every solid/profile/importedMesh entry also includes an `attachedFrames` array
  * listing all CoordinateFrame children with their world poses.
@@ -29,6 +29,7 @@ import { MeasureLine }     from '../domain/MeasureLine.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { ImportedMesh }    from '../domain/ImportedMesh.js'
 import { FACES, computeOutwardFaceNormal, getCentroid } from '../model/CuboidModel.js'
+import { f32ToBase64, u32ToBase64 } from './SceneSerializer.js'
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -227,13 +228,20 @@ export function exportScene(scene, worldPoseOf) {
         attachedFrames: attachedFrames(obj.id, scene, worldPoseOf),
       }
       if (bufs?.offset) entry.offset = bufs.offset
+      if (bufs?.positions) {
+        entry.geometry = {
+          positions: f32ToBase64(bufs.positions),
+          normals:   bufs.normals ? f32ToBase64(bufs.normals) : null,
+          indices:   bufs.indices ? u32ToBase64(bufs.indices) : null,
+        }
+      }
       objects.push(entry)
       continue
     }
   }
 
   return {
-    version:          '1.0',
+    version:          '1.1',
     coordinateSystem: 'ROS REP-103 (+X forward, +Y left, +Z up)',
     exportedAt:       new Date().toISOString(),
     objects,

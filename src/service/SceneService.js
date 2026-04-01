@@ -326,6 +326,140 @@ export class SceneService extends EventEmitter {
     return entities
   }
 
+  /**
+   * Imports a parsed scene JSON (from SceneImporter.parseImportJson) into the scene.
+   *
+   * - clear=true  → clears the current scene first (replaces it)
+   * - clear=false → merges into the current scene; all IDs are remapped to avoid collisions
+   *
+   * CoordinateFrames that appear as standalone objects in the export JSON are
+   * imported; the `attachedFrames` arrays inside each parent entry are ignored
+   * (they are informational duplicates).
+   *
+   * ImportedMesh objects are imported only when the export JSON contains a
+   * `geometry` field (v1.1+); they are silently skipped otherwise.
+   *
+   * Emits: 'objectAdded' for each successfully reconstructed entity.
+   *
+   * @param {{ version: string, objects: object[] }} parsed  output of parseImportJson()
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} viewContext
+   * @param {{ clear?: boolean }} [options]
+   * @returns {{ imported: number, skipped: number }}
+   */
+  importFromJson(parsed, viewContext = {}, { clear = true } = {}) {
+    if (clear) this._clearScene()
+
+    // When merging, build an id-remap table so imported IDs never collide.
+    // When clearing first, reuse original IDs (simpler undo story).
+    const idMap = new Map()   // originalId → newId
+    const remapId = (origId) => {
+      if (clear) return origId
+      if (!idMap.has(origId)) idMap.set(origId, `imp_${idMap.size}_${Date.now()}`)
+      return idMap.get(origId)
+    }
+
+    // Filter out standalone CoordinateFrame entries — process them after their parents
+    const nonFrames = parsed.objects.filter(o => o.type !== 'CoordinateFrame')
+    const frames    = parsed.objects.filter(o => o.type === 'CoordinateFrame')
+
+    let imported = 0
+    let skipped  = 0
+
+    for (const dto of [...nonFrames, ...frames]) {
+      try {
+        const entity = this._reconstructEntity(dto, viewContext, remapId)
+        if (!entity) { skipped++; continue }
+        this._model.addObject(entity)
+        this.emit('objectAdded', entity)
+        imported++
+      } catch (err) {
+        console.warn('[SceneService] importFromJson: skipping entry', dto.id, err)
+        skipped++
+      }
+    }
+
+    return { imported, skipped }
+  }
+
+  /**
+   * Reconstructs a single domain entity from an export-format DTO.
+   * Returns null when the entry should be skipped (e.g. ImportedMesh without geometry).
+   * @private
+   */
+  _reconstructEntity(dto, viewContext, remapId) {
+    const newId = remapId(dto.id)
+
+    if (dto.type === 'Solid') {
+      const vertices = dto.vertices.map((v, i) =>
+        new Vertex(remapId(v.id) || `${newId}_v${i}`, new Vector3(v.x, v.y, v.z))
+      )
+      const solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
+      solid.description = dto.description ?? ''
+      solid.meshView.updateGeometry(solid.corners)
+      return solid
+    }
+
+    if (dto.type === 'Profile') {
+      const meshView = new MeshView(this._threeScene)
+      meshView.setVisible(false)
+      const profile = new Profile(newId, dto.name ?? 'Profile', meshView)
+      profile.description = dto.description ?? ''
+      if (dto.sketchRect) {
+        const p1 = new Vector3(dto.sketchRect.p1.x, dto.sketchRect.p1.y, dto.sketchRect.p1.z)
+        const p2 = new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z)
+        profile.setRect(p1, p2)
+      }
+      return profile
+    }
+
+    if (dto.type === 'MeasureLine') {
+      const { camera, renderer, container = document.body } = viewContext
+      if (!camera || !renderer) return null
+      const p1 = new Vector3(dto.p1.x, dto.p1.y, dto.p1.z)
+      const p2 = new Vector3(dto.p2.x, dto.p2.y, dto.p2.z)
+      const v0 = new Vertex(`${newId}_v0`, p1)
+      const v1 = new Vertex(`${newId}_v1`, p2)
+      const e0 = new Edge(`${newId}_e0`, v0, v1)
+      const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
+      const entity   = new MeasureLine(newId, dto.name ?? 'Measure', [v0, v1], [e0], meshView)
+      meshView.update(entity.p1, entity.p2)
+      return entity
+    }
+
+    if (dto.type === 'ImportedMesh') {
+      if (!dto.geometry?.positions) return null   // v1.0 export — no buffers, skip
+      const meshView  = new ImportedMeshView(this._threeScene)
+      const entity    = new ImportedMesh(newId, dto.name ?? 'ImportedMesh', meshView)
+      const positions = base64ToF32(dto.geometry.positions)
+      const normals   = dto.geometry.normals ? base64ToF32(dto.geometry.normals) : null
+      const indices   = dto.geometry.indices ? base64ToU32(dto.geometry.indices) : null
+      meshView.updateGeometryBuffers(positions, normals, indices)
+      if (dto.offset) {
+        meshView.cuboid.position.set(dto.offset.x, dto.offset.y, dto.offset.z)
+        meshView.updateBoxHelper()
+      }
+      entity.initCorners(meshView.getInitialCorners8())
+      return entity
+    }
+
+    if (dto.type === 'CoordinateFrame') {
+      const newParentId = remapId(dto.parentId)
+      // Skip if parent is not present in the scene (e.g. ImportedMesh that was skipped)
+      if (!this._model.getObject(newParentId)) return null
+      const meshView = new CoordinateFrameView(this._threeScene)
+      const frame    = new CoordinateFrame(newId, dto.name ?? 'Frame', newParentId, meshView)
+      if (dto.translation) {
+        frame.translation.set(dto.translation.x, dto.translation.y, dto.translation.z)
+      }
+      if (dto.rotation) {
+        frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
+      }
+      return frame
+    }
+
+    return null
+  }
+
   /** Disposes all objects and resets the model (local). Emits objectRemoved for each. */
   _clearScene() {
     for (const [id, obj] of this._model.objects) {
