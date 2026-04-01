@@ -28,7 +28,7 @@ Defines the placement, dimensions, and responsive behavior of UI components in e
 block-beta
   columns 5
   header["HEADER — fixed h:40px z:100"]:5
-  outliner["OUTLINER\nfixed w:200px\nz:100"] viewport["3D VIEWPORT (canvas)\nabsolute top:40px bottom:24px\nleft:200px right:240px\nGizmo 96×96px (top-right)"]:3 npanel["N PANEL\nfixed w:240px\nz:100"]
+  outliner["OUTLINER\nfixed\nw:200px\nz:100\n\n(objects list)"] viewport["3D VIEWPORT (canvas)\nabsolute\ntop:40px, bottom:24px\nleft:200px, right:240px\n\nGizmo 96×96px (top-right)\nz:0"]:3 npanel["N PANEL\nfixed\nw:240px\nz:100\n\n(properties)"]
   statusbar["STATUS BAR — fixed h:24px z:100"]:5
 ```
 
@@ -53,10 +53,10 @@ block-beta
 ```mermaid
 block-beta
   columns 1
-  header["HEADER\nfixed, h:40px, z:100\n[≡][↶][↷][Mode▾] · · · [status] · · · [⋯][N]"]
-  viewport["3D VIEWPORT (canvas)\ntop:40px, bottom:86px, w:100vw\n\nGizmo 96×96px (top-right)"]
-  infobar["INFO BAR\nfixed, h:26px, z:100\n(mobile status text)"]
-  toolbar["MOBILE TOOLBAR\nfixed, h:60px, z:100\n[Btn1]  [Btn2]  [Btn3]  [Btn4]"]
+  header["HEADER — fixed h:40px z:100"]
+  viewport["3D VIEWPORT (canvas)\ntop:40px, bottom:86px, w:100vw\n\nGizmo 96×96px (top-right)\n\n\n(main interaction area)\n\n"]
+  infobar["INFO BAR — fixed h:26px z:100"]
+  toolbar["MOBILE TOOLBAR — fixed h:60px z:100"]
 ```
 
 **Drawers (overlay, not in main flow):**
