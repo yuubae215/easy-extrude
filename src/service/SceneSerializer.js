@@ -27,12 +27,27 @@
  * { type: 'ImportedMesh', id, name,
  *   positions: <base64 Float32Array>, normals: <base64 Float32Array>|null,
  *   indices: <base64 Uint32Array>|null, offset: {x,y,z} }
+ *
+ * SceneObjectDTO (UrbanPolyline):
+ * { type: 'UrbanPolyline', id, name, description, lynchClass: string|null,
+ *   vertices: [{ id, x, y, z }] }
+ *
+ * SceneObjectDTO (UrbanPolygon):
+ * { type: 'UrbanPolygon', id, name, description, lynchClass: string|null,
+ *   vertices: [{ id, x, y, z }] }
+ *
+ * SceneObjectDTO (UrbanMarker):
+ * { type: 'UrbanMarker', id, name, description, lynchClass: string|null,
+ *   vertex: { id, x, y, z } }
  */
 import { Solid }            from '../domain/Solid.js'
 import { Profile }          from '../domain/Profile.js'
 import { MeasureLine }      from '../domain/MeasureLine.js'
 import { CoordinateFrame }  from '../domain/CoordinateFrame.js'
 import { ImportedMesh }     from '../domain/ImportedMesh.js'
+import { UrbanPolyline }    from '../domain/UrbanPolyline.js'
+import { UrbanPolygon }     from '../domain/UrbanPolygon.js'
+import { UrbanMarker }      from '../domain/UrbanMarker.js'
 
 // ── Base64 helpers for typed arrays ──────────────────────────────────────────
 
@@ -149,6 +164,44 @@ export function serializeScene(scene) {
           offset:    bufs.offset,
         })
       }
+    } else if (obj instanceof UrbanPolyline) {
+      objects.push({
+        type:        'UrbanPolyline',
+        id:          obj.id,
+        name:        obj.name,
+        description: obj.description ?? '',
+        lynchClass:  obj.lynchClass ?? null,
+        vertices: obj.vertices.map(v => ({
+          id: v.id,
+          x:  v.position.x,
+          y:  v.position.y,
+          z:  v.position.z,
+        })),
+      })
+    } else if (obj instanceof UrbanPolygon) {
+      objects.push({
+        type:        'UrbanPolygon',
+        id:          obj.id,
+        name:        obj.name,
+        description: obj.description ?? '',
+        lynchClass:  obj.lynchClass ?? null,
+        vertices: obj.vertices.map(v => ({
+          id: v.id,
+          x:  v.position.x,
+          y:  v.position.y,
+          z:  v.position.z,
+        })),
+      })
+    } else if (obj instanceof UrbanMarker) {
+      const v = obj.vertices[0]
+      objects.push({
+        type:        'UrbanMarker',
+        id:          obj.id,
+        name:        obj.name,
+        description: obj.description ?? '',
+        lynchClass:  obj.lynchClass ?? null,
+        vertex: { id: v.id, x: v.position.x, y: v.position.y, z: v.position.z },
+      })
     }
   }
 

@@ -37,6 +37,7 @@ This directory records the project's design decisions.
 | [ADR-023](ADR-023-mobile-input-model.md) | **Mobile Input Model — Touch Gesture Model and Device Detection** | Accepted | 2026-03-29 | ADR-003, ADR-006, ADR-014 |
 | [ADR-024](ADR-024-mobile-toolbar-architecture.md) | **Mobile Toolbar Architecture — Fixed-Slot Layout and Context-Sensitive Actions** | Accepted | 2026-03-29 | ADR-008, ADR-023 |
 | [ADR-025](ADR-025-ifc-semantic-classification.md) | **IFC Semantic Classification of Scene Objects** | Accepted | 2026-04-01 | ADR-020, ADR-021, ADR-022, ADR-013 |
+| [ADR-026](ADR-026-lynch-urban-classification.md) | **Lynch Urban Classification of 2D Map Objects** | Accepted | 2026-04-01 | ADR-020, ADR-021, ADR-022, ADR-025, ADR-013 |
 
 ## How to Add a New ADR
 
