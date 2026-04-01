@@ -4,6 +4,8 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-04-01**: Bugfix — CI build failure: `SetLynchClassCommand` was imported with a class-style name in `AppController.js`, but `src/command/SetLynchClassCommand.js` exports a factory function `createSetLynchClassCommand`. Fixed import and call site. Added "Command Factory Naming Convention" rule to `docs/code_contracts/architecture.md` and `docs/CODE_CONTRACTS.md` to prevent recurrence.
+
 - **2026-04-01**: Feature — Lynch urban classification system for 2D map objects (ADR-026). Added three new persistent 2D domain entities (`UrbanPolyline` for Path/Edge, `UrbanPolygon` for District, `UrbanMarker` for Node/Landmark) implementing the LocalGeometry interface (ADR-021). Added `LynchClassRegistry` (5 entries with geometry-type constraints, parallel to `IFCClassRegistry`) and `SetLynchClassCommand` for undo/redo. `SceneService` gains `createUrbanPolyline/Polygon/Marker()`, `setLynchClass()`, and emits `'objectLynchClassChanged'`. `SceneSerializer` handles all three new DTOs. `SCREEN_DESIGN.md` extended with S-11–S-16 (planned UX for N-panel Lynch class section, Outliner badges, placement modes). `ROADMAP.md` updated with Lynch UI Phases 1–3. Rendering layer (`meshView = null`) deferred to next session.
 
 - **2026-04-01**: Documentation — Translated `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, and `docs/EVENTS.md` from Japanese to English. Replaced ASCII-art layout diagrams in SCREEN_DESIGN and LAYOUT_DESIGN with Mermaid `block-beta` diagrams (information areas, desktop layout, mobile layout); non-layout ASCII art (N panel fields, Outliner rows, z-index stack) kept as code blocks.

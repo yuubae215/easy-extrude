@@ -104,6 +104,21 @@ this._measure.snapMeshView = null
 - **Principle**: Every 3D geometry object should have a visible origin coordinate frame so the user can immediately read its reference direction.
 - **Concrete Rule**: `SceneService.createCuboid()`, `SceneService.extrudeSketch()`, and `SceneService.duplicateCuboid()` each call `this.createCoordinateFrame(id, 'Origin')` after registering the new `Cuboid` in the model. The frame is named `'Origin'` (fixed string) to distinguish it from manually-added frames (named `'Frame.XXX'`). `createCoordinateFrame` accepts an optional second parameter `overrideName` for this purpose. Sketches do NOT get an origin frame (they are 2D and have no meaningful reference direction until extruded).
 
+## Command Factory Naming Convention
+
+- **Principle**: All commands are plain objects returned by factory functions, not class instances. The export name follows the `createXCommand` pattern. Importing with a class-style name (`XCommand`) will produce a build-time "not exported" error — but only at build time, not in the editor.
+- **Concrete Rule**: Every file in `src/command/` exports a single function named `createXCommand`. Imports in `AppController.js` must use `{ createXCommand }` not `{ XCommand }`. Call sites use `createXCommand(...)` not `new XCommand(...)`. When adding a new command, verify both the export name in the command file and the import+call in `AppController.js` match before committing.
+
+```js
+// ✓ Correct
+import { createSetLynchClassCommand } from '../command/SetLynchClassCommand.js'
+const cmd = createSetLynchClassCommand(id, oldClass, newClass, service)
+
+// ✗ Wrong — causes build error "not exported"
+import { SetLynchClassCommand } from '../command/SetLynchClassCommand.js'
+const cmd = new SetLynchClassCommand(id, oldClass, newClass, service)
+```
+
 ## CommandStack: push() vs execute() — Post-Hoc Recording
 
 - **Principle**: `CommandStack.execute(cmd)` calls `cmd.execute()` then pushes to the undo stack. Using it for a just-completed operation double-applies the effect.
