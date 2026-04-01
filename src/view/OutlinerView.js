@@ -13,7 +13,8 @@
  *   setObjectIfcClass(id, ifcClass) — updates the coloured IFC badge shown
  *   to the right of the object name. Pass null to hide the badge.
  */
-import { IFC_CLASS_MAP } from '../domain/IFCClassRegistry.js'
+import { IFC_CLASS_MAP }    from '../domain/IFCClassRegistry.js'
+import { LYNCH_CLASS_MAP } from '../domain/LynchClassRegistry.js'
 
 export class OutlinerView {
   constructor() {
@@ -172,12 +173,12 @@ export class OutlinerView {
    *
    * @param {string} id
    * @param {string} name
-   * @param {'cuboid'|'sketch'|'imported'|'measure'|'frame'} [type='cuboid']
+   * @param {'cuboid'|'sketch'|'imported'|'measure'|'frame'|'urban-polyline'|'urban-polygon'|'urban-marker'} [type='cuboid']
    * @param {string|null} [parentId=null]
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
-    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl } = this._createRow(id, name, type, depth)
+    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
       // Find insertion point: after the entire subtree rooted at parentId so
@@ -196,7 +197,7 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, visible: true, parentId })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl, visible: true, parentId })
   }
 
   /**
@@ -221,6 +222,36 @@ export class OutlinerView {
       item.ifcBadgeEl.textContent = ''
       item.ifcBadgeEl.title = ''
       item.ifcBadgeEl.style.display = 'none'
+    }
+  }
+
+  /**
+   * Updates the Lynch class badge for an Urban entity row.
+   * Also updates the icon color to reflect the Lynch class color.
+   * @param {string} id
+   * @param {string|null} lynchClass  — null hides the badge
+   */
+  setObjectLynchClass(id, lynchClass) {
+    const item = this._items.get(id)
+    if (!item) return
+    const entry = lynchClass ? LYNCH_CLASS_MAP.get(lynchClass) : null
+    if (entry) {
+      item.lynchBadgeEl.textContent = entry.name
+      item.lynchBadgeEl.title = entry.label
+      Object.assign(item.lynchBadgeEl.style, {
+        display:    'inline-block',
+        background: entry.color + '22',
+        border:     `1px solid ${entry.color}`,
+        color:      entry.color,
+      })
+      // Also update the icon color to match the Lynch class
+      if (item.iconEl) item.iconEl.style.color = entry.color
+    } else {
+      item.lynchBadgeEl.textContent = ''
+      item.lynchBadgeEl.title = ''
+      item.lynchBadgeEl.style.display = 'none'
+      // Reset icon to grey (unclassified)
+      if (item.iconEl) item.iconEl.style.color = '#888888'
     }
   }
 
@@ -391,6 +422,18 @@ export class OutlinerView {
       iconColor = '#a0c8ff'
     } else if (type === 'sketch') {
       iconColor = '#80cbc4'
+    } else if (type === 'urban-polyline') {
+      iconText  = '⟿'
+      iconTitle = 'Urban polyline (Path / Edge)'
+      iconColor = '#888888'   // updated by setObjectLynchClass
+    } else if (type === 'urban-polygon') {
+      iconText  = '⬡'
+      iconTitle = 'Urban polygon (District)'
+      iconColor = '#888888'
+    } else if (type === 'urban-marker') {
+      iconText  = '⬤'
+      iconTitle = 'Urban marker (Node / Landmark)'
+      iconColor = '#888888'
     }
 
     iconEl.textContent = iconText
@@ -472,10 +515,29 @@ export class OutlinerView {
       if (this._onDeleteCb) this._onDeleteCb(id)
     })
 
+    // Lynch class badge (hidden by default; shown via setObjectLynchClass)
+    const lynchBadgeEl = document.createElement('span')
+    Object.assign(lynchBadgeEl.style, {
+      display:        'none',
+      fontSize:       '9px',
+      fontWeight:     'bold',
+      padding:        '1px 4px',
+      borderRadius:   '2px',
+      flexShrink:     '0',
+      maxWidth:       '52px',
+      overflow:       'hidden',
+      textOverflow:   'ellipsis',
+      whiteSpace:     'nowrap',
+      lineHeight:     '1.4',
+      fontFamily:     'sans-serif',
+      cursor:         'default',
+    })
+
     rowEl.appendChild(triEl)
     rowEl.appendChild(iconEl)
     rowEl.appendChild(nameEl)
     rowEl.appendChild(ifcBadgeEl)
+    rowEl.appendChild(lynchBadgeEl)
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
 
@@ -530,6 +592,6 @@ export class OutlinerView {
       if (this._onSelectCb) this._onSelectCb(id)
     })
 
-    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl }
+    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl }
   }
 }
