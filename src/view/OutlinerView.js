@@ -8,7 +8,13 @@
  *   is inserted as an indented child directly below its parent (and after any
  *   existing siblings).  The parent row's triangle indicator turns orange to
  *   show it has children.  Removing a parent also removes all child rows.
+ *
+ * IFC classification (ADR-025):
+ *   setObjectIfcClass(id, ifcClass) — updates the coloured IFC badge shown
+ *   to the right of the object name. Pass null to hide the badge.
  */
+import { IFC_CLASS_MAP } from '../domain/IFCClassRegistry.js'
+
 export class OutlinerView {
   constructor() {
     // ── Panel container ────────────────────────────────────────────────────
@@ -90,6 +96,7 @@ export class OutlinerView {
      *   eyeEl: HTMLElement,
      *   nameEl: HTMLElement,
      *   triEl: HTMLElement,
+     *   ifcBadgeEl: HTMLElement,
      *   visible: boolean,
      *   parentId: string|null
      * }>}
@@ -170,7 +177,7 @@ export class OutlinerView {
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
-    const { rowEl, eyeEl, nameEl, triEl } = this._createRow(id, name, type, depth)
+    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
       // Find insertion point: after the entire subtree rooted at parentId so
@@ -189,7 +196,32 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, visible: true, parentId })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, visible: true, parentId })
+  }
+
+  /**
+   * Updates the IFC class badge for an object row.
+   * @param {string} id
+   * @param {string|null} ifcClass  — null hides the badge
+   */
+  setObjectIfcClass(id, ifcClass) {
+    const item = this._items.get(id)
+    if (!item) return
+    const entry = ifcClass ? IFC_CLASS_MAP.get(ifcClass) : null
+    if (entry) {
+      item.ifcBadgeEl.textContent = entry.label
+      item.ifcBadgeEl.title = entry.name
+      Object.assign(item.ifcBadgeEl.style, {
+        display: 'inline-block',
+        background: entry.color + '22',
+        border: `1px solid ${entry.color}`,
+        color: entry.color,
+      })
+    } else {
+      item.ifcBadgeEl.textContent = ''
+      item.ifcBadgeEl.title = ''
+      item.ifcBadgeEl.style.display = 'none'
+    }
   }
 
   /** Updates the displayed name of an object row */
@@ -383,6 +415,24 @@ export class OutlinerView {
       whiteSpace: 'nowrap',
     })
 
+    // IFC class badge (hidden by default; shown via setObjectIfcClass)
+    const ifcBadgeEl = document.createElement('span')
+    Object.assign(ifcBadgeEl.style, {
+      display: 'none',
+      fontSize: '9px',
+      fontWeight: 'bold',
+      padding: '1px 4px',
+      borderRadius: '2px',
+      flexShrink: '0',
+      maxWidth: '52px',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      lineHeight: '1.4',
+      fontFamily: 'sans-serif',
+      cursor: 'default',
+    })
+
     // Eye (visibility toggle)
     const eyeEl = document.createElement('span')
     eyeEl.textContent = '👁'
@@ -425,6 +475,7 @@ export class OutlinerView {
     rowEl.appendChild(triEl)
     rowEl.appendChild(iconEl)
     rowEl.appendChild(nameEl)
+    rowEl.appendChild(ifcBadgeEl)
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
 
@@ -479,6 +530,6 @@ export class OutlinerView {
       if (this._onSelectCb) this._onSelectCb(id)
     })
 
-    return { rowEl, eyeEl, nameEl, triEl }
+    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl }
   }
 }

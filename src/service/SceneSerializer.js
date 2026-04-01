@@ -10,7 +10,7 @@
  * }
  *
  * SceneObjectDTO (Solid):
- * { type: 'Solid', id, name, description, vertices: [{ id, x, y, z }] }
+ * { type: 'Solid', id, name, description, ifcClass: string|null, vertices: [{ id, x, y, z }] }
  *
  * SceneObjectDTO (Profile):
  * { type: 'Profile', id, name, description,
@@ -85,10 +85,11 @@ export function serializeScene(scene) {
   for (const obj of scene.objects.values()) {
     if (obj instanceof Solid) {
       objects.push({
-        type: 'Solid',
+        type:        'Solid',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
+        ifcClass:    obj.ifcClass ?? null,
         vertices: obj.vertices.map(v => ({
           id: v.id,
           x:  v.position.x,
@@ -141,6 +142,7 @@ export function serializeScene(scene) {
           type:      'ImportedMesh',
           id:        obj.id,
           name:      obj.name,
+          ifcClass:  obj.ifcClass ?? null,
           positions: f32ToBase64(bufs.positions),
           normals:   bufs.normals  ? f32ToBase64(bufs.normals)  : null,
           indices:   bufs.indices  ? u32ToBase64(bufs.indices)  : null,

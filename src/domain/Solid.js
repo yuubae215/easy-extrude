@@ -14,7 +14,7 @@
  *
  * Note: `meshView` is co-located on the entity for now.
  *
- * @see ADR-020, ADR-012, ADR-009
+ * @see ADR-020, ADR-012, ADR-009, ADR-025
  */
 import { FACES } from '../model/CuboidModel.js'
 import { Face }  from '../graph/Face.js'
@@ -39,6 +39,8 @@ export class Solid {
     this.id          = id
     this.name        = name
     this.description = ''
+    /** @type {string|null} IFC4 class name (e.g. 'IfcWall'); null = unclassified. @see ADR-025 */
+    this.ifcClass    = null
     /** @type {import('../graph/Vertex.js').Vertex[]} */
     this.vertices    = vertices
 
