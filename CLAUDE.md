@@ -131,7 +131,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-04-01**: Feature — Lynch urban classification system (ADR-026): `UrbanPolyline`, `UrbanPolygon`, `UrbanMarker` domain entities; `LynchClassRegistry`; `SetLynchClassCommand`; `SceneService.setLynchClass()` + create methods; `SceneSerializer` DTOs. UX design added to `SCREEN_DESIGN.md` (S-11–S-16) and `ROADMAP.md` (Phases 1–3). Rendering layer deferred.
 - **2026-04-01**: Documentation — Translated `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` from Japanese to English; replaced ASCII-art layout diagrams with Mermaid `block-beta` diagrams.
-- **2026-04-01**: Documentation — `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` を新規作成。`CLAUDE.md` に変更影響マトリクスと更新チェックリストを追加。
 - **2026-04-01**: Bugfix — Mobile header overflow. Export/Import buttons clipped on narrow screens; replaced with `_moreMenuBtn` (⋯) dropdown on mobile. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. MENTAL_MODEL §3 updated.
-- **2026-04-01**: Documentation — Created `docs/PHILOSOPHY.md`: 20 principles in English distilled from MENTAL_MODEL, PROCESS_NOTES, and ADRs. Added maintenance lifecycle (triggers, lifecycle states, three-document hierarchy table). Added PHILOSOPHY column to Design change impact matrix and two-question post-mortem protocol to "After fixing a bug".
