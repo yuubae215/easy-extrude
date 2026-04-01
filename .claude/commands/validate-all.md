@@ -33,7 +33,7 @@ Apply the checklist from `.claude/commands/qc.md` to every `.js` file.
 
 Also read:
 - `docs/ARCHITECTURE.md`
-- `.claude/MENTAL_MODEL.md`
+- `docs/CODE_CONTRACTS.md`
 
 Checks to emphasise for whole-repo scope:
 - Layer leakage (domain logic in View, Three.js in Model, etc.)
@@ -62,7 +62,7 @@ Apply the checklist from `.claude/commands/ux.md` to:
 - `index.html`
 
 Also read:
-- `.claude/MENTAL_MODEL.md` §2 and §3
+- `docs/CODE_CONTRACTS.md` §2 and §3
 - `docs/ROADMAP.md` (Mobile Support section)
 
 ---
@@ -104,5 +104,5 @@ ranked by severity.
 ## Process lessons
 
 Validation strategy, two-pass pattern, and agent-scoping heuristics are
-maintained in `.claude/PROCESS_NOTES.md` §1. Update that file (not this one)
+maintained in `.claude/DEVELOPMENT.md` §1. Update that file (not this one)
 when new lessons emerge from running this command.

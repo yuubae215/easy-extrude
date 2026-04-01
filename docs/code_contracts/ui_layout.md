@@ -1,6 +1,6 @@
 # Mental Model: UI & Layout Adaptability
 
-Detail file for `.claude/MENTAL_MODEL.md` Section 3.
+Detail file for `docs/CODE_CONTRACTS.md` Section 3.
 
 ---
 

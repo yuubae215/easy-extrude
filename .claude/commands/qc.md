@@ -13,7 +13,7 @@ Perform a QC review on the files specified in `$ARGUMENTS`, or on all recently c
 
 Read these before evaluating:
 - `docs/ARCHITECTURE.md` — layer responsibilities and ownership contracts
-- `.claude/MENTAL_MODEL.md` — accumulated rules from real bugs
+- `docs/CODE_CONTRACTS.md` — accumulated rules from real bugs
 
 ### 3. Read each target file in full
 
@@ -40,7 +40,7 @@ Read these before evaluating:
 - [ ] Event names: `camelCase` strings (`objectAdded`, `objectRenamed`, etc.).
 - [ ] ADR files: `ADR-NNN-kebab-case-title.md`.
 
-#### D. DDD / Entity Contracts (MENTAL_MODEL §1, ADR-009–012)
+#### D. DDD / Entity Contracts (CODE_CONTRACTS §1, ADR-009–012)
 
 - [ ] Type dispatch uses `instanceof Sketch` / `instanceof Cuboid` — not a `dimension` property.
 - [ ] `Sketch.extrude()` returns a new `Cuboid` and does not mutate `Sketch` itself.
@@ -49,25 +49,25 @@ Read these before evaluating:
 - [ ] `ImportedMesh` has no `corners` / vertex graph; code that iterates selected objects and accesses `.corners` guards with `selObj.corners` or `instanceof ImportedMesh`.
 - [ ] `MeasureLine` holds `p1`/`p2` (`THREE.Vector3`) + `MeasureLineView`. It has no vertex/edge/face graph and must be excluded from `collectSnapTargets` and `_hitAnyObject` raycasting.
 - [ ] Edit Mode and Grab are blocked for both `ImportedMesh` and `MeasureLine`; blocks emit a toast before returning.
-- [ ] Every method called via `_meshView` in `AppController` exists as a no-op on `MeasureLineView` (see MENTAL_MODEL §1 — MeasureLineView No-Op Interface Completeness for the full required list).
+- [ ] Every method called via `_meshView` in `AppController` exists as a no-op on `MeasureLineView` (see CODE_CONTRACTS §1 — MeasureLineView No-Op Interface Completeness for the full required list).
 
 #### E. Event / Observable Contracts (ADR-013)
 
 - [ ] `SceneService` emits domain events (`objectAdded`, `objectRemoved`, `objectRenamed`, `activeChanged`) for every state change that views need to react to.
 - [ ] Views subscribe via `SceneService.on(event, handler)` — not via direct polling or controller callbacks.
 
-#### F. Visual State Ownership (MENTAL_MODEL §1)
+#### F. Visual State Ownership (CODE_CONTRACTS §1)
 
 - [ ] `hlMesh.visible` set only inside `setFaceHighlight()`.
 - [ ] `cuboid.visible` / `wireframe.visible` set only inside `setVisible()`.
 - [ ] `boxHelper.visible` set only inside `setObjectSelected()`.
 
-#### G. Mode Transition Contract (ADR-008, MENTAL_MODEL §1)
+#### G. Mode Transition Contract (ADR-008, CODE_CONTRACTS §1)
 
 - [ ] All mode changes go through `AppController.setMode(mode)`.
 - [ ] When switching active objects from Edit Mode, `setMode('object')` is called first.
 
-#### H. Mobile Toolbar Slots (MENTAL_MODEL §3)
+#### H. Mobile Toolbar Slots (CODE_CONTRACTS §3)
 
 - [ ] Every mode exposes exactly **4 slots** (matching the widest mode, Edit 3D).
 

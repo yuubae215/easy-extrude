@@ -1,6 +1,6 @@
 # Mental Model: Architecture & State Management
 
-Detail file for `.claude/MENTAL_MODEL.md` Section 1.
+Detail file for `docs/CODE_CONTRACTS.md` Section 1.
 
 ---
 

@@ -1,6 +1,7 @@
-# Mental Model — easy-extrude
+# Code Contracts — easy-extrude
 
-Accumulated rules and policies. Full details in `.claude/mental_model/`.
+Accumulated rules and policies derived from real bugs and design decisions.
+Full details in `docs/code_contracts/`.
 **Read the relevant detail file before modifying code in that area.**
 
 ---
@@ -28,7 +29,7 @@ Accumulated rules and policies. Full details in `.claude/mental_model/`.
 
 ### How to update
 
-1. Add/edit the rule in the relevant detail file in `.claude/mental_model/`.
+1. Add/edit the rule in the relevant detail file in `docs/code_contracts/`.
 2. Update the summary row in the index table below.
 3. Commit together with the code change that motivated it.
 4. If the rule is substantial, create an ADR first and link it here.
@@ -37,7 +38,7 @@ Accumulated rules and policies. Full details in `.claude/mental_model/`.
 
 ## 1. Architecture & State Management
 
-Detail: `.claude/mental_model/1_architecture.md`
+Detail: `docs/code_contracts/architecture.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
@@ -61,7 +62,7 @@ Detail: `.claude/mental_model/1_architecture.md`
 
 ## 2. Events & Interaction (Touch/Pointer)
 
-Detail: `.claude/mental_model/2_interaction.md`
+Detail: `docs/code_contracts/interaction.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
@@ -76,7 +77,7 @@ Detail: `.claude/mental_model/2_interaction.md`
 
 ## 3. UI & Layout Adaptability
 
-Detail: `.claude/mental_model/3_ui_layout.md`
+Detail: `docs/code_contracts/ui_layout.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
@@ -92,7 +93,7 @@ Detail: `.claude/mental_model/3_ui_layout.md`
 
 ## 3.5 Server-Side Async (Node.js BFF)
 
-Detail: `.claude/mental_model/3b_server_async.md`
+Detail: `docs/code_contracts/server_async.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
@@ -106,7 +107,7 @@ Detail: `.claude/mental_model/3b_server_async.md`
 
 ## 4. Memory Management (Three.js)
 
-Detail: `.claude/mental_model/4_memory_management.md`
+Detail: `docs/code_contracts/memory_management.md`
 
 | Rule | Core Takeaway |
 |------|--------------|

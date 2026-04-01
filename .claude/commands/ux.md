@@ -12,14 +12,14 @@ Perform a UX review on the files specified in `$ARGUMENTS`, or on all recently c
 ### 2. Read reference documents
 
 Read these before evaluating:
-- `.claude/MENTAL_MODEL.md` §2 (Touch/Pointer events), §3 (UI & Layout)
+- `docs/CODE_CONTRACTS.md` §2 (Touch/Pointer events), §3 (UI & Layout)
 - `docs/ROADMAP.md` — Mobile Support section
 
 ### 3. Read each target file in full
 
 ### 4. Evaluate against the UX checklist
 
-#### A. Mobile Toolbar Stability (MENTAL_MODEL §3)
+#### A. Mobile Toolbar Stability (CODE_CONTRACTS §3)
 
 - [ ] Every mode exposes exactly **4 slots** (matching the widest mode, Edit 3D). Missing slots use `{ spacer: true }` (not conditional rendering), so toolbar width never changes.
 
@@ -36,20 +36,20 @@ Read these before evaluating:
 - [ ] No layout shifts between mode transitions that would cause misclicks.
 - [ ] Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. Grab active Stack button toggles `stackMode` mid-grab.`_startGrab()` does **not** reset `stackMode`, preserving the pre-set.
 
-#### B. Touch Event Handling (MENTAL_MODEL §2)
+#### B. Touch Event Handling (CODE_CONTRACTS §2)
 
 - [ ] `_onPointerDown` re-runs hit tests (e.g. `_hitFace()`) for touch devices before dispatching clicks — not relying on a prior `pointermove` for hover state.
 - [ ] Face extrude on mobile is **gesture-only**: tap → drag → release (no Extrude button in Edit 3D).
 - [ ] `_confirmFaceExtrude()` is called in `_onPointerUp`, not `_onPointerDown`.
 - [ ] `_onPointerDown` returns early for events not originating from the canvas (`e.target !== renderer.domElement`).
 
-#### C. Multi-touch / Orbit Coexistence (MENTAL_MODEL §2)
+#### C. Multi-touch / Orbit Coexistence (CODE_CONTRACTS §2)
 
 - [ ] Rect selection does not disable OrbitControls (`_controls.enabled` not set to `false` for rect sel).
 - [ ] Second touch during rect selection cancels rect sel and lets OrbitControls take the two-finger gesture.
 - [ ] Only `_objDragging` and `_sketch.drawing` legitimately set `_controls.enabled = false`.
 
-#### D. Toast & Status Positioning (MENTAL_MODEL §3)
+#### D. Toast & Status Positioning (CODE_CONTRACTS §3)
 
 - [ ] `showToast()` uses `bottom: 96px` on mobile, `bottom: 64px` on desktop.
 - [ ] Status text on mobile updates `_infoEl` (footer bar), not the canvas pill or header.
@@ -96,7 +96,7 @@ Read these before evaluating:
 
 - [ ] Hovered faces highlight immediately on `pointermove` (desktop).
 - [ ] Selected sub-elements (vertices, edges, faces) have a distinct colour from hovered ones.
-- [ ] `setObjectSelected(true)` is restored when returning to Object mode from Edit mode (MENTAL_MODEL §1 — State Restoration on Mode Exit).
+- [ ] `setObjectSelected(true)` is restored when returning to Object mode from Edit mode (CODE_CONTRACTS §1 — State Restoration on Mode Exit).
 - [ ] Measure distance label (amber) is visible and updates position every animation frame via `MeasureLineView.updateLabelPosition(camera)`.
 
 ### 5. Report findings

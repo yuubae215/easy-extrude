@@ -1,6 +1,6 @@
 # Mental Model: Server-Side Async (Node.js BFF)
 
-Detail file for `.claude/MENTAL_MODEL.md` Section 3.5.
+Detail file for `docs/CODE_CONTRACTS.md` Section 3.5.
 See also: ADR-015 (BFF Microservices Architecture), ADR-017 (WebSocket Session Geometry Service).
 
 ---

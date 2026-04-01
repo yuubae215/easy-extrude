@@ -35,13 +35,13 @@ Before writing or modifying any code, consult the relevant documents.
 | object / hierarchy / 1D / 2D / 3D | ADR-005 |
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
 | SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
-| mobile / touch / gesture / pointer / OrbitControls | ADR-023, `.claude/mental_model/2_interaction.md` |
-| mobile toolbar / slot / spacer / UI layout | ADR-024, `.claude/mental_model/3_ui_layout.md` |
-| entity capability / instanceof / MeasureLine / ImportedMesh / CoordinateFrame | `.claude/mental_model/1_architecture.md` |
-| visual flag / meshview / dispose / memory / Three.js cleanup | `.claude/mental_model/4_memory_management.md` |
-| BFF / sceneStore / database / WebSocket / occt / STEP import | `.claude/mental_model/3b_server_async.md` |
+| mobile / touch / gesture / pointer / OrbitControls | ADR-023, `docs/code_contracts/interaction.md` |
+| mobile toolbar / slot / spacer / UI layout | ADR-024, `docs/code_contracts/ui_layout.md` |
+| entity capability / instanceof / MeasureLine / ImportedMesh / CoordinateFrame | `docs/code_contracts/architecture.md` |
+| visual flag / meshview / dispose / memory / Three.js cleanup | `docs/code_contracts/memory_management.md` |
+| BFF / sceneStore / database / WebSocket / occt / STEP import | `docs/code_contracts/server_async.md` |
 | concurrency / async / locking / isProcessing | `docs/CONCURRENCY.md` |
-| validation / process / agent workflow / meta | `.claude/PROCESS_NOTES.md` |
+| validation / process / agent workflow / meta | `.claude/DEVELOPMENT.md` |
 
 **`/adr <topic>`** — slash command to search the ADR index.
 
@@ -55,8 +55,8 @@ Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 When a new requirement arrives, update **all** documents marked ✅ below.
 Documents marked ⚠️ need review but may not require changes.
 
-| Requirement type | STATE_TRANSITIONS | SCREEN_DESIGN | LAYOUT_DESIGN | EVENTS | ARCHITECTURE | ADR | MENTAL_MODEL | PHILOSOPHY |
-|------------------|:-----------------:|:-------------:|:-------------:|:------:|:------------:|:---:|:------------:|:----------:|
+| Requirement type | STATE_TRANSITIONS | SCREEN_DESIGN | LAYOUT_DESIGN | EVENTS | ARCHITECTURE | ADR | CODE_CONTRACTS | PHILOSOPHY |
+|------------------|:-----------------:|:-------------:|:-------------:|:------:|:------------:|:---:|:--------------:|:----------:|
 | **新しいモード / サブステートを追加** | ✅ | ✅ (全エリア) | ✅ (ツールバースロット) | ✅ (keyboard) | ⚠️ | ✅ ADR-008 更新 | ⚠️ §1 | — |
 | **既存モードにサブ操作を追加** (grab, measure など) | ✅ (FSM 追加) | ✅ (ステータスバー・ツールバー行) | ⚠️ (スロット数変化なら ✅) | ✅ (pointer/keyboard 節) | — | ⚠️ | ⚠️ §2 | — |
 | **新しいエンティティ型を追加** (domain entity) | ⚠️ | ✅ (N パネル・アウトライナー行) | — | ✅ (objectAdded など) | ✅ (taxonomy 表) | ✅ 新 ADR | ✅ §1 | ⚠️ (§2 Type contract) |
@@ -70,7 +70,7 @@ Documents marked ⚠️ need review but may not require changes.
 | **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (下記ルール参照) | ⚠️ (下記ルール参照) |
 
 > **PHILOSOPHY column rule**: mark ⚠️ only when the same root value has been
-> violated in **two or more unrelated contexts**. A single bug → MENTAL_MODEL.
+> violated in **two or more unrelated contexts**. A single bug → CODE_CONTRACTS.
 > A recurring pattern across contexts → extract or update a PHILOSOPHY principle.
 
 ### 更新チェックリスト (コードを書く前に実行)
@@ -91,16 +91,16 @@ After every bug fix, **before committing**, ask these two questions in order:
 **Q1 — Rule missing?**
 > "Did this bug exist because an implicit rule was missing or misunderstood?"
 
-If yes → add the rule to the relevant `.claude/mental_model/*.md` detail file,
-then update the summary row in `.claude/MENTAL_MODEL.md` index.
-Use the criteria in MENTAL_MODEL's "What belongs here" section.
+If yes → add the rule to the relevant `docs/code_contracts/*.md` detail file,
+then update the summary row in `docs/CODE_CONTRACTS.md` index.
+Use the criteria in CODE_CONTRACTS's "What belongs here" section.
 When in doubt, add it — stale entries are easier to clean up than missing ones.
 
 **Q2 — Pattern repeating?**
 > "Have we violated the same *underlying value* in two or more unrelated places?"
 
 If yes → this signals a missing or under-specified principle in `docs/PHILOSOPHY.md`.
-Either add a new principle or sharpen an existing one. Link it to the MENTAL_MODEL
+Either add a new principle or sharpen an existing one. Link it to the CODE_CONTRACTS
 rules it underlies. See PHILOSOPHY's "When to update" table for exact triggers.
 
 ## Development commands
@@ -117,8 +117,8 @@ pnpm preview   # preview production build
 **ROS world frame** (+X forward, +Y left, +Z up). Right-handed. Matches ROS REP-103.
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
-@.claude/MENTAL_MODEL.md
-@.claude/PROCESS_NOTES.md
+@docs/CODE_CONTRACTS.md
+@.claude/DEVELOPMENT.md
 
 ## Notes for changes
 
