@@ -26,6 +26,9 @@ Before writing or modifying any code, consult the relevant documents.
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
 | state machine / mode transition / state | `docs/STATE_TRANSITIONS.md`, ADR-008 |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
+| screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
+| layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
+| events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |
 | controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
 | mode / edit mode / object mode / sketch | ADR-002, ADR-004, ADR-008 |
 | object / hierarchy / 1D / 2D / 3D | ADR-005 |
