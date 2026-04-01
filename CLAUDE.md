@@ -26,6 +26,9 @@ Before writing or modifying any code, consult the relevant documents.
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
 | state machine / mode transition / state | `docs/STATE_TRANSITIONS.md`, ADR-008 |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
+| screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
+| layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
+| events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |
 | controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
 | mode / edit mode / object mode / sketch | ADR-002, ADR-004, ADR-008 |
 | object / hierarchy / 1D / 2D / 3D | ADR-005 |
@@ -43,6 +46,38 @@ Before writing or modifying any code, consult the relevant documents.
 
 Create a new ADR when a design choice is non-obvious or hard to reverse.
 Update `docs/adr/README.md` index whenever an ADR is added or superseded.
+
+---
+
+## Design change impact
+
+When a new requirement arrives, update **all** documents marked ✅ below.
+Documents marked ⚠️ need review but may not require changes.
+
+| Requirement type | STATE_TRANSITIONS | SCREEN_DESIGN | LAYOUT_DESIGN | EVENTS | ARCHITECTURE | ADR | MENTAL_MODEL |
+|------------------|:-----------------:|:-------------:|:-------------:|:------:|:------------:|:---:|:------------:|
+| **新しいモード / サブステートを追加** | ✅ | ✅ (全エリア) | ✅ (ツールバースロット) | ✅ (keyboard) | ⚠️ | ✅ ADR-008 更新 | ⚠️ §1 |
+| **既存モードにサブ操作を追加** (grab, measure など) | ✅ (FSM 追加) | ✅ (ステータスバー・ツールバー行) | ⚠️ (スロット数変化なら ✅) | ✅ (pointer/keyboard 節) | — | ⚠️ | ⚠️ §2 |
+| **新しいエンティティ型を追加** (domain entity) | ⚠️ | ✅ (N パネル・アウトライナー行) | — | ✅ (objectAdded など) | ✅ (taxonomy 表) | ✅ 新 ADR | ✅ §1 |
+| **新しい UI 画面 / パネルを追加** | ⚠️ | ✅ (画面 ID 追加) | ✅ (寸法・z-index) | ✅ (UI events 節) | — | ⚠️ | ⚠️ §3 |
+| **キーボードショートカットを追加 / 変更** | — | ✅ (ステータスバー欄) | — | ✅ (keyboard 表) | — | — | — |
+| **モバイル操作 / ジェスチャーを追加** | ✅ (touch FSM) | ✅ (モバイル差分表) | ✅ (ツールバースロット) | ✅ (touch 節) | — | ✅ ADR-023/024 更新 | ✅ §2, §3 |
+| **レイアウト寸法 / z-index 変更** | — | ⚠️ | ✅ | — | — | — | ✅ §3 |
+| **新しいドメインイベントを追加** | — | — | — | ✅ (domain events 節) | ⚠️ | ⚠️ ADR-013 | — |
+| **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 |
+| **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 |
+| **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (下記ルール参照) |
+
+### 更新チェックリスト (コードを書く前に実行)
+
+```
+1. 上の表で ✅ の列を確認
+2. 各ドキュメントの対象セクションを読む (Document navigation 表を参照)
+3. 非自明な設計選択 → 新 ADR を作成、docs/adr/README.md インデックスを更新
+4. コード変更後 → ✅ ドキュメントを更新してから commit
+```
+
+---
 
 ## After fixing a bug
 
@@ -80,6 +115,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-04-01**: Documentation — `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` を新規作成。`CLAUDE.md` に変更影響マトリクスと更新チェックリストを追加。
 - **2026-04-01**: Bugfix — Mobile header overflow. Export/Import buttons clipped on narrow screens; replaced with `_moreMenuBtn` (⋯) dropdown on mobile. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. MENTAL_MODEL §3 updated.
 - **2026-04-01**: Feature — Scene JSON import. `SceneImporter.js` (pure parse/validate); `SceneService.importFromJson()` for all entity types with merge/ID-remap support; `SceneExporter.js` upgraded to v1.1 with ImportedMesh geometry buffers (Base64); Import button + `Ctrl+I` + `showImportModal()` (Clear / Merge / Cancel) in UIView.
-- **2026-03-31**: Feature — Scene JSON export. New `SceneExporter.js` pure module; header "Export" button + `Ctrl+E`. Exports Solid/Profile/MeasureLine/CoordinateFrame (with Euler ZYX + world pose)/ImportedMesh with AABB, face normals, attached frames. Browser download via Blob; no BFF dependency.
