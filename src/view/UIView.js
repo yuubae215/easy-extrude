@@ -313,6 +313,39 @@ export class UIView {
       if (this._onExportJson) this._onExportJson()
     })
 
+    // ── Import JSON button ────────────────────────────────────────────────────
+    this._importJsonBtn = document.createElement('button')
+    Object.assign(this._importJsonBtn.style, {
+      padding: '4px 8px',
+      background: 'transparent',
+      border: '1px solid #3a3a3a',
+      borderRadius: '5px',
+      color: '#aaa',
+      cursor: 'pointer',
+      fontSize: '11px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      lineHeight: '1',
+      flexShrink: '0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+    })
+    this._importJsonBtn.title = 'Import scene from JSON (Ctrl+I)'
+    this._importJsonBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 14 12 9 17 14"/>
+        <line x1="12" y1="9" x2="12" y2="21"/>
+      </svg>
+      Import
+    `
+    this._headerEl.appendChild(this._importJsonBtn)
+    /** @type {Function|null} Import JSON callback (set by AppController). */
+    this._onImportJson = null
+    this._importJsonBtn.addEventListener('click', () => {
+      if (this._onImportJson) this._onImportJson()
+    })
+
     // ── Canvas status overlay (mobile only — floats below header on canvas) ─
     this._canvasStatusEl = document.createElement('div')
     Object.assign(this._canvasStatusEl.style, {
@@ -1263,6 +1296,85 @@ export class UIView {
 
   /** Registers callback for Export JSON button (header bar). */
   onExportJson(cb) { this._onExportJson = cb }
+
+  /** Registers callback for Import JSON button (header bar). */
+  onImportJson(cb) { this._onImportJson = cb }
+
+  /**
+   * Shows a modal asking the user whether to clear the scene before importing
+   * or to merge the imported objects into the current scene.
+   *
+   * Returns a Promise that resolves to:
+   *   'clear'  — user chose "Clear and import"
+   *   'merge'  — user chose "Merge into current scene"
+   *   null     — user cancelled
+   *
+   * @param {string} filename  Name of the file being imported (shown in title)
+   * @returns {Promise<'clear'|'merge'|null>}
+   */
+  showImportModal(filename) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div')
+      overlay.style.cssText = [
+        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
+        'display:flex;align-items:center;justify-content:center;z-index:10000',
+      ].join(';')
+
+      const dlg = document.createElement('div')
+      dlg.style.cssText = [
+        'background:#1a2030;border:1px solid #2a3a4a;border-radius:8px',
+        'padding:20px 24px;min-width:320px;max-width:420px;color:#ecf0f1;font-family:monospace',
+        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
+      ].join(';')
+
+      const title = document.createElement('div')
+      title.textContent = 'Import JSON'
+      title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:6px;color:#aad4f5'
+      dlg.appendChild(title)
+
+      const sub = document.createElement('div')
+      sub.textContent = filename
+      sub.style.cssText = 'font-size:11px;color:#7a9ab5;margin-bottom:16px;word-break:break-all'
+      dlg.appendChild(sub)
+
+      const btnRow = document.createElement('div')
+      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap'
+
+      const btnCancel = document.createElement('button')
+      btnCancel.textContent = 'Cancel'
+      btnCancel.style.cssText = [
+        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
+      ].join(';')
+
+      const btnMerge = document.createElement('button')
+      btnMerge.textContent = 'Merge into scene'
+      btnMerge.style.cssText = [
+        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a7a5a',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
+      ].join(';')
+
+      const btnClear = document.createElement('button')
+      btnClear.textContent = 'Clear and import'
+      btnClear.style.cssText = [
+        'padding:6px 14px;background:#e67e22;color:#fff;border:none',
+        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
+      ].join(';')
+
+      btnRow.appendChild(btnCancel)
+      btnRow.appendChild(btnMerge)
+      btnRow.appendChild(btnClear)
+      dlg.appendChild(btnRow)
+      overlay.appendChild(dlg)
+      document.body.appendChild(overlay)
+
+      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
+      btnCancel.addEventListener('click', () => close(null))
+      btnMerge.addEventListener('click',  () => close('merge'))
+      btnClear.addEventListener('click',  () => close('clear'))
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
+    })
+  }
 
   /**
    * Shows Save/Load buttons in the header and registers their callbacks.

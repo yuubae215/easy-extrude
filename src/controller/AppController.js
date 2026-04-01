@@ -38,6 +38,7 @@ import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 import { downloadSceneJson }          from '../service/SceneExporter.js'
+import { parseImportJson }            from '../service/SceneImporter.js'
 
 export class AppController {
   /**
@@ -3529,6 +3530,13 @@ export class AppController {
       return
     }
 
+    // ── Ctrl+I: import scene JSON ─────────────────────────────────────────
+    if (e.ctrlKey && (e.key === 'i' || e.key === 'I')) {
+      e.preventDefault()
+      this._triggerImportSceneJson()
+      return
+    }
+
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
     if (this._rotate.active) {
       switch (e.key) {
@@ -3799,8 +3807,9 @@ export class AppController {
     // Show first-run gesture hints on mobile
     this._uiView.showOnboardingIfNeeded()
 
-    // Wire Export JSON button
+    // Wire Export / Import JSON buttons
     this._uiView.onExportJson(() => this._exportSceneJson())
+    this._uiView.onImportJson(() => this._triggerImportSceneJson())
 
     // Non-blocking BFF + Node Editor setup (Phase B)
     this._initBff().catch(err => {
@@ -3828,6 +3837,69 @@ export class AppController {
     } catch (err) {
       console.error('[AppController] Export failed:', err)
       this._uiView.showToast('Export failed', { type: 'error' })
+    }
+  }
+
+  // ── Scene JSON import ─────────────────────────────────────────────────────
+
+  /**
+   * Opens a file picker for .json files, reads the selected file, then shows
+   * the import confirmation modal (clear / merge choice).
+   * Side-effectful; must only be called from user gestures.
+   */
+  _triggerImportSceneJson() {
+    const input = document.createElement('input')
+    input.type   = 'file'
+    input.accept = '.json'
+    input.addEventListener('change', () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        this._handleImportJsonText(file.name, ev.target.result)
+      }
+      reader.readAsText(file)
+    })
+    input.click()
+  }
+
+  /**
+   * Parses the JSON text and shows the import modal.
+   * On confirmation, delegates to SceneService.importFromJson().
+   * @param {string} filename
+   * @param {string} jsonText
+   */
+  async _handleImportJsonText(filename, jsonText) {
+    let parsed
+    try {
+      parsed = parseImportJson(jsonText)
+    } catch (err) {
+      this._uiView.showToast(`Import failed: ${err.message}`, { type: 'error' })
+      return
+    }
+
+    const choice = await this._uiView.showImportModal(filename)
+    if (choice === null) return    // user cancelled
+
+    const viewContext = {
+      camera:    this._camera,
+      renderer:  this._sceneView.renderer,
+      container: document.body,
+    }
+
+    try {
+      const { imported, skipped } = this._service.importFromJson(
+        parsed,
+        viewContext,
+        { clear: choice === 'clear' },
+      )
+      const msg = skipped > 0
+        ? `Imported ${imported} objects (${skipped} skipped)`
+        : `Imported ${imported} objects`
+      this._uiView.showToast(msg)
+    } catch (err) {
+      console.error('[AppController] Import failed:', err)
+      this._uiView.showToast('Import failed', { type: 'error' })
     }
   }
 }
