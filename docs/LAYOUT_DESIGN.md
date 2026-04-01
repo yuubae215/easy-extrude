@@ -26,10 +26,10 @@ Defines the placement, dimensions, and responsive behavior of UI components in e
 
 ```mermaid
 block-beta
-  columns 3
-  header["HEADER\nfixed, h:40px, z:100\n[≡] [↶] [↷] [Mode▾] — status — [Export][Import][Save]"]:3
-  outliner["OUTLINER\nfixed, w:200px\nz:100"] viewport["3D VIEWPORT (canvas)\nabsolute\ntop:40px, bottom:24px\nleft:200px, right:240px\n\nGizmo 96×96px (top-right)"] npanel["N PANEL\nfixed, w:240px\nz:100"]
-  statusbar["STATUS BAR\nfixed, h:24px, z:100 — key hints / operation guidance"]:3
+  columns 5
+  header["HEADER — fixed h:40px z:100"]:5
+  outliner["OUTLINER\nfixed w:200px\nz:100"] viewport["3D VIEWPORT (canvas)\nabsolute top:40px bottom:24px\nleft:200px right:240px\nGizmo 96×96px (top-right)"]:3 npanel["N PANEL\nfixed w:240px\nz:100"]
+  statusbar["STATUS BAR — fixed h:24px z:100"]:5
 ```
 
 ### Component Dimensions (Desktop)

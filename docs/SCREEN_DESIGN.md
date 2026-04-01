@@ -33,11 +33,11 @@ Each screen is composed of the following information areas.
 
 ```mermaid
 block-beta
-  columns 3
-  A["[A] Header"]:3
-  B["[B]\nOutliner"] C["[C] 3D Viewport\n(Canvas)"] D["[D]\nN Panel\n(Properties)"]
-  E["[E] Status Bar / Footer"]:3
-  F["[F] Mobile Toolbar\n(mobile only)"]:3
+  columns 5
+  A["[A] Header"]:5
+  B["[B] Outliner"] C["[C] 3D Viewport (Canvas)"]:3 D["[D] N Panel (Properties)"]
+  E["[E] Status Bar / Footer"]:5
+  F["[F] Mobile Toolbar (mobile only)"]:5
 ```
 
 ---
