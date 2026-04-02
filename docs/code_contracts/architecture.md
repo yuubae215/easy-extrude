@@ -209,6 +209,33 @@ const cmd = createSetLynchClassCommand(id, old, newClass, service)
 commandStack.push(cmd)
 ```
 
+## CommandStack Must Be Clear After Initialization
+
+- **Principle**: The undo stack represents user-reversible actions. Auto-created initial state (the first solid placed on construction) is not a user action and must not appear in the undo history.
+- **Concrete Rule**: After `_addObject()` and `setMode('object')` in the constructor, call `this._commandStack.clear()`. Without this, the Undo button is enabled immediately on load even though nothing has been done.
+
+```js
+// Constructor — end of setup
+this._addObject()
+this.setMode('object')
+this._commandStack.clear()  // ← initial state is not undoable
+```
+
+## Urban Placement Confirm Must Not Auto-Select the New Entity
+
+- **Principle**: After a placement workflow (urban, measure), the app must return to the pre-placement toolbar state so the user can immediately continue working. Auto-selecting the new entity transitions the toolbar to an entity-specific variant that may lack the Add button, trapping the user.
+- **Concrete Rule**: `_confirmUrbanPlacement()` must NOT call `_switchActiveObject()` after creating the entity. The previous selection is preserved automatically; `_refreshObjectModeStatus()` and `_updateMobileToolbar()` at the end of the method restore the correct toolbar.
+
+```js
+// WRONG — selects new entity, changes toolbar to [Grab|Lynch|Delete|spacer]
+const obj = this._service.createUrbanPolyline(points, undefined, renderer)
+this._switchActiveObject(obj.id, true)
+
+// CORRECT — entity added to scene/outliner; toolbar returns to initial object-mode slots
+const obj = this._service.createUrbanPolyline(points, undefined, renderer)
+// (no _switchActiveObject)
+```
+
 ## _updateMouse Must Precede All Coordinate-Picking Handlers in _onPointerDown
 
 - **Principle**: All pointer-position-dependent operations inside `_onPointerDown` must see the CURRENT event position, not the position from the last `pointermove`. On touch devices (mobile), `pointermove` does NOT fire before the first `pointerdown`, so `this._mouse` is stale at tap time.
