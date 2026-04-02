@@ -177,3 +177,45 @@ angle = this._rotate.startAngle - currentAngle
 | `hlMesh.visible` | `setFaceHighlight()` |
 | `cuboid.visible` / `wireframe.visible` | `setVisible()` |
 | `boxHelper.visible` | `setObjectSelected()` |
+
+## Frame View Must Be Hidden Before Detach (Undo)
+
+- **Principle**: A view that has been made visible (via `showFull()`) must be explicitly hidden before its entity is detached from the model; hiding cannot be deferred to `_hideFrameChain()` because `_hideFrameChain()` looks up entities via `_scene.getObject()`, which returns null after detach.
+- **Concrete Rule**: In `AddSolidCommand.undo()`, call `meshView.hide()` and `meshView.hideConnection()` on each child `CoordinateFrame` **before** calling `sceneService.detachObject()`. The comment "frames are already invisible" was incorrect — a frame shown via `_showGeometryFrameTree()` (parent selected) remains visible after soft-detach unless explicitly hidden first.
+
+```js
+// WRONG — frame stays visible in the Three.js scene after undo
+sceneService.detachObject(frame.id)
+
+// CORRECT
+frame.meshView.hide()
+frame.meshView.hideConnection()
+sceneService.detachObject(frame.id)
+```
+
+## Post-Hoc Command Push Requires Prior Service Call
+
+- **Principle**: `CommandStack.push()` is post-hoc recording — it records an operation that has ALREADY been applied. The command's `execute()` is only called by `redo()`, never by `push()`.
+- **Concrete Rule**: When UI callbacks (e.g. `onIfcClassChange`, `onLynchClassChange`) create commands and push them, the corresponding service method (`setIfcClass`, `setLynchClass`) must be called **before** `push()`. Calling `push(cmd)` without a prior service call results in a no-op: the domain object's field is never updated, no domain event is emitted, the outliner badge stays blank, and the N-panel reflects stale data.
+
+```js
+// WRONG — class is never applied to domain object
+const cmd = createSetLynchClassCommand(id, old, newClass, service)
+commandStack.push(cmd)
+
+// CORRECT — apply first, then record for undo
+service.setLynchClass(id, newClass)
+const cmd = createSetLynchClassCommand(id, old, newClass, service)
+commandStack.push(cmd)
+```
+
+## _updateMouse Must Precede All Coordinate-Picking Handlers in _onPointerDown
+
+- **Principle**: All pointer-position-dependent operations inside `_onPointerDown` must see the CURRENT event position, not the position from the last `pointermove`. On touch devices (mobile), `pointermove` does NOT fire before the first `pointerdown`, so `this._mouse` is stale at tap time.
+- **Concrete Rule**: Call `this._updateMouse(e)` immediately after the `e.target !== renderer.domElement` guard — before any handler that uses `this._mouse` or calls `_urbanPickPoint()` / `_raycaster`. Failure to do this makes tap-to-place operations (e.g. urban entity placement) record points at the wrong world position, which causes entities to appear at origin or to not be created at all.
+
+```js
+if (e.target !== renderer.domElement) return
+this._updateMouse(e)   // ← must be here, not further down
+// ... rotate / grab / urban placement handlers follow
+```

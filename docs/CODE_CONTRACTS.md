@@ -52,12 +52,15 @@ Detail: `docs/code_contracts/architecture.md`
 | Auto Origin Frame | `createCuboid()`, `extrudeSketch()`, `duplicateCuboid()` each call `createCoordinateFrame(id, 'Origin')` |
 | Command Factory Naming Convention | All commands use `createXCommand` factory exports; never class-style `XCommand`. Import and call site must match the export name exactly |
 | CommandStack push() vs execute() | `_confirm*()` handlers use `push()` (post-hoc recording); never use `execute()` for already-completed operations |
+| Post-Hoc Push Requires Prior Service Call | UI class-change callbacks (`onIfcClassChange`, `onLynchClassChange`) must call the service method **before** `push()`; `push()` alone is a no-op — the domain object is never updated |
 | Entity Swap Must Emit Events | Any direct `removeObject()`/`addObject()` call must also emit `objectRemoved`/`objectAdded` domain events |
 | Soft-Delete Pattern | `_deleteObject()` uses `detachObject()` + `setVisible(false)`; `dispose()` only in cascade-delete and `_clearScene()` |
 | N Panel Read-Only Rows | Always pass `val` argument through to `row()`; never substitute hardcoded 0 |
 | Euler Angle Convention | Use `'ZYX'` order (= ROS RPY); never `'XYZ'` for CoordinateFrame rotation display |
 | Mouse Rotation Sign | `angle = startAngle - currentAngle` (not reversed); mouse-driven path only |
 | Visual State Ownership | `hlMesh.visible` owned by `setFaceHighlight()`; `boxHelper.visible` by `setObjectSelected()` |
+| Frame View Must Be Hidden Before Detach | `AddSolidCommand.undo()` must call `meshView.hide()` + `hideConnection()` before `detachObject()`; after detach `_scene.getObject()` returns null so `_hideFrameChain()` silently skips the frame |
+| _updateMouse Before Coordinate Picking | Call `_updateMouse(e)` immediately after the canvas guard in `_onPointerDown`; touch devices have no preceding `pointermove` so `_mouse` is stale at first tap |
 
 ---
 
