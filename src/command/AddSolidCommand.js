@@ -38,8 +38,13 @@ export function createAddSolidCommand(solidRef, childrenRefs, sceneService, onAf
       // frames have no further children in typical scenes, but reverse order is
       // correct for nested frame chains).
       for (let i = childrenRefs.length - 1; i >= 0; i--) {
+        // Hide explicitly: the frame may be visible if its parent was selected
+        // (showGeometryFrameTree makes it visible). After detachObject the
+        // scene model no longer holds the frame, so _hideFrameChain's
+        // getObject() check would skip it — we must hide before detaching.
+        childrenRefs[i].meshView.hide()
+        childrenRefs[i].meshView.hideConnection()
         sceneService.detachObject(childrenRefs[i].id)
-        // Frames are already invisible; no meshView.setVisible call needed.
       }
       sceneService.detachObject(solidRef.id)
       solidRef.meshView.setVisible(false)

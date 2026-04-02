@@ -103,7 +103,7 @@ export class AppController {
       const obj = this._scene.getObject(id)
       if (obj?.meshView?.setLynchClass) obj.meshView.setLynchClass(lynchClass, obj.name)
       // Refresh N panel if this is the active object
-      if (id === this._scene.activeId) this._refreshNPanel()
+      if (id === this._scene.activeId) this._updateNPanel()
     })
     this._service.on('geometryApplied', ({ objectId }) => {
       this._importProgressUnsub?.(); this._importProgressUnsub = null
@@ -346,15 +346,20 @@ export class AppController {
     uiView.onIfcClassChange(ifcClass => {
       const obj = this._activeObj
       if (!obj) return
-      const cmd = createSetIfcClassCommand(obj.id, obj.ifcClass ?? null, ifcClass ?? null, this._service)
+      const oldClass = obj.ifcClass ?? null
+      this._service.setIfcClass(obj.id, ifcClass)          // apply first (post-hoc push pattern)
+      const cmd = createSetIfcClassCommand(obj.id, oldClass, ifcClass ?? null, this._service)
       this._commandStack.push(cmd)
       this._updateNPanel()
     })
     uiView.onLynchClassChange(lynchClass => {
       const obj = this._activeObj
       if (!obj) return
-      const cmd = createSetLynchClassCommand(obj.id, obj.lynchClass ?? null, lynchClass ?? null, this._service)
+      const oldClass = obj.lynchClass ?? null
+      this._service.setLynchClass(obj.id, lynchClass)      // apply first (post-hoc push pattern)
+      const cmd = createSetLynchClassCommand(obj.id, oldClass, lynchClass ?? null, this._service)
       this._commandStack.push(cmd)
+      this._updateNPanel()
     })
     uiView.onFramePositionChange((axis, val) => {
       const frame = this._activeObj
@@ -498,10 +503,19 @@ export class AppController {
     const cmd = createAddSolidCommand(
       obj, childrenRefs, this._service,
       ()   => {
-        // onAfterUndo: switch active to any remaining geometry object
+        // onAfterUndo: switch active to any remaining geometry object.
+        // When none remains, clear selection so the toolbar reverts to the
+        // empty-scene state (no stale _objSelected flag).
         const nextId = [...this._scene.objects.entries()]
           .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
-        if (nextId) this._switchActiveObject(nextId, true)
+        if (nextId) {
+          this._switchActiveObject(nextId, true)
+        } else {
+          this._objSelected = false
+          this._selectedIds.clear()
+          this._refreshObjectModeStatus()
+          this._updateMobileToolbar()
+        }
       },
       (id) => this._switchActiveObject(id, true),
     )
@@ -3520,6 +3534,13 @@ export class AppController {
     // face selection before the button's click handler fires (e.g. Extrude).
     if (e.target !== this._sceneView.renderer.domElement) return
 
+    // Update _mouse from the event immediately after the canvas guard.
+    // On touch devices pointermove does not fire before the first pointerdown,
+    // so _mouse would otherwise hold a stale (or zero) position. Every
+    // subsequent handler that calls _urbanPickPoint() / _raycaster depends on
+    // an up-to-date _mouse — calling _updateMouse here covers all of them.
+    this._updateMouse(e)
+
     if (this._rotate.active) {
       if (e.button === 0) { this._confirmRotate(); return }
       if (e.button === 2) { this._cancelRotate();  return }
@@ -3633,7 +3654,6 @@ export class AppController {
     }
 
     if (e.button !== 0) return
-    this._updateMouse(e)
 
     // ── 2D extrude height drag ────────────────────────────────────────────
     if (this._scene.editSubstate === '2d-extrude') {
