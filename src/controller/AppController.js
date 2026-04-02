@@ -448,6 +448,8 @@ export class AppController {
     // Create the initial object
     this._addObject()
     this.setMode('object')
+    // The initial solid creation must not be undoable — the user has done nothing yet.
+    this._commandStack.clear()
   }
 
   // ─── Domain state shorthand ───────────────────────────────────────────────
@@ -1110,17 +1112,17 @@ export class AppController {
       })
       obj.lynchClass = lynchClass
       this._service.setLynchClass(obj.id, lynchClass)
-      this._switchActiveObject(obj.id, true)
+      // Do not auto-select: toolbar must return to the initial object-mode slots.
     } else if (geometry === 'polyline' && points.length >= 2) {
       const obj = this._service.createUrbanPolyline(points, undefined, renderer)
       obj.lynchClass = lynchClass
       this._service.setLynchClass(obj.id, lynchClass)
-      this._switchActiveObject(obj.id, true)
+      // Do not auto-select: toolbar must return to the initial object-mode slots.
     } else if (geometry === 'polygon' && points.length >= 3) {
       const obj = this._service.createUrbanPolygon(points, undefined, renderer)
       obj.lynchClass = lynchClass
       this._service.setLynchClass(obj.id, lynchClass)
-      this._switchActiveObject(obj.id, true)
+      // Do not auto-select: toolbar must return to the initial object-mode slots.
     }
 
     this._refreshObjectModeStatus()
