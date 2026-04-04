@@ -16,6 +16,7 @@ import { OperationGraph, CycleError } from '../geometry/geometryGraph.js'
 import { evaluateGraph, evaluateSubgraph } from '../geometry/evaluator.js'
 import { encodeGeometryUpdate, encodeGraphSnapshot } from '../geometry/meshEncoder.js'
 import { getScene, updateScene } from '../services/sceneStore.js'
+import { runStepWorker }         from '../workers/runStepWorker.js'
 
 /** @type {Map<string, Session>} */
 const sessions = new Map()
@@ -238,62 +239,32 @@ async function handleStepImport(session, { jobId, filename, data: base64, scale 
   session.send('import.progress', { jobId, percent: 0, status: 'started' })
 
   try {
-    // Lazy-load occt-import-js (WASM); fall back gracefully if unavailable
-    let occt
+    // Decode base64 payload → ArrayBuffer for zero-copy transfer to worker.
+    const nodeBuf     = Buffer.from(base64, 'base64')
+    const arrayBuffer = nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength)
+
+    let positions, normals, indices
     try {
-      const mod = await import('occt-import-js')
-      occt = await mod.default()
-    } catch {
-      session.send('import.progress', { jobId, percent: 0, status: 'unavailable',
-        message: 'occt-import-js not installed — stub result used' })
-      // Insert a stub StepImportNode so the graph is still updated
-      _insertStepStub(session, jobId, filename)
-      return
-    }
-
-    session.send('import.progress', { jobId, percent: 10, status: 'loading' })
-    const buffer = Buffer.from(base64, 'base64')
-    session.send('import.progress', { jobId, percent: 30, status: 'parsing' })
-
-    const result = occt.ReadStepFile(new Uint8Array(buffer), null)
-    session.send('import.progress', { jobId, percent: 80, status: 'converting' })
-
-    if (!result.success) {
-      session.sendError('STEP_PARSE_ERROR', 'STEP parsing failed', 'import.step')
-      return
-    }
-
-    console.log(`[SessionManager] STEP parse success: ${result.meshes?.length ?? 0} mesh(es)`)
-    if (result.meshes?.length > 0) {
-      const m0 = result.meshes[0]
-      console.log('[SessionManager] mesh[0] keys:', Object.keys(m0))
-      if (m0.attributes) console.log('[SessionManager] mesh[0].attributes keys:', Object.keys(m0.attributes))
-    }
-
-    // Flatten all mesh data from the STEP result.
-    // occt-import-js stores geometry at mesh level (mesh.attributes / mesh.index),
-    // NOT at face level. mesh.faces is face-group metadata (color ranges only).
-    const positions = [], normals = [], indices = []
-    let vertexOffset = 0
-    for (const mesh of result.meshes ?? []) {
-      const pos = mesh.attributes?.position?.array ?? []
-      const nrm = mesh.attributes?.normal?.array   ?? []
-      const idx = mesh.index?.array                ?? []
-      if (pos.length === 0 || pos.length % 3 !== 0) {
-        console.warn(`[SessionManager] mesh has invalid position array (length=${pos.length}) — skipping`)
-        continue
+      const result = await runStepWorker(
+        arrayBuffer,
+        typeof scale === 'number' && isFinite(scale) ? scale : 1,
+        (percent, status) => session.send('import.progress', { jobId, percent, status }),
+      )
+      positions = result.positions
+      normals   = result.normals
+      indices   = result.indices
+    } catch (err) {
+      // Worker reports occt-import-js missing: degrade to stub rather than error
+      if (err.message.startsWith('occt-import-js unavailable')) {
+        session.send('import.progress', { jobId, percent: 0, status: 'unavailable',
+          message: 'occt-import-js not installed - stub result used' })
+        _insertStepStub(session, jobId, filename)
+        return
       }
-      for (let i = 0; i < pos.length; i++) positions.push(pos[i])
-      for (let i = 0; i < nrm.length; i++) normals.push(nrm[i])
-      for (let i = 0; i < idx.length; i++) indices.push(idx[i] + vertexOffset)
-      vertexOffset += pos.length / 3
+      throw err
     }
-    // Apply unit scale if requested (e.g. mm→m: scale=0.001)
-    const s = typeof scale === 'number' && isFinite(scale) && scale !== 1 ? scale : null
-    if (s !== null) {
-      for (let i = 0; i < positions.length; i++) positions[i] *= s
-    }
-    console.log(`[SessionManager] Extracted: ${positions.length / 3} vertices, ${indices.length / 3} triangles${s !== null ? ` (scale ×${s})` : ''}`)
+
+    console.log(`[SessionManager] STEP parsed: ${positions.length / 3} vertices, ${indices.length / 3} triangles`)
 
     if (positions.length === 0) {
       session.sendError('STEP_EMPTY', 'STEP file produced no geometry — check server log for details', 'import.step')

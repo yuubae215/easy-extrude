@@ -41,30 +41,42 @@ try {
 
   progress(75, 'converting')
 
-  // Extract geometry at mesh level (not face level — see MENTAL_MODEL §3.5)
-  const positions = [], normals = [], indices = []
-  let vertexOffset = 0
+  // First pass: collect valid meshes and sum buffer sizes to pre-allocate TypedArrays.
+  // Avoids intermediate JS arrays and repeated push() reallocations.
+  let totalPos = 0, totalNrm = 0, totalIdx = 0
+  const validMeshes = []
   for (const mesh of result.meshes ?? []) {
     const pos = mesh.attributes?.position?.array ?? []
-    const nrm = mesh.attributes?.normal?.array   ?? []
-    const idx = mesh.index?.array                ?? []
     if (pos.length === 0 || pos.length % 3 !== 0) continue
-    for (let i = 0; i < pos.length; i++) positions.push(pos[i])
-    for (let i = 0; i < nrm.length; i++) normals.push(nrm[i])
-    for (let i = 0; i < idx.length; i++) indices.push(idx[i] + vertexOffset)
-    vertexOffset += pos.length / 3
+    const nrm = mesh.attributes?.normal?.array ?? []
+    const idx = mesh.index?.array              ?? []
+    validMeshes.push({ pos, nrm, idx })
+    totalPos += pos.length
+    totalNrm += nrm.length
+    totalIdx += idx.length
+  }
+
+  // Second pass: fill pre-allocated TypedArrays directly.
+  const posArr = new Float32Array(totalPos)
+  const nrmArr = new Float32Array(totalNrm)
+  const idxArr = new Uint32Array(totalIdx)
+  let posOff = 0, nrmOff = 0, idxOff = 0, vertOff = 0
+
+  for (const { pos, nrm, idx } of validMeshes) {
+    posArr.set(pos, posOff)
+    nrmArr.set(nrm, nrmOff)
+    for (let i = 0; i < idx.length; i++) idxArr[idxOff + i] = idx[i] + vertOff
+    posOff  += pos.length
+    nrmOff  += nrm.length
+    idxOff  += idx.length
+    vertOff += pos.length / 3
   }
 
   if (isFinite(scale) && scale !== 1) {
-    for (let i = 0; i < positions.length; i++) positions[i] *= scale
+    for (let i = 0; i < posArr.length; i++) posArr[i] *= scale
   }
 
   progress(95, 'sending')
-
-  // Use TypedArrays and transfer their buffers to avoid V8 serialization overhead
-  const posArr = new Float32Array(positions)
-  const nrmArr = new Float32Array(normals)
-  const idxArr = new Uint32Array(indices)
 
   parentPort.postMessage(
     { type: 'result', positions: posArr, normals: nrmArr, indices: idxArr },

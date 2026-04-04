@@ -16,14 +16,11 @@
  */
 import { Router }  from 'express'
 import multer      from 'multer'
-import { Worker }  from 'worker_threads'
 import { v4 as uuidv4 } from 'uuid'
-import { fileURLToPath } from 'url'
 import { sendToSession, applyStepImportToSession } from '../ws/sessionManager.js'
+import { runStepWorker } from '../workers/runStepWorker.js'
 
 export const importRouter = Router()
-
-const WORKER_PATH = fileURLToPath(new URL('../workers/stepParser.js', import.meta.url))
 
 // Use memory storage — buffer is transferred zero-copy to the worker
 const upload = multer({
@@ -54,7 +51,7 @@ importRouter.post('/step', upload.single('file'), async (req, res) => {
   )
 
   try {
-    const { positions, normals, indices } = await _runStepWorker(
+    const { positions, normals, indices } = await runStepWorker(
       arrayBuffer,
       isFinite(scale) ? scale : 1,
       progress,
@@ -66,17 +63,9 @@ importRouter.post('/step', upload.single('file'), async (req, res) => {
       applyStepImportToSession(sessionId, { filename, positions, normals, indices })
     }
 
-    // Return plain arrays in the REST response for convenience
-    res.json({
-      jobId,
-      filename,
-      status: 'done',
-      mesh: {
-        positions: Array.from(positions),
-        normals:   Array.from(normals),
-        indices:   Array.from(indices),
-      },
-    })
+    // Geometry is delivered to the client via WebSocket (geometry.update).
+    // The REST response only signals completion — no mesh data here.
+    res.json({ jobId, filename, status: 'done' })
     progress(100, 'done')
   } catch (err) {
     console.error('[import] STEP parse error:', err.message)
@@ -86,83 +75,3 @@ importRouter.post('/step', upload.single('file'), async (req, res) => {
   }
 })
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Spawns a stepParser Worker and resolves with the typed array geometry.
- * Progress callbacks are forwarded to the caller.
- *
- * @param {ArrayBuffer} arrayBuffer  Transferred to the worker (zero-copy)
- * @param {number}      scale
- * @param {Function}    onProgress   (percent, status) => void
- * @returns {Promise<{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }>}
- */
-/** Maximum time (ms) allowed for STEP parsing before the worker is killed. */
-const PARSE_TIMEOUT_MS = 15 * 60 * 1000 // 15 minutes
-
-/**
- * How often (ms) to nudge the progress bar while the worker is blocked in
- * synchronous WASM (ReadStepFile cannot send messages during execution).
- * Keeps the UI alive so the user knows the server is still working.
- */
-const HEARTBEAT_MS = 10_000 // every 10 s
-
-function _runStepWorker(arrayBuffer, scale, onProgress) {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER_PATH, {
-      workerData: { buffer: arrayBuffer, scale },
-      transferList: [arrayBuffer],
-    })
-
-    let settled      = false
-    let heartbeatPct = 30  // start where the worker's last progress left off
-
-    // Heartbeat: the worker is blocked in synchronous WASM and cannot send
-    // messages. The main thread is free, so we nudge the progress bar here.
-    const heartbeat = setInterval(() => {
-      // Slow drift 30→75% over ~75 s, then hold at 75 until done.
-      if (heartbeatPct < 75) heartbeatPct += 5
-      onProgress(heartbeatPct, 'Parsing (large file — please wait)…')
-    }, HEARTBEAT_MS)
-
-    const timeout = setTimeout(() => {
-      if (settled) return
-      worker.terminate()
-      const err = new Error('STEP parsing timed out (15 min). The file may be too large for the current server.')
-      err.status = 504
-      _settle(null, err)
-    }, PARSE_TIMEOUT_MS)
-
-    function _settle(value, error) {
-      if (settled) return
-      settled = true
-      clearInterval(heartbeat)
-      clearTimeout(timeout)
-      error ? reject(error) : resolve(value)
-    }
-
-    worker.on('message', (msg) => {
-      switch (msg.type) {
-        case 'progress':
-          // Update heartbeat baseline so it doesn't go backwards
-          if (msg.percent > heartbeatPct) heartbeatPct = msg.percent
-          onProgress(msg.percent, msg.status)
-          break
-        case 'result':
-          _settle({ positions: msg.positions, normals: msg.normals, indices: msg.indices })
-          break
-        case 'error': {
-          const err = new Error(msg.message)
-          err.status = 422
-          _settle(null, err)
-          break
-        }
-      }
-    })
-
-    worker.on('error', (err) => _settle(null, err))
-    worker.on('exit',  (code) => {
-      if (code !== 0) _settle(null, new Error(`Step parser worker exited with code ${code}`))
-    })
-  })
-}

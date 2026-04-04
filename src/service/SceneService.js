@@ -157,13 +157,21 @@ export class SceneService extends EventEmitter {
    * Applies a geometry.update message from the Geometry Service to the matching
    * scene object's MeshView.
    *
+   * Accepts both the legacy plain-array format and the base64 binary format
+   * (positionsB64 / normalsB64 / indicesB64) introduced to reduce WS payload size.
+   *
    * Phase C: If the objectId is not yet registered in the SceneModel, an
    * ImportedMesh is auto-created (thin-client entity for server-side geometry).
    *
-   * @param {{ objectId: string, positions: number[], normals: number[], indices: number[] }} payload
+   * @param {{ objectId: string,
+   *           positionsB64?: string, normalsB64?: string, indicesB64?: string,
+   *           positions?: number[], normals?: number[], indices?: number[] }} payload
    */
-  _applyGeometryUpdate({ objectId, positions, normals, indices }) {
-    if (!objectId || !positions?.length) return
+  _applyGeometryUpdate({ objectId, positionsB64, normalsB64, indicesB64, positions, normals, indices }) {
+    const pos = positionsB64 ? base64ToF32(positionsB64) : positions
+    const nrm = normalsB64  ? base64ToF32(normalsB64)   : normals
+    const idx = indicesB64  ? base64ToU32(indicesB64)   : indices
+    if (!objectId || !pos?.length) return
 
     let obj = this._model.getObject(objectId)
 
@@ -174,7 +182,7 @@ export class SceneService extends EventEmitter {
 
     if (obj instanceof ImportedMesh) {
       try {
-        obj.meshView.updateGeometryBuffers(positions, normals, indices)
+        obj.meshView.updateGeometryBuffers(pos, nrm, idx)
         // Initialise synthetic AABB corners so grab/move operations work.
         obj.initCorners(obj.meshView.getInitialCorners8())
         this.emit('geometryApplied', { objectId })
@@ -186,7 +194,7 @@ export class SceneService extends EventEmitter {
     }
 
     // Cuboid path: convert flat position array to corner Vector3 array
-    const corners = _positionsToCorners(positions)
+    const corners = _positionsToCorners(pos)
     if (corners) {
       obj.meshView.updateGeometry(corners)
     }
