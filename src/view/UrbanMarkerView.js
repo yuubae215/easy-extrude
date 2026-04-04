@@ -200,6 +200,8 @@ export class UrbanMarkerView {
   clearEditSelection()    {}
   clearPivotDisplay()     {}
   showSnapCandidates()    {}
+  showSnapNearest()       {}
+  clearSnapNearest()      {}
   showSnapLocked()        {}
   clearSnapLocked()       {}
   clearSnapDisplay()      {}

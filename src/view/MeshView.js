@@ -116,6 +116,31 @@ export class MeshView {
     this._snapWorldCandidates.visible = false
     scene.add(this._snapWorldCandidates)
 
+    // Nearest-candidate hover indicator — medium hollow shape, shown before snap locks
+    const _makeSnapNearMat = (tex, color) => new THREE.PointsMaterial({
+      color, size: 17, sizeAttenuation: false, depthTest: false,
+      map: tex, transparent: true, alphaTest: 0.05, opacity: 0.85,
+    })
+    this._snapNearVertGeo = new THREE.BufferGeometry()
+    this._snapNearVert = new THREE.Points(this._snapNearVertGeo, _makeSnapNearMat(_texCircle,   0x69f0ae))
+    this._snapNearVert.visible = false
+    scene.add(this._snapNearVert)
+
+    this._snapNearEdgeGeo = new THREE.BufferGeometry()
+    this._snapNearEdge = new THREE.Points(this._snapNearEdgeGeo, _makeSnapNearMat(_texTriangle, 0xffd740))
+    this._snapNearEdge.visible = false
+    scene.add(this._snapNearEdge)
+
+    this._snapNearFaceGeo = new THREE.BufferGeometry()
+    this._snapNearFace = new THREE.Points(this._snapNearFaceGeo, _makeSnapNearMat(_texSquare,   0x4fc3f7))
+    this._snapNearFace.visible = false
+    scene.add(this._snapNearFace)
+
+    this._snapNearWorldGeo = new THREE.BufferGeometry()
+    this._snapNearWorld = new THREE.Points(this._snapNearWorldGeo, _makeSnapNearMat(_texDiamond, 0xffffff))
+    this._snapNearWorld.visible = false
+    scene.add(this._snapNearWorld)
+
     // Locked snap target — large bright hollow shape per type
     const _makeSnapLockMat = (tex, color) => new THREE.PointsMaterial({
       color, size: 20, sizeAttenuation: false, depthTest: false,
@@ -428,6 +453,40 @@ export class MeshView {
   }
 
   /**
+   * Shows a hover highlight for the nearest-but-not-yet-locked snap candidate.
+   * Visually between candidates (12 px, 0.65 opacity) and locked (20 px, 1.0):
+   * 17 px at 0.85 opacity, same shape and colour as the locked indicator.
+   * Call when cursor is within preview range but outside snap-lock range.
+   * @param {THREE.Vector3} position
+   * @param {string}        type  'vertex'|'edge'|'face'|'world'
+   */
+  showSnapNearest(position, type) {
+    this._snapNearVert.visible  = false
+    this._snapNearEdge.visible  = false
+    this._snapNearFace.visible  = false
+    this._snapNearWorld.visible = false
+    const nearMap = {
+      vertex: [this._snapNearVertGeo,  this._snapNearVert],
+      edge:   [this._snapNearEdgeGeo,  this._snapNearEdge],
+      face:   [this._snapNearFaceGeo,  this._snapNearFace],
+      world:  [this._snapNearWorldGeo, this._snapNearWorld],
+    }
+    const [geo, points] = nearMap[type] ?? nearMap.vertex
+    const arr = new Float32Array([position.x, position.y, position.z])
+    geo.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+    geo.attributes.position.needsUpdate = true
+    points.visible = true
+  }
+
+  /** Hides the nearest-candidate hover indicator. */
+  clearSnapNearest() {
+    this._snapNearVert.visible  = false
+    this._snapNearEdge.visible  = false
+    this._snapNearFace.visible  = false
+    this._snapNearWorld.visible = false
+  }
+
+  /**
    * Shows the locked snap indicator (hollow shape + guide line from pivot).
    * @param {THREE.Vector3} position - snap target position
    * @param {string}        type     - 'vertex'|'edge'|'face'
@@ -467,12 +526,16 @@ export class MeshView {
     this._snapLine.visible        = false
   }
 
-  /** Hides all snap candidate and locked-target visuals. */
+  /** Hides all snap candidate, nearest-hover, and locked-target visuals. */
   clearSnapDisplay() {
     this._snapVertCandidates.visible  = false
     this._snapEdgeCandidates.visible  = false
     this._snapFaceCandidates.visible  = false
     this._snapWorldCandidates.visible = false
+    this._snapNearVert.visible        = false
+    this._snapNearEdge.visible        = false
+    this._snapNearFace.visible        = false
+    this._snapNearWorld.visible       = false
     this._snapLockedVert.visible      = false
     this._snapLockedEdge.visible      = false
     this._snapLockedFace.visible      = false

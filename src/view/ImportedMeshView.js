@@ -269,6 +269,8 @@ export class ImportedMeshView {
   clearEditSelection()    {}
   clearPivotDisplay()     {}
   showSnapCandidates()    {}
+  showSnapNearest()       {}
+  clearSnapNearest()      {}
   showSnapLocked()        {}
   clearSnapLocked()       {}
   clearSnapDisplay()      {}

@@ -257,6 +257,23 @@ export class CoordinateFrameView {
     }
   }
 
+  /**
+   * Scales the entire frame so the axis length appears at a constant screen
+   * pixel size regardless of camera distance.  Call every animation frame.
+   * Uses the same perspective-correction formula as MeasureLineView._scaleDots().
+   * @param {THREE.PerspectiveCamera} camera
+   * @param {THREE.WebGLRenderer} renderer
+   */
+  updateScale(camera, renderer) {
+    if (!this._group.visible || !camera.isPerspectiveCamera) return
+    const tanHalfFov = Math.tan((camera.fov * Math.PI) / 360)
+    const screenH    = renderer.domElement.clientHeight || 1
+    const targetPx   = 80   // axis length in screen pixels
+    const d          = camera.position.distanceTo(this._group.position)
+    const worldSize  = (targetPx / screenH) * 2 * d * tanHalfFov
+    this._group.scale.setScalar(worldSize / AXIS_LENGTH)
+  }
+
   // ── No-op interface (MENTAL_MODEL §1) ────────────────────────────────────
   setFaceHighlight()      {}
   clearExtrusionDisplay() {}
@@ -267,6 +284,8 @@ export class CoordinateFrameView {
   clearPivotDisplay()     {}
   clearSnapDisplay()      {}
   showSnapCandidates()    {}
+  showSnapNearest()       {}
+  clearSnapNearest()      {}
   showSnapLocked()        {}
   clearSnapLocked()       {}
   updateGeometry()        {}

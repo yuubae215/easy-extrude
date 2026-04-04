@@ -207,6 +207,8 @@ export class UrbanPolygonView {
   clearEditSelection()    {}
   clearPivotDisplay()     {}
   showSnapCandidates()    {}
+  showSnapNearest()       {}
+  clearSnapNearest()      {}
   showSnapLocked()        {}
   clearSnapLocked()       {}
   clearSnapDisplay()      {}

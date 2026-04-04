@@ -184,6 +184,8 @@ export class UrbanPolylineView {
   clearEditSelection()    {}
   clearPivotDisplay()     {}
   showSnapCandidates()    {}
+  showSnapNearest()       {}
+  clearSnapNearest()      {}
   showSnapLocked()        {}
   clearSnapLocked()       {}
   clearSnapDisplay()      {}

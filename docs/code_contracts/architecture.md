@@ -47,6 +47,18 @@ if (this._activeObj && !this._objSelected) {
   - Ctrl+drag rotation and pivot selection (`_startPivotSelect`) are blocked for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame` (no local vertex geometry to rotate/pivot).
   - The "no Edit Mode" guard applies to `setMode('edit')` for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`.
 
+## Rect Selection Must Guard Against Null Cuboid
+
+- **Principle**: `_finalizeRectSelection()` iterates over every object in the scene. Not all entities have a raycasting surface — `CoordinateFrame`, `MeasureLine`, `UrbanPolyline`, `UrbanPolygon`, and `UrbanMarker` all return `null` for `.cuboid`. Accessing `.visible` on `null` throws a `TypeError` that silently aborts rect selection entirely.
+- **Concrete Rule**: Always use optional chaining `obj.meshView.cuboid?.visible` (not `.cuboid.visible`) in `_finalizeRectSelection`. Objects with `cuboid === null` produce `undefined`, which is falsy, so they are correctly skipped by the `continue`. The same pattern is already used in `_hitAnyObject` and `_findStackTarget`.
+
+```js
+// Correct
+if (!obj.meshView.cuboid?.visible) continue
+// Wrong — throws when an UrbanPolyline/UrbanPolygon/UrbanMarker is in the scene
+if (!obj.meshView.cuboid.visible) continue
+```
+
 ## MeasureLineView No-Op Interface Completeness
 
 - **Principle**: Every method called via `_meshView` in `AppController` must exist on `MeasureLineView` (as a no-op if not applicable), or any code path that reaches it when a `MeasureLine` is active will throw `TypeError` and silently abort the handler.

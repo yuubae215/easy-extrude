@@ -130,6 +130,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-04-04**: Bugfix — Rect selection (`cuboid?.visible` guard). Feature — CoordinateFrame constant screen-size axes; SnapPoint back-face cull + front-facing priority + nearest-candidate hover highlight (17 px before lock).
 - **2026-04-01**: Bugfix — CI build failure: `SetLynchClassCommand` was imported with a class-style name in `AppController.js`, but the module exports factory function `createSetLynchClassCommand`. Fixed import and call site; added "Command Factory Naming Convention" rule to CODE_CONTRACTS.
 - **2026-04-01**: Feature — Lynch urban classification system (ADR-026): `UrbanPolyline`, `UrbanPolygon`, `UrbanMarker` domain entities; `LynchClassRegistry`; `SetLynchClassCommand`; `SceneService.setLynchClass()` + create methods; `SceneSerializer` DTOs. UX design added to `SCREEN_DESIGN.md` (S-11–S-16) and `ROADMAP.md` (Phases 1–3). Rendering layer deferred.
-- **2026-04-01**: Documentation — Translated `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` from Japanese to English; replaced ASCII-art layout diagrams with Mermaid `block-beta` diagrams.

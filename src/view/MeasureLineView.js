@@ -216,6 +216,8 @@ export class MeasureLineView {
   clearPivotDisplay()    {}
   clearSnapDisplay()     {}
   showSnapCandidates()   {}
+  showSnapNearest()      {}
+  clearSnapNearest()     {}
   showSnapLocked()       {}
   clearSnapLocked()      {}
 

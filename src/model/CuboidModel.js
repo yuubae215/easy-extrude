@@ -192,11 +192,15 @@ export function collectSnapTargets(objects, mode = 'all', excludeIds = new Set()
     }
 
     if (doFace && obj.faces) {
+      const corners = obj.corners   // undefined for non-Solid entities (their faces array is empty)
       for (const f of obj.faces) {
         const center = f.vertices
           .reduce((acc, v) => acc.add(v.position), new THREE.Vector3())
           .divideScalar(f.vertices.length)
-        targets.push({ label: `${obj.name} ${f.name}`, position: center, type: 'face' })
+        const normal = (corners && f.index != null)
+          ? computeOutwardFaceNormal(corners, f.index)
+          : null
+        targets.push({ label: `${obj.name} ${f.name}`, position: center, type: 'face', normal })
       }
     }
   }

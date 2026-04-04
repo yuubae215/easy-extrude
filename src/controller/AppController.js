@@ -1219,23 +1219,13 @@ export class AppController {
    * Also updates this._measure.snapping / snappedTarget / snapTargets.
    */
   _measurePickPoint() {
-    const SNAP_PX = 25
     const mx = (this._mouse.x + 1) / 2 * innerWidth
     const my = (-this._mouse.y + 1) / 2 * innerHeight
 
     const targets = collectSnapTargets(this._scene.objects, 'all')
     this._measure.snapTargets = targets
 
-    let bestDist   = SNAP_PX
-    let bestTarget = null
-    const camMat = this._camera.matrixWorldInverse
-    for (const t of targets) {
-      const camPos = t.position.clone().applyMatrix4(camMat)
-      if (camPos.z >= 0) continue
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(mx - s.x, my - s.y)
-      if (d < bestDist) { bestDist = d; bestTarget = t }
-    }
+    const bestTarget = this._pickBestSnapTarget(targets, mx, my)
 
     if (bestTarget) {
       this._measure.snapping      = true
@@ -1489,6 +1479,8 @@ export class AppController {
    */
   _filterNearbySnapTargets(targets, maxDepthRatio = 2.0) {
     const camPos = this._camera.position
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
 
     // Pass 1: visibility filter — exclude points beyond the far clip plane
     // or behind the camera (both map to v.z > 1 after project()).
@@ -1497,14 +1489,96 @@ export class AppController {
       return v.z <= 1
     })
 
-    if (visible.length <= 1) return visible
+    if (visible.length === 0) return visible
 
     // Pass 2: depth filter — keep only candidates within maxDepthRatio of the
     // nearest candidate in 3D space.  This hides occluded or far-background
     // points that happen to overlap foreground geometry on screen.
     const dists   = visible.map(({ position }) => position.distanceTo(camPos))
     const minDist = Math.min(...dists)
-    return visible.filter((_, i) => dists[i] <= minDist * maxDepthRatio)
+    const depthFiltered = visible.filter((_, i) => dists[i] <= minDist * maxDepthRatio)
+
+    // Pass 3 (Idea A): remove face snap candidates whose normal points away from
+    // the camera.  Back-facing face centers are rarely useful snap targets and
+    // create visual noise on the opposite side of objects.
+    return depthFiltered.filter(t => {
+      if (t.type !== 'face' || !t.normal) return true
+      return t.normal.dot(camDir) < 0   // normal toward camera = front-facing
+    })
+  }
+
+  /**
+   * Finds the best snap target from `targets` near screen position (sx, sy).
+   *
+   * Idea A — back-face cull: face snap targets whose outward normal points away
+   * from the camera are excluded (they are behind the visible surface).
+   *
+   * Idea D — front-facing bonus: among face candidates within SNAP_PX, those
+   * whose normal is most directly toward the camera receive a screen-distance
+   * discount (up to FRONTNESS_BONUS_PX), so they beat a slightly-closer
+   * grazing-angle face snap target.
+   *
+   * @param {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }[]} targets
+   * @param {number} sx  cursor screen x (pixels)
+   * @param {number} sy  cursor screen y (pixels)
+   * @returns {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }|null}
+   */
+  _pickBestSnapTarget(targets, sx, sy) {
+    const SNAP_PX           = 25
+    const FRONTNESS_BONUS_PX = 5   // max screen-px discount for a face directly facing camera
+    const camMat = this._camera.matrixWorldInverse
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
+
+    let bestScore  = SNAP_PX
+    let bestTarget = null
+
+    for (const t of targets) {
+      // Skip targets behind the camera
+      const camPos = t.position.clone().applyMatrix4(camMat)
+      if (camPos.z >= 0) continue
+
+      // Idea A: skip back-facing face snap points
+      if (t.type === 'face' && t.normal && t.normal.dot(camDir) >= 0) continue
+
+      const s = this._projectToScreen(t.position)
+      const d = Math.hypot(sx - s.x, sy - s.y)
+
+      // Idea D: front-facing face candidates get a screen-distance discount
+      const bonus = (t.type === 'face' && t.normal)
+        ? Math.max(0, -t.normal.dot(camDir)) * FRONTNESS_BONUS_PX
+        : 0
+      const score = d - bonus
+      if (score < bestScore) { bestScore = score; bestTarget = t }
+    }
+    return bestTarget
+  }
+
+  /**
+   * Returns the snap candidate nearest to screen position (sx, sy) within
+   * maxPx pixels, applying back-face culling for face targets.
+   * Used to drive the hover-highlight indicator before the snap locks.
+   * @param {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }[]} targets
+   * @param {number} sx  cursor x (pixels)
+   * @param {number} sy  cursor y (pixels)
+   * @param {number} [maxPx=60]
+   * @returns target or null
+   */
+  _findNearestSnapCandidate(targets, sx, sy, maxPx = 60) {
+    const camMat = this._camera.matrixWorldInverse
+    const camDir = new THREE.Vector3()
+    this._camera.getWorldDirection(camDir)
+    let bestDist   = maxPx
+    let bestTarget = null
+    for (const t of targets) {
+      const cp = t.position.clone().applyMatrix4(camMat)
+      if (cp.z >= 0) continue
+      if (t.type === 'face' && t.normal && t.normal.dot(camDir) >= 0) continue
+      const s = this._projectToScreen(t.position)
+      const d = Math.hypot(sx - s.x, sy - s.y)
+      if (d < bestDist) { bestDist = d; bestTarget = t }
+    }
+    return bestTarget
   }
 
   /** Hits any visible object — returns { hit, obj } or null */
@@ -2348,7 +2422,7 @@ export class AppController {
 
     const matched = []
     for (const obj of this._scene.objects.values()) {
-      if (!obj.meshView.cuboid.visible) continue
+      if (!obj.meshView.cuboid?.visible) continue
       const corners = obj.corners ?? _meshBboxCorners(obj)
       if (!corners || corners.length === 0) continue
       const pts = corners.map(c => this._toScreenPx(c))
@@ -3106,7 +3180,6 @@ export class AppController {
    * @returns {number}  snapped or original distance
    */
   _trySnapFaceExtrude(dist) {
-    const SNAP_PX = 25
     const fe      = this._faceExtrude
     const center  = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
     const posAfter = center.clone().addScaledVector(fe.normal, dist)
@@ -3119,17 +3192,7 @@ export class AppController {
     const worldTargets = collectWorldSnapTargets(posAfter)
     const targets      = [...geoTargets, ...worldTargets]
     fe.snapTargets = targets
-    let bestDist   = SNAP_PX
-    let bestTarget = null
-
-    const camMat = this._camera.matrixWorldInverse
-    for (const t of targets) {
-      const camPos = t.position.clone().applyMatrix4(camMat)
-      if (camPos.z >= 0) continue
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(mx - s.x, my - s.y)
-      if (d < bestDist) { bestDist = d; bestTarget = t }
-    }
+    const bestTarget = this._pickBestSnapTarget(targets, mx, my)
 
     if (bestTarget) {
       fe.snapping      = true
@@ -3150,7 +3213,6 @@ export class AppController {
    * @returns {THREE.Vector3}  snapped or original delta
    */
   _trySnapToGeometry(delta) {
-    const SNAP_PX    = 25
     const pivotAfter = this._grab.pivot.clone().add(delta)
     const pScreen    = this._projectToScreen(pivotAfter)
 
@@ -3159,19 +3221,7 @@ export class AppController {
     const worldTargets = collectWorldSnapTargets(pivotAfter)
     const targets      = [...geoTargets, ...worldTargets]
     this._grab.snapTargets = targets  // cache for candidate display
-    let bestDist   = SNAP_PX
-    let bestTarget = null
-
-    const camMat = this._camera.matrixWorldInverse
-    for (const t of targets) {
-      // Skip targets behind the camera (camera-space z >= 0 means behind)
-      const camPos = t.position.clone().applyMatrix4(camMat)
-      if (camPos.z >= 0) continue
-
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(pScreen.x - s.x, pScreen.y - s.y)
-      if (d < bestDist) { bestDist = d; bestTarget = t }
-    }
+    const bestTarget = this._pickBestSnapTarget(targets, pScreen.x, pScreen.y)
 
     if (bestTarget) {
       this._grab.snapping      = true
@@ -3327,8 +3377,11 @@ export class AppController {
       }
       this._applyGrab()
       if (this._grab.autoSnap) {
+        const mx = (this._mouse.x + 1) / 2 * innerWidth
+        const my = (-this._mouse.y + 1) / 2 * innerHeight
         this._meshView.showSnapCandidates(this._filterNearbySnapTargets(this._grab.snapTargets))
         if (this._grab.snapping && this._grab.snappedTarget) {
+          this._meshView.clearSnapNearest()
           this._meshView.showSnapLocked(
             this._grab.snappedTarget.position,
             this._grab.snappedTarget.type,
@@ -3336,6 +3389,9 @@ export class AppController {
           )
         } else {
           this._meshView.clearSnapLocked()
+          const nearest = this._findNearestSnapCandidate(this._grab.snapTargets, mx, my)
+          if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
+          else         this._meshView.clearSnapNearest()
         }
       } else {
         this._meshView.clearSnapDisplay()
@@ -3363,8 +3419,11 @@ export class AppController {
         // Show snap candidates via snapMeshView (a real MeshView, not MeasureLineView)
         const smv = this._measure.snapMeshView
         if (smv) {
+          const mx = (this._mouse.x + 1) / 2 * innerWidth
+          const my = (-this._mouse.y + 1) / 2 * innerHeight
           smv.showSnapCandidates(this._filterNearbySnapTargets(this._measure.snapTargets))
           if (this._measure.snapping && this._measure.snappedTarget) {
+            smv.clearSnapNearest()
             smv.showSnapLocked(
               this._measure.snappedTarget.position,
               this._measure.snappedTarget.type,
@@ -3372,6 +3431,9 @@ export class AppController {
             )
           } else {
             smv.clearSnapLocked()
+            const nearest = this._findNearestSnapCandidate(this._measure.snapTargets, mx, my)
+            if (nearest) smv.showSnapNearest(nearest.position, nearest.type)
+            else         smv.clearSnapNearest()
           }
         }
         // Phase 2: draw preview line
@@ -3466,8 +3528,11 @@ export class AppController {
       this._applyFaceExtrude()
       // snap visuals
       const fe = this._faceExtrude
-      this._meshView.showSnapCandidates(fe.snapTargets)
+      const mx = (this._mouse.x + 1) / 2 * innerWidth
+      const my = (-this._mouse.y + 1) / 2 * innerHeight
+      this._meshView.showSnapCandidates(this._filterNearbySnapTargets(fe.snapTargets))
       if (fe.snapping && fe.snappedTarget) {
+        this._meshView.clearSnapNearest()
         const faceCenterAfter = fe.savedCorners
           .reduce((a, c) => a.add(c), new THREE.Vector3())
           .divideScalar(fe.savedCorners.length)
@@ -3475,6 +3540,9 @@ export class AppController {
         this._meshView.showSnapLocked(fe.snappedTarget.position, fe.snappedTarget.type, faceCenterAfter)
       } else {
         this._meshView.clearSnapLocked()
+        const nearest = this._findNearestSnapCandidate(fe.snapTargets, mx, my)
+        if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
+        else         this._meshView.clearSnapNearest()
       }
       this._updateFaceExtrudeStatus()
       return
@@ -4228,9 +4296,11 @@ export class AppController {
       this._sceneView.render()
       if (this._gizmoView) this._gizmoView.update()
       // Keep MeasureLine HTML labels positioned over the correct screen pixel
+      // and CoordinateFrame axes at a constant screen size.
       for (const obj of this._scene.objects.values()) {
-        if (obj instanceof MeasureLine) obj.meshView.updateLabelPosition()
-        if (obj instanceof UrbanMarker)  obj.meshView.updateLabelPosition()
+        if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
+        if (obj instanceof UrbanMarker)     obj.meshView.updateLabelPosition()
+        if (obj instanceof CoordinateFrame) obj.meshView.updateScale(this._camera, this._sceneView.renderer)
       }
       // Sync CoordinateFrame world poses every frame (ADR-020).
       // SceneService._updateWorldPoses() computes worldPos = parentCentroid + translation
