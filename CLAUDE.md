@@ -118,7 +118,6 @@ pnpm preview   # preview production build
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 @docs/CODE_CONTRACTS.md
-@.claude/DEVELOPMENT.md
 
 ## Notes for changes
 
