@@ -49,6 +49,19 @@ await db.batch(['CREATE TABLE IF NOT EXISTS ...'], 'write')
   ```
   Use `mesh.faces` only for per-face colour/material lookups. Never use `push(...typedArray)` for large arrays — iterate with a `for` loop to avoid "Maximum call stack size exceeded".
 
+## setIndex Requires BufferAttribute, Not Raw TypedArray
+
+- **Principle**: `BufferGeometry.setIndex()` in Three.js only auto-wraps plain JS `Array`s into a `BufferAttribute`. If a raw `TypedArray` (e.g., `Uint32Array` from `base64ToU32`) is passed, the `else` branch stores it verbatim as `geometry.index`. The WebGL renderer then reads `geometry.index.array.byteLength` and crashes with "Cannot read properties of undefined (reading 'byteLength')" because a TypedArray has no `.array` property.
+- **Concrete Rule**: In `ImportedMeshView.updateGeometryBuffers`, always wrap indices in a `THREE.BufferAttribute` before passing to `setIndex`:
+  ```js
+  this._geo.setIndex(
+    Array.isArray(indices)
+      ? indices  // Three.js wraps plain arrays automatically
+      : new THREE.BufferAttribute(indices instanceof Uint32Array ? indices : new Uint32Array(indices), 1)
+  )
+  ```
+  The base64 decode path (`base64ToU32`) returns a `Uint32Array`, so this wrapping is mandatory for all geometry received via WebSocket.
+
 ## Camera Far Clip and Fit for Imported Geometry
 
 - **Principle**: The default camera `far = 100` is sized for hand-built voxel scenes. STEP files from real CAD tools routinely have bounding sphere radii in the hundreds or thousands of units (mm-scale parts). Geometry beyond `far` is clipped and invisible with no error.

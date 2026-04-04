@@ -1479,6 +1479,34 @@ export class AppController {
     this._mouse.copy(v)
   }
 
+  /**
+   * Filters snap targets to visible ones, then removes far-background
+   * candidates that are occluded by closer geometry.
+   * @param {{ position: THREE.Vector3, type: string }[]} targets
+   * @param {number} maxDepthRatio  Keep targets within this multiple of the
+   *   nearest candidate's camera distance (default 2.0).
+   * @returns {{ position: THREE.Vector3, type: string }[]}
+   */
+  _filterNearbySnapTargets(targets, maxDepthRatio = 2.0) {
+    const camPos = this._camera.position
+
+    // Pass 1: visibility filter — exclude points beyond the far clip plane
+    // or behind the camera (both map to v.z > 1 after project()).
+    const visible = targets.filter(({ position }) => {
+      const v = position.clone().project(this._camera)
+      return v.z <= 1
+    })
+
+    if (visible.length <= 1) return visible
+
+    // Pass 2: depth filter — keep only candidates within maxDepthRatio of the
+    // nearest candidate in 3D space.  This hides occluded or far-background
+    // points that happen to overlap foreground geometry on screen.
+    const dists   = visible.map(({ position }) => position.distanceTo(camPos))
+    const minDist = Math.min(...dists)
+    return visible.filter((_, i) => dists[i] <= minDist * maxDepthRatio)
+  }
+
   /** Hits any visible object — returns { hit, obj } or null */
   _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -3299,7 +3327,7 @@ export class AppController {
       }
       this._applyGrab()
       if (this._grab.autoSnap) {
-        this._meshView.showSnapCandidates(this._grab.snapTargets)
+        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(this._grab.snapTargets))
         if (this._grab.snapping && this._grab.snappedTarget) {
           this._meshView.showSnapLocked(
             this._grab.snappedTarget.position,
@@ -3335,7 +3363,7 @@ export class AppController {
         // Show snap candidates via snapMeshView (a real MeshView, not MeasureLineView)
         const smv = this._measure.snapMeshView
         if (smv) {
-          smv.showSnapCandidates(this._measure.snapTargets)
+          smv.showSnapCandidates(this._filterNearbySnapTargets(this._measure.snapTargets))
           if (this._measure.snapping && this._measure.snappedTarget) {
             smv.showSnapLocked(
               this._measure.snappedTarget.position,

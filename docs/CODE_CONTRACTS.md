@@ -108,6 +108,7 @@ Detail: `docs/code_contracts/server_async.md`
 | Unguarded JSON.parse | Wrap `JSON.parse(row.data)` in try/catch in sceneStore.js |
 | occt-import-js Geometry Structure | Extract geometry from `mesh.attributes`, not `mesh.faces` |
 | Camera Far Clip for Imports | Call `fitCameraToSphere()` after every `updateGeometryBuffers`; never hard-code `camera.far` |
+| setIndex Requires BufferAttribute | Wrap raw `Uint32Array` (e.g. from `base64ToU32`) in `new THREE.BufferAttribute(arr, 1)` before `setIndex()`; plain JS arrays are handled automatically |
 
 ---
 

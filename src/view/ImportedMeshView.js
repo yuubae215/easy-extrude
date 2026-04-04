@@ -70,7 +70,14 @@ export class ImportedMeshView {
       this._geo.computeVertexNormals()
     }
     if (indices && indices.length) {
-      this._geo.setIndex(indices)
+      // setIndex() only auto-wraps plain Arrays; TypedArrays (e.g. Uint32Array from
+      // base64ToU32) must be wrapped manually, otherwise geometry.index.array is
+      // undefined and the WebGL renderer throws on the next render tick.
+      this._geo.setIndex(
+        Array.isArray(indices)
+          ? indices
+          : new THREE.BufferAttribute(indices instanceof Uint32Array ? indices : new Uint32Array(indices), 1),
+      )
     } else {
       this._geo.setIndex(null)
     }

@@ -122,6 +122,27 @@ export class MeasureLineView {
   updateLabelPosition() {
     if (!this._line.visible) return
     this._updateLabel(this._p1, this._p2)
+    this._scaleDots()
+  }
+
+  /**
+   * Scales endpoint spheres so they appear at a constant screen size (~8 px)
+   * regardless of camera distance.  Called every frame from updateLabelPosition().
+   */
+  _scaleDots() {
+    const cam = this._camera
+    if (!cam.isPerspectiveCamera) return
+    const tanHalfFov = Math.tan((cam.fov * Math.PI) / 360)
+    const screenH    = this._renderer.domElement.clientHeight || 1
+    const targetPx   = 8   // desired diameter in screen pixels
+    for (const dot of [this._dot1, this._dot2]) {
+      const d = cam.position.distanceTo(dot.position)
+      // world size that covers targetPx pixels at distance d
+      const worldSize = (targetPx / screenH) * 2 * d * tanHalfFov
+      // base sphere radius is 0.05; scale factor = worldSize / 0.05
+      const s = worldSize / 0.05
+      dot.scale.setScalar(s)
+    }
   }
 
   _updateLabel(p1, p2) {
