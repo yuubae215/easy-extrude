@@ -21,6 +21,36 @@
     </style>
   </head>
   <body>
+    <!--
+      Register the Cross-Origin Isolation service worker (ADR-027 Phase 4).
+      The SW injects COOP/COEP headers required for SharedArrayBuffer access
+      on GitHub Pages, which does not support custom HTTP response headers.
+
+      Guard: skipped when `crossOriginIsolated` is already true (e.g. Vite
+      dev server sets the headers directly via vite.config.js).
+
+      On first load (SW not yet active):
+        - SW installs and calls skipWaiting() + clients.claim()
+        - 'statechange' fires 'activated' -> page reloads once
+        - On reload the SW is active and all responses carry COOP/COEP
+    -->
+    <script>
+      if (!crossOriginIsolated && 'serviceWorker' in navigator) {
+        navigator.serviceWorker
+          .register('/easy-extrude/coi-serviceworker.js')
+          .then(function (reg) {
+            var sw = reg.installing || reg.waiting
+            if (sw) {
+              sw.addEventListener('statechange', function (e) {
+                if (e.target.state === 'activated') location.reload()
+              })
+            }
+          })
+          .catch(function (err) {
+            console.warn('[COI] Service worker registration failed:', err)
+          })
+      }
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

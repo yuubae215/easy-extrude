@@ -43,15 +43,16 @@ Rust → WebAssembly → Web Worker → Main thread (Three.js).
 | `run_monte_carlo(params)` | Simulation engine for urban analysis (UrbanPolygon / ADR-026) | ADR-027 |
 | `build_boolean_union(a, b)` | CSG union — could replace server-side BFF round-trip for simple ops | ADR-027, ADR-017 |
 
-### Phase 4 — True zero-copy (SharedArrayBuffer)
+### Phase 4 — True zero-copy (SharedArrayBuffer) — partial ✅ *2026-04-05*
 
-> Requires `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` headers on the hosting environment (GitHub Pages currently does not set these).
+> COOP/COEP headers are now set on GitHub Pages via a service worker.
+> The `posView.slice()` step is analysed and deferred — see ADR-027 §Phase 4 Architectural Analysis.
 
-| Task | Details |
-|------|---------|
-| Enable COOP/COEP headers | Server / CDN config; verify GitHub Pages support or switch to self-hosted |
-| Shared Wasm Memory | `WebAssembly.Memory { shared: true }` — Worker and main thread read the same buffer with no `slice()` |
-| Remove the one remaining copy | Eliminates the `posView.slice()` step in the worker |
+| Task | Status | Details |
+|------|--------|---------|
+| Enable COOP/COEP headers | ✅ *2026-04-05* | `public/coi-serviceworker.js` intercepts every fetch on GitHub Pages and injects `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`; `index.html` registers the SW and reloads once on first activation; Vite dev server already sets these headers natively |
+| Shared Wasm Memory | ⏸ Deferred | Requires `RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals"` (nightly Rust as of 2026-04); architectural constraint documented in ADR-027 |
+| Remove the one remaining copy | ⏸ Deferred | Blocked by shared Wasm memory above; single-buffered Rust statics require one copy to guarantee Three.js data ownership (ADR-027 §Phase 4 Architectural Analysis) |
 
 ---
 
@@ -248,6 +249,8 @@ Bugs are also tracked on GitHub Issues #69–#73.
 
 | Item | Date |
 |------|------|
+| Wasm Geometry Engine Phase 4 — COOP/COEP via `public/coi-serviceworker.js`; `index.html` SW registration with one-shot reload; `typeof SharedArrayBuffer !== 'undefined'` now true on GitHub Pages; shared Wasm memory deferred (requires nightly Rust); architectural analysis documented in ADR-027 (ADR-027) | 2026-04-05 |
+| Wasm Geometry Engine Phase 3 — `build_extruded_profile()` (arbitrary n-gon prism); `build_instance_matrices()` (batch TRS→4x4); `GeometryEngine.computeExtrudedProfile()` + `computeInstanceMatrices()`; `MeshView.rebuildExtrudedProfile()`; AppController async Wasm rebuild on extrude confirm (ADR-027) | 2026-04-05 |
 | Wasm Geometry Engine Phase 2 — `MeshView.rebuildGeometry()` async Wasm path; `SceneService.batchRebuildSolids()` parallel rebuild via `Promise.all()`; progress overlay for batches > 3 objects; `importFromJson()` made async; sync `updateGeometry()` retained for interactive ops (ADR-027) | 2026-04-05 |
 | Wasm Geometry Engine — three-layer architecture (Rust/Wasm + Web Worker + GeometryEngine.js facade); zero-copy data path; `pnpm build:wasm` pipeline; wasm-pack output committed; CI updated; JS-only devs need no Rust toolchain (ADR-027) | 2026-04-05 |
 | IFC semantic classification — `IFCClassRegistry`, `SetIfcClassCommand`; N-panel IFC class picker (dropdown) for Solid and ImportedMesh; `Ctrl+Z` undoable; `SceneSerializer` and `SceneExporter` include `ifcClass` field (ADR-025) | 2026-04-01 |

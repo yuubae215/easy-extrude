@@ -172,27 +172,67 @@ is never broken by Wasm unavailability; it simply runs slower.
 
 ## Future Work
 
-### True zero-copy with SharedArrayBuffer
+### Phase 4: COOP/COEP Headers (2026-04-05) ✅
 
-If the hosting environment sets the required COOP/COEP HTTP headers:
+GitHub Pages does not support custom HTTP response headers, so a Service Worker
+is used to inject the required isolation headers at the browser's fetch boundary:
 
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-then `WebAssembly.Memory` can be declared as `shared: true`:
+`public/coi-serviceworker.js` intercepts every `fetch` event and rewrites the
+response with the two headers appended.  `index.html` registers the SW and
+reloads once on first activation (when the SW was not yet active for the current
+load).  The Vite dev server continues to set these headers natively via
+`vite.config.js`; the SW is skipped in dev because `window.crossOriginIsolated`
+is already `true`.
 
-```rust
-// In a future init path
-let memory = WebAssembly::Memory::new_with_descriptor(
-    &MemoryDescriptor::new().initial(16).maximum(256).shared(true)
-)?;
+After this change, `typeof SharedArrayBuffer !== 'undefined'` is `true` on
+GitHub Pages.
+
+### Phase 4: Architectural Analysis — Why One Copy Remains ⏸
+
+The original goal was to eliminate step ④ (`posView.slice()`) so that Wasm
+linear memory is read directly by the main thread via a shared `ArrayBuffer`.
+After analysis, this requires one of the following architectural changes:
+
+| Path | Constraint |
+|------|-----------|
+| Shared Wasm memory (`WebAssembly.Memory { shared: true }`) | Requires `RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals"` which targets nightly Rust as of 2026-04.  The Wasm binary must declare memory as *imported* (not defined), so the existing committed binary is incompatible. |
+| Pre-allocated `SharedArrayBuffer` output buffers | Eliminates `postMessage` transfer overhead, but does **not** reduce copy count: the copy from Wasm heap into the SAB is still required, and doing it on the main thread would block the render loop. |
+| N-way static buffers in Rust | Allows the main thread to hold a view while the worker fills the next slot, eliminating the copy.  Requires knowing `N` (max concurrent objects) at Rust compile time. |
+
+The current `slice()` + `transfer` path is optimal for the sequential,
+single-buffered architecture in use:
+
+- One copy: Wasm heap → transferable `ArrayBuffer` (in the Worker, off the main thread)
+- Zero copies: Worker → Main thread (`postMessage` with `transfer`)
+- Zero copies: Main thread → Three.js `BufferAttribute`
+
+Deferring shared Wasm memory until wasm-bindgen stable supports it or until
+the N-way buffer design is ready.
+
+### True zero-copy with Shared Wasm Memory (future)
+
+When the Rust toolchain supports shared memory on stable:
+
+```bash
+RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals" \
+  wasm-pack build wasm-engine --target bundler --out-dir ../src/engine/wasm
+```
+
+```javascript
+// geometry.worker.js — init with external shared memory
+const memory = new WebAssembly.Memory({ initial: 16, maximum: 256, shared: true })
+await initWasm({ module_or_path: wasmUrl, memory })
+// Share the SAB backing the Wasm heap with the main thread (no transfer needed)
+self.postMessage({ type: 'wasm_memory', buffer: memory.buffer })
 ```
 
 The Worker and main thread would then both hold a view over the **same**
-`SharedArrayBuffer`, eliminating step ④ entirely.  The vite.config.js dev
-server already sets these headers; production deployment is the remaining step.
+`SharedArrayBuffer`, eliminating step ④ entirely.
 
 ### Phase 3: Expanded Rust compute surface (2026-04-05)
 
