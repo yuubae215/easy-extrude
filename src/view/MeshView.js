@@ -283,6 +283,29 @@ export class MeshView {
     this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
   }
 
+  /**
+   * Async geometry rebuild for a Profile extrusion — uses Wasm `build_extruded_profile`
+   * via GeometryEngine.  Falls back to the synchronous cuboid path automatically.
+   *
+   * Use this after Profile→Solid conversion (SceneService.extrudeProfile) so the
+   * geometry is computed off the main thread.
+   *
+   * @param {Array<{x: number, y: number}>|Float32Array} vertices2d  n ≥ 3 profile vertices (XY)
+   * @param {number} height  signed extrusion height in world Z units
+   * @returns {Promise<void>}
+   */
+  async rebuildExtrudedProfile(vertices2d, height) {
+    const { positions, normals, indices } = await geometryEngine.computeExtrudedProfile(vertices2d, height)
+    const newGeo = new THREE.BufferGeometry()
+    newGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    newGeo.setAttribute('normal',   new THREE.BufferAttribute(normals, 3))
+    newGeo.setIndex(new THREE.BufferAttribute(indices, 1))
+    this.cuboid.geometry.dispose()
+    this.cuboid.geometry = newGeo
+    this.wireframe.geometry.dispose()
+    this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
+  }
+
   /** Updates the visual appearance for object-selected state */
   setObjectSelected(sel) {
     this.cuboidMat.emissive.set(sel ? 0x112244 : 0x000000)

@@ -1,4 +1,1 @@
-# This directory contains wasm-pack generated output that IS committed to git.
-# wasm-pack normally writes `*` here; this file overrides that so generated
-# files can be tracked.  See ADR-027 and package.json build:wasm script.
-# Do not replace with `*` — the build:wasm script rewrites this file after each build.
+# wasm-pack output committed to git — do not replace with *

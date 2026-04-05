@@ -2205,10 +2205,17 @@ export class AppController {
     )
     this._commandStack.push(cmd)
 
+    // Synchronous JS rebuild for immediate display (ADR-027: real-time path).
     this._meshView.updateGeometry(cuboid.corners)
     this._meshView.setVisible(true)
     this._meshView.clearSketchRect()
     this._uiView.clearExtrusionLabel()
+
+    // Background Wasm rebuild via the profile-specific path (ADR-027 Phase 3).
+    // `profileRef.vertices` holds the original 2D profile vertices before the swap.
+    // Silently falls back to the JS geometry above if the worker is not ready.
+    const profileVerts2d = profileRef.vertices.map(v => v.position)
+    cuboid.meshView.rebuildExtrudedProfile(profileVerts2d, height).catch(() => {})
 
     this._uiView.setStatusRich([
       { text: 'Extruded', color: '#6ab04c' },
