@@ -102,19 +102,23 @@ export class OutlinerView {
      *   parentId: string|null
      * }>}
      */
-    this._items       = new Map()
-    this._activeId    = null
-    this._onSelectCb  = null
-    this._onDeleteCb  = null
-    this._onAddCb     = null
-    this._onVisibleCb = null
-    this._onRenameCb  = null
+    this._items        = new Map()
+    this._activeId     = null
+    this._onSelectCb   = null
+    this._onDeleteCb   = null
+    this._onAddCb      = null
+    this._onVisibleCb  = null
+    this._onRenameCb   = null
+    /** Callback for drag-and-drop re-parent: cb(draggedFrameId, targetId) (ADR-028) */
+    this._onReparentCb = null
+    /** ID of the frame currently being dragged, or null. */
+    this._draggingId   = null
     /**
      * Maps childId → parentId for depth computation without querying SceneModel.
      * Used by _getDepth() to support multi-level indentation (ADR-019).
      * @type {Map<string, string>}
      */
-    this._parentMap   = new Map()
+    this._parentMap    = new Map()
 
     this._addBtn.addEventListener('click', () => {
       if (this._onAddCb) this._onAddCb()
@@ -157,11 +161,13 @@ export class OutlinerView {
   get isDrawerOpen() { return this._drawerOpen }
 
   // ─── Callbacks ────────────────────────────────────────────────────────────
-  onSelect(cb)  { this._onSelectCb  = cb }
-  onDelete(cb)  { this._onDeleteCb  = cb }
-  onAdd(cb)     { this._onAddCb     = cb }
-  onVisible(cb) { this._onVisibleCb = cb }
-  onRename(cb)  { this._onRenameCb  = cb }
+  onSelect(cb)   { this._onSelectCb   = cb }
+  onDelete(cb)   { this._onDeleteCb   = cb }
+  onAdd(cb)      { this._onAddCb      = cb }
+  onVisible(cb)  { this._onVisibleCb  = cb }
+  onRename(cb)   { this._onRenameCb   = cb }
+  /** Registers callback for drag-and-drop re-parent: cb(frameId, newParentId) */
+  onReparent(cb) { this._onReparentCb = cb }
 
   // ─── Object management ────────────────────────────────────────────────────
 
@@ -197,7 +203,7 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl, visible: true, parentId })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl, visible: true, parentId, locked: false })
   }
 
   /**
@@ -306,6 +312,82 @@ export class OutlinerView {
     item.eyeEl.title = visible ? 'Hide' : 'Show'
   }
 
+  /**
+   * Locks or unlocks a frame row for dragging (ADR-028).
+   * Locked rows (Origin frames) cannot be dragged to a new parent.
+   * @param {string} id
+   * @param {boolean} locked
+   */
+  setObjectLocked(id, locked) {
+    const item = this._items.get(id)
+    if (!item) return
+    item.locked = locked
+    item.rowEl.draggable = !locked
+  }
+
+  /**
+   * Moves a CoordinateFrame row (and its entire subtree) to appear under a new
+   * parent row in the DOM, keeping _parentMap and visual depth in sync (ADR-028).
+   *
+   * Call this in response to SceneService 'frameReparented' events.
+   * @param {string} id          ID of the frame being re-parented
+   * @param {string} newParentId ID of the new parent object
+   */
+  reparentObject(id, newParentId) {
+    const item = this._items.get(id)
+    if (!item) return
+
+    const oldParentId = item.parentId
+
+    // Step 1: Collect the full subtree rooted at id (BEFORE updating parentMap)
+    const subtree = this._collectSubtree(id)
+
+    // Step 2: Find DOM insertion point (BEFORE removing rows from DOM)
+    const insertAfterEl = this._getLastDescendantEl(newParentId)
+    if (!insertAfterEl) return  // new parent not in outliner
+
+    // Step 3: Remove subtree rows from DOM (entries stay in _items)
+    for (const did of subtree) {
+      this._items.get(did).rowEl.remove()
+    }
+
+    // Step 4: Update parentMap + item.parentId for the moved root
+    this._parentMap.set(id, newParentId)
+    item.parentId = newParentId
+
+    // Step 5: Re-insert subtree rows with correct depth + glyphs
+    let refEl = insertAfterEl
+    for (const did of subtree) {
+      const ditem = this._items.get(did)
+      const depth = this._getDepth(did)
+
+      // Update left padding
+      ditem.rowEl.style.paddingLeft = `${16 + depth * 12}px`
+
+      // Update connector glyph and its style
+      if (depth > 0) {
+        ditem.triEl.textContent = '\u2514'   // └
+        Object.assign(ditem.triEl.style, {
+          color: '#555', fontSize: '10px',
+          marginLeft: '-14px', marginRight: '2px',
+        })
+      } else {
+        ditem.triEl.textContent = '\u25b6'   // ▶
+        Object.assign(ditem.triEl.style, {
+          color: '#444', fontSize: '8px',
+          marginLeft: '0px', marginRight: '0px',
+        })
+      }
+
+      refEl.insertAdjacentElement('afterend', ditem.rowEl)
+      refEl = ditem.rowEl
+    }
+
+    // Step 6: Update parent indicators on old and new parent rows
+    if (oldParentId) this._setParentIndicator(oldParentId, this._hasChildren(oldParentId))
+    if (newParentId) this._setParentIndicator(newParentId, true)
+  }
+
   // ─── Internal helpers ─────────────────────────────────────────────────────
 
   /**
@@ -319,6 +401,31 @@ export class OutlinerView {
     if (!parentItem) return
     parentItem.triEl.style.color    = hasChildren ? '#cc7a00' : '#444'
     parentItem.triEl.style.fontSize = hasChildren ? '9px'     : '8px'
+  }
+
+  /** Returns true if any item has the given id as its parentId. */
+  _hasChildren(parentId) {
+    return [...this._items.values()].some(i => i.parentId === parentId)
+  }
+
+  /**
+   * Returns the ordered list of ids in the subtree rooted at id (DFS pre-order):
+   * [id, child1, grandchild1, child2, ...].
+   */
+  _collectSubtree(id) {
+    const result = [id]
+    for (const [cid, citem] of this._items) {
+      if (citem.parentId === id) result.push(...this._collectSubtree(cid))
+    }
+    return result
+  }
+
+  /** Removes the drop-highlight outline from all rows (called on dragend). */
+  _clearDropHighlights() {
+    for (const item of this._items.values()) {
+      item.rowEl.style.outline = ''
+      item.rowEl.style.outlineOffset = ''
+    }
   }
 
   // ─── Row builder ──────────────────────────────────────────────────────────
@@ -590,6 +697,47 @@ export class OutlinerView {
     })
     rowEl.addEventListener('click', () => {
       if (this._onSelectCb) this._onSelectCb(id)
+    })
+
+    // ── Drag-and-drop re-parenting (ADR-028) ──────────────────────────────
+    // Frame rows can be dragged (locked frames are prevented in dragstart).
+    // All rows can be drop targets so the user can drop onto any valid parent.
+    if (type === 'frame') {
+      rowEl.draggable = true
+      rowEl.addEventListener('dragstart', (e) => {
+        const item = this._items.get(id)
+        if (item?.locked) { e.preventDefault(); return }
+        this._draggingId = id
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', id)
+        rowEl.style.opacity = '0.4'
+      })
+      rowEl.addEventListener('dragend', () => {
+        rowEl.style.opacity = '1'
+        this._draggingId = null
+        this._clearDropHighlights()
+      })
+    }
+
+    rowEl.addEventListener('dragover', (e) => {
+      if (!this._draggingId || this._draggingId === id) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      rowEl.style.outline = '2px solid #4fc3f7'
+      rowEl.style.outlineOffset = '-2px'
+    })
+    rowEl.addEventListener('dragleave', () => {
+      rowEl.style.outline = ''
+      rowEl.style.outlineOffset = ''
+    })
+    rowEl.addEventListener('drop', (e) => {
+      e.preventDefault()
+      rowEl.style.outline = ''
+      rowEl.style.outlineOffset = ''
+      if (!this._draggingId || this._draggingId === id) return
+      const dragged = this._draggingId
+      this._draggingId = null
+      if (this._onReparentCb) this._onReparentCb(dragged, id)
     })
 
     return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl }

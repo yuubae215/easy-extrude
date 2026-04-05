@@ -578,6 +578,7 @@ export class UIView {
     this._onDescriptionChangeCb = null
     this._onFramePositionChangeCb = null
     this._onFrameRotationChangeCb = null
+    this._onFrameParentChangeCb   = null
     this._onLocationChangeCb = null
     this._onIfcClassChangeCb = null
 
@@ -599,6 +600,10 @@ export class UIView {
   /** Registers callback for CoordinateFrame rotation changes from the N panel.
    *  cb(axis: 'x'|'y'|'z', valueDeg: number) */
   onFrameRotationChange(callback) { this._onFrameRotationChangeCb = callback }
+
+  /** Registers callback for CoordinateFrame parent changes from the N panel.
+   *  cb(newParentId: string) */
+  onFrameParentChange(callback) { this._onFrameParentChangeCb = callback }
 
   /** Registers callback for geometry object location changes from the N panel.
    *  cb(axis: 'x'|'y'|'z', value: number) */
@@ -2247,8 +2252,11 @@ export class UIView {
    * @param {{x:number,y:number,z:number}} eulerDeg  rotation in degrees, intrinsic ZYX = extrinsic XYZ = ROS RPY order
    * @param {string} name
    * @param {boolean} [locked]  when true, values are read-only (Origin frame)
+   * @param {{ id: string, name: string }[]|null} [parentOptions]
+   *   All valid parent candidates (ADR-028). null or empty = no dropdown shown.
+   * @param {string|null} [currentParentId]  currently selected parent id
    */
-  updateNPanelForFrame(pos, eulerDeg, name, locked = false) {
+  updateNPanelForFrame(pos, eulerDeg, name, locked = false, parentOptions = null, currentParentId = null) {
     if (!this._nPanelVisible) return
 
     const row = (axis, color, val) => {
@@ -2361,8 +2369,45 @@ export class UIView {
       ? (ax, col, val) => row(ax, col, val)
       : (ax, col, val) => editRow(ax, col, val, v => { if (this._onFrameRotationChangeCb) this._onFrameRotationChangeCb(ax.toLowerCase(), v) })
 
+    // Parent section — only for non-locked frames with candidate options (ADR-028)
+    let parentSection = null
+    if (!locked && parentOptions?.length > 0) {
+      parentSection = document.createElement('div')
+      Object.assign(parentSection.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+      const parentTitleEl = document.createElement('div')
+      parentTitleEl.textContent = 'Parent'
+      Object.assign(parentTitleEl.style, {
+        color: '#aaa', fontSize: '11px',
+        textTransform: 'uppercase', letterSpacing: '0.05em',
+        marginBottom: '6px',
+      })
+      const selectEl = document.createElement('select')
+      Object.assign(selectEl.style, {
+        width: '100%', boxSizing: 'border-box',
+        background: '#383838', border: '1px solid #444', borderRadius: '3px',
+        padding: '3px 6px', color: '#e8e8e8', fontSize: '12px',
+        fontFamily: 'sans-serif', outline: 'none', cursor: 'pointer',
+      })
+      for (const opt of parentOptions) {
+        const optEl = document.createElement('option')
+        optEl.value = opt.id
+        optEl.textContent = opt.name
+        if (opt.id === currentParentId) optEl.selected = true
+        selectEl.appendChild(optEl)
+      }
+      selectEl.addEventListener('change', () => {
+        if (this._onFrameParentChangeCb) this._onFrameParentChangeCb(selectEl.value)
+      })
+      selectEl.addEventListener('focus', () => { selectEl.style.borderColor = '#4fc3f7' })
+      selectEl.addEventListener('blur',  () => { selectEl.style.borderColor = '#444' })
+      selectEl.addEventListener('keydown', e => e.stopPropagation())
+      parentSection.appendChild(parentTitleEl)
+      parentSection.appendChild(selectEl)
+    }
+
     this._nPanelContentEl.innerHTML = ''
     this._nPanelContentEl.appendChild(nameSection)
+    if (parentSection) this._nPanelContentEl.appendChild(parentSection)
     this._nPanelContentEl.appendChild(section(locked ? 'Location (World)' : 'Location (Local)', [
       locRow('X', '#e05252', pos.x),
       locRow('Y', '#6ab04c', pos.y),

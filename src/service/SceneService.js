@@ -740,6 +740,94 @@ export class SceneService extends EventEmitter {
    *   edges: { from: string, to: string, relation: string, vertexId?: string }[]
    * }}
    */
+  /**
+   * Changes the parent of a CoordinateFrame, maintaining its world position.
+   *
+   * The frame's `translation` is recomputed so that the frame stays at its
+   * current world position relative to the new parent's centroid.
+   * On undo, pass `forcedTranslation` to restore the exact prior translation
+   * instead of recomputing from the current world pose cache.
+   *
+   * No-ops (returns false) when:
+   *   - frameId is not a CoordinateFrame
+   *   - frame.name === 'Origin' (locked to its geometry object)
+   *   - newParentId is unknown, a MeasureLine, or an ImportedMesh
+   *   - newParentId === frameId (self-reference)
+   *   - newParentId is a descendant of frameId (would create a cycle)
+   *
+   * Emits: 'frameReparented' { id, newParentId }
+   *
+   * @param {string} frameId
+   * @param {string} newParentId
+   * @param {import('three').Vector3|null} [forcedTranslation]
+   *   Undo path only — sets translation directly instead of recomputing.
+   * @returns {boolean}
+   */
+  reparentFrame(frameId, newParentId, forcedTranslation = null) {
+    const frame = this._model.getObject(frameId)
+    if (!(frame instanceof CoordinateFrame)) return false
+    if (frame.name === 'Origin') return false
+
+    const newParent = this._model.getObject(newParentId)
+    if (!newParent) return false
+    if (newParent instanceof MeasureLine || newParent instanceof ImportedMesh) return false
+    if (newParentId === frameId) return false
+    if (this._isDescendant(frameId, newParentId)) return false
+
+    if (forcedTranslation) {
+      frame.translation.copy(forcedTranslation)
+    } else {
+      // Maintain world position: new translation = worldPos - newParentCentroid
+      const worldPos = this._worldPoseCache.get(frameId)?.position
+      const centroid  = this._computeObjectCentroid(newParent)
+      if (worldPos && centroid) {
+        frame.translation.copy(worldPos).sub(centroid)
+      } else {
+        frame.translation.set(0, 0, 0)
+      }
+    }
+
+    frame.parentId = newParentId
+    this.emit('frameReparented', { id: frameId, newParentId })
+    return true
+  }
+
+  /**
+   * Returns true if candidateId is a strict descendant of ancestorId in the
+   * CoordinateFrame parent chain. Used for cycle detection before re-parenting.
+   * @param {string} ancestorId
+   * @param {string} candidateId
+   * @returns {boolean}
+   */
+  _isDescendant(ancestorId, candidateId) {
+    let current = this._model.getObject(candidateId)
+    while (current instanceof CoordinateFrame && current.parentId) {
+      if (current.parentId === ancestorId) return true
+      current = this._model.getObject(current.parentId)
+    }
+    return false
+  }
+
+  /**
+   * Returns a clone of the world-space centroid of a scene object.
+   * CoordinateFrame: reads from world pose cache.
+   * Geometry objects: averages corners.
+   * Returns null if the centroid cannot be determined.
+   * @param {object} obj
+   * @returns {import('three').Vector3|null}
+   */
+  _computeObjectCentroid(obj) {
+    if (obj instanceof CoordinateFrame) {
+      return this._worldPoseCache.get(obj.id)?.position?.clone() ?? null
+    }
+    if (obj.corners?.length > 0) {
+      const c = new Vector3()
+      obj.corners.forEach(corner => c.add(corner))
+      return c.divideScalar(obj.corners.length)
+    }
+    return null
+  }
+
   getSceneGraph() {
     const nodes = []
     const edges = []

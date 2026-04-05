@@ -39,6 +39,7 @@ import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
 import { createSetLynchClassCommand } from '../command/SetLynchClassCommand.js'
+import { createReparentFrameCommand } from '../command/ReparentFrameCommand.js'
 import { downloadSceneJson }          from '../service/SceneExporter.js'
 import { parseImportJson }            from '../service/SceneImporter.js'
 import { UrbanPolyline } from '../domain/UrbanPolyline.js'
@@ -83,8 +84,17 @@ export class AppController {
                     ? 'urban-marker'
                     : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
+      // Origin frames are locked — cannot be dragged to a new parent (ADR-028)
+      if (obj instanceof CoordinateFrame && obj.name === 'Origin') {
+        outlinerView?.setObjectLocked(obj.id, true)
+      }
       if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
       if (obj.lynchClass) outlinerView?.setObjectLynchClass(obj.id, obj.lynchClass)
+    })
+    // Update outliner hierarchy and N panel when a frame is re-parented (ADR-028)
+    this._service.on('frameReparented', ({ id, newParentId }) => {
+      outlinerView?.reparentObject(id, newParentId)
+      if (id === this._scene.activeId) this._updateNPanel()
     })
     this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
     this._service.on('objectRenamed', (id, nm)  => {
@@ -344,12 +354,38 @@ export class AppController {
     uiView.onModeChange(mode => this.setMode(mode))
 
     if (outlinerView) {
-      outlinerView.onSelect( id       => this._onOutlinerSelect(id))
-      outlinerView.onDelete( id       => this._deleteObject(id))
-      outlinerView.onAdd(  ()         => this._addObject())
-      outlinerView.onVisible((id, v)  => this._setObjectVisible(id, v))
-      outlinerView.onRename( (id, nm) => this._renameObject(id, nm))
+      outlinerView.onSelect(  id       => this._onOutlinerSelect(id))
+      outlinerView.onDelete(  id       => this._deleteObject(id))
+      outlinerView.onAdd(  ()          => this._addObject())
+      outlinerView.onVisible( (id, v)  => this._setObjectVisible(id, v))
+      outlinerView.onRename(  (id, nm) => this._renameObject(id, nm))
+      // Drag-and-drop re-parent (ADR-028)
+      outlinerView.onReparent((frameId, targetId) => {
+        const frame = this._scene.getObject(frameId)
+        if (!frame || frame.name === 'Origin') {
+          this._uiView.showToast('Origin frames cannot be re-parented', { type: 'warn' })
+          return
+        }
+        const cmd = createReparentFrameCommand(frameId, targetId, this._service)
+        if (!this._service.reparentFrame(frameId, targetId)) {
+          this._uiView.showToast('Cannot re-parent: invalid target or cycle detected', { type: 'warn' })
+          return
+        }
+        this._commandStack.push(cmd)
+      })
     }
+
+    // N panel parent dropdown (ADR-028)
+    uiView.onFrameParentChange((newParentId) => {
+      const obj = this._activeObj
+      if (!(obj instanceof CoordinateFrame) || obj.name === 'Origin') return
+      const cmd = createReparentFrameCommand(obj.id, newParentId, this._service)
+      if (!this._service.reparentFrame(obj.id, newParentId)) {
+        this._uiView.showToast('Cannot re-parent: invalid target or cycle detected', { type: 'warn' })
+        return
+      }
+      this._commandStack.push(cmd)
+    })
 
     uiView.onNameChange(name => {
       if (this._scene.activeId) this._renameObject(this._scene.activeId, name)
@@ -1671,11 +1707,20 @@ export class AppController {
       const localPos = obj.translation.clone().applyQuaternion(parentRot.clone().conjugate())
       const localRot  = parentRot.clone().conjugate().multiply(obj.rotation)
       const euler = new THREE.Euler().setFromQuaternion(localRot, 'ZYX')
+      // Build valid parent candidates for the N panel dropdown (ADR-028)
+      const parentOptions = [...this._scene.objects.values()]
+        .filter(o => {
+          if (o.id === obj.id) return false
+          if (o instanceof MeasureLine || o instanceof ImportedMesh) return false
+          if (this._service._isDescendant(obj.id, o.id)) return false
+          return true
+        })
+        .map(o => ({ id: o.id, name: o.name }))
       this._uiView.updateNPanelForFrame(localPos, {
         x: THREE.MathUtils.radToDeg(euler.x),
         y: THREE.MathUtils.radToDeg(euler.y),
         z: THREE.MathUtils.radToDeg(euler.z),
-      }, obj.name, false)
+      }, obj.name, false, parentOptions, obj.parentId)
       return
     }
 
