@@ -1,0 +1,22 @@
+[package]
+name = "wasm-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Geometry computation engine for easy-extrude — runs in Wasm"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+
+[profile.release]
+# Optimise for size (Wasm binary size matters for initial load)
+opt-level = "z"
+lto = true
+
+[package.metadata.wasm-pack.profile.release]
+# wasm-opt is a post-processing step that shrinks the binary further.
+# Disabled here because it requires a network download of binaryen.
+# Re-enable in CI by removing this section or setting wasm-opt = ["-Oz"].
+wasm-opt = false

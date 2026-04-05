@@ -1,8 +1,52 @@
 # Roadmap
 
-## Design Direction (2026-03-20, updated 2026-04-01)
+## Design Direction (2026-03-20, updated 2026-04-05)
 
 This project is a **solid-body modeling application**. Each shape is a deformable solid defined by a LocalGeometry graph (vertices / edges / faces). Complex scenes are built by placing and deforming multiple solid objects alongside coordinate frames and measurement annotations. See `docs/adr/` for detailed design decisions.
+
+---
+
+## Wasm Geometry Engine (ADR-027)
+
+Three-layer architecture for non-blocking, near-zero-copy geometry computation.
+Rust → WebAssembly → Web Worker → Main thread (Three.js).
+
+### Phase 1 — Infrastructure ✅ *2026-04-05*
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Rust crate `wasm-engine/` | `build_cuboid_geometry()` + pointer getters + `wasm_memory()`; mirrors `CuboidModel.js` face/normal logic exactly | ADR-027 |
+| Web Worker bridge `geometry.worker.js` | Loads Wasm via `initWasm(wasmUrl)`, reads output via pointer (zero-copy view), slices once, transfers ArrayBuffer to main thread | ADR-027 |
+| `GeometryEngine.js` facade | Promise API (`computeCuboid(corners)`); `?worker` Vite import; graceful fallback to `CuboidModel.buildGeometry()` on init failure | ADR-027 |
+| Build pipeline | `pnpm build:wasm` (wasm-pack → `src/engine/wasm/`); `pnpm build` runs it first; `pnpm test:wasm` (cargo test); CI updated | ADR-027 |
+| `src/engine/wasm/` committed | Generated WASM binary and JS bindings committed — JS-only developers need no Rust toolchain | ADR-027 |
+
+### Phase 2 — Wire into rendering pipeline
+
+| Task | Details | ADR |
+|------|---------|-----|
+| `MeshView` async geometry path | `rebuildGeometry()` → `await geometryEngine.computeCuboid(corners)` instead of synchronous `buildGeometry()`; `geometryEngine` singleton injected or imported | ADR-027 |
+| Batched computation (multi-object scenes) | Queue multiple `computeCuboid` calls in parallel when rebuilding all objects on scene load | ADR-027 |
+| Progress indicator | Show spinner / disable input during batch rebuild if > N objects | ADR-027 |
+
+### Phase 3 — Expand Rust compute surface
+
+| Candidate Task | Description | ADR |
+|---------------|-------------|-----|
+| `build_extruded_profile(profile, height)` | Profile→Solid geometry (replace JS extrude path) | ADR-027 |
+| `build_instanced_mesh(transforms[])` | Batch geometry for repeated objects → single draw call | ADR-027 |
+| `run_monte_carlo(params)` | Simulation engine for urban analysis (UrbanPolygon / ADR-026) | ADR-027 |
+| `build_boolean_union(a, b)` | CSG union — could replace server-side BFF round-trip for simple ops | ADR-027, ADR-017 |
+
+### Phase 4 — True zero-copy (SharedArrayBuffer)
+
+> Requires `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` headers on the hosting environment (GitHub Pages currently does not set these).
+
+| Task | Details |
+|------|---------|
+| Enable COOP/COEP headers | Server / CDN config; verify GitHub Pages support or switch to self-hosted |
+| Shared Wasm Memory | `WebAssembly.Memory { shared: true }` — Worker and main thread read the same buffer with no `slice()` |
+| Remove the one remaining copy | Eliminates the `posView.slice()` step in the worker |
 
 ---
 
@@ -199,6 +243,7 @@ Bugs are also tracked on GitHub Issues #69–#73.
 
 | Item | Date |
 |------|------|
+| Wasm Geometry Engine — three-layer architecture (Rust/Wasm + Web Worker + GeometryEngine.js facade); zero-copy data path; `pnpm build:wasm` pipeline; wasm-pack output committed; CI updated; JS-only devs need no Rust toolchain (ADR-027) | 2026-04-05 |
 | IFC semantic classification — `IFCClassRegistry`, `SetIfcClassCommand`; N-panel IFC class picker (dropdown) for Solid and ImportedMesh; `Ctrl+Z` undoable; `SceneSerializer` and `SceneExporter` include `ifcClass` field (ADR-025) | 2026-04-01 |
 | Documentation — `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` created (Japanese → English); Mermaid `block-beta` diagrams; `CLAUDE.md` change-impact matrix added | 2026-04-01 |
 | Documentation — `docs/PHILOSOPHY.md` created: 20 design principles distilled from MENTAL_MODEL, PROCESS_NOTES, and ADRs; doc-structure refactored (MENTAL_MODEL → CODE_CONTRACTS + DEVELOPMENT + PHILOSOPHY) | 2026-04-01 |

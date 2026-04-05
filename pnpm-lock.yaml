@@ -18,6 +18,9 @@ importers:
       vite:
         specifier: ^6.2.0
         version: 6.4.1(@types/node@25.5.0)
+      vite-plugin-wasm:
+        specifier: ^3.6.0
+        version: 3.6.0(vite@6.4.1(@types/node@25.5.0))
       wait-on:
         specifier: ^9.0.4
         version: 9.0.4
@@ -731,6 +734,7 @@ packages:
 
   libsql@0.5.28:
     resolution: {integrity: sha512-wKqx9FgtPcKHdPfR/Kfm0gejsnbuf8zV+ESPmltFvsq5uXwdeN9fsWn611DmqrdXj1e94NkARcMA2f1syiAqOg==}
+    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   lodash.includes@4.3.0:
@@ -1027,6 +1031,11 @@ packages:
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
+
+  vite-plugin-wasm@3.6.0:
+    resolution: {integrity: sha512-mL/QPziiIA4RAA6DkaZZzOstdwbW5jO4Vz7Zenj0wieKWBlNvIvX5L5ljum9lcUX0ShNfBgCNLKTjNkRVVqcsw==}
+    peerDependencies:
+      vite: ^2 || ^3 || ^4 || ^5 || ^6 || ^7 || ^8
 
   vite@6.4.1:
     resolution: {integrity: sha512-+Oxm7q9hDoLMyJOYfUYBuHQo+dkAloi33apOPP56pzj+vsdJDzr+j1NISE5pyaAuKL4A3UD34qd0lx5+kfKp2g==}
@@ -2028,6 +2037,10 @@ snapshots:
   uuid@11.1.0: {}
 
   vary@1.1.2: {}
+
+  vite-plugin-wasm@3.6.0(vite@6.4.1(@types/node@25.5.0)):
+    dependencies:
+      vite: 6.4.1(@types/node@25.5.0)
 
   vite@6.4.1(@types/node@25.5.0):
     dependencies:

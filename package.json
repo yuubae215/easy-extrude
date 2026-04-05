@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "concurrently --kill-others-on-fail -n bff,vite -c cyan,green \"pnpm server:dev\" \"wait-on tcp:localhost:3001 && vite\"",
-    "build": "vite build",
+    "build": "pnpm build:wasm && vite build",
+    "build:wasm": "wasm-pack build wasm-engine --target web --out-dir ../src/engine/wasm --out-name wasm_engine && printf '# wasm-pack output committed to git — do not replace with *\\n' > src/engine/wasm/.gitignore",
     "preview": "vite preview",
     "server:install": "pnpm --filter easy-extrude-bff install",
     "server:dev": "pnpm --filter easy-extrude-bff run dev",
-    "server:start": "pnpm --filter easy-extrude-bff run start"
+    "server:start": "pnpm --filter easy-extrude-bff run start",
+    "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml"
   },
   "dependencies": {
     "three": "^0.172.0"
@@ -18,6 +20,7 @@
   "devDependencies": {
     "concurrently": "^9.2.1",
     "vite": "^6.2.0",
+    "vite-plugin-wasm": "^3.6.0",
     "wait-on": "^9.0.4"
   },
   "pnpm": {

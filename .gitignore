@@ -144,6 +144,9 @@ vite.config.ts.timestamp-*
 # Claude Code
 settings.local.json
 
+# Rust build artifacts (generated WASM output in src/engine/wasm/ is committed)
+wasm-engine/target/
+
 # test data
 server/tests/data/*.step
 server/tests/data/*.STEP
