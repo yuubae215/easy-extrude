@@ -246,6 +246,11 @@ export class SceneService extends EventEmitter {
         this.emit('objectAdded', entity)
       }
       this._remoteId = sceneId
+
+      // Rebuild Solid geometry in parallel via Wasm worker (ADR-027 Phase 2).
+      const solids = entities.filter(e => e instanceof Solid)
+      await this.batchRebuildSolids(solids)
+
       return true
     } catch (err) {
       if (err instanceof BffUnavailableError) {
@@ -289,7 +294,8 @@ export class SceneService extends EventEmitter {
         const solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
         solid.description = dto.description ?? ''
         solid.ifcClass    = dto.ifcClass    ?? null
-        solid.meshView.updateGeometry(solid.corners)
+        // Geometry is rebuilt asynchronously by batchRebuildSolids() after all
+        // entities are created — see loadScene() / importFromJson().
         entities.push(solid)
       // Accept both new ('Profile') and legacy ('Sketch') type strings
       } else if (dto.type === 'Profile' || dto.type === 'Sketch') {
@@ -393,7 +399,7 @@ export class SceneService extends EventEmitter {
    * @param {{ clear?: boolean }} [options]
    * @returns {{ imported: number, skipped: number }}
    */
-  importFromJson(parsed, viewContext = {}, { clear = true } = {}) {
+  async importFromJson(parsed, viewContext = {}, { clear = true } = {}) {
     if (clear) this._clearScene()
 
     // When merging, build an id-remap table so imported IDs never collide.
@@ -411,6 +417,7 @@ export class SceneService extends EventEmitter {
 
     let imported = 0
     let skipped  = 0
+    const solids = []
 
     for (const dto of [...nonFrames, ...frames]) {
       try {
@@ -418,6 +425,7 @@ export class SceneService extends EventEmitter {
         if (!entity) { skipped++; continue }
         this._model.addObject(entity)
         this.emit('objectAdded', entity)
+        if (entity instanceof Solid) solids.push(entity)
         imported++
       } catch (err) {
         console.warn('[SceneService] importFromJson: skipping entry', dto.id, err)
@@ -425,7 +433,41 @@ export class SceneService extends EventEmitter {
       }
     }
 
+    // Rebuild Solid geometry in parallel via Wasm worker (ADR-027 Phase 2).
+    await this.batchRebuildSolids(solids)
+
     return { imported, skipped }
+  }
+
+  /**
+   * Rebuilds cuboid geometry for multiple Solid objects in parallel using the
+   * Wasm worker (ADR-027 Phase 2).  Falls back to the synchronous JS path
+   * automatically when the Wasm worker is unavailable.
+   *
+   * Emits progress events so the UI can display a spinner when N > BATCH_PROGRESS_THRESHOLD:
+   *   'batchRebuildStart'    { total: number }
+   *   'batchRebuildProgress' { done: number, total: number }
+   *   'batchRebuildEnd'
+   *
+   * @param {import('../domain/Solid.js').Solid[]} solids
+   * @returns {Promise<void>}
+   */
+  async batchRebuildSolids(solids) {
+    const BATCH_PROGRESS_THRESHOLD = 3
+    const total = solids.length
+    if (total === 0) return
+
+    const showProgress = total > BATCH_PROGRESS_THRESHOLD
+    if (showProgress) this.emit('batchRebuildStart', { total })
+
+    let done = 0
+    await Promise.all(solids.map(async (solid) => {
+      await solid.meshView.rebuildGeometry(solid.corners)
+      done++
+      if (showProgress) this.emit('batchRebuildProgress', { done, total })
+    }))
+
+    if (showProgress) this.emit('batchRebuildEnd')
   }
 
   /**
@@ -443,7 +485,7 @@ export class SceneService extends EventEmitter {
       const solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
       solid.description = dto.description ?? ''
       solid.ifcClass    = dto.ifcClass    ?? null
-      solid.meshView.updateGeometry(solid.corners)
+      // Geometry is rebuilt asynchronously by batchRebuildSolids() — see importFromJson().
       return solid
     }
 

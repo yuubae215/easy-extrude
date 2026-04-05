@@ -21,13 +21,13 @@ Rust → WebAssembly → Web Worker → Main thread (Three.js).
 | Build pipeline | `pnpm build:wasm` (wasm-pack → `src/engine/wasm/`); `pnpm build` runs it first; `pnpm test:wasm` (cargo test); CI updated | ADR-027 |
 | `src/engine/wasm/` committed | Generated WASM binary and JS bindings committed — JS-only developers need no Rust toolchain | ADR-027 |
 
-### Phase 2 — Wire into rendering pipeline
+### Phase 2 — Wire into rendering pipeline ✅ *2026-04-05*
 
 | Task | Details | ADR |
 |------|---------|-----|
-| `MeshView` async geometry path | `rebuildGeometry()` → `await geometryEngine.computeCuboid(corners)` instead of synchronous `buildGeometry()`; `geometryEngine` singleton injected or imported | ADR-027 |
-| Batched computation (multi-object scenes) | Queue multiple `computeCuboid` calls in parallel when rebuilding all objects on scene load | ADR-027 |
-| Progress indicator | Show spinner / disable input during batch rebuild if > N objects | ADR-027 |
+| `MeshView` async geometry path | `rebuildGeometry()` → `await geometryEngine.computeCuboid(corners)` via Wasm worker; sync `updateGeometry()` retained for real-time interactive operations | ADR-027 |
+| Batched computation (multi-object scenes) | `SceneService.batchRebuildSolids(solids)` runs all `rebuildGeometry()` calls via `Promise.all()`; called from `loadScene()` and `importFromJson()` after all entities are created | ADR-027 |
+| Progress indicator | `batchRebuildStart/Progress/End` events emitted when solid count > 3; `AppController` subscribes and shows/updates/hides `showImportProgress()` overlay | ADR-027 |
 
 ### Phase 3 — Expand Rust compute surface
 
@@ -243,6 +243,7 @@ Bugs are also tracked on GitHub Issues #69–#73.
 
 | Item | Date |
 |------|------|
+| Wasm Geometry Engine Phase 2 — `MeshView.rebuildGeometry()` async Wasm path; `SceneService.batchRebuildSolids()` parallel rebuild via `Promise.all()`; progress overlay for batches > 3 objects; `importFromJson()` made async; sync `updateGeometry()` retained for interactive ops (ADR-027) | 2026-04-05 |
 | Wasm Geometry Engine — three-layer architecture (Rust/Wasm + Web Worker + GeometryEngine.js facade); zero-copy data path; `pnpm build:wasm` pipeline; wasm-pack output committed; CI updated; JS-only devs need no Rust toolchain (ADR-027) | 2026-04-05 |
 | IFC semantic classification — `IFCClassRegistry`, `SetIfcClassCommand`; N-panel IFC class picker (dropdown) for Solid and ImportedMesh; `Ctrl+Z` undoable; `SceneSerializer` and `SceneExporter` include `ifcClass` field (ADR-025) | 2026-04-01 |
 | Documentation — `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md`, `docs/EVENTS.md` created (Japanese → English); Mermaid `block-beta` diagrams; `CLAUDE.md` change-impact matrix added | 2026-04-01 |

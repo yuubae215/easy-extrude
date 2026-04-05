@@ -128,6 +128,18 @@ export class AppController {
       }
     })
 
+    // ── Wasm batch geometry rebuild progress (ADR-027 Phase 2) ────────────────
+    this._service.on('batchRebuildStart', ({ total }) => {
+      this._uiView.showImportProgress(0, `Building geometry… (0 / ${total})`)
+    })
+    this._service.on('batchRebuildProgress', ({ done, total }) => {
+      const pct = Math.round((done / total) * 100)
+      this._uiView.showImportProgress(pct, `Building geometry… (${done} / ${total})`)
+    })
+    this._service.on('batchRebuildEnd', () => {
+      this._uiView.hideImportProgress()
+    })
+
     // ── Measure placement state ────────────────────────────────────────────
     // Active while the user is placing a MeasureLine (M key / Add → Measure).
     // Phase 1: waiting for first click (p1 = null)
@@ -4393,7 +4405,7 @@ export class AppController {
     }
 
     try {
-      const { imported, skipped } = this._service.importFromJson(
+      const { imported, skipped } = await this._service.importFromJson(
         parsed,
         viewContext,
         { clear: choice === 'clear' },
