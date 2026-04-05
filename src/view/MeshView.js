@@ -3,9 +3,18 @@
  *
  * Side effects: creates Three.js objects, adds them to the scene, and updates geometry.
  * Pure geometry calculations are delegated to CuboidModel functions.
+ *
+ * Geometry rebuild paths:
+ *   updateGeometry(corners)  — synchronous JS path; used for real-time interactive
+ *                              operations (grab, face extrude, undo/redo).
+ *   rebuildGeometry(corners) — async Wasm-backed path (ADR-027); used during scene
+ *                              load and JSON import where multiple objects are rebuilt
+ *                              in parallel.  Falls back to the JS path automatically
+ *                              if the Wasm worker is unavailable.
  */
 import * as THREE from 'three'
 import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel.js'
+import { geometryEngine } from '../service/GeometryEngine.js'
 
 export class MeshView {
   constructor(scene) {
@@ -244,6 +253,30 @@ export class MeshView {
   /** Rebuilds geometry from the corner array and applies it to the mesh */
   updateGeometry(corners) {
     const newGeo = buildGeometry(corners)
+    this.cuboid.geometry.dispose()
+    this.cuboid.geometry = newGeo
+    this.wireframe.geometry.dispose()
+    this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
+  }
+
+  /**
+   * Async geometry rebuild — uses the Wasm worker via GeometryEngine (ADR-027).
+   * Dispatches computation to the Web Worker so the main thread stays free during
+   * batch scene loads.  Falls back to the synchronous JS path automatically when
+   * the worker is unavailable.
+   *
+   * Use this for scene load / JSON import (batch).
+   * Use updateGeometry() for real-time interactive operations.
+   *
+   * @param {import('three').Vector3[]} corners  8-element array
+   * @returns {Promise<void>}
+   */
+  async rebuildGeometry(corners) {
+    const { positions, normals, indices } = await geometryEngine.computeCuboid(corners)
+    const newGeo = new THREE.BufferGeometry()
+    newGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    newGeo.setAttribute('normal',   new THREE.BufferAttribute(normals, 3))
+    newGeo.setIndex(new THREE.BufferAttribute(indices, 1))
     this.cuboid.geometry.dispose()
     this.cuboid.geometry = newGeo
     this.wireframe.geometry.dispose()
