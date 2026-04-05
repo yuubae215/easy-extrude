@@ -31,6 +31,13 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      # ubuntu-latest ships with Rust; we just need the wasm32 target + wasm-pack.
+      - name: Setup Rust wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
