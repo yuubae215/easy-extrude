@@ -316,6 +316,8 @@ export class SceneService extends EventEmitter {
         const p2 = new Vector3(dto.p2.x, dto.p2.y, dto.p2.z)
         const v0 = new Vertex(`${dto.id}_v0`, p1)
         const v1 = new Vertex(`${dto.id}_v1`, p2)
+        if (dto.anchorRef0) v0.anchorRef = dto.anchorRef0
+        if (dto.anchorRef1) v1.anchorRef = dto.anchorRef1
         const e0 = new Edge(`${dto.id}_e0`, v0, v1)
         const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
         const entity   = new MeasureLine(dto.id, dto.name, [v0, v1], [e0], meshView)
@@ -509,6 +511,8 @@ export class SceneService extends EventEmitter {
       const p2 = new Vector3(dto.p2.x, dto.p2.y, dto.p2.z)
       const v0 = new Vertex(`${newId}_v0`, p1)
       const v1 = new Vertex(`${newId}_v1`, p2)
+      if (dto.anchorRef0) v0.anchorRef = dto.anchorRef0
+      if (dto.anchorRef1) v1.anchorRef = dto.anchorRef1
       const e0 = new Edge(`${newId}_e0`, v0, v1)
       const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)
       const entity   = new MeasureLine(newId, dto.name ?? 'Measure', [v0, v1], [e0], meshView)
@@ -662,6 +666,97 @@ export class SceneService extends EventEmitter {
       frame.meshView.updatePosition(worldPos)
       frame.meshView.updateConnectionLine(parentCentroid)
     }
+
+    // Re-resolve all anchored MeasureLine endpoints so they follow their
+    // referenced geometry elements (ADR-028).
+    this._updateAnchoredMeasures()
+  }
+
+  /**
+   * Recomputes the world position of every anchored MeasureLine vertex.
+   * Called once per animation frame at the end of _updateWorldPoses().
+   * If the referenced object or element no longer exists the vertex stays at
+   * its last known position (no crash, silent degradation).
+   */
+  _updateAnchoredMeasures() {
+    for (const obj of this._model.objects.values()) {
+      if (!(obj instanceof MeasureLine)) continue
+      let needsUpdate = false
+      for (const vertex of obj.vertices) {
+        if (!vertex.anchorRef) continue
+        const anchored = this._model.getObject(vertex.anchorRef.objectId)
+        if (!anchored) continue
+        const newPos = this._resolveAnchorPosition(vertex.anchorRef, anchored)
+        if (newPos) {
+          vertex.position.copy(newPos)
+          needsUpdate = true
+        }
+      }
+      if (needsUpdate) obj.meshView.update(obj.p1, obj.p2)
+    }
+  }
+
+  /**
+   * Resolves the world position of a geometry element from an anchor reference.
+   * Returns null when the element cannot be found on the given object.
+   * @param {{ type: string, elementId: string }} anchorRef
+   * @param {object} obj  the scene object that owns the element
+   * @returns {import('three').Vector3|null}
+   */
+  _resolveAnchorPosition(anchorRef, obj) {
+    const { type, elementId } = anchorRef
+    if (type === 'vertex') {
+      const v = obj.vertices?.find(v => v.id === elementId)
+      return v ? v.position : null
+    }
+    if (type === 'edge') {
+      const e = obj.edges?.find(e => e.id === elementId)
+      if (!e) return null
+      return e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
+    }
+    if (type === 'face') {
+      const f = obj.faces?.find(f => f.id === elementId)
+      if (!f) return null
+      const center = new Vector3()
+      f.vertices.forEach(v => center.add(v.position))
+      return center.divideScalar(f.vertices.length)
+    }
+    return null
+  }
+
+  /**
+   * Returns a snapshot of the full scene connectivity graph (ADR-028).
+   *
+   * Nodes: every scene object (geometry + frames + annotations).
+   * Edges:
+   *   'frame'  — CoordinateFrame parentId chain (frame hierarchy)
+   *   'anchor' — MeasureLine endpoint anchored to a geometry element
+   *
+   * Use this for connectivity analysis: build an undirected adjacency list
+   * from edges and run BFS/DFS to find connected components (clusters).
+   *
+   * @returns {{
+   *   nodes: { id: string, name: string, type: string, parentId: string|null }[],
+   *   edges: { from: string, to: string, relation: string, vertexId?: string }[]
+   * }}
+   */
+  getSceneGraph() {
+    const nodes = []
+    const edges = []
+    for (const [id, obj] of this._model.objects) {
+      nodes.push({ id, name: obj.name, type: obj.constructor.name, parentId: obj.parentId ?? null })
+      if (obj.parentId) {
+        edges.push({ from: obj.parentId, to: id, relation: 'frame' })
+      }
+      if (obj instanceof MeasureLine) {
+        for (const v of obj.vertices) {
+          if (v.anchorRef) {
+            edges.push({ from: v.anchorRef.objectId, to: id, relation: 'anchor', vertexId: v.id })
+          }
+        }
+      }
+    }
+    return { nodes, edges }
   }
 
   // ── Use cases ──────────────────────────────────────────────────────────────
@@ -960,14 +1055,21 @@ export class SceneService extends EventEmitter {
   /**
    * Creates a MeasureLine entity + MeasureLineView and registers it in the scene.
    *
+   * When an endpoint was snapped to a geometry element, pass the corresponding
+   * anchor reference so the endpoint tracks the element as the object moves (ADR-028).
+   *
    * @param {THREE.Vector3} p1         start endpoint (world space)
    * @param {THREE.Vector3} p2         end endpoint (world space)
    * @param {THREE.Camera}  camera     used by MeasureLineView for label projection
    * @param {THREE.WebGLRenderer} renderer  used for canvas bounds
    * @param {HTMLElement}   container  DOM element for the HTML label
+   * @param {{ p1?: { objectId:string, type:string, elementId:string },
+   *            p2?: { objectId:string, type:string, elementId:string } }} [anchorRefs={}]
+   *   Optional anchor references for each endpoint. When provided, the vertex
+   *   position is re-resolved from the referenced element every animation frame.
    * @returns {import('../domain/MeasureLine.js').MeasureLine}
    */
-  createMeasureLine(p1, p2, camera, renderer, container) {
+  createMeasureLine(p1, p2, camera, renderer, container, anchorRefs = {}) {
     const idx  = this._model.objects.size
     const id   = `ml_${idx}_${Date.now()}`
     const name = `Measure.${String(idx).padStart(3, '0')}`
@@ -975,6 +1077,9 @@ export class SceneService extends EventEmitter {
     // Build Vertex + Edge graph before constructing the entity (ADR-021)
     const v0 = new Vertex(`${id}_v0`, p1.clone())
     const v1 = new Vertex(`${id}_v1`, p2.clone())
+    // Set anchor references if the endpoint was snapped to a geometry element (ADR-028)
+    if (anchorRefs.p1) v0.anchorRef = anchorRefs.p1
+    if (anchorRefs.p2) v1.anchorRef = anchorRefs.p2
     const e0 = new Edge(`${id}_e0`, v0, v1)
 
     const meshView = new MeasureLineView(this._threeScene, container, camera, renderer)

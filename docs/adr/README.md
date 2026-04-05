@@ -39,6 +39,7 @@ This directory records the project's design decisions.
 | [ADR-025](ADR-025-ifc-semantic-classification.md) | **IFC Semantic Classification of Scene Objects** | Accepted | 2026-04-01 | ADR-020, ADR-021, ADR-022, ADR-013 |
 | [ADR-026](ADR-026-lynch-urban-classification.md) | **Lynch Urban Classification of 2D Map Objects** | Accepted | 2026-04-01 | ADR-020, ADR-021, ADR-022, ADR-025, ADR-013 |
 | [ADR-027](ADR-027-wasm-geometry-engine.md) | **Wasm Geometry Engine — Three-Layer Architecture with Zero-Copy Data Path** | Accepted | 2026-04-05 | ADR-007, ADR-012, ADR-017 |
+| [ADR-028](ADR-028-anchored-annotations-scene-graph.md) | **Anchored Annotations & Scene Graph API** | Accepted | 2026-04-06 | ADR-012, ADR-016, ADR-018, ADR-019, ADR-021 |
 
 ## How to Add a New ADR
 

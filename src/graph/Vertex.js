@@ -16,6 +16,16 @@ export class Vertex {
   constructor(id, position) {
     this.id       = id
     this.position = position
+    /**
+     * Optional anchor to a geometry element of another scene object (ADR-028).
+     * When set, SceneService._updateAnchoredMeasures() recomputes this vertex's
+     * world position from the referenced element every animation frame, so the
+     * MeasureLine endpoint follows the anchored object when it moves.
+     *
+     * null  = free-floating vertex (default)
+     * @type {{ objectId: string, type: 'vertex'|'edge'|'face', elementId: string }|null}
+     */
+    this.anchorRef = null
   }
 
   /** Returns a new Vertex with the same id and a cloned position. */

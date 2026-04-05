@@ -126,11 +126,13 @@ export function serializeScene(scene) {
       })
     } else if (obj instanceof MeasureLine) {
       objects.push({
-        type: 'MeasureLine',
-        id:   obj.id,
-        name: obj.name,
-        p1:   { x: obj.p1.x, y: obj.p1.y, z: obj.p1.z },
-        p2:   { x: obj.p2.x, y: obj.p2.y, z: obj.p2.z },
+        type:       'MeasureLine',
+        id:         obj.id,
+        name:       obj.name,
+        p1:         { x: obj.p1.x, y: obj.p1.y, z: obj.p1.z },
+        anchorRef0: obj.vertices[0].anchorRef ?? null,
+        p2:         { x: obj.p2.x, y: obj.p2.y, z: obj.p2.z },
+        anchorRef1: obj.vertices[1].anchorRef ?? null,
       })
     } else if (obj instanceof CoordinateFrame) {
       objects.push({

@@ -150,11 +150,14 @@ export class AppController {
       p1:           null,
       /** @type {THREE.Vector3|null} live cursor position (snapped) */
       p2:           null,
-      /** @type {{label:string, position:THREE.Vector3, type:string}[]} */
+      /** @type {{label:string, position:THREE.Vector3, type:string, objectId:string, elementId:string}[]} */
       snapTargets:  [],
       snapping:     false,
-      /** @type {{label:string, position:THREE.Vector3, type:string}|null} */
+      /** @type {{label:string, position:THREE.Vector3, type:string, objectId:string, elementId:string}|null} */
       snappedTarget: null,
+      /** Anchor reference captured when p1 was confirmed (ADR-028).
+       *  @type {{ objectId:string, type:string, elementId:string }|null} */
+      p1Anchor:     null,
       /** Three.js Line for preview before entity is created */
       previewLine:  null,
       /** True while the user is holding a pointer down to snap a point */
@@ -913,6 +916,7 @@ export class AppController {
     this._measure.active       = true
     this._measure.p1           = null
     this._measure.p2           = null
+    this._measure.p1Anchor     = null
     this._measure.snapTargets  = []
     this._measure.snapping     = false
     this._measure.snappedTarget = null
@@ -938,6 +942,7 @@ export class AppController {
     this._measure.active       = false
     this._measure.p1           = null
     this._measure.p2           = null
+    this._measure.p1Anchor     = null
     this._measure.snapping     = false
     this._measure.snappedTarget = null
     this._measure.snapTargets  = []
@@ -965,12 +970,22 @@ export class AppController {
     const pt = this._measurePickPoint()
     if (!pt) return
     if (!this._measure.p1) {
-      // Phase 1 → Phase 2: record start point
+      // Phase 1 → Phase 2: record start point and its anchor (ADR-028)
       this._measure.p1 = pt.clone()
+      const t = this._measure.snappedTarget
+      this._measure.p1Anchor = (t?.objectId && t?.elementId)
+        ? { objectId: t.objectId, type: t.type, elementId: t.elementId }
+        : null
       this._updateMeasureStatus()
     } else {
       // Phase 2: record end point → create entity
       const p2 = pt.clone()
+      // Capture anchor refs before clearing state (ADR-028)
+      const t2       = this._measure.snappedTarget
+      const p2Anchor = (t2?.objectId && t2?.elementId)
+        ? { objectId: t2.objectId, type: t2.type, elementId: t2.elementId }
+        : null
+      const p1Anchor = this._measure.p1Anchor
       if (this._measure.previewLine) {
         this._sceneView.scene.remove(this._measure.previewLine)
         this._measure.previewLine.geometry.dispose()
@@ -983,6 +998,7 @@ export class AppController {
       const p1                    = this._measure.p1
       this._measure.p1            = null
       this._measure.p2            = null
+      this._measure.p1Anchor      = null
       this._measure.snapTargets   = []
       this._measure.snapping      = false
       this._measure.snappedTarget = null
@@ -991,6 +1007,7 @@ export class AppController {
         this._camera,
         this._sceneView.renderer,
         document.body,
+        { p1: p1Anchor, p2: p2Anchor },
       )
       this._switchActiveObject(obj.id, true)
       if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true

@@ -170,9 +170,12 @@ export function collectSnapTargets(objects, mode = 'all', excludeIds = new Set()
 
     // Objects without a vertex graph (e.g. ImportedMesh) may still expose
     // bounding-box snap points via meshView.getSnapTargets().
+    // objectId is included for scene graph analysis (ADR-028); elementId is null
+    // because bounding-box snap points have no stable identity for anchor tracking.
     if (!obj.vertices) {
       if (typeof obj.meshView?.getSnapTargets === 'function') {
         const pts = obj.meshView.getSnapTargets(obj.name, { doVert, doEdge, doFace })
+        for (const p of pts) { p.objectId = id; p.elementId = null }
         targets.push(...pts)
       }
       continue
@@ -180,14 +183,14 @@ export function collectSnapTargets(objects, mode = 'all', excludeIds = new Set()
 
     if (doVert) {
       for (const v of obj.vertices) {
-        targets.push({ label: `${obj.name} Vertex`, position: v.position, type: 'vertex' })
+        targets.push({ label: `${obj.name} Vertex`, position: v.position, type: 'vertex', objectId: id, elementId: v.id })
       }
     }
 
     if (doEdge && obj.edges) {
       for (const e of obj.edges) {
         const mid = e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
-        targets.push({ label: `${obj.name} Edge`, position: mid, type: 'edge' })
+        targets.push({ label: `${obj.name} Edge`, position: mid, type: 'edge', objectId: id, elementId: e.id })
       }
     }
 
@@ -200,7 +203,7 @@ export function collectSnapTargets(objects, mode = 'all', excludeIds = new Set()
         const normal = (corners && f.index != null)
           ? computeOutwardFaceNormal(corners, f.index)
           : null
-        targets.push({ label: `${obj.name} ${f.name}`, position: center, type: 'face', normal })
+        targets.push({ label: `${obj.name} ${f.name}`, position: center, type: 'face', normal, objectId: id, elementId: f.id })
       }
     }
   }
