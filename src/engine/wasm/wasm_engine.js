@@ -23,6 +23,64 @@ export function build_cuboid_geometry(corners_flat) {
 }
 
 /**
+ * Build BufferGeometry arrays for a prism extruded from a 2D polygon profile.
+ *
+ * `profile_flat`: flat f32 slice of length 2*n (n ≥ 3), ordered as
+ *                 [x0, y0, x1, y1, …, x(n-1), y(n-1)].
+ *                 Accepts both CCW and CW winding — outward normals are
+ *                 determined via a centroid test, mirroring `build_cuboid_geometry`.
+ * `height`:       extrusion height in world Z units (may be negative).
+ *                 The profile sits at z = min(0, height);
+ *                 the extruded cap is at z = max(0, height).
+ *
+ * Geometry layout (same static Vecs as `build_cuboid_geometry`):
+ *   - `n` side quads:    4 verts × n quads, outward side normals
+ *   - 1 bottom cap:      n verts, normal (0, 0, −1)
+ *   - 1 top cap:         n verts, normal (0, 0, +1)
+ *   Total positions/normals: (4n + 2n) × 3 = 6n × 3 f32 values
+ *   Total indices:           (2n + 2(n−2)) × 3 = (4n−4) × 3 u32 values
+ *
+ * For n = 4 (rectangle): 72 f32 positions and 36 u32 indices —
+ * identical counts to `build_cuboid_geometry`.
+ *
+ * Returns the vertex count (6n) on success, 0 on bad input.
+ * @param {Float32Array} profile_flat
+ * @param {number} height
+ * @returns {number}
+ */
+export function build_extruded_profile(profile_flat, height) {
+    const ptr0 = passArrayF32ToWasm0(profile_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.build_extruded_profile(ptr0, len0, height);
+    return ret >>> 0;
+}
+
+/**
+ * Compute column-major 4×4 instance matrices from compact TRS transforms.
+ *
+ * Produces the exact layout expected by `THREE.InstancedMesh.instanceMatrix`
+ * (same as `THREE.Matrix4.compose()` column-major element order).
+ *
+ * `transforms_flat`: flat f32 slice of length 10*n (n ≥ 1), where each
+ *                    transform is 10 values:
+ *                    [px, py, pz,  qx, qy, qz, qw,  sx, sy, sz]
+ *                     ↑ position   ↑ quaternion      ↑ scale
+ *
+ * Output stored in `INSTANCE_MATRICES`: n × 16 f32 values (column-major).
+ * Read via `get_matrices_ptr()` / `get_matrices_len()`.
+ *
+ * Returns n (instance count) on success, 0 on bad input.
+ * @param {Float32Array} transforms_flat
+ * @returns {number}
+ */
+export function build_instance_matrices(transforms_flat) {
+    const ptr0 = passArrayF32ToWasm0(transforms_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.build_instance_matrices(ptr0, len0);
+    return ret >>> 0;
+}
+
+/**
  * Number of u32 elements in the indices buffer.
  * @returns {number}
  */
@@ -37,6 +95,24 @@ export function get_indices_len() {
  */
 export function get_indices_ptr() {
     const ret = wasm.get_indices_ptr();
+    return ret >>> 0;
+}
+
+/**
+ * Number of f32 elements in the instance-matrix buffer (n × 16).
+ * @returns {number}
+ */
+export function get_matrices_len() {
+    const ret = wasm.get_matrices_len();
+    return ret >>> 0;
+}
+
+/**
+ * Pointer to the start of the instance-matrix buffer in Wasm linear memory.
+ * @returns {number}
+ */
+export function get_matrices_ptr() {
+    const ret = wasm.get_matrices_ptr();
     return ret >>> 0;
 }
 

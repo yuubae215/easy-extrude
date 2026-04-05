@@ -29,12 +29,17 @@ Rust → WebAssembly → Web Worker → Main thread (Three.js).
 | Batched computation (multi-object scenes) | `SceneService.batchRebuildSolids(solids)` runs all `rebuildGeometry()` calls via `Promise.all()`; called from `loadScene()` and `importFromJson()` after all entities are created | ADR-027 |
 | Progress indicator | `batchRebuildStart/Progress/End` events emitted when solid count > 3; `AppController` subscribes and shows/updates/hides `showImportProgress()` overlay | ADR-027 |
 
-### Phase 3 — Expand Rust compute surface
+### Phase 3 — Expand Rust compute surface ✅ *2026-04-05*
+
+| Task | Details | ADR |
+|------|---------|-----|
+| `build_extruded_profile(profile, height)` | Arbitrary n-gon prism geometry in Rust (2*n f32 profile verts + height); fan-triangulated caps + side quads; centroid-based outward-normal test handles CW/CCW input. `GeometryEngine.computeExtrudedProfile()` + `MeshView.rebuildExtrudedProfile()` wired; AppController fires async Wasm rebuild after sync `updateGeometry()` on extrude confirm | ADR-027 |
+| `build_instance_matrices(transforms[])` | Batch TRS → column-major 4×4 matrices in Rust (n×10 f32 → n×16 f32); matches `THREE.Matrix4.compose()` layout exactly; JS fallback via Three.js `Matrix4.compose()`; `GeometryEngine.computeInstanceMatrices()` ready for `THREE.InstancedMesh` usage | ADR-027 |
+
+**Remaining (Phase 3 future)**
 
 | Candidate Task | Description | ADR |
 |---------------|-------------|-----|
-| `build_extruded_profile(profile, height)` | Profile→Solid geometry (replace JS extrude path) | ADR-027 |
-| `build_instanced_mesh(transforms[])` | Batch geometry for repeated objects → single draw call | ADR-027 |
 | `run_monte_carlo(params)` | Simulation engine for urban analysis (UrbanPolygon / ADR-026) | ADR-027 |
 | `build_boolean_union(a, b)` | CSG union — could replace server-side BFF round-trip for simple ops | ADR-027, ADR-017 |
 

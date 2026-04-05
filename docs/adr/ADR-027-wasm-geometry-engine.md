@@ -194,16 +194,44 @@ The Worker and main thread would then both hold a view over the **same**
 `SharedArrayBuffer`, eliminating step ④ entirely.  The vite.config.js dev
 server already sets these headers; production deployment is the remaining step.
 
+### Phase 3: Expanded Rust compute surface (2026-04-05)
+
+Two new functions added to `lib.rs`:
+
+#### `build_extruded_profile(profile_flat: &[f32], height: f32) -> u32`
+
+Generates a prism from an arbitrary 2D polygon profile extruded along Z.
+
+- Input: 2*n f32 values `[x0, y0, x1, y1, …]` (n ≥ 3) + signed height
+- Output: positions / normals / indices in the same POSITIONS/NORMALS/INDICES Vecs
+- Centroid-based outward-normal test on each side face — handles both CW and CCW polygon winding
+- For n = 4 (rectangle): produces 72 f32 + 36 u32, same counts as `build_cuboid_geometry`
+- Enables future non-rectangular Profile shapes (L-shape, T-shape, …)
+
+**JS integration**: `GeometryEngine.computeExtrudedProfile(vertices2d, height)` ·
+`MeshView.rebuildExtrudedProfile(vertices2d, height)`.
+AppController fires async Wasm rebuild after sync `updateGeometry()` on extrude confirm.
+
+#### `build_instance_matrices(transforms_flat: &[f32]) -> u32`
+
+Batch-computes column-major 4×4 matrices from compact TRS transforms.
+
+- Input: n×10 f32 values `[px, py, pz, qx, qy, qz, qw, sx, sy, sz]` per instance
+- Output: n×16 f32 values in `INSTANCE_MATRICES` (separate buffer, does not clobber geometry Vecs)
+- Layout matches `THREE.Matrix4.compose()` / `THREE.InstancedMesh.instanceMatrix.array` exactly
+- JS fallback via `THREE.Matrix4.compose()` on main thread
+
+**JS integration**: `GeometryEngine.computeInstanceMatrices(transforms)` → returns
+`{ matrices: Float32Array }` ready for `new THREE.InstancedBufferAttribute(matrices, 16)`.
+
 ### Extending the compute API
 
-Future operations to add in `lib.rs`:
+Remaining future work in `lib.rs`:
 
 | Function | Description |
 |----------|-------------|
-| `build_extruded_profile(profile, height)` | Profile→Solid geometry (2D→3D) |
+| `run_monte_carlo(params)` | Simulation engine for urban analysis (ADR-026) |
 | `build_boolean_union(a, b)` | CSG union (replaces server-side BFF round-trip) |
-| `run_monte_carlo(params)` | Simulation engine for urban analysis |
-| `build_instanced_mesh(transforms)` | Batch geometry for repeated objects (draw-call reduction) |
 
 ---
 

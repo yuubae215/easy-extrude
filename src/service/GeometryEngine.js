@@ -25,7 +25,7 @@
  */
 
 import * as THREE from 'three'
-import { buildGeometry } from '../model/CuboidModel.js'
+import { buildGeometry, buildCuboidFromRect } from '../model/CuboidModel.js'
 
 // ---------------------------------------------------------------------------
 // Worker import — `?worker` tells Vite to bundle the worker and all its
@@ -131,12 +131,6 @@ export class GeometryEngine {
   /**
    * Compute BufferGeometry data for a cuboid defined by 8 THREE.Vector3 corners.
    *
-   * If the Wasm worker is available, computation runs off the main thread and
-   * the result is transferred (zero-copy) back.
-   *
-   * If the worker is unavailable, falls back to the synchronous JS implementation
-   * in CuboidModel.buildGeometry() and extracts the typed arrays.
-   *
    * @param {THREE.Vector3[]} corners — length-8 array matching createInitialCorners() order
    * @returns {Promise<{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }>}
    */
@@ -150,6 +144,76 @@ export class GeometryEngine {
     }
 
     return this._computeCuboidWasm(corners)
+  }
+
+  /**
+   * Compute BufferGeometry data for a prism extruded from a 2D polygon profile.
+   *
+   * Accepts either:
+   *   - An array of {x, y} objects (or THREE.Vector2 / THREE.Vector3 with x,y used)
+   *   - A Float32Array of 2*n values [x0, y0, x1, y1, ...]
+   *
+   * Falls back to `buildCuboidFromRect` + `buildGeometry` when n === 4 and the
+   * worker is unavailable (rectangular profile only).
+   *
+   * @param {Array<{x: number, y: number}>|Float32Array} vertices2d  n ≥ 3 profile vertices
+   * @param {number} height  signed extrusion height in world Z units
+   * @returns {Promise<{ positions: Float32Array, normals: Float32Array, indices: Uint32Array }>}
+   */
+  computeExtrudedProfile(vertices2d, height) {
+    if (!this._ready) {
+      return Promise.reject(new Error('GeometryEngine.init() has not completed'))
+    }
+
+    const profile = vertices2d instanceof Float32Array
+      ? vertices2d
+      : (() => {
+          const flat = new Float32Array(vertices2d.length * 2)
+          vertices2d.forEach((v, i) => { flat[i * 2] = v.x; flat[i * 2 + 1] = v.y })
+          return flat
+        })()
+
+    if (this._usingFallback || !this._worker) {
+      return this._computeExtrudedProfileFallback(profile, height)
+    }
+
+    return new Promise((resolve, reject) => {
+      const id = this._nextId++
+      this._pending.set(id, { resolve, reject })
+      this._worker.postMessage(
+        { type: 'compute_extruded_profile', id, payload: { profile, height } },
+        [profile.buffer],
+      )
+    })
+  }
+
+  /**
+   * Compute n column-major 4×4 instance matrices from compact TRS transforms.
+   *
+   * Each transform is 10 floats: [px, py, pz, qx, qy, qz, qw, sx, sy, sz].
+   * The returned `matrices` Float32Array has n × 16 values matching the layout
+   * of `THREE.Matrix4.compose()` / `THREE.InstancedMesh.instanceMatrix`.
+   *
+   * @param {Float32Array} transforms  n × 10 f32 values
+   * @returns {Promise<{ matrices: Float32Array }>}
+   */
+  computeInstanceMatrices(transforms) {
+    if (!this._ready) {
+      return Promise.reject(new Error('GeometryEngine.init() has not completed'))
+    }
+
+    if (this._usingFallback || !this._worker) {
+      return this._computeInstanceMatricesFallback(transforms)
+    }
+
+    return new Promise((resolve, reject) => {
+      const id = this._nextId++
+      this._pending.set(id, { resolve, reject })
+      this._worker.postMessage(
+        { type: 'compute_instance_matrices', id, payload: { transforms } },
+        [transforms.buffer],
+      )
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -193,6 +257,61 @@ export class GeometryEngine {
         : new Uint32Array(rawIndex)
 
       return Promise.resolve({ positions, normals, indices })
+    } catch (err) {
+      return Promise.reject(err)
+    }
+  }
+
+  /**
+   * Fallback for computeExtrudedProfile when Wasm is unavailable.
+   * Handles rectangular profiles only (n === 4); rejects for other shapes.
+   * @param {Float32Array} profile
+   * @param {number} height
+   */
+  _computeExtrudedProfileFallback(profile, height) {
+    try {
+      const n = profile.length / 2
+      if (n !== 4) {
+        return Promise.reject(new Error(
+          'GeometryEngine fallback only supports rectangular profiles (n=4); Wasm required for n≠4',
+        ))
+      }
+      // Reconstruct p1/p2 from the profile flat array.
+      const p1 = new THREE.Vector3(profile[0], profile[1], 0)
+      const p2 = new THREE.Vector3(profile[4], profile[5], 0)
+      const corners = buildCuboidFromRect(p1, p2, height)
+      return this._computeCuboidFallback(corners)
+    } catch (err) {
+      return Promise.reject(err)
+    }
+  }
+
+  /**
+   * Fallback for computeInstanceMatrices when Wasm is unavailable.
+   * Computes matrices on the main thread via Three.js Matrix4.compose().
+   * @param {Float32Array} transforms  n × 10 f32 values
+   */
+  _computeInstanceMatricesFallback(transforms) {
+    try {
+      const n = transforms.length / 10
+      if (transforms.length % 10 !== 0 || n < 1) {
+        return Promise.reject(new Error('computeInstanceMatrices: transforms must be a multiple of 10'))
+      }
+      const matrices = new Float32Array(n * 16)
+      const pos  = new THREE.Vector3()
+      const quat = new THREE.Quaternion()
+      const scl  = new THREE.Vector3()
+      const mat  = new THREE.Matrix4()
+
+      for (let i = 0; i < n; i++) {
+        const b = i * 10
+        pos.set(transforms[b],     transforms[b + 1], transforms[b + 2])
+        quat.set(transforms[b + 3], transforms[b + 4], transforms[b + 5], transforms[b + 6])
+        scl.set(transforms[b + 7], transforms[b + 8], transforms[b + 9])
+        mat.compose(pos, quat, scl)
+        matrices.set(mat.elements, i * 16)
+      }
+      return Promise.resolve({ matrices })
     } catch (err) {
       return Promise.reject(err)
     }
