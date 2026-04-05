@@ -1,0 +1,16 @@
+{
+  "name": "wasm-engine",
+  "type": "module",
+  "description": "Geometry computation engine for easy-extrude — runs in Wasm",
+  "version": "0.1.0",
+  "files": [
+    "wasm_engine_bg.wasm",
+    "wasm_engine.js",
+    "wasm_engine.d.ts"
+  ],
+  "main": "wasm_engine.js",
+  "types": "wasm_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
