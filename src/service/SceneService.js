@@ -644,14 +644,27 @@ export class SceneService extends EventEmitter {
 
     for (const frame of allFrames) {
       const parent = this._model.getObject(frame.parentId)
-      if (!parent || parent.corners.length === 0) continue
+      if (!parent) continue
 
-      // Compute parent centroid inline (parent.corners may be from any LocalGeometry type)
-      const parentCentroid = new Vector3()
-      for (const c of parent.corners) parentCentroid.add(c)
-      parentCentroid.divideScalar(parent.corners.length)
+      // Resolve parent world position.
+      // CoordinateFrame.corners returns [this.translation] — a local offset, not a world position.
+      // When the parent is a CoordinateFrame, use the world pose cache (already populated by the
+      // topological sort above). When the parent is a geometry object, derive its centroid from
+      // its world-space corners as before.
+      let parentWorldPos
+      if (parent instanceof CoordinateFrame) {
+        const cached = this._worldPoseCache.get(parent.id)
+        if (!cached) continue               // parent not yet resolved (shouldn't happen after sort)
+        parentWorldPos = cached.position
+      } else {
+        if (parent.corners.length === 0) continue
+        const centroid = new Vector3()
+        for (const c of parent.corners) centroid.add(c)
+        centroid.divideScalar(parent.corners.length)
+        parentWorldPos = centroid
+      }
 
-      const worldPos = parentCentroid.clone().add(frame.translation)
+      const worldPos = parentWorldPos.clone().add(frame.translation)
 
       // Update cache
       const entry = this._worldPoseCache.get(frame.id)
@@ -664,7 +677,7 @@ export class SceneService extends EventEmitter {
 
       // Update view
       frame.meshView.updatePosition(worldPos)
-      frame.meshView.updateConnectionLine(parentCentroid)
+      frame.meshView.updateConnectionLine(parentWorldPos)
     }
 
     // Re-resolve all anchored MeasureLine endpoints so they follow their
@@ -1207,15 +1220,26 @@ export class SceneService extends EventEmitter {
     const meshView = new CoordinateFrameView(this._threeScene)
     const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)
 
-    // Initialise the world pose cache and visual position at parent centroid.
+    // Initialise the world pose cache and visual position at parent world position.
     // translation = (0,0,0) so the frame starts exactly at the parent origin.
-    const corners = parent.corners
-    if (corners.length > 0) {
-      const centroid = new Vector3()
-      for (const c of corners) centroid.add(c)
-      centroid.divideScalar(corners.length)
-      this._worldPoseCache.set(frame.id, { position: centroid.clone(), quaternion: frame.rotation })
-      meshView.updatePosition(centroid)
+    // When the parent is a CoordinateFrame its corners return a local offset, not a world
+    // position — use the world pose cache instead (mirrors _updateWorldPoses logic).
+    let initialWorldPos = null
+    if (parent instanceof CoordinateFrame) {
+      const cached = this._worldPoseCache.get(parent.id)
+      if (cached) initialWorldPos = cached.position.clone()
+    } else {
+      const corners = parent.corners
+      if (corners.length > 0) {
+        const centroid = new Vector3()
+        for (const c of corners) centroid.add(c)
+        centroid.divideScalar(corners.length)
+        initialWorldPos = centroid
+      }
+    }
+    if (initialWorldPos) {
+      this._worldPoseCache.set(frame.id, { position: initialWorldPos.clone(), quaternion: frame.rotation })
+      meshView.updatePosition(initialWorldPos)
     }
 
     this._model.addObject(frame)
