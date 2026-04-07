@@ -416,9 +416,15 @@ export class AppController {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
       const parent = this._scene.getObject(frame.parentId)
-      if (!parent || parent.corners.length === 0) return
+      if (!parent) return
       const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
-      const parentCentroid = getCentroid(parent.corners)
+      // For a geometry parent: centroid from world-space corners.
+      // For a CoordinateFrame parent: world position from cache (localOffset is NOT world pos).
+      // (PHILOSOPHY #21 Phase 3 — CoordinateFrame.corners does not exist)
+      const parentCentroid = (parent instanceof CoordinateFrame)
+        ? (this._service.worldPoseOf(parent.id)?.position?.clone() ?? null)
+        : (parent.corners.length > 0 ? getCentroid(parent.corners) : null)
+      if (!parentCentroid) return
       // val is in parent's local space; convert to world-space translation
       const localPos = frame.translation.clone().applyQuaternion(parentRot.clone().conjugate())
       localPos[axis] = val
@@ -515,9 +521,12 @@ export class AppController {
     return this._scene.activeObject
   }
 
-  /** Returns the active object's corners array */
+  /** Returns the grab-handle array for the active object.
+   *  Geometry → world-space corners; CoordinateFrame → localOffset. */
   get _corners() {
-    return this._scene.activeObject?.corners ?? []
+    const obj = this._scene.activeObject
+    if (!obj) return []
+    return _grabHandlesOf(obj)
   }
 
   /** Returns the active object's MeshView */
@@ -2567,7 +2576,7 @@ export class AppController {
     this._grab.allStartCorners = new Map()
     for (const id of this._selectedIds) {
       const selObj = this._scene.getObject(id)
-      if (selObj) this._grab.allStartCorners.set(id, selObj.corners.map(c => c.clone()))
+      if (selObj) this._grab.allStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
     }
     // segmentStartCorners tracks the start of each individual drag segment (touch).
     // Initially identical to allStartCorners; re-snapshotted on each touch re-down.
@@ -2612,7 +2621,7 @@ export class AppController {
     const endCornersMap = new Map()
     for (const id of this._selectedIds) {
       const obj = this._scene.getObject(id)
-      if (obj) endCornersMap.set(id, obj.corners.map(c => c.clone()))
+      if (obj) endCornersMap.set(id, _grabHandlesOf(obj).map(c => c.clone()))
     }
     if (endCornersMap.size > 0) {
       const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
@@ -2642,8 +2651,9 @@ export class AppController {
     for (const [id, startCorners] of this._grab.allStartCorners) {
       const selObj = this._scene.getObject(id)
       if (selObj) {
-        startCorners.forEach((c, i) => selObj.corners[i].copy(c))
-        selObj.meshView.updateGeometry(selObj.corners)
+        const handles = _grabHandlesOf(selObj)
+        startCorners.forEach((c, i) => handles[i].copy(c))
+        selObj.meshView.updateGeometry(handles)
         selObj.meshView.updateBoxHelper()
       }
     }
@@ -2875,7 +2885,7 @@ export class AppController {
     for (const id of this._selectedIds) {
       const selObj = this._scene.getObject(id)
       if (selObj) {
-        selObj.meshView.updateGeometry(selObj.corners)
+        selObj.meshView.updateGeometry(_grabHandlesOf(selObj))
         selObj.meshView.updateBoxHelper()
       }
     }
@@ -3739,7 +3749,7 @@ export class AppController {
           this._grab.segmentStartCorners = new Map()
           for (const id of this._selectedIds) {
             const selObj = this._scene.getObject(id)
-            if (selObj) this._grab.segmentStartCorners.set(id, selObj.corners.map(c => c.clone()))
+            if (selObj) this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
           }
           this._grab.startCorners = this._corners.map(c => c.clone())
           const grabCenter = (this._activeObj instanceof CoordinateFrame)
@@ -3909,7 +3919,10 @@ export class AppController {
         this._objDragAllStartCorners = new Map()
         for (const id of this._selectedIds) {
           const selObj = this._scene.getObject(id)
-          if (selObj?.corners) this._objDragAllStartCorners.set(id, selObj.corners.map(c => c.clone()))
+          // CoordinateFrame uses localOffset (not corners); exclude it from mouse-drag
+          // (frames are moved via G-key grab only — PHILOSOPHY #21 Phase 3).
+          if (selObj && !(selObj instanceof CoordinateFrame))
+            this._objDragAllStartCorners.set(id, selObj.corners.map(c => c.clone()))
         }
 
         this._objDragging      = true
@@ -4491,6 +4504,24 @@ export class AppController {
 }
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Returns the mutable handle array used by the grab / move system.
+ *
+ * - Geometry entities (Solid, Profile, MeasureLine, ImportedMesh, Urban*):
+ *   `obj.corners` — WorldVector3[], positions in world space.
+ * - CoordinateFrame: `obj.localOffset` — LocalVector3[], the translation offset
+ *   relative to the parent centroid.
+ *
+ * Using `.corners` on a CoordinateFrame returns undefined (PHILOSOPHY #21 Phase 3).
+ * This helper centralises the branching so call sites stay clean.
+ *
+ * @param {object} obj  scene entity
+ * @returns {import('three').Vector3[]}
+ */
+function _grabHandlesOf(obj) {
+  return (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+}
 
 /**
  * Returns 8 AABB corners for objects that don't have a `corners` property

@@ -40,7 +40,7 @@
  *   World pose: SceneService._worldPoseCache[id].position = parentCentroid + translation
  *
  * ─── Grab / move mechanics ───────────────────────────────────────────────────
- *   `get corners()` returns `[this.translation]` — a single-element array.
+ *   `get localOffset()` returns `[this.translation]` — a single-element array.
  *   The grab system saves `[translation.clone()]` at grab-start; on cancel it
  *   restores `translation.copy(saved)`. SceneService._updateWorldPoses() then
  *   recomputes the correct world position from the restored translation.
@@ -48,6 +48,11 @@
  *   NOTE: The drag plane center in AppController._startGrab() must use
  *   SceneService.worldPoseOf(frame.id).position (not translation) so the plane
  *   passes through the frame's actual world position.
+ *
+ *   NOTE: CoordinateFrame intentionally does NOT have a `corners` property.
+ *   Geometry entities expose `corners` (WorldVector3[]); CoordinateFrame exposes
+ *   `localOffset` (LocalVector3[]) — distinct names enforce the semantic
+ *   distinction at the API level (PHILOSOPHY #21, Phase 3).
  *
  * ─── Capability matrix ───────────────────────────────────────────────────────
  *   Edit Mode:         blocked (no vertex graph)
@@ -101,21 +106,22 @@ export class CoordinateFrame {
    * to the frame's mutable translation vector.
    *
    * Used by the grab system for save/restore (cancel restores translation):
-   *  - `startCorners = corners.map(c => c.clone())` saves [translation.clone()]
-   *  - `move(startCorners, delta)` updates translation in-place
-   *  - Cancel: `corners[0].copy(saved)` = `translation.copy(saved)` ✓
+   *  - `startHandles = localOffset.map(c => c.clone())` saves [translation.clone()]
+   *  - `move(startHandles, delta)` updates translation in-place
+   *  - Cancel: `localOffset[0].copy(saved)` = `translation.copy(saved)` ✓
    *
-   * NOTE: getCentroid(corners) = translation, not world position.
-   * AppController._startGrab() special-cases CoordinateFrame to use
-   * SceneService.worldPoseOf(id).position for the drag plane center.
+   * NOTE: getCentroid(localOffset) = translation, NOT world position.
+   * AppController._startGrab() uses SceneService.worldPoseOf(id).position
+   * for the drag plane center.
    *
    * CONTRACT: returns LocalVector3 (local offset from parent), NOT WorldVector3.
-   * Any spatial computation layer reading corners must branch on instanceof CoordinateFrame
-   * and use _worldPoseCache instead (see PHILOSOPHY #21, CODE_CONTRACTS architecture.md).
+   * Distinct property name (`localOffset`, not `corners`) enforces the semantic
+   * distinction at the API level — accessing `.corners` on a CoordinateFrame
+   * returns undefined (PHILOSOPHY #21 Phase 3, CODE_CONTRACTS architecture.md).
    *
    * @returns {[import('../types/spatial.js').LocalVector3]}
    */
-  get corners() { return /** @type {[import('../types/spatial.js').LocalVector3]} */ ([this.translation]) }
+  get localOffset() { return /** @type {[import('../types/spatial.js').LocalVector3]} */ ([this.translation]) }
 
   /**
    * Translates the frame by `delta` from its grab-start translation.
@@ -125,10 +131,10 @@ export class CoordinateFrame {
    * SceneService._updateWorldPoses() picks up the updated translation on the
    * next frame and recomputes the world pose in the cache.
    *
-   * @param {[Vector3]} startCorners  saved [translation] at grab start
-   * @param {Vector3}   delta         world-space movement vector
+   * @param {[Vector3]} startLocalOffset  saved [translation] at grab start
+   * @param {Vector3}   delta             world-space movement vector
    */
-  move(startCorners, delta) {
-    this.translation.copy(startCorners[0]).add(delta)
+  move(startLocalOffset, delta) {
+    this.translation.copy(startLocalOffset[0]).add(delta)
   }
 }
