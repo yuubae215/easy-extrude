@@ -312,28 +312,35 @@ Mixing coordinate spaces produces wrong numeric results: valid JavaScript, no ru
 no stack trace. The bug is invisible until it manifests visually or physically.
 
 - **Local space** (`LocalVector3`): a position or offset expressed relative to a parent frame.
-  `CoordinateFrame.translation` and `CoordinateFrame.corners` are local space.
+  `CoordinateFrame.translation` and `CoordinateFrame.localOffset` are local space.
 - **World space** (`WorldVector3`): a position expressed in the scene's global coordinate system.
-  `Cuboid.corners`, `ImportedMesh.corners`, and every value in `_worldPoseCache` are world space.
+  `Solid.corners`, `ImportedMesh.corners`, and every value in `_worldPoseCache` are world space.
 - Both are `THREE.Vector3` at runtime. Without branded types the compiler cannot distinguish them.
 
-**The failure mode is asymmetric and insidious**: geometry `corners` and frame `corners` share
-the same property name, the same JavaScript type, and the same shape — but their semantics are
-opposite. Code that works for geometry silently produces wrong results for frames.
+**The failure mode is asymmetric and insidious**: when geometry `corners` and frame `corners`
+shared the same property name, the same JavaScript type, and the same shape — but their semantics
+were opposite — code that worked for geometry silently produced wrong results for frames.
 
-**Immediate measure**: branch on `instanceof CoordinateFrame` at every call site that reads
-`corners` for a spatial computation, and document the contract in CODE_CONTRACTS.
+**Phase 1 — Hotfix**: branch on `instanceof CoordinateFrame` at every call site.
 
-**Permanent measure**: use JSDoc branded types so the type checker rejects misuse at compile time:
+**Phase 2 — Branded types**: JSDoc `WorldVector3`/`LocalVector3` brands; `tsc --checkJs` in CI.
+No runtime overhead. No TypeScript migration. The type checker rejects misuse.
 
 ```js
 /** @typedef {import('three').Vector3 & { _brand: 'world' }} WorldVector3 */
 /** @typedef {import('three').Vector3 & { _brand: 'local' }} LocalVector3 */
 ```
 
-No runtime overhead. No TypeScript migration. `tsc --checkJs` enforces the distinction in CI.
+**Phase 3 — Structural separation** (the full expression of this principle):
+`CoordinateFrame` no longer has a `corners` property. It exposes `localOffset` instead.
+Accessing `.corners` on a frame returns `undefined` — the API shape itself makes confusion
+impossible, not just detectable. This is aligned with PHILOSOPHY #2 ("Type Is the Capability
+Contract"): a `CoordinateFrame` does not have world-geometry corners, and its API reflects that.
 
-*Underlies CODE_CONTRACTS rules: CoordinateFrame.corners Is Local Space*
+The `_grabHandlesOf(obj)` helper centralises the one remaining `instanceof` branch so all
+grab/move/undo code stays clean without scattered checks.
+
+*Underlies CODE_CONTRACTS rules: CoordinateFrame.localOffset vs Geometry.corners*
 
 ---
 
@@ -390,4 +397,4 @@ For verification, give an agent a small named file list rather than `src/**/*.js
 | 18 | Emit the Event, Then Perform the Swap | Contracts | Entity Swap Emit |
 | 19 | Documentation Drift Is a Bug | Living Docs | CODE_CONTRACTS maintenance, ADR drift |
 | 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | DEVELOPMENT two-pass pattern |
-| 21 | Coordinate Spaces Are Statically Distinguished | Contracts | CoordinateFrame.corners Is Local Space |
+| 21 | Coordinate Spaces Are Statically Distinguished | Contracts | CoordinateFrame.localOffset vs Geometry.corners |

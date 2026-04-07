@@ -647,10 +647,10 @@ export class SceneService extends EventEmitter {
       if (!parent) continue
 
       // Resolve parent world position.
-      // CoordinateFrame.corners returns [this.translation] — a LocalVector3 offset, not a WorldVector3.
+      // CoordinateFrame exposes `localOffset` (LocalVector3), NOT `corners`.
       // When the parent is a CoordinateFrame, use the world pose cache (already populated by the
       // topological sort above). When the parent is a geometry object, derive its centroid from
-      // its world-space corners as before (PHILOSOPHY #21, CODE_CONTRACTS architecture.md).
+      // its world-space corners as before (PHILOSOPHY #21 Phase 3, CODE_CONTRACTS architecture.md).
       /** @type {import('../types/spatial.js').WorldVector3|null} */
       let parentWorldPos = null
       if (parent instanceof CoordinateFrame) {
@@ -1225,9 +1225,9 @@ export class SceneService extends EventEmitter {
 
     // Initialise the world pose cache and visual position at parent world position.
     // translation = (0,0,0) so the frame starts exactly at the parent origin.
-    // When the parent is a CoordinateFrame its corners return a LocalVector3 offset, not a
-    // WorldVector3 — use the world pose cache instead (mirrors _updateWorldPoses logic,
-    // PHILOSOPHY #21, CODE_CONTRACTS architecture.md).
+    // CoordinateFrame exposes `localOffset` (LocalVector3), NOT `corners`.
+    // When the parent is a CoordinateFrame, use the world pose cache instead
+    // (mirrors _updateWorldPoses logic, PHILOSOPHY #21 Phase 3, CODE_CONTRACTS architecture.md).
     /** @type {import('../types/spatial.js').WorldVector3|null} */
     let initialWorldPos = null
     if (parent instanceof CoordinateFrame) {

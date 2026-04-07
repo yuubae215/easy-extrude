@@ -111,28 +111,31 @@ this._measure.snapMeshView = null
 - **No selection ring**: the orange wireframe selection sphere was removed. Selection state is conveyed solely by the depth override (arrows pop to the front when selected).
 - **Axis label sprites** (`_labelX/Y/Z`): `THREE.Sprite` with `CanvasTexture` bearing the letter in the axis colour. Positioned at `AXIS_LENGTH + 0.09` along each axis so the letter sits just past the arrowhead. Must be included in the `depthTest`/`renderOrder` loop and their `material.map` must be disposed in `dispose()`.
 
-## CoordinateFrame.corners Is Local Space, Not World Space
+## CoordinateFrame.localOffset vs Geometry.corners (PHILOSOPHY #21 Phase 3)
 
-- **Principle**: `corners` is overloaded across entity types. For geometry objects (Cuboid, ImportedMesh, Sketch) it returns world-space vertex positions. For `CoordinateFrame` it returns `[this.translation]` — a **parent-relative local offset** — NOT a world position.
-- **Concrete Rule**: Never pass `CoordinateFrame.corners` (or their centroid) to any computation that expects a world-space position. Specifically, `SceneService._updateWorldPoses()` and `SceneService.createCoordinateFrame()` must branch on `parent instanceof CoordinateFrame` and use `_worldPoseCache.get(parent.id).position` for the parent world position. Failing to branch causes nested frames to compute wrong world positions (missing grandparent contributions) and to display dashed connection lines anchored at the world origin instead of the parent frame's actual position.
+- **Principle**: Geometry entities (`Solid`, `ImportedMesh`, `Profile`, Urban*) expose `get corners()` returning `WorldVector3[]`. `CoordinateFrame` exposes `get localOffset()` returning `LocalVector3[]` — a single-element array wrapping `this.translation`. **`CoordinateFrame` has no `corners` property.** Accessing `.corners` on a frame returns `undefined`.
+- **Why distinct names**: Phase 2 added JSDoc brands to distinguish the types at compile time. Phase 3 eliminates the shared property name so the API shape itself enforces the distinction — no branch, no annotation, no code review can accidentally treat `localOffset` as world space (PHILOSOPHY #21 Phase 3, PHILOSOPHY #2).
+- **Grab / move**: use the `_grabHandlesOf(obj)` helper in `AppController.js` (returns `obj.localOffset` for frames, `obj.corners` for geometry). Do NOT call `.corners` on an object that might be a `CoordinateFrame`.
+- **World position of a frame**: always read from `SceneService._worldPoseCache.get(id).position`. Never compute from `localOffset`.
+- **`SceneService._updateWorldPoses()` and `createCoordinateFrame()`**: branch on `parent instanceof CoordinateFrame` to use the world pose cache for frame parents; use `parent.corners` centroid for geometry parents.
 
 ```js
-// ✓ Correct — use world pose cache for frame parents
+// ✓ Correct — use world pose cache for frame parents; corners for geometry
 if (parent instanceof CoordinateFrame) {
-  const cached = this._worldPoseCache.get(parent.id)
-  parentWorldPos = cached.position          // true world position
+  parentWorldPos = this._worldPoseCache.get(parent.id).position  // true world position
 } else {
-  // geometry object — corners are world-space
   const centroid = new Vector3()
-  for (const c of parent.corners) centroid.add(c)
+  for (const c of parent.corners) centroid.add(c)        // geometry corners = WorldVector3
   centroid.divideScalar(parent.corners.length)
   parentWorldPos = centroid
 }
 
-// ✗ Wrong — treats CoordinateFrame.corners as world-space; it is local-space
-const centroid = new Vector3()
-for (const c of parent.corners) centroid.add(c)   // parent.corners = [frame.translation] ← local!
-centroid.divideScalar(parent.corners.length)
+// ✓ Correct — grab handles (AppController)
+const handles = _grabHandlesOf(selObj)    // localOffset for CF; corners for geometry
+handles.forEach((c, i) => c.copy(saved[i]))
+
+// ✗ Wrong — parent.corners is undefined when parent is a CoordinateFrame
+const centroid = getCentroid(parent.corners)   // TypeError or wrong result
 ```
 
 - **Ordering dependency**: `_updateWorldPoses()` topologically sorts frames (shallow first) before the loop so that when a child frame is processed its parent's world pose is already in `_worldPoseCache`. This invariant must be preserved if the loop structure is ever changed.

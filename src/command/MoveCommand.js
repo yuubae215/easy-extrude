@@ -14,13 +14,18 @@
  *   Required for CoordinateFrame world-pose cache invalidation; optional otherwise.
  * @returns {{label: string, execute(): void, undo(): void}}
  */
+import { CoordinateFrame } from '../domain/CoordinateFrame.js'
+
 export function createMoveCommand(label, startCornersMap, endCornersMap, sceneModel, sceneService = null) {
   function apply(cornersMap) {
     for (const [id, corners] of cornersMap) {
       const obj = sceneModel.getObject(id)
       if (!obj) continue
-      obj.corners.forEach((c, i) => c.copy(corners[i]))
-      obj.meshView.updateGeometry(obj.corners)
+      // CoordinateFrame exposes localOffset (LocalVector3[]); geometry exposes corners (WorldVector3[]).
+      // Use the appropriate accessor — accessing .corners on a CoordinateFrame returns undefined (PHILOSOPHY #21 Phase 3).
+      const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+      handles.forEach((c, i) => c.copy(corners[i]))
+      obj.meshView.updateGeometry(handles)
       obj.meshView.updateBoxHelper()
       if (sceneService) sceneService.invalidateWorldPose(id)
     }

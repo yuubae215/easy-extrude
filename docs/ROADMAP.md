@@ -228,20 +228,27 @@ and connection lines anchored at world origin.
 a WorldVector3 is expected produces a type error at `pnpm typecheck` — caught before merge.
 `pnpm typecheck` is now a required CI gate on every push to main/master.
 
-### Phase 3 — Structural separation (long-term, after Phase 2)
+### Phase 3 — Structural separation ✅ *2026-04-07*
 
-Evaluate whether `corners` should be split into semantically distinct interfaces so that
-the distinction is enforced by the API shape, not just by brands:
+**Chosen option**: Rename `CoordinateFrame.corners` → `localOffset`.
 
-| Option | Pros | Cons |
-|--------|------|------|
-| Rename `CoordinateFrame.corners` → `localOffset` | Impossible to confuse with world-space `corners` | Breaking change to all call sites; grab uses `allStartCorners` keyed by id |
-| Split `IWorldGeometry` / `ILocalOffset` interfaces | Fully structural; IDE navigation is clear | Refactor scope is large; existing grab/undo machinery uses unified `corners` contract |
-| Keep unified `corners` + Phase 2 brands | Minimal change; already ships | Relies on JSDoc discipline; brands are advisory until `strict` mode is universal |
+Phase 2 enforces coordinate-space safety via the type checker (brands), but `CoordinateFrame.corners`
+still existed as a property — the API shape allowed confusion even if the type checker warned.
+Phase 3 eliminates the confusion at the **API level**: accessing `.corners` on a CoordinateFrame
+now returns `undefined`. No branch, no annotation, no code review can save incorrect code —
+the property simply does not exist.
 
-**Decision gate**: revisit after Phase 2 is running in CI for ≥ 1 month.
-If brand violations are caught in practice, Phase 3 is worthwhile.
-If no violations appear, the brands alone may be sufficient.
+This aligns with PHILOSOPHY #2 ("Type Is the Capability Contract") and the full intent of
+PHILOSOPHY #21 ("The type system must enforce this — **not documentation, not naming conventions,
+not code review**").
+
+| Task | Details |
+|------|---------|
+| Rename `CoordinateFrame.get corners()` → `get localOffset()` | Property name encodes semantics; accessing `.corners` on a frame returns `undefined` |
+| Add `_grabHandlesOf(obj)` helper in AppController | Single `instanceof` branch; all grab/move/cancel/undo paths use it |
+| Fix nested-frame N-panel bug | `onFramePositionChange` used `parent.corners` as world pos for CF parents — now uses `worldPoseOf()` |
+| Update `MoveCommand.js` | Add `CoordinateFrame` import + `localOffset` branch |
+| Update `spatial.js` | `LocalVector3` comment refers to `localOffset`, not `corners` |
 
 ---
 

@@ -26,7 +26,7 @@
 /**
  * A THREE.Vector3 expressed relative to a parent frame's world position.
  * - CoordinateFrame.translation
- * - CoordinateFrame.corners  (returns [this.translation])
+ * - CoordinateFrame.localOffset  (returns [this.translation])
  *
  * Passing a LocalVector3 where a WorldVector3 is expected (or vice versa)
  * produces a tsc type error at `pnpm typecheck`.
