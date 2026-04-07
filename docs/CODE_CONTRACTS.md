@@ -64,6 +64,7 @@ Detail: `docs/code_contracts/architecture.md`
 | CommandStack Clear After Init | Call `_commandStack.clear()` at the end of the constructor after `_addObject()` + `setMode()`; the auto-created initial solid must not appear in undo history |
 | Urban Placement Confirm No Auto-Select | `_confirmUrbanPlacement()` must NOT call `_switchActiveObject()` after creating the entity; previous selection is preserved and toolbar returns to initial object-mode slots |
 | Rect Selection Null Cuboid Guard | `_finalizeRectSelection()` must use `obj.meshView.cuboid?.visible` (optional chaining); Urban entities and CoordinateFrame return `null` for `.cuboid` and would throw TypeError without the guard |
+| CoordinateFrame.corners Is Local Space | `CoordinateFrame.corners` returns `[this.translation]` — a local offset, NOT a world position. `_updateWorldPoses()` and `createCoordinateFrame()` must branch on `parent instanceof CoordinateFrame` and use `_worldPoseCache` for the parent world position; using `parent.corners` as world space causes wrong nested-frame positions and connection lines anchored at world origin |
 
 ---
 

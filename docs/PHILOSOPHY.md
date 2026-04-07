@@ -304,6 +304,39 @@ corresponding domain events — `objectRemoved` before the swap, `objectAdded` a
 
 ---
 
+### 21. Coordinate Spaces Are Statically Distinguished
+
+Every `Vector3` in the spatial computation layer belongs to exactly one coordinate space.
+The type system must enforce this — not documentation, not naming conventions, not code review.
+Mixing coordinate spaces produces wrong numeric results: valid JavaScript, no runtime exception,
+no stack trace. The bug is invisible until it manifests visually or physically.
+
+- **Local space** (`LocalVector3`): a position or offset expressed relative to a parent frame.
+  `CoordinateFrame.translation` and `CoordinateFrame.corners` are local space.
+- **World space** (`WorldVector3`): a position expressed in the scene's global coordinate system.
+  `Cuboid.corners`, `ImportedMesh.corners`, and every value in `_worldPoseCache` are world space.
+- Both are `THREE.Vector3` at runtime. Without branded types the compiler cannot distinguish them.
+
+**The failure mode is asymmetric and insidious**: geometry `corners` and frame `corners` share
+the same property name, the same JavaScript type, and the same shape — but their semantics are
+opposite. Code that works for geometry silently produces wrong results for frames.
+
+**Immediate measure**: branch on `instanceof CoordinateFrame` at every call site that reads
+`corners` for a spatial computation, and document the contract in CODE_CONTRACTS.
+
+**Permanent measure**: use JSDoc branded types so the type checker rejects misuse at compile time:
+
+```js
+/** @typedef {import('three').Vector3 & { _brand: 'world' }} WorldVector3 */
+/** @typedef {import('three').Vector3 & { _brand: 'local' }} LocalVector3 */
+```
+
+No runtime overhead. No TypeScript migration. `tsc --checkJs` enforces the distinction in CI.
+
+*Underlies CODE_CONTRACTS rules: CoordinateFrame.corners Is Local Space*
+
+---
+
 ## VIII. Living Documentation
 
 ### 19. Documentation Drift Is a Bug
@@ -357,3 +390,4 @@ For verification, give an agent a small named file list rather than `src/**/*.js
 | 18 | Emit the Event, Then Perform the Swap | Contracts | Entity Swap Emit |
 | 19 | Documentation Drift Is a Bug | Living Docs | CODE_CONTRACTS maintenance, ADR drift |
 | 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | DEVELOPMENT two-pass pattern |
+| 21 | Coordinate Spaces Are Statically Distinguished | Contracts | CoordinateFrame.corners Is Local Space |
