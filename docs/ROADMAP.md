@@ -187,6 +187,61 @@ serializer) is complete.  The phases below cover the rendering and UI layers.
 
 ---
 
+## Coordinate Space Type Safety
+
+**Goal**: eliminate the class of bugs where `LocalVector3` is silently used where
+`WorldVector3` is required (or vice versa) by making the distinction enforceable at
+compile time. Root cause documented in PHILOSOPHY #21.
+
+**Root cause of the nested-frame bug (2026-04-07)**:
+`CoordinateFrame.corners` returns `[this.translation]` — a parent-relative local offset.
+Geometry `corners` return world-space positions. Both are `Vector3[]`. The spatial
+computation layer treated them uniformly, producing wrong world positions for nested frames
+and connection lines anchored at world origin.
+
+### Phase 1 — Hotfix ✅ *2026-04-07*
+
+| Task | Details |
+|------|---------|
+| `instanceof` branch in `_updateWorldPoses()` | For `CoordinateFrame` parents: read world position from `_worldPoseCache`; for geometry: compute centroid from `corners` as before |
+| `instanceof` branch in `createCoordinateFrame()` | Same branching for initial world position on frame creation |
+| CODE_CONTRACTS rule | "CoordinateFrame.corners Is Local Space" added to `architecture.md` and index |
+| PHILOSOPHY principle | #21 "Coordinate Spaces Are Statically Distinguished" added |
+
+### Phase 2 — Branded type annotations (JSDoc)
+
+**Approach**: JSDoc intersection types create compile-time brands with zero runtime overhead.
+`tsc --checkJs` enforces them without a TypeScript migration.
+
+| Task | Details |
+|------|---------|
+| Add branded type aliases | `src/types/spatial.js` — export `@typedef WorldVector3` and `LocalVector3` as branded `THREE.Vector3` intersections |
+| Annotate `corners` return types | `/** @returns {WorldVector3[]} */` on Cuboid, ImportedMesh, Sketch; `/** @returns {LocalVector3[]} */` on CoordinateFrame |
+| Annotate `_worldPoseCache` values | `{ position: WorldVector3, quaternion: THREE.Quaternion }` |
+| Annotate `_updateWorldPoses()` locals | `parentWorldPos: WorldVector3`, `worldPos: WorldVector3` |
+| Annotate `createCoordinateFrame()` locals | `initialWorldPos: WorldVector3` |
+| Wire `tsc --checkJs` into CI | Add `tsconfig.json` (`checkJs: true`, `strict: true`, `noEmit: true`); add `pnpm typecheck` script; CI step after build |
+
+**Expected outcome**: any future code that passes `frame.corners[0]` (LocalVector3) where
+a WorldVector3 is expected produces a type error at `pnpm typecheck` — caught before merge.
+
+### Phase 3 — Structural separation (long-term, after Phase 2)
+
+Evaluate whether `corners` should be split into semantically distinct interfaces so that
+the distinction is enforced by the API shape, not just by brands:
+
+| Option | Pros | Cons |
+|--------|------|------|
+| Rename `CoordinateFrame.corners` → `localOffset` | Impossible to confuse with world-space `corners` | Breaking change to all call sites; grab uses `allStartCorners` keyed by id |
+| Split `IWorldGeometry` / `ILocalOffset` interfaces | Fully structural; IDE navigation is clear | Refactor scope is large; existing grab/undo machinery uses unified `corners` contract |
+| Keep unified `corners` + Phase 2 brands | Minimal change; already ships | Relies on JSDoc discipline; brands are advisory until `strict` mode is universal |
+
+**Decision gate**: revisit after Phase 2 is running in CI for ≥ 1 month.
+If brand violations are caught in practice, Phase 3 is worthwhile.
+If no violations appear, the brands alone may be sufficient.
+
+---
+
 ## Backlog (frontend features)
 
 | Priority | Item | Complexity | ADR / Notes |
