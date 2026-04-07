@@ -83,8 +83,6 @@ export class UrbanMarker {
    * @returns {UrbanMarker}
    */
   static fromPoint(id, name, point, meshView) {
-    const v = new Vertex(`${id}_v0`)
-    v.position.copy(point)
-    return new UrbanMarker(id, name, [v], meshView)
+    return new UrbanMarker(id, name, [new Vertex(`${id}_v0`, point.clone())], meshView)
   }
 }

@@ -76,7 +76,7 @@ export class SceneService extends EventEmitter {
      * World pose cache for CoordinateFrame entities (ADR-020).
      * Populated by _updateWorldPoses() each animation frame.
      * Source of truth for world position; never stored on the entity itself.
-     * @type {Map<string, { position: import('three').Vector3, quaternion: import('three').Quaternion }>}
+     * @type {Map<string, { position: import('../types/spatial.js').WorldVector3, quaternion: import('three').Quaternion }>}
      */
     this._worldPoseCache = new Map()
   }
@@ -647,11 +647,12 @@ export class SceneService extends EventEmitter {
       if (!parent) continue
 
       // Resolve parent world position.
-      // CoordinateFrame.corners returns [this.translation] — a local offset, not a world position.
+      // CoordinateFrame.corners returns [this.translation] — a LocalVector3 offset, not a WorldVector3.
       // When the parent is a CoordinateFrame, use the world pose cache (already populated by the
       // topological sort above). When the parent is a geometry object, derive its centroid from
-      // its world-space corners as before.
-      let parentWorldPos
+      // its world-space corners as before (PHILOSOPHY #21, CODE_CONTRACTS architecture.md).
+      /** @type {import('../types/spatial.js').WorldVector3|null} */
+      let parentWorldPos = null
       if (parent instanceof CoordinateFrame) {
         const cached = this._worldPoseCache.get(parent.id)
         if (!cached) continue               // parent not yet resolved (shouldn't happen after sort)
@@ -661,10 +662,12 @@ export class SceneService extends EventEmitter {
         const centroid = new Vector3()
         for (const c of parent.corners) centroid.add(c)
         centroid.divideScalar(parent.corners.length)
-        parentWorldPos = centroid
+        /** @type {import('../types/spatial.js').WorldVector3} */
+        parentWorldPos = /** @type {any} */ (centroid)
       }
 
-      const worldPos = parentWorldPos.clone().add(frame.translation)
+      /** @type {import('../types/spatial.js').WorldVector3} */
+      const worldPos = /** @type {any} */ (parentWorldPos.clone().add(frame.translation))
 
       // Update cache
       const entry = this._worldPoseCache.get(frame.id)
@@ -1222,19 +1225,21 @@ export class SceneService extends EventEmitter {
 
     // Initialise the world pose cache and visual position at parent world position.
     // translation = (0,0,0) so the frame starts exactly at the parent origin.
-    // When the parent is a CoordinateFrame its corners return a local offset, not a world
-    // position — use the world pose cache instead (mirrors _updateWorldPoses logic).
+    // When the parent is a CoordinateFrame its corners return a LocalVector3 offset, not a
+    // WorldVector3 — use the world pose cache instead (mirrors _updateWorldPoses logic,
+    // PHILOSOPHY #21, CODE_CONTRACTS architecture.md).
+    /** @type {import('../types/spatial.js').WorldVector3|null} */
     let initialWorldPos = null
     if (parent instanceof CoordinateFrame) {
       const cached = this._worldPoseCache.get(parent.id)
-      if (cached) initialWorldPos = cached.position.clone()
+      if (cached) initialWorldPos = /** @type {any} */ (cached.position.clone())
     } else {
       const corners = parent.corners
       if (corners.length > 0) {
         const centroid = new Vector3()
         for (const c of corners) centroid.add(c)
         centroid.divideScalar(corners.length)
-        initialWorldPos = centroid
+        initialWorldPos = /** @type {any} */ (centroid)
       }
     }
     if (initialWorldPos) {

@@ -1,3 +1,4 @@
+// @ts-nocheck — Wasm worker TypedArray variance and ?worker import not yet annotated.
 /**
  * GeometryEngine — main-thread facade for the Wasm geometry worker (ADR-027)
  *

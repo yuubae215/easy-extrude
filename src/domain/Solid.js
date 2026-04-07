@@ -59,12 +59,12 @@ export class Solid {
   }
 
   /**
-   * Returns the vertex positions as a plain Vector3 array.
+   * Returns the vertex positions as a plain Vector3 array (world space).
    * Used by CuboidModel pure functions, MeshView, and AppController.
-   * @returns {import('three').Vector3[]}
+   * @returns {import('../types/spatial.js').WorldVector3[]}
    */
   get corners() {
-    return this.vertices.map(v => v.position)
+    return /** @type {import('../types/spatial.js').WorldVector3[]} */ (this.vertices.map(v => v.position))
   }
 
   /** Renames the entity. */

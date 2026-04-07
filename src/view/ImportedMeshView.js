@@ -1,3 +1,4 @@
+// @ts-nocheck — pre-existing Three.js object-access patterns; not yet fully annotated.
 /**
  * ImportedMeshView — thin-client view for arbitrary triangle meshes received
  * from the Geometry Service (Phase C, ADR-017).

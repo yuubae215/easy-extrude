@@ -109,9 +109,13 @@ export class CoordinateFrame {
    * AppController._startGrab() special-cases CoordinateFrame to use
    * SceneService.worldPoseOf(id).position for the drag plane center.
    *
-   * @returns {[Vector3]}
+   * CONTRACT: returns LocalVector3 (local offset from parent), NOT WorldVector3.
+   * Any spatial computation layer reading corners must branch on instanceof CoordinateFrame
+   * and use _worldPoseCache instead (see PHILOSOPHY #21, CODE_CONTRACTS architecture.md).
+   *
+   * @returns {[import('../types/spatial.js').LocalVector3]}
    */
-  get corners() { return [this.translation] }
+  get corners() { return /** @type {[import('../types/spatial.js').LocalVector3]} */ ([this.translation]) }
 
   /**
    * Translates the frame by `delta` from its grab-start translation.

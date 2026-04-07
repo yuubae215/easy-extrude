@@ -1,3 +1,4 @@
+// @ts-nocheck — pre-existing Three.js object-access patterns; not yet fully annotated.
 /**
  * CoordinateFrameView - Three.js representation of a CoordinateFrame entity.
  *

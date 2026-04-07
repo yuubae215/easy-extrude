@@ -82,11 +82,7 @@ export class UrbanPolygon {
    * @returns {UrbanPolygon}
    */
   static fromPoints(id, name, points, meshView) {
-    const vertices = points.map((p, i) => {
-      const v = new Vertex(`${id}_v${i}`)
-      v.position.copy(p)
-      return v
-    })
+    const vertices = points.map((p, i) => new Vertex(`${id}_v${i}`, p.clone()))
     const n = vertices.length
     const edges = vertices.map((v, i) =>
       new Edge(`${id}_e${i}`, v, vertices[(i + 1) % n])

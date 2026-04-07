@@ -208,22 +208,25 @@ and connection lines anchored at world origin.
 | CODE_CONTRACTS rule | "CoordinateFrame.corners Is Local Space" added to `architecture.md` and index |
 | PHILOSOPHY principle | #21 "Coordinate Spaces Are Statically Distinguished" added |
 
-### Phase 2 — Branded type annotations (JSDoc)
+### Phase 2 — Branded type annotations (JSDoc) ✅ *2026-04-07*
 
 **Approach**: JSDoc intersection types create compile-time brands with zero runtime overhead.
 `tsc --checkJs` enforces them without a TypeScript migration.
 
 | Task | Details |
 |------|---------|
-| Add branded type aliases | `src/types/spatial.js` — export `@typedef WorldVector3` and `LocalVector3` as branded `THREE.Vector3` intersections |
-| Annotate `corners` return types | `/** @returns {WorldVector3[]} */` on Cuboid, ImportedMesh, Sketch; `/** @returns {LocalVector3[]} */` on CoordinateFrame |
-| Annotate `_worldPoseCache` values | `{ position: WorldVector3, quaternion: THREE.Quaternion }` |
-| Annotate `_updateWorldPoses()` locals | `parentWorldPos: WorldVector3`, `worldPos: WorldVector3` |
-| Annotate `createCoordinateFrame()` locals | `initialWorldPos: WorldVector3` |
-| Wire `tsc --checkJs` into CI | Add `tsconfig.json` (`checkJs: true`, `strict: true`, `noEmit: true`); add `pnpm typecheck` script; CI step after build |
+| Add branded type aliases ✅ | `src/types/spatial.js` — exports `@typedef WorldVector3` and `LocalVector3` as branded `THREE.Vector3` intersections |
+| Annotate `corners` return types ✅ | `/** @returns {WorldVector3[]} */` on Solid, ImportedMesh, Profile; `/** @returns {LocalVector3[]} */` on CoordinateFrame |
+| Annotate `_worldPoseCache` values ✅ | `{ position: WorldVector3, quaternion: THREE.Quaternion }` |
+| Annotate `_updateWorldPoses()` locals ✅ | `parentWorldPos: WorldVector3`, `worldPos: WorldVector3` |
+| Annotate `createCoordinateFrame()` locals ✅ | `initialWorldPos: WorldVector3` |
+| Wire `tsc --checkJs` into CI ✅ | `tsconfig.json` (`checkJs: true`, `noImplicitAny: false`, `strictFunctionTypes: true`, `noEmit: true`); `pnpm typecheck` script; CI step after install, before build |
+| Bonus: fix Urban entity Vertex bug ✅ | `UrbanPolyline/Polygon/Marker.fromPoints()` passed only `id` to `new Vertex()`, leaving `position` undefined — caught by tsc; fixed to `new Vertex(id, p.clone())` |
+| Scope note | `src/types/` and `src/domain/` are the checked include set. View/service files transitively pulled in carry `// @ts-nocheck` until full annotation is done in Phase 3. `strict: true` deferred to Phase 3. |
 
 **Expected outcome**: any future code that passes `frame.corners[0]` (LocalVector3) where
 a WorldVector3 is expected produces a type error at `pnpm typecheck` — caught before merge.
+`pnpm typecheck` is now a required CI gate on every push to main/master.
 
 ### Phase 3 — Structural separation (long-term, after Phase 2)
 

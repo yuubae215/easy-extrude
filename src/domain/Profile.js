@@ -77,12 +77,12 @@ export class Profile {
   }
 
   /**
-   * Returns vertex positions as Vector3[]; empty array before setRect().
+   * Returns vertex positions as Vector3[] (world space); empty array before setRect().
    * Satisfies the LocalGeometry `corners` interface.
-   * @returns {import('three').Vector3[]}
+   * @returns {import('../types/spatial.js').WorldVector3[]}
    */
   get corners() {
-    return this.vertices.map(v => v.position)
+    return /** @type {import('../types/spatial.js').WorldVector3[]} */ (this.vertices.map(v => v.position))
   }
 
   /** Renames the entity. */

@@ -12,12 +12,14 @@
     "server:install": "pnpm --filter easy-extrude-bff install",
     "server:dev": "pnpm --filter easy-extrude-bff run dev",
     "server:start": "pnpm --filter easy-extrude-bff run start",
+    "typecheck": "tsc --noEmit",
     "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml"
   },
   "dependencies": {
     "three": "^0.172.0"
   },
   "devDependencies": {
+    "@types/three": "^0.183.1",
     "concurrently": "^9.2.1",
     "vite": "^6.2.0",
     "vite-plugin-wasm": "^3.6.0",
