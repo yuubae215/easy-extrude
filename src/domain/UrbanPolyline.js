@@ -82,11 +82,7 @@ export class UrbanPolyline {
    * @returns {UrbanPolyline}
    */
   static fromPoints(id, name, points, meshView) {
-    const vertices = points.map((p, i) => {
-      const v = new Vertex(`${id}_v${i}`)
-      v.position.copy(p)
-      return v
-    })
+    const vertices = points.map((p, i) => new Vertex(`${id}_v${i}`, p.clone()))
     const edges = []
     for (let i = 0; i < vertices.length - 1; i++) {
       edges.push(new Edge(`${id}_e${i}`, vertices[i], vertices[i + 1]))

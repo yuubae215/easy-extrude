@@ -1,3 +1,4 @@
+// @ts-nocheck — pre-existing Three.js patterns; snap/getSnapTargets contracts pending annotation.
 /**
  * CuboidModel - pure data model and side-effect-free pure functions
  *

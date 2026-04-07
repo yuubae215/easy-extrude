@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "noEmit": true,
+    "allowJs": true,
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    // Phase 2: enforce branded WorldVector3/LocalVector3 in the domain layer.
+    // Strict mode is scoped to src/types/ and src/domain/ so existing loosely-annotated
+    // files (AppController, SceneService) don't flood CI with unrelated errors.
+    // Expand include in Phase 3 after those files gain full JSDoc coverage.
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictFunctionTypes": true
+  },
+  "include": [
+    "src/types/**/*.js",
+    "src/domain/**/*.js"
+  ],
+  "exclude": ["node_modules/**", "dist/**"]
+}

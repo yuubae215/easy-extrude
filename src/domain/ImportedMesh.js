@@ -28,11 +28,13 @@ export class ImportedMesh {
     this.meshView = meshView
     /** @type {string|null} IFC4 class name (e.g. 'IfcWall'); null = unclassified. @see ADR-025 */
     this.ifcClass = null
-    /** @type {THREE.Vector3[]} synthetic 8 AABB corners for grab/drag — set by initCorners() */
+    /** @type {import('../types/spatial.js').WorldVector3[]} synthetic 8 AABB corners for grab/drag — set by initCorners() */
     this._corners8 = []
   }
 
-  /** Returns the 8 synthetic bounding-box corners (world space). */
+  /** Returns the 8 synthetic bounding-box corners (world space).
+   * @returns {import('../types/spatial.js').WorldVector3[]}
+   */
   get corners() { return this._corners8 }
 
   /** Renames the entity. */
@@ -46,7 +48,7 @@ export class ImportedMesh {
    * @param {THREE.Vector3[]} corners8
    */
   initCorners(corners8) {
-    this._corners8 = corners8.map(c => c.clone())
+    this._corners8 = /** @type {import('../types/spatial.js').WorldVector3[]} */ (corners8.map(c => c.clone()))
   }
 
   /**
