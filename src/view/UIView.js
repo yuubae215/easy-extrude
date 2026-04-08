@@ -4,7 +4,7 @@
  * Side effects: creates DOM elements, appends them, and modifies their styles.
  */
 import { IFC_CLASSES, IFC_CLASS_MAP } from '../domain/IFCClassRegistry.js'
-import { getLynchClassesByGeometry, LYNCH_CLASS_MAP } from '../domain/LynchClassRegistry.js'
+import { getPlaceTypesByGeometry, PLACE_TYPE_MAP } from '../domain/PlaceTypeRegistry.js'
 
 /** SVG icon strings for the mobile toolbar. Pass as `icon` in setMobileToolbar buttons. */
 export const ICONS = {
@@ -186,7 +186,7 @@ export class UIView {
       alignItems: 'center',
       gap: '5px',
     })
-    this._mapModeBtn.title = 'Open 2D Map Mode for urban modeling'
+    this._mapModeBtn.title = 'Open 2D Map Mode for spatial annotation'
     this._mapModeBtn.innerHTML = `${ICONS.map}<span>Map</span>`
     this._headerEl.appendChild(this._mapModeBtn)
     /** @type {Function|null} */
@@ -640,9 +640,9 @@ export class UIView {
    *  cb(ifcClass: string|null)  — null means "clear classification" */
   onIfcClassChange(callback) { this._onIfcClassChangeCb = callback }
 
-  /** Registers callback for Lynch class changes from the N panel.
-   *  cb(lynchClass: string|null)  — null means "clear classification" */
-  onLynchClassChange(callback) { this._onLynchClassChangeCb = callback }
+  /** Registers callback for place type changes from the N panel.
+   *  cb(placeType: string|null)  — null means "clear classification" */
+  onPlaceTypeChange(callback) { this._onPlaceTypeChangeCb = callback }
 
   /** Registers callback for the Map Mode button click */
   onMapModeClick(callback) { this._onMapModeClick = callback }
@@ -903,7 +903,7 @@ export class UIView {
 
   /**
    * Shows the 2D Map Mode toolbar on the left side of the screen.
-   * Lynch-type buttons let the user pick what to draw; Confirm/Cancel appear
+   * Place-type buttons let the user pick what to draw; Confirm/Cancel appear
    * only when a drawing is in progress.
    *
    * @param {string|null} activeTool  - currently selected tool ('path'|'edge'|'district'|'node'|'landmark'|null)
@@ -1703,7 +1703,7 @@ export class UIView {
     const {
       locationEditable = false,
       ifcClass = undefined, showIfcClass = false,
-      lynchClass = undefined, showLynchClass = false, lynchGeometry = null,
+      placeType = undefined, showPlaceType = false, placeTypeGeometry = null,
     } = options
 
     const editRow = (axis, color, val, onChange) => {
@@ -1866,10 +1866,10 @@ export class UIView {
       ifcSection = this._buildIfcClassSection(ifcClass ?? null)
     }
 
-    // ── Lynch Class section (only for Urban entities) ─────────────────────
-    let lynchSection = null
-    if (showLynchClass) {
-      lynchSection = this._buildLynchClassSection(lynchClass ?? null, lynchGeometry)
+    // ── Place Type section (only for Annotated entities) ─────────────────
+    let placeTypeSection = null
+    if (showPlaceType) {
+      placeTypeSection = this._buildPlaceTypeSection(placeType ?? null, placeTypeGeometry)
     }
 
     const locRow = locationEditable
@@ -1888,8 +1888,8 @@ export class UIView {
       row('Y', '#6ab04c', dimensions.y),
       row('Z', '#4a9eed', dimensions.z),
     ]))
-    if (ifcSection)   this._nPanelContentEl.appendChild(ifcSection)
-    if (lynchSection) this._nPanelContentEl.appendChild(lynchSection)
+    if (ifcSection)        this._nPanelContentEl.appendChild(ifcSection)
+    if (placeTypeSection)  this._nPanelContentEl.appendChild(placeTypeSection)
     this._nPanelContentEl.appendChild(descSection)
   }
 
@@ -1969,19 +1969,19 @@ export class UIView {
   }
 
   /**
-   * Builds the Lynch Class section for the N-panel (Urban entities only).
-   * Shows a coloured badge for the current class and a button to open the picker.
-   * @param {string|null} currentClass
-   * @param {'polyline'|'polygon'|'marker'|null} geometry  filter for the picker
+   * Builds the Place Type section for the N-panel (Annotated entities only).
+   * Shows a coloured badge for the current type and a button to open the picker.
+   * @param {string|null} currentType
+   * @param {'line'|'region'|'point'|null} geometry  filter for the picker
    * @returns {HTMLElement}
    * @private
    */
-  _buildLynchClassSection(currentClass, geometry) {
+  _buildPlaceTypeSection(currentType, geometry) {
     const sec = document.createElement('div')
     Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
 
     const titleEl = document.createElement('div')
-    titleEl.textContent = 'Lynch Class'
+    titleEl.textContent = 'Place Type'
     Object.assign(titleEl.style, {
       color: '#aaa', fontSize: '11px',
       textTransform: 'uppercase', letterSpacing: '0.05em',
@@ -1993,14 +1993,14 @@ export class UIView {
     Object.assign(rowEl.style, { display: 'flex', gap: '6px', alignItems: 'center' })
 
     const badgeEl = document.createElement('span')
-    this._refreshLynchBadge(badgeEl, currentClass)
+    this._refreshPlaceTypeBadge(badgeEl, currentType)
     Object.assign(badgeEl.style, {
       flex: '1', minWidth: '0',
       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
     })
 
     const changeBtn = document.createElement('button')
-    changeBtn.textContent = currentClass ? 'Change' : 'Set'
+    changeBtn.textContent = currentType ? 'Change' : 'Set'
     Object.assign(changeBtn.style, {
       padding: '2px 7px',
       background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
@@ -2011,16 +2011,16 @@ export class UIView {
     changeBtn.addEventListener('mouseleave', () => { changeBtn.style.background = '#3c3c3c' })
     changeBtn.addEventListener('click', (e) => {
       e.stopPropagation()
-      this._openLynchPicker(badgeEl, changeBtn, geometry)
+      this._openPlaceTypePicker(badgeEl, changeBtn, geometry)
     })
 
     rowEl.appendChild(badgeEl)
     rowEl.appendChild(changeBtn)
 
-    if (currentClass) {
+    if (currentType) {
       const clearBtn = document.createElement('button')
       clearBtn.textContent = '✕'
-      clearBtn.title = 'Clear Lynch class'
+      clearBtn.title = 'Clear place type'
       Object.assign(clearBtn.style, {
         padding: '2px 5px',
         background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
@@ -2031,10 +2031,10 @@ export class UIView {
       clearBtn.addEventListener('mouseleave', () => { clearBtn.style.background = '#3c3c3c' })
       clearBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        this._refreshLynchBadge(badgeEl, null)
+        this._refreshPlaceTypeBadge(badgeEl, null)
         changeBtn.textContent = 'Set'
         clearBtn.remove()
-        if (this._onLynchClassChangeCb) this._onLynchClassChangeCb(null)
+        if (this._onPlaceTypeChangeCb) this._onPlaceTypeChangeCb(null)
       })
       rowEl.appendChild(clearBtn)
     }
@@ -2044,13 +2044,13 @@ export class UIView {
   }
 
   /**
-   * Updates the visual state of a Lynch badge element.
+   * Updates the visual state of a place type badge element.
    * @param {HTMLElement} badgeEl
-   * @param {string|null} lynchClass
+   * @param {string|null} placeType
    * @private
    */
-  _refreshLynchBadge(badgeEl, lynchClass) {
-    const entry = lynchClass ? LYNCH_CLASS_MAP.get(lynchClass) : null
+  _refreshPlaceTypeBadge(badgeEl, placeType) {
+    const entry = placeType ? PLACE_TYPE_MAP.get(placeType) : null
     if (entry) {
       badgeEl.textContent = entry.label
       Object.assign(badgeEl.style, {
@@ -2081,18 +2081,18 @@ export class UIView {
   }
 
   /**
-   * Opens the Lynch class picker overlay anchored near the N-panel.
+   * Opens the place type picker overlay anchored near the N-panel.
    * @param {HTMLElement} badgeEl   badge to update on selection
    * @param {HTMLElement} changeBtn button to update label
-   * @param {'polyline'|'polygon'|'marker'|null} geometry  filter valid classes
+   * @param {'line'|'region'|'point'|null} geometry  filter valid types
    * @private
    */
-  _openLynchPicker(badgeEl, changeBtn, geometry) {
-    const existing = document.getElementById('_lynchPickerOverlay')
+  _openPlaceTypePicker(badgeEl, changeBtn, geometry) {
+    const existing = document.getElementById('_placeTypePickerOverlay')
     if (existing) { existing.remove(); return }
 
     const overlay = document.createElement('div')
-    overlay.id = '_lynchPickerOverlay'
+    overlay.id = '_placeTypePickerOverlay'
     Object.assign(overlay.style, {
       position: 'fixed',
       top: '40px',
@@ -2111,7 +2111,7 @@ export class UIView {
 
     // Title
     const headerEl = document.createElement('div')
-    headerEl.textContent = 'Lynch Classification'
+    headerEl.textContent = 'Place Type'
     Object.assign(headerEl.style, {
       padding: '8px 10px 6px',
       color: '#ccc', fontSize: '12px', fontFamily: 'sans-serif',
@@ -2124,10 +2124,10 @@ export class UIView {
     Object.assign(listEl.style, { overflowY: 'auto', flex: '1', padding: '4px 6px 8px' })
     overlay.appendChild(listEl)
 
-    const entries = geometry ? getLynchClassesByGeometry(geometry) : []
+    const entries = geometry ? getPlaceTypesByGeometry(geometry) : []
     if (entries.length === 0) {
       const emptyEl = document.createElement('div')
-      emptyEl.textContent = 'No classes available for this geometry type.'
+      emptyEl.textContent = 'No types available for this geometry type.'
       Object.assign(emptyEl.style, { color: '#666', fontSize: '11px', padding: '8px 4px' })
       listEl.appendChild(emptyEl)
     }
@@ -2170,10 +2170,10 @@ export class UIView {
       itemEl.appendChild(labelEl)
 
       itemEl.addEventListener('click', () => {
-        this._refreshLynchBadge(badgeEl, entry.name)
+        this._refreshPlaceTypeBadge(badgeEl, entry.name)
         changeBtn.textContent = 'Change'
         overlay.remove()
-        if (this._onLynchClassChangeCb) this._onLynchClassChangeCb(entry.name)
+        if (this._onPlaceTypeChangeCb) this._onPlaceTypeChangeCb(entry.name)
       })
 
       listEl.appendChild(itemEl)

@@ -23,7 +23,7 @@
  *   'objectRemoved'             (id: string)
  *   'objectRenamed'             (id: string, name: string)
  *   'objectIfcClassChanged'     (id: string, ifcClass: string|null)
- *   'objectLynchClassChanged'   (id: string, lynchClass: string|null)
+ *   'objectPlaceTypeChanged'    (id: string, placeType: string|null)
  *   'activeChanged'             (id: string|null)
  *
  * Rules:
@@ -49,12 +49,12 @@ import { MeasureLine } from '../domain/MeasureLine.js'
 import { MeasureLineView } from '../view/MeasureLineView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
-import { UrbanPolyline } from '../domain/UrbanPolyline.js'
-import { UrbanPolygon }  from '../domain/UrbanPolygon.js'
-import { UrbanMarker }   from '../domain/UrbanMarker.js'
-import { UrbanPolylineView } from '../view/UrbanPolylineView.js'
-import { UrbanPolygonView }  from '../view/UrbanPolygonView.js'
-import { UrbanMarkerView }   from '../view/UrbanMarkerView.js'
+import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
+import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
+import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
+import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
+import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
+import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -347,34 +347,34 @@ export class SceneService extends EventEmitter {
           frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
         }
         entities.push(frame)
-      } else if (dto.type === 'UrbanPolyline') {
+      } else if (dto.type === 'AnnotatedLine') {
         const { renderer = null } = viewContext
         const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-        const meshView = new UrbanPolylineView(this._threeScene, points, dto.lynchClass ?? null, renderer)
-        const entity   = UrbanPolyline.fromPoints(dto.id, dto.name, points, meshView)
+        const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer)
+        const entity   = AnnotatedLine.fromPoints(dto.id, dto.name, points, meshView)
         entity.description = dto.description ?? ''
-        entity.lynchClass  = dto.lynchClass  ?? null
-        if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+        entity.placeType   = dto.placeType   ?? null
+        if (entity.placeType) meshView.setPlaceType(entity.placeType)
         entities.push(entity)
-      } else if (dto.type === 'UrbanPolygon') {
+      } else if (dto.type === 'AnnotatedRegion') {
         const { renderer = null } = viewContext
         const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-        const meshView = new UrbanPolygonView(this._threeScene, points, dto.lynchClass ?? null, renderer)
-        const entity   = UrbanPolygon.fromPoints(dto.id, dto.name, points, meshView)
+        const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer)
+        const entity   = AnnotatedRegion.fromPoints(dto.id, dto.name, points, meshView)
         entity.description = dto.description ?? ''
-        entity.lynchClass  = dto.lynchClass  ?? null
-        if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+        entity.placeType   = dto.placeType   ?? null
+        if (entity.placeType) meshView.setPlaceType(entity.placeType)
         entities.push(entity)
-      } else if (dto.type === 'UrbanMarker') {
+      } else if (dto.type === 'AnnotatedPoint') {
         const { camera = null, renderer = null, container = document.body } = viewContext
         const point  = new Vector3(dto.vertex.x, dto.vertex.y, dto.vertex.z)
-        const meshView = new UrbanMarkerView(
-          this._threeScene, camera, container, renderer, point, dto.name, dto.lynchClass ?? null,
+        const meshView = new AnnotatedPointView(
+          this._threeScene, camera, container, renderer, point, dto.name, dto.placeType ?? null,
         )
-        const entity  = UrbanMarker.fromPoint(dto.id, dto.name, point, meshView)
+        const entity  = AnnotatedPoint.fromPoint(dto.id, dto.name, point, meshView)
         entity.description = dto.description ?? ''
-        entity.lynchClass  = dto.lynchClass  ?? null
-        if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass, entity.name)
+        entity.placeType   = dto.placeType   ?? null
+        if (entity.placeType) meshView.setPlaceType(entity.placeType, entity.name)
         entities.push(entity)
       }
     }
@@ -552,38 +552,38 @@ export class SceneService extends EventEmitter {
       return frame
     }
 
-    if (dto.type === 'UrbanPolyline') {
+    if (dto.type === 'AnnotatedLine') {
       const { renderer = null } = viewContext
       const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-      const meshView = new UrbanPolylineView(this._threeScene, points, dto.lynchClass ?? null, renderer)
-      const entity   = UrbanPolyline.fromPoints(newId, dto.name ?? 'Polyline', points, meshView)
+      const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer)
+      const entity   = AnnotatedLine.fromPoints(newId, dto.name ?? 'Line', points, meshView)
       entity.description = dto.description ?? ''
-      entity.lynchClass  = dto.lynchClass  ?? null
-      if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+      entity.placeType   = dto.placeType   ?? null
+      if (entity.placeType) meshView.setPlaceType(entity.placeType)
       return entity
     }
 
-    if (dto.type === 'UrbanPolygon') {
+    if (dto.type === 'AnnotatedRegion') {
       const { renderer = null } = viewContext
       const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-      const meshView = new UrbanPolygonView(this._threeScene, points, dto.lynchClass ?? null, renderer)
-      const entity   = UrbanPolygon.fromPoints(newId, dto.name ?? 'Polygon', points, meshView)
+      const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer)
+      const entity   = AnnotatedRegion.fromPoints(newId, dto.name ?? 'Region', points, meshView)
       entity.description = dto.description ?? ''
-      entity.lynchClass  = dto.lynchClass  ?? null
-      if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass)
+      entity.placeType   = dto.placeType   ?? null
+      if (entity.placeType) meshView.setPlaceType(entity.placeType)
       return entity
     }
 
-    if (dto.type === 'UrbanMarker') {
+    if (dto.type === 'AnnotatedPoint') {
       const { camera = null, renderer = null, container = document.body } = viewContext
       const point    = new Vector3(dto.vertex.x, dto.vertex.y, dto.vertex.z)
-      const meshView = new UrbanMarkerView(
-        this._threeScene, camera, container, renderer, point, dto.name ?? 'Marker', dto.lynchClass ?? null,
+      const meshView = new AnnotatedPointView(
+        this._threeScene, camera, container, renderer, point, dto.name ?? 'Point', dto.placeType ?? null,
       )
-      const entity   = UrbanMarker.fromPoint(newId, dto.name ?? 'Marker', point, meshView)
+      const entity   = AnnotatedPoint.fromPoint(newId, dto.name ?? 'Point', point, meshView)
       entity.description = dto.description ?? ''
-      entity.lynchClass  = dto.lynchClass  ?? null
-      if (entity.lynchClass) meshView.setLynchClass(entity.lynchClass, entity.name)
+      entity.placeType   = dto.placeType   ?? null
+      if (entity.placeType) meshView.setPlaceType(entity.placeType, entity.name)
       return entity
     }
 
@@ -964,77 +964,77 @@ export class SceneService extends EventEmitter {
     this.emit('objectIfcClassChanged', id, obj.ifcClass)
   }
 
-  // ── Lynch urban classification (ADR-026) ──────────────────────────────────
+  // ── Spatial annotation place type (ADR-029) ──────────────────────────────
 
   /**
-   * Assigns a Lynch class to an UrbanPolyline, UrbanPolygon, or UrbanMarker.
+   * Assigns a place type to an AnnotatedLine, AnnotatedRegion, or AnnotatedPoint.
    * Pass null to clear the classification.
-   * No-ops if id is unknown or the entity type does not support Lynch classification.
-   * Emits: 'objectLynchClassChanged'
+   * No-ops if id is unknown or the entity type does not support place types.
+   * Emits: 'objectPlaceTypeChanged'
    * @param {string} id
-   * @param {string|null} lynchClass  e.g. 'Path', 'District', or null to unclassify
+   * @param {string|null} placeType  e.g. 'Route', 'Zone', 'Hub', or null to unclassify
    */
-  setLynchClass(id, lynchClass) {
+  setPlaceType(id, placeType) {
     const obj = this._model.getObject(id)
     if (!obj) return
-    if (!(obj instanceof UrbanPolyline) &&
-        !(obj instanceof UrbanPolygon)  &&
-        !(obj instanceof UrbanMarker))  return
-    obj.lynchClass = lynchClass ?? null
-    this.emit('objectLynchClassChanged', id, obj.lynchClass)
+    if (!(obj instanceof AnnotatedLine)   &&
+        !(obj instanceof AnnotatedRegion) &&
+        !(obj instanceof AnnotatedPoint)) return
+    obj.placeType = placeType ?? null
+    this.emit('objectPlaceTypeChanged', id, obj.placeType)
   }
 
   /**
-   * Creates an UrbanPolyline from an ordered array of points and adds it to the scene.
+   * Creates an AnnotatedLine from an ordered array of points and adds it to the scene.
    * Emits: 'objectAdded'
    * @param {import('three').Vector3[]} points  N ≥ 2 ordered points
    * @param {string} [name]
    * @param {import('three').WebGLRenderer} [renderer]
-   * @returns {UrbanPolyline}
+   * @returns {AnnotatedLine}
    */
-  createUrbanPolyline(points, name, renderer) {
-    const id      = `urban_poly_${Date.now()}`
-    const meshView = new UrbanPolylineView(this._threeScene, points, null, renderer ?? null)
-    const obj     = UrbanPolyline.fromPoints(id, name ?? 'Polyline', points, meshView)
+  createAnnotatedLine(points, name, renderer) {
+    const id      = `annot_line_${Date.now()}`
+    const meshView = new AnnotatedLineView(this._threeScene, points, null, renderer ?? null)
+    const obj     = AnnotatedLine.fromPoints(id, name ?? 'Line', points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj
   }
 
   /**
-   * Creates an UrbanPolygon from an ordered ring of points and adds it to the scene.
+   * Creates an AnnotatedRegion from an ordered ring of points and adds it to the scene.
    * The polygon is implicitly closed; do NOT repeat the first point at the end.
    * Emits: 'objectAdded'
    * @param {import('three').Vector3[]} points  N ≥ 3 points in ring order
    * @param {string} [name]
    * @param {import('three').WebGLRenderer} [renderer]
-   * @returns {UrbanPolygon}
+   * @returns {AnnotatedRegion}
    */
-  createUrbanPolygon(points, name, renderer) {
-    const id      = `urban_area_${Date.now()}`
-    const meshView = new UrbanPolygonView(this._threeScene, points, null, renderer ?? null)
-    const obj     = UrbanPolygon.fromPoints(id, name ?? 'Polygon', points, meshView)
+  createAnnotatedRegion(points, name, renderer) {
+    const id      = `annot_region_${Date.now()}`
+    const meshView = new AnnotatedRegionView(this._threeScene, points, null, renderer ?? null)
+    const obj     = AnnotatedRegion.fromPoints(id, name ?? 'Region', points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj
   }
 
   /**
-   * Creates an UrbanMarker at the given anchor point and adds it to the scene.
+   * Creates an AnnotatedPoint at the given anchor position and adds it to the scene.
    * Emits: 'objectAdded'
    * @param {import('three').Vector3} point  anchor position
    * @param {string} [name]
    * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} [viewContext]
-   * @returns {UrbanMarker}
+   * @returns {AnnotatedPoint}
    */
-  createUrbanMarker(point, name, viewContext = {}) {
-    const id      = `urban_mark_${Date.now()}`
-    const markerName = name ?? 'Marker'
+  createAnnotatedPoint(point, name, viewContext = {}) {
+    const id      = `annot_point_${Date.now()}`
+    const pointName = name ?? 'Point'
     const { camera = null, renderer = null, container = document.body } = viewContext
-    const meshView = new UrbanMarkerView(
-      this._threeScene, camera, container, renderer, point, markerName, null,
+    const meshView = new AnnotatedPointView(
+      this._threeScene, camera, container, renderer, point, pointName, null,
     )
-    const obj = UrbanMarker.fromPoint(id, markerName, point, meshView)
+    const obj = AnnotatedPoint.fromPoint(id, pointName, point, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj

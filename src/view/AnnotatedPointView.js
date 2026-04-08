@@ -1,27 +1,27 @@
 /**
- * UrbanMarkerView — renderer for UrbanMarker domain entities.
+ * AnnotatedPointView — renderer for AnnotatedPoint domain entities.
  *
  * Renders:
- *  - A flat circle mesh (CylinderGeometry, low height) in Lynch color; grey when unclassified
- *  - An HTML label showing the marker name, positioned above the mesh
+ *  - A flat circle mesh (CylinderGeometry, low height) in place-type color; grey when unclassified
+ *  - An HTML label showing the point name, positioned above the mesh
  *  - A BoxHelper for selection highlight
  *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView
  * so AppController's setMode() and mode-agnostic calls are safe.
  *
- * Note: no `cuboid` property — UrbanMarker is excluded from raycasting.
- * Move support: updateGeometry([position]) refreshes marker position.
+ * Note: no `cuboid` property — AnnotatedPoint is excluded from raycasting.
+ * Move support: updateGeometry([position]) refreshes point position.
  *
- * @see ADR-026
+ * @see ADR-029
  */
 import * as THREE from 'three'
-import { getLynchClassEntry } from '../domain/LynchClassRegistry.js'
+import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
 const DEFAULT_COLOR = 0x888888
 const MARKER_RADIUS = 0.25
 const MARKER_HEIGHT = 0.04
 
-export class UrbanMarkerView {
+export class AnnotatedPointView {
   /**
    * @param {THREE.Scene}   scene
    * @param {THREE.Camera}  camera
@@ -29,9 +29,9 @@ export class UrbanMarkerView {
    * @param {THREE.WebGLRenderer} renderer
    * @param {THREE.Vector3} point       anchor position
    * @param {string}        name        entity name (shown in label)
-   * @param {string|null}   lynchClass  'Node' | 'Landmark' | null
+   * @param {string|null}   placeType   'Hub' | 'Anchor' | null
    */
-  constructor(scene, camera, container, renderer, point, name, lynchClass) {
+  constructor(scene, camera, container, renderer, point, name, placeType) {
     this._scene    = scene
     this._camera   = camera
     this._renderer = renderer
@@ -39,7 +39,7 @@ export class UrbanMarkerView {
     // ── Circle marker mesh ─────────────────────────────────────────────────
     this._geo = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 16)
     this._mat = new THREE.MeshBasicMaterial({
-      color:    this._colorForClass(lynchClass),
+      color:    this._colorForType(placeType),
       depthTest: false,
     })
     /** Named differently from cuboid to indicate no raycasting. */
@@ -53,7 +53,7 @@ export class UrbanMarkerView {
     // ── Outline ring (slightly larger, transparent) ────────────────────────
     this._ringGeo = new THREE.RingGeometry(MARKER_RADIUS, MARKER_RADIUS + 0.05, 16)
     this._ringMat = new THREE.MeshBasicMaterial({
-      color:       this._colorForClass(lynchClass),
+      color:       this._colorForType(placeType),
       depthTest:   false,
       transparent: true,
       opacity:     0.6,
@@ -84,7 +84,7 @@ export class UrbanMarkerView {
       whiteSpace:    'nowrap',
       display:       'none',
       zIndex:        '50',
-      borderLeft:    `3px solid #${this._colorForClass(lynchClass).toString(16).padStart(6, '0')}`,
+      borderLeft:    `3px solid #${this._colorForType(placeType).toString(16).padStart(6, '0')}`,
     })
     this._label.textContent = name
     container.appendChild(this._label)
@@ -96,7 +96,7 @@ export class UrbanMarkerView {
   // ── Geometry ───────────────────────────────────────────────────────────────
 
   /**
-   * Repositions the marker.
+   * Repositions the point marker.
    * @param {THREE.Vector3} point
    */
   _setPoint(point) {
@@ -106,9 +106,9 @@ export class UrbanMarkerView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
-  /** Returns hex color for the given Lynch class. */
-  _colorForClass(lynchClass) {
-    const entry = getLynchClassEntry(lynchClass)
+  /** Returns hex color for the given place type. */
+  _colorForType(placeType) {
+    const entry = getPlaceTypeEntry(placeType)
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
@@ -150,15 +150,15 @@ export class UrbanMarkerView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
-  // ── Lynch class (color) update ─────────────────────────────────────────────
+  // ── Place type (color) update ──────────────────────────────────────────────
 
   /**
-   * Updates mesh and ring color when lynchClass changes.
-   * @param {string|null} lynchClass
-   * @param {string}      name  entity name (label text may reflect class label)
+   * Updates mesh and ring color when placeType changes.
+   * @param {string|null} placeType
+   * @param {string}      name  entity name (label text may reflect place type label)
    */
-  setLynchClass(lynchClass, name) {
-    const hex = this._colorForClass(lynchClass)
+  setPlaceType(placeType, name) {
+    const hex = this._colorForType(placeType)
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)

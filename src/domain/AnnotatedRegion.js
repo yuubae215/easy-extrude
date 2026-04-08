@@ -1,8 +1,11 @@
 /**
- * UrbanPolygon — domain entity for a 2D urban areal element.
+ * AnnotatedRegion — domain entity for a 2D annotated areal element.
  *
- * Represents Kevin Lynch's areal element at city/map scale:
- *   - District (地区) : medium-to-large areas with an identifiable common character
+ * Represents an areal spatial feature whose position and extent carry semantic meaning.
+ * Valid placeType value: 'Zone' (bounded area with identifiable character).
+ *
+ * Scale-independent: usable at city scale (neighbourhood), building scale
+ * (room, department), or part scale (work area, manufacturing cell).
  *
  * Graph model (ADR-021):
  *   Implements the LocalGeometry interface.
@@ -13,39 +16,39 @@
  * The polygon is implicitly closed: the last edge connects the final vertex
  * back to the first.  No duplicate vertex is stored.
  *
- * The `lynchClass` field carries the semantic Lynch classification ('District').
+ * The `placeType` field carries the semantic place classification ('Zone').
  *
  * Type identity:
- *   `instanceof UrbanPolygon` → areal urban element; move OK, no Edit Mode (planned).
+ *   `instanceof AnnotatedRegion` → areal annotated element; move OK, no Edit Mode.
  *
- * @see ADR-026, ADR-021, ADR-020
+ * @see ADR-029, ADR-021, ADR-020
  */
 import { Vertex } from '../graph/Vertex.js'
 import { Edge }   from '../graph/Edge.js'
 
-export class UrbanPolygon {
+export class AnnotatedRegion {
   /**
    * @param {string}   id
    * @param {string}   name
    * @param {Vertex[]} vertices  ordered ring, N ≥ 3
    * @param {Edge[]}   edges     N closing edges
-   * @param {object}   meshView  rendering context (UrbanPolygonView, future)
+   * @param {object}   meshView  rendering context (AnnotatedRegionView)
    */
   constructor(id, name, vertices, edges, meshView) {
     this.id          = id
     this.name        = name
     this.description = ''
     /**
-     * Lynch semantic class.
-     * @type {'District'|null}
-     * @see ADR-026, LynchClassRegistry
+     * Semantic place type.
+     * @type {'Zone'|null}
+     * @see ADR-029, PlaceTypeRegistry
      */
-    this.lynchClass  = null
+    this.placeType   = null
     /** @type {Vertex[]} */
     this.vertices    = vertices
     /** @type {Edge[]} */
     this.edges       = edges
-    /** @type {[]}  always empty — UrbanPolygon is a 2D planar entity */
+    /** @type {[]}  always empty — AnnotatedRegion is a 2D planar entity */
     this.faces       = []
     this.meshView    = meshView
   }
@@ -73,13 +76,13 @@ export class UrbanPolygon {
   // ── Factory helper ─────────────────────────────────────────────────────────
 
   /**
-   * Builds an UrbanPolygon from an ordered ring of Vector3 points.
+   * Builds an AnnotatedRegion from an ordered ring of Vector3 points.
    * The polygon is implicitly closed; do NOT pass the first point again at the end.
    * @param {string}                    id
    * @param {string}                    name
    * @param {import('three').Vector3[]} points   N ≥ 3 points in ring order (CCW from +Z)
    * @param {object}                    meshView
-   * @returns {UrbanPolygon}
+   * @returns {AnnotatedRegion}
    */
   static fromPoints(id, name, points, meshView) {
     const vertices = points.map((p, i) => new Vertex(`${id}_v${i}`, p.clone()))
@@ -87,6 +90,6 @@ export class UrbanPolygon {
     const edges = vertices.map((v, i) =>
       new Edge(`${id}_e${i}`, v, vertices[(i + 1) % n])
     )
-    return new UrbanPolygon(id, name, vertices, edges, meshView)
+    return new AnnotatedRegion(id, name, vertices, edges, meshView)
   }
 }

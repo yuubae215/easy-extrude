@@ -1,6 +1,6 @@
 # ADR-026 — Lynch Urban Classification of 2D Map Objects
 
-**Status:** Accepted
+**Status:** Superseded by ADR-029
 **Date:** 2026-04-01
 **Author:** Claude Code
 
