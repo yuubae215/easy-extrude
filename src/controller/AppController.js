@@ -38,14 +38,14 @@ import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
-import { createSetLynchClassCommand } from '../command/SetLynchClassCommand.js'
+import { createSetLynchClassCommand } from '../command/SetLynchClassCommand.js' // N-panel Lynch class change (post-hoc push)
 import { createReparentFrameCommand } from '../command/ReparentFrameCommand.js'
 import { downloadSceneJson }          from '../service/SceneExporter.js'
 import { parseImportJson }            from '../service/SceneImporter.js'
 import { UrbanPolyline } from '../domain/UrbanPolyline.js'
 import { UrbanPolygon }  from '../domain/UrbanPolygon.js'
 import { UrbanMarker }   from '../domain/UrbanMarker.js'
-import { getLynchClassesByGeometry, getLynchClassEntry } from '../domain/LynchClassRegistry.js'
+import { getLynchClassEntry } from '../domain/LynchClassRegistry.js'
 
 export class AppController {
   /**
@@ -176,21 +176,27 @@ export class AppController {
       snapMeshView: null,
     }
 
-    // ── Urban entity placement state (ADR-026) ────────────────────────────
-    // 'type': 'path' | 'edge' | 'district' | 'node' | 'landmark'
-    // lynchClassMap for placement type → Lynch class name
-    this._urbanPlacement = {
-      active:  false,
-      /** @type {'path'|'edge'|'district'|'node'|'landmark'|null} */
-      type:    null,
-      /** @type {THREE.Vector3[]} confirmed vertices */
-      points:  [],
-      /** @type {THREE.Vector3|null} live cursor position (ground-plane pick) */
-      cursor:  null,
-      /** Preview line object (THREE.Line) shown while placing */
+    // ── 2D Map Mode state ─────────────────────────────────────────────────
+    // Entered via the "Map" header button.  Uses an orthographic top-down
+    // camera (SceneView.useOrthoCamera) for distortion-free 2D placement.
+    this._mapMode = {
+      /** Whether map mode is currently active */
+      active: false,
+      /** Active drawing tool: 'path'|'edge'|'district'|'node'|'landmark'|null */
+      tool:   null,
+      /** @type {THREE.Vector3[]} confirmed vertex positions (Z=0 plane) */
+      points: [],
+      /** @type {THREE.Vector3|null} live cursor world position */
+      cursor: null,
+      /** THREE.Line preview drawn while placing */
       previewLine: null,
-      /** Cursor dot (THREE.Mesh) shown at cursor position */
-      cursorDot: null,
+      /** THREE.Mesh cursor dot */
+      cursorDot:   null,
+      /** Panning state */
+      isPanning:   false,
+      panStart:    null,   // { screenX, screenY, camX, camY }
+      /** Current orthographic frustum height (world units) */
+      frustumSize: 50,
     }
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
@@ -500,6 +506,9 @@ export class AppController {
       this._refreshUndoRedoState()
     })
 
+    // ── Map Mode entry ────────────────────────────────────────────────────
+    uiView.onMapModeClick(() => this._enterMapMode())
+
     this._bindEvents()
 
     // Create the initial object
@@ -548,11 +557,6 @@ export class AppController {
     if (type === 'sketch')  { this._addProfileObject();    return }
     if (type === 'measure') { this._startMeasurePlacement(); return }
     if (type === 'frame')   { this._addCoordinateFrame();  return }
-    // Urban entity placement types (ADR-026)
-    if (type === 'path' || type === 'edge' || type === 'district' ||
-        type === 'node' || type === 'landmark') {
-      this._startUrbanPlacement(type); return
-    }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
@@ -1088,19 +1092,38 @@ export class AppController {
     }
   }
 
-  // ── Urban entity placement (ADR-026) ─────────────────────────────────────
+  // ── 2D Map Mode ──────────────────────────────────────────────────────────
 
-  /**
-   * Returns the Lynch class name for a placement type.
-   * 'path'→'Path', 'edge'→'Edge', 'district'→'District', 'node'→'Node', 'landmark'→'Landmark'
-   * @param {string} type
-   */
-  _lynchClassForType(type) {
-    return type.charAt(0).toUpperCase() + type.slice(1)
+  /** Enters 2D Map Mode: switches to orthographic top-down camera, shows map toolbar. */
+  _enterMapMode() {
+    if (this._mapMode.active) return
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    this._mapMode.active = true
+    this._mapMode.tool   = null
+    this._mapMode.points = []
+    this._mapMode.cursor = null
+    this._mapMode.isPanning = false
+    this._sceneView.useOrthoCamera(true, this._mapMode.frustumSize)
+    this._uiView.setCursor('default')
+    this._uiView.setStatus('Map Mode — select a Lynch type on the left to start drawing')
+    this._refreshMapToolbar()
+    this._updateMobileToolbar()
+  }
+
+  /** Exits 2D Map Mode: restores perspective camera, removes map toolbar. */
+  _exitMapMode() {
+    this._mapCancelDrawing()
+    this._mapMode.active      = false
+    this._mapMode.isPanning   = false
+    this._sceneView.useOrthoCamera(false)
+    this._uiView.hideMapToolbar()
+    this._uiView.setCursor('default')
+    this._refreshObjectModeStatus()
+    this._updateMobileToolbar()
   }
 
   /**
-   * Returns the entity geometry kind for a placement type.
+   * Returns the geometry kind for a Lynch placement type.
    * @param {string} type
    * @returns {'polyline'|'polygon'|'marker'}
    */
@@ -1110,181 +1133,203 @@ export class AppController {
     return 'polyline'
   }
 
+  /** Returns the Lynch class name capitalised from a placement type string. */
+  _lynchClassForType(type) {
+    return type.charAt(0).toUpperCase() + type.slice(1)
+  }
+
   /**
-   * Starts urban entity placement mode for the given type.
-   * @param {'path'|'edge'|'district'|'node'|'landmark'} type
+   * Sets the active map drawing tool.
+   * @param {string} type  'path'|'edge'|'district'|'node'|'landmark'
    */
-  _startUrbanPlacement(type) {
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._cancelUrbanPlacement()   // clear any previous state
-    this._urbanPlacement.active = true
-    this._urbanPlacement.type   = type
-    this._urbanPlacement.points = []
-    this._urbanPlacement.cursor = null
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = false
+  _setMapTool(type) {
+    this._mapCancelDrawing()   // clear any in-progress drawing
+    this._mapMode.tool   = type
+    this._mapMode.points = []
+    this._mapMode.cursor = null
     this._uiView.setCursor('crosshair')
-    this._updateUrbanPlacementStatus()
-    this._updateMobileToolbar()
+    this._refreshMapToolbar()
+    this._updateMapStatus()
   }
 
-  /** Cancels urban placement mode and cleans up preview objects. */
-  _cancelUrbanPlacement() {
-    if (!this._urbanPlacement.active) return
-    this._clearUrbanPreview()
-    this._urbanPlacement.active = false
-    this._urbanPlacement.type   = null
-    this._urbanPlacement.points = []
-    this._urbanPlacement.cursor = null
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
+  /** Cancels the current drawing without creating an entity. */
+  _mapCancelDrawing() {
+    this._clearMapPreview()
+    this._mapMode.tool   = null
+    this._mapMode.points = []
+    this._mapMode.cursor = null
     this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /** Removes preview line and cursor dot from the scene. */
-  _clearUrbanPreview() {
-    const scene = this._sceneView.scene
-    if (this._urbanPlacement.previewLine) {
-      scene.remove(this._urbanPlacement.previewLine)
-      this._urbanPlacement.previewLine.geometry.dispose()
-      this._urbanPlacement.previewLine.material.dispose()
-      this._urbanPlacement.previewLine = null
-    }
-    if (this._urbanPlacement.cursorDot) {
-      scene.remove(this._urbanPlacement.cursorDot)
-      this._urbanPlacement.cursorDot.geometry.dispose()
-      this._urbanPlacement.cursorDot.material.dispose()
-      this._urbanPlacement.cursorDot = null
+    this._refreshMapToolbar()
+    if (this._mapMode.active) {
+      this._uiView.setStatus('Map Mode — select a Lynch type on the left to start drawing')
     }
   }
 
   /**
-   * Confirms the current urban placement:
-   *  - Marker: places immediately (called after single click)
-   *  - Polyline/Polygon: creates the entity from accumulated points
+   * Confirms the current drawing and creates the Urban entity.
+   * Called from Enter key, Confirm button, or (for polygons) clicking near the first vertex.
    */
-  _confirmUrbanPlacement() {
-    const { type, points } = this._urbanPlacement
-    const geometry = this._geometryForType(type)
-    const lynchClass = this._lynchClassForType(type)
+  _mapConfirmDrawing() {
+    const { tool, points } = this._mapMode
+    if (!tool) return
+    const geometry  = this._geometryForType(tool)
+    const lynchClass = this._lynchClassForType(tool)
+    const renderer  = this._sceneView.renderer
 
-    this._clearUrbanPreview()
-    this._urbanPlacement.active = false
-    this._urbanPlacement.type   = null
-    this._urbanPlacement.points = []
-    this._urbanPlacement.cursor = null
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
-    this._uiView.setCursor('default')
-
-    const renderer = this._sceneView.renderer
-
-    if (geometry === 'marker') {
-      // Should already be handled in _onPointerDown for markers
-      if (points.length === 0) { this._updateMobileToolbar(); this._refreshObjectModeStatus(); return }
+    if (geometry === 'marker' && points.length === 1) {
       const obj = this._service.createUrbanMarker(points[0], undefined, {
         camera: this._camera, renderer, container: document.body,
       })
-      obj.lynchClass = lynchClass
       this._service.setLynchClass(obj.id, lynchClass)
-      // Do not auto-select: toolbar must return to the initial object-mode slots.
     } else if (geometry === 'polyline' && points.length >= 2) {
       const obj = this._service.createUrbanPolyline(points, undefined, renderer)
-      obj.lynchClass = lynchClass
       this._service.setLynchClass(obj.id, lynchClass)
-      // Do not auto-select: toolbar must return to the initial object-mode slots.
     } else if (geometry === 'polygon' && points.length >= 3) {
       const obj = this._service.createUrbanPolygon(points, undefined, renderer)
-      obj.lynchClass = lynchClass
       this._service.setLynchClass(obj.id, lynchClass)
-      // Do not auto-select: toolbar must return to the initial object-mode slots.
+    } else {
+      return  // not enough points
     }
 
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
+    // Keep the same tool active for rapid repeated placement
+    this._clearMapPreview()
+    this._mapMode.points = []
+    this._mapMode.cursor = null
+    this._refreshMapToolbar()
+    this._uiView.setStatus(`Map Mode — ${lynchClass} placed.  Draw another or select a different type.`)
   }
 
-  /** Updates the status bar during urban placement. */
-  _updateUrbanPlacementStatus() {
-    if (!this._urbanPlacement.active) return
-    const geometry = this._geometryForType(this._urbanPlacement.type)
-    const n        = this._urbanPlacement.points.length
-    const typeLabel = this._lynchClassForType(this._urbanPlacement.type)
+  /** Removes preview line and cursor dot from the Three.js scene. */
+  _clearMapPreview() {
+    const scene = this._sceneView.scene
+    if (this._mapMode.previewLine) {
+      scene.remove(this._mapMode.previewLine)
+      this._mapMode.previewLine.geometry.dispose()
+      this._mapMode.previewLine.material.dispose()
+      this._mapMode.previewLine = null
+    }
+    if (this._mapMode.cursorDot) {
+      scene.remove(this._mapMode.cursorDot)
+      this._mapMode.cursorDot.geometry.dispose()
+      this._mapMode.cursorDot.material.dispose()
+      this._mapMode.cursorDot = null
+    }
+  }
+
+  /**
+   * Picks the ground-plane (Z=0) world position under the mouse in Map Mode,
+   * using the orthographic camera for correct distortion-free picking.
+   * @param {PointerEvent|MouseEvent} e
+   * @returns {THREE.Vector3}
+   */
+  _mapPickPoint(e) {
+    const ndcX =  (e.clientX / innerWidth)  * 2 - 1
+    const ndcY = -(e.clientY / innerHeight) * 2 + 1
+    this._raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this._sceneView.activeCamera)
+    const pt = new THREE.Vector3()
+    this._raycaster.ray.intersectPlane(this._groundPlane, pt)
+    return new THREE.Vector3(pt.x, pt.y, 0)
+  }
+
+  /** Updates the live preview line and cursor dot during map drawing. */
+  _updateMapPreview() {
+    const { tool, points, cursor } = this._mapMode
+    if (!tool || !cursor) return
+    const geometry = this._geometryForType(tool)
+    const entry    = getLynchClassEntry(this._lynchClassForType(tool))
+    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
+
+    // Cursor dot
+    if (!this._mapMode.cursorDot) {
+      const g = new THREE.SphereGeometry(0.08, 8, 8)
+      const m = new THREE.MeshBasicMaterial({ color, depthTest: false })
+      this._mapMode.cursorDot = new THREE.Mesh(g, m)
+      this._mapMode.cursorDot.renderOrder = 3
+      this._sceneView.scene.add(this._mapMode.cursorDot)
+    }
+    this._mapMode.cursorDot.position.copy(cursor)
+    this._mapMode.cursorDot.material.color.setHex(color)
+
+    // Preview line (confirmed points + live cursor position)
+    if (geometry !== 'marker' && points.length > 0) {
+      const previewPts = [...points, cursor]
+      if (geometry === 'polygon' && previewPts.length >= 3) previewPts.push(previewPts[0])
+      const flat = []
+      for (const p of previewPts) flat.push(p.x, p.y, p.z)
+
+      if (!this._mapMode.previewLine) {
+        const geo = new THREE.BufferGeometry()
+        const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.7 })
+        this._mapMode.previewLine = new THREE.Line(geo, mat)
+        this._mapMode.previewLine.renderOrder = 2
+        this._sceneView.scene.add(this._mapMode.previewLine)
+      }
+      this._mapMode.previewLine.geometry.setAttribute(
+        'position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3),
+      )
+      this._mapMode.previewLine.geometry.attributes.position.needsUpdate = true
+      this._mapMode.previewLine.material.color.setHex(color)
+    } else if (this._mapMode.previewLine) {
+      this._sceneView.scene.remove(this._mapMode.previewLine)
+      this._mapMode.previewLine.geometry.dispose()
+      this._mapMode.previewLine.material.dispose()
+      this._mapMode.previewLine = null
+    }
+  }
+
+  /** Updates the status bar text during map drawing. */
+  _updateMapStatus() {
+    const { tool, points } = this._mapMode
+    if (!tool) return
+    const geometry  = this._geometryForType(tool)
+    const typeLabel = this._lynchClassForType(tool)
+    const n = points.length
 
     if (geometry === 'marker') {
       this._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: 'Click to place marker.', color: '#888' },
+        { text: 'Click to place.', color: '#888' },
         { text: 'ESC cancel', color: '#444' },
       ])
     } else if (geometry === 'polyline') {
       this._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: `${n} pts — Click to add point.`, color: '#888' },
-        { text: n >= 2 ? 'Enter / RMB = confirm' : '', color: '#aaa' },
+        { text: `${n} pts`, color: '#aaa' },
+        { text: 'click to add', color: '#888' },
+        { text: n >= 2 ? '  Enter / RMB = confirm' : '', color: '#aaa' },
         { text: 'ESC cancel', color: '#444' },
       ])
     } else {
       this._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: `${n} pts — Click to add point.`, color: '#888' },
-        { text: n >= 3 ? 'Enter = close & confirm' : '', color: '#aaa' },
+        { text: `${n} pts`, color: '#aaa' },
+        { text: 'click to add', color: '#888' },
+        { text: n >= 3 ? '  Enter = close & confirm' : '', color: '#aaa' },
         { text: 'ESC cancel', color: '#444' },
       ])
     }
   }
 
   /**
-   * Picks the ground-plane intersection point for urban placement.
-   * @returns {THREE.Vector3|null}
+   * Rebuilds the Map toolbar to reflect current state
+   * (active tool, confirm/cancel visibility).
+   * @private
    */
-  _urbanPickPoint() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) return pt
-    return null
-  }
+  _refreshMapToolbar() {
+    if (!this._mapMode.active) return
+    const { tool, points } = this._mapMode
+    const geometry = tool ? this._geometryForType(tool) : null
+    const canConfirm = geometry === 'polyline' ? points.length >= 2
+      : geometry === 'polygon' ? points.length >= 3
+      : false   // markers confirm immediately on click
 
-  /** Updates the preview line/polygon during urban placement pointer move. */
-  _updateUrbanPreview() {
-    const { active, type, points, cursor } = this._urbanPlacement
-    if (!active || !cursor) return
-    const geometry = this._geometryForType(type)
-    const entry    = getLynchClassEntry(this._lynchClassForType(type))
-    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
-
-    // Cursor dot
-    if (!this._urbanPlacement.cursorDot) {
-      const g = new THREE.SphereGeometry(0.08, 8, 8)
-      const m = new THREE.MeshBasicMaterial({ color, depthTest: false })
-      this._urbanPlacement.cursorDot = new THREE.Mesh(g, m)
-      this._urbanPlacement.cursorDot.renderOrder = 3
-      this._sceneView.scene.add(this._urbanPlacement.cursorDot)
-    }
-    this._urbanPlacement.cursorDot.position.copy(cursor)
-
-    // Preview line (confirmed points + cursor)
-    if (geometry !== 'marker' && points.length > 0) {
-      const previewPts = [...points, cursor]
-      if (geometry === 'polygon' && previewPts.length >= 3) {
-        previewPts.push(previewPts[0])   // close ring
-      }
-      const flat = []
-      for (const p of previewPts) { flat.push(p.x, p.y, p.z) }
-      const positions = new Float32Array(flat)
-
-      if (!this._urbanPlacement.previewLine) {
-        const geo = new THREE.BufferGeometry()
-        const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.7 })
-        this._urbanPlacement.previewLine = new THREE.Line(geo, mat)
-        this._urbanPlacement.previewLine.renderOrder = 2
-        this._sceneView.scene.add(this._urbanPlacement.previewLine)
-      }
-      this._urbanPlacement.previewLine.geometry.setAttribute(
-        'position', new THREE.Float32BufferAttribute(positions, 3),
-      )
-      this._urbanPlacement.previewLine.geometry.attributes.position.needsUpdate = true
-      this._urbanPlacement.previewLine.material.color.setHex(color)
-    }
+    this._uiView.showMapToolbar(
+      tool,
+      (t) => this._setMapTool(t),
+      canConfirm ? () => this._mapConfirmDrawing() : null,
+      tool       ? () => this._mapCancelDrawing()  : null,
+      ()         => this._exitMapMode(),
+    )
   }
 
   /**
@@ -1822,15 +1867,14 @@ export class AppController {
     const mode     = this._scene.selectionMode
     const substate = this._scene.editSubstate
 
-    if (this._urbanPlacement.active) {
-      const geometry = this._geometryForType(this._urbanPlacement.type)
-      const canConfirm = (geometry === 'polyline' && this._urbanPlacement.points.length >= 2)
-        || (geometry === 'polygon' && this._urbanPlacement.points.length >= 3)
+    if (this._mapMode.active) {
+      // In Map Mode the left-side map toolbar handles drawing controls.
+      // Show a minimal "Exit Map" slot on mobile.
       this._uiView.setMobileToolbar([
-        ...(canConfirm ? [{ icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmUrbanPlacement() }] : [{ spacer: true }]),
+        { icon: ICONS.back, label: 'Exit Map', onClick: () => this._exitMapMode() },
         { spacer: true },
         { spacer: true },
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelUrbanPlacement(), danger: true },
+        { spacer: true },
       ])
       return
     }
@@ -1870,12 +1914,12 @@ export class AppController {
         return
       }
 
-      // Urban entity toolbar: Grab | Lynch | Delete | (spacer)
+      // Urban entity toolbar: Grab | Map (to edit in map mode) | Delete | (spacer)
       const _isUrban = o => o instanceof UrbanPolyline || o instanceof UrbanPolygon || o instanceof UrbanMarker
       if (hasObj && _isUrban(this._activeObj)) {
         this._uiView.setMobileToolbar([
           { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
-          { icon: '🗂',         label: 'Lynch',  onClick: () => this._openLynchPicker() },
+          { icon: ICONS.map,    label: 'Map',    onClick: () => this._enterMapMode() },
           { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
           { spacer: true },
         ])
@@ -1902,7 +1946,6 @@ export class AppController {
               () => this._addObject('measure'),
               () => this._triggerStepImport(),
               canAddFrame ? () => this._addObject('frame') : undefined,
-              { onPath: () => this._addObject('path'), onEdge: () => this._addObject('edge'), onDistrict: () => this._addObject('district'), onNode: () => this._addObject('node'), onLandmark: () => this._addObject('landmark') },
             )
           },
         },
@@ -2675,23 +2718,6 @@ export class AppController {
   // ── CoordinateFrame rotation (R key, ADR-019) ────────────────────────────
 
   /**
-   * Opens the Lynch class picker for the active Urban entity.
-   * Called from the mobile toolbar Lynch button.
-   * On desktop the N-panel picker is used directly.
-   */
-  _openLynchPicker() {
-    const obj = this._activeObj
-    if (!(obj instanceof UrbanPolyline) && !(obj instanceof UrbanPolygon) && !(obj instanceof UrbanMarker)) return
-    const geometry = obj instanceof UrbanPolyline ? 'polyline'
-      : obj instanceof UrbanPolygon ? 'polygon'
-      : 'marker'
-    // Reuse the UIView Lynch picker (which triggers onLynchClassChange callback)
-    const tempBadge  = document.createElement('span')
-    const tempBtn    = document.createElement('button')
-    this._uiView._openLynchPicker(tempBadge, tempBtn, geometry)
-  }
-
-  /**
    * Starts rotate mode for the active CoordinateFrame.
    * Only valid when the active object is a CoordinateFrame and no grab is active.
    */
@@ -3128,6 +3154,14 @@ export class AppController {
   }
 
   _onWheel(e) {
+    // ── 2D Map Mode: scroll to zoom ──────────────────────────────────────
+    if (this._mapMode.active) {
+      e.preventDefault()
+      const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15
+      this._mapMode.frustumSize = Math.max(2, Math.min(500, this._mapMode.frustumSize * factor))
+      this._sceneView.setOrthoZoom(this._mapMode.frustumSize)
+      return
+    }
     if (this._rotate.active && this._ctrlHeld) {
       e.preventDefault()
       const steps = AppController.ANGLE_STEPS
@@ -3492,12 +3526,23 @@ export class AppController {
       return
     }
 
-    // ── Urban entity placement hover ─────────────────────────────────────
-    if (this._urbanPlacement.active) {
-      const pt = this._urbanPickPoint()
-      if (pt) {
-        this._urbanPlacement.cursor = pt
-        this._updateUrbanPreview()
+    // ── 2D Map Mode: pan or drawing hover ────────────────────────────────
+    if (this._mapMode.active) {
+      if (this._mapMode.isPanning && this._mapMode.panStart) {
+        const { frustumSize } = this._mapMode
+        const aspect = innerWidth / innerHeight
+        const dx = (e.clientX - this._mapMode.panStart.screenX) * (frustumSize * aspect / innerWidth)
+        const dy = (e.clientY - this._mapMode.panStart.screenY) * (frustumSize / innerHeight)
+        this._sceneView.panOrthoCamera(
+          this._mapMode.panStart.camX - dx,
+          this._mapMode.panStart.camY + dy,
+        )
+        return
+      }
+      if (this._mapMode.tool) {
+        const pt = this._mapPickPoint(e)
+        this._mapMode.cursor = pt
+        this._updateMapPreview()
       }
       return
     }
@@ -3789,41 +3834,52 @@ export class AppController {
       return
     }
 
-    // ── Urban entity placement clicks ────────────────────────────────────
-    if (this._urbanPlacement.active) {
-      if (e.button === 2) {
-        // RMB confirms polyline/polygon (if enough points), otherwise cancels
-        const geometry = this._geometryForType(this._urbanPlacement.type)
-        const n = this._urbanPlacement.points.length
-        if ((geometry === 'polyline' && n >= 2) || (geometry === 'polygon' && n >= 3)) {
-          this._confirmUrbanPlacement()
-        } else {
-          this._cancelUrbanPlacement()
+    // ── 2D Map Mode: drawing clicks and pan start ────────────────────────
+    if (this._mapMode.active) {
+      if (e.button === 1 || (e.button === 0 && !this._mapMode.tool)) {
+        // Middle button or left button with no tool → start panning
+        this._mapMode.isPanning = true
+        const cam = this._sceneView.activeCamera
+        this._mapMode.panStart = {
+          screenX: e.clientX, screenY: e.clientY,
+          camX: cam.position.x, camY: cam.position.y,
         }
+        this._uiView.setCursor('grabbing')
+        this._activeDragPointerId = e.pointerId
         return
       }
-      if (e.button === 0) {
-        const pt = this._urbanPickPoint()
-        if (!pt) return
-        const geometry = this._geometryForType(this._urbanPlacement.type)
+      if (e.button === 0 && this._mapMode.tool) {
+        const pt = this._mapPickPoint(e)
+        const geometry = this._geometryForType(this._mapMode.tool)
         if (geometry === 'marker') {
-          // Immediate place on single click
-          this._urbanPlacement.points = [pt.clone()]
-          this._confirmUrbanPlacement()
+          this._mapMode.points = [pt.clone()]
+          this._mapConfirmDrawing()
           return
         }
-        // For polygon: check if clicking near first point to close
-        if (geometry === 'polygon' && this._urbanPlacement.points.length >= 3) {
-          const first = this._urbanPlacement.points[0]
-          this._raycaster.setFromCamera(this._mouse, this._camera)
+        // For polygon: clicking near first vertex closes the shape
+        if (geometry === 'polygon' && this._mapMode.points.length >= 3) {
+          const first = this._mapMode.points[0]
           const firstScreen = this._projectToScreen(first)
-          const mouseScreen = { x: (this._mouse.x + 1) / 2 * innerWidth, y: (-this._mouse.y + 1) / 2 * innerHeight }
-          const dist = Math.hypot(mouseScreen.x - firstScreen.x, mouseScreen.y - firstScreen.y)
-          if (dist < 20) { this._confirmUrbanPlacement(); return }
+          const mx = e.clientX, my = e.clientY
+          if (Math.hypot(mx - firstScreen.x, my - firstScreen.y) < 20) {
+            this._mapConfirmDrawing()
+            return
+          }
         }
-        this._urbanPlacement.points.push(pt.clone())
-        this._updateUrbanPlacementStatus()
-        this._updateMobileToolbar()
+        this._mapMode.points.push(pt.clone())
+        this._updateMapStatus()
+        this._refreshMapToolbar()
+        return
+      }
+      if (e.button === 2 && this._mapMode.tool) {
+        // RMB confirms if enough points, otherwise cancels tool
+        const geometry = this._geometryForType(this._mapMode.tool)
+        const n = this._mapMode.points.length
+        if ((geometry === 'polyline' && n >= 2) || (geometry === 'polygon' && n >= 3)) {
+          this._mapConfirmDrawing()
+        } else {
+          this._mapCancelDrawing()
+        }
         return
       }
       return
@@ -3999,6 +4055,17 @@ export class AppController {
       clearTimeout(this._longPress.timer)
       this._longPress.timer = null
       this._longPress.pointerId = null
+    }
+
+    // ── 2D Map Mode: end panning on pointer up ────────────────────────────
+    if (this._mapMode.active && this._mapMode.isPanning) {
+      if (this._activeDragPointerId === e.pointerId) {
+        this._activeDragPointerId = null
+        this._mapMode.isPanning = false
+        this._mapMode.panStart  = null
+        this._uiView.setCursor(this._mapMode.tool ? 'crosshair' : 'default')
+      }
+      return
     }
 
     // ── Measure point confirmation (hold-to-snap, release-to-confirm) ─────
@@ -4196,14 +4263,21 @@ export class AppController {
       return
     }
 
-    // ── Urban entity placement keys ─────────────────────────────────────
-    if (this._urbanPlacement.active) {
-      if (e.key === 'Escape') { this._cancelUrbanPlacement(); return }
-      if (e.key === 'Enter') {
-        const geometry = this._geometryForType(this._urbanPlacement.type)
-        const n = this._urbanPlacement.points.length
+    // ── 2D Map Mode keys ────────────────────────────────────────────────────
+    if (this._mapMode.active) {
+      if (e.key === 'Escape') {
+        if (this._mapMode.tool) {
+          this._mapCancelDrawing()   // cancel drawing, stay in map mode
+        } else {
+          this._exitMapMode()        // exit map mode entirely
+        }
+        return
+      }
+      if (e.key === 'Enter' && this._mapMode.tool) {
+        const geometry = this._geometryForType(this._mapMode.tool)
+        const n = this._mapMode.points.length
         if ((geometry === 'polyline' && n >= 2) || (geometry === 'polygon' && n >= 3)) {
-          this._confirmUrbanPlacement()
+          this._mapConfirmDrawing()
         }
         return
       }
@@ -4342,7 +4416,6 @@ export class AppController {
           () => this._addObject('measure'),
           () => this._triggerStepImport(),
           canAddFrame ? () => this._addObject('frame') : undefined,
-          { onPath: () => this._addObject('path'), onEdge: () => this._addObject('edge'), onDistrict: () => this._addObject('district'), onNode: () => this._addObject('node'), onLandmark: () => this._addObject('landmark') },
         )
         return
       }

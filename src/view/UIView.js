@@ -26,6 +26,7 @@ export const ICONS = {
   measure:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="3"/><line x1="3" y1="13" x2="7" y2="13"/><line x1="7" y1="9" x2="11" y2="9"/><line x1="11" y1="5" x2="15" y2="5"/></svg>`,
   frame:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><line x1="12" y1="12" x2="19" y2="12" stroke="#e05252"/><line x1="12" y1="12" x2="8.5" y2="8.5" stroke="#52e052"/><line x1="12" y1="12" x2="12" y2="5" stroke="#5252e0"/></svg>`,
   grab:     `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M6 14a4 4 0 0 0 2.83 3.83L10 18h4l1.17-.17A4 4 0 0 0 18 14v-2H6v2z"/></svg>`,
+  map:      `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>`,
 }
 
 export class UIView {
@@ -167,6 +168,32 @@ export class UIView {
     this._headerEl.appendChild(this._redoBtn)
 
     this._headerEl.appendChild(this._modeSelectorEl)
+
+    // ── Map Mode button ───────────────────────────────────────────────────
+    this._mapModeBtn = document.createElement('button')
+    Object.assign(this._mapModeBtn.style, {
+      padding: '4px 8px',
+      background: 'transparent',
+      border: '1px solid #3a3a3a',
+      borderRadius: '5px',
+      color: '#aaa',
+      cursor: 'pointer',
+      fontSize: '12px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      lineHeight: '1',
+      flexShrink: '0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '5px',
+    })
+    this._mapModeBtn.title = 'Open 2D Map Mode for urban modeling'
+    this._mapModeBtn.innerHTML = `${ICONS.map}<span>Map</span>`
+    this._headerEl.appendChild(this._mapModeBtn)
+    /** @type {Function|null} */
+    this._onMapModeClick = null
+    this._mapModeBtn.addEventListener('click', () => {
+      if (this._onMapModeClick) this._onMapModeClick()
+    })
 
     // ── Header status (centered within header bar via flex) ───────────────
     this._headerStatusEl = document.createElement('div')
@@ -617,6 +644,9 @@ export class UIView {
    *  cb(lynchClass: string|null)  — null means "clear classification" */
   onLynchClassChange(callback) { this._onLynchClassChangeCb = callback }
 
+  /** Registers callback for the Map Mode button click */
+  onMapModeClick(callback) { this._onMapModeClick = callback }
+
   /** Registers callback for mode changes */
   onModeChange(callback) {
     this._modeChangeCallback = callback
@@ -782,9 +812,8 @@ export class UIView {
    * @param {() => void} [onMeasure]
    * @param {() => void} [onImportStep]
    * @param {() => void} [onFrame]
-   * @param {{ onPath?: () => void, onEdge?: () => void, onDistrict?: () => void, onNode?: () => void, onLandmark?: () => void }} [urban]
    */
-  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame, urban) {
+  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame) {
     this.hideAddMenu()
     const menu = document.createElement('div')
     Object.assign(menu.style, {
@@ -848,54 +877,6 @@ export class UIView {
     ]
     items.forEach(({ label, hint, cb }) => menu.appendChild(makeItem(label, hint, cb)))
 
-    // ── Urban submenu ─────────────────────────────────────────────────────────
-    if (urban) {
-      const sep = document.createElement('div')
-      Object.assign(sep.style, { height: '1px', background: '#3a3a3a', margin: '2px 0' })
-      menu.appendChild(sep)
-
-      // Urban submenu header
-      const urbanHeader = makeItem('Urban ▶', '', null)
-      Object.assign(urbanHeader.style, { color: '#80cbc4' })
-      menu.appendChild(urbanHeader)
-
-      // Sub-items container (shown/hidden on click)
-      const subContainer = document.createElement('div')
-      subContainer.style.display = 'none'
-      Object.assign(subContainer.style, { background: '#232323' })
-
-      const URBAN_ITEMS = [
-        { label: '⟿ Urban Path',     color: '#4A90D9', cb: urban.onPath },
-        { label: '⟿ Urban Edge',     color: '#E74C3C', cb: urban.onEdge },
-        { label: '⬡ Urban District', color: '#27AE60', cb: urban.onDistrict },
-        { label: '⬤ Urban Node',     color: '#F39C12', cb: urban.onNode },
-        { label: '⬤ Urban Landmark', color: '#9B59B6', cb: urban.onLandmark },
-      ]
-      URBAN_ITEMS.forEach(({ label, color, cb }) => {
-        if (!cb) return
-        const subItem = document.createElement('div')
-        Object.assign(subItem.style, {
-          padding: '6px 12px 6px 22px',
-          color,
-          cursor: 'pointer',
-          fontSize: '12px',
-          fontFamily: 'sans-serif',
-        })
-        subItem.textContent = label
-        subItem.addEventListener('mouseenter', () => { subItem.style.background = '#3a3a3a' })
-        subItem.addEventListener('mouseleave', () => { subItem.style.background = 'transparent' })
-        subItem.addEventListener('click', () => { this.hideAddMenu(); cb() })
-        subContainer.appendChild(subItem)
-      })
-
-      urbanHeader.addEventListener('click', () => {
-        const shown = subContainer.style.display !== 'none'
-        subContainer.style.display = shown ? 'none' : 'block'
-      })
-
-      menu.appendChild(subContainer)
-    }
-
     document.body.appendChild(menu)
     this._addMenuEl = menu
 
@@ -916,6 +897,155 @@ export class UIView {
       document.removeEventListener('click', this._addMenuCloseHandler)
       this._addMenuCloseHandler = null
     }
+  }
+
+  // ── 2D Map Mode toolbar ──────────────────────────────────────────────────
+
+  /**
+   * Shows the 2D Map Mode toolbar on the left side of the screen.
+   * Lynch-type buttons let the user pick what to draw; Confirm/Cancel appear
+   * only when a drawing is in progress.
+   *
+   * @param {string|null} activeTool  - currently selected tool ('path'|'edge'|'district'|'node'|'landmark'|null)
+   * @param {(type: string) => void} onToolSelect  - called when user clicks a type button
+   * @param {(() => void)|null} onConfirm  - called when Confirm clicked (null = hidden)
+   * @param {() => void} onCancel   - called when Cancel clicked
+   * @param {() => void} onExit     - called when Exit Map clicked
+   */
+  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit) {
+    this.hideMapToolbar()
+
+    const toolbar = document.createElement('div')
+    toolbar.id = '_mapToolbar'
+    Object.assign(toolbar.style, {
+      position: 'fixed',
+      top: '50%',
+      left: '8px',
+      transform: 'translateY(-50%)',
+      background: '#1e1e2e',
+      border: '1px solid #3a3a4a',
+      borderRadius: '8px',
+      padding: '6px',
+      zIndex: '150',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '4px',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+      userSelect: 'none',
+      minWidth: '44px',
+    })
+
+    const TOOL_ITEMS = [
+      { type: 'path',     label: '⟿',  title: 'Path (Linear)',     color: '#4A90D9' },
+      { type: 'edge',     label: '⟿',  title: 'Edge (Boundary)',   color: '#E74C3C' },
+      { type: 'district', label: '⬡',  title: 'District (Area)',   color: '#27AE60' },
+      { type: 'node',     label: '⬤',  title: 'Node (Junction)',   color: '#F39C12' },
+      { type: 'landmark', label: '⬤',  title: 'Landmark (Point)',  color: '#9B59B6' },
+    ]
+
+    const sep = () => {
+      const d = document.createElement('div')
+      Object.assign(d.style, { height: '1px', background: '#3a3a4a', margin: '2px 0' })
+      return d
+    }
+
+    // Tool buttons
+    TOOL_ITEMS.forEach(({ type, label, title, color }) => {
+      const btn = document.createElement('button')
+      const isActive = activeTool === type
+      Object.assign(btn.style, {
+        width: '36px', height: '36px',
+        background: isActive ? color + '33' : 'transparent',
+        border: isActive ? `1.5px solid ${color}` : '1.5px solid transparent',
+        borderRadius: '6px',
+        color,
+        cursor: 'pointer',
+        fontSize: '16px',
+        lineHeight: '1',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'background 0.1s',
+      })
+      btn.title = title
+      btn.textContent = label
+      btn.addEventListener('mouseenter', () => {
+        if (activeTool !== type) btn.style.background = color + '22'
+      })
+      btn.addEventListener('mouseleave', () => {
+        if (activeTool !== type) btn.style.background = 'transparent'
+      })
+      btn.addEventListener('click', () => onToolSelect(type))
+      toolbar.appendChild(btn)
+    })
+
+    // Confirm / Cancel (drawing in progress)
+    if (onConfirm !== null || onCancel) {
+      toolbar.appendChild(sep())
+
+      if (onConfirm) {
+        const confirmBtn = document.createElement('button')
+        Object.assign(confirmBtn.style, {
+          width: '36px', height: '36px',
+          background: '#1a3a1a',
+          border: '1.5px solid #4caf50',
+          borderRadius: '6px',
+          color: '#4caf50',
+          cursor: 'pointer',
+          fontSize: '16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        })
+        confirmBtn.title = 'Confirm (Enter)'
+        confirmBtn.innerHTML = ICONS.confirm
+        confirmBtn.addEventListener('click', () => onConfirm())
+        toolbar.appendChild(confirmBtn)
+      }
+
+      if (onCancel) {
+        const cancelBtn = document.createElement('button')
+        Object.assign(cancelBtn.style, {
+          width: '36px', height: '36px',
+          background: '#3a1a1a',
+          border: '1.5px solid #e74c3c',
+          borderRadius: '6px',
+          color: '#e74c3c',
+          cursor: 'pointer',
+          fontSize: '16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        })
+        cancelBtn.title = 'Cancel drawing (Escape)'
+        cancelBtn.innerHTML = ICONS.cancel
+        cancelBtn.addEventListener('click', () => onCancel())
+        toolbar.appendChild(cancelBtn)
+      }
+    }
+
+    // Exit button
+    toolbar.appendChild(sep())
+    const exitBtn = document.createElement('button')
+    Object.assign(exitBtn.style, {
+      width: '36px', height: '36px',
+      background: 'transparent',
+      border: '1.5px solid #555',
+      borderRadius: '6px',
+      color: '#aaa',
+      cursor: 'pointer',
+      fontSize: '10px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      lineHeight: '1',
+    })
+    exitBtn.title = 'Exit Map Mode'
+    exitBtn.innerHTML = ICONS.back
+    exitBtn.addEventListener('click', () => onExit())
+    toolbar.appendChild(exitBtn)
+
+    document.body.appendChild(toolbar)
+    this._mapToolbarEl = toolbar
+  }
+
+  /** Removes the Map Mode toolbar. */
+  hideMapToolbar() {
+    const existing = document.getElementById('_mapToolbar')
+    if (existing) existing.remove()
+    this._mapToolbarEl = null
   }
 
   /**

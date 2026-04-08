@@ -21,6 +21,9 @@ export class SceneView {
     this.camera.position.set(6, -4, 3)    // front (+X), right (-Y), above (+Z)
     this.camera.lookAt(0, 0, 0)
 
+    this._orthoCamera = null
+    this._useOrtho    = false
+
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = false
     // Left button is reserved for object/face operations; right button orbits the camera
@@ -58,6 +61,13 @@ export class SceneView {
     this.camera.aspect = innerWidth / innerHeight
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(innerWidth, innerHeight)
+    if (this._orthoCamera) {
+      const aspect = innerWidth / innerHeight
+      const h = this._orthoCamera.top - this._orthoCamera.bottom
+      this._orthoCamera.left   = -h * aspect / 2
+      this._orthoCamera.right  =  h * aspect / 2
+      this._orthoCamera.updateProjectionMatrix()
+    }
   }
 
   /**
@@ -85,9 +95,74 @@ export class SceneView {
     this.camera.updateProjectionMatrix()
   }
 
+  /**
+   * Switches between the perspective camera and an orthographic top-down camera.
+   * When enabling, the ortho camera is centred over the current OrbitControls target.
+   * @param {boolean} enable
+   * @param {number} [frustumSize=50] - visible world-units height in ortho view
+   */
+  useOrthoCamera(enable, frustumSize = 50) {
+    if (enable) {
+      const aspect = innerWidth / innerHeight
+      if (!this._orthoCamera) {
+        this._orthoCamera = new THREE.OrthographicCamera(
+          -frustumSize * aspect / 2,  frustumSize * aspect / 2,
+           frustumSize / 2,           -frustumSize / 2,
+          -1000, 1000,
+        )
+      } else {
+        this._orthoCamera.left   = -frustumSize * aspect / 2
+        this._orthoCamera.right  =  frustumSize * aspect / 2
+        this._orthoCamera.top    =  frustumSize / 2
+        this._orthoCamera.bottom = -frustumSize / 2
+      }
+      // Centre ortho camera over the perspective camera's focus point (XY plane)
+      const t = this.controls.target
+      this._orthoCamera.position.set(t.x, t.y, 100)
+      this._orthoCamera.up.set(0, 1, 0)
+      this._orthoCamera.lookAt(t.x, t.y, 0)
+      this._orthoCamera.updateProjectionMatrix()
+      this._useOrtho = true
+      this.controls.enabled = false
+    } else {
+      this._useOrtho = false
+      this.controls.enabled = true
+    }
+  }
+
+  /**
+   * Adjusts the orthographic frustum height (zoom level) while keeping the camera centred.
+   * @param {number} frustumSize
+   */
+  setOrthoZoom(frustumSize) {
+    if (!this._orthoCamera) return
+    const aspect = innerWidth / innerHeight
+    this._orthoCamera.left   = -frustumSize * aspect / 2
+    this._orthoCamera.right  =  frustumSize * aspect / 2
+    this._orthoCamera.top    =  frustumSize / 2
+    this._orthoCamera.bottom = -frustumSize / 2
+    this._orthoCamera.updateProjectionMatrix()
+  }
+
+  /**
+   * Translates the orthographic camera in XY (world-space pan).
+   * @param {number} x
+   * @param {number} y
+   */
+  panOrthoCamera(x, y) {
+    if (!this._orthoCamera) return
+    this._orthoCamera.position.set(x, y, 100)
+    this._orthoCamera.lookAt(x, y, 0)
+  }
+
+  /** The camera currently being used for rendering. */
+  get activeCamera() {
+    return (this._useOrtho && this._orthoCamera) ? this._orthoCamera : this.camera
+  }
+
   /** Updates controls and renders the scene (call from the animation loop) */
   render() {
-    this.controls.update()
-    this.renderer.render(this.scene, this.camera)
+    if (!this._useOrtho) this.controls.update()
+    this.renderer.render(this.scene, this.activeCamera)
   }
 }

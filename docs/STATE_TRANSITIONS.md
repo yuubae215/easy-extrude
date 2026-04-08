@@ -7,16 +7,21 @@ See ADR-008 for implementation details.
 
 ## Top-level Modes
 
-A two-state machine held in `SceneModel.selectionMode`.
-
 ```
                     Tab
   ┌─────────────────────────────────────────────────┐
   |                                                 |
   v                                                 |
 OBJECT MODE  ──────────────────────────────> EDIT MODE
+  |     |                                           |
+  |     | Map button / _enterMapMode()              | (dispatches on active object dimension)
+  |     v                                           |
+  |  MAP MODE  (orthographic top-down camera)       |
+  |     |                                           |
+  |     | Escape (no tool) / Exit Map button        |
+  |     | _exitMapMode() → OBJECT MODE              |
   |                                                 |
-  | Shift+A → Add Box                               | (dispatches on active object dimension)
+  | Shift+A → Add Box                               |
   |   → _addObject('box') → OBJECT MODE             |
   |                                                 |
   | Shift+A → Add Sketch                            |
@@ -25,6 +30,39 @@ OBJECT MODE  ──────────────────────�
   | X / Delete (selected)                           |
   |   → _deleteObject() → OBJECT MODE               |
   └─────────────────────────────────────────────────┘
+```
+
+### Map Mode (2D Urban Modeling)
+
+`_mapMode.active = true` — orthographic top-down camera; OrbitControls disabled.
+`_mapMode.tool` — the Lynch type currently being drawn, or `null` (pan-only).
+
+```
+OBJECT MODE
+    |
+    Map button header click → _enterMapMode()
+    |
+    v
+MAP MODE  (_mapMode.active = true)
+    |
+    ├─ No tool active
+    │    Left-drag (or middle-drag) → pan camera (XY)
+    │    Scroll wheel               → zoom (frustumSize ±15%)
+    │    ESC → _exitMapMode() → OBJECT MODE
+    │
+    ├─ Click Lynch type in left toolbar → _setMapTool(type)
+    │       |
+    │       v
+    │   DRAWING  (_mapMode.tool set, _mapMode.points accumulate)
+    │       |
+    │       ├─ Click (marker)     → immediate confirm → DRAWING (same tool)
+    │       ├─ Click (polyline/polygon) → add vertex
+    │       ├─ Enter / RMB (≥2 pts polyline, ≥3 pts polygon) → _mapConfirmDrawing()
+    │       ├─ Click near first vertex (polygon, ≥3 pts)      → _mapConfirmDrawing()
+    │       ├─ _mapConfirmDrawing() → create entity, keep tool active
+    │       └─ ESC → _mapCancelDrawing() → MAP MODE (no tool)
+    │
+    └─ Exit Map button / ESC (no tool) → _exitMapMode() → OBJECT MODE
 ```
 
 ---
@@ -311,6 +349,7 @@ App state                   Toolbar buttons (→ always the same count)
 ──────────────────────────────────────────────────────────────────────────
 grab.active                 [✓ Confirm]  [✕ Cancel]
 faceExtrude.active          [✓ Confirm]  [✕ Cancel]
+mapMode.active              [← Exit Map]  (left-side map toolbar handles drawing)
 ──────────────────────────────────────────────────────────────────────────
 Object Mode                 [+ Add]  [Edit*]  [Delete*]
   * disabled if no selection
