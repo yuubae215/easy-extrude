@@ -471,54 +471,95 @@ G = Grab   X = Delete   Lynch class: Node / Landmark
 
 ---
 
-### S-14: Urban Placement — UrbanPolyline
+### S-14: 2D Map Mode — No Active Tool (Pan / Zoom)
 
-Entered via Add menu → "Urban Path" or "Urban Edge".
+Entered from the **Map** button in the header or from the mobile toolbar of a selected Urban entity.
 
-#### [C] 3D Viewport
-- Already-placed vertices shown as small circles connected by preview line
-- Cursor snaps to nearest geometry (V/E/F snap, same as Measure tool)
-- Mouse hover shows candidate next vertex
+#### [C] Viewport (Orthographic Top-Down)
+- Full-screen orthographic camera looking straight down along −Z
+- Existing 3D objects and Urban entities visible from above
+- Ground-plane grid visible
+- OrbitControls disabled; custom 2D pan/zoom active
 
-#### [D] N Panel
-- Vertex count: live counter
+#### [G] Left Map Toolbar (desktop)
+| Button | Color | Tooltip |
+|--------|-------|---------|
+| ⟿ (Path) | #4A90D9 | Path (Linear) |
+| ⟿ (Edge) | #E74C3C | Edge (Boundary) |
+| ⬡ (District) | #27AE60 | District (Area) |
+| ⬤ (Node) | #F39C12 | Node (Junction) |
+| ⬤ (Landmark) | #9B59B6 | Landmark (Point) |
+| ← | #aaa | Exit Map Mode |
+
+All type buttons toggle the active drawing tool.
 
 #### [E] Status Bar
 ```
-Click to add point. Enter / RMB = confirm. Escape = cancel.
+Map Mode — select a Lynch type on the left to start drawing
 ```
 
-#### [F] Mobile Toolbar
-| Slot | Button | State |
-|------|--------|-------|
-| 1 | Confirm | enabled (≥ 2 vertices) |
-| 2 | Undo pt | enabled |
-| 3 | (spacer) | — |
-| 4 | Cancel | enabled |
+#### [F] Mobile Toolbar (1 slot used)
+| Slot | Button |
+|------|--------|
+| 1 | ← Exit Map |
+| 2–4 | (spacers) |
+
+#### Interaction
+| Input | Action |
+|-------|--------|
+| Left-drag (no tool) | Pan camera |
+| Middle-drag | Pan camera |
+| Scroll wheel | Zoom in/out (frustumSize ±15%) |
+| ESC (no tool) | Exit map mode |
 
 ---
 
-### S-15: Urban Placement — UrbanPolygon
+### S-15: 2D Map Mode — Drawing (Polyline / Polygon)
 
-#### [C] 3D Viewport
-- Vertices + preview ring; auto-close highlight when hovering near first vertex
+Active when a Path, Edge, or District tool is selected in the map toolbar.
+
+#### [C] Viewport
+- Cursor dot (Lynch color) follows mouse
+- Preview line connects confirmed vertices to cursor
+- Polygon: preview ring closes when cursor is near first vertex (< 20 px)
+
+#### [G] Left Map Toolbar
+- Active type button highlighted with Lynch color border
+- Confirm button (✓, green) shown when ≥ 2 pts (polyline) or ≥ 3 pts (polygon)
+- Cancel button (✕, red) shown while drawing
 
 #### [E] Status Bar
 ```
-Click to add point. Click first point / Enter = close. Escape = cancel.
+[Type]  N pts  click to add  Enter / RMB = confirm   ESC cancel
 ```
+
+#### Interaction
+| Input | Action |
+|-------|--------|
+| Left-click | Add vertex |
+| Click near first vertex (polygon ≥ 3 pts) | Confirm and close polygon |
+| Enter / RMB (≥ 2 pts polyline, ≥ 3 pts polygon) | Confirm shape |
+| ESC | Cancel drawing (stay in map mode) |
+
+After confirmation the entity is created with the Lynch class matching the tool type.
+The same tool remains active for rapid repeated placement.
 
 ---
 
-### S-16: Urban Placement — UrbanMarker
+### S-16: 2D Map Mode — Drawing (Marker)
 
-#### [C] 3D Viewport
-- Single marker preview follows cursor (snaps to geometry)
+Active when Node or Landmark tool is selected.
+
+#### [C] Viewport
+- Cursor dot follows mouse in Lynch color
 
 #### [E] Status Bar
 ```
-Click to place marker. Escape = cancel.
+[Type]  Click to place.   ESC cancel
 ```
+
+#### Interaction
+Single left-click places the marker immediately; the tool remains active.
 
 ---
 
