@@ -7,6 +7,16 @@
 | **Deciders** | yuubae215 |
 | **Related** | ADR-007 (Cuboid geometry), ADR-012 (Graph-based geometry), ADR-017 (WebSocket geometry service) |
 
+## Implementation Status
+
+| Phase | Summary | Date |
+|-------|---------|------|
+| **Phase 1** — Infrastructure | Rust crate `wasm-engine/` with `build_cuboid_geometry()`; `geometry.worker.js` bridge (zero-copy pointer read, ArrayBuffer transfer); `GeometryEngine.js` facade (Promise API, graceful JS fallback); `pnpm build:wasm` pipeline; generated Wasm committed | ✅ 2026-04-05 |
+| **Phase 2** — Rendering pipeline | `MeshView.rebuildGeometry()` async Wasm path; `SceneService.batchRebuildSolids()` parallel rebuild via `Promise.all()`; progress overlay for batches > 3 objects; `importFromJson()` made async; sync `updateGeometry()` retained for interactive ops | ✅ 2026-04-05 |
+| **Phase 3** — Expanded compute | `build_extruded_profile()` (arbitrary n-gon prism); `build_instance_matrices()` (batch TRS → 4×4); `GeometryEngine.computeExtrudedProfile()` + `computeInstanceMatrices()`; `MeshView.rebuildExtrudedProfile()`; AppController async Wasm rebuild on extrude confirm | ✅ 2026-04-05 |
+| **Phase 4** — COOP/COEP | `public/coi-serviceworker.js` injects isolation headers on GitHub Pages; `index.html` registers SW with one-shot reload; `SharedArrayBuffer` now available on GitHub Pages | ✅ 2026-04-05 |
+| **Phase 4** — Shared Wasm Memory | Requires nightly Rust (`+atomics,+bulk-memory`); architectural constraint documented in §Future Work | ⏸ Deferred |
+
 ---
 
 ## Context

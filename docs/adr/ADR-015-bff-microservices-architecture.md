@@ -2,8 +2,16 @@
 
 - **Status**: Accepted
 - **Date**: 2026-03-20
-- **Implemented (Phase A)**: 2026-03-21
 - **References**: ADR-011, ADR-012, ADR-013
+
+## Implementation Status
+
+| Phase | Summary | Date |
+|-------|---------|------|
+| **Phase A** | Express BFF skeleton; SQLite scene persistence; `TransformGraph` storage; `BffClient`; `SceneSerializer`; Vite proxy; pnpm workspace | ✅ 2026-03-21 |
+| **Phase B** | Geometry Service (DAG evaluator); WebSocket session (ADR-017); Node Editor UI prototype; STEP import (REST + WS); `BffClient.WsChannel` | ✅ 2026-03-21 |
+| **Phase C** | `ImportedMesh` thin-client entity + `ImportedMeshView`; `SceneService.createImportedMesh()` + `_applyGeometryUpdate()`; Outliner type icon; AppController guards; `fitCameraToSphere()`; unit conversion dialog | ✅ 2026-03-22 |
+| **Phase D** | Direction TBD after Phase C checkpoint — see ROADMAP §BFF Phase D | Pending |
 
 ---
 
