@@ -28,16 +28,16 @@
  *   positions: <base64 Float32Array>, normals: <base64 Float32Array>|null,
  *   indices: <base64 Uint32Array>|null, offset: {x,y,z} }
  *
- * SceneObjectDTO (UrbanPolyline):
- * { type: 'UrbanPolyline', id, name, description, lynchClass: string|null,
+ * SceneObjectDTO (AnnotatedLine):
+ * { type: 'AnnotatedLine', id, name, description, placeType: string|null,
  *   vertices: [{ id, x, y, z }] }
  *
- * SceneObjectDTO (UrbanPolygon):
- * { type: 'UrbanPolygon', id, name, description, lynchClass: string|null,
+ * SceneObjectDTO (AnnotatedRegion):
+ * { type: 'AnnotatedRegion', id, name, description, placeType: string|null,
  *   vertices: [{ id, x, y, z }] }
  *
- * SceneObjectDTO (UrbanMarker):
- * { type: 'UrbanMarker', id, name, description, lynchClass: string|null,
+ * SceneObjectDTO (AnnotatedPoint):
+ * { type: 'AnnotatedPoint', id, name, description, placeType: string|null,
  *   vertex: { id, x, y, z } }
  */
 import { Solid }            from '../domain/Solid.js'
@@ -45,9 +45,9 @@ import { Profile }          from '../domain/Profile.js'
 import { MeasureLine }      from '../domain/MeasureLine.js'
 import { CoordinateFrame }  from '../domain/CoordinateFrame.js'
 import { ImportedMesh }     from '../domain/ImportedMesh.js'
-import { UrbanPolyline }    from '../domain/UrbanPolyline.js'
-import { UrbanPolygon }     from '../domain/UrbanPolygon.js'
-import { UrbanMarker }      from '../domain/UrbanMarker.js'
+import { AnnotatedLine }    from '../domain/AnnotatedLine.js'
+import { AnnotatedRegion }  from '../domain/AnnotatedRegion.js'
+import { AnnotatedPoint }   from '../domain/AnnotatedPoint.js'
 
 // ── Base64 helpers for typed arrays ──────────────────────────────────────────
 
@@ -166,13 +166,13 @@ export function serializeScene(scene) {
           offset:    bufs.offset,
         })
       }
-    } else if (obj instanceof UrbanPolyline) {
+    } else if (obj instanceof AnnotatedLine) {
       objects.push({
-        type:        'UrbanPolyline',
+        type:        'AnnotatedLine',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
-        lynchClass:  obj.lynchClass ?? null,
+        placeType:   obj.placeType ?? null,
         vertices: obj.vertices.map(v => ({
           id: v.id,
           x:  v.position.x,
@@ -180,13 +180,13 @@ export function serializeScene(scene) {
           z:  v.position.z,
         })),
       })
-    } else if (obj instanceof UrbanPolygon) {
+    } else if (obj instanceof AnnotatedRegion) {
       objects.push({
-        type:        'UrbanPolygon',
+        type:        'AnnotatedRegion',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
-        lynchClass:  obj.lynchClass ?? null,
+        placeType:   obj.placeType ?? null,
         vertices: obj.vertices.map(v => ({
           id: v.id,
           x:  v.position.x,
@@ -194,14 +194,14 @@ export function serializeScene(scene) {
           z:  v.position.z,
         })),
       })
-    } else if (obj instanceof UrbanMarker) {
+    } else if (obj instanceof AnnotatedPoint) {
       const v = obj.vertices[0]
       objects.push({
-        type:        'UrbanMarker',
+        type:        'AnnotatedPoint',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
-        lynchClass:  obj.lynchClass ?? null,
+        placeType:   obj.placeType ?? null,
         vertex: { id: v.id, x: v.position.x, y: v.position.y, z: v.position.z },
       })
     }

@@ -38,14 +38,14 @@ import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
-import { createSetLynchClassCommand } from '../command/SetLynchClassCommand.js' // N-panel Lynch class change (post-hoc push)
+import { createSetPlaceTypeCommand }  from '../command/SetPlaceTypeCommand.js'  // N-panel place type change (post-hoc push)
 import { createReparentFrameCommand } from '../command/ReparentFrameCommand.js'
 import { downloadSceneJson }          from '../service/SceneExporter.js'
 import { parseImportJson }            from '../service/SceneImporter.js'
-import { UrbanPolyline } from '../domain/UrbanPolyline.js'
-import { UrbanPolygon }  from '../domain/UrbanPolygon.js'
-import { UrbanMarker }   from '../domain/UrbanMarker.js'
-import { getLynchClassEntry } from '../domain/LynchClassRegistry.js'
+import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
+import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
+import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
+import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
 export class AppController {
   /**
@@ -76,12 +76,12 @@ export class AppController {
             ? 'frame'
             : obj instanceof Profile
               ? 'sketch'
-              : obj instanceof UrbanPolyline
-                ? 'urban-polyline'
-                : obj instanceof UrbanPolygon
-                  ? 'urban-polygon'
-                  : obj instanceof UrbanMarker
-                    ? 'urban-marker'
+              : obj instanceof AnnotatedLine
+                ? 'annot-line'
+                : obj instanceof AnnotatedRegion
+                  ? 'annot-region'
+                  : obj instanceof AnnotatedPoint
+                    ? 'annot-point'
                     : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
       // Origin frames are locked — cannot be dragged to a new parent (ADR-028)
@@ -89,7 +89,7 @@ export class AppController {
         outlinerView?.setObjectLocked(obj.id, true)
       }
       if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
-      if (obj.lynchClass) outlinerView?.setObjectLynchClass(obj.id, obj.lynchClass)
+      if (obj.placeType) outlinerView?.setObjectPlaceType(obj.id, obj.placeType)
     })
     // Update outliner hierarchy and N panel when a frame is re-parented (ADR-028)
     this._service.on('frameReparented', ({ id, newParentId }) => {
@@ -107,11 +107,11 @@ export class AppController {
     this._service.on('objectIfcClassChanged', (id, ifcClass) => {
       outlinerView?.setObjectIfcClass(id, ifcClass)
     })
-    this._service.on('objectLynchClassChanged', (id, lynchClass) => {
-      outlinerView?.setObjectLynchClass(id, lynchClass)
-      // Update view color when Lynch class changes
+    this._service.on('objectPlaceTypeChanged', (id, placeType) => {
+      outlinerView?.setObjectPlaceType(id, placeType)
+      // Update view color when place type changes
       const obj = this._scene.getObject(id)
-      if (obj?.meshView?.setLynchClass) obj.meshView.setLynchClass(lynchClass, obj.name)
+      if (obj?.meshView?.setPlaceType) obj.meshView.setPlaceType(placeType, obj.name)
       // Refresh N panel if this is the active object
       if (id === this._scene.activeId) this._updateNPanel()
     })
@@ -409,12 +409,12 @@ export class AppController {
       this._commandStack.push(cmd)
       this._updateNPanel()
     })
-    uiView.onLynchClassChange(lynchClass => {
+    uiView.onPlaceTypeChange(placeType => {
       const obj = this._activeObj
       if (!obj) return
-      const oldClass = obj.lynchClass ?? null
-      this._service.setLynchClass(obj.id, lynchClass)      // apply first (post-hoc push pattern)
-      const cmd = createSetLynchClassCommand(obj.id, oldClass, lynchClass ?? null, this._service)
+      const oldType = obj.placeType ?? null
+      this._service.setPlaceType(obj.id, placeType)        // apply first (post-hoc push pattern)
+      const cmd = createSetPlaceTypeCommand(obj.id, oldType, placeType ?? null, this._service)
       this._commandStack.push(cmd)
       this._updateNPanel()
     })
@@ -1105,7 +1105,7 @@ export class AppController {
     this._mapMode.isPanning = false
     this._sceneView.useOrthoCamera(true, this._mapMode.frustumSize)
     this._uiView.setCursor('default')
-    this._uiView.setStatus('Map Mode — select a Lynch type on the left to start drawing')
+    this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
     this._refreshMapToolbar()
     this._updateMobileToolbar()
   }
@@ -1123,24 +1123,24 @@ export class AppController {
   }
 
   /**
-   * Returns the geometry kind for a Lynch placement type.
+   * Returns the geometry kind for a place-type drawing tool.
    * @param {string} type
-   * @returns {'polyline'|'polygon'|'marker'}
+   * @returns {'line'|'region'|'point'}
    */
   _geometryForType(type) {
-    if (type === 'district') return 'polygon'
-    if (type === 'node' || type === 'landmark') return 'marker'
-    return 'polyline'
+    if (type === 'zone') return 'region'
+    if (type === 'hub' || type === 'anchor') return 'point'
+    return 'line'
   }
 
-  /** Returns the Lynch class name capitalised from a placement type string. */
-  _lynchClassForType(type) {
+  /** Returns the place type name capitalised from a tool type string. */
+  _placeTypeForType(type) {
     return type.charAt(0).toUpperCase() + type.slice(1)
   }
 
   /**
    * Sets the active map drawing tool.
-   * @param {string} type  'path'|'edge'|'district'|'node'|'landmark'
+   * @param {string} type  'route'|'boundary'|'zone'|'hub'|'anchor'
    */
   _setMapTool(type) {
     this._mapCancelDrawing()   // clear any in-progress drawing
@@ -1161,32 +1161,32 @@ export class AppController {
     this._uiView.setCursor('default')
     this._refreshMapToolbar()
     if (this._mapMode.active) {
-      this._uiView.setStatus('Map Mode — select a Lynch type on the left to start drawing')
+      this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
     }
   }
 
   /**
-   * Confirms the current drawing and creates the Urban entity.
-   * Called from Enter key, Confirm button, or (for polygons) clicking near the first vertex.
+   * Confirms the current drawing and creates the annotated entity.
+   * Called from Enter key, Confirm button, or (for regions) clicking near the first vertex.
    */
   _mapConfirmDrawing() {
     const { tool, points } = this._mapMode
     if (!tool) return
     const geometry  = this._geometryForType(tool)
-    const lynchClass = this._lynchClassForType(tool)
+    const placeType = this._placeTypeForType(tool)
     const renderer  = this._sceneView.renderer
 
-    if (geometry === 'marker' && points.length === 1) {
-      const obj = this._service.createUrbanMarker(points[0], undefined, {
+    if (geometry === 'point' && points.length === 1) {
+      const obj = this._service.createAnnotatedPoint(points[0], undefined, {
         camera: this._camera, renderer, container: document.body,
       })
-      this._service.setLynchClass(obj.id, lynchClass)
-    } else if (geometry === 'polyline' && points.length >= 2) {
-      const obj = this._service.createUrbanPolyline(points, undefined, renderer)
-      this._service.setLynchClass(obj.id, lynchClass)
-    } else if (geometry === 'polygon' && points.length >= 3) {
-      const obj = this._service.createUrbanPolygon(points, undefined, renderer)
-      this._service.setLynchClass(obj.id, lynchClass)
+      this._service.setPlaceType(obj.id, placeType)
+    } else if (geometry === 'line' && points.length >= 2) {
+      const obj = this._service.createAnnotatedLine(points, undefined, renderer)
+      this._service.setPlaceType(obj.id, placeType)
+    } else if (geometry === 'region' && points.length >= 3) {
+      const obj = this._service.createAnnotatedRegion(points, undefined, renderer)
+      this._service.setPlaceType(obj.id, placeType)
     } else {
       return  // not enough points
     }
@@ -1196,7 +1196,7 @@ export class AppController {
     this._mapMode.points = []
     this._mapMode.cursor = null
     this._refreshMapToolbar()
-    this._uiView.setStatus(`Map Mode — ${lynchClass} placed.  Draw another or select a different type.`)
+    this._uiView.setStatus(`Map Mode — ${placeType} placed.  Draw another or select a different type.`)
   }
 
   /** Removes preview line and cursor dot from the Three.js scene. */
@@ -1236,7 +1236,7 @@ export class AppController {
     const { tool, points, cursor } = this._mapMode
     if (!tool || !cursor) return
     const geometry = this._geometryForType(tool)
-    const entry    = getLynchClassEntry(this._lynchClassForType(tool))
+    const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
     const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
 
     // Cursor dot
@@ -1282,16 +1282,16 @@ export class AppController {
     const { tool, points } = this._mapMode
     if (!tool) return
     const geometry  = this._geometryForType(tool)
-    const typeLabel = this._lynchClassForType(tool)
+    const typeLabel = this._placeTypeForType(tool)
     const n = points.length
 
-    if (geometry === 'marker') {
+    if (geometry === 'point') {
       this._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
         { text: 'Click to place.', color: '#888' },
         { text: 'ESC cancel', color: '#444' },
       ])
-    } else if (geometry === 'polyline') {
+    } else if (geometry === 'line') {
       this._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
         { text: `${n} pts`, color: '#aaa' },
@@ -1704,7 +1704,7 @@ export class AppController {
   _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const meshes = [...this._scene.objects.values()]
-      .filter(o => !(o instanceof MeasureLine) && !(o instanceof UrbanPolyline) && !(o instanceof UrbanPolygon) && !(o instanceof UrbanMarker) && o.meshView.cuboid?.visible)
+      .filter(o => !(o instanceof MeasureLine) && !(o instanceof AnnotatedLine) && !(o instanceof AnnotatedRegion) && !(o instanceof AnnotatedPoint) && o.meshView.cuboid?.visible)
       .map(o => o.meshView.cuboid)
     const hits = this._raycaster.intersectObjects(meshes)
     if (!hits.length) return null
@@ -1794,19 +1794,19 @@ export class AppController {
     corners.forEach(c => { bMin.min(c); bMax.max(c) })
     const dims = new THREE.Vector3().subVectors(bMax, bMin)
     const locationEditable = typeof obj.move === 'function' && !(obj instanceof CoordinateFrame)
-    const showIfcClass   = obj instanceof Solid || obj instanceof ImportedMesh
-    const showLynchClass = obj instanceof UrbanPolyline || obj instanceof UrbanPolygon || obj instanceof UrbanMarker
-    const lynchGeometry  = obj instanceof UrbanPolyline ? 'polyline'
-      : obj instanceof UrbanPolygon ? 'polygon'
-      : obj instanceof UrbanMarker  ? 'marker'
+    const showIfcClass    = obj instanceof Solid || obj instanceof ImportedMesh
+    const showPlaceType   = obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
+    const placeTypeGeometry = obj instanceof AnnotatedLine   ? 'line'
+      : obj instanceof AnnotatedRegion ? 'region'
+      : obj instanceof AnnotatedPoint  ? 'point'
       : null
     this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', {
       locationEditable,
       showIfcClass,
       ifcClass: showIfcClass ? (obj.ifcClass ?? null) : undefined,
-      showLynchClass,
-      lynchClass:     showLynchClass ? (obj.lynchClass ?? null) : undefined,
-      lynchGeometry,
+      showPlaceType,
+      placeType:        showPlaceType ? (obj.placeType ?? null) : undefined,
+      placeTypeGeometry,
     })
   }
 
@@ -1914,9 +1914,9 @@ export class AppController {
         return
       }
 
-      // Urban entity toolbar: Grab | Map (to edit in map mode) | Delete | (spacer)
-      const _isUrban = o => o instanceof UrbanPolyline || o instanceof UrbanPolygon || o instanceof UrbanMarker
-      if (hasObj && _isUrban(this._activeObj)) {
+      // Annotated entity toolbar: Grab | Map (to edit in map mode) | Delete | (spacer)
+      const _isAnnotated = o => o instanceof AnnotatedLine || o instanceof AnnotatedRegion || o instanceof AnnotatedPoint
+      if (hasObj && _isAnnotated(this._activeObj)) {
         this._uiView.setMobileToolbar([
           { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
           { icon: ICONS.map,    label: 'Map',    onClick: () => this._enterMapMode() },
@@ -1928,12 +1928,12 @@ export class AppController {
 
       // 5-slot layout: Add | Dup | Edit | Delete | Stack
       // All slots always present; unavailable actions are disabled to prevent layout shifts.
-      const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isUrban(this._activeObj)
+      const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj)
       const canEdit  = canDup
       const canStack = hasObj
         && !(this._activeObj instanceof ImportedMesh)
         && !(this._activeObj instanceof MeasureLine)
-        && !_isUrban(this._activeObj)
+        && !_isAnnotated(this._activeObj)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -2135,14 +2135,14 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh, MeasureLine, CoordinateFrame, and Urban entities have no vertex graph — Edit Mode not supported
+    // ImportedMesh, MeasureLine, CoordinateFrame, and Annotated entities have no vertex graph — Edit Mode not supported
     if (mode === 'edit' && (
       this._activeObj instanceof ImportedMesh ||
       this._activeObj instanceof MeasureLine  ||
       this._activeObj instanceof CoordinateFrame ||
-      this._activeObj instanceof UrbanPolyline ||
-      this._activeObj instanceof UrbanPolygon  ||
-      this._activeObj instanceof UrbanMarker
+      this._activeObj instanceof AnnotatedLine   ||
+      this._activeObj instanceof AnnotatedRegion ||
+      this._activeObj instanceof AnnotatedPoint
     )) {
       this._uiView.showToast('Edit Mode is not available for this object type')
       return
@@ -3771,7 +3771,7 @@ export class AppController {
     // Update _mouse from the event immediately after the canvas guard.
     // On touch devices pointermove does not fire before the first pointerdown,
     // so _mouse would otherwise hold a stale (or zero) position. Every
-    // subsequent handler that calls _urbanPickPoint() / _raycaster depends on
+    // subsequent handler that calls _mapPickPoint() / _raycaster depends on
     // an up-to-date _mouse — calling _updateMouse here covers all of them.
     this._updateMouse(e)
 
@@ -4466,7 +4466,7 @@ export class AppController {
       // and CoordinateFrame axes at a constant screen size.
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
-        if (obj instanceof UrbanMarker)     obj.meshView.updateLabelPosition()
+        if (obj instanceof AnnotatedPoint)  obj.meshView.updateLabelPosition()
         if (obj instanceof CoordinateFrame) obj.meshView.updateScale(this._camera, this._sceneView.renderer)
       }
       // Sync CoordinateFrame world poses every frame (ADR-020).
@@ -4581,7 +4581,7 @@ export class AppController {
 /**
  * Returns the mutable handle array used by the grab / move system.
  *
- * - Geometry entities (Solid, Profile, MeasureLine, ImportedMesh, Urban*):
+ * - Geometry entities (Solid, Profile, MeasureLine, ImportedMesh, Annotated*):
  *   `obj.corners` — WorldVector3[], positions in world space.
  * - CoordinateFrame: `obj.localOffset` — LocalVector3[], the translation offset
  *   relative to the parent centroid.

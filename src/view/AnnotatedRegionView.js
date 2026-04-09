@@ -1,44 +1,44 @@
 /**
- * UrbanPolygonView — renderer for UrbanPolygon domain entities.
+ * AnnotatedRegionView — renderer for AnnotatedRegion domain entities.
  *
  * Renders:
- *  - A Line2 (fat line) as a closed ring connecting all vertices in Lynch color
+ *  - A Line2 (fat line) as a closed ring connecting all vertices in place-type color
  *  - A translucent fill mesh (ShapeGeometry on Z=0 XY plane)
  *  - Vertex dot markers (small spheres) at each vertex
  *  - A BoxHelper for selection highlight
  *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView.
  *
- * Note: no `cuboid` property — UrbanPolygon is excluded from raycasting.
+ * Note: no `cuboid` property — AnnotatedRegion is excluded from raycasting.
  *
- * @see ADR-026
+ * @see ADR-029
  */
 import * as THREE from 'three'
 import { Line2 }         from 'three/addons/lines/Line2.js'
 import { LineGeometry }  from 'three/addons/lines/LineGeometry.js'
 import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
-import { getLynchClassEntry } from '../domain/LynchClassRegistry.js'
+import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
 const DEFAULT_COLOR    = 0x888888
 const FILL_OPACITY     = 0.18
 const SELECTED_WIDTH   = 4
 const UNSELECTED_WIDTH = 2
 
-export class UrbanPolygonView {
+export class AnnotatedRegionView {
   /**
    * @param {THREE.Scene}   scene
    * @param {THREE.Vector3[]} points  ordered ring positions (N ≥ 3, implicitly closed)
-   * @param {string|null}   lynchClass  'District' | null
+   * @param {string|null}   placeType  'Zone' | null
    * @param {THREE.WebGLRenderer} renderer  needed for Line2 resolution
    */
-  constructor(scene, points, lynchClass, renderer) {
+  constructor(scene, points, placeType, renderer) {
     this._scene    = scene
     this._renderer = renderer
 
     // ── Line2 (closed ring) ────────────────────────────────────────────────
     this._lineGeo = new LineGeometry()
     this._lineMat = new LineMaterial({
-      color:       this._colorForClass(lynchClass),
+      color:       this._colorForType(placeType),
       linewidth:   UNSELECTED_WIDTH,
       worldUnits:  false,
       depthTest:   false,
@@ -56,7 +56,7 @@ export class UrbanPolygonView {
     // ── Fill mesh ──────────────────────────────────────────────────────────
     this._fillGeo = null
     this._fillMat = new THREE.MeshBasicMaterial({
-      color:       this._colorForClass(lynchClass),
+      color:       this._colorForType(placeType),
       transparent: true,
       opacity:     FILL_OPACITY,
       depthTest:   false,
@@ -69,7 +69,7 @@ export class UrbanPolygonView {
     // ── Vertex dots ────────────────────────────────────────────────────────
     this._dotGeo = new THREE.SphereGeometry(0.07, 6, 6)
     this._dotMat = new THREE.MeshBasicMaterial({
-      color:    this._colorForClass(lynchClass),
+      color:    this._colorForType(placeType),
       depthTest: false,
     })
     /** @type {THREE.Mesh[]} */
@@ -146,9 +146,9 @@ export class UrbanPolygonView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
-  /** Returns hex color for the given Lynch class (grey if null). */
-  _colorForClass(lynchClass) {
-    const entry = getLynchClassEntry(lynchClass)
+  /** Returns hex color for the given place type (grey if null). */
+  _colorForType(placeType) {
+    const entry = getPlaceTypeEntry(placeType)
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
@@ -168,14 +168,14 @@ export class UrbanPolygonView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
-  // ── Lynch class (color) update ─────────────────────────────────────────────
+  // ── Place type (color) update ──────────────────────────────────────────────
 
   /**
-   * Updates ring, fill, and dot color when lynchClass changes.
-   * @param {string|null} lynchClass
+   * Updates ring, fill, and dot color when placeType changes.
+   * @param {string|null} placeType
    */
-  setLynchClass(lynchClass) {
-    const hex = this._colorForClass(lynchClass)
+  setPlaceType(placeType) {
+    const hex = this._colorForType(placeType)
     this._lineMat.color.setHex(hex)
     this._fillMat.color.setHex(hex)
     this._dotMat.color.setHex(hex)

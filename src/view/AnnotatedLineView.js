@@ -1,44 +1,44 @@
 /**
- * UrbanPolylineView — renderer for UrbanPolyline domain entities.
+ * AnnotatedLineView — renderer for AnnotatedLine domain entities.
  *
  * Renders:
- *  - A Line2 (fat line) connecting all vertices in Lynch color; grey when unclassified
+ *  - A Line2 (fat line) connecting all vertices in place-type color; grey when unclassified
  *  - Vertex dot markers (small spheres) at each vertex
  *  - A BoxHelper for selection highlight
  *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView
  * so AppController's setMode() and mode-agnostic calls are safe.
  *
- * Note: no `cuboid` property — UrbanPolyline is excluded from raycasting.
+ * Note: no `cuboid` property — AnnotatedLine is excluded from raycasting.
  * Move support: updateGeometry(corners) refreshes vertex positions.
  *
- * @see ADR-026
+ * @see ADR-029
  */
 import * as THREE from 'three'
 import { Line2 }         from 'three/addons/lines/Line2.js'
 import { LineGeometry }  from 'three/addons/lines/LineGeometry.js'
 import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
-import { getLynchClassEntry } from '../domain/LynchClassRegistry.js'
+import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
 const DEFAULT_COLOR   = 0x888888   // unclassified grey
 const SELECTED_WIDTH  = 4
 const UNSELECTED_WIDTH = 2
 
-export class UrbanPolylineView {
+export class AnnotatedLineView {
   /**
    * @param {THREE.Scene}   scene
    * @param {THREE.Vector3[]} points  ordered vertex positions (N ≥ 2)
-   * @param {string|null}   lynchClass  'Path' | 'Edge' | null
+   * @param {string|null}   placeType  'Route' | 'Boundary' | null
    * @param {THREE.WebGLRenderer} renderer  needed for Line2 resolution
    */
-  constructor(scene, points, lynchClass, renderer) {
+  constructor(scene, points, placeType, renderer) {
     this._scene    = scene
     this._renderer = renderer
 
     // ── Line2 geometry ─────────────────────────────────────────────────────
     this._lineGeo = new LineGeometry()
     this._lineMat = new LineMaterial({
-      color:       this._colorForClass(lynchClass),
+      color:       this._colorForType(placeType),
       linewidth:   UNSELECTED_WIDTH,
       worldUnits:  false,    // linewidth in pixels
       depthTest:   false,
@@ -56,7 +56,7 @@ export class UrbanPolylineView {
     // ── Vertex dots ────────────────────────────────────────────────────────
     this._dotGeo = new THREE.SphereGeometry(0.06, 6, 6)
     this._dotMat = new THREE.MeshBasicMaterial({
-      color:    this._colorForClass(lynchClass),
+      color:    this._colorForType(placeType),
       depthTest: false,
     })
     /** @type {THREE.Mesh[]} */
@@ -124,9 +124,9 @@ export class UrbanPolylineView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
-  /** Returns hex color for the given Lynch class (grey if null). */
-  _colorForClass(lynchClass) {
-    const entry = getLynchClassEntry(lynchClass)
+  /** Returns hex color for the given place type (grey if null). */
+  _colorForType(placeType) {
+    const entry = getPlaceTypeEntry(placeType)
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
@@ -147,14 +147,14 @@ export class UrbanPolylineView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
-  // ── Lynch class (color) update ─────────────────────────────────────────────
+  // ── Place type (color) update ──────────────────────────────────────────────
 
   /**
-   * Updates line and dot color when lynchClass changes.
-   * @param {string|null} lynchClass
+   * Updates line and dot color when placeType changes.
+   * @param {string|null} placeType
    */
-  setLynchClass(lynchClass) {
-    const hex = this._colorForClass(lynchClass)
+  setPlaceType(placeType) {
+    const hex = this._colorForType(placeType)
     this._lineMat.color.setHex(hex)
     this._dotMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)

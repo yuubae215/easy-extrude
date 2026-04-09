@@ -1,9 +1,13 @@
 /**
- * UrbanMarker — domain entity for a 2D urban point element.
+ * AnnotatedPoint — domain entity for a 2D annotated point element.
  *
- * Represents Kevin Lynch's point-like elements at city/map scale:
- *   - Node     (ノード)         : strategic focal points — junctions, squares, concentrations
- *   - Landmark (ランドマーク)   : memorable external reference points — towers, monuments
+ * Represents a point spatial feature whose position carries semantic meaning.
+ * Valid placeType values:
+ *   - 'Hub'    : junction / focal concentration / datum hole / fixture point
+ *   - 'Anchor' : external reference / memorable feature / root datum of a tolerance chain
+ *
+ * Scale-independent: usable at city scale (intersection, monument),
+ * building scale (doorway, column), or part scale (datum hole, reference feature).
  *
  * Graph model (ADR-021):
  *   Implements the LocalGeometry interface.
@@ -11,36 +15,35 @@
  *   edges:    []          — none (0D topology)
  *   faces:    []          — none
  *
- * The `lynchClass` field carries the semantic Lynch classification
- * ('Node' | 'Landmark').
+ * The `placeType` field carries the semantic place classification ('Hub' | 'Anchor').
  *
  * Type identity:
- *   `instanceof UrbanMarker` → point urban element; move OK, no Edit Mode.
+ *   `instanceof AnnotatedPoint` → point annotated element; move OK, no Edit Mode.
  *
- * @see ADR-026, ADR-021, ADR-020
+ * @see ADR-029, ADR-021, ADR-020
  */
 import { Vertex } from '../graph/Vertex.js'
 
-export class UrbanMarker {
+export class AnnotatedPoint {
   /**
    * @param {string}   id
    * @param {string}   name
    * @param {Vertex[]} vertices  [v0] — single anchor vertex
-   * @param {object}   meshView  rendering context (UrbanMarkerView, future)
+   * @param {object}   meshView  rendering context (AnnotatedPointView)
    */
   constructor(id, name, vertices, meshView) {
     this.id          = id
     this.name        = name
     this.description = ''
     /**
-     * Lynch semantic class.
-     * @type {'Node'|'Landmark'|null}
-     * @see ADR-026, LynchClassRegistry
+     * Semantic place type.
+     * @type {'Hub'|'Anchor'|null}
+     * @see ADR-029, PlaceTypeRegistry
      */
-    this.lynchClass  = null
+    this.placeType   = null
     /** @type {Vertex[]}  single-element array — the anchor point */
     this.vertices    = vertices
-    /** @type {[]}  always empty — UrbanMarker is a 0D point entity */
+    /** @type {[]}  always empty — AnnotatedPoint is a 0D point entity */
     this.edges       = []
     /** @type {[]}  always empty */
     this.faces       = []
@@ -75,14 +78,14 @@ export class UrbanMarker {
   // ── Factory helper ─────────────────────────────────────────────────────────
 
   /**
-   * Builds an UrbanMarker from a single Vector3 anchor point.
+   * Builds an AnnotatedPoint from a single Vector3 anchor position.
    * @param {string}                   id
    * @param {string}                   name
    * @param {import('three').Vector3}  point   anchor position
    * @param {object}                   meshView
-   * @returns {UrbanMarker}
+   * @returns {AnnotatedPoint}
    */
   static fromPoint(id, name, point, meshView) {
-    return new UrbanMarker(id, name, [new Vertex(`${id}_v0`, point.clone())], meshView)
+    return new AnnotatedPoint(id, name, [new Vertex(`${id}_v0`, point.clone())], meshView)
   }
 }

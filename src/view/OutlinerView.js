@@ -14,7 +14,7 @@
  *   to the right of the object name. Pass null to hide the badge.
  */
 import { IFC_CLASS_MAP }    from '../domain/IFCClassRegistry.js'
-import { LYNCH_CLASS_MAP } from '../domain/LynchClassRegistry.js'
+import { PLACE_TYPE_MAP } from '../domain/PlaceTypeRegistry.js'
 
 export class OutlinerView {
   constructor() {
@@ -179,12 +179,12 @@ export class OutlinerView {
    *
    * @param {string} id
    * @param {string} name
-   * @param {'cuboid'|'sketch'|'imported'|'measure'|'frame'|'urban-polyline'|'urban-polygon'|'urban-marker'} [type='cuboid']
+   * @param {'cuboid'|'sketch'|'imported'|'measure'|'frame'|'annot-line'|'annot-region'|'annot-point'} [type='cuboid']
    * @param {string|null} [parentId=null]
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
-    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl } = this._createRow(id, name, type, depth)
+    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, iconEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
       // Find insertion point: after the entire subtree rooted at parentId so
@@ -203,7 +203,7 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl, visible: true, parentId, locked: false })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, iconEl, visible: true, parentId, locked: false })
   }
 
   /**
@@ -232,30 +232,30 @@ export class OutlinerView {
   }
 
   /**
-   * Updates the Lynch class badge for an Urban entity row.
-   * Also updates the icon color to reflect the Lynch class color.
+   * Updates the place type badge for an annotated entity row.
+   * Also updates the icon color to reflect the place type color.
    * @param {string} id
-   * @param {string|null} lynchClass  — null hides the badge
+   * @param {string|null} placeType  — null hides the badge
    */
-  setObjectLynchClass(id, lynchClass) {
+  setObjectPlaceType(id, placeType) {
     const item = this._items.get(id)
     if (!item) return
-    const entry = lynchClass ? LYNCH_CLASS_MAP.get(lynchClass) : null
+    const entry = placeType ? PLACE_TYPE_MAP.get(placeType) : null
     if (entry) {
-      item.lynchBadgeEl.textContent = entry.name
-      item.lynchBadgeEl.title = entry.label
-      Object.assign(item.lynchBadgeEl.style, {
+      item.placeTypeBadgeEl.textContent = entry.name
+      item.placeTypeBadgeEl.title = entry.label
+      Object.assign(item.placeTypeBadgeEl.style, {
         display:    'inline-block',
         background: entry.color + '22',
         border:     `1px solid ${entry.color}`,
         color:      entry.color,
       })
-      // Also update the icon color to match the Lynch class
+      // Also update the icon color to match the place type
       if (item.iconEl) item.iconEl.style.color = entry.color
     } else {
-      item.lynchBadgeEl.textContent = ''
-      item.lynchBadgeEl.title = ''
-      item.lynchBadgeEl.style.display = 'none'
+      item.placeTypeBadgeEl.textContent = ''
+      item.placeTypeBadgeEl.title = ''
+      item.placeTypeBadgeEl.style.display = 'none'
       // Reset icon to grey (unclassified)
       if (item.iconEl) item.iconEl.style.color = '#888888'
     }
@@ -529,17 +529,17 @@ export class OutlinerView {
       iconColor = '#a0c8ff'
     } else if (type === 'sketch') {
       iconColor = '#80cbc4'
-    } else if (type === 'urban-polyline') {
+    } else if (type === 'annot-line') {
       iconText  = '⟿'
-      iconTitle = 'Urban polyline (Path / Edge)'
-      iconColor = '#888888'   // updated by setObjectLynchClass
-    } else if (type === 'urban-polygon') {
+      iconTitle = 'Annotated line (Route / Boundary)'
+      iconColor = '#888888'   // updated by setObjectPlaceType
+    } else if (type === 'annot-region') {
       iconText  = '⬡'
-      iconTitle = 'Urban polygon (District)'
+      iconTitle = 'Annotated region (Zone)'
       iconColor = '#888888'
-    } else if (type === 'urban-marker') {
+    } else if (type === 'annot-point') {
       iconText  = '⬤'
-      iconTitle = 'Urban marker (Node / Landmark)'
+      iconTitle = 'Annotated point (Hub / Anchor)'
       iconColor = '#888888'
     }
 
@@ -622,9 +622,9 @@ export class OutlinerView {
       if (this._onDeleteCb) this._onDeleteCb(id)
     })
 
-    // Lynch class badge (hidden by default; shown via setObjectLynchClass)
-    const lynchBadgeEl = document.createElement('span')
-    Object.assign(lynchBadgeEl.style, {
+    // Place type badge (hidden by default; shown via setObjectPlaceType)
+    const placeTypeBadgeEl = document.createElement('span')
+    Object.assign(placeTypeBadgeEl.style, {
       display:        'none',
       fontSize:       '9px',
       fontWeight:     'bold',
@@ -644,7 +644,7 @@ export class OutlinerView {
     rowEl.appendChild(iconEl)
     rowEl.appendChild(nameEl)
     rowEl.appendChild(ifcBadgeEl)
-    rowEl.appendChild(lynchBadgeEl)
+    rowEl.appendChild(placeTypeBadgeEl)
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
 
@@ -740,6 +740,6 @@ export class OutlinerView {
       if (this._onReparentCb) this._onReparentCb(dragged, id)
     })
 
-    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, lynchBadgeEl, iconEl }
+    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, iconEl }
   }
 }

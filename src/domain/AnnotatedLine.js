@@ -1,50 +1,52 @@
 /**
- * UrbanPolyline — domain entity for a 2D urban linear element.
+ * AnnotatedLine — domain entity for a 2D annotated linear element.
  *
- * Represents Kevin Lynch's linear elements at city/map scale:
- *   - Path  (パス)  : channels of movement — streets, walkways, transit lines
- *   - Edge  (エッジ) : linear boundaries — shorelines, walls, fences, railroad cuts
+ * Represents a linear spatial feature whose position carries semantic meaning.
+ * Valid placeType values: 'Route' (movement channel) or 'Boundary' (separating edge).
+ *
+ * Scale-independent: usable at city scale (street, shoreline), building scale
+ * (corridor, wall), or part scale (feed path, area boundary).
  *
  * Graph model (ADR-021):
  *   Implements the LocalGeometry interface.
  *   vertices: Vertex[N]   — ordered sequence of N ≥ 2 points
- *   edges:    Edge[N-1]   — sequential connections (v0→v1, v1→v2, …, v[N-2]→v[N-1])
- *   faces:    []          — always empty (2D / open linear entity)
+ *   edges:    Edge[N-1]   — sequential connections (v0→v1, v1→v2, …)
+ *   faces:    []          — always empty (2D open linear entity)
  *
- * The entity lives in the XY plane (Z = 0 for ground-level urban elements).
- * The `lynchClass` field carries the semantic Lynch classification ('Path' | 'Edge').
+ * The entity lives in the XY plane (Z = 0 for ground-level elements).
+ * The `placeType` field carries the semantic place classification ('Route' | 'Boundary').
  *
  * Type identity:
- *   `instanceof UrbanPolyline` → linear urban element; move OK, no Edit Mode (planned).
+ *   `instanceof AnnotatedLine` → linear annotated element; move OK, no Edit Mode.
  *
- * @see ADR-026, ADR-021, ADR-020
+ * @see ADR-029, ADR-021, ADR-020
  */
 import { Vertex } from '../graph/Vertex.js'
 import { Edge }   from '../graph/Edge.js'
 
-export class UrbanPolyline {
+export class AnnotatedLine {
   /**
    * @param {string}   id
    * @param {string}   name
    * @param {Vertex[]} vertices  ordered sequence, N ≥ 2
    * @param {Edge[]}   edges     N-1 sequential edges
-   * @param {object}   meshView  rendering context (UrbanPolylineView, future)
+   * @param {object}   meshView  rendering context (AnnotatedLineView)
    */
   constructor(id, name, vertices, edges, meshView) {
     this.id          = id
     this.name        = name
     this.description = ''
     /**
-     * Lynch semantic class.
-     * @type {'Path'|'Edge'|null}
-     * @see ADR-026, LynchClassRegistry
+     * Semantic place type.
+     * @type {'Route'|'Boundary'|null}
+     * @see ADR-029, PlaceTypeRegistry
      */
-    this.lynchClass  = null
+    this.placeType   = null
     /** @type {Vertex[]} */
     this.vertices    = vertices
     /** @type {Edge[]} */
     this.edges       = edges
-    /** @type {[]}  always empty — UrbanPolyline is a 2D open linear entity */
+    /** @type {[]}  always empty — AnnotatedLine is a 2D open linear entity */
     this.faces       = []
     this.meshView    = meshView
   }
@@ -73,13 +75,13 @@ export class UrbanPolyline {
   // ── Factory helper ─────────────────────────────────────────────────────────
 
   /**
-   * Builds an UrbanPolyline from an ordered array of Vector3 points.
+   * Builds an AnnotatedLine from an ordered array of Vector3 points.
    * Vertex and Edge ids are derived from the entity id.
    * @param {string}                    id
    * @param {string}                    name
    * @param {import('three').Vector3[]} points   N ≥ 2 ordered points
    * @param {object}                    meshView
-   * @returns {UrbanPolyline}
+   * @returns {AnnotatedLine}
    */
   static fromPoints(id, name, points, meshView) {
     const vertices = points.map((p, i) => new Vertex(`${id}_v${i}`, p.clone()))
@@ -87,6 +89,6 @@ export class UrbanPolyline {
     for (let i = 0; i < vertices.length - 1; i++) {
       edges.push(new Edge(`${id}_e${i}`, vertices[i], vertices[i + 1]))
     }
-    return new UrbanPolyline(id, name, vertices, edges, meshView)
+    return new AnnotatedLine(id, name, vertices, edges, meshView)
   }
 }
