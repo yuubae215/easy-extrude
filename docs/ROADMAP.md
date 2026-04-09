@@ -88,6 +88,71 @@ full specification in ADR-030.
 
 ---
 
+## Spatial Node Editor Strategy (ADR-030 × ADR-016/017)
+
+SpatialLink (ADR-030) と Node Editor (ADR-016/017) は、同じシーンオブジェクトに対する
+**異なる抽象レベルのグラフ表現**である。
+
+| レイヤー | エッジ種別 | 意味 | 効果 |
+|---------|-----------|------|------|
+| 意味的 (Semantic) | SpatialLink (`references`/`connects`/`contains`/`adjacent`) | 人間が読む意図 | なし — アノテーションのみ |
+| 計算的 (Computational) | OperationGraph (BFF Phase D) | 形状依存関係 | サーバサイド計算を駆動 |
+| 構造的 (Structural) | TransformGraph `'frame'` エッジ | SE(3) 親子 | 世界座標を駆動 |
+
+三者はすでに `getSceneGraph()` (ADR-028) という統一データソースを共有している。
+ADR-016 §4 の Extension path もこの方向を示唆している。
+
+戦略的な機会は、**Node Editor パネルを三レイヤー統合グラフエディタとして育てる**ことにある。
+それにより SpatialLink Phase 4 の `L` キー作成フローと、BFF Phase D の DAG 編集 UI が
+「グラフに辺を追加する」同一 UX として収束し、二重実装を避けられる。
+
+### Phase S-1 — Node Editor パネルへの統合シーングラフ表示
+
+| タスク | 詳細 | ADR |
+|--------|------|-----|
+| Node Editor が `getSceneGraph()` を読む | シーンエンティティをノード、`'frame'`/`'anchor'`/`'spatial'` エッジをレイヤー別に描画 | ADR-016, ADR-028, ADR-030 |
+| エッジ視覚語彙 | SpatialLink は既存の linkType 配色 (amber/cyan/violet/slate) を継承; OperationGraph エッジは別スタイル (例: 白実線) | ADR-030, ADR-017 |
+| レイヤーフィルタトグル | 各エッジ種別の表示/非表示を独立切替; 大規模シーンの視覚的複雑度を低減 | — |
+| 読み取り専用 (Phase S-1) | 表示のみ; トポロジー編集は Phase S-2 以降 | — |
+
+### Phase S-2 — Node Editor パネルでの SpatialLink 編集
+
+| タスク | 詳細 | ADR |
+|--------|------|-----|
+| ノード接続で SpatialLink 作成 | ソースノードのポートからドラッグ → ターゲットノードにリリース → linkType ピッカーオーバーレイ | ADR-030 §8 (代替作成フロー) |
+| エッジ選択で SpatialLink 削除 | パネル上のエッジ選択 → Delete キー → `DeleteSpatialLinkCommand` | ADR-030, ADR-022 |
+| `L` キーフローとの同期 | 両フローが同じ `CreateSpatialLinkCommand` を push する; 重複なし | ADR-030 |
+
+### Phase S-3 — 意味的エッジの計算的エッジへのアップグレード
+
+SpatialLink の意味型を起点に、段階的に「計算的効果を持つ構造」へ昇格させるパス。
+
+| タスク | 詳細 | ADR |
+|--------|------|-----|
+| `references` → CoordinateFrame 親子化 | `references` エッジのコンテキストメニュー「親フレームとして昇格」→ `SpatialLink` を保持したまま `CoordinateFrame.parentId` を設定 | ADR-018, ADR-019, ADR-030 |
+| `connects` → 拘束 (revolute / prismatic) | `connects` エッジから「拘束を追加」→ 拘束種別ピッカー → バックログの Revolute/Prismatic Constraint 実装を起動 | ADR-016 |
+| アップグレードは非破壊的 | 元の SpatialLink は新しい構造的/計算的エッジと並存; ユーザーはいつでも降格できる | — |
+
+> **設計上の注意**: アップグレードは SpatialLink を削除しない。意味的記述と計算的効果を
+> 独立した関心として保持することで、PHILOSOPHY #3 (純粋計算と副作用の分離) を尊重する。
+
+### Phase S-4 — 統合グラフ編集 (BFF Phase D Node Editor 項目を包含)
+
+| タスク | 詳細 | ADR |
+|--------|------|-----|
+| DAG トポロジー編集 | Node Editor パネルで OperationGraph エッジを作成/削除; BFF Phase D の「Node Editor — DAG topology editing UI」を直接達成 | ADR-017 |
+| 混在レイヤーグラフビュー | TransformGraph (構造) / SpatialLink (意味) / OperationGraph (計算) を単一キャンバス上にレイヤー切替表示 | ADR-016, ADR-028, ADR-030 |
+| BFF Phase D 項目の置換え | Phase S-4 が完成したら「Node Editor — DAG topology editing UI」を BFF Phase D テーブルから削除し、このロードマップ項目に統合 | ADR-015, ADR-017 |
+
+### アーキテクチャ上の前提
+
+`getSceneGraph()` はすでに三レイヤー全体の統一データソースである。
+Phase S-1 は新規データパイプライン不要 — Node Editor パネルの描画ターゲット追加のみ。
+Phase S-2/S-3 は既存のコマンド/イベントシステムを拡張するだけで新規ドメイン概念を要しない。
+**新 ADR は Phase S-3 (拘束ソルバー設計) および Phase S-4 (統合グラフ編集 UI) の着手前に作成する。**
+
+---
+
 ## Wasm Geometry Engine — remaining work (ADR-027)
 
 Phases 1–4 are implemented (2026-04-05). See ADR-027 for full design and implementation details.
