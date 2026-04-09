@@ -98,8 +98,12 @@ export class OutlinerView {
      *   nameEl: HTMLElement,
      *   triEl: HTMLElement,
      *   ifcBadgeEl: HTMLElement,
+     *   placeTypeBadgeEl: HTMLElement,
+     *   linkedBadgeEl: HTMLElement,
+     *   iconEl: HTMLElement,
      *   visible: boolean,
-     *   parentId: string|null
+     *   parentId: string|null,
+     *   locked: boolean
      * }>}
      */
     this._items        = new Map()
@@ -184,7 +188,7 @@ export class OutlinerView {
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
-    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, iconEl } = this._createRow(id, name, type, depth)
+    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, iconEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
       // Find insertion point: after the entire subtree rooted at parentId so
@@ -203,7 +207,19 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, iconEl, visible: true, parentId, locked: false })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, iconEl, visible: true, parentId, locked: false })
+  }
+
+  /**
+   * Shows or hides the SpatialLink participation badge on an outliner row.
+   * Called by AppController when spatialLinkAdded / spatialLinkRemoved fires.
+   * @param {string} id
+   * @param {boolean} hasLinks
+   */
+  setObjectLinked(id, hasLinks) {
+    const item = this._items.get(id)
+    if (!item) return
+    item.linkedBadgeEl.style.display = hasLinks ? 'inline-block' : 'none'
   }
 
   /**
@@ -640,11 +656,24 @@ export class OutlinerView {
       cursor:         'default',
     })
 
+    // SpatialLink badge — small chain icon, hidden until entity participates in ≥ 1 link
+    const linkedBadgeEl = document.createElement('span')
+    linkedBadgeEl.textContent = '⟡'
+    linkedBadgeEl.title = 'Has spatial links'
+    Object.assign(linkedBadgeEl.style, {
+      display:    'none',
+      fontSize:   '10px',
+      color:      '#a78bfa',  // soft violet, matches 'contains' link color
+      flexShrink: '0',
+      cursor:     'default',
+    })
+
     rowEl.appendChild(triEl)
     rowEl.appendChild(iconEl)
     rowEl.appendChild(nameEl)
     rowEl.appendChild(ifcBadgeEl)
     rowEl.appendChild(placeTypeBadgeEl)
+    rowEl.appendChild(linkedBadgeEl)
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
 
@@ -740,6 +769,6 @@ export class OutlinerView {
       if (this._onReparentCb) this._onReparentCb(dragged, id)
     })
 
-    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, iconEl }
+    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, iconEl }
   }
 }
