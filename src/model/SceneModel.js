@@ -15,6 +15,9 @@ export class SceneModel {
     /** @type {Map<string, SceneObject>} */
     this._objects = new Map()
 
+    /** @type {Map<string, import('../domain/SpatialLink.js').SpatialLink>} */
+    this._links = new Map()
+
     /** @type {string|null} */
     this._activeId = null
 
@@ -36,6 +39,9 @@ export class SceneModel {
 
   /** Full object map (do not mutate directly; use addObject / removeObject). */
   get objects() { return this._objects }
+
+  /** Full link map (do not mutate directly; use addLink / removeLink). */
+  get links() { return this._links }
 
   /** ID of the currently active object, or null if none. */
   get activeId() { return this._activeId }
@@ -82,6 +88,15 @@ export class SceneModel {
     return [...this._objects.values()].filter(o => !o.parentId)
   }
 
+  /**
+   * Returns the SpatialLink for the given id, or null if not found.
+   * @param {string} id
+   * @returns {import('../domain/SpatialLink.js').SpatialLink|null}
+   */
+  getLink(id) {
+    return this._links.get(id) ?? null
+  }
+
   // ── Commands ───────────────────────────────────────────────────────────────
 
   /**
@@ -99,6 +114,22 @@ export class SceneModel {
    */
   removeObject(id) {
     this._objects.delete(id)
+  }
+
+  /**
+   * Adds a SpatialLink to the scene. The link must have a unique `id`.
+   * @param {import('../domain/SpatialLink.js').SpatialLink} link
+   */
+  addLink(link) {
+    this._links.set(link.id, link)
+  }
+
+  /**
+   * Removes the SpatialLink with the given id from the scene.
+   * @param {string} id
+   */
+  removeLink(id) {
+    this._links.delete(id)
   }
 
   /**

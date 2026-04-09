@@ -39,6 +39,12 @@
  * SceneObjectDTO (AnnotatedPoint):
  * { type: 'AnnotatedPoint', id, name, description, placeType: string|null,
  *   vertex: { id, x, y, z } }
+ *
+ * SpatialLinkDTO:
+ * { type: 'SpatialLink', id, sourceId, targetId,
+ *   linkType: 'references'|'connects'|'contains'|'adjacent' }
+ *
+ * The serialized payload (v1.2+) has an additional top-level `links` array.
  */
 import { Solid }            from '../domain/Solid.js'
 import { Profile }          from '../domain/Profile.js'
@@ -88,11 +94,11 @@ export { f32ToBase64, u32ToBase64, base64ToF32, base64ToU32 }
 // ── Serialise ─────────────────────────────────────────────────────────────────
 
 /**
- * Converts all live objects in a SceneModel into a plain-JSON payload
+ * Converts all live objects and links in a SceneModel into a plain-JSON payload
  * suitable for the BFF REST API.
  *
  * @param {import('../model/SceneModel.js').SceneModel} scene
- * @returns {{ objects: object[], transformGraph: { nodes: [], edges: [] } }}
+ * @returns {{ objects: object[], links: object[], transformGraph: { nodes: [], edges: [] } }}
  */
 export function serializeScene(scene) {
   const objects = []
@@ -207,6 +213,18 @@ export function serializeScene(scene) {
     }
   }
 
+  // Serialize SpatialLinks (ADR-030).
+  const links = []
+  for (const link of scene.links.values()) {
+    links.push({
+      type:     'SpatialLink',
+      id:       link.id,
+      sourceId: link.sourceId,
+      targetId: link.targetId,
+      linkType: link.linkType,
+    })
+  }
+
   // Phase A: no real transform-graph editing yet; emit a node per object.
   const nodes = objects.map(o => ({
     id:       `tnode_${o.id}`,
@@ -227,6 +245,7 @@ export function serializeScene(scene) {
 
   return {
     objects,
+    links,
     transformGraph: { nodes, edges },
   }
 }

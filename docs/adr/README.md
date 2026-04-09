@@ -41,7 +41,7 @@ This directory records the project's design decisions.
 | [ADR-027](ADR-027-wasm-geometry-engine.md) | **Wasm Geometry Engine — Three-Layer Architecture with Zero-Copy Data Path** | Accepted | 2026-04-05 | ADR-007, ADR-012, ADR-017 |
 | [ADR-028](ADR-028-anchored-annotations-scene-graph.md) | **Anchored Annotations & Scene Graph API** | Accepted | 2026-04-06 | ADR-012, ADR-016, ADR-018, ADR-019, ADR-021 |
 | [ADR-029](ADR-029-spatial-annotation-system.md) | **Spatial Annotation System — AnnotatedLine/Region/Point with Place Types** | Accepted | 2026-04-08 | ADR-020, ADR-021, ADR-022, ADR-025, ADR-013, ADR-028 |
-| [ADR-030](ADR-030-spatial-link.md) | **SpatialLink — Typed Semantic Edges Between Annotated Elements** | Proposed | 2026-04-09 | ADR-029, ADR-028, ADR-013, ADR-020, ADR-022 |
+| [ADR-030](ADR-030-spatial-link.md) | **SpatialLink — Typed Semantic Edges Between Annotated Elements** | Accepted | 2026-04-09 | ADR-029, ADR-028, ADR-013, ADR-020, ADR-022 |
 
 ## How to Add a New ADR
 

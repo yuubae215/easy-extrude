@@ -3,7 +3,12 @@
  *
  * Pure computation: no I/O, no DOM, no Three.js mutations.
  *
- * Supported versions: "1.0" (no ImportedMesh geometry), "1.1" (geometry buffers included).
+ * Supported versions:
+ *   "1.0" — no ImportedMesh geometry
+ *   "1.1" — geometry buffers included
+ *   "1.2" — SpatialLinks included (top-level `links` array)
+ *
+ * Backward compatibility: files missing `links` are imported with links treated as [].
  *
  * Usage:
  *   const parsed = parseImportJson(jsonText)   // throws on invalid input
@@ -12,13 +17,15 @@
 
 /** @typedef {'Solid'|'Profile'|'MeasureLine'|'CoordinateFrame'|'ImportedMesh'} ObjType */
 
-const SUPPORTED_VERSIONS = new Set(['1.0', '1.1'])
+const SUPPORTED_VERSIONS = new Set(['1.0', '1.1', '1.2'])
+
+const VALID_LINK_TYPES = new Set(['references', 'connects', 'contains', 'adjacent'])
 
 /**
  * Parse and lightly validate the JSON text of an exported scene file.
  *
  * @param {string} jsonText  Raw text content of the .json file.
- * @returns {{ version: string, objects: object[] }}
+ * @returns {{ version: string, objects: object[], links: object[] }}
  * @throws {Error} if the JSON is malformed or the schema is invalid.
  */
 export function parseImportJson(jsonText) {
@@ -50,5 +57,15 @@ export function parseImportJson(jsonText) {
     return true
   })
 
-  return { version: root.version, objects }
+  // Parse SpatialLinks (v1.2+); treat missing array as empty for older files.
+  const links = Array.isArray(root.links) ? root.links.filter(l => {
+    if (!l || typeof l !== 'object')              return false
+    if (typeof l.id !== 'string' || !l.id)        return false
+    if (typeof l.sourceId !== 'string')            return false
+    if (typeof l.targetId !== 'string')            return false
+    if (!VALID_LINK_TYPES.has(l.linkType))         return false
+    return true
+  }) : []
+
+  return { version: root.version, objects, links }
 }
