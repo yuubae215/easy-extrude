@@ -46,6 +46,9 @@ import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
+import { SpatialLink } from '../domain/SpatialLink.js'
+import { createSpatialLinkCommand }       from '../command/CreateSpatialLinkCommand.js'
+import { createDeleteSpatialLinkCommand } from '../command/DeleteSpatialLinkCommand.js'
 
 export class AppController {
   /**
@@ -115,6 +118,22 @@ export class AppController {
       // Refresh N panel if this is the active object
       if (id === this._scene.activeId) this._updateNPanel()
     })
+    // SpatialLink events — refresh outliner badges and N panel (ADR-030 Phase 4)
+    this._service.on('spatialLinkAdded', (link) => {
+      this._refreshLinkBadge(link.sourceId)
+      this._refreshLinkBadge(link.targetId)
+      if (link.sourceId === this._scene.activeId || link.targetId === this._scene.activeId) {
+        this._updateNPanel()
+      }
+    })
+    this._service.on('spatialLinkRemoved', () => {
+      // Refresh all badges — a removal may drop an entity's link count to 0
+      for (const obj of this._scene.objects.values()) {
+        this._refreshLinkBadge(obj.id)
+      }
+      if (this._activeObj) this._updateNPanel()
+    })
+
     this._service.on('geometryApplied', ({ objectId }) => {
       this._importProgressUnsub?.(); this._importProgressUnsub = null
       this._uiView.hideImportProgress()
@@ -174,6 +193,17 @@ export class AppController {
       pressing:     false,
       /** MeshView used for snap candidate display (may differ from _meshView when active obj is MeasureLine) */
       snapMeshView: null,
+    }
+
+    // ── SpatialLink creation state (ADR-030 Phase 4) ──────────────────────
+    // Active while the user is selecting a target entity after pressing L.
+    // Phase 1: sourceId captured, waiting for target click.
+    this._spatialLinkMode = {
+      active:           false,
+      /** @type {string|null} ID of the source entity */
+      sourceId:         null,
+      /** @type {string|null} ID of the candidate target (pending picker) */
+      pendingTargetId:  null,
     }
 
     // ── 2D Map Mode state ─────────────────────────────────────────────────
@@ -1463,6 +1493,11 @@ export class AppController {
   _duplicateObject() {
     const id = this._scene.activeId
     if (!id) return
+    // SpatialLink has no geometry — cannot be duplicated (ADR-030)
+    if (this._activeObj instanceof SpatialLink) {
+      this._uiView.showToast('SpatialLink cannot be duplicated', { type: 'warn' })
+      return
+    }
     if (this._scene.selectionMode === 'edit') this.setMode('object')
     const copy = this._service.duplicateSolid(id)
     if (!copy) return
@@ -1540,6 +1575,13 @@ export class AppController {
 
   /** Called when user clicks a row in the outliner */
   _onOutlinerSelect(id) {
+    // During link creation: treat the clicked row as the target entity
+    if (this._spatialLinkMode.active) {
+      if (id !== this._spatialLinkMode.sourceId) {
+        this._showLinkTypePicker(window.innerWidth / 2, window.innerHeight / 2, id)
+      }
+      return  // don't change active selection while in link mode
+    }
     if (this._scene.selectionMode === 'edit') this.setMode('object')
     if (id !== this._scene.activeId) {
       this._switchActiveObject(id, true)
@@ -1547,6 +1589,121 @@ export class AppController {
       // Clicking the already-active row just re-selects it
       this._setObjectSelected(true)
     }
+  }
+
+  // ── SpatialLink creation flow (ADR-030 Phase 4) ────────────────────────────
+
+  /** Starts the two-phase L-key link creation. Source = currently active entity. */
+  _startSpatialLinkCreation() {
+    this._spatialLinkMode.active   = true
+    this._spatialLinkMode.sourceId = this._scene.activeId
+    this._spatialLinkMode.pendingTargetId = null
+    this._uiView.setStatus('Click target entity  [Esc: cancel]')
+    this._uiView.setCursor('crosshair')
+  }
+
+  /** Cancels link creation mode and restores normal status. */
+  _cancelSpatialLinkCreation() {
+    this._spatialLinkMode.active   = false
+    this._spatialLinkMode.sourceId = null
+    this._spatialLinkMode.pendingTargetId = null
+    this._uiView.setCursor('default')
+    this._refreshObjectModeStatus()
+  }
+
+  /**
+   * Opens the link-type picker at (x, y) for the given target entity.
+   * On selection, calls _confirmSpatialLink().
+   * @param {number} x  client X
+   * @param {number} y  client Y
+   * @param {string} targetId
+   */
+  _showLinkTypePicker(x, y, targetId) {
+    this._spatialLinkMode.pendingTargetId = targetId
+    this._uiView.showLinkTypePicker(x, y, (linkType) => {
+      this._confirmSpatialLink(linkType)
+    })
+  }
+
+  /**
+   * Creates the SpatialLink and records the undo command.
+   * @param {'references'|'connects'|'contains'|'adjacent'} linkType
+   */
+  _confirmSpatialLink(linkType) {
+    const { sourceId, pendingTargetId } = this._spatialLinkMode
+    if (!sourceId || !pendingTargetId) return
+    const link = this._service.createSpatialLink(sourceId, pendingTargetId, linkType)
+    this._commandStack.push(createSpatialLinkCommand(link, this._service))
+    this._uiView.showToast(`Link created: ${linkType}`)
+    this._cancelSpatialLinkCreation()
+    this._updateNPanel()
+  }
+
+  /**
+   * Refreshes the outliner "linked" badge for an entity based on its current link count.
+   * @param {string} entityId
+   */
+  _refreshLinkBadge(entityId) {
+    if (!this._outlinerView) return
+    const hasLinks = this._service.getLinksOf(entityId).length > 0
+    this._outlinerView.setObjectLinked(entityId, hasLinks)
+  }
+
+  /**
+   * Hit-tests all scene entities for SpatialLink target selection.
+   * Returns the hit entity, or null if nothing was hit.
+   * Checks cuboid geometry first, then falls back to bounding-box for
+   * non-geometry entities (AnnotatedLine/Region/Point, MeasureLine, CoordinateFrame).
+   * @returns {{ obj: object }|null}
+   */
+  _hitAnyEntityForLink() {
+    // Step 1: cuboid-based raycast (same as _hitAnyObject but excludes source)
+    const cuboidHit = this._hitAnyObject()
+    if (cuboidHit && cuboidHit.obj.id !== this._spatialLinkMode.sourceId) {
+      return cuboidHit
+    }
+
+    // Step 2: bounding-box check for non-cuboid entities
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const ray = this._raycaster.ray
+    const pt  = new THREE.Vector3()
+
+    let nearestDist = Infinity
+    let nearestObj  = null
+
+    for (const obj of this._scene.objects.values()) {
+      if (obj.id === this._spatialLinkMode.sourceId) continue
+      if (obj.meshView?.cuboid?.visible) continue  // already checked in step 1
+
+      let box = null
+
+      if (obj instanceof CoordinateFrame) {
+        const wp = this._service.worldPoseOf(obj.id)?.position
+        if (wp) {
+          box = new THREE.Box3(
+            wp.clone().subScalar(0.4),
+            wp.clone().addScalar(0.4),
+          )
+        }
+      } else if (obj.corners && obj.corners.length > 0) {
+        box = new THREE.Box3()
+        for (const c of obj.corners) box.expandByPoint(c)
+        box.expandByScalar(0.4)
+      }
+
+      if (!box) continue
+
+      const hitPt = ray.intersectBox(box, pt)
+      if (hitPt) {
+        const dist = ray.origin.distanceTo(hitPt)
+        if (dist < nearestDist) {
+          nearestDist = dist
+          nearestObj  = obj
+        }
+      }
+    }
+
+    return nearestObj ? { obj: nearestObj } : null
   }
 
   // ─── Event binding ─────────────────────────────────────────────────────────
@@ -1778,6 +1935,24 @@ export class AppController {
       return
     }
 
+    // SpatialLink has no geometry — show a minimal N-panel summary (ADR-030)
+    if (obj instanceof SpatialLink) {
+      const src = this._scene.getObject(obj.sourceId)
+      const tgt = this._scene.getObject(obj.targetId)
+      const srcName = src?.name ?? obj.sourceId
+      const tgtName = tgt?.name ?? obj.targetId
+      this._uiView.updateNPanelForSpatialLink(obj, srcName, tgtName, () => {
+        // Delete callback from N-panel
+        const link = this._scene.getLink(obj.id)
+        if (!link) return
+        this._service.detachSpatialLink(obj.id)
+        this._commandStack.push(createDeleteSpatialLinkCommand(link, this._service))
+        this._uiView.showToast('Link deleted')
+        this._updateNPanel()
+      })
+      return
+    }
+
     if (obj instanceof Profile && obj.sketchRect) {
       const { p1, p2 } = obj.sketchRect
       const centroid = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
@@ -1800,6 +1975,16 @@ export class AppController {
       : obj instanceof AnnotatedRegion ? 'region'
       : obj instanceof AnnotatedPoint  ? 'point'
       : null
+    // Spatial Links section: list all links for this entity with delete buttons
+    const spatialLinks    = this._service.getLinksOf(obj.id)
+    const onDeleteSpatialLink = (linkId) => {
+      const link = this._scene.getLink(linkId)
+      if (!link) return
+      this._service.detachSpatialLink(linkId)
+      this._commandStack.push(createDeleteSpatialLinkCommand(link, this._service))
+      this._uiView.showToast('Link deleted')
+      this._updateNPanel()
+    }
     this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', {
       locationEditable,
       showIfcClass,
@@ -1807,6 +1992,9 @@ export class AppController {
       showPlaceType,
       placeType:        showPlaceType ? (obj.placeType ?? null) : undefined,
       placeTypeGeometry,
+      spatialLinks:        spatialLinks.length > 0 ? spatialLinks : null,
+      onDeleteSpatialLink,
+      getEntityName:       (id) => this._scene.getObject(id)?.name ?? id,
     })
   }
 
@@ -1916,6 +2104,16 @@ export class AppController {
 
       // Annotated entity toolbar: Grab | Map (to edit in map mode) | Delete | (spacer)
       const _isAnnotated = o => o instanceof AnnotatedLine || o instanceof AnnotatedRegion || o instanceof AnnotatedPoint
+      const _isSpatialLink = o => o instanceof SpatialLink
+      // SpatialLink: no operations available on mobile toolbar (ADR-030)
+      if (hasObj && _isSpatialLink(this._activeObj)) {
+        this._uiView.setMobileToolbar([
+          { spacer: true }, { spacer: true },
+          { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
+          { spacer: true }, { spacer: true },
+        ])
+        return
+      }
       if (hasObj && _isAnnotated(this._activeObj)) {
         this._uiView.setMobileToolbar([
           { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
@@ -1928,12 +2126,13 @@ export class AppController {
 
       // 5-slot layout: Add | Dup | Edit | Delete | Stack
       // All slots always present; unavailable actions are disabled to prevent layout shifts.
-      const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj)
+      const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
       const canEdit  = canDup
       const canStack = hasObj
         && !(this._activeObj instanceof ImportedMesh)
         && !(this._activeObj instanceof MeasureLine)
         && !_isAnnotated(this._activeObj)
+        && !_isSpatialLink(this._activeObj)
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -2135,14 +2334,16 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh, MeasureLine, CoordinateFrame, and Annotated entities have no vertex graph — Edit Mode not supported
+    // ImportedMesh, MeasureLine, CoordinateFrame, Annotated entities, and SpatialLink
+    // have no vertex graph — Edit Mode not supported (ADR-030)
     if (mode === 'edit' && (
       this._activeObj instanceof ImportedMesh ||
       this._activeObj instanceof MeasureLine  ||
       this._activeObj instanceof CoordinateFrame ||
       this._activeObj instanceof AnnotatedLine   ||
       this._activeObj instanceof AnnotatedRegion ||
-      this._activeObj instanceof AnnotatedPoint
+      this._activeObj instanceof AnnotatedPoint  ||
+      this._activeObj instanceof SpatialLink
     )) {
       this._uiView.showToast('Edit Mode is not available for this object type')
       return
@@ -2605,6 +2806,11 @@ export class AppController {
 
   _startGrab() {
     if (!this._objSelected) return
+    // SpatialLink has no geometry — cannot be grabbed (ADR-030)
+    if (this._activeObj instanceof SpatialLink) {
+      this._uiView.showToast('SpatialLink cannot be grabbed', { type: 'warn' })
+      return
+    }
     this._grab.active          = true
     this._grab.axis            = null
     this._grab.inputStr        = ''
@@ -3781,6 +3987,21 @@ export class AppController {
       return
     }
 
+    // ── SpatialLink target selection (ADR-030 Phase 4) ─────────────────────
+    if (this._spatialLinkMode.active) {
+      if (e.button === 2) { this._cancelSpatialLinkCreation(); return }
+      if (e.button === 0) {
+        const hit = this._hitAnyEntityForLink()
+        if (hit) {
+          this._showLinkTypePicker(e.clientX, e.clientY, hit.obj.id)
+        } else {
+          this._cancelSpatialLinkCreation()
+        }
+        return
+      }
+      return
+    }
+
     if (this._grab.active) {
       if (this._grab.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
@@ -4290,6 +4511,12 @@ export class AppController {
       return
     }
 
+    // ── SpatialLink creation keys (ADR-030 Phase 4) ────────────────────────
+    if (this._spatialLinkMode.active) {
+      if (e.key === 'Escape') { this._cancelSpatialLinkCreation(); return }
+      return  // consume all other keys during link mode
+    }
+
     // ── Sketch phase keys ──────────────────────────────────────────────────
     if (this._scene.editSubstate === '2d-sketch') {
       if (e.key === 'Enter') {
@@ -4386,6 +4613,15 @@ export class AppController {
       // M: start measure placement
       if (e.key === 'm' || e.key === 'M') {
         this._startMeasurePlacement()
+        return
+      }
+      // L: start SpatialLink creation (ADR-030 Phase 4)
+      if ((e.key === 'l' || e.key === 'L') && this._objSelected) {
+        if (this._activeObj instanceof SpatialLink) {
+          this._uiView.showToast('SpatialLink cannot be used as a link source', { type: 'warn' })
+          return
+        }
+        this._startSpatialLinkCreation()
         return
       }
       // Shift+D: duplicate active object and immediately grab (Blender-style)

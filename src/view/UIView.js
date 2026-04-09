@@ -1704,6 +1704,9 @@ export class UIView {
       locationEditable = false,
       ifcClass = undefined, showIfcClass = false,
       placeType = undefined, showPlaceType = false, placeTypeGeometry = null,
+      spatialLinks = null,          // SpatialLink[] | null
+      onDeleteSpatialLink = null,   // (linkId: string) => void
+      getEntityName = (id) => id,   // (id: string) => string
     } = options
 
     const editRow = (axis, color, val, onChange) => {
@@ -1872,6 +1875,12 @@ export class UIView {
       placeTypeSection = this._buildPlaceTypeSection(placeType ?? null, placeTypeGeometry)
     }
 
+    // ── Spatial Links section (for any entity that participates in links) ──
+    let spatialLinksSection = null
+    if (spatialLinks && spatialLinks.length > 0) {
+      spatialLinksSection = this._buildSpatialLinksSection(spatialLinks, onDeleteSpatialLink, getEntityName)
+    }
+
     const locRow = locationEditable
       ? (axis, color, val) => editRow(axis, color, val, v => { if (this._onLocationChangeCb) this._onLocationChangeCb(axis.toLowerCase(), v) })
       : row
@@ -1888,8 +1897,9 @@ export class UIView {
       row('Y', '#6ab04c', dimensions.y),
       row('Z', '#4a9eed', dimensions.z),
     ]))
-    if (ifcSection)        this._nPanelContentEl.appendChild(ifcSection)
-    if (placeTypeSection)  this._nPanelContentEl.appendChild(placeTypeSection)
+    if (ifcSection)           this._nPanelContentEl.appendChild(ifcSection)
+    if (placeTypeSection)     this._nPanelContentEl.appendChild(placeTypeSection)
+    if (spatialLinksSection)  this._nPanelContentEl.appendChild(spatialLinksSection)
     this._nPanelContentEl.appendChild(descSection)
   }
 
@@ -2548,6 +2558,265 @@ export class UIView {
       rotRow('Y', '#6ab04c', eulerDeg.y),
       rotRow('Z', '#4a9eed', eulerDeg.z),
     ]))
+  }
+
+  // ── SpatialLink N-panel (ADR-030 Phase 4) ────────────────────────────────
+
+  /**
+   * Renders a minimal N-panel entry for a SpatialLink entity itself.
+   * Shows source name, target name, linkType, and a Delete button.
+   * @param {import('../domain/SpatialLink.js').SpatialLink} link
+   * @param {string} srcName
+   * @param {string} tgtName
+   * @param {() => void} onDelete
+   */
+  updateNPanelForSpatialLink(link, srcName, tgtName, onDelete) {
+    if (!this._nPanelVisible) return
+
+    const LINK_COLORS = {
+      references: '#F59E0B',
+      connects:   '#06B6D4',
+      contains:   '#8B5CF6',
+      adjacent:   '#64748B',
+    }
+    const color = LINK_COLORS[link.linkType] ?? '#888'
+
+    this._nPanelContentEl.innerHTML = ''
+
+    // Title section
+    const titleSec = document.createElement('div')
+    Object.assign(titleSec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+
+    const typeBadge = document.createElement('span')
+    typeBadge.textContent = link.linkType
+    Object.assign(typeBadge.style, {
+      display: 'inline-block',
+      background: color + '33',
+      border: `1px solid ${color}`,
+      borderRadius: '3px',
+      padding: '2px 8px',
+      color,
+      fontSize: '12px',
+      fontWeight: 'bold',
+      fontFamily: 'sans-serif',
+      marginBottom: '8px',
+    })
+    titleSec.appendChild(typeBadge)
+
+    const makeRow = (label, value) => {
+      const r = document.createElement('div')
+      Object.assign(r.style, {
+        display: 'flex', gap: '6px', alignItems: 'baseline',
+        padding: '2px 0', fontFamily: 'sans-serif',
+      })
+      const lEl = document.createElement('span')
+      lEl.textContent = label
+      Object.assign(lEl.style, { color: '#888', fontSize: '11px', minWidth: '40px' })
+      const vEl = document.createElement('span')
+      vEl.textContent = value
+      Object.assign(vEl.style, { color: '#e0e0e0', fontSize: '12px' })
+      r.appendChild(lEl)
+      r.appendChild(vEl)
+      return r
+    }
+    titleSec.appendChild(makeRow('From:', srcName))
+    titleSec.appendChild(makeRow('To:', tgtName))
+    this._nPanelContentEl.appendChild(titleSec)
+
+    // Delete button
+    const delSec = document.createElement('div')
+    Object.assign(delSec.style, { padding: '8px 10px' })
+    const delBtn = document.createElement('button')
+    delBtn.textContent = 'Delete Link'
+    Object.assign(delBtn.style, {
+      width: '100%', padding: '5px',
+      background: 'rgba(192,57,43,0.15)',
+      border: '1px solid rgba(231,76,60,0.4)',
+      borderRadius: '4px',
+      color: '#e74c3c', fontSize: '12px', fontFamily: 'sans-serif',
+      cursor: 'pointer',
+    })
+    delBtn.addEventListener('click', onDelete)
+    delSec.appendChild(delBtn)
+    this._nPanelContentEl.appendChild(delSec)
+  }
+
+  /**
+   * Builds the Spatial Links section for the N-panel.
+   * Lists all links this entity participates in, with a delete button per link.
+   * @param {import('../domain/SpatialLink.js').SpatialLink[]} links
+   * @param {((linkId: string) => void)|null} onDelete
+   * @param {(id: string) => string} getEntityName
+   * @returns {HTMLElement}
+   * @private
+   */
+  _buildSpatialLinksSection(links, onDelete, getEntityName) {
+    const LINK_COLORS = {
+      references: '#F59E0B',
+      connects:   '#06B6D4',
+      contains:   '#8B5CF6',
+      adjacent:   '#64748B',
+    }
+
+    const sec = document.createElement('div')
+    Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+
+    const titleEl = document.createElement('div')
+    titleEl.textContent = 'Spatial Links'
+    Object.assign(titleEl.style, {
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+      marginBottom: '6px',
+    })
+    sec.appendChild(titleEl)
+
+    for (const link of links) {
+      const color = LINK_COLORS[link.linkType] ?? '#888'
+      const rowEl = document.createElement('div')
+      Object.assign(rowEl.style, {
+        display: 'flex', alignItems: 'center', gap: '6px',
+        padding: '3px 0', fontFamily: 'sans-serif',
+      })
+
+      const badge = document.createElement('span')
+      badge.textContent = link.linkType
+      Object.assign(badge.style, {
+        flexShrink: '0',
+        background: color + '22',
+        border: `1px solid ${color}`,
+        borderRadius: '3px',
+        padding: '1px 5px',
+        color, fontSize: '10px', fontWeight: 'bold',
+      })
+      rowEl.appendChild(badge)
+
+      const namesEl = document.createElement('span')
+      namesEl.textContent = `${getEntityName(link.sourceId)} → ${getEntityName(link.targetId)}`
+      Object.assign(namesEl.style, {
+        flex: '1', fontSize: '11px', color: '#ccc',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      })
+      rowEl.appendChild(namesEl)
+
+      if (onDelete) {
+        const delBtn = document.createElement('button')
+        delBtn.textContent = '×'
+        delBtn.title = 'Delete this link'
+        Object.assign(delBtn.style, {
+          flexShrink: '0',
+          background: 'transparent',
+          border: '1px solid #555',
+          borderRadius: '3px',
+          color: '#e74c3c', fontSize: '13px',
+          cursor: 'pointer', padding: '0 5px',
+          lineHeight: '16px',
+        })
+        delBtn.addEventListener('click', () => onDelete(link.id))
+        rowEl.appendChild(delBtn)
+      }
+
+      sec.appendChild(rowEl)
+    }
+
+    return sec
+  }
+
+  /**
+   * Shows a floating overlay for selecting the SpatialLink type.
+   * Calls onSelect(linkType) when the user picks one.
+   * @param {number} x  client X
+   * @param {number} y  client Y
+   * @param {(linkType: 'references'|'connects'|'contains'|'adjacent') => void} onSelect
+   */
+  showLinkTypePicker(x, y, onSelect) {
+    const existing = document.getElementById('_linkTypePickerOverlay')
+    if (existing) { existing.remove() }
+
+    const LINK_TYPES = [
+      { type: 'references', color: '#F59E0B', label: 'References', desc: 'Source derives positional datum from target' },
+      { type: 'connects',   color: '#06B6D4', label: 'Connects',   desc: 'A route logically connects source to target' },
+      { type: 'contains',   color: '#8B5CF6', label: 'Contains',   desc: 'Region source spatially contains target' },
+      { type: 'adjacent',   color: '#64748B', label: 'Adjacent',   desc: 'Source and target share a boundary' },
+    ]
+
+    const overlay = document.createElement('div')
+    overlay.id = '_linkTypePickerOverlay'
+
+    // Clamp position to viewport
+    const W = 220, H = 200
+    const px = Math.min(x, window.innerWidth  - W - 8)
+    const py = Math.min(y, window.innerHeight - H - 8)
+
+    Object.assign(overlay.style, {
+      position:     'fixed',
+      left:         `${Math.max(8, px)}px`,
+      top:          `${Math.max(48, py)}px`,
+      width:        `${W}px`,
+      background:   '#2a2a2a',
+      border:       '1px solid #3a3a3a',
+      borderRadius: '6px',
+      boxShadow:    '0 4px 16px rgba(0,0,0,0.6)',
+      zIndex:       '200',
+      overflow:     'hidden',
+    })
+
+    const headerEl = document.createElement('div')
+    headerEl.textContent = 'Link Type'
+    Object.assign(headerEl.style, {
+      padding: '7px 10px 5px',
+      color: '#ccc', fontSize: '12px', fontFamily: 'sans-serif',
+      borderBottom: '1px solid #3a3a3a',
+    })
+    overlay.appendChild(headerEl)
+
+    for (const { type, color, label, desc } of LINK_TYPES) {
+      const item = document.createElement('div')
+      Object.assign(item.style, {
+        display:    'flex', gap: '8px', alignItems: 'flex-start',
+        padding:    '7px 10px',
+        cursor:     'pointer',
+        fontFamily: 'sans-serif',
+        transition: 'background 0.1s',
+      })
+      item.addEventListener('mouseenter', () => { item.style.background = '#333' })
+      item.addEventListener('mouseleave', () => { item.style.background = '' })
+      item.addEventListener('click', () => {
+        overlay.remove()
+        document.removeEventListener('pointerdown', closeOnOutside)
+        onSelect(type)
+      })
+
+      const dot = document.createElement('span')
+      Object.assign(dot.style, {
+        marginTop:    '3px',
+        width:        '8px', height: '8px', borderRadius: '50%',
+        background:   color, flexShrink: '0', display: 'inline-block',
+      })
+
+      const textWrap = document.createElement('div')
+      const nameEl = document.createElement('div')
+      nameEl.textContent = label
+      Object.assign(nameEl.style, { color, fontSize: '12px', fontWeight: 'bold' })
+      const descEl = document.createElement('div')
+      descEl.textContent = desc
+      Object.assign(descEl.style, { color: '#666', fontSize: '10px', marginTop: '1px' })
+      textWrap.appendChild(nameEl)
+      textWrap.appendChild(descEl)
+
+      item.appendChild(dot)
+      item.appendChild(textWrap)
+      overlay.appendChild(item)
+    }
+
+    document.body.appendChild(overlay)
+
+    const closeOnOutside = (e) => {
+      if (!overlay.contains(e.target)) {
+        overlay.remove()
+        document.removeEventListener('pointerdown', closeOnOutside)
+      }
+    }
+    setTimeout(() => document.addEventListener('pointerdown', closeOnOutside), 0)
   }
 
   /**

@@ -69,7 +69,7 @@ full specification in ADR-030.
 | `getSceneGraph()` extension | Include SpatialLinks as `relation: 'spatial'` edges with `linkType` field | ADR-030, ADR-028 |
 | `SceneService.getLinksOf(entityId)` | Query helper: return all links where `sourceId` or `targetId` matches | ADR-030 |
 
-### Phase 3 — Rendering
+### Phase 3 — Rendering ✅ (2026-04-09)
 
 | Task | Details | ADR |
 |------|---------|-----|
@@ -77,13 +77,13 @@ full specification in ADR-030.
 | Color-coded by `linkType` | `references`=amber, `connects`=cyan, `contains`=violet, `adjacent`=slate | ADR-030 |
 | Polymorphic interface completeness | No-op stubs for all AppController-called MeshView methods (PHILOSOPHY #17) | ADR-030 |
 
-### Phase 4 — Creation UI
+### Phase 4 — Creation UI ✅ (2026-04-09)
 
 | Task | Details | ADR |
 |------|---------|-----|
 | Two-phase `L`-key link creation | Select source → `L` key → click target → linkType picker overlay → confirm | ADR-030 |
 | N-panel "Spatial Links" section | List all links for selected entity with delete button per link | ADR-030 |
-| Outliner badge for linked entities | Small icon when entity participates in ≥ 1 SpatialLink | ADR-030 |
+| Outliner badge for linked entities | Small `⟡` icon when entity participates in ≥ 1 SpatialLink | ADR-030 |
 | `AppController` guards | Block Grab / Edit / Stack / Dup for `SpatialLink`; `showToast()` on blocked ops | ADR-030 |
 
 ---

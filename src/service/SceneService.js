@@ -58,6 +58,7 @@ import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
 import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
 import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
 import { SpatialLink } from '../domain/SpatialLink.js'
+import { SpatialLinkView } from '../view/SpatialLinkView.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -82,6 +83,12 @@ export class SceneService extends EventEmitter {
      * @type {Map<string, { position: import('../types/spatial.js').WorldVector3, quaternion: import('three').Quaternion }>}
      */
     this._worldPoseCache = new Map()
+    /**
+     * SpatialLink rendering views (ADR-030 Phase 3).
+     * Keyed by SpatialLink.id. Parallel to _model.links.
+     * @type {Map<string, SpatialLinkView>}
+     */
+    this._linkViews = new Map()
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -252,6 +259,7 @@ export class SceneService extends EventEmitter {
         try {
           const link = new SpatialLink(dto.id, dto.sourceId, dto.targetId, dto.linkType)
           this._model.addLink(link)
+          this._createLinkView(link)
           this.emit('spatialLinkAdded', link)
         } catch (err) {
           console.warn('[SceneService] loadScene: skipping link', dto.id, err)
@@ -460,6 +468,7 @@ export class SceneService extends EventEmitter {
           dto.linkType,
         )
         this._model.addLink(link)
+        this._createLinkView(link)
         this.emit('spatialLinkAdded', link)
         imported++
       } catch (err) {
@@ -627,8 +636,10 @@ export class SceneService extends EventEmitter {
       this.emit('objectRemoved', id)
     }
     for (const [id] of this._model.links) {
+      this._linkViews.get(id)?.dispose(this._threeScene)
       this.emit('spatialLinkRemoved', id)
     }
+    this._linkViews.clear()
     this._worldPoseCache.clear()
     this._model = new SceneModel()
   }
@@ -719,6 +730,9 @@ export class SceneService extends EventEmitter {
     // Re-resolve all anchored MeasureLine endpoints so they follow their
     // referenced geometry elements (ADR-028).
     this._updateAnchoredMeasures()
+
+    // Reposition SpatialLink dashed lines between entity world centroids (ADR-030).
+    this._updateSpatialLinkViews()
   }
 
   /**
@@ -742,6 +756,57 @@ export class SceneService extends EventEmitter {
         }
       }
       if (needsUpdate) obj.meshView.update(obj.p1, obj.p2)
+    }
+  }
+
+  // ── SpatialLink view helpers (ADR-030 Phase 3) ───────────────────────────
+
+  /**
+   * Computes the world-space centroid of any scene entity.
+   * For CoordinateFrame: reads from _worldPoseCache.
+   * For all others: averages the `corners` (WorldVector3[]).
+   * Returns null when the entity is unknown or has no geometry yet.
+   * @param {string} id
+   * @returns {import('three').Vector3|null}
+   */
+  _entityWorldCentroid(id) {
+    const obj = this._model.getObject(id)
+    if (!obj) return null
+
+    if (obj instanceof CoordinateFrame) {
+      return this._worldPoseCache.get(id)?.position?.clone() ?? null
+    }
+
+    const corners = obj.corners
+    if (!corners || corners.length === 0) return null
+
+    const sum = new Vector3()
+    for (const c of corners) sum.add(c)
+    return sum.divideScalar(corners.length)
+  }
+
+  /**
+   * Creates a SpatialLinkView and stores it in _linkViews.
+   * @param {import('../domain/SpatialLink.js').SpatialLink} link
+   */
+  _createLinkView(link) {
+    const src = this._entityWorldCentroid(link.sourceId) ?? new Vector3()
+    const tgt = this._entityWorldCentroid(link.targetId) ?? new Vector3()
+    const view = new SpatialLinkView(this._threeScene, src, tgt, link.linkType)
+    this._linkViews.set(link.id, view)
+  }
+
+  /**
+   * Updates the line endpoints of every SpatialLinkView to follow entity centroids.
+   * Called once per animation frame at the end of _updateWorldPoses().
+   */
+  _updateSpatialLinkViews() {
+    for (const [id, view] of this._linkViews) {
+      const link = this._model.getLink(id)
+      if (!link) continue
+      const src = this._entityWorldCentroid(link.sourceId)
+      const tgt = this._entityWorldCentroid(link.targetId)
+      if (src && tgt) view.update(src, tgt)
     }
   }
 
@@ -1091,12 +1156,13 @@ export class SceneService extends EventEmitter {
     const id   = `link_${Date.now()}`
     const link = new SpatialLink(id, sourceId, targetId, linkType)
     this._model.addLink(link)
+    this._createLinkView(link)
     this.emit('spatialLinkAdded', link)
     return link
   }
 
   /**
-   * Removes a SpatialLink from the model without disposing (no meshView).
+   * Removes a SpatialLink from the model and disposes its view.
    * Used by both the hard-delete UI path and the undo/redo command path.
    * No-ops if the id is unknown.
    * Emits: 'spatialLinkRemoved'
@@ -1105,17 +1171,20 @@ export class SceneService extends EventEmitter {
   detachSpatialLink(id) {
     if (!this._model.getLink(id)) return
     this._model.removeLink(id)
+    this._linkViews.get(id)?.dispose(this._threeScene)
+    this._linkViews.delete(id)
     this.emit('spatialLinkRemoved', id)
   }
 
   /**
-   * Re-inserts a previously detached SpatialLink into the model.
+   * Re-inserts a previously detached SpatialLink into the model and recreates its view.
    * Used by the undo/redo command path.
    * Emits: 'spatialLinkAdded'
    * @param {SpatialLink} link
    */
   reattachSpatialLink(link) {
     this._model.addLink(link)
+    this._createLinkView(link)
     this.emit('spatialLinkAdded', link)
   }
 
