@@ -2,8 +2,9 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Date** | 2026-04-09 |
+| **Implemented** | 2026-04-09 |
 | **References** | ADR-029, ADR-028, ADR-013, ADR-020, ADR-022 |
 
 ---

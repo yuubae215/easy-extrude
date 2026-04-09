@@ -53,16 +53,16 @@ Typed semantic edges between annotated elements — makes spatial relationships
 machine-readable in the scene graph. Design defined in ADR-029 §Out of scope;
 full specification in ADR-030.
 
-### Phase 1 — Domain layer
+### Phase 1 — Domain layer ✅ (2026-04-09)
 
 | Task | Details | ADR |
 |------|---------|-----|
 | `SpatialLink` domain entity | `id`, `sourceId`, `targetId`, `linkType` (`references` / `connects` / `contains` / `adjacent`); no geometry | ADR-030 |
-| `SceneService.createSpatialLink()` / `deleteSpatialLink()` | Emits `spatialLinkAdded` / `spatialLinkRemoved`; stored in `SceneModel` | ADR-030 |
-| `CreateSpatialLinkCommand` / `DeleteSpatialLinkCommand` | Undo/redo support; factory naming convention | ADR-030, ADR-022 |
-| `SceneSerializer` + `SceneExporter` + `SceneImporter` | `"links": [...]` top-level array; scene version bump to 1.2; backward-compatible load | ADR-030 |
+| `SceneService.createSpatialLink()` / `detachSpatialLink()` / `reattachSpatialLink()` | Emits `spatialLinkAdded` / `spatialLinkRemoved`; stored in `SceneModel._links` | ADR-030 |
+| `CreateSpatialLinkCommand` / `DeleteSpatialLinkCommand` | Undo/redo support; factory naming convention; detach/reattach pattern (no meshView) | ADR-030, ADR-022 |
+| `SceneSerializer` + `SceneExporter` + `SceneImporter` | `"links": [...]` top-level array; scene version bump to 1.2; backward-compatible load (missing links → []) | ADR-030 |
 
-### Phase 2 — Scene graph integration
+### Phase 2 — Scene graph integration ✅ (2026-04-09)
 
 | Task | Details | ADR |
 |------|---------|-----|

@@ -3,12 +3,13 @@
  *
  * Pure computation: no I/O, no DOM, no Three.js scene mutations.
  *
- * Export format (v1.0):
+ * Export format (v1.2):
  * {
- *   version: "1.0",
+ *   version: "1.2",
  *   coordinateSystem: "ROS REP-103 (+X forward, +Y left, +Z up)",
  *   exportedAt: <ISO timestamp>,
- *   objects: SceneExportObject[]
+ *   objects: SceneExportObject[],
+ *   links: SpatialLinkExport[]
  * }
  *
  * SceneExportObject discriminated union by `type`:
@@ -18,8 +19,15 @@
  *  - "CoordinateFrame" — SE(3) frame relative to parent; world pose included when cached
  *  - "ImportedMesh"    — server-computed mesh; AABB from synthetic corners + offset + base64 geometry buffers
  *
+ * SpatialLinkExport:
+ *  { type: "SpatialLink", id, sourceId, targetId, linkType }
+ *  linkType: 'references' | 'connects' | 'contains' | 'adjacent'
+ *
  * Every solid/profile/importedMesh entry also includes an `attachedFrames` array
  * listing all CoordinateFrame children with their world poses.
+ *
+ * Backward compatibility:
+ *  v1.0 / v1.1 files missing the `links` array are loaded with links treated as [].
  */
 
 import * as THREE from 'three'
@@ -119,7 +127,7 @@ function attachedFrames(parentId, scene, worldPoseOf) {
  * @param {(id: string) => {position: THREE.Vector3, quaternion: THREE.Quaternion}|null} worldPoseOf
  *   Callback that returns the cached world pose for a CoordinateFrame id.
  *   Pass `(id) => sceneService.worldPoseOf(id)` from AppController.
- * @returns {object} Plain JSON-serializable object.
+ * @returns {object} Plain JSON-serializable object (v1.2).
  */
 export function exportScene(scene, worldPoseOf) {
   const objects = []
@@ -240,11 +248,21 @@ export function exportScene(scene, worldPoseOf) {
     }
   }
 
+  // Serialize SpatialLinks (ADR-030).
+  const links = [...scene.links.values()].map(link => ({
+    type:     'SpatialLink',
+    id:       link.id,
+    sourceId: link.sourceId,
+    targetId: link.targetId,
+    linkType: link.linkType,
+  }))
+
   return {
-    version:          '1.1',
+    version:          '1.2',
     coordinateSystem: 'ROS REP-103 (+X forward, +Y left, +Z up)',
     exportedAt:       new Date().toISOString(),
     objects,
+    links,
   }
 }
 

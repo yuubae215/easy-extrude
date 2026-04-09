@@ -25,6 +25,8 @@
  *   'objectIfcClassChanged'     (id: string, ifcClass: string|null)
  *   'objectPlaceTypeChanged'    (id: string, placeType: string|null)
  *   'activeChanged'             (id: string|null)
+ *   'spatialLinkAdded'          (link: SpatialLink)
+ *   'spatialLinkRemoved'        (id: string)
  *
  * Rules:
  *  - SceneService is the ONLY place that calls new Solid / new Profile / new MeshView.
@@ -55,6 +57,7 @@ import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
 import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
 import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
+import { SpatialLink } from '../domain/SpatialLink.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -244,6 +247,15 @@ export class SceneService extends EventEmitter {
       for (const entity of entities) {
         this._model.addObject(entity)
         this.emit('objectAdded', entity)
+      }
+      for (const dto of (remote.data.links ?? [])) {
+        try {
+          const link = new SpatialLink(dto.id, dto.sourceId, dto.targetId, dto.linkType)
+          this._model.addLink(link)
+          this.emit('spatialLinkAdded', link)
+        } catch (err) {
+          console.warn('[SceneService] loadScene: skipping link', dto.id, err)
+        }
       }
       this._remoteId = sceneId
 
@@ -438,6 +450,24 @@ export class SceneService extends EventEmitter {
     // Rebuild Solid geometry in parallel via Wasm worker (ADR-027 Phase 2).
     await this.batchRebuildSolids(solids)
 
+    // Import SpatialLinks (v1.2+); silently skip on older exports.
+    for (const dto of (parsed.links ?? [])) {
+      try {
+        const link = new SpatialLink(
+          remapId(dto.id),
+          remapId(dto.sourceId),
+          remapId(dto.targetId),
+          dto.linkType,
+        )
+        this._model.addLink(link)
+        this.emit('spatialLinkAdded', link)
+        imported++
+      } catch (err) {
+        console.warn('[SceneService] importFromJson: skipping link', dto.id, err)
+        skipped++
+      }
+    }
+
     return { imported, skipped }
   }
 
@@ -590,11 +620,14 @@ export class SceneService extends EventEmitter {
     return null
   }
 
-  /** Disposes all objects and resets the model (local). Emits objectRemoved for each. */
+  /** Disposes all objects and links, then resets the model (local). */
   _clearScene() {
     for (const [id, obj] of this._model.objects) {
       obj.meshView.dispose(this._threeScene)
       this.emit('objectRemoved', id)
+    }
+    for (const [id] of this._model.links) {
+      this.emit('spatialLinkRemoved', id)
     }
     this._worldPoseCache.clear()
     this._model = new SceneModel()
@@ -860,6 +893,9 @@ export class SceneService extends EventEmitter {
         }
       }
     }
+    for (const [, link] of this._model.links) {
+      edges.push({ from: link.sourceId, to: link.targetId, relation: 'spatial', linkId: link.id, linkType: link.linkType })
+    }
     return { nodes, edges }
   }
 
@@ -1038,6 +1074,60 @@ export class SceneService extends EventEmitter {
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj
+  }
+
+  // ── Spatial links (ADR-030) ───────────────────────────────────────────────
+
+  /**
+   * Creates a SpatialLink between two scene entities and registers it.
+   * No-ops if sourceId and targetId are identical.
+   * Emits: 'spatialLinkAdded'
+   * @param {string} sourceId
+   * @param {string} targetId
+   * @param {'references'|'connects'|'contains'|'adjacent'} linkType
+   * @returns {SpatialLink}
+   */
+  createSpatialLink(sourceId, targetId, linkType) {
+    const id   = `link_${Date.now()}`
+    const link = new SpatialLink(id, sourceId, targetId, linkType)
+    this._model.addLink(link)
+    this.emit('spatialLinkAdded', link)
+    return link
+  }
+
+  /**
+   * Removes a SpatialLink from the model without disposing (no meshView).
+   * Used by both the hard-delete UI path and the undo/redo command path.
+   * No-ops if the id is unknown.
+   * Emits: 'spatialLinkRemoved'
+   * @param {string} id
+   */
+  detachSpatialLink(id) {
+    if (!this._model.getLink(id)) return
+    this._model.removeLink(id)
+    this.emit('spatialLinkRemoved', id)
+  }
+
+  /**
+   * Re-inserts a previously detached SpatialLink into the model.
+   * Used by the undo/redo command path.
+   * Emits: 'spatialLinkAdded'
+   * @param {SpatialLink} link
+   */
+  reattachSpatialLink(link) {
+    this._model.addLink(link)
+    this.emit('spatialLinkAdded', link)
+  }
+
+  /**
+   * Returns all SpatialLinks where sourceId or targetId matches the given entity id.
+   * @param {string} entityId
+   * @returns {SpatialLink[]}
+   */
+  getLinksOf(entityId) {
+    return [...this._model.links.values()].filter(
+      l => l.sourceId === entityId || l.targetId === entityId,
+    )
   }
 
   /**
