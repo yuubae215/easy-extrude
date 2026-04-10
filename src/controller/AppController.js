@@ -212,7 +212,7 @@ export class AppController {
     this._mapMode = {
       /** Whether map mode is currently active */
       active: false,
-      /** Active drawing tool: 'path'|'edge'|'district'|'node'|'landmark'|null */
+      /** Active drawing tool: 'route'|'boundary'|'zone'|'hub'|'anchor'|null */
       tool:   null,
       /** @type {THREE.Vector3[]} confirmed vertex positions (Z=0 plane) */
       points: [],
@@ -1170,7 +1170,7 @@ export class AppController {
 
   /**
    * Sets the active map drawing tool.
-   * @param {string} type  'route'|'boundary'|'zone'|'hub'|'anchor'
+   * @param {string} type  PlaceType name lowercase: 'route'|'boundary'|'zone'|'hub'|'anchor'
    */
   _setMapTool(type) {
     this._mapCancelDrawing()   // clear any in-progress drawing
@@ -1249,6 +1249,7 @@ export class AppController {
   /**
    * Picks the ground-plane (Z=0) world position under the mouse in Map Mode,
    * using the orthographic camera for correct distortion-free picking.
+   * Applies grid snapping (1-unit grid) then endpoint snapping to existing vertices.
    * @param {PointerEvent|MouseEvent} e
    * @returns {THREE.Vector3}
    */
@@ -1258,7 +1259,46 @@ export class AppController {
     this._raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this._sceneView.activeCamera)
     const pt = new THREE.Vector3()
     this._raycaster.ray.intersectPlane(this._groundPlane, pt)
-    return new THREE.Vector3(pt.x, pt.y, 0)
+    pt.z = 0
+
+    // Grid snap: round to nearest grid unit (matches GridHelper 20×20 / 20 divisions = 1 unit)
+    const GRID = 1.0
+    pt.x = Math.round(pt.x / GRID) * GRID
+    pt.y = Math.round(pt.y / GRID) * GRID
+
+    // Endpoint snap: override grid snap when cursor is within 24 px of an existing vertex
+    return this._mapSnapToEndpoint(pt, e.clientX, e.clientY)
+  }
+
+  /**
+   * Snaps a grid-snapped world point to a nearby annotated entity vertex.
+   * Uses the orthographic camera to measure screen-space distance.
+   * Endpoint snap has higher priority than grid snap.
+   * @param {THREE.Vector3} gridPt  grid-snapped world position
+   * @param {number} screenX  pointer clientX
+   * @param {number} screenY  pointer clientY
+   * @param {number} [snapPx=24]  snap radius in CSS pixels
+   * @returns {THREE.Vector3}
+   */
+  _mapSnapToEndpoint(gridPt, screenX, screenY, snapPx = 24) {
+    const cam = this._sceneView.activeCamera
+    let bestDist = snapPx
+    let bestPt   = null
+
+    for (const obj of this._scene.objects.values()) {
+      const verts = (obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint)
+        ? obj.vertices.map(v => v.position)
+        : null
+      if (!verts) continue
+
+      for (const vert of verts) {
+        const sv = this._projectToScreen(vert, cam)
+        const d  = Math.hypot(screenX - sv.x, screenY - sv.y)
+        if (d < bestDist) { bestDist = d; bestPt = vert.clone() }
+      }
+    }
+
+    return bestPt ?? gridPt
   }
 
   /** Updates the live preview line and cursor dot during map drawing. */
@@ -1281,9 +1321,9 @@ export class AppController {
     this._mapMode.cursorDot.material.color.setHex(color)
 
     // Preview line (confirmed points + live cursor position)
-    if (geometry !== 'marker' && points.length > 0) {
+    if (geometry !== 'point' && points.length > 0) {
       const previewPts = [...points, cursor]
-      if (geometry === 'polygon' && previewPts.length >= 3) previewPts.push(previewPts[0])
+      if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
       const flat = []
       for (const p of previewPts) flat.push(p.x, p.y, p.z)
 
@@ -1349,9 +1389,9 @@ export class AppController {
     if (!this._mapMode.active) return
     const { tool, points } = this._mapMode
     const geometry = tool ? this._geometryForType(tool) : null
-    const canConfirm = geometry === 'polyline' ? points.length >= 2
-      : geometry === 'polygon' ? points.length >= 3
-      : false   // markers confirm immediately on click
+    const canConfirm = geometry === 'line' ? points.length >= 2
+      : geometry === 'region' ? points.length >= 3
+      : false   // points confirm immediately on click
 
     this._uiView.showMapToolbar(
       tool,
@@ -1887,8 +1927,8 @@ export class AppController {
   }
 
   // ─── Utilities ─────────────────────────────────────────────────────────────
-  _projectToScreen(position) {
-    const v = position.clone().project(this._camera)
+  _projectToScreen(position, camera = this._camera) {
+    const v = position.clone().project(camera)
     return {
       x: (v.x + 1) / 2 * innerWidth,
       y: (-v.y + 1) / 2 * innerHeight,
@@ -4072,15 +4112,15 @@ export class AppController {
       if (e.button === 0 && this._mapMode.tool) {
         const pt = this._mapPickPoint(e)
         const geometry = this._geometryForType(this._mapMode.tool)
-        if (geometry === 'marker') {
+        if (geometry === 'point') {
           this._mapMode.points = [pt.clone()]
           this._mapConfirmDrawing()
           return
         }
-        // For polygon: clicking near first vertex closes the shape
-        if (geometry === 'polygon' && this._mapMode.points.length >= 3) {
+        // For region: clicking near first vertex closes the shape
+        if (geometry === 'region' && this._mapMode.points.length >= 3) {
           const first = this._mapMode.points[0]
-          const firstScreen = this._projectToScreen(first)
+          const firstScreen = this._projectToScreen(first, this._sceneView.activeCamera)
           const mx = e.clientX, my = e.clientY
           if (Math.hypot(mx - firstScreen.x, my - firstScreen.y) < 20) {
             this._mapConfirmDrawing()
@@ -4096,7 +4136,7 @@ export class AppController {
         // RMB confirms if enough points, otherwise cancels tool
         const geometry = this._geometryForType(this._mapMode.tool)
         const n = this._mapMode.points.length
-        if ((geometry === 'polyline' && n >= 2) || (geometry === 'polygon' && n >= 3)) {
+        if ((geometry === 'line' && n >= 2) || (geometry === 'region' && n >= 3)) {
           this._mapConfirmDrawing()
         } else {
           this._mapCancelDrawing()
@@ -4497,7 +4537,7 @@ export class AppController {
       if (e.key === 'Enter' && this._mapMode.tool) {
         const geometry = this._geometryForType(this._mapMode.tool)
         const n = this._mapMode.points.length
-        if ((geometry === 'polyline' && n >= 2) || (geometry === 'polygon' && n >= 3)) {
+        if ((geometry === 'line' && n >= 2) || (geometry === 'region' && n >= 3)) {
           this._mapConfirmDrawing()
         }
         return

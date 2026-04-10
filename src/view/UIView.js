@@ -936,11 +936,11 @@ export class UIView {
     })
 
     const TOOL_ITEMS = [
-      { type: 'path',     label: '⟿',  title: 'Path (Linear)',     color: '#4A90D9' },
-      { type: 'edge',     label: '⟿',  title: 'Edge (Boundary)',   color: '#E74C3C' },
-      { type: 'district', label: '⬡',  title: 'District (Area)',   color: '#27AE60' },
-      { type: 'node',     label: '⬤',  title: 'Node (Junction)',   color: '#F39C12' },
-      { type: 'landmark', label: '⬤',  title: 'Landmark (Point)',  color: '#9B59B6' },
+      { type: 'route',    label: '⟿',  title: 'Route (経路)',       color: '#4A90D9' },
+      { type: 'boundary', label: '⟿',  title: 'Boundary (境界)',    color: '#E74C3C' },
+      { type: 'zone',     label: '⬡',  title: 'Zone (ゾーン)',      color: '#27AE60' },
+      { type: 'hub',      label: '⬤',  title: 'Hub (ハブ)',         color: '#F39C12' },
+      { type: 'anchor',   label: '⬤',  title: 'Anchor (アンカー)',  color: '#9B59B6' },
     ]
 
     const sep = () => {
