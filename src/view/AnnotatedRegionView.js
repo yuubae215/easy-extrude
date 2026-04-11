@@ -62,7 +62,10 @@ export class AnnotatedRegionView {
     scene.add(this._line)
 
     // ── Fill mesh ──────────────────────────────────────────────────────────
-    this._fillGeo = null
+    // Use an empty BufferGeometry as placeholder — THREE.Mesh(null, ...) throws
+    // in r172 because updateMorphTargets() accesses geometry.morphAttributes.
+    // _setPoints() replaces this with a ShapeGeometry and disposes the placeholder.
+    this._fillGeo = new THREE.BufferGeometry()
     this._fillMat = new THREE.MeshBasicMaterial({
       color:       this._colorForType(placeType),
       transparent: true,
@@ -87,7 +90,8 @@ export class AnnotatedRegionView {
     // Pulses outward from the polygon boundary: scale 1.0×→1.08×, opacity 0.40→0
     // on a 3 s cycle.  The ring geometry is rebuilt in _setPoints() to match the
     // actual polygon bounding radius.
-    this._rimGeo  = null
+    // Empty BufferGeometry placeholder — same reason as _fillGeo above.
+    this._rimGeo  = new THREE.BufferGeometry()
     this._rimMat  = new THREE.MeshBasicMaterial({
       color:       this._colorForType(placeType),
       depthTest:   false,
@@ -95,7 +99,7 @@ export class AnnotatedRegionView {
       opacity:     0,
       side:        THREE.DoubleSide,
     })
-    this._rimRing = new THREE.Mesh(null, this._rimMat)
+    this._rimRing = new THREE.Mesh(this._rimGeo, this._rimMat)
     this._rimRing.renderOrder = 1
     scene.add(this._rimRing)
 
@@ -160,10 +164,13 @@ export class AnnotatedRegionView {
     if (boundRadius > 0) {
       // Thin rim at the polygon boundary; inner radius slightly inside boundary
       this._rimGeo  = new THREE.RingGeometry(boundRadius * 0.92, boundRadius, 32)
-      this._rimRing.geometry = this._rimGeo
       this._rimRing.position.set(centroid.x, centroid.y, 0)
       this._rimRing.scale.setScalar(1)
+    } else {
+      // Degenerate polygon (all points identical) — keep a valid empty geometry
+      this._rimGeo = new THREE.BufferGeometry()
     }
+    this._rimRing.geometry = this._rimGeo
 
     this._updateBoxHelper(points)
   }

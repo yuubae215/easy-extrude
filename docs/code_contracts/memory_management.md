@@ -41,6 +41,12 @@ _clearScene() {
 - **Principle**: Silently skipping an entity type in `serializeScene()` causes that type to disappear on the next load with no error. This is a silent data-loss bug — the save succeeds, the load succeeds, but objects are gone.
 - **Concrete Rule**: Every domain entity class added to `SceneModel` (e.g. `Solid`, `Profile`, `MeasureLine`, `CoordinateFrame`, `ImportedMesh`) must be explicitly handled in `serializeScene()` — either serialized with a matching `_deserializeEntities` branch, or skipped with a comment explaining why. Verify that new entity types are covered in SceneSerializer in the same commit they are added to the domain layer.
 
+## THREE.Mesh Requires Valid Geometry — Never Pass null
+
+- **Principle**: `THREE.Mesh(null, material)` throws `TypeError: Cannot read properties of null (reading 'morphAttributes')` in Three.js r172 because the constructor calls `updateMorphTargets()` which accesses `this.geometry.morphAttributes` unconditionally.
+- **Concrete Rule**: Never pass `null` as the geometry argument to `new THREE.Mesh(...)`. When the real geometry will be set later (e.g. in `_setPoints()`), use `new THREE.BufferGeometry()` as a valid empty placeholder. Store the placeholder in the same instance field that tracks the geometry (e.g. `this._fillGeo`) so that `_setPoints` can dispose it correctly with `if (this._fillGeo) { this._fillGeo.dispose() }` before assigning the real geometry.
+- **Root bug**: `AnnotatedRegionView` used `new THREE.Mesh(null, mat)` for both `_fillMesh` and `_rimRing`, causing `createAnnotatedRegion()` to throw on every call, silently swallowed by the try-catch in `_mapConfirmDrawing()`, so Zone was never created.
+
 ## ImportedMesh Serialization: Base64 Typed Arrays + Position Offset
 
 - **Principle**: Raw Float32/Uint32 buffers cannot be stored directly in JSON. Base64 encoding is used so geometry survives round-trip through the BFF DB without loss.
