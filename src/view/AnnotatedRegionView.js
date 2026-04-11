@@ -6,7 +6,7 @@
  *  - A translucent fill mesh (ShapeGeometry on Z=0 XY plane)
  *  - Vertex dot markers (small spheres) at each vertex
  *  - A BoxHelper for selection highlight
- *  - A rim ring (RingGeometry) that pulses outward from the boundary (Zone only)
+ *  - A rim ring (polygon-shaped ShapeGeometry) that pulses outward from the boundary (Zone only)
  *
  * Animations (called via tick(t) each frame):
  *  - Zone: fill opacity breathes on a 4 s cycle (alive, "owned territory" feel)
@@ -88,8 +88,9 @@ export class AnnotatedRegionView {
 
     // ── Rim ring (Zone animation — ADR-031 §8) ─────────────────────────────
     // Pulses outward from the polygon boundary: scale 1.0×→1.08×, opacity 0.40→0
-    // on a 3 s cycle.  The ring geometry is rebuilt in _setPoints() to match the
-    // actual polygon bounding radius.
+    // on a 3 s cycle.  The ring geometry is rebuilt in _setPoints() as a
+    // polygon-shaped ShapeGeometry (with hole) so the ring tracks the actual
+    // Zone shape rather than an approximating circle.
     // Empty BufferGeometry placeholder — same reason as _fillGeo above.
     this._rimGeo  = new THREE.BufferGeometry()
     this._rimMat  = new THREE.MeshBasicMaterial({
@@ -154,22 +155,30 @@ export class AnnotatedRegionView {
       this._dots.push(dot)
     }
 
-    // Rim ring: compute centroid and max bounding radius
+    // Rim ring: polygon-shaped ring that matches the Zone outline.
+    // Build in local space with centroid at origin so scale.setScalar() expands
+    // the ring along the actual polygon shape (not a circle).
     const centroid = new THREE.Vector3()
     for (const p of points) centroid.add(p)
     centroid.divideScalar(points.length)
-    const boundRadius = Math.max(...points.map(p => p.distanceTo(centroid)))
 
     if (this._rimGeo) { this._rimGeo.dispose(); this._rimGeo = null }
-    if (boundRadius > 0) {
-      // Thin rim at the polygon boundary; inner radius slightly inside boundary
-      this._rimGeo  = new THREE.RingGeometry(boundRadius * 0.92, boundRadius, 32)
-      this._rimRing.position.set(centroid.x, centroid.y, 0)
-      this._rimRing.scale.setScalar(1)
-    } else {
-      // Degenerate polygon (all points identical) — keep a valid empty geometry
-      this._rimGeo = new THREE.BufferGeometry()
-    }
+
+    // Outer boundary = polygon vertices; inner boundary = vertices shrunk 92% toward
+    // centroid to form a thin ring matching the Zone shape.
+    const relPts = points.map(p => new THREE.Vector2(p.x - centroid.x, p.y - centroid.y))
+    const outerShape = new THREE.Shape()
+    outerShape.moveTo(relPts[0].x, relPts[0].y)
+    for (let i = 1; i < relPts.length; i++) outerShape.lineTo(relPts[i].x, relPts[i].y)
+    outerShape.closePath()
+    const innerHole = new THREE.Path()
+    innerHole.moveTo(relPts[0].x * 0.92, relPts[0].y * 0.92)
+    for (let i = 1; i < relPts.length; i++) innerHole.lineTo(relPts[i].x * 0.92, relPts[i].y * 0.92)
+    innerHole.closePath()
+    outerShape.holes.push(innerHole)
+    this._rimGeo = new THREE.ShapeGeometry(outerShape)
+    this._rimRing.position.set(centroid.x, centroid.y, 0)
+    this._rimRing.scale.setScalar(1)
     this._rimRing.geometry = this._rimGeo
 
     this._updateBoxHelper(points)

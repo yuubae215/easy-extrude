@@ -47,6 +47,11 @@ _clearScene() {
 - **Concrete Rule**: Never pass `null` as the geometry argument to `new THREE.Mesh(...)`. When the real geometry will be set later (e.g. in `_setPoints()`), use `new THREE.BufferGeometry()` as a valid empty placeholder. Store the placeholder in the same instance field that tracks the geometry (e.g. `this._fillGeo`) so that `_setPoints` can dispose it correctly with `if (this._fillGeo) { this._fillGeo.dispose() }` before assigning the real geometry.
 - **Root bug**: `AnnotatedRegionView` used `new THREE.Mesh(null, mat)` for both `_fillMesh` and `_rimRing`, causing `createAnnotatedRegion()` to throw on every call, silently swallowed by the try-catch in `_mapConfirmDrawing()`, so Zone was never created.
 
+## Zone Rim Ring Must Use Polygon ShapeGeometry, Not RingGeometry
+
+- **Principle**: `THREE.RingGeometry` always produces a circular ring regardless of the polygon's actual shape. When this is used for an animation that is meant to "pulse outward from the boundary", rectangular or irregular Zones get a visually mismatched circular pulse.
+- **Concrete Rule**: In `AnnotatedRegionView._setPoints()`, build the rim ring as a `THREE.ShapeGeometry` with a polygonal hole: outer boundary = polygon vertices in local space (centroid at origin); inner boundary = vertices scaled 92% toward centroid. Position `_rimRing` at the centroid in world space. `scale.setScalar()` in `tick()` then expands the ring outward along the real polygon shape.
+
 ## ImportedMesh Serialization: Base64 Typed Arrays + Position Offset
 
 - **Principle**: Raw Float32/Uint32 buffers cannot be stored directly in JSON. Base64 encoding is used so geometry survives round-trip through the BFF DB without loss.
