@@ -1513,7 +1513,26 @@ export class AppController {
     let previewPts = [...pendingPoints]
     if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
 
-    if (previewPts.length < 2) return  // nothing to draw (point type = no preview line)
+    if (previewPts.length < 2) {
+      // Point type (Hub / Anchor): no line to draw, but show a static dot at the
+      // placed position so the user can see where they placed it (ADR-031 §3).
+      if (this._mapMode.previewLine) {
+        this._sceneView.scene.remove(this._mapMode.previewLine)
+        this._mapMode.previewLine.geometry.dispose()
+        this._mapMode.previewLine.material.dispose()
+        this._mapMode.previewLine = null
+      }
+      if (previewPts.length === 1) {
+        const g = new THREE.SphereGeometry(0.15, 12, 12)
+        const m = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.85 })
+        const dot = new THREE.Mesh(g, m)
+        dot.position.copy(previewPts[0])
+        dot.renderOrder = 3
+        this._sceneView.scene.add(dot)
+        this._mapMode.previewLine = dot  // reuse slot; disposed the same way on exit/confirm
+      }
+      return
+    }
 
     const flat = []
     for (const p of previewPts) flat.push(p.x, p.y, p.z)
