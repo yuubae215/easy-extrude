@@ -24,15 +24,18 @@ import { LineGeometry }  from 'three/addons/lines/LineGeometry.js'
 import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
-const DEFAULT_COLOR    = 0x888888   // unclassified grey
-const SELECTED_WIDTH   = 4
-const UNSELECTED_WIDTH = 2
-const PARTICLE_COUNT   = 4          // flowing dots per Route line
-const PARTICLE_RADIUS  = 0.045
-const PARTICLE_SPEED   = 0.22       // fraction of total line length per second
-const DRAWING_OPACITY  = 0.70       // while rubber-band preview (drawing state)
-const PENDING_OPACITY  = 0.90       // while awaiting confirm (pending state)
-const CONFIRMED_OPACITY = 1.00      // after entity is committed
+const DEFAULT_COLOR      = 0x888888   // unclassified grey
+const SELECTED_WIDTH     = 4
+const UNSELECTED_WIDTH   = 3
+const PARTICLE_COUNT     = 6          // flowing dots per Route line
+const PARTICLE_RADIUS    = 0.12       // world-unit radius; visible at default frustumSize=50
+const PARTICLE_SPEED     = 0.22       // fraction of total line length per second
+const DRAWING_OPACITY    = 0.70       // while rubber-band preview (drawing state)
+const PENDING_OPACITY    = 0.90       // while awaiting confirm (pending state)
+const CONFIRMED_OPACITY  = 1.00       // after entity is committed
+const BOUNDARY_DASH_SIZE = 0.60       // confirmed Boundary dash length (world units)
+const BOUNDARY_GAP_SIZE  = 0.30       // confirmed Boundary gap length (world units)
+const BOUNDARY_DASH_SPD  = 0.30       // march speed: world units per second
 
 export class AnnotatedLineView {
   /**
@@ -56,10 +59,7 @@ export class AnnotatedLineView {
       transparent: true,
       opacity:     CONFIRMED_OPACITY,
     })
-    this._lineMat.resolution.set(
-      renderer?.domElement?.width  ?? window.innerWidth,
-      renderer?.domElement?.height ?? window.innerHeight,
-    )
+    this._lineMat.resolution.set(window.innerWidth, window.innerHeight)
     this._line = new Line2(this._lineGeo, this._lineMat)
     this._line.renderOrder = 2
     scene.add(this._line)
@@ -204,29 +204,36 @@ export class AnnotatedLineView {
    * @param {number} t  elapsed seconds (performance.now() / 1000)
    */
   tick(t) {
-    if (!this._line.visible || this._placeType !== 'Route') return
-    if (this._segments.length === 0 || this._totalLen === 0) return
+    if (!this._line.visible) return
 
-    for (const mesh of this._particles) {
-      // Each particle travels the full polyline length continuously.
-      const frac = ((mesh._tOffset + t * PARTICLE_SPEED) % 1 + 1) % 1
-      const targetDist = frac * this._totalLen
+    if (this._placeType === 'Route') {
+      if (this._segments.length === 0 || this._totalLen === 0) return
 
-      let cumLen = 0
-      let placed = false
-      for (const seg of this._segments) {
-        if (cumLen + seg.len >= targetDist) {
-          const segFrac = seg.len > 0 ? (targetDist - cumLen) / seg.len : 0
-          mesh.position.lerpVectors(seg.a, seg.b, segFrac)
-          placed = true
-          break
+      for (const mesh of this._particles) {
+        // Each particle travels the full polyline length continuously.
+        const frac = ((mesh._tOffset + t * PARTICLE_SPEED) % 1 + 1) % 1
+        const targetDist = frac * this._totalLen
+
+        let cumLen = 0
+        let placed = false
+        for (const seg of this._segments) {
+          if (cumLen + seg.len >= targetDist) {
+            const segFrac = seg.len > 0 ? (targetDist - cumLen) / seg.len : 0
+            mesh.position.lerpVectors(seg.a, seg.b, segFrac)
+            placed = true
+            break
+          }
+          cumLen += seg.len
         }
-        cumLen += seg.len
+        if (!placed) {
+          // Floating-point edge: snap to last segment endpoint
+          mesh.position.copy(this._segments[this._segments.length - 1].b)
+        }
       }
-      if (!placed) {
-        // Floating-point edge: snap to last segment endpoint
-        mesh.position.copy(this._segments[this._segments.length - 1].b)
-      }
+    } else if (this._placeType === 'Boundary') {
+      // Marching-ants: animate dashOffset for a slow "boundary tape" effect.
+      const cycle = BOUNDARY_DASH_SIZE + BOUNDARY_GAP_SIZE
+      this._lineMat.dashOffset = -((t * BOUNDARY_DASH_SPD) % cycle)
     }
   }
 
@@ -260,6 +267,17 @@ export class AnnotatedLineView {
     this._dotMat.color.setHex(hex)
     this._partMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
+    // Boundary: confirmed style uses slow-marching dashes (marching-ants animation)
+    if (placeType === 'Boundary') {
+      this._lineMat.dashed   = true
+      this._lineMat.dashSize = BOUNDARY_DASH_SIZE
+      this._lineMat.gapSize  = BOUNDARY_GAP_SIZE
+    } else {
+      this._lineMat.dashed   = false
+      this._lineMat.dashSize = 1000
+      this._lineMat.gapSize  = 0
+    }
+    this._lineMat.needsUpdate = true
     // Rebuild particles now that the place type is known (fixes Route particle bug:
     // particles were never created when setPlaceType was called after construction).
     this._rebuildParticles(this._points)

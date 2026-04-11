@@ -56,10 +56,7 @@ export class AnnotatedRegionView {
       transparent: true,
       opacity:     CONFIRMED_OPACITY,
     })
-    this._lineMat.resolution.set(
-      renderer?.domElement?.width  ?? window.innerWidth,
-      renderer?.domElement?.height ?? window.innerHeight,
-    )
+    this._lineMat.resolution.set(window.innerWidth, window.innerHeight)
     this._line = new Line2(this._lineGeo, this._lineMat)
     this._line.renderOrder = 2
     scene.add(this._line)
@@ -247,6 +244,8 @@ export class AnnotatedRegionView {
     this.boxHelper.material?.color.setHex(hex)
     // Reset fill opacity to default when place type changes
     this._fillMat.opacity = FILL_OPACITY
+    // rimRing is only active for Zone; sync visibility with the new type
+    this._rimRing.visible = this._fillMesh.visible && placeType === 'Zone'
   }
 
   /**
