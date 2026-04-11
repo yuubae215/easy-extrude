@@ -1,6 +1,6 @@
 # Roadmap
 
-## Design Direction (2026-03-20, updated 2026-04-09)
+## Design Direction (2026-03-20, updated 2026-04-11)
 
 This project is a **solid-body modeling application**. Each shape is a deformable solid defined by a LocalGeometry graph (vertices / edges / faces). Complex scenes are built by placing and deforming multiple solid objects alongside coordinate frames and measurement annotations. See `docs/adr/` for detailed design decisions.
 
@@ -37,13 +37,15 @@ The phases below cover the rendering and UI layers.
 
 ### Phase 3 — Creation UX
 
+> **Superseded by ADR-031** for interaction model details.
+> The tasks below are preserved for reference; implementation follows ADR-031 §2–§7.
+
 | Task | Details | ADR |
 |------|---------|-----|
 | "Annotate" submenu in Add menu (Shift+A) | Entries: Route, Boundary, Zone, Hub, Anchor (geometry type inferred from selection) | ADR-029 |
-| `AnnotatedLine` placement mode | Click to place vertices; Enter/RMB to confirm; Escape to cancel | ADR-029 |
-| `AnnotatedRegion` placement mode | Click to place ring vertices; auto-close on first vertex or Enter | ADR-029 |
-| `AnnotatedPoint` placement mode | Single click to place; immediate confirm | ADR-029 |
-| Mobile toolbar for annotation placement | Fixed-slot layout during placement; Cancel in last slot | ADR-024, ADR-029 |
+| Placement interaction model | Three-state drawing model; platform-differentiated (Mobile = drag, PC = multi-click/drag); see ADR-031 | ADR-031 |
+| Naming before confirm | Name input in Map toolbar during `pending` state; default "{PlaceType} N" | ADR-031 |
+| Mobile toolbar for annotation placement | Fixed-slot layout during `drawing` + `pending`; Confirm + Cancel slots | ADR-024, ADR-031 |
 
 ---
 
@@ -153,6 +155,58 @@ Phase S-2/S-3 は既存のコマンド/イベントシステムを拡張する�
 
 ---
 
+## Map Mode Interaction Model (ADR-031)
+
+Full design specification in `docs/adr/ADR-031-map-mode-interaction-model.md`.
+Implements a unified three-state drawing model (`idle → drawing → pending → confirm`)
+with platform-differentiated interaction and redesigned animations.
+
+### Phase M-1 — Visual state language
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Pending state dashed line style | `AnnotatedLineView` / `AnnotatedRegionView`: add dashed `LineMaterial` variant; switch to dashed on `setPending(true)` | ADR-031 §3 |
+| Pending state opacity | Set opacity to 90% (vs drawing 70% / confirmed 100%) | ADR-031 §3 |
+| Pending stops rubber-band | On `pointerup` / Enter: freeze preview at current geometry, stop cursor following | ADR-031 §1 |
+
+### Phase M-2 — Naming before confirm
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Name input in Map toolbar during `pending` | Add text-input slot to `showMapToolbar()`; shown only in `pending` state | ADR-031 §4 |
+| Default name generation | Per-type counter: "Route 1", "Zone 2", …; `SceneService` tracks counts | ADR-031 §4 |
+| Confirm with current name | `_mapConfirmDrawing()` reads name from toolbar input before calling `createAnnotated*()` | ADR-031 §4 |
+
+### Phase M-3 — Platform-differentiated interaction
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Mobile drag model (all types) | `pointerdown` = start; `pointerup` = end; movement < 8 px AND geometry ≠ point → cancel | ADR-031 §2 |
+| Mobile Line = 2-point straight line | `points = [start, end]`; no multi-click vertex accumulation on touch | ADR-031 §2 |
+| Mobile Region = axis-aligned rectangle | Same as current Zone drag; enter `pending` on release (no immediate confirm) | ADR-031 §2 |
+| PC Region = drag-rectangle only | Remove multi-click polygon on PC; drag-to-rectangle (same gesture as Mobile) | ADR-031 §2 |
+| Remove immediate confirms | Zone drag, Point click: no longer confirm on `pointerup`; all enter `pending` | ADR-031 §2, §3 |
+| Remove chain drawing | After confirm: tool resets to `idle`; `points = []`; no last-point carryover | ADR-031 §5 |
+
+### Phase M-4 — Endpoint snapping (PC)
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Collect snap candidates | On every `pointermove` during `drawing` on PC: gather `AnnotatedLine` endpoints + `AnnotatedRegion` vertices | ADR-031 §6 |
+| 20 px screen-space snap | Project candidate vertices to screen; if distance < 20 px, override `cursor` with snapped world position | ADR-031 §6 |
+| Snap indicator ring | Render a highlighted ring at the snap target (`renderOrder` above preview); hide when not snapping | ADR-031 §6 |
+
+### Phase M-5 — Animation overhaul
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Route bug fix | `AnnotatedLineView`: store `this._points`; call `_rebuildParticles(this._points)` from `setPlaceType()` | ADR-031 §8 |
+| Zone strengthened fill breathing | `FILL_OPACITY_MIN = 0.15`, `FILL_OPACITY_MAX = 0.65`, 4 s sine (unchanged) | ADR-031 §8 |
+| Zone rim ring | New `THREE.RingGeometry` at boundary; scale 1.0×→1.08×, opacity 0.40→0, 3 s cycle | ADR-031 §8 |
+| Anchor crosshair pulse | 4 short line segments (±X, ±Y, length 0.18 m); scale 1.0×→1.3×, 4 s sine; replaces ring breathing | ADR-031 §8 |
+
+---
+
 ## Map Mode — Mobile Bug Fixes
 
 Issues discovered during 2026-04-11 session. Bug ① was fixed; ②–④ are deferred.
@@ -169,12 +223,11 @@ polygon, `_onPointerUp` zone first-tap else-branch).
 
 ---
 
-### ② Two-finger unintended multi-point addition
+### ② Two-finger unintended multi-point addition — ✅ Superseded by ADR-031
 
-| Detail | Location |
-|--------|----------|
-| **Root cause** | `_activeDragPointerId` is not set in the line-tool tap path or the region polygon `else` branch (`_onPointerDown` ~4178–4188). The guard `_activeDragPointerId !== null && pointerType === 'touch'` therefore does not block a simultaneous second finger, which adds an extra point from its own position. | `AppController.js:4035, 4178, 4187` |
-| **Fix** | After each point is added in these paths, set `_activeDragPointerId = e.pointerId` and clear it in `_onPointerUp` (mirroring the zone-first-tap pattern). |
+Mobile Line/Region no longer uses multi-click vertex accumulation (ADR-031 §2: Mobile =
+single drag gesture).  Multi-point addition paths are removed entirely, so the
+`_activeDragPointerId` guard issue becomes moot.
 
 ---
 
@@ -187,13 +240,11 @@ polygon, `_onPointerUp` zone first-tap else-branch).
 
 ---
 
-### ④ Zone polygon close threshold too small for touch
+### ④ Zone polygon close threshold too small for touch — ✅ Superseded by ADR-031
 
-| Detail | Location |
-|--------|----------|
-| **Root cause** | The "tap near first vertex to close polygon" check uses `< 20` px screen distance (`AppController.js:4160`). Touch fingers cover 40–60 px, making precise closure difficult. | `AppController.js:4160` |
-| **Note** | Not blocking — the toolbar Confirm button (shown when `points.length >= 3`) is the reliable mobile path. However, the canvas-tap close remains unreliable. |
-| **Fix** | Increase threshold to `< 40` px for `pointerType === 'touch'`, keeping 20 px for mouse. |
+Mobile Region is now drag-to-rectangle only (ADR-031 §2).  Multi-vertex polygon drawing
+on Mobile is deferred to a future control-point editing mode.  The polygon-close tap path
+no longer exists on touch, so the threshold issue is moot.
 
 ---
 
