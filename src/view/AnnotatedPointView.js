@@ -6,6 +6,10 @@
  *  - An HTML label showing the point name, positioned above the mesh
  *  - A BoxHelper for selection highlight
  *
+ * Animations (called via tick(t) each frame):
+ *  - Hub:    sonar-ping ring expands and fades every 2 s (beacon / junction feel)
+ *  - Anchor: outline ring breathes slowly at 4 s period (calm, fixed reference feel)
+ *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView
  * so AppController's setMode() and mode-agnostic calls are safe.
  *
@@ -35,6 +39,7 @@ export class AnnotatedPointView {
     this._scene    = scene
     this._camera   = camera
     this._renderer = renderer
+    this._placeType = placeType
 
     // ── Circle marker mesh ─────────────────────────────────────────────────
     this._geo = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 16)
@@ -63,6 +68,22 @@ export class AnnotatedPointView {
     this._ring.position.copy(point)
     this._ring.renderOrder = 3
     scene.add(this._ring)
+
+    // ── Sonar-ping ring (Hub animation) ───────────────────────────────────
+    // Expands from the marker outward and fades, giving a "broadcasting node" feel.
+    // For non-Hub types the ring stays invisible (opacity: 0).
+    this._sonarGeo = new THREE.RingGeometry(MARKER_RADIUS * 0.85, MARKER_RADIUS, 16)
+    this._sonarMat = new THREE.MeshBasicMaterial({
+      color:       this._colorForType(placeType),
+      depthTest:   false,
+      transparent: true,
+      opacity:     0,
+      side:        THREE.DoubleSide,
+    })
+    this._sonarRing = new THREE.Mesh(this._sonarGeo, this._sonarMat)
+    this._sonarRing.position.copy(point)
+    this._sonarRing.renderOrder = 4
+    scene.add(this._sonarRing)
 
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this.boxHelper = new THREE.BoxHelper(this._mesh, 0xffffff)
@@ -103,6 +124,7 @@ export class AnnotatedPointView {
     this._point.copy(point)
     this._mesh.position.copy(point)
     this._ring.position.copy(point)
+    this._sonarRing.position.copy(point)
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
@@ -110,6 +132,32 @@ export class AnnotatedPointView {
   _colorForType(placeType) {
     const entry = getPlaceTypeEntry(placeType)
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
+  }
+
+  // ── Per-frame animation ────────────────────────────────────────────────────
+
+  /**
+   * Drives place-type-specific animations.  Called every frame from AppController.
+   * @param {number} t  elapsed seconds (performance.now() / 1000)
+   */
+  tick(t) {
+    if (!this._mesh.visible) return
+    if (this._placeType === 'Hub') {
+      // Sonar ping: ring expands 1× → 4× and fades over a 2 s cycle.
+      // Creates a "broadcasting junction node" feel — game-like beacon.
+      const phase = (t % 2.0) / 2.0             // 0 → 1 every 2 s
+      this._sonarRing.scale.setScalar(1 + phase * 3)
+      this._sonarMat.opacity = (1 - phase) * 0.65
+      // Outline ring: steady
+      this._ringMat.opacity = 0.6
+    } else if (this._placeType === 'Anchor') {
+      // Slow breathing on the outline ring (4 s period) — calm, fixed-reference feel.
+      const breath = (Math.sin(t * Math.PI * 0.5) + 1) * 0.5  // 0 → 1, 4 s period
+      this._ringMat.opacity = 0.25 + breath * 0.55
+      this._sonarMat.opacity = 0
+    } else {
+      this._sonarMat.opacity = 0
+    }
   }
 
   // ── Label update (call once per frame while visible) ───────────────────────
@@ -158,12 +206,16 @@ export class AnnotatedPointView {
    * @param {string}      name  entity name (label text may reflect place type label)
    */
   setPlaceType(placeType, name) {
+    this._placeType = placeType
     const hex = this._colorForType(placeType)
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
+    this._sonarMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
     const hexStr = hex.toString(16).padStart(6, '0')
     this._label.style.borderLeft = `3px solid #${hexStr}`
+    // Reset sonar scale so the ping animation restarts cleanly from the new type
+    this._sonarRing.scale.setScalar(1)
     if (name) {
       this._name = name
       this._label.textContent = name
@@ -179,8 +231,9 @@ export class AnnotatedPointView {
   // ── Visual state ───────────────────────────────────────────────────────────
 
   setVisible(visible) {
-    this._mesh.visible  = visible
-    this._ring.visible  = visible
+    this._mesh.visible      = visible
+    this._ring.visible      = visible
+    this._sonarRing.visible = visible
     this._label.style.display = visible ? 'block' : 'none'
     if (!visible) this.boxHelper.visible = false
   }
@@ -215,11 +268,14 @@ export class AnnotatedPointView {
   dispose(scene) {
     scene.remove(this._mesh)
     scene.remove(this._ring)
+    scene.remove(this._sonarRing)
     scene.remove(this.boxHelper)
     this._geo.dispose()
     this._mat.dispose()
     this._ringGeo.dispose()
     this._ringMat.dispose()
+    this._sonarGeo.dispose()
+    this._sonarMat.dispose()
     this._label.remove()
   }
 }

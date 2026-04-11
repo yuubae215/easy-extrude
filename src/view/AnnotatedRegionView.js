@@ -7,6 +7,9 @@
  *  - Vertex dot markers (small spheres) at each vertex
  *  - A BoxHelper for selection highlight
  *
+ * Animations (called via tick(t) each frame):
+ *  - Zone: fill opacity breathes gently on a 4 s cycle (alive, "owned territory" feel)
+ *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView.
  *
  * Note: no `cuboid` property — AnnotatedRegion is excluded from raycasting.
@@ -21,6 +24,8 @@ import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
 const DEFAULT_COLOR    = 0x888888
 const FILL_OPACITY     = 0.18
+const FILL_OPACITY_MIN = 0.10  // breathing animation lower bound
+const FILL_OPACITY_MAX = 0.28  // breathing animation upper bound
 const SELECTED_WIDTH   = 4
 const UNSELECTED_WIDTH = 2
 
@@ -34,6 +39,7 @@ export class AnnotatedRegionView {
   constructor(scene, points, placeType, renderer) {
     this._scene    = scene
     this._renderer = renderer
+    this._placeType = placeType
 
     // ── Line2 (closed ring) ────────────────────────────────────────────────
     this._lineGeo = new LineGeometry()
@@ -152,6 +158,19 @@ export class AnnotatedRegionView {
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
+  // ── Per-frame animation ────────────────────────────────────────────────────
+
+  /**
+   * Drives Zone fill breathing animation.  Called every frame from AppController.
+   * @param {number} t  elapsed seconds (performance.now() / 1000)
+   */
+  tick(t) {
+    if (!this._fillMesh.visible || this._placeType !== 'Zone') return
+    // Gentle sine-wave breath: opacity oscillates between MIN and MAX on a 4 s period.
+    const breath = (Math.sin(t * Math.PI * 0.5) + 1) * 0.5  // 0 → 1, 4 s period
+    this._fillMat.opacity = FILL_OPACITY_MIN + breath * (FILL_OPACITY_MAX - FILL_OPACITY_MIN)
+  }
+
   // ── Move support ───────────────────────────────────────────────────────────
 
   /**
@@ -175,11 +194,14 @@ export class AnnotatedRegionView {
    * @param {string|null} placeType
    */
   setPlaceType(placeType) {
+    this._placeType = placeType
     const hex = this._colorForType(placeType)
     this._lineMat.color.setHex(hex)
     this._fillMat.color.setHex(hex)
     this._dotMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
+    // Reset fill opacity to default when place type changes
+    this._fillMat.opacity = FILL_OPACITY
   }
 
   // ── Visual state ───────────────────────────────────────────────────────────
