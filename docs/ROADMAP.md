@@ -161,49 +161,49 @@ Full design specification in `docs/adr/ADR-031-map-mode-interaction-model.md`.
 Implements a unified three-state drawing model (`idle → drawing → pending → confirm`)
 with platform-differentiated interaction and redesigned animations.
 
-### Phase M-1 — Visual state language
+### Phase M-1 — Visual state language ✅ (2026-04-11)
 
 | Task | Details | ADR |
 |------|---------|-----|
-| Pending state dashed line style | `AnnotatedLineView` / `AnnotatedRegionView`: add dashed `LineMaterial` variant; switch to dashed on `setPending(true)` | ADR-031 §3 |
-| Pending state opacity | Set opacity to 90% (vs drawing 70% / confirmed 100%) | ADR-031 §3 |
-| Pending stops rubber-band | On `pointerup` / Enter: freeze preview at current geometry, stop cursor following | ADR-031 §1 |
+| Pending state dashed line style | `AnnotatedLineView` / `AnnotatedRegionView`: `setPending(bool)` switches `LineMaterial` to dashed variant | ADR-031 §3 |
+| Pending state opacity | Drawing=70%, Pending=90%, Confirmed=100% | ADR-031 §3 |
+| Pending stops rubber-band | `_enterMapPendingState()` freezes preview; `_showPendingPreview()` renders static `LineDashedMaterial` | ADR-031 §1 |
 
-### Phase M-2 — Naming before confirm
-
-| Task | Details | ADR |
-|------|---------|-----|
-| Name input in Map toolbar during `pending` | Add text-input slot to `showMapToolbar()`; shown only in `pending` state | ADR-031 §4 |
-| Default name generation | Per-type counter: "Route 1", "Zone 2", …; `SceneService` tracks counts | ADR-031 §4 |
-| Confirm with current name | `_mapConfirmDrawing()` reads name from toolbar input before calling `createAnnotated*()` | ADR-031 §4 |
-
-### Phase M-3 — Platform-differentiated interaction
+### Phase M-2 — Naming before confirm ✅ (2026-04-11)
 
 | Task | Details | ADR |
 |------|---------|-----|
-| Mobile drag model (all types) | `pointerdown` = start; `pointerup` = end; movement < 8 px AND geometry ≠ point → cancel | ADR-031 §2 |
-| Mobile Line = 2-point straight line | `points = [start, end]`; no multi-click vertex accumulation on touch | ADR-031 §2 |
-| Mobile Region = axis-aligned rectangle | Same as current Zone drag; enter `pending` on release (no immediate confirm) | ADR-031 §2 |
-| PC Region = drag-rectangle only | Remove multi-click polygon on PC; drag-to-rectangle (same gesture as Mobile) | ADR-031 §2 |
-| Remove immediate confirms | Zone drag, Point click: no longer confirm on `pointerup`; all enter `pending` | ADR-031 §2, §3 |
-| Remove chain drawing | After confirm: tool resets to `idle`; `points = []`; no last-point carryover | ADR-031 §5 |
+| Name input in Map toolbar during `pending` | `showMapToolbar(…, pendingName)` adds `<input>` when `pendingName !== null`; auto-focused | ADR-031 §4 |
+| Default name generation | `_mapMode.nameCounters` per-type; default `"{PlaceType} {N}"` | ADR-031 §4 |
+| Confirm with current name | `_mapConfirmDrawing()` calls `getMapPendingName()` to read toolbar input | ADR-031 §4 |
 
-### Phase M-4 — Endpoint snapping (PC)
+### Phase M-3 — Platform-differentiated interaction ✅ (2026-04-11)
 
 | Task | Details | ADR |
 |------|---------|-----|
-| Collect snap candidates | On every `pointermove` during `drawing` on PC: gather `AnnotatedLine` endpoints + `AnnotatedRegion` vertices | ADR-031 §6 |
-| 20 px screen-space snap | Project candidate vertices to screen; if distance < 20 px, override `cursor` with snapped world position | ADR-031 §6 |
-| Snap indicator ring | Render a highlighted ring at the snap target (`renderOrder` above preview); hide when not snapping | ADR-031 §6 |
+| Mobile drag model (all types) | `pointerdown` → `mobileDragStart`; `pointerup` → pending (or cancel if < 8 px for Line/Region) | ADR-031 §2 |
+| Mobile Line = 2-point straight line | `pendingPoints = [start, end]`; no multi-click | ADR-031 §2 |
+| Mobile Region = axis-aligned rectangle | Drag-to-rectangle; enter `pending` on release | ADR-031 §2 |
+| PC Region = drag-rectangle only | `mobileDragStart` used for PC Region too; multi-click polygon removed | ADR-031 §2 |
+| Remove immediate confirms | All types enter `pending`; `_enterMapPendingState()` is the single confirm-entry path | ADR-031 §2, §3 |
+| Remove chain drawing | After confirm: `drawState = 'drawing'`, `points = []`; no carryover | ADR-031 §5 |
 
-### Phase M-5 — Animation overhaul
+### Phase M-4 — Endpoint snapping (PC) ✅ (2026-04-11)
 
 | Task | Details | ADR |
 |------|---------|-----|
-| Route bug fix | `AnnotatedLineView`: store `this._points`; call `_rebuildParticles(this._points)` from `setPlaceType()` | ADR-031 §8 |
-| Zone strengthened fill breathing | `FILL_OPACITY_MIN = 0.15`, `FILL_OPACITY_MAX = 0.65`, 4 s sine (unchanged) | ADR-031 §8 |
-| Zone rim ring | New `THREE.RingGeometry` at boundary; scale 1.0×→1.08×, opacity 0.40→0, 3 s cycle | ADR-031 §8 |
-| Anchor crosshair pulse | 4 short line segments (±X, ±Y, length 0.18 m); scale 1.0×→1.3×, 4 s sine; replaces ring breathing | ADR-031 §8 |
+| Collect snap candidates | `_mapPickPoint()` skips snap on mobile; PC-only via `_mapSnapToEndpoint()` | ADR-031 §6 |
+| 20 px screen-space snap | `_mapSnapToEndpoint(…, snapPx = 20)` returns `{ snapped, point }` | ADR-031 §6 |
+| Snap indicator ring | `_updateSnapRing()` creates/shows `THREE.Mesh` with `RingGeometry`; hidden when not snapping | ADR-031 §6 |
+
+### Phase M-5 — Animation overhaul ✅ (2026-04-11)
+
+| Task | Details | ADR |
+|------|---------|-----|
+| Route bug fix | `AnnotatedLineView`: stores `this._points`; `setPlaceType()` calls `_rebuildParticles(this._points)` | ADR-031 §8 |
+| Zone strengthened fill breathing | `FILL_OPACITY_MIN = 0.15`, `FILL_OPACITY_MAX = 0.65`, 4 s sine | ADR-031 §8 |
+| Zone rim ring | `THREE.RingGeometry` at boundary; scale 1.0×→1.08×, opacity 0.40→0, 3 s cycle | ADR-031 §8 |
+| Anchor crosshair pulse | `THREE.LineSegments` (±X, ±Y, 0.18 m); scale 1.0×→1.3×, 4 s sine, opacity 0.55 constant | ADR-031 §8 |
 
 ---
 
@@ -231,12 +231,12 @@ single drag gesture).  Multi-point addition paths are removed entirely, so the
 
 ---
 
-### ③ Zone drag preview corrupted by second finger movement
+### ③ Zone drag preview corrupted by second finger movement ✅ Superseded by ADR-031
 
-| Detail | Location |
-|--------|----------|
-| **Root cause** | `_onPointerMove` in Map mode does not filter by `pointerId`. During a zone drag (finger 1, `_activeDragPointerId` set), if finger 2 moves across the screen, its `clientX/Y` updates `cursor` and `_updateMapPreview()` draws the rectangle to the wrong position. | `AppController.js:3823–3826` |
-| **Fix** | Add `if (e.pointerId !== this._activeDragPointerId) return` guard (or skip cursor update when `_activeDragPointerId !== null && e.pointerId !== _activeDragPointerId`) at the top of the Map mode `_onPointerMove` branch. |
+The drag gesture now uses `mobileDragStart` (set on `pointerdown`) and `_activeDragPointerId`
+to filter `pointerup`.  `_onPointerMove` already checks
+`if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return`
+at the top of the handler (line ~3770), which covers the Map mode pointer-move path.
 
 ---
 
@@ -352,6 +352,7 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 
 | Feature | Completion | ADR / Notes |
 |---------|------------|-------------|
+| Map Mode Interaction Model (Phases M-1 to M-5: three-state draw, naming, platform UX, snapping, animations) | 2026-04-11 | ADR-031 |
 | Spatial Annotation System refactor (UrbanPolyline→AnnotatedLine etc.) | 2026-04-08 | ADR-029 |
 | Coordinate Space Type Safety (Phases 1–3: instanceof hotfix → JSDoc brands → API separation) | 2026-04-07 | PHILOSOPHY #21, CODE_CONTRACTS |
 | Wasm Geometry Engine (Phases 1–4: Rust/Wasm + Worker + COOP/COEP) | 2026-04-05 | ADR-027 |

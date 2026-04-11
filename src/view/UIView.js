@@ -912,8 +912,20 @@ export class UIView {
    * @param {() => void} onCancel   - called when Cancel clicked
    * @param {() => void} onExit     - called when Exit Map clicked
    */
-  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit) {
+  /**
+   * Builds (or rebuilds) the Map Mode toolbar.
+   *
+   * @param {string|null}   activeTool   currently selected tool type
+   * @param {function}      onToolSelect callback(type) when a tool button is clicked
+   * @param {function|null} onConfirm    called when the Confirm button is clicked (null = hide button)
+   * @param {function|null} onCancel     called when the Cancel button is clicked (null = hide button)
+   * @param {function}      onExit       called when the Exit button is clicked
+   * @param {string|null}   pendingName  when non-null: show a name input with this default value
+   *                                     (pending state); when null: hide the name input
+   */
+  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
     this.hideMapToolbar()
+    this._mapNameInput = null
 
     const toolbar = document.createElement('div')
     toolbar.id = '_mapToolbar'
@@ -977,9 +989,44 @@ export class UIView {
       toolbar.appendChild(btn)
     })
 
-    // Confirm / Cancel (drawing in progress)
-    if (onConfirm !== null || onCancel) {
+    // ── Pending state: name input + Confirm + Cancel ───────────────────────
+    if (pendingName !== null) {
       toolbar.appendChild(sep())
+
+      // Inline name input for naming-before-confirm (ADR-031 §4)
+      const nameInput = document.createElement('input')
+      nameInput.type  = 'text'
+      nameInput.value = pendingName
+      Object.assign(nameInput.style, {
+        width:        '120px',
+        height:       '28px',
+        background:   '#12121c',
+        border:       '1px solid #4a90d9',
+        borderRadius: '4px',
+        color:        '#e0e0e0',
+        fontSize:     '12px',
+        padding:      '0 6px',
+        outline:      'none',
+        boxSizing:    'border-box',
+        // Expand toolbar width while name input is visible
+        alignSelf:    'stretch',
+      })
+      // Stop pointer events from bubbling to canvas (prevent unintended drawings)
+      nameInput.addEventListener('pointerdown', e => e.stopPropagation())
+      nameInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.stopPropagation(); if (onConfirm) onConfirm() }
+        if (e.key === 'Escape') { e.stopPropagation(); if (onCancel) onCancel() }
+        else e.stopPropagation()  // swallow all other keys so they don't fire map shortcuts
+      })
+      toolbar.appendChild(nameInput)
+      this._mapNameInput = nameInput
+      // Auto-focus and select-all for quick editing
+      requestAnimationFrame(() => { nameInput.focus(); nameInput.select() })
+    }
+
+    // Confirm / Cancel buttons
+    if (onConfirm !== null || onCancel) {
+      if (pendingName === null) toolbar.appendChild(sep())
 
       if (onConfirm) {
         const confirmBtn = document.createElement('button')
@@ -1011,7 +1058,7 @@ export class UIView {
           fontSize: '16px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         })
-        cancelBtn.title = 'Cancel drawing (Escape)'
+        cancelBtn.title = 'Cancel (Escape)'
         cancelBtn.innerHTML = ICONS.cancel
         cancelBtn.addEventListener('click', () => onCancel())
         toolbar.appendChild(cancelBtn)
@@ -1041,11 +1088,21 @@ export class UIView {
     this._mapToolbarEl = toolbar
   }
 
+  /**
+   * Returns the current value of the name input shown during pending state.
+   * Returns null if no name input is currently shown.
+   * @returns {string|null}
+   */
+  getMapPendingName() {
+    return this._mapNameInput ? this._mapNameInput.value : null
+  }
+
   /** Removes the Map Mode toolbar. */
   hideMapToolbar() {
     const existing = document.getElementById('_mapToolbar')
     if (existing) existing.remove()
     this._mapToolbarEl = null
+    this._mapNameInput  = null
   }
 
   /**

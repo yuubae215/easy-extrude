@@ -24,12 +24,15 @@ import { LineGeometry }  from 'three/addons/lines/LineGeometry.js'
 import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
-const DEFAULT_COLOR   = 0x888888   // unclassified grey
-const SELECTED_WIDTH  = 4
+const DEFAULT_COLOR    = 0x888888   // unclassified grey
+const SELECTED_WIDTH   = 4
 const UNSELECTED_WIDTH = 2
-const PARTICLE_COUNT  = 4          // flowing dots per Route line
-const PARTICLE_RADIUS = 0.045
-const PARTICLE_SPEED  = 0.22       // fraction of total line length per second
+const PARTICLE_COUNT   = 4          // flowing dots per Route line
+const PARTICLE_RADIUS  = 0.045
+const PARTICLE_SPEED   = 0.22       // fraction of total line length per second
+const DRAWING_OPACITY  = 0.70       // while rubber-band preview (drawing state)
+const PENDING_OPACITY  = 0.90       // while awaiting confirm (pending state)
+const CONFIRMED_OPACITY = 1.00      // after entity is committed
 
 export class AnnotatedLineView {
   /**
@@ -51,7 +54,7 @@ export class AnnotatedLineView {
       worldUnits:  false,    // linewidth in pixels
       depthTest:   false,
       transparent: true,
-      opacity:     0.9,
+      opacity:     CONFIRMED_OPACITY,
     })
     this._lineMat.resolution.set(
       renderer?.domElement?.width  ?? window.innerWidth,
@@ -87,6 +90,8 @@ export class AnnotatedLineView {
      */
     this._segments  = []
     this._totalLen  = 0
+    /** @type {THREE.Vector3[]} last known points (for setPlaceType particle rebuild) */
+    this._points    = []
 
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this._helperObj = new THREE.Object3D()
@@ -106,6 +111,8 @@ export class AnnotatedLineView {
    * @param {THREE.Vector3[]} points
    */
   _setPoints(points) {
+    this._points = points ?? []    // snapshot for later particle rebuilds
+
     // Remove old dots
     for (const d of this._dots) {
       this._scene.remove(d)
@@ -253,6 +260,22 @@ export class AnnotatedLineView {
     this._dotMat.color.setHex(hex)
     this._partMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
+    // Rebuild particles now that the place type is known (fixes Route particle bug:
+    // particles were never created when setPlaceType was called after construction).
+    this._rebuildParticles(this._points)
+  }
+
+  /**
+   * Switches the line to dashed (pending) or solid (drawing/confirmed) style.
+   * Called by AppController when the map draw-state changes.
+   * @param {boolean} pending
+   */
+  setPending(pending) {
+    this._lineMat.dashed   = pending
+    this._lineMat.dashSize = pending ? 0.40 : 1000
+    this._lineMat.gapSize  = pending ? 0.20 : 0
+    this._lineMat.opacity  = pending ? PENDING_OPACITY : CONFIRMED_OPACITY
+    this._lineMat.needsUpdate = true
   }
 
   // ── Visual state ───────────────────────────────────────────────────────────
