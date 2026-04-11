@@ -8,7 +8,7 @@
  *
  * Animations (called via tick(t) each frame):
  *  - Hub:    sonar-ping ring expands and fades every 2 s (beacon / junction feel)
- *  - Anchor: outline ring breathes slowly at 4 s period (calm, fixed reference feel)
+ *  - Anchor: crosshair pulse — 4 line segments (±X, ±Y) scale 1.0×→1.3×, 4 s sine (ADR-031 §8)
  *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView
  * so AppController's setMode() and mode-agnostic calls are safe.
@@ -16,14 +16,16 @@
  * Note: no `cuboid` property — AnnotatedPoint is excluded from raycasting.
  * Move support: updateGeometry([position]) refreshes point position.
  *
- * @see ADR-029
+ * @see ADR-029, ADR-031
  */
 import * as THREE from 'three'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
-const DEFAULT_COLOR = 0x888888
-const MARKER_RADIUS = 0.25
-const MARKER_HEIGHT = 0.04
+const DEFAULT_COLOR    = 0x888888
+const MARKER_RADIUS    = 0.25
+const MARKER_HEIGHT    = 0.04
+const CROSSHAIR_LEN    = 0.18   // half-length of each arm (ADR-031 §8)
+const CROSSHAIR_OPACITY = 0.55  // constant opacity (ADR-031 §8)
 
 export class AnnotatedPointView {
   /**
@@ -85,6 +87,31 @@ export class AnnotatedPointView {
     this._sonarRing.renderOrder = 4
     scene.add(this._sonarRing)
 
+    // ── Anchor crosshair (ADR-031 §8) ──────────────────────────────────────
+    // 4 line segments radiating from the central dot (±X, ±Y, length CROSSHAIR_LEN).
+    // Scale pulses 1.0×→1.3× on a 4 s sine cycle at constant 0.55 opacity.
+    // Replaces the ring-breathing animation for Anchor place type.
+    const L = CROSSHAIR_LEN
+    const crosshairPositions = new Float32Array([
+      0, 0, 0,  L, 0, 0,    // +X arm
+      0, 0, 0, -L, 0, 0,    // −X arm
+      0, 0, 0,  0, L, 0,    // +Y arm
+      0, 0, 0,  0,-L, 0,    // −Y arm
+    ])
+    const crosshairGeo = new THREE.BufferGeometry()
+    crosshairGeo.setAttribute('position', new THREE.Float32BufferAttribute(crosshairPositions, 3))
+    this._crosshairMat = new THREE.LineBasicMaterial({
+      color:       this._colorForType(placeType),
+      depthTest:   false,
+      transparent: true,
+      opacity:     CROSSHAIR_OPACITY,
+    })
+    this._crosshairs = new THREE.LineSegments(crosshairGeo, this._crosshairMat)
+    this._crosshairs.position.copy(point)
+    this._crosshairs.renderOrder = 4
+    this._crosshairs.visible = false   // shown only for Anchor
+    scene.add(this._crosshairs)
+
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this.boxHelper = new THREE.BoxHelper(this._mesh, 0xffffff)
     this.boxHelper.visible = false
@@ -112,6 +139,9 @@ export class AnnotatedPointView {
 
     this._point = point.clone()
     this._name  = name
+
+    // Apply initial place-type visuals
+    this._applyPlaceTypeVisuals(placeType)
   }
 
   // ── Geometry ───────────────────────────────────────────────────────────────
@@ -125,6 +155,7 @@ export class AnnotatedPointView {
     this._mesh.position.copy(point)
     this._ring.position.copy(point)
     this._sonarRing.position.copy(point)
+    this._crosshairs.position.copy(point)
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
@@ -132,6 +163,27 @@ export class AnnotatedPointView {
   _colorForType(placeType) {
     const entry = getPlaceTypeEntry(placeType)
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
+  }
+
+  /**
+   * Applies place-type-specific visibility / opacity rules.
+   * Called from constructor and setPlaceType().
+   * @param {string|null} placeType
+   */
+  _applyPlaceTypeVisuals(placeType) {
+    if (placeType === 'Anchor') {
+      this._crosshairs.visible = true
+      this._sonarMat.opacity   = 0
+      this._ringMat.opacity    = 0.40   // subtle constant outline for Anchor
+    } else if (placeType === 'Hub') {
+      this._crosshairs.visible = false
+      this._ringMat.opacity    = 0.6
+    } else {
+      this._crosshairs.visible = false
+      this._ringMat.opacity    = 0.6
+    }
+    // Reset crosshair scale so pulse starts from 1.0×
+    this._crosshairs.scale.setScalar(1)
   }
 
   // ── Per-frame animation ────────────────────────────────────────────────────
@@ -151,9 +203,10 @@ export class AnnotatedPointView {
       // Outline ring: steady
       this._ringMat.opacity = 0.6
     } else if (this._placeType === 'Anchor') {
-      // Slow breathing on the outline ring (4 s period) — calm, fixed-reference feel.
-      const breath = (Math.sin(t * Math.PI * 0.5) + 1) * 0.5  // 0 → 1, 4 s period
-      this._ringMat.opacity = 0.25 + breath * 0.55
+      // Crosshair pulse: scale 1.0×→1.3× on 4 s sine, opacity constant 0.55.
+      // Calm, unhurried — conveys "pinned in place" (ADR-031 §8).
+      const scale = 1.0 + 0.30 * (Math.sin(t * Math.PI * 0.5) * 0.5 + 0.5)  // 4 s period, 1.0→1.3
+      this._crosshairs.scale.setScalar(scale)
       this._sonarMat.opacity = 0
     } else {
       this._sonarMat.opacity = 0
@@ -211,6 +264,7 @@ export class AnnotatedPointView {
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
     this._sonarMat.color.setHex(hex)
+    this._crosshairMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
     const hexStr = hex.toString(16).padStart(6, '0')
     this._label.style.borderLeft = `3px solid #${hexStr}`
@@ -220,6 +274,7 @@ export class AnnotatedPointView {
       this._name = name
       this._label.textContent = name
     }
+    this._applyPlaceTypeVisuals(placeType)
   }
 
   /** Updates the label text (e.g. after rename). */
@@ -234,6 +289,7 @@ export class AnnotatedPointView {
     this._mesh.visible      = visible
     this._ring.visible      = visible
     this._sonarRing.visible = visible
+    this._crosshairs.visible = visible && this._placeType === 'Anchor'
     this._label.style.display = visible ? 'block' : 'none'
     if (!visible) this.boxHelper.visible = false
   }
@@ -269,6 +325,7 @@ export class AnnotatedPointView {
     scene.remove(this._mesh)
     scene.remove(this._ring)
     scene.remove(this._sonarRing)
+    scene.remove(this._crosshairs)
     scene.remove(this.boxHelper)
     this._geo.dispose()
     this._mat.dispose()
@@ -276,6 +333,8 @@ export class AnnotatedPointView {
     this._ringMat.dispose()
     this._sonarGeo.dispose()
     this._sonarMat.dispose()
+    this._crosshairs.geometry.dispose()
+    this._crosshairMat.dispose()
     this._label.remove()
   }
 }

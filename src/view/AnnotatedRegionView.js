@@ -6,15 +6,17 @@
  *  - A translucent fill mesh (ShapeGeometry on Z=0 XY plane)
  *  - Vertex dot markers (small spheres) at each vertex
  *  - A BoxHelper for selection highlight
+ *  - A rim ring (RingGeometry) that pulses outward from the boundary (Zone only)
  *
  * Animations (called via tick(t) each frame):
- *  - Zone: fill opacity breathes gently on a 4 s cycle (alive, "owned territory" feel)
+ *  - Zone: fill opacity breathes on a 4 s cycle (alive, "owned territory" feel)
+ *  - Zone: rim ring expands 1.0×→1.08× and fades 0.40→0 on a 3 s cycle
  *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView.
  *
  * Note: no `cuboid` property — AnnotatedRegion is excluded from raycasting.
  *
- * @see ADR-029
+ * @see ADR-029, ADR-031
  */
 import * as THREE from 'three'
 import { Line2 }         from 'three/addons/lines/Line2.js'
@@ -23,11 +25,14 @@ import { LineMaterial }  from 'three/addons/lines/LineMaterial.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
 const DEFAULT_COLOR    = 0x888888
-const FILL_OPACITY     = 0.18
-const FILL_OPACITY_MIN = 0.10  // breathing animation lower bound
-const FILL_OPACITY_MAX = 0.28  // breathing animation upper bound
+const FILL_OPACITY     = 0.40          // confirmed default (mid-range)
+const FILL_OPACITY_MIN = 0.15          // breathing animation lower bound (ADR-031 §8)
+const FILL_OPACITY_MAX = 0.65          // breathing animation upper bound (ADR-031 §8)
+const RIM_OPACITY_MAX  = 0.40          // rim ring start opacity (ADR-031 §8)
 const SELECTED_WIDTH   = 4
 const UNSELECTED_WIDTH = 2
+const CONFIRMED_OPACITY = 1.00
+const PENDING_OPACITY   = 0.90
 
 export class AnnotatedRegionView {
   /**
@@ -49,7 +54,7 @@ export class AnnotatedRegionView {
       worldUnits:  false,
       depthTest:   false,
       transparent: true,
-      opacity:     0.9,
+      opacity:     CONFIRMED_OPACITY,
     })
     this._lineMat.resolution.set(
       renderer?.domElement?.width  ?? window.innerWidth,
@@ -80,6 +85,22 @@ export class AnnotatedRegionView {
     })
     /** @type {THREE.Mesh[]} */
     this._dots = []
+
+    // ── Rim ring (Zone animation — ADR-031 §8) ─────────────────────────────
+    // Pulses outward from the polygon boundary: scale 1.0×→1.08×, opacity 0.40→0
+    // on a 3 s cycle.  The ring geometry is rebuilt in _setPoints() to match the
+    // actual polygon bounding radius.
+    this._rimGeo  = null
+    this._rimMat  = new THREE.MeshBasicMaterial({
+      color:       this._colorForType(placeType),
+      depthTest:   false,
+      transparent: true,
+      opacity:     0,
+      side:        THREE.DoubleSide,
+    })
+    this._rimRing = new THREE.Mesh(null, this._rimMat)
+    this._rimRing.renderOrder = 1
+    scene.add(this._rimRing)
 
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this._helperObj = new THREE.Object3D()
@@ -132,6 +153,21 @@ export class AnnotatedRegionView {
       this._dots.push(dot)
     }
 
+    // Rim ring: compute centroid and max bounding radius
+    const centroid = new THREE.Vector3()
+    for (const p of points) centroid.add(p)
+    centroid.divideScalar(points.length)
+    const boundRadius = Math.max(...points.map(p => p.distanceTo(centroid)))
+
+    if (this._rimGeo) { this._rimGeo.dispose(); this._rimGeo = null }
+    if (boundRadius > 0) {
+      // Thin rim at the polygon boundary; inner radius slightly inside boundary
+      this._rimGeo  = new THREE.RingGeometry(boundRadius * 0.92, boundRadius, 32)
+      this._rimRing.geometry = this._rimGeo
+      this._rimRing.position.set(centroid.x, centroid.y, 0)
+      this._rimRing.scale.setScalar(1)
+    }
+
     this._updateBoxHelper(points)
   }
 
@@ -161,14 +197,22 @@ export class AnnotatedRegionView {
   // ── Per-frame animation ────────────────────────────────────────────────────
 
   /**
-   * Drives Zone fill breathing animation.  Called every frame from AppController.
+   * Drives Zone fill breathing + rim ring animation.  Called every frame.
    * @param {number} t  elapsed seconds (performance.now() / 1000)
    */
   tick(t) {
     if (!this._fillMesh.visible || this._placeType !== 'Zone') return
-    // Gentle sine-wave breath: opacity oscillates between MIN and MAX on a 4 s period.
+
+    // Fill breath: opacity oscillates between MIN and MAX on a 4 s period.
     const breath = (Math.sin(t * Math.PI * 0.5) + 1) * 0.5  // 0 → 1, 4 s period
     this._fillMat.opacity = FILL_OPACITY_MIN + breath * (FILL_OPACITY_MAX - FILL_OPACITY_MIN)
+
+    // Rim ring pulse: scale 1.0×→1.08×, opacity 0.40→0, 3 s cycle (ADR-031 §8).
+    if (this._rimGeo) {
+      const phase = (t % 3.0) / 3.0  // 0 → 1 every 3 s
+      this._rimRing.scale.setScalar(1.0 + phase * 0.08)
+      this._rimMat.opacity = RIM_OPACITY_MAX * (1 - phase)
+    }
   }
 
   // ── Move support ───────────────────────────────────────────────────────────
@@ -199,9 +243,22 @@ export class AnnotatedRegionView {
     this._lineMat.color.setHex(hex)
     this._fillMat.color.setHex(hex)
     this._dotMat.color.setHex(hex)
+    this._rimMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
     // Reset fill opacity to default when place type changes
     this._fillMat.opacity = FILL_OPACITY
+  }
+
+  /**
+   * Switches the boundary ring to dashed (pending) or solid (drawing/confirmed) style.
+   * @param {boolean} pending
+   */
+  setPending(pending) {
+    this._lineMat.dashed   = pending
+    this._lineMat.dashSize = pending ? 0.40 : 1000
+    this._lineMat.gapSize  = pending ? 0.20 : 0
+    this._lineMat.opacity  = pending ? PENDING_OPACITY : CONFIRMED_OPACITY
+    this._lineMat.needsUpdate = true
   }
 
   // ── Visual state ───────────────────────────────────────────────────────────
@@ -209,6 +266,7 @@ export class AnnotatedRegionView {
   setVisible(visible) {
     this._line.visible     = visible
     this._fillMesh.visible = visible
+    this._rimRing.visible  = visible && this._placeType === 'Zone'
     for (const d of this._dots) d.visible = visible
     if (!visible) this.boxHelper.visible = false
   }
@@ -244,6 +302,7 @@ export class AnnotatedRegionView {
   dispose(scene) {
     scene.remove(this._line)
     scene.remove(this._fillMesh)
+    scene.remove(this._rimRing)
     scene.remove(this._helperObj)
     scene.remove(this.boxHelper)
     for (const d of this._dots) scene.remove(d)
@@ -251,6 +310,8 @@ export class AnnotatedRegionView {
     this._lineMat.dispose()
     if (this._fillGeo) this._fillGeo.dispose()
     this._fillMat.dispose()
+    if (this._rimGeo) this._rimGeo.dispose()
+    this._rimMat.dispose()
     this._dotGeo.dispose()
     this._dotMat.dispose()
     this._dots = []
