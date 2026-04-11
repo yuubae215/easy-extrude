@@ -1020,8 +1020,8 @@ export class UIView {
       })
       toolbar.appendChild(nameInput)
       this._mapNameInput = nameInput
-      // Auto-focus and select-all for quick editing
-      requestAnimationFrame(() => { nameInput.focus(); nameInput.select() })
+      // Do NOT auto-focus: prevents the software keyboard from popping up on mobile.
+      // The user can tap/click the input to edit the name when needed.
     }
 
     // Confirm / Cancel buttons
