@@ -4176,6 +4176,8 @@ export class AppController {
           } else {
             // Polygon mode (already have vertices): add next vertex
             this._mapMode.points.push(pt.clone())
+            this._mapMode.cursor = pt.clone()
+            this._updateMapPreview()
             this._updateMapStatus()
             this._refreshMapToolbar()
           }
@@ -4183,6 +4185,8 @@ export class AppController {
         }
         // Line tool: push next vertex
         this._mapMode.points.push(pt.clone())
+        this._mapMode.cursor = pt.clone()
+        this._updateMapPreview()
         this._updateMapStatus()
         this._refreshMapToolbar()
         return
@@ -4404,6 +4408,8 @@ export class AppController {
       } else {
         // Barely moved → treat as click: start polygon vertex collection
         this._mapMode.points.push(startPt)
+        this._mapMode.cursor = startPt.clone()
+        this._updateMapPreview()
         this._updateMapStatus()
         this._refreshMapToolbar()
       }
