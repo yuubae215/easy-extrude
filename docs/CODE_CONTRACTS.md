@@ -126,3 +126,4 @@ Detail: `docs/code_contracts/memory_management.md`
 | _clearScene Emit Order | Emit `objectRemoved` for each object BEFORE replacing `this._model` |
 | SceneSerializer Entity Coverage | Every domain entity must be explicitly handled (or commented) in `serializeScene()` |
 | ImportedMesh Serialization | Base64 buffers; restore `cuboid.position` from `offset` BEFORE calling `initCorners()` |
+| THREE.Mesh Requires Valid Geometry | Never pass `null` to `new THREE.Mesh(null, mat)` — use `new THREE.BufferGeometry()` as placeholder; `updateMorphTargets()` throws on null geometry |
