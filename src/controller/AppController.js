@@ -1285,30 +1285,40 @@ export class AppController {
     // Read the user-supplied name (or fall back to the auto-generated default)
     const name = this._uiView.getMapPendingName() ?? pendingName ?? placeType
 
-    if (geometry === 'point' && pendingPoints.length >= 1) {
-      const obj = this._service.createAnnotatedPoint(pendingPoints[0], name, {
-        camera: this._camera, renderer, container: document.body,
-      })
-      this._service.setPlaceType(obj.id, placeType)
-    } else if (geometry === 'line' && pendingPoints.length >= 2) {
-      const obj = this._service.createAnnotatedLine(pendingPoints, name, renderer)
-      this._service.setPlaceType(obj.id, placeType)
-    } else if (geometry === 'region' && pendingPoints.length >= 3) {
-      const obj = this._service.createAnnotatedRegion(pendingPoints, name, renderer)
-      this._service.setPlaceType(obj.id, placeType)
-    } else {
-      return  // geometry validation failed — should not reach here
+    // Create entity — state reset always happens in finally, even if creation throws
+    let created = false
+    try {
+      if (geometry === 'point' && pendingPoints.length >= 1) {
+        const obj = this._service.createAnnotatedPoint(pendingPoints[0], name, {
+          camera: this._camera, renderer, container: document.body,
+        })
+        this._service.setPlaceType(obj.id, placeType)
+        created = true
+      } else if (geometry === 'line' && pendingPoints.length >= 2) {
+        const obj = this._service.createAnnotatedLine(pendingPoints, name, renderer)
+        this._service.setPlaceType(obj.id, placeType)
+        created = true
+      } else if (geometry === 'region' && pendingPoints.length >= 3) {
+        const obj = this._service.createAnnotatedRegion(pendingPoints, name, renderer)
+        this._service.setPlaceType(obj.id, placeType)
+        created = true
+      }
+    } catch (err) {
+      console.error('[MapMode] entity creation failed:', err)
+    } finally {
+      // Always exit pending state — confirm button must disappear regardless of success
+      this._clearMapPreview()
+      this._mapMode.drawState     = 'drawing'  // ready for another gesture
+      this._mapMode.points        = []
+      this._mapMode.pendingPoints = null
+      this._mapMode.pendingName   = null
+      this._mapMode.cursor        = null
+      this._refreshMapToolbar()
     }
 
-    // Tool resets to idle after confirm — no chain drawing (ADR-031 §5)
-    this._clearMapPreview()
-    this._mapMode.drawState     = 'drawing'  // ready for another gesture
-    this._mapMode.points        = []
-    this._mapMode.pendingPoints = null
-    this._mapMode.pendingName   = null
-    this._mapMode.cursor        = null
-    this._refreshMapToolbar()
-    this._uiView.setStatus(`Map Mode — ${placeType} placed. Draw another or select a different type.`)
+    if (created) {
+      this._uiView.setStatus(`Map Mode — ${placeType} placed. Draw another or select a different type.`)
+    }
   }
 
   /** Removes preview line, cursor dot, and snap ring from the Three.js scene. */

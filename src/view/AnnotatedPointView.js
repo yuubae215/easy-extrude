@@ -21,11 +21,11 @@
 import * as THREE from 'three'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 
-const DEFAULT_COLOR    = 0x888888
-const MARKER_RADIUS    = 0.25
-const MARKER_HEIGHT    = 0.04
-const CROSSHAIR_LEN    = 0.18   // half-length of each arm (ADR-031 §8)
-const CROSSHAIR_OPACITY = 0.55  // constant opacity (ADR-031 §8)
+const DEFAULT_COLOR     = 0x888888
+const MARKER_RADIUS     = 0.25
+const MARKER_HEIGHT     = 0.04
+const CROSSHAIR_LEN     = 0.45   // half-length; extends beyond MARKER_RADIUS so arms are visible outside the dot
+const CROSSHAIR_OPACITY = 0.90   // high opacity for contrast against colored marker
 
 export class AnnotatedPointView {
   /**
@@ -100,8 +100,9 @@ export class AnnotatedPointView {
     ])
     const crosshairGeo = new THREE.BufferGeometry()
     crosshairGeo.setAttribute('position', new THREE.Float32BufferAttribute(crosshairPositions, 3))
+    // White crosshair so arms contrast against the colored marker disc beneath
     this._crosshairMat = new THREE.LineBasicMaterial({
-      color:       this._colorForType(placeType),
+      color:       0xffffff,
       depthTest:   false,
       transparent: true,
       opacity:     CROSSHAIR_OPACITY,
@@ -264,7 +265,7 @@ export class AnnotatedPointView {
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
     this._sonarMat.color.setHex(hex)
-    this._crosshairMat.color.setHex(hex)
+    // Crosshair stays white for contrast — do not tint with place-type color
     this.boxHelper.material?.color.setHex(hex)
     const hexStr = hex.toString(16).padStart(6, '0')
     this._label.style.borderLeft = `3px solid #${hexStr}`
