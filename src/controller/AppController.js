@@ -227,6 +227,12 @@ export class AppController {
       panStart:    null,   // { screenX, screenY, camX, camY }
       /** Current orthographic frustum height (world units) */
       frustumSize: 50,
+      /**
+       * Zone drag-to-rectangle state: set on pointerdown when zone tool is active
+       * and no polygon vertices exist yet.  Cleared on pointerup.
+       * @type {{ pt: THREE.Vector3, screenX: number, screenY: number }|null}
+       */
+      zoneDragStart: null,
     }
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
@@ -1185,9 +1191,10 @@ export class AppController {
   /** Cancels the current drawing without creating an entity. */
   _mapCancelDrawing() {
     this._clearMapPreview()
-    this._mapMode.tool   = null
-    this._mapMode.points = []
-    this._mapMode.cursor = null
+    this._mapMode.tool          = null
+    this._mapMode.points        = []
+    this._mapMode.cursor        = null
+    this._mapMode.zoneDragStart = null
     this._uiView.setCursor('default')
     this._refreshMapToolbar()
     if (this._mapMode.active) {
@@ -1221,12 +1228,24 @@ export class AppController {
       return  // not enough points
     }
 
-    // Keep the same tool active for rapid repeated placement
+    // Keep the same tool active for rapid repeated placement.
+    // For lines: carry the last endpoint forward so the next segment starts there
+    // automatically (chain drawing — no need to re-click the same point).
+    // For regions/points: reset to empty for fresh placement.
+    const lastPt = points[points.length - 1]
     this._clearMapPreview()
-    this._mapMode.points = []
+    this._mapMode.points = geometry === 'line' ? [lastPt.clone()] : []
     this._mapMode.cursor = null
     this._refreshMapToolbar()
-    this._uiView.setStatus(`Map Mode — ${placeType} placed.  Draw another or select a different type.`)
+    if (geometry === 'line') {
+      this._uiView.setStatusRich([
+        { text: placeType, bold: true, color: '#80cbc4' },
+        { text: 'placed — click to extend from endpoint', color: '#888' },
+        { text: '  ESC = new line', color: '#444' },
+      ])
+    } else {
+      this._uiView.setStatus(`Map Mode — ${placeType} placed.  Draw another or select a different type.`)
+    }
   }
 
   /** Removes preview line and cursor dot from the Three.js scene. */
@@ -1303,7 +1322,7 @@ export class AppController {
 
   /** Updates the live preview line and cursor dot during map drawing. */
   _updateMapPreview() {
-    const { tool, points, cursor } = this._mapMode
+    const { tool, points, cursor, zoneDragStart } = this._mapMode
     if (!tool || !cursor) return
     const geometry = this._geometryForType(tool)
     const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
@@ -1320,10 +1339,26 @@ export class AppController {
     this._mapMode.cursorDot.position.copy(cursor)
     this._mapMode.cursorDot.material.color.setHex(color)
 
-    // Preview line (confirmed points + live cursor position)
-    if (geometry !== 'point' && points.length > 0) {
-      const previewPts = [...points, cursor]
+    // Determine the preview point sequence to render
+    let previewPts = null
+    if (geometry === 'region' && zoneDragStart) {
+      // Zone drag-to-rectangle: show live rectangle from anchor to cursor
+      const p1 = zoneDragStart.pt
+      const p2 = cursor
+      previewPts = [
+        new THREE.Vector3(p1.x, p1.y, 0),
+        new THREE.Vector3(p2.x, p1.y, 0),
+        new THREE.Vector3(p2.x, p2.y, 0),
+        new THREE.Vector3(p1.x, p2.y, 0),
+        new THREE.Vector3(p1.x, p1.y, 0),  // close ring
+      ]
+    } else if (geometry !== 'point' && points.length > 0) {
+      // Normal polygon / polyline preview: confirmed points + live cursor
+      previewPts = [...points, cursor]
       if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
+    }
+
+    if (previewPts) {
       const flat = []
       for (const p of previewPts) flat.push(p.x, p.y, p.z)
 
@@ -4117,16 +4152,36 @@ export class AppController {
           this._mapConfirmDrawing()
           return
         }
-        // For region: clicking near first vertex closes the shape
-        if (geometry === 'region' && this._mapMode.points.length >= 3) {
-          const first = this._mapMode.points[0]
-          const firstScreen = this._projectToScreen(first, this._sceneView.activeCamera)
-          const mx = e.clientX, my = e.clientY
-          if (Math.hypot(mx - firstScreen.x, my - firstScreen.y) < 20) {
-            this._mapConfirmDrawing()
-            return
+        if (geometry === 'region') {
+          // Clicking near the first polygon vertex closes and confirms the shape
+          if (this._mapMode.points.length >= 3) {
+            const first = this._mapMode.points[0]
+            const firstScreen = this._projectToScreen(first, this._sceneView.activeCamera)
+            if (Math.hypot(e.clientX - firstScreen.x, e.clientY - firstScreen.y) < 20) {
+              this._mapConfirmDrawing()
+              return
+            }
           }
+          if (this._mapMode.points.length === 0) {
+            // No polygon vertices yet — start drag-to-rectangle (like sketch).
+            // pointerup will confirm as rectangle if dragged, or add as first
+            // polygon vertex if the pointer barely moved (just a tap/click).
+            this._mapMode.zoneDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
+            this._activeDragPointerId = e.pointerId
+            this._uiView.setStatusRich([
+              { text: 'Zone', bold: true, color: '#80cbc4' },
+              { text: 'drag to draw rectangle', color: '#888' },
+              { text: '  ESC cancel', color: '#444' },
+            ])
+          } else {
+            // Polygon mode (already have vertices): add next vertex
+            this._mapMode.points.push(pt.clone())
+            this._updateMapStatus()
+            this._refreshMapToolbar()
+          }
+          return
         }
+        // Line tool: push next vertex
         this._mapMode.points.push(pt.clone())
         this._updateMapStatus()
         this._refreshMapToolbar()
@@ -4325,6 +4380,32 @@ export class AppController {
         this._mapMode.isPanning = false
         this._mapMode.panStart  = null
         this._uiView.setCursor(this._mapMode.tool ? 'crosshair' : 'default')
+      }
+      return
+    }
+
+    // ── 2D Map Mode: zone drag-to-rectangle confirmation ──────────────────
+    if (this._mapMode.active && this._mapMode.zoneDragStart &&
+        this._activeDragPointerId === e.pointerId) {
+      const { pt: startPt, screenX: sx, screenY: sy } = this._mapMode.zoneDragStart
+      this._mapMode.zoneDragStart = null
+      this._activeDragPointerId   = null
+      const isDrag = Math.hypot(e.clientX - sx, e.clientY - sy) > 5
+      if (isDrag && this._mapMode.cursor) {
+        // Dragged enough → confirm as axis-aligned rectangle zone
+        const p1 = startPt, p2 = this._mapMode.cursor
+        this._mapMode.points = [
+          new THREE.Vector3(p1.x, p1.y, 0),
+          new THREE.Vector3(p2.x, p1.y, 0),
+          new THREE.Vector3(p2.x, p2.y, 0),
+          new THREE.Vector3(p1.x, p2.y, 0),
+        ]
+        this._mapConfirmDrawing()
+      } else {
+        // Barely moved → treat as click: start polygon vertex collection
+        this._mapMode.points.push(startPt)
+        this._updateMapStatus()
+        this._refreshMapToolbar()
       }
       return
     }
@@ -4738,11 +4819,14 @@ export class AppController {
       requestAnimationFrame(loop)
       this._sceneView.render()
       if (this._gizmoView) this._gizmoView.update()
-      // Keep MeasureLine HTML labels positioned over the correct screen pixel
-      // and CoordinateFrame axes at a constant screen size.
+      // Keep MeasureLine / AnnotatedPoint HTML labels positioned over the correct screen pixel,
+      // drive per-element animations, and keep CoordinateFrame axes at constant screen size.
+      const t = performance.now() * 0.001  // elapsed seconds for animation clock
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
-        if (obj instanceof AnnotatedPoint)  obj.meshView.updateLabelPosition()
+        if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(); obj.meshView.tick(t) }
+        if (obj instanceof AnnotatedLine)   obj.meshView.tick(t)
+        if (obj instanceof AnnotatedRegion) obj.meshView.tick(t)
         if (obj instanceof CoordinateFrame) obj.meshView.updateScale(this._camera, this._sceneView.renderer)
       }
       // Sync CoordinateFrame world poses every frame (ADR-020).

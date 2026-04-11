@@ -6,6 +6,10 @@
  *  - Vertex dot markers (small spheres) at each vertex
  *  - A BoxHelper for selection highlight
  *
+ * Animations (called via tick(t) each frame):
+ *  - Route:    4 small particles flow along the polyline (traffic / data-flow feel)
+ *  - Boundary: none — static solid line conveys "barrier / wall" semantics
+ *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView
  * so AppController's setMode() and mode-agnostic calls are safe.
  *
@@ -23,6 +27,9 @@ import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 const DEFAULT_COLOR   = 0x888888   // unclassified grey
 const SELECTED_WIDTH  = 4
 const UNSELECTED_WIDTH = 2
+const PARTICLE_COUNT  = 4          // flowing dots per Route line
+const PARTICLE_RADIUS = 0.045
+const PARTICLE_SPEED  = 0.22       // fraction of total line length per second
 
 export class AnnotatedLineView {
   /**
@@ -34,6 +41,7 @@ export class AnnotatedLineView {
   constructor(scene, points, placeType, renderer) {
     this._scene    = scene
     this._renderer = renderer
+    this._placeType = placeType
 
     // ── Line2 geometry ─────────────────────────────────────────────────────
     this._lineGeo = new LineGeometry()
@@ -62,6 +70,24 @@ export class AnnotatedLineView {
     /** @type {THREE.Mesh[]} */
     this._dots = []
 
+    // ── Route flowing particles ────────────────────────────────────────────
+    // Shared geometry / material reused across all particles for this line.
+    this._partGeo = new THREE.SphereGeometry(PARTICLE_RADIUS, 6, 6)
+    this._partMat = new THREE.MeshBasicMaterial({
+      color:       this._colorForType(placeType),
+      depthTest:   false,
+      transparent: true,
+      opacity:     0.85,
+    })
+    /** @type {THREE.Mesh[]} */
+    this._particles = []
+    /**
+     * Pre-computed segment data for the current polyline.
+     * @type {Array<{ a: THREE.Vector3, b: THREE.Vector3, len: number }>}
+     */
+    this._segments  = []
+    this._totalLen  = 0
+
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this._helperObj = new THREE.Object3D()
     scene.add(this._helperObj)
@@ -86,7 +112,10 @@ export class AnnotatedLineView {
     }
     this._dots = []
 
-    if (!points || points.length < 2) return
+    if (!points || points.length < 2) {
+      this._rebuildParticles([])
+      return
+    }
 
     // Flat position array for LineGeometry
     const flat = []
@@ -104,6 +133,37 @@ export class AnnotatedLineView {
     }
 
     this._updateBoxHelper(points)
+    this._rebuildParticles(points)
+  }
+
+  /**
+   * Recomputes segment data and rebuilds particle meshes for Route animation.
+   * @param {THREE.Vector3[]} points
+   */
+  _rebuildParticles(points) {
+    // Remove existing particles from scene
+    for (const p of this._particles) this._scene.remove(p)
+    this._particles = []
+    this._segments  = []
+    this._totalLen  = 0
+
+    if (this._placeType !== 'Route' || !points || points.length < 2) return
+
+    // Pre-compute segments
+    for (let i = 0; i < points.length - 1; i++) {
+      const len = points[i].distanceTo(points[i + 1])
+      this._segments.push({ a: points[i].clone(), b: points[i + 1].clone(), len })
+      this._totalLen += len
+    }
+
+    // Create particles with evenly staggered start offsets
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const mesh = new THREE.Mesh(this._partGeo, this._partMat)
+      mesh.renderOrder = 4
+      mesh._tOffset = i / PARTICLE_COUNT  // stagger around the loop
+      this._scene.add(mesh)
+      this._particles.push(mesh)
+    }
   }
 
   /**
@@ -130,6 +190,39 @@ export class AnnotatedLineView {
     return entry ? parseInt(entry.color.slice(1), 16) : DEFAULT_COLOR
   }
 
+  // ── Per-frame animation ────────────────────────────────────────────────────
+
+  /**
+   * Drives Route particle animation.  Called every frame from AppController.
+   * @param {number} t  elapsed seconds (performance.now() / 1000)
+   */
+  tick(t) {
+    if (!this._line.visible || this._placeType !== 'Route') return
+    if (this._segments.length === 0 || this._totalLen === 0) return
+
+    for (const mesh of this._particles) {
+      // Each particle travels the full polyline length continuously.
+      const frac = ((mesh._tOffset + t * PARTICLE_SPEED) % 1 + 1) % 1
+      const targetDist = frac * this._totalLen
+
+      let cumLen = 0
+      let placed = false
+      for (const seg of this._segments) {
+        if (cumLen + seg.len >= targetDist) {
+          const segFrac = seg.len > 0 ? (targetDist - cumLen) / seg.len : 0
+          mesh.position.lerpVectors(seg.a, seg.b, segFrac)
+          placed = true
+          break
+        }
+        cumLen += seg.len
+      }
+      if (!placed) {
+        // Floating-point edge: snap to last segment endpoint
+        mesh.position.copy(this._segments[this._segments.length - 1].b)
+      }
+    }
+  }
+
   // ── Move support ───────────────────────────────────────────────────────────
 
   /**
@@ -154,9 +247,11 @@ export class AnnotatedLineView {
    * @param {string|null} placeType
    */
   setPlaceType(placeType) {
+    this._placeType = placeType
     const hex = this._colorForType(placeType)
     this._lineMat.color.setHex(hex)
     this._dotMat.color.setHex(hex)
+    this._partMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
   }
 
@@ -164,7 +259,8 @@ export class AnnotatedLineView {
 
   setVisible(visible) {
     this._line.visible = visible
-    for (const d of this._dots) d.visible = visible
+    for (const d of this._dots)     d.visible = visible
+    for (const p of this._particles) p.visible = visible
     if (!visible) this.boxHelper.visible = false
   }
 
@@ -200,11 +296,16 @@ export class AnnotatedLineView {
     scene.remove(this._line)
     scene.remove(this._helperObj)
     scene.remove(this.boxHelper)
-    for (const d of this._dots) scene.remove(d)
+    for (const d of this._dots)     scene.remove(d)
+    for (const p of this._particles) scene.remove(p)
     this._lineGeo.dispose()
     this._lineMat.dispose()
     this._dotGeo.dispose()
     this._dotMat.dispose()
-    this._dots = []
+    this._partGeo.dispose()
+    this._partMat.dispose()
+    this._dots      = []
+    this._particles = []
+    this._segments  = []
   }
 }
