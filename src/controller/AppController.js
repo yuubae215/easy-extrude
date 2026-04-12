@@ -1194,6 +1194,9 @@ export class AppController {
     this._mapMode.cursor        = null
     this._mapMode.mobileDragStart = null
     this._mapMode.isPanning     = false
+    // TC was created with the perspective camera; the ortho camera used in Map
+    // Mode would cause wrong gizmo scale and broken raycast — hide it.
+    this._detachMobileTransform()
     this._sceneView.useOrthoCamera(true, this._mapMode.frustumSize)
     this._uiView.setCursor('default')
     this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
@@ -1210,6 +1213,8 @@ export class AppController {
     this._uiView.hideMapToolbar()
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
+    // Restore TC gizmo now that the perspective camera is active again.
+    if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     this._updateMobileToolbar()
   }
 
@@ -1845,6 +1850,12 @@ export class AppController {
     this._tc.setSpace('world')
     this._tc.visible = false
     this._sceneView.scene.add(this._tc)
+
+    // Render the gizmo on top of CoordinateFrame axes (renderOrder 1) so it
+    // is never hidden behind the origin frame that appears on selection.
+    this._tc.traverse(child => {
+      if (child !== this._tc) child.renderOrder = 2
+    })
 
     // Disable OrbitControls while dragging; re-enable on release
     this._tc.addEventListener('dragging-changed', (e) => {
@@ -3062,6 +3073,10 @@ export class AppController {
         this._setChildFramesVisible(this._scene.activeId, sel)
       }
     }
+    // Sync the TC gizmo with the new selection state so every code path
+    // (not just _switchActiveObject) keeps the gizmo visible/hidden correctly.
+    if (sel && this._activeObj) this._attachMobileTransform(this._activeObj)
+    else this._detachMobileTransform()
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
   }
