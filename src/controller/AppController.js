@@ -1958,11 +1958,14 @@ export class AppController {
     this._tcProxy.position.copy(centroid)
     this._tcProxy.quaternion.identity()  // reset accumulated proxy rotation each attach
     this._tcProxy.updateMatrixWorld()
-    // CoordinateFrame: default to rotate mode; all other entities: translate only
+    // CoordinateFrame: default to rotate mode; all other entities: translate only.
+    // Always keep _tcMode in sync with the actual TC mode so that objectChange
+    // and dragging-changed handlers read the correct mode.
     if (obj instanceof CoordinateFrame) {
       this._tcMode = 'rotate'
       this._tc.setMode('rotate')
     } else {
+      this._tcMode = 'translate'
       this._tc.setMode('translate')
     }
     this._tc.attach(this._tcProxy)
@@ -4757,6 +4760,20 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
+      // If TC gizmo is active, check if this pointer hits a gizmo handle BEFORE
+      // doing regular object selection. Without this guard, the ray passes through
+      // TC handles (rotate ring, translate arrows) and hits objects behind them,
+      // causing an unintended active-object switch and mode change.
+      // Example: tapping the TC rotate ring hits the Cuboid behind it →
+      //   _switchActiveObject(cuboid) → _attachMobileTransform(cuboid) → tc.setMode('translate')
+      // TC registers its own pointer listeners after _onPointerDown, so _tcDragging
+      // is still false at this point — we must raycast against the gizmo explicitly.
+      if (this._tc?.object) {
+        this._raycaster.setFromCamera(this._mouse, this._camera)
+        const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
+        if (tcHits.length > 0) return
+      }
+
       // Primary cuboid hit; fall back to annotation entity bounding-box hit.
       let result = this._hitAnyObject()
       if (!result) result = this._hitAnyAnnotation()

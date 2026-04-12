@@ -294,6 +294,8 @@ this._updateMouse(e)   // ← must be here, not further down
 - **Concrete Rule 1**: After `_tc.attach(proxy)` in `_attachMobileTransform()`, immediately call `_tc.getHelper().updateMatrixWorld()` to force the gizmo's internal `_worldPosition` to reflect the proxy's new matrix. Without this, TC rotates/translates relative to the wrong pivot for the first drag.
 - **Concrete Rule 2**: `_syncMobileTransformProxy()` must call `_service._updateWorldPoses()` before reading `worldPoseOf()` when the active object is a `CoordinateFrame`. `MoveCommand.apply()` calls `invalidateWorldPose()` synchronously before `_syncMobileTransformProxy()` runs during undo/redo — leaving the cache empty. `worldPoseOf()` would return `null` and the fallback `new THREE.Vector3()` would snap the proxy to the world origin.
 - **Concrete Rule 3**: `_toggleTcMode()` must call `_syncMobileTransformProxy()` after resetting the proxy quaternion to re-anchor the gizmo at the frame's current world position. Without this, switching Rotate↔Translate leaves TC internally anchored to a stale world position.
+- **Concrete Rule 4**: `_onPointerDown` must raycast against `_tc.getHelper()` BEFORE `_hitAnyObject()` whenever the TC gizmo is attached (`this._tc?.object`). TC registers its own pointer listeners AFTER `_onPointerDown`, so `_tcDragging` is still `false` at the time `_onPointerDown` fires — the only reliable way to detect a gizmo hit is to raycast explicitly. Without this guard, the ray passes through TC handles (rotate ring, translate arrows) to hit objects behind them, causing `_switchActiveObject()` → `_attachMobileTransform()` → `tc.setMode()` to run — unintentionally switching the active object and the gizmo mode.
+- **Concrete Rule 5**: `_attachMobileTransform()` must keep `_tcMode` in sync with the TC mode for ALL entity types. Previously only the `CoordinateFrame` branch set `_tcMode = 'rotate'`; the `else` branch set `tc.setMode('translate')` without updating `_tcMode`. Always set `_tcMode = 'translate'` alongside `tc.setMode('translate')`.
 
 ```js
 // _attachMobileTransform() — force gizmo sync after attach
@@ -307,6 +309,13 @@ const centroid = this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THR
 // _toggleTcMode() — re-anchor after mode switch
 this._tcProxy.quaternion.identity()
 this._syncMobileTransformProxy()           // ← refresh proxy position + gizmo internal state
+
+// _onPointerDown — guard against TC gizmo hit before regular selection
+if (this._tc?.object) {
+  this._raycaster.setFromCamera(this._mouse, this._camera)
+  const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
+  if (tcHits.length > 0) return  // ← let TC handle its own pointer event
+}
 ```
 
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
