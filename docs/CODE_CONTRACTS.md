@@ -66,6 +66,7 @@ Detail: `docs/code_contracts/architecture.md`
 | Rect Selection Null Cuboid Guard | `_finalizeRectSelection()` must use `obj.meshView.cuboid?.visible` (optional chaining); Urban entities and CoordinateFrame return `null` for `.cuboid` and would throw TypeError without the guard |
 | CoordinateFrame.localOffset vs Geometry.corners | `CoordinateFrame` exposes `localOffset` (LocalVector3[]); geometry exposes `corners` (WorldVector3[]). `.corners` does NOT exist on `CoordinateFrame`. Use `_grabHandlesOf(obj)` for grab/move; use `_worldPoseCache` for world position. (PHILOSOPHY #21 Phase 3) |
 | HTML Overlay Active Camera | Views projecting 3D→screen for HTML labels must use `SceneView.activeCamera`, not `AppController._camera` (perspective-only); pass `this._sceneView.activeCamera` at each animation-loop call site |
+| TC Gizmo Force-Update After Proxy Repositioning | Call `_tc.getHelper().updateMatrixWorld()` after `tc.attach()` in `_attachMobileTransform()`; call `_service._updateWorldPoses()` before `worldPoseOf()` in `_syncMobileTransformProxy()`; call `_syncMobileTransformProxy()` from `_toggleTcMode()` |
 
 ---
 

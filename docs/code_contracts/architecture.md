@@ -288,6 +288,27 @@ this._updateMouse(e)   // ← must be here, not further down
 // ... rotate / grab / urban placement handlers follow
 ```
 
+## TC Gizmo Must Be Force-Updated After Proxy Repositioning
+
+- **Principle**: Three.js `TransformControls.attach()` stores the proxy reference but does NOT immediately reposition the gizmo. The gizmo only moves on the next render cycle when `TransformControlsGizmo.updateMatrixWorld()` runs. After `_attachMobileTransform()` repositions the proxy to a new object's world position, the gizmo remains at the previous object's position for one frame — visually separating TC from the new frame's origin.
+- **Concrete Rule 1**: After `_tc.attach(proxy)` in `_attachMobileTransform()`, immediately call `_tc.getHelper().updateMatrixWorld()` to force the gizmo's internal `_worldPosition` to reflect the proxy's new matrix. Without this, TC rotates/translates relative to the wrong pivot for the first drag.
+- **Concrete Rule 2**: `_syncMobileTransformProxy()` must call `_service._updateWorldPoses()` before reading `worldPoseOf()` when the active object is a `CoordinateFrame`. `MoveCommand.apply()` calls `invalidateWorldPose()` synchronously before `_syncMobileTransformProxy()` runs during undo/redo — leaving the cache empty. `worldPoseOf()` would return `null` and the fallback `new THREE.Vector3()` would snap the proxy to the world origin.
+- **Concrete Rule 3**: `_toggleTcMode()` must call `_syncMobileTransformProxy()` after resetting the proxy quaternion to re-anchor the gizmo at the frame's current world position. Without this, switching Rotate↔Translate leaves TC internally anchored to a stale world position.
+
+```js
+// _attachMobileTransform() — force gizmo sync after attach
+this._tc.attach(this._tcProxy)
+this._tc.getHelper().updateMatrixWorld()   // ← required; without this, gizmo stays at old position
+
+// _syncMobileTransformProxy() — flush world pose cache first
+if (obj instanceof CoordinateFrame) this._service._updateWorldPoses()  // ← before worldPoseOf()
+const centroid = this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3()
+
+// _toggleTcMode() — re-anchor after mode switch
+this._tcProxy.quaternion.identity()
+this._syncMobileTransformProxy()           // ← refresh proxy position + gizmo internal state
+```
+
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
 
 - **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.
