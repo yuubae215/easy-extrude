@@ -311,6 +311,9 @@ export class AnnotatedLineView {
     if (sel) this.boxHelper.update()
   }
 
+  /** True when the line is shown in the scene (false when soft-deleted). */
+  get visible() { return this._line.visible }
+
   // ── Edit-mode no-ops ───────────────────────────────────────────────────────
 
   setFaceHighlight()      {}

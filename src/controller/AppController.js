@@ -2170,6 +2170,45 @@ export class AppController {
     return obj ? { hit: hits[0], obj } : null
   }
 
+  /**
+   * Hits any visible annotation entity (AnnotatedLine/Region/Point) using a
+   * bounding-box raycast.  Called as a fallback when _hitAnyObject() misses
+   * (annotation entities have no cuboid and are excluded from that test).
+   * @returns {{ obj: object }|null}
+   */
+  _hitAnyAnnotation() {
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const ray = this._raycaster.ray
+    const pt  = new THREE.Vector3()
+
+    let nearestDist = Infinity
+    let nearestObj  = null
+
+    for (const obj of this._scene.objects.values()) {
+      if (!(obj instanceof AnnotatedLine) && !(obj instanceof AnnotatedRegion) && !(obj instanceof AnnotatedPoint)) continue
+      if (!obj.meshView?.visible) continue  // skip soft-deleted
+
+      const corners = obj.corners
+      if (!corners.length) continue
+
+      const box = new THREE.Box3()
+      for (const c of corners) box.expandByPoint(c)
+      // Expand by pick tolerance; for single-point entities this is the full hit area.
+      box.expandByScalar(0.3)
+
+      const hitPt = ray.intersectBox(box, pt)
+      if (hitPt) {
+        const dist = ray.origin.distanceTo(hitPt)
+        if (dist < nearestDist) {
+          nearestDist = dist
+          nearestObj  = obj
+        }
+      }
+    }
+
+    return nearestObj ? { obj: nearestObj } : null
+  }
+
   /** Hits only the active object's mesh */
   _hitActiveSolid() {
     if (!this._activeObj) return null
@@ -4128,7 +4167,7 @@ export class AppController {
         }
         this._updateNPanel()
       } else {
-        this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
+        this._uiView.setCursor((this._hitAnyObject() || this._hitAnyAnnotation()) ? 'pointer' : 'default')
       }
       return
     }
@@ -4478,7 +4517,9 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
-      const result = this._hitAnyObject()
+      // Primary cuboid hit; fall back to annotation entity bounding-box hit.
+      let result = this._hitAnyObject()
+      if (!result) result = this._hitAnyAnnotation()
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
@@ -4500,8 +4541,10 @@ export class AppController {
           }
         }
 
-        // MeasureLine and CoordinateFrame cannot be dragged
-        if (obj instanceof MeasureLine || obj instanceof CoordinateFrame) {
+        // MeasureLine, CoordinateFrame, and annotation entities cannot be pointer-dragged
+        // (use G key to move them after selecting).
+        if (obj instanceof MeasureLine || obj instanceof CoordinateFrame ||
+            obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint) {
           return
         }
 
@@ -5110,7 +5153,7 @@ export class AppController {
       const t = performance.now() * 0.001  // elapsed seconds for animation clock
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
-        if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(); obj.meshView.tick(t) }
+        if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
         if (obj instanceof AnnotatedLine)   obj.meshView.tick(t)
         if (obj instanceof AnnotatedRegion) obj.meshView.tick(t)
         if (obj instanceof CoordinateFrame) obj.meshView.updateScale(this._camera, this._sceneView.renderer)

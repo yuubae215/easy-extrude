@@ -219,10 +219,15 @@ export class AnnotatedPointView {
   /**
    * Projects anchor position to screen and updates label position.
    * Must be called from the animation loop (AppController._animate) while visible.
+   * @param {import('three').Camera} [camera]  Active camera to use for projection.
+   *   When Map mode uses an orthographic camera, pass that camera here so the
+   *   label tracks the rendered position correctly.  Falls back to the stored
+   *   perspective camera if omitted.
    */
-  updateLabelPosition() {
+  updateLabelPosition(camera) {
+    const cam = camera ?? this._camera
     if (!this._mesh.visible) return
-    const ndc    = this._point.clone().project(this._camera)
+    const ndc    = this._point.clone().project(cam)
     const canvas = this._renderer.domElement
     const rect   = canvas.getBoundingClientRect()
     const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
@@ -234,6 +239,9 @@ export class AnnotatedPointView {
     this._label.style.left    = `${Math.round(sx + MARKER_RADIUS * 20 + 4)}px`
     this._label.style.top     = `${Math.round(sy - 10)}px`
   }
+
+  /** True when the marker is shown in the scene (false when soft-deleted). */
+  get visible() { return this._mesh.visible }
 
   // ── Move support ───────────────────────────────────────────────────────────
 

@@ -49,7 +49,10 @@ export function parseImportJson(jsonText) {
   }
 
   // Light per-entry type check (no deep validation — invalid entries are skipped on import)
-  const KNOWN_TYPES = new Set(['Solid', 'Profile', 'MeasureLine', 'CoordinateFrame', 'ImportedMesh'])
+  const KNOWN_TYPES = new Set([
+    'Solid', 'Profile', 'MeasureLine', 'CoordinateFrame', 'ImportedMesh',
+    'AnnotatedLine', 'AnnotatedRegion', 'AnnotatedPoint',
+  ])
   const objects = root.objects.filter(o => {
     if (!o || typeof o !== 'object') return false
     if (!KNOWN_TYPES.has(o.type))    return false

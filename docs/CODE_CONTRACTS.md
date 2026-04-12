@@ -65,6 +65,7 @@ Detail: `docs/code_contracts/architecture.md`
 | Urban Placement Confirm No Auto-Select | `_confirmUrbanPlacement()` must NOT call `_switchActiveObject()` after creating the entity; previous selection is preserved and toolbar returns to initial object-mode slots |
 | Rect Selection Null Cuboid Guard | `_finalizeRectSelection()` must use `obj.meshView.cuboid?.visible` (optional chaining); Urban entities and CoordinateFrame return `null` for `.cuboid` and would throw TypeError without the guard |
 | CoordinateFrame.localOffset vs Geometry.corners | `CoordinateFrame` exposes `localOffset` (LocalVector3[]); geometry exposes `corners` (WorldVector3[]). `.corners` does NOT exist on `CoordinateFrame`. Use `_grabHandlesOf(obj)` for grab/move; use `_worldPoseCache` for world position. (PHILOSOPHY #21 Phase 3) |
+| HTML Overlay Active Camera | Views projecting 3D→screen for HTML labels must use `SceneView.activeCamera`, not `AppController._camera` (perspective-only); pass `this._sceneView.activeCamera` at each animation-loop call site |
 
 ---
 
@@ -125,6 +126,7 @@ Detail: `docs/code_contracts/memory_management.md`
 | Object Lifecycle Symmetry | Every `scene.add()` must have matching `scene.remove()` + `.dispose()` in `dispose()` |
 | _clearScene Emit Order | Emit `objectRemoved` for each object BEFORE replacing `this._model` |
 | SceneSerializer Entity Coverage | Every domain entity must be explicitly handled (or commented) in `serializeScene()` |
+| SceneImporter KNOWN_TYPES Coverage | `KNOWN_TYPES` in `SceneImporter` must include every type in `serializeScene()` + `_deserializeEntities`; add in same commit as domain entity |
 | ImportedMesh Serialization | Base64 buffers; restore `cuboid.position` from `offset` BEFORE calling `initCorners()` |
 | THREE.Mesh Requires Valid Geometry | Never pass `null` to `new THREE.Mesh(null, mat)` — use `new THREE.BufferGeometry()` as placeholder; `updateMorphTargets()` throws on null geometry |
 | Zone Rim Ring Must Use Polygon Geometry | Use `ShapeGeometry` + polygon hole for the rim ring; `RingGeometry` always produces a circle regardless of Zone shape |
