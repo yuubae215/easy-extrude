@@ -67,6 +67,8 @@ Detail: `docs/code_contracts/architecture.md`
 | CoordinateFrame.localOffset vs Geometry.corners | `CoordinateFrame` exposes `localOffset` (LocalVector3[]); geometry exposes `corners` (WorldVector3[]). `.corners` does NOT exist on `CoordinateFrame`. Use `_grabHandlesOf(obj)` for grab/move; use `_worldPoseCache` for world position. (PHILOSOPHY #21 Phase 3) |
 | HTML Overlay Active Camera | Views projecting 3D→screen for HTML labels must use `SceneView.activeCamera`, not `AppController._camera` (perspective-only); pass `this._sceneView.activeCamera` at each animation-loop call site |
 | TC Gizmo Force-Update After Proxy Repositioning | Call `_tc.getHelper().updateMatrixWorld()` after `tc.attach()` in `_attachMobileTransform()`; call `_service._updateWorldPoses()` before `worldPoseOf()` in `_syncMobileTransformProxy()`; call `_syncMobileTransformProxy()` from `_toggleTcMode()` |
+| TC Gizmo Hit Guard Before Object Selection | In `_onPointerDown`, raycast against `_tc.getHelper()` before `_hitAnyObject()` when TC is attached; return early if hit — otherwise the ray pierces TC handles to hit objects behind them, switching active object and gizmo mode unintentionally |
+| TC Mode Must Match _tcMode | `_attachMobileTransform()` must set `_tcMode = 'translate'` in the non-CoordinateFrame branch alongside `tc.setMode('translate')`; `_tcMode` must always reflect the current TC mode for all code paths |
 
 ---
 
