@@ -382,7 +382,7 @@ export class AppController {
 
     // ── TC mode toggle for mobile CoordinateFrame (translate / rotate) ────
     /** @type {'translate'|'rotate'} Current TC gizmo mode when a CoordinateFrame is active. */
-    this._tcMode           = 'rotate'
+    this._tcMode           = 'translate'
     /** Proxy quaternion snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
     this._tcStartProxyQuat = null
     /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
@@ -1958,12 +1958,13 @@ export class AppController {
     this._tcProxy.position.copy(centroid)
     this._tcProxy.quaternion.identity()  // reset accumulated proxy rotation each attach
     this._tcProxy.updateMatrixWorld()
-    // CoordinateFrame: default to rotate mode; all other entities: translate only.
+    // CoordinateFrame: default to translate mode (user adjusts position first, then
+    // switches to rotate with the toolbar button).  All other entities: translate only.
     // Always keep _tcMode in sync with the actual TC mode so that objectChange
     // and dragging-changed handlers read the correct mode.
     if (obj instanceof CoordinateFrame) {
-      this._tcMode = 'rotate'
-      this._tc.setMode('rotate')
+      this._tcMode = 'translate'
+      this._tc.setMode('translate')
     } else {
       this._tcMode = 'translate'
       this._tc.setMode('translate')
@@ -2659,17 +2660,17 @@ export class AppController {
     if (mode === 'object') {
       const hasObj = this._objSelected
 
-      // CoordinateFrame: TC mode toggle | spacer | Delete | Add Frame | spacer
+      // CoordinateFrame: TC mode toggle | Done | Delete | Add Frame | spacer
       if (hasObj && this._activeObj instanceof CoordinateFrame) {
         const isRotate = this._tcMode === 'rotate'
         this._uiView.setMobileToolbar([
           {
             icon:    isRotate ? ICONS.rotate    : ICONS.translate,
             label:   isRotate ? 'Rotate'        : 'Move',
-            active:  isRotate,
+            active:  true,  // always highlight current mode
             onClick: () => this._toggleTcMode(),
           },
-          { spacer: true },
+          { icon: ICONS.confirm, label: 'Done', onClick: () => this._setObjectSelected(false) },
           { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
           { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._addObject('frame') },
           { spacer: true },
@@ -3473,6 +3474,10 @@ export class AppController {
     this._refreshObjectModeStatus()
     this._updateNPanel()
     this._updateMobileToolbar()
+    // Re-anchor the TC gizmo to the object's new position after grab.
+    // During a regular touch/keyboard grab the proxy is never moved by the TC,
+    // so after confirm the gizmo would remain at the pre-grab position.
+    if (this._activeObj) this._attachMobileTransform(this._activeObj)
   }
 
   _cancelGrab() {
@@ -5414,7 +5419,25 @@ export class AppController {
         if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
         if (obj instanceof AnnotatedLine)   obj.meshView.tick(t)
         if (obj instanceof AnnotatedRegion) obj.meshView.tick(t)
-        if (obj instanceof CoordinateFrame) obj.meshView.updateScale(this._camera, this._sceneView.renderer)
+        if (obj instanceof CoordinateFrame) {
+          // Cap the frame's world size so it never visually dwarfs its parent.
+          // Compute the parent object's bounding radius (max distance from centroid
+          // to any corner) and allow the frame axes to grow to at most 1.5× that.
+          // Falls back to Infinity (uncapped) when the parent has no geometry corners
+          // (e.g. another CoordinateFrame parent).
+          let maxWS = Infinity
+          const frameParent = this._scene.getObject(obj.parentId)
+          if (frameParent && !(frameParent instanceof CoordinateFrame) && frameParent.corners?.length > 0) {
+            const centroid = getCentroid(frameParent.corners)
+            let maxR = 0
+            for (const c of frameParent.corners) {
+              const r = centroid.distanceTo(c)
+              if (r > maxR) maxR = r
+            }
+            if (maxR > 0) maxWS = maxR * 1.5
+          }
+          obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
+        }
       }
       // Sync CoordinateFrame world poses every frame (ADR-020).
       // SceneService._updateWorldPoses() computes worldPos = parentCentroid + translation

@@ -230,16 +230,21 @@ export class CoordinateFrameView {
    * Scales the entire frame so the axis length appears at a constant screen
    * pixel size regardless of camera distance.  Call every animation frame.
    * Uses the same perspective-correction formula as MeasureLineView._scaleDots().
+   *
    * @param {THREE.PerspectiveCamera} camera
    * @param {THREE.WebGLRenderer} renderer
+   * @param {number} [maxWorldSize=Infinity]  Upper bound for the axis world length.
+   *   Pass the parent object's bounding radius (× some factor) so the frame never
+   *   grows larger than the parent when the user zooms far out.
    */
-  updateScale(camera, renderer) {
+  updateScale(camera, renderer, maxWorldSize = Infinity) {
     if (!this._group.visible || !camera.isPerspectiveCamera) return
     const tanHalfFov = Math.tan((camera.fov * Math.PI) / 360)
     const screenH    = renderer.domElement.clientHeight || 1
     const targetPx   = 80   // axis length in screen pixels
     const d          = camera.position.distanceTo(this._group.position)
-    const worldSize  = (targetPx / screenH) * 2 * d * tanHalfFov
+    let worldSize    = (targetPx / screenH) * 2 * d * tanHalfFov
+    if (maxWorldSize < Infinity) worldSize = Math.min(worldSize, maxWorldSize)
     this._group.scale.setScalar(worldSize / AXIS_LENGTH)
   }
 
