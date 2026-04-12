@@ -1848,13 +1848,15 @@ export class AppController {
     this._tc = new TransformControls(this._sceneView.camera, this._sceneView.renderer.domElement)
     this._tc.setMode('translate')
     this._tc.setSpace('world')
-    this._tc.visible = false
-    this._sceneView.scene.add(this._tc)
+    // In Three.js r152+ TransformControls extends Controls (not Object3D).
+    // The visible scene graph lives in tc.getHelper() (= tc._root, an Object3D).
+    // Must add getHelper() to the scene, not tc itself.
+    this._sceneView.scene.add(this._tc.getHelper())
 
     // Render the gizmo on top of CoordinateFrame axes (renderOrder 1) so it
     // is never hidden behind the origin frame that appears on selection.
-    this._tc.traverse(child => {
-      if (child !== this._tc) child.renderOrder = 2
+    this._tc.getHelper().traverse(child => {
+      child.renderOrder = 2
     })
 
     // Disable OrbitControls while dragging; re-enable on release
@@ -1915,14 +1917,12 @@ export class AppController {
     this._tcProxy.position.copy(centroid)
     this._tcProxy.updateMatrixWorld()
     this._tc.attach(this._tcProxy)
-    this._tc.visible = true
   }
 
   /** Detaches and hides the TC gizmo. Safe to call when TC is already detached. */
   _detachMobileTransform() {
     if (!this._tc) return
     this._tc.detach()
-    this._tc.visible = false
   }
 
   /**
@@ -1936,7 +1936,7 @@ export class AppController {
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
       : getCentroid(obj.corners)
     this._tcProxy.position.copy(centroid)
-    this._tc.updateMatrixWorld()
+    this._tc.getHelper().updateMatrixWorld()
   }
 
   /**
