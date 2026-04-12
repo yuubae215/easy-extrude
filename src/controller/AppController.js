@@ -1966,6 +1966,10 @@ export class AppController {
       this._tc.setMode('translate')
     }
     this._tc.attach(this._tcProxy)
+    // Force the TC gizmo to immediately update to the proxy's new world position.
+    // Without this, the gizmo stays at the previous object's position until the
+    // next render cycle, visually separating TC from the newly selected frame's origin.
+    this._tc.getHelper().updateMatrixWorld()
   }
 
   /** Detaches and hides the TC gizmo. Safe to call when TC is already detached. */
@@ -1983,16 +1987,28 @@ export class AppController {
     this._tcMode = this._tcMode === 'rotate' ? 'translate' : 'rotate'
     this._tc.setMode(this._tcMode)
     this._tcProxy.quaternion.identity()  // clear accumulated proxy rotation on mode switch
+    this._syncMobileTransformProxy()     // re-anchor gizmo to current frame world position
     this._updateMobileToolbar()
   }
 
   /**
-   * Repositions the TC proxy to match the current state of the active object.
-   * Call after undo/redo so the gizmo snaps back to the correct position.
+   * Repositions the TC proxy to match the current state of the active object
+   * and forces the TC gizmo to update its internal state.
+   *
+   * Called after undo/redo and mode switches.
+   *
+   * For CoordinateFrame: forces `_updateWorldPoses()` first, because undo/redo
+   * runs MoveCommand.apply() which calls `invalidateWorldPose()` before this
+   * method runs — leaving the cache empty and causing `worldPoseOf()` to return
+   * null (which would fall back to the world origin).
    */
   _syncMobileTransformProxy() {
     if (!this._tc || !this._tcProxy || !this._activeObj || !this._tc.object) return
     const obj = this._activeObj
+    // Ensure world pose cache is populated for CoordinateFrame. It may have been
+    // cleared by invalidateWorldPose() (e.g. in MoveCommand.apply during undo/redo)
+    // before the animation loop's _updateWorldPoses() has had a chance to run.
+    if (obj instanceof CoordinateFrame) this._service._updateWorldPoses()
     const centroid = (obj instanceof CoordinateFrame)
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
       : getCentroid(obj.corners)
