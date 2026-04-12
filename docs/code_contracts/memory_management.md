@@ -41,6 +41,12 @@ _clearScene() {
 - **Principle**: Silently skipping an entity type in `serializeScene()` causes that type to disappear on the next load with no error. This is a silent data-loss bug — the save succeeds, the load succeeds, but objects are gone.
 - **Concrete Rule**: Every domain entity class added to `SceneModel` (e.g. `Solid`, `Profile`, `MeasureLine`, `CoordinateFrame`, `ImportedMesh`) must be explicitly handled in `serializeScene()` — either serialized with a matching `_deserializeEntities` branch, or skipped with a comment explaining why. Verify that new entity types are covered in SceneSerializer in the same commit they are added to the domain layer.
 
+## SceneImporter KNOWN_TYPES Must Mirror Every Serializable Entity Type
+
+- **Principle**: `SceneImporter.parseImportJson()` silently drops any object whose `type` field is not in `KNOWN_TYPES`. If a new entity type is added to the serializer but not to `KNOWN_TYPES`, exported files containing that type will silently lose those objects on import.
+- **Concrete Rule**: Whenever a new domain entity type is added to `SceneSerializer` (export) and `SceneService._deserializeEntities` (import), add its type string to the `KNOWN_TYPES` set in `SceneImporter.parseImportJson()` in the same commit. The three sets must stay in sync: `serializeScene()` branches, `_deserializeEntities` branches, and `KNOWN_TYPES`.
+- **Root bug**: `AnnotatedLine`, `AnnotatedRegion`, `AnnotatedPoint` were added to the serializer and deserializer but never added to `KNOWN_TYPES`, causing them to be silently filtered out on every import.
+
 ## THREE.Mesh Requires Valid Geometry — Never Pass null
 
 - **Principle**: `THREE.Mesh(null, material)` throws `TypeError: Cannot read properties of null (reading 'morphAttributes')` in Three.js r172 because the constructor calls `updateMorphTargets()` which accesses `this.geometry.morphAttributes` unconditionally.

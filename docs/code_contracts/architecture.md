@@ -287,3 +287,9 @@ if (e.target !== renderer.domElement) return
 this._updateMouse(e)   // ← must be here, not further down
 // ... rotate / grab / urban placement handlers follow
 ```
+
+## HTML Overlay Views Must Use the Active Camera for Screen Projection
+
+- **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.
+- **Concrete Rule**: Any view that projects 3D positions to screen coordinates for HTML overlay positioning (e.g. `AnnotatedPointView.updateLabelPosition()`) must use the ACTIVE camera, not a stale stored reference. Call sites in the animation loop must pass `this._sceneView.activeCamera` explicitly: `obj.meshView.updateLabelPosition(this._sceneView.activeCamera)`. The same applies to `MeasureLineView` if it is ever used alongside Map mode's orthographic camera.
+- **Root bug**: `AnnotatedPointView` stored `this._camera` (perspective camera) at construction time. In Map mode the ortho camera was used for rendering, but labels were projected with the perspective camera → labels appeared at wrong screen positions relative to the rendered 3D markers.
