@@ -2,14 +2,14 @@
 /**
  * CoordinateFrameView - Three.js representation of a CoordinateFrame entity.
  *
- * Renders three colour-coded arrow helpers at the frame origin:
+ * Renders three colour-coded axis lines at the frame origin:
  *   X → red    (+X forward in ROS world frame)
  *   Y → green  (+Y left)
  *   Z → blue   (+Z up)
  *
- * Each axis has a matching text label sprite (X / Y / Z) positioned just
- * past the arrowhead so the reference direction is immediately readable.
  * A small white sphere marks the origin point.
+ * Arrow heads and text labels have been removed — the TC gizmo (TransformControls)
+ * serves as the interactive representation when a frame is selected on mobile.
  *
  * Visibility modes (mutually exclusive visual states):
  *   hidden      – group.visible = false (default, e.g. parent geometry not selected)
@@ -34,10 +34,7 @@
 import * as THREE from 'three'
 
 const AXIS_LENGTH   = 0.5
-const HEAD_LENGTH   = 0.12
-const HEAD_WIDTH    = 0.06
 const ORIGIN_RADIUS = 0.04
-const LABEL_OFFSET  = AXIS_LENGTH + 0.09
 
 // Opacity levels for chain-visibility modes
 const OPACITY_FULL   = 1.0
@@ -47,23 +44,11 @@ const OPACITY_LINE_DIMMED = 0.28  // connection line — dimmed
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeAxisLabel(letter, hexColor) {
-  const size   = 64
-  const canvas = document.createElement('canvas')
-  canvas.width  = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  ctx.clearRect(0, 0, size, size)
-  ctx.fillStyle = `#${hexColor.toString(16).padStart(6, '0')}`
-  ctx.font          = `bold ${Math.round(size * 0.72)}px sans-serif`
-  ctx.textAlign     = 'center'
-  ctx.textBaseline  = 'middle'
-  ctx.fillText(letter, size / 2, size / 2)
-  const tex = new THREE.CanvasTexture(canvas)
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true })
-  const sprite = new THREE.Sprite(mat)
-  sprite.scale.set(0.18, 0.18, 1)
-  return sprite
+function makeAxisLine(x, y, z, color) {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, x, y, z], 3))
+  const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
+  return new THREE.Line(geo, mat)
 }
 
 // ── Class ──────────────────────────────────────────────────────────────────
@@ -78,32 +63,16 @@ export class CoordinateFrameView {
     const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
     this._originSphere = new THREE.Mesh(sphereGeo, sphereMat)
 
-    // ── Axes ───────────────────────────────────────────────────────────────
-    const ZERO = new THREE.Vector3()
-    this._arrowX = new THREE.ArrowHelper(
-      new THREE.Vector3(1, 0, 0), ZERO, AXIS_LENGTH, 0xff4444, HEAD_LENGTH, HEAD_WIDTH,
-    )
-    this._arrowY = new THREE.ArrowHelper(
-      new THREE.Vector3(0, 1, 0), ZERO, AXIS_LENGTH, 0x44cc44, HEAD_LENGTH, HEAD_WIDTH,
-    )
-    this._arrowZ = new THREE.ArrowHelper(
-      new THREE.Vector3(0, 0, 1), ZERO, AXIS_LENGTH, 0x4488ff, HEAD_LENGTH, HEAD_WIDTH,
-    )
-
-    // ── Axis labels (X / Y / Z sprites) ───────────────────────────────────
-    this._labelX = makeAxisLabel('X', 0xff4444)
-    this._labelX.position.set(LABEL_OFFSET, 0, 0)
-    this._labelY = makeAxisLabel('Y', 0x44cc44)
-    this._labelY.position.set(0, LABEL_OFFSET, 0)
-    this._labelZ = makeAxisLabel('Z', 0x4488ff)
-    this._labelZ.position.set(0, 0, LABEL_OFFSET)
+    // ── Axis lines (thin RGB, no arrowheads or labels) ─────────────────────
+    this._lineX = makeAxisLine(AXIS_LENGTH, 0, 0, 0xff4444)
+    this._lineY = makeAxisLine(0, AXIS_LENGTH, 0, 0x44cc44)
+    this._lineZ = makeAxisLine(0, 0, AXIS_LENGTH, 0x4488ff)
 
     // ── Group ──────────────────────────────────────────────────────────────
     this._group = new THREE.Group()
     this._group.add(
       this._originSphere,
-      this._arrowX, this._arrowY, this._arrowZ,
-      this._labelX, this._labelY, this._labelZ,
+      this._lineX, this._lineY, this._lineZ,
     )
 
     this._group.visible = false  // hidden until explicitly shown
@@ -243,9 +212,8 @@ export class CoordinateFrameView {
       if (obj.geometry) obj.geometry.dispose()
       if (obj.material) {
         if (Array.isArray(obj.material)) {
-          obj.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose() })
+          obj.material.forEach(m => m.dispose())
         } else {
-          if (obj.material.map) obj.material.map.dispose()
           obj.material.dispose()
         }
       }
@@ -296,28 +264,17 @@ export class CoordinateFrameView {
 
   /**
    * Applies X-ray rendering (depthTest: false, renderOrder: 1) and the given
-   * opacity to all arrow / label / sphere materials.
+   * opacity to all line and sphere materials.
    * @param {number} opacity  0–1
    */
   _applyXray(opacity) {
     const transparent = opacity < 1.0
-    const arrows = [this._arrowX, this._arrowY, this._arrowZ]
-    for (const arrow of arrows) {
-      for (const m of [arrow.line.material, arrow.cone.material]) {
-        m.depthTest   = false
-        m.transparent = transparent
-        m.opacity     = opacity
-        m.needsUpdate = true
-      }
-      arrow.line.renderOrder = 1
-      arrow.cone.renderOrder = 1
-    }
-    for (const label of [this._labelX, this._labelY, this._labelZ]) {
-      label.material.depthTest   = false
-      label.material.transparent = transparent
-      label.material.opacity     = opacity
-      label.material.needsUpdate = true
-      label.renderOrder          = 1
+    for (const line of [this._lineX, this._lineY, this._lineZ]) {
+      line.material.depthTest   = false
+      line.material.transparent = transparent
+      line.material.opacity     = opacity
+      line.material.needsUpdate = true
+      line.renderOrder          = 1
     }
     this._originSphere.material.depthTest   = false
     this._originSphere.material.transparent = transparent

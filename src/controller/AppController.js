@@ -380,6 +380,14 @@ export class AppController {
      */
     this._activeFrameChain = new Set()
 
+    // ── TC mode toggle for mobile CoordinateFrame (translate / rotate) ────
+    /** @type {'translate'|'rotate'} Current TC gizmo mode when a CoordinateFrame is active. */
+    this._tcMode           = 'rotate'
+    /** Proxy quaternion snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
+    this._tcStartProxyQuat = null
+    /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
+    this._tcStartFrameRot  = null
+
     // ── CoordinateFrame rotate state (R key, ADR-019 Phase B) ─────────────
     // Symmetric to _grab but applies a quaternion rotation to CoordinateFrame.rotation.
     this._rotate = {
@@ -1864,33 +1872,66 @@ export class AppController {
       this._tcDragging = e.value
       this._controls.enabled = !e.value
       if (e.value) {
-        // Drag start — snapshot proxy position and corners for absolute-delta calc
-        this._tcStartProxyPos = this._tcProxy.position.clone()
-        this._tcStartCorners  = this._snapshotTcCorners()
+        // Drag start — snapshot based on current TC mode
+        this._tcStartProxyPos  = this._tcProxy.position.clone()
+        this._tcStartProxyQuat = this._tcProxy.quaternion.clone()
+        this._tcStartCorners   = this._snapshotTcCorners()
+        if (this._tcMode === 'rotate' && this._activeObj instanceof CoordinateFrame) {
+          this._tcStartFrameRot = this._activeObj.rotation.clone()
+        }
       } else {
-        // Drag end — record MoveCommand for undo/redo
-        if (this._tcStartCorners.size > 0 && this._activeObj) {
-          const endCorners = this._snapshotTcCorners()
-          const cmd = createMoveCommand('Move', this._tcStartCorners, endCorners, this._scene, this._service)
-          this._commandStack.push(cmd)
-          this._refreshUndoRedoState()
+        // Drag end — record undo command based on TC mode
+        const obj = this._activeObj
+        if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {
+          if (this._tcStartFrameRot) {
+            const endQuat = obj.rotation.clone()
+            if (!endQuat.equals(this._tcStartFrameRot)) {
+              const cmd = createFrameRotateCommand(
+                obj, this._tcStartFrameRot.clone(), endQuat, this._service,
+                () => this._updateNPanel(),
+              )
+              this._commandStack.push(cmd)
+              this._refreshUndoRedoState()
+            }
+            this._tcStartFrameRot = null
+          }
+          this._updateNPanel()
+        } else {
+          // Translate: record MoveCommand
+          if (this._tcStartCorners.size > 0 && obj) {
+            const endCorners = this._snapshotTcCorners()
+            const cmd = createMoveCommand('Move', this._tcStartCorners, endCorners, this._scene, this._service)
+            this._commandStack.push(cmd)
+            this._refreshUndoRedoState()
+          }
         }
         this._tcStartCorners = new Map()
       }
     })
 
-    // Apply proxy movement to domain entity corners every frame during drag
+    // Apply proxy transform to domain entity every frame during drag
     this._tc.addEventListener('objectChange', () => {
       const obj = this._activeObj
       if (!obj) return
-      const delta   = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
-      const startPts = this._tcStartCorners.get(obj.id)
-      if (!startPts) return
-      const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
-      startPts.forEach((c, i) => handles[i].copy(c).add(delta))
-      obj.meshView.updateGeometry(handles)
-      obj.meshView.updateBoxHelper()
-      if (obj instanceof CoordinateFrame) this._service.invalidateWorldPose(obj.id)
+      if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {
+        // Rotate mode: apply quaternion delta to frame rotation
+        if (!this._tcStartProxyQuat || !this._tcStartFrameRot) return
+        const deltaQ = this._tcProxy.quaternion.clone().multiply(
+          this._tcStartProxyQuat.clone().invert(),
+        )
+        obj.rotation.copy(this._tcStartFrameRot).premultiply(deltaQ)
+        obj.meshView.updateRotation(obj.rotation)
+      } else {
+        // Translate mode: apply position delta to handles
+        const delta    = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
+        const startPts = this._tcStartCorners.get(obj.id)
+        if (!startPts) return
+        const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+        startPts.forEach((c, i) => handles[i].copy(c).add(delta))
+        obj.meshView.updateGeometry(handles)
+        obj.meshView.updateBoxHelper()
+        if (obj instanceof CoordinateFrame) this._service.invalidateWorldPose(obj.id)
+      }
     })
   }
 
@@ -1915,7 +1956,15 @@ export class AppController {
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
       : getCentroid(obj.corners)
     this._tcProxy.position.copy(centroid)
+    this._tcProxy.quaternion.identity()  // reset accumulated proxy rotation each attach
     this._tcProxy.updateMatrixWorld()
+    // CoordinateFrame: default to rotate mode; all other entities: translate only
+    if (obj instanceof CoordinateFrame) {
+      this._tcMode = 'rotate'
+      this._tc.setMode('rotate')
+    } else {
+      this._tc.setMode('translate')
+    }
     this._tc.attach(this._tcProxy)
   }
 
@@ -1923,6 +1972,18 @@ export class AppController {
   _detachMobileTransform() {
     if (!this._tc) return
     this._tc.detach()
+  }
+
+  /**
+   * Toggles the TC gizmo between 'rotate' and 'translate' mode.
+   * Only effective when a CoordinateFrame is the active object on mobile.
+   */
+  _toggleTcMode() {
+    if (!this._tc) return
+    this._tcMode = this._tcMode === 'rotate' ? 'translate' : 'rotate'
+    this._tc.setMode(this._tcMode)
+    this._tcProxy.quaternion.identity()  // clear accumulated proxy rotation on mode switch
+    this._updateMobileToolbar()
   }
 
   /**
@@ -2579,11 +2640,17 @@ export class AppController {
     if (mode === 'object') {
       const hasObj = this._objSelected
 
-      // CoordinateFrame gets a specialised toolbar: Rotate | Grab | Delete | Add Frame
+      // CoordinateFrame: TC mode toggle | spacer | Delete | Add Frame | spacer
       if (hasObj && this._activeObj instanceof CoordinateFrame) {
+        const isRotate = this._tcMode === 'rotate'
         this._uiView.setMobileToolbar([
-          { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._startRotate() },
-          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
+          {
+            icon:    isRotate ? ICONS.rotate    : ICONS.translate,
+            label:   isRotate ? 'Rotate'        : 'Move',
+            active:  isRotate,
+            onClick: () => this._toggleTcMode(),
+          },
+          { spacer: true },
           { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
           { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._addObject('frame') },
           { spacer: true },
