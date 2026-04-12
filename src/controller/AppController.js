@@ -9,6 +9,7 @@
  * and View mutations.
  */
 import * as THREE from 'three'
+import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import {
   buildCuboidFromRect,
   computeOutwardFaceNormal,
@@ -417,6 +418,18 @@ export class AppController {
       startY:    0,
     }
 
+    // ── Mobile TransformControls (touch devices only, translate mode) ──────
+    /** @type {import('three/addons/controls/TransformControls.js').TransformControls|null} */
+    this._tc              = null
+    /** @type {THREE.Object3D|null} Proxy Object3D that TC drives; positioned at object centroid */
+    this._tcProxy         = null
+    /** True while the TC gizmo is being dragged (prevents conflicting input handling) */
+    this._tcDragging      = false
+    /** Proxy world position snapshotted at drag start (for computing absolute delta) */
+    this._tcStartProxyPos = new THREE.Vector3()
+    /** corners/localOffset snapshot for undo — populated at drag start */
+    this._tcStartCorners  = new Map()
+
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
     uiView.onModeChange(mode => this.setMode(mode))
@@ -560,18 +573,25 @@ export class AppController {
       const cmd = this._commandStack.undo()
       if (cmd) this._uiView.showToast(`Undo: ${cmd.label}`)
       this._refreshUndoRedoState()
+      this._syncMobileTransformProxy()
     })
     uiView.onRedoClick(() => {
       if (this._grab.active || this._rotate.active || this._faceExtrude.active) return
       const cmd = this._commandStack.redo()
       if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
       this._refreshUndoRedoState()
+      this._syncMobileTransformProxy()
     })
 
     // ── Map Mode entry ────────────────────────────────────────────────────
     uiView.onMapModeClick(() => this._enterMapMode())
 
     this._bindEvents()
+
+    // Initialise translate gizmo for touch devices (desktop keeps Grab)
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      this._initMobileTransformControls()
+    }
 
     // Create the initial object
     this._addObject()
@@ -1807,6 +1827,118 @@ export class AppController {
     this._startGrab()
   }
 
+  // ─── Mobile TransformControls helpers ─────────────────────────────────────
+
+  /**
+   * Creates TransformControls (translate mode) and a proxy Object3D for mobile.
+   * The proxy is positioned at the selected object's world centroid so TC can
+   * drive it; objectChange then propagates the delta to the domain entity.
+   *
+   * Called once at construction time when `pointer: coarse` is detected.
+   */
+  _initMobileTransformControls() {
+    this._tcProxy = new THREE.Object3D()
+    this._sceneView.scene.add(this._tcProxy)
+
+    this._tc = new TransformControls(this._sceneView.camera, this._sceneView.renderer.domElement)
+    this._tc.setMode('translate')
+    this._tc.setSpace('world')
+    this._tc.visible = false
+    this._sceneView.scene.add(this._tc)
+
+    // Disable OrbitControls while dragging; re-enable on release
+    this._tc.addEventListener('dragging-changed', (e) => {
+      this._tcDragging = e.value
+      this._controls.enabled = !e.value
+      if (e.value) {
+        // Drag start — snapshot proxy position and corners for absolute-delta calc
+        this._tcStartProxyPos = this._tcProxy.position.clone()
+        this._tcStartCorners  = this._snapshotTcCorners()
+      } else {
+        // Drag end — record MoveCommand for undo/redo
+        if (this._tcStartCorners.size > 0 && this._activeObj) {
+          const endCorners = this._snapshotTcCorners()
+          const cmd = createMoveCommand('Move', this._tcStartCorners, endCorners, this._scene, this._service)
+          this._commandStack.push(cmd)
+          this._refreshUndoRedoState()
+        }
+        this._tcStartCorners = new Map()
+      }
+    })
+
+    // Apply proxy movement to domain entity corners every frame during drag
+    this._tc.addEventListener('objectChange', () => {
+      const obj = this._activeObj
+      if (!obj) return
+      const delta   = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
+      const startPts = this._tcStartCorners.get(obj.id)
+      if (!startPts) return
+      const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+      startPts.forEach((c, i) => handles[i].copy(c).add(delta))
+      obj.meshView.updateGeometry(handles)
+      obj.meshView.updateBoxHelper()
+      if (obj instanceof CoordinateFrame) this._service.invalidateWorldPose(obj.id)
+    })
+  }
+
+  /**
+   * Attaches the TC gizmo to the active object on mobile.
+   * Does nothing on desktop (this._tc is null) or for unsupported entity types.
+   * @param {object} obj - domain entity
+   */
+  _attachMobileTransform(obj) {
+    if (!this._tc || !obj) return
+    // Skip entity types that either can't move or have special movement semantics
+    if (obj instanceof SpatialLink    ||
+        obj instanceof MeasureLine    ||
+        obj instanceof AnnotatedLine  ||
+        obj instanceof AnnotatedRegion ||
+        obj instanceof AnnotatedPoint) {
+      this._detachMobileTransform()
+      return
+    }
+    // Position proxy at object's world centroid
+    const centroid = (obj instanceof CoordinateFrame)
+      ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
+      : getCentroid(obj.corners)
+    this._tcProxy.position.copy(centroid)
+    this._tcProxy.updateMatrixWorld()
+    this._tc.attach(this._tcProxy)
+    this._tc.visible = true
+  }
+
+  /** Detaches and hides the TC gizmo. Safe to call when TC is already detached. */
+  _detachMobileTransform() {
+    if (!this._tc) return
+    this._tc.detach()
+    this._tc.visible = false
+  }
+
+  /**
+   * Repositions the TC proxy to match the current state of the active object.
+   * Call after undo/redo so the gizmo snaps back to the correct position.
+   */
+  _syncMobileTransformProxy() {
+    if (!this._tc || !this._tcProxy || !this._activeObj || !this._tc.object) return
+    const obj = this._activeObj
+    const centroid = (obj instanceof CoordinateFrame)
+      ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
+      : getCentroid(obj.corners)
+    this._tcProxy.position.copy(centroid)
+    this._tc.updateMatrixWorld()
+  }
+
+  /**
+   * Snapshots current corners/localOffset of the active object into a Map.
+   * @returns {Map<string, THREE.Vector3[]>}
+   */
+  _snapshotTcCorners() {
+    const obj = this._activeObj
+    if (!obj) return new Map()
+    const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+    return new Map([[obj.id, handles.map(c => c.clone())]])
+  }
+
   /**
    * Switches the active object without toggling selection.
    * @param {string} id
@@ -1847,6 +1979,13 @@ export class AppController {
     this._refreshObjectModeStatus()
     this._updateNPanel()
     this._updateMobileToolbar()
+
+    // Attach or detach mobile translate gizmo based on new selection state
+    if (obj && select) {
+      this._attachMobileTransform(obj)
+    } else if (!id) {
+      this._detachMobileTransform()
+    }
   }
 
   _setObjectVisible(id, visible) {
@@ -2732,8 +2871,11 @@ export class AppController {
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
       this._updateMobileToolbar()
+      // Re-attach mobile gizmo when returning to Object mode
+      if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     } else {
       // edit mode — dispatch on entity type
+      this._detachMobileTransform()  // hide gizmo in Edit mode (no 3D translate there)
       this._clearObjectSelection()
       this._setObjectSelected(false)
       this._objDragging = false
@@ -4823,6 +4965,7 @@ export class AppController {
           if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
         }
         this._refreshUndoRedoState()
+        this._syncMobileTransformProxy()
       }
       return
     }
