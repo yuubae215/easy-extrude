@@ -152,16 +152,82 @@ CoordinateFrame 階層の合成と同じアルゴリズムを共有できる。
 非マウント時の Grab はワールドXY平面に拘束（Z変化を防ぐ）。
 これは `mounts` 実装に関係なく修正する（MAP要素が浮く問題の最小修正）。
 
-### 5. 作成 UI
+### 5. 作成 UI — PC
 
 既存の SpatialLink 作成フロー（`L` キー）を拡張する。
 
 1. Map要素を選択 → `L` キー
 2. ステータスバー「Click host object」
 3. ホストをクリック → リンク種別ピッカーに **「Mount on surface ⊕」** ボタンを追加
-4. 確定 → `createSpatialLinkCommand` + マウント座標変換 をひとつのコマンドに束ねて Undo スタックに積む
+4. 確定 → `MountAnnotationCommand` を Undo スタックに積む
 
 Mount後、Outliner の該当行にバッジ「⊕」を表示。
+
+### 5b. 作成 UI — Mobile
+
+モバイルでは `L` キーが使えないため、コンテキストメニューと専用の
+ホスト選択フローを用いる。既存の長押しコンテキストメニュー
+（ADR-023 §2）を拡張する。
+
+#### 5b-1. コンテキストメニュー拡張
+
+`_showLongPressContextMenu()` において、対象エンティティが
+`AnnotatedLine | AnnotatedRegion | AnnotatedPoint` の場合、
+マウント状態に応じてアイテムを追加する：
+
+| 状態 | 追加アイテム |
+|------|------------|
+| 未マウント | **「Mount on object ⊕」** |
+| マウント済み | **「Unmount ⊗」** （ホスト名をラベルに表示） |
+
+```
+現在: [Grab, Rename, Delete]
+拡張: [Grab, Mount on object ⊕, Rename, Delete]   ← 未マウント時
+拡張: [Grab, Unmount ⊗ Solid_003, Rename, Delete] ← マウント済み時
+```
+
+#### 5b-2. マウントフロー（2フェーズ）
+
+**フェーズ1 — ホスト選択**
+
+「Mount on object ⊕」をタップすると：
+
+1. コンテキストメニューを閉じる
+2. AppController が `_mountPicking = { active: true, sourceId }` に入る
+3. ステータスバー：「Tap host object (or tap empty space to cancel)」
+4. 有効なホスト（Solid / CoordinateFrame）以外のオブジェクトを半透明（opacity 0.3）に
+5. OrbitControls は**有効のまま**（タップとドラッグを区別するため）
+
+**フェーズ2 — 確定 / キャンセル**
+
+| ユーザー操作 | 結果 |
+|-------------|------|
+| 有効なホストをタップ | マウント確定 → `MountAnnotationCommand` |
+| 無効なオブジェクトをタップ | 無視（ステータスバーでフィードバック） |
+| 空白をタップ | キャンセル → `_mountPicking` リセット |
+| ステータスバーの ✕ ボタン | キャンセル |
+
+#### 5b-3. アンマウントフロー
+
+「Unmount ⊗」タップ → 確認なしで即時実行（Undo 可能なため）。
+`UnmountAnnotationCommand` を Undo スタックに積む。
+
+#### 5b-4. 状態変数
+
+```js
+// AppController に追加
+_mountPicking = { active: false, sourceId: null }
+```
+
+`_mountPicking.active` が true の間：
+- `_onPointerDown` のタップ判定を乗っ取り、ホスト選択ロジックを実行
+- 長押しタイマーは起動しない
+
+#### 5b-5. モバイルツールバースロット
+
+マウント選択中（`_mountPicking.active`）はツールバースロットに変化なし
+（ADR-024 §固定スロット原則を守る）。
+キャンセルはステータスバーの ✕ ボタンのみで行う。
 
 ### 6. Undo / Redo
 

@@ -43,6 +43,7 @@ This directory records the project's design decisions.
 | [ADR-029](ADR-029-spatial-annotation-system.md) | **Spatial Annotation System — AnnotatedLine/Region/Point with Place Types** | Accepted | 2026-04-08 | ADR-020, ADR-021, ADR-022, ADR-025, ADR-013, ADR-028 |
 | [ADR-030](ADR-030-spatial-link.md) | **SpatialLink — Typed Semantic Edges Between Annotated Elements** | Accepted | 2026-04-09 | ADR-029, ADR-028, ADR-013, ADR-020, ADR-022 |
 | [ADR-031](ADR-031-map-mode-interaction-model.md) | **Map Mode Interaction Model & Visual Language** | Accepted | 2026-04-11 | ADR-023, ADR-024, ADR-029, ADR-006 |
+| [ADR-032](ADR-032-geometric-host-binding.md) | **Geometric Host Binding — Map Elements Mounted on Scene Objects** | Proposed | 2026-04-13 | ADR-029, ADR-030, ADR-016, ADR-018, ADR-019 |
 
 ## How to Add a New ADR
 

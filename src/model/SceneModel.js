@@ -18,6 +18,22 @@ export class SceneModel {
     /** @type {Map<string, import('../domain/SpatialLink.js').SpatialLink>} */
     this._links = new Map()
 
+    /**
+     * Reverse index for 'mounts' links: sourceId → linkId.
+     * Enables O(1) lookup of "is entity X mounted, and to what host?".
+     * Maintained in sync with _links by addLink / removeLink.
+     * @type {Map<string, string>}
+     */
+    this._mountsIndex = new Map()
+
+    /**
+     * Reverse index for 'mounts' links: hostId → Set of sourceIds.
+     * Enables O(1) lookup of "what Map elements are mounted on host X?".
+     * Maintained in sync with _links by addLink / removeLink.
+     * @type {Map<string, Set<string>>}
+     */
+    this._mountedByIndex = new Map()
+
     /** @type {string|null} */
     this._activeId = null
 
@@ -118,18 +134,61 @@ export class SceneModel {
 
   /**
    * Adds a SpatialLink to the scene. The link must have a unique `id`.
+   * For 'mounts' links, also updates _mountsIndex and _mountedByIndex.
    * @param {import('../domain/SpatialLink.js').SpatialLink} link
    */
   addLink(link) {
     this._links.set(link.id, link)
+    if (link.linkType === 'mounts') {
+      this._mountsIndex.set(link.sourceId, link.id)
+      if (!this._mountedByIndex.has(link.targetId)) {
+        this._mountedByIndex.set(link.targetId, new Set())
+      }
+      this._mountedByIndex.get(link.targetId).add(link.sourceId)
+    }
   }
 
   /**
    * Removes the SpatialLink with the given id from the scene.
+   * For 'mounts' links, also cleans up _mountsIndex and _mountedByIndex.
    * @param {string} id
    */
   removeLink(id) {
+    const link = this._links.get(id)
+    if (link?.linkType === 'mounts') {
+      this._mountsIndex.delete(link.sourceId)
+      this._mountedByIndex.get(link.targetId)?.delete(link.sourceId)
+    }
     this._links.delete(id)
+  }
+
+  /**
+   * Returns the 'mounts' SpatialLink for which the given entity is the source,
+   * or null if the entity is not mounted on any host.
+   * O(1) via _mountsIndex.
+   * @param {string} sourceId
+   * @returns {import('../domain/SpatialLink.js').SpatialLink|null}
+   */
+  getMountsLink(sourceId) {
+    const linkId = this._mountsIndex.get(sourceId)
+    return linkId ? (this._links.get(linkId) ?? null) : null
+  }
+
+  /**
+   * Returns all 'mounts' SpatialLinks for which the given entity is the host (target).
+   * O(k) where k = number of mounted children.
+   * @param {string} hostId
+   * @returns {import('../domain/SpatialLink.js').SpatialLink[]}
+   */
+  getMountedLinks(hostId) {
+    const sourceIds = this._mountedByIndex.get(hostId)
+    if (!sourceIds || sourceIds.size === 0) return []
+    return [...sourceIds]
+      .map(sid => {
+        const linkId = this._mountsIndex.get(sid)
+        return linkId ? (this._links.get(linkId) ?? null) : null
+      })
+      .filter(Boolean)
   }
 
   /**
