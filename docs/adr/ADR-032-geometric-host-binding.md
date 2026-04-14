@@ -1,4 +1,4 @@
-# ADR-032 — Geometric Host Binding: Map Elements Mounted on Scene Objects
+# ADR-032 — Geometric Host Binding: Spatial Constraint Vocabulary for SpatialLink
 
 | Field | Value |
 |-------|-------|
@@ -10,251 +10,303 @@
 
 ## Context
 
-### 問題
+### 発端となった問題
 
-Map要素（`AnnotatedLine` / `AnnotatedRegion` / `AnnotatedPoint`）は現在、
-ワールドXY平面（Z=0）上に置かれることを暗黙的に前提としている。
-Grab でZ方向に動かすと平面から浮いてしまい、
-「この経路は装置の上面に貼られている」「このアンカーは機器上の基準点を指す」
-といった意味が失われる。
+Map要素（`AnnotatedLine` / `AnnotatedRegion` / `AnnotatedPoint`）を Grab すると
+Z 方向に浮いてしまい、「この経路は装置の上面に貼られている」という意味が失われる。
+「対象物の上に Map 要素を置く」という操作ニーズが起点。
 
-### ユーザーが表現したいもの
+### SpatialLink の本質的な再解釈
 
-- Solidオブジェクト（床、装置、壁など）の**表面**にMap要素を貼り付けたい
-- ホストSolidを移動・回転させると、Map要素が**追随**してほしい
-- Grab時はホストの表面内（ローカルXY平面）に拘束したい
-- ホストは Solid に限らず、worldPose が計算可能な任意のエンティティ
+ADR-030 は `SpatialLink` を「意味的なアノテーション（非拘束）」と定義したが、
+設計を深掘りすると、`linkType` とは**英語の前置詞に対応する空間的・論理的拘束の種別**
+であることが分かる。
 
-### SpatialLinkの再解釈
+| 前置詞 | linkType | 拘束の性質 |
+|--------|----------|-----------|
+| on, at | `mounts` | 幾何学的（座標変換） |
+| attached to | `fastened` | 幾何学的（剛体結合） |
+| aligned with | `aligned` | 幾何学的（回転） |
+| in, inside | `contains` | 位相的（包含） |
+| beside | `adjacent` | 位相的（境界共有） |
+| above | `above` | 位相的（Z方向） |
+| along, between | `connects` | 位相的（経路） |
+| derived from | `references` | 意味的（基準参照） |
+| depicts | `represents` | 意味的（表現） |
 
-ADR-030 は SpatialLink を「意味的なアノテーション（非拘束）」と定義し、
-幾何学的拘束を Out of scope とした。
+SpatialLink は Map 要素専用ではない。トレーに入ったスマホ、
+機器に取り付けられたセンサー、壁に接する棚——あらゆるエンティティ間の
+空間的関係を記述できる。
 
-しかし根本を見直すと、`linkType` とは**論理的な拘束条件の種別**であり、
-SpatialLink は元来「エンティティ間の拘束関係の記録」として設計されている。
-`mounts` はその拘束の一種——「ソースの頂点座標がターゲットのローカル空間で定義される」
-という拘束——であり、ad-hoc な拡張ではなく `linkType` 語彙の自然な延長である。
+### CoordinateFrame がリンクの単位
 
-### 5NF の原則
+「Solid に対してマウントする」では曖昧。Solid は複数の基準点を持てる
+（重心、穴の中心、コーナーなど）。**リンクの両端は CoordinateFrame** であるべき。
 
-データ構造は第五正規形（5NF）で設計する。
+```
+Phone.Bottom ──mounts──> Tray.Interior
+     ↑                        ↑
+CoordinateFrame         CoordinateFrame
+```
 
-| 事実（fact） | 格納場所 |
-|---|---|
-| 「AとBの間に拘束関係 `mounts` がある」 | SpatialLink(id, sourceId, targetId, linkType) |
-| 「A の頂点座標（ローカル空間）」 | AnnotatedLine/Region/Point 自身の頂点データ |
-| 「A のワールド座標（導出値）」 | SceneService._worldPoseCache |
+これにより「どの面に対して」が明示され、同一 Solid の異なるフレームへの
+複数リンクも自然に表現できる。
 
-マウント時のホスト逆行列（`hostToLocal`）は別エンティティから導出可能な
-時刻スナップショットであり、SpatialLink に格納しない。
+### 5NF とフレームの遅延生成
+
+「全ての考えられる特徴フレームを事前に生成する」ことは 5NF に反する。
+`CoordinateFrame` エンティティは**関係を表現する必要が生じたときのみ**作成する。
+
+```
+悪い例（事前生成）:
+  Solid_Tray → 自動生成: Origin, Interior, LeftWall, RightWall, Bottom ...
+  → 関係を作らなくてもエンティティが増殖
+
+良い例（遅延生成）:
+  Solid_Tray → Origin のみ自動生成
+  「スマホを入れる」関係を作るとき → Interior フレームを命名・作成
+  「スマホを入れない」なら Interior フレームは存在しない
+```
+
+フレームが必要になるのは「その位置を参照する具体的な関係が生まれるとき」。
+それ以前に存在する理由はない。これが 5NF の本質的な適用。
+
+### 5NF で整理したデータの事実（facts）
+
+| 事実 | 格納場所 |
+|------|---------|
+| 「AフレームとBフレームの間に拘束 X がある」 | SpatialLink(id, sourceId, targetId, linkType) |
+| 「AフレームのローカルX座標は 1.5 m」 | CoordinateFrame.translation |
+| 「エンティティEのローカル空間における頂点座標」 | AnnotatedLine/Region/Point の頂点データ |
+| 「エンティティEのワールド座標（導出値）」 | SceneService._worldPoseCache |
+
+マウント時の逆行列スナップショット（`hostToLocal`）は導出可能な時刻依存値であり、
+SpatialLink に格納しない。
 
 ### 座標空間はグラフ構造で決まる
 
-Map要素が「ワールド空間にあるか／ホストローカル空間にあるか」は、
-SpatialLink の `mounts` グラフを見れば分かる。
+`mounts` グラフのルートノード（親なし）＝ワールド空間。
+親ありノード＝親フレームのローカル空間。
+`coordinateSpace` フラグをエンティティに持たせる必要はない—グラフが真実源。
 
 ```
-Solid_003 ← worldPose 既知
-    ↑  mounts
-AnnotatedPoint_001  ← 頂点はSolid_003ローカル空間
+CoordinateFrame_Tray.Interior  ← worldPose 既知
+         ↑  mounts
+AnnotatedPoint_001              ← 頂点は Tray.Interior のローカル空間
 ```
 
-- **mounts 親なし（グラフのルート）** → 頂点はワールド空間
-- **mounts 親あり** → 頂点は親エンティティのローカル空間
-
-これは CoordinateFrame の `parentId` 階層と同一のパターンであり、
-SceneService の `_worldPoseCache` 合成ロジックの自然な延長である。
-`coordinateSpace` フラグを別途エンティティに持たせる必要はない。
+これは CoordinateFrame の `parentId` 階層と同一パターン。
+SceneService の `_worldPoseCache` 合成ロジックを共有できる。
 
 ---
 
 ## Decision
 
-### 1. SpatialLink の `linkType` 語彙拡張
-
-`SpatialLink` エンティティのデータ構造は変更しない：
+### 1. SpatialLink データ構造（変更なし）
 
 ```js
 class SpatialLink {
   constructor(id, sourceId, targetId, linkType) {
     this.id       = id
-    this.sourceId = sourceId   // Map要素
-    this.targetId = targetId   // ホストエンティティ（Solid等）
+    this.sourceId = sourceId   // 推奨: CoordinateFrame ID
+    this.targetId = targetId   // 推奨: CoordinateFrame ID
     this.linkType = linkType
   }
 }
 ```
 
-`mounts` を語彙に追加する：
+`sourceId` / `targetId` は任意のエンティティ ID を受け付けるが、
+**精度が必要な関係では CoordinateFrame エンティティの ID を使う**。
+canonical origin で十分な場合はエンティティ自身の ID でよい。
 
-| linkType   | 有向？ | 意味                                              | 幾何学的拘束 |
-|------------|--------|---------------------------------------------------|------------|
-| `references` | yes  | ソースがターゲットの位置基準を参照する            | なし       |
-| `connects`   | no   | ルートがソース・ターゲットを論理的に結ぶ          | なし       |
-| `contains`   | yes  | 領域ソースがエンティティターゲットを内包する      | なし       |
-| `adjacent`   | no   | 隣接・境界共有                                    | なし       |
-| **`mounts`** | **yes** | **ソースの頂点座標がターゲットのローカル空間で定義される** | **あり** |
+### 2. linkType 語彙 — 空間前置詞体系
 
-`mounts` は有向（source = Map要素、target = ホストエンティティ）。
+ADR-030 の 4 種を包含し、拡張する。
 
-### 2. ホストエンティティの要件
+#### カテゴリ A — 幾何学的拘束
+SceneService が `GEOMETRIC_LINK_TYPES` として認識し、毎フレーム座標変換を適用。
 
-ターゲット（ホスト）になれるエンティティは、SceneService が
-worldPose（位置・回転）を計算できるものに限る。
+| linkType | 対応前置詞 | 意味 | 拘束の種類 |
+|----------|-----------|------|-----------|
+| `mounts` | on / at | source の頂点座標が target フレームのローカル空間で定義される | 位置 + 姿勢（完全束縛） |
+| `fastened` | attached to / fixed to | source フレームが target フレームに剛体固定される | 6-DOF 剛体結合 |
+| `aligned` | aligned with | source の主軸が target の主軸に一致する | 回転のみ |
 
-初期実装のホスト対象：
-- `Solid` — 重心 + 上面法線から pose を導出
-- `CoordinateFrame` — 明示的な pose を持つ
+#### カテゴリ B — 位相的拘束
+空間的な構造関係を記録。変換なし。グラフクエリ・解析に使用。
 
-将来拡張（対象は `getSceneGraph()` のノード型に準じる）：
-- `ImportedMesh` — バウンディングボックスから pose を導出
+| linkType | 対応前置詞 | 意味 |
+|----------|-----------|------|
+| `contains` | in / inside | source の領域 / 体積が target エンティティを包含する |
+| `adjacent` | beside / next to | source と target が境界を共有または隣接する |
+| `above` | above / over | source が target の上方にある（Z 方向） |
+| `connects` | between / along | source 経路が source〜target 間を結ぶ |
 
-Map要素自身（AnnotatedLine 等）は初期実装ではホストにしない。
-グラフが木構造（Tree）の範囲に留まる。
+#### カテゴリ C — 意味的拘束
+幾何処理なし。可視化・ドキュメンテーション用途。
 
-### 3. 座標変換の設計
+| linkType | 対応前置詞 | 意味 |
+|----------|-----------|------|
+| `references` | derived from | source が target の位置基準を参照する（公差チェーン） |
+| `represents` | depicts | source エンティティが target の概念を表現する |
+
+#### 論理的整合性（validation）
+
+UI はリンク作成時に以下の組み合わせのみ許可する：
+
+| linkType | source に有効な型 | target に有効な型 |
+|----------|-----------------|-----------------|
+| `mounts` | Annotated\* | CoordinateFrame / Solid |
+| `fastened` | Solid / CoordinateFrame | Solid / CoordinateFrame |
+| `aligned` | CoordinateFrame | CoordinateFrame |
+| `contains` | AnnotatedRegion | 任意 |
+| `adjacent` | 任意 | 任意 |
+| `above` | 任意 | 任意 |
+| `connects` | AnnotatedLine | 任意 |
+| `references` | 任意 | 任意 |
+| `represents` | 任意 | 任意 |
+
+### 3. SceneModel — mounts インデックス
+
+`addLink` / `removeLink` が `_mountsIndex`（sourceId → linkId）と
+`_mountedByIndex`（targetId → Set\<sourceId\>）を自動維持。
+（実装済み — 前コミット参照）
+
+```js
+getMountsLink(sourceId)     // → SpatialLink | null  O(1)
+getMountedLinks(targetId)   // → SpatialLink[]        O(k)
+```
+
+### 4. CoordinateFrame の遅延生成フロー
+
+関係作成 UI が CoordinateFrame 生成を兼ねる。
+
+```
+ユーザー操作:
+  1. 「Solid_Tray に Interior フレームを追加」
+     → CoordinateFrame を Solid_Tray の子として作成・命名
+  2. AnnotatedPoint を選択 → 「Mount on frame ⊕」
+     → Tray.Interior フレームをタップ
+     → SpatialLink(source=AnnotatedPoint, target=CF_Interior, linkType='mounts') 作成
+```
+
+関係を作らないなら CF_Interior は存在しない。
+
+### 5. 座標変換の設計
 
 #### マウント時（一度だけ）
 
-1. SceneService がホストの `worldPose H` を取得
-2. Map要素の全頂点を `localVertex = H.inverse × worldVertex` で変換し、上書き保存
-3. `mounts` SpatialLink を作成（データ追加なし）
+```
+hostPose H = worldPoseOf(link.targetId)  // targetId = CoordinateFrame or Solid
+localVertex = H.inverse × worldVertex    // 全頂点を上書き保存
+```
 
-#### 毎フレーム（`_updateWorldPoses()` 内）
+#### 毎フレーム（_updateWorldPoses() 内）
 
 ```js
-// mounts リンクを持つ全Map要素について
-const link = mountsLinkOf(entity)           // null なら世界空間
-if (link) {
+for (const link of model.getMountedLinks(frameId)) {
+  const source = model.getObject(link.sourceId)
   const hostPose = worldPoseOf(link.targetId)
-  entity.vertices.forEach(v => {
-    worldVertex = hostPose.applyToVector3(v.local)
+  source.vertices.forEach(v => {
+    v._worldPosition = hostPose.applyToVector3(v.position)
   })
 }
 ```
 
-CoordinateFrame 階層の合成と同じアルゴリズムを共有できる。
-
 #### マウント解除時
 
-1. ホストの現在の `worldPose H_current` を取得
-2. 全頂点を `worldVertex = H_current × localVertex` で逆変換し、ワールド空間に戻す
-3. `mounts` SpatialLink を削除
-
-### 4. Grab の動作変更
-
-マウント済みMap要素を Grab する場合：
-
-- 移動平面をワールドXYではなく **ホストのローカルXY平面** に拘束
-- ホストが傾いていれば、その傾きに沿って動く
-- Grab 終了時：移動後のローカル頂点を確定値として保存
-
-非マウント時の Grab はワールドXY平面に拘束（Z変化を防ぐ）。
-これは `mounts` 実装に関係なく修正する（MAP要素が浮く問題の最小修正）。
-
-### 5. 作成 UI — PC
-
-既存の SpatialLink 作成フロー（`L` キー）を拡張する。
-
-1. Map要素を選択 → `L` キー
-2. ステータスバー「Click host object」
-3. ホストをクリック → リンク種別ピッカーに **「Mount on surface ⊕」** ボタンを追加
-4. 確定 → `MountAnnotationCommand` を Undo スタックに積む
-
-Mount後、Outliner の該当行にバッジ「⊕」を表示。
-
-### 5b. 作成 UI — Mobile
-
-モバイルでは `L` キーが使えないため、コンテキストメニューと専用の
-ホスト選択フローを用いる。既存の長押しコンテキストメニュー
-（ADR-023 §2）を拡張する。
-
-#### 5b-1. コンテキストメニュー拡張
-
-`_showLongPressContextMenu()` において、対象エンティティが
-`AnnotatedLine | AnnotatedRegion | AnnotatedPoint` の場合、
-マウント状態に応じてアイテムを追加する：
-
-| 状態 | 追加アイテム |
-|------|------------|
-| 未マウント | **「Mount on object ⊕」** |
-| マウント済み | **「Unmount ⊗」** （ホスト名をラベルに表示） |
-
 ```
-現在: [Grab, Rename, Delete]
-拡張: [Grab, Mount on object ⊕, Rename, Delete]   ← 未マウント時
-拡張: [Grab, Unmount ⊗ Solid_003, Rename, Delete] ← マウント済み時
+worldVertex = hostCurrentPose × localVertex  // 全頂点をワールド空間に戻す
+SpatialLink を削除
 ```
 
-#### 5b-2. マウントフロー（2フェーズ）
+### 6. Grab の動作変更
 
-**フェーズ1 — ホスト選択**
+マウント済み Annotated\* を Grab する場合、移動平面を
+**host フレームのローカル XY 平面**に拘束する。
+未マウント時は Z 変化を防ぐためワールド XY 平面に拘束（既存バグ修正も兼ねる）。
 
-「Mount on object ⊕」をタップすると：
+### 7. Undo / Redo
 
-1. コンテキストメニューを閉じる
-2. AppController が `_mountPicking = { active: true, sourceId }` に入る
-3. ステータスバー：「Tap host object (or tap empty space to cancel)」
-4. 有効なホスト（Solid / CoordinateFrame）以外のオブジェクトを半透明（opacity 0.3）に
-5. OrbitControls は**有効のまま**（タップとドラッグを区別するため）
+`MountAnnotationCommand(linkId, sourceId, targetId, verticesBeforeMount)` を新設。
+
+- `execute()` — 頂点変換 + SpatialLink 作成（アトミック）
+- `undo()` — `verticesBeforeMount` で頂点復元 + SpatialLink 削除
+
+マウントは「頂点データ変換 + リンク作成」の不可分操作。
+既存 `createSpatialLinkCommand` とは別コマンドとする。
+
+### 8. 作成 UI — PC
+
+`L` キーフロー拡張：
+
+1. エンティティ選択 → `L` キー
+2. ステータスバー「Click target frame or object」
+3. CoordinateFrame / エンティティをクリック
+4. linkType ピッカー（validation テーブルで有効な種別のみ表示）
+5. 確定 → コマンドをプッシュ
+
+### 9. 作成 UI — Mobile
+
+#### コンテキストメニュー拡張
+
+`_showLongPressContextMenu()` において、対象エンティティの型と
+マウント状態に応じてアイテムを条件分岐：
+
+| 対象型 | 状態 | 追加アイテム |
+|--------|------|------------|
+| Annotated\* | 未マウント | **「Mount on frame ⊕」** |
+| Annotated\* | マウント済み | **「Unmount ⊗ \<フレーム名\>」** |
+| Solid / CoordinateFrame | — | **「Link to... 🔗」**（汎用リンク作成） |
+
+#### マウントフロー（2フェーズ）
+
+**フェーズ1 — ターゲットフレーム選択**
+
+「Mount on frame ⊕」タップ後：
+- `_mountPicking = { active: true, sourceId }` に遷移
+- シーン内の CoordinateFrame インジケータを強調表示（他は半透明）
+- ステータスバー：「Tap target frame (or empty space to cancel)」
+- OrbitControls は**有効のまま**
 
 **フェーズ2 — 確定 / キャンセル**
 
 | ユーザー操作 | 結果 |
-|-------------|------|
-| 有効なホストをタップ | マウント確定 → `MountAnnotationCommand` |
-| 無効なオブジェクトをタップ | 無視（ステータスバーでフィードバック） |
-| 空白をタップ | キャンセル → `_mountPicking` リセット |
-| ステータスバーの ✕ ボタン | キャンセル |
+|------------|------|
+| CoordinateFrame / Solid をタップ | validation 通過 → `MountAnnotationCommand` |
+| 空白をタップ | キャンセル |
+| ステータスバー ✕ | キャンセル |
 
-#### 5b-3. アンマウントフロー
+#### 汎用リンクフロー
 
-「Unmount ⊗」タップ → 確認なしで即時実行（Undo 可能なため）。
-`UnmountAnnotationCommand` を Undo スタックに積む。
+「Link to... 🔗」タップ後：
+- `_linkPicking = { active: true, sourceId }` に遷移（既存フロー）
+- ターゲット選択後、linkType ピッカーを表示（validation 済みのもののみ）
 
-#### 5b-4. 状態変数
+#### アンマウント
+
+「Unmount ⊗」タップ → 確認なしで即時実行（Undo 可）。
+
+#### 状態変数
 
 ```js
-// AppController に追加
-_mountPicking = { active: false, sourceId: null }
+_mountPicking = { active: false, sourceId: null }  // mounts 専用
+// _linkPicking は既存（汎用リンク用）
 ```
 
-`_mountPicking.active` が true の間：
-- `_onPointerDown` のタップ判定を乗っ取り、ホスト選択ロジックを実行
-- 長押しタイマーは起動しない
-
-#### 5b-5. モバイルツールバースロット
-
-マウント選択中（`_mountPicking.active`）はツールバースロットに変化なし
-（ADR-024 §固定スロット原則を守る）。
-キャンセルはステータスバーの ✕ ボタンのみで行う。
-
-### 6. Undo / Redo
-
-`MountAnnotationCommand(linkId, sourceId, hostId, verticesBeforeMount)` を新設：
-
-- `execute()` — 頂点を変換、SpatialLink 作成
-- `undo()` — `verticesBeforeMount` で頂点を復元、SpatialLink 削除
-
-既存の `createSpatialLinkCommand` / `deleteSpatialLinkCommand` とは別に作る。
-マウントは「頂点データ変換 + リンク作成」の不可分なアトミック操作であるため。
-
-### 7. シリアライズ
-
-`mounts` SpatialLink は既存のシリアライズ形式で保存される（追加フィールドなし）：
+### 10. シリアライズ（変更なし）
 
 ```jsonc
 {
   "type": "SpatialLink",
   "id": "link_007",
   "sourceId": "annot_point_001",
-  "targetId": "solid_003",
+  "targetId": "cf_tray_interior",
   "linkType": "mounts"
 }
 ```
 
-ロード時の注意：マウント済みMap要素の頂点はローカル空間にある。
-ホストSolid の worldPose が確定した後に `mounts` リンクを処理する
+ロード時：`mounts` リンクはホストエンティティの worldPose 確定後に処理
 （CoordinateFrame の parentId 解決と同じ deferred パターン）。
 
 ---
@@ -263,14 +315,12 @@ _mountPicking = { active: false, sourceId: null }
 
 ### 木構造（初期実装）
 
-各Map要素は高々1つの `mounts` 親を持つ。SceneService は：
-
-1. `mounts` エッジを収集してトポロジカルソート
-2. 親から子の順にワールド座標を合成
+各 Annotated\* エンティティは高々 1 つの `mounts` 親を持つ。
+SceneService はトポロジカルソートで親から子の順に worldPose を合成。
 
 ### 循環検出
 
-`mounts` グラフに循環が発生した場合（A→B→A）、SceneService は
+`mounts` グラフに循環が検出された場合、SceneService は
 循環エッジを無視してコンソール警告を出す。
 
 ---
@@ -280,32 +330,31 @@ _mountPicking = { active: false, sourceId: null }
 ### Benefits
 
 - `SpatialLink` のデータ構造に変更なし
-- CoordinateFrame 階層と同一のアルゴリズムで worldPose を合成
-- Map要素が Solid に追随するシナリオが自然に表現できる
-- ホスト対象はインターフェースを満たす任意エンティティに拡張可能
+- linkType が英語前置詞体系として直感的に拡張可能
+- Map 要素以外（Solid 間、CF 間）の空間関係も同一フレームワークで表現
+- CoordinateFrame の遅延生成によりエンティティ爆発を防止（5NF）
+- CoordinateFrame 階層と同一アルゴリズムで worldPose を合成
 
 ### Constraints
 
-- マウント時に頂点データが書き換わる（非マウント時とローカル空間が異なる）。
-  座標空間はグラフ構造を見れば判断可能。
-- Undo で `verticesBeforeMount` を保持する必要があり、大きなRegionではメモリコストが増える。
-  （コマンドスタック上限 MAX=50 で自然に上限が決まる）
-- ホストSolid が削除された場合は dangling — 最後のワールド位置で静止（ADR-030 既存ポリシー）。
+- マウント時に頂点データが書き換わる。座標空間はグラフ構造で判断可能
+- Undo で `verticesBeforeMount` を保持（MAX=50 のスタック上限で自然に制約）
+- ホスト削除時は dangling — 最後のワールド位置で静止（ADR-030 ポリシーを継承）
 
 ### Out of scope
 
-- **多段マウント（Map要素 → Map要素 → Solid）** — DAG対応は将来拡張
-- **フェイス指定** — 初期実装はSolidのトップフェイスのXY平面のみ
-- **broken-mount インジケータ** — ダングリング可視化は将来拡張
+- `fastened` / `aligned` の constraint-solver 実装（語彙は定義済み、実装は別フェーズ）
+- 多段マウント（Annotated\* → Annotated\*）— 将来の DAG 対応
+- broken-mount インジケータ — 将来拡張
 
 ---
 
 ## References
 
-- ADR-029 — Spatial Annotation System（AnnotatedLine/Region/Point）
-- ADR-030 — SpatialLink（`mounts` を Out of scope として予告）
-- ADR-016 — Transform Graph（座標変換の基本設計）
-- ADR-018, ADR-019 — CoordinateFrame（parentId/deferred解決の先例）
+- ADR-029 — Spatial Annotation System
+- ADR-030 — SpatialLink（意味的リンクとして設計; 本 ADR で幾何学的拘束を追加）
+- ADR-016 — Transform Graph
+- ADR-018, ADR-019 — CoordinateFrame（parentId 階層の先例）
 - PHILOSOPHY #2 — Type Is the Capability Contract
 - PHILOSOPHY #3 — Separate Pure Computation from Side Effects
 - PHILOSOPHY #21 — Coordinate Spaces Are Statically Distinguished

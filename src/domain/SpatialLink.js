@@ -43,12 +43,51 @@ export class SpatialLink {
   }
 }
 
-/** All valid linkType values. */
-export const LINK_TYPES = /** @type {const} */ (['references', 'connects', 'contains', 'adjacent', 'mounts'])
+/**
+ * All valid linkType values, organised as a spatial preposition vocabulary.
+ *
+ * Category A — Geometric (SceneService applies coordinate transforms):
+ *   mounts   : on / at          — source vertices in target frame's local space
+ *   fastened : attached to      — rigid 6-DOF binding between frames
+ *   aligned  : aligned with     — rotation-only constraint
+ *
+ * Category B — Topological (structural relationship, no transform):
+ *   contains : in / inside      — source region contains target entity
+ *   adjacent : beside / next to — shared boundary or neighbouring
+ *   above    : above / over     — source is vertically above target (Z-axis)
+ *   connects : between / along  — source path connects source to target
+ *
+ * Category C — Semantic (meaning only, no geometric processing):
+ *   references : derived from   — source derives positional datum from target
+ *   represents : depicts        — source entity represents target concept
+ *
+ * @see ADR-030 (original 4-type vocabulary)
+ * @see ADR-032 (extended preposition vocabulary + geometric constraint solver)
+ */
+export const LINK_TYPES = /** @type {const} */ ([
+  'mounts', 'fastened', 'aligned',
+  'contains', 'adjacent', 'above', 'connects',
+  'references', 'represents',
+])
 
 /**
  * linkType values that imply a geometric coordinate-space binding.
- * SceneService applies a transform for these types when computing world positions.
- * @see ADR-032
+ * SceneService applies a frame transform when computing world positions
+ * for entities whose sourceId participates in one of these link types.
+ * @see ADR-032 §2 Category A
  */
-export const GEOMETRIC_LINK_TYPES = /** @type {const} */ (['mounts'])
+export const GEOMETRIC_LINK_TYPES = /** @type {const} */ (['mounts', 'fastened', 'aligned'])
+
+/**
+ * linkType values that describe topological / structural relationships.
+ * Recorded in the scene graph for queries and analytics; no transform applied.
+ * @see ADR-032 §2 Category B
+ */
+export const TOPOLOGICAL_LINK_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects'])
+
+/**
+ * linkType values that carry semantic meaning only.
+ * Used for visualisation and documentation; no geometric processing.
+ * @see ADR-032 §2 Category C
+ */
+export const SEMANTIC_LINK_TYPES = /** @type {const} */ (['references', 'represents'])
