@@ -27,7 +27,11 @@ export function createMoveCommand(label, startCornersMap, endCornersMap, sceneMo
       handles.forEach((c, i) => c.copy(corners[i]))
       obj.meshView.updateGeometry(handles)
       obj.meshView.updateBoxHelper()
-      if (sceneService) sceneService.invalidateWorldPose(id)
+      if (sceneService) {
+        sceneService.invalidateWorldPose(id)
+        // ADR-032: keep _mountLocalPositions consistent after any direct position write
+        sceneService.syncMountedPosition(id)
+      }
     }
   }
 
