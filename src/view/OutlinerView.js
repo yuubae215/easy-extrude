@@ -207,7 +207,7 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, iconEl, visible: true, parentId, locked: false })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, unreferencedBadgeEl, iconEl, visible: true, parentId, locked: false })
   }
 
   /**
@@ -220,6 +220,20 @@ export class OutlinerView {
     const item = this._items.get(id)
     if (!item) return
     item.linkedBadgeEl.style.display = hasLinks ? 'inline-block' : 'none'
+  }
+
+  /**
+   * Shows or hides the "unreferenced" badge (⊡) on a CoordinateFrame row.
+   * Called by AppController when a SpatialLink referencing this frame is
+   * added or removed, and when the frame is first created.
+   * No-ops for non-frame rows. (ADR-033 Phase C-4)
+   * @param {string} id
+   * @param {boolean} unreferenced  true = no links → show badge
+   */
+  setFrameUnreferenced(id, unreferenced) {
+    const item = this._items.get(id)
+    if (!item) return
+    item.unreferencedBadgeEl.style.display = unreferenced ? 'inline-block' : 'none'
   }
 
   /**
@@ -668,12 +682,26 @@ export class OutlinerView {
       cursor:     'default',
     })
 
+    // Unreferenced frame badge (ADR-033 Phase C-4) — shown for CoordinateFrames
+    // with no SpatialLink references. Only created for 'frame' type rows.
+    const unreferencedBadgeEl = document.createElement('span')
+    unreferencedBadgeEl.textContent = '⊡'
+    unreferencedBadgeEl.title = 'No SpatialLink references this frame'
+    Object.assign(unreferencedBadgeEl.style, {
+      display:    type === 'frame' ? 'inline-block' : 'none',
+      fontSize:   '10px',
+      color:      '#666',
+      flexShrink: '0',
+      cursor:     'default',
+    })
+
     rowEl.appendChild(triEl)
     rowEl.appendChild(iconEl)
     rowEl.appendChild(nameEl)
     rowEl.appendChild(ifcBadgeEl)
     rowEl.appendChild(placeTypeBadgeEl)
     rowEl.appendChild(linkedBadgeEl)
+    rowEl.appendChild(unreferencedBadgeEl)
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
 

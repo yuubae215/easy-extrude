@@ -988,7 +988,6 @@ export class SceneService extends EventEmitter {
     solid.meshView.updateGeometry(solid.corners)
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
-    this.createCoordinateFrame(id, 'Origin')
     return solid
   }
 
@@ -1227,7 +1226,6 @@ export class SceneService extends EventEmitter {
     this._model.addObject(solid)
     this.emit('objectRemoved', id)
     this.emit('objectAdded', solid)
-    this.createCoordinateFrame(id, 'Origin')
     return solid
   }
 
@@ -1293,7 +1291,6 @@ export class SceneService extends EventEmitter {
     solid.meshView.updateGeometry(solid.corners)
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
-    this.createCoordinateFrame(newId, 'Origin')
     return solid
   }
 
