@@ -48,8 +48,9 @@ import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
 import { SpatialLink } from '../domain/SpatialLink.js'
-import { createSpatialLinkCommand }       from '../command/CreateSpatialLinkCommand.js'
-import { createDeleteSpatialLinkCommand } from '../command/DeleteSpatialLinkCommand.js'
+import { createSpatialLinkCommand }           from '../command/CreateSpatialLinkCommand.js'
+import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
+import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
 
 export class AppController {
   /**
@@ -91,6 +92,10 @@ export class AppController {
       // Origin frames are locked — cannot be dragged to a new parent (ADR-028)
       if (obj instanceof CoordinateFrame && obj.name === 'Origin') {
         outlinerView?.setObjectLocked(obj.id, true)
+      }
+      // New CoordinateFrame always starts unreferenced (ADR-033 Phase C-4)
+      if (obj instanceof CoordinateFrame) {
+        outlinerView?.setFrameUnreferenced(obj.id, true)
       }
       if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
       if (obj.placeType) outlinerView?.setObjectPlaceType(obj.id, obj.placeType)
@@ -2178,6 +2183,24 @@ export class AppController {
     if (!this._outlinerView) return
     const hasLinks = this._service.getLinksOf(entityId).length > 0
     this._outlinerView.setObjectLinked(entityId, hasLinks)
+    // Also refresh the "unreferenced" badge for CoordinateFrames (ADR-033 Phase C-4)
+    const obj = this._scene.getObject(entityId)
+    if (obj instanceof CoordinateFrame) {
+      this._outlinerView.setFrameUnreferenced(entityId, !hasLinks)
+    }
+  }
+
+  /**
+   * Refreshes the outliner "unreferenced" badge for a single CoordinateFrame.
+   * No-op for non-CoordinateFrame entities. (ADR-033 Phase C-4)
+   * @param {string} frameId
+   */
+  _refreshFrameUnreferencedBadge(frameId) {
+    if (!this._outlinerView) return
+    const obj = this._scene.getObject(frameId)
+    if (!(obj instanceof CoordinateFrame)) return
+    const hasLinks = this._service.getLinksOf(frameId).length > 0
+    this._outlinerView.setFrameUnreferenced(frameId, !hasLinks)
   }
 
   /**
@@ -2471,6 +2494,7 @@ export class AppController {
     if (!obj) return
 
     if (obj instanceof CoordinateFrame) {
+      const frameUnreferenced = this._service.getLinksOf(obj.id).length === 0
       if (obj.name === 'Origin') {
         // Origin is fixed at parent centroid — show world position, locked (no local offset)
         const wp = this._service.worldPoseOf(obj.id)?.position ?? obj.translation
@@ -2478,7 +2502,7 @@ export class AppController {
           { x: wp.x, y: wp.y, z: wp.z },
           { x: 0, y: 0, z: 0 },
           obj.name,
-          true
+          true, null, null, frameUnreferenced
         )
         return
       }
@@ -2501,7 +2525,7 @@ export class AppController {
         x: THREE.MathUtils.radToDeg(euler.x),
         y: THREE.MathUtils.radToDeg(euler.y),
         z: THREE.MathUtils.radToDeg(euler.z),
-      }, obj.name, false, parentOptions, obj.parentId)
+      }, obj.name, false, parentOptions, obj.parentId, frameUnreferenced)
       return
     }
 
@@ -2555,6 +2579,38 @@ export class AppController {
       this._uiView.showToast('Link deleted')
       this._updateNPanel()
     }
+
+    // Frames section (ADR-033 Phase C-2): only for entities that can host frames
+    // (Solid / Annotated* / ImportedMesh — same restriction as createCoordinateFrame)
+    const showFrames = obj instanceof Solid || obj instanceof AnnotatedLine ||
+      obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
+    let frames = null
+    let onAddFrame = null
+    let onSelectFrame = null
+    if (showFrames) {
+      // Collect child CoordinateFrames whose parentId === obj.id
+      frames = [...this._scene.objects.values()]
+        .filter(o => o instanceof CoordinateFrame && o.parentId === obj.id)
+        .map(f => {
+          const linksToFrame = this._service.getLinksOf(f.id)
+          return { id: f.id, name: f.name, unreferenced: linksToFrame.length === 0 }
+        })
+      onAddFrame = () => {
+        const frame = this._service.createCoordinateFrame(obj.id)
+        if (!frame) return
+        this._commandStack.push(createCreateCoordinateFrameCommand(
+          frame, this._service,
+          () => { this._updateNPanel() },
+          (id) => { this._updateNPanel() },
+        ))
+        this._uiView.showToast(`Frame "${frame.name}" added`)
+        this._updateNPanel()
+      }
+      onSelectFrame = (frameId) => {
+        this._switchActiveObject(frameId)
+      }
+    }
+
     this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', {
       locationEditable,
       showIfcClass,
@@ -2565,6 +2621,9 @@ export class AppController {
       spatialLinks:        spatialLinks.length > 0 ? spatialLinks : null,
       onDeleteSpatialLink,
       getEntityName:       (id) => this._scene.getObject(id)?.name ?? id,
+      frames,
+      onAddFrame,
+      onSelectFrame,
     })
   }
 

@@ -1765,6 +1765,9 @@ export class UIView {
       spatialLinks = null,          // SpatialLink[] | null
       onDeleteSpatialLink = null,   // (linkId: string) => void
       getEntityName = (id) => id,   // (id: string) => string
+      frames = null,                // CoordinateFrame[] | null — child frames of this entity
+      onAddFrame = null,            // () => void
+      onSelectFrame = null,         // (frameId: string) => void
     } = options
 
     const editRow = (axis, color, val, onChange) => {
@@ -1939,6 +1942,12 @@ export class UIView {
       spatialLinksSection = this._buildSpatialLinksSection(spatialLinks, onDeleteSpatialLink, getEntityName)
     }
 
+    // ── Frames section (child CoordinateFrames) ───────────────────────────
+    let framesSection = null
+    if (frames !== null || onAddFrame !== null) {
+      framesSection = this._buildFramesSection(frames ?? [], onAddFrame, onSelectFrame)
+    }
+
     const locRow = locationEditable
       ? (axis, color, val) => editRow(axis, color, val, v => { if (this._onLocationChangeCb) this._onLocationChangeCb(axis.toLowerCase(), v) })
       : row
@@ -1958,6 +1967,7 @@ export class UIView {
     if (ifcSection)           this._nPanelContentEl.appendChild(ifcSection)
     if (placeTypeSection)     this._nPanelContentEl.appendChild(placeTypeSection)
     if (spatialLinksSection)  this._nPanelContentEl.appendChild(spatialLinksSection)
+    if (framesSection)        this._nPanelContentEl.appendChild(framesSection)
     this._nPanelContentEl.appendChild(descSection)
   }
 
@@ -2453,8 +2463,9 @@ export class UIView {
    * @param {{ id: string, name: string }[]|null} [parentOptions]
    *   All valid parent candidates (ADR-028). null or empty = no dropdown shown.
    * @param {string|null} [currentParentId]  currently selected parent id
+   * @param {boolean} [unreferenced]  true when frame has no SpatialLink references (ADR-033 Phase C-4)
    */
-  updateNPanelForFrame(pos, eulerDeg, name, locked = false, parentOptions = null, currentParentId = null) {
+  updateNPanelForFrame(pos, eulerDeg, name, locked = false, parentOptions = null, currentParentId = null, unreferenced = false) {
     if (!this._nPanelVisible) return
 
     const row = (axis, color, val) => {
@@ -2616,6 +2627,19 @@ export class UIView {
       rotRow('Y', '#6ab04c', eulerDeg.y),
       rotRow('Z', '#4a9eed', eulerDeg.z),
     ]))
+
+    // Unreferenced notice (ADR-033 Phase C-4)
+    if (unreferenced) {
+      const noticeSec = document.createElement('div')
+      Object.assign(noticeSec.style, { padding: '8px 10px 6px', borderTop: '1px solid #3a3a3a' })
+      const noticeEl = document.createElement('div')
+      noticeEl.textContent = '⊡ No SpatialLink references this frame'
+      Object.assign(noticeEl.style, {
+        fontSize: '11px', color: '#666', fontStyle: 'italic', fontFamily: 'sans-serif',
+      })
+      noticeSec.appendChild(noticeEl)
+      this._nPanelContentEl.appendChild(noticeSec)
+    }
   }
 
   // ── SpatialLink N-panel (ADR-030 Phase 4) ────────────────────────────────
@@ -2774,6 +2798,110 @@ export class UIView {
       }
 
       sec.appendChild(rowEl)
+    }
+
+    return sec
+  }
+
+  /**
+   * Builds the Frames section for the N-panel.
+   * Shows child CoordinateFrames of the current entity and an "+ Add Frame" button.
+   * Each frame row has the frame name and a "Go" button to select it.
+   * @param {Array<{id:string, name:string}>} frames
+   * @param {(() => void)|null} onAddFrame
+   * @param {((frameId: string) => void)|null} onSelectFrame
+   * @returns {HTMLElement}
+   * @private
+   */
+  _buildFramesSection(frames, onAddFrame, onSelectFrame) {
+    const sec = document.createElement('div')
+    Object.assign(sec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
+
+    const headerEl = document.createElement('div')
+    Object.assign(headerEl.style, { display: 'flex', alignItems: 'center', marginBottom: '6px' })
+
+    const titleEl = document.createElement('span')
+    titleEl.textContent = 'Frames'
+    Object.assign(titleEl.style, {
+      flex: '1',
+      color: '#aaa', fontSize: '11px',
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+    })
+    headerEl.appendChild(titleEl)
+
+    if (onAddFrame) {
+      const addBtn = document.createElement('button')
+      addBtn.textContent = '+ Add Frame'
+      addBtn.title = 'Add an interface frame to this entity'
+      Object.assign(addBtn.style, {
+        padding: '2px 7px',
+        background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
+        color: '#e8e8e8', fontSize: '11px', cursor: 'pointer',
+        fontFamily: 'sans-serif',
+      })
+      addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#4a4a4a' })
+      addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#3c3c3c' })
+      addBtn.addEventListener('click', () => onAddFrame())
+      headerEl.appendChild(addBtn)
+    }
+    sec.appendChild(headerEl)
+
+    if (frames.length === 0) {
+      const emptyEl = document.createElement('div')
+      emptyEl.textContent = 'No frames'
+      Object.assign(emptyEl.style, { fontSize: '11px', color: '#666', fontStyle: 'italic' })
+      sec.appendChild(emptyEl)
+    } else {
+      for (const frame of frames) {
+        const rowEl = document.createElement('div')
+        Object.assign(rowEl.style, {
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '3px 0', fontFamily: 'sans-serif',
+        })
+
+        const iconEl = document.createElement('span')
+        iconEl.textContent = '⊞'
+        Object.assign(iconEl.style, { color: '#6ab04c', fontSize: '13px', flexShrink: '0' })
+        rowEl.appendChild(iconEl)
+
+        const nameEl = document.createElement('span')
+        nameEl.textContent = frame.name
+        Object.assign(nameEl.style, {
+          flex: '1', fontSize: '12px', color: '#e8e8e8',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        })
+        rowEl.appendChild(iconEl)
+        rowEl.appendChild(nameEl)
+
+        // Unreferenced badge (Phase C-4): shown when frame has no SpatialLink references
+        if (frame.unreferenced) {
+          const badgeEl = document.createElement('span')
+          badgeEl.textContent = '⊡'
+          badgeEl.title = 'No SpatialLink references this frame'
+          Object.assign(badgeEl.style, {
+            color: '#888', fontSize: '11px', flexShrink: '0',
+          })
+          rowEl.appendChild(badgeEl)
+        }
+
+        if (onSelectFrame) {
+          const goBtn = document.createElement('button')
+          goBtn.textContent = 'Select'
+          goBtn.title = `Select frame "${frame.name}"`
+          Object.assign(goBtn.style, {
+            flexShrink: '0',
+            padding: '2px 6px',
+            background: '#3c3c3c', border: '1px solid #555', borderRadius: '3px',
+            color: '#ccc', fontSize: '10px', cursor: 'pointer',
+          })
+          goBtn.addEventListener('mouseenter', () => { goBtn.style.background = '#4a4a4a' })
+          goBtn.addEventListener('mouseleave', () => { goBtn.style.background = '#3c3c3c' })
+          goBtn.addEventListener('click', () => onSelectFrame(frame.id))
+          rowEl.appendChild(goBtn)
+        }
+
+        sec.appendChild(rowEl)
+      }
     }
 
     return sec

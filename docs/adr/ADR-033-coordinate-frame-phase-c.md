@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Date** | 2026-04-15 |
 | **Supersedes (partially)** | ADR-018 §Auto-Origin, CODE_CONTRACTS §Auto Origin Frame |
 | **References** | ADR-018, ADR-019, ADR-032, ADR-030 |
