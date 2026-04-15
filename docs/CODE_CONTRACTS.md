@@ -49,7 +49,7 @@ Detail: `docs/code_contracts/architecture.md`
 | Measure Snap Display | Use `_measure.snapMeshView` (not `_meshView`) for all snap display during measure placement |
 | MeasureLineView Label Lifecycle | Call `updateLabelPosition()` every animation frame for every MeasureLine in scene |
 | CoordinateFrame Depth Rendering | Hidden by default; `setParentSelected()` controls visibility+X-ray; `setObjectSelected()` only changes sphere color |
-| Auto Origin Frame | `createCuboid()`, `extrudeSketch()`, `duplicateCuboid()` each call `createCoordinateFrame(id, 'Origin')` |
+| ~~Auto Origin Frame~~ | ~~`createCuboid()`, `extrudeSketch()`, `duplicateCuboid()` each call `createCoordinateFrame(id, 'Origin')`~~ **Superseded by ADR-033** — CoordinateFrame is created only with explicit user intent (interface contract); no auto-generation on Solid creation |
 | Command Factory Naming Convention | All commands use `createXCommand` factory exports; never class-style `XCommand`. Import and call site must match the export name exactly |
 | CommandStack push() vs execute() | `_confirm*()` handlers use `push()` (post-hoc recording); never use `execute()` for already-completed operations |
 | Post-Hoc Push Requires Prior Service Call | UI class-change callbacks (`onIfcClassChange`, `onLynchClassChange`) must call the service method **before** `push()`; `push()` alone is a no-op — the domain object is never updated |

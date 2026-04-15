@@ -140,10 +140,22 @@ const centroid = getCentroid(parent.corners)   // TypeError or wrong result
 
 - **Ordering dependency**: `_updateWorldPoses()` topologically sorts frames (shallow first) before the loop so that when a child frame is processed its parent's world pose is already in `_worldPoseCache`. This invariant must be preserved if the loop structure is ever changed.
 
-## Auto Origin Frame on 3D Object Creation
+## ~~Auto Origin Frame on 3D Object Creation~~ — Superseded by ADR-033
 
-- **Principle**: Every 3D geometry object should have a visible origin coordinate frame so the user can immediately read its reference direction.
-- **Concrete Rule**: `SceneService.createCuboid()`, `SceneService.extrudeSketch()`, and `SceneService.duplicateCuboid()` each call `this.createCoordinateFrame(id, 'Origin')` after registering the new `Cuboid` in the model. The frame is named `'Origin'` (fixed string) to distinguish it from manually-added frames (named `'Frame.XXX'`). `createCoordinateFrame` accepts an optional second parameter `overrideName` for this purpose. Sketches do NOT get an origin frame (they are 2D and have no meaningful reference direction until extruded).
+> **This contract is superseded by ADR-033 (CoordinateFrame Phase C).**
+> The rule below describes the old behaviour. Do NOT follow it for new code.
+
+~~**Principle**: Every 3D geometry object should have a visible origin coordinate frame so the user can immediately read its reference direction.~~
+~~**Concrete Rule**: `SceneService.createCuboid()`, `SceneService.extrudeSketch()`, and `SceneService.duplicateCuboid()` each call `this.createCoordinateFrame(id, 'Origin')`.~~
+
+**New rule (ADR-033)**: `CoordinateFrame` is an interface contract — it is created only
+when a spatial relationship (SpatialLink) is being established, or when the user
+explicitly adds a named reference point. `createCuboid()`, `extrudeSketch()`, and
+`duplicateCuboid()` must NOT call `createCoordinateFrame()` automatically.
+
+Existing scenes with auto-generated "Origin" frames are read back as-is (backward
+compatibility). The migration step (removing the `createCoordinateFrame` calls) is
+tracked in ADR-033 §Migration.
 
 ## Command Factory Naming Convention
 
