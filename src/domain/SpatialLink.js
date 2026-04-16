@@ -74,20 +74,20 @@ export const LINK_TYPES = /** @type {const} */ ([
  * linkType values that imply a geometric coordinate-space binding.
  * SceneService applies a frame transform when computing world positions
  * for entities whose sourceId participates in one of these link types.
- * @see ADR-032 §2 Category A
+ * @see ADR-032 Sec.2 Category A
  */
 export const GEOMETRIC_LINK_TYPES = /** @type {const} */ (['mounts', 'fastened', 'aligned'])
 
 /**
  * linkType values that describe topological / structural relationships.
  * Recorded in the scene graph for queries and analytics; no transform applied.
- * @see ADR-032 §2 Category B
+ * @see ADR-032 Sec.2 Category B
  */
 export const TOPOLOGICAL_LINK_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects'])
 
 /**
  * linkType values that carry semantic meaning only.
  * Used for visualisation and documentation; no geometric processing.
- * @see ADR-032 §2 Category C
+ * @see ADR-032 Sec.2 Category C
  */
 export const SEMANTIC_LINK_TYPES = /** @type {const} */ (['references', 'represents'])
