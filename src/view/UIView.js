@@ -2999,7 +2999,7 @@ export class UIView {
 
     const ALL_LINK_TYPES = [
       // Category A — Geometric
-      { type: 'mounts',   color: '#F97316', label: 'Mounts',     desc: 'Source vertices live in host frame's local space', category: 'Geometric' },
+      { type: 'mounts',   color: '#F97316', label: 'Mounts',     desc: "Source vertices live in host frame's local space", category: 'Geometric' },
       { type: 'fastened', color: '#EF4444', label: 'Fastened',   desc: 'Rigid 6-DOF binding between two frames',          category: 'Geometric' },
       { type: 'aligned',  color: '#F59E0B', label: 'Aligned',    desc: 'Source axis aligned with target axis',            category: 'Geometric' },
       // Category B — Topological
