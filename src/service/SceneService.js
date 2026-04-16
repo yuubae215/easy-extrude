@@ -34,7 +34,7 @@
  *  - Callers (AppController) interact with domain state through `service.scene`
  *    for reads and through service methods for writes.
  */
-import { Vector3 } from 'three'
+import { Vector3, Quaternion } from 'three'
 import { EventEmitter } from '../core/EventEmitter.js'
 import { SceneModel } from '../model/SceneModel.js'
 import { MeshView } from '../view/MeshView.js'
@@ -89,6 +89,15 @@ export class SceneService extends EventEmitter {
      * @type {Map<string, SpatialLinkView>}
      */
     this._linkViews = new Map()
+    /**
+     * Local-space vertex positions for mounted Annotated* entities (ADR-032 Phase H-2).
+     * Keyed by SpatialLink.id (mounts link).
+     * Populated by mountAnnotation(); cleared by unmountAnnotation().
+     * _updateMountedAnnotations() reads this every frame and writes world positions
+     * back to vertex.position so the rest of the app continues to see world coords.
+     * @type {Map<string, { sourceId: string, localPositions: import('three').Vector3[] }>}
+     */
+    this._mountLocalPositions = new Map()
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -641,6 +650,7 @@ export class SceneService extends EventEmitter {
     }
     this._linkViews.clear()
     this._worldPoseCache.clear()
+    this._mountLocalPositions.clear()
     this._model = new SceneModel()
   }
 
@@ -731,6 +741,10 @@ export class SceneService extends EventEmitter {
     // referenced geometry elements (ADR-028).
     this._updateAnchoredMeasures()
 
+    // Reposition mounted Annotated* entities (ADR-032 Phase H-2).
+    // Must run after all CoordinateFrame poses are resolved.
+    this._updateMountedAnnotations()
+
     // Reposition SpatialLink dashed lines between entity world centroids (ADR-030).
     this._updateSpatialLinkViews()
   }
@@ -757,6 +771,150 @@ export class SceneService extends EventEmitter {
       }
       if (needsUpdate) obj.meshView.update(obj.p1, obj.p2)
     }
+  }
+
+  // ── Geometric Host Binding — mounts coordinate transform (ADR-032 Phase H-2) ─
+
+  /**
+   * Recomputes world-space vertex positions for all mounted Annotated* entities.
+   * Called once per animation frame at the end of _updateWorldPoses(), after all
+   * CoordinateFrame poses have been resolved into _worldPoseCache.
+   *
+   * For each mounts link:
+   *   vertex.position[i] = H × localPositions[i]
+   * where H is the host CoordinateFrame's world pose (position + quaternion).
+   *
+   * This keeps vertex.position in world coords at all times — the local positions
+   * are stored separately in _mountLocalPositions.
+   */
+  _updateMountedAnnotations() {
+    for (const [linkId, { sourceId, localPositions }] of this._mountLocalPositions) {
+      const source = this._model.getObject(sourceId)
+      const link   = this._model.getLink(linkId)
+      if (!source || !link) continue
+
+      const pose = this._worldPoseCache.get(link.targetId)
+      if (!pose) continue  // host CF not yet resolved — skip this frame
+
+      // worldPos = H × localPos = q.rotate(localPos) + position
+      const corners = localPositions.map(lp =>
+        lp.clone().applyQuaternion(pose.quaternion).add(pose.position),
+      )
+      // Write world coords back to vertex.position so all other code sees world coords
+      source.vertices.forEach((v, i) => { if (corners[i]) v.position.copy(corners[i]) })
+      source.meshView.updateGeometry(corners)
+      if (source.meshView.boxHelper?.visible) source.meshView.updateBoxHelper()
+    }
+  }
+
+  // ── Geometric Host Binding — mount / unmount operations (ADR-032 H-2/H-3) ──
+
+  /**
+   * Mounts an Annotated* entity onto a CoordinateFrame target.
+   *
+   * Coordinate transform (one-time):
+   *   localPos = H⁻¹ × worldPos   (H = host frame's current world pose)
+   * The local positions are stored in _mountLocalPositions and are used
+   * every frame by _updateMountedAnnotations() to recompute world positions.
+   *
+   * Returns the created SpatialLink and the world positions before mounting
+   * (needed by MountAnnotationCommand for undo).
+   *
+   * @param {string} sourceId   ID of an Annotated* entity
+   * @param {string} targetCFId ID of a CoordinateFrame entity
+   * @returns {{ link: SpatialLink, worldPositionsBefore: import('three').Vector3[] }|null}
+   */
+  mountAnnotation(sourceId, targetCFId) {
+    const source = this._model.getObject(sourceId)
+    const target = this._model.getObject(targetCFId)
+    if (!source || !(target instanceof CoordinateFrame)) return null
+    if (!(source instanceof AnnotatedLine) && !(source instanceof AnnotatedRegion) && !(source instanceof AnnotatedPoint)) return null
+
+    const pose = this._worldPoseCache.get(targetCFId)
+    if (!pose) return null  // host pose unknown — refuse to mount
+
+    // Snapshot world positions before transform
+    const worldPositionsBefore = source.vertices.map(v => v.position.clone())
+
+    // H⁻¹: conjugate quaternion + adjusted translation
+    const invQ = pose.quaternion.clone().conjugate()
+    const localPositions = worldPositionsBefore.map(wp =>
+      wp.clone().sub(pose.position).applyQuaternion(invQ),
+    )
+
+    // Create the mounts link
+    const link = this.createSpatialLink(sourceId, targetCFId, 'mounts')
+
+    // Store local positions for per-frame update
+    this._mountLocalPositions.set(link.id, { sourceId, localPositions })
+
+    return { link, worldPositionsBefore }
+  }
+
+  /**
+   * Reverses a mount operation (undo / unmount UI).
+   * Removes the local-position entry and the SpatialLink, then restores the
+   * entity's vertex positions to the given world coords.
+   *
+   * @param {SpatialLink} link                      The mounts SpatialLink to remove
+   * @param {import('three').Vector3[]} worldPositionsBefore  World positions before mount
+   */
+  unmountAnnotation(link, worldPositionsBefore) {
+    const source = this._model.getObject(link.sourceId)
+    this._mountLocalPositions.delete(link.id)
+    this.detachSpatialLink(link.id)
+    if (source) {
+      source.vertices.forEach((v, i) => { if (worldPositionsBefore[i]) v.position.copy(worldPositionsBefore[i]) })
+      source.meshView.updateGeometry(source.corners)
+      if (source.meshView.boxHelper?.visible) source.meshView.updateBoxHelper()
+    }
+  }
+
+  /**
+   * Re-applies a mount after undo (redo path).
+   * The entity's vertices are expected to be back at worldPositionsBefore.
+   *
+   * @param {SpatialLink} link                      The original mounts SpatialLink
+   * @param {import('three').Vector3[]} worldPositionsBefore  World positions to re-transform from
+   */
+  remountAnnotation(link, worldPositionsBefore) {
+    const target = this._model.getObject(link.targetId)
+    if (!(target instanceof CoordinateFrame)) return
+
+    const pose = this._worldPoseCache.get(link.targetId)
+    if (!pose) return
+
+    const invQ = pose.quaternion.clone().conjugate()
+    const localPositions = worldPositionsBefore.map(wp =>
+      wp.clone().sub(pose.position).applyQuaternion(invQ),
+    )
+
+    // Re-attach the link
+    this.reattachSpatialLink(link)
+    this._mountLocalPositions.set(link.id, { sourceId: link.sourceId, localPositions })
+  }
+
+  /**
+   * Recomputes the mount local positions for a mounted entity from its current
+   * world-space vertex positions.  Must be called after any direct modification
+   * of vertex.position (e.g. MoveCommand undo/redo) to keep _mountLocalPositions
+   * consistent with the entity's new world location.
+   *
+   * No-op if the entity has no mounts link or if the host pose is unknown.
+   * @param {string} sourceId
+   */
+  syncMountedPosition(sourceId) {
+    const mountLink = this._model.getMountsLink(sourceId)
+    if (!mountLink) return
+    const pose = this._worldPoseCache.get(mountLink.targetId)
+    if (!pose) return
+    const source = this._model.getObject(sourceId)
+    if (!source) return
+    const invQ = pose.quaternion.clone().conjugate()
+    const localPositions = source.vertices.map(v =>
+      v.position.clone().sub(pose.position).applyQuaternion(invQ),
+    )
+    this._mountLocalPositions.set(mountLink.id, { sourceId, localPositions })
   }
 
   // ── SpatialLink view helpers (ADR-030 Phase 3) ───────────────────────────
@@ -1164,11 +1322,16 @@ export class SceneService extends EventEmitter {
    * Removes a SpatialLink from the model and disposes its view.
    * Used by both the hard-delete UI path and the undo/redo command path.
    * No-ops if the id is unknown.
+   * For 'mounts' links: also cleans up _mountLocalPositions so the entity's
+   * vertex.position (which is already in world coords thanks to the last
+   * _updateMountedAnnotations() call) is used as-is going forward.
    * Emits: 'spatialLinkRemoved'
    * @param {string} id
    */
   detachSpatialLink(id) {
     if (!this._model.getLink(id)) return
+    // Clean up mount local positions before removing the link record
+    this._mountLocalPositions.delete(id)
     this._model.removeLink(id)
     this._linkViews.get(id)?.dispose(this._threeScene)
     this._linkViews.delete(id)
@@ -1178,12 +1341,27 @@ export class SceneService extends EventEmitter {
   /**
    * Re-inserts a previously detached SpatialLink into the model and recreates its view.
    * Used by the undo/redo command path.
+   * For 'mounts' links: recomputes local positions from the source entity's current
+   * vertex.position (world coords) and the host CF's current world pose.
    * Emits: 'spatialLinkAdded'
    * @param {SpatialLink} link
    */
   reattachSpatialLink(link) {
     this._model.addLink(link)
     this._createLinkView(link)
+    // For mounts links, re-establish the local position mapping so _updateMountedAnnotations
+    // continues to drive the entity's position from the host frame.
+    if (link.linkType === 'mounts') {
+      const source = this._model.getObject(link.sourceId)
+      const pose   = this._worldPoseCache.get(link.targetId)
+      if (source && pose) {
+        const invQ = pose.quaternion.clone().conjugate()
+        const localPositions = source.vertices.map(v =>
+          v.position.clone().sub(pose.position).applyQuaternion(invQ),
+        )
+        this._mountLocalPositions.set(link.id, { sourceId: link.sourceId, localPositions })
+      }
+    }
     this.emit('spatialLinkAdded', link)
   }
 

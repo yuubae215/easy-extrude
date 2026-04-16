@@ -51,6 +51,34 @@ import { SpatialLink } from '../domain/SpatialLink.js'
 import { createSpatialLinkCommand }           from '../command/CreateSpatialLinkCommand.js'
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
+import { createMountAnnotationCommand }       from '../command/MountAnnotationCommand.js'
+
+// ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Returns the set of valid linkType values for a given source/target entity pair.
+ * Based on ADR-032 §2 validation table.
+ * @param {object|null} source
+ * @param {object|null} target
+ * @returns {string[]}
+ */
+function _computeValidLinkTypes(source, target) {
+  const isAnnotated = o => o instanceof AnnotatedLine || o instanceof AnnotatedRegion || o instanceof AnnotatedPoint
+  const isCF = o => o instanceof CoordinateFrame
+
+  const geometric = []
+  if (isAnnotated(source) && isCF(target))  geometric.push('mounts')
+  if ((source instanceof Solid || isAnnotated(source)) && isCF(target)) geometric.push('fastened')
+  if (isCF(source) && isCF(target)) geometric.push('aligned')
+
+  const topological = ['adjacent', 'above']
+  if (source instanceof AnnotatedRegion) topological.push('contains')
+  if (source instanceof AnnotatedLine)   topological.push('connects')
+
+  const semantic = ['references', 'represents']
+
+  return [...geometric, ...topological, ...semantic]
+}
 
 export class AppController {
   /**
@@ -210,6 +238,15 @@ export class AppController {
       sourceId:         null,
       /** @type {string|null} ID of the candidate target (pending picker) */
       pendingTargetId:  null,
+    }
+
+    // ── Mount picking state (ADR-032 Phase H-6, Mobile) ──────────────────
+    // Entered via "Mount on frame ⊕" long-press context menu item.
+    // The user taps a CoordinateFrame as the mount target.
+    this._mountPicking = {
+      active:   false,
+      /** @type {string|null} ID of the Annotated* entity to mount */
+      sourceId: null,
     }
 
     // ── 2D Map Mode state ─────────────────────────────────────────────────
@@ -1762,6 +1799,31 @@ export class AppController {
       }
     }
 
+    // ADR-033 §4: warn when deleting a CoordinateFrame that is referenced by SpatialLinks
+    if (target instanceof CoordinateFrame) {
+      const links = this._service.getLinksOf(id)
+      if (links.length > 0) {
+        const n = links.length
+        this._uiView.showConfirmDialog(
+          `Frame "${target.name}" is referenced by ${n} spatial link${n > 1 ? 's' : ''}.\n` +
+          `Deleting it will leave those links dangling. Delete anyway?`,
+          (confirmed) => {
+            if (confirmed) this._execDeleteObject(id, target)
+          },
+          { title: 'Delete Frame', confirmLabel: 'Delete', danger: true },
+        )
+        return
+      }
+    }
+
+    this._execDeleteObject(id, target)
+  }
+
+  /** Performs the actual soft-delete after all guards have passed. */
+  _execDeleteObject(id, target) {
+    if (!target) target = this._scene.getObject(id)
+    if (!target) return
+
     // If deleting the active object while in Edit Mode, exit cleanly first
     // (setMode operates on the active meshView, so must be called before dispose)
     if (id === this._scene.activeId && this._scene.selectionMode === 'edit') {
@@ -2149,21 +2211,29 @@ export class AppController {
 
   /**
    * Opens the link-type picker at (x, y) for the given target entity.
-   * On selection, calls _confirmSpatialLink().
+   * Filters valid link types based on source / target entity type (ADR-032 §2).
    * @param {number} x  client X
    * @param {number} y  client Y
    * @param {string} targetId
    */
   _showLinkTypePicker(x, y, targetId) {
     this._spatialLinkMode.pendingTargetId = targetId
+    const sourceId = this._spatialLinkMode.sourceId
+    const source   = this._scene.getObject(sourceId)
+    const target   = this._scene.getObject(targetId)
+    const validTypes = _computeValidLinkTypes(source, target)
     this._uiView.showLinkTypePicker(x, y, (linkType) => {
-      this._confirmSpatialLink(linkType)
-    })
+      if (linkType === 'mounts') {
+        this._confirmMountAnnotation(sourceId, targetId)
+      } else {
+        this._confirmSpatialLink(linkType)
+      }
+    }, { validTypes })
   }
 
   /**
    * Creates the SpatialLink and records the undo command.
-   * @param {'references'|'connects'|'contains'|'adjacent'} linkType
+   * @param {string} linkType
    */
   _confirmSpatialLink(linkType) {
     const { sourceId, pendingTargetId } = this._spatialLinkMode
@@ -2173,6 +2243,49 @@ export class AppController {
     this._uiView.showToast(`Link created: ${linkType}`)
     this._cancelSpatialLinkCreation()
     this._updateNPanel()
+  }
+
+  /**
+   * Mounts an Annotated* entity onto a CoordinateFrame and records the command.
+   * Called from both the L-key flow (PC) and the mobile mount-picking flow.
+   * @param {string} sourceId  Annotated* entity ID
+   * @param {string} targetId  CoordinateFrame entity ID
+   */
+  _confirmMountAnnotation(sourceId, targetId) {
+    const result = this._service.mountAnnotation(sourceId, targetId)
+    if (!result) {
+      this._uiView.showToast('Cannot mount — host frame pose unknown', { type: 'warn' })
+      return
+    }
+    const { link, worldPositionsBefore } = result
+    this._commandStack.push(createMountAnnotationCommand(
+      link, worldPositionsBefore, this._service,
+      () => { this._updateNPanel() },
+      () => { this._updateNPanel() },
+    ))
+    this._uiView.showToast(`Mounted on frame "${this._scene.getObject(targetId)?.name}"`)
+    this._cancelSpatialLinkCreation()
+    this._cancelMountPicking()
+    this._updateNPanel()
+  }
+
+  // ── Mount picking flow (Mobile, ADR-032 Phase H-6) ────────────────────────
+
+  /** Starts mount-picking mode for the given source Annotated* entity (mobile). */
+  _startMountPicking(sourceId) {
+    this._mountPicking.active   = true
+    this._mountPicking.sourceId = sourceId
+    this._uiView.setStatus('Tap target frame (or empty space to cancel)  [✕]')
+    this._uiView.setCursor('crosshair')
+  }
+
+  /** Cancels mount-picking mode and restores normal status. */
+  _cancelMountPicking() {
+    if (!this._mountPicking.active) return
+    this._mountPicking.active   = false
+    this._mountPicking.sourceId = null
+    this._uiView.setCursor('default')
+    this._refreshObjectModeStatus()
   }
 
   /**
@@ -2639,6 +2752,41 @@ export class AppController {
   _showLongPressContextMenu(x, y, obj) {
     const id = obj.id
     const canDup = !(obj instanceof ImportedMesh) && !(obj instanceof Profile)
+    const isAnnotated = obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
+    const isSolidOrCF = obj instanceof Solid || obj instanceof CoordinateFrame
+    const canAddFrame = obj instanceof Solid || isAnnotated
+
+    // ADR-032 §9: mount / unmount items for Annotated* entities
+    const mountLink = isAnnotated ? this._scene.getMountsLink(id) : null
+    const hostFrame = mountLink ? this._scene.getObject(mountLink.targetId) : null
+    const mountItems = isAnnotated
+      ? (mountLink
+        ? [{ label: `Unmount ⊗ "${hostFrame?.name ?? '?'}"`, onClick: () => {
+            const wb = obj.vertices.map(v => v.position.clone())
+            this._service.unmountAnnotation(mountLink, wb)
+            // Record undo
+            const undoCmd = createMountAnnotationCommand(
+              mountLink, wb, this._service,
+              () => { this._updateNPanel() },
+              () => { this._updateNPanel() },
+            )
+            // Swap execute/undo for unmount: execute = unmount, undo = remount
+            this._commandStack.push({ label: `Unmount from frame`, execute: undoCmd.undo, undo: undoCmd.execute })
+            this._uiView.showToast('Unmounted')
+            this._updateNPanel()
+          }}]
+        : [{ label: 'Mount on frame ⊕', onClick: () => this._startMountPicking(id) }])
+      : []
+
+    // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
+    const linkItems = isSolidOrCF
+      ? [{ label: 'Link to... 🔗', onClick: () => {
+          this._startSpatialLinkCreation()
+          // Override the sourceId to the long-pressed object (it may not be active)
+          this._spatialLinkMode.sourceId = id
+        }}]
+      : []
+
     const items = [
       {
         label: 'Grab',
@@ -2647,6 +2795,12 @@ export class AppController {
       ...(canDup ? [{
         label: 'Duplicate',
         onClick: () => this._duplicateObject(),
+      }] : []),
+      ...mountItems,
+      ...linkItems,
+      ...(canAddFrame ? [{
+        label: 'Add interface frame ⊞',
+        onClick: () => this._promptAddFrame(id),
       }] : []),
       {
         label: 'Rename',
@@ -2659,6 +2813,29 @@ export class AppController {
       },
     ]
     this._uiView.showContextMenu(x, y, items)
+  }
+
+  /**
+   * Shows a name-input dialog then creates a CoordinateFrame as a child of the
+   * given entity.  The frame is recorded on the command stack for undo/redo.
+   * Called from the long-press context menu (mobile, ADR-033 Phase C-3).
+   * @param {string} parentId - ID of the parent entity
+   */
+  _promptAddFrame(parentId) {
+    if (!this._scene.getObject(parentId)) return
+    this._uiView.showRenameDialog('Frame', (name) => {
+      if (name === null) return  // user cancelled
+      const frameName = name || 'Frame'
+      const frame = this._service.createCoordinateFrame(parentId, frameName)
+      if (!frame) return
+      this._commandStack.push(createCreateCoordinateFrameCommand(
+        frame, this._service,
+        () => { this._updateNPanel() },
+        () => { this._updateNPanel() },
+      ))
+      this._uiView.showToast(`Frame "${frame.name}" added`)
+      this._updateNPanel()
+    }, { title: 'Add Interface Frame' })
   }
 
   /** Opens the rename prompt for the given object id (shared helper). */
@@ -3485,9 +3662,32 @@ export class AppController {
     this._grab.pivotLabel = 'Centroid'
     this._grab.autoSnap   = false
 
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, this._grab.pivot)
+    // ADR-032 §6: for mounted Annotated* entities, constrain drag to host local XY plane.
+    // For unmounted Annotated* entities, constrain to world XY (prevents Z drift).
+    // For all other entities, use the camera-facing plane (existing behaviour).
+    const isAnnotated = this._activeObj instanceof AnnotatedLine ||
+      this._activeObj instanceof AnnotatedRegion ||
+      this._activeObj instanceof AnnotatedPoint
+    let planeNormal = null
+    if (isAnnotated) {
+      const mountLink = this._scene.getMountsLink(this._scene.activeId)
+      if (mountLink) {
+        // Mounted: use host CoordinateFrame's local Z axis as drag plane normal
+        const hostPose = this._service.worldPoseOf(mountLink.targetId)
+        if (hostPose) {
+          planeNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(hostPose.quaternion)
+        }
+      }
+      if (!planeNormal) {
+        // Unmounted Annotated*: use world Z (XY plane)
+        planeNormal = new THREE.Vector3(0, 0, 1)
+      }
+    } else {
+      const camDir = new THREE.Vector3()
+      this._camera.getWorldDirection(camDir)
+      planeNormal = camDir
+    }
+    this._grab.dragPlane.setFromNormalAndCoplanarPoint(planeNormal, this._grab.pivot)
 
     this._raycaster.setFromCamera(this._mouse, this._camera)
     const pt = new THREE.Vector3()
@@ -3507,6 +3707,12 @@ export class AppController {
     if (!this._grab.active) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
     this._applyGrab()
+
+    // ADR-032 §6: after grab on mounted Annotated* entities, sync local positions
+    // so _updateMountedAnnotations uses the new world positions going forward.
+    for (const id of this._selectedIds) {
+      this._service.syncMountedPosition(id)
+    }
 
     // ── Record undo snapshot (ADR-022 Phase 1) ────────────────────────────
     const endCornersMap = new Map()
@@ -4634,6 +4840,44 @@ export class AppController {
       return
     }
 
+    // ── Mount target selection (ADR-032 Phase H-6, Mobile) ────────────────
+    if (this._mountPicking.active) {
+      if (e.button === 2 || e.pointerType === 'touch') {
+        // Right-click or empty-tap cancels
+        const hit = this._hitAnyEntityForLink()
+        if (hit) {
+          const hitObj = this._scene.getObject(hit.obj.id)
+          if (hitObj instanceof CoordinateFrame) {
+            this._confirmMountAnnotation(this._mountPicking.sourceId, hit.obj.id)
+          } else if (hitObj instanceof Solid) {
+            this._uiView.showToast('Add a frame to this object first', { type: 'warn' })
+          } else {
+            this._cancelMountPicking()
+          }
+        } else {
+          this._cancelMountPicking()
+        }
+        return
+      }
+      if (e.button === 0) {
+        const hit = this._hitAnyEntityForLink()
+        if (hit) {
+          const hitObj = this._scene.getObject(hit.obj.id)
+          if (hitObj instanceof CoordinateFrame) {
+            this._confirmMountAnnotation(this._mountPicking.sourceId, hit.obj.id)
+          } else if (hitObj instanceof Solid) {
+            this._uiView.showToast('Add a frame to this object first', { type: 'warn' })
+          } else {
+            this._cancelMountPicking()
+          }
+        } else {
+          this._cancelMountPicking()
+        }
+        return
+      }
+      return
+    }
+
     // ── SpatialLink target selection (ADR-030 Phase 4) ─────────────────────
     if (this._spatialLinkMode.active) {
       if (e.button === 2) { this._cancelSpatialLinkCreation(); return }
@@ -5287,6 +5531,12 @@ export class AppController {
     if (this._spatialLinkMode.active) {
       if (e.key === 'Escape') { this._cancelSpatialLinkCreation(); return }
       return  // consume all other keys during link mode
+    }
+
+    // ── Mount picking keys (ADR-032 Phase H-5) ─────────────────────────────
+    if (this._mountPicking.active) {
+      if (e.key === 'Escape') { this._cancelMountPicking(); return }
+      return  // consume all other keys during mount picking
     }
 
     // ── Sketch phase keys ──────────────────────────────────────────────────

@@ -1186,7 +1186,7 @@ export class UIView {
    * @param {string} currentName
    * @param {(name: string|null) => void} callback
    */
-  showRenameDialog(currentName, callback) {
+  showRenameDialog(currentName, callback, { title: titleText = 'Rename' } = {}) {
     const overlay = document.createElement('div')
     Object.assign(overlay.style, {
       position: 'fixed', inset: '0',
@@ -1208,7 +1208,7 @@ export class UIView {
     })
 
     const title = document.createElement('div')
-    title.textContent = 'Rename'
+    title.textContent = titleText
     Object.assign(title.style, { color: '#aaa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' })
 
     const input = document.createElement('input')
@@ -1257,6 +1257,79 @@ export class UIView {
     })
 
     requestAnimationFrame(() => { input.focus(); input.select() })
+  }
+
+  /**
+   * Shows a confirmation dialog with a message and OK / Cancel buttons.
+   * Calls `callback(true)` on confirm, `callback(false)` on cancel.
+   * @param {string} message
+   * @param {(confirmed: boolean) => void} callback
+   * @param {{ title?: string, confirmLabel?: string, danger?: boolean }} [opts]
+   */
+  showConfirmDialog(message, callback, { title: titleText = 'Confirm', confirmLabel = 'OK', danger = false } = {}) {
+    const overlay = document.createElement('div')
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: '0',
+      background: 'rgba(0,0,0,0.55)',
+      zIndex: '500',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    })
+
+    const box = document.createElement('div')
+    Object.assign(box.style, {
+      background: '#2b2b2b',
+      border: '1px solid #555',
+      borderRadius: '12px',
+      padding: '20px 20px 16px',
+      minWidth: '260px',
+      maxWidth: '340px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+    })
+
+    const titleEl = document.createElement('div')
+    titleEl.textContent = titleText
+    Object.assign(titleEl.style, { color: '#aaa', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' })
+
+    const msgEl = document.createElement('div')
+    msgEl.textContent = message
+    Object.assign(msgEl.style, { color: '#e8e8e8', fontSize: '14px', lineHeight: '1.5', marginBottom: '16px' })
+
+    const row = document.createElement('div')
+    Object.assign(row.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' })
+
+    const mkBtn = (text, primary, isDanger) => {
+      const b = document.createElement('button')
+      b.textContent = text
+      Object.assign(b.style, {
+        padding: '8px 18px', borderRadius: '7px', border: 'none', cursor: 'pointer',
+        fontSize: '14px', fontFamily: 'inherit',
+        background: isDanger ? '#c0392b' : primary ? '#4fc3f7' : 'rgba(255,255,255,0.08)',
+        color: (primary || isDanger) ? '#fff' : '#d8d8d8',
+        fontWeight: (primary || isDanger) ? '600' : '400',
+      })
+      return b
+    }
+    const btnCancel  = mkBtn('Cancel', false, false)
+    const btnConfirm = mkBtn(confirmLabel, !danger, danger)
+    row.appendChild(btnCancel)
+    row.appendChild(btnConfirm)
+
+    box.appendChild(titleEl)
+    box.appendChild(msgEl)
+    box.appendChild(row)
+    overlay.appendChild(box)
+    document.body.appendChild(overlay)
+
+    const close = (val) => { overlay.remove(); callback(val) }
+    btnCancel.addEventListener('click',  () => close(false))
+    btnConfirm.addEventListener('click', () => close(true))
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false) })
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  { e.preventDefault(); close(true) }
+      if (e.key === 'Escape') { close(false) }
+    })
+    requestAnimationFrame(() => btnConfirm.focus())
   }
 
   /**
@@ -2914,16 +2987,33 @@ export class UIView {
    * @param {number} y  client Y
    * @param {(linkType: 'references'|'connects'|'contains'|'adjacent') => void} onSelect
    */
-  showLinkTypePicker(x, y, onSelect) {
+  /**
+   * @param {number} x  client X
+   * @param {number} y  client Y
+   * @param {(type: string) => void} onSelect
+   * @param {{ validTypes?: string[] }} [opts]  If provided, only these link types are shown
+   */
+  showLinkTypePicker(x, y, onSelect, { validTypes } = {}) {
     const existing = document.getElementById('_linkTypePickerOverlay')
     if (existing) { existing.remove() }
 
-    const LINK_TYPES = [
-      { type: 'references', color: '#F59E0B', label: 'References', desc: 'Source derives positional datum from target' },
-      { type: 'connects',   color: '#06B6D4', label: 'Connects',   desc: 'A route logically connects source to target' },
-      { type: 'contains',   color: '#8B5CF6', label: 'Contains',   desc: 'Region source spatially contains target' },
-      { type: 'adjacent',   color: '#64748B', label: 'Adjacent',   desc: 'Source and target share a boundary' },
+    const ALL_LINK_TYPES = [
+      // Category A — Geometric
+      { type: 'mounts',   color: '#F97316', label: 'Mounts',     desc: 'Source vertices live in host frame's local space', category: 'Geometric' },
+      { type: 'fastened', color: '#EF4444', label: 'Fastened',   desc: 'Rigid 6-DOF binding between two frames',          category: 'Geometric' },
+      { type: 'aligned',  color: '#F59E0B', label: 'Aligned',    desc: 'Source axis aligned with target axis',            category: 'Geometric' },
+      // Category B — Topological
+      { type: 'contains', color: '#8B5CF6', label: 'Contains',   desc: 'Region source spatially contains target',         category: 'Topological' },
+      { type: 'adjacent', color: '#64748B', label: 'Adjacent',   desc: 'Source and target share a boundary',              category: 'Topological' },
+      { type: 'above',    color: '#94A3B8', label: 'Above',      desc: 'Source is vertically above target (Z axis)',      category: 'Topological' },
+      { type: 'connects', color: '#06B6D4', label: 'Connects',   desc: 'A route logically connects source to target',     category: 'Topological' },
+      // Category C — Semantic
+      { type: 'references',  color: '#F59E0B', label: 'References',  desc: 'Source derives positional datum from target', category: 'Semantic' },
+      { type: 'represents',  color: '#10B981', label: 'Represents',  desc: 'Source entity depicts the target concept',    category: 'Semantic' },
     ]
+    const LINK_TYPES = validTypes
+      ? ALL_LINK_TYPES.filter(t => validTypes.includes(t.type))
+      : ALL_LINK_TYPES
 
     const overlay = document.createElement('div')
     overlay.id = '_linkTypePickerOverlay'
