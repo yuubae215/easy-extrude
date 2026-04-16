@@ -212,7 +212,7 @@ ADR-016 §4 の Extension path もこの方向を示唆している。
 それにより SpatialLink Phase 4 の `L` キー作成フローと、BFF Phase D の DAG 編集 UI が
 「グラフに辺を追加する」同一 UX として収束し、二重実装を避けられる。
 
-### Phase S-1 — Node Editor パネルへの統合シーングラフ表示
+### Phase S-1 — Node Editor パネルへの統合シーングラフ表示 ✅ (2026-04-16)
 
 | タスク | 詳細 | ADR |
 |--------|------|-----|
@@ -456,6 +456,7 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 
 | Feature | Completion | ADR / Notes |
 |---------|------------|-------------|
+| Spatial Node Editor Phase S-1 — unified scene graph + layer filter toggles in Node Editor | 2026-04-16 | ADR-016, ADR-028, ADR-030 |
 | SpatialLink — Design: Geometric Host Binding vocabulary (ADR-032 Proposed) | 2026-04-13 | ADR-032 |
 | CoordinateFrame Phase C — Design: Interface Contract Model (ADR-033 Proposed) | 2026-04-15 | ADR-033 |
 | Map Mode Interaction Model (Phases M-1 to M-5: three-state draw, naming, platform UX, snapping, animations) | 2026-04-11 | ADR-031 |
