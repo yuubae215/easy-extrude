@@ -221,13 +221,13 @@ ADR-016 §4 の Extension path もこの方向を示唆している。
 | レイヤーフィルタトグル | 各エッジ種別の表示/非表示を独立切替; 大規模シーンの視覚的複雑度を低減 | — |
 | 読み取り専用 (Phase S-1) | 表示のみ; トポロジー編集は Phase S-2 以降 | — |
 
-### Phase S-2 — Node Editor パネルでの SpatialLink 編集
+### Phase S-2 — Node Editor パネルでの SpatialLink 編集 ✅ (2026-04-16)
 
 | タスク | 詳細 | ADR |
 |--------|------|-----|
-| ノード接続で SpatialLink 作成 | ソースノードのポートからドラッグ → ターゲットノードにリリース → linkType ピッカーオーバーレイ | ADR-030 §8 (代替作成フロー) |
-| エッジ選択で SpatialLink 削除 | パネル上のエッジ選択 → Delete キー → `DeleteSpatialLinkCommand` | ADR-030, ADR-022 |
-| `L` キーフローとの同期 | 両フローが同じ `CreateSpatialLinkCommand` を push する; 重複なし | ADR-030 |
+| ノード接続で SpatialLink 作成 | ソースノードの出力ポートからドラッグ → ターゲットノードの入力ポートにリリース → linkType ピッカーオーバーレイ → `CreateSpatialLinkCommand` | ADR-030 §8 (代替作成フロー) |
+| エッジ選択で SpatialLink 削除 | 空間エッジをクリック選択（黄色ハイライト）→ Delete キー → `DeleteSpatialLinkCommand` | ADR-030, ADR-022 |
+| `L` キーフローとの同期 | `_createSpatialLinkDirect()` を共有メソッドとして抽出; 両フローが同じ `CreateSpatialLinkCommand` を push | ADR-030 |
 
 ### Phase S-3 — 意味的エッジの計算的エッジへのアップグレード
 
@@ -456,6 +456,7 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 
 | Feature | Completion | ADR / Notes |
 |---------|------------|-------------|
+| Spatial Node Editor Phase S-2 — SpatialLink editing in Node Editor (port drag, edge delete, shared command) | 2026-04-16 | ADR-030, ADR-022 |
 | Spatial Node Editor Phase S-1 — unified scene graph + layer filter toggles in Node Editor | 2026-04-16 | ADR-016, ADR-028, ADR-030 |
 | SpatialLink — Design: Geometric Host Binding vocabulary (ADR-032 Proposed) | 2026-04-13 | ADR-032 |
 | CoordinateFrame Phase C — Design: Interface Contract Model (ADR-033 Proposed) | 2026-04-15 | ADR-033 |
