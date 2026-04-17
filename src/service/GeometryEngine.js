@@ -67,10 +67,12 @@ export class GeometryEngine {
 
     this._initPromise = new Promise((resolve) => {
       let settled = false
+      let timeout
 
       const settle = (err) => {
         if (settled) return
         settled = true
+        clearTimeout(timeout)
         if (err) {
           console.warn('[GeometryEngine] Wasm worker unavailable, using JS fallback:', err)
           this._usingFallback = true
@@ -113,12 +115,9 @@ export class GeometryEngine {
         })
 
         // Timeout: if the worker does not become ready within 10 s, fall back.
-        const timeout = setTimeout(() => {
+        timeout = setTimeout(() => {
           settle(new Error('Worker init timeout'))
         }, 10_000)
-
-        // When settled (either way), cancel the timeout.
-        this._initPromise.then(() => clearTimeout(timeout))
 
         this._worker.postMessage({ type: 'init' })
       } catch (err) {
