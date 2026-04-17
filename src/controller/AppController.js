@@ -410,6 +410,8 @@ export class AppController {
       stackMode:       false,
       /** True when stacking is actively snapping Z this frame. */
       stacking:        false,
+      /** Last delta applied via _applyGrabDeltaToAll; used for live coordinate display. */
+      lastDelta:       new THREE.Vector3(),
     }
 
     /** Unsubscribe function for the active import.progress WS listener, or null */
@@ -3023,10 +3025,15 @@ export class AppController {
       this._uiView.setStatus('')
       return
     }
-    this._uiView.setStatusRich([
+    const isReadOnly = this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine
+    const parts = [
       { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
       { text: 'selected', color: '#888' },
-    ])
+    ]
+    if (isReadOnly) {
+      parts.push({ text: 'read-only', color: '#ff9800' })
+    }
+    this._uiView.setStatusRich(parts)
     this._uiView.appendInfoHint(
       this._activeObj instanceof CoordinateFrame ? 'R' : null,
       'Rotate',
@@ -3670,6 +3677,7 @@ export class AppController {
       : getCentroid(this._corners)
     this._grab.centroid.copy(grabCenter)
     this._grab.pivot.copy(this._grab.centroid)
+    this._grab.lastDelta.set(0, 0, 0)
     this._grab.pivotLabel = 'Centroid'
     this._grab.autoSnap   = false
 
@@ -4064,6 +4072,7 @@ export class AppController {
    * @param {import('three').Vector3} delta
    */
   _applyGrabDeltaToAll(delta) {
+    this._grab.lastDelta.copy(delta)
     for (const [id, startCorners] of this._grab.segmentStartCorners) {
       const selObj = this._scene.getObject(id)
       if (selObj) selObj.move(startCorners, delta)
@@ -4195,6 +4204,14 @@ export class AppController {
     } else if (this._ctrlHeld) {
       parts.push({ text: `Grid: ${this._grab.gridSize}`, bold: true, color: '#80cbc4' })
       parts.push({ text: 'Scroll to change', color: '#444' })
+    }
+
+    if (!this._grab.hasInput) {
+      const d = this._grab.lastDelta
+      const cx = (this._grab.centroid.x + d.x).toFixed(2)
+      const cy = (this._grab.centroid.y + d.y).toFixed(2)
+      const cz = (this._grab.centroid.z + d.z).toFixed(2)
+      parts.push({ text: `X:${cx} Y:${cy} Z:${cz}`, color: '#546e7a' })
     }
 
     this._uiView.setStatusRich(parts)
@@ -4925,6 +4942,7 @@ export class AppController {
             : getCentroid(this._corners)
           this._grab.centroid.copy(grabCenter)
           this._grab.pivot.copy(grabCenter)
+          this._grab.lastDelta.set(0, 0, 0)
           const camDir = new THREE.Vector3()
           this._camera.getWorldDirection(camDir)
           this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
