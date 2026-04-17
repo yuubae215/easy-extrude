@@ -188,7 +188,7 @@ export class OutlinerView {
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
-    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, iconEl } = this._createRow(id, name, type, depth)
+    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, unreferencedBadgeEl, iconEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
       // Find insertion point: after the entire subtree rooted at parentId so
@@ -797,6 +797,6 @@ export class OutlinerView {
       if (this._onReparentCb) this._onReparentCb(dragged, id)
     })
 
-    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, iconEl }
+    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, unreferencedBadgeEl, iconEl }
   }
 }
