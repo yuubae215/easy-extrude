@@ -400,7 +400,7 @@ Phases A, B, C implemented (2026-03-21 to 2026-03-22). See ADR-015 and ADR-017 f
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
 | ~~🔴 High~~ | ~~MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement~~ ✅ 2026-04-17 | ~~Medium~~ | ADR-005 |
-| 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
+| ~~🟡 Medium~~ | ~~Right-click context menu (currently: cancel only)~~ ✅ 2026-04-17 | ~~Low~~ | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
 | 🟡 Medium | Export (OBJ / GLTF) | Low | Phase D via Geometry Service |
 | 🟢 Low | CoordinateFrame assembly-mate positioning — `matchedFrameId` field; declare frame coincidence to drive object placement | High | ADR-021 |
