@@ -2409,7 +2409,32 @@ export class AppController {
       keydown:     e => this._onKeyDown(e),
       keyup:       e => this._onKeyUp(e),
       wheel:       e => this._onWheel(e),
-      contextmenu: e => e.preventDefault(),
+      contextmenu: e => {
+        e.preventDefault()
+        if (this._contextMenuSuppressed) { this._contextMenuSuppressed = false; return }
+        if (e.target !== this._sceneView.renderer.domElement) return
+        if (this._scene.selectionMode !== 'object') return
+        this._updateMouse(e)
+        let result = this._hitAnyObject()
+        if (!result) result = this._hitAnyAnnotation()
+        if (!result) return
+        const { obj } = result
+        if (!this._selectedIds.has(obj.id)) {
+          this._clearObjectSelection()
+          if (obj.id !== this._scene.activeId) {
+            this._switchActiveObject(obj.id, true)
+          } else if (!this._objSelected) {
+            this._setObjectSelected(true)
+          }
+          this._selectedIds.add(obj.id)
+        } else if (obj.id !== this._scene.activeId) {
+          this._service.setActiveObject(obj.id)
+          this._objSelected = true
+          this._refreshObjectModeStatus()
+          this._updateNPanel()
+        }
+        this._showLongPressContextMenu(e.clientX, e.clientY, obj)
+      },
     }
     window.addEventListener('pointermove', this._handlers.pointermove)
     window.addEventListener('pointerdown', this._handlers.pointerdown)
@@ -4954,6 +4979,13 @@ export class AppController {
     // an up-to-date _mouse — calling _updateMouse here covers all of them.
     this._updateMouse(e)
 
+    // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
+    this._contextMenuSuppressed = e.button === 2 && (
+      this._rotate.active || this._mountPicking.active ||
+      this._spatialLinkMode.active || this._grab.active ||
+      this._faceExtrude.active || !!this._mapMode.tool || this._measure.active
+    )
+
     if (this._rotate.active) {
       if (e.button === 0) { this._confirmRotate(); return }
       if (e.button === 2) { this._cancelRotate();  return }
@@ -5164,31 +5196,6 @@ export class AppController {
         return
       }
       return
-    }
-
-    // Right-click on object (PC only) → context menu (ADR-006)
-    if (e.button === 2 && e.pointerType !== 'touch' && this._scene.selectionMode === 'object') {
-      let result = this._hitAnyObject()
-      if (!result) result = this._hitAnyAnnotation()
-      if (result) {
-        const { obj } = result
-        if (!this._selectedIds.has(obj.id)) {
-          this._clearObjectSelection()
-          if (obj.id !== this._scene.activeId) {
-            this._switchActiveObject(obj.id, true)
-          } else if (!this._objSelected) {
-            this._setObjectSelected(true)
-          }
-          this._selectedIds.add(obj.id)
-        } else if (obj.id !== this._scene.activeId) {
-          this._service.setActiveObject(obj.id)
-          this._objSelected = true
-          this._refreshObjectModeStatus()
-          this._updateNPanel()
-        }
-        this._showLongPressContextMenu(e.clientX, e.clientY, obj)
-        return
-      }
     }
 
     if (e.button !== 0) return
