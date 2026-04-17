@@ -186,6 +186,14 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 - `e.preventDefault()` suppresses the browser default menu
 - When `grab.active`, acts as a trigger for `_cancelGrab()`
 
+### Right-click (button === 2) — PC context menu (ADR-006)
+
+| State | Condition | Action |
+|-------|-----------|--------|
+| Operation in progress | `grab.active`, `measure.active`, `rotate.active`, etc. | Cancel the operation |
+| Object mode, hits object | `selectionMode === 'object'` + `pointerType !== 'touch'` | Select object + `showContextMenu()` (Grab / Dup / Rename / Delete) |
+| Object mode, hits empty | No hit result | No-op; OrbitControls handles right-drag orbit |
+
 ---
 
 ## [C] Keyboard Events

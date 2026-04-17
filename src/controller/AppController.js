@@ -5166,6 +5166,31 @@ export class AppController {
       return
     }
 
+    // Right-click on object (PC only) → context menu (ADR-006)
+    if (e.button === 2 && e.pointerType !== 'touch' && this._scene.selectionMode === 'object') {
+      let result = this._hitAnyObject()
+      if (!result) result = this._hitAnyAnnotation()
+      if (result) {
+        const { obj } = result
+        if (!this._selectedIds.has(obj.id)) {
+          this._clearObjectSelection()
+          if (obj.id !== this._scene.activeId) {
+            this._switchActiveObject(obj.id, true)
+          } else if (!this._objSelected) {
+            this._setObjectSelected(true)
+          }
+          this._selectedIds.add(obj.id)
+        } else if (obj.id !== this._scene.activeId) {
+          this._service.setActiveObject(obj.id)
+          this._objSelected = true
+          this._refreshObjectModeStatus()
+          this._updateNPanel()
+        }
+        this._showLongPressContextMenu(e.clientX, e.clientY, obj)
+        return
+      }
+    }
+
     if (e.button !== 0) return
 
     // ── 2D extrude height drag ────────────────────────────────────────────
