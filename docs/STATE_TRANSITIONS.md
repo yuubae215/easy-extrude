@@ -71,7 +71,8 @@ MAP MODE  (_mapMode.active = true)
 
 State machine held in `SceneModel.editSubstate`.
 The initial substate when entering EDIT MODE is determined by the active object's runtime type
-(`instanceof Solid` → 3D, `instanceof Profile` → 2D). There is no `dimension` field (removed in ADR-012).
+(`instanceof Solid` → 3D, `instanceof Profile` → 2D, `instanceof MeasureLine` → 1D).
+There is no `dimension` field (removed in ADR-012).
 
 ```
 Enter EDIT MODE
@@ -99,6 +100,12 @@ EDIT · 3D      EDIT · 2D-SKETCH (back)
     | Tab / O key
     v
 OBJECT MODE
+
+instanceof MeasureLine ?──> EDIT · 1D ('1d')
+                                |
+                                | Tab / Esc / setMode('object')
+                                v
+                           OBJECT MODE
 ```
 
 ### Substate Details
@@ -109,6 +116,7 @@ OBJECT MODE
 | `'2d-sketch'` | Drawing a rectangle on the ground plane | `_enterEditMode2D()` |
 | `'2d-extrude'` | Extruding sketch in the height direction | `_enterExtrudePhase()` (Enter key) |
 | `'3d'` | Face selection and extrusion on a 3D cuboid | `_enterEditMode3D()` |
+| `'1d'` | Endpoint drag on a MeasureLine | `_enterEditMode1D()` |
 
 ---
 

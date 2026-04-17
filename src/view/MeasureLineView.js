@@ -44,15 +44,18 @@ export class MeasureLineView {
 
     // ── End-point markers (small spheres) ──────────────────────────────────
     const dotGeo = new THREE.SphereGeometry(0.05, 8, 8)
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0xf9a825, depthTest: false })
-    this._dot1 = new THREE.Mesh(dotGeo, dotMat)
-    this._dot2 = new THREE.Mesh(dotGeo, dotMat)
+    // Separate materials per dot so hover colour can be changed independently.
+    this._dotMats = [
+      new THREE.MeshBasicMaterial({ color: 0xf9a825, depthTest: false }),
+      new THREE.MeshBasicMaterial({ color: 0xf9a825, depthTest: false }),
+    ]
+    this._dot1 = new THREE.Mesh(dotGeo, this._dotMats[0])
+    this._dot2 = new THREE.Mesh(dotGeo, this._dotMats[1])
     this._dot1.renderOrder = 1
     this._dot2.renderOrder = 1
     scene.add(this._dot1)
     scene.add(this._dot2)
     this._dotGeo = dotGeo
-    this._dotMat = dotMat
 
     // ── BoxHelper for object-selected highlight ────────────────────────────
     // We attach to an invisible helper object whose bounding-box wraps the line.
@@ -206,6 +209,22 @@ export class MeasureLineView {
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
+  // ── Endpoint hover (1D Edit Mode) ─────────────────────────────────────────
+
+  /**
+   * Highlights the endpoint sphere at `index` (0 or 1) to indicate hover.
+   * @param {0|1} index
+   */
+  setEndpointHover(index) {
+    this._dotMats[index].color.set(0x69f0ae)   // green — matches 3D vertex hover
+  }
+
+  /** Restores both endpoint spheres to the default amber colour. */
+  clearEndpointHover() {
+    this._dotMats[0].color.set(0xf9a825)
+    this._dotMats[1].color.set(0xf9a825)
+  }
+
   // ── Edit-mode no-ops (keeps AppController.setMode() safe) ─────────────────
 
   setFaceHighlight()     {}
@@ -237,7 +256,8 @@ export class MeasureLineView {
     this._geo.dispose()
     this._mat.dispose()
     this._dotGeo.dispose()
-    this._dotMat.dispose()
+    this._dotMats[0].dispose()
+    this._dotMats[1].dispose()
     this._label.remove()
   }
 }

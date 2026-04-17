@@ -719,6 +719,12 @@ export class UIView {
         ['Enter', 'Confirm'],
         ['Esc', 'Back to sketch'],
       ]
+    } else if (subtype === '1d') {
+      shortcuts = [
+        ['Tab', 'Object Mode'],
+        ['Drag endpoint', 'Reposition'],
+        ['Esc', 'Object Mode'],
+      ]
     } else {
       shortcuts = [
         ['Tab', 'Object Mode'],

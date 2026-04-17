@@ -355,6 +355,19 @@ export class AppController {
     this._hoveredVertex  = null
     /** @type {import('../graph/Edge.js').Edge|null} */
     this._hoveredEdge    = null
+    /** @type {number|null} Hovered endpoint index (0 or 1) in 1D Edit Mode */
+    this._hoveredEndpointIndex = null
+
+    // ── 1D endpoint drag state (MeasureLine Edit Mode) ────────────────────
+    this._endpointDrag = {
+      active:        false,
+      /** @type {number|null} 0 or 1 */
+      endpointIndex: null,
+      dragPlane:     new THREE.Plane(),
+      startPoint:    new THREE.Vector3(),
+      /** @type {import('three').Vector3[]|null} [p1, p2] snapshot before drag */
+      startCorners:  null,
+    }
 
     // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
     this._faceExtrude = {
@@ -2952,8 +2965,8 @@ export class AppController {
       // 5-slot layout: Add | Dup | Edit | Delete | Stack
       // All slots always present; unavailable actions are disabled to prevent layout shifts.
       const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
-      const canEdit  = canDup
-      const canStack = hasObj
+      const canEdit  = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof CoordinateFrame) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
+      const canStack = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
         && !(this._activeObj instanceof ImportedMesh)
         && !(this._activeObj instanceof MeasureLine)
         && !_isAnnotated(this._activeObj)
@@ -3015,6 +3028,15 @@ export class AppController {
         { icon: ICONS.face,   label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
       ])
     }
+
+    if (substate === '1d') {
+      this._uiView.setMobileToolbar([
+        { icon: ICONS.back, label: 'Object', onClick: () => this.setMode('object') },
+        { spacer: true },
+        { spacer: true },
+        { spacer: true },
+      ])
+    }
   }
 
   // ─── Status bar helpers ────────────────────────────────────────────────────
@@ -3025,7 +3047,7 @@ export class AppController {
       this._uiView.setStatus('')
       return
     }
-    const isReadOnly = this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine
+    const isReadOnly = this._activeObj instanceof ImportedMesh
     const parts = [
       { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
       { text: 'selected', color: '#888' },
@@ -3164,11 +3186,11 @@ export class AppController {
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
-    // ImportedMesh, MeasureLine, CoordinateFrame, Annotated entities, and SpatialLink
-    // have no vertex graph — Edit Mode not supported (ADR-030)
+    // ImportedMesh, CoordinateFrame, Annotated entities, and SpatialLink have
+    // no editable vertex graph — Edit Mode not supported.
+    // MeasureLine supports 1D Edit Mode (endpoint drag).
     if (mode === 'edit' && (
       this._activeObj instanceof ImportedMesh ||
-      this._activeObj instanceof MeasureLine  ||
       this._activeObj instanceof CoordinateFrame ||
       this._activeObj instanceof AnnotatedLine   ||
       this._activeObj instanceof AnnotatedRegion ||
@@ -3176,6 +3198,10 @@ export class AppController {
       this._activeObj instanceof SpatialLink
     )) {
       this._uiView.showToast('Edit Mode is not available for this object type')
+      return
+    }
+    if (mode === 'edit' && !this._activeObj) {
+      this._uiView.showToast('Select an object first')
       return
     }
 
@@ -3233,6 +3259,8 @@ export class AppController {
       this._objDragging = false
       if (this._activeObj instanceof Profile) {
         this._enterEditMode2D()
+      } else if (this._activeObj instanceof MeasureLine) {
+        this._enterEditMode1D()
       } else {
         this._enterEditMode3D()
       }
@@ -3247,6 +3275,19 @@ export class AppController {
     this._extrudePhase.hasInput = false
     this._extrudePhase.inputStr = ''
     this._extrudePhase.height = 0
+    // Cancel any in-progress endpoint drag (restores original positions)
+    if (this._endpointDrag.active) {
+      const obj = this._activeObj
+      if (obj instanceof MeasureLine && this._endpointDrag.startCorners) {
+        obj.corners.forEach((c, i) => c.copy(this._endpointDrag.startCorners[i]))
+        obj.meshView?.update(obj.p1, obj.p2)
+      }
+      this._endpointDrag.active = false
+      this._endpointDrag.endpointIndex = null
+      this._controls.enabled = true
+    }
+    this._hoveredEndpointIndex = null
+    if (this._meshView) this._meshView.clearEndpointHover?.()
   }
 
   _enterEditMode2D() {
@@ -3278,6 +3319,21 @@ export class AppController {
     this._uiView.updateMode('edit', '3d')
     this._refreshEditModeStatus()
     this._updateMobileToolbar()
+  }
+
+  _enterEditMode1D() {
+    this._scene.setEditSubstate('1d')
+    this._hoveredEndpointIndex = null
+    this._uiView.updateMode('edit', '1d')
+    this._refreshEditMode1DStatus()
+    this._updateMobileToolbar()
+  }
+
+  _refreshEditMode1DStatus() {
+    this._uiView.setStatusRich([
+      { text: 'Edit Mode · 1D', bold: true, color: '#e8e8e8' },
+      { text: 'Drag an endpoint to reposition', color: '#555' },
+    ])
   }
 
   _enterExtrudePhase() {
@@ -4740,6 +4796,42 @@ export class AppController {
       return
     }
 
+    // ── Endpoint drag (1D Edit Mode) ─────────────────────────────────────
+    if (this._endpointDrag.active) {
+      this._raycaster.setFromCamera(this._mouse, this._camera)
+      const pt = new THREE.Vector3()
+      if (this._raycaster.ray.intersectPlane(this._endpointDrag.dragPlane, pt)) {
+        const obj = this._activeObj
+        obj.vertices[this._endpointDrag.endpointIndex].position.copy(pt)
+        obj.meshView.update(obj.p1, obj.p2)
+      }
+      return
+    }
+
+    // ── 1D Edit Mode: endpoint hover detection ────────────────────────────
+    if (this._scene.editSubstate === '1d') {
+      const mx = (this._mouse.x + 1) / 2 * innerWidth
+      const my = (-this._mouse.y + 1) / 2 * innerHeight
+      const v   = this._findNearestVertex(mx, my, 20)
+      const idx = v ? this._activeObj.vertices.indexOf(v) : null
+      if (idx !== this._hoveredEndpointIndex) {
+        this._meshView.clearEndpointHover()
+        this._hoveredEndpointIndex = idx
+        if (idx !== null) {
+          this._meshView.setEndpointHover(idx)
+          this._uiView.setStatusRich([
+            { text: `Endpoint ${idx + 1}`, bold: true, color: '#69f0ae' },
+            { text: 'Drag to reposition', color: '#555' },
+          ])
+          this._uiView.setCursor('pointer')
+        } else {
+          this._refreshEditMode1DStatus()
+          this._uiView.setCursor('default')
+        }
+      }
+      return
+    }
+
     // ── Face extrude mode (E key) ─────────────────────────────────────────
     if (this._faceExtrude.active) {
       if (this._faceExtrude.hasInput) return
@@ -5207,6 +5299,37 @@ export class AppController {
       return
     }
 
+    // ── Edit mode · 1D: start endpoint drag ──────────────────────────────
+    if (this._scene.editSubstate === '1d') {
+      const isTouch = e.pointerType === 'touch'
+      const mx = (this._mouse.x + 1) / 2 * innerWidth
+      const my = (-this._mouse.y + 1) / 2 * innerHeight
+      const v   = this._findNearestVertex(mx, my, isTouch ? 30 : 15)
+      if (v) {
+        const obj = this._activeObj
+        const idx = obj.vertices.indexOf(v)
+        this._endpointDrag.endpointIndex = idx
+        this._endpointDrag.startCorners  = obj.corners.map(c => c.clone())
+        const camDir = new THREE.Vector3()
+        this._camera.getWorldDirection(camDir)
+        this._endpointDrag.dragPlane.setFromNormalAndCoplanarPoint(camDir, v.position)
+        this._raycaster.setFromCamera(this._mouse, this._camera)
+        const pt = new THREE.Vector3()
+        if (this._raycaster.ray.intersectPlane(this._endpointDrag.dragPlane, pt)) {
+          this._endpointDrag.startPoint.copy(pt)
+        } else {
+          this._endpointDrag.startPoint.copy(v.position)
+        }
+        this._endpointDrag.active  = true
+        this._controls.enabled     = false
+        this._activeDragPointerId  = e.pointerId
+        this._meshView.clearEndpointHover()
+        this._hoveredEndpointIndex = null
+        this._uiView.setCursor('grabbing')
+      }
+      return
+    }
+
     // ── Edit mode: click to select sub-elements ───────────────────────────
     // Refresh hover state for touch (pointermove may not fire before pointerdown on touch devices)
     if (this._scene.editSubstate === '3d') {
@@ -5315,6 +5438,29 @@ export class AppController {
         this._enterMapPendingState(rectPts)
         return
       }
+      return
+    }
+
+    // ── Endpoint drag confirmation (1D Edit Mode) ────────────────────────
+    if (this._endpointDrag.active && this._activeDragPointerId === e.pointerId) {
+      this._activeDragPointerId = null
+      this._endpointDrag.active = false
+      this._controls.enabled    = true
+      const obj = this._activeObj
+      // Only push a command if the endpoint actually moved
+      const endCorners = obj.corners.map(c => c.clone())
+      const moved = this._endpointDrag.startCorners.some(
+        (sc, i) => sc.distanceToSquared(endCorners[i]) > 1e-10,
+      )
+      if (moved) {
+        const startMap = new Map([[obj.id, this._endpointDrag.startCorners]])
+        const endMap   = new Map([[obj.id, endCorners]])
+        const cmd = createMoveCommand('Move Endpoint', startMap, endMap, this._scene)
+        this._commandStack.push(cmd)
+      }
+      obj.meshView.updateBoxHelper()
+      this._uiView.setCursor('default')
+      this._refreshEditMode1DStatus()
       return
     }
 

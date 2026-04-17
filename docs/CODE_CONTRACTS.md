@@ -44,8 +44,8 @@ Detail: `docs/code_contracts/architecture.md`
 |------|--------------|
 | Mode Transition Flow | `setMode()` is the single entry point; always call `setMode('object')` before `_switchActiveObject()` from edit mode |
 | State Restoration on Mode Exit | Restore `_objSelected = true` + `setObjectSelected(true)` when returning to Object mode if `_activeObj` exists |
-| Entity Capability Contracts | Use `instanceof` not `dimension`; `Sketch.extrude()` returns new Cuboid swapped via `SceneService.extrudeSketch()`; MeasureLine/ImportedMesh/CoordinateFrame have restricted capabilities |
-| MeasureLineView No-Op Interface | Every `_meshView` method called in AppController must exist as a no-op on MeasureLineView |
+| Entity Capability Contracts | Use `instanceof` not `dimension`; `Sketch.extrude()` returns new Cuboid swapped via `SceneService.extrudeSketch()`; ImportedMesh/CoordinateFrame have restricted capabilities; MeasureLine supports 1D Edit Mode (endpoint drag via `_enterEditMode1D`) |
+| MeasureLineView No-Op Interface | Every `_meshView` method called in AppController must exist as a no-op or real impl on MeasureLineView; `setEndpointHover(index)` and `clearEndpointHover()` are real impls used in `'1d'` edit substate |
 | Measure Snap Display | Use `_measure.snapMeshView` (not `_meshView`) for all snap display during measure placement |
 | MeasureLineView Label Lifecycle | Call `updateLabelPosition()` every animation frame for every MeasureLine in scene |
 | CoordinateFrame Depth Rendering | Hidden by default; `setParentSelected()` controls visibility+X-ray; `setObjectSelected()` only changes sphere color |

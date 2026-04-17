@@ -20,6 +20,7 @@ Defines the structure and content of information displayed on each screen of eas
 | `S-04` | Edit Mode · 2D Sketch | Select Profile + Tab |
 | `S-05` | Edit Mode · 2D Extrude | Confirm Sketch → Enter |
 | `S-06` | Edit Mode · 3D (Solid editing) | Select Solid + Tab |
+| `S-06b` | Edit Mode · 1D (MeasureLine endpoint drag) | Select MeasureLine + Tab |
 | `S-07` | Grab in progress | G key / long press |
 | `S-08` | Face Extrude in progress | Edit 3D + select face + E key |
 | `S-09` | Measure placement in progress | M key |
@@ -223,6 +224,26 @@ Height: 1.00 m   Enter to confirm / Escape to cancel
 | 3 | Edge | enabled / active emphasis |
 | 4 | Face | enabled / active emphasis |
 | 5 | Extrude | disabled (enabled when face selected) |
+
+---
+
+### S-06b: Edit Mode · 1D (MeasureLine endpoint drag)
+
+#### [C] 3D Viewport
+- Endpoint spheres turn **green** (`#69f0ae`) on hover
+- Dragging snaps to a camera-facing plane through the dragged endpoint
+
+#### [E] Status Bar
+```
+Tab = Object Mode   Drag endpoint = Reposition   Esc = Object Mode
+```
+Hover text: `Endpoint 1 — Drag to reposition`
+
+#### [F] Mobile Toolbar
+| Slot | Button |
+|------|--------|
+| 1 | ← Object |
+| 2–4 | (spacer) |
 
 ---
 
