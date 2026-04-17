@@ -399,7 +399,7 @@ Phases A, B, C implemented (2026-03-21 to 2026-03-22). See ADR-015 and ADR-017 f
 
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
-| 🔴 High | MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement | Medium | ADR-005 |
+| ~~🔴 High~~ | ~~MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement~~ ✅ 2026-04-17 | ~~Medium~~ | ADR-005 |
 | 🟡 Medium | Right-click context menu (currently: cancel only) | Low | ADR-006 |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
 | 🟡 Medium | Export (OBJ / GLTF) | Low | Phase D via Geometry Service |
@@ -433,8 +433,8 @@ Bugs are also tracked on GitHub Issues #69–#73.
 
 | Priority | Item | Issue | Complexity |
 |----------|------|-------|-----------|
-| 🔴 High | Tab key shows no toast when Edit Mode blocked for read-only objects | [#69](https://github.com/yuubae215/easy-extrude/issues/69) | Low |
-| 🔴 High | Stack button incorrectly enabled for ImportedMesh / MeasureLine | [#70](https://github.com/yuubae215/easy-extrude/issues/70) | Low |
+| ~~🔴 High~~ | ~~Tab key shows no toast when Edit Mode blocked for read-only objects~~ ✅ 2026-04-17 (MeasureLine now editable; `!activeObj` guard added) | [#69](https://github.com/yuubae215/easy-extrude/issues/69) | ~~Low~~ |
+| ~~🔴 High~~ | ~~Stack button incorrectly enabled for ImportedMesh / MeasureLine~~ ✅ 2026-04-17 | [#70](https://github.com/yuubae215/easy-extrude/issues/70) | ~~Low~~ |
 | 🟡 Medium | No cancel button in mobile toolbar during measure placement | [#71](https://github.com/yuubae215/easy-extrude/issues/71) | Low |
 | 🟡 Medium | R key (Rotate CoordinateFrame) missing from Object mode status bar hints | [#72](https://github.com/yuubae215/easy-extrude/issues/72) | Low |
 | 🟢 Low | Modal dialogs lack label associations and keyboard navigation | [#73](https://github.com/yuubae215/easy-extrude/issues/73) | Medium |

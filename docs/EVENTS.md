@@ -144,6 +144,8 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `selectionMode === 'object'` + object hit | `_objDragging = true`, disable orbit |
 | `selectionMode === 'object'` + miss | `_rectSel.active = true` (desktop only) |
 | `editSubstate === '3d'` | Re-run hit test → `_handleEditClick()` |
+| `editSubstate === '1d'` + near endpoint | Set `_endpointDrag` state, disable orbit, capture drag |
+| `editSubstate === '1d'` + miss | No-op (orbit controls remain active) |
 | Second touch (during rectSel) | Cancel rectSel, delegate to OrbitControls |
 
 ### pointermove
@@ -155,6 +157,8 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `_sketch.drawing` | Update sketch rectangle p2 |
 | `faceExtrude.active` | Calculate distance + `_applyFaceExtrude()` + update label |
 | `grab.active` | `_applyGrab()` |
+| `_endpointDrag.active` | Project to drag plane → update endpoint position live |
+| hover (edit 1d, nothing active) | `_findNearestVertex()` → `setEndpointHover()` |
 | hover (edit 3d, nothing active) | `_hitFace/Vertex/Edge()` → `setFaceHighlight()` |
 | Long-press timer active (`_longPressTimer`) | Cancel timer if movement > 8px |
 
@@ -162,6 +166,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 
 | Condition | Action |
 |-----------|--------|
+| `_endpointDrag.active` | Confirm drag → `createMoveCommand` → `_commandStack.push()` |
 | `faceExtrude.active` + `wasDragging` | `_confirmFaceExtrude()` |
 | `_sketch.drawing` + `wasDragging` | `_confirmSketchRect()` |
 | `_rectSel.active` + `wasDragging` | `_finalizeRectSel()` |

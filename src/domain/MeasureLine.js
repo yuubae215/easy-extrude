@@ -6,11 +6,11 @@
  *   `p1` / `p2` / `distance` are retained as @deprecated backward-compatible
  *   getters to avoid breaking existing call sites at once.
  *
- * The line can be moved as a whole via Grab (G key); individual endpoint drag
- * via Edit Mode is a planned future extension (the graph structure supports it).
+ * The line can be moved as a whole via Grab (G key) or repositioned endpoint-
+ * by-endpoint via Edit Mode (Tab key → drag endpoint).
  *
  * Type identity:
- *   `instanceof MeasureLine` → 1D measurement; move OK, no Edit Mode.
+ *   `instanceof MeasureLine` → 1D measurement; move OK, Edit Mode (endpoint drag).
  *   `instanceof Solid`       → locally-editable deformable 3D solid.
  *   `instanceof Profile`     → 2D cross-section awaiting extrusion.
  *   `instanceof ImportedMesh`→ server-side geometry; move OK, no Edit Mode.
