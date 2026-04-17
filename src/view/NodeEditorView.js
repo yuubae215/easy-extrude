@@ -6,7 +6,10 @@
  *   - Entity nodes (Solid, Profile, CoordinateFrame, etc.) with type-based colors
  *   - Edge layers: frame (grey) | anchor (yellow) | spatial (linkType colors) | operation (blue/grey)
  *   - Layer filter toggles in the filter bar
- *   - Read-only display (Phase S-2 adds topology editing)
+ * Phase S-2: SpatialLink topology editing.
+ *   - Drag from output port → release on input port → linkType picker → CreateSpatialLinkCommand
+ *   - Click spatial edge to select → Delete key → DeleteSpatialLinkCommand
+ *   - Syncs with L-key flow via shared AppController callbacks
  */
 
 const NODE_W = 140
@@ -60,8 +63,9 @@ export class NodeEditorView {
   /**
    * @param {HTMLElement} container
    * @param {import('../service/SceneService.js').SceneService} sceneService
+   * @param {{ onLinkRequested?: Function, onDeleteSpatialLink?: Function }} [callbacks]
    */
-  constructor(container, sceneService) {
+  constructor(container, sceneService, callbacks = {}) {
     this._container     = container
     this._service       = sceneService
     this._opGraph       = { nodes: [], edges: [] }   // from WS graph.snapshot
@@ -70,6 +74,12 @@ export class NodeEditorView {
     this._selectedId    = null
     this._visible       = false
     this._layerVisible  = { frame: true, anchor: true, spatial: true, operation: true }
+
+    // Phase S-2 callbacks
+    this._onLinkRequested     = callbacks.onLinkRequested     ?? null
+    this._onDeleteSpatialLink = callbacks.onDeleteSpatialLink ?? null
+    this._dragState    = null   // { sourceId, x1, y1, x2, y2 } — active port-to-port drag
+    this._selectedEdge = null   // { linkId } — selected spatial edge
 
     this._panel        = null
     this._svg          = null
@@ -227,9 +237,49 @@ export class NodeEditorView {
     svg.style.cssText = `
       position: absolute; top: 52px; left: 0; right: 200px; bottom: 0;
       width: calc(100% - 200px); height: calc(100% - 52px);
-      cursor: default; overflow: hidden;
+      cursor: default; overflow: hidden; outline: none;
     `
     svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    svg.setAttribute('tabindex', '-1')
+
+    // Phase S-2: port drag tracking
+    svg.addEventListener('pointermove', (e) => {
+      if (!this._dragState) return
+      const r = svg.getBoundingClientRect()
+      this._dragState.x2 = e.clientX - r.left
+      this._dragState.y2 = e.clientY - r.top
+      this._render()
+    })
+    svg.addEventListener('pointerup', (e) => {
+      if (!this._dragState) return
+      const r   = svg.getBoundingClientRect()
+      const x   = e.clientX - r.left
+      const y   = e.clientY - r.top
+      const tgt = this._hitInputPort(x, y)
+      if (tgt && tgt !== this._dragState.sourceId) {
+        this._onLinkRequested?.(this._dragState.sourceId, tgt, e.clientX, e.clientY)
+      }
+      this._dragState = null
+      this._render()
+    })
+    // Phase S-2: Delete key removes selected spatial edge
+    svg.addEventListener('keydown', (e) => {
+      if (!this._selectedEdge) return
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      e.preventDefault()
+      e.stopPropagation()
+      this._onDeleteSpatialLink?.(this._selectedEdge.linkId)
+      this._selectedEdge = null
+      this._render()
+    })
+    // Deselect edge on empty-space click
+    svg.addEventListener('click', () => {
+      if (this._selectedEdge) {
+        this._selectedEdge = null
+        this._render()
+      }
+    })
+
     this._svg = svg
     panel.appendChild(svg)
 
@@ -285,6 +335,19 @@ export class NodeEditorView {
       const pos = this._nodePositions.get(node.id) ?? { x: 20, y: OP_NODE_START_Y }
       this._drawOpNode(svg, node, pos)
     }
+
+    // Phase S-2: temp drag line from source output port to cursor
+    if (this._dragState) {
+      const { x1, y1, x2, y2 } = this._dragState
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      line.setAttribute('x1', String(x1)); line.setAttribute('y1', String(y1))
+      line.setAttribute('x2', String(x2)); line.setAttribute('y2', String(y2))
+      line.setAttribute('stroke', '#f1c40f')
+      line.setAttribute('stroke-width', '1.5')
+      line.setAttribute('stroke-dasharray', '4,3')
+      line.style.pointerEvents = 'none'
+      svg.appendChild(line)
+    }
   }
 
   // ── Edge drawing ────────────────────────────────────────────────────────────
@@ -293,20 +356,41 @@ export class NodeEditorView {
     const x1 = src.x + NODE_W / 2,  y1 = src.y + NODE_H / 2
     const x2 = dst.x + NODE_W / 2,  y2 = dst.y + NODE_H / 2
     const cx = (x1 + x2) / 2
+    const d  = `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`
 
-    const styleKey = edge.relation === 'spatial' ? (edge.linkType ?? 'references') : edge.relation
-    const style    = EDGE_STYLE[styleKey] ?? EDGE_STYLE.geometry
+    const styleKey   = edge.relation === 'spatial' ? (edge.linkType ?? 'references') : edge.relation
+    const style      = EDGE_STYLE[styleKey] ?? EDGE_STYLE.geometry
+    const isSelected = edge.relation === 'spatial' && this._selectedEdge?.linkId === edge.linkId
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-    path.setAttribute('d', `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`)
+    path.setAttribute('d', d)
     path.setAttribute('fill',         'none')
-    path.setAttribute('stroke',       style.color)
-    path.setAttribute('stroke-width', String(style.width))
+    path.setAttribute('stroke',       isSelected ? '#f1c40f' : style.color)
+    path.setAttribute('stroke-width', isSelected ? String(style.width + 1.5) : String(style.width))
     if (style.dash !== 'none') path.setAttribute('stroke-dasharray', style.dash)
     svg.appendChild(path)
 
     if (style.directed) {
-      this._drawArrow(svg, x2, y2, Math.atan2(y2 - y1, x2 - x1), style.color)
+      this._drawArrow(svg, x2, y2, Math.atan2(y2 - y1, x2 - x1), isSelected ? '#f1c40f' : style.color)
+    }
+
+    // Phase S-2: wide transparent hit area for spatial edge selection
+    if (edge.relation === 'spatial') {
+      const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      hit.setAttribute('d', d)
+      hit.setAttribute('fill',   'none')
+      hit.setAttribute('stroke', 'transparent')
+      hit.setAttribute('stroke-width', '14')
+      hit.style.cursor = 'pointer'
+      hit.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        this._selectedEdge = this._selectedEdge?.linkId === edge.linkId
+          ? null
+          : { linkId: edge.linkId }
+        this._svg.focus()
+        this._render()
+      })
+      svg.appendChild(hit)
     }
   }
 
@@ -387,10 +471,27 @@ export class NodeEditorView {
     portIn.setAttribute('r',  '4');         portIn.setAttribute('fill', color)
     g.appendChild(portIn)
 
-    // Output port
+    // Output port — Phase S-2: drag to create SpatialLink
     const portOut = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
     portOut.setAttribute('cx', String(NODE_W)); portOut.setAttribute('cy', String(NODE_H / 2))
     portOut.setAttribute('r',  '4');            portOut.setAttribute('fill', color)
+    if (this._onLinkRequested) {
+      portOut.style.cursor = 'crosshair'
+      portOut.addEventListener('pointerdown', (e) => {
+        e.stopPropagation()   // prevent node drag
+        const r      = this._svg.getBoundingClientRect()
+        const srcPos = this._nodePositions.get(id)
+        this._dragState = {
+          sourceId: id,
+          x1: (srcPos?.x ?? 0) + NODE_W,
+          y1: (srcPos?.y ?? 0) + NODE_H / 2,
+          x2: e.clientX - r.left,
+          y2: e.clientY - r.top,
+        }
+        this._svg.setPointerCapture(e.pointerId)
+        this._render()
+      })
+    }
     g.appendChild(portOut)
 
     // Name label
@@ -425,6 +526,20 @@ export class NodeEditorView {
     g.addEventListener('pointerup', () => { dragging = false })
 
     svg.appendChild(g)
+  }
+
+  // ── Phase S-2 helpers ───────────────────────────────────────────────────────
+
+  /** Returns entity id whose input port (x=0, y=NODE_H/2) is within 14px of (svgX, svgY). */
+  _hitInputPort(svgX, svgY) {
+    for (const node of this._sceneGraph.nodes) {
+      const pos = this._nodePositions.get(node.id)
+      if (!pos) continue
+      const px = pos.x
+      const py = pos.y + NODE_H / 2
+      if (Math.hypot(svgX - px, svgY - py) < 14) return node.id
+    }
+    return null
   }
 
   // ── Selection + params ──────────────────────────────────────────────────────

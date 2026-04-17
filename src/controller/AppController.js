@@ -2232,17 +2232,28 @@ export class AppController {
   }
 
   /**
-   * Creates the SpatialLink and records the undo command.
+   * Shared link creation used by L-key flow and Node Editor (Phase S-2).
+   * Creates SpatialLink + records undo command without touching spatialLinkMode state.
+   * @param {string} sourceId
+   * @param {string} targetId
+   * @param {string} linkType
+   */
+  _createSpatialLinkDirect(sourceId, targetId, linkType) {
+    const link = this._service.createSpatialLink(sourceId, targetId, linkType)
+    this._commandStack.push(createSpatialLinkCommand(link, this._service))
+    this._uiView.showToast(`Link created: ${linkType}`)
+    this._updateNPanel()
+  }
+
+  /**
+   * Creates the SpatialLink from L-key picking flow and records the undo command.
    * @param {string} linkType
    */
   _confirmSpatialLink(linkType) {
     const { sourceId, pendingTargetId } = this._spatialLinkMode
     if (!sourceId || !pendingTargetId) return
-    const link = this._service.createSpatialLink(sourceId, pendingTargetId, linkType)
-    this._commandStack.push(createSpatialLinkCommand(link, this._service))
-    this._uiView.showToast(`Link created: ${linkType}`)
+    this._createSpatialLinkDirect(sourceId, pendingTargetId, linkType)
     this._cancelSpatialLinkCreation()
-    this._updateNPanel()
   }
 
   /**
@@ -5698,8 +5709,30 @@ export class AppController {
     // Open WebSocket geometry channel
     this._service.openGeometryChannel()
 
-    // Wire up Node Editor
-    this._nodeEditorView = new NodeEditorView(document.body, this._service)
+    // Wire up Node Editor (Phase S-2: topology editing callbacks)
+    this._nodeEditorView = new NodeEditorView(document.body, this._service, {
+      onLinkRequested: (sourceId, targetId, x, y) => {
+        const source = this._scene.getObject(sourceId)
+        const target = this._scene.getObject(targetId)
+        if (!source || !target) return
+        const validTypes = _computeValidLinkTypes(source, target)
+        this._uiView.showLinkTypePicker(x, y, (linkType) => {
+          if (linkType === 'mounts') {
+            this._confirmMountAnnotation(sourceId, targetId)
+          } else {
+            this._createSpatialLinkDirect(sourceId, targetId, linkType)
+          }
+        }, { validTypes })
+      },
+      onDeleteSpatialLink: (linkId) => {
+        const link = this._scene.getLink(linkId)
+        if (!link) return
+        this._service.detachSpatialLink(linkId)
+        this._commandStack.push(createDeleteSpatialLinkCommand(link, this._service))
+        this._uiView.showToast('Link deleted')
+        this._updateNPanel()
+      },
+    })
     this._uiView.onNodeEditorToggle(() => {
       const visible = this._nodeEditorView.toggle()
       // Visual feedback on header button
