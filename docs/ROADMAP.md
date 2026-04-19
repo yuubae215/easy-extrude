@@ -15,17 +15,17 @@ classified by place type: Route / Boundary / Zone / Hub / Anchor.
 Domain layer (entities, registry, service, serializer) is complete.
 The phases below cover the rendering and UI layers.
 
-### Phase 1 — Rendering layer ★ prerequisite for all UI
+### Phase 1 — Rendering layer ✅ (2026-04-11)
 
 | Task | Details | ADR |
 |------|---------|-----|
-| `AnnotatedLineView` | Three.js `Line2` (fat line) with configurable stroke color; BoxHelper for selection | ADR-029 |
-| `AnnotatedRegionView` | Three.js `Line2` closed ring + translucent fill `Mesh` (ShapeGeometry); BoxHelper | ADR-029 |
-| `AnnotatedPointView` | Three.js `Sprite` or `Mesh` (flat circle / diamond); label HTML overlay | ADR-029 |
-| Wire views into `SceneService.create*` | Replace `meshView = null` with constructed view; add `scene.add` / `dispose` | ADR-029 |
-| `AppController` instanceof guards | Grab (G key) allowed; Edit Mode blocked (no sub-element editing yet); Stack blocked | ADR-029 |
+| `AnnotatedLineView` | Three.js `Line2` (fat line) with configurable stroke color; BoxHelper for selection; Route particle + Boundary marching-ants animations | ADR-029, ADR-031 |
+| `AnnotatedRegionView` | Three.js `Line2` closed ring + translucent fill `Mesh` (ShapeGeometry); Zone breathing fill + rim ring animation | ADR-029, ADR-031 |
+| `AnnotatedPointView` | Flat `CylinderGeometry` marker + HTML label overlay; Hub sonar ping + Anchor crosshair pulse animations | ADR-029, ADR-031 |
+| Wire views into `SceneService.create*` | Views constructed with place-type color and geometry; `dispose()` implemented | ADR-029 |
+| `AppController` instanceof guards | Grab (G key) allowed; Edit Mode blocked; Stack blocked; rect-selection guard | ADR-029 |
 
-### Phase 2 — Classification UI (N-panel + Outliner)
+### Phase 2 — Classification UI (N-panel + Outliner) ✅ (2026-04-08)
 
 | Task | Details | ADR |
 |------|---------|-----|
@@ -35,15 +35,15 @@ The phases below cover the rendering and UI layers.
 | Place-type picker overlay | Grouped list filtered by geometry type (`getPlaceTypesByGeometry`); search input | ADR-029 |
 | `SetPlaceTypeCommand` wired to controller | `AppController` subscribes `objectPlaceTypeChanged`; forwards to OutlinerView | ADR-029 |
 
-### Phase 3 — Creation UX
+### Phase 3 — Creation UX ✅ (2026-04-11)
 
 > **Superseded by ADR-031** for interaction model details.
-> The tasks below are preserved for reference; implementation follows ADR-031 §2–§7.
+> Implemented as Map Mode Phases M-1 to M-5 (ADR-031).
 
 | Task | Details | ADR |
 |------|---------|-----|
 | "Annotate" submenu in Add menu (Shift+A) | Entries: Route, Boundary, Zone, Hub, Anchor (geometry type inferred from selection) | ADR-029 |
-| Placement interaction model | Three-state drawing model; platform-differentiated (Mobile = drag, PC = multi-click/drag); see ADR-031 | ADR-031 |
+| Placement interaction model | Three-state drawing model (idle→drawing→pending→confirm); platform-differentiated | ADR-031 |
 | Naming before confirm | Name input in Map toolbar during `pending` state; default "{PlaceType} N" | ADR-031 |
 | Mobile toolbar for annotation placement | Fixed-slot layout during `drawing` + `pending`; Confirm + Cancel slots | ADR-024, ADR-031 |
 
@@ -435,15 +435,15 @@ Bugs are also tracked on GitHub Issues #69–#73.
 |----------|------|-------|-----------|
 | ~~🔴 High~~ | ~~Tab key shows no toast when Edit Mode blocked for read-only objects~~ ✅ 2026-04-17 (MeasureLine now editable; `!activeObj` guard added) | [#69](https://github.com/yuubae215/easy-extrude/issues/69) | ~~Low~~ |
 | ~~🔴 High~~ | ~~Stack button incorrectly enabled for ImportedMesh / MeasureLine~~ ✅ 2026-04-17 | [#70](https://github.com/yuubae215/easy-extrude/issues/70) | ~~Low~~ |
-| 🟡 Medium | No cancel button in mobile toolbar during measure placement | [#71](https://github.com/yuubae215/easy-extrude/issues/71) | Low |
-| 🟡 Medium | R key (Rotate CoordinateFrame) missing from Object mode status bar hints | [#72](https://github.com/yuubae215/easy-extrude/issues/72) | Low |
+| ~~🟡 Medium~~ | ~~No cancel button in mobile toolbar during measure placement~~ ✅ (`_measure.active` branch added to `_updateMobileToolbar()`) | [#71](https://github.com/yuubae215/easy-extrude/issues/71) | ~~Low~~ |
+| ~~🟡 Medium~~ | ~~R key (Rotate CoordinateFrame) missing from Object mode status bar hints~~ ✅ (`appendInfoHint('R', 'Rotate')` in `_refreshObjectModeStatus()`) | [#72](https://github.com/yuubae215/easy-extrude/issues/72) | ~~Low~~ |
 | 🟢 Low | Modal dialogs lack label associations and keyboard navigation | [#73](https://github.com/yuubae215/easy-extrude/issues/73) | Medium |
 
 ### Improvement proposals
 
 | Priority | Item | Complexity | Notes |
 |----------|------|-----------|-------|
-| 🟡 Medium | **A-1: Context-sensitive status bar** — Dynamically switch footer hints based on active object type (add `R Rotate` for CoordinateFrame, read-only note for ImportedMesh) | Low | `_refreshObjectModeStatus()` + extend `UIView._setInfoText()` args |
+| ~~🟡 Medium~~ | ~~**A-1: Context-sensitive status bar**~~ ✅ — `R Rotate` hint for CoordinateFrame via `appendInfoHint()` in `_refreshObjectModeStatus()` | Low | — |
 | 🟡 Medium | **A-2: Live coordinates during Grab** — Show centroid coordinates `X:1.25 Y:0.00 Z:0.50` in status bar during Grab | Low | Change only `_updateGrabStatus()` |
 | 🟢 Low | **A-3: CoordinateFrame rotation arc guide** — Overlay arc in Three.js to indicate rotation axis during R key | Medium | Requires new Three.js geometry |
 | 🟢 Low | **B-3: Measure label tap** — Tap on MeasureLine distance label to copy to clipboard or convert units | Low | `MeasureLineView` + click handler |
@@ -461,8 +461,10 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 |---------|------------|-------------|
 | Spatial Node Editor Phase S-2 — SpatialLink editing in Node Editor (port drag, edge delete, shared command) | 2026-04-16 | ADR-030, ADR-022 |
 | Spatial Node Editor Phase S-1 — unified scene graph + layer filter toggles in Node Editor | 2026-04-16 | ADR-016, ADR-028, ADR-030 |
+| Geometric Host Binding (ADR-032) — Phases H-1 to H-6: linkType 拡張・座標変換・Grab 拘束・Mobile/PC 作成 UI | 2026-04-15 | ADR-032 |
+| CoordinateFrame Phase C (ADR-033) — Phases C-1 to C-4: Auto-Origin 廃止・作成 UI (PC+Mobile)・ライフサイクル表示 | 2026-04-15 | ADR-033 |
 | SpatialLink — Design: Geometric Host Binding vocabulary (ADR-032 Proposed) | 2026-04-13 | ADR-032 |
-| CoordinateFrame Phase C — Design: Interface Contract Model (ADR-033 Proposed) | 2026-04-15 | ADR-033 |
+| Spatial Annotation System — Phases 1 to 3 (Rendering layer, Classification UI, Creation UX) | 2026-04-11 | ADR-029, ADR-031 |
 | Map Mode Interaction Model (Phases M-1 to M-5: three-state draw, naming, platform UX, snapping, animations) | 2026-04-11 | ADR-031 |
 | Spatial Annotation System refactor (UrbanPolyline→AnnotatedLine etc.) | 2026-04-08 | ADR-029 |
 | Coordinate Space Type Safety (Phases 1–3: instanceof hotfix → JSDoc brands → API separation) | 2026-04-07 | PHILOSOPHY #21, CODE_CONTRACTS |
