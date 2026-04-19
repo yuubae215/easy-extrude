@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Accepted |
+| **Status** | Draft |
 | **Date** | 2026-04-19 |
 | **References** | ADR-033, ADR-032, ADR-030, ADR-018, ADR-019, PHILOSOPHY #21 |
 
@@ -160,25 +160,16 @@ without the modeller's involvement.
   coordinate system), users may find identity rotation disorienting.
   A future ADR should address implicit axis visualisation.
 
-### Resolved decisions (2026-04-19)
+### Open questions (to resolve before Accepted)
 
-**Q1 — "Add Frame" placement-pick sub-mode vs. centroid default?**
-Resolved: keep centroid + immediate Grab as the current UX.  A "pick placement
-on creation" sub-mode is deferred as a future backlog candidate.  Centroid is
-a neutral, predictable starting point; the user is expected to Grab and reposition
-immediately, which is consistent with existing workflow.
-
-**Q2 — Visual ghost of parent's implicit local axes during placement?**
-Resolved: implement as Phase P-1.  A transient Three.js ghost overlay (dimmed
-dashed axis lines) is shown at the parent entity's world centroid while the
-CoordinateFrame is in Grab state.  The ghost is removed on Grab confirm or cancel.
-This provides orientation context without committing to any automatic axis assignment.
-Implementation: `CoordinateFrameView.showParentAxesGhost()` / `hideParentAxesGhost()`
-called from `AppController._startGrab()` / `_confirmGrab()` / `_cancelGrab()`.
-
-**Q3 — History / provenance model for pre-declared frames?**
-Resolved: defer indefinitely.  No current stakeholder demand.  To be addressed
-if Phase S-3 (constraint solver) or assembly-mate UX requires provenance tracking.
+- Should "Add Frame" enter a placement-pick sub-mode instead of defaulting
+  to centroid?  If yes, define the interaction model (escape cancels,
+  click confirms, what is snapped to?).
+- Should the system provide a visual ghost of the parent's implicit local
+  axes when a frame is being placed?  This does not require an entity —
+  it is a transient rendering aid.
+- When the geometry modeller pre-declares frames and the integrator later
+  adjusts them, is there a history / provenance model needed?
 
 ---
 
