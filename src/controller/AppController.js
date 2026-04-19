@@ -3797,6 +3797,23 @@ export class AppController {
       this._grab.startPoint.copy(this._grab.pivot)
     }
 
+    // ADR-034 Phase P-1: show parent entity's local axes as ghost during frame grab
+    if (this._activeObj instanceof CoordinateFrame) {
+      const parent = this._scene.getObject(this._activeObj.parentId)
+      if (parent) {
+        let parentWorldPos, parentWorldQuat
+        if (parent instanceof CoordinateFrame) {
+          const pose = this._service.worldPoseOf(parent.id)
+          parentWorldPos  = pose?.position?.clone()   ?? new THREE.Vector3()
+          parentWorldQuat = pose?.quaternion?.clone()  ?? new THREE.Quaternion()
+        } else {
+          parentWorldPos  = getCentroid(parent.corners ?? [])
+          parentWorldQuat = new THREE.Quaternion()
+        }
+        this._activeObj.meshView.showParentAxesGhost(parentWorldPos, parentWorldQuat)
+      }
+    }
+
     this._controls.enabled = false
     this._uiView.setCursor('grabbing')
     this._updateGrabStatus()
@@ -3834,6 +3851,7 @@ export class AppController {
     this._grab.stacking      = false
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
+    if (this._activeObj instanceof CoordinateFrame) this._activeObj.meshView.hideParentAxesGhost()
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -3860,6 +3878,7 @@ export class AppController {
     }
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
+    if (this._activeObj instanceof CoordinateFrame) this._activeObj.meshView.hideParentAxesGhost()
     this._grab.active        = false
     this._grab.axis          = null
     this._grab.autoSnap      = false

@@ -192,6 +192,27 @@ linkType 語彙を英語前置詞体系（9 種）に整理し、位相的・意
 
 ---
 
+## CoordinateFrame Placement Policy (ADR-034)
+
+Placement and initial pose policy for CoordinateFrame entities.
+ADR-033 defines *when* to create a frame; ADR-034 defines *where* and *how*.
+Key decisions: placement is unrestricted (face / edge / interior / vertex);
+default = parent centroid + identity rotation; integrator holds authority over frame pose.
+
+Full design rationale in `docs/adr/ADR-034-coordinate-frame-placement-policy.md`.
+
+### Phase P-1 — Parent axes ghost during Grab ✅ (2026-04-19)
+
+| Task | Details | ADR |
+|------|---------|-----|
+| `showParentAxesGhost(worldPos, worldQuat)` in `CoordinateFrameView` | Lazily created Three.js group of three dimmed dashed axis lines (X=red, Y=green, Z=blue); depth-test off; opacity 0.35; scaled every frame by `updateScale()` from parent camera distance | ADR-034 §2, §5 |
+| `hideParentAxesGhost()` | Hides the group without disposing — reused on next grab | ADR-034 §5 |
+| Wired into `AppController._startGrab()` | On CoordinateFrame grab: find parent, compute world centroid + quaternion, call `showParentAxesGhost()` | ADR-034 §5 |
+| Wired into `_confirmGrab()` / `_cancelGrab()` | Call `hideParentAxesGhost()` unconditionally when active object is CoordinateFrame | ADR-034 §5 |
+| `dispose()` cleanup | `scene.remove` + traverse dispose for ghost group | ADR-034 §5 |
+
+---
+
 ## Spatial Node Editor Strategy (ADR-030 × ADR-016/017)
 
 SpatialLink (ADR-030) と Node Editor (ADR-016/017) は、同じシーンオブジェクトに対する
@@ -459,6 +480,7 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 
 | Feature | Completion | ADR / Notes |
 |---------|------------|-------------|
+| CoordinateFrame Placement Policy (ADR-034) — Phase P-1: parent axes ghost during Grab (CoordinateFrameView + AppController) | 2026-04-19 | ADR-034 |
 | Spatial Node Editor Phase S-2 — SpatialLink editing in Node Editor (port drag, edge delete, shared command) | 2026-04-16 | ADR-030, ADR-022 |
 | Spatial Node Editor Phase S-1 — unified scene graph + layer filter toggles in Node Editor | 2026-04-16 | ADR-016, ADR-028, ADR-030 |
 | Geometric Host Binding (ADR-032) — Phases H-1 to H-6: linkType 拡張・座標変換・Grab 拘束・Mobile/PC 作成 UI | 2026-04-15 | ADR-032 |

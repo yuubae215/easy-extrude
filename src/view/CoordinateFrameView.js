@@ -84,6 +84,14 @@ export class CoordinateFrameView {
      */
     this._connectionLine = null
 
+    /**
+     * Ghost overlay showing the parent entity's local coordinate axes.
+     * Visible only while this frame is being grabbed (ADR-034 Phase P-1).
+     * Null until showParentAxesGhost() is called for the first time.
+     * @type {THREE.Group|null}
+     */
+    this._parentAxesGhost = null
+
     scene.add(this._group)
   }
 
@@ -184,6 +192,27 @@ export class CoordinateFrameView {
     if (this._connectionLine) this._connectionLine.visible = false
   }
 
+  // ── Parent axes ghost (ADR-034 Phase P-1) ─────────────────────────────────
+
+  /**
+   * Shows a dimmed ghost of the parent entity's local coordinate axes.
+   * Lazily creates the Three.js group on first call.
+   * Called by AppController when this frame enters Grab state.
+   * @param {THREE.Vector3} worldPosition  parent entity's world centroid
+   * @param {THREE.Quaternion} worldQuaternion  parent entity's world orientation
+   */
+  showParentAxesGhost(worldPosition, worldQuaternion) {
+    if (!this._parentAxesGhost) this._createParentAxesGhost()
+    this._parentAxesGhost.position.copy(worldPosition)
+    this._parentAxesGhost.quaternion.copy(worldQuaternion)
+    this._parentAxesGhost.visible = true
+  }
+
+  /** Hides the parent axes ghost without disposing it. */
+  hideParentAxesGhost() {
+    if (this._parentAxesGhost) this._parentAxesGhost.visible = false
+  }
+
   /**
    * Updates both endpoints of the connection line.
    * Called every animation frame when the parent is also a CoordinateFrame.
@@ -224,6 +253,14 @@ export class CoordinateFrameView {
       this._connectionLine.material.dispose()
       this._connectionLine = null
     }
+    if (this._parentAxesGhost) {
+      scene.remove(this._parentAxesGhost)
+      this._parentAxesGhost.traverse(obj => {
+        if (obj.geometry) obj.geometry.dispose()
+        if (obj.material) obj.material.dispose()
+      })
+      this._parentAxesGhost = null
+    }
   }
 
   /**
@@ -246,6 +283,12 @@ export class CoordinateFrameView {
     let worldSize    = (targetPx / screenH) * 2 * d * tanHalfFov
     if (maxWorldSize < Infinity) worldSize = Math.min(worldSize, maxWorldSize)
     this._group.scale.setScalar(worldSize / AXIS_LENGTH)
+
+    if (this._parentAxesGhost?.visible) {
+      const dg = camera.position.distanceTo(this._parentAxesGhost.position)
+      const ghostSize = (targetPx / screenH) * 2 * dg * tanHalfFov
+      this._parentAxesGhost.scale.setScalar(ghostSize / AXIS_LENGTH)
+    }
   }
 
   // ── No-op interface (MENTAL_MODEL §1) ────────────────────────────────────
@@ -286,6 +329,35 @@ export class CoordinateFrameView {
     this._originSphere.material.opacity     = opacity
     this._originSphere.material.needsUpdate = true
     this._originSphere.renderOrder          = 1
+  }
+
+  /** Lazily creates the parent axes ghost Three.js group. */
+  _createParentAxesGhost() {
+    const GHOST_LEN = 0.5
+    const makeGhostAxis = (x, y, z, color) => {
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, x, y, z], 3))
+      const mat = new THREE.LineDashedMaterial({
+        color,
+        dashSize:    0.08,
+        gapSize:     0.05,
+        depthTest:   false,
+        transparent: true,
+        opacity:     0.35,
+      })
+      const line = new THREE.Line(geo, mat)
+      line.computeLineDistances()
+      line.renderOrder = 1
+      return line
+    }
+    this._parentAxesGhost = new THREE.Group()
+    this._parentAxesGhost.add(
+      makeGhostAxis(GHOST_LEN, 0, 0, 0xff4444),
+      makeGhostAxis(0, GHOST_LEN, 0, 0x44cc44),
+      makeGhostAxis(0, 0, GHOST_LEN, 0x4488ff),
+    )
+    this._parentAxesGhost.visible = false
+    this._scene.add(this._parentAxesGhost)
   }
 
   /** Lazily creates the dashed connection line Three.js object. */
