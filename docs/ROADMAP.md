@@ -461,8 +461,9 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 |---------|------------|-------------|
 | Spatial Node Editor Phase S-2 — SpatialLink editing in Node Editor (port drag, edge delete, shared command) | 2026-04-16 | ADR-030, ADR-022 |
 | Spatial Node Editor Phase S-1 — unified scene graph + layer filter toggles in Node Editor | 2026-04-16 | ADR-016, ADR-028, ADR-030 |
+| Geometric Host Binding (ADR-032) — Phases H-1 to H-6: linkType 拡張・座標変換・Grab 拘束・Mobile/PC 作成 UI | 2026-04-15 | ADR-032 |
+| CoordinateFrame Phase C (ADR-033) — Phases C-1 to C-4: Auto-Origin 廃止・作成 UI (PC+Mobile)・ライフサイクル表示 | 2026-04-15 | ADR-033 |
 | SpatialLink — Design: Geometric Host Binding vocabulary (ADR-032 Proposed) | 2026-04-13 | ADR-032 |
-| CoordinateFrame Phase C — Design: Interface Contract Model (ADR-033 Proposed) | 2026-04-15 | ADR-033 |
 | Map Mode Interaction Model (Phases M-1 to M-5: three-state draw, naming, platform UX, snapping, animations) | 2026-04-11 | ADR-031 |
 | Spatial Annotation System refactor (UrbanPolyline→AnnotatedLine etc.) | 2026-04-08 | ADR-029 |
 | Coordinate Space Type Safety (Phases 1–3: instanceof hotfix → JSDoc brands → API separation) | 2026-04-07 | PHILOSOPHY #21, CODE_CONTRACTS |
