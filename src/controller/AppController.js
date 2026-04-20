@@ -3995,6 +3995,7 @@ export class AppController {
     }
 
     this._controls.enabled = false
+    this._detachMobileTransform()
     this._uiView.setCursor('grabbing')
     this._updateGrabStatus()
     this._updateMobileToolbar()
@@ -4064,6 +4065,7 @@ export class AppController {
     this._grab.stackMode     = false
     this._grab.stacking      = false
     this._controls.enabled = true
+    if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateNPanel()
