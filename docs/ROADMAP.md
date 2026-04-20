@@ -208,6 +208,7 @@ Full design rationale in `docs/adr/ADR-034-coordinate-frame-placement-policy.md`
 | `showParentAxesGhost(worldPos, worldQuat)` in `CoordinateFrameView` | Lazily created Three.js group of three dimmed dashed axis lines (X=red, Y=green, Z=blue); `depthTest: false`; opacity 0.35; scaled from parent camera distance | ADR-034 §7 |
 | `hideParentAxesGhost()` | Hides without disposing — reused on next selection | ADR-034 §7 |
 | Wired into `AppController` selection change | Show on CoordinateFrame becoming active object; hide on deselection | ADR-034 §7 |
+| `AppController._parentAxesOverlay` | Scene-level Three.js Group for pick sub-mode (no CoordinateFrameView exists yet); shown on pick sub-mode entry, hidden on confirm/cancel | ADR-034 §7 |
 | `updateScale()` ghost scaling | Ghost scaled independently from camera distance to parent centroid | ADR-034 §7 |
 | `dispose()` cleanup | `scene.remove` + traverse dispose for ghost group | ADR-034 §7 |
 
