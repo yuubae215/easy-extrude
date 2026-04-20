@@ -59,6 +59,7 @@ import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
 import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
 import { SpatialLink } from '../domain/SpatialLink.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
+import { RoleService } from './RoleService.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -375,6 +376,10 @@ export class SceneService extends EventEmitter {
         if (dto.rotation) {
           frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
         }
+        // Restore provenance field (ADR-034 §8.4, backward-compatible: null on missing key)
+        if (dto.declaredBy === 'modeller' || dto.declaredBy === 'integrator') {
+          frame.declaredBy = dto.declaredBy
+        }
         entities.push(frame)
       } else if (dto.type === 'AnnotatedLine') {
         const { renderer = null } = viewContext
@@ -596,6 +601,9 @@ export class SceneService extends EventEmitter {
       }
       if (dto.rotation) {
         frame.rotation.set(dto.rotation.x, dto.rotation.y, dto.rotation.z, dto.rotation.w)
+      }
+      if (dto.declaredBy === 'modeller' || dto.declaredBy === 'integrator') {
+        frame.declaredBy = dto.declaredBy
       }
       return frame
     }
@@ -1546,7 +1554,14 @@ export class SceneService extends EventEmitter {
    * @param {string} parentObjectId
    * @returns {CoordinateFrame|null}
    */
-  createCoordinateFrame(parentObjectId, overrideName = null) {
+  /**
+   * @param {string} parentObjectId
+   * @param {string|null} [overrideName]
+   * @param {import('three').Vector3|null} [placedWorldPos]  If given, sets translation so the
+   *   frame's world position equals this point (pick-sub-mode placement, ADR-034 §6).
+   *   When null the frame starts at the parent centroid (translation = 0,0,0).
+   */
+  createCoordinateFrame(parentObjectId, overrideName = null, placedWorldPos = null) {
     const parent = this._model.getObject(parentObjectId)
     if (!parent || parent instanceof MeasureLine || parent instanceof ImportedMesh) return null
 
@@ -1556,26 +1571,35 @@ export class SceneService extends EventEmitter {
 
     const meshView = new CoordinateFrameView(this._threeScene)
     const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)
+    // Assign provenance from current role (ADR-034 §8.1, §8.2)
+    frame.declaredBy = RoleService.getRole()
 
-    // Initialise the world pose cache and visual position at parent world position.
-    // translation = (0,0,0) so the frame starts exactly at the parent origin.
+    // Compute parent centroid (world space) — used for both default placement and
+    // computing the translation offset when placedWorldPos is given.
     // CoordinateFrame exposes `localOffset` (LocalVector3), NOT `corners`.
     // When the parent is a CoordinateFrame, use the world pose cache instead
     // (mirrors _updateWorldPoses logic, PHILOSOPHY #21 Phase 3, CODE_CONTRACTS architecture.md).
     /** @type {import('../types/spatial.js').WorldVector3|null} */
-    let initialWorldPos = null
+    let parentWorldPos = null
     if (parent instanceof CoordinateFrame) {
       const cached = this._worldPoseCache.get(parent.id)
-      if (cached) initialWorldPos = /** @type {any} */ (cached.position.clone())
+      if (cached) parentWorldPos = /** @type {any} */ (cached.position.clone())
     } else {
       const corners = parent.corners
       if (corners.length > 0) {
         const centroid = new Vector3()
         for (const c of corners) centroid.add(c)
         centroid.divideScalar(corners.length)
-        initialWorldPos = /** @type {any} */ (centroid)
+        parentWorldPos = /** @type {any} */ (centroid)
       }
     }
+
+    // When a pick position is given, set translation = worldPos - parentCentroid.
+    if (placedWorldPos && parentWorldPos) {
+      frame.translation.copy(placedWorldPos).sub(parentWorldPos)
+    }
+
+    const initialWorldPos = placedWorldPos ?? parentWorldPos
     if (initialWorldPos) {
       this._worldPoseCache.set(frame.id, { position: initialWorldPos.clone(), quaternion: frame.rotation })
       meshView.updatePosition(initialWorldPos)

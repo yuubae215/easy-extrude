@@ -140,6 +140,15 @@ const centroid = getCentroid(parent.corners)   // TypeError or wrong result
 
 - **Ordering dependency**: `_updateWorldPoses()` topologically sorts frames (shallow first) before the loop so that when a child frame is processed its parent's world pose is already in `_worldPoseCache`. This invariant must be preserved if the loop structure is ever changed.
 
+## CoordinateFrame Provenance and Role-Based Edit Access (ADR-034 §8)
+
+- **Principle**: A frame declared by one stakeholder role must not be silently changed by another. Ownership is explicit via `frame.declaredBy`; violations show a toast.
+- **Concrete Rule**: `CoordinateFrame.declaredBy` is `'modeller' | 'integrator' | null`. `null` = permissive (always editable). Before Grab, R-key, rename, or delete of a `CoordinateFrame`, the controller calls `RoleService.canEdit(frame)`. If it returns false, show `showToast('This frame was declared by a <role>. Switch to that role to edit it.', { type: 'warn' })` and return.
+- `RoleService.getRole()` / `RoleService.setRole(role)` — module-level singleton. `null` = no role set (permissive mode).
+- `window.__easyExtrude.setRole('modeller')` / `.getRole()` — console API (DevTools).
+- **Serialisation**: `declaredBy` is included in scene JSON (backward-compatible: missing key → `null` on load).
+- **Frame creation**: `createCoordinateFrame()` sets `frame.declaredBy = RoleService.getRole()` — null when no role is active.
+
 ## ~~Auto Origin Frame on 3D Object Creation~~ — Superseded by ADR-033
 
 > **This contract is superseded by ADR-033 (CoordinateFrame Phase C).**

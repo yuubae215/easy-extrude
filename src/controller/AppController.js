@@ -52,6 +52,7 @@ import { createSpatialLinkCommand }           from '../command/CreateSpatialLink
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
 import { createMountAnnotationCommand }       from '../command/MountAnnotationCommand.js'
+import { RoleService }                        from '../service/RoleService.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -483,6 +484,24 @@ export class AppController {
       startY:    0,
     }
 
+    // ── CoordinateFrame placement pick sub-mode (ADR-034 §6) ─────────────────
+    /**
+     * Active when the user is picking a placement point for a new CoordinateFrame.
+     * @type {{ active: boolean, parentId: string|null }}
+     */
+    this._framePlacementState = { active: false, parentId: null }
+    /**
+     * Scene-level Three.js Group showing world-aligned parent axes during pick sub-mode.
+     * Lazily created in _enterFramePickSubMode; reused on subsequent entries.
+     * @type {THREE.Group|null}
+     */
+    this._parentAxesOverlay = null
+    /**
+     * Ghost CoordinateFrame axes following the cursor during pick sub-mode.
+     * @type {THREE.Group|null}
+     */
+    this._frameCursorGhost = null
+
     // ── Mobile TransformControls (touch devices only, translate mode) ──────
     /** @type {import('three/addons/controls/TransformControls.js').TransformControls|null} */
     this._tc              = null
@@ -663,6 +682,12 @@ export class AppController {
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()
+
+    // Expose console API for role-based provenance (ADR-034 §8.3)
+    window.__easyExtrude = {
+      setRole: (role) => RoleService.setRole(role),
+      getRole: ()     => RoleService.getRole(),
+    }
   }
 
   // ─── Domain state shorthand ───────────────────────────────────────────────
@@ -738,7 +763,7 @@ export class AppController {
   }
 
   /**
-   * Adds a CoordinateFrame as a child of the currently active geometry object.
+   * Begins the CoordinateFrame placement pick sub-mode (ADR-034 §6).
    * No-ops with a toast if no suitable parent is selected.
    */
   _addCoordinateFrame() {
@@ -751,8 +776,125 @@ export class AppController {
       return
     }
     if (this._scene.selectionMode === 'edit') this.setMode('object')
-    const frame = this._service.createCoordinateFrame(parentId)
-    if (frame) this._switchActiveObject(frame.id, true)
+    this._enterFramePickSubMode(parentId)
+  }
+
+  /**
+   * Enters the frame placement pick sub-mode for the given parent entity.
+   * Shows the parent axes ghost and cursor ghost; updates status bar and mobile toolbar.
+   * @param {string} parentId
+   */
+  _enterFramePickSubMode(parentId) {
+    this._framePlacementState = { active: true, parentId }
+
+    // Show parent axes overlay at geometry ancestor centroid (ADR-034 §7)
+    const ancestorCentroid = this._geometryAncestorCentroid(parentId)
+    if (ancestorCentroid) {
+      if (!this._parentAxesOverlay) {
+        this._parentAxesOverlay = _makeGhostAxesGroup()
+        this._sceneView.scene.add(this._parentAxesOverlay)
+      }
+      this._parentAxesOverlay.position.copy(ancestorCentroid)
+      this._parentAxesOverlay.quaternion.set(0, 0, 0, 1)
+      this._parentAxesOverlay.visible = true
+    }
+
+    // Cursor ghost axes (hidden until hover)
+    if (!this._frameCursorGhost) {
+      this._frameCursorGhost = _makeFrameAxesGroup()
+      this._sceneView.scene.add(this._frameCursorGhost)
+    }
+    this._frameCursorGhost.visible = false
+
+    const mobile = window.innerWidth < 768
+    if (mobile) {
+      this._uiView.setStatus('Tap to place frame')
+      this._updateMobileToolbar()
+    } else {
+      this._uiView.setStatus('Click to place frame — Esc to cancel')
+      this._uiView.setCursor('crosshair')
+    }
+  }
+
+  /**
+   * Cancels pick sub-mode; hides overlays and restores normal state.
+   */
+  _cancelFramePickSubMode() {
+    this._framePlacementState = { active: false, parentId: null }
+    if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
+    if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
+    this._uiView.setCursor('default')
+    this._refreshObjectModeStatus()
+    this._updateMobileToolbar()
+  }
+
+  /**
+   * Confirms frame placement at the given world position.
+   * Creates the CoordinateFrame, records undo, exits sub-mode.
+   * @param {THREE.Vector3} worldPos
+   */
+  _confirmFramePlacement(worldPos) {
+    const { parentId } = this._framePlacementState
+    this._cancelFramePickSubMode()
+
+    const frame = this._service.createCoordinateFrame(parentId, null, worldPos)
+    if (!frame) return
+
+    const cmd = createCreateCoordinateFrameCommand(
+      frame, this._service,
+      () => {
+        // After undo: restore parent selection if parent still exists
+        const parent = this._scene.getObject(parentId)
+        if (parent) this._switchActiveObject(parentId, true)
+        else { this._objSelected = false; this._selectedIds.clear(); this._refreshObjectModeStatus(); this._updateMobileToolbar() }
+      },
+      (id) => this._switchActiveObject(id, true),
+    )
+    this._commandStack.push(cmd)
+    this._switchActiveObject(frame.id, true)
+  }
+
+  /**
+   * Picks a world position on the parent entity's surface from the current mouse/pointer.
+   * Returns null when the ray misses the entity bounding box.
+   * @returns {THREE.Vector3|null}
+   */
+  _pickFramePlacementPoint() {
+    const { parentId } = this._framePlacementState
+    const parent = this._scene.getObject(parentId)
+    if (!parent) return null
+
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    const ray = this._raycaster.ray
+    const pt  = new THREE.Vector3()
+
+    // Try raycasting against the parent's cuboid mesh first (Solid)
+    const cuboid = parent.meshView?.cuboid
+    if (cuboid) {
+      const hits = []
+      this._raycaster.intersectObject(cuboid, true, hits)
+      if (hits.length > 0) return hits[0].point.clone()
+    }
+
+    // Fallback: bounding box intersection
+    if (parent.corners?.length > 0) {
+      const box = new THREE.Box3()
+      for (const c of parent.corners) box.expandByPoint(c)
+      if (ray.intersectBox(box, pt)) return pt.clone()
+    }
+
+    // For CoordinateFrame parent: use a plane at the frame world position
+    if (parent instanceof CoordinateFrame) {
+      const wp = this._service.worldPoseOf(parentId)?.position
+      if (wp) {
+        const camDir = new THREE.Vector3()
+        this._camera.getWorldDirection(camDir)
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, wp)
+        if (ray.intersectPlane(plane, pt)) return pt.clone()
+      }
+    }
+
+    return null
   }
 
   // ── STEP import ─────────────────────────────────────────────────────────────
@@ -1814,6 +1956,12 @@ export class AppController {
       }
     }
 
+    // Provenance check: block delete if frame was declared by a different role (ADR-034 §8.2)
+    if (target instanceof CoordinateFrame && !RoleService.canEdit(target)) {
+      this._uiView.showToast(`This frame was declared by a ${target.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
+      return
+    }
+
     // ADR-033 §4: warn when deleting a CoordinateFrame that is referenced by SpatialLinks
     if (target instanceof CoordinateFrame) {
       const links = this._service.getLinksOf(id)
@@ -2126,6 +2274,8 @@ export class AppController {
         prev.meshView.setObjectSelected(false)
         if (prev instanceof CoordinateFrame) {
           this._hideFrameChain()
+          // Hide parent axes ghost when leaving a CoordinateFrame selection (ADR-034 §7)
+          prev.meshView.hideParentAxesGhost()
         } else {
           this._setChildFramesVisible(this._scene.activeId, false)
         }
@@ -2145,6 +2295,9 @@ export class AppController {
     if (select) {
       if (obj instanceof CoordinateFrame) {
         this._showFrameChain(id)
+        // Show parent axes ghost at geometry ancestor centroid (ADR-034 §7)
+        const ghostPos = this._geometryAncestorCentroid(id)
+        if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
       } else {
         this._setChildFramesVisible(id, true)
       }
@@ -2162,6 +2315,28 @@ export class AppController {
     }
   }
 
+  /**
+   * Walks up the parentId chain from the given CoordinateFrame ID to find the
+   * first non-CoordinateFrame ancestor, then returns its world centroid.
+   * Returns null if no geometry ancestor found or if it has no corners.
+   * @param {string} frameId
+   * @returns {THREE.Vector3|null}
+   */
+  _geometryAncestorCentroid(frameId) {
+    let obj = this._scene.getObject(frameId)
+    while (obj instanceof CoordinateFrame) {
+      obj = this._scene.getObject(obj.parentId)
+    }
+    if (!obj) return null
+    // Use cached world position for CoordinateFrame (never reached here — just corners)
+    const corners = obj.corners
+    if (!corners || corners.length === 0) return null
+    const centroid = new THREE.Vector3()
+    for (const c of corners) centroid.add(c)
+    centroid.divideScalar(corners.length)
+    return centroid
+  }
+
   _setObjectVisible(id, visible) {
     this._service.setObjectVisible(id, visible)
   }
@@ -2169,6 +2344,12 @@ export class AppController {
   _renameObject(id, name) {
     const oldName = this._scene.getObject(id)?.name
     if (!oldName || oldName === name) return
+    // Provenance check for CoordinateFrame (ADR-034 §8.2)
+    const obj = this._scene.getObject(id)
+    if (obj instanceof CoordinateFrame && !RoleService.canEdit(obj)) {
+      this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
+      return
+    }
     this._service.renameObject(id, name)
     if (id === this._scene.activeId) this._updateNPanel()
     // ── Record undo snapshot (ADR-022 Phase 4) ────────────────────────────
@@ -2927,6 +3108,17 @@ export class AppController {
     if (this._measure.active) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelMeasure(), danger: true },
+        { spacer: true },
+        { spacer: true },
+        { spacer: true },
+      ])
+      return
+    }
+
+    // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
+    if (this._framePlacementState.active) {
+      this._uiView.setMobileToolbar([
+        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelFramePickSubMode(), danger: true },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -3729,6 +3921,11 @@ export class AppController {
       this._uiView.showToast('SpatialLink cannot be grabbed', { type: 'warn' })
       return
     }
+    // Provenance check: block grab if frame was declared by a different role (ADR-034 §8.2)
+    if (this._activeObj instanceof CoordinateFrame && !RoleService.canEdit(this._activeObj)) {
+      this._uiView.showToast(`This frame was declared by a ${this._activeObj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
+      return
+    }
     this._grab.active          = true
     this._grab.axis            = null
     this._grab.inputStr        = ''
@@ -3883,6 +4080,11 @@ export class AppController {
     const frame = this._activeObj
     if (!(frame instanceof CoordinateFrame)) return
     if (this._grab.active) return
+    // Provenance check (ADR-034 §8.2)
+    if (!RoleService.canEdit(frame)) {
+      this._uiView.showToast(`This frame was declared by a ${frame.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
+      return
+    }
 
     this._rotate.active    = true
     this._rotate.axis      = null
@@ -4693,6 +4895,37 @@ export class AppController {
       return
     }
 
+    // ── Frame placement pick sub-mode hover (ADR-034 §6) ─────────────────
+    if (this._framePlacementState.active && e.pointerType !== 'touch') {
+      const pt = this._pickFramePlacementPoint()
+      if (pt && this._frameCursorGhost) {
+        this._frameCursorGhost.position.copy(pt)
+        this._frameCursorGhost.quaternion.set(0, 0, 0, 1)
+        this._frameCursorGhost.visible = true
+        // Scale cursor ghost to consistent screen size
+        const d = this._camera.position.distanceTo(pt)
+        if (d > 0 && this._camera.isPerspectiveCamera) {
+          const tanHalfFov = Math.tan((this._camera.fov * Math.PI) / 360)
+          const screenH    = this._sceneView.renderer.domElement.clientHeight || 1
+          const ws = (60 / screenH) * 2 * d * tanHalfFov
+          this._frameCursorGhost.scale.setScalar(ws / _GHOST_AXIS_LEN)
+        }
+      } else if (this._frameCursorGhost) {
+        this._frameCursorGhost.visible = false
+      }
+      // Scale parent axes overlay too
+      if (this._parentAxesOverlay?.visible) {
+        const dp = this._camera.position.distanceTo(this._parentAxesOverlay.position)
+        if (dp > 0 && this._camera.isPerspectiveCamera) {
+          const tanHalfFov = Math.tan((this._camera.fov * Math.PI) / 360)
+          const screenH    = this._sceneView.renderer.domElement.clientHeight || 1
+          const ws = (80 / screenH) * 2 * dp * tanHalfFov
+          this._parentAxesOverlay.scale.setScalar(ws / _GHOST_AXIS_LEN)
+        }
+      }
+      return
+    }
+
     // ── 2D Map Mode: pan or drawing hover ────────────────────────────────
     if (this._mapMode.active) {
       if (this._mapMode.isPanning && this._mapMode.panStart) {
@@ -4983,8 +5216,24 @@ export class AppController {
     this._contextMenuSuppressed = e.button === 2 && (
       this._rotate.active || this._mountPicking.active ||
       this._spatialLinkMode.active || this._grab.active ||
-      this._faceExtrude.active || !!this._mapMode.tool || this._measure.active
+      this._faceExtrude.active || !!this._mapMode.tool || this._measure.active ||
+      this._framePlacementState.active
     )
+
+    // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
+    if (this._framePlacementState.active) {
+      if (e.button === 2) { this._cancelFramePickSubMode(); return }
+      if (e.button === 0 || e.pointerType === 'touch') {
+        const pt = this._pickFramePlacementPoint()
+        if (pt) {
+          this._confirmFramePlacement(pt)
+        } else {
+          this._cancelFramePickSubMode()
+        }
+        return
+      }
+      return
+    }
 
     if (this._rotate.active) {
       if (e.button === 0) { this._confirmRotate(); return }
@@ -5728,6 +5977,12 @@ export class AppController {
       return
     }
 
+    // ── Frame placement pick sub-mode keys (ADR-034 §6) ──────────────────
+    if (this._framePlacementState.active) {
+      if (e.key === 'Escape') { this._cancelFramePickSubMode(); return }
+      return  // consume all other keys during frame pick
+    }
+
     // ── Measure placement keys ─────────────────────────────────────────────
     if (this._measure.active) {
       if (e.key === 'Escape') { this._cancelMeasure(); return }
@@ -6127,4 +6382,51 @@ function _meshBboxCorners(obj) {
     new THREE.Vector3(max.x, max.y, max.z),
     new THREE.Vector3(min.x, max.y, max.z),
   ]
+}
+
+// ── Frame placement helpers (ADR-034 §6, §7) ──────────────────────────────────
+
+const _GHOST_AXIS_LEN = 0.5
+const _GHOST_OPACITY  = 0.35
+const _GHOST_DASH     = 0.08
+const _GHOST_GAP      = 0.05
+
+/** Creates a dimmed dashed axis-lines group (world-aligned — always identity rotation). */
+function _makeGhostAxesGroup() {
+  const group = new THREE.Group()
+  for (const [dx, dy, dz, color] of [
+    [_GHOST_AXIS_LEN, 0, 0, 0xff4444],
+    [0, _GHOST_AXIS_LEN, 0, 0x44cc44],
+    [0, 0, _GHOST_AXIS_LEN, 0x4488ff],
+  ]) {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, dx, dy, dz], 3))
+    const mat = new THREE.LineDashedMaterial({
+      color, dashSize: _GHOST_DASH, gapSize: _GHOST_GAP,
+      depthTest: false, transparent: true, opacity: _GHOST_OPACITY,
+    })
+    const line = new THREE.Line(geo, mat)
+    line.renderOrder = 1
+    line.computeLineDistances()
+    group.add(line)
+  }
+  return group
+}
+
+/** Creates a bright solid axis-lines group to show as cursor ghost during frame pick. */
+function _makeFrameAxesGroup() {
+  const group = new THREE.Group()
+  for (const [dx, dy, dz, color] of [
+    [_GHOST_AXIS_LEN, 0, 0, 0xff4444],
+    [0, _GHOST_AXIS_LEN, 0, 0x44cc44],
+    [0, 0, _GHOST_AXIS_LEN, 0x4488ff],
+  ]) {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, dx, dy, dz], 3))
+    const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.75 })
+    const line = new THREE.Line(geo, mat)
+    line.renderOrder = 2
+    group.add(line)
+  }
+  return group
 }

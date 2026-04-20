@@ -142,10 +142,11 @@ export function serializeScene(scene) {
       })
     } else if (obj instanceof CoordinateFrame) {
       objects.push({
-        type:     'CoordinateFrame',
-        id:       obj.id,
-        name:     obj.name,
-        parentId: obj.parentId,
+        type:       'CoordinateFrame',
+        id:         obj.id,
+        name:       obj.name,
+        parentId:   obj.parentId,
+        declaredBy: obj.declaredBy ?? null,
         translation: {
           x: obj.translation.x,
           y: obj.translation.y,
