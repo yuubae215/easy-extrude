@@ -1,4 +1,4 @@
-# ADR-034 — CoordinateFrame Placement and Pose Policy
+# ADR-034 — CoordinateFrame Placement, Pose, and Provenance Policy
 
 | Field | Value |
 |-------|-------|
@@ -11,10 +11,11 @@
 ## Context
 
 ADR-033 defines *when* to create a CoordinateFrame (only with explicit user intent
-or as a SpatialLink endpoint).  It leaves two questions open:
+or as a SpatialLink endpoint).  It leaves three questions open:
 
-1. **Where** can a frame be placed within or on a parent entity?
+1. **Where** can a frame be placed within or on a parent entity, and how does the UX support that?
 2. **How** should the frame's orientation (pose) be initialised and changed?
+3. **Who** may change a frame that another stakeholder declared, and how is that enforced?
 
 These questions are non-trivial because:
 
@@ -22,6 +23,8 @@ These questions are non-trivial because:
   decision should belong to the integrator, not the tool.
 - The "designer" of a CoordinateFrame is often not the geometry modeller.
   Understanding who decides frame placement is essential to designing the right UX.
+- Allowing anyone to silently change a declared frame violates the spatial contract.
+  Changes must be explicit and role-aware.
 
 ### The stakeholder model
 
@@ -50,6 +53,7 @@ This means:
 - The system must support arbitrary placement (face, interior, edge, vertex)
   because valid integration points span the full 3D interior of an object,
   not just its visible surfaces.
+- A frame declared by one role must not be silently changed by another.
 
 ---
 
@@ -66,34 +70,27 @@ imposed — the valid placement set includes:
 - A point in the interior of a Solid
 - A point at a vertex
 
-The creation UX must support this full space via **Grab** after initial placement.
-
 ### 2. Default initial placement
 
-When "Add Frame" is triggered without additional context, the frame is placed
-at the **centroid of the parent entity's implicit local space**:
+The frame's initial position is determined by the **placement-pick sub-mode**
+(§6 below).  When the user confirms a pick point, the frame is created there.
 
-| Entity type | Centroid definition |
-|-------------|---------------------|
-| `Solid` | Average of `corners` (WorldVector3 array) |
-| `AnnotatedLine` | Midpoint of vertex sequence |
-| `AnnotatedRegion` | Average of ring vertices |
+If no explicit pick is made (e.g. pick is cancelled before confirming), no frame
+is created.  There is no centroid fallback on abort.
+
+| Entity type | Pick surface |
+|-------------|-------------|
+| `Solid` | Any face, edge, or vertex of the cuboid |
+| `AnnotatedLine` | Any point along the line |
+| `AnnotatedRegion` | Any point on the boundary or interior |
 | `AnnotatedPoint` | The single vertex position |
-| `ImportedMesh` | Bounding-box centroid |
-
-This is a *starting point*, not a prescribed final position.  The user is
-expected to Grab and reposition the frame immediately after creation.
-
-> **Note (2026-04-19, Draft):** Centroid is a neutral fallback.  A future UX
-> enhancement could enter a "pick placement" sub-mode on creation (similar to
-> Map Mode's drawing state), allowing the user to click a point directly.
-> This is deferred pending ADR-034 acceptance.
+| `ImportedMesh` | Any point on the surface mesh |
 
 ### 3. Default orientation (pose)
 
-The initial rotation of a CoordinateFrame is the **identity rotation** —
-axes aligned with the parent entity's implicit coordinate system
-(which for root Solids aligns with the world frame).
+The initial rotation of a CoordinateFrame is always the **identity rotation** —
+axes aligned with the world frame — regardless of where on the parent entity
+the pick lands.
 
 **Rationale:** The integrator, not the geometry modeller, decides the
 semantically correct axis orientation for an interface point.  Auto-rotating
@@ -102,9 +99,8 @@ is fundamentally a relationship-derived concept.
 
 Frame orientation is changed **only when**:
 
-- A stakeholder (integrator or pre-declaring modeller) explicitly rotates the
-  frame via the R-key rotation workflow.
-- A future constraint solver (ADR Phase S-3 or later) computes a required
+- A stakeholder explicitly rotates the frame via the R-key rotation workflow.
+- A future constraint solver (Phase S-3 or later) computes a required
   orientation from a mating relationship.
 
 ### 4. Orientation change triggers
@@ -115,26 +111,163 @@ Frame orientation is changed **only when**:
 | Constraint from `mounts`/`fastened` link | System (future solver) | When a geometric link is established |
 | Copied from mating frame | System (future "align frames" UX) | When "snap to mate" is invoked |
 
-### 5. Creation UX (current implementation)
+### 5. Creation UX
 
 1. User triggers "Add Frame" (N-panel button or long-press context menu).
-2. Frame created at parent centroid, identity rotation.
-3. Frame immediately becomes the active object.
-4. User uses **Grab (G)** to reposition, **R key** to rotate if needed.
-5. Frame is named via prompt (mobile) or inline rename (PC).
+2. App enters **placement-pick sub-mode** for the parent entity (§6).
+3. User picks a point → frame created at that position, identity rotation.
+4. Frame immediately becomes the active object; parent axes ghost becomes visible (§7).
+5. User uses **R key** to rotate if needed.
+6. Frame is named via prompt (mobile) or inline rename (PC).
 
-### 6. Implications for geometry modeller workflow
+### 6. Placement pick sub-mode interaction model
+
+The sub-mode is scoped to a single parent entity.  The user cannot pick
+a point on a different entity.
+
+#### PC
+
+| Step | Action | Visual |
+|------|--------|--------|
+| Entry | "Add Frame" button clicked in N-panel | Status bar: "Click to place frame — Esc to cancel" |
+| Hover | Mouse moves over parent entity | Ghost CoordinateFrame follows cursor; snaps to vertex / edge midpoint / face centre (20 px screen-space) |
+| Snap | Snap candidate found | Snap ring indicator shown at candidate point (same ring as Grab snap) |
+| Confirm | Left-click | Frame created at picked position; sub-mode exits |
+| Cancel | Escape or right-click | Sub-mode exits; no frame created |
+
+#### Mobile
+
+| Step | Action | Visual |
+|------|--------|--------|
+| Entry | "Add interface frame ⊞" in long-press context menu | Mobile toolbar: `[Cancel]`; status bar: "Tap to place frame" |
+| Tap | Finger taps parent entity | Frame created at tap position; sub-mode exits |
+| Cancel | Toolbar Cancel button | Sub-mode exits; no frame created |
+
+#### State
+
+```
+framePlacementState = {
+  active:   bool,       // whether sub-mode is engaged
+  parentId: string,     // the entity being placed on
+}
+```
+
+### 7. Parent axes ghost — orientation context overlay
+
+While a CoordinateFrame is the **active selected object**, a transient ghost
+overlay is rendered at the **parent entity's world centroid** to show the
+parent's implicit coordinate axes.
+
+This helps the user understand the identity rotation reference without requiring
+a separate entity.
+
+| Property | Value |
+|----------|-------|
+| Geometry | Three `LineDashedMaterial` lines along parent-local +X, +Y, +Z |
+| Colors | X = #ff4444 (red), Y = #44cc44 (green), Z = #4488ff (blue) |
+| Depth test | Off (`depthTest: false`, `renderOrder: 1`) — always visible through geometry |
+| Opacity | 0.35 |
+| Dash / gap | 0.08 / 0.05 world units (pre-scale) |
+| Scale | Computed from camera distance to **parent centroid** using the same formula as `CoordinateFrameView.updateScale()`; capped at parent bounding radius × 1.5 |
+| Rotation | Matches parent entity's world orientation (identity for root Solids) |
+| Lifecycle | Shown when CoordinateFrame becomes active object; hidden when deselected or active object changes |
+
+Implementation: `CoordinateFrameView.showParentAxesGhost(worldPos, worldQuat)` /
+`hideParentAxesGhost()`, called from `AppController` on selection change.
+
+### 8. Provenance model — role-based frame authorship
+
+#### 8.1 Data model
+
+`CoordinateFrame` gains one new field:
+
+```js
+/** @type {'modeller' | 'integrator' | null} */
+this.declaredBy = null   // null = no provenance restriction
+```
+
+`null` is the default.  Frames created before this ADR is implemented, and
+frames created when no role is active, carry `null` and are always editable.
+
+#### 8.2 Edit validation
+
+When a user attempts to **move (Grab), rotate (R key), rename, or delete** a
+CoordinateFrame, the system checks:
+
+| `frame.declaredBy` | `currentRole` | Result |
+|--------------------|---------------|--------|
+| `null` | any | ✅ allowed |
+| `'modeller'` | `'modeller'` | ✅ allowed |
+| `'integrator'` | `'integrator'` | ✅ allowed |
+| `'modeller'` | `'integrator'` | ❌ blocked |
+| `'integrator'` | `'modeller'` | ❌ blocked |
+| any | `null` (no role set) | ✅ allowed (pre-Auth permissive mode) |
+
+On block: `showToast('This frame was declared by a [role]. Switch to that role to edit it.', { type: 'warn' })`.
+
+**Creating new frames is always allowed**, regardless of role or parent frame provenance.
+New frames receive `declaredBy = currentRole` (null if no role is active).
+
+#### 8.3 Current role storage and console API
+
+Until Auth is integrated, the current role is stored in a module-level variable
+in `RoleService.js` and exposed on the global app handle:
+
+```js
+// RoleService.js
+let _currentRole = null   // 'modeller' | 'integrator' | null
+
+export const RoleService = {
+  getRole: () => _currentRole,
+  setRole: (role) => { _currentRole = role },
+}
+```
+
+```js
+// AppController constructor — after init
+window.__easyExtrude = {
+  setRole: (role) => RoleService.setRole(role),
+  getRole: ()     => RoleService.getRole(),
+}
+```
+
+From the browser DevTools console:
+
+```js
+window.__easyExtrude.setRole('modeller')    // become geometry modeller
+window.__easyExtrude.setRole('integrator')  // become integrator
+window.__easyExtrude.setRole(null)          // clear role (permissive mode)
+window.__easyExtrude.getRole()              // → 'modeller'
+```
+
+#### 8.4 Auth integration (backlog)
+
+When an Auth layer is introduced:
+
+1. `RoleService.setRole()` becomes read-only (set by Auth session).
+2. `window.__easyExtrude.setRole()` is removed or restricted to dev builds.
+3. The validation logic in `AppController` is unchanged — only the source
+   of truth for `currentRole` changes from a local variable to a session token.
+4. `declaredBy` serialisation is forward-compatible: existing `null` fields
+   remain permissive; role-tagged fields enforce provenance immediately.
+
+No migration of existing scene data is required for the Auth transition.
+
+### 9. Implications for geometry modeller workflow
 
 A geometry modeller who anticipates integration may:
 
-- Create frames at *likely* interface points (e.g. mounting face centre)
-  as a courtesy declaration.
+- Enter the sub-mode and pick frames at *likely* interface points
+  (e.g. mounting face centre, shaft end).
 - Name them descriptively: `MountingFace`, `OutputShaft`, `DatumHole_A`.
 - Leave rotation at identity unless the interface direction is well-defined
   by the object's own geometry (e.g. a shaft axis is unambiguous).
+- Set role to `'modeller'` before declaring frames so that integrators
+  cannot silently reposition them.
 
-The integrator retains authority to reposition or re-orient these frames
-without the modeller's involvement.
+The integrator retains authority to **create** frames on any parent entity.
+To reposition a modeller-declared frame, the integrator must switch to the
+`'modeller'` role — which is a deliberate, visible act.
 
 ---
 
@@ -146,30 +279,51 @@ without the modeller's involvement.
   contract the assembly demands.
 - No auto-alignment surprises — the tool does not impose geometric assumptions
   on semantic decisions.
-- Consistent with PHILOSOPHY #2 (Type Is the Capability Contract) and
-  PHILOSOPHY #3 (Separate Pure Computation from Side Effects): frame pose
-  is mutable state owned by the integrator, not derived automatically from
-  geometry.
+- Pick sub-mode eliminates the mandatory post-creation Grab step; the frame
+  lands exactly where the user intended.
+- Parent axes ghost gives orientation context at no cost: no new entity,
+  no persistent state, just a transient rendering aid.
+- Role-based provenance makes ownership explicit: implicit changes to declared
+  frames are impossible.
+- Auth integration is a drop-in: validation logic is role-source-agnostic.
 
 ### Constraints
 
-- The centroid default requires a Grab step for most real placements.
-  A "pick placement on creation" UX would reduce this friction
-  (see §2 note above — deferred).
-- Without a visual indicator of the implicit local axes (the parent entity's
-  coordinate system), users may find identity rotation disorienting.
-  A future ADR should address implicit axis visualisation.
+- Pick sub-mode adds an interactive step before frame creation (vs. instant
+  centroid creation).  This is acceptable because most real placements require
+  a Grab step anyway.
+- Console role-switching is a developer tool, not a user-facing workflow.
+  Until Auth is in place, the system trusts the developer to set the correct role.
+- `declaredBy = null` frames are permissive by design; existing scenes are
+  unaffected until the user actively sets a role.
 
-### Open questions (to resolve before Accepted)
+---
 
-- Should "Add Frame" enter a placement-pick sub-mode instead of defaulting
-  to centroid?  If yes, define the interaction model (escape cancels,
-  click confirms, what is snapped to?).
-- Should the system provide a visual ghost of the parent's implicit local
-  axes when a frame is being placed?  This does not require an entity —
-  it is a transient rendering aid.
-- When the geometry modeller pre-declares frames and the integrator later
-  adjusts them, is there a history / provenance model needed?
+## Implementation phases
+
+### Phase P-1 — Parent axes ghost
+
+`CoordinateFrameView.showParentAxesGhost(worldPos, worldQuat)` /
+`hideParentAxesGhost()`.  Called from `AppController` when active object
+becomes / leaves a CoordinateFrame.  `updateScale()` scales ghost independently
+from parent camera distance.
+
+### Phase P-2 — Placement pick sub-mode
+
+`AppController._framePlacementState`.  N-panel "Add Frame" enters sub-mode
+instead of creating at centroid.  PC: hover ghost + snap ring + click confirm.
+Mobile: tap confirm + toolbar Cancel.
+
+### Phase P-3 — Provenance model + console API
+
+`CoordinateFrame.declaredBy` field.  `RoleService.js`.  Edit validation in
+`AppController` grab / rotate / rename / delete paths.  `window.__easyExtrude`
+console API.  Serialisation: `declaredBy` included in scene JSON.
+
+### Phase P-4 — Auth integration *(backlog)*
+
+Replace `RoleService._currentRole` with session-derived role from Auth layer.
+Remove or gate `window.__easyExtrude.setRole()`.  No scene data migration needed.
 
 ---
 
@@ -178,6 +332,7 @@ without the modeller's involvement.
 - ADR-033 — CoordinateFrame Phase C: Interface Contract Model (creation trigger policy)
 - ADR-032 — Geometric Host Binding (mounts/fastened links that will consume frames)
 - ADR-030 — SpatialLink (semantic links that use frames as endpoints)
+- ADR-031 — Map Mode Interaction Model (placement-pick sub-mode pattern reference)
 - ADR-018 — CoordinateFrame Phase A (original entity design)
 - ADR-019 — CoordinateFrame Phase B (nested hierarchy, rotation editing)
 - PHILOSOPHY #2 — Type Is the Capability Contract
