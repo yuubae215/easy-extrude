@@ -155,42 +155,64 @@ framePlacementState = {
 ### 7. Parent axes ghost — orientation context overlay
 
 The parent entity's implicit coordinate axes are rendered as a transient ghost
-overlay at the **parent entity's world centroid** in two situations:
+overlay in two situations (see §5 for lifecycle):
 
 1. **Placement pick sub-mode is active** — the user needs the orientation reference
    to decide *where* to place the frame and to understand what X/Y/Z will mean
    when they later edit the N-panel location fields.
-2. **A CoordinateFrame is the active selected object** — the user needs the same
-   reference when repositioning via Grab or setting translation values in the N-panel.
+2. **A CoordinateFrame is the active selected object** — the same reference is
+   needed when repositioning via Grab or setting translation values in the N-panel.
 
-Without this overlay, a user entering `X = 0.5` in the N-panel has no visual
-anchor for which direction X points.  The ghost makes that explicit.
+#### What the ghost shows
+
+The ghost always renders **world-aligned axes** (identity rotation — no
+parent-local tilt), positioned at the **geometry ancestor's centroid**.
+
+"Geometry ancestor" is the first non-CoordinateFrame entity found by walking
+up the parentId chain from the immediate parent.
+
+**Rationale:** `CoordinateFrame.translation` is a *world-space* offset from
+the parent centroid (see `SceneService._updateWorldPoses()`:
+`worldPos = parentWorldPos + frame.translation`).  This means N-panel
+`X = 0.5` always moves the frame 0.5 units in the **world X direction**,
+regardless of how any intermediate CoordinateFrame is rotated.  Showing
+the geometry ancestor's world-aligned axes makes the ghost consistent with
+the actual translation semantics.
+
+Showing an intermediate CoordinateFrame's rotated local axes would be
+misleading: the user would expect `X = 0.5` to move along the displayed X
+axis, but the code moves along world X.
+
+> **Note (2026-04-20, Draft — provisional):** This decision was reached by
+> reasoning from the `translation`-is-world-space invariant.  It should be
+> validated against real usage in Phase P-1 and revisited if the UX does not
+> match user expectations.
 
 | Property | Value |
 |----------|-------|
-| Geometry | Three `LineDashedMaterial` lines along parent-local +X, +Y, +Z |
+| Geometry | Three `LineDashedMaterial` lines along world +X, +Y, +Z |
 | Colors | X = #ff4444 (red), Y = #44cc44 (green), Z = #4488ff (blue) |
+| Position | World centroid of the geometry ancestor |
+| Rotation | Identity (world-aligned always) |
 | Depth test | Off (`depthTest: false`, `renderOrder: 1`) — always visible through geometry |
 | Opacity | 0.35 |
 | Dash / gap | 0.08 / 0.05 world units (pre-scale) |
-| Scale | Computed from camera distance to **parent centroid** using the same formula as `CoordinateFrameView.updateScale()`; capped at parent bounding radius × 1.5 |
-| Rotation | Matches parent entity's world orientation (identity for root Solids) |
+| Scale | Computed from camera distance to geometry ancestor centroid using the same formula as `CoordinateFrameView.updateScale()`; capped at geometry ancestor bounding radius × 1.5 |
 
 #### Lifecycle
 
 | Event | Ghost state |
 |-------|-------------|
-| Pick sub-mode entered (`_framePlacementState.active = true`) | Shown at parent entity centroid |
+| Pick sub-mode entered (`_framePlacementState.active = true`) | Shown at geometry ancestor centroid, world-aligned |
 | Pick confirmed → frame created and selected | Remains visible (now in "frame selected" mode) |
 | Pick cancelled | Hidden |
-| CoordinateFrame becomes active selected object | Shown at parent entity centroid |
+| CoordinateFrame becomes active selected object | Shown at geometry ancestor centroid, world-aligned |
 | Active object changes away from CoordinateFrame | Hidden |
 
-Implementation: `CoordinateFrameView.showParentAxesGhost(worldPos, worldQuat)` /
-`hideParentAxesGhost()`.  During pick sub-mode the ghost is rendered independently
-of any `CoordinateFrameView` instance (no frame exists yet); the overlay belongs
-to the parent entity's view or is managed directly by `AppController` as a
-scene-level transient object.
+Implementation: `CoordinateFrameView.showParentAxesGhost(worldPos)` /
+`hideParentAxesGhost()` (no quaternion argument needed — always identity).
+During pick sub-mode, `AppController._parentAxesOverlay` (a scene-level
+Three.js Group) is used directly since no `CoordinateFrameView` exists yet.
 
 ### 8. Provenance model — role-based frame authorship
 
