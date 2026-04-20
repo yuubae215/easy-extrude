@@ -69,6 +69,7 @@ Detail: `docs/code_contracts/architecture.md`
 | TC Gizmo Force-Update After Proxy Repositioning | Call `_tc.getHelper().updateMatrixWorld()` after `tc.attach()` in `_attachMobileTransform()`; call `_service._updateWorldPoses()` before `worldPoseOf()` in `_syncMobileTransformProxy()`; call `_syncMobileTransformProxy()` from `_toggleTcMode()` |
 | TC Gizmo Hit Guard Before Object Selection | In `_onPointerDown`, raycast against `_tc.getHelper()` before `_hitAnyObject()` when TC is attached; return early if hit — otherwise the ray pierces TC handles to hit objects behind them, switching active object and gizmo mode unintentionally |
 | TC Mode Must Match _tcMode | `_attachMobileTransform()` must set `_tcMode = 'translate'` in the non-CoordinateFrame branch alongside `tc.setMode('translate')`; `_tcMode` must always reflect the current TC mode for all code paths |
+| CoordinateFrame Provenance (ADR-034) | Before Grab / R-key / rename / delete of a CoordinateFrame, call `RoleService.canEdit(frame)`; mismatch → `showToast` and return. `frame.declaredBy` is set to `RoleService.getRole()` at creation time. `window.__easyExtrude.setRole()` / `.getRole()` are the console API entry points |
 
 ---
 

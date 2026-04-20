@@ -42,6 +42,11 @@ const OPACITY_DIMMED = 0.30   // context frames (visible but de-emphasised)
 const OPACITY_LINE_FULL   = 0.80  // connection line — full
 const OPACITY_LINE_DIMMED = 0.28  // connection line — dimmed
 
+// Parent axes ghost constants (ADR-034 §7)
+const GHOST_OPACITY   = 0.35
+const GHOST_DASH_SIZE = 0.08
+const GHOST_GAP_SIZE  = 0.05
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function makeAxisLine(x, y, z, color) {
@@ -49,6 +54,23 @@ function makeAxisLine(x, y, z, color) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, x, y, z], 3))
   const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
   return new THREE.Line(geo, mat)
+}
+
+function makeGhostAxisLine(x, y, z, color) {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, x, y, z], 3))
+  const mat = new THREE.LineDashedMaterial({
+    color,
+    dashSize:    GHOST_DASH_SIZE,
+    gapSize:     GHOST_GAP_SIZE,
+    depthTest:   false,
+    transparent: true,
+    opacity:     GHOST_OPACITY,
+  })
+  const line = new THREE.Line(geo, mat)
+  line.renderOrder = 1
+  line.computeLineDistances()
+  return line
 }
 
 // ── Class ──────────────────────────────────────────────────────────────────
@@ -85,6 +107,14 @@ export class CoordinateFrameView {
     this._connectionLine = null
 
     scene.add(this._group)
+
+    /**
+     * Lazily created parent axes ghost group (ADR-034 §7).
+     * Shows world-aligned dashed axes at the geometry ancestor centroid.
+     * Created on first showParentAxesGhost() call; reused on subsequent calls.
+     * @type {THREE.Group|null}
+     */
+    this._ghostGroup = null
   }
 
   // ── Required interface ─────────────────────────────────────────────────────
@@ -163,6 +193,34 @@ export class CoordinateFrameView {
     this._originSphere.scale.setScalar(selected ? 1.6 : 1.0)
   }
 
+  // ── Parent axes ghost (ADR-034 §7) ────────────────────────────────────────
+
+  /**
+   * Shows world-aligned dashed axes at the geometry ancestor centroid.
+   * Gives orientation context when a CoordinateFrame is the active selection.
+   * Lazily creates the ghost group on first call; reuses it on subsequent calls.
+   * @param {THREE.Vector3} worldPos  World position of the geometry ancestor centroid.
+   */
+  showParentAxesGhost(worldPos) {
+    if (!this._ghostGroup) {
+      this._ghostGroup = new THREE.Group()
+      this._ghostGroup.add(
+        makeGhostAxisLine(AXIS_LENGTH, 0, 0, 0xff4444),
+        makeGhostAxisLine(0, AXIS_LENGTH, 0, 0x44cc44),
+        makeGhostAxisLine(0, 0, AXIS_LENGTH, 0x4488ff),
+      )
+      this._scene.add(this._ghostGroup)
+    }
+    this._ghostGroup.position.copy(worldPos)
+    this._ghostGroup.quaternion.set(0, 0, 0, 1)  // identity — world-aligned always
+    this._ghostGroup.visible = true
+  }
+
+  /** Hides the parent axes ghost without disposing it. */
+  hideParentAxesGhost() {
+    if (this._ghostGroup) this._ghostGroup.visible = false
+  }
+
   // ── Parent-child connection line ───────────────────────────────────────────
 
   /**
@@ -224,6 +282,14 @@ export class CoordinateFrameView {
       this._connectionLine.material.dispose()
       this._connectionLine = null
     }
+    if (this._ghostGroup) {
+      scene.remove(this._ghostGroup)
+      this._ghostGroup.traverse(obj => {
+        if (obj.geometry) obj.geometry.dispose()
+        if (obj.material) obj.material.dispose()
+      })
+      this._ghostGroup = null
+    }
   }
 
   /**
@@ -238,14 +304,24 @@ export class CoordinateFrameView {
    *   grows larger than the parent when the user zooms far out.
    */
   updateScale(camera, renderer, maxWorldSize = Infinity) {
-    if (!this._group.visible || !camera.isPerspectiveCamera) return
+    if (!camera.isPerspectiveCamera) return
     const tanHalfFov = Math.tan((camera.fov * Math.PI) / 360)
     const screenH    = renderer.domElement.clientHeight || 1
     const targetPx   = 80   // axis length in screen pixels
-    const d          = camera.position.distanceTo(this._group.position)
-    let worldSize    = (targetPx / screenH) * 2 * d * tanHalfFov
-    if (maxWorldSize < Infinity) worldSize = Math.min(worldSize, maxWorldSize)
-    this._group.scale.setScalar(worldSize / AXIS_LENGTH)
+
+    if (this._group.visible) {
+      const d       = camera.position.distanceTo(this._group.position)
+      let worldSize = (targetPx / screenH) * 2 * d * tanHalfFov
+      if (maxWorldSize < Infinity) worldSize = Math.min(worldSize, maxWorldSize)
+      this._group.scale.setScalar(worldSize / AXIS_LENGTH)
+    }
+
+    // Scale ghost independently from camera distance to ghost position (ADR-034 §7)
+    if (this._ghostGroup?.visible) {
+      const dg      = camera.position.distanceTo(this._ghostGroup.position)
+      const wsGhost = (targetPx / screenH) * 2 * dg * tanHalfFov
+      this._ghostGroup.scale.setScalar(wsGhost / AXIS_LENGTH)
+    }
   }
 
   // ── No-op interface (MENTAL_MODEL §1) ────────────────────────────────────

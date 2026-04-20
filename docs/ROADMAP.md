@@ -201,7 +201,7 @@ parent axes ghost shown while selected; role-based provenance with console API u
 
 Full design rationale in `docs/adr/ADR-034-coordinate-frame-placement-policy.md`.
 
-### Phase P-1 — Parent axes ghost
+### Phase P-1 — Parent axes ghost ✅ (2026-04-20)
 
 | Task | Details | ADR |
 |------|---------|-----|
@@ -212,23 +212,23 @@ Full design rationale in `docs/adr/ADR-034-coordinate-frame-placement-policy.md`
 | `updateScale()` ghost scaling | Ghost scaled independently from camera distance to parent centroid | ADR-034 §7 |
 | `dispose()` cleanup | `scene.remove` + traverse dispose for ghost group | ADR-034 §7 |
 
-### Phase P-2 — Placement pick sub-mode
+### Phase P-2 — Placement pick sub-mode ✅ (2026-04-20)
 
 | Task | Details | ADR |
 |------|---------|-----|
 | `AppController._framePlacementState` | `{ active, parentId }` sub-mode state | ADR-034 §6 |
-| PC: hover ghost + snap ring + click confirm | Mouse over parent entity → ghost frame follows cursor; vertex/edge midpoint/face centre snap (20 px); left-click confirms; Escape cancels | ADR-034 §6 |
+| PC: hover ghost + snap ring + click confirm | Mouse over parent entity → ghost frame follows cursor; left-click confirms; Escape/right-click cancels | ADR-034 §6 |
 | Mobile: tap confirm + toolbar Cancel | Single tap on parent entity → frame placed; Cancel button aborts | ADR-034 §6 |
 | N-panel "Add Frame" enters sub-mode | No centroid fallback; abort = no frame created | ADR-034 §5, §6 |
 | Status bar / toolbar updates during pick | PC: "Click to place frame — Esc to cancel"; Mobile: "Tap to place frame" | ADR-034 §6 |
 
-### Phase P-3 — Provenance model + console API
+### Phase P-3 — Provenance model + console API ✅ (2026-04-20)
 
 | Task | Details | ADR |
 |------|---------|-----|
 | `CoordinateFrame.declaredBy` field | `'modeller' \| 'integrator' \| null`; `null` = no restriction | ADR-034 §8.1 |
-| `RoleService.js` | Module-level `_currentRole`; `getRole()` / `setRole()` | ADR-034 §8.3 |
-| Edit validation in `AppController` | Grab / R-key / rename / delete check `declaredBy` vs `currentRole`; mismatch → toast | ADR-034 §8.2 |
+| `RoleService.js` | Module-level `_currentRole`; `getRole()` / `setRole()` / `canEdit(frame)` | ADR-034 §8.3 |
+| Edit validation in `AppController` | Grab / R-key / rename / delete check `declaredBy` via `RoleService.canEdit()`; mismatch → toast | ADR-034 §8.2 |
 | `window.__easyExtrude` console API | `setRole()` / `getRole()` exposed in `AppController` constructor | ADR-034 §8.3 |
 | Serialisation: `declaredBy` in scene JSON | Included in `SceneSerializer`; `null` on missing key (backward-compatible) | ADR-034 §8.4 |
 
@@ -507,7 +507,7 @@ Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale 
 
 | Feature | Completion | ADR / Notes |
 |---------|------------|-------------|
-| CoordinateFrame Placement Policy (ADR-034) — ADR accepted; Phases P-1 to P-4 designed | 2026-04-19 | ADR-034 |
+| CoordinateFrame Placement Policy (ADR-034) — Phases P-1 to P-3: ghost overlay, pick sub-mode, provenance + console API | 2026-04-20 | ADR-034 |
 | Spatial Node Editor Phase S-2 — SpatialLink editing in Node Editor (port drag, edge delete, shared command) | 2026-04-16 | ADR-030, ADR-022 |
 | Spatial Node Editor Phase S-1 — unified scene graph + layer filter toggles in Node Editor | 2026-04-16 | ADR-016, ADR-028, ADR-030 |
 | Geometric Host Binding (ADR-032) — Phases H-1 to H-6: linkType 拡張・座標変換・Grab 拘束・Mobile/PC 作成 UI | 2026-04-15 | ADR-032 |

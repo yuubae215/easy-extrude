@@ -96,6 +96,15 @@ export class CoordinateFrame {
      * @type {Quaternion}
      */
     this.rotation = new Quaternion()
+
+    /**
+     * Provenance role that declared this frame (ADR-034 §8.1).
+     * null  = no restriction — always editable.
+     * 'modeller'   = only the geometry modeller role may edit.
+     * 'integrator' = only the integrator role may edit.
+     * @type {'modeller' | 'integrator' | null}
+     */
+    this.declaredBy = null
   }
 
   /** @param {string} name */
