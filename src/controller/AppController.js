@@ -6240,11 +6240,11 @@ export class AppController {
               const r = centroid.distanceTo(c)
               if (r > maxR) maxR = r
             }
-            if (maxR > 0) maxWS = maxR * 1.5
+            if (maxR > 0) maxWS = maxR * 0.75
           }
           if (maxWS === Infinity) {
             // sceneRadius=0 means empty scene; use 1.0 so the CF is still visible
-            maxWS = sceneRadius > 0 ? sceneRadius * 0.3 : 1.0
+            maxWS = sceneRadius > 0 ? sceneRadius * 0.15 : 1.0
           }
           obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
         }
