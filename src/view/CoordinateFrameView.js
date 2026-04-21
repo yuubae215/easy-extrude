@@ -34,6 +34,7 @@
 import * as THREE from 'three'
 
 const AXIS_LENGTH   = 0.5
+const AXIS_RADIUS   = 0.015   // ~3% of axis length; matches TC shaft visual weight
 const ORIGIN_RADIUS = 0.04
 
 // Opacity levels for chain-visibility modes
@@ -49,11 +50,14 @@ const GHOST_GAP_SIZE  = 0.05
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeAxisLine(x, y, z, color) {
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, x, y, z], 3))
-  const mat = new THREE.LineBasicMaterial({ color, depthTest: true })
-  return new THREE.Line(geo, mat)
+function makeAxisMesh(direction, color) {
+  const geo = new THREE.CylinderGeometry(AXIS_RADIUS, AXIS_RADIUS, AXIS_LENGTH, 6, 1, false)
+  geo.translate(0, AXIS_LENGTH / 2, 0)   // base at origin, tip at +Y
+  const mat = new THREE.MeshBasicMaterial({ color, depthTest: true })
+  const mesh = new THREE.Mesh(geo, mat)
+  if      (direction === 'x') mesh.rotation.z = -Math.PI / 2
+  else if (direction === 'z') mesh.rotation.x =  Math.PI / 2
+  return mesh
 }
 
 function makeGhostAxisLine(x, y, z, color) {
@@ -85,10 +89,10 @@ export class CoordinateFrameView {
     const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
     this._originSphere = new THREE.Mesh(sphereGeo, sphereMat)
 
-    // ── Axis lines (thin RGB, no arrowheads or labels) ─────────────────────
-    this._lineX = makeAxisLine(AXIS_LENGTH, 0, 0, 0xff4444)
-    this._lineY = makeAxisLine(0, AXIS_LENGTH, 0, 0x44cc44)
-    this._lineZ = makeAxisLine(0, 0, AXIS_LENGTH, 0x4488ff)
+    // ── Axis cylinders (RGB, TC-like shaft thickness) ──────────────────────
+    this._lineX = makeAxisMesh('x', 0xff4444)
+    this._lineY = makeAxisMesh('y', 0x44cc44)
+    this._lineZ = makeAxisMesh('z', 0x4488ff)
 
     // ── Group ──────────────────────────────────────────────────────────────
     this._group = new THREE.Group()
@@ -307,7 +311,7 @@ export class CoordinateFrameView {
     if (!camera.isPerspectiveCamera) return
     const tanHalfFov = Math.tan((camera.fov * Math.PI) / 360)
     const screenH    = renderer.domElement.clientHeight || 1
-    const targetPx   = 80   // axis length in screen pixels
+    const targetPx   = 50   // axis length in screen pixels
 
     if (this._group.visible) {
       const d       = camera.position.distanceTo(this._group.position)
