@@ -149,6 +149,24 @@ const centroid = getCentroid(parent.corners)   // TypeError or wrong result
 - **Serialisation**: `declaredBy` is included in scene JSON (backward-compatible: missing key → `null` on load).
 - **Frame creation**: `createCoordinateFrame()` sets `frame.declaredBy = RoleService.getRole()` — null when no role is active.
 
+## CoordinateFrame Scale Cap — maxWorldSize Must Always Be Finite
+
+- **Principle**: CFs use constant-screen-size scaling (target: 80 px). Without an upper bound, the world-space axis length grows linearly with camera distance, making independent CFs visually dwarf all scene objects when the user zooms out.
+- **Concrete Rule**: The animation loop in `AppController.start()` must **always** pass a finite `maxWorldSize` to `CoordinateFrameView.updateScale()`. When a CF has a solid geometry parent, `maxWS = parentBoundingRadius × 1.5`. When no solid parent exists, fall back to `sceneRadius × 0.3` (where `sceneRadius` = max `c.length()` across all `corners` in the scene), with a floor of `1.0` for empty scenes.
+
+```js
+// ✓ Correct — always finite
+if (maxWS === Infinity) {
+  maxWS = sceneRadius > 0 ? sceneRadius * 0.3 : 1.0
+}
+obj.meshView.updateScale(camera, renderer, maxWS)
+
+// ✗ Wrong — passes Infinity for independent CFs; axes balloon to huge size at far zoom
+obj.meshView.updateScale(camera, renderer, Infinity)
+```
+
+- `sceneRadius` is computed once per frame before the object iteration loop (not per-CF), from all objects whose `corners?.length > 0`.
+
 ## ~~Auto Origin Frame on 3D Object Creation~~ — Superseded by ADR-033
 
 > **This contract is superseded by ADR-033 (CoordinateFrame Phase C).**

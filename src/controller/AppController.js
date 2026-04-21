@@ -6209,6 +6209,17 @@ export class AppController {
       // Keep MeasureLine / AnnotatedPoint HTML labels positioned over the correct screen pixel,
       // drive per-element animations, and keep CoordinateFrame axes at constant screen size.
       const t = performance.now() * 0.001  // elapsed seconds for animation clock
+      // Compute scene bounding radius once per frame: used as a fallback cap for
+      // CFs that have no solid parent (otherwise they grow unboundedly when zooming out).
+      let sceneRadius = 0
+      for (const o of this._scene.objects.values()) {
+        if (o.corners?.length > 0) {
+          for (const c of o.corners) {
+            const r = c.length()
+            if (r > sceneRadius) sceneRadius = r
+          }
+        }
+      }
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
         if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
@@ -6218,8 +6229,8 @@ export class AppController {
           // Cap the frame's world size so it never visually dwarfs its parent.
           // Compute the parent object's bounding radius (max distance from centroid
           // to any corner) and allow the frame axes to grow to at most 1.5× that.
-          // Falls back to Infinity (uncapped) when the parent has no geometry corners
-          // (e.g. another CoordinateFrame parent).
+          // When no solid parent exists, fall back to a scene-wide cap (30% of the
+          // furthest corner from origin) so independent CFs also stay proportional.
           let maxWS = Infinity
           const frameParent = this._scene.getObject(obj.parentId)
           if (frameParent && !(frameParent instanceof CoordinateFrame) && frameParent.corners?.length > 0) {
@@ -6230,6 +6241,10 @@ export class AppController {
               if (r > maxR) maxR = r
             }
             if (maxR > 0) maxWS = maxR * 1.5
+          }
+          if (maxWS === Infinity) {
+            // sceneRadius=0 means empty scene; use 1.0 so the CF is still visible
+            maxWS = sceneRadius > 0 ? sceneRadius * 0.3 : 1.0
           }
           obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
         }
