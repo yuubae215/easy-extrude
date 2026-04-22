@@ -6232,11 +6232,17 @@ export class AppController {
           // When no solid parent exists, fall back to a scene-wide cap (30% of the
           // furthest corner from origin) so independent CFs also stay proportional.
           let maxWS = Infinity
-          const frameParent = this._scene.getObject(obj.parentId)
-          if (frameParent && !(frameParent instanceof CoordinateFrame) && frameParent.corners?.length > 0) {
-            const centroid = getCentroid(frameParent.corners)
+          // Walk up the parent chain past any CoordinateFrame ancestors to find
+          // the nearest Solid (or other geometry entity with corners). This ensures
+          // grandchild CFs use the same size reference as direct-child CFs.
+          let solidAncestor = this._scene.getObject(obj.parentId)
+          while (solidAncestor instanceof CoordinateFrame) {
+            solidAncestor = this._scene.getObject(solidAncestor.parentId)
+          }
+          if (solidAncestor && solidAncestor.corners?.length > 0) {
+            const centroid = getCentroid(solidAncestor.corners)
             let maxR = 0
-            for (const c of frameParent.corners) {
+            for (const c of solidAncestor.corners) {
               const r = centroid.distanceTo(c)
               if (r > maxR) maxR = r
             }
