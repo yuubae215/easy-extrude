@@ -362,3 +362,27 @@ if (this._tc?.object) {
 - **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.
 - **Concrete Rule**: Any view that projects 3D positions to screen coordinates for HTML overlay positioning (e.g. `AnnotatedPointView.updateLabelPosition()`) must use the ACTIVE camera, not a stale stored reference. Call sites in the animation loop must pass `this._sceneView.activeCamera` explicitly: `obj.meshView.updateLabelPosition(this._sceneView.activeCamera)`. The same applies to `MeasureLineView` if it is ever used alongside Map mode's orthographic camera.
 - **Root bug**: `AnnotatedPointView` stored `this._camera` (perspective camera) at construction time. In Map mode the ortho camera was used for rendering, but labels were projected with the perspective camera → labels appeared at wrong screen positions relative to the rendered 3D markers.
+
+## CoordinateFrame Tap Selection Requires _hitAnyCoordinateFrame Fallback
+
+- **Principle**: `_hitAnyObject()` filters candidates by `o.meshView.cuboid?.visible`. `CoordinateFrame.cuboid` returns `null`, so frames are never hit by this method. `_hitAnyAnnotation()` also skips frames. Without a dedicated fallback, tapping a visible frame axis on mobile never calls `_switchActiveObject()` and TC never appears.
+- **Concrete Rule**: `_onPointerDown` must call `_hitAnyCoordinateFrame()` as a third fallback after `_hitAnyAnnotation()`. `CoordinateFrameView` exposes a `get group()` getter (returns `this._group`); `_hitAnyCoordinateFrame()` iterates over all `CoordinateFrame` entities, skips those with `!obj.meshView?.group?.visible`, and raycasts `intersectObject(group, true)` to find the nearest hit. Only frames that are currently shown (via `showFull()` or `showDimmed()`) are considered.
+
+## _promptAddFrame Must Select Frame After Creation
+
+- **Principle**: `CoordinateFrameView._group.visible` defaults to `false`. A frame only becomes visible when `_showFrameChain()` or `_setChildFramesVisible()` calls `showFull()` / `showDimmed()`. These are only called from `_switchActiveObject()`.
+- **Concrete Rule**: After `this._commandStack.push(...)` in `_promptAddFrame()`, always call `this._switchActiveObject(frame.id, true)`. Without this, the frame is soft-created in the model and shown in the outliner (via `objectAdded` event), but remains permanently invisible in the 3D viewport and TC is never attached. Match the pattern from `_confirmFramePlacement()` including proper undo/redo callbacks: undo → restore parent selection; redo → `_switchActiveObject(id, true)`.
+
+```js
+// _promptAddFrame() — correct pattern
+this._commandStack.push(createCreateCoordinateFrameCommand(frame, this._service,
+  () => {
+    const parent = this._scene.getObject(parentId)
+    if (parent) this._switchActiveObject(parentId, true)
+    else { this._objSelected = false; this._selectedIds.clear(); ... }
+    this._updateNPanel()
+  },
+  (id) => { this._switchActiveObject(id, true); this._updateNPanel() },
+))
+this._switchActiveObject(frame.id, true)  // ← make frame visible + attach TC
+```

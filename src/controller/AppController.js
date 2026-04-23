@@ -2808,6 +2808,33 @@ export class AppController {
     return nearestObj ? { obj: nearestObj } : null
   }
 
+  /**
+   * Hits any visible CoordinateFrame by raycasting against its axis meshes and
+   * origin sphere.  Called as a third fallback in _onPointerDown when both
+   * _hitAnyObject() and _hitAnyAnnotation() miss (e.g. mobile tap on a frame axis).
+   * Only frames whose group.visible is true are considered — hidden frames are
+   * not tappable.
+   * @returns {{ obj: object }|null}
+   */
+  _hitAnyCoordinateFrame() {
+    this._raycaster.setFromCamera(this._mouse, this._camera)
+    let nearestDist = Infinity
+    let nearestObj  = null
+
+    for (const obj of this._scene.objects.values()) {
+      if (!(obj instanceof CoordinateFrame)) continue
+      if (!obj.meshView?.group?.visible) continue
+
+      const hits = this._raycaster.intersectObject(obj.meshView.group, true)
+      if (hits.length > 0 && hits[0].distance < nearestDist) {
+        nearestDist = hits[0].distance
+        nearestObj  = obj
+      }
+    }
+
+    return nearestObj ? { obj: nearestObj } : null
+  }
+
   /** Hits only the active object's mesh */
   _hitActiveSolid() {
     if (!this._activeObj) return null
@@ -3062,10 +3089,17 @@ export class AppController {
       if (!frame) return
       this._commandStack.push(createCreateCoordinateFrameCommand(
         frame, this._service,
-        () => { this._updateNPanel() },
-        () => { this._updateNPanel() },
+        () => {
+          // After undo: restore parent selection if parent still exists
+          const parent = this._scene.getObject(parentId)
+          if (parent) this._switchActiveObject(parentId, true)
+          else { this._objSelected = false; this._selectedIds.clear(); this._refreshObjectModeStatus(); this._updateMobileToolbar() }
+          this._updateNPanel()
+        },
+        (id) => { this._switchActiveObject(id, true); this._updateNPanel() },
       ))
       this._uiView.showToast(`Frame "${frame.name}" added`)
+      this._switchActiveObject(frame.id, true)
       this._updateNPanel()
     }, { title: 'Add Interface Frame' })
   }
@@ -5486,9 +5520,10 @@ export class AppController {
         if (tcHits.length > 0) return
       }
 
-      // Primary cuboid hit; fall back to annotation entity bounding-box hit.
+      // Primary cuboid hit; fall back to annotation bounding-box; last fallback is CF axis mesh.
       let result = this._hitAnyObject()
       if (!result) result = this._hitAnyAnnotation()
+      if (!result) result = this._hitAnyCoordinateFrame()
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
