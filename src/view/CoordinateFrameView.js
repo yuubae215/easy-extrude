@@ -123,8 +123,11 @@ export class CoordinateFrameView {
 
   // ── Required interface ─────────────────────────────────────────────────────
 
-  /** No raycasting surface for CoordinateFrames. */
+  /** No raycasting surface via cuboid; use group for tap selection instead. */
   get cuboid() { return null }
+
+  /** Exposes the Three.js Group for mobile tap raycasting (_hitAnyCoordinateFrame). */
+  get group() { return this._group }
 
   /** @param {THREE.Vector3} position */
   updatePosition(position) {
