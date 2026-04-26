@@ -99,6 +99,15 @@ export class SceneService extends EventEmitter {
      * @type {Map<string, { sourceId: string, localPositions: import('three').Vector3[] }>}
      */
     this._mountLocalPositions = new Map()
+    /**
+     * Relative transforms for fastened CoordinateFrame pairs (ADR-032 §2, 'fastened').
+     * Keyed by SpatialLink.id (fastened link).
+     * Populated by fastenFrame(); cleared by unfastenFrame() / detachSpatialLink().
+     * _updateFastenedFrames() reads this every frame and drives the source CF's
+     * world pose to match targetPose × relativeTransform.
+     * @type {Map<string, { sourceId: string, relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion }>}
+     */
+    this._fastenedTransforms = new Map()
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -659,6 +668,7 @@ export class SceneService extends EventEmitter {
     this._linkViews.clear()
     this._worldPoseCache.clear()
     this._mountLocalPositions.clear()
+    this._fastenedTransforms.clear()
     this._model = new SceneModel()
   }
 
@@ -752,6 +762,10 @@ export class SceneService extends EventEmitter {
     // Reposition mounted Annotated* entities (ADR-032 Phase H-2).
     // Must run after all CoordinateFrame poses are resolved.
     this._updateMountedAnnotations()
+
+    // Drive fastened CoordinateFrame pairs (ADR-032 §2, 'fastened').
+    // Must run after all CoordinateFrame poses are resolved.
+    this._updateFastenedFrames()
 
     // Reposition SpatialLink dashed lines between entity world centroids (ADR-030).
     this._updateSpatialLinkViews()
@@ -923,6 +937,158 @@ export class SceneService extends EventEmitter {
       v.position.clone().sub(pose.position).applyQuaternion(invQ),
     )
     this._mountLocalPositions.set(mountLink.id, { sourceId, localPositions })
+  }
+
+  // ── Geometric Host Binding — fastened constraint (ADR-032 §2, 'fastened') ──
+
+  /**
+   * Drives each fastened CoordinateFrame's world pose every animation frame.
+   * Called after all parentId-chain poses are resolved in _updateWorldPoses().
+   *
+   * For each fastened link (source CF → target CF):
+   *   sourceWorldPos  = targetPos + targetQuat.apply(relativeOffset)
+   *   sourceWorldQuat = targetQuat × relativeQuat
+   *
+   * The derived world pose is written back to source.translation and source.rotation
+   * so the existing cache / view update path remains correct.
+   *
+   * Limitation: if the source CF has CoordinateFrame children in the parentId tree,
+   * those children's poses were already computed with the pre-constraint values.
+   * Single-level fastening (no CF-of-CF chains) is the expected use case.
+   */
+  _updateFastenedFrames() {
+    for (const [linkId, { sourceId, relativeOffset, relativeQuat }] of this._fastenedTransforms) {
+      const link   = this._model.getLink(linkId)
+      const source = this._model.getObject(sourceId)
+      if (!link || !(source instanceof CoordinateFrame)) continue
+
+      const targetPose = this._worldPoseCache.get(link.targetId)
+      if (!targetPose) continue
+
+      // Compute desired world pose
+      const worldPos  = relativeOffset.clone().applyQuaternion(targetPose.quaternion).add(targetPose.position)
+      const worldQuat = targetPose.quaternion.clone().multiply(relativeQuat)
+
+      // Resolve parent centroid to back-derive translation
+      const parent = this._model.getObject(source.parentId)
+      if (!parent) continue
+      let parentWorldPos
+      if (parent instanceof CoordinateFrame) {
+        const cached = this._worldPoseCache.get(parent.id)
+        if (!cached) continue
+        parentWorldPos = cached.position
+      } else {
+        if (!parent.corners || parent.corners.length === 0) continue
+        const centroid = new Vector3()
+        for (const c of parent.corners) centroid.add(c)
+        centroid.divideScalar(parent.corners.length)
+        parentWorldPos = centroid
+      }
+
+      // Write back so subsequent code (N panel, Node editor) sees correct state
+      source.translation.copy(worldPos).sub(parentWorldPos)
+      source.rotation.copy(worldQuat)  // also updates cache entry (shared reference)
+
+      // Update cache position explicitly (quaternion already updated via shared ref)
+      const entry = this._worldPoseCache.get(sourceId)
+      if (entry) {
+        entry.position.copy(worldPos)
+      } else {
+        this._worldPoseCache.set(sourceId, { position: worldPos.clone(), quaternion: source.rotation })
+      }
+
+      // Update view
+      source.meshView.updatePosition(worldPos)
+      source.meshView.updateConnectionLine(parentWorldPos)
+    }
+  }
+
+  /**
+   * Rigidly fastens a source CoordinateFrame to a target CoordinateFrame.
+   *
+   * Computes the relative transform (source in target's local frame) once and
+   * stores it in _fastenedTransforms.  _updateFastenedFrames() then drives the
+   * source CF's world pose every animation frame.
+   *
+   * Returns the created link and the pre-bind state needed by the undo command.
+   *
+   * @param {string} sourceCFId  ID of the CoordinateFrame to constrain
+   * @param {string} targetCFId  ID of the CoordinateFrame to bind to
+   * @returns {{ link: SpatialLink, translationBefore: import('three').Vector3, rotationBefore: import('three').Quaternion, relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion } | null}
+   */
+  fastenFrame(sourceCFId, targetCFId) {
+    const source = this._model.getObject(sourceCFId)
+    const target = this._model.getObject(targetCFId)
+    if (!(source instanceof CoordinateFrame) || !(target instanceof CoordinateFrame)) return null
+
+    const sourcePose = this._worldPoseCache.get(sourceCFId)
+    const targetPose = this._worldPoseCache.get(targetCFId)
+    if (!sourcePose || !targetPose) return null
+
+    // Snapshot pre-bind state for undo
+    const translationBefore = source.translation.clone()
+    const rotationBefore    = source.rotation.clone()
+
+    // Relative transform: source expressed in target's local frame
+    const invTargetQuat  = targetPose.quaternion.clone().conjugate()
+    const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
+    const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
+
+    const link = this.createSpatialLink(sourceCFId, targetCFId, 'fastened')
+    this._fastenedTransforms.set(link.id, { sourceId: sourceCFId, relativeOffset, relativeQuat })
+
+    return { link, translationBefore, rotationBefore, relativeOffset, relativeQuat }
+  }
+
+  /**
+   * Removes a fastened constraint and restores the source CF to the given pre-bind pose.
+   *
+   * For undo: pass the translationBefore / rotationBefore captured at bind time.
+   * For forward unfasten ("stay in place"): pass the current translation / rotation.
+   *
+   * @param {SpatialLink}                link               The fastened SpatialLink to remove
+   * @param {import('three').Vector3}    translationBefore  Translation to restore
+   * @param {import('three').Quaternion} rotationBefore     Rotation to restore
+   */
+  unfastenFrame(link, translationBefore, rotationBefore) {
+    this._fastenedTransforms.delete(link.id)
+    this.detachSpatialLink(link.id)
+    const source = this._model.getObject(link.sourceId)
+    if (source instanceof CoordinateFrame) {
+      source.translation.copy(translationBefore)
+      source.rotation.copy(rotationBefore)
+      this._worldPoseCache.delete(link.sourceId)  // force recompute on next frame
+    }
+  }
+
+  /**
+   * Re-applies a fastened constraint (redo path).
+   * Uses the previously computed relativeOffset / relativeQuat rather than
+   * recomputing from current world poses (which may have changed during undo).
+   *
+   * @param {SpatialLink}                link           The fastened SpatialLink to restore
+   * @param {import('three').Vector3}    relativeOffset Relative offset in target's local frame
+   * @param {import('three').Quaternion} relativeQuat   Relative rotation in target's local frame
+   */
+  refastenFrame(link, relativeOffset, relativeQuat) {
+    this.reattachSpatialLink(link)
+    // Override the recomputed transform with the original one from bind time
+    this._fastenedTransforms.set(link.id, {
+      sourceId: link.sourceId,
+      relativeOffset: relativeOffset.clone(),
+      relativeQuat:   relativeQuat.clone(),
+    })
+  }
+
+  /**
+   * Returns the stored relative transform for a fastened link, or null if unknown.
+   * Used by the unfasten UI to reconstruct the undo command.
+   * @param {string} linkId
+   * @returns {{ relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion } | null}
+   */
+  getFastenedTransform(linkId) {
+    const entry = this._fastenedTransforms.get(linkId)
+    return entry ? { relativeOffset: entry.relativeOffset, relativeQuat: entry.relativeQuat } : null
   }
 
   // ── SpatialLink view helpers (ADR-030 Phase 3) ───────────────────────────
@@ -1338,8 +1504,9 @@ export class SceneService extends EventEmitter {
    */
   detachSpatialLink(id) {
     if (!this._model.getLink(id)) return
-    // Clean up mount local positions before removing the link record
+    // Clean up mount / fasten data before removing the link record
     this._mountLocalPositions.delete(id)
+    this._fastenedTransforms.delete(id)
     this._model.removeLink(id)
     this._linkViews.get(id)?.dispose(this._threeScene)
     this._linkViews.delete(id)
@@ -1368,6 +1535,18 @@ export class SceneService extends EventEmitter {
           v.position.clone().sub(pose.position).applyQuaternion(invQ),
         )
         this._mountLocalPositions.set(link.id, { sourceId: link.sourceId, localPositions })
+      }
+    }
+    // For fastened links, recompute the relative transform from current world poses
+    // (used when restoring a scene from file — ADR-032 §2).
+    if (link.linkType === 'fastened') {
+      const sourcePose = this._worldPoseCache.get(link.sourceId)
+      const targetPose = this._worldPoseCache.get(link.targetId)
+      if (sourcePose && targetPose) {
+        const invTargetQuat = targetPose.quaternion.clone().conjugate()
+        const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
+        const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
+        this._fastenedTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
       }
     }
     this.emit('spatialLinkAdded', link)

@@ -190,6 +190,21 @@ linkType 語彙を英語前置詞体系（9 種）に整理し、位相的・意
 | 「Link to... 🔗」（Solid / CoordinateFrame） | 既存 `_linkPicking` フローへ；validation 済み linkType のみ表示 | ADR-032 §9 |
 | マウントピッキング中のステータスバー | 「Tap target frame (or empty space to cancel)」；Escape でキャンセル | ADR-032 §9 |
 
+### Phase H-7 — `fastened` Constraint Solver (CF→CF) ✅ (2026-04-26)
+
+| Task | Details | ADR |
+|------|---------|-----|
+| `SceneService._fastenedTransforms` Map | linkId → `{ sourceId, relativeOffset, relativeQuat }`；ADR-032 §3 インデックスと同パターン | ADR-032 §2 |
+| `SceneService.fastenFrame(sourceCFId, targetCFId)` | バインド時に相対変換を計算・保存；pre-bind の translation/rotation を返してコマンドに渡す | ADR-032 §5 |
+| `SceneService.unfastenFrame(link, translBefore, rotBefore)` | 拘束解除 + source CF を指定ポーズに復元（undo: pre-bind 値、forward: 現在値） | ADR-032 §5 |
+| `SceneService.refastenFrame(link, relativeOffset, relativeQuat)` | Redo パス：保存済み相対変換で拘束を再適用 | ADR-032 §5 |
+| `SceneService._updateFastenedFrames()` | 毎フレーム `_updateWorldPoses()` 末尾で呼び出し；source CF の世界ポーズを `targetPose × relativeTransform` に強制更新 | ADR-032 §5 |
+| `FastenFrameCommand` | `execute()` = `refastenFrame`、`undo()` = `unfastenFrame`；post-hoc push パターン | ADR-032 §7 |
+| `_computeValidLinkTypes` 更新 | CF→CF に `fastened` を追加（6-DOF 剛体結合） | ADR-032 §2 |
+| L キーフロー：`fastened` → `_confirmFastenFrame()` | linkType ピッカーで `fastened` 選択時に専用ハンドラへルーティング | ADR-032 §8 |
+| Mobile 長押しメニュー：「Unfasten ⊗」 | 拘束済み CF に対してのみ表示；Undo 可 | ADR-032 §9 |
+| `reattachSpatialLink` fastened ブランチ | シーンロード時に現在ポーズから相対変換を再計算して `_fastenedTransforms` に登録 | ADR-032 §5 |
+
 ---
 
 ## CoordinateFrame Placement Policy (ADR-034)

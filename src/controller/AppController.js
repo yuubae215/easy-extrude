@@ -52,6 +52,7 @@ import { createSpatialLinkCommand }           from '../command/CreateSpatialLink
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
 import { createMountAnnotationCommand }       from '../command/MountAnnotationCommand.js'
+import { createFastenFrameCommand }           from '../command/FastenFrameCommand.js'
 import { RoleService }                        from '../service/RoleService.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ function _computeValidLinkTypes(source, target) {
   const geometric = []
   if (isAnnotated(source) && isCF(target))  geometric.push('mounts')
   if ((source instanceof Solid || isAnnotated(source)) && isCF(target)) geometric.push('fastened')
+  if (isCF(source) && isCF(target)) geometric.push('fastened')
   if (isCF(source) && isCF(target)) geometric.push('aligned')
 
   const topological = ['adjacent', 'above']
@@ -2421,6 +2423,8 @@ export class AppController {
     this._uiView.showLinkTypePicker(x, y, (linkType) => {
       if (linkType === 'mounts') {
         this._confirmMountAnnotation(sourceId, targetId)
+      } else if (linkType === 'fastened') {
+        this._confirmFastenFrame(sourceId, targetId)
       } else {
         this._confirmSpatialLink(linkType)
       }
@@ -2473,6 +2477,29 @@ export class AppController {
     this._uiView.showToast(`Mounted on frame "${this._scene.getObject(targetId)?.name}"`)
     this._cancelSpatialLinkCreation()
     this._cancelMountPicking()
+    this._updateNPanel()
+  }
+
+  /**
+   * Fastens a source CoordinateFrame to a target CoordinateFrame and records the command.
+   * Called from the L-key link-type picker when the user selects 'fastened' for CF→CF.
+   * @param {string} sourceId  CoordinateFrame entity ID (slave / constrained frame)
+   * @param {string} targetId  CoordinateFrame entity ID (master / reference frame)
+   */
+  _confirmFastenFrame(sourceId, targetId) {
+    const result = this._service.fastenFrame(sourceId, targetId)
+    if (!result) {
+      this._uiView.showToast('Cannot fasten — frame pose unknown', { type: 'warn' })
+      return
+    }
+    const { link, translationBefore, rotationBefore, relativeOffset, relativeQuat } = result
+    this._commandStack.push(createFastenFrameCommand(
+      link, translationBefore, rotationBefore, relativeOffset, relativeQuat, this._service,
+      () => { this._updateNPanel() },
+      () => { this._updateNPanel() },
+    ))
+    this._uiView.showToast(`Fastened to "${this._scene.getObject(targetId)?.name}"`)
+    this._cancelSpatialLinkCreation()
     this._updateNPanel()
   }
 
@@ -3037,6 +3064,39 @@ export class AppController {
         : [{ label: 'Mount on frame ⊕', onClick: () => this._startMountPicking(id) }])
       : []
 
+    // ADR-032 §2: unfasten item for CoordinateFrame that is the source of a fastened link
+    const fastenedLink = (obj instanceof CoordinateFrame)
+      ? this._service.getLinksOf(id).find(l => l.linkType === 'fastened' && l.sourceId === id)
+      : null
+    const unfastenItems = fastenedLink
+      ? [{ label: `Unfasten ⊗ "${this._scene.getObject(fastenedLink.targetId)?.name ?? '?'}"`, onClick: () => {
+          const source = this._scene.getObject(id)
+          const transform = this._service.getFastenedTransform(fastenedLink.id)
+          if (!transform || !(source instanceof CoordinateFrame)) return
+          // "Stay in place": capture current constrained pose as the restore point
+          const translationCurrent = source.translation.clone()
+          const rotationCurrent    = source.rotation.clone()
+          this._service.unfastenFrame(fastenedLink, translationCurrent, rotationCurrent)
+          // Build command so undo re-applies the constraint and redo re-removes it
+          this._commandStack.push({
+            label: 'Unfasten frame',
+            execute: () => {
+              const src = this._scene.getObject(id)
+              const tc  = src instanceof CoordinateFrame ? src.translation.clone() : translationCurrent
+              const rc  = src instanceof CoordinateFrame ? src.rotation.clone()    : rotationCurrent
+              this._service.unfastenFrame(fastenedLink, tc, rc)
+              this._updateNPanel()
+            },
+            undo: () => {
+              this._service.refastenFrame(fastenedLink, transform.relativeOffset, transform.relativeQuat)
+              this._updateNPanel()
+            },
+          })
+          this._uiView.showToast('Unfastened')
+          this._updateNPanel()
+        }}]
+      : []
+
     // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
     const linkItems = isSolidOrCF
       ? [{ label: 'Link to... 🔗', onClick: () => {
@@ -3056,6 +3116,7 @@ export class AppController {
         onClick: () => this._duplicateObject(),
       }] : []),
       ...mountItems,
+      ...unfastenItems,
       ...linkItems,
       ...(canAddFrame ? [{
         label: 'Add interface frame ⊞',
