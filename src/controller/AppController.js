@@ -5517,7 +5517,12 @@ export class AppController {
       if (this._tc?.object) {
         this._raycaster.setFromCamera(this._mouse, this._camera)
         const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
-        if (tcHits.length > 0) return
+        // Three.js TC includes invisible picker meshes (visible=false) that extend
+        // far beyond the visual handles. Raycasting does not respect visible=false,
+        // so pickers intercept every tap on the object body and trigger the early-return,
+        // preventing single-tap selection of regular Cuboids (CODE_CONTRACTS §1).
+        // Only block when a *visible* TC handle (arrow, ring) is actually hit.
+        if (tcHits.some(h => h.object.visible)) return
       }
 
       // Primary cuboid hit; fall back to annotation bounding-box; last fallback is CF axis mesh.
