@@ -73,6 +73,7 @@ Detail: `docs/code_contracts/architecture.md`
 | CoordinateFrame Scale Cap | `updateScale()` must always receive a finite `maxWorldSize`; use `sceneRadius × 0.3` (floor 1.0) as fallback for CFs without a solid parent — otherwise axes balloon to huge size when zooming out |
 | CoordinateFrame Tap Selection | `_hitAnyObject()` never hits a CF (cuboid = null); `_onPointerDown` must call `_hitAnyCoordinateFrame()` as a third fallback. `CoordinateFrameView.group` getter exposes the Three.js Group for `intersectObject()`. Only visible groups are tested. |
 | _promptAddFrame Must Select Frame After Creation | After pushing the command in `_promptAddFrame()`, call `_switchActiveObject(frame.id, true)` — otherwise the frame stays hidden in the 3D viewport. Undo restores parent selection; redo re-selects the frame. |
+| _hitAnyEntityForLink CF Priority | `_hitAnyEntityForLink()` must call `_hitAnyCoordinateFrame()` as Step 0 before the cuboid raycast; CFs sit on top of Solids so the cuboid step would return the Solid, causing `_computeValidLinkTypes(CF, Solid)` to omit "fastened". |
 
 ---
 

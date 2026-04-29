@@ -2576,6 +2576,13 @@ export class AppController {
    * @returns {{ obj: object }|null}
    */
   _hitAnyEntityForLink() {
+    // Step 0: prioritise CoordinateFrame hits — CFs are rendered on top of Solids,
+    // so the cuboid raycast (step 1) would return the parent Solid instead of the CF.
+    const cfHit = this._hitAnyCoordinateFrame()
+    if (cfHit && cfHit.obj.id !== this._spatialLinkMode.sourceId) {
+      return cfHit
+    }
+
     // Step 1: cuboid-based raycast (same as _hitAnyObject but excludes source)
     const cuboidHit = this._hitAnyObject()
     if (cuboidHit && cuboidHit.obj.id !== this._spatialLinkMode.sourceId) {
