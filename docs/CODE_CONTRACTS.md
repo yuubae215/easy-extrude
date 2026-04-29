@@ -101,6 +101,8 @@ Detail: `docs/code_contracts/ui_layout.md`
 | Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts |
 | Mobile Touch Gesture Model | Touch: tap=select, one-finger-drag=orbit, long-press=context menu; no rect selection or _objDragging |
 | Long-Press Context Menu | `showContextMenu()` with Grab/Dup/Rename/Delete; items filtered by entity type |
+| Long-Press for Non-Draggable Entities | CF/MeasureLine/Annotated* early-return must set long-press timer for touch BEFORE returning; without this CF "Link to..." is unreachable on mobile |
+| _confirmFastenFrame Type Guard | Check `instanceof CoordinateFrame` for both IDs and call `_service._updateWorldPoses()` before `fastenFrame()`; type mismatch must show "Select a coordinate frame as source and target" not "frame pose unknown" |
 | Measure Point Placement | Confirm in `_onPointerUp`; hold shows live snap feedback before release |
 | Stack Mode | Ray origin must be Z=10000; runs in both `_grab.active` and `_objDragging` paths |
 | Viewport-Aware Z-Index | Toast `bottom: 96px` on mobile (above 86px toolbar); status in `_infoEl` on mobile |

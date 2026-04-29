@@ -58,6 +58,29 @@ if (this._grab.active) {
   - `_grab.segmentStartCorners` — snapshot taken in `_startGrab()` (initially = `allStartCorners`) **and re-taken on every touch re-down** during grab. Used by `_applyGrabDeltaToAll()` so the drag delta is measured from the current position, not the original. Updating only `segmentStartCorners` (not `allStartCorners`) ensures cancel/undo always revert to the pre-grab origin.
   - `_applyGrabDeltaToAll(delta)` must iterate `segmentStartCorners`, not `allStartCorners`.
 
+## Long-Press Context Menu for Non-Draggable Entities (Mobile)
+
+- **Principle**: Entity types that block pointer drag (CoordinateFrame, MeasureLine, Annotated*) must still receive the long-press context menu on touch so mobile users can access "Link to..." and other context actions.
+- **Concrete Rule**: In `_onPointerDown`, the early-return guard that blocks drag for non-draggable entity types must set up the long-press timer for touch events **before** returning. Without this, CoordinateFrames are never accessible from the long-press context menu on mobile — the user is forced to long-press the parent Solid, which sets `sourceId` to the Solid's ID instead of the CF's ID, causing `fastenFrame()` to fail with a type-mismatch that shows as "frame pose unknown".
+
+```js
+if (obj instanceof MeasureLine || obj instanceof CoordinateFrame || ...) {
+  // Set up long-press BEFORE returning so touch context menu still works
+  if (e.pointerType === 'touch' && this._objSelected && this._selectedIds.has(obj.id)) {
+    this._longPress.pointerId = e.pointerId
+    this._longPress.startX    = e.clientX
+    this._longPress.startY    = e.clientY
+    this._longPress.timer = setTimeout(() => { ... }, 400)
+  }
+  return  // still no drag
+}
+```
+
+## _confirmFastenFrame Type Guard
+
+- **Principle**: Before delegating to `fastenFrame()`, verify that both source and target are CoordinateFrames. `fastenFrame()` returning null is overloaded — it covers both type mismatch and missing world pose; the caller must distinguish these cases to show a meaningful error.
+- **Concrete Rule**: `_confirmFastenFrame()` must check `instanceof CoordinateFrame` for both IDs and show "Select a coordinate frame as source and target" before calling `fastenFrame()`. It must also call `this._service._updateWorldPoses()` immediately before `fastenFrame()` to refresh the cache (the same pattern used in `_switchActiveObject`).
+
 ## Global Event vs. UI Event Delegation
 
 - **Principle**: Global `window` listeners must explicitly ignore pointer events originating from UI overlays to avoid intercepting and canceling clicks meant for buttons.
