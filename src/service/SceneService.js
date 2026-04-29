@@ -1564,6 +1564,19 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Returns true if the given CoordinateFrame id is the SOURCE of any fastened link.
+   * Used by AppController to block independent TC movement of constrained frames.
+   * @param {string} cfId
+   * @returns {boolean}
+   */
+  isFastenedSource(cfId) {
+    for (const { sourceId } of this._fastenedTransforms.values()) {
+      if (sourceId === cfId) return true
+    }
+    return false
+  }
+
+  /**
    * Sets the active object id and emits 'activeChanged'.
    * Pass null to deselect.
    * Emits: 'activeChanged'

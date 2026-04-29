@@ -515,6 +515,8 @@ export class AppController {
     this._tcStartProxyPos = new THREE.Vector3()
     /** corners/localOffset snapshot for undo — populated at drag start */
     this._tcStartCorners  = new Map()
+    /** True during a TC drag on a fastened-source CF; blocks movement and records no command. */
+    this._tcFastenedBlocked = false
 
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
@@ -2111,8 +2113,22 @@ export class AppController {
         if (this._tcMode === 'rotate' && this._activeObj instanceof CoordinateFrame) {
           this._tcStartFrameRot = this._activeObj.rotation.clone()
         }
+        // Block movement on fastened-source CFs: _updateFastenedFrames() would
+        // override any translation/rotation written by objectChange every frame.
+        if (this._activeObj instanceof CoordinateFrame &&
+            this._service.isFastenedSource(this._activeObj.id)) {
+          this._tcFastenedBlocked = true
+          this._uiView.showToast('This frame is fastened. Unfasten it first to move it independently.', { type: 'warn' })
+        }
       } else {
-        // Drag end — record undo command based on TC mode
+        // Drag end — if fastened, snap proxy back and skip command recording
+        if (this._tcFastenedBlocked) {
+          this._tcFastenedBlocked = false
+          this._tcStartCorners = new Map()
+          this._syncMobileTransformProxy()
+          return
+        }
+        // Record undo command based on TC mode
         const obj = this._activeObj
         if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {
           if (this._tcStartFrameRot) {
@@ -2143,6 +2159,10 @@ export class AppController {
 
     // Apply proxy transform to domain entity every frame during drag
     this._tc.addEventListener('objectChange', () => {
+      // Fastened-source CF: _updateFastenedFrames() overrides translation/rotation
+      // every frame, so any delta we write here is immediately discarded.  Skip all
+      // updates; the proxy will be snapped back to the CF position on drag end.
+      if (this._tcFastenedBlocked) return
       const obj = this._activeObj
       if (!obj) return
       if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {

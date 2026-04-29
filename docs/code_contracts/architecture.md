@@ -359,6 +359,31 @@ if (this._tc?.object) {
 }
 ```
 
+## TC Drag Must Be Blocked on Fastened-Source CoordinateFrames
+
+- **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `translation` and `rotation` overwritten by `_updateFastenedFrames()` every animation frame. Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.
+- **Concrete Rule**: In the `dragging-changed` start handler, call `this._service.isFastenedSource(obj.id)` for `CoordinateFrame` active objects. If it returns `true`, set `this._tcFastenedBlocked = true` and show a toast. In the `objectChange` handler, return immediately when `_tcFastenedBlocked` is set. In the `dragging-changed` end handler, if `_tcFastenedBlocked`: clear the flag, call `_syncMobileTransformProxy()` to snap the proxy back to the CF's constrained position, and return without pushing any undo command.
+- **Root bug**: `_updateFastenedFrames()` runs at the end of every `_updateWorldPoses()` call. It writes back `source.translation` and `source.rotation` unconditionally. A TC drag that sets `source.translation` in `objectChange` is immediately reversed, but the TC proxy (a plain `THREE.Object3D` owned by TC) keeps moving — producing a visual desync where the gizmo and the CF separate.
+
+```js
+// dragging-changed start
+if (obj instanceof CoordinateFrame && this._service.isFastenedSource(obj.id)) {
+  this._tcFastenedBlocked = true
+  this._uiView.showToast('This frame is fastened. Unfasten it first to move it independently.', { type: 'warn' })
+}
+
+// dragging-changed end
+if (this._tcFastenedBlocked) {
+  this._tcFastenedBlocked = false
+  this._tcStartCorners = new Map()
+  this._syncMobileTransformProxy()   // snap TC proxy back to constraint-enforced position
+  return
+}
+
+// objectChange
+if (this._tcFastenedBlocked) return
+```
+
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
 
 - **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.
