@@ -2870,8 +2870,10 @@ export class AppController {
 
   /**
    * Hits any visible CoordinateFrame by raycasting against its axis meshes and
-   * origin sphere.  Called as a third fallback in _onPointerDown when both
-   * _hitAnyObject() and _hitAnyAnnotation() miss (e.g. mobile tap on a frame axis).
+   * origin sphere, with a bounding-box fallback to enlarge the tap area on mobile.
+   * Called FIRST in _onPointerDown before cuboid hit-testing so that a tap on CF
+   * axes/sphere selects the CF, not the Solid behind it (PHILOSOPHY #22).
+   * Also used as a standalone check in _hitAnyEntityForLink (Step 0).
    * Only frames whose group.visible is true are considered — hidden frames are
    * not tappable.
    * @returns {{ obj: object }|null}
@@ -5634,10 +5636,12 @@ export class AppController {
         if (tcHits.some(h => h.object.visible)) return
       }
 
-      // Primary cuboid hit; fall back to annotation bounding-box; last fallback is CF axis mesh.
-      let result = this._hitAnyObject()
+      // CF-first: visible CoordinateFrames sit on top of their parent Solid.
+      // Checking CF before cuboid ensures a tap on CF axes/sphere selects the CF,
+      // not the Solid behind it (Children Before Parents in Hit-Testing, PHILOSOPHY #22).
+      let result = this._hitAnyCoordinateFrame()
+      if (!result) result = this._hitAnyObject()
       if (!result) result = this._hitAnyAnnotation()
-      if (!result) result = this._hitAnyCoordinateFrame()
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
