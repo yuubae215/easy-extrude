@@ -388,3 +388,8 @@ this._commandStack.push(createCreateCoordinateFrameCommand(frame, this._service,
 ))
 this._switchActiveObject(frame.id, true)  // ← make frame visible + attach TC
 ```
+
+## _hitAnyEntityForLink Must Prioritise CoordinateFrame Over Parent Solid
+
+- **Principle**: CFs are visually rendered on top of (and often at the origin of) their parent Solid. A cuboid raycast (step 1) reaches the Solid first, making it impossible for the user to select a CF as a link target by tapping.
+- **Concrete Rule**: `_hitAnyEntityForLink()` must call `_hitAnyCoordinateFrame()` as **Step 0** before the cuboid raycast. If a CF is found and it is not the link source, return it immediately. Only fall through to the cuboid and bounding-box steps when no CF is hit. `_startSpatialLinkCreation()` already calls `showFull()` on all CFs, so they are always visible during linking.

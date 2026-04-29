@@ -103,6 +103,12 @@ If yes → this signals a missing or under-specified principle in `docs/PHILOSOP
 Either add a new principle or sharpen an existing one. Link it to the CODE_CONTRACTS
 rules it underlies. See PHILOSOPHY's "When to update" table for exact triggers.
 
+If **almost** (same value, but only 1 context so far) → add a row to the
+**Yellow Cards** table in `docs/PHILOSOPHY.md`. A Yellow Card is a first strike:
+it records the candidate principle and its first context so it can be found
+when the second violation surfaces. Without this, single-context patterns are
+forgotten and PHILOSOPHY never grows.
+
 ## Development commands
 
 ```bash

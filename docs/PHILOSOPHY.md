@@ -44,6 +44,7 @@ If a rule applies to one file or one class, it belongs in CODE_CONTRACTS, not he
 | Experience reveals a principle applies more broadly than written | Widen its scope; update examples |
 | A principle is now enforced structurally (type system, linter) | **Retire it** — structure is the source of truth, prose is redundant |
 | A principle is really a single code rule | Move it to CODE_CONTRACTS; remove from here |
+| A bug fix where Q2 is "almost but only 1 context" | Add a row to the **Yellow Cards** table (above the Index); graduate when 2nd context found |
 
 ### How to update
 
@@ -370,6 +371,27 @@ For verification, give an agent a small named file list rather than `src/**/*.js
 - This is Pass 1 → Pass 2 in the two-pass pattern (see `DEVELOPMENT.md`).
 
 *Underlies DEVELOPMENT rules: Two-pass pattern, Focused Agents > Broad Agents*
+
+---
+
+## Yellow Cards — Pending Elevation
+
+Single-context violations that do not yet meet the 2+ threshold for a named principle.
+When the same root value is violated in a second **unrelated** context, move the entry
+to the main body as a full principle and add a row to the Index.
+
+### How to update
+
+| Action | When |
+|--------|------|
+| Add a row | After a bug fix where the CODE_CONTRACTS Q2 answer is "almost, but only 1 context so far" |
+| Add a second context | When the same root value appears in a new unrelated file/feature |
+| Graduate to principle | Once 2+ contexts exist — extract a full principle above, remove the row here |
+| Remove stale row | If the codebase is refactored such that the violation can no longer occur |
+
+| Candidate Principle | First Context (date · file · what happened) | CODE_CONTRACTS Rule |
+|---------------------|---------------------------------------------|---------------------|
+| **Children Before Parents in Hit-Testing** — In a parent-child scene hierarchy, hit-test the child (more specific/inner entity) before the parent (container). The parent's geometry physically covers the child, so arrival order in the raycast pipeline determines what the user can select, not visual prominence. | 2026-04-29 · `AppController._hitAnyEntityForLink` · CF sat on top of Solid; cuboid raycast returned the Solid, making `_computeValidLinkTypes(CF→Solid)` omit "fastened" | `_hitAnyEntityForLink CF Priority` |
 
 ---
 
