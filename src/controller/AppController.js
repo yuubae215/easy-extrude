@@ -2912,6 +2912,25 @@ export class AppController {
     return nearestObj ? { obj: nearestObj } : null
   }
 
+  /**
+   * Returns true if `cf` (a CoordinateFrame) is a descendant of the entity
+   * with `ancestorId`.  Walks the parentId chain until hitting a non-CF.
+   * Used in _onPointerDown to implement PHILOSOPHY #22 precisely:
+   * a CF beats its own parent Solid, but must NOT block selection of an
+   * unrelated Solid that merely overlaps the CF's bounding-box hit area.
+   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} cf
+   * @param {string} ancestorId
+   * @returns {boolean}
+   */
+  _isCfDescendantOf(cf, ancestorId) {
+    let obj = cf
+    while (obj instanceof CoordinateFrame) {
+      if (obj.parentId === ancestorId) return true
+      obj = this._scene.getObject(obj.parentId)
+    }
+    return false
+  }
+
   /** Hits only the active object's mesh */
   _hitActiveSolid() {
     if (!this._activeObj) return null
@@ -5636,11 +5655,24 @@ export class AppController {
         if (tcHits.some(h => h.object.visible)) return
       }
 
-      // CF-first: visible CoordinateFrames sit on top of their parent Solid.
-      // Checking CF before cuboid ensures a tap on CF axes/sphere selects the CF,
-      // not the Solid behind it (Children Before Parents in Hit-Testing, PHILOSOPHY #22).
-      let result = this._hitAnyCoordinateFrame()
-      if (!result) result = this._hitAnyObject()
+      // PHILOSOPHY #22 — Children Before Parents in Hit-Testing:
+      // A CF should beat its own parent Solid when both are in the same screen region.
+      // However a CF belonging to a *different* Solid must NOT intercept clicks on
+      // the target Solid — the bounding-box fallback in _hitAnyCoordinateFrame()
+      // creates a 0.4-unit false-positive zone that would otherwise block Solid selection.
+      // Fix: run both checks, then apply parent-child discrimination.
+      const cfResult    = this._hitAnyCoordinateFrame()
+      const solidResult = this._hitAnyObject()
+      let result
+      if (cfResult && solidResult) {
+        // Both hit: prefer CF only when it is a descendant of the found Solid
+        // (PHILOSOPHY #22 applies to child→parent, not to cross-Solid relationships).
+        result = this._isCfDescendantOf(cfResult.obj, solidResult.obj.id)
+          ? cfResult
+          : solidResult
+      } else {
+        result = cfResult ?? solidResult
+      }
       if (!result) result = this._hitAnyAnnotation()
       if (result) {
         const { hit, obj } = result
