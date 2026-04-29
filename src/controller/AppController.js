@@ -2656,7 +2656,16 @@ export class AppController {
         if (e.target !== this._sceneView.renderer.domElement) return
         if (this._scene.selectionMode !== 'object') return
         this._updateMouse(e)
-        let result = this._hitAnyObject()
+        // PHILOSOPHY #22 — same hit-priority logic as _onPointerDown:
+        // CF beats its own parent Solid; unrelated CF does not shadow a Solid.
+        const cfResult    = this._hitAnyCoordinateFrame()
+        const solidResult = this._hitAnyObject()
+        let result
+        if (cfResult && solidResult) {
+          result = this._isCfDescendantOf(cfResult.obj, solidResult.obj.id) ? cfResult : solidResult
+        } else {
+          result = cfResult ?? solidResult
+        }
         if (!result) result = this._hitAnyAnnotation()
         if (!result) return
         const { obj } = result
@@ -5636,31 +5645,12 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
-      // If TC gizmo is active, check if this pointer hits a gizmo handle BEFORE
-      // doing regular object selection. Without this guard, the ray passes through
-      // TC handles (rotate ring, translate arrows) and hits objects behind them,
-      // causing an unintended active-object switch and mode change.
-      // Example: tapping the TC rotate ring hits the Cuboid behind it →
-      //   _switchActiveObject(cuboid) → _attachMobileTransform(cuboid) → tc.setMode('translate')
-      // TC registers its own pointer listeners after _onPointerDown, so _tcDragging
-      // is still false at this point — we must raycast against the gizmo explicitly.
-      if (this._tc?.object) {
-        this._raycaster.setFromCamera(this._mouse, this._camera)
-        const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
-        // Three.js TC includes invisible picker meshes (visible=false) that extend
-        // far beyond the visual handles. Raycasting does not respect visible=false,
-        // so pickers intercept every tap on the object body and trigger the early-return,
-        // preventing single-tap selection of regular Cuboids (CODE_CONTRACTS §1).
-        // Only block when a *visible* TC handle (arrow, ring) is actually hit.
-        if (tcHits.some(h => h.object.visible)) return
-      }
-
-      // PHILOSOPHY #22 — Children Before Parents in Hit-Testing:
+      // PHILOSOPHY #22 — Narrower Scope Wins in Hit-Testing:
+      // Run scene hit tests first so we know what the user is actually targeting.
       // A CF should beat its own parent Solid when both are in the same screen region.
       // However a CF belonging to a *different* Solid must NOT intercept clicks on
       // the target Solid — the bounding-box fallback in _hitAnyCoordinateFrame()
       // creates a 0.4-unit false-positive zone that would otherwise block Solid selection.
-      // Fix: run both checks, then apply parent-child discrimination.
       const cfResult    = this._hitAnyCoordinateFrame()
       const solidResult = this._hitAnyObject()
       let result
@@ -5674,6 +5664,26 @@ export class AppController {
         result = cfResult ?? solidResult
       }
       if (!result) result = this._hitAnyAnnotation()
+
+      // TC gizmo guard — PHILOSOPHY #22 (gizmo scope):
+      // The TC gizmo has authority only over the object it is attached to.
+      // Block the tap only when the user is operating on the same active object
+      // (or on empty space near it). If the tap lands on a *different* entity,
+      // allow selection to proceed even when a TC handle lies in the same screen
+      // region — the gizmo must not shadow unrelated scene objects (CODE_CONTRACTS §1).
+      // TC registers its own pointer listeners after _onPointerDown, so _tcDragging
+      // is still false at this point — we must raycast against the gizmo explicitly.
+      if (this._tc?.object) {
+        const targetId = result?.obj.id
+        if (!targetId || targetId === this._scene.activeId) {
+          this._raycaster.setFromCamera(this._mouse, this._camera)
+          const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
+          // Three.js TC includes invisible picker meshes (visible=false) that extend
+          // far beyond the visual handles. Raycasting does not respect visible=false.
+          // Only block when a *visible* TC handle (arrow, ring) is actually hit.
+          if (tcHits.some(h => h.object.visible)) return
+        }
+      }
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
