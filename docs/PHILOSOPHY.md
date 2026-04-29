@@ -250,6 +250,26 @@ Disable OrbitControls only when a specific operation fully consumes the same inp
 
 ---
 
+### 22. Children Before Parents in Hit-Testing
+
+In a parent-child scene hierarchy, hit-test the more specific entity before the container.
+The parent's geometry physically covers the child; arrival order in the raycast pipeline
+determines what the user can select, not visual prominence.
+
+- `_onPointerDown` checks `_hitAnyCoordinateFrame()` **before** `_hitAnyObject()` (cuboid).
+  A CF is rendered on top of its parent Solid; if the Solid is tested first, a tap on the
+  CF axes selects the Solid — the CF long-press context menu never fires, "Link to..." stores
+  the Solid id as source, and the subsequent `_confirmFastenFrame` instanceof check fails.
+- `_hitAnyEntityForLink()` checks CF (Step 0) before the cuboid raycast (Step 1) for the same
+  reason: the Solid behind the CF would otherwise be returned as the link target, causing
+  `_computeValidLinkTypes(CF, Solid)` to omit "fastened".
+- The pattern generalises: whenever entity A is the child of entity B and both occupy the same
+  screen region, A must be tested first.
+
+*Underlies CODE_CONTRACTS rules: CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority*
+
+---
+
 ## VI. UI Stability
 
 ### 15. Toolbar Slots Are Fixed; Buttons Are Not Removed
@@ -391,7 +411,7 @@ to the main body as a full principle and add a row to the Index.
 
 | Candidate Principle | First Context (date · file · what happened) | CODE_CONTRACTS Rule |
 |---------------------|---------------------------------------------|---------------------|
-| **Children Before Parents in Hit-Testing** — In a parent-child scene hierarchy, hit-test the child (more specific/inner entity) before the parent (container). The parent's geometry physically covers the child, so arrival order in the raycast pipeline determines what the user can select, not visual prominence. | 2026-04-29 · `AppController._hitAnyEntityForLink` · CF sat on top of Solid; cuboid raycast returned the Solid, making `_computeValidLinkTypes(CF→Solid)` omit "fastened" | `_hitAnyEntityForLink CF Priority` |
+| *(empty — no pending candidates)* | — | — |
 
 ---
 
@@ -420,3 +440,4 @@ to the main body as a full principle and add a row to the Index.
 | 19 | Documentation Drift Is a Bug | Living Docs | CODE_CONTRACTS maintenance, ADR drift |
 | 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | DEVELOPMENT two-pass pattern |
 | 21 | Coordinate Spaces Are Statically Distinguished | Contracts | CoordinateFrame.localOffset vs Geometry.corners |
+| 22 | Children Before Parents in Hit-Testing | Interaction | CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority |
