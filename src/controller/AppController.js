@@ -2505,6 +2505,14 @@ export class AppController {
    * @param {string} targetId  CoordinateFrame entity ID (master / reference frame)
    */
   _confirmFastenFrame(sourceId, targetId) {
+    const source = this._scene.getObject(sourceId)
+    const target = this._scene.getObject(targetId)
+    if (!(source instanceof CoordinateFrame) || !(target instanceof CoordinateFrame)) {
+      this._uiView.showToast('Select a coordinate frame as source and target', { type: 'warn' })
+      return
+    }
+    // Force-update world poses so cache is fresh even if called between animation ticks
+    this._service._updateWorldPoses()
     const result = this._service.fastenFrame(sourceId, targetId)
     if (!result) {
       this._uiView.showToast('Cannot fasten — frame pose unknown', { type: 'warn' })
@@ -5653,8 +5661,26 @@ export class AppController {
 
         // MeasureLine, CoordinateFrame, and annotation entities cannot be pointer-dragged
         // (use G key to move them after selecting).
+        // On touch, still set up the long-press timer so the context menu (including
+        // "Link to...") can be triggered for these entity types on mobile.
         if (obj instanceof MeasureLine || obj instanceof CoordinateFrame ||
             obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint) {
+          if (e.pointerType === 'touch' && this._objSelected && this._selectedIds.has(obj.id)) {
+            this._longPress.pointerId = e.pointerId
+            this._longPress.startX    = e.clientX
+            this._longPress.startY    = e.clientY
+            this._longPress.timer = setTimeout(() => {
+              this._longPress.timer = null
+              if (this._longPress.pointerId === e.pointerId) {
+                this._longPress.pointerId = null
+                this._showLongPressContextMenu(
+                  this._longPress.startX,
+                  this._longPress.startY,
+                  obj,
+                )
+              }
+            }, 400)
+          }
           return
         }
 
