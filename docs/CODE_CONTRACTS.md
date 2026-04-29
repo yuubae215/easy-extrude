@@ -107,7 +107,7 @@ Detail: `docs/code_contracts/ui_layout.md`
 | Measure Point Placement | Confirm in `_onPointerUp`; hold shows live snap feedback before release |
 | Stack Mode | Ray origin must be Z=10000; runs in both `_grab.active` and `_objDragging` paths |
 | Viewport-Aware Z-Index | Toast `bottom: 96px` on mobile (above 86px toolbar); status in `_infoEl` on mobile |
-| Mobile Header Overflow | Export/Import hidden on mobile; replaced by `_moreMenuBtn` (⋯) dropdown. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer |
+| Mobile Header Overflow | Export/Import hidden on mobile; replaced by `_moreMenuBtn` (⋯) dropdown. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. Map button hides its `<span>` text label on mobile (padding tightened to `4px`) — without this the N-panel icon is clipped on 375px viewports. Header has `overflow:hidden` |
 
 ---
 

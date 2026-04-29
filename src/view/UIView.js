@@ -42,6 +42,7 @@ export class UIView {
       display: 'flex', alignItems: 'center',
       padding: '0 8px', gap: '6px',
       zIndex: '100',
+      overflow: 'hidden',
       userSelect: 'none',
       fontFamily: 'system-ui, -apple-system, sans-serif',
     })
@@ -224,6 +225,8 @@ export class UIView {
       display: 'none',
       borderRadius: '6px',
       flexShrink: '0',
+      alignItems: 'center',
+      justifyContent: 'center',
     })
     this._nToggleBtn.setAttribute('aria-label', 'Toggle properties panel')
     this._nToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`
@@ -1656,6 +1659,12 @@ export class UIView {
     this._redoBtn.style.display = mobile ? 'flex' : 'none'
     this._nToggleBtn.style.display = mobile ? 'block' : 'none'
     this._nToggleBtn.style.marginLeft = ''
+    // Map button: icon-only on mobile to save horizontal space in the header.
+    // hamburger+undo+redo+mode+map(icon+text)+more+N exceeds 375px viewport;
+    // hiding the "Map" label recovers ~30px and keeps all icons fully visible.
+    const mapSpan = this._mapModeBtn.querySelector('span')
+    if (mapSpan) mapSpan.style.display = mobile ? 'none' : ''
+    this._mapModeBtn.style.padding = mobile ? '4px' : '4px 8px'
     // ⋯ overflow menu is mobile-only; Export/Import buttons are desktop-only
     this._moreMenuBtn.style.display = mobile ? 'flex' : 'none'
     this._exportJsonBtn.style.display = mobile ? 'none' : 'flex'
