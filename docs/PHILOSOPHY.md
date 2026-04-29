@@ -250,23 +250,37 @@ Disable OrbitControls only when a specific operation fully consumes the same inp
 
 ---
 
-### 22. Children Before Parents in Hit-Testing
+### 22. Narrower Scope Wins in Hit-Testing
 
-In a parent-child scene hierarchy, hit-test the more specific entity before the container.
-The parent's geometry physically covers the child; arrival order in the raycast pipeline
-determines what the user can select, not visual prominence.
+Hit-test priority must match what the user is actually targeting — not just what geometry
+arrives first in the raycast pipeline. Two concrete manifestations:
 
-- `_onPointerDown` checks `_hitAnyCoordinateFrame()` **before** `_hitAnyObject()` (cuboid).
-  A CF is rendered on top of its parent Solid; if the Solid is tested first, a tap on the
-  CF axes selects the Solid — the CF long-press context menu never fires, "Link to..." stores
-  the Solid id as source, and the subsequent `_confirmFastenFrame` instanceof check fails.
-- `_hitAnyEntityForLink()` checks CF (Step 0) before the cuboid raycast (Step 1) for the same
-  reason: the Solid behind the CF would otherwise be returned as the link target, causing
-  `_computeValidLinkTypes(CF, Solid)` to omit "fastened".
-- The pattern generalises: whenever entity A is the child of entity B and both occupy the same
-  screen region, A must be tested first.
+**a) Children before parents in scene hierarchy.**
+When entity A is a child of entity B and both occupy the same screen region, test A first.
+The parent's geometry physically covers the child; testing the parent first silently
+redirects every tap intended for the child.
 
-*Underlies CODE_CONTRACTS rules: CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority*
+- `_onPointerDown` runs `_hitAnyCoordinateFrame()` before `_hitAnyObject()` (cuboid).
+  A CF rendered on top of its parent Solid: testing the Solid first would select the Solid —
+  the CF long-press context menu never fires, "Link to..." stores the Solid id as source,
+  and the subsequent `_confirmFastenFrame` instanceof check fails.
+- `_hitAnyEntityForLink()` checks CF (Step 0) before the cuboid raycast (Step 1) for the
+  same reason: the Solid behind the CF would otherwise be returned as the link target,
+  causing `_computeValidLinkTypes(CF, Solid)` to omit "fastened".
+
+**b) Gizmos have authority only over their attached object.**
+A tool gizmo (e.g. TransformControls) must not shadow unrelated scene entities.
+Run scene hit tests first; apply the gizmo guard only when the tap lands on the gizmo's
+own object (or on empty space near it).
+
+- When a Solid is selected and TC arrows are on screen, tapping a *different* Solid or CF
+  should switch selection even if a TC arrow lies in the same screen region.
+  Blocking all TC-overlapping taps makes it impossible to change selection on mobile
+  without first dismissing the gizmo.
+- Correct guard: `if (!targetId || targetId === scene.activeId) { /* TC check */ }`.
+  A tap on a different entity bypasses the guard entirely.
+
+*Underlies CODE_CONTRACTS rules: CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority, TC Gizmo Hit Guard Before Object Selection*
 
 ---
 
