@@ -2394,6 +2394,10 @@ export class AppController {
     this._spatialLinkMode.active   = true
     this._spatialLinkMode.sourceId = this._scene.activeId
     this._spatialLinkMode.pendingTargetId = null
+    // Show all CFs so the target frame is visible for picking regardless of selection state
+    for (const obj of this._scene.objects.values()) {
+      if (obj instanceof CoordinateFrame && obj.meshView) obj.meshView.showFull()
+    }
     this._uiView.setStatus('Click target entity  [Esc: cancel]')
     this._uiView.setCursor('crosshair')
   }
@@ -2403,8 +2407,22 @@ export class AppController {
     this._spatialLinkMode.active   = false
     this._spatialLinkMode.sourceId = null
     this._spatialLinkMode.pendingTargetId = null
+    this._restoreCoordinateFrameVisibility()
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
+  }
+
+  /** Restores CF visibility after link-creation mode: show only CFs whose parent (or self) is the active object. */
+  _restoreCoordinateFrameVisibility() {
+    const activeId = this._activeObj?.id
+    for (const obj of this._scene.objects.values()) {
+      if (!(obj instanceof CoordinateFrame) || !obj.meshView) continue
+      if (obj.id === activeId || obj.parentId === activeId) {
+        obj.meshView.showFull()
+      } else {
+        obj.meshView.hide()
+      }
+    }
   }
 
   /**
@@ -2845,6 +2863,8 @@ export class AppController {
    */
   _hitAnyCoordinateFrame() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
+    const ray = this._raycaster.ray
+    const pt  = new THREE.Vector3()
     let nearestDist = Infinity
     let nearestObj  = null
 
@@ -2852,10 +2872,23 @@ export class AppController {
       if (!(obj instanceof CoordinateFrame)) continue
       if (!obj.meshView?.group?.visible) continue
 
+      // Geometry hit (axes + origin sphere)
       const hits = this._raycaster.intersectObject(obj.meshView.group, true)
       if (hits.length > 0 && hits[0].distance < nearestDist) {
         nearestDist = hits[0].distance
         nearestObj  = obj
+        continue
+      }
+
+      // Bounding box fallback — enlarges effective tap area on mobile
+      const wp = this._service.worldPoseOf(obj.id)?.position
+      if (wp) {
+        const box = new THREE.Box3(wp.clone().subScalar(0.4), wp.clone().addScalar(0.4))
+        const hitPt = ray.intersectBox(box, pt)
+        if (hitPt) {
+          const dist = ray.origin.distanceTo(hitPt)
+          if (dist < nearestDist) { nearestDist = dist; nearestObj = obj }
+        }
       }
     }
 
