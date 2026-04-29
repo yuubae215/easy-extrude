@@ -368,7 +368,8 @@ if (this._tc?.object) {
 ## CoordinateFrame Tap Selection Must Check CF Before Parent Solid
 
 - **Principle**: `_hitAnyObject()` filters candidates by `o.meshView.cuboid?.visible`. `CoordinateFrame.cuboid` returns `null`, so frames are never hit by this method. CFs are visually rendered on top of their parent Solid. If the Solid is checked first, a tap on the CF axes/sphere hits the Solid and the CF is never selected — this causes long-press context menus to be attributed to the Solid, breaking "Link to..." source selection for CF→CF fastened links on mobile.
-- **Concrete Rule**: `_onPointerDown` must call `_hitAnyCoordinateFrame()` **first**, before `_hitAnyObject()` and `_hitAnyAnnotation()`. `CoordinateFrameView` exposes a `get group()` getter; `_hitAnyCoordinateFrame()` iterates visible frames (those with `showFull()` / `showDimmed()`), raycasts `intersectObject(group, true)`, and falls back to a 0.4-unit bounding box to enlarge the mobile tap area. A CF hit takes priority over the Solid behind it (PHILOSOPHY #22 — Children Before Parents in Hit-Testing).
+- **Concrete Rule**: `_onPointerDown` runs **both** `_hitAnyCoordinateFrame()` and `_hitAnyObject()` in parallel, then applies the parent-child discrimination rule (PHILOSOPHY #22): prefer the CF result **only when the CF is a descendant of the found Solid** (tested via `_isCfDescendantOf(cf, solid.id)`). When the CF belongs to a *different* Solid, prefer the Solid — the 0.4-unit bounding-box fallback in `_hitAnyCoordinateFrame()` otherwise creates a false-positive zone that blocks selection of nearby Solids.
+- **Anti-pattern**: calling `_hitAnyCoordinateFrame()` with a simple "if CF → return CF" gate causes visible CFs of the selected Solid to intercept every click within 0.4 world units, making it impossible to select other nearby Solids or CFs (the "solid-selection-conflict" bug).
 
 ## _promptAddFrame Must Select Frame After Creation
 
