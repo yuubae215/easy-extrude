@@ -54,6 +54,10 @@ static mut INDICES:          Vec<u32> = Vec::new();
 /// Instance matrix buffer — separate from geometry buffers; used by
 /// `build_instance_matrices()` only. Does not clobber POSITIONS/NORMALS/INDICES.
 static mut INSTANCE_MATRICES: Vec<f32> = Vec::new();
+/// Constraint pose output buffer — used by `solve_fastened_constraints()`.
+static mut CONSTRAINT_POSES: Vec<f32> = Vec::new();
+/// Generic transform output buffer — used by `apply_pose_to_points()`.
+static mut TRANSFORM_BUFFER: Vec<f32> = Vec::new();
 
 // ---------------------------------------------------------------------------
 // Internal vector math (no dependencies)
@@ -85,6 +89,33 @@ fn normalize(v: [f32; 3]) -> [f32; 3] {
         return [0.0, 0.0, 1.0];
     }
     [v[0] / len, v[1] / len, v[2] / len]
+}
+
+/// Rotate vector (vx, vy, vz) by unit quaternion (qx, qy, qz, qw).
+/// Equivalent to THREE.js Vector3.applyQuaternion() — no allocation.
+/// Formula: t = 2·(q.xyz × v);  v' = v + qw·t + q.xyz × t
+#[inline]
+fn apply_quat_to_vec(qx: f32, qy: f32, qz: f32, qw: f32, vx: f32, vy: f32, vz: f32) -> [f32; 3] {
+    let tx = 2.0 * (qy * vz - qz * vy);
+    let ty = 2.0 * (qz * vx - qx * vz);
+    let tz = 2.0 * (qx * vy - qy * vx);
+    [
+        vx + qw * tx + qy * tz - qz * ty,
+        vy + qw * ty + qz * tx - qx * tz,
+        vz + qw * tz + qx * ty - qy * tx,
+    ]
+}
+
+/// Hamilton product a × b (Three.js Quaternion.multiply order).
+#[inline]
+fn quat_mul(ax: f32, ay: f32, az: f32, aw: f32,
+            bx: f32, by: f32, bz: f32, bw: f32) -> [f32; 4] {
+    [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ]
 }
 
 /// Raw face normal (not yet corrected for outward direction).
@@ -468,6 +499,125 @@ pub fn get_matrices_len() -> usize {
 }
 
 // ---------------------------------------------------------------------------
+// solve_fastened_constraints — per-frame constraint pose solver
+// ---------------------------------------------------------------------------
+
+/// Batch-solve world poses for N fastened CoordinateFrame constraints.
+///
+/// `input_flat`: N × 14 f32, one block per constraint:
+///   [0..2]   relativeOffset.xyz       — offset in target's local frame
+///   [3..6]   relativeQuat.xyzw        — rotation relative to target (Three.js order)
+///   [7..9]   targetPos.xyz            — target world position
+///   [10..13] targetQuat.xyzw          — target world quaternion
+///
+/// Equivalent JS (per constraint):
+///   worldPos  = relativeOffset.clone().applyQuaternion(targetQuat).add(targetPos)
+///   worldQuat = targetQuat.clone().multiply(relativeQuat)
+///
+/// Output stored in CONSTRAINT_POSES: N × 7 f32:
+///   [0..2] worldPos.xyz
+///   [3..6] worldQuat.xyzw
+///
+/// Returns N on success, 0 on bad input (non-multiple of 14 or empty).
+#[wasm_bindgen]
+pub fn solve_fastened_constraints(input_flat: &[f32]) -> u32 {
+    if input_flat.is_empty() || input_flat.len() % 14 != 0 {
+        return 0;
+    }
+    let n = input_flat.len() / 14;
+
+    // SAFETY: single-threaded Wasm — no concurrent access.
+    unsafe {
+        CONSTRAINT_POSES.clear();
+        CONSTRAINT_POSES.reserve(n * 7);
+
+        for i in 0..n {
+            let b = i * 14;
+            let (rox, roy, roz)         = (input_flat[b],      input_flat[b + 1],  input_flat[b + 2]);
+            let (rqx, rqy, rqz, rqw)   = (input_flat[b + 3],  input_flat[b + 4],  input_flat[b + 5],  input_flat[b + 6]);
+            let (tpx, tpy, tpz)         = (input_flat[b + 7],  input_flat[b + 8],  input_flat[b + 9]);
+            let (tqx, tqy, tqz, tqw)   = (input_flat[b + 10], input_flat[b + 11], input_flat[b + 12], input_flat[b + 13]);
+
+            // worldPos = applyQuat(relativeOffset, targetQuat) + targetPos
+            let rotated = apply_quat_to_vec(tqx, tqy, tqz, tqw, rox, roy, roz);
+            let wp = [rotated[0] + tpx, rotated[1] + tpy, rotated[2] + tpz];
+
+            // worldQuat = targetQuat × relativeQuat  (Hamilton product)
+            let wq = quat_mul(tqx, tqy, tqz, tqw, rqx, rqy, rqz, rqw);
+
+            CONSTRAINT_POSES.extend_from_slice(&[wp[0], wp[1], wp[2], wq[0], wq[1], wq[2], wq[3]]);
+        }
+    }
+
+    n as u32
+}
+
+/// Pointer to the constraint-poses output buffer.
+#[wasm_bindgen]
+pub fn get_constraints_ptr() -> *const f32 {
+    unsafe { CONSTRAINT_POSES.as_ptr() }
+}
+
+/// Number of f32 elements in the constraint-poses buffer (N × 7).
+#[wasm_bindgen]
+pub fn get_constraints_len() -> usize {
+    unsafe { CONSTRAINT_POSES.len() }
+}
+
+// ---------------------------------------------------------------------------
+// apply_pose_to_points — rigid-body transform for a batch of vertices
+// ---------------------------------------------------------------------------
+
+/// Apply a single rigid-body pose to N local-space points, producing world-space points.
+///
+/// `input_flat`: 7 + 3*N f32:
+///   [0..2] pose.position.xyz
+///   [3..6] pose.quaternion.xyzw   (Three.js order: x, y, z, w)
+///   [7..]  N × (lx, ly, lz)  local-space points
+///
+/// Equivalent JS (per point):
+///   worldPoint = localPoint.clone().applyQuaternion(pose.quaternion).add(pose.position)
+///
+/// Output stored in TRANSFORM_BUFFER: N × 3 f32 world-space points.
+///
+/// Returns N on success, 0 on bad input.
+#[wasm_bindgen]
+pub fn apply_pose_to_points(input_flat: &[f32]) -> u32 {
+    if input_flat.len() < 10 { return 0; } // need at least 7 header + 3 for one point
+    let (px, py, pz)         = (input_flat[0], input_flat[1], input_flat[2]);
+    let (qx, qy, qz, qw)    = (input_flat[3], input_flat[4], input_flat[5], input_flat[6]);
+    let points = &input_flat[7..];
+    if points.len() % 3 != 0 { return 0; }
+    let n = points.len() / 3;
+
+    // SAFETY: single-threaded Wasm — no concurrent access.
+    unsafe {
+        TRANSFORM_BUFFER.clear();
+        TRANSFORM_BUFFER.reserve(n * 3);
+
+        for i in 0..n {
+            let (lx, ly, lz) = (points[i * 3], points[i * 3 + 1], points[i * 3 + 2]);
+            let r = apply_quat_to_vec(qx, qy, qz, qw, lx, ly, lz);
+            TRANSFORM_BUFFER.extend_from_slice(&[r[0] + px, r[1] + py, r[2] + pz]);
+        }
+    }
+
+    n as u32
+}
+
+/// Pointer to the transform output buffer.
+#[wasm_bindgen]
+pub fn get_transform_ptr() -> *const f32 {
+    unsafe { TRANSFORM_BUFFER.as_ptr() }
+}
+
+/// Number of f32 elements in the transform output buffer (N × 3).
+#[wasm_bindgen]
+pub fn get_transform_len() -> usize {
+    unsafe { TRANSFORM_BUFFER.len() }
+}
+
+// ---------------------------------------------------------------------------
 // Tests (run with: cargo test)
 // ---------------------------------------------------------------------------
 
@@ -675,5 +825,123 @@ mod tests {
         assert_eq!(build_instance_matrices(&[]), 0);
         assert_eq!(build_instance_matrices(&[0.0; 9]), 0);
         assert_eq!(build_instance_matrices(&[0.0; 11]), 0);
+    }
+
+    // ── solve_fastened_constraints ─────────────────────────────────────────
+
+    /// Identity target pose + zero relative offset/quat → worldPos = targetPos, worldQuat = identity.
+    #[test]
+    fn test_solve_fastened_identity() {
+        // relativeOffset=(0,0,0), relativeQuat=identity(0,0,0,1)
+        // targetPos=(1,2,3), targetQuat=identity(0,0,0,1)
+        let input: [f32; 14] = [
+            0.0, 0.0, 0.0,       // relativeOffset
+            0.0, 0.0, 0.0, 1.0,  // relativeQuat
+            1.0, 2.0, 3.0,       // targetPos
+            0.0, 0.0, 0.0, 1.0,  // targetQuat
+        ];
+        let n = solve_fastened_constraints(&input);
+        assert_eq!(n, 1);
+        unsafe {
+            assert_eq!(CONSTRAINT_POSES.len(), 7);
+            // worldPos should be (1,2,3)
+            assert!((CONSTRAINT_POSES[0] - 1.0).abs() < 1e-5, "x={}", CONSTRAINT_POSES[0]);
+            assert!((CONSTRAINT_POSES[1] - 2.0).abs() < 1e-5, "y={}", CONSTRAINT_POSES[1]);
+            assert!((CONSTRAINT_POSES[2] - 3.0).abs() < 1e-5, "z={}", CONSTRAINT_POSES[2]);
+            // worldQuat should be identity (0,0,0,1)
+            assert!(CONSTRAINT_POSES[3].abs() < 1e-5);
+            assert!(CONSTRAINT_POSES[4].abs() < 1e-5);
+            assert!(CONSTRAINT_POSES[5].abs() < 1e-5);
+            assert!((CONSTRAINT_POSES[6] - 1.0).abs() < 1e-5);
+        }
+    }
+
+    /// relativeOffset along X, rotated 90° around Z → offset maps to +Y in world space.
+    /// targetPos = origin, targetQuat = 90° around Z: (0, 0, sin45°, cos45°)
+    #[test]
+    fn test_solve_fastened_rotated_offset() {
+        let s = std::f32::consts::FRAC_1_SQRT_2; // sin(45°) = cos(45°)
+        // targetQuat = 90° rotation around Z: (qx=0, qy=0, qz=s, qw=s)
+        // relativeOffset = (1, 0, 0)
+        // Expected worldPos: applyQuat((1,0,0), (0,0,s,s)) = (0, 1, 0)
+        let input: [f32; 14] = [
+            1.0, 0.0, 0.0,       // relativeOffset
+            0.0, 0.0, 0.0, 1.0,  // relativeQuat (identity)
+            0.0, 0.0, 0.0,       // targetPos
+            0.0, 0.0,  s,   s,   // targetQuat (90° around Z)
+        ];
+        let n = solve_fastened_constraints(&input);
+        assert_eq!(n, 1);
+        unsafe {
+            assert!(CONSTRAINT_POSES[0].abs() < 1e-5,        "x={}", CONSTRAINT_POSES[0]);
+            assert!((CONSTRAINT_POSES[1] - 1.0).abs() < 1e-5, "y={}", CONSTRAINT_POSES[1]);
+            assert!(CONSTRAINT_POSES[2].abs() < 1e-5,        "z={}", CONSTRAINT_POSES[2]);
+        }
+    }
+
+    /// Batch: two constraints → 14 output values.
+    #[test]
+    fn test_solve_fastened_batch_count() {
+        let input: [f32; 28] = [
+            0.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0,  1.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0,
+            0.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0,  0.0, 1.0, 0.0,  0.0, 0.0, 0.0, 1.0,
+        ];
+        let n = solve_fastened_constraints(&input);
+        assert_eq!(n, 2);
+        unsafe { assert_eq!(CONSTRAINT_POSES.len(), 14); }
+    }
+
+    /// Rejects empty or non-multiple-of-14 input.
+    #[test]
+    fn test_solve_fastened_rejects_bad_input() {
+        assert_eq!(solve_fastened_constraints(&[]), 0);
+        assert_eq!(solve_fastened_constraints(&[0.0; 13]), 0);
+        assert_eq!(solve_fastened_constraints(&[0.0; 15]), 0);
+    }
+
+    // ── apply_pose_to_points ───────────────────────────────────────────────
+
+    /// Identity pose → world points equal local points.
+    #[test]
+    fn test_apply_pose_identity() {
+        // pose: position=(0,0,0), quat=identity
+        let mut input = vec![0.0f32; 7];
+        input[6] = 1.0; // qw = 1
+        input.extend_from_slice(&[1.0, 2.0, 3.0,  4.0, 5.0, 6.0]); // 2 points
+
+        let n = apply_pose_to_points(&input);
+        assert_eq!(n, 2);
+        unsafe {
+            assert!((TRANSFORM_BUFFER[0] - 1.0).abs() < 1e-5);
+            assert!((TRANSFORM_BUFFER[1] - 2.0).abs() < 1e-5);
+            assert!((TRANSFORM_BUFFER[2] - 3.0).abs() < 1e-5);
+            assert!((TRANSFORM_BUFFER[3] - 4.0).abs() < 1e-5);
+            assert!((TRANSFORM_BUFFER[4] - 5.0).abs() < 1e-5);
+            assert!((TRANSFORM_BUFFER[5] - 6.0).abs() < 1e-5);
+        }
+    }
+
+    /// Translation-only pose shifts all points by the offset.
+    #[test]
+    fn test_apply_pose_translation() {
+        let input: [f32; 10] = [
+            5.0, 0.0, 0.0,       // position
+            0.0, 0.0, 0.0, 1.0,  // quat identity
+            0.0, 0.0, 0.0,       // one local point at origin
+        ];
+        let n = apply_pose_to_points(&input);
+        assert_eq!(n, 1);
+        unsafe {
+            assert!((TRANSFORM_BUFFER[0] - 5.0).abs() < 1e-5);
+            assert!(TRANSFORM_BUFFER[1].abs() < 1e-5);
+            assert!(TRANSFORM_BUFFER[2].abs() < 1e-5);
+        }
+    }
+
+    /// Rejects input shorter than 7 (pose) + 3 (one point) = 10 values.
+    #[test]
+    fn test_apply_pose_rejects_bad_input() {
+        assert_eq!(apply_pose_to_points(&[0.0; 9]), 0);
+        assert_eq!(apply_pose_to_points(&[0.0; 8]), 0); // 8 - 7 = 1 → not multiple of 3
     }
 }

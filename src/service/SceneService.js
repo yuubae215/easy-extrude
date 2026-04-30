@@ -60,6 +60,7 @@ import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
 import { SpatialLink } from '../domain/SpatialLink.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
+import { constraintSolver } from './ConstraintSolver.js'
 
 export class SceneService extends EventEmitter {
   /**
@@ -828,11 +829,25 @@ export class SceneService extends EventEmitter {
       const pose = this._worldPoseCache.get(link.targetId)
       if (!pose) continue  // host CF not yet resolved — skip this frame
 
-      // worldPos = H × localPos = q.rotate(localPos) + position
-      const corners = localPositions.map(lp =>
-        lp.clone().applyQuaternion(pose.quaternion).add(pose.position),
-      )
-      // Write world coords back to vertex.position so all other code sees world coords
+      // Pack pose + local points into flat array for Wasm.
+      // Layout: [px,py,pz, qx,qy,qz,qw, lx0,ly0,lz0, ...] = 7 + 3*n f32
+      const n = localPositions.length
+      const inputFlat = new Float32Array(7 + n * 3)
+      inputFlat[0] = pose.position.x;    inputFlat[1] = pose.position.y;    inputFlat[2] = pose.position.z
+      inputFlat[3] = pose.quaternion.x;  inputFlat[4] = pose.quaternion.y;  inputFlat[5] = pose.quaternion.z;  inputFlat[6] = pose.quaternion.w
+      for (let j = 0; j < n; j++) {
+        const lp = localPositions[j]
+        inputFlat[7 + j * 3] = lp.x;  inputFlat[8 + j * 3] = lp.y;  inputFlat[9 + j * 3] = lp.z
+      }
+
+      // worldPos = H × localPos = q.rotate(localPos) + position  (Wasm or JS fallback)
+      const worldPts = constraintSolver.applyPoseToPoints(inputFlat)
+
+      // Build corners array and write world coords back to vertex.position
+      const corners = []
+      for (let j = 0; j < n; j++) {
+        corners.push(new Vector3(worldPts[j * 3], worldPts[j * 3 + 1], worldPts[j * 3 + 2]))
+      }
       source.vertices.forEach((v, i) => { if (corners[i]) v.position.copy(corners[i]) })
       source.meshView.updateGeometry(corners)
       if (source.meshView.boxHelper?.visible) source.meshView.updateBoxHelper()
@@ -967,19 +982,43 @@ export class SceneService extends EventEmitter {
    * Single-level fastening (no CF-of-CF chains) is the expected use case.
    */
   _updateFastenedFrames() {
-    for (const [linkId, { sourceId, relativeOffset, relativeQuat }] of this._fastenedTransforms) {
+    // Filter to valid, solvable constraints
+    const entries = []
+    for (const entry of this._fastenedTransforms.entries()) {
+      const [linkId, { sourceId }] = entry
       const link   = this._model.getLink(linkId)
       const source = this._model.getObject(sourceId)
       if (!link || !(source instanceof CoordinateFrame)) continue
+      if (!this._worldPoseCache.has(link.targetId)) continue
+      entries.push(entry)
+    }
+    if (entries.length === 0) return
 
-      const targetPose = this._worldPoseCache.get(link.targetId)
-      if (!targetPose) continue
+    // Pack math inputs into a flat Float32Array for Wasm (or JS fallback).
+    // Layout per constraint: [relOffXYZ, relQxyzw, targetPosXYZ, targetQxyzw] = 14 f32
+    const inputFlat = new Float32Array(entries.length * 14)
+    for (let i = 0; i < entries.length; i++) {
+      const [linkId, { relativeOffset, relativeQuat }] = entries[i]
+      const targetPose = this._worldPoseCache.get(this._model.getLink(linkId).targetId)
+      const b = i * 14
+      inputFlat[b]     = relativeOffset.x;    inputFlat[b + 1]  = relativeOffset.y;    inputFlat[b + 2]  = relativeOffset.z
+      inputFlat[b + 3] = relativeQuat.x;      inputFlat[b + 4]  = relativeQuat.y;      inputFlat[b + 5]  = relativeQuat.z;     inputFlat[b + 6]  = relativeQuat.w
+      inputFlat[b + 7] = targetPose.position.x; inputFlat[b + 8] = targetPose.position.y; inputFlat[b + 9] = targetPose.position.z
+      inputFlat[b + 10] = targetPose.quaternion.x; inputFlat[b + 11] = targetPose.quaternion.y
+      inputFlat[b + 12] = targetPose.quaternion.z; inputFlat[b + 13] = targetPose.quaternion.w
+    }
 
-      // Compute desired world pose
-      const worldPos  = relativeOffset.clone().applyQuaternion(targetPose.quaternion).add(targetPose.position)
-      const worldQuat = targetPose.quaternion.clone().multiply(relativeQuat)
+    // Solve all constraint poses — pure math, no allocations inside
+    const poses = constraintSolver.solveFastenedConstraints(inputFlat)
 
-      // Resolve parent
+    // Apply results: view updates and parent mutations stay in JS
+    for (let i = 0; i < entries.length; i++) {
+      const [linkId, { sourceId }] = entries[i]
+      const o = i * 7
+      const wpx = poses[o], wpy = poses[o + 1], wpz = poses[o + 2]
+      const wqx = poses[o + 3], wqy = poses[o + 4], wqz = poses[o + 5], wqw = poses[o + 6]
+
+      const source = this._model.getObject(sourceId)
       const parent = this._model.getObject(source.parentId)
       if (!parent) continue
 
@@ -990,17 +1029,18 @@ export class SceneService extends EventEmitter {
         const cached = this._worldPoseCache.get(parent.id)
         if (!cached) continue
         parentWorldPos = cached.position
-        source.translation.copy(worldPos).sub(parentWorldPos)
+        source.translation.set(wpx - parentWorldPos.x, wpy - parentWorldPos.y, wpz - parentWorldPos.z)
       } else {
-        // Parent is a Solid (or other geometry entity): the CF is a fixed mounting
-        // point on the Solid.  Keep source.translation unchanged and move the Solid
-        // instead so that CF_A arrives at the constrained world position.
+        // Parent is a Solid: keep source.translation unchanged, move the Solid
+        // so that the CF arrives at the constrained world position.
         if (!parent.corners || parent.corners.length === 0) continue
         const currentEntry = this._worldPoseCache.get(sourceId)
         if (!currentEntry) continue
 
-        const delta = worldPos.clone().sub(currentEntry.position)
-        for (const corner of parent.corners) corner.add(delta)
+        const dx = wpx - currentEntry.position.x
+        const dy = wpy - currentEntry.position.y
+        const dz = wpz - currentEntry.position.z
+        for (const corner of parent.corners) { corner.x += dx; corner.y += dy; corner.z += dz }
         parent.meshView.updateGeometry(parent.corners)
         parent.meshView.updateBoxHelper()
 
@@ -1012,18 +1052,19 @@ export class SceneService extends EventEmitter {
         // source.translation intentionally left unchanged
       }
 
-      source.rotation.copy(worldQuat)  // also updates cache entry (shared reference)
+      source.rotation.set(wqx, wqy, wqz, wqw)  // also updates cache entry (shared reference)
 
-      // Update cache position explicitly (quaternion already updated via shared ref)
-      const entry = this._worldPoseCache.get(sourceId)
-      if (entry) {
-        entry.position.copy(worldPos)
+      // Update cache position (quaternion updated via shared ref above)
+      const cacheEntry = this._worldPoseCache.get(sourceId)
+      if (cacheEntry) {
+        cacheEntry.position.set(wpx, wpy, wpz)
       } else {
-        this._worldPoseCache.set(sourceId, { position: worldPos.clone(), quaternion: source.rotation })
+        this._worldPoseCache.set(sourceId, { position: new Vector3(wpx, wpy, wpz), quaternion: source.rotation })
       }
 
       // Update view
-      source.meshView.updatePosition(worldPos)
+      const _wp = new Vector3(wpx, wpy, wpz)
+      source.meshView.updatePosition(_wp)
       source.meshView.updateConnectionLine(parentWorldPos)
     }
   }

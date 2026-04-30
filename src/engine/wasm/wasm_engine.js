@@ -1,6 +1,30 @@
 /* @ts-self-types="./wasm_engine.d.ts" */
 
 /**
+ * Apply a single rigid-body pose to N local-space points, producing world-space points.
+ *
+ * `input_flat`: 7 + 3*N f32:
+ *   [0..2] pose.position.xyz
+ *   [3..6] pose.quaternion.xyzw   (Three.js order: x, y, z, w)
+ *   [7..]  N × (lx, ly, lz)  local-space points
+ *
+ * Equivalent JS (per point):
+ *   worldPoint = localPoint.clone().applyQuaternion(pose.quaternion).add(pose.position)
+ *
+ * Output stored in TRANSFORM_BUFFER: N × 3 f32 world-space points.
+ *
+ * Returns N on success, 0 on bad input.
+ * @param {Float32Array} input_flat
+ * @returns {number}
+ */
+export function apply_pose_to_points(input_flat) {
+    const ptr0 = passArrayF32ToWasm0(input_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.apply_pose_to_points(ptr0, len0);
+    return ret >>> 0;
+}
+
+/**
  * Build BufferGeometry arrays for a cuboid defined by 8 corners.
  *
  * `corners_flat`: flat f32 slice of length 24 (8 corners × x,y,z),
@@ -81,6 +105,24 @@ export function build_instance_matrices(transforms_flat) {
 }
 
 /**
+ * Number of f32 elements in the constraint-poses buffer (N × 7).
+ * @returns {number}
+ */
+export function get_constraints_len() {
+    const ret = wasm.get_constraints_len();
+    return ret >>> 0;
+}
+
+/**
+ * Pointer to the constraint-poses output buffer.
+ * @returns {number}
+ */
+export function get_constraints_ptr() {
+    const ret = wasm.get_constraints_ptr();
+    return ret >>> 0;
+}
+
+/**
  * Number of u32 elements in the indices buffer.
  * @returns {number}
  */
@@ -149,6 +191,52 @@ export function get_positions_len() {
  */
 export function get_positions_ptr() {
     const ret = wasm.get_positions_ptr();
+    return ret >>> 0;
+}
+
+/**
+ * Number of f32 elements in the transform output buffer (N × 3).
+ * @returns {number}
+ */
+export function get_transform_len() {
+    const ret = wasm.get_transform_len();
+    return ret >>> 0;
+}
+
+/**
+ * Pointer to the transform output buffer.
+ * @returns {number}
+ */
+export function get_transform_ptr() {
+    const ret = wasm.get_transform_ptr();
+    return ret >>> 0;
+}
+
+/**
+ * Batch-solve world poses for N fastened CoordinateFrame constraints.
+ *
+ * `input_flat`: N × 14 f32, one block per constraint:
+ *   [0..2]   relativeOffset.xyz       — offset in target's local frame
+ *   [3..6]   relativeQuat.xyzw        — rotation relative to target (Three.js order)
+ *   [7..9]   targetPos.xyz            — target world position
+ *   [10..13] targetQuat.xyzw          — target world quaternion
+ *
+ * Equivalent JS (per constraint):
+ *   worldPos  = relativeOffset.clone().applyQuaternion(targetQuat).add(targetPos)
+ *   worldQuat = targetQuat.clone().multiply(relativeQuat)
+ *
+ * Output stored in CONSTRAINT_POSES: N × 7 f32:
+ *   [0..2] worldPos.xyz
+ *   [3..6] worldQuat.xyzw
+ *
+ * Returns N on success, 0 on bad input (non-multiple of 14 or empty).
+ * @param {Float32Array} input_flat
+ * @returns {number}
+ */
+export function solve_fastened_constraints(input_flat) {
+    const ptr0 = passArrayF32ToWasm0(input_flat, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.solve_fastened_constraints(ptr0, len0);
     return ret >>> 0;
 }
 
