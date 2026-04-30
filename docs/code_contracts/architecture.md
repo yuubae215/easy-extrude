@@ -384,6 +384,16 @@ if (this._tcFastenedBlocked) {
 if (this._tcFastenedBlocked) return
 ```
 
+## Fastened Constraint — Known Limitations
+
+These are design-level constraints (not bugs) of the current `fastened` implementation.  Violating these silently produces wrong behaviour.
+
+- **Translation-only propagation**: `_updateFastenedFrames()` propagates the constraint as a world-space translation delta to the parent Solid's corners.  Rotation of the target entity is reflected in `source.rotation` (the CF rotates) but the parent Solid's corner geometry is NOT rotated.  If the target rotates, the Solid will appear at the correct position but with the wrong orientation.  Acceptable while Solid rotation is not a first-class operation.
+
+- **One fastened CF per Solid**: If two child CFs of the same Solid are each fastened to different target CFs, the second iteration of `_updateFastenedFrames()` moves the Solid again — invalidating the first constraint.  Only the last constraint processed (Map insertion order) is satisfied at the end of each frame.  **Do not create multiple fastened links whose source CFs share the same parent Solid.**
+
+- **Geometric constraints inactive after `loadScene()` / `importFromJson()`**: SpatialLinks are deserialized and added to the model, but `_fastenedTransforms` and `_mountLocalPositions` are not populated during deserialization because `_worldPoseCache` is not yet available.  Both `loadScene()` and `importFromJson()` call `_updateWorldPoses()` + `_reactivateLiveLinks()` at the end to re-establish live constraints.  If either call is removed, constraints become permanently inactive for that session.
+
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
 
 - **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.

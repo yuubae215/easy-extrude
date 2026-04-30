@@ -290,6 +290,11 @@ export class SceneService extends EventEmitter {
       const solids = entities.filter(e => e instanceof Solid)
       await this.batchRebuildSolids(solids)
 
+      // One synchronous world-pose pass so _worldPoseCache is populated, then
+      // reactivate geometric constraints (_fastenedTransforms / _mountLocalPositions).
+      this._updateWorldPoses()
+      this._reactivateLiveLinks()
+
       return true
     } catch (err) {
       if (err instanceof BffUnavailableError) {
@@ -499,6 +504,11 @@ export class SceneService extends EventEmitter {
         skipped++
       }
     }
+
+    // One synchronous world-pose pass so _worldPoseCache is populated, then
+    // reactivate geometric constraints for any imported fastened / mounts links.
+    this._updateWorldPoses()
+    this._reactivateLiveLinks()
 
     return { imported, skipped }
   }
@@ -1526,6 +1536,37 @@ export class SceneService extends EventEmitter {
     this._linkViews.get(id)?.dispose(this._threeScene)
     this._linkViews.delete(id)
     this.emit('spatialLinkRemoved', id)
+  }
+
+  /**
+   * Reactivates all geometric SpatialLink constraints (fastened, mounts) for
+   * every link currently in the model.  Must be called AFTER _updateWorldPoses()
+   * has run so that _worldPoseCache is populated.
+   *
+   * Used at the end of loadScene() and importFromJson() to make constraints live
+   * again after entities and links have been reconstructed from serialized data.
+   */
+  _reactivateLiveLinks() {
+    for (const link of this._model.links.values()) {
+      if (link.linkType === 'fastened') {
+        const sourcePose = this._worldPoseCache.get(link.sourceId)
+        const targetPose = this._worldPoseCache.get(link.targetId)
+        if (!sourcePose || !targetPose) continue
+        const invTargetQuat  = targetPose.quaternion.clone().conjugate()
+        const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
+        const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
+        this._fastenedTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
+      } else if (link.linkType === 'mounts') {
+        const source = this._model.getObject(link.sourceId)
+        const pose   = this._worldPoseCache.get(link.targetId)
+        if (!source || !pose) continue
+        const invQ = pose.quaternion.clone().conjugate()
+        const localPositions = source.vertices.map(v =>
+          v.position.clone().sub(pose.position).applyQuaternion(invQ),
+        )
+        this._mountLocalPositions.set(link.id, { sourceId: link.sourceId, localPositions })
+      }
+    }
   }
 
   /**

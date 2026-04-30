@@ -75,6 +75,7 @@ Detail: `docs/code_contracts/architecture.md`
 | CoordinateFrame Tap Selection | `_hitAnyObject()` never hits a CF (cuboid = null); `_onPointerDown` runs **both** `_hitAnyCoordinateFrame()` and `_hitAnyObject()` then picks via `_isCfDescendantOf()`: CF wins only when it is a child of the found Solid (PHILOSOPHY #22); otherwise the Solid wins — the 0.4-unit bbox fallback must not block selection of nearby unrelated Solids. |
 | _promptAddFrame Must Select Frame After Creation | After pushing the command in `_promptAddFrame()`, call `_switchActiveObject(frame.id, true)` — otherwise the frame stays hidden in the 3D viewport. Undo restores parent selection; redo re-selects the frame. |
 | _hitAnyEntityForLink CF Priority | `_hitAnyEntityForLink()` must call `_hitAnyCoordinateFrame()` as Step 0 before the cuboid raycast; CFs sit on top of Solids so the cuboid step would return the Solid, causing `_computeValidLinkTypes(CF, Solid)` to omit "fastened". |
+| Fastened Constraint Limitations | (1) Rotation of target is NOT propagated to parent Solid corners — only translation delta is applied. (2) Only one fastened source CF per parent Solid is supported; two fastened CFs on the same Solid violate each other (last processed wins). (3) `loadScene()` / `importFromJson()` must call `_updateWorldPoses()` + `_reactivateLiveLinks()` after entity/link reconstruction; without this, constraints are silent no-ops for the rest of the session. |
 
 ---
 
