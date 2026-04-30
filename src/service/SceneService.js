@@ -969,24 +969,39 @@ export class SceneService extends EventEmitter {
       const worldPos  = relativeOffset.clone().applyQuaternion(targetPose.quaternion).add(targetPose.position)
       const worldQuat = targetPose.quaternion.clone().multiply(relativeQuat)
 
-      // Resolve parent centroid to back-derive translation
+      // Resolve parent
       const parent = this._model.getObject(source.parentId)
       if (!parent) continue
+
       let parentWorldPos
       if (parent instanceof CoordinateFrame) {
+        // Parent is another CF: update source.translation so the CF repositions
+        // within the parent CF's frame (original sliding behavior).
         const cached = this._worldPoseCache.get(parent.id)
         if (!cached) continue
         parentWorldPos = cached.position
+        source.translation.copy(worldPos).sub(parentWorldPos)
       } else {
+        // Parent is a Solid (or other geometry entity): the CF is a fixed mounting
+        // point on the Solid.  Keep source.translation unchanged and move the Solid
+        // instead so that CF_A arrives at the constrained world position.
         if (!parent.corners || parent.corners.length === 0) continue
+        const currentEntry = this._worldPoseCache.get(sourceId)
+        if (!currentEntry) continue
+
+        const delta = worldPos.clone().sub(currentEntry.position)
+        for (const corner of parent.corners) corner.add(delta)
+        parent.meshView.updateGeometry(parent.corners)
+        parent.meshView.updateBoxHelper()
+
+        // Recompute parent centroid after the move
         const centroid = new Vector3()
         for (const c of parent.corners) centroid.add(c)
         centroid.divideScalar(parent.corners.length)
         parentWorldPos = centroid
+        // source.translation intentionally left unchanged
       }
 
-      // Write back so subsequent code (N panel, Node editor) sees correct state
-      source.translation.copy(worldPos).sub(parentWorldPos)
       source.rotation.copy(worldQuat)  // also updates cache entry (shared reference)
 
       // Update cache position explicitly (quaternion already updated via shared ref)

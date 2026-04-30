@@ -361,9 +361,9 @@ if (this._tc?.object) {
 
 ## TC Drag Must Be Blocked on Fastened-Source CoordinateFrames
 
-- **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `translation` and `rotation` overwritten by `_updateFastenedFrames()` every animation frame. Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.
+- **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `rotation` overwritten by `_updateFastenedFrames()` every animation frame (and `translation` too when the parent is another CF). Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.
 - **Concrete Rule**: In the `dragging-changed` start handler, call `this._service.isFastenedSource(obj.id)` for `CoordinateFrame` active objects. If it returns `true`, set `this._tcFastenedBlocked = true` and show a toast. In the `objectChange` handler, return immediately when `_tcFastenedBlocked` is set. In the `dragging-changed` end handler, if `_tcFastenedBlocked`: clear the flag, call `_syncMobileTransformProxy()` to snap the proxy back to the CF's constrained position, and return without pushing any undo command.
-- **Root bug**: `_updateFastenedFrames()` runs at the end of every `_updateWorldPoses()` call. It writes back `source.translation` and `source.rotation` unconditionally. A TC drag that sets `source.translation` in `objectChange` is immediately reversed, but the TC proxy (a plain `THREE.Object3D` owned by TC) keeps moving — producing a visual desync where the gizmo and the CF separate.
+- **Root bug (fixed)**: When the source CF's parent is a **Solid**, `_updateFastenedFrames()` must move the parent Solid (via `corner.add(delta)` + `updateGeometry`) rather than updating `source.translation`. Updating `source.translation` only slides the CF on the Solid's surface — the Solid itself never moves, so the constraint has no observable effect on the parent body. `source.translation` must remain unchanged so the CF stays at its designated mounting point on the Solid.
 
 ```js
 // dragging-changed start
