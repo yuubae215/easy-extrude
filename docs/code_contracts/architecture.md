@@ -361,9 +361,9 @@ if (this._tc?.object) {
 
 ## TC Drag Must Be Blocked on Fastened-Source CoordinateFrames
 
-- **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `translation` and `rotation` overwritten by `_updateFastenedFrames()` every animation frame. Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.
+- **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `rotation` overwritten by `_updateFastenedFrames()` every animation frame (and `translation` too when the parent is another CF). Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.
 - **Concrete Rule**: In the `dragging-changed` start handler, call `this._service.isFastenedSource(obj.id)` for `CoordinateFrame` active objects. If it returns `true`, set `this._tcFastenedBlocked = true` and show a toast. In the `objectChange` handler, return immediately when `_tcFastenedBlocked` is set. In the `dragging-changed` end handler, if `_tcFastenedBlocked`: clear the flag, call `_syncMobileTransformProxy()` to snap the proxy back to the CF's constrained position, and return without pushing any undo command.
-- **Root bug**: `_updateFastenedFrames()` runs at the end of every `_updateWorldPoses()` call. It writes back `source.translation` and `source.rotation` unconditionally. A TC drag that sets `source.translation` in `objectChange` is immediately reversed, but the TC proxy (a plain `THREE.Object3D` owned by TC) keeps moving — producing a visual desync where the gizmo and the CF separate.
+- **Root bug (fixed)**: When the source CF's parent is a **Solid**, `_updateFastenedFrames()` must move the parent Solid (via `corner.add(delta)` + `updateGeometry`) rather than updating `source.translation`. Updating `source.translation` only slides the CF on the Solid's surface — the Solid itself never moves, so the constraint has no observable effect on the parent body. `source.translation` must remain unchanged so the CF stays at its designated mounting point on the Solid.
 
 ```js
 // dragging-changed start
@@ -383,6 +383,16 @@ if (this._tcFastenedBlocked) {
 // objectChange
 if (this._tcFastenedBlocked) return
 ```
+
+## Fastened Constraint — Known Limitations
+
+These are design-level constraints (not bugs) of the current `fastened` implementation.  Violating these silently produces wrong behaviour.
+
+- **Translation-only propagation**: `_updateFastenedFrames()` propagates the constraint as a world-space translation delta to the parent Solid's corners.  Rotation of the target entity is reflected in `source.rotation` (the CF rotates) but the parent Solid's corner geometry is NOT rotated.  If the target rotates, the Solid will appear at the correct position but with the wrong orientation.  Acceptable while Solid rotation is not a first-class operation.
+
+- **One fastened CF per Solid**: If two child CFs of the same Solid are each fastened to different target CFs, the second iteration of `_updateFastenedFrames()` moves the Solid again — invalidating the first constraint.  Only the last constraint processed (Map insertion order) is satisfied at the end of each frame.  **Do not create multiple fastened links whose source CFs share the same parent Solid.**
+
+- **Geometric constraints inactive after `loadScene()` / `importFromJson()`**: SpatialLinks are deserialized and added to the model, but `_fastenedTransforms` and `_mountLocalPositions` are not populated during deserialization because `_worldPoseCache` is not yet available.  Both `loadScene()` and `importFromJson()` call `_updateWorldPoses()` + `_reactivateLiveLinks()` at the end to re-establish live constraints.  If either call is removed, constraints become permanently inactive for that session.
 
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
 

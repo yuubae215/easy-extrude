@@ -464,6 +464,8 @@ Phases A, B, C implemented (2026-03-21 to 2026-03-22). See ADR-015 and ADR-017 f
 |----------|------|-----------|-------------|
 | ~~🔴 High~~ | ~~MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement~~ ✅ 2026-04-17 | ~~Medium~~ | ADR-005 |
 | ~~🟡 Medium~~ | ~~Right-click context menu (currently: cancel only)~~ ✅ 2026-04-17 | ~~Low~~ | ADR-006 |
+| 🔴 High | **fastened 拘束の回転伝播** — `_updateFastenedFrames()` は現在 translation delta のみ親 Solid に適用し rotation を伝播しない。Target CF が回転したとき Source CF の rotation は更新されるが親 Solid のコーナーは回転しないため、Solid の向きが拘束と乖離する。修正方針: `currentEntry.quaternion` を保存 → `deltaQuat = worldQuat × currentQuat⁻¹` → 各コーナーを source CF のワールド位置まわりに `deltaQuat` で回転させてから translation delta を加算。 | Medium | ADR-032 §5; CODE_CONTRACTS "Fastened Constraint Limitations" (1) |
+| 🟡 Medium | **fastened 拘束: 同一 Solid に複数 source CF** — 現在は `_fastenedTransforms` のイテレーション順で最後の拘束のみが満たされる (last write wins)。複数拘束を同時に充足するには単純な逐次デルタ加算ではなく制約ソルバーが必要。当面は UI 側で「1 Solid につき fastened source CF は 1 つまで」を validation で制限することを推奨。 | High | ADR-032 §5; CODE_CONTRACTS "Fastened Constraint Limitations" (2) |
 | 🟡 Medium | Multi-face extrude (Shift+click) | Medium | — |
 | 🟡 Medium | Export (OBJ / GLTF) | Low | Phase D via Geometry Service |
 | 🟢 Low | CoordinateFrame assembly-mate positioning — `matchedFrameId` field; declare frame coincidence to drive object placement | High | ADR-021 |
