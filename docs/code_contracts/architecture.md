@@ -359,17 +359,25 @@ if (this._tc?.object) {
 }
 ```
 
-## TC Drag Must Be Blocked on Fastened-Source CoordinateFrames
+## TC Drag Must Be Blocked on Fastened-Source CoordinateFrames and Their Parent Solids
 
 - **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `rotation` overwritten by `_updateFastenedFrames()` every animation frame (and `translation` too when the parent is another CF). Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.
-- **Concrete Rule**: In the `dragging-changed` start handler, call `this._service.isFastenedSource(obj.id)` for `CoordinateFrame` active objects. If it returns `true`, set `this._tcFastenedBlocked = true` and show a toast. In the `objectChange` handler, return immediately when `_tcFastenedBlocked` is set. In the `dragging-changed` end handler, if `_tcFastenedBlocked`: clear the flag, call `_syncMobileTransformProxy()` to snap the proxy back to the CF's constrained position, and return without pushing any undo command.
+- The same problem applies to the **parent Solid** of a fastened-source CF: `_updateFastenedFrames()` moves the Solid's corners back every frame to satisfy the constraint, so the Solid snaps to its original position while the TC proxy stays at the dragged position.
+- **Concrete Rule**: In the `dragging-changed` start handler:
+  - For `CoordinateFrame`: call `this._service.isFastenedSource(obj.id)`.
+  - For Solid / other entities: call `this._service.hasFastenedChild(obj.id)`.
+  - If either returns `true`, set `this._tcFastenedBlocked = true` and show a toast.
+  - In the `objectChange` handler, return immediately when `_tcFastenedBlocked` is set.
+  - In the `dragging-changed` end handler, if `_tcFastenedBlocked`: clear the flag, call `_syncMobileTransformProxy()` to snap the proxy back to the constraint-enforced position, and return without pushing any undo command.
 - **Root bug (fixed)**: When the source CF's parent is a **Solid**, `_updateFastenedFrames()` must move the parent Solid (via `corner.add(delta)` + `updateGeometry`) rather than updating `source.translation`. Updating `source.translation` only slides the CF on the Solid's surface — the Solid itself never moves, so the constraint has no observable effect on the parent body. `source.translation` must remain unchanged so the CF stays at its designated mounting point on the Solid.
 
 ```js
 // dragging-changed start
-if (obj instanceof CoordinateFrame && this._service.isFastenedSource(obj.id)) {
+const isFastenedCF    = obj instanceof CoordinateFrame && this._service.isFastenedSource(obj.id)
+const isFastenedSolid = !(obj instanceof CoordinateFrame) && this._service.hasFastenedChild(obj.id)
+if (isFastenedCF || isFastenedSolid) {
   this._tcFastenedBlocked = true
-  this._uiView.showToast('This frame is fastened. Unfasten it first to move it independently.', { type: 'warn' })
+  this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
 }
 
 // dragging-changed end

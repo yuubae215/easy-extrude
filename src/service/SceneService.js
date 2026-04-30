@@ -1673,6 +1673,15 @@ export class SceneService extends EventEmitter {
     return false
   }
 
+  /** Returns true when any fastened-source CF has the given solid as its direct parent. */
+  hasFastenedChild(solidId) {
+    for (const { sourceId } of this._fastenedTransforms.values()) {
+      const source = this._model.getObject(sourceId)
+      if (source && source.parentId === solidId) return true
+    }
+    return false
+  }
+
   /**
    * Sets the active object id and emits 'activeChanged'.
    * Pass null to deselect.

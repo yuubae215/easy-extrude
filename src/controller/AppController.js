@@ -2113,12 +2113,16 @@ export class AppController {
         if (this._tcMode === 'rotate' && this._activeObj instanceof CoordinateFrame) {
           this._tcStartFrameRot = this._activeObj.rotation.clone()
         }
-        // Block movement on fastened-source CFs: _updateFastenedFrames() would
-        // override any translation/rotation written by objectChange every frame.
-        if (this._activeObj instanceof CoordinateFrame &&
-            this._service.isFastenedSource(this._activeObj.id)) {
+        // Block movement on fastened-source CFs and Solids that own them:
+        // _updateFastenedFrames() overrides translation every frame, so any delta
+        // from objectChange is silently discarded and the TC proxy drifts.
+        const isFastenedCF = this._activeObj instanceof CoordinateFrame &&
+            this._service.isFastenedSource(this._activeObj.id)
+        const isFastenedSolid = !(this._activeObj instanceof CoordinateFrame) &&
+            this._service.hasFastenedChild(this._activeObj.id)
+        if (isFastenedCF || isFastenedSolid) {
           this._tcFastenedBlocked = true
-          this._uiView.showToast('This frame is fastened. Unfasten it first to move it independently.', { type: 'warn' })
+          this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
         }
       } else {
         // Drag end — if fastened, snap proxy back and skip command recording
