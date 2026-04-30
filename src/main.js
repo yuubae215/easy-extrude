@@ -6,7 +6,8 @@ import { UIView }          from './view/UIView.js'
 import { GizmoView }       from './view/GizmoView.js'
 import { OutlinerView }    from './view/OutlinerView.js'
 import { AppController }   from './controller/AppController.js'
-import { geometryEngine }  from './service/GeometryEngine.js'
+import { geometryEngine }   from './service/GeometryEngine.js'
+import { constraintSolver } from './service/ConstraintSolver.js'
 
 // Start the Wasm geometry worker in the background (ADR-027).
 // The rest of the app boots synchronously and uses the JS fallback until
@@ -14,6 +15,12 @@ import { geometryEngine }  from './service/GeometryEngine.js'
 // are automatically dispatched to Wasm.
 geometryEngine.init().then(() => {
   console.info(`[GeometryEngine] ready — Wasm: ${geometryEngine.isWasmActive}`)
+})
+
+// Load the Wasm constraint solver on the main thread for synchronous per-frame math.
+// Uses the same .wasm binary as GeometryEngine but a separate instance with independent memory.
+constraintSolver.init().then(() => {
+  console.info(`[ConstraintSolver] ready — Wasm: ${constraintSolver.isWasmActive}`)
 })
 
 const sceneView    = new SceneView()

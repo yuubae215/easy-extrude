@@ -2,6 +2,23 @@
 /* eslint-disable */
 
 /**
+ * Apply a single rigid-body pose to N local-space points, producing world-space points.
+ *
+ * `input_flat`: 7 + 3*N f32:
+ *   [0..2] pose.position.xyz
+ *   [3..6] pose.quaternion.xyzw   (Three.js order: x, y, z, w)
+ *   [7..]  N × (lx, ly, lz)  local-space points
+ *
+ * Equivalent JS (per point):
+ *   worldPoint = localPoint.clone().applyQuaternion(pose.quaternion).add(pose.position)
+ *
+ * Output stored in TRANSFORM_BUFFER: N × 3 f32 world-space points.
+ *
+ * Returns N on success, 0 on bad input.
+ */
+export function apply_pose_to_points(input_flat: Float32Array): number;
+
+/**
  * Build BufferGeometry arrays for a cuboid defined by 8 corners.
  *
  * `corners_flat`: flat f32 slice of length 24 (8 corners × x,y,z),
@@ -60,6 +77,16 @@ export function build_extruded_profile(profile_flat: Float32Array, height: numbe
 export function build_instance_matrices(transforms_flat: Float32Array): number;
 
 /**
+ * Number of f32 elements in the constraint-poses buffer (N × 7).
+ */
+export function get_constraints_len(): number;
+
+/**
+ * Pointer to the constraint-poses output buffer.
+ */
+export function get_constraints_ptr(): number;
+
+/**
  * Number of u32 elements in the indices buffer.
  */
 export function get_indices_len(): number;
@@ -100,6 +127,37 @@ export function get_positions_len(): number;
 export function get_positions_ptr(): number;
 
 /**
+ * Number of f32 elements in the transform output buffer (N × 3).
+ */
+export function get_transform_len(): number;
+
+/**
+ * Pointer to the transform output buffer.
+ */
+export function get_transform_ptr(): number;
+
+/**
+ * Batch-solve world poses for N fastened CoordinateFrame constraints.
+ *
+ * `input_flat`: N × 14 f32, one block per constraint:
+ *   [0..2]   relativeOffset.xyz       — offset in target's local frame
+ *   [3..6]   relativeQuat.xyzw        — rotation relative to target (Three.js order)
+ *   [7..9]   targetPos.xyz            — target world position
+ *   [10..13] targetQuat.xyzw          — target world quaternion
+ *
+ * Equivalent JS (per constraint):
+ *   worldPos  = relativeOffset.clone().applyQuaternion(targetQuat).add(targetPos)
+ *   worldQuat = targetQuat.clone().multiply(relativeQuat)
+ *
+ * Output stored in CONSTRAINT_POSES: N × 7 f32:
+ *   [0..2] worldPos.xyz
+ *   [3..6] worldQuat.xyzw
+ *
+ * Returns N on success, 0 on bad input (non-multiple of 14 or empty).
+ */
+export function solve_fastened_constraints(input_flat: Float32Array): number;
+
+/**
  * Returns the `WebAssembly.Memory` object so JS can construct typed-array
  * views directly over the Wasm heap (zero-copy read after `build_*`).
  *
@@ -114,9 +172,12 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly apply_pose_to_points: (a: number, b: number) => number;
     readonly build_cuboid_geometry: (a: number, b: number) => number;
     readonly build_extruded_profile: (a: number, b: number, c: number) => number;
     readonly build_instance_matrices: (a: number, b: number) => number;
+    readonly get_constraints_len: () => number;
+    readonly get_constraints_ptr: () => number;
     readonly get_indices_len: () => number;
     readonly get_indices_ptr: () => number;
     readonly get_matrices_len: () => number;
@@ -125,6 +186,9 @@ export interface InitOutput {
     readonly get_normals_ptr: () => number;
     readonly get_positions_len: () => number;
     readonly get_positions_ptr: () => number;
+    readonly get_transform_len: () => number;
+    readonly get_transform_ptr: () => number;
+    readonly solve_fastened_constraints: (a: number, b: number) => number;
     readonly wasm_memory: () => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
