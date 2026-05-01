@@ -268,17 +268,18 @@ redirects every tap intended for the child.
   same reason: the Solid behind the CF would otherwise be returned as the link target,
   causing `_computeValidLinkTypes(CF, Solid)` to omit "fastened".
 
-**b) Gizmos have authority only over their attached object.**
-A tool gizmo (e.g. TransformControls) must not shadow unrelated scene entities.
-Run scene hit tests first; apply the gizmo guard only when the tap lands on the gizmo's
-own object (or on empty space near it).
+**b) Visible gizmo handles always take priority; invisible geometry never blocks.**
+A tool gizmo (e.g. TransformControls) must not shadow unrelated scene entities
+through its *invisible* collision volumes. But when a handle is *visibly* rendered
+and hit, the user's intent is unambiguous — the gizmo takes priority regardless of
+what other entity occupies the same screen region (matches Blender / Maya / Unreal).
 
-- When a Solid is selected and TC arrows are on screen, tapping a *different* Solid or CF
-  should switch selection even if a TC arrow lies in the same screen region.
-  Blocking all TC-overlapping taps makes it impossible to change selection on mobile
-  without first dismissing the gizmo.
-- Correct guard: `if (!targetId || targetId === scene.activeId) { /* TC check */ }`.
-  A tap on a different entity bypasses the guard entirely.
+- Three.js TC includes invisible picker meshes (`visible=false`) that extend far
+  beyond the visual arrows and rings. These must never block selection of other objects.
+- A visible handle hit is an unambiguous user-intent signal — return early even when
+  another Solid or CF is also under the tap.
+- Correct guard: `if (tcHits.some(h => h.object.visible)) return` — unconditional,
+  no `targetId` check needed. Invisible-only hits fall through to normal selection.
 
 *Underlies CODE_CONTRACTS rules: CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority, TC Gizmo Hit Guard Before Object Selection*
 
