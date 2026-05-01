@@ -1,7 +1,12 @@
 # State Transitions
 
-Records the mode state transitions of easy-extrude.
-See ADR-008 for implementation details.
+Records the state machines of easy-extrude — both **UI mode transitions** and
+**internal component state machines**.
+
+UI state machines (modes, substates, input gestures) are covered in the sections below.
+Internal component state machines (caches, async flags, lifecycle objects) are covered
+in the final section.  **Both must be designed here before implementation.**
+See ADR-008 for UI mode implementation details.
 
 ---
 
@@ -407,6 +412,83 @@ Edit · 3D                   [← Object]  [Vertex]  [Edge]  [Face]  [Extrude*]
 
 Toolbar button taps use `click` events, not pointer events, so they are
 unaffected by the canvas target guard above.
+
+---
+
+## Internal Component State Machines
+
+### Design workflow (required before implementation)
+
+Whenever you introduce a stateful component — a cache, an async flag, a lifecycle
+object — draw its state machine here **before writing the implementation**.
+The critical question that must be answered for every accessor method:
+
+> **"What does this method return / do in each state?"**
+
+This question, asked at design time, prevents an entire class of bug where callers
+receive `null` or stale data and silently fall back to a wrong value.
+
+The checklist:
+
+```
+1. Name every possible state the component can be in.
+2. Draw all transitions (what event causes each transition).
+3. For each public accessor / method:
+      - specify its behaviour in every state
+      - choose one of: (a) compute on demand (self-healing)
+                       (b) throw / assert (precondition violated)
+                       (c) eager init (UNINIT state impossible by construction)
+      - "return null" is NOT an acceptable answer — it transfers the problem
+        to every caller and will be mishandled by N−1 of them.
+4. Document the chosen strategy here and in CODE_CONTRACTS.
+```
+
+---
+
+### `_worldPoseCache` (SceneService)
+
+**Why this exists here**: 11 of 14 `worldPoseOf()` call sites were missing a
+freshness guard because the cache's lifecycle states were never formally designed.
+Every accessor silently fell back to `(0,0,0)` before the animation loop had run.
+(See PHILOSOPHY #23.)
+
+**States**
+
+```
+UNINIT ──[_updateWorldPoses() first call]──→ VALID
+VALID  ──[invalidateWorldPose(frameId)]────→ STALE  (entry removed from Map)
+STALE  ──[_updateWorldPoses()]─────────────→ VALID
+```
+
+`UNINIT` = `_worldPoseCache` is empty (app start, or after `_worldPoseCache.clear()`).
+`STALE`  = one or more entries have been removed by `invalidateWorldPose()` but
+           `_updateWorldPoses()` has not yet rerun (e.g. during undo/redo, between frames).
+
+**Accessor contract**
+
+| Accessor | UNINIT | VALID | STALE |
+|----------|--------|-------|-------|
+| `worldPoseOf(id)` | auto-heal: calls `_updateWorldPoses()`, then returns entry | return cached entry | auto-heal: calls `_updateWorldPoses()`, then returns entry |
+
+Strategy chosen: **(a) compute on demand** — `worldPoseOf()` calls `_updateWorldPoses()`
+on cache miss so every caller always receives a current pose regardless of when it is
+called relative to the animation loop.
+
+```javascript
+// SceneService.js
+worldPoseOf(frameId) {
+  if (!this._worldPoseCache.has(frameId)) this._updateWorldPoses()
+  return this._worldPoseCache.get(frameId) ?? null
+}
+```
+
+**Transition triggers**
+
+| Transition | Trigger | Called by |
+|------------|---------|-----------|
+| → VALID | `_updateWorldPoses()` | animation loop (every frame) + `worldPoseOf()` on cache miss |
+| → STALE | `invalidateWorldPose(id)` | `MoveCommand.apply()` during undo/redo |
+| → UNINIT | `_worldPoseCache.clear()` | `_clearScene()` |
 
 ---
 
