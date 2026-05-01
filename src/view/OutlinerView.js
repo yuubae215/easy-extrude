@@ -99,7 +99,8 @@ export class OutlinerView {
      *   triEl: HTMLElement,
      *   ifcBadgeEl: HTMLElement,
      *   placeTypeBadgeEl: HTMLElement,
-     *   linkedBadgeEl: HTMLElement,
+     *   sourceBadgeEl: HTMLElement,
+     *   targetBadgeEl: HTMLElement,
      *   iconEl: HTMLElement,
      *   visible: boolean,
      *   parentId: string|null,
@@ -188,7 +189,7 @@ export class OutlinerView {
    */
   addObject(id, name, type = 'cuboid', parentId = null) {
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
-    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, unreferencedBadgeEl, iconEl } = this._createRow(id, name, type, depth)
+    const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, sourceBadgeEl, targetBadgeEl, unreferencedBadgeEl, iconEl } = this._createRow(id, name, type, depth)
 
     if (parentId) {
       // Find insertion point: after the entire subtree rooted at parentId so
@@ -207,19 +208,23 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, unreferencedBadgeEl, iconEl, visible: true, parentId, locked: false })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, sourceBadgeEl, targetBadgeEl, unreferencedBadgeEl, iconEl, visible: true, parentId, locked: false })
   }
 
   /**
-   * Shows or hides the SpatialLink participation badge on an outliner row.
+   * Updates the SpatialLink role badges on an outliner row.
+   * Shows a source badge (⟡→) when the entity is the source of a link,
+   * and a target badge (←⟡) when it is the target (parent in the hierarchy).
    * Called by AppController when spatialLinkAdded / spatialLinkRemoved fires.
    * @param {string} id
-   * @param {boolean} hasLinks
+   * @param {boolean} asSource  entity is source (dependent/child) of ≥1 link
+   * @param {boolean} asTarget  entity is target (reference/parent) of ≥1 link
    */
-  setObjectLinked(id, hasLinks) {
+  setObjectLinked(id, asSource, asTarget) {
     const item = this._items.get(id)
     if (!item) return
-    item.linkedBadgeEl.style.display = hasLinks ? 'inline-block' : 'none'
+    item.sourceBadgeEl.style.display = asSource ? 'inline-block' : 'none'
+    item.targetBadgeEl.style.display = asTarget ? 'inline-block' : 'none'
   }
 
   /**
@@ -670,14 +675,28 @@ export class OutlinerView {
       cursor:         'default',
     })
 
-    // SpatialLink badge — small chain icon, hidden until entity participates in ≥ 1 link
-    const linkedBadgeEl = document.createElement('span')
-    linkedBadgeEl.textContent = '⟡'
-    linkedBadgeEl.title = 'Has spatial links'
-    Object.assign(linkedBadgeEl.style, {
+    // SpatialLink source badge — shown when entity is the source (dependent/child) of ≥1 link.
+    // Arrow points away: "this entity links TO others".
+    const sourceBadgeEl = document.createElement('span')
+    sourceBadgeEl.textContent = '⟡→'
+    sourceBadgeEl.title = 'Sends spatial links to other entities (source / child role)'
+    Object.assign(sourceBadgeEl.style, {
       display:    'none',
       fontSize:   '10px',
-      color:      '#a78bfa',  // soft violet, matches 'contains' link color
+      color:      '#F59E0B',  // amber — matches 'references' link color
+      flexShrink: '0',
+      cursor:     'default',
+    })
+
+    // SpatialLink target badge — shown when entity is the target (reference/parent) of ≥1 link.
+    // Arrow points in: "other entities link TO this".
+    const targetBadgeEl = document.createElement('span')
+    targetBadgeEl.textContent = '←⟡'
+    targetBadgeEl.title = 'Other entities spatially link to this (target / parent role)'
+    Object.assign(targetBadgeEl.style, {
+      display:    'none',
+      fontSize:   '10px',
+      color:      '#14B8A6',  // teal — matches 'aligned' link color
       flexShrink: '0',
       cursor:     'default',
     })
@@ -700,7 +719,8 @@ export class OutlinerView {
     rowEl.appendChild(nameEl)
     rowEl.appendChild(ifcBadgeEl)
     rowEl.appendChild(placeTypeBadgeEl)
-    rowEl.appendChild(linkedBadgeEl)
+    rowEl.appendChild(sourceBadgeEl)
+    rowEl.appendChild(targetBadgeEl)
     rowEl.appendChild(unreferencedBadgeEl)
     rowEl.appendChild(eyeEl)
     rowEl.appendChild(delEl)
@@ -797,6 +817,6 @@ export class OutlinerView {
       if (this._onReparentCb) this._onReparentCb(dragged, id)
     })
 
-    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, linkedBadgeEl, unreferencedBadgeEl, iconEl }
+    return { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, sourceBadgeEl, targetBadgeEl, unreferencedBadgeEl, iconEl }
   }
 }

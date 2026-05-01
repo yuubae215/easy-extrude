@@ -2573,17 +2573,21 @@ export class AppController {
   }
 
   /**
-   * Refreshes the outliner "linked" badge for an entity based on its current link count.
+   * Refreshes the outliner link-role badges for an entity.
+   * Passes separate source/target flags so the outliner can distinguish
+   * which role (child/dependent vs parent/reference) the entity plays.
    * @param {string} entityId
    */
   _refreshLinkBadge(entityId) {
     if (!this._outlinerView) return
-    const hasLinks = this._service.getLinksOf(entityId).length > 0
-    this._outlinerView.setObjectLinked(entityId, hasLinks)
+    const links = this._service.getLinksOf(entityId)
+    const asSource = links.some(l => l.sourceId === entityId)
+    const asTarget = links.some(l => l.targetId === entityId)
+    this._outlinerView.setObjectLinked(entityId, asSource, asTarget)
     // Also refresh the "unreferenced" badge for CoordinateFrames (ADR-033 Phase C-4)
     const obj = this._scene.getObject(entityId)
     if (obj instanceof CoordinateFrame) {
-      this._outlinerView.setFrameUnreferenced(entityId, !hasLinks)
+      this._outlinerView.setFrameUnreferenced(entityId, links.length === 0)
     }
   }
 
@@ -3120,6 +3124,7 @@ export class AppController {
       placeType:        showPlaceType ? (obj.placeType ?? null) : undefined,
       placeTypeGeometry,
       spatialLinks:        spatialLinks.length > 0 ? spatialLinks : null,
+      currentEntityId:     obj.id,
       onDeleteSpatialLink,
       getEntityName:       (id) => this._scene.getObject(id)?.name ?? id,
       frames,
