@@ -78,11 +78,11 @@ export class UIView {
     this._modeBtnEl.appendChild(this._modeLabelEl)
     this._modeBtnEl.appendChild(arrowEl)
 
-    // Dropdown menu
+    // Dropdown menu — appended to body so header overflow:hidden doesn't clip it
     this._modeDropdownEl = document.createElement('div')
     Object.assign(this._modeDropdownEl.style, {
-      position: 'absolute',
-      top: '100%', left: '0',
+      position: 'fixed',
+      top: '42px', left: '0',
       background: '#2b2b2b',
       border: '1px solid #555',
       borderRadius: '4px',
@@ -90,7 +90,6 @@ export class UIView {
       display: 'none',
       zIndex: '200',
       minWidth: '140px',
-      marginTop: '2px',
       boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
     })
 
@@ -124,7 +123,7 @@ export class UIView {
     })
 
     this._modeSelectorEl.appendChild(this._modeBtnEl)
-    this._modeSelectorEl.appendChild(this._modeDropdownEl)
+    document.body.appendChild(this._modeDropdownEl)
 
     // ── Hamburger button (mobile only — opens Outliner drawer) ────────────
     this._hamburgerBtn = document.createElement('button')
@@ -497,7 +496,7 @@ export class UIView {
 
     // Close dropdown on outside click
     document.addEventListener('click', (e) => {
-      if (!this._modeSelectorEl.contains(e.target)) {
+      if (!this._modeSelectorEl.contains(e.target) && !this._modeDropdownEl.contains(e.target)) {
         this._modeDropdownEl.style.display = 'none'
         this._modeBtnEl.setAttribute('aria-expanded', 'false')
       }
@@ -658,6 +657,11 @@ export class UIView {
     this._modeBtnEl.addEventListener('click', (e) => {
       e.stopPropagation()
       const isOpen = this._modeDropdownEl.style.display !== 'none'
+      if (!isOpen) {
+        const rect = this._modeBtnEl.getBoundingClientRect()
+        this._modeDropdownEl.style.top = `${rect.bottom + 2}px`
+        this._modeDropdownEl.style.left = `${rect.left}px`
+      }
       this._modeDropdownEl.style.display = isOpen ? 'none' : 'block'
       this._modeBtnEl.setAttribute('aria-expanded', isOpen ? 'false' : 'true')
     })

@@ -425,7 +425,7 @@ to the main body as a full principle and add a row to the Index.
 
 | Candidate Principle | First Context (date · file · what happened) | CODE_CONTRACTS Rule |
 |---------------------|---------------------------------------------|---------------------|
-| *(empty — no pending candidates)* | — | — |
+| Overflow-escaping popups belong on body | 2026-05-01 · `UIView.js` · `_modeDropdownEl` was a child of the header (which has `overflow:hidden`); the dropdown was clipped below the header boundary and unselectable. Fixed by moving to `document.body` with `position:fixed` + `getBoundingClientRect()` positioning, matching the already-correct `_moreMenuDropdown` pattern. | Mobile Header Overflow |
 
 ---
 
