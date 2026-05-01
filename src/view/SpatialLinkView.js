@@ -4,13 +4,21 @@
  *
  * Renders:
  *  - A dashed Three.js Line between the world centroids of source and target entities
- *  - A directional arrowhead (cone) for directed link types (references, contains)
+ *  - A directional arrowhead (cone) for all directed link types
  *
- * Color-coded by linkType (ADR-030 §7):
- *  - references → amber  #F59E0B
- *  - connects   → cyan   #06B6D4
- *  - contains   → violet #8B5CF6
- *  - adjacent   → slate  #64748B
+ * Color-coded by linkType (ADR-030 §7, extended for full vocabulary):
+ *  Category A — Geometric (directed, source in target's frame):
+ *   mounts    → green   #22C55E
+ *   fastened  → emerald #10B981
+ *   aligned   → teal    #14B8A6
+ *  Category B — Topological:
+ *   contains  → violet  #8B5CF6  (directed)
+ *   above     → indigo  #6366F1  (directed)
+ *   adjacent  → slate   #64748B  (undirected)
+ *   connects  → cyan    #06B6D4  (undirected)
+ *  Category C — Semantic (directed, source depends on target):
+ *   references → amber  #F59E0B
+ *   represents → rose   #F43F5E
  *
  * No-op interface: every MeshView method called through polymorphic references
  * in AppController is implemented as a no-op (PHILOSOPHY #17).
@@ -22,16 +30,27 @@
  */
 import * as THREE from 'three'
 
-/** Color hex values by linkType. */
+/** Color hex values by linkType (covers the full ADR-032 vocabulary). */
 export const LINK_TYPE_COLORS = {
-  references: 0xF59E0B,  // amber
-  connects:   0x06B6D4,  // cyan
+  // Category A — Geometric
+  mounts:     0x22C55E,  // green
+  fastened:   0x10B981,  // emerald
+  aligned:    0x14B8A6,  // teal
+  // Category B — Topological
   contains:   0x8B5CF6,  // violet
+  above:      0x6366F1,  // indigo
   adjacent:   0x64748B,  // slate
+  connects:   0x06B6D4,  // cyan
+  // Category C — Semantic
+  references: 0xF59E0B,  // amber
+  represents: 0xF43F5E,  // rose
 }
 
-/** Link types that have a directional arrowhead. */
-const DIRECTED = new Set(['references', 'contains'])
+/**
+ * Link types that carry a directional arrowhead (source → target).
+ * Undirected types (connects, adjacent) have no arrow.
+ */
+const DIRECTED = new Set(['mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents'])
 
 export class SpatialLinkView {
   /**

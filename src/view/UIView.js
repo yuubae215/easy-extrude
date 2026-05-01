@@ -1851,6 +1851,7 @@ export class UIView {
       ifcClass = undefined, showIfcClass = false,
       placeType = undefined, showPlaceType = false, placeTypeGeometry = null,
       spatialLinks = null,          // SpatialLink[] | null
+      currentEntityId = null,       // string | null — id of the entity being shown (for role context)
       onDeleteSpatialLink = null,   // (linkId: string) => void
       getEntityName = (id) => id,   // (id: string) => string
       frames = null,                // CoordinateFrame[] | null — child frames of this entity
@@ -2027,7 +2028,7 @@ export class UIView {
     // ── Spatial Links section (for any entity that participates in links) ──
     let spatialLinksSection = null
     if (spatialLinks && spatialLinks.length > 0) {
-      spatialLinksSection = this._buildSpatialLinksSection(spatialLinks, onDeleteSpatialLink, getEntityName)
+      spatialLinksSection = this._buildSpatialLinksSection(spatialLinks, onDeleteSpatialLink, getEntityName, currentEntityId)
     }
 
     // ── Frames section (child CoordinateFrames) ───────────────────────────
@@ -2744,10 +2745,15 @@ export class UIView {
     if (!this._nPanelVisible) return
 
     const LINK_COLORS = {
-      references: '#F59E0B',
-      connects:   '#06B6D4',
+      mounts:     '#22C55E',
+      fastened:   '#10B981',
+      aligned:    '#14B8A6',
       contains:   '#8B5CF6',
+      above:      '#6366F1',
       adjacent:   '#64748B',
+      connects:   '#06B6D4',
+      references: '#F59E0B',
+      represents: '#F43F5E',
     }
     const color = LINK_COLORS[link.linkType] ?? '#888'
 
@@ -2813,19 +2819,31 @@ export class UIView {
 
   /**
    * Builds the Spatial Links section for the N-panel.
-   * Lists all links this entity participates in, with a delete button per link.
+   * Groups links by the current entity's role: source (child) vs target (parent).
+   * When currentEntityId is provided, each link row shows only the *other* end
+   * with a directional indicator (⟡→ outgoing / ←⟡ incoming) so the user can
+   * immediately tell which entity is the parent in the relationship.
    * @param {import('../domain/SpatialLink.js').SpatialLink[]} links
    * @param {((linkId: string) => void)|null} onDelete
    * @param {(id: string) => string} getEntityName
+   * @param {string|null} currentEntityId
    * @returns {HTMLElement}
    * @private
    */
-  _buildSpatialLinksSection(links, onDelete, getEntityName) {
+  _buildSpatialLinksSection(links, onDelete, getEntityName, currentEntityId = null) {
     const LINK_COLORS = {
-      references: '#F59E0B',
-      connects:   '#06B6D4',
+      // Category A — Geometric
+      mounts:     '#22C55E',
+      fastened:   '#10B981',
+      aligned:    '#14B8A6',
+      // Category B — Topological
       contains:   '#8B5CF6',
+      above:      '#6366F1',
       adjacent:   '#64748B',
+      connects:   '#06B6D4',
+      // Category C — Semantic
+      references: '#F59E0B',
+      represents: '#F43F5E',
     }
 
     const sec = document.createElement('div')
@@ -2840,13 +2858,33 @@ export class UIView {
     })
     sec.appendChild(titleEl)
 
-    for (const link of links) {
+    // Partition links by role when currentEntityId is known
+    const outgoing = currentEntityId ? links.filter(l => l.sourceId === currentEntityId) : []
+    const incoming = currentEntityId ? links.filter(l => l.targetId === currentEntityId) : []
+    const unknown  = currentEntityId ? [] : links  // fallback: no role context
+
+    const makeSubHeader = (label, color) => {
+      const el = document.createElement('div')
+      el.textContent = label
+      Object.assign(el.style, {
+        fontSize: '10px', color, fontWeight: 'bold',
+        marginTop: '4px', marginBottom: '2px', fontFamily: 'sans-serif',
+      })
+      return el
+    }
+
+    const makeLinkRow = (link, directionGlyph, otherEntityId) => {
       const color = LINK_COLORS[link.linkType] ?? '#888'
       const rowEl = document.createElement('div')
       Object.assign(rowEl.style, {
-        display: 'flex', alignItems: 'center', gap: '6px',
+        display: 'flex', alignItems: 'center', gap: '5px',
         padding: '3px 0', fontFamily: 'sans-serif',
       })
+
+      const dirEl = document.createElement('span')
+      dirEl.textContent = directionGlyph
+      Object.assign(dirEl.style, { flexShrink: '0', fontSize: '11px', color: '#888' })
+      rowEl.appendChild(dirEl)
 
       const badge = document.createElement('span')
       badge.textContent = link.linkType
@@ -2860,13 +2898,13 @@ export class UIView {
       })
       rowEl.appendChild(badge)
 
-      const namesEl = document.createElement('span')
-      namesEl.textContent = `${getEntityName(link.sourceId)} → ${getEntityName(link.targetId)}`
-      Object.assign(namesEl.style, {
+      const nameEl = document.createElement('span')
+      nameEl.textContent = getEntityName(otherEntityId)
+      Object.assign(nameEl.style, {
         flex: '1', fontSize: '11px', color: '#ccc',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       })
-      rowEl.appendChild(namesEl)
+      rowEl.appendChild(nameEl)
 
       if (onDelete) {
         const delBtn = document.createElement('button')
@@ -2885,7 +2923,63 @@ export class UIView {
         rowEl.appendChild(delBtn)
       }
 
-      sec.appendChild(rowEl)
+      return rowEl
+    }
+
+    if (currentEntityId) {
+      // Outgoing links: this entity → target (child/dependent role)
+      if (outgoing.length > 0) {
+        sec.appendChild(makeSubHeader('⟡→ Links to (source role)', '#F59E0B'))
+        for (const link of outgoing) {
+          sec.appendChild(makeLinkRow(link, '→', link.targetId))
+        }
+      }
+      // Incoming links: source → this entity (parent/reference role)
+      if (incoming.length > 0) {
+        sec.appendChild(makeSubHeader('←⟡ Linked by (target role)', '#14B8A6'))
+        for (const link of incoming) {
+          sec.appendChild(makeLinkRow(link, '←', link.sourceId))
+        }
+      }
+    } else {
+      // Fallback: no entity context — show full source → target display
+      for (const link of unknown) {
+        const color = LINK_COLORS[link.linkType] ?? '#888'
+        const rowEl = document.createElement('div')
+        Object.assign(rowEl.style, {
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '3px 0', fontFamily: 'sans-serif',
+        })
+        const badge = document.createElement('span')
+        badge.textContent = link.linkType
+        Object.assign(badge.style, {
+          flexShrink: '0', background: color + '22',
+          border: `1px solid ${color}`, borderRadius: '3px',
+          padding: '1px 5px', color, fontSize: '10px', fontWeight: 'bold',
+        })
+        rowEl.appendChild(badge)
+        const namesEl = document.createElement('span')
+        namesEl.textContent = `${getEntityName(link.sourceId)} → ${getEntityName(link.targetId)}`
+        Object.assign(namesEl.style, {
+          flex: '1', fontSize: '11px', color: '#ccc',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        })
+        rowEl.appendChild(namesEl)
+        if (onDelete) {
+          const delBtn = document.createElement('button')
+          delBtn.textContent = '×'
+          delBtn.title = 'Delete this link'
+          Object.assign(delBtn.style, {
+            flexShrink: '0', background: 'transparent',
+            border: '1px solid #555', borderRadius: '3px',
+            color: '#e74c3c', fontSize: '13px',
+            cursor: 'pointer', padding: '0 5px', lineHeight: '16px',
+          })
+          delBtn.addEventListener('click', () => onDelete(link.id))
+          rowEl.appendChild(delBtn)
+        }
+        sec.appendChild(rowEl)
+      }
     }
 
     return sec
