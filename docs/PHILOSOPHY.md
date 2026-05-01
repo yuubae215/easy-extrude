@@ -268,20 +268,19 @@ redirects every tap intended for the child.
   same reason: the Solid behind the CF would otherwise be returned as the link target,
   causing `_computeValidLinkTypes(CF, Solid)` to omit "fastened".
 
-**b) Visible gizmo handles always take priority; invisible geometry never blocks.**
+**b) Tool gizmo drag and object selection are independent operations.**
 A tool gizmo (e.g. TransformControls) must not shadow unrelated scene entities
-through its *invisible* collision volumes. But when a handle is *visibly* rendered
-and hit, the user's intent is unambiguous — the gizmo takes priority regardless of
-what other entity occupies the same screen region (matches Blender / Maya / Unreal).
+through its collision volumes — neither visible nor invisible.
 
-- Three.js TC includes invisible picker meshes (`visible=false`) that extend far
-  beyond the visual arrows and rings. These must never block selection of other objects.
-- A visible handle hit is an unambiguous user-intent signal — return early even when
-  another Solid or CF is also under the tap.
-- Correct guard: `if (tcHits.some(h => h.object.visible)) return` — unconditional,
-  no `targetId` check needed. Invisible-only hits fall through to normal selection.
+- On mobile, `_hitAnyObject()` tests only domain cuboids. TC gizmo meshes are
+  never in the result, so no explicit hit-guard is needed. TC handles its own
+  drag via its own pointer listeners; AppController handles selection independently.
+- On touch, tapping empty space (no entity in `result`) immediately deselects —
+  this is the industry-standard tap-to-deselect behaviour (Shapr3D, Nomad Sculpt).
+- Invisible picker meshes (`visible=false`) must never block selection. This
+  applies to all raycasts against the TC helper, if such a test were ever added.
 
-*Underlies CODE_CONTRACTS rules: CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority, TC Gizmo Hit Guard Before Object Selection*
+*Underlies CODE_CONTRACTS rules: CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority, TC Gizmo Does Not Block Object Selection*
 
 ---
 

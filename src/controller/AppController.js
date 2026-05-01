@@ -5685,21 +5685,10 @@ export class AppController {
       }
       if (!result) result = this._hitAnyAnnotation()
 
-      // TC gizmo guard — PHILOSOPHY #22b (gizmo scope, refined):
-      // Visible handles always take priority — even when another entity occupies the
-      // same screen region (matches Blender / Maya / Unreal standard behaviour).
-      // The user can see the handle; their intent is unambiguous.
-      // Invisible picker meshes (visible=false) do NOT block selection of other objects.
-      // TC registers its own pointer listeners after _onPointerDown, so _tcDragging
-      // is still false at this point — we must raycast against the gizmo explicitly.
-      if (this._tc?.object) {
-        this._raycaster.setFromCamera(this._mouse, this._camera)
-        const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
-        // Three.js TC includes invisible picker meshes (visible=false) that extend
-        // far beyond the visual handles. Raycasting does not respect visible=false.
-        // Only block when a *visible* TC handle (arrow, ring) is actually hit.
-        if (tcHits.some(h => h.object.visible)) return
-      }
+      // TC drag is handled entirely by TC's own pointer listeners — no AppController
+      // guard needed here. On mobile _hitAnyObject() only tests domain cuboids, so
+      // TC gizmo meshes never appear in `result`; letting selection proceed through
+      // TC arrows restores tap-to-select behaviour (Shapr3D / industry standard).
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
@@ -5798,9 +5787,12 @@ export class AppController {
           this._objRotateStartCorners = this._corners.map(c => c.clone())
         }
       } else {
-        // No object hit — start rectangle selection (mouse only).
-        // On touch, empty-space drag is orbit via OrbitControls.
-        if (e.pointerType === 'touch') return
+        // No object hit: touch tap → deselect; desktop → start rectangle selection.
+        if (e.pointerType === 'touch') {
+          this._clearObjectSelection()
+          this._setObjectSelected(false)
+          return
+        }
         // Do NOT disable _controls here: orbit (right-click / two-finger) uses
         // separate buttons/fingers and must remain available simultaneously.
         this._rectSel.active    = true
