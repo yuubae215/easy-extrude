@@ -2207,7 +2207,12 @@ export class AppController {
       this._detachMobileTransform()
       return
     }
-    // Position proxy at object's world centroid
+    // Position proxy at object's world centroid.
+    // For CoordinateFrame: force-populate the world pose cache before reading it.
+    // _attachMobileTransform() is called synchronously (e.g. on Outliner selection)
+    // before the animation loop's _updateWorldPoses() has run, so the cache may be
+    // empty and worldPoseOf() would return null → TC placed at origin instead of CF.
+    if (obj instanceof CoordinateFrame) this._service._updateWorldPoses()
     const centroid = (obj instanceof CoordinateFrame)
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
       : getCentroid(obj.corners)
