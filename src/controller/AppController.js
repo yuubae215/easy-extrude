@@ -5685,24 +5685,20 @@ export class AppController {
       }
       if (!result) result = this._hitAnyAnnotation()
 
-      // TC gizmo guard — PHILOSOPHY #22 (gizmo scope):
-      // The TC gizmo has authority only over the object it is attached to.
-      // Block the tap only when the user is operating on the same active object
-      // (or on empty space near it). If the tap lands on a *different* entity,
-      // allow selection to proceed even when a TC handle lies in the same screen
-      // region — the gizmo must not shadow unrelated scene objects (CODE_CONTRACTS §1).
+      // TC gizmo guard — PHILOSOPHY #22b (gizmo scope, refined):
+      // Visible handles always take priority — even when another entity occupies the
+      // same screen region (matches Blender / Maya / Unreal standard behaviour).
+      // The user can see the handle; their intent is unambiguous.
+      // Invisible picker meshes (visible=false) do NOT block selection of other objects.
       // TC registers its own pointer listeners after _onPointerDown, so _tcDragging
       // is still false at this point — we must raycast against the gizmo explicitly.
       if (this._tc?.object) {
-        const targetId = result?.obj.id
-        if (!targetId || targetId === this._scene.activeId) {
-          this._raycaster.setFromCamera(this._mouse, this._camera)
-          const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
-          // Three.js TC includes invisible picker meshes (visible=false) that extend
-          // far beyond the visual handles. Raycasting does not respect visible=false.
-          // Only block when a *visible* TC handle (arrow, ring) is actually hit.
-          if (tcHits.some(h => h.object.visible)) return
-        }
+        this._raycaster.setFromCamera(this._mouse, this._camera)
+        const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
+        // Three.js TC includes invisible picker meshes (visible=false) that extend
+        // far beyond the visual handles. Raycasting does not respect visible=false.
+        // Only block when a *visible* TC handle (arrow, ring) is actually hit.
+        if (tcHits.some(h => h.object.visible)) return
       }
       if (result) {
         const { hit, obj } = result
