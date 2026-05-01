@@ -333,7 +333,7 @@ this._updateMouse(e)   // ← must be here, not further down
 - **Concrete Rule 1**: After `_tc.attach(proxy)` in `_attachMobileTransform()`, immediately call `_tc.getHelper().updateMatrixWorld()` to force the gizmo's internal `_worldPosition` to reflect the proxy's new matrix. Without this, TC rotates/translates relative to the wrong pivot for the first drag.
 - **Concrete Rule 2**: `_syncMobileTransformProxy()` must call `_service._updateWorldPoses()` before reading `worldPoseOf()` when the active object is a `CoordinateFrame`. `MoveCommand.apply()` calls `invalidateWorldPose()` synchronously before `_syncMobileTransformProxy()` runs during undo/redo — leaving the cache empty. `worldPoseOf()` would return `null` and the fallback `new THREE.Vector3()` would snap the proxy to the world origin.
 - **Concrete Rule 3**: `_toggleTcMode()` must call `_syncMobileTransformProxy()` after resetting the proxy quaternion to re-anchor the gizmo at the frame's current world position. Without this, switching Rotate↔Translate leaves TC internally anchored to a stale world position.
-- **Concrete Rule 4**: `_onPointerDown` must raycast against `_tc.getHelper()` whenever the TC gizmo is attached (`this._tc?.object`). TC registers its own pointer listeners AFTER `_onPointerDown`, so `_tcDragging` is still `false` — the only reliable way to detect a gizmo hit is to raycast explicitly. **Visible handles always take priority**: `if (tcHits.some(h => h.object.visible)) return` immediately — even when another entity is also hit in the same screen region. The user can see the handle; their intent is unambiguous. This matches Blender / Maya / Unreal standard behaviour. **Invisible picker meshes** (`visible=false`) must NOT block selection — Three.js `Mesh.raycast()` ignores the `visible` flag, so invisible pickers (which extend far beyond the visual handles) would otherwise intercept taps on nearby objects. Using `tcHits.length > 0` (without the `visible` filter) breaks selection of any object near the active gizmo entirely.
+- **Concrete Rule 4**: TC's `pointerdown` listener is registered on `renderer.domElement` (target/bubble phase). AppController's `_onPointerDown` is registered on `window` (bubble phase). DOM event propagation fires the element listener first, then bubbles to `window` — so TC's `dragging-changed` event (and therefore `_tcDragging = true`) is set **before** `_onPointerDown` runs. In the empty-space `else` branch (no domain entity hit), check `if (this._tcDragging) return` **before** the deselect/rect-selection logic. Without this guard, tapping a TC arrow that extends outside the Solid bounds deselects the object: `_hitAnyObject()` returns null (TC meshes are not domain cuboids), the else branch runs, and the object is cleared. The guard must NOT be placed in the `if (result)` branch — that would break tap-to-select through TC arrows (Shapr3D / industry standard behaviour).
 - **Concrete Rule 5**: `_attachMobileTransform()` must keep `_tcMode` in sync with the TC mode for ALL entity types. Previously only the `CoordinateFrame` branch set `_tcMode = 'rotate'`; the `else` branch set `tc.setMode('translate')` without updating `_tcMode`. Always set `_tcMode = 'translate'` alongside `tc.setMode('translate')`.
 
 ```js
@@ -349,13 +349,15 @@ const centroid = this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THR
 this._tcProxy.quaternion.identity()
 this._syncMobileTransformProxy()           // ← refresh proxy position + gizmo internal state
 
-// _onPointerDown — guard against TC gizmo hit before regular selection
-if (this._tc?.object) {
-  this._raycaster.setFromCamera(this._mouse, this._camera)
-  const tcHits = this._raycaster.intersectObject(this._tc.getHelper(), true)
-  // Filter to visible handles only — invisible pickers have visible=false but
-  // Mesh.raycast() ignores visible, so they block selection of the object body.
-  if (tcHits.some(h => h.object.visible)) return  // ← let TC handle its own pointer event
+// _onPointerDown — in the empty-space (no entity hit) else branch only:
+} else {
+  if (this._tcDragging) return  // ← TC arrow outside Solid bounds; TC owns this event
+  if (e.pointerType === 'touch') {
+    this._clearObjectSelection()
+    this._setObjectSelected(false)
+    return
+  }
+  // ... rect selection start
 }
 ```
 

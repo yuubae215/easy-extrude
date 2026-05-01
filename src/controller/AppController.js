@@ -5788,6 +5788,10 @@ export class AppController {
         }
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
+        // If TC already claimed this pointer (arrow outside Solid bounds), its own
+        // listener fires first (target phase, before our window listener) and sets
+        // _tcDragging = true — skip deselection/rect-selection so the drag proceeds.
+        if (this._tcDragging) return
         if (e.pointerType === 'touch') {
           this._clearObjectSelection()
           this._setObjectSelected(false)
