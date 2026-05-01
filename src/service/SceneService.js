@@ -691,12 +691,16 @@ export class SceneService extends EventEmitter {
   // ── World pose query (ADR-020) ─────────────────────────────────────────────
 
   /**
-   * Returns the cached world pose for a CoordinateFrame, or null if unknown.
-   * The cache is populated by _updateWorldPoses() each animation frame.
+   * Returns the world pose for a CoordinateFrame.
+   * On a cache miss (empty cache or unknown id), eagerly runs _updateWorldPoses()
+   * so callers that run synchronously before the animation loop — Outliner selection,
+   * _promptAddFrame, pointer-down handlers, etc. — always get a valid pose instead
+   * of null.  Redundant calls within a single frame are cheap (O(frames) recompute).
    * @param {string} frameId
    * @returns {{ position: import('three').Vector3, quaternion: import('three').Quaternion }|null}
    */
   worldPoseOf(frameId) {
+    if (!this._worldPoseCache.has(frameId)) this._updateWorldPoses()
     return this._worldPoseCache.get(frameId) ?? null
   }
 

@@ -326,6 +326,28 @@ If the behaviour does not apply, implement a no-op.
 
 ---
 
+### 23. Accessors Own Their Freshness Guarantee
+
+A derived-state accessor is responsible for ensuring the value it returns is current.
+Never push that responsibility to callers.
+
+When callers must manually run a "refresh" step before every read, N−1 of them will
+eventually skip it — the invariant is maintained only by convention, not structure.
+
+- `worldPoseOf()` called `_updateWorldPoses()` on cache miss, instead of requiring
+  every call site to guard manually.  11 of 14 call sites were missing the guard;
+  grab, rotate, hit-test, N-panel, and link-mode all silently fell back to origin.
+- The one accessor method is the single authoritative enforcement point.
+  An invariant that lives in N callers lives in none of them reliably.
+
+**The failure mode is asymmetric**: the code compiles, no exception is thrown,
+the fallback value (0,0,0) is a plausible position — the bug is invisible until
+the user drags a CoordinateFrame and it teleports.
+
+*Underlies CODE_CONTRACTS rules: `worldPoseOf()` self-healing (SceneService)*
+
+---
+
 ### 18. Emit the Event, Then Perform the Swap
 
 When an entity is replaced outside the standard create/delete path, always emit the
@@ -455,3 +477,4 @@ to the main body as a full principle and add a row to the Index.
 | 20 | Narrow Focus Finds What Broad Scans Miss | Living Docs | DEVELOPMENT two-pass pattern |
 | 21 | Coordinate Spaces Are Statically Distinguished | Contracts | CoordinateFrame.localOffset vs Geometry.corners |
 | 22 | Children Before Parents in Hit-Testing | Interaction | CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority |
+| 23 | Accessors Own Their Freshness Guarantee | Contracts | `worldPoseOf()` self-healing |

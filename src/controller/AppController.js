@@ -2207,7 +2207,7 @@ export class AppController {
       this._detachMobileTransform()
       return
     }
-    // Position proxy at object's world centroid
+    // Position proxy at object's world centroid.
     const centroid = (obj instanceof CoordinateFrame)
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
       : getCentroid(obj.corners)
@@ -2256,19 +2256,10 @@ export class AppController {
    * and forces the TC gizmo to update its internal state.
    *
    * Called after undo/redo and mode switches.
-   *
-   * For CoordinateFrame: forces `_updateWorldPoses()` first, because undo/redo
-   * runs MoveCommand.apply() which calls `invalidateWorldPose()` before this
-   * method runs — leaving the cache empty and causing `worldPoseOf()` to return
-   * null (which would fall back to the world origin).
    */
   _syncMobileTransformProxy() {
     if (!this._tc || !this._tcProxy || !this._activeObj || !this._tc.object) return
     const obj = this._activeObj
-    // Ensure world pose cache is populated for CoordinateFrame. It may have been
-    // cleared by invalidateWorldPose() (e.g. in MoveCommand.apply during undo/redo)
-    // before the animation loop's _updateWorldPoses() has had a chance to run.
-    if (obj instanceof CoordinateFrame) this._service._updateWorldPoses()
     const centroid = (obj instanceof CoordinateFrame)
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
       : getCentroid(obj.corners)
