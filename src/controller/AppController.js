@@ -5685,10 +5685,14 @@ export class AppController {
       }
       if (!result) result = this._hitAnyAnnotation()
 
-      // TC drag is handled entirely by TC's own pointer listeners — no AppController
-      // guard needed here. On mobile _hitAnyObject() only tests domain cuboids, so
-      // TC gizmo meshes never appear in `result`; letting selection proceed through
-      // TC arrows restores tap-to-select behaviour (Shapr3D / industry standard).
+      // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
+      // in the target phase before this window listener ran), preserve the active entity
+      // and proxy intact — switching selection here would call _attachMobileTransform()
+      // on the overlapping Solid, replacing _activeObj and moving the proxy away from
+      // the CF centroid. Subsequent objectChange would then look up the Solid id in
+      // _tcStartCorners, find nothing, and return early → CF never moves.
+      if (this._tcDragging) return
+
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
@@ -5791,6 +5795,8 @@ export class AppController {
         // If TC already claimed this pointer (arrow outside Solid bounds), its own
         // listener fires first (target phase, before our window listener) and sets
         // _tcDragging = true — skip deselection/rect-selection so the drag proceeds.
+        // Note: the same guard is also applied before the `if (result)` branch above
+        // to prevent _switchActiveObject from replacing the active entity mid-drag.
         if (this._tcDragging) return
         if (e.pointerType === 'touch') {
           this._clearObjectSelection()

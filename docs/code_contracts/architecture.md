@@ -333,7 +333,7 @@ this._updateMouse(e)   // ← must be here, not further down
 - **Concrete Rule 1**: After `_tc.attach(proxy)` in `_attachMobileTransform()`, immediately call `_tc.getHelper().updateMatrixWorld()` to force the gizmo's internal `_worldPosition` to reflect the proxy's new matrix. Without this, TC rotates/translates relative to the wrong pivot for the first drag.
 - **Concrete Rule 2**: `_syncMobileTransformProxy()` must call `_service._updateWorldPoses()` before reading `worldPoseOf()` when the active object is a `CoordinateFrame`. `MoveCommand.apply()` calls `invalidateWorldPose()` synchronously before `_syncMobileTransformProxy()` runs during undo/redo — leaving the cache empty. `worldPoseOf()` would return `null` and the fallback `new THREE.Vector3()` would snap the proxy to the world origin.
 - **Concrete Rule 3**: `_toggleTcMode()` must call `_syncMobileTransformProxy()` after resetting the proxy quaternion to re-anchor the gizmo at the frame's current world position. Without this, switching Rotate↔Translate leaves TC internally anchored to a stale world position.
-- **Concrete Rule 4**: TC's `pointerdown` listener is registered on `renderer.domElement` (target/bubble phase). AppController's `_onPointerDown` is registered on `window` (bubble phase). DOM event propagation fires the element listener first, then bubbles to `window` — so TC's `dragging-changed` event (and therefore `_tcDragging = true`) is set **before** `_onPointerDown` runs. In the empty-space `else` branch (no domain entity hit), check `if (this._tcDragging) return` **before** the deselect/rect-selection logic. Without this guard, tapping a TC arrow that extends outside the Solid bounds deselects the object: `_hitAnyObject()` returns null (TC meshes are not domain cuboids), the else branch runs, and the object is cleared. The guard must NOT be placed in the `if (result)` branch — that would break tap-to-select through TC arrows (Shapr3D / industry standard behaviour).
+- **Concrete Rule 4**: TC's `pointerdown` listener is registered on `renderer.domElement` (target/bubble phase). AppController's `_onPointerDown` is registered on `window` (bubble phase). DOM event propagation fires the element listener first, then bubbles to `window` — so TC's `dragging-changed` event (and therefore `_tcDragging = true`) is set **before** `_onPointerDown` runs. Place `if (this._tcDragging) return` **before** the entire `if (result) / else` block in the object-mode section. This covers two failure modes: (a) TC arrow outside Solid bounds — `_hitAnyObject()` returns null, entering the `else` branch would deselect the active entity; (b) TC arrow overlapping a Solid — `_hitAnyObject()` returns the Solid, `_switchActiveObject()` would call `_attachMobileTransform(solid)` which replaces `_activeObj` and moves the proxy to the Solid centroid; subsequent `objectChange` then looks up the Solid id in `_tcStartCorners`, finds nothing (snapshot was for CF), and returns early — the CF never moves.
 - **Concrete Rule 5**: `_attachMobileTransform()` must keep `_tcMode` in sync with the TC mode for ALL entity types. Previously only the `CoordinateFrame` branch set `_tcMode = 'rotate'`; the `else` branch set `tc.setMode('translate')` without updating `_tcMode`. Always set `_tcMode = 'translate'` alongside `tc.setMode('translate')`.
 
 ```js
@@ -349,9 +349,15 @@ const centroid = this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THR
 this._tcProxy.quaternion.identity()
 this._syncMobileTransformProxy()           // ← refresh proxy position + gizmo internal state
 
-// _onPointerDown — in the empty-space (no entity hit) else branch only:
+// _onPointerDown — guard BEFORE the if(result)/else block:
+if (this._tcDragging) return  // ← TC owns this pointer; skip selection entirely
+
+if (result) {
+  // ... normal selection logic
 } else {
-  if (this._tcDragging) return  // ← TC arrow outside Solid bounds; TC owns this event
+  // Note: redundant _tcDragging check in else branch kept for clarity;
+  // the top-level guard above already handles this path.
+  if (this._tcDragging) return
   if (e.pointerType === 'touch') {
     this._clearObjectSelection()
     this._setObjectSelected(false)
