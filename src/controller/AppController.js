@@ -4359,6 +4359,7 @@ export class AppController {
       this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
       const pivot = getCentroid(this._rotate.startCorners)
       projected = pivot.clone().project(this._camera)
+      obj.meshView.boxHelper.visible = false
     }
 
     if (deferStartAngle) {
@@ -4410,6 +4411,7 @@ export class AppController {
         this._commandStack.push(cmd)
       }
     }
+    if (this._activeObj instanceof Solid) this._activeObj.meshView.setObjectSelected(true)
     this._rotate.active             = false
     this._rotate.axis               = null
     this._rotate.inputStr           = ''
@@ -4435,7 +4437,7 @@ export class AppController {
     } else if (obj instanceof Solid && this._rotate.startCorners) {
       this._rotate.startCorners.forEach((c, i) => { obj.vertices[i].position.copy(c) })
       obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.updateBoxHelper()
+      obj.meshView.setObjectSelected(true)
     }
     this._rotate.active             = false
     this._rotate.axis               = null
