@@ -1126,11 +1126,32 @@ export class SceneService extends EventEmitter {
         const currentEntry = this._worldPoseCache.get(sourceId)
         if (!currentEntry) continue
 
-        const dx = wpx - currentEntry.position.x
-        const dy = wpy - currentEntry.position.y
-        const dz = wpz - currentEntry.position.z
+        // Rigid body pivot = source CF's current world position.
+        // Clone prevQuat BEFORE source.rotation.set() below mutates the shared cache reference.
+        const pivotX = currentEntry.position.x
+        const pivotY = currentEntry.position.y
+        const pivotZ = currentEntry.position.z
+        const prevQuat = currentEntry.quaternion.clone()
+        const dq = prevQuat.conjugate().multiply(new Quaternion(wqx, wqy, wqz, wqw))
+        const dqx = dq.x, dqy = dq.y, dqz = dq.z, dqw = dq.w
 
-        for (const corner of rootSolid.corners) { corner.x += dx; corner.y += dy; corner.z += dz }
+        // Snapshot old world positions of intermediate CFs before corner mutation
+        const oldChainPos = chain.map(cf => {
+          const c = this._worldPoseCache.get(cf.id)
+          return c ? c.position.clone() : null
+        })
+
+        // Rotate each corner around the source CF pivot, then translate to the new CF position.
+        // Formula: newCorner = deltaQuat × (corner − pivot) + newCFWorldPos
+        for (const corner of rootSolid.corners) {
+          const rx = corner.x - pivotX, ry = corner.y - pivotY, rz = corner.z - pivotZ
+          const tx = 2 * (dqy * rz - dqz * ry)
+          const ty = 2 * (dqz * rx - dqx * rz)
+          const tz = 2 * (dqx * ry - dqy * rx)
+          corner.x = rx + dqw * tx + dqy * tz - dqz * ty + wpx
+          corner.y = ry + dqw * ty + dqz * tx - dqx * tz + wpy
+          corner.z = rz + dqw * tz + dqx * ty - dqy * tx + wpz
+        }
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         rootSolid.meshView.updateBoxHelper()
 
@@ -1140,9 +1161,26 @@ export class SceneService extends EventEmitter {
         centroid.divideScalar(rootSolid.corners.length)
         let parentPos = centroid
 
-        // Inline re-propagation of intermediate CFs (root-side child → source's parent)
-        for (const cf of chain) {
-          const cfWorldPos = parentPos.clone().add(cf.translation)
+        // Re-propagate intermediate CFs using the same rigid body transform.
+        // Also update cf.translation so _updateWorldPoses() stays consistent next frame.
+        for (let k = 0; k < chain.length; k++) {
+          const cf = chain[k]
+          const oldPos = oldChainPos[k]
+          let cfWorldPos
+          if (oldPos) {
+            const rx = oldPos.x - pivotX, ry = oldPos.y - pivotY, rz = oldPos.z - pivotZ
+            const tx = 2 * (dqy * rz - dqz * ry)
+            const ty = 2 * (dqz * rx - dqx * rz)
+            const tz = 2 * (dqx * ry - dqy * rx)
+            cfWorldPos = new Vector3(
+              rx + dqw * tx + dqy * tz - dqz * ty + wpx,
+              ry + dqw * ty + dqz * tx - dqx * tz + wpy,
+              rz + dqw * tz + dqx * ty - dqy * tx + wpz,
+            )
+          } else {
+            cfWorldPos = parentPos.clone().add(cf.translation)
+          }
+          cf.translation.copy(cfWorldPos).sub(parentPos)
           const entry = this._worldPoseCache.get(cf.id)
           if (entry) {
             entry.position.copy(cfWorldPos)
@@ -1155,7 +1193,7 @@ export class SceneService extends EventEmitter {
         }
 
         parentWorldPos = parentPos
-        // source.translation intentionally left unchanged
+        // source.translation intentionally left unchanged (constraint solver drives worldPos)
       } else {
         // Fallback: CF chain has no root Solid (orphaned chain); slide source within its parent CF
         const parentCached = this._worldPoseCache.get(parent.id)
