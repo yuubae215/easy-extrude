@@ -38,6 +38,7 @@ import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
+import { createSolidRotateCommand }   from '../command/SolidRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
 import { createSetPlaceTypeCommand }  from '../command/SetPlaceTypeCommand.js'  // N-panel place type change (post-hoc push)
 import { createReparentFrameCommand } from '../command/ReparentFrameCommand.js'
@@ -451,16 +452,18 @@ export class AppController {
     /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
     this._tcStartFrameRot  = null
 
-    // ── CoordinateFrame rotate state (R key, ADR-019 Phase B) ─────────────
-    // Symmetric to _grab but applies a quaternion rotation to CoordinateFrame.rotation.
+    // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
+    // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
     this._rotate = {
       active:     false,
       /** World-space axis to rotate around: null = view-space Z, 'x'|'y'|'z' = world axes. */
       axis:       null,
-      /** Screen-angle (radians) from frame projected position to mouse at start. */
+      /** Screen-angle (radians) from projected pivot to mouse at start. */
       startAngle: 0,
-      /** Saved rotation quaternion at the moment rotation begins (for cancel). */
+      /** Saved rotation quaternion at the moment rotation begins (CoordinateFrame only). */
       startRot:   new THREE.Quaternion(),
+      /** Corner snapshot taken at the moment rotation begins (Solid only). @type {import('three').Vector3[]|null} */
+      startCorners: null,
       /** Numeric degree string typed by the user; empty when mouse-driven. */
       inputStr:   '',
       /** True when the user has typed at least one digit. */
@@ -4268,31 +4271,42 @@ export class AppController {
     this._updateMobileToolbar()
   }
 
-  // ── CoordinateFrame rotation (R key, ADR-019) ────────────────────────────
+  // ── CoordinateFrame / Solid rotation (R key, ADR-019 / ADR-036) ──────────
 
   /**
-   * Starts rotate mode for the active CoordinateFrame.
-   * Only valid when the active object is a CoordinateFrame and no grab is active.
+   * Starts rotate mode for the active CoordinateFrame or Solid.
+   * For CoordinateFrame: rotates the quaternion around the frame origin.
+   * For Solid: bakes the rotation into corner positions (ADR-036).
    */
   _startRotate() {
-    const frame = this._activeObj
-    if (!(frame instanceof CoordinateFrame)) return
+    const obj = this._activeObj
+    if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
     if (this._grab.active) return
-    // Provenance check (ADR-034 §8.2)
-    if (!RoleService.canEdit(frame)) {
-      this._uiView.showToast(`This frame was declared by a ${frame.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-      return
+
+    this._rotate.active      = true
+    this._rotate.axis        = null
+    this._rotate.inputStr    = ''
+    this._rotate.hasInput    = false
+    this._rotate.startCorners = null
+
+    let projected
+    if (obj instanceof CoordinateFrame) {
+      // Provenance check (ADR-034 §8.2)
+      if (!RoleService.canEdit(obj)) {
+        this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
+        this._rotate.active = false
+        return
+      }
+      this._rotate.startRot.copy(obj.rotation)
+      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
+    } else {
+      // Solid: snapshot corners; pivot = centroid of startCorners (ADR-036)
+      this._rotate.startCorners = obj.corners.map(c => c.clone())
+      const pivot = getCentroid(this._rotate.startCorners)
+      projected = pivot.clone().project(this._camera)
     }
 
-    this._rotate.active    = true
-    this._rotate.axis      = null
-    this._rotate.inputStr  = ''
-    this._rotate.hasInput  = false
-    this._rotate.startRot.copy(frame.rotation)
-
-    // Compute the screen-space angle from the projected frame origin to the mouse.
-    // This allows the mouse-driven angle to be relative to where it started.
-    const projected = (this._service.worldPoseOf(frame.id)?.position ?? frame.translation).clone().project(this._camera)
+    // Screen-space start angle: angle from projected pivot to current mouse.
     this._rotate.startAngle = Math.atan2(
       this._mouse.y - projected.y,
       this._mouse.x - projected.x,
@@ -4308,7 +4322,7 @@ export class AppController {
   _confirmRotate() {
     if (!this._rotate.active) return
     this._applyRotate()
-    // ── Record undo snapshot (ADR-022 Phase 4) ────────────────────────────
+    // ── Record undo snapshot (ADR-022) ────────────────────────────────────
     if (this._activeObj instanceof CoordinateFrame) {
       const frame = this._activeObj
       const endQuat = frame.rotation.clone()
@@ -4319,31 +4333,48 @@ export class AppController {
         )
         this._commandStack.push(cmd)
       }
+    } else if (this._activeObj instanceof Solid && this._rotate.startCorners) {
+      const solid = this._activeObj
+      const endCorners = solid.corners.map(c => c.clone())
+      const changed = endCorners.some((c, i) => !c.equals(this._rotate.startCorners[i]))
+      if (changed) {
+        const cmd = createSolidRotateCommand(
+          solid, this._rotate.startCorners, endCorners, this._service,
+          () => this._updateNPanel(),
+        )
+        this._commandStack.push(cmd)
+      }
     }
-    this._rotate.active   = false
-    this._rotate.axis     = null
-    this._rotate.inputStr = ''
-    this._rotate.hasInput = false
-    this._controls.enabled = true
+    this._rotate.active      = false
+    this._rotate.axis        = null
+    this._rotate.inputStr    = ''
+    this._rotate.hasInput    = false
+    this._rotate.startCorners = null
+    this._controls.enabled   = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
   }
 
   /**
-   * Cancels the rotation, restoring the frame to its saved rotation.
+   * Cancels the rotation, restoring the object to its saved state.
    */
   _cancelRotate() {
     if (!this._rotate.active) return
-    const frame = this._activeObj
-    if (frame instanceof CoordinateFrame) {
-      frame.rotation.copy(this._rotate.startRot)
-      frame.meshView.updateRotation(frame.rotation)
+    const obj = this._activeObj
+    if (obj instanceof CoordinateFrame) {
+      obj.rotation.copy(this._rotate.startRot)
+      obj.meshView.updateRotation(obj.rotation)
+    } else if (obj instanceof Solid && this._rotate.startCorners) {
+      this._rotate.startCorners.forEach((c, i) => { obj.vertices[i].position.copy(c) })
+      obj.meshView.updateGeometry(obj.corners)
+      obj.meshView.updateBoxHelper()
     }
-    this._rotate.active   = false
-    this._rotate.axis     = null
-    this._rotate.inputStr = ''
-    this._rotate.hasInput = false
-    this._controls.enabled = true
+    this._rotate.active      = false
+    this._rotate.axis        = null
+    this._rotate.inputStr    = ''
+    this._rotate.hasInput    = false
+    this._rotate.startCorners = null
+    this._controls.enabled   = true
     this._refreshObjectModeStatus()
   }
 
@@ -4357,9 +4388,14 @@ export class AppController {
     this._rotate.inputStr = ''
     this._rotate.hasInput = false
     // Recompute start angle with new axis
-    const frame = this._activeObj
-    if (frame instanceof CoordinateFrame) {
-      const projected = (this._service.worldPoseOf(frame.id)?.position ?? frame.translation).clone().project(this._camera)
+    const obj = this._activeObj
+    let projected
+    if (obj instanceof CoordinateFrame) {
+      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
+    } else if (obj instanceof Solid && this._rotate.startCorners) {
+      projected = getCentroid(this._rotate.startCorners).clone().project(this._camera)
+    }
+    if (projected) {
       this._rotate.startAngle = Math.atan2(
         this._mouse.y - projected.y,
         this._mouse.x - projected.x,
@@ -4370,12 +4406,13 @@ export class AppController {
   }
 
   /**
-   * Applies the current rotation delta to the active CoordinateFrame.
+   * Applies the current rotation delta to the active CoordinateFrame or Solid.
    * Called on every pointer move and on numeric input changes.
    */
   _applyRotate() {
-    const frame = this._activeObj
-    if (!(frame instanceof CoordinateFrame) || !this._rotate.active) return
+    const obj = this._activeObj
+    if (!this._rotate.active) return
+    if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
 
     let angle
     if (this._rotate.hasInput) {
@@ -4383,11 +4420,15 @@ export class AppController {
       angle = isNaN(parsed) ? 0 : parsed * (Math.PI / 180)
     } else {
       // Mouse-driven: measure signed angle from start to current mouse position.
-      // Negated so that moving the mouse CCW around the frame rotates CCW (natural tracking).
-      const projected = (this._service.worldPoseOf(frame.id)?.position ?? frame.translation).clone().project(this._camera)
+      let pivotScreen
+      if (obj instanceof CoordinateFrame) {
+        pivotScreen = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
+      } else {
+        pivotScreen = getCentroid(this._rotate.startCorners).clone().project(this._camera)
+      }
       const currentAngle = Math.atan2(
-        this._mouse.y - projected.y,
-        this._mouse.x - projected.x,
+        this._mouse.y - pivotScreen.y,
+        this._mouse.x - pivotScreen.x,
       )
       angle = this._rotate.startAngle - currentAngle
       // Ctrl: snap to stepSize degree increments
@@ -4409,8 +4450,17 @@ export class AppController {
     }
 
     const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
-    frame.rotation.copy(this._rotate.startRot).premultiply(deltaQ)
-    frame.meshView.updateRotation(frame.rotation)
+
+    if (obj instanceof CoordinateFrame) {
+      obj.rotation.copy(this._rotate.startRot).premultiply(deltaQ)
+      obj.meshView.updateRotation(obj.rotation)
+    } else {
+      // Solid: rotate all corners around the centroid of startCorners (ADR-036)
+      const pivot = getCentroid(this._rotate.startCorners)
+      obj.rotate(this._rotate.startCorners, pivot, deltaQ)
+      obj.meshView.updateGeometry(obj.corners)
+      obj.meshView.updateBoxHelper()
+    }
     this._updateRotateStatus()
   }
 
@@ -6355,8 +6405,9 @@ export class AppController {
         this._startGrab()
         return
       }
-      // R: rotate (CoordinateFrame only, ADR-019)
-      if ((e.key === 'r' || e.key === 'R') && this._activeObj instanceof CoordinateFrame) {
+      // R: rotate (CoordinateFrame or Solid, ADR-019 / ADR-036)
+      if ((e.key === 'r' || e.key === 'R') &&
+          (this._activeObj instanceof CoordinateFrame || this._activeObj instanceof Solid)) {
         this._startRotate()
         return
       }

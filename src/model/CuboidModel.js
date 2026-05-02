@@ -271,6 +271,18 @@ export function getFacePivotCandidates(corners) {
 }
 
 /**
+ * Pure function that rotates all 8 corners around a pivot by the given quaternion.
+ * Returns a new array of cloned Vector3 — does not mutate the input.
+ * @param {import('three').Vector3[]} corners  Current 8 corner positions
+ * @param {import('three').Vector3}  pivot     World-space rotation pivot
+ * @param {import('three').Quaternion} quat    Rotation to apply
+ * @returns {import('three').Vector3[]}
+ */
+export function rotateCuboid(corners, pivot, quat) {
+  return corners.map(c => c.clone().sub(pivot).applyQuaternion(quat).add(pivot))
+}
+
+/**
  * Pivot candidates: all of the above combined (8 vertices + 12 edge midpoints + 6 face centers).
  * @param {THREE.Vector3[]} corners
  * @returns {{ label: string, position: THREE.Vector3, type: string }[]}
