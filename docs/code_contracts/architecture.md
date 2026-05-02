@@ -410,6 +410,10 @@ These are design-level constraints (not bugs) of the current `fastened` implemen
 
 - **Geometric constraints inactive after `loadScene()` / `importFromJson()`**: SpatialLinks are deserialized and added to the model, but `_fastenedTransforms` and `_mountLocalPositions` are not populated during deserialization because `_worldPoseCache` is not yet available.  Both `loadScene()` and `importFromJson()` call `_updateWorldPoses()` + `_reactivateLiveLinks()` at the end to re-establish live constraints.  If either call is removed, constraints become permanently inactive for that session.
 
+- **CF chain propagation** (ADR-035): When the SOURCE CF's direct parent is another CoordinateFrame (nested CF hierarchy), the old code absorbed the translation delta inside the CF chain and never reached the root Solid.  The fix: `_findAncestorChain(cfId)` walks up `parentId` links while the node is a `CoordinateFrame`, collecting intermediate CFs in root→leaf order, and returns `{ rootSolid, chain }`.  `_updateFastenedFrames()` then (1) moves `rootSolid.corners` by the delta, (2) re-propagates each intermediate CF's world pose inline from the new centroid, (3) leaves `source.translation` unchanged.  When `chain` is empty (direct Solid parent), this is identical to the old Solid-parent branch.
+
+- **Cycle detection** (ADR-035): `_detectFastenedCycles(entries)` builds a Solid-to-Solid directed graph from fastened constraints and runs a DFS to find back-edges.  Entries whose `linkId` is in the returned `Set` are excluded from the solver for that frame.  `_prevCyclicLinkIds` tracks the previous frame's cyclic set; a `constraintCycleDetected` event is emitted (→ AppController toast) only when the set changes, preventing per-frame toast spam.
+
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
 
 - **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.
