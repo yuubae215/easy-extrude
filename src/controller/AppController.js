@@ -2163,6 +2163,20 @@ export class AppController {
             this._tcStartFrameRot = null
           }
           this._updateNPanel()
+        } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
+          const startPts = this._tcStartCorners.get(obj.id)
+          if (startPts) {
+            const endPts = obj.corners.map(c => c.clone())
+            if (startPts.some((c, i) => !c.equals(endPts[i]))) {
+              const cmd = createSolidRotateCommand(
+                obj, startPts.map(c => c.clone()), endPts, this._service,
+                () => this._updateNPanel(),
+              )
+              this._commandStack.push(cmd)
+              this._refreshUndoRedoState()
+            }
+          }
+          this._updateNPanel()
         } else {
           // Translate: record MoveCommand
           if (this._tcStartCorners.size > 0 && obj) {
@@ -2192,6 +2206,20 @@ export class AppController {
         )
         obj.rotation.copy(this._tcStartFrameRot).premultiply(deltaQ)
         obj.meshView.updateRotation(obj.rotation)
+      } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
+        // Rotate mode: rotate all corners around the centroid (same delta-quat approach as CF)
+        if (!this._tcStartProxyQuat) return
+        const startPts = this._tcStartCorners.get(obj.id)
+        if (!startPts) return
+        const deltaQ = this._tcProxy.quaternion.clone().multiply(
+          this._tcStartProxyQuat.clone().invert(),
+        )
+        const pivot = getCentroid(startPts)
+        obj.corners.forEach((c, i) => {
+          c.copy(startPts[i]).sub(pivot).applyQuaternion(deltaQ).add(pivot)
+        })
+        obj.meshView.updateGeometry(obj.corners)
+        obj.meshView.updateBoxHelper()
       } else {
         // Translate mode: apply position delta to handles
         const delta    = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
@@ -2255,7 +2283,7 @@ export class AppController {
 
   /**
    * Toggles the TC gizmo between 'rotate' and 'translate' mode.
-   * Only effective when a CoordinateFrame is the active object on mobile.
+   * Effective for CoordinateFrame (quaternion) and Solid (corner rotation) on mobile.
    */
   _toggleTcMode() {
     if (!this._tc) return
@@ -3424,7 +3452,12 @@ export class AppController {
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
-          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => { this._startRotate(true); this._updateMobileToolbar() } }
+          ? {
+              icon:    this._tcMode === 'rotate' ? ICONS.translate : ICONS.rotate,
+              label:   this._tcMode === 'rotate' ? 'Move'          : 'Rotate',
+              active:  this._tcMode === 'rotate',
+              onClick: () => this._toggleTcMode(),
+            }
           : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
