@@ -30,8 +30,13 @@ export class MeshView {
     )
     scene.add(this.wireframe)
 
-    // BoxHelper for object-selected highlight
-    this.boxHelper = new THREE.BoxHelper(this.cuboid, 0x4fc3f7)
+    // Selection highlight: LineSegments from actual corner edges (OBB, not AABB).
+    // THREE.BoxHelper computes an AABB which diverges from the solid after R-key
+    // rotation because corners are baked as world-space vertices with no mesh transform.
+    this.boxHelper = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x4fc3f7 }),
+    )
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
 
@@ -255,8 +260,11 @@ export class MeshView {
     const newGeo = buildGeometry(corners)
     this.cuboid.geometry.dispose()
     this.cuboid.geometry = newGeo
+    const edgesGeo = new THREE.EdgesGeometry(newGeo, 1)
     this.wireframe.geometry.dispose()
-    this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
+    this.wireframe.geometry = edgesGeo
+    this.boxHelper.geometry.dispose()
+    this.boxHelper.geometry = new THREE.EdgesGeometry(newGeo, 1)
   }
 
   /**
@@ -281,6 +289,8 @@ export class MeshView {
     this.cuboid.geometry = newGeo
     this.wireframe.geometry.dispose()
     this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
+    this.boxHelper.geometry.dispose()
+    this.boxHelper.geometry = new THREE.EdgesGeometry(newGeo, 1)
   }
 
   /**
@@ -304,19 +314,18 @@ export class MeshView {
     this.cuboid.geometry = newGeo
     this.wireframe.geometry.dispose()
     this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
+    this.boxHelper.geometry.dispose()
+    this.boxHelper.geometry = new THREE.EdgesGeometry(newGeo, 1)
   }
 
   /** Updates the visual appearance for object-selected state */
   setObjectSelected(sel) {
     this.cuboidMat.emissive.set(sel ? 0x112244 : 0x000000)
     this.boxHelper.visible = sel
-    if (sel) this.boxHelper.update()
   }
 
-  /** Updates the BoxHelper to match the current geometry */
-  updateBoxHelper() {
-    this.boxHelper.update()
-  }
+  /** No-op: boxHelper geometry is kept in sync by updateGeometry() */
+  updateBoxHelper() {}
 
   /**
    * Updates the extrusion display lines (I-type dimension line).
@@ -683,6 +692,7 @@ export class MeshView {
     scene.remove(this._selFaceMesh)
     this.cuboid.geometry.dispose()
     this.wireframe.geometry.dispose()
+    this.boxHelper.geometry.dispose()
     this._hlGeo.dispose()
     this._extrusionLinesGeo.dispose()
     this._pivotVertGeo.dispose()

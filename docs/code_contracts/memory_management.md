@@ -58,6 +58,12 @@ _clearScene() {
 - **Principle**: `THREE.RingGeometry` always produces a circular ring regardless of the polygon's actual shape. When this is used for an animation that is meant to "pulse outward from the boundary", rectangular or irregular Zones get a visually mismatched circular pulse.
 - **Concrete Rule**: In `AnnotatedRegionView._setPoints()`, build the rim ring as a `THREE.ShapeGeometry` with a polygonal hole: outer boundary = polygon vertices in local space (centroid at origin); inner boundary = vertices scaled 92% toward centroid. Position `_rimRing` at the centroid in world space. `scale.setScalar()` in `tick()` then expands the ring outward along the real polygon shape.
 
+## BoxHelper Must Not Be Used for World-Space Baked Geometry
+
+- **Principle**: `THREE.BoxHelper` computes an **axis-aligned bounding box (AABB)** from the mesh's geometry vertices. In `MeshView`, corner positions are baked directly into geometry as world-space vertices (no Three.js mesh transform is applied). After an R-key rotation, the AABB is axis-aligned and larger than the actual solid — it does not follow the solid's orientation.
+- **Concrete Rule**: In `MeshView`, the selection highlight (`boxHelper`) must be a `THREE.LineSegments` with `THREE.EdgesGeometry` built from the actual corner positions, not a `THREE.BoxHelper`. Update `boxHelper.geometry` in `updateGeometry()`, `rebuildGeometry()`, and `rebuildExtrudedProfile()` (all three geometry-update paths). `updateBoxHelper()` is a no-op; `setObjectSelected()` only toggles `visible`. Dispose `boxHelper.geometry` in `dispose()`.
+- **Root bug**: After confirming rotation (`_confirmRotate` → `setObjectSelected(true)` → `boxHelper.update()`), the AABB of the rotated geometry was displayed — axis-aligned, larger than the solid, and visually rotating independently from it.
+
 ## ImportedMesh Serialization: Base64 Typed Arrays + Position Offset
 
 - **Principle**: Raw Float32/Uint32 buffers cannot be stored directly in JSON. Base64 encoding is used so geometry survives round-trip through the BFF DB without loss.
