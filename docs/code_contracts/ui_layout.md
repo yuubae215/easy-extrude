@@ -12,15 +12,19 @@ Detail file for `docs/CODE_CONTRACTS.md` Section 3.
 | Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 | Slot 5 |
 |------|--------|--------|--------|--------|--------|
 | Object (generic) | Add | Dup | Edit | Delete | Stack |
+| Object (Solid selected) | Add | Dup | Edit | Delete | Rotate |
 | Object (CoordinateFrame selected) | Rotate | Grab | Delete | Add Frame | *(spacer)* |
 | Edit 2D sketch | <- Object | Extrude | *(spacer)* | *(spacer)* | — |
 | Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* | — |
 | Edit 3D | <- Object | Vertex | Edge | Face | — |
 | Grab active | Confirm | Stack | Cancel | *(spacer)* | — |
+| Rotate active | Confirm | *(spacer)* | Cancel | *(spacer)* | — |
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
 Dup, Edit, and Stack are disabled for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`. Dup is additionally disabled for `Profile`. Delete remains enabled for all object types. All Object-mode slots maintain consistent disabled states so slot positions never shift.
+
+**Solid exception**: when a Solid is selected, slot 5 shows Rotate instead of Stack. Stack is still available via the Grab-active toolbar after starting a grab.
 
 **CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout (Rotate|Grab|Delete|Add Frame|spacer) rather than disabling individual generic slots.
 

@@ -89,6 +89,7 @@ Detail: `docs/code_contracts/interaction.md`
 | Touch vs. Pointer Asymmetry | Re-run hit tests in `_onPointerDown` before `_handleEditClick`; hover does not fire before touch tap |
 | Gesture-Based Interaction Priority | Auto-start face extrude on touch tap in Edit 3D; gesture-only, no toolbar button |
 | Interaction Confirmation Lifecycle | FaceExtrude confirms on `pointerup`; Grab on touch confirms via toolbar only, never in `pointerup` |
+| Mobile Rotate Interaction Lifecycle | Rotate button calls `_startRotate(true)`; each canvas touch re-anchors `segmentStart*`; `_onPointerUp` keeps rotate active; confirm via toolbar only |
 | Grab State: allStartCorners vs segmentStartCorners | `allStartCorners` = undo anchor (never update mid-grab); `segmentStartCorners` = per-drag delta (re-snapshot on re-touch) |
 | Global Event vs. UI Event Delegation | First guard in `_onPointerDown`: `if (e.target !== renderer.domElement) return` |
 | OrbitControls Disable Strategy | Use `matchMedia('(pointer: coarse)')` not `innerWidth < 768`; disable only for single-finger-consuming ops |
@@ -101,7 +102,7 @@ Detail: `docs/code_contracts/ui_layout.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
-| Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts |
+| Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts. Solid selected: slot 5 = Rotate (replaces Stack; Stack still accessible via Grab toolbar) |
 | Mobile Touch Gesture Model | Touch: tap=select, one-finger-drag=orbit, long-press=context menu; no rect selection or _objDragging |
 | Long-Press Context Menu | `showContextMenu()` with Grab/Dup/Rename/Delete; items filtered by entity type |
 | Long-Press for Non-Draggable Entities | CF/MeasureLine/Annotated* early-return must set long-press timer for touch BEFORE returning; without this CF "Link to..." is unreachable on mobile |
