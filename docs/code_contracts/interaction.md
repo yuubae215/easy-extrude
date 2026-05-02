@@ -50,6 +50,15 @@ if (this._grab.active) {
 }
 ```
 
+## Mobile Rotate Interaction Lifecycle
+
+- **Principle**: On mobile, the rotate operation follows the same multi-segment drag pattern as Grab: each new canvas touch re-anchors the drag reference so subsequent drags accumulate naturally.
+- **Concrete Rule**: Tapping the Rotate button calls `_startRotate(true)` (deferStartAngle = true). In `_onPointerDown` during rotate, touch events: (1) re-snapshot `segmentStartCorners` (Solid) or `segmentStartRot` (CF) from the current object state; (2) set `needsStartAngle = true`; (3) set `_activeDragPointerId`. In `_applyRotate`, when `needsStartAngle` is true, capture `segmentStartAngle = currentAngle` and return without applying rotation. Subsequent pointer moves apply `angle = segmentStartAngle - currentAngle` from `segmentStartCorners`. In `_onPointerUp` during rotate, return immediately — rotate stays active until the Confirm/Cancel toolbar button fires.
+
+  `startCorners` / `startRot` remain unchanged throughout (undo anchor). `segmentStart*` fields are re-initialized on each touch re-down.
+
+  Left-click on canvas still confirms on PC; right-click cancels. Touch `pointerdown` during rotate must NOT confirm — add `if (e.pointerType === 'touch') { ... return }` before the `e.button === 0` confirm check.
+
 ## Grab State: allStartCorners vs segmentStartCorners
 
 - **Principle**: A multi-drag grab (multiple finger-lift + re-touch cycles before confirming) needs two distinct corner snapshots: one for undo/cancel anchoring, and one for per-segment drag delta calculation.

@@ -33,6 +33,7 @@ Each mode shows a **fixed number of slots**. The toolbar width never changes wit
 | Edit 2D extrude | 4 |
 | Edit 3D | 4 |
 | Grab active | 4 |
+| Rotate active | 4 |
 
 Object mode uses 5 slots (the widest); all other modes use 4.
 The toolbar is sized to 5 slots and never shrinks.
@@ -52,12 +53,17 @@ identical dimensions occupying layout space without being tappable.
 
 ```
 Object mode (generic):      [ Add | Dup | Edit | Delete | Stack ]
+Object mode (Solid):        [ Add | Dup | Edit | Delete | Rotate ]
 Object mode (CoordFrame):   [ Rotate | Grab | Delete | Add Frame | (spacer) ]
 Edit 2D sketch:             [ <- Object | Extrude | (spacer) | (spacer) ]
 Edit 2D extrude:            [ Confirm | Cancel | (spacer) | (spacer) ]
 Edit 3D:                    [ <- Object | Vertex | Edge | Face ]
 Grab active:                [ Confirm | Stack | Cancel | (spacer) ]
+Rotate active:              [ Confirm | (spacer) | Cancel | (spacer) ]
 ```
+
+**Solid exception**: when a Solid is selected, slot 5 shows Rotate instead of Stack.
+Stack mode is still accessible via the Grab-active toolbar after starting a grab.
 
 **CoordinateFrame exception**: when a CoordinateFrame is selected, the entire Object mode
 toolbar switches to the specialized 5-slot layout (Rotate | Grab | Delete | Add Frame |
@@ -70,7 +76,8 @@ applicable actions is categorically different.
 |--------|-------------|
 | Dup | `ImportedMesh`, `MeasureLine`, `CoordinateFrame`, `Profile` |
 | Edit | `ImportedMesh`, `MeasureLine`, `CoordinateFrame` |
-| Stack | `ImportedMesh`, `MeasureLine`, `CoordinateFrame` |
+| Stack | `ImportedMesh`, `MeasureLine`, `CoordinateFrame` (slot 5 hidden when Solid selected — Rotate takes its place) |
+| Rotate | Only shown when `Solid` is selected (slot 5); never disabled |
 | Delete | Never disabled |
 | Add | Never disabled |
 

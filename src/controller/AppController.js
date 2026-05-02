@@ -470,6 +470,15 @@ export class AppController {
       hasInput:   false,
       /** Degree increment for Ctrl snap. Cycled with Ctrl+Wheel. */
       stepSize:   1,
+      // Mobile multi-segment drag support: re-initialized on each new touch drag.
+      /** True when startAngle should be captured from the next pointer position (mobile). */
+      needsStartAngle:      false,
+      /** Per-segment start angle; equals startAngle on PC (single drag). */
+      segmentStartAngle:    0,
+      /** Per-segment corner snapshot for Solid; equals startCorners on PC. @type {import('three').Vector3[]|null} */
+      segmentStartCorners:  null,
+      /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
+      segmentStartRot:      new THREE.Quaternion(),
     }
 
     this._ctrlHeld  = false
@@ -3325,6 +3334,16 @@ export class AppController {
       return
     }
 
+    if (this._rotate.active) {
+      this._uiView.setMobileToolbar([
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
+        { spacer: true },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelRotate(), danger: true },
+        { spacer: true },
+      ])
+      return
+    }
+
     if (this._grab.active) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
@@ -3378,15 +3397,14 @@ export class AppController {
         return
       }
 
-      // 5-slot layout: Add | Dup | Edit | Delete | Stack
+      // 5-slot layout: Add | Dup | Edit | Delete | Rotate (Solid) / Stack (others)
       // All slots always present; unavailable actions are disabled to prevent layout shifts.
-      const canDup   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
-      const canEdit  = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof CoordinateFrame) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
-      const canStack = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
-        && !(this._activeObj instanceof ImportedMesh)
-        && !(this._activeObj instanceof MeasureLine)
+      const canDup    = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
+      const canEdit   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof CoordinateFrame) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
+      const canStack  = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
         && !_isAnnotated(this._activeObj)
         && !_isSpatialLink(this._activeObj)
+      const canRotate = hasObj && this._activeObj instanceof Solid
       this._uiView.setMobileToolbar([
         {
           icon: ICONS.add, label: 'Add',
@@ -3405,7 +3423,9 @@ export class AppController {
         { icon: ICONS.duplicate, label: 'Dup',    onClick: () => this._duplicateObject(),                                        disabled: !canDup },
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
-        { icon: ICONS.stack,     label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
+        canRotate
+          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => { this._startRotate(true); this._updateMobileToolbar() } }
+          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
     }
@@ -4278,7 +4298,7 @@ export class AppController {
    * For CoordinateFrame: rotates the quaternion around the frame origin.
    * For Solid: bakes the rotation into corner positions (ADR-036).
    */
-  _startRotate() {
+  _startRotate(deferStartAngle = false) {
     const obj = this._activeObj
     if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
     if (this._grab.active) return
@@ -4298,22 +4318,34 @@ export class AppController {
         return
       }
       this._rotate.startRot.copy(obj.rotation)
+      this._rotate.segmentStartRot.copy(obj.rotation)
       projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
     } else {
       // Solid: snapshot corners; pivot = centroid of startCorners (ADR-036)
-      this._rotate.startCorners = obj.corners.map(c => c.clone())
+      this._rotate.startCorners        = obj.corners.map(c => c.clone())
+      this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
       const pivot = getCentroid(this._rotate.startCorners)
       projected = pivot.clone().project(this._camera)
     }
 
-    // Screen-space start angle: angle from projected pivot to current mouse.
-    this._rotate.startAngle = Math.atan2(
-      this._mouse.y - projected.y,
-      this._mouse.x - projected.x,
-    )
+    if (deferStartAngle) {
+      // Mobile: startAngle will be captured from the first canvas touch (CODE_CONTRACTS §2)
+      this._rotate.needsStartAngle   = true
+      this._rotate.startAngle        = 0
+      this._rotate.segmentStartAngle = 0
+    } else {
+      // PC: startAngle from current mouse position
+      this._rotate.startAngle = Math.atan2(
+        this._mouse.y - projected.y,
+        this._mouse.x - projected.x,
+      )
+      this._rotate.segmentStartAngle = this._rotate.startAngle
+      this._rotate.needsStartAngle   = false
+    }
 
     this._controls.enabled = false
     this._updateRotateStatus()
+    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
   /**
@@ -4345,14 +4377,17 @@ export class AppController {
         this._commandStack.push(cmd)
       }
     }
-    this._rotate.active      = false
-    this._rotate.axis        = null
-    this._rotate.inputStr    = ''
-    this._rotate.hasInput    = false
-    this._rotate.startCorners = null
-    this._controls.enabled   = true
+    this._rotate.active             = false
+    this._rotate.axis               = null
+    this._rotate.inputStr           = ''
+    this._rotate.hasInput           = false
+    this._rotate.startCorners       = null
+    this._rotate.segmentStartCorners = null
+    this._rotate.needsStartAngle    = false
+    this._controls.enabled          = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
+    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
   /**
@@ -4369,13 +4404,16 @@ export class AppController {
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.updateBoxHelper()
     }
-    this._rotate.active      = false
-    this._rotate.axis        = null
-    this._rotate.inputStr    = ''
-    this._rotate.hasInput    = false
-    this._rotate.startCorners = null
-    this._controls.enabled   = true
+    this._rotate.active             = false
+    this._rotate.axis               = null
+    this._rotate.inputStr           = ''
+    this._rotate.hasInput           = false
+    this._rotate.startCorners       = null
+    this._rotate.segmentStartCorners = null
+    this._rotate.needsStartAngle    = false
+    this._controls.enabled          = true
     this._refreshObjectModeStatus()
+    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
   /**
@@ -4419,18 +4457,24 @@ export class AppController {
       const parsed = parseFloat(this._rotate.inputStr)
       angle = isNaN(parsed) ? 0 : parsed * (Math.PI / 180)
     } else {
-      // Mouse-driven: measure signed angle from start to current mouse position.
+      // Mouse/touch-driven: measure signed angle from segment start to current position.
       let pivotScreen
       if (obj instanceof CoordinateFrame) {
         pivotScreen = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
       } else {
-        pivotScreen = getCentroid(this._rotate.startCorners).clone().project(this._camera)
+        pivotScreen = getCentroid(this._rotate.segmentStartCorners).clone().project(this._camera)
       }
       const currentAngle = Math.atan2(
         this._mouse.y - pivotScreen.y,
         this._mouse.x - pivotScreen.x,
       )
-      angle = this._rotate.startAngle - currentAngle
+      // Mobile: defer start angle to first canvas touch so there's no jump.
+      if (this._rotate.needsStartAngle) {
+        this._rotate.segmentStartAngle = currentAngle
+        this._rotate.needsStartAngle   = false
+        return
+      }
+      angle = this._rotate.segmentStartAngle - currentAngle
       // Ctrl: snap to stepSize degree increments
       if (this._ctrlHeld) {
         const stepRad = this._rotate.stepSize * (Math.PI / 180)
@@ -4452,12 +4496,12 @@ export class AppController {
     const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
 
     if (obj instanceof CoordinateFrame) {
-      obj.rotation.copy(this._rotate.startRot).premultiply(deltaQ)
+      obj.rotation.copy(this._rotate.segmentStartRot).premultiply(deltaQ)
       obj.meshView.updateRotation(obj.rotation)
     } else {
-      // Solid: rotate all corners around the centroid of startCorners (ADR-036)
-      const pivot = getCentroid(this._rotate.startCorners)
-      obj.rotate(this._rotate.startCorners, pivot, deltaQ)
+      // Solid: rotate all corners around the centroid of segmentStartCorners (ADR-036)
+      const pivot = getCentroid(this._rotate.segmentStartCorners)
+      obj.rotate(this._rotate.segmentStartCorners, pivot, deltaQ)
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.updateBoxHelper()
     }
@@ -5484,6 +5528,19 @@ export class AppController {
     }
 
     if (this._rotate.active) {
+      if (e.pointerType === 'touch') {
+        // Mobile: drag rotates the object; confirmation is via the toolbar button.
+        // Re-snapshot segmentStart* so each new drag segment starts from current state.
+        const obj = this._activeObj
+        if (obj instanceof Solid && obj.corners) {
+          this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
+        } else if (obj instanceof CoordinateFrame) {
+          this._rotate.segmentStartRot.copy(obj.rotation)
+        }
+        this._rotate.needsStartAngle  = true
+        this._activeDragPointerId     = e.pointerId
+        return
+      }
       if (e.button === 0) { this._confirmRotate(); return }
       if (e.button === 2) { this._cancelRotate();  return }
       return
@@ -6044,6 +6101,10 @@ export class AppController {
     // wasDragging: a canvas drag started for this pointer (via _onPointerDown)
     const wasDragging = this._activeDragPointerId === e.pointerId
     if (wasDragging) this._activeDragPointerId = null
+    if (this._rotate.active) {
+      // Mobile rotate: keep active after finger lift; user confirms via toolbar button.
+      return
+    }
     if (this._grab.active) {
       // Touch grab: keep grab active after finger release.
       // The object stays at the dragged position; user confirms via the Confirm button.
