@@ -404,7 +404,7 @@ if (this._tcFastenedBlocked) return
 
 These are design-level constraints (not bugs) of the current `fastened` implementation.  Violating these silently produces wrong behaviour.
 
-- **Translation-only propagation**: `_updateFastenedFrames()` propagates the constraint as a world-space translation delta to the parent Solid's corners.  Rotation of the target entity is reflected in `source.rotation` (the CF rotates) but the parent Solid's corner geometry is NOT rotated.  If the target rotates, the Solid will appear at the correct position but with the wrong orientation.  Acceptable while Solid rotation is not a first-class operation.
+- **Solid R-key rotation propagates through child CFs**: When a Solid is rotated with R-key (or TC rotate on mobile), all direct child CoordinateFrames have their `rotation` and `translation` baked in sync with the delta quaternion: `cf.rotation = segStartRot ∘ deltaQ`, `cf.translation = segStartTrans.applyQuaternion(deltaQ)`.  This lets `_updateFastenedFrames()` detect the changed world pose of a target CF and propagate the rotation to the fastened Solid B.  Both values are snapshotted on operation start and restored on cancel; `SolidRotateCommand` stores start/end CF poses so undo/redo works correctly.
 
 - **One fastened CF per Solid**: If two child CFs of the same Solid are each fastened to different target CFs, the second iteration of `_updateFastenedFrames()` moves the Solid again — invalidating the first constraint.  Only the last constraint processed (Map insertion order) is satisfied at the end of each frame.  **Do not create multiple fastened links whose source CFs share the same parent Solid.**
 

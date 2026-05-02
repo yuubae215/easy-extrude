@@ -1,4 +1,5 @@
-import { Solid } from '../domain/Solid.js'
+import { Solid }           from '../domain/Solid.js'
+import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 
 /**
  * SolidRotateCommand — records an R-key Solid rotation for undo/redo.
@@ -7,26 +8,40 @@ import { Solid } from '../domain/Solid.js'
  * Stores start/end corners and swaps them on execute/undo, identical to the
  * MoveCommand pattern.  The rotation itself is baked into the corner positions.
  *
+ * Child CoordinateFrames of the Solid have their rotation (quaternion) and
+ * translation (world-space offset from centroid) baked in sync with the corner
+ * rotation, so fastened constraints continue to track the Solid's orientation.
+ *
  * @param {import('../domain/Solid.js').Solid} solidRef
  * @param {import('three').Vector3[]} startCorners  Corner snapshot before rotation
  * @param {import('three').Vector3[]} endCorners    Corner snapshot after rotation
  * @param {import('../service/SceneService.js').SceneService} sceneService
  * @param {() => void} onApplied  Called after each apply (e.g. _updateNPanel)
+ * @param {Map<string, {rotation: import('three').Quaternion, translation: import('three').Vector3}>} [startCfPoses]
+ * @param {Map<string, {rotation: import('three').Quaternion, translation: import('three').Vector3}>} [endCfPoses]
  * @returns {{label: string, execute(): void, undo(): void}}
  */
-export function createSolidRotateCommand(solidRef, startCorners, endCorners, sceneService, onApplied) {
-  function apply(corners) {
+export function createSolidRotateCommand(solidRef, startCorners, endCorners, sceneService, onApplied, startCfPoses = new Map(), endCfPoses = new Map()) {
+  function apply(corners, cfPoses) {
     const obj = sceneService.scene.getObject(solidRef.id)
     if (!(obj instanceof Solid)) return
     obj.corners.forEach((c, i) => c.copy(corners[i]))
     obj.meshView.updateGeometry(obj.corners)
     obj.meshView.updateBoxHelper()
+    for (const [cfId, { rotation, translation }] of cfPoses) {
+      const cf = sceneService.scene.getObject(cfId)
+      if (cf instanceof CoordinateFrame) {
+        cf.rotation.copy(rotation)
+        cf.meshView.updateRotation(cf.rotation)
+        cf.translation.copy(translation)
+      }
+    }
     sceneService.syncMountedPosition(solidRef.id)
     onApplied()
   }
   return {
     label: 'Rotate Solid',
-    execute() { apply(endCorners) },
-    undo()    { apply(startCorners) },
+    execute() { apply(endCorners, endCfPoses) },
+    undo()    { apply(startCorners, startCfPoses) },
   }
 }
