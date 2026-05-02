@@ -451,6 +451,8 @@ export class AppController {
     this._tcStartProxyQuat = null
     /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
     this._tcStartFrameRot  = null
+    /** Child CF pose snapshots at TC drag start for Solid rotate — for undo. @type {Map<string,{rotation,translation}>|null} */
+    this._tcStartCfPoses   = null
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
     // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
@@ -479,6 +481,10 @@ export class AppController {
       segmentStartCorners:  null,
       /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
       segmentStartRot:      new THREE.Quaternion(),
+      /** Child CF pose snapshot at rotate start — for undo. @type {Map<string,{rotation,translation}>|null} */
+      startCfPoses:    null,
+      /** Child CF pose snapshot at segment start — reapplied each frame. @type {Map<string,{rotation,translation}>|null} */
+      segStartCfPoses: null,
     }
 
     this._ctrlHeld  = false
@@ -2128,6 +2134,9 @@ export class AppController {
         if (this._tcMode === 'rotate' && this._activeObj instanceof CoordinateFrame) {
           this._tcStartFrameRot = this._activeObj.rotation.clone()
         }
+        if (this._tcMode === 'rotate' && this._activeObj instanceof Solid) {
+          this._tcStartCfPoses = this._snapshotChildCfPoses(this._activeObj.id)
+        }
         // Block movement on fastened-source CFs and Solids that own them:
         // _updateFastenedFrames() overrides translation every frame, so any delta
         // from objectChange is silently discarded and the TC proxy drifts.
@@ -2168,14 +2177,17 @@ export class AppController {
           if (startPts) {
             const endPts = obj.corners.map(c => c.clone())
             if (startPts.some((c, i) => !c.equals(endPts[i]))) {
+              const startCfPoses = this._tcStartCfPoses ?? new Map()
+              const endCfPoses   = this._snapshotChildCfPoses(obj.id)
               const cmd = createSolidRotateCommand(
                 obj, startPts.map(c => c.clone()), endPts, this._service,
-                () => this._updateNPanel(),
+                () => this._updateNPanel(), startCfPoses, endCfPoses,
               )
               this._commandStack.push(cmd)
               this._refreshUndoRedoState()
             }
           }
+          this._tcStartCfPoses = null
           this._updateNPanel()
         } else {
           // Translate: record MoveCommand
@@ -2220,6 +2232,7 @@ export class AppController {
         })
         obj.meshView.updateGeometry(obj.corners)
         obj.meshView.updateBoxHelper()
+        this._applyChildCfPosesDelta(this._tcStartCfPoses, deltaQ)
       } else {
         // Translate mode: apply position delta to handles
         const delta    = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
@@ -4326,6 +4339,60 @@ export class AppController {
 
   // ── CoordinateFrame / Solid rotation (R key, ADR-019 / ADR-036) ──────────
 
+  // ── Child-CF pose helpers (Solid rotation sync) ─────────────────────────────
+
+  /** Returns CoordinateFrames whose parentId === solidId. */
+  _childCfsOf(solidId) {
+    const result = []
+    for (const obj of this._scene.objects.values()) {
+      if (obj instanceof CoordinateFrame && obj.parentId === solidId) result.push(obj)
+    }
+    return result
+  }
+
+  /**
+   * Snapshot {rotation, translation} of every direct-child CF of a Solid.
+   * @returns {Map<string,{rotation: THREE.Quaternion, translation: THREE.Vector3}>}
+   */
+  _snapshotChildCfPoses(solidId) {
+    const poses = new Map()
+    for (const cf of this._childCfsOf(solidId)) {
+      poses.set(cf.id, { rotation: cf.rotation.clone(), translation: cf.translation.clone() })
+    }
+    return poses
+  }
+
+  /**
+   * Apply deltaQ to all CF poses in the snapshot: rotation = segStartRot ∘ deltaQ,
+   * translation = segStartTrans rotated by deltaQ.
+   * @param {Map<string,{rotation,translation}>|null} segStartPoses
+   * @param {THREE.Quaternion} deltaQ
+   */
+  _applyChildCfPosesDelta(segStartPoses, deltaQ) {
+    if (!segStartPoses) return
+    for (const [cfId, { rotation: segStartRot, translation: segStartTrans }] of segStartPoses) {
+      const cf = this._scene.getObject(cfId)
+      if (!(cf instanceof CoordinateFrame)) continue
+      cf.rotation.copy(segStartRot).premultiply(deltaQ)
+      cf.meshView.updateRotation(cf.rotation)
+      cf.translation.copy(segStartTrans).applyQuaternion(deltaQ)
+    }
+  }
+
+  /**
+   * Restore CF rotations and translations from a saved pose map (used on cancel/undo).
+   * @param {Map<string,{rotation,translation}>} poses
+   */
+  _restoreChildCfPoses(poses) {
+    for (const [cfId, { rotation, translation }] of poses) {
+      const cf = this._scene.getObject(cfId)
+      if (!(cf instanceof CoordinateFrame)) continue
+      cf.rotation.copy(rotation)
+      cf.meshView.updateRotation(cf.rotation)
+      cf.translation.copy(translation)
+    }
+  }
+
   /**
    * Starts rotate mode for the active CoordinateFrame or Solid.
    * For CoordinateFrame: rotates the quaternion around the frame origin.
@@ -4360,6 +4427,9 @@ export class AppController {
       const pivot = getCentroid(this._rotate.startCorners)
       projected = pivot.clone().project(this._camera)
       obj.meshView.boxHelper.visible = false
+      // Snapshot child CF poses so fastened constraints track the Solid's rotation
+      this._rotate.startCfPoses    = this._snapshotChildCfPoses(obj.id)
+      this._rotate.segStartCfPoses = this._snapshotChildCfPoses(obj.id)
     }
 
     if (deferStartAngle) {
@@ -4404,9 +4474,11 @@ export class AppController {
       const endCorners = solid.corners.map(c => c.clone())
       const changed = endCorners.some((c, i) => !c.equals(this._rotate.startCorners[i]))
       if (changed) {
+        const startCfPoses = this._rotate.startCfPoses ?? new Map()
+        const endCfPoses   = this._snapshotChildCfPoses(solid.id)
         const cmd = createSolidRotateCommand(
           solid, this._rotate.startCorners, endCorners, this._service,
-          () => this._updateNPanel(),
+          () => this._updateNPanel(), startCfPoses, endCfPoses,
         )
         this._commandStack.push(cmd)
       }
@@ -4419,6 +4491,8 @@ export class AppController {
     this._rotate.startCorners       = null
     this._rotate.segmentStartCorners = null
     this._rotate.needsStartAngle    = false
+    this._rotate.startCfPoses       = null
+    this._rotate.segStartCfPoses    = null
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
@@ -4438,6 +4512,7 @@ export class AppController {
       this._rotate.startCorners.forEach((c, i) => { obj.vertices[i].position.copy(c) })
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.setObjectSelected(true)
+      if (this._rotate.startCfPoses) this._restoreChildCfPoses(this._rotate.startCfPoses)
     }
     this._rotate.active             = false
     this._rotate.axis               = null
@@ -4446,6 +4521,8 @@ export class AppController {
     this._rotate.startCorners       = null
     this._rotate.segmentStartCorners = null
     this._rotate.needsStartAngle    = false
+    this._rotate.startCfPoses       = null
+    this._rotate.segStartCfPoses    = null
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
@@ -4539,6 +4616,9 @@ export class AppController {
       obj.rotate(this._rotate.segmentStartCorners, pivot, deltaQ)
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.updateBoxHelper()
+      // Keep child CF poses in sync so fastened constraints track the Solid's rotation.
+      // rotation = segStartRot composed with deltaQ; translation = segStartTrans rotated by deltaQ.
+      this._applyChildCfPosesDelta(this._rotate.segStartCfPoses, deltaQ)
     }
     this._updateRotateStatus()
   }
@@ -5569,6 +5649,7 @@ export class AppController {
         const obj = this._activeObj
         if (obj instanceof Solid && obj.corners) {
           this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
+          this._rotate.segStartCfPoses     = this._snapshotChildCfPoses(obj.id)
         } else if (obj instanceof CoordinateFrame) {
           this._rotate.segmentStartRot.copy(obj.rotation)
         }
