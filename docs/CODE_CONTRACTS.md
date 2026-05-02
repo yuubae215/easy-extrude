@@ -144,3 +144,4 @@ Detail: `docs/code_contracts/memory_management.md`
 | ImportedMesh Serialization | Base64 buffers; restore `cuboid.position` from `offset` BEFORE calling `initCorners()` |
 | THREE.Mesh Requires Valid Geometry | Never pass `null` to `new THREE.Mesh(null, mat)` — use `new THREE.BufferGeometry()` as placeholder; `updateMorphTargets()` throws on null geometry |
 | Zone Rim Ring Must Use Polygon Geometry | Use `ShapeGeometry` + polygon hole for the rim ring; `RingGeometry` always produces a circle regardless of Zone shape |
+| BoxHelper Forbidden for World-Space Baked Geometry | `THREE.BoxHelper` computes AABB; use `THREE.LineSegments`+`EdgesGeometry` for `MeshView` selection highlight so it matches the solid's actual orientation after rotation |
