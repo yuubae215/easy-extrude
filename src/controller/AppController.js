@@ -3452,7 +3452,12 @@ export class AppController {
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
-          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => { this._startRotate(true); this._updateMobileToolbar() } }
+          ? {
+              icon:    this._tcMode === 'rotate' ? ICONS.translate : ICONS.rotate,
+              label:   this._tcMode === 'rotate' ? 'Move'          : 'Rotate',
+              active:  this._tcMode === 'rotate',
+              onClick: () => this._toggleTcMode(),
+            }
           : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
