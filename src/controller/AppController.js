@@ -185,6 +185,9 @@ export class AppController {
       this._uiView.hideImportProgress()
       this._uiView.showToast(`Geometry error: ${message}`)
     })
+    this._service.on('constraintCycleDetected', () => {
+      this._uiView.showToast('Constraint cycle detected — some fastened links are inactive', { type: 'warn' })
+    })
     this._service.on('wsDisconnected', () => {
       // If an import was in progress when the server dropped, clear it and notify.
       if (this._importProgressUnsub) {

@@ -109,6 +109,13 @@ export class SceneService extends EventEmitter {
      * @type {Map<string, { sourceId: string, relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion }>}
      */
     this._fastenedTransforms = new Map()
+    /**
+     * Set of fastened linkIds detected as part of a cycle in the previous frame.
+     * Used to debounce the constraintCycleDetected event so it fires only when
+     * the cyclic set changes (ADR-035 §2).
+     * @type {Set<string>}
+     */
+    this._prevCyclicLinkIds = new Set()
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -985,6 +992,74 @@ export class SceneService extends EventEmitter {
    * those children's poses were already computed with the pre-constraint values.
    * Single-level fastening (no CF-of-CF chains) is the expected use case.
    */
+  /**
+   * Walks up the CoordinateFrame parent chain from the given CF and returns the
+   * root Solid (first non-CF ancestor that has corners) and the ordered list of
+   * intermediate CFs from the root-side child down to the CF's direct parent.
+   *
+   * chain[0] = direct child of rootSolid, chain[last] = direct parent of cfId CF.
+   * When cfId's parent is directly the rootSolid, chain is empty.
+   * rootSolid is null if the chain leads to an object without corners.
+   *
+   * @param {string} cfId
+   * @returns {{ rootSolid: import('../domain/Solid.js').Solid|null, chain: CoordinateFrame[] }}
+   */
+  _findAncestorChain(cfId) {
+    const cf = this._model.getObject(cfId)
+    const chain = []
+    let node = this._model.getObject(cf.parentId)
+    while (node instanceof CoordinateFrame) {
+      chain.unshift(node)
+      node = this._model.getObject(node.parentId)
+    }
+    const rootSolid = (node && node.corners && node.corners.length > 0) ? node : null
+    return { rootSolid, chain }
+  }
+
+  /**
+   * Detects cycles in the Solid-to-Solid fastened constraint graph (ADR-035 §2).
+   * Each fastened link is projected to an edge between root Solids; a DFS finds
+   * back-edges and returns their linkIds.
+   *
+   * @param {Array<[string, {sourceId: string}]>} entries  validated fastened entries
+   * @returns {Set<string>} linkIds that form back-edges (cyclic)
+   */
+  _detectFastenedCycles(entries) {
+    const adj = new Map()  // solidId → [{to: solidId, linkId}]
+    for (const [linkId, { sourceId }] of entries) {
+      const link = this._model.getLink(linkId)
+      if (!link) continue
+      const { rootSolid: srcRoot } = this._findAncestorChain(sourceId)
+      const { rootSolid: tgtRoot } = this._findAncestorChain(link.targetId)
+      if (!srcRoot || !tgtRoot || srcRoot.id === tgtRoot.id) continue
+      if (!adj.has(srcRoot.id)) adj.set(srcRoot.id, [])
+      adj.get(srcRoot.id).push({ to: tgtRoot.id, linkId })
+    }
+
+    const visited = new Set()
+    const stack   = new Set()
+    const cyclic  = new Set()
+
+    const dfs = (nodeId) => {
+      if (visited.has(nodeId)) return
+      visited.add(nodeId)
+      stack.add(nodeId)
+      for (const { to, linkId } of (adj.get(nodeId) || [])) {
+        if (stack.has(to)) {
+          cyclic.add(linkId)
+        } else {
+          dfs(to)
+        }
+      }
+      stack.delete(nodeId)
+    }
+
+    for (const nodeId of adj.keys()) {
+      if (!visited.has(nodeId)) dfs(nodeId)
+    }
+    return cyclic
+  }
+
   _updateFastenedFrames() {
     // Filter to valid, solvable constraints
     const entries = []
@@ -998,11 +1073,25 @@ export class SceneService extends EventEmitter {
     }
     if (entries.length === 0) return
 
+    // § 2 — Cycle detection (ADR-035): skip cyclic links and notify once per change
+    const cyclic = this._detectFastenedCycles(entries)
+    const cyclicChanged =
+      cyclic.size !== this._prevCyclicLinkIds.size ||
+      [...cyclic].some(id => !this._prevCyclicLinkIds.has(id))
+    if (cyclicChanged) {
+      this._prevCyclicLinkIds = new Set(cyclic)
+      if (cyclic.size > 0) {
+        this.emit('constraintCycleDetected')
+      }
+    }
+    const acyclicEntries = cyclic.size > 0 ? entries.filter(([id]) => !cyclic.has(id)) : entries
+    if (acyclicEntries.length === 0) return
+
     // Pack math inputs into a flat Float32Array for Wasm (or JS fallback).
     // Layout per constraint: [relOffXYZ, relQxyzw, targetPosXYZ, targetQxyzw] = 14 f32
-    const inputFlat = new Float32Array(entries.length * 14)
-    for (let i = 0; i < entries.length; i++) {
-      const [linkId, { relativeOffset, relativeQuat }] = entries[i]
+    const inputFlat = new Float32Array(acyclicEntries.length * 14)
+    for (let i = 0; i < acyclicEntries.length; i++) {
+      const [linkId, { relativeOffset, relativeQuat }] = acyclicEntries[i]
       const targetPose = this._worldPoseCache.get(this._model.getLink(linkId).targetId)
       const b = i * 14
       inputFlat[b]     = relativeOffset.x;    inputFlat[b + 1]  = relativeOffset.y;    inputFlat[b + 2]  = relativeOffset.z
@@ -1016,8 +1105,8 @@ export class SceneService extends EventEmitter {
     const poses = constraintSolver.solveFastenedConstraints(inputFlat)
 
     // Apply results: view updates and parent mutations stay in JS
-    for (let i = 0; i < entries.length; i++) {
-      const [linkId, { sourceId }] = entries[i]
+    for (let i = 0; i < acyclicEntries.length; i++) {
+      const [, { sourceId }] = acyclicEntries[i]
       const o = i * 7
       const wpx = poses[o], wpy = poses[o + 1], wpz = poses[o + 2]
       const wqx = poses[o + 3], wqy = poses[o + 4], wqz = poses[o + 5], wqw = poses[o + 6]
@@ -1026,34 +1115,53 @@ export class SceneService extends EventEmitter {
       const parent = this._model.getObject(source.parentId)
       if (!parent) continue
 
+      // § 1 — Chain propagation (ADR-035): walk up to the root Solid, move it by
+      // the delta, then re-propagate the intermediate CF chain so every cached
+      // world pose stays consistent.  When source's direct parent is the root Solid
+      // (chain is empty), this is identical to the previous Solid-parent branch.
+      const { rootSolid, chain } = this._findAncestorChain(sourceId)
+
       let parentWorldPos
-      if (parent instanceof CoordinateFrame) {
-        // Parent is another CF: update source.translation so the CF repositions
-        // within the parent CF's frame (original sliding behavior).
-        const cached = this._worldPoseCache.get(parent.id)
-        if (!cached) continue
-        parentWorldPos = cached.position
-        source.translation.set(wpx - parentWorldPos.x, wpy - parentWorldPos.y, wpz - parentWorldPos.z)
-      } else {
-        // Parent is a Solid: keep source.translation unchanged, move the Solid
-        // so that the CF arrives at the constrained world position.
-        if (!parent.corners || parent.corners.length === 0) continue
+      if (rootSolid) {
         const currentEntry = this._worldPoseCache.get(sourceId)
         if (!currentEntry) continue
 
         const dx = wpx - currentEntry.position.x
         const dy = wpy - currentEntry.position.y
         const dz = wpz - currentEntry.position.z
-        for (const corner of parent.corners) { corner.x += dx; corner.y += dy; corner.z += dz }
-        parent.meshView.updateGeometry(parent.corners)
-        parent.meshView.updateBoxHelper()
 
-        // Recompute parent centroid after the move
+        for (const corner of rootSolid.corners) { corner.x += dx; corner.y += dy; corner.z += dz }
+        rootSolid.meshView.updateGeometry(rootSolid.corners)
+        rootSolid.meshView.updateBoxHelper()
+
+        // Compute rootSolid centroid after the move
         const centroid = new Vector3()
-        for (const c of parent.corners) centroid.add(c)
-        centroid.divideScalar(parent.corners.length)
-        parentWorldPos = centroid
+        for (const c of rootSolid.corners) centroid.add(c)
+        centroid.divideScalar(rootSolid.corners.length)
+        let parentPos = centroid
+
+        // Inline re-propagation of intermediate CFs (root-side child → source's parent)
+        for (const cf of chain) {
+          const cfWorldPos = parentPos.clone().add(cf.translation)
+          const entry = this._worldPoseCache.get(cf.id)
+          if (entry) {
+            entry.position.copy(cfWorldPos)
+          } else {
+            this._worldPoseCache.set(cf.id, { position: cfWorldPos, quaternion: cf.rotation })
+          }
+          cf.meshView.updatePosition(cfWorldPos)
+          cf.meshView.updateConnectionLine(parentPos)
+          parentPos = cfWorldPos
+        }
+
+        parentWorldPos = parentPos
         // source.translation intentionally left unchanged
+      } else {
+        // Fallback: CF chain has no root Solid (orphaned chain); slide source within its parent CF
+        const parentCached = this._worldPoseCache.get(parent.id)
+        if (!parentCached) continue
+        parentWorldPos = parentCached.position
+        source.translation.set(wpx - parentWorldPos.x, wpy - parentWorldPos.y, wpz - parentWorldPos.z)
       }
 
       source.rotation.set(wqx, wqy, wqz, wqw)  // also updates cache entry (shared reference)
