@@ -46,6 +46,7 @@ This directory records the project's design decisions.
 | [ADR-032](ADR-032-geometric-host-binding.md) | **Geometric Host Binding — Map Elements Mounted on Scene Objects** | Accepted | 2026-04-13 | ADR-029, ADR-030, ADR-016, ADR-018, ADR-019 |
 | [ADR-033](ADR-033-coordinate-frame-phase-c.md) | **CoordinateFrame Phase C — Interface Contract Model** | Accepted | 2026-04-15 | ADR-018, ADR-019, ADR-032, ADR-030 |
 | [ADR-034](ADR-034-coordinate-frame-placement-policy.md) | **CoordinateFrame Placement and Pose Policy** | Accepted | 2026-04-20 | ADR-033, ADR-032, ADR-030, ADR-018, ADR-019 |
+| [ADR-035](ADR-035-fastened-chain-propagation.md) | **Fastened Constraint CF-Chain Propagation and Cycle Detection** | Accepted | 2026-05-02 | ADR-032, ADR-033, ADR-030, ADR-018, ADR-019 |
 
 ## How to Add a New ADR
 
