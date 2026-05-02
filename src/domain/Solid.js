@@ -82,6 +82,19 @@ export class Solid {
   }
 
   /**
+   * Rotates all vertices around `pivot` by `quat`, starting from `startCorners`.
+   * Symmetric to move(): takes a pre-drag snapshot so the operation is reapplyable.
+   * @param {import('three').Vector3[]} startCorners  snapshot taken before rotation
+   * @param {import('three').Vector3}  pivot          world-space rotation pivot
+   * @param {import('three').Quaternion} quat         rotation to apply
+   */
+  rotate(startCorners, pivot, quat) {
+    startCorners.forEach((c, i) => {
+      this.vertices[i].position.copy(c).sub(pivot).applyQuaternion(quat).add(pivot)
+    })
+  }
+
+  /**
    * Applies a face extrusion offset in-place.
    * @param {import('../graph/Face.js').Face} face  the face to extrude
    * @param {import('three').Vector3[]} savedFaceCorners  4 corner snapshots before drag

@@ -217,7 +217,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | Key | Action |
 |-----|--------|
 | `G` | `_startGrab()` |
-| `R` | `_startRotate()` (CoordinateFrame selected only) |
+| `R` | `_startRotate()` (CoordinateFrame or Solid selected, ADR-019/ADR-036) |
 | `M` | `_startMeasurePlacement()` |
 | `Shift+A` | Show add menu |
 | `Shift+D` | Duplicate selected object |
@@ -251,7 +251,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `0`–`9` / `.` | Numeric input mode |
 | `Ctrl` (hold) | Enable snap mode |
 
-### Rotate Active (CoordinateFrame)
+### Rotate Active (CoordinateFrame / Solid)
 
 | Key | Action |
 |-----|--------|
@@ -259,6 +259,8 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `Y` | Rotate around Y axis |
 | `Z` | Rotate around Z axis |
 | `0`–`9` / `.` | Numeric input mode (degrees) |
+
+Pivot: CoordinateFrame = frame world origin. Solid = centroid of corners at rotation start (ADR-036).
 
 ---
 
@@ -399,7 +401,8 @@ Commands are recorded post-hoc via `push()` — never use `execute()` for pre-ex
 | `DeleteCommand` | After `_deleteObject()` confirmed | `attachObject()` + `setVisible(true)` |
 | `ExtrudeSketchCommand` | After `_confirmExtrude()` confirmed | Delete Solid, restore Profile |
 | `RenameCommand` | After `_confirmRename()` confirmed | Restore previous name |
-| `FrameRotateCommand` | After `_confirmRotate()` confirmed | Restore startQuat |
+| `FrameRotateCommand` | After `_confirmRotate()` confirmed (CoordinateFrame) | Restore startQuat |
+| `SolidRotateCommand` | After `_confirmRotate()` confirmed (Solid) | Restore startCorners |
 
 ---
 

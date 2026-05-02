@@ -107,7 +107,7 @@ G = Grab   M = Measure   Shift+A = Add   Ctrl+Z = Undo
 
 #### [E] Status Bar
 ```
-G = Grab   Tab = Edit   Shift+D = Duplicate   X = Delete   M = Measure
+R = Rotate   G = Grab   Tab = Edit   Shift+D = Duplicate   X = Delete   M = Measure
 ```
 
 #### [F] Mobile Toolbar

@@ -463,6 +463,7 @@ Phases A, B, C implemented (2026-03-21 to 2026-03-22). See ADR-015 and ADR-017 f
 | Priority | Item | Complexity | ADR / Notes |
 |----------|------|-----------|-------------|
 | ~~🔴 High~~ | ~~MeasureLine Edit Mode · 1D — endpoint drag to reposition after placement~~ ✅ 2026-04-17 | ~~Medium~~ | ADR-005 |
+| ~~🟡 Medium~~ | ~~**Solid arbitrary rotation (R key)** — R キーで Solid を直接回転（centroid pivot、コーナーベイク、Undo 対応）~~ ✅ 2026-05-02 | ~~Low~~ | ADR-036 |
 | ~~🟡 Medium~~ | ~~Right-click context menu (currently: cancel only)~~ ✅ 2026-04-17 | ~~Low~~ | ADR-006 |
 | 🔴 High | **fastened 拘束 CF チェーン伝播 (ADR-035)** — SOURCE CF の直接の親が CoordinateFrame の場合（孫CF同士の fastened）、現在は `source.translation` のみ更新され root Solid に delta が伝わらない。修正方針: `_findAncestorChain(sourceId)` で root Solid を特定し corners に delta を適用 → CF チェーンをインライン再伝播。加えて fastened グラフのサイクルを毎フレーム DFS で検出し、サイクル検出時は `showToast` + 該当 constraint をスキップ。実装ガイドは ADR-035 § 実装ガイド 参照。 | Medium | ADR-035; CODE_CONTRACTS "Fastened Constraint Limitations" |
 | 🔴 High | **fastened 拘束の回転伝播** — `_updateFastenedFrames()` は現在 translation delta のみ親 Solid に適用し rotation を伝播しない。Target CF が回転したとき Source CF の rotation は更新されるが親 Solid のコーナーは回転しないため、Solid の向きが拘束と乖離する。修正方針: `currentEntry.quaternion` を保存 → `deltaQuat = worldQuat × currentQuat⁻¹` → 各コーナーを source CF のワールド位置まわりに `deltaQuat` で回転させてから translation delta を加算。 | Medium | ADR-032 §5; CODE_CONTRACTS "Fastened Constraint Limitations" (1) |
