@@ -134,14 +134,16 @@ export class CoordinateFrame {
 
   /**
    * Translates the frame by `delta` from its grab-start translation.
-   * `translation` is a world-space offset from parent centroid, so adding a
-   * world-space `delta` directly is correct.
+   * `translation` is a parent-local offset (ROS TF), so `delta` must also be
+   * expressed in the parent's local frame before calling this method.
+   * Callers (AppController._applyGrabDeltaToAll) convert the world delta via
+   * `delta.applyQuaternion(parentWorldQuat.conjugate())`.
    *
    * SceneService._updateWorldPoses() picks up the updated translation on the
    * next frame and recomputes the world pose in the cache.
    *
-   * @param {[Vector3]} startLocalOffset  saved [translation] at grab start
-   * @param {Vector3}   delta             world-space movement vector
+   * @param {[Vector3]} startLocalOffset  saved [translation] at grab start (parent-local)
+   * @param {Vector3}   delta             parent-local movement vector
    */
   move(startLocalOffset, delta) {
     this.translation.copy(startLocalOffset[0]).add(delta)

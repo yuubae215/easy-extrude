@@ -451,8 +451,8 @@ export class AppController {
     this._tcStartProxyQuat = null
     /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
     this._tcStartFrameRot  = null
-    /** Child CF pose snapshots at TC drag start for Solid rotate — for undo. @type {Map<string,{rotation,translation}>|null} */
-    this._tcStartCfPoses   = null
+    /** bodyRotation snapshot at TC drag start for Solid rotate — for undo. @type {THREE.Quaternion|null} */
+    this._tcStartBodyRot   = null
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
     // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
@@ -481,10 +481,10 @@ export class AppController {
       segmentStartCorners:  null,
       /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
       segmentStartRot:      new THREE.Quaternion(),
-      /** Child CF pose snapshot at rotate start — for undo. @type {Map<string,{rotation,translation}>|null} */
-      startCfPoses:    null,
-      /** Child CF pose snapshot at segment start — reapplied each frame. @type {Map<string,{rotation,translation}>|null} */
-      segStartCfPoses: null,
+      /** Solid bodyRotation snapshot at rotate start — for undo. @type {import('three').Quaternion|null} */
+      startBodyRot:    null,
+      /** Solid bodyRotation snapshot at segment start — reapplied each frame. @type {import('three').Quaternion|null} */
+      segStartBodyRot: null,
     }
 
     this._ctrlHeld  = false
@@ -605,37 +605,22 @@ export class AppController {
     uiView.onFramePositionChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
-      const parent = this._scene.getObject(frame.parentId)
-      if (!parent) return
-      const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
-      // For a geometry parent: centroid from world-space corners.
-      // For a CoordinateFrame parent: world position from cache (localOffset is NOT world pos).
-      // (PHILOSOPHY #21 Phase 3 — CoordinateFrame.corners does not exist)
-      const parentCentroid = (parent instanceof CoordinateFrame)
-        ? (this._service.worldPoseOf(parent.id)?.position?.clone() ?? null)
-        : (parent.corners.length > 0 ? getCentroid(parent.corners) : null)
-      if (!parentCentroid) return
-      // val is in parent's local space; convert to world-space translation
-      const localPos = frame.translation.clone().applyQuaternion(parentRot.clone().conjugate())
-      localPos[axis] = val
-      frame.translation.copy(localPos).applyQuaternion(parentRot)
-      const newWorldPos = parentCentroid.clone().add(frame.translation)
-      const cacheEntry = this._service.worldPoseOf(frame.id)
-      if (cacheEntry) cacheEntry.position.copy(newWorldPos)
-      frame.meshView.updatePosition(newWorldPos)
+      // translation is already in parent-local space (ROS TF) — set directly
+      frame.translation[axis] = val
+      this._service.invalidateWorldPose(frame.id)
+      const newWorldPos = this._service.worldPoseOf(frame.id)?.position
+      if (newWorldPos) frame.meshView.updatePosition(newWorldPos)
     })
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
-      const parent = this._scene.getObject(frame.parentId)
-      const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
-      // val is local Euler degrees; rebuild local quaternion then convert to world
-      const localRot = parentRot.clone().conjugate().multiply(frame.rotation)
-      const localEuler = new THREE.Euler().setFromQuaternion(localRot, 'ZYX')
+      // rotation is already in parent-local space (ROS TF) — edit directly
+      const localEuler = new THREE.Euler().setFromQuaternion(frame.rotation, 'ZYX')
       localEuler[axis] = THREE.MathUtils.degToRad(val)
-      localRot.setFromEuler(localEuler)
-      frame.rotation.copy(parentRot.clone().multiply(localRot))
-      frame.meshView.updateRotation(frame.rotation)
+      frame.rotation.setFromEuler(localEuler)
+      const parentWorldQuat = this._service._getParentWorldQuat(frame)
+      frame.meshView.updateRotation(parentWorldQuat.clone().multiply(frame.rotation))
+      this._service.invalidateWorldPose(frame.id)
     })
     uiView.onLocationChange((axis, val) => {
       const obj = this._activeObj
@@ -2135,7 +2120,7 @@ export class AppController {
           this._tcStartFrameRot = this._activeObj.rotation.clone()
         }
         if (this._tcMode === 'rotate' && this._activeObj instanceof Solid) {
-          this._tcStartCfPoses = this._snapshotChildCfPoses(this._activeObj.id)
+          this._tcStartBodyRot = this._activeObj.bodyRotation.clone()
         }
         // Block movement on fastened-source CFs and Solids that own them:
         // _updateFastenedFrames() overrides translation every frame, so any delta
@@ -2177,17 +2162,17 @@ export class AppController {
           if (startPts) {
             const endPts = obj.corners.map(c => c.clone())
             if (startPts.some((c, i) => !c.equals(endPts[i]))) {
-              const startCfPoses = this._tcStartCfPoses ?? new Map()
-              const endCfPoses   = this._snapshotChildCfPoses(obj.id)
+              const startBodyRot = this._tcStartBodyRot ?? new THREE.Quaternion()
+              const endBodyRot   = obj.bodyRotation.clone()
               const cmd = createSolidRotateCommand(
-                obj, startPts.map(c => c.clone()), endPts, this._service,
-                () => this._updateNPanel(), startCfPoses, endCfPoses,
+                obj, startPts.map(c => c.clone()), endPts, startBodyRot, endBodyRot,
+                this._service, () => this._updateNPanel(),
               )
               this._commandStack.push(cmd)
               this._refreshUndoRedoState()
             }
           }
-          this._tcStartCfPoses = null
+          this._tcStartBodyRot = null
           this._updateNPanel()
         } else {
           // Translate: record MoveCommand
@@ -2211,13 +2196,17 @@ export class AppController {
       const obj = this._activeObj
       if (!obj) return
       if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {
-        // Rotate mode: apply quaternion delta to frame rotation
+        // Rotate mode: apply quaternion delta to local frame rotation (ROS TF)
         if (!this._tcStartProxyQuat || !this._tcStartFrameRot) return
         const deltaQ = this._tcProxy.quaternion.clone().multiply(
           this._tcStartProxyQuat.clone().invert(),
         )
-        obj.rotation.copy(this._tcStartFrameRot).premultiply(deltaQ)
-        obj.meshView.updateRotation(obj.rotation)
+        // _tcStartFrameRot is the local rotation snapshot; compute new local rot via change-of-basis
+        const parentWorldQuat = this._service._getParentWorldQuat(obj)
+        const startWorldQuat  = parentWorldQuat.clone().multiply(this._tcStartFrameRot)
+        const newWorldQuat    = new THREE.Quaternion().copy(startWorldQuat).premultiply(deltaQ)
+        obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
+        obj.meshView.updateRotation(newWorldQuat)
       } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
         // Rotate mode: rotate all corners around the centroid (same delta-quat approach as CF)
         if (!this._tcStartProxyQuat) return
@@ -2232,17 +2221,24 @@ export class AppController {
         })
         obj.meshView.updateGeometry(obj.corners)
         obj.meshView.updateBoxHelper()
-        this._applyChildCfPosesDelta(this._tcStartCfPoses, deltaQ)
+        if (this._tcStartBodyRot) obj.bodyRotation.copy(this._tcStartBodyRot).premultiply(deltaQ)
       } else {
         // Translate mode: apply position delta to handles
-        const delta    = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
-        const startPts = this._tcStartCorners.get(obj.id)
+        const worldDelta = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
+        const startPts   = this._tcStartCorners.get(obj.id)
         if (!startPts) return
-        const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
-        startPts.forEach((c, i) => handles[i].copy(c).add(delta))
-        obj.meshView.updateGeometry(handles)
-        obj.meshView.updateBoxHelper()
-        if (obj instanceof CoordinateFrame) this._service.invalidateWorldPose(obj.id)
+        if (obj instanceof CoordinateFrame) {
+          // translation is parent-local — convert world delta to local space (ROS TF)
+          const parentWorldQuat = this._service._getParentWorldQuat(obj)
+          const localDelta = worldDelta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
+          obj.localOffset.forEach((h, i) => h.copy(startPts[i]).add(localDelta))
+          obj.meshView.updateGeometry(obj.localOffset)
+          this._service.invalidateWorldPose(obj.id)
+        } else {
+          startPts.forEach((c, i) => obj.corners[i].copy(c).add(worldDelta))
+          obj.meshView.updateGeometry(obj.corners)
+          obj.meshView.updateBoxHelper()
+        }
       }
     })
   }
@@ -3058,12 +3054,8 @@ export class AppController {
         )
         return
       }
-      // Non-Origin frame: show position/rotation in parent's local coordinate system
-      const parent = this._scene.getObject(obj.parentId)
-      const parentRot = (parent instanceof CoordinateFrame) ? parent.rotation : new THREE.Quaternion()
-      const localPos = obj.translation.clone().applyQuaternion(parentRot.clone().conjugate())
-      const localRot  = parentRot.clone().conjugate().multiply(obj.rotation)
-      const euler = new THREE.Euler().setFromQuaternion(localRot, 'ZYX')
+      // Non-Origin frame: translation and rotation are already in parent-local space (ROS TF)
+      const euler = new THREE.Euler().setFromQuaternion(obj.rotation, 'ZYX')
       // Build valid parent candidates for the N panel dropdown (ADR-028)
       const parentOptions = [...this._scene.objects.values()]
         .filter(o => {
@@ -3073,7 +3065,7 @@ export class AppController {
           return true
         })
         .map(o => ({ id: o.id, name: o.name }))
-      this._uiView.updateNPanelForFrame(localPos, {
+      this._uiView.updateNPanelForFrame(obj.translation, {
         x: THREE.MathUtils.radToDeg(euler.x),
         y: THREE.MathUtils.radToDeg(euler.y),
         z: THREE.MathUtils.radToDeg(euler.z),
@@ -4342,57 +4334,6 @@ export class AppController {
   // ── Child-CF pose helpers (Solid rotation sync) ─────────────────────────────
 
   /** Returns CoordinateFrames whose parentId === solidId. */
-  _childCfsOf(solidId) {
-    const result = []
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof CoordinateFrame && obj.parentId === solidId) result.push(obj)
-    }
-    return result
-  }
-
-  /**
-   * Snapshot {rotation, translation} of every direct-child CF of a Solid.
-   * @returns {Map<string,{rotation: THREE.Quaternion, translation: THREE.Vector3}>}
-   */
-  _snapshotChildCfPoses(solidId) {
-    const poses = new Map()
-    for (const cf of this._childCfsOf(solidId)) {
-      poses.set(cf.id, { rotation: cf.rotation.clone(), translation: cf.translation.clone() })
-    }
-    return poses
-  }
-
-  /**
-   * Apply deltaQ to all CF poses in the snapshot: rotation = segStartRot ∘ deltaQ,
-   * translation = segStartTrans rotated by deltaQ.
-   * @param {Map<string,{rotation,translation}>|null} segStartPoses
-   * @param {THREE.Quaternion} deltaQ
-   */
-  _applyChildCfPosesDelta(segStartPoses, deltaQ) {
-    if (!segStartPoses) return
-    for (const [cfId, { rotation: segStartRot, translation: segStartTrans }] of segStartPoses) {
-      const cf = this._scene.getObject(cfId)
-      if (!(cf instanceof CoordinateFrame)) continue
-      cf.rotation.copy(segStartRot).premultiply(deltaQ)
-      cf.meshView.updateRotation(cf.rotation)
-      cf.translation.copy(segStartTrans).applyQuaternion(deltaQ)
-    }
-  }
-
-  /**
-   * Restore CF rotations and translations from a saved pose map (used on cancel/undo).
-   * @param {Map<string,{rotation,translation}>} poses
-   */
-  _restoreChildCfPoses(poses) {
-    for (const [cfId, { rotation, translation }] of poses) {
-      const cf = this._scene.getObject(cfId)
-      if (!(cf instanceof CoordinateFrame)) continue
-      cf.rotation.copy(rotation)
-      cf.meshView.updateRotation(cf.rotation)
-      cf.translation.copy(translation)
-    }
-  }
-
   /**
    * Starts rotate mode for the active CoordinateFrame or Solid.
    * For CoordinateFrame: rotates the quaternion around the frame origin.
@@ -4427,9 +4368,10 @@ export class AppController {
       const pivot = getCentroid(this._rotate.startCorners)
       projected = pivot.clone().project(this._camera)
       obj.meshView.boxHelper.visible = false
-      // Snapshot child CF poses so fastened constraints track the Solid's rotation
-      this._rotate.startCfPoses    = this._snapshotChildCfPoses(obj.id)
-      this._rotate.segStartCfPoses = this._snapshotChildCfPoses(obj.id)
+      // Snapshot bodyRotation so it can be baked into SolidRotateCommand for undo/redo.
+      // CFs follow automatically via ROS TF forward kinematics — no CF pose snapshot needed.
+      this._rotate.startBodyRot    = obj.bodyRotation.clone()
+      this._rotate.segStartBodyRot = obj.bodyRotation.clone()
     }
 
     if (deferStartAngle) {
@@ -4474,11 +4416,11 @@ export class AppController {
       const endCorners = solid.corners.map(c => c.clone())
       const changed = endCorners.some((c, i) => !c.equals(this._rotate.startCorners[i]))
       if (changed) {
-        const startCfPoses = this._rotate.startCfPoses ?? new Map()
-        const endCfPoses   = this._snapshotChildCfPoses(solid.id)
+        const startBodyRot = this._rotate.startBodyRot ?? new THREE.Quaternion()
+        const endBodyRot   = solid.bodyRotation.clone()
         const cmd = createSolidRotateCommand(
-          solid, this._rotate.startCorners, endCorners, this._service,
-          () => this._updateNPanel(), startCfPoses, endCfPoses,
+          solid, this._rotate.startCorners, endCorners, startBodyRot, endBodyRot,
+          this._service, () => this._updateNPanel(),
         )
         this._commandStack.push(cmd)
       }
@@ -4491,8 +4433,8 @@ export class AppController {
     this._rotate.startCorners       = null
     this._rotate.segmentStartCorners = null
     this._rotate.needsStartAngle    = false
-    this._rotate.startCfPoses       = null
-    this._rotate.segStartCfPoses    = null
+    this._rotate.startBodyRot       = null
+    this._rotate.segStartBodyRot    = null
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
@@ -4507,12 +4449,13 @@ export class AppController {
     const obj = this._activeObj
     if (obj instanceof CoordinateFrame) {
       obj.rotation.copy(this._rotate.startRot)
-      obj.meshView.updateRotation(obj.rotation)
+      const parentWorldQuat = this._service._getParentWorldQuat(obj)
+      obj.meshView.updateRotation(parentWorldQuat.clone().multiply(obj.rotation))
     } else if (obj instanceof Solid && this._rotate.startCorners) {
       this._rotate.startCorners.forEach((c, i) => { obj.vertices[i].position.copy(c) })
+      if (this._rotate.startBodyRot) obj.bodyRotation.copy(this._rotate.startBodyRot)
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.setObjectSelected(true)
-      if (this._rotate.startCfPoses) this._restoreChildCfPoses(this._rotate.startCfPoses)
     }
     this._rotate.active             = false
     this._rotate.axis               = null
@@ -4521,8 +4464,8 @@ export class AppController {
     this._rotate.startCorners       = null
     this._rotate.segmentStartCorners = null
     this._rotate.needsStartAngle    = false
-    this._rotate.startCfPoses       = null
-    this._rotate.segStartCfPoses    = null
+    this._rotate.startBodyRot       = null
+    this._rotate.segStartBodyRot    = null
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
@@ -4608,17 +4551,24 @@ export class AppController {
     const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
 
     if (obj instanceof CoordinateFrame) {
-      obj.rotation.copy(this._rotate.segmentStartRot).premultiply(deltaQ)
-      obj.meshView.updateRotation(obj.rotation)
+      // ROS TF: compute new local rotation via change-of-basis.
+      // newLocalRot = parentWorldQuat^-1 * deltaQ * parentWorldQuat * segStartLocalRot
+      const parentWorldQuat  = this._service._getParentWorldQuat(obj)
+      const startWorldQuat   = parentWorldQuat.clone().multiply(this._rotate.segmentStartRot)
+      const newWorldQuat     = new THREE.Quaternion().copy(startWorldQuat).premultiply(deltaQ)
+      obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
+      obj.meshView.updateRotation(newWorldQuat)
     } else {
       // Solid: rotate all corners around the centroid of segmentStartCorners (ADR-036)
       const pivot = getCentroid(this._rotate.segmentStartCorners)
       obj.rotate(this._rotate.segmentStartCorners, pivot, deltaQ)
+      // Update bodyRotation: newBodyRot = deltaQ * segStartBodyRot
+      if (this._rotate.segStartBodyRot) {
+        obj.bodyRotation.copy(this._rotate.segStartBodyRot).premultiply(deltaQ)
+      }
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.updateBoxHelper()
-      // Keep child CF poses in sync so fastened constraints track the Solid's rotation.
-      // rotation = segStartRot composed with deltaQ; translation = segStartTrans rotated by deltaQ.
-      this._applyChildCfPosesDelta(this._rotate.segStartCfPoses, deltaQ)
+      // CFs follow automatically via _updateWorldPoses() each animation frame.
     }
     this._updateRotateStatus()
   }
@@ -4765,7 +4715,15 @@ export class AppController {
     this._grab.lastDelta.copy(delta)
     for (const [id, startCorners] of this._grab.segmentStartCorners) {
       const selObj = this._scene.getObject(id)
-      if (selObj) selObj.move(startCorners, delta)
+      if (!selObj) continue
+      if (selObj instanceof CoordinateFrame) {
+        // translation is parent-local — convert world delta to parent's local space (ROS TF)
+        const parentWorldQuat = this._service._getParentWorldQuat(selObj)
+        const localDelta = delta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
+        selObj.move(startCorners, localDelta)
+      } else {
+        selObj.move(startCorners, delta)
+      }
     }
   }
 
@@ -5649,7 +5607,7 @@ export class AppController {
         const obj = this._activeObj
         if (obj instanceof Solid && obj.corners) {
           this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
-          this._rotate.segStartCfPoses     = this._snapshotChildCfPoses(obj.id)
+          this._rotate.segStartBodyRot     = obj.bodyRotation.clone()
         } else if (obj instanceof CoordinateFrame) {
           this._rotate.segmentStartRot.copy(obj.rotation)
         }

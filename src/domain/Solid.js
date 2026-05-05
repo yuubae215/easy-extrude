@@ -16,9 +16,10 @@
  *
  * @see ADR-020, ADR-012, ADR-009, ADR-025
  */
-import { FACES } from '../model/CuboidModel.js'
-import { Face }  from '../graph/Face.js'
-import { Edge }  from '../graph/Edge.js'
+import { FACES }      from '../model/CuboidModel.js'
+import { Face }       from '../graph/Face.js'
+import { Edge }       from '../graph/Edge.js'
+import { Quaternion } from 'three'
 
 // 12 unique edges of a cuboid (vertex index pairs).
 // Order: 4 bottom ring, 4 top ring, 4 vertical pillars.
@@ -56,6 +57,16 @@ export class Solid {
 
     /** @type {import('../view/MeshView.js').MeshView} */
     this.meshView    = meshView
+
+    /**
+     * Cumulative body-frame orientation (ROS TF style).
+     * Tracks the total rotation applied to this Solid since creation.
+     * Child CoordinateFrames express their translation/rotation in this frame,
+     * so their world pose = centroid + bodyRotation * localTranslation.
+     * Updated by AppController on R-key rotation and TC rotation.
+     * @type {Quaternion}
+     */
+    this.bodyRotation = new Quaternion()
   }
 
   /**
