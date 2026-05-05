@@ -346,6 +346,10 @@ export class SceneService extends EventEmitter {
         const solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
         solid.description = dto.description ?? ''
         solid.ifcClass    = dto.ifcClass    ?? null
+        // Restore bodyRotation (ROS TF style; defaults to identity for old files)
+        if (dto.bodyRotation) {
+          solid.bodyRotation.set(dto.bodyRotation.x, dto.bodyRotation.y, dto.bodyRotation.z, dto.bodyRotation.w)
+        }
         // Geometry is rebuilt asynchronously by batchRebuildSolids() after all
         // entities are created — see loadScene() / importFromJson().
         entities.push(solid)
@@ -712,10 +716,49 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Returns the world-space quaternion of a CoordinateFrame's parent.
+   * For a Solid parent: Solid.bodyRotation.
+   * For a CF parent: cache entry quaternion (world).
+   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frame
+   * @returns {import('three').Quaternion}
+   */
+  _getParentWorldQuat(frame) {
+    const parent = this._model.getObject(frame.parentId)
+    if (!parent) return new Quaternion()
+    if (parent instanceof CoordinateFrame) {
+      const cached = this._worldPoseCache.get(parent.id)
+      return cached ? cached.quaternion.clone() : new Quaternion()
+    }
+    // Solid parent
+    return parent.bodyRotation.clone()
+  }
+
+  /**
+   * Returns the world-space position of a CoordinateFrame's parent centroid.
+   * For a Solid parent: centroid of corners.
+   * For a CF parent: cache entry position.
+   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frame
+   * @returns {import('three').Vector3}
+   */
+  _getParentWorldPos(frame) {
+    const parent = this._model.getObject(frame.parentId)
+    if (!parent) return new Vector3()
+    if (parent instanceof CoordinateFrame) {
+      const cached = this._worldPoseCache.get(parent.id)
+      return cached ? cached.position.clone() : new Vector3()
+    }
+    // Solid parent — centroid from corners
+    const centroid = new Vector3()
+    for (const c of parent.corners) centroid.add(c)
+    if (parent.corners.length > 0) centroid.divideScalar(parent.corners.length)
+    return centroid
+  }
+
+  /**
    * Recomputes and caches the world pose for every CoordinateFrame in the scene.
    * Must be called once per animation frame (from AppController animation loop).
    *
-   * Position model: worldPos = parentCentroid + translation
+   * Position model (ROS TF): worldPos = parentWorldPos + parentWorldQuat * localTranslation
    *
    * Frames are processed in topological order (shallow before deep) so nested
    * frame chains (ADR-019) propagate correctly in a single pass.
@@ -740,40 +783,47 @@ export class SceneService extends EventEmitter {
       const parent = this._model.getObject(frame.parentId)
       if (!parent) continue
 
-      // Resolve parent world position.
-      // CoordinateFrame exposes `localOffset` (LocalVector3), NOT `corners`.
-      // When the parent is a CoordinateFrame, use the world pose cache (already populated by the
-      // topological sort above). When the parent is a geometry object, derive its centroid from
-      // its world-space corners as before (PHILOSOPHY #21 Phase 3, CODE_CONTRACTS architecture.md).
+      // ROS TF forward kinematics: worldPose = parentWorldPose * localTransform
+      // worldPos  = parentWorldPos  + parentWorldQuat * frame.translation
+      // worldQuat = parentWorldQuat * frame.rotation
+      // (PHILOSOPHY #21, CODE_CONTRACTS architecture.md)
       /** @type {import('../types/spatial.js').WorldVector3|null} */
-      let parentWorldPos = null
+      let parentWorldPos  = null
+      let parentWorldQuat = null
       if (parent instanceof CoordinateFrame) {
         const cached = this._worldPoseCache.get(parent.id)
         if (!cached) continue               // parent not yet resolved (shouldn't happen after sort)
-        parentWorldPos = cached.position
+        parentWorldPos  = cached.position
+        parentWorldQuat = cached.quaternion
       } else {
+        // Solid parent: derive centroid from corners; orientation from bodyRotation
         if (parent.corners.length === 0) continue
         const centroid = new Vector3()
         for (const c of parent.corners) centroid.add(c)
         centroid.divideScalar(parent.corners.length)
-        /** @type {import('../types/spatial.js').WorldVector3} */
-        parentWorldPos = /** @type {any} */ (centroid)
+        parentWorldPos  = /** @type {any} */ (centroid)
+        parentWorldQuat = parent.bodyRotation   // Quaternion tracking cumulative Solid rotation
       }
 
+      // Local translation expressed in parent frame → rotate into world space
       /** @type {import('../types/spatial.js').WorldVector3} */
-      const worldPos = /** @type {any} */ (parentWorldPos.clone().add(frame.translation))
+      const worldPos  = /** @type {any} */ (parentWorldPos.clone().add(
+        frame.translation.clone().applyQuaternion(parentWorldQuat)
+      ))
+      const worldQuat = parentWorldQuat.clone().multiply(frame.rotation)
 
-      // Update cache
+      // Update cache (quaternion is no longer a shared ref — stored as separate object)
       const entry = this._worldPoseCache.get(frame.id)
       if (entry) {
         entry.position.copy(worldPos)
-        // quaternion is the same object as frame.rotation — no copy needed
+        entry.quaternion.copy(worldQuat)
       } else {
-        this._worldPoseCache.set(frame.id, { position: worldPos.clone(), quaternion: frame.rotation })
+        this._worldPoseCache.set(frame.id, { position: worldPos.clone(), quaternion: worldQuat })
       }
 
       // Update view
       frame.meshView.updatePosition(worldPos)
+      frame.meshView.updateRotation(worldQuat)
       frame.meshView.updateConnectionLine(parentWorldPos)
     }
 
@@ -1155,66 +1205,66 @@ export class SceneService extends EventEmitter {
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         rootSolid.meshView.updateBoxHelper()
 
+        // Apply dq to rootSolid bodyRotation (ROS TF: tracks cumulative orientation)
+        rootSolid.bodyRotation.premultiply(dq)
+
         // Compute rootSolid centroid after the move
         const centroid = new Vector3()
         for (const c of rootSolid.corners) centroid.add(c)
         centroid.divideScalar(rootSolid.corners.length)
-        let parentPos = centroid
 
-        // Re-propagate intermediate CFs using the same rigid body transform.
-        // Also update cf.translation so _updateWorldPoses() stays consistent next frame.
-        for (let k = 0; k < chain.length; k++) {
-          const cf = chain[k]
-          const oldPos = oldChainPos[k]
-          let cfWorldPos
-          if (oldPos) {
-            const rx = oldPos.x - pivotX, ry = oldPos.y - pivotY, rz = oldPos.z - pivotZ
-            const tx = 2 * (dqy * rz - dqz * ry)
-            const ty = 2 * (dqz * rx - dqx * rz)
-            const tz = 2 * (dqx * ry - dqy * rx)
-            cfWorldPos = new Vector3(
-              rx + dqw * tx + dqy * tz - dqz * ty + wpx,
-              ry + dqw * ty + dqz * tx - dqx * tz + wpy,
-              rz + dqw * tz + dqx * ty - dqy * tx + wpz,
-            )
-          } else {
-            cfWorldPos = parentPos.clone().add(cf.translation)
-          }
-          cf.translation.copy(cfWorldPos).sub(parentPos)
+        // Re-propagate intermediate CFs via ROS TF forward kinematics.
+        // Local translations/rotations are UNCHANGED; recompute world poses from bodyRotation.
+        let pWorldPos  = centroid
+        let pWorldQuat = rootSolid.bodyRotation
+        for (const cf of chain) {
+          const cfWorldPos  = pWorldPos.clone().add(cf.translation.clone().applyQuaternion(pWorldQuat))
+          const cfWorldQuat = pWorldQuat.clone().multiply(cf.rotation)
           const entry = this._worldPoseCache.get(cf.id)
           if (entry) {
             entry.position.copy(cfWorldPos)
+            entry.quaternion.copy(cfWorldQuat)
           } else {
-            this._worldPoseCache.set(cf.id, { position: cfWorldPos, quaternion: cf.rotation })
+            this._worldPoseCache.set(cf.id, { position: cfWorldPos, quaternion: cfWorldQuat })
           }
           cf.meshView.updatePosition(cfWorldPos)
-          cf.meshView.updateConnectionLine(parentPos)
-          parentPos = cfWorldPos
+          cf.meshView.updateRotation(cfWorldQuat)
+          cf.meshView.updateConnectionLine(pWorldPos)
+          pWorldPos  = cfWorldPos
+          pWorldQuat = cfWorldQuat
         }
 
-        parentWorldPos = parentPos
-        // source.translation intentionally left unchanged (constraint solver drives worldPos)
+        parentWorldPos = pWorldPos
+        // source.translation and source.rotation updated below via world→local back-conversion
       } else {
         // Fallback: CF chain has no root Solid (orphaned chain); slide source within its parent CF
         const parentCached = this._worldPoseCache.get(parent.id)
         if (!parentCached) continue
         parentWorldPos = parentCached.position
-        source.translation.set(wpx - parentWorldPos.x, wpy - parentWorldPos.y, wpz - parentWorldPos.z)
       }
 
-      source.rotation.set(wqx, wqy, wqz, wqw)  // also updates cache entry (shared reference)
+      // Back-convert world pose from solver to parent-local (ROS TF style):
+      // localTranslation = parentWorldQuat^-1 * (worldPos - parentWorldPos)
+      // localRotation    = parentWorldQuat^-1 * worldQuat
+      const sourceWorldPos  = new Vector3(wpx, wpy, wpz)
+      const sourceWorldQuat = new Quaternion(wqx, wqy, wqz, wqw)
+      const parentWorldQuat = this._getParentWorldQuat(source)
+      const invParentQuat   = parentWorldQuat.clone().conjugate()
+      source.translation.copy(sourceWorldPos.clone().sub(parentWorldPos).applyQuaternion(invParentQuat))
+      source.rotation.copy(invParentQuat.clone().multiply(sourceWorldQuat))
 
-      // Update cache position (quaternion updated via shared ref above)
+      // Update cache with world pose (no longer a shared reference to source.rotation)
       const cacheEntry = this._worldPoseCache.get(sourceId)
       if (cacheEntry) {
-        cacheEntry.position.set(wpx, wpy, wpz)
+        cacheEntry.position.copy(sourceWorldPos)
+        cacheEntry.quaternion.copy(sourceWorldQuat)
       } else {
-        this._worldPoseCache.set(sourceId, { position: new Vector3(wpx, wpy, wpz), quaternion: source.rotation })
+        this._worldPoseCache.set(sourceId, { position: sourceWorldPos, quaternion: sourceWorldQuat })
       }
 
       // Update view
-      const _wp = new Vector3(wpx, wpy, wpz)
-      source.meshView.updatePosition(_wp)
+      source.meshView.updatePosition(sourceWorldPos)
+      source.meshView.updateRotation(sourceWorldQuat)
       source.meshView.updateConnectionLine(parentWorldPos)
     }
   }
@@ -1437,13 +1487,24 @@ export class SceneService extends EventEmitter {
     if (this._isDescendant(frameId, newParentId)) return false
 
     if (forcedTranslation) {
+      // Undo path: restore previously saved local translation directly
       frame.translation.copy(forcedTranslation)
     } else {
-      // Maintain world position: new translation = worldPos - newParentCentroid
-      const worldPos = this._worldPoseCache.get(frameId)?.position
+      // Maintain world position across reparent:
+      // newLocalTranslation = newParentWorldQuat^-1 * (worldPos - newParentCentroid)
+      const framePose = this._worldPoseCache.get(frameId)
+      const worldPos  = framePose?.position
+      const worldQuat = framePose?.quaternion
       const centroid  = this._computeObjectCentroid(newParent)
+      const newParentQuat = newParent instanceof CoordinateFrame
+        ? (this._worldPoseCache.get(newParent.id)?.quaternion ?? new Quaternion())
+        : newParent.bodyRotation
       if (worldPos && centroid) {
-        frame.translation.copy(worldPos).sub(centroid)
+        const worldOffset = worldPos.clone().sub(centroid)
+        frame.translation.copy(worldOffset.applyQuaternion(newParentQuat.clone().conjugate()))
+        if (worldQuat) {
+          frame.rotation.copy(newParentQuat.clone().conjugate().multiply(worldQuat))
+        }
       } else {
         frame.translation.set(0, 0, 0)
       }
@@ -2042,15 +2103,25 @@ export class SceneService extends EventEmitter {
       }
     }
 
-    // When a pick position is given, set translation = worldPos - parentCentroid.
+    // Convert placed world position to parent-local translation (ROS TF style).
+    // localTranslation = parentWorldQuat^-1 * (worldPos - parentWorldPos)
     if (placedWorldPos && parentWorldPos) {
-      frame.translation.copy(placedWorldPos).sub(parentWorldPos)
+      const parentWorldQuat = parent instanceof CoordinateFrame
+        ? (this._worldPoseCache.get(parent.id)?.quaternion ?? new Quaternion())
+        : parent.bodyRotation
+      const worldOffset = placedWorldPos.clone().sub(parentWorldPos)
+      frame.translation.copy(worldOffset.applyQuaternion(parentWorldQuat.clone().conjugate()))
     }
 
     const initialWorldPos = placedWorldPos ?? parentWorldPos
     if (initialWorldPos) {
-      this._worldPoseCache.set(frame.id, { position: initialWorldPos.clone(), quaternion: frame.rotation })
+      // Cache stores world pose; initial rotation = parent's world rotation (frame.rotation = identity)
+      const parentWorldQuat = parent instanceof CoordinateFrame
+        ? (this._worldPoseCache.get(parent.id)?.quaternion?.clone() ?? new Quaternion())
+        : parent.bodyRotation.clone()
+      this._worldPoseCache.set(frame.id, { position: initialWorldPos.clone(), quaternion: parentWorldQuat })
       meshView.updatePosition(initialWorldPos)
+      meshView.updateRotation(parentWorldQuat)
     }
 
     this._model.addObject(frame)

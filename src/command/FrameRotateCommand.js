@@ -4,22 +4,27 @@ import { CoordinateFrame } from '../domain/CoordinateFrame.js'
  * FrameRotateCommand — records a CoordinateFrame R-key rotation for undo/redo.
  * (ADR-022 Phase 4)
  *
- * Both execute() and undo() update frame.rotation and refresh the meshView and
- * N panel via the onApplied callback so the UI stays in sync.
+ * Stores start/end LOCAL quaternions (parent-frame relative, ROS TF style).
+ * apply() sets frame.rotation (local) and lets _updateWorldPoses() recompute
+ * the world quaternion for the meshView on the next animation frame.
+ * The immediate meshView.updateRotation() call uses the world quaternion
+ * derived from the parent's cached world rotation.
  *
  * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frameRef
- * @param {import('three').Quaternion} startQuat  Rotation before the operation
- * @param {import('three').Quaternion} endQuat    Rotation after the operation
+ * @param {import('three').Quaternion} startQuat  Local rotation before the operation
+ * @param {import('three').Quaternion} endQuat    Local rotation after the operation
  * @param {import('../service/SceneService.js').SceneService} sceneService
  * @param {() => void} onApplied  Called after each apply (e.g. _updateNPanel)
  * @returns {{label: string, execute(): void, undo(): void}}
  */
 export function createFrameRotateCommand(frameRef, startQuat, endQuat, sceneService, onApplied) {
-  function apply(quat) {
+  function apply(localQuat) {
     const obj = sceneService.scene.getObject(frameRef.id)
     if (!(obj instanceof CoordinateFrame)) return
-    obj.rotation.copy(quat)
-    obj.meshView.updateRotation(obj.rotation)
+    obj.rotation.copy(localQuat)
+    // Compute world quaternion for immediate view update
+    const parentWorldQuat = sceneService._getParentWorldQuat(obj)
+    obj.meshView.updateRotation(parentWorldQuat.clone().multiply(localQuat))
     sceneService.invalidateWorldPose(obj.id)
     onApplied()
   }

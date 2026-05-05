@@ -117,6 +117,12 @@ export function serializeScene(scene) {
           y:  v.position.y,
           z:  v.position.z,
         })),
+        bodyRotation: {
+          x: obj.bodyRotation.x,
+          y: obj.bodyRotation.y,
+          z: obj.bodyRotation.z,
+          w: obj.bodyRotation.w,
+        },
       })
     } else if (obj instanceof Profile) {
       const sr = obj.sketchRect
