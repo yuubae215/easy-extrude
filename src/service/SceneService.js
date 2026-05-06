@@ -1182,7 +1182,7 @@ export class SceneService extends EventEmitter {
         const pivotY = currentEntry.position.y
         const pivotZ = currentEntry.position.z
         const prevQuat = currentEntry.quaternion.clone()
-        const dq = prevQuat.conjugate().multiply(new Quaternion(wqx, wqy, wqz, wqw))
+        const dq = new Quaternion(wqx, wqy, wqz, wqw).multiply(prevQuat.conjugate())
         const dqx = dq.x, dqy = dq.y, dqz = dq.z, dqw = dq.w
 
         // Snapshot old world positions of intermediate CFs before corner mutation
