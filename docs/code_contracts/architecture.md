@@ -367,6 +367,34 @@ if (result) {
 }
 ```
 
+## _confirmRotate Must Call _syncMobileTransformProxy
+
+- **Principle**: R-key rotation moves the Solid's corners (and centroid). The TC proxy position is only set when `_syncMobileTransformProxy()` is called; it is NOT updated by the animation loop automatically. After rotation confirms, the proxy stays at the pre-rotation centroid, so the TC gizmo appears misaligned with the Solid.
+- **Concrete Rule**: `_confirmRotate()` must call `this._syncMobileTransformProxy()` before returning — after `_updateNPanel()`. This matches the undo/redo pattern at the `onUndoClick`/`onRedoClick` handlers (lines 670/677). Omitting this call leaves the TC gizmo anchored to the old centroid until the next `pointermove` fires.
+
+```js
+// _confirmRotate() — end of method
+this._updateNPanel()
+this._syncMobileTransformProxy()  // ← re-anchor TC to new centroid
+if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
+```
+
+## R-key Rotation Must Be Blocked on Fastened-Source Solid
+
+- **Principle**: `_updateFastenedFrames()` overwrites the SOURCE Solid's `bodyRotation` and corners every animation frame to enforce the constraint. R-key rotation sets `bodyRotation = deltaQ * segStartBodyRot` every frame via `_applyRotate()`. These two writes target the **same Solid** and fight each other: each frame, R-key writes a rotation-based value, and then the constraint immediately overwrites it with the constraint-enforced value. The resulting pose is undefined and the undo command records a stale `endBodyRot` that differs from what the constraint will impose on the next frame.
+- **Concrete Rule**: In `_startRotate()`, for the Solid branch, call `this._service.hasFastenedChild(obj.id)` before snapshotting corners. If it returns `true`, set `this._rotate.active = false`, show the same toast as TC drag, and return. This mirrors the guard in the TC `dragging-changed` handler.
+
+```js
+// _startRotate() Solid branch — add BEFORE corner snapshot
+if (this._service.hasFastenedChild(obj.id)) {
+  this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
+  this._rotate.active = false
+  return
+}
+this._rotate.startCorners = obj.corners.map(c => c.clone())
+// ...
+```
+
 ## TC Drag Must Be Blocked on Fastened-Source CoordinateFrames and Their Parent Solids
 
 - **Principle**: A CoordinateFrame that is the SOURCE of a `fastened` SpatialLink has its `rotation` overwritten by `_updateFastenedFrames()` every animation frame (and `translation` too when the parent is another CF). Any delta applied by the TC `objectChange` handler is silently discarded one frame later, causing the TC proxy gizmo to drift away from the CF — the gizmo appears to move while the CF stays put.

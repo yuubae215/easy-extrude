@@ -4362,6 +4362,14 @@ export class AppController {
       this._rotate.segmentStartRot.copy(obj.rotation)
       projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
     } else {
+      // Solid: block rotation when a fastened-source CF is a direct child (same guard as TC drag).
+      // _updateFastenedFrames() overwrites bodyRotation and corners every frame, so R-key would
+      // fight the constraint — the solid snaps back each frame and the pose relationship breaks.
+      if (this._service.hasFastenedChild(obj.id)) {
+        this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
+        this._rotate.active = false
+        return
+      }
       // Solid: snapshot corners; pivot = centroid of startCorners (ADR-036)
       this._rotate.startCorners        = obj.corners.map(c => c.clone())
       this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
@@ -4438,6 +4446,8 @@ export class AppController {
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
+    // Re-anchor TC proxy to the new centroid after rotation (matches undo/redo pattern at lines 670/677)
+    this._syncMobileTransformProxy()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
