@@ -1884,11 +1884,11 @@ export class SceneService extends EventEmitter {
     return false
   }
 
-  /** Returns true when any fastened-source CF has the given solid as its direct parent. */
+  /** Returns true when any fastened-source CF has the given solid as its root ancestor. */
   hasFastenedChild(solidId) {
     for (const { sourceId } of this._fastenedTransforms.values()) {
-      const source = this._model.getObject(sourceId)
-      if (source && source.parentId === solidId) return true
+      const { rootSolid } = this._findAncestorChain(sourceId)
+      if (rootSolid && rootSolid.id === solidId) return true
     }
     return false
   }
