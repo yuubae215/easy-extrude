@@ -48,6 +48,7 @@ This directory records the project's design decisions.
 | [ADR-034](ADR-034-coordinate-frame-placement-policy.md) | **CoordinateFrame Placement and Pose Policy** | Accepted | 2026-04-20 | ADR-033, ADR-032, ADR-030, ADR-018, ADR-019 |
 | [ADR-035](ADR-035-fastened-chain-propagation.md) | **Fastened Constraint CF-Chain Propagation and Cycle Detection** | Accepted | 2026-05-02 | ADR-032, ADR-033, ADR-030, ADR-018, ADR-019 |
 | [ADR-036](ADR-036-solid-arbitrary-rotation.md) | **Solid Arbitrary Rotation — R key, Corner-Baking** | Accepted | 2026-05-02 | ADR-007, ADR-019, ADR-022, ADR-012 |
+| [ADR-037](ADR-037-body-frame-architecture.md) | **Body Frame Architecture — CF-Primary Entity Model** | Accepted | 2026-05-07 | ADR-018, ADR-019, ADR-033, ADR-034, ADR-035, ADR-036 |
 
 ## How to Add a New ADR
 

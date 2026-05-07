@@ -298,6 +298,9 @@ export class SceneService extends EventEmitter {
       const solids = entities.filter(e => e instanceof Solid)
       await this.batchRebuildSolids(solids)
 
+      // Migration: ensure every Solid has an Origin CF (ADR-037 §6).
+      this._ensureOriginFrames(solids)
+
       // One synchronous world-pose pass so _worldPoseCache is populated, then
       // reactivate geometric constraints (_fastenedTransforms / _mountLocalPositions).
       this._updateWorldPoses()
@@ -497,6 +500,9 @@ export class SceneService extends EventEmitter {
 
     // Rebuild Solid geometry in parallel via Wasm worker (ADR-027 Phase 2).
     await this.batchRebuildSolids(solids)
+
+    // Migration: ensure every Solid has an Origin CF (ADR-037 §6).
+    this._ensureOriginFrames(solids)
 
     // Import SpatialLinks (v1.2+); silently skip on older exports.
     for (const dto of (parsed.links ?? [])) {
@@ -1597,6 +1603,8 @@ export class SceneService extends EventEmitter {
     solid.meshView.updateGeometry(solid.corners)
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
+    // Body frame: Origin CF always exists at Solid centroid (ADR-037)
+    this.createCoordinateFrame(solid.id, 'Origin', null)
     return solid
   }
 
@@ -1795,6 +1803,20 @@ export class SceneService extends EventEmitter {
    * every link currently in the model.  Must be called AFTER _updateWorldPoses()
    * has run so that _worldPoseCache is populated.
    *
+   * Migration pass for scenes saved before ADR-037.
+   * For each Solid in `solids` that has no direct child CF named 'Origin',
+   * creates one at the centroid (translation=0, rotation=identity).
+   * @param {import('../domain/Solid.js').Solid[]} solids
+   */
+  _ensureOriginFrames(solids) {
+    for (const solid of solids) {
+      const hasOrigin = [...this._model.getChildren(solid.id)]
+        .some(o => o instanceof CoordinateFrame && o.name === 'Origin')
+      if (!hasOrigin) this.createCoordinateFrame(solid.id, 'Origin', null)
+    }
+  }
+
+  /**
    * Used at the end of loadScene() and importFromJson() to make constraints live
    * again after entities and links have been reconstructed from serialized data.
    */
@@ -1921,6 +1943,8 @@ export class SceneService extends EventEmitter {
     this._model.addObject(solid)
     this.emit('objectRemoved', id)
     this.emit('objectAdded', solid)
+    // Body frame: Origin CF always exists at Solid centroid (ADR-037)
+    this.createCoordinateFrame(solid.id, 'Origin', null)
     return solid
   }
 
@@ -1986,6 +2010,8 @@ export class SceneService extends EventEmitter {
     solid.meshView.updateGeometry(solid.corners)
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
+    // Body frame: Origin CF always exists at Solid centroid (ADR-037)
+    this.createCoordinateFrame(solid.id, 'Origin', null)
     return solid
   }
 
