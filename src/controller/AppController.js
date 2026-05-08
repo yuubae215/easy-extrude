@@ -847,7 +847,16 @@ export class AppController {
     const { parentId } = this._framePlacementState
     this._cancelFramePickSubMode()
 
-    const frame = this._service.createCoordinateFrame(parentId, null, worldPos)
+    // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
+    const parentObj = this._scene.getObject(parentId)
+    let effectiveParentId = parentId
+    if (parentObj && !(parentObj instanceof CoordinateFrame)) {
+      const originFrame = [...this._scene.objects.values()]
+        .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
+      if (originFrame) effectiveParentId = originFrame.id
+    }
+
+    const frame = this._service.createCoordinateFrame(effectiveParentId, null, worldPos)
     if (!frame) return
 
     const cmd = createCreateCoordinateFrameCommand(
@@ -1955,6 +1964,12 @@ export class AppController {
     const target = this._scene.getObject(id)
     if (!target) return
 
+    // Origin frames are the body frame — cannot be explicitly deleted (ADR-037)
+    if (target instanceof CoordinateFrame && target.name === 'Origin') {
+      this._uiView.showToast('Origin frame cannot be deleted', { type: 'warn' })
+      return
+    }
+
     // Frames are always deletable.  Geometry objects require at least one
     // other geometry object to remain in the scene.
     if (!(target instanceof CoordinateFrame)) {
@@ -2260,23 +2275,32 @@ export class AppController {
       return
     }
     // Position proxy at object's world centroid.
-    const centroid = (obj instanceof CoordinateFrame)
-      ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
-      : getCentroid(obj.corners)
-    this._tcProxy.position.copy(centroid)
-    this._tcProxy.quaternion.identity()  // reset accumulated proxy rotation each attach
-    this._tcProxy.updateMatrixWorld()
-    // CoordinateFrame: default to translate mode (user adjusts position first, then
-    // switches to rotate with the toolbar button).  All other entities: translate only.
-    // Always keep _tcMode in sync with the actual TC mode so that objectChange
-    // and dragging-changed handlers read the correct mode.
-    if (obj instanceof CoordinateFrame) {
-      this._tcMode = 'translate'
-      this._tc.setMode('translate')
+    // For Solids: use Origin CF world pose so TC arrows align with Solid.bodyRotation (ADR-037 §3)
+    if (!(obj instanceof CoordinateFrame)) {
+      const originFrame = [...this._scene.objects.values()]
+        .find(o => o instanceof CoordinateFrame && o.parentId === obj.id && o.name === 'Origin')
+      const originPose = originFrame ? this._service.worldPoseOf(originFrame.id) : null
+      if (originPose) {
+        this._tcProxy.position.copy(originPose.position)
+        this._tcProxy.quaternion.copy(originPose.quaternion)
+        this._tcProxy.updateMatrixWorld()
+        this._tcMode = 'translate'
+        this._tc.setMode('translate')
+        this._tc.attach(this._tcProxy)
+        this._tc.getHelper().updateMatrixWorld()
+        return
+      }
+      // Legacy fallback: no Origin CF
+      this._tcProxy.position.copy(getCentroid(obj.corners))
+      this._tcProxy.quaternion.identity()
     } else {
-      this._tcMode = 'translate'
-      this._tc.setMode('translate')
+      this._tcProxy.position.copy(this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
+      this._tcProxy.quaternion.identity()  // reset accumulated proxy rotation each attach
     }
+    this._tcProxy.updateMatrixWorld()
+    // Always translate mode; _tcMode must stay in sync for objectChange handler.
+    this._tcMode = 'translate'
+    this._tc.setMode('translate')
     this._tc.attach(this._tcProxy)
     // Force the TC gizmo to immediately update to the proxy's new world position.
     // Without this, the gizmo stays at the previous object's position until the
@@ -2413,8 +2437,13 @@ export class AppController {
   _renameObject(id, name) {
     const oldName = this._scene.getObject(id)?.name
     if (!oldName || oldName === name) return
-    // Provenance check for CoordinateFrame (ADR-034 §8.2)
     const obj = this._scene.getObject(id)
+    // Origin frames are the body frame — renaming would strip protection (ADR-037)
+    if (obj instanceof CoordinateFrame && obj.name === 'Origin') {
+      this._uiView.showToast('Origin frame cannot be renamed', { type: 'warn' })
+      return
+    }
+    // Provenance check for CoordinateFrame (ADR-034 §8.2)
     if (obj instanceof CoordinateFrame && !RoleService.canEdit(obj)) {
       this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
       return
@@ -3292,7 +3321,15 @@ export class AppController {
     this._uiView.showRenameDialog('Frame', (name) => {
       if (name === null) return  // user cancelled
       const frameName = name || 'Frame'
-      const frame = this._service.createCoordinateFrame(parentId, frameName)
+      // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
+      const parentObj = this._scene.getObject(parentId)
+      let effectiveParentId = parentId
+      if (parentObj && !(parentObj instanceof CoordinateFrame)) {
+        const originFrame = [...this._scene.objects.values()]
+          .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
+        if (originFrame) effectiveParentId = originFrame.id
+      }
+      const frame = this._service.createCoordinateFrame(effectiveParentId, frameName)
       if (!frame) return
       this._commandStack.push(createCreateCoordinateFrameCommand(
         frame, this._service,
@@ -4176,6 +4213,11 @@ export class AppController {
     // SpatialLink has no geometry — cannot be grabbed (ADR-030)
     if (this._activeObj instanceof SpatialLink) {
       this._uiView.showToast('SpatialLink cannot be grabbed', { type: 'warn' })
+      return
+    }
+    // Origin frames are fixed at the Solid centroid — cannot be grabbed (ADR-037)
+    if (this._activeObj instanceof CoordinateFrame && this._activeObj.name === 'Origin') {
+      this._uiView.showToast('Origin frame is fixed at the centroid', { type: 'warn' })
       return
     }
     // Provenance check: block grab if frame was declared by a different role (ADR-034 §8.2)

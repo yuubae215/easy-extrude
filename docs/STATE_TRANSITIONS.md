@@ -492,6 +492,125 @@ worldPoseOf(frameId) {
 
 ---
 
+## CoordinateFrame Body Frame Lifecycle (ADR-037)
+
+### Origin CF is created atomically with every Solid
+
+```
+Shift+A → Add Box  /  Extrude Profile  /  Duplicate Solid
+    |
+    createSolid() / extrudeProfile() / duplicateSolid()
+    |   → Solid added to model, objectAdded emitted
+    |   → createCoordinateFrame(solid.id, 'Origin', null)
+    |       translation=(0,0,0), rotation=identity
+    |
+    v
+OBJECT MODE — Solid selected
+    Outliner: Solid
+               └── Origin (CF, locked icon, at centroid)
+    TC proxy: position = Origin CF worldPos (= centroid)
+              quaternion = Origin CF worldQuat (= Solid.bodyRotation)
+```
+
+### User CF creation — parent is always Origin CF
+
+```
+OBJECT MODE (Solid selected)
+    |
+    Long-press → "Add Interface Frame"   OR
+    Add menu → "Frame" → pick-sub-mode → click
+    |
+    Solid already has Origin CF (guaranteed since Solid creation)
+    effectiveParentId = Origin CF id
+    createCoordinateFrame(originId, name, [worldPos])
+    push CreateCoordinateFrameCommand(userFrame)
+    |
+    v
+OBJECT MODE — user CF selected
+    Outliner: Solid
+               └── Origin (locked)
+                   └── Frame.001 (user CF)
+```
+
+### Undo Solid creation (AddSolidCommand.undo)
+
+```
+Undo AddSolidCommand
+    |
+    childrenRefs (collected by _collectAllDescendantFrames) includes Origin CF
+    |
+    for each child (reverse order): hide + detach
+    detach Solid
+    |
+    → OBJECT MODE (next object selected or deselected)
+```
+
+### Undo / redo of Extrude (ExtrudeSketchCommand)
+
+```
+Undo ExtrudeSketchCommand
+    |
+    find Origin CF via scene.getChildren(solidId)
+    deleteObject(Origin CF)   ← disposes meshView
+    detachObject(solid)
+    reattachObject(profile)   ← Profile survives with its MeshView
+    |
+    → OBJECT MODE — Profile selected
+
+Redo ExtrudeSketchCommand
+    |
+    extrudeProfile() → new Solid + new Origin CF (both created fresh)
+    |
+    → OBJECT MODE — Solid selected
+```
+
+### Origin CF lifecycle states
+
+```
+ABSENT  ── (before Solid creation)
+           Solid created ────────────────────────────────→ PRESENT
+PRESENT ── AddSolidCommand.undo() ──────────────────────→ ABSENT
+PRESENT ── ExtrudeSketchCommand.undo() ─────────────────→ ABSENT (deleteObject disposes it)
+PRESENT ── explicit delete attempt ──────────────────────→ PRESENT (blocked with toast)
+PRESENT ── cascade delete (parent Solid deleted) ────────→ gone (disposed)
+```
+
+### Origin CF invariants
+
+- `translation = (0,0,0)` in parent-local → worldPos = Solid centroid
+- `rotation = identity` in parent-local → worldQuat = Solid.bodyRotation
+- `name === 'Origin'`
+- Always a direct child of a Solid (`parentId = solid.id`)
+
+Protected operations (toast shown, operation blocked):
+
+| Operation | Guard location |
+|-----------|---------------|
+| Grab / drag | `_startGrab()` |
+| N-panel translation | `onFramePositionChange` (existing) |
+| N-panel rotation | `onFrameRotationChange` (existing) |
+| Rename | `_renameObject()` |
+| Delete | `_deleteObject()` |
+| Reparent | `onReparent`, `onFrameParentChange` (existing) |
+
+### TC proxy orientation for Solid (ADR-037 §3)
+
+```
+Solid selected → _attachMobileTransform(solid)
+    |
+    look up Origin CF (direct child with name === 'Origin')
+    |
+    ├── found:
+    │     tcProxy.position   = worldPoseOf(origin).position   (= centroid)
+    │     tcProxy.quaternion = worldPoseOf(origin).quaternion (= bodyRotation)
+    │
+    └── not found (legacy scene, pre-ADR-037):
+          tcProxy.position   = getCentroid(solid.corners)
+          tcProxy.quaternion = identity   ← world-aligned fallback
+```
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow
@@ -502,3 +621,4 @@ worldPoseOf(frameId) {
 - **ADR-029**: Spatial annotation system — `AnnotatedLine/Region/Point`, `PlaceTypeRegistry`
 - **ADR-030**: SpatialLink — typed semantic edges; `L` key two-phase creation flow
 - **ADR-031**: Map Mode interaction model — three-state `drawState`, PC vs Mobile platform split, naming-before-confirm
+- **ADR-037**: Body Frame Architecture — Origin CF created atomically with Solid; TC proxy follows Origin CF world pose
