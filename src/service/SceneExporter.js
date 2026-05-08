@@ -3,9 +3,9 @@
  *
  * Pure computation: no I/O, no DOM, no Three.js scene mutations.
  *
- * Export format (v1.2):
+ * Export format (v1.3):
  * {
- *   version: "1.2",
+ *   version: "1.3",
  *   coordinateSystem: "ROS REP-103 (+X forward, +Y left, +Z up)",
  *   exportedAt: <ISO timestamp>,
  *   objects: SceneExportObject[],
@@ -19,9 +19,8 @@
  *  - "CoordinateFrame" — SE(3) frame relative to parent; world pose included when cached
  *  - "ImportedMesh"    — server-computed mesh; AABB from synthetic corners + offset + base64 geometry buffers
  *
- * SpatialLinkExport:
- *  { type: "SpatialLink", id, sourceId, targetId, linkType }
- *  linkType: 'references' | 'connects' | 'contains' | 'adjacent'
+ * SpatialLinkExport (v1.3):
+ *  { type: "SpatialLink", id, sourceId, targetId, jointType: JointType|null, semanticType: SemanticType }
  *
  * Every solid/profile/importedMesh entry also includes an `attachedFrames` array
  * listing all CoordinateFrame children with their world poses.
@@ -248,17 +247,18 @@ export function exportScene(scene, worldPoseOf) {
     }
   }
 
-  // Serialize SpatialLinks (ADR-030).
+  // Serialize SpatialLinks (ADR-038 v1.3 format).
   const links = [...scene.links.values()].map(link => ({
-    type:     'SpatialLink',
-    id:       link.id,
-    sourceId: link.sourceId,
-    targetId: link.targetId,
-    linkType: link.linkType,
+    type:         'SpatialLink',
+    id:           link.id,
+    sourceId:     link.sourceId,
+    targetId:     link.targetId,
+    jointType:    link.jointType,
+    semanticType: link.semanticType,
   }))
 
   return {
-    version:          '1.2',
+    version:          '1.3',
     coordinateSystem: 'ROS REP-103 (+X forward, +Y left, +Z up)',
     exportedAt:       new Date().toISOString(),
     objects,

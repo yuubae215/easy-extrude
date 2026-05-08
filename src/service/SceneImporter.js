@@ -6,9 +6,11 @@
  * Supported versions:
  *   "1.0" — no ImportedMesh geometry
  *   "1.1" — geometry buffers included
- *   "1.2" — SpatialLinks included (top-level `links` array)
+ *   "1.2" — SpatialLinks with flat `linkType` field
+ *   "1.3" — SpatialLinks with `jointType` + `semanticType` (ADR-038)
  *
- * Backward compatibility: files missing `links` are imported with links treated as [].
+ * Backward compatibility: v1.2 files with `linkType` are auto-migrated on import.
+ *                         Files missing `links` are imported with links treated as [].
  *
  * Usage:
  *   const parsed = parseImportJson(jsonText)   // throws on invalid input
@@ -17,9 +19,16 @@
 
 /** @typedef {'Solid'|'Profile'|'MeasureLine'|'CoordinateFrame'|'ImportedMesh'} ObjType */
 
-const SUPPORTED_VERSIONS = new Set(['1.0', '1.1', '1.2'])
+const SUPPORTED_VERSIONS = new Set(['1.0', '1.1', '1.2', '1.3'])
 
-const VALID_LINK_TYPES = new Set(['references', 'connects', 'contains', 'adjacent'])
+const VALID_JOINT_TYPES    = new Set(['fixed', 'revolute', 'continuous', 'prismatic', 'floating', 'planar'])
+const VALID_SEMANTIC_TYPES = new Set([
+  'fastened', 'mounts', 'aligned',
+  'contains', 'adjacent', 'above', 'connects',
+  'references', 'represents',
+])
+// v1.2 flat linkType values still accepted for backward compat
+const VALID_LEGACY_LINK_TYPES = new Set([...VALID_SEMANTIC_TYPES, 'references', 'connects', 'contains', 'adjacent'])
 
 /**
  * Parse and lightly validate the JSON text of an exported scene file.
@@ -61,12 +70,21 @@ export function parseImportJson(jsonText) {
   })
 
   // Parse SpatialLinks (v1.2+); treat missing array as empty for older files.
+  // v1.3+: validates jointType + semanticType
+  // v1.2:  validates legacy linkType (migration happens in SceneService on reconstruction)
   const links = Array.isArray(root.links) ? root.links.filter(l => {
     if (!l || typeof l !== 'object')              return false
     if (typeof l.id !== 'string' || !l.id)        return false
     if (typeof l.sourceId !== 'string')            return false
     if (typeof l.targetId !== 'string')            return false
-    if (!VALID_LINK_TYPES.has(l.linkType))         return false
+    // v1.3 format
+    if ('semanticType' in l) {
+      if (!VALID_SEMANTIC_TYPES.has(l.semanticType)) return false
+      if (l.jointType !== null && l.jointType !== undefined && !VALID_JOINT_TYPES.has(l.jointType)) return false
+      return true
+    }
+    // v1.2 legacy format
+    if (!VALID_LEGACY_LINK_TYPES.has(l.linkType)) return false
     return true
   }) : []
 

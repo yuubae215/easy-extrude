@@ -6,88 +6,132 @@
  * or stacked. AppController must guard against these operations using
  * `instanceof SpatialLink`.
  *
- * Valid linkType values:
- *   - 'references' : directed — source derives positional datum from target
- *   - 'connects'   : undirected — a route logically connects source to target
- *   - 'contains'   : directed — region source spatially contains entity target
- *   - 'adjacent'   : undirected — source and target share a boundary or are neighbouring
- *   - 'mounts'     : directed — source's vertices are expressed in target's local
- *                    coordinate space; SceneService computes world positions by
- *                    composing the host's worldPose each frame. Whether an entity's
- *                    vertices are in world space or host-local space is determined
- *                    solely by the presence of a 'mounts' link in the graph —
- *                    no additional flag is stored on the entity. @see ADR-032
+ * A SpatialLink has two orthogonal fields:
  *
- * Dangling links: deleting a source or target entity does NOT auto-delete the link.
- * The link becomes broken but persists; future UI may show a "broken link" indicator.
+ *   jointType    — URDF-style kinematic type (determines DOF and constraint solver).
+ *                  null = semantic/topological annotation only; no constraint solver.
  *
- * @see ADR-030
- * @see ADR-032
+ *   semanticType — domain meaning annotation (always present).
+ *
+ * Example: a rigid structural bond between two frames is
+ *   { jointType: 'fixed', semanticType: 'fastened' }
+ *
+ * @see ADR-038 (URDF-style link taxonomy, supersedes ADR-030 §2 vocabulary)
+ * @see ADR-032 (geometric host binding — mounts constraint)
  */
 export class SpatialLink {
   /**
    * @param {string} id
    * @param {string} sourceId
    * @param {string} targetId
-   * @param {'references'|'connects'|'contains'|'adjacent'|'mounts'} linkType
+   * @param {JointType|null}   jointType    URDF kinematic type, or null for annotation-only links
+   * @param {SemanticType}     semanticType Domain meaning annotation
    */
-  constructor(id, sourceId, targetId, linkType) {
-    this.id       = id
-    this.sourceId = sourceId
-    this.targetId = targetId
-    /**
-     * Constraint relationship type.
-     * @type {'references'|'connects'|'contains'|'adjacent'|'mounts'}
-     */
-    this.linkType = linkType
+  constructor(id, sourceId, targetId, jointType, semanticType) {
+    this.id           = id
+    this.sourceId     = sourceId
+    this.targetId     = targetId
+    /** @type {JointType|null} */
+    this.jointType    = jointType ?? null
+    /** @type {SemanticType} */
+    this.semanticType = semanticType
   }
 }
 
+// ── Type aliases ──────────────────────────────────────────────────────────────
+
 /**
- * All valid linkType values, organised as a spatial preposition vocabulary.
+ * URDF-style kinematic joint types.
+ * Determines the degrees of freedom (DOF) between the linked frames.
+ * Mirrors the URDF <joint type="..."> attribute.
  *
- * Category A — Geometric (SceneService applies coordinate transforms):
- *   mounts   : on / at          — source vertices in target frame's local space
- *   fastened : attached to      — rigid 6-DOF binding between frames
- *   aligned  : aligned with     — rotation-only constraint
+ *   fixed      — 0 DOF; all 6 DOF locked (rigid constraint).
+ *                Constraint solver drives source CF to maintain relative pose with target.
+ *   revolute   — 1 DOF rotation around a defined axis, with angular limits.
+ *   continuous — 1 DOF rotation around a defined axis, unlimited.
+ *   prismatic  — 1 DOF translation along a defined axis, with limits.
+ *   floating   — 6 DOF; initial pose recorded but no runtime constraint.
+ *   planar     — 3 DOF; free translation in the XY plane + Z rotation.
  *
- * Category B — Topological (structural relationship, no transform):
- *   contains : in / inside      — source region contains target entity
- *   adjacent : beside / next to — shared boundary or neighbouring
- *   above    : above / over     — source is vertically above target (Z-axis)
- *   connects : between / along  — source path connects source to target
- *
- * Category C — Semantic (meaning only, no geometric processing):
- *   references : derived from   — source derives positional datum from target
- *   represents : depicts        — source entity represents target concept
- *
- * @see ADR-030 (original 4-type vocabulary)
- * @see ADR-032 (extended preposition vocabulary + geometric constraint solver)
+ * @typedef {'fixed'|'revolute'|'continuous'|'prismatic'|'floating'|'planar'} JointType
  */
-export const LINK_TYPES = /** @type {const} */ ([
-  'mounts', 'fastened', 'aligned',
+
+/**
+ * Semantic annotation types — domain meaning attached to a link.
+ * Independent of kinematic DOF.
+ *
+ *   fastened   — Structurally joined / bolted / welded parts (maps to fixed joint)
+ *   mounts     — Source vertices expressed in target's local coordinate space
+ *   aligned    — Source axis aligned with target axis (orientation reference)
+ *   contains   — Region source spatially contains entity target
+ *   adjacent   — Source and target share a boundary or are neighbours
+ *   above      — Source is vertically above target (Z-axis)
+ *   connects   — A route logically connects source to target
+ *   references — Source derives positional datum from target
+ *   represents — Source entity depicts / represents target concept
+ *
+ * @typedef {'fastened'|'mounts'|'aligned'|'contains'|'adjacent'|'above'|'connects'|'references'|'represents'} SemanticType
+ */
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/**
+ * All valid kinematic joint types (URDF-style).
+ * @see ADR-038
+ */
+export const JOINT_TYPES = /** @type {const} */ ([
+  'fixed', 'revolute', 'continuous', 'prismatic', 'floating', 'planar',
+])
+
+/**
+ * All valid semantic annotation types.
+ * @see ADR-038
+ */
+export const SEMANTIC_TYPES = /** @type {const} */ ([
+  'fastened', 'mounts', 'aligned',
   'contains', 'adjacent', 'above', 'connects',
   'references', 'represents',
 ])
 
 /**
- * linkType values that imply a geometric coordinate-space binding.
- * SceneService applies a frame transform when computing world positions
- * for entities whose sourceId participates in one of these link types.
- * @see ADR-032 Sec.2 Category A
+ * semanticType values that imply a geometric coordinate-space binding.
+ * SceneService applies a frame transform when computing world positions.
+ * @see ADR-032
  */
-export const GEOMETRIC_LINK_TYPES = /** @type {const} */ (['mounts', 'fastened', 'aligned'])
+export const GEOMETRIC_SEMANTIC_TYPES = /** @type {const} */ (['fastened', 'mounts', 'aligned'])
 
 /**
- * linkType values that describe topological / structural relationships.
- * Recorded in the scene graph for queries and analytics; no transform applied.
- * @see ADR-032 Sec.2 Category B
+ * semanticType values that describe topological / structural relationships.
+ * No transform applied at runtime.
  */
-export const TOPOLOGICAL_LINK_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects'])
+export const TOPOLOGICAL_SEMANTIC_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects'])
 
 /**
- * linkType values that carry semantic meaning only.
- * Used for visualisation and documentation; no geometric processing.
- * @see ADR-032 Sec.2 Category C
+ * semanticType values that carry semantic meaning only.
  */
-export const SEMANTIC_LINK_TYPES = /** @type {const} */ (['references', 'represents'])
+export const ANNOTATION_SEMANTIC_TYPES = /** @type {const} */ (['references', 'represents'])
+
+// ── Migration helper ──────────────────────────────────────────────────────────
+
+/**
+ * Maps an old-format `linkType` string (scene v1.2 and earlier) to the new
+ * two-layer [jointType, semanticType] representation (scene v1.3+).
+ *
+ * @param {string} linkType  Old single-field link type value
+ * @returns {[JointType|null, SemanticType]}
+ */
+export function migrateLinkType(linkType) {
+  /** @type {Record<string, [JointType|null, SemanticType]>} */
+  const MAP = {
+    fastened:   ['fixed',  'fastened'],
+    mounts:     ['fixed',  'mounts'],
+    aligned:    ['fixed',  'aligned'],
+    contains:   [null,     'contains'],
+    adjacent:   [null,     'adjacent'],
+    above:      [null,     'above'],
+    connects:   [null,     'connects'],
+    references: [null,     'references'],
+    represents: [null,     'represents'],
+  }
+  return MAP[linkType] ?? [null, /** @type {SemanticType} */ (linkType)]
+}
