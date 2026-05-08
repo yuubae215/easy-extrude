@@ -19,7 +19,7 @@
  */
 export function createDeleteSpatialLinkCommand(linkRef, sceneService) {
   return {
-    label: `Delete link "${linkRef.linkType}" (${linkRef.sourceId} → ${linkRef.targetId})`,
+    label: `Delete link "${linkRef.jointType ? `${linkRef.jointType}·${linkRef.semanticType}` : linkRef.semanticType}" (${linkRef.sourceId} → ${linkRef.targetId})`,
 
     execute() {
       sceneService.detachSpatialLink(linkRef.id)

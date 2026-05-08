@@ -57,7 +57,7 @@ import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
 import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
 import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
-import { SpatialLink } from '../domain/SpatialLink.js'
+import { SpatialLink, migrateLinkType } from '../domain/SpatialLink.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
@@ -284,7 +284,11 @@ export class SceneService extends EventEmitter {
       }
       for (const dto of (remote.data.links ?? [])) {
         try {
-          const link = new SpatialLink(dto.id, dto.sourceId, dto.targetId, dto.linkType)
+          // Migrate old linkType field (v1.2) to jointType/semanticType (v1.3)
+          const [jt, st] = dto.jointType !== undefined
+            ? [dto.jointType ?? null, dto.semanticType]
+            : migrateLinkType(dto.linkType)
+          const link = new SpatialLink(dto.id, dto.sourceId, dto.targetId, jt, st)
           this._model.addLink(link)
           this._createLinkView(link)
           this.emit('spatialLinkAdded', link)
@@ -507,11 +511,16 @@ export class SceneService extends EventEmitter {
     // Import SpatialLinks (v1.2+); silently skip on older exports.
     for (const dto of (parsed.links ?? [])) {
       try {
+        // Migrate old linkType field (v1.2) to jointType/semanticType (v1.3)
+        const [jt, st] = dto.jointType !== undefined
+          ? [dto.jointType ?? null, dto.semanticType]
+          : migrateLinkType(dto.linkType)
         const link = new SpatialLink(
           remapId(dto.id),
           remapId(dto.sourceId),
           remapId(dto.targetId),
-          dto.linkType,
+          jt,
+          st,
         )
         this._model.addLink(link)
         this._createLinkView(link)
@@ -957,7 +966,7 @@ export class SceneService extends EventEmitter {
     )
 
     // Create the mounts link
-    const link = this.createSpatialLink(sourceId, targetCFId, 'mounts')
+    const link = this.createSpatialLink(sourceId, targetCFId, 'fixed', 'mounts')
 
     // Store local positions for per-frame update
     this._mountLocalPositions.set(link.id, { sourceId, localPositions })
@@ -1286,9 +1295,10 @@ export class SceneService extends EventEmitter {
    *
    * @param {string} sourceCFId  ID of the CoordinateFrame to constrain
    * @param {string} targetCFId  ID of the CoordinateFrame to bind to
+   * @param {string} [semanticType='fastened']  Semantic annotation ('fastened'|'aligned')
    * @returns {{ link: SpatialLink, translationBefore: import('three').Vector3, rotationBefore: import('three').Quaternion, relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion } | null}
    */
-  fastenFrame(sourceCFId, targetCFId) {
+  fastenFrame(sourceCFId, targetCFId, semanticType = 'fastened') {
     const source = this._model.getObject(sourceCFId)
     const target = this._model.getObject(targetCFId)
     if (!(source instanceof CoordinateFrame) || !(target instanceof CoordinateFrame)) return null
@@ -1306,7 +1316,7 @@ export class SceneService extends EventEmitter {
     const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
     const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
 
-    const link = this.createSpatialLink(sourceCFId, targetCFId, 'fastened')
+    const link = this.createSpatialLink(sourceCFId, targetCFId, 'fixed', semanticType)
     this._fastenedTransforms.set(link.id, { sourceId: sourceCFId, relativeOffset, relativeQuat })
 
     return { link, translationBefore, rotationBefore, relativeOffset, relativeQuat }
@@ -1396,7 +1406,7 @@ export class SceneService extends EventEmitter {
   _createLinkView(link) {
     const src = this._entityWorldCentroid(link.sourceId) ?? new Vector3()
     const tgt = this._entityWorldCentroid(link.targetId) ?? new Vector3()
-    const view = new SpatialLinkView(this._threeScene, src, tgt, link.linkType)
+    const view = new SpatialLinkView(this._threeScene, src, tgt, link.semanticType)
     this._linkViews.set(link.id, view)
   }
 
@@ -1574,7 +1584,7 @@ export class SceneService extends EventEmitter {
       }
     }
     for (const [, link] of this._model.links) {
-      edges.push({ from: link.sourceId, to: link.targetId, relation: 'spatial', linkId: link.id, linkType: link.linkType })
+      edges.push({ from: link.sourceId, to: link.targetId, relation: 'spatial', linkId: link.id, jointType: link.jointType, semanticType: link.semanticType })
     }
     return { nodes, edges }
   }
@@ -1763,14 +1773,15 @@ export class SceneService extends EventEmitter {
    * Creates a SpatialLink between two scene entities and registers it.
    * No-ops if sourceId and targetId are identical.
    * Emits: 'spatialLinkAdded'
-   * @param {string} sourceId
-   * @param {string} targetId
-   * @param {'references'|'connects'|'contains'|'adjacent'} linkType
+   * @param {string}                                              sourceId
+   * @param {string}                                              targetId
+   * @param {import('../domain/SpatialLink.js').JointType|null}   jointType
+   * @param {import('../domain/SpatialLink.js').SemanticType}     semanticType
    * @returns {SpatialLink}
    */
-  createSpatialLink(sourceId, targetId, linkType) {
+  createSpatialLink(sourceId, targetId, jointType, semanticType) {
     const id   = `link_${Date.now()}`
-    const link = new SpatialLink(id, sourceId, targetId, linkType)
+    const link = new SpatialLink(id, sourceId, targetId, jointType, semanticType)
     this._model.addLink(link)
     this._createLinkView(link)
     this.emit('spatialLinkAdded', link)
@@ -1822,7 +1833,7 @@ export class SceneService extends EventEmitter {
    */
   _reactivateLiveLinks() {
     for (const link of this._model.links.values()) {
-      if (link.linkType === 'fastened') {
+      if (link.jointType === 'fixed' && link.semanticType !== 'mounts') {
         const sourcePose = this._worldPoseCache.get(link.sourceId)
         const targetPose = this._worldPoseCache.get(link.targetId)
         if (!sourcePose || !targetPose) continue
@@ -1830,7 +1841,7 @@ export class SceneService extends EventEmitter {
         const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
         const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
         this._fastenedTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
-      } else if (link.linkType === 'mounts') {
+      } else if (link.semanticType === 'mounts') {
         const source = this._model.getObject(link.sourceId)
         const pose   = this._worldPoseCache.get(link.targetId)
         if (!source || !pose) continue
@@ -1856,7 +1867,7 @@ export class SceneService extends EventEmitter {
     this._createLinkView(link)
     // For mounts links, re-establish the local position mapping so _updateMountedAnnotations
     // continues to drive the entity's position from the host frame.
-    if (link.linkType === 'mounts') {
+    if (link.semanticType === 'mounts') {
       const source = this._model.getObject(link.sourceId)
       const pose   = this._worldPoseCache.get(link.targetId)
       if (source && pose) {
@@ -1867,9 +1878,8 @@ export class SceneService extends EventEmitter {
         this._mountLocalPositions.set(link.id, { sourceId: link.sourceId, localPositions })
       }
     }
-    // For fastened links, recompute the relative transform from current world poses
-    // (used when restoring a scene from file — ADR-032 §2).
-    if (link.linkType === 'fastened') {
+    // For fixed joints (non-mounts), recompute the relative transform from current world poses.
+    if (link.jointType === 'fixed' && link.semanticType !== 'mounts') {
       const sourcePose = this._worldPoseCache.get(link.sourceId)
       const targetPose = this._worldPoseCache.get(link.targetId)
       if (sourcePose && targetPose) {

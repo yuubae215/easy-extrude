@@ -139,7 +139,7 @@ export class SceneModel {
    */
   addLink(link) {
     this._links.set(link.id, link)
-    if (link.linkType === 'mounts') {
+    if (link.semanticType === 'mounts') {
       this._mountsIndex.set(link.sourceId, link.id)
       if (!this._mountedByIndex.has(link.targetId)) {
         this._mountedByIndex.set(link.targetId, new Set())
@@ -155,7 +155,7 @@ export class SceneModel {
    */
   removeLink(id) {
     const link = this._links.get(id)
-    if (link?.linkType === 'mounts') {
+    if (link?.semanticType === 'mounts') {
       this._mountsIndex.delete(link.sourceId)
       this._mountedByIndex.get(link.targetId)?.delete(link.sourceId)
     }

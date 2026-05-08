@@ -6,7 +6,7 @@
  *  - A dashed Three.js Line between the world centroids of source and target entities
  *  - A directional arrowhead (cone) for all directed link types
  *
- * Color-coded by linkType (ADR-030 §7, extended for full vocabulary):
+ * Color-coded by semanticType (ADR-038):
  *  Category A — Geometric (directed, source in target's frame):
  *   mounts    → green   #22C55E
  *   fastened  → emerald #10B981
@@ -30,7 +30,7 @@
  */
 import * as THREE from 'three'
 
-/** Color hex values by linkType (covers the full ADR-032 vocabulary). */
+/** Color hex values by semanticType (ADR-038). */
 export const LINK_TYPE_COLORS = {
   // Category A — Geometric
   mounts:     0x22C55E,  // green
@@ -55,14 +55,14 @@ const DIRECTED = new Set(['mounts', 'fastened', 'aligned', 'contains', 'above', 
 export class SpatialLinkView {
   /**
    * @param {THREE.Scene}   scene
-   * @param {THREE.Vector3} srcPos   world centroid of the source entity
-   * @param {THREE.Vector3} tgtPos   world centroid of the target entity
-   * @param {'references'|'connects'|'contains'|'adjacent'} linkType
+   * @param {THREE.Vector3} srcPos       world centroid of the source entity
+   * @param {THREE.Vector3} tgtPos       world centroid of the target entity
+   * @param {string}        semanticType semanticType of the SpatialLink (ADR-038)
    */
-  constructor(scene, srcPos, tgtPos, linkType) {
+  constructor(scene, srcPos, tgtPos, semanticType) {
     this._scene = scene
 
-    const color = LINK_TYPE_COLORS[linkType] ?? 0x888888
+    const color = LINK_TYPE_COLORS[semanticType] ?? 0x888888
 
     // ── Dashed line ────────────────────────────────────────────────────────
     this._geo = new THREE.BufferGeometry()
@@ -79,7 +79,7 @@ export class SpatialLinkView {
 
     // ── Directional arrowhead (directed types only) ────────────────────────
     this._arrow = null
-    if (DIRECTED.has(linkType)) {
+    if (DIRECTED.has(semanticType)) {
       // ArrowHelper: shaft is hidden; only the cone head is shown
       const tmpDir = new THREE.Vector3(1, 0, 0)
       this._arrow = new THREE.ArrowHelper(

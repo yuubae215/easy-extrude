@@ -42,12 +42,14 @@ const EDGE_STYLE = {
   // Scene graph structural edges
   frame:      { color: '#95a5a6', dash: '6,3', width: 1.5, directed: true  },
   anchor:     { color: '#f1c40f', dash: '3,3', width: 1.5, directed: true  },
-  // Spatial linkTypes — topological / semantic (ADR-030)
+  // Spatial semanticTypes — topological / semantic (ADR-038)
   references: { color: '#f39c12', dash: 'none', width: 1.5, directed: true  },
+  represents: { color: '#e74c3c', dash: 'none', width: 1.5, directed: true  },
   connects:   { color: '#00bcd4', dash: 'none', width: 1.5, directed: false },
   contains:   { color: '#9c27b0', dash: 'none', width: 1.5, directed: true  },
   adjacent:   { color: '#607d8b', dash: 'none', width: 1.5, directed: false },
-  // Spatial linkTypes — geometric binding (ADR-032)
+  above:      { color: '#6366F1', dash: 'none', width: 1.5, directed: true  },
+  // Spatial semanticTypes — geometric binding (ADR-038)
   mounts:     { color: '#ff5722', dash: 'none', width: 2.0, directed: true  },
   fastened:   { color: '#ff9800', dash: 'none', width: 2.0, directed: false },
   aligned:    { color: '#8bc34a', dash: 'none', width: 2.0, directed: false },
@@ -358,7 +360,7 @@ export class NodeEditorView {
     const cx = (x1 + x2) / 2
     const d  = `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`
 
-    const styleKey   = edge.relation === 'spatial' ? (edge.linkType ?? 'references') : edge.relation
+    const styleKey   = edge.relation === 'spatial' ? (edge.semanticType ?? 'references') : edge.relation
     const style      = EDGE_STYLE[styleKey] ?? EDGE_STYLE.geometry
     const isSelected = edge.relation === 'spatial' && this._selectedEdge?.linkId === edge.linkId
 
@@ -597,15 +599,16 @@ export class NodeEditorView {
       panel.appendChild(sep)
 
       for (const edge of links) {
-        const style    = EDGE_STYLE[edge.linkType] ?? EDGE_STYLE.references
+        const style    = EDGE_STYLE[edge.semanticType] ?? EDGE_STYLE.references
         const dir      = edge.from === node.id ? '→' : '←'
         const otherId  = edge.from === node.id ? edge.to : edge.from
         const other    = this._sceneGraph.nodes.find(n => n.id === otherId)
         const otherLbl = other?.name ?? otherId.slice(0, 8) + '…'
+        const lbl      = edge.jointType ? `${edge.jointType}·${edge.semanticType}` : edge.semanticType
 
         const row = document.createElement('div')
         row.style.cssText = 'font-size:9px;margin-bottom:3px'
-        row.innerHTML = `<span style="color:${style.color}">${edge.linkType}</span> ${dir} ${otherLbl}`
+        row.innerHTML = `<span style="color:${style.color}">${lbl}</span> ${dir} ${otherLbl}`
         panel.appendChild(row)
       }
     }

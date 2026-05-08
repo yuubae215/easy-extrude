@@ -6,7 +6,7 @@
  * detach/reattach pattern without any visibility manipulation.
  *
  * Usage (AppController):
- *   const link = sceneService.createSpatialLink(sourceId, targetId, linkType)
+ *   const link = sceneService.createSpatialLink(sourceId, targetId, jointType, semanticType)
  *   _commandStack.push(createSpatialLinkCommand(link, sceneService))
  *
  * undo(): detaches the link from the model (emits 'spatialLinkRemoved').
@@ -18,7 +18,7 @@
  */
 export function createSpatialLinkCommand(linkRef, sceneService) {
   return {
-    label: `Link "${linkRef.linkType}" (${linkRef.sourceId} → ${linkRef.targetId})`,
+    label: `Link "${linkRef.jointType ? `${linkRef.jointType}·${linkRef.semanticType}` : linkRef.semanticType}" (${linkRef.sourceId} → ${linkRef.targetId})`,
 
     execute() {
       sceneService.reattachSpatialLink(linkRef)

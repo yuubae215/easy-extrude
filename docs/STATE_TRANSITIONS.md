@@ -622,3 +622,199 @@ Solid selected → _attachMobileTransform(solid)
 - **ADR-030**: SpatialLink — typed semantic edges; `L` key two-phase creation flow
 - **ADR-031**: Map Mode interaction model — three-state `drawState`, PC vs Mobile platform split, naming-before-confirm
 - **ADR-037**: Body Frame Architecture — Origin CF created atomically with Solid; TC proxy follows Origin CF world pose
+
+---
+
+## § Formal FSM Specification (Moore-Mealy Hybrid)
+
+Design spec for the app's operation state machine.
+**Status**: Design document only — no runtime `StateMachine` class yet.
+**Purpose**: Serves as the authoritative contract for `AppController` state transitions;
+future work can convert this to a declarative runtime FSM (separate ADR).
+
+### Convention
+
+- **Moore output**: always active while in that state (set on entry, held until exit).
+- **Mealy action**: executed exactly once on a specific transition edge.
+- **Guard format**: 2D array — outer array = OR (any row satisfies), inner array = AND (all conditions in the row must hold).
+- Transition precedence: guards evaluated top-to-bottom; first matching transition fires.
+
+### Object Mode — Primary Operations
+
+```json
+{
+  "states": {
+    "S_OBJECT_IDLE": {
+      "outputs": {
+        "selectionMode": "object",
+        "orbitEnabled": true,
+        "mobileToolbarSlots": "object-idle"
+      }
+    },
+    "S_GRAB_ACTIVE": {
+      "outputs": {
+        "orbitEnabled": false,
+        "grab.active": true,
+        "mobileToolbarSlots": "grab"
+      }
+    },
+    "S_ROTATE_ACTIVE": {
+      "outputs": {
+        "orbitEnabled": false,
+        "rotate.active": true,
+        "mobileToolbarSlots": "rotate"
+      }
+    },
+    "S_FACE_EXTRUDE": {
+      "outputs": {
+        "orbitEnabled": false,
+        "faceExtrude.active": true,
+        "mobileToolbarSlots": "edit-3d"
+      }
+    },
+    "S_MEASURE_PLACING": {
+      "outputs": {
+        "orbitEnabled": false,
+        "measure.active": true,
+        "mobileToolbarSlots": "measure"
+      }
+    },
+    "S_LINK_MODE": {
+      "outputs": {
+        "spatialLinkMode.active": true,
+        "statusBar": "Click source CF, then target CF"
+      }
+    }
+  },
+  "transitions": [
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_GRAB_ACTIVE",
+      "event": "keyG",
+      "guard": [
+        ["activeObj !== null", "NOT isFastenedSource(activeObj)"]
+      ],
+      "actions": {
+        "grab.allStartCorners": "snapshot(_grabHandlesOf(activeObj))",
+        "grab.segmentStartCorners": "snapshot(_grabHandlesOf(activeObj))",
+        "grab.axis": "null",
+        "grab.pivotSelectMode": "false"
+      }
+    },
+    {
+      "from": "S_GRAB_ACTIVE",
+      "to": "S_OBJECT_IDLE",
+      "event": "confirmGrab",
+      "guard": [],
+      "actions": {
+        "commandStack.push": "createMoveCommand(allStartCorners, currentCorners)"
+      }
+    },
+    {
+      "from": "S_GRAB_ACTIVE",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "activeObj.corners": "restore(grab.allStartCorners)"
+      }
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_ROTATE_ACTIVE",
+      "event": "keyR",
+      "guard": [
+        ["activeObj instanceof Solid", "NOT hasFastenedChild(activeObj.id)"]
+      ],
+      "actions": {
+        "rotate.startCorners": "snapshot(activeObj.corners)",
+        "rotate.pivot": "centroid(activeObj.corners)",
+        "rotate.axis": "null",
+        "rotate.isMobile": "false"
+      }
+    },
+    {
+      "from": "S_ROTATE_ACTIVE",
+      "to": "S_OBJECT_IDLE",
+      "event": "confirmRotate",
+      "guard": [],
+      "actions": {
+        "commandStack.push": "createSolidRotateCommand(startCorners, currentCorners)",
+        "_syncMobileTransformProxy": "call()"
+      }
+    },
+    {
+      "from": "S_ROTATE_ACTIVE",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "activeObj.corners": "restore(rotate.startCorners)"
+      }
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_LINK_MODE",
+      "event": "keyL",
+      "guard": [["activeObj !== null"]],
+      "actions": {
+        "spatialLinkMode.sourceId": "activeObj.id"
+      }
+    },
+    {
+      "from": "S_LINK_MODE",
+      "to": "S_OBJECT_IDLE",
+      "event": "targetSelected",
+      "guard": [["sourceId !== targetId"]],
+      "actions": {
+        "showLinkTypePicker": "call(_computeLinkOptions(source, target))"
+      }
+    },
+    {
+      "from": "S_LINK_MODE",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {}
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_MEASURE_PLACING",
+      "event": "keyM",
+      "guard": [["selectionMode === 'object'"]],
+      "actions": {
+        "measure.active": "true",
+        "measure.p1": "null",
+        "measure.p2": "null"
+      }
+    },
+    {
+      "from": "S_MEASURE_PLACING",
+      "to": "S_OBJECT_IDLE",
+      "event": "pointerUp_p2Confirmed",
+      "guard": [["measure.p1 !== null"]],
+      "actions": {
+        "commandStack.push": "createMeasureLineCommand(p1, p2)"
+      }
+    },
+    {
+      "from": "S_MEASURE_PLACING",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "measure.active": "false"
+      }
+    }
+  ]
+}
+```
+
+### Notes on Guard Syntax
+
+Guards use a 2-D array encoding:
+- `[[A, B], [C]]` means `(A AND B) OR (C)`.
+- `[]` means unconditional (always fires, subject to event match).
+
+This mirrors IEC 61499-style state machine notation and the PLC structured text
+convention used in the project's robotics integration context.

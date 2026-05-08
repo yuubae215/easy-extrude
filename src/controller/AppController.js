@@ -59,29 +59,42 @@ import { RoleService }                        from '../service/RoleService.js'
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
 /**
- * Returns the set of valid linkType values for a given source/target entity pair.
- * Based on ADR-032 §2 validation table.
+ * Returns the set of valid link options for a given source/target entity pair.
+ * Each option carries jointType (URDF kinematic), semanticType (domain annotation),
+ * and a display label. Based on ADR-038 validation table.
+ *
  * @param {object|null} source
  * @param {object|null} target
- * @returns {string[]}
+ * @returns {{ jointType: string|null, semanticType: string, label: string }[]}
  */
-function _computeValidLinkTypes(source, target) {
+function _computeLinkOptions(source, target) {
   const isAnnotated = o => o instanceof AnnotatedLine || o instanceof AnnotatedRegion || o instanceof AnnotatedPoint
   const isCF = o => o instanceof CoordinateFrame
 
-  const geometric = []
-  if (isAnnotated(source) && isCF(target))  geometric.push('mounts')
-  if ((source instanceof Solid || isAnnotated(source)) && isCF(target)) geometric.push('fastened')
-  if (isCF(source) && isCF(target)) geometric.push('fastened')
-  if (isCF(source) && isCF(target)) geometric.push('aligned')
+  const options = []
 
-  const topological = ['adjacent', 'above']
-  if (source instanceof AnnotatedRegion) topological.push('contains')
-  if (source instanceof AnnotatedLine)   topological.push('connects')
+  // ── Kinematic (fixed joint) options ──────────────────────────────────────
+  if (isCF(source) && isCF(target)) {
+    options.push({ jointType: 'fixed', semanticType: 'fastened', label: 'Fixed · Fastened' })
+    options.push({ jointType: 'fixed', semanticType: 'aligned',  label: 'Fixed · Aligned' })
+  }
+  if (isAnnotated(source) && isCF(target)) {
+    options.push({ jointType: 'fixed', semanticType: 'mounts',   label: 'Fixed · Mounts' })
+  }
 
-  const semantic = ['references', 'represents']
+  // ── Topological / semantic annotation options ─────────────────────────────
+  if (source instanceof AnnotatedRegion) {
+    options.push({ jointType: null, semanticType: 'contains',  label: 'Contains' })
+  }
+  if (source instanceof AnnotatedLine) {
+    options.push({ jointType: null, semanticType: 'connects',  label: 'Connects' })
+  }
+  options.push({ jointType: null, semanticType: 'adjacent',   label: 'Adjacent' })
+  options.push({ jointType: null, semanticType: 'above',      label: 'Above' })
+  options.push({ jointType: null, semanticType: 'references', label: 'References' })
+  options.push({ jointType: null, semanticType: 'represents', label: 'Represents' })
 
-  return [...geometric, ...topological, ...semantic]
+  return options
 }
 
 export class AppController {
@@ -2533,16 +2546,16 @@ export class AppController {
     const sourceId = this._spatialLinkMode.sourceId
     const source   = this._scene.getObject(sourceId)
     const target   = this._scene.getObject(targetId)
-    const validTypes = _computeValidLinkTypes(source, target)
-    this._uiView.showLinkTypePicker(x, y, (linkType) => {
-      if (linkType === 'mounts') {
+    const linkOptions = _computeLinkOptions(source, target)
+    this._uiView.showLinkTypePicker(x, y, (option) => {
+      if (option.semanticType === 'mounts') {
         this._confirmMountAnnotation(sourceId, targetId)
-      } else if (linkType === 'fastened') {
-        this._confirmFastenFrame(sourceId, targetId)
+      } else if (option.jointType === 'fixed') {
+        this._confirmFastenFrame(sourceId, targetId, option.semanticType)
       } else {
-        this._confirmSpatialLink(linkType)
+        this._confirmSpatialLink(option)
       }
-    }, { validTypes })
+    }, { linkOptions })
   }
 
   /**
@@ -2550,23 +2563,23 @@ export class AppController {
    * Creates SpatialLink + records undo command without touching spatialLinkMode state.
    * @param {string} sourceId
    * @param {string} targetId
-   * @param {string} linkType
+   * @param {{ jointType: string|null, semanticType: string, label: string }} option
    */
-  _createSpatialLinkDirect(sourceId, targetId, linkType) {
-    const link = this._service.createSpatialLink(sourceId, targetId, linkType)
+  _createSpatialLinkDirect(sourceId, targetId, option) {
+    const link = this._service.createSpatialLink(sourceId, targetId, option.jointType, option.semanticType)
     this._commandStack.push(createSpatialLinkCommand(link, this._service))
-    this._uiView.showToast(`Link created: ${linkType}`)
+    this._uiView.showToast(`Link created: ${option.label}`)
     this._updateNPanel()
   }
 
   /**
    * Creates the SpatialLink from L-key picking flow and records the undo command.
-   * @param {string} linkType
+   * @param {{ jointType: string|null, semanticType: string, label: string }} option
    */
-  _confirmSpatialLink(linkType) {
+  _confirmSpatialLink(option) {
     const { sourceId, pendingTargetId } = this._spatialLinkMode
     if (!sourceId || !pendingTargetId) return
-    this._createSpatialLinkDirect(sourceId, pendingTargetId, linkType)
+    this._createSpatialLinkDirect(sourceId, pendingTargetId, option)
     this._cancelSpatialLinkCreation()
   }
 
@@ -2596,11 +2609,12 @@ export class AppController {
 
   /**
    * Fastens a source CoordinateFrame to a target CoordinateFrame and records the command.
-   * Called from the L-key link-type picker when the user selects 'fastened' for CF→CF.
-   * @param {string} sourceId  CoordinateFrame entity ID (slave / constrained frame)
-   * @param {string} targetId  CoordinateFrame entity ID (master / reference frame)
+   * Called from the L-key link-type picker when the user selects a fixed joint for CF→CF.
+   * @param {string} sourceId     CoordinateFrame entity ID (slave / constrained frame)
+   * @param {string} targetId     CoordinateFrame entity ID (master / reference frame)
+   * @param {string} [semanticType='fastened']  Semantic annotation for the link
    */
-  _confirmFastenFrame(sourceId, targetId) {
+  _confirmFastenFrame(sourceId, targetId, semanticType = 'fastened') {
     const source = this._scene.getObject(sourceId)
     const target = this._scene.getObject(targetId)
     if (!(source instanceof CoordinateFrame) || !(target instanceof CoordinateFrame)) {
@@ -2609,7 +2623,7 @@ export class AppController {
     }
     // Force-update world poses so cache is fresh even if called between animation ticks
     this._service._updateWorldPoses()
-    const result = this._service.fastenFrame(sourceId, targetId)
+    const result = this._service.fastenFrame(sourceId, targetId, semanticType)
     if (!result) {
       this._uiView.showToast('Cannot fasten — frame pose unknown', { type: 'warn' })
       return
@@ -3241,7 +3255,7 @@ export class AppController {
 
     // ADR-032 §2: unfasten item for CoordinateFrame that is the source of a fastened link
     const fastenedLink = (obj instanceof CoordinateFrame)
-      ? this._service.getLinksOf(id).find(l => l.linkType === 'fastened' && l.sourceId === id)
+      ? this._service.getLinksOf(id).find(l => l.jointType === 'fixed' && l.sourceId === id)
       : null
     const unfastenItems = fastenedLink
       ? [{ label: `Unfasten ⊗ "${this._scene.getObject(fastenedLink.targetId)?.name ?? '?'}"`, onClick: () => {
@@ -6640,14 +6654,16 @@ export class AppController {
         const source = this._scene.getObject(sourceId)
         const target = this._scene.getObject(targetId)
         if (!source || !target) return
-        const validTypes = _computeValidLinkTypes(source, target)
-        this._uiView.showLinkTypePicker(x, y, (linkType) => {
-          if (linkType === 'mounts') {
+        const linkOptions = _computeLinkOptions(source, target)
+        this._uiView.showLinkTypePicker(x, y, (option) => {
+          if (option.semanticType === 'mounts') {
             this._confirmMountAnnotation(sourceId, targetId)
+          } else if (option.jointType === 'fixed') {
+            this._confirmFastenFrame(sourceId, targetId, option.semanticType)
           } else {
-            this._createSpatialLinkDirect(sourceId, targetId, linkType)
+            this._createSpatialLinkDirect(sourceId, targetId, option)
           }
-        }, { validTypes })
+        }, { linkOptions })
       },
       onDeleteSpatialLink: (linkId) => {
         const link = this._scene.getLink(linkId)

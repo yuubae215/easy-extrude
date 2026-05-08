@@ -40,11 +40,12 @@
  * { type: 'AnnotatedPoint', id, name, description, placeType: string|null,
  *   vertex: { id, x, y, z } }
  *
- * SpatialLinkDTO:
+ * SpatialLinkDTO (v1.3+):
  * { type: 'SpatialLink', id, sourceId, targetId,
- *   linkType: 'references'|'connects'|'contains'|'adjacent' }
+ *   jointType: JointType|null, semanticType: SemanticType }
  *
  * The serialized payload (v1.2+) has an additional top-level `links` array.
+ * v1.3 replaces the flat `linkType` field with `jointType` + `semanticType`.
  */
 import { Solid }            from '../domain/Solid.js'
 import { Profile }          from '../domain/Profile.js'
@@ -220,15 +221,16 @@ export function serializeScene(scene) {
     }
   }
 
-  // Serialize SpatialLinks (ADR-030).
+  // Serialize SpatialLinks (ADR-038 v1.3 format).
   const links = []
   for (const link of scene.links.values()) {
     links.push({
-      type:     'SpatialLink',
-      id:       link.id,
-      sourceId: link.sourceId,
-      targetId: link.targetId,
-      linkType: link.linkType,
+      type:         'SpatialLink',
+      id:           link.id,
+      sourceId:     link.sourceId,
+      targetId:     link.targetId,
+      jointType:    link.jointType,
+      semanticType: link.semanticType,
     })
   }
 

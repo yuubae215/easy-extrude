@@ -2759,7 +2759,7 @@ export class UIView {
       references: '#F59E0B',
       represents: '#F43F5E',
     }
-    const color = LINK_COLORS[link.linkType] ?? '#888'
+    const color = LINK_COLORS[link.semanticType] ?? '#888'
 
     this._nPanelContentEl.innerHTML = ''
 
@@ -2768,7 +2768,7 @@ export class UIView {
     Object.assign(titleSec.style, { padding: '8px 10px 6px', borderBottom: '1px solid #3a3a3a' })
 
     const typeBadge = document.createElement('span')
-    typeBadge.textContent = link.linkType
+    typeBadge.textContent = link.jointType ? `${link.jointType} · ${link.semanticType}` : link.semanticType
     Object.assign(typeBadge.style, {
       display: 'inline-block',
       background: color + '33',
@@ -2878,7 +2878,7 @@ export class UIView {
     }
 
     const makeLinkRow = (link, directionGlyph, otherEntityId) => {
-      const color = LINK_COLORS[link.linkType] ?? '#888'
+      const color = LINK_COLORS[link.semanticType] ?? '#888'
       const rowEl = document.createElement('div')
       Object.assign(rowEl.style, {
         display: 'flex', alignItems: 'center', gap: '5px',
@@ -2891,7 +2891,7 @@ export class UIView {
       rowEl.appendChild(dirEl)
 
       const badge = document.createElement('span')
-      badge.textContent = link.linkType
+      badge.textContent = link.semanticType
       Object.assign(badge.style, {
         flexShrink: '0',
         background: color + '22',
@@ -2948,14 +2948,14 @@ export class UIView {
     } else {
       // Fallback: no entity context — show full source → target display
       for (const link of unknown) {
-        const color = LINK_COLORS[link.linkType] ?? '#888'
+        const color = LINK_COLORS[link.semanticType] ?? '#888'
         const rowEl = document.createElement('div')
         Object.assign(rowEl.style, {
           display: 'flex', alignItems: 'center', gap: '6px',
           padding: '3px 0', fontFamily: 'sans-serif',
         })
         const badge = document.createElement('span')
-        badge.textContent = link.linkType
+        badge.textContent = link.semanticType
         Object.assign(badge.style, {
           flexShrink: '0', background: color + '22',
           border: `1px solid ${color}`, borderRadius: '3px',
@@ -3095,38 +3095,30 @@ export class UIView {
 
   /**
    * Shows a floating overlay for selecting the SpatialLink type.
-   * Calls onSelect(linkType) when the user picks one.
+   * Calls onSelect(option) when the user picks one, where option = { jointType, semanticType, label }.
    * @param {number} x  client X
    * @param {number} y  client Y
-   * @param {(linkType: 'references'|'connects'|'contains'|'adjacent') => void} onSelect
+   * @param {(option: { jointType: string|null, semanticType: string, label: string }) => void} onSelect
+   * @param {{ linkOptions?: { jointType: string|null, semanticType: string, label: string }[] }} [opts]
+   *   If provided, shows only these options (from _computeLinkOptions).
    */
-  /**
-   * @param {number} x  client X
-   * @param {number} y  client Y
-   * @param {(type: string) => void} onSelect
-   * @param {{ validTypes?: string[] }} [opts]  If provided, only these link types are shown
-   */
-  showLinkTypePicker(x, y, onSelect, { validTypes } = {}) {
+  showLinkTypePicker(x, y, onSelect, { linkOptions } = {}) {
     const existing = document.getElementById('_linkTypePickerOverlay')
     if (existing) { existing.remove() }
 
-    const ALL_LINK_TYPES = [
-      // Category A — Geometric
-      { type: 'mounts',   color: '#F97316', label: 'Mounts',     desc: "Source vertices live in host frame's local space", category: 'Geometric' },
-      { type: 'fastened', color: '#EF4444', label: 'Fastened',   desc: 'Rigid 6-DOF binding between two frames',          category: 'Geometric' },
-      { type: 'aligned',  color: '#F59E0B', label: 'Aligned',    desc: 'Source axis aligned with target axis',            category: 'Geometric' },
-      // Category B — Topological
-      { type: 'contains', color: '#8B5CF6', label: 'Contains',   desc: 'Region source spatially contains target',         category: 'Topological' },
-      { type: 'adjacent', color: '#64748B', label: 'Adjacent',   desc: 'Source and target share a boundary',              category: 'Topological' },
-      { type: 'above',    color: '#94A3B8', label: 'Above',      desc: 'Source is vertically above target (Z axis)',      category: 'Topological' },
-      { type: 'connects', color: '#06B6D4', label: 'Connects',   desc: 'A route logically connects source to target',     category: 'Topological' },
-      // Category C — Semantic
-      { type: 'references',  color: '#F59E0B', label: 'References',  desc: 'Source derives positional datum from target', category: 'Semantic' },
-      { type: 'represents',  color: '#10B981', label: 'Represents',  desc: 'Source entity depicts the target concept',    category: 'Semantic' },
-    ]
-    const LINK_TYPES = validTypes
-      ? ALL_LINK_TYPES.filter(t => validTypes.includes(t.type))
-      : ALL_LINK_TYPES
+    // Color and description by semanticType
+    const SEMANTIC_META = {
+      mounts:     { color: '#22C55E', desc: "Source vertices live in host frame's local space" },
+      fastened:   { color: '#10B981', desc: 'Rigid 6-DOF binding between two frames' },
+      aligned:    { color: '#14B8A6', desc: 'Source axis aligned with target axis' },
+      contains:   { color: '#8B5CF6', desc: 'Region source spatially contains target' },
+      adjacent:   { color: '#64748B', desc: 'Source and target share a boundary' },
+      above:      { color: '#94A3B8', desc: 'Source is vertically above target (Z axis)' },
+      connects:   { color: '#06B6D4', desc: 'A route logically connects source to target' },
+      references: { color: '#F59E0B', desc: 'Source derives positional datum from target' },
+      represents: { color: '#F43F5E', desc: 'Source entity depicts the target concept' },
+    }
+    const LINK_TYPES = linkOptions ?? []
 
     const overlay = document.createElement('div')
     overlay.id = '_linkTypePickerOverlay'
@@ -3158,7 +3150,9 @@ export class UIView {
     })
     overlay.appendChild(headerEl)
 
-    for (const { type, color, label, desc } of LINK_TYPES) {
+    for (const option of LINK_TYPES) {
+      const { semanticType, label } = option
+      const { color = '#888', desc = '' } = SEMANTIC_META[semanticType] ?? {}
       const item = document.createElement('div')
       Object.assign(item.style, {
         display:    'flex', gap: '8px', alignItems: 'flex-start',
@@ -3172,7 +3166,7 @@ export class UIView {
       item.addEventListener('click', () => {
         overlay.remove()
         document.removeEventListener('pointerdown', closeOnOutside)
-        onSelect(type)
+        onSelect(option)
       })
 
       const dot = document.createElement('span')
