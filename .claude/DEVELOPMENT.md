@@ -99,3 +99,27 @@ Validators 1–3 (ADR, QC, SQA) are independent — launch them as concurrent
 agents in a single message. Wait for all three before deciding whether to
 commit. `/ux` is also independent, so include it in the same parallel batch
 when view/controller files changed.
+
+---
+
+## 4. FSM Design First — Stateful Features
+
+新しい「操作状態」(マルチステップフロー、中断可能な操作、排他的モード) を
+実装する前に、**必ず FSM を設計してから** コードを書く:
+
+1. `docs/STATE_TRANSITIONS.md` § Formal FSM Specification に
+   新しい状態・イベント・ガード・アクションを JSON で追記する
+2. `src/core/editorStates.js` に状態名定数を追加する  
+   (`export const S_MY_OP = 'S_MY_OP'`)
+3. `AppController._opState` の遷移テーブルに行を追加する:
+   ```js
+   { from: S_OBJECT_IDLE, on: 'BEGIN_MY_OP', to: S_MY_OP },
+   { from: S_MY_OP,       on: 'CONFIRM',     to: S_OBJECT_IDLE },
+   { from: S_MY_OP,       on: 'CANCEL',      to: S_OBJECT_IDLE },
+   ```
+4. 三相メソッド規約に従う (ADR-039 §Method contract):
+   - `_startX()`: ドメインガード → `this._opState.send('BEGIN_X')` (mutual exclusion)
+   - `_confirmX()`: `if (!this._opState.is(S_X)) return` → 処理 → `send('CONFIRM')`
+   - `_cancelX()`: `if (!this._opState.is(S_X)) return` → 復元 → `send('CANCEL')`
+
+**参考**: `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039
