@@ -55,6 +55,11 @@ import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateF
 import { createMountAnnotationCommand }       from '../command/MountAnnotationCommand.js'
 import { createFastenFrameCommand }           from '../command/FastenFrameCommand.js'
 import { RoleService }                        from '../service/RoleService.js'
+import { StateMachine } from '../core/StateMachine.js'
+import {
+  S_OBJECT_IDLE, S_GRAB_ACTIVE, S_ROTATE_ACTIVE,
+  S_FACE_EXTRUDE, S_MEASURE_PLACING, S_LINK_MODE,
+} from '../core/editorStates.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -227,8 +232,8 @@ export class AppController {
     // Active while the user is placing a MeasureLine (M key / Add → Measure).
     // Phase 1: waiting for first click (p1 = null)
     // Phase 2: p1 set, waiting for second click (preview line shown)
+    // Active state tracked by this._opState (S_MEASURE_PLACING).
     this._measure = {
-      active:       false,
       /** @type {THREE.Vector3|null} fixed first endpoint */
       p1:           null,
       /** @type {THREE.Vector3|null} live cursor position (snapped) */
@@ -252,13 +257,41 @@ export class AppController {
     // ── SpatialLink creation state (ADR-030 Phase 4) ──────────────────────
     // Active while the user is selecting a target entity after pressing L.
     // Phase 1: sourceId captured, waiting for target click.
+    // Active state tracked by this._opState (S_LINK_MODE).
     this._spatialLinkMode = {
-      active:           false,
       /** @type {string|null} ID of the source entity */
       sourceId:         null,
       /** @type {string|null} ID of the candidate target (pending picker) */
       pendingTargetId:  null,
     }
+
+    // ── Primary operation FSM (ADR-039) ──────────────────────────────────
+    // Single source of truth for which Object Mode operation is currently active.
+    // Replaces five separate `.active` boolean flags (grab/rotate/faceExtrude/
+    // measure/spatialLink). Mutual exclusion is structural: BEGIN_X can only
+    // fire from S_OBJECT_IDLE, so two operations can never be active simultaneously.
+    this._opState = new StateMachine(S_OBJECT_IDLE, [
+      // Grab
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_GRAB',          to: S_GRAB_ACTIVE },
+      { from: S_GRAB_ACTIVE,    on: 'CONFIRM',              to: S_OBJECT_IDLE },
+      { from: S_GRAB_ACTIVE,    on: 'CANCEL',               to: S_OBJECT_IDLE },
+      // Rotate
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_ROTATE',         to: S_ROTATE_ACTIVE },
+      { from: S_ROTATE_ACTIVE,  on: 'CONFIRM',              to: S_OBJECT_IDLE },
+      { from: S_ROTATE_ACTIVE,  on: 'CANCEL',               to: S_OBJECT_IDLE },
+      // Face Extrude (Edit Mode · 3D)
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_FACE_EXTRUDE',   to: S_FACE_EXTRUDE },
+      { from: S_FACE_EXTRUDE,   on: 'CONFIRM',              to: S_OBJECT_IDLE },
+      { from: S_FACE_EXTRUDE,   on: 'CANCEL',               to: S_OBJECT_IDLE },
+      // Measure placement
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_MEASURE',        to: S_MEASURE_PLACING },
+      { from: S_MEASURE_PLACING, on: 'CONFIRM',             to: S_OBJECT_IDLE },
+      { from: S_MEASURE_PLACING, on: 'CANCEL',              to: S_OBJECT_IDLE },
+      // Spatial Link creation
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_LINK',           to: S_LINK_MODE },
+      { from: S_LINK_MODE,      on: 'CONFIRM',              to: S_OBJECT_IDLE },
+      { from: S_LINK_MODE,      on: 'CANCEL',               to: S_OBJECT_IDLE },
+    ])
 
     // ── Mount picking state (ADR-032 Phase H-6, Mobile) ──────────────────
     // Entered via "Mount on frame ⊕" long-press context menu item.
@@ -390,8 +423,8 @@ export class AppController {
     }
 
     // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
+    // Active state tracked by this._opState (S_FACE_EXTRUDE).
     this._faceExtrude = {
-      active:        false,
       /** @type {import('../graph/Face.js').Face|null} */
       face:          null,
       savedCorners:  [],
@@ -407,8 +440,8 @@ export class AppController {
     }
 
     // ── Blender-style grab state ───────────────────────────────────────────
+    // Active state tracked by this._opState (S_GRAB_ACTIVE).
     this._grab = {
-      active:          false,
       axis:            null,
       startMouse:      new THREE.Vector2(),
       startCorners:    [],
@@ -469,8 +502,8 @@ export class AppController {
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
     // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
+    // Active state tracked by this._opState (S_ROTATE_ACTIVE).
     this._rotate = {
-      active:     false,
       /** World-space axis to rotate around: null = view-space Z, 'x'|'y'|'z' = world axes. */
       axis:       null,
       /** Screen-angle (radians) from projected pivot to mouse at start. */
@@ -676,14 +709,14 @@ export class AppController {
     })
 
     uiView.onUndoClick(() => {
-      if (this._grab.active || this._rotate.active || this._faceExtrude.active) return
+      if (this._opState.is(S_GRAB_ACTIVE) || this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_FACE_EXTRUDE)) return
       const cmd = this._commandStack.undo()
       if (cmd) this._uiView.showToast(`Undo: ${cmd.label}`)
       this._refreshUndoRedoState()
       this._syncMobileTransformProxy()
     })
     uiView.onRedoClick(() => {
-      if (this._grab.active || this._rotate.active || this._faceExtrude.active) return
+      if (this._opState.is(S_GRAB_ACTIVE) || this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_FACE_EXTRUDE)) return
       const cmd = this._commandStack.redo()
       if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
       this._refreshUndoRedoState()
@@ -1283,7 +1316,7 @@ export class AppController {
   /** Enters measure placement mode: click p1, then p2 to create a MeasureLine. */
   _startMeasurePlacement() {
     if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._measure.active       = true
+    this._opState.send('BEGIN_MEASURE')
     this._measure.p1           = null
     this._measure.p2           = null
     this._measure.p1Anchor     = null
@@ -1308,8 +1341,7 @@ export class AppController {
   }
 
   _cancelMeasure() {
-    if (!this._measure.active) return
-    this._measure.active       = false
+    if (!this._opState.is(S_MEASURE_PLACING)) return
     this._measure.p1           = null
     this._measure.p2           = null
     this._measure.p1Anchor     = null
@@ -1325,6 +1357,7 @@ export class AppController {
     }
     this._measure.snapMeshView?.clearSnapDisplay()
     this._measure.snapMeshView = null
+    this._opState.send('CANCEL')
     if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -1364,7 +1397,7 @@ export class AppController {
       }
       this._measure.snapMeshView?.clearSnapDisplay()
       this._measure.snapMeshView  = null
-      this._measure.active        = false
+      this._opState.send('CONFIRM')
       const p1                    = this._measure.p1
       this._measure.p1            = null
       this._measure.p2            = null
@@ -1388,7 +1421,7 @@ export class AppController {
   }
 
   _updateMeasureStatus() {
-    if (!this._measure.active) return
+    if (!this._opState.is(S_MEASURE_PLACING)) return
     if (!this._measure.p1) {
       this._uiView.setStatusRich([
         { text: 'Measure', bold: true, color: '#f9a825' },
@@ -2481,7 +2514,7 @@ export class AppController {
   /** Called when user clicks a row in the outliner */
   _onOutlinerSelect(id) {
     // During link creation: treat the clicked row as the target entity
-    if (this._spatialLinkMode.active) {
+    if (this._opState.is(S_LINK_MODE)) {
       if (id !== this._spatialLinkMode.sourceId) {
         this._showLinkTypePicker(window.innerWidth / 2, window.innerHeight / 2, id)
       }
@@ -2500,7 +2533,7 @@ export class AppController {
 
   /** Starts the two-phase L-key link creation. Source = currently active entity. */
   _startSpatialLinkCreation() {
-    this._spatialLinkMode.active   = true
+    this._opState.send('BEGIN_LINK')
     this._spatialLinkMode.sourceId = this._scene.activeId
     this._spatialLinkMode.pendingTargetId = null
     // Show all CFs so the target frame is visible for picking regardless of selection state
@@ -2513,7 +2546,7 @@ export class AppController {
 
   /** Cancels link creation mode and restores normal status. */
   _cancelSpatialLinkCreation() {
-    this._spatialLinkMode.active   = false
+    this._opState.send('CANCEL')
     this._spatialLinkMode.sourceId = null
     this._spatialLinkMode.pendingTargetId = null
     this._restoreCoordinateFrameVisibility()
@@ -3397,7 +3430,7 @@ export class AppController {
       return
     }
 
-    if (this._measure.active) {
+    if (this._opState.is(S_MEASURE_PLACING)) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelMeasure(), danger: true },
         { spacer: true },
@@ -3418,7 +3451,7 @@ export class AppController {
       return
     }
 
-    if (this._rotate.active) {
+    if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
         { spacer: true },
@@ -3428,7 +3461,7 @@ export class AppController {
       return
     }
 
-    if (this._grab.active) {
+    if (this._opState.is(S_GRAB_ACTIVE)) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
         { icon: ICONS.stack,   label: 'Stack',   onClick: () => this._toggleStackMode(), active: this._grab.stackMode },
@@ -3731,9 +3764,9 @@ export class AppController {
     }
 
     // ── Cancel all in-progress operations ──────────────────────────────────
-    if (this._grab.active)   this._cancelGrab()
-    if (this._rotate.active) this._cancelRotate()
-    if (this._faceExtrude.active) this._cancelFaceExtrude()
+    if (this._opState.is(S_GRAB_ACTIVE))   this._cancelGrab()
+    if (this._opState.is(S_ROTATE_ACTIVE)) this._cancelRotate()
+    if (this._opState.is(S_FACE_EXTRUDE))  this._cancelFaceExtrude()
     if (this._objDragging) {
       this._objDragging = false
       this._objCtrlDrag = false
@@ -4239,7 +4272,8 @@ export class AppController {
       this._uiView.showToast(`This frame was declared by a ${this._activeObj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
       return
     }
-    this._grab.active          = true
+    // All domain guards passed → mutual exclusion + state transition
+    if (!this._opState.send('BEGIN_GRAB')) return
     this._grab.axis            = null
     this._grab.inputStr        = ''
     this._grab.hasInput        = false
@@ -4315,7 +4349,7 @@ export class AppController {
   }
 
   _confirmGrab() {
-    if (!this._grab.active) return
+    if (!this._opState.is(S_GRAB_ACTIVE)) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
     this._applyGrab()
 
@@ -4337,7 +4371,6 @@ export class AppController {
       this._commandStack.push(cmd)
     }
 
-    this._grab.active        = false
     this._grab.axis          = null
     this._grab.autoSnap      = false
     this._grab.snappedTarget = null
@@ -4345,6 +4378,7 @@ export class AppController {
     this._grab.stacking      = false
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
+    this._opState.send('CONFIRM')
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -4357,7 +4391,7 @@ export class AppController {
   }
 
   _cancelGrab() {
-    if (!this._grab.active) return
+    if (!this._opState.is(S_GRAB_ACTIVE)) return
     if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
     // Restore all selected objects to their pre-grab positions
     for (const [id, startCorners] of this._grab.allStartCorners) {
@@ -4371,12 +4405,12 @@ export class AppController {
     }
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
-    this._grab.active        = false
     this._grab.axis          = null
     this._grab.autoSnap      = false
     this._grab.snappedTarget = null
     this._grab.stackMode     = false
     this._grab.stacking      = false
+    this._opState.send('CANCEL')
     this._controls.enabled = true
     if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     this._uiView.setCursor('default')
@@ -4398,20 +4432,12 @@ export class AppController {
   _startRotate(deferStartAngle = false) {
     const obj = this._activeObj
     if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
-    if (this._grab.active) return
 
-    this._rotate.active      = true
-    this._rotate.axis        = null
-    this._rotate.inputStr    = ''
-    this._rotate.hasInput    = false
-    this._rotate.startCorners = null
-
-    let projected
+    // ── Domain guards (with user feedback) — run before state transition ──
     if (obj instanceof CoordinateFrame) {
       // Provenance check (ADR-034 §8.2)
       if (!RoleService.canEdit(obj)) {
         this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-        this._rotate.active = false
         return
       }
       // Block R-key when this CF is a fixed-joint source or an ancestor of one.
@@ -4419,21 +4445,33 @@ export class AppController {
       // each frame → diverging feedback loop → root Solid flies off (CODE_CONTRACTS §1).
       if (this._service.isInFixedJointSourceChain(obj.id)) {
         this._uiView.showToast('This frame is part of a fixed-joint constraint chain. Unfasten it first to rotate it independently.', { type: 'warn' })
-        this._rotate.active = false
         return
       }
-      this._rotate.startRot.copy(obj.rotation)
-      this._rotate.segmentStartRot.copy(obj.rotation)
-      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
     } else {
       // Solid: block rotation when a fastened-source CF is a direct child (same guard as TC drag).
       // _updateFastenedFrames() overwrites bodyRotation and corners every frame, so R-key would
       // fight the constraint — the solid snaps back each frame and the pose relationship breaks.
       if (this._service.hasFastenedChild(obj.id)) {
         this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
-        this._rotate.active = false
         return
       }
+    }
+
+    // All domain guards passed → mutual exclusion + state transition
+    if (!this._opState.send('BEGIN_ROTATE')) return
+
+    // ── Setup (state is now S_ROTATE_ACTIVE) ──────────────────────────────
+    this._rotate.axis        = null
+    this._rotate.inputStr    = ''
+    this._rotate.hasInput    = false
+    this._rotate.startCorners = null
+
+    let projected
+    if (obj instanceof CoordinateFrame) {
+      this._rotate.startRot.copy(obj.rotation)
+      this._rotate.segmentStartRot.copy(obj.rotation)
+      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
+    } else {
       // Solid: snapshot corners; pivot = centroid of startCorners (ADR-036)
       this._rotate.startCorners        = obj.corners.map(c => c.clone())
       this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
@@ -4470,7 +4508,7 @@ export class AppController {
    * Confirms the current rotation and exits rotate mode.
    */
   _confirmRotate() {
-    if (!this._rotate.active) return
+    if (!this._opState.is(S_ROTATE_ACTIVE)) return
     this._applyRotate()
     // ── Record undo snapshot (ADR-022) ────────────────────────────────────
     if (this._activeObj instanceof CoordinateFrame) {
@@ -4498,7 +4536,6 @@ export class AppController {
       }
     }
     if (this._activeObj instanceof Solid) this._activeObj.meshView.setObjectSelected(true)
-    this._rotate.active             = false
     this._rotate.axis               = null
     this._rotate.inputStr           = ''
     this._rotate.hasInput           = false
@@ -4507,6 +4544,7 @@ export class AppController {
     this._rotate.needsStartAngle    = false
     this._rotate.startBodyRot       = null
     this._rotate.segStartBodyRot    = null
+    this._opState.send('CONFIRM')
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
@@ -4519,7 +4557,7 @@ export class AppController {
    * Cancels the rotation, restoring the object to its saved state.
    */
   _cancelRotate() {
-    if (!this._rotate.active) return
+    if (!this._opState.is(S_ROTATE_ACTIVE)) return
     const obj = this._activeObj
     if (obj instanceof CoordinateFrame) {
       obj.rotation.copy(this._rotate.startRot)
@@ -4531,7 +4569,6 @@ export class AppController {
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.setObjectSelected(true)
     }
-    this._rotate.active             = false
     this._rotate.axis               = null
     this._rotate.inputStr           = ''
     this._rotate.hasInput           = false
@@ -4540,6 +4577,7 @@ export class AppController {
     this._rotate.needsStartAngle    = false
     this._rotate.startBodyRot       = null
     this._rotate.segStartBodyRot    = null
+    this._opState.send('CANCEL')
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
@@ -4578,7 +4616,7 @@ export class AppController {
    */
   _applyRotate() {
     const obj = this._activeObj
-    if (!this._rotate.active) return
+    if (!this._opState.is(S_ROTATE_ACTIVE)) return
     if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
 
     let angle
@@ -4684,7 +4722,7 @@ export class AppController {
   }
 
   _applyGrab() {
-    if (!this._grab.active) return
+    if (!this._opState.is(S_GRAB_ACTIVE)) return
     if (this._grab.hasInput && this._grab.axis) {
       this._applyGrabFromInput()
     } else if (this._grab.axis) {
@@ -4970,7 +5008,7 @@ export class AppController {
       this._sceneView.setOrthoZoom(this._mapMode.frustumSize)
       return
     }
-    if (this._rotate.active && this._ctrlHeld) {
+    if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
       e.preventDefault()
       const steps = AppController.ANGLE_STEPS
       const idx   = steps.indexOf(this._rotate.stepSize)
@@ -4983,7 +5021,7 @@ export class AppController {
       this._updateRotateStatus()
       return
     }
-    if (!this._grab.active || !this._ctrlHeld) return
+    if (!this._opState.is(S_GRAB_ACTIVE) || !this._ctrlHeld) return
     e.preventDefault()
     const sizes = AppController.GRID_SIZES
     const idx   = sizes.indexOf(this._grab.gridSize)
@@ -5000,8 +5038,8 @@ export class AppController {
   // ─── Face extrude (E key) ──────────────────────────────────────────────────
 
   _startFaceExtrude(face) {
+    this._opState.send('BEGIN_FACE_EXTRUDE')
     const fe = this._faceExtrude
-    fe.active        = true
     fe.face          = face
     fe.savedCorners  = face.vertices.map(v => v.position.clone())
     fe.allStartCorners = this._corners.map(c => c.clone())   // full Solid snapshot for undo (ADR-022)
@@ -5048,6 +5086,7 @@ export class AppController {
   }
 
   _confirmFaceExtrude() {
+    if (!this._opState.is(S_FACE_EXTRUDE)) return
     // ── Record undo snapshot (ADR-022 Phase 2) ────────────────────────────
     if (this._scene.activeId) {
       const activeId = this._scene.activeId
@@ -5057,7 +5096,7 @@ export class AppController {
       this._commandStack.push(cmd)
     }
 
-    this._faceExtrude.active = false
+    this._opState.send('CONFIRM')
     this._controls.enabled = true
     this._meshView.clearExtrusionDisplay()
     this._meshView.clearSnapDisplay()
@@ -5071,13 +5110,14 @@ export class AppController {
   }
 
   _cancelFaceExtrude() {
+    if (!this._opState.is(S_FACE_EXTRUDE)) return
     const { face, savedCorners, normal } = this._faceExtrude
     if (face) {
       this._activeObj.extrudeFace(face, savedCorners, normal, 0)
       this._meshView.updateGeometry(this._corners)
       this._meshView.setFaceHighlight(face.index, this._corners)
     }
-    this._faceExtrude.active = false
+    this._opState.send('CANCEL')
     this._controls.enabled = true
     this._meshView.clearExtrusionDisplay()
     this._meshView.clearSnapDisplay()
@@ -5169,7 +5209,7 @@ export class AppController {
   // ─── Pivot point selection ─────────────────────────────────────────────────
 
   _startPivotSelect() {
-    if (!this._grab.active || this._grab.pivotSelectMode) return
+    if (!this._opState.is(S_GRAB_ACTIVE) || this._grab.pivotSelectMode) return
     // Pivot selection uses Cuboid-specific vertex geometry — skip for non-Cuboid types.
     if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine || this._activeObj instanceof CoordinateFrame) return
     this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
@@ -5297,13 +5337,13 @@ export class AppController {
     if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
     this._updateMouse(e)
 
-    if (this._rotate.active) {
+    if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._applyRotate()
       this._updateNPanel()
       return
     }
 
-    if (this._grab.active) {
+    if (this._opState.is(S_GRAB_ACTIVE)) {
       if (this._grab.pivotSelectMode) {
         this._updatePivotHover()
         return
@@ -5388,7 +5428,7 @@ export class AppController {
     }
 
     // ── Measure placement hover ───────────────────────────────────────────
-    if (this._measure.active) {
+    if (this._opState.is(S_MEASURE_PLACING)) {
       const pt = this._measurePickPoint()
       if (pt) {
         this._measure.p2 = pt
@@ -5530,7 +5570,7 @@ export class AppController {
     }
 
     // ── Face extrude mode (E key) ─────────────────────────────────────────
-    if (this._faceExtrude.active) {
+    if (this._opState.is(S_FACE_EXTRUDE)) {
       if (this._faceExtrude.hasInput) return
       this._raycaster.setFromCamera(this._mouse, this._camera)
       const pt = new THREE.Vector3()
@@ -5653,9 +5693,9 @@ export class AppController {
 
     // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
     this._contextMenuSuppressed = e.button === 2 && (
-      this._rotate.active || this._mountPicking.active ||
-      this._spatialLinkMode.active || this._grab.active ||
-      this._faceExtrude.active || !!this._mapMode.tool || this._measure.active ||
+      this._opState.is(S_ROTATE_ACTIVE) || this._mountPicking.active ||
+      this._opState.is(S_LINK_MODE) || this._opState.is(S_GRAB_ACTIVE) ||
+      this._opState.is(S_FACE_EXTRUDE) || !!this._mapMode.tool || this._opState.is(S_MEASURE_PLACING) ||
       this._framePlacementState.active
     )
 
@@ -5674,7 +5714,7 @@ export class AppController {
       return
     }
 
-    if (this._rotate.active) {
+    if (this._opState.is(S_ROTATE_ACTIVE)) {
       if (e.pointerType === 'touch') {
         // Mobile: drag rotates the object; confirmation is via the toolbar button.
         // Re-snapshot segmentStart* so each new drag segment starts from current state.
@@ -5733,7 +5773,7 @@ export class AppController {
     }
 
     // ── SpatialLink target selection (ADR-030 Phase 4) ─────────────────────
-    if (this._spatialLinkMode.active) {
+    if (this._opState.is(S_LINK_MODE)) {
       if (e.button === 2) { this._cancelSpatialLinkCreation(); return }
       if (e.button === 0) {
         const hit = this._hitAnyEntityForLink()
@@ -5747,7 +5787,7 @@ export class AppController {
       return
     }
 
-    if (this._grab.active) {
+    if (this._opState.is(S_GRAB_ACTIVE)) {
       if (this._grab.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
         if (e.button === 2) { this._cancelPivotSelect();  return }
@@ -5790,7 +5830,7 @@ export class AppController {
       return
     }
 
-    if (this._faceExtrude.active) {
+    if (this._opState.is(S_FACE_EXTRUDE)) {
       if (e.button === 0) {
         // Don't confirm immediately — let pointermove update the distance,
         // then confirm on pointerup. This allows touch-drag to set distance.
@@ -5888,7 +5928,7 @@ export class AppController {
     }
 
     // ── Measure placement clicks ──────────────────────────────────────────
-    if (this._measure.active) {
+    if (this._opState.is(S_MEASURE_PLACING)) {
       if (e.button === 2) { this._cancelMeasure(); return }
       if (e.button === 0) {
         // Hold to snap, release to confirm — handled in _onPointerUp.
@@ -6237,7 +6277,7 @@ export class AppController {
     }
 
     // ── Measure point confirmation (hold-to-snap, release-to-confirm) ─────
-    if (this._measure.active && this._measure.pressing) {
+    if (this._opState.is(S_MEASURE_PLACING) && this._measure.pressing) {
       if (this._activeDragPointerId === e.pointerId) {
         this._activeDragPointerId = null
         this._measure.pressing    = false
@@ -6249,17 +6289,17 @@ export class AppController {
     // wasDragging: a canvas drag started for this pointer (via _onPointerDown)
     const wasDragging = this._activeDragPointerId === e.pointerId
     if (wasDragging) this._activeDragPointerId = null
-    if (this._rotate.active) {
+    if (this._opState.is(S_ROTATE_ACTIVE)) {
       // Mobile rotate: keep active after finger lift; user confirms via toolbar button.
       return
     }
-    if (this._grab.active) {
+    if (this._opState.is(S_GRAB_ACTIVE)) {
       // Touch grab: keep grab active after finger release.
       // The object stays at the dragged position; user confirms via the Confirm button.
       // Multiple drag segments are supported before confirming.
       return
     }
-    if (this._faceExtrude.active) {
+    if (this._opState.is(S_FACE_EXTRUDE)) {
       // Only confirm when a canvas drag was started; prevents double-confirm
       // when the mobile Confirm toolbar button fires both pointerup and click.
       if (wasDragging) this._confirmFaceExtrude()
@@ -6306,9 +6346,9 @@ export class AppController {
   _onKeyUp(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = false
-      if (this._grab.active && !this._grab.pivotSelectMode) this._updateGrabStatus()
-      if (this._faceExtrude.active) this._updateFaceExtrudeStatus()
-      if (this._rotate.active && !this._rotate.hasInput) {
+      if (this._opState.is(S_GRAB_ACTIVE) && !this._grab.pivotSelectMode) this._updateGrabStatus()
+      if (this._opState.is(S_FACE_EXTRUDE)) this._updateFaceExtrudeStatus()
+      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotate.hasInput) {
         this._applyRotate()
         this._updateRotateStatus()
       }
@@ -6318,7 +6358,7 @@ export class AppController {
   _onKeyDown(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = true
-      if (this._rotate.active && !this._rotate.hasInput) {
+      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotate.hasInput) {
         this._applyRotate()
         this._updateRotateStatus()
       }
@@ -6329,7 +6369,7 @@ export class AppController {
     // key handlers so they don't mis-fire as grab-axis or rotate-axis keys.
     if (e.ctrlKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y')) {
       e.preventDefault()
-      if (!this._grab.active && !this._rotate.active && !this._faceExtrude.active) {
+      if (!this._opState.is(S_GRAB_ACTIVE) && !this._opState.is(S_ROTATE_ACTIVE) && !this._opState.is(S_FACE_EXTRUDE)) {
         const isUndo = e.key === 'z' && !e.shiftKey
         if (isUndo) {
           const cmd = this._commandStack.undo()
@@ -6359,7 +6399,7 @@ export class AppController {
     }
 
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
-    if (this._rotate.active) {
+    if (this._opState.is(S_ROTATE_ACTIVE)) {
       switch (e.key) {
         case 'x': case 'X': this._setRotateAxis('x'); return
         case 'y': case 'Y': this._setRotateAxis('y'); return
@@ -6391,7 +6431,7 @@ export class AppController {
     }
 
     // ── Keys active during grab ────────────────────────────────────────────
-    if (this._grab.active) {
+    if (this._opState.is(S_GRAB_ACTIVE)) {
       if (this._grab.pivotSelectMode) {
         if (e.key === 'Escape') this._cancelPivotSelect()
         if (e.key === '1') { this._setPivotCandidateMode('vertex'); return }
@@ -6479,13 +6519,13 @@ export class AppController {
     }
 
     // ── Measure placement keys ─────────────────────────────────────────────
-    if (this._measure.active) {
+    if (this._opState.is(S_MEASURE_PLACING)) {
       if (e.key === 'Escape') { this._cancelMeasure(); return }
       return
     }
 
     // ── SpatialLink creation keys (ADR-030 Phase 4) ────────────────────────
-    if (this._spatialLinkMode.active) {
+    if (this._opState.is(S_LINK_MODE)) {
       if (e.key === 'Escape') { this._cancelSpatialLinkCreation(); return }
       return  // consume all other keys during link mode
     }
@@ -6539,7 +6579,7 @@ export class AppController {
     }
 
     // ── Face extrude keys (Edit Mode · 3D) ────────────────────────────────
-    if (this._faceExtrude.active) {
+    if (this._opState.is(S_FACE_EXTRUDE)) {
       if (e.key === 'Enter')  { e.preventDefault(); this._confirmFaceExtrude(); return }
       if (e.key === 'Escape') { this._cancelFaceExtrude(); return }
       if ((e.key >= '0' && e.key <= '9') || e.key === '.') {

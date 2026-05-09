@@ -50,6 +50,7 @@ This directory records the project's design decisions.
 | [ADR-036](ADR-036-solid-arbitrary-rotation.md) | **Solid Arbitrary Rotation — R key, Corner-Baking** | Accepted | 2026-05-02 | ADR-007, ADR-019, ADR-022, ADR-012 |
 | [ADR-037](ADR-037-body-frame-architecture.md) | **Body Frame Architecture — CF-Primary Entity Model** | Accepted | 2026-05-07 | ADR-018, ADR-019, ADR-033, ADR-034, ADR-035, ADR-036 |
 | [ADR-038](ADR-038-urdf-link-taxonomy.md) | **URDF-Style Link Taxonomy: Kinematic + Semantic Two-Layer Classification** | Accepted | 2026-05-08 | ADR-030, ADR-032, ADR-016, ADR-037 |
+| [ADR-039](ADR-039-operation-state-machine.md) | **Runtime Operation State Machine — FSM-First Design Pattern** | Accepted | 2026-05-09 | ADR-008, ADR-022, ADR-030 |
 
 ## How to Add a New ADR
 

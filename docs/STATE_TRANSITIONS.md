@@ -714,10 +714,16 @@ is consumed; target entity fields are never written by `_updateFastenedFrames()`
 
 ## § Formal FSM Specification (Moore-Mealy Hybrid)
 
-Design spec for the app's operation state machine.
-**Status**: Design document only — no runtime `StateMachine` class yet.
-**Purpose**: Serves as the authoritative contract for `AppController` state transitions;
-future work can convert this to a declarative runtime FSM (separate ADR).
+Runtime implementation of the app's Object Mode operation state machine.
+**Status**: Implemented — `src/core/StateMachine.js` + `src/core/editorStates.js` (ADR-039).
+**Runtime instance**: `AppController._opState` (`new StateMachine(S_OBJECT_IDLE, [...])`)
+**State constants**: exported from `src/core/editorStates.js`
+
+To add a new operation state:
+1. Add state constant to `src/core/editorStates.js`
+2. Add transitions `{ from: S_OBJECT_IDLE, on: 'BEGIN_X', to: S_X }` + CONFIRM/CANCEL rows to `_opState`
+3. Follow the three-phase method contract (see ADR-039 §Method contract)
+4. Document the new state in this section below
 
 ### Convention
 
