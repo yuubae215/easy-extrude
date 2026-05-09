@@ -1926,6 +1926,29 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Returns true when cfId is itself a fixed-joint source, or an ancestor of one in the
+   * parentId chain (JOINT_SOURCE or JOINT_SOURCE_ANCESTOR state per CF state machine).
+   *
+   * Used to block R-key rotation on CFs whose mutation would fight _updateFastenedFrames()
+   * every frame: _applyRotate() reads live Solid.bodyRotation, the constraint corrects it,
+   * the next frame _applyRotate() reads the modified value → diverging feedback loop.
+   *
+   * Named after jointType='fixed' (ADR-038) — not semanticType='fastened'.
+   * @param {string} cfId
+   * @returns {boolean}
+   */
+  isInFixedJointSourceChain(cfId) {
+    for (const { sourceId } of this._fastenedTransforms.values()) {
+      let node = this._model.getObject(sourceId)
+      while (node instanceof CoordinateFrame) {
+        if (node.id === cfId) return true
+        node = this._model.getObject(node.parentId)
+      }
+    }
+    return false
+  }
+
+  /**
    * Sets the active object id and emits 'activeChanged'.
    * Pass null to deselect.
    * Emits: 'activeChanged'

@@ -611,6 +611,93 @@ Solid selected → _attachMobileTransform(solid)
 
 ---
 
+## CoordinateFrame Role under Fixed-Joint SpatialLink (ADR-038)
+
+A CF's **kinematic role** in the constraint graph determines which user operations are
+permitted on it every animation frame. The role is derived from `_fastenedTransforms`
+(keyed by SpatialLink.id where `jointType === 'fixed' && semanticType !== 'mounts'`).
+
+### CF kinematic role states
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ State          │ Definition                           │ Managed by           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ FREE           │ Not in any fixed-joint chain         │ default              │
+│ JOINT_SOURCE   │ _fastenedTransforms[link.id]         │ fastenFrame()        │
+│                │   .sourceId === this.id              │ unfastenFrame()      │
+│ SOURCE_ANCESTOR│ parentId chain of JOINT_SOURCE       │ derived (no field)   │
+│                │ includes this CF                     │                      │
+│ JOINT_TARGET   │ link.targetId === this.id            │ fastenFrame()        │
+│                │ (reference/driver frame)             │ unfastenFrame()      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+State is **not stored** on the entity — it is queried each operation via:
+- `isFastenedSource(cfId)` → JOINT_SOURCE
+- `isInFixedJointSourceChain(cfId)` → JOINT_SOURCE **or** SOURCE_ANCESTOR
+
+### State transitions
+
+```
+FREE ──── fastenFrame(thisId, targetId) ────────────────────────→ JOINT_SOURCE
+FREE ──── fastenFrame(sourceId, thisId) ────────────────────────→ JOINT_TARGET
+FREE ──── parentId-chain of a JOINT_SOURCE CF ──────────────────→ SOURCE_ANCESTOR
+                                                                   (implicit; no event)
+
+JOINT_SOURCE ──── unfastenFrame(link) ─────────────────────────→ FREE
+JOINT_TARGET ──── unfastenFrame(link) ─────────────────────────→ FREE
+SOURCE_ANCESTOR ── all JOINT_SOURCE CFs in chain unfastened ───→ FREE
+                                                                   (implicit)
+```
+
+### Permitted operations per role
+
+| Operation | FREE | JOINT_SOURCE | SOURCE_ANCESTOR | JOINT_TARGET |
+|-----------|------|--------------|-----------------|--------------|
+| Grab (translate) | ✓ | ✗ toast | ✗ toast | ✓ |
+| R-key rotate | ✓ | ✗ toast | ✗ toast | ✓ |
+| TC drag | ✓ | ✗ toast | ✓ (TC blocked separately) | ✓ |
+| N-panel translate | ✓ | ✓ (constraint overwrites) | ✓ | ✓ |
+| N-panel rotate | ✓ | ✓ (constraint overwrites) | ✓ | ✓ |
+| Delete | ✓ | ✓ (link removed too) | ✓ | ✓ |
+| Rename | ✓ | ✓ | ✓ | ✓ |
+
+**R-key on SOURCE_ANCESTOR** was previously unguarded (bug #GxGK6):
+- `_applyRotate()` wrote `Origin CF.rotation` using the LIVE `Solid.bodyRotation`
+- `_updateFastenedFrames()` corrected `Solid.bodyRotation` each frame
+- Each frame `_applyRotate()` read the corrected bodyRot → produced a different
+  CF rotation → different constraint delta → bodyRot accumulated unboundedly
+- Fix: `_startRotate()` CF branch calls `isInFixedJointSourceChain(obj.id)`,
+  which checks both JOINT_SOURCE and SOURCE_ANCESTOR states.
+
+### `_updateFastenedFrames()` per-frame writes (constraint active)
+
+Every animation frame while `_fastenedTransforms` is non-empty:
+
+```
+JOINT_SOURCE CF:
+  ├── source.translation  ← overwritten (world→local back-conversion)
+  ├── source.rotation     ← overwritten (world→local back-conversion)
+  ├── _worldPoseCache[sourceId] ← overwritten with solver result
+  └── source.meshView     ← updatePosition, updateRotation, updateConnectionLine
+
+SOURCE_ANCESTOR CFs (chain between JOINT_SOURCE and rootSolid):
+  ├── _worldPoseCache[cf.id]  ← re-propagated from new Solid kinematics
+  └── cf.meshView             ← updatePosition, updateRotation, updateConnectionLine
+
+rootSolid (Solid in JOINT_SOURCE's ancestor chain):
+  ├── corners[]          ← rigid-body rotated around source CF pivot → translated
+  ├── bodyRotation       ← premultiplied by dq (world-space delta quaternion)
+  ├── meshView.updateGeometry
+  └── meshView.updateBoxHelper
+```
+
+JOINT_TARGET CF is **read-only** for the constraint: only `_worldPoseCache[targetId]`
+is consumed; target entity fields are never written by `_updateFastenedFrames()`.
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow

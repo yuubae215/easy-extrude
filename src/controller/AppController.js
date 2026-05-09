@@ -4414,6 +4414,14 @@ export class AppController {
         this._rotate.active = false
         return
       }
+      // Block R-key when this CF is a fixed-joint source or an ancestor of one.
+      // _applyRotate() reads live Solid.bodyRotation; _updateFastenedFrames() corrects it
+      // each frame → diverging feedback loop → root Solid flies off (CODE_CONTRACTS §1).
+      if (this._service.isInFixedJointSourceChain(obj.id)) {
+        this._uiView.showToast('This frame is part of a fixed-joint constraint chain. Unfasten it first to rotate it independently.', { type: 'warn' })
+        this._rotate.active = false
+        return
+      }
       this._rotate.startRot.copy(obj.rotation)
       this._rotate.segmentStartRot.copy(obj.rotation)
       projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
