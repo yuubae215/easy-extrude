@@ -660,6 +660,7 @@ export class AppController {
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
+      if (this._isFastenedRotationBlocked(frame)) return
       // rotation is already in parent-local space (ROS TF) — edit directly
       const localEuler = new THREE.Euler().setFromQuaternion(frame.rotation, 'ZYX')
       localEuler[axis] = THREE.MathUtils.degToRad(val)
@@ -4429,6 +4430,28 @@ export class AppController {
    * For CoordinateFrame: rotates the quaternion around the frame origin.
    * For Solid: bakes the rotation into corner positions (ADR-036).
    */
+
+  /**
+   * Centralised guard for any UI rotation entry point (R-key, N-panel, future inspectors…).
+   * Returns true and shows a toast when the frame must not be rotated because it is part of
+   * a fixed-joint source chain — rotating it would fight _updateFastenedFrames() every frame
+   * and cause the root Solid to diverge (CODE_CONTRACTS §1 "R-key Rotation Blocked").
+   *
+   * Keeping the guard here (not inline in each handler) means new UI entry points only need
+   * one call, and the toast message stays consistent.
+   *
+   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frame
+   * @returns {boolean} true = blocked (caller should return early)
+   */
+  _isFastenedRotationBlocked(frame) {
+    if (!this._service.isInFixedJointSourceChain(frame.id)) return false
+    this._uiView.showToast(
+      'This frame is part of a fixed-joint constraint chain. Unfasten it first to rotate it independently.',
+      { type: 'warn' },
+    )
+    return true
+  }
+
   _startRotate(deferStartAngle = false) {
     const obj = this._activeObj
     if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
@@ -4440,13 +4463,7 @@ export class AppController {
         this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
         return
       }
-      // Block R-key when this CF is a fixed-joint source or an ancestor of one.
-      // _applyRotate() reads live Solid.bodyRotation; _updateFastenedFrames() corrects it
-      // each frame → diverging feedback loop → root Solid flies off (CODE_CONTRACTS §1).
-      if (this._service.isInFixedJointSourceChain(obj.id)) {
-        this._uiView.showToast('This frame is part of a fixed-joint constraint chain. Unfasten it first to rotate it independently.', { type: 'warn' })
-        return
-      }
+      if (this._isFastenedRotationBlocked(obj)) return
     } else {
       // Solid: block rotation when a fastened-source CF is a direct child (same guard as TC drag).
       // _updateFastenedFrames() overwrites bodyRotation and corners every frame, so R-key would

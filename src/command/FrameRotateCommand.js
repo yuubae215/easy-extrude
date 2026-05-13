@@ -25,7 +25,9 @@ export function createFrameRotateCommand(frameRef, startQuat, endQuat, sceneServ
     // Compute world quaternion for immediate view update
     const parentWorldQuat = sceneService._getParentWorldQuat(obj)
     obj.meshView.updateRotation(parentWorldQuat.clone().multiply(localQuat))
-    sceneService.invalidateWorldPose(obj.id)
+    // Full world-pose pass ensures fastened constraints propagate immediately,
+    // matching the SolidRotateCommand pattern (CODE_CONTRACTS §1).
+    sceneService._updateWorldPoses()
     onApplied()
   }
   return {
