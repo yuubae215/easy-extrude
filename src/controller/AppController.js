@@ -383,6 +383,8 @@ export class AppController {
     this._objDragStartCorners   = []
     /** @type {Map<string, import('three').Vector3[]>} corners snapshot for each selected object at drag start */
     this._objDragAllStartCorners = new Map()
+    /** @type {Map<string, import('three').Vector3>} Solid._position snapshot at mouse-drag start (ADR-040) */
+    this._objDragAllStartPositions = new Map()
     this._objRotateStartX       = 0
     this._objRotateCentroid     = new THREE.Vector3()
     this._objRotateStartCorners = []
@@ -427,8 +429,11 @@ export class AppController {
     this._faceExtrude = {
       /** @type {import('../graph/Face.js').Face|null} */
       face:          null,
-      savedCorners:  [],
-      normal:        new THREE.Vector3(),
+      savedCorners:  [],    // world face corners at drag start (for display / snap)
+      /** @type {import('three').Vector3[]} Body-frame face corners at drag start (for extrudeFace call). ADR-040 */
+      savedLocalFaceCorners: [],
+      normal:        new THREE.Vector3(),  // world face normal (for distance dot product)
+      localNormal:   new THREE.Vector3(),  // body-frame face normal (for extrudeFace call). ADR-040
       dist:          0,
       dragPlane:     new THREE.Plane(),
       startPoint:    new THREE.Vector3(),
@@ -449,6 +454,8 @@ export class AppController {
       allStartCorners: new Map(),
       /** @type {Map<string, import('three').Vector3[]>} corners at the start of the current drag segment (touch re-grab) */
       segmentStartCorners: new Map(),
+      /** @type {Map<string, import('three').Vector3>} Solid._position snapshot at segment start (ADR-040) */
+      segmentStartPositions: new Map(),
       centroid:        new THREE.Vector3(),
       pivot:           new THREE.Vector3(),
       pivotLabel:      'Centroid',
@@ -497,8 +504,10 @@ export class AppController {
     this._tcStartProxyQuat = null
     /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
     this._tcStartFrameRot  = null
-    /** bodyRotation snapshot at TC drag start for Solid rotate — for undo. @type {THREE.Quaternion|null} */
-    this._tcStartBodyRot   = null
+    /** orientation snapshot at TC drag start for Solid rotate — for undo. @type {THREE.Quaternion|null} */
+    this._tcStartOrientation = null
+    /** _position snapshot at TC drag start for Solid (rotate and translate). @type {THREE.Vector3|null} */
+    this._tcStartPos         = null
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
     // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
@@ -510,8 +519,6 @@ export class AppController {
       startAngle: 0,
       /** Saved rotation quaternion at the moment rotation begins (CoordinateFrame only). */
       startRot:   new THREE.Quaternion(),
-      /** Corner snapshot taken at the moment rotation begins (Solid only). @type {import('three').Vector3[]|null} */
-      startCorners: null,
       /** Numeric degree string typed by the user; empty when mouse-driven. */
       inputStr:   '',
       /** True when the user has typed at least one digit. */
@@ -523,14 +530,19 @@ export class AppController {
       needsStartAngle:      false,
       /** Per-segment start angle; equals startAngle on PC (single drag). */
       segmentStartAngle:    0,
-      /** Per-segment corner snapshot for Solid; equals startCorners on PC. @type {import('three').Vector3[]|null} */
-      segmentStartCorners:  null,
       /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
       segmentStartRot:      new THREE.Quaternion(),
-      /** Solid bodyRotation snapshot at rotate start — for undo. @type {import('three').Quaternion|null} */
-      startBodyRot:    null,
-      /** Solid bodyRotation snapshot at segment start — reapplied each frame. @type {import('three').Quaternion|null} */
-      segStartBodyRot: null,
+      // ADR-040 Solid rotate state (replaces startCorners/segmentStartCorners/bodyRot fields)
+      /** Solid orientation snapshot at rotate start — for undo. @type {import('three').Quaternion|null} */
+      startOrientation:    null,
+      /** Solid _position snapshot at rotate start — for undo. @type {import('three').Vector3|null} */
+      startPos:            null,
+      /** Solid orientation snapshot at segment start — for reapplyable drag. @type {import('three').Quaternion|null} */
+      segStartOrientation: null,
+      /** Solid _position snapshot at segment start — for reapplyable drag. @type {import('three').Vector3|null} */
+      segStartPos:         null,
+      /** Centroid of solid corners at segment start — used as rotation pivot + screen projection. @type {import('three').Vector3|null} */
+      segStartPivot:       null,
     }
 
     this._ctrlHeld  = false
@@ -677,8 +689,13 @@ export class AppController {
       const currentCentroid = getCentroid(corners)
       const delta = new THREE.Vector3()
       delta[axis] = val - currentCentroid[axis]
-      const startCorners = corners.map(c => c.clone())
-      obj.move(startCorners, delta)
+      if (obj instanceof Solid) {
+        // Use _position snapshot so move() keeps primary triple consistent (ADR-040)
+        obj.move(obj._position.clone(), delta)
+      } else {
+        const startCorners = corners.map(c => c.clone())
+        obj.move(startCorners, delta)
+      }
       obj.meshView.updateGeometry(corners)
       if (this._objSelected) obj.meshView.updateBoxHelper()
     })
@@ -2181,8 +2198,10 @@ export class AppController {
         if (this._tcMode === 'rotate' && this._activeObj instanceof CoordinateFrame) {
           this._tcStartFrameRot = this._activeObj.rotation.clone()
         }
-        if (this._tcMode === 'rotate' && this._activeObj instanceof Solid) {
-          this._tcStartBodyRot = this._activeObj.bodyRotation.clone()
+        if (this._activeObj instanceof Solid) {
+          // Snapshot orientation+position for both rotate and translate modes (ADR-040)
+          this._tcStartOrientation = this._activeObj.orientation.clone()
+          this._tcStartPos         = this._activeObj._position.clone()
         }
         // Block movement on fastened-source CFs and Solids that own them:
         // _updateFastenedFrames() overrides translation every frame, so any delta
@@ -2220,21 +2239,19 @@ export class AppController {
           }
           this._updateNPanel()
         } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
-          const startPts = this._tcStartCorners.get(obj.id)
-          if (startPts) {
-            const endPts = obj.corners.map(c => c.clone())
-            if (startPts.some((c, i) => !c.equals(endPts[i]))) {
-              const startBodyRot = this._tcStartBodyRot ?? new THREE.Quaternion()
-              const endBodyRot   = obj.bodyRotation.clone()
-              const cmd = createSolidRotateCommand(
-                obj, startPts.map(c => c.clone()), endPts, startBodyRot, endBodyRot,
-                this._service, () => this._updateNPanel(),
-              )
-              this._commandStack.push(cmd)
-              this._refreshUndoRedoState()
-            }
+          // Record rotate command if orientation changed (ADR-040)
+          if (this._tcStartOrientation && !obj.orientation.equals(this._tcStartOrientation)) {
+            const cmd = createSolidRotateCommand(
+              obj,
+              this._tcStartOrientation, obj.orientation.clone(),
+              this._tcStartPos ?? new THREE.Vector3(), obj._position.clone(),
+              this._service, () => this._updateNPanel(),
+            )
+            this._commandStack.push(cmd)
+            this._refreshUndoRedoState()
           }
-          this._tcStartBodyRot = null
+          this._tcStartOrientation = null
+          this._tcStartPos         = null
           this._updateNPanel()
         } else {
           // Translate: record MoveCommand
@@ -2270,20 +2287,13 @@ export class AppController {
         obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
         obj.meshView.updateRotation(newWorldQuat)
       } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
-        // Rotate mode: rotate all corners around the centroid (same delta-quat approach as CF)
-        if (!this._tcStartProxyQuat) return
-        const startPts = this._tcStartCorners.get(obj.id)
-        if (!startPts) return
-        const deltaQ = this._tcProxy.quaternion.clone().multiply(
-          this._tcStartProxyQuat.clone().invert(),
-        )
-        const pivot = getCentroid(startPts)
-        obj.corners.forEach((c, i) => {
-          c.copy(startPts[i]).sub(pivot).applyQuaternion(deltaQ).add(pivot)
-        })
+        // Rotate mode: rotate via primary triple (ADR-040)
+        if (!this._tcStartProxyQuat || !this._tcStartOrientation || !this._tcStartPos) return
+        const deltaQ = this._tcProxy.quaternion.clone().multiply(this._tcStartProxyQuat.clone().invert())
+        const pivot  = getCentroid(obj.corners)
+        obj.rotate(this._tcStartOrientation, this._tcStartPos, pivot, deltaQ)
         obj.meshView.updateGeometry(obj.corners)
         obj.meshView.updateBoxHelper()
-        if (this._tcStartBodyRot) obj.bodyRotation.copy(this._tcStartBodyRot).premultiply(deltaQ)
       } else {
         // Translate mode: apply position delta to handles
         const worldDelta = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
@@ -2296,6 +2306,11 @@ export class AppController {
           obj.localOffset.forEach((h, i) => h.copy(startPts[i]).add(localDelta))
           obj.meshView.updateGeometry(obj.localOffset)
           this._service.invalidateWorldPose(obj.id)
+        } else if (obj instanceof Solid) {
+          // Solid: use move() to keep _position + localCorners consistent (ADR-040)
+          if (this._tcStartPos) obj.move(this._tcStartPos, worldDelta)
+          obj.meshView.updateGeometry(obj.corners)
+          obj.meshView.updateBoxHelper()
         } else {
           startPts.forEach((c, i) => obj.corners[i].copy(c).add(worldDelta))
           obj.meshView.updateGeometry(obj.corners)
@@ -4295,6 +4310,12 @@ export class AppController {
     this._grab.segmentStartCorners = new Map(
       [...this._grab.allStartCorners.entries()].map(([id, cs]) => [id, cs.map(c => c.clone())])
     )
+    // Solid _position snapshots for move() — separate from corner snapshots (ADR-040)
+    this._grab.segmentStartPositions = new Map()
+    for (const id of this._selectedIds) {
+      const selObj = this._scene.getObject(id)
+      if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
+    }
     // For CoordinateFrame, corners = [translation] (parent-relative offset).
     // Use the world position from the cache so the drag plane passes through
     // the frame's actual world location (ADR-020).
@@ -4397,12 +4418,17 @@ export class AppController {
     // Restore all selected objects to their pre-grab positions
     for (const [id, startCorners] of this._grab.allStartCorners) {
       const selObj = this._scene.getObject(id)
-      if (selObj) {
+      if (!selObj) continue
+      if (selObj instanceof Solid) {
+        // Decompose world corners back into _position + localCorners (ADR-040)
+        selObj.setWorldCorners(startCorners)
+        selObj.meshView.updateGeometry(selObj.corners)
+      } else {
         const handles = _grabHandlesOf(selObj)
         startCorners.forEach((c, i) => handles[i].copy(c))
         selObj.meshView.updateGeometry(handles)
-        selObj.meshView.updateBoxHelper()
       }
+      selObj.meshView.updateBoxHelper()
     }
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
@@ -4478,10 +4504,9 @@ export class AppController {
     if (!this._opState.send('BEGIN_ROTATE')) return
 
     // ── Setup (state is now S_ROTATE_ACTIVE) ──────────────────────────────
-    this._rotate.axis        = null
-    this._rotate.inputStr    = ''
-    this._rotate.hasInput    = false
-    this._rotate.startCorners = null
+    this._rotate.axis     = null
+    this._rotate.inputStr = ''
+    this._rotate.hasInput = false
 
     let projected
     if (obj instanceof CoordinateFrame) {
@@ -4489,16 +4514,16 @@ export class AppController {
       this._rotate.segmentStartRot.copy(obj.rotation)
       projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
     } else {
-      // Solid: snapshot corners; pivot = centroid of startCorners (ADR-036)
-      this._rotate.startCorners        = obj.corners.map(c => c.clone())
-      this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
-      const pivot = getCentroid(this._rotate.startCorners)
+      // Solid: snapshot orientation+position from primary triple (ADR-040)
+      this._rotate.startOrientation    = obj.orientation.clone()
+      this._rotate.startPos            = obj._position.clone()
+      this._rotate.segStartOrientation = obj.orientation.clone()
+      this._rotate.segStartPos         = obj._position.clone()
+      const pivot = getCentroid(obj.corners)
+      this._rotate.segStartPivot       = pivot.clone()
       projected = pivot.clone().project(this._camera)
       obj.meshView.boxHelper.visible = false
-      // Snapshot bodyRotation so it can be baked into SolidRotateCommand for undo/redo.
       // CFs follow automatically via ROS TF forward kinematics — no CF pose snapshot needed.
-      this._rotate.startBodyRot    = obj.bodyRotation.clone()
-      this._rotate.segStartBodyRot = obj.bodyRotation.clone()
     }
 
     if (deferStartAngle) {
@@ -4538,29 +4563,29 @@ export class AppController {
         )
         this._commandStack.push(cmd)
       }
-    } else if (this._activeObj instanceof Solid && this._rotate.startCorners) {
+    } else if (this._activeObj instanceof Solid && this._rotate.startOrientation) {
       const solid = this._activeObj
-      const endCorners = solid.corners.map(c => c.clone())
-      const changed = endCorners.some((c, i) => !c.equals(this._rotate.startCorners[i]))
+      const changed = !solid.orientation.equals(this._rotate.startOrientation)
       if (changed) {
-        const startBodyRot = this._rotate.startBodyRot ?? new THREE.Quaternion()
-        const endBodyRot   = solid.bodyRotation.clone()
         const cmd = createSolidRotateCommand(
-          solid, this._rotate.startCorners, endCorners, startBodyRot, endBodyRot,
+          solid,
+          this._rotate.startOrientation.clone(), solid.orientation.clone(),
+          this._rotate.startPos.clone(),         solid._position.clone(),
           this._service, () => this._updateNPanel(),
         )
         this._commandStack.push(cmd)
       }
     }
     if (this._activeObj instanceof Solid) this._activeObj.meshView.setObjectSelected(true)
-    this._rotate.axis               = null
-    this._rotate.inputStr           = ''
-    this._rotate.hasInput           = false
-    this._rotate.startCorners       = null
-    this._rotate.segmentStartCorners = null
-    this._rotate.needsStartAngle    = false
-    this._rotate.startBodyRot       = null
-    this._rotate.segStartBodyRot    = null
+    this._rotate.axis            = null
+    this._rotate.inputStr        = ''
+    this._rotate.hasInput        = false
+    this._rotate.startOrientation    = null
+    this._rotate.startPos            = null
+    this._rotate.segStartOrientation = null
+    this._rotate.segStartPos         = null
+    this._rotate.segStartPivot       = null
+    this._rotate.needsStartAngle     = false
     this._opState.send('CONFIRM')
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
@@ -4580,20 +4605,23 @@ export class AppController {
       obj.rotation.copy(this._rotate.startRot)
       const parentWorldQuat = this._service._getParentWorldQuat(obj)
       obj.meshView.updateRotation(parentWorldQuat.clone().multiply(obj.rotation))
-    } else if (obj instanceof Solid && this._rotate.startCorners) {
-      this._rotate.startCorners.forEach((c, i) => { obj.vertices[i].position.copy(c) })
-      if (this._rotate.startBodyRot) obj.bodyRotation.copy(this._rotate.startBodyRot)
+    } else if (obj instanceof Solid && this._rotate.startOrientation) {
+      // Restore primary triple; _rebuildWorldCorners() syncs derived corners (ADR-040)
+      obj.orientation.copy(this._rotate.startOrientation)
+      obj._position.copy(this._rotate.startPos)
+      obj._rebuildWorldCorners()
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.setObjectSelected(true)
     }
-    this._rotate.axis               = null
-    this._rotate.inputStr           = ''
-    this._rotate.hasInput           = false
-    this._rotate.startCorners       = null
-    this._rotate.segmentStartCorners = null
-    this._rotate.needsStartAngle    = false
-    this._rotate.startBodyRot       = null
-    this._rotate.segStartBodyRot    = null
+    this._rotate.axis            = null
+    this._rotate.inputStr        = ''
+    this._rotate.hasInput        = false
+    this._rotate.startOrientation    = null
+    this._rotate.startPos            = null
+    this._rotate.segStartOrientation = null
+    this._rotate.segStartPos         = null
+    this._rotate.segStartPivot       = null
+    this._rotate.needsStartAngle     = false
     this._opState.send('CANCEL')
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
@@ -4614,8 +4642,8 @@ export class AppController {
     let projected
     if (obj instanceof CoordinateFrame) {
       projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
-    } else if (obj instanceof Solid && this._rotate.startCorners) {
-      projected = getCentroid(this._rotate.startCorners).clone().project(this._camera)
+    } else if (obj instanceof Solid && this._rotate.segStartPivot) {
+      projected = this._rotate.segStartPivot.clone().project(this._camera)
     }
     if (projected) {
       this._rotate.startAngle = Math.atan2(
@@ -4646,7 +4674,7 @@ export class AppController {
       if (obj instanceof CoordinateFrame) {
         pivotScreen = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
       } else {
-        pivotScreen = getCentroid(this._rotate.segmentStartCorners).clone().project(this._camera)
+        pivotScreen = (this._rotate.segStartPivot ?? getCentroid(obj.corners)).clone().project(this._camera)
       }
       const currentAngle = Math.atan2(
         this._mouse.y - pivotScreen.y,
@@ -4688,12 +4716,10 @@ export class AppController {
       obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
       obj.meshView.updateRotation(newWorldQuat)
     } else {
-      // Solid: rotate all corners around the centroid of segmentStartCorners (ADR-036)
-      const pivot = getCentroid(this._rotate.segmentStartCorners)
-      obj.rotate(this._rotate.segmentStartCorners, pivot, deltaQ)
-      // Update bodyRotation: newBodyRot = deltaQ * segStartBodyRot
-      if (this._rotate.segStartBodyRot) {
-        obj.bodyRotation.copy(this._rotate.segStartBodyRot).premultiply(deltaQ)
+      // Solid: rotate around segment-start pivot using primary triple (ADR-040)
+      const pivot = this._rotate.segStartPivot ?? getCentroid(obj.corners)
+      if (this._rotate.segStartOrientation && this._rotate.segStartPos) {
+        obj.rotate(this._rotate.segStartOrientation, this._rotate.segStartPos, pivot, deltaQ)
       }
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.updateBoxHelper()
@@ -4850,6 +4876,10 @@ export class AppController {
         const parentWorldQuat = this._service._getParentWorldQuat(selObj)
         const localDelta = delta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
         selObj.move(startCorners, localDelta)
+      } else if (selObj instanceof Solid) {
+        // Solid: use _position snapshot so move() keeps primary triple consistent (ADR-040)
+        const segStartPos = this._grab.segmentStartPositions.get(id)
+        if (segStartPos) selObj.move(segStartPos, delta)
       } else {
         selObj.move(startCorners, delta)
       }
@@ -5058,14 +5088,22 @@ export class AppController {
     this._opState.send('BEGIN_FACE_EXTRUDE')
     const fe = this._faceExtrude
     fe.face          = face
-    fe.savedCorners  = face.vertices.map(v => v.position.clone())
+    fe.savedCorners  = face.vertices.map(v => v.position.clone())  // world, for display / snap
     fe.allStartCorners = this._corners.map(c => c.clone())   // full Solid snapshot for undo (ADR-022)
     fe.dist          = 0
     fe.inputStr      = ''
     fe.hasInput      = false
     fe.snapping      = false
     fe.snappedTarget = null
+    // World normal (for distance dot product and drag plane)
     fe.normal.copy(computeOutwardFaceNormal(this._corners, face.index))
+    // Body-frame normal and face corners for extrudeFace() call (ADR-040)
+    const solid = this._activeObj
+    fe.savedLocalFaceCorners = face.vertices.map(v => {
+      const i = solid.vertices.indexOf(v)
+      return solid.localCorners[i].clone()
+    })
+    fe.localNormal.copy(fe.normal).applyQuaternion(solid.orientation.clone().invert())
     const center = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
     const camDir = new THREE.Vector3()
     this._camera.getWorldDirection(camDir)
@@ -5079,8 +5117,8 @@ export class AppController {
   }
 
   _applyFaceExtrude() {
-    const { face, savedCorners, normal, dist } = this._faceExtrude
-    this._activeObj.extrudeFace(face, savedCorners, normal, dist)
+    const { face, savedCorners, savedLocalFaceCorners, localNormal, normal, dist } = this._faceExtrude
+    this._activeObj.extrudeFace(face, savedLocalFaceCorners, localNormal, dist)
     this._meshView.updateGeometry(this._corners)
     this._meshView.setFaceHighlight(face.index, this._corners)
     const currentFaceCorners = face.vertices.map(v => v.position)
@@ -5128,9 +5166,9 @@ export class AppController {
 
   _cancelFaceExtrude() {
     if (!this._opState.is(S_FACE_EXTRUDE)) return
-    const { face, savedCorners, normal } = this._faceExtrude
+    const { face, savedLocalFaceCorners, localNormal } = this._faceExtrude
     if (face) {
-      this._activeObj.extrudeFace(face, savedCorners, normal, 0)
+      this._activeObj.extrudeFace(face, savedLocalFaceCorners, localNormal, 0)
       this._meshView.updateGeometry(this._corners)
       this._meshView.setFaceHighlight(face.index, this._corners)
     }
@@ -5501,7 +5539,13 @@ export class AppController {
             // Apply delta to all selected objects
             for (const [id, startCorners] of this._objDragAllStartCorners) {
               const selObj = this._scene.getObject(id)
-              if (selObj) selObj.move(startCorners, delta)
+              if (!selObj) continue
+              if (selObj instanceof Solid) {
+                const segStartPos = this._objDragAllStartPositions.get(id)
+                if (segStartPos) selObj.move(segStartPos, delta)
+              } else {
+                selObj.move(startCorners, delta)
+              }
             }
             // Stack snap: after XY movement, adjust Z so the object rests on
             // the highest surface directly below it (same logic as _grab path).
@@ -5736,9 +5780,11 @@ export class AppController {
         // Mobile: drag rotates the object; confirmation is via the toolbar button.
         // Re-snapshot segmentStart* so each new drag segment starts from current state.
         const obj = this._activeObj
-        if (obj instanceof Solid && obj.corners) {
-          this._rotate.segmentStartCorners = obj.corners.map(c => c.clone())
-          this._rotate.segStartBodyRot     = obj.bodyRotation.clone()
+        if (obj instanceof Solid) {
+          // Re-snapshot segment-start triple for new drag segment (ADR-040)
+          this._rotate.segStartOrientation = obj.orientation.clone()
+          this._rotate.segStartPos         = obj._position.clone()
+          this._rotate.segStartPivot       = getCentroid(obj.corners).clone()
         } else if (obj instanceof CoordinateFrame) {
           this._rotate.segmentStartRot.copy(obj.rotation)
         }
@@ -5815,9 +5861,13 @@ export class AppController {
           // On touch: checkpoint the current position as the start of a new drag
           // segment, then track the pointer. Grab stays active until Confirm is pressed.
           this._grab.segmentStartCorners = new Map()
+          this._grab.segmentStartPositions = new Map()
           for (const id of this._selectedIds) {
             const selObj = this._scene.getObject(id)
-            if (selObj) this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
+            if (selObj) {
+              this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
+              if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
+            }
           }
           this._grab.startCorners = this._corners.map(c => c.clone())
           const grabCenter = (this._activeObj instanceof CoordinateFrame)
@@ -6078,13 +6128,16 @@ export class AppController {
         }
 
         // Snapshot corners of every selected object for this drag (mouse only)
-        this._objDragAllStartCorners = new Map()
+        this._objDragAllStartCorners   = new Map()
+        this._objDragAllStartPositions = new Map()
         for (const id of this._selectedIds) {
           const selObj = this._scene.getObject(id)
           // CoordinateFrame uses localOffset (not corners); exclude it from mouse-drag
           // (frames are moved via G-key grab only — PHILOSOPHY #21 Phase 3).
-          if (selObj && !(selObj instanceof CoordinateFrame))
+          if (selObj && !(selObj instanceof CoordinateFrame)) {
             this._objDragAllStartCorners.set(id, selObj.corners.map(c => c.clone()))
+            if (selObj instanceof Solid) this._objDragAllStartPositions.set(id, selObj._position.clone())
+          }
         }
 
         this._objDragging      = true

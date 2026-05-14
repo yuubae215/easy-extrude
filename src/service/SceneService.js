@@ -347,16 +347,32 @@ export class SceneService extends EventEmitter {
     for (const dto of (data.objects ?? [])) {
       // Accept both new ('Solid') and legacy ('Cuboid') type strings
       if (dto.type === 'Solid' || dto.type === 'Cuboid') {
-        const vertices = dto.vertices.map(v =>
-          new Vertex(v.id, new Vector3(v.x, v.y, v.z))
-        )
-        const solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+        let solid
+        if (dto.position && dto.orientation && dto.localCorners) {
+          // v1.3+ format: restore primary triple directly via setPose (ADR-040)
+          const vertices = Array.from({ length: 8 }, (_, i) => new Vertex(`${dto.id}_v${i}`, new Vector3()))
+          solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+          solid.setPose(
+            new Vector3(dto.position.x, dto.position.y, dto.position.z),
+            new Quaternion(dto.orientation.x, dto.orientation.y, dto.orientation.z, dto.orientation.w),
+            dto.localCorners.map(lc => new Vector3(lc.x, lc.y, lc.z))
+          )
+        } else {
+          // Legacy format: vertices are world corners; bodyRotation may be non-identity
+          const vertices = dto.vertices.map(v => new Vertex(v.id, new Vector3(v.x, v.y, v.z)))
+          solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+          if (dto.bodyRotation) {
+            // _initFromWorldCorners stored localCorners as (worldCorner - centroid), which is the
+            // world-space offset, not the body-frame offset. De-rotate to fix them (ADR-040).
+            const q    = new Quaternion(dto.bodyRotation.x, dto.bodyRotation.y, dto.bodyRotation.z, dto.bodyRotation.w)
+            const invQ = q.clone().invert()
+            for (let i = 0; i < 8; i++) solid.localCorners[i].applyQuaternion(invQ)
+            solid.orientation.copy(q)
+            solid._rebuildWorldCorners()
+          }
+        }
         solid.description = dto.description ?? ''
         solid.ifcClass    = dto.ifcClass    ?? null
-        // Restore bodyRotation (ROS TF style; defaults to identity for old files)
-        if (dto.bodyRotation) {
-          solid.bodyRotation.set(dto.bodyRotation.x, dto.bodyRotation.y, dto.bodyRotation.z, dto.bodyRotation.w)
-        }
         // Geometry is rebuilt asynchronously by batchRebuildSolids() after all
         // entities are created — see loadScene() / importFromJson().
         entities.push(solid)
@@ -745,7 +761,7 @@ export class SceneService extends EventEmitter {
       return cached ? cached.quaternion.clone() : new Quaternion()
     }
     // Solid parent
-    return parent.bodyRotation.clone()
+    return parent.orientation.clone()
   }
 
   /**
@@ -811,13 +827,13 @@ export class SceneService extends EventEmitter {
         parentWorldPos  = cached.position
         parentWorldQuat = cached.quaternion
       } else {
-        // Solid parent: derive centroid from corners; orientation from bodyRotation
+        // Solid parent: derive centroid from corners; orientation is the primary triple (ADR-040)
         if (parent.corners.length === 0) continue
         const centroid = new Vector3()
         for (const c of parent.corners) centroid.add(c)
         centroid.divideScalar(parent.corners.length)
         parentWorldPos  = /** @type {any} */ (centroid)
-        parentWorldQuat = parent.bodyRotation   // Quaternion tracking cumulative Solid rotation
+        parentWorldQuat = parent.orientation  // authoritative orientation (ADR-040)
       }
 
       // Local translation expressed in parent frame → rotate into world space
@@ -1077,7 +1093,7 @@ export class SceneService extends EventEmitter {
       chain.unshift(node)
       node = this._model.getObject(node.parentId)
     }
-    const rootSolid = (node && node.corners && node.corners.length > 0) ? node : null
+    const rootSolid = (node instanceof Solid) ? node : null
     return { rootSolid, chain }
   }
 
@@ -1198,40 +1214,24 @@ export class SceneService extends EventEmitter {
         const pivotZ = currentEntry.position.z
         const prevQuat = currentEntry.quaternion.clone()
         const dq = new Quaternion(wqx, wqy, wqz, wqw).multiply(prevQuat.conjugate())
-        const dqx = dq.x, dqy = dq.y, dqz = dq.z, dqw = dq.w
 
-        // Snapshot old world positions of intermediate CFs before corner mutation
-        const oldChainPos = chain.map(cf => {
-          const c = this._worldPoseCache.get(cf.id)
-          return c ? c.position.clone() : null
-        })
-
-        // Rotate each corner around the source CF pivot, then translate to the new CF position.
-        // Formula: newCorner = deltaQuat × (corner − pivot) + newCFWorldPos
-        for (const corner of rootSolid.corners) {
-          const rx = corner.x - pivotX, ry = corner.y - pivotY, rz = corner.z - pivotZ
-          const tx = 2 * (dqy * rz - dqz * ry)
-          const ty = 2 * (dqz * rx - dqx * rz)
-          const tz = 2 * (dqx * ry - dqy * rx)
-          corner.x = rx + dqw * tx + dqy * tz - dqz * ty + wpx
-          corner.y = ry + dqw * ty + dqz * tx - dqx * tz + wpy
-          corner.z = rz + dqw * tz + dqx * ty - dqy * tx + wpz
-        }
+        // ADR-040: update primary triple; _rebuildWorldCorners() derives the 8 world corners.
+        // pivot = source CF world position; newPos = wpx/wpy/wpz (target world pos of source CF).
+        rootSolid.orientation.premultiply(dq)
+        rootSolid._position.sub(new Vector3(pivotX, pivotY, pivotZ)).applyQuaternion(dq).add(new Vector3(wpx, wpy, wpz))
+        rootSolid._rebuildWorldCorners()
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         rootSolid.meshView.updateBoxHelper()
 
-        // Apply dq to rootSolid bodyRotation (ROS TF: tracks cumulative orientation)
-        rootSolid.bodyRotation.premultiply(dq)
-
-        // Compute rootSolid centroid after the move
+        // Compute rootSolid centroid after the rebuild (for CF chain propagation)
         const centroid = new Vector3()
         for (const c of rootSolid.corners) centroid.add(c)
         centroid.divideScalar(rootSolid.corners.length)
 
         // Re-propagate intermediate CFs via ROS TF forward kinematics.
-        // Local translations/rotations are UNCHANGED; recompute world poses from bodyRotation.
+        // Local translations/rotations are UNCHANGED; recompute world poses from orientation.
         let pWorldPos  = centroid
-        let pWorldQuat = rootSolid.bodyRotation
+        let pWorldQuat = rootSolid.orientation
         for (const cf of chain) {
           const cfWorldPos  = pWorldPos.clone().add(cf.translation.clone().applyQuaternion(pWorldQuat))
           const cfWorldQuat = pWorldQuat.clone().multiply(cf.rotation)
@@ -1514,7 +1514,7 @@ export class SceneService extends EventEmitter {
       const centroid  = this._computeObjectCentroid(newParent)
       const newParentQuat = newParent instanceof CoordinateFrame
         ? (this._worldPoseCache.get(newParent.id)?.quaternion ?? new Quaternion())
-        : newParent.bodyRotation
+        : newParent.orientation
       if (worldPos && centroid) {
         const worldOffset = worldPos.clone().sub(centroid)
         frame.translation.copy(worldOffset.applyQuaternion(newParentQuat.clone().conjugate()))
@@ -2194,7 +2194,7 @@ export class SceneService extends EventEmitter {
     if (placedWorldPos && parentWorldPos) {
       const parentWorldQuat = parent instanceof CoordinateFrame
         ? (this._worldPoseCache.get(parent.id)?.quaternion ?? new Quaternion())
-        : parent.bodyRotation
+        : parent.orientation
       const worldOffset = placedWorldPos.clone().sub(parentWorldPos)
       frame.translation.copy(worldOffset.applyQuaternion(parentWorldQuat.clone().conjugate()))
     }
@@ -2204,7 +2204,7 @@ export class SceneService extends EventEmitter {
       // Cache stores world pose; initial rotation = parent's world rotation (frame.rotation = identity)
       const parentWorldQuat = parent instanceof CoordinateFrame
         ? (this._worldPoseCache.get(parent.id)?.quaternion?.clone() ?? new Quaternion())
-        : parent.bodyRotation.clone()
+        : parent.orientation.clone()
       this._worldPoseCache.set(frame.id, { position: initialWorldPos.clone(), quaternion: parentWorldQuat })
       meshView.updatePosition(initialWorldPos)
       meshView.updateRotation(parentWorldQuat)

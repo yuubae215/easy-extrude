@@ -106,24 +106,16 @@ export function serializeScene(scene) {
 
   for (const obj of scene.objects.values()) {
     if (obj instanceof Solid) {
+      // v1.3 format: serialize primary triple; world corners are derived on load (ADR-040)
       objects.push({
         type:        'Solid',
         id:          obj.id,
         name:        obj.name,
         description: obj.description ?? '',
         ifcClass:    obj.ifcClass ?? null,
-        vertices: obj.vertices.map(v => ({
-          id: v.id,
-          x:  v.position.x,
-          y:  v.position.y,
-          z:  v.position.z,
-        })),
-        bodyRotation: {
-          x: obj.bodyRotation.x,
-          y: obj.bodyRotation.y,
-          z: obj.bodyRotation.z,
-          w: obj.bodyRotation.w,
-        },
+        position:    { x: obj._position.x,   y: obj._position.y,   z: obj._position.z },
+        orientation: { x: obj.orientation.x,  y: obj.orientation.y,  z: obj.orientation.z,  w: obj.orientation.w },
+        localCorners: obj.localCorners.map(lc => ({ x: lc.x, y: lc.y, z: lc.z })),
       })
     } else if (obj instanceof Profile) {
       const sr = obj.sketchRect
