@@ -795,6 +795,9 @@ export class SceneService extends EventEmitter {
    * branching is needed — worldPos is always derived from translation.
    */
   _updateWorldPoses() {
+    // Purge stale entries from removed entities before recomputing (PHILOSOPHY #24).
+    this._worldPoseCache.clear()
+
     const allFrames = [...this._model.objects.values()].filter(o => o instanceof CoordinateFrame)
 
     // Topological sort: parents before children (by depth)
@@ -822,13 +825,13 @@ export class SceneService extends EventEmitter {
       if (parent instanceof CoordinateFrame) {
         const cached = this._worldPoseCache.get(parent.id)
         if (!cached) continue               // parent not yet resolved (shouldn't happen after sort)
-        parentWorldPos  = cached.position
-        parentWorldQuat = cached.quaternion
+        parentWorldPos  = cached.position.clone()
+        parentWorldQuat = cached.quaternion.clone()
       } else {
         // Solid parent: ADR-040 _position is the authoritative exact centroid (PHILOSOPHY #24).
-        // Never use avg(corners) — FP rounding re-inputs error into _position each frame.
-        parentWorldPos  = /** @type {any} */ (parent._position)
-        parentWorldQuat = parent.orientation
+        // Clone so that downstream applyQuaternion / add calls never mutate the Solid's own Vector3.
+        parentWorldPos  = /** @type {any} */ (parent._position.clone())
+        parentWorldQuat = parent.orientation.clone()
       }
 
       // Local translation expressed in parent frame → rotate into world space
@@ -838,14 +841,8 @@ export class SceneService extends EventEmitter {
       ))
       const worldQuat = parentWorldQuat.clone().multiply(frame.rotation)
 
-      // Update cache (quaternion is no longer a shared ref — stored as separate object)
-      const entry = this._worldPoseCache.get(frame.id)
-      if (entry) {
-        entry.position.copy(worldPos)
-        entry.quaternion.copy(worldQuat)
-      } else {
-        this._worldPoseCache.set(frame.id, { position: worldPos.clone(), quaternion: worldQuat })
-      }
+      // Cache was cleared at start of this method — always set fresh entries.
+      this._worldPoseCache.set(frame.id, { position: worldPos, quaternion: worldQuat })
 
       // Update view
       frame.meshView.updatePosition(worldPos)
@@ -1227,19 +1224,16 @@ export class SceneService extends EventEmitter {
 
         // Re-propagate intermediate CFs via ROS TF forward kinematics.
         // Local translations/rotations are UNCHANGED; recompute world poses from orientation.
-        // PHILOSOPHY #24: _position is the exact origin — use it directly, no centroid recompute.
-        let pWorldPos  = newSolidPos
-        let pWorldQuat = rootSolid.orientation
+        // PHILOSOPHY #24: clone _position/_orientation so the in-place loop never mutates the Solid.
+        let pWorldPos  = rootSolid._position.clone()
+        let pWorldQuat = rootSolid.orientation.clone()
         for (const cf of chain) {
           const cfWorldPos  = pWorldPos.clone().add(cf.translation.clone().applyQuaternion(pWorldQuat))
           const cfWorldQuat = pWorldQuat.clone().multiply(cf.rotation)
-          const entry = this._worldPoseCache.get(cf.id)
-          if (entry) {
-            entry.position.copy(cfWorldPos)
-            entry.quaternion.copy(cfWorldQuat)
-          } else {
-            this._worldPoseCache.set(cf.id, { position: cfWorldPos, quaternion: cfWorldQuat })
-          }
+          // Always set a fresh entry — _worldPoseCache was cleared at the top of _updateWorldPoses,
+          // then re-populated; any entry here was set by this method, so .copy() and .set() are both
+          // safe.  Use .set() with clones to keep references isolated (PHILOSOPHY #24).
+          this._worldPoseCache.set(cf.id, { position: cfWorldPos.clone(), quaternion: cfWorldQuat.clone() })
           cf.meshView.updatePosition(cfWorldPos)
           cf.meshView.updateRotation(cfWorldQuat)
           cf.meshView.updateConnectionLine(pWorldPos)
@@ -1268,14 +1262,8 @@ export class SceneService extends EventEmitter {
         source.rotation.copy(invParentQuat.clone().multiply(sourceWorldQuat))
       }
 
-      // Update cache with world pose
-      const cacheEntry = this._worldPoseCache.get(sourceId)
-      if (cacheEntry) {
-        cacheEntry.position.copy(sourceWorldPos)
-        cacheEntry.quaternion.copy(sourceWorldQuat)
-      } else {
-        this._worldPoseCache.set(sourceId, { position: sourceWorldPos, quaternion: sourceWorldQuat })
-      }
+      // Update cache with world pose — always set fresh to keep references isolated.
+      this._worldPoseCache.set(sourceId, { position: sourceWorldPos.clone(), quaternion: sourceWorldQuat.clone() })
 
       // Update view
       source.meshView.updatePosition(sourceWorldPos)
