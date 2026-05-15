@@ -15,17 +15,26 @@
  * @returns {{label: string, execute(): void, undo(): void}}
  */
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
+import { Solid }           from '../domain/Solid.js'
 
 export function createMoveCommand(label, startCornersMap, endCornersMap, sceneModel, sceneService = null) {
   function apply(cornersMap) {
     for (const [id, corners] of cornersMap) {
       const obj = sceneModel.getObject(id)
       if (!obj) continue
-      // CoordinateFrame exposes localOffset (LocalVector3[]); geometry exposes corners (WorldVector3[]).
-      // Use the appropriate accessor — accessing .corners on a CoordinateFrame returns undefined (PHILOSOPHY #21 Phase 3).
-      const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
-      handles.forEach((c, i) => c.copy(corners[i]))
-      obj.meshView.updateGeometry(handles)
+      if (obj instanceof CoordinateFrame) {
+        // CoordinateFrame exposes localOffset (LocalVector3[]); no corners (PHILOSOPHY #21 Phase 3).
+        obj.localOffset.forEach((c, i) => c.copy(corners[i]))
+        obj.meshView.updateGeometry(obj.localOffset)
+      } else if (obj instanceof Solid) {
+        // Solid: decompose world-corner snapshot back into _position + localCorners (ADR-040).
+        // Keeps the primary triple consistent — direct corner copy would leave _position stale.
+        obj.setWorldCorners(corners)
+        obj.meshView.updateGeometry(obj.corners)
+      } else {
+        obj.corners.forEach((c, i) => c.copy(corners[i]))
+        obj.meshView.updateGeometry(obj.corners)
+      }
       obj.meshView.updateBoxHelper()
       if (sceneService) {
         sceneService.invalidateWorldPose(id)
