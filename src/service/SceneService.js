@@ -1204,17 +1204,21 @@ export class SceneService extends EventEmitter {
 
       let parentWorldPos
       if (rootSolid) {
-        const currentEntry = this._worldPoseCache.get(sourceId)
-        if (!currentEntry) continue
-
-        // Absolute rigid-body solve (ADR-040 Phase 2).
-        // Compute source CF's fixed offset in root Solid's body frame from the current
-        // pre-constraint-application forward-kinematics state.  This relationship is
-        // mathematically invariant (rigid body), so computing it each frame avoids storing
-        // extra bind-time state and eliminates the dq-accumulation / hemisphere-flip failure.
-        const invSolidQuat     = rootSolid.orientation.clone().conjugate()
-        const solidLocalOffset = currentEntry.position.clone().sub(rootSolid._position).applyQuaternion(invSolidQuat)
-        const solidLocalQuat   = invSolidQuat.clone().multiply(currentEntry.quaternion)
+        // Compute solidLocalOffset/solidLocalQuat from invariant local data only —
+        // never from _worldPoseCache.  localCorners average to (0,0,0), so the
+        // Solid's body-frame centroid is exactly the origin.  Accumulate through
+        // the CF chain using each CF's own translation/rotation (local, immutable).
+        // This breaks the FP feedback loop that caused divergence far from the origin:
+        // the old path subtracted rootSolid._position from a cache-derived world pos,
+        // introducing rounding error that compounded each frame.
+        const sourceCf         = this._model.getObject(sourceId)
+        const fullChain        = [...chain, sourceCf]
+        const solidLocalOffset = new Vector3()    // body-frame centroid = (0,0,0)
+        const solidLocalQuat   = new Quaternion() // identity = Solid body frame
+        for (const cf of fullChain) {
+          solidLocalOffset.add(cf.translation.clone().applyQuaternion(solidLocalQuat))
+          solidLocalQuat.multiply(cf.rotation)
+        }
 
         // Derive root Solid absolute world pose from solver output — no delta, no accumulation.
         //   new_Q_s = W_cf_quat × solidLocalQuat⁻¹
@@ -1231,10 +1235,9 @@ export class SceneService extends EventEmitter {
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         rootSolid.meshView.updateBoxHelper()
 
-        // Compute rootSolid centroid after the rebuild (for CF chain propagation)
-        const centroid = new Vector3()
-        for (const c of rootSolid.corners) centroid.add(c)
-        centroid.divideScalar(rootSolid.corners.length)
+        // localCorners average to (0,0,0), so Solid centroid == _position exactly.
+        // Derive directly instead of re-summing corners to avoid another FP source.
+        const centroid = newSolidPos.clone()
 
         // Re-propagate intermediate CFs via ROS TF forward kinematics.
         // Local translations/rotations are UNCHANGED; recompute world poses from orientation.
