@@ -1207,22 +1207,26 @@ export class SceneService extends EventEmitter {
         const currentEntry = this._worldPoseCache.get(sourceId)
         if (!currentEntry) continue
 
-        // Rigid body pivot = source CF's current world position.
-        // Clone prevQuat BEFORE source.rotation.set() below mutates the shared cache reference.
-        const pivotX = currentEntry.position.x
-        const pivotY = currentEntry.position.y
-        const pivotZ = currentEntry.position.z
-        const prevQuat = currentEntry.quaternion.clone()
-        const targetQuat = new Quaternion(wqx, wqy, wqz, wqw)
-        // Ensure shortest-path delta: if dot < 0 the quaternions are in opposite hemispheres,
-        // which makes dq a ~360° spin instead of the intended small rotation.
-        if (targetQuat.dot(prevQuat) < 0) targetQuat.negate()
-        const dq = targetQuat.multiply(prevQuat.conjugate()).normalize()
+        // Absolute rigid-body solve (ADR-040 Phase 2).
+        // Compute source CF's fixed offset in root Solid's body frame from the current
+        // pre-constraint-application forward-kinematics state.  This relationship is
+        // mathematically invariant (rigid body), so computing it each frame avoids storing
+        // extra bind-time state and eliminates the dq-accumulation / hemisphere-flip failure.
+        const invSolidQuat     = rootSolid.orientation.clone().conjugate()
+        const solidLocalOffset = currentEntry.position.clone().sub(rootSolid._position).applyQuaternion(invSolidQuat)
+        const solidLocalQuat   = invSolidQuat.clone().multiply(currentEntry.quaternion)
 
-        // ADR-040: update primary triple; _rebuildWorldCorners() derives the 8 world corners.
-        // pivot = source CF world position; newPos = wpx/wpy/wpz (target world pos of source CF).
-        rootSolid.orientation.premultiply(dq).normalize()
-        rootSolid._position.sub(new Vector3(pivotX, pivotY, pivotZ)).applyQuaternion(dq).add(new Vector3(wpx, wpy, wpz))
+        // Derive root Solid absolute world pose from solver output — no delta, no accumulation.
+        //   new_Q_s = W_cf_quat × solidLocalQuat⁻¹
+        //   new_P_s = W_cf_pos  − new_Q_s × solidLocalOffset
+        const newSolidQuat = new Quaternion(wqx, wqy, wqz, wqw)
+          .multiply(solidLocalQuat.clone().conjugate())
+          .normalize()
+        const newSolidPos = new Vector3(wpx, wpy, wpz)
+          .sub(solidLocalOffset.clone().applyQuaternion(newSolidQuat))
+
+        rootSolid.orientation.copy(newSolidQuat)
+        rootSolid._position.copy(newSolidPos)
         rootSolid._rebuildWorldCorners()
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         rootSolid.meshView.updateBoxHelper()
