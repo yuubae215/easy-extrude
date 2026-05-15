@@ -1213,11 +1213,11 @@ export class SceneService extends EventEmitter {
         const pivotY = currentEntry.position.y
         const pivotZ = currentEntry.position.z
         const prevQuat = currentEntry.quaternion.clone()
-        const dq = new Quaternion(wqx, wqy, wqz, wqw).multiply(prevQuat.conjugate())
+        const dq = new Quaternion(wqx, wqy, wqz, wqw).multiply(prevQuat.conjugate()).normalize()
 
         // ADR-040: update primary triple; _rebuildWorldCorners() derives the 8 world corners.
         // pivot = source CF world position; newPos = wpx/wpy/wpz (target world pos of source CF).
-        rootSolid.orientation.premultiply(dq)
+        rootSolid.orientation.premultiply(dq).normalize()
         rootSolid._position.sub(new Vector3(pivotX, pivotY, pivotZ)).applyQuaternion(dq).add(new Vector3(wpx, wpy, wpz))
         rootSolid._rebuildWorldCorners()
         rootSolid.meshView.updateGeometry(rootSolid.corners)
