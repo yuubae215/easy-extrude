@@ -1250,7 +1250,6 @@ export class SceneService extends EventEmitter {
         }
 
         parentWorldPos = pWorldPos
-        // source.translation and source.rotation updated below via world→local back-conversion
       } else {
         // Fallback: CF chain has no root Solid (orphaned chain); slide source within its parent CF
         const parentCached = this._worldPoseCache.get(parent.id)
@@ -1258,17 +1257,20 @@ export class SceneService extends EventEmitter {
         parentWorldPos = parentCached.position
       }
 
-      // Back-convert world pose from solver to parent-local (ROS TF style):
-      // localTranslation = parentWorldQuat^-1 * (worldPos - parentWorldPos)
-      // localRotation    = parentWorldQuat^-1 * worldQuat
       const sourceWorldPos  = new Vector3(wpx, wpy, wpz)
       const sourceWorldQuat = new Quaternion(wqx, wqy, wqz, wqw)
-      const parentWorldQuat = this._getParentWorldQuat(source)
-      const invParentQuat   = parentWorldQuat.clone().conjugate()
-      source.translation.copy(sourceWorldPos.clone().sub(parentWorldPos).applyQuaternion(invParentQuat))
-      source.rotation.copy(invParentQuat.clone().multiply(sourceWorldQuat))
 
-      // Update cache with world pose (no longer a shared reference to source.rotation)
+      // When rootSolid was moved as a rigid body above, local coords (translation/rotation)
+      // are invariant — skipping back-conversion prevents FP error from accumulating each frame.
+      // For orphaned chains (no rootSolid), back-convert so the source CF slides within its parent.
+      if (!rootSolid) {
+        const parentWorldQuat = this._getParentWorldQuat(source)
+        const invParentQuat   = parentWorldQuat.clone().conjugate()
+        source.translation.copy(sourceWorldPos.clone().sub(parentWorldPos).applyQuaternion(invParentQuat))
+        source.rotation.copy(invParentQuat.clone().multiply(sourceWorldQuat))
+      }
+
+      // Update cache with world pose
       const cacheEntry = this._worldPoseCache.get(sourceId)
       if (cacheEntry) {
         cacheEntry.position.copy(sourceWorldPos)
