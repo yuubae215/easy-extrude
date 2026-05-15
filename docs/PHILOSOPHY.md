@@ -144,6 +144,34 @@ Transformation verbs produce a new entity without mutating the source.
 
 ## II. Concurrency
 
+### 24. Derive Absolute State from Invariant Sources
+
+Per-frame computations must take their inputs from immutable local data, never from
+the outputs of a previous run of the same computation.
+
+- When `solidLocalOffset` was back-computed from `_worldPoseCache` (a world-space derived
+  value), floating-point rounding in the centroid-from-corners step fed a tiny error back
+  into `_position` each frame. Far from the origin — where large coordinates lose mantissa
+  precision — this compounded into slow divergence: invisible at 60 fps, catastrophic
+  after a few hundred frames. Symptom: "rotates slowly → flies off-screen; returns to
+  origin → recovers." Fixed by accumulating directly from `cf.translation`/`cf.rotation`
+  (local, immutable) so no world-space back-computation occurs.
+- When delta quaternions (`dq = currentQuat × prevQuat⁻¹`) were accumulated each frame,
+  sign drift in `prevQuat` caused `dq` to approach a 180° flip at hemisphere boundaries.
+  Fixed by deriving the absolute pose in one step from the solver's output.
+
+**The failure mode is asymmetric**: the code is valid JavaScript, throws no exception,
+and produces a value that is a plausible scene position — invisible until the error
+compounds enough to be visually obvious, which can take seconds or minutes.
+
+**The invariant to check**: if removing the world-space cache line and replacing with
+a local-data accumulation loop produces the same mathematical result, the cache path
+is a liability — remove it.
+
+*Underlies CODE_CONTRACTS rules: Fastened Constraint Limitations (1a)*
+
+---
+
 ### 7. Choose Your Locking Strategy Before You Write Code
 
 Decide whether an operation is *optimistic* (prioritise responsiveness) or
@@ -449,7 +477,7 @@ to the main body as a full principle and add a row to the Index.
 |---------------------|---------------------------------------------|---------------------|
 | Overflow-escaping popups belong on body | 2026-05-01 · `UIView.js` · `_modeDropdownEl` was a child of the header (which has `overflow:hidden`); the dropdown was clipped below the header boundary and unselectable. Fixed by moving to `document.body` with `position:fixed` + `getBoundingClientRect()` positioning, matching the already-correct `_moreMenuDropdown` pattern. | Mobile Header Overflow |
 | Three.js helpers must match the actual geometry model, not an approximation | 2026-05-02 · `MeshView.js` · `THREE.BoxHelper` computes AABB; because `MeshView` bakes corner positions as world-space vertices with no mesh transform, the AABB diverges from the actual OBB after R-key rotation. After confirming rotation, the selection highlight appeared as an axis-aligned box larger than the solid, visually rotating independently. Fixed by replacing `BoxHelper` with `LineSegments+EdgesGeometry` kept in sync by `updateGeometry()`. | BoxHelper Forbidden for World-Space Baked Geometry |
-| Derive absolute state, not incremental deltas | 2026-05-15 · `SceneService._updateFastenedFrames()` · The per-frame rigid-body solver computed `dq = targetQuat × prevQuat⁻¹` (delta from last frame) and accumulated it via `premultiply`. At ±90°/±180° quaternion boundaries, the shortest-path negate fix (`dot < 0`) was insufficient because `prevQuat` itself could carry sign drift from prior frames, causing `dq` to approach a full 180° flip — the root Solid flew off-screen. Fixed by computing `solidLocalOffset` and `solidLocalQuat` (rigid relationship in Solid body frame) each frame from forward-kinematics state, then deriving the absolute pose: `new_Q_s = W_cf_quat × solidLocalQuat⁻¹`. No accumulation; sign inconsistencies in intermediate quaternions are rotation-invariant and cannot compound. | Fastened Constraint Limitations |
+| *(graduated to principle #24 — Derive Absolute State from Invariant Sources)* | | |
 
 ---
 
@@ -480,3 +508,4 @@ to the main body as a full principle and add a row to the Index.
 | 21 | Coordinate Spaces Are Statically Distinguished | Contracts | CoordinateFrame.localOffset vs Geometry.corners |
 | 22 | Children Before Parents in Hit-Testing | Interaction | CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority |
 | 23 | Accessors Own Their Freshness Guarantee | Contracts | `worldPoseOf()` self-healing |
+| 24 | Derive Absolute State from Invariant Sources | Concurrency | Fastened Constraint Limitations (1a) |
