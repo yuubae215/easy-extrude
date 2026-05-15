@@ -1213,7 +1213,11 @@ export class SceneService extends EventEmitter {
         const pivotY = currentEntry.position.y
         const pivotZ = currentEntry.position.z
         const prevQuat = currentEntry.quaternion.clone()
-        const dq = new Quaternion(wqx, wqy, wqz, wqw).multiply(prevQuat.conjugate()).normalize()
+        const targetQuat = new Quaternion(wqx, wqy, wqz, wqw)
+        // Ensure shortest-path delta: if dot < 0 the quaternions are in opposite hemispheres,
+        // which makes dq a ~360° spin instead of the intended small rotation.
+        if (targetQuat.dot(prevQuat) < 0) targetQuat.negate()
+        const dq = targetQuat.multiply(prevQuat.conjugate()).normalize()
 
         // ADR-040: update primary triple; _rebuildWorldCorners() derives the 8 world corners.
         // pivot = source CF world position; newPos = wpx/wpy/wpz (target world pos of source CF).

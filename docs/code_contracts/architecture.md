@@ -443,6 +443,8 @@ These are design-level constraints (not bugs) of the current `fastened` implemen
 
 - **Cycle detection** (ADR-035): `_detectFastenedCycles(entries)` builds a Solid-to-Solid directed graph from fastened constraints and runs a DFS to find back-edges.  Entries whose `linkId` is in the returned `Set` are excluded from the solver for that frame.  `_prevCyclicLinkIds` tracks the previous frame's cyclic set; a `constraintCycleDetected` event is emitted (→ AppController toast) only when the set changes, preventing per-frame toast spam.
 
+- **Quaternion hemisphere flip in delta solver**: `_updateFastenedFrames()` computes a per-frame delta quaternion `dq = targetQuat × prevQuat⁻¹`. If `targetQuat` and `prevQuat` are in opposite hemispheres (i.e. `targetQuat.dot(prevQuat) < 0`), `dq` encodes a ~360° rotation instead of the intended small rotation, causing the Solid to be flung out of the scene instantly. This manifests near ±90° and ±180° because that is where Three.js Euler→Quaternion conversion commonly crosses the hemisphere boundary. **Always negate `targetQuat` before multiplying when the dot product is negative**: `if (targetQuat.dot(prevQuat) < 0) targetQuat.negate()`. This enforces the shortest-path convention and keeps `dq` bounded to at most 180°.
+
 ## HTML Overlay Views Must Use the Active Camera for Screen Projection
 
 - **Principle**: `AppController.get _camera()` always returns the perspective camera (`SceneView.camera`). When Map mode activates the orthographic camera (`SceneView.activeCamera`), the renderer uses the ortho camera but views storing the old perspective camera reference will compute wrong screen positions.
