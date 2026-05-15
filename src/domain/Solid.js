@@ -88,7 +88,7 @@ export class Solid {
      * worldCorner[i] = _position + orientation.apply(localCorners[i]).
      * @type {import('../types/spatial.js').LocalVector3[]}
      */
-    this.localCorners = vertices.map(() => new Vector3())
+    this.localCorners = /** @type {import('../types/spatial.js').LocalVector3[]} */ (vertices.map(() => new Vector3()))
 
     // Initialise pose from passed world corners (identity orientation, centroid as origin).
     this._initFromWorldCorners(vertices.map(v => v.position))
