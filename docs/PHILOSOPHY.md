@@ -144,29 +144,60 @@ Transformation verbs produce a new entity without mutating the source.
 
 ## II. Concurrency
 
-### 24. Derive Absolute State from Invariant Sources
+### 24. Derive Absolute State from Invariant Sources — Never Feed Derived Values Back
 
 Per-frame computations must take their inputs from immutable local data, never from
-the outputs of a previous run of the same computation.
+the outputs of a previous run of the same computation. A derived value re-used as
+an input seeds an error feedback loop: the error compounds each frame, growing until
+it causes visible divergence or blows up entirely.
 
-- When `solidLocalOffset` was back-computed from `_worldPoseCache` (a world-space derived
-  value), floating-point rounding in the centroid-from-corners step fed a tiny error back
-  into `_position` each frame. Far from the origin — where large coordinates lose mantissa
-  precision — this compounded into slow divergence: invisible at 60 fps, catastrophic
-  after a few hundred frames. Symptom: "rotates slowly → flies off-screen; returns to
-  origin → recovers." Fixed by accumulating directly from `cf.translation`/`cf.rotation`
-  (local, immutable) so no world-space back-computation occurs.
-- When delta quaternions (`dq = currentQuat × prevQuat⁻¹`) were accumulated each frame,
-  sign drift in `prevQuat` caused `dq` to approach a 180° flip at hemisphere boundaries.
-  Fixed by deriving the absolute pose in one step from the solver's output.
+Three concrete manifestations in this codebase:
+
+**a) solidLocalOffset back-computed from _worldPoseCache** (first fix)
+`solidLocalOffset` was derived from `_worldPoseCache` (a world-space value produced by
+the previous frame). FP rounding in the centroid-from-corners step fed a tiny error
+back into `_position` each frame. Far from the origin — where large coordinates lose
+mantissa precision — this compounded into slow divergence. Symptom: "rotates slowly →
+flies off-screen; returns to origin → recovers." Fixed by accumulating directly from
+`cf.translation`/`cf.rotation` (local, invariant).
+
+**b) Delta quaternion accumulation** (second fix)
+`dq = currentQuat × prevQuat⁻¹` accumulated each frame. Sign drift in `prevQuat`
+caused `dq` to approach a 180° flip at hemisphere boundaries. Fixed by deriving the
+absolute pose in one step from the solver's output — no accumulation at all.
+
+**c) avg(corners) used as parentWorldPos in _updateWorldPoses** (third fix)
+`_updateWorldPoses()` and `_getParentWorldPos()` computed the Solid's world-origin
+as `avg(corners)` — an average of 8 world-space vertices. The constraint solver then
+used this as an input to compute a new `_position`, which `_rebuildWorldCorners()`
+wrote back into `corners`. This closed a frame-to-frame loop:
+
+```
+_position → corners → avg(corners) ≈ parentWorldPos → solver → new _position
+```
+
+Because `avg(corners)` carries FP rounding from 8 large-coordinate additions, the
+re-computed `_position` differed from the true `_position` by `~1e-14` per frame.
+Far from the origin this magnified into visible drift. Slow rotation (many frames) was
+catastrophic; fast rotation (few frames) appeared fine; returning to the origin reset
+the accumulated error — matching the reported symptoms exactly.
+
+Fixed by replacing `avg(corners)` with `parent._position` directly (the authoritative
+ADR-040 primary triple). In `_updateFastenedFrames`, `solidLocalOffset` now seeds from
+`new Vector3()` (exact zero) instead of `avg(localCorners)` (≈ zero but not exact).
+
+**The general rule**: if a derived quantity feeds back into the computation that
+produced it — even indirectly, even across two different methods — the cycle
+accumulates error every frame. Audit any path where a per-frame output becomes
+a per-frame input.
 
 **The failure mode is asymmetric**: the code is valid JavaScript, throws no exception,
 and produces a value that is a plausible scene position — invisible until the error
 compounds enough to be visually obvious, which can take seconds or minutes.
 
-**The invariant to check**: if removing the world-space cache line and replacing with
-a local-data accumulation loop produces the same mathematical result, the cache path
-is a liability — remove it.
+**The invariant to check**: if removing the derived quantity and replacing it with the
+invariant source produces the same mathematical result, the derived path is a liability
+— remove it.
 
 *Underlies CODE_CONTRACTS rules: Fastened Constraint Limitations (1a)*
 

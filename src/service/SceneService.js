@@ -765,8 +765,8 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Returns the world-space position of a CoordinateFrame's parent centroid.
-   * For a Solid parent: centroid of corners.
+   * Returns the world-space position of a CoordinateFrame's parent origin.
+   * For a Solid parent: _position (authoritative, exact — PHILOSOPHY #24).
    * For a CF parent: cache entry position.
    * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frame
    * @returns {import('three').Vector3}
@@ -778,11 +778,9 @@ export class SceneService extends EventEmitter {
       const cached = this._worldPoseCache.get(parent.id)
       return cached ? cached.position.clone() : new Vector3()
     }
-    // Solid parent — centroid from corners
-    const centroid = new Vector3()
-    for (const c of parent.corners) centroid.add(c)
-    if (parent.corners.length > 0) centroid.divideScalar(parent.corners.length)
-    return centroid
+    // Solid parent: ADR-040 _position is the authoritative exact centroid (PHILOSOPHY #24).
+    // Never use avg(corners) — FP rounding accumulates each frame and causes slow divergence.
+    return parent._position.clone()
   }
 
   /**
@@ -827,13 +825,10 @@ export class SceneService extends EventEmitter {
         parentWorldPos  = cached.position
         parentWorldQuat = cached.quaternion
       } else {
-        // Solid parent: derive centroid from corners; orientation is the primary triple (ADR-040)
-        if (parent.corners.length === 0) continue
-        const centroid = new Vector3()
-        for (const c of parent.corners) centroid.add(c)
-        centroid.divideScalar(parent.corners.length)
-        parentWorldPos  = /** @type {any} */ (centroid)
-        parentWorldQuat = parent.orientation  // authoritative orientation (ADR-040)
+        // Solid parent: ADR-040 _position is the authoritative exact centroid (PHILOSOPHY #24).
+        // Never use avg(corners) — FP rounding re-inputs error into _position each frame.
+        parentWorldPos  = /** @type {any} */ (parent._position)
+        parentWorldQuat = parent.orientation
       }
 
       // Local translation expressed in parent frame → rotate into world space
@@ -1204,24 +1199,14 @@ export class SceneService extends EventEmitter {
 
       let parentWorldPos
       if (rootSolid) {
-        // Derive the body-frame centroid directly from localCorners — never from
-        // _worldPoseCache.  _updateWorldPoses() uses avg(corners) as parentWorldPos for
-        // child CFs; the re-propagation below must use the same starting point so the two
-        // passes are consistent.  Assuming avg(localCorners)=0 and using _position directly
-        // introduces a mismatch when FP rounding makes the average non-zero, causing the
-        // intermediate CF chain to oscillate by that delta between frames.
-        const localCentroid = new Vector3()
-        if (rootSolid.localCorners.length > 0) {
-          for (const c of rootSolid.localCorners) localCentroid.add(c)
-          localCentroid.divideScalar(rootSolid.localCorners.length)
-        }
-
         // Accumulate body-frame → sourceCF offset using each CF's invariant local data.
         //   new_Q_s = W_cf_quat × solidLocalQuat⁻¹
         //   new_P_s = W_cf_pos  − new_Q_s × solidLocalOffset
+        // PHILOSOPHY #24: start from exact zero — body-frame centroid IS _position by definition.
+        // avg(localCorners) ≈ 0 but not exactly; seeding from it feeds FP error back each frame.
         const sourceCf         = this._model.getObject(sourceId)
         const fullChain        = [...chain, sourceCf]
-        const solidLocalOffset = localCentroid.clone()
+        const solidLocalOffset = new Vector3()
         const solidLocalQuat   = new Quaternion()
         for (const cf of fullChain) {
           solidLocalOffset.add(cf.translation.clone().applyQuaternion(solidLocalQuat))
@@ -1240,13 +1225,10 @@ export class SceneService extends EventEmitter {
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         if (rootSolid.meshView.boxHelper?.visible) rootSolid.meshView.updateBoxHelper()
 
-        // World centroid matches avg(corners) = _position + q.apply(localCentroid).
-        // Using this as pWorldPos makes the re-propagation identical to _updateWorldPoses.
-        const centroid = localCentroid.clone().applyQuaternion(newSolidQuat).add(newSolidPos)
-
         // Re-propagate intermediate CFs via ROS TF forward kinematics.
         // Local translations/rotations are UNCHANGED; recompute world poses from orientation.
-        let pWorldPos  = centroid
+        // PHILOSOPHY #24: _position is the exact origin — use it directly, no centroid recompute.
+        let pWorldPos  = newSolidPos
         let pWorldQuat = rootSolid.orientation
         for (const cf of chain) {
           const cfWorldPos  = pWorldPos.clone().add(cf.translation.clone().applyQuaternion(pWorldQuat))
