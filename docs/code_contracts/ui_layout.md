@@ -22,6 +22,47 @@ Detail file for `docs/CODE_CONTRACTS.md` Section 3.
 
 **Semantic slot rule (transient operation bars)**: Slot 1 is always Cancel/Back (retreat). Slot 4 is always Confirm (advance). Slots 2–3 are contextual tools. This fixed semantic mapping enables muscle memory — users always tap the same corner to abandon or commit an operation, regardless of what operation is active.
 
+### Why sequential (pack-left) mapping is forbidden
+
+3D modelling operations demand high visual attention on the canvas preview. When a user's eyes are tracking a grab position or rotation angle, they cannot afford to scan the toolbar to locate Cancel or Confirm. If those buttons shift position because a different operation has one fewer contextual tool, every operation becomes a visual search task.
+
+The forbidden anti-pattern is **sequential mapping**: filling slots left-to-right with only the available buttons, so the slot count drops when fewer actions are relevant. This makes Cancel appear at index 0 in Measure mode but at index 2 in Rotate mode — breaking muscle memory silently.
+
+The correct pattern is **semantic mapping**: slot semantics are fixed for the entire category of transient operation bars, regardless of how many contextual tools the current operation needs. Missing actions become spacers, never position shifts.
+
+### Transient operation bar — 4-slot layout contract
+
+All states that interrupt Object mode (Grab, Rotate, Edit-extrude, Edit-sketch, Measure, Frame-placement, Map) use a **4-slot bar**. The semantic assignment is:
+
+| Index | Role | Visual treatment |
+|-------|------|-----------------|
+| **0** (leftmost) | **Cancel / Back** — always retreat | `danger: true` |
+| **1** | Contextual tool A | `active` reflects toggle state |
+| **2** | Contextual tool B | `active` reflects toggle state |
+| **3** (rightmost) | **Confirm / Advance** — always commit | default style |
+
+When no contextual tool is needed, use `{ spacer: true }` at slots 1 and/or 2. Never omit the slot — omission causes index shift.
+
+```js
+// ❌ forbidden — Cancel moves from index 0 to index 1 when a contextual tool is absent
+this._uiView.setMobileToolbar([
+  { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirm() },
+  { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancel(), danger: true },
+])
+
+// ✓ correct — semantic positions are fixed; absent tools become spacers
+this._uiView.setMobileToolbar([
+  { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancel(), danger: true }, // [0] always
+  { spacer: true },                                                                         // [1] unused
+  { spacer: true },                                                                         // [2] unused
+  { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirm() },               // [3] always
+])
+```
+
+Object mode is a **5-slot home state** with different semantics (Add / Dup / Edit / Delete / Rotate-or-Stack) — it does not follow the 4-slot transient rule.
+
+**Future Phase 3** (axis-constraint buttons during Grab) will expand the Grab bar to 5 slots: `[ Cancel | X | Y | Z | Confirm ]`. The semantic corners (Cancel = leftmost, Confirm = rightmost) are preserved even when slots are added in the middle.
+
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
 Dup, Edit, and Stack are disabled for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`. Dup is additionally disabled for `Profile`. Delete remains enabled for all object types. All Object-mode slots maintain consistent disabled states so slot positions never shift.
