@@ -1890,6 +1890,29 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * BFS over jointType === 'fixed' links starting from startEntityId.
+   * Returns all reachable entity IDs including the start entity itself.
+   * @param {string} startEntityId
+   * @returns {Set<string>}
+   */
+  getConnectedAssembly(startEntityId) {
+    const visited = new Set([startEntityId])
+    const queue = [startEntityId]
+    while (queue.length > 0) {
+      const currentId = queue.shift()
+      for (const link of this.getLinksOf(currentId)) {
+        if (link.jointType !== 'fixed') continue
+        const neighborId = link.sourceId === currentId ? link.targetId : link.sourceId
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId)
+          queue.push(neighborId)
+        }
+      }
+    }
+    return visited
+  }
+
+  /**
    * Returns true if the given CoordinateFrame id is the SOURCE of any fastened link.
    * Used by AppController to block independent TC movement of constrained frames.
    * @param {string} cfId
