@@ -385,9 +385,13 @@ export class AppController {
     this._objDragAllStartCorners = new Map()
     /** @type {Map<string, import('three').Vector3>} Solid._position snapshot at mouse-drag start (ADR-040) */
     this._objDragAllStartPositions = new Map()
-    this._objRotateStartX       = 0
-    this._objRotateCentroid     = new THREE.Vector3()
-    this._objRotateStartCorners = []
+    this._objRotateStartX           = 0
+    this._objRotateCentroid         = new THREE.Vector3()
+    this._objRotateStartCorners     = []
+    /** ADR-040: orientation snapshot for Solid ctrl+drag rotate. @type {import('three').Quaternion|null} */
+    this._objRotateStartOrientation = null
+    /** ADR-040: _position snapshot for Solid ctrl+drag rotate. @type {import('three').Vector3|null} */
+    this._objRotateStartPos         = null
 
     // ── Rectangle selection state ──────────────────────────────────────────
     /** @type {Set<string>} IDs of all currently selected objects (multi-select) */
@@ -5526,10 +5530,18 @@ export class AppController {
         if (this._objCtrlDrag) {
           const angle = (e.clientX - this._objRotateStartX) * 0.01
           const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
-          this._objRotateStartCorners.forEach((c, i) => {
-            this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
-          })
-          this._meshView.updateGeometry(this._corners)
+          const obj   = this._activeObj
+          if (obj instanceof Solid && this._objRotateStartOrientation) {
+            // ADR-040: use primary triple API — Solid.rotate() updates _position, orientation,
+            // localCorners, and world corners in one snapshot-based call (no direct mutation).
+            obj.rotate(this._objRotateStartOrientation, this._objRotateStartPos, this._objRotateCentroid, quat)
+            obj.meshView.updateGeometry(obj.corners)
+          } else {
+            this._objRotateStartCorners.forEach((c, i) => {
+              this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
+            })
+            this._meshView.updateGeometry(this._corners)
+          }
           if (this._objSelected) this._meshView.updateBoxHelper()
         } else {
           this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -6156,7 +6168,15 @@ export class AppController {
         if (e.ctrlKey) {
           this._objRotateStartX = e.clientX
           this._objRotateCentroid.copy(obj instanceof Solid ? obj._position : getCentroid(this._corners))
-          this._objRotateStartCorners = this._corners.map(c => c.clone())
+          if (obj instanceof Solid) {
+            // ADR-040: snapshot primary triple for snapshot-based rotate (no corner mutation)
+            this._objRotateStartOrientation = obj.orientation.clone()
+            this._objRotateStartPos         = obj._position.clone()
+          } else {
+            this._objRotateStartOrientation = null
+            this._objRotateStartPos         = null
+            this._objRotateStartCorners = this._corners.map(c => c.clone())
+          }
         }
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
