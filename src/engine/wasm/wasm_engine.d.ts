@@ -137,7 +137,10 @@ export function get_transform_len(): number;
 export function get_transform_ptr(): number;
 
 /**
- * Batch-solve world poses for N fastened CoordinateFrame constraints.
+ * Batch-solve world poses for N fixed-joint CoordinateFrame constraints.
+ *
+ * Operates on kinematic jointType='fixed' links (0 DOF).
+ * Domain semanticType (fastened, aligned, …) is irrelevant at this layer.
  *
  * `input_flat`: N × 14 f32, one block per constraint:
  *   [0..2]   relativeOffset.xyz       — offset in target's local frame
@@ -155,7 +158,7 @@ export function get_transform_ptr(): number;
  *
  * Returns N on success, 0 on bad input (non-multiple of 14 or empty).
  */
-export function solve_fastened_constraints(input_flat: Float32Array): number;
+export function solve_fixed_joints(input_flat: Float32Array): number;
 
 /**
  * Returns the `WebAssembly.Memory` object so JS can construct typed-array
@@ -188,7 +191,7 @@ export interface InitOutput {
     readonly get_positions_ptr: () => number;
     readonly get_transform_len: () => number;
     readonly get_transform_ptr: () => number;
-    readonly solve_fastened_constraints: (a: number, b: number) => number;
+    readonly solve_fastened_constraints: (a: number, b: number) => number; // Wasm binary symbol — pending next wasm-pack rebuild
     readonly wasm_memory: () => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

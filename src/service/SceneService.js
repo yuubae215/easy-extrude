@@ -101,14 +101,13 @@ export class SceneService extends EventEmitter {
      */
     this._mountLocalPositions = new Map()
     /**
-     * Relative transforms for fastened CoordinateFrame pairs (ADR-032 §2, 'fastened').
-     * Keyed by SpatialLink.id (fastened link).
-     * Populated by fastenFrame(); cleared by unfastenFrame() / detachSpatialLink().
-     * _updateFastenedFrames() reads this every frame and drives the source CF's
+     * Relative transforms for fixed-joint CoordinateFrame pairs (ADR-038, jointType='fixed').
+     * Keyed by SpatialLink.id. Populated by fastenFrame(); cleared by unfastenFrame() / detachSpatialLink().
+     * _updateFixedJointFrames() reads this every frame and drives the source CF's
      * world pose to match targetPose × relativeTransform.
      * @type {Map<string, { sourceId: string, relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion }>}
      */
-    this._fastenedTransforms = new Map()
+    this._fixedJointTransforms = new Map()
     /**
      * Set of fastened linkIds detected as part of a cycle in the previous frame.
      * Used to debounce the constraintCycleDetected event so it fires only when
@@ -306,7 +305,7 @@ export class SceneService extends EventEmitter {
       this._ensureOriginFrames(solids)
 
       // One synchronous world-pose pass so _worldPoseCache is populated, then
-      // reactivate geometric constraints (_fastenedTransforms / _mountLocalPositions).
+      // reactivate geometric constraints (_fixedJointTransforms / _mountLocalPositions).
       this._updateWorldPoses()
       this._reactivateLiveLinks()
 
@@ -722,7 +721,7 @@ export class SceneService extends EventEmitter {
     this._linkViews.clear()
     this._worldPoseCache.clear()
     this._mountLocalPositions.clear()
-    this._fastenedTransforms.clear()
+    this._fixedJointTransforms.clear()
     this._model = new SceneModel()
   }
 
@@ -861,7 +860,7 @@ export class SceneService extends EventEmitter {
 
     // Drive fastened CoordinateFrame pairs (ADR-032 §2, 'fastened').
     // Must run after all CoordinateFrame poses are resolved.
-    this._updateFastenedFrames()
+    this._updateFixedJointFrames()
 
     // Reposition SpatialLink dashed lines between entity world centroids (ADR-030).
     this._updateSpatialLinkViews()
@@ -1134,10 +1133,10 @@ export class SceneService extends EventEmitter {
     return cyclic
   }
 
-  _updateFastenedFrames() {
+  _updateFixedJointFrames() {
     // Filter to valid, solvable constraints
     const entries = []
-    for (const entry of this._fastenedTransforms.entries()) {
+    for (const entry of this._fixedJointTransforms.entries()) {
       const [linkId, { sourceId }] = entry
       const link   = this._model.getLink(linkId)
       const source = this._model.getObject(sourceId)
@@ -1176,7 +1175,7 @@ export class SceneService extends EventEmitter {
     }
 
     // Solve all constraint poses — pure math, no allocations inside
-    const poses = constraintSolver.solveFastenedConstraints(inputFlat)
+    const poses = constraintSolver.solveFixedJoints(inputFlat)
 
     // Apply results: view updates and parent mutations stay in JS
     for (let i = 0; i < acyclicEntries.length; i++) {
@@ -1275,7 +1274,7 @@ export class SceneService extends EventEmitter {
    * Rigidly fastens a source CoordinateFrame to a target CoordinateFrame.
    *
    * Computes the relative transform (source in target's local frame) once and
-   * stores it in _fastenedTransforms.  _updateFastenedFrames() then drives the
+   * stores it in _fixedJointTransforms.  _updateFixedJointFrames() then drives the
    * source CF's world pose every animation frame.
    *
    * Returns the created link and the pre-bind state needed by the undo command.
@@ -1304,7 +1303,7 @@ export class SceneService extends EventEmitter {
     const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
 
     const link = this.createSpatialLink(sourceCFId, targetCFId, 'fixed', semanticType)
-    this._fastenedTransforms.set(link.id, { sourceId: sourceCFId, relativeOffset, relativeQuat })
+    this._fixedJointTransforms.set(link.id, { sourceId: sourceCFId, relativeOffset, relativeQuat })
 
     return { link, translationBefore, rotationBefore, relativeOffset, relativeQuat }
   }
@@ -1320,7 +1319,7 @@ export class SceneService extends EventEmitter {
    * @param {import('three').Quaternion} rotationBefore     Rotation to restore
    */
   unfastenFrame(link, translationBefore, rotationBefore) {
-    this._fastenedTransforms.delete(link.id)
+    this._fixedJointTransforms.delete(link.id)
     this.detachSpatialLink(link.id)
     const source = this._model.getObject(link.sourceId)
     if (source instanceof CoordinateFrame) {
@@ -1342,7 +1341,7 @@ export class SceneService extends EventEmitter {
   refastenFrame(link, relativeOffset, relativeQuat) {
     this.reattachSpatialLink(link)
     // Override the recomputed transform with the original one from bind time
-    this._fastenedTransforms.set(link.id, {
+    this._fixedJointTransforms.set(link.id, {
       sourceId: link.sourceId,
       relativeOffset: relativeOffset.clone(),
       relativeQuat:   relativeQuat.clone(),
@@ -1356,7 +1355,7 @@ export class SceneService extends EventEmitter {
    * @returns {{ relativeOffset: import('three').Vector3, relativeQuat: import('three').Quaternion } | null}
    */
   getFastenedTransform(linkId) {
-    const entry = this._fastenedTransforms.get(linkId)
+    const entry = this._fixedJointTransforms.get(linkId)
     return entry ? { relativeOffset: entry.relativeOffset, relativeQuat: entry.relativeQuat } : null
   }
 
@@ -1789,7 +1788,7 @@ export class SceneService extends EventEmitter {
     if (!this._model.getLink(id)) return
     // Clean up mount / fasten data before removing the link record
     this._mountLocalPositions.delete(id)
-    this._fastenedTransforms.delete(id)
+    this._fixedJointTransforms.delete(id)
     this._model.removeLink(id)
     this._linkViews.get(id)?.dispose(this._threeScene)
     this._linkViews.delete(id)
@@ -1827,7 +1826,7 @@ export class SceneService extends EventEmitter {
         const invTargetQuat  = targetPose.quaternion.clone().conjugate()
         const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
         const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
-        this._fastenedTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
+        this._fixedJointTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
       } else if (link.semanticType === 'mounts') {
         const source = this._model.getObject(link.sourceId)
         const pose   = this._worldPoseCache.get(link.targetId)
@@ -1873,7 +1872,7 @@ export class SceneService extends EventEmitter {
         const invTargetQuat = targetPose.quaternion.clone().conjugate()
         const relativeOffset = sourcePose.position.clone().sub(targetPose.position).applyQuaternion(invTargetQuat)
         const relativeQuat   = invTargetQuat.clone().multiply(sourcePose.quaternion)
-        this._fastenedTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
+        this._fixedJointTransforms.set(link.id, { sourceId: link.sourceId, relativeOffset, relativeQuat })
       }
     }
     this.emit('spatialLinkAdded', link)
@@ -1897,7 +1896,7 @@ export class SceneService extends EventEmitter {
    * @returns {boolean}
    */
   isFastenedSource(cfId) {
-    for (const { sourceId } of this._fastenedTransforms.values()) {
+    for (const { sourceId } of this._fixedJointTransforms.values()) {
       if (sourceId === cfId) return true
     }
     return false
@@ -1905,7 +1904,7 @@ export class SceneService extends EventEmitter {
 
   /** Returns true when any fastened-source CF has the given solid as its root ancestor. */
   hasFastenedChild(solidId) {
-    for (const { sourceId } of this._fastenedTransforms.values()) {
+    for (const { sourceId } of this._fixedJointTransforms.values()) {
       const { rootSolid } = this._findAncestorChain(sourceId)
       if (rootSolid && rootSolid.id === solidId) return true
     }
@@ -1917,19 +1916,19 @@ export class SceneService extends EventEmitter {
    * of one in the parentId chain (i.e., cfId is a JOINT_SOURCE or JOINT_SOURCE_ANCESTOR).
    *
    * Used by _startRotate() to block R-key on CFs whose rotation would conflict with
-   * _updateFastenedFrames(): that method applies a per-frame delta to the root Solid's
+   * _updateFixedJointFrames(): that method applies a per-frame delta to the root Solid's
    * bodyRotation to enforce the constraint, but _applyRotate() reads bodyRotation live as
    * the parent world quaternion — creating a feedback loop that accumulates unboundedly.
    *
    * "Fixed joint" is the correct term (ADR-038 jointType='fixed'); this check operates
-   * on _fastenedTransforms which tracks all fixed CF-to-CF joints (not only semanticType
+   * on _fixedJointTransforms which tracks all fixed CF-to-CF joints (not only semanticType
    * 'fastened' — any fixed joint activates the rigid body solver).
    *
    * @param {string} cfId
    * @returns {boolean}
    */
   isInFixedJointSourceChain(cfId) {
-    for (const { sourceId } of this._fastenedTransforms.values()) {
+    for (const { sourceId } of this._fixedJointTransforms.values()) {
       let node = this._model.getObject(sourceId)
       while (node instanceof CoordinateFrame) {
         if (node.id === cfId) return true
@@ -1943,7 +1942,7 @@ export class SceneService extends EventEmitter {
    * Returns true when cfId is itself a fixed-joint source, or an ancestor of one in the
    * parentId chain (JOINT_SOURCE or JOINT_SOURCE_ANCESTOR state per CF state machine).
    *
-   * Used to block R-key rotation on CFs whose mutation would fight _updateFastenedFrames()
+   * Used to block R-key rotation on CFs whose mutation would fight _updateFixedJointFrames()
    * every frame: _applyRotate() reads live Solid.bodyRotation, the constraint corrects it,
    * the next frame _applyRotate() reads the modified value → diverging feedback loop.
    *
@@ -1952,7 +1951,7 @@ export class SceneService extends EventEmitter {
    * @returns {boolean}
    */
   isInFixedJointSourceChain(cfId) {
-    for (const { sourceId } of this._fastenedTransforms.values()) {
+    for (const { sourceId } of this._fixedJointTransforms.values()) {
       let node = this._model.getObject(sourceId)
       while (node instanceof CoordinateFrame) {
         if (node.id === cfId) return true

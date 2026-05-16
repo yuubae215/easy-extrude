@@ -54,7 +54,7 @@ static mut INDICES:          Vec<u32> = Vec::new();
 /// Instance matrix buffer — separate from geometry buffers; used by
 /// `build_instance_matrices()` only. Does not clobber POSITIONS/NORMALS/INDICES.
 static mut INSTANCE_MATRICES: Vec<f32> = Vec::new();
-/// Constraint pose output buffer — used by `solve_fastened_constraints()`.
+/// Constraint pose output buffer — used by `solve_fixed_joints()`.
 static mut CONSTRAINT_POSES: Vec<f32> = Vec::new();
 /// Generic transform output buffer — used by `apply_pose_to_points()`.
 static mut TRANSFORM_BUFFER: Vec<f32> = Vec::new();
@@ -499,10 +499,14 @@ pub fn get_matrices_len() -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// solve_fastened_constraints — per-frame constraint pose solver
+// solve_fixed_joints — per-frame constraint pose solver
 // ---------------------------------------------------------------------------
 
-/// Batch-solve world poses for N fastened CoordinateFrame constraints.
+/// Batch-solve world poses for N fixed-joint CoordinateFrame constraints.
+///
+/// Operates on kinematic jointType='fixed' links (0 DOF).
+/// Domain semanticType (fastened, aligned, …) is irrelevant here — the
+/// solver only cares that the relative transform is rigid.
 ///
 /// `input_flat`: N × 14 f32, one block per constraint:
 ///   [0..2]   relativeOffset.xyz       — offset in target's local frame
@@ -520,7 +524,7 @@ pub fn get_matrices_len() -> usize {
 ///
 /// Returns N on success, 0 on bad input (non-multiple of 14 or empty).
 #[wasm_bindgen]
-pub fn solve_fastened_constraints(input_flat: &[f32]) -> u32 {
+pub fn solve_fixed_joints(input_flat: &[f32]) -> u32 {
     if input_flat.is_empty() || input_flat.len() % 14 != 0 {
         return 0;
     }
@@ -827,11 +831,11 @@ mod tests {
         assert_eq!(build_instance_matrices(&[0.0; 11]), 0);
     }
 
-    // ── solve_fastened_constraints ─────────────────────────────────────────
+    // ── solve_fixed_joints ────────────────────────────────────────────────
 
     /// Identity target pose + zero relative offset/quat → worldPos = targetPos, worldQuat = identity.
     #[test]
-    fn test_solve_fastened_identity() {
+    fn test_solve_fixed_joints_identity() {
         // relativeOffset=(0,0,0), relativeQuat=identity(0,0,0,1)
         // targetPos=(1,2,3), targetQuat=identity(0,0,0,1)
         let input: [f32; 14] = [
@@ -840,7 +844,7 @@ mod tests {
             1.0, 2.0, 3.0,       // targetPos
             0.0, 0.0, 0.0, 1.0,  // targetQuat
         ];
-        let n = solve_fastened_constraints(&input);
+        let n = solve_fixed_joints(&input);
         assert_eq!(n, 1);
         unsafe {
             assert_eq!(CONSTRAINT_POSES.len(), 7);
@@ -859,7 +863,7 @@ mod tests {
     /// relativeOffset along X, rotated 90° around Z → offset maps to +Y in world space.
     /// targetPos = origin, targetQuat = 90° around Z: (0, 0, sin45°, cos45°)
     #[test]
-    fn test_solve_fastened_rotated_offset() {
+    fn test_solve_fixed_joints_rotated_offset() {
         let s = std::f32::consts::FRAC_1_SQRT_2; // sin(45°) = cos(45°)
         // targetQuat = 90° rotation around Z: (qx=0, qy=0, qz=s, qw=s)
         // relativeOffset = (1, 0, 0)
@@ -870,7 +874,7 @@ mod tests {
             0.0, 0.0, 0.0,       // targetPos
             0.0, 0.0,  s,   s,   // targetQuat (90° around Z)
         ];
-        let n = solve_fastened_constraints(&input);
+        let n = solve_fixed_joints(&input);
         assert_eq!(n, 1);
         unsafe {
             assert!(CONSTRAINT_POSES[0].abs() < 1e-5,        "x={}", CONSTRAINT_POSES[0]);
@@ -881,22 +885,22 @@ mod tests {
 
     /// Batch: two constraints → 14 output values.
     #[test]
-    fn test_solve_fastened_batch_count() {
+    fn test_solve_fixed_joints_batch_count() {
         let input: [f32; 28] = [
             0.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0,  1.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0,
             0.0, 0.0, 0.0,  0.0, 0.0, 0.0, 1.0,  0.0, 1.0, 0.0,  0.0, 0.0, 0.0, 1.0,
         ];
-        let n = solve_fastened_constraints(&input);
+        let n = solve_fixed_joints(&input);
         assert_eq!(n, 2);
         unsafe { assert_eq!(CONSTRAINT_POSES.len(), 14); }
     }
 
     /// Rejects empty or non-multiple-of-14 input.
     #[test]
-    fn test_solve_fastened_rejects_bad_input() {
-        assert_eq!(solve_fastened_constraints(&[]), 0);
-        assert_eq!(solve_fastened_constraints(&[0.0; 13]), 0);
-        assert_eq!(solve_fastened_constraints(&[0.0; 15]), 0);
+    fn test_solve_fixed_joints_rejects_bad_input() {
+        assert_eq!(solve_fixed_joints(&[]), 0);
+        assert_eq!(solve_fixed_joints(&[0.0; 13]), 0);
+        assert_eq!(solve_fixed_joints(&[0.0; 15]), 0);
     }
 
     // ── apply_pose_to_points ───────────────────────────────────────────────

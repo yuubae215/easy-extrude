@@ -2329,7 +2329,7 @@ export class AppController {
           this._tcStartPos         = this._activeObj._position.clone()
         }
         // Block movement on fastened-source CFs and Solids that own them:
-        // _updateFastenedFrames() overrides translation every frame, so any delta
+        // _updateFixedJointFrames() overrides translation every frame, so any delta
         // from objectChange is silently discarded and the TC proxy drifts.
         const isFastenedCF = this._activeObj instanceof CoordinateFrame &&
             this._service.isFastenedSource(this._activeObj.id)
@@ -2393,7 +2393,7 @@ export class AppController {
 
     // Apply proxy transform to domain entity every frame during drag
     this._tc.addEventListener('objectChange', () => {
-      // Fastened-source CF: _updateFastenedFrames() overrides translation/rotation
+      // Fastened-source CF: _updateFixedJointFrames() overrides translation/rotation
       // every frame, so any delta we write here is immediately discarded.  Skip all
       // updates; the proxy will be snapped back to the CF position on drag end.
       if (this._tcFastenedBlocked) return
@@ -4586,7 +4586,7 @@ export class AppController {
   /**
    * Centralised guard for any UI rotation entry point (R-key, N-panel, future inspectors…).
    * Returns true and shows a toast when the frame must not be rotated because it is part of
-   * a fixed-joint source chain — rotating it would fight _updateFastenedFrames() every frame
+   * a fixed-joint source chain — rotating it would fight _updateFixedJointFrames() every frame
    * and cause the root Solid to diverge (CODE_CONTRACTS §1 "R-key Rotation Blocked").
    *
    * Keeping the guard here (not inline in each handler) means new UI entry points only need
@@ -4618,7 +4618,7 @@ export class AppController {
       if (this._isFastenedRotationBlocked(obj)) return
     } else {
       // Solid: block rotation when a fastened-source CF is a direct child (same guard as TC drag).
-      // _updateFastenedFrames() overwrites bodyRotation and corners every frame, so R-key would
+      // _updateFixedJointFrames() overwrites bodyRotation and corners every frame, so R-key would
       // fight the constraint — the solid snaps back each frame and the pose relationship breaks.
       if (this._service.hasFastenedChild(obj.id)) {
         this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
