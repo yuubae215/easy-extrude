@@ -17,7 +17,7 @@ export const get_positions_len: () => number;
 export const get_positions_ptr: () => number;
 export const get_transform_len: () => number;
 export const get_transform_ptr: () => number;
-export const solve_fastened_constraints: (a: number, b: number) => number;
+export const solve_fixed_joints: (a: number, b: number) => number;
 export const wasm_memory: () => any;
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
