@@ -774,8 +774,23 @@ To add a new operation state:
     },
     "S_LINK_MODE": {
       "outputs": {
-        "spatialLinkMode.active": true,
+        "spatialLinkMode.sourceId": "captured",
         "statusBar": "Click source CF, then target CF"
+      }
+    },
+    "S_FRAME_PLACEMENT": {
+      "outputs": {
+        "cursor": "crosshair",
+        "framePlacementState.parentId": "captured",
+        "parentAxesOverlay.visible": true,
+        "mobileToolbarSlots": "frame-placement"
+      }
+    },
+    "S_MOUNT_PICKING": {
+      "outputs": {
+        "cursor": "crosshair",
+        "mountPicking.sourceId": "captured",
+        "statusBar": "Tap target frame (or empty space to cancel)"
       }
     }
   },
@@ -898,6 +913,69 @@ To add a new operation state:
       "actions": {
         "measure.active": "false"
       }
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_FRAME_PLACEMENT",
+      "event": "_addCoordinateFrame",
+      "guard": [["activeObj !== null"]],
+      "actions": {
+        "framePlacementState.parentId": "activeObj.id",
+        "parentAxesOverlay": "show(geometryAncestorCentroid)",
+        "cursor": "crosshair"
+      }
+    },
+    {
+      "from": "S_FRAME_PLACEMENT",
+      "to": "S_OBJECT_IDLE",
+      "event": "pointerDown_left",
+      "guard": [["pickFramePlacementPoint() !== null"]],
+      "actions": {
+        "commandStack.push": "createCreateCoordinateFrameCommand(placedFrame)",
+        "parentAxesOverlay.visible": false,
+        "frameCursorGhost.visible": false,
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "S_FRAME_PLACEMENT",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "parentAxesOverlay.visible": false,
+        "frameCursorGhost.visible": false,
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_MOUNT_PICKING",
+      "event": "longPressContextMenu_mountOnFrame",
+      "guard": [["activeObj instanceof AnnotatedLine|AnnotatedRegion|AnnotatedPoint"]],
+      "actions": {
+        "mountPicking.sourceId": "activeObj.id",
+        "cursor": "crosshair"
+      }
+    },
+    {
+      "from": "S_MOUNT_PICKING",
+      "to": "S_OBJECT_IDLE",
+      "event": "pointerDown_hitCoordinateFrame",
+      "guard": [["hit.obj instanceof CoordinateFrame"]],
+      "actions": {
+        "commandStack.push": "createMountAnnotationCommand(sourceId, targetId)",
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "S_MOUNT_PICKING",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "cursor": "default"
+      }
     }
   ]
 }
@@ -911,3 +989,66 @@ Guards use a 2-D array encoding:
 
 This mirrors IEC 61499-style state machine notation and the PLC structured text
 convention used in the project's robotics integration context.
+
+---
+
+### Edit Mode — Operation States (`_editOpState`)
+
+**Status**: Implemented — `AppController._editOpState` (`new StateMachine(EO_IDLE, [...])`)
+**Handler classes**: `src/core/states/EndpointDragState.js`
+**State constants**: `EO_IDLE`, `EO_1D_DRAG` in `src/core/editorStates.js`
+
+Parallel FSM to `_opState`, scoped to operations within Edit Mode.
+Structured to accept future edit-mode operations (vertex grab, face-normal move, etc.).
+
+```json
+{
+  "states": {
+    "EO_IDLE": {
+      "outputs": { "editDragActive": false }
+    },
+    "EO_1D_DRAG": {
+      "outputs": {
+        "editDragActive": true,
+        "orbitEnabled": false,
+        "cursor": "grabbing",
+        "handler": "EndpointDragState"
+      }
+    }
+  },
+  "transitions": [
+    {
+      "from": "EO_IDLE",
+      "to": "EO_1D_DRAG",
+      "event": "pointerDown_nearEndpoint",
+      "guard": [["editSubstate === '1d'", "findNearestVertex() !== null"]],
+      "actions": {
+        "EndpointDragState.enter": "call(vertex, endpointIndex)",
+        "controls.enabled": false,
+        "cursor": "grabbing"
+      }
+    },
+    {
+      "from": "EO_1D_DRAG",
+      "to": "EO_IDLE",
+      "event": "pointerUp",
+      "guard": [["activeDragPointerId === e.pointerId"]],
+      "actions": {
+        "EndpointDragState.confirm": "call() → push MoveCommand if moved",
+        "controls.enabled": true,
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "EO_1D_DRAG",
+      "to": "EO_IDLE",
+      "event": "cancelEditMode",
+      "guard": [],
+      "actions": {
+        "EndpointDragState.cancel": "call() → restore original corners",
+        "controls.enabled": true
+      }
+    }
+  ]
+}
+```
