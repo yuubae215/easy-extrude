@@ -2030,6 +2030,20 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Moves a single endpoint of a MeasureLine to an absolute world position
+   * during a live 1D endpoint-drag preview. Updates the mesh view in the same call.
+   * Owns the entity mutation so EndpointDragState stays pure input-computation.
+   * @param {import('../domain/MeasureLine.js').MeasureLine} obj
+   * @param {number} endpointIndex  0 or 1
+   * @param {import('three').Vector3} worldPoint  target world-space position
+   */
+  applyPreviewEndpointMove(obj, endpointIndex, worldPoint) {
+    if (!(obj instanceof MeasureLine)) return
+    obj.vertices[endpointIndex].position.copy(worldPoint)
+    obj.meshView?.update(obj.p1, obj.p2)
+  }
+
+  /**
    * Extrudes a Profile into a Solid and replaces it in the scene.
    * The Profile entity is discarded; the returned Solid reuses the same id,
    * name, and MeshView so the Outliner requires no update.

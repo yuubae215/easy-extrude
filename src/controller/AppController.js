@@ -820,6 +820,7 @@ export class AppController {
       controls:     this._controls,
       commandStack: this._commandStack,
       scene:        this._scene,
+      sceneService: this._service,
     }
   }
 

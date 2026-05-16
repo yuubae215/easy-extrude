@@ -534,18 +534,21 @@ if (segStartPos) selObj.move(segStartPos, currentDelta.clone().add(new THREE.Vec
 
 `_applyStackSnap()` receives `segStartPositions` and `currentDelta` as parameters because the call site differs between G-key grab (uses `this._grab.segmentStartPositions` + `lastDelta`) and mouse-drag (uses `this._objDragAllStartPositions` + `delta`).
 
-## Preview Pipeline — applyPreviewTranslation / applyPreviewRotation (Phase 2)
+## Preview Pipeline — applyPreviewTranslation / applyPreviewRotation / applyPreviewEndpointMove
 
-Entity-type dispatch for drag-preview mutations belongs in `SceneService`, not in `AppController`. Two methods own this contract:
+Entity mutation during live drag previews belongs in `SceneService`, not in `AppController` or handler classes. Three methods own this contract:
 
 | Method | Responsibility |
 |--------|---------------|
 | `SceneService.applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta)` | CF → parent-local delta conversion + `cf.move()`; Solid → `solid.move(segStartPos, delta)`; other → `entity.move(corners, delta)`; mesh view update |
 | `SceneService.applyPreviewRotation(obj, { segStartOrientation, segStartPos, pivot }, deltaQ)` | CF → ROS TF local rotation update + `meshView.updateRotation()`; Solid → `solid.rotate()` + mesh view update |
+| `SceneService.applyPreviewEndpointMove(obj, endpointIndex, worldPoint)` | MeasureLine only — sets one vertex to absolute world position + `meshView.update()` |
 
-`AppController` is responsible for computing the world-space delta or quaternion from input events (mouse position, touch, axis constraints, grid snap), then calling the service method. It must not replicate the entity-type dispatch.
+`AppController` computes the world-space delta or quaternion from input events (mouse position, touch, axis constraints, grid snap), then calls the service method. It must not replicate the entity-type dispatch. Handler classes (`EndpointDragState`, and any future Edit Mode handlers) compute ray intersections from input events and delegate all entity mutation to these service methods.
 
 After a stack snap (which re-applies domain mutations via `selObj.move()`), the call site must re-update mesh views for the snapped objects — `applyPreviewTranslation` only updates views for the non-snapped pass.
+
+`cancel()` paths that need to restore entity state must also call the appropriate service method (e.g. `applyPreviewEndpointMove` called twice — once per endpoint — in `EndpointDragState.cancel()`). This keeps view state consistent even during cancellation.
 
 ## _hitAnyEntityForLink Must Prioritise CoordinateFrame Over Parent Solid
 

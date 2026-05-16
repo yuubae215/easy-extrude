@@ -5,12 +5,14 @@
  * Lifecycle matches the three-phase contract from ADR-039:
  *
  *   enter()       — pointerdown on an endpoint; sets up drag plane, snapshots corners
- *   onPointerMove — pointermove; intersects drag plane, moves vertex live
+ *   onPointerMove — pointermove; intersects drag plane; delegates mutation to
+ *                   SceneService.applyPreviewEndpointMove (Preview Pipeline)
  *   confirm()     — pointerup; pushes MoveCommand if endpoint actually moved
- *   cancel()      — mode exit / Escape; restores original corner positions
+ *   cancel()      — mode exit / Escape; restores original corner positions via service
  *
  * Called by AppController when _editOpState is EO_1D_DRAG.
- * Context object (ctx) contains the minimal AppController state needed.
+ * Context object (ctx) contains the minimal AppController state needed,
+ * including sceneService for Preview Pipeline delegation.
  */
 import * as THREE from 'three'
 import { createMoveCommand } from '../../command/MoveCommand.js'
@@ -24,12 +26,12 @@ export class EndpointDragState {
   }
 
   /**
-   * @param {{ obj, camera, raycaster, controls }} ctx
+   * @param {{ obj, camera, raycaster, controls, sceneService }} ctx
    * @param {import('../../graph/Vertex.js').Vertex} vertex  The hovered endpoint vertex
    * @param {number} endpointIndex  0 or 1
    */
   enter(ctx, vertex, endpointIndex) {
-    const { obj, camera, raycaster, controls } = ctx
+    const { obj, camera, controls } = ctx
     this._endpointIndex = endpointIndex
     this._startCorners  = obj.corners.map(c => c.clone())
 
@@ -41,16 +43,18 @@ export class EndpointDragState {
   }
 
   /**
-   * @param {{ obj, camera, mouse, raycaster }} ctx
+   * Computes the ray-plane intersection and delegates the vertex mutation to
+   * SceneService.applyPreviewEndpointMove (Preview Pipeline — no direct entity
+   * mutation in the handler).
+   * @param {{ obj, camera, mouse, raycaster, sceneService }} ctx
    */
   onPointerMove(ctx) {
-    const { obj, camera, mouse, raycaster } = ctx
+    const { obj, camera, mouse, raycaster, sceneService } = ctx
     if (!obj) return
     raycaster.setFromCamera(mouse, camera)
     const pt = new THREE.Vector3()
     if (raycaster.ray.intersectPlane(this._dragPlane, pt)) {
-      obj.vertices[this._endpointIndex].position.copy(pt)
-      obj.meshView.update(obj.p1, obj.p2)
+      sceneService.applyPreviewEndpointMove(obj, this._endpointIndex, pt)
     }
   }
 
@@ -76,15 +80,15 @@ export class EndpointDragState {
   }
 
   /**
-   * Cancels the drag: restores the original corner positions.
-   * @param {{ obj, controls }} ctx
+   * Cancels the drag: restores both endpoints via SceneService to keep view in sync.
+   * @param {{ obj, controls, sceneService }} ctx
    */
   cancel(ctx) {
-    const { obj, controls } = ctx
+    const { obj, controls, sceneService } = ctx
     controls.enabled = true
     if (obj instanceof MeasureLine && this._startCorners) {
-      obj.corners.forEach((c, i) => c.copy(this._startCorners[i]))
-      obj.meshView?.update(obj.p1, obj.p2)
+      sceneService.applyPreviewEndpointMove(obj, 0, this._startCorners[0])
+      sceneService.applyPreviewEndpointMove(obj, 1, this._startCorners[1])
     }
     this._endpointIndex = null
     this._startCorners  = null
