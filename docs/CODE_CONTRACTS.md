@@ -110,7 +110,7 @@ Detail: `docs/code_contracts/ui_layout.md`
 
 | Rule | Core Takeaway |
 |------|--------------|
-| Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts. Solid selected: slot 5 = Rotate (replaces Stack; Stack still accessible via Grab toolbar) |
+| Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts. Solid selected: slot 5 = Rotate (replaces Stack; Stack still accessible via Grab toolbar). Semantic slot rule for transient operation bars: slot 1 = Cancel/Back, slot 4 = Confirm — fixed regardless of which operation is active. |
 | Mobile Touch Gesture Model | Touch: tap=select, one-finger-drag=orbit, long-press=context menu; no rect selection or _objDragging |
 | Long-Press Context Menu | `showContextMenu()` with Grab/Dup/Rename/Delete; items filtered by entity type |
 | Long-Press for Non-Draggable Entities | CF/MeasureLine/Annotated* early-return must set long-press timer for touch BEFORE returning; without this CF "Link to..." is unreachable on mobile |
