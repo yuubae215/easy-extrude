@@ -519,6 +519,34 @@ for (let i = 0; i < 8; i++) solid.localCorners[i].applyQuaternion(invQ)
 solid.restorePose(solid._position, q)
 ```
 
+### Stack Snap Must Use Public API
+
+`_applyStackSnap()` computes a Z offset to rest grabbed objects on a surface below them. This offset must be applied via `selObj.move(segStartPos, currentDelta.clone().add(snapZ))` — never by directly mutating `corners`:
+
+```js
+// WRONG — leaves _position stale after corners are mutated
+selObj.corners.forEach(c => { c.z += zOffset })
+
+// CORRECT — snapshot-based move, keeps primary triple consistent
+const segStartPos = segStartPositions.get(id)
+if (segStartPos) selObj.move(segStartPos, currentDelta.clone().add(new THREE.Vector3(0, 0, zOffset)))
+```
+
+`_applyStackSnap()` receives `segStartPositions` and `currentDelta` as parameters because the call site differs between G-key grab (uses `this._grab.segmentStartPositions` + `lastDelta`) and mouse-drag (uses `this._objDragAllStartPositions` + `delta`).
+
+## Preview Pipeline — applyPreviewTranslation / applyPreviewRotation (Phase 2)
+
+Entity-type dispatch for drag-preview mutations belongs in `SceneService`, not in `AppController`. Two methods own this contract:
+
+| Method | Responsibility |
+|--------|---------------|
+| `SceneService.applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta)` | CF → parent-local delta conversion + `cf.move()`; Solid → `solid.move(segStartPos, delta)`; other → `entity.move(corners, delta)`; mesh view update |
+| `SceneService.applyPreviewRotation(obj, { segStartOrientation, segStartPos, pivot }, deltaQ)` | CF → ROS TF local rotation update + `meshView.updateRotation()`; Solid → `solid.rotate()` + mesh view update |
+
+`AppController` is responsible for computing the world-space delta or quaternion from input events (mouse position, touch, axis constraints, grid snap), then calling the service method. It must not replicate the entity-type dispatch.
+
+After a stack snap (which re-applies domain mutations via `selObj.move()`), the call site must re-update mesh views for the snapped objects — `applyPreviewTranslation` only updates views for the non-snapped pass.
+
 ## _hitAnyEntityForLink Must Prioritise CoordinateFrame Over Parent Solid
 
 - **Principle**: CFs are visually rendered on top of (and often at the origin of) their parent Solid. A cuboid raycast (step 1) reaches the Solid first, making it impossible for the user to select a CF as a link target by tapping.
