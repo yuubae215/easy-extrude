@@ -213,7 +213,11 @@ export function get_transform_ptr() {
 }
 
 /**
- * Batch-solve world poses for N fastened CoordinateFrame constraints.
+ * Batch-solve world poses for N fixed-joint CoordinateFrame constraints.
+ *
+ * Operates on kinematic jointType='fixed' links (0 DOF).
+ * Domain semanticType (fastened, aligned, …) is irrelevant here — the
+ * solver only cares that the relative transform is rigid.
  *
  * `input_flat`: N × 14 f32, one block per constraint:
  *   [0..2]   relativeOffset.xyz       — offset in target's local frame
@@ -233,10 +237,10 @@ export function get_transform_ptr() {
  * @param {Float32Array} input_flat
  * @returns {number}
  */
-export function solve_fastened_constraints(input_flat) {
+export function solve_fixed_joints(input_flat) {
     const ptr0 = passArrayF32ToWasm0(input_flat, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.solve_fastened_constraints(ptr0, len0);
+    const ret = wasm.solve_fixed_joints(ptr0, len0);
     return ret >>> 0;
 }
 

@@ -13,8 +13,8 @@
  *
  *   await constraintSolver.init()
  *
- *   // Solve N fastened constraints in one shot
- *   const poses = constraintSolver.solveFastenedConstraints(inputFlat)
+ *   // Solve N fixed-joint (0 DOF) constraints in one shot
+ *   const poses = constraintSolver.solveFixedJoints(inputFlat)
  *   // poses: Float32Array of N×7 [worldX,worldY,worldZ, worldQx,worldQy,worldQz,worldQw]
  *
  *   // Transform N local-space points by one pose
@@ -22,7 +22,7 @@
  *   // worldPts: Float32Array of N×3 [wx,wy,wz]
  *
  * Input formats:
- *   solveFastenedConstraints — N × 14 f32 per constraint:
+ *   solveFixedJoints — N × 14 f32 per constraint:
  *     [relOffX, relOffY, relOffZ,
  *      relQx, relQy, relQz, relQw,
  *      targetX, targetY, targetZ,
@@ -34,7 +34,7 @@
 
 import wasmUrl from '../engine/wasm/wasm_engine_bg.wasm?url'
 import initWasm, {
-  solve_fastened_constraints,
+  solve_fixed_joints,
   apply_pose_to_points,
   get_constraints_ptr,
   get_constraints_len,
@@ -84,17 +84,17 @@ export class ConstraintSolver {
   // ---------------------------------------------------------------------------
 
   /**
-   * Solve world poses for N fastened CoordinateFrame constraints.
+   * Solve world poses for N fixed-joint (0 DOF) CoordinateFrame constraints.
    *
    * @param {Float32Array} inputFlat  N × 14 f32 per constraint
    * @returns {Float32Array} N × 7 f32: [worldX, worldY, worldZ, worldQx, worldQy, worldQz, worldQw]
    */
-  solveFastenedConstraints(inputFlat) {
+  solveFixedJoints(inputFlat) {
     if (this._usingFallback || !this._ready) {
-      return this._solveFastenedFallback(inputFlat)
+      return this._solveFixedJointsFallback(inputFlat)
     }
 
-    const n = solve_fastened_constraints(inputFlat)
+    const n = solve_fixed_joints(inputFlat)
     if (!n) return new Float32Array(0)
 
     const mem = wasm_memory()
@@ -132,7 +132,7 @@ export class ConstraintSolver {
    * @param {Float32Array} inputFlat
    * @returns {Float32Array}
    */
-  _solveFastenedFallback(inputFlat) {
+  _solveFixedJointsFallback(inputFlat) {
     const n = (inputFlat.length / 14) | 0
     const out = new Float32Array(n * 7)
     for (let i = 0; i < n; i++) {
