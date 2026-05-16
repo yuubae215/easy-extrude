@@ -14,11 +14,13 @@ Detail file for `docs/CODE_CONTRACTS.md` Section 3.
 | Object (generic) | Add | Dup | Edit | Delete | Stack |
 | Object (Solid selected) | Add | Dup | Edit | Delete | Rotate |
 | Object (CoordinateFrame selected) | Rotate | Grab | Delete | Add Frame | *(spacer)* |
-| Edit 2D sketch | <- Object | Extrude | *(spacer)* | *(spacer)* | — |
-| Edit 2D extrude | Confirm | Cancel | *(spacer)* | *(spacer)* | — |
+| Edit 2D sketch | <- Object | *(spacer)* | *(spacer)* | Extrude | — |
+| Edit 2D extrude | Cancel | *(spacer)* | *(spacer)* | Confirm | — |
 | Edit 3D | <- Object | Vertex | Edge | Face | — |
-| Grab active | Confirm | Stack | Cancel | *(spacer)* | — |
-| Rotate active | Confirm | *(spacer)* | Cancel | *(spacer)* | — |
+| Grab active | Cancel | Stack | *(spacer)* | Confirm | — |
+| Rotate active | Cancel | *(spacer)* | *(spacer)* | Confirm | — |
+
+**Semantic slot rule (transient operation bars)**: Slot 1 is always Cancel/Back (retreat). Slot 4 is always Confirm (advance). Slots 2–3 are contextual tools. This fixed semantic mapping enables muscle memory — users always tap the same corner to abandon or commit an operation, regardless of what operation is active.
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 

@@ -3516,20 +3516,20 @@ export class AppController {
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
-        { spacer: true },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelRotate(), danger: true },
         { spacer: true },
+        { spacer: true },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
       ])
       return
     }
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
-        { icon: ICONS.stack,   label: 'Stack',   onClick: () => this._toggleStackMode(), active: this._grab.stackMode },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
+        { icon: ICONS.stack,   label: 'Stack',   onClick: () => this._toggleStackMode(), active: this._grab.stackMode },
         { spacer: true },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
       ])
       return
     }
@@ -3623,19 +3623,19 @@ export class AppController {
          Math.abs(this._sketch.p2.y - this._sketch.p1.y) > 0.01)
       this._uiView.setMobileToolbar([
         { icon: ICONS.back,    label: 'Object',  onClick: () => this.setMode('object') },
+        { spacer: true },
+        { spacer: true },
         { icon: ICONS.extrude, label: 'Extrude', onClick: () => this._enterExtrudePhase(), disabled: !hasRect },
-        { spacer: true },
-        { spacer: true },
       ])
       return
     }
 
     if (substate === '2d-extrude') {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelExtrudePhase(), danger: true },
         { spacer: true },
         { spacer: true },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
       ])
       return
     }

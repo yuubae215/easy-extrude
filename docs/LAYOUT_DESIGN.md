@@ -107,13 +107,13 @@ Empty slots are filled with `{spacer: true}` to prevent layout shifts.
 
 | App State | Slot 1 | Slot 2 | Slot 3 | Slot 4 | Slot 5 |
 |-----------|--------|--------|--------|--------|--------|
-| grab.active | ✓ Confirm | Stack | ✕ Cancel | — | — |
+| grab.active | ✕ Cancel | Stack | — | ✓ Confirm | — |
 | faceExtrude.active | ✓ Confirm | ✕ Cancel | — | — | — |
 | **Object Mode** (no selection) | + Add | Edit (disabled) | Delete (disabled) | — | — |
 | **Object Mode** (selection) | + Add | Edit | Delete | — | — |
 | **Object Mode** (Frame selected) | Rotate | Grab | Delete | Add Frame | spacer |
-| Edit · 2D-Sketch | ← Object | Extrude (disabled) | — | — | — |
-| Edit · 2D-Extrude | ✓ Confirm | ✕ Cancel | — | — | — |
+| Edit · 2D-Sketch | ← Object | — | — | Extrude (disabled) | — |
+| Edit · 2D-Extrude | ✕ Cancel | — | — | ✓ Confirm | — |
 | Edit · 3D | ← Object | Vertex | Edge | Face | Extrude (disabled*) |
 
 `*` Extrude is enabled when a face is included in editSelection.

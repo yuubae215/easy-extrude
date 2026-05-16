@@ -55,12 +55,16 @@ identical dimensions occupying layout space without being tappable.
 Object mode (generic):      [ Add | Dup | Edit | Delete | Stack ]
 Object mode (Solid):        [ Add | Dup | Edit | Delete | Rotate ]
 Object mode (CoordFrame):   [ Rotate | Grab | Delete | Add Frame | (spacer) ]
-Edit 2D sketch:             [ <- Object | Extrude | (spacer) | (spacer) ]
-Edit 2D extrude:            [ Confirm | Cancel | (spacer) | (spacer) ]
+Edit 2D sketch:             [ <- Object | (spacer) | (spacer) | Extrude ]
+Edit 2D extrude:            [ Cancel | (spacer) | (spacer) | Confirm ]
 Edit 3D:                    [ <- Object | Vertex | Edge | Face ]
-Grab active:                [ Confirm | Stack | Cancel | (spacer) ]
-Rotate active:              [ Confirm | (spacer) | Cancel | (spacer) ]
+Grab active:                [ Cancel | Stack | (spacer) | Confirm ]
+Rotate active:              [ Cancel | (spacer) | (spacer) | Confirm ]
 ```
+
+**Semantic slot rule for transient operation bars**: slot 1 is always Cancel/Back
+(retreat), slot 4 is always Confirm (advance). Slots 2–3 are contextual tools.
+This mapping is fixed regardless of which operation is active, enabling muscle memory.
 
 **Solid exception**: when a Solid is selected, slot 5 shows Rotate instead of Stack.
 Stack mode is still accessible via the Grab-active toolbar after starting a grab.
@@ -124,7 +128,7 @@ mobile; `_setInfoText()` is a no-op on mobile.
 Phase 3 plans to add X/Y/Z axis constraint buttons during Grab active
 (see ROADMAP Phase 3). This will expand Grab active to 5 slots:
 ```
-Grab active (Phase 3):   [ Confirm | X | Y | Z | Cancel ]
+Grab active (Phase 3):   [ Cancel | X | Y | Z | Confirm ]
 ```
 At that point, review whether Object mode still needs to remain at 5 to maintain the
 "never shrink" invariant, or whether 5 becomes the universal fixed count.
