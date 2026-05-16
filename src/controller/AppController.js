@@ -4609,10 +4609,7 @@ export class AppController {
       const parentWorldQuat = this._service._getParentWorldQuat(obj)
       obj.meshView.updateRotation(parentWorldQuat.clone().multiply(obj.rotation))
     } else if (obj instanceof Solid && this._rotate.startOrientation) {
-      // Restore primary triple; _rebuildWorldCorners() syncs derived corners (ADR-040)
-      obj.orientation.copy(this._rotate.startOrientation)
-      obj._position.copy(this._rotate.startPos)
-      obj._rebuildWorldCorners()
+      obj.restorePose(this._rotate.startPos, this._rotate.startOrientation)
       obj.meshView.updateGeometry(obj.corners)
       obj.meshView.setObjectSelected(true)
     }

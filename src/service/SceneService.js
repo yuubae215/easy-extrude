@@ -367,8 +367,9 @@ export class SceneService extends EventEmitter {
             const q    = new Quaternion(dto.bodyRotation.x, dto.bodyRotation.y, dto.bodyRotation.z, dto.bodyRotation.w)
             const invQ = q.clone().invert()
             for (let i = 0; i < 8; i++) solid.localCorners[i].applyQuaternion(invQ)
-            solid.orientation.copy(q)
-            solid._rebuildWorldCorners()
+            // _position is already correct (centroid from _initFromWorldCorners).
+            // restorePose() sets orientation and rebuilds world corners via the public API.
+            solid.restorePose(solid._position, q)
           }
         }
         solid.description = dto.description ?? ''
@@ -1216,9 +1217,7 @@ export class SceneService extends EventEmitter {
         const newSolidPos = new Vector3(wpx, wpy, wpz)
           .sub(solidLocalOffset.clone().applyQuaternion(newSolidQuat))
 
-        rootSolid.orientation.copy(newSolidQuat)
-        rootSolid._position.copy(newSolidPos)
-        rootSolid._rebuildWorldCorners()
+        rootSolid.restorePose(newSolidPos, newSolidQuat)
         rootSolid.meshView.updateGeometry(rootSolid.corners)
         if (rootSolid.meshView.boxHelper?.visible) rootSolid.meshView.updateBoxHelper()
 

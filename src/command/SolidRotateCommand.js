@@ -5,7 +5,7 @@ import { Solid } from '../domain/Solid.js'
  * (ADR-040, ADR-022; supersedes ADR-036 corner-snapshot approach)
  *
  * Stores start/end orientation (Quaternion) and _position (Vector3).
- * World corners are derived via _rebuildWorldCorners() — no corner snapshots needed.
+ * World corners are rebuilt by `Solid.restorePose()` — no corner snapshots needed.
  * Child CoordinateFrames follow automatically via ROS TF forward kinematics
  * when orientation is restored — no CF pose snapshots needed.
  *
@@ -22,9 +22,7 @@ export function createSolidRotateCommand(solidRef, startOrientation, endOrientat
   function apply(orientation, position) {
     const obj = sceneService.scene.getObject(solidRef.id)
     if (!(obj instanceof Solid)) return
-    obj.orientation.copy(orientation)
-    obj._position.copy(position)
-    obj._rebuildWorldCorners()
+    obj.restorePose(position, orientation)
     obj.meshView.updateGeometry(obj.corners)
     obj.meshView.updateBoxHelper()
     // Refresh all CF world poses immediately so the viewport is consistent

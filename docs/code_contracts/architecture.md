@@ -476,6 +476,49 @@ this._commandStack.push(createCreateCoordinateFrameCommand(frame, this._service,
 this._switchActiveObject(frame.id, true)  // ← make frame visible + attach TC
 ```
 
+## Solid Pose Mutation — Public API and SSOT Rule (ADR-040)
+
+`Solid.js` owns the invariant: `vertices[i].position = _position + orientation.apply(localCorners[i])`.
+This invariant is maintained by `_rebuildWorldCorners()`, which is **private** — it must only be called inside `Solid.js` itself. External code that calls `_rebuildWorldCorners()` directly is bypassing the public API and is forbidden.
+
+### The five public mutation methods
+
+| Method | When to use |
+|--------|------------|
+| `move(segStartPos, delta)` | Snapshot-based translation during drag |
+| `rotate(segStartOrientation, segStartPos, pivot, quat)` | Snapshot-based rotation during drag |
+| `restorePose(position, orient)` | Undo/redo restore and cancel paths — position+orientation change, localCorners unchanged |
+| `setPose(position, orient, localCornersArr)` | Deserialization — all three primary triple members change |
+| `setWorldCorners(worldCorners)` | MoveCommand undo/redo — restores from a legacy world-corner snapshot |
+| `extrudeFace(face, savedLocalFaceCorners, localNormal, dist)` | Face extrude drag — only localCorners change |
+
+### The snapshot pattern
+
+All mutation methods are **reapplyable from the same snapshot**. Start snapshots must be taken from the ADR-040 primary triple (`_position`, `orientation`, `localCorners`) at the moment the operation begins, then passed to the method on every pointer-move frame. Never accumulate deltas across frames — always re-apply from the snapshot.
+
+### restorePose() is the canonical restore path
+
+Whenever an undo/redo command or a cancel path needs to restore `_position` and `orientation` (but not `localCorners`), it must call `obj.restorePose(position, orientation)`. Never:
+```js
+// WRONG — bypasses the public API, calls private _rebuildWorldCorners directly
+obj.orientation.copy(orientation)
+obj._position.copy(position)
+obj._rebuildWorldCorners()
+
+// CORRECT
+obj.restorePose(position, orientation)
+```
+
+### localCorners direct mutation
+
+The only legitimate exception is deserialization code that must fix `localCorners` in-place before calling a public rebuild method. The pattern is:
+```js
+// Fix localCorners (unavoidable in legacy format migration)
+for (let i = 0; i < 8; i++) solid.localCorners[i].applyQuaternion(invQ)
+// Then call a public method to sync _position + orientation and rebuild
+solid.restorePose(solid._position, q)
+```
+
 ## _hitAnyEntityForLink Must Prioritise CoordinateFrame Over Parent Solid
 
 - **Principle**: CFs are visually rendered on top of (and often at the origin of) their parent Solid. A cuboid raycast (step 1) reaches the Solid first, making it impossible for the user to select a CF as a link target by tapping.
