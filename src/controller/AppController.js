@@ -686,13 +686,15 @@ export class AppController {
       if (!obj || typeof obj.move !== 'function') return
       const corners = this._corners
       if (!corners.length) return
-      const currentCentroid = getCentroid(corners)
       const delta = new THREE.Vector3()
-      delta[axis] = val - currentCentroid[axis]
       if (obj instanceof Solid) {
-        // Use _position snapshot so move() keeps primary triple consistent (ADR-040)
+        // ADR-040: use _position directly — getCentroid(corners) introduces FP rounding
+        // that feeds back into _position each call (PHILOSOPHY #24 manifestation c).
+        delta[axis] = val - obj._position[axis]
         obj.move(obj._position.clone(), delta)
       } else {
+        const currentCentroid = getCentroid(corners)
+        delta[axis] = val - currentCentroid[axis]
         const startCorners = corners.map(c => c.clone())
         obj.move(startCorners, delta)
       }
@@ -2290,8 +2292,9 @@ export class AppController {
         // Rotate mode: rotate via primary triple (ADR-040)
         if (!this._tcStartProxyQuat || !this._tcStartOrientation || !this._tcStartPos) return
         const deltaQ = this._tcProxy.quaternion.clone().multiply(this._tcStartProxyQuat.clone().invert())
-        const pivot  = getCentroid(obj.corners)
-        obj.rotate(this._tcStartOrientation, this._tcStartPos, pivot, deltaQ)
+        // ADR-040: pivot must be _position clone — getCentroid aliases the object that
+        // rotate() mutates first, causing sub(pivot) to subtract the wrong value.
+        obj.rotate(this._tcStartOrientation, this._tcStartPos, obj._position.clone(), deltaQ)
         obj.meshView.updateGeometry(obj.corners)
         obj.meshView.updateBoxHelper()
       } else {
@@ -2352,8 +2355,8 @@ export class AppController {
         this._tc.getHelper().updateMatrixWorld()
         return
       }
-      // Legacy fallback: no Origin CF
-      this._tcProxy.position.copy(getCentroid(obj.corners))
+      // Legacy fallback: no Origin CF — use _position for Solid (ADR-040 primary triple)
+      this._tcProxy.position.copy(obj instanceof Solid ? obj._position : getCentroid(obj.corners))
       this._tcProxy.quaternion.identity()
     } else {
       this._tcProxy.position.copy(this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
@@ -2400,7 +2403,7 @@ export class AppController {
     const obj = this._activeObj
     const centroid = (obj instanceof CoordinateFrame)
       ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
-      : getCentroid(obj.corners)
+      : (obj instanceof Solid ? obj._position.clone() : getCentroid(obj.corners))
     this._tcProxy.position.copy(centroid)
     this._tc.getHelper().updateMatrixWorld()
   }
@@ -4321,7 +4324,7 @@ export class AppController {
     // the frame's actual world location (ADR-020).
     const grabCenter = (this._activeObj instanceof CoordinateFrame)
       ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
-      : getCentroid(this._corners)
+      : (this._activeObj instanceof Solid ? this._activeObj._position.clone() : getCentroid(this._corners))
     this._grab.centroid.copy(grabCenter)
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.lastDelta.set(0, 0, 0)
@@ -5872,7 +5875,7 @@ export class AppController {
           this._grab.startCorners = this._corners.map(c => c.clone())
           const grabCenter = (this._activeObj instanceof CoordinateFrame)
             ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
-            : getCentroid(this._corners)
+            : (this._activeObj instanceof Solid ? this._activeObj._position.clone() : getCentroid(this._corners))
           this._grab.centroid.copy(grabCenter)
           this._grab.pivot.copy(grabCenter)
           this._grab.lastDelta.set(0, 0, 0)
@@ -6155,7 +6158,7 @@ export class AppController {
 
         if (e.ctrlKey) {
           this._objRotateStartX = e.clientX
-          this._objRotateCentroid.copy(getCentroid(this._corners))
+          this._objRotateCentroid.copy(obj instanceof Solid ? obj._position : getCentroid(this._corners))
           this._objRotateStartCorners = this._corners.map(c => c.clone())
         }
       } else {
