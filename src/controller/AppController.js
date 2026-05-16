@@ -4711,24 +4711,13 @@ export class AppController {
 
     const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
 
-    if (obj instanceof CoordinateFrame) {
-      // ROS TF: compute new local rotation via change-of-basis.
-      // newLocalRot = parentWorldQuat^-1 * deltaQ * parentWorldQuat * segStartLocalRot
-      const parentWorldQuat  = this._service._getParentWorldQuat(obj)
-      const startWorldQuat   = parentWorldQuat.clone().multiply(this._rotate.segmentStartRot)
-      const newWorldQuat     = new THREE.Quaternion().copy(startWorldQuat).premultiply(deltaQ)
-      obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
-      obj.meshView.updateRotation(newWorldQuat)
-    } else {
-      // Solid: rotate around segment-start pivot using primary triple (ADR-040)
-      const pivot = this._rotate.segStartPivot ?? obj._position.clone()
-      if (this._rotate.segStartOrientation && this._rotate.segStartPos) {
-        obj.rotate(this._rotate.segStartOrientation, this._rotate.segStartPos, pivot, deltaQ)
-      }
-      obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.updateBoxHelper()
-      // CFs follow automatically via _updateWorldPoses() each animation frame.
-    }
+    this._service.applyPreviewRotation(obj, {
+      segStartOrientation: obj instanceof CoordinateFrame
+        ? this._rotate.segmentStartRot
+        : this._rotate.segStartOrientation,
+      segStartPos: this._rotate.segStartPos,
+      pivot: this._rotate.segStartPivot ?? obj._position.clone(),
+    }, deltaQ)
     this._updateRotateStatus()
   }
 
@@ -4777,19 +4766,20 @@ export class AppController {
     } else {
       this._applyFreeGrab()
     }
-    // Stack snap: adjust Z so grabbed objects rest on top of any object below
+    // Stack snap: adjust Z so grabbed objects rest on top of any object below.
+    // applyPreviewTranslation (called from _applyGrabDeltaToAll) already updated
+    // views; re-update after stack snap since it re-applies domain mutations.
     if (this._grab.stackMode) {
-      this._applyStackSnap()
+      this._applyStackSnap(this._grab.segmentStartPositions, this._grab.lastDelta)
+      for (const id of this._selectedIds) {
+        const selObj = this._scene.getObject(id)
+        if (selObj) {
+          selObj.meshView.updateGeometry(_grabHandlesOf(selObj))
+          selObj.meshView.updateBoxHelper()
+        }
+      }
     } else {
       this._grab.stacking = false
-    }
-    // Update geometry for all selected objects
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj) {
-        selObj.meshView.updateGeometry(_grabHandlesOf(selObj))
-        selObj.meshView.updateBoxHelper()
-      }
     }
   }
 
@@ -4806,10 +4796,10 @@ export class AppController {
    * Stack snap: after all grab movement is applied, cast downward rays from the
    * bottom face of the active grabbed object. If another object is directly below,
    * shift all grabbed objects upward so the bottom face rests on that surface.
-   *
-   * Must be called after `_applyGrabDeltaToAll()` has updated vertex positions.
+   * @param {Map<string, import('three').Vector3>} segStartPositions  per-Solid _position snapshots
+   * @param {import('three').Vector3} currentDelta  world delta already applied by the caller
    */
-  _applyStackSnap() {
+  _applyStackSnap(segStartPositions, currentDelta) {
     const grabbed = this._activeObj
     if (!(grabbed instanceof Solid)) { this._grab.stacking = false; return }
 
@@ -4855,11 +4845,14 @@ export class AppController {
     // Skip if already resting on the surface (within 1mm tolerance)
     if (Math.abs(zOffset) < 0.001) { this._grab.stacking = false; return }
 
-    // Apply additional Z shift to all selected objects' vertex positions directly
+    // Apply additional Z shift via the public Solid.move() API (ADR-040: never mutate
+    // corners directly — _position and localCorners must remain the SSOT).
+    const snapDelta = currentDelta.clone().add(new THREE.Vector3(0, 0, zOffset))
     for (const id of this._selectedIds) {
       const selObj = this._scene.getObject(id)
       if (selObj instanceof Solid) {
-        selObj.corners.forEach(c => { c.z += zOffset })
+        const segStartPos = segStartPositions?.get(id)
+        if (segStartPos) selObj.move(segStartPos, snapDelta)
       }
     }
     this._grab.stacking = true
@@ -4872,22 +4865,11 @@ export class AppController {
    */
   _applyGrabDeltaToAll(delta) {
     this._grab.lastDelta.copy(delta)
-    for (const [id, startCorners] of this._grab.segmentStartCorners) {
-      const selObj = this._scene.getObject(id)
-      if (!selObj) continue
-      if (selObj instanceof CoordinateFrame) {
-        // translation is parent-local — convert world delta to parent's local space (ROS TF)
-        const parentWorldQuat = this._service._getParentWorldQuat(selObj)
-        const localDelta = delta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
-        selObj.move(startCorners, localDelta)
-      } else if (selObj instanceof Solid) {
-        // Solid: use _position snapshot so move() keeps primary triple consistent (ADR-040)
-        const segStartPos = this._grab.segmentStartPositions.get(id)
-        if (segStartPos) selObj.move(segStartPos, delta)
-      } else {
-        selObj.move(startCorners, delta)
-      }
-    }
+    this._service.applyPreviewTranslation(
+      this._grab.segmentStartCorners,
+      this._grab.segmentStartPositions,
+      delta,
+    )
   }
 
   _applyGrabFromInput() {
@@ -5548,26 +5530,22 @@ export class AppController {
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
             const delta = pt.clone().sub(this._objDragStart)
-            // Apply delta to all selected objects
-            for (const [id, startCorners] of this._objDragAllStartCorners) {
-              const selObj = this._scene.getObject(id)
-              if (!selObj) continue
-              if (selObj instanceof Solid) {
-                const segStartPos = this._objDragAllStartPositions.get(id)
-                if (segStartPos) selObj.move(segStartPos, delta)
-              } else {
-                selObj.move(startCorners, delta)
-              }
-            }
+            this._service.applyPreviewTranslation(
+              this._objDragAllStartCorners,
+              this._objDragAllStartPositions,
+              delta,
+            )
             // Stack snap: after XY movement, adjust Z so the object rests on
             // the highest surface directly below it (same logic as _grab path).
-            if (this._grab.stackMode) this._applyStackSnap()
-            // Update geometry for all dragged objects
-            for (const [id] of this._objDragAllStartCorners) {
-              const selObj = this._scene.getObject(id)
-              if (selObj) {
-                selObj.meshView.updateGeometry(selObj.corners)
-                selObj.meshView.updateBoxHelper()
+            if (this._grab.stackMode) {
+              this._applyStackSnap(this._objDragAllStartPositions, delta)
+              // Re-update views after stack snap re-applied domain mutations.
+              for (const [id] of this._objDragAllStartCorners) {
+                const selObj = this._scene.getObject(id)
+                if (selObj) {
+                  selObj.meshView.updateGeometry(selObj.corners)
+                  selObj.meshView.updateBoxHelper()
+                }
               }
             }
           }

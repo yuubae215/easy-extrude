@@ -1973,6 +1973,62 @@ export class SceneService extends EventEmitter {
     this.emit('activeChanged', id)
   }
 
+  // ── Preview operations (live drag / rotate) ───────────────────────────────
+
+  /**
+   * Applies a world-space translation to all objects in a selection snapshot during
+   * a live drag (G-key Grab or mouse-drag preview). Dispatches by entity type:
+   * CoordinateFrame receives a parent-local delta; Solid uses the primary triple
+   * (_position snapshot + world delta); all other entities use their corners snapshot.
+   * Mesh views are updated in the same call.
+   * @param {Map<string, import('three').Vector3[]>} segStartCorners  per-entity snapshots
+   * @param {Map<string, import('three').Vector3>|null} segStartPositions  per-Solid _position snapshots
+   * @param {import('three').Vector3} worldDelta
+   */
+  applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta) {
+    for (const [id, startCorners] of segStartCorners) {
+      const obj = this._model.getObject(id)
+      if (!obj) continue
+      if (obj instanceof CoordinateFrame) {
+        const parentWorldQuat = this._getParentWorldQuat(obj)
+        const localDelta = worldDelta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
+        obj.move(startCorners, localDelta)
+      } else if (obj instanceof Solid) {
+        const segStartPos = segStartPositions?.get(id)
+        if (segStartPos) obj.move(segStartPos, worldDelta)
+      } else {
+        obj.move(startCorners, worldDelta)
+      }
+      const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+      obj.meshView?.updateGeometry(handles)
+      obj.meshView?.updateBoxHelper()
+    }
+  }
+
+  /**
+   * Applies a rotation delta to an object during a live Rotate preview.
+   * Dispatches by entity type: CoordinateFrame uses ROS TF local rotation;
+   * Solid uses the primary triple snapshot. Mesh views are updated in the same call.
+   * @param {import('../domain/Solid.js').Solid|import('../domain/CoordinateFrame.js').CoordinateFrame} obj
+   * @param {{ segStartOrientation: import('three').Quaternion, segStartPos?: import('three').Vector3, pivot?: import('three').Vector3 }} snap
+   * @param {import('three').Quaternion} deltaQ
+   */
+  applyPreviewRotation(obj, { segStartOrientation, segStartPos, pivot }, deltaQ) {
+    if (obj instanceof CoordinateFrame) {
+      const parentWorldQuat = this._getParentWorldQuat(obj)
+      const startWorldQuat  = parentWorldQuat.clone().multiply(segStartOrientation)
+      const newWorldQuat    = new Quaternion().copy(startWorldQuat).premultiply(deltaQ)
+      obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
+      obj.meshView?.updateRotation(newWorldQuat)
+    } else if (obj instanceof Solid) {
+      if (segStartOrientation && segStartPos) {
+        obj.rotate(segStartOrientation, segStartPos, pivot, deltaQ)
+      }
+      obj.meshView?.updateGeometry(obj.corners)
+      obj.meshView?.updateBoxHelper()
+    }
+  }
+
   /**
    * Extrudes a Profile into a Solid and replaces it in the scene.
    * The Profile entity is discarded; the returned Solid reuses the same id,
