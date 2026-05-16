@@ -3475,6 +3475,12 @@ export class AppController {
         }}]
       : []
 
+    // Show "Select Assembly" only when the object has fixed-joint neighbors
+    const hasFixedNeighbors = this._service.getConnectedAssembly(id).size > 1
+    const assemblyItems = hasFixedNeighbors
+      ? [{ label: 'Select Assembly 🔗', onClick: () => this._selectAssembly() }]
+      : []
+
     const items = [
       {
         label: 'Grab',
@@ -3487,6 +3493,7 @@ export class AppController {
       ...mountItems,
       ...unfastenItems,
       ...linkItems,
+      ...assemblyItems,
       ...(canAddFrame ? [{
         label: 'Add interface frame ⊞',
         onClick: () => this._promptAddFrame(id),
@@ -4393,6 +4400,40 @@ export class AppController {
     this._objSelected = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
+  }
+
+  /**
+   * Selects all entities reachable from the active object via fixed-joint SpatialLinks.
+   * BFS traversal through jointType === 'fixed' edges (Semantic Select / assembly select).
+   * Keyboard: Shift+S  Mobile: long-press context menu "Select Assembly"
+   */
+  _selectAssembly() {
+    if (!this._objSelected || !this._activeObj) return
+    if (this._activeObj instanceof SpatialLink) return
+
+    const startId = this._activeObj.id
+    const assemblyIds = this._service.getConnectedAssembly(startId)
+
+    if (assemblyIds.size <= 1) {
+      this._uiView.showToast('No fixed-linked parts found', { type: 'warn' })
+      return
+    }
+
+    this._clearObjectSelection()
+    for (const id of assemblyIds) {
+      const obj = this._scene.getObject(id)
+      if (!obj?.meshView) continue
+      obj.meshView.setObjectSelected(true)
+      this._setChildFramesVisible(obj.id, true)
+      this._selectedIds.add(id)
+    }
+
+    if (this._scene.activeId !== startId) this._service.setActiveObject(startId)
+    this._objSelected = true
+    this._refreshObjectModeStatus()
+    this._updateNPanel()
+    this._updateMobileToolbar()
+    this._uiView.showToast(`${assemblyIds.size} objects selected`)
   }
 
   // ─── Blender-style grab ────────────────────────────────────────────────────
@@ -6733,6 +6774,12 @@ export class AppController {
           return
         }
         this._startSpatialLinkCreation()
+        return
+      }
+      // Shift+S: select all fixed-joint-connected parts (Semantic Select / assembly select)
+      if (e.key === 'S' && e.shiftKey && this._objSelected) {
+        e.preventDefault()
+        this._selectAssembly()
         return
       }
       // Shift+D: duplicate active object and immediately grab (Blender-style)
