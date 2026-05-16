@@ -4519,7 +4519,7 @@ export class AppController {
       this._rotate.startPos            = obj._position.clone()
       this._rotate.segStartOrientation = obj.orientation.clone()
       this._rotate.segStartPos         = obj._position.clone()
-      const pivot = getCentroid(obj.corners)
+      const pivot = obj._position.clone()
       this._rotate.segStartPivot       = pivot.clone()
       projected = pivot.clone().project(this._camera)
       obj.meshView.boxHelper.visible = false
@@ -4674,7 +4674,7 @@ export class AppController {
       if (obj instanceof CoordinateFrame) {
         pivotScreen = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
       } else {
-        pivotScreen = (this._rotate.segStartPivot ?? getCentroid(obj.corners)).clone().project(this._camera)
+        pivotScreen = (this._rotate.segStartPivot ?? obj._position.clone()).clone().project(this._camera)
       }
       const currentAngle = Math.atan2(
         this._mouse.y - pivotScreen.y,
@@ -4717,7 +4717,7 @@ export class AppController {
       obj.meshView.updateRotation(newWorldQuat)
     } else {
       // Solid: rotate around segment-start pivot using primary triple (ADR-040)
-      const pivot = this._rotate.segStartPivot ?? getCentroid(obj.corners)
+      const pivot = this._rotate.segStartPivot ?? obj._position.clone()
       if (this._rotate.segStartOrientation && this._rotate.segStartPos) {
         obj.rotate(this._rotate.segStartOrientation, this._rotate.segStartPos, pivot, deltaQ)
       }
@@ -5784,7 +5784,7 @@ export class AppController {
           // Re-snapshot segment-start triple for new drag segment (ADR-040)
           this._rotate.segStartOrientation = obj.orientation.clone()
           this._rotate.segStartPos         = obj._position.clone()
-          this._rotate.segStartPivot       = getCentroid(obj.corners).clone()
+          this._rotate.segStartPivot       = obj._position.clone()
         } else if (obj instanceof CoordinateFrame) {
           this._rotate.segmentStartRot.copy(obj.rotation)
         }
