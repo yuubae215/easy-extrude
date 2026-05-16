@@ -60,9 +60,13 @@ import {
   S_OBJECT_IDLE, S_GRAB_ACTIVE, S_ROTATE_ACTIVE,
   S_FACE_EXTRUDE, S_MEASURE_PLACING, S_LINK_MODE,
   S_FRAME_PLACEMENT, S_MOUNT_PICKING,
-  EO_IDLE, EO_1D_DRAG,
+  S_QUICK_DRAG, S_RECT_SELECT,
+  EO_IDLE, EO_1D_DRAG, EO_2D_SKETCH_DRAW,
 } from '../core/editorStates.js'
 import { EndpointDragState } from '../core/states/EndpointDragState.js'
+import { SketchDrawState }   from '../core/states/SketchDrawState.js'
+import { QuickDragState }    from '../core/states/QuickDragState.js'
+import { RectSelectState }   from '../core/states/RectSelectState.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -302,6 +306,14 @@ export class AppController {
       { from: S_OBJECT_IDLE,    on: 'BEGIN_MOUNT_PICKING',     to: S_MOUNT_PICKING },
       { from: S_MOUNT_PICKING,  on: 'CONFIRM',                 to: S_OBJECT_IDLE },
       { from: S_MOUNT_PICKING,  on: 'CANCEL',                  to: S_OBJECT_IDLE },
+
+      { from: S_OBJECT_IDLE,   on: 'BEGIN_QUICK_DRAG',        to: S_QUICK_DRAG },
+      { from: S_QUICK_DRAG,    on: 'CONFIRM',                  to: S_OBJECT_IDLE },
+      { from: S_QUICK_DRAG,    on: 'CANCEL',                   to: S_OBJECT_IDLE },
+
+      { from: S_OBJECT_IDLE,   on: 'BEGIN_RECT_SELECT',       to: S_RECT_SELECT },
+      { from: S_RECT_SELECT,   on: 'CONFIRM',                  to: S_OBJECT_IDLE },
+      { from: S_RECT_SELECT,   on: 'CANCEL',                   to: S_OBJECT_IDLE },
     ])
 
     // ── Mount picking state (ADR-032 Phase H-6, Mobile) ──────────────────
@@ -369,8 +381,9 @@ export class AppController {
     }
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
+    // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
+    // p1/p2 are kept here (vs. inside SketchDrawState) so _enterExtrudePhase can read them.
     this._sketch = {
-      drawing: false,
       p1: null,  // THREE.Vector3 ground-plane point
       p2: null,  // THREE.Vector3 ground-plane point
     }
@@ -387,8 +400,7 @@ export class AppController {
 
     // ── Object mode state ──────────────────────────────────────────────────
     this._objSelected           = false
-    this._objDragging           = false
-    this._objCtrlDrag           = false
+    this._objCtrlDrag           = false  // true during Ctrl+drag rotate within S_QUICK_DRAG
     this._objDragPlane          = new THREE.Plane()
     this._objDragStart          = new THREE.Vector3()
     this._objDragStartCorners   = []
@@ -432,11 +444,18 @@ export class AppController {
     // Mirrors _opState but scoped to Edit Mode. Currently covers 1D endpoint
     // drag; structured for future edit-mode operations (vertex grab, etc.).
     this._editOpState = new StateMachine(EO_IDLE, [
-      { from: EO_IDLE,    on: 'BEGIN_1D_DRAG', to: EO_1D_DRAG },
-      { from: EO_1D_DRAG, on: 'CONFIRM',       to: EO_IDLE },
-      { from: EO_1D_DRAG, on: 'CANCEL',        to: EO_IDLE },
+      { from: EO_IDLE,           on: 'BEGIN_1D_DRAG',    to: EO_1D_DRAG },
+      { from: EO_1D_DRAG,        on: 'CONFIRM',          to: EO_IDLE },
+      { from: EO_1D_DRAG,        on: 'CANCEL',           to: EO_IDLE },
+
+      { from: EO_IDLE,           on: 'BEGIN_2D_SKETCH',  to: EO_2D_SKETCH_DRAW },
+      { from: EO_2D_SKETCH_DRAW, on: 'CONFIRM',          to: EO_IDLE },
+      { from: EO_2D_SKETCH_DRAW, on: 'CANCEL',           to: EO_IDLE },
     ])
-    this._endpointDragHandler = new EndpointDragState()
+    this._endpointDragHandler  = new EndpointDragState()
+    this._sketchDrawHandler    = new SketchDrawState()
+    this._quickDragHandler     = new QuickDragState()
+    this._rectSelHandler       = new RectSelectState()
 
     // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
     // Active state tracked by this._opState (S_FACE_EXTRUDE).
@@ -813,14 +832,79 @@ export class AppController {
   /** Minimal context object passed to Edit Mode operation state handlers. */
   get _editCtx() {
     return {
-      obj:          this._activeObj,
-      camera:       this._camera,
-      mouse:        this._mouse,
-      raycaster:    this._raycaster,
-      controls:     this._controls,
-      commandStack: this._commandStack,
-      scene:        this._scene,
-      sceneService: this._service,
+      obj:                   this._activeObj,
+      camera:                this._camera,
+      mouse:                 this._mouse,
+      raycaster:             this._raycaster,
+      controls:              this._controls,
+      commandStack:          this._commandStack,
+      scene:                 this._scene,
+      sceneService:          this._service,
+      // Extended for SketchDrawState:
+      groundPlane:           this._groundPlane,
+      sketch:                this._sketch,
+      meshView:              this._meshView,
+      uiView:                this._uiView,
+      onMobileToolbarUpdate: () => this._updateMobileToolbar(),
+    }
+  }
+
+  get _quickDragCtx() {
+    return {
+      controls: this._controls,
+      uiView:   this._uiView,
+      applyMove: (e) => {
+        if (this._objCtrlDrag) {
+          const angle = (e.clientX - this._objRotateStartX) * 0.01
+          const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
+          const obj   = this._activeObj
+          if (obj instanceof Solid && this._objRotateStartOrientation) {
+            obj.rotate(this._objRotateStartOrientation, this._objRotateStartPos, this._objRotateCentroid, quat)
+            obj.meshView.updateGeometry(obj.corners)
+          } else {
+            this._objRotateStartCorners.forEach((c, i) => {
+              this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
+            })
+            this._meshView.updateGeometry(this._corners)
+          }
+          if (this._objSelected) this._meshView.updateBoxHelper()
+        } else {
+          this._raycaster.setFromCamera(this._mouse, this._camera)
+          const pt = new THREE.Vector3()
+          if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
+            const delta = pt.clone().sub(this._objDragStart)
+            this._service.applyPreviewTranslation(
+              this._objDragAllStartCorners,
+              this._objDragAllStartPositions,
+              delta,
+            )
+            if (this._grab.stackMode) {
+              this._applyStackSnap(this._objDragAllStartPositions, delta)
+              for (const [id] of this._objDragAllStartCorners) {
+                const selObj = this._scene.getObject(id)
+                if (selObj) {
+                  selObj.meshView.updateGeometry(selObj.corners)
+                  selObj.meshView.updateBoxHelper()
+                }
+              }
+            }
+          }
+        }
+      },
+      finish: () => {
+        this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
+        this._updateNPanel()
+      },
+    }
+  }
+
+  get _rectSelCtx() {
+    return {
+      controls:      this._controls,
+      rectSel:       this._rectSel,
+      rectSelEl:     this._rectSelEl,
+      updateDisplay: () => this._updateRectSelDisplay(),
+      finalize:      () => this._finalizeRectSelection(),
     }
   }
 
@@ -3832,9 +3916,13 @@ export class AppController {
     if (this._opState.is(S_FACE_EXTRUDE))     this._cancelFaceExtrude()
     if (this._opState.is(S_FRAME_PLACEMENT))  this._cancelFramePickSubMode()
     if (this._opState.is(S_MOUNT_PICKING))    this._cancelMountPicking()
-    if (this._objDragging) {
-      this._objDragging = false
-      this._objCtrlDrag = false
+    if (this._opState.is(S_QUICK_DRAG)) {
+      this._quickDragHandler.cancel(this._quickDragCtx)
+      this._opState.send('CANCEL')
+    }
+    if (this._opState.is(S_RECT_SELECT)) {
+      this._rectSelHandler.cancel(this._rectSelCtx)
+      this._opState.send('CANCEL')
     }
 
     // ── Clear all edit visual state on the current active object ───────────
@@ -3879,7 +3967,6 @@ export class AppController {
       this._detachMobileTransform()  // hide gizmo in Edit mode (no 3D translate there)
       this._clearObjectSelection()
       this._setObjectSelected(false)
-      this._objDragging = false
       if (this._activeObj instanceof Profile) {
         this._enterEditMode2D()
       } else if (this._activeObj instanceof MeasureLine) {
@@ -3892,12 +3979,14 @@ export class AppController {
 
   _cleanupEditSubstate() {
     this._scene.setEditSubstate(null)
-    this._sketch.drawing = false
-    this._sketch.p1 = null
-    this._sketch.p2 = null
     this._extrudePhase.hasInput = false
     this._extrudePhase.inputStr = ''
     this._extrudePhase.height = 0
+    // Cancel any in-progress 2D sketch draw (restores controls, clears p1/p2)
+    if (this._editOpState.is(EO_2D_SKETCH_DRAW)) {
+      this._sketchDrawHandler.cancel(this._editCtx)
+      this._editOpState.send('CANCEL')
+    }
     // Cancel any in-progress endpoint drag (restores original positions)
     if (this._editOpState.is(EO_1D_DRAG)) {
       this._endpointDragHandler.cancel(this._editCtx)
@@ -5539,69 +5628,23 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
-      if (this._rectSel.active) {
-        this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
-        this._updateRectSelDisplay()
+      if (this._opState.is(S_RECT_SELECT)) {
+        this._rectSelHandler.onPointerMove(this._rectSelCtx, e)
         return
       }
-      if (this._objDragging) {
-        if (this._objCtrlDrag) {
-          const angle = (e.clientX - this._objRotateStartX) * 0.01
-          const quat  = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle)
-          const obj   = this._activeObj
-          if (obj instanceof Solid && this._objRotateStartOrientation) {
-            // ADR-040: use primary triple API — Solid.rotate() updates _position, orientation,
-            // localCorners, and world corners in one snapshot-based call (no direct mutation).
-            obj.rotate(this._objRotateStartOrientation, this._objRotateStartPos, this._objRotateCentroid, quat)
-            obj.meshView.updateGeometry(obj.corners)
-          } else {
-            this._objRotateStartCorners.forEach((c, i) => {
-              this._corners[i].copy(c).sub(this._objRotateCentroid).applyQuaternion(quat).add(this._objRotateCentroid)
-            })
-            this._meshView.updateGeometry(this._corners)
-          }
-          if (this._objSelected) this._meshView.updateBoxHelper()
-        } else {
-          this._raycaster.setFromCamera(this._mouse, this._camera)
-          const pt = new THREE.Vector3()
-          if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
-            const delta = pt.clone().sub(this._objDragStart)
-            this._service.applyPreviewTranslation(
-              this._objDragAllStartCorners,
-              this._objDragAllStartPositions,
-              delta,
-            )
-            // Stack snap: after XY movement, adjust Z so the object rests on
-            // the highest surface directly below it (same logic as _grab path).
-            if (this._grab.stackMode) {
-              this._applyStackSnap(this._objDragAllStartPositions, delta)
-              // Re-update views after stack snap re-applied domain mutations.
-              for (const [id] of this._objDragAllStartCorners) {
-                const selObj = this._scene.getObject(id)
-                if (selObj) {
-                  selObj.meshView.updateGeometry(selObj.corners)
-                  selObj.meshView.updateBoxHelper()
-                }
-              }
-            }
-          }
-        }
+      if (this._opState.is(S_QUICK_DRAG)) {
+        this._quickDragHandler.onPointerMove(this._quickDragCtx, e)
         this._updateNPanel()
-      } else {
-        this._uiView.setCursor((this._hitAnyObject() || this._hitAnyAnnotation()) ? 'pointer' : 'default')
+        return
       }
+      this._uiView.setCursor((this._hitAnyObject() || this._hitAnyAnnotation()) ? 'pointer' : 'default')
       return
     }
 
     // ── Edit mode · 2D sketch ─────────────────────────────────────────────
     if (this._scene.editSubstate === '2d-sketch') {
-      if (this._sketch.drawing) {
-        const pt = new THREE.Vector3()
-        this._raycaster.setFromCamera(this._mouse, this._camera)
-        if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) {
-          this._sketch.p2 = pt.clone()
-          this._meshView.showSketchRect(this._sketch.p1, this._sketch.p2)
-        }
+      if (this._editOpState.is(EO_2D_SKETCH_DRAW)) {
+        this._sketchDrawHandler.onPointerMove(this._editCtx)
       }
       return
     }
@@ -5751,9 +5794,9 @@ export class AppController {
     if (this._activeDragPointerId !== null && e.pointerType === 'touch') {
       // Second finger while rect selection is active: cancel rect sel so
       // OrbitControls can handle the two-finger orbit/dolly gesture.
-      if (this._rectSel.active) {
-        this._rectSel.active = false
-        this._rectSelEl.style.display = 'none'
+      if (this._opState.is(S_RECT_SELECT)) {
+        this._rectSelHandler.cancel(this._rectSelCtx)
+        this._opState.send('CANCEL')
         this._activeDragPointerId = null
       }
       return
@@ -6037,14 +6080,13 @@ export class AppController {
 
     // ── Sketch drawing ────────────────────────────────────────────────────
     if (this._scene.editSubstate === '2d-sketch') {
-      const pt = new THREE.Vector3()
-      this._raycaster.setFromCamera(this._mouse, this._camera)
-      if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) {
-        this._sketch.drawing = true
-        this._sketch.p1 = pt.clone()
-        this._sketch.p2 = pt.clone()
-        this._controls.enabled = false
-        this._activeDragPointerId = e.pointerId
+      if (this._editOpState.send('BEGIN_2D_SKETCH')) {
+        if (this._sketchDrawHandler.enter(this._editCtx)) {
+          this._activeDragPointerId = e.pointerId
+        } else {
+          // Ground plane not hit — roll back FSM immediately
+          this._editOpState.send('CANCEL')
+        }
       }
       return
     }
@@ -6160,12 +6202,8 @@ export class AppController {
           }
         }
 
-        this._objDragging      = true
         // Ctrl+drag (rotate) only works for locally-editable objects (Cuboid).
-        this._objCtrlDrag      = e.ctrlKey && !(obj instanceof ImportedMesh) && !(obj instanceof MeasureLine) && !(obj instanceof CoordinateFrame)
-        this._controls.enabled = false
-        this._activeDragPointerId = e.pointerId
-        this._uiView.setCursor('grabbing')
+        this._objCtrlDrag = e.ctrlKey && !(obj instanceof ImportedMesh) && !(obj instanceof MeasureLine) && !(obj instanceof CoordinateFrame)
 
         const camDir = new THREE.Vector3()
         this._camera.getWorldDirection(camDir)
@@ -6186,6 +6224,11 @@ export class AppController {
             this._objRotateStartCorners = this._corners.map(c => c.clone())
           }
         }
+
+        if (this._opState.send('BEGIN_QUICK_DRAG')) {
+          this._quickDragHandler.enter(this._quickDragCtx)
+          this._activeDragPointerId = e.pointerId
+        }
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
         // If TC already claimed this pointer (arrow outside Solid bounds), its own
@@ -6201,10 +6244,10 @@ export class AppController {
         }
         // Do NOT disable _controls here: orbit (right-click / two-finger) uses
         // separate buttons/fingers and must remain available simultaneously.
-        this._rectSel.active    = true
-        this._rectSel.startPx   = { x: e.clientX, y: e.clientY }
-        this._rectSel.currentPx = { x: e.clientX, y: e.clientY }
-        this._activeDragPointerId = e.pointerId
+        if (this._opState.send('BEGIN_RECT_SELECT')) {
+          this._rectSelHandler.enter(this._rectSelCtx, e)
+          this._activeDragPointerId = e.pointerId
+        }
       }
       return
     }
@@ -6381,41 +6424,20 @@ export class AppController {
       if (wasDragging) this._confirmFaceExtrude()
       return
     }
-    if (this._sketch.drawing) {
-      this._sketch.drawing = false
-      this._controls.enabled = true
-      // Save rect to object
-      if (this._sketch.p1 && this._sketch.p2) {
-        const obj = this._activeObj
-        if (obj) {
-          const dx = Math.abs(this._sketch.p2.x - this._sketch.p1.x)
-          const dy = Math.abs(this._sketch.p2.y - this._sketch.p1.y)
-          if (dx > 0.01 || dy > 0.01) {
-            obj.setRect(this._sketch.p1, this._sketch.p2)
-            this._uiView.setStatusRich([
-              { text: 'Sketch', bold: true, color: '#4fc3f7' },
-              { text: 'Press Enter to extrude · Drag to redraw', color: '#888' },
-            ])
-            this._updateMobileToolbar()
-          }
-        }
-      }
+    if (this._editOpState.is(EO_2D_SKETCH_DRAW) && wasDragging) {
+      this._sketchDrawHandler.confirm(this._editCtx)
+      this._editOpState.send('CONFIRM')
       return
     }
-    if (this._rectSel.active) {
-      this._rectSel.active = false
-      this._rectSelEl.style.display = 'none'
-      this._controls.enabled = true
-      this._finalizeRectSelection()
+    if (this._opState.is(S_RECT_SELECT) && wasDragging) {
+      this._rectSelHandler.confirm(this._rectSelCtx)
+      this._opState.send('CONFIRM')
       return
     }
-    if (this._objDragging) {
-      this._objDragging  = false
-      this._objCtrlDrag  = false
-      this._controls.enabled = true
-      this._activeDragPointerId = null
-      this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
-      this._updateNPanel()
+    if (this._opState.is(S_QUICK_DRAG) && wasDragging) {
+      this._objCtrlDrag = false
+      this._quickDragHandler.confirm(this._quickDragCtx)
+      this._opState.send('CONFIRM')
     }
   }
 

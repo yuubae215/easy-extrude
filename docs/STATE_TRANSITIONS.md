@@ -995,11 +995,10 @@ convention used in the project's robotics integration context.
 ### Edit Mode — Operation States (`_editOpState`)
 
 **Status**: Implemented — `AppController._editOpState` (`new StateMachine(EO_IDLE, [...])`)
-**Handler classes**: `src/core/states/EndpointDragState.js`
-**State constants**: `EO_IDLE`, `EO_1D_DRAG` in `src/core/editorStates.js`
+**Handler classes**: `src/core/states/EndpointDragState.js`, `src/core/states/SketchDrawState.js`
+**State constants**: `EO_IDLE`, `EO_1D_DRAG`, `EO_2D_SKETCH_DRAW` in `src/core/editorStates.js`
 
 Parallel FSM to `_opState`, scoped to operations within Edit Mode.
-Structured to accept future edit-mode operations (vertex grab, face-normal move, etc.).
 
 ```json
 {
@@ -1013,6 +1012,14 @@ Structured to accept future edit-mode operations (vertex grab, face-normal move,
         "orbitEnabled": false,
         "cursor": "grabbing",
         "handler": "EndpointDragState"
+      }
+    },
+    "EO_2D_SKETCH_DRAW": {
+      "outputs": {
+        "editDragActive": true,
+        "orbitEnabled": false,
+        "cursor": "crosshair",
+        "handler": "SketchDrawState"
       }
     }
   },
@@ -1048,7 +1055,48 @@ Structured to accept future edit-mode operations (vertex grab, face-normal move,
         "EndpointDragState.cancel": "call() → restore original corners",
         "controls.enabled": true
       }
+    },
+    {
+      "from": "EO_IDLE",
+      "to": "EO_2D_SKETCH_DRAW",
+      "event": "pointerDown_onGroundPlane",
+      "guard": [["editSubstate === '2d-sketch'", "groundPlane ray-hit succeeded"]],
+      "actions": {
+        "SketchDrawState.enter": "call() → sets sketch.p1/p2, disables controls",
+        "controls.enabled": false
+      }
+    },
+    {
+      "from": "EO_2D_SKETCH_DRAW",
+      "to": "EO_IDLE",
+      "event": "pointerUp",
+      "guard": [["activeDragPointerId === e.pointerId"]],
+      "actions": {
+        "SketchDrawState.confirm": "call() → obj.setRect() if rect large enough",
+        "controls.enabled": true
+      }
+    },
+    {
+      "from": "EO_2D_SKETCH_DRAW",
+      "to": "EO_IDLE",
+      "event": "cancelEditMode",
+      "guard": [],
+      "actions": {
+        "SketchDrawState.cancel": "call() → clears sketch.p1/p2",
+        "controls.enabled": true
+      }
     }
   ]
 }
 ```
+
+### Object Mode — Quick Drag and Rectangle Selection (`_opState` extensions)
+
+`S_QUICK_DRAG` and `S_RECT_SELECT` are appended to the same `_opState` machine (source of truth: `AppController._opState`).
+
+| State | Entry event | Confirm event | Cancel event | Handler class |
+|---|---|---|---|---|
+| `S_QUICK_DRAG` | `BEGIN_QUICK_DRAG` on pointerdown hitting an object (mouse only) | `CONFIRM` on pointerup | `CANCEL` on mode exit | `QuickDragState` |
+| `S_RECT_SELECT` | `BEGIN_RECT_SELECT` on pointerdown on empty space (mouse only) | `CONFIRM` on pointerup | `CANCEL` on second touch / mode exit | `RectSelectState` |
+
+**Handler files**: `src/core/states/QuickDragState.js`, `src/core/states/RectSelectState.js`
