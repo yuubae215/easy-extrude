@@ -13,7 +13,7 @@ Detail file for `docs/CODE_CONTRACTS.md` Section 3.
 |------|--------|--------|--------|--------|--------|
 | Object (generic) | Add | Dup | Edit | Delete | Stack |
 | Object (Solid selected) | Add | Dup | Edit | Delete | Rotate |
-| Object (CoordinateFrame selected) | Rotate | Grab | Delete | Add Frame | *(spacer)* |
+| Object (CoordinateFrame selected) | Delete | Move | Rotate | *(spacer)* | *(spacer)* |
 | Edit 2D sketch | <- Object | *(spacer)* | *(spacer)* | Extrude | — |
 | Edit 2D extrude | Cancel | *(spacer)* | *(spacer)* | Confirm | — |
 | Edit 3D | <- Object | Vertex | Edge | Face | — |
@@ -69,7 +69,7 @@ Dup, Edit, and Stack are disabled for `ImportedMesh`, `MeasureLine`, and `Coordi
 
 **Solid exception**: when a Solid is selected, slot 5 shows Rotate instead of Stack. Stack is still available via the Grab-active toolbar after starting a grab.
 
-**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout (Rotate|Grab|Delete|Add Frame|spacer) rather than disabling individual generic slots.
+**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout `[Delete | Move | Rotate | spacer | spacer]` rather than disabling individual generic slots. Delete is at slot 0 (left edge, matching the destructive-action anchor rule). Move (translate mode) and Rotate are separate buttons at slots 1–2 with `active` highlight reflecting the current TC mode; clicking an already-active mode is a no-op. Slots 3–4 are reserved for future CF-specific tools (e.g. Fasten).
 
 The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `_startGrab()` does not reset `stackMode`, so the pre-set is respected. `_confirmGrab()` and `_cancelGrab()` reset it to `false` when the grab ends.
 

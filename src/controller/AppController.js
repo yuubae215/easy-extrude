@@ -3621,19 +3621,13 @@ export class AppController {
     if (mode === 'object') {
       const hasObj = this._objSelected
 
-      // CoordinateFrame: TC mode toggle | Done | Delete | Add Frame | spacer
+      // CoordinateFrame: Delete | Move | Rotate | spacer | spacer
       if (hasObj && this._activeObj instanceof CoordinateFrame) {
-        const isRotate = this._tcMode === 'rotate'
         this._uiView.setMobileToolbar([
-          {
-            icon:    isRotate ? ICONS.rotate    : ICONS.translate,
-            label:   isRotate ? 'Rotate'        : 'Move',
-            active:  true,  // always highlight current mode
-            onClick: () => this._toggleTcMode(),
-          },
-          { icon: ICONS.confirm, label: 'Done', onClick: () => this._setObjectSelected(false) },
-          { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
-          { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._addObject('frame') },
+          { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
+          { icon: ICONS.translate, label: 'Move',   onClick: () => { if (this._tcMode !== 'translate') this._toggleTcMode() }, active: this._tcMode === 'translate' },
+          { icon: ICONS.rotate,    label: 'Rotate', onClick: () => { if (this._tcMode !== 'rotate')    this._toggleTcMode() }, active: this._tcMode === 'rotate' },
+          { spacer: true },
           { spacer: true },
         ])
         return
