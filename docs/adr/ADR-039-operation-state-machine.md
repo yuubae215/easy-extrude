@@ -152,8 +152,10 @@ if (this._opState.is(S_FACE_EXTRUDE))  this._cancelFaceExtrude()
 - Transitions currently have no `action` — methods call `send()` themselves.
   This is intentional: methods handle complex domain logic (toasts, undo
   snapshots) that shouldn't be hidden inside a transition table.
-- `_mountPicking`, `_framePlacementState`, and `_endpointDrag` retain their
-  own `.active` flags; they are not part of `_opState` (deferred to a follow-up).
+- `_mountPicking` and `_framePlacementState` have been migrated to `_opState`
+  as `S_MOUNT_PICKING` and `S_FRAME_PLACEMENT` (follow-up to initial delivery).
+- `_endpointDrag` retains its own `.active` flag; it lives in Edit Mode (1D
+  substate) not Object Mode, so it is outside `_opState`'s scope.
 
 ---
 

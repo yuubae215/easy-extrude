@@ -7,12 +7,14 @@
  */
 
 // ── Object Mode primary operation FSM (AppController._opState) ───────────────
-export const S_OBJECT_IDLE     = 'S_OBJECT_IDLE'
-export const S_GRAB_ACTIVE     = 'S_GRAB_ACTIVE'
-export const S_ROTATE_ACTIVE   = 'S_ROTATE_ACTIVE'
-export const S_FACE_EXTRUDE    = 'S_FACE_EXTRUDE'
-export const S_MEASURE_PLACING = 'S_MEASURE_PLACING'
-export const S_LINK_MODE       = 'S_LINK_MODE'
+export const S_OBJECT_IDLE      = 'S_OBJECT_IDLE'
+export const S_GRAB_ACTIVE      = 'S_GRAB_ACTIVE'
+export const S_ROTATE_ACTIVE    = 'S_ROTATE_ACTIVE'
+export const S_FACE_EXTRUDE     = 'S_FACE_EXTRUDE'
+export const S_MEASURE_PLACING  = 'S_MEASURE_PLACING'
+export const S_LINK_MODE        = 'S_LINK_MODE'
+export const S_FRAME_PLACEMENT  = 'S_FRAME_PLACEMENT'
+export const S_MOUNT_PICKING    = 'S_MOUNT_PICKING'
 
 // ── Edit Mode substates (SceneModel._editSubstate) ───────────────────────────
 export const ES_3D         = '3d'

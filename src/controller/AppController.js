@@ -59,6 +59,7 @@ import { StateMachine } from '../core/StateMachine.js'
 import {
   S_OBJECT_IDLE, S_GRAB_ACTIVE, S_ROTATE_ACTIVE,
   S_FACE_EXTRUDE, S_MEASURE_PLACING, S_LINK_MODE,
+  S_FRAME_PLACEMENT, S_MOUNT_PICKING,
 } from '../core/editorStates.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
@@ -288,16 +289,24 @@ export class AppController {
       { from: S_MEASURE_PLACING, on: 'CONFIRM',             to: S_OBJECT_IDLE },
       { from: S_MEASURE_PLACING, on: 'CANCEL',              to: S_OBJECT_IDLE },
       // Spatial Link creation
-      { from: S_OBJECT_IDLE,    on: 'BEGIN_LINK',           to: S_LINK_MODE },
-      { from: S_LINK_MODE,      on: 'CONFIRM',              to: S_OBJECT_IDLE },
-      { from: S_LINK_MODE,      on: 'CANCEL',               to: S_OBJECT_IDLE },
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_LINK',              to: S_LINK_MODE },
+      { from: S_LINK_MODE,      on: 'CONFIRM',                 to: S_OBJECT_IDLE },
+      { from: S_LINK_MODE,      on: 'CANCEL',                  to: S_OBJECT_IDLE },
+      // Frame placement pick sub-mode (ADR-034 §6)
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_FRAME_PLACEMENT',   to: S_FRAME_PLACEMENT },
+      { from: S_FRAME_PLACEMENT, on: 'CONFIRM',                to: S_OBJECT_IDLE },
+      { from: S_FRAME_PLACEMENT, on: 'CANCEL',                 to: S_OBJECT_IDLE },
+      // Mount target picking (ADR-032 Phase H-6, Mobile)
+      { from: S_OBJECT_IDLE,    on: 'BEGIN_MOUNT_PICKING',     to: S_MOUNT_PICKING },
+      { from: S_MOUNT_PICKING,  on: 'CONFIRM',                 to: S_OBJECT_IDLE },
+      { from: S_MOUNT_PICKING,  on: 'CANCEL',                  to: S_OBJECT_IDLE },
     ])
 
     // ── Mount picking state (ADR-032 Phase H-6, Mobile) ──────────────────
     // Entered via "Mount on frame ⊕" long-press context menu item.
     // The user taps a CoordinateFrame as the mount target.
+    // Active state tracked by this._opState (S_MOUNT_PICKING).
     this._mountPicking = {
-      active:   false,
       /** @type {string|null} ID of the Annotated* entity to mount */
       sourceId: null,
     }
@@ -571,10 +580,11 @@ export class AppController {
 
     // ── CoordinateFrame placement pick sub-mode (ADR-034 §6) ─────────────────
     /**
-     * Active when the user is picking a placement point for a new CoordinateFrame.
-     * @type {{ active: boolean, parentId: string|null }}
+     * Data for frame placement pick sub-mode.
+     * Active state tracked by this._opState (S_FRAME_PLACEMENT).
+     * @type {{ parentId: string|null }}
      */
-    this._framePlacementState = { active: false, parentId: null }
+    this._framePlacementState = { parentId: null }
     /**
      * Scene-level Three.js Group showing world-aligned parent axes during pick sub-mode.
      * Lazily created in _enterFramePickSubMode; reused on subsequent entries.
@@ -865,7 +875,8 @@ export class AppController {
    * @param {string} parentId
    */
   _enterFramePickSubMode(parentId) {
-    this._framePlacementState = { active: true, parentId }
+    if (!this._opState.send('BEGIN_FRAME_PLACEMENT')) return
+    this._framePlacementState.parentId = parentId
 
     // Show parent axes overlay at geometry ancestor centroid (ADR-034 §7)
     const ancestorCentroid = this._geometryAncestorCentroid(parentId)
@@ -900,10 +911,12 @@ export class AppController {
    * Cancels pick sub-mode; hides overlays and restores normal state.
    */
   _cancelFramePickSubMode() {
-    this._framePlacementState = { active: false, parentId: null }
+    if (!this._opState.is(S_FRAME_PLACEMENT)) return
+    this._framePlacementState.parentId = null
     if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
     if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
     this._uiView.setCursor('default')
+    this._opState.send('CANCEL')
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
   }
@@ -914,8 +927,15 @@ export class AppController {
    * @param {THREE.Vector3} worldPos
    */
   _confirmFramePlacement(worldPos) {
-    const { parentId } = this._framePlacementState
-    this._cancelFramePickSubMode()
+    if (!this._opState.is(S_FRAME_PLACEMENT)) return
+    const parentId = this._framePlacementState.parentId
+    this._framePlacementState.parentId = null
+    if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
+    if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
+    this._uiView.setCursor('default')
+    this._opState.send('CONFIRM')
+    this._refreshObjectModeStatus()
+    this._updateMobileToolbar()
 
     // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
     const parentObj = this._scene.getObject(parentId)
@@ -2659,7 +2679,12 @@ export class AppController {
     ))
     this._uiView.showToast(`Mounted on frame "${this._scene.getObject(targetId)?.name}"`)
     this._cancelSpatialLinkCreation()
-    this._cancelMountPicking()
+    if (this._opState.is(S_MOUNT_PICKING)) {
+      this._mountPicking.sourceId = null
+      this._uiView.setCursor('default')
+      this._opState.send('CONFIRM')
+      this._refreshObjectModeStatus()
+    }
     this._updateNPanel()
   }
 
@@ -2699,7 +2724,7 @@ export class AppController {
 
   /** Starts mount-picking mode for the given source Annotated* entity (mobile). */
   _startMountPicking(sourceId) {
-    this._mountPicking.active   = true
+    if (!this._opState.send('BEGIN_MOUNT_PICKING')) return
     this._mountPicking.sourceId = sourceId
     this._uiView.setStatus('Tap target frame (or empty space to cancel)  [✕]')
     this._uiView.setCursor('crosshair')
@@ -2707,10 +2732,10 @@ export class AppController {
 
   /** Cancels mount-picking mode and restores normal status. */
   _cancelMountPicking() {
-    if (!this._mountPicking.active) return
-    this._mountPicking.active   = false
+    if (!this._opState.is(S_MOUNT_PICKING)) return
     this._mountPicking.sourceId = null
     this._uiView.setCursor('default')
+    this._opState.send('CANCEL')
     this._refreshObjectModeStatus()
   }
 
@@ -3464,7 +3489,7 @@ export class AppController {
     }
 
     // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
-    if (this._framePlacementState.active) {
+    if (this._opState.is(S_FRAME_PLACEMENT)) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelFramePickSubMode(), danger: true },
         { spacer: true },
@@ -3787,9 +3812,11 @@ export class AppController {
     }
 
     // ── Cancel all in-progress operations ──────────────────────────────────
-    if (this._opState.is(S_GRAB_ACTIVE))   this._cancelGrab()
-    if (this._opState.is(S_ROTATE_ACTIVE)) this._cancelRotate()
-    if (this._opState.is(S_FACE_EXTRUDE))  this._cancelFaceExtrude()
+    if (this._opState.is(S_GRAB_ACTIVE))      this._cancelGrab()
+    if (this._opState.is(S_ROTATE_ACTIVE))    this._cancelRotate()
+    if (this._opState.is(S_FACE_EXTRUDE))     this._cancelFaceExtrude()
+    if (this._opState.is(S_FRAME_PLACEMENT))  this._cancelFramePickSubMode()
+    if (this._opState.is(S_MOUNT_PICKING))    this._cancelMountPicking()
     if (this._objDragging) {
       this._objDragging = false
       this._objCtrlDrag = false
@@ -5416,7 +5443,7 @@ export class AppController {
     }
 
     // ── Frame placement pick sub-mode hover (ADR-034 §6) ─────────────────
-    if (this._framePlacementState.active && e.pointerType !== 'touch') {
+    if (this._opState.is(S_FRAME_PLACEMENT) && e.pointerType !== 'touch') {
       const pt = this._pickFramePlacementPoint()
       if (pt && this._frameCursorGhost) {
         this._frameCursorGhost.position.copy(pt)
@@ -5744,14 +5771,14 @@ export class AppController {
 
     // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
     this._contextMenuSuppressed = e.button === 2 && (
-      this._opState.is(S_ROTATE_ACTIVE) || this._mountPicking.active ||
+      this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_MOUNT_PICKING) ||
       this._opState.is(S_LINK_MODE) || this._opState.is(S_GRAB_ACTIVE) ||
       this._opState.is(S_FACE_EXTRUDE) || !!this._mapMode.tool || this._opState.is(S_MEASURE_PLACING) ||
-      this._framePlacementState.active
+      this._opState.is(S_FRAME_PLACEMENT)
     )
 
     // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
-    if (this._framePlacementState.active) {
+    if (this._opState.is(S_FRAME_PLACEMENT)) {
       if (e.button === 2) { this._cancelFramePickSubMode(); return }
       if (e.button === 0 || e.pointerType === 'touch') {
         const pt = this._pickFramePlacementPoint()
@@ -5788,7 +5815,7 @@ export class AppController {
     }
 
     // ── Mount target selection (ADR-032 Phase H-6, Mobile) ────────────────
-    if (this._mountPicking.active) {
+    if (this._opState.is(S_MOUNT_PICKING)) {
       if (e.button === 2 || e.pointerType === 'touch') {
         // Right-click or empty-tap cancels
         const hit = this._hitAnyEntityForLink()
@@ -6581,7 +6608,7 @@ export class AppController {
     }
 
     // ── Frame placement pick sub-mode keys (ADR-034 §6) ──────────────────
-    if (this._framePlacementState.active) {
+    if (this._opState.is(S_FRAME_PLACEMENT)) {
       if (e.key === 'Escape') { this._cancelFramePickSubMode(); return }
       return  // consume all other keys during frame pick
     }
@@ -6599,7 +6626,7 @@ export class AppController {
     }
 
     // ── Mount picking keys (ADR-032 Phase H-5) ─────────────────────────────
-    if (this._mountPicking.active) {
+    if (this._opState.is(S_MOUNT_PICKING)) {
       if (e.key === 'Escape') { this._cancelMountPicking(); return }
       return  // consume all other keys during mount picking
     }

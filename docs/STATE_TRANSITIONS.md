@@ -774,8 +774,23 @@ To add a new operation state:
     },
     "S_LINK_MODE": {
       "outputs": {
-        "spatialLinkMode.active": true,
+        "spatialLinkMode.sourceId": "captured",
         "statusBar": "Click source CF, then target CF"
+      }
+    },
+    "S_FRAME_PLACEMENT": {
+      "outputs": {
+        "cursor": "crosshair",
+        "framePlacementState.parentId": "captured",
+        "parentAxesOverlay.visible": true,
+        "mobileToolbarSlots": "frame-placement"
+      }
+    },
+    "S_MOUNT_PICKING": {
+      "outputs": {
+        "cursor": "crosshair",
+        "mountPicking.sourceId": "captured",
+        "statusBar": "Tap target frame (or empty space to cancel)"
       }
     }
   },
@@ -897,6 +912,69 @@ To add a new operation state:
       "guard": [],
       "actions": {
         "measure.active": "false"
+      }
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_FRAME_PLACEMENT",
+      "event": "_addCoordinateFrame",
+      "guard": [["activeObj !== null"]],
+      "actions": {
+        "framePlacementState.parentId": "activeObj.id",
+        "parentAxesOverlay": "show(geometryAncestorCentroid)",
+        "cursor": "crosshair"
+      }
+    },
+    {
+      "from": "S_FRAME_PLACEMENT",
+      "to": "S_OBJECT_IDLE",
+      "event": "pointerDown_left",
+      "guard": [["pickFramePlacementPoint() !== null"]],
+      "actions": {
+        "commandStack.push": "createCreateCoordinateFrameCommand(placedFrame)",
+        "parentAxesOverlay.visible": false,
+        "frameCursorGhost.visible": false,
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "S_FRAME_PLACEMENT",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "parentAxesOverlay.visible": false,
+        "frameCursorGhost.visible": false,
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "S_OBJECT_IDLE",
+      "to": "S_MOUNT_PICKING",
+      "event": "longPressContextMenu_mountOnFrame",
+      "guard": [["activeObj instanceof AnnotatedLine|AnnotatedRegion|AnnotatedPoint"]],
+      "actions": {
+        "mountPicking.sourceId": "activeObj.id",
+        "cursor": "crosshair"
+      }
+    },
+    {
+      "from": "S_MOUNT_PICKING",
+      "to": "S_OBJECT_IDLE",
+      "event": "pointerDown_hitCoordinateFrame",
+      "guard": [["hit.obj instanceof CoordinateFrame"]],
+      "actions": {
+        "commandStack.push": "createMountAnnotationCommand(sourceId, targetId)",
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "S_MOUNT_PICKING",
+      "to": "S_OBJECT_IDLE",
+      "event": "keyEscape",
+      "guard": [],
+      "actions": {
+        "cursor": "default"
       }
     }
   ]
