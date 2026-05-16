@@ -76,7 +76,16 @@ Every critical state transition has exactly one designated entry point. Never by
 - Bypassing creates split-brain: the model and view believe different modes are active —
   the resulting bugs are non-deterministic and nearly impossible to reproduce.
 
-*Underlies CODE_CONTRACTS rules: Mode Transition Flow, CommandStack push() vs execute()*
+The same principle applies to domain entity mutation: a domain class owns the invariant
+between its primary state and its derived state. External code must use the class's
+public mutation API — never reach in and call the private rebuild method directly.
+
+- `Solid._rebuildWorldCorners()` maintains `vertices[i].position = _position + orientation × localCorners[i]`.
+  External code (commands, services, controllers) must call `restorePose()`, `move()`, `rotate()`, etc.
+  Calling `_rebuildWorldCorners()` from outside `Solid.js` is a bypass: the invariant is maintained
+  by convention of the caller, not by the class's own API boundary.
+
+*Underlies CODE_CONTRACTS rules: Mode Transition Flow, CommandStack push() vs execute(), Solid Pose Mutation Must Use Public API*
 
 ---
 
@@ -516,7 +525,7 @@ to the main body as a full principle and add a row to the Index.
 
 | # | Principle | Chapter | Underlies |
 |---|-----------|---------|-----------|
-| 1 | One Authoritative Entry Point | Design | Mode Transition Flow, CommandStack |
+| 1 | One Authoritative Entry Point | Design | Mode Transition Flow, CommandStack, Solid Pose Mutation Must Use Public API |
 | 2 | Type Is the Capability Contract | Design | Entity Capability Contracts, No-Op Interface |
 | 3 | Separate Pure Computation from Side Effects | Design | Visual State Ownership, Pure/Side-Effect |
 | 4 | Every Visual Flag Has One Owner | Design | Visual State Ownership |

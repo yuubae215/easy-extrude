@@ -180,6 +180,19 @@ export class Solid {
   }
 
   /**
+   * Restores `_position` and `orientation` from snapshots without changing `localCorners`.
+   * Use this — never direct field assignment — for rotation undo/redo and cancel paths.
+   * `localCorners` are invariant across rigid rotations, so no corner snapshot is needed.
+   * @param {Vector3}    position
+   * @param {Quaternion} orient
+   */
+  restorePose(position, orient) {
+    this._position.copy(position)
+    this.orientation.copy(orient)
+    this._rebuildWorldCorners()
+  }
+
+  /**
    * Translates the solid from `segStartPos` by `delta`.
    * Snapshot-based (reapplyable from the same start each pointer-move event).
    * @param {Vector3} segStartPos  _position snapshot taken at segment start
