@@ -115,6 +115,14 @@ export class SceneService extends EventEmitter {
      * @type {Set<string>}
      */
     this._prevCyclicLinkIds = new Set()
+
+    // ── Rubber-band link highlight state ──────────────────────────────────────
+    /** Entity IDs currently selected (not dragging). Drives link opacity. */
+    this._linkSelectedIds = new Set()
+    /** Entity IDs currently being grabbed. Drives marching ants + tension. */
+    this._dragEntityIds   = new Set()
+    /** Accumulates each frame during drag to scroll dash offset. */
+    this._dashTimer       = 0
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -1394,19 +1402,98 @@ export class SceneService extends EventEmitter {
     const tgt = this._entityWorldCentroid(link.targetId) ?? new Vector3()
     const view = new SpatialLinkView(this._threeScene, src, tgt, link.semanticType)
     this._linkViews.set(link.id, view)
+    // Apply current selection/drag highlight to the newly created view.
+    const highlighted =
+      this._dragEntityIds.has(link.sourceId) ||
+      this._dragEntityIds.has(link.targetId) ||
+      this._linkSelectedIds.has(link.sourceId) ||
+      this._linkSelectedIds.has(link.targetId)
+    view.setHighlighted(highlighted)
   }
 
   /**
    * Updates the line endpoints of every SpatialLinkView to follow entity centroids.
+   * Drives rubber-band animation: marching ants dash scroll + tension color shift.
    * Called once per animation frame at the end of _updateWorldPoses().
    */
   _updateSpatialLinkViews() {
+    const hasDrag = this._dragEntityIds.size > 0
+    if (hasDrag) this._dashTimer += 0.018   // advance marching ants
+
     for (const [id, view] of this._linkViews) {
       const link = this._model.getLink(id)
       if (!link) continue
       const src = this._entityWorldCentroid(link.sourceId)
       const tgt = this._entityWorldCentroid(link.targetId)
-      if (src && tgt) view.update(src, tgt)
+      if (!src || !tgt) continue
+
+      const isDragging = hasDrag && (
+        this._dragEntityIds.has(link.sourceId) ||
+        this._dragEntityIds.has(link.targetId)
+      )
+
+      let dashOffset = 0
+      let tension    = 0
+      if (isDragging) {
+        dashOffset = -this._dashTimer
+        const currentDist = src.distanceTo(tgt)
+        // tension: 0 at rest, ramps to 1 at 50% stretch beyond rest distance
+        tension = Math.max(0, (currentDist / view.restDistance) - 1) / 0.5
+      }
+
+      view.update(src, tgt, dashOffset, tension)
+    }
+  }
+
+  // ── Rubber-band highlight API (called by AppController) ────────────────────
+
+  /**
+   * Updates which entity IDs are "selected" (but not dragging).
+   * Link views connecting these entities are highlighted (full opacity, larger dashes).
+   * @param {Set<string>} entityIds
+   */
+  updateLinkSelectionHighlight(entityIds) {
+    this._linkSelectedIds = new Set(entityIds)
+    this._applyLinkHighlights()
+  }
+
+  /**
+   * Marks entities as actively being grabbed or released.
+   * On drag start: snapshots rest distances for tension computation.
+   * @param {Iterable<string>} entityIds
+   * @param {boolean}          active
+   */
+  setLinkDragging(entityIds, active) {
+    this._dragEntityIds.clear()
+    if (active) {
+      for (const id of entityIds) this._dragEntityIds.add(id)
+      // Snapshot rest distances for all links connected to dragged entities.
+      for (const [linkId, view] of this._linkViews) {
+        const link = this._model.getLink(linkId)
+        if (!link) continue
+        if (this._dragEntityIds.has(link.sourceId) || this._dragEntityIds.has(link.targetId)) {
+          const src = this._entityWorldCentroid(link.sourceId)
+          const tgt = this._entityWorldCentroid(link.targetId)
+          if (src && tgt) view.setRestDistance(src, tgt)
+        }
+      }
+    } else {
+      this._dashTimer = 0
+    }
+    this._applyLinkHighlights()
+  }
+
+  /** Applies highlight / idle opacity to all link views based on current selection/drag state. */
+  _applyLinkHighlights() {
+    for (const [id, view] of this._linkViews) {
+      const link = this._model.getLink(id)
+      if (!link) continue
+      const highlighted =
+        this._dragEntityIds.has(link.sourceId) ||
+        this._dragEntityIds.has(link.targetId) ||
+        this._linkSelectedIds.has(link.sourceId) ||
+        this._linkSelectedIds.has(link.targetId)
+      view.setHighlighted(highlighted)
     }
   }
 

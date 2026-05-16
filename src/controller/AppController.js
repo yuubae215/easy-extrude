@@ -2570,6 +2570,8 @@ export class AppController {
       this._selectedIds.clear()
       this._selectedIds.add(id)
     }
+    // Rubber-band: highlight links for the newly active entity (or clear on deselect).
+    this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
@@ -4329,6 +4331,7 @@ export class AppController {
       if (obj) obj.meshView.setObjectSelected(false)
     }
     this._selectedIds.clear()
+    this._service.updateLinkSelectionHighlight(new Set())
   }
 
   /**
@@ -4457,6 +4460,8 @@ export class AppController {
     }
     // All domain guards passed → mutual exclusion + state transition
     if (!this._opState.send('BEGIN_GRAB')) return
+    // Rubber-band: activate marching ants + tension for links connected to dragged entities.
+    this._service.setLinkDragging(this._selectedIds, true)
     this._grab.axis            = null
     this._grab.inputStr        = ''
     this._grab.hasInput        = false
@@ -4568,6 +4573,9 @@ export class AppController {
     this._meshView.clearPivotDisplay()
     this._meshView.clearSnapDisplay()
     this._opState.send('CONFIRM')
+    // Rubber-band: end drag animation; stay highlighted since entity is still selected.
+    this._service.setLinkDragging(new Set(), false)
+    this._service.updateLinkSelectionHighlight(this._selectedIds)
     this._controls.enabled = true
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
@@ -4605,6 +4613,9 @@ export class AppController {
     this._grab.stackMode     = false
     this._grab.stacking      = false
     this._opState.send('CANCEL')
+    // Rubber-band: end drag animation; stay highlighted since entity is still selected.
+    this._service.setLinkDragging(new Set(), false)
+    this._service.updateLinkSelectionHighlight(this._selectedIds)
     this._controls.enabled = true
     if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     this._uiView.setCursor('default')
