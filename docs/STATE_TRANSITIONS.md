@@ -989,3 +989,66 @@ Guards use a 2-D array encoding:
 
 This mirrors IEC 61499-style state machine notation and the PLC structured text
 convention used in the project's robotics integration context.
+
+---
+
+### Edit Mode — Operation States (`_editOpState`)
+
+**Status**: Implemented — `AppController._editOpState` (`new StateMachine(EO_IDLE, [...])`)
+**Handler classes**: `src/core/states/EndpointDragState.js`
+**State constants**: `EO_IDLE`, `EO_1D_DRAG` in `src/core/editorStates.js`
+
+Parallel FSM to `_opState`, scoped to operations within Edit Mode.
+Structured to accept future edit-mode operations (vertex grab, face-normal move, etc.).
+
+```json
+{
+  "states": {
+    "EO_IDLE": {
+      "outputs": { "editDragActive": false }
+    },
+    "EO_1D_DRAG": {
+      "outputs": {
+        "editDragActive": true,
+        "orbitEnabled": false,
+        "cursor": "grabbing",
+        "handler": "EndpointDragState"
+      }
+    }
+  },
+  "transitions": [
+    {
+      "from": "EO_IDLE",
+      "to": "EO_1D_DRAG",
+      "event": "pointerDown_nearEndpoint",
+      "guard": [["editSubstate === '1d'", "findNearestVertex() !== null"]],
+      "actions": {
+        "EndpointDragState.enter": "call(vertex, endpointIndex)",
+        "controls.enabled": false,
+        "cursor": "grabbing"
+      }
+    },
+    {
+      "from": "EO_1D_DRAG",
+      "to": "EO_IDLE",
+      "event": "pointerUp",
+      "guard": [["activeDragPointerId === e.pointerId"]],
+      "actions": {
+        "EndpointDragState.confirm": "call() → push MoveCommand if moved",
+        "controls.enabled": true,
+        "cursor": "default"
+      }
+    },
+    {
+      "from": "EO_1D_DRAG",
+      "to": "EO_IDLE",
+      "event": "cancelEditMode",
+      "guard": [],
+      "actions": {
+        "EndpointDragState.cancel": "call() → restore original corners",
+        "controls.enabled": true
+      }
+    }
+  ]
+}
+```

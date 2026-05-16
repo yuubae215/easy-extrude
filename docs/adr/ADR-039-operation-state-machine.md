@@ -154,14 +154,19 @@ if (this._opState.is(S_FACE_EXTRUDE))  this._cancelFaceExtrude()
   snapshots) that shouldn't be hidden inside a transition table.
 - `_mountPicking` and `_framePlacementState` have been migrated to `_opState`
   as `S_MOUNT_PICKING` and `S_FRAME_PLACEMENT` (follow-up to initial delivery).
-- `_endpointDrag` retains its own `.active` flag; it lives in Edit Mode (1D
-  substate) not Object Mode, so it is outside `_opState`'s scope.
+- `_endpointDrag` has been replaced by a parallel `_editOpState` (StateMachine)
+  + `EndpointDragState` handler class — the same pattern as `_opState` but
+  scoped to Edit Mode. `_endpointDrag.active` is fully removed from
+  AppController; the handler owns `endpointIndex`, `startCorners`, and
+  `dragPlane`. `_editOpState` is structured to accept future Edit Mode
+  operations (vertex grab, etc.) without reopening AppController's internals.
 
 ---
 
 ## Implementation Reference
 
-- `src/core/StateMachine.js` — FSM class
-- `src/core/editorStates.js` — state name constants
-- `src/controller/AppController.js` — `this._opState`, migrated methods
-- `docs/STATE_TRANSITIONS.md` §Formal FSM Specification — now marked Implemented
+- `src/core/StateMachine.js` — FSM class (used by both `_opState` and `_editOpState`)
+- `src/core/editorStates.js` — state name constants for both FSMs
+- `src/core/states/EndpointDragState.js` — Edit Mode 1D drag handler (first state class)
+- `src/controller/AppController.js` — `this._opState` (Object Mode) + `this._editOpState` (Edit Mode)
+- `docs/STATE_TRANSITIONS.md` §Formal FSM Specification + §Edit Mode — Operation States

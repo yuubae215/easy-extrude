@@ -60,7 +60,9 @@ import {
   S_OBJECT_IDLE, S_GRAB_ACTIVE, S_ROTATE_ACTIVE,
   S_FACE_EXTRUDE, S_MEASURE_PLACING, S_LINK_MODE,
   S_FRAME_PLACEMENT, S_MOUNT_PICKING,
+  EO_IDLE, EO_1D_DRAG,
 } from '../core/editorStates.js'
+import { EndpointDragState } from '../core/states/EndpointDragState.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -426,16 +428,15 @@ export class AppController {
     /** @type {number|null} Hovered endpoint index (0 or 1) in 1D Edit Mode */
     this._hoveredEndpointIndex = null
 
-    // ── 1D endpoint drag state (MeasureLine Edit Mode) ────────────────────
-    this._endpointDrag = {
-      active:        false,
-      /** @type {number|null} 0 or 1 */
-      endpointIndex: null,
-      dragPlane:     new THREE.Plane(),
-      startPoint:    new THREE.Vector3(),
-      /** @type {import('three').Vector3[]|null} [p1, p2] snapshot before drag */
-      startCorners:  null,
-    }
+    // ── Edit Mode operation FSM + handler (ADR-039 follow-up) ────────────
+    // Mirrors _opState but scoped to Edit Mode. Currently covers 1D endpoint
+    // drag; structured for future edit-mode operations (vertex grab, etc.).
+    this._editOpState = new StateMachine(EO_IDLE, [
+      { from: EO_IDLE,    on: 'BEGIN_1D_DRAG', to: EO_1D_DRAG },
+      { from: EO_1D_DRAG, on: 'CONFIRM',       to: EO_IDLE },
+      { from: EO_1D_DRAG, on: 'CANCEL',        to: EO_IDLE },
+    ])
+    this._endpointDragHandler = new EndpointDragState()
 
     // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
     // Active state tracked by this._opState (S_FACE_EXTRUDE).
@@ -808,6 +809,19 @@ export class AppController {
   // ─── Convenience getters ──────────────────────────────────────────────────
   get _camera()   { return this._sceneView.camera }
   get _controls() { return this._sceneView.controls }
+
+  /** Minimal context object passed to Edit Mode operation state handlers. */
+  get _editCtx() {
+    return {
+      obj:          this._activeObj,
+      camera:       this._camera,
+      mouse:        this._mouse,
+      raycaster:    this._raycaster,
+      controls:     this._controls,
+      commandStack: this._commandStack,
+      scene:        this._scene,
+    }
+  }
 
   // ─── Object management ────────────────────────────────────────────────────
 
@@ -3884,15 +3898,9 @@ export class AppController {
     this._extrudePhase.inputStr = ''
     this._extrudePhase.height = 0
     // Cancel any in-progress endpoint drag (restores original positions)
-    if (this._endpointDrag.active) {
-      const obj = this._activeObj
-      if (obj instanceof MeasureLine && this._endpointDrag.startCorners) {
-        obj.corners.forEach((c, i) => c.copy(this._endpointDrag.startCorners[i]))
-        obj.meshView?.update(obj.p1, obj.p2)
-      }
-      this._endpointDrag.active = false
-      this._endpointDrag.endpointIndex = null
-      this._controls.enabled = true
+    if (this._editOpState.is(EO_1D_DRAG)) {
+      this._endpointDragHandler.cancel(this._editCtx)
+      this._editOpState.send('CANCEL')
     }
     this._hoveredEndpointIndex = null
     if (this._meshView) this._meshView.clearEndpointHover?.()
@@ -5612,14 +5620,8 @@ export class AppController {
     }
 
     // ── Endpoint drag (1D Edit Mode) ─────────────────────────────────────
-    if (this._endpointDrag.active) {
-      this._raycaster.setFromCamera(this._mouse, this._camera)
-      const pt = new THREE.Vector3()
-      if (this._raycaster.ray.intersectPlane(this._endpointDrag.dragPlane, pt)) {
-        const obj = this._activeObj
-        obj.vertices[this._endpointDrag.endpointIndex].position.copy(pt)
-        obj.meshView.update(obj.p1, obj.p2)
-      }
+    if (this._editOpState.is(EO_1D_DRAG)) {
+      this._endpointDragHandler.onPointerMove(this._editCtx)
       return
     }
 
@@ -6215,24 +6217,13 @@ export class AppController {
       if (v) {
         const obj = this._activeObj
         const idx = obj.vertices.indexOf(v)
-        this._endpointDrag.endpointIndex = idx
-        this._endpointDrag.startCorners  = obj.corners.map(c => c.clone())
-        const camDir = new THREE.Vector3()
-        this._camera.getWorldDirection(camDir)
-        this._endpointDrag.dragPlane.setFromNormalAndCoplanarPoint(camDir, v.position)
-        this._raycaster.setFromCamera(this._mouse, this._camera)
-        const pt = new THREE.Vector3()
-        if (this._raycaster.ray.intersectPlane(this._endpointDrag.dragPlane, pt)) {
-          this._endpointDrag.startPoint.copy(pt)
-        } else {
-          this._endpointDrag.startPoint.copy(v.position)
+        if (this._editOpState.send('BEGIN_1D_DRAG')) {
+          this._endpointDragHandler.enter(this._editCtx, v, idx)
+          this._activeDragPointerId  = e.pointerId
+          this._meshView.clearEndpointHover()
+          this._hoveredEndpointIndex = null
+          this._uiView.setCursor('grabbing')
         }
-        this._endpointDrag.active  = true
-        this._controls.enabled     = false
-        this._activeDragPointerId  = e.pointerId
-        this._meshView.clearEndpointHover()
-        this._hoveredEndpointIndex = null
-        this._uiView.setCursor('grabbing')
       }
       return
     }
@@ -6349,22 +6340,11 @@ export class AppController {
     }
 
     // ── Endpoint drag confirmation (1D Edit Mode) ────────────────────────
-    if (this._endpointDrag.active && this._activeDragPointerId === e.pointerId) {
+    if (this._editOpState.is(EO_1D_DRAG) && this._activeDragPointerId === e.pointerId) {
       this._activeDragPointerId = null
-      this._endpointDrag.active = false
-      this._controls.enabled    = true
       const obj = this._activeObj
-      // Only push a command if the endpoint actually moved
-      const endCorners = obj.corners.map(c => c.clone())
-      const moved = this._endpointDrag.startCorners.some(
-        (sc, i) => sc.distanceToSquared(endCorners[i]) > 1e-10,
-      )
-      if (moved) {
-        const startMap = new Map([[obj.id, this._endpointDrag.startCorners]])
-        const endMap   = new Map([[obj.id, endCorners]])
-        const cmd = createMoveCommand('Move Endpoint', startMap, endMap, this._scene)
-        this._commandStack.push(cmd)
-      }
+      this._endpointDragHandler.confirm(this._editCtx)
+      this._editOpState.send('CONFIRM')
       obj.meshView.updateBoxHelper()
       this._uiView.setCursor('default')
       this._refreshEditMode1DStatus()

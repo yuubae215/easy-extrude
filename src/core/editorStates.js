@@ -3,7 +3,9 @@
  * Replaces magic string literals throughout AppController and SceneModel.
  *
  * See docs/STATE_TRANSITIONS.md §Formal FSM Specification for the full state diagrams.
- * Runtime instance: AppController._opState (StateMachine from src/core/StateMachine.js)
+ * Runtime instances:
+ *   AppController._opState     (Object Mode operations — StateMachine)
+ *   AppController._editOpState (Edit Mode operations — StateMachine)
  */
 
 // ── Object Mode primary operation FSM (AppController._opState) ───────────────
@@ -21,6 +23,12 @@ export const ES_3D         = '3d'
 export const ES_2D_SKETCH  = '2d-sketch'
 export const ES_2D_EXTRUDE = '2d-extrude'
 export const ES_1D         = '1d'
+
+// ── Edit Mode operation FSM (AppController._editOpState) ─────────────────────
+// Parallel to _opState but scoped to operations within Edit Mode.
+// Currently covers 1D endpoint drag; structured for future Edit ops (vertex grab, etc.).
+export const EO_IDLE    = 'EO_IDLE'    // no edit operation in progress
+export const EO_1D_DRAG = 'EO_1D_DRAG' // endpoint drag (MeasureLine 1D Edit Mode)
 
 // ── Map Mode draw states (_mapMode.drawState) ────────────────────────────────
 export const DS_IDLE    = 'idle'
