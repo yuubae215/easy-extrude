@@ -42,6 +42,7 @@ block-beta
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:248px | 50 |
+| Link Network Overlay | w:220px, h:auto (collapsed:26px) | fixed bottom:8px left:8px | 50 |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
 | Context menu | w:auto | absolute (cursor position) | 200 |
 | Mode dropdown | w:140px | absolute (below button) | 200 |
@@ -77,9 +78,11 @@ block-beta
 | Toast | w:auto, max-w:280px | fixed bottom:**96px**, centered | 150 |
 | Context menu | w:auto | absolute (tap position) | 200 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:8px | 50 |
+| Link Network Overlay | w:220px, h:auto | fixed bottom:94px left:8px | 50 |
 
 > **Toast bottom** must be toolbar (60px) + margin (36px) = **96px**.
 > On desktop (no toolbar): bottom:32px.
+> **Link Network Overlay bottom** on mobile: above toolbar = 94px; on desktop: 8px.
 
 ---
 
