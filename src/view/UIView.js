@@ -3203,6 +3203,122 @@ export class UIView {
   }
 
   /**
+   * Shows a non-intrusive suggestion banner prompting the user to create a SpatialLink.
+   * Auto-dismisses after 6 seconds. Replaces any existing suggestion.
+   *
+   * @param {{
+   *   sourceId:     string,
+   *   targetId:     string,
+   *   semanticType: string,
+   *   label:        string,
+   *   sourceName:   string,
+   *   targetName:   string,
+   * }} suggestion
+   * @param {() => void} onAccept  Called when the user clicks "Create Link"
+   */
+  showSemanticSuggestion(suggestion, onAccept) {
+    this.dismissSemanticSuggestion()
+
+    const { semanticType, label, sourceName, targetName } = suggestion
+
+    const SEMANTIC_META = {
+      above:    { color: '#94A3B8', verb: 'is above' },
+      adjacent: { color: '#64748B', verb: 'is adjacent to' },
+      contains: { color: '#8B5CF6', verb: 'contains' },
+    }
+    const { color = '#888', verb = label.toLowerCase() } = SEMANTIC_META[semanticType] ?? {}
+
+    const bottomPx = this._isMobile() ? '104px' : '72px'
+    const el = document.createElement('div')
+    el.id = '_semanticSuggestion'
+    Object.assign(el.style, {
+      position:       'fixed',
+      bottom:         bottomPx,
+      left:           '50%',
+      transform:      'translateX(-50%)',
+      display:        'flex',
+      alignItems:     'center',
+      gap:            '10px',
+      background:     'rgba(24, 24, 28, 0.93)',
+      backdropFilter: 'blur(12px)',
+      webkitBackdropFilter: 'blur(12px)',
+      color:          '#f0f0f0',
+      borderRadius:   '10px',
+      border:         '1px solid rgba(255,255,255,0.08)',
+      borderLeft:     `3px solid ${color}`,
+      padding:        '9px 14px',
+      fontSize:       '12px',
+      fontFamily:     'system-ui, -apple-system, sans-serif',
+      boxShadow:      '0 6px 24px rgba(0,0,0,0.5)',
+      zIndex:         '9998',
+      whiteSpace:     'nowrap',
+      userSelect:     'none',
+    })
+
+    const dot = document.createElement('span')
+    Object.assign(dot.style, {
+      width: '7px', height: '7px', borderRadius: '50%',
+      background: color, flexShrink: '0', display: 'inline-block',
+    })
+
+    const hl = `font-weight:600;color:#f0f0f0`
+    const textEl = document.createElement('span')
+    textEl.style.color = '#aaa'
+    textEl.innerHTML =
+      `<span style="${hl}">${sourceName}</span> ` +
+      `${verb} ` +
+      `<span style="${hl}">${targetName}</span>`
+
+    const createBtn = document.createElement('button')
+    createBtn.textContent = `Link (${label})`
+    Object.assign(createBtn.style, {
+      padding:     '4px 10px',
+      background:  color,
+      color:       '#fff',
+      border:      'none',
+      borderRadius:'6px',
+      cursor:      'pointer',
+      fontSize:    '11px',
+      fontWeight:  '600',
+      fontFamily:  'inherit',
+      flexShrink:  '0',
+    })
+    createBtn.addEventListener('click', () => {
+      this.dismissSemanticSuggestion()
+      onAccept()
+    })
+
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '×'
+    Object.assign(closeBtn.style, {
+      background: 'none',
+      border:     'none',
+      color:      '#555',
+      cursor:     'pointer',
+      fontSize:   '16px',
+      lineHeight: '1',
+      padding:    '0 2px',
+      flexShrink: '0',
+    })
+    closeBtn.addEventListener('click', () => this.dismissSemanticSuggestion())
+
+    el.appendChild(dot)
+    el.appendChild(textEl)
+    el.appendChild(createBtn)
+    el.appendChild(closeBtn)
+    document.body.appendChild(el)
+
+    this._suggestionTimeout = setTimeout(() => this.dismissSemanticSuggestion(), 6000)
+  }
+
+  /** Removes the semantic suggestion banner if present. */
+  dismissSemanticSuggestion() {
+    clearTimeout(this._suggestionTimeout)
+    this._suggestionTimeout = null
+    document.getElementById('_semanticSuggestion')?.remove()
+  }
+
+  /**
    * Shows the extrusion amount label at a screen position.
    * @param {string} text
    * @param {number} screenX
