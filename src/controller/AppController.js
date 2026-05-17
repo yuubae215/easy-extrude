@@ -2339,12 +2339,15 @@ export class AppController {
           this._tcFastenedBlocked = true
           this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
         }
+        this._service.setLinkDragging(this._selectedIds, true)
       } else {
         // Drag end — if fastened, snap proxy back and skip command recording
         if (this._tcFastenedBlocked) {
           this._tcFastenedBlocked = false
           this._tcStartCorners = new Map()
           this._syncMobileTransformProxy()
+          this._service.setLinkDragging(new Set(), false)
+          this._service.updateLinkSelectionHighlight(this._selectedIds)
           return
         }
         // Record undo command based on TC mode
@@ -2388,6 +2391,8 @@ export class AppController {
           }
         }
         this._tcStartCorners = new Map()
+        this._service.setLinkDragging(new Set(), false)
+        this._service.updateLinkSelectionHighlight(this._selectedIds)
       }
     })
 
