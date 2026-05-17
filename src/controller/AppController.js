@@ -31,6 +31,7 @@ import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
+import { LinkNetworkView } from '../view/LinkNetworkView.js'
 import { CommandStack }              from '../service/CommandStack.js'
 import { createMoveCommand }          from '../command/MoveCommand.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
@@ -162,12 +163,16 @@ export class AppController {
       outlinerView?.reparentObject(id, newParentId)
       if (id === this._scene.activeId) this._updateNPanel()
     })
-    this._service.on('objectRemoved', id        => outlinerView?.removeObject(id))
+    this._service.on('objectRemoved', id => {
+      outlinerView?.removeObject(id)
+      this._updateLinkNetwork()
+    })
     this._service.on('objectRenamed', (id, nm)  => {
       outlinerView?.setObjectName(id, nm)
       if (id === this._scene.activeId && this._scene.selectionMode === 'object') {
         this._refreshObjectModeStatus()
       }
+      this._updateLinkNetwork()
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
     this._service.on('objectIfcClassChanged', (id, ifcClass) => {
@@ -188,6 +193,7 @@ export class AppController {
       if (link.sourceId === this._scene.activeId || link.targetId === this._scene.activeId) {
         this._updateNPanel()
       }
+      this._updateLinkNetwork()
     })
     this._service.on('spatialLinkRemoved', () => {
       // Refresh all badges — a removal may drop an entity's link count to 0
@@ -195,6 +201,7 @@ export class AppController {
         this._refreshLinkBadge(obj.id)
       }
       if (this._activeObj) this._updateNPanel()
+      this._updateLinkNetwork()
     })
 
     this._service.on('geometryApplied', ({ objectId }) => {
@@ -779,6 +786,10 @@ export class AppController {
 
     // ── Map Mode entry ────────────────────────────────────────────────────
     uiView.onMapModeClick(() => this._enterMapMode())
+
+    // ── CF Link Network Overlay ───────────────────────────────────────────
+    this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
+    this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)
 
     this._bindEvents()
 
@@ -2579,6 +2590,8 @@ export class AppController {
     }
     // Rubber-band: highlight links for the newly active entity (or clear on deselect).
     this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
+    // Link network overlay: sync node highlight with 3D selection.
+    this._linkNetworkView?.setSelection(select && id ? this._selectedIds : new Set())
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
@@ -2864,6 +2877,26 @@ export class AppController {
     if (obj instanceof CoordinateFrame) {
       this._outlinerView.setFrameUnreferenced(entityId, links.length === 0)
     }
+  }
+
+  /** Rebuilds the Link Network Overlay from current scene state. */
+  _updateLinkNetwork() {
+    if (!this._linkNetworkView) return
+    const entityInfos = new Map()
+    for (const [id, obj] of this._scene.objects) {
+      const type = obj instanceof ImportedMesh    ? 'imported'
+        : obj instanceof MeasureLine             ? 'measure'
+        : obj instanceof CoordinateFrame         ? 'frame'
+        : obj instanceof Profile                 ? 'sketch'
+        : obj instanceof AnnotatedLine           ? 'annot-line'
+        : obj instanceof AnnotatedRegion         ? 'annot-region'
+        : obj instanceof AnnotatedPoint          ? 'annot-point'
+        : 'cuboid'
+      entityInfos.set(id, { name: obj.name, type })
+    }
+    const links = [...this._scene.links.values()]
+    this._linkNetworkView.update(entityInfos, links)
+    this._linkNetworkView.setSelection(this._selectedIds)
   }
 
   /**
