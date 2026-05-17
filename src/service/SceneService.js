@@ -123,6 +123,21 @@ export class SceneService extends EventEmitter {
     this._dragEntityIds   = new Set()
     /** Accumulates each frame during drag to scroll dash offset. */
     this._dashTimer       = 0
+    /**
+     * View context for HTML label rendering (camera, renderer, container).
+     * Set by AppController.setViewContext() after construction.
+     * @type {{ camera: import('three').Camera|null, renderer: import('three').WebGLRenderer|null, container: HTMLElement|null }}
+     */
+    this._viewContext = { camera: null, renderer: null, container: null }
+  }
+
+  /**
+   * Provides the camera/renderer/container needed for HTML label projection on
+   * CoordinateFrameView. Called once by AppController after construction.
+   * @param {{ camera: import('three').Camera, renderer: import('three').WebGLRenderer, container: HTMLElement }} ctx
+   */
+  setViewContext(ctx) {
+    this._viewContext = ctx
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -425,7 +440,9 @@ export class SceneService extends EventEmitter {
         entity.initCorners(meshView.getInitialCorners8())
         entities.push(entity)
       } else if (dto.type === 'CoordinateFrame') {
-        const meshView = new CoordinateFrameView(this._threeScene)
+        const { camera: cfCam = null, renderer: cfRnd = null, container: cfCnt = null } = viewContext
+        const meshView = new CoordinateFrameView(this._threeScene, cfCam, cfRnd, cfCnt)
+        meshView.setLabelText(dto.name)
         const frame    = new CoordinateFrame(dto.id, dto.name, dto.parentId, meshView)
         if (dto.translation) {
           frame.translation.set(dto.translation.x, dto.translation.y, dto.translation.z)
@@ -664,8 +681,11 @@ export class SceneService extends EventEmitter {
       const newParentId = remapId(dto.parentId)
       // Skip if parent is not present in the scene (e.g. ImportedMesh that was skipped)
       if (!this._model.getObject(newParentId)) return null
-      const meshView = new CoordinateFrameView(this._threeScene)
-      const frame    = new CoordinateFrame(newId, dto.name ?? 'Frame', newParentId, meshView)
+      const { camera: cfCam = null, renderer: cfRnd = null, container: cfCnt = null } = viewContext
+      const meshView = new CoordinateFrameView(this._threeScene, cfCam, cfRnd, cfCnt)
+      const cfName   = dto.name ?? 'Frame'
+      meshView.setLabelText(cfName)
+      const frame    = new CoordinateFrame(newId, cfName, newParentId, meshView)
       if (dto.translation) {
         frame.translation.set(dto.translation.x, dto.translation.y, dto.translation.z)
       }
@@ -2389,7 +2409,9 @@ export class SceneService extends EventEmitter {
     const id   = `frame_${idx}_${Date.now()}`
     const name = overrideName ?? `Frame.${String(idx).padStart(3, '0')}`
 
-    const meshView = new CoordinateFrameView(this._threeScene)
+    const { camera, renderer, container } = this._viewContext
+    const meshView = new CoordinateFrameView(this._threeScene, camera ?? null, renderer ?? null, container ?? null)
+    meshView.setLabelText(name)
     const frame    = new CoordinateFrame(id, name, parentObjectId, meshView)
     // Assign provenance from current role (ADR-034 §8.1, §8.2)
     frame.declaredBy = RoleService.getRole()
