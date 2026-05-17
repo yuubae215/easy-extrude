@@ -4465,6 +4465,13 @@ export class AppController {
       this._uiView.showToast(`This frame was declared by a ${this._activeObj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
       return
     }
+    // Semantic guardrail: block grab when any selected entity is fastened or mounted to
+    // an entity outside the selection (PHILOSOPHY #1 — One Authoritative Entry Point).
+    const grabGuardrail = this._service.checkMoveGuardrail(this._selectedIds)
+    if (grabGuardrail.blocked) {
+      this._uiView.showToast(grabGuardrail.message, { type: 'warn' })
+      return
+    }
     // All domain guards passed → mutual exclusion + state transition
     if (!this._opState.send('BEGIN_GRAB')) return
     // Rubber-band: activate marching ants + tension for links connected to dragged entities.
@@ -6276,6 +6283,14 @@ export class AppController {
             this._objRotateStartPos         = null
             this._objRotateStartCorners = this._corners.map(c => c.clone())
           }
+        }
+
+        // Semantic guardrail: same check as _startGrab — block independent movement of
+        // fastened/mounted entities during mouse-drag (mirrors G-key grab guard).
+        const dragGuardrail = this._service.checkMoveGuardrail(this._selectedIds)
+        if (dragGuardrail.blocked) {
+          this._uiView.showToast(dragGuardrail.message, { type: 'warn' })
+          return
         }
 
         if (this._opState.send('BEGIN_QUICK_DRAG')) {
