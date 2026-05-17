@@ -1498,6 +1498,29 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Returns the maximum tension across all SpatialLinks connected to dragged entities.
+   * Tension is 0 at rest distance and reaches 1 at 50% stretch beyond rest distance.
+   * Used by AppController to compute drag-damping resistance during free movement.
+   * @returns {number}
+   */
+  getLinkDragTension() {
+    if (this._dragEntityIds.size === 0) return 0
+    let maxTension = 0
+    for (const [id, view] of this._linkViews) {
+      const link = this._model.getLink(id)
+      if (!link) continue
+      if (!this._dragEntityIds.has(link.sourceId) && !this._dragEntityIds.has(link.targetId)) continue
+      const src = this._entityWorldCentroid(link.sourceId)
+      const tgt = this._entityWorldCentroid(link.targetId)
+      if (!src || !tgt) continue
+      const currentDist = src.distanceTo(tgt)
+      const tension = Math.max(0, (currentDist / view.restDistance) - 1) / 0.5
+      if (tension > maxTension) maxTension = tension
+    }
+    return maxTension
+  }
+
+  /**
    * Resolves the world position of a geometry element from an anchor reference.
    * Returns null when the element cannot be found on the given object.
    * @param {{ type: string, elementId: string }} anchorRef
