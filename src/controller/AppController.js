@@ -873,6 +873,8 @@ export class AppController {
           const pt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(this._objDragPlane, pt)) {
             const delta = pt.clone().sub(this._objDragStart)
+            const _qdTension = this._service.getLinkDragTension()
+            if (_qdTension > 0) delta.multiplyScalar(Math.max(0.15, 1.0 - Math.min(_qdTension, 1.0) * 0.85))
             this._service.applyPreviewTranslation(
               this._objDragAllStartCorners,
               this._objDragAllStartPositions,
@@ -5083,6 +5085,8 @@ export class AppController {
     } else {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
+      const _fgTension = this._service.getLinkDragTension()
+      if (_fgTension > 0) delta.multiplyScalar(Math.max(0.15, 1.0 - Math.min(_fgTension, 1.0) * 0.85))
     }
     this._applyGrabDeltaToAll(delta)
   }
@@ -5138,7 +5142,9 @@ export class AppController {
     } else {
       this._grab.snapping      = false
       this._grab.snappedTarget = null
-      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
+      const _acTension = this._service.getLinkDragTension()
+      const _acDist    = _acTension > 0 ? dist * Math.max(0.15, 1.0 - Math.min(_acTension, 1.0) * 0.85) : dist
+      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(_acDist))
     }
   }
 
