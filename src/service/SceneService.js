@@ -1977,6 +1977,42 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Checks whether any entity in the selection has a semantic constraint
+   * (fastened or mounts) linking it to an entity outside the selection.
+   * Moving selected entities independently of their linked peers violates
+   * the design intent encoded in those links.
+   *
+   * When the linked peer is also selected the constraint is not violated —
+   * moving the whole assembly together is valid.
+   *
+   * @param {Set<string>} selectedIds
+   * @returns {{ blocked: boolean, message: string }}
+   */
+  checkMoveGuardrail(selectedIds) {
+    for (const id of selectedIds) {
+      for (const link of this.getLinksOf(id)) {
+        const peerId = link.sourceId === id ? link.targetId : link.sourceId
+        if (selectedIds.has(peerId)) continue
+        if (link.semanticType === 'fastened') {
+          const name = this._model.getObject(peerId)?.name ?? 'another object'
+          return {
+            blocked: true,
+            message: `Fastened to "${name}". Unfasten the link or include the linked object in your selection.`,
+          }
+        }
+        if (link.semanticType === 'mounts') {
+          const name = this._model.getObject(peerId)?.name ?? 'another object'
+          return {
+            blocked: true,
+            message: `Mounted on "${name}". Remove the mount link to move independently.`,
+          }
+        }
+      }
+    }
+    return { blocked: false, message: '' }
+  }
+
+  /**
    * BFS over jointType === 'fixed' links starting from startEntityId.
    * Returns all reachable entity IDs including the start entity itself.
    * @param {string} startEntityId
