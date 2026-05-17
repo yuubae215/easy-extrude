@@ -80,9 +80,16 @@ function makeGhostAxisLine(x, y, z, color) {
 // ── Class ──────────────────────────────────────────────────────────────────
 
 export class CoordinateFrameView {
-  /** @param {THREE.Scene} scene */
-  constructor(scene) {
-    this._scene = scene
+  /**
+   * @param {THREE.Scene} scene
+   * @param {THREE.Camera|null}          [camera]    Required for floating label projection.
+   * @param {THREE.WebGLRenderer|null}   [renderer]  Required for floating label projection.
+   * @param {HTMLElement|null}           [container] DOM parent for the label element.
+   */
+  constructor(scene, camera = null, renderer = null, container = null) {
+    this._scene    = scene
+    this._camera   = camera
+    this._renderer = renderer
 
     // ── Origin sphere ──────────────────────────────────────────────────────
     const sphereGeo = new THREE.SphereGeometry(ORIGIN_RADIUS, 8, 8)
@@ -119,6 +126,34 @@ export class CoordinateFrameView {
      * @type {THREE.Group|null}
      */
     this._ghostGroup = null
+
+    // ── Floating HTML label ────────────────────────────────────────────────
+    /** @type {HTMLElement|null} */
+    this._label = null
+    this._labelVisible = false   // tracks desired visibility (showFull/showDimmed/hide)
+
+    if (camera && renderer && container) {
+      this._label = document.createElement('div')
+      Object.assign(this._label.style, {
+        position:        'fixed',
+        pointerEvents:   'none',
+        userSelect:      'none',
+        fontFamily:      'monospace',
+        fontSize:        '10px',
+        lineHeight:      '1',
+        padding:         '2px 6px',
+        borderRadius:    '3px',
+        background:      'rgba(18,22,36,0.82)',
+        color:           '#b8c4d8',
+        borderLeft:      '2px solid #4488ff',
+        whiteSpace:      'nowrap',
+        zIndex:          '50',
+        display:         'none',
+        transition:      'transform 0.12s, background 0.12s, border-color 0.12s',
+        transformOrigin: 'left center',
+      })
+      container.appendChild(this._label)
+    }
   }
 
   // ── Required interface ─────────────────────────────────────────────────────
@@ -142,6 +177,7 @@ export class CoordinateFrameView {
   /** Outliner eye-icon toggle. */
   setVisible(visible) {
     this._group.visible = visible
+    if (!visible) this._setLabelDisplay(false)
   }
 
   // ── Visibility modes ───────────────────────────────────────────────────────
@@ -154,6 +190,7 @@ export class CoordinateFrameView {
   showFull() {
     this._group.visible = true
     this._applyXray(OPACITY_FULL)
+    this._labelVisible = true
   }
 
   /**
@@ -168,11 +205,14 @@ export class CoordinateFrameView {
     this._originSphere.material.color.setHex(0xffffff)
     this._originSphere.scale.setScalar(1.0)
     this._applyXray(OPACITY_DIMMED)
+    this._labelVisible = true
   }
 
   /** Hide completely. Visibility restored by showFull() or showDimmed(). */
   hide() {
     this._group.visible = false
+    this._labelVisible  = false
+    this._setLabelDisplay(false)
   }
 
   /**
@@ -182,6 +222,66 @@ export class CoordinateFrameView {
   setParentSelected(selected) {
     if (selected) this.showFull()
     else this.hide()
+  }
+
+  // ── Floating label ─────────────────────────────────────────────────────────
+
+  /**
+   * Updates the label text (e.g. after rename).
+   * @param {string} name
+   */
+  setLabelText(name) {
+    if (this._label) this._label.textContent = name
+  }
+
+  /**
+   * Highlights the label to signal minimap-node hover sync.
+   * @param {boolean} highlighted
+   */
+  setLabelHighlighted(highlighted) {
+    if (!this._label) return
+    if (highlighted) {
+      Object.assign(this._label.style, {
+        background:   'rgba(249,115,22,0.88)',
+        borderColor:  '#ffcc00',
+        color:        '#fff',
+        transform:    'scale(1.18)',
+      })
+    } else {
+      Object.assign(this._label.style, {
+        background:   'rgba(18,22,36,0.82)',
+        borderColor:  '#4488ff',
+        color:        '#b8c4d8',
+        transform:    'scale(1)',
+      })
+    }
+  }
+
+  /**
+   * Projects the frame origin to screen space and repositions the HTML label.
+   * Must be called once per frame from AppController while the CF is visible.
+   * @param {THREE.Camera} camera  Pass `SceneView.activeCamera` (supports ortho mode).
+   */
+  updateLabelPosition(camera) {
+    if (!this._label || !this._renderer || !this._labelVisible) return
+
+    const ndc    = this._group.position.clone().project(camera)
+    const canvas = this._renderer.domElement
+    const rect   = canvas.getBoundingClientRect()
+
+    if (ndc.z > 1) { this._setLabelDisplay(false); return }
+
+    const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
+    const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
+
+    this._label.style.left    = `${Math.round(sx + 6)}px`
+    this._label.style.top     = `${Math.round(sy - 16)}px`
+    this._setLabelDisplay(true)
+  }
+
+  /** @param {boolean} show */
+  _setLabelDisplay(show) {
+    if (this._label) this._label.style.display = show ? 'block' : 'none'
   }
 
   // ── Selection highlight ────────────────────────────────────────────────────
@@ -296,6 +396,10 @@ export class CoordinateFrameView {
         if (obj.material) obj.material.dispose()
       })
       this._ghostGroup = null
+    }
+    if (this._label) {
+      this._label.remove()
+      this._label = null
     }
   }
 

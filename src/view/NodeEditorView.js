@@ -65,7 +65,7 @@ export class NodeEditorView {
   /**
    * @param {HTMLElement} container
    * @param {import('../service/SceneService.js').SceneService} sceneService
-   * @param {{ onLinkRequested?: Function, onDeleteSpatialLink?: Function }} [callbacks]
+   * @param {{ onLinkRequested?: Function, onDeleteSpatialLink?: Function, onNodeHover?: Function, onNodeHoverEnd?: Function }} [callbacks]
    */
   constructor(container, sceneService, callbacks = {}) {
     this._container     = container
@@ -80,6 +80,9 @@ export class NodeEditorView {
     // Phase S-2 callbacks
     this._onLinkRequested     = callbacks.onLinkRequested     ?? null
     this._onDeleteSpatialLink = callbacks.onDeleteSpatialLink ?? null
+    // Hover-sync callbacks: NodeEditor ↔ 3D label
+    this._onNodeHover     = callbacks.onNodeHover     ?? null
+    this._onNodeHoverEnd  = callbacks.onNodeHoverEnd  ?? null
     this._dragState    = null   // { sourceId, x1, y1, x2, y2 } — active port-to-port drag
     this._selectedEdge = null   // { linkId } — selected spatial edge
 
@@ -444,6 +447,10 @@ export class NodeEditorView {
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`)
     g.style.cursor = 'pointer'
     g.addEventListener('click', () => this._selectNode(id))
+    if (this._onNodeHover) {
+      g.addEventListener('mouseenter', () => this._onNodeHover(id))
+      g.addEventListener('mouseleave', () => this._onNodeHoverEnd?.(id))
+    }
 
     // Shadow
     const shadow = document.createElementNS('http://www.w3.org/2000/svg', 'rect')

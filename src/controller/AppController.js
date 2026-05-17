@@ -125,6 +125,11 @@ export class AppController {
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
     this._service = new SceneService(sceneView.scene)
+    this._service.setViewContext({
+      camera:    sceneView.camera,
+      renderer:  sceneView.renderer,
+      container: document.body,
+    })
 
     // ── Undo / Redo command history (ADR-022) ─────────────────────────────
     this._commandStack = new CommandStack()
@@ -172,6 +177,10 @@ export class AppController {
       if (id === this._scene.activeId && this._scene.selectionMode === 'object') {
         this._refreshObjectModeStatus()
       }
+      // Update floating 3D label if entity has one (CoordinateFrame, AnnotatedPoint)
+      const renamedObj = this._scene.getObject(id)
+      renamedObj?.meshView?.setLabelText?.(nm)
+      renamedObj?.meshView?.setName?.(nm)
       this._updateLinkNetwork()
     })
     this._service.on('activeChanged', id        => outlinerView?.setActive(id))
@@ -6912,6 +6921,14 @@ export class AppController {
 
     // Wire up Node Editor (Phase S-2: topology editing callbacks)
     this._nodeEditorView = new NodeEditorView(document.body, this._service, {
+      onNodeHover: (id) => {
+        const obj = this._scene.getObject(id)
+        obj?.meshView?.setLabelHighlighted?.(true)
+      },
+      onNodeHoverEnd: (id) => {
+        const obj = this._scene.getObject(id)
+        obj?.meshView?.setLabelHighlighted?.(false)
+      },
       onLinkRequested: (sourceId, targetId, x, y) => {
         const source = this._scene.getObject(sourceId)
         const target = this._scene.getObject(targetId)
@@ -7003,6 +7020,7 @@ export class AppController {
             maxWS = sceneRadius > 0 ? sceneRadius * 0.15 : 1.0
           }
           obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
+          obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
         }
       }
       // Sync CoordinateFrame world poses every frame (ADR-020).
