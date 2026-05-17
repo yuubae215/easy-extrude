@@ -68,6 +68,7 @@ import { EndpointDragState } from '../core/states/EndpointDragState.js'
 import { SketchDrawState }   from '../core/states/SketchDrawState.js'
 import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
+import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -4493,6 +4494,7 @@ export class AppController {
   // ─── Blender-style grab ────────────────────────────────────────────────────
 
   _startGrab() {
+    this._uiView.dismissSemanticSuggestion()
     if (!this._objSelected) return
     // SpatialLink has no geometry — cannot be grabbed (ADR-030)
     if (this._activeObj instanceof SpatialLink) {
@@ -4643,6 +4645,10 @@ export class AppController {
     // During a regular touch/keyboard grab the proxy is never moved by the TC,
     // so after confirm the gizmo would remain at the pre-grab position.
     if (this._activeObj) this._attachMobileTransform(this._activeObj)
+
+    // ── Semantic inference (ADR-041) ─────────────────────────────────────
+    // Suggest a SpatialLink when a single Solid lands near another object.
+    this._runSemanticInference()
   }
 
   _cancelGrab() {
@@ -4680,6 +4686,44 @@ export class AppController {
     this._refreshObjectModeStatus()
     this._updateNPanel()
     this._updateMobileToolbar()
+  }
+
+  // ── Semantic inference (ADR-041) ─────────────────────────────────────────
+
+  /**
+   * Runs heuristic spatial-relationship inference after a single-Solid move and
+   * shows a non-intrusive suggestion banner if a plausible SpatialLink is found.
+   * No-ops when multiple objects are selected (ambiguous which pair to suggest).
+   */
+  _runSemanticInference() {
+    if (this._selectedIds.size !== 1) return
+    const [movedId] = this._selectedIds
+    const moved = this._scene.getObject(movedId)
+    if (!(moved instanceof Solid)) return
+
+    const existingPairs = new Set(
+      this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
+    )
+    const suggestions = inferSemanticRelationships(
+      moved,
+      this._scene.objects.values(),
+      existingPairs,
+    )
+    if (suggestions.length === 0) return
+
+    const top = suggestions[0]
+    const source = this._scene.getObject(top.sourceId)
+    const target = this._scene.getObject(top.targetId)
+    this._uiView.showSemanticSuggestion({
+      sourceId:     top.sourceId,
+      targetId:     top.targetId,
+      semanticType: top.semanticType,
+      label:        top.label,
+      sourceName:   source?.name ?? '?',
+      targetName:   target?.name ?? '?',
+    }, () => {
+      this._createSpatialLinkDirect(top.sourceId, top.targetId, top)
+    })
   }
 
   // ── CoordinateFrame / Solid rotation (R key, ADR-019 / ADR-036) ──────────
@@ -6557,6 +6601,7 @@ export class AppController {
       this._opState.send('CONFIRM')
       this._service.setLinkDragging(new Set(), false)
       this._service.updateLinkSelectionHighlight(this._selectedIds)
+      this._runSemanticInference()
     }
   }
 

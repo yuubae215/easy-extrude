@@ -2019,6 +2019,11 @@ export class SceneService extends EventEmitter {
     )
   }
 
+  /** Returns all SpatialLinks in the scene as an array. */
+  getLinks() {
+    return [...this._model.links.values()]
+  }
+
   /**
    * Checks whether any entity in the selection has a semantic constraint
    * (fastened or mounts) linking it to an entity outside the selection.
