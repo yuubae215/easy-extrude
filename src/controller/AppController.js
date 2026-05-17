@@ -2339,12 +2339,15 @@ export class AppController {
           this._tcFastenedBlocked = true
           this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
         }
+        this._service.setLinkDragging(this._selectedIds, true)
       } else {
         // Drag end — if fastened, snap proxy back and skip command recording
         if (this._tcFastenedBlocked) {
           this._tcFastenedBlocked = false
           this._tcStartCorners = new Map()
           this._syncMobileTransformProxy()
+          this._service.setLinkDragging(new Set(), false)
+          this._service.updateLinkSelectionHighlight(this._selectedIds)
           return
         }
         // Record undo command based on TC mode
@@ -2388,6 +2391,8 @@ export class AppController {
           }
         }
         this._tcStartCorners = new Map()
+        this._service.setLinkDragging(new Set(), false)
+        this._service.updateLinkSelectionHighlight(this._selectedIds)
       }
     })
 
@@ -3922,6 +3927,8 @@ export class AppController {
     if (this._opState.is(S_QUICK_DRAG)) {
       this._quickDragHandler.cancel(this._quickDragCtx)
       this._opState.send('CANCEL')
+      this._service.setLinkDragging(new Set(), false)
+      this._service.updateLinkSelectionHighlight(this._selectedIds)
     }
     if (this._opState.is(S_RECT_SELECT)) {
       this._rectSelHandler.cancel(this._rectSelCtx)
@@ -6274,6 +6281,7 @@ export class AppController {
         if (this._opState.send('BEGIN_QUICK_DRAG')) {
           this._quickDragHandler.enter(this._quickDragCtx)
           this._activeDragPointerId = e.pointerId
+          this._service.setLinkDragging(this._selectedIds, true)
         }
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
@@ -6484,6 +6492,8 @@ export class AppController {
       this._objCtrlDrag = false
       this._quickDragHandler.confirm(this._quickDragCtx)
       this._opState.send('CONFIRM')
+      this._service.setLinkDragging(new Set(), false)
+      this._service.updateLinkSelectionHighlight(this._selectedIds)
     }
   }
 
