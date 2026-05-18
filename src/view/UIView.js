@@ -3319,6 +3319,53 @@ export class UIView {
   }
 
   /**
+   * Shows a compact non-interactive tooltip during drag when a SpatialLink
+   * suggestion is live.  Distinct from showSemanticSuggestion (the post-drag
+   * banner): this tooltip is pointer-events:none and has no buttons.
+   * @param {{ semanticType: string, label: string, sourceName: string, targetName: string }} suggestion
+   */
+  showDragSuggestionTooltip(suggestion) {
+    this.hideDragSuggestionTooltip()
+    const colorMap = {
+      above:    '#6366F1',
+      adjacent: '#64748B',
+      contains: '#8B5CF6',
+    }
+    const color = colorMap[suggestion.semanticType] ?? '#94A3B8'
+    const el = document.createElement('div')
+    el.id = '_dragSuggestionTooltip'
+    Object.assign(el.style, {
+      position:       'fixed',
+      bottom:         window.matchMedia('(pointer: coarse)').matches ? '120px' : '88px',
+      left:           '50%',
+      transform:      'translateX(-50%)',
+      background:     'rgba(15, 23, 42, 0.88)',
+      color:          '#e2e8f0',
+      padding:        '6px 14px',
+      borderRadius:   '8px',
+      fontSize:       '13px',
+      pointerEvents:  'none',
+      zIndex:         '9997',
+      backdropFilter: 'blur(8px)',
+      whiteSpace:     'nowrap',
+      borderLeft:     `3px solid ${color}`,
+      display:        'flex',
+      alignItems:     'center',
+      gap:            '8px',
+    })
+    el.innerHTML =
+      `<span style="color:${color};font-size:10px">●</span>` +
+      `<span>${suggestion.label}</span>` +
+      `<kbd style="background:#334155;padding:2px 6px;border-radius:4px;font-size:11px;font-family:monospace">↵</kbd>` +
+      `<span style="color:#94a3b8;font-size:12px">to link</span>`
+    document.body.appendChild(el)
+  }
+
+  hideDragSuggestionTooltip() {
+    document.getElementById('_dragSuggestionTooltip')?.remove()
+  }
+
+  /**
    * Shows the extrusion amount label at a screen position.
    * @param {string} text
    * @param {number} screenX

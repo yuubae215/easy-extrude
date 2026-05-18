@@ -1096,7 +1096,17 @@ Parallel FSM to `_opState`, scoped to operations within Edit Mode.
 
 | State | Entry event | Confirm event | Cancel event | Handler class |
 |---|---|---|---|---|
-| `S_QUICK_DRAG` | `BEGIN_QUICK_DRAG` on pointerdown hitting an object (mouse only) | `CONFIRM` on pointerup | `CANCEL` on mode exit | `QuickDragState` |
+| `S_QUICK_DRAG` | `BEGIN_QUICK_DRAG` on pointerdown hitting an object (mouse only) | `CONFIRM` on pointerup **or** Enter key while SUGGESTING | `CANCEL` on mode exit | `QuickDragState` |
 | `S_RECT_SELECT` | `BEGIN_RECT_SELECT` on pointerdown on empty space (mouse only) | `CONFIRM` on pointerup | `CANCEL` on second touch / mode exit | `RectSelectState` |
 
 **Handler files**: `src/core/states/QuickDragState.js`, `src/core/states/RectSelectState.js`
+
+**`QuickDragState` internal sub-states** (not tracked by `_opState`):
+
+| Sub-state | Entry condition | Exit condition |
+|-----------|----------------|----------------|
+| DRAGGING | `enter()` | inference found → SUGGESTING |
+| SUGGESTING | `inferSemanticRelationships()` returns a result | inference lost → DRAGGING; Enter key → confirm + link; pointerup → confirm (Phase 1 banner) |
+
+Ghost `SpatialLinkView` + tooltip are shown in SUGGESTING and disposed on any exit (confirm, cancel, inference lost).
+See ADR-041 for the full two-tier suggestion system.

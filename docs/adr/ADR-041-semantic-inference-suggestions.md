@@ -23,6 +23,9 @@ intent; the system's job is to elevate that accidental geometry into explicit se
 
 ## Decision
 
+Two-tier suggestion system:
+
+**Phase 1 — Post-drag banner** (original):
 After every confirmed grab/drag operation (G-key grab confirm, QuickDrag mouse-drag release), run
 a lightweight geometric heuristic pass (`SemanticInferencer.js`) and show a non-intrusive
 **suggestion banner** if a plausible SpatialLink is found.
@@ -33,6 +36,32 @@ The banner:
 - Offers a single **Link (Label)** button and a **×** dismiss button
 - Auto-dismisses after 6 seconds
 - Is never mandatory — dismissal is always respected
+
+**Phase 2 — Live drag sub-state** (QuickDrag only):
+`QuickDragState` runs the same heuristic on every `pointermove` during a desktop mouse drag.
+When a suggestion is found, the state transitions internally from **DRAGGING** to **SUGGESTING**:
+
+- A ghost `SpatialLinkView` (dashed line + arrowhead, full opacity, semantic color) appears
+  between the moved object and the inferred target.
+- A compact non-interactive tooltip at the screen bottom shows `"↵ to link"`.
+- If the user moves the object away from the suggestion zone, the state returns to DRAGGING
+  and the ghost disappears — no action is taken.
+- Pressing `Enter` during SUGGESTING calls `ctx.acceptSuggestion()`:
+  confirms the drag, creates the SpatialLink via `_createSpatialLinkDirect()`,
+  sets `_activeDragPointerId = null` so the subsequent `pointerup` is a no-op,
+  and skips the Phase 1 banner (link already created).
+- If the user releases the mouse without pressing `Enter`, the drag confirms normally and the
+  Phase 1 banner still appears as a fallback (same as before Phase 2).
+
+Sub-state transitions (internal to `QuickDragState`, not tracked by `_opState`):
+
+```
+DRAGGING ──(inference found)──► SUGGESTING
+SUGGESTING ──(inference lost)──► DRAGGING
+SUGGESTING ──(Enter key)──► confirm drag + create link + exit S_QUICK_DRAG
+any ──(pointerup)──► confirm drag (Phase 1 banner if applicable)
+any ──(mode exit)──► cancel
+```
 
 ---
 
@@ -92,7 +121,9 @@ Only the **highest-confidence** suggestion is shown (at most 1 banner at a time)
 
 **Always show the link picker after a move** — too disruptive; blocks orbit/camera interaction.
 
-**Inline ghost-link preview during drag** — high implementation cost; requires per-frame
-proximity computation in the animation loop.
+**Inline ghost-link preview during drag** — originally rejected as "high implementation cost."
+Implemented in Phase 2 as `QuickDragState` sub-states (DRAGGING / SUGGESTING); the cost was
+manageable because the heuristic runs outside the animation loop (only on `pointermove`) and
+reuses the existing `SpatialLinkView` infrastructure.
 
 **Infer for multi-object moves** — ambiguous (which pair?); deferred to a future iteration.
