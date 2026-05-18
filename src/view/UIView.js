@@ -2558,7 +2558,7 @@ export class UIView {
    * @param {string|null} [currentParentId]  currently selected parent id
    * @param {boolean} [unreferenced]  true when frame has no SpatialLink references (ADR-033 Phase C-4)
    */
-  updateNPanelForFrame(pos, eulerDeg, name, locked = false, parentOptions = null, currentParentId = null, unreferenced = false) {
+  updateNPanelForFrame(pos, eulerDeg, name, locked = false, parentOptions = null, currentParentId = null, unreferenced = false, childFrames = null, onAddChildFrame = null, onSelectChildFrame = null) {
     if (!this._nPanelVisible) return
 
     const row = (axis, color, val) => {
@@ -2732,6 +2732,13 @@ export class UIView {
       })
       noticeSec.appendChild(noticeEl)
       this._nPanelContentEl.appendChild(noticeSec)
+    }
+
+    // Child frames section (grandchild CF creation)
+    if (childFrames !== null || onAddChildFrame !== null) {
+      this._nPanelContentEl.appendChild(
+        this._buildFramesSection(childFrames ?? [], onAddChildFrame, onSelectChildFrame)
+      )
     }
   }
 
