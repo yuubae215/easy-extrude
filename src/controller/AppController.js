@@ -3549,15 +3549,18 @@ export class AppController {
     if (mode === 'object') {
       const hasObj = this._objSelected
 
-      // CoordinateFrame: Delete | Move | Rotate | spacer | spacer
+      // CoordinateFrame: AddFrame | Move | spacer | Delete | Rotate
+      // Slots 1 (Move) and 4 (Rotate) align with Solid toolbar positions for muscle-memory parity.
+      // AddFrame is always enabled — even for Origin CF, adding a child CF is valid (ADR-037).
+      // Move, Delete, and Rotate are locked for the auto-managed Origin frame.
       if (hasObj && this._activeObj instanceof CoordinateFrame) {
         const isOriginCF = this._activeObj.name === 'Origin'
         this._uiView.setMobileToolbar([
-          { icon: ICONS.delete,    label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
-          { icon: ICONS.frame,     label: 'Add Frame', onClick: () => this._promptAddFrame(this._scene.activeId), disabled: isOriginCF },
-          { icon: ICONS.grab,      label: 'Move',      onClick: () => this._startGrab(), disabled: isOriginCF },
-          { icon: ICONS.rotate,    label: 'Rotate',    onClick: () => this._startRotate(true), disabled: isOriginCF },
+          { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._promptAddFrame(this._scene.activeId) },
+          { icon: ICONS.grab,   label: 'Move',      onClick: () => this._startGrab(),                                                        disabled: isOriginCF },
           { spacer: true },
+          { icon: ICONS.delete, label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
+          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._startRotate(true),                                                   disabled: isOriginCF },
         ])
         return
       }
@@ -3584,9 +3587,11 @@ export class AppController {
         return
       }
 
-      // 5-slot layout: Add | Dup | Edit | Delete | Rotate (Solid) / Stack (others)
+      // 5-slot layout: Add | Grab | Edit | Delete | Rotate (Solid) / Stack (others)
       // All slots always present; unavailable actions are disabled to prevent layout shifts.
-      const canDup    = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof CoordinateFrame) && !(this._activeObj instanceof Profile) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
+      // Grab (slot 1) and Rotate (slot 4) mirror the CF toolbar for cross-entity muscle memory.
+      // Dup is omitted here; it remains available via the long-press context menu.
+      const canGrab   = hasObj && !(this._activeObj instanceof ImportedMesh)
       const canEdit   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof CoordinateFrame) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
       const canStack  = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
         && !_isAnnotated(this._activeObj)
@@ -3607,7 +3612,7 @@ export class AppController {
             )
           },
         },
-        { icon: ICONS.duplicate, label: 'Dup',    onClick: () => this._duplicateObject(),                                        disabled: !canDup },
+        { icon: ICONS.grab,      label: 'Grab',   onClick: () => this._startGrab(),                                              disabled: !canGrab },
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
@@ -6892,6 +6897,11 @@ export class AppController {
           }
         }
       }
+      // Sync CoordinateFrame world poses BEFORE label/scale updates so that
+      // updateLabelPosition() reads the current frame's _group.position, not the
+      // previous frame's value. Without this, labels lag one frame and appear to
+      // vibrate at startup while the cache is being populated.
+      this._service._updateWorldPoses()
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
         if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
@@ -6928,10 +6938,6 @@ export class AppController {
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
         }
       }
-      // Sync CoordinateFrame world poses every frame (ADR-020).
-      // SceneService._updateWorldPoses() computes worldPos = parentCentroid + translation
-      // in topological order and updates the _worldPoseCache + meshView.updatePosition.
-      this._service._updateWorldPoses()
     }
     loop()
 
