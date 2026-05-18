@@ -136,6 +136,8 @@ export class CoordinateFrameView {
       this._label = document.createElement('div')
       Object.assign(this._label.style, {
         position:        'fixed',
+        left:            '0',
+        top:             '0',
         pointerEvents:   'none',
         userSelect:      'none',
         fontFamily:      'monospace',
@@ -149,8 +151,9 @@ export class CoordinateFrameView {
         whiteSpace:      'nowrap',
         zIndex:          '50',
         display:         'none',
-        transition:      'transform 0.12s, background 0.12s, border-color 0.12s',
+        transition:      'background 0.12s, border-color 0.12s',
         transformOrigin: 'left center',
+        willChange:      'transform',
       })
       container.appendChild(this._label)
     }
@@ -274,8 +277,7 @@ export class CoordinateFrameView {
     const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
     const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
 
-    this._label.style.left    = `${Math.round(sx + 6)}px`
-    this._label.style.top     = `${Math.round(sy - 16)}px`
+    this._label.style.transform = `translate3d(${Math.round(sx + 6)}px,${Math.round(sy - 16)}px,0)`
     this._setLabelDisplay(true)
   }
 

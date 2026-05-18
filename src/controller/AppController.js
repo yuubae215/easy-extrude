@@ -9,7 +9,6 @@
  * and View mutations.
  */
 import * as THREE from 'three'
-import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import {
   buildCuboidFromRect,
   computeOutwardFaceNormal,
@@ -550,17 +549,11 @@ export class AppController {
      */
     this._activeFrameChain = new Set()
 
-    // ── TC mode toggle for mobile CoordinateFrame (translate / rotate) ────
-    /** @type {'translate'|'rotate'} Current TC gizmo mode when a CoordinateFrame is active. */
-    this._tcMode           = 'translate'
-    /** Proxy quaternion snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
-    this._tcStartProxyQuat = null
-    /** Frame rotation snapshot at TC drag start (rotate mode only). @type {THREE.Quaternion|null} */
-    this._tcStartFrameRot  = null
-    /** orientation snapshot at TC drag start for Solid rotate — for undo. @type {THREE.Quaternion|null} */
-    this._tcStartOrientation = null
-    /** _position snapshot at TC drag start for Solid (rotate and translate). @type {THREE.Vector3|null} */
-    this._tcStartPos         = null
+    // ── Mobile axis guide (replaces TransformControls on touch devices) ──────
+    /** THREE.Line for the world-axis guide shown during axis-constrained grab. @type {THREE.Line|null} */
+    this._axisGuideLine = null
+    /** THREE.LineLoop for the gimbal ring shown during axis-constrained rotate. @type {THREE.Line|null} */
+    this._axisGuideRing = null
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
     // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
@@ -636,20 +629,6 @@ export class AppController {
      * @type {THREE.Group|null}
      */
     this._frameCursorGhost = null
-
-    // ── Mobile TransformControls (touch devices only, translate mode) ──────
-    /** @type {import('three/addons/controls/TransformControls.js').TransformControls|null} */
-    this._tc              = null
-    /** @type {THREE.Object3D|null} Proxy Object3D that TC drives; positioned at object centroid */
-    this._tcProxy         = null
-    /** True while the TC gizmo is being dragged (prevents conflicting input handling) */
-    this._tcDragging      = false
-    /** Proxy world position snapshotted at drag start (for computing absolute delta) */
-    this._tcStartProxyPos = new THREE.Vector3()
-    /** corners/localOffset snapshot for undo — populated at drag start */
-    this._tcStartCorners  = new Map()
-    /** True during a TC drag on a fastened-source CF; blocks movement and records no command. */
-    this._tcFastenedBlocked = false
 
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
@@ -787,14 +766,12 @@ export class AppController {
       const cmd = this._commandStack.undo()
       if (cmd) this._uiView.showToast(`Undo: ${cmd.label}`)
       this._refreshUndoRedoState()
-      this._syncMobileTransformProxy()
     })
     uiView.onRedoClick(() => {
       if (this._opState.is(S_GRAB_ACTIVE) || this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_FACE_EXTRUDE)) return
       const cmd = this._commandStack.redo()
       if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
       this._refreshUndoRedoState()
-      this._syncMobileTransformProxy()
     })
 
     // ── Map Mode entry ────────────────────────────────────────────────────
@@ -805,11 +782,7 @@ export class AppController {
     this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)
 
     this._bindEvents()
-
-    // Initialise translate gizmo for touch devices (desktop keeps Grab)
-    if (window.matchMedia('(pointer: coarse)').matches) {
-      this._initMobileTransformControls()
-    }
+    this._initMobileAxisGuide()
 
     // Create the initial object
     this._addObject()
@@ -1712,9 +1685,6 @@ export class AppController {
     this._mapMode.cursor        = null
     this._mapMode.mobileDragStart = null
     this._mapMode.isPanning     = false
-    // TC was created with the perspective camera; the ortho camera used in Map
-    // Mode would cause wrong gizmo scale and broken raycast — hide it.
-    this._detachMobileTransform()
     this._sceneView.useOrthoCamera(true, this._mapMode.frustumSize)
     this._uiView.setCursor('default')
     this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
@@ -1731,8 +1701,6 @@ export class AppController {
     this._uiView.hideMapToolbar()
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
-    // Restore TC gizmo now that the perspective camera is active again.
-    if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     this._updateMobileToolbar()
   }
 
@@ -2387,267 +2355,84 @@ export class AppController {
     this._startGrab()
   }
 
-  // ─── Mobile TransformControls helpers ─────────────────────────────────────
+  // ─── Mobile Axis Guide helpers (replaces TransformControls) ──────────────
 
   /**
-   * Creates TransformControls (translate mode) and a proxy Object3D for mobile.
-   * The proxy is positioned at the selected object's world centroid so TC can
-   * drive it; objectChange then propagates the delta to the domain entity.
-   *
-   * Called once at construction time when `pointer: coarse` is detected.
+   * Creates 3D axis guide visuals: a colored line (translate) and a gimbal ring
+   * (rotate).  Both are invisible until _showAxisGuide() is called.
+   * Called once at construction time.
    */
-  _initMobileTransformControls() {
-    this._tcProxy = new THREE.Object3D()
-    this._sceneView.scene.add(this._tcProxy)
+  _initMobileAxisGuide() {
+    // Axis line — two endpoints; reused for all axes (position updated by _showAxisGuide)
+    const lineGeom = new THREE.BufferGeometry()
+    lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.85 })
+    this._axisGuideLine = new THREE.Line(lineGeom, lineMat)
+    this._axisGuideLine.visible = false
+    this._axisGuideLine.renderOrder = 999
+    this._sceneView.scene.add(this._axisGuideLine)
 
-    this._tc = new TransformControls(this._sceneView.camera, this._sceneView.renderer.domElement)
-    this._tc.setMode('translate')
-    this._tc.setSpace('world')
-    // In Three.js r152+ TransformControls extends Controls (not Object3D).
-    // The visible scene graph lives in tc.getHelper() (= tc._root, an Object3D).
-    // Must add getHelper() to the scene, not tc itself.
-    this._sceneView.scene.add(this._tc.getHelper())
-
-    // Render the gizmo on top of CoordinateFrame axes (renderOrder 1) so it
-    // is never hidden behind the origin frame that appears on selection.
-    this._tc.getHelper().traverse(child => {
-      child.renderOrder = 2
-    })
-
-    // Disable OrbitControls while dragging; re-enable on release
-    this._tc.addEventListener('dragging-changed', (e) => {
-      this._tcDragging = e.value
-      this._controls.enabled = !e.value
-      if (e.value) {
-        // Drag start — snapshot based on current TC mode
-        this._tcStartProxyPos  = this._tcProxy.position.clone()
-        this._tcStartProxyQuat = this._tcProxy.quaternion.clone()
-        this._tcStartCorners   = this._snapshotTcCorners()
-        if (this._tcMode === 'rotate' && this._activeObj instanceof CoordinateFrame) {
-          this._tcStartFrameRot = this._activeObj.rotation.clone()
-        }
-        if (this._activeObj instanceof Solid) {
-          // Snapshot orientation+position for both rotate and translate modes (ADR-040)
-          this._tcStartOrientation = this._activeObj.orientation.clone()
-          this._tcStartPos         = this._activeObj._position.clone()
-        }
-        // Block movement on fastened-source CFs and Solids that own them:
-        // _updateFixedJointFrames() overrides translation every frame, so any delta
-        // from objectChange is silently discarded and the TC proxy drifts.
-        const isFastenedCF = this._activeObj instanceof CoordinateFrame &&
-            this._service.isFastenedSource(this._activeObj.id)
-        const isFastenedSolid = !(this._activeObj instanceof CoordinateFrame) &&
-            this._service.hasFastenedChild(this._activeObj.id)
-        if (isFastenedCF || isFastenedSolid) {
-          this._tcFastenedBlocked = true
-          this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
-        }
-        this._service.setLinkDragging(this._selectedIds, true)
-      } else {
-        // Drag end — if fastened, snap proxy back and skip command recording
-        if (this._tcFastenedBlocked) {
-          this._tcFastenedBlocked = false
-          this._tcStartCorners = new Map()
-          this._syncMobileTransformProxy()
-          this._service.setLinkDragging(new Set(), false)
-          this._service.updateLinkSelectionHighlight(this._selectedIds)
-          return
-        }
-        // Record undo command based on TC mode
-        const obj = this._activeObj
-        if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {
-          if (this._tcStartFrameRot) {
-            const endQuat = obj.rotation.clone()
-            if (!endQuat.equals(this._tcStartFrameRot)) {
-              const cmd = createFrameRotateCommand(
-                obj, this._tcStartFrameRot.clone(), endQuat, this._service,
-                () => this._updateNPanel(),
-              )
-              this._commandStack.push(cmd)
-              this._refreshUndoRedoState()
-            }
-            this._tcStartFrameRot = null
-          }
-          this._updateNPanel()
-        } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
-          // Record rotate command if orientation changed (ADR-040)
-          if (this._tcStartOrientation && !obj.orientation.equals(this._tcStartOrientation)) {
-            const cmd = createSolidRotateCommand(
-              obj,
-              this._tcStartOrientation, obj.orientation.clone(),
-              this._tcStartPos ?? new THREE.Vector3(), obj._position.clone(),
-              this._service, () => this._updateNPanel(),
-            )
-            this._commandStack.push(cmd)
-            this._refreshUndoRedoState()
-          }
-          this._tcStartOrientation = null
-          this._tcStartPos         = null
-          this._updateNPanel()
-        } else {
-          // Translate: record MoveCommand
-          if (this._tcStartCorners.size > 0 && obj) {
-            const endCorners = this._snapshotTcCorners()
-            const cmd = createMoveCommand('Move', this._tcStartCorners, endCorners, this._scene, this._service)
-            this._commandStack.push(cmd)
-            this._refreshUndoRedoState()
-          }
-        }
-        this._tcStartCorners = new Map()
-        this._service.setLinkDragging(new Set(), false)
-        this._service.updateLinkSelectionHighlight(this._selectedIds)
-      }
-    })
-
-    // Apply proxy transform to domain entity every frame during drag
-    this._tc.addEventListener('objectChange', () => {
-      // Fastened-source CF: _updateFixedJointFrames() overrides translation/rotation
-      // every frame, so any delta we write here is immediately discarded.  Skip all
-      // updates; the proxy will be snapped back to the CF position on drag end.
-      if (this._tcFastenedBlocked) return
-      const obj = this._activeObj
-      if (!obj) return
-      if (this._tcMode === 'rotate' && obj instanceof CoordinateFrame) {
-        // Rotate mode: apply quaternion delta to local frame rotation (ROS TF)
-        if (!this._tcStartProxyQuat || !this._tcStartFrameRot) return
-        const deltaQ = this._tcProxy.quaternion.clone().multiply(
-          this._tcStartProxyQuat.clone().invert(),
-        )
-        // _tcStartFrameRot is the local rotation snapshot; compute new local rot via change-of-basis
-        const parentWorldQuat = this._service._getParentWorldQuat(obj)
-        const startWorldQuat  = parentWorldQuat.clone().multiply(this._tcStartFrameRot)
-        const newWorldQuat    = new THREE.Quaternion().copy(startWorldQuat).premultiply(deltaQ)
-        obj.rotation.copy(parentWorldQuat.clone().conjugate().multiply(newWorldQuat))
-        obj.meshView.updateRotation(newWorldQuat)
-      } else if (this._tcMode === 'rotate' && obj instanceof Solid) {
-        // Rotate mode: rotate via primary triple (ADR-040)
-        if (!this._tcStartProxyQuat || !this._tcStartOrientation || !this._tcStartPos) return
-        const deltaQ = this._tcProxy.quaternion.clone().multiply(this._tcStartProxyQuat.clone().invert())
-        // ADR-040: pivot must be _position clone — getCentroid aliases the object that
-        // rotate() mutates first, causing sub(pivot) to subtract the wrong value.
-        obj.rotate(this._tcStartOrientation, this._tcStartPos, obj._position.clone(), deltaQ)
-        obj.meshView.updateGeometry(obj.corners)
-        obj.meshView.updateBoxHelper()
-      } else {
-        // Translate mode: apply position delta to handles
-        const worldDelta = this._tcProxy.position.clone().sub(this._tcStartProxyPos)
-        const startPts   = this._tcStartCorners.get(obj.id)
-        if (!startPts) return
-        if (obj instanceof CoordinateFrame) {
-          // translation is parent-local — convert world delta to local space (ROS TF)
-          const parentWorldQuat = this._service._getParentWorldQuat(obj)
-          const localDelta = worldDelta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
-          obj.localOffset.forEach((h, i) => h.copy(startPts[i]).add(localDelta))
-          obj.meshView.updateGeometry(obj.localOffset)
-          this._service.invalidateWorldPose(obj.id)
-        } else if (obj instanceof Solid) {
-          // Solid: use move() to keep _position + localCorners consistent (ADR-040)
-          if (this._tcStartPos) obj.move(this._tcStartPos, worldDelta)
-          obj.meshView.updateGeometry(obj.corners)
-          obj.meshView.updateBoxHelper()
-        } else {
-          startPts.forEach((c, i) => obj.corners[i].copy(c).add(worldDelta))
-          obj.meshView.updateGeometry(obj.corners)
-          obj.meshView.updateBoxHelper()
-        }
-      }
-    })
+    // Gimbal ring — circle in the local XY plane; rotated to match the rotation axis
+    const SEG = 64
+    const pts = new Float32Array((SEG + 1) * 3)
+    for (let i = 0; i <= SEG; i++) {
+      const t = (i / SEG) * Math.PI * 2
+      pts[i * 3] = Math.cos(t); pts[i * 3 + 1] = Math.sin(t); pts[i * 3 + 2] = 0
+    }
+    const ringGeom = new THREE.BufferGeometry()
+    ringGeom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    const ringMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 })
+    this._axisGuideRing = new THREE.Line(ringGeom, ringMat)
+    this._axisGuideRing.visible = false
+    this._axisGuideRing.renderOrder = 999
+    this._sceneView.scene.add(this._axisGuideRing)
   }
 
   /**
-   * Attaches the TC gizmo to the active object on mobile.
-   * Does nothing on desktop (this._tc is null) or for unsupported entity types.
-   * @param {object} obj - domain entity
+   * Shows the axis guide appropriate for the current operation mode.
+   * @param {'x'|'y'|'z'} axis
+   * @param {THREE.Vector3} center - world position of the guide origin
+   * @param {'translate'|'rotate'} mode
    */
-  _attachMobileTransform(obj) {
-    if (!this._tc || !obj) return
-    // Skip entity types that either can't move or have special movement semantics
-    if (obj instanceof SpatialLink    ||
-        obj instanceof MeasureLine    ||
-        obj instanceof AnnotatedLine  ||
-        obj instanceof AnnotatedRegion ||
-        obj instanceof AnnotatedPoint) {
-      this._detachMobileTransform()
-      return
-    }
-    // Position proxy at object's world centroid.
-    // For Solids: use Origin CF world pose so TC arrows align with Solid.bodyRotation (ADR-037 §3)
-    if (!(obj instanceof CoordinateFrame)) {
-      const originFrame = [...this._scene.objects.values()]
-        .find(o => o instanceof CoordinateFrame && o.parentId === obj.id && o.name === 'Origin')
-      const originPose = originFrame ? this._service.worldPoseOf(originFrame.id) : null
-      if (originPose) {
-        this._tcProxy.position.copy(originPose.position)
-        this._tcProxy.quaternion.copy(originPose.quaternion)
-        this._tcProxy.updateMatrixWorld()
-        this._tcMode = 'translate'
-        this._tc.setMode('translate')
-        this._tc.attach(this._tcProxy)
-        this._tc.getHelper().updateMatrixWorld()
-        return
-      }
-      // Legacy fallback: no Origin CF — use _position for Solid (ADR-040 primary triple)
-      this._tcProxy.position.copy(obj instanceof Solid ? obj._position : getCentroid(obj.corners))
-      this._tcProxy.quaternion.identity()
+  _showAxisGuide(axis, center, mode) {
+    const COLORS = { x: 0xe05252, y: 0x6ab04c, z: 0x4a9eed }
+    const color = COLORS[axis] ?? 0xffffff
+    const camDist = center.distanceTo(this._camera.position)
+    const r = Math.max(0.5, camDist * 0.25)
+
+    if (mode === 'translate') {
+      const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0)
+                : axis === 'y' ? new THREE.Vector3(0, 1, 0)
+                :                new THREE.Vector3(0, 0, 1)
+      const attr = this._axisGuideLine.geometry.attributes.position
+      const p0 = center.clone().addScaledVector(dir, -r * 2.5)
+      const p1 = center.clone().addScaledVector(dir,  r * 2.5)
+      attr.array[0] = p0.x; attr.array[1] = p0.y; attr.array[2] = p0.z
+      attr.array[3] = p1.x; attr.array[4] = p1.y; attr.array[5] = p1.z
+      attr.needsUpdate = true
+      this._axisGuideLine.material.color.setHex(color)
+      this._axisGuideLine.visible = true
+      this._axisGuideRing.visible = false
     } else {
-      this._tcProxy.position.copy(this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
-      this._tcProxy.quaternion.identity()  // reset accumulated proxy rotation each attach
+      this._axisGuideRing.position.copy(center)
+      this._axisGuideRing.scale.setScalar(r)
+      if (axis === 'x') {
+        this._axisGuideRing.rotation.set(0, Math.PI / 2, 0)
+      } else if (axis === 'y') {
+        this._axisGuideRing.rotation.set(Math.PI / 2, 0, 0)
+      } else {
+        this._axisGuideRing.rotation.set(0, 0, 0)
+      }
+      this._axisGuideRing.material.color.setHex(color)
+      this._axisGuideRing.visible = true
+      this._axisGuideLine.visible = false
     }
-    this._tcProxy.updateMatrixWorld()
-    // Always translate mode; _tcMode must stay in sync for objectChange handler.
-    this._tcMode = 'translate'
-    this._tc.setMode('translate')
-    this._tc.attach(this._tcProxy)
-    // Force the TC gizmo to immediately update to the proxy's new world position.
-    // Without this, the gizmo stays at the previous object's position until the
-    // next render cycle, visually separating TC from the newly selected frame's origin.
-    this._tc.getHelper().updateMatrixWorld()
   }
 
-  /** Detaches and hides the TC gizmo. Safe to call when TC is already detached. */
-  _detachMobileTransform() {
-    if (!this._tc) return
-    this._tc.detach()
-  }
-
-  /**
-   * Toggles the TC gizmo between 'rotate' and 'translate' mode.
-   * Effective for CoordinateFrame (quaternion) and Solid (corner rotation) on mobile.
-   */
-  _toggleTcMode() {
-    if (!this._tc) return
-    this._tcMode = this._tcMode === 'rotate' ? 'translate' : 'rotate'
-    this._tc.setMode(this._tcMode)
-    this._tcProxy.quaternion.identity()  // clear accumulated proxy rotation on mode switch
-    this._syncMobileTransformProxy()     // re-anchor gizmo to current frame world position
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Repositions the TC proxy to match the current state of the active object
-   * and forces the TC gizmo to update its internal state.
-   *
-   * Called after undo/redo and mode switches.
-   */
-  _syncMobileTransformProxy() {
-    if (!this._tc || !this._tcProxy || !this._activeObj || !this._tc.object) return
-    const obj = this._activeObj
-    const centroid = (obj instanceof CoordinateFrame)
-      ? (this._service.worldPoseOf(obj.id)?.position?.clone() ?? new THREE.Vector3())
-      : (obj instanceof Solid ? obj._position.clone() : getCentroid(obj.corners))
-    this._tcProxy.position.copy(centroid)
-    this._tc.getHelper().updateMatrixWorld()
-  }
-
-  /**
-   * Snapshots current corners/localOffset of the active object into a Map.
-   * @returns {Map<string, THREE.Vector3[]>}
-   */
-  _snapshotTcCorners() {
-    const obj = this._activeObj
-    if (!obj) return new Map()
-    const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
-    return new Map([[obj.id, handles.map(c => c.clone())]])
+  /** Hides all axis guide visuals. */
+  _hideAxisGuide() {
+    if (this._axisGuideLine) this._axisGuideLine.visible = false
+    if (this._axisGuideRing) this._axisGuideRing.visible = false
   }
 
   /**
@@ -2700,12 +2485,6 @@ export class AppController {
     this._updateNPanel()
     this._updateMobileToolbar()
 
-    // Attach or detach mobile translate gizmo based on new selection state
-    if (obj && select) {
-      this._attachMobileTransform(obj)
-    } else if (!id) {
-      this._detachMobileTransform()
-    }
   }
 
   /**
@@ -3420,11 +3199,19 @@ export class AppController {
           return true
         })
         .map(o => ({ id: o.id, name: o.name }))
+      // Child frames whose direct parent is this CF (grandchild CF creation)
+      const childFrames = [...this._scene.objects.values()]
+        .filter(o => o instanceof CoordinateFrame && o.parentId === obj.id)
+        .map(f => ({ id: f.id, name: f.name, unreferenced: this._service.getLinksOf(f.id).length === 0 }))
       this._uiView.updateNPanelForFrame(obj.translation, {
         x: THREE.MathUtils.radToDeg(euler.x),
         y: THREE.MathUtils.radToDeg(euler.y),
         z: THREE.MathUtils.radToDeg(euler.z),
-      }, obj.name, false, parentOptions, obj.parentId, frameUnreferenced)
+      }, obj.name, false, parentOptions, obj.parentId, frameUnreferenced,
+        childFrames,
+        () => this._promptAddFrame(obj.id),
+        (fid) => this._switchActiveObject(fid, true),
+      )
       return
     }
 
@@ -3740,8 +3527,9 @@ export class AppController {
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelRotate(), danger: true },
-        { spacer: true },
-        { spacer: true },
+        { icon: 'X', label: 'X', onClick: () => this._setRotateAxis('x'), active: this._rotate.axis === 'x' },
+        { icon: 'Y', label: 'Y', onClick: () => this._setRotateAxis('y'), active: this._rotate.axis === 'y' },
+        { icon: 'Z', label: 'Z', onClick: () => this._setRotateAxis('z'), active: this._rotate.axis === 'z' },
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
       ])
       return
@@ -3750,8 +3538,9 @@ export class AppController {
     if (this._opState.is(S_GRAB_ACTIVE)) {
       this._uiView.setMobileToolbar([
         { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
-        { icon: ICONS.stack,   label: 'Stack',   onClick: () => this._toggleStackMode(), active: this._grab.stackMode },
-        { spacer: true },
+        { icon: 'X', label: 'X', onClick: () => this._setGrabAxis('x'), active: this._grab.axis === 'x' },
+        { icon: 'Y', label: 'Y', onClick: () => this._setGrabAxis('y'), active: this._grab.axis === 'y' },
+        { icon: 'Z', label: 'Z', onClick: () => this._setGrabAxis('z'), active: this._grab.axis === 'z' },
         { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
       ])
       return
@@ -3762,11 +3551,12 @@ export class AppController {
 
       // CoordinateFrame: Delete | Move | Rotate | spacer | spacer
       if (hasObj && this._activeObj instanceof CoordinateFrame) {
+        const isOriginCF = this._activeObj.name === 'Origin'
         this._uiView.setMobileToolbar([
-          { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
-          { icon: ICONS.translate, label: 'Move',   onClick: () => { if (this._tcMode !== 'translate') this._toggleTcMode() }, active: this._tcMode === 'translate' },
-          { icon: ICONS.rotate,    label: 'Rotate', onClick: () => { if (this._tcMode !== 'rotate')    this._toggleTcMode() }, active: this._tcMode === 'rotate' },
-          { spacer: true },
+          { icon: ICONS.delete,    label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
+          { icon: ICONS.frame,     label: 'Add Frame', onClick: () => this._promptAddFrame(this._scene.activeId), disabled: isOriginCF },
+          { icon: ICONS.grab,      label: 'Move',      onClick: () => this._startGrab(), disabled: isOriginCF },
+          { icon: ICONS.rotate,    label: 'Rotate',    onClick: () => this._startRotate(true), disabled: isOriginCF },
           { spacer: true },
         ])
         return
@@ -3821,12 +3611,7 @@ export class AppController {
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
-          ? {
-              icon:    this._tcMode === 'rotate' ? ICONS.translate : ICONS.rotate,
-              label:   this._tcMode === 'rotate' ? 'Move'          : 'Rotate',
-              active:  this._tcMode === 'rotate',
-              onClick: () => this._toggleTcMode(),
-            }
+          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._startRotate(true) }
           : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
@@ -4095,11 +3880,8 @@ export class AppController {
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
       this._updateMobileToolbar()
-      // Re-attach mobile gizmo when returning to Object mode
-      if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
     } else {
       // edit mode — dispatch on entity type
-      this._detachMobileTransform()  // hide gizmo in Edit mode (no 3D translate there)
       this._clearObjectSelection()
       this._setObjectSelected(false)
       if (this._activeObj instanceof Profile) {
@@ -4311,10 +4093,6 @@ export class AppController {
         this._setChildFramesVisible(this._scene.activeId, sel)
       }
     }
-    // Sync the TC gizmo with the new selection state so every code path
-    // (not just _switchActiveObject) keeps the gizmo visible/hidden correctly.
-    if (sel && this._activeObj) this._attachMobileTransform(this._activeObj)
-    else this._detachMobileTransform()
     this._refreshObjectModeStatus()
     this._updateMobileToolbar()
   }
@@ -4676,7 +4454,6 @@ export class AppController {
     }
 
     this._controls.enabled = false
-    this._detachMobileTransform()
     this._uiView.setCursor('grabbing')
     this._updateGrabStatus()
     this._updateMobileToolbar()
@@ -4721,10 +4498,7 @@ export class AppController {
     this._refreshObjectModeStatus()
     this._updateNPanel()
     this._updateMobileToolbar()
-    // Re-anchor the TC gizmo to the object's new position after grab.
-    // During a regular touch/keyboard grab the proxy is never moved by the TC,
-    // so after confirm the gizmo would remain at the pre-grab position.
-    if (this._activeObj) this._attachMobileTransform(this._activeObj)
+    this._hideAxisGuide()
 
     // ── Semantic inference (ADR-041) ─────────────────────────────────────
     // Suggest a SpatialLink when a single Solid lands near another object.
@@ -4761,7 +4535,7 @@ export class AppController {
     this._service.setLinkDragging(new Set(), false)
     this._service.updateLinkSelectionHighlight(this._selectedIds)
     this._controls.enabled = true
-    if (this._activeObj && this._objSelected) this._attachMobileTransform(this._activeObj)
+    this._hideAxisGuide()
     this._uiView.setCursor('default')
     this._refreshObjectModeStatus()
     this._updateNPanel()
@@ -4950,8 +4724,7 @@ export class AppController {
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
     this._updateNPanel()
-    // Re-anchor TC proxy to the new centroid after rotation (matches undo/redo pattern at lines 670/677)
-    this._syncMobileTransformProxy()
+    this._hideAxisGuide()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
@@ -4981,6 +4754,7 @@ export class AppController {
     this._rotate.needsStartAngle     = false
     this._opState.send('CANCEL')
     this._controls.enabled          = true
+    this._hideAxisGuide()
     this._refreshObjectModeStatus()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
@@ -4997,10 +4771,13 @@ export class AppController {
     // Recompute start angle with new axis
     const obj = this._activeObj
     let projected
+    let rotCenter = null
     if (obj instanceof CoordinateFrame) {
-      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
+      rotCenter = this._service.worldPoseOf(obj.id)?.position ?? obj.translation
+      projected = rotCenter.clone().project(this._camera)
     } else if (obj instanceof Solid && this._rotate.segStartPivot) {
-      projected = this._rotate.segStartPivot.clone().project(this._camera)
+      rotCenter = this._rotate.segStartPivot
+      projected = rotCenter.clone().project(this._camera)
     }
     if (projected) {
       this._rotate.startAngle = Math.atan2(
@@ -5008,8 +4785,14 @@ export class AppController {
         this._mouse.x - projected.x,
       )
     }
+    if (this._rotate.axis && rotCenter) {
+      this._showAxisGuide(this._rotate.axis, rotCenter.clone(), 'rotate')
+    } else {
+      this._hideAxisGuide()
+    }
     this._applyRotate()
     this._updateRotateStatus()
+    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
   /**
@@ -5100,6 +4883,12 @@ export class AppController {
     this._grab.hasInput = false
     this._applyGrab()
     this._updateGrabStatus()
+    if (this._grab.axis) {
+      this._showAxisGuide(this._grab.axis, this._grab.centroid.clone(), 'translate')
+    } else {
+      this._hideAxisGuide()
+    }
+    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
   }
 
   _getAxisVec(axis) {
@@ -6345,13 +6134,6 @@ export class AppController {
       if (!result) result = this._hitAnyAnnotation()
 
       // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
-      // in the target phase before this window listener ran), preserve the active entity
-      // and proxy intact — switching selection here would call _attachMobileTransform()
-      // on the overlapping Solid, replacing _activeObj and moving the proxy away from
-      // the CF centroid. Subsequent objectChange would then look up the Solid id in
-      // _tcStartCorners, find nothing, and return early → CF never moves.
-      if (this._tcDragging) return
-
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
@@ -6472,12 +6254,6 @@ export class AppController {
         }
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
-        // If TC already claimed this pointer (arrow outside Solid bounds), its own
-        // listener fires first (target phase, before our window listener) and sets
-        // _tcDragging = true — skip deselection/rect-selection so the drag proceeds.
-        // Note: the same guard is also applied before the `if (result)` branch above
-        // to prevent _switchActiveObject from replacing the active entity mid-drag.
-        if (this._tcDragging) return
         if (e.pointerType === 'touch') {
           this._clearObjectSelection()
           this._setObjectSelected(false)
@@ -6721,7 +6497,6 @@ export class AppController {
           if (cmd) this._uiView.showToast(`Redo: ${cmd.label}`)
         }
         this._refreshUndoRedoState()
-        this._syncMobileTransformProxy()
       }
       return
     }
