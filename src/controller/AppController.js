@@ -69,6 +69,7 @@ import { SketchDrawState }   from '../core/states/SketchDrawState.js'
 import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
 import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
+import { SpatialLinkView }            from '../view/SpatialLinkView.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -472,6 +473,8 @@ export class AppController {
     this._endpointDragHandler  = new EndpointDragState()
     this._sketchDrawHandler    = new SketchDrawState()
     this._quickDragHandler     = new QuickDragState()
+    /** @type {import('../view/SpatialLinkView.js').SpatialLinkView|null} Ghost link during drag suggestion */
+    this._ghostLinkView        = null
     this._rectSelHandler       = new RectSelectState()
 
     // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
@@ -918,6 +921,64 @@ export class AppController {
         this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
         this._updateNPanel()
       },
+
+      // ── Live semantic inference during drag (ADR-041 Phase 2) ────────────
+
+      runInference: () => {
+        if (this._selectedIds.size !== 1) return null
+        const [movedId] = this._selectedIds
+        const moved = this._scene.getObject(movedId)
+        if (!(moved instanceof Solid)) return null
+        const existingPairs = new Set(
+          this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
+        )
+        const suggestions = inferSemanticRelationships(
+          moved, this._scene.objects.values(), existingPairs,
+        )
+        return suggestions.length > 0 ? suggestions[0] : null
+      },
+
+      showDragSuggestion: (suggestion) => {
+        if (this._ghostLinkView) {
+          this._ghostLinkView.dispose(this._sceneView.scene)
+          this._ghostLinkView = null
+        }
+        const srcPos = this._dragSuggestionCentroid(suggestion.sourceId)
+        const tgtPos = this._dragSuggestionCentroid(suggestion.targetId)
+        if (!srcPos || !tgtPos) return
+        this._ghostLinkView = new SpatialLinkView(
+          this._sceneView.scene, srcPos, tgtPos, suggestion.semanticType,
+        )
+        this._ghostLinkView.setHighlighted(true)
+        this._uiView.showDragSuggestionTooltip(suggestion)
+      },
+
+      updateDragSuggestion: (suggestion) => {
+        if (!this._ghostLinkView) return
+        const srcPos = this._dragSuggestionCentroid(suggestion.sourceId)
+        const tgtPos = this._dragSuggestionCentroid(suggestion.targetId)
+        if (srcPos && tgtPos) this._ghostLinkView.update(srcPos, tgtPos)
+      },
+
+      hideDragSuggestion: () => {
+        if (this._ghostLinkView) {
+          this._ghostLinkView.dispose(this._sceneView.scene)
+          this._ghostLinkView = null
+        }
+        this._uiView.hideDragSuggestionTooltip()
+      },
+
+      // Confirm the drag and immediately create the inferred SpatialLink.
+      // Sets _activeDragPointerId=null so the subsequent pointerup is a no-op.
+      acceptSuggestion: (suggestion) => {
+        this._objCtrlDrag = false
+        this._quickDragHandler.confirm(this._quickDragCtx)
+        this._opState.send('CONFIRM')
+        this._activeDragPointerId = null
+        this._service.setLinkDragging(new Set(), false)
+        this._service.updateLinkSelectionHighlight(this._selectedIds)
+        this._createSpatialLinkDirect(suggestion.sourceId, suggestion.targetId, suggestion)
+      },
     }
   }
 
@@ -929,6 +990,25 @@ export class AppController {
       updateDisplay: () => this._updateRectSelDisplay(),
       finalize:      () => this._finalizeRectSelection(),
     }
+  }
+
+  /**
+   * Returns the world-space centroid of an entity by id.
+   * For Solid uses _position (authoritative ADR-040 primary triple).
+   * For other entities (e.g. AnnotatedRegion) uses avg(corners).
+   * Read-only display only — never feed this back into physics or state.
+   * @param {string} id
+   * @returns {import('three').Vector3|null}
+   */
+  _dragSuggestionCentroid(id) {
+    const obj = this._scene.getObject(id)
+    if (!obj) return null
+    if (obj instanceof Solid) return obj._position.clone()
+    const cs = obj.corners
+    if (!cs || cs.length === 0) return null
+    const sum = new THREE.Vector3()
+    for (const c of cs) sum.add(c)
+    return sum.divideScalar(cs.length)
   }
 
   // ─── Object management ────────────────────────────────────────────────────
@@ -6658,6 +6738,11 @@ export class AppController {
       e.preventDefault()
       this._triggerImportSceneJson()
       return
+    }
+
+    // ── Keys active during quick drag (ADR-041 Phase 2) ───────────────────
+    if (this._opState.is(S_QUICK_DRAG)) {
+      if (this._quickDragHandler.onKeyDown(this._quickDragCtx, e)) return
     }
 
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
