@@ -4850,6 +4850,19 @@ export class AppController {
       this._camera.getWorldDirection(axisVec).negate()
     }
 
+    // Sign correction for pointer-driven axis-constrained rotation.
+    // Screen CCW (positive atan2 angle) maps to positive rotation only when the
+    // world axis points toward the viewer (camFwd · axisVec < 0). When the axis
+    // points away from the viewer (dot > 0 — e.g. +Y in the ROS frame for a
+    // typical above-right camera position), the apparent arc direction is reversed.
+    // Negating restores right-hand-rule consistency across all axes and camera poses.
+    // Free rotation and keyboard-input angles are already correct and are not touched.
+    if (!this._rotate.hasInput && this._rotate.axis) {
+      const camFwd = new THREE.Vector3()
+      this._camera.getWorldDirection(camFwd)
+      if (camFwd.dot(axisVec) > 0) angle = -angle
+    }
+
     const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
 
     this._service.applyPreviewRotation(obj, {
