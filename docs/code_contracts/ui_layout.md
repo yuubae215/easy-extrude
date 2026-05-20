@@ -11,9 +11,9 @@ Detail file for `docs/CODE_CONTRACTS.md` Section 3.
 
 | Mode | Slot 1 | Slot 2 | Slot 3 | Slot 4 | Slot 5 |
 |------|--------|--------|--------|--------|--------|
-| Object (generic) | Add | Dup | Edit | Delete | Stack |
-| Object (Solid selected) | Add | Dup | Edit | Delete | Rotate |
-| Object (CoordinateFrame selected) | Delete | Move | Rotate | *(spacer)* | *(spacer)* |
+| Object (generic / no selection) | Add | Grab | Edit | Delete | Stack |
+| Object (Solid selected) | Add | **Grab** | Edit | Delete | Rotate |
+| Object (CoordinateFrame selected) | Add Frame | **Move** | *(spacer)* | Delete | Rotate |
 | Edit 2D sketch | <- Object | *(spacer)* | *(spacer)* | Extrude | — |
 | Edit 2D extrude | Cancel | *(spacer)* | *(spacer)* | Confirm | — |
 | Edit 3D | <- Object | Vertex | Edge | Face | — |
@@ -59,17 +59,17 @@ this._uiView.setMobileToolbar([
 ])
 ```
 
-Object mode is a **5-slot home state** with different semantics (Add / Dup / Edit / Delete / Rotate-or-Stack) — it does not follow the 4-slot transient rule.
+Object mode is a **5-slot home state** with different semantics (Add / Grab / Edit / Delete / Rotate-or-Stack) — it does not follow the 4-slot transient rule.
 
 **Future Phase 3** (axis-constraint buttons during Grab) will expand the Grab bar to 5 slots: `[ Cancel | X | Y | Z | Confirm ]`. The semantic corners (Cancel = leftmost, Confirm = rightmost) are preserved even when slots are added in the middle.
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
-Dup, Edit, and Stack are disabled for `ImportedMesh`, `MeasureLine`, and `CoordinateFrame`. Dup is additionally disabled for `Profile`. Delete remains enabled for all object types. All Object-mode slots maintain consistent disabled states so slot positions never shift.
+Grab and Edit are disabled for `ImportedMesh`. Edit and Stack are also disabled for `CoordinateFrame` (CF has its own toolbar). Delete remains enabled for all object types. Dup was removed from the toolbar to make room for Grab; it remains available via the long-press context menu. All Object-mode slots maintain consistent disabled states so slot positions never shift.
 
 **Solid exception**: when a Solid is selected, slot 5 shows Rotate instead of Stack. Stack is still available via the Grab-active toolbar after starting a grab.
 
-**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout `[Delete | Move | Rotate | spacer | spacer]` rather than disabling individual generic slots. Delete is at slot 0 (left edge, matching the destructive-action anchor rule). Move (translate mode) and Rotate are separate buttons at slots 1–2 with `active` highlight reflecting the current TC mode; clicking an already-active mode is a no-op. Slots 3–4 are reserved for future CF-specific tools (e.g. Fasten).
+**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout `[Add Frame | Move | spacer | Delete | Rotate]`. Slot 2 (Move/Grab) and slot 5 (Rotate) intentionally mirror the Solid toolbar positions so that the muscle memory for "tap slot 2 to move, tap slot 5 to rotate" carries across both entity types. Add Frame (slot 1) is **always enabled** — even for the auto-managed Origin CF, adding a child CF is valid per ADR-037. Move, Delete, and Rotate are disabled for the Origin CF (name === 'Origin') since it is rigidly fixed to its parent Solid's centroid.
 
 The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `_startGrab()` does not reset `stackMode`, so the pre-set is respected. `_confirmGrab()` and `_cancelGrab()` reset it to `false` when the grab ends.
 
