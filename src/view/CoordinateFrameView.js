@@ -136,6 +136,8 @@ export class CoordinateFrameView {
     // caused by per-frame getBoundingClientRect() variation during viewport animations.
     this._lblX = null           // last rendered pixel X (integer)
     this._lblY = null           // last rendered pixel Y (integer)
+    this._lastRawX  = 0        // raw screen X at last write (pre-rounding)
+    this._lastRawY  = 0        // raw screen Y at last write (pre-rounding)
     this._cachedRect   = null   // cached canvas bounding rect
     this._cachedRectW  = 0      // canvas clientWidth at cache time
     this._cachedRectH  = 0      // canvas clientHeight at cache time
@@ -294,12 +296,21 @@ export class CoordinateFrameView {
 
     const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
     const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
+
+    // Dead-zone filter: suppress writes when camera drifts < 0.5 px in screen space.
+    // OrbitControls inertia and touch-sensor noise cause sub-pixel oscillation that,
+    // without this guard, straddles rounding boundaries and toggles the label position
+    // every frame — visible as jitter even when the scene is visually static.
+    if (this._lblX !== null &&
+        Math.hypot(sx - this._lastRawX, sy - this._lastRawY) < 0.5) {
+      this._setLabelDisplay(true)
+      return
+    }
+    this._lastRawX = sx
+    this._lastRawY = sy
+
     const rx = Math.round(sx + 6)
     const ry = Math.round(sy - 16)
-
-    // Skip the style write when the pixel position has not changed — prevents
-    // the GPU compositor from triggering a redundant recomposition on mobile.
-    if (rx === this._lblX && ry === this._lblY) { this._setLabelDisplay(true); return }
     this._lblX = rx
     this._lblY = ry
     this._label.style.transform = `translate3d(${rx}px,${ry}px,0)`
