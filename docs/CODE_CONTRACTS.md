@@ -61,7 +61,7 @@ Detail: `docs/code_contracts/architecture.md`
 | Soft-Delete Pattern | `_deleteObject()` uses `detachObject()` + `setVisible(false)`; `dispose()` only in cascade-delete and `_clearScene()` |
 | N Panel Read-Only Rows | Always pass `val` argument through to `row()`; never substitute hardcoded 0 |
 | Euler Angle Convention | Use `'ZYX'` order (= ROS RPY); never `'XYZ'` for CoordinateFrame rotation display |
-| Mouse Rotation Sign | `angle = startAngle - currentAngle` (not reversed); mouse-driven path only |
+| Mouse Rotation Sign | `angle = currentAngle - segmentStartAngle`; screen-CCW swipe → positive angle → CCW on-screen rotation for both PC and mobile |
 | Visual State Ownership | `hlMesh.visible` owned by `setFaceHighlight()`; `boxHelper.visible` by `setObjectSelected()` |
 | Frame View Must Be Hidden Before Detach | `AddSolidCommand.undo()` must call `meshView.hide()` + `hideConnection()` before `detachObject()`; after detach `_scene.getObject()` returns null so `_hideFrameChain()` silently skips the frame |
 | _updateMouse Before Coordinate Picking | Call `_updateMouse(e)` immediately after the canvas guard in `_onPointerDown`; touch devices have no preceding `pointermove` so `_mouse` is stale at first tap |
@@ -115,6 +115,7 @@ Detail: `docs/code_contracts/ui_layout.md`
 |------|--------------|
 | Mobile Toolbar Stability | Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts. Object mode (5 slots): `[Add \| Grab \| Edit \| Delete \| Rotate-or-Stack]`. Solid selected: slot 5 = Rotate. CF selected: `[Add Frame \| Move \| spacer \| Delete \| Rotate]` — slots 2 (Move) and 5 (Rotate) intentionally mirror Solid positions for cross-entity muscle memory; Add Frame is always enabled even for Origin CF. Dup removed from toolbar; remains in long-press context menu. Semantic slot rule for transient operation bars: slot 1 = Cancel/Back, slot 4 = Confirm — fixed regardless of which operation is active. |
 | CF Label Position Order | `_updateWorldPoses()` must run BEFORE `updateLabelPosition()` in the animation loop; calling label update on a stale `_group.position` (previous frame) causes the label to lag one frame and appear to vibrate at startup. |
+| CF Label getBoundingClientRect Cache | `CoordinateFrameView.updateLabelPosition()` caches the result of `canvas.getBoundingClientRect()` (keyed on `clientWidth`/`clientHeight`) and reuses it across frames. Calling `getBoundingClientRect()` every frame on mobile returns slightly varying values during viewport-resize animations (address-bar show/hide), which pushes the rounded pixel position across a 0.5-pixel boundary on alternate frames and causes visible jitter. The cache is invalidated whenever canvas dimensions change (i.e., on window resize). Additionally, the transform is only written to the DOM when the rounded position changes, preventing GPU recomposition on static scenes. |
 | Mobile Touch Gesture Model | Touch: tap=select, one-finger-drag=orbit, long-press=context menu; no rect selection or _objDragging |
 | Long-Press Context Menu | `showContextMenu()` with Grab/Dup/Rename/Delete; items filtered by entity type |
 | Long-Press for Non-Draggable Entities | CF/MeasureLine/Annotated* early-return must set long-press timer for touch BEFORE returning; without this CF "Link to..." is unreachable on mobile |
