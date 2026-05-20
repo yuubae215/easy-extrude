@@ -4831,7 +4831,7 @@ export class AppController {
         this._rotate.needsStartAngle   = false
         return
       }
-      angle = this._rotate.segmentStartAngle - currentAngle
+      angle = currentAngle - this._rotate.segmentStartAngle
       // Ctrl: snap to stepSize degree increments
       if (this._ctrlHeld) {
         const stepRad = this._rotate.stepSize * (Math.PI / 180)

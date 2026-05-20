@@ -132,6 +132,14 @@ export class CoordinateFrameView {
     this._label = null
     this._labelVisible = false   // tracks desired visibility (showFull/showDimmed/hide)
 
+    // Label position cache: avoid redundant style updates and prevent mobile jitter
+    // caused by per-frame getBoundingClientRect() variation during viewport animations.
+    this._lblX = null           // last rendered pixel X (integer)
+    this._lblY = null           // last rendered pixel Y (integer)
+    this._cachedRect   = null   // cached canvas bounding rect
+    this._cachedRectW  = 0      // canvas clientWidth at cache time
+    this._cachedRectH  = 0      // canvas clientHeight at cache time
+
     if (camera && renderer && container) {
       this._label = document.createElement('div')
       Object.assign(this._label.style, {
@@ -269,15 +277,32 @@ export class CoordinateFrameView {
     if (!this._label || !this._renderer || !this._labelVisible) return
 
     const ndc    = this._group.position.clone().project(camera)
-    const canvas = this._renderer.domElement
-    const rect   = canvas.getBoundingClientRect()
-
     if (ndc.z > 1) { this._setLabelDisplay(false); return }
+
+    // Cache getBoundingClientRect so mobile browser viewport animations (address-bar
+    // show/hide) cannot introduce per-frame variation in rect.top/rect.left that would
+    // push the rounded label position across a 0.5-pixel boundary on alternate frames.
+    const canvas = this._renderer.domElement
+    const cw = canvas.clientWidth
+    const ch = canvas.clientHeight
+    if (!this._cachedRect || cw !== this._cachedRectW || ch !== this._cachedRectH) {
+      this._cachedRect  = canvas.getBoundingClientRect()
+      this._cachedRectW = cw
+      this._cachedRectH = ch
+    }
+    const rect = this._cachedRect
 
     const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
     const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
+    const rx = Math.round(sx + 6)
+    const ry = Math.round(sy - 16)
 
-    this._label.style.transform = `translate3d(${Math.round(sx + 6)}px,${Math.round(sy - 16)}px,0)`
+    // Skip the style write when the pixel position has not changed — prevents
+    // the GPU compositor from triggering a redundant recomposition on mobile.
+    if (rx === this._lblX && ry === this._lblY) { this._setLabelDisplay(true); return }
+    this._lblX = rx
+    this._lblY = ry
+    this._label.style.transform = `translate3d(${rx}px,${ry}px,0)`
     this._setLabelDisplay(true)
   }
 
