@@ -38,7 +38,8 @@ Before writing or modifying any code, consult the relevant documents.
 | cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
 | SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
 | mobile / touch / gesture / pointer / OrbitControls | ADR-023, `docs/code_contracts/interaction.md` |
-| mobile toolbar / slot / spacer / UI layout | ADR-024, `docs/code_contracts/ui_layout.md` |
+| mobile toolbar / slot / spacer / UI layout | ADR-024, ADR-042, `docs/code_contracts/ui_layout.md` |
+| unified entity transform / mental model / fixed-slot / grab rotate deselect add | ADR-042 |
 | entity capability / instanceof / MeasureLine / ImportedMesh / CoordinateFrame | `docs/code_contracts/architecture.md` |
 | visual flag / meshview / dispose / memory / Three.js cleanup | `docs/code_contracts/memory_management.md` |
 | BFF / sceneStore / database / WebSocket / occt / STEP import | `docs/code_contracts/server_async.md` |

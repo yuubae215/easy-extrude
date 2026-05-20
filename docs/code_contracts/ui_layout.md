@@ -59,17 +59,17 @@ this._uiView.setMobileToolbar([
 ])
 ```
 
-Object mode is a **5-slot home state** with different semantics (Add / Grab / Edit / Delete / Rotate-or-Stack) — it does not follow the 4-slot transient rule.
-
-**Future Phase 3** (axis-constraint buttons during Grab) will expand the Grab bar to 5 slots: `[ Cancel | X | Y | Z | Confirm ]`. The semantic corners (Cancel = leftmost, Confirm = rightmost) are preserved even when slots are added in the middle.
+Object mode is a **5-slot home state** with different semantics (Add / Grab / Edit / Delete / Rotate-or-Stack) — it does not follow the 4-slot transient rule. ADR-042 defines the target unified 4-slot design (`[ Deselect | Grab | Rotate | Add [Context] ]`) to be adopted in a future implementation pass.
 
 `{ spacer: true }` renders as a `visibility: hidden` div of identical dimensions. It occupies layout space without being tappable.
 
 Grab and Edit are disabled for `ImportedMesh`. Edit and Stack are also disabled for `CoordinateFrame` (CF has its own toolbar). Delete remains enabled for all object types. Dup was removed from the toolbar to make room for Grab; it remains available via the long-press context menu. All Object-mode slots maintain consistent disabled states so slot positions never shift.
 
-**Solid exception**: when a Solid is selected, slot 5 shows Rotate instead of Stack. Stack is still available via the Grab-active toolbar after starting a grab.
+**Origin CF disabled actions**: Move, Delete, and Rotate are disabled for the Origin CF (`name === 'Origin'`) since it is rigidly fixed to its parent Solid's centroid. Only Add Frame remains enabled. ADR-042 §2 defines the planned locked-state visual treatment (🔒 icon + toast) to replace the current silent `disabled` state.
 
-**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout `[Add Frame | Move | spacer | Delete | Rotate]`. Slot 2 (Move/Grab) and slot 5 (Rotate) intentionally mirror the Solid toolbar positions so that the muscle memory for "tap slot 2 to move, tap slot 5 to rotate" carries across both entity types. Add Frame (slot 1) is **always enabled** — even for the auto-managed Origin CF, adding a child CF is valid per ADR-037. Move, Delete, and Rotate are disabled for the Origin CF (name === 'Origin') since it is rigidly fixed to its parent Solid's centroid.
+**CoordinateFrame exception**: when a CoordinateFrame is selected the entire toolbar switches to a specialised 5-slot layout `[Add Frame | Move | spacer | Delete | Rotate]`. Slot 2 (Move/Grab) and slot 5 (Rotate) intentionally mirror the Solid toolbar positions so that the muscle memory for "tap slot 2 to move, tap slot 5 to rotate" carries across both entity types. Add Frame (slot 1) is **always enabled** — even for the auto-managed Origin CF, adding a child CF is valid per ADR-037.
+
+**Axis sub-bar during Grab / Rotate** (planned, ADR-042): a floating axis selector bar will appear above the main toolbar during Grab/Rotate: `[ X | Y | Z ]` for Rotate, `[ X | Y | Z | XY-plane ]` for Grab. The last-used axis is remembered. This supersedes the 5-slot Grab bar expansion planned in ADR-024 §Future; the transient bar will remain 4 slots.
 
 The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `_startGrab()` does not reset `stackMode`, so the pre-set is respected. `_confirmGrab()` and `_cancelGrab()` reset it to `false` when the grab ends.
 
