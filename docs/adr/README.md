@@ -53,6 +53,7 @@ This directory records the project's design decisions.
 | [ADR-039](ADR-039-operation-state-machine.md) | **Runtime Operation State Machine — FSM-First Design Pattern** | Accepted | 2026-05-09 | ADR-008, ADR-022, ADR-030 |
 | [ADR-040](ADR-040-solid-data-model-redesign.md) | **Solid Data Model Redesign — Primary Triple (_position, orientation, localCorners)** | Accepted | 2026-05-14 | ADR-036, ADR-035, ADR-022, ADR-012 |
 | [ADR-041](ADR-041-semantic-inference-suggestions.md) | **Semantic Inference Suggestions — Geometric Heuristics for SpatialLink Proposals** | Accepted | 2026-05-17 | ADR-030, ADR-038, ADR-039 |
+| [ADR-042](ADR-042-unified-entity-transform-mental-model.md) | **Unified Entity Transform Mental Model — Fixed-Slot Transform Policy** | Accepted | 2026-05-20 | ADR-023, ADR-024, ADR-037, ADR-039, ADR-040 |
 
 ## How to Add a New ADR
 
