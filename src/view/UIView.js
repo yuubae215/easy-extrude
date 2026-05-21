@@ -3414,10 +3414,9 @@ export class UIView {
       if (spacer) {
         const placeholder = document.createElement('div')
         Object.assign(placeholder.style, {
-          minWidth:   '52px',
+          flex:       '1 0 0',
           minHeight:  '48px',
           visibility: 'hidden',
-          flexShrink: '1',
         })
         this._mobileToolbarEl.appendChild(placeholder)
         return
@@ -3432,8 +3431,8 @@ export class UIView {
         alignItems:       'center',
         justifyContent:   'center',
         gap:              '3px',
-        padding:          '6px 12px',
-        minWidth:         '52px',
+        padding:          '6px 4px',
+        flex:             '1 0 0',
         minHeight:        '48px',
         background:       bg,
         border:           `1px solid ${border}`,
@@ -3445,7 +3444,7 @@ export class UIView {
         userSelect:       'none',
         WebkitUserSelect: 'none',
         transition:       'background 0.15s, border-color 0.15s',
-        flexShrink:       '1',
+        overflow:         'hidden',
       })
       if (!indicator) btn.style.cursor = disabled ? 'default' : 'pointer'
 
@@ -3464,11 +3463,16 @@ export class UIView {
       const labelEl = document.createElement('span')
       labelEl.textContent = label
       Object.assign(labelEl.style, {
-        fontSize:      '9px',
-        fontWeight:    '500',
+        fontSize:     '9px',
+        fontWeight:   '500',
         letterSpacing: '0.04em',
         textTransform: 'uppercase',
         opacity:       (disabled && !indicator) ? '0.35' : '0.7',
+        width:         '100%',
+        textAlign:     'center',
+        overflow:      'hidden',
+        textOverflow:  'ellipsis',
+        whiteSpace:    'nowrap',
       })
 
       btn.appendChild(iconEl)
