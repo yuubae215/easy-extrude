@@ -55,7 +55,8 @@ export class AnnotatedLineView {
       color:       this._colorForType(placeType),
       linewidth:   UNSELECTED_WIDTH,
       worldUnits:  false,    // linewidth in pixels
-      depthTest:   false,
+      depthTest:   true,
+      depthWrite:  false,
       transparent: true,
       opacity:     CONFIRMED_OPACITY,
     })
@@ -68,7 +69,7 @@ export class AnnotatedLineView {
     this._dotGeo = new THREE.SphereGeometry(0.06, 6, 6)
     this._dotMat = new THREE.MeshBasicMaterial({
       color:    this._colorForType(placeType),
-      depthTest: false,
+      depthTest: true,
     })
     /** @type {THREE.Mesh[]} */
     this._dots = []
@@ -78,7 +79,8 @@ export class AnnotatedLineView {
     this._partGeo = new THREE.SphereGeometry(PARTICLE_RADIUS, 6, 6)
     this._partMat = new THREE.MeshBasicMaterial({
       color:       this._colorForType(placeType),
-      depthTest:   false,
+      depthTest:   true,
+      depthWrite:  false,
       transparent: true,
       opacity:     0.85,
     })
