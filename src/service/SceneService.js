@@ -456,18 +456,18 @@ export class SceneService extends EventEmitter {
         }
         entities.push(frame)
       } else if (dto.type === 'AnnotatedLine') {
-        const { renderer = null } = viewContext
+        const { camera = null, renderer = null, container = document.body } = viewContext
         const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-        const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer)
+        const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, dto.name ?? '')
         const entity   = AnnotatedLine.fromPoints(dto.id, dto.name, points, meshView)
         entity.description = dto.description ?? ''
         entity.placeType   = dto.placeType   ?? null
         if (entity.placeType) meshView.setPlaceType(entity.placeType)
         entities.push(entity)
       } else if (dto.type === 'AnnotatedRegion') {
-        const { renderer = null } = viewContext
+        const { camera = null, renderer = null, container = document.body } = viewContext
         const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-        const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer)
+        const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, dto.name ?? '')
         const entity   = AnnotatedRegion.fromPoints(dto.id, dto.name, points, meshView)
         entity.description = dto.description ?? ''
         entity.placeType   = dto.placeType   ?? null
@@ -699,10 +699,11 @@ export class SceneService extends EventEmitter {
     }
 
     if (dto.type === 'AnnotatedLine') {
-      const { renderer = null } = viewContext
+      const { camera = null, renderer = null, container = document.body } = viewContext
+      const lineName = dto.name ?? 'Line'
       const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-      const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer)
-      const entity   = AnnotatedLine.fromPoints(newId, dto.name ?? 'Line', points, meshView)
+      const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, lineName)
+      const entity   = AnnotatedLine.fromPoints(newId, lineName, points, meshView)
       entity.description = dto.description ?? ''
       entity.placeType   = dto.placeType   ?? null
       if (entity.placeType) meshView.setPlaceType(entity.placeType)
@@ -710,10 +711,11 @@ export class SceneService extends EventEmitter {
     }
 
     if (dto.type === 'AnnotatedRegion') {
-      const { renderer = null } = viewContext
+      const { camera = null, renderer = null, container = document.body } = viewContext
+      const regionName = dto.name ?? 'Region'
       const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-      const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer)
-      const entity   = AnnotatedRegion.fromPoints(newId, dto.name ?? 'Region', points, meshView)
+      const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, regionName)
+      const entity   = AnnotatedRegion.fromPoints(newId, regionName, points, meshView)
       entity.description = dto.description ?? ''
       entity.placeType   = dto.placeType   ?? null
       if (entity.placeType) meshView.setPlaceType(entity.placeType)
@@ -1832,13 +1834,15 @@ export class SceneService extends EventEmitter {
    * Emits: 'objectAdded'
    * @param {import('three').Vector3[]} points  N ≥ 2 ordered points
    * @param {string} [name]
-   * @param {import('three').WebGLRenderer} [renderer]
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} [viewContext]
    * @returns {AnnotatedLine}
    */
-  createAnnotatedLine(points, name, renderer) {
+  createAnnotatedLine(points, name, viewContext = {}) {
     const id      = `annot_line_${Date.now()}`
-    const meshView = new AnnotatedLineView(this._threeScene, points, null, renderer ?? null)
-    const obj     = AnnotatedLine.fromPoints(id, name ?? 'Line', points, meshView)
+    const lineName = name ?? 'Line'
+    const { camera = null, renderer = null, container = document.body } = viewContext
+    const meshView = new AnnotatedLineView(this._threeScene, points, null, renderer, camera, container, lineName)
+    const obj     = AnnotatedLine.fromPoints(id, lineName, points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj
@@ -1850,13 +1854,15 @@ export class SceneService extends EventEmitter {
    * Emits: 'objectAdded'
    * @param {import('three').Vector3[]} points  N ≥ 3 points in ring order
    * @param {string} [name]
-   * @param {import('three').WebGLRenderer} [renderer]
+   * @param {{ camera?: import('three').Camera, renderer?: import('three').WebGLRenderer, container?: HTMLElement }} [viewContext]
    * @returns {AnnotatedRegion}
    */
-  createAnnotatedRegion(points, name, renderer) {
+  createAnnotatedRegion(points, name, viewContext = {}) {
     const id      = `annot_region_${Date.now()}`
-    const meshView = new AnnotatedRegionView(this._threeScene, points, null, renderer ?? null)
-    const obj     = AnnotatedRegion.fromPoints(id, name ?? 'Region', points, meshView)
+    const regionName = name ?? 'Region'
+    const { camera = null, renderer = null, container = document.body } = viewContext
+    const meshView = new AnnotatedRegionView(this._threeScene, points, null, renderer, camera, container, regionName)
+    const obj     = AnnotatedRegion.fromPoints(id, regionName, points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
     return obj

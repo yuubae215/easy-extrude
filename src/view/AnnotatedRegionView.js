@@ -43,10 +43,14 @@ export class AnnotatedRegionView {
    * @param {THREE.Vector3[]}     points     ordered ring positions (N ≥ 3, implicitly closed)
    * @param {string|null}         placeType  'Zone' | null
    * @param {THREE.WebGLRenderer} renderer   needed for Line2 resolution
+   * @param {THREE.Camera|null}   [camera]   for label projection
+   * @param {HTMLElement|null}    [container] DOM element to append the label to
+   * @param {string}              [name]     entity name shown in label
    */
-  constructor(scene, points, placeType, renderer) {
+  constructor(scene, points, placeType, renderer, camera = null, container = null, name = '') {
     this._scene      = scene
     this._renderer   = renderer
+    this._camera     = camera
     this._placeType  = placeType
     this._isSelected = false
     this._isPending  = false
@@ -136,6 +140,30 @@ export class AnnotatedRegionView {
     this.boxHelper = new THREE.BoxHelper(this._helperObj, 0xffffff)
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
+
+    // ── HTML name label ────────────────────────────────────────────────────
+    this._label = null
+    if (container) {
+      this._label = document.createElement('div')
+      const hexStr = this._colorForType(placeType).toString(16).padStart(6, '0')
+      Object.assign(this._label.style, {
+        position:      'fixed',
+        pointerEvents: 'none',
+        userSelect:    'none',
+        background:    'rgba(20, 20, 20, 0.80)',
+        color:         '#e0e0e0',
+        fontSize:      '11px',
+        fontFamily:    'sans-serif',
+        padding:       '1px 5px',
+        borderRadius:  '3px',
+        whiteSpace:    'nowrap',
+        display:       'none',
+        zIndex:        '50',
+        borderLeft:    `3px solid #${hexStr}`,
+      })
+      this._label.textContent = name
+      container.appendChild(this._label)
+    }
 
     // ── Set initial geometry ───────────────────────────────────────────────
     this._setPoints(points)
@@ -275,6 +303,37 @@ export class AnnotatedRegionView {
     this._rimMat2.opacity = RIM_OPACITY_MAX * Math.pow(1 - phase2, 2)
   }
 
+  // ── Label update (call once per frame while visible) ──────────────────────
+
+  /**
+   * Projects the region centroid to screen and updates label position.
+   * Must be called from the animation loop while visible.
+   * @param {import('three').Camera} [camera]  Active camera (orthographic in Map mode).
+   */
+  updateLabelPosition(camera) {
+    if (!this._label) return
+    const cam = camera ?? this._camera
+    if (!cam || !this._renderer || !this._group.visible) return
+    const worldPos = new THREE.Vector3()
+    this._group.getWorldPosition(worldPos)
+    const ndc    = worldPos.project(cam)
+    const canvas = this._renderer.domElement
+    const rect   = canvas.getBoundingClientRect()
+    const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
+    const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
+
+    if (ndc.z > 1) { this._label.style.display = 'none'; return }
+
+    this._label.style.display = 'block'
+    this._label.style.left    = `${Math.round(sx + 4)}px`
+    this._label.style.top     = `${Math.round(sy - 10)}px`
+  }
+
+  /** Updates the label text (e.g. after rename). */
+  setName(name) {
+    if (this._label) this._label.textContent = name
+  }
+
   // ── Move support ───────────────────────────────────────────────────────────
 
   /**
@@ -310,6 +369,10 @@ export class AnnotatedRegionView {
     const isZone = placeType === 'Zone'
     this._rimRing1.visible = isZone
     this._rimRing2.visible = isZone
+    if (this._label) {
+      const hexStr = hex.toString(16).padStart(6, '0')
+      this._label.style.borderLeft = `3px solid #${hexStr}`
+    }
   }
 
   /**
@@ -330,7 +393,10 @@ export class AnnotatedRegionView {
 
   setVisible(visible) {
     this._group.visible = visible
-    if (!visible) this.boxHelper.visible = false
+    if (!visible) {
+      this.boxHelper.visible = false
+      if (this._label) this._label.style.display = 'none'
+    }
   }
 
   setObjectSelected(sel) {
@@ -379,5 +445,6 @@ export class AnnotatedRegionView {
     this._dotGeo.dispose()
     this._dotMat.dispose()
     this._dots = []
+    if (this._label) this._label.remove()
   }
 }
