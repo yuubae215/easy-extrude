@@ -63,7 +63,8 @@ export class AnnotatedRegionView {
       color:       this._colorForType(placeType),
       linewidth:   UNSELECTED_WIDTH,
       worldUnits:  false,
-      depthTest:   false,
+      depthTest:   true,
+      depthWrite:  false,
       transparent: true,
       opacity:     CONFIRMED_OPACITY,
     })
@@ -77,11 +78,15 @@ export class AnnotatedRegionView {
     // geometry.morphAttributes; use empty BufferGeometry as safe placeholder.
     this._fillGeo = new THREE.BufferGeometry()
     this._fillMat = new THREE.MeshBasicMaterial({
-      color:       this._colorForType(placeType),
-      transparent: true,
-      opacity:     FILL_OPACITY,
-      depthTest:   false,
-      side:        THREE.DoubleSide,
+      color:              this._colorForType(placeType),
+      transparent:        true,
+      opacity:            FILL_OPACITY,
+      depthTest:          true,
+      depthWrite:         false,
+      side:               THREE.DoubleSide,
+      polygonOffset:      true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
     })
     this._fillMesh = new THREE.Mesh(this._fillGeo, this._fillMat)
     this._fillMesh.renderOrder = 1
@@ -91,7 +96,7 @@ export class AnnotatedRegionView {
     this._dotGeo = new THREE.SphereGeometry(0.07, 6, 6)
     this._dotMat = new THREE.MeshBasicMaterial({
       color:     this._colorForType(placeType),
-      depthTest: false,
+      depthTest: true,
     })
     /** @type {THREE.Mesh[]} */
     this._dots = []
@@ -102,11 +107,15 @@ export class AnnotatedRegionView {
     // wave effect.  Placeholder geometry — replaced in _setPoints.
     this._rimGeo  = new THREE.BufferGeometry()
     this._rimMat1 = new THREE.MeshBasicMaterial({
-      color:       this._colorForType(placeType),
-      depthTest:   false,
-      transparent: true,
-      opacity:     0,
-      side:        THREE.DoubleSide,
+      color:              this._colorForType(placeType),
+      depthTest:          true,
+      depthWrite:         false,
+      transparent:        true,
+      opacity:            0,
+      side:               THREE.DoubleSide,
+      polygonOffset:      true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
     })
     this._rimRing1 = new THREE.Mesh(this._rimGeo, this._rimMat1)
     this._rimRing1.renderOrder = 1

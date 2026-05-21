@@ -46,8 +46,11 @@ export class AnnotatedPointView {
     // ── Circle marker mesh ─────────────────────────────────────────────────
     this._geo = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 16)
     this._mat = new THREE.MeshBasicMaterial({
-      color:    this._colorForType(placeType),
-      depthTest: false,
+      color:              this._colorForType(placeType),
+      depthTest:          true,
+      polygonOffset:      true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
     })
     /** Named differently from cuboid to indicate no raycasting. */
     this._mesh = new THREE.Mesh(this._geo, this._mat)
@@ -60,11 +63,15 @@ export class AnnotatedPointView {
     // ── Outline ring (slightly larger, transparent) ────────────────────────
     this._ringGeo = new THREE.RingGeometry(MARKER_RADIUS, MARKER_RADIUS + 0.05, 16)
     this._ringMat = new THREE.MeshBasicMaterial({
-      color:       this._colorForType(placeType),
-      depthTest:   false,
-      transparent: true,
-      opacity:     0.6,
-      side:        THREE.DoubleSide,
+      color:              this._colorForType(placeType),
+      depthTest:          true,
+      depthWrite:         false,
+      transparent:        true,
+      opacity:            0.6,
+      side:               THREE.DoubleSide,
+      polygonOffset:      true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
     })
     this._ring = new THREE.Mesh(this._ringGeo, this._ringMat)
     this._ring.position.copy(point)
@@ -76,11 +83,15 @@ export class AnnotatedPointView {
     // For non-Hub types the ring stays invisible (opacity: 0).
     this._sonarGeo = new THREE.RingGeometry(MARKER_RADIUS * 0.85, MARKER_RADIUS, 16)
     this._sonarMat = new THREE.MeshBasicMaterial({
-      color:       this._colorForType(placeType),
-      depthTest:   false,
-      transparent: true,
-      opacity:     0,
-      side:        THREE.DoubleSide,
+      color:              this._colorForType(placeType),
+      depthTest:          true,
+      depthWrite:         false,
+      transparent:        true,
+      opacity:            0,
+      side:               THREE.DoubleSide,
+      polygonOffset:      true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
     })
     this._sonarRing = new THREE.Mesh(this._sonarGeo, this._sonarMat)
     this._sonarRing.position.copy(point)
@@ -103,7 +114,8 @@ export class AnnotatedPointView {
     // White crosshair so arms contrast against the colored marker disc beneath
     this._crosshairMat = new THREE.LineBasicMaterial({
       color:       0xffffff,
-      depthTest:   false,
+      depthTest:   true,
+      depthWrite:  false,
       transparent: true,
       opacity:     CROSSHAIR_OPACITY,
     })

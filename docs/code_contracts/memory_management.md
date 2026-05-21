@@ -64,6 +64,12 @@ _clearScene() {
 - **Concrete Rule**: In `MeshView`, the selection highlight (`boxHelper`) must be a `THREE.LineSegments` with `THREE.EdgesGeometry` built from the actual corner positions, not a `THREE.BoxHelper`. Update `boxHelper.geometry` in `updateGeometry()`, `rebuildGeometry()`, and `rebuildExtrudedProfile()` (all three geometry-update paths). `updateBoxHelper()` is a no-op; `setObjectSelected()` only toggles `visible`. Dispose `boxHelper.geometry` in `dispose()`.
 - **Root bug**: After confirming rotation (`_confirmRotate` → `setObjectSelected(true)` → `boxHelper.update()`), the AABB of the rotated geometry was displayed — axis-aligned, larger than the solid, and visually rotating independently from it.
 
+## Annotation View Materials Must Use depthTest: true
+
+- **Principle**: Annotation views (AnnotatedLineView, AnnotatedRegionView, AnnotatedPointView) are scene-space 3D objects, not HUD overlays. Setting `depthTest: false` on their materials makes them render in front of all other scene geometry regardless of actual spatial depth — Zones and Routes appear pasted on top of Solid objects (Cubes) that should occlude them.
+- **Concrete Rule**: All materials in annotation views must use `depthTest: true`. Transparent materials (fill, rim rings, particles, sonar ring, outline rings, crosshair lines) must also set `depthWrite: false` to prevent writing incorrect depth values for semi-transparent surfaces. Flat polygon meshes on the ground plane (Z=0) — fill geometry, rim rings, marker disc, outline ring, sonar ring — must also set `polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4` to prevent Z-fighting with the ground grid.
+- **Root bug**: All annotation view materials were created with `depthTest: false` so annotations were always drawn on top of Solid objects regardless of spatial position.
+
 ## ImportedMesh Serialization: Base64 Typed Arrays + Position Offset
 
 - **Principle**: Raw Float32/Uint32 buffers cannot be stored directly in JSON. Base64 encoding is used so geometry survives round-trip through the BFF DB without loss.
