@@ -43,11 +43,16 @@ export class AnnotatedLineView {
    * @param {THREE.Vector3[]} points  ordered vertex positions (N ≥ 2)
    * @param {string|null}   placeType  'Route' | 'Boundary' | null
    * @param {THREE.WebGLRenderer} renderer  needed for Line2 resolution
+   * @param {THREE.Camera|null}   [camera]   for label projection
+   * @param {HTMLElement|null}    [container] DOM element to append the label to
+   * @param {string}              [name]     entity name shown in label
    */
-  constructor(scene, points, placeType, renderer) {
+  constructor(scene, points, placeType, renderer, camera = null, container = null, name = '') {
     this._scene    = scene
     this._renderer = renderer
+    this._camera   = camera
     this._placeType = placeType
+    this._labelPos  = null
 
     // ── Line2 geometry ─────────────────────────────────────────────────────
     this._lineGeo = new LineGeometry()
@@ -102,6 +107,30 @@ export class AnnotatedLineView {
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
 
+    // ── HTML name label ────────────────────────────────────────────────────
+    this._label = null
+    if (container) {
+      this._label = document.createElement('div')
+      const hexStr = this._colorForType(placeType).toString(16).padStart(6, '0')
+      Object.assign(this._label.style, {
+        position:      'fixed',
+        pointerEvents: 'none',
+        userSelect:    'none',
+        background:    'rgba(20, 20, 20, 0.80)',
+        color:         '#e0e0e0',
+        fontSize:      '11px',
+        fontFamily:    'sans-serif',
+        padding:       '1px 5px',
+        borderRadius:  '3px',
+        whiteSpace:    'nowrap',
+        display:       'none',
+        zIndex:        '50',
+        borderLeft:    `3px solid #${hexStr}`,
+      })
+      this._label.textContent = name
+      container.appendChild(this._label)
+    }
+
     // ── Set initial geometry ───────────────────────────────────────────────
     this._setPoints(points)
   }
@@ -143,6 +172,7 @@ export class AnnotatedLineView {
 
     this._updateBoxHelper(points)
     this._rebuildParticles(points)
+    this._labelPos = this._computeLabelPos(points)
   }
 
   /**
@@ -173,6 +203,30 @@ export class AnnotatedLineView {
       this._scene.add(mesh)
       this._particles.push(mesh)
     }
+  }
+
+  /**
+   * Returns the arc-length midpoint of the polyline for label placement.
+   * @param {THREE.Vector3[]} points
+   * @returns {THREE.Vector3|null}
+   */
+  _computeLabelPos(points) {
+    if (!points || points.length < 2) return null
+    let total = 0
+    for (let i = 0; i < points.length - 1; i++) {
+      total += points[i].distanceTo(points[i + 1])
+    }
+    const half = total * 0.5
+    let cum = 0
+    for (let i = 0; i < points.length - 1; i++) {
+      const segLen = points[i].distanceTo(points[i + 1])
+      if (cum + segLen >= half) {
+        const t = segLen > 0 ? (half - cum) / segLen : 0
+        return points[i].clone().lerp(points[i + 1], t)
+      }
+      cum += segLen
+    }
+    return points[points.length - 1].clone()
   }
 
   /**
@@ -239,6 +293,35 @@ export class AnnotatedLineView {
     }
   }
 
+  // ── Label update (call once per frame while visible) ──────────────────────
+
+  /**
+   * Projects the arc-length midpoint of the polyline to screen and updates label position.
+   * Must be called from the animation loop while visible.
+   * @param {import('three').Camera} [camera]  Active camera (orthographic in Map mode).
+   */
+  updateLabelPosition(camera) {
+    if (!this._label || !this._labelPos) return
+    const cam = camera ?? this._camera
+    if (!cam || !this._renderer || !this._line.visible) return
+    const ndc    = this._labelPos.clone().project(cam)
+    const canvas = this._renderer.domElement
+    const rect   = canvas.getBoundingClientRect()
+    const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
+    const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
+
+    if (ndc.z > 1) { this._label.style.display = 'none'; return }
+
+    this._label.style.display = 'block'
+    this._label.style.left    = `${Math.round(sx + 4)}px`
+    this._label.style.top     = `${Math.round(sy - 10)}px`
+  }
+
+  /** Updates the label text (e.g. after rename). */
+  setName(name) {
+    if (this._label) this._label.textContent = name
+  }
+
   // ── Move support ───────────────────────────────────────────────────────────
 
   /**
@@ -269,6 +352,10 @@ export class AnnotatedLineView {
     this._dotMat.color.setHex(hex)
     this._partMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
+    if (this._label) {
+      const hexStr = hex.toString(16).padStart(6, '0')
+      this._label.style.borderLeft = `3px solid #${hexStr}`
+    }
     // Boundary: confirmed style uses slow-marching dashes (marching-ants animation)
     if (placeType === 'Boundary') {
       this._lineMat.dashed   = true
@@ -304,7 +391,10 @@ export class AnnotatedLineView {
     this._line.visible = visible
     for (const d of this._dots)     d.visible = visible
     for (const p of this._particles) p.visible = visible
-    if (!visible) this.boxHelper.visible = false
+    if (!visible) {
+      this.boxHelper.visible = false
+      if (this._label) this._label.style.display = 'none'
+    }
   }
 
   setObjectSelected(sel) {
@@ -353,5 +443,6 @@ export class AnnotatedLineView {
     this._dots      = []
     this._particles = []
     this._segments  = []
+    if (this._label) this._label.remove()
   }
 }

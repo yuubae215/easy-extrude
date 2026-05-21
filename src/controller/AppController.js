@@ -1806,11 +1806,15 @@ export class AppController {
         this._service.setPlaceType(obj.id, placeType)
         created = true
       } else if (geometry === 'line' && pendingPoints.length >= 2) {
-        const obj = this._service.createAnnotatedLine(pendingPoints, name, renderer)
+        const obj = this._service.createAnnotatedLine(pendingPoints, name, {
+          camera: this._camera, renderer, container: document.body,
+        })
         this._service.setPlaceType(obj.id, placeType)
         created = true
       } else if (geometry === 'region' && pendingPoints.length >= 3) {
-        const obj = this._service.createAnnotatedRegion(pendingPoints, name, renderer)
+        const obj = this._service.createAnnotatedRegion(pendingPoints, name, {
+          camera: this._camera, renderer, container: document.body,
+        })
         this._service.setPlaceType(obj.id, placeType)
         created = true
       }
@@ -6918,8 +6922,8 @@ export class AppController {
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
         if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
-        if (obj instanceof AnnotatedLine)   obj.meshView.tick(t)
-        if (obj instanceof AnnotatedRegion) obj.meshView.tick(t)
+        if (obj instanceof AnnotatedLine)   { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
+        if (obj instanceof AnnotatedRegion) { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
         if (obj instanceof CoordinateFrame) {
           // Cap the frame's world size so it never visually dwarfs its parent.
           // Compute the parent object's bounding radius (max distance from centroid
