@@ -29,6 +29,9 @@ export class GizmoView {
     this._camera   = camera
     this._controls = controls
     this._hovered  = null  // e.g. 'X+', 'Y-'
+    this._lastKey      = null   // axis key of last snap, for toggle-back
+    this._prevPosition = null   // camera position before last snap
+    this._prevUp       = null   // camera.up before last snap
 
     this._canvas = document.createElement('canvas')
     this._canvas.width  = SIZE
@@ -170,6 +173,24 @@ export class GizmoView {
     const target = this._controls.target.clone()
     const dist   = this._camera.position.distanceTo(target)
 
+    // Toggle: clicking the same axis key a second time restores the previous perspective view
+    if (key === this._lastKey && this._prevPosition) {
+      this._camera.position.copy(this._prevPosition)
+      this._camera.up.copy(this._prevUp)
+      this._camera.lookAt(target)
+      this._controls.update()
+      this.update()
+      this._lastKey      = null
+      this._prevPosition = null
+      this._prevUp       = null
+      return
+    }
+
+    // Save current camera state so the toggle can restore it
+    this._prevPosition = this._camera.position.clone()
+    this._prevUp       = this._camera.up.clone()
+    this._lastKey      = key
+
     // Direction from origin for each axis view
     const viewDirs = {
       'X+': new THREE.Vector3( 1,  0,  0),
@@ -185,9 +206,14 @@ export class GizmoView {
     // Snap camera position along that axis direction from the orbit target
     this._camera.position.copy(target).addScaledVector(dir, dist)
 
-    // Fix up-vector: top/bottom views (Z+/Z-) use +X as screen-up; others keep +Z up
-    if (key === 'Z+' || key === 'Z-') {
-      this._camera.up.set(1, 0, 0)  // X (forward) points up on screen in top/bottom view
+    // Fix up-vector: top/bottom views (Z+/Z-) use +X as screen-up; others keep +Z up.
+    // Z+ uses a tiny Y offset to prevent gimbal lock (camera look dir parallel to up vec).
+    if (key === 'Z+') {
+      this._camera.position.y += 1e-4  // epsilon prevents gimbal lock in OrbitControls
+      this._camera.up.set(1, 0, 0)
+    } else if (key === 'Z-') {
+      this._camera.position.y += 1e-4
+      this._camera.up.set(1, 0, 0)
     } else {
       this._camera.up.set(0, 0, 1)  // ROS convention: +Z is up for all horizontal views
     }
