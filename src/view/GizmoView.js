@@ -178,6 +178,10 @@ export class GizmoView {
       this._camera.position.copy(this._prevPosition)
       this._camera.up.copy(this._prevUp)
       this._camera.lookAt(target)
+      // OrbitControls stores its polar-axis quat at construction time and never recomputes it.
+      // Sync it to the restored camera.up so orbit behaves correctly after the toggle.
+      this._controls._quat.setFromUnitVectors(this._prevUp, new THREE.Vector3(0, 1, 0))
+      this._controls._quatInverse.copy(this._controls._quat).invert()
       this._controls.update()
       this.update()
       this._lastKey      = null
@@ -206,16 +210,25 @@ export class GizmoView {
     // Snap camera position along that axis direction from the orbit target
     this._camera.position.copy(target).addScaledVector(dir, dist)
 
-    // Fix up-vector: top/bottom views (Z+/Z-) use +X as screen-up; others keep +Z up.
-    // Z+ uses a tiny Y offset to prevent gimbal lock (camera look dir parallel to up vec).
-    if (key === 'Z+') {
-      this._camera.position.y += 1e-4  // epsilon prevents gimbal lock in OrbitControls
+    // Fix up-vector and sync OrbitControls' internal polar-axis quat.
+    // OrbitControls computes _quat = setFromUnitVectors(camera.up, Y) once at construction
+    // and never updates it — changing camera.up without syncing _quat leaves the internal
+    // spherical coordinate system misaligned, causing gimbal lock on the very next drag.
+    //
+    // Z+/Z-: camera looks along ±Z which is parallel to the original up (Z), so we
+    // declare X as the new "screen up" to escape the singularity. The Y epsilon keeps
+    // the camera just off the exact equatorial plane of the X-up sphere (phi=90°±ε),
+    // which keeps OrbitControls stable.
+    // X±/Y±: camera is already at the equator of the Z-up sphere — restore Z-up quat.
+    if (key === 'Z+' || key === 'Z-') {
+      this._camera.position.y += 1e-4  // keeps camera off the exact Z-axis so phi ≠ 90°
       this._camera.up.set(1, 0, 0)
-    } else if (key === 'Z-') {
-      this._camera.position.y += 1e-4
-      this._camera.up.set(1, 0, 0)
+      this._controls._quat.setFromUnitVectors(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0))
+      this._controls._quatInverse.copy(this._controls._quat).invert()
     } else {
       this._camera.up.set(0, 0, 1)  // ROS convention: +Z is up for all horizontal views
+      this._controls._quat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0))
+      this._controls._quatInverse.copy(this._controls._quat).invert()
     }
 
     this._camera.lookAt(target)
