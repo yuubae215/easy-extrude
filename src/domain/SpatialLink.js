@@ -26,8 +26,9 @@ export class SpatialLink {
    * @param {string} targetId
    * @param {JointType|null}   jointType    URDF kinematic type, or null for annotation-only links
    * @param {SemanticType}     semanticType Domain meaning annotation
+   * @param {object}           [properties] Optional domain-specific properties (e.g. clearance)
    */
-  constructor(id, sourceId, targetId, jointType, semanticType) {
+  constructor(id, sourceId, targetId, jointType, semanticType, properties = {}) {
     this.id           = id
     this.sourceId     = sourceId
     this.targetId     = targetId
@@ -35,6 +36,11 @@ export class SpatialLink {
     this.jointType    = jointType ?? null
     /** @type {SemanticType} */
     this.semanticType = semanticType
+    /** @type {object} */
+    this.properties   = properties
+    // Runtime validation state (not serialized)
+    this.violated     = false
+    this.errorMessage = ''
   }
 }
 
@@ -69,8 +75,10 @@ export class SpatialLink {
  *   connects   — A route logically connects source to target
  *   references — Source derives positional datum from target
  *   represents — Source entity depicts / represents target concept
+ *   bounded_by — 2D map object (AnnotatedLine/Region) defines a clearance boundary for a 3D Solid;
+ *                link.properties.clearance (mm) is the minimum required distance
  *
- * @typedef {'fastened'|'mounts'|'aligned'|'contains'|'adjacent'|'above'|'connects'|'references'|'represents'} SemanticType
+ * @typedef {'fastened'|'mounts'|'aligned'|'contains'|'adjacent'|'above'|'connects'|'references'|'represents'|'bounded_by'} SemanticType
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -91,6 +99,7 @@ export const SEMANTIC_TYPES = /** @type {const} */ ([
   'fastened', 'mounts', 'aligned',
   'contains', 'adjacent', 'above', 'connects',
   'references', 'represents',
+  'bounded_by',
 ])
 
 /**
@@ -104,7 +113,7 @@ export const GEOMETRIC_SEMANTIC_TYPES = /** @type {const} */ (['fastened', 'moun
  * semanticType values that describe topological / structural relationships.
  * No transform applied at runtime.
  */
-export const TOPOLOGICAL_SEMANTIC_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects'])
+export const TOPOLOGICAL_SEMANTIC_TYPES = /** @type {const} */ (['contains', 'adjacent', 'above', 'connects', 'bounded_by'])
 
 /**
  * semanticType values that carry semantic meaning only.
