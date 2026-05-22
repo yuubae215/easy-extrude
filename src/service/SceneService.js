@@ -1533,6 +1533,11 @@ export class SceneService extends EventEmitter {
     // Aggregate tact-time-link targets so Hub visual state is OR-composed across multiple routes.
     const tactTimeHubIds     = new Set()
     const violatedTactHubIds = new Set()
+    // Aggregate tolerance-references targets (Anchor → CF) for OR-composed Anchor visual state.
+    const toleranceAnchorIds        = new Set()
+    const violatedToleranceAnchorIds = new Set()
+    // Conflict detection: track all tolerances assigned to each CF by different Anchors.
+    const cfToleranceMap = new Map()   // cfId → Set<number>
 
     for (const link of this._model.links.values()) {
       if (link.semanticType === 'bounded_by') {
@@ -1610,7 +1615,58 @@ export class SceneService extends EventEmitter {
 
         tactTimeHubIds.add(link.targetId)
         if (link.violated) violatedTactHubIds.add(link.targetId)
+
+      } else if (link.semanticType === 'references' && link.properties?.tolerance !== undefined) {
+        // ADR-043 Phase 4: Anchor tolerance check — Anchor (AnnotatedPoint) → CoordinateFrame.
+        // Validates that the CF world position is within `tolerance` mm of the Anchor position.
+        const source = this._model.getObject(link.sourceId)
+        const target = this._model.getObject(link.targetId)
+        if (!source || !target || !(source instanceof AnnotatedPoint) || !(target instanceof CoordinateFrame)) {
+          link.violated = false; continue
+        }
+        if (source.placeType !== 'Anchor') { link.violated = false; continue }
+
+        const cfPose = this._worldPoseCache.get(link.targetId)
+        if (!cfPose) { link.violated = false; continue }
+
+        // Anchor position is in world space (mm); CF world position from the pose cache (m).
+        // _worldPoseCache stores positions in the same world units as the scene (m).
+        const anchorPos  = source.corners[0]
+        const tolerance  = link.properties.tolerance          // mm
+        const distanceM  = anchorPos.distanceTo(cfPose.position)
+        const distanceMm = distanceM * 1000                   // m → mm
+
+        link.properties.currentDistance = distanceMm
+        link.violated     = distanceMm > tolerance
+        link.errorMessage = link.violated
+          ? `⚠️ 位置誤差: ${distanceMm.toFixed(1)}mm (許容: ±${tolerance}mm)`
+          : ''
+
+        this._linkViews.get(link.id)?.setViolated?.(link.violated)
+
+        toleranceAnchorIds.add(link.sourceId)
+        if (link.violated) violatedToleranceAnchorIds.add(link.sourceId)
+
+        // Track all tolerances that reference this CF (for conflict detection).
+        if (!cfToleranceMap.has(link.targetId)) cfToleranceMap.set(link.targetId, new Set())
+        cfToleranceMap.get(link.targetId).add(tolerance)
       }
+    }
+
+    // Detect anchor-tolerance conflicts: same CF constrained by multiple Anchors with differing tolerances.
+    const conflictingCfIds = new Set()
+    for (const [cfId, tolerances] of cfToleranceMap) {
+      if (tolerances.size > 1) conflictingCfIds.add(cfId)
+    }
+    if (conflictingCfIds.size > 0 && !this._lastConflictingCfIds) {
+      this._lastConflictingCfIds = new Set()
+    }
+    if (this._lastConflictingCfIds) {
+      const added = [...conflictingCfIds].filter(id => !this._lastConflictingCfIds.has(id))
+      if (added.length > 0) {
+        this.emit('anchorToleranceConflict', { cfIds: conflictingCfIds })
+      }
+      this._lastConflictingCfIds = conflictingCfIds
     }
 
     // Propagate violation tint to Solid targets of contains links.
@@ -1623,6 +1679,12 @@ export class SceneService extends EventEmitter {
     for (const id of tactTimeHubIds) {
       const obj = this._model.getObject(id)
       obj?.meshView?.setTactTimeViolated?.(violatedTactHubIds.has(id))
+    }
+
+    // Propagate tolerance violation state to Anchor sources of references links (ADR-043 Phase 4).
+    for (const id of toleranceAnchorIds) {
+      const obj = this._model.getObject(id)
+      obj?.meshView?.setToleranceViolated?.(violatedToleranceAnchorIds.has(id))
     }
   }
 
@@ -2091,6 +2153,11 @@ export class SceneService extends EventEmitter {
     if (link.semanticType === 'connects' && link.properties?.deadline !== undefined) {
       const target = this._model.getObject(link.targetId)
       target?.meshView?.setTactTimeViolated?.(false)
+    }
+    // Clear tolerance violation state from the Anchor source before removing the link (ADR-043 Phase 4).
+    if (link.semanticType === 'references' && link.properties?.tolerance !== undefined) {
+      const source = this._model.getObject(link.sourceId)
+      source?.meshView?.setToleranceViolated?.(false)
     }
     // Clean up mount / fasten data before removing the link record
     this._mountLocalPositions.delete(id)
