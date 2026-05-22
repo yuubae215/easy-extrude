@@ -18,6 +18,9 @@ import { geometryEngine } from '../service/GeometryEngine.js'
 
 export class MeshView {
   constructor(scene) {
+    this._selected           = false
+    this._constraintViolated = false
+
     // Cuboid mesh
     this.cuboidMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide })
     this.cuboid = new THREE.Mesh(new THREE.BufferGeometry(), this.cuboidMat)
@@ -320,8 +323,26 @@ export class MeshView {
 
   /** Updates the visual appearance for object-selected state */
   setObjectSelected(sel) {
-    this.cuboidMat.emissive.set(sel ? 0x112244 : 0x000000)
+    this._selected = sel
+    this._syncEmissive()
     this.boxHelper.visible = sel
+  }
+
+  /** Sets or clears the spatial-constraint violation tint (red emissive). */
+  setConstraintViolated(violated) {
+    this._constraintViolated = violated
+    this._syncEmissive()
+  }
+
+  /** Sole writer of cuboidMat.emissive — composes selection and violation states. */
+  _syncEmissive() {
+    if (this._constraintViolated) {
+      this.cuboidMat.emissive.set(0x550000)
+    } else if (this._selected) {
+      this.cuboidMat.emissive.set(0x112244)
+    } else {
+      this.cuboidMat.emissive.set(0x000000)
+    }
   }
 
   /** No-op: boxHelper geometry is kept in sync by updateGeometry() */

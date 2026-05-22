@@ -90,6 +90,27 @@ function _minDistPolylineToPoints(linePoints, testPoints) {
   return minDist
 }
 
+/**
+ * Ray-casting point-in-polygon test on the XY plane (odd-even rule).
+ * Used for containment evaluation of contains SpatialLinks.
+ * @param {number} px
+ * @param {number} py
+ * @param {import('three').Vector3[]} poly  ordered ring of polygon vertices (≥ 3)
+ * @returns {boolean}
+ */
+function _xyPointInPolygon(px, py, poly) {
+  let inside = false
+  const n = poly.length
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y
+    const xj = poly[j].x, yj = poly[j].y
+    if (((yi > py) !== (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
 export class SceneService extends EventEmitter {
   /**
    * @param {import('three').Scene} threeScene  Three.js scene used for MeshView creation/disposal
@@ -1499,35 +1520,68 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Evaluates all bounded_by SpatialLinks and updates their violated/errorMessage state.
-   * Pure computation: reads corners, writes link runtime fields only.
+   * Evaluates bounded_by (clearance) and contains (containment) SpatialLinks.
+   * Pure computation: reads corners, writes link runtime fields and view violation state.
    * Called from _updateSpatialLinkViews() each animation frame.
    */
   _evaluateClearanceLinks() {
+    // Aggregate contains-link targets so multiple links to the same Solid compose correctly.
+    const containsTargetIds   = new Set()
+    const violatedContainsIds = new Set()
+
     for (const link of this._model.links.values()) {
-      if (link.semanticType !== 'bounded_by') continue
+      if (link.semanticType === 'bounded_by') {
+        const source = this._model.getObject(link.sourceId)
+        const target = this._model.getObject(link.targetId)
+        if (!source || !target) { link.violated = false; continue }
 
-      const source = this._model.getObject(link.sourceId)
-      const target = this._model.getObject(link.targetId)
-      if (!source || !target) { link.violated = false; continue }
+        const srcCorners = source.corners
+        const tgtCorners = target.corners
+        if (!srcCorners?.length || !tgtCorners?.length || srcCorners.length < 2) {
+          link.violated = false
+          continue
+        }
 
-      const srcCorners = source.corners
-      const tgtCorners = target.corners
-      if (!srcCorners?.length || !tgtCorners?.length || srcCorners.length < 2) {
-        link.violated = false
-        continue
+        const limit   = link.properties?.clearance ?? 0
+        const minDist = _minDistPolylineToPoints(srcCorners, tgtCorners)
+
+        link.violated     = minDist < limit
+        link.errorMessage = link.violated
+          ? `⚠️ 安全距離不足: ${minDist.toFixed(0)}mm (要求: ${limit}mm)`
+          : ''
+        link.properties.currentClearance = minDist
+
+        this._linkViews.get(link.id)?.setViolated?.(link.violated)
+
+      } else if (link.semanticType === 'contains') {
+        const source = this._model.getObject(link.sourceId)
+        const target = this._model.getObject(link.targetId)
+        if (!source || !target) { link.violated = false; continue }
+
+        const regionCorners = source.corners
+        const solidCorners  = target.corners
+        if (!regionCorners?.length || !solidCorners?.length || regionCorners.length < 3) {
+          link.violated = false
+          continue
+        }
+
+        const allInside = solidCorners.every(c => _xyPointInPolygon(c.x, c.y, regionCorners))
+        link.violated     = !allInside
+        link.errorMessage = link.violated ? '⚠️ Zone外に脱出しています' : ''
+
+        this._linkViews.get(link.id)?.setViolated?.(link.violated)
+
+        if (target instanceof Solid) {
+          containsTargetIds.add(link.targetId)
+          if (link.violated) violatedContainsIds.add(link.targetId)
+        }
       }
+    }
 
-      const limit = link.properties?.clearance ?? 0
-      const minDist = _minDistPolylineToPoints(srcCorners, tgtCorners)
-
-      link.violated     = minDist < limit
-      link.errorMessage = link.violated
-        ? `⚠️ 安全距離不足: ${minDist.toFixed(0)}mm (要求: ${limit}mm)`
-        : ''
-      link.properties.currentClearance = minDist
-
-      this._linkViews.get(link.id)?.setViolated?.(link.violated)
+    // Propagate violation tint to Solid targets of contains links.
+    for (const id of containsTargetIds) {
+      const obj = this._model.getObject(id)
+      obj?.meshView?.setConstraintViolated?.(violatedContainsIds.has(id))
     }
   }
 
@@ -1985,7 +2039,13 @@ export class SceneService extends EventEmitter {
    * @param {string} id
    */
   detachSpatialLink(id) {
-    if (!this._model.getLink(id)) return
+    const link = this._model.getLink(id)
+    if (!link) return
+    // Clear contains-link violation tint from the target Solid before removing the link.
+    if (link.semanticType === 'contains') {
+      const target = this._model.getObject(link.targetId)
+      target?.meshView?.setConstraintViolated?.(false)
+    }
     // Clean up mount / fasten data before removing the link record
     this._mountLocalPositions.delete(id)
     this._fixedJointTransforms.delete(id)
