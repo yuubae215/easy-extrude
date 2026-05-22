@@ -62,7 +62,7 @@ Detail: `docs/code_contracts/architecture.md`
 | N Panel Read-Only Rows | Always pass `val` argument through to `row()`; never substitute hardcoded 0 |
 | Euler Angle Convention | Use `'ZYX'` order (= ROS RPY); never `'XYZ'` for CoordinateFrame rotation display |
 | Mouse Rotation Sign | `angle = currentAngle - segmentStartAngle`; screen-CCW swipe → positive angle → CCW on-screen rotation for both PC and mobile |
-| Visual State Ownership | `hlMesh.visible` owned by `setFaceHighlight()`; `boxHelper.visible` by `setObjectSelected()` |
+| Visual State Ownership | `hlMesh.visible` owned by `setFaceHighlight()`; `boxHelper.visible` by `setObjectSelected()`; `cuboidMat.emissive` owned by `_syncEmissive()` — composes `_selected` (blue 0x112244) and `_constraintViolated` (red 0x550000); never set emissive directly from outside MeshView |
 | Frame View Must Be Hidden Before Detach | `AddSolidCommand.undo()` must call `meshView.hide()` + `hideConnection()` before `detachObject()`; after detach `_scene.getObject()` returns null so `_hideFrameChain()` silently skips the frame |
 | _updateMouse Before Coordinate Picking | Call `_updateMouse(e)` immediately after the canvas guard in `_onPointerDown`; touch devices have no preceding `pointermove` so `_mouse` is stale at first tap |
 | CommandStack Clear After Init | Call `_commandStack.clear()` at the end of the constructor after `_addObject()` + `setMode()`; the auto-created initial solid must not appear in undo history |
