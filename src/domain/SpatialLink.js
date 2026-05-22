@@ -72,7 +72,9 @@ export class SpatialLink {
  *   contains   — Region source spatially contains entity target
  *   adjacent   — Source and target share a boundary or are neighbours
  *   above      — Source is vertically above target (Z-axis)
- *   connects   — A route logically connects source to target
+ *   connects   — A route logically connects source to target.
+ *                When link.properties.deadline (s) and link.properties.speed (m/s) are set,
+ *                evaluates as a tact-time constraint: routeLength_mm / 1000 / speed > deadline → violated.
  *   references — Source derives positional datum from target
  *   represents — Source entity depicts / represents target concept
  *   bounded_by — 2D map object (AnnotatedLine/Region) defines a clearance boundary for a 3D Solid;

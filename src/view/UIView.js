@@ -2765,6 +2765,7 @@ export class UIView {
       connects:   '#06B6D4',
       references: '#F59E0B',
       represents: '#F43F5E',
+      bounded_by: '#EF4444',
     }
     const color = LINK_COLORS[link.semanticType] ?? '#888'
 
@@ -2852,6 +2853,7 @@ export class UIView {
       above:      '#6366F1',
       adjacent:   '#64748B',
       connects:   '#06B6D4',
+      bounded_by: '#EF4444',
       // Category C — Semantic
       references: '#F59E0B',
       represents: '#F43F5E',
@@ -2916,6 +2918,21 @@ export class UIView {
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       })
       rowEl.appendChild(nameEl)
+
+      // Tact-time info for connects links with deadline property (ADR-043 Phase 3)
+      if (link.semanticType === 'connects' && link.properties?.deadline !== undefined) {
+        const transitTime = link.properties.currentTransitTime
+        const deadline    = link.properties.deadline
+        const t           = transitTime !== undefined ? transitTime.toFixed(1) : '–'
+        const exceeded    = transitTime !== undefined && transitTime > deadline
+        const infoEl = document.createElement('span')
+        infoEl.textContent = `${t}s/${deadline}s`
+        Object.assign(infoEl.style, {
+          flexShrink: '0', fontSize: '10px', fontFamily: 'monospace',
+          color: exceeded ? '#EF4444' : '#4ADE80', margin: '0 2px',
+        })
+        rowEl.appendChild(infoEl)
+      }
 
       if (onDelete) {
         const delBtn = document.createElement('button')
@@ -3121,9 +3138,10 @@ export class UIView {
       contains:   { color: '#8B5CF6', desc: 'Region source spatially contains target' },
       adjacent:   { color: '#64748B', desc: 'Source and target share a boundary' },
       above:      { color: '#94A3B8', desc: 'Source is vertically above target (Z axis)' },
-      connects:   { color: '#06B6D4', desc: 'A route logically connects source to target' },
+      connects:   { color: '#06B6D4', desc: 'Route connects to target; with deadline+speed, evaluates tact time' },
       references: { color: '#F59E0B', desc: 'Source derives positional datum from target' },
       represents: { color: '#F43F5E', desc: 'Source entity depicts the target concept' },
+      bounded_by: { color: '#EF4444', desc: 'Target must stay outside source boundary by clearance (mm)' },
     }
     const LINK_TYPES = linkOptions ?? []
 
