@@ -223,6 +223,7 @@ export function serializeScene(scene) {
       targetId:     link.targetId,
       jointType:    link.jointType,
       semanticType: link.semanticType,
+      properties:   link.properties ?? {},
     })
   }
 

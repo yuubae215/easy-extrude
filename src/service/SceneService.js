@@ -62,6 +62,34 @@ import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
 
+/**
+ * Minimum 2D (XY-projected) distance from any polyline segment to any point.
+ * Used for clearance evaluation of bounded_by SpatialLinks.
+ * @param {import('three').Vector3[]} linePoints  ordered polyline vertices
+ * @param {import('three').Vector3[]} testPoints  points to test against
+ * @returns {number} minimum distance in world units
+ */
+function _minDistPolylineToPoints(linePoints, testPoints) {
+  let minDist = Infinity
+  for (let i = 0; i < linePoints.length - 1; i++) {
+    const ax = linePoints[i].x,     ay = linePoints[i].y
+    const bx = linePoints[i + 1].x, by = linePoints[i + 1].y
+    const dx = bx - ax,             dy = by - ay
+    const segLen2 = dx * dx + dy * dy
+    for (const pt of testPoints) {
+      const px = pt.x, py = pt.y
+      let t = 0
+      if (segLen2 > 1e-10) {
+        t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / segLen2))
+      }
+      const cx2 = ax + t * dx, cy2 = ay + t * dy
+      const dist = Math.sqrt((px - cx2) ** 2 + (py - cy2) ** 2)
+      if (dist < minDist) minDist = dist
+    }
+  }
+  return minDist
+}
+
 export class SceneService extends EventEmitter {
   /**
    * @param {import('three').Scene} threeScene  Three.js scene used for MeshView creation/disposal
@@ -310,7 +338,7 @@ export class SceneService extends EventEmitter {
           const [jt, st] = dto.jointType !== undefined
             ? [dto.jointType ?? null, dto.semanticType]
             : migrateLinkType(dto.linkType)
-          const link = new SpatialLink(dto.id, dto.sourceId, dto.targetId, jt, st)
+          const link = new SpatialLink(dto.id, dto.sourceId, dto.targetId, jt, st, dto.properties ?? {})
           this._model.addLink(link)
           this._createLinkView(link)
           this.emit('spatialLinkAdded', link)
@@ -562,6 +590,7 @@ export class SceneService extends EventEmitter {
           remapId(dto.targetId),
           jt,
           st,
+          dto.properties ?? {},
         )
         this._model.addLink(link)
         this._createLinkView(link)
@@ -1465,6 +1494,41 @@ export class SceneService extends EventEmitter {
 
       view.update(src, tgt, dashOffset, tension)
     }
+
+    this._evaluateClearanceLinks()
+  }
+
+  /**
+   * Evaluates all bounded_by SpatialLinks and updates their violated/errorMessage state.
+   * Pure computation: reads corners, writes link runtime fields only.
+   * Called from _updateSpatialLinkViews() each animation frame.
+   */
+  _evaluateClearanceLinks() {
+    for (const link of this._model.links.values()) {
+      if (link.semanticType !== 'bounded_by') continue
+
+      const source = this._model.getObject(link.sourceId)
+      const target = this._model.getObject(link.targetId)
+      if (!source || !target) { link.violated = false; continue }
+
+      const srcCorners = source.corners
+      const tgtCorners = target.corners
+      if (!srcCorners?.length || !tgtCorners?.length || srcCorners.length < 2) {
+        link.violated = false
+        continue
+      }
+
+      const limit = link.properties?.clearance ?? 0
+      const minDist = _minDistPolylineToPoints(srcCorners, tgtCorners)
+
+      link.violated     = minDist < limit
+      link.errorMessage = link.violated
+        ? `⚠️ 安全距離不足: ${minDist.toFixed(0)}mm (要求: ${limit}mm)`
+        : ''
+      link.properties.currentClearance = minDist
+
+      this._linkViews.get(link.id)?.setViolated?.(link.violated)
+    }
   }
 
   // ── Rubber-band highlight API (called by AppController) ────────────────────
@@ -1901,9 +1965,9 @@ export class SceneService extends EventEmitter {
    * @param {import('../domain/SpatialLink.js').SemanticType}     semanticType
    * @returns {SpatialLink}
    */
-  createSpatialLink(sourceId, targetId, jointType, semanticType) {
+  createSpatialLink(sourceId, targetId, jointType, semanticType, properties = {}) {
     const id   = `link_${Date.now()}`
-    const link = new SpatialLink(id, sourceId, targetId, jointType, semanticType)
+    const link = new SpatialLink(id, sourceId, targetId, jointType, semanticType, properties)
     this._model.addLink(link)
     this._createLinkView(link)
     this.emit('spatialLinkAdded', link)

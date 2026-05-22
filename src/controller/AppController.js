@@ -103,6 +103,11 @@ function _computeLinkOptions(source, target) {
   if (source instanceof AnnotatedLine) {
     options.push({ jointType: null, semanticType: 'connects',  label: 'Connects' })
   }
+  if ((source instanceof AnnotatedLine || source instanceof AnnotatedRegion) && target instanceof Solid) {
+    options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (500mm)',   properties: { clearance: 500 } })
+    options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (1000mm)',  properties: { clearance: 1000 } })
+    options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (no gap)',  properties: { clearance: 0 } })
+  }
   options.push({ jointType: null, semanticType: 'adjacent',   label: 'Adjacent' })
   options.push({ jointType: null, semanticType: 'above',      label: 'Above' })
   options.push({ jointType: null, semanticType: 'references', label: 'References' })
@@ -2636,7 +2641,7 @@ export class AppController {
    * @param {{ jointType: string|null, semanticType: string, label: string }} option
    */
   _createSpatialLinkDirect(sourceId, targetId, option) {
-    const link = this._service.createSpatialLink(sourceId, targetId, option.jointType, option.semanticType)
+    const link = this._service.createSpatialLink(sourceId, targetId, option.jointType, option.semanticType, option.properties ?? {})
     this._commandStack.push(createSpatialLinkCommand(link, this._service))
     this._uiView.showToast(`Link created: ${option.label}`)
     this._updateNPanel()

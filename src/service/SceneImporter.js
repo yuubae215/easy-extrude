@@ -26,6 +26,7 @@ const VALID_SEMANTIC_TYPES = new Set([
   'fastened', 'mounts', 'aligned',
   'contains', 'adjacent', 'above', 'connects',
   'references', 'represents',
+  'bounded_by',
 ])
 // v1.2 flat linkType values still accepted for backward compat
 const VALID_LEGACY_LINK_TYPES = new Set([...VALID_SEMANTIC_TYPES, 'references', 'connects', 'contains', 'adjacent'])

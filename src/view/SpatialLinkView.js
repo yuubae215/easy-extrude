@@ -44,13 +44,15 @@ export const LINK_TYPE_COLORS = {
   // Category C — Semantic
   references: 0xF59E0B,  // amber
   represents: 0xF43F5E,  // rose
+  // Category D — Safety constraint
+  bounded_by: 0xFB923C,  // orange
 }
 
 /**
  * Link types that carry a directional arrowhead (source → target).
  * Undirected types (connects, adjacent) have no arrow.
  */
-const DIRECTED = new Set(['mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents'])
+const DIRECTED = new Set(['mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents', 'bounded_by'])
 
 export class SpatialLinkView {
   /**
@@ -99,6 +101,9 @@ export class SpatialLinkView {
     // Rest distance: baseline for tension computation during grab.
     this._restDistance = Math.max(srcPos.distanceTo(tgtPos), 0.001)
 
+    // Clearance violation state (bounded_by links only).
+    this._violated = false
+
     // Set initial geometry
     this.update(srcPos, tgtPos)
   }
@@ -132,6 +137,18 @@ export class SpatialLinkView {
       if (this._arrow) this._arrow.cone.material.color.set(this._baseColor)
     }
 
+    // Alert state overrides tension color when clearance is violated
+    if (this._violated) {
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.008)
+      const alertRed    = new THREE.Color(0xEF4444)
+      const alertBright = new THREE.Color(0xFF9999)
+      this._mat.color.lerpColors(alertRed, alertBright, pulse * 0.4)
+      if (this._arrow) this._arrow.cone.material.color.lerpColors(alertRed, alertBright, pulse * 0.4)
+      this._mat.dashSize = 0.15
+      this._mat.gapSize  = 0.08
+      this._mat.opacity  = 0.8 + pulse * 0.2
+    }
+
     if (dashOffset !== 0) {
       this._mat.dashOffset = dashOffset
     }
@@ -147,6 +164,17 @@ export class SpatialLinkView {
         this._arrow.setDirection(dir)
       }
     }
+  }
+
+  // ── Clearance violation state ──────────────────────────────────────────────
+
+  /**
+   * Sets the clearance violation state for bounded_by links.
+   * When violated, the link pulses red to alert the user.
+   * @param {boolean} violated
+   */
+  setViolated(violated) {
+    this._violated = violated
   }
 
   // ── Tension / highlight state ──────────────────────────────────────────────
