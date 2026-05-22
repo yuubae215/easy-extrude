@@ -1520,14 +1520,19 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Evaluates bounded_by (clearance) and contains (containment) SpatialLinks.
-   * Pure computation: reads corners, writes link runtime fields and view violation state.
-   * Called from _updateSpatialLinkViews() each animation frame.
+   * Evaluates runtime SpatialLink constraints each animation frame:
+   *  - bounded_by: min 2D XY distance from polyline/polygon to Solid corners vs. clearance (mm)
+   *  - contains: point-in-polygon test for all Solid corners inside AnnotatedRegion boundary
+   *  - connects (with deadline): Route polyline length / speed vs. deadline (tact-time; ADR-043 Phase 3)
+   * Pure computation: reads corners, writes link.violated / link.errorMessage / view violation state.
    */
   _evaluateClearanceLinks() {
     // Aggregate contains-link targets so multiple links to the same Solid compose correctly.
     const containsTargetIds   = new Set()
     const violatedContainsIds = new Set()
+    // Aggregate tact-time-link targets so Hub visual state is OR-composed across multiple routes.
+    const tactTimeHubIds     = new Set()
+    const violatedTactHubIds = new Set()
 
     for (const link of this._model.links.values()) {
       if (link.semanticType === 'bounded_by') {
@@ -1575,6 +1580,36 @@ export class SceneService extends EventEmitter {
           containsTargetIds.add(link.targetId)
           if (link.violated) violatedContainsIds.add(link.targetId)
         }
+
+      } else if (link.semanticType === 'connects' && link.properties?.deadline !== undefined) {
+        // Tact-time evaluation: Route (AnnotatedLine) → Hub (AnnotatedPoint).
+        // Checks whether route polyline length / speed exceeds the deadline.
+        const source = this._model.getObject(link.sourceId)
+        const target = this._model.getObject(link.targetId)
+        if (!source || !target) { link.violated = false; continue }
+
+        const routeCorners = source.corners
+        if (!routeCorners?.length || routeCorners.length < 2) { link.violated = false; continue }
+
+        let routeLength = 0
+        for (let i = 1; i < routeCorners.length; i++) {
+          routeLength += routeCorners[i - 1].distanceTo(routeCorners[i])
+        }
+
+        const speed       = link.properties.speed ?? 1.5          // m/s
+        const deadline    = link.properties.deadline               // seconds
+        const transitTime = routeLength / 1000 / speed             // mm → m → seconds
+
+        link.violated     = transitTime > deadline
+        link.errorMessage = link.violated
+          ? `⚠️ タクト超過: ${transitTime.toFixed(1)}s (制限: ${deadline}s)`
+          : ''
+        link.properties.currentTransitTime = transitTime
+
+        this._linkViews.get(link.id)?.setViolated?.(link.violated)
+
+        tactTimeHubIds.add(link.targetId)
+        if (link.violated) violatedTactHubIds.add(link.targetId)
       }
     }
 
@@ -1582,6 +1617,12 @@ export class SceneService extends EventEmitter {
     for (const id of containsTargetIds) {
       const obj = this._model.getObject(id)
       obj?.meshView?.setConstraintViolated?.(violatedContainsIds.has(id))
+    }
+
+    // Propagate tact-time violation state to Hub targets of connects links.
+    for (const id of tactTimeHubIds) {
+      const obj = this._model.getObject(id)
+      obj?.meshView?.setTactTimeViolated?.(violatedTactHubIds.has(id))
     }
   }
 
@@ -2045,6 +2086,11 @@ export class SceneService extends EventEmitter {
     if (link.semanticType === 'contains') {
       const target = this._model.getObject(link.targetId)
       target?.meshView?.setConstraintViolated?.(false)
+    }
+    // Clear tact-time violation state from the Hub before removing the link.
+    if (link.semanticType === 'connects' && link.properties?.deadline !== undefined) {
+      const target = this._model.getObject(link.targetId)
+      target?.meshView?.setTactTimeViolated?.(false)
     }
     // Clean up mount / fasten data before removing the link record
     this._mountLocalPositions.delete(id)

@@ -152,6 +152,7 @@ export class AnnotatedPointView {
 
     this._point = point.clone()
     this._name  = name
+    this._tactViolated = false
 
     // Apply initial place-type visuals
     this._applyPlaceTypeVisuals(placeType)
@@ -208,11 +209,12 @@ export class AnnotatedPointView {
   tick(t) {
     if (!this._mesh.visible) return
     if (this._placeType === 'Hub') {
-      // Sonar ping: ring expands 1× → 4× and fades over a 2 s cycle.
-      // Creates a "broadcasting junction node" feel — game-like beacon.
-      const phase = (t % 2.0) / 2.0             // 0 → 1 every 2 s
+      // Sonar ping: ring expands 1× → 4× and fades over a 2 s cycle normally.
+      // When tact-time is violated: faster period (0.6 s) and higher peak opacity.
+      const period = this._tactViolated ? 0.6 : 2.0
+      const phase  = (t % period) / period
       this._sonarRing.scale.setScalar(1 + phase * 3)
-      this._sonarMat.opacity = (1 - phase) * 0.65
+      this._sonarMat.opacity = (1 - phase) * (this._tactViolated ? 0.9 : 0.65)
       // Outline ring: steady
       this._ringMat.opacity = 0.6
     } else if (this._placeType === 'Anchor') {
@@ -318,6 +320,22 @@ export class AnnotatedPointView {
   setObjectSelected(sel) {
     this.boxHelper.visible = sel
     if (sel) this.boxHelper.update()
+  }
+
+  /**
+   * Updates Hub visual state when a tact-time constraint is violated.
+   * When violated: marker/ring turns red; sonar ping period doubles in speed.
+   * When cleared: reverts to place-type color.
+   * @param {boolean} violated
+   */
+  setTactTimeViolated(violated) {
+    if (this._tactViolated === violated) return
+    this._tactViolated = violated
+    const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
+    this._mat.color.setHex(hex)
+    this._sonarMat.color.setHex(hex)
+    this._ringMat.color.setHex(hex)
+    this.boxHelper.material?.color.setHex(hex)
   }
 
   // ── Edit-mode no-ops ───────────────────────────────────────────────────────

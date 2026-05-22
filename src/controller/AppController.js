@@ -101,7 +101,14 @@ function _computeLinkOptions(source, target) {
     options.push({ jointType: null, semanticType: 'contains',  label: 'Contains' })
   }
   if (source instanceof AnnotatedLine) {
-    options.push({ jointType: null, semanticType: 'connects',  label: 'Connects' })
+    if (source.placeType === 'Route' && target instanceof AnnotatedPoint && target.placeType === 'Hub') {
+      // Tact-time constrained route connections (deadline + speed stored in properties).
+      options.push({ jointType: null, semanticType: 'connects', label: 'Tact 30 s · 1.5 m/s',  properties: { deadline: 30,  speed: 1.5 } })
+      options.push({ jointType: null, semanticType: 'connects', label: 'Tact 60 s · 1.5 m/s',  properties: { deadline: 60,  speed: 1.5 } })
+      options.push({ jointType: null, semanticType: 'connects', label: 'Tact 120 s · 1.5 m/s', properties: { deadline: 120, speed: 1.5 } })
+    } else {
+      options.push({ jointType: null, semanticType: 'connects', label: 'Connects' })
+    }
   }
   if ((source instanceof AnnotatedLine || source instanceof AnnotatedRegion) && target instanceof Solid) {
     options.push({ jointType: null, semanticType: 'bounded_by', label: 'Bounded By (500mm)',   properties: { clearance: 500 } })
