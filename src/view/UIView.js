@@ -2933,6 +2933,20 @@ export class UIView {
         })
         rowEl.appendChild(infoEl)
       }
+      // Tolerance info for references links with tolerance property (ADR-043 Phase 4)
+      if (link.semanticType === 'references' && link.properties?.tolerance !== undefined) {
+        const currentDist = link.properties.currentDistance
+        const tolerance   = link.properties.tolerance
+        const d           = currentDist !== undefined ? currentDist.toFixed(1) : '–'
+        const exceeded    = currentDist !== undefined && currentDist > tolerance
+        const infoEl = document.createElement('span')
+        infoEl.textContent = `${d}mm/±${tolerance}mm`
+        Object.assign(infoEl.style, {
+          flexShrink: '0', fontSize: '10px', fontFamily: 'monospace',
+          color: exceeded ? '#EF4444' : '#4ADE80', margin: '0 2px',
+        })
+        rowEl.appendChild(infoEl)
+      }
 
       if (onDelete) {
         const delBtn = document.createElement('button')
@@ -3139,7 +3153,7 @@ export class UIView {
       adjacent:   { color: '#64748B', desc: 'Source and target share a boundary' },
       above:      { color: '#94A3B8', desc: 'Source is vertically above target (Z axis)' },
       connects:   { color: '#06B6D4', desc: 'Route connects to target; with deadline+speed, evaluates tact time' },
-      references: { color: '#F59E0B', desc: 'Source derives positional datum from target' },
+      references: { color: '#F59E0B', desc: 'Source derives positional datum from target; Anchor→CF with tolerance validates position error' },
       represents: { color: '#F43F5E', desc: 'Source entity depicts the target concept' },
       bounded_by: { color: '#EF4444', desc: 'Target must stay outside source boundary by clearance (mm)' },
     }

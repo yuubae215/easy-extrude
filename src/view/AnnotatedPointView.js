@@ -152,7 +152,8 @@ export class AnnotatedPointView {
 
     this._point = point.clone()
     this._name  = name
-    this._tactViolated = false
+    this._tactViolated      = false
+    this._toleranceViolated = false
 
     // Apply initial place-type visuals
     this._applyPlaceTypeVisuals(placeType)
@@ -218,9 +219,10 @@ export class AnnotatedPointView {
       // Outline ring: steady
       this._ringMat.opacity = 0.6
     } else if (this._placeType === 'Anchor') {
-      // Crosshair pulse: scale 1.0×→1.3× on 4 s sine, opacity constant 0.55.
-      // Calm, unhurried — conveys "pinned in place" (ADR-031 §8).
-      const scale = 1.0 + 0.30 * (Math.sin(t * Math.PI * 0.5) * 0.5 + 0.5)  // 4 s period, 1.0→1.3
+      // Crosshair pulse: scale 1.0×→1.3×. Normal = 4 s calm; violated = 1 s urgent.
+      // Conveys "pinned in place" (ADR-031 §8); urgency when tolerance exceeded (ADR-043 §4).
+      const freq  = this._toleranceViolated ? 2.0 : 0.5   // radians/s → 1 s or 4 s period
+      const scale = 1.0 + 0.30 * (Math.sin(t * Math.PI * freq) * 0.5 + 0.5)
       this._crosshairs.scale.setScalar(scale)
       this._sonarMat.opacity = 0
     } else {
@@ -336,6 +338,22 @@ export class AnnotatedPointView {
     this._sonarMat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
+  }
+
+  /**
+   * Updates Anchor visual state when a tolerance constraint is violated.
+   * When violated: crosshairs + marker turn red; pulse period shortens to 1 s.
+   * When cleared: reverts to place-type color.
+   * @param {boolean} violated
+   */
+  setToleranceViolated(violated) {
+    if (this._toleranceViolated === violated) return
+    this._toleranceViolated = violated
+    const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
+    this._mat.color.setHex(hex)
+    this._ringMat.color.setHex(hex)
+    this._crosshairMat.color.setHex(violated ? 0xEF4444 : 0xffffff)
+    this.boxHelper.material?.color.setHex(violated ? 0xEF4444 : 0xffffff)
   }
 
   // ── Edit-mode no-ops ───────────────────────────────────────────────────────

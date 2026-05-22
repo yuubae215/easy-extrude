@@ -117,7 +117,14 @@ function _computeLinkOptions(source, target) {
   }
   options.push({ jointType: null, semanticType: 'adjacent',   label: 'Adjacent' })
   options.push({ jointType: null, semanticType: 'above',      label: 'Above' })
-  options.push({ jointType: null, semanticType: 'references', label: 'References' })
+  // Anchor → CoordinateFrame: tolerance-constrained references presets (ADR-043 Phase 4).
+  if (source instanceof AnnotatedPoint && source.placeType === 'Anchor' && isCF(target)) {
+    options.push({ jointType: null, semanticType: 'references', label: 'Tolerance ±1 mm',  properties: { tolerance: 1 } })
+    options.push({ jointType: null, semanticType: 'references', label: 'Tolerance ±5 mm',  properties: { tolerance: 5 } })
+    options.push({ jointType: null, semanticType: 'references', label: 'Tolerance ±10 mm', properties: { tolerance: 10 } })
+  } else {
+    options.push({ jointType: null, semanticType: 'references', label: 'References' })
+  }
   options.push({ jointType: null, semanticType: 'represents', label: 'Represents' })
 
   return options
@@ -242,6 +249,9 @@ export class AppController {
     })
     this._service.on('constraintCycleDetected', () => {
       this._uiView.showToast('Constraint cycle detected — some fastened links are inactive', { type: 'warn' })
+    })
+    this._service.on('anchorToleranceConflict', ({ cfIds }) => {
+      this._uiView.showToast(`Anchor conflict: ${cfIds.size} frame(s) constrained by multiple Anchors with different tolerances`, { type: 'warn' })
     })
     this._service.on('wsDisconnected', () => {
       // If an import was in progress when the server dropped, clear it and notify.

@@ -124,11 +124,48 @@ Custom clearance input (text field in picker) is deferred to a future phase.
 
 ---
 
-## Deferred (Phase 2+)
+## Phase 4 — Anchor Tolerance Validation (implemented 2026-05-22)
 
-- **Zone containment** (`AnnotatedRegion → Solid`): solid must remain inside the Zone polygon. Requires point-in-polygon test for each solid corner.
-- **Hub interface timing** (`AnnotatedPoint → trajectory`): takt-time estimation linking logistics path travel time to Hub demand timing.
-- **Anchor tolerance tree** (`AnnotatedPoint → CF chain`): constraint tree validation from calibration fixture to CF ancestry.
+### Concept
+
+An `AnnotatedPoint` with `placeType='Anchor'` represents a physical calibration fixture.
+A `references` SpatialLink from an Anchor to a `CoordinateFrame` with `properties.tolerance` (mm)
+validates that the CF's actual world position is within the specified tolerance of the Anchor's world position.
+
+### Implementation
+
+**Link creation** (`_computeLinkOptions` in AppController):
+When source is `AnnotatedPoint(Anchor)` and target is `CoordinateFrame`, the picker shows
+three tolerance presets: ±1 mm, ±5 mm, ±10 mm instead of the generic "References" option.
+
+**Per-frame evaluation** (`_evaluateClearanceLinks` in SceneService):
+For each `references` link with `properties.tolerance !== undefined`:
+1. Fetch Anchor world position from `source.corners[0]`.
+2. Fetch CF world position from `_worldPoseCache.get(link.targetId).position`.
+3. Compute 3D distance and convert m → mm: `distanceMm = anchorPos.distanceTo(cfPos) * 1000`.
+4. Set `link.violated = distanceMm > tolerance`, `link.properties.currentDistance = distanceMm`.
+5. Call `linkView.setViolated(link.violated)` for SpatialLinkView red pulse.
+
+**Conflict detection**: If multiple Anchor `references` links target the same CF with different
+tolerances, `anchorToleranceConflict` event is emitted → AppController shows a `'warn'` toast.
+
+**Visual feedback** (`AnnotatedPointView.setToleranceViolated(bool)`):
+- `violated = true` → marker and ring change to red (0xEF4444); crosshair pulse frequency 0.5 → 2.0 rad/s (4 s → 1 s period).
+- `violated = false` → reverts to place-type color; crosshair returns to 4 s calm pulse.
+
+**N-panel display**: `_buildSpatialLinksSection` shows `${dist}mm/±${tolerance}mm` in green/red
+alongside the link badge for `references` links that have a `tolerance` property.
+
+**Link removal cleanup** (`detachSpatialLink`): `setToleranceViolated(false)` is called on the
+Anchor source before the link record is removed.
+
+---
+
+## Deferred (Phase 5+)
+
+- **Zone containment** (`AnnotatedRegion → Solid`): ✅ Implemented in Phase 2.
+- **Hub interface timing** (`AnnotatedPoint → trajectory`): ✅ Implemented in Phase 3.
+- **Anchor tolerance tree** (`AnnotatedPoint → CF chain`): ✅ Implemented in Phase 4.
 - **Custom clearance input** in the link type picker (text field for arbitrary mm value).
 - **Wasm migration** of `_evaluateClearanceLinks` when scene complexity warrants it.
 - **3D clearance mode**: full distance in world space (not just XY), for non-ground-plane boundaries.
