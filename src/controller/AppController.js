@@ -600,6 +600,10 @@ export class AppController {
       needsStartAngle:      false,
       /** Per-segment start angle; equals startAngle on PC (single drag). */
       segmentStartAngle:    0,
+      /** Angle from pivot to cursor at the previous frame; used for incremental accumulation. */
+      prevCurrentAngle:     0,
+      /** Accumulated signed rotation (radians) for the current drag segment. */
+      accumulatedAngle:     0,
       /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
       segmentStartRot:      new THREE.Quaternion(),
       // ADR-040 Solid rotate state (replaces startCorners/segmentStartCorners/bodyRot fields)
@@ -4698,6 +4702,8 @@ export class AppController {
       this._rotate.needsStartAngle   = true
       this._rotate.startAngle        = 0
       this._rotate.segmentStartAngle = 0
+      this._rotate.prevCurrentAngle  = 0
+      this._rotate.accumulatedAngle  = 0
     } else {
       // PC: startAngle from current mouse position
       this._rotate.startAngle = Math.atan2(
@@ -4705,6 +4711,8 @@ export class AppController {
         this._mouse.x - projected.x,
       )
       this._rotate.segmentStartAngle = this._rotate.startAngle
+      this._rotate.prevCurrentAngle  = this._rotate.startAngle
+      this._rotate.accumulatedAngle  = 0
       this._rotate.needsStartAngle   = false
     }
 
@@ -4755,7 +4763,6 @@ export class AppController {
     this._rotate.segStartPivot       = null
     this._rotate.needsStartAngle     = false
     this._rotateSectorPreview.hide()
-    this._gizmoView?.setRotationArc(null)
     this._opState.send('CONFIRM')
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
@@ -4789,7 +4796,6 @@ export class AppController {
     this._rotate.segStartPivot       = null
     this._rotate.needsStartAngle     = false
     this._rotateSectorPreview.hide()
-    this._gizmoView?.setRotationArc(null)
     this._opState.send('CANCEL')
     this._controls.enabled          = true
     this._hideAxisGuide()
@@ -4861,11 +4867,20 @@ export class AppController {
       )
       // Mobile: defer start angle to first canvas touch so there's no jump.
       if (this._rotate.needsStartAngle) {
-        this._rotate.segmentStartAngle = currentAngle
-        this._rotate.needsStartAngle   = false
+        this._rotate.prevCurrentAngle = currentAngle
+        this._rotate.accumulatedAngle = 0
+        this._rotate.needsStartAngle  = false
         return
       }
-      angle = currentAngle - this._rotate.segmentStartAngle
+      // Incremental accumulation: normalize each per-frame delta to [-π, π] so
+      // crossing the atan2 branch-cut (directly left of pivot) never causes a
+      // sudden ±360° jump.
+      let delta = currentAngle - this._rotate.prevCurrentAngle
+      if (delta > Math.PI)  delta -= 2 * Math.PI
+      if (delta < -Math.PI) delta += 2 * Math.PI
+      this._rotate.accumulatedAngle += delta
+      this._rotate.prevCurrentAngle  = currentAngle
+      angle = this._rotate.accumulatedAngle
       // Ctrl: snap to stepSize degree increments
       if (this._ctrlHeld) {
         const stepRad = this._rotate.stepSize * (Math.PI / 180)
@@ -4907,7 +4922,6 @@ export class AppController {
       pivot: this._rotate.segStartPivot ?? obj._position.clone(),
     }, deltaQ)
     this._updateRotateStatus()
-    this._gizmoView?.setRotationArc(angle, this._rotate.axis)
     this._rotateSectorPreview.updateAngle(angle)
   }
 

@@ -32,7 +32,6 @@ export class GizmoView {
     this._lastKey      = null   // axis key of last snap, for toggle-back
     this._prevPosition = null   // camera position before last snap
     this._prevUp       = null   // camera.up before last snap
-    this._rotationArc  = null   // { sweepAngle: number, axis: string|null } during rotate
 
     this._canvas = document.createElement('canvas')
     this._canvas.width  = SIZE
@@ -61,16 +60,6 @@ export class GizmoView {
   /** Adjusts the right offset to avoid overlapping the N panel */
   setRightOffset(px) {
     this._canvas.style.right = `${px}px`
-  }
-
-  /**
-   * Shows a rotation arc preview on the gizmo canvas while rotating.
-   * @param {number|null} sweepAngle - total rotation in radians (null to hide)
-   * @param {'x'|'y'|'z'|null} axis - constrained axis, or null for free rotation
-   */
-  setRotationArc(sweepAngle, axis) {
-    this._rotationArc = sweepAngle != null ? { sweepAngle, axis } : null
-    this.update()
   }
 
   // ── Projection ─────────────────────────────────────────────────────────────
@@ -102,72 +91,6 @@ export class GizmoView {
     const axes = this._projectAxes()
 
     ctx.clearRect(0, 0, SIZE, SIZE)
-
-    // Draw rotation arc preview behind axis lines when rotate is active
-    if (this._rotationArc && Math.abs(this._rotationArc.sweepAngle) > 1e-4) {
-      const { sweepAngle, axis } = this._rotationArc
-      const axisEntry = axis ? AXES.find(a => a.label === axis.toUpperCase()) : null
-      const color     = axisEntry ? axisEntry.color : '#aabbff'
-      const radius    = ARM_LEN * 0.75
-      const sAngle    = -Math.PI / 2   // 12 o'clock as reference start direction
-      const eAngle    = sAngle + sweepAngle
-      const ccw       = sweepAngle < 0
-
-      ctx.save()
-
-      // Pie fill (semi-transparent)
-      ctx.beginPath()
-      ctx.moveTo(HALF, HALF)
-      ctx.arc(HALF, HALF, radius, sAngle, eAngle, ccw)
-      ctx.closePath()
-      ctx.globalAlpha = 0.22
-      ctx.fillStyle   = color
-      ctx.fill()
-
-      // Arc edge stroke
-      ctx.globalAlpha = 0.85
-      ctx.beginPath()
-      ctx.arc(HALF, HALF, radius, sAngle, eAngle, ccw)
-      ctx.strokeStyle = color
-      ctx.lineWidth   = 1.5
-      ctx.stroke()
-
-      // Start radial tick (dashed, from center to arc start)
-      ctx.globalAlpha = 0.45
-      ctx.setLineDash([3, 3])
-      ctx.beginPath()
-      ctx.moveTo(HALF, HALF)
-      ctx.lineTo(HALF + radius * Math.cos(sAngle), HALF + radius * Math.sin(sAngle))
-      ctx.strokeStyle = color
-      ctx.lineWidth   = 1
-      ctx.stroke()
-
-      // End radial tick (solid, current angle)
-      ctx.globalAlpha = 1.0
-      ctx.setLineDash([])
-      ctx.beginPath()
-      ctx.moveTo(HALF, HALF)
-      ctx.lineTo(HALF + radius * Math.cos(eAngle), HALF + radius * Math.sin(eAngle))
-      ctx.strokeStyle = color
-      ctx.lineWidth   = 1.5
-      ctx.stroke()
-
-      // Angle label with dark background for readability over axis lines
-      const deg   = sweepAngle * 180 / Math.PI
-      const label = (deg >= 0 ? '+' : '') + deg.toFixed(1) + '°'
-      ctx.font = 'bold 10px sans-serif'
-      ctx.textAlign    = 'center'
-      ctx.textBaseline = 'middle'
-      const tw = ctx.measureText(label).width
-      ctx.globalAlpha = 0.75
-      ctx.fillStyle   = '#0d0d1a'
-      ctx.fillRect(HALF - tw / 2 - 2, HALF - 7, tw + 4, 14)
-      ctx.globalAlpha = 1.0
-      ctx.fillStyle   = '#ffffff'
-      ctx.fillText(label, HALF, HALF)
-
-      ctx.restore()
-    }
 
     // Build a flat render list (positive + negative for each axis)
     const items = []
