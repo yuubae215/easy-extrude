@@ -4973,6 +4973,28 @@ export class AppController {
     this._grab.axis     = (this._grab.axis === axis) ? null : axis
     this._grab.inputStr = ''
     this._grab.hasInput = false
+    // Re-snapshot current positions as the new segment start so accumulated
+    // movement from the previous axis constraint is preserved (e.g. X→Y keeps
+    // the X offset). Mirrors the touch re-grab pattern (pointerdown in S_GRAB_ACTIVE).
+    this._grab.segmentStartCorners = new Map()
+    this._grab.segmentStartPositions = new Map()
+    for (const id of this._selectedIds) {
+      const selObj = this._scene.getObject(id)
+      if (selObj) {
+        this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
+        if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
+      }
+    }
+    this._grab.startMouse.copy(this._mouse)
+    if (!this._grab.axis) {
+      // Switching back to free grab: reset the 3D drag-plane anchor to the current
+      // mouse position so the free-grab delta starts at zero.
+      this._raycaster.setFromCamera(this._mouse, this._camera)
+      const _pt = new THREE.Vector3()
+      if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, _pt)) {
+        this._grab.startPoint.copy(_pt)
+      }
+    }
     this._applyGrab()
     this._updateGrabStatus()
     if (this._grab.axis) {
