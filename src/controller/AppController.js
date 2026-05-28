@@ -4751,6 +4751,7 @@ export class AppController {
     this._rotate.segStartPos         = null
     this._rotate.segStartPivot       = null
     this._rotate.needsStartAngle     = false
+    this._gizmoView?.setRotationArc(null)
     this._opState.send('CONFIRM')
     this._controls.enabled          = true
     this._refreshObjectModeStatus()
@@ -4783,6 +4784,7 @@ export class AppController {
     this._rotate.segStartPos         = null
     this._rotate.segStartPivot       = null
     this._rotate.needsStartAngle     = false
+    this._gizmoView?.setRotationArc(null)
     this._opState.send('CANCEL')
     this._controls.enabled          = true
     this._hideAxisGuide()
@@ -4899,6 +4901,7 @@ export class AppController {
       pivot: this._rotate.segStartPivot ?? obj._position.clone(),
     }, deltaQ)
     this._updateRotateStatus()
+    this._gizmoView?.setRotationArc(angle, this._rotate.axis)
   }
 
   /**
