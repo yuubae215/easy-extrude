@@ -69,6 +69,7 @@ import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
 import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView }            from '../view/SpatialLinkView.js'
+import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -138,10 +139,11 @@ export class AppController {
    * @param {import('../view/OutlinerView.js').OutlinerView} outlinerView
    */
   constructor(sceneView, uiView, gizmoView = null, outlinerView = null) {
-    this._sceneView    = sceneView
-    this._uiView       = uiView
-    this._gizmoView    = gizmoView
-    this._outlinerView = outlinerView
+    this._sceneView          = sceneView
+    this._uiView             = uiView
+    this._gizmoView          = gizmoView
+    this._outlinerView       = outlinerView
+    this._rotateSectorPreview = new RotateSectorPreview(sceneView.scene)
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
     this._service = new SceneService(sceneView.scene)
@@ -4706,6 +4708,7 @@ export class AppController {
       this._rotate.needsStartAngle   = false
     }
 
+    this._refreshSectorPreview()
     this._controls.enabled = false
     this._updateRotateStatus()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
@@ -4751,6 +4754,7 @@ export class AppController {
     this._rotate.segStartPos         = null
     this._rotate.segStartPivot       = null
     this._rotate.needsStartAngle     = false
+    this._rotateSectorPreview.hide()
     this._gizmoView?.setRotationArc(null)
     this._opState.send('CONFIRM')
     this._controls.enabled          = true
@@ -4784,6 +4788,7 @@ export class AppController {
     this._rotate.segStartPos         = null
     this._rotate.segStartPivot       = null
     this._rotate.needsStartAngle     = false
+    this._rotateSectorPreview.hide()
     this._gizmoView?.setRotationArc(null)
     this._opState.send('CANCEL')
     this._controls.enabled          = true
@@ -4823,6 +4828,7 @@ export class AppController {
     } else {
       this._hideAxisGuide()
     }
+    this._refreshSectorPreview()
     this._applyRotate()
     this._updateRotateStatus()
     if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
@@ -4902,6 +4908,31 @@ export class AppController {
     }, deltaQ)
     this._updateRotateStatus()
     this._gizmoView?.setRotationArc(angle, this._rotate.axis)
+    this._rotateSectorPreview.updateAngle(angle)
+  }
+
+  /**
+   * (Re)creates the 3D sector preview at the pivot with the current axis orientation.
+   * Called at rotate start and on every axis toggle.
+   */
+  _refreshSectorPreview() {
+    const obj = this._activeObj
+    if (!obj) return
+
+    let center, radius
+    if (obj instanceof Solid) {
+      center = (this._rotate.segStartPivot ?? obj._position).clone()
+      // Radius: max corner distance from pivot; floor at 0.5 to stay visible on tiny solids
+      const raw = Math.max(...obj.corners.map(c => c.distanceTo(center)))
+      radius = Math.max(raw, 0.5) * 1.1
+    } else if (obj instanceof CoordinateFrame) {
+      center = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone()
+      radius = 0.8
+    } else {
+      return
+    }
+
+    this._rotateSectorPreview.show(center, radius, this._rotate.axis, this._camera)
   }
 
   /**
