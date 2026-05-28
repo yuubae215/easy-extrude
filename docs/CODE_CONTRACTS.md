@@ -101,7 +101,7 @@ Detail: `docs/code_contracts/interaction.md`
 | Gesture-Based Interaction Priority | Auto-start face extrude on touch tap in Edit 3D; gesture-only, no toolbar button |
 | Interaction Confirmation Lifecycle | FaceExtrude confirms on `pointerup`; Grab on touch confirms via toolbar only, never in `pointerup` |
 | Mobile Rotate Interaction Lifecycle | Rotate button calls `_startRotate(true)`; each canvas touch re-anchors `segmentStart*`; `_onPointerUp` keeps rotate active; confirm via toolbar only |
-| Grab State: allStartCorners vs segmentStartCorners | `allStartCorners` = undo anchor (never update mid-grab); `segmentStartCorners` = per-drag delta (re-snapshot on re-touch) |
+| Grab State: allStartCorners vs segmentStartCorners | `allStartCorners` = undo anchor (never update mid-grab); `segmentStartCorners` = per-drag delta (re-snapshot on re-touch OR on axis-constraint switch in `_setGrabAxis()`). Re-snapshot triggers: (1) touch `pointerdown` in `S_GRAB_ACTIVE`; (2) `_setGrabAxis()` axis change — preserves accumulated offset from the previous constraint. `startMouse` is also reset on axis switch so the new delta starts at zero. |
 | Global Event vs. UI Event Delegation | First guard in `_onPointerDown`: `if (e.target !== renderer.domElement) return` |
 | OrbitControls Disable Strategy | Use `matchMedia('(pointer: coarse)')` not `innerWidth < 768`; disable only for single-finger-consuming ops |
 

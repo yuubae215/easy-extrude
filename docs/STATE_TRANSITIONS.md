@@ -230,6 +230,9 @@ GRAB ACTIVE (grab.active = true)
     |
     |── mouse move → _applyGrab()
     |── X/Y/Z key → _setGrabAxis(axis)  (axis lock)
+    |       re-snapshots segmentStartCorners/segmentStartPositions to current positions
+    |       and resets startMouse — preserves accumulated offset from previous constraint
+    |       (e.g. X→Y keeps the X movement; switching back to free grab also resets startPoint)
     |── V key → PIVOT SELECT MODE (grab.pivotSelectMode = true)
     |       |── mouse move → _updatePivotHover()
     |       |── left click → _confirmPivotSelect() → GRAB ACTIVE
