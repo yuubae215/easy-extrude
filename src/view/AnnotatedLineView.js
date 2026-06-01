@@ -259,15 +259,29 @@ export class AnnotatedLineView {
    * Drives Route particle animation.  Called every frame from AppController.
    * @param {number} t  elapsed seconds (performance.now() / 1000)
    */
+  /**
+   * Called when a tact-time link violation is detected (bilateral alarm).
+   * Reverses particle flow direction and tints particles red.
+   * Sole writer of _particleDirection and particle color (PHILOSOPHY #4).
+   * @param {boolean} violated
+   */
+  setTactViolated(violated) {
+    this._particleDirection = violated ? -1 : 1
+    const color = violated ? 0xEF4444 : this._colorForType(this._placeType)
+    this._partMat.color.setHex(color)
+  }
+
   tick(t) {
     if (!this._line.visible) return
 
     if (this._placeType === 'Route') {
       if (this._segments.length === 0 || this._totalLen === 0) return
 
+      const direction = this._particleDirection ?? 1
       for (const mesh of this._particles) {
         // Each particle travels the full polyline length continuously.
-        const frac = ((mesh._tOffset + t * PARTICLE_SPEED) % 1 + 1) % 1
+        // _particleDirection=-1 reverses flow when tact-time is violated.
+        const frac = ((mesh._tOffset + t * PARTICLE_SPEED * direction) % 1 + 1) % 1
         const targetDist = frac * this._totalLen
 
         let cumLen = 0
