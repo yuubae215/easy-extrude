@@ -157,3 +157,36 @@ export function inferSemanticRelationships(moved, sceneObjects, existingPairs) {
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 3)
 }
+
+/** Outer radius for approach warmth visualization — 3× the contact threshold. */
+const APPROACH_RADIUS = CONTACT_THRESHOLD * 3
+
+/**
+ * Computes continuous warmth values (0..1) for Solid entities near the moved Solid.
+ * Used to show a pre-threshold "getting warmer" effect on wireframes.
+ * Pure computation; no side effects.
+ *
+ * @param {Solid} moved
+ * @param {Iterable<any>} sceneObjects
+ * @returns {Array<{ targetId: string, warmth: number }>}
+ */
+export function computeApproachWarmth(moved, sceneObjects) {
+  if (!(moved instanceof Solid)) return []
+  const mBox = _solidBox(moved)
+  const result = []
+  for (const entity of sceneObjects) {
+    if (entity.id === moved.id || !(entity instanceof Solid)) continue
+    const tBox = _solidBox(entity)
+    // Minimum positive gap across all six axis-aligned face pairs.
+    const gaps = [
+      mBox.min.z - tBox.max.z, tBox.min.z - mBox.max.z,
+      mBox.min.x - tBox.max.x, tBox.min.x - mBox.max.x,
+      mBox.min.y - tBox.max.y, tBox.min.y - mBox.max.y,
+    ].filter(g => g > 0)
+    const minGap = gaps.length ? Math.min(...gaps) : 0
+    if (minGap < APPROACH_RADIUS) {
+      result.push({ targetId: entity.id, warmth: Math.max(0, 1 - minGap / APPROACH_RADIUS) })
+    }
+  }
+  return result
+}

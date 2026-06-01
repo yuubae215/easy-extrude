@@ -67,9 +67,10 @@ import { EndpointDragState } from '../core/states/EndpointDragState.js'
 import { SketchDrawState }   from '../core/states/SketchDrawState.js'
 import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
-import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
-import { SpatialLinkView }            from '../view/SpatialLinkView.js'
+import { inferSemanticRelationships, computeApproachWarmth } from '../service/SemanticInferencer.js'
+import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
+import { RippleEffect }               from '../view/RippleEffect.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -498,6 +499,8 @@ export class AppController {
     this._quickDragHandler     = new QuickDragState()
     /** @type {import('../view/SpatialLinkView.js').SpatialLinkView|null} Ghost link during drag suggestion */
     this._ghostLinkView        = null
+    /** @type {import('../view/RippleEffect.js').RippleEffect[]} Active link-acceptance ripple animations */
+    this._activeRipples        = []
     this._rectSelHandler       = new RectSelectState()
 
     // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
@@ -561,6 +564,10 @@ export class AppController {
       stacking:        false,
       /** Last delta applied via _applyGrabDeltaToAll; used for live coordinate display. */
       lastDelta:       new THREE.Vector3(),
+      /** True when a live semantic suggestion is showing during G-key grab (ADR-041 Phase 3). */
+      isSuggesting:    false,
+      /** The suggestion currently displayed, or null. @type {object|null} */
+      currentSuggestion: null,
     }
 
     /** Unsubscribe function for the active import.progress WS listener, or null */
@@ -2668,6 +2675,15 @@ export class AppController {
     this._commandStack.push(createSpatialLinkCommand(link, this._service))
     this._uiView.showToast(`Link created: ${option.label}`)
     this._updateNPanel()
+    // Acceptance ceremony: ripple sphere at link midpoint + brief line flash.
+    const srcPos = this._dragSuggestionCentroid(sourceId)
+    const tgtPos = this._dragSuggestionCentroid(targetId)
+    if (srcPos && tgtPos) {
+      const midpoint = srcPos.clone().lerp(tgtPos, 0.5)
+      const color    = LINK_TYPE_COLORS[option.semanticType] ?? 0x888888
+      this._activeRipples.push(new RippleEffect(this._sceneView.scene, midpoint, color))
+    }
+    this._service._linkViews.get(link.id)?.triggerFlash?.()
   }
 
   /**
@@ -3873,6 +3889,9 @@ export class AppController {
     if (this._opState.is(S_MOUNT_PICKING))    this._cancelMountPicking()
     if (this._opState.is(S_QUICK_DRAG)) {
       this._quickDragHandler.cancel(this._quickDragCtx)
+      for (const obj of this._scene.objects.values()) {
+        if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
+      }
       this._opState.send('CANCEL')
       this._service.setLinkDragging(new Set(), false)
       this._service.updateLinkSelectionHighlight(this._selectedIds)
@@ -4452,8 +4471,10 @@ export class AppController {
     this._grab.centroid.copy(grabCenter)
     this._grab.pivot.copy(this._grab.centroid)
     this._grab.lastDelta.set(0, 0, 0)
-    this._grab.pivotLabel = 'Centroid'
-    this._grab.autoSnap   = false
+    this._grab.pivotLabel      = 'Centroid'
+    this._grab.autoSnap        = false
+    this._grab.isSuggesting    = false
+    this._grab.currentSuggestion = null
 
     // ADR-032 §6: for mounted Annotated* entities, constrain drag to host local XY plane.
     // For unmounted Annotated* entities, constrain to world XY (prevents Z drift).
@@ -4499,6 +4520,16 @@ export class AppController {
   _confirmGrab() {
     if (!this._opState.is(S_GRAB_ACTIVE)) return
     if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
+    // Clear live suggestion ghost before final state is committed (Drag Suggestion Lifecycle).
+    if (this._grab.isSuggesting) {
+      this._grab.isSuggesting      = false
+      this._grab.currentSuggestion = null
+      this._quickDragCtx.hideDragSuggestion()
+    }
+    // Clear approach warmth on all Solids.
+    for (const obj of this._scene.objects.values()) {
+      if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
+    }
     this._applyGrab()
 
     // ADR-032 §6: after grab on mounted Annotated* entities, sync local positions
@@ -4545,6 +4576,14 @@ export class AppController {
   _cancelGrab() {
     if (!this._opState.is(S_GRAB_ACTIVE)) return
     if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
+    if (this._grab.isSuggesting) {
+      this._grab.isSuggesting      = false
+      this._grab.currentSuggestion = null
+      this._quickDragCtx.hideDragSuggestion()
+    }
+    for (const obj of this._scene.objects.values()) {
+      if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
+    }
     // Restore all selected objects to their pre-grab positions
     for (const [id, startCorners] of this._grab.allStartCorners) {
       const selObj = this._scene.getObject(id)
@@ -5036,6 +5075,41 @@ export class AppController {
       }
     } else {
       this._grab.stacking = false
+    }
+
+    // Live inference preview during G-key grab (ADR-041 Phase 3 — mirrors QuickDragState sub-state).
+    if (this._selectedIds.size === 1) {
+      const ctx        = this._quickDragCtx
+      const suggestion = ctx.runInference()
+      const key        = suggestion ? `${suggestion.semanticType}|${suggestion.targetId}` : null
+      const prevKey    = this._grab.currentSuggestion
+        ? `${this._grab.currentSuggestion.semanticType}|${this._grab.currentSuggestion.targetId}` : null
+      if (suggestion) {
+        if (!this._grab.isSuggesting || key !== prevKey) {
+          this._grab.isSuggesting      = true
+          this._grab.currentSuggestion = suggestion
+          ctx.showDragSuggestion(suggestion)
+        } else {
+          ctx.updateDragSuggestion(suggestion)
+        }
+      } else if (this._grab.isSuggesting) {
+        this._grab.isSuggesting      = false
+        this._grab.currentSuggestion = null
+        ctx.hideDragSuggestion()
+      }
+    }
+
+    // Approach gradient: warm wireframe of nearby Solids before the snap threshold is reached.
+    const [movedId] = this._selectedIds
+    const movedObj  = this._scene.getObject(movedId)
+    if (movedObj instanceof Solid) {
+      const warmthEntries = computeApproachWarmth(movedObj, this._scene.objects.values())
+      const warmthMap     = new Map(warmthEntries.map(e => [e.targetId, e.warmth]))
+      for (const obj of this._scene.objects.values()) {
+        if (obj instanceof Solid && !this._selectedIds.has(obj.id)) {
+          obj.meshView?.setApproachWarmth(warmthMap.get(obj.id) ?? 0)
+        }
+      }
     }
   }
 
@@ -6571,6 +6645,9 @@ export class AppController {
       this._opState.send('CONFIRM')
       this._service.setLinkDragging(new Set(), false)
       this._service.updateLinkSelectionHighlight(this._selectedIds)
+      for (const obj of this._scene.objects.values()) {
+        if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
+      }
       this._runSemanticInference()
     }
   }
@@ -6681,7 +6758,16 @@ export class AppController {
         case 'y': case 'Y': this._setGrabAxis('y'); return
         case 'z': case 'Z': this._setGrabAxis('z'); return
         case 's': case 'S': this._toggleStackMode(); return
-        case 'Enter':        this._confirmGrab();    return
+        case 'Enter':
+          if (this._grab.isSuggesting && this._grab.currentSuggestion) {
+            this._createSpatialLinkDirect(
+              this._grab.currentSuggestion.sourceId,
+              this._grab.currentSuggestion.targetId,
+              this._grab.currentSuggestion,
+            )
+          }
+          this._confirmGrab()
+          return
         case 'Escape':       this._cancelGrab();     return
         case '1': this._setSnapMode('vertex'); return
         case '2': this._setSnapMode('edge');   return
@@ -7013,7 +7099,15 @@ export class AppController {
       this._service._updateWorldPoses()
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
-        if (obj instanceof AnnotatedPoint)  { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
+        if (obj instanceof AnnotatedPoint)  {
+          obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
+          obj.meshView.tick(t)
+          // Bilateral tolerance alarm: update error bridge line toward violated CF.
+          if (obj.meshView._bridgeCfId) {
+            const pose = this._service._worldPoseCache.get(obj.meshView._bridgeCfId)
+            if (pose) obj.meshView.updateBridgeLine(this._sceneView.scene, pose.position)
+          }
+        }
         if (obj instanceof AnnotatedLine)   { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
         if (obj instanceof AnnotatedRegion) { obj.meshView.updateLabelPosition(this._sceneView.activeCamera); obj.meshView.tick(t) }
         if (obj instanceof CoordinateFrame) {
@@ -7046,6 +7140,14 @@ export class AppController {
           obj.meshView.updateScale(this._camera, this._sceneView.renderer, maxWS)
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
         }
+      }
+      // Tick and prune completed link-acceptance ripple animations.
+      if (this._activeRipples.length > 0) {
+        this._activeRipples = this._activeRipples.filter(r => {
+          const done = r.tick(t)
+          if (done) r.dispose()
+          return !done
+        })
       }
     }
     loop()

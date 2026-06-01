@@ -294,13 +294,29 @@ export class AnnotatedRegionView {
     // Dual rim ring pulse: two waves at 180° phase offset.
     // Each ring's outer edge expands from 1.0× to 1.10× while fading.
     // Math.pow(1 - phase, 2) gives ease-out fade (slow at start, fast at end).
-    const phase1 = (t % RIM_PULSE_DURATION) / RIM_PULSE_DURATION
+    // _rimPeriod is shortened when a contains-violation is active (bilateral alarm).
+    const rimPeriod = this._rimPeriod ?? RIM_PULSE_DURATION
+    const phase1 = (t % rimPeriod) / rimPeriod
     this._rimRing1.scale.setScalar(1.0 + phase1 * 0.10)
     this._rimMat1.opacity = RIM_OPACITY_MAX * Math.pow(1 - phase1, 2)
 
-    const phase2 = ((t + RIM_PULSE_DURATION * 0.5) % RIM_PULSE_DURATION) / RIM_PULSE_DURATION
+    const phase2 = ((t + rimPeriod * 0.5) % rimPeriod) / rimPeriod
     this._rimRing2.scale.setScalar(1.0 + phase2 * 0.10)
     this._rimMat2.opacity = RIM_OPACITY_MAX * Math.pow(1 - phase2, 2)
+  }
+
+  /**
+   * Called when a contains-link is violated (bilateral alarm).
+   * Turns rim rings and border red and speeds up the pulse.
+   * Sole writer of rim color during violation (PHILOSOPHY #4).
+   * @param {boolean} violated
+   */
+  setContainsViolated(violated) {
+    this._rimPeriod = violated ? 1.0 : RIM_PULSE_DURATION
+    const color = violated ? 0xEF4444 : this._colorForType(this._placeType)
+    this._rimMat1.color.setHex(color)
+    this._rimMat2.color.setHex(color)
+    this._lineMat.color = color
   }
 
   // ── Label update (call once per frame while visible) ──────────────────────

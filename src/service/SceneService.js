@@ -1513,7 +1513,9 @@ export class SceneService extends EventEmitter {
         tension = Math.max(0, (currentDist / view.restDistance) - 1) / 0.5
       }
 
-      view.update(src, tgt, dashOffset, tension)
+      const severity = link.semanticType === 'bounded_by'
+        ? (link.properties?.severity ?? 0) : 0
+      view.update(src, tgt, dashOffset, tension, severity)
     }
 
     this._evaluateClearanceLinks()
@@ -1530,9 +1532,15 @@ export class SceneService extends EventEmitter {
     // Aggregate contains-link targets so multiple links to the same Solid compose correctly.
     const containsTargetIds   = new Set()
     const violatedContainsIds = new Set()
+    // Bilateral: also track source Regions that have violated contains-links.
+    const containsSourceIds         = new Set()
+    const violatedContainsSourceIds = new Set()
     // Aggregate tact-time-link targets so Hub visual state is OR-composed across multiple routes.
     const tactTimeHubIds     = new Set()
     const violatedTactHubIds = new Set()
+    // Bilateral: also track source Routes that have violated tact-time links.
+    const tactTimeRouteIds     = new Set()
+    const violatedTactRouteIds = new Set()
     // Aggregate tolerance-references targets (Anchor → CF) for OR-composed Anchor visual state.
     const toleranceAnchorIds        = new Set()
     const violatedToleranceAnchorIds = new Set()
@@ -1560,6 +1568,10 @@ export class SceneService extends EventEmitter {
           ? `⚠️ 安全距離不足: ${minDist.toFixed(0)}mm (要求: ${limit}mm)`
           : ''
         link.properties.currentClearance = minDist
+        // Severity: 0 at 2× clearance, 0.5 at 1.5×, 1.0 at threshold and beyond (one-frame lag is intentional).
+        link.properties.severity = link.violated
+          ? 1.0
+          : (limit > 0 ? Math.max(0, 1 - (minDist / limit - 1)) : 0)
 
         this._linkViews.get(link.id)?.setViolated?.(link.violated)
 
@@ -1585,6 +1597,9 @@ export class SceneService extends EventEmitter {
           containsTargetIds.add(link.targetId)
           if (link.violated) violatedContainsIds.add(link.targetId)
         }
+        // Bilateral: track Zone source for reverse alarm.
+        containsSourceIds.add(link.sourceId)
+        if (link.violated) violatedContainsSourceIds.add(link.sourceId)
 
       } else if (link.semanticType === 'connects' && link.properties?.deadline !== undefined) {
         // Tact-time evaluation: Route (AnnotatedLine) → Hub (AnnotatedPoint).
@@ -1615,6 +1630,9 @@ export class SceneService extends EventEmitter {
 
         tactTimeHubIds.add(link.targetId)
         if (link.violated) violatedTactHubIds.add(link.targetId)
+        // Bilateral: track Route source for reverse alarm.
+        tactTimeRouteIds.add(link.sourceId)
+        if (link.violated) violatedTactRouteIds.add(link.sourceId)
 
       } else if (link.semanticType === 'references' && link.properties?.tolerance !== undefined) {
         // ADR-043 Phase 4: Anchor tolerance check — Anchor (AnnotatedPoint) → CoordinateFrame.
@@ -1645,6 +1663,9 @@ export class SceneService extends EventEmitter {
         this._linkViews.get(link.id)?.setViolated?.(link.violated)
 
         toleranceAnchorIds.add(link.sourceId)
+        // Store cfId on the anchor view so it can draw the error bridge line.
+        const anchorObj = this._model.getObject(link.sourceId)
+        if (anchorObj) anchorObj._toleranceCfId = link.violated ? link.targetId : null
         if (link.violated) violatedToleranceAnchorIds.add(link.sourceId)
 
         // Track all tolerances that reference this CF (for conflict detection).
@@ -1674,17 +1695,28 @@ export class SceneService extends EventEmitter {
       const obj = this._model.getObject(id)
       obj?.meshView?.setConstraintViolated?.(violatedContainsIds.has(id))
     }
+    // Bilateral: propagate violation state to Zone sources of contains links.
+    for (const id of containsSourceIds) {
+      const obj = this._model.getObject(id)
+      obj?.meshView?.setContainsViolated?.(violatedContainsSourceIds.has(id))
+    }
 
     // Propagate tact-time violation state to Hub targets of connects links.
     for (const id of tactTimeHubIds) {
       const obj = this._model.getObject(id)
       obj?.meshView?.setTactTimeViolated?.(violatedTactHubIds.has(id))
     }
+    // Bilateral: propagate tact-time violation state to Route sources of connects links.
+    for (const id of tactTimeRouteIds) {
+      const obj = this._model.getObject(id)
+      obj?.meshView?.setTactViolated?.(violatedTactRouteIds.has(id))
+    }
 
     // Propagate tolerance violation state to Anchor sources of references links (ADR-043 Phase 4).
     for (const id of toleranceAnchorIds) {
       const obj = this._model.getObject(id)
-      obj?.meshView?.setToleranceViolated?.(violatedToleranceAnchorIds.has(id))
+      const cfId = obj?._toleranceCfId ?? null
+      obj?.meshView?.setToleranceViolated?.(violatedToleranceAnchorIds.has(id), cfId)
     }
   }
 

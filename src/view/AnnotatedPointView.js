@@ -154,6 +154,9 @@ export class AnnotatedPointView {
     this._name  = name
     this._tactViolated      = false
     this._toleranceViolated = false
+    this._bridgeLine = null
+    this._bridgeCfId = null
+    this._scene      = null   // set lazily in updateBridgeLine()
 
     // Apply initial place-type visuals
     this._applyPlaceTypeVisuals(placeType)
@@ -346,14 +349,56 @@ export class AnnotatedPointView {
    * When cleared: reverts to place-type color.
    * @param {boolean} violated
    */
-  setToleranceViolated(violated) {
-    if (this._toleranceViolated === violated) return
+  /**
+   * @param {boolean}     violated
+   * @param {string|null} cfId  CF entity ID to draw error bridge toward, or null to clear.
+   */
+  setToleranceViolated(violated, cfId = null) {
+    if (this._toleranceViolated === violated && this._bridgeCfId === cfId) return
     this._toleranceViolated = violated
+    this._bridgeCfId = violated ? cfId : null
     const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
     this._crosshairMat.color.setHex(violated ? 0xEF4444 : 0xffffff)
     this.boxHelper.material?.color.setHex(violated ? 0xEF4444 : 0xffffff)
+    // Dispose bridge line when clearing violation.
+    if (!violated && this._bridgeLine) {
+      this._scene.remove(this._bridgeLine)
+      this._bridgeLine.geometry.dispose()
+      this._bridgeLine.material.dispose()
+      this._bridgeLine = null
+    }
+  }
+
+  /**
+   * Updates the error bridge line endpoint to track the CF world position.
+   * Creates the bridge line lazily on first call.
+   * @param {import('three').Scene} scene
+   * @param {import('three').Vector3} cfWorldPos
+   */
+  updateBridgeLine(scene, cfWorldPos) {
+    if (!this._bridgeCfId || !this._toleranceViolated) return
+    const anchorPos = this._mesh.position
+    if (!this._bridgeLine) {
+      const geo = new THREE.BufferGeometry()
+      const mat = new THREE.LineDashedMaterial({
+        color:       0xEF4444,
+        dashSize:    0.08,
+        gapSize:     0.06,
+        transparent: true,
+        opacity:     0.9,
+        depthTest:   false,
+      })
+      this._bridgeLine = new THREE.Line(geo, mat)
+      this._bridgeLine.renderOrder = 3
+      this._scene = scene
+      scene.add(this._bridgeLine)
+    }
+    const pts = [anchorPos.x, anchorPos.y, anchorPos.z, cfWorldPos.x, cfWorldPos.y, cfWorldPos.z]
+    this._bridgeLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    this._bridgeLine.geometry.attributes.position.needsUpdate = true
+    this._bridgeLine.computeLineDistances()
   }
 
   // ── Edit-mode no-ops ───────────────────────────────────────────────────────
@@ -384,6 +429,12 @@ export class AnnotatedPointView {
     scene.remove(this._sonarRing)
     scene.remove(this._crosshairs)
     scene.remove(this.boxHelper)
+    if (this._bridgeLine) {
+      scene.remove(this._bridgeLine)
+      this._bridgeLine.geometry.dispose()
+      this._bridgeLine.material.dispose()
+      this._bridgeLine = null
+    }
     this._geo.dispose()
     this._mat.dispose()
     this._ringGeo.dispose()

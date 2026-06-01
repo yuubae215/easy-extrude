@@ -104,6 +104,9 @@ export class SpatialLinkView {
     // Clearance violation state (bounded_by links only).
     this._violated = false
 
+    // Flash state: non-null while the acceptance flash is playing (seconds timestamp).
+    this._flashStart = null
+
     // Set initial geometry
     this.update(srcPos, tgtPos)
   }
@@ -118,8 +121,9 @@ export class SpatialLinkView {
    * @param {THREE.Vector3} tgtPos
    * @param {number} [dashOffset=0]   Negative value scrolls dashes source→target (marching ants).
    * @param {number} [tension=0]      0..1 — color shift from semantic color toward orange-red.
+   * @param {number} [severity=0]     0..1 — bounded_by proximity gradient; overrides tension and _violated.
    */
-  update(srcPos, tgtPos, dashOffset = 0, tension = 0) {
+  update(srcPos, tgtPos, dashOffset = 0, tension = 0, severity = 0) {
     const pts = [srcPos.x, srcPos.y, srcPos.z, tgtPos.x, tgtPos.y, tgtPos.z]
     this._geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     this._geo.attributes.position.needsUpdate = true
@@ -137,8 +141,33 @@ export class SpatialLinkView {
       if (this._arrow) this._arrow.cone.material.color.set(this._baseColor)
     }
 
-    // Alert state overrides tension color when clearance is violated
-    if (this._violated) {
+    // Severity gradient for bounded_by links: semantic → amber → red as limit approaches.
+    // Overrides tension color when severity > 0. Preserves binary _violated for other link types.
+    if (severity > 0) {
+      const safe  = new THREE.Color(this._baseColor)
+      const amber = new THREE.Color(0xFBBF24)
+      const red   = new THREE.Color(0xEF4444)
+      let gradColor
+      if (severity < 0.5) {
+        gradColor = safe.clone().lerp(amber, severity * 2)
+      } else {
+        gradColor = amber.clone().lerp(red, (severity - 0.5) * 2)
+      }
+      this._mat.color.copy(gradColor)
+      if (this._arrow) this._arrow.cone.material.color.copy(gradColor)
+      this._mat.dashSize = 0.35 - severity * 0.20
+      this._mat.gapSize  = 0.18 - severity * 0.10
+      this._mat.opacity  = 0.4 + severity * 0.4
+      // Pulse only at full violation zone (severity ≈ 1)
+      if (severity > 0.8) {
+        const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.008)
+        const bright = new THREE.Color(0xFF9999)
+        this._mat.color.lerp(bright, pulse * 0.4)
+        if (this._arrow) this._arrow.cone.material.color.lerp(bright, pulse * 0.4)
+        this._mat.opacity = 0.8 + pulse * 0.2
+      }
+    } else if (this._violated) {
+      // Fallback binary alert for non-bounded_by links (e.g., contains, tact-time)
       const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.008)
       const alertRed    = new THREE.Color(0xEF4444)
       const alertBright = new THREE.Color(0xFF9999)
@@ -164,6 +193,26 @@ export class SpatialLinkView {
         this._arrow.setDirection(dir)
       }
     }
+
+    // Acceptance flash: boost opacity 1.0 → normal over 300ms after link creation.
+    if (this._flashStart !== null) {
+      const elapsed = performance.now() / 1000 - this._flashStart
+      if (elapsed < 0.3) {
+        this._mat.opacity = 1.0 - elapsed * 2   // 1.0 → 0.4
+      } else {
+        this._flashStart = null
+      }
+    }
+  }
+
+  // ── Acceptance flash ──────────────────────────────────────────────────────
+
+  /**
+   * Triggers a 300ms opacity flash on the link line to confirm link creation.
+   * Sole writer of _flashStart (PHILOSOPHY #4).
+   */
+  triggerFlash() {
+    this._flashStart = performance.now() / 1000
   }
 
   // ── Clearance violation state ──────────────────────────────────────────────

@@ -328,6 +328,24 @@ export class MeshView {
     this.boxHelper.visible = sel
   }
 
+  /**
+   * Sets the approach warmth tint on wireframe edges (0 = normal, 1 = full amber).
+   * Sole writer of wireframe color/opacity during grab approach (PHILOSOPHY #4).
+   * @param {number} t  0..1
+   */
+  setApproachWarmth(t) {
+    const mat = this.wireframe.material
+    if (t <= 0) {
+      mat.color.setHex(0xffffff)
+      mat.opacity = 0.4
+    } else {
+      const base  = new THREE.Color(0xffffff)
+      const amber = new THREE.Color(0xF59E0B)
+      mat.color.lerpColors(base, amber, t * t)   // ease-in for drama
+      mat.opacity = 0.4 + t * 0.5
+    }
+  }
+
   /** Sets or clears the spatial-constraint violation tint (red emissive). */
   setConstraintViolated(violated) {
     this._constraintViolated = violated
