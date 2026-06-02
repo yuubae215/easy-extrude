@@ -24,11 +24,13 @@ export class UIViewBridge {
   // Class fields ensure the Proxy set-handler stores these on this instance.
   _reactMobileToolbar = false
   _reactHeader = false
+  _reactNPanel = false
 
   constructor(uiView) {
     this._view = uiView
     this._nativeToolbarEl = uiView._mobileToolbarEl ?? null
     this._nativeHeaderEl  = uiView._headerEl ?? null
+    this._nativePanelEl   = uiView._nPanelEl ?? null
 
     // Expose every property/method on the wrapped view transparently so
     // AppController can use this as a drop-in replacement for UIView.
@@ -79,6 +81,51 @@ export class UIViewBridge {
         this._nativeHeaderEl.style.setProperty('display', 'none', 'important')
       }
     }
+  }
+
+  enableReactNPanel() {
+    this._reactNPanel = true
+    if (this._nativePanelEl) {
+      this._nativePanelEl.style.setProperty('display', 'none', 'important')
+    }
+    const view = this._view
+    const prevApply = view._applyMobileLayout.bind(view)
+    view._applyMobileLayout = () => {
+      prevApply()
+      if (this._nativePanelEl) {
+        this._nativePanelEl.style.setProperty('display', 'none', 'important')
+      }
+    }
+  }
+
+  // ── N-Panel visibility ────────────────────────────────────────────────────
+  // Getter override so AppController's `if (!this._uiView.nPanelVisible) return`
+  // reads from the store once React has taken over.
+
+  get nPanelVisible() {
+    return useUIStore.getState().nPanelVisible
+  }
+
+  toggleNPanel() {
+    const next = !useUIStore.getState().nPanelVisible
+    useUIStore.getState().actions.setNPanelVisible(next)
+    if (!this._reactNPanel) {
+      this._view.toggleNPanel()
+    }
+  }
+
+  showBackdrop(onClose) {
+    if (!this._reactNPanel) {
+      this._view.showBackdrop(onClose)
+    }
+    useUIStore.getState().actions.setBackdrop(onClose ?? null)
+  }
+
+  hideBackdrop() {
+    if (!this._reactNPanel) {
+      this._view.hideBackdrop()
+    }
+    useUIStore.getState().actions.setBackdrop(null)
   }
 
   // ── State → store bridges ─────────────────────────────────────────────────
@@ -183,5 +230,109 @@ export class UIViewBridge {
   onImportJson(cb) {
     this._view.onImportJson(cb)
     useUIStore.getState().actions.registerCallback('onImportJson', cb)
+  }
+
+  // ── N-Panel state bridges ─────────────────────────────────────────────────
+
+  updateNPanel(centroid, dimensions, name = '', description = '', options = {}) {
+    if (!this._reactNPanel) {
+      this._view.updateNPanel(centroid, dimensions, name, description, options)
+    }
+    useUIStore.getState().actions.setNPanelData({
+      type: 'generic',
+      centroid: { x: centroid.x, y: centroid.y, z: centroid.z },
+      dimensions: { x: dimensions.x, y: dimensions.y, z: dimensions.z },
+      name, description,
+      locationEditable:     options.locationEditable    ?? false,
+      showIfcClass:         options.showIfcClass        ?? false,
+      ifcClass:             options.ifcClass            ?? null,
+      showPlaceType:        options.showPlaceType       ?? false,
+      placeType:            options.placeType           ?? null,
+      placeTypeGeometry:    options.placeTypeGeometry   ?? null,
+      spatialLinks:         options.spatialLinks        ?? null,
+      currentEntityId:      options.currentEntityId     ?? null,
+      onDeleteSpatialLink:  options.onDeleteSpatialLink ?? null,
+      getEntityName:        options.getEntityName       ?? ((id) => id),
+      frames:               options.frames              ?? null,
+      onAddFrame:           options.onAddFrame          ?? null,
+      onSelectFrame:        options.onSelectFrame       ?? null,
+    })
+  }
+
+  updateNPanelForFrame(
+    pos, eulerDeg, name,
+    locked = false,
+    parentOptions = null,
+    currentParentId = null,
+    unreferenced = false,
+    childFrames = null,
+    onAddChildFrame = null,
+    onSelectChildFrame = null,
+  ) {
+    if (!this._reactNPanel) {
+      this._view.updateNPanelForFrame(
+        pos, eulerDeg, name, locked, parentOptions, currentParentId,
+        unreferenced, childFrames, onAddChildFrame, onSelectChildFrame,
+      )
+    }
+    useUIStore.getState().actions.setNPanelData({
+      type: 'frame',
+      pos: { x: pos.x, y: pos.y, z: pos.z },
+      eulerDeg: { x: eulerDeg.x, y: eulerDeg.y, z: eulerDeg.z },
+      name, locked, parentOptions, currentParentId,
+      unreferenced, childFrames, onAddChildFrame, onSelectChildFrame,
+    })
+  }
+
+  updateNPanelForSpatialLink(link, srcName, tgtName, onDelete) {
+    if (!this._reactNPanel) {
+      this._view.updateNPanelForSpatialLink(link, srcName, tgtName, onDelete)
+    }
+    useUIStore.getState().actions.setNPanelData({
+      type: 'link',
+      link, srcName, tgtName, onDelete,
+    })
+  }
+
+  // ── N-Panel callback bridges ──────────────────────────────────────────────
+
+  onNameChange(cb) {
+    this._view.onNameChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelNameChange', cb)
+  }
+
+  onDescriptionChange(cb) {
+    this._view.onDescriptionChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelDescriptionChange', cb)
+  }
+
+  onLocationChange(cb) {
+    this._view.onLocationChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelLocationChange', cb)
+  }
+
+  onFramePositionChange(cb) {
+    this._view.onFramePositionChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelFramePositionChange', cb)
+  }
+
+  onFrameRotationChange(cb) {
+    this._view.onFrameRotationChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelFrameRotationChange', cb)
+  }
+
+  onFrameParentChange(cb) {
+    this._view.onFrameParentChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelFrameParentChange', cb)
+  }
+
+  onIfcClassChange(cb) {
+    this._view.onIfcClassChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelIfcClassChange', cb)
+  }
+
+  onPlaceTypeChange(cb) {
+    this._view.onPlaceTypeChange(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelPlaceTypeChange', cb)
   }
 }

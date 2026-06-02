@@ -2,17 +2,19 @@ import { useEffect } from 'react'
 import { useUIStore } from '../store/uiStore.js'
 import { Header } from './Header/Header.jsx'
 import { MobileToolbar } from './Toolbar/MobileToolbar.jsx'
+import { NPanel } from './NPanel/NPanel.jsx'
 
 /**
- * React UI root — Phase 2 (Header + MobileToolbar).
+ * React UI root — Phase 2 (Header + MobileToolbar + NPanel).
  *
  * Manages:
  * 1. Cursor sync: store → document.body
  * 2. Header: React replacement for UIView's 40px top bar
  * 3. MobileToolbar: React replacement for UIView's native mobile toolbar
- * 4. ToastStack: React-rendered toasts
+ * 4. NPanel: React replacement for UIView's 200px right properties panel
+ * 5. ToastStack: React-rendered toasts
  *
- * UIView.js still manages the N-panel, bottom info bar, modals, and other UI.
+ * UIView.js still manages the bottom info bar, modals, and other UI.
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -26,6 +28,7 @@ export function UIShell() {
     <>
       <Header />
       <MobileToolbar />
+      <NPanel />
       <ToastStack toasts={toasts} />
     </>
   )

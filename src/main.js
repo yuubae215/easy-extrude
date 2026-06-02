@@ -14,7 +14,7 @@ import { geometryEngine }   from './service/GeometryEngine.js'
 import { constraintSolver } from './service/ConstraintSolver.js'
 
 // Mount the React UI overlay.
-// UIView.js still manages header, N-panel, and desktop UI.
+// UIView.js still manages the bottom info bar, modals, and other UI.
 const reactRoot = document.getElementById('react-ui-root')
 if (reactRoot) {
   createRoot(reactRoot).render(createElement(UIShell))
@@ -43,5 +43,6 @@ const controller   = new AppController(sceneView, uiView, gizmoView, outlinerVie
 // Hand UI sections to React — hides the corresponding UIView native elements.
 uiView.enableReactHeader()
 uiView.enableReactMobileToolbar()
+uiView.enableReactNPanel()
 
 controller.start()

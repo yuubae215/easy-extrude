@@ -12,83 +12,79 @@ let _toastId = 0
  */
 export const useUIStore = create((set, get) => ({
   // ── Toolbar ────────────────────────────────────────────────────────────────
-  // Array of button descriptors matching the existing setMobileToolbar() shape:
-  // { icon, label, onClick, disabled?, active?, indicator? } | { spacer: true }
   toolbar: [],
 
   // ── Status line ────────────────────────────────────────────────────────────
-  // Array of { text, style? } parts matching setStatusRich() shape
   statusParts: [],
 
   // ── Cursor ─────────────────────────────────────────────────────────────────
   cursor: 'default',
 
   // ── Mode ───────────────────────────────────────────────────────────────────
-  mode: 'object',      // 'object' | 'edit' | 'sketch' | 'map' | 'node'
-  editSubtype: null,   // '3d' | '2d-sketch' | '2d-extrude' | '1d' | null
+  mode: 'object',
+  editSubtype: null,
 
   // ── Toasts ─────────────────────────────────────────────────────────────────
-  // [{ id, msg, type }]  type: 'info' | 'warn' | 'error'
   toasts: [],
 
   // ── N-Panel (properties sidebar) ───────────────────────────────────────────
-  // Raw descriptor object passed from AppController — shape defined by updateNPanel()
-  nPanel: null,
+  nPanelVisible: false,
+  // Descriptor shapes:
+  //   { type: 'generic', centroid, dimensions, name, description, locationEditable,
+  //     showIfcClass, ifcClass, showPlaceType, placeType, placeTypeGeometry,
+  //     spatialLinks, currentEntityId, onDeleteSpatialLink, getEntityName,
+  //     frames, onAddFrame, onSelectFrame }
+  //   { type: 'frame', pos, eulerDeg, name, locked, parentOptions, currentParentId,
+  //     unreferenced, childFrames, onAddChildFrame, onSelectChildFrame }
+  //   { type: 'link', link, srcName, tgtName, onDelete }
+  nPanelData: null,
+  // Backdrop overlay callback — set by showBackdrop(), cleared by hideBackdrop()
+  backdropCallback: null,
 
   // ── Extrusion label ────────────────────────────────────────────────────────
-  extrusionLabel: null, // { text, x, y } | null
+  extrusionLabel: null,
 
   // ── Header ────────────────────────────────────────────────────────────────
-  bffConnected: false,    // true after BFF connect — shows Save/Load buttons
-  nodeEditorOpen: false,  // reflects Node Editor panel visibility
+  bffConnected: false,
+  nodeEditorOpen: false,
 
   // ── Modal / overlay state ──────────────────────────────────────────────────
-  // Reserved for future React-driven modal system (Phase 2)
   modal: null,
 
   // ── Callbacks registered by AppController ─────────────────────────────────
-  // Components call these to notify the controller of user interactions.
-  // AppController registers them via actions.registerCallback().
   callbacks: {},
 
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
-    // Toolbar
     setToolbar: (buttons) => set({ toolbar: buttons }),
 
-    // Status
     setStatus: (text) => set({ statusParts: [{ text }] }),
     setStatusRich: (parts) => set({ statusParts: parts }),
 
-    // Cursor — applied to document.body by the React root
     setCursor: (style) => set({ cursor: style }),
 
-    // Mode
     updateMode: (mode, editSubtype = null) => set({ mode, editSubtype }),
 
-    // Toasts
     pushToast: (msg, type = 'info') => {
       const id = ++_toastId
       set(state => ({ toasts: [...state.toasts, { id, msg, type }] }))
-      // Auto-dismiss after 3 s
       setTimeout(() => {
         set(state => ({ toasts: state.toasts.filter(t => t.id !== id) }))
       }, 3000)
     },
     dismissToast: (id) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
-    // N-Panel
-    setNPanel: (descriptor) => set({ nPanel: descriptor }),
+    setNPanelVisible: (val) => set({ nPanelVisible: val }),
+    toggleNPanel: () => set(state => ({ nPanelVisible: !state.nPanelVisible })),
+    setNPanelData: (descriptor) => set({ nPanelData: descriptor }),
+    setBackdrop: (cb) => set({ backdropCallback: cb }),
 
-    // Extrusion label
     setExtrusionLabel: (text, x, y) => set({ extrusionLabel: text != null ? { text, x, y } : null }),
 
-    // Header
     setBffConnected: (val) => set({ bffConnected: val }),
     setNodeEditorOpen: (val) => set({ nodeEditorOpen: val }),
 
-    // Callbacks
     registerCallback: (name, fn) => set(state => ({
       callbacks: { ...state.callbacks, [name]: fn },
     })),
