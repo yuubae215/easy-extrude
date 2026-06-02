@@ -4851,8 +4851,18 @@ export class AppController {
     this._rotate.axis = (this._rotate.axis === axis) ? null : axis
     this._rotate.inputStr = ''
     this._rotate.hasInput = false
-    // Recompute start angle with new axis
     const obj = this._activeObj
+    // Re-snapshot current orientation/pivot as new segment start so accumulated
+    // rotation from the prior axis constraint is preserved (mirrors _setGrabAxis()
+    // segmentStart re-snapshot pattern).
+    if (obj instanceof CoordinateFrame) {
+      this._rotate.segmentStartRot.copy(obj.rotation)
+    } else if (obj instanceof Solid) {
+      this._rotate.segStartOrientation = obj.orientation.clone()
+      this._rotate.segStartPos         = obj._position.clone()
+      this._rotate.segStartPivot       = obj._position.clone()
+    }
+    // Recompute start angle with new axis
     let projected
     let rotCenter = null
     if (obj instanceof CoordinateFrame) {
@@ -4868,6 +4878,11 @@ export class AppController {
         this._mouse.x - projected.x,
       )
     }
+    // Reset accumulation baseline for the new axis segment so the first
+    // _applyRotate() call produces delta = 0 (no spurious jump).
+    this._rotate.segmentStartAngle = this._rotate.startAngle
+    this._rotate.prevCurrentAngle  = this._rotate.startAngle
+    this._rotate.accumulatedAngle  = 0
     if (this._rotate.axis && rotCenter) {
       this._showAxisGuide(this._rotate.axis, rotCenter.clone(), 'rotate')
     } else {
@@ -5025,6 +5040,20 @@ export class AppController {
       }
     }
     this._grab.startMouse.copy(this._mouse)
+    // Update centroid/pivot to current position so the axis guide and
+    // screen-projection track the object after accumulated movement from the
+    // prior constraint. Mirrors the touch re-grab centroid update (pointerdown
+    // in S_GRAB_ACTIVE). segmentStartPositions was just re-snapshotted above.
+    if (this._activeObj instanceof CoordinateFrame) {
+      const pos = this._service.worldPoseOf(this._activeObj.id)?.position
+      if (pos) { this._grab.centroid.copy(pos); this._grab.pivot.copy(pos) }
+    } else if (this._grab.segmentStartPositions.size > 0) {
+      const avg = new THREE.Vector3()
+      for (const p of this._grab.segmentStartPositions.values()) avg.add(p)
+      avg.divideScalar(this._grab.segmentStartPositions.size)
+      this._grab.centroid.copy(avg)
+      this._grab.pivot.copy(avg)
+    }
     if (!this._grab.axis) {
       // Switching back to free grab: reset the 3D drag-plane anchor to the current
       // mouse position so the free-grab delta starts at zero.
