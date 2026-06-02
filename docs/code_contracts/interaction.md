@@ -59,13 +59,25 @@ if (this._grab.active) {
 
   Left-click on canvas still confirms on PC; right-click cancels. Touch `pointerdown` during rotate must NOT confirm — add `if (e.pointerType === 'touch') { ... return }` before the `e.button === 0` confirm check.
 
+## Rotate Segment Re-snapshot on Axis Change
+
+- **Principle**: Switching axis constraints during Rotate (X→Y, Y→Z, etc.) must re-snapshot the current rotation state as the new segment baseline — identical to how `_setGrabAxis()` re-snapshots `segmentStartPositions` for Grab. Without re-snapshotting, the accumulated rotation from the previous axis is discarded and a spurious angle jump occurs.
+- **Concrete Rule**: In `_setRotateAxis()`, after updating `this._rotate.axis` and before re-computing `startAngle`:
+  1. Re-snapshot orientation: `segmentStartRot.copy(obj.rotation)` (CoordinateFrame) or `segStartOrientation = obj.orientation.clone()` (Solid).
+  2. Re-snapshot position: `segStartPos = obj._position.clone()` and `segStartPivot = obj._position.clone()` (Solid only; CF pivot is derived from `worldPoseOf()`).
+  3. After computing the new `startAngle`, reset: `accumulatedAngle = 0`, `prevCurrentAngle = startAngle`, `segmentStartAngle = startAngle`.
+
+  Without step 1: `applyPreviewRotation` starts from the original orientation, discarding the X-axis rotation result.
+  Without step 3: the first `_applyRotate()` delta is `currentAngle(new axis) − prevCurrentAngle(old axis)` — an arbitrary large jump.
+
 ## Grab State: allStartCorners vs segmentStartCorners
 
 - **Principle**: A multi-drag grab (multiple finger-lift + re-touch cycles before confirming) needs two distinct corner snapshots: one for undo/cancel anchoring, and one for per-segment drag delta calculation.
 - **Concrete Rule**:
   - `_grab.allStartCorners` — snapshot taken once in `_startGrab()`. Used by `_cancelGrab()` (restore to original) and `_confirmGrab()` (undo command "before" state). **Never updated mid-grab.**
-  - `_grab.segmentStartCorners` — snapshot taken in `_startGrab()` (initially = `allStartCorners`) **and re-taken on every touch re-down** during grab. Used by `_applyGrabDeltaToAll()` so the drag delta is measured from the current position, not the original. Updating only `segmentStartCorners` (not `allStartCorners`) ensures cancel/undo always revert to the pre-grab origin.
+  - `_grab.segmentStartCorners` — snapshot taken in `_startGrab()` (initially = `allStartCorners`) **and re-taken on every touch re-down** during grab AND on every axis-constraint switch in `_setGrabAxis()`. Used by `_applyGrabDeltaToAll()` so the drag delta is measured from the current position, not the original. Updating only `segmentStartCorners` (not `allStartCorners`) ensures cancel/undo always revert to the pre-grab origin.
   - `_applyGrabDeltaToAll(delta)` must iterate `segmentStartCorners`, not `allStartCorners`.
+  - After re-snapshotting `segmentStartPositions` in `_setGrabAxis()`, **`_grab.centroid` and `_grab.pivot` must also be updated** to the current object position (average of `segmentStartPositions` for Solids; `worldPoseOf()` for CoordinateFrame). Without this update the axis guide line and the screen-space axis-projection pivot remain at the original grab-start position while the object has already moved — the line appears "left behind" (置いてきぼり).
 
 ## Long-Press Context Menu for Non-Draggable Entities (Mobile)
 
