@@ -10,19 +10,25 @@ import { useUIStore } from '../store/uiStore.js'
  * React takeover flags: once a React component fully covers a UIView section,
  * call enableReact*() to stop forwarding to UIView for that section.
  *
- * Methods bridged:
+ * Methods bridged (state → store):
  *   showToast, setStatus, setStatusRich, setCursor,
- *   setMobileToolbar, updateMode, setExtrusionLabel
+ *   setMobileToolbar, updateMode, setExtrusionLabel,
+ *   enableSaveLoad
+ *
+ * Methods bridged (callbacks → store):
+ *   onModeChange, onOutlinerToggle, onNPanelToggle,
+ *   onUndoClick, onRedoClick, onMapModeClick,
+ *   onNodeEditorToggle, onExportJson, onImportJson
  */
 export class UIViewBridge {
-  // Class fields so the Proxy set-handler keeps them on this instance (not _view).
+  // Class fields ensure the Proxy set-handler stores these on this instance.
   _reactMobileToolbar = false
+  _reactHeader = false
 
   constructor(uiView) {
     this._view = uiView
-    // Hold a direct reference to the native toolbar element so we can hide it
-    // when React's MobileToolbar component takes over rendering.
     this._nativeToolbarEl = uiView._mobileToolbarEl ?? null
+    this._nativeHeaderEl  = uiView._headerEl ?? null
 
     // Expose every property/method on the wrapped view transparently so
     // AppController can use this as a drop-in replacement for UIView.
@@ -42,22 +48,13 @@ export class UIViewBridge {
     })
   }
 
-  /**
-   * Signal that the React MobileToolbar component is now rendering the toolbar.
-   * After this call:
-   *   - setMobileToolbar() stops forwarding to UIView (React reads from store)
-   *   - The native DOM toolbar container is permanently hidden
-   *   - _applyMobileLayout() is patched so resize events don't re-show the native el
-   */
+  // ── React takeover enablers ───────────────────────────────────────────────
+
   enableReactMobileToolbar() {
     this._reactMobileToolbar = true
-
-    // Hide the native toolbar container immediately.
     if (this._nativeToolbarEl) {
       this._nativeToolbarEl.style.setProperty('display', 'none', 'important')
     }
-
-    // Patch UIView's resize handler so it never re-shows the native toolbar.
     const view = this._view
     const origApply = view._applyMobileLayout.bind(view)
     view._applyMobileLayout = () => {
@@ -68,7 +65,23 @@ export class UIViewBridge {
     }
   }
 
-  // ── Bridged methods ───────────────────────────────────────────────────────
+  enableReactHeader() {
+    this._reactHeader = true
+    if (this._nativeHeaderEl) {
+      this._nativeHeaderEl.style.setProperty('display', 'none', 'important')
+    }
+    // Patch _applyMobileLayout so resize never re-shows the native header.
+    const view = this._view
+    const prevApply = view._applyMobileLayout.bind(view)
+    view._applyMobileLayout = () => {
+      prevApply()
+      if (this._nativeHeaderEl) {
+        this._nativeHeaderEl.style.setProperty('display', 'none', 'important')
+      }
+    }
+  }
+
+  // ── State → store bridges ─────────────────────────────────────────────────
 
   showToast(msg, opts = {}) {
     this._view.showToast(msg, opts)
@@ -98,6 +111,7 @@ export class UIViewBridge {
   }
 
   updateMode(mode, subtype = null) {
+    // Always forward to UIView so the bottom info bar keyboard hints still update.
     this._view.updateMode(mode, subtype)
     useUIStore.getState().actions.updateMode(mode, subtype)
   }
@@ -105,5 +119,69 @@ export class UIViewBridge {
   setExtrusionLabel(text, x, y) {
     this._view.setExtrusionLabel(text, x, y)
     useUIStore.getState().actions.setExtrusionLabel(text, x, y)
+  }
+
+  enableSaveLoad(onSave, onLoad) {
+    // Forward to UIView (keeps native buttons alive while not React-headed).
+    this._view.enableSaveLoad(onSave, onLoad)
+    // Store callbacks and flip the bffConnected flag for the React header.
+    const { registerCallback, setBffConnected } = useUIStore.getState().actions
+    registerCallback('onSaveScene', onSave)
+    registerCallback('onLoadScene', onLoad)
+    setBffConnected(true)
+  }
+
+  // ── Callback → store bridges ──────────────────────────────────────────────
+  // Each method registers the callback with UIView AND with the store so that
+  // React components can invoke it when the React header has taken over.
+
+  onModeChange(cb) {
+    this._view.onModeChange(cb)
+    useUIStore.getState().actions.registerCallback('onModeChange', cb)
+  }
+
+  onOutlinerToggle(cb) {
+    this._view.onOutlinerToggle(cb)
+    useUIStore.getState().actions.registerCallback('onOutlinerToggle', cb)
+  }
+
+  onNPanelToggle(cb) {
+    this._view.onNPanelToggle(cb)
+    useUIStore.getState().actions.registerCallback('onNPanelToggle', cb)
+  }
+
+  onUndoClick(cb) {
+    this._view.onUndoClick(cb)
+    useUIStore.getState().actions.registerCallback('onUndoClick', cb)
+  }
+
+  onRedoClick(cb) {
+    this._view.onRedoClick(cb)
+    useUIStore.getState().actions.registerCallback('onRedoClick', cb)
+  }
+
+  onMapModeClick(cb) {
+    this._view.onMapModeClick(cb)
+    useUIStore.getState().actions.registerCallback('onMapModeClick', cb)
+  }
+
+  onNodeEditorToggle(cb) {
+    // Wrap so each invocation also toggles the store's nodeEditorOpen flag.
+    const wrapped = () => {
+      cb()
+      useUIStore.setState(s => ({ nodeEditorOpen: !s.nodeEditorOpen }))
+    }
+    this._view.onNodeEditorToggle(wrapped)
+    useUIStore.getState().actions.registerCallback('onNodeEditorToggle', wrapped)
+  }
+
+  onExportJson(cb) {
+    this._view.onExportJson(cb)
+    useUIStore.getState().actions.registerCallback('onExportJson', cb)
+  }
+
+  onImportJson(cb) {
+    this._view.onImportJson(cb)
+    useUIStore.getState().actions.registerCallback('onImportJson', cb)
   }
 }

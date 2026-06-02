@@ -40,7 +40,8 @@ const gizmoView    = new GizmoView(sceneView.camera, sceneView.controls)
 const outlinerView = new OutlinerView()
 const controller   = new AppController(sceneView, uiView, gizmoView, outlinerView)
 
-// Hand mobile toolbar rendering to React — hides the UIView native element.
+// Hand UI sections to React — hides the corresponding UIView native elements.
+uiView.enableReactHeader()
 uiView.enableReactMobileToolbar()
 
 controller.start()

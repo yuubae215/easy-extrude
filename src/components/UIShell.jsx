@@ -1,28 +1,30 @@
 import { useEffect } from 'react'
 import { useUIStore } from '../store/uiStore.js'
+import { Header } from './Header/Header.jsx'
 import { MobileToolbar } from './Toolbar/MobileToolbar.jsx'
 
 /**
- * React UI root — Phase 2 (MobileToolbar).
+ * React UI root — Phase 2 (Header + MobileToolbar).
  *
  * Manages:
  * 1. Cursor sync: store → document.body
- * 2. MobileToolbar: React replacement for UIView's native mobile toolbar
- * 3. ToastStack: React-rendered toasts (Phase 0)
+ * 2. Header: React replacement for UIView's 40px top bar
+ * 3. MobileToolbar: React replacement for UIView's native mobile toolbar
+ * 4. ToastStack: React-rendered toasts
  *
- * UIView.js still manages the header, N-panel, and all desktop UI.
+ * UIView.js still manages the N-panel, bottom info bar, modals, and other UI.
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
   const toasts = useUIStore(s => s.toasts)
 
-  // Apply cursor from store to body so Three.js canvas cursor stays in sync
   useEffect(() => {
     document.body.style.cursor = cursor
   }, [cursor])
 
   return (
     <>
+      <Header />
       <MobileToolbar />
       <ToastStack toasts={toasts} />
     </>

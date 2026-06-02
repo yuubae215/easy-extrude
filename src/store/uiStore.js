@@ -38,6 +38,10 @@ export const useUIStore = create((set, get) => ({
   // ── Extrusion label ────────────────────────────────────────────────────────
   extrusionLabel: null, // { text, x, y } | null
 
+  // ── Header ────────────────────────────────────────────────────────────────
+  bffConnected: false,    // true after BFF connect — shows Save/Load buttons
+  nodeEditorOpen: false,  // reflects Node Editor panel visibility
+
   // ── Modal / overlay state ──────────────────────────────────────────────────
   // Reserved for future React-driven modal system (Phase 2)
   modal: null,
@@ -79,6 +83,10 @@ export const useUIStore = create((set, get) => ({
 
     // Extrusion label
     setExtrusionLabel: (text, x, y) => set({ extrusionLabel: text != null ? { text, x, y } : null }),
+
+    // Header
+    setBffConnected: (val) => set({ bffConnected: val }),
+    setNodeEditorOpen: (val) => set({ nodeEditorOpen: val }),
 
     // Callbacks
     registerCallback: (name, fn) => set(state => ({
