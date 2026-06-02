@@ -13,7 +13,8 @@ import { AppController }   from './controller/AppController.js'
 import { geometryEngine }   from './service/GeometryEngine.js'
 import { constraintSolver } from './service/ConstraintSolver.js'
 
-// Mount the React UI overlay (Phase 0–1 shell; UIView.js still active alongside)
+// Mount the React UI overlay.
+// UIView.js still manages header, N-panel, and desktop UI.
 const reactRoot = document.getElementById('react-ui-root')
 if (reactRoot) {
   createRoot(reactRoot).render(createElement(UIShell))
@@ -38,5 +39,8 @@ const uiView       = new UIViewBridge(new UIView())
 const gizmoView    = new GizmoView(sceneView.camera, sceneView.controls)
 const outlinerView = new OutlinerView()
 const controller   = new AppController(sceneView, uiView, gizmoView, outlinerView)
+
+// Hand mobile toolbar rendering to React — hides the UIView native element.
+uiView.enableReactMobileToolbar()
 
 controller.start()

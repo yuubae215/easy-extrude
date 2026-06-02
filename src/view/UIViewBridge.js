@@ -6,15 +6,23 @@ import { useUIStore } from '../store/uiStore.js'
  *
  * Forwards every call to the original UIView first, then updates the store.
  * This keeps UIView.js fully functional during the incremental React migration.
- * Phase 2 will remove the UIView.js calls once React components cover each area.
+ *
+ * React takeover flags: once a React component fully covers a UIView section,
+ * call enableReact*() to stop forwarding to UIView for that section.
  *
  * Methods bridged:
  *   showToast, setStatus, setStatusRich, setCursor,
  *   setMobileToolbar, updateMode, setExtrusionLabel
  */
 export class UIViewBridge {
+  // Class fields so the Proxy set-handler keeps them on this instance (not _view).
+  _reactMobileToolbar = false
+
   constructor(uiView) {
     this._view = uiView
+    // Hold a direct reference to the native toolbar element so we can hide it
+    // when React's MobileToolbar component takes over rendering.
+    this._nativeToolbarEl = uiView._mobileToolbarEl ?? null
 
     // Expose every property/method on the wrapped view transparently so
     // AppController can use this as a drop-in replacement for UIView.
@@ -32,6 +40,32 @@ export class UIViewBridge {
         return true
       },
     })
+  }
+
+  /**
+   * Signal that the React MobileToolbar component is now rendering the toolbar.
+   * After this call:
+   *   - setMobileToolbar() stops forwarding to UIView (React reads from store)
+   *   - The native DOM toolbar container is permanently hidden
+   *   - _applyMobileLayout() is patched so resize events don't re-show the native el
+   */
+  enableReactMobileToolbar() {
+    this._reactMobileToolbar = true
+
+    // Hide the native toolbar container immediately.
+    if (this._nativeToolbarEl) {
+      this._nativeToolbarEl.style.setProperty('display', 'none', 'important')
+    }
+
+    // Patch UIView's resize handler so it never re-shows the native toolbar.
+    const view = this._view
+    const origApply = view._applyMobileLayout.bind(view)
+    view._applyMobileLayout = () => {
+      origApply()
+      if (this._nativeToolbarEl) {
+        this._nativeToolbarEl.style.setProperty('display', 'none', 'important')
+      }
+    }
   }
 
   // ── Bridged methods ───────────────────────────────────────────────────────
@@ -57,7 +91,9 @@ export class UIViewBridge {
   }
 
   setMobileToolbar(buttons) {
-    this._view.setMobileToolbar(buttons)
+    if (!this._reactMobileToolbar) {
+      this._view.setMobileToolbar(buttons)
+    }
     useUIStore.getState().actions.setToolbar(buttons)
   }
 

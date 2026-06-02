@@ -1,15 +1,16 @@
 import { useEffect } from 'react'
 import { useUIStore } from '../store/uiStore.js'
+import { MobileToolbar } from './Toolbar/MobileToolbar.jsx'
 
 /**
- * React UI root — Phase 0 shell.
+ * React UI root — Phase 2 (MobileToolbar).
  *
- * Currently only:
- * 1. Syncs the cursor state from the store to document.body
- * 2. Renders toasts as a proof-of-concept that the React overlay works
+ * Manages:
+ * 1. Cursor sync: store → document.body
+ * 2. MobileToolbar: React replacement for UIView's native mobile toolbar
+ * 3. ToastStack: React-rendered toasts (Phase 0)
  *
- * UIView.js continues to run as before.  Phase 2 will migrate UIView sections
- * into child components of this shell.
+ * UIView.js still manages the header, N-panel, and all desktop UI.
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -22,6 +23,7 @@ export function UIShell() {
 
   return (
     <>
+      <MobileToolbar />
       <ToastStack toasts={toasts} />
     </>
   )
