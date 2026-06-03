@@ -44,5 +44,8 @@ const controller   = new AppController(sceneView, uiView, gizmoView, outlinerVie
 uiView.enableReactHeader()
 uiView.enableReactMobileToolbar()
 uiView.enableReactNPanel()
+uiView.enableReactExtrusionLabel()
+uiView.enableReactInfoBar()
+uiView.enableReactModals()
 
 controller.start()

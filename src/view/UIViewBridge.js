@@ -22,15 +22,20 @@ import { useUIStore } from '../store/uiStore.js'
  */
 export class UIViewBridge {
   // Class fields ensure the Proxy set-handler stores these on this instance.
-  _reactMobileToolbar = false
-  _reactHeader = false
-  _reactNPanel = false
+  _reactMobileToolbar     = false
+  _reactHeader            = false
+  _reactNPanel            = false
+  _reactExtrusionLabel    = false
+  _reactInfoBar           = false
+  _reactModals            = false
 
   constructor(uiView) {
     this._view = uiView
-    this._nativeToolbarEl = uiView._mobileToolbarEl ?? null
-    this._nativeHeaderEl  = uiView._headerEl ?? null
-    this._nativePanelEl   = uiView._nPanelEl ?? null
+    this._nativeToolbarEl     = uiView._mobileToolbarEl     ?? null
+    this._nativeHeaderEl      = uiView._headerEl            ?? null
+    this._nativePanelEl       = uiView._nPanelEl            ?? null
+    this._nativeExtrusionEl   = uiView._extrusionLabelEl    ?? null
+    this._nativeInfoEl        = uiView._infoEl              ?? null
 
     // Expose every property/method on the wrapped view transparently so
     // AppController can use this as a drop-in replacement for UIView.
@@ -98,6 +103,24 @@ export class UIViewBridge {
     }
   }
 
+  enableReactExtrusionLabel() {
+    this._reactExtrusionLabel = true
+    if (this._nativeExtrusionEl) {
+      this._nativeExtrusionEl.style.setProperty('display', 'none', 'important')
+    }
+  }
+
+  enableReactInfoBar() {
+    this._reactInfoBar = true
+    if (this._nativeInfoEl) {
+      this._nativeInfoEl.style.setProperty('display', 'none', 'important')
+    }
+  }
+
+  enableReactModals() {
+    this._reactModals = true
+  }
+
   // ── N-Panel visibility ────────────────────────────────────────────────────
   // Getter override so AppController's `if (!this._uiView.nPanelVisible) return`
   // reads from the store once React has taken over.
@@ -158,14 +181,68 @@ export class UIViewBridge {
   }
 
   updateMode(mode, subtype = null) {
-    // Always forward to UIView so the bottom info bar keyboard hints still update.
-    this._view.updateMode(mode, subtype)
+    if (!this._reactInfoBar) {
+      this._view.updateMode(mode, subtype)
+    }
     useUIStore.getState().actions.updateMode(mode, subtype)
   }
 
   setExtrusionLabel(text, x, y) {
-    this._view.setExtrusionLabel(text, x, y)
+    if (!this._reactExtrusionLabel) {
+      this._view.setExtrusionLabel(text, x, y)
+    }
     useUIStore.getState().actions.setExtrusionLabel(text, x, y)
+  }
+
+  clearExtrusionLabel() {
+    if (!this._reactExtrusionLabel) {
+      this._view.clearExtrusionLabel()
+    }
+    useUIStore.getState().actions.setExtrusionLabel(null, 0, 0)
+  }
+
+  appendInfoHint(key, desc) {
+    if (!this._reactInfoBar) {
+      this._view.appendInfoHint?.(key, desc)
+    }
+    useUIStore.getState().actions.setExtraHint(key ?? null, desc)
+  }
+
+  // clearExtraHint is the idiomatic clear for appendInfoHint(null).
+  // Kept as a separate bridge method for symmetry with clearExtrusionLabel.
+  clearExtraHint() {
+    if (!this._reactInfoBar) {
+      this._view.appendInfoHint?.(null)
+    }
+    useUIStore.getState().actions.setExtraHint(null)
+  }
+
+  showRenameDialog(currentName, callback, options = {}) {
+    if (this._reactModals) {
+      useUIStore.getState().actions.showModal({
+        type: 'rename',
+        currentName,
+        callback,
+        title: options.title ?? 'Rename',
+      })
+      return
+    }
+    this._view.showRenameDialog(currentName, callback, options)
+  }
+
+  showConfirmDialog(message, callback, options = {}) {
+    if (this._reactModals) {
+      useUIStore.getState().actions.showModal({
+        type: 'confirm',
+        message,
+        callback,
+        title:        options.title        ?? 'Confirm',
+        confirmLabel: options.confirmLabel ?? 'OK',
+        danger:       options.danger       ?? false,
+      })
+      return
+    }
+    this._view.showConfirmDialog(message, callback, options)
   }
 
   enableSaveLoad(onSave, onLoad) {

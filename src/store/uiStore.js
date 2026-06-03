@@ -44,11 +44,17 @@ export const useUIStore = create((set, get) => ({
   // ── Extrusion label ────────────────────────────────────────────────────────
   extrusionLabel: null,
 
+  // ── Info bar extra hint (desktop only) ────────────────────────────────────
+  extraHint: null,
+
   // ── Header ────────────────────────────────────────────────────────────────
   bffConnected: false,
   nodeEditorOpen: false,
 
   // ── Modal / overlay state ──────────────────────────────────────────────────
+  // Shapes:
+  //   { type: 'rename',  currentName, callback, title }
+  //   { type: 'confirm', message, callback, title, confirmLabel, danger }
   modal: null,
 
   // ── Callbacks registered by AppController ─────────────────────────────────
@@ -82,8 +88,13 @@ export const useUIStore = create((set, get) => ({
 
     setExtrusionLabel: (text, x, y) => set({ extrusionLabel: text != null ? { text, x, y } : null }),
 
+    setExtraHint: (key, desc) => set({ extraHint: key ? { key, desc } : null }),
+
     setBffConnected: (val) => set({ bffConnected: val }),
     setNodeEditorOpen: (val) => set({ nodeEditorOpen: val }),
+
+    showModal: (config) => set({ modal: config }),
+    closeModal: () => set({ modal: null }),
 
     registerCallback: (name, fn) => set(state => ({
       callbacks: { ...state.callbacks, [name]: fn },

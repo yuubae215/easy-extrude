@@ -3,9 +3,12 @@ import { useUIStore } from '../store/uiStore.js'
 import { Header } from './Header/Header.jsx'
 import { MobileToolbar } from './Toolbar/MobileToolbar.jsx'
 import { NPanel } from './NPanel/NPanel.jsx'
+import { ExtrusionLabel } from './ExtrusionLabel/ExtrusionLabel.jsx'
+import { InfoBar } from './InfoBar/InfoBar.jsx'
+import { ModalLayer } from './Modal/ModalLayer.jsx'
 
 /**
- * React UI root — Phase 2 (Header + MobileToolbar + NPanel).
+ * React UI root — Phase 2d–2f (ExtrusionLabel + InfoBar + Modals added).
  *
  * Manages:
  * 1. Cursor sync: store → document.body
@@ -13,8 +16,9 @@ import { NPanel } from './NPanel/NPanel.jsx'
  * 3. MobileToolbar: React replacement for UIView's native mobile toolbar
  * 4. NPanel: React replacement for UIView's 200px right properties panel
  * 5. ToastStack: React-rendered toasts
- *
- * UIView.js still manages the bottom info bar, modals, and other UI.
+ * 6. ExtrusionLabel: floating 3D extrusion amount label
+ * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
+ * 8. ModalLayer: RenameDialog and ConfirmDialog
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -29,6 +33,9 @@ export function UIShell() {
       <Header />
       <MobileToolbar />
       <NPanel />
+      <ExtrusionLabel />
+      <InfoBar />
+      <ModalLayer />
       <ToastStack toasts={toasts} />
     </>
   )
