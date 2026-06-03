@@ -6,9 +6,11 @@ import { NPanel } from './NPanel/NPanel.jsx'
 import { ExtrusionLabel } from './ExtrusionLabel/ExtrusionLabel.jsx'
 import { InfoBar } from './InfoBar/InfoBar.jsx'
 import { ModalLayer } from './Modal/ModalLayer.jsx'
+import { MapToolbar } from './MapToolbar/MapToolbar.jsx'
+import { CanvasStatusPill } from './CanvasStatusPill/CanvasStatusPill.jsx'
 
 /**
- * React UI root — Phase 2d–2f (ExtrusionLabel + InfoBar + Modals added).
+ * React UI root — Phase 2d–2g (ExtrusionLabel + InfoBar + Modals + MapToolbar + CanvasStatusPill).
  *
  * Manages:
  * 1. Cursor sync: store → document.body
@@ -19,6 +21,8 @@ import { ModalLayer } from './Modal/ModalLayer.jsx'
  * 6. ExtrusionLabel: floating 3D extrusion amount label
  * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
  * 8. ModalLayer: RenameDialog and ConfirmDialog
+ * 9. MapToolbar: Map Mode left vertical toolbar (tool buttons + name input)
+ * 10. CanvasStatusPill: floating mobile status pill above toolbars
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -36,6 +40,8 @@ export function UIShell() {
       <ExtrusionLabel />
       <InfoBar />
       <ModalLayer />
+      <MapToolbar />
+      <CanvasStatusPill />
       <ToastStack toasts={toasts} />
     </>
   )
