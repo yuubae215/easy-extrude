@@ -8,9 +8,15 @@ import { InfoBar } from './InfoBar/InfoBar.jsx'
 import { ModalLayer } from './Modal/ModalLayer.jsx'
 import { MapToolbar } from './MapToolbar/MapToolbar.jsx'
 import { CanvasStatusPill } from './CanvasStatusPill/CanvasStatusPill.jsx'
+import { ContextMenu } from './ContextMenu/ContextMenu.jsx'
+import { AddMenu } from './AddMenu/AddMenu.jsx'
+import { LinkTypePicker } from './LinkTypePicker/LinkTypePicker.jsx'
+import { SemanticSuggestion } from './SemanticSuggestion/SemanticSuggestion.jsx'
+import { DragSuggestionTooltip } from './SemanticSuggestion/DragSuggestionTooltip.jsx'
+import { ImportProgress } from './ImportUI/ImportProgress.jsx'
 
 /**
- * React UI root — Phase 2d–2g (ExtrusionLabel + InfoBar + Modals + MapToolbar + CanvasStatusPill).
+ * React UI root — Phase 2d–2g + Phase 3.
  *
  * Manages:
  * 1. Cursor sync: store → document.body
@@ -20,9 +26,15 @@ import { CanvasStatusPill } from './CanvasStatusPill/CanvasStatusPill.jsx'
  * 5. ToastStack: React-rendered toasts
  * 6. ExtrusionLabel: floating 3D extrusion amount label
  * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
- * 8. ModalLayer: RenameDialog and ConfirmDialog
+ * 8. ModalLayer: RenameDialog, ConfirmDialog, ImportModal
  * 9. MapToolbar: Map Mode left vertical toolbar (tool buttons + name input)
  * 10. CanvasStatusPill: floating mobile status pill above toolbars
+ * 11. ContextMenu: long-press / right-click context menu
+ * 12. AddMenu: Shift+A add object menu
+ * 13. LinkTypePicker: L-key SpatialLink type picker
+ * 14. SemanticSuggestion: post-drag ADR-041 suggestion banner
+ * 15. DragSuggestionTooltip: during-drag non-interactive tooltip
+ * 16. ImportProgress: file import progress bar
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -42,6 +54,12 @@ export function UIShell() {
       <ModalLayer />
       <MapToolbar />
       <CanvasStatusPill />
+      <ContextMenu />
+      <AddMenu />
+      <LinkTypePicker />
+      <SemanticSuggestion />
+      <DragSuggestionTooltip />
+      <ImportProgress />
       <ToastStack toasts={toasts} />
     </>
   )
