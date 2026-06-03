@@ -28,6 +28,7 @@ export class UIViewBridge {
   _reactExtrusionLabel    = false
   _reactInfoBar           = false
   _reactModals            = false
+  _reactMapToolbar        = false
 
   constructor(uiView) {
     this._view = uiView
@@ -119,6 +120,55 @@ export class UIViewBridge {
 
   enableReactModals() {
     this._reactModals = true
+  }
+
+  enableReactMapToolbar() {
+    this._reactMapToolbar = true
+    const statusEl = this._view._canvasStatusEl
+    if (statusEl) {
+      statusEl.style.setProperty('display', 'none', 'important')
+    }
+    const view = this._view
+    const prevApply = view._applyMobileLayout.bind(view)
+    view._applyMobileLayout = () => {
+      prevApply()
+      if (statusEl) statusEl.style.setProperty('display', 'none', 'important')
+    }
+  }
+
+  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
+    if (this._reactMapToolbar) {
+      const { registerCallback, setMapToolbar, setMapPendingNameInput } =
+        useUIStore.getState().actions
+      registerCallback('onMapToolSelect', onToolSelect)
+      registerCallback('onMapConfirm', onConfirm ?? null)
+      registerCallback('onMapCancel',  onCancel  ?? null)
+      registerCallback('onMapExit',    onExit)
+      setMapToolbar({ visible: true, activeTool, pendingName,
+                      showConfirm: !!onConfirm, showCancel: !!onCancel })
+      setMapPendingNameInput(pendingName ?? '')
+      return
+    }
+    this._view.showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName)
+  }
+
+  hideMapToolbar() {
+    if (this._reactMapToolbar) {
+      useUIStore.getState().actions.setMapToolbar({
+        visible: false, activeTool: null, pendingName: null,
+        showConfirm: false, showCancel: false,
+      })
+      return
+    }
+    this._view.hideMapToolbar()
+  }
+
+  getMapPendingName() {
+    if (this._reactMapToolbar) {
+      // 空文字を null に変換して AppController の ?? フォールバックを有効化
+      return useUIStore.getState().mapPendingNameInput || null
+    }
+    return this._view.getMapPendingName()
   }
 
   // ── N-Panel visibility ────────────────────────────────────────────────────

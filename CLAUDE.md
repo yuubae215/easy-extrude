@@ -139,6 +139,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-06-03**: Refactor — VanillaJS → React 段階的移行 Phase 2g 完了（MapToolbar + CanvasStatusPill）。`MapToolbar` React 化（5 ツールボタン、名前入力、Confirm/Cancel/Exit）；`CanvasStatusPill` React 化（モバイル専用フローティング pill）；`UIViewBridge` に `_reactMapToolbar` フラグと 4 ブリッジメソッド追加；ストアに `mapToolbar` スライスと `mapPendingNameInput` 追加；`main.js` で有効化。
 - **2026-06-03**: Refactor — VanillaJS → React 段階的移行 Phase 2d–2f 完了（Strangler Fig）。`ExtrusionLabel` React 化（`extrusionLabel` ストア読み）；`InfoBar` React 化（デスクトップ: `getInfoText()` 純粋関数でキーボードヒント、モバイル: `statusParts` ステータス）；`RenameDialog`/`ConfirmDialog` React 化（`ModalLayer`、ストア `showModal`/`closeModal`、Enter/Escape を `stopImmediatePropagation` で AppController から遮断）。`UIViewBridge` に 3 フラグ追加、`main.js` で全有効化。
 - **2026-06-02**: Refactor — VanillaJS → React 段階的移行 Phase 0〜2 完了（Strangler Fig）。React 19 + Zustand 5 インフラ追加；`UIViewBridge` Proxy で UIView と store に二重書き；`MobileToolbar`・`Header`・`NPanel` を React 化（UIView 対応 DOM を `!important` で非表示化）。`NPanel` は generic/frame/link の 3 エンティティ型、IFC Class 検索ピッカー、PlaceType ピッカー、SpatialLinks outgoing/incoming 分割表示を含む。`nPanelVisible` getter が store から読むことで AppController のガードが正しく機能。
 - **2026-05-22**: Feature — ADR-043 Phase 3: Hub タクトタイム見積もり（Route × Hub）。`_evaluateClearanceLinks()` に `connects+deadline` ブランチを追加（polyline 全長÷speed vs deadline、複数リンク OR 合成）；`AnnotatedPointView.setTactTimeViolated()` 追加（赤変色・0.6s 速ソナー周期）；Route→Hub リンク作成プリセット 3 種（30/60/120 s）；N-パネルにタクト時間表示（緑/赤）。

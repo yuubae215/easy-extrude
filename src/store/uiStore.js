@@ -60,6 +60,16 @@ export const useUIStore = create((set, get) => ({
   // ── Callbacks registered by AppController ─────────────────────────────────
   callbacks: {},
 
+  // ── Map Toolbar ─────────────────────────────────────────────────────────────
+  mapToolbar: {
+    visible:     false,
+    activeTool:  null,    // 'route'|'boundary'|'zone'|'hub'|'anchor'|null
+    pendingName: null,    // null = 入力非表示; string = 入力表示
+    showConfirm: false,
+    showCancel:  false,
+  },
+  mapPendingNameInput: '',  // React コンポーネントが onChange で更新
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -103,5 +113,10 @@ export const useUIStore = create((set, get) => ({
       const { [name]: _, ...rest } = state.callbacks
       return { callbacks: rest }
     }),
+
+    setMapToolbar: (config) => set(state => ({
+      mapToolbar: { ...state.mapToolbar, ...config },
+    })),
+    setMapPendingNameInput: (value) => set({ mapPendingNameInput: value }),
   },
 }))

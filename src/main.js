@@ -47,5 +47,6 @@ uiView.enableReactNPanel()
 uiView.enableReactExtrusionLabel()
 uiView.enableReactInfoBar()
 uiView.enableReactModals()
+uiView.enableReactMapToolbar()
 
 controller.start()
