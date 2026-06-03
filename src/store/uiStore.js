@@ -70,6 +70,30 @@ export const useUIStore = create((set, get) => ({
   },
   mapPendingNameInput: '',  // React コンポーネントが onChange で更新
 
+  // ── Context Menu ──────────────────────────────────────────────────────────
+  // { x, y, items: [{label, onClick, danger?}] } | null
+  contextMenu: null,
+
+  // ── Add Menu (Shift+A) ────────────────────────────────────────────────────
+  // { x, y, cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame } } | null
+  addMenu: null,
+
+  // ── Link Type Picker (L-key) ───────────────────────────────────────────────
+  // { x, y, options: [{jointType, semanticType, label}], onSelect } | null
+  linkTypePicker: null,
+
+  // ── Semantic Suggestion (post-drag ADR-041) ────────────────────────────────
+  // { suggestion: {sourceId,targetId,semanticType,label,sourceName,targetName}, onAccept } | null
+  semanticSuggestion: null,
+
+  // ── Drag Suggestion Tooltip (during drag, non-interactive) ────────────────
+  // { suggestion: {semanticType, label, sourceName, targetName} } | null
+  dragTooltip: null,
+
+  // ── Import Progress ────────────────────────────────────────────────────────
+  // { percent: 0–100, status: string } | null
+  importProgress: null,
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -118,5 +142,24 @@ export const useUIStore = create((set, get) => ({
       mapToolbar: { ...state.mapToolbar, ...config },
     })),
     setMapPendingNameInput: (value) => set({ mapPendingNameInput: value }),
+
+    showContextMenu:   (cfg) => set({ contextMenu: cfg }),
+    hideContextMenu:   ()    => set({ contextMenu: null }),
+
+    showAddMenu:       (cfg) => set({ addMenu: cfg }),
+    hideAddMenu:       ()    => set({ addMenu: null }),
+
+    showLinkTypePicker:  (cfg) => set({ linkTypePicker: cfg }),
+    hideLinkTypePicker:  ()    => set({ linkTypePicker: null }),
+
+    showSemanticSuggestion:   (cfg) => set({ semanticSuggestion: cfg }),
+    dismissSemanticSuggestion: ()   => set({ semanticSuggestion: null }),
+
+    showDragTooltip:   (cfg) => set({ dragTooltip: cfg }),
+    hideDragTooltip:   ()    => set({ dragTooltip: null }),
+
+    showImportProgress: (cfg) => set({ importProgress: cfg }),
+    hideImportProgress: ()    => set({ importProgress: null }),
+    // ImportModal uses existing showModal({ type:'import', filename, resolve }) / closeModal()
   },
 }))

@@ -8,6 +8,7 @@ export function ModalLayer() {
   if (!modal) return null
   if (modal.type === 'rename')  return <RenameDialog  modal={modal} onClose={closeModal} />
   if (modal.type === 'confirm') return <ConfirmDialog modal={modal} onClose={closeModal} />
+  if (modal.type === 'import')  return <ImportModal   modal={modal} onClose={closeModal} />
   return null
 }
 
@@ -137,6 +138,100 @@ function RenameDialog({ modal, onClose }) {
         <button style={confirmStyle} onClick={confirm}>OK</button>
       </ButtonRow>
     </Overlay>
+  )
+}
+
+// ── ImportModal ─────────────────────────────────────────────────────────────
+
+function ImportModal({ modal, onClose }) {
+  const choose = (choice) => {
+    onClose()
+    modal.resolve(choice)
+  }
+
+  return (
+    <div
+      onPointerDown={e => { if (e.target === e.currentTarget) choose(null) }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000,
+      }}
+    >
+      <div
+        onPointerDown={e => e.stopPropagation()}
+        style={{
+          background: '#1a2030',
+          border: '1px solid #2a3a4a',
+          borderRadius: '6px',
+          padding: '18px 20px',
+          minWidth: '280px',
+          maxWidth: '400px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          color: '#ecf0f1',
+        }}
+      >
+        <div style={{ color: '#aad4f5', fontWeight: 'bold', marginBottom: '6px', fontSize: '13px' }}>
+          Import JSON
+        </div>
+        <div style={{ color: '#7a9ab5', marginBottom: '16px', wordBreak: 'break-all' }}>
+          {modal.filename}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => choose(null)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '4px',
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              cursor: 'pointer',
+              background: '#2c3e50',
+              color: '#ecf0f1',
+              border: '1px solid #3a3a3a',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => choose('merge')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '4px',
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              cursor: 'pointer',
+              background: '#2c3e50',
+              color: '#ecf0f1',
+              border: '1px solid #3a7a5a',
+            }}
+          >
+            Merge into scene
+          </button>
+          <button
+            onClick={() => choose('clear')}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '4px',
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              cursor: 'pointer',
+              background: '#e67e22',
+              color: '#fff',
+              border: '1px solid #e67e22',
+              fontWeight: 'bold',
+            }}
+          >
+            Clear and import
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

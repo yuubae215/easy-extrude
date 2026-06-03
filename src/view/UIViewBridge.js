@@ -29,6 +29,11 @@ export class UIViewBridge {
   _reactInfoBar           = false
   _reactModals            = false
   _reactMapToolbar        = false
+  _reactContextMenu       = false
+  _reactAddMenu           = false
+  _reactLinkTypePicker    = false
+  _reactSemanticSuggestion = false
+  _reactImportUI          = false
 
   constructor(uiView) {
     this._view = uiView
@@ -135,6 +140,12 @@ export class UIViewBridge {
       if (statusEl) statusEl.style.setProperty('display', 'none', 'important')
     }
   }
+
+  enableReactContextMenu()        { this._reactContextMenu = true }
+  enableReactAddMenu()            { this._reactAddMenu = true }
+  enableReactLinkTypePicker()     { this._reactLinkTypePicker = true }
+  enableReactSemanticSuggestion() { this._reactSemanticSuggestion = true }
+  enableReactImportUI()           { this._reactImportUI = true }
 
   showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
     if (this._reactMapToolbar) {
@@ -293,6 +304,111 @@ export class UIViewBridge {
       return
     }
     this._view.showConfirmDialog(message, callback, options)
+  }
+
+  // ── Overlay bridges ───────────────────────────────────────────────────────
+
+  showContextMenu(x, y, items) {
+    if (this._reactContextMenu) {
+      useUIStore.getState().actions.showContextMenu({ x, y, items })
+      return
+    }
+    this._view.showContextMenu(x, y, items)
+  }
+
+  hideContextMenu() {
+    if (this._reactContextMenu) { useUIStore.getState().actions.hideContextMenu(); return }
+    this._view.hideContextMenu()
+  }
+
+  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame) {
+    if (this._reactAddMenu) {
+      useUIStore.getState().actions.showAddMenu({
+        x, y,
+        cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame },
+      })
+      return
+    }
+    this._view.showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame)
+  }
+
+  hideAddMenu() {
+    if (this._reactAddMenu) { useUIStore.getState().actions.hideAddMenu(); return }
+    this._view.hideAddMenu()
+  }
+
+  showLinkTypePicker(x, y, onSelect, { linkOptions } = {}) {
+    if (this._reactLinkTypePicker) {
+      useUIStore.getState().actions.showLinkTypePicker({
+        x, y,
+        options: linkOptions ?? [],
+        onSelect,
+      })
+      return
+    }
+    this._view.showLinkTypePicker(x, y, onSelect, { linkOptions })
+  }
+
+  hideLinkTypePicker() {
+    if (this._reactLinkTypePicker) { useUIStore.getState().actions.hideLinkTypePicker(); return }
+    this._view.hideLinkTypePicker?.()
+  }
+
+  showSemanticSuggestion(suggestion, onAccept) {
+    if (this._reactSemanticSuggestion) {
+      useUIStore.getState().actions.showSemanticSuggestion({ suggestion, onAccept })
+      return
+    }
+    this._view.showSemanticSuggestion(suggestion, onAccept)
+  }
+
+  dismissSemanticSuggestion() {
+    if (this._reactSemanticSuggestion) {
+      useUIStore.getState().actions.dismissSemanticSuggestion()
+      return
+    }
+    this._view.dismissSemanticSuggestion()
+  }
+
+  showDragSuggestionTooltip(suggestion) {
+    if (this._reactSemanticSuggestion) {
+      useUIStore.getState().actions.showDragTooltip({ suggestion })
+      return
+    }
+    this._view.showDragSuggestionTooltip(suggestion)
+  }
+
+  hideDragSuggestionTooltip() {
+    if (this._reactSemanticSuggestion) {
+      useUIStore.getState().actions.hideDragTooltip()
+      return
+    }
+    this._view.hideDragSuggestionTooltip()
+  }
+
+  showImportProgress(percent, status) {
+    if (this._reactImportUI) {
+      useUIStore.getState().actions.showImportProgress({ percent, status })
+      return
+    }
+    this._view.showImportProgress(percent, status)
+  }
+
+  hideImportProgress() {
+    if (this._reactImportUI) {
+      useUIStore.getState().actions.hideImportProgress()
+      return
+    }
+    this._view.hideImportProgress()
+  }
+
+  showImportModal(filename) {
+    if (this._reactImportUI) {
+      return new Promise(resolve => {
+        useUIStore.getState().actions.showModal({ type: 'import', filename, resolve })
+      })
+    }
+    return this._view.showImportModal(filename)
   }
 
   enableSaveLoad(onSave, onLoad) {
