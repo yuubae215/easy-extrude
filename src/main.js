@@ -1,13 +1,24 @@
 /**
  * Entry point - assembles MVC components and starts the app
  */
+import { createRoot }      from 'react-dom/client'
+import { createElement }   from 'react'
+import { UIShell }         from './components/UIShell.jsx'
 import { SceneView }       from './view/SceneView.js'
 import { UIView }          from './view/UIView.js'
+import { UIViewBridge }    from './view/UIViewBridge.js'
 import { GizmoView }       from './view/GizmoView.js'
 import { OutlinerView }    from './view/OutlinerView.js'
 import { AppController }   from './controller/AppController.js'
 import { geometryEngine }   from './service/GeometryEngine.js'
 import { constraintSolver } from './service/ConstraintSolver.js'
+
+// Mount the React UI overlay.
+// UIView.js still manages the bottom info bar, modals, and other UI.
+const reactRoot = document.getElementById('react-ui-root')
+if (reactRoot) {
+  createRoot(reactRoot).render(createElement(UIShell))
+}
 
 // Start the Wasm geometry worker in the background (ADR-027).
 // The rest of the app boots synchronously and uses the JS fallback until
@@ -24,9 +35,14 @@ constraintSolver.init().then(() => {
 })
 
 const sceneView    = new SceneView()
-const uiView       = new UIView()
+const uiView       = new UIViewBridge(new UIView())
 const gizmoView    = new GizmoView(sceneView.camera, sceneView.controls)
 const outlinerView = new OutlinerView()
 const controller   = new AppController(sceneView, uiView, gizmoView, outlinerView)
+
+// Hand UI sections to React — hides the corresponding UIView native elements.
+uiView.enableReactHeader()
+uiView.enableReactMobileToolbar()
+uiView.enableReactNPanel()
 
 controller.start()
