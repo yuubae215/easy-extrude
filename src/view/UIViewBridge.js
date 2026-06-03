@@ -201,16 +201,18 @@ export class UIViewBridge {
     useUIStore.getState().actions.setExtrusionLabel(null, 0, 0)
   }
 
-  updateExtraHint(key, desc) {
+  appendInfoHint(key, desc) {
     if (!this._reactInfoBar) {
-      this._view.updateExtraHint?.(key, desc)
+      this._view.appendInfoHint?.(key, desc)
     }
-    useUIStore.getState().actions.setExtraHint(key, desc)
+    useUIStore.getState().actions.setExtraHint(key ?? null, desc)
   }
 
+  // clearExtraHint is the idiomatic clear for appendInfoHint(null).
+  // Kept as a separate bridge method for symmetry with clearExtrusionLabel.
   clearExtraHint() {
     if (!this._reactInfoBar) {
-      this._view.clearExtraHint?.()
+      this._view.appendInfoHint?.(null)
     }
     useUIStore.getState().actions.setExtraHint(null)
   }
