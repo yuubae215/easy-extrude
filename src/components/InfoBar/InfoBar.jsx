@@ -32,10 +32,7 @@ export function InfoBar() {
       gap: 0,
       overflow: 'hidden',
     }}>
-      {mobile
-        ? <StatusContent parts={statusParts} />
-        : <HintsContent shortcuts={getInfoText(mode, editSubtype)} extraHint={extraHint} />
-      }
+      {!mobile && <HintsContent shortcuts={getInfoText(mode, editSubtype)} extraHint={extraHint} />}
     </div>
   )
 }

@@ -192,7 +192,7 @@ function IfcPicker({ onSelect, onClose }) {
       <div style={{
         position: 'fixed',
         top: '40px',
-        right: '200px',
+        right: window.innerWidth < 768 ? '0' : '200px',
         width: '220px',
         maxHeight: '420px',
         background: '#252525',
@@ -330,7 +330,7 @@ function PlaceTypePicker({ geometry, onSelect, onClose }) {
       <div style={{
         position: 'fixed',
         top: '40px',
-        right: '200px',
+        right: window.innerWidth < 768 ? '0' : '200px',
         width: '230px',
         maxHeight: '320px',
         background: '#252525',

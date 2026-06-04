@@ -779,7 +779,7 @@ export class AppController {
       } else {
         if (uiView.nPanelVisible) this._toggleNPanel()
         outlinerView.openDrawer()
-        uiView.showBackdrop(() => outlinerView.closeDrawer())
+        uiView.showBackdrop(() => { outlinerView.closeDrawer(); uiView.hideBackdrop() })
       }
     })
 
@@ -790,7 +790,7 @@ export class AppController {
       }
       this._toggleNPanel()
       if (uiView.nPanelVisible) {
-        uiView.showBackdrop(() => this._toggleNPanel())
+        uiView.showBackdrop(() => { this._toggleNPanel(); uiView.hideBackdrop() })
       } else {
         uiView.hideBackdrop()
       }
