@@ -1,147 +1,43 @@
 import { useUIStore } from '../store/uiStore.js'
 
 /**
- * UIViewBridge — wraps UIView and mirrors key method calls into the Zustand
- * store so React components can read the same UI state.
+ * UIViewBridge — coordinates AppController ↔ Zustand store.
  *
- * Forwards every call to the original UIView first, then updates the store.
- * This keeps UIView.js fully functional during the incremental React migration.
+ * All UI sections have been migrated to React (Phase 0–4). The bridge's
+ * sole job now is to route AppController method calls to store actions so
+ * React components can read current UI state.
  *
- * React takeover flags: once a React component fully covers a UIView section,
- * call enableReact*() to stop forwarding to UIView for that section.
- *
- * Methods bridged (state → store):
- *   showToast, setStatus, setStatusRich, setCursor,
- *   setMobileToolbar, updateMode, setExtrusionLabel,
- *   enableSaveLoad
- *
- * Methods bridged (callbacks → store):
- *   onModeChange, onOutlinerToggle, onNPanelToggle,
- *   onUndoClick, onRedoClick, onMapModeClick,
- *   onNodeEditorToggle, onExportJson, onImportJson
+ * The Proxy wrapper has been removed (Phase 5). Every method called by
+ * AppController is explicitly defined here.
  */
 export class UIViewBridge {
-  // Class fields ensure the Proxy set-handler stores these on this instance.
-  _reactMobileToolbar     = false
-  _reactHeader            = false
-  _reactNPanel            = false
-  _reactExtrusionLabel    = false
-  _reactInfoBar           = false
-  _reactModals            = false
-  _reactMapToolbar        = false
-  _reactContextMenu       = false
-  _reactAddMenu           = false
-  _reactLinkTypePicker    = false
+  _reactMobileToolbar      = false
+  _reactHeader             = false
+  _reactNPanel             = false
+  _reactExtrusionLabel     = false
+  _reactInfoBar            = false
+  _reactModals             = false
+  _reactMapToolbar         = false
+  _reactContextMenu        = false
+  _reactAddMenu            = false
+  _reactLinkTypePicker     = false
   _reactSemanticSuggestion = false
-  _reactImportUI          = false
-  _reactOnboarding        = false
+  _reactImportUI           = false
+  _reactOnboarding         = false
 
   constructor(uiView) {
     this._view = uiView
-    this._nativeToolbarEl     = uiView._mobileToolbarEl     ?? null
-    this._nativeHeaderEl      = uiView._headerEl            ?? null
-    this._nativePanelEl       = uiView._nPanelEl            ?? null
-    this._nativeExtrusionEl   = uiView._extrusionLabelEl    ?? null
-    this._nativeInfoEl        = uiView._infoEl              ?? null
-
-    // Expose every property/method on the wrapped view transparently so
-    // AppController can use this as a drop-in replacement for UIView.
-    return new Proxy(this, {
-      get(target, prop) {
-        if (prop in target) return typeof target[prop] === 'function'
-          ? target[prop].bind(target)
-          : target[prop]
-        const orig = target._view[prop]
-        return typeof orig === 'function' ? orig.bind(target._view) : orig
-      },
-      set(target, prop, value) {
-        if (prop in target) { target[prop] = value; return true }
-        target._view[prop] = value
-        return true
-      },
-    })
   }
 
-  // ── React takeover enablers ───────────────────────────────────────────────
+  // ── React takeover enablers (all UI sections migrated → flag-only) ────────
 
-  enableReactMobileToolbar() {
-    this._reactMobileToolbar = true
-    if (this._nativeToolbarEl) {
-      this._nativeToolbarEl.style.setProperty('display', 'none', 'important')
-    }
-    const view = this._view
-    const origApply = view._applyMobileLayout.bind(view)
-    view._applyMobileLayout = () => {
-      origApply()
-      if (this._nativeToolbarEl) {
-        this._nativeToolbarEl.style.setProperty('display', 'none', 'important')
-      }
-    }
-  }
-
-  enableReactHeader() {
-    this._reactHeader = true
-    if (this._nativeHeaderEl) {
-      this._nativeHeaderEl.style.setProperty('display', 'none', 'important')
-    }
-    // Patch _applyMobileLayout so resize never re-shows the native header.
-    const view = this._view
-    const prevApply = view._applyMobileLayout.bind(view)
-    view._applyMobileLayout = () => {
-      prevApply()
-      if (this._nativeHeaderEl) {
-        this._nativeHeaderEl.style.setProperty('display', 'none', 'important')
-      }
-    }
-  }
-
-  enableReactNPanel() {
-    this._reactNPanel = true
-    if (this._nativePanelEl) {
-      this._nativePanelEl.style.setProperty('display', 'none', 'important')
-    }
-    const view = this._view
-    const prevApply = view._applyMobileLayout.bind(view)
-    view._applyMobileLayout = () => {
-      prevApply()
-      if (this._nativePanelEl) {
-        this._nativePanelEl.style.setProperty('display', 'none', 'important')
-      }
-    }
-  }
-
-  enableReactExtrusionLabel() {
-    this._reactExtrusionLabel = true
-    if (this._nativeExtrusionEl) {
-      this._nativeExtrusionEl.style.setProperty('display', 'none', 'important')
-    }
-  }
-
-  enableReactInfoBar() {
-    this._reactInfoBar = true
-    if (this._nativeInfoEl) {
-      this._nativeInfoEl.style.setProperty('display', 'none', 'important')
-    }
-  }
-
-  enableReactModals() {
-    this._reactModals = true
-  }
-
-  enableReactMapToolbar() {
-    this._reactMapToolbar = true
-    const statusEl = this._view._canvasStatusEl
-    if (statusEl) {
-      statusEl.style.setProperty('display', 'none', 'important')
-    }
-    const view = this._view
-    const prevApply = view._applyMobileLayout.bind(view)
-    view._applyMobileLayout = () => {
-      prevApply()
-      if (statusEl) statusEl.style.setProperty('display', 'none', 'important')
-    }
-  }
-
+  enableReactMobileToolbar()      { this._reactMobileToolbar = true }
+  enableReactHeader()             { this._reactHeader = true }
+  enableReactNPanel()             { this._reactNPanel = true }
+  enableReactExtrusionLabel()     { this._reactExtrusionLabel = true }
+  enableReactInfoBar()            { this._reactInfoBar = true }
+  enableReactModals()             { this._reactModals = true }
+  enableReactMapToolbar()         { this._reactMapToolbar = true }
   enableReactContextMenu()        { this._reactContextMenu = true }
   enableReactAddMenu()            { this._reactAddMenu = true }
   enableReactLinkTypePicker()     { this._reactLinkTypePicker = true }
@@ -149,54 +45,68 @@ export class UIViewBridge {
   enableReactImportUI()           { this._reactImportUI = true }
   enableReactOnboarding()         { this._reactOnboarding = true }
 
-  showOnboardingIfNeeded() {
-    if (this._reactOnboarding) {
-      if (!window.matchMedia('(pointer: coarse)').matches) return
-      if (localStorage.getItem('ee_onboarded') === '1') return
-      useUIStore.getState().actions.showOnboarding()
-      return
-    }
-    this._view.showOnboardingIfNeeded()
+  // ── Canvas / cursor ───────────────────────────────────────────────────────
+
+  setCanvas(canvas) {
+    this._view.setCanvas(canvas)
   }
 
-  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
-    if (this._reactMapToolbar) {
-      const { registerCallback, setMapToolbar, setMapPendingNameInput } =
-        useUIStore.getState().actions
-      registerCallback('onMapToolSelect', onToolSelect)
-      registerCallback('onMapConfirm', onConfirm ?? null)
-      registerCallback('onMapCancel',  onCancel  ?? null)
-      registerCallback('onMapExit',    onExit)
-      setMapToolbar({ visible: true, activeTool, pendingName,
-                      showConfirm: !!onConfirm, showCancel: !!onCancel })
-      setMapPendingNameInput(pendingName ?? '')
-      return
-    }
-    this._view.showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName)
+  setCursor(style) {
+    this._view.setCursor(style)
+    useUIStore.getState().actions.setCursor(style)
   }
 
-  hideMapToolbar() {
-    if (this._reactMapToolbar) {
-      useUIStore.getState().actions.setMapToolbar({
-        visible: false, activeTool: null, pendingName: null,
-        showConfirm: false, showCancel: false,
-      })
-      return
-    }
-    this._view.hideMapToolbar()
+  // ── Header state ─────────────────────────────────────────────────────────
+
+  setStatus(text) {
+    useUIStore.getState().actions.setStatus(text)
   }
 
-  getMapPendingName() {
-    if (this._reactMapToolbar) {
-      // 空文字を null に変換して AppController の ?? フォールバックを有効化
-      return useUIStore.getState().mapPendingNameInput || null
-    }
-    return this._view.getMapPendingName()
+  setStatusRich(parts) {
+    useUIStore.getState().actions.setStatusRich(parts)
+  }
+
+  setUndoRedoEnabled(canUndo, canRedo) {
+    useUIStore.getState().actions.setUndoRedoEnabled(canUndo, canRedo)
+  }
+
+  // ── Mobile toolbar ────────────────────────────────────────────────────────
+
+  setMobileToolbar(buttons) {
+    useUIStore.getState().actions.setToolbar(buttons)
+  }
+
+  // ── Mode / info bar ───────────────────────────────────────────────────────
+
+  updateMode(mode, subtype = null) {
+    useUIStore.getState().actions.updateMode(mode, subtype)
+  }
+
+  appendInfoHint(key, desc) {
+    useUIStore.getState().actions.setExtraHint(key ?? null, desc)
+  }
+
+  clearExtraHint() {
+    useUIStore.getState().actions.setExtraHint(null)
+  }
+
+  // ── Extrusion label ───────────────────────────────────────────────────────
+
+  setExtrusionLabel(text, x, y) {
+    useUIStore.getState().actions.setExtrusionLabel(text, x, y)
+  }
+
+  clearExtrusionLabel() {
+    useUIStore.getState().actions.setExtrusionLabel(null, 0, 0)
+  }
+
+  // ── Toasts ────────────────────────────────────────────────────────────────
+
+  showToast(msg, opts = {}) {
+    useUIStore.getState().actions.pushToast(msg, opts.type ?? 'info')
   }
 
   // ── N-Panel visibility ────────────────────────────────────────────────────
-  // Getter override so AppController's `if (!this._uiView.nPanelVisible) return`
-  // reads from the store once React has taken over.
 
   get nPanelVisible() {
     return useUIStore.getState().nPanelVisible
@@ -205,228 +115,137 @@ export class UIViewBridge {
   toggleNPanel() {
     const next = !useUIStore.getState().nPanelVisible
     useUIStore.getState().actions.setNPanelVisible(next)
-    if (!this._reactNPanel) {
-      this._view.toggleNPanel()
-    }
   }
 
   showBackdrop(onClose) {
-    if (!this._reactNPanel) {
-      this._view.showBackdrop(onClose)
-    }
     useUIStore.getState().actions.setBackdrop(onClose ?? null)
   }
 
   hideBackdrop() {
-    if (!this._reactNPanel) {
-      this._view.hideBackdrop()
-    }
     useUIStore.getState().actions.setBackdrop(null)
   }
 
-  // ── State → store bridges ─────────────────────────────────────────────────
-
-  showToast(msg, opts = {}) {
-    this._view.showToast(msg, opts)
-    useUIStore.getState().actions.pushToast(msg, opts.type ?? 'info')
-  }
-
-  setStatus(text) {
-    this._view.setStatus(text)
-    useUIStore.getState().actions.setStatus(text)
-  }
-
-  setStatusRich(parts) {
-    this._view.setStatusRich(parts)
-    useUIStore.getState().actions.setStatusRich(parts)
-  }
-
-  setCursor(style) {
-    this._view.setCursor(style)
-    useUIStore.getState().actions.setCursor(style)
-  }
-
-  setMobileToolbar(buttons) {
-    if (!this._reactMobileToolbar) {
-      this._view.setMobileToolbar(buttons)
-    }
-    useUIStore.getState().actions.setToolbar(buttons)
-  }
-
-  updateMode(mode, subtype = null) {
-    if (!this._reactInfoBar) {
-      this._view.updateMode(mode, subtype)
-    }
-    useUIStore.getState().actions.updateMode(mode, subtype)
-  }
-
-  setExtrusionLabel(text, x, y) {
-    if (!this._reactExtrusionLabel) {
-      this._view.setExtrusionLabel(text, x, y)
-    }
-    useUIStore.getState().actions.setExtrusionLabel(text, x, y)
-  }
-
-  clearExtrusionLabel() {
-    if (!this._reactExtrusionLabel) {
-      this._view.clearExtrusionLabel()
-    }
-    useUIStore.getState().actions.setExtrusionLabel(null, 0, 0)
-  }
-
-  appendInfoHint(key, desc) {
-    if (!this._reactInfoBar) {
-      this._view.appendInfoHint?.(key, desc)
-    }
-    useUIStore.getState().actions.setExtraHint(key ?? null, desc)
-  }
-
-  // clearExtraHint is the idiomatic clear for appendInfoHint(null).
-  // Kept as a separate bridge method for symmetry with clearExtrusionLabel.
-  clearExtraHint() {
-    if (!this._reactInfoBar) {
-      this._view.appendInfoHint?.(null)
-    }
-    useUIStore.getState().actions.setExtraHint(null)
-  }
+  // ── Modals / dialogs ─────────────────────────────────────────────────────
 
   showRenameDialog(currentName, callback, options = {}) {
-    if (this._reactModals) {
-      useUIStore.getState().actions.showModal({
-        type: 'rename',
-        currentName,
-        callback,
-        title: options.title ?? 'Rename',
-      })
-      return
-    }
-    this._view.showRenameDialog(currentName, callback, options)
+    useUIStore.getState().actions.showModal({
+      type: 'rename',
+      currentName,
+      callback,
+      title: options.title ?? 'Rename',
+    })
   }
 
   showConfirmDialog(message, callback, options = {}) {
-    if (this._reactModals) {
-      useUIStore.getState().actions.showModal({
-        type: 'confirm',
-        message,
-        callback,
-        title:        options.title        ?? 'Confirm',
-        confirmLabel: options.confirmLabel ?? 'OK',
-        danger:       options.danger       ?? false,
-      })
-      return
-    }
-    this._view.showConfirmDialog(message, callback, options)
+    useUIStore.getState().actions.showModal({
+      type: 'confirm',
+      message,
+      callback,
+      title:        options.title        ?? 'Confirm',
+      confirmLabel: options.confirmLabel ?? 'OK',
+      danger:       options.danger       ?? false,
+    })
   }
 
   // ── Overlay bridges ───────────────────────────────────────────────────────
 
   showContextMenu(x, y, items) {
-    if (this._reactContextMenu) {
-      useUIStore.getState().actions.showContextMenu({ x, y, items })
-      return
-    }
-    this._view.showContextMenu(x, y, items)
+    useUIStore.getState().actions.showContextMenu({ x, y, items })
   }
 
   hideContextMenu() {
-    if (this._reactContextMenu) { useUIStore.getState().actions.hideContextMenu(); return }
-    this._view.hideContextMenu()
+    useUIStore.getState().actions.hideContextMenu()
   }
 
   showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame) {
-    if (this._reactAddMenu) {
-      useUIStore.getState().actions.showAddMenu({
-        x, y,
-        cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame },
-      })
-      return
-    }
-    this._view.showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame)
+    useUIStore.getState().actions.showAddMenu({
+      x, y,
+      cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame },
+    })
   }
 
   hideAddMenu() {
-    if (this._reactAddMenu) { useUIStore.getState().actions.hideAddMenu(); return }
-    this._view.hideAddMenu()
+    useUIStore.getState().actions.hideAddMenu()
   }
 
   showLinkTypePicker(x, y, onSelect, { linkOptions } = {}) {
-    if (this._reactLinkTypePicker) {
-      useUIStore.getState().actions.showLinkTypePicker({
-        x, y,
-        options: linkOptions ?? [],
-        onSelect,
-      })
-      return
-    }
-    this._view.showLinkTypePicker(x, y, onSelect, { linkOptions })
+    useUIStore.getState().actions.showLinkTypePicker({
+      x, y,
+      options: linkOptions ?? [],
+      onSelect,
+    })
   }
 
   hideLinkTypePicker() {
-    if (this._reactLinkTypePicker) { useUIStore.getState().actions.hideLinkTypePicker(); return }
-    this._view.hideLinkTypePicker?.()
+    useUIStore.getState().actions.hideLinkTypePicker()
   }
 
   showSemanticSuggestion(suggestion, onAccept) {
-    if (this._reactSemanticSuggestion) {
-      useUIStore.getState().actions.showSemanticSuggestion({ suggestion, onAccept })
-      return
-    }
-    this._view.showSemanticSuggestion(suggestion, onAccept)
+    useUIStore.getState().actions.showSemanticSuggestion({ suggestion, onAccept })
   }
 
   dismissSemanticSuggestion() {
-    if (this._reactSemanticSuggestion) {
-      useUIStore.getState().actions.dismissSemanticSuggestion()
-      return
-    }
-    this._view.dismissSemanticSuggestion()
+    useUIStore.getState().actions.dismissSemanticSuggestion()
   }
 
   showDragSuggestionTooltip(suggestion) {
-    if (this._reactSemanticSuggestion) {
-      useUIStore.getState().actions.showDragTooltip({ suggestion })
-      return
-    }
-    this._view.showDragSuggestionTooltip(suggestion)
+    useUIStore.getState().actions.showDragTooltip({ suggestion })
   }
 
   hideDragSuggestionTooltip() {
-    if (this._reactSemanticSuggestion) {
-      useUIStore.getState().actions.hideDragTooltip()
-      return
-    }
-    this._view.hideDragSuggestionTooltip()
+    useUIStore.getState().actions.hideDragTooltip()
   }
 
   showImportProgress(percent, status) {
-    if (this._reactImportUI) {
-      useUIStore.getState().actions.showImportProgress({ percent, status })
-      return
-    }
-    this._view.showImportProgress(percent, status)
+    useUIStore.getState().actions.showImportProgress({ percent, status })
   }
 
   hideImportProgress() {
-    if (this._reactImportUI) {
-      useUIStore.getState().actions.hideImportProgress()
-      return
-    }
-    this._view.hideImportProgress()
+    useUIStore.getState().actions.hideImportProgress()
   }
 
   showImportModal(filename) {
-    if (this._reactImportUI) {
-      return new Promise(resolve => {
-        useUIStore.getState().actions.showModal({ type: 'import', filename, resolve })
-      })
-    }
-    return this._view.showImportModal(filename)
+    return new Promise(resolve => {
+      useUIStore.getState().actions.showModal({ type: 'import', filename, resolve })
+    })
   }
 
+  // ── Map toolbar ───────────────────────────────────────────────────────────
+
+  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
+    const { registerCallback, setMapToolbar, setMapPendingNameInput } =
+      useUIStore.getState().actions
+    registerCallback('onMapToolSelect', onToolSelect)
+    registerCallback('onMapConfirm', onConfirm ?? null)
+    registerCallback('onMapCancel',  onCancel  ?? null)
+    registerCallback('onMapExit',    onExit)
+    setMapToolbar({ visible: true, activeTool, pendingName,
+                    showConfirm: !!onConfirm, showCancel: !!onCancel })
+    setMapPendingNameInput(pendingName ?? '')
+  }
+
+  hideMapToolbar() {
+    useUIStore.getState().actions.setMapToolbar({
+      visible: false, activeTool: null, pendingName: null,
+      showConfirm: false, showCancel: false,
+    })
+  }
+
+  getMapPendingName() {
+    return useUIStore.getState().mapPendingNameInput || null
+  }
+
+  // ── Onboarding ────────────────────────────────────────────────────────────
+
+  showOnboardingIfNeeded() {
+    if (!window.matchMedia('(pointer: coarse)').matches) return
+    if (localStorage.getItem('ee_onboarded') === '1') return
+    useUIStore.getState().actions.showOnboarding()
+  }
+
+  // ── Save / load ───────────────────────────────────────────────────────────
+
   enableSaveLoad(onSave, onLoad) {
-    // Forward to UIView (keeps native buttons alive while not React-headed).
-    this._view.enableSaveLoad(onSave, onLoad)
-    // Store callbacks and flip the bffConnected flag for the React header.
     const { registerCallback, setBffConnected } = useUIStore.getState().actions
     registerCallback('onSaveScene', onSave)
     registerCallback('onLoadScene', onLoad)
@@ -434,65 +253,50 @@ export class UIViewBridge {
   }
 
   // ── Callback → store bridges ──────────────────────────────────────────────
-  // Each method registers the callback with UIView AND with the store so that
-  // React components can invoke it when the React header has taken over.
 
   onModeChange(cb) {
-    this._view.onModeChange(cb)
     useUIStore.getState().actions.registerCallback('onModeChange', cb)
   }
 
   onOutlinerToggle(cb) {
-    this._view.onOutlinerToggle(cb)
     useUIStore.getState().actions.registerCallback('onOutlinerToggle', cb)
   }
 
   onNPanelToggle(cb) {
-    this._view.onNPanelToggle(cb)
     useUIStore.getState().actions.registerCallback('onNPanelToggle', cb)
   }
 
   onUndoClick(cb) {
-    this._view.onUndoClick(cb)
     useUIStore.getState().actions.registerCallback('onUndoClick', cb)
   }
 
   onRedoClick(cb) {
-    this._view.onRedoClick(cb)
     useUIStore.getState().actions.registerCallback('onRedoClick', cb)
   }
 
   onMapModeClick(cb) {
-    this._view.onMapModeClick(cb)
     useUIStore.getState().actions.registerCallback('onMapModeClick', cb)
   }
 
   onNodeEditorToggle(cb) {
-    // Wrap so each invocation also toggles the store's nodeEditorOpen flag.
     const wrapped = () => {
       cb()
       useUIStore.setState(s => ({ nodeEditorOpen: !s.nodeEditorOpen }))
     }
-    this._view.onNodeEditorToggle(wrapped)
     useUIStore.getState().actions.registerCallback('onNodeEditorToggle', wrapped)
   }
 
   onExportJson(cb) {
-    this._view.onExportJson(cb)
     useUIStore.getState().actions.registerCallback('onExportJson', cb)
   }
 
   onImportJson(cb) {
-    this._view.onImportJson(cb)
     useUIStore.getState().actions.registerCallback('onImportJson', cb)
   }
 
   // ── N-Panel state bridges ─────────────────────────────────────────────────
 
   updateNPanel(centroid, dimensions, name = '', description = '', options = {}) {
-    if (!this._reactNPanel) {
-      this._view.updateNPanel(centroid, dimensions, name, description, options)
-    }
     useUIStore.getState().actions.setNPanelData({
       type: 'generic',
       centroid: { x: centroid.x, y: centroid.y, z: centroid.z },
@@ -524,12 +328,6 @@ export class UIViewBridge {
     onAddChildFrame = null,
     onSelectChildFrame = null,
   ) {
-    if (!this._reactNPanel) {
-      this._view.updateNPanelForFrame(
-        pos, eulerDeg, name, locked, parentOptions, currentParentId,
-        unreferenced, childFrames, onAddChildFrame, onSelectChildFrame,
-      )
-    }
     useUIStore.getState().actions.setNPanelData({
       type: 'frame',
       pos: { x: pos.x, y: pos.y, z: pos.z },
@@ -540,9 +338,6 @@ export class UIViewBridge {
   }
 
   updateNPanelForSpatialLink(link, srcName, tgtName, onDelete) {
-    if (!this._reactNPanel) {
-      this._view.updateNPanelForSpatialLink(link, srcName, tgtName, onDelete)
-    }
     useUIStore.getState().actions.setNPanelData({
       type: 'link',
       link, srcName, tgtName, onDelete,
@@ -552,42 +347,34 @@ export class UIViewBridge {
   // ── N-Panel callback bridges ──────────────────────────────────────────────
 
   onNameChange(cb) {
-    this._view.onNameChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelNameChange', cb)
   }
 
   onDescriptionChange(cb) {
-    this._view.onDescriptionChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelDescriptionChange', cb)
   }
 
   onLocationChange(cb) {
-    this._view.onLocationChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelLocationChange', cb)
   }
 
   onFramePositionChange(cb) {
-    this._view.onFramePositionChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelFramePositionChange', cb)
   }
 
   onFrameRotationChange(cb) {
-    this._view.onFrameRotationChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelFrameRotationChange', cb)
   }
 
   onFrameParentChange(cb) {
-    this._view.onFrameParentChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelFrameParentChange', cb)
   }
 
   onIfcClassChange(cb) {
-    this._view.onIfcClassChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelIfcClassChange', cb)
   }
 
   onPlaceTypeChange(cb) {
-    this._view.onPlaceTypeChange(cb)
     useUIStore.getState().actions.registerCallback('onNPanelPlaceTypeChange', cb)
   }
 }
