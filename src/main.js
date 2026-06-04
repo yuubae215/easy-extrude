@@ -9,6 +9,7 @@ import { UIView }          from './view/UIView.js'
 import { UIViewBridge }    from './view/UIViewBridge.js'
 import { GizmoView }       from './view/GizmoView.js'
 import { OutlinerView }    from './view/OutlinerView.js'
+import { OutlinerBridge }  from './view/OutlinerBridge.js'
 import { AppController }   from './controller/AppController.js'
 import { geometryEngine }   from './service/GeometryEngine.js'
 import { constraintSolver } from './service/ConstraintSolver.js'
@@ -37,7 +38,7 @@ constraintSolver.init().then(() => {
 const sceneView    = new SceneView()
 const uiView       = new UIViewBridge(new UIView())
 const gizmoView    = new GizmoView(sceneView.camera, sceneView.controls)
-const outlinerView = new OutlinerView()
+const outlinerView = new OutlinerBridge(new OutlinerView())
 const controller   = new AppController(sceneView, uiView, gizmoView, outlinerView)
 
 // Hand UI sections to React — hides the corresponding UIView native elements.
@@ -53,5 +54,7 @@ uiView.enableReactAddMenu()
 uiView.enableReactLinkTypePicker()
 uiView.enableReactSemanticSuggestion()
 uiView.enableReactImportUI()
+uiView.enableReactOnboarding()
+outlinerView.enableReact()
 
 controller.start()
