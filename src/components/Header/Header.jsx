@@ -53,12 +53,14 @@ export function Header() {
 // ── Mobile header ─────────────────────────────────────────────────────────
 
 function MobileHeaderContents() {
-  const callbacks = useUIStore(s => s.callbacks)
+  const callbacks   = useUIStore(s => s.callbacks)
+  const undoEnabled = useUIStore(s => s.undoEnabled)
+  const redoEnabled = useUIStore(s => s.redoEnabled)
   return (
     <>
       <IconBtn svg={SVG_HAMBURGER} label="Toggle outliner"       onClick={() => callbacks.onOutlinerToggle?.()} />
-      <IconBtn svg={SVG_UNDO}      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border />
-      <IconBtn svg={SVG_REDO}      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border />
+      <IconBtn svg={SVG_UNDO}      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border disabled={!undoEnabled} />
+      <IconBtn svg={SVG_REDO}      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!redoEnabled} />
       <ModeDropdown />
       <MapButton />
       {/* Invisible flex:1 spacer — keeps ⋯ and N right-aligned (matching UIView's visibility:hidden pattern) */}
@@ -163,24 +165,26 @@ function HeaderStatus() {
   )
 }
 
-function IconBtn({ svg, label, onClick, border = false }) {
+function IconBtn({ svg, label, onClick, border = false, disabled = false }) {
   return (
     <button
       aria-label={label}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       style={{
         padding:      '5px 7px',
         background:   'transparent',
         border:       border ? '1px solid #3a3a3a' : 'none',
         borderRadius: '6px',
         color:        '#c0c0c0',
-        cursor:       'pointer',
+        cursor:       disabled ? 'default' : 'pointer',
         lineHeight:   '1',
         display:      'flex',
         alignItems:   'center',
         justifyContent: 'center',
         flexShrink:   '0',
         pointerEvents:'auto',
+        opacity:      disabled ? 0.35 : 1,
       }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />

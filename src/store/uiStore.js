@@ -50,6 +50,8 @@ export const useUIStore = create((set, get) => ({
   // ── Header ────────────────────────────────────────────────────────────────
   bffConnected: false,
   nodeEditorOpen: false,
+  undoEnabled: false,
+  redoEnabled: false,
 
   // ── Modal / overlay state ──────────────────────────────────────────────────
   // Shapes:
@@ -137,6 +139,7 @@ export const useUIStore = create((set, get) => ({
 
     setBffConnected: (val) => set({ bffConnected: val }),
     setNodeEditorOpen: (val) => set({ nodeEditorOpen: val }),
+    setUndoRedoEnabled: (canUndo, canRedo) => set({ undoEnabled: canUndo, redoEnabled: canRedo }),
 
     showModal: (config) => set({ modal: config }),
     closeModal: () => set({ modal: null }),
