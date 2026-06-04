@@ -14,9 +14,11 @@ import { LinkTypePicker } from './LinkTypePicker/LinkTypePicker.jsx'
 import { SemanticSuggestion } from './SemanticSuggestion/SemanticSuggestion.jsx'
 import { DragSuggestionTooltip } from './SemanticSuggestion/DragSuggestionTooltip.jsx'
 import { ImportProgress } from './ImportUI/ImportProgress.jsx'
+import { Outliner } from './Outliner/Outliner.jsx'
+import { Onboarding } from './Onboarding/Onboarding.jsx'
 
 /**
- * React UI root — Phase 2d–2g + Phase 3.
+ * React UI root — Phase 2d–2g + Phase 3 + Phase 4.
  *
  * Manages:
  * 1. Cursor sync: store → document.body
@@ -35,6 +37,8 @@ import { ImportProgress } from './ImportUI/ImportProgress.jsx'
  * 14. SemanticSuggestion: post-drag ADR-041 suggestion banner
  * 15. DragSuggestionTooltip: during-drag non-interactive tooltip
  * 16. ImportProgress: file import progress bar
+ * 17. Outliner: scene collection left sidebar
+ * 18. Onboarding: mobile first-visit gesture hint overlay
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -60,6 +64,8 @@ export function UIShell() {
       <SemanticSuggestion />
       <DragSuggestionTooltip />
       <ImportProgress />
+      <Outliner />
+      <Onboarding />
       <ToastStack toasts={toasts} />
     </>
   )

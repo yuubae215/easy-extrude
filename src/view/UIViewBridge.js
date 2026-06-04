@@ -34,6 +34,7 @@ export class UIViewBridge {
   _reactLinkTypePicker    = false
   _reactSemanticSuggestion = false
   _reactImportUI          = false
+  _reactOnboarding        = false
 
   constructor(uiView) {
     this._view = uiView
@@ -146,6 +147,17 @@ export class UIViewBridge {
   enableReactLinkTypePicker()     { this._reactLinkTypePicker = true }
   enableReactSemanticSuggestion() { this._reactSemanticSuggestion = true }
   enableReactImportUI()           { this._reactImportUI = true }
+  enableReactOnboarding()         { this._reactOnboarding = true }
+
+  showOnboardingIfNeeded() {
+    if (this._reactOnboarding) {
+      if (!window.matchMedia('(pointer: coarse)').matches) return
+      if (localStorage.getItem('ee_onboarded') === '1') return
+      useUIStore.getState().actions.showOnboarding()
+      return
+    }
+    this._view.showOnboardingIfNeeded()
+  }
 
   showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
     if (this._reactMapToolbar) {

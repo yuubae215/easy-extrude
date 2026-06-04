@@ -94,6 +94,17 @@ export const useUIStore = create((set, get) => ({
   // { percent: 0–100, status: string } | null
   importProgress: null,
 
+  // ── Outliner ───────────────────────────────────────────────────────────────
+  // Flat array in insertion order; React renders via DFS pre-order traversal.
+  // Item shape: { id, name, type, parentId, visible, locked,
+  //               ifcClass, placeType, linked:{asSource,asTarget}, unreferenced }
+  outlinerItems: [],
+  outlinerActiveId: null,
+  outlinerDrawerOpen: false,
+
+  // ── Onboarding (mobile first-visit gesture hint) ───────────────────────────
+  onboardingVisible: false,
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -161,5 +172,43 @@ export const useUIStore = create((set, get) => ({
     showImportProgress: (cfg) => set({ importProgress: cfg }),
     hideImportProgress: ()    => set({ importProgress: null }),
     // ImportModal uses existing showModal({ type:'import', filename, resolve }) / closeModal()
+
+    // ── Outliner ──────────────────────────────────────────────────────────────
+    outlinerAddItem: (id, name, type, parentId) => set(state => ({
+      outlinerItems: [...state.outlinerItems, {
+        id, name, type, parentId: parentId ?? null,
+        visible: true, locked: false,
+        ifcClass: null, placeType: null,
+        linked: { asSource: false, asTarget: false },
+        unreferenced: false,
+      }],
+    })),
+
+    outlinerRemoveItem: (id) => set(state => {
+      const toRemove = new Set()
+      const collect = (pid) => {
+        toRemove.add(pid)
+        state.outlinerItems.filter(i => i.parentId === pid).forEach(i => collect(i.id))
+      }
+      collect(id)
+      return {
+        outlinerItems: state.outlinerItems.filter(i => !toRemove.has(i.id)),
+        outlinerActiveId: toRemove.has(state.outlinerActiveId) ? null : state.outlinerActiveId,
+      }
+    }),
+
+    outlinerSetActive:    (id)         => set({ outlinerActiveId: id }),
+    outlinerClearActive:  ()           => set({ outlinerActiveId: null }),
+    outlinerUpdateItem:   (id, patch)  => set(state => ({
+      outlinerItems: state.outlinerItems.map(i => i.id === id ? { ...i, ...patch } : i),
+    })),
+    outlinerReparentItem: (id, newParentId) => set(state => ({
+      outlinerItems: state.outlinerItems.map(i => i.id === id ? { ...i, parentId: newParentId ?? null } : i),
+    })),
+    outlinerSetDrawerOpen: (open) => set({ outlinerDrawerOpen: open }),
+
+    // ── Onboarding ───────────────────────────────────────────────────────────
+    showOnboarding: () => set({ onboardingVisible: true }),
+    hideOnboarding: () => set({ onboardingVisible: false }),
   },
 }))
