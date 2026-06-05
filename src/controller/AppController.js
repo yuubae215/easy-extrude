@@ -71,6 +71,7 @@ import { inferSemanticRelationships, computeApproachWarmth } from '../service/Se
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
+import { MapModeController }          from './map/MapModeController.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -367,60 +368,10 @@ export class AppController {
       sourceId: null,
     }
 
-    // ── 2D Map Mode state ─────────────────────────────────────────────────
-    // Entered via the "Map" header button.  Uses an orthographic top-down
-    // camera (SceneView.useOrthoCamera) for distortion-free 2D placement.
-    //
-    // Three-state drawing model (ADR-031 §1):
-    //   idle     → no gesture in progress; tool may or may not be selected
-    //   drawing  → gesture in progress (rubber-band follows cursor)
-    //   pending  → geometry fully defined; static dashed preview; awaiting name + confirm
-    this._mapMode = {
-      /** Whether map mode is currently active */
-      active: false,
-      /** Active drawing tool: 'route'|'boundary'|'zone'|'hub'|'anchor'|null */
-      tool:   null,
-      /** 'idle'|'drawing'|'pending' (ADR-031 §1) */
-      drawState: 'idle',
-      /** @type {THREE.Vector3[]} vertex positions collected during drawing */
-      points: [],
-      /** @type {THREE.Vector3[]|null} frozen geometry entered when going pending */
-      pendingPoints: null,
-      /** Default name for the pending entity (e.g. "Route 1") */
-      pendingName: null,
-      /** @type {THREE.Vector3|null} live cursor world position */
-      cursor: null,
-      /** THREE.Line preview drawn while placing */
-      previewLine: null,
-      /** THREE.Mesh cursor dot */
-      cursorDot:   null,
-      /** Panning state */
-      isPanning:   false,
-      panStart:    null,   // { screenX, screenY, camX, camY }
-      /** Current orthographic frustum height (world units) */
-      frustumSize: 50,
-      /**
-       * Mobile drag start: set on pointerdown for Line/Region/Point tools.
-       * Cleared on pointerup.
-       * @type {{ pt: THREE.Vector3, screenX: number, screenY: number }|null}
-       */
-      mobileDragStart: null,
-      /**
-       * Per-type creation counters for default name generation ("Route 1", "Zone 2" …).
-       */
-      nameCounters: { Route: 0, Boundary: 0, Zone: 0, Hub: 0, Anchor: 0 },
-      /**
-       * Snap indicator ring (PC only) — shown at the snap-candidate world position.
-       * @type {THREE.Mesh|null}
-       */
-      snapRingMesh: null,
-      /**
-       * The world position of the active snap candidate (null when not snapping).
-       * Populated by _mapPickPoint on PC; consumed by _updateMapPreview.
-       * @type {THREE.Vector3|null}
-       */
-      snapCandidate: null,
-    }
+    // ── 2D Map Mode (delegated to MapModeController) ─────────────────────
+    // All map mode state and interaction logic live in MapModeController.
+    // AppController accesses map state via this._mapModeCtrl.isActive / .hasTool.
+    this._mapModeCtrl = new MapModeController(this)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
@@ -812,7 +763,7 @@ export class AppController {
     })
 
     // ── Map Mode entry ────────────────────────────────────────────────────
-    uiView.onMapModeClick(() => this._enterMapMode())
+    uiView.onMapModeClick(() => this._mapModeCtrl.enter())
 
     // ── CF Link Network Overlay ───────────────────────────────────────────
     this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
@@ -1702,517 +1653,10 @@ export class AppController {
     }
   }
 
-  // ── 2D Map Mode ──────────────────────────────────────────────────────────
-
-  /** Returns true when running on a coarse-pointer (touch) device. */
-  _isMapMobile() {
-    return window.matchMedia('(pointer: coarse)').matches
-  }
-
-  /** Enters 2D Map Mode: switches to orthographic top-down camera, shows map toolbar. */
-  _enterMapMode() {
-    if (this._mapMode.active) return
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._mapMode.active        = true
-    this._mapMode.tool          = null
-    this._mapMode.drawState     = 'idle'
-    this._mapMode.points        = []
-    this._mapMode.pendingPoints = null
-    this._mapMode.pendingName   = null
-    this._mapMode.cursor        = null
-    this._mapMode.mobileDragStart = null
-    this._mapMode.isPanning     = false
-    this._sceneView.useOrthoCamera(true, this._mapMode.frustumSize)
-    this._uiView.setCursor('default')
-    this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
-    this._refreshMapToolbar()
-    this._updateMobileToolbar()
-  }
-
-  /** Exits 2D Map Mode: restores perspective camera, removes map toolbar. */
-  _exitMapMode() {
-    this._mapCancelDrawing()
-    this._mapMode.active      = false
-    this._mapMode.isPanning   = false
-    this._sceneView.useOrthoCamera(false)
-    this._uiView.hideMapToolbar()
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Returns the geometry kind for a place-type drawing tool.
-   * @param {string} type
-   * @returns {'line'|'region'|'point'}
-   */
-  _geometryForType(type) {
-    if (type === 'zone') return 'region'
-    if (type === 'hub' || type === 'anchor') return 'point'
-    return 'line'
-  }
-
-  /** Returns the place type name capitalised from a tool type string. */
-  _placeTypeForType(type) {
-    return type.charAt(0).toUpperCase() + type.slice(1)
-  }
-
-  /**
-   * Sets the active map drawing tool, resetting to drawing state.
-   * @param {string} type  PlaceType name lowercase: 'route'|'boundary'|'zone'|'hub'|'anchor'
-   */
-  _setMapTool(type) {
-    this._mapCancelDrawing()   // clear any in-progress drawing
-    this._mapMode.tool          = type
-    this._mapMode.drawState     = 'drawing'
-    this._mapMode.points        = []
-    this._mapMode.pendingPoints = null
-    this._mapMode.pendingName   = null
-    this._mapMode.cursor        = null
-    this._uiView.setCursor('crosshair')
-    this._refreshMapToolbar()
-    this._updateMapStatus()
-  }
-
-  /** Cancels the current drawing without creating an entity. */
-  _mapCancelDrawing() {
-    this._clearMapPreview()
-    this._mapMode.tool            = null
-    this._mapMode.drawState       = 'idle'
-    this._mapMode.points          = []
-    this._mapMode.pendingPoints   = null
-    this._mapMode.pendingName     = null
-    this._mapMode.cursor          = null
-    this._mapMode.mobileDragStart = null
-    this._mapMode.snapCandidate   = null
-    this._uiView.setCursor('default')
-    this._refreshMapToolbar()
-    if (this._mapMode.active) {
-      this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
-    }
-  }
-
-  /**
-   * Transitions from drawing → pending state.
-   * Freezes the current geometry, generates a default name, switches the preview to
-   * dashed style, and refreshes the toolbar to show the name input + Confirm button.
-   * @param {THREE.Vector3[]} points  the completed geometry vertices
-   */
-  _enterMapPendingState(points) {
-    if (!this._mapMode.tool) return
-    const placeType = this._placeTypeForType(this._mapMode.tool)
-    const n = ++this._mapMode.nameCounters[placeType]
-    this._mapMode.drawState     = 'pending'
-    this._mapMode.pendingPoints = points.map(p => p.clone())
-    this._mapMode.pendingName   = `${placeType} ${n}`
-    this._mapMode.cursor        = null
-    this._mapMode.snapCandidate = null
-    this._clearMapPreview()
-    this._showPendingPreview()
-    this._refreshMapToolbar()
-    this._uiView.setStatusRich([
-      { text: placeType, bold: true, color: '#80cbc4' },
-      { text: '— enter a name and confirm', color: '#888' },
-      { text: '  ESC = cancel', color: '#444' },
-    ])
-  }
-
-  /**
-   * Confirms the pending entity.
-   * Must only be called while drawState === 'pending'.
-   * Reads the entity name from the toolbar name input (falls back to pendingName).
-   */
-  _mapConfirmDrawing() {
-    const { tool, pendingPoints, pendingName } = this._mapMode
-    if (!tool || !pendingPoints) return
-
-    const geometry  = this._geometryForType(tool)
-    const placeType = this._placeTypeForType(tool)
-    const renderer  = this._sceneView.renderer
-
-    // Read the user-supplied name (or fall back to the auto-generated default)
-    const name = this._uiView.getMapPendingName() ?? pendingName ?? placeType
-
-    // Create entity — state reset always happens in finally, even if creation throws
-    let created = false
-    try {
-      if (geometry === 'point' && pendingPoints.length >= 1) {
-        const obj = this._service.createAnnotatedPoint(pendingPoints[0], name, {
-          camera: this._camera, renderer, container: document.body,
-        })
-        this._service.setPlaceType(obj.id, placeType)
-        created = true
-      } else if (geometry === 'line' && pendingPoints.length >= 2) {
-        const obj = this._service.createAnnotatedLine(pendingPoints, name, {
-          camera: this._camera, renderer, container: document.body,
-        })
-        this._service.setPlaceType(obj.id, placeType)
-        created = true
-      } else if (geometry === 'region' && pendingPoints.length >= 3) {
-        const obj = this._service.createAnnotatedRegion(pendingPoints, name, {
-          camera: this._camera, renderer, container: document.body,
-        })
-        this._service.setPlaceType(obj.id, placeType)
-        created = true
-      }
-    } catch (err) {
-      console.error('[MapMode] entity creation failed:', err)
-    } finally {
-      // Always exit pending state — confirm button must disappear regardless of success
-      this._clearMapPreview()
-      this._mapMode.drawState     = 'drawing'  // ready for another gesture
-      this._mapMode.points        = []
-      this._mapMode.pendingPoints = null
-      this._mapMode.pendingName   = null
-      this._mapMode.cursor        = null
-      this._refreshMapToolbar()
-    }
-
-    if (created) {
-      this._uiView.setStatus(`Map Mode — ${placeType} placed. Draw another or select a different type.`)
-    }
-  }
-
-  /** Removes preview line, cursor dot, and snap ring from the Three.js scene. */
-  _clearMapPreview() {
-    const scene = this._sceneView.scene
-    if (this._mapMode.previewLine) {
-      scene.remove(this._mapMode.previewLine)
-      this._mapMode.previewLine.geometry.dispose()
-      this._mapMode.previewLine.material.dispose()
-      this._mapMode.previewLine = null
-    }
-    if (this._mapMode.cursorDot) {
-      scene.remove(this._mapMode.cursorDot)
-      this._mapMode.cursorDot.geometry.dispose()
-      this._mapMode.cursorDot.material.dispose()
-      this._mapMode.cursorDot = null
-    }
-    if (this._mapMode.snapRingMesh) {
-      scene.remove(this._mapMode.snapRingMesh)
-      this._mapMode.snapRingMesh.geometry.dispose()
-      this._mapMode.snapRingMesh.material.dispose()
-      this._mapMode.snapRingMesh = null
-    }
-    this._mapMode.snapCandidate = null
-  }
-
-  /**
-   * Picks the ground-plane (Z=0) world position under the pointer in Map Mode,
-   * using the orthographic camera for correct distortion-free picking.
-   * Applies grid snapping (1-unit grid) then, on PC only, endpoint snapping.
-   * Also stores the active snap candidate in this._mapMode.snapCandidate.
-   * @param {PointerEvent|MouseEvent} e
-   * @returns {THREE.Vector3}
-   */
-  _mapPickPoint(e) {
-    const ndcX =  (e.clientX / innerWidth)  * 2 - 1
-    const ndcY = -(e.clientY / innerHeight) * 2 + 1
-    this._raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this._sceneView.activeCamera)
-    const pt = new THREE.Vector3()
-    this._raycaster.ray.intersectPlane(this._groundPlane, pt)
-    pt.z = 0
-
-    // Grid snap: round to nearest grid unit (matches GridHelper 20×20 / 20 divisions = 1 unit)
-    const GRID = 1.0
-    pt.x = Math.round(pt.x / GRID) * GRID
-    pt.y = Math.round(pt.y / GRID) * GRID
-
-    // Endpoint snap: PC only — not reliable on touch (ADR-031 §6)
-    if (!this._isMapMobile()) {
-      const { snapped, point } = this._mapSnapToEndpoint(pt, e.clientX, e.clientY)
-      this._mapMode.snapCandidate = snapped
-      return point
-    }
-
-    this._mapMode.snapCandidate = null
-    return pt
-  }
-
-  /**
-   * Snaps a grid-snapped world point to a nearby annotated entity vertex (PC only).
-   * Uses the orthographic camera to measure screen-space distance.
-   * Endpoint snap has higher priority than grid snap.
-   * @param {THREE.Vector3} gridPt  grid-snapped world position
-   * @param {number} screenX  pointer clientX
-   * @param {number} screenY  pointer clientY
-   * @param {number} [snapPx=20]  snap radius in CSS pixels (ADR-031 §6)
-   * @returns {{ snapped: THREE.Vector3|null, point: THREE.Vector3 }}
-   */
-  _mapSnapToEndpoint(gridPt, screenX, screenY, snapPx = 20) {
-    const cam = this._sceneView.activeCamera
-    let bestDist = snapPx
-    let bestPt   = null
-
-    for (const obj of this._scene.objects.values()) {
-      const verts = (obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint)
-        ? obj.vertices.map(v => v.position)
-        : null
-      if (!verts) continue
-
-      for (const vert of verts) {
-        const sv = this._projectToScreen(vert, cam)
-        const d  = Math.hypot(screenX - sv.x, screenY - sv.y)
-        if (d < bestDist) { bestDist = d; bestPt = vert.clone() }
-      }
-    }
-
-    return bestPt
-      ? { snapped: bestPt, point: bestPt }
-      : { snapped: null,   point: gridPt }
-  }
-
-  /**
-   * Updates the live preview during map drawing (drawing state only).
-   * In pending state use _showPendingPreview() instead.
-   */
-  _updateMapPreview() {
-    const { tool, points, cursor, mobileDragStart, drawState } = this._mapMode
-    if (!tool || drawState !== 'drawing') return
-    if (!cursor) return
-
-    const geometry = this._geometryForType(tool)
-    const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
-    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
-
-    // Cursor dot — shown only in drawing state
-    if (!this._mapMode.cursorDot) {
-      const g = new THREE.SphereGeometry(0.08, 8, 8)
-      const m = new THREE.MeshBasicMaterial({ color, depthTest: false })
-      this._mapMode.cursorDot = new THREE.Mesh(g, m)
-      this._mapMode.cursorDot.renderOrder = 3
-      this._sceneView.scene.add(this._mapMode.cursorDot)
-    }
-    this._mapMode.cursorDot.position.copy(cursor)
-    this._mapMode.cursorDot.material.color.setHex(color)
-
-    // Update snap ring visibility (PC only)
-    this._updateSnapRing(this._mapMode.snapCandidate, color)
-
-    // Determine the preview point sequence to render
-    let previewPts = null
-
-    if (geometry === 'region' && mobileDragStart) {
-      // Drag-to-rectangle: show live rectangle from anchor to cursor
-      const p1 = mobileDragStart.pt
-      const p2 = cursor
-      previewPts = [
-        new THREE.Vector3(p1.x, p1.y, 0),
-        new THREE.Vector3(p2.x, p1.y, 0),
-        new THREE.Vector3(p2.x, p2.y, 0),
-        new THREE.Vector3(p1.x, p2.y, 0),
-        new THREE.Vector3(p1.x, p1.y, 0),  // close ring
-      ]
-    } else if (geometry === 'line' && mobileDragStart) {
-      // Mobile line drag: straight line from start to cursor
-      previewPts = [mobileDragStart.pt, cursor]
-    } else if (geometry !== 'point' && points.length > 0) {
-      // PC multi-click preview: confirmed points + live cursor
-      previewPts = [...points, cursor]
-      if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
-    }
-
-    if (previewPts) {
-      const flat = []
-      for (const p of previewPts) flat.push(p.x, p.y, p.z)
-
-      if (!this._mapMode.previewLine) {
-        const geo = new THREE.BufferGeometry()
-        // Solid line at 70% opacity for drawing state (ADR-031 §3)
-        const mat = new THREE.LineBasicMaterial({
-          color, depthTest: false, transparent: true, opacity: 0.70,
-        })
-        this._mapMode.previewLine = new THREE.Line(geo, mat)
-        this._mapMode.previewLine.renderOrder = 2
-        this._sceneView.scene.add(this._mapMode.previewLine)
-      }
-      this._mapMode.previewLine.geometry.setAttribute(
-        'position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3),
-      )
-      this._mapMode.previewLine.geometry.attributes.position.needsUpdate = true
-      this._mapMode.previewLine.material.color.setHex(color)
-    } else if (this._mapMode.previewLine) {
-      this._sceneView.scene.remove(this._mapMode.previewLine)
-      this._mapMode.previewLine.geometry.dispose()
-      this._mapMode.previewLine.material.dispose()
-      this._mapMode.previewLine = null
-    }
-  }
-
-  /**
-   * Creates or updates the static dashed preview for the pending state (ADR-031 §3).
-   * Must be called after entering pending state with pendingPoints populated.
-   */
-  _showPendingPreview() {
-    const { tool, pendingPoints } = this._mapMode
-    if (!tool || !pendingPoints) return
-
-    const geometry = this._geometryForType(tool)
-    const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
-    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
-
-    // Remove cursor dot — pending state shows no live cursor
-    if (this._mapMode.cursorDot) {
-      this._sceneView.scene.remove(this._mapMode.cursorDot)
-      this._mapMode.cursorDot.geometry.dispose()
-      this._mapMode.cursorDot.material.dispose()
-      this._mapMode.cursorDot = null
-    }
-    // Hide snap ring
-    this._updateSnapRing(null, color)
-
-    // Frozen point list (close ring for region)
-    let previewPts = [...pendingPoints]
-    if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
-
-    if (previewPts.length < 2) {
-      // Point type (Hub / Anchor): no line to draw, but show a static dot at the
-      // placed position so the user can see where they placed it (ADR-031 §3).
-      if (this._mapMode.previewLine) {
-        this._sceneView.scene.remove(this._mapMode.previewLine)
-        this._mapMode.previewLine.geometry.dispose()
-        this._mapMode.previewLine.material.dispose()
-        this._mapMode.previewLine = null
-      }
-      if (previewPts.length === 1) {
-        const g = new THREE.SphereGeometry(0.15, 12, 12)
-        const m = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.85 })
-        const dot = new THREE.Mesh(g, m)
-        dot.position.copy(previewPts[0])
-        dot.renderOrder = 3
-        this._sceneView.scene.add(dot)
-        this._mapMode.previewLine = dot  // reuse slot; disposed the same way on exit/confirm
-      }
-      return
-    }
-
-    const flat = []
-    for (const p of previewPts) flat.push(p.x, p.y, p.z)
-
-    // Recreate as dashed line (LineDashedMaterial) at 90% opacity (ADR-031 §3)
-    if (this._mapMode.previewLine) {
-      this._sceneView.scene.remove(this._mapMode.previewLine)
-      this._mapMode.previewLine.geometry.dispose()
-      this._mapMode.previewLine.material.dispose()
-      this._mapMode.previewLine = null
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3))
-    const mat = new THREE.LineDashedMaterial({
-      color,
-      dashSize:    0.40,
-      gapSize:     0.20,
-      depthTest:   false,
-      transparent: true,
-      opacity:     0.90,
-    })
-    const line = new THREE.Line(geo, mat)
-    line.computeLineDistances()
-    line.renderOrder = 2
-    this._sceneView.scene.add(line)
-    this._mapMode.previewLine = line
-  }
-
-  /**
-   * Shows or hides the endpoint snap indicator ring (PC only, ADR-031 §6).
-   * @param {THREE.Vector3|null} snapPt  world position to show ring at; null = hide
-   * @param {number} color  hex color for the ring
-   */
-  _updateSnapRing(snapPt, color) {
-    const scene = this._sceneView.scene
-
-    if (!snapPt) {
-      if (this._mapMode.snapRingMesh) this._mapMode.snapRingMesh.visible = false
-      return
-    }
-
-    if (!this._mapMode.snapRingMesh) {
-      const geo = new THREE.RingGeometry(0.18, 0.30, 16)
-      const mat = new THREE.MeshBasicMaterial({
-        depthTest:   false,
-        transparent: true,
-        opacity:     0.85,
-        side:        THREE.DoubleSide,
-      })
-      const mesh = new THREE.Mesh(geo, mat)
-      mesh.renderOrder = 5
-      scene.add(mesh)
-      this._mapMode.snapRingMesh = mesh
-    }
-
-    this._mapMode.snapRingMesh.visible = true
-    this._mapMode.snapRingMesh.material.color.setHex(color)
-    this._mapMode.snapRingMesh.position.copy(snapPt)
-    this._mapMode.snapRingMesh.position.z = 0
-  }
-
-  /** Updates the status bar text during map drawing. */
-  _updateMapStatus() {
-    const { tool, points, drawState } = this._mapMode
-    if (!tool) return
-
-    if (drawState === 'pending') return   // pending status set in _enterMapPendingState
-
-    const geometry  = this._geometryForType(tool)
-    const typeLabel = this._placeTypeForType(tool)
-    const n = points.length
-    const mobile = this._isMapMobile()
-
-    if (geometry === 'point') {
-      this._uiView.setStatusRich([
-        { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: mobile ? 'Tap to place' : 'Click to place', color: '#888' },
-        { text: '  ESC cancel', color: '#444' },
-      ])
-    } else if (geometry === 'line') {
-      if (mobile) {
-        this._uiView.setStatusRich([
-          { text: typeLabel, bold: true, color: '#80cbc4' },
-          { text: 'Drag to draw a straight line', color: '#888' },
-          { text: '  ESC cancel', color: '#444' },
-        ])
-      } else {
-        this._uiView.setStatusRich([
-          { text: typeLabel, bold: true, color: '#80cbc4' },
-          { text: `${n} pts`, color: '#aaa' },
-          { text: 'click to add vertex', color: '#888' },
-          { text: n >= 2 ? '  Enter / RMB = done' : '', color: '#aaa' },
-          { text: '  ESC cancel', color: '#444' },
-        ])
-      }
-    } else {
-      const typeHint = mobile ? 'Drag to draw rectangle' : 'Drag to draw rectangle'
-      this._uiView.setStatusRich([
-        { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: typeHint, color: '#888' },
-        { text: '  ESC cancel', color: '#444' },
-      ])
-    }
-  }
-
-  /**
-   * Rebuilds the Map toolbar to reflect current state.
-   * In pending state: shows name input + Confirm + Cancel.
-   * In drawing state: shows tool buttons + (Confirm if ready) + Cancel.
-   * @private
-   */
-  _refreshMapToolbar() {
-    if (!this._mapMode.active) return
-    const { tool, drawState, pendingName } = this._mapMode
-
-    // In pending state: Confirm is always available; show name input
-    const isPending  = drawState === 'pending'
-    const canConfirm = isPending
-
-    this._uiView.showMapToolbar(
-      tool,
-      (t) => this._setMapTool(t),
-      canConfirm ? () => this._mapConfirmDrawing() : null,
-      tool       ? () => this._mapCancelDrawing()  : null,
-      ()         => this._exitMapMode(),
-      isPending ? (pendingName ?? '') : null,  // pendingName = show name input; null = hide
-    )
-  }
+  // ── 2D Map Mode — see MapModeController ─────────────────────────────────
+  // All map mode methods live in src/controller/map/MapModeController.js.
+  // AppController holds this._mapModeCtrl; event handlers delegate via
+  // this._mapModeCtrl.onPointerMove/Down/Up/KeyDown/onWheel.
 
   /**
    * Finds the nearest V/E/F snap target to the current mouse cursor.
@@ -3541,11 +2985,11 @@ export class AppController {
     const mode     = this._scene.selectionMode
     const substate = this._scene.editSubstate
 
-    if (this._mapMode.active) {
+    if (this._mapModeCtrl.isActive) {
       // In Map Mode the left-side map toolbar handles drawing controls.
       // Show a minimal "Exit Map" slot on mobile.
       this._uiView.setMobileToolbar([
-        { icon: ICONS.back, label: 'Exit Map', onClick: () => this._exitMapMode() },
+        { icon: ICONS.back, label: 'Exit Map', onClick: () => this._mapModeCtrl.exit() },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -3630,7 +3074,7 @@ export class AppController {
       if (hasObj && _isAnnotated(this._activeObj)) {
         this._uiView.setMobileToolbar([
           { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
-          { icon: ICONS.map,    label: 'Map',    onClick: () => this._enterMapMode() },
+          { icon: ICONS.map,    label: 'Map',    onClick: () => this._mapModeCtrl.enter() },
           { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
           { spacer: true },
         ])
@@ -5409,13 +4853,7 @@ export class AppController {
 
   _onWheel(e) {
     // ── 2D Map Mode: scroll to zoom ──────────────────────────────────────
-    if (this._mapMode.active) {
-      e.preventDefault()
-      const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15
-      this._mapMode.frustumSize = Math.max(2, Math.min(500, this._mapMode.frustumSize * factor))
-      this._sceneView.setOrthoZoom(this._mapMode.frustumSize)
-      return
-    }
+    if (this._mapModeCtrl.onWheel(e)) return
     if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
       e.preventDefault()
       const steps = AppController.ANGLE_STEPS
@@ -5822,26 +5260,7 @@ export class AppController {
     }
 
     // ── 2D Map Mode: pan or drawing hover ────────────────────────────────
-    if (this._mapMode.active) {
-      if (this._mapMode.isPanning && this._mapMode.panStart) {
-        const { frustumSize } = this._mapMode
-        const aspect = innerWidth / innerHeight
-        const dx = (e.clientX - this._mapMode.panStart.screenX) * (frustumSize * aspect / innerWidth)
-        const dy = (e.clientY - this._mapMode.panStart.screenY) * (frustumSize / innerHeight)
-        this._sceneView.panOrthoCamera(
-          this._mapMode.panStart.camX - dx,
-          this._mapMode.panStart.camY + dy,
-        )
-        return
-      }
-      // Only update preview in drawing state; pending state shows frozen dashed preview
-      if (this._mapMode.tool && this._mapMode.drawState === 'drawing') {
-        const pt = this._mapPickPoint(e)
-        this._mapMode.cursor = pt
-        this._updateMapPreview()
-      }
-      return
-    }
+    if (this._mapModeCtrl.onPointerMove(e)) return
 
     // ── Measure placement hover ───────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
@@ -6069,7 +5488,7 @@ export class AppController {
     this._contextMenuSuppressed = e.button === 2 && (
       this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_MOUNT_PICKING) ||
       this._opState.is(S_LINK_MODE) || this._opState.is(S_GRAB_ACTIVE) ||
-      this._opState.is(S_FACE_EXTRUDE) || !!this._mapMode.tool || this._opState.is(S_MEASURE_PLACING) ||
+      this._opState.is(S_FACE_EXTRUDE) || this._mapModeCtrl.hasTool || this._opState.is(S_MEASURE_PLACING) ||
       this._opState.is(S_FRAME_PLACEMENT)
     )
 
@@ -6222,90 +5641,7 @@ export class AppController {
     }
 
     // ── 2D Map Mode: drawing clicks and pan start ────────────────────────
-    if (this._mapMode.active) {
-      // Pan: middle button OR left button with no tool selected
-      if (e.button === 1 || (e.button === 0 && !this._mapMode.tool)) {
-        this._mapMode.isPanning = true
-        const cam = this._sceneView.activeCamera
-        this._mapMode.panStart = {
-          screenX: e.clientX, screenY: e.clientY,
-          camX: cam.position.x, camY: cam.position.y,
-        }
-        this._uiView.setCursor('grabbing')
-        this._activeDragPointerId = e.pointerId
-        return
-      }
-
-      if (e.button === 0 && this._mapMode.tool) {
-        const { drawState } = this._mapMode
-
-        // In pending state: LMB on canvas confirms (keyboard-free fallback)
-        if (drawState === 'pending') {
-          this._mapConfirmDrawing()
-          return
-        }
-
-        const pt       = this._mapPickPoint(e)
-        const geometry = this._geometryForType(this._mapMode.tool)
-
-        if (this._isMapMobile()) {
-          // ── Mobile: single drag gesture for all types (ADR-031 §2) ──────
-          // Record drag start; interaction completes on pointerup.
-          this._mapMode.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
-          this._mapMode.cursor          = pt.clone()
-          this._activeDragPointerId     = e.pointerId
-          this._updateMapPreview()
-          return
-        }
-
-        // ── PC interaction ───────────────────────────────────────────────
-        if (geometry === 'point') {
-          // Single click → enter pending immediately
-          this._enterMapPendingState([pt])
-          return
-        }
-
-        if (geometry === 'region') {
-          // Drag-to-rectangle: record drag start; pointerup enters pending
-          this._mapMode.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
-          this._mapMode.cursor          = pt.clone()
-          this._activeDragPointerId     = e.pointerId
-          const typeLabel = this._placeTypeForType(this._mapMode.tool)
-          this._uiView.setStatusRich([
-            { text: typeLabel, bold: true, color: '#80cbc4' },
-            { text: 'drag to draw rectangle', color: '#888' },
-            { text: '  ESC cancel', color: '#444' },
-          ])
-          return
-        }
-
-        // Line (PC): each click adds a vertex; Enter/RMB transitions to pending
-        this._mapMode.points.push(pt.clone())
-        this._mapMode.cursor = pt.clone()
-        this._updateMapPreview()
-        this._updateMapStatus()
-        return
-      }
-
-      if (e.button === 2 && this._mapMode.tool) {
-        const { drawState, points, tool: currentTool } = this._mapMode
-        if (drawState === 'pending') {
-          // RMB in pending → cancel back to drawing (re-select same tool)
-          this._mapCancelDrawing()
-          if (currentTool) this._setMapTool(currentTool)
-          return
-        }
-        // RMB in drawing: for PC Line with ≥2 pts → enter pending; else cancel
-        const geometry = this._geometryForType(this._mapMode.tool)
-        if (geometry === 'line' && points.length >= 2) {
-          this._enterMapPendingState(points)
-        } else {
-          this._mapCancelDrawing()
-        }
-        return
-      }
-      return
-    }
+    if (this._mapModeCtrl.onPointerDown(e)) return
 
     // ── Measure placement clicks ──────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
@@ -6562,72 +5898,8 @@ export class AppController {
       this._longPress.pointerId = null
     }
 
-    // ── 2D Map Mode: end panning on pointer up ────────────────────────────
-    if (this._mapMode.active && this._mapMode.isPanning) {
-      if (this._activeDragPointerId === e.pointerId) {
-        this._activeDragPointerId = null
-        this._mapMode.isPanning   = false
-        this._mapMode.panStart    = null
-        this._uiView.setCursor(this._mapMode.tool ? 'crosshair' : 'default')
-      }
-      return
-    }
-
-    // ── 2D Map Mode: drag gesture completion (mobile + PC Region) ─────────
-    if (this._mapMode.active && this._mapMode.mobileDragStart &&
-        this._activeDragPointerId === e.pointerId) {
-      const { pt: startPt, screenX: sx, screenY: sy } = this._mapMode.mobileDragStart
-      this._mapMode.mobileDragStart = null
-      this._activeDragPointerId     = null
-
-      const savedTool = this._mapMode.tool
-      if (!savedTool) return
-
-      const pt       = this._mapPickPoint(e)
-      const geometry = this._geometryForType(savedTool)
-      const dx       = e.clientX - sx
-      const dy       = e.clientY - sy
-      const moved    = Math.hypot(dx, dy)
-
-      if (geometry === 'point') {
-        // Point: any tap (no movement threshold) → pending (ADR-031 §2)
-        this._enterMapPendingState([startPt])
-        return
-      }
-
-      if (geometry === 'line') {
-        // Line: drag from start to end → 2-point straight line → pending
-        // Minimum drag threshold: 8 px screen-space (ADR-031 §2)
-        if (moved < 8) {
-          this._mapCancelDrawing()
-          this._setMapTool(savedTool)
-          return
-        }
-        this._enterMapPendingState([startPt, pt])
-        return
-      }
-
-      if (geometry === 'region') {
-        // Region: drag-to-rectangle → pending
-        // Minimum drag threshold: 8 px (ADR-031 §2)
-        if (moved < 8) {
-          this._mapCancelDrawing()
-          this._setMapTool(savedTool)
-          return
-        }
-        const p1 = startPt
-        const p2 = this._mapMode.cursor ?? pt
-        const rectPts = [
-          new THREE.Vector3(p1.x, p1.y, 0),
-          new THREE.Vector3(p2.x, p1.y, 0),
-          new THREE.Vector3(p2.x, p2.y, 0),
-          new THREE.Vector3(p1.x, p2.y, 0),
-        ]
-        this._enterMapPendingState(rectPts)
-        return
-      }
-      return
-    }
+    // ── 2D Map Mode: end panning / drag gesture completion ───────────────
+    if (this._mapModeCtrl.onPointerUp(e)) return
 
     // ── Endpoint drag confirmation (1D Edit Mode) ────────────────────────
     if (this._editOpState.is(EO_1D_DRAG) && this._activeDragPointerId === e.pointerId) {
@@ -6840,40 +6112,7 @@ export class AppController {
     }
 
     // ── 2D Map Mode keys ────────────────────────────────────────────────────
-    if (this._mapMode.active) {
-      const { drawState, tool } = this._mapMode
-
-      if (e.key === 'Escape') {
-        if (drawState === 'pending') {
-          // ESC in pending → cancel back to drawing with empty points
-          const savedTool = tool
-          this._mapCancelDrawing()
-          if (savedTool) this._setMapTool(savedTool)
-        } else if (tool) {
-          this._mapCancelDrawing()   // cancel drawing, stay in map mode
-        } else {
-          this._exitMapMode()        // exit map mode entirely
-        }
-        return
-      }
-
-      if (e.key === 'Enter' && tool) {
-        if (drawState === 'pending') {
-          // Enter in pending → confirm the entity
-          this._mapConfirmDrawing()
-        } else {
-          // Enter in drawing → transition to pending if enough points (PC Line)
-          const geometry = this._geometryForType(tool)
-          const n        = this._mapMode.points.length
-          if (geometry === 'line' && n >= 2) {
-            this._enterMapPendingState(this._mapMode.points)
-          }
-          // Region + Point enter pending via gesture (pointerup), not Enter key
-        }
-        return
-      }
-      return
-    }
+    if (this._mapModeCtrl.onKeyDown(e)) return
 
     // ── Frame placement pick sub-mode keys (ADR-034 §6) ──────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
