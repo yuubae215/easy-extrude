@@ -14,12 +14,7 @@ import {
   computeOutwardFaceNormal,
   getCentroid,
   toNDC,
-  getPivotCandidates,
-  getVertexPivotCandidates,
-  getEdgePivotCandidates,
-  getFacePivotCandidates,
   collectSnapTargets,
-  collectWorldSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
 import { Solid }           from '../domain/Solid.js'
@@ -32,7 +27,6 @@ import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
 import { LinkNetworkView } from '../view/LinkNetworkView.js'
 import { CommandStack }              from '../service/CommandStack.js'
-import { createMoveCommand }          from '../command/MoveCommand.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
@@ -65,12 +59,13 @@ import { EndpointDragState } from '../core/states/EndpointDragState.js'
 import { SketchDrawState }   from '../core/states/SketchDrawState.js'
 import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
-import { inferSemanticRelationships, computeApproachWarmth } from '../service/SemanticInferencer.js'
+import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
+import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -474,51 +469,7 @@ export class AppController {
     }
 
     // ── Blender-style grab state ───────────────────────────────────────────
-    // Active state tracked by this._opState (S_GRAB_ACTIVE).
-    this._grab = {
-      axis:            null,
-      startMouse:      new THREE.Vector2(),
-      startCorners:    [],
-      /** @type {Map<string, import('three').Vector3[]>} corners snapshot for all selected objects */
-      allStartCorners: new Map(),
-      /** @type {Map<string, import('three').Vector3[]>} corners at the start of the current drag segment (touch re-grab) */
-      segmentStartCorners: new Map(),
-      /** @type {Map<string, import('three').Vector3>} Solid._position snapshot at segment start (ADR-040) */
-      segmentStartPositions: new Map(),
-      centroid:        new THREE.Vector3(),
-      pivot:           new THREE.Vector3(),
-      pivotLabel:      'Centroid',
-      dragPlane:       new THREE.Plane(),
-      startPoint:      new THREE.Vector3(),
-      inputStr:        '',
-      hasInput:        false,
-      pivotSelectMode: false,
-      hoveredPivotIdx: -1,
-      candidates:      [],
-      /** Current candidate filter in pivot select mode: 'all'|'vertex'|'edge'|'face' */
-      pivotMode:       'all',
-      snapping:        false,
-      /** Set to true after G->V pivot confirm; enables auto-snap without Ctrl */
-      autoSnap:        false,
-      /** The snap target currently locked to, or null */
-      snappedTarget:   null,
-      /** Snap target filter: 'all'|'vertex'|'edge'|'face' */
-      snapMode:        'all',
-      /** All snap candidates from last _trySnapToGeometry call (for display) */
-      snapTargets:     [],
-      /** Grid snap unit size (Ctrl during grab). Cycled with Ctrl+Wheel. */
-      gridSize:        1,
-      /** When true, grabbed object snaps Z so its bottom rests on the top surface below. */
-      stackMode:       false,
-      /** True when stacking is actively snapping Z this frame. */
-      stacking:        false,
-      /** Last delta applied via _applyGrabDeltaToAll; used for live coordinate display. */
-      lastDelta:       new THREE.Vector3(),
-      /** True when a live semantic suggestion is showing during G-key grab (ADR-041 Phase 3). */
-      isSuggesting:    false,
-      /** The suggestion currently displayed, or null. @type {object|null} */
-      currentSuggestion: null,
-    }
+    this._grabHandler = new GrabOperationHandler(this)
 
     /** Unsubscribe function for the active import.progress WS listener, or null */
     this._importProgressUnsub = null
@@ -825,8 +776,8 @@ export class AppController {
               this._objDragAllStartPositions,
               delta,
             )
-            if (this._grab.stackMode) {
-              this._applyStackSnap(this._objDragAllStartPositions, delta)
+            if (this._grabHandler.stackMode) {
+              this._grabHandler._applyStackSnap(this._objDragAllStartPositions, delta)
               for (const [id] of this._objDragAllStartCorners) {
                 const selObj = this._scene.getObject(id)
                 if (selObj) {
@@ -1797,7 +1748,7 @@ export class AppController {
     this._selectedIds.clear()
     this._selectedIds.add(copy.id)
     this._switchActiveObject(copy.id, true)
-    this._startGrab()
+    this._grabHandler.start()
   }
 
   // ─── Mobile Axis Guide helpers (replaces TransformControls) ──────────────
@@ -2857,7 +2808,7 @@ export class AppController {
     const items = [
       {
         label: 'Grab',
-        onClick: () => this._startGrab(),
+        onClick: () => this._grabHandler.start(),
       },
       ...(canDup ? [{
         label: 'Duplicate',
@@ -2991,11 +2942,11 @@ export class AppController {
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
-        { icon: 'X', label: 'X', onClick: () => this._setGrabAxis('x'), active: this._grab.axis === 'x' },
-        { icon: 'Y', label: 'Y', onClick: () => this._setGrabAxis('y'), active: this._grab.axis === 'y' },
-        { icon: 'Z', label: 'Z', onClick: () => this._setGrabAxis('z'), active: this._grab.axis === 'z' },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._grabHandler.cancel(), danger: true },
+        { icon: 'X', label: 'X', onClick: () => this._grabHandler.setAxis('x'), active: this._grabHandler.axis === 'x' },
+        { icon: 'Y', label: 'Y', onClick: () => this._grabHandler.setAxis('y'), active: this._grabHandler.axis === 'y' },
+        { icon: 'Z', label: 'Z', onClick: () => this._grabHandler.setAxis('z'), active: this._grabHandler.axis === 'z' },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._grabHandler.confirm() },
       ])
       return
     }
@@ -3011,7 +2962,7 @@ export class AppController {
         const isOriginCF = this._activeObj.name === 'Origin'
         this._uiView.setMobileToolbar([
           { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._promptAddFrame(this._scene.activeId) },
-          { icon: ICONS.grab,   label: 'Move',      onClick: () => this._startGrab(),                                                        disabled: isOriginCF },
+          { icon: ICONS.grab,   label: 'Move',      onClick: () => this._grabHandler.start(),                                            disabled: isOriginCF },
           { spacer: true },
           { icon: ICONS.delete, label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
           { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._rotateHandler.start(true),                                            disabled: isOriginCF },
@@ -3033,7 +2984,7 @@ export class AppController {
       }
       if (hasObj && _isAnnotated(this._activeObj)) {
         this._uiView.setMobileToolbar([
-          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
+          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._grabHandler.start() },
           { icon: ICONS.map,    label: 'Map',    onClick: () => this._mapModeCtrl.enter() },
           { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
           { spacer: true },
@@ -3066,12 +3017,12 @@ export class AppController {
             )
           },
         },
-        { icon: ICONS.grab,      label: 'Grab',   onClick: () => this._startGrab(),                                              disabled: !canGrab },
+        { icon: ICONS.grab,      label: 'Grab',   onClick: () => this._grabHandler.start(),                                      disabled: !canGrab },
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
           ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._rotateHandler.start(true) }
-          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
+          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grabHandler.toggleStackMode(); this._updateMobileToolbar() }, active: this._grabHandler.stackMode, disabled: !canStack },
       ])
       return
     }
@@ -3288,7 +3239,7 @@ export class AppController {
     }
 
     // ── Cancel all in-progress operations ──────────────────────────────────
-    if (this._opState.is(S_GRAB_ACTIVE))      this._cancelGrab()
+    if (this._opState.is(S_GRAB_ACTIVE))      this._grabHandler.cancel()
     if (this._opState.is(S_ROTATE_ACTIVE))    this._rotateHandler.cancel()
     if (this._opState.is(S_FACE_EXTRUDE))     this._cancelFaceExtrude()
     if (this._opState.is(S_FRAME_PLACEMENT))  this._cancelFramePickSubMode()
@@ -3811,956 +3762,6 @@ export class AppController {
     this._uiView.showToast(`${assemblyIds.size} objects selected`)
   }
 
-  // ─── Blender-style grab ────────────────────────────────────────────────────
-
-  _startGrab() {
-    this._uiView.dismissSemanticSuggestion()
-    if (!this._objSelected) return
-    // SpatialLink has no geometry — cannot be grabbed (ADR-030)
-    if (this._activeObj instanceof SpatialLink) {
-      this._uiView.showToast('SpatialLink cannot be grabbed', { type: 'warn' })
-      return
-    }
-    // Origin frames are fixed at the Solid centroid — cannot be grabbed (ADR-037)
-    if (this._activeObj instanceof CoordinateFrame && this._activeObj.name === 'Origin') {
-      this._uiView.showToast('Origin frame is fixed at the centroid', { type: 'warn' })
-      return
-    }
-    // Provenance check: block grab if frame was declared by a different role (ADR-034 §8.2)
-    if (this._activeObj instanceof CoordinateFrame && !RoleService.canEdit(this._activeObj)) {
-      this._uiView.showToast(`This frame was declared by a ${this._activeObj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-      return
-    }
-    // Semantic guardrail: block grab when any selected entity is fastened or mounted to
-    // an entity outside the selection (PHILOSOPHY #1 — One Authoritative Entry Point).
-    const grabGuardrail = this._service.checkMoveGuardrail(this._selectedIds)
-    if (grabGuardrail.blocked) {
-      this._uiView.showToast(grabGuardrail.message, { type: 'warn' })
-      return
-    }
-    // All domain guards passed → mutual exclusion + state transition
-    if (!this._opState.send('BEGIN_GRAB')) return
-    // Rubber-band: activate marching ants + tension for links connected to dragged entities.
-    this._service.setLinkDragging(this._selectedIds, true)
-    this._grab.axis            = null
-    this._grab.inputStr        = ''
-    this._grab.hasInput        = false
-    this._grab.pivotSelectMode = false
-    this._grab.hoveredPivotIdx = -1
-    this._grab.snapMode        = 'all'
-    this._grab.snapTargets     = []
-    this._grab.startMouse.copy(this._mouse)
-    this._grab.startCorners = this._corners.map(c => c.clone())
-    // Snapshot corners of every selected object for multi-object grab
-    this._grab.allStartCorners = new Map()
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj) this._grab.allStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
-    }
-    // segmentStartCorners tracks the start of each individual drag segment (touch).
-    // Initially identical to allStartCorners; re-snapshotted on each touch re-down.
-    this._grab.segmentStartCorners = new Map(
-      [...this._grab.allStartCorners.entries()].map(([id, cs]) => [id, cs.map(c => c.clone())])
-    )
-    // Solid _position snapshots for move() — separate from corner snapshots (ADR-040)
-    this._grab.segmentStartPositions = new Map()
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
-    }
-    // For CoordinateFrame, corners = [translation] (parent-relative offset).
-    // Use the world position from the cache so the drag plane passes through
-    // the frame's actual world location (ADR-020).
-    const grabCenter = (this._activeObj instanceof CoordinateFrame)
-      ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
-      : (this._activeObj instanceof Solid ? this._activeObj._position.clone() : getCentroid(this._corners))
-    this._grab.centroid.copy(grabCenter)
-    this._grab.pivot.copy(this._grab.centroid)
-    this._grab.lastDelta.set(0, 0, 0)
-    this._grab.pivotLabel      = 'Centroid'
-    this._grab.autoSnap        = false
-    this._grab.isSuggesting    = false
-    this._grab.currentSuggestion = null
-
-    // ADR-032 §6: for mounted Annotated* entities, constrain drag to host local XY plane.
-    // For unmounted Annotated* entities, constrain to world XY (prevents Z drift).
-    // For all other entities, use the camera-facing plane (existing behaviour).
-    const isAnnotated = this._activeObj instanceof AnnotatedLine ||
-      this._activeObj instanceof AnnotatedRegion ||
-      this._activeObj instanceof AnnotatedPoint
-    let planeNormal = null
-    if (isAnnotated) {
-      const mountLink = this._scene.getMountsLink(this._scene.activeId)
-      if (mountLink) {
-        // Mounted: use host CoordinateFrame's local Z axis as drag plane normal
-        const hostPose = this._service.worldPoseOf(mountLink.targetId)
-        if (hostPose) {
-          planeNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(hostPose.quaternion)
-        }
-      }
-      if (!planeNormal) {
-        // Unmounted Annotated*: use world Z (XY plane)
-        planeNormal = new THREE.Vector3(0, 0, 1)
-      }
-    } else {
-      const camDir = new THREE.Vector3()
-      this._camera.getWorldDirection(camDir)
-      planeNormal = camDir
-    }
-    this._grab.dragPlane.setFromNormalAndCoplanarPoint(planeNormal, this._grab.pivot)
-
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) {
-      this._grab.startPoint.copy(pt)
-    } else {
-      this._grab.startPoint.copy(this._grab.pivot)
-    }
-
-    this._controls.enabled = false
-    this._uiView.setCursor('grabbing')
-    this._updateGrabStatus()
-    this._updateMobileToolbar()
-  }
-
-  _confirmGrab() {
-    if (!this._opState.is(S_GRAB_ACTIVE)) return
-    if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
-    // Clear live suggestion ghost before final state is committed (Drag Suggestion Lifecycle).
-    if (this._grab.isSuggesting) {
-      this._grab.isSuggesting      = false
-      this._grab.currentSuggestion = null
-      this._quickDragCtx.hideDragSuggestion()
-    }
-    // Clear approach warmth on all Solids.
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
-    }
-    this._applyGrab()
-
-    // ADR-032 §6: after grab on mounted Annotated* entities, sync local positions
-    // so _updateMountedAnnotations uses the new world positions going forward.
-    for (const id of this._selectedIds) {
-      this._service.syncMountedPosition(id)
-    }
-
-    // ── Record undo snapshot (ADR-022 Phase 1) ────────────────────────────
-    const endCornersMap = new Map()
-    for (const id of this._selectedIds) {
-      const obj = this._scene.getObject(id)
-      if (obj) endCornersMap.set(id, _grabHandlesOf(obj).map(c => c.clone()))
-    }
-    if (endCornersMap.size > 0) {
-      const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
-      const cmd = createMoveCommand(label, this._grab.allStartCorners, endCornersMap, this._scene, this._service)
-      this._commandStack.push(cmd)
-    }
-
-    this._grab.axis          = null
-    this._grab.autoSnap      = false
-    this._grab.snappedTarget = null
-    this._grab.stackMode     = false
-    this._grab.stacking      = false
-    this._meshView.clearPivotDisplay()
-    this._meshView.clearSnapDisplay()
-    this._opState.send('CONFIRM')
-    // Rubber-band: end drag animation; stay highlighted since entity is still selected.
-    this._service.setLinkDragging(new Set(), false)
-    this._service.updateLinkSelectionHighlight(this._selectedIds)
-    this._controls.enabled = true
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-    this._hideAxisGuide()
-
-    // ── Semantic inference (ADR-041) ─────────────────────────────────────
-    // Suggest a SpatialLink when a single Solid lands near another object.
-    this._runSemanticInference()
-  }
-
-  _cancelGrab() {
-    if (!this._opState.is(S_GRAB_ACTIVE)) return
-    if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
-    if (this._grab.isSuggesting) {
-      this._grab.isSuggesting      = false
-      this._grab.currentSuggestion = null
-      this._quickDragCtx.hideDragSuggestion()
-    }
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
-    }
-    // Restore all selected objects to their pre-grab positions
-    for (const [id, startCorners] of this._grab.allStartCorners) {
-      const selObj = this._scene.getObject(id)
-      if (!selObj) continue
-      if (selObj instanceof Solid) {
-        // Decompose world corners back into _position + localCorners (ADR-040)
-        selObj.setWorldCorners(startCorners)
-        selObj.meshView.updateGeometry(selObj.corners)
-      } else {
-        const handles = _grabHandlesOf(selObj)
-        startCorners.forEach((c, i) => handles[i].copy(c))
-        selObj.meshView.updateGeometry(handles)
-      }
-      selObj.meshView.updateBoxHelper()
-    }
-    this._meshView.clearPivotDisplay()
-    this._meshView.clearSnapDisplay()
-    this._grab.axis          = null
-    this._grab.autoSnap      = false
-    this._grab.snappedTarget = null
-    this._grab.stackMode     = false
-    this._grab.stacking      = false
-    this._opState.send('CANCEL')
-    // Rubber-band: end drag animation; stay highlighted since entity is still selected.
-    this._service.setLinkDragging(new Set(), false)
-    this._service.updateLinkSelectionHighlight(this._selectedIds)
-    this._controls.enabled = true
-    this._hideAxisGuide()
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-  }
-
-  // ── Semantic inference (ADR-041) ─────────────────────────────────────────
-
-  /**
-   * Runs heuristic spatial-relationship inference after a single-Solid move and
-   * shows a non-intrusive suggestion banner if a plausible SpatialLink is found.
-   * No-ops when multiple objects are selected (ambiguous which pair to suggest).
-   */
-  _runSemanticInference() {
-    if (this._selectedIds.size !== 1) return
-    const [movedId] = this._selectedIds
-    const moved = this._scene.getObject(movedId)
-    if (!(moved instanceof Solid)) return
-
-    const existingPairs = new Set(
-      this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
-    )
-    const suggestions = inferSemanticRelationships(
-      moved,
-      this._scene.objects.values(),
-      existingPairs,
-    )
-    if (suggestions.length === 0) return
-
-    const top = suggestions[0]
-    const source = this._scene.getObject(top.sourceId)
-    const target = this._scene.getObject(top.targetId)
-    this._uiView.showSemanticSuggestion({
-      sourceId:     top.sourceId,
-      targetId:     top.targetId,
-      semanticType: top.semanticType,
-      label:        top.label,
-      sourceName:   source?.name ?? '?',
-      targetName:   target?.name ?? '?',
-    }, () => {
-      this._createSpatialLinkDirect(top.sourceId, top.targetId, top)
-    })
-  }
-
-  _setGrabAxis(axis) {
-    this._grab.axis     = (this._grab.axis === axis) ? null : axis
-    this._grab.inputStr = ''
-    this._grab.hasInput = false
-    // Re-snapshot current positions as the new segment start so accumulated
-    // movement from the previous axis constraint is preserved (e.g. X→Y keeps
-    // the X offset). Mirrors the touch re-grab pattern (pointerdown in S_GRAB_ACTIVE).
-    this._grab.segmentStartCorners = new Map()
-    this._grab.segmentStartPositions = new Map()
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj) {
-        this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
-        if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
-      }
-    }
-    this._grab.startMouse.copy(this._mouse)
-    // Update centroid/pivot to current position so the axis guide and
-    // screen-projection track the object after accumulated movement from the
-    // prior constraint. Mirrors the touch re-grab centroid update (pointerdown
-    // in S_GRAB_ACTIVE). segmentStartPositions was just re-snapshotted above.
-    if (this._activeObj instanceof CoordinateFrame) {
-      const pos = this._service.worldPoseOf(this._activeObj.id)?.position
-      if (pos) { this._grab.centroid.copy(pos); this._grab.pivot.copy(pos) }
-    } else if (this._grab.segmentStartPositions.size > 0) {
-      const avg = new THREE.Vector3()
-      for (const p of this._grab.segmentStartPositions.values()) avg.add(p)
-      avg.divideScalar(this._grab.segmentStartPositions.size)
-      this._grab.centroid.copy(avg)
-      this._grab.pivot.copy(avg)
-    }
-    if (!this._grab.axis) {
-      // Switching back to free grab: reset the 3D drag-plane anchor to the current
-      // mouse position so the free-grab delta starts at zero.
-      this._raycaster.setFromCamera(this._mouse, this._camera)
-      const _pt = new THREE.Vector3()
-      if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, _pt)) {
-        this._grab.startPoint.copy(_pt)
-      }
-    }
-    this._applyGrab()
-    this._updateGrabStatus()
-    if (this._grab.axis) {
-      this._showAxisGuide(this._grab.axis, this._grab.centroid.clone(), 'translate')
-    } else {
-      this._hideAxisGuide()
-    }
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  _getAxisVec(axis) {
-    return new THREE.Vector3(
-      axis === 'x' ? 1 : 0,
-      axis === 'y' ? 1 : 0,
-      axis === 'z' ? 1 : 0,
-    )
-  }
-
-  _applyGrab() {
-    if (!this._opState.is(S_GRAB_ACTIVE)) return
-    if (this._grab.hasInput && this._grab.axis) {
-      this._applyGrabFromInput()
-    } else if (this._grab.axis) {
-      this._applyAxisConstrainedGrab()
-    } else {
-      this._applyFreeGrab()
-    }
-    // Stack snap: adjust Z so grabbed objects rest on top of any object below.
-    // applyPreviewTranslation (called from _applyGrabDeltaToAll) already updated
-    // views; re-update after stack snap since it re-applies domain mutations.
-    if (this._grab.stackMode) {
-      this._applyStackSnap(this._grab.segmentStartPositions, this._grab.lastDelta)
-      for (const id of this._selectedIds) {
-        const selObj = this._scene.getObject(id)
-        if (selObj) {
-          selObj.meshView.updateGeometry(_grabHandlesOf(selObj))
-          selObj.meshView.updateBoxHelper()
-        }
-      }
-    } else {
-      this._grab.stacking = false
-    }
-
-    // Live inference preview during G-key grab (ADR-041 Phase 3 — mirrors QuickDragState sub-state).
-    if (this._selectedIds.size === 1) {
-      const ctx        = this._quickDragCtx
-      const suggestion = ctx.runInference()
-      const key        = suggestion ? `${suggestion.semanticType}|${suggestion.targetId}` : null
-      const prevKey    = this._grab.currentSuggestion
-        ? `${this._grab.currentSuggestion.semanticType}|${this._grab.currentSuggestion.targetId}` : null
-      if (suggestion) {
-        if (!this._grab.isSuggesting || key !== prevKey) {
-          this._grab.isSuggesting      = true
-          this._grab.currentSuggestion = suggestion
-          ctx.showDragSuggestion(suggestion)
-        } else {
-          ctx.updateDragSuggestion(suggestion)
-        }
-      } else if (this._grab.isSuggesting) {
-        this._grab.isSuggesting      = false
-        this._grab.currentSuggestion = null
-        ctx.hideDragSuggestion()
-      }
-    }
-
-    // Approach gradient: warm wireframe of nearby Solids before the snap threshold is reached.
-    const [movedId] = this._selectedIds
-    const movedObj  = this._scene.getObject(movedId)
-    if (movedObj instanceof Solid) {
-      const warmthEntries = computeApproachWarmth(movedObj, this._scene.objects.values())
-      const warmthMap     = new Map(warmthEntries.map(e => [e.targetId, e.warmth]))
-      for (const obj of this._scene.objects.values()) {
-        if (obj instanceof Solid && !this._selectedIds.has(obj.id)) {
-          obj.meshView?.setApproachWarmth(warmthMap.get(obj.id) ?? 0)
-        }
-      }
-    }
-  }
-
-  /** Toggles stacking mode on/off during an active grab. */
-  _toggleStackMode() {
-    this._grab.stackMode = !this._grab.stackMode
-    this._grab.stacking  = false
-    this._applyGrab()
-    this._updateGrabStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Stack snap: after all grab movement is applied, cast downward rays from the
-   * bottom face of the active grabbed object. If another object is directly below,
-   * shift all grabbed objects upward so the bottom face rests on that surface.
-   * @param {Map<string, import('three').Vector3>} segStartPositions  per-Solid _position snapshots
-   * @param {import('three').Vector3} currentDelta  world delta already applied by the caller
-   */
-  _applyStackSnap(segStartPositions, currentDelta) {
-    const grabbed = this._activeObj
-    if (!(grabbed instanceof Solid)) { this._grab.stacking = false; return }
-
-    // Find bottom Z of the grabbed object
-    const gCorners = grabbed.corners
-    let gZMin = Infinity
-    gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
-
-    // Collect meshes from non-grabbed objects (excluding MeasureLine)
-    const grabbedIds = new Set(this._selectedIds)
-    const targetMeshes = [...this._scene.objects.values()]
-      .filter(o => !grabbedIds.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
-      .map(o => o.meshView.cuboid)
-
-    if (!targetMeshes.length) { this._grab.stacking = false; return }
-
-    // Sample the bottom face: 4 corners at gZMin + centroid
-    const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < 0.001)
-    const center = new THREE.Vector3()
-    bottomCorners.forEach(c => center.add(c))
-    center.divideScalar(bottomCorners.length || 1)
-
-    const origins = [...bottomCorners, center]
-    const downDir = new THREE.Vector3(0, 0, -1)
-    const stackRay = new THREE.Raycaster()
-
-    // Cast downward from well above the scene; find the highest surface hit at (x,y).
-    // Using gZMin+ε as origin would miss surfaces above the current bottom face.
-    const RAY_TOP = 10000
-    let highestHitZ = null
-    for (const origin of origins) {
-      stackRay.set(new THREE.Vector3(origin.x, origin.y, RAY_TOP), downDir)
-      const hits = stackRay.intersectObjects(targetMeshes)
-      if (hits.length > 0) {
-        const hz = hits[0].point.z
-        if (highestHitZ === null || hz > highestHitZ) highestHitZ = hz
-      }
-    }
-
-    if (highestHitZ === null) { this._grab.stacking = false; return }
-
-    const zOffset = highestHitZ - gZMin
-    // Skip if already resting on the surface (within 1mm tolerance)
-    if (Math.abs(zOffset) < 0.001) { this._grab.stacking = false; return }
-
-    // Apply additional Z shift via the public Solid.move() API (ADR-040: never mutate
-    // corners directly — _position and localCorners must remain the SSOT).
-    const snapDelta = currentDelta.clone().add(new THREE.Vector3(0, 0, zOffset))
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj instanceof Solid) {
-        const segStartPos = segStartPositions?.get(id)
-        if (segStartPos) selObj.move(segStartPos, snapDelta)
-      }
-    }
-    this._grab.stacking = true
-  }
-
-  /**
-   * Applies `delta` to the active object and all other selected objects.
-   * Uses each object's own startCorners snapshot from `_grab.allStartCorners`.
-   * @param {import('three').Vector3} delta
-   */
-  _applyGrabDeltaToAll(delta) {
-    this._grab.lastDelta.copy(delta)
-    this._service.applyPreviewTranslation(
-      this._grab.segmentStartCorners,
-      this._grab.segmentStartPositions,
-      delta,
-    )
-  }
-
-  _applyGrabFromInput() {
-    this._grab.snapping = false
-    const parsed = parseFloat(this._grab.inputStr)
-    if (this._grab.inputStr && isNaN(parsed)) {
-      this._uiView.showToast('Invalid number')
-      return
-    }
-    const dist    = isNaN(parsed) ? 0 : parsed
-    const axisVec = this._getAxisVec(this._grab.axis)
-    this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
-  }
-
-  _applyFreeGrab() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (!this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) return
-    let delta = pt.clone().sub(this._grab.startPoint)
-    if (this._grab.autoSnap) {
-      delta = this._trySnapToGeometry(delta)
-    } else if (this._ctrlHeld) {
-      delta = this._applyGridSnapToDelta(delta)
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-    } else {
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-      const _fgTension = this._service.getLinkDragTension()
-      if (_fgTension > 0) delta.multiplyScalar(Math.max(0.15, 1.0 - Math.min(_fgTension, 1.0) * 0.85))
-    }
-    this._applyGrabDeltaToAll(delta)
-  }
-
-  _applyAxisConstrainedGrab() {
-    const axisVec = this._getAxisVec(this._grab.axis)
-
-    // Compute the screen-space direction of the world axis using the analytic
-    // Jacobian of the perspective projection, evaluated at the grab pivot.
-    //
-    // The previous approach projected (pivot + axisVec) to NDC and subtracted
-    // project(pivot). When the camera is close to the object, (pivot + axisVec)
-    // can land behind the camera. THREE.js perspective division by a negative W
-    // flips the NDC sign, reversing the apparent axis direction and causing the
-    // object to move opposite to the cursor.
-    //
-    // The Jacobian d(ndc)/dt at t=0 is computed entirely at the pivot point
-    // (always in front of the camera), so it is immune to this sign-flip.
-    //
-    // Derivation for perspective projection  ndc.x = x_c * f_x / (−z_c):
-    //   dx_ndc/dt = f_x * (v_x * (−z_c) − x_c * v_z) / z_c²
-    //   dy_ndc/dt = f_y * (v_y * (−z_c) − y_c * v_z) / z_c²
-    // where (x_c, y_c, z_c) = pivot in camera space, (v_x, v_y, v_z) = axis
-    // in camera space, and z_c < 0 for points in front of the camera.
-    const P_c = this._grab.pivot.clone().applyMatrix4(this._camera.matrixWorldInverse)
-    const v_c = axisVec.clone().transformDirection(this._camera.matrixWorldInverse)
-    const f_y = 1 / Math.tan(THREE.MathUtils.degToRad(this._camera.fov * 0.5))
-    const f_x = f_y / this._camera.aspect
-    const z   = P_c.z    // negative for in-front points
-
-    const dx        = f_x * (v_c.x * (-z) - P_c.x * v_c.z) / (z * z)
-    const dy        = f_y * (v_c.y * (-z) - P_c.y * v_c.z) / (z * z)
-    const screenLen = Math.sqrt(dx * dx + dy * dy)
-    if (screenLen < 1e-4) return
-
-    const axisNormX = dx / screenLen
-    const axisNormY = dy / screenLen
-
-    const mdx  = this._mouse.x - this._grab.startMouse.x
-    const mdy  = this._mouse.y - this._grab.startMouse.y
-    const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
-
-    if (this._grab.autoSnap) {
-      const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
-      const snappedDelta = this._trySnapToGeometry(delta)
-      this._applyGrabDeltaToAll(snappedDelta)
-    } else if (this._ctrlHeld) {
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-      const g           = this._grab.gridSize
-      const snappedDist = Math.round(dist / g) * g
-      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(snappedDist))
-    } else {
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-      const _acTension = this._service.getLinkDragTension()
-      const _acDist    = _acTension > 0 ? dist * Math.max(0.15, 1.0 - Math.min(_acTension, 1.0) * 0.85) : dist
-      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(_acDist))
-    }
-  }
-
-  _updateGrabStatus() {
-    if (this._grab.pivotSelectMode) {
-      const MODE_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-      const MODE_COLOR = { all: '#aaa', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
-      const m = this._grab.pivotMode ?? 'all'
-      this._uiView.setStatusRich([
-        { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
-        { text: MODE_LABEL[m], color: MODE_COLOR[m] },
-        { text: '1 Vertex  2 Edge  3 Face', color: '#444' },
-      ])
-      return
-    }
-
-    const AXIS_COLORS = { x: '#e05252', y: '#6ab04c', z: '#4a9eed' }
-    const parts = [{ text: 'Grab', bold: true, color: '#ffffff' }]
-
-    if (this._grab.axis) {
-      parts.push({ text: this._grab.axis.toUpperCase(), bold: true, color: AXIS_COLORS[this._grab.axis] })
-    }
-    if (this._grab.hasInput) {
-      parts.push({ text: this._grab.inputStr + '_', color: '#ffeb3b' })
-    }
-    if (this._grab.pivotLabel !== 'Centroid') {
-      parts.push({ text: this._grab.pivotLabel, color: '#888' })
-    }
-    if (this._grab.stackMode) {
-      if (this._grab.stacking) {
-        parts.push({ text: 'Stack: ON', bold: true, color: '#a5d6a7' })
-      } else {
-        parts.push({ text: 'Stack', color: '#4caf50' })
-      }
-    }
-    if (this._grab.snapping && this._grab.snappedTarget) {
-      parts.push({ text: `Snap: ${this._grab.snappedTarget.label}`, bold: true, color: '#ff9800' })
-    } else if (this._grab.autoSnap) {
-      parts.push({ text: 'Auto Snap [World]', color: '#80cbc4' })
-      parts.push({ text: 'Origin / X / Y / Z', color: '#444' })
-    } else if (this._ctrlHeld) {
-      parts.push({ text: `Grid: ${this._grab.gridSize}`, bold: true, color: '#80cbc4' })
-      parts.push({ text: 'Scroll to change', color: '#444' })
-    }
-
-    if (!this._grab.hasInput) {
-      const d = this._grab.lastDelta
-      const cx = (this._grab.centroid.x + d.x).toFixed(2)
-      const cy = (this._grab.centroid.y + d.y).toFixed(2)
-      const cz = (this._grab.centroid.z + d.z).toFixed(2)
-      parts.push({ text: `X:${cx} Y:${cy} Z:${cz}`, color: '#546e7a' })
-      const dx = (d.x >= 0 ? '+' : '') + d.x.toFixed(2)
-      const dy = (d.y >= 0 ? '+' : '') + d.y.toFixed(2)
-      const dz = (d.z >= 0 ? '+' : '') + d.z.toFixed(2)
-      parts.push({ text: `Δ ${dx} ${dy} ${dz}`, color: '#78909c' })
-    }
-
-    this._uiView.setStatusRich(parts)
-  }
-
-  // ─── Grid snap (Ctrl during grab) ─────────────────────────────────────────
-
-  /** Grid sizes cycled by Ctrl+Wheel during grab */
-  static get GRID_SIZES() { return [0.1, 0.25, 0.5, 1, 2.5, 5, 10] }
-
-  /** Angle step sizes (degrees) cycled by Ctrl+Wheel during rotate */
-  static get ANGLE_STEPS() { return [1, 5, 10, 15, 22.5, 45, 90] }
-
-  /**
-   * Rounds a delta vector to the nearest multiple of the current grid size.
-   * @param {THREE.Vector3} delta
-   * @returns {THREE.Vector3}
-   */
-  _applyGridSnapToDelta(delta) {
-    const g = this._grab.gridSize
-    return new THREE.Vector3(
-      Math.round(delta.x / g) * g,
-      Math.round(delta.y / g) * g,
-      Math.round(delta.z / g) * g,
-    )
-  }
-
-  _onWheel(e) {
-    // ── 2D Map Mode: scroll to zoom ──────────────────────────────────────
-    if (this._mapModeCtrl.onWheel(e)) return
-    if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
-      e.preventDefault()
-      const steps = AppController.ANGLE_STEPS
-      const cur   = steps.indexOf(this._rotateHandler.stepSize)
-      const idx   = cur >= 0 ? cur : (steps.findIndex(s => s >= this._rotateHandler.stepSize) || 0)
-      const next  = e.deltaY > 0
-        ? Math.min(idx + 1, steps.length - 1)
-        : Math.max(idx - 1, 0)
-      this._rotateHandler.stepSize = steps[next]
-      this._rotateHandler.apply()
-      this._rotateHandler.updateStatus()
-      return
-    }
-    if (!this._opState.is(S_GRAB_ACTIVE) || !this._ctrlHeld) return
-    e.preventDefault()
-    const sizes = AppController.GRID_SIZES
-    const idx   = sizes.indexOf(this._grab.gridSize)
-    // fall back to nearest index if current size not in list
-    const cur   = idx >= 0 ? idx : sizes.findIndex(s => s >= this._grab.gridSize) || 0
-    const next  = e.deltaY > 0
-      ? Math.min(cur + 1, sizes.length - 1)
-      : Math.max(cur - 1, 0)
-    this._grab.gridSize = sizes[next]
-    this._applyGrab()
-    this._updateGrabStatus()
-  }
-
-  // ─── Face extrude (E key) ──────────────────────────────────────────────────
-
-  _startFaceExtrude(face) {
-    this._opState.send('BEGIN_FACE_EXTRUDE')
-    const fe = this._faceExtrude
-    fe.face          = face
-    fe.savedCorners  = face.vertices.map(v => v.position.clone())  // world, for display / snap
-    fe.allStartCorners = this._corners.map(c => c.clone())   // full Solid snapshot for undo (ADR-022)
-    fe.dist          = 0
-    fe.inputStr      = ''
-    fe.hasInput      = false
-    fe.snapping      = false
-    fe.snappedTarget = null
-    // World normal (for distance dot product and drag plane)
-    fe.normal.copy(computeOutwardFaceNormal(this._corners, face.index))
-    // Body-frame normal and face corners for extrudeFace() call (ADR-040)
-    const solid = this._activeObj
-    fe.savedLocalFaceCorners = face.vertices.map(v => {
-      const i = solid.vertices.indexOf(v)
-      return solid.localCorners[i].clone()
-    })
-    fe.localNormal.copy(fe.normal).applyQuaternion(solid.orientation.clone().invert())
-    const center = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    fe.dragPlane.setFromNormalAndCoplanarPoint(camDir, center)
-    const pt = new THREE.Vector3()
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    fe.startPoint.copy(this._raycaster.ray.intersectPlane(fe.dragPlane, pt) ? pt : center)
-    this._controls.enabled = false
-    this._updateFaceExtrudeStatus()
-    this._updateMobileToolbar()
-  }
-
-  _applyFaceExtrude() {
-    const { face, savedCorners, savedLocalFaceCorners, localNormal, normal, dist } = this._faceExtrude
-    this._activeObj.extrudeFace(face, savedLocalFaceCorners, localNormal, dist)
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.setFaceHighlight(face.index, this._corners)
-    const currentFaceCorners = face.vertices.map(v => v.position)
-    const { spanMid, armDir } = this._meshView.setExtrusionDisplay(savedCorners, currentFaceCorners)
-    const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
-    const screen = this._projectToScreen(labelPos)
-    this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
-    this._updateNPanel()
-  }
-
-  _applyFaceExtrudeFromInput() {
-    this._faceExtrude.snapping = false
-    const parsed = parseFloat(this._faceExtrude.inputStr)
-    if (this._faceExtrude.inputStr && isNaN(parsed)) {
-      this._uiView.showToast('Invalid number')
-      return
-    }
-    this._faceExtrude.dist = isNaN(parsed) ? 0 : parsed
-    this._applyFaceExtrude()
-  }
-
-  _confirmFaceExtrude() {
-    if (!this._opState.is(S_FACE_EXTRUDE)) return
-    // ── Record undo snapshot (ADR-022 Phase 2) ────────────────────────────
-    if (this._scene.activeId) {
-      const activeId = this._scene.activeId
-      const endCornersMap   = new Map([[activeId, this._corners.map(c => c.clone())]])
-      const startCornersMap = new Map([[activeId, this._faceExtrude.allStartCorners]])
-      const cmd = createMoveCommand('Face Extrude', startCornersMap, endCornersMap, this._scene, this._service)
-      this._commandStack.push(cmd)
-    }
-
-    this._opState.send('CONFIRM')
-    this._controls.enabled = true
-    this._meshView.clearExtrusionDisplay()
-    this._meshView.clearSnapDisplay()
-    this._meshView.setFaceHighlight(null, this._corners)
-    this._scene.editSelection.clear()
-    this._meshView.updateEditSelection(this._scene.editSelection, this._corners)
-    this._uiView.clearExtrusionLabel()
-    this._updateNPanel()
-    this._refreshEditModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  _cancelFaceExtrude() {
-    if (!this._opState.is(S_FACE_EXTRUDE)) return
-    const { face, savedLocalFaceCorners, localNormal } = this._faceExtrude
-    if (face) {
-      this._activeObj.extrudeFace(face, savedLocalFaceCorners, localNormal, 0)
-      this._meshView.updateGeometry(this._corners)
-      this._meshView.setFaceHighlight(face.index, this._corners)
-    }
-    this._opState.send('CANCEL')
-    this._controls.enabled = true
-    this._meshView.clearExtrusionDisplay()
-    this._meshView.clearSnapDisplay()
-    this._uiView.clearExtrusionLabel()
-    this._refreshEditModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  _updateFaceExtrudeStatus() {
-    const fe = this._faceExtrude
-    const parts = [
-      { text: 'Extrude', bold: true, color: '#ffffff' },
-      { text: fe.face?.name ?? '', color: '#4fc3f7' },
-    ]
-    if (fe.hasInput) {
-      parts.push({ text: fe.inputStr + '_', color: '#ffeb3b' })
-    } else {
-      parts.push({ text: `D: ${fe.dist.toFixed(3)}`, color: '#ffeb3b' })
-    }
-    if (fe.snapping && fe.snappedTarget) {
-      parts.push({ text: `Snap: ${fe.snappedTarget.label}`, bold: true, color: '#ff9800' })
-    }
-    const hint = window.innerWidth < 768
-      ? 'Release to confirm'
-      : 'Enter confirm  Esc cancel'
-    parts.push({ text: hint, color: '#444' })
-    this._uiView.setStatusRich(parts)
-  }
-
-  /**
-   * Snaps face extrude distance to nearest geometry element projected onto the face normal.
-   * @param {number} dist  raw extrude distance
-   * @returns {number}  snapped or original distance
-   */
-  _trySnapFaceExtrude(dist) {
-    const fe      = this._faceExtrude
-    const center  = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
-    const posAfter = center.clone().addScaledVector(fe.normal, dist)
-
-    // Compare snap targets to the mouse cursor, not the face center
-    const mx = (this._mouse.x + 1) / 2 * innerWidth
-    const my = (-this._mouse.y + 1) / 2 * innerHeight
-
-    const geoTargets   = collectSnapTargets(this._scene.objects, 'all', new Set([this._scene.activeId]))
-    const worldTargets = collectWorldSnapTargets(posAfter)
-    const targets      = [...geoTargets, ...worldTargets]
-    fe.snapTargets = targets
-    const bestTarget = this._pickBestSnapTarget(targets, mx, my)
-
-    if (bestTarget) {
-      fe.snapping      = true
-      fe.snappedTarget = bestTarget
-      return bestTarget.position.clone().sub(center).dot(fe.normal)
-    }
-    fe.snapping      = false
-    fe.snappedTarget = null
-    return dist
-  }
-
-  // ─── Geometry snap ─────────────────────────────────────────────────────────
-
-  /**
-   * Attempts to snap the grab pivot to the nearest geometry element.
-   * Snap candidates: all Vertex positions, Edge midpoints, Face centers.
-   * @param {THREE.Vector3} delta  current free delta
-   * @returns {THREE.Vector3}  snapped or original delta
-   */
-  _trySnapToGeometry(delta) {
-    const pivotAfter = this._grab.pivot.clone().add(delta)
-    const pScreen    = this._projectToScreen(pivotAfter)
-
-    const grabbedIds   = new Set(this._grab.allStartCorners.keys())
-    const geoTargets   = collectSnapTargets(this._scene.objects, this._grab.snapMode, grabbedIds)
-    const worldTargets = collectWorldSnapTargets(pivotAfter)
-    const targets      = [...geoTargets, ...worldTargets]
-    this._grab.snapTargets = targets  // cache for candidate display
-    const bestTarget = this._pickBestSnapTarget(targets, pScreen.x, pScreen.y)
-
-    if (bestTarget) {
-      this._grab.snapping      = true
-      this._grab.snappedTarget = bestTarget
-      return bestTarget.position.clone().sub(this._grab.pivot)
-    }
-    this._grab.snapping      = false
-    this._grab.snappedTarget = null
-    return delta
-  }
-
-  // ─── Pivot point selection ─────────────────────────────────────────────────
-
-  _startPivotSelect() {
-    if (!this._opState.is(S_GRAB_ACTIVE) || this._grab.pivotSelectMode) return
-    // Pivot selection uses Cuboid-specific vertex geometry — skip for non-Cuboid types.
-    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine || this._activeObj instanceof CoordinateFrame) return
-    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
-    this._grab.pivotSelectMode = true
-    this._grab.pivotMode       = 'all'
-    this._grab.hoveredPivotIdx = -1
-    this._grab.candidates = getPivotCandidates(this._grab.startCorners)
-    this._meshView.showPivotCandidates(this._grab.candidates)
-    this._updateGrabStatus()
-  }
-
-  /**
-   * Filters pivot candidates by sub-element type and refreshes the display.
-   * @param {'all'|'vertex'|'edge'|'face'} mode
-   */
-  _setPivotCandidateMode(mode) {
-    this._grab.pivotMode = mode
-    const corners = this._grab.startCorners
-    const candidates =
-      mode === 'vertex' ? getVertexPivotCandidates(corners) :
-      mode === 'edge'   ? getEdgePivotCandidates(corners)   :
-      mode === 'face'   ? getFacePivotCandidates(corners)   :
-                          getPivotCandidates(corners)
-    this._grab.candidates      = candidates
-    this._grab.hoveredPivotIdx = -1
-    this._meshView.showPivotCandidates(candidates)
-    this._meshView.setHoveredPivot(null)
-    this._updateGrabStatus()
-  }
-
-  _updatePivotHover() {
-    const SNAP_PX = 30
-    let minDist    = Infinity
-    let closestIdx = -1
-    const mx = (this._mouse.x + 1) / 2 * innerWidth
-    const my = (-this._mouse.y + 1) / 2 * innerHeight
-    this._grab.candidates.forEach((c, i) => {
-      const ndc = c.position.clone().project(this._camera)
-      const sx  = (ndc.x + 1) / 2 * innerWidth
-      const sy  = (-ndc.y + 1) / 2 * innerHeight
-      const d   = Math.hypot(sx - mx, sy - my)
-      if (d < minDist) { minDist = d; closestIdx = i }
-    })
-    if (minDist <= SNAP_PX && closestIdx >= 0) {
-      this._grab.hoveredPivotIdx = closestIdx
-      const cand = this._grab.candidates[closestIdx]
-      this._meshView.setHoveredPivot(cand)
-      this._uiView.setStatusRich([
-        { text: 'Pivot', color: '#aaa' },
-        { text: cand.label, bold: true, color: '#ffeb3b' },
-      ])
-    } else {
-      this._grab.hoveredPivotIdx = -1
-      this._meshView.setHoveredPivot(null)
-      this._uiView.setStatusRich([
-        { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
-        { text: 'Click to confirm', color: '#aaa' },
-        { text: 'Esc to cancel', color: '#666' },
-      ])
-    }
-  }
-
-  /**
-   * Changes the snap target filter during grab and resets the current snap lock.
-   * @param {'all'|'vertex'|'edge'|'face'} mode
-   */
-  _setSnapMode(mode) {
-    this._grab.snapMode      = mode
-    this._grab.snapping      = false
-    this._grab.snappedTarget = null
-    this._meshView.clearSnapLocked()
-    this._updateGrabStatus()
-  }
-
-  _confirmPivotSelect() {
-    const idx = this._grab.hoveredPivotIdx
-    if (idx >= 0) {
-      const cand = this._grab.candidates[idx]
-      this._grab.pivot.copy(cand.position)
-      this._grab.pivotLabel = cand.label
-      this._restartGrabFromPivot()
-      this._grab.autoSnap = true  // auto-snap enabled after pivot selection
-    }
-    this._grab.pivotSelectMode = false
-    this._grab.hoveredPivotIdx = -1
-    this._meshView.clearPivotDisplay()
-    this._updateGrabStatus()
-  }
-
-  _cancelPivotSelect() {
-    this._grab.pivotSelectMode = false
-    this._grab.hoveredPivotIdx = -1
-    this._meshView.clearPivotDisplay()
-    this._updateGrabStatus()
-  }
-
-  _restartGrabFromPivot() {
-    const pivot  = this._grab.pivot
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, pivot)
-    this._grab.startPoint.copy(pivot)
-    this._grab.axis     = null
-    this._grab.inputStr = ''
-    this._grab.hasInput = false
-    this._grab.startMouse.copy(this._mouse)
-  }
-
   // ─── Pointer events (mouse + touch + stylus) ──────────────────────────────
   _onPointerMove(e) {
     // Cancel long-press grab if the finger moved more than 8 px
@@ -4785,32 +3786,33 @@ export class AppController {
     }
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
-      if (this._grab.pivotSelectMode) {
-        this._updatePivotHover()
+      const gs = this._grabHandler.state
+      if (this._grabHandler.pivotSelectMode) {
+        this._grabHandler.updatePivotHover()
         return
       }
-      this._applyGrab()
-      if (this._grab.autoSnap) {
+      this._grabHandler.apply()
+      if (gs.autoSnap) {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(this._grab.snapTargets))
-        if (this._grab.snapping && this._grab.snappedTarget) {
+        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(gs.snapTargets))
+        if (gs.snapping && gs.snappedTarget) {
           this._meshView.clearSnapNearest()
           this._meshView.showSnapLocked(
-            this._grab.snappedTarget.position,
-            this._grab.snappedTarget.type,
-            this._grab.pivot,
+            gs.snappedTarget.position,
+            gs.snappedTarget.type,
+            gs.pivot,
           )
         } else {
           this._meshView.clearSnapLocked()
-          const nearest = this._findNearestSnapCandidate(this._grab.snapTargets, mx, my)
+          const nearest = this._findNearestSnapCandidate(gs.snapTargets, mx, my)
           if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
           else         this._meshView.clearSnapNearest()
         }
       } else {
         this._meshView.clearSnapDisplay()
       }
-      this._updateGrabStatus()
+      this._grabHandler.updateStatus()
       this._updateNPanel()
       return
     }
@@ -5171,49 +4173,50 @@ export class AppController {
     }
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
-      if (this._grab.pivotSelectMode) {
+      if (this._grabHandler.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
-        if (e.button === 2) { this._cancelPivotSelect();  return }
+        if (e.button === 2) { this._grabHandler.cancelPivotSelect();  return }
         return
       }
       if (e.button === 0) {
         if (e.pointerType === 'touch') {
           // On touch: checkpoint the current position as the start of a new drag
           // segment, then track the pointer. Grab stays active until Confirm is pressed.
-          this._grab.segmentStartCorners = new Map()
-          this._grab.segmentStartPositions = new Map()
+          const gs = this._grabHandler.state
+          gs.segmentStartCorners = new Map()
+          gs.segmentStartPositions = new Map()
           for (const id of this._selectedIds) {
             const selObj = this._scene.getObject(id)
             if (selObj) {
-              this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
-              if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
+              gs.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
+              if (selObj instanceof Solid) gs.segmentStartPositions.set(id, selObj._position.clone())
             }
           }
-          this._grab.startCorners = this._corners.map(c => c.clone())
+          gs.startCorners = this._corners.map(c => c.clone())
           const grabCenter = (this._activeObj instanceof CoordinateFrame)
             ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
             : (this._activeObj instanceof Solid ? this._activeObj._position.clone() : getCentroid(this._corners))
-          this._grab.centroid.copy(grabCenter)
-          this._grab.pivot.copy(grabCenter)
-          this._grab.lastDelta.set(0, 0, 0)
+          gs.centroid.copy(grabCenter)
+          gs.pivot.copy(grabCenter)
+          gs.lastDelta.set(0, 0, 0)
           const camDir = new THREE.Vector3()
           this._camera.getWorldDirection(camDir)
-          this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
+          gs.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
           this._raycaster.setFromCamera(this._mouse, this._camera)
           const _segPt = new THREE.Vector3()
-          if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, _segPt)) {
-            this._grab.startPoint.copy(_segPt)
+          if (this._raycaster.ray.intersectPlane(gs.dragPlane, _segPt)) {
+            gs.startPoint.copy(_segPt)
           } else {
-            this._grab.startPoint.copy(grabCenter)
+            gs.startPoint.copy(grabCenter)
           }
-          this._grab.startMouse.copy(this._mouse)
+          gs.startMouse.copy(this._mouse)
           this._activeDragPointerId = e.pointerId
           return
         }
-        this._confirmGrab()
+        this._grabHandler.confirm()
         return
       }
-      if (e.button === 2) { this._cancelGrab();  return }
+      if (e.button === 2) { this._grabHandler.cancel();  return }
       return
     }
 
@@ -5556,7 +4559,7 @@ export class AppController {
   _onKeyUp(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = false
-      if (this._opState.is(S_GRAB_ACTIVE) && !this._grab.pivotSelectMode) this._updateGrabStatus()
+      if (this._opState.is(S_GRAB_ACTIVE) && !this._grabHandler.pivotSelectMode) this._grabHandler.updateStatus()
       if (this._opState.is(S_FACE_EXTRUDE)) this._updateFaceExtrudeStatus()
       if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotateHandler.state.hasInput) {
         this._rotateHandler.apply()
@@ -5647,53 +4650,55 @@ export class AppController {
 
     // ── Keys active during grab ────────────────────────────────────────────
     if (this._opState.is(S_GRAB_ACTIVE)) {
-      if (this._grab.pivotSelectMode) {
-        if (e.key === 'Escape') this._cancelPivotSelect()
-        if (e.key === '1') { this._setPivotCandidateMode('vertex'); return }
-        if (e.key === '2') { this._setPivotCandidateMode('edge');   return }
-        if (e.key === '3') { this._setPivotCandidateMode('face');   return }
+      const gh = this._grabHandler
+      const gs = gh.state
+      if (gh.pivotSelectMode) {
+        if (e.key === 'Escape') gh.cancelPivotSelect()
+        if (e.key === '1') { gh.setPivotCandidateMode('vertex'); return }
+        if (e.key === '2') { gh.setPivotCandidateMode('edge');   return }
+        if (e.key === '3') { gh.setPivotCandidateMode('face');   return }
         return
       }
       switch (e.key) {
-        case 'v': case 'V': this._startPivotSelect(); return
-        case 'x': case 'X': this._setGrabAxis('x'); return
-        case 'y': case 'Y': this._setGrabAxis('y'); return
-        case 'z': case 'Z': this._setGrabAxis('z'); return
-        case 's': case 'S': this._toggleStackMode(); return
+        case 'v': case 'V': gh.startPivotSelect(); return
+        case 'x': case 'X': gh.setAxis('x'); return
+        case 'y': case 'Y': gh.setAxis('y'); return
+        case 'z': case 'Z': gh.setAxis('z'); return
+        case 's': case 'S': gh.toggleStackMode(); return
         case 'Enter':
-          if (this._grab.isSuggesting && this._grab.currentSuggestion) {
+          if (gh.isSuggesting && gh.currentSuggestion) {
             this._createSpatialLinkDirect(
-              this._grab.currentSuggestion.sourceId,
-              this._grab.currentSuggestion.targetId,
-              this._grab.currentSuggestion,
+              gh.currentSuggestion.sourceId,
+              gh.currentSuggestion.targetId,
+              gh.currentSuggestion,
             )
           }
-          this._confirmGrab()
+          gh.confirm()
           return
-        case 'Escape':       this._cancelGrab();     return
+        case 'Escape':       gh.cancel();     return
         case '1': this._setSnapMode('vertex'); return
         case '2': this._setSnapMode('edge');   return
         case '3': this._setSnapMode('face');   return
       }
-      if (this._grab.axis) {
+      if (gs.axis) {
         if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
-          this._grab.inputStr += e.key
-          this._grab.hasInput  = true
-          this._applyGrab()
-          this._updateGrabStatus()
+          gs.inputStr += e.key
+          gs.hasInput  = true
+          gh.apply()
+          gh.updateStatus()
           return
         }
-        if (e.key === '-' && this._grab.inputStr.length === 0) {
-          this._grab.inputStr = '-'
-          this._grab.hasInput = true
-          this._updateGrabStatus()
+        if (e.key === '-' && gs.inputStr.length === 0) {
+          gs.inputStr = '-'
+          gs.hasInput = true
+          gh.updateStatus()
           return
         }
         if (e.key === 'Backspace') {
-          this._grab.inputStr = this._grab.inputStr.slice(0, -1)
-          this._grab.hasInput = this._grab.inputStr.length > 0 && this._grab.inputStr !== '-'
-          this._applyGrab()
-          this._updateGrabStatus()
+          gs.inputStr = gs.inputStr.slice(0, -1)
+          gs.hasInput = gs.inputStr.length > 0 && gs.inputStr !== '-'
+          gh.apply()
+          gh.updateStatus()
           return
         }
       }
@@ -5848,7 +4853,7 @@ export class AppController {
       }
       // G: grab
       if ((e.key === 'g' || e.key === 'G') && this._objSelected) {
-        this._startGrab()
+        this._grabHandler.start()
         return
       }
       // R: rotate (CoordinateFrame or Solid, ADR-019 / ADR-036)
