@@ -37,8 +37,6 @@ import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
-import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
-import { createSolidRotateCommand }   from '../command/SolidRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
 import { createSetPlaceTypeCommand }  from '../command/SetPlaceTypeCommand.js'  // N-panel place type change (post-hoc push)
 import { createReparentFrameCommand } from '../command/ReparentFrameCommand.js'
@@ -72,6 +70,7 @@ import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
+import { RotationHandler }            from './handler/RotationHandler.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -538,46 +537,7 @@ export class AppController {
     this._axisGuideRing = null
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
-    // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
-    // Active state tracked by this._opState (S_ROTATE_ACTIVE).
-    this._rotate = {
-      /** World-space axis to rotate around: null = view-space Z, 'x'|'y'|'z' = world axes. */
-      axis:       null,
-      /** Screen-angle (radians) from projected pivot to mouse at start. */
-      startAngle: 0,
-      /** Saved rotation quaternion at the moment rotation begins (CoordinateFrame only). */
-      startRot:   new THREE.Quaternion(),
-      /** Numeric degree string typed by the user; empty when mouse-driven. */
-      inputStr:   '',
-      /** True when the user has typed at least one digit. */
-      hasInput:   false,
-      /** Degree increment for Ctrl snap. Cycled with Ctrl+Wheel. */
-      stepSize:   1,
-      // Mobile multi-segment drag support: re-initialized on each new touch drag.
-      /** True when startAngle should be captured from the next pointer position (mobile). */
-      needsStartAngle:      false,
-      /** Per-segment start angle; equals startAngle on PC (single drag). */
-      segmentStartAngle:    0,
-      /** Angle from pivot to cursor at the previous frame; used for incremental accumulation. */
-      prevCurrentAngle:     0,
-      /** Accumulated signed rotation (radians) for the current drag segment. */
-      accumulatedAngle:     0,
-      /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
-      segmentStartRot:      new THREE.Quaternion(),
-      // ADR-040 Solid rotate state (replaces startCorners/segmentStartCorners/bodyRot fields)
-      /** Solid orientation snapshot at rotate start — for undo. @type {import('three').Quaternion|null} */
-      startOrientation:    null,
-      /** Solid _position snapshot at rotate start — for undo. @type {import('three').Vector3|null} */
-      startPos:            null,
-      /** Solid orientation snapshot at segment start — for reapplyable drag. @type {import('three').Quaternion|null} */
-      segStartOrientation: null,
-      /** Solid _position snapshot at segment start — for reapplyable drag. @type {import('three').Vector3|null} */
-      segStartPos:         null,
-      /** Centroid of solid corners at segment start — used as rotation pivot + screen projection. @type {import('three').Vector3|null} */
-      segStartPivot:       null,
-      /** Display angle (radians) from last _applyRotate(); used by _updateRotateStatus(). */
-      displayAngle:        0,
-    }
+    this._rotateHandler = new RotationHandler(this)
 
     this._ctrlHeld  = false
 
@@ -693,7 +653,7 @@ export class AppController {
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
-      if (this._isFastenedRotationBlocked(frame)) return
+      if (this._rotateHandler.isFastenedRotationBlocked(frame)) return
       // rotation is already in parent-local space (ROS TF) — edit directly
       const localEuler = new THREE.Euler().setFromQuaternion(frame.rotation, 'ZYX')
       localEuler[axis] = THREE.MathUtils.degToRad(val)
@@ -3020,11 +2980,11 @@ export class AppController {
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelRotate(), danger: true },
-        { icon: 'X', label: 'X', onClick: () => this._setRotateAxis('x'), active: this._rotate.axis === 'x' },
-        { icon: 'Y', label: 'Y', onClick: () => this._setRotateAxis('y'), active: this._rotate.axis === 'y' },
-        { icon: 'Z', label: 'Z', onClick: () => this._setRotateAxis('z'), active: this._rotate.axis === 'z' },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._rotateHandler.cancel(), danger: true },
+        { icon: 'X', label: 'X', onClick: () => this._rotateHandler.setAxis('x'), active: this._rotateHandler.axis === 'x' },
+        { icon: 'Y', label: 'Y', onClick: () => this._rotateHandler.setAxis('y'), active: this._rotateHandler.axis === 'y' },
+        { icon: 'Z', label: 'Z', onClick: () => this._rotateHandler.setAxis('z'), active: this._rotateHandler.axis === 'z' },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._rotateHandler.confirm() },
       ])
       return
     }
@@ -3054,7 +3014,7 @@ export class AppController {
           { icon: ICONS.grab,   label: 'Move',      onClick: () => this._startGrab(),                                                        disabled: isOriginCF },
           { spacer: true },
           { icon: ICONS.delete, label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
-          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._startRotate(true),                                                   disabled: isOriginCF },
+          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._rotateHandler.start(true),                                            disabled: isOriginCF },
         ])
         return
       }
@@ -3110,7 +3070,7 @@ export class AppController {
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
-          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._startRotate(true) }
+          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._rotateHandler.start(true) }
           : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
       ])
       return
@@ -3329,7 +3289,7 @@ export class AppController {
 
     // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._opState.is(S_GRAB_ACTIVE))      this._cancelGrab()
-    if (this._opState.is(S_ROTATE_ACTIVE))    this._cancelRotate()
+    if (this._opState.is(S_ROTATE_ACTIVE))    this._rotateHandler.cancel()
     if (this._opState.is(S_FACE_EXTRUDE))     this._cancelFaceExtrude()
     if (this._opState.is(S_FRAME_PLACEMENT))  this._cancelFramePickSubMode()
     if (this._opState.is(S_MOUNT_PICKING))    this._cancelMountPicking()
@@ -4102,379 +4062,6 @@ export class AppController {
     })
   }
 
-  // ── CoordinateFrame / Solid rotation (R key, ADR-019 / ADR-036) ──────────
-
-  // ── Child-CF pose helpers (Solid rotation sync) ─────────────────────────────
-
-  /** Returns CoordinateFrames whose parentId === solidId. */
-  /**
-   * Starts rotate mode for the active CoordinateFrame or Solid.
-   * For CoordinateFrame: rotates the quaternion around the frame origin.
-   * For Solid: bakes the rotation into corner positions (ADR-036).
-   */
-
-  /**
-   * Centralised guard for any UI rotation entry point (R-key, N-panel, future inspectors…).
-   * Returns true and shows a toast when the frame must not be rotated because it is part of
-   * a fixed-joint source chain — rotating it would fight _updateFixedJointFrames() every frame
-   * and cause the root Solid to diverge (CODE_CONTRACTS §1 "R-key Rotation Blocked").
-   *
-   * Keeping the guard here (not inline in each handler) means new UI entry points only need
-   * one call, and the toast message stays consistent.
-   *
-   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frame
-   * @returns {boolean} true = blocked (caller should return early)
-   */
-  _isFastenedRotationBlocked(frame) {
-    if (!this._service.isInFixedJointSourceChain(frame.id)) return false
-    this._uiView.showToast(
-      'This frame is part of a fixed-joint constraint chain. Unfasten it first to rotate it independently.',
-      { type: 'warn' },
-    )
-    return true
-  }
-
-  _startRotate(deferStartAngle = false) {
-    const obj = this._activeObj
-    if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
-
-    // ── Domain guards (with user feedback) — run before state transition ──
-    if (obj instanceof CoordinateFrame) {
-      // Provenance check (ADR-034 §8.2)
-      if (!RoleService.canEdit(obj)) {
-        this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-        return
-      }
-      if (this._isFastenedRotationBlocked(obj)) return
-    } else {
-      // Solid: block rotation when a fastened-source CF is a direct child (same guard as TC drag).
-      // _updateFixedJointFrames() overwrites bodyRotation and corners every frame, so R-key would
-      // fight the constraint — the solid snaps back each frame and the pose relationship breaks.
-      if (this._service.hasFastenedChild(obj.id)) {
-        this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
-        return
-      }
-    }
-
-    // All domain guards passed → mutual exclusion + state transition
-    if (!this._opState.send('BEGIN_ROTATE')) return
-
-    // ── Setup (state is now S_ROTATE_ACTIVE) ──────────────────────────────
-    this._rotate.axis     = null
-    this._rotate.inputStr = ''
-    this._rotate.hasInput = false
-
-    let projected
-    if (obj instanceof CoordinateFrame) {
-      this._rotate.startRot.copy(obj.rotation)
-      this._rotate.segmentStartRot.copy(obj.rotation)
-      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
-    } else {
-      // Solid: snapshot orientation+position from primary triple (ADR-040)
-      this._rotate.startOrientation    = obj.orientation.clone()
-      this._rotate.startPos            = obj._position.clone()
-      this._rotate.segStartOrientation = obj.orientation.clone()
-      this._rotate.segStartPos         = obj._position.clone()
-      const pivot = obj._position.clone()
-      this._rotate.segStartPivot       = pivot.clone()
-      projected = pivot.clone().project(this._camera)
-      obj.meshView.boxHelper.visible = false
-      // CFs follow automatically via ROS TF forward kinematics — no CF pose snapshot needed.
-    }
-
-    if (deferStartAngle) {
-      // Mobile: startAngle will be captured from the first canvas touch (CODE_CONTRACTS §2)
-      this._rotate.needsStartAngle   = true
-      this._rotate.startAngle        = 0
-      this._rotate.segmentStartAngle = 0
-      this._rotate.prevCurrentAngle  = 0
-      this._rotate.accumulatedAngle  = 0
-    } else {
-      // PC: startAngle from current mouse position
-      this._rotate.startAngle = Math.atan2(
-        this._mouse.y - projected.y,
-        this._mouse.x - projected.x,
-      )
-      this._rotate.segmentStartAngle = this._rotate.startAngle
-      this._rotate.prevCurrentAngle  = this._rotate.startAngle
-      this._rotate.accumulatedAngle  = 0
-      this._rotate.needsStartAngle   = false
-    }
-
-    this._refreshSectorPreview()
-    this._controls.enabled = false
-    this._updateRotateStatus()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Confirms the current rotation and exits rotate mode.
-   */
-  _confirmRotate() {
-    if (!this._opState.is(S_ROTATE_ACTIVE)) return
-    this._applyRotate()
-    // ── Record undo snapshot (ADR-022) ────────────────────────────────────
-    if (this._activeObj instanceof CoordinateFrame) {
-      const frame = this._activeObj
-      const endQuat = frame.rotation.clone()
-      if (!endQuat.equals(this._rotate.startRot)) {
-        const cmd = createFrameRotateCommand(
-          frame, this._rotate.startRot.clone(), endQuat, this._service,
-          () => this._updateNPanel(),
-        )
-        this._commandStack.push(cmd)
-      }
-    } else if (this._activeObj instanceof Solid && this._rotate.startOrientation) {
-      const solid = this._activeObj
-      const changed = !solid.orientation.equals(this._rotate.startOrientation)
-      if (changed) {
-        const cmd = createSolidRotateCommand(
-          solid,
-          this._rotate.startOrientation.clone(), solid.orientation.clone(),
-          this._rotate.startPos.clone(),         solid._position.clone(),
-          this._service, () => this._updateNPanel(),
-        )
-        this._commandStack.push(cmd)
-      }
-    }
-    if (this._activeObj instanceof Solid) this._activeObj.meshView.setObjectSelected(true)
-    this._rotate.axis            = null
-    this._rotate.inputStr        = ''
-    this._rotate.hasInput        = false
-    this._rotate.startOrientation    = null
-    this._rotate.startPos            = null
-    this._rotate.segStartOrientation = null
-    this._rotate.segStartPos         = null
-    this._rotate.segStartPivot       = null
-    this._rotate.needsStartAngle     = false
-    this._rotateSectorPreview.hide()
-    this._opState.send('CONFIRM')
-    this._controls.enabled          = true
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._hideAxisGuide()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Cancels the rotation, restoring the object to its saved state.
-   */
-  _cancelRotate() {
-    if (!this._opState.is(S_ROTATE_ACTIVE)) return
-    const obj = this._activeObj
-    if (obj instanceof CoordinateFrame) {
-      obj.rotation.copy(this._rotate.startRot)
-      const parentWorldQuat = this._service._getParentWorldQuat(obj)
-      obj.meshView.updateRotation(parentWorldQuat.clone().multiply(obj.rotation))
-    } else if (obj instanceof Solid && this._rotate.startOrientation) {
-      obj.restorePose(this._rotate.startPos, this._rotate.startOrientation)
-      obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.setObjectSelected(true)
-    }
-    this._rotate.axis            = null
-    this._rotate.inputStr        = ''
-    this._rotate.hasInput        = false
-    this._rotate.startOrientation    = null
-    this._rotate.startPos            = null
-    this._rotate.segStartOrientation = null
-    this._rotate.segStartPos         = null
-    this._rotate.segStartPivot       = null
-    this._rotate.needsStartAngle     = false
-    this._rotateSectorPreview.hide()
-    this._opState.send('CANCEL')
-    this._controls.enabled          = true
-    this._hideAxisGuide()
-    this._refreshObjectModeStatus()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Sets the world-axis constraint for the current rotation.
-   * Toggling the same axis clears the constraint (free rotation).
-   * @param {'x'|'y'|'z'} axis
-   */
-  _setRotateAxis(axis) {
-    this._rotate.axis = (this._rotate.axis === axis) ? null : axis
-    this._rotate.inputStr = ''
-    this._rotate.hasInput = false
-    const obj = this._activeObj
-    // Re-snapshot current orientation/pivot as new segment start so accumulated
-    // rotation from the prior axis constraint is preserved (mirrors _setGrabAxis()
-    // segmentStart re-snapshot pattern).
-    if (obj instanceof CoordinateFrame) {
-      this._rotate.segmentStartRot.copy(obj.rotation)
-    } else if (obj instanceof Solid) {
-      this._rotate.segStartOrientation = obj.orientation.clone()
-      this._rotate.segStartPos         = obj._position.clone()
-      this._rotate.segStartPivot       = obj._position.clone()
-    }
-    // Recompute start angle with new axis
-    let projected
-    let rotCenter = null
-    if (obj instanceof CoordinateFrame) {
-      rotCenter = this._service.worldPoseOf(obj.id)?.position ?? obj.translation
-      projected = rotCenter.clone().project(this._camera)
-    } else if (obj instanceof Solid && this._rotate.segStartPivot) {
-      rotCenter = this._rotate.segStartPivot
-      projected = rotCenter.clone().project(this._camera)
-    }
-    if (projected) {
-      this._rotate.startAngle = Math.atan2(
-        this._mouse.y - projected.y,
-        this._mouse.x - projected.x,
-      )
-    }
-    // Reset accumulation baseline for the new axis segment so the first
-    // _applyRotate() call produces delta = 0 (no spurious jump).
-    this._rotate.segmentStartAngle = this._rotate.startAngle
-    this._rotate.prevCurrentAngle  = this._rotate.startAngle
-    this._rotate.accumulatedAngle  = 0
-    this._rotate.displayAngle      = 0
-    if (this._rotate.axis && rotCenter) {
-      this._showAxisGuide(this._rotate.axis, rotCenter.clone(), 'rotate')
-    } else {
-      this._hideAxisGuide()
-    }
-    this._refreshSectorPreview()
-    this._applyRotate()
-    this._updateRotateStatus()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Applies the current rotation delta to the active CoordinateFrame or Solid.
-   * Called on every pointer move and on numeric input changes.
-   */
-  _applyRotate() {
-    const obj = this._activeObj
-    if (!this._opState.is(S_ROTATE_ACTIVE)) return
-    if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
-
-    let angle
-    if (this._rotate.hasInput) {
-      const parsed = parseFloat(this._rotate.inputStr)
-      angle = isNaN(parsed) ? 0 : parsed * (Math.PI / 180)
-    } else {
-      // Mouse/touch-driven: measure signed angle from segment start to current position.
-      let pivotScreen
-      if (obj instanceof CoordinateFrame) {
-        pivotScreen = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
-      } else {
-        pivotScreen = (this._rotate.segStartPivot ?? obj._position.clone()).clone().project(this._camera)
-      }
-      const currentAngle = Math.atan2(
-        this._mouse.y - pivotScreen.y,
-        this._mouse.x - pivotScreen.x,
-      )
-      // Mobile: defer start angle to first canvas touch so there's no jump.
-      if (this._rotate.needsStartAngle) {
-        this._rotate.prevCurrentAngle = currentAngle
-        this._rotate.accumulatedAngle = 0
-        this._rotate.needsStartAngle  = false
-        return
-      }
-      // Incremental accumulation: normalize each per-frame delta to [-π, π] so
-      // crossing the atan2 branch-cut (directly left of pivot) never causes a
-      // sudden ±360° jump.
-      let delta = currentAngle - this._rotate.prevCurrentAngle
-      if (delta > Math.PI)  delta -= 2 * Math.PI
-      if (delta < -Math.PI) delta += 2 * Math.PI
-      this._rotate.accumulatedAngle += delta
-      this._rotate.prevCurrentAngle  = currentAngle
-      angle = this._rotate.accumulatedAngle
-      // Ctrl: snap to stepSize degree increments
-      if (this._ctrlHeld) {
-        const stepRad = this._rotate.stepSize * (Math.PI / 180)
-        angle = Math.round(angle / stepRad) * stepRad
-      }
-    }
-
-    // Build axis vector: world axis when constrained, view-direction when free.
-    let axisVec
-    if (this._rotate.axis === 'x') axisVec = new THREE.Vector3(1, 0, 0)
-    else if (this._rotate.axis === 'y') axisVec = new THREE.Vector3(0, 1, 0)
-    else if (this._rotate.axis === 'z') axisVec = new THREE.Vector3(0, 0, 1)
-    else {
-      // Screen-plane rotation: axis points toward the camera (view direction negated).
-      axisVec = new THREE.Vector3()
-      this._camera.getWorldDirection(axisVec).negate()
-    }
-
-    // Sign correction for pointer-driven axis-constrained rotation.
-    // Screen CCW (positive atan2 angle) maps to positive rotation only when the
-    // world axis points toward the viewer (camFwd · axisVec < 0). When the axis
-    // points away from the viewer (dot > 0 — e.g. +Y in the ROS frame for a
-    // typical above-right camera position), the apparent arc direction is reversed.
-    // Negating restores right-hand-rule consistency across all axes and camera poses.
-    // Free rotation and keyboard-input angles are already correct and are not touched.
-    if (!this._rotate.hasInput && this._rotate.axis) {
-      const camFwd = new THREE.Vector3()
-      this._camera.getWorldDirection(camFwd)
-      if (camFwd.dot(axisVec) > 0) angle = -angle
-    }
-
-    const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
-
-    this._service.applyPreviewRotation(obj, {
-      segStartOrientation: obj instanceof CoordinateFrame
-        ? this._rotate.segmentStartRot
-        : this._rotate.segStartOrientation,
-      segStartPos: this._rotate.segStartPos,
-      pivot: this._rotate.segStartPivot ?? obj._position.clone(),
-    }, deltaQ)
-    this._rotate.displayAngle = angle
-    this._updateRotateStatus()
-    this._rotateSectorPreview.updateAngle(angle)
-  }
-
-  /**
-   * (Re)creates the 3D sector preview at the pivot with the current axis orientation.
-   * Called at rotate start and on every axis toggle.
-   */
-  _refreshSectorPreview() {
-    const obj = this._activeObj
-    if (!obj) return
-
-    let center, radius
-    if (obj instanceof Solid) {
-      center = (this._rotate.segStartPivot ?? obj._position).clone()
-      // Radius: max corner distance from pivot; floor at 0.5 to stay visible on tiny solids
-      const raw = Math.max(...obj.corners.map(c => c.distanceTo(center)))
-      radius = Math.max(raw, 0.5) * 1.1
-    } else if (obj instanceof CoordinateFrame) {
-      center = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone()
-      radius = 0.8
-    } else {
-      return
-    }
-
-    this._rotateSectorPreview.show(center, radius, this._rotate.axis, this._camera)
-  }
-
-  /**
-   * Updates the status bar text to reflect the current rotate operation.
-   */
-  _updateRotateStatus() {
-    const AXIS_COLORS = { x: '#e05252', y: '#6ab04c', z: '#4a9eed' }
-    const parts = [{ text: 'Rotate', bold: true, color: '#80b3ff' }]
-
-    if (this._rotate.axis) {
-      parts.push({ text: this._rotate.axis.toUpperCase(), bold: true, color: AXIS_COLORS[this._rotate.axis] })
-    }
-    if (this._rotate.hasInput) {
-      parts.push({ text: this._rotate.inputStr + '°_', color: '#ffeb3b' })
-    } else {
-      const deg = (this._rotate.displayAngle * 180 / Math.PI).toFixed(1)
-      parts.push({ text: `${deg}°`, color: '#546e7a' })
-      if (this._ctrlHeld) {
-        parts.push({ text: `Step: ${this._rotate.stepSize}°`, bold: true, color: '#80cbc4' })
-        parts.push({ text: 'Scroll to change', color: '#444' })
-      }
-    }
-    parts.push({ text: 'Enter confirm  Esc cancel', color: '#444' })
-    this._uiView.setStatusRich(parts)
-  }
-
   _setGrabAxis(axis) {
     this._grab.axis     = (this._grab.axis === axis) ? null : axis
     this._grab.inputStr = ''
@@ -4857,14 +4444,14 @@ export class AppController {
     if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
       e.preventDefault()
       const steps = AppController.ANGLE_STEPS
-      const idx   = steps.indexOf(this._rotate.stepSize)
-      const cur   = idx >= 0 ? idx : (steps.findIndex(s => s >= this._rotate.stepSize) || 0)
+      const cur   = steps.indexOf(this._rotateHandler.stepSize)
+      const idx   = cur >= 0 ? cur : (steps.findIndex(s => s >= this._rotateHandler.stepSize) || 0)
       const next  = e.deltaY > 0
-        ? Math.min(cur + 1, steps.length - 1)
-        : Math.max(cur - 1, 0)
-      this._rotate.stepSize = steps[next]
-      this._applyRotate()
-      this._updateRotateStatus()
+        ? Math.min(idx + 1, steps.length - 1)
+        : Math.max(idx - 1, 0)
+      this._rotateHandler.stepSize = steps[next]
+      this._rotateHandler.apply()
+      this._rotateHandler.updateStatus()
       return
     }
     if (!this._opState.is(S_GRAB_ACTIVE) || !this._ctrlHeld) return
@@ -5192,7 +4779,7 @@ export class AppController {
     this._updateMouse(e)
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
-      this._applyRotate()
+      this._rotateHandler.apply()
       this._updateNPanel()
       return
     }
@@ -5512,20 +5099,21 @@ export class AppController {
         // Mobile: drag rotates the object; confirmation is via the toolbar button.
         // Re-snapshot segmentStart* so each new drag segment starts from current state.
         const obj = this._activeObj
+        const s = this._rotateHandler.state
         if (obj instanceof Solid) {
           // Re-snapshot segment-start triple for new drag segment (ADR-040)
-          this._rotate.segStartOrientation = obj.orientation.clone()
-          this._rotate.segStartPos         = obj._position.clone()
-          this._rotate.segStartPivot       = obj._position.clone()
+          s.segStartOrientation = obj.orientation.clone()
+          s.segStartPos         = obj._position.clone()
+          s.segStartPivot       = obj._position.clone()
         } else if (obj instanceof CoordinateFrame) {
-          this._rotate.segmentStartRot.copy(obj.rotation)
+          s.segmentStartRot.copy(obj.rotation)
         }
-        this._rotate.needsStartAngle  = true
-        this._activeDragPointerId     = e.pointerId
+        s.needsStartAngle     = true
+        this._activeDragPointerId = e.pointerId
         return
       }
-      if (e.button === 0) { this._confirmRotate(); return }
-      if (e.button === 2) { this._cancelRotate();  return }
+      if (e.button === 0) { this._rotateHandler.confirm(); return }
+      if (e.button === 2) { this._rotateHandler.cancel();  return }
       return
     }
 
@@ -5970,9 +5558,9 @@ export class AppController {
       this._ctrlHeld = false
       if (this._opState.is(S_GRAB_ACTIVE) && !this._grab.pivotSelectMode) this._updateGrabStatus()
       if (this._opState.is(S_FACE_EXTRUDE)) this._updateFaceExtrudeStatus()
-      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotate.hasInput) {
-        this._applyRotate()
-        this._updateRotateStatus()
+      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotateHandler.state.hasInput) {
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
       }
     }
   }
@@ -5980,9 +5568,9 @@ export class AppController {
   _onKeyDown(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = true
-      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotate.hasInput) {
-        this._applyRotate()
-        this._updateRotateStatus()
+      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotateHandler.state.hasInput) {
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
       }
     }
 
@@ -6027,30 +5615,31 @@ export class AppController {
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       switch (e.key) {
-        case 'x': case 'X': this._setRotateAxis('x'); return
-        case 'y': case 'Y': this._setRotateAxis('y'); return
-        case 'z': case 'Z': this._setRotateAxis('z'); return
-        case 'Enter':  this._confirmRotate(); return
-        case 'Escape': this._cancelRotate();  return
+        case 'x': case 'X': this._rotateHandler.setAxis('x'); return
+        case 'y': case 'Y': this._rotateHandler.setAxis('y'); return
+        case 'z': case 'Z': this._rotateHandler.setAxis('z'); return
+        case 'Enter':  this._rotateHandler.confirm(); return
+        case 'Escape': this._rotateHandler.cancel();  return
       }
+      const rs = this._rotateHandler.state
       if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
-        this._rotate.inputStr += e.key
-        this._rotate.hasInput  = true
-        this._applyRotate()
-        this._updateRotateStatus()
+        rs.inputStr += e.key
+        rs.hasInput  = true
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
         return
       }
-      if (e.key === '-' && this._rotate.inputStr.length === 0) {
-        this._rotate.inputStr = '-'
-        this._rotate.hasInput = true
-        this._updateRotateStatus()
+      if (e.key === '-' && rs.inputStr.length === 0) {
+        rs.inputStr = '-'
+        rs.hasInput = true
+        this._rotateHandler.updateStatus()
         return
       }
       if (e.key === 'Backspace') {
-        this._rotate.inputStr = this._rotate.inputStr.slice(0, -1)
-        this._rotate.hasInput = this._rotate.inputStr.length > 0 && this._rotate.inputStr !== '-'
-        this._applyRotate()
-        this._updateRotateStatus()
+        rs.inputStr = rs.inputStr.slice(0, -1)
+        rs.hasInput = rs.inputStr.length > 0 && rs.inputStr !== '-'
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
         return
       }
       return
@@ -6265,7 +5854,7 @@ export class AppController {
       // R: rotate (CoordinateFrame or Solid, ADR-019 / ADR-036)
       if ((e.key === 'r' || e.key === 'R') &&
           (this._activeObj instanceof CoordinateFrame || this._activeObj instanceof Solid)) {
-        this._startRotate()
+        this._rotateHandler.start()
         return
       }
       // Shift+A: show Add menu
