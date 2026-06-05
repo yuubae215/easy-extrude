@@ -288,6 +288,7 @@ export function Outliner() {
       display: 'flex',
       flexDirection: 'column',
       userSelect: 'none',
+      pointerEvents: 'auto',
       transform: translate,
       transition: isMobile ? 'transform 0.25s ease' : '',
     }}>

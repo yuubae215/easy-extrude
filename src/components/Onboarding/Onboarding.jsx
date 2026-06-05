@@ -55,6 +55,7 @@ export function Onboarding() {
         color: '#e8e8e8',
         userSelect: 'none',
         WebkitUserSelect: 'none',
+        pointerEvents: 'auto',
       }}
     >
       {HINTS.map(({ svg, text }) => (

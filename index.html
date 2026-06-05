@@ -14,9 +14,11 @@
         background: #000;
         overflow: hidden;
       }
+      * {
+        -webkit-tap-highlight-color: transparent;
+      }
       canvas {
         display: block;
-        -webkit-tap-highlight-color: transparent;
       }
     </style>
   </head>
@@ -54,7 +56,7 @@
     <!-- React UI overlay — rendered on top of the Three.js canvas.
          pointer-events:none on the root so canvas interaction passes through by default;
          individual React components set pointer-events:auto where needed. -->
-    <div id="react-ui-root" style="position:fixed;inset:0;pointer-events:none;z-index:10"></div>
+    <div id="react-ui-root" style="position:fixed;inset:0;pointer-events:none;z-index:100"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
