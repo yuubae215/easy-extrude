@@ -67,6 +67,7 @@ export function MapToolbar() {
         boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
         userSelect: 'none', minWidth: '44px',
         fontFamily: 'system-ui, -apple-system, sans-serif',
+        pointerEvents: 'auto',
       }}
     >
       {/* Tool buttons — always rendered, never removed to prevent layout shift */}

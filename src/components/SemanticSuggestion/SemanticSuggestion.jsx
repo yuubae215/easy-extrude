@@ -62,6 +62,7 @@ export function SemanticSuggestion() {
       boxShadow: '0 6px 24px rgba(0,0,0,0.5)',
       zIndex: 9998,
       fontSize: '12px',
+      pointerEvents: 'auto',
     }}>
       <span style={{
         width: '8px',

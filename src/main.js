@@ -37,6 +37,7 @@ const sceneView    = new SceneView()
 const uiView       = new UIViewBridge(new UIView())
 const gizmoView    = new GizmoView(sceneView.camera, sceneView.controls)
 const outlinerView = new OutlinerBridge()
+outlinerView.enableReact()
 const controller   = new AppController(sceneView, uiView, gizmoView, outlinerView)
 
 // Hand UI sections to React — hides the corresponding UIView native elements.
@@ -53,6 +54,5 @@ uiView.enableReactLinkTypePicker()
 uiView.enableReactSemanticSuggestion()
 uiView.enableReactImportUI()
 uiView.enableReactOnboarding()
-outlinerView.enableReact()
 
 controller.start()

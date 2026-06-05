@@ -26,6 +26,7 @@ function Overlay({ onCancel, children }) {
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 500,
+        pointerEvents: 'auto',
       }}
     >
       <div
@@ -160,6 +161,7 @@ function ImportModal({ modal, onClose }) {
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 10000,
+        pointerEvents: 'auto',
       }}
     >
       <div

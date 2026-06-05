@@ -45,6 +45,7 @@ export function ContextMenu() {
         zIndex: 400,
         paddingTop: '4px',
         paddingBottom: '4px',
+        pointerEvents: 'auto',
       }}
     >
       {contextMenu.items.map((item, i) => (

@@ -53,6 +53,7 @@ export function LinkTypePicker() {
         boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
         overflow: 'hidden',
         zIndex: 200,
+        pointerEvents: 'auto',
       }}
     >
       <div style={{

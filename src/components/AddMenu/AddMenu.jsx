@@ -43,6 +43,7 @@ export function AddMenu() {
         minWidth: '140px',
         overflow: 'hidden',
         zIndex: 300,
+        pointerEvents: 'auto',
       }}
     >
       <div style={{
