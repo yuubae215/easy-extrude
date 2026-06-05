@@ -624,6 +624,8 @@ export class AppController {
       segStartPos:         null,
       /** Centroid of solid corners at segment start — used as rotation pivot + screen projection. @type {import('three').Vector3|null} */
       segStartPivot:       null,
+      /** Display angle (radians) from last _applyRotate(); used by _updateRotateStatus(). */
+      displayAngle:        0,
     }
 
     this._ctrlHeld  = false
@@ -4883,6 +4885,7 @@ export class AppController {
     this._rotate.segmentStartAngle = this._rotate.startAngle
     this._rotate.prevCurrentAngle  = this._rotate.startAngle
     this._rotate.accumulatedAngle  = 0
+    this._rotate.displayAngle      = 0
     if (this._rotate.axis && rotCenter) {
       this._showAxisGuide(this._rotate.axis, rotCenter.clone(), 'rotate')
     } else {
@@ -4975,6 +4978,7 @@ export class AppController {
       segStartPos: this._rotate.segStartPos,
       pivot: this._rotate.segStartPivot ?? obj._position.clone(),
     }, deltaQ)
+    this._rotate.displayAngle = angle
     this._updateRotateStatus()
     this._rotateSectorPreview.updateAngle(angle)
   }
@@ -5015,9 +5019,13 @@ export class AppController {
     }
     if (this._rotate.hasInput) {
       parts.push({ text: this._rotate.inputStr + '°_', color: '#ffeb3b' })
-    } else if (this._ctrlHeld) {
-      parts.push({ text: `Step: ${this._rotate.stepSize}°`, bold: true, color: '#80cbc4' })
-      parts.push({ text: 'Scroll to change', color: '#444' })
+    } else {
+      const deg = (this._rotate.displayAngle * 180 / Math.PI).toFixed(1)
+      parts.push({ text: `${deg}°`, color: '#546e7a' })
+      if (this._ctrlHeld) {
+        parts.push({ text: `Step: ${this._rotate.stepSize}°`, bold: true, color: '#80cbc4' })
+        parts.push({ text: 'Scroll to change', color: '#444' })
+      }
     }
     parts.push({ text: 'Enter confirm  Esc cancel', color: '#444' })
     this._uiView.setStatusRich(parts)
@@ -5368,6 +5376,10 @@ export class AppController {
       const cy = (this._grab.centroid.y + d.y).toFixed(2)
       const cz = (this._grab.centroid.z + d.z).toFixed(2)
       parts.push({ text: `X:${cx} Y:${cy} Z:${cz}`, color: '#546e7a' })
+      const dx = (d.x >= 0 ? '+' : '') + d.x.toFixed(2)
+      const dy = (d.y >= 0 ? '+' : '') + d.y.toFixed(2)
+      const dz = (d.z >= 0 ? '+' : '') + d.z.toFixed(2)
+      parts.push({ text: `Δ ${dx} ${dy} ${dz}`, color: '#78909c' })
     }
 
     this._uiView.setStatusRich(parts)
