@@ -66,6 +66,10 @@ import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
 import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
+import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
+import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
+import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
+import { FramePlacementHandler }      from './handler/FramePlacementHandler.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -272,42 +276,13 @@ export class AppController {
       this._uiView.hideImportProgress()
     })
 
-    // ── Measure placement state ────────────────────────────────────────────
-    // Active while the user is placing a MeasureLine (M key / Add → Measure).
-    // Phase 1: waiting for first click (p1 = null)
-    // Phase 2: p1 set, waiting for second click (preview line shown)
-    // Active state tracked by this._opState (S_MEASURE_PLACING).
-    this._measure = {
-      /** @type {THREE.Vector3|null} fixed first endpoint */
-      p1:           null,
-      /** @type {THREE.Vector3|null} live cursor position (snapped) */
-      p2:           null,
-      /** @type {{label:string, position:THREE.Vector3, type:string, objectId:string, elementId:string}[]} */
-      snapTargets:  [],
-      snapping:     false,
-      /** @type {{label:string, position:THREE.Vector3, type:string, objectId:string, elementId:string}|null} */
-      snappedTarget: null,
-      /** Anchor reference captured when p1 was confirmed (ADR-028).
-       *  @type {{ objectId:string, type:string, elementId:string }|null} */
-      p1Anchor:     null,
-      /** Three.js Line for preview before entity is created */
-      previewLine:  null,
-      /** True while the user is holding a pointer down to snap a point */
-      pressing:     false,
-      /** MeshView used for snap candidate display (may differ from _meshView when active obj is MeasureLine) */
-      snapMeshView: null,
-    }
+    // ── Measure placement handler (delegated to MeasurePlacementHandler) ──
+    this._measureHandler  = new MeasurePlacementHandler(this)
+    this._measure         = this._measureHandler.state
 
-    // ── SpatialLink creation state (ADR-030 Phase 4) ──────────────────────
-    // Active while the user is selecting a target entity after pressing L.
-    // Phase 1: sourceId captured, waiting for target click.
-    // Active state tracked by this._opState (S_LINK_MODE).
-    this._spatialLinkMode = {
-      /** @type {string|null} ID of the source entity */
-      sourceId:         null,
-      /** @type {string|null} ID of the candidate target (pending picker) */
-      pendingTargetId:  null,
-    }
+    // ── SpatialLink creation handler (delegated to LinkCreationHandler) ───
+    this._linkHandler     = new LinkCreationHandler(this)
+    this._spatialLinkMode = this._linkHandler.state
 
     // ── Primary operation FSM (ADR-039) ──────────────────────────────────
     // Single source of truth for which Object Mode operation is currently active.
@@ -448,25 +423,9 @@ export class AppController {
     this._activeRipples        = []
     this._rectSelHandler       = new RectSelectState()
 
-    // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
-    // Active state tracked by this._opState (S_FACE_EXTRUDE).
-    this._faceExtrude = {
-      /** @type {import('../graph/Face.js').Face|null} */
-      face:          null,
-      savedCorners:  [],    // world face corners at drag start (for display / snap)
-      /** @type {import('three').Vector3[]} Body-frame face corners at drag start (for extrudeFace call). ADR-040 */
-      savedLocalFaceCorners: [],
-      normal:        new THREE.Vector3(),  // world face normal (for distance dot product)
-      localNormal:   new THREE.Vector3(),  // body-frame face normal (for extrudeFace call). ADR-040
-      dist:          0,
-      dragPlane:     new THREE.Plane(),
-      startPoint:    new THREE.Vector3(),
-      inputStr:      '',
-      hasInput:      false,
-      snapping:      false,
-      snappedTarget: null,
-      snapTargets:   [],
-    }
+    // ── Face extrude handler (delegated to FaceExtrudeHandler) ──────────────
+    this._faceExtrudeHandler = new FaceExtrudeHandler(this)
+    this._faceExtrude        = this._faceExtrudeHandler.state
 
     // ── Blender-style grab state ───────────────────────────────────────────
     this._grabHandler = new GrabOperationHandler(this)
@@ -510,24 +469,9 @@ export class AppController {
       startY:    0,
     }
 
-    // ── CoordinateFrame placement pick sub-mode (ADR-034 §6) ─────────────────
-    /**
-     * Data for frame placement pick sub-mode.
-     * Active state tracked by this._opState (S_FRAME_PLACEMENT).
-     * @type {{ parentId: string|null }}
-     */
-    this._framePlacementState = { parentId: null }
-    /**
-     * Scene-level Three.js Group showing world-aligned parent axes during pick sub-mode.
-     * Lazily created in _enterFramePickSubMode; reused on subsequent entries.
-     * @type {THREE.Group|null}
-     */
-    this._parentAxesOverlay = null
-    /**
-     * Ghost CoordinateFrame axes following the cursor during pick sub-mode.
-     * @type {THREE.Group|null}
-     */
-    this._frameCursorGhost = null
+    // ── CoordinateFrame placement handler (delegated to FramePlacementHandler) ─
+    this._framePlacementHandler = new FramePlacementHandler(this)
+    this._framePlacementState   = this._framePlacementHandler.state
 
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
@@ -849,7 +793,7 @@ export class AppController {
         this._activeDragPointerId = null
         this._service.setLinkDragging(new Set(), false)
         this._service.updateLinkSelectionHighlight(this._selectedIds)
-        this._createSpatialLinkDirect(suggestion.sourceId, suggestion.targetId, suggestion)
+        this._linkHandler.createDirect(suggestion.sourceId, suggestion.targetId, suggestion)
       },
     }
   }
@@ -891,7 +835,7 @@ export class AppController {
    */
   _addObject(type = 'box') {
     if (type === 'sketch')  { this._addProfileObject();    return }
-    if (type === 'measure') { this._startMeasurePlacement(); return }
+    if (type === 'measure') { this._measureHandler.start(); return }
     if (type === 'frame')   { this._addCoordinateFrame();  return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
@@ -940,969 +884,7 @@ export class AppController {
       return
     }
     if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._enterFramePickSubMode(parentId)
-  }
-
-  /**
-   * Enters the frame placement pick sub-mode for the given parent entity.
-   * Shows the parent axes ghost and cursor ghost; updates status bar and mobile toolbar.
-   * @param {string} parentId
-   */
-  _enterFramePickSubMode(parentId) {
-    if (!this._opState.send('BEGIN_FRAME_PLACEMENT')) return
-    this._framePlacementState.parentId = parentId
-
-    // Show parent axes overlay at geometry ancestor centroid (ADR-034 §7)
-    const ancestorCentroid = this._geometryAncestorCentroid(parentId)
-    if (ancestorCentroid) {
-      if (!this._parentAxesOverlay) {
-        this._parentAxesOverlay = _makeGhostAxesGroup()
-        this._sceneView.scene.add(this._parentAxesOverlay)
-      }
-      this._parentAxesOverlay.position.copy(ancestorCentroid)
-      this._parentAxesOverlay.quaternion.set(0, 0, 0, 1)
-      this._parentAxesOverlay.visible = true
-    }
-
-    // Cursor ghost axes (hidden until hover)
-    if (!this._frameCursorGhost) {
-      this._frameCursorGhost = _makeFrameAxesGroup()
-      this._sceneView.scene.add(this._frameCursorGhost)
-    }
-    this._frameCursorGhost.visible = false
-
-    const mobile = window.innerWidth < 768
-    if (mobile) {
-      this._uiView.setStatus('Tap to place frame')
-      this._updateMobileToolbar()
-    } else {
-      this._uiView.setStatus('Click to place frame — Esc to cancel')
-      this._uiView.setCursor('crosshair')
-    }
-  }
-
-  /**
-   * Cancels pick sub-mode; hides overlays and restores normal state.
-   */
-  _cancelFramePickSubMode() {
-    if (!this._opState.is(S_FRAME_PLACEMENT)) return
-    this._framePlacementState.parentId = null
-    if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
-    if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
-    this._uiView.setCursor('default')
-    this._opState.send('CANCEL')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Confirms frame placement at the given world position.
-   * Creates the CoordinateFrame, records undo, exits sub-mode.
-   * @param {THREE.Vector3} worldPos
-   */
-  _confirmFramePlacement(worldPos) {
-    if (!this._opState.is(S_FRAME_PLACEMENT)) return
-    const parentId = this._framePlacementState.parentId
-    this._framePlacementState.parentId = null
-    if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
-    if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
-    this._uiView.setCursor('default')
-    this._opState.send('CONFIRM')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-
-    // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
-    const parentObj = this._scene.getObject(parentId)
-    let effectiveParentId = parentId
-    if (parentObj && !(parentObj instanceof CoordinateFrame)) {
-      const originFrame = [...this._scene.objects.values()]
-        .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
-      if (originFrame) effectiveParentId = originFrame.id
-    }
-
-    const frame = this._service.createCoordinateFrame(effectiveParentId, null, worldPos)
-    if (!frame) return
-
-    const cmd = createCreateCoordinateFrameCommand(
-      frame, this._service,
-      () => {
-        // After undo: restore parent selection if parent still exists
-        const parent = this._scene.getObject(parentId)
-        if (parent) this._switchActiveObject(parentId, true)
-        else { this._objSelected = false; this._selectedIds.clear(); this._refreshObjectModeStatus(); this._updateMobileToolbar() }
-      },
-      (id) => this._switchActiveObject(id, true),
-    )
-    this._commandStack.push(cmd)
-    this._switchActiveObject(frame.id, true)
-  }
-
-  /**
-   * Picks a world position on the parent entity's surface from the current mouse/pointer.
-   * Returns null when the ray misses the entity bounding box.
-   * @returns {THREE.Vector3|null}
-   */
-  _pickFramePlacementPoint() {
-    const { parentId } = this._framePlacementState
-    const parent = this._scene.getObject(parentId)
-    if (!parent) return null
-
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-
-    // Try raycasting against the parent's cuboid mesh first (Solid)
-    const cuboid = parent.meshView?.cuboid
-    if (cuboid) {
-      const hits = []
-      this._raycaster.intersectObject(cuboid, true, hits)
-      if (hits.length > 0) return hits[0].point.clone()
-    }
-
-    // Fallback: bounding box intersection
-    if (parent.corners?.length > 0) {
-      const box = new THREE.Box3()
-      for (const c of parent.corners) box.expandByPoint(c)
-      if (ray.intersectBox(box, pt)) return pt.clone()
-    }
-
-    // For CoordinateFrame parent: use a plane at the frame world position
-    if (parent instanceof CoordinateFrame) {
-      const wp = this._service.worldPoseOf(parentId)?.position
-      if (wp) {
-        const camDir = new THREE.Vector3()
-        this._camera.getWorldDirection(camDir)
-        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, wp)
-        if (ray.intersectPlane(plane, pt)) return pt.clone()
-      }
-    }
-
-    return null
-  }
-
-  // ── STEP import ─────────────────────────────────────────────────────────────
-
-  _triggerStepImport() {
-    const input = document.createElement('input')
-    input.type = 'file'; input.accept = '.stp,.step,.STP,.STEP'
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0]
-      if (!file) return
-
-      const scale = await this._showUnitDialog()
-      if (scale === null) return  // user cancelled
-
-      if (!this._service._bff) {
-        this._uiView.showToast('サーバーに接続されていません', { type: 'warn' })
-        return
-      }
-
-      // Always upload via REST (multipart/form-data) to avoid WS payload size limits.
-      // Pass sessionId so the server can stream import.progress events back over WS.
-      const ws        = this._service.wsChannel
-      const sessionId = ws?.sessionId ?? null
-
-      if (ws) {
-        this._importProgressUnsub = ws.on('import.progress', ({ percent, status }) => {
-          this._uiView.showImportProgress(percent, status)
-        })
-      }
-
-      this._uiView.showImportProgress(0, 'Uploading…')
-      try {
-        await this._service._bff.importStep(file, { scale, sessionId })
-        // Progress overlay is hidden by geometryApplied / geometryError handlers.
-        // If WS is not connected (REST-only mode), hide it now.
-        if (!ws) this._uiView.hideImportProgress()
-      } catch (err) {
-        this._importProgressUnsub?.(); this._importProgressUnsub = null
-        this._uiView.hideImportProgress()
-        this._uiView.showToast('Import failed', { type: 'error' })
-        console.error('[AppController] STEP import error:', err)
-      }
-    })
-    input.click()
-  }
-
-  // ── Save / Load scene ──────────────────────────────────────────────────────
-
-  async _saveScene() {
-    const name = await this._showInputDialog('Save Scene', 'Scene name:', 'Untitled')
-    if (name === null) return
-    const id = await this._service.saveScene(name)
-    if (id) {
-      this._uiView.showToast(`Saved: "${name}"`)
-    } else {
-      this._uiView.showToast('Save failed', { type: 'error' })
-    }
-  }
-
-  async _loadScene() {
-    const scenes = await this._service.listScenes()
-    if (!scenes || scenes.length === 0) {
-      this._uiView.showToast('No saved scenes', { type: 'warn' })
-      return
-    }
-    const id = await this._showSceneListDialog(scenes)
-    if (id === null) return
-    const ok = await this._service.loadScene(id, {
-      camera:    this._camera,
-      renderer:  this._sceneView.renderer,
-      container: document.body,
-    })
-    if (ok) {
-      this._commandStack.clear()
-      this._uiView.showToast('Scene loaded')
-      this._switchActiveObject(null)
-    } else {
-      this._uiView.showToast('Load failed', { type: 'error' })
-    }
-  }
-
-  /** Shows a text-input dialog. Resolves with the trimmed string, or null if cancelled. */
-  _showInputDialog(title, label, placeholder = '') {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:300px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      const titleEl = document.createElement('div')
-      titleEl.textContent = title
-      titleEl.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(titleEl)
-
-      const lbl = document.createElement('div')
-      lbl.textContent = label
-      lbl.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px'
-      dlg.appendChild(lbl)
-
-      const input = document.createElement('input')
-      input.type = 'text'
-      input.value = placeholder
-      input.setAttribute('aria-label', label)
-      input.style.cssText = [
-        'width:100%;box-sizing:border-box;background:#0d1a26;color:#ecf0f1',
-        'border:1px solid #3a4a5a;border-radius:4px;padding:6px 8px',
-        'font-family:monospace;font-size:12px;outline:none',
-      ].join(';')
-      dlg.appendChild(input)
-
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnSave = document.createElement('button')
-      btnSave.textContent = 'Save'
-      btnSave.style.cssText = [
-        'padding:6px 14px;background:#2980b9;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnSave)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
-      btnCancel.addEventListener('click', () => close(null))
-      btnSave.addEventListener('click', () => close(input.value.trim() || placeholder))
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') close(input.value.trim() || placeholder)
-        if (e.key === 'Escape') close(null)
-      })
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-      input.focus()
-      input.select()
-    })
-  }
-
-  /**
-   * Shows a list-selection dialog for saved scenes.
-   * Resolves with the selected scene id, or null if cancelled.
-   * @param {{ id: string, name: string, updated_at: string }[]} scenes
-   */
-  _showSceneListDialog(scenes) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:320px;max-width:480px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      const titleEl = document.createElement('div')
-      titleEl.textContent = 'Load Scene'
-      titleEl.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(titleEl)
-
-      let selectedId = null
-
-      const list = document.createElement('div')
-      list.setAttribute('role', 'listbox')
-      list.setAttribute('aria-label', 'Saved scenes')
-      list.style.cssText = [
-        'max-height:240px;overflow-y:auto;border:1px solid #3a4a5a;border-radius:4px',
-      ].join(';')
-
-      const selectRow = (row, id) => {
-        list.querySelectorAll('[role="option"]').forEach(r => {
-          r.style.background = ''
-          r.setAttribute('aria-selected', 'false')
-        })
-        row.style.background = '#2980b9'
-        row.setAttribute('aria-selected', 'true')
-        selectedId = id
-      }
-
-      scenes.forEach((scene) => {
-        const row = document.createElement('div')
-        row.setAttribute('role', 'option')
-        row.setAttribute('tabindex', '0')
-        row.setAttribute('aria-selected', 'false')
-        row.style.cssText = [
-          'padding:8px 10px;cursor:pointer;font-size:12px',
-          'border-bottom:1px solid #2a3a4a;display:flex;justify-content:space-between;align-items:center',
-        ].join(';')
-        row.dataset.id = scene.id
-
-        const nameEl = document.createElement('span')
-        nameEl.textContent = scene.name
-        nameEl.style.cssText = 'color:#ecf0f1;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
-
-        const dateEl = document.createElement('span')
-        const d = new Date(scene.updated_at)
-        dateEl.textContent = isNaN(d) ? '' : d.toLocaleDateString()
-        dateEl.style.cssText = 'color:#7f8c8d;font-size:10px;margin-left:8px;flex-shrink:0'
-
-        row.appendChild(nameEl)
-        row.appendChild(dateEl)
-
-        row.addEventListener('click', () => selectRow(row, scene.id))
-        row.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectRow(row, scene.id) }
-        })
-
-        list.appendChild(row)
-      })
-
-      dlg.appendChild(list)
-
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnLoad = document.createElement('button')
-      btnLoad.textContent = 'Load'
-      btnLoad.style.cssText = [
-        'padding:6px 14px;background:#2980b9;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnLoad)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
-      btnCancel.addEventListener('click', () => close(null))
-      btnLoad.addEventListener('click', () => close(selectedId))
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-    })
-  }
-
-  // ── Unit selection dialog ──────────────────────────────────────────────────
-
-  /** Shows a modal dialog for unit scale selection. Resolves with scale factor or null if cancelled. */
-  _showUnitDialog() {
-    return new Promise((resolve) => {
-      const UNITS = [
-        { label: 'No conversion  (1 : 1)',    value: 1 },
-        { label: 'mm  →  m       (÷ 1000)',   value: 0.001 },
-        { label: 'm   →  mm      (× 1000)',   value: 1000 },
-        { label: 'cm  →  m       (÷ 100)',    value: 0.01 },
-        { label: 'inch →  m      (× 0.0254)', value: 0.0254 },
-        { label: 'inch →  mm     (× 25.4)',   value: 25.4 },
-      ]
-
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:320px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      const title = document.createElement('div')
-      title.textContent = 'Import STEP — Unit Conversion'
-      title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(title)
-
-      const lbl = document.createElement('div')
-      lbl.textContent = 'Scale'
-      lbl.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px'
-      dlg.appendChild(lbl)
-
-      const sel = document.createElement('select')
-      sel.style.cssText = [
-        'width:100%;background:#0d1a26;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;padding:6px 8px;font-family:monospace;font-size:12px',
-        'cursor:pointer;outline:none',
-      ].join(';')
-      UNITS.forEach((u, i) => {
-        const opt = document.createElement('option')
-        opt.value = i
-        opt.textContent = u.label
-        sel.appendChild(opt)
-      })
-      dlg.appendChild(sel)
-
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnImport = document.createElement('button')
-      btnImport.textContent = 'Import'
-      btnImport.style.cssText = [
-        'padding:6px 14px;background:#e67e22;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnImport)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
-      btnCancel.addEventListener('click', () => close(null))
-      btnImport.addEventListener('click', () => close(UNITS[sel.value].value))
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-    })
-  }
-
-  // ────────────────────────────────────────────────────────────────────────────
-
-  _addProfileObject() {
-    // Exit current mode cleanly before switching active object
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-
-    const obj = this._service.createProfile()
-    this._switchActiveObject(obj.id, true)
-    this.setMode('edit')  // enters Edit Mode · 2D
-  }
-
-  /** Enters measure placement mode: click p1, then p2 to create a MeasureLine. */
-  _startMeasurePlacement() {
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._opState.send('BEGIN_MEASURE')
-    this._measure.p1           = null
-    this._measure.p2           = null
-    this._measure.p1Anchor     = null
-    this._measure.snapTargets  = []
-    this._measure.snapping     = false
-    this._measure.snappedTarget = null
-    // Snap display requires a MeshView with THREE.Points infrastructure.
-    // MeasureLineView and CoordinateFrameView have no snap display infrastructure.
-    // Fall back to any real MeshView-backed object for snap candidate rendering.
-    const activeObj = this._scene.activeObject
-    const _isSnapCapable = o => !(o instanceof MeasureLine) && !(o instanceof CoordinateFrame)
-    this._measure.snapMeshView = (activeObj && _isSnapCapable(activeObj))
-      ? activeObj.meshView
-      : ([...this._scene.objects.values()].find(_isSnapCapable)?.meshView ?? null)
-    // On touch devices, disable orbit so single-finger touch places measure
-    // points instead of orbiting the camera.  Use (pointer: coarse) rather
-    // than innerWidth so that tablets and landscape phones are also covered.
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = false
-    this._uiView.setCursor('crosshair')
-    this._updateMeasureStatus()
-    this._updateMobileToolbar()
-  }
-
-  _cancelMeasure() {
-    if (!this._opState.is(S_MEASURE_PLACING)) return
-    this._measure.p1           = null
-    this._measure.p2           = null
-    this._measure.p1Anchor     = null
-    this._measure.snapping     = false
-    this._measure.snappedTarget = null
-    this._measure.snapTargets  = []
-    this._measure.pressing     = false
-    if (this._measure.previewLine) {
-      this._sceneView.scene.remove(this._measure.previewLine)
-      this._measure.previewLine.geometry.dispose()
-      this._measure.previewLine.material.dispose()
-      this._measure.previewLine = null
-    }
-    this._measure.snapMeshView?.clearSnapDisplay()
-    this._measure.snapMeshView = null
-    this._opState.send('CANCEL')
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Confirms the current snapped cursor position as a measure point.
-   * Phase 1: sets p1. Phase 2: creates the MeasureLine entity.
-   * Called from _onPointerUp so mobile users can hold-to-snap before releasing.
-   */
-  _confirmMeasurePoint() {
-    const pt = this._measurePickPoint()
-    if (!pt) return
-    if (!this._measure.p1) {
-      // Phase 1 → Phase 2: record start point and its anchor (ADR-028)
-      this._measure.p1 = pt.clone()
-      const t = this._measure.snappedTarget
-      this._measure.p1Anchor = (t?.objectId && t?.elementId)
-        ? { objectId: t.objectId, type: t.type, elementId: t.elementId }
-        : null
-      this._updateMeasureStatus()
-    } else {
-      // Phase 2: record end point → create entity
-      const p2 = pt.clone()
-      // Capture anchor refs before clearing state (ADR-028)
-      const t2       = this._measure.snappedTarget
-      const p2Anchor = (t2?.objectId && t2?.elementId)
-        ? { objectId: t2.objectId, type: t2.type, elementId: t2.elementId }
-        : null
-      const p1Anchor = this._measure.p1Anchor
-      if (this._measure.previewLine) {
-        this._sceneView.scene.remove(this._measure.previewLine)
-        this._measure.previewLine.geometry.dispose()
-        this._measure.previewLine.material.dispose()
-        this._measure.previewLine = null
-      }
-      this._measure.snapMeshView?.clearSnapDisplay()
-      this._measure.snapMeshView  = null
-      this._opState.send('CONFIRM')
-      const p1                    = this._measure.p1
-      this._measure.p1            = null
-      this._measure.p2            = null
-      this._measure.p1Anchor      = null
-      this._measure.snapTargets   = []
-      this._measure.snapping      = false
-      this._measure.snappedTarget = null
-      const obj = this._service.createMeasureLine(
-        p1, p2,
-        this._camera,
-        this._sceneView.renderer,
-        document.body,
-        { p1: p1Anchor, p2: p2Anchor },
-      )
-      this._switchActiveObject(obj.id, true)
-      if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
-      this._uiView.setCursor('default')
-      this._refreshObjectModeStatus()
-      this._updateMobileToolbar()
-    }
-  }
-
-  _updateMeasureStatus() {
-    if (!this._opState.is(S_MEASURE_PLACING)) return
-    if (!this._measure.p1) {
-      this._uiView.setStatusRich([
-        { text: 'Measure', bold: true, color: '#f9a825' },
-        { text: 'Click to set start point', color: '#888' },
-        { text: 'ESC cancel', color: '#444' },
-      ])
-    } else {
-      const parts = [
-        { text: 'Measure', bold: true, color: '#f9a825' },
-        { text: 'Click to set end point', color: '#888' },
-      ]
-      if (this._measure.p2) {
-        const d = this._measure.p1.distanceTo(this._measure.p2)
-        const f = d < 1 ? `${(d * 100).toFixed(1)} cm` : `${d.toFixed(3)} m`
-        parts.push({ text: f, bold: true, color: '#f9a825' })
-      }
-      if (this._measure.snapping && this._measure.snappedTarget) {
-        parts.push({ text: `Snap: ${this._measure.snappedTarget.label}`, color: '#ff9800' })
-      }
-      parts.push({ text: 'ESC cancel', color: '#444' })
-      this._uiView.setStatusRich(parts)
-    }
-  }
-
-  // ── 2D Map Mode — see MapModeController ─────────────────────────────────
-  // All map mode methods live in src/controller/map/MapModeController.js.
-  // AppController holds this._mapModeCtrl; event handlers delegate via
-  // this._mapModeCtrl.onPointerMove/Down/Up/KeyDown/onWheel.
-
-  /**
-   * Finds the nearest V/E/F snap target to the current mouse cursor.
-   * Returns the snapped world position (or ground-plane fallback).
-   * Also updates this._measure.snapping / snappedTarget / snapTargets.
-   */
-  _measurePickPoint() {
-    const mx = (this._mouse.x + 1) / 2 * innerWidth
-    const my = (-this._mouse.y + 1) / 2 * innerHeight
-
-    const targets = collectSnapTargets(this._scene.objects, 'all')
-    this._measure.snapTargets = targets
-
-    const bestTarget = this._pickBestSnapTarget(targets, mx, my)
-
-    if (bestTarget) {
-      this._measure.snapping      = true
-      this._measure.snappedTarget = bestTarget
-      return bestTarget.position.clone()
-    }
-
-    // Fallback: intersect ground plane (Z=0)
-    this._measure.snapping      = false
-    this._measure.snappedTarget = null
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) return pt
-    return null
-  }
-
-  /** Builds or updates the dashed preview line shown during measure placement phase 2. */
-  _updateMeasurePreview(p1, p2) {
-    const pts = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]
-    if (!this._measure.previewLine) {
-      const geo  = new THREE.BufferGeometry()
-      const mat  = new THREE.LineDashedMaterial({
-        color: 0xf9a825, dashSize: 0.15, gapSize: 0.08, depthTest: false,
-      })
-      this._measure.previewLine = new THREE.Line(geo, mat)
-      this._measure.previewLine.renderOrder = 1
-      this._sceneView.scene.add(this._measure.previewLine)
-    }
-    const geo = this._measure.previewLine.geometry
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
-    geo.attributes.position.needsUpdate = true
-    this._measure.previewLine.computeLineDistances()
-  }
-
-  _deleteObject(id) {
-    const target = this._scene.getObject(id)
-    if (!target) return
-
-    // Origin frames are the body frame — cannot be explicitly deleted (ADR-037)
-    if (target instanceof CoordinateFrame && target.name === 'Origin') {
-      this._uiView.showToast('Origin frame cannot be deleted', { type: 'warn' })
-      return
-    }
-
-    // Frames are always deletable.  Geometry objects require at least one
-    // other geometry object to remain in the scene.
-    if (!(target instanceof CoordinateFrame)) {
-      const geometryCount = [...this._scene.objects.values()]
-        .filter(o => !(o instanceof CoordinateFrame)).length
-      if (geometryCount <= 1) {
-        this._uiView.showToast('Scene must contain at least one object', { type: 'warn' })
-        return
-      }
-    }
-
-    // Provenance check: block delete if frame was declared by a different role (ADR-034 §8.2)
-    if (target instanceof CoordinateFrame && !RoleService.canEdit(target)) {
-      this._uiView.showToast(`This frame was declared by a ${target.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-      return
-    }
-
-    // ADR-033 §4: warn when deleting a CoordinateFrame that is referenced by SpatialLinks
-    if (target instanceof CoordinateFrame) {
-      const links = this._service.getLinksOf(id)
-      if (links.length > 0) {
-        const n = links.length
-        this._uiView.showConfirmDialog(
-          `Frame "${target.name}" is referenced by ${n} spatial link${n > 1 ? 's' : ''}.\n` +
-          `Deleting it will leave those links dangling. Delete anyway?`,
-          (confirmed) => {
-            if (confirmed) this._execDeleteObject(id, target)
-          },
-          { title: 'Delete Frame', confirmLabel: 'Delete', danger: true },
-        )
-        return
-      }
-    }
-
-    this._execDeleteObject(id, target)
-  }
-
-  /** Performs the actual soft-delete after all guards have passed. */
-  _execDeleteObject(id, target) {
-    if (!target) target = this._scene.getObject(id)
-    if (!target) return
-
-    // If deleting the active object while in Edit Mode, exit cleanly first
-    // (setMode operates on the active meshView, so must be called before dispose)
-    if (id === this._scene.activeId && this._scene.selectionMode === 'edit') {
-      this.setMode('object')
-    }
-
-    const wasActive = this._scene.activeId === id
-
-    // If deleting the active frame, hide its chain before detaching
-    if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
-      this._hideFrameChain()
-    }
-    // If deleting a geometry object with visible child frames, hide them first
-    if (wasActive && !(target instanceof CoordinateFrame)) {
-      this._setChildFramesVisible(id, false)
-    }
-
-    // Determine next active object: prefer geometry objects over frames.
-    const nextId = wasActive
-      ? (
-          // First try another geometry object
-          [...this._scene.objects.entries()].find(
-            ([k, o]) => k !== id && !(o instanceof CoordinateFrame),
-          )?.[0]
-          // Fall back to any object (e.g. another frame)
-          ?? [...this._scene.objects.keys()].find(k => k !== id)
-          ?? null
-        )
-      : null
-
-    // ── Soft-delete for undo support (ADR-022 Phase 3) ────────────────────
-    const childrenRefs = [...this._collectAllDescendantFrames(id)]
-      .map(fid => this._scene.getObject(fid)).filter(Boolean)
-
-    // Detach children first (deepest last, though frames rarely nest >1 deep)
-    for (let i = childrenRefs.length - 1; i >= 0; i--) {
-      this._service.detachObject(childrenRefs[i].id)
-    }
-    this._service.detachObject(id)
-    target.meshView.setVisible(false)
-
-    const cmd = createDeleteCommand(
-      target, childrenRefs, this._service,
-      // onAfterUndo: switch active to the restored entity
-      (restoredId) => this._switchActiveObject(restoredId, true),
-      // onAfterRedo: switch active to next available object
-      (deletedId)  => {
-        const nxt = [...this._scene.objects.entries()]
-          .find(([k, o]) => k !== deletedId && !(o instanceof CoordinateFrame))?.[0]
-          ?? [...this._scene.objects.keys()].find(k => k !== deletedId)
-          ?? null
-        if (nxt) this._switchActiveObject(nxt, true)
-      },
-    )
-    this._commandStack.push(cmd)
-
-    if (wasActive && nextId) {
-      this._switchActiveObject(nextId, true)
-    }
-  }
-
-  /**
-   * Duplicates the active Solid, makes the copy active, and immediately
-   * starts a grab so the user can position it (Blender Shift+D behaviour).
-   * No-ops if there is no active object or it is a Profile.
-   */
-  _duplicateObject() {
-    const id = this._scene.activeId
-    if (!id) return
-    // SpatialLink has no geometry — cannot be duplicated (ADR-030)
-    if (this._activeObj instanceof SpatialLink) {
-      this._uiView.showToast('SpatialLink cannot be duplicated', { type: 'warn' })
-      return
-    }
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    const copy = this._service.duplicateSolid(id)
-    if (!copy) return
-    this._selectedIds.clear()
-    this._selectedIds.add(copy.id)
-    this._switchActiveObject(copy.id, true)
-    this._grabHandler.start()
-  }
-
-  // ─── Mobile Axis Guide helpers (replaces TransformControls) ──────────────
-
-  /**
-   * Creates 3D axis guide visuals: a colored line (translate) and a gimbal ring
-   * (rotate).  Both are invisible until _showAxisGuide() is called.
-   * Called once at construction time.
-   */
-  _initMobileAxisGuide() {
-    // Axis line — two endpoints; reused for all axes (position updated by _showAxisGuide)
-    const lineGeom = new THREE.BufferGeometry()
-    lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.85 })
-    this._axisGuideLine = new THREE.Line(lineGeom, lineMat)
-    this._axisGuideLine.visible = false
-    this._axisGuideLine.renderOrder = 999
-    this._sceneView.scene.add(this._axisGuideLine)
-
-    // Gimbal ring — circle in the local XY plane; rotated to match the rotation axis
-    const SEG = 64
-    const pts = new Float32Array((SEG + 1) * 3)
-    for (let i = 0; i <= SEG; i++) {
-      const t = (i / SEG) * Math.PI * 2
-      pts[i * 3] = Math.cos(t); pts[i * 3 + 1] = Math.sin(t); pts[i * 3 + 2] = 0
-    }
-    const ringGeom = new THREE.BufferGeometry()
-    ringGeom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
-    const ringMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 })
-    this._axisGuideRing = new THREE.Line(ringGeom, ringMat)
-    this._axisGuideRing.visible = false
-    this._axisGuideRing.renderOrder = 999
-    this._sceneView.scene.add(this._axisGuideRing)
-  }
-
-  /**
-   * Shows the axis guide appropriate for the current operation mode.
-   * @param {'x'|'y'|'z'} axis
-   * @param {THREE.Vector3} center - world position of the guide origin
-   * @param {'translate'|'rotate'} mode
-   */
-  _showAxisGuide(axis, center, mode) {
-    const COLORS = { x: 0xe05252, y: 0x6ab04c, z: 0x4a9eed }
-    const color = COLORS[axis] ?? 0xffffff
-    const camDist = center.distanceTo(this._camera.position)
-    const r = Math.max(0.5, camDist * 0.25)
-
-    if (mode === 'translate') {
-      const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0)
-                : axis === 'y' ? new THREE.Vector3(0, 1, 0)
-                :                new THREE.Vector3(0, 0, 1)
-      const attr = this._axisGuideLine.geometry.attributes.position
-      const p0 = center.clone().addScaledVector(dir, -r * 2.5)
-      const p1 = center.clone().addScaledVector(dir,  r * 2.5)
-      attr.array[0] = p0.x; attr.array[1] = p0.y; attr.array[2] = p0.z
-      attr.array[3] = p1.x; attr.array[4] = p1.y; attr.array[5] = p1.z
-      attr.needsUpdate = true
-      this._axisGuideLine.material.color.setHex(color)
-      this._axisGuideLine.visible = true
-      this._axisGuideRing.visible = false
-    } else {
-      this._axisGuideRing.position.copy(center)
-      this._axisGuideRing.scale.setScalar(r)
-      if (axis === 'x') {
-        this._axisGuideRing.rotation.set(0, Math.PI / 2, 0)
-      } else if (axis === 'y') {
-        this._axisGuideRing.rotation.set(Math.PI / 2, 0, 0)
-      } else {
-        this._axisGuideRing.rotation.set(0, 0, 0)
-      }
-      this._axisGuideRing.material.color.setHex(color)
-      this._axisGuideRing.visible = true
-      this._axisGuideLine.visible = false
-    }
-  }
-
-  /** Hides all axis guide visuals. */
-  _hideAxisGuide() {
-    if (this._axisGuideLine) this._axisGuideLine.visible = false
-    if (this._axisGuideRing) this._axisGuideRing.visible = false
-  }
-
-  /**
-   * Switches the active object without toggling selection.
-   * @param {string} id
-   * @param {boolean} select - whether to set _objSelected = true
-   */
-  _switchActiveObject(id, select = false) {
-    // Deselect / un-highlight previous
-    if (this._scene.activeId && this._scene.activeId !== id) {
-      const prev = this._scene.getObject(this._scene.activeId)
-      if (prev) {
-        prev.meshView.setObjectSelected(false)
-        if (prev instanceof CoordinateFrame) {
-          this._hideFrameChain()
-          // Hide parent axes ghost when leaving a CoordinateFrame selection (ADR-034 §7)
-          prev.meshView.hideParentAxesGhost()
-        } else {
-          this._setChildFramesVisible(this._scene.activeId, false)
-        }
-      }
-    }
-
-    this._service.setActiveObject(id)
-    this._objSelected = select
-    // Keep _selectedIds in sync so grab / pointer-drag work after outliner selection
-    if (select) {
-      this._selectedIds.clear()
-      this._selectedIds.add(id)
-    }
-    // Rubber-band: highlight links for the newly active entity (or clear on deselect).
-    this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
-    // Link network overlay: sync node highlight with 3D selection.
-    this._linkNetworkView?.setSelection(select && id ? this._selectedIds : new Set())
-
-    const obj = this._scene.getObject(id)
-    if (obj) obj.meshView.setObjectSelected(select)
-    if (select) {
-      if (obj instanceof CoordinateFrame) {
-        this._showFrameChain(id)
-        // Show parent axes ghost at geometry ancestor centroid (ADR-034 §7)
-        const ghostPos = this._geometryAncestorCentroid(id)
-        if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
-      } else {
-        this._setChildFramesVisible(id, true)
-      }
-    }
-
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-
-  }
-
-  /**
-   * Walks up the parentId chain from the given CoordinateFrame ID to find the
-   * first non-CoordinateFrame ancestor, then returns its world centroid.
-   * Returns null if no geometry ancestor found or if it has no corners.
-   * @param {string} frameId
-   * @returns {THREE.Vector3|null}
-   */
-  _geometryAncestorCentroid(frameId) {
-    let obj = this._scene.getObject(frameId)
-    while (obj instanceof CoordinateFrame) {
-      obj = this._scene.getObject(obj.parentId)
-    }
-    if (!obj) return null
-    // Use cached world position for CoordinateFrame (never reached here — just corners)
-    const corners = obj.corners
-    if (!corners || corners.length === 0) return null
-    const centroid = new THREE.Vector3()
-    for (const c of corners) centroid.add(c)
-    centroid.divideScalar(corners.length)
-    return centroid
+    this._framePlacementHandler.start(parentId)
   }
 
   _setObjectVisible(id, visible) {
@@ -1945,7 +927,7 @@ export class AppController {
     // During link creation: treat the clicked row as the target entity
     if (this._opState.is(S_LINK_MODE)) {
       if (id !== this._spatialLinkMode.sourceId) {
-        this._showLinkTypePicker(window.innerWidth / 2, window.innerHeight / 2, id)
+        this._linkHandler.showTypePicker(window.innerWidth / 2, window.innerHeight / 2, id)
       }
       return  // don't change active selection while in link mode
     }
@@ -1956,163 +938,6 @@ export class AppController {
       // Clicking the already-active row just re-selects it
       this._setObjectSelected(true)
     }
-  }
-
-  // ── SpatialLink creation flow (ADR-030 Phase 4) ────────────────────────────
-
-  /** Starts the two-phase L-key link creation. Source = currently active entity. */
-  _startSpatialLinkCreation() {
-    this._opState.send('BEGIN_LINK')
-    this._spatialLinkMode.sourceId = this._scene.activeId
-    this._spatialLinkMode.pendingTargetId = null
-    // Show all CFs so the target frame is visible for picking regardless of selection state
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof CoordinateFrame && obj.meshView) obj.meshView.showFull()
-    }
-    this._uiView.setStatus('Click target entity  [Esc: cancel]')
-    this._uiView.setCursor('crosshair')
-  }
-
-  /** Cancels link creation mode and restores normal status. */
-  _cancelSpatialLinkCreation() {
-    this._opState.send('CANCEL')
-    this._spatialLinkMode.sourceId = null
-    this._spatialLinkMode.pendingTargetId = null
-    this._restoreCoordinateFrameVisibility()
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-  }
-
-  /** Restores CF visibility after link-creation mode: show only CFs whose parent (or self) is the active object. */
-  _restoreCoordinateFrameVisibility() {
-    const activeId = this._activeObj?.id
-    for (const obj of this._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame) || !obj.meshView) continue
-      if (obj.id === activeId || obj.parentId === activeId) {
-        obj.meshView.showFull()
-      } else {
-        obj.meshView.hide()
-      }
-    }
-  }
-
-  /**
-   * Opens the link-type picker at (x, y) for the given target entity.
-   * Filters valid link types based on source / target entity type (ADR-032 §2).
-   * @param {number} x  client X
-   * @param {number} y  client Y
-   * @param {string} targetId
-   */
-  _showLinkTypePicker(x, y, targetId) {
-    this._spatialLinkMode.pendingTargetId = targetId
-    const sourceId = this._spatialLinkMode.sourceId
-    const source   = this._scene.getObject(sourceId)
-    const target   = this._scene.getObject(targetId)
-    const linkOptions = _computeLinkOptions(source, target)
-    this._uiView.showLinkTypePicker(x, y, (option) => {
-      if (option.semanticType === 'mounts') {
-        this._confirmMountAnnotation(sourceId, targetId)
-      } else if (option.jointType === 'fixed') {
-        this._confirmFastenFrame(sourceId, targetId, option.semanticType)
-      } else {
-        this._confirmSpatialLink(option)
-      }
-    }, { linkOptions })
-  }
-
-  /**
-   * Shared link creation used by L-key flow and Node Editor (Phase S-2).
-   * Creates SpatialLink + records undo command without touching spatialLinkMode state.
-   * @param {string} sourceId
-   * @param {string} targetId
-   * @param {{ jointType: string|null, semanticType: string, label: string }} option
-   */
-  _createSpatialLinkDirect(sourceId, targetId, option) {
-    const link = this._service.createSpatialLink(sourceId, targetId, option.jointType, option.semanticType, option.properties ?? {})
-    this._commandStack.push(createSpatialLinkCommand(link, this._service))
-    this._uiView.showToast(`Link created: ${option.label}`)
-    this._updateNPanel()
-    // Acceptance ceremony: ripple sphere at link midpoint + brief line flash.
-    const srcPos = this._dragSuggestionCentroid(sourceId)
-    const tgtPos = this._dragSuggestionCentroid(targetId)
-    if (srcPos && tgtPos) {
-      const midpoint = srcPos.clone().lerp(tgtPos, 0.5)
-      const color    = LINK_TYPE_COLORS[option.semanticType] ?? 0x888888
-      this._activeRipples.push(new RippleEffect(this._sceneView.scene, midpoint, color))
-    }
-    this._service._linkViews.get(link.id)?.triggerFlash?.()
-  }
-
-  /**
-   * Creates the SpatialLink from L-key picking flow and records the undo command.
-   * @param {{ jointType: string|null, semanticType: string, label: string }} option
-   */
-  _confirmSpatialLink(option) {
-    const { sourceId, pendingTargetId } = this._spatialLinkMode
-    if (!sourceId || !pendingTargetId) return
-    this._createSpatialLinkDirect(sourceId, pendingTargetId, option)
-    this._cancelSpatialLinkCreation()
-  }
-
-  /**
-   * Mounts an Annotated* entity onto a CoordinateFrame and records the command.
-   * Called from both the L-key flow (PC) and the mobile mount-picking flow.
-   * @param {string} sourceId  Annotated* entity ID
-   * @param {string} targetId  CoordinateFrame entity ID
-   */
-  _confirmMountAnnotation(sourceId, targetId) {
-    const result = this._service.mountAnnotation(sourceId, targetId)
-    if (!result) {
-      this._uiView.showToast('Cannot mount — host frame pose unknown', { type: 'warn' })
-      return
-    }
-    const { link, worldPositionsBefore } = result
-    this._commandStack.push(createMountAnnotationCommand(
-      link, worldPositionsBefore, this._service,
-      () => { this._updateNPanel() },
-      () => { this._updateNPanel() },
-    ))
-    this._uiView.showToast(`Mounted on frame "${this._scene.getObject(targetId)?.name}"`)
-    this._cancelSpatialLinkCreation()
-    if (this._opState.is(S_MOUNT_PICKING)) {
-      this._mountPicking.sourceId = null
-      this._uiView.setCursor('default')
-      this._opState.send('CONFIRM')
-      this._refreshObjectModeStatus()
-    }
-    this._updateNPanel()
-  }
-
-  /**
-   * Fastens a source CoordinateFrame to a target CoordinateFrame and records the command.
-   * Called from the L-key link-type picker when the user selects a fixed joint for CF→CF.
-   * @param {string} sourceId     CoordinateFrame entity ID (slave / constrained frame)
-   * @param {string} targetId     CoordinateFrame entity ID (master / reference frame)
-   * @param {string} [semanticType='fastened']  Semantic annotation for the link
-   */
-  _confirmFastenFrame(sourceId, targetId, semanticType = 'fastened') {
-    const source = this._scene.getObject(sourceId)
-    const target = this._scene.getObject(targetId)
-    if (!(source instanceof CoordinateFrame) || !(target instanceof CoordinateFrame)) {
-      this._uiView.showToast('Select a coordinate frame as source and target', { type: 'warn' })
-      return
-    }
-    // Force-update world poses so cache is fresh even if called between animation ticks
-    this._service._updateWorldPoses()
-    const result = this._service.fastenFrame(sourceId, targetId, semanticType)
-    if (!result) {
-      this._uiView.showToast('Cannot fasten — frame pose unknown', { type: 'warn' })
-      return
-    }
-    const { link, translationBefore, rotationBefore, relativeOffset, relativeQuat } = result
-    this._commandStack.push(createFastenFrameCommand(
-      link, translationBefore, rotationBefore, relativeOffset, relativeQuat, this._service,
-      () => { this._updateNPanel() },
-      () => { this._updateNPanel() },
-    ))
-    this._uiView.showToast(`Fastened to "${this._scene.getObject(targetId)?.name}"`)
-    this._cancelSpatialLinkCreation()
-    this._updateNPanel()
   }
 
   // ── Mount picking flow (Mobile, ADR-032 Phase H-6) ────────────────────────
@@ -2793,7 +1618,7 @@ export class AppController {
     // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
     const linkItems = isSolidOrCF
       ? [{ label: 'Link to... 🔗', onClick: () => {
-          this._startSpatialLinkCreation()
+          this._linkHandler.start()
           // Override the sourceId to the long-pressed object (it may not be active)
           this._spatialLinkMode.sourceId = id
         }}]
@@ -2910,7 +1735,7 @@ export class AppController {
 
     if (this._opState.is(S_MEASURE_PLACING)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelMeasure(), danger: true },
+        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._measureHandler.cancel(), danger: true },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -2921,7 +1746,7 @@ export class AppController {
     // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelFramePickSubMode(), danger: true },
+        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._framePlacementHandler.cancel(), danger: true },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -3241,8 +2066,8 @@ export class AppController {
     // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._opState.is(S_GRAB_ACTIVE))      this._grabHandler.cancel()
     if (this._opState.is(S_ROTATE_ACTIVE))    this._rotateHandler.cancel()
-    if (this._opState.is(S_FACE_EXTRUDE))     this._cancelFaceExtrude()
-    if (this._opState.is(S_FRAME_PLACEMENT))  this._cancelFramePickSubMode()
+    if (this._opState.is(S_FACE_EXTRUDE))     this._faceExtrudeHandler.cancel()
+    if (this._opState.is(S_FRAME_PLACEMENT))  this._framePlacementHandler.cancel()
     if (this._opState.is(S_MOUNT_PICKING))    this._cancelMountPicking()
     if (this._opState.is(S_QUICK_DRAG)) {
       this._quickDragHandler.cancel(this._quickDragCtx)
@@ -3819,32 +2644,7 @@ export class AppController {
 
     // ── Frame placement pick sub-mode hover (ADR-034 §6) ─────────────────
     if (this._opState.is(S_FRAME_PLACEMENT) && e.pointerType !== 'touch') {
-      const pt = this._pickFramePlacementPoint()
-      if (pt && this._frameCursorGhost) {
-        this._frameCursorGhost.position.copy(pt)
-        this._frameCursorGhost.quaternion.set(0, 0, 0, 1)
-        this._frameCursorGhost.visible = true
-        // Scale cursor ghost to consistent screen size
-        const d = this._camera.position.distanceTo(pt)
-        if (d > 0 && this._camera.isPerspectiveCamera) {
-          const tanHalfFov = Math.tan((this._camera.fov * Math.PI) / 360)
-          const screenH    = this._sceneView.renderer.domElement.clientHeight || 1
-          const ws = (60 / screenH) * 2 * d * tanHalfFov
-          this._frameCursorGhost.scale.setScalar(ws / _GHOST_AXIS_LEN)
-        }
-      } else if (this._frameCursorGhost) {
-        this._frameCursorGhost.visible = false
-      }
-      // Scale parent axes overlay too
-      if (this._parentAxesOverlay?.visible) {
-        const dp = this._camera.position.distanceTo(this._parentAxesOverlay.position)
-        if (dp > 0 && this._camera.isPerspectiveCamera) {
-          const tanHalfFov = Math.tan((this._camera.fov * Math.PI) / 360)
-          const screenH    = this._sceneView.renderer.domElement.clientHeight || 1
-          const ws = (80 / screenH) * 2 * dp * tanHalfFov
-          this._parentAxesOverlay.scale.setScalar(ws / _GHOST_AXIS_LEN)
-        }
-      }
+      this._framePlacementHandler.updateCursorGhost()
       return
     }
 
@@ -3853,7 +2653,7 @@ export class AppController {
 
     // ── Measure placement hover ───────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
-      const pt = this._measurePickPoint()
+      const pt = this._measureHandler.pickPoint()
       if (pt) {
         this._measure.p2 = pt
         // Show snap candidates via snapMeshView (a real MeshView, not MeasureLineView)
@@ -3878,10 +2678,10 @@ export class AppController {
         }
         // Phase 2: draw preview line
         if (this._measure.p1) {
-          this._updateMeasurePreview(this._measure.p1, pt)
+          this._measureHandler.updatePreview(this._measure.p1, pt)
         }
       }
-      this._updateMeasureStatus()
+      this._measureHandler.updateStatus()
       return
     }
 
@@ -3958,8 +2758,8 @@ export class AppController {
       const pt = new THREE.Vector3()
       if (!this._raycaster.ray.intersectPlane(this._faceExtrude.dragPlane, pt)) return
       const rawDist = pt.clone().sub(this._faceExtrude.startPoint).dot(this._faceExtrude.normal)
-      this._faceExtrude.dist = this._trySnapFaceExtrude(rawDist)
-      this._applyFaceExtrude()
+      this._faceExtrude.dist = this._faceExtrudeHandler.trySnap(rawDist)
+      this._faceExtrudeHandler.applyPreview()
       // snap visuals
       const fe = this._faceExtrude
       const mx = (this._mouse.x + 1) / 2 * innerWidth
@@ -3978,7 +2778,7 @@ export class AppController {
         if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
         else         this._meshView.clearSnapNearest()
       }
-      this._updateFaceExtrudeStatus()
+      this._faceExtrudeHandler.updateStatus()
       return
     }
 
@@ -4083,13 +2883,13 @@ export class AppController {
 
     // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
-      if (e.button === 2) { this._cancelFramePickSubMode(); return }
+      if (e.button === 2) { this._framePlacementHandler.cancel(); return }
       if (e.button === 0 || e.pointerType === 'touch') {
-        const pt = this._pickFramePlacementPoint()
+        const pt = this._framePlacementHandler.pickPoint()
         if (pt) {
-          this._confirmFramePlacement(pt)
+          this._framePlacementHandler.confirm(pt)
         } else {
-          this._cancelFramePickSubMode()
+          this._framePlacementHandler.cancel()
         }
         return
       }
@@ -4127,7 +2927,7 @@ export class AppController {
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
-            this._confirmMountAnnotation(this._mountPicking.sourceId, hit.obj.id)
+            this._linkHandler.confirmMount(this._mountPicking.sourceId, hit.obj.id)
           } else if (hitObj instanceof Solid) {
             this._uiView.showToast('Add a frame to this object first', { type: 'warn' })
           } else {
@@ -4143,7 +2943,7 @@ export class AppController {
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
-            this._confirmMountAnnotation(this._mountPicking.sourceId, hit.obj.id)
+            this._linkHandler.confirmMount(this._mountPicking.sourceId, hit.obj.id)
           } else if (hitObj instanceof Solid) {
             this._uiView.showToast('Add a frame to this object first', { type: 'warn' })
           } else {
@@ -4159,13 +2959,13 @@ export class AppController {
 
     // ── SpatialLink target selection (ADR-030 Phase 4) ─────────────────────
     if (this._opState.is(S_LINK_MODE)) {
-      if (e.button === 2) { this._cancelSpatialLinkCreation(); return }
+      if (e.button === 2) { this._linkHandler.cancel(); return }
       if (e.button === 0) {
         const hit = this._hitAnyEntityForLink()
         if (hit) {
-          this._showLinkTypePicker(e.clientX, e.clientY, hit.obj.id)
+          this._linkHandler.showTypePicker(e.clientX, e.clientY, hit.obj.id)
         } else {
-          this._cancelSpatialLinkCreation()
+          this._linkHandler.cancel()
         }
         return
       }
@@ -4227,7 +3027,7 @@ export class AppController {
         this._activeDragPointerId = e.pointerId
         return
       }
-      if (e.button === 2) { this._cancelFaceExtrude(); return }
+      if (e.button === 2) { this._faceExtrudeHandler.cancel(); return }
       return
     }
 
@@ -4236,7 +3036,7 @@ export class AppController {
 
     // ── Measure placement clicks ──────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
-      if (e.button === 2) { this._cancelMeasure(); return }
+      if (e.button === 2) { this._measureHandler.cancel(); return }
       if (e.button === 0) {
         // Hold to snap, release to confirm — handled in _onPointerUp.
         // This lets mobile users slide their finger to the snap target before lifting.
@@ -4473,7 +3273,7 @@ export class AppController {
         !e.shiftKey) {
       const faces = [...this._scene.editSelection].filter(x => x instanceof Face)
       if (faces.length > 0) {
-        this._startFaceExtrude(faces[0])
+        this._faceExtrudeHandler.start(faces[0])
         this._activeDragPointerId = e.pointerId
       }
     }
@@ -4509,7 +3309,7 @@ export class AppController {
       if (this._activeDragPointerId === e.pointerId) {
         this._activeDragPointerId = null
         this._measure.pressing    = false
-        this._confirmMeasurePoint()
+        this._measureHandler.confirmPoint()
       }
       return
     }
@@ -4530,7 +3330,7 @@ export class AppController {
     if (this._opState.is(S_FACE_EXTRUDE)) {
       // Only confirm when a canvas drag was started; prevents double-confirm
       // when the mobile Confirm toolbar button fires both pointerup and click.
-      if (wasDragging) this._confirmFaceExtrude()
+      if (wasDragging) this._faceExtrudeHandler.confirm()
       return
     }
     if (this._editOpState.is(EO_2D_SKETCH_DRAW) && wasDragging) {
@@ -4560,7 +3360,7 @@ export class AppController {
     if (e.key === 'Control') {
       this._ctrlHeld = false
       if (this._opState.is(S_GRAB_ACTIVE) && !this._grabHandler.pivotSelectMode) this._grabHandler.updateStatus()
-      if (this._opState.is(S_FACE_EXTRUDE)) this._updateFaceExtrudeStatus()
+      if (this._opState.is(S_FACE_EXTRUDE)) this._faceExtrudeHandler.updateStatus()
       if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotateHandler.state.hasInput) {
         this._rotateHandler.apply()
         this._rotateHandler.updateStatus()
@@ -4667,7 +3467,7 @@ export class AppController {
         case 's': case 'S': gh.toggleStackMode(); return
         case 'Enter':
           if (gh.isSuggesting && gh.currentSuggestion) {
-            this._createSpatialLinkDirect(
+            this._linkHandler.createDirect(
               gh.currentSuggestion.sourceId,
               gh.currentSuggestion.targetId,
               gh.currentSuggestion,
@@ -4710,19 +3510,19 @@ export class AppController {
 
     // ── Frame placement pick sub-mode keys (ADR-034 §6) ──────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
-      if (e.key === 'Escape') { this._cancelFramePickSubMode(); return }
+      if (e.key === 'Escape') { this._framePlacementHandler.cancel(); return }
       return  // consume all other keys during frame pick
     }
 
     // ── Measure placement keys ─────────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
-      if (e.key === 'Escape') { this._cancelMeasure(); return }
+      if (e.key === 'Escape') { this._measureHandler.cancel(); return }
       return
     }
 
     // ── SpatialLink creation keys (ADR-030 Phase 4) ────────────────────────
     if (this._opState.is(S_LINK_MODE)) {
-      if (e.key === 'Escape') { this._cancelSpatialLinkCreation(); return }
+      if (e.key === 'Escape') { this._linkHandler.cancel(); return }
       return  // consume all other keys during link mode
     }
 
@@ -4776,26 +3576,26 @@ export class AppController {
 
     // ── Face extrude keys (Edit Mode · 3D) ────────────────────────────────
     if (this._opState.is(S_FACE_EXTRUDE)) {
-      if (e.key === 'Enter')  { e.preventDefault(); this._confirmFaceExtrude(); return }
-      if (e.key === 'Escape') { this._cancelFaceExtrude(); return }
+      if (e.key === 'Enter')  { e.preventDefault(); this._faceExtrudeHandler.confirm(); return }
+      if (e.key === 'Escape') { this._faceExtrudeHandler.cancel(); return }
       if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
         this._faceExtrude.inputStr += e.key
         this._faceExtrude.hasInput  = true
-        this._applyFaceExtrudeFromInput()
-        this._updateFaceExtrudeStatus()
+        this._faceExtrudeHandler.applyFromInput()
+        this._faceExtrudeHandler.updateStatus()
         return
       }
       if (e.key === '-' && this._faceExtrude.inputStr.length === 0) {
         this._faceExtrude.inputStr = '-'
         this._faceExtrude.hasInput = true
-        this._updateFaceExtrudeStatus()
+        this._faceExtrudeHandler.updateStatus()
         return
       }
       if (e.key === 'Backspace') {
         this._faceExtrude.inputStr = this._faceExtrude.inputStr.slice(0, -1)
         this._faceExtrude.hasInput = this._faceExtrude.inputStr.length > 0 && this._faceExtrude.inputStr !== '-'
-        this._applyFaceExtrudeFromInput()
-        this._updateFaceExtrudeStatus()
+        this._faceExtrudeHandler.applyFromInput()
+        this._faceExtrudeHandler.updateStatus()
         return
       }
       return
@@ -4808,7 +3608,7 @@ export class AppController {
       if (e.key === '3') { this._setEditSelectMode('face');   return }
       if ((e.key === 'e' || e.key === 'E') && this._editSelectMode === 'face') {
         const selected = [...this._scene.editSelection].filter(x => x instanceof Face)
-        if (selected.length > 0) this._startFaceExtrude(selected[0])
+        if (selected.length > 0) this._faceExtrudeHandler.start(selected[0])
         return
       }
     }
@@ -4827,7 +3627,7 @@ export class AppController {
     if (this._scene.selectionMode === 'object') {
       // M: start measure placement
       if (e.key === 'm' || e.key === 'M') {
-        this._startMeasurePlacement()
+        this._measureHandler.start()
         return
       }
       // L: start SpatialLink creation (ADR-030 Phase 4)
@@ -4836,7 +3636,7 @@ export class AppController {
           this._uiView.showToast('SpatialLink cannot be used as a link source', { type: 'warn' })
           return
         }
-        this._startSpatialLinkCreation()
+        this._linkHandler.start()
         return
       }
       // Shift+S: select all fixed-joint-connected parts (Semantic Select / assembly select)
@@ -4915,11 +3715,11 @@ export class AppController {
         const linkOptions = _computeLinkOptions(source, target)
         this._uiView.showLinkTypePicker(x, y, (option) => {
           if (option.semanticType === 'mounts') {
-            this._confirmMountAnnotation(sourceId, targetId)
+            this._linkHandler.confirmMount(sourceId, targetId)
           } else if (option.jointType === 'fixed') {
-            this._confirmFastenFrame(sourceId, targetId, option.semanticType)
+            this._linkHandler.confirmFasten(sourceId, targetId, option.semanticType)
           } else {
-            this._createSpatialLinkDirect(sourceId, targetId, option)
+            this._linkHandler.createDirect(sourceId, targetId, option)
           }
         }, { linkOptions })
       },
@@ -5169,51 +3969,4 @@ function _meshBboxCorners(obj) {
     new THREE.Vector3(max.x, max.y, max.z),
     new THREE.Vector3(min.x, max.y, max.z),
   ]
-}
-
-// ── Frame placement helpers (ADR-034 §6, §7) ──────────────────────────────────
-
-const _GHOST_AXIS_LEN = 0.5
-const _GHOST_OPACITY  = 0.35
-const _GHOST_DASH     = 0.08
-const _GHOST_GAP      = 0.05
-
-/** Creates a dimmed dashed axis-lines group (world-aligned — always identity rotation). */
-function _makeGhostAxesGroup() {
-  const group = new THREE.Group()
-  for (const [dx, dy, dz, color] of [
-    [_GHOST_AXIS_LEN, 0, 0, 0xff4444],
-    [0, _GHOST_AXIS_LEN, 0, 0x44cc44],
-    [0, 0, _GHOST_AXIS_LEN, 0x4488ff],
-  ]) {
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, dx, dy, dz], 3))
-    const mat = new THREE.LineDashedMaterial({
-      color, dashSize: _GHOST_DASH, gapSize: _GHOST_GAP,
-      depthTest: false, transparent: true, opacity: _GHOST_OPACITY,
-    })
-    const line = new THREE.Line(geo, mat)
-    line.renderOrder = 1
-    line.computeLineDistances()
-    group.add(line)
-  }
-  return group
-}
-
-/** Creates a bright solid axis-lines group to show as cursor ghost during frame pick. */
-function _makeFrameAxesGroup() {
-  const group = new THREE.Group()
-  for (const [dx, dy, dz, color] of [
-    [_GHOST_AXIS_LEN, 0, 0, 0xff4444],
-    [0, _GHOST_AXIS_LEN, 0, 0x44cc44],
-    [0, 0, _GHOST_AXIS_LEN, 0x4488ff],
-  ]) {
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, dx, dy, dz], 3))
-    const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.75 })
-    const line = new THREE.Line(geo, mat)
-    line.renderOrder = 2
-    group.add(line)
-  }
-  return group
 }
