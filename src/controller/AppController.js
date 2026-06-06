@@ -956,6 +956,74 @@ export class AppController {
     }
   }
 
+  // ── Active object switching ────────────────────────────────────────────────
+
+  /**
+   * Switches the active object, updating visual selection, frame visibility,
+   * link highlighting, and all UI components.
+   * @param {string} id
+   * @param {boolean} [select=false]
+   */
+  _switchActiveObject(id, select = false) {
+    if (this._scene.activeId && this._scene.activeId !== id) {
+      const prev = this._scene.getObject(this._scene.activeId)
+      if (prev) {
+        prev.meshView.setObjectSelected(false)
+        if (prev instanceof CoordinateFrame) {
+          this._selMgr.hideFrameChain()
+          prev.meshView.hideParentAxesGhost()
+        } else {
+          this._selMgr.setChildFramesVisible(this._scene.activeId, false)
+        }
+      }
+    }
+
+    this._service.setActiveObject(id)
+    this._objSelected = select
+    if (select) {
+      this._selectedIds.clear()
+      this._selectedIds.add(id)
+    }
+    this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
+    this._linkNetworkView?.setSelection(select && id ? this._selectedIds : new Set())
+
+    const obj = this._scene.getObject(id)
+    if (obj) obj.meshView.setObjectSelected(select)
+    if (select) {
+      if (obj instanceof CoordinateFrame) {
+        this._selMgr.showFrameChain(id)
+        const ghostPos = this._geometryAncestorCentroid(id)
+        if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
+      } else {
+        this._selMgr.setChildFramesVisible(id, true)
+      }
+    }
+
+    this._refreshObjectModeStatus()
+    this._updateNPanel()
+    this._updateMobileToolbar()
+  }
+
+  /**
+   * Walks the parentId chain from a CoordinateFrame to find the first
+   * non-CF ancestor's world centroid (used for parent axes ghost ADR-034 §7).
+   * @param {string} frameId
+   * @returns {THREE.Vector3|null}
+   */
+  _geometryAncestorCentroid(frameId) {
+    let obj = this._scene.getObject(frameId)
+    while (obj instanceof CoordinateFrame) {
+      obj = this._scene.getObject(obj.parentId)
+    }
+    if (!obj) return null
+    const corners = obj.corners
+    if (!corners || corners.length === 0) return null
+    const centroid = new THREE.Vector3()
+    for (const c of corners) centroid.add(c)
+    centroid.divideScalar(corners.length)
+    return centroid
+  }
+
   // ── Mount picking flow (Mobile, ADR-032 Phase H-6) ────────────────────────
 
   /** Starts mount-picking mode for the given source Annotated* entity (mobile). */
