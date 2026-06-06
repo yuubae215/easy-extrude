@@ -11,7 +11,10 @@ export class SceneView {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(innerWidth, innerHeight)
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-    document.body.appendChild(this.renderer.domElement)
+    // Mount inside #canvas-container so the stacking order is explicit:
+    // canvas (z-index:0) → gizmo (z-index:10) → React UI (z-index:100).
+    const canvasContainer = document.getElementById('canvas-container') ?? document.body
+    canvasContainer.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(0x1a1a2e)

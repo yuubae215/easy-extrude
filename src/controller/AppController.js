@@ -960,6 +960,83 @@ export class AppController {
     }
   }
 
+  // ── Mobile axis guide ─────────────────────────────────────────────────────
+
+  /**
+   * Creates 3D axis guide visuals: a colored line (translate) and a gimbal ring
+   * (rotate).  Both are invisible until _showAxisGuide() is called.
+   * Called once at construction time.
+   */
+  _initMobileAxisGuide() {
+    const lineGeom = new THREE.BufferGeometry()
+    lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.85 })
+    this._axisGuideLine = new THREE.Line(lineGeom, lineMat)
+    this._axisGuideLine.visible = false
+    this._axisGuideLine.renderOrder = 999
+    this._sceneView.scene.add(this._axisGuideLine)
+
+    const SEG = 64
+    const pts = new Float32Array((SEG + 1) * 3)
+    for (let i = 0; i <= SEG; i++) {
+      const t = (i / SEG) * Math.PI * 2
+      pts[i * 3] = Math.cos(t); pts[i * 3 + 1] = Math.sin(t); pts[i * 3 + 2] = 0
+    }
+    const ringGeom = new THREE.BufferGeometry()
+    ringGeom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    const ringMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 })
+    this._axisGuideRing = new THREE.Line(ringGeom, ringMat)
+    this._axisGuideRing.visible = false
+    this._axisGuideRing.renderOrder = 999
+    this._sceneView.scene.add(this._axisGuideRing)
+  }
+
+  /**
+   * @param {'x'|'y'|'z'} axis
+   * @param {THREE.Vector3} center
+   * @param {'translate'|'rotate'} mode
+   */
+  _showAxisGuide(axis, center, mode) {
+    const COLORS = { x: 0xe05252, y: 0x6ab04c, z: 0x4a9eed }
+    const color = COLORS[axis] ?? 0xffffff
+    const camDist = center.distanceTo(this._camera.position)
+    const r = Math.max(0.5, camDist * 0.25)
+
+    if (mode === 'translate') {
+      const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0)
+                : axis === 'y' ? new THREE.Vector3(0, 1, 0)
+                :                new THREE.Vector3(0, 0, 1)
+      const attr = this._axisGuideLine.geometry.attributes.position
+      const p0 = center.clone().addScaledVector(dir, -r * 2.5)
+      const p1 = center.clone().addScaledVector(dir,  r * 2.5)
+      attr.array[0] = p0.x; attr.array[1] = p0.y; attr.array[2] = p0.z
+      attr.array[3] = p1.x; attr.array[4] = p1.y; attr.array[5] = p1.z
+      attr.needsUpdate = true
+      this._axisGuideLine.material.color.setHex(color)
+      this._axisGuideLine.visible = true
+      this._axisGuideRing.visible = false
+    } else {
+      this._axisGuideRing.position.copy(center)
+      this._axisGuideRing.scale.setScalar(r)
+      if (axis === 'x') {
+        this._axisGuideRing.rotation.set(0, Math.PI / 2, 0)
+      } else if (axis === 'y') {
+        this._axisGuideRing.rotation.set(Math.PI / 2, 0, 0)
+      } else {
+        this._axisGuideRing.rotation.set(0, 0, 0)
+      }
+      this._axisGuideRing.material.color.setHex(color)
+      this._axisGuideRing.visible = true
+      this._axisGuideLine.visible = false
+    }
+  }
+
+  /** Hides all axis guide visuals. */
+  _hideAxisGuide() {
+    if (this._axisGuideLine) this._axisGuideLine.visible = false
+    if (this._axisGuideRing) this._axisGuideRing.visible = false
+  }
+
   // ── Active object switching ────────────────────────────────────────────────
 
   /**
