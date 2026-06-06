@@ -14,12 +14,7 @@ import {
   computeOutwardFaceNormal,
   getCentroid,
   toNDC,
-  getPivotCandidates,
-  getVertexPivotCandidates,
-  getEdgePivotCandidates,
-  getFacePivotCandidates,
   collectSnapTargets,
-  collectWorldSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
 import { Solid }           from '../domain/Solid.js'
@@ -32,13 +27,10 @@ import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
 import { LinkNetworkView } from '../view/LinkNetworkView.js'
 import { CommandStack }              from '../service/CommandStack.js'
-import { createMoveCommand }          from '../command/MoveCommand.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
-import { createFrameRotateCommand }   from '../command/FrameRotateCommand.js'
-import { createSolidRotateCommand }   from '../command/SolidRotateCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
 import { createSetPlaceTypeCommand }  from '../command/SetPlaceTypeCommand.js'  // N-panel place type change (post-hoc push)
 import { createReparentFrameCommand } from '../command/ReparentFrameCommand.js'
@@ -67,10 +59,17 @@ import { EndpointDragState } from '../core/states/EndpointDragState.js'
 import { SketchDrawState }   from '../core/states/SketchDrawState.js'
 import { QuickDragState }    from '../core/states/QuickDragState.js'
 import { RectSelectState }   from '../core/states/RectSelectState.js'
-import { inferSemanticRelationships, computeApproachWarmth } from '../service/SemanticInferencer.js'
+import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
+import { MapModeController }          from './map/MapModeController.js'
+import { RotationHandler }            from './handler/RotationHandler.js'
+import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
+import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
+import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
+import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
+import { FramePlacementHandler }      from './handler/FramePlacementHandler.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -277,42 +276,13 @@ export class AppController {
       this._uiView.hideImportProgress()
     })
 
-    // ── Measure placement state ────────────────────────────────────────────
-    // Active while the user is placing a MeasureLine (M key / Add → Measure).
-    // Phase 1: waiting for first click (p1 = null)
-    // Phase 2: p1 set, waiting for second click (preview line shown)
-    // Active state tracked by this._opState (S_MEASURE_PLACING).
-    this._measure = {
-      /** @type {THREE.Vector3|null} fixed first endpoint */
-      p1:           null,
-      /** @type {THREE.Vector3|null} live cursor position (snapped) */
-      p2:           null,
-      /** @type {{label:string, position:THREE.Vector3, type:string, objectId:string, elementId:string}[]} */
-      snapTargets:  [],
-      snapping:     false,
-      /** @type {{label:string, position:THREE.Vector3, type:string, objectId:string, elementId:string}|null} */
-      snappedTarget: null,
-      /** Anchor reference captured when p1 was confirmed (ADR-028).
-       *  @type {{ objectId:string, type:string, elementId:string }|null} */
-      p1Anchor:     null,
-      /** Three.js Line for preview before entity is created */
-      previewLine:  null,
-      /** True while the user is holding a pointer down to snap a point */
-      pressing:     false,
-      /** MeshView used for snap candidate display (may differ from _meshView when active obj is MeasureLine) */
-      snapMeshView: null,
-    }
+    // ── Measure placement handler (delegated to MeasurePlacementHandler) ──
+    this._measureHandler  = new MeasurePlacementHandler(this)
+    this._measure         = this._measureHandler.state
 
-    // ── SpatialLink creation state (ADR-030 Phase 4) ──────────────────────
-    // Active while the user is selecting a target entity after pressing L.
-    // Phase 1: sourceId captured, waiting for target click.
-    // Active state tracked by this._opState (S_LINK_MODE).
-    this._spatialLinkMode = {
-      /** @type {string|null} ID of the source entity */
-      sourceId:         null,
-      /** @type {string|null} ID of the candidate target (pending picker) */
-      pendingTargetId:  null,
-    }
+    // ── SpatialLink creation handler (delegated to LinkCreationHandler) ───
+    this._linkHandler     = new LinkCreationHandler(this)
+    this._spatialLinkMode = this._linkHandler.state
 
     // ── Primary operation FSM (ADR-039) ──────────────────────────────────
     // Single source of truth for which Object Mode operation is currently active.
@@ -367,60 +337,10 @@ export class AppController {
       sourceId: null,
     }
 
-    // ── 2D Map Mode state ─────────────────────────────────────────────────
-    // Entered via the "Map" header button.  Uses an orthographic top-down
-    // camera (SceneView.useOrthoCamera) for distortion-free 2D placement.
-    //
-    // Three-state drawing model (ADR-031 §1):
-    //   idle     → no gesture in progress; tool may or may not be selected
-    //   drawing  → gesture in progress (rubber-band follows cursor)
-    //   pending  → geometry fully defined; static dashed preview; awaiting name + confirm
-    this._mapMode = {
-      /** Whether map mode is currently active */
-      active: false,
-      /** Active drawing tool: 'route'|'boundary'|'zone'|'hub'|'anchor'|null */
-      tool:   null,
-      /** 'idle'|'drawing'|'pending' (ADR-031 §1) */
-      drawState: 'idle',
-      /** @type {THREE.Vector3[]} vertex positions collected during drawing */
-      points: [],
-      /** @type {THREE.Vector3[]|null} frozen geometry entered when going pending */
-      pendingPoints: null,
-      /** Default name for the pending entity (e.g. "Route 1") */
-      pendingName: null,
-      /** @type {THREE.Vector3|null} live cursor world position */
-      cursor: null,
-      /** THREE.Line preview drawn while placing */
-      previewLine: null,
-      /** THREE.Mesh cursor dot */
-      cursorDot:   null,
-      /** Panning state */
-      isPanning:   false,
-      panStart:    null,   // { screenX, screenY, camX, camY }
-      /** Current orthographic frustum height (world units) */
-      frustumSize: 50,
-      /**
-       * Mobile drag start: set on pointerdown for Line/Region/Point tools.
-       * Cleared on pointerup.
-       * @type {{ pt: THREE.Vector3, screenX: number, screenY: number }|null}
-       */
-      mobileDragStart: null,
-      /**
-       * Per-type creation counters for default name generation ("Route 1", "Zone 2" …).
-       */
-      nameCounters: { Route: 0, Boundary: 0, Zone: 0, Hub: 0, Anchor: 0 },
-      /**
-       * Snap indicator ring (PC only) — shown at the snap-candidate world position.
-       * @type {THREE.Mesh|null}
-       */
-      snapRingMesh: null,
-      /**
-       * The world position of the active snap candidate (null when not snapping).
-       * Populated by _mapPickPoint on PC; consumed by _updateMapPreview.
-       * @type {THREE.Vector3|null}
-       */
-      snapCandidate: null,
-    }
+    // ── 2D Map Mode (delegated to MapModeController) ─────────────────────
+    // All map mode state and interaction logic live in MapModeController.
+    // AppController accesses map state via this._mapModeCtrl.isActive / .hasTool.
+    this._mapModeCtrl = new MapModeController(this)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
@@ -503,72 +423,12 @@ export class AppController {
     this._activeRipples        = []
     this._rectSelHandler       = new RectSelectState()
 
-    // ── Face extrude state (Edit Mode · 3D, E key) ─────────────────────────
-    // Active state tracked by this._opState (S_FACE_EXTRUDE).
-    this._faceExtrude = {
-      /** @type {import('../graph/Face.js').Face|null} */
-      face:          null,
-      savedCorners:  [],    // world face corners at drag start (for display / snap)
-      /** @type {import('three').Vector3[]} Body-frame face corners at drag start (for extrudeFace call). ADR-040 */
-      savedLocalFaceCorners: [],
-      normal:        new THREE.Vector3(),  // world face normal (for distance dot product)
-      localNormal:   new THREE.Vector3(),  // body-frame face normal (for extrudeFace call). ADR-040
-      dist:          0,
-      dragPlane:     new THREE.Plane(),
-      startPoint:    new THREE.Vector3(),
-      inputStr:      '',
-      hasInput:      false,
-      snapping:      false,
-      snappedTarget: null,
-      snapTargets:   [],
-    }
+    // ── Face extrude handler (delegated to FaceExtrudeHandler) ──────────────
+    this._faceExtrudeHandler = new FaceExtrudeHandler(this)
+    this._faceExtrude        = this._faceExtrudeHandler.state
 
     // ── Blender-style grab state ───────────────────────────────────────────
-    // Active state tracked by this._opState (S_GRAB_ACTIVE).
-    this._grab = {
-      axis:            null,
-      startMouse:      new THREE.Vector2(),
-      startCorners:    [],
-      /** @type {Map<string, import('three').Vector3[]>} corners snapshot for all selected objects */
-      allStartCorners: new Map(),
-      /** @type {Map<string, import('three').Vector3[]>} corners at the start of the current drag segment (touch re-grab) */
-      segmentStartCorners: new Map(),
-      /** @type {Map<string, import('three').Vector3>} Solid._position snapshot at segment start (ADR-040) */
-      segmentStartPositions: new Map(),
-      centroid:        new THREE.Vector3(),
-      pivot:           new THREE.Vector3(),
-      pivotLabel:      'Centroid',
-      dragPlane:       new THREE.Plane(),
-      startPoint:      new THREE.Vector3(),
-      inputStr:        '',
-      hasInput:        false,
-      pivotSelectMode: false,
-      hoveredPivotIdx: -1,
-      candidates:      [],
-      /** Current candidate filter in pivot select mode: 'all'|'vertex'|'edge'|'face' */
-      pivotMode:       'all',
-      snapping:        false,
-      /** Set to true after G->V pivot confirm; enables auto-snap without Ctrl */
-      autoSnap:        false,
-      /** The snap target currently locked to, or null */
-      snappedTarget:   null,
-      /** Snap target filter: 'all'|'vertex'|'edge'|'face' */
-      snapMode:        'all',
-      /** All snap candidates from last _trySnapToGeometry call (for display) */
-      snapTargets:     [],
-      /** Grid snap unit size (Ctrl during grab). Cycled with Ctrl+Wheel. */
-      gridSize:        1,
-      /** When true, grabbed object snaps Z so its bottom rests on the top surface below. */
-      stackMode:       false,
-      /** True when stacking is actively snapping Z this frame. */
-      stacking:        false,
-      /** Last delta applied via _applyGrabDeltaToAll; used for live coordinate display. */
-      lastDelta:       new THREE.Vector3(),
-      /** True when a live semantic suggestion is showing during G-key grab (ADR-041 Phase 3). */
-      isSuggesting:    false,
-      /** The suggestion currently displayed, or null. @type {object|null} */
-      currentSuggestion: null,
-    }
+    this._grabHandler = new GrabOperationHandler(this)
 
     /** Unsubscribe function for the active import.progress WS listener, or null */
     this._importProgressUnsub = null
@@ -587,46 +447,7 @@ export class AppController {
     this._axisGuideRing = null
 
     // ── CoordinateFrame / Solid rotate state (R key, ADR-019 Phase B / ADR-036) ─
-    // Shared for both CoordinateFrame (quaternion-based) and Solid (corner-baking).
-    // Active state tracked by this._opState (S_ROTATE_ACTIVE).
-    this._rotate = {
-      /** World-space axis to rotate around: null = view-space Z, 'x'|'y'|'z' = world axes. */
-      axis:       null,
-      /** Screen-angle (radians) from projected pivot to mouse at start. */
-      startAngle: 0,
-      /** Saved rotation quaternion at the moment rotation begins (CoordinateFrame only). */
-      startRot:   new THREE.Quaternion(),
-      /** Numeric degree string typed by the user; empty when mouse-driven. */
-      inputStr:   '',
-      /** True when the user has typed at least one digit. */
-      hasInput:   false,
-      /** Degree increment for Ctrl snap. Cycled with Ctrl+Wheel. */
-      stepSize:   1,
-      // Mobile multi-segment drag support: re-initialized on each new touch drag.
-      /** True when startAngle should be captured from the next pointer position (mobile). */
-      needsStartAngle:      false,
-      /** Per-segment start angle; equals startAngle on PC (single drag). */
-      segmentStartAngle:    0,
-      /** Angle from pivot to cursor at the previous frame; used for incremental accumulation. */
-      prevCurrentAngle:     0,
-      /** Accumulated signed rotation (radians) for the current drag segment. */
-      accumulatedAngle:     0,
-      /** Per-segment quaternion for CoordinateFrame; equals startRot on PC. */
-      segmentStartRot:      new THREE.Quaternion(),
-      // ADR-040 Solid rotate state (replaces startCorners/segmentStartCorners/bodyRot fields)
-      /** Solid orientation snapshot at rotate start — for undo. @type {import('three').Quaternion|null} */
-      startOrientation:    null,
-      /** Solid _position snapshot at rotate start — for undo. @type {import('three').Vector3|null} */
-      startPos:            null,
-      /** Solid orientation snapshot at segment start — for reapplyable drag. @type {import('three').Quaternion|null} */
-      segStartOrientation: null,
-      /** Solid _position snapshot at segment start — for reapplyable drag. @type {import('three').Vector3|null} */
-      segStartPos:         null,
-      /** Centroid of solid corners at segment start — used as rotation pivot + screen projection. @type {import('three').Vector3|null} */
-      segStartPivot:       null,
-      /** Display angle (radians) from last _applyRotate(); used by _updateRotateStatus(). */
-      displayAngle:        0,
-    }
+    this._rotateHandler = new RotationHandler(this)
 
     this._ctrlHeld  = false
 
@@ -648,24 +469,9 @@ export class AppController {
       startY:    0,
     }
 
-    // ── CoordinateFrame placement pick sub-mode (ADR-034 §6) ─────────────────
-    /**
-     * Data for frame placement pick sub-mode.
-     * Active state tracked by this._opState (S_FRAME_PLACEMENT).
-     * @type {{ parentId: string|null }}
-     */
-    this._framePlacementState = { parentId: null }
-    /**
-     * Scene-level Three.js Group showing world-aligned parent axes during pick sub-mode.
-     * Lazily created in _enterFramePickSubMode; reused on subsequent entries.
-     * @type {THREE.Group|null}
-     */
-    this._parentAxesOverlay = null
-    /**
-     * Ghost CoordinateFrame axes following the cursor during pick sub-mode.
-     * @type {THREE.Group|null}
-     */
-    this._frameCursorGhost = null
+    // ── CoordinateFrame placement handler (delegated to FramePlacementHandler) ─
+    this._framePlacementHandler = new FramePlacementHandler(this)
+    this._framePlacementState   = this._framePlacementHandler.state
 
     // ── UI wiring ──────────────────────────────────────────────────────────
     uiView.setCanvas(sceneView.renderer.domElement)
@@ -742,7 +548,7 @@ export class AppController {
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
-      if (this._isFastenedRotationBlocked(frame)) return
+      if (this._rotateHandler.isFastenedRotationBlocked(frame)) return
       // rotation is already in parent-local space (ROS TF) — edit directly
       const localEuler = new THREE.Euler().setFromQuaternion(frame.rotation, 'ZYX')
       localEuler[axis] = THREE.MathUtils.degToRad(val)
@@ -812,7 +618,7 @@ export class AppController {
     })
 
     // ── Map Mode entry ────────────────────────────────────────────────────
-    uiView.onMapModeClick(() => this._enterMapMode())
+    uiView.onMapModeClick(() => this._mapModeCtrl.enter())
 
     // ── CF Link Network Overlay ───────────────────────────────────────────
     this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
@@ -914,8 +720,8 @@ export class AppController {
               this._objDragAllStartPositions,
               delta,
             )
-            if (this._grab.stackMode) {
-              this._applyStackSnap(this._objDragAllStartPositions, delta)
+            if (this._grabHandler.stackMode) {
+              this._grabHandler._applyStackSnap(this._objDragAllStartPositions, delta)
               for (const [id] of this._objDragAllStartCorners) {
                 const selObj = this._scene.getObject(id)
                 if (selObj) {
@@ -987,7 +793,7 @@ export class AppController {
         this._activeDragPointerId = null
         this._service.setLinkDragging(new Set(), false)
         this._service.updateLinkSelectionHighlight(this._selectedIds)
-        this._createSpatialLinkDirect(suggestion.sourceId, suggestion.targetId, suggestion)
+        this._linkHandler.createDirect(suggestion.sourceId, suggestion.targetId, suggestion)
       },
     }
   }
@@ -1029,7 +835,7 @@ export class AppController {
    */
   _addObject(type = 'box') {
     if (type === 'sketch')  { this._addProfileObject();    return }
-    if (type === 'measure') { this._startMeasurePlacement(); return }
+    if (type === 'measure') { this._measureHandler.start(); return }
     if (type === 'frame')   { this._addCoordinateFrame();  return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
@@ -1078,1476 +884,7 @@ export class AppController {
       return
     }
     if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._enterFramePickSubMode(parentId)
-  }
-
-  /**
-   * Enters the frame placement pick sub-mode for the given parent entity.
-   * Shows the parent axes ghost and cursor ghost; updates status bar and mobile toolbar.
-   * @param {string} parentId
-   */
-  _enterFramePickSubMode(parentId) {
-    if (!this._opState.send('BEGIN_FRAME_PLACEMENT')) return
-    this._framePlacementState.parentId = parentId
-
-    // Show parent axes overlay at geometry ancestor centroid (ADR-034 §7)
-    const ancestorCentroid = this._geometryAncestorCentroid(parentId)
-    if (ancestorCentroid) {
-      if (!this._parentAxesOverlay) {
-        this._parentAxesOverlay = _makeGhostAxesGroup()
-        this._sceneView.scene.add(this._parentAxesOverlay)
-      }
-      this._parentAxesOverlay.position.copy(ancestorCentroid)
-      this._parentAxesOverlay.quaternion.set(0, 0, 0, 1)
-      this._parentAxesOverlay.visible = true
-    }
-
-    // Cursor ghost axes (hidden until hover)
-    if (!this._frameCursorGhost) {
-      this._frameCursorGhost = _makeFrameAxesGroup()
-      this._sceneView.scene.add(this._frameCursorGhost)
-    }
-    this._frameCursorGhost.visible = false
-
-    const mobile = window.innerWidth < 768
-    if (mobile) {
-      this._uiView.setStatus('Tap to place frame')
-      this._updateMobileToolbar()
-    } else {
-      this._uiView.setStatus('Click to place frame — Esc to cancel')
-      this._uiView.setCursor('crosshair')
-    }
-  }
-
-  /**
-   * Cancels pick sub-mode; hides overlays and restores normal state.
-   */
-  _cancelFramePickSubMode() {
-    if (!this._opState.is(S_FRAME_PLACEMENT)) return
-    this._framePlacementState.parentId = null
-    if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
-    if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
-    this._uiView.setCursor('default')
-    this._opState.send('CANCEL')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Confirms frame placement at the given world position.
-   * Creates the CoordinateFrame, records undo, exits sub-mode.
-   * @param {THREE.Vector3} worldPos
-   */
-  _confirmFramePlacement(worldPos) {
-    if (!this._opState.is(S_FRAME_PLACEMENT)) return
-    const parentId = this._framePlacementState.parentId
-    this._framePlacementState.parentId = null
-    if (this._parentAxesOverlay) this._parentAxesOverlay.visible = false
-    if (this._frameCursorGhost)  this._frameCursorGhost.visible  = false
-    this._uiView.setCursor('default')
-    this._opState.send('CONFIRM')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-
-    // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
-    const parentObj = this._scene.getObject(parentId)
-    let effectiveParentId = parentId
-    if (parentObj && !(parentObj instanceof CoordinateFrame)) {
-      const originFrame = [...this._scene.objects.values()]
-        .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
-      if (originFrame) effectiveParentId = originFrame.id
-    }
-
-    const frame = this._service.createCoordinateFrame(effectiveParentId, null, worldPos)
-    if (!frame) return
-
-    const cmd = createCreateCoordinateFrameCommand(
-      frame, this._service,
-      () => {
-        // After undo: restore parent selection if parent still exists
-        const parent = this._scene.getObject(parentId)
-        if (parent) this._switchActiveObject(parentId, true)
-        else { this._objSelected = false; this._selectedIds.clear(); this._refreshObjectModeStatus(); this._updateMobileToolbar() }
-      },
-      (id) => this._switchActiveObject(id, true),
-    )
-    this._commandStack.push(cmd)
-    this._switchActiveObject(frame.id, true)
-  }
-
-  /**
-   * Picks a world position on the parent entity's surface from the current mouse/pointer.
-   * Returns null when the ray misses the entity bounding box.
-   * @returns {THREE.Vector3|null}
-   */
-  _pickFramePlacementPoint() {
-    const { parentId } = this._framePlacementState
-    const parent = this._scene.getObject(parentId)
-    if (!parent) return null
-
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-
-    // Try raycasting against the parent's cuboid mesh first (Solid)
-    const cuboid = parent.meshView?.cuboid
-    if (cuboid) {
-      const hits = []
-      this._raycaster.intersectObject(cuboid, true, hits)
-      if (hits.length > 0) return hits[0].point.clone()
-    }
-
-    // Fallback: bounding box intersection
-    if (parent.corners?.length > 0) {
-      const box = new THREE.Box3()
-      for (const c of parent.corners) box.expandByPoint(c)
-      if (ray.intersectBox(box, pt)) return pt.clone()
-    }
-
-    // For CoordinateFrame parent: use a plane at the frame world position
-    if (parent instanceof CoordinateFrame) {
-      const wp = this._service.worldPoseOf(parentId)?.position
-      if (wp) {
-        const camDir = new THREE.Vector3()
-        this._camera.getWorldDirection(camDir)
-        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, wp)
-        if (ray.intersectPlane(plane, pt)) return pt.clone()
-      }
-    }
-
-    return null
-  }
-
-  // ── STEP import ─────────────────────────────────────────────────────────────
-
-  _triggerStepImport() {
-    const input = document.createElement('input')
-    input.type = 'file'; input.accept = '.stp,.step,.STP,.STEP'
-    input.addEventListener('change', async () => {
-      const file = input.files?.[0]
-      if (!file) return
-
-      const scale = await this._showUnitDialog()
-      if (scale === null) return  // user cancelled
-
-      if (!this._service._bff) {
-        this._uiView.showToast('サーバーに接続されていません', { type: 'warn' })
-        return
-      }
-
-      // Always upload via REST (multipart/form-data) to avoid WS payload size limits.
-      // Pass sessionId so the server can stream import.progress events back over WS.
-      const ws        = this._service.wsChannel
-      const sessionId = ws?.sessionId ?? null
-
-      if (ws) {
-        this._importProgressUnsub = ws.on('import.progress', ({ percent, status }) => {
-          this._uiView.showImportProgress(percent, status)
-        })
-      }
-
-      this._uiView.showImportProgress(0, 'Uploading…')
-      try {
-        await this._service._bff.importStep(file, { scale, sessionId })
-        // Progress overlay is hidden by geometryApplied / geometryError handlers.
-        // If WS is not connected (REST-only mode), hide it now.
-        if (!ws) this._uiView.hideImportProgress()
-      } catch (err) {
-        this._importProgressUnsub?.(); this._importProgressUnsub = null
-        this._uiView.hideImportProgress()
-        this._uiView.showToast('Import failed', { type: 'error' })
-        console.error('[AppController] STEP import error:', err)
-      }
-    })
-    input.click()
-  }
-
-  // ── Save / Load scene ──────────────────────────────────────────────────────
-
-  async _saveScene() {
-    const name = await this._showInputDialog('Save Scene', 'Scene name:', 'Untitled')
-    if (name === null) return
-    const id = await this._service.saveScene(name)
-    if (id) {
-      this._uiView.showToast(`Saved: "${name}"`)
-    } else {
-      this._uiView.showToast('Save failed', { type: 'error' })
-    }
-  }
-
-  async _loadScene() {
-    const scenes = await this._service.listScenes()
-    if (!scenes || scenes.length === 0) {
-      this._uiView.showToast('No saved scenes', { type: 'warn' })
-      return
-    }
-    const id = await this._showSceneListDialog(scenes)
-    if (id === null) return
-    const ok = await this._service.loadScene(id, {
-      camera:    this._camera,
-      renderer:  this._sceneView.renderer,
-      container: document.body,
-    })
-    if (ok) {
-      this._commandStack.clear()
-      this._uiView.showToast('Scene loaded')
-      this._switchActiveObject(null)
-    } else {
-      this._uiView.showToast('Load failed', { type: 'error' })
-    }
-  }
-
-  /** Shows a text-input dialog. Resolves with the trimmed string, or null if cancelled. */
-  _showInputDialog(title, label, placeholder = '') {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:300px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      const titleEl = document.createElement('div')
-      titleEl.textContent = title
-      titleEl.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(titleEl)
-
-      const lbl = document.createElement('div')
-      lbl.textContent = label
-      lbl.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px'
-      dlg.appendChild(lbl)
-
-      const input = document.createElement('input')
-      input.type = 'text'
-      input.value = placeholder
-      input.setAttribute('aria-label', label)
-      input.style.cssText = [
-        'width:100%;box-sizing:border-box;background:#0d1a26;color:#ecf0f1',
-        'border:1px solid #3a4a5a;border-radius:4px;padding:6px 8px',
-        'font-family:monospace;font-size:12px;outline:none',
-      ].join(';')
-      dlg.appendChild(input)
-
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnSave = document.createElement('button')
-      btnSave.textContent = 'Save'
-      btnSave.style.cssText = [
-        'padding:6px 14px;background:#2980b9;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnSave)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
-      btnCancel.addEventListener('click', () => close(null))
-      btnSave.addEventListener('click', () => close(input.value.trim() || placeholder))
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') close(input.value.trim() || placeholder)
-        if (e.key === 'Escape') close(null)
-      })
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-      input.focus()
-      input.select()
-    })
-  }
-
-  /**
-   * Shows a list-selection dialog for saved scenes.
-   * Resolves with the selected scene id, or null if cancelled.
-   * @param {{ id: string, name: string, updated_at: string }[]} scenes
-   */
-  _showSceneListDialog(scenes) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:320px;max-width:480px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      const titleEl = document.createElement('div')
-      titleEl.textContent = 'Load Scene'
-      titleEl.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(titleEl)
-
-      let selectedId = null
-
-      const list = document.createElement('div')
-      list.setAttribute('role', 'listbox')
-      list.setAttribute('aria-label', 'Saved scenes')
-      list.style.cssText = [
-        'max-height:240px;overflow-y:auto;border:1px solid #3a4a5a;border-radius:4px',
-      ].join(';')
-
-      const selectRow = (row, id) => {
-        list.querySelectorAll('[role="option"]').forEach(r => {
-          r.style.background = ''
-          r.setAttribute('aria-selected', 'false')
-        })
-        row.style.background = '#2980b9'
-        row.setAttribute('aria-selected', 'true')
-        selectedId = id
-      }
-
-      scenes.forEach((scene) => {
-        const row = document.createElement('div')
-        row.setAttribute('role', 'option')
-        row.setAttribute('tabindex', '0')
-        row.setAttribute('aria-selected', 'false')
-        row.style.cssText = [
-          'padding:8px 10px;cursor:pointer;font-size:12px',
-          'border-bottom:1px solid #2a3a4a;display:flex;justify-content:space-between;align-items:center',
-        ].join(';')
-        row.dataset.id = scene.id
-
-        const nameEl = document.createElement('span')
-        nameEl.textContent = scene.name
-        nameEl.style.cssText = 'color:#ecf0f1;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'
-
-        const dateEl = document.createElement('span')
-        const d = new Date(scene.updated_at)
-        dateEl.textContent = isNaN(d) ? '' : d.toLocaleDateString()
-        dateEl.style.cssText = 'color:#7f8c8d;font-size:10px;margin-left:8px;flex-shrink:0'
-
-        row.appendChild(nameEl)
-        row.appendChild(dateEl)
-
-        row.addEventListener('click', () => selectRow(row, scene.id))
-        row.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectRow(row, scene.id) }
-        })
-
-        list.appendChild(row)
-      })
-
-      dlg.appendChild(list)
-
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnLoad = document.createElement('button')
-      btnLoad.textContent = 'Load'
-      btnLoad.style.cssText = [
-        'padding:6px 14px;background:#2980b9;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnLoad)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
-      btnCancel.addEventListener('click', () => close(null))
-      btnLoad.addEventListener('click', () => close(selectedId))
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-    })
-  }
-
-  // ── Unit selection dialog ──────────────────────────────────────────────────
-
-  /** Shows a modal dialog for unit scale selection. Resolves with scale factor or null if cancelled. */
-  _showUnitDialog() {
-    return new Promise((resolve) => {
-      const UNITS = [
-        { label: 'No conversion  (1 : 1)',    value: 1 },
-        { label: 'mm  →  m       (÷ 1000)',   value: 0.001 },
-        { label: 'm   →  mm      (× 1000)',   value: 1000 },
-        { label: 'cm  →  m       (÷ 100)',    value: 0.01 },
-        { label: 'inch →  m      (× 0.0254)', value: 0.0254 },
-        { label: 'inch →  mm     (× 25.4)',   value: 25.4 },
-      ]
-
-      const overlay = document.createElement('div')
-      overlay.style.cssText = [
-        'position:fixed;inset:0;background:rgba(0,0,0,0.6)',
-        'display:flex;align-items:center;justify-content:center;z-index:9999',
-      ].join(';')
-
-      const dlg = document.createElement('div')
-      dlg.style.cssText = [
-        'background:#1e2a3a;border:1px solid #3a4a5a;border-radius:6px',
-        'padding:20px 24px;min-width:320px;color:#ecf0f1;font-family:monospace',
-        'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
-      ].join(';')
-
-      const title = document.createElement('div')
-      title.textContent = 'Import STEP — Unit Conversion'
-      title.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:14px;color:#aad4f5'
-      dlg.appendChild(title)
-
-      const lbl = document.createElement('div')
-      lbl.textContent = 'Scale'
-      lbl.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px'
-      dlg.appendChild(lbl)
-
-      const sel = document.createElement('select')
-      sel.style.cssText = [
-        'width:100%;background:#0d1a26;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;padding:6px 8px;font-family:monospace;font-size:12px',
-        'cursor:pointer;outline:none',
-      ].join(';')
-      UNITS.forEach((u, i) => {
-        const opt = document.createElement('option')
-        opt.value = i
-        opt.textContent = u.label
-        sel.appendChild(opt)
-      })
-      dlg.appendChild(sel)
-
-      const btnRow = document.createElement('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
-
-      const btnCancel = document.createElement('button')
-      btnCancel.textContent = 'Cancel'
-      btnCancel.style.cssText = [
-        'padding:6px 14px;background:#2c3e50;color:#ecf0f1;border:1px solid #3a4a5a',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px',
-      ].join(';')
-
-      const btnImport = document.createElement('button')
-      btnImport.textContent = 'Import'
-      btnImport.style.cssText = [
-        'padding:6px 14px;background:#e67e22;color:#fff;border:none',
-        'border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;font-weight:bold',
-      ].join(';')
-
-      btnRow.appendChild(btnCancel)
-      btnRow.appendChild(btnImport)
-      dlg.appendChild(btnRow)
-      overlay.appendChild(dlg)
-      document.body.appendChild(overlay)
-
-      const close = (result) => { document.body.removeChild(overlay); resolve(result) }
-      btnCancel.addEventListener('click', () => close(null))
-      btnImport.addEventListener('click', () => close(UNITS[sel.value].value))
-      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null) })
-    })
-  }
-
-  // ────────────────────────────────────────────────────────────────────────────
-
-  _addProfileObject() {
-    // Exit current mode cleanly before switching active object
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-
-    const obj = this._service.createProfile()
-    this._switchActiveObject(obj.id, true)
-    this.setMode('edit')  // enters Edit Mode · 2D
-  }
-
-  /** Enters measure placement mode: click p1, then p2 to create a MeasureLine. */
-  _startMeasurePlacement() {
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._opState.send('BEGIN_MEASURE')
-    this._measure.p1           = null
-    this._measure.p2           = null
-    this._measure.p1Anchor     = null
-    this._measure.snapTargets  = []
-    this._measure.snapping     = false
-    this._measure.snappedTarget = null
-    // Snap display requires a MeshView with THREE.Points infrastructure.
-    // MeasureLineView and CoordinateFrameView have no snap display infrastructure.
-    // Fall back to any real MeshView-backed object for snap candidate rendering.
-    const activeObj = this._scene.activeObject
-    const _isSnapCapable = o => !(o instanceof MeasureLine) && !(o instanceof CoordinateFrame)
-    this._measure.snapMeshView = (activeObj && _isSnapCapable(activeObj))
-      ? activeObj.meshView
-      : ([...this._scene.objects.values()].find(_isSnapCapable)?.meshView ?? null)
-    // On touch devices, disable orbit so single-finger touch places measure
-    // points instead of orbiting the camera.  Use (pointer: coarse) rather
-    // than innerWidth so that tablets and landscape phones are also covered.
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = false
-    this._uiView.setCursor('crosshair')
-    this._updateMeasureStatus()
-    this._updateMobileToolbar()
-  }
-
-  _cancelMeasure() {
-    if (!this._opState.is(S_MEASURE_PLACING)) return
-    this._measure.p1           = null
-    this._measure.p2           = null
-    this._measure.p1Anchor     = null
-    this._measure.snapping     = false
-    this._measure.snappedTarget = null
-    this._measure.snapTargets  = []
-    this._measure.pressing     = false
-    if (this._measure.previewLine) {
-      this._sceneView.scene.remove(this._measure.previewLine)
-      this._measure.previewLine.geometry.dispose()
-      this._measure.previewLine.material.dispose()
-      this._measure.previewLine = null
-    }
-    this._measure.snapMeshView?.clearSnapDisplay()
-    this._measure.snapMeshView = null
-    this._opState.send('CANCEL')
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Confirms the current snapped cursor position as a measure point.
-   * Phase 1: sets p1. Phase 2: creates the MeasureLine entity.
-   * Called from _onPointerUp so mobile users can hold-to-snap before releasing.
-   */
-  _confirmMeasurePoint() {
-    const pt = this._measurePickPoint()
-    if (!pt) return
-    if (!this._measure.p1) {
-      // Phase 1 → Phase 2: record start point and its anchor (ADR-028)
-      this._measure.p1 = pt.clone()
-      const t = this._measure.snappedTarget
-      this._measure.p1Anchor = (t?.objectId && t?.elementId)
-        ? { objectId: t.objectId, type: t.type, elementId: t.elementId }
-        : null
-      this._updateMeasureStatus()
-    } else {
-      // Phase 2: record end point → create entity
-      const p2 = pt.clone()
-      // Capture anchor refs before clearing state (ADR-028)
-      const t2       = this._measure.snappedTarget
-      const p2Anchor = (t2?.objectId && t2?.elementId)
-        ? { objectId: t2.objectId, type: t2.type, elementId: t2.elementId }
-        : null
-      const p1Anchor = this._measure.p1Anchor
-      if (this._measure.previewLine) {
-        this._sceneView.scene.remove(this._measure.previewLine)
-        this._measure.previewLine.geometry.dispose()
-        this._measure.previewLine.material.dispose()
-        this._measure.previewLine = null
-      }
-      this._measure.snapMeshView?.clearSnapDisplay()
-      this._measure.snapMeshView  = null
-      this._opState.send('CONFIRM')
-      const p1                    = this._measure.p1
-      this._measure.p1            = null
-      this._measure.p2            = null
-      this._measure.p1Anchor      = null
-      this._measure.snapTargets   = []
-      this._measure.snapping      = false
-      this._measure.snappedTarget = null
-      const obj = this._service.createMeasureLine(
-        p1, p2,
-        this._camera,
-        this._sceneView.renderer,
-        document.body,
-        { p1: p1Anchor, p2: p2Anchor },
-      )
-      this._switchActiveObject(obj.id, true)
-      if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = true
-      this._uiView.setCursor('default')
-      this._refreshObjectModeStatus()
-      this._updateMobileToolbar()
-    }
-  }
-
-  _updateMeasureStatus() {
-    if (!this._opState.is(S_MEASURE_PLACING)) return
-    if (!this._measure.p1) {
-      this._uiView.setStatusRich([
-        { text: 'Measure', bold: true, color: '#f9a825' },
-        { text: 'Click to set start point', color: '#888' },
-        { text: 'ESC cancel', color: '#444' },
-      ])
-    } else {
-      const parts = [
-        { text: 'Measure', bold: true, color: '#f9a825' },
-        { text: 'Click to set end point', color: '#888' },
-      ]
-      if (this._measure.p2) {
-        const d = this._measure.p1.distanceTo(this._measure.p2)
-        const f = d < 1 ? `${(d * 100).toFixed(1)} cm` : `${d.toFixed(3)} m`
-        parts.push({ text: f, bold: true, color: '#f9a825' })
-      }
-      if (this._measure.snapping && this._measure.snappedTarget) {
-        parts.push({ text: `Snap: ${this._measure.snappedTarget.label}`, color: '#ff9800' })
-      }
-      parts.push({ text: 'ESC cancel', color: '#444' })
-      this._uiView.setStatusRich(parts)
-    }
-  }
-
-  // ── 2D Map Mode ──────────────────────────────────────────────────────────
-
-  /** Returns true when running on a coarse-pointer (touch) device. */
-  _isMapMobile() {
-    return window.matchMedia('(pointer: coarse)').matches
-  }
-
-  /** Enters 2D Map Mode: switches to orthographic top-down camera, shows map toolbar. */
-  _enterMapMode() {
-    if (this._mapMode.active) return
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    this._mapMode.active        = true
-    this._mapMode.tool          = null
-    this._mapMode.drawState     = 'idle'
-    this._mapMode.points        = []
-    this._mapMode.pendingPoints = null
-    this._mapMode.pendingName   = null
-    this._mapMode.cursor        = null
-    this._mapMode.mobileDragStart = null
-    this._mapMode.isPanning     = false
-    this._sceneView.useOrthoCamera(true, this._mapMode.frustumSize)
-    this._uiView.setCursor('default')
-    this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
-    this._refreshMapToolbar()
-    this._updateMobileToolbar()
-  }
-
-  /** Exits 2D Map Mode: restores perspective camera, removes map toolbar. */
-  _exitMapMode() {
-    this._mapCancelDrawing()
-    this._mapMode.active      = false
-    this._mapMode.isPanning   = false
-    this._sceneView.useOrthoCamera(false)
-    this._uiView.hideMapToolbar()
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Returns the geometry kind for a place-type drawing tool.
-   * @param {string} type
-   * @returns {'line'|'region'|'point'}
-   */
-  _geometryForType(type) {
-    if (type === 'zone') return 'region'
-    if (type === 'hub' || type === 'anchor') return 'point'
-    return 'line'
-  }
-
-  /** Returns the place type name capitalised from a tool type string. */
-  _placeTypeForType(type) {
-    return type.charAt(0).toUpperCase() + type.slice(1)
-  }
-
-  /**
-   * Sets the active map drawing tool, resetting to drawing state.
-   * @param {string} type  PlaceType name lowercase: 'route'|'boundary'|'zone'|'hub'|'anchor'
-   */
-  _setMapTool(type) {
-    this._mapCancelDrawing()   // clear any in-progress drawing
-    this._mapMode.tool          = type
-    this._mapMode.drawState     = 'drawing'
-    this._mapMode.points        = []
-    this._mapMode.pendingPoints = null
-    this._mapMode.pendingName   = null
-    this._mapMode.cursor        = null
-    this._uiView.setCursor('crosshair')
-    this._refreshMapToolbar()
-    this._updateMapStatus()
-  }
-
-  /** Cancels the current drawing without creating an entity. */
-  _mapCancelDrawing() {
-    this._clearMapPreview()
-    this._mapMode.tool            = null
-    this._mapMode.drawState       = 'idle'
-    this._mapMode.points          = []
-    this._mapMode.pendingPoints   = null
-    this._mapMode.pendingName     = null
-    this._mapMode.cursor          = null
-    this._mapMode.mobileDragStart = null
-    this._mapMode.snapCandidate   = null
-    this._uiView.setCursor('default')
-    this._refreshMapToolbar()
-    if (this._mapMode.active) {
-      this._uiView.setStatus('Map Mode — select a type on the left to start drawing')
-    }
-  }
-
-  /**
-   * Transitions from drawing → pending state.
-   * Freezes the current geometry, generates a default name, switches the preview to
-   * dashed style, and refreshes the toolbar to show the name input + Confirm button.
-   * @param {THREE.Vector3[]} points  the completed geometry vertices
-   */
-  _enterMapPendingState(points) {
-    if (!this._mapMode.tool) return
-    const placeType = this._placeTypeForType(this._mapMode.tool)
-    const n = ++this._mapMode.nameCounters[placeType]
-    this._mapMode.drawState     = 'pending'
-    this._mapMode.pendingPoints = points.map(p => p.clone())
-    this._mapMode.pendingName   = `${placeType} ${n}`
-    this._mapMode.cursor        = null
-    this._mapMode.snapCandidate = null
-    this._clearMapPreview()
-    this._showPendingPreview()
-    this._refreshMapToolbar()
-    this._uiView.setStatusRich([
-      { text: placeType, bold: true, color: '#80cbc4' },
-      { text: '— enter a name and confirm', color: '#888' },
-      { text: '  ESC = cancel', color: '#444' },
-    ])
-  }
-
-  /**
-   * Confirms the pending entity.
-   * Must only be called while drawState === 'pending'.
-   * Reads the entity name from the toolbar name input (falls back to pendingName).
-   */
-  _mapConfirmDrawing() {
-    const { tool, pendingPoints, pendingName } = this._mapMode
-    if (!tool || !pendingPoints) return
-
-    const geometry  = this._geometryForType(tool)
-    const placeType = this._placeTypeForType(tool)
-    const renderer  = this._sceneView.renderer
-
-    // Read the user-supplied name (or fall back to the auto-generated default)
-    const name = this._uiView.getMapPendingName() ?? pendingName ?? placeType
-
-    // Create entity — state reset always happens in finally, even if creation throws
-    let created = false
-    try {
-      if (geometry === 'point' && pendingPoints.length >= 1) {
-        const obj = this._service.createAnnotatedPoint(pendingPoints[0], name, {
-          camera: this._camera, renderer, container: document.body,
-        })
-        this._service.setPlaceType(obj.id, placeType)
-        created = true
-      } else if (geometry === 'line' && pendingPoints.length >= 2) {
-        const obj = this._service.createAnnotatedLine(pendingPoints, name, {
-          camera: this._camera, renderer, container: document.body,
-        })
-        this._service.setPlaceType(obj.id, placeType)
-        created = true
-      } else if (geometry === 'region' && pendingPoints.length >= 3) {
-        const obj = this._service.createAnnotatedRegion(pendingPoints, name, {
-          camera: this._camera, renderer, container: document.body,
-        })
-        this._service.setPlaceType(obj.id, placeType)
-        created = true
-      }
-    } catch (err) {
-      console.error('[MapMode] entity creation failed:', err)
-    } finally {
-      // Always exit pending state — confirm button must disappear regardless of success
-      this._clearMapPreview()
-      this._mapMode.drawState     = 'drawing'  // ready for another gesture
-      this._mapMode.points        = []
-      this._mapMode.pendingPoints = null
-      this._mapMode.pendingName   = null
-      this._mapMode.cursor        = null
-      this._refreshMapToolbar()
-    }
-
-    if (created) {
-      this._uiView.setStatus(`Map Mode — ${placeType} placed. Draw another or select a different type.`)
-    }
-  }
-
-  /** Removes preview line, cursor dot, and snap ring from the Three.js scene. */
-  _clearMapPreview() {
-    const scene = this._sceneView.scene
-    if (this._mapMode.previewLine) {
-      scene.remove(this._mapMode.previewLine)
-      this._mapMode.previewLine.geometry.dispose()
-      this._mapMode.previewLine.material.dispose()
-      this._mapMode.previewLine = null
-    }
-    if (this._mapMode.cursorDot) {
-      scene.remove(this._mapMode.cursorDot)
-      this._mapMode.cursorDot.geometry.dispose()
-      this._mapMode.cursorDot.material.dispose()
-      this._mapMode.cursorDot = null
-    }
-    if (this._mapMode.snapRingMesh) {
-      scene.remove(this._mapMode.snapRingMesh)
-      this._mapMode.snapRingMesh.geometry.dispose()
-      this._mapMode.snapRingMesh.material.dispose()
-      this._mapMode.snapRingMesh = null
-    }
-    this._mapMode.snapCandidate = null
-  }
-
-  /**
-   * Picks the ground-plane (Z=0) world position under the pointer in Map Mode,
-   * using the orthographic camera for correct distortion-free picking.
-   * Applies grid snapping (1-unit grid) then, on PC only, endpoint snapping.
-   * Also stores the active snap candidate in this._mapMode.snapCandidate.
-   * @param {PointerEvent|MouseEvent} e
-   * @returns {THREE.Vector3}
-   */
-  _mapPickPoint(e) {
-    const ndcX =  (e.clientX / innerWidth)  * 2 - 1
-    const ndcY = -(e.clientY / innerHeight) * 2 + 1
-    this._raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this._sceneView.activeCamera)
-    const pt = new THREE.Vector3()
-    this._raycaster.ray.intersectPlane(this._groundPlane, pt)
-    pt.z = 0
-
-    // Grid snap: round to nearest grid unit (matches GridHelper 20×20 / 20 divisions = 1 unit)
-    const GRID = 1.0
-    pt.x = Math.round(pt.x / GRID) * GRID
-    pt.y = Math.round(pt.y / GRID) * GRID
-
-    // Endpoint snap: PC only — not reliable on touch (ADR-031 §6)
-    if (!this._isMapMobile()) {
-      const { snapped, point } = this._mapSnapToEndpoint(pt, e.clientX, e.clientY)
-      this._mapMode.snapCandidate = snapped
-      return point
-    }
-
-    this._mapMode.snapCandidate = null
-    return pt
-  }
-
-  /**
-   * Snaps a grid-snapped world point to a nearby annotated entity vertex (PC only).
-   * Uses the orthographic camera to measure screen-space distance.
-   * Endpoint snap has higher priority than grid snap.
-   * @param {THREE.Vector3} gridPt  grid-snapped world position
-   * @param {number} screenX  pointer clientX
-   * @param {number} screenY  pointer clientY
-   * @param {number} [snapPx=20]  snap radius in CSS pixels (ADR-031 §6)
-   * @returns {{ snapped: THREE.Vector3|null, point: THREE.Vector3 }}
-   */
-  _mapSnapToEndpoint(gridPt, screenX, screenY, snapPx = 20) {
-    const cam = this._sceneView.activeCamera
-    let bestDist = snapPx
-    let bestPt   = null
-
-    for (const obj of this._scene.objects.values()) {
-      const verts = (obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint)
-        ? obj.vertices.map(v => v.position)
-        : null
-      if (!verts) continue
-
-      for (const vert of verts) {
-        const sv = this._projectToScreen(vert, cam)
-        const d  = Math.hypot(screenX - sv.x, screenY - sv.y)
-        if (d < bestDist) { bestDist = d; bestPt = vert.clone() }
-      }
-    }
-
-    return bestPt
-      ? { snapped: bestPt, point: bestPt }
-      : { snapped: null,   point: gridPt }
-  }
-
-  /**
-   * Updates the live preview during map drawing (drawing state only).
-   * In pending state use _showPendingPreview() instead.
-   */
-  _updateMapPreview() {
-    const { tool, points, cursor, mobileDragStart, drawState } = this._mapMode
-    if (!tool || drawState !== 'drawing') return
-    if (!cursor) return
-
-    const geometry = this._geometryForType(tool)
-    const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
-    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
-
-    // Cursor dot — shown only in drawing state
-    if (!this._mapMode.cursorDot) {
-      const g = new THREE.SphereGeometry(0.08, 8, 8)
-      const m = new THREE.MeshBasicMaterial({ color, depthTest: false })
-      this._mapMode.cursorDot = new THREE.Mesh(g, m)
-      this._mapMode.cursorDot.renderOrder = 3
-      this._sceneView.scene.add(this._mapMode.cursorDot)
-    }
-    this._mapMode.cursorDot.position.copy(cursor)
-    this._mapMode.cursorDot.material.color.setHex(color)
-
-    // Update snap ring visibility (PC only)
-    this._updateSnapRing(this._mapMode.snapCandidate, color)
-
-    // Determine the preview point sequence to render
-    let previewPts = null
-
-    if (geometry === 'region' && mobileDragStart) {
-      // Drag-to-rectangle: show live rectangle from anchor to cursor
-      const p1 = mobileDragStart.pt
-      const p2 = cursor
-      previewPts = [
-        new THREE.Vector3(p1.x, p1.y, 0),
-        new THREE.Vector3(p2.x, p1.y, 0),
-        new THREE.Vector3(p2.x, p2.y, 0),
-        new THREE.Vector3(p1.x, p2.y, 0),
-        new THREE.Vector3(p1.x, p1.y, 0),  // close ring
-      ]
-    } else if (geometry === 'line' && mobileDragStart) {
-      // Mobile line drag: straight line from start to cursor
-      previewPts = [mobileDragStart.pt, cursor]
-    } else if (geometry !== 'point' && points.length > 0) {
-      // PC multi-click preview: confirmed points + live cursor
-      previewPts = [...points, cursor]
-      if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
-    }
-
-    if (previewPts) {
-      const flat = []
-      for (const p of previewPts) flat.push(p.x, p.y, p.z)
-
-      if (!this._mapMode.previewLine) {
-        const geo = new THREE.BufferGeometry()
-        // Solid line at 70% opacity for drawing state (ADR-031 §3)
-        const mat = new THREE.LineBasicMaterial({
-          color, depthTest: false, transparent: true, opacity: 0.70,
-        })
-        this._mapMode.previewLine = new THREE.Line(geo, mat)
-        this._mapMode.previewLine.renderOrder = 2
-        this._sceneView.scene.add(this._mapMode.previewLine)
-      }
-      this._mapMode.previewLine.geometry.setAttribute(
-        'position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3),
-      )
-      this._mapMode.previewLine.geometry.attributes.position.needsUpdate = true
-      this._mapMode.previewLine.material.color.setHex(color)
-    } else if (this._mapMode.previewLine) {
-      this._sceneView.scene.remove(this._mapMode.previewLine)
-      this._mapMode.previewLine.geometry.dispose()
-      this._mapMode.previewLine.material.dispose()
-      this._mapMode.previewLine = null
-    }
-  }
-
-  /**
-   * Creates or updates the static dashed preview for the pending state (ADR-031 §3).
-   * Must be called after entering pending state with pendingPoints populated.
-   */
-  _showPendingPreview() {
-    const { tool, pendingPoints } = this._mapMode
-    if (!tool || !pendingPoints) return
-
-    const geometry = this._geometryForType(tool)
-    const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
-    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
-
-    // Remove cursor dot — pending state shows no live cursor
-    if (this._mapMode.cursorDot) {
-      this._sceneView.scene.remove(this._mapMode.cursorDot)
-      this._mapMode.cursorDot.geometry.dispose()
-      this._mapMode.cursorDot.material.dispose()
-      this._mapMode.cursorDot = null
-    }
-    // Hide snap ring
-    this._updateSnapRing(null, color)
-
-    // Frozen point list (close ring for region)
-    let previewPts = [...pendingPoints]
-    if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
-
-    if (previewPts.length < 2) {
-      // Point type (Hub / Anchor): no line to draw, but show a static dot at the
-      // placed position so the user can see where they placed it (ADR-031 §3).
-      if (this._mapMode.previewLine) {
-        this._sceneView.scene.remove(this._mapMode.previewLine)
-        this._mapMode.previewLine.geometry.dispose()
-        this._mapMode.previewLine.material.dispose()
-        this._mapMode.previewLine = null
-      }
-      if (previewPts.length === 1) {
-        const g = new THREE.SphereGeometry(0.15, 12, 12)
-        const m = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.85 })
-        const dot = new THREE.Mesh(g, m)
-        dot.position.copy(previewPts[0])
-        dot.renderOrder = 3
-        this._sceneView.scene.add(dot)
-        this._mapMode.previewLine = dot  // reuse slot; disposed the same way on exit/confirm
-      }
-      return
-    }
-
-    const flat = []
-    for (const p of previewPts) flat.push(p.x, p.y, p.z)
-
-    // Recreate as dashed line (LineDashedMaterial) at 90% opacity (ADR-031 §3)
-    if (this._mapMode.previewLine) {
-      this._sceneView.scene.remove(this._mapMode.previewLine)
-      this._mapMode.previewLine.geometry.dispose()
-      this._mapMode.previewLine.material.dispose()
-      this._mapMode.previewLine = null
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3))
-    const mat = new THREE.LineDashedMaterial({
-      color,
-      dashSize:    0.40,
-      gapSize:     0.20,
-      depthTest:   false,
-      transparent: true,
-      opacity:     0.90,
-    })
-    const line = new THREE.Line(geo, mat)
-    line.computeLineDistances()
-    line.renderOrder = 2
-    this._sceneView.scene.add(line)
-    this._mapMode.previewLine = line
-  }
-
-  /**
-   * Shows or hides the endpoint snap indicator ring (PC only, ADR-031 §6).
-   * @param {THREE.Vector3|null} snapPt  world position to show ring at; null = hide
-   * @param {number} color  hex color for the ring
-   */
-  _updateSnapRing(snapPt, color) {
-    const scene = this._sceneView.scene
-
-    if (!snapPt) {
-      if (this._mapMode.snapRingMesh) this._mapMode.snapRingMesh.visible = false
-      return
-    }
-
-    if (!this._mapMode.snapRingMesh) {
-      const geo = new THREE.RingGeometry(0.18, 0.30, 16)
-      const mat = new THREE.MeshBasicMaterial({
-        depthTest:   false,
-        transparent: true,
-        opacity:     0.85,
-        side:        THREE.DoubleSide,
-      })
-      const mesh = new THREE.Mesh(geo, mat)
-      mesh.renderOrder = 5
-      scene.add(mesh)
-      this._mapMode.snapRingMesh = mesh
-    }
-
-    this._mapMode.snapRingMesh.visible = true
-    this._mapMode.snapRingMesh.material.color.setHex(color)
-    this._mapMode.snapRingMesh.position.copy(snapPt)
-    this._mapMode.snapRingMesh.position.z = 0
-  }
-
-  /** Updates the status bar text during map drawing. */
-  _updateMapStatus() {
-    const { tool, points, drawState } = this._mapMode
-    if (!tool) return
-
-    if (drawState === 'pending') return   // pending status set in _enterMapPendingState
-
-    const geometry  = this._geometryForType(tool)
-    const typeLabel = this._placeTypeForType(tool)
-    const n = points.length
-    const mobile = this._isMapMobile()
-
-    if (geometry === 'point') {
-      this._uiView.setStatusRich([
-        { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: mobile ? 'Tap to place' : 'Click to place', color: '#888' },
-        { text: '  ESC cancel', color: '#444' },
-      ])
-    } else if (geometry === 'line') {
-      if (mobile) {
-        this._uiView.setStatusRich([
-          { text: typeLabel, bold: true, color: '#80cbc4' },
-          { text: 'Drag to draw a straight line', color: '#888' },
-          { text: '  ESC cancel', color: '#444' },
-        ])
-      } else {
-        this._uiView.setStatusRich([
-          { text: typeLabel, bold: true, color: '#80cbc4' },
-          { text: `${n} pts`, color: '#aaa' },
-          { text: 'click to add vertex', color: '#888' },
-          { text: n >= 2 ? '  Enter / RMB = done' : '', color: '#aaa' },
-          { text: '  ESC cancel', color: '#444' },
-        ])
-      }
-    } else {
-      const typeHint = mobile ? 'Drag to draw rectangle' : 'Drag to draw rectangle'
-      this._uiView.setStatusRich([
-        { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: typeHint, color: '#888' },
-        { text: '  ESC cancel', color: '#444' },
-      ])
-    }
-  }
-
-  /**
-   * Rebuilds the Map toolbar to reflect current state.
-   * In pending state: shows name input + Confirm + Cancel.
-   * In drawing state: shows tool buttons + (Confirm if ready) + Cancel.
-   * @private
-   */
-  _refreshMapToolbar() {
-    if (!this._mapMode.active) return
-    const { tool, drawState, pendingName } = this._mapMode
-
-    // In pending state: Confirm is always available; show name input
-    const isPending  = drawState === 'pending'
-    const canConfirm = isPending
-
-    this._uiView.showMapToolbar(
-      tool,
-      (t) => this._setMapTool(t),
-      canConfirm ? () => this._mapConfirmDrawing() : null,
-      tool       ? () => this._mapCancelDrawing()  : null,
-      ()         => this._exitMapMode(),
-      isPending ? (pendingName ?? '') : null,  // pendingName = show name input; null = hide
-    )
-  }
-
-  /**
-   * Finds the nearest V/E/F snap target to the current mouse cursor.
-   * Returns the snapped world position (or ground-plane fallback).
-   * Also updates this._measure.snapping / snappedTarget / snapTargets.
-   */
-  _measurePickPoint() {
-    const mx = (this._mouse.x + 1) / 2 * innerWidth
-    const my = (-this._mouse.y + 1) / 2 * innerHeight
-
-    const targets = collectSnapTargets(this._scene.objects, 'all')
-    this._measure.snapTargets = targets
-
-    const bestTarget = this._pickBestSnapTarget(targets, mx, my)
-
-    if (bestTarget) {
-      this._measure.snapping      = true
-      this._measure.snappedTarget = bestTarget
-      return bestTarget.position.clone()
-    }
-
-    // Fallback: intersect ground plane (Z=0)
-    this._measure.snapping      = false
-    this._measure.snappedTarget = null
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (this._raycaster.ray.intersectPlane(this._groundPlane, pt)) return pt
-    return null
-  }
-
-  /** Builds or updates the dashed preview line shown during measure placement phase 2. */
-  _updateMeasurePreview(p1, p2) {
-    const pts = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z]
-    if (!this._measure.previewLine) {
-      const geo  = new THREE.BufferGeometry()
-      const mat  = new THREE.LineDashedMaterial({
-        color: 0xf9a825, dashSize: 0.15, gapSize: 0.08, depthTest: false,
-      })
-      this._measure.previewLine = new THREE.Line(geo, mat)
-      this._measure.previewLine.renderOrder = 1
-      this._sceneView.scene.add(this._measure.previewLine)
-    }
-    const geo = this._measure.previewLine.geometry
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
-    geo.attributes.position.needsUpdate = true
-    this._measure.previewLine.computeLineDistances()
-  }
-
-  _deleteObject(id) {
-    const target = this._scene.getObject(id)
-    if (!target) return
-
-    // Origin frames are the body frame — cannot be explicitly deleted (ADR-037)
-    if (target instanceof CoordinateFrame && target.name === 'Origin') {
-      this._uiView.showToast('Origin frame cannot be deleted', { type: 'warn' })
-      return
-    }
-
-    // Frames are always deletable.  Geometry objects require at least one
-    // other geometry object to remain in the scene.
-    if (!(target instanceof CoordinateFrame)) {
-      const geometryCount = [...this._scene.objects.values()]
-        .filter(o => !(o instanceof CoordinateFrame)).length
-      if (geometryCount <= 1) {
-        this._uiView.showToast('Scene must contain at least one object', { type: 'warn' })
-        return
-      }
-    }
-
-    // Provenance check: block delete if frame was declared by a different role (ADR-034 §8.2)
-    if (target instanceof CoordinateFrame && !RoleService.canEdit(target)) {
-      this._uiView.showToast(`This frame was declared by a ${target.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-      return
-    }
-
-    // ADR-033 §4: warn when deleting a CoordinateFrame that is referenced by SpatialLinks
-    if (target instanceof CoordinateFrame) {
-      const links = this._service.getLinksOf(id)
-      if (links.length > 0) {
-        const n = links.length
-        this._uiView.showConfirmDialog(
-          `Frame "${target.name}" is referenced by ${n} spatial link${n > 1 ? 's' : ''}.\n` +
-          `Deleting it will leave those links dangling. Delete anyway?`,
-          (confirmed) => {
-            if (confirmed) this._execDeleteObject(id, target)
-          },
-          { title: 'Delete Frame', confirmLabel: 'Delete', danger: true },
-        )
-        return
-      }
-    }
-
-    this._execDeleteObject(id, target)
-  }
-
-  /** Performs the actual soft-delete after all guards have passed. */
-  _execDeleteObject(id, target) {
-    if (!target) target = this._scene.getObject(id)
-    if (!target) return
-
-    // If deleting the active object while in Edit Mode, exit cleanly first
-    // (setMode operates on the active meshView, so must be called before dispose)
-    if (id === this._scene.activeId && this._scene.selectionMode === 'edit') {
-      this.setMode('object')
-    }
-
-    const wasActive = this._scene.activeId === id
-
-    // If deleting the active frame, hide its chain before detaching
-    if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
-      this._hideFrameChain()
-    }
-    // If deleting a geometry object with visible child frames, hide them first
-    if (wasActive && !(target instanceof CoordinateFrame)) {
-      this._setChildFramesVisible(id, false)
-    }
-
-    // Determine next active object: prefer geometry objects over frames.
-    const nextId = wasActive
-      ? (
-          // First try another geometry object
-          [...this._scene.objects.entries()].find(
-            ([k, o]) => k !== id && !(o instanceof CoordinateFrame),
-          )?.[0]
-          // Fall back to any object (e.g. another frame)
-          ?? [...this._scene.objects.keys()].find(k => k !== id)
-          ?? null
-        )
-      : null
-
-    // ── Soft-delete for undo support (ADR-022 Phase 3) ────────────────────
-    const childrenRefs = [...this._collectAllDescendantFrames(id)]
-      .map(fid => this._scene.getObject(fid)).filter(Boolean)
-
-    // Detach children first (deepest last, though frames rarely nest >1 deep)
-    for (let i = childrenRefs.length - 1; i >= 0; i--) {
-      this._service.detachObject(childrenRefs[i].id)
-    }
-    this._service.detachObject(id)
-    target.meshView.setVisible(false)
-
-    const cmd = createDeleteCommand(
-      target, childrenRefs, this._service,
-      // onAfterUndo: switch active to the restored entity
-      (restoredId) => this._switchActiveObject(restoredId, true),
-      // onAfterRedo: switch active to next available object
-      (deletedId)  => {
-        const nxt = [...this._scene.objects.entries()]
-          .find(([k, o]) => k !== deletedId && !(o instanceof CoordinateFrame))?.[0]
-          ?? [...this._scene.objects.keys()].find(k => k !== deletedId)
-          ?? null
-        if (nxt) this._switchActiveObject(nxt, true)
-      },
-    )
-    this._commandStack.push(cmd)
-
-    if (wasActive && nextId) {
-      this._switchActiveObject(nextId, true)
-    }
-  }
-
-  /**
-   * Duplicates the active Solid, makes the copy active, and immediately
-   * starts a grab so the user can position it (Blender Shift+D behaviour).
-   * No-ops if there is no active object or it is a Profile.
-   */
-  _duplicateObject() {
-    const id = this._scene.activeId
-    if (!id) return
-    // SpatialLink has no geometry — cannot be duplicated (ADR-030)
-    if (this._activeObj instanceof SpatialLink) {
-      this._uiView.showToast('SpatialLink cannot be duplicated', { type: 'warn' })
-      return
-    }
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    const copy = this._service.duplicateSolid(id)
-    if (!copy) return
-    this._selectedIds.clear()
-    this._selectedIds.add(copy.id)
-    this._switchActiveObject(copy.id, true)
-    this._startGrab()
-  }
-
-  // ─── Mobile Axis Guide helpers (replaces TransformControls) ──────────────
-
-  /**
-   * Creates 3D axis guide visuals: a colored line (translate) and a gimbal ring
-   * (rotate).  Both are invisible until _showAxisGuide() is called.
-   * Called once at construction time.
-   */
-  _initMobileAxisGuide() {
-    // Axis line — two endpoints; reused for all axes (position updated by _showAxisGuide)
-    const lineGeom = new THREE.BufferGeometry()
-    lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.85 })
-    this._axisGuideLine = new THREE.Line(lineGeom, lineMat)
-    this._axisGuideLine.visible = false
-    this._axisGuideLine.renderOrder = 999
-    this._sceneView.scene.add(this._axisGuideLine)
-
-    // Gimbal ring — circle in the local XY plane; rotated to match the rotation axis
-    const SEG = 64
-    const pts = new Float32Array((SEG + 1) * 3)
-    for (let i = 0; i <= SEG; i++) {
-      const t = (i / SEG) * Math.PI * 2
-      pts[i * 3] = Math.cos(t); pts[i * 3 + 1] = Math.sin(t); pts[i * 3 + 2] = 0
-    }
-    const ringGeom = new THREE.BufferGeometry()
-    ringGeom.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
-    const ringMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.9 })
-    this._axisGuideRing = new THREE.Line(ringGeom, ringMat)
-    this._axisGuideRing.visible = false
-    this._axisGuideRing.renderOrder = 999
-    this._sceneView.scene.add(this._axisGuideRing)
-  }
-
-  /**
-   * Shows the axis guide appropriate for the current operation mode.
-   * @param {'x'|'y'|'z'} axis
-   * @param {THREE.Vector3} center - world position of the guide origin
-   * @param {'translate'|'rotate'} mode
-   */
-  _showAxisGuide(axis, center, mode) {
-    const COLORS = { x: 0xe05252, y: 0x6ab04c, z: 0x4a9eed }
-    const color = COLORS[axis] ?? 0xffffff
-    const camDist = center.distanceTo(this._camera.position)
-    const r = Math.max(0.5, camDist * 0.25)
-
-    if (mode === 'translate') {
-      const dir = axis === 'x' ? new THREE.Vector3(1, 0, 0)
-                : axis === 'y' ? new THREE.Vector3(0, 1, 0)
-                :                new THREE.Vector3(0, 0, 1)
-      const attr = this._axisGuideLine.geometry.attributes.position
-      const p0 = center.clone().addScaledVector(dir, -r * 2.5)
-      const p1 = center.clone().addScaledVector(dir,  r * 2.5)
-      attr.array[0] = p0.x; attr.array[1] = p0.y; attr.array[2] = p0.z
-      attr.array[3] = p1.x; attr.array[4] = p1.y; attr.array[5] = p1.z
-      attr.needsUpdate = true
-      this._axisGuideLine.material.color.setHex(color)
-      this._axisGuideLine.visible = true
-      this._axisGuideRing.visible = false
-    } else {
-      this._axisGuideRing.position.copy(center)
-      this._axisGuideRing.scale.setScalar(r)
-      if (axis === 'x') {
-        this._axisGuideRing.rotation.set(0, Math.PI / 2, 0)
-      } else if (axis === 'y') {
-        this._axisGuideRing.rotation.set(Math.PI / 2, 0, 0)
-      } else {
-        this._axisGuideRing.rotation.set(0, 0, 0)
-      }
-      this._axisGuideRing.material.color.setHex(color)
-      this._axisGuideRing.visible = true
-      this._axisGuideLine.visible = false
-    }
-  }
-
-  /** Hides all axis guide visuals. */
-  _hideAxisGuide() {
-    if (this._axisGuideLine) this._axisGuideLine.visible = false
-    if (this._axisGuideRing) this._axisGuideRing.visible = false
-  }
-
-  /**
-   * Switches the active object without toggling selection.
-   * @param {string} id
-   * @param {boolean} select - whether to set _objSelected = true
-   */
-  _switchActiveObject(id, select = false) {
-    // Deselect / un-highlight previous
-    if (this._scene.activeId && this._scene.activeId !== id) {
-      const prev = this._scene.getObject(this._scene.activeId)
-      if (prev) {
-        prev.meshView.setObjectSelected(false)
-        if (prev instanceof CoordinateFrame) {
-          this._hideFrameChain()
-          // Hide parent axes ghost when leaving a CoordinateFrame selection (ADR-034 §7)
-          prev.meshView.hideParentAxesGhost()
-        } else {
-          this._setChildFramesVisible(this._scene.activeId, false)
-        }
-      }
-    }
-
-    this._service.setActiveObject(id)
-    this._objSelected = select
-    // Keep _selectedIds in sync so grab / pointer-drag work after outliner selection
-    if (select) {
-      this._selectedIds.clear()
-      this._selectedIds.add(id)
-    }
-    // Rubber-band: highlight links for the newly active entity (or clear on deselect).
-    this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
-    // Link network overlay: sync node highlight with 3D selection.
-    this._linkNetworkView?.setSelection(select && id ? this._selectedIds : new Set())
-
-    const obj = this._scene.getObject(id)
-    if (obj) obj.meshView.setObjectSelected(select)
-    if (select) {
-      if (obj instanceof CoordinateFrame) {
-        this._showFrameChain(id)
-        // Show parent axes ghost at geometry ancestor centroid (ADR-034 §7)
-        const ghostPos = this._geometryAncestorCentroid(id)
-        if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
-      } else {
-        this._setChildFramesVisible(id, true)
-      }
-    }
-
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-
-  }
-
-  /**
-   * Walks up the parentId chain from the given CoordinateFrame ID to find the
-   * first non-CoordinateFrame ancestor, then returns its world centroid.
-   * Returns null if no geometry ancestor found or if it has no corners.
-   * @param {string} frameId
-   * @returns {THREE.Vector3|null}
-   */
-  _geometryAncestorCentroid(frameId) {
-    let obj = this._scene.getObject(frameId)
-    while (obj instanceof CoordinateFrame) {
-      obj = this._scene.getObject(obj.parentId)
-    }
-    if (!obj) return null
-    // Use cached world position for CoordinateFrame (never reached here — just corners)
-    const corners = obj.corners
-    if (!corners || corners.length === 0) return null
-    const centroid = new THREE.Vector3()
-    for (const c of corners) centroid.add(c)
-    centroid.divideScalar(corners.length)
-    return centroid
+    this._framePlacementHandler.start(parentId)
   }
 
   _setObjectVisible(id, visible) {
@@ -2590,7 +927,7 @@ export class AppController {
     // During link creation: treat the clicked row as the target entity
     if (this._opState.is(S_LINK_MODE)) {
       if (id !== this._spatialLinkMode.sourceId) {
-        this._showLinkTypePicker(window.innerWidth / 2, window.innerHeight / 2, id)
+        this._linkHandler.showTypePicker(window.innerWidth / 2, window.innerHeight / 2, id)
       }
       return  // don't change active selection while in link mode
     }
@@ -2601,163 +938,6 @@ export class AppController {
       // Clicking the already-active row just re-selects it
       this._setObjectSelected(true)
     }
-  }
-
-  // ── SpatialLink creation flow (ADR-030 Phase 4) ────────────────────────────
-
-  /** Starts the two-phase L-key link creation. Source = currently active entity. */
-  _startSpatialLinkCreation() {
-    this._opState.send('BEGIN_LINK')
-    this._spatialLinkMode.sourceId = this._scene.activeId
-    this._spatialLinkMode.pendingTargetId = null
-    // Show all CFs so the target frame is visible for picking regardless of selection state
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof CoordinateFrame && obj.meshView) obj.meshView.showFull()
-    }
-    this._uiView.setStatus('Click target entity  [Esc: cancel]')
-    this._uiView.setCursor('crosshair')
-  }
-
-  /** Cancels link creation mode and restores normal status. */
-  _cancelSpatialLinkCreation() {
-    this._opState.send('CANCEL')
-    this._spatialLinkMode.sourceId = null
-    this._spatialLinkMode.pendingTargetId = null
-    this._restoreCoordinateFrameVisibility()
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-  }
-
-  /** Restores CF visibility after link-creation mode: show only CFs whose parent (or self) is the active object. */
-  _restoreCoordinateFrameVisibility() {
-    const activeId = this._activeObj?.id
-    for (const obj of this._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame) || !obj.meshView) continue
-      if (obj.id === activeId || obj.parentId === activeId) {
-        obj.meshView.showFull()
-      } else {
-        obj.meshView.hide()
-      }
-    }
-  }
-
-  /**
-   * Opens the link-type picker at (x, y) for the given target entity.
-   * Filters valid link types based on source / target entity type (ADR-032 §2).
-   * @param {number} x  client X
-   * @param {number} y  client Y
-   * @param {string} targetId
-   */
-  _showLinkTypePicker(x, y, targetId) {
-    this._spatialLinkMode.pendingTargetId = targetId
-    const sourceId = this._spatialLinkMode.sourceId
-    const source   = this._scene.getObject(sourceId)
-    const target   = this._scene.getObject(targetId)
-    const linkOptions = _computeLinkOptions(source, target)
-    this._uiView.showLinkTypePicker(x, y, (option) => {
-      if (option.semanticType === 'mounts') {
-        this._confirmMountAnnotation(sourceId, targetId)
-      } else if (option.jointType === 'fixed') {
-        this._confirmFastenFrame(sourceId, targetId, option.semanticType)
-      } else {
-        this._confirmSpatialLink(option)
-      }
-    }, { linkOptions })
-  }
-
-  /**
-   * Shared link creation used by L-key flow and Node Editor (Phase S-2).
-   * Creates SpatialLink + records undo command without touching spatialLinkMode state.
-   * @param {string} sourceId
-   * @param {string} targetId
-   * @param {{ jointType: string|null, semanticType: string, label: string }} option
-   */
-  _createSpatialLinkDirect(sourceId, targetId, option) {
-    const link = this._service.createSpatialLink(sourceId, targetId, option.jointType, option.semanticType, option.properties ?? {})
-    this._commandStack.push(createSpatialLinkCommand(link, this._service))
-    this._uiView.showToast(`Link created: ${option.label}`)
-    this._updateNPanel()
-    // Acceptance ceremony: ripple sphere at link midpoint + brief line flash.
-    const srcPos = this._dragSuggestionCentroid(sourceId)
-    const tgtPos = this._dragSuggestionCentroid(targetId)
-    if (srcPos && tgtPos) {
-      const midpoint = srcPos.clone().lerp(tgtPos, 0.5)
-      const color    = LINK_TYPE_COLORS[option.semanticType] ?? 0x888888
-      this._activeRipples.push(new RippleEffect(this._sceneView.scene, midpoint, color))
-    }
-    this._service._linkViews.get(link.id)?.triggerFlash?.()
-  }
-
-  /**
-   * Creates the SpatialLink from L-key picking flow and records the undo command.
-   * @param {{ jointType: string|null, semanticType: string, label: string }} option
-   */
-  _confirmSpatialLink(option) {
-    const { sourceId, pendingTargetId } = this._spatialLinkMode
-    if (!sourceId || !pendingTargetId) return
-    this._createSpatialLinkDirect(sourceId, pendingTargetId, option)
-    this._cancelSpatialLinkCreation()
-  }
-
-  /**
-   * Mounts an Annotated* entity onto a CoordinateFrame and records the command.
-   * Called from both the L-key flow (PC) and the mobile mount-picking flow.
-   * @param {string} sourceId  Annotated* entity ID
-   * @param {string} targetId  CoordinateFrame entity ID
-   */
-  _confirmMountAnnotation(sourceId, targetId) {
-    const result = this._service.mountAnnotation(sourceId, targetId)
-    if (!result) {
-      this._uiView.showToast('Cannot mount — host frame pose unknown', { type: 'warn' })
-      return
-    }
-    const { link, worldPositionsBefore } = result
-    this._commandStack.push(createMountAnnotationCommand(
-      link, worldPositionsBefore, this._service,
-      () => { this._updateNPanel() },
-      () => { this._updateNPanel() },
-    ))
-    this._uiView.showToast(`Mounted on frame "${this._scene.getObject(targetId)?.name}"`)
-    this._cancelSpatialLinkCreation()
-    if (this._opState.is(S_MOUNT_PICKING)) {
-      this._mountPicking.sourceId = null
-      this._uiView.setCursor('default')
-      this._opState.send('CONFIRM')
-      this._refreshObjectModeStatus()
-    }
-    this._updateNPanel()
-  }
-
-  /**
-   * Fastens a source CoordinateFrame to a target CoordinateFrame and records the command.
-   * Called from the L-key link-type picker when the user selects a fixed joint for CF→CF.
-   * @param {string} sourceId     CoordinateFrame entity ID (slave / constrained frame)
-   * @param {string} targetId     CoordinateFrame entity ID (master / reference frame)
-   * @param {string} [semanticType='fastened']  Semantic annotation for the link
-   */
-  _confirmFastenFrame(sourceId, targetId, semanticType = 'fastened') {
-    const source = this._scene.getObject(sourceId)
-    const target = this._scene.getObject(targetId)
-    if (!(source instanceof CoordinateFrame) || !(target instanceof CoordinateFrame)) {
-      this._uiView.showToast('Select a coordinate frame as source and target', { type: 'warn' })
-      return
-    }
-    // Force-update world poses so cache is fresh even if called between animation ticks
-    this._service._updateWorldPoses()
-    const result = this._service.fastenFrame(sourceId, targetId, semanticType)
-    if (!result) {
-      this._uiView.showToast('Cannot fasten — frame pose unknown', { type: 'warn' })
-      return
-    }
-    const { link, translationBefore, rotationBefore, relativeOffset, relativeQuat } = result
-    this._commandStack.push(createFastenFrameCommand(
-      link, translationBefore, rotationBefore, relativeOffset, relativeQuat, this._service,
-      () => { this._updateNPanel() },
-      () => { this._updateNPanel() },
-    ))
-    this._uiView.showToast(`Fastened to "${this._scene.getObject(targetId)?.name}"`)
-    this._cancelSpatialLinkCreation()
-    this._updateNPanel()
   }
 
   // ── Mount picking flow (Mobile, ADR-032 Phase H-6) ────────────────────────
@@ -3438,7 +1618,7 @@ export class AppController {
     // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
     const linkItems = isSolidOrCF
       ? [{ label: 'Link to... 🔗', onClick: () => {
-          this._startSpatialLinkCreation()
+          this._linkHandler.start()
           // Override the sourceId to the long-pressed object (it may not be active)
           this._spatialLinkMode.sourceId = id
         }}]
@@ -3453,7 +1633,7 @@ export class AppController {
     const items = [
       {
         label: 'Grab',
-        onClick: () => this._startGrab(),
+        onClick: () => this._grabHandler.start(),
       },
       ...(canDup ? [{
         label: 'Duplicate',
@@ -3541,11 +1721,11 @@ export class AppController {
     const mode     = this._scene.selectionMode
     const substate = this._scene.editSubstate
 
-    if (this._mapMode.active) {
+    if (this._mapModeCtrl.isActive) {
       // In Map Mode the left-side map toolbar handles drawing controls.
       // Show a minimal "Exit Map" slot on mobile.
       this._uiView.setMobileToolbar([
-        { icon: ICONS.back, label: 'Exit Map', onClick: () => this._exitMapMode() },
+        { icon: ICONS.back, label: 'Exit Map', onClick: () => this._mapModeCtrl.exit() },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -3555,7 +1735,7 @@ export class AppController {
 
     if (this._opState.is(S_MEASURE_PLACING)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelMeasure(), danger: true },
+        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._measureHandler.cancel(), danger: true },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -3566,7 +1746,7 @@ export class AppController {
     // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._cancelFramePickSubMode(), danger: true },
+        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._framePlacementHandler.cancel(), danger: true },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -3576,22 +1756,22 @@ export class AppController {
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelRotate(), danger: true },
-        { icon: 'X', label: 'X', onClick: () => this._setRotateAxis('x'), active: this._rotate.axis === 'x' },
-        { icon: 'Y', label: 'Y', onClick: () => this._setRotateAxis('y'), active: this._rotate.axis === 'y' },
-        { icon: 'Z', label: 'Z', onClick: () => this._setRotateAxis('z'), active: this._rotate.axis === 'z' },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmRotate() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._rotateHandler.cancel(), danger: true },
+        { icon: 'X', label: 'X', onClick: () => this._rotateHandler.setAxis('x'), active: this._rotateHandler.axis === 'x' },
+        { icon: 'Y', label: 'Y', onClick: () => this._rotateHandler.setAxis('y'), active: this._rotateHandler.axis === 'y' },
+        { icon: 'Z', label: 'Z', onClick: () => this._rotateHandler.setAxis('z'), active: this._rotateHandler.axis === 'z' },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._rotateHandler.confirm() },
       ])
       return
     }
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
       this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelGrab(), danger: true },
-        { icon: 'X', label: 'X', onClick: () => this._setGrabAxis('x'), active: this._grab.axis === 'x' },
-        { icon: 'Y', label: 'Y', onClick: () => this._setGrabAxis('y'), active: this._grab.axis === 'y' },
-        { icon: 'Z', label: 'Z', onClick: () => this._setGrabAxis('z'), active: this._grab.axis === 'z' },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmGrab() },
+        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._grabHandler.cancel(), danger: true },
+        { icon: 'X', label: 'X', onClick: () => this._grabHandler.setAxis('x'), active: this._grabHandler.axis === 'x' },
+        { icon: 'Y', label: 'Y', onClick: () => this._grabHandler.setAxis('y'), active: this._grabHandler.axis === 'y' },
+        { icon: 'Z', label: 'Z', onClick: () => this._grabHandler.setAxis('z'), active: this._grabHandler.axis === 'z' },
+        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._grabHandler.confirm() },
       ])
       return
     }
@@ -3607,10 +1787,10 @@ export class AppController {
         const isOriginCF = this._activeObj.name === 'Origin'
         this._uiView.setMobileToolbar([
           { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._promptAddFrame(this._scene.activeId) },
-          { icon: ICONS.grab,   label: 'Move',      onClick: () => this._startGrab(),                                                        disabled: isOriginCF },
+          { icon: ICONS.grab,   label: 'Move',      onClick: () => this._grabHandler.start(),                                            disabled: isOriginCF },
           { spacer: true },
           { icon: ICONS.delete, label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
-          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._startRotate(true),                                                   disabled: isOriginCF },
+          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._rotateHandler.start(true),                                            disabled: isOriginCF },
         ])
         return
       }
@@ -3629,8 +1809,8 @@ export class AppController {
       }
       if (hasObj && _isAnnotated(this._activeObj)) {
         this._uiView.setMobileToolbar([
-          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._startGrab() },
-          { icon: ICONS.map,    label: 'Map',    onClick: () => this._enterMapMode() },
+          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._grabHandler.start() },
+          { icon: ICONS.map,    label: 'Map',    onClick: () => this._mapModeCtrl.enter() },
           { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
           { spacer: true },
         ])
@@ -3662,12 +1842,12 @@ export class AppController {
             )
           },
         },
-        { icon: ICONS.grab,      label: 'Grab',   onClick: () => this._startGrab(),                                              disabled: !canGrab },
+        { icon: ICONS.grab,      label: 'Grab',   onClick: () => this._grabHandler.start(),                                      disabled: !canGrab },
         { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
         { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
         canRotate
-          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._startRotate(true) }
-          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grab.stackMode = !this._grab.stackMode; this._updateMobileToolbar() }, active: this._grab.stackMode, disabled: !canStack },
+          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._rotateHandler.start(true) }
+          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grabHandler.toggleStackMode(); this._updateMobileToolbar() }, active: this._grabHandler.stackMode, disabled: !canStack },
       ])
       return
     }
@@ -3884,10 +2064,10 @@ export class AppController {
     }
 
     // ── Cancel all in-progress operations ──────────────────────────────────
-    if (this._opState.is(S_GRAB_ACTIVE))      this._cancelGrab()
-    if (this._opState.is(S_ROTATE_ACTIVE))    this._cancelRotate()
-    if (this._opState.is(S_FACE_EXTRUDE))     this._cancelFaceExtrude()
-    if (this._opState.is(S_FRAME_PLACEMENT))  this._cancelFramePickSubMode()
+    if (this._opState.is(S_GRAB_ACTIVE))      this._grabHandler.cancel()
+    if (this._opState.is(S_ROTATE_ACTIVE))    this._rotateHandler.cancel()
+    if (this._opState.is(S_FACE_EXTRUDE))     this._faceExtrudeHandler.cancel()
+    if (this._opState.is(S_FRAME_PLACEMENT))  this._framePlacementHandler.cancel()
     if (this._opState.is(S_MOUNT_PICKING))    this._cancelMountPicking()
     if (this._opState.is(S_QUICK_DRAG)) {
       this._quickDragHandler.cancel(this._quickDragCtx)
@@ -4407,1335 +2587,6 @@ export class AppController {
     this._uiView.showToast(`${assemblyIds.size} objects selected`)
   }
 
-  // ─── Blender-style grab ────────────────────────────────────────────────────
-
-  _startGrab() {
-    this._uiView.dismissSemanticSuggestion()
-    if (!this._objSelected) return
-    // SpatialLink has no geometry — cannot be grabbed (ADR-030)
-    if (this._activeObj instanceof SpatialLink) {
-      this._uiView.showToast('SpatialLink cannot be grabbed', { type: 'warn' })
-      return
-    }
-    // Origin frames are fixed at the Solid centroid — cannot be grabbed (ADR-037)
-    if (this._activeObj instanceof CoordinateFrame && this._activeObj.name === 'Origin') {
-      this._uiView.showToast('Origin frame is fixed at the centroid', { type: 'warn' })
-      return
-    }
-    // Provenance check: block grab if frame was declared by a different role (ADR-034 §8.2)
-    if (this._activeObj instanceof CoordinateFrame && !RoleService.canEdit(this._activeObj)) {
-      this._uiView.showToast(`This frame was declared by a ${this._activeObj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-      return
-    }
-    // Semantic guardrail: block grab when any selected entity is fastened or mounted to
-    // an entity outside the selection (PHILOSOPHY #1 — One Authoritative Entry Point).
-    const grabGuardrail = this._service.checkMoveGuardrail(this._selectedIds)
-    if (grabGuardrail.blocked) {
-      this._uiView.showToast(grabGuardrail.message, { type: 'warn' })
-      return
-    }
-    // All domain guards passed → mutual exclusion + state transition
-    if (!this._opState.send('BEGIN_GRAB')) return
-    // Rubber-band: activate marching ants + tension for links connected to dragged entities.
-    this._service.setLinkDragging(this._selectedIds, true)
-    this._grab.axis            = null
-    this._grab.inputStr        = ''
-    this._grab.hasInput        = false
-    this._grab.pivotSelectMode = false
-    this._grab.hoveredPivotIdx = -1
-    this._grab.snapMode        = 'all'
-    this._grab.snapTargets     = []
-    this._grab.startMouse.copy(this._mouse)
-    this._grab.startCorners = this._corners.map(c => c.clone())
-    // Snapshot corners of every selected object for multi-object grab
-    this._grab.allStartCorners = new Map()
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj) this._grab.allStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
-    }
-    // segmentStartCorners tracks the start of each individual drag segment (touch).
-    // Initially identical to allStartCorners; re-snapshotted on each touch re-down.
-    this._grab.segmentStartCorners = new Map(
-      [...this._grab.allStartCorners.entries()].map(([id, cs]) => [id, cs.map(c => c.clone())])
-    )
-    // Solid _position snapshots for move() — separate from corner snapshots (ADR-040)
-    this._grab.segmentStartPositions = new Map()
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
-    }
-    // For CoordinateFrame, corners = [translation] (parent-relative offset).
-    // Use the world position from the cache so the drag plane passes through
-    // the frame's actual world location (ADR-020).
-    const grabCenter = (this._activeObj instanceof CoordinateFrame)
-      ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
-      : (this._activeObj instanceof Solid ? this._activeObj._position.clone() : getCentroid(this._corners))
-    this._grab.centroid.copy(grabCenter)
-    this._grab.pivot.copy(this._grab.centroid)
-    this._grab.lastDelta.set(0, 0, 0)
-    this._grab.pivotLabel      = 'Centroid'
-    this._grab.autoSnap        = false
-    this._grab.isSuggesting    = false
-    this._grab.currentSuggestion = null
-
-    // ADR-032 §6: for mounted Annotated* entities, constrain drag to host local XY plane.
-    // For unmounted Annotated* entities, constrain to world XY (prevents Z drift).
-    // For all other entities, use the camera-facing plane (existing behaviour).
-    const isAnnotated = this._activeObj instanceof AnnotatedLine ||
-      this._activeObj instanceof AnnotatedRegion ||
-      this._activeObj instanceof AnnotatedPoint
-    let planeNormal = null
-    if (isAnnotated) {
-      const mountLink = this._scene.getMountsLink(this._scene.activeId)
-      if (mountLink) {
-        // Mounted: use host CoordinateFrame's local Z axis as drag plane normal
-        const hostPose = this._service.worldPoseOf(mountLink.targetId)
-        if (hostPose) {
-          planeNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(hostPose.quaternion)
-        }
-      }
-      if (!planeNormal) {
-        // Unmounted Annotated*: use world Z (XY plane)
-        planeNormal = new THREE.Vector3(0, 0, 1)
-      }
-    } else {
-      const camDir = new THREE.Vector3()
-      this._camera.getWorldDirection(camDir)
-      planeNormal = camDir
-    }
-    this._grab.dragPlane.setFromNormalAndCoplanarPoint(planeNormal, this._grab.pivot)
-
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) {
-      this._grab.startPoint.copy(pt)
-    } else {
-      this._grab.startPoint.copy(this._grab.pivot)
-    }
-
-    this._controls.enabled = false
-    this._uiView.setCursor('grabbing')
-    this._updateGrabStatus()
-    this._updateMobileToolbar()
-  }
-
-  _confirmGrab() {
-    if (!this._opState.is(S_GRAB_ACTIVE)) return
-    if (this._grab.pivotSelectMode) { this._cancelPivotSelect(); return }
-    // Clear live suggestion ghost before final state is committed (Drag Suggestion Lifecycle).
-    if (this._grab.isSuggesting) {
-      this._grab.isSuggesting      = false
-      this._grab.currentSuggestion = null
-      this._quickDragCtx.hideDragSuggestion()
-    }
-    // Clear approach warmth on all Solids.
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
-    }
-    this._applyGrab()
-
-    // ADR-032 §6: after grab on mounted Annotated* entities, sync local positions
-    // so _updateMountedAnnotations uses the new world positions going forward.
-    for (const id of this._selectedIds) {
-      this._service.syncMountedPosition(id)
-    }
-
-    // ── Record undo snapshot (ADR-022 Phase 1) ────────────────────────────
-    const endCornersMap = new Map()
-    for (const id of this._selectedIds) {
-      const obj = this._scene.getObject(id)
-      if (obj) endCornersMap.set(id, _grabHandlesOf(obj).map(c => c.clone()))
-    }
-    if (endCornersMap.size > 0) {
-      const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
-      const cmd = createMoveCommand(label, this._grab.allStartCorners, endCornersMap, this._scene, this._service)
-      this._commandStack.push(cmd)
-    }
-
-    this._grab.axis          = null
-    this._grab.autoSnap      = false
-    this._grab.snappedTarget = null
-    this._grab.stackMode     = false
-    this._grab.stacking      = false
-    this._meshView.clearPivotDisplay()
-    this._meshView.clearSnapDisplay()
-    this._opState.send('CONFIRM')
-    // Rubber-band: end drag animation; stay highlighted since entity is still selected.
-    this._service.setLinkDragging(new Set(), false)
-    this._service.updateLinkSelectionHighlight(this._selectedIds)
-    this._controls.enabled = true
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-    this._hideAxisGuide()
-
-    // ── Semantic inference (ADR-041) ─────────────────────────────────────
-    // Suggest a SpatialLink when a single Solid lands near another object.
-    this._runSemanticInference()
-  }
-
-  _cancelGrab() {
-    if (!this._opState.is(S_GRAB_ACTIVE)) return
-    if (this._grab.pivotSelectMode) { this._grab.pivotSelectMode = false }
-    if (this._grab.isSuggesting) {
-      this._grab.isSuggesting      = false
-      this._grab.currentSuggestion = null
-      this._quickDragCtx.hideDragSuggestion()
-    }
-    for (const obj of this._scene.objects.values()) {
-      if (obj instanceof Solid) obj.meshView?.setApproachWarmth(0)
-    }
-    // Restore all selected objects to their pre-grab positions
-    for (const [id, startCorners] of this._grab.allStartCorners) {
-      const selObj = this._scene.getObject(id)
-      if (!selObj) continue
-      if (selObj instanceof Solid) {
-        // Decompose world corners back into _position + localCorners (ADR-040)
-        selObj.setWorldCorners(startCorners)
-        selObj.meshView.updateGeometry(selObj.corners)
-      } else {
-        const handles = _grabHandlesOf(selObj)
-        startCorners.forEach((c, i) => handles[i].copy(c))
-        selObj.meshView.updateGeometry(handles)
-      }
-      selObj.meshView.updateBoxHelper()
-    }
-    this._meshView.clearPivotDisplay()
-    this._meshView.clearSnapDisplay()
-    this._grab.axis          = null
-    this._grab.autoSnap      = false
-    this._grab.snappedTarget = null
-    this._grab.stackMode     = false
-    this._grab.stacking      = false
-    this._opState.send('CANCEL')
-    // Rubber-band: end drag animation; stay highlighted since entity is still selected.
-    this._service.setLinkDragging(new Set(), false)
-    this._service.updateLinkSelectionHighlight(this._selectedIds)
-    this._controls.enabled = true
-    this._hideAxisGuide()
-    this._uiView.setCursor('default')
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-  }
-
-  // ── Semantic inference (ADR-041) ─────────────────────────────────────────
-
-  /**
-   * Runs heuristic spatial-relationship inference after a single-Solid move and
-   * shows a non-intrusive suggestion banner if a plausible SpatialLink is found.
-   * No-ops when multiple objects are selected (ambiguous which pair to suggest).
-   */
-  _runSemanticInference() {
-    if (this._selectedIds.size !== 1) return
-    const [movedId] = this._selectedIds
-    const moved = this._scene.getObject(movedId)
-    if (!(moved instanceof Solid)) return
-
-    const existingPairs = new Set(
-      this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
-    )
-    const suggestions = inferSemanticRelationships(
-      moved,
-      this._scene.objects.values(),
-      existingPairs,
-    )
-    if (suggestions.length === 0) return
-
-    const top = suggestions[0]
-    const source = this._scene.getObject(top.sourceId)
-    const target = this._scene.getObject(top.targetId)
-    this._uiView.showSemanticSuggestion({
-      sourceId:     top.sourceId,
-      targetId:     top.targetId,
-      semanticType: top.semanticType,
-      label:        top.label,
-      sourceName:   source?.name ?? '?',
-      targetName:   target?.name ?? '?',
-    }, () => {
-      this._createSpatialLinkDirect(top.sourceId, top.targetId, top)
-    })
-  }
-
-  // ── CoordinateFrame / Solid rotation (R key, ADR-019 / ADR-036) ──────────
-
-  // ── Child-CF pose helpers (Solid rotation sync) ─────────────────────────────
-
-  /** Returns CoordinateFrames whose parentId === solidId. */
-  /**
-   * Starts rotate mode for the active CoordinateFrame or Solid.
-   * For CoordinateFrame: rotates the quaternion around the frame origin.
-   * For Solid: bakes the rotation into corner positions (ADR-036).
-   */
-
-  /**
-   * Centralised guard for any UI rotation entry point (R-key, N-panel, future inspectors…).
-   * Returns true and shows a toast when the frame must not be rotated because it is part of
-   * a fixed-joint source chain — rotating it would fight _updateFixedJointFrames() every frame
-   * and cause the root Solid to diverge (CODE_CONTRACTS §1 "R-key Rotation Blocked").
-   *
-   * Keeping the guard here (not inline in each handler) means new UI entry points only need
-   * one call, and the toast message stays consistent.
-   *
-   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} frame
-   * @returns {boolean} true = blocked (caller should return early)
-   */
-  _isFastenedRotationBlocked(frame) {
-    if (!this._service.isInFixedJointSourceChain(frame.id)) return false
-    this._uiView.showToast(
-      'This frame is part of a fixed-joint constraint chain. Unfasten it first to rotate it independently.',
-      { type: 'warn' },
-    )
-    return true
-  }
-
-  _startRotate(deferStartAngle = false) {
-    const obj = this._activeObj
-    if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
-
-    // ── Domain guards (with user feedback) — run before state transition ──
-    if (obj instanceof CoordinateFrame) {
-      // Provenance check (ADR-034 §8.2)
-      if (!RoleService.canEdit(obj)) {
-        this._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
-        return
-      }
-      if (this._isFastenedRotationBlocked(obj)) return
-    } else {
-      // Solid: block rotation when a fastened-source CF is a direct child (same guard as TC drag).
-      // _updateFixedJointFrames() overwrites bodyRotation and corners every frame, so R-key would
-      // fight the constraint — the solid snaps back each frame and the pose relationship breaks.
-      if (this._service.hasFastenedChild(obj.id)) {
-        this._uiView.showToast('This object is held by a fastened constraint. Unfasten it first to move it independently.', { type: 'warn' })
-        return
-      }
-    }
-
-    // All domain guards passed → mutual exclusion + state transition
-    if (!this._opState.send('BEGIN_ROTATE')) return
-
-    // ── Setup (state is now S_ROTATE_ACTIVE) ──────────────────────────────
-    this._rotate.axis     = null
-    this._rotate.inputStr = ''
-    this._rotate.hasInput = false
-
-    let projected
-    if (obj instanceof CoordinateFrame) {
-      this._rotate.startRot.copy(obj.rotation)
-      this._rotate.segmentStartRot.copy(obj.rotation)
-      projected = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
-    } else {
-      // Solid: snapshot orientation+position from primary triple (ADR-040)
-      this._rotate.startOrientation    = obj.orientation.clone()
-      this._rotate.startPos            = obj._position.clone()
-      this._rotate.segStartOrientation = obj.orientation.clone()
-      this._rotate.segStartPos         = obj._position.clone()
-      const pivot = obj._position.clone()
-      this._rotate.segStartPivot       = pivot.clone()
-      projected = pivot.clone().project(this._camera)
-      obj.meshView.boxHelper.visible = false
-      // CFs follow automatically via ROS TF forward kinematics — no CF pose snapshot needed.
-    }
-
-    if (deferStartAngle) {
-      // Mobile: startAngle will be captured from the first canvas touch (CODE_CONTRACTS §2)
-      this._rotate.needsStartAngle   = true
-      this._rotate.startAngle        = 0
-      this._rotate.segmentStartAngle = 0
-      this._rotate.prevCurrentAngle  = 0
-      this._rotate.accumulatedAngle  = 0
-    } else {
-      // PC: startAngle from current mouse position
-      this._rotate.startAngle = Math.atan2(
-        this._mouse.y - projected.y,
-        this._mouse.x - projected.x,
-      )
-      this._rotate.segmentStartAngle = this._rotate.startAngle
-      this._rotate.prevCurrentAngle  = this._rotate.startAngle
-      this._rotate.accumulatedAngle  = 0
-      this._rotate.needsStartAngle   = false
-    }
-
-    this._refreshSectorPreview()
-    this._controls.enabled = false
-    this._updateRotateStatus()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Confirms the current rotation and exits rotate mode.
-   */
-  _confirmRotate() {
-    if (!this._opState.is(S_ROTATE_ACTIVE)) return
-    this._applyRotate()
-    // ── Record undo snapshot (ADR-022) ────────────────────────────────────
-    if (this._activeObj instanceof CoordinateFrame) {
-      const frame = this._activeObj
-      const endQuat = frame.rotation.clone()
-      if (!endQuat.equals(this._rotate.startRot)) {
-        const cmd = createFrameRotateCommand(
-          frame, this._rotate.startRot.clone(), endQuat, this._service,
-          () => this._updateNPanel(),
-        )
-        this._commandStack.push(cmd)
-      }
-    } else if (this._activeObj instanceof Solid && this._rotate.startOrientation) {
-      const solid = this._activeObj
-      const changed = !solid.orientation.equals(this._rotate.startOrientation)
-      if (changed) {
-        const cmd = createSolidRotateCommand(
-          solid,
-          this._rotate.startOrientation.clone(), solid.orientation.clone(),
-          this._rotate.startPos.clone(),         solid._position.clone(),
-          this._service, () => this._updateNPanel(),
-        )
-        this._commandStack.push(cmd)
-      }
-    }
-    if (this._activeObj instanceof Solid) this._activeObj.meshView.setObjectSelected(true)
-    this._rotate.axis            = null
-    this._rotate.inputStr        = ''
-    this._rotate.hasInput        = false
-    this._rotate.startOrientation    = null
-    this._rotate.startPos            = null
-    this._rotate.segStartOrientation = null
-    this._rotate.segStartPos         = null
-    this._rotate.segStartPivot       = null
-    this._rotate.needsStartAngle     = false
-    this._rotateSectorPreview.hide()
-    this._opState.send('CONFIRM')
-    this._controls.enabled          = true
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._hideAxisGuide()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Cancels the rotation, restoring the object to its saved state.
-   */
-  _cancelRotate() {
-    if (!this._opState.is(S_ROTATE_ACTIVE)) return
-    const obj = this._activeObj
-    if (obj instanceof CoordinateFrame) {
-      obj.rotation.copy(this._rotate.startRot)
-      const parentWorldQuat = this._service._getParentWorldQuat(obj)
-      obj.meshView.updateRotation(parentWorldQuat.clone().multiply(obj.rotation))
-    } else if (obj instanceof Solid && this._rotate.startOrientation) {
-      obj.restorePose(this._rotate.startPos, this._rotate.startOrientation)
-      obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.setObjectSelected(true)
-    }
-    this._rotate.axis            = null
-    this._rotate.inputStr        = ''
-    this._rotate.hasInput        = false
-    this._rotate.startOrientation    = null
-    this._rotate.startPos            = null
-    this._rotate.segStartOrientation = null
-    this._rotate.segStartPos         = null
-    this._rotate.segStartPivot       = null
-    this._rotate.needsStartAngle     = false
-    this._rotateSectorPreview.hide()
-    this._opState.send('CANCEL')
-    this._controls.enabled          = true
-    this._hideAxisGuide()
-    this._refreshObjectModeStatus()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Sets the world-axis constraint for the current rotation.
-   * Toggling the same axis clears the constraint (free rotation).
-   * @param {'x'|'y'|'z'} axis
-   */
-  _setRotateAxis(axis) {
-    this._rotate.axis = (this._rotate.axis === axis) ? null : axis
-    this._rotate.inputStr = ''
-    this._rotate.hasInput = false
-    const obj = this._activeObj
-    // Re-snapshot current orientation/pivot as new segment start so accumulated
-    // rotation from the prior axis constraint is preserved (mirrors _setGrabAxis()
-    // segmentStart re-snapshot pattern).
-    if (obj instanceof CoordinateFrame) {
-      this._rotate.segmentStartRot.copy(obj.rotation)
-    } else if (obj instanceof Solid) {
-      this._rotate.segStartOrientation = obj.orientation.clone()
-      this._rotate.segStartPos         = obj._position.clone()
-      this._rotate.segStartPivot       = obj._position.clone()
-    }
-    // Recompute start angle with new axis
-    let projected
-    let rotCenter = null
-    if (obj instanceof CoordinateFrame) {
-      rotCenter = this._service.worldPoseOf(obj.id)?.position ?? obj.translation
-      projected = rotCenter.clone().project(this._camera)
-    } else if (obj instanceof Solid && this._rotate.segStartPivot) {
-      rotCenter = this._rotate.segStartPivot
-      projected = rotCenter.clone().project(this._camera)
-    }
-    if (projected) {
-      this._rotate.startAngle = Math.atan2(
-        this._mouse.y - projected.y,
-        this._mouse.x - projected.x,
-      )
-    }
-    // Reset accumulation baseline for the new axis segment so the first
-    // _applyRotate() call produces delta = 0 (no spurious jump).
-    this._rotate.segmentStartAngle = this._rotate.startAngle
-    this._rotate.prevCurrentAngle  = this._rotate.startAngle
-    this._rotate.accumulatedAngle  = 0
-    this._rotate.displayAngle      = 0
-    if (this._rotate.axis && rotCenter) {
-      this._showAxisGuide(this._rotate.axis, rotCenter.clone(), 'rotate')
-    } else {
-      this._hideAxisGuide()
-    }
-    this._refreshSectorPreview()
-    this._applyRotate()
-    this._updateRotateStatus()
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  /**
-   * Applies the current rotation delta to the active CoordinateFrame or Solid.
-   * Called on every pointer move and on numeric input changes.
-   */
-  _applyRotate() {
-    const obj = this._activeObj
-    if (!this._opState.is(S_ROTATE_ACTIVE)) return
-    if (!(obj instanceof CoordinateFrame) && !(obj instanceof Solid)) return
-
-    let angle
-    if (this._rotate.hasInput) {
-      const parsed = parseFloat(this._rotate.inputStr)
-      angle = isNaN(parsed) ? 0 : parsed * (Math.PI / 180)
-    } else {
-      // Mouse/touch-driven: measure signed angle from segment start to current position.
-      let pivotScreen
-      if (obj instanceof CoordinateFrame) {
-        pivotScreen = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone().project(this._camera)
-      } else {
-        pivotScreen = (this._rotate.segStartPivot ?? obj._position.clone()).clone().project(this._camera)
-      }
-      const currentAngle = Math.atan2(
-        this._mouse.y - pivotScreen.y,
-        this._mouse.x - pivotScreen.x,
-      )
-      // Mobile: defer start angle to first canvas touch so there's no jump.
-      if (this._rotate.needsStartAngle) {
-        this._rotate.prevCurrentAngle = currentAngle
-        this._rotate.accumulatedAngle = 0
-        this._rotate.needsStartAngle  = false
-        return
-      }
-      // Incremental accumulation: normalize each per-frame delta to [-π, π] so
-      // crossing the atan2 branch-cut (directly left of pivot) never causes a
-      // sudden ±360° jump.
-      let delta = currentAngle - this._rotate.prevCurrentAngle
-      if (delta > Math.PI)  delta -= 2 * Math.PI
-      if (delta < -Math.PI) delta += 2 * Math.PI
-      this._rotate.accumulatedAngle += delta
-      this._rotate.prevCurrentAngle  = currentAngle
-      angle = this._rotate.accumulatedAngle
-      // Ctrl: snap to stepSize degree increments
-      if (this._ctrlHeld) {
-        const stepRad = this._rotate.stepSize * (Math.PI / 180)
-        angle = Math.round(angle / stepRad) * stepRad
-      }
-    }
-
-    // Build axis vector: world axis when constrained, view-direction when free.
-    let axisVec
-    if (this._rotate.axis === 'x') axisVec = new THREE.Vector3(1, 0, 0)
-    else if (this._rotate.axis === 'y') axisVec = new THREE.Vector3(0, 1, 0)
-    else if (this._rotate.axis === 'z') axisVec = new THREE.Vector3(0, 0, 1)
-    else {
-      // Screen-plane rotation: axis points toward the camera (view direction negated).
-      axisVec = new THREE.Vector3()
-      this._camera.getWorldDirection(axisVec).negate()
-    }
-
-    // Sign correction for pointer-driven axis-constrained rotation.
-    // Screen CCW (positive atan2 angle) maps to positive rotation only when the
-    // world axis points toward the viewer (camFwd · axisVec < 0). When the axis
-    // points away from the viewer (dot > 0 — e.g. +Y in the ROS frame for a
-    // typical above-right camera position), the apparent arc direction is reversed.
-    // Negating restores right-hand-rule consistency across all axes and camera poses.
-    // Free rotation and keyboard-input angles are already correct and are not touched.
-    if (!this._rotate.hasInput && this._rotate.axis) {
-      const camFwd = new THREE.Vector3()
-      this._camera.getWorldDirection(camFwd)
-      if (camFwd.dot(axisVec) > 0) angle = -angle
-    }
-
-    const deltaQ = new THREE.Quaternion().setFromAxisAngle(axisVec, angle)
-
-    this._service.applyPreviewRotation(obj, {
-      segStartOrientation: obj instanceof CoordinateFrame
-        ? this._rotate.segmentStartRot
-        : this._rotate.segStartOrientation,
-      segStartPos: this._rotate.segStartPos,
-      pivot: this._rotate.segStartPivot ?? obj._position.clone(),
-    }, deltaQ)
-    this._rotate.displayAngle = angle
-    this._updateRotateStatus()
-    this._rotateSectorPreview.updateAngle(angle)
-  }
-
-  /**
-   * (Re)creates the 3D sector preview at the pivot with the current axis orientation.
-   * Called at rotate start and on every axis toggle.
-   */
-  _refreshSectorPreview() {
-    const obj = this._activeObj
-    if (!obj) return
-
-    let center, radius
-    if (obj instanceof Solid) {
-      center = (this._rotate.segStartPivot ?? obj._position).clone()
-      // Radius: max corner distance from pivot; floor at 0.5 to stay visible on tiny solids
-      const raw = Math.max(...obj.corners.map(c => c.distanceTo(center)))
-      radius = Math.max(raw, 0.5) * 1.1
-    } else if (obj instanceof CoordinateFrame) {
-      center = (this._service.worldPoseOf(obj.id)?.position ?? obj.translation).clone()
-      radius = 0.8
-    } else {
-      return
-    }
-
-    this._rotateSectorPreview.show(center, radius, this._rotate.axis, this._camera)
-  }
-
-  /**
-   * Updates the status bar text to reflect the current rotate operation.
-   */
-  _updateRotateStatus() {
-    const AXIS_COLORS = { x: '#e05252', y: '#6ab04c', z: '#4a9eed' }
-    const parts = [{ text: 'Rotate', bold: true, color: '#80b3ff' }]
-
-    if (this._rotate.axis) {
-      parts.push({ text: this._rotate.axis.toUpperCase(), bold: true, color: AXIS_COLORS[this._rotate.axis] })
-    }
-    if (this._rotate.hasInput) {
-      parts.push({ text: this._rotate.inputStr + '°_', color: '#ffeb3b' })
-    } else {
-      const deg = (this._rotate.displayAngle * 180 / Math.PI).toFixed(1)
-      parts.push({ text: `${deg}°`, color: '#546e7a' })
-      if (this._ctrlHeld) {
-        parts.push({ text: `Step: ${this._rotate.stepSize}°`, bold: true, color: '#80cbc4' })
-        parts.push({ text: 'Scroll to change', color: '#444' })
-      }
-    }
-    parts.push({ text: 'Enter confirm  Esc cancel', color: '#444' })
-    this._uiView.setStatusRich(parts)
-  }
-
-  _setGrabAxis(axis) {
-    this._grab.axis     = (this._grab.axis === axis) ? null : axis
-    this._grab.inputStr = ''
-    this._grab.hasInput = false
-    // Re-snapshot current positions as the new segment start so accumulated
-    // movement from the previous axis constraint is preserved (e.g. X→Y keeps
-    // the X offset). Mirrors the touch re-grab pattern (pointerdown in S_GRAB_ACTIVE).
-    this._grab.segmentStartCorners = new Map()
-    this._grab.segmentStartPositions = new Map()
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj) {
-        this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
-        if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
-      }
-    }
-    this._grab.startMouse.copy(this._mouse)
-    // Update centroid/pivot to current position so the axis guide and
-    // screen-projection track the object after accumulated movement from the
-    // prior constraint. Mirrors the touch re-grab centroid update (pointerdown
-    // in S_GRAB_ACTIVE). segmentStartPositions was just re-snapshotted above.
-    if (this._activeObj instanceof CoordinateFrame) {
-      const pos = this._service.worldPoseOf(this._activeObj.id)?.position
-      if (pos) { this._grab.centroid.copy(pos); this._grab.pivot.copy(pos) }
-    } else if (this._grab.segmentStartPositions.size > 0) {
-      const avg = new THREE.Vector3()
-      for (const p of this._grab.segmentStartPositions.values()) avg.add(p)
-      avg.divideScalar(this._grab.segmentStartPositions.size)
-      this._grab.centroid.copy(avg)
-      this._grab.pivot.copy(avg)
-    }
-    if (!this._grab.axis) {
-      // Switching back to free grab: reset the 3D drag-plane anchor to the current
-      // mouse position so the free-grab delta starts at zero.
-      this._raycaster.setFromCamera(this._mouse, this._camera)
-      const _pt = new THREE.Vector3()
-      if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, _pt)) {
-        this._grab.startPoint.copy(_pt)
-      }
-    }
-    this._applyGrab()
-    this._updateGrabStatus()
-    if (this._grab.axis) {
-      this._showAxisGuide(this._grab.axis, this._grab.centroid.clone(), 'translate')
-    } else {
-      this._hideAxisGuide()
-    }
-    if (window.matchMedia('(pointer: coarse)').matches) this._updateMobileToolbar()
-  }
-
-  _getAxisVec(axis) {
-    return new THREE.Vector3(
-      axis === 'x' ? 1 : 0,
-      axis === 'y' ? 1 : 0,
-      axis === 'z' ? 1 : 0,
-    )
-  }
-
-  _applyGrab() {
-    if (!this._opState.is(S_GRAB_ACTIVE)) return
-    if (this._grab.hasInput && this._grab.axis) {
-      this._applyGrabFromInput()
-    } else if (this._grab.axis) {
-      this._applyAxisConstrainedGrab()
-    } else {
-      this._applyFreeGrab()
-    }
-    // Stack snap: adjust Z so grabbed objects rest on top of any object below.
-    // applyPreviewTranslation (called from _applyGrabDeltaToAll) already updated
-    // views; re-update after stack snap since it re-applies domain mutations.
-    if (this._grab.stackMode) {
-      this._applyStackSnap(this._grab.segmentStartPositions, this._grab.lastDelta)
-      for (const id of this._selectedIds) {
-        const selObj = this._scene.getObject(id)
-        if (selObj) {
-          selObj.meshView.updateGeometry(_grabHandlesOf(selObj))
-          selObj.meshView.updateBoxHelper()
-        }
-      }
-    } else {
-      this._grab.stacking = false
-    }
-
-    // Live inference preview during G-key grab (ADR-041 Phase 3 — mirrors QuickDragState sub-state).
-    if (this._selectedIds.size === 1) {
-      const ctx        = this._quickDragCtx
-      const suggestion = ctx.runInference()
-      const key        = suggestion ? `${suggestion.semanticType}|${suggestion.targetId}` : null
-      const prevKey    = this._grab.currentSuggestion
-        ? `${this._grab.currentSuggestion.semanticType}|${this._grab.currentSuggestion.targetId}` : null
-      if (suggestion) {
-        if (!this._grab.isSuggesting || key !== prevKey) {
-          this._grab.isSuggesting      = true
-          this._grab.currentSuggestion = suggestion
-          ctx.showDragSuggestion(suggestion)
-        } else {
-          ctx.updateDragSuggestion(suggestion)
-        }
-      } else if (this._grab.isSuggesting) {
-        this._grab.isSuggesting      = false
-        this._grab.currentSuggestion = null
-        ctx.hideDragSuggestion()
-      }
-    }
-
-    // Approach gradient: warm wireframe of nearby Solids before the snap threshold is reached.
-    const [movedId] = this._selectedIds
-    const movedObj  = this._scene.getObject(movedId)
-    if (movedObj instanceof Solid) {
-      const warmthEntries = computeApproachWarmth(movedObj, this._scene.objects.values())
-      const warmthMap     = new Map(warmthEntries.map(e => [e.targetId, e.warmth]))
-      for (const obj of this._scene.objects.values()) {
-        if (obj instanceof Solid && !this._selectedIds.has(obj.id)) {
-          obj.meshView?.setApproachWarmth(warmthMap.get(obj.id) ?? 0)
-        }
-      }
-    }
-  }
-
-  /** Toggles stacking mode on/off during an active grab. */
-  _toggleStackMode() {
-    this._grab.stackMode = !this._grab.stackMode
-    this._grab.stacking  = false
-    this._applyGrab()
-    this._updateGrabStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Stack snap: after all grab movement is applied, cast downward rays from the
-   * bottom face of the active grabbed object. If another object is directly below,
-   * shift all grabbed objects upward so the bottom face rests on that surface.
-   * @param {Map<string, import('three').Vector3>} segStartPositions  per-Solid _position snapshots
-   * @param {import('three').Vector3} currentDelta  world delta already applied by the caller
-   */
-  _applyStackSnap(segStartPositions, currentDelta) {
-    const grabbed = this._activeObj
-    if (!(grabbed instanceof Solid)) { this._grab.stacking = false; return }
-
-    // Find bottom Z of the grabbed object
-    const gCorners = grabbed.corners
-    let gZMin = Infinity
-    gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
-
-    // Collect meshes from non-grabbed objects (excluding MeasureLine)
-    const grabbedIds = new Set(this._selectedIds)
-    const targetMeshes = [...this._scene.objects.values()]
-      .filter(o => !grabbedIds.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
-      .map(o => o.meshView.cuboid)
-
-    if (!targetMeshes.length) { this._grab.stacking = false; return }
-
-    // Sample the bottom face: 4 corners at gZMin + centroid
-    const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < 0.001)
-    const center = new THREE.Vector3()
-    bottomCorners.forEach(c => center.add(c))
-    center.divideScalar(bottomCorners.length || 1)
-
-    const origins = [...bottomCorners, center]
-    const downDir = new THREE.Vector3(0, 0, -1)
-    const stackRay = new THREE.Raycaster()
-
-    // Cast downward from well above the scene; find the highest surface hit at (x,y).
-    // Using gZMin+ε as origin would miss surfaces above the current bottom face.
-    const RAY_TOP = 10000
-    let highestHitZ = null
-    for (const origin of origins) {
-      stackRay.set(new THREE.Vector3(origin.x, origin.y, RAY_TOP), downDir)
-      const hits = stackRay.intersectObjects(targetMeshes)
-      if (hits.length > 0) {
-        const hz = hits[0].point.z
-        if (highestHitZ === null || hz > highestHitZ) highestHitZ = hz
-      }
-    }
-
-    if (highestHitZ === null) { this._grab.stacking = false; return }
-
-    const zOffset = highestHitZ - gZMin
-    // Skip if already resting on the surface (within 1mm tolerance)
-    if (Math.abs(zOffset) < 0.001) { this._grab.stacking = false; return }
-
-    // Apply additional Z shift via the public Solid.move() API (ADR-040: never mutate
-    // corners directly — _position and localCorners must remain the SSOT).
-    const snapDelta = currentDelta.clone().add(new THREE.Vector3(0, 0, zOffset))
-    for (const id of this._selectedIds) {
-      const selObj = this._scene.getObject(id)
-      if (selObj instanceof Solid) {
-        const segStartPos = segStartPositions?.get(id)
-        if (segStartPos) selObj.move(segStartPos, snapDelta)
-      }
-    }
-    this._grab.stacking = true
-  }
-
-  /**
-   * Applies `delta` to the active object and all other selected objects.
-   * Uses each object's own startCorners snapshot from `_grab.allStartCorners`.
-   * @param {import('three').Vector3} delta
-   */
-  _applyGrabDeltaToAll(delta) {
-    this._grab.lastDelta.copy(delta)
-    this._service.applyPreviewTranslation(
-      this._grab.segmentStartCorners,
-      this._grab.segmentStartPositions,
-      delta,
-    )
-  }
-
-  _applyGrabFromInput() {
-    this._grab.snapping = false
-    const parsed = parseFloat(this._grab.inputStr)
-    if (this._grab.inputStr && isNaN(parsed)) {
-      this._uiView.showToast('Invalid number')
-      return
-    }
-    const dist    = isNaN(parsed) ? 0 : parsed
-    const axisVec = this._getAxisVec(this._grab.axis)
-    this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(dist))
-  }
-
-  _applyFreeGrab() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const pt = new THREE.Vector3()
-    if (!this._raycaster.ray.intersectPlane(this._grab.dragPlane, pt)) return
-    let delta = pt.clone().sub(this._grab.startPoint)
-    if (this._grab.autoSnap) {
-      delta = this._trySnapToGeometry(delta)
-    } else if (this._ctrlHeld) {
-      delta = this._applyGridSnapToDelta(delta)
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-    } else {
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-      const _fgTension = this._service.getLinkDragTension()
-      if (_fgTension > 0) delta.multiplyScalar(Math.max(0.15, 1.0 - Math.min(_fgTension, 1.0) * 0.85))
-    }
-    this._applyGrabDeltaToAll(delta)
-  }
-
-  _applyAxisConstrainedGrab() {
-    const axisVec = this._getAxisVec(this._grab.axis)
-
-    // Compute the screen-space direction of the world axis using the analytic
-    // Jacobian of the perspective projection, evaluated at the grab pivot.
-    //
-    // The previous approach projected (pivot + axisVec) to NDC and subtracted
-    // project(pivot). When the camera is close to the object, (pivot + axisVec)
-    // can land behind the camera. THREE.js perspective division by a negative W
-    // flips the NDC sign, reversing the apparent axis direction and causing the
-    // object to move opposite to the cursor.
-    //
-    // The Jacobian d(ndc)/dt at t=0 is computed entirely at the pivot point
-    // (always in front of the camera), so it is immune to this sign-flip.
-    //
-    // Derivation for perspective projection  ndc.x = x_c * f_x / (−z_c):
-    //   dx_ndc/dt = f_x * (v_x * (−z_c) − x_c * v_z) / z_c²
-    //   dy_ndc/dt = f_y * (v_y * (−z_c) − y_c * v_z) / z_c²
-    // where (x_c, y_c, z_c) = pivot in camera space, (v_x, v_y, v_z) = axis
-    // in camera space, and z_c < 0 for points in front of the camera.
-    const P_c = this._grab.pivot.clone().applyMatrix4(this._camera.matrixWorldInverse)
-    const v_c = axisVec.clone().transformDirection(this._camera.matrixWorldInverse)
-    const f_y = 1 / Math.tan(THREE.MathUtils.degToRad(this._camera.fov * 0.5))
-    const f_x = f_y / this._camera.aspect
-    const z   = P_c.z    // negative for in-front points
-
-    const dx        = f_x * (v_c.x * (-z) - P_c.x * v_c.z) / (z * z)
-    const dy        = f_y * (v_c.y * (-z) - P_c.y * v_c.z) / (z * z)
-    const screenLen = Math.sqrt(dx * dx + dy * dy)
-    if (screenLen < 1e-4) return
-
-    const axisNormX = dx / screenLen
-    const axisNormY = dy / screenLen
-
-    const mdx  = this._mouse.x - this._grab.startMouse.x
-    const mdy  = this._mouse.y - this._grab.startMouse.y
-    const dist = (mdx * axisNormX + mdy * axisNormY) / screenLen
-
-    if (this._grab.autoSnap) {
-      const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
-      const snappedDelta = this._trySnapToGeometry(delta)
-      this._applyGrabDeltaToAll(snappedDelta)
-    } else if (this._ctrlHeld) {
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-      const g           = this._grab.gridSize
-      const snappedDist = Math.round(dist / g) * g
-      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(snappedDist))
-    } else {
-      this._grab.snapping      = false
-      this._grab.snappedTarget = null
-      const _acTension = this._service.getLinkDragTension()
-      const _acDist    = _acTension > 0 ? dist * Math.max(0.15, 1.0 - Math.min(_acTension, 1.0) * 0.85) : dist
-      this._applyGrabDeltaToAll(axisVec.clone().multiplyScalar(_acDist))
-    }
-  }
-
-  _updateGrabStatus() {
-    if (this._grab.pivotSelectMode) {
-      const MODE_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-      const MODE_COLOR = { all: '#aaa', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
-      const m = this._grab.pivotMode ?? 'all'
-      this._uiView.setStatusRich([
-        { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
-        { text: MODE_LABEL[m], color: MODE_COLOR[m] },
-        { text: '1 Vertex  2 Edge  3 Face', color: '#444' },
-      ])
-      return
-    }
-
-    const AXIS_COLORS = { x: '#e05252', y: '#6ab04c', z: '#4a9eed' }
-    const parts = [{ text: 'Grab', bold: true, color: '#ffffff' }]
-
-    if (this._grab.axis) {
-      parts.push({ text: this._grab.axis.toUpperCase(), bold: true, color: AXIS_COLORS[this._grab.axis] })
-    }
-    if (this._grab.hasInput) {
-      parts.push({ text: this._grab.inputStr + '_', color: '#ffeb3b' })
-    }
-    if (this._grab.pivotLabel !== 'Centroid') {
-      parts.push({ text: this._grab.pivotLabel, color: '#888' })
-    }
-    if (this._grab.stackMode) {
-      if (this._grab.stacking) {
-        parts.push({ text: 'Stack: ON', bold: true, color: '#a5d6a7' })
-      } else {
-        parts.push({ text: 'Stack', color: '#4caf50' })
-      }
-    }
-    if (this._grab.snapping && this._grab.snappedTarget) {
-      parts.push({ text: `Snap: ${this._grab.snappedTarget.label}`, bold: true, color: '#ff9800' })
-    } else if (this._grab.autoSnap) {
-      parts.push({ text: 'Auto Snap [World]', color: '#80cbc4' })
-      parts.push({ text: 'Origin / X / Y / Z', color: '#444' })
-    } else if (this._ctrlHeld) {
-      parts.push({ text: `Grid: ${this._grab.gridSize}`, bold: true, color: '#80cbc4' })
-      parts.push({ text: 'Scroll to change', color: '#444' })
-    }
-
-    if (!this._grab.hasInput) {
-      const d = this._grab.lastDelta
-      const cx = (this._grab.centroid.x + d.x).toFixed(2)
-      const cy = (this._grab.centroid.y + d.y).toFixed(2)
-      const cz = (this._grab.centroid.z + d.z).toFixed(2)
-      parts.push({ text: `X:${cx} Y:${cy} Z:${cz}`, color: '#546e7a' })
-      const dx = (d.x >= 0 ? '+' : '') + d.x.toFixed(2)
-      const dy = (d.y >= 0 ? '+' : '') + d.y.toFixed(2)
-      const dz = (d.z >= 0 ? '+' : '') + d.z.toFixed(2)
-      parts.push({ text: `Δ ${dx} ${dy} ${dz}`, color: '#78909c' })
-    }
-
-    this._uiView.setStatusRich(parts)
-  }
-
-  // ─── Grid snap (Ctrl during grab) ─────────────────────────────────────────
-
-  /** Grid sizes cycled by Ctrl+Wheel during grab */
-  static get GRID_SIZES() { return [0.1, 0.25, 0.5, 1, 2.5, 5, 10] }
-
-  /** Angle step sizes (degrees) cycled by Ctrl+Wheel during rotate */
-  static get ANGLE_STEPS() { return [1, 5, 10, 15, 22.5, 45, 90] }
-
-  /**
-   * Rounds a delta vector to the nearest multiple of the current grid size.
-   * @param {THREE.Vector3} delta
-   * @returns {THREE.Vector3}
-   */
-  _applyGridSnapToDelta(delta) {
-    const g = this._grab.gridSize
-    return new THREE.Vector3(
-      Math.round(delta.x / g) * g,
-      Math.round(delta.y / g) * g,
-      Math.round(delta.z / g) * g,
-    )
-  }
-
-  _onWheel(e) {
-    // ── 2D Map Mode: scroll to zoom ──────────────────────────────────────
-    if (this._mapMode.active) {
-      e.preventDefault()
-      const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15
-      this._mapMode.frustumSize = Math.max(2, Math.min(500, this._mapMode.frustumSize * factor))
-      this._sceneView.setOrthoZoom(this._mapMode.frustumSize)
-      return
-    }
-    if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
-      e.preventDefault()
-      const steps = AppController.ANGLE_STEPS
-      const idx   = steps.indexOf(this._rotate.stepSize)
-      const cur   = idx >= 0 ? idx : (steps.findIndex(s => s >= this._rotate.stepSize) || 0)
-      const next  = e.deltaY > 0
-        ? Math.min(cur + 1, steps.length - 1)
-        : Math.max(cur - 1, 0)
-      this._rotate.stepSize = steps[next]
-      this._applyRotate()
-      this._updateRotateStatus()
-      return
-    }
-    if (!this._opState.is(S_GRAB_ACTIVE) || !this._ctrlHeld) return
-    e.preventDefault()
-    const sizes = AppController.GRID_SIZES
-    const idx   = sizes.indexOf(this._grab.gridSize)
-    // fall back to nearest index if current size not in list
-    const cur   = idx >= 0 ? idx : sizes.findIndex(s => s >= this._grab.gridSize) || 0
-    const next  = e.deltaY > 0
-      ? Math.min(cur + 1, sizes.length - 1)
-      : Math.max(cur - 1, 0)
-    this._grab.gridSize = sizes[next]
-    this._applyGrab()
-    this._updateGrabStatus()
-  }
-
-  // ─── Face extrude (E key) ──────────────────────────────────────────────────
-
-  _startFaceExtrude(face) {
-    this._opState.send('BEGIN_FACE_EXTRUDE')
-    const fe = this._faceExtrude
-    fe.face          = face
-    fe.savedCorners  = face.vertices.map(v => v.position.clone())  // world, for display / snap
-    fe.allStartCorners = this._corners.map(c => c.clone())   // full Solid snapshot for undo (ADR-022)
-    fe.dist          = 0
-    fe.inputStr      = ''
-    fe.hasInput      = false
-    fe.snapping      = false
-    fe.snappedTarget = null
-    // World normal (for distance dot product and drag plane)
-    fe.normal.copy(computeOutwardFaceNormal(this._corners, face.index))
-    // Body-frame normal and face corners for extrudeFace() call (ADR-040)
-    const solid = this._activeObj
-    fe.savedLocalFaceCorners = face.vertices.map(v => {
-      const i = solid.vertices.indexOf(v)
-      return solid.localCorners[i].clone()
-    })
-    fe.localNormal.copy(fe.normal).applyQuaternion(solid.orientation.clone().invert())
-    const center = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    fe.dragPlane.setFromNormalAndCoplanarPoint(camDir, center)
-    const pt = new THREE.Vector3()
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    fe.startPoint.copy(this._raycaster.ray.intersectPlane(fe.dragPlane, pt) ? pt : center)
-    this._controls.enabled = false
-    this._updateFaceExtrudeStatus()
-    this._updateMobileToolbar()
-  }
-
-  _applyFaceExtrude() {
-    const { face, savedCorners, savedLocalFaceCorners, localNormal, normal, dist } = this._faceExtrude
-    this._activeObj.extrudeFace(face, savedLocalFaceCorners, localNormal, dist)
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.setFaceHighlight(face.index, this._corners)
-    const currentFaceCorners = face.vertices.map(v => v.position)
-    const { spanMid, armDir } = this._meshView.setExtrusionDisplay(savedCorners, currentFaceCorners)
-    const labelPos = spanMid.clone().addScaledVector(armDir, 0.25)
-    const screen = this._projectToScreen(labelPos)
-    this._uiView.setExtrusionLabel(`D ${Math.abs(dist).toFixed(3)}`, screen.x, screen.y)
-    this._updateNPanel()
-  }
-
-  _applyFaceExtrudeFromInput() {
-    this._faceExtrude.snapping = false
-    const parsed = parseFloat(this._faceExtrude.inputStr)
-    if (this._faceExtrude.inputStr && isNaN(parsed)) {
-      this._uiView.showToast('Invalid number')
-      return
-    }
-    this._faceExtrude.dist = isNaN(parsed) ? 0 : parsed
-    this._applyFaceExtrude()
-  }
-
-  _confirmFaceExtrude() {
-    if (!this._opState.is(S_FACE_EXTRUDE)) return
-    // ── Record undo snapshot (ADR-022 Phase 2) ────────────────────────────
-    if (this._scene.activeId) {
-      const activeId = this._scene.activeId
-      const endCornersMap   = new Map([[activeId, this._corners.map(c => c.clone())]])
-      const startCornersMap = new Map([[activeId, this._faceExtrude.allStartCorners]])
-      const cmd = createMoveCommand('Face Extrude', startCornersMap, endCornersMap, this._scene, this._service)
-      this._commandStack.push(cmd)
-    }
-
-    this._opState.send('CONFIRM')
-    this._controls.enabled = true
-    this._meshView.clearExtrusionDisplay()
-    this._meshView.clearSnapDisplay()
-    this._meshView.setFaceHighlight(null, this._corners)
-    this._scene.editSelection.clear()
-    this._meshView.updateEditSelection(this._scene.editSelection, this._corners)
-    this._uiView.clearExtrusionLabel()
-    this._updateNPanel()
-    this._refreshEditModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  _cancelFaceExtrude() {
-    if (!this._opState.is(S_FACE_EXTRUDE)) return
-    const { face, savedLocalFaceCorners, localNormal } = this._faceExtrude
-    if (face) {
-      this._activeObj.extrudeFace(face, savedLocalFaceCorners, localNormal, 0)
-      this._meshView.updateGeometry(this._corners)
-      this._meshView.setFaceHighlight(face.index, this._corners)
-    }
-    this._opState.send('CANCEL')
-    this._controls.enabled = true
-    this._meshView.clearExtrusionDisplay()
-    this._meshView.clearSnapDisplay()
-    this._uiView.clearExtrusionLabel()
-    this._refreshEditModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  _updateFaceExtrudeStatus() {
-    const fe = this._faceExtrude
-    const parts = [
-      { text: 'Extrude', bold: true, color: '#ffffff' },
-      { text: fe.face?.name ?? '', color: '#4fc3f7' },
-    ]
-    if (fe.hasInput) {
-      parts.push({ text: fe.inputStr + '_', color: '#ffeb3b' })
-    } else {
-      parts.push({ text: `D: ${fe.dist.toFixed(3)}`, color: '#ffeb3b' })
-    }
-    if (fe.snapping && fe.snappedTarget) {
-      parts.push({ text: `Snap: ${fe.snappedTarget.label}`, bold: true, color: '#ff9800' })
-    }
-    const hint = window.innerWidth < 768
-      ? 'Release to confirm'
-      : 'Enter confirm  Esc cancel'
-    parts.push({ text: hint, color: '#444' })
-    this._uiView.setStatusRich(parts)
-  }
-
-  /**
-   * Snaps face extrude distance to nearest geometry element projected onto the face normal.
-   * @param {number} dist  raw extrude distance
-   * @returns {number}  snapped or original distance
-   */
-  _trySnapFaceExtrude(dist) {
-    const fe      = this._faceExtrude
-    const center  = fe.savedCorners.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(fe.savedCorners.length)
-    const posAfter = center.clone().addScaledVector(fe.normal, dist)
-
-    // Compare snap targets to the mouse cursor, not the face center
-    const mx = (this._mouse.x + 1) / 2 * innerWidth
-    const my = (-this._mouse.y + 1) / 2 * innerHeight
-
-    const geoTargets   = collectSnapTargets(this._scene.objects, 'all', new Set([this._scene.activeId]))
-    const worldTargets = collectWorldSnapTargets(posAfter)
-    const targets      = [...geoTargets, ...worldTargets]
-    fe.snapTargets = targets
-    const bestTarget = this._pickBestSnapTarget(targets, mx, my)
-
-    if (bestTarget) {
-      fe.snapping      = true
-      fe.snappedTarget = bestTarget
-      return bestTarget.position.clone().sub(center).dot(fe.normal)
-    }
-    fe.snapping      = false
-    fe.snappedTarget = null
-    return dist
-  }
-
-  // ─── Geometry snap ─────────────────────────────────────────────────────────
-
-  /**
-   * Attempts to snap the grab pivot to the nearest geometry element.
-   * Snap candidates: all Vertex positions, Edge midpoints, Face centers.
-   * @param {THREE.Vector3} delta  current free delta
-   * @returns {THREE.Vector3}  snapped or original delta
-   */
-  _trySnapToGeometry(delta) {
-    const pivotAfter = this._grab.pivot.clone().add(delta)
-    const pScreen    = this._projectToScreen(pivotAfter)
-
-    const grabbedIds   = new Set(this._grab.allStartCorners.keys())
-    const geoTargets   = collectSnapTargets(this._scene.objects, this._grab.snapMode, grabbedIds)
-    const worldTargets = collectWorldSnapTargets(pivotAfter)
-    const targets      = [...geoTargets, ...worldTargets]
-    this._grab.snapTargets = targets  // cache for candidate display
-    const bestTarget = this._pickBestSnapTarget(targets, pScreen.x, pScreen.y)
-
-    if (bestTarget) {
-      this._grab.snapping      = true
-      this._grab.snappedTarget = bestTarget
-      return bestTarget.position.clone().sub(this._grab.pivot)
-    }
-    this._grab.snapping      = false
-    this._grab.snappedTarget = null
-    return delta
-  }
-
-  // ─── Pivot point selection ─────────────────────────────────────────────────
-
-  _startPivotSelect() {
-    if (!this._opState.is(S_GRAB_ACTIVE) || this._grab.pivotSelectMode) return
-    // Pivot selection uses Cuboid-specific vertex geometry — skip for non-Cuboid types.
-    if (this._activeObj instanceof ImportedMesh || this._activeObj instanceof MeasureLine || this._activeObj instanceof CoordinateFrame) return
-    this._grab.startCorners.forEach((c, i) => this._corners[i].copy(c))
-    this._meshView.updateGeometry(this._corners)
-    this._meshView.updateBoxHelper()
-    this._grab.pivotSelectMode = true
-    this._grab.pivotMode       = 'all'
-    this._grab.hoveredPivotIdx = -1
-    this._grab.candidates = getPivotCandidates(this._grab.startCorners)
-    this._meshView.showPivotCandidates(this._grab.candidates)
-    this._updateGrabStatus()
-  }
-
-  /**
-   * Filters pivot candidates by sub-element type and refreshes the display.
-   * @param {'all'|'vertex'|'edge'|'face'} mode
-   */
-  _setPivotCandidateMode(mode) {
-    this._grab.pivotMode = mode
-    const corners = this._grab.startCorners
-    const candidates =
-      mode === 'vertex' ? getVertexPivotCandidates(corners) :
-      mode === 'edge'   ? getEdgePivotCandidates(corners)   :
-      mode === 'face'   ? getFacePivotCandidates(corners)   :
-                          getPivotCandidates(corners)
-    this._grab.candidates      = candidates
-    this._grab.hoveredPivotIdx = -1
-    this._meshView.showPivotCandidates(candidates)
-    this._meshView.setHoveredPivot(null)
-    this._updateGrabStatus()
-  }
-
-  _updatePivotHover() {
-    const SNAP_PX = 30
-    let minDist    = Infinity
-    let closestIdx = -1
-    const mx = (this._mouse.x + 1) / 2 * innerWidth
-    const my = (-this._mouse.y + 1) / 2 * innerHeight
-    this._grab.candidates.forEach((c, i) => {
-      const ndc = c.position.clone().project(this._camera)
-      const sx  = (ndc.x + 1) / 2 * innerWidth
-      const sy  = (-ndc.y + 1) / 2 * innerHeight
-      const d   = Math.hypot(sx - mx, sy - my)
-      if (d < minDist) { minDist = d; closestIdx = i }
-    })
-    if (minDist <= SNAP_PX && closestIdx >= 0) {
-      this._grab.hoveredPivotIdx = closestIdx
-      const cand = this._grab.candidates[closestIdx]
-      this._meshView.setHoveredPivot(cand)
-      this._uiView.setStatusRich([
-        { text: 'Pivot', color: '#aaa' },
-        { text: cand.label, bold: true, color: '#ffeb3b' },
-      ])
-    } else {
-      this._grab.hoveredPivotIdx = -1
-      this._meshView.setHoveredPivot(null)
-      this._uiView.setStatusRich([
-        { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
-        { text: 'Click to confirm', color: '#aaa' },
-        { text: 'Esc to cancel', color: '#666' },
-      ])
-    }
-  }
-
-  /**
-   * Changes the snap target filter during grab and resets the current snap lock.
-   * @param {'all'|'vertex'|'edge'|'face'} mode
-   */
-  _setSnapMode(mode) {
-    this._grab.snapMode      = mode
-    this._grab.snapping      = false
-    this._grab.snappedTarget = null
-    this._meshView.clearSnapLocked()
-    this._updateGrabStatus()
-  }
-
-  _confirmPivotSelect() {
-    const idx = this._grab.hoveredPivotIdx
-    if (idx >= 0) {
-      const cand = this._grab.candidates[idx]
-      this._grab.pivot.copy(cand.position)
-      this._grab.pivotLabel = cand.label
-      this._restartGrabFromPivot()
-      this._grab.autoSnap = true  // auto-snap enabled after pivot selection
-    }
-    this._grab.pivotSelectMode = false
-    this._grab.hoveredPivotIdx = -1
-    this._meshView.clearPivotDisplay()
-    this._updateGrabStatus()
-  }
-
-  _cancelPivotSelect() {
-    this._grab.pivotSelectMode = false
-    this._grab.hoveredPivotIdx = -1
-    this._meshView.clearPivotDisplay()
-    this._updateGrabStatus()
-  }
-
-  _restartGrabFromPivot() {
-    const pivot  = this._grab.pivot
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, pivot)
-    this._grab.startPoint.copy(pivot)
-    this._grab.axis     = null
-    this._grab.inputStr = ''
-    this._grab.hasInput = false
-    this._grab.startMouse.copy(this._mouse)
-  }
-
   // ─── Pointer events (mouse + touch + stylus) ──────────────────────────────
   _onPointerMove(e) {
     // Cancel long-press grab if the finger moved more than 8 px
@@ -5754,98 +2605,55 @@ export class AppController {
     this._updateMouse(e)
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
-      this._applyRotate()
+      this._rotateHandler.apply()
       this._updateNPanel()
       return
     }
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
-      if (this._grab.pivotSelectMode) {
-        this._updatePivotHover()
+      const gs = this._grabHandler.state
+      if (this._grabHandler.pivotSelectMode) {
+        this._grabHandler.updatePivotHover()
         return
       }
-      this._applyGrab()
-      if (this._grab.autoSnap) {
+      this._grabHandler.apply()
+      if (gs.autoSnap) {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(this._grab.snapTargets))
-        if (this._grab.snapping && this._grab.snappedTarget) {
+        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(gs.snapTargets))
+        if (gs.snapping && gs.snappedTarget) {
           this._meshView.clearSnapNearest()
           this._meshView.showSnapLocked(
-            this._grab.snappedTarget.position,
-            this._grab.snappedTarget.type,
-            this._grab.pivot,
+            gs.snappedTarget.position,
+            gs.snappedTarget.type,
+            gs.pivot,
           )
         } else {
           this._meshView.clearSnapLocked()
-          const nearest = this._findNearestSnapCandidate(this._grab.snapTargets, mx, my)
+          const nearest = this._findNearestSnapCandidate(gs.snapTargets, mx, my)
           if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
           else         this._meshView.clearSnapNearest()
         }
       } else {
         this._meshView.clearSnapDisplay()
       }
-      this._updateGrabStatus()
+      this._grabHandler.updateStatus()
       this._updateNPanel()
       return
     }
 
     // ── Frame placement pick sub-mode hover (ADR-034 §6) ─────────────────
     if (this._opState.is(S_FRAME_PLACEMENT) && e.pointerType !== 'touch') {
-      const pt = this._pickFramePlacementPoint()
-      if (pt && this._frameCursorGhost) {
-        this._frameCursorGhost.position.copy(pt)
-        this._frameCursorGhost.quaternion.set(0, 0, 0, 1)
-        this._frameCursorGhost.visible = true
-        // Scale cursor ghost to consistent screen size
-        const d = this._camera.position.distanceTo(pt)
-        if (d > 0 && this._camera.isPerspectiveCamera) {
-          const tanHalfFov = Math.tan((this._camera.fov * Math.PI) / 360)
-          const screenH    = this._sceneView.renderer.domElement.clientHeight || 1
-          const ws = (60 / screenH) * 2 * d * tanHalfFov
-          this._frameCursorGhost.scale.setScalar(ws / _GHOST_AXIS_LEN)
-        }
-      } else if (this._frameCursorGhost) {
-        this._frameCursorGhost.visible = false
-      }
-      // Scale parent axes overlay too
-      if (this._parentAxesOverlay?.visible) {
-        const dp = this._camera.position.distanceTo(this._parentAxesOverlay.position)
-        if (dp > 0 && this._camera.isPerspectiveCamera) {
-          const tanHalfFov = Math.tan((this._camera.fov * Math.PI) / 360)
-          const screenH    = this._sceneView.renderer.domElement.clientHeight || 1
-          const ws = (80 / screenH) * 2 * dp * tanHalfFov
-          this._parentAxesOverlay.scale.setScalar(ws / _GHOST_AXIS_LEN)
-        }
-      }
+      this._framePlacementHandler.updateCursorGhost()
       return
     }
 
     // ── 2D Map Mode: pan or drawing hover ────────────────────────────────
-    if (this._mapMode.active) {
-      if (this._mapMode.isPanning && this._mapMode.panStart) {
-        const { frustumSize } = this._mapMode
-        const aspect = innerWidth / innerHeight
-        const dx = (e.clientX - this._mapMode.panStart.screenX) * (frustumSize * aspect / innerWidth)
-        const dy = (e.clientY - this._mapMode.panStart.screenY) * (frustumSize / innerHeight)
-        this._sceneView.panOrthoCamera(
-          this._mapMode.panStart.camX - dx,
-          this._mapMode.panStart.camY + dy,
-        )
-        return
-      }
-      // Only update preview in drawing state; pending state shows frozen dashed preview
-      if (this._mapMode.tool && this._mapMode.drawState === 'drawing') {
-        const pt = this._mapPickPoint(e)
-        this._mapMode.cursor = pt
-        this._updateMapPreview()
-      }
-      return
-    }
+    if (this._mapModeCtrl.onPointerMove(e)) return
 
     // ── Measure placement hover ───────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
-      const pt = this._measurePickPoint()
+      const pt = this._measureHandler.pickPoint()
       if (pt) {
         this._measure.p2 = pt
         // Show snap candidates via snapMeshView (a real MeshView, not MeasureLineView)
@@ -5870,10 +2678,10 @@ export class AppController {
         }
         // Phase 2: draw preview line
         if (this._measure.p1) {
-          this._updateMeasurePreview(this._measure.p1, pt)
+          this._measureHandler.updatePreview(this._measure.p1, pt)
         }
       }
-      this._updateMeasureStatus()
+      this._measureHandler.updateStatus()
       return
     }
 
@@ -5950,8 +2758,8 @@ export class AppController {
       const pt = new THREE.Vector3()
       if (!this._raycaster.ray.intersectPlane(this._faceExtrude.dragPlane, pt)) return
       const rawDist = pt.clone().sub(this._faceExtrude.startPoint).dot(this._faceExtrude.normal)
-      this._faceExtrude.dist = this._trySnapFaceExtrude(rawDist)
-      this._applyFaceExtrude()
+      this._faceExtrude.dist = this._faceExtrudeHandler.trySnap(rawDist)
+      this._faceExtrudeHandler.applyPreview()
       // snap visuals
       const fe = this._faceExtrude
       const mx = (this._mouse.x + 1) / 2 * innerWidth
@@ -5970,7 +2778,7 @@ export class AppController {
         if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
         else         this._meshView.clearSnapNearest()
       }
-      this._updateFaceExtrudeStatus()
+      this._faceExtrudeHandler.updateStatus()
       return
     }
 
@@ -6069,19 +2877,19 @@ export class AppController {
     this._contextMenuSuppressed = e.button === 2 && (
       this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_MOUNT_PICKING) ||
       this._opState.is(S_LINK_MODE) || this._opState.is(S_GRAB_ACTIVE) ||
-      this._opState.is(S_FACE_EXTRUDE) || !!this._mapMode.tool || this._opState.is(S_MEASURE_PLACING) ||
+      this._opState.is(S_FACE_EXTRUDE) || this._mapModeCtrl.hasTool || this._opState.is(S_MEASURE_PLACING) ||
       this._opState.is(S_FRAME_PLACEMENT)
     )
 
     // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
-      if (e.button === 2) { this._cancelFramePickSubMode(); return }
+      if (e.button === 2) { this._framePlacementHandler.cancel(); return }
       if (e.button === 0 || e.pointerType === 'touch') {
-        const pt = this._pickFramePlacementPoint()
+        const pt = this._framePlacementHandler.pickPoint()
         if (pt) {
-          this._confirmFramePlacement(pt)
+          this._framePlacementHandler.confirm(pt)
         } else {
-          this._cancelFramePickSubMode()
+          this._framePlacementHandler.cancel()
         }
         return
       }
@@ -6093,20 +2901,21 @@ export class AppController {
         // Mobile: drag rotates the object; confirmation is via the toolbar button.
         // Re-snapshot segmentStart* so each new drag segment starts from current state.
         const obj = this._activeObj
+        const s = this._rotateHandler.state
         if (obj instanceof Solid) {
           // Re-snapshot segment-start triple for new drag segment (ADR-040)
-          this._rotate.segStartOrientation = obj.orientation.clone()
-          this._rotate.segStartPos         = obj._position.clone()
-          this._rotate.segStartPivot       = obj._position.clone()
+          s.segStartOrientation = obj.orientation.clone()
+          s.segStartPos         = obj._position.clone()
+          s.segStartPivot       = obj._position.clone()
         } else if (obj instanceof CoordinateFrame) {
-          this._rotate.segmentStartRot.copy(obj.rotation)
+          s.segmentStartRot.copy(obj.rotation)
         }
-        this._rotate.needsStartAngle  = true
-        this._activeDragPointerId     = e.pointerId
+        s.needsStartAngle     = true
+        this._activeDragPointerId = e.pointerId
         return
       }
-      if (e.button === 0) { this._confirmRotate(); return }
-      if (e.button === 2) { this._cancelRotate();  return }
+      if (e.button === 0) { this._rotateHandler.confirm(); return }
+      if (e.button === 2) { this._rotateHandler.cancel();  return }
       return
     }
 
@@ -6118,7 +2927,7 @@ export class AppController {
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
-            this._confirmMountAnnotation(this._mountPicking.sourceId, hit.obj.id)
+            this._linkHandler.confirmMount(this._mountPicking.sourceId, hit.obj.id)
           } else if (hitObj instanceof Solid) {
             this._uiView.showToast('Add a frame to this object first', { type: 'warn' })
           } else {
@@ -6134,7 +2943,7 @@ export class AppController {
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
-            this._confirmMountAnnotation(this._mountPicking.sourceId, hit.obj.id)
+            this._linkHandler.confirmMount(this._mountPicking.sourceId, hit.obj.id)
           } else if (hitObj instanceof Solid) {
             this._uiView.showToast('Add a frame to this object first', { type: 'warn' })
           } else {
@@ -6150,13 +2959,13 @@ export class AppController {
 
     // ── SpatialLink target selection (ADR-030 Phase 4) ─────────────────────
     if (this._opState.is(S_LINK_MODE)) {
-      if (e.button === 2) { this._cancelSpatialLinkCreation(); return }
+      if (e.button === 2) { this._linkHandler.cancel(); return }
       if (e.button === 0) {
         const hit = this._hitAnyEntityForLink()
         if (hit) {
-          this._showLinkTypePicker(e.clientX, e.clientY, hit.obj.id)
+          this._linkHandler.showTypePicker(e.clientX, e.clientY, hit.obj.id)
         } else {
-          this._cancelSpatialLinkCreation()
+          this._linkHandler.cancel()
         }
         return
       }
@@ -6164,49 +2973,50 @@ export class AppController {
     }
 
     if (this._opState.is(S_GRAB_ACTIVE)) {
-      if (this._grab.pivotSelectMode) {
+      if (this._grabHandler.pivotSelectMode) {
         if (e.button === 0) { this._confirmPivotSelect(); return }
-        if (e.button === 2) { this._cancelPivotSelect();  return }
+        if (e.button === 2) { this._grabHandler.cancelPivotSelect();  return }
         return
       }
       if (e.button === 0) {
         if (e.pointerType === 'touch') {
           // On touch: checkpoint the current position as the start of a new drag
           // segment, then track the pointer. Grab stays active until Confirm is pressed.
-          this._grab.segmentStartCorners = new Map()
-          this._grab.segmentStartPositions = new Map()
+          const gs = this._grabHandler.state
+          gs.segmentStartCorners = new Map()
+          gs.segmentStartPositions = new Map()
           for (const id of this._selectedIds) {
             const selObj = this._scene.getObject(id)
             if (selObj) {
-              this._grab.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
-              if (selObj instanceof Solid) this._grab.segmentStartPositions.set(id, selObj._position.clone())
+              gs.segmentStartCorners.set(id, _grabHandlesOf(selObj).map(c => c.clone()))
+              if (selObj instanceof Solid) gs.segmentStartPositions.set(id, selObj._position.clone())
             }
           }
-          this._grab.startCorners = this._corners.map(c => c.clone())
+          gs.startCorners = this._corners.map(c => c.clone())
           const grabCenter = (this._activeObj instanceof CoordinateFrame)
             ? (this._service.worldPoseOf(this._activeObj.id)?.position?.clone() ?? getCentroid(this._corners))
             : (this._activeObj instanceof Solid ? this._activeObj._position.clone() : getCentroid(this._corners))
-          this._grab.centroid.copy(grabCenter)
-          this._grab.pivot.copy(grabCenter)
-          this._grab.lastDelta.set(0, 0, 0)
+          gs.centroid.copy(grabCenter)
+          gs.pivot.copy(grabCenter)
+          gs.lastDelta.set(0, 0, 0)
           const camDir = new THREE.Vector3()
           this._camera.getWorldDirection(camDir)
-          this._grab.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
+          gs.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
           this._raycaster.setFromCamera(this._mouse, this._camera)
           const _segPt = new THREE.Vector3()
-          if (this._raycaster.ray.intersectPlane(this._grab.dragPlane, _segPt)) {
-            this._grab.startPoint.copy(_segPt)
+          if (this._raycaster.ray.intersectPlane(gs.dragPlane, _segPt)) {
+            gs.startPoint.copy(_segPt)
           } else {
-            this._grab.startPoint.copy(grabCenter)
+            gs.startPoint.copy(grabCenter)
           }
-          this._grab.startMouse.copy(this._mouse)
+          gs.startMouse.copy(this._mouse)
           this._activeDragPointerId = e.pointerId
           return
         }
-        this._confirmGrab()
+        this._grabHandler.confirm()
         return
       }
-      if (e.button === 2) { this._cancelGrab();  return }
+      if (e.button === 2) { this._grabHandler.cancel();  return }
       return
     }
 
@@ -6217,99 +3027,16 @@ export class AppController {
         this._activeDragPointerId = e.pointerId
         return
       }
-      if (e.button === 2) { this._cancelFaceExtrude(); return }
+      if (e.button === 2) { this._faceExtrudeHandler.cancel(); return }
       return
     }
 
     // ── 2D Map Mode: drawing clicks and pan start ────────────────────────
-    if (this._mapMode.active) {
-      // Pan: middle button OR left button with no tool selected
-      if (e.button === 1 || (e.button === 0 && !this._mapMode.tool)) {
-        this._mapMode.isPanning = true
-        const cam = this._sceneView.activeCamera
-        this._mapMode.panStart = {
-          screenX: e.clientX, screenY: e.clientY,
-          camX: cam.position.x, camY: cam.position.y,
-        }
-        this._uiView.setCursor('grabbing')
-        this._activeDragPointerId = e.pointerId
-        return
-      }
-
-      if (e.button === 0 && this._mapMode.tool) {
-        const { drawState } = this._mapMode
-
-        // In pending state: LMB on canvas confirms (keyboard-free fallback)
-        if (drawState === 'pending') {
-          this._mapConfirmDrawing()
-          return
-        }
-
-        const pt       = this._mapPickPoint(e)
-        const geometry = this._geometryForType(this._mapMode.tool)
-
-        if (this._isMapMobile()) {
-          // ── Mobile: single drag gesture for all types (ADR-031 §2) ──────
-          // Record drag start; interaction completes on pointerup.
-          this._mapMode.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
-          this._mapMode.cursor          = pt.clone()
-          this._activeDragPointerId     = e.pointerId
-          this._updateMapPreview()
-          return
-        }
-
-        // ── PC interaction ───────────────────────────────────────────────
-        if (geometry === 'point') {
-          // Single click → enter pending immediately
-          this._enterMapPendingState([pt])
-          return
-        }
-
-        if (geometry === 'region') {
-          // Drag-to-rectangle: record drag start; pointerup enters pending
-          this._mapMode.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
-          this._mapMode.cursor          = pt.clone()
-          this._activeDragPointerId     = e.pointerId
-          const typeLabel = this._placeTypeForType(this._mapMode.tool)
-          this._uiView.setStatusRich([
-            { text: typeLabel, bold: true, color: '#80cbc4' },
-            { text: 'drag to draw rectangle', color: '#888' },
-            { text: '  ESC cancel', color: '#444' },
-          ])
-          return
-        }
-
-        // Line (PC): each click adds a vertex; Enter/RMB transitions to pending
-        this._mapMode.points.push(pt.clone())
-        this._mapMode.cursor = pt.clone()
-        this._updateMapPreview()
-        this._updateMapStatus()
-        return
-      }
-
-      if (e.button === 2 && this._mapMode.tool) {
-        const { drawState, points, tool: currentTool } = this._mapMode
-        if (drawState === 'pending') {
-          // RMB in pending → cancel back to drawing (re-select same tool)
-          this._mapCancelDrawing()
-          if (currentTool) this._setMapTool(currentTool)
-          return
-        }
-        // RMB in drawing: for PC Line with ≥2 pts → enter pending; else cancel
-        const geometry = this._geometryForType(this._mapMode.tool)
-        if (geometry === 'line' && points.length >= 2) {
-          this._enterMapPendingState(points)
-        } else {
-          this._mapCancelDrawing()
-        }
-        return
-      }
-      return
-    }
+    if (this._mapModeCtrl.onPointerDown(e)) return
 
     // ── Measure placement clicks ──────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
-      if (e.button === 2) { this._cancelMeasure(); return }
+      if (e.button === 2) { this._measureHandler.cancel(); return }
       if (e.button === 0) {
         // Hold to snap, release to confirm — handled in _onPointerUp.
         // This lets mobile users slide their finger to the snap target before lifting.
@@ -6546,7 +3273,7 @@ export class AppController {
         !e.shiftKey) {
       const faces = [...this._scene.editSelection].filter(x => x instanceof Face)
       if (faces.length > 0) {
-        this._startFaceExtrude(faces[0])
+        this._faceExtrudeHandler.start(faces[0])
         this._activeDragPointerId = e.pointerId
       }
     }
@@ -6562,72 +3289,8 @@ export class AppController {
       this._longPress.pointerId = null
     }
 
-    // ── 2D Map Mode: end panning on pointer up ────────────────────────────
-    if (this._mapMode.active && this._mapMode.isPanning) {
-      if (this._activeDragPointerId === e.pointerId) {
-        this._activeDragPointerId = null
-        this._mapMode.isPanning   = false
-        this._mapMode.panStart    = null
-        this._uiView.setCursor(this._mapMode.tool ? 'crosshair' : 'default')
-      }
-      return
-    }
-
-    // ── 2D Map Mode: drag gesture completion (mobile + PC Region) ─────────
-    if (this._mapMode.active && this._mapMode.mobileDragStart &&
-        this._activeDragPointerId === e.pointerId) {
-      const { pt: startPt, screenX: sx, screenY: sy } = this._mapMode.mobileDragStart
-      this._mapMode.mobileDragStart = null
-      this._activeDragPointerId     = null
-
-      const savedTool = this._mapMode.tool
-      if (!savedTool) return
-
-      const pt       = this._mapPickPoint(e)
-      const geometry = this._geometryForType(savedTool)
-      const dx       = e.clientX - sx
-      const dy       = e.clientY - sy
-      const moved    = Math.hypot(dx, dy)
-
-      if (geometry === 'point') {
-        // Point: any tap (no movement threshold) → pending (ADR-031 §2)
-        this._enterMapPendingState([startPt])
-        return
-      }
-
-      if (geometry === 'line') {
-        // Line: drag from start to end → 2-point straight line → pending
-        // Minimum drag threshold: 8 px screen-space (ADR-031 §2)
-        if (moved < 8) {
-          this._mapCancelDrawing()
-          this._setMapTool(savedTool)
-          return
-        }
-        this._enterMapPendingState([startPt, pt])
-        return
-      }
-
-      if (geometry === 'region') {
-        // Region: drag-to-rectangle → pending
-        // Minimum drag threshold: 8 px (ADR-031 §2)
-        if (moved < 8) {
-          this._mapCancelDrawing()
-          this._setMapTool(savedTool)
-          return
-        }
-        const p1 = startPt
-        const p2 = this._mapMode.cursor ?? pt
-        const rectPts = [
-          new THREE.Vector3(p1.x, p1.y, 0),
-          new THREE.Vector3(p2.x, p1.y, 0),
-          new THREE.Vector3(p2.x, p2.y, 0),
-          new THREE.Vector3(p1.x, p2.y, 0),
-        ]
-        this._enterMapPendingState(rectPts)
-        return
-      }
-      return
-    }
+    // ── 2D Map Mode: end panning / drag gesture completion ───────────────
+    if (this._mapModeCtrl.onPointerUp(e)) return
 
     // ── Endpoint drag confirmation (1D Edit Mode) ────────────────────────
     if (this._editOpState.is(EO_1D_DRAG) && this._activeDragPointerId === e.pointerId) {
@@ -6646,7 +3309,7 @@ export class AppController {
       if (this._activeDragPointerId === e.pointerId) {
         this._activeDragPointerId = null
         this._measure.pressing    = false
-        this._confirmMeasurePoint()
+        this._measureHandler.confirmPoint()
       }
       return
     }
@@ -6667,7 +3330,7 @@ export class AppController {
     if (this._opState.is(S_FACE_EXTRUDE)) {
       // Only confirm when a canvas drag was started; prevents double-confirm
       // when the mobile Confirm toolbar button fires both pointerup and click.
-      if (wasDragging) this._confirmFaceExtrude()
+      if (wasDragging) this._faceExtrudeHandler.confirm()
       return
     }
     if (this._editOpState.is(EO_2D_SKETCH_DRAW) && wasDragging) {
@@ -6696,11 +3359,11 @@ export class AppController {
   _onKeyUp(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = false
-      if (this._opState.is(S_GRAB_ACTIVE) && !this._grab.pivotSelectMode) this._updateGrabStatus()
-      if (this._opState.is(S_FACE_EXTRUDE)) this._updateFaceExtrudeStatus()
-      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotate.hasInput) {
-        this._applyRotate()
-        this._updateRotateStatus()
+      if (this._opState.is(S_GRAB_ACTIVE) && !this._grabHandler.pivotSelectMode) this._grabHandler.updateStatus()
+      if (this._opState.is(S_FACE_EXTRUDE)) this._faceExtrudeHandler.updateStatus()
+      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotateHandler.state.hasInput) {
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
       }
     }
   }
@@ -6708,9 +3371,9 @@ export class AppController {
   _onKeyDown(e) {
     if (e.key === 'Control') {
       this._ctrlHeld = true
-      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotate.hasInput) {
-        this._applyRotate()
-        this._updateRotateStatus()
+      if (this._opState.is(S_ROTATE_ACTIVE) && !this._rotateHandler.state.hasInput) {
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
       }
     }
 
@@ -6755,30 +3418,31 @@ export class AppController {
     // ── Keys active during rotate (CoordinateFrame R key, ADR-019) ────────
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       switch (e.key) {
-        case 'x': case 'X': this._setRotateAxis('x'); return
-        case 'y': case 'Y': this._setRotateAxis('y'); return
-        case 'z': case 'Z': this._setRotateAxis('z'); return
-        case 'Enter':  this._confirmRotate(); return
-        case 'Escape': this._cancelRotate();  return
+        case 'x': case 'X': this._rotateHandler.setAxis('x'); return
+        case 'y': case 'Y': this._rotateHandler.setAxis('y'); return
+        case 'z': case 'Z': this._rotateHandler.setAxis('z'); return
+        case 'Enter':  this._rotateHandler.confirm(); return
+        case 'Escape': this._rotateHandler.cancel();  return
       }
+      const rs = this._rotateHandler.state
       if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
-        this._rotate.inputStr += e.key
-        this._rotate.hasInput  = true
-        this._applyRotate()
-        this._updateRotateStatus()
+        rs.inputStr += e.key
+        rs.hasInput  = true
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
         return
       }
-      if (e.key === '-' && this._rotate.inputStr.length === 0) {
-        this._rotate.inputStr = '-'
-        this._rotate.hasInput = true
-        this._updateRotateStatus()
+      if (e.key === '-' && rs.inputStr.length === 0) {
+        rs.inputStr = '-'
+        rs.hasInput = true
+        this._rotateHandler.updateStatus()
         return
       }
       if (e.key === 'Backspace') {
-        this._rotate.inputStr = this._rotate.inputStr.slice(0, -1)
-        this._rotate.hasInput = this._rotate.inputStr.length > 0 && this._rotate.inputStr !== '-'
-        this._applyRotate()
-        this._updateRotateStatus()
+        rs.inputStr = rs.inputStr.slice(0, -1)
+        rs.hasInput = rs.inputStr.length > 0 && rs.inputStr !== '-'
+        this._rotateHandler.apply()
+        this._rotateHandler.updateStatus()
         return
       }
       return
@@ -6786,53 +3450,55 @@ export class AppController {
 
     // ── Keys active during grab ────────────────────────────────────────────
     if (this._opState.is(S_GRAB_ACTIVE)) {
-      if (this._grab.pivotSelectMode) {
-        if (e.key === 'Escape') this._cancelPivotSelect()
-        if (e.key === '1') { this._setPivotCandidateMode('vertex'); return }
-        if (e.key === '2') { this._setPivotCandidateMode('edge');   return }
-        if (e.key === '3') { this._setPivotCandidateMode('face');   return }
+      const gh = this._grabHandler
+      const gs = gh.state
+      if (gh.pivotSelectMode) {
+        if (e.key === 'Escape') gh.cancelPivotSelect()
+        if (e.key === '1') { gh.setPivotCandidateMode('vertex'); return }
+        if (e.key === '2') { gh.setPivotCandidateMode('edge');   return }
+        if (e.key === '3') { gh.setPivotCandidateMode('face');   return }
         return
       }
       switch (e.key) {
-        case 'v': case 'V': this._startPivotSelect(); return
-        case 'x': case 'X': this._setGrabAxis('x'); return
-        case 'y': case 'Y': this._setGrabAxis('y'); return
-        case 'z': case 'Z': this._setGrabAxis('z'); return
-        case 's': case 'S': this._toggleStackMode(); return
+        case 'v': case 'V': gh.startPivotSelect(); return
+        case 'x': case 'X': gh.setAxis('x'); return
+        case 'y': case 'Y': gh.setAxis('y'); return
+        case 'z': case 'Z': gh.setAxis('z'); return
+        case 's': case 'S': gh.toggleStackMode(); return
         case 'Enter':
-          if (this._grab.isSuggesting && this._grab.currentSuggestion) {
-            this._createSpatialLinkDirect(
-              this._grab.currentSuggestion.sourceId,
-              this._grab.currentSuggestion.targetId,
-              this._grab.currentSuggestion,
+          if (gh.isSuggesting && gh.currentSuggestion) {
+            this._linkHandler.createDirect(
+              gh.currentSuggestion.sourceId,
+              gh.currentSuggestion.targetId,
+              gh.currentSuggestion,
             )
           }
-          this._confirmGrab()
+          gh.confirm()
           return
-        case 'Escape':       this._cancelGrab();     return
+        case 'Escape':       gh.cancel();     return
         case '1': this._setSnapMode('vertex'); return
         case '2': this._setSnapMode('edge');   return
         case '3': this._setSnapMode('face');   return
       }
-      if (this._grab.axis) {
+      if (gs.axis) {
         if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
-          this._grab.inputStr += e.key
-          this._grab.hasInput  = true
-          this._applyGrab()
-          this._updateGrabStatus()
+          gs.inputStr += e.key
+          gs.hasInput  = true
+          gh.apply()
+          gh.updateStatus()
           return
         }
-        if (e.key === '-' && this._grab.inputStr.length === 0) {
-          this._grab.inputStr = '-'
-          this._grab.hasInput = true
-          this._updateGrabStatus()
+        if (e.key === '-' && gs.inputStr.length === 0) {
+          gs.inputStr = '-'
+          gs.hasInput = true
+          gh.updateStatus()
           return
         }
         if (e.key === 'Backspace') {
-          this._grab.inputStr = this._grab.inputStr.slice(0, -1)
-          this._grab.hasInput = this._grab.inputStr.length > 0 && this._grab.inputStr !== '-'
-          this._applyGrab()
-          this._updateGrabStatus()
+          gs.inputStr = gs.inputStr.slice(0, -1)
+          gs.hasInput = gs.inputStr.length > 0 && gs.inputStr !== '-'
+          gh.apply()
+          gh.updateStatus()
           return
         }
       }
@@ -6840,56 +3506,23 @@ export class AppController {
     }
 
     // ── 2D Map Mode keys ────────────────────────────────────────────────────
-    if (this._mapMode.active) {
-      const { drawState, tool } = this._mapMode
-
-      if (e.key === 'Escape') {
-        if (drawState === 'pending') {
-          // ESC in pending → cancel back to drawing with empty points
-          const savedTool = tool
-          this._mapCancelDrawing()
-          if (savedTool) this._setMapTool(savedTool)
-        } else if (tool) {
-          this._mapCancelDrawing()   // cancel drawing, stay in map mode
-        } else {
-          this._exitMapMode()        // exit map mode entirely
-        }
-        return
-      }
-
-      if (e.key === 'Enter' && tool) {
-        if (drawState === 'pending') {
-          // Enter in pending → confirm the entity
-          this._mapConfirmDrawing()
-        } else {
-          // Enter in drawing → transition to pending if enough points (PC Line)
-          const geometry = this._geometryForType(tool)
-          const n        = this._mapMode.points.length
-          if (geometry === 'line' && n >= 2) {
-            this._enterMapPendingState(this._mapMode.points)
-          }
-          // Region + Point enter pending via gesture (pointerup), not Enter key
-        }
-        return
-      }
-      return
-    }
+    if (this._mapModeCtrl.onKeyDown(e)) return
 
     // ── Frame placement pick sub-mode keys (ADR-034 §6) ──────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
-      if (e.key === 'Escape') { this._cancelFramePickSubMode(); return }
+      if (e.key === 'Escape') { this._framePlacementHandler.cancel(); return }
       return  // consume all other keys during frame pick
     }
 
     // ── Measure placement keys ─────────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
-      if (e.key === 'Escape') { this._cancelMeasure(); return }
+      if (e.key === 'Escape') { this._measureHandler.cancel(); return }
       return
     }
 
     // ── SpatialLink creation keys (ADR-030 Phase 4) ────────────────────────
     if (this._opState.is(S_LINK_MODE)) {
-      if (e.key === 'Escape') { this._cancelSpatialLinkCreation(); return }
+      if (e.key === 'Escape') { this._linkHandler.cancel(); return }
       return  // consume all other keys during link mode
     }
 
@@ -6943,26 +3576,26 @@ export class AppController {
 
     // ── Face extrude keys (Edit Mode · 3D) ────────────────────────────────
     if (this._opState.is(S_FACE_EXTRUDE)) {
-      if (e.key === 'Enter')  { e.preventDefault(); this._confirmFaceExtrude(); return }
-      if (e.key === 'Escape') { this._cancelFaceExtrude(); return }
+      if (e.key === 'Enter')  { e.preventDefault(); this._faceExtrudeHandler.confirm(); return }
+      if (e.key === 'Escape') { this._faceExtrudeHandler.cancel(); return }
       if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
         this._faceExtrude.inputStr += e.key
         this._faceExtrude.hasInput  = true
-        this._applyFaceExtrudeFromInput()
-        this._updateFaceExtrudeStatus()
+        this._faceExtrudeHandler.applyFromInput()
+        this._faceExtrudeHandler.updateStatus()
         return
       }
       if (e.key === '-' && this._faceExtrude.inputStr.length === 0) {
         this._faceExtrude.inputStr = '-'
         this._faceExtrude.hasInput = true
-        this._updateFaceExtrudeStatus()
+        this._faceExtrudeHandler.updateStatus()
         return
       }
       if (e.key === 'Backspace') {
         this._faceExtrude.inputStr = this._faceExtrude.inputStr.slice(0, -1)
         this._faceExtrude.hasInput = this._faceExtrude.inputStr.length > 0 && this._faceExtrude.inputStr !== '-'
-        this._applyFaceExtrudeFromInput()
-        this._updateFaceExtrudeStatus()
+        this._faceExtrudeHandler.applyFromInput()
+        this._faceExtrudeHandler.updateStatus()
         return
       }
       return
@@ -6975,7 +3608,7 @@ export class AppController {
       if (e.key === '3') { this._setEditSelectMode('face');   return }
       if ((e.key === 'e' || e.key === 'E') && this._editSelectMode === 'face') {
         const selected = [...this._scene.editSelection].filter(x => x instanceof Face)
-        if (selected.length > 0) this._startFaceExtrude(selected[0])
+        if (selected.length > 0) this._faceExtrudeHandler.start(selected[0])
         return
       }
     }
@@ -6994,7 +3627,7 @@ export class AppController {
     if (this._scene.selectionMode === 'object') {
       // M: start measure placement
       if (e.key === 'm' || e.key === 'M') {
-        this._startMeasurePlacement()
+        this._measureHandler.start()
         return
       }
       // L: start SpatialLink creation (ADR-030 Phase 4)
@@ -7003,7 +3636,7 @@ export class AppController {
           this._uiView.showToast('SpatialLink cannot be used as a link source', { type: 'warn' })
           return
         }
-        this._startSpatialLinkCreation()
+        this._linkHandler.start()
         return
       }
       // Shift+S: select all fixed-joint-connected parts (Semantic Select / assembly select)
@@ -7020,13 +3653,13 @@ export class AppController {
       }
       // G: grab
       if ((e.key === 'g' || e.key === 'G') && this._objSelected) {
-        this._startGrab()
+        this._grabHandler.start()
         return
       }
       // R: rotate (CoordinateFrame or Solid, ADR-019 / ADR-036)
       if ((e.key === 'r' || e.key === 'R') &&
           (this._activeObj instanceof CoordinateFrame || this._activeObj instanceof Solid)) {
-        this._startRotate()
+        this._rotateHandler.start()
         return
       }
       // Shift+A: show Add menu
@@ -7082,11 +3715,11 @@ export class AppController {
         const linkOptions = _computeLinkOptions(source, target)
         this._uiView.showLinkTypePicker(x, y, (option) => {
           if (option.semanticType === 'mounts') {
-            this._confirmMountAnnotation(sourceId, targetId)
+            this._linkHandler.confirmMount(sourceId, targetId)
           } else if (option.jointType === 'fixed') {
-            this._confirmFastenFrame(sourceId, targetId, option.semanticType)
+            this._linkHandler.confirmFasten(sourceId, targetId, option.semanticType)
           } else {
-            this._createSpatialLinkDirect(sourceId, targetId, option)
+            this._linkHandler.createDirect(sourceId, targetId, option)
           }
         }, { linkOptions })
       },
@@ -7336,51 +3969,4 @@ function _meshBboxCorners(obj) {
     new THREE.Vector3(max.x, max.y, max.z),
     new THREE.Vector3(min.x, max.y, max.z),
   ]
-}
-
-// ── Frame placement helpers (ADR-034 §6, §7) ──────────────────────────────────
-
-const _GHOST_AXIS_LEN = 0.5
-const _GHOST_OPACITY  = 0.35
-const _GHOST_DASH     = 0.08
-const _GHOST_GAP      = 0.05
-
-/** Creates a dimmed dashed axis-lines group (world-aligned — always identity rotation). */
-function _makeGhostAxesGroup() {
-  const group = new THREE.Group()
-  for (const [dx, dy, dz, color] of [
-    [_GHOST_AXIS_LEN, 0, 0, 0xff4444],
-    [0, _GHOST_AXIS_LEN, 0, 0x44cc44],
-    [0, 0, _GHOST_AXIS_LEN, 0x4488ff],
-  ]) {
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, dx, dy, dz], 3))
-    const mat = new THREE.LineDashedMaterial({
-      color, dashSize: _GHOST_DASH, gapSize: _GHOST_GAP,
-      depthTest: false, transparent: true, opacity: _GHOST_OPACITY,
-    })
-    const line = new THREE.Line(geo, mat)
-    line.renderOrder = 1
-    line.computeLineDistances()
-    group.add(line)
-  }
-  return group
-}
-
-/** Creates a bright solid axis-lines group to show as cursor ghost during frame pick. */
-function _makeFrameAxesGroup() {
-  const group = new THREE.Group()
-  for (const [dx, dy, dz, color] of [
-    [_GHOST_AXIS_LEN, 0, 0, 0xff4444],
-    [0, _GHOST_AXIS_LEN, 0, 0x44cc44],
-    [0, 0, _GHOST_AXIS_LEN, 0x4488ff],
-  ]) {
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, dx, dy, dz], 3))
-    const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.75 })
-    const line = new THREE.Line(geo, mat)
-    line.renderOrder = 2
-    group.add(line)
-  }
-  return group
 }
