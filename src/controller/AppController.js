@@ -70,6 +70,7 @@ import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
 import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
 import { FramePlacementHandler }         from './handler/FramePlacementHandler.js'
 import { EditModeSelectionHandler }      from './handler/EditModeSelectionHandler.js'
+import { SelectionManager }             from './SelectionManager.js'
 import {
   projectToScreen,
   filterNearbySnapTargets,
@@ -466,6 +467,9 @@ export class AppController {
     // ── Edit mode sub-element selection ──────────────────────────────────────
     this._editSelHandler = new EditModeSelectionHandler(this)
 
+    // ── Object selection + frame-chain visibility ─────────────────────────────
+    this._selMgr = new SelectionManager(this)
+
     // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
     /** @type {number|null} pointerId of the active edit drag; null when idle */
     this._activeDragPointerId = null
@@ -815,8 +819,8 @@ export class AppController {
       controls:      this._controls,
       rectSel:       this._rectSel,
       rectSelEl:     this._rectSelEl,
-      updateDisplay: () => this._updateRectSelDisplay(),
-      finalize:      () => this._finalizeRectSelection(),
+      updateDisplay: () => this._selMgr.updateRectSelDisplay(),
+      finalize:      () => this._selMgr.finalizeRectSelection(),
     }
   }
 
@@ -856,7 +860,7 @@ export class AppController {
     const obj = this._service.createSolid()
 
     // ── Record undo snapshot (ADR-022 Phase 3) ────────────────────────────
-    const childrenRefs = [...this._collectAllDescendantFrames(obj.id)]
+    const childrenRefs = [...this._selMgr.collectAllDescendantFrames(obj.id)]
       .map(fid => this._scene.getObject(fid)).filter(Boolean)
     const cmd = createAddSolidCommand(
       obj, childrenRefs, this._service,
@@ -948,7 +952,7 @@ export class AppController {
       this._switchActiveObject(id, true)
     } else {
       // Clicking the already-active row just re-selects it
-      this._setObjectSelected(true)
+      this._selMgr.setObjectSelected(true)
     }
   }
 
@@ -1117,11 +1121,11 @@ export class AppController {
         if (!result) return
         const { obj } = result
         if (!this._selectedIds.has(obj.id)) {
-          this._clearObjectSelection()
+          this._selMgr.clearObjectSelection()
           if (obj.id !== this._scene.activeId) {
             this._switchActiveObject(obj.id, true)
           } else if (!this._objSelected) {
-            this._setObjectSelected(true)
+            this._selMgr.setObjectSelected(true)
           }
           this._selectedIds.add(obj.id)
         } else if (obj.id !== this._scene.activeId) {
@@ -1742,9 +1746,9 @@ export class AppController {
         this._objSelected = true
         this._activeObj.meshView.setObjectSelected(true)
         if (this._activeObj instanceof CoordinateFrame) {
-          this._showFrameChain(this._scene.activeId)
+          this._selMgr.showFrameChain(this._scene.activeId)
         } else {
-          this._setChildFramesVisible(this._scene.activeId, true)
+          this._selMgr.setChildFramesVisible(this._scene.activeId, true)
         }
       }
       this._refreshObjectModeStatus()
@@ -1752,8 +1756,8 @@ export class AppController {
       this._updateMobileToolbar()
     } else {
       // edit mode — dispatch on entity type
-      this._clearObjectSelection()
-      this._setObjectSelected(false)
+      this._selMgr.clearObjectSelection()
+      this._selMgr.setObjectSelected(false)
       if (this._activeObj instanceof Profile) {
         this._enterEditMode2D()
       } else if (this._activeObj instanceof MeasureLine) {
@@ -1951,22 +1955,6 @@ export class AppController {
     this._uiView.setStatusRich(parts)
   }
 
-  _setObjectSelected(sel) {
-    this._objSelected = sel
-    if (this._meshView) this._meshView.setObjectSelected(sel)
-    if (this._scene.activeId) {
-      const active = this._scene.getObject(this._scene.activeId)
-      if (active instanceof CoordinateFrame) {
-        if (sel) this._showFrameChain(this._scene.activeId)
-        else this._hideFrameChain()
-      } else {
-        this._setChildFramesVisible(this._scene.activeId, sel)
-      }
-    }
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
   // ─── Rectangle selection helpers ──────────────────────────────────────────
 
   /** Creates the CSS overlay <div> used to draw the selection rectangle. */
@@ -1981,208 +1969,6 @@ export class AppController {
     })
     document.body.appendChild(el)
     return el
-  }
-
-  /** Updates the overlay position/style to reflect the current drag rectangle. */
-  _updateRectSelDisplay() {
-    const { startPx, currentPx } = this._rectSel
-    const isRight = currentPx.x >= startPx.x
-    const x = Math.min(startPx.x, currentPx.x)
-    const y = Math.min(startPx.y, currentPx.y)
-    const w = Math.abs(currentPx.x - startPx.x)
-    const h = Math.abs(currentPx.y - startPx.y)
-    Object.assign(this._rectSelEl.style, {
-      display:     'block',
-      left:        x + 'px',
-      top:         y + 'px',
-      width:       w + 'px',
-      height:      h + 'px',
-      border:      '1px ' + (isRight ? 'solid' : 'dashed') + ' ' + (isRight ? '#4fc3f7' : '#ffa726'),
-      background:  isRight ? 'rgba(79,195,247,0.05)' : 'rgba(255,167,38,0.05)',
-    })
-  }
-
-  /**
-   * Collects ALL CoordinateFrame IDs in the frame tree rooted at `parentId`
-   * (any object type).  Recurses through all levels of CoordinateFrame children.
-   * @param {string} parentId
-   * @returns {Set<string>}
-   */
-  _collectAllDescendantFrames(parentId) {
-    const result = new Set()
-    const recurse = (id) => {
-      for (const child of this._scene.getChildren(id)) {
-        if (child instanceof CoordinateFrame) {
-          result.add(child.id)
-          recurse(child.id)
-        }
-      }
-    }
-    recurse(parentId)
-    return result
-  }
-
-  /**
-   * Shows or hides the frame tree attached to a geometry object.
-   * `visible = true`  → showFull() on all frames + connection lines (full opacity)
-   * `visible = false` → _hideFrameChain()
-   *
-   * Used when the GEOMETRY PARENT is selected/deselected (not a frame).
-   * @param {string|null} parentId
-   * @param {boolean} visible
-   */
-  _setChildFramesVisible(parentId, visible) {
-    if (!parentId) return
-    if (visible) {
-      this._showGeometryFrameTree(parentId)
-    } else {
-      this._hideFrameChain()
-    }
-  }
-
-  /**
-   * Shows all CoordinateFrame descendants of a geometry object at full opacity.
-   * Called when the geometry parent is selected (no specific frame is active).
-   * @param {string} geoId
-   */
-  _showGeometryFrameTree(geoId) {
-    const treeIds = this._collectAllDescendantFrames(geoId)
-    this._activeFrameChain = treeIds
-    for (const fid of treeIds) {
-      const f = this._scene.getObject(fid)
-      if (!f) continue
-      f.meshView.showFull()
-      f.meshView.showConnection(false)   // always draw line to parent (geometry or frame)
-    }
-  }
-
-  /**
-   * Shows the full frame tree of the geometry root that `frameId` belongs to.
-   * The selected frame is shown at full opacity; all other frames are dimmed.
-   * Connection lines between parent-child frame pairs are drawn; the line to
-   * the selected frame is full opacity, others are dimmed.
-   * @param {string} frameId  ID of the active CoordinateFrame
-   */
-  _showFrameChain(frameId) {
-    // Find geometry root (walk up through CoordinateFrame parents)
-    let geoRoot = this._scene.getObject(frameId)
-    while (geoRoot instanceof CoordinateFrame) {
-      geoRoot = this._scene.getObject(geoRoot.parentId)
-    }
-    if (!geoRoot) return
-
-    const treeIds = this._collectAllDescendantFrames(geoRoot.id)
-    this._activeFrameChain = treeIds
-
-    for (const fid of treeIds) {
-      const f = this._scene.getObject(fid)
-      if (!f) continue
-      const isSelected = fid === frameId
-      if (isSelected) f.meshView.showFull()
-      else            f.meshView.showDimmed()
-      // Connection line to parent (geometry centroid or parent frame).
-      // Full opacity for the selected frame's own line; dimmed for others.
-      f.meshView.showConnection(!isSelected)
-    }
-  }
-
-  /**
-   * Hides all frames in _activeFrameChain and clears connection lines.
-   * Safe to call when _activeFrameChain is empty (no-op).
-   */
-  _hideFrameChain() {
-    const chain = this._activeFrameChain
-    this._activeFrameChain = new Set()
-    for (const fid of chain) {
-      const f = this._scene.getObject(fid)
-      if (!f) continue  // already deleted — skip (view already disposed)
-      f.meshView.hide()
-      f.meshView.hideConnection()
-    }
-  }
-
-  /** Clears visual selection highlight for all currently selected objects. */
-  _clearObjectSelection() {
-    // Always hide any visible frame tree first (_hideFrameChain handles both
-    // geometry-tree and frame-chain visibility in _activeFrameChain)
-    this._hideFrameChain()
-    for (const id of this._selectedIds) {
-      const obj = this._scene.getObject(id)
-      if (obj) obj.meshView.setObjectSelected(false)
-    }
-    this._selectedIds.clear()
-    this._service.updateLinkSelectionHighlight(new Set())
-  }
-
-  /**
-   * Finalizes the rectangle selection.
-   * Right-drag (x increases): enclosed-only mode.
-   * Left-drag (x decreases): touch mode (any overlap counts).
-   */
-  _finalizeRectSelection() {
-    const { startPx, currentPx } = this._rectSel
-    const w = Math.abs(currentPx.x - startPx.x)
-    const h = Math.abs(currentPx.y - startPx.y)
-
-    // Tiny movement — treat as deselect click
-    if (w < 3 && h < 3) {
-      this._clearObjectSelection()
-      this._setObjectSelected(false)
-      return
-    }
-
-    const isRight = currentPx.x >= startPx.x
-    const minX = Math.min(startPx.x, currentPx.x)
-    const minY = Math.min(startPx.y, currentPx.y)
-    const maxX = Math.max(startPx.x, currentPx.x)
-    const maxY = Math.max(startPx.y, currentPx.y)
-
-    const matched = []
-    for (const obj of this._scene.objects.values()) {
-      if (!obj.meshView.cuboid?.visible) continue
-      const corners = obj.corners ?? _meshBboxCorners(obj)
-      if (!corners || corners.length === 0) continue
-      const pts = corners.map(c => projectToScreen(c, this._camera))
-
-      if (isRight) {
-        // Enclosed: every projected corner must be inside the rect
-        if (pts.every(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)) {
-          matched.push(obj)
-        }
-      } else {
-        // Touch: object screen-bounding-box overlaps the rect
-        const bMinX = Math.min(...pts.map(p => p.x))
-        const bMaxX = Math.max(...pts.map(p => p.x))
-        const bMinY = Math.min(...pts.map(p => p.y))
-        const bMaxY = Math.max(...pts.map(p => p.y))
-        if (bMinX <= maxX && bMaxX >= minX && bMinY <= maxY && bMaxY >= minY) {
-          matched.push(obj)
-        }
-      }
-    }
-
-    // Clear previous multi-selection then apply new one
-    this._clearObjectSelection()
-    if (matched.length === 0) {
-      this._setObjectSelected(false)
-      return
-    }
-
-    for (const obj of matched) {
-      obj.meshView.setObjectSelected(true)
-      this._setChildFramesVisible(obj.id, true)
-      this._selectedIds.add(obj.id)
-    }
-
-    // Make the first matched object active
-    const first = matched[0]
-    if (first.id !== this._scene.activeId) {
-      // Deselect previous active's box-helper (already handled above)
-      this._service.setActiveObject(first.id)
-    }
-    this._objSelected = true
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
   }
 
   /**
@@ -2202,12 +1988,12 @@ export class AppController {
       return
     }
 
-    this._clearObjectSelection()
+    this._selMgr.clearObjectSelection()
     for (const id of assemblyIds) {
       const obj = this._scene.getObject(id)
       if (!obj?.meshView) continue
       obj.meshView.setObjectSelected(true)
-      this._setChildFramesVisible(obj.id, true)
+      this._selMgr.setChildFramesVisible(obj.id, true)
       this._selectedIds.add(id)
     }
 
@@ -2726,11 +2512,11 @@ export class AppController {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
           // Clicked an unselected object — clear previous selection, select only this
-          this._clearObjectSelection()
+          this._selMgr.clearObjectSelection()
           if (obj.id !== this._scene.activeId) {
             this._switchActiveObject(obj.id, true)
           } else if (!this._objSelected) {
-            this._setObjectSelected(true)
+            this._selMgr.setObjectSelected(true)
           }
           this._selectedIds.add(obj.id)
         } else {
@@ -2843,8 +2629,8 @@ export class AppController {
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
         if (e.pointerType === 'touch') {
-          this._clearObjectSelection()
-          this._setObjectSelected(false)
+          this._selMgr.clearObjectSelection()
+          this._selMgr.setObjectSelected(false)
           return
         }
         // Do NOT disable _controls here: orbit (right-click / two-finger) uses
@@ -3578,27 +3364,3 @@ function _grabHandlesOf(obj) {
   return (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
 }
 
-/**
- * Returns 8 AABB corners for objects that don't have a `corners` property
- * (e.g. ImportedMesh). Falls back to empty array if bounding box is unavailable.
- * @param {object} obj  scene entity
- * @returns {THREE.Vector3[]}
- */
-function _meshBboxCorners(obj) {
-  const geo = obj.meshView?.cuboid?.geometry
-  if (!geo) return []
-  geo.computeBoundingBox()
-  const box = geo.boundingBox
-  if (!box || box.isEmpty()) return []
-  const { min, max } = box
-  return [
-    new THREE.Vector3(min.x, min.y, min.z),
-    new THREE.Vector3(max.x, min.y, min.z),
-    new THREE.Vector3(max.x, max.y, min.z),
-    new THREE.Vector3(min.x, max.y, min.z),
-    new THREE.Vector3(min.x, min.y, max.z),
-    new THREE.Vector3(max.x, min.y, max.z),
-    new THREE.Vector3(max.x, max.y, max.z),
-    new THREE.Vector3(min.x, max.y, max.z),
-  ]
-}
