@@ -13,7 +13,6 @@ import {
   buildCuboidFromRect,
   computeOutwardFaceNormal,
   getCentroid,
-  toNDC,
   collectSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
@@ -69,7 +68,15 @@ import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
 import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
 import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
 import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
-import { FramePlacementHandler }      from './handler/FramePlacementHandler.js'
+import { FramePlacementHandler }         from './handler/FramePlacementHandler.js'
+import { EditModeSelectionHandler }      from './handler/EditModeSelectionHandler.js'
+import { SelectionManager }             from './SelectionManager.js'
+import {
+  projectToScreen,
+  filterNearbySnapTargets,
+  findNearestSnapCandidate,
+} from './snap/SnapSystem.js'
+import { HitTestService } from './HitTestService.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -454,6 +461,15 @@ export class AppController {
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
 
+    // ── Hit-testing (raycasting utilities) ───────────────────────────────────
+    this._hitTest = new HitTestService(this)
+
+    // ── Edit mode sub-element selection ──────────────────────────────────────
+    this._editSelHandler = new EditModeSelectionHandler(this)
+
+    // ── Object selection + frame-chain visibility ─────────────────────────────
+    this._selMgr = new SelectionManager(this)
+
     // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
     /** @type {number|null} pointerId of the active edit drag; null when idle */
     this._activeDragPointerId = null
@@ -734,7 +750,7 @@ export class AppController {
         }
       },
       finish: () => {
-        this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
+        this._uiView.setCursor(this._hitTest.hitAnyObject() ? 'pointer' : 'default')
         this._updateNPanel()
       },
 
@@ -803,8 +819,8 @@ export class AppController {
       controls:      this._controls,
       rectSel:       this._rectSel,
       rectSelEl:     this._rectSelEl,
-      updateDisplay: () => this._updateRectSelDisplay(),
-      finalize:      () => this._finalizeRectSelection(),
+      updateDisplay: () => this._selMgr.updateRectSelDisplay(),
+      finalize:      () => this._selMgr.finalizeRectSelection(),
     }
   }
 
@@ -844,7 +860,7 @@ export class AppController {
     const obj = this._service.createSolid()
 
     // ── Record undo snapshot (ADR-022 Phase 3) ────────────────────────────
-    const childrenRefs = [...this._collectAllDescendantFrames(obj.id)]
+    const childrenRefs = [...this._selMgr.collectAllDescendantFrames(obj.id)]
       .map(fid => this._scene.getObject(fid)).filter(Boolean)
     const cmd = createAddSolidCommand(
       obj, childrenRefs, this._service,
@@ -936,7 +952,7 @@ export class AppController {
       this._switchActiveObject(id, true)
     } else {
       // Clicking the already-active row just re-selects it
-      this._setObjectSelected(true)
+      this._selMgr.setObjectSelected(true)
     }
   }
 
@@ -1021,13 +1037,13 @@ export class AppController {
   _hitAnyEntityForLink() {
     // Step 0: prioritise CoordinateFrame hits — CFs are rendered on top of Solids,
     // so the cuboid raycast (step 1) would return the parent Solid instead of the CF.
-    const cfHit = this._hitAnyCoordinateFrame()
+    const cfHit = this._hitTest.hitAnyCoordinateFrame()
     if (cfHit && cfHit.obj.id !== this._spatialLinkMode.sourceId) {
       return cfHit
     }
 
     // Step 1: cuboid-based raycast (same as _hitAnyObject but excludes source)
-    const cuboidHit = this._hitAnyObject()
+    const cuboidHit = this._hitTest.hitAnyObject()
     if (cuboidHit && cuboidHit.obj.id !== this._spatialLinkMode.sourceId) {
       return cuboidHit
     }
@@ -1090,26 +1106,26 @@ export class AppController {
         if (this._contextMenuSuppressed) { this._contextMenuSuppressed = false; return }
         if (e.target !== this._sceneView.renderer.domElement) return
         if (this._scene.selectionMode !== 'object') return
-        this._updateMouse(e)
+        this._hitTest.updateMouse(e)
         // PHILOSOPHY #22 — same hit-priority logic as _onPointerDown:
         // CF beats its own parent Solid; unrelated CF does not shadow a Solid.
-        const cfResult    = this._hitAnyCoordinateFrame()
-        const solidResult = this._hitAnyObject()
+        const cfResult    = this._hitTest.hitAnyCoordinateFrame()
+        const solidResult = this._hitTest.hitAnyObject()
         let result
         if (cfResult && solidResult) {
-          result = this._isCfDescendantOf(cfResult.obj, solidResult.obj.id) ? cfResult : solidResult
+          result = this._hitTest.isCfDescendantOf(cfResult.obj, solidResult.obj.id) ? cfResult : solidResult
         } else {
           result = cfResult ?? solidResult
         }
-        if (!result) result = this._hitAnyAnnotation()
+        if (!result) result = this._hitTest.hitAnyAnnotation()
         if (!result) return
         const { obj } = result
         if (!this._selectedIds.has(obj.id)) {
-          this._clearObjectSelection()
+          this._selMgr.clearObjectSelection()
           if (obj.id !== this._scene.activeId) {
             this._switchActiveObject(obj.id, true)
           } else if (!this._objSelected) {
-            this._setObjectSelected(true)
+            this._selMgr.setObjectSelected(true)
           }
           this._selectedIds.add(obj.id)
         } else if (obj.id !== this._scene.activeId) {
@@ -1140,264 +1156,6 @@ export class AppController {
     window.removeEventListener('wheel',       this._handlers.wheel)
     window.removeEventListener('contextmenu', this._handlers.contextmenu)
     this._handlers = null
-  }
-
-  // ─── Raycasting ────────────────────────────────────────────────────────────
-  _updateMouse(e) {
-    const v = toNDC(e.clientX, e.clientY, innerWidth, innerHeight)
-    this._mouse.copy(v)
-  }
-
-  /**
-   * Filters snap targets to visible ones, then removes far-background
-   * candidates that are occluded by closer geometry.
-   * @param {{ position: THREE.Vector3, type: string }[]} targets
-   * @param {number} maxDepthRatio  Keep targets within this multiple of the
-   *   nearest candidate's camera distance (default 2.0).
-   * @returns {{ position: THREE.Vector3, type: string }[]}
-   */
-  _filterNearbySnapTargets(targets, maxDepthRatio = 2.0) {
-    const camPos = this._camera.position
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-
-    // Pass 1: visibility filter — exclude points beyond the far clip plane
-    // or behind the camera (both map to v.z > 1 after project()).
-    const visible = targets.filter(({ position }) => {
-      const v = position.clone().project(this._camera)
-      return v.z <= 1
-    })
-
-    if (visible.length === 0) return visible
-
-    // Pass 2: depth filter — keep only candidates within maxDepthRatio of the
-    // nearest candidate in 3D space.  This hides occluded or far-background
-    // points that happen to overlap foreground geometry on screen.
-    const dists   = visible.map(({ position }) => position.distanceTo(camPos))
-    const minDist = Math.min(...dists)
-    const depthFiltered = visible.filter((_, i) => dists[i] <= minDist * maxDepthRatio)
-
-    // Pass 3 (Idea A): remove face snap candidates whose normal points away from
-    // the camera.  Back-facing face centers are rarely useful snap targets and
-    // create visual noise on the opposite side of objects.
-    return depthFiltered.filter(t => {
-      if (t.type !== 'face' || !t.normal) return true
-      return t.normal.dot(camDir) < 0   // normal toward camera = front-facing
-    })
-  }
-
-  /**
-   * Finds the best snap target from `targets` near screen position (sx, sy).
-   *
-   * Idea A — back-face cull: face snap targets whose outward normal points away
-   * from the camera are excluded (they are behind the visible surface).
-   *
-   * Idea D — front-facing bonus: among face candidates within SNAP_PX, those
-   * whose normal is most directly toward the camera receive a screen-distance
-   * discount (up to FRONTNESS_BONUS_PX), so they beat a slightly-closer
-   * grazing-angle face snap target.
-   *
-   * @param {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }[]} targets
-   * @param {number} sx  cursor screen x (pixels)
-   * @param {number} sy  cursor screen y (pixels)
-   * @returns {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }|null}
-   */
-  _pickBestSnapTarget(targets, sx, sy) {
-    const SNAP_PX           = 25
-    const FRONTNESS_BONUS_PX = 5   // max screen-px discount for a face directly facing camera
-    const camMat = this._camera.matrixWorldInverse
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-
-    let bestScore  = SNAP_PX
-    let bestTarget = null
-
-    for (const t of targets) {
-      // Skip targets behind the camera
-      const camPos = t.position.clone().applyMatrix4(camMat)
-      if (camPos.z >= 0) continue
-
-      // Idea A: skip back-facing face snap points
-      if (t.type === 'face' && t.normal && t.normal.dot(camDir) >= 0) continue
-
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(sx - s.x, sy - s.y)
-
-      // Idea D: front-facing face candidates get a screen-distance discount
-      const bonus = (t.type === 'face' && t.normal)
-        ? Math.max(0, -t.normal.dot(camDir)) * FRONTNESS_BONUS_PX
-        : 0
-      const score = d - bonus
-      if (score < bestScore) { bestScore = score; bestTarget = t }
-    }
-    return bestTarget
-  }
-
-  /**
-   * Returns the snap candidate nearest to screen position (sx, sy) within
-   * maxPx pixels, applying back-face culling for face targets.
-   * Used to drive the hover-highlight indicator before the snap locks.
-   * @param {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }[]} targets
-   * @param {number} sx  cursor x (pixels)
-   * @param {number} sy  cursor y (pixels)
-   * @param {number} [maxPx=60]
-   * @returns target or null
-   */
-  _findNearestSnapCandidate(targets, sx, sy, maxPx = 60) {
-    const camMat = this._camera.matrixWorldInverse
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    let bestDist   = maxPx
-    let bestTarget = null
-    for (const t of targets) {
-      const cp = t.position.clone().applyMatrix4(camMat)
-      if (cp.z >= 0) continue
-      if (t.type === 'face' && t.normal && t.normal.dot(camDir) >= 0) continue
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(sx - s.x, sy - s.y)
-      if (d < bestDist) { bestDist = d; bestTarget = t }
-    }
-    return bestTarget
-  }
-
-  /** Hits any visible object — returns { hit, obj } or null */
-  _hitAnyObject() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const meshes = [...this._scene.objects.values()]
-      .filter(o => !(o instanceof MeasureLine) && !(o instanceof AnnotatedLine) && !(o instanceof AnnotatedRegion) && !(o instanceof AnnotatedPoint) && o.meshView.cuboid?.visible)
-      .map(o => o.meshView.cuboid)
-    const hits = this._raycaster.intersectObjects(meshes)
-    if (!hits.length) return null
-    const hitMesh = hits[0].object
-    const obj = [...this._scene.objects.values()].find(o => o.meshView.cuboid === hitMesh)
-    return obj ? { hit: hits[0], obj } : null
-  }
-
-  /**
-   * Hits any visible annotation entity (AnnotatedLine/Region/Point) using a
-   * bounding-box raycast.  Called as a fallback when _hitAnyObject() misses
-   * (annotation entities have no cuboid and are excluded from that test).
-   * @returns {{ obj: object }|null}
-   */
-  _hitAnyAnnotation() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-
-    let nearestDist = Infinity
-    let nearestObj  = null
-
-    for (const obj of this._scene.objects.values()) {
-      if (!(obj instanceof AnnotatedLine) && !(obj instanceof AnnotatedRegion) && !(obj instanceof AnnotatedPoint)) continue
-      if (!obj.meshView?.visible) continue  // skip soft-deleted
-
-      const corners = obj.corners
-      if (!corners.length) continue
-
-      const box = new THREE.Box3()
-      for (const c of corners) box.expandByPoint(c)
-      // Expand by pick tolerance; for single-point entities this is the full hit area.
-      box.expandByScalar(0.3)
-
-      const hitPt = ray.intersectBox(box, pt)
-      if (hitPt) {
-        const dist = ray.origin.distanceTo(hitPt)
-        if (dist < nearestDist) {
-          nearestDist = dist
-          nearestObj  = obj
-        }
-      }
-    }
-
-    return nearestObj ? { obj: nearestObj } : null
-  }
-
-  /**
-   * Hits any visible CoordinateFrame by raycasting against its axis meshes and
-   * origin sphere, with a bounding-box fallback to enlarge the tap area on mobile.
-   * Called FIRST in _onPointerDown before cuboid hit-testing so that a tap on CF
-   * axes/sphere selects the CF, not the Solid behind it (PHILOSOPHY #22).
-   * Also used as a standalone check in _hitAnyEntityForLink (Step 0).
-   * Only frames whose group.visible is true are considered — hidden frames are
-   * not tappable.
-   * @returns {{ obj: object }|null}
-   */
-  _hitAnyCoordinateFrame() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-    let nearestDist = Infinity
-    let nearestObj  = null
-
-    for (const obj of this._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame)) continue
-      if (!obj.meshView?.group?.visible) continue
-
-      // Geometry hit (axes + origin sphere)
-      const hits = this._raycaster.intersectObject(obj.meshView.group, true)
-      if (hits.length > 0 && hits[0].distance < nearestDist) {
-        nearestDist = hits[0].distance
-        nearestObj  = obj
-        continue
-      }
-
-      // Bounding box fallback — enlarges effective tap area on mobile
-      const wp = this._service.worldPoseOf(obj.id)?.position
-      if (wp) {
-        const box = new THREE.Box3(wp.clone().subScalar(0.4), wp.clone().addScalar(0.4))
-        const hitPt = ray.intersectBox(box, pt)
-        if (hitPt) {
-          const dist = ray.origin.distanceTo(hitPt)
-          if (dist < nearestDist) { nearestDist = dist; nearestObj = obj }
-        }
-      }
-    }
-
-    return nearestObj ? { obj: nearestObj } : null
-  }
-
-  /**
-   * Returns true if `cf` (a CoordinateFrame) is a descendant of the entity
-   * with `ancestorId`.  Walks the parentId chain until hitting a non-CF.
-   * Used in _onPointerDown to implement PHILOSOPHY #22 precisely:
-   * a CF beats its own parent Solid, but must NOT block selection of an
-   * unrelated Solid that merely overlaps the CF's bounding-box hit area.
-   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} cf
-   * @param {string} ancestorId
-   * @returns {boolean}
-   */
-  _isCfDescendantOf(cf, ancestorId) {
-    let obj = cf
-    while (obj instanceof CoordinateFrame) {
-      if (obj.parentId === ancestorId) return true
-      obj = this._scene.getObject(obj.parentId)
-    }
-    return false
-  }
-
-  /** Hits only the active object's mesh */
-  _hitActiveSolid() {
-    if (!this._activeObj) return null
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const hits = this._raycaster.intersectObject(this._activeObj.meshView.cuboid)
-    return hits.length ? hits[0] : null
-  }
-
-  _hitFace() {
-    const hit = this._hitActiveSolid()
-    if (!hit) return null
-    const fi   = Math.floor(hit.face.a / 4)
-    const face = this._activeObj?.faces?.[fi] ?? null
-    return face ? { face, point: hit.point } : null
-  }
-
-  // ─── Utilities ─────────────────────────────────────────────────────────────
-  _projectToScreen(position, camera = this._camera) {
-    const v = position.clone().project(camera)
-    return {
-      x: (v.x + 1) / 2 * innerWidth,
-      y: (-v.y + 1) / 2 * innerHeight,
-    }
   }
 
   _updateNPanel() {
@@ -1881,9 +1639,9 @@ export class AppController {
       const em = this._editSelectMode
       this._uiView.setMobileToolbar([
         { icon: ICONS.back,   label: 'Object', onClick: () => this.setMode('object') },
-        { icon: ICONS.vertex, label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
-        { icon: ICONS.edge,   label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
-        { icon: ICONS.face,   label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
+        { icon: ICONS.vertex, label: 'Vertex', onClick: () => this._editSelHandler.setEditSelectMode('vertex'), active: em === 'vertex' },
+        { icon: ICONS.edge,   label: 'Edge',   onClick: () => this._editSelHandler.setEditSelectMode('edge'),   active: em === 'edge' },
+        { icon: ICONS.face,   label: 'Face',   onClick: () => this._editSelHandler.setEditSelectMode('face'),   active: em === 'face' },
       ])
     }
 
@@ -1918,128 +1676,6 @@ export class AppController {
       this._activeObj instanceof CoordinateFrame ? 'R' : null,
       'Rotate',
     )
-  }
-
-  // ─── Edit mode sub-element helpers (Phase 6) ─────────────────────────────
-
-  /** Status bar for Edit Mode · 3D showing current sub-element mode. */
-  _refreshEditModeStatus() {
-    const LABEL = { vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-    const COLOR = { vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
-    const m = this._editSelectMode
-    this._uiView.setStatusRich([
-      { text: 'Edit', color: '#888' },
-      { text: LABEL[m], bold: true, color: COLOR[m] },
-      { text: '1 Vertex  2 Edge  3 Face', color: '#444' },
-    ])
-  }
-
-  /** Switches the sub-element mode and clears stale hover state. */
-  _setEditSelectMode(mode) {
-    this._editSelectMode = mode
-    this._hoveredFace   = null
-    this._hoveredVertex = null
-    this._hoveredEdge   = null
-    if (this._meshView) {
-      this._meshView.setFaceHighlight(null, this._corners)
-      this._meshView.clearVertexHover()
-      this._meshView.clearEdgeHover()
-    }
-    this._uiView.setCursor('default')
-    this._refreshEditModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Projects a world position to screen pixels.
-   * @param {import('three').Vector3} pos3d
-   * @returns {{ x: number, y: number }}
-   */
-  _toScreenPx(pos3d) {
-    const v = pos3d.clone().project(this._camera)
-    return {
-      x: (v.x + 1) / 2 * innerWidth,
-      y: (-v.y + 1) / 2 * innerHeight,
-    }
-  }
-
-  /**
-   * Finds the vertex of the active object nearest to screen position (mx, my).
-   * @param {number} mx  screen x in pixels
-   * @param {number} my  screen y in pixels
-   * @param {number} [maxPx=15]  max pixel radius
-   * @returns {import('../graph/Vertex.js').Vertex|null}
-   */
-  _findNearestVertex(mx, my, maxPx = 15) {
-    const obj = this._activeObj
-    if (!obj?.vertices) return null
-    let best = null, bestDist = maxPx
-    for (const v of obj.vertices) {
-      const s = this._toScreenPx(v.position)
-      const d = Math.hypot(s.x - mx, s.y - my)
-      if (d < bestDist) { bestDist = d; best = v }
-    }
-    return best
-  }
-
-  /**
-   * Finds the edge of the active object nearest to screen position (mx, my)
-   * by comparing to each edge's midpoint.
-   * @param {number} mx
-   * @param {number} my
-   * @param {number} [maxPx=15]
-   * @returns {import('../graph/Edge.js').Edge|null}
-   */
-  _findNearestEdge(mx, my, maxPx = 15) {
-    const obj = this._activeObj
-    if (!obj?.edges) return null
-    let best = null, bestDist = maxPx
-    for (const e of obj.edges) {
-      const mid = e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
-      const s = this._toScreenPx(mid)
-      const d = Math.hypot(s.x - mx, s.y - my)
-      if (d < bestDist) { bestDist = d; best = e }
-    }
-    return best
-  }
-
-  /**
-   * Handles a click in Edit Mode · 3D — updates editSelection and visuals.
-   * @param {boolean} shift  whether Shift was held
-   */
-  _handleEditClick(shift) {
-    const sel = this._scene.editSelection
-    let element = null
-
-    if (this._editSelectMode === 'face')   element = this._hoveredFace
-    else if (this._editSelectMode === 'vertex') element = this._hoveredVertex
-    else if (this._editSelectMode === 'edge')   element = this._hoveredEdge
-
-    if (!element) {
-      if (!shift) this._scene.clearEditSelection()
-    } else {
-      if (shift) {
-        if (sel.has(element)) sel.delete(element)
-        else                  sel.add(element)
-      } else {
-        this._scene.clearEditSelection()
-        sel.add(element)
-      }
-    }
-
-    this._meshView.updateEditSelection(sel, this._corners)
-
-    const count = sel.size
-    if (count > 0) {
-      const LABEL = { vertex: 'vertex', edge: 'edge', face: 'face' }
-      this._uiView.setStatusRich([
-        { text: String(count), bold: true, color: '#e8e8e8' },
-        { text: `${LABEL[this._editSelectMode]}${count > 1 ? 's' : ''} selected`, color: '#888' },
-      ])
-    } else {
-      this._refreshEditModeStatus()
-    }
-    this._updateMobileToolbar()
   }
 
   // ─── Mode management ───────────────────────────────────────────────────────
@@ -2110,9 +1746,9 @@ export class AppController {
         this._objSelected = true
         this._activeObj.meshView.setObjectSelected(true)
         if (this._activeObj instanceof CoordinateFrame) {
-          this._showFrameChain(this._scene.activeId)
+          this._selMgr.showFrameChain(this._scene.activeId)
         } else {
-          this._setChildFramesVisible(this._scene.activeId, true)
+          this._selMgr.setChildFramesVisible(this._scene.activeId, true)
         }
       }
       this._refreshObjectModeStatus()
@@ -2120,8 +1756,8 @@ export class AppController {
       this._updateMobileToolbar()
     } else {
       // edit mode — dispatch on entity type
-      this._clearObjectSelection()
-      this._setObjectSelected(false)
+      this._selMgr.clearObjectSelection()
+      this._selMgr.setObjectSelected(false)
       if (this._activeObj instanceof Profile) {
         this._enterEditMode2D()
       } else if (this._activeObj instanceof MeasureLine) {
@@ -2178,7 +1814,7 @@ export class AppController {
     this._scene.setEditSubstate('3d')
     this._editSelectMode = 'face'
     this._uiView.updateMode('edit', '3d')
-    this._refreshEditModeStatus()
+    this._editSelHandler.refreshStatus()
     this._updateMobileToolbar()
   }
 
@@ -2246,7 +1882,7 @@ export class AppController {
       (this._sketch.p1.y + this._sketch.p2.y) / 2,
       height / 2,
     )
-    const screen = this._projectToScreen(labelPos)
+    const screen = projectToScreen(labelPos, this._camera)
     this._uiView.setExtrusionLabel(`H ${Math.abs(height).toFixed(3)}`, screen.x, screen.y)
   }
 
@@ -2319,22 +1955,6 @@ export class AppController {
     this._uiView.setStatusRich(parts)
   }
 
-  _setObjectSelected(sel) {
-    this._objSelected = sel
-    if (this._meshView) this._meshView.setObjectSelected(sel)
-    if (this._scene.activeId) {
-      const active = this._scene.getObject(this._scene.activeId)
-      if (active instanceof CoordinateFrame) {
-        if (sel) this._showFrameChain(this._scene.activeId)
-        else this._hideFrameChain()
-      } else {
-        this._setChildFramesVisible(this._scene.activeId, sel)
-      }
-    }
-    this._refreshObjectModeStatus()
-    this._updateMobileToolbar()
-  }
-
   // ─── Rectangle selection helpers ──────────────────────────────────────────
 
   /** Creates the CSS overlay <div> used to draw the selection rectangle. */
@@ -2349,208 +1969,6 @@ export class AppController {
     })
     document.body.appendChild(el)
     return el
-  }
-
-  /** Updates the overlay position/style to reflect the current drag rectangle. */
-  _updateRectSelDisplay() {
-    const { startPx, currentPx } = this._rectSel
-    const isRight = currentPx.x >= startPx.x
-    const x = Math.min(startPx.x, currentPx.x)
-    const y = Math.min(startPx.y, currentPx.y)
-    const w = Math.abs(currentPx.x - startPx.x)
-    const h = Math.abs(currentPx.y - startPx.y)
-    Object.assign(this._rectSelEl.style, {
-      display:     'block',
-      left:        x + 'px',
-      top:         y + 'px',
-      width:       w + 'px',
-      height:      h + 'px',
-      border:      '1px ' + (isRight ? 'solid' : 'dashed') + ' ' + (isRight ? '#4fc3f7' : '#ffa726'),
-      background:  isRight ? 'rgba(79,195,247,0.05)' : 'rgba(255,167,38,0.05)',
-    })
-  }
-
-  /**
-   * Collects ALL CoordinateFrame IDs in the frame tree rooted at `parentId`
-   * (any object type).  Recurses through all levels of CoordinateFrame children.
-   * @param {string} parentId
-   * @returns {Set<string>}
-   */
-  _collectAllDescendantFrames(parentId) {
-    const result = new Set()
-    const recurse = (id) => {
-      for (const child of this._scene.getChildren(id)) {
-        if (child instanceof CoordinateFrame) {
-          result.add(child.id)
-          recurse(child.id)
-        }
-      }
-    }
-    recurse(parentId)
-    return result
-  }
-
-  /**
-   * Shows or hides the frame tree attached to a geometry object.
-   * `visible = true`  → showFull() on all frames + connection lines (full opacity)
-   * `visible = false` → _hideFrameChain()
-   *
-   * Used when the GEOMETRY PARENT is selected/deselected (not a frame).
-   * @param {string|null} parentId
-   * @param {boolean} visible
-   */
-  _setChildFramesVisible(parentId, visible) {
-    if (!parentId) return
-    if (visible) {
-      this._showGeometryFrameTree(parentId)
-    } else {
-      this._hideFrameChain()
-    }
-  }
-
-  /**
-   * Shows all CoordinateFrame descendants of a geometry object at full opacity.
-   * Called when the geometry parent is selected (no specific frame is active).
-   * @param {string} geoId
-   */
-  _showGeometryFrameTree(geoId) {
-    const treeIds = this._collectAllDescendantFrames(geoId)
-    this._activeFrameChain = treeIds
-    for (const fid of treeIds) {
-      const f = this._scene.getObject(fid)
-      if (!f) continue
-      f.meshView.showFull()
-      f.meshView.showConnection(false)   // always draw line to parent (geometry or frame)
-    }
-  }
-
-  /**
-   * Shows the full frame tree of the geometry root that `frameId` belongs to.
-   * The selected frame is shown at full opacity; all other frames are dimmed.
-   * Connection lines between parent-child frame pairs are drawn; the line to
-   * the selected frame is full opacity, others are dimmed.
-   * @param {string} frameId  ID of the active CoordinateFrame
-   */
-  _showFrameChain(frameId) {
-    // Find geometry root (walk up through CoordinateFrame parents)
-    let geoRoot = this._scene.getObject(frameId)
-    while (geoRoot instanceof CoordinateFrame) {
-      geoRoot = this._scene.getObject(geoRoot.parentId)
-    }
-    if (!geoRoot) return
-
-    const treeIds = this._collectAllDescendantFrames(geoRoot.id)
-    this._activeFrameChain = treeIds
-
-    for (const fid of treeIds) {
-      const f = this._scene.getObject(fid)
-      if (!f) continue
-      const isSelected = fid === frameId
-      if (isSelected) f.meshView.showFull()
-      else            f.meshView.showDimmed()
-      // Connection line to parent (geometry centroid or parent frame).
-      // Full opacity for the selected frame's own line; dimmed for others.
-      f.meshView.showConnection(!isSelected)
-    }
-  }
-
-  /**
-   * Hides all frames in _activeFrameChain and clears connection lines.
-   * Safe to call when _activeFrameChain is empty (no-op).
-   */
-  _hideFrameChain() {
-    const chain = this._activeFrameChain
-    this._activeFrameChain = new Set()
-    for (const fid of chain) {
-      const f = this._scene.getObject(fid)
-      if (!f) continue  // already deleted — skip (view already disposed)
-      f.meshView.hide()
-      f.meshView.hideConnection()
-    }
-  }
-
-  /** Clears visual selection highlight for all currently selected objects. */
-  _clearObjectSelection() {
-    // Always hide any visible frame tree first (_hideFrameChain handles both
-    // geometry-tree and frame-chain visibility in _activeFrameChain)
-    this._hideFrameChain()
-    for (const id of this._selectedIds) {
-      const obj = this._scene.getObject(id)
-      if (obj) obj.meshView.setObjectSelected(false)
-    }
-    this._selectedIds.clear()
-    this._service.updateLinkSelectionHighlight(new Set())
-  }
-
-  /**
-   * Finalizes the rectangle selection.
-   * Right-drag (x increases): enclosed-only mode.
-   * Left-drag (x decreases): touch mode (any overlap counts).
-   */
-  _finalizeRectSelection() {
-    const { startPx, currentPx } = this._rectSel
-    const w = Math.abs(currentPx.x - startPx.x)
-    const h = Math.abs(currentPx.y - startPx.y)
-
-    // Tiny movement — treat as deselect click
-    if (w < 3 && h < 3) {
-      this._clearObjectSelection()
-      this._setObjectSelected(false)
-      return
-    }
-
-    const isRight = currentPx.x >= startPx.x
-    const minX = Math.min(startPx.x, currentPx.x)
-    const minY = Math.min(startPx.y, currentPx.y)
-    const maxX = Math.max(startPx.x, currentPx.x)
-    const maxY = Math.max(startPx.y, currentPx.y)
-
-    const matched = []
-    for (const obj of this._scene.objects.values()) {
-      if (!obj.meshView.cuboid?.visible) continue
-      const corners = obj.corners ?? _meshBboxCorners(obj)
-      if (!corners || corners.length === 0) continue
-      const pts = corners.map(c => this._toScreenPx(c))
-
-      if (isRight) {
-        // Enclosed: every projected corner must be inside the rect
-        if (pts.every(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)) {
-          matched.push(obj)
-        }
-      } else {
-        // Touch: object screen-bounding-box overlaps the rect
-        const bMinX = Math.min(...pts.map(p => p.x))
-        const bMaxX = Math.max(...pts.map(p => p.x))
-        const bMinY = Math.min(...pts.map(p => p.y))
-        const bMaxY = Math.max(...pts.map(p => p.y))
-        if (bMinX <= maxX && bMaxX >= minX && bMinY <= maxY && bMaxY >= minY) {
-          matched.push(obj)
-        }
-      }
-    }
-
-    // Clear previous multi-selection then apply new one
-    this._clearObjectSelection()
-    if (matched.length === 0) {
-      this._setObjectSelected(false)
-      return
-    }
-
-    for (const obj of matched) {
-      obj.meshView.setObjectSelected(true)
-      this._setChildFramesVisible(obj.id, true)
-      this._selectedIds.add(obj.id)
-    }
-
-    // Make the first matched object active
-    const first = matched[0]
-    if (first.id !== this._scene.activeId) {
-      // Deselect previous active's box-helper (already handled above)
-      this._service.setActiveObject(first.id)
-    }
-    this._objSelected = true
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
   }
 
   /**
@@ -2570,12 +1988,12 @@ export class AppController {
       return
     }
 
-    this._clearObjectSelection()
+    this._selMgr.clearObjectSelection()
     for (const id of assemblyIds) {
       const obj = this._scene.getObject(id)
       if (!obj?.meshView) continue
       obj.meshView.setObjectSelected(true)
-      this._setChildFramesVisible(obj.id, true)
+      this._selMgr.setChildFramesVisible(obj.id, true)
       this._selectedIds.add(id)
     }
 
@@ -2602,7 +2020,7 @@ export class AppController {
 
     // During a drag, only process the pointer that started it
     if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
-    this._updateMouse(e)
+    this._hitTest.updateMouse(e)
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._rotateHandler.apply()
@@ -2620,7 +2038,7 @@ export class AppController {
       if (gs.autoSnap) {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(gs.snapTargets))
+        this._meshView.showSnapCandidates(filterNearbySnapTargets(gs.snapTargets, this._camera))
         if (gs.snapping && gs.snappedTarget) {
           this._meshView.clearSnapNearest()
           this._meshView.showSnapLocked(
@@ -2630,7 +2048,7 @@ export class AppController {
           )
         } else {
           this._meshView.clearSnapLocked()
-          const nearest = this._findNearestSnapCandidate(gs.snapTargets, mx, my)
+          const nearest = findNearestSnapCandidate(gs.snapTargets, mx, my, this._camera)
           if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
           else         this._meshView.clearSnapNearest()
         }
@@ -2661,7 +2079,7 @@ export class AppController {
         if (smv) {
           const mx = (this._mouse.x + 1) / 2 * innerWidth
           const my = (-this._mouse.y + 1) / 2 * innerHeight
-          smv.showSnapCandidates(this._filterNearbySnapTargets(this._measure.snapTargets))
+          smv.showSnapCandidates(filterNearbySnapTargets(this._measure.snapTargets, this._camera))
           if (this._measure.snapping && this._measure.snappedTarget) {
             smv.clearSnapNearest()
             smv.showSnapLocked(
@@ -2671,7 +2089,7 @@ export class AppController {
             )
           } else {
             smv.clearSnapLocked()
-            const nearest = this._findNearestSnapCandidate(this._measure.snapTargets, mx, my)
+            const nearest = findNearestSnapCandidate(this._measure.snapTargets, mx, my, this._camera)
             if (nearest) smv.showSnapNearest(nearest.position, nearest.type)
             else         smv.clearSnapNearest()
           }
@@ -2695,7 +2113,7 @@ export class AppController {
         this._updateNPanel()
         return
       }
-      this._uiView.setCursor((this._hitAnyObject() || this._hitAnyAnnotation()) ? 'pointer' : 'default')
+      this._uiView.setCursor((this._hitTest.hitAnyObject() || this._hitTest.hitAnyAnnotation()) ? 'pointer' : 'default')
       return
     }
 
@@ -2731,7 +2149,7 @@ export class AppController {
     if (this._scene.editSubstate === '1d') {
       const mx = (this._mouse.x + 1) / 2 * innerWidth
       const my = (-this._mouse.y + 1) / 2 * innerHeight
-      const v   = this._findNearestVertex(mx, my, 20)
+      const v   = this._editSelHandler.findNearestVertex(mx, my, 20)
       const idx = v ? this._activeObj.vertices.indexOf(v) : null
       if (idx !== this._hoveredEndpointIndex) {
         this._meshView.clearEndpointHover()
@@ -2764,7 +2182,7 @@ export class AppController {
       const fe = this._faceExtrude
       const mx = (this._mouse.x + 1) / 2 * innerWidth
       const my = (-this._mouse.y + 1) / 2 * innerHeight
-      this._meshView.showSnapCandidates(this._filterNearbySnapTargets(fe.snapTargets))
+      this._meshView.showSnapCandidates(filterNearbySnapTargets(fe.snapTargets, this._camera))
       if (fe.snapping && fe.snappedTarget) {
         this._meshView.clearSnapNearest()
         const faceCenterAfter = fe.savedCorners
@@ -2774,7 +2192,7 @@ export class AppController {
         this._meshView.showSnapLocked(fe.snappedTarget.position, fe.snappedTarget.type, faceCenterAfter)
       } else {
         this._meshView.clearSnapLocked()
-        const nearest = this._findNearestSnapCandidate(fe.snapTargets, mx, my)
+        const nearest = findNearestSnapCandidate(fe.snapTargets, mx, my, this._camera)
         if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
         else         this._meshView.clearSnapNearest()
       }
@@ -2784,7 +2202,7 @@ export class AppController {
 
     // ── Hover detection per sub-element mode ──────────────────────────────
     if (this._editSelectMode === 'face') {
-      const hit  = this._hitFace()
+      const hit  = this._hitTest.hitFace()
       const face = hit?.face ?? null
       if (face !== this._hoveredFace) {
         this._hoveredFace = face
@@ -2797,7 +2215,7 @@ export class AppController {
             { text: hasSel ? 'E to extrude' : 'Click to select', color: '#555' },
           ])
         } else {
-          this._refreshEditModeStatus()
+          this._editSelHandler.refreshStatus()
         }
         this._uiView.setCursor(face ? 'pointer' : 'default')
       }
@@ -2808,7 +2226,7 @@ export class AppController {
     const my = (-this._mouse.y + 1) / 2 * innerHeight
 
     if (this._editSelectMode === 'vertex') {
-      const v = this._findNearestVertex(mx, my)
+      const v = this._editSelHandler.findNearestVertex(mx, my)
       if (v !== this._hoveredVertex) {
         this._hoveredVertex = v
         if (v) {
@@ -2820,7 +2238,7 @@ export class AppController {
           this._uiView.setCursor('pointer')
         } else {
           this._meshView.clearVertexHover()
-          this._refreshEditModeStatus()
+          this._editSelHandler.refreshStatus()
           this._uiView.setCursor('default')
         }
       }
@@ -2828,7 +2246,7 @@ export class AppController {
     }
 
     if (this._editSelectMode === 'edge') {
-      const e = this._findNearestEdge(mx, my)
+      const e = this._editSelHandler.findNearestEdge(mx, my)
       if (e !== this._hoveredEdge) {
         this._hoveredEdge = e
         if (e) {
@@ -2840,7 +2258,7 @@ export class AppController {
           this._uiView.setCursor('pointer')
         } else {
           this._meshView.clearEdgeHover()
-          this._refreshEditModeStatus()
+          this._editSelHandler.refreshStatus()
           this._uiView.setCursor('default')
         }
       }
@@ -2871,7 +2289,7 @@ export class AppController {
     // so _mouse would otherwise hold a stale (or zero) position. Every
     // subsequent handler that calls _mapPickPoint() / _raycaster depends on
     // an up-to-date _mouse — calling _updateMouse here covers all of them.
-    this._updateMouse(e)
+    this._hitTest.updateMouse(e)
 
     // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
     this._contextMenuSuppressed = e.button === 2 && (
@@ -2923,7 +2341,7 @@ export class AppController {
     if (this._opState.is(S_MOUNT_PICKING)) {
       if (e.button === 2 || e.pointerType === 'touch') {
         // Right-click or empty-tap cancels
-        const hit = this._hitAnyEntityForLink()
+        const hit = this._hitTest.hitAnyEntityForLink()
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
@@ -2939,7 +2357,7 @@ export class AppController {
         return
       }
       if (e.button === 0) {
-        const hit = this._hitAnyEntityForLink()
+        const hit = this._hitTest.hitAnyEntityForLink()
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
@@ -2961,7 +2379,7 @@ export class AppController {
     if (this._opState.is(S_LINK_MODE)) {
       if (e.button === 2) { this._linkHandler.cancel(); return }
       if (e.button === 0) {
-        const hit = this._hitAnyEntityForLink()
+        const hit = this._hitTest.hitAnyEntityForLink()
         if (hit) {
           this._linkHandler.showTypePicker(e.clientX, e.clientY, hit.obj.id)
         } else {
@@ -3075,30 +2493,30 @@ export class AppController {
       // However a CF belonging to a *different* Solid must NOT intercept clicks on
       // the target Solid — the bounding-box fallback in _hitAnyCoordinateFrame()
       // creates a 0.4-unit false-positive zone that would otherwise block Solid selection.
-      const cfResult    = this._hitAnyCoordinateFrame()
-      const solidResult = this._hitAnyObject()
+      const cfResult    = this._hitTest.hitAnyCoordinateFrame()
+      const solidResult = this._hitTest.hitAnyObject()
       let result
       if (cfResult && solidResult) {
         // Both hit: prefer CF only when it is a descendant of the found Solid
         // (PHILOSOPHY #22 applies to child→parent, not to cross-Solid relationships).
-        result = this._isCfDescendantOf(cfResult.obj, solidResult.obj.id)
+        result = this._hitTest.isCfDescendantOf(cfResult.obj, solidResult.obj.id)
           ? cfResult
           : solidResult
       } else {
         result = cfResult ?? solidResult
       }
-      if (!result) result = this._hitAnyAnnotation()
+      if (!result) result = this._hitTest.hitAnyAnnotation()
 
       // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
       if (result) {
         const { hit, obj } = result
         if (!this._selectedIds.has(obj.id)) {
           // Clicked an unselected object — clear previous selection, select only this
-          this._clearObjectSelection()
+          this._selMgr.clearObjectSelection()
           if (obj.id !== this._scene.activeId) {
             this._switchActiveObject(obj.id, true)
           } else if (!this._objSelected) {
-            this._setObjectSelected(true)
+            this._selMgr.setObjectSelected(true)
           }
           this._selectedIds.add(obj.id)
         } else {
@@ -3211,8 +2629,8 @@ export class AppController {
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
         if (e.pointerType === 'touch') {
-          this._clearObjectSelection()
-          this._setObjectSelected(false)
+          this._selMgr.clearObjectSelection()
+          this._selMgr.setObjectSelected(false)
           return
         }
         // Do NOT disable _controls here: orbit (right-click / two-finger) uses
@@ -3230,7 +2648,7 @@ export class AppController {
       const isTouch = e.pointerType === 'touch'
       const mx = (this._mouse.x + 1) / 2 * innerWidth
       const my = (-this._mouse.y + 1) / 2 * innerHeight
-      const v   = this._findNearestVertex(mx, my, isTouch ? 30 : 15)
+      const v   = this._editSelHandler.findNearestVertex(mx, my, isTouch ? 30 : 15)
       if (v) {
         const obj = this._activeObj
         const idx = obj.vertices.indexOf(v)
@@ -3249,20 +2667,20 @@ export class AppController {
     // Refresh hover state for touch (pointermove may not fire before pointerdown on touch devices)
     if (this._scene.editSubstate === '3d') {
       if (this._editSelectMode === 'face') {
-        const hit = this._hitFace()
+        const hit = this._hitTest.hitFace()
         this._hoveredFace = hit?.face ?? null
         this._meshView.setFaceHighlight(this._hoveredFace?.index ?? null, this._corners)
       } else if (this._editSelectMode === 'vertex') {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._hoveredVertex = this._findNearestVertex(mx, my)
+        this._hoveredVertex = this._editSelHandler.findNearestVertex(mx, my)
       } else if (this._editSelectMode === 'edge') {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._hoveredEdge = this._findNearestEdge(mx, my)
+        this._hoveredEdge = this._editSelHandler.findNearestEdge(mx, my)
       }
     }
-    this._handleEditClick(e.shiftKey)
+    this._editSelHandler.handleEditClick(e.shiftKey)
 
     // Mobile: auto-start face extrude immediately after a face tap, so the
     // user can drag to set the distance without pressing the Extrude button.
@@ -3603,9 +3021,9 @@ export class AppController {
 
     // ── Sub-element mode switching (Edit Mode · 3D only) ──────────────────
     if (this._scene.selectionMode === 'edit' && this._scene.editSubstate === '3d') {
-      if (e.key === '1') { this._setEditSelectMode('vertex'); return }
-      if (e.key === '2') { this._setEditSelectMode('edge');   return }
-      if (e.key === '3') { this._setEditSelectMode('face');   return }
+      if (e.key === '1') { this._editSelHandler.setEditSelectMode('vertex'); return }
+      if (e.key === '2') { this._editSelHandler.setEditSelectMode('edge');   return }
+      if (e.key === '3') { this._editSelHandler.setEditSelectMode('face');   return }
       if ((e.key === 'e' || e.key === 'E') && this._editSelectMode === 'face') {
         const selected = [...this._scene.editSelection].filter(x => x instanceof Face)
         if (selected.length > 0) this._faceExtrudeHandler.start(selected[0])
@@ -3946,27 +3364,3 @@ function _grabHandlesOf(obj) {
   return (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
 }
 
-/**
- * Returns 8 AABB corners for objects that don't have a `corners` property
- * (e.g. ImportedMesh). Falls back to empty array if bounding box is unavailable.
- * @param {object} obj  scene entity
- * @returns {THREE.Vector3[]}
- */
-function _meshBboxCorners(obj) {
-  const geo = obj.meshView?.cuboid?.geometry
-  if (!geo) return []
-  geo.computeBoundingBox()
-  const box = geo.boundingBox
-  if (!box || box.isEmpty()) return []
-  const { min, max } = box
-  return [
-    new THREE.Vector3(min.x, min.y, min.z),
-    new THREE.Vector3(max.x, min.y, min.z),
-    new THREE.Vector3(max.x, max.y, min.z),
-    new THREE.Vector3(min.x, max.y, min.z),
-    new THREE.Vector3(min.x, min.y, max.z),
-    new THREE.Vector3(max.x, min.y, max.z),
-    new THREE.Vector3(max.x, max.y, max.z),
-    new THREE.Vector3(min.x, max.y, max.z),
-  ]
-}
