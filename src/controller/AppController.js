@@ -70,6 +70,7 @@ import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
 import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
 import { FramePlacementHandler }         from './handler/FramePlacementHandler.js'
 import { EditModeSelectionHandler }      from './handler/EditModeSelectionHandler.js'
+import { ContextMenuHandler }            from './handler/ContextMenuHandler.js'
 import { SelectionManager }             from './SelectionManager.js'
 import { UIStateManager }               from './UIStateManager.js'
 import {
@@ -471,6 +472,7 @@ export class AppController {
     // ── Object selection + frame-chain visibility ─────────────────────────────
     this._selMgr = new SelectionManager(this)
     this._uiStateMgr = new UIStateManager(this)
+    this._contextMenuHandler = new ContextMenuHandler(this)
 
     // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
     /** @type {number|null} pointerId of the active edit drag; null when idle */
@@ -1232,166 +1234,9 @@ export class AppController {
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────
 
-  /**
-   * Shows the long-press context menu near the touch point.
-   * Items vary by object type — only operations valid for `obj` are listed.
-   * @param {number} x - client X of the touch
-   * @param {number} y - client Y of the touch
-   * @param obj - the domain entity that was long-pressed
-   */
-  _showLongPressContextMenu(x, y, obj) {
-    const id = obj.id
-    const canDup = !(obj instanceof ImportedMesh) && !(obj instanceof Profile)
-    const isAnnotated = obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
-    const isSolidOrCF = obj instanceof Solid || obj instanceof CoordinateFrame
-    const canAddFrame = obj instanceof Solid || isAnnotated
-
-    // ADR-032 §9: mount / unmount items for Annotated* entities
-    const mountLink = isAnnotated ? this._scene.getMountsLink(id) : null
-    const hostFrame = mountLink ? this._scene.getObject(mountLink.targetId) : null
-    const mountItems = isAnnotated
-      ? (mountLink
-        ? [{ label: `Unmount ⊗ "${hostFrame?.name ?? '?'}"`, onClick: () => {
-            const wb = obj.vertices.map(v => v.position.clone())
-            this._service.unmountAnnotation(mountLink, wb)
-            // Record undo
-            const undoCmd = createMountAnnotationCommand(
-              mountLink, wb, this._service,
-              () => { this._updateNPanel() },
-              () => { this._updateNPanel() },
-            )
-            // Swap execute/undo for unmount: execute = unmount, undo = remount
-            this._commandStack.push({ label: `Unmount from frame`, execute: undoCmd.undo, undo: undoCmd.execute })
-            this._uiView.showToast('Unmounted')
-            this._updateNPanel()
-          }}]
-        : [{ label: 'Mount on frame ⊕', onClick: () => this._startMountPicking(id) }])
-      : []
-
-    // ADR-032 §2: unfasten item for CoordinateFrame that is the source of a fastened link
-    const fastenedLink = (obj instanceof CoordinateFrame)
-      ? this._service.getLinksOf(id).find(l => l.jointType === 'fixed' && l.sourceId === id)
-      : null
-    const unfastenItems = fastenedLink
-      ? [{ label: `Unfasten ⊗ "${this._scene.getObject(fastenedLink.targetId)?.name ?? '?'}"`, onClick: () => {
-          const source = this._scene.getObject(id)
-          const transform = this._service.getFastenedTransform(fastenedLink.id)
-          if (!transform || !(source instanceof CoordinateFrame)) return
-          // "Stay in place": capture current constrained pose as the restore point
-          const translationCurrent = source.translation.clone()
-          const rotationCurrent    = source.rotation.clone()
-          this._service.unfastenFrame(fastenedLink, translationCurrent, rotationCurrent)
-          // Build command so undo re-applies the constraint and redo re-removes it
-          this._commandStack.push({
-            label: 'Unfasten frame',
-            execute: () => {
-              const src = this._scene.getObject(id)
-              const tc  = src instanceof CoordinateFrame ? src.translation.clone() : translationCurrent
-              const rc  = src instanceof CoordinateFrame ? src.rotation.clone()    : rotationCurrent
-              this._service.unfastenFrame(fastenedLink, tc, rc)
-              this._updateNPanel()
-            },
-            undo: () => {
-              this._service.refastenFrame(fastenedLink, transform.relativeOffset, transform.relativeQuat)
-              this._updateNPanel()
-            },
-          })
-          this._uiView.showToast('Unfastened')
-          this._updateNPanel()
-        }}]
-      : []
-
-    // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
-    const linkItems = isSolidOrCF
-      ? [{ label: 'Link to... 🔗', onClick: () => {
-          this._linkHandler.start()
-          // Override the sourceId to the long-pressed object (it may not be active)
-          this._spatialLinkMode.sourceId = id
-        }}]
-      : []
-
-    // Show "Select Assembly" only when the object has fixed-joint neighbors
-    const hasFixedNeighbors = this._service.getConnectedAssembly(id).size > 1
-    const assemblyItems = hasFixedNeighbors
-      ? [{ label: 'Select Assembly 🔗', onClick: () => this._selectAssembly() }]
-      : []
-
-    const items = [
-      {
-        label: 'Grab',
-        onClick: () => this._grabHandler.start(),
-      },
-      ...(canDup ? [{
-        label: 'Duplicate',
-        onClick: () => this._duplicateObject(),
-      }] : []),
-      ...mountItems,
-      ...unfastenItems,
-      ...linkItems,
-      ...assemblyItems,
-      ...(canAddFrame ? [{
-        label: 'Add interface frame ⊞',
-        onClick: () => this._promptAddFrame(id),
-      }] : []),
-      {
-        label: 'Rename',
-        onClick: () => this._promptRename(id),
-      },
-      {
-        label: 'Delete',
-        danger: true,
-        onClick: () => this._deleteObject(id),
-      },
-    ]
-    this._uiView.showContextMenu(x, y, items)
-  }
-
-  /**
-   * Shows a name-input dialog then creates a CoordinateFrame as a child of the
-   * given entity.  The frame is recorded on the command stack for undo/redo.
-   * Called from the long-press context menu (mobile, ADR-033 Phase C-3).
-   * @param {string} parentId - ID of the parent entity
-   */
-  _promptAddFrame(parentId) {
-    if (!this._scene.getObject(parentId)) return
-    this._uiView.showRenameDialog('Frame', (name) => {
-      if (name === null) return  // user cancelled
-      const frameName = name || 'Frame'
-      // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
-      const parentObj = this._scene.getObject(parentId)
-      let effectiveParentId = parentId
-      if (parentObj && !(parentObj instanceof CoordinateFrame)) {
-        const originFrame = [...this._scene.objects.values()]
-          .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
-        if (originFrame) effectiveParentId = originFrame.id
-      }
-      const frame = this._service.createCoordinateFrame(effectiveParentId, frameName)
-      if (!frame) return
-      this._commandStack.push(createCreateCoordinateFrameCommand(
-        frame, this._service,
-        () => {
-          // After undo: restore parent selection if parent still exists
-          const parent = this._scene.getObject(parentId)
-          if (parent) this._switchActiveObject(parentId, true)
-          else { this._objSelected = false; this._selectedIds.clear(); this._refreshObjectModeStatus(); this._updateMobileToolbar() }
-          this._updateNPanel()
-        },
-        (id) => { this._switchActiveObject(id, true); this._updateNPanel() },
-      ))
-      this._uiView.showToast(`Frame "${frame.name}" added`)
-      this._switchActiveObject(frame.id, true)
-      this._updateNPanel()
-    }, { title: 'Add Interface Frame' })
-  }
-
-  /** Opens the rename prompt for the given object id (shared helper). */
-  _promptRename(id) {
-    const obj = this._scene.getObject(id)
-    if (!obj) return
-    this._uiView.showRenameDialog(obj.name, (name) => {
-      if (name) this._renameObject(id, name)
-    })
-  }
+  _showLongPressContextMenu(x, y, obj) { this._contextMenuHandler.showLongPressContextMenu(x, y, obj) }
+  _promptAddFrame(parentId)            { this._contextMenuHandler.promptAddFrame(parentId) }
+  _promptRename(id)                    { this._contextMenuHandler.promptRename(id) }
 
   _refreshUndoRedoState() { this._uiStateMgr.refreshUndoRedoState() }
 
