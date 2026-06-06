@@ -13,7 +13,6 @@ import {
   buildCuboidFromRect,
   computeOutwardFaceNormal,
   getCentroid,
-  toNDC,
   collectSnapTargets,
 } from '../model/CuboidModel.js'
 import { SceneService }    from '../service/SceneService.js'
@@ -76,6 +75,7 @@ import {
   findNearestSnapCandidate,
   pickBestSnapTarget,
 } from './snap/SnapSystem.js'
+import { HitTestService } from './HitTestService.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -460,6 +460,9 @@ export class AppController {
     this._raycaster = new THREE.Raycaster()
     this._mouse     = new THREE.Vector2()
 
+    // ── Hit-testing (raycasting utilities) ───────────────────────────────────
+    this._hitTest = new HitTestService(this)
+
     // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
     /** @type {number|null} pointerId of the active edit drag; null when idle */
     this._activeDragPointerId = null
@@ -740,7 +743,7 @@ export class AppController {
         }
       },
       finish: () => {
-        this._uiView.setCursor(this._hitAnyObject() ? 'pointer' : 'default')
+        this._uiView.setCursor(this._hitTest.hitAnyObject() ? 'pointer' : 'default')
         this._updateNPanel()
       },
 
@@ -1027,13 +1030,13 @@ export class AppController {
   _hitAnyEntityForLink() {
     // Step 0: prioritise CoordinateFrame hits — CFs are rendered on top of Solids,
     // so the cuboid raycast (step 1) would return the parent Solid instead of the CF.
-    const cfHit = this._hitAnyCoordinateFrame()
+    const cfHit = this._hitTest.hitAnyCoordinateFrame()
     if (cfHit && cfHit.obj.id !== this._spatialLinkMode.sourceId) {
       return cfHit
     }
 
     // Step 1: cuboid-based raycast (same as _hitAnyObject but excludes source)
-    const cuboidHit = this._hitAnyObject()
+    const cuboidHit = this._hitTest.hitAnyObject()
     if (cuboidHit && cuboidHit.obj.id !== this._spatialLinkMode.sourceId) {
       return cuboidHit
     }
@@ -1096,18 +1099,18 @@ export class AppController {
         if (this._contextMenuSuppressed) { this._contextMenuSuppressed = false; return }
         if (e.target !== this._sceneView.renderer.domElement) return
         if (this._scene.selectionMode !== 'object') return
-        this._updateMouse(e)
+        this._hitTest.updateMouse(e)
         // PHILOSOPHY #22 — same hit-priority logic as _onPointerDown:
         // CF beats its own parent Solid; unrelated CF does not shadow a Solid.
-        const cfResult    = this._hitAnyCoordinateFrame()
-        const solidResult = this._hitAnyObject()
+        const cfResult    = this._hitTest.hitAnyCoordinateFrame()
+        const solidResult = this._hitTest.hitAnyObject()
         let result
         if (cfResult && solidResult) {
-          result = this._isCfDescendantOf(cfResult.obj, solidResult.obj.id) ? cfResult : solidResult
+          result = this._hitTest.isCfDescendantOf(cfResult.obj, solidResult.obj.id) ? cfResult : solidResult
         } else {
           result = cfResult ?? solidResult
         }
-        if (!result) result = this._hitAnyAnnotation()
+        if (!result) result = this._hitTest.hitAnyAnnotation()
         if (!result) return
         const { obj } = result
         if (!this._selectedIds.has(obj.id)) {
@@ -1146,143 +1149,6 @@ export class AppController {
     window.removeEventListener('wheel',       this._handlers.wheel)
     window.removeEventListener('contextmenu', this._handlers.contextmenu)
     this._handlers = null
-  }
-
-  // ─── Raycasting ────────────────────────────────────────────────────────────
-  _updateMouse(e) {
-    const v = toNDC(e.clientX, e.clientY, innerWidth, innerHeight)
-    this._mouse.copy(v)
-  }
-
-  /** Hits any visible object — returns { hit, obj } or null */
-  _hitAnyObject() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const meshes = [...this._scene.objects.values()]
-      .filter(o => !(o instanceof MeasureLine) && !(o instanceof AnnotatedLine) && !(o instanceof AnnotatedRegion) && !(o instanceof AnnotatedPoint) && o.meshView.cuboid?.visible)
-      .map(o => o.meshView.cuboid)
-    const hits = this._raycaster.intersectObjects(meshes)
-    if (!hits.length) return null
-    const hitMesh = hits[0].object
-    const obj = [...this._scene.objects.values()].find(o => o.meshView.cuboid === hitMesh)
-    return obj ? { hit: hits[0], obj } : null
-  }
-
-  /**
-   * Hits any visible annotation entity (AnnotatedLine/Region/Point) using a
-   * bounding-box raycast.  Called as a fallback when _hitAnyObject() misses
-   * (annotation entities have no cuboid and are excluded from that test).
-   * @returns {{ obj: object }|null}
-   */
-  _hitAnyAnnotation() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-
-    let nearestDist = Infinity
-    let nearestObj  = null
-
-    for (const obj of this._scene.objects.values()) {
-      if (!(obj instanceof AnnotatedLine) && !(obj instanceof AnnotatedRegion) && !(obj instanceof AnnotatedPoint)) continue
-      if (!obj.meshView?.visible) continue  // skip soft-deleted
-
-      const corners = obj.corners
-      if (!corners.length) continue
-
-      const box = new THREE.Box3()
-      for (const c of corners) box.expandByPoint(c)
-      // Expand by pick tolerance; for single-point entities this is the full hit area.
-      box.expandByScalar(0.3)
-
-      const hitPt = ray.intersectBox(box, pt)
-      if (hitPt) {
-        const dist = ray.origin.distanceTo(hitPt)
-        if (dist < nearestDist) {
-          nearestDist = dist
-          nearestObj  = obj
-        }
-      }
-    }
-
-    return nearestObj ? { obj: nearestObj } : null
-  }
-
-  /**
-   * Hits any visible CoordinateFrame by raycasting against its axis meshes and
-   * origin sphere, with a bounding-box fallback to enlarge the tap area on mobile.
-   * Called FIRST in _onPointerDown before cuboid hit-testing so that a tap on CF
-   * axes/sphere selects the CF, not the Solid behind it (PHILOSOPHY #22).
-   * Also used as a standalone check in _hitAnyEntityForLink (Step 0).
-   * Only frames whose group.visible is true are considered — hidden frames are
-   * not tappable.
-   * @returns {{ obj: object }|null}
-   */
-  _hitAnyCoordinateFrame() {
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-    let nearestDist = Infinity
-    let nearestObj  = null
-
-    for (const obj of this._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame)) continue
-      if (!obj.meshView?.group?.visible) continue
-
-      // Geometry hit (axes + origin sphere)
-      const hits = this._raycaster.intersectObject(obj.meshView.group, true)
-      if (hits.length > 0 && hits[0].distance < nearestDist) {
-        nearestDist = hits[0].distance
-        nearestObj  = obj
-        continue
-      }
-
-      // Bounding box fallback — enlarges effective tap area on mobile
-      const wp = this._service.worldPoseOf(obj.id)?.position
-      if (wp) {
-        const box = new THREE.Box3(wp.clone().subScalar(0.4), wp.clone().addScalar(0.4))
-        const hitPt = ray.intersectBox(box, pt)
-        if (hitPt) {
-          const dist = ray.origin.distanceTo(hitPt)
-          if (dist < nearestDist) { nearestDist = dist; nearestObj = obj }
-        }
-      }
-    }
-
-    return nearestObj ? { obj: nearestObj } : null
-  }
-
-  /**
-   * Returns true if `cf` (a CoordinateFrame) is a descendant of the entity
-   * with `ancestorId`.  Walks the parentId chain until hitting a non-CF.
-   * Used in _onPointerDown to implement PHILOSOPHY #22 precisely:
-   * a CF beats its own parent Solid, but must NOT block selection of an
-   * unrelated Solid that merely overlaps the CF's bounding-box hit area.
-   * @param {import('../domain/CoordinateFrame.js').CoordinateFrame} cf
-   * @param {string} ancestorId
-   * @returns {boolean}
-   */
-  _isCfDescendantOf(cf, ancestorId) {
-    let obj = cf
-    while (obj instanceof CoordinateFrame) {
-      if (obj.parentId === ancestorId) return true
-      obj = this._scene.getObject(obj.parentId)
-    }
-    return false
-  }
-
-  /** Hits only the active object's mesh */
-  _hitActiveSolid() {
-    if (!this._activeObj) return null
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const hits = this._raycaster.intersectObject(this._activeObj.meshView.cuboid)
-    return hits.length ? hits[0] : null
-  }
-
-  _hitFace() {
-    const hit = this._hitActiveSolid()
-    if (!hit) return null
-    const fi   = Math.floor(hit.face.a / 4)
-    const face = this._activeObj?.faces?.[fi] ?? null
-    return face ? { face, point: hit.point } : null
   }
 
   _updateNPanel() {
@@ -2487,7 +2353,7 @@ export class AppController {
 
     // During a drag, only process the pointer that started it
     if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
-    this._updateMouse(e)
+    this._hitTest.updateMouse(e)
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._rotateHandler.apply()
@@ -2580,7 +2446,7 @@ export class AppController {
         this._updateNPanel()
         return
       }
-      this._uiView.setCursor((this._hitAnyObject() || this._hitAnyAnnotation()) ? 'pointer' : 'default')
+      this._uiView.setCursor((this._hitTest.hitAnyObject() || this._hitTest.hitAnyAnnotation()) ? 'pointer' : 'default')
       return
     }
 
@@ -2669,7 +2535,7 @@ export class AppController {
 
     // ── Hover detection per sub-element mode ──────────────────────────────
     if (this._editSelectMode === 'face') {
-      const hit  = this._hitFace()
+      const hit  = this._hitTest.hitFace()
       const face = hit?.face ?? null
       if (face !== this._hoveredFace) {
         this._hoveredFace = face
@@ -2756,7 +2622,7 @@ export class AppController {
     // so _mouse would otherwise hold a stale (or zero) position. Every
     // subsequent handler that calls _mapPickPoint() / _raycaster depends on
     // an up-to-date _mouse — calling _updateMouse here covers all of them.
-    this._updateMouse(e)
+    this._hitTest.updateMouse(e)
 
     // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
     this._contextMenuSuppressed = e.button === 2 && (
@@ -2808,7 +2674,7 @@ export class AppController {
     if (this._opState.is(S_MOUNT_PICKING)) {
       if (e.button === 2 || e.pointerType === 'touch') {
         // Right-click or empty-tap cancels
-        const hit = this._hitAnyEntityForLink()
+        const hit = this._hitTest.hitAnyEntityForLink()
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
@@ -2824,7 +2690,7 @@ export class AppController {
         return
       }
       if (e.button === 0) {
-        const hit = this._hitAnyEntityForLink()
+        const hit = this._hitTest.hitAnyEntityForLink()
         if (hit) {
           const hitObj = this._scene.getObject(hit.obj.id)
           if (hitObj instanceof CoordinateFrame) {
@@ -2846,7 +2712,7 @@ export class AppController {
     if (this._opState.is(S_LINK_MODE)) {
       if (e.button === 2) { this._linkHandler.cancel(); return }
       if (e.button === 0) {
-        const hit = this._hitAnyEntityForLink()
+        const hit = this._hitTest.hitAnyEntityForLink()
         if (hit) {
           this._linkHandler.showTypePicker(e.clientX, e.clientY, hit.obj.id)
         } else {
@@ -2960,19 +2826,19 @@ export class AppController {
       // However a CF belonging to a *different* Solid must NOT intercept clicks on
       // the target Solid — the bounding-box fallback in _hitAnyCoordinateFrame()
       // creates a 0.4-unit false-positive zone that would otherwise block Solid selection.
-      const cfResult    = this._hitAnyCoordinateFrame()
-      const solidResult = this._hitAnyObject()
+      const cfResult    = this._hitTest.hitAnyCoordinateFrame()
+      const solidResult = this._hitTest.hitAnyObject()
       let result
       if (cfResult && solidResult) {
         // Both hit: prefer CF only when it is a descendant of the found Solid
         // (PHILOSOPHY #22 applies to child→parent, not to cross-Solid relationships).
-        result = this._isCfDescendantOf(cfResult.obj, solidResult.obj.id)
+        result = this._hitTest.isCfDescendantOf(cfResult.obj, solidResult.obj.id)
           ? cfResult
           : solidResult
       } else {
         result = cfResult ?? solidResult
       }
-      if (!result) result = this._hitAnyAnnotation()
+      if (!result) result = this._hitTest.hitAnyAnnotation()
 
       // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
       if (result) {
@@ -3134,7 +3000,7 @@ export class AppController {
     // Refresh hover state for touch (pointermove may not fire before pointerdown on touch devices)
     if (this._scene.editSubstate === '3d') {
       if (this._editSelectMode === 'face') {
-        const hit = this._hitFace()
+        const hit = this._hitTest.hitFace()
         this._hoveredFace = hit?.face ?? null
         this._meshView.setFaceHighlight(this._hoveredFace?.index ?? null, this._corners)
       } else if (this._editSelectMode === 'vertex') {
