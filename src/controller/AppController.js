@@ -68,12 +68,12 @@ import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
 import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
 import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
 import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
-import { FramePlacementHandler }      from './handler/FramePlacementHandler.js'
+import { FramePlacementHandler }         from './handler/FramePlacementHandler.js'
+import { EditModeSelectionHandler }      from './handler/EditModeSelectionHandler.js'
 import {
   projectToScreen,
   filterNearbySnapTargets,
   findNearestSnapCandidate,
-  pickBestSnapTarget,
 } from './snap/SnapSystem.js'
 import { HitTestService } from './HitTestService.js'
 
@@ -462,6 +462,9 @@ export class AppController {
 
     // ── Hit-testing (raycasting utilities) ───────────────────────────────────
     this._hitTest = new HitTestService(this)
+
+    // ── Edit mode sub-element selection ──────────────────────────────────────
+    this._editSelHandler = new EditModeSelectionHandler(this)
 
     // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
     /** @type {number|null} pointerId of the active edit drag; null when idle */
@@ -1632,9 +1635,9 @@ export class AppController {
       const em = this._editSelectMode
       this._uiView.setMobileToolbar([
         { icon: ICONS.back,   label: 'Object', onClick: () => this.setMode('object') },
-        { icon: ICONS.vertex, label: 'Vertex', onClick: () => this._setEditSelectMode('vertex'), active: em === 'vertex' },
-        { icon: ICONS.edge,   label: 'Edge',   onClick: () => this._setEditSelectMode('edge'),   active: em === 'edge' },
-        { icon: ICONS.face,   label: 'Face',   onClick: () => this._setEditSelectMode('face'),   active: em === 'face' },
+        { icon: ICONS.vertex, label: 'Vertex', onClick: () => this._editSelHandler.setEditSelectMode('vertex'), active: em === 'vertex' },
+        { icon: ICONS.edge,   label: 'Edge',   onClick: () => this._editSelHandler.setEditSelectMode('edge'),   active: em === 'edge' },
+        { icon: ICONS.face,   label: 'Face',   onClick: () => this._editSelHandler.setEditSelectMode('face'),   active: em === 'face' },
       ])
     }
 
@@ -1669,128 +1672,6 @@ export class AppController {
       this._activeObj instanceof CoordinateFrame ? 'R' : null,
       'Rotate',
     )
-  }
-
-  // ─── Edit mode sub-element helpers (Phase 6) ─────────────────────────────
-
-  /** Status bar for Edit Mode · 3D showing current sub-element mode. */
-  _refreshEditModeStatus() {
-    const LABEL = { vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-    const COLOR = { vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
-    const m = this._editSelectMode
-    this._uiView.setStatusRich([
-      { text: 'Edit', color: '#888' },
-      { text: LABEL[m], bold: true, color: COLOR[m] },
-      { text: '1 Vertex  2 Edge  3 Face', color: '#444' },
-    ])
-  }
-
-  /** Switches the sub-element mode and clears stale hover state. */
-  _setEditSelectMode(mode) {
-    this._editSelectMode = mode
-    this._hoveredFace   = null
-    this._hoveredVertex = null
-    this._hoveredEdge   = null
-    if (this._meshView) {
-      this._meshView.setFaceHighlight(null, this._corners)
-      this._meshView.clearVertexHover()
-      this._meshView.clearEdgeHover()
-    }
-    this._uiView.setCursor('default')
-    this._refreshEditModeStatus()
-    this._updateMobileToolbar()
-  }
-
-  /**
-   * Projects a world position to screen pixels.
-   * @param {import('three').Vector3} pos3d
-   * @returns {{ x: number, y: number }}
-   */
-  _toScreenPx(pos3d) {
-    const v = pos3d.clone().project(this._camera)
-    return {
-      x: (v.x + 1) / 2 * innerWidth,
-      y: (-v.y + 1) / 2 * innerHeight,
-    }
-  }
-
-  /**
-   * Finds the vertex of the active object nearest to screen position (mx, my).
-   * @param {number} mx  screen x in pixels
-   * @param {number} my  screen y in pixels
-   * @param {number} [maxPx=15]  max pixel radius
-   * @returns {import('../graph/Vertex.js').Vertex|null}
-   */
-  _findNearestVertex(mx, my, maxPx = 15) {
-    const obj = this._activeObj
-    if (!obj?.vertices) return null
-    let best = null, bestDist = maxPx
-    for (const v of obj.vertices) {
-      const s = this._toScreenPx(v.position)
-      const d = Math.hypot(s.x - mx, s.y - my)
-      if (d < bestDist) { bestDist = d; best = v }
-    }
-    return best
-  }
-
-  /**
-   * Finds the edge of the active object nearest to screen position (mx, my)
-   * by comparing to each edge's midpoint.
-   * @param {number} mx
-   * @param {number} my
-   * @param {number} [maxPx=15]
-   * @returns {import('../graph/Edge.js').Edge|null}
-   */
-  _findNearestEdge(mx, my, maxPx = 15) {
-    const obj = this._activeObj
-    if (!obj?.edges) return null
-    let best = null, bestDist = maxPx
-    for (const e of obj.edges) {
-      const mid = e.v0.position.clone().add(e.v1.position).multiplyScalar(0.5)
-      const s = this._toScreenPx(mid)
-      const d = Math.hypot(s.x - mx, s.y - my)
-      if (d < bestDist) { bestDist = d; best = e }
-    }
-    return best
-  }
-
-  /**
-   * Handles a click in Edit Mode · 3D — updates editSelection and visuals.
-   * @param {boolean} shift  whether Shift was held
-   */
-  _handleEditClick(shift) {
-    const sel = this._scene.editSelection
-    let element = null
-
-    if (this._editSelectMode === 'face')   element = this._hoveredFace
-    else if (this._editSelectMode === 'vertex') element = this._hoveredVertex
-    else if (this._editSelectMode === 'edge')   element = this._hoveredEdge
-
-    if (!element) {
-      if (!shift) this._scene.clearEditSelection()
-    } else {
-      if (shift) {
-        if (sel.has(element)) sel.delete(element)
-        else                  sel.add(element)
-      } else {
-        this._scene.clearEditSelection()
-        sel.add(element)
-      }
-    }
-
-    this._meshView.updateEditSelection(sel, this._corners)
-
-    const count = sel.size
-    if (count > 0) {
-      const LABEL = { vertex: 'vertex', edge: 'edge', face: 'face' }
-      this._uiView.setStatusRich([
-        { text: String(count), bold: true, color: '#e8e8e8' },
-        { text: `${LABEL[this._editSelectMode]}${count > 1 ? 's' : ''} selected`, color: '#888' },
-      ])
-    } else {
-      this._refreshEditModeStatus()
-    }
-    this._updateMobileToolbar()
   }
 
   // ─── Mode management ───────────────────────────────────────────────────────
@@ -1929,7 +1810,7 @@ export class AppController {
     this._scene.setEditSubstate('3d')
     this._editSelectMode = 'face'
     this._uiView.updateMode('edit', '3d')
-    this._refreshEditModeStatus()
+    this._editSelHandler.refreshStatus()
     this._updateMobileToolbar()
   }
 
@@ -2261,7 +2142,7 @@ export class AppController {
       if (!obj.meshView.cuboid?.visible) continue
       const corners = obj.corners ?? _meshBboxCorners(obj)
       if (!corners || corners.length === 0) continue
-      const pts = corners.map(c => this._toScreenPx(c))
+      const pts = corners.map(c => projectToScreen(c, this._camera))
 
       if (isRight) {
         // Enclosed: every projected corner must be inside the rect
@@ -2482,7 +2363,7 @@ export class AppController {
     if (this._scene.editSubstate === '1d') {
       const mx = (this._mouse.x + 1) / 2 * innerWidth
       const my = (-this._mouse.y + 1) / 2 * innerHeight
-      const v   = this._findNearestVertex(mx, my, 20)
+      const v   = this._editSelHandler.findNearestVertex(mx, my, 20)
       const idx = v ? this._activeObj.vertices.indexOf(v) : null
       if (idx !== this._hoveredEndpointIndex) {
         this._meshView.clearEndpointHover()
@@ -2548,7 +2429,7 @@ export class AppController {
             { text: hasSel ? 'E to extrude' : 'Click to select', color: '#555' },
           ])
         } else {
-          this._refreshEditModeStatus()
+          this._editSelHandler.refreshStatus()
         }
         this._uiView.setCursor(face ? 'pointer' : 'default')
       }
@@ -2559,7 +2440,7 @@ export class AppController {
     const my = (-this._mouse.y + 1) / 2 * innerHeight
 
     if (this._editSelectMode === 'vertex') {
-      const v = this._findNearestVertex(mx, my)
+      const v = this._editSelHandler.findNearestVertex(mx, my)
       if (v !== this._hoveredVertex) {
         this._hoveredVertex = v
         if (v) {
@@ -2571,7 +2452,7 @@ export class AppController {
           this._uiView.setCursor('pointer')
         } else {
           this._meshView.clearVertexHover()
-          this._refreshEditModeStatus()
+          this._editSelHandler.refreshStatus()
           this._uiView.setCursor('default')
         }
       }
@@ -2579,7 +2460,7 @@ export class AppController {
     }
 
     if (this._editSelectMode === 'edge') {
-      const e = this._findNearestEdge(mx, my)
+      const e = this._editSelHandler.findNearestEdge(mx, my)
       if (e !== this._hoveredEdge) {
         this._hoveredEdge = e
         if (e) {
@@ -2591,7 +2472,7 @@ export class AppController {
           this._uiView.setCursor('pointer')
         } else {
           this._meshView.clearEdgeHover()
-          this._refreshEditModeStatus()
+          this._editSelHandler.refreshStatus()
           this._uiView.setCursor('default')
         }
       }
@@ -2981,7 +2862,7 @@ export class AppController {
       const isTouch = e.pointerType === 'touch'
       const mx = (this._mouse.x + 1) / 2 * innerWidth
       const my = (-this._mouse.y + 1) / 2 * innerHeight
-      const v   = this._findNearestVertex(mx, my, isTouch ? 30 : 15)
+      const v   = this._editSelHandler.findNearestVertex(mx, my, isTouch ? 30 : 15)
       if (v) {
         const obj = this._activeObj
         const idx = obj.vertices.indexOf(v)
@@ -3006,14 +2887,14 @@ export class AppController {
       } else if (this._editSelectMode === 'vertex') {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._hoveredVertex = this._findNearestVertex(mx, my)
+        this._hoveredVertex = this._editSelHandler.findNearestVertex(mx, my)
       } else if (this._editSelectMode === 'edge') {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._hoveredEdge = this._findNearestEdge(mx, my)
+        this._hoveredEdge = this._editSelHandler.findNearestEdge(mx, my)
       }
     }
-    this._handleEditClick(e.shiftKey)
+    this._editSelHandler.handleEditClick(e.shiftKey)
 
     // Mobile: auto-start face extrude immediately after a face tap, so the
     // user can drag to set the distance without pressing the Extrude button.
@@ -3354,9 +3235,9 @@ export class AppController {
 
     // ── Sub-element mode switching (Edit Mode · 3D only) ──────────────────
     if (this._scene.selectionMode === 'edit' && this._scene.editSubstate === '3d') {
-      if (e.key === '1') { this._setEditSelectMode('vertex'); return }
-      if (e.key === '2') { this._setEditSelectMode('edge');   return }
-      if (e.key === '3') { this._setEditSelectMode('face');   return }
+      if (e.key === '1') { this._editSelHandler.setEditSelectMode('vertex'); return }
+      if (e.key === '2') { this._editSelHandler.setEditSelectMode('edge');   return }
+      if (e.key === '3') { this._editSelHandler.setEditSelectMode('face');   return }
       if ((e.key === 'e' || e.key === 'E') && this._editSelectMode === 'face') {
         const selected = [...this._scene.editSelection].filter(x => x instanceof Face)
         if (selected.length > 0) this._faceExtrudeHandler.start(selected[0])
