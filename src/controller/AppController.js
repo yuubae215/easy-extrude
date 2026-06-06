@@ -70,7 +70,9 @@ import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
 import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
 import { FramePlacementHandler }         from './handler/FramePlacementHandler.js'
 import { EditModeSelectionHandler }      from './handler/EditModeSelectionHandler.js'
+import { ContextMenuHandler }            from './handler/ContextMenuHandler.js'
 import { SelectionManager }             from './SelectionManager.js'
+import { UIStateManager }               from './UIStateManager.js'
 import {
   projectToScreen,
   filterNearbySnapTargets,
@@ -469,6 +471,8 @@ export class AppController {
 
     // ── Object selection + frame-chain visibility ─────────────────────────────
     this._selMgr = new SelectionManager(this)
+    this._uiStateMgr = new UIStateManager(this)
+    this._contextMenuHandler = new ContextMenuHandler(this)
 
     // ── Pointer tracking (Pointer Events API — mouse + touch + stylus) ─────
     /** @type {number|null} pointerId of the active edit drag; null when idle */
@@ -956,6 +960,74 @@ export class AppController {
     }
   }
 
+  // ── Active object switching ────────────────────────────────────────────────
+
+  /**
+   * Switches the active object, updating visual selection, frame visibility,
+   * link highlighting, and all UI components.
+   * @param {string} id
+   * @param {boolean} [select=false]
+   */
+  _switchActiveObject(id, select = false) {
+    if (this._scene.activeId && this._scene.activeId !== id) {
+      const prev = this._scene.getObject(this._scene.activeId)
+      if (prev) {
+        prev.meshView.setObjectSelected(false)
+        if (prev instanceof CoordinateFrame) {
+          this._selMgr.hideFrameChain()
+          prev.meshView.hideParentAxesGhost()
+        } else {
+          this._selMgr.setChildFramesVisible(this._scene.activeId, false)
+        }
+      }
+    }
+
+    this._service.setActiveObject(id)
+    this._objSelected = select
+    if (select) {
+      this._selectedIds.clear()
+      this._selectedIds.add(id)
+    }
+    this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
+    this._linkNetworkView?.setSelection(select && id ? this._selectedIds : new Set())
+
+    const obj = this._scene.getObject(id)
+    if (obj) obj.meshView.setObjectSelected(select)
+    if (select) {
+      if (obj instanceof CoordinateFrame) {
+        this._selMgr.showFrameChain(id)
+        const ghostPos = this._geometryAncestorCentroid(id)
+        if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
+      } else {
+        this._selMgr.setChildFramesVisible(id, true)
+      }
+    }
+
+    this._refreshObjectModeStatus()
+    this._updateNPanel()
+    this._updateMobileToolbar()
+  }
+
+  /**
+   * Walks the parentId chain from a CoordinateFrame to find the first
+   * non-CF ancestor's world centroid (used for parent axes ghost ADR-034 §7).
+   * @param {string} frameId
+   * @returns {THREE.Vector3|null}
+   */
+  _geometryAncestorCentroid(frameId) {
+    let obj = this._scene.getObject(frameId)
+    while (obj instanceof CoordinateFrame) {
+      obj = this._scene.getObject(obj.parentId)
+    }
+    if (!obj) return null
+    const corners = obj.corners
+    if (!corners || corners.length === 0) return null
+    const centroid = new THREE.Vector3()
+    for (const c of corners) centroid.add(c)
+    centroid.divideScalar(corners.length)
+    return centroid
+  }
+
   // ── Mount picking flow (Mobile, ADR-032 Phase H-6) ────────────────────────
 
   /** Starts mount-picking mode for the given source Annotated* entity (mobile). */
@@ -1158,525 +1230,22 @@ export class AppController {
     this._handlers = null
   }
 
-  _updateNPanel() {
-    if (!this._uiView.nPanelVisible) return
-    const obj = this._activeObj
-    if (!obj) return
-
-    if (obj instanceof CoordinateFrame) {
-      const frameUnreferenced = this._service.getLinksOf(obj.id).length === 0
-      if (obj.name === 'Origin') {
-        // Origin is fixed at parent centroid — show world position, locked (no local offset)
-        const wp = this._service.worldPoseOf(obj.id)?.position ?? obj.translation
-        this._uiView.updateNPanelForFrame(
-          { x: wp.x, y: wp.y, z: wp.z },
-          { x: 0, y: 0, z: 0 },
-          obj.name,
-          true, null, null, frameUnreferenced
-        )
-        return
-      }
-      // Non-Origin frame: translation and rotation are already in parent-local space (ROS TF)
-      const euler = new THREE.Euler().setFromQuaternion(obj.rotation, 'ZYX')
-      // Build valid parent candidates for the N panel dropdown (ADR-028)
-      const parentOptions = [...this._scene.objects.values()]
-        .filter(o => {
-          if (o.id === obj.id) return false
-          if (o instanceof MeasureLine || o instanceof ImportedMesh) return false
-          if (this._service._isDescendant(obj.id, o.id)) return false
-          return true
-        })
-        .map(o => ({ id: o.id, name: o.name }))
-      // Child frames whose direct parent is this CF (grandchild CF creation)
-      const childFrames = [...this._scene.objects.values()]
-        .filter(o => o instanceof CoordinateFrame && o.parentId === obj.id)
-        .map(f => ({ id: f.id, name: f.name, unreferenced: this._service.getLinksOf(f.id).length === 0 }))
-      this._uiView.updateNPanelForFrame(obj.translation, {
-        x: THREE.MathUtils.radToDeg(euler.x),
-        y: THREE.MathUtils.radToDeg(euler.y),
-        z: THREE.MathUtils.radToDeg(euler.z),
-      }, obj.name, false, parentOptions, obj.parentId, frameUnreferenced,
-        childFrames,
-        () => this._promptAddFrame(obj.id),
-        (fid) => this._switchActiveObject(fid, true),
-      )
-      return
-    }
-
-    // SpatialLink has no geometry — show a minimal N-panel summary (ADR-030)
-    if (obj instanceof SpatialLink) {
-      const src = this._scene.getObject(obj.sourceId)
-      const tgt = this._scene.getObject(obj.targetId)
-      const srcName = src?.name ?? obj.sourceId
-      const tgtName = tgt?.name ?? obj.targetId
-      this._uiView.updateNPanelForSpatialLink(obj, srcName, tgtName, () => {
-        // Delete callback from N-panel
-        const link = this._scene.getLink(obj.id)
-        if (!link) return
-        this._service.detachSpatialLink(obj.id)
-        this._commandStack.push(createDeleteSpatialLinkCommand(link, this._service))
-        this._uiView.showToast('Link deleted')
-        this._updateNPanel()
-      })
-      return
-    }
-
-    if (obj instanceof Profile && obj.sketchRect) {
-      const { p1, p2 } = obj.sketchRect
-      const centroid = new THREE.Vector3((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, 0)
-      const dims = new THREE.Vector3(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y), 0)
-      this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '')
-      return
-    }
-
-    const corners = this._corners
-    if (!corners.length) return
-    const centroid = getCentroid(corners)
-    const bMin = new THREE.Vector3(Infinity, Infinity, Infinity)
-    const bMax = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
-    corners.forEach(c => { bMin.min(c); bMax.max(c) })
-    const dims = new THREE.Vector3().subVectors(bMax, bMin)
-    const locationEditable = typeof obj.move === 'function' && !(obj instanceof CoordinateFrame)
-    const showIfcClass    = obj instanceof Solid || obj instanceof ImportedMesh
-    const showPlaceType   = obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
-    const placeTypeGeometry = obj instanceof AnnotatedLine   ? 'line'
-      : obj instanceof AnnotatedRegion ? 'region'
-      : obj instanceof AnnotatedPoint  ? 'point'
-      : null
-    // Spatial Links section: list all links for this entity with delete buttons
-    const spatialLinks    = this._service.getLinksOf(obj.id)
-    const onDeleteSpatialLink = (linkId) => {
-      const link = this._scene.getLink(linkId)
-      if (!link) return
-      this._service.detachSpatialLink(linkId)
-      this._commandStack.push(createDeleteSpatialLinkCommand(link, this._service))
-      this._uiView.showToast('Link deleted')
-      this._updateNPanel()
-    }
-
-    // Frames section (ADR-033 Phase C-2): only for entities that can host frames
-    // (Solid / Annotated* / ImportedMesh — same restriction as createCoordinateFrame)
-    const showFrames = obj instanceof Solid || obj instanceof AnnotatedLine ||
-      obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
-    let frames = null
-    let onAddFrame = null
-    let onSelectFrame = null
-    if (showFrames) {
-      // Collect child CoordinateFrames whose parentId === obj.id
-      frames = [...this._scene.objects.values()]
-        .filter(o => o instanceof CoordinateFrame && o.parentId === obj.id)
-        .map(f => {
-          const linksToFrame = this._service.getLinksOf(f.id)
-          return { id: f.id, name: f.name, unreferenced: linksToFrame.length === 0 }
-        })
-      onAddFrame = () => {
-        const frame = this._service.createCoordinateFrame(obj.id)
-        if (!frame) return
-        this._commandStack.push(createCreateCoordinateFrameCommand(
-          frame, this._service,
-          () => { this._updateNPanel() },
-          (id) => { this._updateNPanel() },
-        ))
-        this._uiView.showToast(`Frame "${frame.name}" added`)
-        this._updateNPanel()
-      }
-      onSelectFrame = (frameId) => {
-        this._switchActiveObject(frameId)
-      }
-    }
-
-    this._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', {
-      locationEditable,
-      showIfcClass,
-      ifcClass: showIfcClass ? (obj.ifcClass ?? null) : undefined,
-      showPlaceType,
-      placeType:        showPlaceType ? (obj.placeType ?? null) : undefined,
-      placeTypeGeometry,
-      spatialLinks:        spatialLinks.length > 0 ? spatialLinks : null,
-      currentEntityId:     obj.id,
-      onDeleteSpatialLink,
-      getEntityName:       (id) => this._scene.getObject(id)?.name ?? id,
-      frames,
-      onAddFrame,
-      onSelectFrame,
-    })
-  }
+  _updateNPanel() { this._uiStateMgr.updateNPanel() }
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────
 
-  /**
-   * Shows the long-press context menu near the touch point.
-   * Items vary by object type — only operations valid for `obj` are listed.
-   * @param {number} x - client X of the touch
-   * @param {number} y - client Y of the touch
-   * @param obj - the domain entity that was long-pressed
-   */
-  _showLongPressContextMenu(x, y, obj) {
-    const id = obj.id
-    const canDup = !(obj instanceof ImportedMesh) && !(obj instanceof Profile)
-    const isAnnotated = obj instanceof AnnotatedLine || obj instanceof AnnotatedRegion || obj instanceof AnnotatedPoint
-    const isSolidOrCF = obj instanceof Solid || obj instanceof CoordinateFrame
-    const canAddFrame = obj instanceof Solid || isAnnotated
+  _showLongPressContextMenu(x, y, obj) { this._contextMenuHandler.showLongPressContextMenu(x, y, obj) }
+  _promptAddFrame(parentId)            { this._contextMenuHandler.promptAddFrame(parentId) }
+  _promptRename(id)                    { this._contextMenuHandler.promptRename(id) }
 
-    // ADR-032 §9: mount / unmount items for Annotated* entities
-    const mountLink = isAnnotated ? this._scene.getMountsLink(id) : null
-    const hostFrame = mountLink ? this._scene.getObject(mountLink.targetId) : null
-    const mountItems = isAnnotated
-      ? (mountLink
-        ? [{ label: `Unmount ⊗ "${hostFrame?.name ?? '?'}"`, onClick: () => {
-            const wb = obj.vertices.map(v => v.position.clone())
-            this._service.unmountAnnotation(mountLink, wb)
-            // Record undo
-            const undoCmd = createMountAnnotationCommand(
-              mountLink, wb, this._service,
-              () => { this._updateNPanel() },
-              () => { this._updateNPanel() },
-            )
-            // Swap execute/undo for unmount: execute = unmount, undo = remount
-            this._commandStack.push({ label: `Unmount from frame`, execute: undoCmd.undo, undo: undoCmd.execute })
-            this._uiView.showToast('Unmounted')
-            this._updateNPanel()
-          }}]
-        : [{ label: 'Mount on frame ⊕', onClick: () => this._startMountPicking(id) }])
-      : []
-
-    // ADR-032 §2: unfasten item for CoordinateFrame that is the source of a fastened link
-    const fastenedLink = (obj instanceof CoordinateFrame)
-      ? this._service.getLinksOf(id).find(l => l.jointType === 'fixed' && l.sourceId === id)
-      : null
-    const unfastenItems = fastenedLink
-      ? [{ label: `Unfasten ⊗ "${this._scene.getObject(fastenedLink.targetId)?.name ?? '?'}"`, onClick: () => {
-          const source = this._scene.getObject(id)
-          const transform = this._service.getFastenedTransform(fastenedLink.id)
-          if (!transform || !(source instanceof CoordinateFrame)) return
-          // "Stay in place": capture current constrained pose as the restore point
-          const translationCurrent = source.translation.clone()
-          const rotationCurrent    = source.rotation.clone()
-          this._service.unfastenFrame(fastenedLink, translationCurrent, rotationCurrent)
-          // Build command so undo re-applies the constraint and redo re-removes it
-          this._commandStack.push({
-            label: 'Unfasten frame',
-            execute: () => {
-              const src = this._scene.getObject(id)
-              const tc  = src instanceof CoordinateFrame ? src.translation.clone() : translationCurrent
-              const rc  = src instanceof CoordinateFrame ? src.rotation.clone()    : rotationCurrent
-              this._service.unfastenFrame(fastenedLink, tc, rc)
-              this._updateNPanel()
-            },
-            undo: () => {
-              this._service.refastenFrame(fastenedLink, transform.relativeOffset, transform.relativeQuat)
-              this._updateNPanel()
-            },
-          })
-          this._uiView.showToast('Unfastened')
-          this._updateNPanel()
-        }}]
-      : []
-
-    // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
-    const linkItems = isSolidOrCF
-      ? [{ label: 'Link to... 🔗', onClick: () => {
-          this._linkHandler.start()
-          // Override the sourceId to the long-pressed object (it may not be active)
-          this._spatialLinkMode.sourceId = id
-        }}]
-      : []
-
-    // Show "Select Assembly" only when the object has fixed-joint neighbors
-    const hasFixedNeighbors = this._service.getConnectedAssembly(id).size > 1
-    const assemblyItems = hasFixedNeighbors
-      ? [{ label: 'Select Assembly 🔗', onClick: () => this._selectAssembly() }]
-      : []
-
-    const items = [
-      {
-        label: 'Grab',
-        onClick: () => this._grabHandler.start(),
-      },
-      ...(canDup ? [{
-        label: 'Duplicate',
-        onClick: () => this._duplicateObject(),
-      }] : []),
-      ...mountItems,
-      ...unfastenItems,
-      ...linkItems,
-      ...assemblyItems,
-      ...(canAddFrame ? [{
-        label: 'Add interface frame ⊞',
-        onClick: () => this._promptAddFrame(id),
-      }] : []),
-      {
-        label: 'Rename',
-        onClick: () => this._promptRename(id),
-      },
-      {
-        label: 'Delete',
-        danger: true,
-        onClick: () => this._deleteObject(id),
-      },
-    ]
-    this._uiView.showContextMenu(x, y, items)
-  }
-
-  /**
-   * Shows a name-input dialog then creates a CoordinateFrame as a child of the
-   * given entity.  The frame is recorded on the command stack for undo/redo.
-   * Called from the long-press context menu (mobile, ADR-033 Phase C-3).
-   * @param {string} parentId - ID of the parent entity
-   */
-  _promptAddFrame(parentId) {
-    if (!this._scene.getObject(parentId)) return
-    this._uiView.showRenameDialog('Frame', (name) => {
-      if (name === null) return  // user cancelled
-      const frameName = name || 'Frame'
-      // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
-      const parentObj = this._scene.getObject(parentId)
-      let effectiveParentId = parentId
-      if (parentObj && !(parentObj instanceof CoordinateFrame)) {
-        const originFrame = [...this._scene.objects.values()]
-          .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
-        if (originFrame) effectiveParentId = originFrame.id
-      }
-      const frame = this._service.createCoordinateFrame(effectiveParentId, frameName)
-      if (!frame) return
-      this._commandStack.push(createCreateCoordinateFrameCommand(
-        frame, this._service,
-        () => {
-          // After undo: restore parent selection if parent still exists
-          const parent = this._scene.getObject(parentId)
-          if (parent) this._switchActiveObject(parentId, true)
-          else { this._objSelected = false; this._selectedIds.clear(); this._refreshObjectModeStatus(); this._updateMobileToolbar() }
-          this._updateNPanel()
-        },
-        (id) => { this._switchActiveObject(id, true); this._updateNPanel() },
-      ))
-      this._uiView.showToast(`Frame "${frame.name}" added`)
-      this._switchActiveObject(frame.id, true)
-      this._updateNPanel()
-    }, { title: 'Add Interface Frame' })
-  }
-
-  /** Opens the rename prompt for the given object id (shared helper). */
-  _promptRename(id) {
-    const obj = this._scene.getObject(id)
-    if (!obj) return
-    this._uiView.showRenameDialog(obj.name, (name) => {
-      if (name) this._renameObject(id, name)
-    })
-  }
-
-  /** Syncs the enabled/disabled state of the mobile header Undo/Redo buttons. */
-  _refreshUndoRedoState() {
-    this._uiView.setUndoRedoEnabled(
-      this._commandStack.canUndo,
-      this._commandStack.canRedo,
-    )
-  }
+  _refreshUndoRedoState() { this._uiStateMgr.refreshUndoRedoState() }
 
   /** Rebuilds the mobile floating toolbar to reflect current app state. */
-  _updateMobileToolbar() {
-    this._refreshUndoRedoState()
-    const mode     = this._scene.selectionMode
-    const substate = this._scene.editSubstate
-
-    if (this._mapModeCtrl.isActive) {
-      // In Map Mode the left-side map toolbar handles drawing controls.
-      // Show a minimal "Exit Map" slot on mobile.
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.back, label: 'Exit Map', onClick: () => this._mapModeCtrl.exit() },
-        { spacer: true },
-        { spacer: true },
-        { spacer: true },
-      ])
-      return
-    }
-
-    if (this._opState.is(S_MEASURE_PLACING)) {
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._measureHandler.cancel(), danger: true },
-        { spacer: true },
-        { spacer: true },
-        { spacer: true },
-      ])
-      return
-    }
-
-    // ── Frame placement pick sub-mode (ADR-034 §6) ────────────────────────
-    if (this._opState.is(S_FRAME_PLACEMENT)) {
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel, label: 'Cancel', onClick: () => this._framePlacementHandler.cancel(), danger: true },
-        { spacer: true },
-        { spacer: true },
-        { spacer: true },
-      ])
-      return
-    }
-
-    if (this._opState.is(S_ROTATE_ACTIVE)) {
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._rotateHandler.cancel(), danger: true },
-        { icon: 'X', label: 'X', onClick: () => this._rotateHandler.setAxis('x'), active: this._rotateHandler.axis === 'x' },
-        { icon: 'Y', label: 'Y', onClick: () => this._rotateHandler.setAxis('y'), active: this._rotateHandler.axis === 'y' },
-        { icon: 'Z', label: 'Z', onClick: () => this._rotateHandler.setAxis('z'), active: this._rotateHandler.axis === 'z' },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._rotateHandler.confirm() },
-      ])
-      return
-    }
-
-    if (this._opState.is(S_GRAB_ACTIVE)) {
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._grabHandler.cancel(), danger: true },
-        { icon: 'X', label: 'X', onClick: () => this._grabHandler.setAxis('x'), active: this._grabHandler.axis === 'x' },
-        { icon: 'Y', label: 'Y', onClick: () => this._grabHandler.setAxis('y'), active: this._grabHandler.axis === 'y' },
-        { icon: 'Z', label: 'Z', onClick: () => this._grabHandler.setAxis('z'), active: this._grabHandler.axis === 'z' },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._grabHandler.confirm() },
-      ])
-      return
-    }
-
-    if (mode === 'object') {
-      const hasObj = this._objSelected
-
-      // CoordinateFrame: AddFrame | Move | spacer | Delete | Rotate
-      // Slots 1 (Move) and 4 (Rotate) align with Solid toolbar positions for muscle-memory parity.
-      // AddFrame is always enabled — even for Origin CF, adding a child CF is valid (ADR-037).
-      // Move, Delete, and Rotate are locked for the auto-managed Origin frame.
-      if (hasObj && this._activeObj instanceof CoordinateFrame) {
-        const isOriginCF = this._activeObj.name === 'Origin'
-        this._uiView.setMobileToolbar([
-          { icon: ICONS.frame,  label: 'Add Frame', onClick: () => this._promptAddFrame(this._scene.activeId) },
-          { icon: ICONS.grab,   label: 'Move',      onClick: () => this._grabHandler.start(),                                            disabled: isOriginCF },
-          { spacer: true },
-          { icon: ICONS.delete, label: 'Delete',    onClick: () => this._deleteObject(this._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
-          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => this._rotateHandler.start(true),                                            disabled: isOriginCF },
-        ])
-        return
-      }
-
-      // Annotated entity toolbar: Grab | Map (to edit in map mode) | Delete | (spacer)
-      const _isAnnotated = o => o instanceof AnnotatedLine || o instanceof AnnotatedRegion || o instanceof AnnotatedPoint
-      const _isSpatialLink = o => o instanceof SpatialLink
-      // SpatialLink: no operations available on mobile toolbar (ADR-030)
-      if (hasObj && _isSpatialLink(this._activeObj)) {
-        this._uiView.setMobileToolbar([
-          { spacer: true }, { spacer: true },
-          { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
-          { spacer: true }, { spacer: true },
-        ])
-        return
-      }
-      if (hasObj && _isAnnotated(this._activeObj)) {
-        this._uiView.setMobileToolbar([
-          { icon: ICONS.grab,   label: 'Grab',   onClick: () => this._grabHandler.start() },
-          { icon: ICONS.map,    label: 'Map',    onClick: () => this._mapModeCtrl.enter() },
-          { icon: ICONS.delete, label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: true },
-          { spacer: true },
-        ])
-        return
-      }
-
-      // 5-slot layout: Add | Grab | Edit | Delete | Rotate (Solid) / Stack (others)
-      // All slots always present; unavailable actions are disabled to prevent layout shifts.
-      // Grab (slot 1) and Rotate (slot 4) mirror the CF toolbar for cross-entity muscle memory.
-      // Dup is omitted here; it remains available via the long-press context menu.
-      const canGrab   = hasObj && !(this._activeObj instanceof ImportedMesh)
-      const canEdit   = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof CoordinateFrame) && !_isAnnotated(this._activeObj) && !_isSpatialLink(this._activeObj)
-      const canStack  = hasObj && !(this._activeObj instanceof ImportedMesh) && !(this._activeObj instanceof MeasureLine)
-        && !_isAnnotated(this._activeObj)
-        && !_isSpatialLink(this._activeObj)
-      const canRotate = hasObj && this._activeObj instanceof Solid
-      this._uiView.setMobileToolbar([
-        {
-          icon: ICONS.add, label: 'Add',
-          onClick: () => {
-            const canAddFrame = this._objSelected && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof ImportedMesh)
-            this._uiView.showAddMenu(
-              window.innerWidth / 2, window.innerHeight / 2,
-              () => this._addObject('box'),
-              () => this._addObject('sketch'),
-              () => this._addObject('measure'),
-              () => this._triggerStepImport(),
-              canAddFrame ? () => this._addObject('frame') : undefined,
-            )
-          },
-        },
-        { icon: ICONS.grab,      label: 'Grab',   onClick: () => this._grabHandler.start(),                                      disabled: !canGrab },
-        { icon: ICONS.edit,      label: 'Edit',   onClick: () => this.setMode('edit'),                                           disabled: !canEdit },
-        { icon: ICONS.delete,    label: 'Delete', onClick: () => this._deleteObject(this._scene.activeId), danger: hasObj,       disabled: !hasObj },
-        canRotate
-          ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => this._rotateHandler.start(true) }
-          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { this._grabHandler.toggleStackMode(); this._updateMobileToolbar() }, active: this._grabHandler.stackMode, disabled: !canStack },
-      ])
-      return
-    }
-
-    if (substate === '2d-sketch') {
-      // Always show ← first so its position never shifts. Extrude is disabled
-      // until a rectangle has been drawn.
-      const hasRect = this._sketch.p1 && this._sketch.p2 &&
-        (Math.abs(this._sketch.p2.x - this._sketch.p1.x) > 0.01 ||
-         Math.abs(this._sketch.p2.y - this._sketch.p1.y) > 0.01)
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.back,    label: 'Object',  onClick: () => this.setMode('object') },
-        { spacer: true },
-        { spacer: true },
-        { icon: ICONS.extrude, label: 'Extrude', onClick: () => this._enterExtrudePhase(), disabled: !hasRect },
-      ])
-      return
-    }
-
-    if (substate === '2d-extrude') {
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.cancel,  label: 'Cancel',  onClick: () => this._cancelExtrudePhase(), danger: true },
-        { spacer: true },
-        { spacer: true },
-        { icon: ICONS.confirm, label: 'Confirm', onClick: () => this._confirmExtrudePhase() },
-      ])
-      return
-    }
-
-    if (substate === '3d') {
-      const em = this._editSelectMode
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.back,   label: 'Object', onClick: () => this.setMode('object') },
-        { icon: ICONS.vertex, label: 'Vertex', onClick: () => this._editSelHandler.setEditSelectMode('vertex'), active: em === 'vertex' },
-        { icon: ICONS.edge,   label: 'Edge',   onClick: () => this._editSelHandler.setEditSelectMode('edge'),   active: em === 'edge' },
-        { icon: ICONS.face,   label: 'Face',   onClick: () => this._editSelHandler.setEditSelectMode('face'),   active: em === 'face' },
-      ])
-    }
-
-    if (substate === '1d') {
-      this._uiView.setMobileToolbar([
-        { icon: ICONS.back, label: 'Object', onClick: () => this.setMode('object') },
-        { spacer: true },
-        { spacer: true },
-        { spacer: true },
-      ])
-    }
-  }
+  _updateMobileToolbar() { this._uiStateMgr.updateMobileToolbar() }
 
   // ─── Status bar helpers ────────────────────────────────────────────────────
 
-  /** Single source of truth for "X selected" / '' status in Object Mode. */
-  _refreshObjectModeStatus() {
-    if (!this._objSelected || !this._activeObj) {
-      this._uiView.setStatus('')
-      return
-    }
-    const isReadOnly = this._activeObj instanceof ImportedMesh
-    const parts = [
-      { text: this._activeObj.name, bold: true, color: '#e8e8e8' },
-      { text: 'selected', color: '#888' },
-    ]
-    if (isReadOnly) {
-      parts.push({ text: 'read-only', color: '#ff9800' })
-    }
-    this._uiView.setStatusRich(parts)
-    this._uiView.appendInfoHint(
-      this._activeObj instanceof CoordinateFrame ? 'R' : null,
-      'Rotate',
-    )
-  }
+  _refreshObjectModeStatus() { this._uiStateMgr.refreshObjectModeStatus() }
 
   // ─── Mode management ───────────────────────────────────────────────────────
   setMode(mode) {
@@ -1826,12 +1395,7 @@ export class AppController {
     this._updateMobileToolbar()
   }
 
-  _refreshEditMode1DStatus() {
-    this._uiView.setStatusRich([
-      { text: 'Edit Mode · 1D', bold: true, color: '#e8e8e8' },
-      { text: 'Drag an endpoint to reposition', color: '#555' },
-    ])
-  }
+  _refreshEditMode1DStatus() { this._uiStateMgr.refreshEditMode1DStatus() }
 
   _enterExtrudePhase() {
     if (!this._sketch.p1 || !this._sketch.p2) return
@@ -1941,19 +1505,7 @@ export class AppController {
     this._enterEditMode2D()
   }
 
-  _updateExtrudePhaseStatus() {
-    const parsed = parseFloat(this._extrudePhase.inputStr)
-    const height = this._extrudePhase.hasInput
-      ? (isNaN(parsed) ? 0 : parsed)
-      : this._extrudePhase.height
-    const parts = [{ text: 'Extrude', bold: true, color: '#ffffff' }]
-    if (this._extrudePhase.hasInput) {
-      parts.push({ text: this._extrudePhase.inputStr + '_', color: '#ffeb3b' })
-    } else {
-      parts.push({ text: `H: ${height.toFixed(3)}`, color: '#ffeb3b' })
-    }
-    this._uiView.setStatusRich(parts)
-  }
+  _updateExtrudePhaseStatus() { this._uiStateMgr.updateExtrudePhaseStatus() }
 
   // ─── Rectangle selection helpers ──────────────────────────────────────────
 
