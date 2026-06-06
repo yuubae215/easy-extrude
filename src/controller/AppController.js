@@ -70,6 +70,12 @@ import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js
 import { LinkCreationHandler }        from './handler/LinkCreationHandler.js'
 import { FaceExtrudeHandler }         from './handler/FaceExtrudeHandler.js'
 import { FramePlacementHandler }      from './handler/FramePlacementHandler.js'
+import {
+  projectToScreen,
+  filterNearbySnapTargets,
+  findNearestSnapCandidate,
+  pickBestSnapTarget,
+} from './snap/SnapSystem.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -1148,118 +1154,6 @@ export class AppController {
     this._mouse.copy(v)
   }
 
-  /**
-   * Filters snap targets to visible ones, then removes far-background
-   * candidates that are occluded by closer geometry.
-   * @param {{ position: THREE.Vector3, type: string }[]} targets
-   * @param {number} maxDepthRatio  Keep targets within this multiple of the
-   *   nearest candidate's camera distance (default 2.0).
-   * @returns {{ position: THREE.Vector3, type: string }[]}
-   */
-  _filterNearbySnapTargets(targets, maxDepthRatio = 2.0) {
-    const camPos = this._camera.position
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-
-    // Pass 1: visibility filter — exclude points beyond the far clip plane
-    // or behind the camera (both map to v.z > 1 after project()).
-    const visible = targets.filter(({ position }) => {
-      const v = position.clone().project(this._camera)
-      return v.z <= 1
-    })
-
-    if (visible.length === 0) return visible
-
-    // Pass 2: depth filter — keep only candidates within maxDepthRatio of the
-    // nearest candidate in 3D space.  This hides occluded or far-background
-    // points that happen to overlap foreground geometry on screen.
-    const dists   = visible.map(({ position }) => position.distanceTo(camPos))
-    const minDist = Math.min(...dists)
-    const depthFiltered = visible.filter((_, i) => dists[i] <= minDist * maxDepthRatio)
-
-    // Pass 3 (Idea A): remove face snap candidates whose normal points away from
-    // the camera.  Back-facing face centers are rarely useful snap targets and
-    // create visual noise on the opposite side of objects.
-    return depthFiltered.filter(t => {
-      if (t.type !== 'face' || !t.normal) return true
-      return t.normal.dot(camDir) < 0   // normal toward camera = front-facing
-    })
-  }
-
-  /**
-   * Finds the best snap target from `targets` near screen position (sx, sy).
-   *
-   * Idea A — back-face cull: face snap targets whose outward normal points away
-   * from the camera are excluded (they are behind the visible surface).
-   *
-   * Idea D — front-facing bonus: among face candidates within SNAP_PX, those
-   * whose normal is most directly toward the camera receive a screen-distance
-   * discount (up to FRONTNESS_BONUS_PX), so they beat a slightly-closer
-   * grazing-angle face snap target.
-   *
-   * @param {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }[]} targets
-   * @param {number} sx  cursor screen x (pixels)
-   * @param {number} sy  cursor screen y (pixels)
-   * @returns {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }|null}
-   */
-  _pickBestSnapTarget(targets, sx, sy) {
-    const SNAP_PX           = 25
-    const FRONTNESS_BONUS_PX = 5   // max screen-px discount for a face directly facing camera
-    const camMat = this._camera.matrixWorldInverse
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-
-    let bestScore  = SNAP_PX
-    let bestTarget = null
-
-    for (const t of targets) {
-      // Skip targets behind the camera
-      const camPos = t.position.clone().applyMatrix4(camMat)
-      if (camPos.z >= 0) continue
-
-      // Idea A: skip back-facing face snap points
-      if (t.type === 'face' && t.normal && t.normal.dot(camDir) >= 0) continue
-
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(sx - s.x, sy - s.y)
-
-      // Idea D: front-facing face candidates get a screen-distance discount
-      const bonus = (t.type === 'face' && t.normal)
-        ? Math.max(0, -t.normal.dot(camDir)) * FRONTNESS_BONUS_PX
-        : 0
-      const score = d - bonus
-      if (score < bestScore) { bestScore = score; bestTarget = t }
-    }
-    return bestTarget
-  }
-
-  /**
-   * Returns the snap candidate nearest to screen position (sx, sy) within
-   * maxPx pixels, applying back-face culling for face targets.
-   * Used to drive the hover-highlight indicator before the snap locks.
-   * @param {{ position: THREE.Vector3, type: string, normal?: THREE.Vector3 }[]} targets
-   * @param {number} sx  cursor x (pixels)
-   * @param {number} sy  cursor y (pixels)
-   * @param {number} [maxPx=60]
-   * @returns target or null
-   */
-  _findNearestSnapCandidate(targets, sx, sy, maxPx = 60) {
-    const camMat = this._camera.matrixWorldInverse
-    const camDir = new THREE.Vector3()
-    this._camera.getWorldDirection(camDir)
-    let bestDist   = maxPx
-    let bestTarget = null
-    for (const t of targets) {
-      const cp = t.position.clone().applyMatrix4(camMat)
-      if (cp.z >= 0) continue
-      if (t.type === 'face' && t.normal && t.normal.dot(camDir) >= 0) continue
-      const s = this._projectToScreen(t.position)
-      const d = Math.hypot(sx - s.x, sy - s.y)
-      if (d < bestDist) { bestDist = d; bestTarget = t }
-    }
-    return bestTarget
-  }
-
   /** Hits any visible object — returns { hit, obj } or null */
   _hitAnyObject() {
     this._raycaster.setFromCamera(this._mouse, this._camera)
@@ -1389,15 +1283,6 @@ export class AppController {
     const fi   = Math.floor(hit.face.a / 4)
     const face = this._activeObj?.faces?.[fi] ?? null
     return face ? { face, point: hit.point } : null
-  }
-
-  // ─── Utilities ─────────────────────────────────────────────────────────────
-  _projectToScreen(position, camera = this._camera) {
-    const v = position.clone().project(camera)
-    return {
-      x: (v.x + 1) / 2 * innerWidth,
-      y: (-v.y + 1) / 2 * innerHeight,
-    }
   }
 
   _updateNPanel() {
@@ -2246,7 +2131,7 @@ export class AppController {
       (this._sketch.p1.y + this._sketch.p2.y) / 2,
       height / 2,
     )
-    const screen = this._projectToScreen(labelPos)
+    const screen = projectToScreen(labelPos, this._camera)
     this._uiView.setExtrusionLabel(`H ${Math.abs(height).toFixed(3)}`, screen.x, screen.y)
   }
 
@@ -2620,7 +2505,7 @@ export class AppController {
       if (gs.autoSnap) {
         const mx = (this._mouse.x + 1) / 2 * innerWidth
         const my = (-this._mouse.y + 1) / 2 * innerHeight
-        this._meshView.showSnapCandidates(this._filterNearbySnapTargets(gs.snapTargets))
+        this._meshView.showSnapCandidates(filterNearbySnapTargets(gs.snapTargets, this._camera))
         if (gs.snapping && gs.snappedTarget) {
           this._meshView.clearSnapNearest()
           this._meshView.showSnapLocked(
@@ -2630,7 +2515,7 @@ export class AppController {
           )
         } else {
           this._meshView.clearSnapLocked()
-          const nearest = this._findNearestSnapCandidate(gs.snapTargets, mx, my)
+          const nearest = findNearestSnapCandidate(gs.snapTargets, mx, my, this._camera)
           if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
           else         this._meshView.clearSnapNearest()
         }
@@ -2661,7 +2546,7 @@ export class AppController {
         if (smv) {
           const mx = (this._mouse.x + 1) / 2 * innerWidth
           const my = (-this._mouse.y + 1) / 2 * innerHeight
-          smv.showSnapCandidates(this._filterNearbySnapTargets(this._measure.snapTargets))
+          smv.showSnapCandidates(filterNearbySnapTargets(this._measure.snapTargets, this._camera))
           if (this._measure.snapping && this._measure.snappedTarget) {
             smv.clearSnapNearest()
             smv.showSnapLocked(
@@ -2671,7 +2556,7 @@ export class AppController {
             )
           } else {
             smv.clearSnapLocked()
-            const nearest = this._findNearestSnapCandidate(this._measure.snapTargets, mx, my)
+            const nearest = findNearestSnapCandidate(this._measure.snapTargets, mx, my, this._camera)
             if (nearest) smv.showSnapNearest(nearest.position, nearest.type)
             else         smv.clearSnapNearest()
           }
@@ -2764,7 +2649,7 @@ export class AppController {
       const fe = this._faceExtrude
       const mx = (this._mouse.x + 1) / 2 * innerWidth
       const my = (-this._mouse.y + 1) / 2 * innerHeight
-      this._meshView.showSnapCandidates(this._filterNearbySnapTargets(fe.snapTargets))
+      this._meshView.showSnapCandidates(filterNearbySnapTargets(fe.snapTargets, this._camera))
       if (fe.snapping && fe.snappedTarget) {
         this._meshView.clearSnapNearest()
         const faceCenterAfter = fe.savedCorners
@@ -2774,7 +2659,7 @@ export class AppController {
         this._meshView.showSnapLocked(fe.snappedTarget.position, fe.snappedTarget.type, faceCenterAfter)
       } else {
         this._meshView.clearSnapLocked()
-        const nearest = this._findNearestSnapCandidate(fe.snapTargets, mx, my)
+        const nearest = findNearestSnapCandidate(fe.snapTargets, mx, my, this._camera)
         if (nearest) this._meshView.showSnapNearest(nearest.position, nearest.type)
         else         this._meshView.clearSnapNearest()
       }

@@ -13,6 +13,7 @@ import { MeasureLine }     from '../../domain/MeasureLine.js'
 import { CoordinateFrame } from '../../domain/CoordinateFrame.js'
 import { collectSnapTargets } from '../../model/CuboidModel.js'
 import { S_MEASURE_PLACING } from '../../core/editorStates.js'
+import { pickBestSnapTarget } from '../snap/SnapSystem.js'
 
 export class MeasurePlacementHandler {
   /**
@@ -215,7 +216,7 @@ export class MeasurePlacementHandler {
     const targets = collectSnapTargets(ctrl._scene.objects, 'all')
     s.snapTargets = targets
 
-    const bestTarget = ctrl._pickBestSnapTarget(targets, mx, my)
+    const bestTarget = pickBestSnapTarget(targets, mx, my, ctrl._camera)
 
     if (bestTarget) {
       s.snapping      = true
