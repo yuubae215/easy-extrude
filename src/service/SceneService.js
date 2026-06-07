@@ -1962,6 +1962,20 @@ export class SceneService extends EventEmitter {
 
   // ── Use cases ──────────────────────────────────────────────────────────────
 
+  _nextEntityName(prefix) {
+    const pattern = new RegExp(`^${prefix}(?:\\.(\\d{3}))?$`)
+    const used = new Set()
+    for (const obj of this._model.objects.values()) {
+      const m = pattern.exec(obj.name)
+      if (!m) continue
+      used.add(m[1] === undefined ? 0 : parseInt(m[1], 10))
+    }
+    if (!used.has(0)) return prefix
+    for (let n = 1; ; n++) {
+      if (!used.has(n)) return `${prefix}.${String(n).padStart(3, '0')}`
+    }
+  }
+
   /**
    * Creates a new Solid entity + MeshView, registers it in the scene, and returns it.
    * Offsets successive objects so they do not stack.
@@ -1971,7 +1985,7 @@ export class SceneService extends EventEmitter {
   createSolid() {
     const idx  = this._model.objects.size
     const id   = `obj_${idx}_${Date.now()}`
-    const name = idx === 0 ? 'Cube' : `Cube.${String(idx).padStart(3, '0')}`
+    const name = this._nextEntityName('Cube')
 
     const positions = createInitialCorners()
     if (idx > 0) {
@@ -1998,7 +2012,7 @@ export class SceneService extends EventEmitter {
   createProfile() {
     const idx  = this._model.objects.size
     const id   = `obj_${idx}_${Date.now()}`
-    const name = `Sketch.${String(idx).padStart(3, '0')}`
+    const name = this._nextEntityName('Sketch')
 
     const meshView = new MeshView(this._threeScene)
     meshView.setVisible(false)  // no geometry until the profile is drawn
@@ -2687,7 +2701,7 @@ export class SceneService extends EventEmitter {
 
     const idx  = this._model.objects.size
     const id   = `frame_${idx}_${Date.now()}`
-    const name = overrideName ?? `Frame.${String(idx).padStart(3, '0')}`
+    const name = overrideName ?? this._nextEntityName('Frame')
 
     const { camera, renderer, container } = this._viewContext
     const meshView = new CoordinateFrameView(this._threeScene, camera ?? null, renderer ?? null, container ?? null)
