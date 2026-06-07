@@ -30,6 +30,7 @@ import {
   collectWorldSnapTargets,
 } from '../../model/CuboidModel.js'
 import { computeApproachWarmth } from '../../service/SemanticInferencer.js'
+import { projectToScreen, pickBestSnapTarget } from '../snap/SnapSystem.js'
 
 /**
  * Returns the appropriate handles array for grab/move operations.
@@ -791,9 +792,9 @@ export class GrabOperationHandler {
     if (!ctrl._raycaster.ray.intersectPlane(s.dragPlane, pt)) return
     let delta = pt.clone().sub(s.startPoint)
     if (s.autoSnap) {
-      delta = ctrl._trySnapToGeometry(delta)
+      delta = this._trySnapToGeometry(delta)
     } else if (ctrl._ctrlHeld) {
-      delta = ctrl._applyGridSnapToDelta(delta)
+      delta = this._applyGridSnapToDelta(delta)
       s.snapping      = false
       s.snappedTarget = null
     } else {
@@ -852,7 +853,7 @@ export class GrabOperationHandler {
 
     if (s.autoSnap) {
       const delta        = new THREE.Vector3().addScaledVector(axisVec, dist)
-      const snappedDelta = ctrl._trySnapToGeometry(delta)
+      const snappedDelta = this._trySnapToGeometry(delta)
       this._applyDeltaToAll(snappedDelta)
     } else if (ctrl._ctrlHeld) {
       s.snapping      = false
@@ -867,5 +868,42 @@ export class GrabOperationHandler {
       const _acDist    = _acTension > 0 ? dist * Math.max(0.15, 1.0 - Math.min(_acTension, 1.0) * 0.85) : dist
       this._applyDeltaToAll(axisVec.clone().multiplyScalar(_acDist))
     }
+  }
+
+  /**
+   * Snaps `delta` to the nearest geometry snap target within SNAP_PX pixels.
+   * Returns a corrected delta pointing at the snap target, or the original delta.
+   */
+  _trySnapToGeometry(delta) {
+    const { _ctrl: ctrl } = this
+    const s = this.state
+    const pivotAfter = s.pivot.clone().add(delta)
+    const pScreen    = projectToScreen(pivotAfter, ctrl._camera)
+
+    const grabbedIds   = new Set(s.allStartCorners.keys())
+    const geoTargets   = collectSnapTargets(ctrl._scene.objects, s.snapMode, grabbedIds)
+    const worldTargets = collectWorldSnapTargets(pivotAfter)
+    const targets      = [...geoTargets, ...worldTargets]
+    s.snapTargets      = targets
+    const bestTarget   = pickBestSnapTarget(targets, pScreen.x, pScreen.y, ctrl._camera)
+
+    if (bestTarget) {
+      s.snapping      = true
+      s.snappedTarget = bestTarget
+      return bestTarget.position.clone().sub(s.pivot)
+    }
+    s.snapping      = false
+    s.snappedTarget = null
+    return delta
+  }
+
+  /** Rounds each component of `delta` to the current grid size. */
+  _applyGridSnapToDelta(delta) {
+    const g = this.state.gridSize
+    return new THREE.Vector3(
+      Math.round(delta.x / g) * g,
+      Math.round(delta.y / g) * g,
+      Math.round(delta.z / g) * g,
+    )
   }
 }

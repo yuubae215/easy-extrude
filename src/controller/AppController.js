@@ -847,6 +847,176 @@ export class AppController {
     return sum.divideScalar(cs.length)
   }
 
+  /**
+   * Projects a world-space position to CSS pixel coordinates.
+   * @param {import('three').Vector3} position
+   * @param {import('three').Camera} [camera]
+   * @returns {{ x: number, y: number }}
+   */
+  _projectToScreen(position, camera = this._camera) {
+    const v = position.clone().project(camera)
+    return {
+      x: (v.x + 1) / 2 * innerWidth,
+      y: (-v.y + 1) / 2 * innerHeight,
+    }
+  }
+
+  /**
+   * Runs semantic inference after a grab/drag confirms, showing a SpatialLink
+   * suggestion banner when the moved Solid lands near another object (ADR-041).
+   */
+  _runSemanticInference() {
+    if (this._selectedIds.size !== 1) return
+    const [movedId] = this._selectedIds
+    const moved = this._scene.getObject(movedId)
+    if (!(moved instanceof Solid)) return
+
+    const existingPairs = new Set(
+      this._service.getLinks().map(l => `${l.sourceId}|${l.targetId}`),
+    )
+    const suggestions = inferSemanticRelationships(
+      moved, this._scene.objects.values(), existingPairs,
+    )
+    if (suggestions.length === 0) return
+
+    const top    = suggestions[0]
+    const source = this._scene.getObject(top.sourceId)
+    const target = this._scene.getObject(top.targetId)
+    this._uiView.showSemanticSuggestion({
+      sourceId:     top.sourceId,
+      targetId:     top.targetId,
+      semanticType: top.semanticType,
+      label:        top.label,
+      sourceName:   source?.name ?? '?',
+      targetName:   target?.name ?? '?',
+    }, () => {
+      this._linkHandler.createDirect(top.sourceId, top.targetId, top)
+    })
+  }
+
+  /**
+   * Duplicates the active Solid, makes the copy active, and immediately
+   * starts a grab so the user can position it (Blender Shift+D behaviour).
+   */
+  _duplicateObject() {
+    const id = this._scene.activeId
+    if (!id) return
+    if (this._activeObj instanceof SpatialLink) {
+      this._uiView.showToast('SpatialLink cannot be duplicated', { type: 'warn' })
+      return
+    }
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+    const copy = this._service.duplicateSolid(id)
+    if (!copy) return
+    this._selectedIds.clear()
+    this._selectedIds.add(copy.id)
+    this._switchActiveObject(copy.id, true)
+    this._grabHandler.start()
+  }
+
+  /**
+   * Deletes an entity by id with all safety guards (Origin frame protection,
+   * minimum geometry count, provenance check, dangling-link confirmation).
+   * @param {string} id
+   */
+  _deleteObject(id) {
+    const target = this._scene.getObject(id)
+    if (!target) return
+
+    if (target instanceof CoordinateFrame && target.name === 'Origin') {
+      this._uiView.showToast('Origin frame cannot be deleted', { type: 'warn' })
+      return
+    }
+
+    if (!(target instanceof CoordinateFrame)) {
+      const geometryCount = [...this._scene.objects.values()]
+        .filter(o => !(o instanceof CoordinateFrame)).length
+      if (geometryCount <= 1) {
+        this._uiView.showToast('Scene must contain at least one object', { type: 'warn' })
+        return
+      }
+    }
+
+    if (target instanceof CoordinateFrame && !RoleService.canEdit(target)) {
+      this._uiView.showToast(
+        `This frame was declared by a ${target.declaredBy}. Switch to that role to edit it.`,
+        { type: 'warn' },
+      )
+      return
+    }
+
+    if (target instanceof CoordinateFrame) {
+      const links = this._service.getLinksOf(id)
+      if (links.length > 0) {
+        const n = links.length
+        this._uiView.showConfirmDialog(
+          `Frame "${target.name}" is referenced by ${n} spatial link${n > 1 ? 's' : ''}.\n` +
+          `Deleting it will leave those links dangling. Delete anyway?`,
+          (confirmed) => { if (confirmed) this._execDeleteObject(id, target) },
+          { title: 'Delete Frame', confirmLabel: 'Delete', danger: true },
+        )
+        return
+      }
+    }
+
+    this._execDeleteObject(id, target)
+  }
+
+  /** Performs the actual soft-delete after all guards in _deleteObject have passed. */
+  _execDeleteObject(id, target) {
+    if (!target) target = this._scene.getObject(id)
+    if (!target) return
+
+    if (id === this._scene.activeId && this._scene.selectionMode === 'edit') {
+      this.setMode('object')
+    }
+
+    const wasActive = this._scene.activeId === id
+
+    if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
+      this._selMgr.hideFrameChain()
+    }
+    if (wasActive && !(target instanceof CoordinateFrame)) {
+      this._selMgr.setChildFramesVisible(id, false)
+    }
+
+    const nextId = wasActive
+      ? (
+          [...this._scene.objects.entries()].find(
+            ([k, o]) => k !== id && !(o instanceof CoordinateFrame),
+          )?.[0]
+          ?? [...this._scene.objects.keys()].find(k => k !== id)
+          ?? null
+        )
+      : null
+
+    const childrenRefs = [...this._selMgr.collectAllDescendantFrames(id)]
+      .map(fid => this._scene.getObject(fid)).filter(Boolean)
+
+    for (let i = childrenRefs.length - 1; i >= 0; i--) {
+      this._service.detachObject(childrenRefs[i].id)
+    }
+    this._service.detachObject(id)
+    target.meshView.setVisible(false)
+
+    const cmd = createDeleteCommand(
+      target, childrenRefs, this._service,
+      (restoredId) => this._switchActiveObject(restoredId, true),
+      (deletedId) => {
+        const nxt = [...this._scene.objects.entries()]
+          .find(([k, o]) => k !== deletedId && !(o instanceof CoordinateFrame))?.[0]
+          ?? [...this._scene.objects.keys()].find(k => k !== deletedId)
+          ?? null
+        if (nxt) this._switchActiveObject(nxt, true)
+      },
+    )
+    this._commandStack.push(cmd)
+
+    if (wasActive && nextId) {
+      this._switchActiveObject(nextId, true)
+    }
+  }
+
   // ─── Object management ────────────────────────────────────────────────────
 
   /**
