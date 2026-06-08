@@ -57,7 +57,7 @@ import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { AnnotatedLineView }   from '../view/AnnotatedLineView.js'
 import { AnnotatedRegionView } from '../view/AnnotatedRegionView.js'
 import { AnnotatedPointView }  from '../view/AnnotatedPointView.js'
-import { SpatialLink, migrateLinkType } from '../domain/SpatialLink.js'
+import { SpatialLink, migrateLinkType, TOPOLOGICAL_SEMANTIC_TYPES } from '../domain/SpatialLink.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
@@ -1784,6 +1784,9 @@ export class SceneService extends EventEmitter {
     for (const [id, view] of this._linkViews) {
       const link = this._model.getLink(id)
       if (!link) continue
+      // Topological links (above, adjacent, contains, connects, bounded_by) carry no kinematic
+      // constraint — applying tension to them wrongly impedes free movement (PHILOSOPHY #11).
+      if (TOPOLOGICAL_SEMANTIC_TYPES.includes(link.semanticType)) continue
       if (!this._dragEntityIds.has(link.sourceId) && !this._dragEntityIds.has(link.targetId)) continue
       const src = this._entityWorldCentroid(link.sourceId)
       const tgt = this._entityWorldCentroid(link.targetId)
@@ -2343,6 +2346,17 @@ export class SceneService extends EventEmitter {
             blocked: true,
             message: `Mounted on "${name}". Remove the mount link to move independently.`,
           }
+        }
+      }
+      // Fastened links live on child CF IDs, not the Solid ID — the link loop above misses them.
+      // hasFastenedChild() walks the full CF ancestor chain so nested topologies are covered.
+      // Without this check, grabbing a Solid whose child CF is a fixed-joint source lets the
+      // drag preview and _updateFixedJointFrames() fight every frame, causing oscillation.
+      const obj = this._model.getObject(id)
+      if (obj instanceof Solid && this.hasFastenedChild(id)) {
+        return {
+          blocked: true,
+          message: 'This object has a fastened constraint. Unfasten the link or include the linked object in your selection.',
         }
       }
     }
