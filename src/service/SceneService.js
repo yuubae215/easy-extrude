@@ -2347,6 +2347,16 @@ export class SceneService extends EventEmitter {
           }
         }
       }
+      // Fastened links live on child CF IDs, not the Solid ID — the link loop above misses them.
+      // hasFastenedChild() walks the full CF ancestor chain so nested-CF topologies are covered.
+      // Without this block, drag preview and _updateFixedJointFrames() fight every frame (oscillation).
+      const obj = this._model.getObject(id)
+      if (obj instanceof Solid && this.hasFastenedChild(id)) {
+        return {
+          blocked: true,
+          message: 'This object has a fastened constraint. Unfasten the link or include the linked object in your selection.',
+        }
+      }
     }
     return { blocked: false, message: '' }
   }

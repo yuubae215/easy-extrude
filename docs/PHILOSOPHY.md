@@ -498,6 +498,43 @@ For verification, give an agent a small named file list rather than `src/**/*.js
 
 ---
 
+### 25. Guard Logic Belongs in Service Predicates, Not Inline Handler Returns
+
+Preconditions for a domain operation belong in a named service method.
+Handler code calls the predicate once and acts on the result. It does not inline its own guard logic.
+
+An inline early return in a handler is only permitted when it works around a specific
+library or runtime constraint — not when it enforces a domain rule.
+
+**The permitted case:** `if (e.target !== renderer.domElement) return` — this is a browser
+event-bubbling workaround with no service-layer analogue. There is no domain rule that says
+"ignore events not aimed at the canvas"; it is a quirk of the host environment.
+
+**The violation:** inlining a domain guard as an early return in a handler method, e.g.:
+```js
+// WRONG — guard logic scattered across call sites
+if (selObj instanceof Solid && service.hasFastenedChild(id)) { showToast(); return }
+```
+This pattern was used for the grab-before-solver-conflict guard. It was added at two call
+sites (G-key grab, QuickDrag) instead of inside `checkMoveGuardrail`. A future code path
+that moves objects — a new gesture mode, an undo-replay, a scripted operation — would
+silently omit the guard.
+
+**The correct pattern:**
+```js
+// CORRECT — one authoritative predicate; handler is oblivious to its internals
+const result = service.checkMoveGuardrail(selectedIds)
+if (result.blocked) { showToast(result.message); return }
+```
+
+All preconditions for movement — whether they enforce semantic design intent (fastened link),
+solver conflict (hasFastenedChild), or role access (RoleService) — belong inside the
+corresponding service predicate, not scattered across handlers.
+
+*Underlies CODE_CONTRACTS rules: Semantic Move Guardrail (checkMoveGuardrail)*
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
@@ -551,3 +588,4 @@ to the main body as a full principle and add a row to the Index.
 | 22 | Children Before Parents in Hit-Testing | Interaction | CoordinateFrame Tap Selection, _hitAnyEntityForLink CF Priority |
 | 23 | Accessors Own Their Freshness Guarantee | Contracts | `worldPoseOf()` self-healing |
 | 24 | Derive Absolute State from Invariant Sources | Concurrency | Fastened Constraint Limitations (1a) |
+| 25 | Guard Logic Belongs in Service Predicates, Not Inline Handler Returns | Design | Semantic Move Guardrail (checkMoveGuardrail) |

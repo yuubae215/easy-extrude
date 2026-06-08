@@ -2419,15 +2419,6 @@ export class AppController {
           this._uiView.showToast(dragGuardrail.message, { type: 'warn' })
           return
         }
-        // Solver-conflict guard: mirrors GrabOperationHandler.start() — fastened links
-        // live on child CF IDs so checkMoveGuardrail misses them for Solid grabs.
-        for (const id of this._selectedIds) {
-          const selObj = this._scene.getObject(id)
-          if (selObj instanceof Solid && this._service.hasFastenedChild(id)) {
-            this._uiView.showToast('This object has a fastened constraint. Unfasten the link or include the linked object in your selection.', { type: 'warn' })
-            return
-          }
-        }
 
         if (this._opState.send('BEGIN_QUICK_DRAG')) {
           this._quickDragHandler.enter(this._quickDragCtx)

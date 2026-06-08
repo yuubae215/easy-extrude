@@ -155,17 +155,6 @@ export class GrabOperationHandler {
       ctrl._uiView.showToast(grabGuardrail.message, { type: 'warn' })
       return
     }
-    // Solver-conflict guard: fastened links live on child CF IDs, not the Solid ID.
-    // checkMoveGuardrail's link-loop misses them. Moving a Solid whose child CF is a
-    // fixed-joint source lets drag preview and _updateFixedJointFrames() fight every frame.
-    // Mirrors the same guard in _startRotate() and TC dragging-changed.
-    for (const id of ctrl._selectedIds) {
-      const selObj = ctrl._scene.getObject(id)
-      if (selObj instanceof Solid && ctrl._service.hasFastenedChild(id)) {
-        ctrl._uiView.showToast('This object has a fastened constraint. Unfasten the link or include the linked object in your selection.', { type: 'warn' })
-        return
-      }
-    }
     // All domain guards passed → mutual exclusion + state transition
     if (!ctrl._opState.send('BEGIN_GRAB')) return
     // Rubber-band: activate marching ants + tension for links connected to dragged entities.
