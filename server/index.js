@@ -17,6 +17,7 @@ import { jwtMiddleware }  from './src/middleware/auth.js'
 import { scenesRouter }   from './src/routes/scenes.js'
 import { authRouter }     from './src/routes/auth.js'
 import { importRouter }   from './src/routes/import.js'
+import { layoutRouter }   from './src/routes/layout.js'
 import { openApiSpec }    from './src/openapi.js'
 import { createSession, removeSession, handleMessage } from './src/ws/sessionManager.js'
 
@@ -40,6 +41,7 @@ app.use('/api/auth',   authRouter)
 
 app.use('/api/scenes', jwtMiddleware, scenesRouter)
 app.use('/api/import', jwtMiddleware, importRouter)
+app.use('/api/layout', jwtMiddleware, layoutRouter)
 
 // ── Health check ──────────────────────────────────────────────────────────────
 

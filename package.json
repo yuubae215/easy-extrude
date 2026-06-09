@@ -2,6 +2,7 @@
   "name": "easy-extrude",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.6.5",
   "scripts": {
     "dev": "vite",
@@ -13,7 +14,11 @@
     "server:dev": "pnpm --filter easy-extrude-bff run dev",
     "server:start": "pnpm --filter easy-extrude-bff run start",
     "typecheck": "tsc --noEmit",
-    "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml"
+    "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml",
+    "layout": "node cli/index.js"
+  },
+  "bin": {
+    "easy-extrude-layout": "./cli/index.js"
   },
   "dependencies": {
     "react": "^19.1.0",

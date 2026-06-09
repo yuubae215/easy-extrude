@@ -1,0 +1,139 @@
+{
+  "version": "layout/1.0",
+  "meta": {
+    "name": "工場セル自動化レイアウト",
+    "description": "セル型工程を自動化工程に置き換えるレイアウト。床置き100V/3芯コンセントから2.8m先の作業台上にロボットとベースプレートを設置し、作業台の余剰面積にワークコンテナを2台配置。"
+  },
+  "strategy": "manual",
+  "entities": [
+    {
+      "ref": "cell_area",
+      "type": "AnnotatedRegion",
+      "name": "自動化セル専有面積",
+      "description": "セル型工程が置かれる床面積",
+      "placeType": "Zone",
+      "vertices": [
+        { "x": -600, "y": -700 },
+        { "x": 3500, "y": -700 },
+        { "x": 3500, "y":  700 },
+        { "x": -600, "y":  700 }
+      ]
+    },
+    {
+      "ref": "floor_outlet",
+      "type": "AnnotatedPoint",
+      "name": "床置きコンセント (100V / 3芯ソケット)",
+      "description": "構内電源。100V 3芯ソケット形状。",
+      "placeType": "Anchor",
+      "position": { "x": 0, "y": 0, "z": 0 }
+    },
+    {
+      "ref": "workbench",
+      "type": "Solid",
+      "name": "作業台",
+      "description": "高さ800mm、天面作業スペース500×300mm",
+      "ifcClass": "IfcFurniture",
+      "dimensions": { "x": 500, "y": 300, "z": 800 },
+      "position": { "x": 2800, "y": 0, "z": 400 },
+      "frames": [
+        {
+          "ref": "workbench_top",
+          "name": "作業台天面中心",
+          "translation": { "x": 0, "y": 0, "z": 400 }
+        }
+      ]
+    },
+    {
+      "ref": "base_plate",
+      "type": "Solid",
+      "name": "ロボット取付ベースプレート (t30mm)",
+      "description": "作業台天面に固定するロボット取付用ベースプレート。厚さ30mm。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": { "x": 300, "y": 250, "z": 30 },
+      "position": { "x": 2650, "y": 0, "z": 815 },
+      "frames": [
+        {
+          "ref": "robot_mount",
+          "name": "ロボット取付面 (ベースプレート天面)",
+          "translation": { "x": 0, "y": 0, "z": 15 }
+        }
+      ]
+    },
+    {
+      "ref": "robot",
+      "type": "Solid",
+      "name": "産業用ロボット",
+      "description": "作業台上のベースプレートにボルト締結。ベースプレート天面 (z=830) を基準に搭載。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 220, "y": 220, "z": 520 },
+      "position": { "x": 2650, "y": 0, "z": 1090 },
+      "frames": [
+        {
+          "ref": "robot_base",
+          "name": "ロボットベース (取付基準面)",
+          "translation": { "x": 0, "y": 0, "z": -260 }
+        }
+      ]
+    },
+    {
+      "ref": "container_a",
+      "type": "Solid",
+      "name": "ワークコンテナA (バラ積みワーク)",
+      "description": "作業台天面のロボット非占有エリアに設置。バラバラに積み上がったワーク入り。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 180, "y": 120, "z": 150 },
+      "position": { "x": 2950, "y":  90, "z": 875 }
+    },
+    {
+      "ref": "container_b",
+      "type": "Solid",
+      "name": "ワークコンテナB (マトリックス格子)",
+      "description": "作業台天面のロボット非占有エリアに設置。ワークをマトリックス上に整列させる格子入り。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 180, "y": 120, "z": 150 },
+      "position": { "x": 2950, "y": -90, "z": 875 }
+    }
+  ],
+  "constraints": [
+    {
+      "source": "base_plate",
+      "target": "workbench",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "ベースプレートを作業台天面上にボルト固定" }
+    },
+    {
+      "source": "robot_base",
+      "target": "robot_mount",
+      "jointType": "fixed",
+      "semanticType": "fastened",
+      "properties": { "note": "ロボットをベースプレートにボルト締結 (M12×4本)" }
+    },
+    {
+      "source": "container_a",
+      "target": "workbench",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "コンテナAは作業台天面のロボット側面エリアに設置" }
+    },
+    {
+      "source": "container_b",
+      "target": "workbench",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "コンテナBはコンテナAの隣に設置" }
+    },
+    {
+      "source": "floor_outlet",
+      "target": "workbench_origin",
+      "jointType": null,
+      "semanticType": "connects",
+      "properties": {
+        "distance_mm": 2800,
+        "voltage_V":   100,
+        "connector":   "3芯ソケット",
+        "note":        "床置きコンセントから作業台まで電源ケーブル配線"
+      }
+    }
+  ]
+}
