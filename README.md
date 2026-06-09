@@ -51,6 +51,12 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 - **Export / Import** (`Ctrl+E` / `Ctrl+I`) — round-trip scene as structured JSON (geometry, frames, links, annotations)
 - **Save / Load** — persist and restore scene state via the BFF REST API
 
+### External Layout API (ADR-045)
+- **Layout DSL** — declarative JSON that encodes *Why* (constraints), *How* (strategy: `linear` / `grid` / `stack` / `radial` / `manual`), and *What* (entity dimensions, coordinate frames, spatial links)
+- **CLI** — compile a Layout DSL file to a loadable scene JSON, or save it directly to the BFF database; no browser required
+- **REST API** — `POST /api/layout/compile` and `POST /api/layout/scenes`; Swagger docs at `GET /api/docs`
+- **NL → Layout DSL via Claude API** — pass `--ai` to the `interpret` command; the LLM generates Layout DSL (never executable code), then `validateLayoutDsl()` catches any schema violations before the scene is built
+
 ### Selection & Navigation
 - **Edit Mode** (`Tab`) — sub-element selection: Vertex (`1`), Edge (`2`), Face (`3`)
 - **Rectangle Selection** — drag on empty space to multi-select (enclosed or touch)
@@ -87,6 +93,24 @@ Open [http://localhost:5173](http://localhost:5173).
 ```bash
 pnpm dev:all   # starts both the BFF (port 3001) and the Vite dev server
 ```
+
+### Layout API — generate scenes from the CLI
+
+```bash
+# Compile a Layout DSL file → SceneSerializer v1.3 JSON (no BFF required)
+pnpm layout compile examples/factory_layout.json --pretty
+
+# Compile + save scene to the BFF database
+pnpm layout import examples/factory_layout.json --api-url http://localhost:3001
+
+# Natural language → Layout DSL via Claude API → compile/import
+ANTHROPIC_API_KEY=sk-... pnpm layout interpret "ロボット3台を1m間隔で配置" --ai
+
+# Swagger UI (BFF must be running)
+open http://localhost:3001/api/docs
+```
+
+See [`docs/adr/ADR-045-external-layout-api.md`](docs/adr/ADR-045-external-layout-api.md) for the full DSL schema and design rationale.
 
 ### Production build
 
@@ -130,6 +154,7 @@ easy-extrude follows a strict **MVC + Domain-Driven Design** layering. The domai
 src/
 ├── domain/          # Pure entities — Solid, Profile, MeasureLine, CoordinateFrame, …
 ├── graph/           # Geometry graph — Vertex, Edge, Face
+├── layout/          # Pure computation — LayoutDslSchema, LayoutValidator, LayoutCompiler (ADR-045)
 ├── model/           # Aggregate root (SceneModel) + pure geometry computation (CuboidModel)
 ├── command/         # Undo/redo commands — one class per operation
 ├── service/         # Application services — SceneService, Serializer, Exporter, BffClient
@@ -159,6 +184,7 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | SQLite / libsql | Server-side scene storage |
 | WebSocket (`ws`) | Real-time geometry streaming (BFF ↔ frontend) |
 | [occt-import-js](https://github.com/kovacsv/occt-import-js) | Server-side STEP tessellation |
+| [Claude API](https://www.anthropic.com/) | NL → Layout DSL (`interpret --ai`, optional) |
 | GitHub Actions | CI/CD → auto deploy to GitHub Pages |
 
 ---
@@ -175,7 +201,8 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Feature backlog and completed milestones |
 | [`docs/CODE_CONTRACTS.md`](docs/CODE_CONTRACTS.md) | Coding rules derived from real bugs |
 | [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) | Design principles distilled from post-mortems |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADR-001 … ADR-033) |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADR-001 … ADR-045) |
+| [`docs/adr/ADR-045-external-layout-api.md`](docs/adr/ADR-045-external-layout-api.md) | Layout DSL schema, LayoutCompiler algorithm, CLI/REST design |
 | [`docs/CONCURRENCY.md`](docs/CONCURRENCY.md) | Optimistic vs. pessimistic locking strategy |
 
 ---
