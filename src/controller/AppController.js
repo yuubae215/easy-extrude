@@ -890,6 +890,7 @@ export class AppController {
       sourceName:   source?.name ?? '?',
       targetName:   target?.name ?? '?',
     }, () => {
+      this._quickDragCtx.hideDragSuggestion()
       this._linkHandler.createDirect(top.sourceId, top.targetId, top)
     })
   }

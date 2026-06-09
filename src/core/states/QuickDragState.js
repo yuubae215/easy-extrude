@@ -36,6 +36,7 @@ export class QuickDragState {
   enter(ctx) {
     ctx.controls.enabled = false
     ctx.uiView.setCursor('grabbing')
+    ctx.uiView.dismissSemanticSuggestion()
     this._isSuggesting      = false
     this._currentSuggestion = null
   }
