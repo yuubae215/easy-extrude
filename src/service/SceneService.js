@@ -1785,6 +1785,8 @@ export class SceneService extends EventEmitter {
       const link = this._model.getLink(id)
       if (!link) continue
       if (!this._dragEntityIds.has(link.sourceId) && !this._dragEntityIds.has(link.targetId)) continue
+      // Links with no kinematic joint have no physical resistance — skip tension (PHILOSOPHY #11).
+      if (link.jointType === null) continue
       const src = this._entityWorldCentroid(link.sourceId)
       const tgt = this._entityWorldCentroid(link.targetId)
       if (!src || !tgt) continue
@@ -2343,6 +2345,16 @@ export class SceneService extends EventEmitter {
             blocked: true,
             message: `Mounted on "${name}". Remove the mount link to move independently.`,
           }
+        }
+      }
+      // Fastened links live on child CF IDs, not the Solid ID — the link loop above misses them.
+      // hasFastenedChild() walks the full CF ancestor chain so nested-CF topologies are covered.
+      // Without this block, drag preview and _updateFixedJointFrames() fight every frame (oscillation).
+      const obj = this._model.getObject(id)
+      if (obj instanceof Solid && this.hasFastenedChild(id)) {
+        return {
+          blocked: true,
+          message: 'This object has a fastened constraint. Unfasten the link or include the linked object in your selection.',
         }
       }
     }
