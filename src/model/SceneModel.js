@@ -113,6 +113,19 @@ export class SceneModel {
     return this._links.get(id) ?? null
   }
 
+  /**
+   * Returns true when `id` is the source or target of any SpatialLink.
+   * Used to suppress CoordinateFrame hierarchy connection lines for linked CFs.
+   * @param {string} id
+   * @returns {boolean}
+   */
+  isLinkEndpoint(id) {
+    for (const link of this._links.values()) {
+      if (link.sourceId === id || link.targetId === id) return true
+    }
+    return false
+  }
+
   // ── Commands ───────────────────────────────────────────────────────────────
 
   /**

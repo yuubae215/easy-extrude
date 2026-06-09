@@ -117,7 +117,7 @@ export class SelectionManager {
       const f = ctrl._scene.getObject(fid)
       if (!f) continue
       f.meshView.showFull()
-      f.meshView.showConnection(false)
+      if (!ctrl._scene.isLinkEndpoint(fid)) f.meshView.showConnection(false)
     }
   }
 
@@ -143,7 +143,7 @@ export class SelectionManager {
       const isSelected = fid === frameId
       if (isSelected) f.meshView.showFull()
       else            f.meshView.showDimmed()
-      f.meshView.showConnection(!isSelected)
+      if (!ctrl._scene.isLinkEndpoint(fid)) f.meshView.showConnection(!isSelected)
     }
   }
 
