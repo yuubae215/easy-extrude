@@ -43,6 +43,10 @@ src/
     CreateSpatialLinkCommand.js   # Undo/redo: create typed semantic edge (ADR-030)
     DeleteSpatialLinkCommand.js   # Undo/redo: delete typed semantic edge (ADR-030)
     MountAnnotationCommand.js     # Undo/redo: mount annotation to CoordinateFrame host (ADR-032)
+  layout/
+    LayoutDslSchema.js            # DSL version constants, strategy/semanticType/jointType enums (pure data)
+    LayoutValidator.js            # validateLayoutDsl(dsl) → {valid, errors[]} (pure computation)
+    LayoutCompiler.js             # compileLayout(dsl) → SceneSerializer v1.3 JSON (pure computation, ADR-045)
   service/
     SceneService.js               # ApplicationService: entity creation, CRUD, observable events
     SceneSerializer.js            # Scene save / load: domain → JSON round-trip (BFF)
@@ -362,12 +366,76 @@ MeasureLine = { vertices: Vertex[2], edges: Edge[1], ... }
 | **Phase 19** | CoordinateFrame interface contract — auto-Origin abolished; frames created only on explicit user intent; `CoordinateFrame.localOffset` replaces `corners`; `_grabHandlesOf()` helper; `AddSolidCommand.undo()` hide-before-detach (ADR-033 C-3/C-4) | Done 2026-04-15 |
 | **Phase 20** | Node Editor topology editing — port drag-to-create; output port drag + temp dashed line + `onLinkRequested`; `showLinkTypePicker`; edge click select + Delete → `DeleteSpatialLinkCommand`; `_createSpatialLinkDirect()` shared method (ADR-030 Phase S-2) | Done 2026-04-16 |
 | **Phase 21** | MeasureLine Edit Mode (1D) — `setEndpointHover(index)` / `clearEndpointHover()`; `_enterEditMode1D()`; `editSubstate='1d'`; endpoint hover + camera-facing drag plane; post-hoc `createMoveCommand`; `canEdit` allows MeasureLine | Done 2026-04-17 |
+| **Phase 22** | External Layout API (ADR-045) — `src/layout/` pure-function layer (`LayoutDslSchema`, `LayoutValidator`, `LayoutCompiler`); Layout DSL v1.0 encodes 5W1H (ADR-044) as Why/constraints + How/strategy + What/entities; REST endpoints `POST /api/layout/compile` and `POST /api/layout/scenes`; CLI `compile`/`import`/`interpret` commands; `--ai` flag bridges Claude API → DSL (LLM generates DSL, not code); validation scenario `examples/factory_layout.json` (factory cell automation); Swagger spec updated at `GET /api/docs` | Done 2026-06-09 |
+
+---
+
+## Layout API (ADR-045)
+
+An external CLI and REST API for generating scenes from structured requirements, without a running browser session.
+
+### Data flow
+
+```
+NL text (optional, --ai flag)
+    │  φ  Claude API → Layout DSL  (LLM generates DSL, never code — ADR-044 §Constraints)
+    ▼
+Layout DSL v1.0 JSON             ← SSOT; encodes 5W1H (ADR-044):
+    │                               Why   = constraints (semanticType, jointType)
+    │                               How   = strategy (linear/grid/stack/radial/manual)
+    │                               What  = entities (Solid dims, CF offsets, vertices)
+    │  compileLayout()  (pure function, src/layout/LayoutCompiler.js)
+    ▼
+SceneSerializer v1.3 JSON        ← SceneImporter-compatible
+    │  importFromJson()  (existing, unchanged)
+    ▼
+SceneService domain state        ← Solid / CoordinateFrame / SpatialLink
+```
+
+### Key modules
+
+| Module | Responsibility |
+|--------|---------------|
+| `src/layout/LayoutDslSchema.js`       | Pure data: version constant, valid strategy/semanticType/jointType enums |
+| `src/layout/LayoutValidator.js`       | `validateLayoutDsl(dsl)` — pure computation, returns `{valid, errors[]}` |
+| `src/layout/LayoutCompiler.js`        | `compileLayout(dsl)` — pure computation, no Three.js/DOM; generates localCorners (CuboidModel ordering), auto-creates Origin CFs (ADR-037) |
+| `server/src/routes/layout.js`         | `POST /api/layout/compile` (stateless) and `POST /api/layout/scenes` (compile + DB save) |
+| `server/src/services/LayoutService.js`| Side-effects wrapper: calls `compileLayout()` then `sceneStore.createScene()` |
+| `cli/index.js` + `cli/commands/`      | `compile` / `import` / `interpret` commands; `--ai` flag calls Claude API |
+
+### Ref namespace (constraints)
+
+Every Solid entity exposes three ref forms for use in `constraints[].source/target`:
+
+| Form | Resolves to |
+|------|-------------|
+| `"<ref>"` | The entity itself (Solid ID) |
+| `"<ref>_origin"` | Auto-generated Origin CF (ADR-037) |
+| `"<frame.ref>"` | User-defined child CF (from `entity.frames[]`) |
+
+### Usage
+
+```bash
+# Compile Layout DSL → SceneSerializer v1.3 (no BFF required)
+pnpm layout compile examples/factory_layout.json --pretty
+
+# Compile + persist to BFF DB
+pnpm layout import examples/factory_layout.json --api-url http://localhost:3001
+
+# NL → Layout DSL via Claude API → optional import
+ANTHROPIC_API_KEY=sk-... pnpm layout interpret "ロボット3台を1m間隔で配置" --ai
+
+# Swagger UI (BFF running)
+open http://localhost:3001/api/docs   # → Layout section
+```
 
 ---
 
 ## Related Documents
 
-- `docs/adr/README.md` — Architecture Decision Record index (ADR-001 … ADR-033)
+- `docs/adr/README.md` — Architecture Decision Record index (ADR-001 … ADR-045)
+- `docs/adr/ADR-044-5w1h-function-mapping.md` — 5W1H homomorphism: NL → ExecutionPlan → Code
+- `docs/adr/ADR-045-external-layout-api.md` — Layout DSL, LayoutCompiler, CLI/REST API
 - `docs/STATE_TRANSITIONS.md` — Mode state transition details
 - `docs/ROADMAP.md` — BFF migration roadmap and feature backlog
 - `docs/CONCURRENCY.md` — Optimistic vs pessimistic locking strategy

@@ -56,6 +56,7 @@ This directory records the project's design decisions.
 | [ADR-042](ADR-042-unified-entity-transform-mental-model.md) | **Unified Entity Transform Mental Model — Fixed-Slot Transform Policy** | Accepted | 2026-05-20 | ADR-023, ADR-024, ADR-037, ADR-039, ADR-040 |
 | [ADR-043](ADR-043-2d-3d-spatial-link-semantics.md) | **2D/3D Spatial Link Semantics — `bounded_by` and Clearance Evaluation** | Draft | 2026-05-21 | ADR-029, ADR-030, ADR-038 |
 | [ADR-044](ADR-044-5w1h-function-mapping.md) | **5W1H Function Mapping — Homomorphic Bridge Between Natural Language and Automation** | Draft | 2026-06-01 | ADR-030, ADR-039, ADR-041, ADR-022 |
+| [ADR-045](ADR-045-external-layout-api.md) | **External Layout API — CLI/REST-Driven Scene Composition via Layout DSL** | Accepted | 2026-06-09 | ADR-044, ADR-015, ADR-022, ADR-030, ADR-037, ADR-040 |
 
 ## How to Add a New ADR
 

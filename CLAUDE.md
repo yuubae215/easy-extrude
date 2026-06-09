@@ -31,6 +31,8 @@ Before writing or modifying any code, consult the relevant documents.
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
 | screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
 | layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
+| Layout API / Layout DSL / compileLayout / LayoutCompiler / scene from CLI or API | ADR-045, `src/layout/LayoutCompiler.js` |
+| 5W1H / NL to code / function mapping / FunctionDescriptor / ExecutionPlan | ADR-044 |
 | events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |
 | controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
 | mode / edit mode / object mode / sketch | ADR-002, ADR-004, ADR-008 |
