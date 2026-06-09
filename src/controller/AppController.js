@@ -2967,8 +2967,6 @@ export class AppController {
   start() {
     const loop = () => {
       requestAnimationFrame(loop)
-      this._sceneView.render()
-      if (this._gizmoView) this._gizmoView.update()
       // Keep MeasureLine / AnnotatedPoint HTML labels positioned over the correct screen pixel,
       // drive per-element animations, and keep CoordinateFrame axes at constant screen size.
       const t = performance.now() * 0.001  // elapsed seconds for animation clock
@@ -2983,11 +2981,14 @@ export class AppController {
           }
         }
       }
-      // Sync CoordinateFrame world poses BEFORE label/scale updates so that
-      // updateLabelPosition() reads the current frame's _group.position, not the
-      // previous frame's value. Without this, labels lag one frame and appear to
-      // vibrate at startup while the cache is being populated.
+      // Sync CoordinateFrame world poses and SpatialLink arrows BEFORE render() so that
+      // link views and CF axes follow entities in the same frame as entity mesh updates.
+      // (Entity meshes are updated synchronously in event handlers via applyPreviewTranslation;
+      // without this ordering, link arrows lag one frame behind the entity during movement.)
+      // updateLabelPosition() below also reads _group.position set here — no change needed.
       this._service._updateWorldPoses()
+      this._sceneView.render()
+      if (this._gizmoView) this._gizmoView.update()
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
         if (obj instanceof AnnotatedPoint)  {
