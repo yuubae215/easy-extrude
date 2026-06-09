@@ -1457,6 +1457,12 @@ export class SceneService extends EventEmitter {
       return this._worldPoseCache.get(id)?.position?.clone() ?? null
     }
 
+    // Solid: use ADR-040 primary triple — never avg(corners) which accumulates FP error
+    // (centroid is Validation-only; _position is the authoritative Verification source)
+    if (obj instanceof Solid) {
+      return obj._position.clone()
+    }
+
     const corners = obj.corners
     if (!corners || corners.length === 0) return null
 

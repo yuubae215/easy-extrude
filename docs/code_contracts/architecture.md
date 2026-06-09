@@ -550,6 +550,21 @@ After a stack snap (which re-applies domain mutations via `selObj.move()`), the 
 
 `cancel()` paths that need to restore entity state must also call the appropriate service method (e.g. `applyPreviewEndpointMove` called twice — once per endpoint — in `EndpointDragState.cancel()`). This keeps view state consistent even during cancellation.
 
+## Centroid Is Validation-Only — Never Use for Verification or Geometry Traversal
+
+- **Principle**: `getCentroid(corners)` / `avg(corners)` is a **measurement operation** computed by summing floating-point world-space vertices. Due to floating-point accumulation, the result diverges from the true geometric origin as coordinates grow large (PHILOSOPHY #24). It is suitable only for display and heuristics (Validation), never for computations whose correctness must be guaranteed (Verification).
+- **Permitted uses** (Validation): N-panel display, label positioning, heuristic proximity checks, visual annotations, drag-tension display.
+- **Forbidden uses** (Verification): SpatialLink endpoint calculation, snap targets, undo/redo coordinates, constraint solver inputs, physics traversal pivots.
+- **Concrete Rule**: For `Solid`, the authoritative reference point is `obj._position` (ADR-040 primary triple). For `CoordinateFrame`, use `_worldPoseCache.get(id).position`. `SceneService._entityWorldCentroid()` must use these authoritative sources, not `avg(corners)`. `_dragSuggestionCentroid()` in `AppController` must use `obj._position` for `Solid` (already correct). The rule "getCentroid is permitted only for read-only display" in the "Rotate Pivot Must Use _position Directly" entry is an instance of this broader contract.
+
+```js
+// WRONG — avg(corners) for Solid SpatialLink endpoint
+const sum = new Vector3(); for (const c of corners) sum.add(c); sum.divideScalar(corners.length)
+
+// CORRECT — authoritative primary triple
+return obj._position.clone()
+```
+
 ## _hitAnyEntityForLink Must Prioritise CoordinateFrame Over Parent Solid
 
 - **Principle**: CFs are visually rendered on top of (and often at the origin of) their parent Solid. A cuboid raycast (step 1) reaches the Solid first, making it impossible for the user to select a CF as a link target by tapping.
