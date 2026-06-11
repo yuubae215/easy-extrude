@@ -167,6 +167,12 @@ obj.meshView.updateScale(camera, renderer, Infinity)
 
 - `sceneRadius` is computed once per frame before the object iteration loop (not per-CF), from all objects whose `corners?.length > 0`.
 
+## Annotation Marker Views Scale in Screen Space, Capped in World Space
+
+- **Principle**: A marker view sized by a *world-unit constant* bakes in an assumption about scene scale. `AnnotatedPointView`'s `MARKER_RADIUS = 0.25` was designed for meter-scale scenes; in an mm-scale scene (Context DSL demo, entities at 2 800 mm) a 0.25 mm marker is sub-pixel — the marker silently disappears while its HTML label (pixel-sized) keeps rendering, which reads as "icon missing" (PHILOSOPHY #26).
+- **Concrete Rule**: `AnnotatedPointView.updateScale(camera, renderer, maxWorldSize)` is called every animation frame from `AppController` with `maxWorldSize = Math.max(sceneRadius * 0.05, 0.25)` — constant screen size (target 20 px radius), capped at 5 % of the scene radius, floored at the legacy 0.25 world units so meter-scale scenes keep their original look. Same dual-bound pattern as `CoordinateFrameView.updateScale()` (rule above).
+- **Composition contract**: `tick()`'s per-frame animation scales (Hub sonar ping, Anchor crosshair pulse) must multiply by `this._viewScale`, never overwrite it — `setScalar(animScale * this._viewScale)`. `_applyPlaceTypeVisuals()` and `setPlaceType()` reset to `_viewScale`, not `1`.
+
 ## ~~Auto Origin Frame on 3D Object Creation~~ — Superseded by ADR-033
 
 > **This contract is superseded by ADR-033 (CoordinateFrame Phase C).**

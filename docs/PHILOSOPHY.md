@@ -379,6 +379,63 @@ Secondary actions are better discovered through contextual gestures than memoris
 
 ---
 
+### 26. A Screen Edge Is a Shared Resource
+
+A `position: fixed` element anchored to a screen edge implicitly claims that edge.
+Two persistent opaque panels layered on the same edge produce a silent overlap:
+no error, no warning — the lower-z element simply ceases to exist for the user.
+
+Every edge-anchored element must therefore either be *transient with a higher z-index*
+(drawer, dropdown, modal) or *offset itself past the current occupants*. And because
+occupancy is dynamic (panels open and close), the offset must be computed in one
+authoritative place from the full occupancy state — not patched ad hoc at each
+toggle call site (same spirit as #23 and #25).
+
+Two manifestations found on the same day, in unrelated features:
+
+- **Left edge**: `LinkNetworkView` (z:50, `left:8px`) rendered entirely behind the
+  Outliner sidebar (z:90, opaque, 180px, always visible on desktop). The link graph
+  was unreachable — users reported it as "missing".
+- **Right edge**: the Context DSL demo Inspector (ADR-047, 280px, z:100) covered both
+  the N panel (z:90) and the world gizmo (z:10). The pre-existing gizmo-offset
+  mechanism (`setRightOffset`) knew only about the N panel, because it was wired
+  inside `_toggleNPanel()` — a per-call-site patch that no new panel would ever know
+  to extend. Fixed by making `AppController._updateGizmoOffset()` the sole owner,
+  driven by a uiStore subscription over all right-edge occupancy state.
+
+**The failure mode is asymmetric**: the layout renders, nothing throws, and each
+panel looks correct in isolation — the overlap is only visible when both happen
+to be open, which may be a state the developer never tested.
+
+*Underlies CODE_CONTRACTS rules: Edge-Anchored Panels Must Coordinate Occupancy*
+
+---
+
+### 27. Overlay Markers Are Sized in Screen Space, Capped in World Space
+
+A marker view (frame axes, anchor icons, annotation glyphs) sized by an absolute
+constant in *either* space alone encodes a hidden assumption that reality will break:
+
+- An absolute **world-unit** size assumes a scene scale. `AnnotatedPointView`'s
+  `MARKER_RADIUS = 0.25` was invisible (sub-pixel) in the mm-scale Context DSL demo
+  scene — while its HTML label, sized in pixels, kept rendering. The user saw
+  "label without icon".
+- An absolute **screen-pixel** size without a world cap assumes a camera distance.
+  `CoordinateFrameView`'s constant-screen-size axes ballooned to dwarf the whole
+  scene when zooming out, until a finite `maxWorldSize` cap was enforced.
+
+The correct shape is always the pair: *target size in screen pixels, clamped to a
+world-space bound derived from the scene (scene radius, parent bounding radius)*.
+One bound without the other is the same bug in mirror image.
+
+**The failure mode is asymmetric**: both versions render valid markers with no
+exception; the marker is just imperceptibly small or absurdly large, and only at
+scene scales or zoom levels the developer didn't try.
+
+*Underlies CODE_CONTRACTS rules: CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale*
+
+---
+
 ## VII. Interface Contracts
 
 ### 17. Polymorphic Interfaces Must Be Complete
@@ -589,3 +646,5 @@ to the main body as a full principle and add a row to the Index.
 | 23 | Accessors Own Their Freshness Guarantee | Contracts | `worldPoseOf()` self-healing |
 | 24 | Derive Absolute State from Invariant Sources | Concurrency | Fastened Constraint Limitations (1a) |
 | 25 | Guard Logic Belongs in Service Predicates, Not Inline Handler Returns | Design | Semantic Move Guardrail (checkMoveGuardrail) |
+| 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
+| 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale |

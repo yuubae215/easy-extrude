@@ -41,8 +41,8 @@ block-beta
 | N Panel sidebar | w:240px, h:calc(100vh-64px) | fixed top:40px right:0 | 100 |
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
-| Gizmo | w:96px, h:96px | absolute top:48px right:248px | 50 |
-| Link Network Overlay | w:220px, h:auto (collapsed:26px) | fixed bottom:8px left:8px | 50 |
+| Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
+| Link Network Overlay | w:220px, h:auto (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar) | 50 |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
 | Context menu | w:auto | absolute (cursor position) | 200 |
 | Mode dropdown | w:140px | absolute (below button) | 200 |
@@ -82,7 +82,8 @@ block-beta
 
 > **Toast bottom** must be toolbar (60px) + margin (36px) = **96px**.
 > On desktop (no toolbar): bottom:32px.
-> **Link Network Overlay bottom** on mobile: above toolbar = 94px; on desktop: 8px.
+> **Link Network Overlay** on mobile: bottom above toolbar = 94px, left:8px (Outliner is a drawer);
+> on desktop: bottom:34px (above 26px InfoBar), left:188px (beside 180px Outliner).
 
 ---
 
@@ -214,6 +215,12 @@ z:0    ── 3D canvas (Three.js renderer)
 | Uncertainty ghost label | HTML overlay, projected via `SceneView.activeCamera` | z-index 50 (Three.js label tier) |
 
 Demo colors: uncertainty amber `#d5a23a`, decision blue `#3a7bd5`, reveal ripple green `#10b981`.
+
+**Right-edge occupancy while the Inspector is open** (`demo.active && demo.inspectorTab`, desktop):
+the N Panel shifts to `right:280px` and the world gizmo offset becomes
+`16 + 200·(nPanelVisible) + 280` — both computed from the uiStore demo slice
+(gizmo: `AppController._updateGizmoOffset()`, sole owner).
+See CODE_CONTRACTS §3 "Edge-Anchored Panels Must Coordinate Occupancy".
 
 ---
 

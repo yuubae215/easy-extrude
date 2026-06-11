@@ -157,6 +157,9 @@ export class AnnotatedPointView {
     this._bridgeLine = null
     this._bridgeCfId = null
     this._scene      = null   // set lazily in updateBridgeLine()
+    // Screen-space scale factor applied on top of the world-unit base geometry.
+    // tick() composes its per-frame animation scales with this value.
+    this._viewScale  = 1
 
     // Apply initial place-type visuals
     this._applyPlaceTypeVisuals(placeType)
@@ -200,8 +203,39 @@ export class AnnotatedPointView {
       this._crosshairs.visible = false
       this._ringMat.opacity    = 0.6
     }
-    // Reset crosshair scale so pulse starts from 1.0×
-    this._crosshairs.scale.setScalar(1)
+    // Reset crosshair scale so pulse starts from 1.0× (in view-scale units)
+    this._crosshairs.scale.setScalar(this._viewScale ?? 1)
+  }
+
+  /**
+   * Scales the marker so it appears at a roughly constant screen pixel size
+   * regardless of camera distance, capped by maxWorldSize (world-unit radius).
+   * Mirrors CoordinateFrameView.updateScale(); call every animation frame.
+   * Without this the fixed MARKER_RADIUS (0.25 world units) is sub-pixel in
+   * mm-scale scenes (e.g. the Context DSL demo) and the marker is invisible.
+   *
+   * @param {THREE.PerspectiveCamera} camera
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {number} [maxWorldSize=Infinity]  Upper bound for the marker world radius.
+   */
+  updateScale(camera, renderer, maxWorldSize = Infinity) {
+    if (!camera.isPerspectiveCamera) return
+    const tanHalfFov = Math.tan((camera.fov * Math.PI) / 360)
+    const screenH    = renderer.domElement.clientHeight || 1
+    const targetPx   = 20   // marker radius in screen pixels (≈ legacy 0.25-unit look)
+    const d          = camera.position.distanceTo(this._mesh.position)
+    let worldRadius  = (targetPx / screenH) * 2 * d * tanHalfFov
+    if (maxWorldSize < Infinity) worldRadius = Math.min(worldRadius, maxWorldSize)
+    const s = worldRadius / MARKER_RADIUS
+    if (Math.abs(s - this._viewScale) < 1e-6) return
+    this._viewScale = s
+    this._mesh.scale.setScalar(s)
+    this._ring.scale.setScalar(s)
+    // Sonar / crosshair scales are recomposed by tick(); keep them in range for
+    // non-animated place types so a static frame never shows a stale size.
+    this._sonarRing.scale.setScalar(s)
+    if (this._placeType !== 'Anchor') this._crosshairs.scale.setScalar(s)
+    if (this.boxHelper.visible) this.boxHelper.update()
   }
 
   // ── Per-frame animation ────────────────────────────────────────────────────
@@ -217,7 +251,7 @@ export class AnnotatedPointView {
       // When tact-time is violated: faster period (0.6 s) and higher peak opacity.
       const period = this._tactViolated ? 0.6 : 2.0
       const phase  = (t % period) / period
-      this._sonarRing.scale.setScalar(1 + phase * 3)
+      this._sonarRing.scale.setScalar((1 + phase * 3) * this._viewScale)
       this._sonarMat.opacity = (1 - phase) * (this._tactViolated ? 0.9 : 0.65)
       // Outline ring: steady
       this._ringMat.opacity = 0.6
@@ -226,7 +260,7 @@ export class AnnotatedPointView {
       // Conveys "pinned in place" (ADR-031 §8); urgency when tolerance exceeded (ADR-043 §4).
       const freq  = this._toleranceViolated ? 2.0 : 0.5   // radians/s → 1 s or 4 s period
       const scale = 1.0 + 0.30 * (Math.sin(t * Math.PI * freq) * 0.5 + 0.5)
-      this._crosshairs.scale.setScalar(scale)
+      this._crosshairs.scale.setScalar(scale * this._viewScale)
       this._sonarMat.opacity = 0
     } else {
       this._sonarMat.opacity = 0
@@ -297,7 +331,7 @@ export class AnnotatedPointView {
     const hexStr = hex.toString(16).padStart(6, '0')
     this._label.style.borderLeft = `3px solid #${hexStr}`
     // Reset sonar scale so the ping animation restarts cleanly from the new type
-    this._sonarRing.scale.setScalar(1)
+    this._sonarRing.scale.setScalar(this._viewScale)
     if (name) {
       this._name = name
       this._label.textContent = name

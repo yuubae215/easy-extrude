@@ -226,11 +226,17 @@ export class LinkNetworkView {
   }
 
   /**
-   * Adjusts the bottom offset when the mobile toolbar is visible.
+   * Adjusts the panel offsets per viewport.
+   * Bottom: clears the mobile toolbar (60px) + info bar (26px) on mobile, and
+   * the 26px info bar on desktop.
+   * Left: on desktop the Outliner sidebar (180px, z:90, opaque) permanently
+   * occupies the left edge — sit beside it, never behind it. On mobile the
+   * Outliner is a drawer (hidden by default), so the edge itself is free.
    * @param {boolean} isMobile
    */
   setMobile(isMobile) {
-    this._panelEl.style.bottom = isMobile ? '94px' : '8px'
+    this._panelEl.style.bottom = isMobile ? '94px' : '34px'
+    this._panelEl.style.left   = isMobile ? '8px'  : '188px'
   }
 
   dispose() {
