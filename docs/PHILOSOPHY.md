@@ -423,6 +423,10 @@ constant in *either* space alone encodes a hidden assumption that reality will b
 - An absolute **screen-pixel** size without a world cap assumes a camera distance.
   `CoordinateFrameView`'s constant-screen-size axes ballooned to dwarf the whole
   scene when zooming out, until a finite `maxWorldSize` cap was enforced.
+- The ground `GridHelper` (20 world units) is the same assumption at scene level:
+  in the mm-scale demo scene it collapsed to an invisible dot — "the world grid
+  is gone". Fixed by scaling it with the scene radius in `fitCameraToSphere()`
+  (power-of-10 cells, so grid lines stay on round coordinates).
 
 The correct shape is always the pair: *target size in screen pixels, clamped to a
 world-space bound derived from the scene (scene radius, parent bounding radius)*.
@@ -432,7 +436,7 @@ One bound without the other is the same bug in mirror image.
 exception; the marker is just imperceptibly small or absurdly large, and only at
 scene scales or zoom levels the developer didn't try.
 
-*Underlies CODE_CONTRACTS rules: CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale*
+*Underlies CODE_CONTRACTS rules: CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scales With Scene Radius*
 
 ---
 
@@ -647,4 +651,4 @@ to the main body as a full principle and add a row to the Index.
 | 24 | Derive Absolute State from Invariant Sources | Concurrency | Fastened Constraint Limitations (1a) |
 | 25 | Guard Logic Belongs in Service Predicates, Not Inline Handler Returns | Design | Semantic Move Guardrail (checkMoveGuardrail) |
 | 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
-| 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale |
+| 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |

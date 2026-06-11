@@ -172,6 +172,10 @@ export class ContextDemoController {
       if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
     }
     for (const id of this._linkIds) ctrl._service.setLinkViewVisible(id, false)
+    // The Link Network panel would spoil the staged step-⑤ reveal (it lists
+    // every link from the start) and sits under the StoryBar — hide it for
+    // the duration of the demo overlay.
+    ctrl._linkNetworkView?.setForceHidden(true)
 
     // Uncertainty ghost from the decision-marker provenance entry (the demo
     // precondition test guarantees exactly one on a Solid position axis).
@@ -234,6 +238,7 @@ export class ContextDemoController {
       if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(true)
     }
     for (const id of this._linkIds) ctrl._service.setLinkViewVisible(id, true)
+    ctrl._linkNetworkView?.setForceHidden(false)
 
     useUIStore.getState().actions.demoEnd()
   }

@@ -47,6 +47,10 @@ export class LinkNetworkView {
     this._edges       = new Map()
     this._selectedIds = new Set()
     this._collapsed   = false
+    /** True while an overlay (e.g. the Context DSL demo) suppresses the panel. */
+    this._forceHidden = false
+    /** Cached link-existence flag from the last update() — drives auto-visibility. */
+    this._hasContent  = false
 
     this._buildDOM()
   }
@@ -211,12 +215,30 @@ export class LinkNetworkView {
     }
 
     const hasContent = this._edges.size > 0
-    this._panelEl.style.display = hasContent ? 'flex' : 'none'
+    this._hasContent = hasContent
+    this._applyVisibility()
 
     if (hasContent) {
       this._runLayout()
       this._renderSVG()
     }
+  }
+
+  /**
+   * Suppresses the panel while a full-screen overlay owns the viewport
+   * (Context DSL demo: the StoryBar covers the panel region, and showing the
+   * link graph early would spoil the staged step-⑤ reveal). Auto-visibility
+   * resumes when released.
+   * @param {boolean} hidden
+   */
+  setForceHidden(hidden) {
+    this._forceHidden = hidden
+    this._applyVisibility()
+  }
+
+  /** Sole writer of the panel's display style (PHILOSOPHY #4). */
+  _applyVisibility() {
+    this._panelEl.style.display = (this._hasContent && !this._forceHidden) ? 'flex' : 'none'
   }
 
   /** Highlights nodes whose IDs are in the provided selection set. */
@@ -357,6 +379,14 @@ export class LinkNetworkView {
     }
 
     // ── Nodes ──────────────────────────────────────────────────────────────
+    // Label placement: flip to the node's left side near the right edge, clamp
+    // inside the panel, and greedily shift down/up to avoid label-label overlap
+    // — without this, labels of right-edge nodes are clipped by the SVG bounds
+    // and labels of nearby nodes render on top of each other.
+    /** @type {{x1:number,y1:number,x2:number,y2:number}[]} placed label boxes */
+    const placedLabels = []
+    const LABEL_H = 9   // approx line height at font-size 8.5
+
     for (const [id, nd] of this._nodes) {
       const sel    = this._selectedIds.has(id)
       const color  = NODE_COLOR[nd.type] ?? NODE_COLOR.default
@@ -391,10 +421,41 @@ export class LinkNetworkView {
       const labelTxt = nd.label.length > maxChars
         ? nd.label.slice(0, maxChars - 1) + '…'
         : nd.label
+      const labelW = this._estimateTextWidth(labelTxt)
+
+      // Horizontal: right of node by default; left when it would clip the
+      // right edge; clamped into the panel as a last resort.
+      let anchor = 'start'
+      let lx     = nd.x + radius + 3
+      if (lx + labelW > PANEL_W - 2) {
+        if (nd.x - radius - 3 - labelW >= 2) {
+          anchor = 'end'
+          lx     = nd.x - radius - 3
+        } else {
+          lx = Math.max(2, PANEL_W - 2 - labelW)
+        }
+      }
+
+      // Vertical: try baseline, then below, above, twice-below — first
+      // candidate that doesn't intersect an already-placed label wins.
+      const boxFor = (y) => anchor === 'start'
+        ? { x1: lx,          y1: y - LABEL_H + 1, x2: lx + labelW, y2: y + 1 }
+        : { x1: lx - labelW, y1: y - LABEL_H + 1, x2: lx,          y2: y + 1 }
+      const intersects = (b) => placedLabels.some(p =>
+        b.x1 < p.x2 && b.x2 > p.x1 && b.y1 < p.y2 && b.y2 > p.y1)
+
+      let ly = nd.y + 3.5
+      for (const dy of [0, LABEL_H, -LABEL_H, LABEL_H * 2]) {
+        const cand = Math.min(Math.max(nd.y + 3.5 + dy, LABEL_H), PANEL_H - 2)
+        if (!intersects(boxFor(cand))) { ly = cand; break }
+        ly = cand   // all candidates collide → keep the last (least-bad) one
+      }
+      placedLabels.push(boxFor(ly))
 
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-      text.setAttribute('x',           nd.x + radius + 3)
-      text.setAttribute('y',           nd.y + 3.5)
+      text.setAttribute('x',           lx)
+      text.setAttribute('y',           ly)
+      text.setAttribute('text-anchor', anchor)
       text.setAttribute('fill',        sel ? '#ffffff' : '#c0c0c0')
       text.setAttribute('font-size',   '8.5')
       text.setAttribute('font-family', 'system-ui, -apple-system, sans-serif')
@@ -405,6 +466,18 @@ export class LinkNetworkView {
       g.appendChild(text)
       this._graphGrp.appendChild(g)
     }
+  }
+
+  /**
+   * Approximate rendered width of a label at font-size 8.5px.
+   * CJK glyphs are full-width (≈ the font size); Latin/ASCII ≈ 0.55×.
+   * @param {string} str
+   * @returns {number} estimated width in px
+   */
+  _estimateTextWidth(str) {
+    let w = 0
+    for (const ch of str) w += ch.charCodeAt(0) > 0xff ? 8.5 : 4.7
+    return w
   }
 
   _toggleCollapse() {

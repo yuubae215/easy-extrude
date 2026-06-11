@@ -65,11 +65,30 @@ export class RotationHandler {
     }
   }
 
+  /** Angle step sizes (degrees) cycled by Ctrl+Wheel during rotate. */
+  static get ANGLE_STEPS() { return [1, 5, 10, 15, 22.5, 45, 90] }
+
   // ── Convenience getters (used by AppController toolbars / wheel handler) ───
 
   get axis()       { return this.state.axis }
   get stepSize()   { return this.state.stepSize }
   set stepSize(v)  { this.state.stepSize = v }
+
+  /**
+   * Cycles the Ctrl-snap angle step through ANGLE_STEPS (Ctrl+Wheel during rotate).
+   * @param {number} deltaY  Wheel delta — positive = coarser step, negative = finer.
+   */
+  cycleStepSize(deltaY) {
+    const steps = RotationHandler.ANGLE_STEPS
+    const cur   = steps.indexOf(this.state.stepSize)
+    const idx   = cur >= 0 ? cur : Math.max(steps.findIndex(s => s >= this.state.stepSize), 0)
+    const next  = deltaY > 0
+      ? Math.min(idx + 1, steps.length - 1)
+      : Math.max(idx - 1, 0)
+    this.state.stepSize = steps[next]
+    this.apply()
+    this.updateStatus()
+  }
 
   // ── Public operation lifecycle ─────────────────────────────────────────────
 

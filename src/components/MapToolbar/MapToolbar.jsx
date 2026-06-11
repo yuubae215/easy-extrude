@@ -30,6 +30,7 @@ export function MapToolbar() {
   const actions     = useUIStore(s => s.actions)
   const [hoveredTool, setHoveredTool] = useState(null)
   const [inputValue,  setInputValue]  = useState('')
+  const isMobile    = useIsMobile()
 
   // Reset input when pending state changes (new geometry placed)
   useEffect(() => {
@@ -59,7 +60,9 @@ export function MapToolbar() {
   return (
     <div
       style={{
-        position: 'fixed', top: '50%', left: '8px',
+        // Desktop: the Outliner (180px, opaque) owns the left edge — sit beside
+        // it (PHILOSOPHY #26). Mobile: the Outliner is a drawer, the edge is free.
+        position: 'fixed', top: '50%', left: isMobile ? '8px' : '188px',
         transform: 'translateY(-50%)',
         background: '#1e1e2e', border: '1px solid #3a3a4a',
         borderRadius: '8px', padding: '6px',
@@ -159,4 +162,15 @@ export function MapToolbar() {
       />
     </div>
   )
+}
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const handler = (e) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return isMobile
 }

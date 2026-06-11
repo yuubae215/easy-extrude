@@ -1497,6 +1497,26 @@ export class AppController {
     window.addEventListener('contextmenu', this._handlers.contextmenu)
   }
 
+  /**
+   * Window wheel handler. Three consumers, in priority order:
+   * 1. Map mode — scroll zooms the orthographic camera (MapModeController.onWheel)
+   * 2. Rotate + Ctrl — cycles the angle snap step (RotationHandler.cycleStepSize)
+   * 3. Grab + Ctrl — cycles the grid snap size (GrabOperationHandler.cycleGridSize)
+   * Everything else falls through to OrbitControls' own wheel zoom.
+   */
+  _onWheel(e) {
+    if (this._mapModeCtrl.onWheel(e)) return
+    if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
+      e.preventDefault()
+      this._rotateHandler.cycleStepSize(e.deltaY)
+      return
+    }
+    if (this._opState.is(S_GRAB_ACTIVE) && this._ctrlHeld) {
+      e.preventDefault()
+      this._grabHandler.cycleGridSize(e.deltaY)
+    }
+  }
+
   dispose() {
     if (!this._handlers) return
     window.removeEventListener('pointermove', this._handlers.pointermove)

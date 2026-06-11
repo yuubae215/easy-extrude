@@ -173,6 +173,11 @@ obj.meshView.updateScale(camera, renderer, Infinity)
 - **Concrete Rule**: `AnnotatedPointView.updateScale(camera, renderer, maxWorldSize)` is called every animation frame from `AppController` with `maxWorldSize = Math.max(sceneRadius * 0.05, 0.25)` — constant screen size (target 20 px radius), capped at 5 % of the scene radius, floored at the legacy 0.25 world units so meter-scale scenes keep their original look. Same dual-bound pattern as `CoordinateFrameView.updateScale()` (rule above).
 - **Composition contract**: `tick()`'s per-frame animation scales (Hub sonar ping, Anchor crosshair pulse) must multiply by `this._viewScale`, never overwrite it — `setScalar(animScale * this._viewScale)`. `_applyPlaceTypeVisuals()` and `setPlaceType()` reset to `_viewScale`, not `1`.
 
+## Ground Grid Scales With Scene Radius
+
+- **Principle**: the 20-unit `GridHelper` is another world-unit constant (PHILOSOPHY #27): in an mm-scale scene it collapses to an invisible dot, which reads as "the world grid is gone".
+- **Concrete Rule**: `SceneView.fitCameraToSphere()` calls `_updateGridScale(radius)`, which scales `this._grid` by `10^max(0, ceil(log10(radius / 10)))` — power-of-10 cell sizes keep grid lines on round world coordinates; scale stays 1 for radius ≤ 10 so meter-scale scenes look unchanged. `fitCameraToSphere` is the single "frame the scene" entry point (STEP import, `compileLayout` demo): new code must route through it rather than positioning the camera directly, or the grid (and clip planes) silently desynchronise from the scene scale.
+
 ## ~~Auto Origin Frame on 3D Object Creation~~ — Superseded by ADR-033
 
 > **This contract is superseded by ADR-033 (CoordinateFrame Phase C).**
