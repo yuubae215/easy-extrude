@@ -21,7 +21,9 @@ const SVG_DEMO = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" st
  * nodeEditorOpen) and fires callbacks registered by AppController.
  *
  * Mobile layout  (<768px):  [☰] [↩] [↪] [Mode▾] [Map] [spacer] [⋯] [N]
- * Desktop layout (≥768px):  [Mode▾] [Map] [··status··] [Save?] [Load?] [Nodes] [Export] [Import]
+ * Desktop layout (≥768px):  [Mode▾] [Map] [··status··] [Save?] [Load?] [Nodes?] [Export] [Import]
+ * (Save / Load / Nodes appear only while the BFF is connected — the Node Editor's
+ *  primary content is the BFF Geometry Service operation graph.)
  */
 export function Header() {
   const isMobile = useIsMobile()
@@ -87,16 +89,16 @@ function DesktopHeaderContents() {
         <>
           <SmallBtn onClick={() => callbacks.onSaveScene?.()} title="Save scene to server">Save</SmallBtn>
           <SmallBtn onClick={() => callbacks.onLoadScene?.()} title="Load scene from server">Load</SmallBtn>
+          <SmallBtn
+            onClick={() => callbacks.onNodeEditorToggle?.()}
+            title="Toggle Node Editor (Geometry DAG)"
+            active={nodeEditorOpen}
+            icon={SVG_NODES}
+          >
+            Nodes
+          </SmallBtn>
         </>
       )}
-      <SmallBtn
-        onClick={() => callbacks.onNodeEditorToggle?.()}
-        title="Toggle Node Editor (Geometry DAG)"
-        active={nodeEditorOpen}
-        icon={SVG_NODES}
-      >
-        Nodes
-      </SmallBtn>
       <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
       <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
       <SmallBtn onClick={() => callbacks.onContextDemoClick?.()} title="Context DSL demo — 要求文脈から3Dシーンへ (ADR-046)" icon={SVG_DEMO}>Demo</SmallBtn>

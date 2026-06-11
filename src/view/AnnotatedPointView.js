@@ -45,12 +45,23 @@ export class AnnotatedPointView {
 
     // ── Circle marker mesh ─────────────────────────────────────────────────
     this._geo = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 16)
+    // Rest the disc ON the ground plane (bottom at z=0) instead of straddling
+    // it — a z-centered cylinder is half-buried, and at glancing angles its
+    // top face, side wall, and the z=0 ring visually separate into what reads
+    // as multiple misregistered discs. (+Y here becomes +Z after the rotation
+    // below.)
+    this._geo.translate(0, MARKER_HEIGHT / 2, 0)
     this._mat = new THREE.MeshBasicMaterial({
-      color:              this._colorForType(placeType),
-      depthTest:          true,
-      polygonOffset:      true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -4,
+      color:       this._colorForType(placeType),
+      depthTest:   true,
+      // transparent:true at full opacity is deliberate: it moves the disc into
+      // the transparent render queue, where renderOrder (2 > zone fill's 1)
+      // guarantees it draws AFTER ground-plane region fills. As an opaque mesh
+      // it is drawn first, and the zone's slope-scaled polygonOffset can pull
+      // the fill in front of the disc at glancing angles — the green fill then
+      // tints the purple marker into a blue-grey ghost.
+      transparent: true,
+      opacity:     1,
     })
     /** Named differently from cuboid to indicate no raycasting. */
     this._mesh = new THREE.Mesh(this._geo, this._mat)
@@ -163,6 +174,22 @@ export class AnnotatedPointView {
 
     // Apply initial place-type visuals
     this._applyPlaceTypeVisuals(placeType)
+    this._applyLift()
+  }
+
+  /**
+   * Keeps the flat overlay parts (ring / sonar / crosshairs) at the disc's TOP
+   * face instead of the z=0 base. Coplanar with the ground they interleave
+   * with region fills and the grid, and at glancing angles they visually
+   * detach from the disc (parallax). The lift scales with `_viewScale` because
+   * the disc height does. Call after every `_viewScale` or position change.
+   */
+  _applyLift() {
+    const lift = this._point ? MARKER_HEIGHT * this._viewScale * 1.05 : 0
+    const z = (this._point?.z ?? 0) + lift
+    this._ring.position.z       = z
+    this._sonarRing.position.z  = z
+    this._crosshairs.position.z = z
   }
 
   // ── Geometry ───────────────────────────────────────────────────────────────
@@ -177,6 +204,7 @@ export class AnnotatedPointView {
     this._ring.position.copy(point)
     this._sonarRing.position.copy(point)
     this._crosshairs.position.copy(point)
+    this._applyLift()
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 
@@ -235,6 +263,7 @@ export class AnnotatedPointView {
     // non-animated place types so a static frame never shows a stale size.
     this._sonarRing.scale.setScalar(s)
     if (this._placeType !== 'Anchor') this._crosshairs.scale.setScalar(s)
+    this._applyLift()
     if (this.boxHelper.visible) this.boxHelper.update()
   }
 

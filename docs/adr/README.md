@@ -59,6 +59,7 @@ This directory records the project's design decisions.
 | [ADR-045](ADR-045-external-layout-api.md) | **External Layout API — CLI/REST-Driven Scene Composition via Layout DSL** | Accepted | 2026-06-09 | ADR-044, ADR-015, ADR-022, ADR-030, ADR-037, ADR-040 |
 | [ADR-046](ADR-046-context-dsl.md) | **Context DSL — 要件文脈の一級データ構造化と仕様への追跡可能コンパイル** | Draft | 2026-06-10 | ADR-044, ADR-045, ADR-037, ADR-030, ADR-047 |
 | [ADR-047](ADR-047-context-demo-layer.md) | **Context Demo Layer — 要求文脈の可視化オーバーレイ (UncertaintyGhost / Inspector / StoryBar)** | Accepted | 2026-06-11 | ADR-046, ADR-045, ADR-040, ADR-041 |
+| [ADR-048](ADR-048-link-network-layered-layout.md) | **Link Network 決定的階層レイアウト — 力学レイアウト廃止と親子構造の可視化** | Accepted | 2026-06-12 | ADR-030, ADR-037, ADR-038 |
 
 ## How to Add a New ADR
 

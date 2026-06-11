@@ -1358,7 +1358,7 @@ export class AppController {
         : obj instanceof AnnotatedRegion         ? 'annot-region'
         : obj instanceof AnnotatedPoint          ? 'annot-point'
         : 'cuboid'
-      entityInfos.set(id, { name: obj.name, type })
+      entityInfos.set(id, { name: obj.name, type, parentId: obj.parentId ?? null })
     }
     const links = [...this._scene.links.values()]
     this._linkNetworkView.update(entityInfos, links)

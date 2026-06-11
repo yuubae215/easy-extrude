@@ -2,15 +2,20 @@
 /**
  * LinkNetworkView — 2D SVG overlay showing the SpatialLink graph.
  *
- * Renders a force-directed graph of all entities that participate in at
- * least one SpatialLink.  Nodes are color-coded by entity type; edges by
- * semanticType.  Directed edges carry an arrowhead and a marching-ants
- * animation.  Clicking a node selects the entity in the 3D viewport.
+ * Renders a deterministic layered hierarchy of all entities that participate
+ * in at least one SpatialLink, plus their ancestor entities (a linked CF is
+ * anchored under its parent Solid even when the Solid itself has no link).
+ * Layer 0 holds root entities (Solids, annotations); each CF sits one row
+ * below its parent. Parent-child structure is drawn as faint static lines;
+ * SpatialLinks keep their semanticType colors, dashes, marching-ants
+ * animation, and arrowheads, and bow into a bezier when both endpoints share
+ * a layer. Same scene → same pixels, every update (no force simulation, no
+ * random scatter). Clicking a node selects the entity in the 3D viewport.
  *
  * Lifecycle: auto-visible when links exist, hidden when none.
  * The panel is collapsible via the header button (−/+).
  *
- * @see ADR-030 (SpatialLink architecture)
+ * @see ADR-030 (SpatialLink architecture), ADR-048 (layered layout)
  */
 import { LINK_TYPE_COLORS } from './SpatialLinkView.js'
 
@@ -33,7 +38,16 @@ const DIRECTED_TYPES = new Set([
 ])
 
 const PANEL_W = 220
-const PANEL_H = 152
+// SVG height: grows to MAX when the hierarchy has 3+ layers (Solid → Origin CF
+// → user CF). Width never grows (left-edge occupancy contract). The MAX cap is
+// set by the Map vertical toolbar, which shares the left:188px column
+// (top:50%, ~259px tall): on a 720px viewport the panel top
+// (720 − 34 bottom − 28 header − MAX) must stay below the toolbar's lower
+// edge (~490px). 160 leaves ~8px clearance; measured via Playwright.
+const MIN_PANEL_H = 152
+const MAX_PANEL_H = 160
+/** Max parentId hops when walking ancestor chains (cycle/corruption guard). */
+const MAX_ANCESTOR_HOPS = 16
 
 export class LinkNetworkView {
   /**
@@ -47,6 +61,10 @@ export class LinkNetworkView {
     this._edges       = new Map()
     this._selectedIds = new Set()
     this._collapsed   = false
+    /** Current SVG height — MIN_PANEL_H, or MAX_PANEL_H for 3+ layers. */
+    this._svgH        = MIN_PANEL_H
+    /** True when rows are too crowded for labels (selection still labelled). */
+    this._denseMode   = false
     /** True while an overlay (e.g. the Context DSL demo) suppresses the panel. */
     this._forceHidden = false
     /** Cached link-existence flag from the last update() — drives auto-visibility. */
@@ -128,7 +146,7 @@ export class LinkNetworkView {
     // ── SVG canvas ──────────────────────────────────────────────────────────
     this._svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     this._svgEl.setAttribute('width',  PANEL_W)
-    this._svgEl.setAttribute('height', PANEL_H)
+    this._svgEl.setAttribute('height', MIN_PANEL_H)
     Object.assign(this._svgEl.style, {
       display:    'block',
       width:      '100%',
@@ -175,14 +193,10 @@ export class LinkNetworkView {
 
   /**
    * Rebuilds the graph from current scene state.
-   * @param {Map<string, {name:string, type:string}>} entityInfos
+   * @param {Map<string, {name:string, type:string, parentId?:string|null}>} entityInfos
    * @param {import('../domain/SpatialLink.js').SpatialLink[]} links
    */
   update(entityInfos, links) {
-    // Preserve existing positions for layout stability across incremental changes.
-    const prevPos = new Map()
-    for (const [id, nd] of this._nodes) prevPos.set(id, { x: nd.x, y: nd.y })
-
     this._nodes.clear()
     this._edges.clear()
 
@@ -192,15 +206,31 @@ export class LinkNetworkView {
       usedIds.add(link.targetId)
     }
 
+    // Include ancestor entities so every linked CF is anchored under its root
+    // Solid — the root itself may carry no link (e.g. a fastened child CF
+    // whose parent Solid is otherwise unreferenced).
+    const includedIds = new Set()
     for (const id of usedIds) {
+      let cur = id
+      for (let hop = 0; hop < MAX_ANCESTOR_HOPS && cur != null; hop++) {
+        if (includedIds.has(cur)) break
+        if (!entityInfos.has(cur)) break
+        includedIds.add(cur)
+        cur = entityInfos.get(cur).parentId ?? null
+      }
+    }
+
+    for (const id of includedIds) {
       const info = entityInfos.get(id)
-      if (!info) continue
-      const prev = prevPos.get(id)
+      // Positions are always assigned by the deterministic layered layout —
+      // no random seed, no carry-over from the previous update.
       this._nodes.set(id, {
-        label: info.name,
-        type:  info.type,
-        x: prev?.x ?? 20 + Math.random() * (PANEL_W - 40),
-        y: prev?.y ?? 20 + Math.random() * (PANEL_H - 40),
+        label:    info.name,
+        type:     info.type,
+        parentId: info.parentId ?? null,
+        layer:    0,
+        x: 0,
+        y: 0,
       })
     }
 
@@ -268,75 +298,142 @@ export class LinkNetworkView {
   // ── Layout ──────────────────────────────────────────────────────────────────
 
   /**
-   * Fruchterman-Reingold spring layout — runs synchronously for 180 iterations.
-   * Position state is stored directly on node objects.
+   * Deterministic layered hierarchy layout (ADR-048).
+   *
+   * Layer = parentId depth among included nodes (roots at 0, CFs below their
+   * parent). X order: roots stable-sorted by (name, id), refined by one
+   * barycenter pass over SpatialLink partners; children grouped under their
+   * parent's x with min-gap sweeps. The output is a pure function of the
+   * input graph — identical scene state yields identical pixels, which
+   * replaces the old force layout's `prevPos` carry-over as the stability
+   * mechanism.
+   *
+   * Side outputs (read by `_renderSVG()`): `nd.layer`, `this._svgH`,
+   * `this._denseMode`, and `this._nodes` rebuilt in left-to-right /
+   * top-to-bottom order so greedy label placement resolves deterministically.
    */
   _runLayout() {
-    const nodes   = [...this._nodes.values()]
-    const edges   = [...this._edges.values()]
-    const n = nodes.length
+    const ids = [...this._nodes.keys()]
+    const n = ids.length
     if (n === 0) return
-    if (n === 1) { nodes[0].x = PANEL_W / 2; nodes[0].y = PANEL_H / 2; return }
 
-    const W  = PANEL_W - 24, H = PANEL_H - 20
-    const cx = W / 2 + 12,  cy = H / 2 + 10
-    // optimal pairwise distance
-    const k  = Math.sqrt((W * H) / n) * 0.75
-
-    const nodeById = new Map()
-    for (const [id, nd] of this._nodes) nodeById.set(id, nd)
-
-    let temp = W * 0.4
-    // cool temperature to ~1 % of initial over 180 steps
-    const cool = Math.pow(0.01, 1 / 180)
-
-    for (let it = 0; it < 180; it++) {
-      for (const nd of nodes) { nd.dx = 0; nd.dy = 0 }
-
-      // Repulsion — all pairs
-      for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-          const u = nodes[i], v = nodes[j]
-          let dx = u.x - v.x, dy = u.y - v.y
-          if (dx === 0 && dy === 0) { dx = Math.random() - 0.5; dy = Math.random() - 0.5 }
-          const dist  = Math.sqrt(dx * dx + dy * dy) || 0.01
-          const force = k * k / dist
-          const fx = (dx / dist) * force, fy = (dy / dist) * force
-          u.dx += fx; u.dy += fy
-          v.dx -= fx; v.dy -= fy
-        }
-      }
-
-      // Attraction — connected pairs
-      for (const e of edges) {
-        const u = nodeById.get(e.source), v = nodeById.get(e.target)
-        if (!u || !v) continue
-        const dx   = v.x - u.x, dy = v.y - u.y
-        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01
-        const force = dist * dist / k
-        const fx = (dx / dist) * force, fy = (dy / dist) * force
-        u.dx += fx; u.dy += fy
-        v.dx -= fx; v.dy -= fy
-      }
-
-      // Weak center gravity
-      for (const nd of nodes) {
-        nd.dx += (cx - nd.x) * 0.04
-        nd.dy += (cy - nd.y) * 0.04
-      }
-
-      // Apply displacement, clamped by temperature
-      for (const nd of nodes) {
-        const len  = Math.sqrt(nd.dx * nd.dx + nd.dy * nd.dy) || 0.01
-        const step = Math.min(len, temp)
-        nd.x += (nd.dx / len) * step
-        nd.y += (nd.dy / len) * step
-        nd.x = Math.max(14, Math.min(W + 10, nd.x))
-        nd.y = Math.max(14, Math.min(H + 8,  nd.y))
-      }
-
-      temp *= cool
+    // ── Layer assignment (memoized parentId walk) ───────────────────────────
+    const layerOf = (id, hop = 0) => {
+      const nd = this._nodes.get(id)
+      const pid = nd.parentId
+      if (hop >= MAX_ANCESTOR_HOPS || pid == null || !this._nodes.has(pid)) return 0
+      return 1 + layerOf(pid, hop + 1)
     }
+    let maxLayer = 0
+    for (const id of ids) {
+      const layer = layerOf(id)
+      this._nodes.get(id).layer = layer
+      maxLayer = Math.max(maxLayer, layer)
+    }
+    const L = maxLayer + 1
+
+    // ── Vertical: panel height + row positions ──────────────────────────────
+    this._svgH = L >= 3 ? MAX_PANEL_H : MIN_PANEL_H
+    const TOP = 24, BOT = 26
+    const rowY = (layer) =>
+      L === 1 ? this._svgH / 2 : TOP + layer * (this._svgH - TOP - BOT) / (L - 1)
+
+    // ── Roots: stable (name, id) order + one barycenter refinement pass ─────
+    const byNameId = (a, b) => {
+      const na = this._nodes.get(a).label, nb = this._nodes.get(b).label
+      return na < nb ? -1 : na > nb ? 1 : a < b ? -1 : a > b ? 1 : 0
+    }
+    const rootOf = (id) => {
+      let cur = id
+      for (let hop = 0; hop < MAX_ANCESTOR_HOPS; hop++) {
+        const pid = this._nodes.get(cur)?.parentId
+        if (pid == null || !this._nodes.has(pid)) return cur
+        cur = pid
+      }
+      return cur
+    }
+    let roots = ids.filter(id => this._nodes.get(id).layer === 0).sort(byNameId)
+    const initialIdx = new Map(roots.map((id, i) => [id, i]))
+    const bary = new Map()
+    for (const id of roots) {
+      const partners = []
+      for (const e of this._edges.values()) {
+        const ru = rootOf(e.source), rv = rootOf(e.target)
+        if (ru === id && rv !== id) partners.push(initialIdx.get(rv))
+        if (rv === id && ru !== id) partners.push(initialIdx.get(ru))
+      }
+      bary.set(id, partners.length
+        ? partners.reduce((s, v) => s + v, 0) / partners.length
+        : initialIdx.get(id))
+    }
+    roots = roots.sort((a, b) => (bary.get(a) - bary.get(b)) || byNameId(a, b))
+
+    const MARGIN = 12
+    const W = PANEL_W - 2 * MARGIN
+    const rootSlot = W / roots.length
+    roots.forEach((id, i) => {
+      const nd = this._nodes.get(id)
+      nd.x = MARGIN + (i + 0.5) * rootSlot
+      nd.y = rowY(0)
+    })
+
+    // ── Child rows: group under parent x, then min-gap sweeps ───────────────
+    let maxRowCount = roots.length
+    for (let layer = 1; layer < L; layer++) {
+      const row = ids.filter(id => this._nodes.get(id).layer === layer)
+      maxRowCount = Math.max(maxRowCount, row.length)
+      // Group order by parent's x, then stable (name, id) within the group.
+      row.sort((a, b) => {
+        const pa = this._nodes.get(this._nodes.get(a).parentId)
+        const pb = this._nodes.get(this._nodes.get(b).parentId)
+        return (pa.x - pb.x) || byNameId(a, b)
+      })
+      // Ideal: spread each sibling group around the parent's x.
+      const groupIndex = new Map()
+      for (const id of row) {
+        const pid = this._nodes.get(id).parentId
+        if (!groupIndex.has(pid)) groupIndex.set(pid, [])
+        groupIndex.get(pid).push(id)
+      }
+      for (const [pid, members] of groupIndex) {
+        const px = this._nodes.get(pid).x
+        members.forEach((id, j) => {
+          this._nodes.get(id).x = px + (j - (members.length - 1) / 2) * 20
+        })
+      }
+      // Left-to-right min-gap sweep, then right-to-left to fix edge pileup.
+      const minGap = 16
+      for (let i = 0; i < row.length; i++) {
+        const nd = this._nodes.get(row[i])
+        const prev = i > 0 ? this._nodes.get(row[i - 1]).x + minGap : MARGIN
+        nd.x = Math.max(nd.x, prev)
+        nd.y = rowY(layer)
+      }
+      for (let i = row.length - 1; i >= 0; i--) {
+        const nd = this._nodes.get(row[i])
+        const next = i < row.length - 1
+          ? this._nodes.get(row[i + 1]).x - minGap
+          : PANEL_W - MARGIN
+        nd.x = Math.min(nd.x, next)
+      }
+      for (let i = 0; i < row.length; i++) {
+        const nd = this._nodes.get(row[i])
+        nd.x = Math.max(MARGIN, Math.min(PANEL_W - MARGIN, nd.x))
+      }
+    }
+
+    // Dense scenes degrade to a labelled-on-selection dot strip (ADR-048 §MVP).
+    this._denseMode = W / maxRowCount < 22
+
+    // Rebuild the node Map in render order (top-to-bottom, left-to-right) so
+    // the greedy label pass in _renderSVG resolves left-neighbor-first.
+    const ordered = ids.sort((a, b) => {
+      const u = this._nodes.get(a), v = this._nodes.get(b)
+      return (u.layer - v.layer) || (u.x - v.x) || byNameId(a, b)
+    })
+    const rebuilt = new Map()
+    for (const id of ordered) rebuilt.set(id, this._nodes.get(id))
+    this._nodes = rebuilt
   }
 
   // ── Rendering ───────────────────────────────────────────────────────────────
@@ -345,10 +442,33 @@ export class LinkNetworkView {
     while (this._graphGrp.firstChild) this._graphGrp.removeChild(this._graphGrp.firstChild)
     if (this._nodes.size === 0) return
 
+    this._svgEl.setAttribute('height', this._svgH)
+
     const nodeById = new Map()
     for (const [id, nd] of this._nodes) nodeById.set(id, nd)
 
-    // ── Edges ──────────────────────────────────────────────────────────────
+    // ── Hierarchy edges (parent → child, structural) ───────────────────────
+    // Faint static lines underneath the SpatialLink layer: containment is
+    // scaffolding, not a semantic relationship — no dash, no marching ants,
+    // no arrowhead (those encode SpatialLink semantics, ADR-030/038).
+    for (const [id, nd] of this._nodes) {
+      const parent = nd.parentId != null ? nodeById.get(nd.parentId) : null
+      if (!parent) continue
+      const dx   = nd.x - parent.x, dy = nd.y - parent.y
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1
+      const nx   = dx / dist, ny = dy / dist
+      const R    = 5
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      line.setAttribute('x1', parent.x + nx * R)
+      line.setAttribute('y1', parent.y + ny * R)
+      line.setAttribute('x2', nd.x - nx * R)
+      line.setAttribute('y2', nd.y - ny * R)
+      line.setAttribute('stroke',       'rgba(255,255,255,0.18)')
+      line.setAttribute('stroke-width', '1')
+      this._graphGrp.appendChild(line)
+    }
+
+    // ── SpatialLink edges ──────────────────────────────────────────────────
     for (const [, edge] of this._edges) {
       const u = nodeById.get(edge.source), v = nodeById.get(edge.target)
       if (!u || !v) continue
@@ -362,20 +482,34 @@ export class LinkNetworkView {
       const R    = 5
       const pullback = edge.directed ? R + 7 : R
 
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-      line.setAttribute('x1', u.x + nx * R)
-      line.setAttribute('y1', u.y + ny * R)
-      line.setAttribute('x2', v.x - nx * pullback)
-      line.setAttribute('y2', v.y - ny * pullback)
-      line.setAttribute('stroke',           color)
-      line.setAttribute('stroke-width',     '1.5')
-      line.setAttribute('stroke-opacity',   '0.75')
-      line.setAttribute('stroke-dasharray', '4 3')
-      line.style.animation = 'lnv-march 1.4s linear infinite'
-      if (edge.directed) {
-        line.setAttribute('marker-end', `url(#lnv-arr-${edge.semanticType})`)
+      const x1 = u.x + nx * R,        y1 = u.y + ny * R
+      const x2 = v.x - nx * pullback, y2 = v.y - ny * pullback
+
+      let el
+      if (u.layer === v.layer && u !== v) {
+        // Same-row links bow away from the row — a straight line would run
+        // through every sibling node between the endpoints. Layer 0 bows up,
+        // deeper layers bow down (toward free space).
+        const bow = u.layer === 0 ? -14 : 14
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        el.setAttribute('d', `M ${x1} ${y1} Q ${(x1 + x2) / 2} ${y1 + bow} ${x2} ${y2}`)
+        el.setAttribute('fill', 'none')
+      } else {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+        el.setAttribute('x1', x1)
+        el.setAttribute('y1', y1)
+        el.setAttribute('x2', x2)
+        el.setAttribute('y2', y2)
       }
-      this._graphGrp.appendChild(line)
+      el.setAttribute('stroke',           color)
+      el.setAttribute('stroke-width',     '1.5')
+      el.setAttribute('stroke-opacity',   '0.75')
+      el.setAttribute('stroke-dasharray', '4 3')
+      el.style.animation = 'lnv-march 1.4s linear infinite'
+      if (edge.directed) {
+        el.setAttribute('marker-end', `url(#lnv-arr-${edge.semanticType})`)
+      }
+      this._graphGrp.appendChild(el)
     }
 
     // ── Nodes ──────────────────────────────────────────────────────────────
@@ -417,6 +551,14 @@ export class LinkNetworkView {
       circle.setAttribute('stroke',       sel ? '#ffffff' : 'rgba(0,0,0,0.45)')
       circle.setAttribute('stroke-width', sel ? '1.5' : '0.8')
 
+      // Crowded rows degrade to a dot strip: labels only on selected nodes
+      // (clicking a dot still selects + reveals its name).
+      if (this._denseMode && !sel) {
+        g.appendChild(circle)
+        this._graphGrp.appendChild(g)
+        continue
+      }
+
       const maxChars = 10
       const labelTxt = nd.label.length > maxChars
         ? nd.label.slice(0, maxChars - 1) + '…'
@@ -446,7 +588,7 @@ export class LinkNetworkView {
 
       let ly = nd.y + 3.5
       for (const dy of [0, LABEL_H, -LABEL_H, LABEL_H * 2]) {
-        const cand = Math.min(Math.max(nd.y + 3.5 + dy, LABEL_H), PANEL_H - 2)
+        const cand = Math.min(Math.max(nd.y + 3.5 + dy, LABEL_H), this._svgH - 2)
         if (!intersects(boxFor(cand))) { ly = cand; break }
         ly = cand   // all candidates collide → keep the last (least-bad) one
       }

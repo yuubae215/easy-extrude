@@ -42,6 +42,17 @@ block-beta
   F["[F] Mobile Toolbar\n(mobile only)"]:3
 ```
 
+**[G] Link Network Overlay** (auto-visible, all Object/Edit screens):
+bottom-left panel shown automatically while the scene contains at least one
+SpatialLink; hidden when none exist and force-hidden during the Context demo
+(S-17). Content (ADR-048): a deterministic layered hierarchy — layer 0 = root
+entities (Solid / annotations, color-coded by type), lower layers = CFs under
+their parent; faint solid lines = parent-child structure; colored dashed
+marching-ants lines (+ arrowhead when directed) = SpatialLinks per
+semanticType; same-layer links bow into a bezier. Clicking a node selects the
+entity in the viewport; crowded rows show labels only for the selection.
+Dimensions / position → `LAYOUT_DESIGN.md`.
+
 ---
 
 ## Per-Screen Information Definitions
@@ -53,7 +64,7 @@ block-beta
 |---------|---------|
 | Mode selector | `Object Mode ▾` |
 | Status | (empty) |
-| Header actions | Save / Load / Export / Import (desktop) / `⋯` menu (mobile) |
+| Header actions | Save / Load / Nodes (desktop, BFF 接続時のみ) / Export / Import / Demo (desktop) / `⋯` menu (mobile) |
 
 #### [B] Outliner
 - Lists all objects in the scene

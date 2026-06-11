@@ -42,7 +42,7 @@ block-beta
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
 | Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
-| Link Network Overlay | w:220px, h:auto (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo | 50 |
+| Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px keeps the panel top clear of the Map toolbar's lower edge on 720px viewports (ADR-048) | 50 |
 | Map Mode toolbar | w:44px min, h:auto | fixed top:50% left:188px (beside Outliner; mobile: left:8px) | 150 |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
 | Context menu | w:auto | absolute (cursor position) | 200 |
@@ -79,7 +79,7 @@ block-beta
 | Toast | w:auto, max-w:280px | fixed bottom:**96px**, centered | 150 |
 | Context menu | w:auto | absolute (tap position) | 200 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:8px | 50 |
-| Link Network Overlay | w:220px, h:auto | fixed bottom:94px left:8px | 50 |
+| Link Network Overlay | w:220px, h:SVG 152–160px + 28px header | fixed bottom:94px left:8px | 50 |
 
 > **Toast bottom** must be toolbar (60px) + margin (36px) = **96px**.
 > On desktop (no toolbar): bottom:32px.
