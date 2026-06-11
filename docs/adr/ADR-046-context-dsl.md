@@ -2,8 +2,8 @@
 
 **Status**: Draft (Proposed)
 **Date**: 2026-06-10
-**Updated**: 2026-06-11 — MVP 実装 (`src/context/`, ゴールデンテスト 8/8) を反映。interval の確定方式を worst-case 自動解決から **Decision エンティティ経由**に変更(§2.3 invariant 2、§7)
-**Related**: ADR-044 (5W1H Function Mapping), ADR-045 (External Layout API), ADR-037 (Body Frame), ADR-030 (SpatialLink)
+**Updated**: 2026-06-11 — MVP 実装 (`src/context/`, ゴールデンテスト 8/8) を反映。interval の確定方式を worst-case 自動解決から **Decision エンティティ経由**に変更(§2.3 invariant 2、§7)。同日、可視化 PoC デモを ADR-047 として実装(`compileContext` の戻り値に `provenance[]` を追加 — additive)
+**Related**: ADR-044 (5W1H Function Mapping), ADR-045 (External Layout API), ADR-037 (Body Frame), ADR-030 (SpatialLink), ADR-047 (Context Demo Layer)
 **Implementation**: `src/context/` (Schema / Validator / Compiler), `examples/factory_context.json`, `pnpm test:context`
 
 ---
@@ -293,5 +293,5 @@ examples/
 3. §4.2 の未実装ルール 3 本(asserted-interval 実測促し / 荷重連鎖 / tcp_envelope)と `a_reach` のシナリオ復帰
 4. static 述語(`footprint_within` 等)の実行エンジン
 5. baseline スナップショット・Decision 署名イベント・diff(瑕疵境界の運用、invariant 4)
-6. 検収マトリックスの最小 UI(Outliner と同様のサイドパネル射影)
+6. ~~検収マトリックスの最小 UI(Outliner と同様のサイドパネル射影)~~ → **済**(ADR-047 Context Inspector — Given/OpenQuestions/Decisions/Trace/Acceptance タブ + デモオーバーレイ、2026-06-11)
 7. `interpret --ai` の生成先を context/0.1 へ切替

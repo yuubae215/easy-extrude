@@ -63,6 +63,7 @@ import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
+import { ContextDemoController }      from './ContextDemoController.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
 import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
 import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
@@ -350,6 +351,10 @@ export class AppController {
     // All map mode state and interaction logic live in MapModeController.
     // AppController accesses map state via this._mapModeCtrl.isActive / .hasTool.
     this._mapModeCtrl = new MapModeController(this)
+
+    // ── Context DSL demo (ADR-046/047, delegated to ContextDemoController) ─
+    // Registers its own uiStore callbacks; AppController only ticks it.
+    this._demoCtrl = new ContextDemoController(this)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
@@ -654,9 +659,11 @@ export class AppController {
     this._commandStack.clear()
 
     // Expose console API for role-based provenance (ADR-034 §8.3)
+    // + Context DSL demo entry (ADR-047)
     window.__easyExtrude = {
-      setRole: (role) => RoleService.setRole(role),
-      getRole: ()     => RoleService.getRole(),
+      setRole:     (role) => RoleService.setRole(role),
+      getRole:     ()     => RoleService.getRole(),
+      demoContext: ()     => this._demoCtrl.enter(),
     }
   }
 
@@ -3042,6 +3049,8 @@ export class AppController {
           return !done
         })
       }
+      // Context DSL demo: ghost pulse/collapse + staggered reveal (ADR-047).
+      this._demoCtrl.tick(t)
     }
     loop()
 
@@ -3051,6 +3060,12 @@ export class AppController {
     // Wire Export / Import JSON buttons
     this._uiView.onExportJson(() => this._exportSceneJson())
     this._uiView.onImportJson(() => this._triggerImportSceneJson())
+
+    // Context DSL demo via URL param (?demo=context) — same path as the
+    // header Demo button and window.__easyExtrude.demoContext().
+    if (new URLSearchParams(location.search).get('demo') === 'context') {
+      this._demoCtrl.enter()
+    }
 
     // Non-blocking BFF + Node Editor setup (Phase B)
     this._initBff().catch(err => {

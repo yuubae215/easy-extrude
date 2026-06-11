@@ -132,10 +132,12 @@ z:200  ── Modal dialogs (rename, unit conversion)
 z:150  ── Toast notifications
 
 z:110  ── Drawers (Outliner, N Panel) ← overlaps header
+        ── Context demo Decision Card (ADR-047)
 
 z:100  ── Header (fixed top)
         ── Mobile toolbar (fixed bottom)
         ── Status bar / Info bar (fixed bottom)
+        ── Context demo Inspector / Story Bar (ADR-047)
 
 z:50   ── Gizmo (overlay on Three.js canvas)
 
@@ -199,6 +201,19 @@ z:0    ── 3D canvas (Three.js renderer)
 - Indent: CoordinateFrame indented 12px under its parent
 - Row height: 28px
 - Active row: `background: #3d3d6b`
+
+---
+
+## Context DSL Demo Overlay (ADR-047)
+
+| Component | Position | Dimensions |
+|-----------|----------|------------|
+| Context Inspector | `fixed; top:40px; right:0; bottom:26px` | width 280px; hidden < 768px |
+| Decision Card | `fixed; right:292px; top:56px` (mobile: `right:12px`) — top-anchored so it never covers the ghost-collapse animation or the StoryBar ✕; shown at step ④ only | width 320px max |
+| Story Bar | `fixed; bottom:36px; left:50%` (mobile: `bottom:96px`) | `min(620px, 100vw − 24px)` |
+| Uncertainty ghost label | HTML overlay, projected via `SceneView.activeCamera` | z-index 50 (Three.js label tier) |
+
+Demo colors: uncertainty amber `#d5a23a`, decision blue `#3a7bd5`, reveal ripple green `#10b981`.
 
 ---
 

@@ -16,10 +16,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { compileContext } from './ContextCompiler.js'
+import { compileContext, extractProvenance } from './ContextCompiler.js'
 import { validateContext } from './ContextValidator.js'
 import { validateLayoutDsl } from '../layout/LayoutValidator.js'
-import { compileLayout } from '../layout/LayoutCompiler.js'
+import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -105,6 +105,65 @@ test('referencing an "unknown" attribute via $fact throws', () => {
   constraint.properties.ratedCurrent_A = { '$fact': 'f_outlet.attrs.ratedCurrent' }
 
   assert.throws(() => compileContext(ctx), /unknown/)
+})
+
+// ── 8a. Provenance extraction (uncertainty visualization input) ───────────────
+
+test('provenance: workbench position.x is decision-driven and carries the source interval', () => {
+  const { provenance } = compileContext(loadContext())
+
+  const p = provenance.find(r => r.entityRef === 'workbench' && r.path === 'position.x')
+  assert.ok(p, 'workbench position.x の provenance が存在すること')
+  assert.equal(p.marker, 'decision')
+  assert.equal(p.ref, 'd_bench_distance')
+  assert.equal(p.nominal, 2800)
+  assert.equal(p.resolvesFact, 'f_outlet_to_bench')
+  assert.deepStrictEqual(p.interval, [2700, 3000])
+  assert.equal(p.unit, 'mm')
+  assert.equal(p.status, 'proposed')
+})
+
+test('provenance: exactly one decision marker targets a Solid position axis (demo precondition)', () => {
+  const { provenance, layoutDsl } = compileContext(loadContext())
+  const solidRefs = new Set(layoutDsl.entities.filter(e => e.type === 'Solid').map(e => e.ref))
+
+  const hits = provenance.filter(r =>
+    r.marker === 'decision' && solidRefs.has(r.entityRef) && r.path.startsWith('position.')
+  )
+  assert.equal(hits.length, 1)
+})
+
+test('provenance: fact and expr markers resolve to their concrete values', () => {
+  const provenance = extractProvenance(loadContext())
+
+  const dim = provenance.find(r => r.entityRef === 'workbench' && r.path === 'dimensions.x')
+  assert.equal(dim.marker, 'fact')
+  assert.equal(dim.value, 500)
+
+  const z = provenance.find(r => r.entityRef === 'workbench' && r.path === 'position.z')
+  assert.equal(z.marker, 'expr')
+  assert.equal(z.value, 400)
+
+  const conn = provenance.find(r => r.entityRef === 'constraint:floor_outlet→workbench_origin'
+    && r.path === 'properties.distance_mm')
+  assert.equal(conn.marker, 'decision')
+})
+
+// ── 8b. Ref map / link id contract (scene id resolution for trace) ────────────
+
+test('buildRefMap and linkIdForConstraint expose deterministic scene ids', () => {
+  const { layoutDsl } = compileContext(loadContext())
+  const refMap = buildRefMap(layoutDsl.entities)
+
+  assert.equal(refMap.get('workbench'),        'solid_workbench')
+  assert.equal(refMap.get('workbench_origin'), 'cf_origin_workbench')
+  assert.equal(refMap.get('workbench_top'),    'cf_workbench_workbench_top')
+  assert.equal(refMap.get('floor_outlet'),     'ap_floor_outlet')
+  assert.equal(refMap.get('cell_area'),        'ar_cell_area')
+
+  const scene = compileLayout(layoutDsl)
+  const c1 = layoutDsl.constraints[1]
+  assert.equal(scene.links[1].id, linkIdForConstraint(1, c1))
 })
 
 // ── 8. Dangling trace sources are rejected ────────────────────────────────────

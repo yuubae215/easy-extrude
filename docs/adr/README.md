@@ -57,7 +57,8 @@ This directory records the project's design decisions.
 | [ADR-043](ADR-043-2d-3d-spatial-link-semantics.md) | **2D/3D Spatial Link Semantics — `bounded_by` and Clearance Evaluation** | Draft | 2026-05-21 | ADR-029, ADR-030, ADR-038 |
 | [ADR-044](ADR-044-5w1h-function-mapping.md) | **5W1H Function Mapping — Homomorphic Bridge Between Natural Language and Automation** | Draft | 2026-06-01 | ADR-030, ADR-039, ADR-041, ADR-022 |
 | [ADR-045](ADR-045-external-layout-api.md) | **External Layout API — CLI/REST-Driven Scene Composition via Layout DSL** | Accepted | 2026-06-09 | ADR-044, ADR-015, ADR-022, ADR-030, ADR-037, ADR-040 |
-| [ADR-046](ADR-046-context-dsl.md) | **Context DSL — 要件文脈の一級データ構造化と仕様への追跡可能コンパイル** | Draft | 2026-06-10 | ADR-044, ADR-045, ADR-037, ADR-030 |
+| [ADR-046](ADR-046-context-dsl.md) | **Context DSL — 要件文脈の一級データ構造化と仕様への追跡可能コンパイル** | Draft | 2026-06-10 | ADR-044, ADR-045, ADR-037, ADR-030, ADR-047 |
+| [ADR-047](ADR-047-context-demo-layer.md) | **Context Demo Layer — 要求文脈の可視化オーバーレイ (UncertaintyGhost / Inspector / StoryBar)** | Accepted | 2026-06-11 | ADR-046, ADR-045, ADR-040, ADR-041 |
 
 ## How to Add a New ADR
 

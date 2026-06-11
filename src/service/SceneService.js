@@ -671,10 +671,24 @@ export class SceneService extends EventEmitter {
     const newId = remapId(dto.id)
 
     if (dto.type === 'Solid') {
-      const vertices = dto.vertices.map((v, i) =>
-        new Vertex(remapId(v.id) || `${newId}_v${i}`, new Vector3(v.x, v.y, v.z))
-      )
-      const solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
+      let solid
+      if (dto.position && dto.orientation && dto.localCorners) {
+        // v1.3+ format (e.g. compileLayout output): restore the primary triple
+        // directly via setPose (ADR-040) — mirrors _deserializeEntities.
+        const vertices = Array.from({ length: 8 }, (_, i) => new Vertex(`${newId}_v${i}`, new Vector3()))
+        solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
+        solid.setPose(
+          new Vector3(dto.position.x, dto.position.y, dto.position.z),
+          new Quaternion(dto.orientation.x, dto.orientation.y, dto.orientation.z, dto.orientation.w),
+          dto.localCorners.map(lc => new Vector3(lc.x, lc.y, lc.z))
+        )
+      } else {
+        // Legacy format: vertices are world corners
+        const vertices = dto.vertices.map((v, i) =>
+          new Vertex(remapId(v.id) || `${newId}_v${i}`, new Vector3(v.x, v.y, v.z))
+        )
+        solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
+      }
       solid.description = dto.description ?? ''
       solid.ifcClass    = dto.ifcClass    ?? null
       // Geometry is rebuilt asynchronously by batchRebuildSolids() — see importFromJson().
@@ -1487,6 +1501,16 @@ export class SceneService extends EventEmitter {
       this._linkSelectedIds.has(link.sourceId) ||
       this._linkSelectedIds.has(link.targetId)
     view.setHighlighted(highlighted)
+  }
+
+  /**
+   * Shows/hides a single SpatialLinkView. `_linkViews` is service-private, so
+   * external staging (e.g. the Context DSL demo reveal) goes through this method.
+   * @param {string} linkId
+   * @param {boolean} visible
+   */
+  setLinkViewVisible(linkId, visible) {
+    this._linkViews.get(linkId)?.setVisible(visible)
   }
 
   /**

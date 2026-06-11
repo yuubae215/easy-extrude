@@ -319,7 +319,8 @@ Lift finger (pointerup, wasDragging=true) → _confirmFaceExtrude()
 | Import button | `click` | Show import modal |
 | Save button | `click` | `SceneService.saveScene()` (BFF REST) |
 | Load button | `click` | `SceneService.loadScene()` (BFF REST) |
-| ⋯ menu (mobile) | `click` | Show dropdown with Export / Import |
+| Demo button (desktop) / ⋯ menu Demo item (mobile) | `click` | `callbacks.onContextDemoClick` → `ContextDemoController.enter()` (ADR-047) |
+| ⋯ menu (mobile) | `click` | Show dropdown with Export / Import / Demo |
 | N button (mobile) | `click` | Toggle N Panel drawer |
 | ≡ hamburger (mobile) | `click` | Toggle Outliner drawer |
 
@@ -356,6 +357,20 @@ Lift finger (pointerup, wasDragging=true) → _confirmFaceExtrude()
 
 > Toolbar buttons are handled on `click`, not `pointerdown`.
 > The canvas target guard causes `pointerdown` to ignore anything other than the canvas.
+
+### Context DSL Demo (ADR-047)
+
+Registered by `ContextDemoController` in its constructor via `uiStore.actions.registerCallback`;
+fired by the `ContextDemo` React components. No new domain events — step staging is
+view-level visibility only.
+
+| Callback | Fired by | Action |
+|----------|----------|--------|
+| `onContextDemoClick` | Header Demo button / MoreMenu | `enter()` — compile + confirm + scene load |
+| `onDemoStepChange(n)` | StoryBar ← 戻る / 次へ → | `setStep(n)` — visibility diff + inspector tab (step ④ gated on approval) |
+| `onDemoApproveDecision(ref)` | DecisionCard 承認ボタン | `approveDecision()` — ghost collapse → reveal + ripple |
+| `onDemoItemSelect(ref)` | Inspector row click | `selectItem(ref)` — trace → 3D highlight / link flash / toast |
+| `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, `demoEnd()` |
 
 ### Gizmo
 

@@ -32,6 +32,8 @@ Before writing or modifying any code, consult the relevant documents.
 | screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
 | layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
 | Layout API / Layout DSL / compileLayout / LayoutCompiler / scene from CLI or API | ADR-045, `src/layout/LayoutCompiler.js` |
+| Context DSL / requirement context / Fact / Decision / OpenQuestion / interval / compileContext | ADR-046, `src/context/`, `examples/factory_context.json` |
+| Context demo / uncertainty ghost / Decision approval / StoryBar / Context Inspector | ADR-047, `src/controller/ContextDemoController.js`, `src/view/UncertaintyGhostView.js` |
 | 5W1H / NL to code / function mapping / FunctionDescriptor / ExecutionPlan | ADR-044 |
 | events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |
 | controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
@@ -141,6 +143,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 Full log → `docs/SESSION_LOG.md`
 
+- **2026-06-11**: Feature — Context DSL ビジュアル PoC デモ（ADR-047）。`ContextDemoController` + `UncertaintyGhostView` + `ContextDemo/` React 群を新規作成: 「3m弱」区間 [2700,3000]mm をアンバーゴーストバンドで 3D 表示し、Decision 承認クリックで nominal 2800 へ収束→作業台出現、6 ステップのストーリーモード（③→④は承認ゲート）+ Context Inspector 5 タブ（Given/OQ/Decision/Trace/Accept）。`compileContext()` に `provenance[]` を追加（純粋）、`buildRefMap`/`linkIdForConstraint` を export。実バグ修正: `_reconstructEntity` が v1.3 primary triple Solid を読めず `compileLayout` 出力が全 silent skip → `setPose()` branch 追加（CODE_CONTRACTS 新規ルール）。入口: Header **Demo** / `__easyExtrude.demoContext()` / `?demo=context`。Playwright で全ステップ検証済み。
 - **2026-06-06**: Fix — 3Dビューポート黒画面バグ修正（Phase 5リファクタリングのデグレ）。`index.html` に `#canvas-container` div（`position:fixed; inset:0; z-index:0`）を追加し、`SceneView.js` の `renderer.domElement` の mount 先を `document.body.appendChild` から `canvasContainer.appendChild`（`document.body` フォールバック付き）に変更。スタッキング順序を明示化: canvas (z-index:0) → GizmoView canvas (z-index:10) → React UI (z-index:100)。
 - **2026-06-04**: Refactor — VanillaJS → React 段階的移行 Phase 5 完了（Strangler Fig ブリッジ最終クリーンアップ）。`UIViewBridge` の JavaScript Proxy を削除し全メソッドを明示的定義に置換；undo/redo UX バグ修正（`uiStore` に `undoEnabled`/`redoEnabled` 追加、`Header.jsx` の Undo/Redo ボタンに `disabled` 適用）；重複 toast バグ修正（`_view.showToast()` 呼び出し削除）；`UIView.js` を 3516 行→43 行に削減（`ICONS` + `setCanvas`/`setCursor` のみ残存）；`OutlinerBridge` をネイティブビューなし対応に変更；`main.js` から `OutlinerView` import を削除。
-- **2026-06-04**: Refactor — VanillaJS → React 段階的移行 Phase 4 完了（Outliner + Onboarding）。`OutlinerBridge` 新規作成（OutlinerView をラップ、dual-write ブリッジ）；`Outliner.jsx` 新規作成（DFS pre-order ツリー描画、インライン rename、ドラッグ&ドロップ reparent、IFC/PlaceType/SpatialLink/⊡ バッジ、モバイル drawer）；`Onboarding.jsx` 新規作成（mobile-only 初回ジェスチャーヒント、4 秒 auto-dismiss）；`UIViewBridge` に `_reactOnboarding` フラグ + `showOnboardingIfNeeded()` オーバーライド追加；`uiStore.js` に outliner + onboarding スライス追加；`UIShell.jsx` に 2 コンポーネント追加；`main.js` で `OutlinerBridge` と両フラグを有効化。

@@ -25,6 +25,7 @@ Defines the structure and content of information displayed on each screen of eas
 | `S-08` | Face Extrude in progress | Edit 3D + select face + E key |
 | `S-09` | Measure placement in progress | M key |
 | `S-10` | Rect selection in progress (desktop only) | Drag on empty space |
+| `S-17` | Context DSL Demo overlay (ADR-047) | Header **Demo** button / `?demo=context` / `window.__easyExtrude.demoContext()` |
 
 ---
 
@@ -581,6 +582,52 @@ Active when Node or Landmark tool is selected.
 
 #### Interaction
 Single left-click places the marker immediately; the tool remains active.
+
+---
+
+## Context DSL Demo Screens (ADR-047)
+
+### S-17: Context DSL Demo overlay
+
+Entered from the header **Demo** button (desktop) / ⋯ MoreMenu (mobile) /
+`?demo=context` / `window.__easyExtrude.demoContext()`. A confirm dialog replaces
+the current scene with the compiled `examples/factory_context.json`.
+Not an FSM mode — orbit / select / grab stay fully active; only entity visibility
+is staged per story step. Exiting (✕) leaves the scene as a normal editable scene.
+
+#### [C] 3D Viewport
+- Step ②+: outlet AnnotatedPoint + cell AnnotatedRegion + **UncertaintyGhostView**
+  (amber translucent band sweeping the interval [2700, 3000] mm, wireframes at both
+  extremes, HTML label `2700–3000 mm · 未確定`, opacity pulse)
+- Step ④: blue nominal wireframe at 2800; on approval the band collapses (0.8 s)
+  onto the nominal box, a blue ripple fires, and the workbench Solid appears
+- Step ⑤: base_plate → robot → container_a/b staggered reveal (150 ms apart,
+  green ripple each) followed by all SpatialLink views
+
+#### [G] Context Inspector (right fixed panel, 280px, desktop only)
+| Tab | Content |
+|-----|---------|
+| Given | facts with status badges (measured 緑 / asserted 青 / assumed 琥珀 / unknown 赤点滅), interval display |
+| OQ | validator-generated OpenQuestions (count badge) + blocked checks |
+| Decision | resolves/nominal/rationale/decidedBy; status flips proposed → agreed on approval |
+| Trace | from —kind→ to rows; click highlights the derived 3D entity |
+| Accept | acceptance checks; blocked rows show the `blockedBy` chain in red |
+
+Row click → `onDemoItemSelect` → trace resolution → real selection highlight
+(`_switchActiveObject`), link flash + toast for constraint-only targets, or a
+"appears in a later step" toast for not-yet-revealed entities (never silent).
+
+#### [H] Decision Card (floating, step ④+)
+Subject, interval → nominal, rationale, decidedBy, status pill, and the
+**「承認して確定」** button. After approval: green border + agreed state.
+
+#### [I] Story Bar (bottom-center overlay)
+Step dots ①–⑥, title + 1–2 line narration (Japanese), ← 戻る / 次へ →, ✕ exit.
+**Next is disabled at step ④ until the interval Decision is approved.**
+Desktop `bottom: 36px`; mobile `bottom: 96px` (above the toolbar).
+
+#### [A] Header
+Desktop: **Demo** button after Import. Mobile: Demo item inside the ⋯ MoreMenu.
 
 ---
 

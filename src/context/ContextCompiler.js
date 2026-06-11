@@ -22,11 +22,11 @@
  */
 
 import { UNKNOWN } from './ContextDslSchema.js'
-import { validateContext, navigate } from './ContextValidator.js'
+import { validateContext, navigate, constraintRef } from './ContextValidator.js'
 
 /**
  * @param {object} ctx — Context DSL object (context/0.1)
- * @returns {{ layoutDsl: object, openQuestions: object[], blockedChecks: object[], trace: object[] }}
+ * @returns {{ layoutDsl: object, openQuestions: object[], blockedChecks: object[], trace: object[], provenance: object[] }}
  * @throws {Error} on validation failure or unresolvable references
  */
 export function compileContext(ctx) {
@@ -46,7 +46,79 @@ export function compileContext(ctx) {
     openQuestions: result.openQuestions,
     blockedChecks: result.blockedChecks,
     trace:         ctx.specification.trace ?? [],
+    provenance:    extractProvenance(ctx),
   }
+}
+
+// ── Provenance extraction ─────────────────────────────────────────────────────
+
+/**
+ * Read-only walk of specification.layout collecting one record per reference
+ * marker, so downstream consumers (e.g. uncertainty visualization) know which
+ * entity property came from which fact/decision/expression — and, for
+ * decisions, what the unresolved source interval was.
+ *
+ * Resolution must already be possible (compileContext calls this only after
+ * resolveNode succeeded); calling it standalone on an unresolvable context throws.
+ *
+ * Record shapes:
+ *   { entityRef, path, marker: 'decision', ref, nominal, status, decidedBy,
+ *     rationale, resolvesFact, interval, unit }
+ *   { entityRef, path, marker: 'fact', ref, value }
+ *   { entityRef, path, marker: 'expr', source, value }
+ *
+ * entityRef is the layout entity ref, or constraintRef(c) for constraints.
+ * path is dot-joined relative to the entity ("position.x", "frames.0.translation.z").
+ *
+ * @param {object} ctx — Context DSL object (context/0.1)
+ * @returns {object[]}
+ */
+export function extractProvenance(ctx) {
+  const facts     = new Map((ctx.given     ?? []).map(f => [f.ref, f]))
+  const decisions = new Map((ctx.decisions ?? []).map(d => [d.ref, d]))
+  const resolver  = makeResolver(facts, decisions)
+  const layout    = ctx.specification?.layout ?? {}
+  const records   = []
+
+  const walk = (node, entityRef, segs) => {
+    if (Array.isArray(node)) {
+      node.forEach((item, i) => walk(item, entityRef, [...segs, String(i)]))
+      return
+    }
+    if (node === null || typeof node !== 'object') return
+
+    const keys = Object.keys(node)
+    if (keys.length === 1 && (keys[0] === '$fact' || keys[0] === '$decision' || keys[0] === '$expr')) {
+      const path = segs.join('.')
+      if (keys[0] === '$decision') {
+        const decision = decisions.get(node.$decision)
+        const fact     = decision ? facts.get(decision.resolves) : undefined
+        records.push({
+          entityRef, path, marker: 'decision',
+          ref:          node.$decision,
+          nominal:      decision?.nominal,
+          status:       decision?.status,
+          decidedBy:    decision?.decidedBy,
+          rationale:    decision?.rationale,
+          resolvesFact: decision?.resolves,
+          interval:     fact?.quantity?.interval ?? null,
+          unit:         fact?.quantity?.unit     ?? null,
+        })
+      } else if (keys[0] === '$fact') {
+        records.push({ entityRef, path, marker: 'fact', ref: node.$fact, value: resolver.fact(node.$fact) })
+      } else {
+        records.push({ entityRef, path, marker: 'expr', source: node.$expr, value: resolver.expr(node.$expr) })
+      }
+      return
+    }
+
+    for (const [key, value] of Object.entries(node)) walk(value, entityRef, [...segs, key])
+  }
+
+  for (const entity of layout.entities ?? []) walk(entity, entity.ref, [])
+  for (const c of layout.constraints ?? []) walk(c, constraintRef(c), [])
+
+  return records
 }
 
 // ── Reference resolution ──────────────────────────────────────────────────────
