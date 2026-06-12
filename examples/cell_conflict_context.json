@@ -1,0 +1,150 @@
+{
+  "version": "context/0.2",
+  "meta": {
+    "name": "ロボットセル多者要求 — 衝突・交渉クラスターシナリオ (ADR-049)",
+    "baseline": null
+  },
+
+  "actors": [
+    { "ref": "mech_engineer",   "role": "developer" },
+    { "ref": "robot_engineer",  "role": "developer" },
+    { "ref": "vision_engineer", "role": "developer" }
+  ],
+
+  "sources": [
+    { "ref": "src_kickoff",     "kind": "utterance", "by": "robot_engineer", "capturedAt": "2026-06-13" },
+    { "ref": "src_zone_sketch", "kind": "sketch",    "by": "mech_engineer",  "capturedAt": "2026-06-13" }
+  ],
+
+  "given": [
+    {
+      "ref": "f_camera",
+      "subject": "ハンドアイカメラ (5MP)",
+      "attrs": {
+        "sensor_px_h": { "value": 2448, "unit": "px" },
+        "lens_focal":  { "value": 16,   "unit": "mm" }
+      },
+      "status": "asserted",
+      "evidence": ["src_kickoff"]
+    }
+  ],
+
+  "variables": [
+    {
+      "ref": "v_camera_standoff",
+      "unit": "mm",
+      "domain": [0, 2000],
+      "description": "撮影姿勢でのハンドアイカメラとワークの距離 (ワーキングディスタンス)"
+    },
+    {
+      "ref": "v_robot_base_x",
+      "unit": "mm",
+      "domain": [0, 3000],
+      "description": "ロボット基台のセル奥行方向位置"
+    }
+  ],
+
+  "requirements": [
+    {
+      "ref": "r_cam_resolution",
+      "by": "vision_engineer",
+      "kpi": { "name": "resolution", "expr": "f_camera.attrs.sensor_px_h / fov_width(v_camera_standoff)", "unit": "px/mm" },
+      "criterion": { "op": ">=", "value": 10 },
+      "constrains": ["v_camera_standoff"],
+      "negotiability": "should",
+      "admissible": { "interval": [200, 350], "source": "stated" }
+    },
+    {
+      "ref": "r_wrist_singularity",
+      "by": "robot_engineer",
+      "kpi": { "name": "singularityMargin", "expr": "wrist_margin(v_camera_standoff)", "unit": "deg" },
+      "criterion": { "op": ">=", "value": 15 },
+      "constrains": ["v_camera_standoff"],
+      "negotiability": "must",
+      "admissible": { "interval": [380, 600], "source": "stated" }
+    },
+    {
+      "ref": "r_eoat_clearance",
+      "by": "mech_engineer",
+      "constrains": ["v_robot_base_x"],
+      "negotiability": "must",
+      "admissible": { "interval": [600, 1200], "source": "stated" },
+      "evidence": ["src_zone_sketch"],
+      "note": "3D スケッチ由来 — フランジから先のエンドエフェクタ体積に基づく設置許容ゾーン。根拠クライテリア未取得 (R9 対象)"
+    },
+    {
+      "ref": "r_cycle_time",
+      "by": "robot_engineer",
+      "kpi": { "name": "cycleTime", "expr": "motion_time(v_robot_base_x, v_camera_standoff)", "unit": "s" },
+      "criterion": { "op": "<=", "value": 8 },
+      "constrains": ["v_robot_base_x", "v_camera_standoff"],
+      "negotiability": "should"
+    },
+    {
+      "ref": "r_cam_mount",
+      "by": "vision_engineer",
+      "kpi": { "name": "fovCoverage", "expr": "fov_cover(v_robot_base_x, v_camera_standoff)", "unit": "ratio" },
+      "criterion": { "op": ">=", "value": 1.0 },
+      "constrains": ["v_robot_base_x", "v_camera_standoff"],
+      "negotiability": "must"
+    }
+  ],
+
+  "decisions": [
+    {
+      "ref": "d_standoff",
+      "resolves": "conflict_v_camera_standoff",
+      "relaxes": {
+        "requirement":  "r_cam_resolution",
+        "oldCriterion": { "op": ">=", "value": 10 },
+        "newCriterion": { "op": ">=", "value": 10 },
+        "note": "レンズ f=16→25mm 変更で WD400 でも 10px/mm を確保 (criterion 不変、KPI 式側が変わる)"
+      },
+      "nominal": 400,
+      "decidedBy": ["vision_engineer", "robot_engineer"],
+      "status": "proposed",
+      "rationale": "WD400: 特異点マージン 17°、レンズ変更費 +3万円で分解能要求を満たす"
+    },
+    {
+      "ref": "d_cell_joint",
+      "resolves": ["v_robot_base_x", "v_camera_standoff"],
+      "nominals": { "v_robot_base_x": 900, "v_camera_standoff": 400 },
+      "decidedBy": ["mech_engineer", "robot_engineer", "vision_engineer"],
+      "status": "proposed",
+      "rationale": "交渉クラスター (サイクルタイム × FOV カバー) の合同確定 — サイクル 7.2s / FOV カバー 1.05 を試算で確認"
+    }
+  ],
+
+  "specification": {
+    "layout": {
+      "version": "layout/1.0",
+      "meta": {
+        "name": "ロボットセル衝突シナリオ — 最小レイアウト",
+        "description": "メカ担当の 3D スケッチ由来の設置許容ゾーンのみを含む最小仕様。"
+      },
+      "strategy": "manual",
+      "entities": [
+        {
+          "ref": "robot_base_zone",
+          "type": "AnnotatedRegion",
+          "name": "ロボット基台設置許容ゾーン (メカ要求)",
+          "description": "エンドエフェクタ体積要件から導かれた設置許容範囲",
+          "placeType": "Zone",
+          "vertices": [
+            { "x": 600,  "y": -300 },
+            { "x": 1200, "y": -300 },
+            { "x": 1200, "y":  300 },
+            { "x": 600,  "y":  300 }
+          ]
+        }
+      ],
+      "constraints": []
+    },
+
+    "trace": [
+      { "from": "r_eoat_clearance", "to": "robot_base_zone", "kind": "constrains" }
+    ]
+  },
+
+  "acceptance": []
+}

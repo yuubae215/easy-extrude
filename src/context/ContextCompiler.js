@@ -25,8 +25,9 @@ import { UNKNOWN } from './ContextDslSchema.js'
 import { validateContext, navigate, constraintRef } from './ContextValidator.js'
 
 /**
- * @param {object} ctx — Context DSL object (context/0.1)
- * @returns {{ layoutDsl: object, openQuestions: object[], blockedChecks: object[], trace: object[], provenance: object[] }}
+ * @param {object} ctx — Context DSL object (context/0.1 or 0.2)
+ * @returns {{ layoutDsl: object, openQuestions: object[], blockedChecks: object[], trace: object[],
+ *             provenance: object[], conflicts: object[], negotiationClusters: object[] }}
  * @throws {Error} on validation failure or unresolvable references
  */
 export function compileContext(ctx) {
@@ -43,10 +44,12 @@ export function compileContext(ctx) {
 
   return {
     layoutDsl,
-    openQuestions: result.openQuestions,
-    blockedChecks: result.blockedChecks,
-    trace:         ctx.specification.trace ?? [],
-    provenance:    extractProvenance(ctx),
+    openQuestions:       result.openQuestions,
+    blockedChecks:       result.blockedChecks,
+    trace:               ctx.specification.trace ?? [],
+    provenance:          extractProvenance(ctx),
+    conflicts:           result.conflicts,
+    negotiationClusters: result.negotiationClusters,
   }
 }
 

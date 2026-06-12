@@ -2,8 +2,9 @@
 
 **Status**: Draft (Proposed)
 **Date**: 2026-06-13
+**Updated**: 2026-06-13 — Phase 1 実装(`src/context/RequirementGraph.js`、Validator R6/R7/R9、Decision 拡張、`examples/cell_conflict_context.json`、テスト 32/32)
 **Related**: ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-044 (5W1H), ADR-035 (Cycle Detection 前例), ADR-030 (SpatialLink)
-**Implementation**: 未着手(§8 の段階導入計画を参照)
+**Implementation**: `src/context/RequirementGraph.js` (R6/R7), `src/context/ContextValidator.js` (R0'/R9/Decision 拡張), `examples/cell_conflict_context.json`, `pnpm test:context`
 
 ---
 
@@ -293,10 +294,14 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
 
 ## 8. 段階導入
 
-1. **Phase 1**(純粋計算のみ、`src/context/` 内で完結):
+1. ~~**Phase 1**(純粋計算のみ、`src/context/` 内で完結):
    `variables[]` / `requirements[]` スキーマ追加、R6(1 次元 interval 交差)、
    R7(双連結成分)、R9、Decision の `resolves: conflict` + `relaxes` + n-ary
-   `nominals{}`。ゴールデンテストにカメラ×リーチ衝突シナリオを追加。
+   `nominals{}`。ゴールデンテストにカメラ×リーチ衝突シナリオを追加。~~
+   → **済**(2026-06-13、context/0.2。`examples/cell_conflict_context.json` +
+   `ContextConflict.test.js` 20 件、既存ゴールデン 12 件と合わせ 32/32。
+   R7 は Hopcroft–Tarjan 双連結成分の反復 DFS 実装。0.1 ドキュメントは
+   `SUPPORTED_VERSIONS` でそのまま受理 — additive 拡張)。
 2. **Phase 2**: R8 役割別 KPI カタログ + フォーム射影(未充足 OpenQuestion → 質問文)。
    単調 KPI 式の区間逆像による `stated → derived` 自動昇格。
 3. **Phase 3**: 領域 Variable(2D フットプリント / 3D 体積)、リーチ包絡・swept volume

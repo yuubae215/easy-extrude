@@ -10,29 +10,44 @@
  * Rules implemented (MVP):
  *   R1 unknown-attr        — Fact.attrs value === "unknown"        → OpenQuestion
  *   R2 dangling-trace      — trace.from must reference an existing
- *                            fact / intent / obligation / decision  → error
+ *                            fact / intent / obligation / decision
+ *                            / requirement                          → error
  *   R3 orphan-spec         — every spec entity and constraint must
  *                            appear as trace.to                     → error
  *   R4 unassigned-scope    — Obligation.responsible === "unassigned"→ OpenQuestion
  *   R5 blocked-acceptance  — acceptance.requires resolves to an
  *                            unknown attr or assumed/unknown fact   → blockedChecks
  *
+ * ADR-049 Phase 1 rules (context/0.2):
+ *   R6 conflict            — requirements constraining the same shared
+ *                            variable with disjoint admissible
+ *                            intervals                              → conflicts
+ *   R7 negotiation-cluster — alternating cycle in the Requirement–
+ *                            Variable bipartite graph               → negotiationClusters
+ *   R9 stated-without-kpi  — admissible.source === "stated" with no
+ *                            (kpi, criterion) backing               → OpenQuestion
+ *
  * @module context/ContextValidator
  */
 
 import {
-  CONTEXT_DSL_VERSION,
+  SUPPORTED_VERSIONS,
   VALID_FACT_STATUS,
   BLOCKING_FACT_STATUS,
   VALID_CHECK_MODES,
   VALID_TRACE_KINDS,
+  VALID_NEGOTIABILITY,
+  VALID_ADMISSIBLE_SOURCE,
+  CONFLICT_REF_PREFIX,
   UNKNOWN,
   UNASSIGNED,
 } from './ContextDslSchema.js'
+import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.js'
 
 /**
  * @param {object} ctx — Context DSL object
- * @returns {{ valid: boolean, errors: string[], openQuestions: object[], blockedChecks: object[] }}
+ * @returns {{ valid: boolean, errors: string[], openQuestions: object[], blockedChecks: object[],
+ *             conflicts: object[], negotiationClusters: object[] }}
  */
 export function validateContext(ctx) {
   const errors        = []
@@ -40,17 +55,19 @@ export function validateContext(ctx) {
   const blockedChecks = []
 
   if (!ctx || typeof ctx !== 'object') {
-    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks }
+    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [] }
   }
 
-  if (ctx.version !== CONTEXT_DSL_VERSION) {
-    errors.push(`version must be "${CONTEXT_DSL_VERSION}", got "${ctx.version}"`)
+  if (!SUPPORTED_VERSIONS.includes(ctx.version)) {
+    errors.push(`version must be one of ${SUPPORTED_VERSIONS.map(v => `"${v}"`).join(', ')}, got "${ctx.version}"`)
   }
 
-  const facts       = new Map((ctx.given       ?? []).map(f => [f.ref, f]))
-  const intents     = new Map((ctx.intents     ?? []).map(g => [g.ref, g]))
-  const obligations = new Map((ctx.obligations ?? []).map(o => [o.ref, o]))
-  const decisions   = new Map((ctx.decisions   ?? []).map(d => [d.ref, d]))
+  const facts        = new Map((ctx.given        ?? []).map(f => [f.ref, f]))
+  const intents      = new Map((ctx.intents      ?? []).map(g => [g.ref, g]))
+  const obligations  = new Map((ctx.obligations  ?? []).map(o => [o.ref, o]))
+  const decisions    = new Map((ctx.decisions    ?? []).map(d => [d.ref, d]))
+  const variables    = new Map((ctx.variables    ?? []).map(v => [v.ref, v]))
+  const requirements = new Map((ctx.requirements ?? []).map(r => [r.ref, r]))
 
   // ── R0: basic fact shape ────────────────────────────────────────────────────
   for (const fact of facts.values()) {
@@ -85,12 +102,102 @@ export function validateContext(ctx) {
     }
   }
 
+  // ── R0': requirement / variable shape (ADR-049) ─────────────────────────────
+  for (const req of requirements.values()) {
+    for (const variable of req.constrains ?? []) {
+      if (!variables.has(variable)) {
+        errors.push(`requirement "${req.ref}": constrains "${variable}" does not reference any variable in variables[]`)
+      }
+    }
+    if ((req.constrains ?? []).length === 0) {
+      errors.push(`requirement "${req.ref}": constrains must list at least one shared variable`)
+    }
+    if (req.negotiability !== undefined && !VALID_NEGOTIABILITY.includes(req.negotiability)) {
+      errors.push(`requirement "${req.ref}": negotiability "${req.negotiability}" is not valid. Use one of: ${VALID_NEGOTIABILITY.join(', ')}`)
+    }
+    const admissible = req.admissible
+    if (admissible !== undefined) {
+      if (!VALID_ADMISSIBLE_SOURCE.includes(admissible.source)) {
+        errors.push(`requirement "${req.ref}": admissible.source "${admissible.source}" is not valid. Use one of: ${VALID_ADMISSIBLE_SOURCE.join(', ')}`)
+      }
+      const interval = admissible.interval
+      if (interval !== undefined
+        && (!Array.isArray(interval) || interval.length !== 2
+            || typeof interval[0] !== 'number' || typeof interval[1] !== 'number'
+            || interval[0] >= interval[1])) {
+        errors.push(`requirement "${req.ref}": admissible.interval must be [min, max] with min < max`)
+      }
+    }
+  }
+
+  // ── R9: stated admissible region without KPI backing → OpenQuestion ─────────
+  // ADR-049 invariant 6: the canonical admissible region is derived from
+  // (kpi, criterion). A stated region (form answer or 3D sketch) is accepted
+  // provisionally, but the criterion behind it must be asked for — otherwise
+  // a later relaxation cannot be quantified.
+  for (const req of requirements.values()) {
+    if (req.admissible?.source === 'stated' && (!req.kpi || !req.criterion)) {
+      openQuestions.push({
+        ref:      `oq_kpi_${req.ref}`,
+        raisedBy: 'R9:stated-without-kpi',
+        about:    req.ref,
+        summary:  `要求「${req.ref}」(${req.by}) の許容領域は stated のまま — 根拠となる KPI とクライテリアが未取得。緩和交渉時に定量比較できない`,
+      })
+    }
+  }
+
+  // ── R6: conflicts / R7: negotiation clusters (computed, never authored) ─────
+  const conflicts           = detectConflicts(requirements)
+  const negotiationClusters = detectNegotiationClusters(requirements)
+  const conflictByRef       = new Map(conflicts.map(c => [c.ref, c]))
+
+  // ── Decision extensions (ADR-049): resolves conflict | Variable[], relaxes ──
+  for (const decision of decisions.values()) {
+    const resolves = decision.resolves
+
+    if (Array.isArray(resolves)) {
+      // n-ary joint decision over shared variables (invariant 8)
+      for (const ref of resolves) {
+        if (!variables.has(ref)) {
+          errors.push(`decision "${decision.ref}": resolves "${ref}" does not reference any variable in variables[]`)
+        }
+        if (decision.nominals?.[ref] === undefined) {
+          errors.push(`decision "${decision.ref}": nominals is missing an entry for "${ref}" — n-ary Decision は全変数の公称値を同時に持つ (ADR-049 invariant 8)`)
+        }
+      }
+      // a joint decision covering all of a cluster's variables resolves it
+      for (const cluster of negotiationClusters) {
+        if (cluster.variables.every(v => resolves.includes(v))) {
+          cluster.resolvedBy = decision.ref
+        }
+      }
+    } else if (typeof resolves === 'string' && resolves.startsWith(CONFLICT_REF_PREFIX)) {
+      const conflict = conflictByRef.get(resolves)
+      if (!conflict) {
+        errors.push(`decision "${decision.ref}": resolves "${resolves}" — この Conflict は現在のグラフから R6 が生成しない。吐かれていない衝突は解消できない (ADR-049 invariant 7)`)
+      } else {
+        conflict.resolvedBy = decision.ref
+      }
+    } else if (typeof resolves === 'string') {
+      if (!facts.has(resolves) && !variables.has(resolves)) {
+        errors.push(`decision "${decision.ref}": resolves "${resolves}" does not reference any fact, variable, or conflict`)
+      }
+    } else {
+      errors.push(`decision "${decision.ref}": resolves must be a fact ref, a conflict ref, or an array of variable refs`)
+    }
+
+    if (decision.relaxes !== undefined && !requirements.has(decision.relaxes.requirement)) {
+      errors.push(`decision "${decision.ref}": relaxes.requirement "${decision.relaxes?.requirement}" does not reference any requirement in requirements[]`)
+    }
+  }
+
   // ── Specification + trace ────────────────────────────────────────────────────
   const spec  = ctx.specification ?? {}
   const trace = spec.trace ?? []
 
   const requirementRefs = new Set([
     ...facts.keys(), ...intents.keys(), ...obligations.keys(), ...decisions.keys(),
+    ...requirements.keys(),
   ])
 
   // R2: dangling trace sources
@@ -152,7 +259,7 @@ export function validateContext(ctx) {
     }
   }
 
-  return { valid: errors.length === 0, errors, openQuestions, blockedChecks }
+  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters }
 }
 
 /** Canonical ref form for a constraint, e.g. "constraint:robot_base→robot_mount". */
