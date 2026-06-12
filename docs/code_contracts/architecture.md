@@ -167,6 +167,17 @@ obj.meshView.updateScale(camera, renderer, Infinity)
 
 - `sceneRadius` is computed once per frame before the object iteration loop (not per-CF), from all objects whose `corners?.length > 0`.
 
+## Annotation Marker Views Scale in Screen Space, Capped in World Space
+
+- **Principle**: A marker view sized by a *world-unit constant* bakes in an assumption about scene scale. `AnnotatedPointView`'s `MARKER_RADIUS = 0.25` was designed for meter-scale scenes; in an mm-scale scene (Context DSL demo, entities at 2 800 mm) a 0.25 mm marker is sub-pixel — the marker silently disappears while its HTML label (pixel-sized) keeps rendering, which reads as "icon missing" (PHILOSOPHY #26).
+- **Concrete Rule**: `AnnotatedPointView.updateScale(camera, renderer, maxWorldSize)` is called every animation frame from `AppController` with `maxWorldSize = Math.max(sceneRadius * 0.05, 0.25)` — constant screen size (target 20 px radius), capped at 5 % of the scene radius, floored at the legacy 0.25 world units so meter-scale scenes keep their original look. Same dual-bound pattern as `CoordinateFrameView.updateScale()` (rule above).
+- **Composition contract**: `tick()`'s per-frame animation scales (Hub sonar ping, Anchor crosshair pulse) must multiply by `this._viewScale`, never overwrite it — `setScalar(animScale * this._viewScale)`. `_applyPlaceTypeVisuals()` and `setPlaceType()` reset to `_viewScale`, not `1`.
+
+## Ground Grid Scales With Scene Radius
+
+- **Principle**: the 20-unit `GridHelper` is another world-unit constant (PHILOSOPHY #27): in an mm-scale scene it collapses to an invisible dot, which reads as "the world grid is gone".
+- **Concrete Rule**: `SceneView.fitCameraToSphere()` calls `_updateGridScale(radius)`, which scales `this._grid` by `10^max(0, ceil(log10(radius / 10)))` — power-of-10 cell sizes keep grid lines on round world coordinates; scale stays 1 for radius ≤ 10 so meter-scale scenes look unchanged. `fitCameraToSphere` is the single "frame the scene" entry point (STEP import, `compileLayout` demo): new code must route through it rather than positioning the camera directly, or the grid (and clip planes) silently desynchronise from the scene scale.
+
 ## ~~Auto Origin Frame on 3D Object Creation~~ — Superseded by ADR-033
 
 > **This contract is superseded by ADR-033 (CoordinateFrame Phase C).**
@@ -569,3 +580,9 @@ return obj._position.clone()
 
 - **Principle**: CFs are visually rendered on top of (and often at the origin of) their parent Solid. A cuboid raycast (step 1) reaches the Solid first, making it impossible for the user to select a CF as a link target by tapping.
 - **Concrete Rule**: `_hitAnyEntityForLink()` must call `_hitAnyCoordinateFrame()` as **Step 0** before the cuboid raycast. If a CF is found and it is not the link source, return it immediately. Only fall through to the cuboid and bounding-box steps when no CF is hit. `_startSpatialLinkCreation()` already calls `showFull()` on all CFs, so they are always visible during linking.
+
+## importFromJson Solid v1.3 Coverage — Scene-JSON Producers Must Be Tested Through the Import Path
+
+- **Principle**: There are two deserialization paths for scene JSON — `_deserializeEntities` (BFF `loadScene`) and `_reconstructEntity` (`importFromJson`). A format extension applied to only one of them creates a silent split: the per-entry `try/catch` in `importFromJson` swallows the `TypeError` into a `console.warn` and the entity is skipped without any user-visible failure (PHILOSOPHY #11). This happened with the v1.3 primary-triple Solid format (`position`/`orientation`/`localCorners`, no `vertices`): `compileLayout()` (ADR-045) emitted it, `_deserializeEntities` handled it, but `_reconstructEntity` read `dto.vertices` unconditionally — every compiled Solid was silently dropped, and the ADR-045 claim "loadable via importFromJson()" was false until the ADR-047 demo exercised the path.
+- **Concrete Rule (1)**: `_reconstructEntity`'s Solid branch must mirror `_deserializeEntities`: check for `dto.position && dto.orientation && dto.localCorners` first and restore via `solid.setPose()` (public API per the Solid Pose Mutation contract); keep the legacy `vertices` path as fallback. Any future scene-JSON format change must be applied to **both** methods in the same commit.
+- **Concrete Rule (2)**: Any new producer of scene JSON (compilers, exporters, migration scripts) must be verified end-to-end through `importFromJson` in a real browser session — golden-equality tests on the JSON alone do not prove loadability.

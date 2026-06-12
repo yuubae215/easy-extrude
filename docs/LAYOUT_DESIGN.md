@@ -41,8 +41,9 @@ block-beta
 | N Panel sidebar | w:240px, h:calc(100vh-64px) | fixed top:40px right:0 | 100 |
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
-| Gizmo | w:96px, h:96px | absolute top:48px right:248px | 50 |
-| Link Network Overlay | w:220px, h:auto (collapsed:26px) | fixed bottom:8px left:8px | 50 |
+| Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
+| Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px keeps the panel top clear of the Map toolbar's lower edge on 720px viewports (ADR-048) | 50 |
+| Map Mode toolbar | w:44px min, h:auto | fixed top:50% left:188px (beside Outliner; mobile: left:8px) | 150 |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
 | Context menu | w:auto | absolute (cursor position) | 200 |
 | Mode dropdown | w:140px | absolute (below button) | 200 |
@@ -78,11 +79,12 @@ block-beta
 | Toast | w:auto, max-w:280px | fixed bottom:**96px**, centered | 150 |
 | Context menu | w:auto | absolute (tap position) | 200 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:8px | 50 |
-| Link Network Overlay | w:220px, h:auto | fixed bottom:94px left:8px | 50 |
+| Link Network Overlay | w:220px, h:SVG 152–160px + 28px header | fixed bottom:94px left:8px | 50 |
 
 > **Toast bottom** must be toolbar (60px) + margin (36px) = **96px**.
 > On desktop (no toolbar): bottom:32px.
-> **Link Network Overlay bottom** on mobile: above toolbar = 94px; on desktop: 8px.
+> **Link Network Overlay** on mobile: bottom above toolbar = 94px, left:8px (Outliner is a drawer);
+> on desktop: bottom:34px (above 26px InfoBar), left:188px (beside 180px Outliner).
 
 ---
 
@@ -132,10 +134,12 @@ z:200  ── Modal dialogs (rename, unit conversion)
 z:150  ── Toast notifications
 
 z:110  ── Drawers (Outliner, N Panel) ← overlaps header
+        ── Context demo Decision Card (ADR-047)
 
 z:100  ── Header (fixed top)
         ── Mobile toolbar (fixed bottom)
         ── Status bar / Info bar (fixed bottom)
+        ── Context demo Inspector / Story Bar (ADR-047)
 
 z:50   ── Gizmo (overlay on Three.js canvas)
 
@@ -199,6 +203,25 @@ z:0    ── 3D canvas (Three.js renderer)
 - Indent: CoordinateFrame indented 12px under its parent
 - Row height: 28px
 - Active row: `background: #3d3d6b`
+
+---
+
+## Context DSL Demo Overlay (ADR-047)
+
+| Component | Position | Dimensions |
+|-----------|----------|------------|
+| Context Inspector | `fixed; top:40px; right:0; bottom:26px` | width 280px; hidden < 768px |
+| Decision Card | `fixed; right:292px; top:56px` (mobile: `right:12px`) — top-anchored so it never covers the ghost-collapse animation or the StoryBar ✕; shown at step ④ only | width 320px max |
+| Story Bar | `fixed; bottom:36px; left:50%` (mobile: `bottom:96px`) | `min(620px, 100vw − 24px)` |
+| Uncertainty ghost label | HTML overlay, projected via `SceneView.activeCamera` | z-index 50 (Three.js label tier) |
+
+Demo colors: uncertainty amber `#d5a23a`, decision blue `#3a7bd5`, reveal ripple green `#10b981`.
+
+**Right-edge occupancy while the Inspector is open** (`demo.active && demo.inspectorTab`, desktop):
+the N Panel shifts to `right:280px` and the world gizmo offset becomes
+`16 + 200·(nPanelVisible) + 280` — both computed from the uiStore demo slice
+(gizmo: `AppController._updateGizmoOffset()`, sole owner).
+See CODE_CONTRACTS §3 "Edge-Anchored Panels Must Coordinate Occupancy".
 
 ---
 

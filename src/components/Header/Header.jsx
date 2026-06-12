@@ -12,6 +12,7 @@ const SVG_MORE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentC
 const SVG_NODES = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="9" y1="12" x2="15" y2="7"/><line x1="9" y1="12" x2="15" y2="17"/></svg>`
 const SVG_EXPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
 const SVG_IMPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 14 12 9 17 14"/><line x1="12" y1="9" x2="12" y2="21"/></svg>`
+const SVG_DEMO = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
 
 /**
  * Header — React replacement for UIView's 40px top bar.
@@ -20,7 +21,9 @@ const SVG_IMPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" 
  * nodeEditorOpen) and fires callbacks registered by AppController.
  *
  * Mobile layout  (<768px):  [☰] [↩] [↪] [Mode▾] [Map] [spacer] [⋯] [N]
- * Desktop layout (≥768px):  [Mode▾] [Map] [··status··] [Save?] [Load?] [Nodes] [Export] [Import]
+ * Desktop layout (≥768px):  [Mode▾] [Map] [··status··] [Save?] [Load?] [Nodes?] [Export] [Import]
+ * (Save / Load / Nodes appear only while the BFF is connected — the Node Editor's
+ *  primary content is the BFF Geometry Service operation graph.)
  */
 export function Header() {
   const isMobile = useIsMobile()
@@ -86,18 +89,19 @@ function DesktopHeaderContents() {
         <>
           <SmallBtn onClick={() => callbacks.onSaveScene?.()} title="Save scene to server">Save</SmallBtn>
           <SmallBtn onClick={() => callbacks.onLoadScene?.()} title="Load scene from server">Load</SmallBtn>
+          <SmallBtn
+            onClick={() => callbacks.onNodeEditorToggle?.()}
+            title="Toggle Node Editor (Geometry DAG)"
+            active={nodeEditorOpen}
+            icon={SVG_NODES}
+          >
+            Nodes
+          </SmallBtn>
         </>
       )}
-      <SmallBtn
-        onClick={() => callbacks.onNodeEditorToggle?.()}
-        title="Toggle Node Editor (Geometry DAG)"
-        active={nodeEditorOpen}
-        icon={SVG_NODES}
-      >
-        Nodes
-      </SmallBtn>
       <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
       <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
+      <SmallBtn onClick={() => callbacks.onContextDemoClick?.()} title="Context DSL demo — 要求文脈から3Dシーンへ (ADR-046)" icon={SVG_DEMO}>Demo</SmallBtn>
     </>
   )
 }
@@ -313,6 +317,7 @@ function MoreMenu() {
         }}>
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
+          {item('Demo',   SVG_DEMO,   callbacks.onContextDemoClick)}
         </div>
       )}
     </>

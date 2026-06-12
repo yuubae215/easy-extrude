@@ -379,6 +379,67 @@ Secondary actions are better discovered through contextual gestures than memoris
 
 ---
 
+### 26. A Screen Edge Is a Shared Resource
+
+A `position: fixed` element anchored to a screen edge implicitly claims that edge.
+Two persistent opaque panels layered on the same edge produce a silent overlap:
+no error, no warning — the lower-z element simply ceases to exist for the user.
+
+Every edge-anchored element must therefore either be *transient with a higher z-index*
+(drawer, dropdown, modal) or *offset itself past the current occupants*. And because
+occupancy is dynamic (panels open and close), the offset must be computed in one
+authoritative place from the full occupancy state — not patched ad hoc at each
+toggle call site (same spirit as #23 and #25).
+
+Two manifestations found on the same day, in unrelated features:
+
+- **Left edge**: `LinkNetworkView` (z:50, `left:8px`) rendered entirely behind the
+  Outliner sidebar (z:90, opaque, 180px, always visible on desktop). The link graph
+  was unreachable — users reported it as "missing".
+- **Right edge**: the Context DSL demo Inspector (ADR-047, 280px, z:100) covered both
+  the N panel (z:90) and the world gizmo (z:10). The pre-existing gizmo-offset
+  mechanism (`setRightOffset`) knew only about the N panel, because it was wired
+  inside `_toggleNPanel()` — a per-call-site patch that no new panel would ever know
+  to extend. Fixed by making `AppController._updateGizmoOffset()` the sole owner,
+  driven by a uiStore subscription over all right-edge occupancy state.
+
+**The failure mode is asymmetric**: the layout renders, nothing throws, and each
+panel looks correct in isolation — the overlap is only visible when both happen
+to be open, which may be a state the developer never tested.
+
+*Underlies CODE_CONTRACTS rules: Edge-Anchored Panels Must Coordinate Occupancy*
+
+---
+
+### 27. Overlay Markers Are Sized in Screen Space, Capped in World Space
+
+A marker view (frame axes, anchor icons, annotation glyphs) sized by an absolute
+constant in *either* space alone encodes a hidden assumption that reality will break:
+
+- An absolute **world-unit** size assumes a scene scale. `AnnotatedPointView`'s
+  `MARKER_RADIUS = 0.25` was invisible (sub-pixel) in the mm-scale Context DSL demo
+  scene — while its HTML label, sized in pixels, kept rendering. The user saw
+  "label without icon".
+- An absolute **screen-pixel** size without a world cap assumes a camera distance.
+  `CoordinateFrameView`'s constant-screen-size axes ballooned to dwarf the whole
+  scene when zooming out, until a finite `maxWorldSize` cap was enforced.
+- The ground `GridHelper` (20 world units) is the same assumption at scene level:
+  in the mm-scale demo scene it collapsed to an invisible dot — "the world grid
+  is gone". Fixed by scaling it with the scene radius in `fitCameraToSphere()`
+  (power-of-10 cells, so grid lines stay on round coordinates).
+
+The correct shape is always the pair: *target size in screen pixels, clamped to a
+world-space bound derived from the scene (scene radius, parent bounding radius)*.
+One bound without the other is the same bug in mirror image.
+
+**The failure mode is asymmetric**: both versions render valid markers with no
+exception; the marker is just imperceptibly small or absurdly large, and only at
+scene scales or zoom levels the developer didn't try.
+
+*Underlies CODE_CONTRACTS rules: CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scales With Scene Radius*
+
+---
+
 ## VII. Interface Contracts
 
 ### 17. Polymorphic Interfaces Must Be Complete
@@ -556,7 +617,7 @@ to the main body as a full principle and add a row to the Index.
 | Three.js helpers must match the actual geometry model, not an approximation | 2026-05-02 · `MeshView.js` · `THREE.BoxHelper` computes AABB; because `MeshView` bakes corner positions as world-space vertices with no mesh transform, the AABB diverges from the actual OBB after R-key rotation. After confirming rotation, the selection highlight appeared as an axis-aligned box larger than the solid, visually rotating independently. Fixed by replacing `BoxHelper` with `LineSegments+EdgesGeometry` kept in sync by `updateGeometry()`. | BoxHelper Forbidden for World-Space Baked Geometry |
 | Per-frame derived values must be computed before their consumers in the same frame | 2026-05-18 · `AppController.js` animation loop · `updateLabelPosition()` read `_group.position` before `_updateWorldPoses()` set it for the current frame, causing CF labels to lag one frame behind and appear to vibrate at startup. Fixed by moving `_updateWorldPoses()` to run before the per-object label loop. The failure mode is asymmetric: the bug is invisible when the scene is static (lag = 0 px); it only manifests when the cache is being populated (startup) or when the CF moves (drag). | CF Label Position Order |
 | *(graduated to principle #24 — Derive Absolute State from Invariant Sources)* | | |
-| Rendering layer must match spatial role — scene objects use depthTest, overlays bypass it | 2026-05-21 · `AnnotatedRegionView.js`, `AnnotatedLineView.js`, `AnnotatedPointView.js` · All annotation view materials had `depthTest: false`, making Zones and Routes render over Solid objects (Cubes) regardless of actual spatial depth. The failure is visually obvious but easy to introduce: flat ground-plane objects are hard to see without "always on top" during authoring, which tempts `depthTest: false` as a quick fix. Correct approach: `depthTest: true` + `polygonOffset` for flat ground-plane meshes to prevent Z-fighting. | Annotation View Materials Must Use depthTest: true |
+| Rendering layer must match spatial role — scene objects use depthTest, overlays bypass it | 2026-05-21 · `AnnotatedRegionView.js`, `AnnotatedLineView.js`, `AnnotatedPointView.js` · All annotation view materials had `depthTest: false`, making Zones and Routes render over Solid objects (Cubes) regardless of actual spatial depth. The failure is visually obvious but easy to introduce: flat ground-plane objects are hard to see without "always on top" during authoring, which tempts `depthTest: false` as a quick fix. Correct approach: `depthTest: true` + `polygonOffset` for flat ground-plane meshes to prevent Z-fighting. **Recurrence (2026-06-12, same feature family — not yet a 2nd unrelated context)**: the `polygonOffset` quick fix itself bit back — its factor scales with screen-space depth slope, so the Zone fill (transparent, drawn after opaques) composited OVER the opaque Anchor marker disc at glancing angles ("blue and purple meshes overlapping"). Each layering hack (depthTest:false → polygonOffset) traded one hidden assumption for another; the durable form is explicit ordering inside one render queue (`transparent:true, opacity:1` + renderOrder) plus geometry that does not straddle the decal plane. | Annotation View Materials Must Use depthTest: true; Ground Markers Must Not Straddle Z=0 |
 
 ---
 
@@ -589,3 +650,5 @@ to the main body as a full principle and add a row to the Index.
 | 23 | Accessors Own Their Freshness Guarantee | Contracts | `worldPoseOf()` self-healing |
 | 24 | Derive Absolute State from Invariant Sources | Concurrency | Fastened Constraint Limitations (1a) |
 | 25 | Guard Logic Belongs in Service Predicates, Not Inline Handler Returns | Design | Semantic Move Guardrail (checkMoveGuardrail) |
+| 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
+| 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |

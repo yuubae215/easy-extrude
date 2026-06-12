@@ -113,6 +113,9 @@ export class GrabOperationHandler {
     }
   }
 
+  /** Grid snap sizes cycled by Ctrl+Wheel during grab. */
+  static get GRID_SIZES() { return [0.1, 0.25, 0.5, 1, 2.5, 5, 10] }
+
   // ── Convenience getters (used by AppController toolbars / wheel handler) ───
 
   get axis()           { return this.state.axis }
@@ -121,6 +124,22 @@ export class GrabOperationHandler {
   get hoveredPivotIdx(){ return this.state.hoveredPivotIdx }
   get isSuggesting()   { return this.state.isSuggesting }
   get currentSuggestion() { return this.state.currentSuggestion }
+
+  /**
+   * Cycles the Ctrl-snap grid size through GRID_SIZES (Ctrl+Wheel during grab).
+   * @param {number} deltaY  Wheel delta — positive = coarser grid, negative = finer.
+   */
+  cycleGridSize(deltaY) {
+    const sizes = GrabOperationHandler.GRID_SIZES
+    const cur   = sizes.indexOf(this.state.gridSize)
+    const idx   = cur >= 0 ? cur : Math.max(sizes.findIndex(s => s >= this.state.gridSize), 0)
+    const next  = deltaY > 0
+      ? Math.min(idx + 1, sizes.length - 1)
+      : Math.max(idx - 1, 0)
+    this.state.gridSize = sizes[next]
+    this.apply()
+    this.updateStatus()
+  }
 
   // ── Public operation lifecycle ─────────────────────────────────────────────
 

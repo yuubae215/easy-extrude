@@ -53,11 +53,26 @@ export class SceneView {
 
   _setupGrid() {
     // GridHelper is in XZ plane by default; rotate 90deg around X to put it in XY plane (Z=0 ground)
-    const grid = new THREE.GridHelper(20, 20, 0x444466, 0x222244)
-    grid.rotation.x = Math.PI / 2
-    grid.material.transparent = true
-    grid.material.opacity = 0.4
-    this.scene.add(grid)
+    this._grid = new THREE.GridHelper(20, 20, 0x444466, 0x222244)
+    this._grid.rotation.x = Math.PI / 2
+    this._grid.material.transparent = true
+    this._grid.material.opacity = 0.4
+    this.scene.add(this._grid)
+  }
+
+  /**
+   * Rescales the ground grid to stay visible at the given scene scale.
+   * The 20-unit grid is sized for meter-scale scenes; in an mm-scale scene
+   * (radius in the thousands) it shrinks to a sub-pixel dot (PHILOSOPHY #27).
+   * Picks a power-of-10 cell size so grid lines stay on round world coordinates:
+   * scale 1 for radius ≤ 10 (default look preserved), ×10 per decade above.
+   * @param {number} radius  scene bounding-sphere radius (world units)
+   */
+  _updateGridScale(radius) {
+    if (!this._grid || !(radius > 0)) return
+    // 20·scale total span ≥ 2·radius  →  scale ≥ radius/10, rounded up to 10^n
+    const scale = Math.pow(10, Math.max(0, Math.ceil(Math.log10(radius / 10))))
+    this._grid.scale.setScalar(scale)
   }
 
   _onResize() {
@@ -96,6 +111,9 @@ export class SceneView {
     this.camera.near = Math.min(0.01, radius * 0.001)
     this.camera.far  = Math.max(this.camera.far, dist * 2 + radius * 4)
     this.camera.updateProjectionMatrix()
+
+    // Keep the ground grid visible at this scene scale (mm-scale imports/demo)
+    this._updateGridScale(radius)
   }
 
   /**

@@ -1,0 +1,367 @@
+{
+  "version": "context/0.1",
+  "meta": {
+    "name": "セル型工程の自動化置換 — 要件文脈",
+    "baseline": null
+  },
+
+  "actors": [
+    { "ref": "customer", "role": "customer" },
+    { "ref": "sier",     "role": "developer" },
+    { "ref": "maint",    "role": "maintainer" },
+    { "ref": "operator", "role": "endUser" },
+    { "ref": "broker",   "role": "agent" }
+  ],
+
+  "sources": [
+    { "ref": "src_brief", "kind": "utterance", "by": "customer", "capturedAt": "2026-06-10" }
+  ],
+
+  "given": [
+    {
+      "ref": "f_cell_area",
+      "subject": "セル型工程の専有面積",
+      "attrs": { "footprint": "unknown" },
+      "status": "asserted",
+      "evidence": ["src_brief"]
+    },
+    {
+      "ref": "f_outlet",
+      "subject": "床敷設構内コンセント",
+      "attrs": {
+        "voltage":        { "value": 100, "unit": "V" },
+        "socket":         "3芯ソケット",
+        "ratedCurrent":   "unknown",
+        "circuitSharing": "unknown"
+      },
+      "status": "asserted",
+      "evidence": ["src_brief"]
+    },
+    {
+      "ref": "f_outlet_to_bench",
+      "subject": "コンセントから作業台設置位置までの距離 (「3m弱」)",
+      "quantity": { "interval": [2700, 3000], "unit": "mm" },
+      "status": "asserted",
+      "evidence": ["src_brief"]
+    },
+    {
+      "ref": "f_bench",
+      "subject": "既存作業台",
+      "attrs": {
+        "height":       { "value": 800, "unit": "mm" },
+        "top":          { "x": 500, "y": 300, "unit": "mm" },
+        "loadCapacity": "unknown"
+      },
+      "status": "asserted",
+      "evidence": ["src_brief"]
+    },
+    {
+      "ref": "f_plate",
+      "subject": "ベースプレート板厚要求",
+      "attrs": { "thickness": { "value": 30, "unit": "mm" } },
+      "status": "asserted",
+      "evidence": ["src_brief"]
+    },
+    {
+      "ref": "f_bolt",
+      "subject": "ロボット締結ボルト仕様",
+      "attrs": { "spec": "M12×4本" },
+      "status": "assumed",
+      "note": "SIer想定値。顧客・ロボットメーカー仕様で未確定",
+      "evidence": []
+    }
+  ],
+
+  "intents": [
+    {
+      "ref": "g_automate",
+      "verb": "replace",
+      "summary": "セル1工程を自動化工程に置換する"
+    },
+    {
+      "ref": "g_depal",
+      "verb": "depalletize_and_place",
+      "inputs":  { "from": "container_a", "state": "バラ積み" },
+      "outputs": { "to": "container_b", "state": "格子へマトリックス整列" },
+      "successCriteria": "全ワークが格子セルへ正姿勢で配置される",
+      "parent": "g_automate"
+    }
+  ],
+
+  "obligations": [
+    {
+      "ref": "o_baseplate_design",
+      "deliverable": "ベースプレート設計 (板厚30mm・作業台天面取付・ロボット締結穴)",
+      "responsible": "sier",
+      "dependsOn": ["f_bench", "f_plate"],
+      "defectScope": "プレート強度・穴位置精度・天面への固定方法"
+    },
+    {
+      "ref": "o_robot_select",
+      "deliverable": "ロボット機種選定 (100V給電・天面500×300内で2コンテナへリーチ)",
+      "responsible": "sier",
+      "dependsOn": ["f_outlet", "f_bench"],
+      "defectScope": "リーチ成立性・可搬質量・電源適合"
+    },
+    {
+      "ref": "o_robot_mount",
+      "deliverable": "ロボットのベースプレート上ボルト締結",
+      "responsible": "sier",
+      "dependsOn": ["o_baseplate_design", "f_bolt"],
+      "defectScope": "締結トルク・緩み止め"
+    },
+    {
+      "ref": "o_power",
+      "deliverable": "構内コンセントからの給電 (3m弱区間の配線)",
+      "responsible": "unassigned",
+      "dependsOn": ["f_outlet", "f_outlet_to_bench"],
+      "defectScope": "unassigned"
+    }
+  ],
+
+  "decisions": [
+    {
+      "ref": "d_bench_distance",
+      "resolves": "f_outlet_to_bench",
+      "nominal": 2800,
+      "decidedBy": "sier",
+      "status": "proposed",
+      "rationale": "「3m弱」区間 [2700, 3000) 内で配線余裕を確保しつつセル奥行を最小化する公称値"
+    },
+    {
+      "ref": "d_cell_bounds",
+      "resolves": "f_cell_area",
+      "nominal": [
+        { "x": -600, "y": -700 },
+        { "x": 3500, "y": -700 },
+        { "x": 3500, "y":  700 },
+        { "x": -600, "y":  700 }
+      ],
+      "decidedBy": "sier",
+      "status": "proposed",
+      "rationale": "専有面積実測値が未入手のため、機器配置から逆算した必要境界の提案値"
+    }
+  ],
+
+  "specification": {
+    "layout": {
+      "version": "layout/1.0",
+      "meta": {
+        "name": "工場セル自動化レイアウト",
+        "description": "セル型工程を自動化工程に置き換えるレイアウト。床置き100V/3芯コンセントから2.8m先の作業台上にロボットとベースプレートを設置し、作業台の余剰面積にワークコンテナを2台配置。"
+      },
+      "strategy": "manual",
+      "entities": [
+        {
+          "ref": "cell_area",
+          "type": "AnnotatedRegion",
+          "name": "自動化セル専有面積",
+          "description": "セル型工程が置かれる床面積",
+          "placeType": "Zone",
+          "vertices": { "$decision": "d_cell_bounds" }
+        },
+        {
+          "ref": "floor_outlet",
+          "type": "AnnotatedPoint",
+          "name": "床置きコンセント (100V / 3芯ソケット)",
+          "description": "構内電源。100V 3芯ソケット形状。",
+          "placeType": "Anchor",
+          "position": { "x": 0, "y": 0, "z": 0 }
+        },
+        {
+          "ref": "workbench",
+          "type": "Solid",
+          "name": "作業台",
+          "description": "高さ800mm、天面作業スペース500×300mm",
+          "ifcClass": "IfcFurniture",
+          "dimensions": {
+            "x": { "$fact": "f_bench.attrs.top.x" },
+            "y": { "$fact": "f_bench.attrs.top.y" },
+            "z": { "$fact": "f_bench.attrs.height.value" }
+          },
+          "position": {
+            "x": { "$decision": "d_bench_distance" },
+            "y": 0,
+            "z": { "$expr": "f_bench.attrs.height.value / 2" }
+          },
+          "frames": [
+            {
+              "ref": "workbench_top",
+              "name": "作業台天面中心",
+              "translation": { "x": 0, "y": 0, "z": { "$expr": "f_bench.attrs.height.value / 2" } }
+            }
+          ]
+        },
+        {
+          "ref": "base_plate",
+          "type": "Solid",
+          "name": "ロボット取付ベースプレート (t30mm)",
+          "description": "作業台天面に固定するロボット取付用ベースプレート。厚さ30mm。",
+          "ifcClass": "IfcElementComponent",
+          "dimensions": {
+            "x": 300,
+            "y": 250,
+            "z": { "$fact": "f_plate.attrs.thickness.value" }
+          },
+          "position": {
+            "x": 2650,
+            "y": 0,
+            "z": { "$expr": "f_bench.attrs.height.value + f_plate.attrs.thickness.value / 2" }
+          },
+          "frames": [
+            {
+              "ref": "robot_mount",
+              "name": "ロボット取付面 (ベースプレート天面)",
+              "translation": { "x": 0, "y": 0, "z": { "$expr": "f_plate.attrs.thickness.value / 2" } }
+            }
+          ]
+        },
+        {
+          "ref": "robot",
+          "type": "Solid",
+          "name": "産業用ロボット",
+          "description": "作業台上のベースプレートにボルト締結。ベースプレート天面 (z=830) を基準に搭載。",
+          "ifcClass": "IfcTransportElement",
+          "dimensions": { "x": 220, "y": 220, "z": 520 },
+          "position": {
+            "x": 2650,
+            "y": 0,
+            "z": { "$expr": "f_bench.attrs.height.value + f_plate.attrs.thickness.value + 520 / 2" }
+          },
+          "frames": [
+            {
+              "ref": "robot_base",
+              "name": "ロボットベース (取付基準面)",
+              "translation": { "x": 0, "y": 0, "z": { "$expr": "0 - 520 / 2" } }
+            }
+          ]
+        },
+        {
+          "ref": "container_a",
+          "type": "Solid",
+          "name": "ワークコンテナA (バラ積みワーク)",
+          "description": "作業台天面のロボット非占有エリアに設置。バラバラに積み上がったワーク入り。",
+          "ifcClass": "IfcTransportElement",
+          "dimensions": { "x": 180, "y": 120, "z": 150 },
+          "position": {
+            "x": 2950,
+            "y": 90,
+            "z": { "$expr": "f_bench.attrs.height.value + 150 / 2" }
+          }
+        },
+        {
+          "ref": "container_b",
+          "type": "Solid",
+          "name": "ワークコンテナB (マトリックス格子)",
+          "description": "作業台天面のロボット非占有エリアに設置。ワークをマトリックス上に整列させる格子入り。",
+          "ifcClass": "IfcTransportElement",
+          "dimensions": { "x": 180, "y": 120, "z": 150 },
+          "position": {
+            "x": 2950,
+            "y": -90,
+            "z": { "$expr": "f_bench.attrs.height.value + 150 / 2" }
+          }
+        }
+      ],
+      "constraints": [
+        {
+          "source": "base_plate",
+          "target": "workbench",
+          "jointType": null,
+          "semanticType": "above",
+          "properties": { "note": "ベースプレートを作業台天面上にボルト固定" }
+        },
+        {
+          "source": "robot_base",
+          "target": "robot_mount",
+          "jointType": "fixed",
+          "semanticType": "fastened",
+          "properties": { "note": "ロボットをベースプレートにボルト締結 (M12×4本)" }
+        },
+        {
+          "source": "container_a",
+          "target": "workbench",
+          "jointType": null,
+          "semanticType": "above",
+          "properties": { "note": "コンテナAは作業台天面のロボット側面エリアに設置" }
+        },
+        {
+          "source": "container_b",
+          "target": "workbench",
+          "jointType": null,
+          "semanticType": "above",
+          "properties": { "note": "コンテナBはコンテナAの隣に設置" }
+        },
+        {
+          "source": "floor_outlet",
+          "target": "workbench_origin",
+          "jointType": null,
+          "semanticType": "connects",
+          "properties": {
+            "distance_mm": { "$decision": "d_bench_distance" },
+            "voltage_V":   { "$fact": "f_outlet.attrs.voltage.value" },
+            "connector":   { "$fact": "f_outlet.attrs.socket" },
+            "note":        "床置きコンセントから作業台まで電源ケーブル配線"
+          }
+        }
+      ]
+    },
+
+    "trace": [
+      { "from": "d_cell_bounds",      "to": "cell_area",    "kind": "derives" },
+      { "from": "f_outlet",           "to": "floor_outlet", "kind": "derives" },
+      { "from": "f_bench",            "to": "workbench",    "kind": "derives" },
+      { "from": "o_baseplate_design", "to": "base_plate",   "kind": "satisfies" },
+      { "from": "f_plate",            "to": "base_plate",   "kind": "constrains" },
+      { "from": "o_robot_select",     "to": "robot",        "kind": "satisfies" },
+      { "from": "g_depal",            "to": "container_a",  "kind": "constrains" },
+      { "from": "g_depal",            "to": "container_b",  "kind": "constrains" },
+      { "from": "o_baseplate_design", "to": "constraint:base_plate→workbench",       "kind": "satisfies" },
+      { "from": "o_robot_mount",      "to": "constraint:robot_base→robot_mount",     "kind": "satisfies" },
+      { "from": "g_depal",            "to": "constraint:container_a→workbench",      "kind": "constrains" },
+      { "from": "g_depal",            "to": "constraint:container_b→workbench",      "kind": "constrains" },
+      { "from": "o_power",            "to": "constraint:floor_outlet→workbench_origin", "kind": "satisfies" },
+      { "from": "f_outlet_to_bench",  "to": "constraint:floor_outlet→workbench_origin", "kind": "constrains" }
+    ]
+  },
+
+  "acceptance": [
+    {
+      "ref": "a_plate_fit",
+      "mode": "static",
+      "predicate": "footprint_within(base_plate, workbench_top)",
+      "requires": []
+    },
+    {
+      "ref": "a_no_overlap",
+      "mode": "static",
+      "predicate": "no_overlap(robot, container_a, container_b) on workbench_top, clearance >= 0mm",
+      "requires": []
+    },
+    {
+      "ref": "a_cable",
+      "mode": "static",
+      "predicate": "cable_length(floor_outlet → robot_base) <= rated_cable",
+      "evaluateAt": "worst_case(f_outlet_to_bench) = 3000mm",
+      "requires": []
+    },
+    {
+      "ref": "a_power",
+      "mode": "witnessed",
+      "predicate": "実負荷運転時電流 <= コンセント定格電流",
+      "requires": ["f_outlet.attrs.ratedCurrent"]
+    },
+    {
+      "ref": "a_torque",
+      "mode": "witnessed",
+      "predicate": "全締結ボルトのトルク値が規定±許容内、合いマーク施工済み",
+      "requires": ["f_bolt"]
+    },
+    {
+      "ref": "a_depal_cycle",
+      "mode": "witnessed",
+      "predicate": "g_depal.successCriteria を連続 N サイクル達成",
+      "requires": []
+    }
+  ]
+}

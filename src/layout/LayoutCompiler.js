@@ -37,8 +37,11 @@ const ENTITY_PREFIX = {
  *   "<ref>"         → Solid ID
  *   "<ref>_origin"  → auto-generated Origin CF ID (ADR-037)
  *   "<frame.ref>"   → user-defined child CF ID
+ *
+ * Exported so callers that load the compiled scene (importFromJson keeps the
+ * original IDs when clear=true) can map DSL refs to live scene entity IDs.
  */
-function buildRefMap(entities) {
+export function buildRefMap(entities) {
   const map = new Map()
 
   for (const entity of entities) {
@@ -301,6 +304,15 @@ function generateObjects(entities, refMap, positions) {
 
 // ── Link generation ───────────────────────────────────────────────────────────
 
+/**
+ * Deterministic SpatialLink ID for the i-th constraint.
+ * Exported alongside buildRefMap so callers can resolve trace targets like
+ * "constraint:robot_base→robot_mount" to live scene link IDs.
+ */
+export function linkIdForConstraint(index, c) {
+  return `sl_${index}_${slug(c.source)}_${slug(c.target)}`
+}
+
 function generateLinks(constraints, refMap) {
   const links = []
 
@@ -310,7 +322,7 @@ function generateLinks(constraints, refMap) {
     if (!sourceId || !targetId) continue // validator catches unresolved refs
 
     links.push({
-      id:           `sl_${i}_${slug(c.source)}_${slug(c.target)}`,
+      id:           linkIdForConstraint(i, c),
       sourceId,
       targetId,
       jointType:    c.jointType    ?? null,

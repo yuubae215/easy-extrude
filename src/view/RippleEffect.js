@@ -11,10 +11,14 @@ const DURATION = 0.6   // seconds
  * (PHILOSOPHY #9 — allocations and deallocations are symmetric)
  */
 export class RippleEffect {
-  constructor(scene, position, color) {
+  /**
+   * @param {number} [radius=0.15]  Base sphere radius in world units — pass an
+   *   entity-scaled value for scenes whose unit is not ~metres (e.g. mm scenes).
+   */
+  constructor(scene, position, color, radius = 0.15) {
     this._scene = scene
     this._start = performance.now() / 1000
-    const geo = new THREE.SphereGeometry(0.15, 8, 8)
+    const geo = new THREE.SphereGeometry(radius, 8, 8)
     const mat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,

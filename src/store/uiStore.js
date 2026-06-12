@@ -107,6 +107,25 @@ export const useUIStore = create((set, get) => ({
   // ── Onboarding (mobile first-visit gesture hint) ───────────────────────────
   onboardingVisible: false,
 
+  // ── Context DSL demo (ADR-046/047) ─────────────────────────────────────────
+  // Populated by ContextDemoController at demoStart; null-equivalent when inactive.
+  demo: {
+    active: false,
+    step: 0,
+    steps: [],              // [{ title, narration }]
+    facts: [],              // Context DSL given[]
+    intents: [],
+    decisions: [],
+    obligations: [],
+    acceptance: [],
+    openQuestions: [],      // [{ ref, raisedBy, about, summary }]
+    blockedChecks: [],      // [{ check, blockedBy[] }]
+    trace: [],              // [{ from, to, kind }]
+    approvedDecisions: {},  // ref → true
+    inspectorTab: null,     // 'facts'|'openQuestions'|'decisions'|'trace'|'acceptance'|null
+    selectedItemRef: null,
+  },
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -213,5 +232,36 @@ export const useUIStore = create((set, get) => ({
     // ── Onboarding ───────────────────────────────────────────────────────────
     showOnboarding: () => set({ onboardingVisible: true }),
     hideOnboarding: () => set({ onboardingVisible: false }),
+
+    // ── Context DSL demo ─────────────────────────────────────────────────────
+    demoStart: (payload) => set(state => ({
+      demo: {
+        ...state.demo,
+        ...payload,
+        active: true,
+        step: 0,
+        approvedDecisions: {},
+        inspectorTab: null,
+        selectedItemRef: null,
+      },
+    })),
+    demoSetStep: (step, inspectorTab) => set(state => ({
+      demo: { ...state.demo, step, inspectorTab },
+    })),
+    demoSetTab: (inspectorTab) => set(state => ({
+      demo: { ...state.demo, inspectorTab },
+    })),
+    demoApproveDecision: (ref) => set(state => ({
+      demo: {
+        ...state.demo,
+        approvedDecisions: { ...state.demo.approvedDecisions, [ref]: true },
+      },
+    })),
+    demoSelectItem: (ref) => set(state => ({
+      demo: { ...state.demo, selectedItemRef: ref },
+    })),
+    demoEnd: () => set(state => ({
+      demo: { ...state.demo, active: false },
+    })),
   },
 }))

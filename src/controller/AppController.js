@@ -63,6 +63,8 @@ import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
+import { ContextDemoController }      from './ContextDemoController.js'
+import { useUIStore }                 from '../store/uiStore.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
 import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
 import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
@@ -350,6 +352,10 @@ export class AppController {
     // All map mode state and interaction logic live in MapModeController.
     // AppController accesses map state via this._mapModeCtrl.isActive / .hasTool.
     this._mapModeCtrl = new MapModeController(this)
+
+    // ── Context DSL demo (ADR-046/047, delegated to ContextDemoController) ─
+    // Registers its own uiStore callbacks; AppController only ticks it.
+    this._demoCtrl = new ContextDemoController(this)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
@@ -644,6 +650,18 @@ export class AppController {
     this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
     this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)
 
+    // ── Gizmo right-edge occupancy ────────────────────────────────────────
+    // The gizmo offset is owned by _updateGizmoOffset() alone (PHILOSOPHY #4);
+    // it tracks every right-edge panel (N panel, Context Inspector) through
+    // a single store subscription instead of per-toggle call sites.
+    useUIStore.subscribe((s, prev) => {
+      if (s.nPanelVisible !== prev.nPanelVisible ||
+          s.demo.active !== prev.demo.active ||
+          s.demo.inspectorTab !== prev.demo.inspectorTab) {
+        this._updateGizmoOffset()
+      }
+    })
+
     this._bindEvents()
     this._initMobileAxisGuide()
 
@@ -654,9 +672,11 @@ export class AppController {
     this._commandStack.clear()
 
     // Expose console API for role-based provenance (ADR-034 §8.3)
+    // + Context DSL demo entry (ADR-047)
     window.__easyExtrude = {
-      setRole: (role) => RoleService.setRole(role),
-      getRole: ()     => RoleService.getRole(),
+      setRole:     (role) => RoleService.setRole(role),
+      getRole:     ()     => RoleService.getRole(),
+      demoContext: ()     => this._demoCtrl.enter(),
     }
   }
 
@@ -1103,14 +1123,25 @@ export class AppController {
     this._commandStack.push(cmd)
   }
 
-  /** Toggles N panel visibility and updates gizmo offset (desktop only) */
+  /** Toggles N panel visibility (gizmo offset follows via the store subscription) */
   _toggleNPanel() {
     this._uiView.toggleNPanel()
     this._updateNPanel()
-    if (this._gizmoView) {
-      const mobile = window.innerWidth < 768
-      this._gizmoView.setRightOffset(!mobile && this._uiView.nPanelVisible ? 216 : 16)
-    }
+  }
+
+  /**
+   * Repositions the world gizmo left of whichever right-edge panels are open.
+   * Sole owner of the gizmo right offset — driven by the uiStore subscription
+   * registered in the constructor; never call setRightOffset() elsewhere.
+   * Desktop only: on mobile the N panel is a drawer and the demo inspector is hidden.
+   */
+  _updateGizmoOffset() {
+    if (!this._gizmoView) return
+    const mobile = window.innerWidth < 768
+    const s = useUIStore.getState()
+    const inspectorOpen = !mobile && s.demo.active && !!s.demo.inspectorTab   // 280px (ADR-047)
+    const nPanelOpen    = !mobile && s.nPanelVisible                          // 200px
+    this._gizmoView.setRightOffset(16 + (nPanelOpen ? 200 : 0) + (inspectorOpen ? 280 : 0))
   }
 
   /** Called when user clicks a row in the outliner */
@@ -1327,7 +1358,7 @@ export class AppController {
         : obj instanceof AnnotatedRegion         ? 'annot-region'
         : obj instanceof AnnotatedPoint          ? 'annot-point'
         : 'cuboid'
-      entityInfos.set(id, { name: obj.name, type })
+      entityInfos.set(id, { name: obj.name, type, parentId: obj.parentId ?? null })
     }
     const links = [...this._scene.links.values()]
     this._linkNetworkView.update(entityInfos, links)
@@ -1464,6 +1495,26 @@ export class AppController {
     window.addEventListener('keyup',       this._handlers.keyup)
     window.addEventListener('wheel',       this._handlers.wheel, { passive: false })
     window.addEventListener('contextmenu', this._handlers.contextmenu)
+  }
+
+  /**
+   * Window wheel handler. Three consumers, in priority order:
+   * 1. Map mode — scroll zooms the orthographic camera (MapModeController.onWheel)
+   * 2. Rotate + Ctrl — cycles the angle snap step (RotationHandler.cycleStepSize)
+   * 3. Grab + Ctrl — cycles the grid snap size (GrabOperationHandler.cycleGridSize)
+   * Everything else falls through to OrbitControls' own wheel zoom.
+   */
+  _onWheel(e) {
+    if (this._mapModeCtrl.onWheel(e)) return
+    if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
+      e.preventDefault()
+      this._rotateHandler.cycleStepSize(e.deltaY)
+      return
+    }
+    if (this._opState.is(S_GRAB_ACTIVE) && this._ctrlHeld) {
+      e.preventDefault()
+      this._grabHandler.cycleGridSize(e.deltaY)
+    }
   }
 
   dispose() {
@@ -2993,6 +3044,10 @@ export class AppController {
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
         if (obj instanceof AnnotatedPoint)  {
+          // Constant screen-size marker, capped to 5% of the scene radius so it
+          // stays proportionate; floor at the legacy 0.25-unit world radius so
+          // meter-scale scenes keep their original marker size.
+          obj.meshView.updateScale(this._camera, this._sceneView.renderer, Math.max(sceneRadius * 0.05, 0.25))
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
           obj.meshView.tick(t)
           // Bilateral tolerance alarm: update error bridge line toward violated CF.
@@ -3042,6 +3097,8 @@ export class AppController {
           return !done
         })
       }
+      // Context DSL demo: ghost pulse/collapse + staggered reveal (ADR-047).
+      this._demoCtrl.tick(t)
     }
     loop()
 
@@ -3051,6 +3108,12 @@ export class AppController {
     // Wire Export / Import JSON buttons
     this._uiView.onExportJson(() => this._exportSceneJson())
     this._uiView.onImportJson(() => this._triggerImportSceneJson())
+
+    // Context DSL demo via URL param (?demo=context) — same path as the
+    // header Demo button and window.__easyExtrude.demoContext().
+    if (new URLSearchParams(location.search).get('demo') === 'context') {
+      this._demoCtrl.enter()
+    }
 
     // Non-blocking BFF + Node Editor setup (Phase B)
     this._initBff().catch(err => {

@@ -19,12 +19,18 @@ export function NPanel() {
   const nPanelVisible  = useUIStore(s => s.nPanelVisible)
   const nPanelData     = useUIStore(s => s.nPanelData)
   const backdropCb     = useUIStore(s => s.backdropCallback)
+  const demoActive     = useUIStore(s => s.demo.active)
+  const demoTab        = useUIStore(s => s.demo.inspectorTab)
   const isMobile       = useIsMobile()
+
+  // The Context Inspector (ADR-047) occupies the right edge (280px) while the
+  // demo is active — shift left so the panel is not hidden behind it.
+  const inspectorOpen = !isMobile && demoActive && !!demoTab
 
   const panelStyle = {
     position:    'fixed',
     top:         '40px',
-    right:       '0',
+    right:       inspectorOpen ? '280px' : '0',
     width:       '200px',
     background:  '#2b2b2b',
     borderLeft:  '1px solid #1a1a1a',
