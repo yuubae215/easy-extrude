@@ -3,7 +3,7 @@
 **Status**: Draft (Proposed)
 **Date**: 2026-06-10
 **Updated**: 2026-06-11 — MVP 実装 (`src/context/`, ゴールデンテスト 8/8) を反映。interval の確定方式を worst-case 自動解決から **Decision エンティティ経由**に変更(§2.3 invariant 2、§7)。同日、可視化 PoC デモを ADR-047 として実装(`compileContext` の戻り値に `provenance[]` を追加 — additive)
-**Related**: ADR-044 (5W1H Function Mapping), ADR-045 (External Layout API), ADR-037 (Body Frame), ADR-030 (SpatialLink), ADR-047 (Context Demo Layer)
+**Related**: ADR-044 (5W1H Function Mapping), ADR-045 (External Layout API), ADR-037 (Body Frame), ADR-030 (SpatialLink), ADR-047 (Context Demo Layer), ADR-049 (Requirement / Conflict モデル — 本 DSL の L2.5 拡張)
 **Implementation**: `src/context/` (Schema / Validator / Compiler), `examples/factory_context.json`, `pnpm test:context`
 
 ---
