@@ -596,3 +596,23 @@ return obj._position.clone()
 
 - **Principle**: stated→derived promotion changes a requirement's admissible interval and `source`. Running it at the wrong point silently corrupts either input validation or conflict detection.
 - **Concrete Rule**: in `validateContext()` the order is fixed: (1) R0' shape checks validate the **human-authored** requirements (catches inverted/invalid stated intervals before they are replaced); (2) `promoteAdmissible()` produces `liveRequirements` (a new Map) + `promoted[]`; (3) R9, R6, R7, R8, and the Decision-`relaxes` existence check all read `liveRequirements`, so the *canonical* (derived) region drives both the open-question and conflict outputs. R9 then naturally stays silent for a successfully promoted requirement (its `source` is now `derived`). `promoted` is returned (sorted) by both `validateContext` and `compileContext`.
+
+## Region Conflict (R6) Is AABB-Only — the Helly-2D Caveat (ADR-049 Phase 3)
+
+- **Principle**: R6's scalar logic is complete because of the 1-D Helly property — a family of intervals has empty common intersection iff some *pair* is disjoint, so one binding pair `(lo=max(mins), hi=min(maxes))` fully describes the conflict. This does **not** generalise to arbitrary 2-D convex sets: the Helly number in the plane is 3, so three pairwise-overlapping convex sets can have empty common intersection and the binding-pair + gap output becomes ill-defined.
+- **Why AABB works**: the intersection of axis-aligned boxes decomposes independently per axis — `∩ AABBᵢ = (∩ intervalsₓ) × (∩ intervalsᵧ) [× (∩ interval_z)]` — and the common intersection is empty iff it is empty on ≥1 axis, where the 1-D Helly property holds. So region R6 = run the scalar interval logic once per axis (`RegionGeometry.intersectBoxes` over `intersectIntervals`). Convex polygons are rejected at R0' (their intersection needs LP/GJK and breaks the per-axis gap contract).
+- **Concrete Rules**:
+  - The half-open `[min,max)` test lives **only** in `RegionGeometry.intersectIntervals`; both the scalar branch and every region axis call through it so the touching-intervals-conflict convention can never diverge.
+  - `gap` shape is polymorphic by admissible shape: scalar → `[hi,lo]` **array** (unchanged — backward-compat regression guard in `ContextConflict.test.js`); region → `{axis:[hi,lo]}` **map** over empty axes only.
+  - `detectConflicts` skips a variable bucket whose requirements mix interval and region shapes (R0' already flags that as an error) rather than throwing on the inconsistent data.
+  - Region ≠ multi-variable: a region admissible constrains exactly one region variable. Multi-variable requirements (`constrains.length ≥ 2`) carry no single-variable admissible and continue to feed R7 clustering, never R6.
+
+## PredicateEngine — Pure, THREE-Free, Blocked-Before-Evaluate (ADR-049 Phase 3)
+
+- **Principle**: acceptance predicates (`no_overlap`, `reach_covers`, `swept_volume`) are pure geometry. The deferral in ADR-046 §4.2 is now implemented in `src/context/PredicateEngine.js` + `RegionGeometry.js`.
+- **Concrete Rules**:
+  - Engine functions return `{ kind, pass, violations }` value objects and **never throw on `pass:false`** (a failing predicate is a normal result). The only thrown error is `MalformedPredicate` for a structurally invalid predicate — caught in R5 and re-surfaced as a validator `error` (PHILOSOPHY #11, never swallowed).
+  - No `THREE` import anywhere in `src/context/` — `RegionGeometry.js` implements its own AABB/vector math so the whole tree loads under bare `node --test`. A `three/addons` import would throw there, which is the built-in purity safety net.
+  - In R5, a structured `predicate` is evaluated **only when the check is not blocked**. A check whose `requires` resolves to an assumed/unknown fact is `status:'blocked'` and the engine is NOT run — you cannot evaluate clearance/reach against an unknown dimension. Precedence: blocked > fail > pass.
+  - `swept_volume` is a conservative capsule-chain **sampling** approximation (points along each path segment, point-to-AABB distance minus tool radius), not an exact swept solid — documented in the module.
+- **Additive return contract**: `validateContext` returns `checkResults` (predicate `pass|fail|blocked` records) on **every** return path including the early `!ctx` null-guard — same discipline as `promoted`. `compileContext` passes it through.

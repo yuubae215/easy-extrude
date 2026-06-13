@@ -1,0 +1,215 @@
+{
+  "version": "context/0.3",
+  "meta": {
+    "name": "ロボットセル — 領域 Variable・衝突・受入述語シナリオ (ADR-049 Phase 3)",
+    "baseline": null
+  },
+
+  "actors": [
+    { "ref": "mech_engineer",   "role": "developer" },
+    { "ref": "robot_engineer",  "role": "developer" },
+    { "ref": "vision_engineer", "role": "developer" }
+  ],
+
+  "sources": [
+    { "ref": "src_kickoff",     "kind": "utterance", "by": "robot_engineer", "capturedAt": "2026-06-13" },
+    { "ref": "src_zone_sketch", "kind": "sketch",    "by": "mech_engineer",  "capturedAt": "2026-06-13" }
+  ],
+
+  "given": [
+    {
+      "ref": "f_robot",
+      "subject": "6軸ロボット (可搬10kg)",
+      "attrs": {
+        "reach":     { "value": 850, "unit": "mm" }
+      },
+      "status": "asserted",
+      "evidence": ["src_kickoff"]
+    },
+    {
+      "ref": "f_bolt",
+      "subject": "ベースプレート固定ボルト",
+      "attrs": {
+        "spec": "M8 想定"
+      },
+      "status": "assumed",
+      "evidence": ["src_kickoff"]
+    }
+  ],
+
+  "variables": [
+    {
+      "ref": "v_base_footprint",
+      "unit": "mm",
+      "region": {
+        "kind": "aabb",
+        "axes": ["x", "y"],
+        "domain": { "x": [0, 3000], "y": [-1000, 1000] }
+      },
+      "description": "ロボット基台の設置可能フットプリント (2D AABB 領域 Variable)"
+    },
+    {
+      "ref": "v_camera_standoff",
+      "unit": "mm",
+      "domain": [0, 2000],
+      "description": "ハンドアイカメラのワーキングディスタンス (スカラー Variable)"
+    }
+  ],
+
+  "requirements": [
+    {
+      "ref": "r_vision_footprint",
+      "by": "vision_engineer",
+      "kpi": { "name": "fovCoverage", "expr": "fov_cover(v_base_footprint)", "unit": "ratio" },
+      "criterion": { "op": ">=", "value": 1.0 },
+      "constrains": ["v_base_footprint"],
+      "negotiability": "should",
+      "admissible": { "region": { "x": [600, 1200], "y": [-300, 300] }, "source": "stated" }
+    },
+    {
+      "ref": "r_mech_footprint",
+      "by": "mech_engineer",
+      "kpi": { "name": "installClearance", "expr": "install_margin(v_base_footprint)", "unit": "mm" },
+      "criterion": { "op": ">=", "value": 50 },
+      "constrains": ["v_base_footprint"],
+      "negotiability": "must",
+      "admissible": { "region": { "x": [1300, 1800], "y": [-100, 100] }, "source": "stated" }
+    },
+    {
+      "ref": "r_cam_resolution",
+      "by": "vision_engineer",
+      "kpi": { "name": "resolution", "expr": "fov_width(v_camera_standoff)", "unit": "px/mm" },
+      "criterion": { "op": ">=", "value": 10 },
+      "constrains": ["v_camera_standoff"],
+      "negotiability": "should",
+      "admissible": { "interval": [200, 350], "source": "stated" }
+    },
+    {
+      "ref": "r_wrist_singularity",
+      "by": "robot_engineer",
+      "kpi": { "name": "singularityMargin", "expr": "wrist_margin(v_camera_standoff)", "unit": "deg" },
+      "criterion": { "op": ">=", "value": 15 },
+      "constrains": ["v_camera_standoff"],
+      "negotiability": "must",
+      "admissible": { "interval": [380, 600], "source": "stated" }
+    }
+  ],
+
+  "decisions": [
+    {
+      "ref": "d_footprint",
+      "resolves": "conflict_v_base_footprint",
+      "nominal": { "x": 1250, "y": 0 },
+      "decidedBy": ["mech_engineer", "vision_engineer"],
+      "status": "proposed",
+      "rationale": "X 方向の no-man's-land [1200,1300] をまたぐ妥協点。視野は縁ぎりぎりだが据付クリアランスを優先"
+    },
+    {
+      "ref": "d_standoff",
+      "resolves": "conflict_v_camera_standoff",
+      "nominal": 400,
+      "decidedBy": ["vision_engineer", "robot_engineer"],
+      "status": "proposed",
+      "rationale": "WD400: 特異点マージン確保。レンズ変更で分解能を担保"
+    }
+  ],
+
+  "specification": {
+    "layout": {
+      "version": "layout/1.0",
+      "meta": {
+        "name": "ロボットセル領域シナリオ — 最小レイアウト",
+        "description": "メカ・ビジョン双方の設置許容ゾーンを含む最小仕様。"
+      },
+      "strategy": "manual",
+      "entities": [
+        {
+          "ref": "vision_zone",
+          "type": "AnnotatedRegion",
+          "name": "視野要求 設置許容ゾーン (ビジョン要求)",
+          "placeType": "Zone",
+          "vertices": [
+            { "x": 600,  "y": -300 },
+            { "x": 1200, "y": -300 },
+            { "x": 1200, "y":  300 },
+            { "x": 600,  "y":  300 }
+          ]
+        },
+        {
+          "ref": "mech_zone",
+          "type": "AnnotatedRegion",
+          "name": "据付要求 設置許容ゾーン (メカ要求)",
+          "placeType": "Zone",
+          "vertices": [
+            { "x": 1300, "y": -100 },
+            { "x": 1800, "y": -100 },
+            { "x": 1800, "y":  100 },
+            { "x": 1300, "y":  100 }
+          ]
+        }
+      ],
+      "constraints": []
+    },
+
+    "trace": [
+      { "from": "r_vision_footprint", "to": "vision_zone", "kind": "constrains" },
+      { "from": "r_mech_footprint",   "to": "mech_zone",   "kind": "constrains" }
+    ]
+  },
+
+  "acceptance": [
+    {
+      "ref": "a_no_overlap",
+      "mode": "static",
+      "predicate": {
+        "kind": "no_overlap",
+        "clearance": 20,
+        "boxes": [
+          { "ref": "robot",       "x": [0, 220],   "y": [0, 220] },
+          { "ref": "container_a", "x": [220, 400], "y": [0, 120] },
+          { "ref": "container_b", "x": [220, 400], "y": [120, 240] }
+        ],
+        "within": { "x": [0, 500], "y": [0, 300] }
+      },
+      "requires": []
+    },
+    {
+      "ref": "a_reach",
+      "mode": "static",
+      "predicate": {
+        "kind": "reach_covers",
+        "envelope": { "shape": "sphere", "center": { "x": 0, "y": 0, "z": 0 }, "radius": 850 },
+        "targets": [
+          { "ref": "tcp_pick",  "x": 600, "y": 0, "z": 200 },
+          { "ref": "tcp_place", "x": 900, "y": 0, "z": 200 }
+        ]
+      },
+      "requires": ["f_robot.attrs.reach"]
+    },
+    {
+      "ref": "a_swept",
+      "mode": "static",
+      "predicate": {
+        "kind": "swept_volume",
+        "path": [ { "x": 0, "y": 0, "z": 0 }, { "x": 600, "y": 0, "z": 0 } ],
+        "radius": 120,
+        "obstacles": [ { "ref": "fence", "x": [900, 920], "y": [-500, 500], "z": [0, 1800] } ],
+        "clearance": 10
+      },
+      "requires": []
+    },
+    {
+      "ref": "a_bolt_clearance",
+      "mode": "static",
+      "predicate": {
+        "kind": "no_overlap",
+        "clearance": 5,
+        "boxes": [
+          { "ref": "plate",  "x": [0, 300], "y": [0, 300] },
+          { "ref": "anchor", "x": [310, 360], "y": [0, 50] }
+        ]
+      },
+      "requires": ["f_bolt.spec"]
+    }
+  ]
+}

@@ -121,8 +121,9 @@ export const useUIStore = create((set, get) => ({
     openQuestions: [],      // [{ ref, raisedBy, about, summary }]
     blockedChecks: [],      // [{ check, blockedBy[] }]
     trace: [],              // [{ from, to, kind }]
+    conflicts: [],          // [{ ref, variable, between[], gap, ... }] — live R6 output
     approvedDecisions: {},  // ref → true
-    inspectorTab: null,     // 'facts'|'openQuestions'|'decisions'|'trace'|'acceptance'|null
+    inspectorTab: null,     // 'facts'|'openQuestions'|'decisions'|'trace'|'acceptance'|'conflicts'|null
     selectedItemRef: null,
   },
 
@@ -259,6 +260,9 @@ export const useUIStore = create((set, get) => ({
     })),
     demoSelectItem: (ref) => set(state => ({
       demo: { ...state.demo, selectedItemRef: ref },
+    })),
+    demoSetConflicts: (conflicts) => set(state => ({
+      demo: { ...state.demo, conflicts },
     })),
     demoEnd: () => set(state => ({
       demo: { ...state.demo, active: false },

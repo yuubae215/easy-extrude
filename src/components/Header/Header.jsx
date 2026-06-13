@@ -102,6 +102,7 @@ function DesktopHeaderContents() {
       <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
       <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
       <SmallBtn onClick={() => callbacks.onContextDemoClick?.()} title="Context DSL demo — 要求文脈から3Dシーンへ (ADR-046)" icon={SVG_DEMO}>Demo</SmallBtn>
+      <SmallBtn onClick={() => callbacks.onContextAuthorClick?.()} title="領域オーサリング — 設置許容ゾーンを3Dでドラッグして衝突をライブ解消 (ADR-049 Phase 3)" icon={SVG_DEMO}>Author</SmallBtn>
     </>
   )
 }
@@ -318,6 +319,7 @@ function MoreMenu() {
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
           {item('Demo',   SVG_DEMO,   callbacks.onContextDemoClick)}
+          {item('Author', SVG_DEMO,   callbacks.onContextAuthorClick)}
         </div>
       )}
     </>

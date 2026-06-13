@@ -623,6 +623,7 @@ is staged per story step. Exiting (✕) leaves the scene as a normal editable sc
 | Decision | resolves/nominal/rationale/decidedBy; status flips proposed → agreed on approval |
 | Trace | from —kind→ to rows; click highlights the derived 3D entity |
 | Accept | acceptance checks; blocked rows show the `blockedBy` chain in red |
+| Conflict | live R6 output (ADR-049): per shared variable, `gap` (scalar `[hi,lo)` or per-axis map), the conflicting requirements, and `resolved`/`conflict` badge. Unresolved-count badge on the tab. Populated live during region authoring. |
 
 Row click → `onDemoItemSelect` → trace resolution → real selection highlight
 (`_switchActiveObject`), link flash + toast for constraint-only targets, or a
@@ -636,6 +637,14 @@ Subject, interval → nominal, rationale, decidedBy, status pill, and the
 Step dots ①–⑥, title + 1–2 line narration (Japanese), ← 戻る / 次へ →, ✕ exit.
 **Next is disabled at step ④ until the interval Decision is approved.**
 Desktop `bottom: 36px`; mobile `bottom: 96px` (above the toolbar).
+
+#### [J] Region Authoring sub-mode (ADR-049 Phase 3, Header **Author** button)
+A separate single-step overlay (`enterAuthoring()`, loads `cell_region_context`). Each
+engineer's設置許容ゾーン is a draggable AABB widget on the ground plane — 4 corner handles
+(resize) + center handle (translate). Dragging runs R6 live: widgets are **green** when clear
+and **red** when their shared variable is in conflict; the Inspector **Conflict** tab updates
+each frame. The text DSL stays the contract — a dragged region is written back as a `stated`
+admissible (invariant 9). Exit via Story Bar ✕ (disposes widgets).
 
 #### [A] Header
 Desktop: **Demo** button after Import. Mobile: Demo item inside the ⋯ MoreMenu.

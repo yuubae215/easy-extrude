@@ -23,6 +23,7 @@ const TABS = [
   { id: 'decisions',     label: 'Decision' },
   { id: 'trace',         label: 'Trace' },
   { id: 'acceptance',    label: 'Accept' },
+  { id: 'conflicts',     label: 'Conflict' },
 ]
 
 export function ContextInspector() {
@@ -66,7 +67,8 @@ export function ContextInspector() {
           const active = demo.inspectorTab === tab.id
           const badge =
             tab.id === 'openQuestions' ? demo.openQuestions.length :
-            tab.id === 'acceptance'    ? demo.blockedChecks.length : 0
+            tab.id === 'acceptance'    ? demo.blockedChecks.length :
+            tab.id === 'conflicts'     ? (demo.conflicts?.filter(c => !c.resolvedBy).length ?? 0) : 0
           return (
             <button
               key={tab.id}
@@ -98,6 +100,7 @@ export function ContextInspector() {
         {demo.inspectorTab === 'decisions'     && <DecisionsTab demo={demo} select={select} />}
         {demo.inspectorTab === 'trace'         && <TraceTab demo={demo} select={select} />}
         {demo.inspectorTab === 'acceptance'    && <AcceptanceTab demo={demo} />}
+        {demo.inspectorTab === 'conflicts'     && <ConflictsTab demo={demo} select={select} />}
       </div>
     </div>
   )
@@ -238,6 +241,39 @@ function TraceTab({ demo, select }) {
   )
 }
 
+function ConflictsTab({ demo, select }) {
+  const conflicts = demo.conflicts ?? []
+  const fmtGap = (gap) => Array.isArray(gap)
+    ? `[${gap[0]}, ${gap[1]})`
+    : Object.entries(gap).map(([ax, g]) => `${ax}: [${g[0]}, ${g[1]})`).join('  ')
+  return (
+    <>
+      <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px' }}>
+        共有設計変数ごとに許容領域を交差して検出 (R6)。ゾーンをドラッグして重ねると消える。
+        衝突は人が書くものではなくルールが吐く (ADR-049 不変条件7)。
+      </div>
+      {conflicts.length === 0 && (
+        <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ 衝突なし — すべての許容領域が交差している</div>
+      )}
+      {conflicts.map(c => (
+        <Row key={c.ref} onClick={() => select(c.variable)} selected={demo.selectedItemRef === c.variable}>
+          <div>
+            <Badge color={c.resolvedBy ? '#22C55E' : '#cc3333'} pulse={!c.resolvedBy}>
+              {c.resolvedBy ? 'resolved' : 'conflict'}
+            </Badge>
+            <span style={{ marginLeft: '5px' }}>{c.variable}</span>
+          </div>
+          <div style={{ fontFamily: 'monospace', fontSize: '11px', color: '#cc6666' }}>
+            gap {fmtGap(c.gap)}
+          </div>
+          <div style={{ fontSize: '10px', color: '#888' }}>{c.between.join('  ×  ')}</div>
+          <Ref>{c.ref}{c.resolvedBy ? ` · by ${c.resolvedBy}` : ''}</Ref>
+        </Row>
+      ))}
+    </>
+  )
+}
+
 function AcceptanceTab({ demo }) {
   const blockedByCheck = new Map(demo.blockedChecks.map(b => [b.check, b.blockedBy]))
   return demo.acceptance.map(check => {
@@ -248,7 +284,9 @@ function AcceptanceTab({ demo }) {
           <span style={{ color: blockedBy ? '#f43f5e' : '#22C55E' }}>
             {blockedBy ? '🚫' : '✓'}
           </span>
-          <span style={{ marginLeft: '5px' }}>{check.predicate}</span>
+          <span style={{ marginLeft: '5px' }}>
+            {typeof check.predicate === 'object' ? check.predicate.kind : check.predicate}
+          </span>
           <Badge color={check.mode === 'static' ? '#4fc3f7' : '#a78bfa'}>{check.mode}</Badge>
         </div>
         {blockedBy && (
