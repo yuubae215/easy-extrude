@@ -1873,6 +1873,9 @@ export class AppController {
     if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
     this._hitTest.updateMouse(e)
 
+    // ── Context DSL region authoring (ADR-049 Phase 3): live handle drag ─────
+    if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerMove(e)) return
+
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._rotateHandler.apply()
       this._updateNPanel()
@@ -2141,6 +2144,9 @@ export class AppController {
     // subsequent handler that calls _mapPickPoint() / _raycaster depends on
     // an up-to-date _mouse — calling _updateMouse here covers all of them.
     this._hitTest.updateMouse(e)
+
+    // ── Context DSL region authoring (ADR-049 Phase 3): drag handles ─────────
+    if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerDown(e)) return
 
     // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
     this._contextMenuSuppressed = e.button === 2 && (
@@ -2557,6 +2563,9 @@ export class AppController {
       this._longPress.timer = null
       this._longPress.pointerId = null
     }
+
+    // ── Context DSL region authoring (ADR-049 Phase 3): end handle drag ─────
+    if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerUp(e)) return
 
     // ── 2D Map Mode: end panning / drag gesture completion ───────────────
     if (this._mapModeCtrl.onPointerUp(e)) return

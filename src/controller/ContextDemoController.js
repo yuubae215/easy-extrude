@@ -19,11 +19,15 @@
 import * as THREE from 'three'
 import { useUIStore } from '../store/uiStore.js'
 import { compileContext } from '../context/ContextCompiler.js'
+import { validateContext } from '../context/ContextValidator.js'
+import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
+import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RippleEffect } from '../view/RippleEffect.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import factoryContext from '../../examples/factory_context.json'
+import regionContext from '../../examples/cell_region_context.json'
 
 /** Inspector tab shown for each story step (null = inspector closed). */
 const TAB_BY_STEP = [null, 'facts', 'openQuestions', 'decisions', 'trace', 'acceptance']
@@ -88,10 +92,20 @@ export class ContextDemoController {
     /** @type {object|null} compiled layout DSL (resolved values) */
     this._layoutDsl = null
 
+    // ── Bidirectional region authoring (ADR-049 Phase 3, §5.2) ──────────────
+    this._authoring   = false
+    /** @type {{reqRef:string, varRef:string, widget:RegionAuthoringWidget}[]} */
+    this._authorWidgets = []
+    /** @type {{reqRef:string, varRef:string, widget:RegionAuthoringWidget}|null} */
+    this._authorDrag  = null
+    /** @type {object|null} mutable (cloned) context the widgets edit + re-validate */
+    this._editCtx     = null
+
     // React components fire these via uiStore.callbacks (same unidirectional
     // pattern as the rest of the UI).
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onContextDemoClick',   ()    => this.enter())
+    registerCallback('onContextAuthorClick', ()    => this.enterAuthoring())
     registerCallback('onDemoStepChange',     (n)   => this.setStep(n))
     registerCallback('onDemoApproveDecision', ()   => this.approveDecision())
     registerCallback('onDemoItemSelect',     (ref) => this.selectItem(ref))
@@ -100,6 +114,9 @@ export class ContextDemoController {
 
   /** True while the demo overlay is active. */
   get isActive() { return this._active }
+
+  /** True while the bidirectional region-authoring sub-mode is active. */
+  get isAuthoring() { return this._authoring }
 
   // ── Entry / exit ───────────────────────────────────────────────────────────
 
@@ -228,6 +245,16 @@ export class ContextDemoController {
     this._active = false
     this._reveal = null
 
+    // Tear down region-authoring widgets (PHILOSOPHY #9 — symmetric disposal).
+    if (this._authoring) {
+      this._ctrl._controls.enabled = true
+      for (const w of this._authorWidgets) w.widget.dispose()
+      this._authorWidgets = []
+      this._authorDrag = null
+      this._editCtx = null
+      this._authoring = false
+    }
+
     if (this._ghost) {
       this._ghost.dispose()
       this._ghost = null
@@ -248,6 +275,8 @@ export class ContextDemoController {
   /** Applies the declarative visibility state for step n (0–5). */
   setStep(n) {
     if (!this._active) return
+    // Authoring sub-mode has a single narration step and no entity staging.
+    if (this._authoring) { useUIStore.getState().actions.demoSetStep(0, 'conflicts'); return }
     const step = Math.max(0, Math.min(DEMO_STEPS.length - 1, n))
     // Step ③→④ is gated on approval — "intervals never collapse silently",
     // expressed structurally. (The StoryBar also disables Next; double guard.)
@@ -338,6 +367,138 @@ export class ContextDemoController {
     })
   }
 
+  // ── Bidirectional region authoring (ADR-049 Phase 3, §5.2) ──────────────────
+
+  /** Compiles the region scenario and starts the live authoring sub-mode. */
+  enterAuthoring() {
+    if (this._active) return
+    let compiled, scene
+    try {
+      compiled = compileContext(regionContext)
+      scene    = compileLayout(compiled.layoutDsl)
+    } catch (err) {
+      this._ctrl._uiView.showToast(`Authoring compile failed: ${err.message}`, { type: 'error' })
+      console.error('[ContextDemoController]', err)
+      return
+    }
+    this._ctrl._uiView.showConfirmDialog(
+      '現在のシーンを置き換えて 領域オーサリング (ADR-049 Phase 3) を開始しますか?',
+      (ok) => { if (ok) this._startAuthoring(compiled, scene) },
+      { title: '領域オーサリング — 衝突のライブ解消', confirmLabel: '開始' },
+    )
+  }
+
+  async _startAuthoring(compiled, scene) {
+    const ctrl = this._ctrl
+    const viewContext = { camera: ctrl._camera, renderer: ctrl._sceneView.renderer, container: document.body }
+    try {
+      await ctrl._service.importFromJson(scene, viewContext, { clear: true })
+    } catch (err) {
+      ctrl._uiView.showToast(`Authoring scene load failed: ${err.message}`, { type: 'error' })
+      console.error('[ContextDemoController]', err)
+      return
+    }
+    ctrl._commandStack.clear()
+    ctrl._refreshUndoRedoState()
+    ctrl._selMgr.clearObjectSelection()
+    ctrl._selMgr.setObjectSelected(false)
+    ctrl._linkNetworkView?.setForceHidden(true)
+
+    // Mutable copy the widgets edit; the imported JSON stays the authoritative input.
+    this._editCtx = JSON.parse(JSON.stringify(regionContext))
+
+    // The compiled zone meshes are hidden — the draggable widgets ARE the regions.
+    for (const obj of ctrl._scene.objects.values()) {
+      if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
+    }
+
+    // One draggable widget per single-variable region requirement.
+    const labels = { r_vision_footprint: 'ビジョン要求', r_mech_footprint: 'メカ要求' }
+    this._authorWidgets = []
+    for (const req of this._editCtx.requirements) {
+      if ((req.constrains?.length ?? 0) !== 1 || !req.admissible?.region) continue
+      const widget = new RegionAuthoringWidget(ctrl._sceneView.scene, document.body, {
+        region: req.admissible.region,
+        handleRadius: 30,
+        labelText: labels[req.ref] ?? req.ref,
+      })
+      this._authorWidgets.push({ reqRef: req.ref, varRef: req.constrains[0], widget })
+    }
+
+    const { center, radius } = this._computeBounds(compiled.layoutDsl)
+    ctrl._sceneView.fitCameraToSphere(center, radius)
+
+    const ui = useUIStore.getState().actions
+    ui.setNPanelVisible(false)
+    ui.demoStart({
+      steps: [{
+        title: '領域オーサリング — 衝突のライブ解消',
+        narration: '各担当の設置許容ゾーンを 3D で直接ドラッグして編集できる。重なれば衝突は消え (緑)、離れれば再発する (赤)。3D は入力デバイス、契約はテキスト DSL のまま (invariant 9)。',
+      }],
+      facts: [], intents: [], decisions: [], obligations: [], acceptance: [],
+      openQuestions: [], blockedChecks: [], trace: [], conflicts: [],
+    })
+    ui.demoSetStep(0, 'conflicts')
+
+    this._active     = true
+    this._authoring  = true
+    this._authorDrag = null
+    this._revalidate() // initial conflict colouring + inspector population
+  }
+
+  /** Re-runs the validator on the edited context and repaints conflict state. */
+  _revalidate() {
+    const result = validateContext(this._editCtx)
+    const conflictVars = new Set(result.conflicts.map(c => c.variable))
+    for (const w of this._authorWidgets) w.widget.setConflict(conflictVars.has(w.varRef))
+    useUIStore.getState().actions.demoSetConflicts(result.conflicts)
+  }
+
+  // Pointer delegation from AppController (returns true when the event is consumed).
+
+  onAuthorPointerDown(e) {
+    if (!this._authoring) return false
+    if (e.button !== 0 && e.pointerType !== 'touch') return false
+    const ctrl = this._ctrl
+    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
+    const meshes = this._authorWidgets.flatMap(w => w.widget.handleMeshes)
+    const hits = ctrl._raycaster.intersectObjects(meshes, false)
+    if (hits.length === 0) return false // let OrbitControls handle non-handle drags
+
+    const mesh  = hits[0].object
+    const entry = this._authorWidgets.find(w => w.widget.handleMeshes.includes(mesh))
+    if (!entry) return false
+    const pt = new THREE.Vector3()
+    if (!ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)) return false
+
+    entry.widget.startDrag(mesh.userData.handleId, pt)
+    this._authorDrag = entry
+    ctrl._controls.enabled = false
+    ctrl._activeDragPointerId = e.pointerId
+    return true
+  }
+
+  onAuthorPointerMove(e) {
+    if (!this._authoring || !this._authorDrag) return false
+    const ctrl = this._ctrl
+    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
+    const pt = new THREE.Vector3()
+    if (!ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)) return true
+    const region = this._authorDrag.widget.dragTo(pt)
+    this._editCtx = applyAdmissibleEdit(this._editCtx, this._authorDrag.reqRef, { region })
+    this._revalidate()
+    return true
+  }
+
+  onAuthorPointerUp() {
+    if (!this._authoring || !this._authorDrag) return false
+    this._authorDrag.widget.endDrag()
+    this._authorDrag = null
+    this._ctrl._controls.enabled = true
+    this._ctrl._activeDragPointerId = null
+    return true
+  }
+
   // ── Requirement → 3D traceability ──────────────────────────────────────────
 
   /**
@@ -411,6 +572,12 @@ export class ContextDemoController {
 
   tick(t) {
     if (!this._active) return
+
+    if (this._authoring) {
+      const cam = this._ctrl._sceneView.activeCamera
+      const rdr = this._ctrl._sceneView.renderer
+      for (const w of this._authorWidgets) w.widget.tick(t, cam, rdr)
+    }
 
     if (this._ghost) {
       const done = this._ghost.tick(t, this._ctrl._sceneView.activeCamera, this._ctrl._sceneView.renderer)

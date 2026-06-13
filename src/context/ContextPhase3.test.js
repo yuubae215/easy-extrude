@@ -21,6 +21,7 @@ import { validateContext } from './ContextValidator.js'
 import { detectConflicts } from './RequirementGraph.js'
 import { intersectIntervals, intersectBoxes, aabbClearance } from './RegionGeometry.js'
 import { evaluatePredicate, MalformedPredicate } from './PredicateEngine.js'
+import { applyAdmissibleEdit } from './ContextEditModel.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -226,4 +227,27 @@ test('compileContext surfaces checkResults alongside conflicts', () => {
 
 test('validator output is deterministic across runs', () => {
   assert.deepStrictEqual(validateContext(loadScenario()), validateContext(loadScenario()))
+})
+
+// ── ContextEditModel (bidirectional authoring write-back) ─────────────────────
+
+test('applyAdmissibleEdit returns a new ctx with the region replaced, input unmutated', () => {
+  const ctx = loadScenario()
+  const before = JSON.parse(JSON.stringify(ctx))
+  const next = applyAdmissibleEdit(ctx, 'r_vision_footprint', { region: { x: [1300, 1900], y: [-100, 100] } })
+
+  assert.deepStrictEqual(ctx, before, 'input ctx must not be mutated (PHILOSOPHY #6)')
+  const edited = next.requirements.find(r => r.ref === 'r_vision_footprint')
+  assert.deepStrictEqual(edited.admissible, { region: { x: [1300, 1900], y: [-100, 100] }, source: 'stated' })
+})
+
+test('dragging a region to overlap clears the conflict; dragging apart re-creates it (live R6)', () => {
+  // Overlap the two footprints on both axes → no conflict.
+  let ctx = loadScenario()
+  ctx = applyAdmissibleEdit(ctx, 'r_vision_footprint', { region: { x: [1250, 1850], y: [-100, 100] } })
+  assert.equal(validateContext(ctx).conflicts.some(c => c.variable === 'v_base_footprint'), false)
+
+  // Move it back apart on X → conflict returns.
+  ctx = applyAdmissibleEdit(ctx, 'r_vision_footprint', { region: { x: [600, 1100], y: [-100, 100] } })
+  assert.equal(validateContext(ctx).conflicts.some(c => c.variable === 'v_base_footprint'), true)
 })

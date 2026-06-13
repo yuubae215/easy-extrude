@@ -370,7 +370,16 @@ view-level visibility only.
 | `onDemoStepChange(n)` | StoryBar ← 戻る / 次へ → | `setStep(n)` — visibility diff + inspector tab (step ④ gated on approval) |
 | `onDemoApproveDecision(ref)` | DecisionCard 承認ボタン | `approveDecision()` — ghost collapse → reveal + ripple |
 | `onDemoItemSelect(ref)` | Inspector row click | `selectItem(ref)` — trace → 3D highlight / link flash / toast |
-| `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, `demoEnd()` |
+| `onContextAuthorClick` | Header **Author** button / MoreMenu | `enterAuthoring()` — region scenario + draggable AABB widgets (ADR-049 Phase 3) |
+| `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, dispose authoring widgets, `demoEnd()` |
+
+**Region authoring pointer flow (ADR-049 Phase 3)**: while `_demoCtrl.isAuthoring`,
+`AppController._onPointerDown/Move/Up` delegate to `_demoCtrl.onAuthorPointerDown/Move/Up`
+right after `updateMouse` and before the normal op-state branches. The handler raycasts the
+widget handle meshes; on a hit it drags on the Z=0 ground plane, runs
+`applyAdmissibleEdit → validateContext` live (R6), recolours widgets + the Inspector
+**Conflict** tab, and consumes the event (OrbitControls disabled for the drag). A miss returns
+`false` so camera orbit still works.
 
 ### Gizmo
 

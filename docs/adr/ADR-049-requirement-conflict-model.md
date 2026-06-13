@@ -342,6 +342,15 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
    `pass|fail|blocked` を出す(ブロック検査はエンジンを走らせない)。`THREE` 非依存
    (bare `node --test` で読み込み可)。`examples/cell_region_context.json` +
    `ContextPhase3.test.js` 22 件、Phase 1+2 の 48 件と合わせ 70/70。
-   → **3D authoring ウィジェット**(ゴーストビュー双方向化)は別スライスで継続中。
+   → **3D authoring ウィジェット 済**(2026-06-13、§5.2 双方向化)。`ContextEditModel.js`
+   (純粋 `applyAdmissibleEdit` — 領域/区間を `stated` admissible として新 ctx へ書き戻し、
+   入力不変 PHILOSOPHY #6)+ `RegionAuthoringWidget.js`(地面上の AABB ゾーンをコーナー/
+   中心ハンドルでドラッグ; setConflict で緑↔赤)。`ContextDemoController.enterAuthoring()`
+   が `cell_region_context` を読み、各メカ/ビジョン担当の設置許容ゾーンをドラッグ可能ウィジェット
+   として出す。ドラッグごとに `applyAdmissibleEdit → validateContext` をライブ実行し R6 衝突を
+   再計算、ウィジェットを再着色 + Inspector の Conflict タブを更新。`AppController` の
+   pointerdown/move/up は authoring 時に `_demoCtrl.onAuthor*` へ委譲(消費時のみ true)。
+   契約はテキスト DSL のまま(invariant 9)、書き戻しは `source:"stated"`(R9 が引き続き支配)。
+   テスト 72/72(編集モデル 2 件追加)、`vite build` 成功。
 4. **Phase 4**: 衝突マトリックス / 交渉クラスター DAG のペルソナ射影 UI、
    n-ary Decision approval フロー。
