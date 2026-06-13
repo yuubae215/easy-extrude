@@ -26,6 +26,13 @@
  * context/0.2 (ADR-049) adds L2.5 on top of 0.1 — additive only:
  *   variables[]     shared design variables that several actors' KPIs reference
  *   requirements[]  (kpi, criterion) pairs constraining those variables
+ *
+ * ADR-049 Phase 2 additive fields (all optional, backward compatible):
+ *   actor.discipline        engineering discipline (e.g. "vision"/"robot"/"mech");
+ *                           keys the role-KPI catalog for R8 (see RoleKpiCatalog.js)
+ *   ctx.kpiCatalog          per-context override of the default role-KPI catalog
+ *   admissible.promotedFrom set to "stated" when a derived interval was produced
+ *                           by stated→derived auto-promotion (AdmissiblePromotion.js)
  */
 
 export const CONTEXT_DSL_VERSION = 'context/0.2'
