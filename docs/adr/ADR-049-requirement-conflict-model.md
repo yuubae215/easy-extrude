@@ -110,6 +110,11 @@ classDiagram
    を `admissible: stated` として許すが、KPI 裏付けのない stated 領域は R9 が
    OpenQuestion を吐く。Fact の `asserted → measured` 遷移と同型の
    `stated → derived` 昇格ライフサイクルを持つ。
+   Phase 3 で許容領域はスカラー区間に加えて **AABB(軸並行ボックス)領域**を取る
+   (`admissible.region: {axis:[lo,hi]}`、領域 Variable 上)。**Helly-2D の注意**:
+   1 次元区間の Helly 性(同時空 ⇔ どれかの対が分離)は平面の凸集合一般には成立しない
+   (Helly 数 3)が、AABB の交差は軸ごとに独立分解できるため軸ごとに 1 次元ロジックを
+   再利用できる。凸ポリゴンのフットプリントは Phase 3 のスコープ外(R0' で却下)。
 7. **Conflict / NegotiationCluster はルールが吐く**(R6 / R7)。入力に `conflict_*` /
    `nc_*` 参照を書くことはできない。
 8. **交渉クラスターの解消は単一の n-ary Decision** — クラスター内の変数群はペアごとの
@@ -324,5 +329,19 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
 3. **Phase 3**: 領域 Variable(2D フットプリント / 3D 体積)、リーチ包絡・swept volume
    の近似述語(ADR-046 §4.2 の述語エンジンに合流)、3D authoring ウィジェット
    (ADR-047 のゴーストビュー双方向化)。
+   → **純粋計算コア 済**(2026-06-13、context/0.3)。新規 2 モジュール:
+   ① `RegionGeometry.js` — AABB 区間/ボックス交差の単一の真実。`intersectIntervals`
+   (半開 `[min,max)` 判定の唯一の置き場)を軸ごとに再利用し `intersectBoxes` を構成。
+   R6 を領域へ拡張: 領域 Variable 上の `admissible.region` を軸ごとに交差し、空軸が
+   1 つ以上で衝突。`gap` はスカラーが従来どおり `[hi,lo]` 配列、領域は空軸のみの
+   `{axis:[hi,lo]}` マップ(後方互換のためスカラー形は不変)。
+   ② `PredicateEngine.js` — `no_overlap`(AABB 最小クリアランス、ADR-046 §4.2 の例)・
+   `reach_covers`(球/円柱包絡)・`swept_volume`(カプセル列のサンプリング近似)の純粋
+   述語。`{pass, violations}` を返し `pass:false` では throw せず、構造不正のみ
+   `MalformedPredicate`。R5 は非ブロック時のみ述語を評価し `checkResults` に
+   `pass|fail|blocked` を出す(ブロック検査はエンジンを走らせない)。`THREE` 非依存
+   (bare `node --test` で読み込み可)。`examples/cell_region_context.json` +
+   `ContextPhase3.test.js` 22 件、Phase 1+2 の 48 件と合わせ 70/70。
+   → **3D authoring ウィジェット**(ゴーストビュー双方向化)は別スライスで継続中。
 4. **Phase 4**: 衝突マトリックス / 交渉クラスター DAG のペルソナ射影 UI、
    n-ary Decision approval フロー。

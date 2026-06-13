@@ -13,33 +13,47 @@
  * @module context/RequirementGraph
  */
 
-import { CONFLICT_REF_PREFIX, CLUSTER_REF_PREFIX } from './ContextDslSchema.js'
+import { CONFLICT_REF_PREFIX, CLUSTER_REF_PREFIX, REGION_AXES } from './ContextDslSchema.js'
+import { intersectIntervals, intersectBoxes } from './RegionGeometry.js'
 
 /**
- * R6 — per shared variable, intersect the admissible intervals of every
- * requirement that constrains exactly that one variable. An empty
- * intersection is a Conflict.
+ * R6 — per shared variable, intersect the admissible sets of every requirement
+ * that constrains exactly that one variable. An empty intersection is a Conflict.
  *
- * Intervals follow the ADR-046 half-open convention [min, max): two
- * intervals that merely touch (e.g. [200,350] vs [350,600]) do NOT
- * intersect. In 1-D, intervals have the Helly property (joint emptiness
- * ⇔ some pair is disjoint), so one Conflict per variable is complete.
+ * Two admissible shapes are handled (a variable's requirements all use the same
+ * shape):
+ *   - scalar `admissible.interval` ([lo,hi]) — 1-D conflict; `gap` is `[hi,lo]`
+ *     (array), preserved verbatim for backward compatibility.
+ *   - region `admissible.region`  ({axis:[lo,hi]}) — AABB conflict; runs the 1-D
+ *     interval logic once per axis (RegionGeometry.intersectBoxes). The
+ *     intersection is empty iff empty on ≥1 axis; `gap` is a per-axis map
+ *     `{axis:[hi,lo]}` for the empty axes only.
  *
- * Phase 1 scope: only requirements with `constrains.length === 1` and an
- * `admissible.interval` participate. Multi-variable requirements carry a
- * region, not an interval — they join R7 clustering but not R6 (Phase 3).
+ * Both shapes follow the ADR-046 half-open convention [min, max) — the single
+ * `intersectIntervals` helper holds that test, so scalar and per-axis logic can
+ * never diverge. The 1-D Helly property (joint emptiness ⇔ some pair disjoint)
+ * is what makes one Conflict per variable complete; for regions it is applied
+ * per axis (AABB only — see RegionGeometry's Helly-2-D caveat).
+ *
+ * Region ≠ multi-variable: a region admissible still constrains ONE region
+ * variable. Multi-variable requirements (`constrains.length ≥ 2`) carry no
+ * single-variable admissible — they continue to feed R7 clustering, never R6.
  *
  * @param {Map<string, object>} requirements — ref → Requirement
  * @returns {object[]} Conflict records:
- *   { ref, variable, between: string[], admissibleSets: {[ref]: [lo,hi]}, gap: [lo,hi] }
+ *   { ref, variable, between: string[], admissibleSets, gap }
+ *   admissibleSets[ref] is the interval [lo,hi] (scalar) or box {axis:[lo,hi]} (region);
+ *   gap is [hi,lo] (scalar) or {axis:[hi,lo]} (region).
  */
 export function detectConflicts(requirements) {
   const byVariable = new Map()
 
   for (const req of requirements.values()) {
     const constrains = req.constrains ?? []
-    const interval   = req.admissible?.interval
-    if (constrains.length !== 1 || !Array.isArray(interval)) continue
+    const admissible = req.admissible
+    const hasInterval = Array.isArray(admissible?.interval)
+    const hasRegion   = admissible?.region && typeof admissible.region === 'object'
+    if (constrains.length !== 1 || (!hasInterval && !hasRegion)) continue
 
     const variable = constrains[0]
     if (!byVariable.has(variable)) byVariable.set(variable, [])
@@ -50,23 +64,36 @@ export function detectConflicts(requirements) {
   for (const [variable, reqs] of byVariable) {
     if (reqs.length < 2) continue
 
-    const lo = Math.max(...reqs.map(r => r.admissible.interval[0]))
-    const hi = Math.min(...reqs.map(r => r.admissible.interval[1]))
-    if (lo < hi) continue // non-empty intersection — no conflict
+    const regionReqs   = reqs.filter(r => r.admissible.region && typeof r.admissible.region === 'object')
+    const intervalReqs = reqs.filter(r => Array.isArray(r.admissible.interval))
+    // Mixed shapes within one variable is malformed input — R0' flags it as an
+    // error. Skip the bucket rather than throw on the inconsistent data.
+    if (regionReqs.length !== reqs.length && intervalReqs.length !== reqs.length) continue
 
-    const between = reqs.map(r => r.ref).sort()
+    const between  = reqs.map(r => r.ref).sort()
     const admissibleSets = {}
-    for (const ref of between) {
-      admissibleSets[ref] = requirements.get(ref).admissible.interval
-    }
 
-    conflicts.push({
-      ref: `${CONFLICT_REF_PREFIX}${variable}`,
-      variable,
-      between,
-      admissibleSets,
-      gap: [hi, lo], // the no-man's-land between the binding constraints
-    })
+    if (regionReqs.length === reqs.length) {
+      const boxes = reqs.map(r => r.admissible.region)
+      const axes  = REGION_AXES.filter(ax => Array.isArray(boxes[0][ax]))
+      const { emptyAxes, gap } = intersectBoxes(boxes, axes)
+      if (emptyAxes.length === 0) continue // overlap on every axis — no conflict
+
+      for (const ref of between) admissibleSets[ref] = requirements.get(ref).admissible.region
+      conflicts.push({ ref: `${CONFLICT_REF_PREFIX}${variable}`, variable, between, admissibleSets, gap })
+    } else {
+      const { lo, hi, empty } = intersectIntervals(reqs.map(r => r.admissible.interval))
+      if (!empty) continue // non-empty intersection — no conflict
+
+      for (const ref of between) admissibleSets[ref] = requirements.get(ref).admissible.interval
+      conflicts.push({
+        ref: `${CONFLICT_REF_PREFIX}${variable}`,
+        variable,
+        between,
+        admissibleSets,
+        gap: [hi, lo], // the no-man's-land between the binding constraints
+      })
+    }
   }
 
   return conflicts.sort((a, b) => a.ref.localeCompare(b.ref))

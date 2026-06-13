@@ -35,6 +35,7 @@ Before writing or modifying any code, consult the relevant documents.
 | Context DSL / requirement context / Fact / Decision / OpenQuestion / interval / compileContext | ADR-046, `src/context/`, `examples/factory_context.json` |
 | Context demo / uncertainty ghost / Decision approval / StoryBar / Context Inspector | ADR-047, `src/controller/ContextDemoController.js`, `src/view/UncertaintyGhostView.js` |
 | Requirement / Conflict / KPI / クライテリア / 許容領域 / 交渉クラスター / 共有設計変数 / Variable | ADR-049, `src/context/RequirementGraph.js`, `examples/cell_conflict_context.json` |
+| 領域 Variable / AABB / footprint / フットプリント / 述語エンジン / predicate / no_overlap / reach_covers / swept volume / acceptance check | ADR-049 §8 Phase 3, `src/context/RegionGeometry.js`, `src/context/PredicateEngine.js`, `examples/cell_region_context.json` |
 | Link Network / link graph / リンク図 / layered layout / node panel | ADR-048, `src/view/LinkNetworkView.js` |
 | 5W1H / NL to code / function mapping / FunctionDescriptor / ExecutionPlan | ADR-044 |
 | events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |

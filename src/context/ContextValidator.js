@@ -45,6 +45,9 @@ import {
   VALID_TRACE_KINDS,
   VALID_NEGOTIABILITY,
   VALID_ADMISSIBLE_SOURCE,
+  VALID_REGION_KINDS,
+  VALID_PREDICATE_KINDS,
+  REGION_AXES,
   CONFLICT_REF_PREFIX,
   UNKNOWN,
   UNASSIGNED,
@@ -52,19 +55,22 @@ import {
 import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.js'
 import { promoteAdmissible } from './AdmissiblePromotion.js'
 import { requiredKpis } from './RoleKpiCatalog.js'
+import { evaluatePredicate, MalformedPredicate } from './PredicateEngine.js'
 
 /**
  * @param {object} ctx — Context DSL object
  * @returns {{ valid: boolean, errors: string[], openQuestions: object[], blockedChecks: object[],
- *             conflicts: object[], negotiationClusters: object[], promoted: string[] }}
+ *             conflicts: object[], negotiationClusters: object[], promoted: string[],
+ *             checkResults: object[] }}
  */
 export function validateContext(ctx) {
   const errors        = []
   const openQuestions = []
   const blockedChecks = []
+  const checkResults  = []
 
   if (!ctx || typeof ctx !== 'object') {
-    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [], promoted: [] }
+    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [], promoted: [], checkResults }
   }
 
   if (!SUPPORTED_VERSIONS.includes(ctx.version)) {
@@ -111,6 +117,26 @@ export function validateContext(ctx) {
     }
   }
 
+  // ── R0': variable shape — region descriptor (ADR-049 Phase 3) ────────────────
+  for (const variable of variables.values()) {
+    const region = variable.region
+    if (region === undefined) continue
+    if (!VALID_REGION_KINDS.includes(region.kind)) {
+      errors.push(`variable "${variable.ref}": region.kind "${region.kind}" is not valid. Use one of: ${VALID_REGION_KINDS.join(', ')} (convex polygons are out of scope — ADR-049 Phase 3 AABB-only)`)
+    }
+    const axes = region.axes
+    if (!Array.isArray(axes) || axes.length === 0 || !axes.every(ax => REGION_AXES.includes(ax))) {
+      errors.push(`variable "${variable.ref}": region.axes must be a non-empty subset of ${REGION_AXES.join('/')}`)
+    } else {
+      for (const ax of axes) {
+        const dom = region.domain?.[ax]
+        if (!isInterval(dom)) {
+          errors.push(`variable "${variable.ref}": region.domain.${ax} must be [min, max] with min < max`)
+        }
+      }
+    }
+  }
+
   // ── R0': requirement / variable shape (ADR-049) ─────────────────────────────
   for (const req of requirements.values()) {
     for (const variable of req.constrains ?? []) {
@@ -129,12 +155,44 @@ export function validateContext(ctx) {
       if (!VALID_ADMISSIBLE_SOURCE.includes(admissible.source)) {
         errors.push(`requirement "${req.ref}": admissible.source "${admissible.source}" is not valid. Use one of: ${VALID_ADMISSIBLE_SOURCE.join(', ')}`)
       }
-      const interval = admissible.interval
-      if (interval !== undefined
-        && (!Array.isArray(interval) || interval.length !== 2
-            || typeof interval[0] !== 'number' || typeof interval[1] !== 'number'
-            || interval[0] >= interval[1])) {
+      const hasInterval = admissible.interval !== undefined
+      const hasRegion   = admissible.region !== undefined
+      if (hasInterval && hasRegion) {
+        errors.push(`requirement "${req.ref}": admissible has both interval and region — use exactly one`)
+      }
+      if (hasInterval && !isInterval(admissible.interval)) {
         errors.push(`requirement "${req.ref}": admissible.interval must be [min, max] with min < max`)
+      }
+
+      // Region admissible must match a single region variable, axis-for-axis.
+      if (hasRegion) {
+        const varRef    = (req.constrains ?? []).length === 1 ? req.constrains[0] : null
+        const variable  = varRef ? variables.get(varRef) : null
+        const region    = variable?.region
+        if (!varRef) {
+          errors.push(`requirement "${req.ref}": admissible.region requires constraining exactly one region variable`)
+        } else if (!region) {
+          errors.push(`requirement "${req.ref}": admissible.region constrains "${varRef}", which is not a region variable`)
+        } else {
+          const box = admissible.region
+          for (const ax of region.axes ?? []) {
+            if (!isInterval(box?.[ax])) {
+              errors.push(`requirement "${req.ref}": admissible.region.${ax} must be [min, max] with min < max`)
+            }
+          }
+          const extra = Object.keys(box ?? {}).filter(ax => !(region.axes ?? []).includes(ax))
+          if (extra.length > 0) {
+            errors.push(`requirement "${req.ref}": admissible.region axes [${extra.join(', ')}] do not match variable "${varRef}" axes [${(region.axes ?? []).join(', ')}]`)
+          }
+        }
+      }
+
+      // Scalar admissible on a region variable (and vice versa) is a mismatch.
+      if (hasInterval && (req.constrains ?? []).length === 1) {
+        const variable = variables.get(req.constrains[0])
+        if (variable?.region) {
+          errors.push(`requirement "${req.ref}": admissible.interval constrains region variable "${req.constrains[0]}" — use admissible.region`)
+        }
       }
     }
   }
@@ -302,9 +360,40 @@ export function validateContext(ctx) {
     if (blockedBy.length > 0) {
       blockedChecks.push({ check: check.ref, blockedBy })
     }
+
+    // ── Predicate evaluation (ADR-049 Phase 3, ADR-046 §4.2) ────────────────
+    // A structured predicate object is executed only when the check is NOT
+    // blocked — you cannot evaluate clearance/reach against an assumed or
+    // unknown dimension. A string predicate stays documentation-only (the MVP
+    // behavior). blocked > fail > pass. (PHILOSOPHY #11: no silent skip.)
+    if (check.predicate && typeof check.predicate === 'object') {
+      if (!VALID_PREDICATE_KINDS.includes(check.predicate.kind)) {
+        errors.push(`acceptance "${check.ref}": predicate.kind "${check.predicate.kind}" is not valid. Use one of: ${VALID_PREDICATE_KINDS.join(', ')}`)
+      } else if (blockedBy.length > 0) {
+        checkResults.push({ check: check.ref, status: 'blocked', blockedBy })
+      } else {
+        try {
+          const res = evaluatePredicate(check.predicate)
+          checkResults.push({ check: check.ref, status: res.pass ? 'pass' : 'fail', violations: res.violations })
+        } catch (err) {
+          if (err instanceof MalformedPredicate) {
+            errors.push(`acceptance "${check.ref}": ${err.message}`)
+          } else {
+            throw err
+          }
+        }
+      }
+    }
   }
 
-  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters, promoted }
+  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters, promoted, checkResults }
+}
+
+/** True iff `iv` is a [min, max] number pair with min < max. */
+function isInterval(iv) {
+  return Array.isArray(iv) && iv.length === 2
+    && typeof iv[0] === 'number' && typeof iv[1] === 'number'
+    && iv[0] < iv[1]
 }
 
 /** Canonical ref form for a constraint, e.g. "constraint:robot_base→robot_mount". */

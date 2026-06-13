@@ -33,12 +33,28 @@
  *   ctx.kpiCatalog          per-context override of the default role-KPI catalog
  *   admissible.promotedFrom set to "stated" when a derived interval was produced
  *                           by stated→derived auto-promotion (AdmissiblePromotion.js)
+ *
+ * context/0.3 (ADR-049 Phase 3) additive fields (all optional, backward compatible):
+ *   variable.region         { kind:"aabb", axes:[...], domain:{axis:[lo,hi]} } —
+ *                           a 2-D footprint / 3-D volume variable instead of a
+ *                           scalar `domain: [lo,hi]`
+ *   admissible.region       { axis:[lo,hi], ... } — an AABB admissible box on a
+ *                           region variable (instead of `interval`)
+ *   acceptance[].predicate  polymorphic: a string (documentation-only, not
+ *                           executed) OR a structured object { kind, ... } the
+ *                           predicate engine evaluates (no_overlap/reach_covers/
+ *                           swept_volume — see PredicateEngine.js)
+ *
+ * AABB / Helly-2-D caveat: region conflict (R6) is AABB-only. Box intersection
+ * decomposes per-axis, where the 1-D Helly property holds; convex-polygon
+ * footprints are rejected at R0' (their intersection breaks the per-axis gap
+ * contract). See RegionGeometry.js.
  */
 
-export const CONTEXT_DSL_VERSION = 'context/0.2'
+export const CONTEXT_DSL_VERSION = 'context/0.3'
 
-/** Accepted input versions — 0.2 is a strict superset of 0.1. */
-export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2']
+/** Accepted input versions — each is a strict additive superset of the prior. */
+export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3']
 
 /** Actor roles — the four user personas plus the customer. */
 export const VALID_ROLES = ['developer', 'maintainer', 'endUser', 'agent', 'customer']
@@ -80,3 +96,12 @@ export const CONFLICT_REF_PREFIX = 'conflict_'
 
 /** Deterministic ref prefix for validator-emitted NegotiationClusters (R7). */
 export const CLUSTER_REF_PREFIX = 'nc_'
+
+/** Region variable kinds (ADR-049 Phase 3). AABB only — see RegionGeometry.js. */
+export const VALID_REGION_KINDS = ['aabb']
+
+/** Region axes, canonical order. */
+export const REGION_AXES = ['x', 'y', 'z']
+
+/** Executable acceptance predicate kinds (ADR-049 Phase 3, ADR-046 §4.2). */
+export const VALID_PREDICATE_KINDS = ['no_overlap', 'reach_covers', 'swept_volume']
