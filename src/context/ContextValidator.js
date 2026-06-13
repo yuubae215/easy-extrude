@@ -27,6 +27,13 @@
  *   R9 stated-without-kpi  — admissible.source === "stated" with no
  *                            (kpi, criterion) backing               → OpenQuestion
  *
+ * ADR-049 Phase 2 rules:
+ *   stated→derived promotion — a stated requirement carrying a closed-form
+ *                            monotonic kpi is promoted to a derived interval
+ *                            (AdmissiblePromotion) BEFORE R6/R7/R9 run
+ *   R8 role-kpi-catalog    — an actor of a discipline whose catalog-mandatory
+ *                            KPI is contributed by no requirement → OpenQuestion
+ *
  * @module context/ContextValidator
  */
 
@@ -43,11 +50,13 @@ import {
   UNASSIGNED,
 } from './ContextDslSchema.js'
 import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.js'
+import { promoteAdmissible } from './AdmissiblePromotion.js'
+import { requiredKpis } from './RoleKpiCatalog.js'
 
 /**
  * @param {object} ctx — Context DSL object
  * @returns {{ valid: boolean, errors: string[], openQuestions: object[], blockedChecks: object[],
- *             conflicts: object[], negotiationClusters: object[] }}
+ *             conflicts: object[], negotiationClusters: object[], promoted: string[] }}
  */
 export function validateContext(ctx) {
   const errors        = []
@@ -55,7 +64,7 @@ export function validateContext(ctx) {
   const blockedChecks = []
 
   if (!ctx || typeof ctx !== 'object') {
-    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [] }
+    return { valid: false, errors: ['Context DSL must be a non-null object'], openQuestions, blockedChecks, conflicts: [], negotiationClusters: [], promoted: [] }
   }
 
   if (!SUPPORTED_VERSIONS.includes(ctx.version)) {
@@ -130,12 +139,21 @@ export function validateContext(ctx) {
     }
   }
 
+  // ── stated → derived auto-promotion (ADR-049 Phase 2) ───────────────────────
+  // R0' validated the human-authored requirements above. Now promote every
+  // promotable `stated` requirement to a `derived` interval (closed-form
+  // monotonic KPI inverted over the variable's domain). R9/R6/R7 and the
+  // Decision checks run on the promoted set so the canonical region governs
+  // both the open-question and the conflict outputs. promoteAdmissible returns
+  // a new Map and never mutates the input (PHILOSOPHY #6).
+  const { requirements: liveRequirements, promoted } = promoteAdmissible(requirements, variables, facts)
+
   // ── R9: stated admissible region without KPI backing → OpenQuestion ─────────
   // ADR-049 invariant 6: the canonical admissible region is derived from
   // (kpi, criterion). A stated region (form answer or 3D sketch) is accepted
   // provisionally, but the criterion behind it must be asked for — otherwise
   // a later relaxation cannot be quantified.
-  for (const req of requirements.values()) {
+  for (const req of liveRequirements.values()) {
     if (req.admissible?.source === 'stated' && (!req.kpi || !req.criterion)) {
       openQuestions.push({
         ref:      `oq_kpi_${req.ref}`,
@@ -146,9 +164,36 @@ export function validateContext(ctx) {
     }
   }
 
+  // ── R8: role-KPI catalog (ADR-049 Phase 2) ──────────────────────────────────
+  // For each engineering discipline present among the actors, every KPI the
+  // versioned catalog marks mandatory for that discipline must be contributed by
+  // some requirement authored by an actor of that discipline. A gap surfaces as
+  // an OpenQuestion — "did the right expert get asked?" becomes a reviewable
+  // asset rather than depending on who attended the kick-off (ADR-049 §5.1).
+  const catalog          = ctx.kpiCatalog
+  const actors           = ctx.actors ?? []
+  const disciplineByActor = new Map(actors.map(a => [a.ref, a.discipline]))
+  const disciplines       = [...new Set(actors.map(a => a.discipline).filter(Boolean))].sort()
+  for (const discipline of disciplines) {
+    const contributed = new Set()
+    for (const req of liveRequirements.values()) {
+      if (disciplineByActor.get(req.by) === discipline && req.kpi?.name) contributed.add(req.kpi.name)
+    }
+    for (const kpiName of requiredKpis(discipline, catalog)) {
+      if (!contributed.has(kpiName)) {
+        openQuestions.push({
+          ref:      `oq_rolekpi_${discipline}_${kpiName}`,
+          raisedBy: 'R8:role-kpi-catalog',
+          about:    discipline,
+          summary:  `${discipline} 分野の必須 KPI「${kpiName}」を制約する要求がない — カタログ必須項目が未充足 (ADR-049 R8)`,
+        })
+      }
+    }
+  }
+
   // ── R6: conflicts / R7: negotiation clusters (computed, never authored) ─────
-  const conflicts           = detectConflicts(requirements)
-  const negotiationClusters = detectNegotiationClusters(requirements)
+  const conflicts           = detectConflicts(liveRequirements)
+  const negotiationClusters = detectNegotiationClusters(liveRequirements)
   const conflictByRef       = new Map(conflicts.map(c => [c.ref, c]))
 
   // ── Decision extensions (ADR-049): resolves conflict | Variable[], relaxes ──
@@ -186,7 +231,7 @@ export function validateContext(ctx) {
       errors.push(`decision "${decision.ref}": resolves must be a fact ref, a conflict ref, or an array of variable refs`)
     }
 
-    if (decision.relaxes !== undefined && !requirements.has(decision.relaxes.requirement)) {
+    if (decision.relaxes !== undefined && !liveRequirements.has(decision.relaxes.requirement)) {
       errors.push(`decision "${decision.ref}": relaxes.requirement "${decision.relaxes?.requirement}" does not reference any requirement in requirements[]`)
     }
   }
@@ -259,7 +304,7 @@ export function validateContext(ctx) {
     }
   }
 
-  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters }
+  return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters, promoted }
 }
 
 /** Canonical ref form for a constraint, e.g. "constraint:robot_base→robot_mount". */

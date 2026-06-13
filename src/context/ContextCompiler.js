@@ -27,7 +27,7 @@ import { validateContext, navigate, constraintRef } from './ContextValidator.js'
 /**
  * @param {object} ctx — Context DSL object (context/0.1 or 0.2)
  * @returns {{ layoutDsl: object, openQuestions: object[], blockedChecks: object[], trace: object[],
- *             provenance: object[], conflicts: object[], negotiationClusters: object[] }}
+ *             provenance: object[], conflicts: object[], negotiationClusters: object[], promoted: string[] }}
  * @throws {Error} on validation failure or unresolvable references
  */
 export function compileContext(ctx) {
@@ -50,6 +50,7 @@ export function compileContext(ctx) {
     provenance:          extractProvenance(ctx),
     conflicts:           result.conflicts,
     negotiationClusters: result.negotiationClusters,
+    promoted:            result.promoted,
   }
 }
 

@@ -2,9 +2,10 @@
 
 **Status**: Draft (Proposed)
 **Date**: 2026-06-13
+**Updated**: 2026-06-13 — Phase 2 実装(R8 役割KPIカタログ、stated→derived 自動昇格、フォーム射影。`src/context/RoleKpiCatalog.js` / `AdmissiblePromotion.js` / `FormProjection.js` 新設、Validator に R8 + 昇格パイプライン、`examples/cell_phase2_context.json`、テスト 48/48)
 **Updated**: 2026-06-13 — Phase 1 実装(`src/context/RequirementGraph.js`、Validator R6/R7/R9、Decision 拡張、`examples/cell_conflict_context.json`、テスト 32/32)
 **Related**: ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-044 (5W1H), ADR-035 (Cycle Detection 前例), ADR-030 (SpatialLink)
-**Implementation**: `src/context/RequirementGraph.js` (R6/R7), `src/context/ContextValidator.js` (R0'/R9/Decision 拡張), `examples/cell_conflict_context.json`, `pnpm test:context`
+**Implementation**: `src/context/RequirementGraph.js` (R6/R7), `src/context/ContextValidator.js` (R0'/R9/R8/Decision 拡張/昇格パイプライン), `src/context/AdmissiblePromotion.js` (stated→derived), `src/context/RoleKpiCatalog.js` (R8 カタログ), `src/context/FormProjection.js` (フォーム射影), `examples/cell_conflict_context.json` + `examples/cell_phase2_context.json`, `pnpm test:context`
 
 ---
 
@@ -189,7 +190,7 @@ classDiagram
 |---|---|---|---|
 | **R6 conflict** | 同一 Variable を constrains する Requirement ≥2 の許容領域交差 | 交差が空 → `Conflict`(gap 付き) | Phase 1(1 次元 interval 交差は純粋計算で即実装可) |
 | **R7 negotiation-cluster** | Requirement–Variable 二部グラフ | サイズ 2 以上の双連結成分 = `NegotiationCluster`(関与 actor・変数列挙 + 解消順序の提案) | Phase 1(グラフ走査のみ) |
-| **R8 role-KPI-catalog** | 役割別必須 KPI カタログ × 存在する Actor | role X の Actor がいるのにカタログ必須 KPI を constrains する Requirement がない → OpenQuestion | Phase 2 |
+| **R8 role-KPI-catalog** | 役割別必須 KPI カタログ × 存在する Actor | discipline X の Actor がいるのにカタログ必須 KPI を contributes する Requirement がない → OpenQuestion | Phase 2(済 — `RoleKpiCatalog.js`、Actor に `discipline` を additive 追加、`ctx.kpiCatalog` で上書き可) |
 | **R9 stated-without-kpi** | `admissible.source === "stated"` かつ kpi/criterion 欠落 | OpenQuestion「この領域の根拠クライテリアは?」 | Phase 1 |
 
 ### R7 の形式化 — DAG であるべき、ではなく「結合ブロックの抽出」
@@ -302,8 +303,24 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
    `ContextConflict.test.js` 20 件、既存ゴールデン 12 件と合わせ 32/32。
    R7 は Hopcroft–Tarjan 双連結成分の反復 DFS 実装。0.1 ドキュメントは
    `SUPPORTED_VERSIONS` でそのまま受理 — additive 拡張)。
-2. **Phase 2**: R8 役割別 KPI カタログ + フォーム射影(未充足 OpenQuestion → 質問文)。
-   単調 KPI 式の区間逆像による `stated → derived` 自動昇格。
+2. ~~**Phase 2**: R8 役割別 KPI カタログ + フォーム射影(未充足 OpenQuestion → 質問文)。
+   単調 KPI 式の区間逆像による `stated → derived` 自動昇格。~~
+   → **済**(2026-06-13)。3 つの純粋計算モジュールを追加:
+   ① `AdmissiblePromotion.js` — `source:"stated"` かつ閉形・単調な `kpi.expr` を持つ要求を、
+   制約変数の domain 上でクライテリアを数値的に逆像(サンプリング + 二分法)して
+   `derived` interval へ昇格。新 Map を返し入力は不変(PHILOSOPHY #6)。関数呼び出し
+   (`fov_width(x)` 等)・非単調・非数値識別子・空集合は昇格せず黙って原型のまま返す
+   (R9 が引き続き支配)。Validator では R0'(入力検証)の後・R6/R7/R9 の前に昇格を挟み、
+   下流ルールは昇格後の集合(canonical 領域)で判定する。
+   ② `RoleKpiCatalog.js` — discipline → 必須 KPI 名のバージョン管理カタログ
+   (`role-kpi/1.0`)。Actor に additive な `discipline` フィールドを追加(coarse `role`
+   では分野固有 KPI を表現できないため)。R8 は present な discipline ごとに、その分野の
+   Actor が著者の要求群が必須 KPI 名を `kpi.name` で供給しているか検査し、欠落を
+   `oq_rolekpi_<discipline>_<kpi>` として吐く。`ctx.kpiCatalog` で上書き可。
+   ③ `FormProjection.js` — Validator の未充足 OpenQuestion(R1/R4/R8/R9)を質問文へ射影。
+   静的な質問リストは持たず、全問回答 = 全ルール沈黙 = `projectForm()` が `[]`(完了が
+   機械判定可能)。Validator 出力のみを読み、再検証しない。`examples/cell_phase2_context.json`
+   + `ContextPhase2.test.js` 16 件、Phase 1 の 32 件と合わせ 48/48。
 3. **Phase 3**: 領域 Variable(2D フットプリント / 3D 体積)、リーチ包絡・swept volume
    の近似述語(ADR-046 §4.2 の述語エンジンに合流)、3D authoring ウィジェット
    (ADR-047 のゴーストビュー双方向化)。

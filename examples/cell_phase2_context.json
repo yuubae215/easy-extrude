@@ -1,0 +1,61 @@
+{
+  "version": "context/0.2",
+  "meta": {
+    "name": "ロボットセル — Phase 2: 役割KPIカタログ・フォーム射影・stated→derived 昇格 (ADR-049)",
+    "baseline": null
+  },
+
+  "actors": [
+    { "ref": "vision_engineer", "role": "developer", "discipline": "vision" },
+    { "ref": "robot_engineer",  "role": "developer", "discipline": "robot" }
+  ],
+
+  "sources": [
+    { "ref": "src_kickoff", "kind": "utterance", "by": "robot_engineer", "capturedAt": "2026-06-13" }
+  ],
+
+  "given": [],
+
+  "variables": [
+    {
+      "ref": "v_working_distance",
+      "unit": "mm",
+      "domain": [100, 1000],
+      "description": "ハンドアイカメラのワーキングディスタンス"
+    }
+  ],
+
+  "requirements": [
+    {
+      "ref": "r_resolution",
+      "by": "vision_engineer",
+      "kpi": { "name": "resolution", "expr": "3500 / v_working_distance", "unit": "px/mm" },
+      "criterion": { "op": ">=", "value": 10 },
+      "constrains": ["v_working_distance"],
+      "negotiability": "should",
+      "admissible": { "interval": [200, 350], "source": "stated" },
+      "note": "閉形・単調 KPI (resolution = 3500/WD)。Phase 2 で stated→derived へ自動昇格し、許容領域 [100,350] を導出する"
+    },
+    {
+      "ref": "r_wd_floor",
+      "by": "robot_engineer",
+      "constrains": ["v_working_distance"],
+      "negotiability": "must",
+      "admissible": { "interval": [400, 600], "source": "stated" },
+      "note": "KPI 裏付けなし — R9 が根拠クライテリアを問う。昇格後の r_resolution [100,350] と交差せず R6 衝突 gap [350,400]"
+    }
+  ],
+
+  "specification": {
+    "layout": {
+      "version": "layout/1.0",
+      "meta": { "name": "Phase 2 最小レイアウト", "description": "要求のみを検証する空レイアウト。" },
+      "strategy": "manual",
+      "entities": [],
+      "constraints": []
+    },
+    "trace": []
+  },
+
+  "acceptance": []
+}
