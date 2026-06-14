@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-06-11
-**Related**: ADR-046 (Context DSL), ADR-045 (External Layout API), ADR-040 (Solid Primary Triple), ADR-041 (RippleEffect 前例), ADR-037 (Origin CF)
+**Related**: ADR-046 (Context DSL), ADR-045 (External Layout API), ADR-040 (Solid Primary Triple), ADR-041 (RippleEffect 前例), ADR-037 (Origin CF), ADR-050 (Context-First 本番機能化 — demo→production 分離)
 **Implementation**: `src/controller/ContextDemoController.js`, `src/view/UncertaintyGhostView.js`, `src/components/ContextDemo/`, `uiStore` demo slice
 
 ---
