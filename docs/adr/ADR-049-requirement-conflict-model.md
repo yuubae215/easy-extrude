@@ -2,7 +2,8 @@
 
 **Status**: Accepted
 **Date**: 2026-06-13
-**Updated**: 2026-06-14 — Phase 4 n-ary Decision 承認インタラクション(`PersonaProjection` に opt-in `{approvedRefs}` ゲート + 新状態 `proposed`、`approveNegotiationDecision()` が再検証せず再射影、`NegotiationClusterView` に依存順承認ボタン、交渉ビューはモバイル全幅表示。3D ゴースト重畳のみ次回送り。テスト 90/90)
+**Updated**: 2026-06-14 — Phase 4 完了: §5.3 actor 別色分け許容領域ゴースト重畳を実装(`PersonaProjection.projectRegionGhosts` 純粋射影 + 読取専用 `RegionGhostView` + `ContextDemoController.enterRegionGhost()`、共通部分が空=赤 no-man's-land バンド、衝突マトリックスのペルソナフィルタと連動。Phase 4 の全 §5.3 ビジュアライゼーション完了。テスト 94/94)
+**Updated**: 2026-06-14 — Phase 4 n-ary Decision 承認インタラクション(`PersonaProjection` に opt-in `{approvedRefs}` ゲート + 新状態 `proposed`、`approveNegotiationDecision()` が再検証せず再射影、`NegotiationClusterView` に依存順承認ボタン、交渉ビューはモバイル全幅表示。テスト 90/90)
 **Updated**: 2026-06-14 — Phase 4 可視化実装(ペルソナ射影: 衝突マトリックス + 交渉クラスター解消順序。`src/context/PersonaProjection.js` 新設 + Context Inspector に Matrix/Cluster タブ + `enterNegotiation()`。n-ary 承認インタラクションと 3D ゴースト重畳は次回送り。テスト 85/85)
 **Updated**: 2026-06-13 — Phase 2 実装(R8 役割KPIカタログ、stated→derived 自動昇格、フォーム射影。`src/context/RoleKpiCatalog.js` / `AdmissiblePromotion.js` / `FormProjection.js` 新設、Validator に R8 + 昇格パイプライン、`examples/cell_phase2_context.json`、テスト 48/48)
 **Updated**: 2026-06-13 — Phase 1 実装(`src/context/RequirementGraph.js`、Validator R6/R7/R9、Decision 拡張、`examples/cell_conflict_context.json`、テスト 32/32)
@@ -384,4 +385,18 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
    「← 先に X を確定」ヒント、ADR-049 不変条件8)。交渉ビューは 3D 非依存のデータオーバーレイなので
    **モバイルでも全幅で表示**(`ContextInspector` の `<768px` return null を交渉時のみ解除、PHILOSOPHY
    #26 の一過性オーバーレイ)。テスト 90/90(承認ゲート 5 件追加)、`vite build`・`tsc --noEmit` クリーン。
-   → **次回送り**: §5.3 の 3D actor 別色分け許容領域ゴーストの重畳。
+   → **actor 別色分け許容領域ゴースト重畳 済**(2026-06-14、§5.3 の最後の次回送り項目)。純粋射影
+   `PersonaProjection.projectRegionGhosts(ctx, validatorResult, {approvedRefs})` を追加: 各**領域 Variable**
+   (`v.region` を持つもの)について、それを単一変数として constrains する領域要求を actor ごとに集め、
+   admissible ボックス群の共通部分を `RegionGeometry.intersectBoxes` で算出(R6 と同一の半開・軸ごとロジック
+   の単一の真実)。空軸が 1 つ以上 = 共通フットプリントなし = 衝突、`gap` がその no-man's-land。`state` は
+   `projectConflictMatrix` と同型(`conflict`/`proposed`/`resolved`/`satisfied`、`approvedRefs` ゲート対応)。
+   入力不変・`THREE`/DOM 非依存。色割当はビューに委ね、actor を `ctx.actors` 順で返す(決定的パレット
+   インデックス)。読取専用ビュー `RegionGhostView`(§5.2 の `RegionAuthoringWidget` が**入力**射影=編集可・
+   緑↔赤に対し、これは ADR-047 ゴースト系譜の**出力**射影=読取専用・persona 色)。各 actor フットプリントを
+   persona 色の半透明フィル + エッジで重畳、共通部分が非空なら明るい「合意領域」フィル(公称値ラベル付)、
+   空なら束縛軸の gap を赤バンド + 「✕ 共通部分なし = 衝突」ラベルで描画。`ContextDemoController.enterRegionGhost()`
+   が `cell_region_context.json` を読み(authoring と同じくシーン置換 + zone メッシュ非表示)ゴーストを描画、
+   **衝突マトリックスを併置**(`demoSetMatrix`)し actor 列クリックの `personaFilter` を tick で 3D ゴースト
+   dimming へミラー(2D グリッドと 3D 重畳が 1 つのペルソナ射影)。ヘッダー「ゴースト」ボタン(PC + More)。
+   テスト 94/94(`projectRegionGhosts` 4 件追加)、`tsc --noEmit`・`vite build` クリーン。**Phase 4 完了**。

@@ -18,12 +18,15 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { validateContext } from './ContextValidator.js'
-import { projectConflictMatrix, projectResolutionOrder } from './PersonaProjection.js'
+import { projectConflictMatrix, projectResolutionOrder, projectRegionGhosts } from './PersonaProjection.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
 const loadScenario = () =>
   JSON.parse(readFileSync(join(here, '../../examples/cell_conflict_context.json'), 'utf8'))
+
+const loadRegionScenario = () =>
+  JSON.parse(readFileSync(join(here, '../../examples/cell_region_context.json'), 'utf8'))
 
 // ── projectConflictMatrix ─────────────────────────────────────────────────────
 
@@ -226,4 +229,55 @@ test('purity: inputs are not mutated (PHILOSOPHY #6)', () => {
   projectResolutionOrder(ctx, result)
   assert.deepStrictEqual(ctx, ctxBefore)
   assert.deepStrictEqual(result, resultBefore)
+})
+
+// ── projectRegionGhosts (ADR-049 §5.3 actor-coloured region overlay) ──────────
+
+test('region ghosts: one ghost per region variable, actors in ctx order', () => {
+  const ctx    = loadRegionScenario()
+  const ghosts = projectRegionGhosts(ctx, validateContext(ctx))
+  // Only v_base_footprint is a region Variable; v_camera_standoff is scalar (skipped).
+  assert.equal(ghosts.length, 1)
+  const g = ghosts[0]
+  assert.equal(g.variable, 'v_base_footprint')
+  assert.deepStrictEqual(g.axes, ['x', 'y'])
+  // mech_engineer precedes vision_engineer in ctx.actors → deterministic palette order.
+  assert.deepStrictEqual(g.regions.map(r => r.actor), ['mech_engineer', 'vision_engineer'])
+  assert.deepStrictEqual(g.regions.map(r => r.requirement), ['r_mech_footprint', 'r_vision_footprint'])
+})
+
+test('region ghosts: disjoint footprints intersect empty on x — the conflict is visible', () => {
+  const ctx    = loadRegionScenario()
+  const ghosts = projectRegionGhosts(ctx, validateContext(ctx))
+  const g = ghosts[0]
+  // vision x[600,1200] vs mech x[1300,1800] → empty on x; y overlaps.
+  assert.equal(g.intersection.empty, true)
+  assert.deepStrictEqual(g.intersection.emptyAxes, ['x'])
+  assert.deepStrictEqual(g.intersection.gap.x, [1200, 1300]) // [hi, lo] no-man's-land
+  assert.equal(g.inConflict, true)
+  assert.equal(g.conflictRef, 'conflict_v_base_footprint')
+})
+
+test('region ghosts: state reflects the approval gate (proposed → resolved)', () => {
+  const ctx    = loadRegionScenario()
+  const result = validateContext(ctx)
+  // No gate → resolvedBy reads resolved (backward-compat seam).
+  assert.equal(projectRegionGhosts(ctx, result)[0].state, 'resolved')
+  // Gate, nothing approved → the resolving Decision is only proposed.
+  assert.equal(projectRegionGhosts(ctx, result, { approvedRefs: new Set() })[0].state, 'proposed')
+  // Gate with d_footprint approved → resolved.
+  assert.equal(
+    projectRegionGhosts(ctx, result, { approvedRefs: new Set(['d_footprint']) })[0].state,
+    'resolved',
+  )
+  // The resolving Decision's nominal is surfaced for the agreement-zone label.
+  assert.deepStrictEqual(projectRegionGhosts(ctx, result)[0].nominal, { x: 1250, y: 0 })
+})
+
+test('region ghosts: purity — inputs are not mutated (PHILOSOPHY #6)', () => {
+  const ctx    = loadRegionScenario()
+  const result = validateContext(ctx)
+  const ctxBefore = JSON.parse(JSON.stringify(ctx))
+  projectRegionGhosts(ctx, result, { approvedRefs: new Set(['d_footprint']) })
+  assert.deepStrictEqual(ctx, ctxBefore)
 })

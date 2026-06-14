@@ -104,6 +104,7 @@ function DesktopHeaderContents() {
       <SmallBtn onClick={() => callbacks.onContextDemoClick?.()} title="Context DSL demo — 要求文脈から3Dシーンへ (ADR-046)" icon={SVG_DEMO}>Demo</SmallBtn>
       <SmallBtn onClick={() => callbacks.onContextAuthorClick?.()} title="領域オーサリング — 設置許容ゾーンを3Dでドラッグして衝突をライブ解消 (ADR-049 Phase 3)" icon={SVG_DEMO}>Author</SmallBtn>
       <SmallBtn onClick={() => callbacks.onContextNegotiationClick?.()} title="交渉設計 — 衝突マトリックス × 交渉クラスター解消順序 (ADR-049 Phase 4)" icon={SVG_DEMO}>交渉</SmallBtn>
+      <SmallBtn onClick={() => callbacks.onContextRegionGhostClick?.()} title="許容領域ゴースト — actor 別色分けした設置許容領域を3Dで重畳、共通部分が空=衝突 (ADR-049 §5.3)" icon={SVG_DEMO}>ゴースト</SmallBtn>
     </>
   )
 }
@@ -322,6 +323,7 @@ function MoreMenu() {
           {item('Demo',   SVG_DEMO,   callbacks.onContextDemoClick)}
           {item('Author', SVG_DEMO,   callbacks.onContextAuthorClick)}
           {item('交渉',   SVG_DEMO,   callbacks.onContextNegotiationClick)}
+          {item('ゴースト', SVG_DEMO,  callbacks.onContextRegionGhostClick)}
         </div>
       )}
     </>
