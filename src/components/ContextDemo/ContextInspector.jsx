@@ -9,7 +9,11 @@ import { NegotiationClusterView } from './NegotiationClusterView.jsx'
  * ContextDemoController) but remain user-clickable. Row click fires
  * onDemoItemSelect → 3D highlight via trace links.
  *
- * Desktop-first: hidden under 768px (declared in ADR-047).
+ * Desktop-first: hidden under 768px (declared in ADR-047) — EXCEPT the
+ * negotiation view (ADR-049 Phase 4), which is a pure data overlay with no 3D
+ * dependency, so it renders full-width on mobile (a transient overlay, not a
+ * persistent edge panel — PHILOSOPHY #26). Negotiation is detected by the
+ * presence of a projected `conflictMatrix`.
  */
 
 const STATUS_COLORS = {
@@ -35,7 +39,11 @@ export function ContextInspector() {
   const callbacks = useUIStore(s => s.callbacks)
   const setTab    = useUIStore(s => s.actions.demoSetTab)
 
-  if (window.innerWidth < 768) return null
+  const isMobile      = window.innerWidth < 768
+  const isNegotiation = !!demo.conflictMatrix
+  // Story/authoring inspector pairs with the 3D scene → desktop only. The
+  // negotiation overlay is 3D-independent → allowed full-width on mobile.
+  if (isMobile && !isNegotiation) return null
   if (!demo.inspectorTab) return null
 
   const select = (ref) => callbacks.onDemoItemSelect?.(ref)
@@ -44,9 +52,10 @@ export function ContextInspector() {
     <div style={{
       position:   'fixed',
       top:        '40px',
-      right:      '0',
       bottom:     '26px',
-      width:      '280px',
+      ...(isMobile
+        ? { left: '0', right: '0', width: 'auto' }
+        : { right: '0', width: '280px' }),
       background: 'rgba(30, 30, 30, 0.96)',
       borderLeft: '1px solid #3a3a3a',
       zIndex:     100,
@@ -73,8 +82,8 @@ export function ContextInspector() {
             tab.id === 'openQuestions' ? demo.openQuestions.length :
             tab.id === 'acceptance'    ? demo.blockedChecks.length :
             tab.id === 'conflicts'     ? (demo.conflicts?.filter(c => !c.resolvedBy).length ?? 0) :
-            tab.id === 'matrix'        ? (demo.conflictMatrix ? Object.values(demo.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.resolvedBy).length : 0) :
-            tab.id === 'cluster'       ? (demo.negotiationClusters?.length ?? 0) : 0
+            tab.id === 'matrix'        ? (demo.conflictMatrix ? Object.values(demo.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
+            tab.id === 'cluster'       ? (demo.resolutionOrder?.filter(s => !s.approved).length ?? 0) : 0
           return (
             <button
               key={tab.id}

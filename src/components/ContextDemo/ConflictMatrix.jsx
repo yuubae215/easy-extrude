@@ -15,7 +15,8 @@ import { Badge, Ref } from './ContextInspector.jsx'
 const CELL = {
   none:      { bg: 'transparent', fg: '#555',    border: '#2a2a2a', mark: '' },
   satisfied: { bg: '#16341f',     fg: '#22C55E', border: '#225c34', mark: '●' },
-  resolved:  { bg: '#2e2a14',     fg: '#d5a23a', border: '#7a6a30', mark: '✓' },
+  resolved:  { bg: '#16341f',     fg: '#22C55E', border: '#225c34', mark: '✓' }, // approved = settled
+  proposed:  { bg: '#2e2a14',     fg: '#f0b030', border: '#7a6020', mark: '◐' }, // Decision on the table, not yet approved
   conflict:  { bg: '#3a1414',     fg: '#ff6b6b', border: '#cc3333', mark: '✕' },
 }
 
@@ -40,7 +41,8 @@ export function ConflictMatrix() {
     <>
       <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px' }}>
         共有設計変数 (行) × 担当 (列)。<span style={{ color: '#ff6b6b' }}>✕衝突中</span> /
-        <span style={{ color: '#d5a23a' }}> ✓解決済</span> /
+        <span style={{ color: '#f0b030' }}> ◐承認待ち</span> /
+        <span style={{ color: '#22C55E' }}> ✓確定済</span> /
         <span style={{ color: '#22C55E' }}> ●主張あり</span> / ↔=複数変数結合。
         列ヘッダをクリックでペルソナ射影。
       </div>
@@ -119,9 +121,11 @@ export function ConflictMatrix() {
               background: '#262626', border: '1px solid #333', lineHeight: '1.5',
             }}>
               <div>
-                <Badge color={s.resolvedBy ? '#22C55E' : '#cc3333'} pulse={!s.resolvedBy}>
-                  {s.resolvedBy ? 'resolved' : 'conflict'}
-                </Badge>
+                {s.approved
+                  ? <Badge color="#22C55E">resolved</Badge>
+                  : s.resolvedBy
+                    ? <Badge color="#f0b030" pulse>proposed</Badge>
+                    : <Badge color="#cc3333" pulse>conflict</Badge>}
                 <span style={{ marginLeft: '5px' }}>{v}</span>
               </div>
               {s.gap && (

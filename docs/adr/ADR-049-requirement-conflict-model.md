@@ -2,6 +2,7 @@
 
 **Status**: Draft (Proposed)
 **Date**: 2026-06-13
+**Updated**: 2026-06-14 — Phase 4 n-ary Decision 承認インタラクション(`PersonaProjection` に opt-in `{approvedRefs}` ゲート + 新状態 `proposed`、`approveNegotiationDecision()` が再検証せず再射影、`NegotiationClusterView` に依存順承認ボタン、交渉ビューはモバイル全幅表示。3D ゴースト重畳のみ次回送り。テスト 90/90)
 **Updated**: 2026-06-14 — Phase 4 可視化実装(ペルソナ射影: 衝突マトリックス + 交渉クラスター解消順序。`src/context/PersonaProjection.js` 新設 + Context Inspector に Matrix/Cluster タブ + `enterNegotiation()`。n-ary 承認インタラクションと 3D ゴースト重畳は次回送り。テスト 85/85)
 **Updated**: 2026-06-13 — Phase 2 実装(R8 役割KPIカタログ、stated→derived 自動昇格、フォーム射影。`src/context/RoleKpiCatalog.js` / `AdmissiblePromotion.js` / `FormProjection.js` 新設、Validator に R8 + 昇格パイプライン、`examples/cell_phase2_context.json`、テスト 48/48)
 **Updated**: 2026-06-13 — Phase 1 実装(`src/context/RequirementGraph.js`、Validator R6/R7/R9、Decision 拡張、`examples/cell_conflict_context.json`、テスト 32/32)
@@ -371,5 +372,16 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
    `NegotiationClusterView.jsx` 新設、共有プリミティブ `Row`/`Badge`/`Ref` を Inspector から export。
    ヘッダーに「交渉」ボタン(PC + モバイル More メニュー)。テスト 85/85(Phase4 13 件追加)、
    `vite build` 成功・`tsc --noEmit` クリーン。
-   → **次回送り**: n-ary Decision **承認インタラクション**フロー(`d_cell_joint` は読み取り表示のみ)、
-   §5.3 の 3D actor 別色分け許容領域ゴーストの重畳。
+   → **n-ary 承認インタラクション 済**(2026-06-14)。`PersonaProjection` の両射影に opt-in の
+   `{ approvedRefs }` ゲートを追加: `resolvedBy` はバリデータが立てる(Decision 承認とは独立)ため、
+   未承認の解消 Decision を持つ conflict/cluster は新状態 **`proposed`**(マトリックス ◐ 琥珀)として
+   表示し、承認すると `resolved`(緑 ✓)へ遷移。`approvedRefs` 省略時は従来どおり `resolvedBy` を
+   `resolved` 扱い(後方互換 — ストーリー/オーサリングの呼び出しは非破壊)。`projectResolutionOrder`
+   の各 step に `approved` フラグを additive 追加。`ContextDemoController.approveNegotiationDecision(ref)`
+   が `demoApproveDecision` → `approvedRefs` 再構築 → **再検証せず**キャッシュ済 `_negResult` で再射影
+   (`demoSetMatrix`)し、確定公称値を toast。`NegotiationClusterView` は解消順序 DAG を上から辿る
+   承認ボタンを出し、n-ary 合同確定は**上流の単一衝突がすべて承認済みのときだけ有効化**(無効時は
+   「← 先に X を確定」ヒント、ADR-049 不変条件8)。交渉ビューは 3D 非依存のデータオーバーレイなので
+   **モバイルでも全幅で表示**(`ContextInspector` の `<768px` return null を交渉時のみ解除、PHILOSOPHY
+   #26 の一過性オーバーレイ)。テスト 90/90(承認ゲート 5 件追加)、`vite build`・`tsc --noEmit` クリーン。
+   → **次回送り**: §5.3 の 3D actor 別色分け許容領域ゴーストの重畳。

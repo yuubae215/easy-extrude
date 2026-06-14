@@ -140,6 +140,54 @@ test('resolution order: conflict precedes the cluster that contains its variable
   assert.deepStrictEqual(order[1].actors, ['robot_engineer', 'vision_engineer'])
 })
 
+// ── projectConflictMatrix: n-ary approval gate (ADR-049 Phase 4) ──────────────
+
+test('approval gate: an unapproved resolving Decision reads state:proposed', () => {
+  const ctx = loadScenario()
+  // approvedRefs provided but empty → d_standoff is on the table, not yet agreed.
+  const matrix = projectConflictMatrix(ctx, validateContext(ctx), { approvedRefs: new Set() })
+  assert.equal(matrix.cells['vision_engineer|v_camera_standoff'].state, 'proposed')
+  assert.equal(matrix.cells['robot_engineer|v_camera_standoff'].state, 'proposed')
+  assert.equal(matrix.variableSummary.v_camera_standoff.resolvedBy, 'd_standoff')
+  assert.equal(matrix.variableSummary.v_camera_standoff.approved, false)
+})
+
+test('approval gate: approving the Decision flips the cells to resolved', () => {
+  const ctx = loadScenario()
+  const matrix = projectConflictMatrix(ctx, validateContext(ctx), { approvedRefs: new Set(['d_standoff']) })
+  assert.equal(matrix.cells['vision_engineer|v_camera_standoff'].state, 'resolved')
+  assert.equal(matrix.cells['robot_engineer|v_camera_standoff'].state, 'resolved')
+  assert.equal(matrix.variableSummary.v_camera_standoff.approved, true)
+})
+
+test('approval gate: omitting approvedRefs preserves resolved (backward compat)', () => {
+  const ctx = loadScenario()
+  const matrix = projectConflictMatrix(ctx, validateContext(ctx)) // no gate
+  assert.equal(matrix.cells['vision_engineer|v_camera_standoff'].state, 'resolved')
+  assert.equal(matrix.variableSummary.v_camera_standoff.approved, true)
+})
+
+test('resolution order: approved flag gates on the approvedRefs set', () => {
+  const ctx = loadScenario()
+  const result = validateContext(ctx)
+  const none = projectResolutionOrder(ctx, result, { approvedRefs: new Set() })
+  assert.deepStrictEqual(none.map(s => s.approved), [false, false])
+
+  // Approving only the upstream single conflict leaves the n-ary cluster pending.
+  const partial = projectResolutionOrder(ctx, result, { approvedRefs: new Set(['d_standoff']) })
+  assert.equal(partial[0].approved, true)   // conflict_v_camera_standoff
+  assert.equal(partial[1].approved, false)  // cluster, still awaiting d_cell_joint
+
+  const all = projectResolutionOrder(ctx, result, { approvedRefs: new Set(['d_standoff', 'd_cell_joint']) })
+  assert.deepStrictEqual(all.map(s => s.approved), [true, true])
+})
+
+test('resolution order: omitting approvedRefs reads approved (backward compat)', () => {
+  const ctx = loadScenario()
+  const order = projectResolutionOrder(ctx, validateContext(ctx)) // no gate
+  assert.deepStrictEqual(order.map(s => s.approved), [true, true])
+})
+
 // ── edge cases ────────────────────────────────────────────────────────────────
 
 test('edge: empty context yields empty matrix and empty order', () => {
