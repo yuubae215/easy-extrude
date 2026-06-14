@@ -1,6 +1,6 @@
-# ADR-049 (Draft) — Requirement / Conflict モデル: KPI 由来の許容領域・衝突検出・交渉クラスター
+# ADR-049 — Requirement / Conflict モデル: KPI 由来の許容領域・衝突検出・交渉クラスター
 
-**Status**: Draft (Proposed)
+**Status**: Accepted
 **Date**: 2026-06-13
 **Updated**: 2026-06-14 — Phase 4 n-ary Decision 承認インタラクション(`PersonaProjection` に opt-in `{approvedRefs}` ゲート + 新状態 `proposed`、`approveNegotiationDecision()` が再検証せず再射影、`NegotiationClusterView` に依存順承認ボタン、交渉ビューはモバイル全幅表示。3D ゴースト重畳のみ次回送り。テスト 90/90)
 **Updated**: 2026-06-14 — Phase 4 可視化実装(ペルソナ射影: 衝突マトリックス + 交渉クラスター解消順序。`src/context/PersonaProjection.js` 新設 + Context Inspector に Matrix/Cluster タブ + `enterNegotiation()`。n-ary 承認インタラクションと 3D ゴースト重畳は次回送り。テスト 85/85)
