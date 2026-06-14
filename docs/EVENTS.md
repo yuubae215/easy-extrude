@@ -371,7 +371,14 @@ view-level visibility only.
 | `onDemoApproveDecision(ref)` | DecisionCard 承認ボタン | `approveDecision()` — ghost collapse → reveal + ripple |
 | `onDemoItemSelect(ref)` | Inspector row click | `selectItem(ref)` — trace → 3D highlight / link flash / toast |
 | `onContextAuthorClick` | Header **Author** button / MoreMenu | `enterAuthoring()` — region scenario + draggable AABB widgets (ADR-049 Phase 3) |
+| `onContextNegotiationClick` | Header **交渉** button / MoreMenu | `enterNegotiation()` — conflict scenario, persona projections (matrix + cluster order), data-only overlay (ADR-049 Phase 4) |
 | `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, dispose authoring widgets, `demoEnd()` |
+
+**Persona filter (ADR-049 Phase 4)**: the Matrix tab's actor column headers call
+`uiStore.actions.demoSetPersonaFilter(actorRef)` directly (pure UI state — no controller
+callback, no 3D side effect). Re-clicking the selected actor clears the filter. Matrix cells and
+Cluster steps not involving the filtered actor are dimmed. The negotiation overlay is data-only:
+no pointer delegation, no scene replacement.
 
 **Region authoring pointer flow (ADR-049 Phase 3)**: while `_demoCtrl.isAuthoring`,
 `AppController._onPointerDown/Move/Up` delegate to `_demoCtrl.onAuthorPointerDown/Move/Up`

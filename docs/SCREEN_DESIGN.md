@@ -624,6 +624,8 @@ is staged per story step. Exiting (✕) leaves the scene as a normal editable sc
 | Trace | from —kind→ to rows; click highlights the derived 3D entity |
 | Accept | acceptance checks; blocked rows show the `blockedBy` chain in red |
 | Conflict | live R6 output (ADR-049): per shared variable, `gap` (scalar `[hi,lo)` or per-axis map), the conflicting requirements, and `resolved`/`conflict` badge. Unresolved-count badge on the tab. Populated live during region authoring. |
+| Matrix | (ADR-049 Phase 4) actor × variable grid. Cell mark/colour by state: ✕赤=未解決衝突 / ✓黄=解決済 / ●緑=主張あり / 空=関与なし、↔=多変数結合。**列ヘッダクリック → ペルソナ射影**(`personaFilter`: 選択 actor 以外を減光)。下部に変数ごとの衝突サマリ(gap・between・resolvedBy)。バッジ=未解決衝突変数数。 |
+| Cluster | (ADR-049 Phase 4) 交渉クラスター解消順序(DSM partitioning)。番号付き縦リストで single/n-ary バッジ・変数・関与 actor・`← after`(dependsOn)・`resolved`/`未確定` バッジ(読み取り専用 — n-ary 承認は次回)。バッジ=クラスター数。 |
 
 Row click → `onDemoItemSelect` → trace resolution → real selection highlight
 (`_switchActiveObject`), link flash + toast for constraint-only targets, or a
@@ -646,8 +648,14 @@ and **red** when their shared variable is in conflict; the Inspector **Conflict*
 each frame. The text DSL stays the contract — a dragged region is written back as a `stated`
 admissible (invariant 9). Exit via Story Bar ✕ (disposes widgets).
 
+#### [K] Negotiation sub-mode (ADR-049 Phase 4, Header **交渉** button)
+A data-only overlay (`enterNegotiation()`, loads `cell_conflict_context` — **scene is not
+replaced**). The Inspector opens on the **Matrix** tab; Matrix and Cluster tabs read the
+persona projections (`projectConflictMatrix` / `projectResolutionOrder`). Single-step Story Bar;
+no 3D widgets/ghost. Exit via Story Bar ✕ (clears projections, restores Link Network panel).
+
 #### [A] Header
-Desktop: **Demo** button after Import. Mobile: Demo item inside the ⋯ MoreMenu.
+Desktop: **Demo** / **Author** / **交渉** buttons after Import. Mobile: same items inside the ⋯ MoreMenu.
 
 ---
 

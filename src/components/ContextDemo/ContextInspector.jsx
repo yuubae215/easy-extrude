@@ -1,4 +1,6 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { ConflictMatrix } from './ConflictMatrix.jsx'
+import { NegotiationClusterView } from './NegotiationClusterView.jsx'
 
 /**
  * ContextInspector — requirement tree panel for the Context DSL demo (ADR-047).
@@ -24,6 +26,8 @@ const TABS = [
   { id: 'trace',         label: 'Trace' },
   { id: 'acceptance',    label: 'Accept' },
   { id: 'conflicts',     label: 'Conflict' },
+  { id: 'matrix',        label: 'Matrix' },   // ADR-049 Phase 4
+  { id: 'cluster',       label: 'Cluster' },  // ADR-049 Phase 4
 ]
 
 export function ContextInspector() {
@@ -68,7 +72,9 @@ export function ContextInspector() {
           const badge =
             tab.id === 'openQuestions' ? demo.openQuestions.length :
             tab.id === 'acceptance'    ? demo.blockedChecks.length :
-            tab.id === 'conflicts'     ? (demo.conflicts?.filter(c => !c.resolvedBy).length ?? 0) : 0
+            tab.id === 'conflicts'     ? (demo.conflicts?.filter(c => !c.resolvedBy).length ?? 0) :
+            tab.id === 'matrix'        ? (demo.conflictMatrix ? Object.values(demo.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.resolvedBy).length : 0) :
+            tab.id === 'cluster'       ? (demo.negotiationClusters?.length ?? 0) : 0
           return (
             <button
               key={tab.id}
@@ -101,6 +107,8 @@ export function ContextInspector() {
         {demo.inspectorTab === 'trace'         && <TraceTab demo={demo} select={select} />}
         {demo.inspectorTab === 'acceptance'    && <AcceptanceTab demo={demo} />}
         {demo.inspectorTab === 'conflicts'     && <ConflictsTab demo={demo} select={select} />}
+        {demo.inspectorTab === 'matrix'        && <ConflictMatrix />}
+        {demo.inspectorTab === 'cluster'       && <NegotiationClusterView />}
       </div>
     </div>
   )
@@ -108,7 +116,7 @@ export function ContextInspector() {
 
 // ── Shared row primitives ───────────────────────────────────────────────────
 
-function Row({ onClick, selected, children }) {
+export function Row({ onClick, selected, children }) {
   return (
     <div
       onClick={onClick}
@@ -125,7 +133,7 @@ function Row({ onClick, selected, children }) {
   )
 }
 
-function Badge({ color, children, pulse = false }) {
+export function Badge({ color, children, pulse = false }) {
   return (
     <span style={{
       display: 'inline-block', padding: '0 5px', borderRadius: '3px',
@@ -141,7 +149,7 @@ function Badge({ color, children, pulse = false }) {
   )
 }
 
-function Ref({ children }) {
+export function Ref({ children }) {
   return <span style={{ fontFamily: 'monospace', fontSize: '10px', color: '#888' }}>{children}</span>
 }
 

@@ -123,8 +123,13 @@ export const useUIStore = create((set, get) => ({
     trace: [],              // [{ from, to, kind }]
     conflicts: [],          // [{ ref, variable, between[], gap, ... }] — live R6 output
     approvedDecisions: {},  // ref → true
-    inspectorTab: null,     // 'facts'|'openQuestions'|'decisions'|'trace'|'acceptance'|'conflicts'|null
+    inspectorTab: null,     // 'facts'|'openQuestions'|'decisions'|'trace'|'acceptance'|'conflicts'|'matrix'|'cluster'|null
     selectedItemRef: null,
+    // ── ADR-049 Phase 4: persona projections (read-only) ─────────────────────
+    negotiationClusters: [], // [{ ref, requirements[], variables[], actors[], resolvedBy? }] — R7 output
+    conflictMatrix: null,    // projectConflictMatrix() result | null
+    resolutionOrder: [],     // projectResolutionOrder() result — DSM meeting order
+    personaFilter: null,     // actorRef | null — persona projection highlight
   },
 
   // ══ Actions ════════════════════════════════════════════════════════════════
@@ -238,6 +243,11 @@ export const useUIStore = create((set, get) => ({
     demoStart: (payload) => set(state => ({
       demo: {
         ...state.demo,
+        // Reset Phase 4 projections unless the payload overrides them.
+        negotiationClusters: [],
+        conflictMatrix: null,
+        resolutionOrder: [],
+        personaFilter: null,
         ...payload,
         active: true,
         step: 0,
@@ -263,6 +273,13 @@ export const useUIStore = create((set, get) => ({
     })),
     demoSetConflicts: (conflicts) => set(state => ({
       demo: { ...state.demo, conflicts },
+    })),
+    // ADR-049 Phase 4 — push persona projections; clear by passing (null, [], []).
+    demoSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
+      demo: { ...state.demo, conflictMatrix, negotiationClusters, resolutionOrder },
+    })),
+    demoSetPersonaFilter: (personaFilter) => set(state => ({
+      demo: { ...state.demo, personaFilter },
     })),
     demoEnd: () => set(state => ({
       demo: { ...state.demo, active: false },
