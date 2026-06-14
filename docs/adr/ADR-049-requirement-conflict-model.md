@@ -2,6 +2,7 @@
 
 **Status**: Draft (Proposed)
 **Date**: 2026-06-13
+**Updated**: 2026-06-14 — Phase 4 可視化実装(ペルソナ射影: 衝突マトリックス + 交渉クラスター解消順序。`src/context/PersonaProjection.js` 新設 + Context Inspector に Matrix/Cluster タブ + `enterNegotiation()`。n-ary 承認インタラクションと 3D ゴースト重畳は次回送り。テスト 85/85)
 **Updated**: 2026-06-13 — Phase 2 実装(R8 役割KPIカタログ、stated→derived 自動昇格、フォーム射影。`src/context/RoleKpiCatalog.js` / `AdmissiblePromotion.js` / `FormProjection.js` 新設、Validator に R8 + 昇格パイプライン、`examples/cell_phase2_context.json`、テスト 48/48)
 **Updated**: 2026-06-13 — Phase 1 実装(`src/context/RequirementGraph.js`、Validator R6/R7/R9、Decision 拡張、`examples/cell_conflict_context.json`、テスト 32/32)
 **Related**: ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-044 (5W1H), ADR-035 (Cycle Detection 前例), ADR-030 (SpatialLink)
@@ -354,3 +355,21 @@ KPI+クライテリアが正準、領域は導出値(MVP の stated は昇格待
    テスト 72/72(編集モデル 2 件追加)、`vite build` 成功。
 4. **Phase 4**: 衝突マトリックス / 交渉クラスター DAG のペルソナ射影 UI、
    n-ary Decision approval フロー。
+   → **可視化 済**(2026-06-14)。純粋計算 1 モジュール `PersonaProjection.js` を追加:
+   ① `projectConflictMatrix(ctx, validatorResult)` — actor × variable グリッド。セル状態は
+   `none|satisfied|conflict|resolved`(R6 の `between` に参加する未解決衝突のみ `conflict`、
+   Decision 解消済は `resolved`、多変数結合要求は `coupled` フラグ付き `satisfied` で R6 に効かない)。
+   `variableSummary` に変数ごとの `gap`/`between`/`resolvedBy`/関与 actor をロールアップ。
+   ② `projectResolutionOrder(ctx, validatorResult)` — DSM partitioning。各クラスターを 1 ノードに縮約
+   → DAG → 決定的トポロジカルソート(Kahn、ready-set を ref 昇順で安定化)で「会議の設計図」を導出。
+   単一変数衝突は leaf、結合クラスターは自変数上の衝突を `dependsOn` に持つ(D2: マージしない)。
+   いずれも純粋・入力不変(PHILOSOPHY #3/#6)、`THREE` 非依存。UI は ADR-047 の Context Inspector に
+   **新タブ Matrix / Cluster** として実装(新エッジパネルを増やさず PHILOSOPHY #26 準拠)。
+   `ContextDemoController.enterNegotiation()` が `cell_conflict_context.json` を読み(データのみ
+   オーバーレイ — シーン非置換 D3)、`validateContext → project*` を実行し uiStore へ push。
+   actor 列ヘッダクリックで `personaFilter` を切替えるペルソナ射影。`ConflictMatrix.jsx` /
+   `NegotiationClusterView.jsx` 新設、共有プリミティブ `Row`/`Badge`/`Ref` を Inspector から export。
+   ヘッダーに「交渉」ボタン(PC + モバイル More メニュー)。テスト 85/85(Phase4 13 件追加)、
+   `vite build` 成功・`tsc --noEmit` クリーン。
+   → **次回送り**: n-ary Decision **承認インタラクション**フロー(`d_cell_joint` は読み取り表示のみ)、
+   §5.3 の 3D actor 別色分け許容領域ゴーストの重畳。

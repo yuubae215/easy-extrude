@@ -21,6 +21,7 @@ import { useUIStore } from '../store/uiStore.js'
 import { compileContext } from '../context/ContextCompiler.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
+import { projectConflictMatrix, projectResolutionOrder } from '../context/PersonaProjection.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
@@ -28,6 +29,7 @@ import { RippleEffect } from '../view/RippleEffect.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import factoryContext from '../../examples/factory_context.json'
 import regionContext from '../../examples/cell_region_context.json'
+import conflictContext from '../../examples/cell_conflict_context.json'
 
 /** Inspector tab shown for each story step (null = inspector closed). */
 const TAB_BY_STEP = [null, 'facts', 'openQuestions', 'decisions', 'trace', 'acceptance']
@@ -101,11 +103,17 @@ export class ContextDemoController {
     /** @type {object|null} mutable (cloned) context the widgets edit + re-validate */
     this._editCtx     = null
 
+    // ── Negotiation visualization (ADR-049 Phase 4) ────────────────────────────
+    // Data-only overlay: conflict matrix + cluster resolution order in the
+    // Inspector. No scene replacement, no widgets, no ghost.
+    this._negotiation = false
+
     // React components fire these via uiStore.callbacks (same unidirectional
     // pattern as the rest of the UI).
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onContextDemoClick',   ()    => this.enter())
     registerCallback('onContextAuthorClick', ()    => this.enterAuthoring())
+    registerCallback('onContextNegotiationClick', () => this.enterNegotiation())
     registerCallback('onDemoStepChange',     (n)   => this.setStep(n))
     registerCallback('onDemoApproveDecision', ()   => this.approveDecision())
     registerCallback('onDemoItemSelect',     (ref) => this.selectItem(ref))
@@ -117,6 +125,9 @@ export class ContextDemoController {
 
   /** True while the bidirectional region-authoring sub-mode is active. */
   get isAuthoring() { return this._authoring }
+
+  /** True while the negotiation-visualization sub-mode is active. */
+  get isNegotiation() { return this._negotiation }
 
   // ── Entry / exit ───────────────────────────────────────────────────────────
 
@@ -245,6 +256,18 @@ export class ContextDemoController {
     this._active = false
     this._reveal = null
 
+    // Negotiation mode is a data-only overlay — nothing was hidden/replaced, so
+    // teardown is just clearing the projections and restoring the Link Network.
+    if (this._negotiation) {
+      this._negotiation = false
+      this._ctrl._linkNetworkView?.setForceHidden(false)
+      const ui = useUIStore.getState().actions
+      ui.demoSetMatrix(null, [], [])
+      ui.demoSetPersonaFilter(null)
+      ui.demoEnd()
+      return
+    }
+
     // Tear down region-authoring widgets (PHILOSOPHY #9 — symmetric disposal).
     if (this._authoring) {
       this._ctrl._controls.enabled = true
@@ -277,6 +300,8 @@ export class ContextDemoController {
     if (!this._active) return
     // Authoring sub-mode has a single narration step and no entity staging.
     if (this._authoring) { useUIStore.getState().actions.demoSetStep(0, 'conflicts'); return }
+    // Negotiation sub-mode is data-only — keep whichever tab the user picked.
+    if (this._negotiation) { useUIStore.getState().actions.demoSetStep(0, useUIStore.getState().demo.inspectorTab ?? 'matrix'); return }
     const step = Math.max(0, Math.min(DEMO_STEPS.length - 1, n))
     // Step ③→④ is gated on approval — "intervals never collapse silently",
     // expressed structurally. (The StoryBar also disables Next; double guard.)
@@ -497,6 +522,58 @@ export class ContextDemoController {
     this._ctrl._controls.enabled = true
     this._ctrl._activeDragPointerId = null
     return true
+  }
+
+  // ── Negotiation visualization (ADR-049 Phase 4) ─────────────────────────────
+
+  /**
+   * Loads the multi-actor conflict scenario and shows the persona projections
+   * (conflict matrix + negotiation-cluster resolution order) in the Inspector.
+   * Data-only: the current scene is left untouched (the conflict scenario's
+   * layout is a single AnnotatedRegion — replacing the scene would add nothing).
+   */
+  enterNegotiation() {
+    if (this._active) return
+    try {
+      compileContext(conflictContext) // validate compilability up front (PHILOSOPHY #11)
+    } catch (err) {
+      this._ctrl._uiView.showToast(`Negotiation compile failed: ${err.message}`, { type: 'error' })
+      console.error('[ContextDemoController]', err)
+      return
+    }
+    this._ctrl._uiView.showConfirmDialog(
+      '交渉設計ビューを開きますか? (現在のシーンはそのまま — 衝突マトリックスと解消順序を表示)',
+      (ok) => { if (ok) this._startNegotiation() },
+      { title: '交渉設計 — 衝突マトリックス × 解消順序 (ADR-049 Phase 4)', confirmLabel: '開く' },
+    )
+  }
+
+  _startNegotiation() {
+    const ctrl   = this._ctrl
+    const result = validateContext(conflictContext)
+    const matrix = projectConflictMatrix(conflictContext, result)
+    const order  = projectResolutionOrder(conflictContext, result)
+
+    // The negotiation view is a data overlay — keep the scene, just clear room.
+    ctrl._linkNetworkView?.setForceHidden(true)
+
+    const ui = useUIStore.getState().actions
+    ui.setNPanelVisible(false)
+    ui.demoStart({
+      steps: [{
+        title: '交渉設計 — 衝突マトリックスと解消順序',
+        narration: '共有設計変数ごとに、誰のどの要求が衝突しているかをマトリックスで一望する。衝突 (R6) と交渉クラスター (R7) はルールが吐く (ADR-049 不変条件7)。クラスターを縮約すると依存は DAG になり、合同 Decision を積む順序 (会議の設計図) が導ける。actor 列をクリックするとペルソナ射影でその担当の関与だけが浮かぶ。',
+      }],
+      facts: [], intents: [], obligations: [], acceptance: [],
+      openQuestions: [], blockedChecks: [], trace: [],
+      decisions: conflictContext.decisions ?? [], // read-only display (n-ary approval deferred)
+      conflicts: result.conflicts,
+    })
+    ui.demoSetMatrix(matrix, result.negotiationClusters, order)
+    ui.demoSetStep(0, 'matrix')
+
+    this._active      = true
+    this._negotiation = true
   }
 
   // ── Requirement → 3D traceability ──────────────────────────────────────────
