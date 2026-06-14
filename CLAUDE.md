@@ -137,6 +137,8 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 @docs/CODE_CONTRACTS.md
 
+@docs/CLAUDE_FABLE5_BEHAVIOR.md
+
 ## Notes for changes
 
 - `vite.config.js` `base` must match the repo name (`/easy-extrude/`)
