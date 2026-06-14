@@ -136,17 +136,21 @@ export function NegotiationClusterView() {
       <div style={{ color: '#999', margin: '10px 0 4px', fontSize: '11px' }}>
         交渉クラスター (R7): {clusters?.length ?? 0} 件
       </div>
-      {(clusters ?? []).map(nc => (
-        <div key={nc.ref} style={{
-          padding: '6px 7px', marginBottom: '4px', borderRadius: '4px',
-          background: '#262626', border: '1px solid #333', lineHeight: '1.5',
-        }}>
-          <div style={{ fontSize: '10px', color: '#aaa' }}>
-            {nc.requirements.join('  ×  ')}
+      {(clusters ?? []).map(nc => {
+        const dim = filter && !nc.actors?.includes(filter)
+        return (
+          <div key={nc.ref} style={{
+            padding: '6px 7px', marginBottom: '4px', borderRadius: '4px',
+            background: '#262626', border: '1px solid #333', lineHeight: '1.5',
+            opacity: dim ? 0.35 : 1,
+          }}>
+            <div style={{ fontSize: '10px', color: '#aaa' }}>
+              {nc.requirements.join('  ×  ')}
+            </div>
+            <Ref>{nc.ref}</Ref>
           </div>
-          <Ref>{nc.ref}</Ref>
-        </div>
-      ))}
+        )
+      })}
     </>
   )
 }
