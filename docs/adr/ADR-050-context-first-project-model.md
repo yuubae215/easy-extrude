@@ -168,6 +168,44 @@ onApprove}`)へ変えスライス非依存に。`ContextInspector` を presentat
 `Import Context…` / `Save·Export` / (loaded 時のみ)`Author Regions` / `Negotiate` / `Region Ghosts` /
 別エントリ `Tutorial`(既存 story)。
 
+### 4.5 3D authoring の役割 — 領域に限らない高次元/視覚的入力射影
+
+§2 の Context-first(テキスト DSL = 正準)の **系**として、3D の役割を明確化する: 3D は
+「**テキストフォームで答えにくい入力**」の authoring 射影である。フォームは「カメラの分解能要求は何 px/mm か」
+のようなスカラー Q&A には強いが、**3次元データ(座標系・座標・姿勢)** や **テキストで Q&A しづらい視覚的情報**
+(リーチ包絡・クリアランス・視線)には次元数的に答えられない。これらは描かせる(ADR-049 §5.2「高次元の
+回答は描かせる」)。3D は **3 種の authoring 射影**を担う:
+
+1. **領域フットプリント**(Phase 3 実装済)— `RegionAuthoringWidget`、`admissible.region`(AABB)。
+2. **姿勢/座標系**(座標・姿勢)— KPI が pose の関数である要求(取付向き・TCP アプローチ角・CF 相対オフセット)を、
+   **既存の CF 操作インフラを再利用**して 3D 操作で著す: `GrabOperationHandler` / `RotationHandler`
+   (`src/controller/handler/`)、`CoordinateFrame.move()` / `rotate()`、`SceneService.applyPreviewTranslation()` /
+   `applyPreviewRotation()`、TC ギズモ(ADR-034/037/042)。
+3. **視覚的インジケータ**(リーチ包絡・クリアランス・swept volume・視線)— `PredicateEngine` の幾何
+   (`reach_covers` / `no_overlap` / `swept_volume`、ADR-049 Phase 3)を 3D ハンドルで著す。
+
+**用語**: 本コードベースに「インジケータ」という独立エンティティは無い。**インジケータ = KPI(評価関数)**、
+**クライテリア = criterion(合格条件)**(ADR-049 §1 観察2)。3D が担うのは「**KPI を定義する幾何/姿勢**」であり、
+**criterion(閾値)はテキストへ一問だけ差し戻す**(ADR-049 §5.2): 3D で描かれるのは KPI を成す幾何であって
+合格ラインではないため、R9 がスケッチ/姿勢由来の `stated` 入力に OpenQuestion を立て、KPI が与えられたら
+`AdmissiblePromotion` が `stated → derived` 昇格する。**契約物はあくまで変換後のテキスト Requirement**
+(不変条件9): 3D で著した evidence(姿勢・スケッチ)は **scene バイナリに保存せず**、必ず
+`kpi` / `criterion` / `evidence` を持つテキスト Requirement へ変換してから署名・baseline・diff の対象になる。
+
+**additive 拡張**(ADR-049 の Variable / admissible / predicate モデルの自然な延長 scalar → region → **pose**。
+各拡張は Phase 3「本番 Authoring」で設計し、純粋層へ追加):
+- Variable に **pose 型**を追加(scalar interval / region AABB に加え)。
+- `applyAdmissibleEdit(ctx, reqRef, admissible)`(`ContextEditModel.js:28`)の `admissible` を
+  `{interval}|{region}|{pose}` の一族へ拡張(**単一の不変書き戻しの形は不変** — PHILOSOPHY #6)。
+- `PredicateEngine` に **姿勢述語**(orientation bounds / relative pose)を additive 追加。
+- evidence の `Source.kind` に **`"pose"` / `"measurement"`** を追加(既存 `"sketch"` に並ぶ — additive)。
+
+**Controller / Service の汎化**: `ContextService.applyAdmissible` を「authoring 入力 → `applyAdmissibleEdit` →
+`applyContextDoc`」の一族とし、`RegionAuthoringWidget` と同じ所有 / `startDrag` / `dragTo` / `setConflict` /
+`dispose` パターン(PHILOSOPHY #4/#9)で **`PoseAuthoringWidget`** を追加。`createEditAdmissibleCommand`(§3.5)は
+pose 入力にも流用する(before/after が pose admissible)。フォーム(§5.1)・3D 領域・3D 姿勢・3D 視覚インジケータは
+すべて **同一 context ドキュメントへの authoring 射影**であり、データは分けない(ADR-049 §5.2)。
+
 ---
 
 ## 5. 永続化 — `.ctx.json` がプロジェクトファイル
@@ -190,7 +228,10 @@ doc の深さ等価をテストする。BFF 永続化(`SceneService.saveScene/lo
    `createApproveDecisionCommand` 経由、`context` スライス、Matrix/Cluster を prop 駆動化 + `ContextLayer`、
    Header の Context メニュー。
 3. **本番 Authoring + region ghosts(3D)** — オーサリング/ゴーストを移管、再生成をドラッグ終了に遅延、
-   `createEditAdmissibleCommand`、AppController に `_ctxCtrl.isAuthoring` 委譲分岐。
+   `createEditAdmissibleCommand`、AppController に `_ctxCtrl.isAuthoring` 委譲分岐。**§4.5 の 3D authoring
+   3 種**(領域 / 姿勢・座標系 / 視覚的インジケータ)をここで設計 — 姿勢は既存 CF 操作インフラ再利用 +
+   `PoseAuthoringWidget`、視覚インジケータは `PredicateEngine` 幾何、いずれも pose 型 Variable / admissible /
+   姿勢述語 / evidence kind を additive 追加(scalar → region → pose)。
 4. **動的フォーム + 永続化** — `FormPanel` + `createAnswerQuestionCommand`、`.ctx.json` import/save、往復テスト。
 5. **チュートリアル分離 + ドキュメント** — `ContextDemoController` から Phase3/4 コード/import を除去、
    本 ADR を Accepted へ、Design change impact 表の ✅ 群を更新。
