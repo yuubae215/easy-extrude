@@ -27,15 +27,43 @@
  */
 
 /**
+ * Approval gate (ADR-049 Phase 4, n-ary Decision approval). A conflict / cluster
+ * carries `resolvedBy` whenever a Decision *references* it — the validator sets
+ * this regardless of whether that Decision has been approved. The negotiation
+ * view walks the resolution-order DAG and approves each Decision in turn, so it
+ * must distinguish "a Decision is on the table" (`proposed`) from "the Decision
+ * is approved" (`resolved`).
+ *
+ *   no resolvedBy                         → 'unresolved' (live conflict)
+ *   resolvedBy, `approvedRefs` omitted    → 'resolved'   (backward compat: the
+ *                                            story/authoring callers pass no gate
+ *                                            and treat any resolvedBy as settled)
+ *   resolvedBy, approved                  → 'resolved'
+ *   resolvedBy, not approved              → 'proposed'
+ *
+ * @param {string|null|undefined} resolvedBy
+ * @param {Set<string>|undefined} approvedRefs — approved Decision refs, or omit for no gate
+ * @returns {'unresolved'|'proposed'|'resolved'}
+ */
+function resolutionState(resolvedBy, approvedRefs) {
+  if (!resolvedBy) return 'unresolved'
+  if (!approvedRefs) return 'resolved'
+  return approvedRefs.has(resolvedBy) ? 'resolved' : 'proposed'
+}
+
+/**
  * Build the actor × variable conflict matrix.
  *
  * @param {object} ctx — raw Context DSL object (reads actors/variables/requirements)
  * @param {{ conflicts: object[] }} validatorResult — validateContext() output
+ * @param {{ approvedRefs?: Set<string> }} [opts] — approved Decision refs; when
+ *   omitted, any `resolvedBy` reads `resolved` (backward compat). When provided,
+ *   an unapproved resolving Decision reads `proposed` instead.
  * @returns {{
  *   actors: string[],
  *   variables: string[],
  *   cells: Object<string, {
- *     state: 'none'|'satisfied'|'conflict'|'resolved',
+ *     state: 'none'|'satisfied'|'conflict'|'proposed'|'resolved',
  *     coupled: boolean,
  *     requirements: string[],
  *     admissible: {ref: string, set: any}[],
@@ -47,6 +75,7 @@
  *     gap: any,
  *     between: string[],
  *     resolvedBy: string|null,
+ *     approved: boolean,
  *     actors: string[],
  *   }>,
  * }}
@@ -54,7 +83,7 @@
  * Cell key is `"<actorRef>|<varRef>"`. A cell exists for every (actor, variable)
  * pair, but only populated cells carry requirements; empty ones are `state:'none'`.
  */
-export function projectConflictMatrix(ctx, validatorResult) {
+export function projectConflictMatrix(ctx, validatorResult, { approvedRefs } = {}) {
   const actorRefs = (ctx?.actors ?? []).map(a => a.ref)
   const varRefs   = (ctx?.variables ?? []).map(v => v.ref)
   const reqs      = ctx?.requirements ?? []
@@ -95,8 +124,9 @@ export function projectConflictMatrix(ctx, validatorResult) {
 
   // Derive each populated cell's state. A cell is `conflict` when the actor
   // authors a requirement that participates in an *unresolved* R6 conflict on
-  // that variable, `resolved` once a Decision has settled that conflict, and
-  // `satisfied` otherwise. Coupled (multi-variable) requirements never appear in
+  // that variable, `proposed` once a Decision references it but is not yet
+  // approved, `resolved` once that Decision is approved, and `satisfied`
+  // otherwise. Coupled (multi-variable) requirements never appear in
   // `conflict.between`, so a cell carrying only those reads `satisfied`.
   for (const a of actorRefs) {
     for (const v of varRefs) {
@@ -104,7 +134,9 @@ export function projectConflictMatrix(ctx, validatorResult) {
       if (cell.requirements.length === 0) continue
       const conflict = conflictByVar.get(v)
       const involved = conflict && cell.requirements.some(r => (conflict.between ?? []).includes(r))
-      cell.state = !involved ? 'satisfied' : (conflict.resolvedBy ? 'resolved' : 'conflict')
+      if (!involved) { cell.state = 'satisfied'; continue }
+      const rs = resolutionState(conflict.resolvedBy, approvedRefs)
+      cell.state = rs === 'unresolved' ? 'conflict' : rs // 'proposed' | 'resolved'
     }
   }
 
@@ -119,6 +151,7 @@ export function projectConflictMatrix(ctx, validatorResult) {
       gap:         conflict?.gap ?? null,
       between,
       resolvedBy:  conflict?.resolvedBy ?? null,
+      approved:    resolutionState(conflict?.resolvedBy, approvedRefs) === 'resolved',
       actors:      [...new Set(between.map(r => reqByRef.get(r)?.by).filter(Boolean))].sort(),
     }
   }
@@ -139,6 +172,8 @@ export function projectConflictMatrix(ctx, validatorResult) {
  *
  * @param {object} ctx — raw Context DSL object (reads requirements for authors)
  * @param {{ conflicts: object[], negotiationClusters: object[] }} validatorResult
+ * @param {{ approvedRefs?: Set<string> }} [opts] — approved Decision refs; gates
+ *   each step's `approved` flag (omit → any `resolvedBy` reads approved).
  * @returns {{
  *   kind: 'conflict'|'cluster',
  *   order: number,
@@ -148,10 +183,11 @@ export function projectConflictMatrix(ctx, validatorResult) {
  *   requirements: string[],
  *   decisionKind: 'single'|'n-ary',
  *   resolvedBy: string|null,
+ *   approved: boolean,
  *   dependsOn: string[],
  * }[]}
  */
-export function projectResolutionOrder(ctx, validatorResult) {
+export function projectResolutionOrder(ctx, validatorResult, { approvedRefs } = {}) {
   const reqByRef  = new Map((ctx?.requirements ?? []).map(r => [r.ref, r]))
   const conflicts = validatorResult?.conflicts ?? []
   const clusters  = validatorResult?.negotiationClusters ?? []
@@ -169,6 +205,7 @@ export function projectResolutionOrder(ctx, validatorResult) {
       actors: [...new Set(between.map(r => reqByRef.get(r)?.by).filter(Boolean))].sort(),
       decisionKind: 'single',
       resolvedBy: c.resolvedBy ?? null,
+      approved: resolutionState(c.resolvedBy, approvedRefs) === 'resolved',
       dependsOn: [],
     })
   }
@@ -188,6 +225,7 @@ export function projectResolutionOrder(ctx, validatorResult) {
       actors: nc.actors ?? [],
       decisionKind: 'n-ary',
       resolvedBy: nc.resolvedBy ?? null,
+      approved: resolutionState(nc.resolvedBy, approvedRefs) === 'resolved',
       dependsOn,
     })
   }

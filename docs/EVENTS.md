@@ -372,6 +372,7 @@ view-level visibility only.
 | `onDemoItemSelect(ref)` | Inspector row click | `selectItem(ref)` — trace → 3D highlight / link flash / toast |
 | `onContextAuthorClick` | Header **Author** button / MoreMenu | `enterAuthoring()` — region scenario + draggable AABB widgets (ADR-049 Phase 3) |
 | `onContextNegotiationClick` | Header **交渉** button / MoreMenu | `enterNegotiation()` — conflict scenario, persona projections (matrix + cluster order), data-only overlay (ADR-049 Phase 4) |
+| `onApproveNegotiationDecision(ref)` | Cluster tab 承認ボタン(確定 / 合同確定) | `approveNegotiationDecision(ref)` — `demoApproveDecision` → re-project matrix/order with updated `approvedRefs` (no re-validation) + nominal toast (ADR-049 Phase 4) |
 | `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, dispose authoring widgets, `demoEnd()` |
 
 **Persona filter (ADR-049 Phase 4)**: the Matrix tab's actor column headers call
@@ -379,6 +380,13 @@ view-level visibility only.
 callback, no 3D side effect). Re-clicking the selected actor clears the filter. Matrix cells and
 Cluster steps not involving the filtered actor are dimmed. The negotiation overlay is data-only:
 no pointer delegation, no scene replacement.
+
+**n-ary approval flow (ADR-049 Phase 4)**: the Cluster tab's approve buttons fire
+`onApproveNegotiationDecision(decisionRef)`. The controller marks the Decision approved, rebuilds
+`approvedRefs`, and re-projects (matrix `proposed`◐ → `resolved`✓; step `approved` flag). A
+cluster's 合同確定 button is enabled only when every `dependsOn` step is approved (DAG order,
+invariant 8). The whole overlay is 3D-independent, so the Inspector renders full-width on mobile
+in negotiation mode (only context that lifts the `<768px` hide).
 
 **Region authoring pointer flow (ADR-049 Phase 3)**: while `_demoCtrl.isAuthoring`,
 `AppController._onPointerDown/Move/Up` delegate to `_demoCtrl.onAuthorPointerDown/Move/Up`

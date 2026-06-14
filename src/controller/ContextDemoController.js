@@ -107,6 +107,10 @@ export class ContextDemoController {
     // Data-only overlay: conflict matrix + cluster resolution order in the
     // Inspector. No scene replacement, no widgets, no ghost.
     this._negotiation = false
+    /** @type {object|null} the conflict-scenario context kept for re-projection on approval */
+    this._negCtx    = null
+    /** @type {object|null} cached validateContext() result (no re-validation on approval) */
+    this._negResult = null
 
     // React components fire these via uiStore.callbacks (same unidirectional
     // pattern as the rest of the UI).
@@ -116,6 +120,7 @@ export class ContextDemoController {
     registerCallback('onContextNegotiationClick', () => this.enterNegotiation())
     registerCallback('onDemoStepChange',     (n)   => this.setStep(n))
     registerCallback('onDemoApproveDecision', ()   => this.approveDecision())
+    registerCallback('onApproveNegotiationDecision', (ref) => this.approveNegotiationDecision(ref))
     registerCallback('onDemoItemSelect',     (ref) => this.selectItem(ref))
     registerCallback('onDemoExit',           ()    => this.exit())
   }
@@ -260,6 +265,8 @@ export class ContextDemoController {
     // teardown is just clearing the projections and restoring the Link Network.
     if (this._negotiation) {
       this._negotiation = false
+      this._negCtx      = null
+      this._negResult   = null
       this._ctrl._linkNetworkView?.setForceHidden(false)
       const ui = useUIStore.getState().actions
       ui.demoSetMatrix(null, [], [])
@@ -551,8 +558,16 @@ export class ContextDemoController {
   _startNegotiation() {
     const ctrl   = this._ctrl
     const result = validateContext(conflictContext)
-    const matrix = projectConflictMatrix(conflictContext, result)
-    const order  = projectResolutionOrder(conflictContext, result)
+    // Keep ctx + result for re-projection; the approval interaction never
+    // re-validates — it only re-applies the approval gate (CODE_CONTRACTS).
+    this._negCtx    = conflictContext
+    this._negResult = result
+
+    // Open with nothing approved: every conflict/cluster reads `proposed`. The
+    // user walks the resolution-order DAG approving each Decision in turn.
+    const approvedRefs = new Set()
+    const matrix = projectConflictMatrix(conflictContext, result, { approvedRefs })
+    const order  = projectResolutionOrder(conflictContext, result, { approvedRefs })
 
     // The negotiation view is a data overlay — keep the scene, just clear room.
     ctrl._linkNetworkView?.setForceHidden(true)
@@ -562,11 +577,11 @@ export class ContextDemoController {
     ui.demoStart({
       steps: [{
         title: '交渉設計 — 衝突マトリックスと解消順序',
-        narration: '共有設計変数ごとに、誰のどの要求が衝突しているかをマトリックスで一望する。衝突 (R6) と交渉クラスター (R7) はルールが吐く (ADR-049 不変条件7)。クラスターを縮約すると依存は DAG になり、合同 Decision を積む順序 (会議の設計図) が導ける。actor 列をクリックするとペルソナ射影でその担当の関与だけが浮かぶ。',
+        narration: '共有設計変数ごとに、誰のどの要求が衝突しているかをマトリックスで一望する。衝突 (R6) と交渉クラスター (R7) はルールが吐く (ADR-049 不変条件7)。解消順序 (DAG) を上から辿り、単一 Decision → n-ary 合同 Decision の順に承認していく。承認するとマトリックスのセルが proposed (◐) → resolved (✓) に変わる。n-ary は上流の衝突をすべて確定してから合同確定できる (不変条件8)。actor 列クリックでペルソナ射影。',
       }],
       facts: [], intents: [], obligations: [], acceptance: [],
       openQuestions: [], blockedChecks: [], trace: [],
-      decisions: conflictContext.decisions ?? [], // read-only display (n-ary approval deferred)
+      decisions: conflictContext.decisions ?? [],
       conflicts: result.conflicts,
     })
     ui.demoSetMatrix(matrix, result.negotiationClusters, order)
@@ -574,6 +589,37 @@ export class ContextDemoController {
 
     this._active      = true
     this._negotiation = true
+  }
+
+  /**
+   * Approves a proposed Decision in the negotiation view (single or n-ary) and
+   * re-projects the matrix + resolution order with the updated approval set.
+   * Pure data overlay: no re-validation (the cached `_negResult` is reused), no
+   * scene mutation. The n-ary `d_cell_joint` simultaneously fixes every variable
+   * in the cluster it resolves (ADR-049 invariant 8).
+   *
+   * @param {string} decisionRef — the resolving Decision ref (e.g. d_standoff, d_cell_joint)
+   */
+  approveNegotiationDecision(decisionRef) {
+    if (!this._negotiation || !this._negCtx || !this._negResult) return
+    const ui = useUIStore.getState().actions
+    ui.demoApproveDecision(decisionRef)
+
+    const approvedRefs = new Set(Object.keys(useUIStore.getState().demo.approvedDecisions))
+    const matrix = projectConflictMatrix(this._negCtx, this._negResult, { approvedRefs })
+    const order  = projectResolutionOrder(this._negCtx, this._negResult, { approvedRefs })
+    ui.demoSetMatrix(matrix, this._negResult.negotiationClusters, order)
+
+    // Summarise the nominal(s) the Decision fixes (single: nominal; n-ary: nominals{}).
+    const d = (this._negCtx.decisions ?? []).find(x => x.ref === decisionRef)
+    let detail = ''
+    if (d?.nominals) {
+      detail = Object.entries(d.nominals).map(([v, n]) => `${v.replace(/^v_/, '')}=${n}`).join(', ')
+    } else if (d?.nominal != null) {
+      detail = `${String(d.resolves).replace(/^conflict_v_/, '')}=${d.nominal}`
+    }
+    const kind = d?.nominals ? '合同確定' : '確定'
+    this._ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
   }
 
   // ── Requirement → 3D traceability ──────────────────────────────────────────

@@ -624,8 +624,8 @@ is staged per story step. Exiting (✕) leaves the scene as a normal editable sc
 | Trace | from —kind→ to rows; click highlights the derived 3D entity |
 | Accept | acceptance checks; blocked rows show the `blockedBy` chain in red |
 | Conflict | live R6 output (ADR-049): per shared variable, `gap` (scalar `[hi,lo)` or per-axis map), the conflicting requirements, and `resolved`/`conflict` badge. Unresolved-count badge on the tab. Populated live during region authoring. |
-| Matrix | (ADR-049 Phase 4) actor × variable grid. Cell mark/colour by state: ✕赤=未解決衝突 / ✓黄=解決済 / ●緑=主張あり / 空=関与なし、↔=多変数結合。**列ヘッダクリック → ペルソナ射影**(`personaFilter`: 選択 actor 以外を減光)。下部に変数ごとの衝突サマリ(gap・between・resolvedBy)。バッジ=未解決衝突変数数。 |
-| Cluster | (ADR-049 Phase 4) 交渉クラスター解消順序(DSM partitioning)。番号付き縦リストで single/n-ary バッジ・変数・関与 actor・`← after`(dependsOn)・`resolved`/`未確定` バッジ(読み取り専用 — n-ary 承認は次回)。バッジ=クラスター数。 |
+| Matrix | (ADR-049 Phase 4) actor × variable grid. Cell mark/colour by state: ✕赤=未解決衝突 / ◐琥珀=承認待ち(Decision 提案済) / ✓緑=確定済 / ●緑=主張あり / 空=関与なし、↔=多変数結合。**列ヘッダクリック → ペルソナ射影**(`personaFilter`: 選択 actor 以外を減光)。下部に変数ごとの衝突サマリ(gap・between・resolvedBy + `conflict`/`proposed`/`resolved` バッジ)。バッジ=未承認衝突変数数。 |
+| Cluster | (ADR-049 Phase 4) 交渉クラスター解消順序(DSM partitioning)。番号付き縦リストで single/n-ary バッジ・変数・関与 actor・`← after`(dependsOn)。各 step の解消行は **承認ボタン**(single=「確定」、n-ary=「合同確定」)/ 承認済は `resolved · d_ref ✓`。n-ary 合同確定は上流の単一衝突がすべて承認済みのときのみ有効(無効時「← 先に X を確定」)。全承認で上部に完了バナー。バッジ=未承認 step 数。 |
 
 Row click → `onDemoItemSelect` → trace resolution → real selection highlight
 (`_switchActiveObject`), link flash + toast for constraint-only targets, or a
@@ -651,8 +651,13 @@ admissible (invariant 9). Exit via Story Bar ✕ (disposes widgets).
 #### [K] Negotiation sub-mode (ADR-049 Phase 4, Header **交渉** button)
 A data-only overlay (`enterNegotiation()`, loads `cell_conflict_context` — **scene is not
 replaced**). The Inspector opens on the **Matrix** tab; Matrix and Cluster tabs read the
-persona projections (`projectConflictMatrix` / `projectResolutionOrder`). Single-step Story Bar;
-no 3D widgets/ghost. Exit via Story Bar ✕ (clears projections, restores Link Network panel).
+persona projections (`projectConflictMatrix` / `projectResolutionOrder`). On open nothing is
+approved → every conflict/cluster reads `proposed`; the Cluster tab is an **approval flow** —
+walk the resolution-order DAG top-down, approving each Decision (n-ary 合同確定 gated behind its
+upstream single conflicts), and the Matrix cells flip ◐→✓ live. Single-step Story Bar; no 3D
+widgets/ghost. **Mobile**: because this overlay has no 3D dependency, the Inspector renders
+full-width below 768px (the only Inspector context that does); reachable via the ⋯ MoreMenu **交渉**.
+Exit via Story Bar ✕ (clears projections + approvals, restores Link Network panel).
 
 #### [A] Header
 Desktop: **Demo** / **Author** / **交渉** buttons after Import. Mobile: same items inside the ⋯ MoreMenu.
