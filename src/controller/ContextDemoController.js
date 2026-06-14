@@ -21,10 +21,11 @@ import { useUIStore } from '../store/uiStore.js'
 import { compileContext } from '../context/ContextCompiler.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
-import { projectConflictMatrix, projectResolutionOrder } from '../context/PersonaProjection.js'
+import { projectConflictMatrix, projectResolutionOrder, projectRegionGhosts } from '../context/PersonaProjection.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
+import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { RippleEffect } from '../view/RippleEffect.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import factoryContext from '../../examples/factory_context.json'
@@ -112,12 +113,23 @@ export class ContextDemoController {
     /** @type {object|null} cached validateContext() result (no re-validation on approval) */
     this._negResult = null
 
+    // ── Actor-coloured region ghost overlay (ADR-049 Phase 4, §5.3) ────────────
+    // Read-only spatial projection: each actor's admissible footprint drawn in
+    // its persona colour, the empty common intersection rendered as the conflict
+    // gap. Linked to the conflict-matrix persona filter.
+    this._regionGhostMode = false
+    /** @type {RegionGhostView[]} sole owner — disposed in exit() (PHILOSOPHY #9) */
+    this._regionGhosts    = []
+    /** @type {string|null} last persona filter pushed to the ghost views */
+    this._ghostFilter     = null
+
     // React components fire these via uiStore.callbacks (same unidirectional
     // pattern as the rest of the UI).
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onContextDemoClick',   ()    => this.enter())
     registerCallback('onContextAuthorClick', ()    => this.enterAuthoring())
     registerCallback('onContextNegotiationClick', () => this.enterNegotiation())
+    registerCallback('onContextRegionGhostClick', () => this.enterRegionGhost())
     registerCallback('onDemoStepChange',     (n)   => this.setStep(n))
     registerCallback('onDemoApproveDecision', ()   => this.approveDecision())
     registerCallback('onApproveNegotiationDecision', (ref) => this.approveNegotiationDecision(ref))
@@ -133,6 +145,9 @@ export class ContextDemoController {
 
   /** True while the negotiation-visualization sub-mode is active. */
   get isNegotiation() { return this._negotiation }
+
+  /** True while the actor-coloured region ghost overlay is active. */
+  get isRegionGhost() { return this._regionGhostMode }
 
   // ── Entry / exit ───────────────────────────────────────────────────────────
 
@@ -261,6 +276,25 @@ export class ContextDemoController {
     this._active = false
     this._reveal = null
 
+    // Region ghost mode: dispose the persona ghosts (PHILOSOPHY #9), restore the
+    // hidden scene + Link Network, clear the matrix projections.
+    if (this._regionGhostMode) {
+      for (const v of this._regionGhosts) v.dispose()
+      this._regionGhosts    = []
+      this._regionGhostMode = false
+      this._ghostFilter     = null
+      const ctrl = this._ctrl
+      for (const obj of ctrl._scene.objects.values()) {
+        if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(true)
+      }
+      ctrl._linkNetworkView?.setForceHidden(false)
+      const ui = useUIStore.getState().actions
+      ui.demoSetMatrix(null, [], [])
+      ui.demoSetPersonaFilter(null)
+      ui.demoEnd()
+      return
+    }
+
     // Negotiation mode is a data-only overlay — nothing was hidden/replaced, so
     // teardown is just clearing the projections and restoring the Link Network.
     if (this._negotiation) {
@@ -309,6 +343,8 @@ export class ContextDemoController {
     if (this._authoring) { useUIStore.getState().actions.demoSetStep(0, 'conflicts'); return }
     // Negotiation sub-mode is data-only — keep whichever tab the user picked.
     if (this._negotiation) { useUIStore.getState().actions.demoSetStep(0, useUIStore.getState().demo.inspectorTab ?? 'matrix'); return }
+    // Region ghost sub-mode — single narration step, keep the picked tab.
+    if (this._regionGhostMode) { useUIStore.getState().actions.demoSetStep(0, useUIStore.getState().demo.inspectorTab ?? 'matrix'); return }
     const step = Math.max(0, Math.min(DEMO_STEPS.length - 1, n))
     // Step ③→④ is gated on approval — "intervals never collapse silently",
     // expressed structurally. (The StoryBar also disables Next; double guard.)
@@ -622,6 +658,98 @@ export class ContextDemoController {
     this._ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
   }
 
+  // ── Actor-coloured region ghost overlay (ADR-049 Phase 4, §5.3) ─────────────
+
+  /**
+   * Loads the region scenario and overlays each actor's admissible footprint as a
+   * persona-coloured ghost. The empty common intersection is drawn as the conflict
+   * gap so "共通部分が空 = 衝突" is visible in 3-D (ADR-049 §5.3, deferred bullet).
+   * The conflict matrix is shown alongside so clicking an actor column dims the
+   * other personas' ghosts (the persona filter links the 2-D grid and 3-D overlay).
+   */
+  enterRegionGhost() {
+    if (this._active) return
+    let compiled, scene
+    try {
+      compiled = compileContext(regionContext)
+      scene    = compileLayout(compiled.layoutDsl)
+    } catch (err) {
+      this._ctrl._uiView.showToast(`Region ghost compile failed: ${err.message}`, { type: 'error' })
+      console.error('[ContextDemoController]', err)
+      return
+    }
+    this._ctrl._uiView.showConfirmDialog(
+      '現在のシーンを置き換えて 許容領域ゴースト重畳 (ADR-049 §5.3) を開きますか?',
+      (ok) => { if (ok) this._startRegionGhost(compiled, scene) },
+      { title: '許容領域ゴースト — actor 別色分け重畳', confirmLabel: '開く' },
+    )
+  }
+
+  async _startRegionGhost(compiled, scene) {
+    const ctrl = this._ctrl
+    const viewContext = { camera: ctrl._camera, renderer: ctrl._sceneView.renderer, container: document.body }
+    try {
+      await ctrl._service.importFromJson(scene, viewContext, { clear: true })
+    } catch (err) {
+      ctrl._uiView.showToast(`Region ghost scene load failed: ${err.message}`, { type: 'error' })
+      console.error('[ContextDemoController]', err)
+      return
+    }
+    ctrl._commandStack.clear()
+    ctrl._refreshUndoRedoState()
+    ctrl._selMgr.clearObjectSelection()
+    ctrl._selMgr.setObjectSelected(false)
+    ctrl._linkNetworkView?.setForceHidden(true)
+
+    // The compiled zone meshes are hidden — the persona-coloured ghosts ARE the
+    // regions (same pattern as authoring), drawn read-only over a clean ground.
+    for (const obj of ctrl._scene.objects.values()) {
+      if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
+    }
+
+    const result = validateContext(regionContext)
+    const ghosts = projectRegionGhosts(regionContext, result)
+    const actorOrder = (regionContext.actors ?? []).map(a => a.ref)
+
+    this._regionGhosts = []
+    for (const g of ghosts) {
+      // Assign a deterministic persona colour per region by actor index.
+      const regions = g.regions.map(r => ({
+        ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
+      }))
+      const view = new RegionGhostView(ctrl._sceneView.scene, document.body, { ...g, regions })
+      this._regionGhosts.push(view)
+    }
+
+    const { center, radius } = this._computeBounds(compiled.layoutDsl)
+    ctrl._sceneView.fitCameraToSphere(center, radius)
+
+    // Show the matrix alongside so the actor-column persona filter drives the
+    // 3-D ghost dimming (the 2-D grid and 3-D overlay are one persona projection).
+    const matrix = projectConflictMatrix(regionContext, result)
+    const order  = projectResolutionOrder(regionContext, result)
+
+    const ui = useUIStore.getState().actions
+    ui.setNPanelVisible(false)
+    ui.demoStart({
+      steps: [{
+        title: '許容領域ゴースト — actor 別色分け重畳',
+        narration: 'メカ・ビジョン各担当の設置許容フットプリントを actor 色で重ねて表示。共通部分が空 = 衝突が目で見える (赤い no-man\'s-land バンド)。マトリックスの担当列をクリックするとそのペルソナの領域だけが残る (ペルソナ射影)。3D は出力射影、契約はテキスト DSL のまま (invariant 9)。',
+      }],
+      facts: [], intents: [], obligations: [], acceptance: [],
+      openQuestions: [], blockedChecks: [], trace: [],
+      decisions: regionContext.decisions ?? [],
+      conflicts: result.conflicts,
+    })
+    ui.demoSetMatrix(matrix, result.negotiationClusters, order)
+    ui.demoSetPersonaFilter(null)
+    ui.demoSetStep(0, 'matrix')
+
+    this._active          = true
+    this._regionGhostMode = true
+    this._ghostFilter     = null
+  }
+
   // ── Requirement → 3D traceability ──────────────────────────────────────────
 
   /**
@@ -700,6 +828,18 @@ export class ContextDemoController {
       const cam = this._ctrl._sceneView.activeCamera
       const rdr = this._ctrl._sceneView.renderer
       for (const w of this._authorWidgets) w.widget.tick(t, cam, rdr)
+    }
+
+    if (this._regionGhostMode) {
+      const cam = this._ctrl._sceneView.activeCamera
+      const rdr = this._ctrl._sceneView.renderer
+      // Mirror the conflict-matrix persona filter into the 3-D ghost dimming.
+      const filter = useUIStore.getState().demo.personaFilter
+      if (filter !== this._ghostFilter) {
+        this._ghostFilter = filter
+        for (const v of this._regionGhosts) v.setPersonaFilter(filter)
+      }
+      for (const v of this._regionGhosts) v.tick(t, cam, rdr)
     }
 
     if (this._ghost) {

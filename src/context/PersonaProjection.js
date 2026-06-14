@@ -25,6 +25,7 @@
  *
  * @module context/PersonaProjection
  */
+import { intersectBoxes, AXIS_ORDER } from './RegionGeometry.js'
 
 /**
  * Approval gate (ADR-049 Phase 4, n-ary Decision approval). A conflict / cluster
@@ -279,4 +280,99 @@ function topoSort(stepList) {
   }
 
   return ordered.map((s, i) => ({ ...s, order: i }))
+}
+
+/**
+ * Project the actor-coloured admissible-region ghost overlay (ADR-049 §5.3,
+ * "actor ごとに色分けした許容領域ゴーストを重畳 — 共通部分が空 = 衝突が目で見える").
+ *
+ * For each *region* Variable (a 2-D/3-D AABB footprint, not a scalar interval),
+ * collect every single-variable region requirement that constrains it, one per
+ * actor, and compute the common intersection of their admissible boxes via
+ * `RegionGeometry.intersectBoxes` — the single source of the half-open per-axis
+ * conflict logic (CODE_CONTRACTS: R6 Region Conflict). When the intersection is
+ * empty on ≥1 axis the requirements collide (no common footprint); the per-axis
+ * `gap` is the no-man's-land the view renders so the conflict is visible in 3-D.
+ *
+ * Pure (no THREE/DOM), input-immutable. Colour assignment is left to the view —
+ * this returns actors in `ctx.actors` order so the caller can map a deterministic
+ * palette index. Scalar variables (no `region`) and single-actor regions yield no
+ * ghost (nothing to overlay).
+ *
+ * The `state` field mirrors `projectConflictMatrix`: an R6 region conflict reads
+ * `conflict` while unresolved, `proposed` once a Decision references it (under an
+ * `approvedRefs` gate), and `resolved` once approved (or whenever `resolvedBy` is
+ * set with the gate omitted — the backward-compat seam).
+ *
+ * @param {object} ctx — raw Context DSL object (reads variables/requirements/actors/decisions)
+ * @param {{ conflicts: object[] }} validatorResult — validateContext() output
+ * @param {{ approvedRefs?: Set<string> }} [opts]
+ * @returns {{
+ *   variable: string,
+ *   unit: string|null,
+ *   axes: string[],
+ *   domain: object|null,
+ *   regions: { requirement: string, actor: string|null, negotiability: string|null, region: object }[],
+ *   intersection: { box: object, emptyAxes: string[], gap: object, empty: boolean },
+ *   inConflict: boolean,
+ *   conflictRef: string|null,
+ *   state: 'satisfied'|'conflict'|'proposed'|'resolved',
+ *   resolvedBy: string|null,
+ *   nominal: object|number|null,
+ * }[]}
+ */
+export function projectRegionGhosts(ctx, validatorResult, { approvedRefs } = {}) {
+  const actorRefs   = (ctx?.actors ?? []).map(a => a.ref)
+  const variables   = ctx?.variables ?? []
+  const reqs        = ctx?.requirements ?? []
+  const decisions   = ctx?.decisions ?? []
+  const conflicts   = validatorResult?.conflicts ?? []
+  const conflictByVar = new Map(conflicts.map(c => [c.variable, c]))
+
+  const ghosts = []
+  for (const v of variables) {
+    if (!v.region) continue // scalar variable — no footprint to overlay
+    const axes = v.region.axes ?? AXIS_ORDER.filter(a => v.region.domain?.[a])
+
+    // One region requirement per actor (single-variable region admissibles only;
+    // coupled multi-variable reqs feed R7, not the per-axis footprint overlay).
+    const regionReqs = reqs.filter(r =>
+      (r.constrains ?? []).length === 1 &&
+      r.constrains[0] === v.ref &&
+      r.admissible?.region
+    )
+    if (regionReqs.length < 1) continue
+
+    const regions = regionReqs.map(r => ({
+      requirement:   r.ref,
+      actor:         r.by ?? null,
+      negotiability: r.negotiability ?? null,
+      region:        r.admissible.region,
+    }))
+    // Sort by actor index so the colour palette assignment is deterministic.
+    regions.sort((a, b) => actorRefs.indexOf(a.actor) - actorRefs.indexOf(b.actor))
+
+    const { box, emptyAxes, gap } = intersectBoxes(regions.map(r => r.region), axes)
+    const conflict = conflictByVar.get(v.ref)
+    const rs = resolutionState(conflict?.resolvedBy, approvedRefs)
+    // The nominal the resolving Decision fixes (single region nominal {x,y}).
+    const decision = decisions.find(d =>
+      d.ref === conflict?.resolvedBy || d.resolves === conflict?.ref
+    )
+
+    ghosts.push({
+      variable:     v.ref,
+      unit:         v.unit ?? null,
+      axes,
+      domain:       v.region.domain ?? null,
+      regions,
+      intersection: { box, emptyAxes, gap, empty: emptyAxes.length > 0 },
+      inConflict:   !!conflict,
+      conflictRef:  conflict?.ref ?? null,
+      state:        conflict ? (rs === 'unresolved' ? 'conflict' : rs) : 'satisfied',
+      resolvedBy:   conflict?.resolvedBy ?? null,
+      nominal:      decision?.nominal ?? null,
+    })
+  }
+  return ghosts
 }

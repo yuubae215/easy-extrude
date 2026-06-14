@@ -373,13 +373,17 @@ view-level visibility only.
 | `onContextAuthorClick` | Header **Author** button / MoreMenu | `enterAuthoring()` — region scenario + draggable AABB widgets (ADR-049 Phase 3) |
 | `onContextNegotiationClick` | Header **交渉** button / MoreMenu | `enterNegotiation()` — conflict scenario, persona projections (matrix + cluster order), data-only overlay (ADR-049 Phase 4) |
 | `onApproveNegotiationDecision(ref)` | Cluster tab 承認ボタン(確定 / 合同確定) | `approveNegotiationDecision(ref)` — `demoApproveDecision` → re-project matrix/order with updated `approvedRefs` (no re-validation) + nominal toast (ADR-049 Phase 4) |
-| `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, dispose authoring widgets, `demoEnd()` |
+| `onContextRegionGhostClick` | Header **ゴースト** button / MoreMenu | `enterRegionGhost()` — region scenario, actor-coloured admissible-region ghosts overlaid (empty intersection = red gap band), conflict matrix alongside; matrix actor-column `personaFilter` dims the 3D ghosts (ADR-049 §5.3) |
+| `onDemoExit` | StoryBar ✕ | `exit()` — restore all visibility, dispose authoring widgets / region ghosts, `demoEnd()` |
 
 **Persona filter (ADR-049 Phase 4)**: the Matrix tab's actor column headers call
 `uiStore.actions.demoSetPersonaFilter(actorRef)` directly (pure UI state — no controller
 callback, no 3D side effect). Re-clicking the selected actor clears the filter. Matrix cells and
 Cluster steps not involving the filtered actor are dimmed. The negotiation overlay is data-only:
-no pointer delegation, no scene replacement.
+no pointer delegation, no scene replacement. In the **region ghost overlay** (§5.3) the same
+`demoSetPersonaFilter` state additionally drives the 3D ghosts: `ContextDemoController.tick()`
+mirrors `demo.personaFilter` into each `RegionGhostView.setPersonaFilter()` (guarded by a
+last-value check), so clicking an actor column dims the other personas' 3D footprints too.
 
 **n-ary approval flow (ADR-049 Phase 4)**: the Cluster tab's approve buttons fire
 `onApproveNegotiationDecision(decisionRef)`. The controller marks the Decision approved, rebuilds

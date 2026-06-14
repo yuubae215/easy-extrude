@@ -659,8 +659,22 @@ widgets/ghost. **Mobile**: because this overlay has no 3D dependency, the Inspec
 full-width below 768px (the only Inspector context that does); reachable via the ⋯ MoreMenu **交渉**.
 Exit via Story Bar ✕ (clears projections + approvals, restores Link Network panel).
 
+#### [L] Region ghost overlay (ADR-049 §5.3, Header **ゴースト** button)
+A single-step overlay (`enterRegionGhost()`, loads `cell_region_context`, **scene replaced** like
+authoring; compiled zone meshes hidden). Each actor's設置許容フットプリント is drawn as a
+**persona-coloured** translucent ghost (fill + edge) overlaid on the ground plane; the common
+intersection is filled bright as the「合意領域」when non-empty, or — when empty — the binding axis's
+no-man's-land is drawn as a **red gap band** labelled「✕ 共通部分なし = 衝突」, so the conflict is
+visible in 3D (the output-projection twin of the editable authoring widgets). The **conflict matrix**
+is shown alongside (Inspector Matrix tab); clicking an actor column sets `personaFilter`, which the
+controller mirrors into the 3D ghosts — the other personas' footprints dim, leaving the selected
+actor's region. Read-only (no handles, no drag); the text DSL stays the contract (invariant 9).
+**Mobile**: the matrix renders full-width below 768px (same `conflictMatrix`-present rule as
+negotiation); reachable via the ⋯ MoreMenu **ゴースト**. Exit via Story Bar ✕ (disposes ghosts,
+clears projections, restores hidden scene + Link Network panel).
+
 #### [A] Header
-Desktop: **Demo** / **Author** / **交渉** buttons after Import. Mobile: same items inside the ⋯ MoreMenu.
+Desktop: **Demo** / **Author** / **交渉** / **ゴースト** buttons after Import. Mobile: same items inside the ⋯ MoreMenu.
 
 ---
 
