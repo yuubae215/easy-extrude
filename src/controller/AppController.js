@@ -64,6 +64,7 @@ import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
+import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
 import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
@@ -356,6 +357,12 @@ export class AppController {
     // ── Context DSL demo (ADR-046/047, delegated to ContextDemoController) ─
     // Registers its own uiStore callbacks; AppController only ticks it.
     this._demoCtrl = new ContextDemoController(this)
+
+    // ── Context-first project model (ADR-050) ─────────────────────────────
+    // Owns the canonical Context DSL document and drives scene regeneration.
+    // Phase 1 wires the load pipeline; UI entry points arrive in later phases.
+    this._ctxService = new ContextService(this._service)
+    this._ctxService.on('contextLoaded', ({ compiled }) => this._onContextLoaded(compiled))
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
@@ -1530,6 +1537,39 @@ export class AppController {
   }
 
   _updateNPanel() { this._uiStateMgr.updateNPanel() }
+
+  /**
+   * Scene-side housekeeping after ContextService adopts a document (ADR-050 §3.4).
+   * A context load is a project-open boundary, not a user edit — it must not
+   * appear in undo history (§3.5; same contract as the demo's _start) — and the
+   * mm-scale derived scene must be framed (PHILOSOPHY #27).
+   * @param {object} compiled — compileContext() output ({ layoutDsl, ... })
+   */
+  _onContextLoaded(compiled) {
+    this._commandStack.clear()
+    this._refreshUndoRedoState()
+    this._selMgr.clearObjectSelection()
+    this._selMgr.setObjectSelected(false)
+
+    const box = new THREE.Box3()
+    for (const e of compiled.layoutDsl.entities ?? []) {
+      if (e.position && e.dimensions) {
+        const { x, y, z } = e.position
+        const d = e.dimensions
+        box.expandByPoint(new THREE.Vector3(x - d.x / 2, y - d.y / 2, z - d.z / 2))
+        box.expandByPoint(new THREE.Vector3(x + d.x / 2, y + d.y / 2, z + d.z / 2))
+      } else if (e.position) {
+        box.expandByPoint(new THREE.Vector3(e.position.x, e.position.y, e.position.z))
+      }
+      if (Array.isArray(e.vertices)) {
+        for (const v of e.vertices) box.expandByPoint(new THREE.Vector3(v.x ?? 0, v.y ?? 0, v.z ?? 0))
+      }
+    }
+    if (box.isEmpty()) { this._sceneView.fitCameraToSphere(new THREE.Vector3(), 10); return }
+    const center = box.getCenter(new THREE.Vector3())
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1)
+    this._sceneView.fitCameraToSphere(center, radius)
+  }
 
   // ─── Mobile toolbar ────────────────────────────────────────────────────────
 

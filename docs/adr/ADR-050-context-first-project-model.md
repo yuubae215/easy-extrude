@@ -1,9 +1,11 @@
 # ADR-050 — Context-First Project Model: 要求/衝突/交渉 の PoC から本番機能化
 
-**Status**: Proposed
+**Status**: Proposed (Phase 1 implemented)
 **Date**: 2026-06-14
 **Related**: ADR-049 (Requirement/Conflict モデル), ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-045 (External Layout API), ADR-022 (Undo/Redo), ADR-013 (Domain Events), ADR-011 (SceneService)
 **Implementation**: 段階導入(本 ADR §6)。新規: `src/service/ContextService.js`, `src/controller/ContextController.js`, `src/command/{ApproveDecision,EditAdmissible,AnswerQuestion}Command.js`, `src/components/Context/{ContextLayer,FormPanel}.jsx`。既存純粋層 `src/context/*`(94 テスト)は無改変で再利用。
+
+> **進捗 (2026-06-15)** — **Phase 1 実装済**: `ContextService`(正準 doc 所有 + load パイプライン)+ `ContextService.test.js`(12 件、`importFromJson` モックで THREE-free)+ `AppController._onContextLoaded` 配線。純粋層は無改変。`demo`/PoC (`ContextDemoController`) は未改変 — §4.1 の `ContextController` 分割は Phase 2。残り: Phase 2(本番 Negotiation)/ 3(本番 Authoring + 3D pose/視覚)/ 4(動的フォーム + `.ctx.json` 永続化)/ 5(チュートリアル分離 + Accepted 昇格)。
 
 ---
 
