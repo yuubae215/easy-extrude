@@ -117,6 +117,61 @@ emit('wsDisconnected', {})
 
 ---
 
+## [A2] Context Document Events (ContextService.emit)
+
+`ContextService` (ADR-050) extends `EventEmitter` and notifies subscribers of
+canonical Context DSL document lifecycle changes. The document is the project
+artifact; the scene is a derived projection (ADR-049 invariant 9). Side effects
+live in the controller; the pure `src/context/*` layer emits nothing.
+
+### contextLoaded
+
+```
+emit('contextLoaded', { doc, validatorResult, compiled, importResult })
+```
+
+| Item | Description |
+|------|-------------|
+| Fired when | `loadContext()` adopts a new document (project-open boundary) |
+| Primary receivers | `AppController._onContextLoaded()` — clears undo history + selection, frames the camera |
+| Note | Loading a context regenerates the scene via `importFromJson({clear:true})` |
+
+### contextChanged
+
+```
+emit('contextChanged', { doc, validatorResult, regenerated })
+```
+
+| Item | Description |
+|------|-------------|
+| Fired when | Any document mutation (approval / admissible edit / form answer) via `applyContextDoc()` |
+| Payload | `regenerated: boolean` — whether the scene was re-imported |
+| Primary receivers | Inspector + 3D overlays (later phases) re-project from the new doc |
+
+### conflictsChanged
+
+```
+emit('conflictsChanged', { conflicts })
+```
+
+| Item | Description |
+|------|-------------|
+| Fired when | `validatorResult.conflicts` differs after a mutation (e.g. a region edit) |
+| Note | A pure status flip (decision approval) does NOT change `conflicts` — `resolvedBy` is set independent of approval — so this does not fire on approve |
+
+### decisionApproved
+
+```
+emit('decisionApproved', { ref })
+```
+
+| Item | Description |
+|------|-------------|
+| Fired when | `approveDecision()` flips a Decision `status: proposed → agreed` |
+| Primary receivers | Matrix transition (`proposed ◐ → resolved ✓`), toast |
+
+---
+
 ## [B] Pointer Events
 
 Pointer events are managed uniformly via the Pointer Events API.
