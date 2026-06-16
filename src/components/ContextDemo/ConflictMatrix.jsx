@@ -1,4 +1,3 @@
-import { useUIStore } from '../../store/uiStore.js'
 import { Badge, Ref } from './ContextInspector.jsx'
 
 /**
@@ -10,6 +9,16 @@ import { Badge, Ref } from './ContextInspector.jsx'
  * toggles the persona filter (dims the other actors) — this IS the persona
  * projection. Rendered as a tab inside ContextInspector (no new edge panel,
  * PHILOSOPHY #26).
+ *
+ * Prop-driven (ADR-050 §4.4): slice-independent so the same presentational
+ * component serves both the demo (`demo` slice) and the production ContextLayer
+ * (`context` slice). Callers supply the projected matrix, the current persona
+ * filter, and the filter toggle.
+ *
+ * @param {object}   props
+ * @param {object|null} props.matrix    — projectConflictMatrix() result
+ * @param {string|null} props.filter    — selected actor ref (persona filter)
+ * @param {(actor:string|null)=>void} props.onSetFilter — toggle handler
  */
 
 const CELL = {
@@ -26,16 +35,12 @@ const fmtGap = (gap) => Array.isArray(gap)
   ? `[${gap[0]}, ${gap[1]})`
   : Object.entries(gap).map(([ax, g]) => `${ax}: [${g[0]}, ${g[1]})`).join('  ')
 
-export function ConflictMatrix() {
-  const matrix    = useUIStore(s => s.demo.conflictMatrix)
-  const filter    = useUIStore(s => s.demo.personaFilter)
-  const setFilter = useUIStore(s => s.actions.demoSetPersonaFilter)
-
+export function ConflictMatrix({ matrix, filter, onSetFilter }) {
   if (!matrix) {
     return <div style={{ color: '#999', fontSize: '11px' }}>マトリックスデータがありません</div>
   }
   const { actors, variables, cells, variableSummary } = matrix
-  const toggle = (a) => setFilter(filter === a ? null : a)
+  const toggle = (a) => onSetFilter(filter === a ? null : a)
 
   return (
     <>

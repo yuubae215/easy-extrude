@@ -1,4 +1,3 @@
-import { useUIStore } from '../../store/uiStore.js'
 import { Badge, Ref } from './ContextInspector.jsx'
 
 /**
@@ -8,20 +7,25 @@ import { Badge, Ref } from './ContextInspector.jsx'
  * Read-only. Renders projectResolutionOrder() as a numbered vertical list:
  * each step is either a single-variable conflict (single Decision) or a
  * negotiation cluster (n-ary Decision), shown with the variables, involved
- * actors, upstream dependencies ("← after"), and the Decision that resolves it
- * (read-only — the n-ary approval interaction is deferred). Contracting clusters
- * makes the dependency graph a DAG; the order is its topological sort (DSM
- * partitioning). The persona filter dims steps the selected actor is not part of.
+ * actors, upstream dependencies ("← after"), and the Decision that resolves it.
+ * Contracting clusters makes the dependency graph a DAG; the order is its
+ * topological sort (DSM partitioning). The persona filter dims steps the
+ * selected actor is not part of.
+ *
+ * Prop-driven (ADR-050 §4.4): slice-independent so the same presentational
+ * component serves both the demo (`demo` slice) and the production ContextLayer
+ * (`context` slice).
+ *
+ * @param {object}   props
+ * @param {Array}    props.order    — projectResolutionOrder() result
+ * @param {Array}    props.clusters — negotiationClusters (R7 output)
+ * @param {string|null} props.filter — selected actor ref (persona filter)
+ * @param {(decisionRef:string)=>void} props.onApprove — approve handler
  */
 
 const shortActor = (ref) => ref.split('_')[0]
 
-export function NegotiationClusterView() {
-  const order     = useUIStore(s => s.demo.resolutionOrder)
-  const clusters  = useUIStore(s => s.demo.negotiationClusters)
-  const filter    = useUIStore(s => s.demo.personaFilter)
-  const callbacks = useUIStore(s => s.callbacks)
-
+export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
   if (!order || order.length === 0) {
     return <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ 衝突・交渉クラスターなし</div>
   }
@@ -31,7 +35,7 @@ export function NegotiationClusterView() {
   // settle first (ADR-049 invariant 8, DSM partitioning order).
   const approvedByRef = Object.fromEntries(order.map(s => [s.ref, s.approved]))
   const allApproved   = order.every(s => s.approved)
-  const approve = (ref) => callbacks.onApproveNegotiationDecision?.(ref)
+  const approve = (ref) => onApprove?.(ref)
 
   return (
     <>

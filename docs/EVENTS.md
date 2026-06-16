@@ -447,6 +447,27 @@ cluster's 合同確定 button is enabled only when every `dependsOn` step is app
 invariant 8). The whole overlay is 3D-independent, so the Inspector renders full-width on mobile
 in negotiation mode (only context that lifts the `<768px` hide).
 
+### Context-first Negotiation (ADR-050 Phase 2)
+
+Production counterpart of the demo negotiation, registered by `ContextController`
+(not `ContextDemoController`) and fired by the production `ContextLayer` /
+prop-driven Matrix·Cluster components. Reads the **`context`** uiStore slice
+(persistent), distinct from the tutorial `demo` slice.
+
+| Callback | Fired by | Action |
+|----------|----------|--------|
+| `onContextNegotiate` | Header **Context ▾ → 交渉設計** / ⋯ menu | `enterNegotiation()` — adopt a doc (Phase 2 bootstraps the bundled conflict example via `ContextService.loadContext`; confirm before scene regen), project matrix + resolution order into the `context` slice |
+| `onApproveContextDecision(ref)` | Cluster tab 承認ボタン (確定 / 合同確定) | `approveDecision(ref)` — `createApproveDecisionCommand` → `cmd.execute()` + `_commandStack.push()` (undoable, ADR-050 §3.5) + nominal toast |
+| `onContextExit` | ContextLayer ✕ | `exit()` — restore Link Network, `contextEnd()` |
+
+The Matrix tab's actor column headers call `uiStore.actions.contextSetPersonaFilter`
+directly (pure UI state, mirroring the demo's `demoSetPersonaFilter`). The tab
+switch uses `contextSetTab` directly. **Approval re-projection is event-driven**:
+the controller subscribes to `ContextService`'s `contextChanged` (§A2) and
+re-projects from there, so approve / undo / redo all re-paint through one path.
+Because approval is a geometry-invariant status flip, neither `execute()` nor
+`undo()` regenerates the scene.
+
 **Region authoring pointer flow (ADR-049 Phase 3)**: while `_demoCtrl.isAuthoring`,
 `AppController._onPointerDown/Move/Up` delegate to `_demoCtrl.onAuthorPointerDown/Move/Up`
 right after `updateMouse` and before the normal op-state branches. The handler raycasts the

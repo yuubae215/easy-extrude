@@ -101,10 +101,7 @@ function DesktopHeaderContents() {
       )}
       <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
       <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
-      <SmallBtn onClick={() => callbacks.onContextDemoClick?.()} title="Context DSL demo — 要求文脈から3Dシーンへ (ADR-046)" icon={SVG_DEMO}>Demo</SmallBtn>
-      <SmallBtn onClick={() => callbacks.onContextAuthorClick?.()} title="領域オーサリング — 設置許容ゾーンを3Dでドラッグして衝突をライブ解消 (ADR-049 Phase 3)" icon={SVG_DEMO}>Author</SmallBtn>
-      <SmallBtn onClick={() => callbacks.onContextNegotiationClick?.()} title="交渉設計 — 衝突マトリックス × 交渉クラスター解消順序 (ADR-049 Phase 4)" icon={SVG_DEMO}>交渉</SmallBtn>
-      <SmallBtn onClick={() => callbacks.onContextRegionGhostClick?.()} title="許容領域ゴースト — actor 別色分けした設置許容領域を3Dで重畳、共通部分が空=衝突 (ADR-049 §5.3)" icon={SVG_DEMO}>ゴースト</SmallBtn>
+      <ContextDropdown />
     </>
   )
 }
@@ -226,6 +223,96 @@ function SmallBtn({ onClick, title, children, active = false, icon }) {
   )
 }
 
+// ── Context dropdown (desktop) ────────────────────────────────────────────
+
+/**
+ * Context ▾ — single entry point for the Context-first features (ADR-050 §4.4),
+ * replacing the four flat demo buttons. `Negotiate` is the production
+ * ContextController path (undoable doc approval); `Tutorial` / `Author` /
+ * `Region Ghosts` remain the demo (`ContextDemoController`) until later phases
+ * migrate them. `.ctx.json` Import / Save arrive in Phase 4.
+ */
+function ContextDropdown() {
+  const callbacks = useUIStore(s => s.callbacks)
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState({ top: 40, right: 8 })
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (!btnRef.current?.contains(e.target)) setOpen(false) }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [open])
+
+  function handleToggle(e) {
+    e.stopPropagation()
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom, right: window.innerWidth - rect.right })
+    }
+    setOpen(o => !o)
+  }
+
+  function item(label, cb, sub = false) {
+    return (
+      <button
+        key={label}
+        onClick={() => { setOpen(false); cb?.() }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+          padding: '9px 14px', background: 'transparent', border: 'none',
+          borderBottom: '1px solid #3a3a3a', color: sub ? '#aaa' : '#e0e0e0',
+          cursor: 'pointer', fontSize: '13px', fontFamily: 'system-ui, -apple-system, sans-serif',
+          textAlign: 'left', pointerEvents: 'auto',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+      >
+        <span dangerouslySetInnerHTML={{ __html: SVG_DEMO }} style={{ display: 'flex' }} />
+        <span>{label}</span>
+      </button>
+    )
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={handleToggle}
+        title="Context-first — 要求/衝突/交渉 (ADR-050)"
+        style={{
+          padding: '4px 8px', background: 'transparent',
+          border: `1px solid ${open ? '#3a7bd5' : '#3a3a3a'}`, borderRadius: '5px',
+          color: open ? '#5a9bf5' : '#aaa', cursor: 'pointer', fontSize: '11px',
+          fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: '1',
+          flexShrink: '0', display: 'flex', alignItems: 'center', gap: '4px',
+          pointerEvents: 'auto',
+        }}
+      >
+        <span dangerouslySetInnerHTML={{ __html: SVG_DEMO }} style={{ display: 'flex' }} />
+        <span>Context ▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'fixed', top: pos.top, right: pos.right,
+          background: '#2b2b2b', border: '1px solid #555', borderRadius: '6px',
+          overflow: 'hidden', zIndex: '200', minWidth: '190px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
+        }}>
+          {item('交渉設計 (Negotiate)', callbacks.onContextNegotiate)}
+          <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
+            デモ (チュートリアル)
+          </div>
+          {item('Tutorial', callbacks.onContextDemoClick, true)}
+          {item('Author Regions', callbacks.onContextAuthorClick, true)}
+          {item('Region Ghosts', callbacks.onContextRegionGhostClick, true)}
+        </div>
+      )}
+    </>
+  )
+}
+
 // ── More (⋯) dropdown (mobile) ────────────────────────────────────────────
 
 function MoreMenu() {
@@ -320,9 +407,9 @@ function MoreMenu() {
         }}>
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
-          {item('Demo',   SVG_DEMO,   callbacks.onContextDemoClick)}
-          {item('Author', SVG_DEMO,   callbacks.onContextAuthorClick)}
-          {item('交渉',   SVG_DEMO,   callbacks.onContextNegotiationClick)}
+          {item('交渉設計 (Negotiate)', SVG_DEMO, callbacks.onContextNegotiate)}
+          {item('Tutorial', SVG_DEMO, callbacks.onContextDemoClick)}
+          {item('Author',   SVG_DEMO, callbacks.onContextAuthorClick)}
           {item('ゴースト', SVG_DEMO,  callbacks.onContextRegionGhostClick)}
         </div>
       )}

@@ -673,8 +673,22 @@ actor's region. Read-only (no handles, no drag); the text DSL stays the contract
 negotiation); reachable via the ⋯ MoreMenu **ゴースト**. Exit via Story Bar ✕ (disposes ghosts,
 clears projections, restores hidden scene + Link Network panel).
 
+#### [M] Context-first Negotiation overlay (ADR-050 Phase 2, production)
+The production counterpart of [K], rendered by `ContextLayer` from the persistent **`context`**
+slice (not the tutorial `demo` slice). Same right-fixed panel (280px desktop; full-width below
+768px — 3D-independent, PHILOSOPHY #26) with **Matrix** / **Cluster** tabs reusing the same
+prop-driven components. Opened via Header **Context ▾ → 交渉設計** (`enterNegotiation()`): Phase 2
+bootstraps the bundled conflict context through `ContextService.loadContext` (confirm first — the
+scene is **regenerated** from the requirements, per invariant 9). The Cluster tab's approve buttons
+fire `onApproveContextDecision(ref)` → `createApproveDecisionCommand` (**undoable** on the single
+CommandStack — Ctrl+Z reverts the approval and the Matrix cell flips ✓→◐). Panel header shows the
+doc name + a live "未解消の衝突 N 件" line; ✕ closes the overlay (`onContextExit`). Distinct from
+[K]: [K] is a tutorial story (transient approvals), [M] mutates the canonical document.
+
 #### [A] Header
-Desktop: **Demo** / **Author** / **交渉** / **ゴースト** buttons after Import. Mobile: same items inside the ⋯ MoreMenu.
+Desktop: **Export** / **Import** then a single **Context ▾** dropdown (production **交渉設計
+(Negotiate)** + demo **Tutorial** / **Author Regions** / **Region Ghosts**). Mobile: the same items
+inside the ⋯ MoreMenu (Export / Import / 交渉設計 / Tutorial / Author / ゴースト).
 
 ---
 

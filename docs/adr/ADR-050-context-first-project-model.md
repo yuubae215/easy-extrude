@@ -1,11 +1,13 @@
 # ADR-050 — Context-First Project Model: 要求/衝突/交渉 の PoC から本番機能化
 
-**Status**: Proposed (Phase 1 implemented)
+**Status**: Proposed (Phases 1–2 implemented)
 **Date**: 2026-06-14
 **Related**: ADR-049 (Requirement/Conflict モデル), ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-045 (External Layout API), ADR-022 (Undo/Redo), ADR-013 (Domain Events), ADR-011 (SceneService)
 **Implementation**: 段階導入(本 ADR §6)。新規: `src/service/ContextService.js`, `src/controller/ContextController.js`, `src/command/{ApproveDecision,EditAdmissible,AnswerQuestion}Command.js`, `src/components/Context/{ContextLayer,FormPanel}.jsx`。既存純粋層 `src/context/*`(94 テスト)は無改変で再利用。
 
 > **進捗 (2026-06-15)** — **Phase 1 実装済**: `ContextService`(正準 doc 所有 + load パイプライン)+ `ContextService.test.js`(12 件、`importFromJson` モックで THREE-free)+ `AppController._onContextLoaded` 配線。純粋層は無改変。`demo`/PoC (`ContextDemoController`) は未改変 — §4.1 の `ContextController` 分割は Phase 2。残り: Phase 2(本番 Negotiation)/ 3(本番 Authoring + 3D pose/視覚)/ 4(動的フォーム + `.ctx.json` 永続化)/ 5(チュートリアル分離 + Accepted 昇格)。
+
+> **進捗 (2026-06-16)** — **Phase 2 実装済(本番 Negotiation・データのみ・最低リスク)**: 新設 `src/controller/ContextController.js` — `ContextService` を消費する永続オーバーレイコーディネータ(`MapModeController` 同様、`setMode` FSM 状態ではない — §4.2)。`enterNegotiation()` は loaded doc で動作(Phase 2 は同梱 `cell_conflict_context.json` を `loadContext` でブートストラップ、実 `.ctx.json` import は Phase 4)し、衝突マトリックス + 解消順序を永続 `context` uiStore スライス(§4.3、`demo` と並列・新ペイロードで自動リセットしない)へ射影。**承認は `createApproveDecisionCommand`(新設 `src/command/ApproveDecisionCommand.js`)経由で単一 CommandStack 上でアンドゥ可能**(§3.5): `execute`=`ctxService.approveDecision`(doc 変異 `proposed→agreed`)、`undo`=`unapproveDecision`。承認は doc 変異(§3.2)でジオメトリ不変のため再生成なし。コントローラは `ContextService` の `contextChanged` を購読し**そこから再射影**するため、承認/undo/redo がすべて同一経路で再射影される(PHILOSOPHY #5)。`ConflictMatrix` / `NegotiationClusterView` を**prop 駆動化**(§4.4、`{matrix,filter,onSetFilter}` / `{order,clusters,filter,onApprove}` — スライス非依存)し、demo (`demo`) と新 `ContextLayer.jsx`(`context`)の双方が同じ presentational を再利用。Header の 4 デモボタンを単一「Context ▾」ドロップダウン(`交渉設計` 本番 + `Tutorial`/`Author`/`Region Ghosts` demo)へ集約。テスト `ApproveDecisionCommand.test.js`(4 件、`importFromJson` モックで THREE-free)、計 **110/110**、`tsc --noEmit`・`vite build` クリーン。demo (`ContextDemoController`) は無改変。残り: Phase 3(本番 Authoring + 3D pose/視覚)/ 4(動的フォーム + `.ctx.json` 永続化)/ 5(チュートリアル分離 + Accepted 昇格)。
 
 ---
 
