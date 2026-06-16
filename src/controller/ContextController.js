@@ -44,11 +44,33 @@ import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
 import { createBlankDoc, addActor, addFact, addVariable, addRequirement } from '../context/DocBuilder.js'
+import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
 import regionContext from '../../examples/cell_region_context.json'
+import phase2Context from '../../examples/cell_phase2_context.json'
+
+/**
+ * Bundled example docs the template gallery (ADR-051 Phase 2) can seed from,
+ * keyed by the filename referenced in `TemplateCatalog`. Resolving a
+ * `kind:'example'` template to a doc is a side effect (static JSON import) and so
+ * lives here, not in the pure catalog.
+ */
+const TEMPLATE_DOCS = {
+  'cell_conflict_context.json': conflictContext,
+  'cell_region_context.json':   regionContext,
+  'cell_phase2_context.json':   phase2Context,
+}
+
+// Fail loudly at module load if the catalog references a file with no bundled doc
+// (PHILOSOPHY #11 — never let a gallery card silently load nothing).
+for (const file of exampleFiles()) {
+  if (!TEMPLATE_DOCS[file]) {
+    console.error(`[ContextController] TemplateCatalog references "${file}" but no bundled doc is mapped in TEMPLATE_DOCS`)
+  }
+}
 
 export class ContextController {
   /**
@@ -81,6 +103,9 @@ export class ContextController {
 
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onNewContext',             ()           => this.newContext())
+    registerCallback('onOpenTemplateGallery',    ()           => this.openTemplateGallery())
+    registerCallback('onCloseTemplateGallery',   ()           => this.closeTemplateGallery())
+    registerCallback('onSelectTemplate',         (id)         => this.selectTemplate(id))
     registerCallback('onContextNegotiate',       ()           => this.enterNegotiation())
     registerCallback('onContextAuthor',          ()           => this.enterAuthoring())
     registerCallback('onContextRegionGhost',     ()           => this.enterRegionGhost())
@@ -125,6 +150,55 @@ export class ContextController {
       },
       { title: '新規 Context', confirmLabel: '作成' },
     )
+  }
+
+  // ── Template gallery (Phase 2 — Entry B, ADR-051 §3) ────────────────────────
+
+  /** Open the starter-template picker modal. */
+  openTemplateGallery() {
+    useUIStore.getState().actions.setTemplateGalleryOpen(true)
+  }
+
+  /** Close the starter-template picker modal. */
+  closeTemplateGallery() {
+    useUIStore.getState().actions.setTemplateGalleryOpen(false)
+  }
+
+  /**
+   * Load a starter template by id and open the negotiate overlay. The gallery's
+   * footer already states the scene-replacement consequence (ADR-051 §7), so no
+   * second confirm dialog is shown. A blank template uses `adoptDoc` (no layout);
+   * an example template uses `loadContext` (regenerates the derived scene). Any
+   * active overlay is exited first so its widgets / ghosts are disposed cleanly
+   * (PHILOSOPHY #9) before the new doc replaces the scene.
+   *
+   * @param {string} id — TemplateCatalog entry id
+   */
+  selectTemplate(id) {
+    const meta = getTemplateMeta(id)
+    if (!meta) {
+      this._ctrl._uiView.showToast(`未知のテンプレート: ${id}`, { type: 'warn' })
+      return
+    }
+    this.closeTemplateGallery()
+    if (this.isActive) this.exit()
+
+    if (meta.source.kind === 'blank') {
+      Promise.resolve(this._ctxService.adoptDoc(createBlankDoc(meta.name), this._viewContext()))
+        .then(() => this._startNegotiation())
+        .catch(err => {
+          this._ctrl._uiView.showToast(`テンプレート読み込み失敗: ${err.message}`, { type: 'error' })
+          console.error('[ContextController]', err)
+        })
+      return
+    }
+
+    const doc = TEMPLATE_DOCS[meta.source.file]
+    if (!doc) {
+      this._ctrl._uiView.showToast(`テンプレート定義が見つかりません: ${meta.source.file}`, { type: 'error' })
+      return
+    }
+    this._loadThen(doc, () => this._startNegotiation())
   }
 
   /**

@@ -461,6 +461,9 @@ prop-driven Matrix·Cluster components. Reads the **`context`** uiStore slice
 | `onContextAuthor` | Header **Context ▾ → 領域オーサリング** / ⋯ menu | **(Phase 3)** `enterAuthoring()` — adopt a region doc (bootstraps the bundled region example if the loaded doc has no single-variable region requirement; confirm before scene regen), hide derived meshes, spawn one `RegionAuthoringWidget` per region requirement (`mode:'author'`) |
 | `onContextRegionGhost` | Header **Context ▾ → 許容領域ゴースト** / ⋯ menu | **(Phase 3)** `enterRegionGhost()` — adopt a region doc (same bootstrap rule), overlay actor-coloured `RegionGhostView`s + the conflict matrix whose persona filter dims the ghosts (`mode:'ghost'`) |
 | `onContextExit` | ContextLayer ✕ | `exit()` — dispose authoring widgets / region ghosts, restore derived meshes + Link Network, `contextEnd()` |
+| `onOpenTemplateGallery` | Header **Context ▾ → テンプレートから開始…** / ⋯ menu | **(Phase 2)** `openTemplateGallery()` — `setTemplateGalleryOpen(true)`; the `TemplateGallery` modal renders the static `TEMPLATE_CATALOG` |
+| `onSelectTemplate(id)` | Template Gallery card click | **(Phase 2)** `selectTemplate(id)` — exit any active overlay, resolve the doc (`createBlankDoc` for `kind:'blank'`, `TEMPLATE_DOCS[file]` for `kind:'example'`), load via `adoptDoc` / `loadContext`, open the negotiate overlay. No second confirm (footer states the consequence — §7) |
+| `onCloseTemplateGallery` | Template Gallery ✕ / backdrop | **(Phase 2)** `closeTemplateGallery()` — `setTemplateGalleryOpen(false)` |
 
 **Phase 3 pointer delegation** (CODE_CONTRACTS «Context Authoring Pointer Delegation»): when
 `_ctxCtrl.isAuthoring`, `_onPointerDown/Move/Up` delegate to `_ctxCtrl.onAuthor*(e)` (after

@@ -154,6 +154,12 @@ export const useUIStore = create((set, get) => ({
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
   },
 
+  // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
+  // Open/closed flag for the starter-template picker modal (TemplateGallery.jsx).
+  // The catalog itself is static (TemplateCatalog.js); selecting an entry fires
+  // `onSelectTemplate(id)` which ContextController loads through ContextService.
+  templateGalleryOpen: false,
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -335,6 +341,8 @@ export const useUIStore = create((set, get) => ({
     contextSetVars: (variables) => set(state => ({
       context: { ...state.context, variables },
     })),
+    setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
+
     contextEnd: () => set(state => ({
       context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [] },
     })),

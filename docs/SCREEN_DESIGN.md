@@ -696,11 +696,22 @@ distinguished by `context.mode`:
   tab only; each actor's admissible footprint is overlaid in 3D in its persona colour
   (`RegionGhostView`), and clicking an actor column dims the other personas' ghosts.
 
+#### [N] Template Gallery (ADR-051 Phase 2, Entry B)
+A transient full-screen modal (`TemplateGallery.jsx`, z-index 300 — above all edge panels,
+PHILOSOPHY #26) opened via Header **Context ▾ → テンプレートから開始…** (`openTemplateGallery()`).
+Lists the static `TEMPLATE_CATALOG` as category-grouped cards (スターター: 空のプロジェクト;
+ロボットセル: シンプル / 多者衝突 / 領域). Clicking a card fires `onSelectTemplate(id)` →
+`selectTemplate(id)`, which loads the chosen doc through the single authoritative path
+(`adoptDoc` for blank, `loadContext` for examples) and opens the negotiate overlay [M]. The footer
+states "現在のシーンは置き換えられ…再生成されます" so the scene-replacement consequence is explicit
+(ADR-051 §7) and **no second confirm dialog** is shown. ✕ / backdrop click closes
+(`onCloseTemplateGallery`).
+
 #### [A] Header
-Desktop: **Export** / **Import** then a single **Context ▾** dropdown (production **交渉設計
+Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Context** /
+**テンプレートから開始…** / **Import Context…** / **Save Context** + production **交渉設計
 (Negotiate)** / **領域オーサリング (Author)** / **許容領域ゴースト (Ghosts)** + demo **Tutorial**).
-Mobile: the same items inside the ⋯ MoreMenu (Export / Import / 交渉設計 / 領域オーサリング /
-許容領域ゴースト / Tutorial).
+Mobile: the same items inside the ⋯ MoreMenu.
 
 ---
 
