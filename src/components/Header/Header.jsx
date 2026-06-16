@@ -301,12 +301,12 @@ function ContextDropdown() {
           boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
         }}>
           {item('交渉設計 (Negotiate)', callbacks.onContextNegotiate)}
+          {item('領域オーサリング (Author)', callbacks.onContextAuthor)}
+          {item('許容領域ゴースト (Ghosts)', callbacks.onContextRegionGhost)}
           <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
             デモ (チュートリアル)
           </div>
           {item('Tutorial', callbacks.onContextDemoClick, true)}
-          {item('Author Regions', callbacks.onContextAuthorClick, true)}
-          {item('Region Ghosts', callbacks.onContextRegionGhostClick, true)}
         </div>
       )}
     </>
@@ -408,9 +408,9 @@ function MoreMenu() {
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
           {item('交渉設計 (Negotiate)', SVG_DEMO, callbacks.onContextNegotiate)}
+          {item('領域オーサリング', SVG_DEMO, callbacks.onContextAuthor)}
+          {item('許容領域ゴースト', SVG_DEMO, callbacks.onContextRegionGhost)}
           {item('Tutorial', SVG_DEMO, callbacks.onContextDemoClick)}
-          {item('Author',   SVG_DEMO, callbacks.onContextAuthorClick)}
-          {item('ゴースト', SVG_DEMO,  callbacks.onContextRegionGhostClick)}
         </div>
       )}
     </>

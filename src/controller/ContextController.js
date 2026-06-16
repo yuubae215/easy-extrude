@@ -9,24 +9,42 @@
  * orbit / select / grab stay live underneath, and the overlay carries requirement
  * state that would tangle uselessly with geometry-edit sub-states.
  *
- * Phase 2 scope (data-only Negotiation — lowest risk, ADR-050 §6):
- *   - `enterNegotiation()` adopts a context document (Phase 2 bootstraps the
- *     bundled conflict example through `ContextService.loadContext`; real
- *     `.ctx.json` import arrives in Phase 4) and projects the conflict matrix +
- *     resolution order into the persistent `context` uiStore slice.
- *   - `approveDecision(ref)` approves through `createApproveDecisionCommand` so
- *     the doc mutation (`status: proposed → agreed`) is **undoable** on the single
- *     CommandStack (ADR-050 §3.5). It does NOT re-project directly — it listens to
- *     ContextService's `contextChanged` event and re-projects from there, so
- *     undo / redo (which mutate the doc through the service) re-project for free
- *     (PHILOSOPHY #5 — communicate through events, not direct calls).
+ * Scope:
+ *   - Phase 2 — Negotiation (data only): `enterNegotiation()` projects the conflict
+ *     matrix + resolution order; `approveDecision(ref)` is undoable through
+ *     `createApproveDecisionCommand` (doc mutation `status: proposed → agreed`).
+ *   - Phase 3 — Authoring + region ghosts (3D, ADR-050 §6/§4.5):
+ *       · `enterAuthoring()` drives `RegionAuthoringWidget`s over the loaded doc's
+ *         single-variable region requirements. A live drag recolours only
+ *         (optimistic — PHILOSOPHY #7) against a cloned edit context; on pointer-up
+ *         the finished edit is committed once through `createEditAdmissibleCommand`
+ *         so the whole drag is a single **undoable** doc mutation that regenerates
+ *         the derived scene (ADR-050 §3.5, §7 — full regen deferred to drag end).
+ *       · `enterRegionGhost()` overlays each actor's admissible footprint in its
+ *         persona colour (`RegionGhostView`, the read-only output projection) and
+ *         mirrors the conflict-matrix persona filter into 3-D ghost dimming.
+ *
+ * Re-projection is event-driven: the controller subscribes to ContextService's
+ * `contextChanged` (emitted by approval / region edit / undo / redo) and repaints
+ * from there — approve / undo / redo all flow through one path (PHILOSOPHY #5).
  *
  * All side effects live here (PHILOSOPHY #3); projection / validation stay in the
- * pure `src/context/*` layer, reached only through ContextService.
+ * pure `src/context/*` layer, reached through ContextService (or directly for the
+ * live-drag recolour, which must not mutate the canonical doc). The widgets and
+ * ghost views are solely owned here (PHILOSOPHY #4/#9): created on enter, disposed
+ * on exit.
  */
+import * as THREE from 'three'
 import { useUIStore } from '../store/uiStore.js'
 import { createApproveDecisionCommand } from '../command/ApproveDecisionCommand.js'
+import { createEditAdmissibleCommand } from '../command/EditAdmissibleCommand.js'
+import { validateContext } from '../context/ContextValidator.js'
+import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
+import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
+import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
+import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
+import regionContext from '../../examples/cell_region_context.json'
 
 export class ContextController {
   /**
@@ -36,53 +54,60 @@ export class ContextController {
     this._ctrl       = ctrl
     this._ctxService = ctrl._ctxService
 
-    /** True while the negotiation overlay is shown. */
-    this._negotiation = false
+    /** Active overlay sub-mode: null | 'negotiate' | 'author' | 'ghost'. */
+    this._mode = null
 
-    // Re-project whenever the canonical document changes — covers approval,
-    // undo, and redo uniformly (they all mutate the doc through the service).
+    // ── Region authoring (Phase 3, §4.5) ───────────────────────────────────────
+    /** @type {{reqRef:string, varRef:string, widget:RegionAuthoringWidget}[]} */
+    this._authorWidgets = []
+    /** @type {{reqRef:string, varRef:string, widget:RegionAuthoringWidget, before:object}|null} */
+    this._authorDrag = null
+    /** @type {object|null} cloned context the live drag recolours (never the canonical doc) */
+    this._editCtx = null
+
+    // ── Region ghost overlay (Phase 3, §5.3) ───────────────────────────────────
+    /** @type {RegionGhostView[]} sole owner — disposed in exit() (PHILOSOPHY #9) */
+    this._regionGhosts = []
+    /** @type {string|null} last persona filter pushed to the ghost views */
+    this._ghostFilter = null
+
+    // Re-project whenever the canonical document changes — covers approval, region
+    // edit, undo, and redo uniformly (they all mutate the doc through the service).
     this._ctxService.on('contextChanged', () => this._reproject())
 
     const { registerCallback } = useUIStore.getState().actions
-    registerCallback('onContextNegotiate',        ()    => this.enterNegotiation())
-    registerCallback('onApproveContextDecision',  (ref) => this.approveDecision(ref))
-    registerCallback('onContextExit',             ()    => this.exit())
+    registerCallback('onContextNegotiate',       ()    => this.enterNegotiation())
+    registerCallback('onContextAuthor',          ()    => this.enterAuthoring())
+    registerCallback('onContextRegionGhost',     ()    => this.enterRegionGhost())
+    registerCallback('onApproveContextDecision', (ref) => this.approveDecision(ref))
+    registerCallback('onContextExit',            ()    => this.exit())
   }
 
+  /** True while any context overlay is active. */
+  get isActive()      { return this._mode !== null }
   /** True while the negotiation overlay is active. */
-  get isNegotiation() { return this._negotiation }
+  get isNegotiation() { return this._mode === 'negotiate' }
+  /** True while the region-authoring overlay is active. */
+  get isAuthoring()   { return this._mode === 'author' }
+  /** True while the region-ghost overlay is active. */
+  get isRegionGhost() { return this._mode === 'ghost' }
 
-  // ── Entry / exit ────────────────────────────────────────────────────────────
+  // ── Negotiation (Phase 2, data only) ─────────────────────────────────────────
 
   /**
    * Open the negotiation view over the loaded context document. If no document
-   * is loaded yet, bootstrap the bundled conflict example (Phase 2 — real file
+   * is loaded yet, bootstrap the bundled conflict example (real `.ctx.json`
    * import is Phase 4); loading a context regenerates the derived scene
    * (invariant 9), so confirm before replacing the current scene.
    */
   enterNegotiation() {
-    if (this._negotiation) return
+    if (this.isActive) return
     if (this._ctxService.loaded) { this._startNegotiation(); return }
     this._ctrl._uiView.showConfirmDialog(
       'コンテキストを読み込んで交渉設計ビューを開きますか? (現在のシーンは要求から再生成されます)',
-      (ok) => { if (ok) this._loadThenNegotiate() },
+      (ok) => { if (ok) this._loadThen(conflictContext, () => this._startNegotiation()) },
       { title: '交渉設計 — 衝突マトリックス × 解消順序 (ADR-050)', confirmLabel: '開く' },
     )
-  }
-
-  async _loadThenNegotiate() {
-    const ctrl = this._ctrl
-    const viewContext = { camera: ctrl._camera, renderer: ctrl._sceneView.renderer, container: document.body }
-    try {
-      // loadContext emits contextLoaded → AppController._onContextLoaded does the
-      // scene-side housekeeping (clear undo/selection, frame the camera).
-      await this._ctxService.loadContext(conflictContext, viewContext)
-    } catch (err) {
-      ctrl._uiView.showToast(`Context load failed: ${err.message}`, { type: 'error' })
-      console.error('[ContextController]', err)
-      return
-    }
-    this._startNegotiation()
   }
 
   _startNegotiation() {
@@ -90,12 +115,12 @@ export class ContextController {
     const doc    = this._ctxService.getDoc()
     const result = this._ctxService.getValidatorResult()
 
-    // The negotiation panel is a transient data overlay — clear room for it.
     ctrl._linkNetworkView?.setForceHidden(true)
 
     const ui = useUIStore.getState().actions
     ui.setNPanelVisible(false)
     ui.contextStart({
+      mode:                'negotiate',
       loaded:              true,
       docMeta:             { name: doc?.meta?.name ?? 'Context', version: doc?.version },
       decisions:           doc?.decisions ?? [],
@@ -105,19 +130,213 @@ export class ContextController {
       resolutionOrder:     this._ctxService.projectOrder(),
     })
     ui.contextSetTab('matrix')
-
-    this._negotiation = true
+    this._mode = 'negotiate'
   }
 
-  /** Close the negotiation overlay (the regenerated scene stays behind). */
-  exit() {
-    if (!this._negotiation) return
-    this._negotiation = false
-    this._ctrl._linkNetworkView?.setForceHidden(false)
-    useUIStore.getState().actions.contextEnd()
+  // ── Region authoring (Phase 3, §4.5) ─────────────────────────────────────────
+
+  /**
+   * Start the live region-authoring overlay. The loaded doc must carry
+   * single-variable region requirements; if it does not (nothing loaded, or a
+   * non-region scenario like the conflict example is loaded), bootstrap the
+   * bundled region example — loading regenerates the scene (invariant 9), so
+   * confirm first.
+   */
+  enterAuthoring() {
+    if (this.isActive) return
+    if (this._ctxService.loaded && this._regionReqs(this._ctxService.getDoc()).length > 0) {
+      this._startAuthoring(); return
+    }
+    this._ctrl._uiView.showConfirmDialog(
+      '現在のシーンを置き換えて 領域オーサリング (ADR-050 Phase 3) を開始しますか?',
+      (ok) => { if (ok) this._loadThen(regionContext, () => this._startAuthoring()) },
+      { title: '領域オーサリング — 衝突のライブ解消', confirmLabel: '開始' },
+    )
   }
 
-  // ── Decision approval (undoable doc mutation, ADR-050 §3.5) ──────────────────
+  _startAuthoring() {
+    const ctrl = this._ctrl
+    const doc  = this._ctxService.getDoc()
+
+    ctrl._linkNetworkView?.setForceHidden(true)
+    // The compiled zone meshes are hidden — the draggable widgets ARE the regions.
+    this._hideDerivedMeshes()
+
+    // Mutable clone the live drag recolours; the canonical doc stays authoritative.
+    this._editCtx = JSON.parse(JSON.stringify(doc))
+
+    this._authorWidgets = []
+    for (const req of this._regionReqs(doc)) {
+      const widget = new RegionAuthoringWidget(ctrl._sceneView.scene, document.body, {
+        region: req.admissible.region,
+        handleRadius: 30,
+        labelText: req.by ?? req.ref,
+      })
+      this._authorWidgets.push({ reqRef: req.ref, varRef: req.constrains[0], widget })
+    }
+
+    this._fitToCompiled()
+
+    const ui = useUIStore.getState().actions
+    ui.setNPanelVisible(false)
+    ui.contextStart({
+      mode:     'author',
+      loaded:   true,
+      docMeta:  { name: doc?.meta?.name ?? 'Context', version: doc?.version },
+      conflicts: [],
+    })
+    ui.contextSetTab('conflicts')
+    this._mode = 'author'
+    this._authorDrag = null
+    this._recolourAuthoring(validateContext(this._editCtx))
+  }
+
+  /** Recolour widgets + publish conflicts from a validator result. */
+  _recolourAuthoring(result) {
+    const conflictVars = new Set(result.conflicts.map(c => c.variable))
+    for (const w of this._authorWidgets) w.widget.setConflict(conflictVars.has(w.varRef))
+    useUIStore.getState().actions.contextSetConflicts(result.conflicts)
+  }
+
+  // Pointer delegation from AppController (returns true when the event is consumed).
+
+  onAuthorPointerDown(e) {
+    if (!this.isAuthoring) return false
+    if (e.button !== 0 && e.pointerType !== 'touch') return false
+    const ctrl = this._ctrl
+    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
+    const meshes = this._authorWidgets.flatMap(w => w.widget.handleMeshes)
+    const hits = ctrl._raycaster.intersectObjects(meshes, false)
+    if (hits.length === 0) return false // let OrbitControls handle non-handle drags
+
+    const mesh  = hits[0].object
+    const entry = this._authorWidgets.find(w => w.widget.handleMeshes.includes(mesh))
+    if (!entry) return false
+    const pt = new THREE.Vector3()
+    if (!ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)) return false
+
+    // Snapshot the admissible at pointer-down — the undo target of the whole drag.
+    entry.before = { region: entry.widget.getRegion() }
+    entry.widget.startDrag(mesh.userData.handleId, pt)
+    this._authorDrag = entry
+    ctrl._controls.enabled = false
+    ctrl._activeDragPointerId = e.pointerId
+    return true
+  }
+
+  onAuthorPointerMove(e) {
+    if (!this.isAuthoring || !this._authorDrag) return false
+    const ctrl = this._ctrl
+    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
+    const pt = new THREE.Vector3()
+    if (!ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)) return true
+    // Live recolour ONLY (optimistic) — re-validate the cloned edit context, never
+    // the canonical doc. Full regeneration is deferred to pointer-up (§7).
+    const region = this._authorDrag.widget.dragTo(pt)
+    this._editCtx = applyAdmissibleEdit(this._editCtx, this._authorDrag.reqRef, { region })
+    this._recolourAuthoring(validateContext(this._editCtx))
+    return true
+  }
+
+  onAuthorPointerUp() {
+    if (!this.isAuthoring || !this._authorDrag) return false
+    const drag = this._authorDrag
+    drag.widget.endDrag()
+    this._authorDrag = null
+    this._ctrl._controls.enabled = true
+    this._ctrl._activeDragPointerId = null
+
+    const after = { region: drag.widget.getRegion() }
+    // Skip a no-op drag (a tap on a handle with no movement).
+    if (JSON.stringify(after.region) !== JSON.stringify(drag.before.region)) {
+      this._commitRegionEdit(drag.reqRef, drag.before, after)
+    }
+    return true
+  }
+
+  /**
+   * Commit a finished region edit through the CommandStack so it is undoable. The
+   * command mutates the canonical doc + regenerates (ADR-050 §3.5); the service's
+   * `contextChanged` event then drives `_reproject()`. If the edit would orphan a
+   * Decision (resolves a conflict R6 no longer emits — ADR-049 invariant 7),
+   * compileContext throws; we surface it and roll the widget back (PHILOSOPHY #11).
+   */
+  _commitRegionEdit(reqRef, before, after) {
+    const ctrl = this._ctrl
+    const cmd = createEditAdmissibleCommand(this._ctxService, reqRef, before, after, this._viewContext())
+    Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)   // post-hoc record (CODE_CONTRACTS push vs execute)
+        ctrl._refreshUndoRedoState()
+      })
+      .catch((err) => {
+        ctrl._uiView.showToast(`領域編集を適用できません: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+        const entry = this._authorWidgets.find(w => w.reqRef === reqRef)
+        entry?.widget.setRegion(before.region)
+        this._editCtx = applyAdmissibleEdit(this._editCtx, reqRef, before)
+        this._recolourAuthoring(validateContext(this._editCtx))
+      })
+  }
+
+  // ── Region ghost overlay (Phase 3, §5.3) ─────────────────────────────────────
+
+  /**
+   * Overlay each actor's admissible footprint as a persona-coloured ghost. As with
+   * authoring the loaded doc must carry region requirements; bootstrap the region
+   * example otherwise (regenerates the scene — confirm first).
+   */
+  enterRegionGhost() {
+    if (this.isActive) return
+    if (this._ctxService.loaded && this._regionReqs(this._ctxService.getDoc()).length > 0) {
+      this._startRegionGhost(); return
+    }
+    this._ctrl._uiView.showConfirmDialog(
+      '現在のシーンを置き換えて 許容領域ゴースト重畳 (ADR-050 Phase 3) を開きますか?',
+      (ok) => { if (ok) this._loadThen(regionContext, () => this._startRegionGhost()) },
+      { title: '許容領域ゴースト — actor 別色分け重畳', confirmLabel: '開く' },
+    )
+  }
+
+  _startRegionGhost() {
+    const ctrl   = this._ctrl
+    const doc    = this._ctxService.getDoc()
+    const result = this._ctxService.getValidatorResult()
+
+    ctrl._linkNetworkView?.setForceHidden(true)
+    // The compiled zone meshes are hidden — the persona ghosts ARE the regions.
+    this._hideDerivedMeshes()
+
+    const actorOrder = (doc.actors ?? []).map(a => a.ref)
+    this._regionGhosts = []
+    for (const g of this._ctxService.projectGhosts()) {
+      const regions = g.regions.map(r => ({
+        ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
+      }))
+      this._regionGhosts.push(new RegionGhostView(ctrl._sceneView.scene, document.body, { ...g, regions }))
+    }
+
+    this._fitToCompiled()
+
+    const ui = useUIStore.getState().actions
+    ui.setNPanelVisible(false)
+    ui.contextStart({
+      mode:                'ghost',
+      loaded:              true,
+      docMeta:             { name: doc?.meta?.name ?? 'Context', version: doc?.version },
+      decisions:           doc?.decisions ?? [],
+      conflicts:           result.conflicts,
+      negotiationClusters: result.negotiationClusters,
+      conflictMatrix:      this._ctxService.projectMatrix(),
+      resolutionOrder:     this._ctxService.projectOrder(),
+    })
+    ui.contextSetPersonaFilter(null)
+    ui.contextSetTab('matrix')
+    this._mode = 'ghost'
+    this._ghostFilter = null
+  }
+
+  // ── Decision approval (undoable doc mutation, ADR-050 §3.5) ───────────────────
 
   /**
    * Approve a proposed Decision (single or n-ary) through the CommandStack so it
@@ -128,11 +347,10 @@ export class ContextController {
    * @param {string} decisionRef — e.g. d_standoff (single), d_cell_joint (n-ary)
    */
   approveDecision(decisionRef) {
-    if (!this._negotiation) return
+    if (!this.isNegotiation) return
     const ctrl = this._ctrl
-    const viewContext = { camera: ctrl._camera, renderer: ctrl._sceneView.renderer, container: document.body }
 
-    const cmd = createApproveDecisionCommand(this._ctxService, decisionRef, viewContext)
+    const cmd = createApproveDecisionCommand(this._ctxService, decisionRef, this._viewContext())
     cmd.execute()                       // mutates the doc → emits contextChanged → _reproject()
     ctrl._commandStack.push(cmd)        // post-hoc record (CODE_CONTRACTS push vs execute)
     ctrl._refreshUndoRedoState()
@@ -149,18 +367,143 @@ export class ContextController {
     ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
   }
 
-  // ── Re-projection (event-driven — covers approve / undo / redo) ──────────────
+  // ── Re-projection (event-driven — covers approve / region edit / undo / redo) ──
 
-  /** Re-project the matrix + resolution order from the current document. */
   _reproject() {
-    if (!this._negotiation) return
-    const result = this._ctxService.getValidatorResult()
+    if (this._mode === 'negotiate' || this._mode === 'ghost') {
+      const result = this._ctxService.getValidatorResult()
+      const ui = useUIStore.getState().actions
+      ui.contextSetMatrix(
+        this._ctxService.projectMatrix(),
+        result.negotiationClusters,
+        this._ctxService.projectOrder(),
+      )
+      ui.contextSetConflicts(result.conflicts)
+    } else if (this._mode === 'author') {
+      // A committed / undone region edit regenerated the scene — re-hide the
+      // derived meshes, resync the edit clone, and recolour from the new doc.
+      this._hideDerivedMeshes()
+      this._editCtx = JSON.parse(JSON.stringify(this._ctxService.getDoc()))
+      this._syncAuthorWidgets()
+      this._recolourAuthoring(this._ctxService.getValidatorResult())
+    }
+  }
+
+  /** Resync widget regions to the canonical doc (after undo / redo of an edit). */
+  _syncAuthorWidgets() {
+    const byRef = new Map(this._regionReqs(this._ctxService.getDoc()).map(r => [r.ref, r]))
+    for (const w of this._authorWidgets) {
+      const req = byRef.get(w.reqRef)
+      if (req?.admissible?.region) w.widget.setRegion(req.admissible.region)
+    }
+  }
+
+  // ── Exit ──────────────────────────────────────────────────────────────────────
+
+  /** Close the active overlay (the regenerated scene stays behind). */
+  exit() {
+    if (!this.isActive) return
+    const ctrl = this._ctrl
     const ui = useUIStore.getState().actions
-    ui.contextSetMatrix(
-      this._ctxService.projectMatrix(),
-      result.negotiationClusters,
-      this._ctxService.projectOrder(),
+
+    if (this._mode === 'author') {
+      ctrl._controls.enabled = true
+      for (const w of this._authorWidgets) w.widget.dispose()
+      this._authorWidgets = []
+      this._authorDrag = null
+      this._editCtx = null
+      this._showDerivedMeshes()
+    } else if (this._mode === 'ghost') {
+      for (const v of this._regionGhosts) v.dispose()
+      this._regionGhosts = []
+      this._ghostFilter = null
+      this._showDerivedMeshes()
+    }
+
+    ctrl._linkNetworkView?.setForceHidden(false)
+    ui.contextEnd()
+    this._mode = null
+  }
+
+  // ── Per-frame animation (driven by AppController's loop) ──────────────────────
+
+  tick(t) {
+    if (this._mode === 'author') {
+      const cam = this._ctrl._sceneView.activeCamera
+      const rdr = this._ctrl._sceneView.renderer
+      for (const w of this._authorWidgets) w.widget.tick(t, cam, rdr)
+    } else if (this._mode === 'ghost') {
+      const cam = this._ctrl._sceneView.activeCamera
+      const rdr = this._ctrl._sceneView.renderer
+      // Mirror the conflict-matrix persona filter into the 3-D ghost dimming.
+      const filter = useUIStore.getState().context.personaFilter
+      if (filter !== this._ghostFilter) {
+        this._ghostFilter = filter
+        for (const v of this._regionGhosts) v.setPersonaFilter(filter)
+      }
+      for (const v of this._regionGhosts) v.tick(t, cam, rdr)
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  _viewContext() {
+    return { camera: this._ctrl._camera, renderer: this._ctrl._sceneView.renderer, container: document.body }
+  }
+
+  /** Load a document then run a start function; toasts on failure (PHILOSOPHY #11). */
+  async _loadThen(doc, start) {
+    try {
+      // loadContext emits contextLoaded → AppController._onContextLoaded does the
+      // scene-side housekeeping (clear undo/selection, frame the camera).
+      await this._ctxService.loadContext(doc, this._viewContext())
+    } catch (err) {
+      this._ctrl._uiView.showToast(`Context load failed: ${err.message}`, { type: 'error' })
+      console.error('[ContextController]', err)
+      return
+    }
+    start()
+  }
+
+  /** Single-variable region requirements of a doc (the authorable / ghostable set). */
+  _regionReqs(doc) {
+    return (doc?.requirements ?? []).filter(
+      r => (r.constrains?.length ?? 0) === 1 && r.admissible?.region,
     )
-    ui.contextSetConflicts(result.conflicts)
+  }
+
+  _hideDerivedMeshes() {
+    for (const obj of this._ctrl._scene.objects.values()) {
+      if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
+    }
+  }
+
+  _showDerivedMeshes() {
+    for (const obj of this._ctrl._scene.objects.values()) {
+      if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(true)
+    }
+  }
+
+  /** Frame the camera on the compiled layout (mm-scale scene — never the default). */
+  _fitToCompiled() {
+    const layoutDsl = this._ctxService.getCompiled()?.layoutDsl
+    if (!layoutDsl) return
+    const box = new THREE.Box3()
+    for (const e of layoutDsl.entities) {
+      if (e.position && e.dimensions) {
+        const { x, y, z } = e.position, d = e.dimensions
+        box.expandByPoint(new THREE.Vector3(x - d.x / 2, y - d.y / 2, z - d.z / 2))
+        box.expandByPoint(new THREE.Vector3(x + d.x / 2, y + d.y / 2, z + d.z / 2))
+      } else if (e.position) {
+        box.expandByPoint(new THREE.Vector3(e.position.x, e.position.y, e.position.z))
+      }
+      if (Array.isArray(e.vertices)) {
+        for (const v of e.vertices) box.expandByPoint(new THREE.Vector3(v.x ?? 0, v.y ?? 0, v.z ?? 0))
+      }
+    }
+    if (box.isEmpty()) return
+    const center = box.getCenter(new THREE.Vector3())
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1)
+    this._ctrl._sceneView.fitCameraToSphere(center, radius)
   }
 }

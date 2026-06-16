@@ -456,9 +456,19 @@ prop-driven Matrix·Cluster components. Reads the **`context`** uiStore slice
 
 | Callback | Fired by | Action |
 |----------|----------|--------|
-| `onContextNegotiate` | Header **Context ▾ → 交渉設計** / ⋯ menu | `enterNegotiation()` — adopt a doc (Phase 2 bootstraps the bundled conflict example via `ContextService.loadContext`; confirm before scene regen), project matrix + resolution order into the `context` slice |
+| `onContextNegotiate` | Header **Context ▾ → 交渉設計** / ⋯ menu | `enterNegotiation()` — adopt a doc (Phase 2 bootstraps the bundled conflict example via `ContextService.loadContext`; confirm before scene regen), project matrix + resolution order into the `context` slice (`mode:'negotiate'`) |
 | `onApproveContextDecision(ref)` | Cluster tab 承認ボタン (確定 / 合同確定) | `approveDecision(ref)` — `createApproveDecisionCommand` → `cmd.execute()` + `_commandStack.push()` (undoable, ADR-050 §3.5) + nominal toast |
-| `onContextExit` | ContextLayer ✕ | `exit()` — restore Link Network, `contextEnd()` |
+| `onContextAuthor` | Header **Context ▾ → 領域オーサリング** / ⋯ menu | **(Phase 3)** `enterAuthoring()` — adopt a region doc (bootstraps the bundled region example if the loaded doc has no single-variable region requirement; confirm before scene regen), hide derived meshes, spawn one `RegionAuthoringWidget` per region requirement (`mode:'author'`) |
+| `onContextRegionGhost` | Header **Context ▾ → 許容領域ゴースト** / ⋯ menu | **(Phase 3)** `enterRegionGhost()` — adopt a region doc (same bootstrap rule), overlay actor-coloured `RegionGhostView`s + the conflict matrix whose persona filter dims the ghosts (`mode:'ghost'`) |
+| `onContextExit` | ContextLayer ✕ | `exit()` — dispose authoring widgets / region ghosts, restore derived meshes + Link Network, `contextEnd()` |
+
+**Phase 3 pointer delegation** (CODE_CONTRACTS «Context Authoring Pointer Delegation»): when
+`_ctxCtrl.isAuthoring`, `_onPointerDown/Move/Up` delegate to `_ctxCtrl.onAuthor*(e)` (after
+`_hitTest.updateMouse`, alongside the existing `_demoCtrl.isAuthoring` branch). A live drag
+**recolours only** (re-validates a cloned edit context); the finished edit is committed once on
+pointer-up through `createEditAdmissibleCommand` (**undoable** doc mutation + scene regen, ADR-050
+§3.5/§7). Re-projection (approve / region edit / undo / redo) flows through `ContextService`'s
+`contextChanged` event into `_reproject()` (PHILOSOPHY #5).
 
 The Matrix tab's actor column headers call `uiStore.actions.contextSetPersonaFilter`
 directly (pure UI state, mirroring the demo's `demoSetPersonaFilter`). The tab

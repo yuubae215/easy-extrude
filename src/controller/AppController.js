@@ -1921,6 +1921,7 @@ export class AppController {
 
     // ── Context DSL region authoring (ADR-049 Phase 3): live handle drag ─────
     if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerMove(e)) return
+    if (this._ctxCtrl.isAuthoring && this._ctxCtrl.onAuthorPointerMove(e)) return
 
     if (this._opState.is(S_ROTATE_ACTIVE)) {
       this._rotateHandler.apply()
@@ -2193,6 +2194,7 @@ export class AppController {
 
     // ── Context DSL region authoring (ADR-049 Phase 3): drag handles ─────────
     if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerDown(e)) return
+    if (this._ctxCtrl.isAuthoring && this._ctxCtrl.onAuthorPointerDown(e)) return
 
     // Suppress contextmenu-triggered menu when right-click is a cancel (ADR-006)
     this._contextMenuSuppressed = e.button === 2 && (
@@ -2612,6 +2614,7 @@ export class AppController {
 
     // ── Context DSL region authoring (ADR-049 Phase 3): end handle drag ─────
     if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerUp(e)) return
+    if (this._ctxCtrl.isAuthoring && this._ctxCtrl.onAuthorPointerUp(e)) return
 
     // ── 2D Map Mode: end panning / drag gesture completion ───────────────
     if (this._mapModeCtrl.onPointerUp(e)) return
@@ -3154,6 +3157,8 @@ export class AppController {
       }
       // Context DSL demo: ghost pulse/collapse + staggered reveal (ADR-047).
       this._demoCtrl.tick(t)
+      // Production Context overlay: authoring widgets + region ghosts (ADR-050 Phase 3).
+      this._ctxCtrl.tick(t)
     }
     loop()
 

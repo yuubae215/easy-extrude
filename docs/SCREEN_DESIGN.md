@@ -685,10 +685,22 @@ CommandStack — Ctrl+Z reverts the approval and the Matrix cell flips ✓→◐
 doc name + a live "未解消の衝突 N 件" line; ✕ closes the overlay (`onContextExit`). Distinct from
 [K]: [K] is a tutorial story (transient approvals), [M] mutates the canonical document.
 
+`ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
+distinguished by `context.mode`:
+- **`negotiate`** (above) — Matrix + Cluster tabs, undoable approval.
+- **`author`** (Phase 3) — opened via **Context ▾ → 領域オーサリング** (`enterAuthoring()`). No
+  tabs; the panel lists the live R6 conflicts (green when clear) while the **3D**
+  `RegionAuthoringWidget`s are the editing surface — drag a handle to resize/move a footprint;
+  release commits an **undoable** region edit to the document (`createEditAdmissibleCommand`).
+- **`ghost`** (Phase 3) — opened via **Context ▾ → 許容領域ゴースト** (`enterRegionGhost()`). Matrix
+  tab only; each actor's admissible footprint is overlaid in 3D in its persona colour
+  (`RegionGhostView`), and clicking an actor column dims the other personas' ghosts.
+
 #### [A] Header
 Desktop: **Export** / **Import** then a single **Context ▾** dropdown (production **交渉設計
-(Negotiate)** + demo **Tutorial** / **Author Regions** / **Region Ghosts**). Mobile: the same items
-inside the ⋯ MoreMenu (Export / Import / 交渉設計 / Tutorial / Author / ゴースト).
+(Negotiate)** / **領域オーサリング (Author)** / **許容領域ゴースト (Ghosts)** + demo **Tutorial**).
+Mobile: the same items inside the ⋯ MoreMenu (Export / Import / 交渉設計 / 領域オーサリング /
+許容領域ゴースト / Tutorial).
 
 ---
 
