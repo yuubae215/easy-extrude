@@ -2,6 +2,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from '../ContextDemo/ConflictMatrix.jsx'
 import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.jsx'
 import { FormPanel } from './FormPanel.jsx'
+import { IntakePanel } from './IntakePanel.jsx'
 
 /**
  * ContextLayer — production Context-first overlay (ADR-050).
@@ -50,6 +51,7 @@ export function ContextLayer() {
       { id: 'matrix',    label: 'Matrix' },
       { id: 'cluster',   label: 'Cluster' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
+      { id: 'intake',    label: 'Intake' },
     ]
     : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
     : []
@@ -149,6 +151,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'questions' && (
           <FormPanel />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
+          <IntakePanel />
         )}
       </div>
     </div>

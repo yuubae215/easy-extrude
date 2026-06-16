@@ -39,9 +39,11 @@ import { useUIStore } from '../store/uiStore.js'
 import { createApproveDecisionCommand } from '../command/ApproveDecisionCommand.js'
 import { createEditAdmissibleCommand } from '../command/EditAdmissibleCommand.js'
 import { createAnswerQuestionCommand } from '../command/AnswerQuestionCommand.js'
+import { createAddDocEntryCommand } from '../command/AddDocEntryCommand.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
+import { createBlankDoc, addActor, addFact, addVariable, addRequirement } from '../context/DocBuilder.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
@@ -78,11 +80,13 @@ export class ContextController {
     this._ctxService.on('contextChanged', () => this._reproject())
 
     const { registerCallback } = useUIStore.getState().actions
+    registerCallback('onNewContext',             ()           => this.newContext())
     registerCallback('onContextNegotiate',       ()           => this.enterNegotiation())
     registerCallback('onContextAuthor',          ()           => this.enterAuthoring())
     registerCallback('onContextRegionGhost',     ()           => this.enterRegionGhost())
     registerCallback('onApproveContextDecision', (ref)        => this.approveDecision(ref))
     registerCallback('onAnswerQuestion',         (ref, q, a)  => this.answerQuestion(ref, q, a))
+    registerCallback('onAddDocEntry',            (type, data) => this.addDocEntry(type, data))
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
@@ -96,6 +100,67 @@ export class ContextController {
   get isAuthoring()   { return this._mode === 'author' }
   /** True while the region-ghost overlay is active. */
   get isRegionGhost() { return this._mode === 'ghost' }
+
+  // ── Blank-doc creation (Phase 1 — Entry A, ADR-051 §3) ──────────────────────
+
+  /**
+   * Create a blank context document and open the negotiate overlay (intake mode).
+   * Clears the current scene after confirmation — blank doc has no layout spec,
+   * so `adoptDoc()` is used instead of `loadContext()` (no compile/layout step).
+   */
+  newContext() {
+    if (this.isActive) return
+    this._ctrl._uiView.showConfirmDialog(
+      '空の Context ドキュメントを作成します。現在のシーンはリセットされます。\n' +
+      '要件入力パネルでアクター・変数・要件を追加してください (ADR-051 §3 Entry A)。',
+      (ok) => {
+        if (!ok) return
+        const doc = createBlankDoc()
+        Promise.resolve(this._ctxService.adoptDoc(doc, this._viewContext()))
+          .then(() => this._startNegotiation())
+          .catch(err => {
+            this._ctrl._uiView.showToast(`Context 作成失敗: ${err.message}`, { type: 'error' })
+            console.error('[ContextController]', err)
+          })
+      },
+      { title: '新規 Context', confirmLabel: '作成' },
+    )
+  }
+
+  /**
+   * Add a doc entry (actor / fact / variable / requirement) through the CommandStack
+   * so the addition is undoable. Dispatches to the appropriate pure DocBuilder
+   * function (input-immutable, PHILOSOPHY #6), then commits via AddDocEntryCommand.
+   *
+   * @param {'actor'|'fact'|'variable'|'requirement'} type
+   * @param {object} data — shaped by type
+   */
+  addDocEntry(type, data) {
+    if (!this.isNegotiation) return
+    const ctrl      = this._ctrl
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc
+    switch (type) {
+      case 'actor':       afterDoc = addActor(beforeDoc, data);       break
+      case 'fact':        afterDoc = addFact(beforeDoc, data);         break
+      case 'variable':    afterDoc = addVariable(beforeDoc, data);     break
+      case 'requirement': afterDoc = addRequirement(beforeDoc, data);  break
+      default:
+        ctrl._uiView.showToast(`未知のエントリ種別: ${type}`, { type: 'warn' })
+        return
+    }
+    const label = { actor: 'Actor 追加', fact: 'Fact 追加', variable: 'Variable 追加', requirement: 'Requirement 追加' }[type]
+    const cmd = createAddDocEntryCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
+    Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)
+        ctrl._refreshUndoRedoState()
+      })
+      .catch(err => {
+        ctrl._uiView.showToast(`エントリを追加できません: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+      })
+  }
 
   // ── Negotiation (Phase 2, data only) ─────────────────────────────────────────
 
@@ -131,13 +196,18 @@ export class ContextController {
       docMeta:             { name: doc?.meta?.name ?? 'Context', version: doc?.version },
       decisions:           doc?.decisions ?? [],
       actors:              doc?.actors ?? [],
+      variables:           doc?.variables ?? [],
       conflicts:           result.conflicts,
       negotiationClusters: result.negotiationClusters,
       conflictMatrix:      this._ctxService.projectMatrix(),
       resolutionOrder:     this._ctxService.projectOrder(),
       form,
     })
-    ui.contextSetTab(form.length > 0 ? 'questions' : 'matrix')
+    // Blank doc (no actors) opens on intake tab so the user can start adding entries.
+    const initialTab = form.length > 0 ? 'questions'
+      : (doc?.actors?.length ?? 0) === 0 ? 'intake'
+      : 'matrix'
+    ui.contextSetTab(initialTab)
     this._mode = 'negotiate'
   }
 
@@ -476,8 +546,12 @@ export class ContextController {
       )
       ui.contextSetConflicts(result.conflicts)
       // Update the form so answered questions disappear immediately (PHILOSOPHY #5).
+      // Also refresh actors and variables so IntakePanel dropdowns stay current.
       if (this._mode === 'negotiate') {
         ui.contextSetForm(this._ctxService.projectForm())
+        const doc = this._ctxService.getDoc()
+        ui.contextSetActors(doc?.actors ?? [])
+        ui.contextSetVars(doc?.variables ?? [])
       }
     } else if (this._mode === 'author') {
       // A committed / undone region edit regenerated the scene — re-hide the
