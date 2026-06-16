@@ -1,6 +1,6 @@
 # ADR-051 — 要件入力（Requirement Intake）: あいまい要件を起点化する複数入口アーキテクチャ
 
-**Status**: Accepted (Phase 1/2 実装済 — Phase 3/4 未実装)
+**Status**: Accepted (Phase 1/2/3 実装済 — Phase 4 未実装)
 **Date**: 2026-06-16
 **Related**: ADR-052 (5W1H ユビキタス言語 — 土台), ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events)
 **Implementation**: 段階導入（§6）。Phase 1 完了 (2026-06-16):
@@ -19,7 +19,16 @@ Phase 2 完了 (2026-06-16):
 - `src/components/Header/Header.jsx` — Context ▾ + mobile ⋯ に「テンプレートから開始…」追加
 - `src/store/uiStore.js` — `templateGalleryOpen` フィールド + `setTemplateGalleryOpen` アクション
 - `src/components/UIShell.jsx` — `<TemplateGallery />` マウント
-- Phase 3 (3D ゴースト即時プレビュー) / Phase 4 (NL インテーク) 未実装。
+
+Phase 3 完了 (2026-06-16):
+- `src/view/UncertaintyGhostView.js` — additive `setIntervalPreview({interval,nominal,labelText})`
+  （構築済みレイアウトを再ベイクせず軸位置・スケール・ラベルのみ更新。demo は無改変）
+- `src/controller/ContextController.js` — `previewIntake(spec)` / `_disposeIntakeGhost()` +
+  `_intakeGhost` 単独所有（`exit()` と `previewIntake(null)` で破棄）+ `tick()` で idle パルス +
+  `onIntakePreview` コールバック
+- `src/components/Context/IntakePanel.jsx` — RequirementForm の admissible 区間入力を `useEffect` で
+  ライブ駆動（unmount/submit で `onPreview(null)`）+ 入力ヒント
+- Phase 4 (NL インテーク) 未実装。
 
 ---
 
@@ -112,7 +121,9 @@ ADR-050 で context ドキュメントを正準アーティファクト化し、
   （`TemplateCatalog.js`、THREE-free 単体テスト）+ ギャラリーモーダル + コントローラの `selectTemplate`
   （blank→`adoptDoc` / example→`loadContext`、既存 example JSON を再利用）。§7 の透明化（読み込む例の明示）を
   ギャラリーフッターで満たす。
-- **Phase 3**: 入口 D（3D ゴースト即時プレビュー）。入力中ライブ駆動。
+- **Phase 3** ✅: 入口 D（3D ゴースト即時プレビュー）。入力中ライブ駆動。IntakePanel の許容区間入力を
+  `UncertaintyGhostView`（`setIntervalPreview` で再ベイクなし in-place 更新、単独所有）にライブ接続。
+  Decision 確定での収束（collapse）は既存 demo/negotiation 経路が担い、本番 Decision アニメは後続。
 - **Phase 4**: 入口 C（NL インテーク）。ADR-044 抽出ブリッジを context へ配線。
 
 ## 7. デモ/初期シーン挙動の透明化（本 ADR の付随決定）

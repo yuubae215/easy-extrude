@@ -464,6 +464,7 @@ prop-driven Matrix·Cluster components. Reads the **`context`** uiStore slice
 | `onOpenTemplateGallery` | Header **Context ▾ → テンプレートから開始…** / ⋯ menu | **(Phase 2)** `openTemplateGallery()` — `setTemplateGalleryOpen(true)`; the `TemplateGallery` modal renders the static `TEMPLATE_CATALOG` |
 | `onSelectTemplate(id)` | Template Gallery card click | **(Phase 2)** `selectTemplate(id)` — exit any active overlay, resolve the doc (`createBlankDoc` for `kind:'blank'`, `TEMPLATE_DOCS[file]` for `kind:'example'`), load via `adoptDoc` / `loadContext`, open the negotiate overlay. No second confirm (footer states the consequence — §7) |
 | `onCloseTemplateGallery` | Template Gallery ✕ / backdrop | **(Phase 2)** `closeTemplateGallery()` — `setTemplateGalleryOpen(false)` |
+| `onIntakePreview(spec\|null)` | IntakePanel RequirementForm 許容区間入力 (live) | **(Phase 3)** `previewIntake(spec)` — drive one `UncertaintyGhostView` from `{lo,hi,unit,label}`; update in place via `setIntervalPreview` (no geometry rebuild), frame the camera once; `null` disposes the ghost. Cleared on form unmount / submit |
 
 **Phase 3 pointer delegation** (CODE_CONTRACTS «Context Authoring Pointer Delegation»): when
 `_ctxCtrl.isAuthoring`, `_onPointerDown/Move/Up` delegate to `_ctxCtrl.onAuthor*(e)` (after

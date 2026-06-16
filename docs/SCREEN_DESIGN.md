@@ -685,6 +685,13 @@ CommandStack — Ctrl+Z reverts the approval and the Matrix cell flips ✓→◐
 doc name + a live "未解消の衝突 N 件" line; ✕ closes the overlay (`onContextExit`). Distinct from
 [K]: [K] is a tutorial story (transient approvals), [M] mutates the canonical document.
 
+The **Intake** tab (`IntakePanel`, ADR-051 Phase 1) adds Actors / Variables / Requirements directly
+to a blank or loaded doc. While the user types a requirement's **admissible interval** the
+RequirementForm drives a live 3-D uncertainty band (ADR-051 Phase 3 — Entry D): an amber swept
+volume between `lo` and `hi` with a blue nominal wireframe (`UncertaintyGhostView`), reflecting how
+much of the acceptance band is still unfixed. The ghost clears when the form is left or the
+requirement is committed (committing records an interval, not a Decision — no collapse animation).
+
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
 - **`negotiate`** (above) — Matrix + Cluster tabs, undoable approval.

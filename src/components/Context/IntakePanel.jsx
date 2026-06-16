@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 
 /**
@@ -196,7 +196,7 @@ function VariableForm({ variables, onAdd }) {
 
 // ── Requirement form ───────────────────────────────────────────────────────────
 
-function RequirementForm({ actors, variables, onAdd }) {
+function RequirementForm({ actors, variables, onAdd, onPreview }) {
   const [ref, setRef]         = useState('')
   const [by, setBy]           = useState('')
   const [kpiName, setKpiName] = useState('')
@@ -209,10 +209,25 @@ function RequirementForm({ actors, variables, onAdd }) {
   const [admLo, setAdmLo]     = useState('')
   const [admHi, setAdmHi]     = useState('')
 
+  // Live 3D uncertainty-band preview driven by the admissible interval inputs
+  // (ADR-051 Phase 3 — Entry D). Fires as [lo, hi] change; cleared on unmount
+  // (tab switch / section collapse) and after a successful submit.
+  const admUnit = variables.find(v => v.ref === constrains)?.unit ?? kpiUnit
+  useEffect(() => {
+    const loN = parseFloat(admLo), hiN = parseFloat(admHi)
+    if (isNaN(loN) || isNaN(hiN) || hiN <= loN) {
+      onPreview?.(null)
+      return
+    }
+    onPreview?.({ lo: loN, hi: hiN, unit: admUnit, label: ref.trim() || 'requirement' })
+  }, [admLo, admHi, admUnit, ref])
+  useEffect(() => () => onPreview?.(null), [])
+
   function submit() {
     const r = ref.trim(), b = by.trim(), kn = kpiName.trim(), kc = constrains.trim()
     const valN = parseFloat(val), loN = parseFloat(admLo), hiN = parseFloat(admHi)
     if (!r || !b || !kn || !kc || isNaN(valN) || isNaN(loN) || isNaN(hiN)) return
+    onPreview?.(null)
     onAdd({
       ref: r,
       by:  b,
@@ -280,6 +295,9 @@ function RequirementForm({ actors, variables, onAdd }) {
       <Field label="negotiability">
         <Select value={neg} onChange={setNeg} options={NEGOTIABILITY} />
       </Field>
+      <div style={{ fontSize: '9px', color: '#777', margin: '2px 0 1px' }}>
+        許容区間 — 入力すると不確実バンドが 3D に即時表示されます (Entry D)
+      </div>
       <div style={{ display: 'flex', gap: '6px' }}>
         <Field label="admissible lo">
           <input value={admLo} onChange={e => setAdmLo(e.target.value)}
@@ -349,7 +367,12 @@ export function IntakePanel() {
         open={openReq}
         onToggle={() => setOpenReq(o => !o)}
       >
-        <RequirementForm actors={actors} variables={variables} onAdd={d => onAdd('requirement', d)} />
+        <RequirementForm
+          actors={actors}
+          variables={variables}
+          onAdd={d => onAdd('requirement', d)}
+          onPreview={spec => callbacks.onIntakePreview?.(spec)}
+        />
       </Section>
     </div>
   )

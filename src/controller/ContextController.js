@@ -47,6 +47,7 @@ import { createBlankDoc, addActor, addFact, addVariable, addRequirement } from '
 import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
+import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
 import regionContext from '../../examples/cell_region_context.json'
@@ -97,6 +98,10 @@ export class ContextController {
     /** @type {string|null} last persona filter pushed to the ghost views */
     this._ghostFilter = null
 
+    // ── Live intake preview (ADR-051 Phase 3, Entry D) ─────────────────────────
+    /** @type {UncertaintyGhostView|null} live admissible-interval ghost (sole owner) */
+    this._intakeGhost = null
+
     // Re-project whenever the canonical document changes — covers approval, region
     // edit, undo, and redo uniformly (they all mutate the doc through the service).
     this._ctxService.on('contextChanged', () => this._reproject())
@@ -112,6 +117,7 @@ export class ContextController {
     registerCallback('onApproveContextDecision', (ref)        => this.approveDecision(ref))
     registerCallback('onAnswerQuestion',         (ref, q, a)  => this.answerQuestion(ref, q, a))
     registerCallback('onAddDocEntry',            (type, data) => this.addDocEntry(type, data))
+    registerCallback('onIntakePreview',          (spec)       => this.previewIntake(spec))
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
@@ -234,6 +240,58 @@ export class ContextController {
         ctrl._uiView.showToast(`エントリを追加できません: ${err.message}`, { type: 'error' })
         console.error('[ContextController]', err)
       })
+  }
+
+  // ── Live intake preview (Phase 3 — Entry D, ADR-051 §3) ─────────────────────
+
+  /**
+   * Drive a single live uncertainty-band ghost from the IntakePanel's admissible
+   * interval inputs (ADR-051 Entry D). As the user types `[lo, hi]` the band
+   * grows / shrinks in 3-D, making the uncertainty of an unfixed acceptance band
+   * tangible (ADR-047 ghost lineage; the band is only collapsed by an explicit
+   * Decision — ADR-046 invariant 2). `spec === null` clears the preview.
+   *
+   * The ghost is reused across keystrokes (updated in place — PHILOSOPHY #4/#9);
+   * the camera is framed once when it first appears (re-framing per keystroke
+   * would be disorienting). Sole owner: created here, disposed in `previewIntake(null)`
+   * and `exit()`.
+   *
+   * @param {{ lo:number, hi:number, unit?:string, label?:string }|null} spec
+   */
+  previewIntake(spec) {
+    if (!this.isNegotiation || !spec) { this._disposeIntakeGhost(); return }
+    const { lo, hi, unit = '', label = 'requirement' } = spec
+    if (!(hi > lo)) { this._disposeIntakeGhost(); return }
+
+    const nominal   = (lo + hi) / 2
+    const labelText = `${label}: ${fmtNum(lo)}–${fmtNum(hi)} ${unit} · 未確定`
+
+    if (this._intakeGhost) {
+      this._intakeGhost.setIntervalPreview({ interval: [lo, hi], nominal, labelText })
+      return
+    }
+
+    // First appearance — pick a fixed slab thickness from the initial span and
+    // frame the camera once (subsequent updates only move / rescale the band).
+    const span = Math.max(hi - lo, 1e-6)
+    const side = Math.max(span * 0.5, 1)
+    const dims = { x: Math.max(span * 0.15, 0.5), y: side, z: side }
+    const position = { x: 0, y: 0, z: dims.z / 2 }
+
+    this._intakeGhost = new UncertaintyGhostView(this._ctrl._sceneView.scene, document.body, {
+      axis: 'x', interval: [lo, hi], nominal, dims, position, labelText,
+    })
+    this._intakeGhost.showNominal(true)
+
+    const center = new THREE.Vector3(nominal, 0, dims.z / 2)
+    const radius = Math.max(span / 2 + dims.x, side)
+    this._ctrl._sceneView.fitCameraToSphere(center, radius)
+  }
+
+  _disposeIntakeGhost() {
+    if (!this._intakeGhost) return
+    this._intakeGhost.dispose()
+    this._intakeGhost = null
   }
 
   // ── Negotiation (Phase 2, data only) ─────────────────────────────────────────
@@ -654,6 +712,8 @@ export class ContextController {
     const ctrl = this._ctrl
     const ui = useUIStore.getState().actions
 
+    this._disposeIntakeGhost()   // live intake preview is only valid inside an overlay
+
     if (this._mode === 'author') {
       ctrl._controls.enabled = true
       for (const w of this._authorWidgets) w.widget.dispose()
@@ -676,6 +736,10 @@ export class ContextController {
   // ── Per-frame animation (driven by AppController's loop) ──────────────────────
 
   tick(t) {
+    // Live intake preview pulses in negotiate mode (Phase 3 — Entry D).
+    if (this._intakeGhost) {
+      this._intakeGhost.tick(t, this._ctrl._sceneView.activeCamera, this._ctrl._sceneView.renderer)
+    }
     if (this._mode === 'author') {
       const cam = this._ctrl._sceneView.activeCamera
       const rdr = this._ctrl._sceneView.renderer
@@ -754,4 +818,9 @@ export class ContextController {
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1)
     this._ctrl._sceneView.fitCameraToSphere(center, radius)
   }
+}
+
+/** Compact number formatting for the intake ghost label (drops trailing zeros). */
+function fmtNum(n) {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100)
 }

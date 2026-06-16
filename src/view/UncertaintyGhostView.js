@@ -137,6 +137,41 @@ export class UncertaintyGhostView {
     this._nominalWire.visible = show && this._visible && this._phase === 'idle'
   }
 
+  /**
+   * Live-update the interval / nominal in place (ADR-051 Phase 3 — Entry D).
+   *
+   * Additive to the constructor-baked layout: only the axis extent, the band /
+   * extreme / nominal positions, and the label text change — the entity dims and
+   * the non-axis band center stay fixed, so no geometry is rebuilt (the band is a
+   * unit box driven by `scale`, the extreme wireframes only translate). A no-op
+   * while collapsing (the snap animation owns the band geometry). This lets the
+   * IntakePanel drive a single ghost as the user types an admissible interval,
+   * rather than churning instances per keystroke (PHILOSOPHY #4/#9).
+   *
+   * @param {{ interval: [number, number], nominal: number, labelText?: string }} p
+   */
+  setIntervalPreview({ interval, nominal, labelText }) {
+    if (this._phase !== 'idle') return
+    const axis = this._axis
+    this._lo = interval[0]
+    this._hi = interval[1]
+    this._nominal = nominal
+
+    this._bandCenter[axis] = (this._lo + this._hi) / 2
+    this._bandSize[axis]   = (this._hi - this._lo) + this._dims[axis]
+    this._band.position.copy(this._bandCenter)
+    this._band.scale.copy(this._bandSize)
+
+    for (let i = 0; i < this._extremes.length; i++) {
+      this._extremes[i].position.copy(this._bandCenter)
+      this._extremes[i].position[axis] = i === 0 ? this._lo : this._hi
+    }
+    this._nominalWire.position.copy(this._bandCenter)
+    this._nominalWire.position[axis] = nominal
+
+    if (labelText != null) this._label.textContent = labelText
+  }
+
   // ── Collapse animation ───────────────────────────────────────────────────
 
   /**
