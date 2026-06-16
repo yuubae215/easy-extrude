@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * ContextDemoController — Context DSL (ADR-046) visual PoC demo (ADR-047).
+ * ContextDemoController — Context DSL (ADR-046) visual tutorial demo (ADR-047).
  *
  * Orchestrates the story-mode walkthrough of the factory-cell example:
  *   ① 顧客発話 → ② Fact化 → ③ OpenQuestions 自動検出 → ④ Decision 承認
@@ -15,22 +15,18 @@
  *
  * Owns: UncertaintyGhostView (sole owner — PHILOSOPHY #4/#9), step staging,
  * staggered reveal animation. UI state flows through uiStore's demo slice.
+ *
+ * NOTE (ADR-050 Phase 5): Production Negotiation, Authoring, and RegionGhost
+ * have been fully migrated to ContextController. This controller is tutorial-only.
  */
 import * as THREE from 'three'
 import { useUIStore } from '../store/uiStore.js'
 import { compileContext } from '../context/ContextCompiler.js'
-import { validateContext } from '../context/ContextValidator.js'
-import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
-import { projectConflictMatrix, projectResolutionOrder, projectRegionGhosts } from '../context/PersonaProjection.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
-import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
-import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { RippleEffect } from '../view/RippleEffect.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import factoryContext from '../../examples/factory_context.json'
-import regionContext from '../../examples/cell_region_context.json'
-import conflictContext from '../../examples/cell_conflict_context.json'
 
 /** Inspector tab shown for each story step (null = inspector closed). */
 const TAB_BY_STEP = [null, 'facts', 'openQuestions', 'decisions', 'trace', 'acceptance']
@@ -95,59 +91,18 @@ export class ContextDemoController {
     /** @type {object|null} compiled layout DSL (resolved values) */
     this._layoutDsl = null
 
-    // ── Bidirectional region authoring (ADR-049 Phase 3, §5.2) ──────────────
-    this._authoring   = false
-    /** @type {{reqRef:string, varRef:string, widget:RegionAuthoringWidget}[]} */
-    this._authorWidgets = []
-    /** @type {{reqRef:string, varRef:string, widget:RegionAuthoringWidget}|null} */
-    this._authorDrag  = null
-    /** @type {object|null} mutable (cloned) context the widgets edit + re-validate */
-    this._editCtx     = null
-
-    // ── Negotiation visualization (ADR-049 Phase 4) ────────────────────────────
-    // Data-only overlay: conflict matrix + cluster resolution order in the
-    // Inspector. No scene replacement, no widgets, no ghost.
-    this._negotiation = false
-    /** @type {object|null} the conflict-scenario context kept for re-projection on approval */
-    this._negCtx    = null
-    /** @type {object|null} cached validateContext() result (no re-validation on approval) */
-    this._negResult = null
-
-    // ── Actor-coloured region ghost overlay (ADR-049 Phase 4, §5.3) ────────────
-    // Read-only spatial projection: each actor's admissible footprint drawn in
-    // its persona colour, the empty common intersection rendered as the conflict
-    // gap. Linked to the conflict-matrix persona filter.
-    this._regionGhostMode = false
-    /** @type {RegionGhostView[]} sole owner — disposed in exit() (PHILOSOPHY #9) */
-    this._regionGhosts    = []
-    /** @type {string|null} last persona filter pushed to the ghost views */
-    this._ghostFilter     = null
-
     // React components fire these via uiStore.callbacks (same unidirectional
     // pattern as the rest of the UI).
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onContextDemoClick',   ()    => this.enter())
-    registerCallback('onContextAuthorClick', ()    => this.enterAuthoring())
-    registerCallback('onContextNegotiationClick', () => this.enterNegotiation())
-    registerCallback('onContextRegionGhostClick', () => this.enterRegionGhost())
     registerCallback('onDemoStepChange',     (n)   => this.setStep(n))
     registerCallback('onDemoApproveDecision', ()   => this.approveDecision())
-    registerCallback('onApproveNegotiationDecision', (ref) => this.approveNegotiationDecision(ref))
     registerCallback('onDemoItemSelect',     (ref) => this.selectItem(ref))
     registerCallback('onDemoExit',           ()    => this.exit())
   }
 
   /** True while the demo overlay is active. */
   get isActive() { return this._active }
-
-  /** True while the bidirectional region-authoring sub-mode is active. */
-  get isAuthoring() { return this._authoring }
-
-  /** True while the negotiation-visualization sub-mode is active. */
-  get isNegotiation() { return this._negotiation }
-
-  /** True while the actor-coloured region ghost overlay is active. */
-  get isRegionGhost() { return this._regionGhostMode }
 
   // ── Entry / exit ───────────────────────────────────────────────────────────
 
@@ -276,49 +231,6 @@ export class ContextDemoController {
     this._active = false
     this._reveal = null
 
-    // Region ghost mode: dispose the persona ghosts (PHILOSOPHY #9), restore the
-    // hidden scene + Link Network, clear the matrix projections.
-    if (this._regionGhostMode) {
-      for (const v of this._regionGhosts) v.dispose()
-      this._regionGhosts    = []
-      this._regionGhostMode = false
-      this._ghostFilter     = null
-      const ctrl = this._ctrl
-      for (const obj of ctrl._scene.objects.values()) {
-        if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(true)
-      }
-      ctrl._linkNetworkView?.setForceHidden(false)
-      const ui = useUIStore.getState().actions
-      ui.demoSetMatrix(null, [], [])
-      ui.demoSetPersonaFilter(null)
-      ui.demoEnd()
-      return
-    }
-
-    // Negotiation mode is a data-only overlay — nothing was hidden/replaced, so
-    // teardown is just clearing the projections and restoring the Link Network.
-    if (this._negotiation) {
-      this._negotiation = false
-      this._negCtx      = null
-      this._negResult   = null
-      this._ctrl._linkNetworkView?.setForceHidden(false)
-      const ui = useUIStore.getState().actions
-      ui.demoSetMatrix(null, [], [])
-      ui.demoSetPersonaFilter(null)
-      ui.demoEnd()
-      return
-    }
-
-    // Tear down region-authoring widgets (PHILOSOPHY #9 — symmetric disposal).
-    if (this._authoring) {
-      this._ctrl._controls.enabled = true
-      for (const w of this._authorWidgets) w.widget.dispose()
-      this._authorWidgets = []
-      this._authorDrag = null
-      this._editCtx = null
-      this._authoring = false
-    }
-
     if (this._ghost) {
       this._ghost.dispose()
       this._ghost = null
@@ -339,12 +251,6 @@ export class ContextDemoController {
   /** Applies the declarative visibility state for step n (0–5). */
   setStep(n) {
     if (!this._active) return
-    // Authoring sub-mode has a single narration step and no entity staging.
-    if (this._authoring) { useUIStore.getState().actions.demoSetStep(0, 'conflicts'); return }
-    // Negotiation sub-mode is data-only — keep whichever tab the user picked.
-    if (this._negotiation) { useUIStore.getState().actions.demoSetStep(0, useUIStore.getState().demo.inspectorTab ?? 'matrix'); return }
-    // Region ghost sub-mode — single narration step, keep the picked tab.
-    if (this._regionGhostMode) { useUIStore.getState().actions.demoSetStep(0, useUIStore.getState().demo.inspectorTab ?? 'matrix'); return }
     const step = Math.max(0, Math.min(DEMO_STEPS.length - 1, n))
     // Step ③→④ is gated on approval — "intervals never collapse silently",
     // expressed structurally. (The StoryBar also disables Next; double guard.)
@@ -435,321 +341,6 @@ export class ContextDemoController {
     })
   }
 
-  // ── Bidirectional region authoring (ADR-049 Phase 3, §5.2) ──────────────────
-
-  /** Compiles the region scenario and starts the live authoring sub-mode. */
-  enterAuthoring() {
-    if (this._active) return
-    let compiled, scene
-    try {
-      compiled = compileContext(regionContext)
-      scene    = compileLayout(compiled.layoutDsl)
-    } catch (err) {
-      this._ctrl._uiView.showToast(`Authoring compile failed: ${err.message}`, { type: 'error' })
-      console.error('[ContextDemoController]', err)
-      return
-    }
-    this._ctrl._uiView.showConfirmDialog(
-      '現在のシーンを置き換えて 領域オーサリング (ADR-049 Phase 3) を開始しますか?',
-      (ok) => { if (ok) this._startAuthoring(compiled, scene) },
-      { title: '領域オーサリング — 衝突のライブ解消', confirmLabel: '開始' },
-    )
-  }
-
-  async _startAuthoring(compiled, scene) {
-    const ctrl = this._ctrl
-    const viewContext = { camera: ctrl._camera, renderer: ctrl._sceneView.renderer, container: document.body }
-    try {
-      await ctrl._service.importFromJson(scene, viewContext, { clear: true })
-    } catch (err) {
-      ctrl._uiView.showToast(`Authoring scene load failed: ${err.message}`, { type: 'error' })
-      console.error('[ContextDemoController]', err)
-      return
-    }
-    ctrl._commandStack.clear()
-    ctrl._refreshUndoRedoState()
-    ctrl._selMgr.clearObjectSelection()
-    ctrl._selMgr.setObjectSelected(false)
-    ctrl._linkNetworkView?.setForceHidden(true)
-
-    // Mutable copy the widgets edit; the imported JSON stays the authoritative input.
-    this._editCtx = JSON.parse(JSON.stringify(regionContext))
-
-    // The compiled zone meshes are hidden — the draggable widgets ARE the regions.
-    for (const obj of ctrl._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
-    }
-
-    // One draggable widget per single-variable region requirement.
-    const labels = { r_vision_footprint: 'ビジョン要求', r_mech_footprint: 'メカ要求' }
-    this._authorWidgets = []
-    for (const req of this._editCtx.requirements) {
-      if ((req.constrains?.length ?? 0) !== 1 || !req.admissible?.region) continue
-      const widget = new RegionAuthoringWidget(ctrl._sceneView.scene, document.body, {
-        region: req.admissible.region,
-        handleRadius: 30,
-        labelText: labels[req.ref] ?? req.ref,
-      })
-      this._authorWidgets.push({ reqRef: req.ref, varRef: req.constrains[0], widget })
-    }
-
-    const { center, radius } = this._computeBounds(compiled.layoutDsl)
-    ctrl._sceneView.fitCameraToSphere(center, radius)
-
-    const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
-    ui.demoStart({
-      steps: [{
-        title: '領域オーサリング — 衝突のライブ解消',
-        narration: '各担当の設置許容ゾーンを 3D で直接ドラッグして編集できる。重なれば衝突は消え (緑)、離れれば再発する (赤)。3D は入力デバイス、契約はテキスト DSL のまま (invariant 9)。',
-      }],
-      facts: [], intents: [], decisions: [], obligations: [], acceptance: [],
-      openQuestions: [], blockedChecks: [], trace: [], conflicts: [],
-    })
-    ui.demoSetStep(0, 'conflicts')
-
-    this._active     = true
-    this._authoring  = true
-    this._authorDrag = null
-    this._revalidate() // initial conflict colouring + inspector population
-  }
-
-  /** Re-runs the validator on the edited context and repaints conflict state. */
-  _revalidate() {
-    const result = validateContext(this._editCtx)
-    const conflictVars = new Set(result.conflicts.map(c => c.variable))
-    for (const w of this._authorWidgets) w.widget.setConflict(conflictVars.has(w.varRef))
-    useUIStore.getState().actions.demoSetConflicts(result.conflicts)
-  }
-
-  // Pointer delegation from AppController (returns true when the event is consumed).
-
-  onAuthorPointerDown(e) {
-    if (!this._authoring) return false
-    if (e.button !== 0 && e.pointerType !== 'touch') return false
-    const ctrl = this._ctrl
-    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
-    const meshes = this._authorWidgets.flatMap(w => w.widget.handleMeshes)
-    const hits = ctrl._raycaster.intersectObjects(meshes, false)
-    if (hits.length === 0) return false // let OrbitControls handle non-handle drags
-
-    const mesh  = hits[0].object
-    const entry = this._authorWidgets.find(w => w.widget.handleMeshes.includes(mesh))
-    if (!entry) return false
-    const pt = new THREE.Vector3()
-    if (!ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)) return false
-
-    entry.widget.startDrag(mesh.userData.handleId, pt)
-    this._authorDrag = entry
-    ctrl._controls.enabled = false
-    ctrl._activeDragPointerId = e.pointerId
-    return true
-  }
-
-  onAuthorPointerMove(e) {
-    if (!this._authoring || !this._authorDrag) return false
-    const ctrl = this._ctrl
-    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
-    const pt = new THREE.Vector3()
-    if (!ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)) return true
-    const region = this._authorDrag.widget.dragTo(pt)
-    this._editCtx = applyAdmissibleEdit(this._editCtx, this._authorDrag.reqRef, { region })
-    this._revalidate()
-    return true
-  }
-
-  onAuthorPointerUp() {
-    if (!this._authoring || !this._authorDrag) return false
-    this._authorDrag.widget.endDrag()
-    this._authorDrag = null
-    this._ctrl._controls.enabled = true
-    this._ctrl._activeDragPointerId = null
-    return true
-  }
-
-  // ── Negotiation visualization (ADR-049 Phase 4) ─────────────────────────────
-
-  /**
-   * Loads the multi-actor conflict scenario and shows the persona projections
-   * (conflict matrix + negotiation-cluster resolution order) in the Inspector.
-   * Data-only: the current scene is left untouched (the conflict scenario's
-   * layout is a single AnnotatedRegion — replacing the scene would add nothing).
-   */
-  enterNegotiation() {
-    if (this._active) return
-    try {
-      compileContext(conflictContext) // validate compilability up front (PHILOSOPHY #11)
-    } catch (err) {
-      this._ctrl._uiView.showToast(`Negotiation compile failed: ${err.message}`, { type: 'error' })
-      console.error('[ContextDemoController]', err)
-      return
-    }
-    this._ctrl._uiView.showConfirmDialog(
-      '交渉設計ビューを開きますか? (現在のシーンはそのまま — 衝突マトリックスと解消順序を表示)',
-      (ok) => { if (ok) this._startNegotiation() },
-      { title: '交渉設計 — 衝突マトリックス × 解消順序 (ADR-049 Phase 4)', confirmLabel: '開く' },
-    )
-  }
-
-  _startNegotiation() {
-    const ctrl   = this._ctrl
-    const result = validateContext(conflictContext)
-    // Keep ctx + result for re-projection; the approval interaction never
-    // re-validates — it only re-applies the approval gate (CODE_CONTRACTS).
-    this._negCtx    = conflictContext
-    this._negResult = result
-
-    // Open with nothing approved: every conflict/cluster reads `proposed`. The
-    // user walks the resolution-order DAG approving each Decision in turn.
-    const approvedRefs = new Set()
-    const matrix = projectConflictMatrix(conflictContext, result, { approvedRefs })
-    const order  = projectResolutionOrder(conflictContext, result, { approvedRefs })
-
-    // The negotiation view is a data overlay — keep the scene, just clear room.
-    ctrl._linkNetworkView?.setForceHidden(true)
-
-    const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
-    ui.demoStart({
-      steps: [{
-        title: '交渉設計 — 衝突マトリックスと解消順序',
-        narration: '共有設計変数ごとに、誰のどの要求が衝突しているかをマトリックスで一望する。衝突 (R6) と交渉クラスター (R7) はルールが吐く (ADR-049 不変条件7)。解消順序 (DAG) を上から辿り、単一 Decision → n-ary 合同 Decision の順に承認していく。承認するとマトリックスのセルが proposed (◐) → resolved (✓) に変わる。n-ary は上流の衝突をすべて確定してから合同確定できる (不変条件8)。actor 列クリックでペルソナ射影。',
-      }],
-      facts: [], intents: [], obligations: [], acceptance: [],
-      openQuestions: [], blockedChecks: [], trace: [],
-      decisions: conflictContext.decisions ?? [],
-      conflicts: result.conflicts,
-    })
-    ui.demoSetMatrix(matrix, result.negotiationClusters, order)
-    ui.demoSetStep(0, 'matrix')
-
-    this._active      = true
-    this._negotiation = true
-  }
-
-  /**
-   * Approves a proposed Decision in the negotiation view (single or n-ary) and
-   * re-projects the matrix + resolution order with the updated approval set.
-   * Pure data overlay: no re-validation (the cached `_negResult` is reused), no
-   * scene mutation. The n-ary `d_cell_joint` simultaneously fixes every variable
-   * in the cluster it resolves (ADR-049 invariant 8).
-   *
-   * @param {string} decisionRef — the resolving Decision ref (e.g. d_standoff, d_cell_joint)
-   */
-  approveNegotiationDecision(decisionRef) {
-    if (!this._negotiation || !this._negCtx || !this._negResult) return
-    const ui = useUIStore.getState().actions
-    ui.demoApproveDecision(decisionRef)
-
-    const approvedRefs = new Set(Object.keys(useUIStore.getState().demo.approvedDecisions))
-    const matrix = projectConflictMatrix(this._negCtx, this._negResult, { approvedRefs })
-    const order  = projectResolutionOrder(this._negCtx, this._negResult, { approvedRefs })
-    ui.demoSetMatrix(matrix, this._negResult.negotiationClusters, order)
-
-    // Summarise the nominal(s) the Decision fixes (single: nominal; n-ary: nominals{}).
-    const d = (this._negCtx.decisions ?? []).find(x => x.ref === decisionRef)
-    let detail = ''
-    if (d?.nominals) {
-      detail = Object.entries(d.nominals).map(([v, n]) => `${v.replace(/^v_/, '')}=${n}`).join(', ')
-    } else if (d?.nominal != null) {
-      detail = `${String(d.resolves).replace(/^conflict_v_/, '')}=${d.nominal}`
-    }
-    const kind = d?.nominals ? '合同確定' : '確定'
-    this._ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
-  }
-
-  // ── Actor-coloured region ghost overlay (ADR-049 Phase 4, §5.3) ─────────────
-
-  /**
-   * Loads the region scenario and overlays each actor's admissible footprint as a
-   * persona-coloured ghost. The empty common intersection is drawn as the conflict
-   * gap so "共通部分が空 = 衝突" is visible in 3-D (ADR-049 §5.3, deferred bullet).
-   * The conflict matrix is shown alongside so clicking an actor column dims the
-   * other personas' ghosts (the persona filter links the 2-D grid and 3-D overlay).
-   */
-  enterRegionGhost() {
-    if (this._active) return
-    let compiled, scene
-    try {
-      compiled = compileContext(regionContext)
-      scene    = compileLayout(compiled.layoutDsl)
-    } catch (err) {
-      this._ctrl._uiView.showToast(`Region ghost compile failed: ${err.message}`, { type: 'error' })
-      console.error('[ContextDemoController]', err)
-      return
-    }
-    this._ctrl._uiView.showConfirmDialog(
-      '現在のシーンを置き換えて 許容領域ゴースト重畳 (ADR-049 §5.3) を開きますか?',
-      (ok) => { if (ok) this._startRegionGhost(compiled, scene) },
-      { title: '許容領域ゴースト — actor 別色分け重畳', confirmLabel: '開く' },
-    )
-  }
-
-  async _startRegionGhost(compiled, scene) {
-    const ctrl = this._ctrl
-    const viewContext = { camera: ctrl._camera, renderer: ctrl._sceneView.renderer, container: document.body }
-    try {
-      await ctrl._service.importFromJson(scene, viewContext, { clear: true })
-    } catch (err) {
-      ctrl._uiView.showToast(`Region ghost scene load failed: ${err.message}`, { type: 'error' })
-      console.error('[ContextDemoController]', err)
-      return
-    }
-    ctrl._commandStack.clear()
-    ctrl._refreshUndoRedoState()
-    ctrl._selMgr.clearObjectSelection()
-    ctrl._selMgr.setObjectSelected(false)
-    ctrl._linkNetworkView?.setForceHidden(true)
-
-    // The compiled zone meshes are hidden — the persona-coloured ghosts ARE the
-    // regions (same pattern as authoring), drawn read-only over a clean ground.
-    for (const obj of ctrl._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
-    }
-
-    const result = validateContext(regionContext)
-    const ghosts = projectRegionGhosts(regionContext, result)
-    const actorOrder = (regionContext.actors ?? []).map(a => a.ref)
-
-    this._regionGhosts = []
-    for (const g of ghosts) {
-      // Assign a deterministic persona colour per region by actor index.
-      const regions = g.regions.map(r => ({
-        ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
-      }))
-      const view = new RegionGhostView(ctrl._sceneView.scene, document.body, { ...g, regions })
-      this._regionGhosts.push(view)
-    }
-
-    const { center, radius } = this._computeBounds(compiled.layoutDsl)
-    ctrl._sceneView.fitCameraToSphere(center, radius)
-
-    // Show the matrix alongside so the actor-column persona filter drives the
-    // 3-D ghost dimming (the 2-D grid and 3-D overlay are one persona projection).
-    const matrix = projectConflictMatrix(regionContext, result)
-    const order  = projectResolutionOrder(regionContext, result)
-
-    const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
-    ui.demoStart({
-      steps: [{
-        title: '許容領域ゴースト — actor 別色分け重畳',
-        narration: 'メカ・ビジョン各担当の設置許容フットプリントを actor 色で重ねて表示。共通部分が空 = 衝突が目で見える (赤い no-man\'s-land バンド)。マトリックスの担当列をクリックするとそのペルソナの領域だけが残る (ペルソナ射影)。3D は出力射影、契約はテキスト DSL のまま (invariant 9)。',
-      }],
-      facts: [], intents: [], obligations: [], acceptance: [],
-      openQuestions: [], blockedChecks: [], trace: [],
-      decisions: regionContext.decisions ?? [],
-      conflicts: result.conflicts,
-    })
-    ui.demoSetMatrix(matrix, result.negotiationClusters, order)
-    ui.demoSetPersonaFilter(null)
-    ui.demoSetStep(0, 'matrix')
-
-    this._active          = true
-    this._regionGhostMode = true
-    this._ghostFilter     = null
-  }
-
   // ── Requirement → 3D traceability ──────────────────────────────────────────
 
   /**
@@ -823,24 +414,6 @@ export class ContextDemoController {
 
   tick(t) {
     if (!this._active) return
-
-    if (this._authoring) {
-      const cam = this._ctrl._sceneView.activeCamera
-      const rdr = this._ctrl._sceneView.renderer
-      for (const w of this._authorWidgets) w.widget.tick(t, cam, rdr)
-    }
-
-    if (this._regionGhostMode) {
-      const cam = this._ctrl._sceneView.activeCamera
-      const rdr = this._ctrl._sceneView.renderer
-      // Mirror the conflict-matrix persona filter into the 3-D ghost dimming.
-      const filter = useUIStore.getState().demo.personaFilter
-      if (filter !== this._ghostFilter) {
-        this._ghostFilter = filter
-        for (const v of this._regionGhosts) v.setPersonaFilter(filter)
-      }
-      for (const v of this._regionGhosts) v.tick(t, cam, rdr)
-    }
 
     if (this._ghost) {
       const done = this._ghost.tick(t, this._ctrl._sceneView.activeCamera, this._ctrl._sceneView.renderer)
