@@ -118,6 +118,7 @@ export class ContextController {
     registerCallback('onAnswerQuestion',         (ref, q, a)  => this.answerQuestion(ref, q, a))
     registerCallback('onAddDocEntry',            (type, data) => this.addDocEntry(type, data))
     registerCallback('onIntakePreview',          (spec)       => this.previewIntake(spec))
+    registerCallback('onAddNlFacts',             (facts)      => this.addNlFacts(facts))
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
@@ -238,6 +239,41 @@ export class ContextController {
       })
       .catch(err => {
         ctrl._uiView.showToast(`エントリを追加できません: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+      })
+  }
+
+  // ── Natural-language intake (Phase 4 — Entry C, ADR-051 §3) ─────────────────
+
+  /**
+   * Fold a batch of NL-extracted Fact fragments into the canonical doc as a single
+   * undoable mutation. The fragments come from the pure `extractFacts` bridge (the
+   * panel computes + previews them; this method only performs the side effect).
+   * Conservative facts (`status:'unknown'`) raise OpenQuestions the FormPanel then
+   * resolves — the NL bridge never silently fixes a value (ADR-051 §Negative).
+   *
+   * @param {object[]} facts — `given[]`-shaped fragments from NlIntake.extractFacts
+   */
+  addNlFacts(facts) {
+    if (!this.isNegotiation) return
+    if (!Array.isArray(facts) || facts.length === 0) return
+    const ctrl = this._ctrl
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = facts.reduce((doc, f) => addFact(doc, f), beforeDoc)
+
+    const label = `NL 取り込み (${facts.length} Fact)`
+    const cmd = createAddDocEntryCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
+    Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)
+        ctrl._refreshUndoRedoState()
+        const unknown = facts.filter(f => f.status === 'unknown').length
+        ctrl._uiView.showToast(
+          `${facts.length} 件の Fact を取り込みました${unknown ? `（うち ${unknown} 件は要確定）` : ''}`,
+        )
+      })
+      .catch(err => {
+        ctrl._uiView.showToast(`NL 取り込みに失敗しました: ${err.message}`, { type: 'error' })
         console.error('[ContextController]', err)
       })
   }
