@@ -2,7 +2,7 @@
 
 **Status**: Proposed
 **Date**: 2026-06-16
-**Related**: ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events)
+**Related**: ADR-052 (5W1H ユビキタス言語 — 土台), ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events)
 **Implementation**: ADR 承認後の段階導入（本 ADR §6）。既存資産を再利用 — `src/service/ContextService.js`, `src/controller/ContextController.js`, `src/context/{FormApplication,FormProjection}.js`, `src/command/AnswerQuestionCommand.js`, `src/components/Context/FormPanel.jsx`, `src/view/UncertaintyGhostView.js`。新規入口 UI は additive。
 
 ---
@@ -42,6 +42,14 @@ ADR-050 で context ドキュメントを正準アーティファクト化し、
 あいまいさの表現は既存を踏襲する（新概念を作らない）: Fact の `interval` + `status`、確定は `Decision`、
 3D 可視化は `UncertaintyGhostView`（入力デバイス、ADR-049 不変条件9）。入口が増えても**ドメインモデルと
 正準形は不変**。
+
+### 2.0 Why ファースト（ADR-052 の直接の帰結）
+
+正準 doc は **Why（KPI / クライテリアと実測の Gap / 及第点の達成）をルートにした 5W1H ツリー**である
+（ADR-052 §2.1）。したがって全入口は **Why を先に捕捉し、幾何（What/How）は導出する**よう doc を
+組み立てる。特に入口 A（ブランクフォーム）と C（NL インテーク）は、最初に「何を、どのクライテリアで、
+どれだけの Gap を許して達成するか」を問う導線にする。これにより NL 文脈と doc が同義語商上で Mutual に
+保たれ（ADR-052 §2.2）、入力した要件の来歴がデータから機械的に復元可能になる。
 
 ### 2.1 採択した代替案と棄却した代替案
 

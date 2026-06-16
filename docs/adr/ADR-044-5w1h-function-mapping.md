@@ -3,7 +3,7 @@
 **Status**: Draft  
 **Date**: 2026-06-01  
 **Supersedes**: —  
-**Related**: ADR-030 (SpatialLink), ADR-039 (Operation State Machine), ADR-041 (Semantic Inference), ADR-022 (Undo/Redo Command Pattern)
+**Related**: ADR-030 (SpatialLink), ADR-039 (Operation State Machine), ADR-041 (Semantic Inference), ADR-022 (Undo/Redo Command Pattern), ADR-052 (5W1H ユビキタス言語 — 本 φ を文脈全体へ一般化), ADR-051 (要件入力 — φ を入口 D の抽出ブリッジに), ADR-046 (Context DSL)
 
 ---
 
