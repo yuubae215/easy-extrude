@@ -18,6 +18,7 @@ import { Outliner } from './Outliner/Outliner.jsx'
 import { Onboarding } from './Onboarding/Onboarding.jsx'
 import { ContextDemoLayer } from './ContextDemo/ContextDemoLayer.jsx'
 import { ContextLayer } from './Context/ContextLayer.jsx'
+import { TemplateGallery } from './Context/TemplateGallery.jsx'
 
 /**
  * React UI root — Phase 2d–2g + Phase 3 + Phase 4.
@@ -70,6 +71,7 @@ export function UIShell() {
       <Onboarding />
       <ContextDemoLayer />
       <ContextLayer />
+      <TemplateGallery />
       <ToastStack toasts={toasts} />
     </>
   )

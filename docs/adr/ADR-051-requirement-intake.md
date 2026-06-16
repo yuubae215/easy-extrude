@@ -1,6 +1,6 @@
 # ADR-051 — 要件入力（Requirement Intake）: あいまい要件を起点化する複数入口アーキテクチャ
 
-**Status**: Accepted (Phase 1 実装済 — Phase 2/3/4 未実装)
+**Status**: Accepted (全 4 フェーズ実装済 — 2026-06-16)
 **Date**: 2026-06-16
 **Related**: ADR-052 (5W1H ユビキタス言語 — 土台), ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events)
 **Implementation**: 段階導入（§6）。Phase 1 完了 (2026-06-16):
@@ -11,7 +11,33 @@
 - `src/controller/ContextController.js` — `newContext()` / `addDocEntry()` / `onNewContext`・`onAddDocEntry` コールバック
 - `src/components/Header/Header.jsx` — Context ▾ に「New Context」追加（PC + mobile ⋯）
 - `src/store/uiStore.js` — `context.variables` フィールド + `contextSetActors` / `contextSetVars` アクション
-- Phase 2 (テンプレートギャラリー) / Phase 3 (3D ゴースト即時プレビュー) / Phase 4 (NL インテーク) 未実装。
+
+Phase 2 完了 (2026-06-16):
+- `src/context/TemplateCatalog.js` — `TEMPLATE_CATALOG`（純粋メタデータ）/ `getTemplateMeta` / `exampleFiles`（THREE-free、JSON import なし）
+- `src/components/Context/TemplateGallery.jsx` — スターターテンプレート選択モーダル（カテゴリ別カード、z-index 300、§7 透明化フッター）
+- `src/controller/ContextController.js` — `openTemplateGallery()` / `closeTemplateGallery()` / `selectTemplate(id)` + `TEMPLATE_DOCS` import マップ（blank→`adoptDoc`、example→`loadContext`）+ `onOpenTemplateGallery`・`onCloseTemplateGallery`・`onSelectTemplate` コールバック
+- `src/components/Header/Header.jsx` — Context ▾ + mobile ⋯ に「テンプレートから開始…」追加
+- `src/store/uiStore.js` — `templateGalleryOpen` フィールド + `setTemplateGalleryOpen` アクション
+- `src/components/UIShell.jsx` — `<TemplateGallery />` マウント
+
+Phase 3 完了 (2026-06-16):
+- `src/view/UncertaintyGhostView.js` — additive `setIntervalPreview({interval,nominal,labelText})`
+  （構築済みレイアウトを再ベイクせず軸位置・スケール・ラベルのみ更新。demo は無改変）
+- `src/controller/ContextController.js` — `previewIntake(spec)` / `_disposeIntakeGhost()` +
+  `_intakeGhost` 単独所有（`exit()` と `previewIntake(null)` で破棄）+ `tick()` で idle パルス +
+  `onIntakePreview` コールバック
+- `src/components/Context/IntakePanel.jsx` — RequirementForm の admissible 区間入力を `useEffect` で
+  ライブ駆動（unmount/submit で `onPreview(null)`）+ 入力ヒント
+
+Phase 4 完了 (2026-06-16):
+- `src/context/NlIntake.js` — 純粋・決定的な `extractFacts(utterance)` 抽出ブリッジ（THREE-free、
+  入力不変、bare `node --test`）。あいまい（約・範囲・不明）は `status:'unknown'` で保守的に出し、
+  確定値のみ `asserted {value, unit}`。解釈不能セグメントは `unparsed` で返す（PHILOSOPHY #11）。
+- `src/controller/ContextController.js` — `addNlFacts(facts)`（バッチを単一 `AddDocEntryCommand` で
+  undo 可能に取り込み）+ `onAddNlFacts` コールバック
+- `src/components/Context/IntakePanel.jsx` — `NlIntakeForm`（テキストエリア + 純粋抽出のライブプレビュー +
+  確定前レビュー → コミット）を intake タブ先頭の「自然言語から取り込み」セクションに追加
+- ADR-044 の決定的準同型に従い、抽出器は固定 Fact スキーマへの写像のみ（任意構造を生成しない）。
 
 ---
 
@@ -98,11 +124,19 @@ ADR-050 で context ドキュメントを正準アーティファクト化し、
 
 ## 6. 段階導入（各フェーズ独立にテスト可能）
 
-- **Phase 1**: 入口 A（ブランクフォーム作成）。空 doc 起動 + Fact/Decision/OpenQuestion 追加ウィジェット +
+- **Phase 1** ✅: 入口 A（ブランクフォーム作成）。空 doc 起動 + Fact/Decision/OpenQuestion 追加ウィジェット +
   純粋 doc-builder + コマンド。THREE-free 単体テスト。
-- **Phase 2**: 入口 B（テンプレートギャラリー）。starter `.ctx.json` 群 + 選択 UI。
-- **Phase 3**: 入口 D（3D ゴースト即時プレビュー）。入力中ライブ駆動。
-- **Phase 4**: 入口 C（NL インテーク）。ADR-044 抽出ブリッジを context へ配線。
+- **Phase 2** ✅: 入口 B（テンプレートギャラリー）。starter `.ctx.json` 群 + 選択 UI。純粋カタログ
+  （`TemplateCatalog.js`、THREE-free 単体テスト）+ ギャラリーモーダル + コントローラの `selectTemplate`
+  （blank→`adoptDoc` / example→`loadContext`、既存 example JSON を再利用）。§7 の透明化（読み込む例の明示）を
+  ギャラリーフッターで満たす。
+- **Phase 3** ✅: 入口 D（3D ゴースト即時プレビュー）。入力中ライブ駆動。IntakePanel の許容区間入力を
+  `UncertaintyGhostView`（`setIntervalPreview` で再ベイクなし in-place 更新、単独所有）にライブ接続。
+  Decision 確定での収束（collapse）は既存 demo/negotiation 経路が担い、本番 Decision アニメは後続。
+- **Phase 4** ✅: 入口 C（NL インテーク）。決定的・保守的な純粋抽出器 `NlIntake.extractFacts`
+  （`src/context/NlIntake.js`）+ `IntakePanel` の NL セクション（ライブプレビュー → レビュー → コミット）+
+  `ContextController.addNlFacts`（単一 `AddDocEntryCommand`）。LLM 非依存の規則ベース抽出（ADR-044
+  準同型に整合）。あいまいは `status:'unknown'` で OpenQuestion 化し Decision で確定。
 
 ## 7. デモ/初期シーン挙動の透明化（本 ADR の付随決定）
 

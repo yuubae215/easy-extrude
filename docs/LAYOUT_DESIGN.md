@@ -212,6 +212,7 @@ z:0    ── 3D canvas (Three.js renderer)
 |-----------|----------|------------|
 | Context Inspector | `fixed; top:40px; right:0; bottom:26px` | width 280px; hidden < 768px |
 | Context Layer (ADR-050 — production negotiation / authoring / region ghost) | `fixed; top:40px; right:0; bottom:26px` (same right-edge slot as the demo Inspector; the two are never active simultaneously) | width 280px desktop; **full-width on mobile** (3D-independent overlay, PHILOSOPHY #26). All three `context.mode`s (negotiate/author/ghost) share this one slot |
+| Template Gallery (ADR-051 Phase 2 — starter-template picker) | `fixed; inset:0` centred modal over a `rgba(0,0,0,0.6)` backdrop; **z-index 300** (above all edge panels — transient, PHILOSOPHY #26) | dialog `width: min(720px, 92vw); max-height: 86vh`; category-grouped card grid `repeat(auto-fill, minmax(200px, 1fr))` |
 | Decision Card | `fixed; right:292px; top:56px` (mobile: `right:12px`) — top-anchored so it never covers the ghost-collapse animation or the StoryBar ✕; shown at step ④ only | width 320px max |
 | Story Bar | `fixed; bottom:36px; left:50%` (mobile: `bottom:96px`) | `min(620px, 100vw − 24px)` |
 | Uncertainty ghost label | HTML overlay, projected via `SceneView.activeCamera` | z-index 50 (Three.js label tier) |

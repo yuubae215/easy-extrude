@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { extractFacts } from '../../context/NlIntake.js'
 
 /**
  * IntakePanel — direct entry addition UI for blank-doc authoring (ADR-051 Phase 1).
@@ -196,7 +197,7 @@ function VariableForm({ variables, onAdd }) {
 
 // ── Requirement form ───────────────────────────────────────────────────────────
 
-function RequirementForm({ actors, variables, onAdd }) {
+function RequirementForm({ actors, variables, onAdd, onPreview }) {
   const [ref, setRef]         = useState('')
   const [by, setBy]           = useState('')
   const [kpiName, setKpiName] = useState('')
@@ -209,10 +210,25 @@ function RequirementForm({ actors, variables, onAdd }) {
   const [admLo, setAdmLo]     = useState('')
   const [admHi, setAdmHi]     = useState('')
 
+  // Live 3D uncertainty-band preview driven by the admissible interval inputs
+  // (ADR-051 Phase 3 — Entry D). Fires as [lo, hi] change; cleared on unmount
+  // (tab switch / section collapse) and after a successful submit.
+  const admUnit = variables.find(v => v.ref === constrains)?.unit ?? kpiUnit
+  useEffect(() => {
+    const loN = parseFloat(admLo), hiN = parseFloat(admHi)
+    if (isNaN(loN) || isNaN(hiN) || hiN <= loN) {
+      onPreview?.(null)
+      return
+    }
+    onPreview?.({ lo: loN, hi: hiN, unit: admUnit, label: ref.trim() || 'requirement' })
+  }, [admLo, admHi, admUnit, ref])
+  useEffect(() => () => onPreview?.(null), [])
+
   function submit() {
     const r = ref.trim(), b = by.trim(), kn = kpiName.trim(), kc = constrains.trim()
     const valN = parseFloat(val), loN = parseFloat(admLo), hiN = parseFloat(admHi)
     if (!r || !b || !kn || !kc || isNaN(valN) || isNaN(loN) || isNaN(hiN)) return
+    onPreview?.(null)
     onAdd({
       ref: r,
       by:  b,
@@ -280,6 +296,9 @@ function RequirementForm({ actors, variables, onAdd }) {
       <Field label="negotiability">
         <Select value={neg} onChange={setNeg} options={NEGOTIABILITY} />
       </Field>
+      <div style={{ fontSize: '9px', color: '#777', margin: '2px 0 1px' }}>
+        許容区間 — 入力すると不確実バンドが 3D に即時表示されます (Entry D)
+      </div>
       <div style={{ display: 'flex', gap: '6px' }}>
         <Field label="admissible lo">
           <input value={admLo} onChange={e => setAdmLo(e.target.value)}
@@ -297,12 +316,75 @@ function RequirementForm({ actors, variables, onAdd }) {
   )
 }
 
+// ── Natural-language intake form (ADR-051 Phase 4 — Entry C) ─────────────────────
+
+function NlIntakeForm({ onAddFacts }) {
+  const [text, setText] = useState('')
+
+  // The extractor is pure (THREE-free) — preview is computed locally, no controller
+  // round-trip. Only commit is a side effect (fires onAddFacts → undoable command).
+  const { facts, unparsed } = extractFacts(text)
+
+  function commit() {
+    if (facts.length === 0) return
+    onAddFacts(facts)
+    setText('')
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: '10px', color: '#777', marginBottom: '5px', lineHeight: 1.5 }}>
+        発話・メモを貼り付けると Fact を抽出します。あいまいな値（約・範囲・不明）は
+        <span style={{ color: '#d5a23a' }}> 未確定</span> として保守的に取り込み、Questions で確定します
+        (ADR-051 §Negative)。
+      </div>
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={3}
+        placeholder={'例:\nカメラの解像度は2448px\nロボットのリーチは約800mm\n架台の高さは不明'}
+        style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.4 }}
+      />
+      {(facts.length > 0 || unparsed.length > 0) && (
+        <div style={{ margin: '6px 0', maxHeight: '160px', overflowY: 'auto' }}>
+          {facts.map(f => (
+            <div key={f.ref} style={{
+              fontSize: '10px', padding: '3px 5px', marginBottom: '3px', borderRadius: '3px',
+              background: f.status === 'unknown' ? 'rgba(213,162,58,0.10)' : 'rgba(34,197,94,0.08)',
+              border: `1px solid ${f.status === 'unknown' ? '#d5a23a55' : '#22C55E44'}`,
+            }}>
+              <span style={{ color: f.status === 'unknown' ? '#d5a23a' : '#22C55E', fontWeight: 'bold' }}>
+                {f.status === 'unknown' ? '未確定' : 'asserted'}
+              </span>
+              <span style={{ color: '#aaa', marginLeft: '5px' }}>{f.subject}</span>
+              {Object.entries(f.attrs).map(([k, v]) => (
+                <span key={k} style={{ color: '#888', marginLeft: '5px' }}>
+                  · {k} = {v === 'unknown' ? '?' : `${v.value}${v.unit ?? ''}`}
+                </span>
+              ))}
+            </div>
+          ))}
+          {unparsed.map((u, i) => (
+            <div key={`u${i}`} style={{ fontSize: '10px', color: '#777', padding: '2px 5px' }}>
+              ⚠ 未解釈: {u}
+            </div>
+          ))}
+        </div>
+      )}
+      <button onClick={commit} style={btnStyle(true)} disabled={facts.length === 0}>
+        + {facts.length || ''} Fact をドキュメントに追加
+      </button>
+    </div>
+  )
+}
+
 // ── IntakePanel (public) ───────────────────────────────────────────────────────
 
 export function IntakePanel() {
   const ctx       = useUIStore(s => s.context)
   const callbacks = useUIStore(s => s.callbacks)
 
+  const [openNl,    setOpenNl]    = useState(false)
   const [openActor, setOpenActor] = useState(true)
   const [openVar,   setOpenVar]   = useState(false)
   const [openReq,   setOpenReq]   = useState(false)
@@ -322,6 +404,15 @@ export function IntakePanel() {
       <div style={{ fontSize: '10px', color: '#666', marginBottom: '8px', lineHeight: 1.5 }}>
         Why ファースト — まずアクター・変数を登録し、次に KPI 基準付き要件を追加してください (ADR-051 §2.0)。
       </div>
+
+      <Section
+        title="自然言語から取り込み"
+        count={0}
+        open={openNl}
+        onToggle={() => setOpenNl(o => !o)}
+      >
+        <NlIntakeForm onAddFacts={facts => callbacks.onAddNlFacts?.(facts)} />
+      </Section>
 
       <Section
         title="Actors"
@@ -349,7 +440,12 @@ export function IntakePanel() {
         open={openReq}
         onToggle={() => setOpenReq(o => !o)}
       >
-        <RequirementForm actors={actors} variables={variables} onAdd={d => onAdd('requirement', d)} />
+        <RequirementForm
+          actors={actors}
+          variables={variables}
+          onAdd={d => onAdd('requirement', d)}
+          onPreview={spec => callbacks.onIntakePreview?.(spec)}
+        />
       </Section>
     </div>
   )
