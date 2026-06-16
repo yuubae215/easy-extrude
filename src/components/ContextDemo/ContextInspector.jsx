@@ -38,6 +38,7 @@ export function ContextInspector() {
   const demo      = useUIStore(s => s.demo)
   const callbacks = useUIStore(s => s.callbacks)
   const setTab    = useUIStore(s => s.actions.demoSetTab)
+  const setFilter = useUIStore(s => s.actions.demoSetPersonaFilter)
 
   const isMobile      = window.innerWidth < 768
   const isNegotiation = !!demo.conflictMatrix
@@ -116,8 +117,21 @@ export function ContextInspector() {
         {demo.inspectorTab === 'trace'         && <TraceTab demo={demo} select={select} />}
         {demo.inspectorTab === 'acceptance'    && <AcceptanceTab demo={demo} />}
         {demo.inspectorTab === 'conflicts'     && <ConflictsTab demo={demo} select={select} />}
-        {demo.inspectorTab === 'matrix'        && <ConflictMatrix />}
-        {demo.inspectorTab === 'cluster'       && <NegotiationClusterView />}
+        {demo.inspectorTab === 'matrix'        && (
+          <ConflictMatrix
+            matrix={demo.conflictMatrix}
+            filter={demo.personaFilter}
+            onSetFilter={setFilter}
+          />
+        )}
+        {demo.inspectorTab === 'cluster'       && (
+          <NegotiationClusterView
+            order={demo.resolutionOrder}
+            clusters={demo.negotiationClusters}
+            filter={demo.personaFilter}
+            onApprove={ref => callbacks.onApproveNegotiationDecision?.(ref)}
+          />
+        )}
       </div>
     </div>
   )

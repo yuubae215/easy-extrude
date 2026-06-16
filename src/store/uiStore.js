@@ -132,6 +132,24 @@ export const useUIStore = create((set, get) => ({
     personaFilter: null,     // actorRef | null — persona projection highlight
   },
 
+  // ── Context-first project (ADR-050) ────────────────────────────────────────
+  // Persistent slice (parallel to `demo`, never auto-reset on a new payload).
+  // Populated by ContextController; reads the canonical doc through ContextService.
+  // The `demo` slice above stays untouched — tutorial story vs. production are
+  // decoupled (ADR-050 §4.1/§4.3).
+  context: {
+    active: false,           // negotiation overlay shown
+    loaded: false,           // a context document has been adopted
+    docMeta: null,           // { name, version } of the loaded doc
+    decisions: [],           // doc.decisions (for detail lookups)
+    conflicts: [],           // validatorResult.conflicts (R6 output)
+    negotiationClusters: [], // validatorResult.negotiationClusters (R7 output)
+    conflictMatrix: null,    // ContextService.projectMatrix() | null
+    resolutionOrder: [],     // ContextService.projectOrder() — DSM meeting order
+    personaFilter: null,     // actorRef | null
+    inspectorTab: 'matrix',  // 'matrix' | 'cluster'
+  },
+
   // ══ Actions ════════════════════════════════════════════════════════════════
 
   actions: {
@@ -283,6 +301,29 @@ export const useUIStore = create((set, get) => ({
     })),
     demoEnd: () => set(state => ({
       demo: { ...state.demo, active: false },
+    })),
+
+    // ── Context-first project (ADR-050) ──────────────────────────────────────
+    // Unlike demoStart, contextStart does NOT wipe the slice on every call —
+    // the context overlay is persistent (a loaded project, not a transient
+    // tutorial). It merges the payload and marks the overlay active.
+    contextStart: (payload) => set(state => ({
+      context: { ...state.context, ...payload, active: true },
+    })),
+    contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
+      context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
+    })),
+    contextSetConflicts: (conflicts) => set(state => ({
+      context: { ...state.context, conflicts },
+    })),
+    contextSetPersonaFilter: (personaFilter) => set(state => ({
+      context: { ...state.context, personaFilter },
+    })),
+    contextSetTab: (inspectorTab) => set(state => ({
+      context: { ...state.context, inspectorTab },
+    })),
+    contextEnd: () => set(state => ({
+      context: { ...state.context, active: false, personaFilter: null },
     })),
   },
 }))

@@ -64,6 +64,7 @@ import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
+import { ContextController }          from './ContextController.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
@@ -363,6 +364,11 @@ export class AppController {
     // Phase 1 wires the load pipeline; UI entry points arrive in later phases.
     this._ctxService = new ContextService(this._service)
     this._ctxService.on('contextLoaded', ({ compiled }) => this._onContextLoaded(compiled))
+
+    // ── Production Context-first overlay (ADR-050 Phase 2) ─────────────────
+    // Persistent overlay coordinator (not a setMode FSM state) consuming the
+    // canonical document via ContextService. Registers its own uiStore callbacks.
+    this._ctxCtrl = new ContextController(this)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
