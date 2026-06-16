@@ -138,7 +138,8 @@ export const useUIStore = create((set, get) => ({
   // The `demo` slice above stays untouched — tutorial story vs. production are
   // decoupled (ADR-050 §4.1/§4.3).
   context: {
-    active: false,           // negotiation overlay shown
+    active: false,           // an overlay (negotiate / author / ghost) is shown
+    mode: null,              // 'negotiate' | 'author' | 'ghost' | null (ADR-050 §4.3)
     loaded: false,           // a context document has been adopted
     docMeta: null,           // { name, version } of the loaded doc
     decisions: [],           // doc.decisions (for detail lookups)
@@ -147,7 +148,7 @@ export const useUIStore = create((set, get) => ({
     conflictMatrix: null,    // ContextService.projectMatrix() | null
     resolutionOrder: [],     // ContextService.projectOrder() — DSM meeting order
     personaFilter: null,     // actorRef | null
-    inspectorTab: 'matrix',  // 'matrix' | 'cluster'
+    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts'
   },
 
   // ══ Actions ════════════════════════════════════════════════════════════════
@@ -323,7 +324,7 @@ export const useUIStore = create((set, get) => ({
       context: { ...state.context, inspectorTab },
     })),
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, personaFilter: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null },
     })),
   },
 }))
