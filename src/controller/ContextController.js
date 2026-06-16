@@ -38,8 +38,10 @@ import * as THREE from 'three'
 import { useUIStore } from '../store/uiStore.js'
 import { createApproveDecisionCommand } from '../command/ApproveDecisionCommand.js'
 import { createEditAdmissibleCommand } from '../command/EditAdmissibleCommand.js'
+import { createAnswerQuestionCommand } from '../command/AnswerQuestionCommand.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
+import { applyQuestionAnswer } from '../context/FormApplication.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
@@ -76,11 +78,14 @@ export class ContextController {
     this._ctxService.on('contextChanged', () => this._reproject())
 
     const { registerCallback } = useUIStore.getState().actions
-    registerCallback('onContextNegotiate',       ()    => this.enterNegotiation())
-    registerCallback('onContextAuthor',          ()    => this.enterAuthoring())
-    registerCallback('onContextRegionGhost',     ()    => this.enterRegionGhost())
-    registerCallback('onApproveContextDecision', (ref) => this.approveDecision(ref))
-    registerCallback('onContextExit',            ()    => this.exit())
+    registerCallback('onContextNegotiate',       ()           => this.enterNegotiation())
+    registerCallback('onContextAuthor',          ()           => this.enterAuthoring())
+    registerCallback('onContextRegionGhost',     ()           => this.enterRegionGhost())
+    registerCallback('onApproveContextDecision', (ref)        => this.approveDecision(ref))
+    registerCallback('onAnswerQuestion',         (ref, q, a)  => this.answerQuestion(ref, q, a))
+    registerCallback('onContextExit',            ()           => this.exit())
+    registerCallback('onImportCtxJson',          ()           => this.importContextFile())
+    registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
   }
 
   /** True while any context overlay is active. */
@@ -117,6 +122,7 @@ export class ContextController {
 
     ctrl._linkNetworkView?.setForceHidden(true)
 
+    const form = this._ctxService.projectForm()
     const ui = useUIStore.getState().actions
     ui.setNPanelVisible(false)
     ui.contextStart({
@@ -124,12 +130,14 @@ export class ContextController {
       loaded:              true,
       docMeta:             { name: doc?.meta?.name ?? 'Context', version: doc?.version },
       decisions:           doc?.decisions ?? [],
+      actors:              doc?.actors ?? [],
       conflicts:           result.conflicts,
       negotiationClusters: result.negotiationClusters,
       conflictMatrix:      this._ctxService.projectMatrix(),
       resolutionOrder:     this._ctxService.projectOrder(),
+      form,
     })
-    ui.contextSetTab('matrix')
+    ui.contextSetTab(form.length > 0 ? 'questions' : 'matrix')
     this._mode = 'negotiate'
   }
 
@@ -367,6 +375,94 @@ export class ContextController {
     ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
   }
 
+  // ── Form answer (undoable doc mutation, ADR-050 §3.5) ────────────────────────
+
+  /**
+   * Commit a form-question answer through the CommandStack so it is undoable.
+   * `applyQuestionAnswer` builds the afterDoc (pure, input-immutable); both
+   * before and after are snapshotted. The command calls `applyContextDoc` with
+   * `regenerate:true` — answers may change derived geometry (e.g. a fact value
+   * promotes a `stated` admissible to `derived`, shifting a zone).
+   *
+   * Re-projection (including form shrinkage) flows through `contextChanged` →
+   * `_reproject()` (PHILOSOPHY #5) — not done inline here.
+   *
+   * @param {string} qRef — OpenQuestion ref
+   * @param {{ ref, target, answerKind }} question — from FormPanel
+   * @param {object} answer — shaped by answerKind
+   */
+  answerQuestion(qRef, question, answer) {
+    if (!this.isNegotiation) return
+    const ctrl = this._ctrl
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = applyQuestionAnswer(beforeDoc, question, answer)
+    const cmd = createAnswerQuestionCommand(this._ctxService, qRef, beforeDoc, afterDoc, this._viewContext())
+    Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)
+        ctrl._refreshUndoRedoState()
+      })
+      .catch((err) => {
+        ctrl._uiView.showToast(`回答を適用できません: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+      })
+  }
+
+  // ── .ctx.json import / export (ADR-050 §5) ────────────────────────────────────
+
+  /**
+   * Open a file picker for `.ctx.json` files, parse, and load via ContextService.
+   * On success: scene is regenerated, undo history is cleared (project-open boundary
+   * — same contract as `loadContext` in AppController._onContextLoaded). Then
+   * automatically enter negotiate mode so the user sees the matrix + questions.
+   * Side-effectful; must only be called from a user gesture.
+   */
+  importContextFile() {
+    const input = document.createElement('input')
+    input.type   = 'file'
+    input.accept = '.ctx.json,.json'
+    input.addEventListener('change', () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        let doc
+        try {
+          doc = JSON.parse(ev.target.result)
+        } catch {
+          this._ctrl._uiView.showToast(`JSON 解析エラー: ${file.name}`, { type: 'error' })
+          return
+        }
+        this._loadThen(doc, () => this._startNegotiation())
+      }
+      reader.readAsText(file)
+    })
+    input.click()
+  }
+
+  /**
+   * Download the current canonical Context DSL document as a `.ctx.json` file.
+   * The doc IS the project artifact — no compilation or conversion needed.
+   */
+  exportContextFile() {
+    const doc = this._ctxService.getDoc()
+    if (!doc) {
+      this._ctrl._uiView.showToast('コンテキストが読み込まれていません', { type: 'warn' })
+      return
+    }
+    const name      = doc?.meta?.name ?? 'context'
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const filename  = `${name.replace(/\s+/g, '_')}-${timestamp}.ctx.json`
+    const blob      = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
+    const url       = URL.createObjectURL(blob)
+    const a         = document.createElement('a')
+    a.href          = url
+    a.download      = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    this._ctrl._uiView.showToast(`Saved: ${filename}`)
+  }
+
   // ── Re-projection (event-driven — covers approve / region edit / undo / redo) ──
 
   _reproject() {
@@ -379,6 +475,10 @@ export class ContextController {
         this._ctxService.projectOrder(),
       )
       ui.contextSetConflicts(result.conflicts)
+      // Update the form so answered questions disappear immediately (PHILOSOPHY #5).
+      if (this._mode === 'negotiate') {
+        ui.contextSetForm(this._ctxService.projectForm())
+      }
     } else if (this._mode === 'author') {
       // A committed / undone region edit regenerated the scene — re-hide the
       // derived meshes, resync the edit clone, and recolour from the new doc.
