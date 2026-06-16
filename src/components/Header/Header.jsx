@@ -300,6 +300,7 @@ function ContextDropdown() {
           overflow: 'hidden', zIndex: '200', minWidth: '200px',
           boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
         }}>
+          {item('New Context',     callbacks.onNewContext)}
           {item('Import Context…', callbacks.onImportCtxJson)}
           {item('Save Context',    callbacks.onExportCtxJson)}
           <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
@@ -412,6 +413,7 @@ function MoreMenu() {
         }}>
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
+          {item('New Context',     SVG_DEMO, callbacks.onNewContext)}
           {item('Import Context…', SVG_DEMO, callbacks.onImportCtxJson)}
           {item('Save Context',    SVG_DEMO, callbacks.onExportCtxJson)}
           {item('交渉設計 (Negotiate)', SVG_DEMO, callbacks.onContextNegotiate)}

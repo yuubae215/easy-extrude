@@ -41,6 +41,7 @@ import {
 } from '../context/PersonaProjection.js'
 import { projectForm } from '../context/FormProjection.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
+import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
 
 /** Decision statuses that count as "approved" for the persona-projection gate. */
 const APPROVED_STATUS = new Set(['agreed', 'signed'])
@@ -153,6 +154,48 @@ export class ContextService extends EventEmitter {
       this.emit('conflictsChanged', { conflicts: validatorResult.conflicts })
     }
     return validatorResult
+  }
+
+  // ── Blank-doc adoption (ADR-051 Phase 1) ────────────────────────────────────
+
+  /**
+   * Adopt a blank (no specification.layout) context document: validate → clear
+   * the scene → set state → emit `contextLoaded`. Unlike `loadContext`, this
+   * skips the compile / layout / import-from-layout pipeline because the doc has
+   * no layout spec yet. The scene is cleared with an empty scene JSON so the user
+   * starts from a clean 3-D view. Throws on validation failure.
+   *
+   * Called by `ContextController.newContext()` for Entry A (ADR-051 §3).
+   *
+   * @param {object} doc — blank Context DSL doc (createBlankDoc() output)
+   * @param {object} viewContext — { camera, renderer, container }
+   * @returns {Promise<{imported:number, skipped:number}>}
+   */
+  async adoptDoc(doc, viewContext) {
+    const validatorResult = validateContext(doc)
+    if (!validatorResult.valid) {
+      throw new Error(`Context DSL validation failed:\n  - ${validatorResult.errors.join('\n  - ')}`)
+    }
+
+    // Clear the scene without a layout compile step.
+    const emptyScene = {
+      version:        SCENE_JSON_VERSION,
+      objects:        [],
+      links:          [],
+      transformGraph: { nodes: [], edges: [] },
+    }
+    const importResult = await this._scene.importFromJson(emptyScene, viewContext, { clear: true })
+
+    this._doc             = doc
+    this._validatorResult = validatorResult
+    this._compiled        = null
+    this._refToId         = new Map()
+    this._traceByFrom     = new Map()
+    this._constraintToLinkId = new Map()
+    this._linkIds         = []
+
+    this.emit('contextLoaded', { doc, validatorResult, compiled: null, importResult })
+    return importResult
   }
 
   // ── Authoring mutations (each yields a new doc — PHILOSOPHY #6) ─────────────

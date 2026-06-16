@@ -1,9 +1,17 @@
 # ADR-051 — 要件入力（Requirement Intake）: あいまい要件を起点化する複数入口アーキテクチャ
 
-**Status**: Proposed
+**Status**: Accepted (Phase 1 実装済 — Phase 2/3/4 未実装)
 **Date**: 2026-06-16
 **Related**: ADR-052 (5W1H ユビキタス言語 — 土台), ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events)
-**Implementation**: ADR 承認後の段階導入（本 ADR §6）。既存資産を再利用 — `src/service/ContextService.js`, `src/controller/ContextController.js`, `src/context/{FormApplication,FormProjection}.js`, `src/command/AnswerQuestionCommand.js`, `src/components/Context/FormPanel.jsx`, `src/view/UncertaintyGhostView.js`。新規入口 UI は additive。
+**Implementation**: 段階導入（§6）。Phase 1 完了 (2026-06-16):
+- `src/context/DocBuilder.js` — `createBlankDoc` / `addActor` / `addFact` / `addVariable` / `addRequirement`（純粋、入力不変）
+- `src/command/AddDocEntryCommand.js` — `createAddDocEntryCommand`（before/after スナップショット、undo 可）
+- `src/components/Context/IntakePanel.jsx` — Actor/Variable/Requirement 直接追加ウィジェット（ContextLayer の 'intake' タブ）
+- `src/service/ContextService.js` — `adoptDoc()` メソッド追加（blank doc 用 — compile/layout スキップ、scene クリア）
+- `src/controller/ContextController.js` — `newContext()` / `addDocEntry()` / `onNewContext`・`onAddDocEntry` コールバック
+- `src/components/Header/Header.jsx` — Context ▾ に「New Context」追加（PC + mobile ⋯）
+- `src/store/uiStore.js` — `context.variables` フィールド + `contextSetActors` / `contextSetVars` アクション
+- Phase 2 (テンプレートギャラリー) / Phase 3 (3D ゴースト即時プレビュー) / Phase 4 (NL インテーク) 未実装。
 
 ---
 

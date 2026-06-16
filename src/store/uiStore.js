@@ -151,6 +151,7 @@ export const useUIStore = create((set, get) => ({
     personaFilter: null,     // actorRef | null
     inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions'
     form: [],                // projectForm() output — open intake questions (Phase 4)
+    variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
   },
 
   // ══ Actions ════════════════════════════════════════════════════════════════
@@ -328,8 +329,14 @@ export const useUIStore = create((set, get) => ({
     contextSetForm: (form) => set(state => ({
       context: { ...state.context, form },
     })),
+    contextSetActors: (actors) => set(state => ({
+      context: { ...state.context, actors },
+    })),
+    contextSetVars: (variables) => set(state => ({
+      context: { ...state.context, variables },
+    })),
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [] },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [] },
     })),
   },
 }))

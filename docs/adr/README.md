@@ -62,7 +62,7 @@ This directory records the project's design decisions.
 | [ADR-048](ADR-048-link-network-layered-layout.md) | **Link Network 決定的階層レイアウト — 力学レイアウト廃止と親子構造の可視化** | Accepted | 2026-06-12 | ADR-030, ADR-037, ADR-038 |
 | [ADR-049](ADR-049-requirement-conflict-model.md) | **Requirement / Conflict モデル — KPI 由来の許容領域・衝突検出・交渉クラスター** | Accepted | 2026-06-14 | ADR-046, ADR-047, ADR-044, ADR-035 |
 | [ADR-050](ADR-050-context-first-project-model.md) | **Context-First Project Model — 要求/衝突/交渉 の PoC から本番機能化** | Accepted | 2026-06-14 | ADR-049, ADR-046, ADR-047, ADR-045, ADR-022, ADR-013, ADR-011 |
-| [ADR-051](ADR-051-requirement-intake.md) | **要件入力（Requirement Intake）— あいまい要件を起点化する複数入口アーキテクチャ** | Proposed | 2026-06-16 | ADR-052, ADR-050, ADR-049, ADR-047, ADR-046, ADR-044, ADR-022, ADR-013 |
+| [ADR-051](ADR-051-requirement-intake.md) | **要件入力（Requirement Intake）— あいまい要件を起点化する複数入口アーキテクチャ** | Accepted (Phase 1) | 2026-06-16 | ADR-052, ADR-050, ADR-049, ADR-047, ADR-046, ADR-044, ADR-022, ADR-013 |
 | [ADR-052](ADR-052-5w1h-ubiquitous-language.md) | **5W1H ユビキタス言語 — NL ⇄ データの Mutual 構造（Why ルートの正準ツリー）** | Proposed | 2026-06-16 | ADR-046, ADR-044, ADR-049, ADR-048, ADR-050, ADR-051 |
 
 ## How to Add a New ADR
