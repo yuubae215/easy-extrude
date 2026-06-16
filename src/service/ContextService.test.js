@@ -192,3 +192,32 @@ test('projection wrappers return populated structures for the conflict scenario'
   assert.ok(svc.projectOrder().length > 0)
   assert.ok(Array.isArray(svc.projectForm()))
 })
+
+// ── whyTree / recoverProvenance accessors (ADR-052) ───────────────────────────
+
+test('whyTree returns null before load and the tree after load', async () => {
+  const svc = new ContextService(fakeScene())
+  assert.equal(svc.whyTree(), null)
+  await svc.loadContext(factory(), VC)
+  const tree = svc.whyTree()
+  assert.ok(tree.nodes.length > 0)
+  assert.ok(tree.roots.includes('intent:g_automate'))
+})
+
+test('recoverProvenance maps a scene entity id back to its Why provenance', async () => {
+  const svc = new ContextService(fakeScene())
+  await svc.loadContext(factory(), VC)
+
+  // _refToId maps the layout ref → scene id; reverse it for a known ref.
+  const sceneId = svc.getRefToId().get('container_a')
+  assert.ok(sceneId, 'container_a was compiled into the scene')
+
+  const p = svc.recoverProvenance(sceneId)
+  assert.equal(p.found, true)
+  assert.ok(p.intents.includes('g_automate'))
+})
+
+test('recoverProvenance returns null with no doc loaded', () => {
+  const svc = new ContextService(fakeScene())
+  assert.equal(svc.recoverProvenance('anything'), null)
+})

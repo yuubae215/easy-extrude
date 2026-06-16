@@ -40,6 +40,7 @@ import {
   projectRegionGhosts,
 } from '../context/PersonaProjection.js'
 import { projectForm } from '../context/FormProjection.js'
+import { buildWhyTree, recoverProvenance } from '../context/ProvenanceTree.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
 
@@ -253,6 +254,38 @@ export class ContextService extends EventEmitter {
   }
   projectForm() {
     return projectForm(this._validatorResult)
+  }
+
+  // ── Why-rooted 5W1H tree / φ⁻¹ provenance recovery (ADR-052) ────────────────
+
+  /**
+   * The Why-rooted 5W1H tree of the loaded document (ADR-052 §2.1). Pure
+   * projection over the canonical doc — `null` until a doc is loaded.
+   */
+  whyTree() {
+    return this._doc ? buildWhyTree(this._doc) : null
+  }
+
+  /**
+   * φ⁻¹ — recover the Why provenance of a derived scene entity from its scene
+   * entity id (ADR-052 §2.2). Reverses the `_refToId` map to obtain the canonical
+   * layout ref, then delegates to the pure `recoverProvenance`. Returns `null`
+   * when no doc is loaded; the recovery result's `found:false` when the id is not
+   * a context-derived entity.
+   *
+   * @param {string} sceneId — a scene entity id (as held by SceneService)
+   * @returns {object|null}
+   */
+  recoverProvenance(sceneId) {
+    if (!this._doc) return null
+    const ref = this._refForSceneId(sceneId)
+    return recoverProvenance(this._doc, ref ?? sceneId)
+  }
+
+  /** Reverse `_refToId` (scene entity id → canonical layout ref). */
+  _refForSceneId(sceneId) {
+    for (const [ref, id] of this._refToId) if (id === sceneId) return ref
+    return null
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
