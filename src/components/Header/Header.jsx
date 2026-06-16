@@ -297,9 +297,14 @@ function ContextDropdown() {
         <div style={{
           position: 'fixed', top: pos.top, right: pos.right,
           background: '#2b2b2b', border: '1px solid #555', borderRadius: '6px',
-          overflow: 'hidden', zIndex: '200', minWidth: '190px',
+          overflow: 'hidden', zIndex: '200', minWidth: '200px',
           boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
         }}>
+          {item('Import Context…', callbacks.onImportCtxJson)}
+          {item('Save Context',    callbacks.onExportCtxJson)}
+          <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
+            本番 (Production)
+          </div>
           {item('交渉設計 (Negotiate)', callbacks.onContextNegotiate)}
           {item('領域オーサリング (Author)', callbacks.onContextAuthor)}
           {item('許容領域ゴースト (Ghosts)', callbacks.onContextRegionGhost)}
@@ -407,6 +412,8 @@ function MoreMenu() {
         }}>
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
+          {item('Import Context…', SVG_DEMO, callbacks.onImportCtxJson)}
+          {item('Save Context',    SVG_DEMO, callbacks.onExportCtxJson)}
           {item('交渉設計 (Negotiate)', SVG_DEMO, callbacks.onContextNegotiate)}
           {item('領域オーサリング', SVG_DEMO, callbacks.onContextAuthor)}
           {item('許容領域ゴースト', SVG_DEMO, callbacks.onContextRegionGhost)}

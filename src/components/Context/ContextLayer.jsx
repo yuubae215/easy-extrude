@@ -1,6 +1,7 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from '../ContextDemo/ConflictMatrix.jsx'
 import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.jsx'
+import { FormPanel } from './FormPanel.jsx'
 
 /**
  * ContextLayer — production Context-first overlay (ADR-050).
@@ -42,11 +43,15 @@ export function ContextLayer() {
 
   const isMobile = window.innerWidth < 768
   const liveConflicts = (ctx.conflicts ?? []).filter(c => !c.resolvedBy).length
-  // negotiate shows both tabs (approve in cluster); ghost shows matrix only
-  // (read-only persona filter); author has no matrix — only the conflict list.
+  // negotiate shows matrix + cluster + questions (if any open); ghost shows matrix
+  // only (read-only persona filter); author has no matrix — only the conflict list.
   const tabs =
-    ctx.mode === 'negotiate' ? [{ id: 'matrix', label: 'Matrix' }, { id: 'cluster', label: 'Cluster' }]
-    : ctx.mode === 'ghost'   ? [{ id: 'matrix', label: 'Matrix' }]
+    ctx.mode === 'negotiate' ? [
+      { id: 'matrix',    label: 'Matrix' },
+      { id: 'cluster',   label: 'Cluster' },
+      ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
+    ]
+    : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
     : []
 
   return (
@@ -91,8 +96,9 @@ export function ContextLayer() {
           {tabs.map(tab => {
             const active = ctx.inspectorTab === tab.id
             const badge =
-              tab.id === 'matrix'  ? (ctx.conflictMatrix ? Object.values(ctx.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
-              tab.id === 'cluster' ? (ctx.resolutionOrder?.filter(s => !s.approved).length ?? 0) : 0
+              tab.id === 'matrix'    ? (ctx.conflictMatrix ? Object.values(ctx.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
+              tab.id === 'cluster'   ? (ctx.resolutionOrder?.filter(s => !s.approved).length ?? 0) :
+              tab.id === 'questions' ? (ctx.form?.length ?? 0) : 0
             return (
               <button
                 key={tab.id}
@@ -140,6 +146,9 @@ export function ContextLayer() {
             filter={ctx.personaFilter}
             onApprove={ref => callbacks.onApproveContextDecision?.(ref)}
           />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'questions' && (
+          <FormPanel />
         )}
       </div>
     </div>

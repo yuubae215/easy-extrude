@@ -143,12 +143,14 @@ export const useUIStore = create((set, get) => ({
     loaded: false,           // a context document has been adopted
     docMeta: null,           // { name, version } of the loaded doc
     decisions: [],           // doc.decisions (for detail lookups)
+    actors: [],              // doc.actors (for actorRef form widgets — Phase 4)
     conflicts: [],           // validatorResult.conflicts (R6 output)
     negotiationClusters: [], // validatorResult.negotiationClusters (R7 output)
     conflictMatrix: null,    // ContextService.projectMatrix() | null
     resolutionOrder: [],     // ContextService.projectOrder() — DSM meeting order
     personaFilter: null,     // actorRef | null
-    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts'
+    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions'
+    form: [],                // projectForm() output — open intake questions (Phase 4)
   },
 
   // ══ Actions ════════════════════════════════════════════════════════════════
@@ -323,8 +325,11 @@ export const useUIStore = create((set, get) => ({
     contextSetTab: (inspectorTab) => set(state => ({
       context: { ...state.context, inspectorTab },
     })),
+    contextSetForm: (form) => set(state => ({
+      context: { ...state.context, form },
+    })),
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [] },
     })),
   },
 }))
