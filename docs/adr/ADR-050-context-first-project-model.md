@@ -2,7 +2,7 @@
 
 **Status**: Accepted
 **Date**: 2026-06-14
-**Related**: ADR-049 (Requirement/Conflict モデル), ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-045 (External Layout API), ADR-022 (Undo/Redo), ADR-013 (Domain Events), ADR-011 (SceneService)
+**Related**: ADR-049 (Requirement/Conflict モデル), ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-045 (External Layout API), ADR-022 (Undo/Redo), ADR-013 (Domain Events), ADR-011 (SceneService), ADR-051 (要件入力 — あいまい要件の起点化、本 ADR の後続 Phase 6)
 **Implementation**: 段階導入(本 ADR §6)。新規: `src/service/ContextService.js`, `src/controller/ContextController.js`, `src/command/{ApproveDecision,EditAdmissible,AnswerQuestion}Command.js`, `src/components/Context/{ContextLayer,FormPanel}.jsx`, `src/context/FormApplication.js`。既存純粋層 `src/context/*`(94 テスト)は無改変で再利用。`ContextDemoController` はチュートリアル専用に精簡(Phases 2–4 の本番コードを除去)。
 
 > **進捗 (2026-06-16 d)** — **Phase 5 完了(チュートリアル分離 + Accepted 昇格)**: `ContextDemoController` から Phases 2–4 で本番 `ContextController` へ移行済みのコードを除去: `enterNegotiation()`/`_startNegotiation()`/`approveNegotiationDecision()` (Phase 2)、`enterAuthoring()`/`_startAuthoring()`/`_revalidate()`/`onAuthorPointerDown/Move/Up()` (Phase 3)、`enterRegionGhost()`/`_startRegionGhost()` (Phase 3)。それに伴い `applyAdmissibleEdit`/`projectConflictMatrix`/`projectResolutionOrder`/`projectRegionGhosts`/`validateContext`/`RegionAuthoringWidget`/`RegionGhostView`/`personaColor`/`regionContext`/`conflictContext` の import 群も除去。demo コントローラが登録するコールバックを tutorial 専用 5 件に絞り込み(`onContextDemoClick`/`onDemoStepChange`/`onDemoApproveDecision`/`onDemoItemSelect`/`onDemoExit`)、Authoring/Negotiation/RegionGhost の 4 件は ContextController が既に登録済み。本 ADR のステータスを **Accepted** に昇格 — 全 5 フェーズ実装完了・**118/118** テスト・`vite build` クリーン。

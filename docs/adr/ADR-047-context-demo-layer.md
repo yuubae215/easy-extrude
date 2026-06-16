@@ -2,7 +2,13 @@
 
 **Status**: Accepted
 **Date**: 2026-06-11
-**Related**: ADR-046 (Context DSL), ADR-045 (External Layout API), ADR-040 (Solid Primary Triple), ADR-041 (RippleEffect 前例), ADR-037 (Origin CF), ADR-050 (Context-First 本番機能化 — demo→production 分離)
+**Related**: ADR-046 (Context DSL), ADR-045 (External Layout API), ADR-040 (Solid Primary Triple), ADR-041 (RippleEffect 前例), ADR-037 (Origin CF), ADR-050 (Context-First 本番機能化 — demo→production 分離), ADR-051 (要件入力 — デモ挙動の透明化)
+
+> **注記 (2026-06-16, ADR-051 §7)** — 各入口（Tutorial / 交渉設計 / 領域オーサリング）は
+> **別の例 JSON を読みシーンを `importFromJson({clear:true})` で差し替える**（Tutorial=`factory_context.json`
+> カメラ無し、本番フロー=`cell_conflict_context.json`/`cell_region_context.json` カメラ要件あり）。
+> データは現シーン（初期キューブ等）から派生しない。確認ダイアログに「現在のシーンを差し替えます／
+> 読み込む例: …」を表示し、入口ごとの読み込み対象を明示すること。
 **Implementation**: `src/controller/ContextDemoController.js`, `src/view/UncertaintyGhostView.js`, `src/components/ContextDemo/`, `uiStore` demo slice
 
 ---

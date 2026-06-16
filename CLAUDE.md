@@ -43,7 +43,8 @@ Before writing or modifying any code, consult the relevant documents.
 | 本番 Negotiation / ContextController / 交渉設計(本番)/ context スライス / アンドゥ可能な承認 / ApproveDecisionCommand / Context ▾ メニュー / ContextLayer / prop 駆動 Matrix・Cluster | ADR-050 §4/§6 Phase 2, `src/controller/ContextController.js`, `src/command/ApproveDecisionCommand.js`, `src/components/Context/ContextLayer.jsx` |
 | 本番 Authoring / 領域オーサリング(本番)/ ライブ recolor / ドラッグ終了で再生成 / アンドゥ可能な領域編集 / EditAdmissibleCommand / 本番 領域ゴースト / context mode (negotiate/author/ghost) | ADR-050 §4.5/§6 Phase 3, `src/controller/ContextController.js`, `src/command/EditAdmissibleCommand.js`, `src/view/RegionAuthoringWidget.js`, `src/view/RegionGhostView.js` |
 | 動的フォーム / OpenQuestion intake / FormPanel / answerKind / AnswerQuestionCommand / .ctx.json import-save / applyQuestionAnswer | ADR-050 §4.4/§5/§6 Phase 4, `src/controller/ContextController.js`, `src/command/AnswerQuestionCommand.js`, `src/context/FormApplication.js`, `src/components/Context/FormPanel.jsx` |
-| Link Network / link graph / リンク図 / layered layout / node panel | ADR-048, `src/view/LinkNetworkView.js` |
+| 要件入力 / requirement intake / あいまい要件の入口 / 複数入口 / blank-slate authoring / テンプレートギャラリー / 自然言語インテーク / NL→Fact / 入力UX / デモがどの例を読むか | ADR-051, ADR-050 §2/§5 (正準 doc), ADR-047 §7 (デモ挙動), ADR-044 (5W1H NL bridge) |
+| Link Network / link graph / リンク図 / layered layout / node panel / 複数親に見える / 包含 vs 制約エッジ | ADR-048 §2.2.1, `src/view/LinkNetworkView.js` |
 | 5W1H / NL to code / function mapping / FunctionDescriptor / ExecutionPlan | ADR-044 |
 | events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |
 | controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
