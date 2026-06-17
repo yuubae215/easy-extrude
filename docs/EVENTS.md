@@ -479,6 +479,14 @@ non-context entity / multi-select clears it. The Gap is re-joined for the tracke
 selection inside `_reproject()` so approve / region edit / undo / redo keep the
 breadcrumb fresh through the one re-projection path (PHILOSOPHY #5).
 
+**ADR-052 Phase 3 — Why tree overview (俯瞰 tab)**: also has **no UI callback** —
+it is pure projected state, not a user action. `ContextController._startNegotiation()`
+pushes `ui.contextSetWhyTree(ContextService.whyTree())` on enter, and `_reproject()`
+re-pushes it on every doc mutation (add / answer / region-edit / undo / redo) so the
+whole-doc `WhyTreeView` overview always matches the live document through the same
+re-projection path as the matrix / form / breadcrumb (PHILOSOPHY #5). `context.whyTree`
+is reset by `contextEnd`.
+
 **Phase 3 pointer delegation** (CODE_CONTRACTS «Context Authoring Pointer Delegation»): when
 `_ctxCtrl.isAuthoring`, `_onPointerDown/Move/Up` delegate to `_ctxCtrl.onAuthor*(e)` (after
 `_hitTest.updateMouse`, alongside the existing `_demoCtrl.isAuthoring` branch). A live drag

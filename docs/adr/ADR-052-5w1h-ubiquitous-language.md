@@ -1,6 +1,6 @@
 # ADR-052 — 5W1H ユビキタス言語: NL ⇄ データの Mutual 構造（Why ルートの正準ツリー）
 
-**Status**: Accepted (Phase 1 + Phase 2 実装済 — 2026-06-17)
+**Status**: Accepted (Phase 1 + Phase 2 + Phase 3 実装済 — 2026-06-17)
 **Date**: 2026-06-16
 **Related**: ADR-046 (Context DSL — 正準形), ADR-044 (5W1H Function Mapping — φ 準同型), ADR-049 (Requirement/Conflict — KPI/criterion/gap/admissible), ADR-047 (Context Demo Layer), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake)
 **Implementation**: 構造契約の明文化（本 ADR §2.1）＋ φ⁻¹（来歴復元）の足場。新データ構造は追加しない（既存の散在情報を単一の構造契約へ統合する）。
@@ -42,8 +42,27 @@ Phase 2 完了 (2026-06-17) — シーン操作 → 来歴提示 UI（Why パン
   `contextStart`/`contextEnd` でリセット）。
 - `ContextService.test.js` +2 件（Gap join の構造契約・非派生 id の `gaps:[]`）、計 183/183、
   `tsc --noEmit`・`vite build` クリーン。demo（`ContextDemoController`）は無改変。
-- 残（後続）: NL ⇄ doc 往復、同義語商の正規化辞書拡張（ADR-044 `why.keywords`）、
-  `buildWhyTree` 全体ツリーの俯瞰ビュー（現状は選択起点の上方 BFS のみ）。
+- 残（後続）: NL ⇄ doc 往復、同義語商の正規化辞書拡張（ADR-044 `why.keywords`）。
+
+Phase 3 完了 (2026-06-17) — `buildWhyTree` 全体ツリーの俯瞰ビュー:
+- Phase 1 で実装・テスト済だが UI 未露出だった `buildWhyTree(ctx)`（正準 doc 全体を単一の
+  Why ルート 5W1H ツリーへ統合）を **negotiate オーバーレイの「俯瞰」タブ**に接続。Phase 2 の
+  WhyBreadcrumb が**選択起点の上方 φ⁻¹ climb**（1 エンティティ）を見せるのに対し、本ビューは
+  **正準 doc 全体**を Why（apex）→ How（中間）→ What（葉）の 3 層として俯瞰する補完ビュー。
+- `src/components/Context/WhyTreeView.jsx` 新設 = presentational・`context.whyTree` 駆動。
+  `buildWhyTree` の `{nodes, edges, roots}` を 5W1H 層別にグルーピングし、**Why ルート**
+  （これより上に遡れない apex = `roots`）を最初に「▲ root」バッジ付きで提示。requirement
+  ノードは KPI 式・クライテリアも展開。WhyBreadcrumb と同じ presentational プリミティブ
+  （Layer / Tag / cardStyle）を共有し 2 つの Why ビューが一族として読める。新データ構造なし
+  （ProvenanceTree 契約 — 既存の散在フィールドの統合のみ）。
+- `ContextController._startNegotiation()` が `ContextService.whyTree()` を `context.whyTree`
+  へ射影。`_reproject()`（negotiate 時）も whyTree を再射影 = add/answer/edit/undo/redo が
+  ツリーを再形成しても単一の再射影経路で最新化（PHILOSOPHY #5）。
+- `uiStore.context.whyTree` フィールド + `contextSetWhyTree` アクション（`contextEnd` でリセット）。
+  `ContextLayer` negotiate タブに「俯瞰」を追加。
+- 純粋層・サービス層は無改変（`buildWhyTree`／`whyTree()` は Phase 1 でテスト済）。
+  計 183/183、`tsc --noEmit`・`vite build` クリーン。demo（`ContextDemoController`）は無改変。
+- 残（後続）: NL ⇄ doc 往復、同義語商の正規化辞書拡張（ADR-044 `why.keywords`）。
 
 ---
 

@@ -375,6 +375,9 @@ export class ContextController {
       resolutionOrder:     this._ctxService.projectOrder(),
       form,
     })
+    // The whole Why-rooted 5W1H tree overview (ADR-052 Phase 3 — bird's-eye
+    // complement to the selection-driven Why breadcrumb).
+    ui.contextSetWhyTree(this._ctxService.whyTree())
     // Blank doc (no actors) opens on intake tab so the user can start adding entries.
     const initialTab = form.length > 0 ? 'questions'
       : (doc?.actors?.length ?? 0) === 0 ? 'intake'
@@ -759,6 +762,9 @@ export class ContextController {
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
         ui.contextSetVars(doc?.variables ?? [])
+        // Refresh the whole-doc Why-tree overview — add/answer/edit all reshape it
+        // (ADR-052 Phase 3; one re-projection path — PHILOSOPHY #5).
+        ui.contextSetWhyTree(this._ctxService.whyTree())
         // Refresh the Why breadcrumb's joined Gap if an entity is selected — approval
         // / region edit / undo can change R6 conflicts (PHILOSOPHY #5, one path).
         if (this._provenanceSceneId) {
