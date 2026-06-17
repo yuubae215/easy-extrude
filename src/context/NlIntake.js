@@ -24,8 +24,22 @@
  *   - range:     「… <a>〜<b><unit>」 / "<a>-<b>", "<a> to <b>", "between <a> and <b>"
  *   - unknown:   「… は 不明/未定/わからない」 / "… unknown / tbd / n/a" (no number)
  *
+ * ADR-052 §2.2 (Mutual = structural isomorphism on the synonym quotient): each
+ * fact additionally carries an **additive** `canonical = {subject, attr}` record
+ * (canonical keys via `SynonymQuotient.canonicalKey`, `null` for out-of-quotient
+ * terms, the whole field **omitted** when both are null). The surface `subject` /
+ * `attrs` are left VERBATIM — `canonical` is a NEW field, never a replacement, so
+ * it is inert in `addFact` / the validator / the narrator (which renders the
+ * verbatim `subject` and node *kind*, not this record). It closes the φ side of
+ * the round-trip on the lexicon — the same dictionary the doc → NL narrator uses
+ * for φ⁻¹ now also mediates NL → doc. Because QUOTIENT_TABLE is the 5W1H
+ * vocabulary (operators / node kinds / relation verbs), domain nouns like
+ * "robot" / "reach" / "カメラ" lie outside the quotient and yield no field.
+ *
  * @module context/NlIntake
  */
+
+import { canonicalKey } from './SynonymQuotient.js'
 
 const UNKNOWN = 'unknown'
 
@@ -120,11 +134,22 @@ function parseStatement(segment) {
   return null
 }
 
-/** Build a `given[]`-shaped Fact fragment from a parsed descriptor. */
+/**
+ * Build a `given[]`-shaped Fact fragment from a parsed descriptor. Attaches an
+ * additive `canonical` record (ADR-052 §2.2) when a term is in the 5W1H quotient;
+ * the verbatim `subject` / `attrs` are never touched (see module header).
+ */
 function buildFact(p, index) {
   const ref     = `f_nl_${index}${slug(p.subject) ? `_${slug(p.subject)}` : ''}`
   const attrKey = p.attr || 'value'
   const subject = p.subject || '（無題）'
+
+  // Additive forward-leg record: canonicalise only terms that ARE in the quotient
+  // (φ on the lexicon). Both null → field omitted, so out-of-quotient domain-noun
+  // facts keep their exact prior shape (existing snapshots unchanged).
+  const cSubject  = canonicalKey(p.subject)
+  const cAttr     = canonicalKey(p.attr)
+  const canonical = (cSubject || cAttr) ? { subject: cSubject, attr: cAttr } : null
 
   if (p.kind === 'scalar' && !p.vague) {
     return {
@@ -132,6 +157,7 @@ function buildFact(p, index) {
       attrs:    { [attrKey]: { value: p.value, unit: p.unit ?? '' } },
       status:   'asserted',
       evidence: [],
+      ...(canonical && { canonical }),
     }
   }
 
@@ -146,6 +172,7 @@ function buildFact(p, index) {
     status:   'unknown',
     evidence: [],
     note,
+    ...(canonical && { canonical }),
   }
 }
 

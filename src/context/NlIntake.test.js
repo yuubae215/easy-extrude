@@ -111,3 +111,37 @@ describe('extractFacts — segmentation & robustness', () => {
     assert.deepEqual(a, b)
   })
 })
+
+describe('extractFacts — additive canonical record (ADR-052 §2.2)', () => {
+  it('leaves surface subject/attrs verbatim and omits canonical for domain nouns', () => {
+    const { facts } = extractFacts('robot reach is 850mm')
+    const f = facts[0]
+    assert.equal(f.subject, 'robot')                       // verbatim, untouched
+    assert.deepEqual(f.attrs['reach'], { value: 850, unit: 'mm' })
+    assert.equal('canonical' in f, false)                  // omitted, not null
+  })
+
+  it('records canonical.attr when the attribute token is in the 5W1H quotient', () => {
+    // "constraint" folds onto key 'constraint'; subject "panel" is out-of-quotient.
+    const { facts } = extractFacts('panel constraint is 5mm')
+    const f = facts[0]
+    assert.equal(f.subject, 'panel')                       // still verbatim
+    assert.deepEqual(f.attrs['constraint'], { value: 5, unit: 'mm' })
+    assert.deepEqual(f.canonical, { subject: null, attr: 'constraint' })
+  })
+
+  it('canonicalises a Japanese quotient term without touching the verbatim key', () => {
+    const { facts } = extractFacts('架台の設計変数は10mm')   // 設計変数 → 'variable'
+    const f = facts[0]
+    assert.ok('設計変数' in f.attrs)                        // verbatim key preserved
+    assert.equal(f.canonical.attr, 'variable')
+    for (const k of Object.keys(f.attrs)) assert.ok(!k.includes('.'), k)
+  })
+
+  it('canonical annotation is deterministic / pure', () => {
+    assert.deepEqual(
+      extractFacts('panel constraint is 5mm'),
+      extractFacts('panel constraint is 5mm'),
+    )
+  })
+})
