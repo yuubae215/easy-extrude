@@ -15,7 +15,7 @@
     "server:start": "pnpm --filter easy-extrude-bff run start",
     "typecheck": "tsc --noEmit",
     "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml",
-    "test:context": "node --test src/context/ContextCompiler.test.js src/context/ContextConflict.test.js src/context/ContextPhase2.test.js src/context/ContextPhase3.test.js src/context/ContextPhase4.test.js src/context/DocBuilder.test.js src/context/TemplateCatalog.test.js src/context/NlIntake.test.js src/service/ContextService.test.js src/command/ApproveDecisionCommand.test.js src/command/EditAdmissibleCommand.test.js src/command/AnswerQuestionCommand.test.js src/command/AddDocEntryCommand.test.js",
+    "test:context": "node --test src/context/ContextCompiler.test.js src/context/ContextConflict.test.js src/context/ContextPhase2.test.js src/context/ContextPhase3.test.js src/context/ContextPhase4.test.js src/context/DocBuilder.test.js src/context/TemplateCatalog.test.js src/context/NlIntake.test.js src/context/ProvenanceTree.test.js src/service/ContextService.test.js src/command/ApproveDecisionCommand.test.js src/command/EditAdmissibleCommand.test.js src/command/AnswerQuestionCommand.test.js src/command/AddDocEntryCommand.test.js",
     "layout": "node cli/index.js"
   },
   "bin": {

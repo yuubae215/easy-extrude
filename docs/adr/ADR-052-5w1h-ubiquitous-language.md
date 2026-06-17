@@ -1,9 +1,25 @@
 # ADR-052 — 5W1H ユビキタス言語: NL ⇄ データの Mutual 構造（Why ルートの正準ツリー）
 
-**Status**: Proposed
+**Status**: Accepted (Phase 1 実装済 — 2026-06-16)
 **Date**: 2026-06-16
 **Related**: ADR-046 (Context DSL — 正準形), ADR-044 (5W1H Function Mapping — φ 準同型), ADR-049 (Requirement/Conflict — KPI/criterion/gap/admissible), ADR-047 (Context Demo Layer), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake)
-**Implementation**: ドキュメントのみ（本セッション）。純粋層 `src/context/*`（検証・コンパイル・射影）への構造契約の明文化と φ⁻¹（来歴復元）の足場は ADR 承認後の後続。新データ構造は追加しない（既存の散在情報を単一の構造契約へ統合する）。
+**Implementation**: 構造契約の明文化（本 ADR §2.1）＋ φ⁻¹（来歴復元）の足場。新データ構造は追加しない（既存の散在情報を単一の構造契約へ統合する）。
+
+Phase 1 完了 (2026-06-16):
+- `src/context/ProvenanceTree.js` — 純粋・入力不変・THREE-free の `buildWhyTree(ctx)` と
+  `recoverProvenance(ctx, entityRef)`（φ⁻¹）。`intents[].parent` / `requirements[].kpi/criterion/
+  constrains` / `decisions[].resolves/relaxes` / `obligations[].dependsOn` / `acceptance[].requires` /
+  `specification.trace[]` / layout 内の `$fact`/`$decision` マーカーを、Why→How→What の単一の
+  型付きノード＋エッジグラフ（各エッジは派生(What 側)→源泉(Why 側)）へ統合。シーンの導出
+  エンティティから Why（KPI/criterion/Intent）を機械的に遡る。
+- `src/service/ContextService.js` — `whyTree()` / `recoverProvenance(sceneId)`（`_refToId` を逆引きして
+  シーンエンティティ id → 正準 layout ref → 純粋 `recoverProvenance` へ委譲。サービスは純粋ロジックを
+  持たない — PHILOSOPHY #3）。
+- `src/context/ProvenanceTree.test.js`（14 件）+ `ContextService.test.js`（+3 件）。
+  factory（Intent ルート）と cell_conflict（Requirement/KPI ルート）の双方の Why 形状を検証。
+- 計 181/181、`tsc --noEmit`・`vite build` クリーン。
+- 残（後続）: シーン操作 → 来歴提示の UI（インスペクタへの Why パンくず）、NL ⇄ doc 往復、
+  同義語商の正規化辞書拡張（ADR-044 `why.keywords`）。
 
 ---
 
