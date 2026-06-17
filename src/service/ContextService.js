@@ -41,6 +41,7 @@ import {
 } from '../context/PersonaProjection.js'
 import { projectForm } from '../context/FormProjection.js'
 import { buildWhyTree, recoverProvenance } from '../context/ProvenanceTree.js'
+import { narrateProvenance, narrateWhyTree } from '../context/ProvenanceNarrative.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
 
@@ -267,6 +268,16 @@ export class ContextService extends EventEmitter {
   }
 
   /**
+   * A one-line natural-language overview of the whole Why tree (ADR-052 Phase 4 —
+   * the doc → NL return leg). `null` until a doc is loaded.
+   * @param {{lang?:'ja'|'en'}} [opts]
+   * @returns {string|null}
+   */
+  whyTreeNarrative(opts = {}) {
+    return this._doc ? narrateWhyTree(this.whyTree(), opts) : null
+  }
+
+  /**
    * φ⁻¹ — recover the Why provenance of a derived scene entity from its scene
    * entity id (ADR-052 §2.2). Reverses the `_refToId` map to obtain the canonical
    * layout ref, then delegates to the pure `recoverProvenance`. Returns `null`
@@ -281,9 +292,10 @@ export class ContextService extends EventEmitter {
    * ref — the one place that owns both halves.
    *
    * @param {string} sceneId — a scene entity id (as held by SceneService)
+   * @param {{lang?:'ja'|'en'}} [opts] — narration language (default ja)
    * @returns {object|null}
    */
-  recoverProvenance(sceneId) {
+  recoverProvenance(sceneId, opts = {}) {
     if (!this._doc) return null
     const ref  = this._refForSceneId(sceneId)
     const prov = recoverProvenance(this._doc, ref ?? sceneId)
@@ -297,7 +309,10 @@ export class ContextService extends EventEmitter {
       .filter(Boolean)
       .map(c => ({ variable: c.variable, gap: c.gap, resolved: !!c.resolvedBy }))
 
-    return { ...prov, gaps }
+    // doc → NL: render the recovered Why (with the joined gaps) as prose. This is
+    // the visible φ⁻¹ return leg of the NL ⇄ doc round-trip (ADR-052 Phase 4).
+    const withGaps = { ...prov, gaps }
+    return { ...withGaps, narrative: narrateProvenance(withGaps, opts) }
   }
 
   /** Reverse `_refToId` (scene entity id → canonical layout ref). */

@@ -1,6 +1,6 @@
 # ADR-052 — 5W1H ユビキタス言語: NL ⇄ データの Mutual 構造（Why ルートの正準ツリー）
 
-**Status**: Accepted (Phase 1 + Phase 2 + Phase 3 実装済 — 2026-06-17)
+**Status**: Accepted (Phase 1 + Phase 2 + Phase 3 + Phase 4 実装済 — 2026-06-17)
 **Date**: 2026-06-16
 **Related**: ADR-046 (Context DSL — 正準形), ADR-044 (5W1H Function Mapping — φ 準同型), ADR-049 (Requirement/Conflict — KPI/criterion/gap/admissible), ADR-047 (Context Demo Layer), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake)
 **Implementation**: 構造契約の明文化（本 ADR §2.1）＋ φ⁻¹（来歴復元）の足場。新データ構造は追加しない（既存の散在情報を単一の構造契約へ統合する）。
@@ -63,6 +63,35 @@ Phase 3 完了 (2026-06-17) — `buildWhyTree` 全体ツリーの俯瞰ビュー
 - 純粋層・サービス層は無改変（`buildWhyTree`／`whyTree()` は Phase 1 でテスト済）。
   計 183/183、`tsc --noEmit`・`vite build` クリーン。demo（`ContextDemoController`）は無改変。
 - 残（後続）: NL ⇄ doc 往復、同義語商の正規化辞書拡張（ADR-044 `why.keywords`）。
+
+Phase 4 完了 (2026-06-17) — NL ⇄ doc 往復（doc → NL ナレーション）＋ 同義語商辞書:
+- §2.2 の Mutual（**同義語商上の構造同型**）を実コードで閉じる。φ（NL → doc）は ADR-051
+  Phase 4 の `NlIntake.extractFacts` が担う既存の足場。本フェーズは **φ⁻¹ の可視化 = doc → NL**
+  を実装し、往復を成立させる。φ⁻¹ は表層語を復元できず、同義語クラスにつき**代表 1 つ**だけを
+  選べる（ADR-044 §φ⁻¹）— これが「商上の構造同型」の正確な保証であり、ナレーションはその範囲で忠実。
+- **`src/context/SynonymQuotient.js`** 新設 = 純粋・入力不変・THREE-free の**同義語商辞書**
+  （ADR-044 `why.keywords` を 5W1H 語彙全体へ一般化）。`canonicalize(term)` = 任意の表層語を
+  同値クラス代表（正準キー）へ射影（語彙上の φ）、`localize(key, lang)` = 代表表層形を 1 つだけ
+  取り出す（φ⁻¹ — 全プリイメージは復元不能）、`localizeOperator`/`operatorSymbol`（criterion.op
+  ⇄ NL）。比較演算子・5W1H ノード種別・関係動詞の二言語（EN 正準・JA 加法）テーブル。拡張点
+  （行追加で商が広がる）。`QUOTIENT_TABLE` は `Object.freeze`。
+- **`src/context/ProvenanceNarrative.js`** 新設 = 純粋・THREE-free の **doc → NL ナレーター**。
+  `narrateProvenance(prov, {lang})` = `recoverProvenance` 結果（サービス join 済 `gaps[]` 含む）を
+  「<entity> は <Why 句> を満たすために存在します」の散文へ。Why（KPI＋クライテリアを
+  `localizeOperator` で「10 以上」へ）/ Gap（未解消＝衝突／解消済を区別）/ How（Decision/
+  Obligation/Constraint）を 5W1H 順に合成。`narrateWhyTree(tree, {lang})` = 全体ツリーの一行俯瞰。
+  新データ構造なし（既存 φ⁻¹ 結果を文字列化）。日英対応。
+- **`ContextService`**: `recoverProvenance(sceneId, opts)` の戻り値に **`narrative` を加法的に付与**
+  （gaps を join した後に `narrateProvenance`）— `showProvenance`/`_reproject` の既存 push 経路を
+  そのまま流れる（PHILOSOPHY #5）。`whyTreeNarrative(opts)` アクセサ追加（doc 未ロード時 `null` — #23）。
+  純粋ロジックは持たず純粋層へ委譲（#3）。
+- **`WhyBreadcrumb.jsx`**: `prov.narrative` を Why カード群の上に散文ブロックで表示
+  （φ⁻¹ 返り脚を平易な日本語で先頭提示）。**`WhyTreeView.jsx`**: `narrateWhyTree` の一行俯瞰を
+  ツリー上部に表示（純粋関数の inline 呼び出し — 既存の inline グルーピングと同列）。
+- `SynonymQuotient.test.js`（23 件中 多くは商構造・演算子・往復）+ `ProvenanceNarrative.test.js`
+  = 計 +23 件、**206/206**、`tsc --noEmit`・`vite build` クリーン。demo は無改変。
+- 残（後続・任意）: 同義語商辞書のさらなる語彙拡張、NL→doc 側での `canonicalize` 正規化の導入
+  （現状 `NlIntake` の表層 subject/attr は逐語保持 — 既存契約を壊さない範囲で additive に検討）。
 
 ---
 
