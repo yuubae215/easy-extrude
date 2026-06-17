@@ -102,6 +102,10 @@ export class ContextController {
     /** @type {UncertaintyGhostView|null} live admissible-interval ghost (sole owner) */
     this._intakeGhost = null
 
+    // ── Why breadcrumb / φ⁻¹ provenance (ADR-052 Phase 2) ──────────────────────
+    /** @type {string|null} scene id whose Why provenance is currently shown */
+    this._provenanceSceneId = null
+
     // Re-project whenever the canonical document changes — covers approval, region
     // edit, undo, and redo uniformly (they all mutate the doc through the service).
     this._ctxService.on('contextChanged', () => this._reproject())
@@ -377,6 +381,41 @@ export class ContextController {
       : 'matrix'
     ui.contextSetTab(initialTab)
     this._mode = 'negotiate'
+    this._provenanceSceneId = null
+  }
+
+  // ── Why breadcrumb / φ⁻¹ provenance (ADR-052 Phase 2) ────────────────────────
+
+  /**
+   * Surface the Why provenance of a selected scene entity in the inspector
+   * (ADR-052 Phase 2 — "scene operation → provenance presentation"). The selected
+   * mesh is a *derived* What/How projection of the canonical doc (invariant 9); this
+   * climbs the doc's derived→source edges (φ⁻¹) back to the Why — the KPI / criterion
+   * / Intent that the placement exists to satisfy — with the measured-vs-target Gap
+   * joined in by ContextService. Only meaningful in negotiate mode, where the derived
+   * scene is visible and selectable (author / ghost hide the meshes).
+   *
+   * @param {string|null} sceneId — selected scene entity id, or null to clear
+   */
+  showProvenance(sceneId) {
+    if (!this.isNegotiation) return
+    const ui = useUIStore.getState().actions
+    if (!sceneId) {
+      this._provenanceSceneId = null
+      ui.contextSetProvenance(null)
+      return
+    }
+    const prov = this._ctxService.recoverProvenance(sceneId)
+    if (!prov || !prov.found) {
+      // The tapped entity is not context-derived (e.g. a user-added solid) — clear
+      // rather than leaving a stale breadcrumb (PHILOSOPHY #11: no silent staleness).
+      this._provenanceSceneId = null
+      ui.contextSetProvenance(null)
+      return
+    }
+    this._provenanceSceneId = sceneId
+    ui.contextSetProvenance(prov)
+    ui.contextSetTab('why')
   }
 
   // ── Region authoring (Phase 3, §4.5) ─────────────────────────────────────────
@@ -720,6 +759,12 @@ export class ContextController {
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
         ui.contextSetVars(doc?.variables ?? [])
+        // Refresh the Why breadcrumb's joined Gap if an entity is selected — approval
+        // / region edit / undo can change R6 conflicts (PHILOSOPHY #5, one path).
+        if (this._provenanceSceneId) {
+          const prov = this._ctxService.recoverProvenance(this._provenanceSceneId)
+          ui.contextSetProvenance(prov?.found ? prov : null)
+        }
       }
     } else if (this._mode === 'author') {
       // A committed / undone region edit regenerated the scene — re-hide the
@@ -767,6 +812,7 @@ export class ContextController {
     ctrl._linkNetworkView?.setForceHidden(false)
     ui.contextEnd()
     this._mode = null
+    this._provenanceSceneId = null
   }
 
   // ── Per-frame animation (driven by AppController's loop) ──────────────────────

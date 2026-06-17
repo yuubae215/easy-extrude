@@ -1,6 +1,6 @@
 # ADR-052 — 5W1H ユビキタス言語: NL ⇄ データの Mutual 構造（Why ルートの正準ツリー）
 
-**Status**: Accepted (Phase 1 実装済 — 2026-06-16)
+**Status**: Accepted (Phase 1 + Phase 2 実装済 — 2026-06-17)
 **Date**: 2026-06-16
 **Related**: ADR-046 (Context DSL — 正準形), ADR-044 (5W1H Function Mapping — φ 準同型), ADR-049 (Requirement/Conflict — KPI/criterion/gap/admissible), ADR-047 (Context Demo Layer), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake)
 **Implementation**: 構造契約の明文化（本 ADR §2.1）＋ φ⁻¹（来歴復元）の足場。新データ構造は追加しない（既存の散在情報を単一の構造契約へ統合する）。
@@ -18,8 +18,32 @@ Phase 1 完了 (2026-06-16):
 - `src/context/ProvenanceTree.test.js`（14 件）+ `ContextService.test.js`（+3 件）。
   factory（Intent ルート）と cell_conflict（Requirement/KPI ルート）の双方の Why 形状を検証。
 - 計 181/181、`tsc --noEmit`・`vite build` クリーン。
-- 残（後続）: シーン操作 → 来歴提示の UI（インスペクタへの Why パンくず）、NL ⇄ doc 往復、
-  同義語商の正規化辞書拡張（ADR-044 `why.keywords`）。
+
+Phase 2 完了 (2026-06-17) — シーン操作 → 来歴提示 UI（Why パンくず）:
+- φ⁻¹（Phase 1 の `recoverProvenance` 足場）を**選択駆動の UI** に接続。negotiate
+  オーバーレイで派生エンティティ（設置許容ゾーン等）を選択すると、その配置が満たすべき
+  Why（KPI/クライテリア/Intent）を上方へ遡って Context Inspector の新規「Why」タブに表示する。
+- `src/service/ContextService.recoverProvenance(sceneId)` を**加法的に拡張**: `validateContext`
+  が所有する R6 Gap（`conflict_<variable>`）を変数 ref で join し `gaps[]` を付与。純粋
+  `recoverProvenance`（`src/context/ProvenanceTree.js`）は R6 を再実装せず `variables` を返すだけ
+  という契約（PHILOSOPHY #3）を維持し、両半分を持つサービスが glue する唯一の場所。
+- `src/controller/ContextController.showProvenance(sceneId)` — negotiate 時のみ動作。φ⁻¹ 結果を
+  `context.provenance` スライスへ射影し「Why」タブへ自動切替。非派生エンティティや multi-select、
+  deselect では null クリア（PHILOSOPHY #11 — 来歴の stale 放置をしない）。`_reproject()`（承認/
+  領域編集/undo/redo の単一経路 — PHILOSOPHY #5）で選択中エンティティの Gap を再 join し最新化。
+- `AppController._syncContextProvenance()` — 選択状態 → コントローラの唯一の reader
+  （PHILOSOPHY #5/#23）。`_switchActiveObject` 末尾 + `SelectionManager.setObjectSelected` /
+  `finalizeRectSelection` から呼ばれ、単一選択された context 派生エンティティのみ Why を表示。
+- `src/components/Context/WhyBreadcrumb.jsx` 新設 = presentational・`context.provenance` 駆動。
+  Why（KPI/クライテリア/Intent）→ Gap（R6, resolved=緑/conflict=赤）→ How（Decision/Obligation/
+  Constraint）を 5W1H 順に縦読みのパンくずで描画。空状態は「派生エンティティを選択して」誘導。
+  `ContextLayer` の negotiate タブに「Why」を追加（未解消 Gap 数のバッジ付き）。
+- `uiStore.context.provenance` フィールド + `contextSetProvenance` アクション（選択 transient、
+  `contextStart`/`contextEnd` でリセット）。
+- `ContextService.test.js` +2 件（Gap join の構造契約・非派生 id の `gaps:[]`）、計 183/183、
+  `tsc --noEmit`・`vite build` クリーン。demo（`ContextDemoController`）は無改変。
+- 残（後続）: NL ⇄ doc 往復、同義語商の正規化辞書拡張（ADR-044 `why.keywords`）、
+  `buildWhyTree` 全体ツリーの俯瞰ビュー（現状は選択起点の上方 BFS のみ）。
 
 ---
 

@@ -149,9 +149,10 @@ export const useUIStore = create((set, get) => ({
     conflictMatrix: null,    // ContextService.projectMatrix() | null
     resolutionOrder: [],     // ContextService.projectOrder() — DSM meeting order
     personaFilter: null,     // actorRef | null
-    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions'
+    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why'
     form: [],                // projectForm() output — open intake questions (Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
+    provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
   },
 
   // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
@@ -318,7 +319,7 @@ export const useUIStore = create((set, get) => ({
     // the context overlay is persistent (a loaded project, not a transient
     // tutorial). It merges the payload and marks the overlay active.
     contextStart: (payload) => set(state => ({
-      context: { ...state.context, ...payload, active: true },
+      context: { ...state.context, provenance: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -341,10 +342,16 @@ export const useUIStore = create((set, get) => ({
     contextSetVars: (variables) => set(state => ({
       context: { ...state.context, variables },
     })),
+    // φ⁻¹ provenance of the currently-selected scene entity (ADR-052 Phase 2).
+    // Selection-transient: pushed by ContextController.showProvenance on select,
+    // null on deselect.
+    contextSetProvenance: (provenance) => set(state => ({
+      context: { ...state.context, provenance },
+    })),
     setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
 
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [] },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], provenance: null },
     })),
   },
 }))

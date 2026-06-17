@@ -273,13 +273,31 @@ export class ContextService extends EventEmitter {
    * when no doc is loaded; the recovery result's `found:false` when the id is not
    * a context-derived entity.
    *
+   * The returned object additionally carries a `gaps` array: the measured-vs-target
+   * **Gap** is an R6 output owned by `validateContext` (keyed `conflict_<variable>`),
+   * which the pure `recoverProvenance` deliberately does NOT re-implement (it returns
+   * the constrained `variables` instead — PHILOSOPHY #3 / ProvenanceTree contract).
+   * The service holds the validator result, so it joins the gap in here by variable
+   * ref — the one place that owns both halves.
+   *
    * @param {string} sceneId — a scene entity id (as held by SceneService)
    * @returns {object|null}
    */
   recoverProvenance(sceneId) {
     if (!this._doc) return null
-    const ref = this._refForSceneId(sceneId)
-    return recoverProvenance(this._doc, ref ?? sceneId)
+    const ref  = this._refForSceneId(sceneId)
+    const prov = recoverProvenance(this._doc, ref ?? sceneId)
+
+    // Join the R6 Gap by variable ref (validateContext owns the gap; this is glue,
+    // not pure logic). A resolved conflict (Decision-settled) is flagged so the UI
+    // can render it green rather than as a live gap.
+    const byVar = new Map((this._validatorResult?.conflicts ?? []).map(c => [c.variable, c]))
+    const gaps = prov.variables
+      .map(v => byVar.get(v))
+      .filter(Boolean)
+      .map(c => ({ variable: c.variable, gap: c.gap, resolved: !!c.resolvedBy }))
+
+    return { ...prov, gaps }
   }
 
   /** Reverse `_refToId` (scene entity id → canonical layout ref). */
