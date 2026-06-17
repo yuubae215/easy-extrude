@@ -1,4 +1,5 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { narrateWhyTree } from '../../context/ProvenanceNarrative.js'
 
 /**
  * WhyTreeView — bird's-eye view of the whole Why-rooted 5W1H tree
@@ -74,6 +75,15 @@ export function WhyTreeView() {
 
   return (
     <div style={{ fontSize: '11px', lineHeight: 1.5 }}>
+      {/* Plain-language overview (doc → NL — ADR-052 Phase 4) */}
+      <div style={{
+        fontSize: '11px', lineHeight: 1.6, color: '#cdd6e0', marginBottom: '8px',
+        padding: '6px 8px', borderRadius: '4px', background: '#5a9bf514',
+        borderLeft: '2px solid #5a9bf5',
+      }}>
+        {narrateWhyTree(tree, { lang: 'ja' })}
+      </div>
+
       <div style={{ color: '#999', marginBottom: '8px', lineHeight: 1.5 }}>
         シーンは Why を落とす What/How 射影 (invariant 9)。このツリーが正準 doc 側に保持された
         <b style={{ color: '#aaa' }}> 全体の来歴構造</b>です。各エッジは派生 (What) → 源泉 (Why) に向きます。

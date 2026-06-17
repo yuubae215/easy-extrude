@@ -62,6 +62,17 @@ export function WhyBreadcrumb() {
         <div style={{ fontFamily: 'monospace', fontSize: '10px', color: '#777' }}>{prov.entityRef}</div>
       </div>
 
+      {/* Plain-language narration (doc → NL, the φ⁻¹ return leg — ADR-052 Phase 4) */}
+      {prov.narrative && (
+        <div style={{
+          fontSize: '11px', lineHeight: 1.6, color: '#cdd6e0', marginBottom: '10px',
+          padding: '6px 8px', borderRadius: '4px', background: '#5a9bf514',
+          borderLeft: '2px solid #5a9bf5',
+        }}>
+          {prov.narrative}
+        </div>
+      )}
+
       {/* Why — the apex: KPIs + criteria + intents the placement serves */}
       <Layer title="Why — なぜこの配置が要るのか" color="#5a9bf5">
         {prov.kpis.length === 0 && prov.intents.length === 0 && prov.why.length === 0 && (
