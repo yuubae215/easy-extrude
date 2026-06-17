@@ -685,6 +685,16 @@ CommandStack — Ctrl+Z reverts the approval and the Matrix cell flips ✓→◐
 doc name + a live "未解消の衝突 N 件" line; ✕ closes the overlay (`onContextExit`). Distinct from
 [K]: [K] is a tutorial story (transient approvals), [M] mutates the canonical document.
 
+The **Why** tab (`WhyBreadcrumb`, ADR-052 Phase 2) is the φ⁻¹ provenance readout. Selecting a
+derived entity in 3D (e.g. a 設置許容ゾーン) climbs the canonical document's derived→source edges
+and shows, top-down in 5W1H order, the **Why** the placement exists (KPI / クライテリア / Intent),
+the **Gap** (R6 measured-vs-target — red when live, green when Decision-settled), and the **How**
+(Decision / Obligation / Constraint) reached. The tab auto-activates on selection and carries a
+badge of unresolved Gaps; deselecting (or selecting a non-context entity) clears it to an empty
+state that nudges the user to click a derived entity. This reverses the scene's lossy What/How
+projection (invariant 9) — the breadcrumb is the user-facing witness that NL ⇄ data stays Mutual
+on the data side (ADR-052 §2.2).
+
 The **Intake** tab (`IntakePanel`, ADR-051 Phase 1) adds Actors / Variables / Requirements directly
 to a blank or loaded doc. A 「自然言語から取り込み」 section (ADR-051 Phase 4 — Entry C) accepts a
 free-text utterance and shows a live preview of the Facts the deterministic `extractFacts` bridge
@@ -697,7 +707,7 @@ requirement is committed (committing records an interval, not a Decision — no 
 
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
-- **`negotiate`** (above) — Matrix + Cluster tabs, undoable approval.
+- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) + **Why** + Intake tabs, undoable approval.
 - **`author`** (Phase 3) — opened via **Context ▾ → 領域オーサリング** (`enterAuthoring()`). No
   tabs; the panel lists the live R6 conflicts (green when clear) while the **3D**
   `RegionAuthoringWidget`s are the editing surface — drag a handle to resize/move a footprint;

@@ -3,6 +3,7 @@ import { ConflictMatrix } from '../ContextDemo/ConflictMatrix.jsx'
 import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.jsx'
 import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
+import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 
 /**
  * ContextLayer — production Context-first overlay (ADR-050).
@@ -51,6 +52,7 @@ export function ContextLayer() {
       { id: 'matrix',    label: 'Matrix' },
       { id: 'cluster',   label: 'Cluster' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
+      { id: 'why',       label: 'Why' },
       { id: 'intake',    label: 'Intake' },
     ]
     : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
@@ -100,7 +102,8 @@ export function ContextLayer() {
             const badge =
               tab.id === 'matrix'    ? (ctx.conflictMatrix ? Object.values(ctx.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
               tab.id === 'cluster'   ? (ctx.resolutionOrder?.filter(s => !s.approved).length ?? 0) :
-              tab.id === 'questions' ? (ctx.form?.length ?? 0) : 0
+              tab.id === 'questions' ? (ctx.form?.length ?? 0) :
+              tab.id === 'why'       ? (ctx.provenance?.gaps?.filter(g => !g.resolved).length ?? 0) : 0
             return (
               <button
                 key={tab.id}
@@ -151,6 +154,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'questions' && (
           <FormPanel />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'why' && (
+          <WhyBreadcrumb />
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
           <IntakePanel />

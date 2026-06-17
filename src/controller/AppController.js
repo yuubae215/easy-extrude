@@ -1298,6 +1298,20 @@ export class AppController {
     this._refreshObjectModeStatus()
     this._updateNPanel()
     this._updateMobileToolbar()
+    this._syncContextProvenance()
+  }
+
+  /**
+   * Push the current single-selection's Why provenance to the context overlay
+   * (ADR-052 Phase 2). The single authoritative reader of selection state → the
+   * controller (PHILOSOPHY #5/#23): a single selected, context-derived entity shows
+   * its Why breadcrumb; anything else (multi-select, deselect, non-negotiate) clears
+   * it. No-op unless the negotiation overlay is active.
+   */
+  _syncContextProvenance() {
+    if (!this._ctxCtrl?.isNegotiation) return
+    const id = (this._objSelected && this._selectedIds.size === 1) ? this._scene.activeId : null
+    this._ctxCtrl.showProvenance(id)
   }
 
   /**

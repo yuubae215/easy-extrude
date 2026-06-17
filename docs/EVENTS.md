@@ -467,6 +467,18 @@ prop-driven Matrix·Cluster components. Reads the **`context`** uiStore slice
 | `onIntakePreview(spec\|null)` | IntakePanel RequirementForm 許容区間入力 (live) | **(Phase 3)** `previewIntake(spec)` — drive one `UncertaintyGhostView` from `{lo,hi,unit,label}`; update in place via `setIntervalPreview` (no geometry rebuild), frame the camera once; `null` disposes the ghost. Cleared on form unmount / submit |
 | `onAddNlFacts(facts)` | IntakePanel NlIntakeForm 「Fact をドキュメントに追加」 | **(Phase 4)** `addNlFacts(facts)` — fold NL-extracted Fact fragments (`extractFacts`, pure) into the doc as one undoable `createAddDocEntryCommand`; toast counts (asserted vs 未確定). Preview is computed locally in the form (pure, no round-trip) |
 
+**ADR-052 Phase 2 — Why breadcrumb (selection → provenance)**: there is **no UI
+callback** for this — the trigger is **entity selection**, not a button.
+`AppController._syncContextProvenance()` is called from `_switchActiveObject`
+(select) and `SelectionManager.setObjectSelected` / `finalizeRectSelection`
+(deselect / multi-select); it is the single reader of selection state and calls
+`ContextController.showProvenance(id|null)` (no-op unless negotiate mode). The
+controller climbs φ⁻¹ (`ContextService.recoverProvenance`, which joins the R6 Gap),
+pushes `context.provenance`, and auto-switches to the `'why'` tab. Deselect / a
+non-context entity / multi-select clears it. The Gap is re-joined for the tracked
+selection inside `_reproject()` so approve / region edit / undo / redo keep the
+breadcrumb fresh through the one re-projection path (PHILOSOPHY #5).
+
 **Phase 3 pointer delegation** (CODE_CONTRACTS «Context Authoring Pointer Delegation»): when
 `_ctxCtrl.isAuthoring`, `_onPointerDown/Move/Up` delegate to `_ctxCtrl.onAuthor*(e)` (after
 `_hitTest.updateMouse`, alongside the existing `_demoCtrl.isAuthoring` branch). A live drag

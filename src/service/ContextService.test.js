@@ -221,3 +221,32 @@ test('recoverProvenance returns null with no doc loaded', () => {
   const svc = new ContextService(fakeScene())
   assert.equal(svc.recoverProvenance('anything'), null)
 })
+
+test('recoverProvenance joins the R6 Gap by variable (additive `gaps` field, ADR-052 Phase 2)', async () => {
+  const svc = new ContextService(fakeScene())
+  await svc.loadContext(conflict(), VC)
+
+  const sceneId = svc.getRefToId().get('robot_base_zone')
+  assert.ok(sceneId, 'robot_base_zone was compiled into the scene')
+
+  const p = svc.recoverProvenance(sceneId)
+  assert.equal(p.found, true)
+  // `gaps` is always present (additive contract) and every entry is a validator
+  // R6 conflict on one of the entity's constrained variables — the service joins
+  // the gap in; recoverProvenance itself never re-implements R6.
+  assert.ok(Array.isArray(p.gaps))
+  const conflictVars = new Set(svc.getValidatorResult().conflicts.map(c => c.variable))
+  for (const g of p.gaps) {
+    assert.ok(p.variables.includes(g.variable), 'gap variable is among the constrained variables')
+    assert.ok(conflictVars.has(g.variable), 'gap variable is a live R6 conflict')
+    assert.equal(typeof g.resolved, 'boolean')
+  }
+})
+
+test('recoverProvenance returns found:false (with empty gaps) for a non-derived id', async () => {
+  const svc = new ContextService(fakeScene())
+  await svc.loadContext(conflict(), VC)
+  const p = svc.recoverProvenance('not-a-context-entity')
+  assert.equal(p.found, false)
+  assert.deepEqual(p.gaps, [])
+})

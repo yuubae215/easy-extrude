@@ -60,6 +60,7 @@ export class SelectionManager {
     }
     ctrl._refreshObjectModeStatus()
     ctrl._updateMobileToolbar()
+    ctrl._syncContextProvenance?.()
   }
 
   /** Clears visual selection highlight for all currently selected objects. */
@@ -244,5 +245,6 @@ export class SelectionManager {
     ctrl._objSelected = true
     ctrl._refreshObjectModeStatus()
     ctrl._updateNPanel()
+    ctrl._syncContextProvenance?.()
   }
 }
