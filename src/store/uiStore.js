@@ -153,6 +153,7 @@ export const useUIStore = create((set, get) => ({
     form: [],                // projectForm() output — open intake questions (Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
     provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
+    whyTree: null,           // ContextService.whyTree() — full Why-rooted 5W1H tree overview (ADR-052 Phase 3)
   },
 
   // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
@@ -348,10 +349,15 @@ export const useUIStore = create((set, get) => ({
     contextSetProvenance: (provenance) => set(state => ({
       context: { ...state.context, provenance },
     })),
+    // Full Why-rooted 5W1H tree overview (ADR-052 Phase 3). Pushed by
+    // ContextController on negotiate enter + re-projected on every doc mutation.
+    contextSetWhyTree: (whyTree) => set(state => ({
+      context: { ...state.context, whyTree },
+    })),
     setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
 
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], provenance: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], provenance: null, whyTree: null },
     })),
   },
 }))

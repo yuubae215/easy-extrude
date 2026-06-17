@@ -4,6 +4,7 @@ import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.js
 import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
+import { WhyTreeView } from './WhyTreeView.jsx'
 
 /**
  * ContextLayer — production Context-first overlay (ADR-050).
@@ -53,6 +54,7 @@ export function ContextLayer() {
       { id: 'cluster',   label: 'Cluster' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
       { id: 'why',       label: 'Why' },
+      { id: 'tree',      label: '俯瞰' },
       { id: 'intake',    label: 'Intake' },
     ]
     : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
@@ -157,6 +159,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'why' && (
           <WhyBreadcrumb />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'tree' && (
+          <WhyTreeView />
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
           <IntakePanel />

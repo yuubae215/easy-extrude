@@ -695,6 +695,15 @@ state that nudges the user to click a derived entity. This reverses the scene's 
 projection (invariant 9) — the breadcrumb is the user-facing witness that NL ⇄ data stays Mutual
 on the data side (ADR-052 §2.2).
 
+The **俯瞰** tab (`WhyTreeView`, ADR-052 Phase 3) is the bird's-eye complement to the Why
+breadcrumb: instead of the upward climb from one selected entity, it renders the **whole** canonical
+document as the single Why-rooted 5W1H tree (`buildWhyTree`), grouped into the three layers Why
+(KPI / クライテリア / Acceptance / Intent) → How (Decision / Obligation / Constraint) → What (Entity /
+Fact / Variable). The **Why roots** (the apexes nothing climbs above) are surfaced first with a
+`▲ root` badge so the reader sees what every placement ultimately serves; a footer counts nodes /
+edges / roots. It refreshes on every doc mutation (add / answer / region-edit / undo / redo), so the
+overview always matches the live document. Empty before any actors/variables/requirements exist.
+
 The **Intake** tab (`IntakePanel`, ADR-051 Phase 1) adds Actors / Variables / Requirements directly
 to a blank or loaded doc. A 「自然言語から取り込み」 section (ADR-051 Phase 4 — Entry C) accepts a
 free-text utterance and shows a live preview of the Facts the deterministic `extractFacts` bridge
@@ -707,7 +716,7 @@ requirement is committed (committing records an interval, not a Decision — no 
 
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
-- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) + **Why** + Intake tabs, undoable approval.
+- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) + **Why** + **俯瞰** + Intake tabs, undoable approval.
 - **`author`** (Phase 3) — opened via **Context ▾ → 領域オーサリング** (`enterAuthoring()`). No
   tabs; the panel lists the live R6 conflicts (green when clear) while the **3D**
   `RegionAuthoringWidget`s are the editing surface — drag a handle to resize/move a footprint;
