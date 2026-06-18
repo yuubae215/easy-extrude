@@ -127,7 +127,7 @@ export class RegionGhostView {
       this._group.add(mesh)
       this._disposables.push({ geometry: mesh.geometry, material: mat })
       const nom = this._fmtNominal(ghost.nominal)
-      const lbl = this._makeLabel(`合意領域 (共通部分)${nom ? ` · 公称 ${nom}` : ''}`, '#ffffff')
+      const lbl = this._makeLabel(`Agreed region (intersection)${nom ? ` · nominal ${nom}` : ''}`, '#ffffff')
       this._labels.push({ el: lbl, anchor: new THREE.Vector3(cx, cy, Z_OVERLAY) })
       return
     }
@@ -158,7 +158,7 @@ export class RegionGhostView {
       this._group.add(mesh)
       this._disposables.push({ geometry: mesh.geometry, material: mat })
       const lbl = this._makeLabel(
-        `✕ 共通部分なし = 衝突 · ${axis} gap [${Math.round(lo)}, ${Math.round(hi)})`, '#ff8080')
+        `✕ No intersection = conflict · ${axis} gap [${Math.round(lo)}, ${Math.round(hi)})`, '#ff8080')
       this._labels.push({ el: lbl, anchor: new THREE.Vector3(cx, cy, Z_OVERLAY) })
     }
   }

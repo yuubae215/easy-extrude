@@ -21,7 +21,7 @@ import { CONTEXT_DSL_VERSION } from './ContextDslSchema.js'
  * @param {string} [name]
  * @returns {object} canonical Context DSL doc (context/0.3)
  */
-export function createBlankDoc(name = '新しいプロジェクト') {
+export function createBlankDoc(name = 'New Project') {
   return {
     version:      CONTEXT_DSL_VERSION,
     meta:         { name, baseline: null },

@@ -1595,7 +1595,7 @@ export class SceneService extends EventEmitter {
 
         link.violated     = minDist < limit
         link.errorMessage = link.violated
-          ? `⚠️ 安全距離不足: ${minDist.toFixed(0)}mm (要求: ${limit}mm)`
+          ? `⚠️ Clearance too small: ${minDist.toFixed(0)}mm (required: ${limit}mm)`
           : ''
         link.properties.currentClearance = minDist
         // Severity: 0 at 2× clearance, 0.5 at 1.5×, 1.0 at threshold and beyond (one-frame lag is intentional).
@@ -1619,7 +1619,7 @@ export class SceneService extends EventEmitter {
 
         const allInside = solidCorners.every(c => _xyPointInPolygon(c.x, c.y, regionCorners))
         link.violated     = !allInside
-        link.errorMessage = link.violated ? '⚠️ Zone外に脱出しています' : ''
+        link.errorMessage = link.violated ? '⚠️ Escaped outside the Zone' : ''
 
         this._linkViews.get(link.id)?.setViolated?.(link.violated)
 
@@ -1652,7 +1652,7 @@ export class SceneService extends EventEmitter {
 
         link.violated     = transitTime > deadline
         link.errorMessage = link.violated
-          ? `⚠️ タクト超過: ${transitTime.toFixed(1)}s (制限: ${deadline}s)`
+          ? `⚠️ Cycle time exceeded: ${transitTime.toFixed(1)}s (limit: ${deadline}s)`
           : ''
         link.properties.currentTransitTime = transitTime
 
@@ -1687,7 +1687,7 @@ export class SceneService extends EventEmitter {
         link.properties.currentDistance = distanceMm
         link.violated     = distanceMm > tolerance
         link.errorMessage = link.violated
-          ? `⚠️ 位置誤差: ${distanceMm.toFixed(1)}mm (許容: ±${tolerance}mm)`
+          ? `⚠️ Position error: ${distanceMm.toFixed(1)}mm (tolerance: ±${tolerance}mm)`
           : ''
 
         this._linkViews.get(link.id)?.setViolated?.(link.violated)

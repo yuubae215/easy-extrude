@@ -19,7 +19,7 @@
  * @property {string} id          — stable identifier (gallery key, callback arg)
  * @property {string} name        — display title
  * @property {string} description — one-line summary shown on the card
- * @property {string} category    — grouping label (e.g. 'スターター', 'ロボットセル')
+ * @property {string} category    — grouping label (e.g. 'Starter', 'Robot Cell')
  * @property {{kind:'blank'}|{kind:'example', file:string}} source
  *           — how the doc is obtained: built from `createBlankDoc`, or a bundled
  *             example JSON resolved by the controller's import map.
@@ -29,30 +29,30 @@
 export const TEMPLATE_CATALOG = [
   {
     id:          'blank',
-    name:        '空のプロジェクト',
-    description: 'ゼロからアクター・変数・要件を入力する (Entry A)。',
-    category:    'スターター',
+    name:        'Empty Project',
+    description: 'Enter actors, variables, and requirements from scratch.',
+    category:    'Starter',
     source:      { kind: 'blank' },
   },
   {
     id:          'cell_simple',
-    name:        'ロボットセル — シンプル',
-    description: '2 アクター・1 変数。役割 KPI カタログとフォーム射影の最小例。',
-    category:    'ロボットセル',
+    name:        'Robot Cell — Simple',
+    description: '2 actors, 1 variable. Minimal example of the role KPI catalog and form projection.',
+    category:    'Robot Cell',
     source:      { kind: 'example', file: 'cell_phase2_context.json' },
   },
   {
     id:          'cell_conflict',
-    name:        'ロボットセル — 多者衝突',
-    description: '3 アクターの要求が衝突。交渉クラスターと承認ゲートを体験。',
-    category:    'ロボットセル',
+    name:        'Robot Cell — Multi-party Conflict',
+    description: '3 actors with conflicting requirements. Try negotiation clusters and approval gates.',
+    category:    'Robot Cell',
     source:      { kind: 'example', file: 'cell_conflict_context.json' },
   },
   {
     id:          'cell_region',
-    name:        'ロボットセル — 領域',
-    description: '領域 Variable・許容領域の重なり・受入述語。3D オーサリング対応。',
-    category:    'ロボットセル',
+    name:        'Robot Cell — Regions',
+    description: 'Region variables, overlapping admissible areas, acceptance predicates. Supports 3D authoring.',
+    category:    'Robot Cell',
     source:      { kind: 'example', file: 'cell_region_context.json' },
   },
 ]

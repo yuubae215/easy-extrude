@@ -196,7 +196,8 @@ export class ContextService extends EventEmitter {
    * no layout spec yet. The scene is cleared with an empty scene JSON so the user
    * starts from a clean 3-D view. Throws on validation failure.
    *
-   * Called by `ContextController.newContext()` for Entry A (ADR-051 §3).
+   * Called by `ContextController.selectTemplate('blank')` (the New Project gallery's
+   * Empty Project card) for Entry A (ADR-051 §3).
    *
    * @param {object} doc — blank Context DSL doc (createBlankDoc() output)
    * @param {object} viewContext — { camera, renderer, container }
@@ -296,7 +297,7 @@ export class ContextService extends EventEmitter {
    * @param {{lang?:'ja'|'en'}} [opts]
    * @returns {string|null}
    */
-  whyTreeNarrative(opts = {}) {
+  whyTreeNarrative(opts = { lang: 'en' }) {
     return this._doc ? narrateWhyTree(this.whyTree(), opts) : null
   }
 
@@ -315,10 +316,10 @@ export class ContextService extends EventEmitter {
    * ref — the one place that owns both halves.
    *
    * @param {string} sceneId — a scene entity id (as held by SceneService)
-   * @param {{lang?:'ja'|'en'}} [opts] — narration language (default ja)
+   * @param {{lang?:'ja'|'en'}} [opts] — narration language (default en)
    * @returns {object|null}
    */
-  recoverProvenance(sceneId, opts = {}) {
+  recoverProvenance(sceneId, opts = { lang: 'en' }) {
     if (!this._doc) return null
     const ref  = this._refForSceneId(sceneId)
     const prov = recoverProvenance(this._doc, ref ?? sceneId)

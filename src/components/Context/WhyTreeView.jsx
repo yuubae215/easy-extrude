@@ -50,9 +50,9 @@ const KIND_COLOR = {
 }
 
 const LAYER_META = {
-  why:  { title: 'Why — KPI / クライテリア / Acceptance / Intent', color: '#5a9bf5' },
-  how:  { title: 'How — Decision / Obligation / Constraint',       color: '#d59b3a' },
-  what: { title: 'What — Entity / Fact / Variable',                color: '#5aa86a' },
+  why:  { title: 'Why — KPI / Criterion / Acceptance / Intent', color: '#5a9bf5' },
+  how:  { title: 'How — Decision / Obligation / Constraint',    color: '#d59b3a' },
+  what: { title: 'What — Entity / Fact / Variable',             color: '#5aa86a' },
 }
 
 export function WhyTreeView() {
@@ -61,8 +61,8 @@ export function WhyTreeView() {
   if (!tree || tree.nodes.length === 0) {
     return (
       <div style={{ color: '#888', fontSize: '11px', lineHeight: 1.6 }}>
-        正準ドキュメントを <b style={{ color: '#aaa' }}>Why ルートの 5W1H ツリー</b> として
-        俯瞰します (ADR-052 §2.1)。アクター・変数・要件を追加すると、ここにツリーが現れます。
+        A bird's-eye view of the canonical document as a <b style={{ color: '#aaa' }}>Why-rooted 5W1H tree</b>.
+        Add actors, variables, and requirements and the tree appears here.
       </div>
     )
   }
@@ -81,12 +81,12 @@ export function WhyTreeView() {
         padding: '6px 8px', borderRadius: '4px', background: '#5a9bf514',
         borderLeft: '2px solid #5a9bf5',
       }}>
-        {narrateWhyTree(tree, { lang: 'ja' })}
+        {narrateWhyTree(tree, { lang: 'en' })}
       </div>
 
       <div style={{ color: '#999', marginBottom: '8px', lineHeight: 1.5 }}>
-        シーンは Why を落とす What/How 射影 (invariant 9)。このツリーが正準 doc 側に保持された
-        <b style={{ color: '#aaa' }}> 全体の来歴構造</b>です。各エッジは派生 (What) → 源泉 (Why) に向きます。
+        The scene is a What/How projection that drops the Why. This tree is the
+        <b style={{ color: '#aaa' }}> full provenance structure</b> kept on the document side; each edge points from derived (What) to source (Why).
       </div>
 
       {['why', 'how', 'what'].map(layer => {
@@ -94,7 +94,7 @@ export function WhyTreeView() {
         const meta = LAYER_META[layer]
         return (
           <Layer key={layer} title={meta.title} color={meta.color} count={nodes.length}>
-            {nodes.length === 0 && <Empty>（この層のノードはありません）</Empty>}
+            {nodes.length === 0 && <Empty>(No nodes in this layer)</Empty>}
             {nodes.map(n => {
               const accent = KIND_COLOR[n.kind] ?? meta.color
               const isRoot = rootSet.has(n.id)
@@ -104,7 +104,7 @@ export function WhyTreeView() {
                     <Tag color={accent}>{KIND_LABEL[n.kind] ?? n.kind}</Tag>
                     {isRoot && (
                       <span
-                        title="Why ルート — これより上に遡れる要求はありません"
+                        title="Why root — no requirement can be traced above this"
                         style={{
                           marginLeft: '4px', background: '#3a5a8a', color: '#cfe2ff',
                           borderRadius: '3px', padding: '0 4px', fontSize: '8px', fontWeight: 'bold',
@@ -120,7 +120,7 @@ export function WhyTreeView() {
                   )}
                   {n.kind === 'requirement' && n.data?.criterion && (
                     <div style={{ color: '#9bd', marginTop: '1px' }}>
-                      クライテリア: {n.data.criterion.op} {n.data.criterion.value} {n.data.kpi?.unit ?? ''}
+                      criterion: {n.data.criterion.op} {n.data.criterion.value} {n.data.kpi?.unit ?? ''}
                     </div>
                   )}
                   <Ref>{n.ref}</Ref>
@@ -132,7 +132,7 @@ export function WhyTreeView() {
       })}
 
       <div style={{ color: '#666', fontSize: '9px', marginTop: '6px' }}>
-        {tree.nodes.length} ノード · {tree.edges.length} エッジ · {tree.roots.length} Why ルート
+        {tree.nodes.length} nodes · {tree.edges.length} edges · {tree.roots.length} Why root{tree.roots.length > 1 ? 's' : ''}
       </div>
     </div>
   )

@@ -56,14 +56,14 @@ export function TemplateGallery() {
           display: 'flex', alignItems: 'baseline',
         }}>
           <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#e8e8e8' }}>
-            テンプレートから開始
+            New Project
           </span>
           <span style={{ marginLeft: '8px', fontSize: '11px', color: '#888' }}>
-            スターター .ctx.json を起点化 (ADR-051 §3 Entry B)
+            Start from a blank project or a starter template
           </span>
           <button
             onClick={close}
-            title="閉じる"
+            title="Close"
             style={{
               marginLeft: 'auto', background: 'transparent', border: 'none',
               color: '#999', cursor: 'pointer', fontSize: '18px', lineHeight: 1,
@@ -123,8 +123,8 @@ export function TemplateGallery() {
           padding: '10px 18px', borderTop: CARD_BORDER,
           fontSize: '10px', color: '#888', lineHeight: 1.5,
         }}>
-          テンプレートを選択すると現在のシーンは置き換えられ、選択した要求から再生成されます
-          (3D は導出射影 — ADR-050 invariant 9 / ADR-051 §7)。
+          Selecting a template replaces the current scene and regenerates it from
+          the chosen requirements (the 3D scene is a derived projection).
         </div>
       </div>
     </div>

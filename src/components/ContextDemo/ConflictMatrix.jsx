@@ -37,7 +37,7 @@ const fmtGap = (gap) => Array.isArray(gap)
 
 export function ConflictMatrix({ matrix, filter, onSetFilter }) {
   if (!matrix) {
-    return <div style={{ color: '#999', fontSize: '11px' }}>マトリックスデータがありません</div>
+    return <div style={{ color: '#999', fontSize: '11px' }}>No matrix data</div>
   }
   const { actors, variables, cells, variableSummary } = matrix
   const toggle = (a) => onSetFilter(filter === a ? null : a)
@@ -45,11 +45,11 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
   return (
     <>
       <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px' }}>
-        共有設計変数 (行) × 担当 (列)。<span style={{ color: '#ff6b6b' }}>✕衝突中</span> /
-        <span style={{ color: '#f0b030' }}> ◐承認待ち</span> /
-        <span style={{ color: '#22C55E' }}> ✓確定済</span> /
-        <span style={{ color: '#22C55E' }}> ●主張あり</span> / ↔=複数変数結合。
-        列ヘッダをクリックでペルソナ射影。
+        Shared design variables (rows) × actors (columns). <span style={{ color: '#ff6b6b' }}>✕ in conflict</span> /
+        <span style={{ color: '#f0b030' }}> ◐ awaiting approval</span> /
+        <span style={{ color: '#22C55E' }}> ✓ resolved</span> /
+        <span style={{ color: '#22C55E' }}> ● claimed</span> / ↔ = multi-variable coupling.
+        Click a column header for the persona projection.
       </div>
 
       <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '10px' }}>
@@ -63,7 +63,7 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
                 <th
                   key={a}
                   onClick={() => toggle(a)}
-                  title={`${a} — クリックでペルソナ射影`}
+                  title={`${a} — click for the persona projection`}
                   style={{
                     cursor: 'pointer', padding: '3px 2px', textAlign: 'center',
                     color: sel ? '#5a9bf5' : (dim ? '#555' : '#c8c8c8'),
@@ -95,7 +95,7 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
                 const c = CELL[cell.state]
                 const dim = filter && filter !== a
                 const title = cell.requirements.length
-                  ? `${cell.requirements.join(', ')}${cell.coupled ? ' (結合)' : ''}`
+                  ? `${cell.requirements.join(', ')}${cell.coupled ? ' (coupled)' : ''}`
                   : ''
                 return (
                   <td

@@ -36,28 +36,28 @@ const REVEAL_INTERVAL = 0.15
 
 export const DEMO_STEPS = [
   {
-    title: '① 顧客の発話',
-    narration: '「セルの1工程を自動化したい。床のコンセントから3m弱のところに作業台があって、その上にロボットを載せたい」— 要件はいつも曖昧なまま始まる。',
+    title: '① Customer utterance',
+    narration: '"I want to automate one step of the cell. There\'s a workbench a little under 3m from the floor outlet, and I want to put a robot on it." — requirements always start out vague.',
   },
   {
-    title: '② Fact 化',
-    narration: '発話を Fact として記録。「3m弱」は区間 [2700, 3000] mm のまま保持される — 勝手にひとつの数値へ丸めない。未確認の属性は unknown として残る。',
+    title: '② Capture as Facts',
+    narration: 'The utterance is recorded as Facts. "A little under 3m" is kept as the interval [2700, 3000] mm — never rounded to a single value. Unconfirmed attributes stay as unknown.',
   },
   {
-    title: '③ OpenQuestions 自動検出',
-    narration: 'バリデータが unknown / 未割当の責任区分を機械的に列挙する。確認漏れを人の注意力に頼らない。',
+    title: '③ Detect OpenQuestions',
+    narration: 'The validator mechanically lists the unknowns and unassigned responsibilities, so spotting omissions no longer relies on human attention.',
   },
   {
-    title: '④ Decision 承認',
-    narration: '区間をひとつの値に確定できるのは Decision だけ（ADR-046 不変条件2）。公称値 2800mm を承認して作業台の位置を確定する。',
+    title: '④ Approve a Decision',
+    narration: 'Only a Decision can settle an interval to a single value. Approve the nominal value 2800mm to fix the workbench position.',
   },
   {
-    title: '⑤ コンパイル → シーン出現',
-    narration: '確定済み仕様 (layout/1.0) からシーンが生成される。すべての配置・拘束は要求にトレースできる。ロボットの fastened 拘束は本物 — ドラッグしてみると分かる。',
+    title: '⑤ Compile → scene appears',
+    narration: 'The scene is generated from the settled specification (layout/1.0). Every placement and constraint traces back to a requirement. The robot\'s fastened constraint is real — try dragging it.',
   },
   {
-    title: '⑥ Acceptance チェック',
-    narration: '受入チェックのうち、unknown / assumed な事実に依存するものは自動的に「ブロック」される。何を確認すれば前に進めるかが構造から分かる。',
+    title: '⑥ Acceptance checks',
+    narration: 'Acceptance checks that depend on unknown / assumed facts are automatically "blocked", so the structure tells you what to confirm to move forward.',
   },
 ]
 
@@ -122,9 +122,9 @@ export class ContextDemoController {
     }
 
     this._ctrl._uiView.showConfirmDialog(
-      '現在のシーンを置き換えて Context DSL デモを開始しますか?',
+      'Replace the current scene and start the Context DSL demo?',
       (ok) => { if (ok) this._start(compiled, scene) },
-      { title: 'Context DSL Demo (ADR-046)', confirmLabel: '開始' },
+      { title: 'Context DSL Demo', confirmLabel: 'Start' },
     )
   }
 
@@ -196,7 +196,7 @@ export class ContextDemoController {
         nominal:   prov.nominal,
         dims:      entity.dimensions,
         position:  entity.position,
-        labelText: `${prov.interval[0]}–${prov.interval[1]} ${prov.unit ?? ''} · 未確定`,
+        labelText: `${prov.interval[0]}–${prov.interval[1]} ${prov.unit ?? ''} · unconfirmed`,
       })
     }
 
@@ -255,7 +255,7 @@ export class ContextDemoController {
     // Step ③→④ is gated on approval — "intervals never collapse silently",
     // expressed structurally. (The StoryBar also disables Next; double guard.)
     if (step >= 4 && !this._approved) {
-      this._ctrl._uiView.showToast('Decision を承認するまで先に進めません', { type: 'warn' })
+      this._ctrl._uiView.showToast('Cannot proceed until the Decision is approved', { type: 'warn' })
       return
     }
 
@@ -363,7 +363,7 @@ export class ContextDemoController {
 
     const targets = this._traceByFrom.get(reqRef) ?? []
     if (targets.length === 0) {
-      ctrl._uiView.showToast(`${reqRef} から派生した仕様要素はありません`)
+      ctrl._uiView.showToast(`No specification elements are derived from ${reqRef}`)
       return
     }
 
@@ -375,7 +375,7 @@ export class ContextDemoController {
       if (!obj) return
       const meshVisible = obj.meshView.cuboid?.visible ?? true
       if (!meshVisible) {
-        ctrl._uiView.showToast(`→ ${obj.name}（後のステップで出現します）`)
+        ctrl._uiView.showToast(`→ ${obj.name} (appears in a later step)`)
         return
       }
       ctrl._switchActiveObject(id, true)
@@ -394,7 +394,7 @@ export class ContextDemoController {
     }
     const srcName = ctrl._scene.getObject(link.sourceId)?.name ?? link.sourceId
     const tgtName = ctrl._scene.getObject(link.targetId)?.name ?? link.targetId
-    ctrl._uiView.showToast(`→ リンク: ${srcName} → ${tgtName} (${link.semanticType})`)
+    ctrl._uiView.showToast(`→ Link: ${srcName} → ${tgtName} (${link.semanticType})`)
   }
 
   _flashLink(linkId) {

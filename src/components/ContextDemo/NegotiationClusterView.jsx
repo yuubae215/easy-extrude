@@ -27,7 +27,7 @@ const shortActor = (ref) => ref.split('_')[0]
 
 export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
   if (!order || order.length === 0) {
-    return <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ 衝突・交渉クラスターなし</div>
+    return <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ No conflicts or negotiation clusters</div>
   }
 
   // A step can only be approved once every upstream step it depends on is
@@ -40,9 +40,9 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
   return (
     <>
       <div style={{ color: '#999', marginBottom: '8px', fontSize: '11px' }}>
-        クラスターを縮約すると依存は DAG になり、合同 Decision を積む順序が導ける (DSM partitioning)。
-        単一変数の衝突は独立に確定でき、結合クラスターは n-ary Decision で同時確定 (ADR-049 不変条件8)。
-        上から順に承認していく。
+        Contracting clusters turns the dependencies into a DAG, giving the order in which to stack joint Decisions (DSM partitioning).
+        Single-variable conflicts can be settled independently; coupled clusters are settled together with an n-ary Decision.
+        Approve from the top down.
       </div>
 
       {allApproved && (
@@ -50,7 +50,7 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
           color: '#22C55E', fontSize: '11px', marginBottom: '8px',
           padding: '5px 7px', background: '#16341f', border: '1px solid #225c34', borderRadius: '4px',
         }}>
-          ✓ すべての Decision が確定 — 交渉クラスターは解消済み
+          ✓ All Decisions settled — negotiation clusters resolved
         </div>
       )}
 
@@ -107,8 +107,8 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
                           onClick={() => ready && approve(step.resolvedBy)}
                           disabled={!ready}
                           title={ready
-                            ? `${step.resolvedBy} を承認して ${step.variables.join(' + ')} を確定`
-                            : `先に ${unmet.join(', ')} を確定`}
+                            ? `Approve ${step.resolvedBy} to settle ${step.variables.join(' + ')}`
+                            : `Settle ${unmet.join(', ')} first`}
                           style={{
                             padding: '3px 9px', borderRadius: '4px', fontSize: '10px',
                             fontFamily: 'inherit', cursor: ready ? 'pointer' : 'not-allowed',
@@ -117,18 +117,18 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
                             border: `1px solid ${ready ? (isCluster ? '#d5a23a' : '#5a9bf5') : '#3a3a3a'}`,
                           }}
                         >
-                          {isCluster ? '合同確定' : '確定'} · {step.resolvedBy}
+                          {isCluster ? 'Settle jointly' : 'Settle'} · {step.resolvedBy}
                         </button>
                         {!ready && (
                           <div style={{ fontSize: '10px', color: '#c8923a', marginTop: '2px' }}>
-                            ← 先に {unmet.join(', ')} を確定
+                            ← Settle {unmet.join(', ')} first
                           </div>
                         )}
                       </>
                     )
                   })()
                 ) : (
-                  <Badge color="#f59e0b" pulse>未確定 (Decision 未提案)</Badge>
+                  <Badge color="#f59e0b" pulse>unsettled (no Decision proposed)</Badge>
                 )}
               </div>
               <Ref>{step.ref}</Ref>
@@ -138,7 +138,7 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
       })}
 
       <div style={{ color: '#999', margin: '10px 0 4px', fontSize: '11px' }}>
-        交渉クラスター (R7): {clusters?.length ?? 0} 件
+        Negotiation clusters: {clusters?.length ?? 0}
       </div>
       {(clusters ?? []).map(nc => {
         const dim = filter && !nc.actors?.includes(filter)

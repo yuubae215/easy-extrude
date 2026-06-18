@@ -18,7 +18,7 @@
  *
  * This registry maps each place type to:
  *   name        — canonical identifier used in `placeType` fields
- *   label       — human-readable label (bilingual: English / Japanese)
+ *   label       — human-readable label
  *   group       — geometry family constraining which entity type is valid
  *   geometry    — 'line' | 'region' | 'point'
  *   color       — hex badge color for UI (N-panel, Outliner)
@@ -47,47 +47,47 @@ export const PLACE_TYPES = [
   // ── Linear elements — AnnotatedLine ───────────────────────────────────────
   {
     name:        'Route',
-    label:       'Route (経路)',
+    label:       'Route',
     group:       'Linear',
     geometry:    'line',
     color:       '#4A90D9',
-    description: '移動・流れの経路 — streets, corridors, conveyor paths, transit lines',
+    description: 'Channels of movement / flow — streets, corridors, conveyor paths, transit lines',
   },
   {
     name:        'Boundary',
-    label:       'Boundary (境界)',
+    label:       'Boundary',
     group:       'Linear',
     geometry:    'line',
     color:       '#E74C3C',
-    description: '分離・区画の境界 — walls, fences, shorelines, area borders',
+    description: 'Linear separators / interfaces — walls, fences, shorelines, area borders',
   },
 
   // ── Areal elements — AnnotatedRegion ──────────────────────────────────────
   {
     name:        'Zone',
-    label:       'Zone (ゾーン)',
+    label:       'Zone',
     group:       'Areal',
     geometry:    'region',
     color:       '#27AE60',
-    description: '特性を持つ領域 — rooms, districts, work cells, departments',
+    description: 'Bounded areas with character — rooms, districts, work cells, departments',
   },
 
   // ── Point elements — AnnotatedPoint ───────────────────────────────────────
   {
     name:        'Hub',
-    label:       'Hub (ハブ)',
+    label:       'Hub',
     group:       'Point',
     geometry:    'point',
     color:       '#F39C12',
-    description: '結節・接続・基準点 — junctions, doorways, datum holes, fixture points',
+    description: 'Junctions / datum points — junctions, doorways, datum holes, fixture points',
   },
   {
     name:        'Anchor',
-    label:       'Anchor (アンカー)',
+    label:       'Anchor',
     group:       'Point',
     geometry:    'point',
     color:       '#9B59B6',
-    description: '外部基準・目印・公差連鎖の起点 — monuments, columns, reference features',
+    description: 'External reference features — monuments, columns, reference features',
   },
 ]
 

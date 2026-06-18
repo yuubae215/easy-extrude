@@ -3,11 +3,11 @@ import { useUIStore } from '../../store/uiStore.js'
 import { ICONS } from '../../view/UIView.js'
 
 const TOOL_ITEMS = [
-  { type: 'route',    label: '⟿', title: 'Route (経路)',      color: '#4A90D9' },
-  { type: 'boundary', label: '⟿', title: 'Boundary (境界)',   color: '#E74C3C' },
-  { type: 'zone',     label: '⬡', title: 'Zone (ゾーン)',     color: '#27AE60' },
-  { type: 'hub',      label: '⬤', title: 'Hub (ハブ)',        color: '#F39C12' },
-  { type: 'anchor',   label: '⬤', title: 'Anchor (アンカー)', color: '#9B59B6' },
+  { type: 'route',    label: '⟿', title: 'Route',    color: '#4A90D9' },
+  { type: 'boundary', label: '⟿', title: 'Boundary', color: '#E74C3C' },
+  { type: 'zone',     label: '⬡', title: 'Zone',     color: '#27AE60' },
+  { type: 'hub',      label: '⬤', title: 'Hub',      color: '#F39C12' },
+  { type: 'anchor',   label: '⬤', title: 'Anchor',   color: '#9B59B6' },
 ]
 
 const SEP = (

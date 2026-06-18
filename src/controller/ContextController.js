@@ -111,7 +111,6 @@ export class ContextController {
     this._ctxService.on('contextChanged', () => this._reproject())
 
     const { registerCallback } = useUIStore.getState().actions
-    registerCallback('onNewContext',             ()           => this.newContext())
     registerCallback('onOpenTemplateGallery',    ()           => this.openTemplateGallery())
     registerCallback('onCloseTemplateGallery',   ()           => this.closeTemplateGallery())
     registerCallback('onSelectTemplate',         (id)         => this.selectTemplate(id))
@@ -137,33 +136,11 @@ export class ContextController {
   /** True while the region-ghost overlay is active. */
   get isRegionGhost() { return this._mode === 'ghost' }
 
-  // ── Blank-doc creation (Phase 1 — Entry A, ADR-051 §3) ──────────────────────
-
-  /**
-   * Create a blank context document and open the negotiate overlay (intake mode).
-   * Clears the current scene after confirmation — blank doc has no layout spec,
-   * so `adoptDoc()` is used instead of `loadContext()` (no compile/layout step).
-   */
-  newContext() {
-    if (this.isActive) return
-    this._ctrl._uiView.showConfirmDialog(
-      '空の Context ドキュメントを作成します。現在のシーンはリセットされます。\n' +
-      '要件入力パネルでアクター・変数・要件を追加してください (ADR-051 §3 Entry A)。',
-      (ok) => {
-        if (!ok) return
-        const doc = createBlankDoc()
-        Promise.resolve(this._ctxService.adoptDoc(doc, this._viewContext()))
-          .then(() => this._startNegotiation())
-          .catch(err => {
-            this._ctrl._uiView.showToast(`Context 作成失敗: ${err.message}`, { type: 'error' })
-            console.error('[ContextController]', err)
-          })
-      },
-      { title: '新規 Context', confirmLabel: '作成' },
-    )
-  }
-
   // ── Template gallery (Phase 2 — Entry B, ADR-051 §3) ────────────────────────
+  // "New Project" (the gallery) is the single create-new entry. Its blank card
+  // (`selectTemplate('blank')`) replaces the former `newContext()` direct path —
+  // it handles active-overlay cleanup via `exit()` and needs no confirm dialog
+  // (the gallery footer is the disclaimer, ADR-051 §7).
 
   /** Open the starter-template picker modal. */
   openTemplateGallery() {
@@ -188,7 +165,7 @@ export class ContextController {
   selectTemplate(id) {
     const meta = getTemplateMeta(id)
     if (!meta) {
-      this._ctrl._uiView.showToast(`未知のテンプレート: ${id}`, { type: 'warn' })
+      this._ctrl._uiView.showToast(`Unknown template: ${id}`, { type: 'warn' })
       return
     }
     this.closeTemplateGallery()
@@ -198,7 +175,7 @@ export class ContextController {
       Promise.resolve(this._ctxService.adoptDoc(createBlankDoc(meta.name), this._viewContext()))
         .then(() => this._startNegotiation())
         .catch(err => {
-          this._ctrl._uiView.showToast(`テンプレート読み込み失敗: ${err.message}`, { type: 'error' })
+          this._ctrl._uiView.showToast(`Failed to load template: ${err.message}`, { type: 'error' })
           console.error('[ContextController]', err)
         })
       return
@@ -206,7 +183,7 @@ export class ContextController {
 
     const doc = TEMPLATE_DOCS[meta.source.file]
     if (!doc) {
-      this._ctrl._uiView.showToast(`テンプレート定義が見つかりません: ${meta.source.file}`, { type: 'error' })
+      this._ctrl._uiView.showToast(`Template definition not found: ${meta.source.file}`, { type: 'error' })
       return
     }
     this._loadThen(doc, () => this._startNegotiation())
@@ -231,10 +208,10 @@ export class ContextController {
       case 'variable':    afterDoc = addVariable(beforeDoc, data);     break
       case 'requirement': afterDoc = addRequirement(beforeDoc, data);  break
       default:
-        ctrl._uiView.showToast(`未知のエントリ種別: ${type}`, { type: 'warn' })
+        ctrl._uiView.showToast(`Unknown entry type: ${type}`, { type: 'warn' })
         return
     }
-    const label = { actor: 'Actor 追加', fact: 'Fact 追加', variable: 'Variable 追加', requirement: 'Requirement 追加' }[type]
+    const label = { actor: 'Add Actor', fact: 'Add Fact', variable: 'Add Variable', requirement: 'Add Requirement' }[type]
     const cmd = createAddDocEntryCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
     Promise.resolve(cmd.execute())
       .then(() => {
@@ -242,7 +219,7 @@ export class ContextController {
         ctrl._refreshUndoRedoState()
       })
       .catch(err => {
-        ctrl._uiView.showToast(`エントリを追加できません: ${err.message}`, { type: 'error' })
+        ctrl._uiView.showToast(`Could not add entry: ${err.message}`, { type: 'error' })
         console.error('[ContextController]', err)
       })
   }
@@ -265,7 +242,7 @@ export class ContextController {
     const beforeDoc = this._ctxService.getDoc()
     const afterDoc  = facts.reduce((doc, f) => addFact(doc, f), beforeDoc)
 
-    const label = `NL 取り込み (${facts.length} Fact)`
+    const label = `NL intake (${facts.length} Fact${facts.length > 1 ? 's' : ''})`
     const cmd = createAddDocEntryCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
     Promise.resolve(cmd.execute())
       .then(() => {
@@ -273,11 +250,11 @@ export class ContextController {
         ctrl._refreshUndoRedoState()
         const unknown = facts.filter(f => f.status === 'unknown').length
         ctrl._uiView.showToast(
-          `${facts.length} 件の Fact を取り込みました${unknown ? `（うち ${unknown} 件は要確定）` : ''}`,
+          `Imported ${facts.length} Fact${facts.length > 1 ? 's' : ''}${unknown ? ` (${unknown} need confirmation)` : ''}`,
         )
       })
       .catch(err => {
-        ctrl._uiView.showToast(`NL 取り込みに失敗しました: ${err.message}`, { type: 'error' })
+        ctrl._uiView.showToast(`NL intake failed: ${err.message}`, { type: 'error' })
         console.error('[ContextController]', err)
       })
   }
@@ -304,7 +281,7 @@ export class ContextController {
     if (!(hi > lo)) { this._disposeIntakeGhost(); return }
 
     const nominal   = (lo + hi) / 2
-    const labelText = `${label}: ${fmtNum(lo)}–${fmtNum(hi)} ${unit} · 未確定`
+    const labelText = `${label}: ${fmtNum(lo)}–${fmtNum(hi)} ${unit} · unconfirmed`
 
     if (this._intakeGhost) {
       this._intakeGhost.setIntervalPreview({ interval: [lo, hi], nominal, labelText })
@@ -337,18 +314,17 @@ export class ContextController {
   // ── Negotiation (Phase 2, data only) ─────────────────────────────────────────
 
   /**
-   * Open the negotiation view over the loaded context document. If no document
-   * is loaded yet, bootstrap the bundled conflict example (real `.ctx.json`
-   * import is Phase 4); loading a context regenerates the derived scene
-   * (invariant 9), so confirm before replacing the current scene.
+   * Open the negotiation view over the loaded context document. The view is a
+   * persistent overlay on the loaded context — it never replaces the user's
+   * scene. If no document is loaded yet, guide the user instead of bootstrapping
+   * a demo (the cell examples are reachable as "New Project" templates).
    */
   enterNegotiation() {
     if (this.isActive) return
     if (this._ctxService.loaded) { this._startNegotiation(); return }
-    this._ctrl._uiView.showConfirmDialog(
-      'コンテキストを読み込んで交渉設計ビューを開きますか? (現在のシーンは要求から再生成されます)',
-      (ok) => { if (ok) this._loadThen(conflictContext, () => this._startNegotiation()) },
-      { title: '交渉設計 — 衝突マトリックス × 解消順序 (ADR-050)', confirmLabel: '開く' },
+    this._ctrl._uiView.showToast(
+      'No context loaded. Start one from New Project, import a .ctx.json, or try the Tutorial.',
+      { type: 'warn' },
     )
   }
 
@@ -424,21 +400,19 @@ export class ContextController {
   // ── Region authoring (Phase 3, §4.5) ─────────────────────────────────────────
 
   /**
-   * Start the live region-authoring overlay. The loaded doc must carry
-   * single-variable region requirements; if it does not (nothing loaded, or a
-   * non-region scenario like the conflict example is loaded), bootstrap the
-   * bundled region example — loading regenerates the scene (invariant 9), so
-   * confirm first.
+   * Start the live region-authoring overlay over the loaded context. The loaded
+   * doc must carry single-variable region requirements; if it does not (nothing
+   * loaded, or a non-region scenario), guide the user instead of replacing the
+   * scene with a demo (the region example is the "Robot Cell — Regions" template).
    */
   enterAuthoring() {
     if (this.isActive) return
     if (this._ctxService.loaded && this._regionReqs(this._ctxService.getDoc()).length > 0) {
       this._startAuthoring(); return
     }
-    this._ctrl._uiView.showConfirmDialog(
-      '現在のシーンを置き換えて 領域オーサリング (ADR-050 Phase 3) を開始しますか?',
-      (ok) => { if (ok) this._loadThen(regionContext, () => this._startAuthoring()) },
-      { title: '領域オーサリング — 衝突のライブ解消', confirmLabel: '開始' },
+    this._ctrl._uiView.showToast(
+      "This view needs a context with region requirements — load the 'Robot Cell — Regions' template from New Project.",
+      { type: 'warn' },
     )
   }
 
@@ -558,7 +532,7 @@ export class ContextController {
         ctrl._refreshUndoRedoState()
       })
       .catch((err) => {
-        ctrl._uiView.showToast(`領域編集を適用できません: ${err.message}`, { type: 'error' })
+        ctrl._uiView.showToast(`Could not apply region edit: ${err.message}`, { type: 'error' })
         console.error('[ContextController]', err)
         const entry = this._authorWidgets.find(w => w.reqRef === reqRef)
         entry?.widget.setRegion(before.region)
@@ -570,19 +544,18 @@ export class ContextController {
   // ── Region ghost overlay (Phase 3, §5.3) ─────────────────────────────────────
 
   /**
-   * Overlay each actor's admissible footprint as a persona-coloured ghost. As with
-   * authoring the loaded doc must carry region requirements; bootstrap the region
-   * example otherwise (regenerates the scene — confirm first).
+   * Overlay each actor's admissible footprint as a persona-coloured ghost over
+   * the loaded context. As with authoring the loaded doc must carry region
+   * requirements; guide the user otherwise instead of replacing the scene.
    */
   enterRegionGhost() {
     if (this.isActive) return
     if (this._ctxService.loaded && this._regionReqs(this._ctxService.getDoc()).length > 0) {
       this._startRegionGhost(); return
     }
-    this._ctrl._uiView.showConfirmDialog(
-      '現在のシーンを置き換えて 許容領域ゴースト重畳 (ADR-050 Phase 3) を開きますか?',
-      (ok) => { if (ok) this._loadThen(regionContext, () => this._startRegionGhost()) },
-      { title: '許容領域ゴースト — actor 別色分け重畳', confirmLabel: '開く' },
+    this._ctrl._uiView.showToast(
+      "This view needs a context with region requirements — load the 'Robot Cell — Regions' template from New Project.",
+      { type: 'warn' },
     )
   }
 
@@ -651,7 +624,7 @@ export class ContextController {
     } else if (d?.nominal != null) {
       detail = `${String(d.resolves).replace(/^conflict_v_/, '')}=${d.nominal}`
     }
-    const kind = d?.nominals ? '合同確定' : '確定'
+    const kind = d?.nominals ? 'Settled jointly' : 'Settled'
     ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
   }
 
@@ -683,7 +656,7 @@ export class ContextController {
         ctrl._refreshUndoRedoState()
       })
       .catch((err) => {
-        ctrl._uiView.showToast(`回答を適用できません: ${err.message}`, { type: 'error' })
+        ctrl._uiView.showToast(`Could not apply answer: ${err.message}`, { type: 'error' })
         console.error('[ContextController]', err)
       })
   }
@@ -710,7 +683,7 @@ export class ContextController {
         try {
           doc = JSON.parse(ev.target.result)
         } catch {
-          this._ctrl._uiView.showToast(`JSON 解析エラー: ${file.name}`, { type: 'error' })
+          this._ctrl._uiView.showToast(`JSON parse error: ${file.name}`, { type: 'error' })
           return
         }
         this._loadThen(doc, () => this._startNegotiation())
@@ -727,7 +700,7 @@ export class ContextController {
   exportContextFile() {
     const doc = this._ctxService.getDoc()
     if (!doc) {
-      this._ctrl._uiView.showToast('コンテキストが読み込まれていません', { type: 'warn' })
+      this._ctrl._uiView.showToast('No context is loaded', { type: 'warn' })
       return
     }
     const name      = doc?.meta?.name ?? 'context'
