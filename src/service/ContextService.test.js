@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { ContextService } from './ContextService.js'
+import { createBlankDoc } from '../context/DocBuilder.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const exampleDir = join(here, '../../examples')
@@ -26,6 +27,7 @@ const load = name => JSON.parse(readFileSync(join(exampleDir, name), 'utf8'))
 const factory  = () => load('factory_context.json')
 const conflict = () => load('cell_conflict_context.json')
 const region   = () => load('cell_region_context.json')
+const phase2   = () => load('cell_phase2_context.json')   // requirements-only: empty layout
 
 /** A fake SceneService recording importFromJson calls; no THREE, no DOM. */
 function fakeScene() {
@@ -87,9 +89,51 @@ test('loadContext rebuilds derivation bookkeeping (refToId / linkIds / traceByFr
 
 test('loadContext rejects (does not mutate state) on an invalid document', async () => {
   const svc = new ContextService(fakeScene())
-  await assert.rejects(() => svc.loadContext({ version: 'context/0.3' /* missing specification */ }, VC))
+  await assert.rejects(() => svc.loadContext({ version: 'context/0.3', specification: 42 /* malformed layout */ }, VC))
   assert.equal(svc.loaded, false)
   assert.equal(svc.getDoc(), null)
+})
+
+// ── Blank / requirements-only docs (no renderable layout) ────────────────────
+
+test('adoptDoc accepts a blank doc, imports an empty scene, and emits contextLoaded', async () => {
+  const scene = fakeScene()
+  const svc = new ContextService(scene)
+  let payload = null
+  svc.on('contextLoaded', p => { payload = p })
+
+  const doc = createBlankDoc()
+  const res = await svc.adoptDoc(doc, VC)
+
+  assert.equal(svc.loaded, true)
+  assert.strictEqual(svc.getDoc(), doc)
+  assert.equal(svc.getCompiled(), null)           // no layout compiled for a blank doc
+  assert.equal(scene.calls.length, 1)
+  assert.equal(scene.calls[0].opts.clear, true)
+  assert.equal(scene.calls[0].scene.objects.length, 0)
+  assert.equal(res.imported, 0)
+  assert.ok(payload)
+  assert.strictEqual(payload.doc, doc)
+  assert.equal(payload.compiled, null)
+  // Derivation bookkeeping is reset to empty (no entities to map).
+  assert.equal(svc.getRefToId().size, 0)
+  assert.equal(svc.getLinkIds().length, 0)
+})
+
+test('loadContext imports an empty scene for a requirements-only (empty-layout) doc', async () => {
+  const scene = fakeScene()
+  const svc = new ContextService(scene)
+
+  // cell_phase2 is a valid doc whose specification.layout has entities:[]
+  // ("要求のみを検証する空レイアウト"). It must load without throwing.
+  const doc = phase2()
+  const res = await svc.loadContext(doc, VC)
+
+  assert.equal(svc.loaded, true)
+  assert.ok(svc.getCompiled().layoutDsl)
+  assert.equal(scene.calls.length, 1)
+  assert.equal(scene.calls[0].scene.objects.length, 0)
+  assert.equal(res.imported, 0)
 })
 
 // ── Decision approval is a document mutation (PoC parity → production) ────────
