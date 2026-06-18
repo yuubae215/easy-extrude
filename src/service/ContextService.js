@@ -104,8 +104,18 @@ export class ContextService extends EventEmitter {
    */
   async loadContext(doc, viewContext) {
     const validatorResult = validateContext(doc)
+    if (!validatorResult.valid) {
+      throw new Error(`Context DSL validation failed:\n  - ${validatorResult.errors.join('\n  - ')}`)
+    }
     const compiled = compileContext(doc)                 // throws on invalid doc
-    const scene    = compileLayout(compiled.layoutDsl)    // throws on invalid layout
+
+    // A requirements-only doc compiles to a layout with no renderable entities
+    // (e.g. cell_phase2: "要求のみを検証する空レイアウト"). LayoutValidator rejects
+    // an empty `entities` array (a legitimate guard for the CLI layout path,
+    // ADR-045), so derive an empty scene here rather than letting compileLayout
+    // throw — an empty layout is a valid context, just not a 3-D one.
+    const hasEntities = (compiled.layoutDsl.entities ?? []).length > 0
+    const scene = hasEntities ? compileLayout(compiled.layoutDsl) : this._emptyScene()
 
     const importResult = await this._scene.importFromJson(scene, viewContext, { clear: true })
 
@@ -180,13 +190,7 @@ export class ContextService extends EventEmitter {
     }
 
     // Clear the scene without a layout compile step.
-    const emptyScene = {
-      version:        SCENE_JSON_VERSION,
-      objects:        [],
-      links:          [],
-      transformGraph: { nodes: [], edges: [] },
-    }
-    const importResult = await this._scene.importFromJson(emptyScene, viewContext, { clear: true })
+    const importResult = await this._scene.importFromJson(this._emptyScene(), viewContext, { clear: true })
 
     this._doc             = doc
     this._validatorResult = validatorResult
@@ -324,6 +328,17 @@ export class ContextService extends EventEmitter {
   // ── Private helpers ─────────────────────────────────────────────────────────
 
   /** Rebuild the ref / trace / link bookkeeping from a compiled context. */
+  /** An empty scene-JSON payload (no objects/links) — a context with no
+   *  renderable layout (blank doc or requirements-only doc) imports this. */
+  _emptyScene() {
+    return {
+      version:        SCENE_JSON_VERSION,
+      objects:        [],
+      links:          [],
+      transformGraph: { nodes: [], edges: [] },
+    }
+  }
+
   _rebuildDerivation(compiled) {
     const layoutDsl = compiled.layoutDsl
     this._refToId = buildRefMap(layoutDsl.entities)

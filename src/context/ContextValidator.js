@@ -313,24 +313,30 @@ export function validateContext(ctx) {
     }
   }
 
-  // R3: orphan spec — every entity and constraint must be a trace target
+  // R3: orphan spec — every entity and constraint must be a trace target.
+  // A blank / intake-stage doc (ADR-051 Entry A) intentionally has no
+  // `specification` yet — there is nothing to derive a scene from. Only enforce
+  // the layout shape once a specification is actually present; otherwise this
+  // rule would reject every authoring-stage doc (createBlankDoc omits it).
   const tracedTargets = new Set(trace.map(link => link.to))
-  const layout        = spec.layout
 
-  if (layout && typeof layout === 'object') {
-    for (const entity of layout.entities ?? []) {
-      if (!tracedTargets.has(entity.ref)) {
-        errors.push(`orphan spec: entity "${entity.ref}" has no TraceLink — 誰も頼んでいない仕様 (ADR-046 invariant 1)`)
+  if (ctx.specification !== undefined) {
+    const layout = spec.layout
+    if (layout && typeof layout === 'object') {
+      for (const entity of layout.entities ?? []) {
+        if (!tracedTargets.has(entity.ref)) {
+          errors.push(`orphan spec: entity "${entity.ref}" has no TraceLink — 誰も頼んでいない仕様 (ADR-046 invariant 1)`)
+        }
       }
-    }
-    for (const c of layout.constraints ?? []) {
-      const cRef = constraintRef(c)
-      if (!tracedTargets.has(cRef)) {
-        errors.push(`orphan spec: constraint "${cRef}" has no TraceLink (ADR-046 invariant 1)`)
+      for (const c of layout.constraints ?? []) {
+        const cRef = constraintRef(c)
+        if (!tracedTargets.has(cRef)) {
+          errors.push(`orphan spec: constraint "${cRef}" has no TraceLink (ADR-046 invariant 1)`)
+        }
       }
+    } else {
+      errors.push('specification.layout must be an object (layout/1.0 shape, $fact/$decision/$expr refs allowed)')
     }
-  } else {
-    errors.push('specification.layout must be an object (layout/1.0 shape, $fact/$decision/$expr refs allowed)')
   }
 
   // ── R5: blocked acceptance checks ────────────────────────────────────────────
