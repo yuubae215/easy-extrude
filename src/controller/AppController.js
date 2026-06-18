@@ -1571,8 +1571,10 @@ export class AppController {
     this._selMgr.clearObjectSelection()
     this._selMgr.setObjectSelected(false)
 
+    // A blank / spec-less doc (ADR-051 Entry A) adopts with `compiled: null` —
+    // there is no layout to frame, so fall through to the empty-box default fit.
     const box = new THREE.Box3()
-    for (const e of compiled.layoutDsl.entities ?? []) {
+    for (const e of compiled?.layoutDsl?.entities ?? []) {
       if (e.position && e.dimensions) {
         const { x, y, z } = e.position
         const d = e.dimensions

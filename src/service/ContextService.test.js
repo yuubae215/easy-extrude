@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import { ContextService } from './ContextService.js'
-import { createBlankDoc } from '../context/DocBuilder.js'
+import { createBlankDoc, addActor } from '../context/DocBuilder.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const exampleDir = join(here, '../../examples')
@@ -134,6 +134,36 @@ test('loadContext imports an empty scene for a requirements-only (empty-layout) 
   assert.equal(scene.calls.length, 1)
   assert.equal(scene.calls[0].scene.objects.length, 0)
   assert.equal(res.imported, 0)
+})
+
+test('applyContextDoc({regenerate}) on a spec-less doc imports an empty scene without compiling', async () => {
+  const scene = fakeScene()
+  const svc = new ContextService(scene)
+  await svc.adoptDoc(createBlankDoc(), VC)              // _compiled = null
+
+  // Adding the first intake entry (AddDocEntryCommand always passes regenerate:true).
+  const after = addActor(svc.getDoc(), { id: 'a_eng', name: 'Engineer', discipline: 'mech' })
+  await assert.doesNotReject(() => svc.applyContextDoc(after, VC, { regenerate: true }))
+
+  assert.strictEqual(svc.getDoc(), after)
+  assert.equal(svc.getCompiled(), null)                 // still spec-less → no layout
+  assert.equal(scene.calls.length, 2)                   // adoptDoc + this regenerate
+  assert.equal(scene.calls[1].scene.objects.length, 0)  // empty scene, not a compile throw
+  assert.equal(svc.getRefToId().size, 0)
+})
+
+test('applyContextDoc({regenerate}) on a requirements-only doc imports an empty scene', async () => {
+  const scene = fakeScene()
+  const svc = new ContextService(scene)
+  const doc = phase2()                                  // specification.layout.entities: []
+  await svc.loadContext(doc, VC)
+
+  // A doc with a specification but an empty layout must regenerate to an empty
+  // scene, not throw "entities array must not be empty".
+  const after = addActor(svc.getDoc(), { id: 'a_extra', name: 'Extra', discipline: 'mech' })
+  await assert.doesNotReject(() => svc.applyContextDoc(after, VC, { regenerate: true }))
+
+  assert.equal(scene.calls[scene.calls.length - 1].scene.objects.length, 0)
 })
 
 // ── Decision approval is a document mutation (PoC parity → production) ────────

@@ -146,8 +146,19 @@ export class ContextService extends EventEmitter {
     let compiled = this._compiled
     let scene    = null
     if (regenerate) {
-      compiled = compileContext(newDoc)              // may throw — aborts before commit
-      scene    = compileLayout(compiled.layoutDsl)
+      // A spec-less / authoring-stage doc (blank doc — ADR-051 Entry A) has no
+      // layout to compile; a requirements-only doc compiles to an empty layout
+      // (LayoutValidator rejects empty `entities`). Both derive an empty scene
+      // here rather than letting compileContext / compileLayout throw — mirrors
+      // loadContext / adoptDoc (PHILOSOPHY #11: never crash on a valid doc).
+      if (newDoc.specification === undefined) {
+        compiled = null
+        scene    = this._emptyScene()
+      } else {
+        compiled = compileContext(newDoc)            // may throw — aborts before commit
+        const hasEntities = (compiled.layoutDsl.entities ?? []).length > 0
+        scene    = hasEntities ? compileLayout(compiled.layoutDsl) : this._emptyScene()
+      }
     }
 
     const prevConflicts = this._validatorResult?.conflicts ?? []
@@ -155,7 +166,15 @@ export class ContextService extends EventEmitter {
     if (regenerate) {
       await this._scene.importFromJson(scene, viewContext, { clear: true })
       this._compiled = compiled
-      this._rebuildDerivation(compiled)
+      if (compiled) {
+        this._rebuildDerivation(compiled)
+      } else {
+        // No layout → no derivation bookkeeping (same reset as adoptDoc).
+        this._refToId            = new Map()
+        this._traceByFrom        = new Map()
+        this._constraintToLinkId = new Map()
+        this._linkIds            = []
+      }
     }
 
     this._doc             = newDoc
