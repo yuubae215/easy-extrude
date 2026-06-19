@@ -167,7 +167,7 @@ export const useUIStore = create((set, get) => ({
   actions: {
     setToolbar: (buttons) => set({ toolbar: buttons }),
 
-    setStatus: (text) => set({ statusParts: [{ text }] }),
+    setStatus: (text) => set({ statusParts: text ? [{ text }] : [] }),
     setStatusRich: (parts) => set({ statusParts: parts }),
 
     setCursor: (style) => set({ cursor: style }),

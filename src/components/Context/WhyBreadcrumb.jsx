@@ -41,11 +41,11 @@ export function WhyBreadcrumb() {
   if (!prov) {
     return (
       <div style={{ color: '#888', fontSize: '11px', lineHeight: 1.6 }}>
-        3D ビューで派生エンティティ (設置許容ゾーンなど) を選択すると、その配置が
-        <b style={{ color: '#aaa' }}> どの KPI・クライテリア・Intent</b> を満たすために
-        存在するのか (Why) を、上方へ遡って表示します。
+        Select a derived entity in the 3D view (such as an admissible zone) to trace,
+        climbing upward, <b style={{ color: '#aaa' }}>which KPI, criterion, or Intent</b>
+        the placement exists to satisfy (its Why).
         <div style={{ marginTop: '6px', color: '#666' }}>
-          シーンは Why を落とす What/How 射影 (invariant 9)。この来歴復元が φ⁻¹ です (ADR-052)。
+          The scene is a What/How projection that drops the Why; this recovery is its inverse.
         </div>
       </div>
     )
@@ -55,7 +55,7 @@ export function WhyBreadcrumb() {
     <div style={{ fontSize: '11px', lineHeight: 1.5 }}>
       {/* Selected entity (the What leaf the breadcrumb starts from) */}
       <div style={{ marginBottom: '8px' }}>
-        <span style={{ color: '#888', fontSize: '10px' }}>選択中</span>
+        <span style={{ color: '#888', fontSize: '10px' }}>Selected</span>
         <div style={{ fontWeight: 'bold', color: '#e8e8e8' }}>
           {prov.node?.label ?? prov.entityRef}
         </div>
@@ -74,9 +74,9 @@ export function WhyBreadcrumb() {
       )}
 
       {/* Why — the apex: KPIs + criteria + intents the placement serves */}
-      <Layer title="Why — なぜこの配置が要るのか" color="#5a9bf5">
+      <Layer title="Why — why this placement is needed" color="#5a9bf5">
         {prov.kpis.length === 0 && prov.intents.length === 0 && prov.why.length === 0 && (
-          <Empty>Why を持つ上位要求に到達しませんでした</Empty>
+          <Empty>No upstream requirement with a Why was reached</Empty>
         )}
         {prov.kpis.map(k => (
           <div key={k.requirement} style={cardStyle('#5a9bf5')}>
@@ -87,7 +87,7 @@ export function WhyBreadcrumb() {
             {k.expr && <div style={mono}>{k.expr}</div>}
             {k.criterion && (
               <div style={{ color: '#9bd', marginTop: '2px' }}>
-                クライテリア: {k.criterion.op} {k.criterion.value} {k.unit}
+                criterion: {k.criterion.op} {k.criterion.value} {k.unit}
               </div>
             )}
             <Ref>{k.requirement}</Ref>
@@ -109,7 +109,7 @@ export function WhyBreadcrumb() {
 
       {/* Gap — measured-vs-target (R6, joined by ContextService) */}
       {prov.gaps?.length > 0 && (
-        <Layer title="Gap — 実測との差 (R6)" color="#cc6666">
+        <Layer title="Gap — measured vs. target" color="#cc6666">
           {prov.gaps.map(g => (
             <div key={g.variable} style={cardStyle(g.resolved ? '#22C55E' : '#cc3333')}>
               <Tag color={g.resolved ? '#226644' : '#7a3030'}>{g.resolved ? 'resolved' : 'conflict'}</Tag>
@@ -122,7 +122,7 @@ export function WhyBreadcrumb() {
 
       {/* How — the decisions / obligations / constraints reached */}
       {prov.how.length > 0 && (
-        <Layer title="How — どう達成するか" color="#d59b3a">
+        <Layer title="How — how it is achieved" color="#d59b3a">
           {prov.how.map(n => (
             <div key={n.id} style={cardStyle('#d59b3a')}>
               <Tag color="#8a6a2a">{KIND_LABEL[n.kind] ?? n.kind}</Tag>

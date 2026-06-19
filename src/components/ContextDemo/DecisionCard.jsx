@@ -4,7 +4,7 @@ import { useUIStore } from '../../store/uiStore.js'
  * DecisionCard — the demo's centerpiece interaction (ADR-047).
  *
  * Shown from step ④. Presents the interval-resolving Decision
- * (d_bench_distance) and the「承認して確定」button. Approval triggers the
+ * (d_bench_distance) and the "Approve & settle" button. Approval triggers the
  * ghost-collapse animation via onDemoApproveDecision; afterwards the card
  * flips to its agreed state.
  */
@@ -51,7 +51,7 @@ export function DecisionCard() {
       lineHeight:   '1.6',
     }}>
       <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
-        {approved ? '✓ Decision 確定済み' : 'Decision の承認'}
+        {approved ? '✓ Decision settled' : 'Approve Decision'}
         <span style={{
           float: 'right', fontSize: '10px', padding: '1px 6px', borderRadius: '3px',
           border: `1px solid ${approved ? '#22C55E' : '#f59e0b'}`,
@@ -82,7 +82,7 @@ export function DecisionCard() {
 
       {approved ? (
         <div style={{ color: '#22C55E', fontSize: '11px' }}>
-          区間が公称値に確定し、作業台がシーンに生成されました。
+          The interval was settled to a nominal value, and the workbench was generated in the scene.
         </div>
       ) : (
         <button
@@ -93,7 +93,7 @@ export function DecisionCard() {
             cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
-          承認して確定 — {decision.nominal} {fact.quantity.unit}
+          Approve & settle — {decision.nominal} {fact.quantity.unit}
         </button>
       )}
     </div>

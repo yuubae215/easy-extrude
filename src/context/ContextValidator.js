@@ -99,7 +99,7 @@ export function validateContext(ctx) {
           ref:        `oq_unknown_${fact.ref}_${key}`,
           raisedBy:   'R1:unknown-attr',
           about:      `${fact.ref}.attrs.${key}`,
-          summary:    `「${fact.subject}」の ${key} が未確認 (status: ${fact.status})`,
+          summary:    `${key} of "${fact.subject}" is unconfirmed (status: ${fact.status})`,
         })
       }
     }
@@ -112,7 +112,7 @@ export function validateContext(ctx) {
         ref:      `oq_scope_${obligation.ref}`,
         raisedBy: 'R4:unassigned-scope',
         about:    obligation.ref,
-        summary:  `「${obligation.deliverable}」の責任区分が未合意 — 請求確定をブロックする`,
+        summary:  `Responsibility for "${obligation.deliverable}" is not agreed — blocks billing sign-off`,
       })
     }
   }
@@ -217,7 +217,7 @@ export function validateContext(ctx) {
         ref:      `oq_kpi_${req.ref}`,
         raisedBy: 'R9:stated-without-kpi',
         about:    req.ref,
-        summary:  `要求「${req.ref}」(${req.by}) の許容領域は stated のまま — 根拠となる KPI とクライテリアが未取得。緩和交渉時に定量比較できない`,
+        summary:  `Requirement "${req.ref}" (${req.by}) has a stated admissible region only — its underlying KPI and criterion are missing, so it cannot be compared quantitatively during relaxation`,
       })
     }
   }
@@ -243,7 +243,7 @@ export function validateContext(ctx) {
           ref:      `oq_rolekpi_${discipline}_${kpiName}`,
           raisedBy: 'R8:role-kpi-catalog',
           about:    discipline,
-          summary:  `${discipline} 分野の必須 KPI「${kpiName}」を制約する要求がない — カタログ必須項目が未充足 (ADR-049 R8)`,
+          summary:  `No requirement constrains the mandatory KPI "${kpiName}" for the ${discipline} discipline — a required catalog item is unmet`,
         })
       }
     }
@@ -265,7 +265,7 @@ export function validateContext(ctx) {
           errors.push(`decision "${decision.ref}": resolves "${ref}" does not reference any variable in variables[]`)
         }
         if (decision.nominals?.[ref] === undefined) {
-          errors.push(`decision "${decision.ref}": nominals is missing an entry for "${ref}" — n-ary Decision は全変数の公称値を同時に持つ (ADR-049 invariant 8)`)
+          errors.push(`decision "${decision.ref}": nominals is missing an entry for "${ref}" — an n-ary Decision must carry a nominal for every variable at once (ADR-049 invariant 8)`)
         }
       }
       // a joint decision covering all of a cluster's variables resolves it
@@ -277,7 +277,7 @@ export function validateContext(ctx) {
     } else if (typeof resolves === 'string' && resolves.startsWith(CONFLICT_REF_PREFIX)) {
       const conflict = conflictByRef.get(resolves)
       if (!conflict) {
-        errors.push(`decision "${decision.ref}": resolves "${resolves}" — この Conflict は現在のグラフから R6 が生成しない。吐かれていない衝突は解消できない (ADR-049 invariant 7)`)
+        errors.push(`decision "${decision.ref}": resolves "${resolves}" — R6 does not produce this Conflict from the current graph. A conflict that was never emitted cannot be resolved (ADR-049 invariant 7)`)
       } else {
         conflict.resolvedBy = decision.ref
       }
@@ -325,7 +325,7 @@ export function validateContext(ctx) {
     if (layout && typeof layout === 'object') {
       for (const entity of layout.entities ?? []) {
         if (!tracedTargets.has(entity.ref)) {
-          errors.push(`orphan spec: entity "${entity.ref}" has no TraceLink — 誰も頼んでいない仕様 (ADR-046 invariant 1)`)
+          errors.push(`orphan spec: entity "${entity.ref}" has no TraceLink — a specification nobody requested (ADR-046 invariant 1)`)
         }
       }
       for (const c of layout.constraints ?? []) {

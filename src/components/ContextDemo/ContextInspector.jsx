@@ -189,7 +189,7 @@ function FactsTab({ demo, select }) {
         </div>
         {fact.quantity?.interval && (
           <div style={{ color: '#d5a23a', fontFamily: 'monospace', fontSize: '11px' }}>
-            区間 [{fact.quantity.interval[0]}, {fact.quantity.interval[1]}] {fact.quantity.unit}
+            interval [{fact.quantity.interval[0]}, {fact.quantity.interval[1]}] {fact.quantity.unit}
           </div>
         )}
         {unknownAttrs.map(([key]) => (
@@ -208,7 +208,7 @@ function OpenQuestionsTab({ demo, select }) {
   return (
     <>
       <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px' }}>
-        バリデータが機械的に生成した未解決事項 — 人が書いたものではない (ADR-046 不変条件4)
+        Open items generated mechanically by the validator — not written by a person.
       </div>
       {demo.openQuestions.map(oq => (
         <Row key={oq.ref} onClick={() => select(oq.ref)} selected={demo.selectedItemRef === oq.ref}>
@@ -220,7 +220,7 @@ function OpenQuestionsTab({ demo, select }) {
         </Row>
       ))}
       <div style={{ color: '#999', margin: '8px 0 4px', fontSize: '11px' }}>
-        ブロックされた受入チェック: {demo.blockedChecks.length} 件
+        Blocked acceptance checks: {demo.blockedChecks.length}
       </div>
       {demo.blockedChecks.map(b => (
         <Row key={b.check}>
@@ -259,7 +259,7 @@ function TraceTab({ demo, select }) {
   return (
     <>
       <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px' }}>
-        すべての仕様要素は要求にトレースされる (ADR-046 不変条件1)。行クリックで 3D ハイライト。
+        Every specification element traces back to a requirement. Click a row to highlight it in 3D.
       </div>
       {demo.trace.map((link, i) => (
         <Row key={i} onClick={() => select(link.from)}>
@@ -280,11 +280,11 @@ function ConflictsTab({ demo, select }) {
   return (
     <>
       <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px' }}>
-        共有設計変数ごとに許容領域を交差して検出 (R6)。ゾーンをドラッグして重ねると消える。
-        衝突は人が書くものではなくルールが吐く (ADR-049 不変条件7)。
+        Detected by intersecting admissible regions per shared design variable. Drag zones to overlap and the conflict clears.
+        Conflicts are emitted by rules, not written by a person.
       </div>
       {conflicts.length === 0 && (
-        <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ 衝突なし — すべての許容領域が交差している</div>
+        <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ No conflicts — all admissible regions intersect</div>
       )}
       {conflicts.map(c => (
         <Row key={c.ref} onClick={() => select(c.variable)} selected={demo.selectedItemRef === c.variable}>

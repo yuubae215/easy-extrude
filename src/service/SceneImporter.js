@@ -43,19 +43,19 @@ export function parseImportJson(jsonText) {
   try {
     root = JSON.parse(jsonText)
   } catch {
-    throw new Error('ファイルが有効な JSON ではありません')
+    throw new Error('File is not valid JSON')
   }
 
   if (!root || typeof root !== 'object') {
-    throw new Error('JSONのルートがオブジェクトではありません')
+    throw new Error('JSON root is not an object')
   }
 
   if (!SUPPORTED_VERSIONS.has(root.version)) {
-    throw new Error(`未対応のバージョンです: ${root.version}`)
+    throw new Error(`Unsupported version: ${root.version}`)
   }
 
   if (!Array.isArray(root.objects)) {
-    throw new Error('objects フィールドが配列ではありません')
+    throw new Error('The objects field is not an array')
   }
 
   // Light per-entry type check (no deep validation — invalid entries are skipped on import)

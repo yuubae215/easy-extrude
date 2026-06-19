@@ -27,9 +27,9 @@ import { WhyTreeView } from './WhyTreeView.jsx'
  */
 
 const TITLE = {
-  negotiate: '交渉設計',
-  author:    '領域オーサリング',
-  ghost:     '許容領域ゴースト',
+  negotiate: 'Negotiate',
+  author:    'Author',
+  ghost:     'Region Ghosts',
 }
 
 const fmtGap = (gap) => Array.isArray(gap)
@@ -54,7 +54,7 @@ export function ContextLayer() {
       { id: 'cluster',   label: 'Cluster' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
       { id: 'why',       label: 'Why' },
-      { id: 'tree',      label: '俯瞰' },
+      { id: 'tree',      label: 'Overview' },
       { id: 'intake',    label: 'Intake' },
     ]
     : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
@@ -86,7 +86,7 @@ export function ContextLayer() {
         </span>
         <button
           onClick={() => callbacks.onContextExit?.()}
-          title="閉じる"
+          title="Close"
           style={{
             marginLeft: 'auto', background: 'transparent', border: 'none',
             color: '#888', cursor: 'pointer', fontSize: '14px', lineHeight: '1',
@@ -133,7 +133,7 @@ export function ContextLayer() {
       )}
 
       <div style={{ padding: '4px 8px 0', fontSize: '10px', color: liveConflicts ? '#cc6666' : '#22C55E' }}>
-        {liveConflicts ? `未解消の衝突 ${liveConflicts} 件` : '✓ すべての衝突が確定済'}
+        {liveConflicts ? `${liveConflicts} unresolved conflict${liveConflicts > 1 ? 's' : ''}` : '✓ All conflicts resolved'}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
@@ -176,11 +176,11 @@ function AuthorConflicts({ conflicts = [] }) {
   return (
     <>
       <div style={{ color: '#999', marginBottom: '6px', fontSize: '11px', lineHeight: 1.5 }}>
-        各担当の設置許容ゾーンを 3D で直接ドラッグ。重なれば衝突は消え (緑)、離れれば再発する (赤)。
-        確定するとアンドゥ可能な要求編集としてドキュメントに書き戻される (3D は入力デバイス、契約はテキスト DSL — invariant 9)。
+        Drag each actor's admissible zone directly in 3D. Overlap clears the conflict (green); separation brings it back (red).
+        Committing writes the change back to the document as an undoable requirement edit (3D is the input device, the contract is the text DSL).
       </div>
       {conflicts.length === 0 && (
-        <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ 衝突なし — すべての許容領域が交差している</div>
+        <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ No conflicts — all admissible regions intersect</div>
       )}
       {conflicts.map(c => (
         <div key={c.ref} style={{

@@ -130,7 +130,9 @@ if (e.pointerType === 'touch') {
 const bottomPx = this._isMobile() ? '96px' : '64px'
 ```
 
-On mobile, status text is shown in the footer info bar (`_infoEl`) instead of the header or canvas pill, because the mobile header is too narrow and keyboard hints are irrelevant on touch. `setStatus()` and `setStatusRich()` update `_infoEl` on mobile; `_setInfoText()` is a no-op on mobile. The `_canvasStatusEl` pill is always hidden (the footer replaces it on mobile; the header status replaces it on desktop). The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile.
+On mobile, status text is shown in the footer info bar (`_infoEl`) instead of the header, because the mobile header is too narrow and keyboard hints are irrelevant on touch. `setStatus()` and `setStatusRich()` update `_infoEl` on mobile; `_setInfoText()` is a no-op on mobile. The Nodes button (`_nodeEditorBtn`) is desktop-only and hidden on mobile.
+
+**Mobile canvas status pill removed (2026-06-18)**: the React `CanvasStatusPill` (a rounded pill floating over the 3-D canvas at `bottom:96px`) was deleted. It frequently rendered an *empty rounded-rectangle background* because `setStatus('')` produced `[{ text: '' }]` (a non-empty array → the pill rendered with no text). Mobile status now lives only in the footer info bar; the desktop `HeaderStatus` (no background box) is unchanged. `setStatus('')` now yields `[]` so an empty status renders nothing on either surface. Do not reintroduce a canvas-overlay status pill — the empty-background artifact is the reason it was removed.
 
 **Mobile header right-alignment**: `_headerStatusEl` uses `visibility: hidden` (not `display: none`) on mobile so it still acts as a `flex: 1` spacer, pushing the right-side buttons (⋯ and N) to the far right without needing `marginLeft: auto` on any individual button.
 

@@ -117,7 +117,7 @@ function ActorForm({ actors, onAdd }) {
           ))}
         </div>
       )}
-      <Field label="ref (例: a_robot)">
+      <Field label="ref (e.g. a_robot)">
         <input value={ref} onChange={e => setRef(e.target.value)}
           placeholder="a_robot" style={inputStyle}
           onKeyDown={e => e.key === 'Enter' && submit()} />
@@ -125,11 +125,11 @@ function ActorForm({ actors, onAdd }) {
       <Field label="role">
         <Select value={role} onChange={setRole} options={ROLES} />
       </Field>
-      <Field label="discipline (省略可)">
+      <Field label="discipline (optional)">
         <Select value={disc} onChange={setDisc} options={DISCIPLINES} />
       </Field>
       <button onClick={submit} style={btnStyle(true)} disabled={!ref.trim()}>
-        + Actor を追加
+        + Add Actor
       </button>
     </div>
   )
@@ -164,7 +164,7 @@ function VariableForm({ variables, onAdd }) {
           ))}
         </div>
       )}
-      <Field label="ref (例: v_reach)">
+      <Field label="ref (e.g. v_reach)">
         <input value={ref} onChange={e => setRef(e.target.value)}
           placeholder="v_reach" style={inputStyle}
           onKeyDown={e => e.key === 'Enter' && submit()} />
@@ -183,13 +183,13 @@ function VariableForm({ variables, onAdd }) {
             placeholder="1000" type="number" style={inputStyle} />
         </Field>
       </div>
-      <Field label="description (省略可)">
+      <Field label="description (optional)">
         <input value={desc} onChange={e => setDesc(e.target.value)}
-          placeholder="説明" style={inputStyle} />
+          placeholder="description" style={inputStyle} />
       </Field>
       <button onClick={submit} style={btnStyle(true)}
         disabled={!ref.trim() || !unit.trim() || lo === '' || hi === ''}>
-        + Variable を追加
+        + Add Variable
       </button>
     </div>
   )
@@ -251,36 +251,36 @@ function RequirementForm({ actors, variables, onAdd, onPreview }) {
 
   return (
     <div>
-      <Field label="ref (例: r_reach)">
+      <Field label="ref (e.g. r_reach)">
         <input value={ref} onChange={e => setRef(e.target.value)}
           placeholder="r_reach" style={inputStyle} />
       </Field>
       <Field label="by (actor)">
         {actors.length > 0
           ? <Select value={by} onChange={setBy}
-              options={[{ value: '', label: '— 選択 —' }, ...actorOpts]} />
+              options={[{ value: '', label: '— select —' }, ...actorOpts]} />
           : <input value={by} onChange={e => setBy(e.target.value)}
               placeholder="a_robot" style={inputStyle} />
         }
       </Field>
-      <Field label="KPI 名">
+      <Field label="KPI name">
         <input value={kpiName} onChange={e => setKpiName(e.target.value)}
           placeholder="reach" style={inputStyle} />
       </Field>
-      <Field label="KPI 式 (省略時: KPI名)">
+      <Field label="KPI expr (defaults to KPI name)">
         <input value={kpiExpr} onChange={e => setKpiExpr(e.target.value)}
           placeholder="arm_length" style={inputStyle} />
       </Field>
-      <Field label="KPI 単位">
+      <Field label="KPI unit">
         <input value={kpiUnit} onChange={e => setKpiUnit(e.target.value)}
           placeholder="mm" style={inputStyle} />
       </Field>
       <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
         <div style={{ flex: '0 0 60px' }}>
-          <label style={labelStyle}>判定</label>
+          <label style={labelStyle}>operator</label>
           <Select value={op} onChange={setOp} options={CRITERION_OPS} />
         </div>
-        <Field label="基準値">
+        <Field label="threshold">
           <input value={val} onChange={e => setVal(e.target.value)}
             type="number" placeholder="400" style={inputStyle} />
         </Field>
@@ -288,7 +288,7 @@ function RequirementForm({ actors, variables, onAdd, onPreview }) {
       <Field label="constrains (variable)">
         {variables.length > 0
           ? <Select value={constrains} onChange={setConst}
-              options={[{ value: '', label: '— 選択 —' }, ...varOpts]} />
+              options={[{ value: '', label: '— select —' }, ...varOpts]} />
           : <input value={constrains} onChange={e => setConst(e.target.value)}
               placeholder="v_reach" style={inputStyle} />
         }
@@ -297,7 +297,7 @@ function RequirementForm({ actors, variables, onAdd, onPreview }) {
         <Select value={neg} onChange={setNeg} options={NEGOTIABILITY} />
       </Field>
       <div style={{ fontSize: '9px', color: '#777', margin: '2px 0 1px' }}>
-        許容区間 — 入力すると不確実バンドが 3D に即時表示されます (Entry D)
+        Admissible interval — entering it shows the uncertainty band in 3D immediately
       </div>
       <div style={{ display: 'flex', gap: '6px' }}>
         <Field label="admissible lo">
@@ -310,7 +310,7 @@ function RequirementForm({ actors, variables, onAdd, onPreview }) {
         </Field>
       </div>
       <button onClick={submit} style={btnStyle(true)} disabled={!canSubmit}>
-        + Requirement を追加
+        + Add Requirement
       </button>
     </div>
   )
@@ -334,15 +334,14 @@ function NlIntakeForm({ onAddFacts }) {
   return (
     <div>
       <div style={{ fontSize: '10px', color: '#777', marginBottom: '5px', lineHeight: 1.5 }}>
-        発話・メモを貼り付けると Fact を抽出します。あいまいな値（約・範囲・不明）は
-        <span style={{ color: '#d5a23a' }}> 未確定</span> として保守的に取り込み、Questions で確定します
-        (ADR-051 §Negative)。
+        Paste an utterance or note to extract Facts. Vague values (approximate, range, unknown) are taken in
+        conservatively as <span style={{ color: '#d5a23a' }}>unconfirmed</span> and resolved in Questions.
       </div>
       <textarea
         value={text}
         onChange={e => setText(e.target.value)}
         rows={3}
-        placeholder={'例:\nカメラの解像度は2448px\nロボットのリーチは約800mm\n架台の高さは不明'}
+        placeholder={'e.g.:\nCamera resolution is 2448px\nRobot reach is about 800mm\nMount height is unknown'}
         style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.4 }}
       />
       {(facts.length > 0 || unparsed.length > 0) && (
@@ -354,7 +353,7 @@ function NlIntakeForm({ onAddFacts }) {
               border: `1px solid ${f.status === 'unknown' ? '#d5a23a55' : '#22C55E44'}`,
             }}>
               <span style={{ color: f.status === 'unknown' ? '#d5a23a' : '#22C55E', fontWeight: 'bold' }}>
-                {f.status === 'unknown' ? '未確定' : 'asserted'}
+                {f.status === 'unknown' ? 'unconfirmed' : 'asserted'}
               </span>
               <span style={{ color: '#aaa', marginLeft: '5px' }}>{f.subject}</span>
               {Object.entries(f.attrs).map(([k, v]) => (
@@ -366,13 +365,13 @@ function NlIntakeForm({ onAddFacts }) {
           ))}
           {unparsed.map((u, i) => (
             <div key={`u${i}`} style={{ fontSize: '10px', color: '#777', padding: '2px 5px' }}>
-              ⚠ 未解釈: {u}
+              ⚠ Not parsed: {u}
             </div>
           ))}
         </div>
       )}
       <button onClick={commit} style={btnStyle(true)} disabled={facts.length === 0}>
-        + {facts.length || ''} Fact をドキュメントに追加
+        + Add {facts.length || ''} Fact{facts.length > 1 ? 's' : ''} to document
       </button>
     </div>
   )
@@ -402,11 +401,11 @@ export function IntakePanel() {
   return (
     <div style={{ paddingBottom: '8px' }}>
       <div style={{ fontSize: '10px', color: '#666', marginBottom: '8px', lineHeight: 1.5 }}>
-        Why ファースト — まずアクター・変数を登録し、次に KPI 基準付き要件を追加してください (ADR-051 §2.0)。
+        Why-first — register actors and variables first, then add requirements with KPI criteria.
       </div>
 
       <Section
-        title="自然言語から取り込み"
+        title="Import from natural language"
         count={0}
         open={openNl}
         onToggle={() => setOpenNl(o => !o)}

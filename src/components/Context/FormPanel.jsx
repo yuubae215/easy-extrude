@@ -29,7 +29,7 @@ export function FormPanel() {
   if (!form || form.length === 0) {
     return (
       <div style={{ padding: '12px 8px', color: '#22C55E', fontSize: '11px', textAlign: 'center' }}>
-        ✓ 回答待ちの質問はありません
+        ✓ No questions awaiting an answer
       </div>
     )
   }
@@ -37,8 +37,8 @@ export function FormPanel() {
   return (
     <div>
       <div style={{ padding: '4px 0 8px', fontSize: '10px', color: '#999', lineHeight: 1.5 }}>
-        validator が発見した未解決項目。回答ごとに 1 問ずつ消え、全問回答でフォームが閉じる。
-        各回答はアンドゥ可能な doc 変異としてコミットされる (ADR-050 §3.5)。
+        Open items found by the validator. Each answer removes one question; the form closes when all are answered.
+        Every answer is committed as an undoable document change.
       </div>
       {form.map(q => (
         <QuestionItem
@@ -99,14 +99,14 @@ function QuantityWidget({ onAnswer }) {
         type="number"
         value={value}
         onChange={e => setValue(e.target.value)}
-        placeholder="値 (value)"
+        placeholder="value"
         style={inputStyle}
       />
       <input
         type="text"
         value={unit}
         onChange={e => setUnit(e.target.value)}
-        placeholder="単位 (unit)"
+        placeholder="unit"
         style={{ ...inputStyle, width: '60px' }}
       />
       <AnswerButton disabled={!valid} onClick={() => onAnswer({ value: Number(value), unit })} />
@@ -124,7 +124,7 @@ function ActorRefWidget({ actors = [], onAnswer }) {
         onChange={e => setSelected(e.target.value)}
         style={{ ...inputStyle, cursor: 'pointer' }}
       >
-        {actors.length === 0 && <option value="">— actor なし —</option>}
+        {actors.length === 0 && <option value="">— no actor —</option>}
         {actors.map(a => (
           <option key={a.ref} value={a.ref}>{a.ref} ({a.role ?? '?'})</option>
         ))}
@@ -150,14 +150,14 @@ function KpiCriterionWidget({ onAnswer }) {
           type="text"
           value={kpiName}
           onChange={e => setKpiName(e.target.value)}
-          placeholder="KPI 名 (name)"
+          placeholder="KPI name"
           style={{ ...inputStyle, width: '90px', flexShrink: 0 }}
         />
         <input
           type="text"
           value={kpiUnit}
           onChange={e => setKpiUnit(e.target.value)}
-          placeholder="単位"
+          placeholder="unit"
           style={{ ...inputStyle, width: '50px', flexShrink: 0 }}
         />
       </div>
@@ -165,7 +165,7 @@ function KpiCriterionWidget({ onAnswer }) {
         type="text"
         value={kpiExpr}
         onChange={e => setKpiExpr(e.target.value)}
-        placeholder="KPI 式 (expr): e.g. eoat_clearance(v_robot_base_x)"
+        placeholder="KPI expr: e.g. eoat_clearance(v_robot_base_x)"
         style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '10px' }}
       />
       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -181,7 +181,7 @@ function KpiCriterionWidget({ onAnswer }) {
           type="number"
           value={val}
           onChange={e => setVal(e.target.value)}
-          placeholder="値"
+          placeholder="value"
           style={{ ...inputStyle, width: '70px' }}
         />
         <AnswerButton
@@ -209,7 +209,7 @@ function RequirementWidget({ question, onAnswer }) {
         type="text"
         value={ref}
         onChange={e => setRef(e.target.value)}
-        placeholder="要求 ref (r_...)"
+        placeholder="requirement ref (r_...)"
         style={{ ...inputStyle, fontFamily: 'monospace' }}
       />
       <input
@@ -223,7 +223,7 @@ function RequirementWidget({ question, onAnswer }) {
         type="text"
         value={desc}
         onChange={e => setDesc(e.target.value)}
-        placeholder="説明 (note)"
+        placeholder="note"
         style={inputStyle}
       />
       <AnswerButton
@@ -250,7 +250,7 @@ function AnswerButton({ disabled, onClick }) {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      回答
+      Answer
     </button>
   )
 }

@@ -79,11 +79,11 @@ export function StoryBar() {
           disabled={demo.step === 0}
           onClick={() => callbacks.onDemoStepChange?.(demo.step - 1)}
         >
-          ← 戻る
+          ← Back
         </NavBtn>
         {gated && (
           <span style={{ alignSelf: 'center', fontSize: '11px', color: '#f59e0b' }}>
-            Decision の承認が必要です
+            Decision approval required
           </span>
         )}
         <NavBtn
@@ -91,7 +91,7 @@ export function StoryBar() {
           disabled={nextDisabled}
           onClick={() => callbacks.onDemoStepChange?.(demo.step + 1)}
         >
-          次へ →
+          Next →
         </NavBtn>
       </div>
     </div>

@@ -7,7 +7,6 @@ import { ExtrusionLabel } from './ExtrusionLabel/ExtrusionLabel.jsx'
 import { InfoBar } from './InfoBar/InfoBar.jsx'
 import { ModalLayer } from './Modal/ModalLayer.jsx'
 import { MapToolbar } from './MapToolbar/MapToolbar.jsx'
-import { CanvasStatusPill } from './CanvasStatusPill/CanvasStatusPill.jsx'
 import { ContextMenu } from './ContextMenu/ContextMenu.jsx'
 import { AddMenu } from './AddMenu/AddMenu.jsx'
 import { LinkTypePicker } from './LinkTypePicker/LinkTypePicker.jsx'
@@ -33,8 +32,7 @@ import { TemplateGallery } from './Context/TemplateGallery.jsx'
  * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
  * 8. ModalLayer: RenameDialog, ConfirmDialog, ImportModal
  * 9. MapToolbar: Map Mode left vertical toolbar (tool buttons + name input)
- * 10. CanvasStatusPill: floating mobile status pill above toolbars
- * 11. ContextMenu: long-press / right-click context menu
+ * 10. ContextMenu: long-press / right-click context menu
  * 12. AddMenu: Shift+A add object menu
  * 13. LinkTypePicker: L-key SpatialLink type picker
  * 14. SemanticSuggestion: post-drag ADR-041 suggestion banner
@@ -60,7 +58,6 @@ export function UIShell() {
       <InfoBar />
       <ModalLayer />
       <MapToolbar />
-      <CanvasStatusPill />
       <ContextMenu />
       <AddMenu />
       <LinkTypePicker />

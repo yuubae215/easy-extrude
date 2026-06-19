@@ -273,7 +273,7 @@ export class AppController {
       if (this._importProgressUnsub) {
         this._importProgressUnsub(); this._importProgressUnsub = null
         this._uiView.hideImportProgress()
-        this._uiView.showToast('サーバーとの接続が切れました。インポートを再試行してください。', { type: 'error', duration: 5000 })
+        this._uiView.showToast('Lost connection to the server. Please retry the import.', { type: 'error', duration: 5000 })
       }
     })
 

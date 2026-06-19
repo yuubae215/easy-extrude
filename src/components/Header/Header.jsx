@@ -280,7 +280,7 @@ function ContextDropdown() {
       <button
         ref={btnRef}
         onClick={handleToggle}
-        title="Context-first — 要求/衝突/交渉 (ADR-050)"
+        title="Context-first — requirements / conflicts / negotiation"
         style={{
           padding: '4px 8px', background: 'transparent',
           border: `1px solid ${open ? '#3a7bd5' : '#3a3a3a'}`, borderRadius: '5px',
@@ -300,18 +300,17 @@ function ContextDropdown() {
           overflow: 'hidden', zIndex: '200', minWidth: '200px',
           boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
         }}>
-          {item('New Context',     callbacks.onNewContext)}
-          {item('テンプレートから開始…', callbacks.onOpenTemplateGallery)}
+          {item('New Project',     callbacks.onOpenTemplateGallery)}
           {item('Import Context…', callbacks.onImportCtxJson)}
           {item('Save Context',    callbacks.onExportCtxJson)}
           <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
-            本番 (Production)
+            Production
           </div>
-          {item('交渉設計 (Negotiate)', callbacks.onContextNegotiate)}
-          {item('領域オーサリング (Author)', callbacks.onContextAuthor)}
-          {item('許容領域ゴースト (Ghosts)', callbacks.onContextRegionGhost)}
+          {item('Negotiate', callbacks.onContextNegotiate)}
+          {item('Author', callbacks.onContextAuthor)}
+          {item('Region Ghosts', callbacks.onContextRegionGhost)}
           <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
-            デモ (チュートリアル)
+            Demo (Tutorial)
           </div>
           {item('Tutorial', callbacks.onContextDemoClick, true)}
         </div>
@@ -414,13 +413,12 @@ function MoreMenu() {
         }}>
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
-          {item('New Context',     SVG_DEMO, callbacks.onNewContext)}
-          {item('テンプレートから開始…', SVG_DEMO, callbacks.onOpenTemplateGallery)}
+          {item('New Project',     SVG_DEMO, callbacks.onOpenTemplateGallery)}
           {item('Import Context…', SVG_DEMO, callbacks.onImportCtxJson)}
           {item('Save Context',    SVG_DEMO, callbacks.onExportCtxJson)}
-          {item('交渉設計 (Negotiate)', SVG_DEMO, callbacks.onContextNegotiate)}
-          {item('領域オーサリング', SVG_DEMO, callbacks.onContextAuthor)}
-          {item('許容領域ゴースト', SVG_DEMO, callbacks.onContextRegionGhost)}
+          {item('Negotiate', SVG_DEMO, callbacks.onContextNegotiate)}
+          {item('Author', SVG_DEMO, callbacks.onContextAuthor)}
+          {item('Region Ghosts', SVG_DEMO, callbacks.onContextRegionGhost)}
           {item('Tutorial', SVG_DEMO, callbacks.onContextDemoClick)}
         </div>
       )}

@@ -677,12 +677,13 @@ clears projections, restores hidden scene + Link Network panel).
 The production counterpart of [K], rendered by `ContextLayer` from the persistent **`context`**
 slice (not the tutorial `demo` slice). Same right-fixed panel (280px desktop; full-width below
 768px — 3D-independent, PHILOSOPHY #26) with **Matrix** / **Cluster** tabs reusing the same
-prop-driven components. Opened via Header **Context ▾ → 交渉設計** (`enterNegotiation()`): Phase 2
-bootstraps the bundled conflict context through `ContextService.loadContext` (confirm first — the
-scene is **regenerated** from the requirements, per invariant 9). The Cluster tab's approve buttons
+prop-driven components. Opened via Header **Context ▾ → Negotiate** (`enterNegotiation()`): it
+operates on the **already-loaded** document and never replaces the scene — if no doc is loaded it
+shows a guiding warn toast instead of bootstrapping an example (2026-06-18; the cell examples are
+reachable as **New Project** templates). The Cluster tab's approve buttons
 fire `onApproveContextDecision(ref)` → `createApproveDecisionCommand` (**undoable** on the single
 CommandStack — Ctrl+Z reverts the approval and the Matrix cell flips ✓→◐). Panel header shows the
-doc name + a live "未解消の衝突 N 件" line; ✕ closes the overlay (`onContextExit`). Distinct from
+doc name + a live "N unresolved conflicts" line; ✕ closes the overlay (`onContextExit`). Distinct from
 [K]: [K] is a tutorial story (transient approvals), [M] mutates the canonical document.
 
 The **Why** tab (`WhyBreadcrumb`, ADR-052 Phase 2) is the φ⁻¹ provenance readout. Selecting a
@@ -727,20 +728,19 @@ distinguished by `context.mode`:
 
 #### [N] Template Gallery (ADR-051 Phase 2, Entry B)
 A transient full-screen modal (`TemplateGallery.jsx`, z-index 300 — above all edge panels,
-PHILOSOPHY #26) opened via Header **Context ▾ → テンプレートから開始…** (`openTemplateGallery()`).
-Lists the static `TEMPLATE_CATALOG` as category-grouped cards (スターター: 空のプロジェクト;
-ロボットセル: シンプル / 多者衝突 / 領域). Clicking a card fires `onSelectTemplate(id)` →
-`selectTemplate(id)`, which loads the chosen doc through the single authoritative path
-(`adoptDoc` for blank, `loadContext` for examples) and opens the negotiate overlay [M]. The footer
-states "現在のシーンは置き換えられ…再生成されます" so the scene-replacement consequence is explicit
-(ADR-051 §7) and **no second confirm dialog** is shown. ✕ / backdrop click closes
-(`onCloseTemplateGallery`).
+PHILOSOPHY #26) opened via Header **Context ▾ → New Project** (`openTemplateGallery()`). This is the
+single "create new" entry — the former **New Context** direct item was removed (its Empty Project
+card here is the blank path). Lists the static `TEMPLATE_CATALOG` as category-grouped cards (Starter:
+Empty Project; Robot Cell: Simple / Multi-party Conflict / Regions). Clicking a card fires
+`onSelectTemplate(id)` → `selectTemplate(id)`, which loads the chosen doc through the single
+authoritative path (`adoptDoc` for blank, `loadContext` for examples) and opens the negotiate overlay
+[M]. The footer states the scene-replacement consequence explicitly (ADR-051 §7) so **no second
+confirm dialog** is shown. ✕ / backdrop click closes (`onCloseTemplateGallery`).
 
 #### [A] Header
-Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Context** /
-**テンプレートから開始…** / **Import Context…** / **Save Context** + production **交渉設計
-(Negotiate)** / **領域オーサリング (Author)** / **許容領域ゴースト (Ghosts)** + demo **Tutorial**).
-Mobile: the same items inside the ⋯ MoreMenu.
+Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Project** /
+**Import Context…** / **Save Context** + production **Negotiate** / **Author** / **Region Ghosts**
++ demo **Tutorial**). Mobile: the same items inside the ⋯ MoreMenu.
 
 ---
 
