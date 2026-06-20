@@ -1,9 +1,9 @@
 # ADR-053 — ロボティクス KPI メソッド: 測定器としての運動学/軌道/干渉計算と可視検証ループ
 
-**Status**: Accepted (Phase 1 実装済 — `robot_reach` / `collision_free` 述語)
+**Status**: Accepted (Phase 1+2 実装済 — 述語層 ＋ 測定器の純粋計算コア / ComputeBackend / RoboticsService)
 **Date**: 2026-06-20
 **Related**: ADR-038 (URDF Link Taxonomy — jointType 予約), ADR-047 (Context Demo Layer — ゴースト/オーバーレイ系譜), ADR-049 (Requirement/Conflict — KPI/criterion/admissible/gap), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake), ADR-052 (5W1H ユビキタス言語), ADR-027 (Wasm Geometry Engine — WASM 前例), ADR-015 (BFF), ADR-017 (WebSocket / Geometry Service)
-**Implementation**: **Phase 1 実装済** = 純粋述語層 `robot_reach` / `collision_free`（§10、`PredicateEngine` + `VALID_PREDICATE_KINDS` 追加 + `CONTEXT_DSL_VERSION` バンプ `context/0.3`→`context/0.4`）。残（後続フェーズ）: URDF パーサ / KDL・ruckig の WASM 化 / 可動ソルバ / `RoboticsService`・`ComputeBackend` / Ghost・Highlight ビュー / pending UX / BFF `/compute`。
+**Implementation**: **Phase 1 実装済** = 純粋述語層 `robot_reach` / `collision_free`（§9、`PredicateEngine` + `VALID_PREDICATE_KINDS` 追加 + `CONTEXT_DSL_VERSION` バンプ `context/0.3`→`context/0.4`）。**Phase 2 実装済** = 測定器の**純粋計算コア**（FK サンプリング到達性 ＋ AABB 干渉ベイク）＋ `ComputeBackend` シーム（`LocalComputeBackend`）＋ `RoboticsService`（測定値→doc ベイクの受け口、THREE-free・注入バックエンド）（§10、`src/robotics/*` + `src/service/RoboticsService.js`）。残（後続フェーズ）: KDL・ruckig の Emscripten→WASM 化 / IK・特異点 Jacobian / 可動ソルバ / urdf-loader・three-mesh-bvh 実幾何 / `ServerComputeBackend`（BFF `/compute`）/ Ghost・Highlight ビュー / pending UX。
 
 ---
 
@@ -363,7 +363,80 @@ revolute/prismatic 可動ソルバ、述語(`robot_reach` / `collision_free`)の
 
 ---
 
-## 10. References
+## 10. Phase 2 実装 — 測定器の純粋計算コア ＋ ComputeBackend ＋ RoboticsService
+
+§9 の純粋述語層が消費する**事前ベイク済みオペランド**（`targets[].reachable`/`margin`・
+`contacts[].clearance`）を、**実際に生成する測定器**の最初の実体を実装する。§2 の境界の
+副作用側を、**WASM/IK を導入せず**に純粋計算で立ち上げる。
+
+### 10.1 設計との乖離と、その埋め方（§4 の KDL/ruckig-WASM → 純-JS 初期形）
+
+§4 は FK/IK を **KDL（C++）→ Emscripten→WASM**、軌道を ruckig-WASM、干渉を three-mesh-bvh
+と定めた。本フェーズは**それらを実装しない**。理由と整合の取り方:
+
+- **環境制約**: 当リポジトリの WASM レーンは Rust→`wasm-pack`（ADR-027）のみで、KDL/ruckig の
+  Emscripten レーンは未整備（`wasm-pack` 自体も当 CI 環境では不在）。§4 のレーン追加は後続。
+- **§3 の明示的許容**: ComputeBackend の「**初期形はブラウザ worker / 純-JS**（ブラウザ環境
+  しか持てない場合も有効）」をそのまま採る。本フェーズの `LocalComputeBackend` は純-JS 同期
+  カーネルを `async run(job)` 契約で包み、将来の Worker/WASM・BFF バックエンドと**差し替え互換**。
+- **§7.1 が名指しした手法**: 到達性は **FK サンプリングで到達点群を作りターゲット内包を判定する
+  総当たり**（§7.1）で計算する。IK ソルバ（KDL）は使わない。`margin` は**長さ単位の到達余裕**
+  （外側ワークスペース境界への余裕）であり、§7.1 の**特異点マージン[deg]ではない**（特異点は
+  Jacobian を要し KDL-WASM 後続）。干渉は **AABB クリアランス**（`RegionGeometry.aabbClearance`）で
+  近似し、three-mesh-bvh の厳密メッシュ距離は後続。
+
+つまり乖離は「測定の**精度モデル**を初期形に落としただけ」で、**シーム（ComputeBackend.run(job)）と
+オペランド形状（§9.2）は不変**。KDL/ruckig-WASM・BVH はこのシームの裏で後から差し込み、
+`RoboticsService` 呼び出し側は不変。この整合をもって §4 の方針を破棄せず「初期形 → 本実装」の
+段階化として扱う。
+
+### 10.2 純粋計算コア（`src/robotics/*`、THREE-free・bare `node --test`）
+
+- **`Kinematics.js`** — 自前の最小 SE(3) クォータニオン/ベクトル演算（`THREE` 非依存、
+  `RegionGeometry` と同方針）。`forwardKinematics(chain, q)`（ROS +X/+Y/+Z・URDF RPY=Rz·Ry·Rx）、
+  `sampleConfigs`（可動関節を limit 範囲でグリッドサンプル、`MAX_SAMPLE_CONFIGS` で総当たり爆発を
+  ガード — ハングさせない）、`reachTargets`（到達点群への最近傍 ≤ tolerance で `reachable`、
+  境界余裕で `margin`）。fixed 関節は q を消費しない（`movableJoints`）。
+- **`Collision.js`** — `bakeContacts({links, obstacles?, scope, ignore?})`。scope `self` は links 内
+  全ペア、`env` は links×obstacles。クリアランスは共有の `aabbClearance`（符号付き＝侵入は負）を
+  再利用（`lo<hi` 等の単一の真実を二重実装しない）。`ignore` は順不同でペアを除外（関節隣接 link）。
+
+両モジュールとも純粋・入力不変。オペランド形状は §9.2 の述語入力にそのまま一致する。
+
+### 10.3 ComputeBackend シーム（`src/robotics/ComputeBackend.js`）
+
+`ComputeBackend` = `run(job): Promise<result>` の単一インターフェイス（§3）。ジョブは冪等な値
+オブジェクト（`{kind:'reach', chain, targets, options?}` / `{kind:'collision', links, …}`）でキャッシュ可能。
+Phase 2 は `LocalComputeBackend`（純-JS カーネルを in-process 実行、`backend:'local'` タグ）のみ。
+`ServerComputeBackend`（BFF `/compute`）・KDL/ruckig-WASM・three-mesh-bvh カーネルは**同一の
+`run(job)` シームの裏で後続差し替え**（呼び出し側不変）。
+
+### 10.4 RoboticsService（`src/service/RoboticsService.js` — 受け口、§2）
+
+測定器の副作用コーディネータ（`EventEmitter`、**純粋ロジックを持たない** — PHILOSOPHY #3、
+`ContextService` と同作法）。バックエンドを**注入**（THREE-free にユニットテスト可、fake backend）。
+`measureReach`/`measureCollision` は backend を走らせ、結果オペランドを acceptance チェックの
+`robot_reach`/`collision_free` 述語へ**新しい doc としてベイク**（入力不変 — PHILOSOPHY #6）、
+`measured` イベントを emit。`applyMeasuredFact` は scalar 値を `status:'measured'` Fact へ
+（`numericFact` 受け口、`cycleTime`/`reachMargin` 等。measured は依存 acceptance を block しない —
+ADR-046 不変条件 3）。チェック欠落/述語種別不一致は throw（測定値の silent 喪失を防ぐ —
+PHILOSOPHY #11）。ベイク後の doc は `validateContext`/`evaluatePredicate` が boolean へ縮退
+（§1.1・§2 のループが形式側で閉じる）。
+
+### 10.5 テストと非目標
+
+`src/robotics/Robotics.test.js`（FK 正当性・到達 pass/fail・干渉ベイク・backend ディスパッチ・
+純粋性）＋ `src/service/RoboticsService.test.js`（doc ベイクの入力不変・述語種別ガード・measured
+Fact・イベント・**ベイク済述語が `validateContext` を通る end-to-end**、fake backend で THREE-free）。
+計 **258/258**、`tsc --noEmit`・`vite build` クリーン（`wasm-pack` 不在は環境要因、ADR-027 成果物は
+git コミット済）。**非目標（据え置き）**: KDL/ruckig Emscripten→WASM、IK/特異点 Jacobian、可動
+ソルバ、urdf-loader/three-mesh-bvh の実幾何、`ServerComputeBackend`/BFF `/compute`、`RobotPoseGhost`/
+`CollisionHighlightView`、pending/computing UX。可視化ループ（§6）の**人間検証側オーバーレイ**は
+本フェーズも未実装（形式検証側の受け口のみ完成）。
+
+---
+
+## 11. References
 
 - 内部: ADR-038(jointType 予約), ADR-047(ゴースト/オーバーレイ系譜), ADR-049
   (KPI/criterion/admissible/gap), ADR-050(Context-First 本番化), ADR-051(要件入力),
