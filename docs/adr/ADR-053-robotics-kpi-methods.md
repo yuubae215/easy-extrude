@@ -31,6 +31,47 @@ ADR-046/049 が築いた要件モデルは、KPI(評価関数)とクライテリ
 - **ruckig** (C++) — 躍度制限のオフライン時間最適軌道生成。
 - **three-mesh-bvh** (gkjohnson, 純 JS) — メッシュ交差・近接の高速判定。
 
+### 1.1 概念的補強 — ドメイン合流の代数構造(圏の不一致とユビキタス言語の縮退作用)
+
+なぜ「測定器」と「形式検証」を分けると設計が綺麗になるのか。その根を、群論・圏論の
+**メタファー**で導入し、続けて数理的に厳密化しておく(後者は誤読を防ぐための注記であり、
+本 ADR は未証明の「群」構造を主張しない)。
+
+**直感レイヤー(導入)** — ユーザーが見る世界とシステムが見る世界は、対象も射も異なる
+**別の圏**である:
+
+- **ユーザーの圏 𝒰**(タスク / ビジネス要求) — 対象は製品・作業ターゲット・要求
+  サイクルタイム。KPI は「このラインは目標スループットを満たすか」。
+- **システムの圏 𝒮**(構成空間 / 計算幾何) — 対象は URDF link・関節角ベクトル q・
+  BVH ボックス・躍度限界式。KPI は IK 残差・`selfClearanceMin`[mm]・`cycleTime` の生データ。
+
+TCP 教示は 𝒰 → 𝒮 への**疎で劣決定的(under-determined)**な写像で、隠れた自由度
+(関節解・干渉)は計算後に初めて確定する。ゆえに両者の KPI は一致しない。ここで
+**ユビキタス言語の KPI**(述語 `robot_reach` / `collision_free`、boolean 合成 `inputValid`)が、
+システム側の「泥臭い物理的複雑さ」とユーザー側の「厳密さを欠く要求」のギャップを**相殺**し、
+矛盾なき結合状態(= 単位元・合流)へ**縮退**させる。「群の逆元による相殺」のイメージで
+捉えると、`selfClearanceMin = 2.3mm`(具体状態)に criterion `>= c` を掛けると
+`self_collision_free == true` という純粋な論理値へ畳まれる、という直感が得られる。
+
+**厳密レイヤー(数理注記)** — ただしこれは数学的には両側逆元を持つ「群」ではない。
+正確には次の 2 つの既存構造である:
+
+1. **同義語商上のセクション σ(片側逆元)** — ADR-052 は正準 doc を**同義語商**として捉え、
+   φ(NL → doc)を準同型、φ⁻¹ を「代表を 1 つ選ぶ」**セクション(右逆)**と定義した。
+   ユビキタス言語の KPI 名は、システム側の生データとユーザー側の要求語の双方を**同一の商**へ
+   着地させる σ である(両側逆元ではない)。
+2. **criterion による前像 / 引き戻し(pullback)** — ADR-049 の許容領域は前像
+   `{ x | criterion(kpi(x)) }`(`AdmissiblePromotion.invertCriterion`)。criterion は性質を
+   KPI 写像に沿って**引き戻す**。`evaluatePredicate` の `Boolean == true` 判定は、その
+   **許容可能集合の定義関数(特性関数)を計算点で評価したもの**として形式化できる。
+
+つまり ADR-052(関心の分離・商空間・φ/φ⁻¹)→ ADR-049(invertCriterion の pullback)→
+本 ADR-053(劣決定入力の可視検証ループ)は、**1 つのレンズ**——「正準 / ユビキタス層が
+商空間のセクション σ と criterion 前像によって 2 つのドメインを合流させる」——に統合される。
+この縮退作用が**最も鮮明**なのが**リーチ到達性**(§7.1): TCP 教示 → 多数の IK 解という
+最大の劣決定(ファイバー構造)を、σ で代表化し criterion で許容領域へ引き戻し、
+特性関数 boolean へ畳む。
+
 ---
 
 ## 2. Decision — 測定器 / 形式検証の分離(境界はコンピュートされた Fact)
@@ -182,15 +223,24 @@ pessimistic / optimistic 区別を本計算へ適用する:
 各 KPI を **(形式)どの Fact/述語で論理式に入るか** と **(人間)どの可視化が検証ループを
 閉じるか** の対で形式化する。blocked セマンティクス・`promoteAdmissible` 関係も併記。
 
-### 7.1 リーチ到達性
+### 7.1 リーチ到達性(代数レンズの主役)
+
+本 KPI は §1.1 の縮退作用が**最も鮮明**な題材であり、ここを最も手厚く展開する。他 3 KPI
+(§7.2–7.4)は同型の縮退として簡潔に従う。
 
 - **形式**: KPI 項 `reachMargin = f_robot.attrs.reachMargin`(IK 成功 + 特異点余裕[deg])、
   criterion `>= θ`。述語案 `robot_reach`(pass/fail + 未到達ターゲットを violations に列挙)。
   ターゲット未知時は `status:'blocked'`(到達余裕は未知寸法に対して評価不能、PHILOSOPHY #11)。
   Fact 参照なので数値解決され `promoteAdmissible` 昇格可(単調性が立てば admissible 反転可)。
   FK サンプリングで到達点群を作りターゲット内包を判定する総当たり = **サーバ向き**。
+- **代数レンズ(§1.1 の具体化)**: TCP 教示は劣決定で、1 つの tool pose に対し IK 解は
+  **ファイバー**(多数の関節解 q)を成す。ユビキタス言語 `robot_reach` はこのファイバーを
+  **セクション σ** で代表化(到達可能な代表解を 1 つ選ぶ片側逆元)し、criterion `>= θ` で
+  許容領域へ**引き戻す(pullback)** `{ TCP | reachMargin(IK(TCP)) >= θ }`。
+  `robot_reach == true` はこの許容可能集合の**特性関数を計算点で評価**したもの——
+  劣決定の複雑さが純粋な論理値へ**縮退**する。
 - **可視化**: IK 関節解の姿勢(複数解 / 到達不能を明示)、到達余裕の色分け。疎な TCP 入力の
-  妥当性を即視できる。
+  妥当性を即視できる(= ファイバーの可視化と、劣決定の可視的解消)。
 
 ### 7.2 自己干渉
 
@@ -257,3 +307,7 @@ revolute/prismatic 可動ソルバ、述語(`robot_reach` / `collision_free`)の
   `src/workers/geometry.worker.js`; `vite.config.js`; `examples/cell_region_context.json`。
 - 外部: gkjohnson/urdf-loaders, orocos/orocos_kinematics_dynamics (KDL),
   pantor/ruckig, gkjohnson/three-mesh-bvh。
+- §1.1 の代数レンズは ADR-052(同義語商・φ/φ⁻¹ = セクション σ)と ADR-049
+  (`AdmissiblePromotion.invertCriterion` / 許容領域前像 = pullback)に明示的に接地する。
+  関連コード参照: `src/context/SynonymQuotient.js`(同義語商), `src/context/AdmissiblePromotion.js`
+  (`invertCriterion`)。
