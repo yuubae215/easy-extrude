@@ -1,9 +1,9 @@
 # ADR-053 — ロボティクス KPI メソッド: 測定器としての運動学/軌道/干渉計算と可視検証ループ
 
-**Status**: Proposed
+**Status**: Accepted (Phase 1 実装済 — `robot_reach` / `collision_free` 述語)
 **Date**: 2026-06-20
 **Related**: ADR-038 (URDF Link Taxonomy — jointType 予約), ADR-047 (Context Demo Layer — ゴースト/オーバーレイ系譜), ADR-049 (Requirement/Conflict — KPI/criterion/admissible/gap), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake), ADR-052 (5W1H ユビキタス言語), ADR-027 (Wasm Geometry Engine — WASM 前例), ADR-015 (BFF), ADR-017 (WebSocket / Geometry Service)
-**Implementation**: なし（本 ADR は境界・表現・ビルド方針・KPI 形式化の設計確定のみ。パーサ / WASM 化 / ソルバ / 述語追加 / Ghost・Highlight ビュー / pending UX は後続フェーズ）
+**Implementation**: **Phase 1 実装済** = 純粋述語層 `robot_reach` / `collision_free`（§10、`PredicateEngine` + `VALID_PREDICATE_KINDS` 追加 + `CONTEXT_DSL_VERSION` バンプ `context/0.3`→`context/0.4`）。残（後続フェーズ）: URDF パーサ / KDL・ruckig の WASM 化 / 可動ソルバ / `RoboticsService`・`ComputeBackend` / Ghost・Highlight ビュー / pending UX / BFF `/compute`。
 
 ---
 
@@ -294,7 +294,76 @@ revolute/prismatic 可動ソルバ、述語(`robot_reach` / `collision_free`)の
 
 ---
 
-## 9. References
+## 9. Phase 1 実装 — `robot_reach` / `collision_free` 述語（純粋層のみ）
+
+§7 で「述語案」止まりだった `robot_reach` / `collision_free` を**具体オブジェクト形状**として確定し、
+純粋述語エンジン（`src/context/PredicateEngine.js`）へ実装する。これは §8 が非目標に挙げた
+「述語の DSL 追加（`VALID_PREDICATE_KINDS` + `CONTEXT_DSL_VERSION` バンプ）」の最初の実体化であり、
+**測定器（RoboticsService / WASM）には一切触れない**。§2 の境界どおり、述語は**事前ベイク済みの
+スカラ/真偽値オペランド**を受け取り、`{ pass, violations }` を返す**形式評価**に徹する
+（IK・BVH の重い幾何は将来フェーズの測定器が担い、本述語は「畳まれた論理値」を計算するだけ）。
+
+### 9.1 設計上の位置づけ — §1.1 の縮退作用の実体化
+
+`robot_reach` の入力 `targets[].reachable`/`margin` は、TCP 教示（劣決定）に対して測定器が IK
+ファイバーを**セクション σ で代表化**して得た値である。述語はそれを criterion 相当の閾値
+（`marginMin`）で**引き戻し**、`pass:boolean`（許容可能集合の**特性関数**を計算点で評価したもの）へ
+**縮退**させる。`collision_free` も同様に、ベイク済み接触ペアのクリアランスを閾値で畳む。
+両者とも純粋・入力不変・THREE-free で、`src/context/*` 全体が bare `node --test` で読み込める制約を保つ。
+
+### 9.2 述語オブジェクト形状（確定）
+
+```jsonc
+// robot_reach — 全ターゲットが到達可能で、かつ（任意の）特異点/到達余裕が閾値以上か
+{
+  "kind": "robot_reach",
+  "targets": [
+    { "ref": "pick",  "reachable": true,  "margin": 12.5 },  // margin[deg] は任意
+    { "ref": "place", "reachable": false }
+  ],
+  "marginMin": 5          // 任意。指定時、reachable でも margin<marginMin は low_margin 違反
+}
+// violations: { kind:'unreachable', target } / { kind:'low_margin', target, margin, required }
+
+// collision_free — ベイク済み接触ペアが必要クリアランスを下回らないか（scope は self|env）
+{
+  "kind": "collision_free",
+  "scope": "self",        // 'self'(自己干渉) | 'env'(障害物干渉)
+  "clearance": 0,         // 任意。必要最小クリアランス（既定 0 = 接触/侵入のみ違反）
+  "contacts": [
+    { "a": "link3", "b": "link5", "clearance": -1.2 },  // 負 = 侵入
+    { "a": "link2", "b": "table", "clearance": 8.0 }
+  ]
+}
+// violations: { kind:'contact', a, b, clearance, required }
+```
+
+- **blocked セマンティクス**は既存のまま（§6(b)・ADR-049 R5）: `acceptance.requires` が
+  assumed/unknown の Fact を指す間、検査は `status:'blocked'` で**述語を走らせない**
+  （到達余裕や接触を未確定寸法に対して評価できない — PHILOSOPHY #11）。
+- **空配列**: `robot_reach` の `targets` が空、`collision_free` の `contacts` 構造が不正 →
+  `MalformedPredicate`（構造不正のみ throw、`pass:false` では決して throw しない）。
+  `contacts: []`（接触なし）は**正当な pass**。
+- これらは boolean 述語なので `promoteAdmissible` 非対象（§7.5、不透明結合、stated のまま R9 が支配）。
+
+### 9.3 バージョニング
+
+新述語 2 種は additive。`VALID_PREDICATE_KINDS` に `'robot_reach'`/`'collision_free'` を追加し、
+`PredicateEngine.PREDICATE_KINDS`・`evaluatePredicate` の switch を同期。`CONTEXT_DSL_VERSION` を
+`context/0.3` → `context/0.4` にバンプ（`SUPPORTED_VERSIONS` に 0.4 を追加、0.1–0.3 は後方互換で維持）。
+バリデータ側のコードは無改変（`VALID_PREDICATE_KINDS` のリスト参照だけで新 kind を受理し、
+ディスパッチは `evaluatePredicate` に委譲済み）。
+
+### 9.4 非目標（本フェーズも据え置き）
+
+測定器（`RoboticsService` / `ComputeBackend` / WASM / urdf-loader / three-mesh-bvh）、
+`targets[].reachable`/`contacts[].clearance` を**実際に生成**する FK/IK/BVH 計算、Ghost/Highlight
+ビュー、pending UX、BFF `/compute` は本フェーズでも実装しない。本フェーズは「測定値が来たら
+論理式に入れられる形」を純粋層で先に用意することに尽きる（§2 の受け口を完成させる）。
+
+---
+
+## 10. References
 
 - 内部: ADR-038(jointType 予約), ADR-047(ゴースト/オーバーレイ系譜), ADR-049
   (KPI/criterion/admissible/gap), ADR-050(Context-First 本番化), ADR-051(要件入力),
