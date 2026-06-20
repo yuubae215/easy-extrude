@@ -7,7 +7,7 @@
 **Updated**: 2026-06-14 — Phase 4 可視化実装(ペルソナ射影: 衝突マトリックス + 交渉クラスター解消順序。`src/context/PersonaProjection.js` 新設 + Context Inspector に Matrix/Cluster タブ + `enterNegotiation()`。n-ary 承認インタラクションと 3D ゴースト重畳は次回送り。テスト 85/85)
 **Updated**: 2026-06-13 — Phase 2 実装(R8 役割KPIカタログ、stated→derived 自動昇格、フォーム射影。`src/context/RoleKpiCatalog.js` / `AdmissiblePromotion.js` / `FormProjection.js` 新設、Validator に R8 + 昇格パイプライン、`examples/cell_phase2_context.json`、テスト 48/48)
 **Updated**: 2026-06-13 — Phase 1 実装(`src/context/RequirementGraph.js`、Validator R6/R7/R9、Decision 拡張、`examples/cell_conflict_context.json`、テスト 32/32)
-**Related**: ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-044 (5W1H), ADR-035 (Cycle Detection 前例), ADR-030 (SpatialLink), ADR-050 (Context-First 本番機能化), ADR-052 (5W1H ユビキタス言語 — KPI/criterion/gap を Why ルートに), ADR-051 (要件入力)
+**Related**: ADR-046 (Context DSL), ADR-047 (Context Demo Layer), ADR-044 (5W1H), ADR-035 (Cycle Detection 前例), ADR-030 (SpatialLink), ADR-050 (Context-First 本番機能化), ADR-052 (5W1H ユビキタス言語 — KPI/criterion/gap を Why ルートに), ADR-051 (要件入力), ADR-053 (ロボティクス KPI メソッド — KPI 項を測定で埋める測定器)
 **Implementation**: `src/context/RequirementGraph.js` (R6/R7), `src/context/ContextValidator.js` (R0'/R9/R8/Decision 拡張/昇格パイプライン), `src/context/AdmissiblePromotion.js` (stated→derived), `src/context/RoleKpiCatalog.js` (R8 カタログ), `src/context/FormProjection.js` (フォーム射影), `examples/cell_conflict_context.json` + `examples/cell_phase2_context.json`, `pnpm test:context`
 
 ---

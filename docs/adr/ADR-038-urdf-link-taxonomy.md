@@ -2,7 +2,8 @@
 
 **Status**: Accepted  
 **Date**: 2026-05-08  
-**Supersedes**: ADR-030 §2 (link type vocabulary), ADR-032 §2 (geometric link vocabulary)
+**Supersedes**: ADR-030 §2 (link type vocabulary), ADR-032 §2 (geometric link vocabulary)  
+**Related**: ADR-053 (ロボティクス KPI メソッド — 予約 jointType `revolute`/`prismatic` を URDF→シーン表現で活用)
 
 ---
 
