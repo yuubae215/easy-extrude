@@ -64,7 +64,7 @@ This directory records the project's design decisions.
 | [ADR-050](ADR-050-context-first-project-model.md) | **Context-First Project Model — 要求/衝突/交渉 の PoC から本番機能化** | Accepted | 2026-06-14 | ADR-049, ADR-046, ADR-047, ADR-045, ADR-022, ADR-013, ADR-011 |
 | [ADR-051](ADR-051-requirement-intake.md) | **要件入力（Requirement Intake）— あいまい要件を起点化する複数入口アーキテクチャ** | Accepted (全 4 フェーズ実装済) | 2026-06-16 | ADR-052, ADR-050, ADR-049, ADR-047, ADR-046, ADR-044, ADR-022, ADR-013 |
 | [ADR-052](ADR-052-5w1h-ubiquitous-language.md) | **5W1H ユビキタス言語 — NL ⇄ データの Mutual 構造（Why ルートの正準ツリー）** | Accepted (Phase 1 + Phase 2 + Phase 3 + Phase 4 実装済) | 2026-06-17 | ADR-046, ADR-044, ADR-049, ADR-048, ADR-050, ADR-051 |
-| [ADR-053](ADR-053-robotics-kpi-methods.md) | **ロボティクス KPI メソッド — 測定器としての運動学/軌道/干渉計算と可視検証ループ** | Accepted (Phase 1+2 実装済) | 2026-06-20 | ADR-038, ADR-047, ADR-049, ADR-052, ADR-027, ADR-015, ADR-017 |
+| [ADR-053](ADR-053-robotics-kpi-methods.md) | **ロボティクス KPI メソッド — 測定器としての運動学/軌道/干渉計算と可視検証ループ** | Accepted (Phase 1+2+3 実装済) | 2026-06-20 | ADR-038, ADR-047, ADR-049, ADR-052, ADR-027, ADR-015, ADR-017 |
 
 ## How to Add a New ADR
 
