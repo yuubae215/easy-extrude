@@ -22,6 +22,17 @@
  *   swept_volume — a capsule chain (radius around a polyline path) keeps a
  *                  minimum clearance from each obstacle AABB. Conservative
  *                  sampling approximation, not an exact swept solid.
+ *   robot_reach  — every taught TCP target is reachable (and optionally keeps a
+ *                  minimum singularity/reach margin). (ADR-053 Phase 1 §7.1/§9.)
+ *   collision_free — no pre-baked contact pair drops below the required
+ *                  clearance. (ADR-053 Phase 1 §7.2/§7.3/§9.)
+ *
+ * ADR-053 boundary: `robot_reach`/`collision_free` consume *pre-baked
+ * measurement-instrument operands* — `targets[].reachable`/`margin` and
+ * `contacts[].clearance` are produced by the future RoboticsService (FK/IK/BVH);
+ * this engine performs only the pure formal evaluation that collapses them to a
+ * boolean (the characteristic function of the admissible set — ADR-053 §1.1).
+ * No THREE, no geometry solving here.
  *
  * @module context/PredicateEngine
  */
@@ -34,7 +45,7 @@ import {
 } from './RegionGeometry.js'
 
 /** Predicate kinds the engine can execute. */
-export const PREDICATE_KINDS = ['no_overlap', 'reach_covers', 'swept_volume']
+export const PREDICATE_KINDS = ['no_overlap', 'reach_covers', 'swept_volume', 'robot_reach', 'collision_free']
 
 /** Samples per path segment for the swept-volume capsule-chain approximation. */
 const SWEPT_SAMPLES_PER_SEGMENT = 16
@@ -59,9 +70,11 @@ export function evaluatePredicate(predicate) {
     throw new MalformedPredicate('predicate must be an object')
   }
   switch (predicate.kind) {
-    case 'no_overlap':   return evalNoOverlap(predicate)
-    case 'reach_covers': return evalReachCovers(predicate)
-    case 'swept_volume': return evalSweptVolume(predicate)
+    case 'no_overlap':     return evalNoOverlap(predicate)
+    case 'reach_covers':   return evalReachCovers(predicate)
+    case 'swept_volume':   return evalSweptVolume(predicate)
+    case 'robot_reach':    return evalRobotReach(predicate)
+    case 'collision_free': return evalCollisionFree(predicate)
     default:
       throw new MalformedPredicate(`unknown predicate kind "${predicate.kind}" — use one of: ${PREDICATE_KINDS.join(', ')}`)
   }
@@ -178,6 +191,69 @@ function evalSweptVolume({ path, radius = 0, obstacles, clearance = 0 }) {
     }
   })
   return { kind: 'swept_volume', pass: violations.length === 0, violations }
+}
+
+// ── robot_reach (ADR-053 Phase 1) ────────────────────────────────────────────
+
+function evalRobotReach({ targets, marginMin }) {
+  if (!Array.isArray(targets) || targets.length === 0) {
+    throw new MalformedPredicate('robot_reach: targets must be a non-empty array')
+  }
+  if (marginMin !== undefined && typeof marginMin !== 'number') {
+    throw new MalformedPredicate('robot_reach: marginMin must be a number when present')
+  }
+
+  const violations = []
+  targets.forEach((t, i) => {
+    if (!t || typeof t !== 'object' || typeof t.reachable !== 'boolean') {
+      throw new MalformedPredicate(`robot_reach: target[${i}] must have a boolean "reachable"`)
+    }
+    const ref = t.ref ?? `target[${i}]`
+    if (!t.reachable) {
+      violations.push({ kind: 'unreachable', target: ref })
+      return
+    }
+    // Reachable but below the required singularity/reach margin (only when both
+    // a threshold and a measured margin are present — a missing margin is not a
+    // failure, the reachable flag already passed).
+    if (marginMin !== undefined && typeof t.margin === 'number' && t.margin < marginMin) {
+      violations.push({ kind: 'low_margin', target: ref, margin: t.margin, required: marginMin })
+    }
+  })
+  return { kind: 'robot_reach', pass: violations.length === 0, violations }
+}
+
+// ── collision_free (ADR-053 Phase 1) ──────────────────────────────────────────
+
+function evalCollisionFree({ scope, contacts, clearance = 0 }) {
+  if (scope !== undefined && scope !== 'self' && scope !== 'env') {
+    throw new MalformedPredicate('collision_free: scope must be "self" or "env" when present')
+  }
+  if (!Array.isArray(contacts)) {
+    throw new MalformedPredicate('collision_free: contacts must be an array')
+  }
+  if (typeof clearance !== 'number') {
+    throw new MalformedPredicate('collision_free: clearance must be a number')
+  }
+
+  const violations = []
+  contacts.forEach((c, i) => {
+    if (!c || typeof c !== 'object' || typeof c.clearance !== 'number') {
+      throw new MalformedPredicate(`collision_free: contact[${i}] must have a numeric "clearance"`)
+    }
+    // A negative clearance is penetration; below the required clearance is a
+    // violation. An empty contacts list is a legitimate pass (nothing touches).
+    if (c.clearance < clearance) {
+      violations.push({
+        kind: 'contact',
+        a: c.a ?? `contact[${i}].a`,
+        b: c.b ?? `contact[${i}].b`,
+        clearance: c.clearance,
+        required: clearance,
+      })
+    }
+  })
+  return { kind: 'collision_free', pass: violations.length === 0, violations }
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────

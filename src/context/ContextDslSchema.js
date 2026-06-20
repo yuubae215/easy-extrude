@@ -49,12 +49,21 @@
  * decomposes per-axis, where the 1-D Helly property holds; convex-polygon
  * footprints are rejected at R0' (their intersection breaks the per-axis gap
  * contract). See RegionGeometry.js.
+ *
+ * context/0.4 (ADR-053 Phase 1) additive change (backward compatible):
+ *   acceptance[].predicate  gains two robotics predicate kinds —
+ *                           robot_reach / collision_free (see PredicateEngine.js).
+ *                           They evaluate pre-baked measurement-instrument
+ *                           operands (reachable flags / contact clearances); the
+ *                           heavy FK/IK/BVH geometry lives in a future side-effect
+ *                           layer, never in the pure predicate. No prior field
+ *                           changes shape, so 0.1–0.3 docs remain valid.
  */
 
-export const CONTEXT_DSL_VERSION = 'context/0.3'
+export const CONTEXT_DSL_VERSION = 'context/0.4'
 
 /** Accepted input versions — each is a strict additive superset of the prior. */
-export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3']
+export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4']
 
 /** Actor roles — the four user personas plus the customer. */
 export const VALID_ROLES = ['developer', 'maintainer', 'endUser', 'agent', 'customer']
@@ -103,5 +112,11 @@ export const VALID_REGION_KINDS = ['aabb']
 /** Region axes, canonical order. */
 export const REGION_AXES = ['x', 'y', 'z']
 
-/** Executable acceptance predicate kinds (ADR-049 Phase 3, ADR-046 §4.2). */
-export const VALID_PREDICATE_KINDS = ['no_overlap', 'reach_covers', 'swept_volume']
+/**
+ * Executable acceptance predicate kinds.
+ * no_overlap / reach_covers / swept_volume — ADR-049 Phase 3, ADR-046 §4.2.
+ * robot_reach / collision_free — ADR-053 Phase 1: evaluate pre-baked robotics
+ * measurement operands (the measurement instrument bakes the operands; the
+ * predicate is the pure formal evaluation — see PredicateEngine.js / ADR-053 §2).
+ */
+export const VALID_PREDICATE_KINDS = ['no_overlap', 'reach_covers', 'swept_volume', 'robot_reach', 'collision_free']
