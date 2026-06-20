@@ -1,0 +1,9 @@
+[submodule "robotics-wasm/vendor/ruckig"]
+	path = robotics-wasm/vendor/ruckig
+	url = https://github.com/pantor/ruckig.git
+[submodule "robotics-wasm/vendor/orocos_kdl"]
+	path = robotics-wasm/vendor/orocos_kdl
+	url = https://github.com/orocos/orocos_kinematics_dynamics.git
+[submodule "robotics-wasm/vendor/eigen"]
+	path = robotics-wasm/vendor/eigen
+	url = https://gitlab.com/libeigen/eigen.git

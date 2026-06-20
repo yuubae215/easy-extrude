@@ -147,6 +147,9 @@ settings.local.json
 # Rust build artifacts (generated WASM output in src/engine/wasm/ is committed)
 wasm-engine/target/
 
+# C++ → WASM build artifacts (Emscripten output in src/engine/robotics-wasm/ is committed)
+robotics-wasm/build/
+
 # test data
 server/tests/data/*.step
 server/tests/data/*.STEP
