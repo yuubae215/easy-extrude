@@ -1,0 +1,55 @@
+#!/bin/sh
+# ============================================================
+# PUBLIC リポジトリ用 pre-commit フック (機械的な最終防壁)
+# 秘匿物 (戦略/価格/コア実装) の混入を検知したら commit を中断する。
+#
+# 設置: このファイルを public リポジトリの .git/hooks/pre-commit にコピーし、
+#       実行権限を付与する (下記 README の手順参照)。
+#       .git/hooks/ は clone で共有されないため、マシンごとに 1 回仕込む。
+#
+# 緊急回避: どうしても通したい正当なケースは `git commit --no-verify`。
+#           ただし「本当に公開してよいか」を必ず自問すること。
+# ============================================================
+
+# --- 禁止キーワード (追加行に含まれていたら弾く) ---
+# 誤検知より見逃しを嫌う方針。false positive は --no-verify で回避し、
+# 必要ならこのリストを各自編集する。大文字小文字は無視 (grep -i)。
+KEYWORD_PATTERN='マネタイズ|monetiz|価格|値付け|課金|売上|収益|revenue|pricing|戦略|strategy|wrench[_ -]?cone|grasp[_ -]?stability'
+
+# --- 禁止パス (これらに該当するファイルの追加を弾く) ---
+PATH_PATTERN='(^|/)(strategy|core|templates)/|private|\.private\.'
+
+fail=0
+
+# ステージされたファイル一覧 (追加/変更分)
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+
+# 1) ファイル名による検査
+for f in $staged_files; do
+  if printf '%s\n' "$f" | grep -Eiq "$PATH_PATTERN"; then
+    echo "BLOCKED(path): $f"
+    echo "  -> 秘匿レイヤ/private を示すパス。public に置かないこと。"
+    fail=1
+  fi
+done
+
+# 2) 追加行の中身による検査 (削除行は対象外)
+hits=$(git diff --cached -U0 --diff-filter=ACM \
+  | grep -E '^\+' \
+  | grep -Ev '^\+\+\+' \
+  | grep -Ein "$KEYWORD_PATTERN")
+
+if [ -n "$hits" ]; then
+  echo "BLOCKED(keyword): 禁止キーワードを含む追加行があります:"
+  printf '%s\n' "$hits" | sed 's/^/  /'
+  echo "  -> 戦略/価格/コア実装は private 側 (easy-extrude-private) へ。"
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo ""
+  echo "commit を中断しました。意図的に通す場合のみ: git commit --no-verify"
+  exit 1
+fi
+
+exit 0

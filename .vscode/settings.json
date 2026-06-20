@@ -1,0 +1,24 @@
+{
+  // ============================================================
+  // PUBLIC リポジトリ識別マーカー (赤)
+  // private 側 (easy-extrude-private) は緑に設定し、取り違えを視覚で防ぐ。
+  // タイトルバーが赤 = ここは公開リポジトリ。
+  // 戦略/価格/マネタイズ/コア実装の話題と記述はここに置かない。
+  // ============================================================
+  "window.titleBarStyle": "custom",
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#8B0000",
+    "titleBar.activeForeground": "#FFFFFF",
+    "titleBar.inactiveBackground": "#5C0000",
+    "titleBar.inactiveForeground": "#F5C6C6",
+    "activityBar.background": "#8B0000",
+    "statusBar.background": "#8B0000",
+    "statusBar.foreground": "#FFFFFF"
+  },
+
+  // ウィンドウタイトルにも [PUBLIC] を出して二重に明示
+  "window.title": "[PUBLIC] ${rootName}${separator}${activeEditorShort}",
+
+  "files.encoding": "utf8",
+  "files.eol": "\n"
+}
