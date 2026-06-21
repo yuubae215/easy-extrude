@@ -14,6 +14,16 @@
 const DEFAULT_URL = 'http://localhost:4001/grasp-search'
 
 /**
+ * Internal token header the external grasp-search service requires.
+ *
+ * SCOPE BOUNDARY: this is the *external service's internal spec* (it gates its
+ * private endpoint on a shared token), not part of the neutral contract and not
+ * solving logic. The value is read ONLY from env (GRASP_SEARCH_TOKEN) and never
+ * hardcoded; when unset the header is omitted (backward compatible).
+ */
+const INTERNAL_TOKEN_HEADER = 'X-Internal-Token'
+
+/**
  * Error thrown when the external grasp-search service is unreachable or returns
  * a non-2xx status. The route maps this to a 502/503.
  */
@@ -49,11 +59,17 @@ export async function callGraspSearch(request, { timeoutMs = 20000 } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
+  // Internal token (external service's private spec). Read from env only; when
+  // unset the header is omitted so existing setups keep working unchanged.
+  const headers = { 'content-type': 'application/json' }
+  const token = process.env.GRASP_SEARCH_TOKEN
+  if (token) headers[INTERNAL_TOKEN_HEADER] = token
+
   let res
   try {
     res = await fetch(url, {
       method:  'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body:    JSON.stringify(request),
       signal:  controller.signal,
     })
