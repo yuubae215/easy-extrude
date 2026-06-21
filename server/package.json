@@ -6,10 +6,14 @@
   "main": "index.js",
   "scripts": {
     "dev": "node --watch --max-old-space-size=8192 index.js",
-    "start": "node --max-old-space-size=8192 index.js"
+    "start": "node --max-old-space-size=8192 index.js",
+    "gen:contract-types": "json2ts -i ../vendor/grasp-contract/schema/grasp-search-request.schema.json -o src/grasp/contract.request.d.ts && json2ts -i ../vendor/grasp-contract/schema/grasp-search-response.schema.json -o src/grasp/contract.response.d.ts",
+    "test:contract": "node --test test/grasp.contract.test.js"
   },
   "dependencies": {
+    "@easy-extrude/grasp-contract": "workspace:*",
     "@libsql/client": "^0.17.0",
+    "ajv": "^8.17.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
@@ -18,5 +22,8 @@
     "swagger-ui-express": "^5.0.1",
     "uuid": "^11.1.0",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.3"
   }
 }

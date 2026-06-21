@@ -169,6 +169,7 @@ Detail: `docs/code_contracts/server_async.md`
 | occt-import-js Geometry Structure | Extract geometry from `mesh.attributes`, not `mesh.faces` |
 | Camera Far Clip for Imports | Call `fitCameraToSphere()` after every `updateGeometryBuffers`; never hard-code `camera.far` |
 | setIndex Requires BufferAttribute | Wrap raw `Uint32Array` (e.g. from `base64ToU32`) in `new THREE.BufferAttribute(arr, 1)` before `setIndex()`; plain JS arrays are handled automatically |
+| Grasp Contract Is Derived, Never Defined | `@easy-extrude/grasp-contract` (submodule `vendor/grasp-contract`, `workspace:*`) is the contract's source of truth; the BFF derives types/validators (`server/src/grasp/contract.js`, generated `.d.ts`) and never defines/extends it. `POST /api/grasp/search` validates + version-checks both ends (inbound mismatch → 400, upstream mismatch/non-conforming → 502, unreachable → 503) and delegates solving to the external grasp-search service. `pnpm test:contract` detects code-vs-contract and instance-vs-contract drift. |
 
 ---
 

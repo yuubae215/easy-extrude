@@ -244,6 +244,59 @@ export const openApiSpec = {
           details: { type: 'array', items: { type: 'string' }, example: ['entities[0].dimensions must have positive x, y, z numbers'] },
         },
       },
+
+      // ── Grasp search (delegated to external grasp-search service) ─────────
+      // Shapes are owned by @easy-extrude/grasp-contract (the neutral JSON
+      // Schema). These docs mirror that contract; they do not define it.
+      GraspSearchRequest: {
+        type: 'object',
+        description: 'BFF -> grasp-search input. Contract: @easy-extrude/grasp-contract (wire/camelCase).',
+        required: ['layoutVersion', 'graspSearch'],
+        properties: {
+          contractVersion: { type: 'integer', example: 1, description: 'Optional; if present it must match the canonical contractVersion or the BFF returns 400.' },
+          layoutVersion:   { type: 'string', example: 'layout/1.0', description: 'Layout DSL schema version this declaration targets (references the public schema; not redefined).' },
+          graspSearch: {
+            type: 'object',
+            description: 'graspSearch declaration. Detailed shape owned by the Layout DSL schema named by layoutVersion; intentionally open here.',
+            additionalProperties: true,
+            properties: {
+              objectiveWeights: { type: 'object', additionalProperties: { type: 'number' }, description: 'objective name -> weight' },
+              topN:             { type: 'integer', minimum: 1, default: 5 },
+            },
+          },
+        },
+      },
+      GraspSearchResponse: {
+        type: 'object',
+        description: 'grasp-search -> BFF output. Top-N ranking with score breakdown.',
+        required: ['candidates'],
+        properties: {
+          contractVersion: { type: 'integer', example: 1 },
+          candidates: {
+            type: 'array',
+            description: 'Ranked candidates, rank ascending (1 = best).',
+            items: {
+              type: 'object',
+              required: ['rank', 'score'],
+              properties: {
+                rank: { type: 'integer', minimum: 1 },
+                pose: { type: 'object', additionalProperties: true, description: 'Opaque at the contract boundary; shape owned by the service.' },
+                score: {
+                  type: 'object',
+                  required: ['withinReach', 'ikSolvable', 'interferenceFree', 'totalScore'],
+                  properties: {
+                    withinReach:      { type: 'boolean' },
+                    ikSolvable:       { type: 'boolean' },
+                    interferenceFree: { type: 'boolean' },
+                    objectiveScores:  { type: 'object', additionalProperties: { type: 'number', minimum: 0, maximum: 1 } },
+                    totalScore:       { type: 'number', minimum: 0 },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   },
 
@@ -485,6 +538,51 @@ export const openApiSpec = {
             content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } },
           },
           401: { description: 'Unauthorised', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+
+    // ── Grasp search ────────────────────────────────────────────────────────
+    '/grasp/search': {
+      post: {
+        tags: ['Grasp'],
+        summary: 'Delegate a grasp-search request to the external grasp-search service',
+        description: [
+          'The BFF validates the request against the neutral contract',
+          '(@easy-extrude/grasp-contract), forwards it to the external',
+          'grasp-search service, then validates the response against the contract',
+          'before returning it.',
+          '',
+          '**Scope boundary**: constraint solving (IK / collision / reach / ranking)',
+          'is performed by the external service, not here. The BFF derives its',
+          'checks from the schema and never defines/extends the contract.',
+          '',
+          '**Drift detection (both ends)**: a present-but-mismatched',
+          '`contractVersion` on the request is rejected with 400; a mismatched',
+          'version or non-conforming payload from the upstream service is a 502.',
+          'Configure the upstream with the `GRASP_SEARCH_URL` env var.',
+        ].join('\n'),
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/GraspSearchRequest' },
+              example: {
+                layoutVersion: 'layout/1.0',
+                graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5 },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Ranked candidates from the grasp-search service',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/GraspSearchResponse' } } },
+          },
+          400: { description: 'Request fails contract validation or version mismatch', content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } } },
+          401: { description: 'Unauthorised', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          502: { description: 'Upstream returned a non-conforming or version-mismatched response', content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } } },
+          503: { description: 'grasp-search service unreachable / timed out', content: { 'application/json': { schema: { $ref: '#/components/schemas/LayoutError' } } } },
         },
       },
     },

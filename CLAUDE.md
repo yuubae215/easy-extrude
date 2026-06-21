@@ -192,6 +192,7 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 - `vite.config.js` `base` must match the repo name (`/easy-extrude/`)
 - Three.js addons must be imported from `three/addons/...`
 - WASM build lanes are **not** needed for `vite build` (both ship committed artifacts in `src/engine/`). To regenerate them run `pnpm setup:toolchain` once (installs wasm-pack + Emscripten SDK + inits `robotics-wasm/vendor` submodules), then `pnpm build:wasm` (Rust) / `pnpm build:robotics-wasm` (C++ KDL+ruckig → `src/engine/robotics-wasm/`). On a fresh clone run `git submodule update --init --recursive` before the C++ build (ADR-053 §11).
+- The neutral I/O contract `@easy-extrude/grasp-contract` is vendored as a **git submodule** at `vendor/grasp-contract` (a pnpm-workspace package the BFF depends on as `workspace:*`). A fresh clone needs `git submodule update --init --recursive`. The BFF only *derives* from it: `pnpm --filter easy-extrude-bff run gen:contract-types` regenerates the committed `.d.ts` from the schema, and `pnpm test:contract` runs the conformance + contractVersion-drift tests. Never edit the contract here — change it upstream and bump `contractVersion`.
 
 @docs/PHILOSOPHY.md
 

@@ -1,3 +1,7 @@
 packages:
   - "."
   - "server"
+  # External neutral I/O contract (git submodule). Referenced as a workspace
+  # package so the BFF can derive types/validators from it by name; the
+  # contract itself is owned upstream and is never edited here.
+  - "vendor/grasp-contract"
