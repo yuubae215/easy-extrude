@@ -80,6 +80,16 @@ export function validateLayoutDsl(dsl) {
         }
       }
 
+      // Optional rotation (ADR-055, additive within layout/1.0): body orientation
+      // quaternion. Omitted ⇒ identity. Lets a rotated Solid round-trip scene⇄DSL.
+      if (entity.rotation !== undefined && entity.rotation !== null) {
+        const r = entity.rotation
+        if (typeof r.x !== 'number' || typeof r.y !== 'number' ||
+            typeof r.z !== 'number' || typeof r.w !== 'number') {
+          errors.push(`entities[${i}].rotation must be a quaternion {x,y,z,w} of numbers`)
+        }
+      }
+
       for (const [j, frame] of (entity.frames ?? []).entries()) {
         if (!frame.ref || typeof frame.ref !== 'string') {
           errors.push(`entities[${i}].frames[${j}] must have a non-empty string "ref"`)

@@ -201,7 +201,9 @@ function generateObjects(entities, refMap, positions) {
           description:  entity.description ?? '',
           ifcClass:     entity.ifcClass ?? null,
           position:     { x: pos.x, y: pos.y, z: pos.z },
-          orientation:  IDENTITY_QUATERNION,
+          orientation:  entity.rotation
+            ? { x: entity.rotation.x, y: entity.rotation.y, z: entity.rotation.z, w: entity.rotation.w }
+            : IDENTITY_QUATERNION,
           localCorners: generateLocalCorners(dims),
         })
 

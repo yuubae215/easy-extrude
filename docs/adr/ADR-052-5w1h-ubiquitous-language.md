@@ -2,7 +2,7 @@
 
 **Status**: Accepted (Phase 1 + Phase 2 + Phase 3 + Phase 4 実装済 — 2026-06-17)
 **Date**: 2026-06-16
-**Related**: ADR-046 (Context DSL — 正準形), ADR-044 (5W1H Function Mapping — φ 準同型), ADR-049 (Requirement/Conflict — KPI/criterion/gap/admissible), ADR-047 (Context Demo Layer), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake), ADR-053 (ロボティクス KPI メソッド — §1.1 が同義語商の σ をドメイン合流レンズに援用)
+**Related**: ADR-046 (Context DSL — 正準形), ADR-044 (5W1H Function Mapping — φ 準同型), ADR-049 (Requirement/Conflict — KPI/criterion/gap/admissible), ADR-047 (Context Demo Layer), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake), ADR-053 (ロボティクス KPI メソッド — §1.1 が同義語商の σ をドメイン合流レンズに援用), ADR-055 (Scene⇄Layout DSL Mutual — 同じ「商/正規形までの構造同型」観を幾何層へ)
 **Implementation**: 構造契約の明文化（本 ADR §2.1）＋ φ⁻¹（来歴復元）の足場。新データ構造は追加しない（既存の散在情報を単一の構造契約へ統合する）。
 
 Phase 1 完了 (2026-06-16):

@@ -3,7 +3,7 @@
 **Status**: Accepted  
 **Date**: 2026-06-09  
 **Supersedes**: —  
-**Related**: ADR-044 (5W1H Function Mapping), ADR-015 (BFF), ADR-022 (Undo/Redo), ADR-030 (SpatialLink), ADR-040 (Solid Data Model), ADR-037 (Body Frame Architecture)
+**Related**: ADR-044 (5W1H Function Mapping), ADR-015 (BFF), ADR-022 (Undo/Redo), ADR-030 (SpatialLink), ADR-040 (Solid Data Model), ADR-037 (Body Frame Architecture), ADR-055 (Scene⇄Layout DSL Mutual — the `compileLayout` inverse)
 
 ---
 
