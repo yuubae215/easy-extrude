@@ -737,6 +737,19 @@ authoritative path (`adoptDoc` for blank, `loadContext` for examples) and opens 
 [M]. The footer states the scene-replacement consequence explicitly (ADR-051 §7) so **no second
 confirm dialog** is shown. ✕ / backdrop click closes (`onCloseTemplateGallery`).
 
+#### [O] Grasp Search panel (ADR-054, Header **Context ▾ → Grasp Search…**)
+A transient modal (`GraspSearchPanel.jsx`, z-index 300 — above all edge panels, PHILOSOPHY
+#26; 3-D-independent so usable full-width on mobile) for the UI → DSL → BFF → grasp-search
+**verification walkthrough**. Opened via `onOpenGraspPanel` → `openGraspPanel()` (warns and
+does not open when no renderable layout is loaded). Shows the source-layout summary
+(`version`, entity count from `ContextService.getCompiled().layoutDsl`), `objectiveWeights`
+(reach / clearance) + `topN` inputs, a **Run** button (`onRunGraspSearch`), a status line
+(Compiling layout on BFF → BFF compile OK → Done / Failed), the ranked candidate list (rank,
+`score.{withinReach ✓/✗, ikSolvable, interferenceFree, totalScore}`, joints), and on failure
+the BFF error envelope with its HTTP status + `details` (400 contract mismatch / 502 upstream
+drift / 503 service unreachable). ✕ / backdrop click closes (`onCloseGraspPanel`). The UI only
+declares the request and displays candidates — solving is the external service's job.
+
 #### [A] Header
 Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Project** /
 **Import Context…** / **Save Context** + production **Negotiate** / **Author** / **Region Ghosts**
