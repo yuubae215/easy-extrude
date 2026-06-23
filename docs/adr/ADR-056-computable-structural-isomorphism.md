@@ -1,12 +1,12 @@
 # ADR-056 — Computable Structural Isomorphism on the Synonym Quotient: Canonical Form, Diff, Reconcile
 
-**Status**: Proposed (design only — implementation deferred to a later phase)
+**Status**: Accepted (実装済 — `src/context/CanonicalForm.js` ＋ `node --test`)
 **Date**: 2026-06-23
 **Related**: ADR-052 (5W1H Mutual — 同義語商上の構造同型を *宣言*; 本 ADR はそれを *計算可能* にする), ADR-055 (Scene⇄DSL の scene fixpoint — 幾何層の正規形; 本 ADR は doc 層の正規形へ一般化), ADR-044 (φ 準同型 NL→doc), ADR-050 (Context-First — 正準は Context doc), ADR-051 (NlIntake の `canonical` スタンプ = 前脚フック), ADR-049 (KPI/criterion/Gap — 同一性ペイロード)
 
-> **本 ADR は設計のみ。** コードは書かない。後続フェーズで `src/context/CanonicalForm.js`
-> （純粋・THREE-free・`node --test`）＋テストとして実装する。本 ADR はそのデータ構造と
-> アルゴリズムを実装可能な粒度で確定する。
+> **当初は設計のみ**として起案された (2026-06-23)。同日中に `src/context/CanonicalForm.js`
+> （純粋・THREE-free・`node --test`）＋テストとして実装され、Status を **Accepted** へ昇格。
+> 下記 §6「実装」を参照。
 
 ---
 
@@ -125,8 +125,45 @@ rootSignature(ctx) = c_∞(whyRoot)                              // 根付き変
   これは意図した境界（埋め込みを誘惑される、まさにその地点を core で断る）。
 - **設計のみ**: 本 ADR にコードは無い。`CanonicalForm.js` ＋テストは後続フェーズ。
 
-### 後続（実装フェーズ）
-1. `src/context/CanonicalForm.js`（`canonicalSignature`/`structuralDiff`/`reconcile`）＋ `node --test`。
-2. 往復検証テスト（`φ(NL)` と構造復元の `docSignature` 一致）を ADR-052 の anecdotal golden に追加。
-3. `QUOTIENT_TABLE` の語彙拡張（決定的 core を広げる正攻法）。
-4. 外部レコメンド lane の I/O 契約（提案候補のスキーマ）— 必要になれば、grasp-contract と同じ submodule 流儀。
+### 後続（任意）
+1. 往復検証テスト（`φ(NL)` と構造復元の `docSignature` 一致）を ADR-052 の anecdotal golden に追加。
+   ※ 本フェーズで `CanonicalForm.test.js` が ref 不変性・順序不変性・構造感度・diff/reconcile を裏取り済。
+2. `QUOTIENT_TABLE` の語彙拡張（決定的 core を広げる正攻法）。
+3. 外部レコメンド lane の I/O 契約（提案候補のスキーマ）— 必要になれば、grasp-contract と同じ submodule 流儀。
+4. diff/reconcile を UI（Context レイヤ）へ配線（現状は純粋層のみ — 配線は別フェーズ）。
+
+## 6. 実装（2026-06-23）
+
+新規 **`src/context/CanonicalForm.js`**（純粋・THREE-free・入力不変・`node --test`）。`buildWhyTree`
+（ProvenanceTree）と `canonicalKey`/`operatorSymbol`（SynonymQuotient）に**のみ**依存し、**新しい doc
+フィールドを増やさない**（シグネチャは合成して保存しない — ProvenanceTree 先例）。
+
+- **`canonicalSignature(ctx) → {docSignature, rootSignature, colorOf, nodes}`** — §2.2 の色細分化。
+  - 初期色 `c0(n) = hash(kindLabel(n.kind), identityPayload(n))`。`kindLabel`/`relationLabel` は
+    `canonicalKey` で商正規化（商外は逐語）。
+  - **`identityPayload`** = criterion の `op`（商正規化）＋`value`、KPI の **正規化 `expr`**＋`unit`。
+    `expr` は識別子/ref パスを `_` プレースホルダへ畳む **ref 不変な式形**（例
+    `f_camera.attrs.sensor_px_h / fov_width(v_standoff)` → `_/_(_)`）にして、ref リネームが
+    シグネチャへ漏れないようにする（§2.2 の ref 不変性）。ラベル・ドメイン名詞は同一性に含めない。
+  - **固定ラウンド数 `WL_ROUNDS = 16`** の WL 反復（doc 依存の早期停止にしない — 早期停止は sink ノードの
+    ハッシュ回数を doc ごとに変え、**異なる 2 doc 間で色が比較不能**になるため。reconcile/diff は
+    クロス doc の色比較が前提）。小規模根付き near-tree DAG の直径 ≪ 16 ゆえ実質完全細分化。
+  - `docSignature` = 全ノード最終色の sorted-multiset のハッシュ。`rootSignature` = Why ルート色の
+    sorted-multiset のハッシュ。ハッシュは自前 FNV-1a 32bit（Unicode 安全・import 不要）。
+- **`structuralDiff(a,b) → {why,how,what}`** — 各層で**色によりノードを整列**（一致色＝無変更で除外）、
+  残余を `id` でペア化して **same-id-different-color ⇒ `changed`**、それ以外を `added`/`removed`。
+  各項は型付き（`{ref,kind,color}` / `{ref,kind,fromColor,toColor}`）。diff は版間（id 安定）の鍵、
+  reconcile は作者間（色のみ）の鍵という役割分担。
+- **`reconcile(a,b) → {pairs,unmatchedA,unmatchedB}`** — **同一色ノード間の最大マッチング**。同色クラス内は
+  構造的に区別不能ゆえ任意ペアが妥当で、決定性のため `ref` ソートでペア化。`pairs[{refA,refB,color,layer}]`
+  が異なる 2 入力面を結ぶ決定的な縫い目（幾何⇄NL レコメンダの整列基盤）。
+
+**テスト** `src/context/CanonicalForm.test.js`（17 件、`pnpm test:context` に組込）= 決定性／**ref 名・順序
+不変性**（リネーム済み同型 doc が同一 `docSignature`、配列順入替不変、演算子シノニム畳み）／**実変化への感度**
+（criterion 値変更・演算子の商クラス越え・構造成長）／diff（clone は無変化・changed・added/removed）／
+reconcile（clone は自己ペア・リネーム間 `refA↔refB`・構造的ユニークノードは unmatched）／純粋性（入力不変・
+実例 doc で非throw）。`test:context` 計 **281/281**、`tsc --noEmit`・`vite build` クリーン。
+
+**スコープ境界（§3）どおり**: 本実装は決定的 core（商＋正規形＋diff＋exact-color reconcile）に徹し、
+曖昧語の embedding/類似度ランキングは一切含まない（外部 *提案* 層の責務）。`CLAUDE.md` の `## スコープ境界`
+／`## AI 向けガード`／ナビ表は ADR-056 起案時に既に追記済。
