@@ -16,7 +16,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { canonicalSignature, structuralDiff, reconcile } from './CanonicalForm.js'
+import {
+  canonicalSignature, canonicalForm, verify, structuralDiff, reconcile,
+  CANONICAL_FORM_VERSION,
+} from './CanonicalForm.js'
 import { PROVENANCE_LAYERS } from './ProvenanceTree.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -123,6 +126,72 @@ describe('canonicalSignature — sensitivity to real change', () => {
     bigger.variables.push({ ref: 'v_extra' })
     bigger.requirements.push({ ref: 'r_extra', criterion: { op: '>=', value: 1 }, constrains: ['v_extra'] })
     assert.notEqual(canonicalSignature(bigger).docSignature, canonicalSignature(docA).docSignature)
+  })
+})
+
+describe('canonicalForm — finalized serializable output', () => {
+  it('carries the version stamp and matches the signature', () => {
+    const cf = canonicalForm(cell)
+    assert.equal(cf.version, CANONICAL_FORM_VERSION)
+    const sig = canonicalSignature(cell)
+    assert.equal(cf.docSignature, sig.docSignature)
+    assert.equal(cf.rootSignature, sig.rootSignature)
+  })
+
+  it('JSON-round-trips (no Map, no undefined leak)', () => {
+    const cf = canonicalForm(cell)
+    const round = JSON.parse(JSON.stringify(cf))
+    assert.deepEqual(round, cf)
+    for (const n of cf.nodes) {
+      assert.ok(typeof n.ref === 'string')
+      assert.ok(typeof n.kind === 'string')
+      assert.ok(PROVENANCE_LAYERS.includes(n.layer))
+      assert.ok(typeof n.color === 'string' && n.color.length > 0)
+      // Internal ProvenanceTree fields must not leak.
+      assert.equal(n.data, undefined)
+      assert.equal(n.label, undefined)
+      assert.equal(n.id, undefined)
+    }
+  })
+
+  it('is deterministic across calls', () => {
+    assert.deepEqual(canonicalForm(factory), canonicalForm(factory))
+  })
+
+  it('populates Why roots with {ref, kind, color}', () => {
+    const cf = canonicalForm(cell)
+    assert.ok(cf.roots.length > 0)
+    for (const r of cf.roots) {
+      assert.ok(typeof r.ref === 'string' && r.ref.length > 0)
+      assert.ok(typeof r.kind === 'string')
+      assert.ok(typeof r.color === 'string' && r.color.length > 0)
+    }
+  })
+
+  it('is ref-name invariant (renamed isomorphic docs share docSignature)', () => {
+    assert.equal(canonicalForm(docA).docSignature, canonicalForm(docB).docSignature)
+  })
+})
+
+describe('verify — round-trip / equivalence (ADR §2.3)', () => {
+  it('equal:true for a doc and its clone', () => {
+    const v = verify(cell, clone(cell))
+    assert.equal(v.equal, true)
+    assert.equal(v.rootEqual, true)
+    assert.equal(v.docSignature.a, v.docSignature.b)
+  })
+
+  it('equal:true for renamed-but-isomorphic docs', () => {
+    const v = verify(docA, docB)
+    assert.equal(v.equal, true)
+  })
+
+  it('equal:false with distinct signatures when a criterion value changes', () => {
+    const changed = clone(docA)
+    changed.requirements[0].criterion.value = 999
+    const v = verify(docA, changed)
+    assert.equal(v.equal, false)
+    assert.notEqual(v.docSignature.a, v.docSignature.b)
   })
 })
 

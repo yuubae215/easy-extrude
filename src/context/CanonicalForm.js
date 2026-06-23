@@ -18,9 +18,15 @@
  * It depends ONLY on `buildWhyTree` (ProvenanceTree) for the structure and
  * `canonicalKey` / `operatorSymbol` (SynonymQuotient) for the quotient labels.
  *
- * Three operations sit on top of the signature (ADR-056 §2.3):
- *   - `canonicalSignature(ctx)` — the WL colour of every node + the doc/root
- *     signatures. `docSignature(a) === docSignature(b)` ⇔ a and b are structurally
+ * Four operations sit on top of the signature (ADR-056 §2.3) — the finalized
+ * **output forms** of the deterministic core:
+ *   - `canonicalForm(ctx)` — the finalized, **JSON-serializable, versioned** normal
+ *     form: `{version, docSignature, rootSignature, roots, nodes}` with per-node WL
+ *     colours. This is the stable machine-contract output (no `Map`, no internal
+ *     `ProvenanceTree` `data`/`label`/id leakage). `canonicalSignature` stays the
+ *     internal `Map`-based primitive that `structuralDiff`/`reconcile` build on.
+ *   - `verify(a, b)` — the round-trip / equivalence check (ADR §2.3 *verify*):
+ *     `equal` ⇔ `docSignature(a) === docSignature(b)`, i.e. a and b are structurally
  *     isomorphic **on the quotient** (WL-equivalent — §2.2 honest note: WL-equiv
  *     ⊋ isomorphism in general, but the target is a small rooted near-tree DAG so
  *     it is effectively exact; we claim "normal form up to WL", not a full
@@ -56,8 +62,18 @@ import { canonicalKey, operatorSymbol } from './SynonymQuotient.js'
 const WL_ROUNDS = 16
 
 /**
+ * Version stamp of the finalized `canonicalForm` output contract (the machine
+ * contract the deterministic core publishes). House style mirrors the other
+ * versioned contracts in the repo (`context/0.4`, `layout/1.0`); a breaking
+ * change to the `canonicalForm` shape or the signature scheme bumps this.
+ */
+export const CANONICAL_FORM_VERSION = 'canonical-form/1.0'
+
+/**
  * Compute the colour-refinement (Weisfeiler–Leman) normal-form signature of a
- * context document.
+ * context document. This is the **internal primitive** — `structuralDiff` /
+ * `reconcile` consume the `Map`-based `colorOf` and the raw `nodes` directly. For
+ * the finalized, JSON-serializable output use `canonicalForm` instead.
  *
  * @param {object} ctx — Context DSL object
  * @returns {{
@@ -65,6 +81,7 @@ const WL_ROUNDS = 16
  *   rootSignature: string,                // sorted-multiset signature over the Why roots
  *   colorOf: Map<string,string>,          // nodeId → stable WL colour
  *   nodes: Array<object>,                 // the underlying ProvenanceTree nodes
+ *   roots: string[],                      // Why-root node ids (the Why apexes)
  * }}
  */
 export function canonicalSignature(ctx) {
@@ -104,7 +121,83 @@ export function canonicalSignature(ctx) {
   const rootColors = roots.map(id => color.get(id)).filter(Boolean).sort()
   const rootSignature = _hash(rootColors.join('|'))
 
-  return { docSignature, rootSignature, colorOf: color, nodes }
+  return { docSignature, rootSignature, colorOf: color, nodes, roots }
+}
+
+/**
+ * The finalized canonical-form output (ADR-056 §2.4) — a versioned,
+ * JSON-serializable normal form. Unlike `canonicalSignature` it carries no `Map`
+ * and no internal `ProvenanceTree` `data`/`label`/id; node identity is the
+ * doc-meaningful `(kind, ref)` pair (unique by construction). This is the stable
+ * machine contract a consumer (or the future external recommender lane) reads.
+ *
+ * @param {object} ctx — Context DSL object
+ * @returns {{
+ *   version: string,
+ *   docSignature: string,
+ *   rootSignature: string,
+ *   roots: Array<{ref:string, kind:string, color:string}>,   // Why apexes, sorted by ref
+ *   nodes: Array<{ref:string, kind:string, layer:string, color:string}>,
+ * }}
+ */
+export function canonicalForm(ctx) {
+  const sig = canonicalSignature(ctx)
+  const byId = new Map(sig.nodes.map(n => [n.id, n]))
+  const roots = sig.roots
+    .map(id => byId.get(id))
+    .filter(Boolean)
+    .map(n => ({ ref: n.ref, kind: n.kind, color: sig.colorOf.get(n.id) }))
+    .sort(_byRef)
+  return {
+    version: CANONICAL_FORM_VERSION,
+    docSignature: sig.docSignature,
+    rootSignature: sig.rootSignature,
+    roots,
+    nodes: _serializableNodes(sig),
+  }
+}
+
+/**
+ * Verify two docs are structurally isomorphic on the quotient (ADR-056 §2.3
+ * *verify*). The primary invariant is `equal` = `docSignature(a) ===
+ * docSignature(b)` — the computable form of the ADR-052 Mutual round-trip
+ * (`docSignature(φ(NL)) === docSignature(structural-recovery)`). When `equal` is
+ * false, `structuralDiff(a, b)` explains *what* differs.
+ *
+ * @param {object} a — Context DSL object
+ * @param {object} b — Context DSL object
+ * @returns {{
+ *   equal: boolean,
+ *   rootEqual: boolean,
+ *   docSignature: { a: string, b: string },
+ *   rootSignature: { a: string, b: string },
+ * }}
+ */
+export function verify(a, b) {
+  const sa = canonicalSignature(a)
+  const sb = canonicalSignature(b)
+  return {
+    equal: sa.docSignature === sb.docSignature,
+    rootEqual: sa.rootSignature === sb.rootSignature,
+    docSignature: { a: sa.docSignature, b: sb.docSignature },
+    rootSignature: { a: sa.rootSignature, b: sb.rootSignature },
+  }
+}
+
+/** Layer sort order for deterministic serialisation (Why → How → What). */
+const _LAYER_ORDER = Object.fromEntries(PROVENANCE_LAYERS.map((l, i) => [l, i]))
+
+/**
+ * Project a `canonicalSignature` result into the serializable per-node array
+ * `{ref, kind, layer, color}`, deterministically ordered by (layer, colour, ref).
+ */
+function _serializableNodes(sig) {
+  return sig.nodes
+    .map(n => ({ ref: n.ref, kind: n.kind, layer: n.layer, color: sig.colorOf.get(n.id) }))
+    .sort((a, b) =>
+      (_LAYER_ORDER[a.layer] - _LAYER_ORDER[b.layer]) ||
+      a.color.localeCompare(b.color) ||
+      a.ref.localeCompare(b.ref))
 }
 
 /**
