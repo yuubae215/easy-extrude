@@ -75,16 +75,30 @@ rootSignature(ctx) = c_∞(whyRoot)                              // 根付き変
 
 `reconcile` の対応マップ（`refA ↔ refB`）が、**異なる 2 入力面を結ぶ決定的な縫い目**になる。
 
-### 2.4 モジュール・スケッチ（実装は後続）
+### 2.4 確定した出力形（モジュール公開 API）
 
-新規・純粋・THREE-free・`node --test` 可: `src/context/CanonicalForm.js`
-- `canonicalSignature(ctx) → { docSignature, rootSignature, colorOf: Map<nodeId,color> }`
-- `structuralDiff(a, b) → { why:[…], how:[…], what:[…] }`（layer 別 added/removed/changed）
-- `reconcile(a, b) → { pairs:[{refA, refB, color}], unmatchedA:[…], unmatchedB:[…] }`
+新規・純粋・THREE-free・`node --test` 可: `src/context/CanonicalForm.js`。**出力形（canonical form /
+verify / diff / reconcile の出力）を以下に確定する**（DSL = 機械契約ゆえ出力もバージョン付き・シリアライズ
+可能・決定的）:
 
-`buildWhyTree`（ProvenanceTree）＋ `canonicalKey`/`localizeOperator`（SynonymQuotient）に**のみ**依存。
+- **`canonicalForm(ctx) → { version, docSignature, rootSignature, roots, nodes }`** = 確定した正規形出力。
+  `version = CANONICAL_FORM_VERSION ('canonical-form/1.0')`（house style: `context/0.4` / `layout/1.0`）。
+  `roots = [{ ref, kind, color }]`（Why apex、ref ソート）、`nodes = [{ ref, kind, layer, color }]`
+  （layer→color→ref で決定的ソート）。**`Map` を含まず・内部 `data`/`label`/id を漏らさない JSON シリアライズ
+  可能形**。ノード同一性は doc 意味のある `(kind, ref)`（構成上一意）。
+- **`canonicalSignature(ctx) → { docSignature, rootSignature, colorOf: Map, nodes, roots }`** = 内部
+  プリミティブ（`Map` ベース、`structuralDiff`/`reconcile` が直接消費）。シリアライズ出力は `canonicalForm` を使う。
+- **`verify(a, b) → { equal, rootEqual, docSignature:{a,b}, rootSignature:{a,b} }`** = §2.3 *verify* の確定出力。
+  `equal = docSignature(a) === docSignature(b)`（ADR-052 Mutual の計算された不変条件）。不一致の *中身* は
+  `structuralDiff` が説明する。
+- **`structuralDiff(a, b) → { why, how, what }`**（各 layer `{ added, removed, changed }`、項は
+  `{ ref, kind, color }` / `{ ref, kind, fromColor, toColor }`）= 版間（id 安定）の差分鍵。
+- **`reconcile(a, b) → { pairs:[{refA, refB, color, layer}], unmatchedA:[…], unmatchedB:[…] }`**（unmatched 項は
+  `{ ref, kind, color, layer }`）= 作者間（色のみ）の対応鍵。
+
+`buildWhyTree`（ProvenanceTree）＋ `canonicalKey`/`operatorSymbol`（SynonymQuotient）に**のみ**依存。
 **新しい doc フィールドを増やさない**（ProvenanceTree の「データ構造を足さない」先例に倣う — シグネチャは
-保存せず合成する）。
+保存せず合成する）。diff/reconcile の **UI 配線は別フェーズ**（本 ADR は純粋層の確定出力まで）。
 
 ## 3. スコープ境界 — 決定的 core は in-scope、曖昧マッピングの提案/ランキングは out-of-scope
 
@@ -158,11 +172,20 @@ rootSignature(ctx) = c_∞(whyRoot)                              // 根付き変
   構造的に区別不能ゆえ任意ペアが妥当で、決定性のため `ref` ソートでペア化。`pairs[{refA,refB,color,layer}]`
   が異なる 2 入力面を結ぶ決定的な縫い目（幾何⇄NL レコメンダの整列基盤）。
 
-**テスト** `src/context/CanonicalForm.test.js`（17 件、`pnpm test:context` に組込）= 決定性／**ref 名・順序
-不変性**（リネーム済み同型 doc が同一 `docSignature`、配列順入替不変、演算子シノニム畳み）／**実変化への感度**
-（criterion 値変更・演算子の商クラス越え・構造成長）／diff（clone は無変化・changed・added/removed）／
-reconcile（clone は自己ペア・リネーム間 `refA↔refB`・構造的ユニークノードは unmatched）／純粋性（入力不変・
-実例 doc で非throw）。`test:context` 計 **281/281**、`tsc --noEmit`・`vite build` クリーン。
+**出力形の確定（2026-06-23 追補）**: §2.4 のとおり、宣言だけで未実装だった **`verify`**（往復検証/等価判定の
+確定出力 `{equal, rootEqual, docSignature:{a,b}, rootSignature:{a,b}}`）を実装し、正規形の**確定した
+シリアライズ出力 `canonicalForm(ctx)`**（`{version, docSignature, rootSignature, roots:[{ref,kind,color}],
+nodes:[{ref,kind,layer,color}]}`、`CANONICAL_FORM_VERSION = 'canonical-form/1.0'`）を追加。`canonicalSignature`
+は内部プリミティブとして維持し、**加法的に `roots`（Why apex node-id 配列）を返す**ようにして `canonicalForm`
+がそれを `{ref,kind,color}` へ射影できるようにした（既存テストは非破壊）。`canonicalForm` は `Map` を含まず内部
+`data`/`label`/id を漏らさない（消費側・将来の外部レコメンド lane が読む安定な機械契約）。diff/reconcile の
+出力形は既に型付き・シリアライズ可能で、本追補では契約として確定（コード本体は無改変）。
+
+**テスト** `src/context/CanonicalForm.test.js`（**25 件**、`pnpm test:context` に組込）= 既存 17 件（決定性／
+**ref 名・順序不変性**／**実変化への感度**／diff／reconcile／純粋性）に加え、**`canonicalForm`**（version
+スタンプ・`canonicalSignature` と一致・JSON 往復で `Map`/内部フィールド非漏洩・決定性・Why roots・ref 不変）と
+**`verify`**（clone/リネーム同型で `equal:true`、criterion 値変更で `equal:false` かつ署名相違）の 8 件。
+`test:context` 計 **289/289**、`tsc --noEmit`・`vite build` クリーン。
 
 **スコープ境界（§3）どおり**: 本実装は決定的 core（商＋正規形＋diff＋exact-color reconcile）に徹し、
 曖昧語の embedding/類似度ランキングは一切含まない（外部 *提案* 層の責務）。`CLAUDE.md` の `## スコープ境界`
