@@ -611,7 +611,10 @@ Three manifestations in this codebase, in unrelated layers:
 
 - **NL ⇄ doc (ADR-052).** Defined as "structural isomorphism on the synonym quotient." φ (NL→doc)
   folds synonyms many-to-one; φ⁻¹ recovers the whole 5W1H Why-tree but only **one** representative
-  surface word per synonym class. `SynonymQuotient.localize` is the section.
+  surface word per synonym class. `SynonymQuotient.localize` is the section. ADR-056 makes this
+  isomorphism *computable*: `CanonicalForm.canonicalSignature` is the ref-invariant WL normal form on
+  that quotient, turning the round-trip into the machine-checkable invariant
+  `docSignature(φ(NL)) === docSignature(structural-recovery)` — no longer an anecdotal golden test.
 - **Scene ⇄ Layout DSL (ADR-055).** `compileLayout` folds the placement `strategy` and slugs `ref`s
   into ids (many-to-one). `decompileLayout` emits the canonical representative
   (`strategy:'manual'`, explicit positions, prefix-stripped refs). The law is the **scene fixpoint**
@@ -626,7 +629,7 @@ losing provenance / structure when the surface cannot be restored — and worse,
 round-trip "works" by an identity test that quietly only holds for inputs the developer happened
 to try. Name the quotient, pick the representative, and prove the fixpoint.
 
-*Underlies CODE_CONTRACTS rules: LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052 Phase 4)*
+*Underlies CODE_CONTRACTS rules: LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052 Phase 4); CanonicalForm WL normal form (ADR-056)*
 
 ---
 
@@ -687,4 +690,4 @@ to the main body as a full principle and add a row to the Index.
 | 25 | Guard Logic Belongs in Service Predicates, Not Inline Handler Returns | Design | Semantic Move Guardrail (checkMoveGuardrail) |
 | 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
 | 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |
-| 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052) |
+| 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
