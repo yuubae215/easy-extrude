@@ -596,6 +596,40 @@ corresponding service predicate, not scattered across handlers.
 
 ---
 
+## VII. Interface Contracts (cont.)
+
+### 28. Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse
+
+When two representations must convert both ways but the forward map is many-to-one,
+"Mutual" cannot mean byte-identity — that target is unreachable. The canonical reconciliation
+is a structure-preserving round-trip *up to a quotient / normal form*: the forward map is a
+homomorphism (many-to-one), and the reverse is a **section** that picks one canonical
+representative per equivalence class — recovering the structure, not the surface. Test the
+invariant that *can* hold (a fixpoint, or isomorphism on the quotient), not an impossible identity.
+
+Three manifestations in this codebase, in unrelated layers:
+
+- **NL ⇄ doc (ADR-052).** Defined as "structural isomorphism on the synonym quotient." φ (NL→doc)
+  folds synonyms many-to-one; φ⁻¹ recovers the whole 5W1H Why-tree but only **one** representative
+  surface word per synonym class. `SynonymQuotient.localize` is the section.
+- **Scene ⇄ Layout DSL (ADR-055).** `compileLayout` folds the placement `strategy` and slugs `ref`s
+  into ids (many-to-one). `decompileLayout` emits the canonical representative
+  (`strategy:'manual'`, explicit positions, prefix-stripped refs). The law is the **scene fixpoint**
+  `compileLayout(decompileLayout(scene)) ≡ scene` — proven on the scene side, never claimed as
+  byte-identity on the DSL side. Expressiveness gaps that would break the fixpoint (a rotated Solid)
+  are closed additively (`rotation`); what still can't round-trip is **reported**, not silently dropped.
+- **Ubiquitous KPI (ADR-053 §1.1).** Reconciles the user-domain and system-domain KPIs not via a
+  two-sided inverse but a section on the synonym quotient + a criterion preimage (pullback).
+
+**The mistake this guards against:** treating the canonical mapping as two-sided-invertible, then
+losing provenance / structure when the surface cannot be restored — and worse, asserting a
+round-trip "works" by an identity test that quietly only holds for inputs the developer happened
+to try. Name the quotient, pick the representative, and prove the fixpoint.
+
+*Underlies CODE_CONTRACTS rules: LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052 Phase 4)*
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
@@ -618,7 +652,7 @@ to the main body as a full principle and add a row to the Index.
 | Per-frame derived values must be computed before their consumers in the same frame | 2026-05-18 · `AppController.js` animation loop · `updateLabelPosition()` read `_group.position` before `_updateWorldPoses()` set it for the current frame, causing CF labels to lag one frame behind and appear to vibrate at startup. Fixed by moving `_updateWorldPoses()` to run before the per-object label loop. The failure mode is asymmetric: the bug is invisible when the scene is static (lag = 0 px); it only manifests when the cache is being populated (startup) or when the CF moves (drag). | CF Label Position Order |
 | *(graduated to principle #24 — Derive Absolute State from Invariant Sources)* | | |
 | Rendering layer must match spatial role — scene objects use depthTest, overlays bypass it | 2026-05-21 · `AnnotatedRegionView.js`, `AnnotatedLineView.js`, `AnnotatedPointView.js` · All annotation view materials had `depthTest: false`, making Zones and Routes render over Solid objects (Cubes) regardless of actual spatial depth. The failure is visually obvious but easy to introduce: flat ground-plane objects are hard to see without "always on top" during authoring, which tempts `depthTest: false` as a quick fix. Correct approach: `depthTest: true` + `polygonOffset` for flat ground-plane meshes to prevent Z-fighting. **Recurrence (2026-06-12, same feature family — not yet a 2nd unrelated context)**: the `polygonOffset` quick fix itself bit back — its factor scales with screen-space depth slope, so the Zone fill (transparent, drawn after opaques) composited OVER the opaque Anchor marker disc at glancing angles ("blue and purple meshes overlapping"). Each layering hack (depthTest:false → polygonOffset) traded one hidden assumption for another; the durable form is explicit ordering inside one render queue (`transparent:true, opacity:1` + renderOrder) plus geometry that does not straddle the decal plane. | Annotation View Materials Must Use depthTest: true; Ground Markers Must Not Straddle Z=0 |
-| The canonical / ubiquitous layer joins two mismatched domains via a quotient section + criterion preimage (not a group inverse) | 2026-06-20 · `docs/adr/ADR-053-robotics-kpi-methods.md` §1.1 (design, not a bug) · Framing the robotics "measurement instrument ↔ formal verifier" boundary, the user observed that the user-domain KPI and system-domain KPI never coincide and that the ubiquitous-language KPI acts as their "inverse". The precise structure is **not** a two-sided group inverse: it is (i) a **section σ on the synonym quotient** (ADR-052 φ⁻¹, a one-sided/right inverse) and (ii) a **criterion preimage / pullback** `{x | criterion(kpi(x))}` (ADR-049 `invertCriterion`), with the boolean `predicate == true` being the **characteristic function of the admissible set** evaluated at a point. This unifies ADR-052 → ADR-049 → ADR-053 as one lens. Recorded as a candidate because the same root value (a canonical layer reconciling two domains through a section + pullback, never a literal inverse) currently spans only these design-stage ADR contexts; **graduate to a numbered principle when a 2nd *unrelated* feature reproduces it** (e.g. a future bug where someone treats the ubiquitous mapping as two-sided-invertible and loses provenance). | (none yet — ADR-053 §1.1 design note; ADR-052 SynonymQuotient / ADR-049 AdmissiblePromotion are the grounding contracts) |
+| *(graduated to principle #28 — Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse)* — first context was 2026-06-20 ADR-053 §1.1 (ubiquitous KPI = synonym-quotient section + criterion pullback, not a group inverse); the 2nd unrelated context arrived 2026-06-22 with ADR-055 (Scene⇄Layout DSL round-trip up to a `strategy:'manual'` normal form, proven by the scene fixpoint), meeting the 2+ bar. | | |
 
 ---
 
@@ -653,3 +687,4 @@ to the main body as a full principle and add a row to the Index.
 | 25 | Guard Logic Belongs in Service Predicates, Not Inline Handler Returns | Design | Semantic Move Guardrail (checkMoveGuardrail) |
 | 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
 | 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |
+| 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052) |

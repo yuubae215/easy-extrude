@@ -14,6 +14,13 @@
 export const LAYOUT_DSL_VERSION = 'layout/1.0'
 export const SCENE_JSON_VERSION  = '1.3'
 
+// Additive growth within layout/1.0 (no version bump — consistent with how
+// `frames`, `placeType`, and `parentRef` were added):
+//   • Solid entities may carry an optional `rotation: {x,y,z,w}` body-orientation
+//     quaternion (default = identity). This closes the one geometry gap that
+//     blocked a lossless scene⇄DSL round-trip (a rotated Solid). See ADR-055 and
+//     LayoutDecompiler.js (the scene→DSL inverse).
+
 /** Placement strategies for unpositioned entities. */
 export const VALID_STRATEGIES = ['linear', 'grid', 'stack', 'radial', 'manual']
 
