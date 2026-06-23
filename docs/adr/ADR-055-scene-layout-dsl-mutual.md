@@ -2,7 +2,7 @@
 
 **Status**: Accepted (Phase 1 実装済 — 2026-06-22)
 **Date**: 2026-06-22
-**Related**: ADR-045 (External Layout API — `compileLayout`), ADR-052 (5W1H Mutual — 同義語商上の構造同型), ADR-050 (Context-First Project Model — 正準は Context, シーンは導出), ADR-054 (UI→DSL→BFF Grasp walkthrough — 正準抽出点 `getCompiled().layoutDsl`), ADR-040 (Solid primary triple), ADR-037 (Auto Origin Frame), ADR-038 (SpatialLink taxonomy)
+**Related**: ADR-045 (External Layout API — `compileLayout`), ADR-052 (5W1H Mutual — 同義語商上の構造同型), ADR-050 (Context-First Project Model — 正準は Context, シーンは導出), ADR-054 (UI→DSL→BFF Grasp walkthrough — 正準抽出点 `getCompiled().layoutDsl`), ADR-040 (Solid primary triple), ADR-037 (Auto Origin Frame), ADR-038 (SpatialLink taxonomy), ADR-056 (Computable Structural Isomorphism — scene fixpoint を doc 層の正規形シグネチャへ一般化)
 
 **Implementation (Phase 1)**:
 - `src/layout/LayoutDecompiler.js` — pure・THREE-free・`node --test` 可。`decompileLayout(sceneJson) → {dsl, warnings}` = `compileLayout` の逆射。

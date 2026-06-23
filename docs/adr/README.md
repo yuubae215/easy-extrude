@@ -67,6 +67,7 @@ This directory records the project's design decisions.
 | [ADR-053](ADR-053-robotics-kpi-methods.md) | **ロボティクス KPI メソッド — 測定器としての運動学/軌道/干渉計算と可視検証ループ** | Accepted (Phase 1+2+3 実装済) | 2026-06-20 | ADR-038, ADR-047, ADR-049, ADR-052, ADR-027, ADR-015, ADR-017 |
 | [ADR-054](ADR-054-ui-dsl-bff-grasp-walkthrough.md) | **UI → DSL → BFF → Grasp API Verification Walkthrough** | Accepted | 2026-06-22 | ADR-045, ADR-050, ADR-046, ADR-015, ADR-017, ADR-053 |
 | [ADR-055](ADR-055-scene-layout-dsl-mutual.md) | **Scene ⇄ Layout DSL Mutual — a Normal-Form Inverse for the Geometry Layer** | Accepted (Phase 1 実装済) | 2026-06-22 | ADR-045, ADR-052, ADR-050, ADR-054, ADR-040, ADR-037, ADR-038 |
+| [ADR-056](ADR-056-computable-structural-isomorphism.md) | **Computable Structural Isomorphism on the Synonym Quotient — Canonical Form, Diff, Reconcile** | Proposed (設計のみ) | 2026-06-23 | ADR-052, ADR-055, ADR-044, ADR-050, ADR-051, ADR-049 |
 
 ## How to Add a New ADR
 
