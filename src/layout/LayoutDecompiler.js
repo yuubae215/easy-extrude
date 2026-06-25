@@ -25,7 +25,7 @@
  * Why/Context (KPI, criterion, Gap, Intent, Acceptance, provenance markers) —
  * the scene does not carry them (ADR-052 §1). When a Context doc is loaded, the
  * canonical Layout DSL remains `ContextService.getCompiled().layoutDsl`
- * (ADR-054); `decompileLayout` is for the **non-Context authoring path**
+ * (ADR-057); `decompileLayout` is for the **non-Context authoring path**
  * (a directly-built / hand-edited scene exported back to DSL).
  *
  * @module layout/LayoutDecompiler

@@ -737,7 +737,7 @@ authoritative path (`adoptDoc` for blank, `loadContext` for examples) and opens 
 [M]. The footer states the scene-replacement consequence explicitly (ADR-051 §7) so **no second
 confirm dialog** is shown. ✕ / backdrop click closes (`onCloseTemplateGallery`).
 
-#### [O] Grasp Search panel (ADR-054, Header **Context ▾ → Grasp Search…**)
+#### [O] Grasp Search panel (ADR-057, Header **Context ▾ → Grasp Search…**)
 A transient modal (`GraspSearchPanel.jsx`, z-index 300 — above all edge panels, PHILOSOPHY
 #26; 3-D-independent so usable full-width on mobile) for the UI → DSL → BFF → grasp-search
 **verification walkthrough**. Opened via `onOpenGraspPanel` → `openGraspPanel()` (warns and

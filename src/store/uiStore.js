@@ -154,10 +154,10 @@ export const useUIStore = create((set, get) => ({
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
     provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
     whyTree: null,           // ContextService.whyTree() — full Why-rooted 5W1H tree overview (ADR-052 Phase 3)
-    grasp: null,             // ADR-054 grasp walkthrough result { status, layout, request, candidates, error } | null
+    grasp: null,             // ADR-057 grasp walkthrough result { status, layout, request, candidates, error } | null
   },
 
-  // ── Grasp search verification panel (ADR-054) ──────────────────────────────
+  // ── Grasp search verification panel (ADR-057) ──────────────────────────────
   // Open/closed flag for the UI→DSL→BFF→grasp-search walkthrough modal
   // (GraspSearchPanel.jsx). Result data lives in `context.grasp`.
   graspPanelOpen: false,
@@ -360,7 +360,7 @@ export const useUIStore = create((set, get) => ({
     contextSetWhyTree: (whyTree) => set(state => ({
       context: { ...state.context, whyTree },
     })),
-    // ADR-054 — merge a partial patch into context.grasp (status/candidates/error).
+    // ADR-057 — merge a partial patch into context.grasp (status/candidates/error).
     contextSetGrasp: (patch) => set(state => ({
       context: { ...state.context, grasp: { ...(state.context.grasp ?? {}), ...patch } },
     })),

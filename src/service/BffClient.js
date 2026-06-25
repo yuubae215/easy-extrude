@@ -300,7 +300,7 @@ export class BffClient {
     return res.json()
   }
 
-  // ── Layout DSL → Scene + Grasp search (ADR-054 verification walkthrough) ─────
+  // ── Layout DSL → Scene + Grasp search (ADR-057 verification walkthrough) ─────
 
   /**
    * Compiles a Layout DSL on the BFF (`POST /api/layout/compile`) and returns the

@@ -2,7 +2,7 @@
 
 **Status**: Accepted (Phase 1 実装済 — 2026-06-22)
 **Date**: 2026-06-22
-**Related**: ADR-045 (External Layout API — `compileLayout`), ADR-052 (5W1H Mutual — 同義語商上の構造同型), ADR-050 (Context-First Project Model — 正準は Context, シーンは導出), ADR-054 (UI→DSL→BFF Grasp walkthrough — 正準抽出点 `getCompiled().layoutDsl`), ADR-040 (Solid primary triple), ADR-037 (Auto Origin Frame), ADR-038 (SpatialLink taxonomy), ADR-056 (Computable Structural Isomorphism — scene fixpoint を doc 層の正規形シグネチャへ一般化)
+**Related**: ADR-045 (External Layout API — `compileLayout`), ADR-052 (5W1H Mutual — 同義語商上の構造同型), ADR-050 (Context-First Project Model — 正準は Context, シーンは導出), ADR-057 (UI→DSL→BFF Grasp walkthrough — 正準抽出点 `getCompiled().layoutDsl`), ADR-040 (Solid primary triple), ADR-037 (Auto Origin Frame), ADR-038 (SpatialLink taxonomy), ADR-056 (Computable Structural Isomorphism — scene fixpoint を doc 層の正規形シグネチャへ一般化)
 
 **Implementation (Phase 1)**:
 - `src/layout/LayoutDecompiler.js` — pure・THREE-free・`node --test` 可。`decompileLayout(sceneJson) → {dsl, warnings}` = `compileLayout` の逆射。
@@ -85,7 +85,7 @@ DSL エンティティとして増設するのは後続フェーズ。
 provenance マーカー）は一切復元しない** — シーンはそれらを持たない（ADR-052 §1）。
 
 **Context doc がロードされている間、正準 Layout DSL は引き続き
-`ContextService.getCompiled().layoutDsl`（ADR-054）であり、シーン逆コンパイルではない。** これは
+`ContextService.getCompiled().layoutDsl`（ADR-057）であり、シーン逆コンパイルではない。** これは
 ADR-050 §2.1 / ADR-052 §2.4 が棄却した「正準が 2 つになり乖離する」を避けるための線引きである。
 本 ADR は `decompileLayout` を Context フローへ配線**しない**（Phase 1 は UI サーフェスも追加しない）。
 

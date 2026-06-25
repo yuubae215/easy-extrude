@@ -3,7 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 
 /**
  * GraspSearchPanel — UI → DSL → BFF → grasp-search verification walkthrough
- * (ADR-054).
+ * (ADR-057).
  *
  * A transient modal (z-index above all edge panels — PHILOSOPHY #26) that runs
  * the canonical thread: the loaded Context's Layout DSL

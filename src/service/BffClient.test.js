@@ -1,5 +1,5 @@
 /**
- * BffClient grasp/layout walkthrough tests (ADR-054).
+ * BffClient grasp/layout walkthrough tests (ADR-057).
  *
  * Run via `pnpm test:context` (node --test). Pure: global `fetch` is stubbed —
  * no real BFF. Covers the happy paths and that the contract-error envelope

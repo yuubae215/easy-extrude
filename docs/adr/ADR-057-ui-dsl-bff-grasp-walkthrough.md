@@ -1,4 +1,4 @@
-# ADR-054 — UI → DSL → BFF → Grasp API Verification Walkthrough
+# ADR-057 — UI → DSL → BFF → Grasp API Verification Walkthrough
 
 **Status**: Accepted
 **Date**: 2026-06-22

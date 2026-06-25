@@ -719,7 +719,7 @@ export class ContextController {
     this._ctrl._uiView.showToast(`Saved: ${filename}`)
   }
 
-  // ── Grasp search verification walkthrough (ADR-054) ──────────────────────────
+  // ── Grasp search verification walkthrough (ADR-057) ──────────────────────────
   // The canonical access route to a Layout DSL from the UI is the intermediate
   // ContextService already holds — `getCompiled().layoutDsl` (no reverse compiler;
   // scope boundary: this repo declares, it does not solve). The walkthrough sends
@@ -809,7 +809,7 @@ export class ContextController {
     }
 
     // Step B — declare the grasp-search request (UI never sets contractVersion;
-    // the BFF stamps the canonical value — ADR-054 §3).
+    // the BFF stamps the canonical value — ADR-057 §3).
     const request = {
       layoutVersion: layoutDsl.version,
       graspSearch:   { objectiveWeights, topN },
