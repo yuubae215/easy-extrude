@@ -1,0 +1,17 @@
+﻿{
+  "contractVersion": 1,
+  "layoutVersion": "layout/1.0",
+  "graspSearch": {
+    "robot": { "base": [0,0,0], "reachMin": 0.5, "reachMax": 1.5 },
+    "target": { "surfaceSamples": [
+      { "point": [1,0,0], "normal": [1,0,0] },
+      { "point": [0.8660254,0.5,0], "normal": [0.8660254,0.5,0] },
+      { "point": [0.5,0.8660254,0], "normal": [0.5,0.8660254,0] },
+      { "point": [0,1,0], "normal": [0,1,0] }
+    ] },
+    "obstacles": [],
+    "sampling": { "approachTiltAngles": [0], "rollAngles": [0], "preGraspDistance": 0.2, "clearanceReference": 0.2 },
+    "objectiveWeights": { "grasp_stability": 1.0, "reach_margin": 0.5 },
+    "topN": 2
+  }
+}
