@@ -466,6 +466,9 @@ prop-driven Matrix·Cluster components. Reads the **`context`** uiStore slice
 | `onCloseTemplateGallery` | Template Gallery ✕ / backdrop | **(Phase 2)** `closeTemplateGallery()` — `setTemplateGalleryOpen(false)` |
 | `onIntakePreview(spec\|null)` | IntakePanel RequirementForm admissible-interval inputs (live) | **(Phase 3)** `previewIntake(spec)` — drive one `UncertaintyGhostView` from `{lo,hi,unit,label}`; update in place via `setIntervalPreview` (no geometry rebuild), frame the camera once; `null` disposes the ghost. Cleared on form unmount / submit |
 | `onAddNlFacts(facts)` | IntakePanel NlIntakeForm "Add … Facts to document" | **(Phase 4)** `addNlFacts(facts)` — fold NL-extracted Fact fragments (`extractFacts`, pure) into the doc as one undoable `createAddDocEntryCommand`; toast counts (asserted vs unconfirmed). Preview is computed locally in the form (pure, no round-trip) |
+| `onOpenGraspPanel` | Header **Context ▾ → Grasp Search…** / ⋯ menu | **(ADR-054)** `openGraspPanel()` — seed `context.grasp` with the loaded layout summary and `setGraspPanelOpen(true)`; warns and does not open when there is no renderable layout |
+| `onRunGraspSearch({weights, topN})` | GraspSearchPanel **Run** button | **(ADR-054)** `runGraspSearch(params)` — read `getCompiled().layoutDsl`, ensure a JWT'd `BffClient`, Step A `compileLayout` (round-trip verify) then Step B `graspSearch` (BFF stamps `contractVersion` + delegates to the external service); push status/candidates into `context.grasp`. A query, not a doc mutation — not on the CommandStack. 400/502/503 surface their reason as a toast + the error envelope |
+| `onCloseGraspPanel` | GraspSearchPanel ✕ / backdrop | **(ADR-054)** `closeGraspPanel()` — `setGraspPanelOpen(false)` |
 
 **ADR-052 Phase 2 — Why breadcrumb (selection → provenance)**: there is **no UI
 callback** for this — the trigger is **entity selection**, not a button.

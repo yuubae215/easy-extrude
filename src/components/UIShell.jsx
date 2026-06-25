@@ -18,6 +18,7 @@ import { Onboarding } from './Onboarding/Onboarding.jsx'
 import { ContextDemoLayer } from './ContextDemo/ContextDemoLayer.jsx'
 import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
+import { GraspSearchPanel } from './Grasp/GraspSearchPanel.jsx'
 
 /**
  * React UI root — Phase 2d–2g + Phase 3 + Phase 4.
@@ -69,6 +70,7 @@ export function UIShell() {
       <ContextDemoLayer />
       <ContextLayer />
       <TemplateGallery />
+      <GraspSearchPanel />
       <ToastStack toasts={toasts} />
     </>
   )

@@ -209,6 +209,9 @@ export class SceneService extends EventEmitter {
   /** true when BFF connection is active. */
   get bffConnected() { return this._bff !== null }
 
+  /** The connected BffClient, or null (ADR-054 grasp walkthrough reads this). */
+  get bff() { return this._bff }
+
   // ── WebSocket Geometry Service (ADR-017, Phase B) ──────────────────────────
 
   /**

@@ -309,6 +309,7 @@ function ContextDropdown() {
           {item('Negotiate', callbacks.onContextNegotiate)}
           {item('Author', callbacks.onContextAuthor)}
           {item('Region Ghosts', callbacks.onContextRegionGhost)}
+          {item('Grasp Search…', callbacks.onOpenGraspPanel)}
           <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
             Demo (Tutorial)
           </div>
@@ -419,6 +420,7 @@ function MoreMenu() {
           {item('Negotiate', SVG_DEMO, callbacks.onContextNegotiate)}
           {item('Author', SVG_DEMO, callbacks.onContextAuthor)}
           {item('Region Ghosts', SVG_DEMO, callbacks.onContextRegionGhost)}
+          {item('Grasp Search…', SVG_DEMO, callbacks.onOpenGraspPanel)}
           {item('Tutorial', SVG_DEMO, callbacks.onContextDemoClick)}
         </div>
       )}

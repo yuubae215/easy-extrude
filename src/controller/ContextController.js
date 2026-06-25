@@ -125,6 +125,9 @@ export class ContextController {
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
+    registerCallback('onOpenGraspPanel',         ()           => this.openGraspPanel())
+    registerCallback('onCloseGraspPanel',        ()           => this.closeGraspPanel())
+    registerCallback('onRunGraspSearch',         (params)     => this.runGraspSearch(params))
   }
 
   /** True while any context overlay is active. */
@@ -714,6 +717,124 @@ export class ContextController {
     a.click()
     URL.revokeObjectURL(url)
     this._ctrl._uiView.showToast(`Saved: ${filename}`)
+  }
+
+  // ── Grasp search verification walkthrough (ADR-054) ──────────────────────────
+  // The canonical access route to a Layout DSL from the UI is the intermediate
+  // ContextService already holds — `getCompiled().layoutDsl` (no reverse compiler;
+  // scope boundary: this repo declares, it does not solve). The walkthrough sends
+  // that DSL through the BFF (round-trip compile) and then declares a grasp-search
+  // request the BFF delegates to the external solver.
+
+  /** The Layout DSL the loaded Context derives, or null if none is renderable. */
+  _loadedLayoutDsl() {
+    const dsl = this._ctxService.getCompiled()?.layoutDsl
+    return dsl && (dsl.entities ?? []).length > 0 ? dsl : null
+  }
+
+  /** Open the grasp-search panel, seeded with the loaded layout summary. */
+  openGraspPanel() {
+    const layoutDsl = this._loadedLayoutDsl()
+    if (!layoutDsl) {
+      this._ctrl._uiView.showToast('Load a project with a layout first (Context ▾ → New Project)', { type: 'warn' })
+      return
+    }
+    const ui = useUIStore.getState().actions
+    ui.contextSetGrasp({
+      status:     'idle',
+      layout:     { version: layoutDsl.version, entities: (layoutDsl.entities ?? []).length },
+      request:    null,
+      candidates: [],
+      error:      null,
+    })
+    ui.setGraspPanelOpen(true)
+  }
+
+  /** Close the grasp-search panel. */
+  closeGraspPanel() {
+    useUIStore.getState().actions.setGraspPanelOpen(false)
+  }
+
+  /**
+   * Run the UI → DSL → BFF → grasp-search walkthrough.
+   *   Step A — round-trip verify: BFF reproduces the scene from the same DSL.
+   *   Step B — grasp request: BFF stamps contractVersion + delegates to the
+   *            external grasp-search service; the ranked candidates come back.
+   * Not a doc mutation (a query — geometry is invariant), so it does NOT touch
+   * the CommandStack. Errors surface their *reason* (400/502/503) — never a
+   * silent no-op (PHILOSOPHY #11).
+   *
+   * @param {{ weights?: Record<string,number>, topN?: number }} [params]
+   */
+  async runGraspSearch(params = {}) {
+    const ctrl = this._ctrl
+    const ui   = useUIStore.getState().actions
+
+    const layoutDsl = this._loadedLayoutDsl()
+    if (!layoutDsl) {
+      ctrl._uiView.showToast('Load a project with a layout first (Context ▾ → New Project)', { type: 'warn' })
+      return
+    }
+
+    // Ensure a JWT'd BffClient (the routes are protected). connectBff fetches a
+    // dev token and nulls _bff when the BFF itself is unreachable.
+    let bff = ctrl._service.bff
+    if (!bff) {
+      await ctrl._service.connectBff()
+      bff = ctrl._service.bff
+    }
+    if (!bff) {
+      ui.contextSetGrasp({ status: 'error', error: { message: 'BFF unavailable', status: null, details: [] } })
+      ctrl._uiView.showToast('BFF unavailable — start the server on :3001', { type: 'error' })
+      return
+    }
+
+    const objectiveWeights = params.weights ?? { reach: 0.6, clearance: 0.4 }
+    const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
+
+    ui.contextSetGrasp({
+      status:     'running',
+      layout:     { version: layoutDsl.version, entities: (layoutDsl.entities ?? []).length },
+      request:    null,
+      candidates: [],
+      error:      null,
+    })
+
+    // Step A — round-trip verify the DSL compiles to a scene on the BFF.
+    try {
+      const scene = await bff.compileLayout(layoutDsl)
+      ui.contextSetGrasp({ status: 'compiled', compiledObjects: (scene.objects ?? []).length })
+    } catch (err) {
+      return this._graspError(err, 'Layout compile (BFF)')
+    }
+
+    // Step B — declare the grasp-search request (UI never sets contractVersion;
+    // the BFF stamps the canonical value — ADR-054 §3).
+    const request = {
+      layoutVersion: layoutDsl.version,
+      graspSearch:   { objectiveWeights, topN },
+    }
+    try {
+      const res = await bff.graspSearch(request)
+      const candidates = res.candidates ?? []
+      ui.contextSetGrasp({ status: 'done', request, candidates, error: null })
+      ctrl._uiView.showToast(`grasp-search: ${candidates.length} candidate(s)`, { type: 'info' })
+    } catch (err) {
+      return this._graspError(err, 'grasp-search', request)
+    }
+  }
+
+  /** Record a walkthrough failure and toast its reason (status-aware). */
+  _graspError(err, label, request = null) {
+    const ui      = useUIStore.getState().actions
+    const status  = err?.status ?? null
+    const details = (err?.details && err.details.length) ? err.details : (err?.message ? [err.message] : [])
+    ui.contextSetGrasp({ status: 'error', request, error: { message: err.message, status, details } })
+    const hint =
+      status === 503 ? ' (grasp-search service unreachable)' :
+      status === 502 ? ' (upstream contract drift / non-conformance)' :
+      status === 400 ? ' (contract mismatch)' : ''
+    this._ctrl._uiView.showToast(`${label} failed: ${err.message}${hint}`, { type: 'error' })
   }
 
   // ── Re-projection (event-driven — covers approve / region edit / undo / redo) ──

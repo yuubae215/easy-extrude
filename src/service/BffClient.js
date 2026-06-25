@@ -300,6 +300,75 @@ export class BffClient {
     return res.json()
   }
 
+  // ── Layout DSL → Scene + Grasp search (ADR-054 verification walkthrough) ─────
+
+  /**
+   * Compiles a Layout DSL on the BFF (`POST /api/layout/compile`) and returns the
+   * SceneSerializer v1.3 JSON. Used as the round-trip verification step: the BFF
+   * reproduces the scene from the same DSL the UI derived locally.
+   *
+   * @param {object} dsl  a Layout DSL document (e.g. ContextService.getCompiled().layoutDsl)
+   * @returns {Promise<{ version: string, objects: object[], links: object[], transformGraph: object }>}
+   */
+  compileLayout(dsl) {
+    return this._postContract('/layout/compile', { dsl })
+  }
+
+  /**
+   * Requests grasp candidates from the external grasp-search service through the
+   * BFF (`POST /api/grasp/search`). The BFF validates the request against the
+   * neutral contract, stamps the canonical `contractVersion`, and delegates the
+   * actual solving (IK / collision / reach / ranking) to the external service —
+   * this client only declares the request and returns the ranked candidates
+   * (scope boundary: the UI never solves).
+   *
+   * The caller assembles a contract-valid request, e.g.
+   *   { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights, topN } }
+   * and must NOT set `contractVersion` (the BFF owns the canonical value).
+   *
+   * @param {{ layoutVersion: string, graspSearch: object }} request
+   * @returns {Promise<{ contractVersion?: number, candidates: object[] }>}
+   */
+  graspSearch(request) {
+    return this._postContract('/grasp/search', request)
+  }
+
+  /**
+   * POST that surfaces the BFF's `{ error, details }` envelope and HTTP status
+   * instead of collapsing 5xx into an opaque BffUnavailableError. The grasp /
+   * layout walkthrough needs the *reason* to reach the UI (PHILOSOPHY #11):
+   * contract mismatch (400), upstream drift / non-conformance (502), service
+   * unreachable (503). A genuine BFF network failure still throws
+   * BffUnavailableError (the BFF itself, not the upstream, is down).
+   *
+   * @param {string} path  relative to base URL
+   * @param {object} body
+   * @returns {Promise<object>}
+   */
+  async _postContract(path, body) {
+    const url     = this._base + path
+    const headers = { 'Content-Type': 'application/json' }
+    if (this._token) headers['Authorization'] = `Bearer ${this._token}`
+
+    let res
+    try {
+      res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    } catch (err) {
+      throw new BffUnavailableError(err)
+    }
+
+    let payload = null
+    try { payload = await res.json() } catch { /* non-JSON body */ }
+
+    if (!res.ok) {
+      const err = new Error(payload?.error ?? `HTTP ${res.status}`)
+      err.status  = res.status
+      err.details = payload?.details ?? []
+      throw err
+    }
+    return payload
+  }
+
   // ── Health ──────────────────────────────────────────────────────────────────
 
   /**
