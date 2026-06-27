@@ -1,0 +1,39 @@
+%% <PROJECT> 概念図(トポロジ)— per-project skeleton
+%% 配置: docs/architecture.mermaid にコピーして埋める。テンプレセット同梱・常時 load 不要。
+%%
+%% 役割分担 (§1.1 単一の源):
+%%   この図が「トポロジ」の正準 = 層・文脈・依存の向き・主要ノードの接続。
+%%   契約の *意味*・不変条件・goal ツリー・根拠は project CLAUDE.md(テキスト)側。二重化しない。
+%%
+%% 記法: 実線矢印 = 依存/データの向き(矢の先が依存される側) / 矢印ラベル = 契約名。
+%% [TODO ...] を実体名に置換し、使わない節・例は削除する(空欄を残さない)。
+
+flowchart TB
+    %% ---- 層 + 契約 (§1.3 OSI) / 依存方向 (§1.1 Clean Arch) ----
+    %% 依存は内側(ドメイン)へ向ける。APP→DOMAIN, INFRA→DOMAIN。ドメインは外へ依存しない。
+    subgraph L_APP["[TODO アプリ層]"]
+        A1["[TODO module]"]
+    end
+    subgraph L_DOMAIN["[TODO ドメイン層](Clean Arch: 内側・純粋)"]
+        DOM["[TODO aggregate root / domain model]"]
+    end
+    subgraph L_INFRA["[TODO インフラ層] DB / IO / framework"]
+        INF["[TODO adapter]"]
+    end
+
+    A1  -->|"[TODO 契約: 何を要求/保証]"| DOM
+    INF -->|"[TODO port/adapter 契約]"| DOM
+
+    %% ---- 文脈境界 (§1.1 DDD) ----
+    %% 同名異義はここで切る。別 context は別 subgraph として複製し、境界をまたぐ依存だけ線でつなぐ。
+    %% subgraph CTX_OTHER["[TODO 別 bounded context]"]
+    %%     X1["[TODO model]"]
+    %% end
+    %% DOM -->|"[TODO 公開契約 / ACL]"| X1
+
+    %% ---- 黒箱・外部系 (§1.3) ----
+    %% 入出力と不変条件は CLAUDE.md 側に。ここは接続だけ。
+    EXT["[TODO 外部系 / 黒箱]"]:::ext
+    DOM -->|"[TODO]"| EXT
+
+    classDef ext fill:#eeeeee,stroke:#999999,color:#222,stroke-dasharray:3 3;

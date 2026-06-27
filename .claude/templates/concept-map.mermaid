@@ -1,0 +1,51 @@
+%% 設計・作業の不変核 — 概念図 (concept map)
+%% 用途: テンプレセットに同梱する見取り図。常時 load しない(docs/ に置き、必要時に参照)。
+%% これは「核という系そのもの」の図。各リポジトリの実装グラフ(architecture.mermaid)とは別物。
+%% 任意の md に埋めるなら ```mermaid フェンスで囲む(GitHub 等で描画される)。
+%% 凡例: 角丸=常時load(~/.claude/CLAUDE.md 核) / 円筒=永続ストア / 橙=skill(on-demand) / 赤=hook(強制)
+
+flowchart TB
+    P["§0 既定姿勢｜論理→物理・一番安いレンズ・YAGNI"]:::posture
+
+    subgraph LOOP["§2 作業ループ (OODA / SPA, reactive-first)"]
+        direction LR
+        OBS["Observe｜実状態を読む"] --> ORI["Orient｜モデル更新"]
+        ORI --> DEC["Decide｜最小の正しい一手"]
+        DEC --> ACT["Act｜実行"]
+        ACT -. 再観測 .-> OBS
+    end
+
+    ROUTER{"§3 選択規則｜信号 → レンズ"}
+
+    subgraph DISC["§1 設計判断の規律 ★主"]
+        D1["1.1 真実の源は一つ｜5NF / DDD / Clean Arch"]
+        D2["1.2 正当化の鎖｜GSN"]
+        ADR["ADR (on-demand)"]:::skill
+        D3["1.3 構造レンズ｜グラフ / 層+契約 / 黒箱 / 様態"]
+        D4["1.4 状態機械｜3状態↑ or 不正遷移が事故"]
+        D2 --> ADR
+    end
+
+    subgraph MEM["§4 セッション間契約 (単一の源)"]
+        M1[("設計された契約｜project CLAUDE.md")]:::store
+        M2[("蓄積された学習｜auto memory")]:::store
+    end
+
+    GATE{{"§5 ガードレール｜過剰モデリング / 暗黙の冗長 / 証拠なき完了 を禁止"}}
+    HOOK["commit hook (強制)"]:::hook
+
+    P --> OBS
+    DEC --> ROUTER
+    ROUTER --> DISC
+    DISC --> DEC
+    M1 --> ORI
+    M2 -.-> ORI
+    ACT --> M1
+    ACT --> GATE
+    GATE -. block .-> ACT
+    GATE --- HOOK
+
+    classDef posture fill:#f3eeff,stroke:#7a57c4,color:#222;
+    classDef store fill:#e9f2ff,stroke:#3b78c2,color:#222;
+    classDef skill fill:#fff2e0,stroke:#e08a00,color:#222;
+    classDef hook fill:#ffe7e7,stroke:#c43b3b,color:#222;
