@@ -1,0 +1,23 @@
+%% [TODO 実体名] 状態機械 — per-entity skeleton (§1.4)
+%% 配置: §1.4 の発動条件(3 状態以上、または不正遷移が事故になる)を満たす実体ごとに
+%%   docs/state-[entity].mermaid を1枚。閾値未満なら作らない(boolean のまま / §0 YAGNI)。
+%%
+%% 規律:
+%%   - 状態の権威は一箇所 (§1.1)。導出状態は導出と明示。
+%%   - 不正遷移は描かない = 型/enum で「表現不能」にする意思表示 (§1.1 暗黙状態の禁止)。
+%%   - 遷移ラベルは event [guard](事前条件)の形。
+%%
+%% 記法: 状態 ID は英数/underscore。日本語名を出すなら  state "受付中" as S1  の形で別行に。
+%% S1..Sn / event を実体に合わせて置換し、不要な例は削除する。
+
+stateDiagram-v2
+    [*] --> S1
+    S1 --> S2 : event_a [guard]
+    S2 --> S3 : event_b
+    S2 --> S1 : event_cancel
+    S3 --> [*]
+
+    %% ラベル付けの例(必要なら有効化):
+    %% state "受付中"  as S1
+    %% state "処理中"  as S2
+    %% state "完了"    as S3

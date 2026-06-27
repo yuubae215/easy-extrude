@@ -3,6 +3,15 @@
 Voxel-based 3D modeling app built with Three.js + Vite. Deployed to GitHub Pages.
 For project structure, MVC design, and features see `README.md`.
 
+> **Design/work invariant kernel** — cross-project *methods & discipline* (logical→physical
+> ordering, single-source-of-truth, justification chains, lens selection, the OODA loop) live in
+> `@.claude/kernel-CLAUDE.md` and load every session alongside this file. That kernel holds only
+> *methods*; this document is this repository's *instance* (the §4 contract). Install guide for
+> global `~/.claude/` use, on-demand `/scaffold-project` and `adr` skill, templates, and the
+> commit-evidence hook: see `.claude/KERNEL-INSTALL.md`.
+
+@.claude/kernel-CLAUDE.md
+
 ## Constitutional Rules (read before any code change)
 
 1. **DDD Entity Core** — the design center is always the domain entities in
