@@ -1,15 +1,15 @@
-kernel-bundle: portable (in-repo, @import-wired)
+kernel-bundle: portable (in-repo)
 version: 2026-06-27
 source: claude-kernel-bundle (canonical)
 notes: |
   これは canonical bundle を本リポジトリへ vendoring したコピー。ドリフト検知用。
   内容を更新するときは canonical 側を直し、本ファイルの version を上げて再配布する。
 
-  本リポジトリの配線(ポータブル版 INSTALL-PORTABLE.md の既定との差分):
-    - 核は `.claude/kernel-CLAUDE.md` に置き、ルート `CLAUDE.md` 冒頭の
-      `@.claude/kernel-CLAUDE.md` で load する(`.claude/rules/00-kernel.md`
-      自動 load は不使用 — このセッションで @import の load を確認済み)。
-    - 核を二重 load しないこと(INSTALL-PORTABLE.md §6)。`@import` と
-      `rules/` 自動 load を併用しない。
+  配線(INSTALL-PORTABLE.md の既定どおり):
+    - 核は `.claude/rules/00-kernel.md`。launch 時にファイル名順で自動 load される
+      (paths 無し = 常時 load。docs: rules は `.claude/CLAUDE.md` と同優先度)。
+      ルート `CLAUDE.md`(プロジェクト・インスタンス)は無改変。
+    - 核を二重 load しないこと(INSTALL-PORTABLE.md §6)。グローバル版
+      (`~/.claude/CLAUDE.md`)や `@import` 配線と併用しない。
     - テストコマンドの単一の源は `.claude/test-command`(= `pnpm test:context`)。
   複数リポジトリ間の同期は INSTALL-PORTABLE.md「§1.1 との折り合い」を参照。

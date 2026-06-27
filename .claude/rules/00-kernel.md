@@ -1,10 +1,8 @@
 <!--
-配置: 本来は ~/.claude/CLAUDE.md (user instructions, 全プロジェクト共通) に置く不変核。
-  このリポジトリでは版管理して持ち込むため `.claude/kernel-CLAUDE.md` に配置し、
-  ルート `CLAUDE.md` の冒頭から `@.claude/kernel-CLAUDE.md` で import して常時 load する。
-  → 方法・規律(本ファイル)とプロジェクト・インスタンス(ルート CLAUDE.md)は §4 のとおり別経路。
-グローバル運用したい場合は `.claude/KERNEL-INSTALL.md` の手順で ~/.claude/ へ展開する。
-このブロックコメントは context 注入前に除去されるため token を消費しない(doc 既定動作)。
+配置(ポータブル版): <repo>/.claude/rules/00-kernel.md。リポジトリに commit して持ち運ぶ。
+  rules は launch 時にファイル名順で load される(paths 無し = 常時)。~/.claude には何も置かない。
+  ※ グローバル版(~/.claude/CLAUDE.md)と併用しないこと。両方 load されると核が二重化する(§1.1)。
+このブロックコメントは context 注入前に除去されるため token を消費しない。
 -->
 
 # 設計・作業の不変核 (project-invariant kernel)
