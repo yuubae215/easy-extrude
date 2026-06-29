@@ -5,7 +5,8 @@
 **Supersedes**: —
 **Related**: ADR-045 (Layout DSL / REST API), ADR-050 (Context-First Project Model),
 ADR-046 (Context DSL), ADR-015 (BFF + Microservices), ADR-017 (WebSocket / Geometry
-Service), ADR-053 (robotics KPI methods — the predicates the solver answers)
+Service), ADR-053 (robotics KPI methods — the predicates the solver answers),
+ADR-057 (Grasp Search UI — the front-end panel that drives this walkthrough)
 
 ---
 

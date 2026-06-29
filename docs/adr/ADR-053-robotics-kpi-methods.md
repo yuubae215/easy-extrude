@@ -2,7 +2,7 @@
 
 **Status**: Accepted (Phase 1+2+3 実装済 — 述語層 ＋ 測定器の純粋計算コア / ComputeBackend / RoboticsService ＋ C++→WASM ビルドレーン環境導入)
 **Date**: 2026-06-20
-**Related**: ADR-038 (URDF Link Taxonomy — jointType 予約), ADR-047 (Context Demo Layer — ゴースト/オーバーレイ系譜), ADR-049 (Requirement/Conflict — KPI/criterion/admissible/gap), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake), ADR-052 (5W1H ユビキタス言語), ADR-027 (Wasm Geometry Engine — WASM 前例), ADR-015 (BFF), ADR-017 (WebSocket / Geometry Service)
+**Related**: ADR-038 (URDF Link Taxonomy — jointType 予約), ADR-047 (Context Demo Layer — ゴースト/オーバーレイ系譜), ADR-049 (Requirement/Conflict — KPI/criterion/admissible/gap), ADR-050 (Context-First Project Model), ADR-051 (Requirement Intake), ADR-052 (5W1H ユビキタス言語), ADR-027 (Wasm Geometry Engine — WASM 前例), ADR-015 (BFF), ADR-017 (WebSocket / Geometry Service), ADR-059 (Grasp 候補の空間ゴースト — deferred した urdf-loader/幾何の消費先)
 **Implementation**: **Phase 1 実装済** = 純粋述語層 `robot_reach` / `collision_free`（§9、`PredicateEngine` + `VALID_PREDICATE_KINDS` 追加 + `CONTEXT_DSL_VERSION` バンプ `context/0.3`→`context/0.4`）。**Phase 2 実装済** = 測定器の**純粋計算コア**（FK サンプリング到達性 ＋ AABB 干渉ベイク）＋ `ComputeBackend` シーム（`LocalComputeBackend`）＋ `RoboticsService`（測定値→doc ベイクの受け口、THREE-free・注入バックエンド）（§10、`src/robotics/*` + `src/service/RoboticsService.js`）。**Phase 3 実装済 = §4 の C++→Emscripten→WASM ビルドレーン環境導入**（§11、`robotics-wasm/`：KDL `v1.5.1` + ruckig `v0.9.2` + Eigen `3.4.0` を pinned submodule で vendor、`emcmake` ビルドで embind WASM モジュールを生成、成果物 `src/engine/robotics-wasm/` を git コミット、`scripts/setup-toolchain.sh` で再現可能化）。残（後続フェーズ）: WASM カーネルを `ComputeBackend` 裏に配線 / IK・特異点 Jacobian / 可動ソルバ / urdf-loader・three-mesh-bvh 実幾何 / `ServerComputeBackend`（BFF `/compute`）/ Ghost・Highlight ビュー / pending UX。
 
 ---

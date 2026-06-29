@@ -2,7 +2,7 @@
 
 **Status**: Accepted (全 4 フェーズ実装済 — 2026-06-16)
 **Date**: 2026-06-16
-**Related**: ADR-052 (5W1H ユビキタス言語 — 土台), ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events)
+**Related**: ADR-052 (5W1H ユビキタス言語 — 土台), ADR-050 (Context-First Project Model), ADR-049 (Requirement/Conflict モデル), ADR-047 (Context Demo Layer), ADR-046 (Context DSL), ADR-044 (5W1H Function Mapping), ADR-022 (Undo/Redo), ADR-013 (Domain Events), ADR-058 (Context オーサリング UX — 例を土台に編集する fork & tweak; ギャラリーを生きたテンプレート化)
 **Implementation**: 段階導入（§6）。Phase 1 完了 (2026-06-16):
 - `src/context/DocBuilder.js` — `createBlankDoc` / `addActor` / `addFact` / `addVariable` / `addRequirement`（純粋、入力不変）
 - `src/command/AddDocEntryCommand.js` — `createAddDocEntryCommand`（before/after スナップショット、undo 可）
