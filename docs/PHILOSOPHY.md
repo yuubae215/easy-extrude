@@ -633,6 +633,44 @@ to try. Name the quotient, pick the representative, and prove the fixpoint.
 
 ---
 
+### 29. Rigor on the Wire, Play in the Client — 契約は決定を運び、UI は体感を所有する
+
+The correctness boundary and the experience boundary obey **opposite** design pressures,
+and confusing them corrupts both. The contract / API boundary carries only *committed
+facts the solver decided* — logically exact, conservatively versioned, **closed**
+(`additionalProperties:false`), grown only by a deliberate versioned act. The UI owns
+*experience* — playful, low-friction, inviting — and **derives** presentation client-side
+from those wire facts. A high-brow, austere UI is never touched; a playful one gets used
+early and yields feedback early. So play is not a luxury here, it is how the project learns.
+
+The two failure directions are symmetric and both must be guarded:
+
+- **UI play leaking into contract laxity.** Every visualization need tempts a new optional
+  field on the wire (`pose.tcp?`, `gripperWidth?`, `approachVector?`…). Unchecked, the
+  contract grows an unbounded bag of presentation conveniences and stops being a rigorous
+  decision record. *The naming tell:* a field named `optional`/`*?` for its cardinality
+  rather than its meaning is usually presentation bolt-on, not a committed fact.
+- **Contract rigor making the UI austere.** Treating the rigorous wire shape as the UI's
+  shape produces a literal, numeric, intimidating interface (a joints array printed as text)
+  that no one wants to touch.
+
+**The inclusion test for a wire field:** *"Is this a committed fact the solver decided, or a
+presentation convenience?"* Only the former goes on the wire. The latter is derived in the
+client. Approach vectors, ghost colour, animation, fades, gripper glyphs — all derived from
+the wire facts (an end-effector frame, a score), never demanded back as new wire entities.
+This is also the **growth governor**: visualization needs grow client derivations, not the
+contract; the contract grows only when the solver genuinely decides a *new kind of fact*, and
+that growth is a discriminated `kind`, not an open accretion of optionals.
+
+This sharpens the repo's existing scope boundary ("declare/schema here, solving upstream"):
+that boundary says *where solving lives*; this principle says *where rigor lives vs where
+play lives*, and they cut differently — the rigorous wire is owned upstream, the playful
+experience is owned here, and presentation never crosses onto the wire.
+
+*Underlies CODE_CONTRACTS rules: Grasp Contract Is Derived, Never Defined; BffClient Surfaces the Contract-Error Envelope (ADR-054); ContextController Grasp Walkthrough (ADR-057 score-first); ADR-060 contract governance; ADR-059 client-derived ghost*
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
@@ -691,3 +729,4 @@ to the main body as a full principle and add a row to the Index.
 | 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
 | 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
+| 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059) |
