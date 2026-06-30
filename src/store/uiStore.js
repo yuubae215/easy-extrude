@@ -154,6 +154,7 @@ export const useUIStore = create((set, get) => ({
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
     provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
     whyTree: null,           // ContextService.whyTree() — full Why-rooted 5W1H tree overview (ADR-052 Phase 3)
+    authorSeed: null,        // ADR-058 — read-only seed doc when a project was forked from an example (anchors for "fork & tweak"); null otherwise
     // ADR-057 grasp-search FSM — a discriminated union on `status` (replaced
     // wholesale by GraspController, never patched), so illegal states (candidates
     // while `error`, results while `solving`) are unrepresentable. null = the
@@ -331,7 +332,7 @@ export const useUIStore = create((set, get) => ({
     // the context overlay is persistent (a loaded project, not a transient
     // tutorial). It merges the payload and marks the overlay active.
     contextStart: (payload) => set(state => ({
-      context: { ...state.context, provenance: null, grasp: null, ...payload, active: true },
+      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -374,8 +375,17 @@ export const useUIStore = create((set, get) => ({
     })),
     setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
 
+    // ADR-058 — read-only seed doc retained when a project is forked from an
+    // example, so the intake forms can show the example's filled values as
+    // anchors ("fork & tweak"). Set by ContextController.forkExample after
+    // _startNegotiation; reset by contextStart / contextEnd. It is NOT a second
+    // source of truth — the working doc stays owned by ContextService (§1.1).
+    contextSetSeed: (authorSeed) => set(state => ({
+      context: { ...state.context, authorSeed },
+    })),
+
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], provenance: null, whyTree: null, grasp: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], provenance: null, whyTree: null, grasp: null, authorSeed: null },
     })),
   },
 }))

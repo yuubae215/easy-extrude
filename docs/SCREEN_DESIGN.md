@@ -737,6 +737,14 @@ authoritative path (`adoptDoc` for blank, `loadContext` for examples) and opens 
 [M]. The footer states the scene-replacement consequence explicitly (ADR-051 §7) so **no second
 confirm dialog** is shown. ✕ / backdrop click closes (`onCloseTemplateGallery`).
 
+Each example card carries a secondary **✎ Use as a starting point (fork & edit)** action
+(ADR-058 Phase 1) → `onForkTemplate(id)` → `forkExample(id)`: it clones the example as the working
+doc (regenerating the scene like Open) but **retains the original example as a read-only seed** and
+opens on the **Intake** tab. There the RequirementForm shows the seed's filled requirements as amber
+**seed-anchor chips** — clicking one floods the form with the example's real KPI / criterion /
+admissible values (an editable anchor; the `ref` is suffixed `_copy`) so the user tweaks a filled
+example instead of facing a blank schema. The blank (Empty Project) card has no fork action.
+
 #### [O] Grasp Search panel (ADR-057 placement, ADR-054 thread; Header **Context ▾ → Grasp Search…**)
 The **`'grasp'` tab inside the production `ContextLayer`** (negotiate mode) — no longer a
 central modal (ADR-057 §B). `onOpenGrasp` → `GraspController.openGrasp()` ensures the
