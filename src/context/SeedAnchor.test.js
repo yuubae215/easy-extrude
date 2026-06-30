@@ -10,6 +10,8 @@ import {
   seedEntry,
   seedIsEmpty,
   describeSeedRequirement,
+  describeSeedActor,
+  describeSeedVariable,
 } from './SeedAnchor.js'
 
 const SEED = {
@@ -110,5 +112,29 @@ describe('describeSeedRequirement', () => {
       describeSeedRequirement({ admissible: { interval: [1, 2] } }),
       '[1, 2]',
     )
+  })
+})
+
+describe('describeSeedActor', () => {
+  it('formats role and discipline', () => {
+    assert.equal(describeSeedActor(SEED.actors[0]), 'agent · robot')
+  })
+
+  it('degrades gracefully on partial / missing fields', () => {
+    assert.equal(describeSeedActor(null), '')
+    assert.equal(describeSeedActor({ role: 'agent' }), 'agent')
+    assert.equal(describeSeedActor({}), '')
+  })
+})
+
+describe('describeSeedVariable', () => {
+  it('formats the domain interval and unit', () => {
+    assert.equal(describeSeedVariable(SEED.variables[0]), '[0, 1000] mm')
+  })
+
+  it('degrades gracefully on partial / missing fields', () => {
+    assert.equal(describeSeedVariable(null), '')
+    assert.equal(describeSeedVariable({ unit: 'mm' }), 'mm')
+    assert.equal(describeSeedVariable({ domain: [1, 2] }), '[1, 2]')
   })
 })

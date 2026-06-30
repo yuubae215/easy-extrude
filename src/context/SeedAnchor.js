@@ -103,3 +103,36 @@ export function describeSeedRequirement(req) {
   }
   return parts.join(' · ')
 }
+
+/**
+ * One-line human description of a seed actor (chip label / tooltip): role and
+ * discipline, formatted from the entry's own fields (ADR-058 Phase 2).
+ *
+ * @param {object} actor — a seed actor entry
+ * @returns {string}
+ */
+export function describeSeedActor(actor) {
+  if (!actor || typeof actor !== 'object') return ''
+  const parts = []
+  if (actor.role) parts.push(String(actor.role))
+  if (actor.discipline) parts.push(String(actor.discipline))
+  return parts.join(' · ')
+}
+
+/**
+ * One-line human description of a seed variable (chip label / tooltip): the
+ * domain interval and unit, formatted from the entry's own fields (ADR-058 Phase 2).
+ *
+ * @param {object} v — a seed variable entry
+ * @returns {string}
+ */
+export function describeSeedVariable(v) {
+  if (!v || typeof v !== 'object') return ''
+  const parts = []
+  const domain = v.domain
+  if (Array.isArray(domain) && domain.length === 2) {
+    parts.push(`[${domain[0]}, ${domain[1]}]`)
+  }
+  if (v.unit) parts.push(String(v.unit))
+  return parts.join(' ')
+}
