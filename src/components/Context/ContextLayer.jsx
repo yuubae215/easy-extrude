@@ -5,6 +5,7 @@ import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 import { WhyTreeView } from './WhyTreeView.jsx'
+import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 
 /**
  * ContextLayer — production Context-first overlay (ADR-050).
@@ -56,6 +57,8 @@ export function ContextLayer() {
       { id: 'why',       label: 'Why' },
       { id: 'tree',      label: 'Overview' },
       { id: 'intake',    label: 'Intake' },
+      // Grasp tab appears once seeded (a renderable layout exists — ADR-057 §B).
+      ...(ctx.grasp ? [{ id: 'grasp', label: 'Grasp' }] : []),
     ]
     : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
     : []
@@ -165,6 +168,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
           <IntakePanel />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'grasp' && (
+          <GraspSearchPanel />
         )}
       </div>
     </div>

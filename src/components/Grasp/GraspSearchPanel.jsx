@@ -1,197 +1,247 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 
 /**
- * GraspSearchPanel — UI → DSL → BFF → grasp-search verification walkthrough
- * (ADR-054).
+ * GraspSearchPanel — UI → DSL → BFF → grasp-search verification (ADR-054 thread,
+ * ADR-057 placement + scoring).
  *
- * A transient modal (z-index above all edge panels — PHILOSOPHY #26) that runs
- * the canonical thread: the loaded Context's Layout DSL
- * (`ContextService.getCompiled().layoutDsl`) is sent through the BFF — first a
- * round-trip `compileLayout` (scene reproduced server-side), then a grasp-search
- * request the BFF delegates to the external solver. The panel only *declares* the
- * request (objective weights + topN) and *displays* the ranked candidates; the
- * UI never solves (scope boundary). Failures surface their reason — contract
- * mismatch (400), upstream drift (502), service unreachable (503) — never a
- * silent no-op (PHILOSOPHY #11).
+ * Rendered as the `'grasp'` tab **inside** the production ContextLayer's right dock
+ * (ADR-057 §B) — no longer a central modal, so the canvas stays visible and no new
+ * screen-edge footprint is claimed (it rides on the existing 280px dock — PHILOSOPHY
+ * #26). Presentational: it reads the `context.grasp` discriminated union (the sole
+ * writer is GraspController — PHILOSOPHY #5) and fires registered callbacks; it owns
+ * no FSM state, only the local form inputs.
  *
- * Presentational: open/closed is `graspPanelOpen`; result lives in
- * `context.grasp`; actions are fired through registered callbacks.
+ * Scoring is built from the contract's `score` only (ADR-057 §F): the three boolean
+ * chips plus labelled `objectiveScores` bars (objective name → 0..1, comparable
+ * across requests on an absolute basis per the contract). The opaque `pose` is never
+ * interpreted into 3-D — spatial ghosts are a deferred follow-up (ADR-059); a raw
+ * `pose.joints` array, if present, is shown as reference text only (never silently
+ * dropped or exaggerated — PHILOSOPHY #11).
  */
 
 const BORDER = '1px solid #3a3a3a'
 
 export function GraspSearchPanel() {
-  const open      = useUIStore(s => s.graspPanelOpen)
   const grasp     = useUIStore(s => s.context.grasp)
   const callbacks = useUIStore(s => s.callbacks)
 
   const [reach, setReach]         = useState(0.6)
   const [clearance, setClearance] = useState(0.4)
   const [topN, setTopN]           = useState(5)
+  // Client-side sort key: 'total' or an objective name. Never re-runs the query
+  // (a grasp request is invariant — ADR-057 §Rendering).
+  const [sortKey, setSortKey]     = useState('total')
 
-  if (!open) return null
-
-  const close   = () => callbacks.onCloseGraspPanel?.()
-  const running = grasp?.status === 'running' || grasp?.status === 'compiled'
+  const status   = grasp?.status ?? 'idle'
+  const busy     = status === 'compiling' || status === 'solving'
   const run = () => callbacks.onRunGraspSearch?.({
     weights: { reach: Number(reach), clearance: Number(clearance) },
     topN:    Number(topN),
   })
 
+  // Objective names present across the returned candidates (for sort buttons).
+  const objectiveKeys = useMemo(() => {
+    if (status !== 'results') return []
+    const keys = new Set()
+    for (const c of grasp.candidates ?? []) {
+      for (const k of Object.keys(c.score?.objectiveScores ?? {})) keys.add(k)
+    }
+    return [...keys].sort()
+  }, [status, grasp])
+
+  const sorted = useMemo(() => {
+    if (status !== 'results') return []
+    const list = [...(grasp.candidates ?? [])]
+    const valueOf = (c) => sortKey === 'total'
+      ? (c.score?.totalScore ?? -Infinity)
+      : (c.score?.objectiveScores?.[sortKey] ?? -Infinity)
+    return list.sort((a, b) => valueOf(b) - valueOf(a))
+  }, [status, grasp, sortKey])
+
   return (
-    <div
-      onClick={close}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'system-ui, -apple-system, sans-serif', pointerEvents: 'auto',
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
+    <div style={{ fontSize: '12px', color: '#ddd' }}>
+      <div style={{ color: '#888', fontSize: '10px', marginBottom: '8px', lineHeight: 1.5 }}>
+        UI → DSL → BFF → grasp-search (verify). The request is a query — geometry is unchanged,
+        so it is not on the undo stack.
+      </div>
+
+      {/* Source layout */}
+      <div style={{ fontSize: '11px', color: '#bbb', marginBottom: '10px' }}>
+        Source layout:{' '}
+        <code style={{ color: '#9ad' }}>{grasp?.layout?.version ?? '—'}</code>
+        {' · '}
+        <span>{grasp?.layout?.entities ?? 0} entit{(grasp?.layout?.entities === 1) ? 'y' : 'ies'}</span>
+      </div>
+
+      {/* Objective weights + topN */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+        <NumField label="reach"     value={reach}     step="0.1" onChange={setReach} />
+        <NumField label="clearance" value={clearance} step="0.1" onChange={setClearance} />
+        <NumField label="topN"      value={topN}      step="1" min="1" onChange={setTopN} />
+      </div>
+
+      <button
+        onClick={run}
+        disabled={busy}
         style={{
-          width: 'min(560px, 94vw)', maxHeight: '88vh',
-          display: 'flex', flexDirection: 'column',
-          background: '#222', border: '1px solid #444', borderRadius: '8px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.6)', overflow: 'hidden',
+          padding: '6px 14px', borderRadius: '5px', border: '1px solid #3a7bd5',
+          background: busy ? '#2a3a52' : '#1d4f8f', color: '#dceaff',
+          cursor: busy ? 'default' : 'pointer', fontSize: '12px', fontWeight: 'bold',
         }}
       >
-        {/* Header */}
-        <div style={{ padding: '14px 18px', borderBottom: BORDER, display: 'flex', alignItems: 'baseline' }}>
-          <span style={{ fontSize: '15px', fontWeight: 'bold', color: '#e8e8e8' }}>Grasp Search</span>
-          <span style={{ marginLeft: '8px', fontSize: '11px', color: '#888' }}>
-            UI → DSL → BFF → grasp-search (verify)
-          </span>
-          <button
-            onClick={close}
-            title="Close"
-            style={{
-              marginLeft: 'auto', background: 'transparent', border: 'none',
-              color: '#999', cursor: 'pointer', fontSize: '18px', lineHeight: 1,
-            }}
-          >×</button>
-        </div>
+        {busy ? 'Running…' : 'Run grasp search'}
+      </button>
 
-        <div style={{ padding: '16px 18px', overflowY: 'auto' }}>
-          {/* Source layout */}
-          <div style={{ fontSize: '12px', color: '#bbb', marginBottom: '14px' }}>
-            Source layout:{' '}
-            <code style={{ color: '#9ad' }}>{grasp?.layout?.version ?? '—'}</code>
-            {' · '}
-            <span>{grasp?.layout?.entities ?? 0} entit{(grasp?.layout?.entities === 1) ? 'y' : 'ies'}</span>
-          </div>
+      <StatusLine grasp={grasp} />
 
-          {/* Objective weights + topN */}
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px' }}>
-            <NumField label="reach"     value={reach}     step="0.1" onChange={setReach} />
-            <NumField label="clearance" value={clearance} step="0.1" onChange={setClearance} />
-            <NumField label="topN"      value={topN}      step="1" min="1" onChange={setTopN} />
-          </div>
-
-          <button
-            onClick={run}
-            disabled={running}
-            style={{
-              padding: '8px 16px', borderRadius: '5px', border: '1px solid #3a7bd5',
-              background: running ? '#2a3a52' : '#1d4f8f', color: '#dceaff',
-              cursor: running ? 'default' : 'pointer', fontSize: '13px', fontWeight: 'bold',
-            }}
-          >
-            {running ? 'Running…' : 'Run grasp search'}
-          </button>
-
-          {/* Status line */}
-          <StatusLine grasp={grasp} />
-
-          {/* Candidates */}
-          {grasp?.status === 'done' && (
-            <div style={{ marginTop: '12px' }}>
-              {grasp.candidates.length === 0 && (
-                <div style={{ fontSize: '12px', color: '#caa' }}>
-                  No candidates returned (the solver found no feasible pose).
-                </div>
-              )}
-              {grasp.candidates.map((c, i) => <Candidate key={c.rank ?? i} c={c} />)}
+      {/* Sort controls + candidates */}
+      {status === 'results' && (
+        <div style={{ marginTop: '10px' }}>
+          {(grasp.candidates ?? []).length === 0 && (
+            <div style={{ fontSize: '11px', color: '#caa' }}>
+              No candidates returned (the solver found no feasible pose).
             </div>
           )}
 
-          {/* Error detail */}
-          {grasp?.status === 'error' && grasp.error && (
-            <div style={{
-              marginTop: '12px', padding: '10px 12px', borderRadius: '5px',
-              background: '#3a2222', border: '1px solid #6a3333', color: '#f0c0c0', fontSize: '12px',
-            }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                {grasp.error.status ? `HTTP ${grasp.error.status} — ` : ''}{grasp.error.message}
-              </div>
-              {(grasp.error.details ?? []).map((d, i) => (
-                <div key={i} style={{ color: '#d8a8a8' }}>· {d}</div>
+          {(grasp.candidates ?? []).length > 0 && (
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' }}>
+              <span style={{ fontSize: '10px', color: '#888' }}>sort:</span>
+              <SortChip label="total" active={sortKey === 'total'} onClick={() => setSortKey('total')} />
+              {objectiveKeys.map(k => (
+                <SortChip key={k} label={k} active={sortKey === k} onClick={() => setSortKey(k)} />
               ))}
             </div>
           )}
+
+          {sorted.map((c, i) => (
+            <Candidate
+              key={c.rank ?? i}
+              c={c}
+              selected={grasp.selectedRank === c.rank}
+              onSelect={() => callbacks.onSelectGraspCandidate?.(c.rank)}
+            />
+          ))}
         </div>
-      </div>
+      )}
+
+      {/* Error detail */}
+      {status === 'error' && (
+        <div style={{
+          marginTop: '10px', padding: '8px 10px', borderRadius: '5px',
+          background: '#3a2222', border: '1px solid #6a3333', color: '#f0c0c0', fontSize: '11px',
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+            {grasp.httpStatus ? `HTTP ${grasp.httpStatus} — ` : ''}{grasp.message}
+            <span style={{ color: '#c98', marginLeft: '4px' }}>({grasp.stage})</span>
+          </div>
+          {(grasp.details ?? []).map((d, i) => (
+            <div key={i} style={{ color: '#d8a8a8' }}>· {d}</div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 function NumField({ label, value, onChange, step, min }) {
   return (
-    <label style={{ fontSize: '11px', color: '#aaa', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+    <label style={{ fontSize: '10px', color: '#aaa', display: 'flex', flexDirection: 'column', gap: '3px' }}>
       {label}
       <input
         type="number" value={value} step={step} min={min}
         onChange={e => onChange(e.target.value)}
         style={{
-          width: '78px', padding: '5px 7px', borderRadius: '4px',
-          border: '1px solid #444', background: '#1a1a1a', color: '#e0e0e0', fontSize: '13px',
+          width: '64px', padding: '4px 6px', borderRadius: '4px',
+          border: '1px solid #444', background: '#1a1a1a', color: '#e0e0e0', fontSize: '12px',
         }}
       />
     </label>
   )
 }
 
-function StatusLine({ grasp }) {
-  if (!grasp) return null
-  const map = {
-    idle:     { text: 'Ready.', color: '#999' },
-    running:  { text: 'Compiling layout on BFF…', color: '#cc9' },
-    compiled: { text: 'BFF compile OK — requesting grasp candidates…', color: '#9c9' },
-    done:     { text: `Done — ${grasp.candidates?.length ?? 0} candidate(s).`, color: '#9c9' },
-    error:    { text: 'Failed — see detail below.', color: '#d99' },
-  }
-  const s = map[grasp.status] ?? map.idle
-  return <div style={{ marginTop: '10px', fontSize: '12px', color: s.color }}>{s.text}</div>
+function SortChip({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        fontSize: '10px', padding: '2px 7px', borderRadius: '10px', cursor: 'pointer',
+        border: `1px solid ${active ? '#3a7bd5' : '#444'}`,
+        background: active ? '#1d3a5f' : 'transparent',
+        color: active ? '#9cf' : '#aaa', fontFamily: 'inherit',
+      }}
+    >{label}</button>
+  )
 }
 
-function Candidate({ c }) {
+function StatusLine({ grasp }) {
+  const status = grasp?.status ?? 'idle'
+  const map = {
+    'idle':      { text: 'Ready.', color: '#999' },
+    'no-layout': { text: 'No renderable layout to search.', color: '#caa' },
+    'compiling': { text: 'Compiling layout on BFF…', color: '#cc9' },
+    'solving':   { text: 'BFF compile OK — requesting grasp candidates…', color: '#9c9' },
+    'results':   { text: `Done — ${grasp?.candidates?.length ?? 0} candidate(s).`, color: '#9c9' },
+    'error':     { text: 'Failed — see detail below.', color: '#d99' },
+  }
+  const s = map[status] ?? map.idle
+  return <div style={{ marginTop: '8px', fontSize: '11px', color: s.color }}>{s.text}</div>
+}
+
+function Candidate({ c, selected, onSelect }) {
   const sc = c.score ?? {}
   const chip = (label, ok) => (
     <span style={{
-      fontSize: '10px', padding: '1px 6px', borderRadius: '3px',
+      fontSize: '9px', padding: '1px 5px', borderRadius: '3px',
       background: ok ? '#1f3a1f' : '#3a1f1f', color: ok ? '#9d9' : '#d99',
       border: `1px solid ${ok ? '#357035' : '#703535'}`,
     }}>{label}{ok ? ' ✓' : ' ✗'}</span>
   )
+  const objectiveScores = sc.objectiveScores ?? null
   return (
-    <div style={{ padding: '8px 10px', border: BORDER, borderRadius: '5px', marginBottom: '6px', background: '#262626' }}>
+    <div
+      onClick={onSelect}
+      style={{
+        padding: '7px 9px', borderRadius: '5px', marginBottom: '6px', cursor: 'pointer',
+        background: selected ? '#243044' : '#262626',
+        border: `1px solid ${selected ? '#3a7bd5' : '#3a3a3a'}`,
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
-        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#e8e8e8' }}>#{c.rank}</span>
-        <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#9ad' }}>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#e8e8e8' }}>#{c.rank}</span>
+        <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9ad' }}>
           score {typeof sc.totalScore === 'number' ? sc.totalScore.toFixed(3) : '—'}
         </span>
       </div>
-      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: objectiveScores ? '6px' : 0 }}>
         {chip('reach', sc.withinReach)}
         {chip('IK', sc.ikSolvable)}
         {chip('clear', sc.interferenceFree)}
       </div>
+      {/* objectiveScores bars — the order-explaining signal (ADR-057 G2). Absent on
+          legacy solvers → bars omitted, totalScore alone (degrade — §1.3). */}
+      {objectiveScores && Object.entries(objectiveScores).map(([k, v]) => (
+        <ObjectiveBar key={k} label={k} value={typeof v === 'number' ? v : 0} />
+      ))}
       {c.pose?.joints && (
-        <div style={{ marginTop: '5px', fontSize: '11px', color: '#999' }}>
+        <div style={{ marginTop: '5px', fontSize: '10px', color: '#888' }}>
           joints: [{c.pose.joints.map(j => (typeof j === 'number' ? j.toFixed(3) : j)).join(', ')}]
+          <span style={{ color: '#666' }}> · spatial view: see ADR-059</span>
         </div>
       )}
+    </div>
+  )
+}
+
+function ObjectiveBar({ label, value }) {
+  const pct = Math.max(0, Math.min(1, value)) * 100
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+      <span style={{ width: '64px', fontSize: '9px', color: '#aaa', textAlign: 'right' }}>{label}</span>
+      <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: '#3a7bd5' }} />
+      </div>
+      <span style={{ width: '30px', fontSize: '9px', color: '#9ad' }}>{value.toFixed(2)}</span>
     </div>
   )
 }

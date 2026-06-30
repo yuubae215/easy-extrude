@@ -65,6 +65,7 @@ import { RippleEffect }               from '../view/RippleEffect.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
+import { GraspController }            from './GraspController.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
@@ -369,6 +370,12 @@ export class AppController {
     // Persistent overlay coordinator (not a setMode FSM state) consuming the
     // canonical document via ContextService. Registers its own uiStore callbacks.
     this._ctxCtrl = new ContextController(this)
+
+    // ── Grasp-search verification overlay (ADR-057) ────────────────────────
+    // Dedicated coordinator (split out of ContextController) for the
+    // UI→DSL→BFF→grasp-search walkthrough. The panel is the `'grasp'` tab inside
+    // the negotiate overlay; the request is a query, not a doc mutation.
+    this._graspCtrl = new GraspController(this, useUIStore)
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
