@@ -22,6 +22,7 @@ export function TemplateGallery() {
 
   const close  = () => callbacks.onCloseTemplateGallery?.()
   const select = (id) => callbacks.onSelectTemplate?.(id)
+  const fork   = (id) => callbacks.onForkTemplate?.(id)
 
   // Group templates by category, preserving catalog order.
   const groups = []
@@ -87,33 +88,53 @@ export function TemplateGallery() {
                 gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
                 gap: '10px',
               }}>
-                {group.items.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => select(t.id)}
-                    style={{
-                      textAlign: 'left', cursor: 'pointer',
-                      background: '#2a2a2a', border: CARD_BORDER, borderRadius: '6px',
-                      padding: '12px 14px', color: '#e0e0e0',
-                      fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: '6px',
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.background = '#323232'
-                      e.currentTarget.style.borderColor = '#3a7bd5'
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.background = '#2a2a2a'
-                      e.currentTarget.style.borderColor = '#3a3a3a'
-                    }}
-                  >
-                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#5a9bf5' }}>
-                      {t.name}
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#aaa', lineHeight: 1.5 }}>
-                      {t.description}
-                    </span>
-                  </button>
-                ))}
+                {group.items.map(t => {
+                  const forkable = t.source.kind === 'example'
+                  return (
+                    <div
+                      key={t.id}
+                      style={{
+                        background: '#2a2a2a', border: CARD_BORDER, borderRadius: '6px',
+                        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a7bd5' }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = '#3a3a3a' }}
+                    >
+                      <button
+                        onClick={() => select(t.id)}
+                        style={{
+                          textAlign: 'left', cursor: 'pointer', background: 'transparent',
+                          border: 'none', padding: '12px 14px', color: '#e0e0e0',
+                          fontFamily: 'inherit', display: 'flex', flexDirection: 'column', gap: '6px',
+                        }}
+                      >
+                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#5a9bf5' }}>
+                          {t.name}
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#aaa', lineHeight: 1.5 }}>
+                          {t.description}
+                        </span>
+                      </button>
+                      {forkable && (
+                        <button
+                          onClick={() => fork(t.id)}
+                          title="Clone this example as a starting point and tweak its requirements"
+                          style={{
+                            textAlign: 'left', cursor: 'pointer', background: 'transparent',
+                            borderTop: '1px dashed #444', border: 'none', borderTopWidth: '1px',
+                            borderTopStyle: 'dashed', borderTopColor: '#444',
+                            padding: '7px 14px', color: '#8a8a8a', fontFamily: 'inherit',
+                            fontSize: '10px',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.color = '#d5a23a' }}
+                          onMouseLeave={e => { e.currentTarget.style.color = '#8a8a8a' }}
+                        >
+                          ✎ Use as a starting point (fork &amp; edit)
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -124,7 +145,9 @@ export function TemplateGallery() {
           fontSize: '10px', color: '#888', lineHeight: 1.5,
         }}>
           Selecting a template replaces the current scene and regenerates it from
-          the chosen requirements (the 3D scene is a derived projection).
+          the chosen requirements (the 3D scene is a derived projection). Fork &amp;
+          edit keeps the example's values as faint anchors in the intake forms so
+          you can tweak them into your own.
         </div>
       </div>
     </div>

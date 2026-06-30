@@ -114,6 +114,7 @@ export class ContextController {
     registerCallback('onOpenTemplateGallery',    ()           => this.openTemplateGallery())
     registerCallback('onCloseTemplateGallery',   ()           => this.closeTemplateGallery())
     registerCallback('onSelectTemplate',         (id)         => this.selectTemplate(id))
+    registerCallback('onForkTemplate',           (id)         => this.forkExample(id))
     registerCallback('onContextNegotiate',       ()           => this.enterNegotiation())
     registerCallback('onContextAuthor',          ()           => this.enterAuthoring())
     registerCallback('onContextRegionGhost',     ()           => this.enterRegionGhost())
@@ -187,6 +188,45 @@ export class ContextController {
       return
     }
     this._loadThen(doc, () => this._startNegotiation())
+  }
+
+  /**
+   * Fork an example as the starting point (ADR-058 — "fork & tweak"). The example
+   * doc is *cloned* into the working doc (so editing never touches the bundled
+   * module), the scene is regenerated from it, and the **original example is
+   * retained as a read-only seed** (`context.authorSeed`) so the intake forms can
+   * surface its filled values as anchors the user copies and overrides.
+   *
+   * The seed is NOT a second source of truth — it is a read-only mirror of the
+   * example file; the working doc stays owned by ContextService (§1.1 /
+   * PHILOSOPHY #1). It is set *after* `_startNegotiation` because `contextStart`
+   * resets `authorSeed` to null. Only `kind:'example'` templates are forkable
+   * (a blank doc has nothing to anchor against — use the Empty Project card).
+   *
+   * @param {string} id — TemplateCatalog entry id (must be an example)
+   */
+  forkExample(id) {
+    const meta = getTemplateMeta(id)
+    if (!meta || meta.source.kind !== 'example') {
+      this._ctrl._uiView.showToast(`Cannot fork template: ${id}`, { type: 'warn' })
+      return
+    }
+    const seed = TEMPLATE_DOCS[meta.source.file]
+    if (!seed) {
+      this._ctrl._uiView.showToast(`Template definition not found: ${meta.source.file}`, { type: 'error' })
+      return
+    }
+    this.closeTemplateGallery()
+    if (this.isActive) this.exit()
+
+    const working = JSON.parse(JSON.stringify(seed))   // clone — edits never touch the module
+    this._loadThen(working, () => {
+      this._startNegotiation()
+      const ui = useUIStore.getState().actions
+      ui.contextSetSeed(JSON.parse(JSON.stringify(seed)))   // read-only anchor mirror
+      ui.contextSetTab('intake')                            // open the authoring forms
+      this._ctrl._uiView.showToast(`Forked “${meta.name}” — tweak the requirements to make it yours`)
+    })
   }
 
   /**

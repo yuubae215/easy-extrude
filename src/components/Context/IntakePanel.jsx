@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { extractFacts } from '../../context/NlIntake.js'
+import { buildSeedIndex, describeSeedRequirement } from '../../context/SeedAnchor.js'
 
 /**
  * IntakePanel — direct entry addition UI for blank-doc authoring (ADR-051 Phase 1).
@@ -197,7 +198,7 @@ function VariableForm({ variables, onAdd }) {
 
 // ── Requirement form ───────────────────────────────────────────────────────────
 
-function RequirementForm({ actors, variables, onAdd, onPreview }) {
+function RequirementForm({ actors, variables, seedReqs = [], onAdd, onPreview }) {
   const [ref, setRef]         = useState('')
   const [by, setBy]           = useState('')
   const [kpiName, setKpiName] = useState('')
@@ -209,6 +210,26 @@ function RequirementForm({ actors, variables, onAdd, onPreview }) {
   const [neg, setNeg]         = useState('must')
   const [admLo, setAdmLo]     = useState('')
   const [admHi, setAdmHi]     = useState('')
+
+  // ADR-058 fork & tweak: pre-fill every field from a seed example requirement so
+  // the user tweaks real values instead of facing a blank schema. The ref is
+  // suffixed `_copy` because the forked working doc already contains the seed ref —
+  // the user renames it. Values become editable anchors (the filled example IS the
+  // explanation of "what to put here").
+  function fillFromSeed(req) {
+    setRef((req.ref ?? '') + '_copy')
+    setBy(req.by ?? '')
+    setKpiName(req.kpi?.name ?? '')
+    setKpiExpr(req.kpi?.expr ?? '')
+    setKpiUnit(req.kpi?.unit ?? '')
+    setOp(req.criterion?.op ?? '>=')
+    setVal(req.criterion?.value != null ? String(req.criterion.value) : '')
+    setConst(req.constrains?.[0] ?? '')
+    setNeg(req.negotiability ?? 'must')
+    const iv = req.admissible?.interval
+    setAdmLo(Array.isArray(iv) ? String(iv[0]) : '')
+    setAdmHi(Array.isArray(iv) ? String(iv[1]) : '')
+  }
 
   // Live 3D uncertainty-band preview driven by the admissible interval inputs
   // (ADR-051 Phase 3 — Entry D). Fires as [lo, hi] change; cleared on unmount
@@ -251,6 +272,30 @@ function RequirementForm({ actors, variables, onAdd, onPreview }) {
 
   return (
     <div>
+      {seedReqs.length > 0 && (
+        <div style={{ marginBottom: '7px' }}>
+          <div style={{ fontSize: '9px', color: '#777', marginBottom: '3px' }}>
+            ✎ From example — click to copy a filled requirement, then tweak it:
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            {seedReqs.map(req => (
+              <button
+                key={req.ref}
+                onClick={() => fillFromSeed(req)}
+                title={describeSeedRequirement(req)}
+                style={{
+                  cursor: 'pointer', background: 'rgba(213,162,58,0.08)',
+                  border: '1px dashed #d5a23a55', borderRadius: '10px',
+                  color: '#d5a23a', padding: '2px 8px', fontSize: '10px',
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                }}
+              >
+                {req.ref}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <Field label="ref (e.g. r_reach)">
         <input value={ref} onChange={e => setRef(e.target.value)}
           placeholder="r_reach" style={inputStyle} />
@@ -390,9 +435,11 @@ export function IntakePanel() {
 
   const actors    = ctx.actors    ?? []
   const variables = ctx.variables ?? []
-  const requirements = (ctx.decisions != null)
-    ? []  // counts shown via matrix; list not needed here
-    : []
+
+  // ADR-058 — when the project was forked from an example, index the read-only
+  // seed so the requirement form can offer its filled values as anchors.
+  const seedIndex = useMemo(() => buildSeedIndex(ctx.authorSeed), [ctx.authorSeed])
+  const seedName  = ctx.authorSeed?.meta?.name
 
   function onAdd(type, data) {
     callbacks.onAddDocEntry?.(type, data)
@@ -400,6 +447,15 @@ export function IntakePanel() {
 
   return (
     <div style={{ paddingBottom: '8px' }}>
+      {seedName && (
+        <div style={{
+          fontSize: '10px', color: '#d5a23a', marginBottom: '8px', lineHeight: 1.5,
+          background: 'rgba(213,162,58,0.08)', border: '1px dashed #d5a23a44',
+          borderRadius: '4px', padding: '5px 7px',
+        }}>
+          ✎ Forked from <b>{seedName}</b> — its filled values are kept as anchors below. Tweak them into your own.
+        </div>
+      )}
       <div style={{ fontSize: '10px', color: '#666', marginBottom: '8px', lineHeight: 1.5 }}>
         Why-first — register actors and variables first, then add requirements with KPI criteria.
       </div>
@@ -442,6 +498,7 @@ export function IntakePanel() {
         <RequirementForm
           actors={actors}
           variables={variables}
+          seedReqs={seedIndex.requirements}
           onAdd={d => onAdd('requirement', d)}
           onPreview={spec => callbacks.onIntakePreview?.(spec)}
         />
