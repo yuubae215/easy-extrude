@@ -1,9 +1,10 @@
 # 057. Grasp Search UI — 右ドックの宣言/検証パネル（スコア優先・ゴーストは後続）
 
-- Status: Accepted
+- Status: Accepted (実装済)
 - Date: 2026-06-30
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
+- Implementation: 新設 `src/controller/GraspController.js`（uiStore 注入）+ `src/controller/GraspController.test.js`（11 件）。`context.grasp` を判別共用体化（`uiStore.js`、`contextSetGrasp` 丸ごと置換・`graspPanelOpen`/`setGraspPanelOpen` 削除）。`GraspSearchPanel.jsx` を中央モーダル→`ContextLayer` の `'grasp'` タブへ（`objectiveScores` バー + クライアントソート + `selectedRank` ハイライト）。`ContextController` から grasp ロジック撤去、`AppController._graspCtrl`、Header `onOpenGrasp`、UIShell standalone 撤去。`test:context` 300/300・`tsc --noEmit`・`vite build` クリーン。契約・BFF・ドメイン無改変。
 - References: ADR-054（UI→DSL→BFF→grasp walkthrough）, ADR-050（Context-first / 持続オーバーレイ）, ADR-047（オーバーレイは setMode ではない / ゴースト系譜）, ADR-053（ロボティクス測定器・幾何は deferred）, ADR-049（KPI/score）, ADR-052（Why）, ADR-055（scene⇄DSL は Context フロー非配線）, ADR-059（後続: 候補→空間ゴースト、deferred した G3）
 
 ## Context — Goal と力学（§1.2 Goal）

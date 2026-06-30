@@ -737,18 +737,24 @@ authoritative path (`adoptDoc` for blank, `loadContext` for examples) and opens 
 [M]. The footer states the scene-replacement consequence explicitly (ADR-051 §7) so **no second
 confirm dialog** is shown. ✕ / backdrop click closes (`onCloseTemplateGallery`).
 
-#### [O] Grasp Search panel (ADR-054, Header **Context ▾ → Grasp Search…**)
-A transient modal (`GraspSearchPanel.jsx`, z-index 300 — above all edge panels, PHILOSOPHY
-#26; 3-D-independent so usable full-width on mobile) for the UI → DSL → BFF → grasp-search
-**verification walkthrough**. Opened via `onOpenGraspPanel` → `openGraspPanel()` (warns and
-does not open when no renderable layout is loaded). Shows the source-layout summary
-(`version`, entity count from `ContextService.getCompiled().layoutDsl`), `objectiveWeights`
-(reach / clearance) + `topN` inputs, a **Run** button (`onRunGraspSearch`), a status line
-(Compiling layout on BFF → BFF compile OK → Done / Failed), the ranked candidate list (rank,
-`score.{withinReach ✓/✗, ikSolvable, interferenceFree, totalScore}`, joints), and on failure
-the BFF error envelope with its HTTP status + `details` (400 contract mismatch / 502 upstream
-drift / 503 service unreachable). ✕ / backdrop click closes (`onCloseGraspPanel`). The UI only
-declares the request and displays candidates — solving is the external service's job.
+#### [O] Grasp Search panel (ADR-057 placement, ADR-054 thread; Header **Context ▾ → Grasp Search…**)
+The **`'grasp'` tab inside the production `ContextLayer`** (negotiate mode) — no longer a
+central modal (ADR-057 §B). `onOpenGrasp` → `GraspController.openGrasp()` ensures the
+negotiate overlay (the tab's host), seeds `context.grasp`, and selects the tab; the former
+top-level `graspPanelOpen` flag is gone (the tab appears once seeded, and only when a
+renderable layout exists). It rides on `ContextLayer`'s existing 280px right dock, so it adds
+**no new screen-edge footprint** (PHILOSOPHY #26). Shows the source-layout summary (`version`,
+entity count from `ContextService.getCompiled().layoutDsl`), `objectiveWeights` (reach /
+clearance) + `topN` inputs, a **Run** button (`onRunGraspSearch`), a status line driven by the
+discriminated-union `status` (idle → compiling → solving → results / error), and the ranked
+candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
+interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
+explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
+re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`, the deferred
+spatial-ghost hook seat — ADR-059). The opaque `pose` is never drawn in 3-D (a raw `pose.joints`
+shows as reference text only). On failure the error state shows the stage + HTTP status +
+`details` (400 contract mismatch / 502 upstream drift / 503 service unreachable / BFF down). The
+UI only declares the request and displays candidates — solving is the external service's job.
 
 #### [A] Header
 Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Project** /

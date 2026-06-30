@@ -149,18 +149,23 @@ export const useUIStore = create((set, get) => ({
     conflictMatrix: null,    // ContextService.projectMatrix() | null
     resolutionOrder: [],     // ContextService.projectOrder() — DSM meeting order
     personaFilter: null,     // actorRef | null
-    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why'
+    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why' | 'tree' | 'intake' | 'grasp'
     form: [],                // projectForm() output — open intake questions (Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
     provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
     whyTree: null,           // ContextService.whyTree() — full Why-rooted 5W1H tree overview (ADR-052 Phase 3)
-    grasp: null,             // ADR-054 grasp walkthrough result { status, layout, request, candidates, error } | null
+    // ADR-057 grasp-search FSM — a discriminated union on `status` (replaced
+    // wholesale by GraspController, never patched), so illegal states (candidates
+    // while `error`, results while `solving`) are unrepresentable. null = the
+    // grasp tab is not seeded (no renderable layout / never opened). Shapes:
+    //   { status:'idle',      layout }
+    //   { status:'no-layout' }
+    //   { status:'compiling', layout }
+    //   { status:'solving',   layout, request }
+    //   { status:'results',   layout, request, candidates, compiledObjects, selectedRank }
+    //   { status:'error',     stage:'compile'|'solve'|'bff', httpStatus, message, details }
+    grasp: null,
   },
-
-  // ── Grasp search verification panel (ADR-054) ──────────────────────────────
-  // Open/closed flag for the UI→DSL→BFF→grasp-search walkthrough modal
-  // (GraspSearchPanel.jsx). Result data lives in `context.grasp`.
-  graspPanelOpen: false,
 
   // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
   // Open/closed flag for the starter-template picker modal (TemplateGallery.jsx).
@@ -326,7 +331,7 @@ export const useUIStore = create((set, get) => ({
     // the context overlay is persistent (a loaded project, not a transient
     // tutorial). It merges the payload and marks the overlay active.
     contextStart: (payload) => set(state => ({
-      context: { ...state.context, provenance: null, ...payload, active: true },
+      context: { ...state.context, provenance: null, grasp: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -360,12 +365,12 @@ export const useUIStore = create((set, get) => ({
     contextSetWhyTree: (whyTree) => set(state => ({
       context: { ...state.context, whyTree },
     })),
-    // ADR-054 — merge a partial patch into context.grasp (status/candidates/error).
-    contextSetGrasp: (patch) => set(state => ({
-      context: { ...state.context, grasp: { ...(state.context.grasp ?? {}), ...patch } },
-    })),
-    setGraspPanelOpen: (graspPanelOpen) => set(() => ({
-      graspPanelOpen,
+    // ADR-057 — replace context.grasp wholesale with one discriminated-union
+    // state. GraspController is the sole writer (PHILOSOPHY #5); the panel reads.
+    // A full replace (not a merge) keeps the union clean — no leftover fields
+    // from a prior status survive a transition.
+    contextSetGrasp: (grasp) => set(state => ({
+      context: { ...state.context, grasp },
     })),
     setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
 
