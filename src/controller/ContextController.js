@@ -40,10 +40,14 @@ import { createApproveDecisionCommand } from '../command/ApproveDecisionCommand.
 import { createEditAdmissibleCommand } from '../command/EditAdmissibleCommand.js'
 import { createAnswerQuestionCommand } from '../command/AnswerQuestionCommand.js'
 import { createAddDocEntryCommand } from '../command/AddDocEntryCommand.js'
+import { createDocEditCommand } from '../command/DocEditCommand.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
-import { createBlankDoc, addActor, addFact, addVariable, addRequirement } from '../context/DocBuilder.js'
+import {
+  createBlankDoc, addActor, addFact, addVariable, addRequirement,
+  updateActor, updateVariable, updateRequirement, removeDocEntry,
+} from '../context/DocBuilder.js'
 import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
@@ -121,6 +125,8 @@ export class ContextController {
     registerCallback('onApproveContextDecision', (ref)        => this.approveDecision(ref))
     registerCallback('onAnswerQuestion',         (ref, q, a)  => this.answerQuestion(ref, q, a))
     registerCallback('onAddDocEntry',            (type, data) => this.addDocEntry(type, data))
+    registerCallback('onEditDocEntry',           (type, data) => this.editDocEntry(type, data))
+    registerCallback('onRemoveDocEntry',         (type, ref)  => this.removeDocEntry(type, ref))
     registerCallback('onIntakePreview',          (spec)       => this.previewIntake(spec))
     registerCallback('onAddNlFacts',             (facts)      => this.addNlFacts(facts))
     registerCallback('onContextExit',            ()           => this.exit())
@@ -264,6 +270,67 @@ export class ContextController {
       })
   }
 
+  /**
+   * Edit an existing doc entry in place (ADR-058 Phase 2 — fork & tweak, per-field).
+   * `data` is the full rebuilt entry, keyed by its (unchanged) `ref`. Dispatches to
+   * the pure `updateX` DocBuilder function (input-immutable, PHILOSOPHY #6), then
+   * commits via the generic `createDocEditCommand` so the tweak is a single undoable
+   * mutation that regenerates derived geometry (a criterion value can shift a zone).
+   * If the edit orphans a Decision / breaks an invariant, `compileContext` throws —
+   * we surface it and never push (PHILOSOPHY #11); the panel's live values stay,
+   * so the user can correct and retry.
+   *
+   * @param {'actor'|'variable'|'requirement'} type
+   * @param {object} data — the full rebuilt entry (its `ref` selects the target)
+   */
+  editDocEntry(type, data) {
+    if (!this.isNegotiation) return
+    const ctrl      = this._ctrl
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc
+    switch (type) {
+      case 'actor':       afterDoc = updateActor(beforeDoc, data);       break
+      case 'variable':    afterDoc = updateVariable(beforeDoc, data);    break
+      case 'requirement': afterDoc = updateRequirement(beforeDoc, data); break
+      default:
+        ctrl._uiView.showToast(`Unknown entry type: ${type}`, { type: 'warn' })
+        return
+    }
+    const label = { actor: 'Edit Actor', variable: 'Edit Variable', requirement: 'Edit Requirement' }[type]
+    this._runDocEdit(beforeDoc, afterDoc, label, `Could not save ${type}`)
+  }
+
+  /**
+   * Remove an existing doc entry through the CommandStack (undoable). Uses the pure
+   * `removeDocEntry` builder; a stale ref is a safe no-op clone (PHILOSOPHY #11). A
+   * removal that orphans a reference (a requirement's actor / variable) is caught by
+   * `compileContext` and surfaced, not silently dropped.
+   *
+   * @param {'actor'|'variable'|'requirement'|'fact'} type
+   * @param {string} ref
+   */
+  removeDocEntry(type, ref) {
+    if (!this.isNegotiation) return
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = removeDocEntry(beforeDoc, type, ref)
+    this._runDocEdit(beforeDoc, afterDoc, `Remove ${type} ${ref}`, `Could not remove ${type}`)
+  }
+
+  /** Shared execute→push→refresh (or toast-on-throw) for edit / remove commands. */
+  _runDocEdit(beforeDoc, afterDoc, label, failMsg) {
+    const ctrl = this._ctrl
+    const cmd = createDocEditCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
+    Promise.resolve(cmd.execute())
+      .then(() => {
+        ctrl._commandStack.push(cmd)   // post-hoc record (CODE_CONTRACTS push vs execute)
+        ctrl._refreshUndoRedoState()
+      })
+      .catch(err => {
+        ctrl._uiView.showToast(`${failMsg}: ${err.message}`, { type: 'error' })
+        console.error('[ContextController]', err)
+      })
+  }
+
   // ── Natural-language intake (Phase 4 — Entry C, ADR-051 §3) ─────────────────
 
   /**
@@ -385,6 +452,7 @@ export class ContextController {
       decisions:           doc?.decisions ?? [],
       actors:              doc?.actors ?? [],
       variables:           doc?.variables ?? [],
+      requirements:        doc?.requirements ?? [],
       conflicts:           result.conflicts,
       negotiationClusters: result.negotiationClusters,
       conflictMatrix:      this._ctxService.projectMatrix(),
@@ -775,6 +843,7 @@ export class ContextController {
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
         ui.contextSetVars(doc?.variables ?? [])
+        ui.contextSetReqs(doc?.requirements ?? [])
         // Refresh the whole-doc Why-tree overview — add/answer/edit all reshape it
         // (ADR-052 Phase 3; one re-projection path — PHILOSOPHY #5).
         ui.contextSetWhyTree(this._ctxService.whyTree())

@@ -1,6 +1,6 @@
 # 058. Context オーサリング UX — 例を土台に編集する（fork & tweak）
 
-- Status: Accepted (Phase 1 + actor/variable seed chips 実装済)
+- Status: Accepted (Phase 1 + Phase 2 in-place 編集 実装済)
 - Date: 2026-06-30
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -182,8 +182,44 @@ Phase 1 で requirement フォームにだけ在ったシード chip（埋まっ
 クリーン（`build:wasm` は当環境にツールチェーン不在 = コミット済成果物・環境要因）。
 契約・スキーマ・BFF・ドメイン無改変。
 
-**残（Phase 2 任意）**: 既存エントリの in-place per-field 編集（汎用 `createDocEditCommand`）、
-閉じた語彙ピッカー（`RoleKpiCatalog`/同義語商）、注釈付き例ライブラリのキュレーション拡充。
+### 追補 — Phase 2（既存エントリの in-place per-field 編集）
+
+§3.3「フィールド単位編集 = スナップショットコマンド」の完全形を実装した。Phase 1 の
+add-only フォーム（既存エントリは死んだ読み取り専用テキスト、tweak には delete→re-add が
+必要）を、**一覧そのものを編集面にする** = 「読んでいるカードがそのまま編集フォームに
+ふわっと展開する」形へ引き上げた。UX の狙い（ユーザ指示「UI が堅い、柔らかく・アハ体験」）:
+*一覧＝編集面* の気付き（クリックで実値がその場に開く）＋ *テキスト⇄3D* の即応
+（要件編集中 admissible を打つと不確実バンドが 3D で動く）＋ 保存の緑フラッシュ（着地の
+微小な確かさ）。
+
+- **純粋層** `src/context/DocBuilder.js`（THREE-free・入力不変・bare `node --test`）:
+  `add*` と対称の `updateActor`/`updateVariable`/`updateRequirement`（`ref` 同一エントリを
+  置換 = 上書き、未マッチは append の upsert = stale ref でも無言脱落しない — PHILOSOPHY #11）
+  ＋ `removeDocEntry(doc, kind, ref)`。`ref` は同一性キーゆえリネームは編集でなく
+  remove+add（リネームは参照 `by`/`constrains` を orphan させ validator が弾く）。+9 テスト。
+- **コマンド層** `src/command/DocEditCommand.js`: 汎用 `createDocEditCommand(ctxService,
+  before, after, label, vc)`（before/after スナップショット + `applyContextDoc({regenerate})`）。
+  既存 `createAddDocEntryCommand` は本コマンドへ**委譲**（同形の実装を一つに — §1.1）。+4 テスト。
+- **コントローラ** `ContextController.editDocEntry(type, data)` / `removeDocEntry(type, ref)`:
+  before スナップ → 純粋 `updateX`/`removeDocEntry` → `createDocEditCommand` を CommandStack へ
+  push（undo 可能）。edit が Decision を orphan する等で `compileContext` が throw したら toast
+  し push しない（PHILOSOPHY #11）。`_startNegotiation`/`_reproject` が `doc.requirements` を
+  `context.requirements` へ射影（カードが最新化 — PHILOSOPHY #5）。
+- **UI** `IntakePanel.jsx`: 既存エントリを `EntryCard`（hover で持ち上がり ✎ 提示、クリックで
+  `Reveal`（fade+slide）越しに同じフォームを edit モードで展開 — `ref` はロック済み識別子、
+  実値プリフィル、Save/Cancel/🗑Remove）。fork 元があれば「Example had: …」を淡いアンカー
+  として併置（§3.2 シード・ゴースト）。保存で対象カードが緑→透明にフェード。要件の live 3D
+  プレビューは edit モードでも駆動（テキスト⇄3D）。**region 要件は interval フォームで表現
+  不能ゆえ read-only カード + 「region」バッジ**（編集は Author モードの 3D ウィジェット —
+  黙って lossy 編集しない、PHILOSOPHY #11）。フォームは dual-mode（`mode:'create'|'edit'`）で
+  add と edit が一つのフォーム族。
+
+検証: `test:context` **327/327**（DocBuilder +9, DocEditCommand +4）、`tsc --noEmit` クリーン、
+`vite build` クリーン。契約・スキーマ・BFF・ドメイン無改変（フロント UX + 純粋 doc 編集のみ —
+スコープ境界）。汎用 `createDocEditCommand` への一般化（§3.3 実装メモ）も本フェーズで達成。
+
+**残（Phase 2 任意）**: 閉じた語彙ピッカー（`RoleKpiCatalog`/同義語商 由来の KPI 関数名・
+演算子・単位 選択肢化）、注釈付き例ライブラリのキュレーション拡充。
 
 ## Lens notes
 
