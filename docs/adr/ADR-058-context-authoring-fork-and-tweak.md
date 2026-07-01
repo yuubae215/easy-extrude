@@ -1,6 +1,6 @@
 # 058. Context オーサリング UX — 例を土台に編集する（fork & tweak）
 
-- Status: Accepted (Phase 1 実装済 — fork + seed-anchor)
+- Status: Accepted (Phase 1 + actor/variable seed chips 実装済)
 - Date: 2026-06-30
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -159,9 +159,31 @@ add-only な `IntakePanel` の現実に合わせ、**シードは「埋まった
 
 検証: `test:context` **310/310**（SeedAnchor +10）、`tsc --noEmit` クリーン、`vite build`
 クリーン。契約・スキーマ・BFF・ドメイン無改変（フロント UX のみ — スコープ境界）。
+
+### 追補 — Phase 2 partial（actor/variable へのシード chip 拡張）
+
+Phase 1 の 残リスト先頭にあった「actor/variable へのシード chip 拡張」を実装した。
+Phase 1 で requirement フォームにだけ在ったシード chip（埋まった例エントリを編集可能な
+アンカーとして流し込む）を **actor / variable フォームにも拡張**し、fork & tweak の
+類推オーサリングを全エントリ種別で一貫させた。
+
+- **純粋層** `src/context/SeedAnchor.js`: chip ラベル/ツールチップ用の純粋関数を 2 つ追加
+  — `describeSeedActor(actor)`（role · discipline）/ `describeSeedVariable(v)`
+  （domain interval ＋ unit）。`describeSeedRequirement` と同形（入力不変・THREE-free・
+  欠落フィールドで graceful degrade）。`SeedAnchor.test.js` +4。
+- **`IntakePanel`**: chip 描画を共有コンポーネント `SeedChips`（kind 非依存：entries/
+  describe/onPick/hint）へ抽出し、requirement の inline chip ブロックもこれへ統一
+  （重複排除）。`ActorForm`/`VariableForm` は `fillFromSeed` を持ち（Phase 1 の
+  requirement と同じく ref を `_copy` 接尾辞化 = forked working doc に既存の seed ref と
+  衝突させない）、`seedIndex.actors`/`seedIndex.variables` を chip として描画。シードが
+  無ければ何も出さない（誇張しない — PHILOSOPHY #11）。
+
+検証: `test:context` **314/314**（SeedAnchor +4）、`tsc --noEmit` クリーン、`vite build`
+クリーン（`build:wasm` は当環境にツールチェーン不在 = コミット済成果物・環境要因）。
+契約・スキーマ・BFF・ドメイン無改変。
+
 **残（Phase 2 任意）**: 既存エントリの in-place per-field 編集（汎用 `createDocEditCommand`）、
-actor/variable へのシード chip 拡張、閉じた語彙ピッカー（`RoleKpiCatalog`/同義語商）、
-注釈付き例ライブラリのキュレーション拡充。
+閉じた語彙ピッカー（`RoleKpiCatalog`/同義語商）、注釈付き例ライブラリのキュレーション拡充。
 
 ## Lens notes
 

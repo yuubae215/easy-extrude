@@ -1,7 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { extractFacts } from '../../context/NlIntake.js'
-import { buildSeedIndex, describeSeedRequirement } from '../../context/SeedAnchor.js'
+import {
+  buildSeedIndex,
+  describeSeedRequirement,
+  describeSeedActor,
+  describeSeedVariable,
+} from '../../context/SeedAnchor.js'
 
 /**
  * IntakePanel — direct entry addition UI for blank-doc authoring (ADR-051 Phase 1).
@@ -57,6 +62,38 @@ function Select({ value, onChange, options }) {
   )
 }
 
+// ── Seed chips (ADR-058 fork & tweak) ───────────────────────────────────────────
+
+// Renders the read-only seed entries of one kind as dashed amber chips. Clicking a
+// chip floods the form with that example entry's real values (an editable anchor —
+// the filled example IS the explanation of "what to put here"). Shared by the actor,
+// variable, and requirement forms so all three read as one family (ADR-058 Phase 2).
+function SeedChips({ entries, describe, onPick, hint }) {
+  if (!entries || entries.length === 0) return null
+  return (
+    <div style={{ marginBottom: '7px' }}>
+      <div style={{ fontSize: '9px', color: '#777', marginBottom: '3px' }}>{hint}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+        {entries.map(e => (
+          <button
+            key={e.ref}
+            onClick={() => onPick(e)}
+            title={describe(e)}
+            style={{
+              cursor: 'pointer', background: 'rgba(213,162,58,0.08)',
+              border: '1px dashed #d5a23a55', borderRadius: '10px',
+              color: '#d5a23a', padding: '2px 8px', fontSize: '10px',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}
+          >
+            {e.ref}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Section header ─────────────────────────────────────────────────────────────
 
 function Section({ title, count, children, open, onToggle }) {
@@ -93,10 +130,18 @@ function Section({ title, count, children, open, onToggle }) {
 
 // ── Actor form ─────────────────────────────────────────────────────────────────
 
-function ActorForm({ actors, onAdd }) {
+function ActorForm({ actors, seedActors = [], onAdd }) {
   const [ref, setRef]    = useState('')
   const [role, setRole]  = useState('developer')
   const [disc, setDisc]  = useState('')
+
+  // ADR-058 Phase 2: copy a filled example actor, then tweak it. The ref is
+  // suffixed `_copy` because the forked working doc already contains the seed ref.
+  function fillFromSeed(a) {
+    setRef((a.ref ?? '') + '_copy')
+    setRole(a.role ?? 'developer')
+    setDisc(a.discipline ?? '')
+  }
 
   function submit() {
     const r = ref.trim()
@@ -107,6 +152,12 @@ function ActorForm({ actors, onAdd }) {
 
   return (
     <div>
+      <SeedChips
+        entries={seedActors}
+        describe={describeSeedActor}
+        onPick={fillFromSeed}
+        hint="✎ From example — click to copy an actor, then tweak it:"
+      />
       {actors.length > 0 && (
         <div style={{ marginBottom: '6px' }}>
           {actors.map(a => (
@@ -138,12 +189,22 @@ function ActorForm({ actors, onAdd }) {
 
 // ── Variable form ──────────────────────────────────────────────────────────────
 
-function VariableForm({ variables, onAdd }) {
+function VariableForm({ variables, seedVariables = [], onAdd }) {
   const [ref, setRef]   = useState('')
   const [unit, setUnit] = useState('mm')
   const [lo, setLo]     = useState('')
   const [hi, setHi]     = useState('')
   const [desc, setDesc] = useState('')
+
+  // ADR-058 Phase 2: copy a filled example variable, then tweak it. The ref is
+  // suffixed `_copy` because the forked working doc already contains the seed ref.
+  function fillFromSeed(v) {
+    setRef((v.ref ?? '') + '_copy')
+    setUnit(v.unit ?? 'mm')
+    setLo(Array.isArray(v.domain) ? String(v.domain[0]) : '')
+    setHi(Array.isArray(v.domain) ? String(v.domain[1]) : '')
+    setDesc(v.description ?? '')
+  }
 
   function submit() {
     const r = ref.trim(), u = unit.trim()
@@ -155,6 +216,12 @@ function VariableForm({ variables, onAdd }) {
 
   return (
     <div>
+      <SeedChips
+        entries={seedVariables}
+        describe={describeSeedVariable}
+        onPick={fillFromSeed}
+        hint="✎ From example — click to copy a variable, then tweak it:"
+      />
       {variables.length > 0 && (
         <div style={{ marginBottom: '6px' }}>
           {variables.map(v => (
@@ -272,30 +339,12 @@ function RequirementForm({ actors, variables, seedReqs = [], onAdd, onPreview })
 
   return (
     <div>
-      {seedReqs.length > 0 && (
-        <div style={{ marginBottom: '7px' }}>
-          <div style={{ fontSize: '9px', color: '#777', marginBottom: '3px' }}>
-            ✎ From example — click to copy a filled requirement, then tweak it:
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-            {seedReqs.map(req => (
-              <button
-                key={req.ref}
-                onClick={() => fillFromSeed(req)}
-                title={describeSeedRequirement(req)}
-                style={{
-                  cursor: 'pointer', background: 'rgba(213,162,58,0.08)',
-                  border: '1px dashed #d5a23a55', borderRadius: '10px',
-                  color: '#d5a23a', padding: '2px 8px', fontSize: '10px',
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
-                }}
-              >
-                {req.ref}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <SeedChips
+        entries={seedReqs}
+        describe={describeSeedRequirement}
+        onPick={fillFromSeed}
+        hint="✎ From example — click to copy a filled requirement, then tweak it:"
+      />
       <Field label="ref (e.g. r_reach)">
         <input value={ref} onChange={e => setRef(e.target.value)}
           placeholder="r_reach" style={inputStyle} />
@@ -475,7 +524,7 @@ export function IntakePanel() {
         open={openActor}
         onToggle={() => setOpenActor(o => !o)}
       >
-        <ActorForm actors={actors} onAdd={d => onAdd('actor', d)} />
+        <ActorForm actors={actors} seedActors={seedIndex.actors} onAdd={d => onAdd('actor', d)} />
       </Section>
 
       <Section
@@ -484,7 +533,7 @@ export function IntakePanel() {
         open={openVar}
         onToggle={() => setOpenVar(o => !o)}
       >
-        <VariableForm variables={variables} onAdd={d => onAdd('variable', d)} />
+        <VariableForm variables={variables} seedVariables={seedIndex.variables} onAdd={d => onAdd('variable', d)} />
       </Section>
 
       <Section
