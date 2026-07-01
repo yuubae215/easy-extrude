@@ -47,17 +47,39 @@ ADR-059 を書く過程で二つの匂いが出た:
 
    ```
    pose:
-     kind: 'endEffector'                                  // 段1（ADR-059）
-     frame: { position:[x,y,z], orientation:[x,y,z,w] }   // base/world 系の手先姿勢
+     kind: 'endEffector'                                          // 段1（ADR-059）
+     frame:
+       position:    { x, y, z }       // world frame（下記「frame の基準系」で確定）
+       orientation: { x, y, z, w }    // 単位クォータニオン
    --- または ---
-     kind: 'jointSpace'                                   // 段2（ADR-059）
-     chainRef: string        // どの運動学連鎖（ロボット）か
-     joints:   number[]      // 連鎖順の関節値
+     kind: 'jointSpace'                                           // 段2（ADR-059）
+     chainRef: string          // どの運動学連鎖（ロボット宣言。未確定＝門2、別 ADR）か
+     joints:   number[]        // 連鎖順の関節値（`Kinematics.js` の chain 順と一致）
    ```
+
+   ベクトル/クォータニオンは **オブジェクト形 `{x,y,z}` / `{x,y,z,w}`**（配列でない）。
+   これは新規発明ではなく本リポジトリの既存規約を継承する — Layout DSL の
+   `Solid.rotation:{x,y,z,w}`（ADR-055, `src/layout/LayoutDslSchema.js`）、`position:{x,y,z}`
+   （`examples/factory_layout.json`）、ドメイン `Solid.orientation`（`THREE.Quaternion`
+   と同型）が既にこの形。配列形（`[x,y,z,w]`）は要素順の意味が型に現れず、上の面と型が
+   割れる（§1.1 真実の源は一つ、に対する契約側の反映）。
+
+   **frame の基準系（決定）**: `position`/`orientation` は **world frame**
+   （CLAUDE.md「World coordinate system」＝ ROS REP-103, +X forward/+Y left/+Z up）で表し、
+   Layout DSL の `Solid.position` と**同じ絶対系・同じ長さ単位**（レイアウトが mm 系なら mm）。
+   「base link 相対」ではなく world を選ぶ理由: 段1（ADR-059）はロボットのリンクツリー・
+   ベース姿勢をクライアントに持たない（門2 未充足）。world frame ならゴーストは
+   `SceneView` の既存座標へ**そのまま**置け、FK もベース姿勢の逆引きも要らない
+   （段1 が「変換ひとつ」で済むという ADR-059 の主張が成立する前提はこれ）。段2
+   （`jointSpace`）が要る `chainRef` は関節値を適用するロボット宣言の識別のみに使い、
+   姿勢の基準系そのものには関与しない。
 
    `kind` は **閉じた集合**。新しい姿勢表現を足す＝ `kind` を 1 つ足す＝ `contractVersion` を
    上げる**意図的行為**（際限ない accretion ではない）。`optional` という語は消え、存在は
    判別子 `kind` が表し、各枝は意味で命名される（`endEffector.frame` / `jointSpace.joints`）。
+   各枝は他方のプロパティを持てない（`additionalProperties:false`、次節のスキーマ参照）。
+   将来の段（例: 軌道ゴースト用の `kind:'cartesianPath'` = frame の列）も同じ統治で追加できる
+   — union の閉じ方自体は変えず、`kind` を 1 つ足すだけで済む拡張点として設計している。
 
 3. **包含テスト（成長のガード, PHILOSOPHY #29）**: あるフィールドをワイヤに載せてよいのは
    *ソルバが決定した事実*のときだけ。**演出はクライアントで導出**し、ワイヤに足さない:
@@ -73,6 +95,101 @@ ADR-059 を書く過程で二つの匂いが出た:
 **変える/新設する契約**: 上流スキーマ（pose を kind union 化、`contractVersion` 上げ）。
 本リポジトリ: 消費型の更新のみ、契約定義はしない。
 
+## 具体スキーマ・ドラフト（上流実装向け, hand-off 用）
+
+上流 `@easy-extrude/grasp-contract` の `schema/grasp-search-response.schema.json` へ
+そのまま渡せる形の draft（JSON Schema、既存 `$defs.scoreBreakdown` と同じ閉じ方の作法）。
+実装の正本はあくまで上流側 — これは *仕様の受け渡し*であって、本リポジトリが契約を
+定義するものではない（§1.1 / CLAUDE.md「BFF と契約」）。
+
+```json
+{
+  "$defs": {
+    "vec3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "quaternion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z", "w"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "w": { "type": "number" }
+      }
+    },
+    "poseEndEffector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "frame"],
+      "properties": {
+        "kind": { "const": "endEffector" },
+        "frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position", "orientation"],
+          "properties": {
+            "position": { "$ref": "#/$defs/vec3" },
+            "orientation": { "$ref": "#/$defs/quaternion" }
+          }
+        }
+      }
+    },
+    "poseJointSpace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "chainRef", "joints"],
+      "properties": {
+        "kind": { "const": "jointSpace" },
+        "chainRef": { "type": "string", "minLength": 1 },
+        "joints": { "type": "array", "items": { "type": "number" } }
+      }
+    },
+    "pose": {
+      "oneOf": [
+        { "$ref": "#/$defs/poseEndEffector" },
+        { "$ref": "#/$defs/poseJointSpace" }
+      ]
+    },
+    "poseCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "score"],
+      "properties": {
+        "rank":  { "type": "integer", "minimum": 1 },
+        "pose":  { "$ref": "#/$defs/pose" },
+        "score": { "$ref": "#/$defs/scoreBreakdown" }
+      }
+    }
+  }
+}
+```
+
+`poseCandidate.pose` は `oneOf`（`kind` が判別子）で**トップレベルの optional のまま**
+（`required` に含めない）— サービス実装が段1/段2 のどちらも未提供な移行期の候補を
+表現できるようにする。ただし **存在するなら閉じた 2 branch のどちらかに完全準拠**
+しなければならない — 「一部だけ opaque」という中間状態は無い（PHILOSOPHY #29 の
+包含テストがここでも効く: 存在するフィールドは全て決定された事実）。
+
+**この repo 側の消費コードの更新点**（上流反映後、`pnpm --filter easy-extrude-bff run
+gen:contract-types` で `.d.ts` は自動再生成されるため手編集は不要。以下は *読む側*の
+変更）:
+- `src/components/Grasp/GraspSearchPanel.jsx`（現行 `c.pose?.joints && (…)`、opaque な
+  `.joints` を無条件参照）を `c.pose?.kind === 'jointSpace'` で分岐し `.joints` を読み、
+  `c.pose?.kind === 'endEffector'` 枝では `frame.position`/`frame.orientation` を表示する
+  よう更新（ADR-059 段1 のゴースト描画もここが入力元になる）。
+- `server/test/grasp.contract.test.js` に `kind:'endEffector'`/`kind:'jointSpace'` それぞれの
+  fixture を追加し、`additionalProperties:false` 違反（枝を跨いだフィールド混在）が
+  reject されることを conformance テストで確認（ADR-054 の方針を継承）。
+
 ## Consequences — Evidence と tradeoff（§1.2 Evidence）
 
 **肯定的**:
@@ -85,6 +202,20 @@ ADR-059 を書く過程で二つの匂いが出た:
 - 上流契約の移行作業（pose union 化）と全消費者の追従が要る（版 pin で drift は検出可能）。
 - kind 判別の分岐が増える（が、これは*意図した*成長点で、無秩序な optional より健全）。
 
+**移行・版数（migration）**:
+- これは **破壊的変更**（`pose` が opaque `additionalProperties:true` の bag から閉じた
+  `oneOf` union へ）。移行を跨ぐ緩衝用の `kind:'unstructured'`／レガシー branch は
+  **意図的に設けない** — 緩衝枝を残すと union が閉じなくなり本 ADR の Goal（成長の統治）を
+  自ら破る。`contractVersion` を 1 つ上げ、`checkContractVersion`（`server/src/grasp/contract.js`）
+  の既存の厳密拒否（不一致は 400）が移行の境界をそのまま強制する — 新設の互換レイヤは不要。
+- 現時点で本リポジトリの消費コードは `pose` を**構造的に検証していない**（`GraspSearchPanel.jsx`
+  は `c.pose?.joints` を存在すれば表示するだけの非構造的参照）ため、後方互換コストは低い。
+  移行は「上流でスキーマ変更 → `contractVersion` 上げ → 本リポジトリで `gen:contract-types`
+  再生成 → 消費コード更新（上の一覧）→ `pnpm test:contract` 緑」の一直線（BPMN 的、分岐なし）。
+- 将来の kind 追加（例: 段階3 の軌道ゴースト用 `kind:'cartesianPath'`）も同じ手順を踏む
+  ＝ version bump が版数のみで「破壊的か加法的か」を機械的に問わない一貫した統治点になる
+  （閉じた union への branch 追加は常に version bump を伴う、が方針）。
+
 **検証（証拠）**:
 - 前例: score 層は既に `additionalProperties:false`（閉の見本、`grasp-search-response.schema.json`
   `$defs.scoreBreakdown`）。判別 union は ADR-056（`canonicalForm` の `kind` 判別）・ADR-057
@@ -96,9 +227,14 @@ ADR-059 を書く過程で二つの匂いが出た:
 
 **波及（blast radius）**:
 - 上流 `grasp-contract`: `grasp-search-response.schema.json` の `poseCandidate.pose` を
-  kind union へ、`contractVersion` 上げ（**上流で実施**）。
-- 本リポジトリ: `server/test/grasp.contract.test.js`（kind 別 conformance）、ADR-057 の
-  `PoseCandidate`/消費コード、ADR-059 のゴースト消費。
+  kind union へ（上の具体スキーマ・ドラフト）、`contractVersion` 上げ（**上流で実施**）。
+- 本リポジトリ（上流反映後の追従作業）:
+  - `server/src/grasp/contract.response.d.ts`（`gen:contract-types` で自動再生成、手編集なし）。
+  - `src/components/Grasp/GraspSearchPanel.jsx`（現行 `c.pose?.joints &&(…)` を `kind` 分岐へ）。
+  - `server/test/grasp.contract.test.js`（kind 別 conformance fixture 追加）。
+  - `src/robotics/Kinematics.js` の `chain`/`movableJoints` 順序と `jointSpace.joints` の
+    連鎖順が一致する契約を、段2 実装時に doc コメントで明示（今は宣言のみ、実装は ADR-059 段2）。
+  - ADR-057 の `PoseCandidate` 消費、ADR-059 のゴースト消費（`GraspGhostView` 新設時の入力）。
 - Docs: README index, CLAUDE.md（BFF と契約 節に統治方針を一言）, ADR-057/059 相互リンク。
 
 ## Lens notes
