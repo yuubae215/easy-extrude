@@ -185,6 +185,60 @@ Phase 1 で requirement フォームにだけ在ったシード chip（埋まっ
 **残（Phase 2 任意）**: 既存エントリの in-place per-field 編集（汎用 `createDocEditCommand`）、
 閉じた語彙ピッカー（`RoleKpiCatalog`/同義語商）、注釈付き例ライブラリのキュレーション拡充。
 
+## UX 具体化 — 遊びの入力面・堅い検証境界（2026-07-03 設計追記, コード無改変）
+
+設計軸は PHILOSOPHY #29 の *パネル内適用*: ワイヤ（ここでは **doc へのコミット境界** =
+`DocBuilder` → `AddDocEntryCommand` → `validateContext`）は厳密に閉じたまま、その手前の
+入力面を遊び満載にする。**遊びが安全に許されるのは、コミット境界が単一で堅いから**（§1.1）。
+入力面のどの仕掛けも doc を直接書かない — 書けるのは従来どおりコマンド経路一本。
+
+### A. 遊びの入力面（すべてクライアント導出・doc 無変更）
+
+1. **シード chip の手本カード hover**: chip hover で `describeSeed*` 既存純粋関数の内容を
+   ミニカード（全フィールドの実値一覧）としてポップ表示。クリック前に *例をブラウズして選ぶ*
+   行為自体を発見体験にする。title 属性ツールチップ（現状）の上位互換。
+2. **流し込みフラッシュ + seed-diff tint**: `fillFromSeed` で埋まったフィールドは一拍の
+   アンバー・フラッシュ（何が起きたかを *読む前に感じる*）。以後、シード値と同一のままの
+   フィールドは淡い破線下線を保ち、ユーザが上書きした瞬間に通常表示へ落ちる —
+   「手本を自分のものにした」進捗が視覚で積み上がる。判定は `現在値 === seedEntry のパス値`
+   の純粋比較（描画時導出、状態を持たない）。
+3. **ref 命名の遊び**: `_copy` 接尾辞は機能的だが無味。既存 ref 集合から `r_reach_2` 型の
+   空き番を提案し、入力中は一意性をライブ判定（空き=緑チェック、衝突=赤、いずれも入力は
+   ブロックしない）。決定的な集合参照のみで安価。
+4. **admissible 区間 = 2 ハンドル・スライダ**: `constrains` の variable を選んだ瞬間、その
+   `domain [lo,hi]` が既知になる — これをレールに dual-handle スライダを出し、既存の
+   `onPreview`（ADR-051 Phase 3 の 3D 不確実バンド）へ直結する。**スライダを撫でると 3D の
+   バンドが即応する**のが本パネル最大の遊び。数値入力は精密用に併置（同一 state へ書く
+   だけ、第二の源にしない）。
+5. **Why-first の道標**: パネル冒頭の説明文を、actors → variables → requirements の
+   3 歩ミニトレイル（各 Section の count>0 でチェックが灯る）に置き換える。新規追加時は
+   Section の count バッジがひと呼吸パルスする。進捗はすべて既存 doc 内容からの導出。
+6. **KPI カタログ chips（従・Phase 2 残の具体形)**: `kpiName`/`expr`/`unit` の自由テキスト
+   3 連を、`RoleKpiCatalog` 由来の chip 群（discipline 別グループ、hover で意味と期待単位）
+   に置換。chip 1 クリックで 3 フィールドが埋まる。正本はカタログ（§1.1）、chips は読むだけ。
+
+### B. 堅い検証境界（rigor 側）
+
+1. **無言 disabled の廃止（PHILOSOPHY #11 違反の解消）**: 現状 `canSubmit` が偽だと
+   ボタンが黙って灰色になるだけ。→ disabled 時は不足理由を 1 行で明示
+   （「by (actor) が未選択」「admissible hi ≤ lo」等）。理由列挙は submit ガードと同じ
+   述語から導出し、二重実装しない。
+2. **フィールド級チェックは検証器の述語を再利用**: hi > lo、admissible ⊆ domain、
+   criterion 値の domain 内性、ref 一意性 — これらのライブ表示は R0' 系の純粋述語を
+   *そのまま呼ぶ*（§1.1: ルールの正本は validator、入力面はミラー）。UI に独自の緩い
+   再実装を書いた瞬間に「入力面は通るがコミットで落ちる」乖離が生まれる。
+3. **コミット境界は無改変**: fillFromSeed もスライダも chips も、最終的に発火するのは
+   従来の `onAddDocEntry` 一本。undo 可能性・`validateContext` 通過・`contextChanged`
+   経由の再射影（PHILOSOPHY #5）は全部そのまま。遊びの層はいつ剥がしても doc の意味論に
+   影響しない — これが本節全体の受け入れ基準。
+
+### 検証（この追記の証拠計画）
+
+- A-2/A-3/B-1 は純粋関数（diff 判定・空き番提案・不足理由列挙）として `node --test` 追加可能。
+- A-4 はスライダ→`onPreview` の既存経路に乗るだけ（`UncertaintyGhostView.setIntervalPreview`
+  は実装済・テスト済）。
+- B-3 は「UI 述語 = validator 述語の同一関数参照」を import 検査（重複実装の静的排除）で担保。
+
 ## Lens notes
 
 - **§1.3 様態（BPMN vs CMMN）**: 裁量編集 = CMMN → 生きたテンプレート（任意フィールドを
