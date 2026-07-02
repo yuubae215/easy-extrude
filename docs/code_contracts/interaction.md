@@ -70,6 +70,10 @@ if (this._grab.active) {
   Without step 1: `applyPreviewRotation` starts from the original orientation, discarding the X-axis rotation result.
   Without step 3: the first `_applyRotate()` delta is `currentAngle(new axis) − prevCurrentAngle(old axis)` — an arbitrary large jump.
 
+**Consolidated update (2026-07-02, migrated from the CODE_CONTRACTS.md index row — where this overlaps the text above, this is newer):**
+
+`_setRotateAxis()` must mirror `_setGrabAxis()`: when the axis constraint changes, re-snapshot `segStartOrientation` / `segmentStartRot` from the current object orientation, update `segStartPos` / `segStartPivot` from `obj._position`, then reset `accumulatedAngle = 0`, `prevCurrentAngle = startAngle`, and `segmentStartAngle = startAngle`. Without the re-snapshot, the next `_applyRotate()` call applies `deltaQ` starting from the original orientation (discarding accumulated X rotation) and the first angle delta is computed against a stale `prevCurrentAngle` (causing a jump).
+
 ## Grab State: allStartCorners vs segmentStartCorners
 
 - **Principle**: A multi-drag grab (multiple finger-lift + re-touch cycles before confirming) needs two distinct corner snapshots: one for undo/cancel anchoring, and one for per-segment drag delta calculation.
@@ -122,6 +126,10 @@ if (e.target !== this._sceneView.renderer.domElement) return
 - **Bug history (2026-06-12)**: the GrabOperationHandler extraction (Phase 1-C) deleted `_onWheel` together with the grab code it contained, but left the `wheel` registration in place. Every wheel event threw; Map-mode zoom, Ctrl+Wheel grid-size cycling (grab) and Ctrl+Wheel angle-step cycling (rotate) all died unnoticed.
 - **Concrete Rule**: when extracting logic out of AppController, keep a thin `_onX` dispatcher on AppController and move only the body into the handler class. `_onWheel` dispatch order: (1) `MapModeController.onWheel` (ortho zoom), (2) `RotationHandler.cycleStepSize` when `S_ROTATE_ACTIVE && _ctrlHeld`, (3) `GrabOperationHandler.cycleGridSize` when `S_GRAB_ACTIVE && _ctrlHeld`, (4) fall through to OrbitControls wheel zoom. The step constants live on the handlers (`RotationHandler.ANGLE_STEPS`, `GrabOperationHandler.GRID_SIZES`).
 
+**Consolidated update (2026-07-02, migrated from the CODE_CONTRACTS.md index row — where this overlaps the text above, this is newer):**
+
+Every `this._handlers.X = e => this._onX(e)` registration in `_bindEvents()` must have a defined `_onX` method. When extracting logic into handler classes, keep the thin `_onX` dispatcher on AppController — deleting it leaves the registration throwing a `TypeError` per event, which a window listener swallows silently (Map zoom + Ctrl+Wheel cycling died this way in the GrabOperationHandler extraction). `_onWheel` dispatch order: Map zoom → rotate `cycleStepSize` (Ctrl) → grab `cycleGridSize` (Ctrl) → fall through to OrbitControls
+
 ## Context Region Authoring Pointer Delegation (ADR-049 Phase 3)
 
 - **Principle**: the bidirectional region-authoring widget (`RegionAuthoringWidget`) is a 3D input device. Its drag must coexist with normal camera orbit and not shadow scene selection (PHILOSOPHY #22b — tool gizmo drag and selection are independent).
@@ -130,3 +138,7 @@ if (e.target !== this._sceneView.renderer.domElement) return
   - The handler owns the drag lifecycle: `onAuthorPointerDown` raycasts `widget.handleMeshes`, intersects the Z=0 ground plane for the world point, calls `widget.startDrag`, sets `_controls.enabled = false` and `_activeDragPointerId`. `onAuthorPointerUp` calls `widget.endDrag` and restores both.
   - Each move re-runs `applyAdmissibleEdit(_editCtx, reqRef, {region}) → validateContext` on a **cloned** `_editCtx` (never the loaded JSON — PHILOSOPHY #6) and repaints conflict state from R6 + pushes `demoSetConflicts`.
   - `RegionAuthoringWidget` is solely owned by `ContextDemoController`: created in `_startAuthoring`, disposed in `exit()` (PHILOSOPHY #4/#9). `setStep()` short-circuits in authoring mode (no `_refToId`/entity staging exists).
+
+**Consolidated update (2026-07-02, migrated from the CODE_CONTRACTS.md index row — where this overlaps the text above, this is newer):**
+
+`_onPointerDown/Move/Up` delegate to `onAuthor*(e)` **after** `_hitTest.updateMouse(e)` (so `_mouse` is fresh) and **before** the normal selection/op-state branches, for **both** the demo (`_demoCtrl.isAuthoring`) and production (`_ctxCtrl.isAuthoring`) controllers — two sibling guard lines, the second never fires while the first is active (only one overlay is live). Each `onAuthor*` returns `true` only when it consumed the event (a handle was hit/dragged), so non-handle clicks fall through to OrbitControls — drag-a-handle and orbit-the-camera stay independent (PHILOSOPHY #22b). The widget owns its drag: `onAuthorPointerDown` sets `_controls.enabled = false` + `_activeDragPointerId`; `onAuthorPointerUp` restores both. `RegionAuthoringWidget` is solely owned by its controller, created in `_startAuthoring`, disposed in `exit()` (PHILOSOPHY #4/#9). Each live drag re-runs `applyAdmissibleEdit → validateContext` on a cloned `_editCtx` (never the loaded JSON — PHILOSOPHY #6) and recolours by R6 output. **Demo**: edits the throwaway `_editCtx` only; `setStep()` short-circuits in authoring mode. **Production**: pointer-up additionally commits the finished edit once via `createEditAdmissibleCommand` (undoable doc mutation + regen — see the ContextController Authoring/Ghost row in §1).

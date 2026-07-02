@@ -75,6 +75,10 @@ The Object-mode Stack button pre-sets `_grab.stackMode` before a grab gesture. `
 
 Face extrude on mobile is a gesture-only operation (tap face -> drag -> release = confirm). No Extrude button is shown in Edit 3D.
 
+**Consolidated update (2026-07-02, migrated from the CODE_CONTRACTS.md index row — where this overlaps the text above, this is newer):**
+
+Fixed slot counts per mode; use `disabled` + `{spacer: true}` to prevent layout shifts. Object mode (5 slots): `[Add | Grab | Edit | Delete | Rotate-or-Stack]`. Solid selected: slot 5 = Rotate. CF selected: `[Add Frame | Move | spacer | Delete | Rotate]` — slots 2 (Move) and 5 (Rotate) intentionally mirror Solid positions for cross-entity muscle memory; Add Frame is always enabled even for Origin CF. Dup removed from toolbar; remains in long-press context menu. Semantic slot rule for transient operation bars: slot 1 = Cancel/Back, slot 4 = Confirm — fixed regardless of which operation is active.
+
 ## Mobile Touch Gesture Model (2026-03-28, updated Phase 2)
 
 - **Principle**: On mobile, the primary navigation gesture (one-finger drag) must always orbit the camera. Intercepting it for object dragging makes navigation unreliable and forces two-step flows to do basic panning.
@@ -152,3 +156,27 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
   - **Right edge**: ownership is dynamic — N panel (200px) and the Context Inspector (280px, ADR-047, shown while `demo.active && demo.inspectorTab`). `NPanel.jsx` shifts to `right:280px` while the inspector is open. The world gizmo offset is owned **solely** by `AppController._updateGizmoOffset()` (`16 + 200·nPanel + 280·inspector`), driven by a single uiStore subscription — never call `GizmoView.setRightOffset()` from individual toggle handlers.
   - **Full-screen overlays**: the Context demo StoryBar (centered, `min(620px, 100vw−24px)`, z:100) sweeps across the Link Network panel region — and the panel would spoil the staged step-⑤ link reveal anyway. `ContextDemoController` calls `LinkNetworkView.setForceHidden(true)` on `_start()` and `false` on `exit()`; `_applyVisibility()` is the panel display's sole writer (PHILOSOPHY #4).
 - **Bug history (2026-06-12)**: the Link Network panel rendered fully behind the Outliner (z:50 < 90, same `left:8px`); the Map Mode toolbar floated on top of the Outliner rows (`left:8px`, z:150); the N panel and world gizmo rendered behind the Context DSL demo inspector. All were silent overlaps — no error, the element simply "disappeared" or blocked another.
+
+---
+
+## Three.js Canvas Must Mount in #canvas-container
+
+> Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.
+
+`SceneView` appends `renderer.domElement` to `document.getElementById('canvas-container')` (fallback: `document.body`). Never append directly to `document.body` — the implicit stacking order is fragile when a React overlay exists. Explicit z-index contract: `#canvas-container` (z-index:0) → GizmoView canvas (z-index:10, `position:fixed`) → `#react-ui-root` (z-index:100). Adding React UI layers without this container caused a black-screen regression after Phase 5.
+
+---
+
+## CF Label getBoundingClientRect Cache
+
+> Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.
+
+`CoordinateFrameView.updateLabelPosition()` caches the result of `canvas.getBoundingClientRect()` (keyed on `clientWidth`/`clientHeight`) and reuses it across frames. Calling `getBoundingClientRect()` every frame on mobile returns slightly varying values during viewport-resize animations (address-bar show/hide), which pushes the rounded pixel position across a 0.5-pixel boundary on alternate frames and causes visible jitter. The cache is invalidated whenever canvas dimensions change (i.e., on window resize). Additionally, the transform is only written to the DOM when the rounded position changes, preventing GPU recomposition on static scenes.
+
+---
+
+## Mobile Header Overflow
+
+> Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.
+
+Export/Import hidden on mobile; replaced by `_moreMenuBtn` (⋯) dropdown. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. Map button hides its `<span>` text label on mobile (padding tightened to `4px`) — without this the N-panel icon is clipped on 375px viewports. Header has `overflow:hidden`. Mode dropdown (`_modeDropdownEl`) is appended to `document.body` with `position:fixed` and positioned via `getBoundingClientRect()` — if placed inside the header it gets clipped by `overflow:hidden`

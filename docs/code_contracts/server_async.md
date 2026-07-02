@@ -71,7 +71,19 @@ await db.batch(['CREATE TABLE IF NOT EXISTS ...'], 'write')
   - `graspClient.js` only forwards the wire request/response — it implements no solving logic.
   - Conformance + version-drift are guarded by `server/test/grasp.contract.test.js` (`pnpm test:contract`): it asserts the BFF's `CONTRACT_VERSION` equals `contract-version.json` (code-vs-contract drift) and validates real request/response instances against the same schema the external service uses (instance-vs-contract drift).
 
+**Consolidated update (2026-07-02, migrated from the CODE_CONTRACTS.md index row — where this overlaps the text above, this is newer):**
+
+`@easy-extrude/grasp-contract` (submodule `vendor/grasp-contract`, `workspace:*`) is the contract's source of truth; the BFF derives types/validators (`server/src/grasp/contract.js`, generated `.d.ts`) and never defines/extends it. `POST /api/grasp/search` validates + version-checks both ends (inbound mismatch → 400, upstream mismatch/non-conforming → 502, unreachable → 503) and delegates solving to the external grasp-search service. `pnpm test:contract` detects code-vs-contract and instance-vs-contract drift.
+
 ## Camera Far Clip and Fit for Imported Geometry
 
 - **Principle**: The default camera `far = 100` is sized for hand-built voxel scenes. STEP files from real CAD tools routinely have bounding sphere radii in the hundreds or thousands of units (mm-scale parts). Geometry beyond `far` is clipped and invisible with no error.
 - **Concrete Rule**: After any `updateGeometryBuffers` call for an `ImportedMesh`, call `SceneView.fitCameraToSphere(sphere.center, sphere.radius)` to reposition the camera and dynamically expand `camera.far` to `max(current far, dist*2 + radius*4)`. The trigger is the `geometryApplied` event emitted by `SceneService`. Never hard-code `camera.far` — let `fitCameraToSphere` expand it on demand.
+
+---
+
+## BffClient Grasp/Layout Walkthrough Surfaces the Contract-Error Envelope (ADR-054)
+
+> Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.
+
+`BffClient.compileLayout(dsl)` (`POST /layout/compile`) and `BffClient.graspSearch(request)` (`POST /grasp/search`) both go through the private `_postContract(path, body)`, which **surfaces the BFF's `{error, details}` envelope and HTTP status** instead of collapsing every 5xx into an opaque `BffUnavailableError`. The walkthrough must show *why* it failed — 400 (contract mismatch / non-conformance), 502 (upstream drift / non-conformance), 503 (upstream unreachable) — never a silent hang (PHILOSOPHY #11). Only a genuine BFF network failure (the BFF process itself down) throws `BffUnavailableError`. The caller assembles a contract-valid request (`{layoutVersion, graspSearch:{objectiveWeights, topN}}`) and **must not set `contractVersion`** — the BFF stamps the canonical value (a present mismatch from the UI is a 400). The contract submodule is read-only here; change it upstream and bump `contractVersion`.
