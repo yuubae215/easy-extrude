@@ -831,6 +831,19 @@ The UI→DSL→BFF→grasp-search walkthrough now lives in its own coordinator *
 
 ---
 
+## Grasp Ghost Is a Gate-Kept Derived Projection; the View Is Factory-Injected; the Frame Convention Lives in ONE Constant (ADR-059 Stage 1)
+
+The stage-1 spatial ghost translates the **typed** wire facts (`pose.kind:'endEffector'` cartesian frame + `score`) into a client-derived 3-D presentation (PHILOSOPHY #29 — nothing here is ever demanded back as a wire field; the approach vector is the −Z frame convention, not an `approachVector` field). Contracts:
+
+- **Capability gate is one pure function, shared by controller and panel.** `renderableEndEffectorFrame(pose)` (`src/view/GraspGhostMath.js`, pure/THREE-free) is the ONLY decision point for "does this candidate get a ghost": `kind === 'endEffector'` + shape check (position length-3 finite numbers, orientation length-4). `GraspController._syncGhost` and `GraspSearchPanel`'s `PoseFooter` caption both call the SAME function — a failing pose gets no ghost AND an honest "spatial view unavailable" caption (PHILOSOPHY #11; heuristic interpretation of opaque/`jointSpace` poses is forbidden). Never duplicate the check inline (§1.1).
+- **`GraspGhostView` is factory-injected, never statically imported into `GraspController`.** The view imports THREE; the controller's tests run in the THREE/`node_modules`-free `test:context` lane. AppController passes `deps.createGhostView`; absent factory = ghost path degrades to a no-op. The pure `GraspGhostMath` import is fine (THREE-free).
+- **Hover is controller-local, never in the `context.grasp` union.** The ghost is a *derived projection* of `results.selectedRank` + pointer hover (ADR-059 §C — no new FSM); `_hoverRank` lives on the controller, and `contextSetGrasp` payloads never carry it.
+- **Ownership & disposal boundaries (PHILOSOPHY #4/#9)**: `GraspController` is the sole owner. `clear()` on every transition out of `results` (new run, idle re-seed); `disposeGhost()` from `ContextController.exit()` (the negotiate overlay is the ghost's host). `tick(t)` is driven from AppController's loop — note the loop clock is **seconds**, the view's animation constants are **ms**; the controller converts (`t * 1000`).
+- **The `frame` base-frame assumption is sealed in `FRAME_CONVENTION`** (single exported constant in `GraspGhostView.js`, surfaced in the caption as `frame: world (assumed)`). Upstream has not specified world vs base-link; when it does, that one line changes. Machine check: grep must find exactly one definition + caption reference.
+- **Target highlight never touches `cuboidMat.emissive`** (owned by `_syncEmissive()` — "Visual State Ownership"): the view adds/disposes its own `EdgesGeometry` overlay over the target's baked world-space geometry (the BoxHelper rule). Nearest-target pick (`nearestTargetIndex`) is display-only proximity — permitted by "Centroid Is Validation-Only", never fed back into state.
+
+---
+
 ## LayoutDecompiler Is the Scene→DSL Normal-Form Inverse; the Scene Fixpoint Is the Law; Context Stays Canonical (ADR-055)
 
 > Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.

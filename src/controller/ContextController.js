@@ -829,6 +829,9 @@ export class ContextController {
     }
 
     ctrl._linkNetworkView?.setForceHidden(false)
+    // The grasp ghost lives inside the negotiate overlay's grasp tab — overlay
+    // exit is its disposal boundary (ADR-059 §B-5, PHILOSOPHY #9).
+    ctrl._graspCtrl?.disposeGhost()
     ui.contextEnd()
     this._mode = null
     this._provenanceSceneId = null

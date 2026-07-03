@@ -126,6 +126,7 @@ Before writing or modifying any code, consult the relevant documents.
 | visual flag / meshview / dispose / memory / Three.js cleanup | `docs/code_contracts/memory_management.md` |
 | BFF / sceneStore / database / WebSocket / occt / STEP import | `docs/code_contracts/server_async.md` |
 | Grasp search / 検証ウォークスルー / UI→DSL→BFF→API / compileLayout 往復 / graspSearch / GraspController / 右ドック grasp タブ / 判別共用体 FSM (idle/no-layout/compiling/solving/results/error) / objectiveScores バー / スコア優先 / selectCandidate / selectedRank / objectiveWeights / topN / 候補 candidates / 正規アクセスルート getCompiled().layoutDsl / graspPanelOpen 廃止 | ADR-057 (placement+FSM), ADR-054 (thread), `src/controller/GraspController.js`, `src/components/Grasp/GraspSearchPanel.jsx` (ContextLayer `'grasp'` タブ), `src/service/BffClient.js`, `src/controller/GraspController.test.js` |
+| grasp ゴースト / spatial ghost / グリッパグリフ / 接近ベクトル / approach vector / FRAME_CONVENTION / 能力ゲート / renderableEndEffectorFrame / hover プレビュー / 接近アニメ / pose kind union 消費 (endEffector/jointSpace) / 対象アウトライン | ADR-059 (Accepted, 段1 実装済), ADR-060, `src/view/GraspGhostMath.js`, `src/view/GraspGhostView.js`, `src/controller/GraspController.js` (`_syncGhost`/`hoverCandidate`/`disposeGhost`) |
 | concurrency / async / locking / isProcessing | `docs/CONCURRENCY.md` |
 | validation / process / agent workflow / meta | `.claude/DEVELOPMENT.md` |
 
@@ -227,6 +228,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 Full log → `docs/SESSION_LOG.md`. **ここには直近 3 件のみ、各 1–3 行の要約で記録する**
 （全文は SESSION_LOG.md 側に書く — CLAUDE.md は 40k 文字制限があり、長文履歴が主因で超過した実績あり）。
 
+- **2026-07-03** (2): Feature — **ADR-059 段1 実装（grasp 候補の空間ゴースト）→ Accepted**。契約 v2 追従（BFF 型再生成: pose kind union、契約テストで旧 opaque 形拒否を証明）。純粋層 `GraspGhostMath`（能力ゲート/−Z 接近ベクトル/score→色/線種）+ `GraspGhostView`（グリッパグリフ・接近アニメ・対象 EdgesGeometry アウトライン・`FRAME_CONVENTION` 単一定数）+ `GraspController` 配線（factory 注入で THREE-free テスト維持、hover は controller ローカル、破棄境界 = 新 run/idle/overlay exit）。パネルに hover コールバック + ゲート同一関数の正直キャプション。テスト 329 + 契約 13 全パス。
 - **2026-07-03**: Design/ADR — ADR-058/059 の UX 設計具体化（コード無改変、軸は PHILOSOPHY #29）。ADR-058 に「遊びの入力面・堅い検証境界」節（seed-diff tint / admissible スライダ→3D バンド / KPI カタログ chips、堅い側は無言 disabled 廃止 + validator 述語の同一関数参照 + コミット境界無改変）、ADR-059 に「段1 ゴーストの視覚設計と門の堅さ」節（能力ゲート形検査 / `FRAME_CONVENTION` 単一定数 / −Z 接近規約導出、遊び側はグリッパグリフ + score→色 + 接近アニメ）。Status 不変。
 - **2026-07-02**: Docs — **CLAUDE.md / CODE_CONTRACTS / PHILOSOPHY の 40k 文字制限超過を構造修正**（lossless）。CLAUDE.md 履歴の全文エントリを SESSION_LOG.md へ完全移設（欠落 9 件も補完）し直近 3 件の要約のみに。CODE_CONTRACTS の索引エッセイ化した約 45 行を `docs/code_contracts/*.md` へ verbatim 移設（詳細節が古い行は Consolidated update として追記）し索引は要約行へ復元、結合バグ行（Semantic Move Guardrail + Tension Skips）も分離。PHILOSOPHY は保守ボイラープレートと卒業済み Yellow Card 注のみ刈り込み。62.9k/83.4k/41.8k → 20.6k/39.5k/39.9k chars。移設 44 本文の verbatim 一致を機械検証。
-- **2026-07-01** (2): Design/ADR — ADR-059/060 を upstream 実装確認に合わせて訂正。pose kind union は upstream で実現済（配列形 `[x,y,z]`/`[x,y,z,w]`）と確認し ADR-060 を Accepted へ。`frame` 基準系は upstream でも未確定。本リポジトリ側追従（submodule pin 更新・型再生成・消費コード）はネットワーク制限で未着手。

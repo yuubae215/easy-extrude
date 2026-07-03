@@ -1,6 +1,8 @@
 # 059. Grasp 候補の空間ゴースト — 数値を「掴める姿」に翻訳する（段階化）
 
-- Status: Proposed（追記 2026-07-01: 門1 は upstream 実装済みとユーザ確認 — 下記参照。段1 の実装自体はまだ未着手のため Status は Proposed のまま）
+- Status: Accepted — 段1 実装済（2026-07-03。段2 = 多関節ゴーストは門2 待ちで未実装のまま）
+  （履歴: Proposed 2026-06-30 → 追記 2026-07-01: 門1 は upstream 実装済みとユーザ確認 →
+  2026-07-03: submodule pin v2 追従 + BFF 型再生成 + 段1 実装で Accepted）
 - Date: 2026-06-30
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -190,6 +192,28 @@ hover/選択/接近アニメで見かけの状態は増えるが、全て `Grasp
 - B-3 のアニメは目視検証（`/verify` 系ウォークスルー）— 段1 実装時の受け入れ確認に含める。
 - 実装着手の前提（submodule pin 更新 or `frame` 基準系確認）は上記「検証（証拠）」節の
   2026-07-01 更新のとおり不変 — 本追記は設計のみで前提を先食いしない。
+
+## 実装記録 — 段1（2026-07-03）
+
+前提 2 点の解消: (a) `vendor/grasp-contract` pin は v2（pose kind union）へ更新済み
+（51aabe8）で、BFF 型を再生成（`contract.response.d.ts` — Pose union）し
+`pnpm test:contract` が両 kind の合格＋旧 opaque 形の拒否を証明。(b) `frame` 基準系は
+upstream 未確定のまま → §A-2 のとおり `FRAME_CONVENTION = 'world'` 単一定数に封じ、
+キャプションに `frame: world (assumed)` を明示（grep 機械検査: 定義 1 + 参照 1）。
+
+実装形:
+- `src/view/GraspGhostMath.js` — 純粋層（能力ゲート `renderableEndEffectorFrame` /
+  `quatRotate` / `approachVector`（−Z 規約）/ `scoreColor` / `ghostLineStyle` /
+  `nearestTargetIndex`）。THREE-free、`node --test` 11 件。
+- `src/view/GraspGhostView.js` — グリッパグリフ + テーパー接近矢印 + 対象 EdgesGeometry
+  アウトライン + hover 40%/select 90% フェード + 接近アニメ（ease-out 400ms・着地で指閉じ）。
+  #27 ペア則（~40px 画面基準・シーン半径由来 world 上限）。
+- `src/controller/GraspController.js` — 単独所有。`GraspGhostView` は **factory 注入**
+  （`deps.createGhostView`; view は THREE を import するため静的 import しない — テスト
+  レーンの THREE-free を維持）。hover は controller ローカル（§C: FSM に足さない）。
+  破棄境界 = 新 run / idle 再シード / `ContextController.exit()` の `disposeGhost()`。
+- `GraspSearchPanel.jsx` — 行 hover/leave コールバック + 同一ゲート関数による正直
+  キャプション（合格 = ghost 案内 / jointSpace = 段2 案内 / 形不一致 = unavailable）。
 
 ## Lens notes
 

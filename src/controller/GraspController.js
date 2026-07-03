@@ -30,21 +30,42 @@
  * The uiStore is **injected** (not statically imported) so the FSM transitions
  * unit-test THREE- and dependency-free with a fake store (the `test:context` lane
  * loads with no `node_modules`); AppController passes the real `useUIStore`.
+ *
+ * Stage-1 spatial ghost (ADR-059): this controller is the **sole owner** of the
+ * `GraspGhostView` (PHILOSOPHY #4/#9) — created lazily via the injected
+ * `createGhostView` factory (the view imports THREE, so the class itself is never
+ * statically imported here, keeping the `test:context` lane THREE-free), updated on
+ * candidate hover/select, and disposed on overlay exit / new run. The capability
+ * gate (`renderableEndEffectorFrame`) is the pure THREE-free check — a candidate
+ * whose pose fails it gets NO ghost and the panel shows an honest caption instead
+ * (PHILOSOPHY #11: never fabricate a pose). Hover is a transient view concern kept
+ * controller-local — it is deliberately NOT part of the `context.grasp` union
+ * (ADR-059 §C: the ghost is a derived projection, not a new FSM).
  */
+import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 
 export class GraspController {
   /**
    * @param {import('./AppController.js').AppController} ctrl
    * @param {{ getState: () => any }} store  injected uiStore (useUIStore)
+   * @param {{ createGhostView?: () => import('../view/GraspGhostView.js').GraspGhostView }} [deps]
+   *        `createGhostView` — lazy GraspGhostView factory (THREE side; absent in
+   *        the THREE-free test lane, where the ghost path degrades to a no-op).
    */
-  constructor(ctrl, store) {
+  constructor(ctrl, store, deps = {}) {
     this._ctrl  = ctrl
     this._store = store
+    this._createGhostView = deps.createGhostView ?? null
+    /** @type {object|null} sole-owned spatial ghost (ADR-059) */
+    this._ghost = null
+    /** transient hovered rank (never in the grasp FSM slice — ADR-059 §C) */
+    this._hoverRank = null
 
     const { registerCallback } = store.getState().actions
     registerCallback('onOpenGrasp',          ()       => this.openGrasp())
     registerCallback('onRunGraspSearch',      (params) => this.runGraspSearch(params))
     registerCallback('onSelectGraspCandidate', (rank)  => this.selectCandidate(rank))
+    registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
   }
 
   // ── Entry: select the grasp tab inside the negotiate overlay (ADR-057 §B) ─────
@@ -78,6 +99,7 @@ export class GraspController {
       return
     }
 
+    this._clearGhost()   // idle carries no candidate to ghost (ADR-059 §B-5)
     const ui = this._store.getState().actions
     ui.contextSetGrasp({ status: 'idle', layout })
     ui.contextSetTab('grasp')
@@ -104,6 +126,9 @@ export class GraspController {
     // Guard: Run is disabled mid-flight (no overlapping requests — §State machine).
     const cur = this._store.getState().context.grasp
     if (cur?.status === 'compiling' || cur?.status === 'solving') return
+
+    // A new run invalidates the previous run's ghost (ADR-059 §B-5).
+    this._clearGhost()
 
     const dsl = this._loadedLayoutDsl()
     if (!dsl) {
@@ -153,12 +178,12 @@ export class GraspController {
     }
   }
 
-  // ── Select: highlight a candidate (the future ghost hook seat, ADR-057 §5) ────
+  // ── Select / hover: drive the stage-1 spatial ghost (ADR-057 §5 seat, ADR-059) ─
 
   /**
-   * Mark a candidate selected. In v1 this is a pure highlight (`selectedRank`); it
-   * is the connection seat for the deferred spatial ghost (ADR-059) and carries no
-   * 3-D side effect here. Only meaningful in the `results` state.
+   * Mark a candidate selected (`selectedRank`) and re-project the spatial ghost —
+   * a click plays the committed approach animation when the candidate's pose
+   * passes the capability gate. Only meaningful in the `results` state.
    *
    * @param {number} rank
    */
@@ -166,6 +191,108 @@ export class GraspController {
     const cur = this._store.getState().context.grasp
     if (cur?.status !== 'results') return
     this._store.getState().actions.contextSetGrasp({ ...cur, selectedRank: rank })
+    this._syncGhost()
+  }
+
+  /**
+   * Candidate-row hover preview (ADR-059 §B-3): the hovered candidate's ghost
+   * fades in at preview opacity; leaving reverts to the selected candidate (or
+   * clears). Hover never touches the `context.grasp` union — it is a derived,
+   * transient view input (ADR-059 §C).
+   *
+   * @param {number|null} rank
+   */
+  hoverCandidate(rank) {
+    if (this._store.getState().context.grasp?.status !== 'results') return
+    if (rank === this._hoverRank) return
+    this._hoverRank = rank
+    this._syncGhost()
+  }
+
+  /**
+   * Per-frame ghost animation, driven by AppController's loop (same seat as
+   * ContextController.tick). `t` arrives in seconds (the loop's animation clock);
+   * the view's fade/approach constants are in ms.
+   *
+   * @param {number} t — elapsed seconds
+   */
+  tick(t) {
+    if (!this._ghost) return
+    const sv = this._ctrl._sceneView
+    this._ghost.tick(t * 1000, sv?.activeCamera, sv?.renderer)
+  }
+
+  /** Fully dispose the ghost (overlay exit / contextEnd — PHILOSOPHY #9). */
+  disposeGhost() {
+    this._hoverRank = null
+    if (this._ghost) {
+      this._ghost.dispose()
+      this._ghost = null
+    }
+  }
+
+  /**
+   * Project the current (hover ?? selected) candidate into the ghost. The pure
+   * capability gate decides renderability — anything that fails it (opaque /
+   * jointSpace / malformed) clears the ghost and the panel's caption explains why
+   * (PHILOSOPHY #11: no heuristic interpretation of poses).
+   */
+  _syncGhost() {
+    const cur = this._store.getState().context.grasp
+    if (cur?.status !== 'results') return this._clearGhost()
+
+    const rank = this._hoverRank ?? cur.selectedRank
+    const candidate = rank == null ? null : (cur.candidates ?? []).find(c => c.rank === rank)
+    const frame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
+    if (!frame) { this._ghost?.clear(); return }
+
+    if (!this._ghost) {
+      if (!this._createGhostView) return   // THREE-free lane: ghost path degrades to no-op
+      this._ghost = this._createGhostView()
+    }
+
+    // Hovering an unselected row previews; everything else is the committed select.
+    const mode = (this._hoverRank != null && this._hoverRank !== cur.selectedRank) ? 'hover' : 'select'
+    const radius = this._sceneRadius()
+    this._ghost.setWorldCap(radius > 0 ? radius * 0.5 : Infinity)
+    this._ghost.showCandidate({ frame, score: candidate.score, mode, rank })
+
+    // Grasped-target outline: nearest scene solid to the TCP (display-only
+    // proximity — permitted by "Centroid Is Validation-Only" for display).
+    const objs = [...(this._ctrl._scene?.objects?.values() ?? [])]
+      .filter(o => o.meshView?.cuboid?.geometry && o.corners?.length > 0)
+    const centers = objs.map(o => o._position
+      ? [o._position.x, o._position.y, o._position.z]
+      : this._displayCenter(o.corners))
+    const maxDist = radius > 0 ? radius * 0.5 : Infinity
+    const idx = nearestTargetIndex(frame.position, centers, maxDist)
+    this._ghost.setTargetGeometry(idx != null ? objs[idx].meshView.cuboid.geometry : null)
+  }
+
+  /** Hide the ghost and drop the transient hover (state transitions out of results). */
+  _clearGhost() {
+    this._hoverRank = null
+    this._ghost?.clear()
+  }
+
+  /** Scene bounding radius (world-cap input — PHILOSOPHY #27 pair rule). */
+  _sceneRadius() {
+    let r = 0
+    for (const o of this._ctrl._scene?.objects?.values() ?? []) {
+      for (const c of o.corners ?? []) {
+        const d = c.length()
+        if (d > r) r = d
+      }
+    }
+    return r
+  }
+
+  /** Display-only centre of world corners (never fed back into state — #24). */
+  _displayCenter(corners) {
+    let x = 0, y = 0, z = 0
+    for (const c of corners) { x += c.x; y += c.y; z += c.z }
+    const n = corners.length
+    return [x / n, y / n, z / n]
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────

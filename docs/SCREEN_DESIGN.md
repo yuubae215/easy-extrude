@@ -758,9 +758,15 @@ discriminated-union `status` (idle → compiling → solving → results / error
 candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
 interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
 explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
-re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`, the deferred
-spatial-ghost hook seat — ADR-059). The opaque `pose` is never drawn in 3-D (a raw `pose.joints`
-shows as reference text only). On failure the error state shows the stage + HTTP status +
+re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`). **Stage-1
+spatial ghost (ADR-059)**: a candidate whose typed `pose.kind === 'endEffector'` frame passes
+the pure capability gate gets a 3-D ghost — row hover fades in a preview (40%,
+`onHoverGraspCandidate`), click commits it (90%) and plays the approach animation (a stylised
+two-finger gripper glyph slides in along the −Z frame convention and closes on landing), with a
+`frame: world (assumed)` caption and an edges outline on the nearest target solid. Candidates
+that fail the gate (`jointSpace` / malformed) show an honest "spatial view unavailable" caption
+instead — poses are never heuristically interpreted (a raw `jointSpace.joints` shows as
+reference text only). On failure the error state shows the stage + HTTP status +
 `details` (400 contract mismatch / 502 upstream drift / 503 service unreachable / BFF down). The
 UI only declares the request and displays candidates — solving is the external service's job.
 
