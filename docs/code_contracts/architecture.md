@@ -759,6 +759,16 @@ The Emscripten C++ lane (`robotics-wasm/`, ADR-053 §11) compiles KDL `v1.5.1` +
 
 ---
 
+## Intake Live Checks Are the Validator's Own Predicates; the Gap List IS the Submit Predicate (ADR-058 UX)
+
+**Same function reference, never a re-implementation (§B-2)**: every field-level live check in the intake surface that mirrors a commit-time rule must call the predicate exported by the validator itself — `isInterval` is exported from `ContextValidator.js` and imported by `src/context/IntakeAssist.js` (re-exported for one import surface); `IntakeAssist.test.js` machine-checks the reference identity (`assert.equal(isInterval, validatorIsInterval)`). Writing a looser UI copy creates the "passes the form, fails the commit" divergence (§1.1 — the rule's source of truth is the validator; the input surface only mirrors it).
+
+**No silent disabled (§B-1 / PHILOSOPHY #11)**: each form's `*Gaps(form)` function (`actorGaps`/`variableGaps`/`requirementGaps`) is THE submit predicate — the button is disabled iff the list is non-empty, `submit()` early-returns on the same list, and `GapNote` prints it as the one-line reason. One predicate, three projections; never an independent `canSubmit` boolean beside a hand-written reason string.
+
+**The playful layer never writes the doc (§B-3)**: seed flood/tint (`matchesSeed` against the `seedFill` snapshot — render-time derivation, no state machine), ref suggestions (`refStatus`/`suggestRef` — informative, never input-blocking), KPI chips (`kpiCatalogChips` — read-only projection of `RoleKpiCatalog`; the catalog carries no units/exprs so none are fabricated), and the `DualRange` admissible slider all end in form-local state; the only doc-mutating exit remains `onAddDocEntry` → DocBuilder → `AddDocEntryCommand`. The slider writes the SAME `admLo`/`admHi` state as the numeric inputs (no second source) so the existing `onPreview` → 3-D band path needs no new wiring. `context.requirements` (uiStore) is supplied by `_startNegotiation` AND `_reproject` (PHILOSOPHY #5) for the ref-uniqueness set and the Why-first trail — the Requirements section badge counts `requirements.length`, not the nonexistent `variableSummary[].requirements` (the pre-existing always-0 bug).
+
+---
+
 ## ContextController Live Intake Preview: One Ghost, Updated In Place (ADR-051 Phase 3)
 
 > Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.

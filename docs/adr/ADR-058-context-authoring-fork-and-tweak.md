@@ -1,6 +1,6 @@
 # 058. Context オーサリング UX — 例を土台に編集する（fork & tweak）
 
-- Status: Accepted (Phase 1 + actor/variable seed chips 実装済)
+- Status: Accepted (Phase 1 + actor/variable seed chips + UX 具体化〔遊びの入力面・堅い検証境界〕実装済)
 - Date: 2026-06-30
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -238,6 +238,39 @@ Phase 1 で requirement フォームにだけ在ったシード chip（埋まっ
 - A-4 はスライダ→`onPreview` の既存経路に乗るだけ（`UncertaintyGhostView.setIntervalPreview`
   は実装済・テスト済）。
 - B-3 は「UI 述語 = validator 述語の同一関数参照」を import 検査（重複実装の静的排除）で担保。
+
+### 実装 (2026-07-04 — UX 具体化の実装)
+
+上記 A/B 設計を実装した（A-1〜A-6 + B-1〜B-3 全項目、コミット境界無改変）。
+
+- **純粋層 `src/context/IntakeAssist.js`**（THREE-free・bare `node --test` 11 件・
+  `test:context` レーン登録）: `refStatus`/`suggestRef`（A-3 — `_copy`/`_<n>` 接尾辞を
+  剥がして空き番提案）、`matchesSeed`（A-2 — 正規化文字列比較、null シードは不一致 = 偽
+  アンカー非捏造 #11）、`actorGaps`/`variableGaps`/`requirementGaps`（B-1 — submit 述語
+  そのもの。ボタン disabled と理由行は同一リストの 2 射影）、`kpiCatalogChips`（A-6 —
+  カタログに無い unit/expr は捏造しない）、`seedCardLines`（A-1）。
+- **B-2 の同一関数参照**: `ContextValidator.isInterval` を export し `IntakeAssist` が
+  import（UI 側再実装ゼロ）。テストで `assert.equal(isInterval, validatorIsInterval)` =
+  参照同一性を機械検証（import 検査の実体化）。
+- **`IntakePanel.jsx`**: 3 フォームに flood フラッシュ（`flashTick` キー再マウント +
+  keyframes）+ seed-diff tint（`seedFill` スナップショットとの `matchesSeed` 描画時導出、
+  状態なし）/ `RefField`（ライブ一意性 ✓/● + 空き番提案リンク、非ブロック）/ `GapNote`
+  （B-1 の 1 行理由）/ `WhyTrail`（A-5 — count 導出のみ、バッジは `key={count}` でパルス
+  再生）/ KPI chips（A-6）/ `DualRange`（A-4 — constrains の variable domain をレールに
+  2 つの native range を重畳、`admLo`/`admHi` と同一 state へ書くので既存 `onPreview` →
+  3D 不確実バンドが即応。domain 妥当性も `isInterval` で判定）。
+- **supporting**: uiStore `context.requirements` + `contextSetRequirements`（ref 一意性
+  とトレイル用に doc.requirements を供給 — `_startNegotiation`/`_reproject` 両経路、
+  PHILOSOPHY #5）。副産物: Requirements Section の count バッジが
+  `variableSummary[].requirements`（存在しないフィールド）を数えて常時 0 だった潜在バグを
+  `requirements.length` へ修正。
+- **B-3 受け入れ基準の充足**: どの仕掛けも doc を書かない。発火は従来の
+  `onAddDocEntry` 一本のまま（diff で機械確認可能 — 変更は表示と form ローカル state のみ）。
+
+検証: `test:context` 340 件（IntakeAssist +11）全パス、`vite build` クリーン。
+契約・スキーマ・BFF・ドメイン無改変。残: 閉じた語彙ピッカーの拡張（unit/期待値まで
+カタログ化するなら `RoleKpiCatalog` 側の正本拡張 = 別判断）、既存エントリ in-place 編集
+（汎用 `createDocEditCommand`）、例ライブラリのキュレーション拡充。
 
 ## Lens notes
 

@@ -385,6 +385,7 @@ export class ContextController {
       decisions:           doc?.decisions ?? [],
       actors:              doc?.actors ?? [],
       variables:           doc?.variables ?? [],
+      requirements:        doc?.requirements ?? [],
       conflicts:           result.conflicts,
       negotiationClusters: result.negotiationClusters,
       conflictMatrix:      this._ctxService.projectMatrix(),
@@ -775,6 +776,7 @@ export class ContextController {
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
         ui.contextSetVars(doc?.variables ?? [])
+        ui.contextSetRequirements(doc?.requirements ?? [])
         // Refresh the whole-doc Why-tree overview — add/answer/edit all reshape it
         // (ADR-052 Phase 3; one re-projection path — PHILOSOPHY #5).
         ui.contextSetWhyTree(this._ctxService.whyTree())

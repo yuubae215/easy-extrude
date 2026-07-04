@@ -715,6 +715,21 @@ volume between `lo` and `hi` with a blue nominal wireframe (`UncertaintyGhostVie
 much of the acceptance band is still unfixed. The ghost clears when the form is left or the
 requirement is committed (committing records an interval, not a Decision — no collapse animation).
 
+The intake forms carry the ADR-058 "playful input surface" layer (all client-side derivation via
+the pure `IntakeAssist` module; the commit boundary — `onAddDocEntry` → DocBuilder → command —
+is untouched): a **Why-first trail** (actors → variables → requirements chips that light up as
+counts grow, with a pulsing section badge on each addition); **seed chip hover mini-cards** (browse
+an example entry's full filled values before flooding the form); a **flood flash + seed-diff tint**
+(fields still holding the seed's value keep a dashed amber underline that disappears when
+overridden); a **ref live-uniqueness check** (green ✓ free / red ● taken, never blocking) with a
+one-click free-number suggestion (`r_reach_2`); **KPI catalog chips** (read-only projection of
+`RoleKpiCatalog`, discipline-grouped, one click fills the KPI name); and a **dual-handle
+admissible slider** railed on the constrained variable's domain, writing the same lo/hi state as
+the numeric inputs so stroking it drives the 3-D uncertainty band live. On the rigid side
+(ADR-058 §B) a disabled submit button is never silent: the missing-reason line above it prints the
+same gap list that disables it, and interval checks call the validator's own `isInterval`
+predicate (same function reference — no looser UI re-implementation).
+
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
 - **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) + **Why** + **俯瞰** + Intake tabs, undoable approval.
