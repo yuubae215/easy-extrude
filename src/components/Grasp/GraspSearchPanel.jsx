@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
+import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
 
 /**
  * GraspSearchPanel — UI → DSL → BFF → grasp-search verification (ADR-054 thread,
@@ -100,10 +101,17 @@ export function GraspSearchPanel() {
 
       <StatusLine grasp={grasp} />
 
+      {/* Rejection funnel (contract v3 diagnostics) — instant "what happened"
+          feedback, especially when the list is empty. Presentation only:
+          everything below derives from the wire facts via GraspFunnelMath. */}
+      {status === 'results' && (
+        <DiagnosticsFunnel diagnostics={grasp.diagnostics} prev={grasp.prevDiagnostics} />
+      )}
+
       {/* Sort controls + candidates */}
       {status === 'results' && (
         <div style={{ marginTop: '10px' }}>
-          {(grasp.candidates ?? []).length === 0 && (
+          {(grasp.candidates ?? []).length === 0 && !grasp.diagnostics && (
             <div style={{ fontSize: '11px', color: '#caa' }}>
               No candidates returned (the solver found no feasible pose).
             </div>
@@ -187,11 +195,147 @@ function StatusLine({ grasp }) {
     'no-layout': { text: 'No renderable layout to search.', color: '#caa' },
     'compiling': { text: 'Compiling layout on BFF…', color: '#cc9' },
     'solving':   { text: 'BFF compile OK — requesting grasp candidates…', color: '#9c9' },
-    'results':   { text: `Done — ${grasp?.candidates?.length ?? 0} candidate(s).`, color: '#9c9' },
+    'results':   {
+      text: grasp?.diagnostics
+        ? `Done — ${grasp?.candidates?.length ?? 0} candidate(s) (${grasp.diagnostics.feasible} feasible of ${grasp.diagnostics.candidatesGenerated} generated).`
+        : `Done — ${grasp?.candidates?.length ?? 0} candidate(s).`,
+      color: '#9c9',
+    },
     'error':     { text: 'Failed — see detail below.', color: '#d99' },
   }
   const s = map[status] ?? map.idle
   return <div style={{ marginTop: '8px', fontSize: '11px', color: s.color }}>{s.text}</div>
+}
+
+// ── Rejection funnel (contract v3 `diagnostics`) ──────────────────────────────
+//
+// The wire carries only the solver-decided funnel counts + reachNearestMiss;
+// everything visual here (stage labels, bar widths, dominant highlight, delta
+// chips, the near-miss meter curve, all wording) is client-derived presentation
+// via the pure GraspFunnelMath helpers (PHILOSOPHY #29 / ADR-060). No reach /
+// IK / collision judgment is re-implemented client-side.
+
+const STAGE_LABELS = { reach: 'reach', ik: 'IK', interference: 'clearance' }
+
+function DiagnosticsFunnel({ diagnostics, prev }) {
+  const funnel = funnelStages(diagnostics)
+  if (!funnel) return null   // legacy / absent diagnostics → degrade silently
+
+  // "Surface samples empty" input guide: nothing was even generated, so no
+  // stage bar can explain anything — guide the input instead (PHILOSOPHY #11).
+  if (funnel.generated === 0) {
+    return (
+      <div style={{
+        marginTop: '10px', padding: '8px 10px', borderRadius: '5px',
+        background: '#332a1d', border: '1px solid #6a5533', color: '#e8cf9f', fontSize: '11px', lineHeight: 1.5,
+      }}>
+        <div style={{ fontWeight: 'bold', marginBottom: '3px' }}>0 candidate poses generated</div>
+        The target's surface sampling came back empty, so there was nothing to
+        filter. Check that the layout contains graspable geometry (a solid the
+        gripper could actually touch) and that it is where you expect it.
+      </div>
+    )
+  }
+
+  const dominant = dominantStage(diagnostics)
+  const delta    = funnelDelta(prev, diagnostics)
+  const closeness = nearMissCloseness(diagnostics.reachNearestMiss)
+
+  return (
+    <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '5px', background: '#222', border: BORDER }}>
+      <div style={{ fontSize: '10px', color: '#888', marginBottom: '6px' }}>
+        rejection funnel — {funnel.generated} generated
+        {delta && <DeltaChip value={delta.generated} goodWhenPositive label="gen" />}
+      </div>
+
+      {funnel.stages.map(s => (
+        <FunnelRow
+          key={s.key}
+          label={STAGE_LABELS[s.key] ?? s.key}
+          stage={s}
+          dominant={s.key === dominant}
+          delta={delta ? delta[s.key] : null}
+        />
+      ))}
+
+      {/* Survivors */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', fontSize: '10px' }}>
+        <span style={{ width: '64px', textAlign: 'right', color: '#9d9' }}>feasible</span>
+        <span style={{ color: '#9d9', fontWeight: 'bold' }}>{funnel.feasible}</span>
+        <span style={{ color: '#777' }}>→ returned {funnel.returned}</span>
+        {delta && <DeltaChip value={delta.feasible} goodWhenPositive label="feasible" />}
+      </div>
+
+      {closeness != null && (
+        <NearMissMeter miss={diagnostics.reachNearestMiss} closeness={closeness} />
+      )}
+    </div>
+  )
+}
+
+function FunnelRow({ label, stage, dominant, delta }) {
+  const pct = Math.max(0, Math.min(1, stage.fraction)) * 100
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+      <span style={{
+        width: '64px', fontSize: '10px', textAlign: 'right',
+        color: dominant ? '#eb7' : '#aaa', fontWeight: dominant ? 'bold' : 'normal',
+      }}>{label}</span>
+      <div style={{ flex: 1, height: '9px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: dominant ? '#b58432' : '#3a6a9d' }} />
+      </div>
+      <span style={{
+        width: '34px', fontSize: '10px',
+        color: stage.rejected > 0 ? (dominant ? '#eb7' : '#c99') : '#666',
+      }}>−{stage.rejected}</span>
+      {delta != null && <DeltaChip value={delta} goodWhenPositive={false} />}
+      {dominant && (
+        <span style={{ fontSize: '9px', color: '#eb7', whiteSpace: 'nowrap' }}>← biggest filter</span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Run-over-run delta chip: "did my tweak work?" at a glance. For rejection
+ * stages fewer is better (goodWhenPositive=false); for generated/feasible
+ * more is better.
+ */
+function DeltaChip({ value, goodWhenPositive, label }) {
+  if (!value) return null   // 0 / null → no chip (no change = no noise)
+  const good = goodWhenPositive ? value > 0 : value < 0
+  const arrow = value > 0 ? '▲' : '▼'
+  return (
+    <span style={{
+      fontSize: '9px', padding: '0 4px', borderRadius: '3px', whiteSpace: 'nowrap',
+      color: good ? '#8d8' : '#d88',
+      background: good ? '#1c2e1c' : '#2e1c1c',
+    }}>{arrow}{Math.abs(value)}{label ? ` ${label}` : ''}</span>
+  )
+}
+
+/**
+ * "Almost reached" meter: reachNearestMiss is the wire fact (smallest distance
+ * a reach-rejected pose missed by, in the request's geometry unit); the fill
+ * curve and the wording are derived feel.
+ */
+function NearMissMeter({ miss, closeness }) {
+  const pct = closeness * 100
+  const feel = closeness >= 0.9 ? 'so close!' : closeness >= 0.5 ? 'almost' : 'out of reach'
+  return (
+    <div style={{ marginTop: '7px', paddingTop: '6px', borderTop: '1px solid #333' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ width: '64px', fontSize: '10px', color: '#eb7', textAlign: 'right' }}>near miss</span>
+        <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #7a5a24, #e8b04a)' }} />
+        </div>
+        <span style={{ fontSize: '9px', color: '#eb7', whiteSpace: 'nowrap' }}>{feel}</span>
+      </div>
+      <div style={{ fontSize: '9px', color: '#997', marginTop: '2px', marginLeft: '70px' }}>
+        closest rejected pose missed reach by {miss} (geometry unit)
+      </div>
+    </div>
+  )
 }
 
 function Candidate({ c, selected, onSelect, onHover }) {

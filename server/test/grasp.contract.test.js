@@ -84,6 +84,16 @@ test('valid response instance conforms to the response schema (both pose kinds)'
         score: { withinReach: true, ikSolvable: true, interferenceFree: false, totalScore: 0.41 },
       },
     ],
+    // v3 rejection funnel — invariant: generated = reach + ik + interference + feasible
+    diagnostics: {
+      candidatesGenerated: 5,
+      rejectedByReach: 2,
+      rejectedByIk: 1,
+      rejectedByInterference: 0,
+      feasible: 2,
+      returned: 2,
+      reachNearestMiss: 0.03,
+    },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
 })
@@ -97,6 +107,52 @@ test('pre-union opaque pose shape is rejected (pose is a closed kind union since
         score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.92 },
       },
     ],
+  })
+  assert.equal(valid, false)
+})
+
+test('zero-candidate response conforms — the funnel explains the emptiness', () => {
+  // candidates:[] is legal; diagnostics carries WHY (all generated poses were
+  // rejected at reach). The UI reads this to render the funnel instead of a
+  // blank list.
+  const res = {
+    contractVersion: CONTRACT_VERSION,
+    candidates: [],
+    diagnostics: {
+      candidatesGenerated: 8,
+      rejectedByReach: 8,
+      rejectedByIk: 0,
+      rejectedByInterference: 0,
+      feasible: 0,
+      returned: 0,
+      reachNearestMiss: 0.12,
+    },
+  }
+  assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
+})
+
+test('pre-v3 response without diagnostics fails conformance (diagnostics is required)', () => {
+  const { valid, errors } = validateResponse({
+    contractVersion: CONTRACT_VERSION,
+    candidates: [{ rank: 1, score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.5 } }],
+  })
+  assert.equal(valid, false)
+  assert.match(errors.join(' '), /diagnostics/)
+})
+
+test('diagnostics with a smuggled presentation field fails (additionalProperties:false)', () => {
+  const { valid } = validateResponse({
+    candidates: [],
+    diagnostics: {
+      candidatesGenerated: 0,
+      rejectedByReach: 0,
+      rejectedByIk: 0,
+      rejectedByInterference: 0,
+      feasible: 0,
+      returned: 0,
+      reachNearestMiss: null,
+      meterColor: '#f00', // presentation is derived client-side, never on the wire
+    },
   })
   assert.equal(valid, false)
 })
@@ -162,6 +218,15 @@ test('valid request is delegated and a conforming upstream response passes throu
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION,
       candidates: [{ rank: 1, score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.5 } }],
+      diagnostics: {
+        candidatesGenerated: 1,
+        rejectedByReach: 0,
+        rejectedByIk: 0,
+        rejectedByInterference: 0,
+        feasible: 1,
+        returned: 1,
+        reachNearestMiss: null,
+      },
     }))
   })
   process.env.GRASP_SEARCH_URL = `http://localhost:${upstream.address().port}`
@@ -169,6 +234,17 @@ test('valid request is delegated and a conforming upstream response passes throu
     const { status, json } = await postToRouter({ layoutVersion: 'layout/1.0', graspSearch: { topN: 1 } })
     assert.equal(status, 200)
     assert.equal(json.candidates[0].rank, 1)
+    // The BFF is a thin window: diagnostics passes through verbatim (no
+    // client-side judgment logic, no reshaping).
+    assert.deepEqual(json.diagnostics, {
+      candidatesGenerated: 1,
+      rejectedByReach: 0,
+      rejectedByIk: 0,
+      rejectedByInterference: 0,
+      feasible: 1,
+      returned: 1,
+      reachNearestMiss: null,
+    })
   } finally {
     upstream.close()
     delete process.env.GRASP_SEARCH_URL

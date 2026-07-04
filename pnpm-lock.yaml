@@ -86,7 +86,11 @@ importers:
         specifier: ^15.0.3
         version: 15.0.4
 
-  vendor/grasp-contract: {}
+  vendor/grasp-contract:
+    devDependencies:
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
 
 packages:
 
