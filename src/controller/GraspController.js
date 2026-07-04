@@ -127,6 +127,11 @@ export class GraspController {
     const cur = this._store.getState().context.grasp
     if (cur?.status === 'compiling' || cur?.status === 'solving') return
 
+    // Keep the outgoing run's funnel so the next results can show the delta
+    // ("did my tweak work?") — an explicitly derived carry-over, not a second
+    // source: the wire truth for the new run is res.diagnostics below.
+    const prevDiagnostics = cur?.status === 'results' ? (cur.diagnostics ?? null) : null
+
     // A new run invalidates the previous run's ghost (ADR-059 §B-5).
     this._clearGhost()
 
@@ -171,7 +176,14 @@ export class GraspController {
     try {
       const res = await bff.graspSearch(request)
       const candidates = res.candidates ?? []
-      ui.contextSetGrasp({ status: 'results', layout, request, candidates, compiledObjects, selectedRank: null })
+      // diagnostics is the contract-v3 rejection funnel — passed through as a
+      // wire fact (presentation derives from it in GraspFunnelMath / the panel).
+      const diagnostics = res.diagnostics ?? null
+      ui.contextSetGrasp({
+        status: 'results', layout, request, candidates,
+        diagnostics, prevDiagnostics,
+        compiledObjects, selectedRank: null,
+      })
       ctrl._uiView.showToast(`grasp-search: ${candidates.length} candidate(s)`, { type: 'info' })
     } catch (err) {
       return this._graspError(err, 'solve')

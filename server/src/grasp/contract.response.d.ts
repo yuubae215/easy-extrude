@@ -22,6 +22,27 @@ export interface GraspSearchResponse {
    * Ranked candidates, rank ascending (1 = best). Not a single best pose.
    */
   candidates: PoseCandidate[];
+  /**
+   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Invariant: candidatesGenerated = rejectedByReach + rejectedByIk + rejectedByInterference + feasible (stages are exclusive; the filter short-circuits). Presentation (wording, colors, meters, suggestions) is derived client-side and never carried here.
+   */
+  diagnostics: {
+    candidatesGenerated: number;
+    rejectedByReach: number;
+    rejectedByIk: number;
+    rejectedByInterference: number;
+    /**
+     * Candidates that passed all three checks (= scored).
+     */
+    feasible: number;
+    /**
+     * Candidates actually included in candidates[] (= min(feasible, topN)).
+     */
+    returned: number;
+    /**
+     * Smallest distance by which a reach-rejected candidate missed the reachable shell (same length unit as the request geometry). null when nothing was rejected by reach.
+     */
+    reachNearestMiss: number | null;
+  };
 }
 export interface PoseCandidate {
   rank: number;

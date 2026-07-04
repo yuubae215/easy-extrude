@@ -32,6 +32,17 @@ function fakeStore() {
   return { getState: () => state, _state: state }
 }
 
+/** Contract-v3 diagnostics fixture: candidates present, nothing reach-rejected. */
+const DIAG_OK = {
+  candidatesGenerated: 4,
+  rejectedByReach: 0,
+  rejectedByIk: 1,
+  rejectedByInterference: 1,
+  feasible: 2,
+  returned: 2,
+  reachNearestMiss: null,
+}
+
 const okBff = {
   async compileLayout() { return { objects: [{}, {}, {}] } },
   async graspSearch() {
@@ -40,6 +51,7 @@ const okBff = {
         { rank: 1, score: { totalScore: 0.9, withinReach: true, ikSolvable: true, interferenceFree: true, objectiveScores: { reach: 0.8, clearance: 0.6 } } },
         { rank: 2, score: { totalScore: 0.7, withinReach: true, ikSolvable: false, interferenceFree: true } },
       ],
+      diagnostics: DIAG_OK,
     }
   },
 }
@@ -109,6 +121,85 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   assert.equal(g.selectedRank, null)
   assert.equal(g.compiledObjects, 3)
   assert.deepEqual(g.request, { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5 } })
+})
+
+// ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────
+
+test('results carries the wire diagnostics verbatim; first run has no prevDiagnostics', async () => {
+  const { gc, grasp } = setup({ bff: okBff })
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.equal(g.status, 'results')
+  assert.deepEqual(g.diagnostics, DIAG_OK)      // pass-through wire fact, no reshaping
+  assert.equal(g.prevDiagnostics, null)
+})
+
+test('a second run carries the previous run diagnostics for the delta view', async () => {
+  const first  = { ...DIAG_OK }
+  const second = { ...DIAG_OK, rejectedByIk: 0, feasible: 3, returned: 3 }
+  let call = 0
+  const bff = {
+    async compileLayout() { return { objects: [{}] } },
+    async graspSearch() { call += 1; return { candidates: [], diagnostics: call === 1 ? first : second } },
+  }
+  const { gc, grasp } = setup({ bff })
+  await gc.runGraspSearch({})
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.deepEqual(g.diagnostics, second)
+  assert.deepEqual(g.prevDiagnostics, first)    // explicit derived carry-over
+})
+
+test('zero-candidate response lands in results with the funnel explaining why', async () => {
+  const diag = {
+    candidatesGenerated: 8, rejectedByReach: 8, rejectedByIk: 0, rejectedByInterference: 0,
+    feasible: 0, returned: 0, reachNearestMiss: 0.12,
+  }
+  const bff = {
+    async compileLayout() { return { objects: [{}] } },
+    async graspSearch() { return { candidates: [], diagnostics: diag } },
+  }
+  const { gc, grasp } = setup({ bff })
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.equal(g.status, 'results')             // an empty ranking is a legal result
+  assert.equal(g.candidates.length, 0)
+  assert.deepEqual(g.diagnostics, diag)
+  assert.equal(g.diagnostics.reachNearestMiss, 0.12)
+})
+
+test('a pre-v3 response without diagnostics degrades to diagnostics:null', async () => {
+  const bff = {
+    async compileLayout() { return { objects: [{}] } },
+    async graspSearch() { return { candidates: [{ rank: 1, score: { totalScore: 0.5, withinReach: true, ikSolvable: true, interferenceFree: true } }] } },
+  }
+  const { gc, grasp } = setup({ bff })
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.equal(g.status, 'results')
+  assert.equal(g.diagnostics, null)
+  assert.equal(g.prevDiagnostics, null)
+})
+
+test('an error run does not leak diagnostics into the error state', async () => {
+  // First run succeeds (results + diagnostics), second run fails at solve —
+  // the error state must not carry stale funnel facts (illegal-state guard).
+  let call = 0
+  const bff = {
+    async compileLayout() { return { objects: [{}] } },
+    async graspSearch() {
+      call += 1
+      if (call === 1) return { candidates: [], diagnostics: DIAG_OK }
+      throw Object.assign(new Error('boom'), { status: 502 })
+    },
+  }
+  const { gc, grasp } = setup({ bff })
+  await gc.runGraspSearch({})
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.equal(g.status, 'error')
+  assert.equal(g.diagnostics, undefined)
+  assert.equal(g.prevDiagnostics, undefined)
 })
 
 // ── runGraspSearch: error branches (legal error states only) ───────────────────
