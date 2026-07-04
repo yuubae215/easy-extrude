@@ -715,6 +715,21 @@ volume between `lo` and `hi` with a blue nominal wireframe (`UncertaintyGhostVie
 much of the acceptance band is still unfixed. The ghost clears when the form is left or the
 requirement is committed (committing records an interval, not a Decision — no collapse animation).
 
+The intake forms carry the ADR-058 "playful input surface" layer (all client-side derivation via
+the pure `IntakeAssist` module; the commit boundary — `onAddDocEntry` → DocBuilder → command —
+is untouched): a **Why-first trail** (actors → variables → requirements chips that light up as
+counts grow, with a pulsing section badge on each addition); **seed chip hover mini-cards** (browse
+an example entry's full filled values before flooding the form); a **flood flash + seed-diff tint**
+(fields still holding the seed's value keep a dashed amber underline that disappears when
+overridden); a **ref live-uniqueness check** (green ✓ free / red ● taken, never blocking) with a
+one-click free-number suggestion (`r_reach_2`); **KPI catalog chips** (read-only projection of
+`RoleKpiCatalog`, discipline-grouped, one click fills the KPI name); and a **dual-handle
+admissible slider** railed on the constrained variable's domain, writing the same lo/hi state as
+the numeric inputs so stroking it drives the 3-D uncertainty band live. On the rigid side
+(ADR-058 §B) a disabled submit button is never silent: the missing-reason line above it prints the
+same gap list that disables it, and interval checks call the validator's own `isInterval`
+predicate (same function reference — no looser UI re-implementation).
+
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
 - **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) + **Why** + **俯瞰** + Intake tabs, undoable approval.
@@ -758,9 +773,15 @@ discriminated-union `status` (idle → compiling → solving → results / error
 candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
 interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
 explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
-re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`, the deferred
-spatial-ghost hook seat — ADR-059). The opaque `pose` is never drawn in 3-D (a raw `pose.joints`
-shows as reference text only). On failure the error state shows the stage + HTTP status +
+re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`). **Stage-1
+spatial ghost (ADR-059)**: a candidate whose typed `pose.kind === 'endEffector'` frame passes
+the pure capability gate gets a 3-D ghost — row hover fades in a preview (40%,
+`onHoverGraspCandidate`), click commits it (90%) and plays the approach animation (a stylised
+two-finger gripper glyph slides in along the −Z frame convention and closes on landing), with a
+`frame: world (assumed)` caption and an edges outline on the nearest target solid. Candidates
+that fail the gate (`jointSpace` / malformed) show an honest "spatial view unavailable" caption
+instead — poses are never heuristically interpreted (a raw `jointSpace.joints` shows as
+reference text only). On failure the error state shows the stage + HTTP status +
 `details` (400 contract mismatch / 502 upstream drift / 503 service unreachable / BFF down). The
 UI only declares the request and displays candidates — solving is the external service's job.
 

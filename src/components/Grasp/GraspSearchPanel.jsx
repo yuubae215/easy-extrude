@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 
 /**
  * GraspSearchPanel — UI → DSL → BFF → grasp-search verification (ADR-054 thread,
@@ -14,10 +15,14 @@ import { useUIStore } from '../../store/uiStore.js'
  *
  * Scoring is built from the contract's `score` only (ADR-057 §F): the three boolean
  * chips plus labelled `objectiveScores` bars (objective name → 0..1, comparable
- * across requests on an absolute basis per the contract). The opaque `pose` is never
- * interpreted into 3-D — spatial ghosts are a deferred follow-up (ADR-059); a raw
- * `pose.joints` array, if present, is shown as reference text only (never silently
- * dropped or exaggerated — PHILOSOPHY #11).
+ * across requests on an absolute basis per the contract). Ranking never comes from
+ * the ghost — score-first is invariant (ADR-057).
+ *
+ * Stage-1 spatial ghost (ADR-059): a candidate whose pose passes the pure
+ * capability gate (`renderableEndEffectorFrame` — typed `kind:'endEffector'` +
+ * shape check) gets hover-preview / click-commit ghost callbacks; anything else
+ * (jointSpace / malformed) shows an honest "spatial view unavailable" caption
+ * instead — poses are never heuristically interpreted (PHILOSOPHY #11).
  */
 
 const BORDER = '1px solid #3a3a3a'
@@ -120,6 +125,7 @@ export function GraspSearchPanel() {
               c={c}
               selected={grasp.selectedRank === c.rank}
               onSelect={() => callbacks.onSelectGraspCandidate?.(c.rank)}
+              onHover={(rank) => callbacks.onHoverGraspCandidate?.(rank)}
             />
           ))}
         </div>
@@ -188,7 +194,7 @@ function StatusLine({ grasp }) {
   return <div style={{ marginTop: '8px', fontSize: '11px', color: s.color }}>{s.text}</div>
 }
 
-function Candidate({ c, selected, onSelect }) {
+function Candidate({ c, selected, onSelect, onHover }) {
   const sc = c.score ?? {}
   const chip = (label, ok) => (
     <span style={{
@@ -201,6 +207,8 @@ function Candidate({ c, selected, onSelect }) {
   return (
     <div
       onClick={onSelect}
+      onMouseEnter={() => onHover(c.rank)}
+      onMouseLeave={() => onHover(null)}
       style={{
         padding: '7px 9px', borderRadius: '5px', marginBottom: '6px', cursor: 'pointer',
         background: selected ? '#243044' : '#262626',
@@ -223,12 +231,37 @@ function Candidate({ c, selected, onSelect }) {
       {objectiveScores && Object.entries(objectiveScores).map(([k, v]) => (
         <ObjectiveBar key={k} label={k} value={typeof v === 'number' ? v : 0} />
       ))}
-      {c.pose?.joints && (
-        <div style={{ marginTop: '5px', fontSize: '10px', color: '#888' }}>
-          joints: [{c.pose.joints.map(j => (typeof j === 'number' ? j.toFixed(3) : j)).join(', ')}]
-          <span style={{ color: '#666' }}> · spatial view: see ADR-059</span>
-        </div>
-      )}
+      <PoseFooter pose={c.pose} />
+    </div>
+  )
+}
+
+/**
+ * Honest spatial-capability caption (ADR-059 §A-1): the SAME pure gate the
+ * controller uses decides what the row promises — a passing pose invites the
+ * ghost gesture; a failing one states why the spatial view is unavailable
+ * (never a silent omission — PHILOSOPHY #11).
+ */
+function PoseFooter({ pose }) {
+  if (!pose) return null
+  if (renderableEndEffectorFrame(pose)) {
+    return (
+      <div style={{ marginTop: '5px', fontSize: '10px', color: '#7a9' }}>
+        3D ghost: hover to preview · click to place
+      </div>
+    )
+  }
+  if (pose.kind === 'jointSpace' && Array.isArray(pose.joints)) {
+    return (
+      <div style={{ marginTop: '5px', fontSize: '10px', color: '#888' }}>
+        joints ({pose.chainRef ?? '—'}): [{pose.joints.map(j => (typeof j === 'number' ? j.toFixed(3) : j)).join(', ')}]
+        <span style={{ color: '#666' }}> · spatial view unavailable (jointSpace — ADR-059 stage 2)</span>
+      </div>
+    )
+  }
+  return (
+    <div style={{ marginTop: '5px', fontSize: '10px', color: '#886' }}>
+      spatial view unavailable (unrecognized pose shape)
     </div>
   )
 }

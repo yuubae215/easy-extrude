@@ -843,7 +843,7 @@ export class ContextController {
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
         ui.contextSetVars(doc?.variables ?? [])
-        ui.contextSetReqs(doc?.requirements ?? [])
+        ui.contextSetRequirements(doc?.requirements ?? [])
         // Refresh the whole-doc Why-tree overview — add/answer/edit all reshape it
         // (ADR-052 Phase 3; one re-projection path — PHILOSOPHY #5).
         ui.contextSetWhyTree(this._ctxService.whyTree())
@@ -898,6 +898,9 @@ export class ContextController {
     }
 
     ctrl._linkNetworkView?.setForceHidden(false)
+    // The grasp ghost lives inside the negotiate overlay's grasp tab — overlay
+    // exit is its disposal boundary (ADR-059 §B-5, PHILOSOPHY #9).
+    ctrl._graspCtrl?.disposeGhost()
     ui.contextEnd()
     this._mode = null
     this._provenanceSceneId = null

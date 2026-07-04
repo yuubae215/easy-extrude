@@ -18,21 +18,15 @@ Each entry represents a value that was tested against reality and held.
 | **`CODE_CONTRACTS.md`** | *What* rule applies in a specific area | A bug revealed an implicit rule | Concrete — a specific method or class contract |
 | **`DEVELOPMENT.md`** | *How* to work on this codebase | A workflow pattern proved more reliable | Procedural — steps, commands, agent strategies |
 
-A principle belongs here only if it explains the **spirit** behind multiple CODE_CONTRACTS rules.
-If a rule applies to one file or one class, it belongs in CODE_CONTRACTS, not here.
+A principle belongs here only if it explains the **spirit** behind multiple CODE_CONTRACTS
+rules; a one-file/one-class rule belongs in CODE_CONTRACTS.
 
 ### What belongs here
 
-- Values discovered through **recurring pain** — not hypothetical wisdom
-- Reasoning that was **actively debated** before a direction was chosen
-- Root causes shared by **two or more CODE_CONTRACTS rules** in unrelated areas
-- Guidance that shapes **how a new contributor thinks**, not just what they do
-
-**Do NOT add:**
-- General software engineering best practices not specific to this project
-- Rules about a single class or module (use CODE_CONTRACTS instead)
-- Workflow or agent patterns (use DEVELOPMENT instead)
-- In-progress notes or tentative ideas (use a task/plan instead)
+Values discovered through **recurring pain**, reasoning that was **actively debated**,
+root causes shared by **2+ CODE_CONTRACTS rules** in unrelated areas, and guidance that
+shapes **how a contributor thinks**. Do NOT add: generic best practices, single-class
+rules (→ CODE_CONTRACTS), workflow patterns (→ DEVELOPMENT), or in-progress notes.
 
 ### When to update
 
@@ -48,20 +42,10 @@ If a rule applies to one file or one class, it belongs in CODE_CONTRACTS, not he
 
 ### How to update
 
-1. Identify which existing principle (if any) the trigger relates to.
-   Be conservative — a sharper existing principle beats a new one.
-2. If adding: write in the format **Title — Subtitle**, then *what it means*,
-   *how it manifests in this codebase*, and *why it matters*.
-3. Add or update the row in the **Index** table at the bottom of this file.
-4. Commit together with the code change or post-mortem that motivated it.
-   The commit message should name the principle.
-
-### Lifecycle states
-
-| State | Meaning |
-|-------|---------|
-| *(no mark)* | Active — practised and relevant |
-| ✗ Retired | Superseded or encoded structurally; kept as history |
+Prefer sharpening an existing principle over adding one. New entries use **Title — Subtitle**,
+then *what it means*, *how it manifests here*, *why it matters*. Update the **Index** table,
+and commit together with the motivating change (commit message names the principle).
+Lifecycle: unmarked = active; ✗ Retired = superseded or encoded structurally, kept as history.
 
 ---
 
@@ -185,11 +169,10 @@ wrote back into `corners`. This closed a frame-to-frame loop:
 _position → corners → avg(corners) ≈ parentWorldPos → solver → new _position
 ```
 
-Because `avg(corners)` carries FP rounding from 8 large-coordinate additions, the
-re-computed `_position` differed from the true `_position` by `~1e-14` per frame.
-Far from the origin this magnified into visible drift. Slow rotation (many frames) was
-catastrophic; fast rotation (few frames) appeared fine; returning to the origin reset
-the accumulated error — matching the reported symptoms exactly.
+`avg(corners)` carries FP rounding from 8 large-coordinate additions, so the re-computed
+`_position` drifted `~1e-14` per frame — visible far from origin, catastrophic under slow
+rotation (many frames), invisible under fast rotation, reset at the origin: matching the
+reported symptoms exactly.
 
 Fixed by replacing `avg(corners)` with `parent._position` directly (the authoritative
 ADR-040 primary triple). In `_updateFastenedFrames`, `solidLocalOffset` now seeds from
@@ -508,15 +491,8 @@ shared the same property name, the same JavaScript type, and the same shape — 
 were opposite — code that worked for geometry silently produced wrong results for frames.
 
 **Phase 1 — Hotfix**: branch on `instanceof CoordinateFrame` at every call site.
-
-**Phase 2 — Branded types**: JSDoc `WorldVector3`/`LocalVector3` brands; `tsc --checkJs` in CI.
-No runtime overhead. No TypeScript migration. The type checker rejects misuse.
-
-```js
-/** @typedef {import('three').Vector3 & { _brand: 'world' }} WorldVector3 */
-/** @typedef {import('three').Vector3 & { _brand: 'local' }} LocalVector3 */
-```
-
+**Phase 2 — Branded types**: JSDoc `WorldVector3`/`LocalVector3` brands; `tsc --checkJs` in CI —
+no runtime overhead, no TypeScript migration; the type checker rejects misuse.
 **Phase 3 — Structural separation** (the full expression of this principle):
 `CoordinateFrame` no longer has a `corners` property. It exposes `localOffset` instead.
 Accessing `.corners` on a frame returns `undefined` — the API shape itself makes confusion
@@ -571,19 +547,14 @@ library or runtime constraint — not when it enforces a domain rule.
 event-bubbling workaround with no service-layer analogue. There is no domain rule that says
 "ignore events not aimed at the canvas"; it is a quirk of the host environment.
 
-**The violation:** inlining a domain guard as an early return in a handler method, e.g.:
-```js
-// WRONG — guard logic scattered across call sites
-if (selObj instanceof Solid && service.hasFastenedChild(id)) { showToast(); return }
-```
-This pattern was used for the grab-before-solver-conflict guard. It was added at two call
-sites (G-key grab, QuickDrag) instead of inside `checkMoveGuardrail`. A future code path
-that moves objects — a new gesture mode, an undo-replay, a scripted operation — would
-silently omit the guard.
+**The violation:** inlining a domain guard as an early return in a handler
+(`if (selObj instanceof Solid && service.hasFastenedChild(id)) { showToast(); return }`).
+This was done at two call sites (G-key grab, QuickDrag) instead of inside
+`checkMoveGuardrail`; any future code path that moves objects would silently omit the guard.
 
 **The correct pattern:**
 ```js
-// CORRECT — one authoritative predicate; handler is oblivious to its internals
+// One authoritative predicate; handler is oblivious to its internals
 const result = service.checkMoveGuardrail(selectedIds)
 if (result.blocked) { showToast(result.message); return }
 ```
@@ -679,12 +650,9 @@ to the main body as a full principle and add a row to the Index.
 
 ### How to update
 
-| Action | When |
-|--------|------|
-| Add a row | After a bug fix where the CODE_CONTRACTS Q2 answer is "almost, but only 1 context so far" |
-| Add a second context | When the same root value appears in a new unrelated file/feature |
-| Graduate to principle | Once 2+ contexts exist — extract a full principle above, remove the row here |
-| Remove stale row | If the codebase is refactored such that the violation can no longer occur |
+Add a row when a bug fix's Q2 answer is "almost, but only 1 context so far"; note the second
+context when the same root value appears in an unrelated file/feature; graduate to a full
+principle once 2+ contexts exist (remove the row); remove stale rows made impossible by refactoring.
 
 | Candidate Principle | First Context (date · file · what happened) | CODE_CONTRACTS Rule |
 |---------------------|---------------------------------------------|---------------------|
@@ -692,8 +660,8 @@ to the main body as a full principle and add a row to the Index.
 | Three.js helpers must match the actual geometry model, not an approximation | 2026-05-02 · `MeshView.js` · `THREE.BoxHelper` computes AABB; because `MeshView` bakes corner positions as world-space vertices with no mesh transform, the AABB diverges from the actual OBB after R-key rotation. After confirming rotation, the selection highlight appeared as an axis-aligned box larger than the solid, visually rotating independently. Fixed by replacing `BoxHelper` with `LineSegments+EdgesGeometry` kept in sync by `updateGeometry()`. | BoxHelper Forbidden for World-Space Baked Geometry |
 | Per-frame derived values must be computed before their consumers in the same frame | 2026-05-18 · `AppController.js` animation loop · `updateLabelPosition()` read `_group.position` before `_updateWorldPoses()` set it for the current frame, causing CF labels to lag one frame behind and appear to vibrate at startup. Fixed by moving `_updateWorldPoses()` to run before the per-object label loop. The failure mode is asymmetric: the bug is invisible when the scene is static (lag = 0 px); it only manifests when the cache is being populated (startup) or when the CF moves (drag). | CF Label Position Order |
 | *(graduated to principle #24 — Derive Absolute State from Invariant Sources)* | | |
-| Rendering layer must match spatial role — scene objects use depthTest, overlays bypass it | 2026-05-21 · `AnnotatedRegionView.js`, `AnnotatedLineView.js`, `AnnotatedPointView.js` · All annotation view materials had `depthTest: false`, making Zones and Routes render over Solid objects (Cubes) regardless of actual spatial depth. The failure is visually obvious but easy to introduce: flat ground-plane objects are hard to see without "always on top" during authoring, which tempts `depthTest: false` as a quick fix. Correct approach: `depthTest: true` + `polygonOffset` for flat ground-plane meshes to prevent Z-fighting. **Recurrence (2026-06-12, same feature family — not yet a 2nd unrelated context)**: the `polygonOffset` quick fix itself bit back — its factor scales with screen-space depth slope, so the Zone fill (transparent, drawn after opaques) composited OVER the opaque Anchor marker disc at glancing angles ("blue and purple meshes overlapping"). Each layering hack (depthTest:false → polygonOffset) traded one hidden assumption for another; the durable form is explicit ordering inside one render queue (`transparent:true, opacity:1` + renderOrder) plus geometry that does not straddle the decal plane. | Annotation View Materials Must Use depthTest: true; Ground Markers Must Not Straddle Z=0 |
-| *(graduated to principle #28 — Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse)* — first context was 2026-06-20 ADR-053 §1.1 (ubiquitous KPI = synonym-quotient section + criterion pullback, not a group inverse); the 2nd unrelated context arrived 2026-06-22 with ADR-055 (Scene⇄Layout DSL round-trip up to a `strategy:'manual'` normal form, proven by the scene fixpoint), meeting the 2+ bar. | | |
+| Rendering layer must match spatial role — scene objects use depthTest, overlays bypass it | 2026-05-21 · `Annotated{Region,Line,Point}View.js` · `depthTest: false` made Zones/Routes render over Solids regardless of depth; tempting because flat ground-plane objects are hard to see during authoring. Correct: `depthTest: true` + `polygonOffset`. **Recurrence (2026-06-12, same feature family — not yet a 2nd unrelated context)**: the `polygonOffset` fix itself bit back (slope-scaled factor composited the Zone fill over the opaque Anchor disc at glancing angles). Each layering hack traded one hidden assumption for another; the durable form is explicit ordering in one render queue (`transparent:true, opacity:1` + renderOrder) plus geometry that does not straddle the decal plane. | Annotation View Materials Must Use depthTest: true; Ground Markers Must Not Straddle Z=0 |
+| *(graduated to principle #28 — Mutual Means Round-Trip Up to a Normal Form; contexts: ADR-053 §1.1 + ADR-055)* | | |
 
 ---
 

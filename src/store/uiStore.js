@@ -152,7 +152,7 @@ export const useUIStore = create((set, get) => ({
     inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why' | 'tree' | 'intake' | 'grasp'
     form: [],                // projectForm() output — open intake questions (Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
-    requirements: [],        // doc.requirements — for IntakePanel click-to-edit cards (ADR-058 Phase 2)
+    requirements: [],        // doc.requirements — ref-uniqueness live check + Why-first trail (ADR-058 UX) + click-to-edit cards (ADR-058 Phase 2)
     provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
     whyTree: null,           // ContextService.whyTree() — full Why-rooted 5W1H tree overview (ADR-052 Phase 3)
     authorSeed: null,        // ADR-058 — read-only seed doc when a project was forked from an example (anchors for "fork & tweak"); null otherwise
@@ -356,9 +356,9 @@ export const useUIStore = create((set, get) => ({
     contextSetVars: (variables) => set(state => ({
       context: { ...state.context, variables },
     })),
-    // Full requirement objects (ADR-058 Phase 2) — the intake panel renders them
-    // as click-to-edit cards. Kept current by _reproject on every doc mutation.
-    contextSetReqs: (requirements) => set(state => ({
+    // Full requirement objects — supplied by _startNegotiation / _reproject; used
+    // for the ref-uniqueness check + Why-first trail and the click-to-edit cards.
+    contextSetRequirements: (requirements) => set(state => ({
       context: { ...state.context, requirements },
     })),
     // φ⁻¹ provenance of the currently-selected scene entity (ADR-052 Phase 2).

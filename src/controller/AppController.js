@@ -66,6 +66,7 @@ import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
+import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
@@ -374,8 +375,11 @@ export class AppController {
     // ── Grasp-search verification overlay (ADR-057) ────────────────────────
     // Dedicated coordinator (split out of ContextController) for the
     // UI→DSL→BFF→grasp-search walkthrough. The panel is the `'grasp'` tab inside
-    // the negotiate overlay; the request is a query, not a doc mutation.
-    this._graspCtrl = new GraspController(this, useUIStore)
+    // the negotiate overlay; the request is a query, not a doc mutation. The ghost
+    // factory is injected so GraspController stays THREE-free in tests (ADR-059).
+    this._graspCtrl = new GraspController(this, useUIStore, {
+      createGhostView: () => new GraspGhostView(this._sceneView.scene, document.body),
+    })
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
     // drawing flag removed — EO_2D_SKETCH_DRAW state in _editOpState is the authority.
@@ -3182,6 +3186,8 @@ export class AppController {
       this._demoCtrl.tick(t)
       // Production Context overlay: authoring widgets + region ghosts (ADR-050 Phase 3).
       this._ctxCtrl.tick(t)
+      // Grasp candidate spatial ghost fade/approach animation (ADR-059).
+      this._graspCtrl.tick(t)
     }
     loop()
 

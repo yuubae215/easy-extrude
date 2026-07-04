@@ -69,18 +69,36 @@ test('request with an unknown top-level field fails (additionalProperties:false)
   assert.equal(valid, false)
 })
 
-test('valid response instance conforms to the response schema', () => {
+test('valid response instance conforms to the response schema (both pose kinds)', () => {
   const res = {
     contractVersion: CONTRACT_VERSION,
     candidates: [
       {
         rank: 1,
-        pose: { joints: [0, 0, 0] },
+        pose: { kind: 'endEffector', frame: { position: [0.1, 0.2, 0.3], orientation: [0, 0, 0, 1] } },
         score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.92 },
+      },
+      {
+        rank: 2,
+        pose: { kind: 'jointSpace', chainRef: 'arm_left', joints: [0, 0.5, -0.5, 0, 1.2, 0] },
+        score: { withinReach: true, ikSolvable: true, interferenceFree: false, totalScore: 0.41 },
       },
     ],
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
+})
+
+test('pre-union opaque pose shape is rejected (pose is a closed kind union since v2)', () => {
+  const { valid } = validateResponse({
+    candidates: [
+      {
+        rank: 1,
+        pose: { joints: [0, 0, 0] }, // v1 opaque shape — no kind discriminator
+        score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.92 },
+      },
+    ],
+  })
+  assert.equal(valid, false)
 })
 
 test('response missing a required score field fails conformance', () => {

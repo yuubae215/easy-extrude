@@ -6,6 +6,11 @@
  */
 
 /**
+ * The pose the solver *decided*, as a closed kind-discriminated union. Only solver-decided facts ride the wire; presentation (approach vector, ghost color, gripper-width display, animation) is derived client-side from the frame + convention and is NOT part of this contract. The only intentional growth point is adding a new kind (which bumps contractVersion). kind is the discriminator; each branch is closed (additionalProperties:false). 'optional' is not a design word here -- field presence is implied by kind.
+ */
+export type Pose = PoseEndEffector | PoseJointSpace;
+
+/**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
  */
 export interface GraspSearchResponse {
@@ -20,13 +25,48 @@ export interface GraspSearchResponse {
 }
 export interface PoseCandidate {
   rank: number;
-  /**
-   * The pose itself (joints / TCP). Opaque at the contract boundary; exact shape owned by the service implementation.
-   */
-  pose?: {
-    [k: string]: unknown;
-  };
+  pose?: Pose;
   score: ScoreBreakdown;
+}
+/**
+ * End-effector (hand/tool) pose expressed in a base/world frame. Cartesian.
+ */
+export interface PoseEndEffector {
+  kind: "endEffector";
+  frame: CartesianFrame;
+}
+/**
+ * A rigid-body pose in a base/world frame.
+ */
+export interface CartesianFrame {
+  /**
+   * x, y, z.
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  position: [number, number, number];
+  /**
+   * Quaternion x, y, z, w.
+   *
+   * @minItems 4
+   * @maxItems 4
+   */
+  orientation: [number, number, number, number];
+}
+/**
+ * Pose expressed in the joint space of a named kinematic chain.
+ */
+export interface PoseJointSpace {
+  kind: "jointSpace";
+  /**
+   * Which kinematic chain (robot) the joint values belong to.
+   */
+  chainRef: string;
+  /**
+   * Joint values in chain order.
+   */
+  joints: number[];
 }
 /**
  * Per-candidate score breakdown explaining why a pose ranked where it did.

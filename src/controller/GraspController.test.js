@@ -181,3 +181,75 @@ test('selectCandidate sets selectedRank only in results', () => {
   assert.equal(grasp().selectedRank, 2)
   assert.equal(grasp().status, 'results')
 })
+
+// ── Stage-1 spatial ghost wiring (ADR-059) ─────────────────────────────────────
+
+/** THREE-free fake GraspGhostView recording the controller's calls. */
+function fakeGhost() {
+  return {
+    calls: [],
+    showCandidate(spec) { this.calls.push(['show', spec]) },
+    setTargetGeometry(g) { this.calls.push(['target', g]) },
+    setWorldCap(cap)     { this.calls.push(['cap', cap]) },
+    clear()              { this.calls.push(['clear']) },
+    tick(...args)        { this.calls.push(['tick', args]) },
+    dispose()            { this.calls.push(['dispose']) },
+  }
+}
+
+const EE_POSE = { kind: 'endEffector', frame: { position: [1, 2, 3], orientation: [0, 0, 0, 1] } }
+const JS_POSE = { kind: 'jointSpace', chainRef: 'arm', joints: [0, 0, 0] }
+
+/** Results-state setup with a ghost factory; returns the ghost instance list. */
+function ghostSetup(candidates) {
+  const store = fakeStore()
+  const ctrl  = makeCtrl({})
+  const ghosts = []
+  const gc = new GraspController(ctrl, store, {
+    createGhostView: () => { const g = fakeGhost(); ghosts.push(g); return g },
+  })
+  store.getState().actions.contextSetGrasp({
+    status: 'results', layout: { version: 'x', entities: 1 }, request: {}, candidates, selectedRank: null,
+  })
+  return { gc, store, ghosts, grasp: () => store.getState().context.grasp }
+}
+
+test('selecting a gated endEffector candidate shows a select-mode ghost with the typed frame', () => {
+  const { gc, ghosts } = ghostSetup([{ rank: 1, pose: EE_POSE, score: { totalScore: 0.9 } }])
+  gc.selectCandidate(1)
+  assert.equal(ghosts.length, 1)
+  const show = ghosts[0].calls.find(c => c[0] === 'show')
+  assert.ok(show)
+  assert.equal(show[1].mode, 'select')
+  assert.equal(show[1].rank, 1)
+  assert.deepEqual(show[1].frame, { position: [1, 2, 3], orientation: [0, 0, 0, 1] })
+})
+
+test('selecting a jointSpace candidate never constructs a ghost (capability gate — no heuristics)', () => {
+  const { gc, ghosts, grasp } = ghostSetup([{ rank: 1, pose: JS_POSE, score: { totalScore: 0.5 } }])
+  gc.selectCandidate(1)
+  assert.equal(grasp().selectedRank, 1)   // selection itself still works
+  assert.equal(ghosts.length, 0)          // but no ghost is fabricated
+})
+
+test('hover previews (mode hover), leaving reverts to the selected candidate (mode select)', () => {
+  const { gc, ghosts } = ghostSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9 } },
+    { rank: 2, pose: { ...EE_POSE, frame: { position: [4, 5, 6], orientation: [0, 0, 0, 1] } }, score: { totalScore: 0.4 } },
+  ])
+  gc.selectCandidate(1)
+  gc.hoverCandidate(2)
+  gc.hoverCandidate(null)
+  const shows = ghosts[0].calls.filter(c => c[0] === 'show').map(c => [c[1].mode, c[1].rank])
+  assert.deepEqual(shows, [['select', 1], ['hover', 2], ['select', 1]])
+})
+
+test('a new run and disposeGhost clean up the ghost (PHILOSOPHY #9)', async () => {
+  const { gc, ghosts } = ghostSetup([{ rank: 1, pose: EE_POSE, score: { totalScore: 0.9 } }])
+  gc.selectCandidate(1)
+  assert.equal(ghosts.length, 1)
+  await gc.runGraspSearch({})           // new run clears the stale ghost first
+  assert.ok(ghosts[0].calls.some(c => c[0] === 'clear'))
+  gc.disposeGhost()
+  assert.ok(ghosts[0].calls.some(c => c[0] === 'dispose'))
+})

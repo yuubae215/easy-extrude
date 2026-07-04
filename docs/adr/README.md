@@ -69,9 +69,9 @@ This directory records the project's design decisions.
 | [ADR-055](ADR-055-scene-layout-dsl-mutual.md) | **Scene ⇄ Layout DSL Mutual — a Normal-Form Inverse for the Geometry Layer** | Accepted (Phase 1 実装済) | 2026-06-22 | ADR-045, ADR-052, ADR-050, ADR-054, ADR-040, ADR-037, ADR-038 |
 | [ADR-056](ADR-056-computable-structural-isomorphism.md) | **Computable Structural Isomorphism on the Synonym Quotient — Canonical Form, Diff, Reconcile** | Accepted (実装済) | 2026-06-23 | ADR-052, ADR-055, ADR-044, ADR-050, ADR-051, ADR-049 |
 | [ADR-057](ADR-057-grasp-search-ui.md) | **Grasp Search UI — 右ドックの宣言/検証パネル（スコア優先・ゴーストは後続）** | Accepted (実装済) | 2026-06-30 | ADR-054, ADR-050, ADR-047, ADR-053, ADR-049, ADR-052, ADR-055 |
-| [ADR-058](ADR-058-context-authoring-fork-and-tweak.md) | **Context オーサリング UX — 例を土台に編集する（fork & tweak）** | Accepted (Phase 1 + Phase 2 in-place 編集 実装済) | 2026-06-30 | ADR-051, ADR-050, ADR-046, ADR-049, ADR-052, ADR-057 |
-| [ADR-059](ADR-059-grasp-candidate-spatial-ghost.md) | **Grasp 候補の空間ゴースト — 数値を「掴める姿」に翻訳する（段階化）** | Proposed | 2026-06-30 | ADR-057, ADR-053, ADR-047, ADR-054, ADR-045, ADR-060 |
-| [ADR-060](ADR-060-grasp-contract-data-governance.md) | **Grasp Contract のデータ構造統治 — 決定層は閉、pose は kind 判別の有界 union** | Accepted (upstream 実装済み確認 2026-07-01; 本リポジトリ追従は未着手) | 2026-06-30 | ADR-059, ADR-057, ADR-054, ADR-056 |
+| [ADR-058](ADR-058-context-authoring-fork-and-tweak.md) | **Context オーサリング UX — 例を土台に編集する（fork & tweak）** | Accepted (Phase 1 + seed chips + UX 具体化 + Phase 2 in-place 編集 実装済) | 2026-06-30 | ADR-051, ADR-050, ADR-046, ADR-049, ADR-052, ADR-057 |
+| [ADR-059](ADR-059-grasp-candidate-spatial-ghost.md) | **Grasp 候補の空間ゴースト — 数値を「掴める姿」に翻訳する（段階化）** | Accepted (段1 実装済 2026-07-03; 段2 は門2 待ち) | 2026-06-30 | ADR-057, ADR-053, ADR-047, ADR-054, ADR-045, ADR-060 |
+| [ADR-060](ADR-060-grasp-contract-data-governance.md) | **Grasp Contract のデータ構造統治 — 決定層は閉、pose は kind 判別の有界 union** | Accepted (upstream 実装済み確認 2026-07-01; 本リポジトリ追従済 2026-07-03 — BFF 型再生成 + 消費コード ADR-059 段1) | 2026-06-30 | ADR-059, ADR-057, ADR-054, ADR-056 |
 
 ## How to Add a New ADR
 

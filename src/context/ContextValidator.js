@@ -395,8 +395,14 @@ export function validateContext(ctx) {
   return { valid: errors.length === 0, errors, openQuestions, blockedChecks, conflicts, negotiationClusters, promoted, checkResults }
 }
 
-/** True iff `iv` is a [min, max] number pair with min < max. */
-function isInterval(iv) {
+/**
+ * True iff `iv` is a [min, max] number pair with min < max.
+ *
+ * Exported so the intake UI's field-level live checks call THE SAME predicate
+ * the validator applies at commit (ADR-058 §B-2 — the rule's source of truth is
+ * the validator; the input surface only mirrors it, never re-implements it).
+ */
+export function isInterval(iv) {
   return Array.isArray(iv) && iv.length === 2
     && typeof iv[0] === 'number' && typeof iv[1] === 'number'
     && iv[0] < iv[1]
