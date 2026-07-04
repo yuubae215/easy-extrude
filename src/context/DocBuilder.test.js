@@ -11,6 +11,10 @@ import {
   addFact,
   addVariable,
   addRequirement,
+  updateActor,
+  updateVariable,
+  updateRequirement,
+  removeDocEntry,
 } from './DocBuilder.js'
 import { CONTEXT_DSL_VERSION, SUPPORTED_VERSIONS } from './ContextDslSchema.js'
 
@@ -220,5 +224,96 @@ describe('composition — build a doc from scratch', () => {
     assert.equal(doc1.actors.length, 1)
     assert.equal(doc2.actors.length, 1)
     assert.equal(doc2.variables.length, 1)
+  })
+})
+
+// ── In-place editing (ADR-058 Phase 2) ──────────────────────────────────────────
+
+describe('updateActor / updateVariable / updateRequirement', () => {
+  it('replaces the entry sharing the ref, leaving others untouched', () => {
+    let doc = createBlankDoc()
+    doc = addActor(doc, { ref: 'a_x', role: 'developer' })
+    doc = addActor(doc, { ref: 'a_y', role: 'agent' })
+    const next = updateActor(doc, { ref: 'a_x', role: 'maintainer', discipline: 'sw' })
+    assert.equal(next.actors.length, 2)
+    assert.deepEqual(next.actors[0], { ref: 'a_x', role: 'maintainer', discipline: 'sw' })
+    assert.deepEqual(next.actors[1], { ref: 'a_y', role: 'agent' })
+  })
+
+  it('preserves array position when replacing (identity by ref)', () => {
+    let doc = createBlankDoc()
+    doc = addVariable(doc, { ref: 'v_a', unit: 'mm', domain: [0, 10] })
+    doc = addVariable(doc, { ref: 'v_b', unit: 'mm', domain: [0, 20] })
+    const next = updateVariable(doc, { ref: 'v_a', unit: 'cm', domain: [1, 9] })
+    assert.equal(next.variables[0].ref, 'v_a')
+    assert.equal(next.variables[0].unit, 'cm')
+    assert.equal(next.variables[1].ref, 'v_b')
+  })
+
+  it('upserts (appends) when no entry matches the ref', () => {
+    const doc  = createBlankDoc()
+    const next = updateActor(doc, { ref: 'a_new', role: 'developer' })
+    assert.equal(next.actors.length, 1)
+    assert.equal(next.actors[0].ref, 'a_new')
+  })
+
+  it('does not mutate the source doc', () => {
+    let doc = createBlankDoc()
+    doc = addRequirement(doc, {
+      ref: 'r_x', by: 'a_x', kpi: { name: 'reach', expr: 'reach', unit: 'mm' },
+      criterion: { op: '>=', value: 400 }, constrains: ['v_x'], negotiability: 'must',
+      admissible: { interval: [400, 800], source: 'stated' }, evidence: [],
+    })
+    const snap = JSON.parse(JSON.stringify(doc))
+    updateRequirement(doc, { ...doc.requirements[0], criterion: { op: '>=', value: 999 } })
+    assert.deepEqual(doc, snap)
+  })
+
+  it('updateRequirement can carry unmanaged fields through unchanged', () => {
+    let doc = createBlankDoc()
+    doc = addRequirement(doc, {
+      ref: 'r_x', by: 'a_x', kpi: { name: 'reach', expr: 'reach', unit: 'mm' },
+      criterion: { op: '>=', value: 400 }, constrains: ['v_x'], negotiability: 'must',
+      admissible: { interval: [400, 800], source: 'stated' }, evidence: [], note: 'keep me',
+    })
+    const edited = { ...doc.requirements[0], criterion: { op: '>=', value: 500 } }
+    const next = updateRequirement(doc, edited)
+    assert.equal(next.requirements[0].criterion.value, 500)
+    assert.equal(next.requirements[0].note, 'keep me')
+  })
+})
+
+describe('removeDocEntry', () => {
+  it('removes the entry of the given kind matching ref', () => {
+    let doc = createBlankDoc()
+    doc = addActor(doc, { ref: 'a_x', role: 'developer' })
+    doc = addActor(doc, { ref: 'a_y', role: 'agent' })
+    const next = removeDocEntry(doc, 'actor', 'a_x')
+    assert.equal(next.actors.length, 1)
+    assert.equal(next.actors[0].ref, 'a_y')
+  })
+
+  it('maps kind → array (variable, requirement, fact)', () => {
+    let doc = createBlankDoc()
+    doc = addVariable(doc, { ref: 'v_x', unit: 'mm', domain: [0, 10] })
+    doc = addFact(doc, { ref: 'f_x', subject: 's', attrs: {}, status: 'asserted' })
+    assert.equal(removeDocEntry(doc, 'variable', 'v_x').variables.length, 0)
+    assert.equal(removeDocEntry(doc, 'fact', 'f_x').given.length, 0)
+  })
+
+  it('is a safe no-op clone for an unknown ref', () => {
+    let doc = createBlankDoc()
+    doc = addActor(doc, { ref: 'a_x', role: 'developer' })
+    const next = removeDocEntry(doc, 'actor', 'a_missing')
+    assert.equal(next.actors.length, 1)
+    assert.notEqual(next, doc)
+  })
+
+  it('does not mutate the source doc', () => {
+    let doc = createBlankDoc()
+    doc = addActor(doc, { ref: 'a_x', role: 'developer' })
+    const snap = JSON.parse(JSON.stringify(doc))
+    removeDocEntry(doc, 'actor', 'a_x')
+    assert.deepEqual(doc, snap)
   })
 })

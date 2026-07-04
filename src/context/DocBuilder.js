@@ -89,6 +89,89 @@ export function addRequirement(doc, requirement) {
   return clone
 }
 
+// ── In-place editing (ADR-058 Phase 2 — fork & tweak, per-field edit) ────────────
+//
+// The add-* functions above append a new entry; the update-* functions below
+// REPLACE the entry sharing the same `ref` (identity), so an existing actor /
+// variable / requirement can be tweaked in place without deleting and re-adding.
+// They are the pure complement of the intake edit forms: the form rebuilds the
+// full entry object, the update fn swaps it in by ref. Input-immutable
+// (PHILOSOPHY #6); ref is the identity key, so renaming is not an edit but a
+// remove + add (which the validator would anyway force, since a rename orphans
+// referencing `by`/`constrains`). Upsert semantics: if no entry matches the ref
+// the entry is appended, so a stale ref never silently drops data (PHILOSOPHY #11).
+
+/**
+ * Replace the actor sharing `actor.ref` with `actor` (input-immutable).
+ * @param {object} doc
+ * @param {{ ref: string, role: string, discipline?: string }} actor
+ * @returns {object} new doc
+ */
+export function updateActor(doc, actor) {
+  const clone = _clone(doc)
+  clone.actors = _upsertByRef(clone.actors, actor)
+  return clone
+}
+
+/**
+ * Replace the variable sharing `variable.ref` with `variable` (input-immutable).
+ * @param {object} doc
+ * @param {{ ref: string, unit: string, domain: [number, number], description?: string }} variable
+ * @returns {object} new doc
+ */
+export function updateVariable(doc, variable) {
+  const clone = _clone(doc)
+  clone.variables = _upsertByRef(clone.variables, variable)
+  return clone
+}
+
+/**
+ * Replace the requirement sharing `requirement.ref` with `requirement`
+ * (input-immutable).
+ * @param {object} doc
+ * @param {object} requirement — full requirement entry (same shape as addRequirement)
+ * @returns {object} new doc
+ */
+export function updateRequirement(doc, requirement) {
+  const clone = _clone(doc)
+  clone.requirements = _upsertByRef(clone.requirements, requirement)
+  return clone
+}
+
+/** Entity kinds → their doc array key (mirrors SeedAnchor's map). */
+const KIND_ARRAY = {
+  actor:       'actors',
+  variable:    'variables',
+  requirement: 'requirements',
+  fact:        'given',
+}
+
+/**
+ * Remove the entry of `kind` matching `ref` (input-immutable). A ref with no
+ * match is a no-op clone (never throws — the caller may have stale UI state).
+ * @param {object} doc
+ * @param {'actor'|'variable'|'requirement'|'fact'} kind
+ * @param {string} ref
+ * @returns {object} new doc
+ */
+export function removeDocEntry(doc, kind, ref) {
+  const arrKey = KIND_ARRAY[kind]
+  if (!arrKey) return _clone(doc)
+  const clone = _clone(doc)
+  clone[arrKey] = (clone[arrKey] ?? []).filter(e => e?.ref !== ref)
+  return clone
+}
+
+/** Replace the array element sharing `entry.ref`, or append if none matches. */
+function _upsertByRef(arr, entry) {
+  const list = arr ?? []
+  const i = list.findIndex(e => e?.ref === entry.ref)
+  if (i === -1) return [...list, entry]
+  const next = list.slice()
+  next[i] = entry
+  return next
+}
+
 /** Deep clone via JSON round-trip (Context DSL docs are JSON-serializable). */
 function _clone(doc) {
   return JSON.parse(JSON.stringify(doc))

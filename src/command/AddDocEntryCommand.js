@@ -1,17 +1,13 @@
 /**
  * AddDocEntryCommand — undoable doc-entry addition command (ADR-051 Phase 1).
  *
- * Follows the same before/after snapshot pattern as AnswerQuestionCommand
- * (PHILOSOPHY #6 — Transformations Return New Instances):
- *   execute(): applyContextDoc(afterDoc, regenerate:true)
- *   undo():    applyContextDoc(beforeDoc, regenerate:true)
+ * A thin specialization of the generic `createDocEditCommand` (ADR-058 Phase 2):
+ * both are the same before/after snapshot pattern (PHILOSOPHY #6) over
+ * `applyContextDoc({regenerate:true})`. Kept as a named export so its existing
+ * call sites (intake add, NL fact batch) read intently; the in-place edit / remove
+ * paths call `createDocEditCommand` directly. A single implementation (§1.1) — this
+ * delegates rather than duplicating the body.
  *
- * `regenerate: true` is always passed for consistency — when a blank doc has no
- * specification.layout, scene regeneration is a no-op (PHILOSOPHY #11: never
- * silently skip a step that might matter in future).
- */
-
-/**
  * @param {import('../service/ContextService.js').ContextService} ctxService
  * @param {object} beforeDoc — full doc snapshot BEFORE the addition
  * @param {object} afterDoc  — full doc snapshot AFTER the addition
@@ -19,14 +15,8 @@
  * @param {object} viewContext — { camera, renderer, container }
  * @returns {{ label: string, execute(): Promise, undo(): Promise }}
  */
+import { createDocEditCommand } from './DocEditCommand.js'
+
 export function createAddDocEntryCommand(ctxService, beforeDoc, afterDoc, label, viewContext) {
-  return {
-    label,
-    execute() {
-      return Promise.resolve(ctxService.applyContextDoc(afterDoc, viewContext, { regenerate: true }))
-    },
-    undo() {
-      return Promise.resolve(ctxService.applyContextDoc(beforeDoc, viewContext, { regenerate: true }))
-    },
-  }
+  return createDocEditCommand(ctxService, beforeDoc, afterDoc, label, viewContext)
 }

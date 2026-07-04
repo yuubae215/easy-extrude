@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { extractFacts } from '../../context/NlIntake.js'
 import {
   buildSeedIndex,
+  seedEntry,
   describeSeedRequirement,
   describeSeedActor,
   describeSeedVariable,
@@ -318,12 +319,147 @@ function DualRange({ domain, lo, hi, onLo, onHi }) {
   )
 }
 
-// ── Actor form ─────────────────────────────────────────────────────────────────
+// ── In-place editing scaffolding (ADR-058 Phase 2) ──────────────────────────────
 
-function ActorForm({ actors, seedActors = [], onAdd }) {
-  const [ref, setRef]    = useState('')
-  const [role, setRole]  = useState('developer')
-  const [disc, setDisc]  = useState('')
+// Fades + slides its children in on mount — gives the inline editor a gentle
+// "unfold" when an existing-entry card is clicked open (soft, not a hard pop).
+function Reveal({ children }) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+  return (
+    <div style={{
+      opacity: shown ? 1 : 0,
+      transform: shown ? 'translateY(0)' : 'translateY(-5px)',
+      transition: 'opacity 0.18s ease, transform 0.18s ease',
+    }}>
+      {children}
+    </div>
+  )
+}
+
+// An existing entry as an interactive card: hover lifts it and reveals the ✎
+// affordance so the read-only list visibly becomes editable. `flash` replays the
+// same eaIntakeFlash animation the add form uses, as the "landed" confirmation.
+function EntryCard({ children, onEdit, flash, badge, editable = true }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <div
+      onClick={editable ? onEdit : undefined}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px',
+        padding: '5px 7px', marginBottom: '4px', borderRadius: '5px',
+        cursor: editable ? 'pointer' : 'default',
+        border: `1px solid ${hover && editable ? '#3a5a8a' : '#2e2e2e'}`,
+        background: hover && editable ? 'rgba(90,155,245,0.09)' : 'rgba(255,255,255,0.02)',
+        transition: 'border-color 0.15s ease, background 0.15s ease',
+        ...(flash ? { animation: 'eaIntakeFlash 700ms ease-out' } : {}),
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}</div>
+      {badge}
+      {editable && (
+        <span style={{ color: hover ? '#5a9bf5' : '#4a4a4a', fontSize: '11px', flexShrink: 0 }}>✎</span>
+      )}
+    </div>
+  )
+}
+
+// Ref shown but locked in edit mode — ref is identity; renaming would orphan
+// referencing by/constrains, so a rename is remove + re-add, not an edit.
+function LockedRef({ value }) {
+  return (
+    <Field label="ref · identity (remove & re-add to rename)">
+      <div style={{
+        ...inputStyle, background: '#151515', cursor: 'not-allowed',
+        display: 'flex', alignItems: 'center', gap: '5px',
+      }}>
+        <span style={{ color: '#5a9bf5' }}>{value}</span>
+        <span style={{ marginLeft: 'auto', color: '#555' }}>🔒</span>
+      </div>
+    </Field>
+  )
+}
+
+// The example's original value for a forked entry, shown as a faint anchor while
+// editing (ADR-058 §3.2 seed ghost) — reinforces "tweak the example into yours".
+function SeedAnchorHint({ entry, describe }) {
+  if (!entry) return null
+  const text = describe(entry)
+  if (!text) return null
+  return (
+    <div style={{
+      fontSize: '9px', color: '#d5a23a', marginBottom: '6px',
+      background: 'rgba(213,162,58,0.07)', border: '1px dashed #d5a23a44',
+      borderRadius: '4px', padding: '3px 6px',
+    }}>
+      ✎ Example had: {text}
+    </div>
+  )
+}
+
+// Save / Cancel / Remove footer shown in edit mode instead of the "+ Add" button.
+function EditorFooter({ onSave, canSave, onCancel, onRemove, saveLabel = 'Save' }) {
+  return (
+    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
+      <button onClick={onSave} style={btnStyle(true)} disabled={!canSave}>{saveLabel}</button>
+      <button onClick={onCancel} style={btnStyle(false)}>Cancel</button>
+      <button onClick={onRemove} title="Remove this entry"
+        style={{ ...btnStyle(false), marginLeft: 'auto', color: '#e08585', background: 'transparent', border: '1px solid #5a3333' }}>
+        🗑 Remove
+      </button>
+    </div>
+  )
+}
+
+// Compact summaries shown on the click-to-edit cards.
+function ActorSummary({ a }) {
+  return (
+    <>
+      <span style={{ color: '#5a9bf5' }}>{a.ref}</span>
+      {' · '}<span style={{ color: '#aaa' }}>{a.role}</span>
+      {a.discipline && <span style={{ color: '#777' }}> · {a.discipline}</span>}
+    </>
+  )
+}
+function VariableSummary({ v }) {
+  return (
+    <>
+      <span style={{ color: '#5a9bf5' }}>{v.ref}</span>
+      {' '}<span style={{ color: '#aaa' }}>∈ [{v.domain?.[0]}, {v.domain?.[1]}] {v.unit}</span>
+    </>
+  )
+}
+function RequirementSummary({ r }) {
+  const iv = r.admissible?.interval
+  return (
+    <>
+      <span style={{ color: '#5a9bf5' }}>{r.ref}</span>
+      {r.kpi?.name && r.criterion && (
+        <span style={{ color: '#aaa' }}> · {r.kpi.name} {r.criterion.op} {r.criterion.value}</span>
+      )}
+      {Array.isArray(iv) && <span style={{ color: '#777' }}> · [{iv[0]}, {iv[1]}]</span>}
+      {r.by && <span style={{ color: '#666' }}> · {r.by}</span>}
+    </>
+  )
+}
+
+/** True when the currently-edited key belongs to `kind` (hides that section's add form). */
+function isEditingKind(editing, kind) {
+  return typeof editing === 'string' && editing.startsWith(`${kind}:`)
+}
+
+// ── Actor form (dual mode: create | edit) ───────────────────────────────────────
+
+function ActorForm({ mode = 'create', initial = null, actors, seedActors = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
+  const isEdit = mode === 'edit'
+  const [ref, setRef]    = useState(initial?.ref ?? '')
+  const [role, setRole]  = useState(initial?.role ?? 'developer')
+  const [disc, setDisc]  = useState(initial?.discipline ?? '')
   // §A-2: snapshot of what the last-picked seed chip flooded in (null = no seed
   // picked); drives the per-field tint. flashTick remounts the field block so
   // the flood flash animation replays.
@@ -343,34 +479,35 @@ function ActorForm({ actors, seedActors = [], onAdd }) {
 
   function submit() {
     if (gaps.length > 0) return
+    if (isEdit) {
+      const next = { ...initial, ref: ref.trim(), role }
+      if (disc) next.discipline = disc; else delete next.discipline
+      onSave(next)
+      return
+    }
     onAdd({ ref: ref.trim(), role, ...(disc ? { discipline: disc } : {}) })
     setRef(''); setDisc(''); setSeedFill(null)
   }
 
   return (
     <div>
-      <SeedChips
-        kind="actor"
-        entries={seedActors}
-        describe={describeSeedActor}
-        onPick={fillFromSeed}
-        hint="✎ From example — click to copy an actor, then tweak it:"
-      />
-      {actors.length > 0 && (
-        <div style={{ marginBottom: '6px' }}>
-          {actors.map(a => (
-            <div key={a.ref} style={{ fontSize: '10px', color: '#888', paddingBottom: '2px' }}>
-              <span style={{ color: '#5a9bf5' }}>{a.ref}</span>
-              {' · '}<span style={{ color: '#aaa' }}>{a.role}</span>
-              {a.discipline && <span style={{ color: '#777' }}> · {a.discipline}</span>}
-            </div>
-          ))}
-        </div>
+      {!isEdit && (
+        <SeedChips
+          kind="actor"
+          entries={seedActors}
+          describe={describeSeedActor}
+          onPick={fillFromSeed}
+          hint="✎ From example — click to copy an actor, then tweak it:"
+        />
       )}
+      {isEdit && <SeedAnchorHint entry={seedEntry} describe={describeSeedActor} />}
       <div key={flashTick} style={flashTick > 0 ? { animation: 'eaIntakeFlash 700ms ease-out' } : undefined}>
-        <RefField label="ref (e.g. a_robot)" value={ref} onChange={setRef}
-          placeholder="a_robot" existingRefs={existingRefs}
-          tint={matchesSeed(seedFill?.ref, ref)} onEnter={submit} />
+        {isEdit
+          ? <LockedRef value={ref} />
+          : <RefField label="ref (e.g. a_robot)" value={ref} onChange={setRef}
+              placeholder="a_robot" existingRefs={existingRefs}
+              tint={matchesSeed(seedFill?.ref, ref)} onEnter={submit} />
+        }
         <Field label="role">
           <Select value={role} onChange={setRole} options={ROLES}
             style={matchesSeed(seedFill?.role, role) ? seedTint : undefined} />
@@ -381,21 +518,23 @@ function ActorForm({ actors, seedActors = [], onAdd }) {
         </Field>
       </div>
       <GapNote gaps={gaps} />
-      <button onClick={submit} style={btnStyle(true)} disabled={gaps.length > 0}>
-        + Add Actor
-      </button>
+      {isEdit
+        ? <EditorFooter onSave={submit} canSave={gaps.length === 0} onCancel={onCancel} onRemove={onRemove} />
+        : <button onClick={submit} style={btnStyle(true)} disabled={gaps.length > 0}>+ Add Actor</button>
+      }
     </div>
   )
 }
 
 // ── Variable form ──────────────────────────────────────────────────────────────
 
-function VariableForm({ variables, seedVariables = [], onAdd }) {
-  const [ref, setRef]   = useState('')
-  const [unit, setUnit] = useState('mm')
-  const [lo, setLo]     = useState('')
-  const [hi, setHi]     = useState('')
-  const [desc, setDesc] = useState('')
+function VariableForm({ mode = 'create', initial = null, variables, seedVariables = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
+  const isEdit = mode === 'edit'
+  const [ref, setRef]   = useState(initial?.ref ?? '')
+  const [unit, setUnit] = useState(initial?.unit ?? 'mm')
+  const [lo, setLo]     = useState(Array.isArray(initial?.domain) ? String(initial.domain[0]) : '')
+  const [hi, setHi]     = useState(Array.isArray(initial?.domain) ? String(initial.domain[1]) : '')
+  const [desc, setDesc] = useState(initial?.description ?? '')
   const [seedFill, setSeedFill] = useState(null)
   const [flashTick, setFlashTick] = useState(0)
 
@@ -418,6 +557,12 @@ function VariableForm({ variables, seedVariables = [], onAdd }) {
 
   function submit() {
     if (gaps.length > 0) return
+    if (isEdit) {
+      const next = { ...initial, ref: ref.trim(), unit: unit.trim(), domain: [parseFloat(lo), parseFloat(hi)] }
+      if (desc.trim()) next.description = desc.trim(); else delete next.description
+      onSave(next)
+      return
+    }
     onAdd({
       ref: ref.trim(), unit: unit.trim(), domain: [parseFloat(lo), parseFloat(hi)],
       ...(desc.trim() ? { description: desc.trim() } : {}),
@@ -429,27 +574,23 @@ function VariableForm({ variables, seedVariables = [], onAdd }) {
 
   return (
     <div>
-      <SeedChips
-        kind="variable"
-        entries={seedVariables}
-        describe={describeSeedVariable}
-        onPick={fillFromSeed}
-        hint="✎ From example — click to copy a variable, then tweak it:"
-      />
-      {variables.length > 0 && (
-        <div style={{ marginBottom: '6px' }}>
-          {variables.map(v => (
-            <div key={v.ref} style={{ fontSize: '10px', color: '#888', paddingBottom: '2px' }}>
-              <span style={{ color: '#5a9bf5' }}>{v.ref}</span>
-              {' '}<span style={{ color: '#aaa' }}>∈ [{v.domain?.[0]}, {v.domain?.[1]}] {v.unit}</span>
-            </div>
-          ))}
-        </div>
+      {!isEdit && (
+        <SeedChips
+          kind="variable"
+          entries={seedVariables}
+          describe={describeSeedVariable}
+          onPick={fillFromSeed}
+          hint="✎ From example — click to copy a variable, then tweak it:"
+        />
       )}
+      {isEdit && <SeedAnchorHint entry={seedEntry} describe={describeSeedVariable} />}
       <div key={flashTick} style={flashTick > 0 ? { animation: 'eaIntakeFlash 700ms ease-out' } : undefined}>
-        <RefField label="ref (e.g. v_reach)" value={ref} onChange={setRef}
-          placeholder="v_reach" existingRefs={existingRefs}
-          tint={matchesSeed(seedFill?.ref, ref)} onEnter={submit} />
+        {isEdit
+          ? <LockedRef value={ref} />
+          : <RefField label="ref (e.g. v_reach)" value={ref} onChange={setRef}
+              placeholder="v_reach" existingRefs={existingRefs}
+              tint={matchesSeed(seedFill?.ref, ref)} onEnter={submit} />
+        }
         <Field label="unit">
           <input value={unit} onChange={e => setUnit(e.target.value)}
             placeholder="mm" style={{ ...inputStyle, ...tintOf('unit', unit) }} />
@@ -470,27 +611,29 @@ function VariableForm({ variables, seedVariables = [], onAdd }) {
         </Field>
       </div>
       <GapNote gaps={gaps} />
-      <button onClick={submit} style={btnStyle(true)} disabled={gaps.length > 0}>
-        + Add Variable
-      </button>
+      {isEdit
+        ? <EditorFooter onSave={submit} canSave={gaps.length === 0} onCancel={onCancel} onRemove={onRemove} />
+        : <button onClick={submit} style={btnStyle(true)} disabled={gaps.length > 0}>+ Add Variable</button>
+      }
     </div>
   )
 }
 
 // ── Requirement form ───────────────────────────────────────────────────────────
 
-function RequirementForm({ actors, variables, requirements = [], seedReqs = [], onAdd, onPreview }) {
-  const [ref, setRef]         = useState('')
-  const [by, setBy]           = useState('')
-  const [kpiName, setKpiName] = useState('')
-  const [kpiExpr, setKpiExpr] = useState('')
-  const [kpiUnit, setKpiUnit] = useState('')
-  const [op, setOp]           = useState('>=')
-  const [val, setVal]         = useState('')
-  const [constrains, setConst]= useState('')
-  const [neg, setNeg]         = useState('must')
-  const [admLo, setAdmLo]     = useState('')
-  const [admHi, setAdmHi]     = useState('')
+function RequirementForm({ mode = 'create', initial = null, actors, variables, requirements = [], seedReqs = [], seedEntry = null, onAdd, onSave, onRemove, onCancel, onPreview }) {
+  const isEdit = mode === 'edit'
+  const [ref, setRef]         = useState(initial?.ref ?? '')
+  const [by, setBy]           = useState(initial?.by ?? '')
+  const [kpiName, setKpiName] = useState(initial?.kpi?.name ?? '')
+  const [kpiExpr, setKpiExpr] = useState(initial?.kpi?.expr ?? '')
+  const [kpiUnit, setKpiUnit] = useState(initial?.kpi?.unit ?? '')
+  const [op, setOp]           = useState(initial?.criterion?.op ?? '>=')
+  const [val, setVal]         = useState(initial?.criterion?.value != null ? String(initial.criterion.value) : '')
+  const [constrains, setConst]= useState(initial?.constrains?.[0] ?? '')
+  const [neg, setNeg]         = useState(initial?.negotiability ?? 'must')
+  const [admLo, setAdmLo]     = useState(Array.isArray(initial?.admissible?.interval) ? String(initial.admissible.interval[0]) : '')
+  const [admHi, setAdmHi]     = useState(Array.isArray(initial?.admissible?.interval) ? String(initial.admissible.interval[1]) : '')
   const [seedFill, setSeedFill] = useState(null)
   const [flashTick, setFlashTick] = useState(0)
 
@@ -541,13 +684,26 @@ function RequirementForm({ actors, variables, requirements = [], seedReqs = [], 
   function submit() {
     if (gaps.length > 0) return
     onPreview?.(null)
-    onAdd({
+    const managed = {
       ref: ref.trim(),
       by:  by.trim(),
       kpi: { name: kpiName.trim(), expr: kpiExpr.trim() || kpiName.trim(), unit: kpiUnit.trim() },
       criterion: { op, value: parseFloat(val) },
       constrains: [constrains.trim()],
       negotiability: neg,
+    }
+    if (isEdit) {
+      // Spread `initial` first so unmanaged fields (evidence, note, source…) survive
+      // the edit — the form manages only the fields it shows (PHILOSOPHY #6 / #11).
+      onSave({
+        ...initial,
+        ...managed,
+        admissible: { source: 'stated', ...(initial?.admissible ?? {}), interval: [parseFloat(admLo), parseFloat(admHi)] },
+      })
+      return
+    }
+    onAdd({
+      ...managed,
       admissible: { interval: [parseFloat(admLo), parseFloat(admHi)], source: 'stated' },
       evidence: [],
     })
@@ -565,17 +721,23 @@ function RequirementForm({ actors, variables, requirements = [], seedReqs = [], 
 
   return (
     <div>
-      <SeedChips
-        kind="requirement"
-        entries={seedReqs}
-        describe={describeSeedRequirement}
-        onPick={fillFromSeed}
-        hint="✎ From example — click to copy a filled requirement, then tweak it:"
-      />
+      {!isEdit && (
+        <SeedChips
+          kind="requirement"
+          entries={seedReqs}
+          describe={describeSeedRequirement}
+          onPick={fillFromSeed}
+          hint="✎ From example — click to copy a filled requirement, then tweak it:"
+        />
+      )}
+      {isEdit && <SeedAnchorHint entry={seedEntry} describe={describeSeedRequirement} />}
       <div key={flashTick} style={flashTick > 0 ? { animation: 'eaIntakeFlash 700ms ease-out' } : undefined}>
-        <RefField label="ref (e.g. r_reach)" value={ref} onChange={setRef}
-          placeholder="r_reach" existingRefs={existingRefs}
-          tint={matchesSeed(seedFill?.ref, ref)} />
+        {isEdit
+          ? <LockedRef value={ref} />
+          : <RefField label="ref (e.g. r_reach)" value={ref} onChange={setRef}
+              placeholder="r_reach" existingRefs={existingRefs}
+              tint={matchesSeed(seedFill?.ref, ref)} />
+        }
         <Field label="by (actor)">
           {actors.length > 0
             ? <Select value={by} onChange={setBy}
@@ -662,9 +824,10 @@ function RequirementForm({ actors, variables, requirements = [], seedReqs = [], 
         </div>
       </div>
       <GapNote gaps={gaps} />
-      <button onClick={submit} style={btnStyle(true)} disabled={gaps.length > 0}>
-        + Add Requirement
-      </button>
+      {isEdit
+        ? <EditorFooter onSave={submit} canSave={gaps.length === 0} onCancel={onCancel} onRemove={onRemove} />
+        : <button onClick={submit} style={btnStyle(true)} disabled={gaps.length > 0}>+ Add Requirement</button>
+      }
     </div>
   )
 }
@@ -741,18 +904,45 @@ export function IntakePanel() {
   const [openVar,   setOpenVar]   = useState(false)
   const [openReq,   setOpenReq]   = useState(false)
 
+  // In-place editing (ADR-058 Phase 2): exactly one entry is editable at a time
+  // (composite key `${kind}:${ref}`); `flash` replays the save-landed animation.
+  const [editing, setEditing] = useState(null)
+  const [flash, setFlash]     = useState(null)
+
   const actors       = ctx.actors       ?? []
   const variables    = ctx.variables    ?? []
   const requirements = ctx.requirements ?? []
 
   // ADR-058 — when the project was forked from an example, index the read-only
-  // seed so the requirement form can offer its filled values as anchors.
+  // seed so the forms can offer / anchor its filled values.
   const seedIndex = useMemo(() => buildSeedIndex(ctx.authorSeed), [ctx.authorSeed])
   const seedName  = ctx.authorSeed?.meta?.name
+
+  const keyOf = (kind, ref) => `${kind}:${ref}`
+  const beginEdit = (kind, ref) => setEditing(keyOf(kind, ref))
+  const cancelEdit = () => setEditing(null)
 
   function onAdd(type, data) {
     callbacks.onAddDocEntry?.(type, data)
   }
+  // Save = edit an existing entry in place, then flash + collapse. Undoable via
+  // ContextController.editDocEntry; re-projection refreshes the cards.
+  function onSaveEdit(kind, data) {
+    callbacks.onEditDocEntry?.(kind, data)
+    setFlash(keyOf(kind, data.ref))
+    setEditing(null)
+  }
+  function onRemove(kind, ref) {
+    callbacks.onRemoveDocEntry?.(kind, ref)
+    setEditing(null)
+  }
+
+  // Clear the save-flash after the animation has had time to play.
+  useEffect(() => {
+    if (!flash) return
+    const id = setTimeout(() => setFlash(null), 800)
+    return () => clearTimeout(id)
+  }, [flash])
 
   return (
     <div style={{ paddingBottom: '8px' }}>
@@ -767,6 +957,9 @@ export function IntakePanel() {
         </div>
       )}
       <WhyTrail actorCount={actors.length} varCount={variables.length} reqCount={requirements.length} />
+      <div style={{ fontSize: '9px', color: '#5a9bf5', marginBottom: '8px' }}>
+        Tip: click any entry to tweak it in place.
+      </div>
 
       <Section
         title="Import from natural language"
@@ -783,7 +976,26 @@ export function IntakePanel() {
         open={openActor}
         onToggle={() => setOpenActor(o => !o)}
       >
-        <ActorForm actors={actors} seedActors={seedIndex.actors} onAdd={d => onAdd('actor', d)} />
+        {actors.map(a => editing === keyOf('actor', a.ref) ? (
+          <Reveal key={`edit-${a.ref}`}>
+            <ActorForm
+              mode="edit" initial={a} actors={actors}
+              seedEntry={seedEntry(seedIndex, 'actor', a.ref)}
+              onSave={d => onSaveEdit('actor', d)}
+              onRemove={() => onRemove('actor', a.ref)}
+              onCancel={cancelEdit}
+            />
+          </Reveal>
+        ) : (
+          <EntryCard key={a.ref} onEdit={() => beginEdit('actor', a.ref)} flash={flash === keyOf('actor', a.ref)}>
+            <ActorSummary a={a} />
+          </EntryCard>
+        ))}
+        {!isEditingKind(editing, 'actor') && (
+          <div style={{ marginTop: actors.length ? '6px' : 0 }}>
+            <ActorForm actors={actors} seedActors={seedIndex.actors} onAdd={d => onAdd('actor', d)} />
+          </div>
+        )}
       </Section>
 
       <Section
@@ -792,7 +1004,26 @@ export function IntakePanel() {
         open={openVar}
         onToggle={() => setOpenVar(o => !o)}
       >
-        <VariableForm variables={variables} seedVariables={seedIndex.variables} onAdd={d => onAdd('variable', d)} />
+        {variables.map(v => editing === keyOf('variable', v.ref) ? (
+          <Reveal key={`edit-${v.ref}`}>
+            <VariableForm
+              mode="edit" initial={v} variables={variables}
+              seedEntry={seedEntry(seedIndex, 'variable', v.ref)}
+              onSave={d => onSaveEdit('variable', d)}
+              onRemove={() => onRemove('variable', v.ref)}
+              onCancel={cancelEdit}
+            />
+          </Reveal>
+        ) : (
+          <EntryCard key={v.ref} onEdit={() => beginEdit('variable', v.ref)} flash={flash === keyOf('variable', v.ref)}>
+            <VariableSummary v={v} />
+          </EntryCard>
+        ))}
+        {!isEditingKind(editing, 'variable') && (
+          <div style={{ marginTop: variables.length ? '6px' : 0 }}>
+            <VariableForm variables={variables} seedVariables={seedIndex.variables} onAdd={d => onAdd('variable', d)} />
+          </div>
+        )}
       </Section>
 
       <Section
@@ -801,14 +1032,52 @@ export function IntakePanel() {
         open={openReq}
         onToggle={() => setOpenReq(o => !o)}
       >
-        <RequirementForm
-          actors={actors}
-          variables={variables}
-          requirements={requirements}
-          seedReqs={seedIndex.requirements}
-          onAdd={d => onAdd('requirement', d)}
-          onPreview={spec => callbacks.onIntakePreview?.(spec)}
-        />
+        {requirements.map(r => {
+          // Region requirements are edited by the 3-D widgets in Author mode — the
+          // interval form can't represent a region, so show them read-only + a hint
+          // (honest, PHILOSOPHY #11) instead of a lossy edit.
+          const isRegion = !!r.admissible?.region && !Array.isArray(r.admissible?.interval)
+          if (editing === keyOf('requirement', r.ref) && !isRegion) {
+            return (
+              <Reveal key={`edit-${r.ref}`}>
+                <RequirementForm
+                  mode="edit" initial={r} actors={actors} variables={variables} requirements={requirements}
+                  seedEntry={seedEntry(seedIndex, 'requirement', r.ref)}
+                  onSave={d => onSaveEdit('requirement', d)}
+                  onRemove={() => onRemove('requirement', r.ref)}
+                  onCancel={cancelEdit}
+                  onPreview={spec => callbacks.onIntakePreview?.(spec)}
+                />
+              </Reveal>
+            )
+          }
+          return (
+            <EntryCard
+              key={r.ref}
+              editable={!isRegion}
+              onEdit={() => beginEdit('requirement', r.ref)}
+              flash={flash === keyOf('requirement', r.ref)}
+              badge={isRegion ? (
+                <span style={{ fontSize: '8px', color: '#888', border: '1px solid #444', borderRadius: '6px', padding: '0 4px', flexShrink: 0 }}
+                  title="Edit this region in Author mode">region</span>
+              ) : null}
+            >
+              <RequirementSummary r={r} />
+            </EntryCard>
+          )
+        })}
+        {!isEditingKind(editing, 'requirement') && (
+          <div style={{ marginTop: requirements.length ? '6px' : 0 }}>
+            <RequirementForm
+              actors={actors}
+              variables={variables}
+              requirements={requirements}
+              seedReqs={seedIndex.requirements}
+              onAdd={d => onAdd('requirement', d)}
+              onPreview={spec => callbacks.onIntakePreview?.(spec)}
+            />
+          </div>
+        )}
       </Section>
     </div>
   )
