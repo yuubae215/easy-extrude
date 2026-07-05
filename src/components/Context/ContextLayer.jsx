@@ -1,6 +1,7 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from '../ContextDemo/ConflictMatrix.jsx'
 import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.jsx'
+import { ChecksPanel } from './ChecksPanel.jsx'
 import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
 import { WizardPanel } from './WizardPanel.jsx'
@@ -66,6 +67,9 @@ export function ContextLayer() {
       { id: 'matrix',    label: 'Matrix' },
       { id: 'cluster',   label: 'Cluster' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
+      // Acceptance verdicts + measurement feedback (ADR-062 Phase 4) — only
+      // when the doc declares checks (no empty tab for authoring-stage docs).
+      ...(ctx.checks?.length > 0 ? [{ id: 'checks', label: 'Checks' }] : []),
       { id: 'why',       label: 'Why' },
       { id: 'tree',      label: 'Overview' },
       // Guided intake (ADR-063 Phase 3) sits beside the expert Intake tab —
@@ -124,6 +128,7 @@ export function ContextLayer() {
               tab.id === 'matrix'    ? (ctx.conflictMatrix ? Object.values(ctx.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
               tab.id === 'cluster'   ? (ctx.resolutionOrder?.filter(s => !s.approved).length ?? 0) :
               tab.id === 'questions' ? (ctx.form?.length ?? 0) :
+              tab.id === 'checks'    ? (ctx.checks?.filter(c => c.status !== 'pass').length ?? 0) :
               tab.id === 'why'       ? (ctx.provenance?.gaps?.filter(g => !g.resolved).length ?? 0) : 0
             return (
               <button
@@ -178,6 +183,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'questions' && (
           <FormPanel />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'checks' && (
+          <ChecksPanel />
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'why' && (
           <WhyBreadcrumb />

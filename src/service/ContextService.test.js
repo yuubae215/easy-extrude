@@ -324,3 +324,34 @@ test('recoverProvenance returns found:false (with empty gaps) for a non-derived 
   assert.equal(p.found, false)
   assert.deepEqual(p.gaps, [])
 })
+
+// ── projectChecks: acceptance verdicts joined with baked predicates (ADR-062 Phase 4) ──
+
+test('projectChecks joins checkResults with the doc predicate (verdict + operands in one row)', async () => {
+  const svc = new ContextService(fakeScene())
+  await svc.loadContext(load('cell_robotics_context.json'), VC)
+
+  const checks = svc.projectChecks()
+  const byRef = new Map(checks.map(c => [c.ref, c]))
+
+  const reach = byRef.get('a_tcp_reach')
+  assert.equal(reach.status, 'pass')
+  assert.equal(reach.kind, 'robot_reach')
+  assert.equal(reach.predicate.marginMin, 25)          // baked operands ride along
+  assert.deepEqual(reach.blockedBy, [])
+
+  const fence = byRef.get('a_fence_clearance')
+  assert.equal(fence.status, 'fail')
+  assert.equal(fence.violations.length, 1)             // validator-owned verdict, verbatim
+
+  const gripper = byRef.get('a_gripper_env')
+  assert.equal(gripper.status, 'blocked')
+  assert.deepEqual(gripper.blockedBy, ['oq_unknown_f_gripper_stroke'])
+})
+
+test('projectChecks returns [] before a doc is loaded and for a doc without acceptance', async () => {
+  const svc = new ContextService(fakeScene())
+  assert.deepEqual(svc.projectChecks(), [])
+  await svc.loadContext(phase2(), VC)                  // acceptance: []
+  assert.deepEqual(svc.projectChecks(), [])
+})

@@ -705,6 +705,22 @@ Fact / Variable). The **Why roots** (the apexes nothing climbs above) are surfac
 edges / roots. It refreshes on every doc mutation (add / answer / region-edit / undo / redo), so the
 overview always matches the live document. Empty before any actors/variables/requirements exist.
 
+The **Checks** tab (`ChecksPanel`, ADR-062 Phase 4) surfaces the validator's acceptance verdicts
+(`checkResults` — pass 緑 / fail 赤 / blocked 琥珀) joined with each check's baked measurement
+operands (`ContextService.projectChecks()`). It appears only when the loaded doc declares
+acceptance checks; the tab badge counts non-passing checks. Each card shows the verdict badge,
+the predicate kind, the violation records verbatim (fail), or the blocking question refs with a
+pointer to the Questions tab (blocked). Robotics predicates (`robot_reach` / `collision_free`)
+additionally render a **worst-margin near-miss meter**: the fill is the shared ADR-061 curve over
+the shortfall (one curve across the grasp funnel and this panel), and the raw worst / required
+numbers (geometry length unit) are always printed beside it. Proof-feedback wiring: a run-over-run
+unsettled-count delta chip, and a green landing flash on any check whose status just flipped to
+pass — e.g. answering the blocking fact on the Questions tab flips a blocked robotics check to
+pass right here (the ADR-053 measurement loop closing in the UI). The previous snapshot is
+component-local (`usePrevOnChange` over status-aware keys); the panel derives, never re-judges.
+The **Robot Cell — Robotics Checks** template ships one check per verdict so the loop is
+demonstrable out of the box.
+
 The **Wizard** tab (`WizardPanel`, ADR-063 Phase 3) is the guided-intake route — the canonical
 entry for a user who cannot yet fill the blank forms (recognition over recall). Inactive it shows a
 start screen (▶ Start guided intake → `onWizardStart`); active it renders a progress trail
@@ -757,7 +773,7 @@ stay free-text underneath the suggestions (expert escape hatch).
 
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
-- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) + **Why** + **俯瞰** + Intake tabs, undoable approval.
+- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) (+ Checks when the doc declares acceptance) + **Why** + **俯瞰** + Wizard + Intake (+ Grasp when seeded) tabs, undoable approval.
 - **`author`** (Phase 3) — opened via **Context ▾ → 領域オーサリング** (`enterAuthoring()`). No
   tabs; the panel lists the live R6 conflicts (green when clear) while the **3D**
   `RegionAuthoringWidget`s are the editing surface — drag a handle to resize/move a footprint;
@@ -771,7 +787,12 @@ A transient full-screen modal (`TemplateGallery.jsx`, z-index 300 — above all 
 PHILOSOPHY #26) opened via Header **Context ▾ → New Project** (`openTemplateGallery()`). This is the
 single "create new" entry — the former **New Context** direct item was removed (its Empty Project
 card here is the blank path). Lists the static `TEMPLATE_CATALOG` as category-grouped cards (Starter:
-Empty Project; Robot Cell: Simple / Multi-party Conflict / Regions). Clicking a card fires
+Empty Project; Robot Cell: Simple / Multi-party Conflict / Regions / Robotics Checks). Each example
+card carries a **structure preview** (ADR-062 Phase 5): a Why/How/What stacked bar + per-layer node
+counts + the `⌗` doc-signature prefix, derived client-side from the ADR-056 canonical form
+(`canonicalForm` → pure `structurePreview`; previews computed once by the controller and pushed as
+`templateGalleryPreviews`). Layer colours match WhyTreeView; a doc whose derivation fails simply
+shows no preview (PHILOSOPHY #11). Clicking a card fires
 `onSelectTemplate(id)` → `selectTemplate(id)`, which loads the chosen doc through the single
 authoritative path (`adoptDoc` for blank, `loadContext` for examples) and opens the negotiate overlay
 [M]. The footer states the scene-replacement consequence explicitly (ADR-051 §7) so **no second

@@ -55,6 +55,13 @@ export const TEMPLATE_CATALOG = [
     category:    'Robot Cell',
     source:      { kind: 'example', file: 'cell_region_context.json' },
   },
+  {
+    id:          'cell_robotics',
+    name:        'Robot Cell — Robotics Checks',
+    description: 'Measured reach margins and contact clearances drive robot_reach / collision_free verdicts. Answer the gripper question to unblock a check.',
+    category:    'Robot Cell',
+    source:      { kind: 'example', file: 'cell_robotics_context.json' },
+  },
 ]
 
 /**

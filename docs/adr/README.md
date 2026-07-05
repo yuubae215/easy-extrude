@@ -73,7 +73,7 @@ This directory records the project's design decisions.
 | [ADR-059](ADR-059-grasp-candidate-spatial-ghost.md) | **Grasp 候補の空間ゴースト — 数値を「掴める姿」に翻訳する（段階化）** | Accepted (段1 実装済 2026-07-03; 段2 は門2 待ち) | 2026-06-30 | ADR-057, ADR-053, ADR-047, ADR-054, ADR-045, ADR-060 |
 | [ADR-060](ADR-060-grasp-contract-data-governance.md) | **Grasp Contract のデータ構造統治 — 決定層は閉、pose は kind 判別の有界 union** | Accepted (upstream 実装済み確認 2026-07-01; 本リポジトリ追従済 2026-07-03 — BFF 型再生成 + 消費コード ADR-059 段1) | 2026-06-30 | ADR-059, ADR-057, ADR-054, ADR-056 |
 | [ADR-061](ADR-061-grasp-diagnostics-funnel-feedback.md) | **Grasp Diagnostics ファネル — 棄却の集計事実を「効いた感」フィードバックへ導出する** | Accepted (実装済) | 2026-07-04 | ADR-060, ADR-057, ADR-059, ADR-054 |
-| [ADR-062](ADR-062-ux-upgrade-three-layer-policy.md) | **UX アップグレード三層方針 — 証明は接続先、契約はカノニカル、体感はゲーム感覚** | Accepted (Phase 1+2+3 実装済; Phase 4–5 後続) | 2026-07-05 | ADR-063, ADR-060, ADR-061, ADR-059, ADR-058, ADR-057, ADR-054, ADR-053, ADR-051, ADR-050 |
+| [ADR-062](ADR-062-ux-upgrade-three-layer-policy.md) | **UX アップグレード三層方針 — 証明は接続先、契約はカノニカル、体感はゲーム感覚** | Accepted (全フェーズ実装済) | 2026-07-05 | ADR-063, ADR-060, ADR-061, ADR-059, ADR-058, ADR-057, ADR-054, ADR-053, ADR-051, ADR-050 |
 | [ADR-063](ADR-063-selection-first-intake-wizard.md) | **選択優先インテーク — ウィザード・パラメトリックアセット・KPI 式カタログ（白紙入力不能の前提）** | Accepted (Phase 1+2+3 実装済; Phase 4–5 後続) | 2026-07-05 | ADR-062, ADR-051, ADR-058, ADR-050, ADR-049, ADR-045, ADR-047 |
 
 ## How to Add a New ADR

@@ -10,12 +10,49 @@ import { TEMPLATE_CATALOG } from '../../context/TemplateCatalog.js'
  * loads it through ContextService (the single authoritative load path — ADR-051
  * §2 / PHILOSOPHY #1). The footer states the scene-replacement consequence up
  * front (ADR-051 §7 transparency) so no second confirm dialog is needed.
+ *
+ * Structure preview (ADR-062 Phase 5): each example card shows a Why/How/What
+ * stacked bar + node counts + the doc-signature prefix, all derived from the
+ * ADR-056 canonical form (`templateGalleryPreviews`, pushed by the controller).
+ * A card without a preview entry renders nothing extra — never a guessed
+ * structure (PHILOSOPHY #11). Layer colours match WhyTreeView.
  */
 
 const CARD_BORDER = '1px solid #3a3a3a'
 
+/** 5W1H layer colours — kept identical to WhyTreeView's LAYER_META. */
+const LAYER_COLOR = { why: '#5a9bf5', how: '#d59b3a', what: '#5aa86a' }
+
+/** Mini structure preview strip on an example card (fact-fed, display-only). */
+function StructurePreview({ preview }) {
+  if (!preview) return null
+  return (
+    <div style={{ marginTop: '2px' }}>
+      <div style={{ display: 'flex', height: '4px', borderRadius: '2px', overflow: 'hidden', background: '#333' }}>
+        {preview.layers.map(l => l.count > 0 && (
+          <div key={l.layer} title={`${l.layer}: ${l.count}`} style={{
+            width: `${Math.max(l.fraction * 100, 2)}%`,
+            background: LAYER_COLOR[l.layer] ?? '#777',
+          }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: '6px', marginTop: '3px', fontSize: '9px', color: '#888' }}>
+        {preview.layers.map(l => (
+          <span key={l.layer}>
+            <span style={{ color: LAYER_COLOR[l.layer] ?? '#888' }}>●</span> {l.layer} {l.count}
+          </span>
+        ))}
+        <span style={{ marginLeft: 'auto', fontFamily: 'monospace', color: '#666' }}>
+          ⌗{preview.signature}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export function TemplateGallery() {
   const open      = useUIStore(s => s.templateGalleryOpen)
+  const previews  = useUIStore(s => s.templateGalleryPreviews)
   const callbacks = useUIStore(s => s.callbacks)
 
   if (!open) return null
@@ -114,6 +151,9 @@ export function TemplateGallery() {
                         <span style={{ fontSize: '11px', color: '#aaa', lineHeight: 1.5 }}>
                           {t.description}
                         </span>
+                        {t.source.kind === 'example' && (
+                          <StructurePreview preview={previews?.[t.source.file]} />
+                        )}
                       </button>
                       {forkable && (
                         <button
