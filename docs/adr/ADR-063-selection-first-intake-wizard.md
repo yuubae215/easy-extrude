@@ -1,6 +1,6 @@
 # 063. 選択優先インテーク — ウィザード・パラメトリックアセット・KPI 式カタログ（白紙入力不能の前提）
 
-- Status: Proposed
+- Status: Accepted (Phase 1 + Phase 2 実装済 2026-07-05; Phase 3–5 ウィザード/パラメトリックビューワは後続)
 - Date: 2026-07-05
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし（ADR-051 の入口カタログを拡張、ADR-058 の seed 系を包含する上位設計）
@@ -179,6 +179,58 @@ Phase 1）をそのまま消費する。
    コミットで数値/テキスト変換（ADR-050 Phase 3 のコミット規律を再利用）。
 5. **Phase 5 — 統合**: ウィザードステップへのビューワ埋め込み、TemplateGallery を
    ウィザード開始点へ接続。「Empty Project」カードをエキスパート棚へ移設。
+
+## 実装（Phase 1 + Phase 2, 2026-07-05）
+
+**Phase 1 — KPI 式アセットカタログ（`role-kpi/2.0`）**
+
+- `src/context/RoleKpiCatalog.js`: `ROLE_KPI_CATALOG` の各エントリを式アセット
+  `{name, unit, exprTemplate, params[], suggestedOp, description}` へ拡張し
+  `ROLE_KPI_CATALOG_VERSION` を `role-kpi/2.0` に。アセット**名**は 1.0 の必須
+  リストと同一（R8 の意味論不変 — カタログ行は依然「その discipline の必須期待」
+  であり閲覧ライブラリではない）。`exprTemplate` は拘束変数を `{var}`、調整
+  パラメータを `{param.key}` で持ち、`instantiateKpiExpr(asset, varRef)` が
+  置換可能なものだけ置換し**未解決プレースホルダは逐語で残す**（#11 — 不完全な
+  式は見た目にも不完全のまま）。式形は昇格可能性に正直: 閉形式単調
+  （resolution / clearance 系）は promoteAdmissible が導出領域へ昇格、ソルバ
+  関数（`wrist_margin` / `motion_time`）は意図的に opaque（R9 が criterion を
+  問い続ける）で、description にそれを明記。
+- **R8 追従（additive）**: `requiredKpis` は `kpiEntryName`（string→そのまま、
+  object→`.name`）で正規化し、**1.0 の名前配列 override（`ctx.kpiCatalog`）を
+  受容し続ける**。`ContextValidator` は無改変。
+- `src/context/IntakeAssist.js`: `kpiCatalogChips` は 2.0 アセットを丸ごと通す
+  （1.0 名前チップには何も捏造しない）。`kpiCardLines(chip)` 新設 = チップ hover
+  ミニカードの純粋射影（unit / expr テンプレート / tweak パラメータ / suggested
+  op / description — 持っているフィールドのみ）。`requirementGaps` に
+  「`kpiExpr` に `{…}` プレースホルダ残存」の gap を追加（コミットすると無言で
+  非昇格式になるのを、無言 disabled でなく理由文で塞ぐ）。
+- `IntakePanel.jsx` RequirementForm: `KpiAssetChips`（hover ミニカードで
+  **選ぶ前に閲覧**）→ クリックで name/unit/expr/op を一括充填し、以降ユーザは
+  パラメータ（閾値・対象変数）だけ改変。式が**前回選択に対する手つかずの
+  インスタンス**である間だけ、変数選択の変更で `{var}` を自動追従（ユーザ編集は
+  決して書き換えない — seed tint と同じ所有権規律）。
+
+**Phase 2 — 選択リスト + フォームの白紙撲滅**
+
+- `src/context/IntakeVocabulary.js` 新設（純粋・THREE-free）: `ROLES` /
+  `NEGOTIABILITY` は **スキーマ enum の同一配列参照**（`VALID_ROLES` /
+  `VALID_NEGOTIABILITY` — 参照同一性テストで担保、ADR-058 §B-2 と同型）、
+  `DISCIPLINES` は `ROLE_KPI_CATALOG` キー（R8 義務を持つ discipline は必ず
+  選択可能 — 旧インライン UI リストは `eoat` を欠いていた実バグを構造的に修正）
+  ＋キュレーション extras、`UNITS` はカタログ宣言単位＋幾何/時間 extras、
+  `CRITERION_OPS` は AdmissiblePromotion が反転/評価できる演算子集合そのもの。
+- `IntakePanel.jsx`: ローカル語彙定数を削除し vocabulary import へ一本化
+  （§1.1）。unit フィールド（variable / KPI）は共有 `<datalist>` で提案 —
+  **提案であって拘束ではない**（エキスパート自由入力の脱出口を保つ — Goal 3）。
+
+**検証**: `RoleKpiCatalog.test.js` 8 件 + `IntakeVocabulary.test.js` 4 件 +
+`IntakeAssist.test.js` +2 件（プレースホルダ gap / 2.0 チップ / カード行）、
+`test:context` **381/381**、`tsc --noEmit`・`vite build` クリーン。
+契約 / BFF / ドメイン実体 / Context DSL 版は無改変。
+
+**残（後続フェーズ）**: Phase 3 ウィザード定義アセット + FSM + WizardPanel、
+Phase 4 パラメトリック 3D アセット + ビューワ、Phase 5 統合（TemplateGallery
+接続・Empty Project のエキスパート棚移設）。
 
 ## Lens notes
 
