@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
+import { DeltaChip } from '../Feedback/FeedbackPrimitives.jsx'
 
 /**
  * GraspSearchPanel — UI → DSL → BFF → grasp-search verification (ADR-054 thread,
@@ -296,23 +297,8 @@ function FunnelRow({ label, stage, dominant, delta }) {
   )
 }
 
-/**
- * Run-over-run delta chip: "did my tweak work?" at a glance. For rejection
- * stages fewer is better (goodWhenPositive=false); for generated/feasible
- * more is better.
- */
-function DeltaChip({ value, goodWhenPositive, label }) {
-  if (!value) return null   // 0 / null → no chip (no change = no noise)
-  const good = goodWhenPositive ? value > 0 : value < 0
-  const arrow = value > 0 ? '▲' : '▼'
-  return (
-    <span style={{
-      fontSize: '9px', padding: '0 4px', borderRadius: '3px', whiteSpace: 'nowrap',
-      color: good ? '#8d8' : '#d88',
-      background: good ? '#1c2e1c' : '#2e1c1c',
-    }}>{arrow}{Math.abs(value)}{label ? ` ${label}` : ''}</span>
-  )
-}
+// DeltaChip moved to the shared FeedbackPrimitives (ADR-062 Phase 1) — same
+// rendering, now reused by FormPanel / ConflictMatrix / ContextLayer.
 
 /**
  * "Almost reached" meter: reachNearestMiss is the wire fact (smallest distance

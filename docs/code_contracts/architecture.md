@@ -883,3 +883,15 @@ The stage-1 spatial ghost translates the **typed** wire facts (`pose.kind:'endEf
 > Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.
 
 `if (this._tcDragging) return` must appear BEFORE the entire `if (result)/else` block in the object-mode section of `_onPointerDown`. Two failure modes: (a) TC arrow outside Solid — `_hitAnyObject()` returns null, else-branch would deselect; (b) TC arrow overlapping a Solid — `_hitAnyObject()` returns the Solid, `_switchActiveObject` would replace `_activeObj` + re-attach TC proxy to the Solid, causing `objectChange` to look up the wrong id in `_tcStartCorners` → CF never moves. Empty-space touch tap (no TC, no entity) deselects normally.
+
+---
+
+## Proof-Feedback Presentation: Shared Primitives, Fact-Fed Only, History Is Component-Local (ADR-062 Phase 1–3)
+
+The proof-feedback loop (input → proof layer decides a fact → client derives the "it worked" presentation) is the default shape for every input/result surface (PHILOSOPHY #29 scope note). Contracts:
+
+- **The primitives are shared, never re-implemented inline.** `DeltaChip` / `LandingFlash` / `flashAnim` / `FeedbackDefs` / `usePrevOnChange` live in `src/components/Feedback/FeedbackPrimitives.jsx`; the pure snapshot comparisons (`refsSignature` / `listDelta` / `settledRefs`) live in `src/view/FeedbackMath.js` (THREE-free, `test:context` lane). A new input surface wires these — it does not grow its own delta/flash logic (§1.1; the pre-ADR-062 state where `DeltaChip` lived inside `GraspSearchPanel` is the anti-pattern).
+- **Inputs are always proof-layer facts.** `projectForm()` open questions, validator `conflicts` (`resolvedBy`), projected matrix `variableSummary` (`approved`), resolution-order `approved`, contract `diagnostics`. The presentation layer never re-judges (no client-side re-validation, no guessed identity: an unkeyable snapshot degrades the whole comparison to `null` — #11).
+- **The previous snapshot is component-local presentation state.** `usePrevOnChange` keeps it in React state — NEVER a uiStore field and NEVER a wire field (same rule that keeps grasp hover out of the `context.grasp` union, ADR-059). It updates only on a *real* change: `refsSignature` absorbs the store's array-identity churn on re-projection, so a repaint never reads as "something happened".
+- **Zero / null renders nothing.** `DeltaChip` hides on 0/null; `LandingFlash` with `active:false` or a null tick is a plain div. Silence is the honest rendering of "no change", not a failure.
+- **Keyframes mount once per overlay root.** `FeedbackDefs` is mounted by `ContextLayer`, demo `ContextInspector`, and `IntakeSharedDefs`; duplicates are harmless (identical keyframes), but an overlay that renders a flash without any mounted defs silently animates nothing — mount the defs with the overlay.

@@ -1,6 +1,7 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from './ConflictMatrix.jsx'
 import { NegotiationClusterView } from './NegotiationClusterView.jsx'
+import { FeedbackDefs } from '../Feedback/FeedbackPrimitives.jsx'
 
 /**
  * ContextInspector — requirement tree panel for the Context DSL demo (ADR-047).
@@ -68,6 +69,8 @@ export function ContextInspector() {
       pointerEvents: 'auto',
       boxSizing:  'border-box',
     }}>
+      {/* Shared landing-flash keyframes for the embedded Matrix/Cluster (ADR-062). */}
+      <FeedbackDefs />
       <div style={{ padding: '8px 10px 4px', fontWeight: 'bold', fontSize: '12px', color: '#c8c8c8' }}>
         Context Inspector
         <span style={{ float: 'right', fontFamily: 'monospace', fontWeight: 'normal', color: '#666' }}>
