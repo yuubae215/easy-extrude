@@ -1,6 +1,6 @@
 # 063. 選択優先インテーク — ウィザード・パラメトリックアセット・KPI 式カタログ（白紙入力不能の前提）
 
-- Status: Accepted (Phase 1 + Phase 2 実装済 2026-07-05; Phase 3–5 ウィザード/パラメトリックビューワは後続)
+- Status: Accepted (Phase 1 + Phase 2 + Phase 3 実装済 2026-07-05; Phase 4–5 パラメトリックビューワ/統合は後続)
 - Date: 2026-07-05
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし（ADR-051 の入口カタログを拡張、ADR-058 の seed 系を包含する上位設計）
@@ -228,9 +228,49 @@ Phase 1）をそのまま消費する。
 `test:context` **381/381**、`tsc --noEmit`・`vite build` クリーン。
 契約 / BFF / ドメイン実体 / Context DSL 版は無改変。
 
-**残（後続フェーズ）**: Phase 3 ウィザード定義アセット + FSM + WizardPanel、
-Phase 4 パラメトリック 3D アセット + ビューワ、Phase 5 統合（TemplateGallery
-接続・Empty Project のエキスパート棚移設）。
+## 実装（Phase 3 — ウィザード, 2026-07-05）
+
+**純粋層 — `src/context/WizardCatalog.js`（ウィザード定義アセット + FSM）**
+
+- 定義アセット `CELL_INTAKE_WIZARD`（`wizard/1.0`、`WIZARD_CATALOG` に登録）:
+  ステップ列（actors → variables → requirements — ADR-051 の Why-first 順を宣言
+  データ化、§1.1: 順序はコンポーネントに散らさず定義に置く）。各ステップは
+  `formGaps`（埋め込みフォームの submit 述語 — **IntakeAssist の同一関数参照**、
+  参照同一性テストで担保 = ADR-058 §B-2 と同型）と `minEntries`（`next` ゲート）
+  を持つ。
+- 純粋 FSM（§1.4 — コンポーネントより先に確定）: 状態は
+  `null（inactive）/ {status:'step', index} / {status:'review'}`。
+  `wizardStepGaps` はコミット済み doc エントリだけを読む段完了述語（理由文を返す
+  — 無言 disabled 禁止 #11、ステップ内 draft は影響しない = 第二の源にしない）。
+  `nextWizardState` はゲート不成立時に**同一 state を返す**（不正遷移は例外でなく
+  表現不能）。`prevWizardState` は常時可・アンダーフローなし。`wizardTrail` は
+  done/current/todo の進捗射影（通過後にエントリを消した段は正直に todo へ戻る）。
+
+**配線 — 器であって新経路ではない（§3）**
+
+- uiStore: `context.wizard`（丸ごと置換、`contextSetWizard`）。sole writer は
+  `ContextController`（grasp FSM — ADR-057 と同じ規律）; panel は読むだけ。
+  `contextStart` / `contextEnd` でリセット。
+- `ContextController`: `startWizard` / `wizardNext`（**正本 doc** に対して同じ純粋
+  述語でゲート — panel は射影スライスから同じ述語で表示、一述語二射影）/
+  `wizardBack` / `finishWizard`（review → matrix タブ + toast — コミットではなく
+  ビュー遷移; 各段が既に CommandStack 経由でコミット済みのため all-or-nothing
+  なし）/ `exitWizard`（任意時点、部分進捗が成果物）。callbacks:
+  `onWizardStart/Next/Back/Finish/Exit`。
+- `WizardPanel.jsx` = ContextLayer negotiate の `'wizard'` タブ（新規エッジ
+  パネルなし — #26）。IntakePanel の **同一フォーム**（`ActorForm` /
+  `VariableForm` / `RequirementForm` を export して埋め込み — 共有 submit 述語・
+  seed chips・KPI 式チップ・DualRange→3D バンドがそのまま乗る）。コミットは
+  既存 `onAddDocEntry` のみ。白紙 doc の初期タブは `'wizard'` へ（開始画面 =
+  想起ゼロの入口; エキスパート Intake タブは 1 タブ隣に無傷 — Goal 3）。
+
+**検証**: `WizardCatalog.test.js` 11 件（FSM 遷移 / 参照同一性 / 入力不変）、
+`test:context` **392/392**、`tsc --noEmit`・`vite build` クリーン。
+契約 / BFF / ドメイン実体 / Context DSL 版は無改変。
+
+**残（後続フェーズ）**: Phase 4 パラメトリック 3D アセット + ビューワ、
+Phase 5 統合（TemplateGallery からのウィザード開始接続・Empty Project の
+エキスパート棚移設・ウィザードステップへのビューワ埋め込み）。
 
 ## Lens notes
 

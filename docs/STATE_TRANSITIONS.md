@@ -495,6 +495,51 @@ worldPoseOf(frameId) {
 
 ---
 
+### `context.wizard` — Guided-intake wizard FSM (ADR-063 Phase 3)
+
+**Why this exists here**: the wizard has 3+ states and its illegal transitions
+(advancing past an unsatisfied step, a bulk confirm that bypasses review) are doc
+quality accidents — 核 §1.4 requires the machine before the components. The state
+was designed in ADR-063 §4 before `WizardPanel` was written.
+
+**States** (stored in `uiStore.context.wizard`, replaced wholesale — a
+discriminated union like `context.grasp`, illegal shapes unrepresentable)
+
+```
+null (inactive)
+  ──[startWizard() — onWizardStart]──────────────→ { defId, status:'step', index:0 }
+step(k)
+  ──[next, wizardStepGaps === []]────────────────→ step(k+1)   (k < last)
+  ──[next, wizardStepGaps === [] , k === last]───→ review
+  ──[next, wizardStepGaps ≠ []]──────────────────→ step(k)     (SAME state returned — blocked with printable reasons, never silent)
+  ──[back, k > 0]────────────────────────────────→ step(k−1)
+  ──[back, k === 0]──────────────────────────────→ step(0)     (stays; no underflow)
+  ──[exit — onWizardExit]────────────────────────→ null        (committed steps stay in the doc)
+review
+  ──[back]───────────────────────────────────────→ step(last)
+  ──[finish — onWizardFinish]────────────────────→ null        (+ contextSetTab('matrix'); a view transition, NOT a commit)
+any
+  ──[contextStart / contextEnd]──────────────────→ null
+```
+
+**Guards / invariants**
+
+- `next` is gated by the pure `wizardStepGaps(def, state, doc)` — it counts only
+  **committed** doc entries (step-local form drafts are transient and never a
+  second source, §1.1). The controller enforces the gate against the
+  authoritative `ContextService.getDoc()`; the panel derives the same list from
+  the projected slice for display (one predicate, two projections — no silent
+  disabled, PHILOSOPHY #11).
+- Every step confirm is an immediate CommandStack doc commit (the existing
+  `onAddDocEntry` path) — exiting mid-wizard always leaves a valid, undoable
+  working doc. There is no all-or-nothing modal commit (ADR-063 §4).
+- Sole writer: `ContextController` via the pure `WizardCatalog` transition
+  functions (`startWizard` / `nextWizardState` / `prevWizardState`). The panel
+  only reads and fires `onWizard*` callbacks (same discipline as the grasp FSM,
+  ADR-057 / PHILOSOPHY #5).
+
+---
+
 ## CoordinateFrame Body Frame Lifecycle (ADR-037)
 
 ### Origin CF is created atomically with every Solid

@@ -167,6 +167,13 @@ export const useUIStore = create((set, get) => ({
     //   { status:'results',   layout, request, candidates, compiledObjects, selectedRank }
     //   { status:'error',     stage:'compile'|'solve'|'bff', httpStatus, message, details }
     grasp: null,
+    // ADR-063 Phase 3 wizard FSM — sole writer ContextController via the pure
+    // WizardCatalog transition functions; the panel only reads + fires callbacks.
+    // null = inactive (the wizard tab shows its start screen). Shapes:
+    //   { defId, status:'step', index }
+    //   { defId, status:'review' }
+    // Step drafts stay component-local (transient, never a second source — §1.1).
+    wizard: null,
   },
 
   // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
@@ -333,7 +340,7 @@ export const useUIStore = create((set, get) => ({
     // the context overlay is persistent (a loaded project, not a transient
     // tutorial). It merges the payload and marks the overlay active.
     contextStart: (payload) => set(state => ({
-      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, ...payload, active: true },
+      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, wizard: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -390,8 +397,15 @@ export const useUIStore = create((set, get) => ({
       context: { ...state.context, authorSeed },
     })),
 
+    // ADR-063 Phase 3 — wizard FSM state, replaced wholesale (same discipline as
+    // contextSetGrasp: sole writer ContextController, transitions computed by the
+    // pure WizardCatalog functions, illegal states unrepresentable).
+    contextSetWizard: (wizard) => set(state => ({
+      context: { ...state.context, wizard },
+    })),
+
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null },
     })),
   },
 }))

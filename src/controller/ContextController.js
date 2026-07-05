@@ -49,6 +49,10 @@ import {
   updateActor, updateVariable, updateRequirement, removeDocEntry,
 } from '../context/DocBuilder.js'
 import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
+import {
+  WIZARD_CATALOG, CELL_INTAKE_WIZARD,
+  startWizard, nextWizardState, prevWizardState, wizardStepGaps,
+} from '../context/WizardCatalog.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
@@ -129,6 +133,11 @@ export class ContextController {
     registerCallback('onRemoveDocEntry',         (type, ref)  => this.removeDocEntry(type, ref))
     registerCallback('onIntakePreview',          (spec)       => this.previewIntake(spec))
     registerCallback('onAddNlFacts',             (facts)      => this.addNlFacts(facts))
+    registerCallback('onWizardStart',            ()           => this.startWizard())
+    registerCallback('onWizardNext',             ()           => this.wizardNext())
+    registerCallback('onWizardBack',             ()           => this.wizardBack())
+    registerCallback('onWizardFinish',           ()           => this.finishWizard())
+    registerCallback('onWizardExit',             ()           => this.exitWizard())
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
@@ -366,6 +375,77 @@ export class ContextController {
       })
   }
 
+  // ── Guided-intake wizard (ADR-063 Phase 3) ───────────────────────────────────
+  // The wizard is an ordered vessel around the existing intake forms: every
+  // commit still flows through addDocEntry (DocBuilder → AddDocEntryCommand),
+  // so leaving mid-wizard always leaves a valid, undoable working doc. This
+  // controller is the SOLE writer of `context.wizard` (same discipline as the
+  // grasp FSM — ADR-057 / PHILOSOPHY #5); transitions are computed by the pure
+  // WizardCatalog functions, and the `next` gate is enforced here against the
+  // AUTHORITATIVE doc (the panel derives the same gaps for display from the
+  // projected slice — one predicate, two projections).
+
+  /** Enter the guided-intake wizard at step 0 and show its tab. */
+  startWizard() {
+    if (!this.isNegotiation) {
+      this._ctrl._uiView.showToast(
+        'Open a context first (New Project / Import) to start the guided intake.',
+        { type: 'warn' },
+      )
+      return
+    }
+    const ui = useUIStore.getState().actions
+    ui.contextSetWizard(startWizard(CELL_INTAKE_WIZARD))
+    ui.contextSetTab('wizard')
+  }
+
+  /**
+   * Advance to the next step (or review). Blocked with the printable step-gap
+   * reasons while the current step's committed entries don't satisfy its gate —
+   * the panel already prints the same list, the toast is the belt-and-braces
+   * surface for a programmatic call (never a silent no-op — PHILOSOPHY #11).
+   */
+  wizardNext() {
+    const state = useUIStore.getState().context.wizard
+    if (!this.isNegotiation || !state) return
+    const def = WIZARD_CATALOG[state.defId]
+    const doc = this._ctxService.getDoc() ?? {}
+    const gaps = wizardStepGaps(def, state, doc)
+    if (gaps.length > 0) {
+      this._ctrl._uiView.showToast(gaps.join(' · '), { type: 'warn' })
+      return
+    }
+    useUIStore.getState().actions.contextSetWizard(nextWizardState(def, state, doc))
+  }
+
+  /** Step back (review → last step; step 0 stays). Always allowed. */
+  wizardBack() {
+    const state = useUIStore.getState().context.wizard
+    if (!this.isNegotiation || !state) return
+    const def = WIZARD_CATALOG[state.defId]
+    useUIStore.getState().actions.contextSetWizard(prevWizardState(def, state))
+  }
+
+  /**
+   * Finish from the review step: deactivate the wizard and land on the matrix
+   * (the doc the wizard built is already fully committed — finishing is a view
+   * transition, not a commit; ADR-063 §4 forbids the all-or-nothing modal).
+   */
+  finishWizard() {
+    const state = useUIStore.getState().context.wizard
+    if (!this.isNegotiation || !state) return
+    const ui = useUIStore.getState().actions
+    ui.contextSetWizard(null)
+    ui.contextSetTab('matrix')
+    this._ctrl._uiView.showToast('Guided intake finished — the document is ready to negotiate')
+  }
+
+  /** Leave the wizard at any point; committed steps stay in the doc (undoable). */
+  exitWizard() {
+    if (!this.isNegotiation) return
+    useUIStore.getState().actions.contextSetWizard(null)
+  }
+
   // ── Live intake preview (Phase 3 — Entry D, ADR-051 §3) ─────────────────────
 
   /**
@@ -462,9 +542,11 @@ export class ContextController {
     // The whole Why-rooted 5W1H tree overview (ADR-052 Phase 3 — bird's-eye
     // complement to the selection-driven Why breadcrumb).
     ui.contextSetWhyTree(this._ctxService.whyTree())
-    // Blank doc (no actors) opens on intake tab so the user can start adding entries.
+    // Blank doc (no actors) opens on the wizard tab (ADR-063 Phase 3 — the
+    // guided route is the canonical entry for a doc with nothing in it yet;
+    // the expert Intake tab stays one tab away).
     const initialTab = form.length > 0 ? 'questions'
-      : (doc?.actors?.length ?? 0) === 0 ? 'intake'
+      : (doc?.actors?.length ?? 0) === 0 ? 'wizard'
       : 'matrix'
     ui.contextSetTab(initialTab)
     this._mode = 'negotiate'
