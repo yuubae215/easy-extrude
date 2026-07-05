@@ -106,6 +106,23 @@ const INTAKE_CSS = `
 .ea-dual-range::-moz-range-track { background: transparent; }
 `
 
+// Shared one-per-panel definitions the intake forms rely on: the keyframe /
+// slider CSS and the unit-suggestion datalist. Rendered by IntakePanel AND by
+// WizardPanel (ADR-063 Phase 3 embeds the same forms) — exactly one instance is
+// mounted at a time since the two live in different tabs.
+export function IntakeSharedDefs() {
+  return (
+    <>
+      <style>{INTAKE_CSS}</style>
+      {/* Shared unit suggestions (ADR-063 Phase 2): every unit field offers the
+          vocabulary as a datalist — suggestions, never a straitjacket. */}
+      <datalist id={UNIT_LIST_ID}>
+        {UNITS.map(u => <option key={u} value={u} />)}
+      </datalist>
+    </>
+  )
+}
+
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: '5px' }}>
@@ -161,7 +178,7 @@ function RefField({ label, value, onChange, placeholder, existingRefs, tint, onE
 
 // Prints the same gap list that disables the submit button — one predicate,
 // two projections (PHILOSOPHY #11: a grey button with no reason is a silent no-op).
-function GapNote({ gaps }) {
+export function GapNote({ gaps }) {
   if (gaps.length === 0) return null
   return (
     <div style={{ fontSize: '9px', color: '#c99a3a', margin: '3px 0 4px', lineHeight: 1.4 }}>
@@ -408,7 +425,7 @@ function Reveal({ children }) {
 // An existing entry as an interactive card: hover lifts it and reveals the ✎
 // affordance so the read-only list visibly becomes editable. `flash` replays the
 // same eaIntakeFlash animation the add form uses, as the "landed" confirmation.
-function EntryCard({ children, onEdit, flash, badge, editable = true }) {
+export function EntryCard({ children, onEdit, flash, badge, editable = true }) {
   const [hover, setHover] = useState(false)
   return (
     <div
@@ -482,7 +499,7 @@ function EditorFooter({ onSave, canSave, onCancel, onRemove, saveLabel = 'Save' 
 }
 
 // Compact summaries shown on the click-to-edit cards.
-function ActorSummary({ a }) {
+export function ActorSummary({ a }) {
   return (
     <>
       <span style={{ color: '#5a9bf5' }}>{a.ref}</span>
@@ -491,7 +508,7 @@ function ActorSummary({ a }) {
     </>
   )
 }
-function VariableSummary({ v }) {
+export function VariableSummary({ v }) {
   return (
     <>
       <span style={{ color: '#5a9bf5' }}>{v.ref}</span>
@@ -499,7 +516,7 @@ function VariableSummary({ v }) {
     </>
   )
 }
-function RequirementSummary({ r }) {
+export function RequirementSummary({ r }) {
   const iv = r.admissible?.interval
   return (
     <>
@@ -520,7 +537,7 @@ function isEditingKind(editing, kind) {
 
 // ── Actor form (dual mode: create | edit) ───────────────────────────────────────
 
-function ActorForm({ mode = 'create', initial = null, actors, seedActors = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
+export function ActorForm({ mode = 'create', initial = null, actors, seedActors = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
   const isEdit = mode === 'edit'
   const [ref, setRef]    = useState(initial?.ref ?? '')
   const [role, setRole]  = useState(initial?.role ?? 'developer')
@@ -593,7 +610,7 @@ function ActorForm({ mode = 'create', initial = null, actors, seedActors = [], s
 
 // ── Variable form ──────────────────────────────────────────────────────────────
 
-function VariableForm({ mode = 'create', initial = null, variables, seedVariables = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
+export function VariableForm({ mode = 'create', initial = null, variables, seedVariables = [], seedEntry = null, onAdd, onSave, onRemove, onCancel }) {
   const isEdit = mode === 'edit'
   const [ref, setRef]   = useState(initial?.ref ?? '')
   const [unit, setUnit] = useState(initial?.unit ?? 'mm')
@@ -686,7 +703,7 @@ function VariableForm({ mode = 'create', initial = null, variables, seedVariable
 
 // ── Requirement form ───────────────────────────────────────────────────────────
 
-function RequirementForm({ mode = 'create', initial = null, actors, variables, requirements = [], seedReqs = [], seedEntry = null, onAdd, onSave, onRemove, onCancel, onPreview }) {
+export function RequirementForm({ mode = 'create', initial = null, actors, variables, requirements = [], seedReqs = [], seedEntry = null, onAdd, onSave, onRemove, onCancel, onPreview }) {
   const isEdit = mode === 'edit'
   const [ref, setRef]         = useState(initial?.ref ?? '')
   const [by, setBy]           = useState(initial?.by ?? '')
@@ -1015,12 +1032,7 @@ export function IntakePanel() {
 
   return (
     <div style={{ paddingBottom: '8px' }}>
-      <style>{INTAKE_CSS}</style>
-      {/* Shared unit suggestions (ADR-063 Phase 2): every unit field offers the
-          vocabulary as a datalist — suggestions, never a straitjacket. */}
-      <datalist id={UNIT_LIST_ID}>
-        {UNITS.map(u => <option key={u} value={u} />)}
-      </datalist>
+      <IntakeSharedDefs />
       {seedName && (
         <div style={{
           fontSize: '10px', color: '#d5a23a', marginBottom: '8px', lineHeight: 1.5,

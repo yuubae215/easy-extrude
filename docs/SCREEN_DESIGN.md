@@ -705,6 +705,22 @@ Fact / Variable). The **Why roots** (the apexes nothing climbs above) are surfac
 edges / roots. It refreshes on every doc mutation (add / answer / region-edit / undo / redo), so the
 overview always matches the live document. Empty before any actors/variables/requirements exist.
 
+The **Wizard** tab (`WizardPanel`, ADR-063 Phase 3) is the guided-intake route — the canonical
+entry for a user who cannot yet fill the blank forms (recognition over recall). Inactive it shows a
+start screen (▶ Start guided intake → `onWizardStart`); active it renders a progress trail
+(actors → variables → requirements → review, done/current/todo chips derived by the pure
+`wizardTrail`), the current step's title + prompt from the `CELL_INTAKE_WIZARD` definition asset
+(`wizard/1.0`, `WizardCatalog.js`), the committed entries of that step's kind as read-only cards,
+and **the same intake form** the Intake tab uses (shared components — same submit predicate, same
+seed chips / KPI asset chips / dual-range slider / live 3-D band, same `onAddDocEntry` commit
+path). **Next** is disabled iff the pure step gate `wizardStepGaps` (committed-entry count) is
+non-empty, and the same reason list is printed above it (no silent disabled — PHILOSOPHY #11);
+**Back** is always allowed; **Exit** leaves at any point with all committed steps intact (each
+addition was an undoable command — partial progress is the deliverable). The **Review** screen
+lists everything committed and **✓ Finish** (`onWizardFinish`) closes the wizard onto the Matrix
+tab — a view transition, not a commit. A blank doc (no actors) now opens on this tab instead of
+Intake; the expert Intake tab stays one tab away (progressive disclosure — ADR-063 Goal 3).
+
 The **Intake** tab (`IntakePanel`, ADR-051 Phase 1) adds Actors / Variables / Requirements directly
 to a blank or loaded doc. A 「自然言語から取り込み」 section (ADR-051 Phase 4 — Entry C) accepts a
 free-text utterance and shows a live preview of the Facts the deterministic `extractFacts` bridge

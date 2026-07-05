@@ -3,6 +3,7 @@ import { ConflictMatrix } from '../ContextDemo/ConflictMatrix.jsx'
 import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.jsx'
 import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
+import { WizardPanel } from './WizardPanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 import { WhyTreeView } from './WhyTreeView.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
@@ -56,6 +57,9 @@ export function ContextLayer() {
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
       { id: 'why',       label: 'Why' },
       { id: 'tree',      label: 'Overview' },
+      // Guided intake (ADR-063 Phase 3) sits beside the expert Intake tab —
+      // progressive disclosure: wizard ⊃ assisted forms ⊃ expert forms.
+      { id: 'wizard',    label: 'Wizard' },
       { id: 'intake',    label: 'Intake' },
       // Grasp tab appears once seeded (a renderable layout exists — ADR-057 §B).
       ...(ctx.grasp ? [{ id: 'grasp', label: 'Grasp' }] : []),
@@ -165,6 +169,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'tree' && (
           <WhyTreeView />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'wizard' && (
+          <WizardPanel />
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
           <IntakePanel />
