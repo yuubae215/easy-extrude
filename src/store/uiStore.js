@@ -151,6 +151,7 @@ export const useUIStore = create((set, get) => ({
     personaFilter: null,     // actorRef | null
     inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why' | 'tree' | 'intake' | 'grasp'
     form: [],                // projectForm() output — open intake questions (Phase 4)
+    checks: [],              // ContextService.projectChecks() — acceptance verdicts + baked predicates (ADR-062 Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
     requirements: [],        // doc.requirements — ref-uniqueness live check + Why-first trail (ADR-058 UX) + click-to-edit cards (ADR-058 Phase 2)
     provenance: null,        // ContextService.recoverProvenance(selectedSceneId) | null (ADR-052 Phase 2)
@@ -181,6 +182,12 @@ export const useUIStore = create((set, get) => ({
   // The catalog itself is static (TemplateCatalog.js); selecting an entry fires
   // `onSelectTemplate(id)` which ContextController loads through ContextService.
   templateGalleryOpen: false,
+  // ADR-062 Phase 5 — per-example structure previews for the gallery cards,
+  // keyed by `source.file`. Derived by ContextController from the bundled docs
+  // via canonicalForm → structurePreview (a fact projection, computed once);
+  // null until the gallery is first opened. Cards without an entry render no
+  // preview (blank template, or a doc whose derivation failed — #11 degrade).
+  templateGalleryPreviews: null,
 
   // ══ Actions ════════════════════════════════════════════════════════════════
 
@@ -357,6 +364,12 @@ export const useUIStore = create((set, get) => ({
     contextSetForm: (form) => set(state => ({
       context: { ...state.context, form },
     })),
+    // Acceptance-check verdicts + baked predicates (ADR-062 Phase 4). Pushed by
+    // ContextController on negotiate enter + every re-projection; ChecksPanel
+    // only reads (transition history stays component-local — ADR-062 §2).
+    contextSetChecks: (checks) => set(state => ({
+      context: { ...state.context, checks },
+    })),
     contextSetActors: (actors) => set(state => ({
       context: { ...state.context, actors },
     })),
@@ -387,6 +400,7 @@ export const useUIStore = create((set, get) => ({
       context: { ...state.context, grasp },
     })),
     setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
+    setTemplateGalleryPreviews: (previews) => set({ templateGalleryPreviews: previews }),
 
     // ADR-058 — read-only seed doc retained when a project is forked from an
     // example, so the intake forms can show the example's filled values as
@@ -405,7 +419,7 @@ export const useUIStore = create((set, get) => ({
     })),
 
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null },
     })),
   },
 }))

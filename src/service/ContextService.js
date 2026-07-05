@@ -281,6 +281,31 @@ export class ContextService extends EventEmitter {
     return projectForm(this._validatorResult)
   }
 
+  /**
+   * Acceptance-check display projection (ADR-062 Phase 4): the validator's
+   * `checkResults` (pass / fail / blocked — the decided facts, ADR-053 §9)
+   * joined with each check's predicate from the canonical doc so the panel can
+   * derive the worst-margin meter from the baked measurement operands. Like the
+   * provenance Gap join, the join is service glue — the validator owns the
+   * verdicts, the doc owns the operands, and this is the one place holding both.
+   * Presentation (meter curve, transition flash) stays client-derived
+   * (CheckFeedbackMath); nothing here re-judges a predicate.
+   */
+  projectChecks() {
+    const byRef = new Map((this._doc?.acceptance ?? []).map(c => [c.ref, c]))
+    return (this._validatorResult?.checkResults ?? []).map(r => {
+      const check = byRef.get(r.check)
+      return {
+        ref:        r.check,
+        status:     r.status,
+        violations: r.violations ?? [],
+        blockedBy:  r.blockedBy ?? [],
+        kind:       check?.predicate?.kind ?? null,
+        predicate:  check?.predicate ?? null,
+      }
+    })
+  }
+
   // ── Why-rooted 5W1H tree / φ⁻¹ provenance recovery (ADR-052) ────────────────
 
   /**

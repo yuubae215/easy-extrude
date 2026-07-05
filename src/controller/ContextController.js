@@ -49,6 +49,8 @@ import {
   updateActor, updateVariable, updateRequirement, removeDocEntry,
 } from '../context/DocBuilder.js'
 import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
+import { canonicalForm } from '../context/CanonicalForm.js'
+import { structurePreview } from '../view/TemplatePreviewMath.js'
 import {
   WIZARD_CATALOG, CELL_INTAKE_WIZARD,
   startWizard, nextWizardState, prevWizardState, wizardStepGaps,
@@ -60,6 +62,7 @@ import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
 import regionContext from '../../examples/cell_region_context.json'
 import phase2Context from '../../examples/cell_phase2_context.json'
+import roboticsContext from '../../examples/cell_robotics_context.json'
 
 /**
  * Bundled example docs the template gallery (ADR-051 Phase 2) can seed from,
@@ -71,6 +74,7 @@ const TEMPLATE_DOCS = {
   'cell_conflict_context.json': conflictContext,
   'cell_region_context.json':   regionContext,
   'cell_phase2_context.json':   phase2Context,
+  'cell_robotics_context.json': roboticsContext,
 }
 
 // Fail loudly at module load if the catalog references a file with no bundled doc
@@ -113,6 +117,10 @@ export class ContextController {
     // ── Why breadcrumb / φ⁻¹ provenance (ADR-052 Phase 2) ──────────────────────
     /** @type {string|null} scene id whose Why provenance is currently shown */
     this._provenanceSceneId = null
+
+    // ── Template-gallery structure previews (ADR-062 Phase 5) ──────────────────
+    /** @type {object|null} memoized file → structurePreview map (static docs) */
+    this._templatePreviewCache = null
 
     // Re-project whenever the canonical document changes — covers approval, region
     // edit, undo, and redo uniformly (they all mutate the doc through the service).
@@ -160,7 +168,31 @@ export class ContextController {
 
   /** Open the starter-template picker modal. */
   openTemplateGallery() {
-    useUIStore.getState().actions.setTemplateGalleryOpen(true)
+    const ui = useUIStore.getState().actions
+    ui.setTemplateGalleryPreviews(this._templatePreviews())
+    ui.setTemplateGalleryOpen(true)
+  }
+
+  /**
+   * Structure previews for the gallery cards (ADR-062 Phase 5), keyed by
+   * example file. The fact is the ADR-056 normal form (`canonicalForm`); the
+   * card shape is the pure `structurePreview` projection. Computed once and
+   * memoized — the bundled docs are static modules. A doc whose derivation
+   * throws gets no preview (an honest missing card, never a guessed one — #11).
+   */
+  _templatePreviews() {
+    if (this._templatePreviewCache) return this._templatePreviewCache
+    const previews = {}
+    for (const [file, doc] of Object.entries(TEMPLATE_DOCS)) {
+      try {
+        previews[file] = structurePreview(canonicalForm(doc))
+      } catch (err) {
+        console.error(`[ContextController] structure preview failed for ${file}`, err)
+        previews[file] = null
+      }
+    }
+    this._templatePreviewCache = previews
+    return previews
   }
 
   /** Close the starter-template picker modal. */
@@ -538,6 +570,7 @@ export class ContextController {
       conflictMatrix:      this._ctxService.projectMatrix(),
       resolutionOrder:     this._ctxService.projectOrder(),
       form,
+      checks:              this._ctxService.projectChecks(),
     })
     // The whole Why-rooted 5W1H tree overview (ADR-052 Phase 3 — bird's-eye
     // complement to the selection-driven Why breadcrumb).
@@ -922,6 +955,11 @@ export class ContextController {
       // Also refresh actors and variables so IntakePanel dropdowns stay current.
       if (this._mode === 'negotiate') {
         ui.contextSetForm(this._ctxService.projectForm())
+        // Acceptance verdicts refresh through the same one path — a form answer
+        // that unblocks a robotics check flips blocked→pass here, and the panel's
+        // component-local snapshot turns that fact into the landing flash
+        // (ADR-062 Phase 4; PHILOSOPHY #5).
+        ui.contextSetChecks(this._ctxService.projectChecks())
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
         ui.contextSetVars(doc?.variables ?? [])

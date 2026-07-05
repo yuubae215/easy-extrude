@@ -1,0 +1,161 @@
+{
+  "version": "context/0.4",
+  "meta": {
+    "name": "ロボットセル — 測定器 KPI・受入チェック (ADR-053/062)",
+    "baseline": null
+  },
+
+  "actors": [
+    { "ref": "robot_engineer",  "role": "developer" },
+    { "ref": "safety_reviewer", "role": "maintainer" }
+  ],
+
+  "sources": [
+    { "ref": "src_teach_session", "kind": "utterance", "by": "robot_engineer", "capturedAt": "2026-07-05" }
+  ],
+
+  "given": [
+    {
+      "ref": "f_robot",
+      "subject": "6軸ロボット (可搬10kg)",
+      "attrs": {
+        "reach": { "value": 850, "unit": "mm" }
+      },
+      "status": "asserted",
+      "evidence": ["src_teach_session"]
+    },
+    {
+      "ref": "f_gripper",
+      "subject": "平行グリッパ",
+      "attrs": {
+        "stroke": "unknown"
+      },
+      "status": "asserted",
+      "evidence": ["src_teach_session"],
+      "note": "ストローク未確認 — 確定するまで環境干渉チェック a_gripper_env は blocked"
+    }
+  ],
+
+  "variables": [
+    {
+      "ref": "v_pick_standoff",
+      "unit": "mm",
+      "domain": [0, 400],
+      "description": "ピック点上方の接近スタンドオフ"
+    }
+  ],
+
+  "requirements": [
+    {
+      "ref": "r_standoff",
+      "by": "robot_engineer",
+      "kpi": { "name": "approachClearance", "expr": "v_pick_standoff - 45", "unit": "mm" },
+      "criterion": { "op": ">=", "value": 30 },
+      "constrains": ["v_pick_standoff"],
+      "negotiability": "must",
+      "admissible": { "interval": [75, 250], "source": "stated" },
+      "note": "工具半径45mm を差し引いた接近クリアランス。閉形単調 — derived へ昇格"
+    }
+  ],
+
+  "specification": {
+    "layout": {
+      "version": "layout/1.0",
+      "meta": {
+        "name": "測定器デモ 最小レイアウト",
+        "description": "ロボット台座・ピックテーブル・プレースコンベアと TCP 教示点。"
+      },
+      "strategy": "manual",
+      "entities": [
+        {
+          "ref": "robot_pedestal",
+          "type": "Solid",
+          "name": "ロボット台座",
+          "dimensions": { "x": 220, "y": 220, "z": 400 },
+          "position": { "x": 0, "y": 0, "z": 200 }
+        },
+        {
+          "ref": "pick_table",
+          "type": "Solid",
+          "name": "ピックテーブル",
+          "dimensions": { "x": 300, "y": 300, "z": 350 },
+          "position": { "x": 600, "y": 0, "z": 175 }
+        },
+        {
+          "ref": "place_conveyor",
+          "type": "Solid",
+          "name": "プレースコンベア",
+          "dimensions": { "x": 400, "y": 250, "z": 300 },
+          "position": { "x": 0, "y": 700, "z": 150 }
+        },
+        {
+          "ref": "tcp_pick",
+          "type": "AnnotatedPoint",
+          "name": "TCP 教示点 pick",
+          "placeType": "Anchor",
+          "position": { "x": 600, "y": 0, "z": 420 }
+        },
+        {
+          "ref": "tcp_place",
+          "type": "AnnotatedPoint",
+          "name": "TCP 教示点 place",
+          "placeType": "Anchor",
+          "position": { "x": 0, "y": 700, "z": 380 }
+        }
+      ],
+      "constraints": []
+    },
+
+    "trace": [
+      { "from": "f_robot",    "to": "robot_pedestal", "kind": "derives" },
+      { "from": "f_robot",    "to": "pick_table",     "kind": "derives" },
+      { "from": "f_robot",    "to": "place_conveyor", "kind": "derives" },
+      { "from": "r_standoff", "to": "tcp_pick",       "kind": "constrains" },
+      { "from": "f_robot",    "to": "tcp_place",      "kind": "derives" }
+    ]
+  },
+
+  "acceptance": [
+    {
+      "ref": "a_tcp_reach",
+      "mode": "static",
+      "predicate": {
+        "kind": "robot_reach",
+        "marginMin": 25,
+        "targets": [
+          { "ref": "tcp_pick",  "reachable": true, "margin": 132 },
+          { "ref": "tcp_place", "reachable": true, "margin": 31 }
+        ]
+      },
+      "requires": ["f_robot.attrs.reach"]
+    },
+    {
+      "ref": "a_fence_clearance",
+      "mode": "static",
+      "predicate": {
+        "kind": "collision_free",
+        "scope": "env",
+        "clearance": 25,
+        "contacts": [
+          { "a": "link2", "b": "fence",      "clearance": 96 },
+          { "a": "link3", "b": "pick_table", "clearance": 22 }
+        ]
+      },
+      "requires": []
+    },
+    {
+      "ref": "a_gripper_env",
+      "mode": "static",
+      "predicate": {
+        "kind": "collision_free",
+        "scope": "env",
+        "clearance": 10,
+        "contacts": [
+          { "a": "gripper", "b": "pick_table",     "clearance": 34 },
+          { "a": "gripper", "b": "place_conveyor", "clearance": 27 }
+        ]
+      },
+      "requires": ["f_gripper.attrs.stroke"]
+    }
+  ]
+}
