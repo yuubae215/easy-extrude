@@ -1,4 +1,6 @@
 import { Badge, Ref } from './ContextInspector.jsx'
+import { DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
+import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 
 /**
  * ConflictMatrix — actor × variable grid (ADR-049 Phase 4, §5.3).
@@ -36,6 +38,19 @@ const fmtGap = (gap) => Array.isArray(gap)
   : Object.entries(gap).map(([ax, g]) => `${ax}: [${g[0]}, ${g[1]})`).join('  ')
 
 export function ConflictMatrix({ matrix, filter, onSetFilter }) {
+  // Proof-feedback wiring (ADR-062 Phase 3): an approval / region edit already
+  // re-validates and re-projects this matrix; the delta chip and the green
+  // flash on a freshly-settled variable card only make that fact FELT. The
+  // sole fact source is the projected matrix (validator-owned `resolvedBy` /
+  // `approved`); the previous snapshot is component-local presentation state.
+  // Hooks run before the null-guard (React rule); a null matrix records no history.
+  const openVars = matrix
+    ? matrix.variables.filter(v => matrix.variableSummary[v].inConflict && !matrix.variableSummary[v].approved)
+    : null
+  const { prev: prevOpenVars, tick } = usePrevOnChange(openVars)
+  const openDelta   = listDelta(prevOpenVars, openVars)
+  const settledVars = settledRefs(prevOpenVars, openVars) ?? []
+
   if (!matrix) {
     return <div style={{ color: '#999', fontSize: '11px' }}>No matrix data</div>
   }
@@ -50,6 +65,7 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
         <span style={{ color: '#22C55E' }}> ✓ resolved</span> /
         <span style={{ color: '#22C55E' }}> ● claimed</span> / ↔ = multi-variable coupling.
         Click a column header for the persona projection.
+        <DeltaChip value={openDelta} goodWhenPositive={false} label="unsettled" />
       </div>
 
       <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '10px' }}>
@@ -121,10 +137,13 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
         {variables.filter(v => variableSummary[v].inConflict).map(v => {
           const s = variableSummary[v]
           return (
-            <div key={v} style={{
-              padding: '6px 7px', marginBottom: '4px', borderRadius: '4px',
-              background: '#262626', border: '1px solid #333', lineHeight: '1.5',
-            }}>
+            // The cell "goes out" visibly: a variable that just left the
+            // unsettled set replays the green landing flash (ADR-062 Phase 3).
+            <LandingFlash key={v} tick={tick} active={settledVars.includes(v)}
+              style={{
+                padding: '6px 7px', marginBottom: '4px', borderRadius: '4px',
+                background: '#262626', border: '1px solid #333', lineHeight: '1.5',
+              }}>
               <div>
                 {s.approved
                   ? <Badge color="#22C55E">resolved</Badge>
@@ -140,7 +159,7 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
               )}
               <div style={{ fontSize: '10px', color: '#888' }}>{s.between.join('  ×  ')}</div>
               <Ref>{s.actors.join(', ')}{s.resolvedBy ? ` · by ${s.resolvedBy}` : ''}</Ref>
-            </div>
+            </LandingFlash>
           )
         })}
       </div>

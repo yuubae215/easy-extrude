@@ -7,6 +7,8 @@ import { WizardPanel } from './WizardPanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 import { WhyTreeView } from './WhyTreeView.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
+import { FeedbackDefs, DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
+import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 
 /**
  * ContextLayer — production Context-first overlay (ADR-050).
@@ -44,10 +46,19 @@ export function ContextLayer() {
   const setTab    = useUIStore(s => s.actions.contextSetTab)
   const setFilter = useUIStore(s => s.actions.contextSetPersonaFilter)
 
+  // Proof-feedback wiring (ADR-062 Phase 3): the header conflict count gets a
+  // run-over-run delta chip + a green flash when conflicts just cleared. Facts
+  // come from validator-owned `ctx.conflicts` (`resolvedBy` included); hooks run
+  // before the active-guard (React rule); history is component-local.
+  const liveConflictRefs = ctx.active ? (ctx.conflicts ?? []).filter(c => !c.resolvedBy).map(c => c.ref) : null
+  const { prev: prevLiveRefs, tick: conflictTick } = usePrevOnChange(liveConflictRefs)
+  const conflictDelta = listDelta(prevLiveRefs, liveConflictRefs)
+  const clearedNow    = (settledRefs(prevLiveRefs, liveConflictRefs) ?? []).length > 0
+
   if (!ctx.active) return null
 
   const isMobile = window.innerWidth < 768
-  const liveConflicts = (ctx.conflicts ?? []).filter(c => !c.resolvedBy).length
+  const liveConflicts = liveConflictRefs.length
   // negotiate shows matrix + cluster + questions (if any open); ghost shows matrix
   // only (read-only persona filter); author has no matrix — only the conflict list.
   const tabs =
@@ -86,6 +97,7 @@ export function ContextLayer() {
       pointerEvents: 'auto',
       boxSizing:  'border-box',
     }}>
+      <FeedbackDefs />
       <div style={{ padding: '8px 10px 4px', fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
         <span style={{ color: '#c8c8c8' }}>{TITLE[ctx.mode] ?? 'Context'}</span>
         <span style={{ marginLeft: '6px', fontWeight: 'normal', fontSize: '10px', color: '#888' }}>
@@ -139,9 +151,12 @@ export function ContextLayer() {
         </div>
       )}
 
-      <div style={{ padding: '4px 8px 0', fontSize: '10px', color: liveConflicts ? '#cc6666' : '#22C55E' }}>
+      <LandingFlash tick={conflictTick} active={clearedNow}
+        style={{ padding: '4px 8px 0', fontSize: '10px', color: liveConflicts ? '#cc6666' : '#22C55E' }}>
         {liveConflicts ? `${liveConflicts} unresolved conflict${liveConflicts > 1 ? 's' : ''}` : '✓ All conflicts resolved'}
-      </div>
+        {' '}
+        <DeltaChip value={conflictDelta} goodWhenPositive={false} label="conflicts" />
+      </LandingFlash>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
         {ctx.mode === 'author' && <AuthorConflicts conflicts={ctx.conflicts} />}

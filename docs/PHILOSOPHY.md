@@ -638,7 +638,14 @@ that boundary says *where solving lives*; this principle says *where rigor lives
 play lives*, and they cut differently — the rigorous wire is owned upstream, the playful
 experience is owned here, and presentation never crosses onto the wire.
 
-*Underlies CODE_CONTRACTS rules: Grasp Contract Is Derived, Never Defined; BffClient Surfaces the Contract-Error Envelope (ADR-054); ContextController Grasp Walkthrough (ADR-057 score-first); ADR-060 contract governance; ADR-059 client-derived ghost*
+**Scope note (ADR-062, 2026-07-05)**: this principle applies to *every* UX surface, not just
+the grasp thread it was distilled from. The proof-feedback loop (input → proof layer decides
+a fact → client derives the "it worked" presentation) is the default shape for any input or
+result surface; the shared primitives live in `FeedbackPrimitives` / `FeedbackMath`, and the
+presentation history behind a delta chip / landing flash stays component-local — never a
+store field, never a wire field.
+
+*Underlies CODE_CONTRACTS rules: Grasp Contract Is Derived, Never Defined; BffClient Surfaces the Contract-Error Envelope (ADR-054); ContextController Grasp Walkthrough (ADR-057 score-first); ADR-060 contract governance; ADR-059 client-derived ghost; Shared Feedback Primitives (ADR-062)*
 
 ---
 
@@ -697,4 +704,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 26 | A Screen Edge Is a Shared Resource | UI | Edge-Anchored Panels Must Coordinate Occupancy |
 | 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
-| 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059) |
+| 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |

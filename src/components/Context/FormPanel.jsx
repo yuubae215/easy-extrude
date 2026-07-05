@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ANSWER_KIND } from '../../context/FormProjection.js'
+import { DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
+import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 
 /**
  * FormPanel — dynamic intake form driven by `projectForm()` output (ADR-050 §4.4).
@@ -19,6 +21,12 @@ import { ANSWER_KIND } from '../../context/FormProjection.js'
  *
  * Completion is machine-checkable: `form` is empty exactly when all validator
  * OpenQuestions have been answered (PHILOSOPHY #11 — the form state cannot lie).
+ *
+ * Proof-feedback wiring (ADR-062 Phase 2): each answer already re-validates and
+ * re-projects; this panel only makes that fact FELT — a run-over-run open-count
+ * delta chip and a green landing flash naming the question(s) the last answer
+ * closed. The sole fact source stays `projectForm()` (via `context.form`); the
+ * previous snapshot is component-local presentation state, never a store field.
  */
 
 export function FormPanel() {
@@ -26,11 +34,25 @@ export function FormPanel() {
   const actors    = useUIStore(s => s.context.actors)
   const callbacks = useUIStore(s => s.callbacks)
 
+  // Previous open-question snapshot (updated only on real changes — array
+  // identity churn from re-projection is absorbed by the signature).
+  const { prev, tick } = usePrevOnChange(form)
+  const delta   = listDelta(prev, form)
+  const settled = settledRefs(prev, form) ?? []
+
   if (!form || form.length === 0) {
     return (
-      <div style={{ padding: '12px 8px', color: '#22C55E', fontSize: '11px', textAlign: 'center' }}>
-        ✓ No questions awaiting an answer
-      </div>
+      <LandingFlash tick={tick} active={settled.length > 0}
+        style={{ padding: '12px 8px', textAlign: 'center', borderRadius: '4px' }}>
+        <div style={{ color: '#22C55E', fontSize: '11px' }}>
+          ✓ No questions awaiting an answer
+        </div>
+        {settled.length > 0 && (
+          <div style={{ color: '#7a9', fontSize: '9px', marginTop: '3px' }}>
+            last answer closed {settled.join(', ')}
+          </div>
+        )}
+      </LandingFlash>
     )
   }
 
@@ -40,6 +62,18 @@ export function FormPanel() {
         Open items found by the validator. Each answer removes one question; the form closes when all are answered.
         Every answer is committed as an undoable document change.
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingBottom: '6px', fontSize: '10px', color: '#c8c8c8' }}>
+        <span>{form.length} open question{form.length > 1 ? 's' : ''}</span>
+        {/* fewer open questions = progress → goodWhenPositive: false */}
+        <DeltaChip value={delta} goodWhenPositive={false} label="open" />
+      </div>
+      {settled.length > 0 && (
+        <LandingFlash tick={tick} style={{ borderRadius: '4px', marginBottom: '6px' }}>
+          <div style={{ fontSize: '9px', color: '#22C55E', padding: '3px 5px' }}>
+            ✓ answered: {settled.join(', ')}
+          </div>
+        </LandingFlash>
+      )}
       {form.map(q => (
         <QuestionItem
           key={q.ref}

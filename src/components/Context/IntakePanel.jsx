@@ -28,6 +28,7 @@ import {
   NEGOTIABILITY,
   UNITS,
 } from '../../context/IntakeVocabulary.js'
+import { FeedbackDefs, flashAnim } from '../Feedback/FeedbackPrimitives.jsx'
 
 /**
  * IntakePanel — direct entry addition UI for blank-doc authoring (ADR-051 Phase 1).
@@ -80,11 +81,9 @@ const btnStyle = (primary = false) => ({
 })
 
 // Keyframes + dual-range thumb styling (inline styles cannot express either).
+// The seed-flood / save-landed flash keyframes moved to the shared
+// FeedbackPrimitives (ADR-062 Phase 1) — use `flashAnim('amber')`.
 const INTAKE_CSS = `
-@keyframes eaIntakeFlash {
-  0%   { background: rgba(213,162,58,0.30); }
-  100% { background: transparent; }
-}
 @keyframes eaBadgePulse {
   0%   { transform: scale(1.5); }
   100% { transform: scale(1); }
@@ -113,6 +112,7 @@ const INTAKE_CSS = `
 export function IntakeSharedDefs() {
   return (
     <>
+      <FeedbackDefs />
       <style>{INTAKE_CSS}</style>
       {/* Shared unit suggestions (ADR-063 Phase 2): every unit field offers the
           vocabulary as a datalist — suggestions, never a straitjacket. */}
@@ -424,7 +424,7 @@ function Reveal({ children }) {
 
 // An existing entry as an interactive card: hover lifts it and reveals the ✎
 // affordance so the read-only list visibly becomes editable. `flash` replays the
-// same eaIntakeFlash animation the add form uses, as the "landed" confirmation.
+// same amber landing flash the add form uses, as the "landed" confirmation.
 export function EntryCard({ children, onEdit, flash, badge, editable = true }) {
   const [hover, setHover] = useState(false)
   return (
@@ -439,7 +439,7 @@ export function EntryCard({ children, onEdit, flash, badge, editable = true }) {
         border: `1px solid ${hover && editable ? '#3a5a8a' : '#2e2e2e'}`,
         background: hover && editable ? 'rgba(90,155,245,0.09)' : 'rgba(255,255,255,0.02)',
         transition: 'border-color 0.15s ease, background 0.15s ease',
-        ...(flash ? { animation: 'eaIntakeFlash 700ms ease-out' } : {}),
+        ...(flash ? flashAnim('amber') : {}),
       }}
     >
       <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}</div>
@@ -583,7 +583,7 @@ export function ActorForm({ mode = 'create', initial = null, actors, seedActors 
         />
       )}
       {isEdit && <SeedAnchorHint entry={seedEntry} describe={describeSeedActor} />}
-      <div key={flashTick} style={flashTick > 0 ? { animation: 'eaIntakeFlash 700ms ease-out' } : undefined}>
+      <div key={flashTick} style={flashTick > 0 ? flashAnim('amber') : undefined}>
         {isEdit
           ? <LockedRef value={ref} />
           : <RefField label="ref (e.g. a_robot)" value={ref} onChange={setRef}
@@ -666,7 +666,7 @@ export function VariableForm({ mode = 'create', initial = null, variables, seedV
         />
       )}
       {isEdit && <SeedAnchorHint entry={seedEntry} describe={describeSeedVariable} />}
-      <div key={flashTick} style={flashTick > 0 ? { animation: 'eaIntakeFlash 700ms ease-out' } : undefined}>
+      <div key={flashTick} style={flashTick > 0 ? flashAnim('amber') : undefined}>
         {isEdit
           ? <LockedRef value={ref} />
           : <RefField label="ref (e.g. v_reach)" value={ref} onChange={setRef}
@@ -838,7 +838,7 @@ export function RequirementForm({ mode = 'create', initial = null, actors, varia
         />
       )}
       {isEdit && <SeedAnchorHint entry={seedEntry} describe={describeSeedRequirement} />}
-      <div key={flashTick} style={flashTick > 0 ? { animation: 'eaIntakeFlash 700ms ease-out' } : undefined}>
+      <div key={flashTick} style={flashTick > 0 ? flashAnim('amber') : undefined}>
         {isEdit
           ? <LockedRef value={ref} />
           : <RefField label="ref (e.g. r_reach)" value={ref} onChange={setRef}

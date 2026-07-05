@@ -1,4 +1,6 @@
 import { Badge, Ref } from './ContextInspector.jsx'
+import { DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
+import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 
 /**
  * NegotiationClusterView — resolution-order ("meeting design") visualization
@@ -26,6 +28,15 @@ import { Badge, Ref } from './ContextInspector.jsx'
 const shortActor = (ref) => ref.split('_')[0]
 
 export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
+  // Proof-feedback wiring (ADR-062 Phase 3): approval flows through the
+  // CommandStack and re-projects this order; the flash on a freshly-settled
+  // step and the unsettled-count delta chip only display that fact. Hooks run
+  // before the empty-guard (React rule); previous snapshot is component-local.
+  const openSteps = Array.isArray(order) ? order.filter(s => !s.approved).map(s => s.ref) : null
+  const { prev: prevOpenSteps, tick } = usePrevOnChange(openSteps)
+  const openDelta    = listDelta(prevOpenSteps, openSteps)
+  const settledSteps = settledRefs(prevOpenSteps, openSteps) ?? []
+
   if (!order || order.length === 0) {
     return <div style={{ color: '#22C55E', fontSize: '11px' }}>✓ No conflicts or negotiation clusters</div>
   }
@@ -43,15 +54,16 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
         Contracting clusters turns the dependencies into a DAG, giving the order in which to stack joint Decisions (DSM partitioning).
         Single-variable conflicts can be settled independently; coupled clusters are settled together with an n-ary Decision.
         Approve from the top down.
+        <DeltaChip value={openDelta} goodWhenPositive={false} label="unsettled" />
       </div>
 
       {allApproved && (
-        <div style={{
+        <LandingFlash tick={tick} active={settledSteps.length > 0} style={{
           color: '#22C55E', fontSize: '11px', marginBottom: '8px',
           padding: '5px 7px', background: '#16341f', border: '1px solid #225c34', borderRadius: '4px',
         }}>
           ✓ All Decisions settled — negotiation clusters resolved
-        </div>
+        </LandingFlash>
       )}
 
       {order.map((step, i) => {
@@ -62,7 +74,8 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
             {i > 0 && (
               <div style={{ textAlign: 'center', color: '#555', fontSize: '11px', lineHeight: '1' }}>↓</div>
             )}
-            <div style={{
+            {/* A step that just settled replays the green landing flash. */}
+            <LandingFlash tick={tick} active={settledSteps.includes(step.ref)} style={{
               padding: '7px 8px', marginBottom: '2px', borderRadius: '4px',
               background: '#262626',
               border: `1px solid ${isCluster ? '#a86a30' : '#3a4a5e'}`,
@@ -132,7 +145,7 @@ export function NegotiationClusterView({ order, clusters, filter, onApprove }) {
                 )}
               </div>
               <Ref>{step.ref}</Ref>
-            </div>
+            </LandingFlash>
           </div>
         )
       })}
