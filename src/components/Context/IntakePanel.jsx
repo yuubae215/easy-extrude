@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { extractFacts } from '../../context/NlIntake.js'
 import {
@@ -17,8 +17,17 @@ import {
   variableGaps,
   requirementGaps,
   kpiCatalogChips,
+  kpiCardLines,
   seedCardLines,
 } from '../../context/IntakeAssist.js'
+import { instantiateKpiExpr } from '../../context/RoleKpiCatalog.js'
+import {
+  ROLES,
+  DISCIPLINES,
+  CRITERION_OPS,
+  NEGOTIABILITY,
+  UNITS,
+} from '../../context/IntakeVocabulary.js'
 
 /**
  * IntakePanel — direct entry addition UI for blank-doc authoring (ADR-051 Phase 1).
@@ -38,10 +47,12 @@ import {
  * predicates (§B-2), so peeling this layer off never changes doc semantics.
  */
 
-const ROLES = ['developer', 'maintainer', 'endUser', 'agent', 'customer']
-const DISCIPLINES = ['', 'vision', 'robot', 'mech', 'sw', 'plan']
-const CRITERION_OPS = ['>=', '<=', '>', '<', '==']
-const NEGOTIABILITY = ['must', 'should']
+// Selection vocabularies come from the pure IntakeVocabulary module (ADR-063
+// Phase 2 — one source; the schema enums and the KPI catalog feed it). The
+// leading '' keeps discipline optional in the actor form.
+const DISCIPLINE_OPTIONS = ['', ...DISCIPLINES]
+/** Shared datalist id: unit fields suggest, never restrict (expert escape hatch). */
+const UNIT_LIST_ID = 'ea-unit-suggestions'
 
 const inputStyle = {
   background: '#1a1a1a', border: '1px solid #444', borderRadius: '3px',
@@ -207,6 +218,60 @@ function SeedChips({ kind, entries, describe, onPick, hint }) {
           ))}
           <div style={{ fontSize: '8px', color: '#776a4a', marginTop: '2px' }}>
             click to flood the form with these values
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── KPI expression asset chips (ADR-063 Phase 1) ───────────────────────────────
+
+// The recognition-over-recall answer to "KPI がすぐには思い付かない": each chip is
+// a curated, ready-to-use expression asset from RoleKpiCatalog (role-kpi/2.0).
+// Clicking fills name/unit/expr/op — the user tweaks only the parameters.
+// Hovering pops a mini-card (pure kpiCardLines) listing what the pick fills and
+// which parameters stay theirs, so assets can be browsed BEFORE picking.
+function KpiAssetChips({ chips, onPick }) {
+  const [hovered, setHovered] = useState(null)
+  if (!chips || chips.length === 0) return null
+  const cardLines = hovered ? kpiCardLines(hovered) : []
+  return (
+    <div style={{ margin: '2px 0 5px', position: 'relative' }}>
+      <div style={{ fontSize: '9px', color: '#777', marginBottom: '3px' }}>
+        KPI catalog — pick a ready expression, then tweak its parameters:
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+        {chips.map(c => (
+          <button key={`${c.discipline}:${c.name}`}
+            onClick={() => { setHovered(null); onPick(c) }}
+            onMouseEnter={() => setHovered(c)}
+            onMouseLeave={() => setHovered(h => (h === c ? null : h))}
+            style={{
+              cursor: 'pointer', background: 'rgba(90,155,245,0.08)',
+              border: '1px solid #5a9bf544', borderRadius: '10px',
+              color: '#8ab4f0', padding: '2px 8px', fontSize: '9px',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}>
+            {c.discipline} · {c.name}
+          </button>
+        ))}
+      </div>
+      {hovered && cardLines.length > 0 && (
+        <div style={{
+          position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 20,
+          background: '#181e2a', border: '1px solid #5a9bf566', borderRadius: '4px',
+          padding: '6px 8px', marginTop: '3px', pointerEvents: 'none',
+          boxShadow: '0 4px 10px rgba(0,0,0,0.5)',
+        }}>
+          {cardLines.map(l => (
+            <div key={l.label} style={{ fontSize: '9px', lineHeight: 1.6 }}>
+              <span style={{ color: '#4a6a9a', whiteSpace: 'nowrap' }}>{l.label}</span>
+              <span style={{ color: '#a9c4ea', marginLeft: '6px' }}>{l.value}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: '8px', color: '#4a5a72', marginTop: '2px' }}>
+            click to fill KPI name / unit / expr — parameters stay yours to tweak
           </div>
         </div>
       )}
@@ -513,7 +578,7 @@ function ActorForm({ mode = 'create', initial = null, actors, seedActors = [], s
             style={matchesSeed(seedFill?.role, role) ? seedTint : undefined} />
         </Field>
         <Field label="discipline (optional)">
-          <Select value={disc} onChange={setDisc} options={DISCIPLINES}
+          <Select value={disc} onChange={setDisc} options={DISCIPLINE_OPTIONS}
             style={matchesSeed(seedFill?.disc, disc) ? seedTint : undefined} />
         </Field>
       </div>
@@ -592,7 +657,7 @@ function VariableForm({ mode = 'create', initial = null, variables, seedVariable
               tint={matchesSeed(seedFill?.ref, ref)} onEnter={submit} />
         }
         <Field label="unit">
-          <input value={unit} onChange={e => setUnit(e.target.value)}
+          <input value={unit} onChange={e => setUnit(e.target.value)} list={UNIT_LIST_ID}
             placeholder="mm" style={{ ...inputStyle, ...tintOf('unit', unit) }} />
         </Field>
         <div style={{ display: 'flex', gap: '6px' }}>
@@ -638,7 +703,32 @@ function RequirementForm({ mode = 'create', initial = null, actors, variables, r
   const [flashTick, setFlashTick] = useState(0)
 
   const existingRefs = requirements.map(r => r.ref)
-  const gaps = requirementGaps({ ref, by, kpiName, constrains, val, admLo, admHi })
+  const gaps = requirementGaps({ ref, by, kpiName, kpiExpr, constrains, val, admLo, admHi })
+
+  // ADR-063 Phase 1: pick a curated KPI expression asset, then tweak only its
+  // parameters. The chip fills name/unit/expr/op from the catalog (single
+  // source); `pickedKpi` remembers the asset so a later variable selection can
+  // finish a still-pristine `{var}` placeholder for the user.
+  const [pickedKpi, setPickedKpi] = useState(null)
+  function fillFromKpiAsset(chip) {
+    setKpiName(chip.name)
+    if (chip.unit) setKpiUnit(chip.unit)
+    if (chip.exprTemplate) setKpiExpr(instantiateKpiExpr(chip, constrains))
+    if (chip.suggestedOp) setOp(chip.suggestedOp)
+    setPickedKpi(chip.exprTemplate ? chip : null)
+  }
+  // Re-instantiate `{var}` when the constrained variable changes while the expr
+  // is still exactly the pristine instantiation for the previous selection —
+  // the user's own edits are never rewritten (same ownership rule as seed tint).
+  const prevConstrains = useRef(constrains)
+  useEffect(() => {
+    const prev = prevConstrains.current
+    prevConstrains.current = constrains
+    if (!pickedKpi || prev === constrains) return
+    if (kpiExpr === instantiateKpiExpr(pickedKpi, prev)) {
+      setKpiExpr(instantiateKpiExpr(pickedKpi, constrains))
+    }
+  }, [constrains])
 
   // ADR-058 fork & tweak: pre-fill every field from a seed example requirement so
   // the user tweaks real values instead of facing a blank schema. The ref is
@@ -663,7 +753,7 @@ function RequirementForm({ mode = 'create', initial = null, actors, variables, r
     setRef(fill.ref); setBy(fill.by); setKpiName(fill.kpiName); setKpiExpr(fill.kpiExpr)
     setKpiUnit(fill.kpiUnit); setOp(fill.op); setVal(fill.val); setConst(fill.const)
     setNeg(fill.neg); setAdmLo(fill.admLo); setAdmHi(fill.admHi)
-    setSeedFill(fill); setFlashTick(t => t + 1)
+    setSeedFill(fill); setPickedKpi(null); setFlashTick(t => t + 1)
   }
 
   // Live 3D uncertainty-band preview driven by the admissible interval inputs
@@ -709,7 +799,7 @@ function RequirementForm({ mode = 'create', initial = null, actors, variables, r
     })
     setRef(''); setBy(actors[0]?.ref ?? ''); setKpiName(''); setKpiExpr('')
     setKpiUnit(''); setVal(''); setConst(variables[0]?.ref ?? '')
-    setAdmLo(''); setAdmHi(''); setSeedFill(null)
+    setAdmLo(''); setAdmHi(''); setSeedFill(null); setPickedKpi(null)
   }
 
   const actorOpts = actors.map(a => ({ value: a.ref, label: a.ref }))
@@ -747,28 +837,7 @@ function RequirementForm({ mode = 'create', initial = null, actors, variables, r
                 placeholder="a_robot" style={{ ...inputStyle, ...tintOf('by', by) }} />
           }
         </Field>
-        {kpiChips.length > 0 && (
-          <div style={{ margin: '2px 0 5px' }}>
-            <div style={{ fontSize: '9px', color: '#777', marginBottom: '3px' }}>
-              KPI catalog — click to fill the name (grouped by discipline):
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-              {kpiChips.map(c => (
-                <button key={`${c.discipline}:${c.name}`}
-                  onClick={() => setKpiName(c.name)}
-                  title={`"${c.name}" is a mandatory KPI of the ${c.discipline} discipline (RoleKpiCatalog)`}
-                  style={{
-                    cursor: 'pointer', background: 'rgba(90,155,245,0.08)',
-                    border: '1px solid #5a9bf544', borderRadius: '10px',
-                    color: '#8ab4f0', padding: '2px 8px', fontSize: '9px',
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                  }}>
-                  {c.discipline} · {c.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <KpiAssetChips chips={kpiChips} onPick={fillFromKpiAsset} />
         <Field label="KPI name">
           <input value={kpiName} onChange={e => setKpiName(e.target.value)}
             placeholder="reach" style={{ ...inputStyle, ...tintOf('kpiName', kpiName) }} />
@@ -778,7 +847,7 @@ function RequirementForm({ mode = 'create', initial = null, actors, variables, r
             placeholder="arm_length" style={{ ...inputStyle, ...tintOf('kpiExpr', kpiExpr) }} />
         </Field>
         <Field label="KPI unit">
-          <input value={kpiUnit} onChange={e => setKpiUnit(e.target.value)}
+          <input value={kpiUnit} onChange={e => setKpiUnit(e.target.value)} list={UNIT_LIST_ID}
             placeholder="mm" style={{ ...inputStyle, ...tintOf('kpiUnit', kpiUnit) }} />
         </Field>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
@@ -947,6 +1016,11 @@ export function IntakePanel() {
   return (
     <div style={{ paddingBottom: '8px' }}>
       <style>{INTAKE_CSS}</style>
+      {/* Shared unit suggestions (ADR-063 Phase 2): every unit field offers the
+          vocabulary as a datalist — suggestions, never a straitjacket. */}
+      <datalist id={UNIT_LIST_ID}>
+        {UNITS.map(u => <option key={u} value={u} />)}
+      </datalist>
       {seedName && (
         <div style={{
           fontSize: '10px', color: '#d5a23a', marginBottom: '8px', lineHeight: 1.5,

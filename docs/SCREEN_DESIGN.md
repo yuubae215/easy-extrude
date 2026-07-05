@@ -722,13 +722,22 @@ counts grow, with a pulsing section badge on each addition); **seed chip hover m
 an example entry's full filled values before flooding the form); a **flood flash + seed-diff tint**
 (fields still holding the seed's value keep a dashed amber underline that disappears when
 overridden); a **ref live-uniqueness check** (green ✓ free / red ● taken, never blocking) with a
-one-click free-number suggestion (`r_reach_2`); **KPI catalog chips** (read-only projection of
-`RoleKpiCatalog`, discipline-grouped, one click fills the KPI name); and a **dual-handle
+one-click free-number suggestion (`r_reach_2`); **KPI expression asset chips** (ADR-063 Phase 1 —
+read-only projection of `RoleKpiCatalog` `role-kpi/2.0`, discipline-grouped; hovering pops a
+mini-card listing what the asset fills and which parameters stay the user's to tweak, and one
+click fills KPI name / unit / expr / suggested operator — the user then only parameterises:
+threshold and target variable. While the expr is still the pristine instantiation, selecting a
+variable auto-completes the `{var}` placeholder; a leftover `{…}` placeholder is a named submit
+gap, never a silent commit); and a **dual-handle
 admissible slider** railed on the constrained variable's domain, writing the same lo/hi state as
 the numeric inputs so stroking it drives the 3-D uncertainty band live. On the rigid side
 (ADR-058 §B) a disabled submit button is never silent: the missing-reason line above it prints the
 same gap list that disables it, and interval checks call the validator's own `isInterval`
-predicate (same function reference — no looser UI re-implementation).
+predicate (same function reference — no looser UI re-implementation). Selection vocabularies
+(roles, disciplines, negotiability, criterion ops, unit datalist suggestions) come from the pure
+`IntakeVocabulary` module (ADR-063 Phase 2 — schema enums by reference, disciplines derived from
+the KPI catalog keys); no intake field confronts the user as a blank canvas, while unit fields
+stay free-text underneath the suggestions (expert escape hatch).
 
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:

@@ -13,6 +13,7 @@ import {
   variableGaps,
   requirementGaps,
   kpiCatalogChips,
+  kpiCardLines,
   seedCardLines,
 } from './IntakeAssist.js'
 import { isInterval as validatorIsInterval } from './ContextValidator.js'
@@ -89,15 +90,50 @@ test('requirementGaps: complete form has no gaps; each missing field is named', 
     .includes('admissible hi must be greater than lo'))
 })
 
+test('requirementGaps: a leftover {…} placeholder in kpiExpr is a named gap (ADR-063)', () => {
+  const full = {
+    ref: 'r', by: 'a', kpiName: 'resolution', constrains: 'v',
+    val: '2', admLo: '400', admHi: '800',
+  }
+  // an instantiated expression (no placeholder) is fine
+  assert.deepEqual(requirementGaps({ ...full, kpiExpr: '3500 / v' }), [])
+  // an asset picked before a variable is selected keeps `{var}` — the gap names it
+  assert.ok(requirementGaps({ ...full, kpiExpr: '3500 / {var}' })
+    .some(g => g.includes('placeholder')))
+  // an unfilled curated parameter is caught the same way
+  assert.ok(requirementGaps({ ...full, kpiExpr: '{sensor_px} / v' })
+    .some(g => g.includes('placeholder')))
+})
+
 // ── kpiCatalogChips (A-6) ────────────────────────────────────────────────────
 
 test('kpiCatalogChips: flattens the catalog, discipline-grouped, no fabricated fields', () => {
   const chips = kpiCatalogChips()
   const total = Object.values(ROLE_KPI_CATALOG).reduce((n, a) => n + a.length, 0)
   assert.equal(chips.length, total)
-  assert.deepEqual(chips.find(c => c.name === 'resolution'), { discipline: 'vision', name: 'resolution' })
-  // custom catalog respected (ctx.kpiCatalog override path)
+  // a role-kpi/2.0 expression asset flows through whole (ADR-063 Phase 1)
+  const resolution = chips.find(c => c.name === 'resolution')
+  assert.equal(resolution.discipline, 'vision')
+  assert.equal(resolution.unit, 'px/mm')
+  assert.ok(resolution.exprTemplate.includes('{var}'))
+  assert.ok(Array.isArray(resolution.params))
+  // a legacy 1.0 name-only catalog (ctx.kpiCatalog override path) yields a
+  // name-only chip — no fabricated unit/expr (PHILOSOPHY #11)
   assert.deepEqual(kpiCatalogChips({ sw: ['latency'] }), [{ discipline: 'sw', name: 'latency' }])
+})
+
+test('kpiCardLines: lists only fields the asset has; 1.0 name-only chip gets no lines beyond none', () => {
+  const chips = kpiCatalogChips()
+  const lines = kpiCardLines(chips.find(c => c.name === 'resolution'))
+  const byLabel = Object.fromEntries(lines.map(l => [l.label, l.value]))
+  assert.equal(byLabel.unit, 'px/mm')
+  assert.ok(byLabel.expr.includes('{var}'))
+  assert.ok(Object.keys(byLabel).some(k => k.startsWith('tweak · sensor_px')))
+  assert.equal(byLabel['suggested op'], '>=')
+  assert.ok(byLabel.about.length > 0)
+  // name-only chip → no fabricated card content
+  assert.deepEqual(kpiCardLines({ discipline: 'sw', name: 'latency' }), [])
+  assert.deepEqual(kpiCardLines(null), [])
 })
 
 // ── seedCardLines (A-1) ──────────────────────────────────────────────────────

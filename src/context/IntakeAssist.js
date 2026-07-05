@@ -15,7 +15,7 @@
  * `node --test` (PHILOSOPHY #3 / #6).
  */
 import { isInterval } from './ContextValidator.js'
-import { ROLE_KPI_CATALOG } from './RoleKpiCatalog.js'
+import { ROLE_KPI_CATALOG, kpiEntryName } from './RoleKpiCatalog.js'
 
 export { isInterval } // re-exported so consumers see one import surface
 
@@ -111,8 +111,8 @@ export function variableGaps(form) {
 }
 
 /**
- * @param {{ ref: string, by: string, kpiName: string, constrains: string,
- *           val: string, admLo: string, admHi: string }} form
+ * @param {{ ref: string, by: string, kpiName: string, kpiExpr?: string,
+ *           constrains: string, val: string, admLo: string, admHi: string }} form
  * @returns {string[]} human-readable reasons; empty ⇔ submittable
  */
 export function requirementGaps(form) {
@@ -120,6 +120,12 @@ export function requirementGaps(form) {
   if (!(form.ref ?? '').trim())        gaps.push('ref is empty')
   if (!(form.by ?? '').trim())         gaps.push('by (actor) is not selected')
   if (!(form.kpiName ?? '').trim())    gaps.push('KPI name is empty')
+  // ADR-063 Phase 1: an expression asset instantiated without its variable (or
+  // with an unfilled param) keeps its `{…}` placeholder — committing it would
+  // silently produce a never-promotable expr, so the gap names it instead (#11).
+  if (/\{[^}]*\}/.test(form.kpiExpr ?? '')) {
+    gaps.push('KPI expr still has a {…} placeholder — pick a variable / fill the parameter')
+  }
   if (!(form.constrains ?? '').trim()) gaps.push('constrains (variable) is not selected')
   if (isNaN(parseFloat(form.val)))     gaps.push('threshold must be a number')
   const lo = parseFloat(form.admLo), hi = parseFloat(form.admHi)
@@ -135,21 +141,53 @@ export function requirementGaps(form) {
 
 /**
  * Flatten the KPI catalog into discipline-grouped chips for the requirement
- * form. Read-only projection: the catalog stays the single source (§1.1); the
- * catalog carries no units or exprs, so none are fabricated here — a chip
- * fills the KPI name and lets expr default to it.
+ * form. Read-only projection: the catalog stays the single source (§1.1).
+ * A `role-kpi/2.0` expression asset flows through whole (name, unit,
+ * exprTemplate, params, suggestedOp, description — ADR-063 Phase 1: the chip
+ * fills a ready expression the user only parameterises); a legacy 1.0 name
+ * string yields a name-only chip — nothing is fabricated for it (#11).
  *
- * @param {Record<string, string[]>} [catalog]
- * @returns {{ discipline: string, name: string }[]} stable order
+ * @param {Record<string, (string|object)[]>} [catalog]
+ * @returns {{ discipline: string, name: string }[]} stable order; 2.0 entries
+ *          additionally carry the asset fields
  */
 export function kpiCatalogChips(catalog = ROLE_KPI_CATALOG) {
   const chips = []
   for (const discipline of Object.keys(catalog ?? {})) {
-    for (const name of catalog[discipline] ?? []) {
-      chips.push({ discipline, name })
+    for (const entry of catalog[discipline] ?? []) {
+      const name = kpiEntryName(entry)
+      if (name === null) continue
+      chips.push(typeof entry === 'string' ? { discipline, name } : { discipline, ...entry })
     }
   }
   return chips
+}
+
+/**
+ * Flatten one KPI expression asset into label/value lines for the chip's hover
+ * mini-card (ADR-063 Phase 1) — the user browses what an asset fills and which
+ * parameters stay theirs to tweak BEFORE picking. Only fields the asset has are
+ * listed (a 1.0 name-only chip gets no fabricated lines — PHILOSOPHY #11).
+ *
+ * @param {object} chip — a kpiCatalogChips() entry
+ * @returns {{ label: string, value: string }[]}
+ */
+export function kpiCardLines(chip) {
+  if (!chip || typeof chip !== 'object') return []
+  const lines = []
+  const push = (label, value) => {
+    if (value !== null && value !== undefined && value !== '') {
+      lines.push({ label, value: String(value) })
+    }
+  }
+  push('unit', chip.unit)
+  push('expr', chip.exprTemplate)
+  for (const p of chip.params ?? []) {
+    if (p?.key) push(`tweak · ${p.key}`, p.label ? `${p.label}${p.example !== undefined ? ` (e.g. ${p.example})` : ''}` : p.example)
+  }
+  push('suggested op', chip.suggestedOp)
+  push('about', chip.description)
+  return lines
 }
 
 // ── A-1: seed chip hover mini-card ────────────────────────────────────────────
