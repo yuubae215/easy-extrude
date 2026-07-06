@@ -55,6 +55,10 @@ import {
   WIZARD_CATALOG, CELL_INTAKE_WIZARD,
   startWizard, nextWizardState, prevWizardState, wizardStepGaps,
 } from '../context/WizardCatalog.js'
+import {
+  getParametricAsset, clampParams, instantiateAsset, applyAssetCommit,
+} from '../context/ParametricAssets.js'
+import { ParametricPreviewView } from '../view/ParametricPreviewView.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
@@ -114,6 +118,10 @@ export class ContextController {
     /** @type {UncertaintyGhostView|null} live admissible-interval ghost (sole owner) */
     this._intakeGhost = null
 
+    // ── Parametric asset viewer (ADR-063 Phase 4) ──────────────────────────────
+    /** @type {ParametricPreviewView|null} live asset ghost preview (sole owner) */
+    this._assetPreview = null
+
     // ── Why breadcrumb / φ⁻¹ provenance (ADR-052 Phase 2) ──────────────────────
     /** @type {string|null} scene id whose Why provenance is currently shown */
     this._provenanceSceneId = null
@@ -146,6 +154,10 @@ export class ContextController {
     registerCallback('onWizardBack',             ()           => this.wizardBack())
     registerCallback('onWizardFinish',           ()           => this.finishWizard())
     registerCallback('onWizardExit',             ()           => this.exitWizard())
+    registerCallback('onAssetViewerOpen',        (assetId)    => this.openAssetViewer(assetId))
+    registerCallback('onAssetParam',             (key, value) => this.setAssetParam(key, value))
+    registerCallback('onAssetViewerCommit',      ()           => this.commitAsset())
+    registerCallback('onAssetViewerClose',       ()           => this.closeAssetViewer())
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
@@ -220,8 +232,15 @@ export class ContextController {
     if (this.isActive) this.exit()
 
     if (meta.source.kind === 'blank') {
-      Promise.resolve(this._ctxService.adoptDoc(createBlankDoc(meta.name), this._viewContext()))
-        .then(() => this._startNegotiation())
+      // The guided card is a wizard ENTRY POINT (ADR-063 Phase 5) — same blank
+      // doc, but the doc keeps a neutral project name and the wizard FSM starts
+      // immediately after negotiation opens.
+      const docName = meta.wizard ? 'New Project' : meta.name
+      Promise.resolve(this._ctxService.adoptDoc(createBlankDoc(docName), this._viewContext()))
+        .then(() => {
+          this._startNegotiation()
+          if (meta.wizard) this.startWizard()
+        })
         .catch(err => {
           this._ctrl._uiView.showToast(`Failed to load template: ${err.message}`, { type: 'error' })
           console.error('[ContextController]', err)
@@ -478,6 +497,88 @@ export class ContextController {
     useUIStore.getState().actions.contextSetWizard(null)
   }
 
+  // ── Parametric asset viewer (ADR-063 Phase 4) ────────────────────────────────
+  // The 3-D viewer is an INPUT DEVICE: sliders drive the pure `instantiateAsset`
+  // fragment, the ghost preview responds live, and the only doc-mutating exit is
+  // an explicit commit that records the converted numbers/text (variables + one
+  // asserted fact) through the generic doc-edit command — the 3-D state itself
+  // is never committed (ADR-063 Goal 2; optimistic preview / pessimistic commit
+  // — ADR-050 Phase 3 discipline). Sole writer of `context.assetViewer`; sole
+  // owner of `_assetPreview` (disposed on close / exit — PHILOSOPHY #4/#9).
+
+  /**
+   * Open the parametric viewer on an asset at its schema defaults and render
+   * the live ghost preview. Negotiate-mode only (the panel lives in its tab).
+   * @param {string} assetId — PARAMETRIC_CATALOG entry id
+   */
+  openAssetViewer(assetId) {
+    if (!this.isNegotiation) return
+    const asset = getParametricAsset(assetId)
+    if (!asset) {
+      this._ctrl._uiView.showToast(`Unknown asset: ${assetId}`, { type: 'warn' })
+      return
+    }
+    const values = clampParams(asset, {})
+    useUIStore.getState().actions.contextSetAssetViewer({ assetId, values })
+
+    if (!this._assetPreview) this._assetPreview = new ParametricPreviewView(this._ctrl._sceneView.scene)
+    this._assetPreview.update(instantiateAsset(asset, values).entities)
+
+    // Frame the camera once per open (per-keystroke re-framing would disorient —
+    // same rule as the intake ghost).
+    const sphere = this._assetPreview.boundingSphere()
+    if (sphere) this._ctrl._sceneView.fitCameraToSphere(sphere.center, sphere.radius * 1.6)
+  }
+
+  /**
+   * Live slider change: clamp through the pure layer, replace the slice, and
+   * rebuild the ghost. No doc mutation, no CommandStack — a preview keystroke
+   * is not a commit.
+   * @param {string} key
+   * @param {number} value
+   */
+  setAssetParam(key, value) {
+    const viewer = useUIStore.getState().context.assetViewer
+    if (!this.isNegotiation || !viewer) return
+    const asset = getParametricAsset(viewer.assetId)
+    if (!asset) return
+    const values = clampParams(asset, { ...viewer.values, [key]: value })
+    useUIStore.getState().actions.contextSetAssetViewer({ ...viewer, values })
+    this._assetPreview?.update(instantiateAsset(asset, values).entities)
+  }
+
+  /**
+   * Commit the current parameter values as doc entries (variables + one asserted
+   * fact — the "converted numbers/text") through the generic doc-edit command so
+   * the whole commit is one undoable mutation. A recommit upserts by ref (pure
+   * `applyAssetCommit`), never duplicates. The viewer stays open so the user can
+   * keep iterating; the preview ghost stays a preview.
+   */
+  commitAsset() {
+    const viewer = useUIStore.getState().context.assetViewer
+    if (!this.isNegotiation || !viewer) return
+    const asset = getParametricAsset(viewer.assetId)
+    if (!asset) return
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = applyAssetCommit(beforeDoc, asset, viewer.values)
+    this._runDocEdit(beforeDoc, afterDoc, `Commit asset ${asset.name}`, 'Could not commit asset')
+    this._ctrl._uiView.showToast(
+      `Committed "${asset.name}" — ${asset.params.length} variable${asset.params.length > 1 ? 's' : ''} + 1 fact (numbers, not boxes)`,
+    )
+  }
+
+  /** Close the viewer and dispose the ghost preview (PHILOSOPHY #9). */
+  closeAssetViewer() {
+    useUIStore.getState().actions.contextSetAssetViewer(null)
+    this._disposeAssetPreview()
+  }
+
+  _disposeAssetPreview() {
+    if (!this._assetPreview) return
+    this._assetPreview.dispose()
+    this._assetPreview = null
+  }
+
   // ── Live intake preview (Phase 3 — Entry D, ADR-051 §3) ─────────────────────
 
   /**
@@ -551,6 +652,11 @@ export class ContextController {
     const ctrl   = this._ctrl
     const doc    = this._ctxService.getDoc()
     const result = this._ctxService.getValidatorResult()
+
+    // contextStart resets the assetViewer slice — dispose its ghost too, or a
+    // re-entry (e.g. importing a new .ctx.json mid-session) would leak the view
+    // with no slice pointing at it (PHILOSOPHY #9).
+    this._disposeAssetPreview()
 
     ctrl._linkNetworkView?.setForceHidden(true)
 
@@ -1002,6 +1108,7 @@ export class ContextController {
     const ui = useUIStore.getState().actions
 
     this._disposeIntakeGhost()   // live intake preview is only valid inside an overlay
+    this._disposeAssetPreview()  // asset ghost preview too (ADR-063 Phase 4)
 
     if (this._mode === 'author') {
       ctrl._controls.enabled = true
@@ -1033,6 +1140,8 @@ export class ContextController {
     if (this._intakeGhost) {
       this._intakeGhost.tick(t, this._ctrl._sceneView.activeCamera, this._ctrl._sceneView.renderer)
     }
+    // Parametric asset ghost pulse (ADR-063 Phase 4) — live, uncommitted preview.
+    this._assetPreview?.tick(t)
     if (this._mode === 'author') {
       const cam = this._ctrl._sceneView.activeCamera
       const rdr = this._ctrl._sceneView.renderer
