@@ -175,6 +175,12 @@ export const useUIStore = create((set, get) => ({
     //   { defId, status:'review' }
     // Step drafts stay component-local (transient, never a second source — §1.1).
     wizard: null,
+    // ADR-063 Phase 4 parametric asset viewer — sole writer ContextController
+    // (same discipline as grasp/wizard); the panel only reads + fires callbacks.
+    // null = closed. Shape: { assetId, values: {key: number} } — values are the
+    // CLAMPED live slider state (a display projection of the pure clampParams;
+    // the doc is only touched by an explicit commit).
+    assetViewer: null,
   },
 
   // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
@@ -347,7 +353,7 @@ export const useUIStore = create((set, get) => ({
     // the context overlay is persistent (a loaded project, not a transient
     // tutorial). It merges the payload and marks the overlay active.
     contextStart: (payload) => set(state => ({
-      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, wizard: null, ...payload, active: true },
+      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -418,8 +424,14 @@ export const useUIStore = create((set, get) => ({
       context: { ...state.context, wizard },
     })),
 
+    // ADR-063 Phase 4 — parametric asset viewer state, replaced wholesale (sole
+    // writer ContextController; values are already clamped by the pure layer).
+    contextSetAssetViewer: (assetViewer) => set(state => ({
+      context: { ...state.context, assetViewer },
+    })),
+
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null },
     })),
   },
 }))

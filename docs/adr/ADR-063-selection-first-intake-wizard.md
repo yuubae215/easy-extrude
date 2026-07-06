@@ -1,6 +1,6 @@
 # 063. 選択優先インテーク — ウィザード・パラメトリックアセット・KPI 式カタログ（白紙入力不能の前提）
 
-- Status: Accepted (Phase 1 + Phase 2 + Phase 3 実装済 2026-07-05; Phase 4–5 パラメトリックビューワ/統合は後続)
+- Status: Accepted (全 5 フェーズ実装済 — Phase 1+2+3: 2026-07-05, Phase 4+5: 2026-07-07)
 - Date: 2026-07-05
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし（ADR-051 の入口カタログを拡張、ADR-058 の seed 系を包含する上位設計）
@@ -268,9 +268,75 @@ Phase 1）をそのまま消費する。
 `test:context` **392/392**、`tsc --noEmit`・`vite build` クリーン。
 契約 / BFF / ドメイン実体 / Context DSL 版は無改変。
 
-**残（後続フェーズ）**: Phase 4 パラメトリック 3D アセット + ビューワ、
-Phase 5 統合（TemplateGallery からのウィザード開始接続・Empty Project の
-エキスパート棚移設・ウィザードステップへのビューワ埋め込み）。
+## 実装（Phase 4 — パラメトリック 3D アセット + ビューワ, 2026-07-07）
+
+**純粋層 — `src/context/ParametricAssets.js`（アセットレジストリ, `parametric/1.0`）**
+
+- アセット = **パラメータスキーマ + 純粋 fragment ビルダー**: `params[]`
+  （`{key, label, unit, min, max, step, default}`）と `fragment(values) →
+  {entities}`（`layout/1.0` manual 断片、明示 position）。DSL は無改変 —
+  アセットは言語の上の**データ**（§非目標）。初期カタログはロボットセル
+  ドメイン 3 件（`robot_pedestal` / `conveyor` / `cell_floor`）で、行追加が
+  正攻法の拡張点（`QUOTIENT_TABLE` / R8 カタログと同じループ）。
+- `clampParams(asset, values)` — 欠落/非有限 → default、範囲外 → clamp。
+  **total（決して throw しない）**: スライダの毎キーストロークで走るため、
+  プレビューがドラッグ中に死なない（#11）。
+- `instantiateAsset(asset, values)` — 完全な compile 可能 `layout/1.0` doc を
+  返す（プレビューが描き、コミットが**変換元**にする中間表現。正準 doc には
+  決して書かれない）。
+- `assetCommitEntries` / `applyAssetCommit(doc, asset, values)` — Goal 2 の
+  「変換された数値・テキスト」の実体: パラメータごとに設計変数
+  （`v_<asset>_<key>`、**スライダ範囲 = 宣言 domain**、unit 付き）＋選択値の
+  asserted Fact 1 件（`g_<asset>_params`）。変数は `updateVariable` upsert、
+  fact は remove+add の丸ごと置換 — **再コミットは上書きであり重複しない**。
+  入力不変（#6）。
+
+**ビュー — `src/view/ParametricPreviewView.js`（ゴースト系譜 — ADR-047/051）**
+
+- instantiated fragment の Solid 群を半透明ボックス＋エッジで描画し、
+  opacity パルスで「未コミットの生きたプレビュー」を伝える。**意図的に
+  `importFromJson` を経由しない**: 正準シーンと undo スタックはスライダの
+  ライブドラッグで無傷（楽観プレビュー / 悲観コミット — ADR-050 Phase 3 の
+  規律。§1「DSL 再コンパイル→シーン更新」はゴースト射影として実現し、
+  正準シーン置換はコミット後の doc 再導出に委ねる）。update/dispose 対称（#9）。
+
+**配線 — `ContextController` + `context.assetViewer` スライス**
+
+- uiStore `context.assetViewer = null | {assetId, values}`（丸ごと置換、sole
+  writer は controller — grasp/wizard と同じ規律）。`contextStart`/`contextEnd`
+  でリセット、`_startNegotiation` 再入時はビューも dispose（リーク防止 #9）。
+- `openAssetViewer`（defaults で開き、カメラは**開いたとき 1 回だけ**フィット）
+  / `setAssetParam`（clamp → スライス置換 → ゴースト再構築。doc 無変異・
+  CommandStack 非経由 — プレビューはコミットではない）/ `commitAsset`
+  （`applyAssetCommit` → 既存の汎用 `createDocEditCommand` = **唯一の
+  書き込み経路に合流**（§3）、1 コミット = 1 undo）/ `closeAssetViewer`。
+  callbacks: `onAssetViewerOpen/onAssetParam/onAssetViewerCommit/onAssetViewerClose`。
+- `ParametricAssetPanel.jsx` = ContextLayer negotiate の `'assets'` タブ
+  （新規エッジパネルなし — #26）。ピッカー（カード = recognition over recall）
+  → ビューワ（1 パラメータ 1 スライダ + **正直なコミットプレビュー**: 書かれる
+  変数 ref / domain / fact をコミット前に逐語表示 — 「3D は入力デバイス、
+  成果物は数値」を見える契約にする）。
+
+## 実装（Phase 5 — 統合, 2026-07-07）
+
+- **ウィザードステップへのビューワ埋め込み**: `CELL_INTAKE_WIZARD` の
+  variables ステップに宣言フィールド `assetSource: true`（順序・選択肢ソースは
+  定義アセットに置く — §1.1）。`WizardPanel` はこれを読んで
+  `<ParametricAssetPanel embedded />` を VariableForm の上に描画 — アセットの
+  コミットが同じ経路で変数を書き、**同じ段完了述語**を満たす（打鍵ゼロで
+  ステップ通過可能）。
+- **TemplateGallery → ウィザード開始点**: カタログ先頭に `guided` カード
+  （`{kind:'blank'}, wizard:true`）。`selectTemplate` は blank doc 採用 →
+  `_startNegotiation()` → `startWizard()` を接続（doc 名は中立な "New
+  Project"）。
+- **Empty Project のエキスパート棚移設**: `blank` カードを `category:'Expert'`
+  としてカタログ末尾へ（Goal 3 — 全カスタマイズ経路は無傷のまま最深部に残る）。
+
+**検証**: `ParametricAssets.test.js` 13 件（カタログ整合性 / 全アセット×
+defaults+両極値が `compileLayout` を通過 / clamp total 性 / instantiate 決定性・
+応答性 / コミットが blank doc で `validateContext` 通過 / 再コミット upsert /
+入力不変）、`test:context` **434/434**、`tsc --noEmit`・`vite build` クリーン。
+契約 / BFF / ドメイン実体 / DSL スキーマ版は無改変。
 
 ## Lens notes
 

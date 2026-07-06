@@ -72,6 +72,10 @@ export const CELL_INTAKE_WIZARD = Object.freeze({
       prompt: 'Declare the shared design variables (a mount height, a cell width…). Unit suggestions come from the KPI catalog — adjust the domain, don’t invent it.',
       formGaps:   variableGaps,
       minEntries: 1,
+      // ADR-063 Phase 5 — this step also offers the parametric 3-D asset viewer
+      // as a choice source: committing an asset writes variables (+ one fact)
+      // through the same command path, satisfying the step gate without typing.
+      assetSource: true,
     }),
     Object.freeze({
       id:    'requirements',

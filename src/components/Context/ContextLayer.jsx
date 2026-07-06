@@ -5,6 +5,7 @@ import { ChecksPanel } from './ChecksPanel.jsx'
 import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
 import { WizardPanel } from './WizardPanel.jsx'
+import { ParametricAssetPanel } from './ParametricAssetPanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 import { WhyTreeView } from './WhyTreeView.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
@@ -75,6 +76,8 @@ export function ContextLayer() {
       // Guided intake (ADR-063 Phase 3) sits beside the expert Intake tab —
       // progressive disclosure: wizard ⊃ assisted forms ⊃ expert forms.
       { id: 'wizard',    label: 'Wizard' },
+      // Parametric 3-D assets (ADR-063 Phase 4) — shape sliders, commit numbers.
+      { id: 'assets',    label: 'Assets' },
       { id: 'intake',    label: 'Intake' },
       // Grasp tab appears once seeded (a renderable layout exists — ADR-057 §B).
       ...(ctx.grasp ? [{ id: 'grasp', label: 'Grasp' }] : []),
@@ -195,6 +198,9 @@ export function ContextLayer() {
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'wizard' && (
           <WizardPanel />
+        )}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'assets' && (
+          <ParametricAssetPanel />
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
           <IntakePanel />

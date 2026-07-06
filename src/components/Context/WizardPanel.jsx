@@ -16,6 +16,7 @@ import {
   VariableSummary,
   RequirementSummary,
 } from './IntakePanel.jsx'
+import { ParametricAssetPanel } from './ParametricAssetPanel.jsx'
 
 /**
  * WizardPanel — the guided-intake wizard tab (ADR-063 Phase 3, "選択優先
@@ -131,7 +132,24 @@ function StepScreen({ def, wizard, actors, variables, requirements, seedIndex, c
         <ActorForm actors={actors} seedActors={seedIndex.actors} onAdd={onAdd} />
       )}
       {step.kind === 'variable' && (
-        <VariableForm variables={variables} seedVariables={seedIndex.variables} onAdd={onAdd} />
+        <>
+          {/* ADR-063 Phase 5 — the parametric viewer embedded as this step's
+              richest choice source: shape an asset in 3-D, commit numbers, and
+              the committed variables satisfy the same step gate. Declared by
+              the wizard definition (`assetSource`), not hard-coded here. */}
+          {step.assetSource && (
+            <div style={{
+              border: '1px solid #3a3a3a', borderRadius: '5px',
+              padding: '7px 8px', marginBottom: '8px',
+            }}>
+              <div style={{ fontSize: '9px', color: '#5a9bf5', marginBottom: '4px' }}>
+                ◇ Or shape it in 3-D — pick an asset, drag sliders, commit the numbers:
+              </div>
+              <ParametricAssetPanel embedded />
+            </div>
+          )}
+          <VariableForm variables={variables} seedVariables={seedIndex.variables} onAdd={onAdd} />
+        </>
       )}
       {step.kind === 'requirement' && (
         <RequirementForm

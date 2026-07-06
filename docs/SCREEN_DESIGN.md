@@ -736,6 +736,19 @@ addition was an undoable command — partial progress is the deliverable). The *
 lists everything committed and **✓ Finish** (`onWizardFinish`) closes the wizard onto the Matrix
 tab — a view transition, not a commit. A blank doc (no actors) now opens on this tab instead of
 Intake; the expert Intake tab stays one tab away (progressive disclosure — ADR-063 Goal 3).
+The **variables** step additionally embeds the parametric asset viewer (declared by the
+definition asset's `assetSource` flag — ADR-063 Phase 5), so the step gate can be satisfied by
+shaping an asset in 3-D instead of typing.
+
+The **Assets** tab (`ParametricAssetPanel`, ADR-063 Phase 4) is the parametric 3-D asset viewer.
+A catalog screen lists the `PARAMETRIC_CATALOG` assets (robot pedestal / conveyor / cell
+footprint) as cards; opening one shows a slider per parameter (range + unit + live value) that
+drives a pulsing blue ghost preview in 3-D (`ParametricPreviewView` — never `importFromJson`; the
+canonical scene and undo stack are untouched by a live drag). An honest commit-preview block
+prints exactly the variables (ref / unit / domain = slider range) and the one asserted fact a
+commit will write; **✓ Commit as variables + fact** folds them into the doc as one undoable
+command (recommit overwrites by ref, never duplicates). The 3-D state itself is never committed —
+the numbers are the artifact (ADR-063 Goal 2).
 
 The **Intake** tab (`IntakePanel`, ADR-051 Phase 1) adds Actors / Variables / Requirements directly
 to a blank or loaded doc. A 「自然言語から取り込み」 section (ADR-051 Phase 4 — Entry C) accepts a
@@ -773,7 +786,7 @@ stay free-text underneath the suggestions (expert escape hatch).
 
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
-- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) (+ Checks when the doc declares acceptance) + **Why** + **俯瞰** + Wizard + Intake (+ Grasp when seeded) tabs, undoable approval.
+- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) (+ Checks when the doc declares acceptance) + **Why** + **俯瞰** + Wizard + Assets + Intake (+ Grasp when seeded) tabs, undoable approval.
 - **`author`** (Phase 3) — opened via **Context ▾ → 領域オーサリング** (`enterAuthoring()`). No
   tabs; the panel lists the live R6 conflicts (green when clear) while the **3D**
   `RegionAuthoringWidget`s are the editing surface — drag a handle to resize/move a footprint;
@@ -787,7 +800,9 @@ A transient full-screen modal (`TemplateGallery.jsx`, z-index 300 — above all 
 PHILOSOPHY #26) opened via Header **Context ▾ → New Project** (`openTemplateGallery()`). This is the
 single "create new" entry — the former **New Context** direct item was removed (its Empty Project
 card here is the blank path). Lists the static `TEMPLATE_CATALOG` as category-grouped cards (Starter:
-Empty Project; Robot Cell: Simple / Multi-party Conflict / Regions / Robotics Checks). Each example
+**Guided Intake (Wizard)** — a blank doc that auto-starts the wizard FSM, ADR-063 Phase 5; Robot
+Cell: Simple / Multi-party Conflict / Regions / Robotics Checks; Expert: Empty Project — the blank
+sheet shelved as the expert escape hatch, ADR-063 Goal 3). Each example
 card carries a **structure preview** (ADR-062 Phase 5): a Why/How/What stacked bar + per-layer node
 counts + the `⌗` doc-signature prefix, derived client-side from the ADR-056 canonical form
 (`canonicalForm` → pure `structurePreview`; previews computed once by the controller and pushed as

@@ -23,16 +23,19 @@
  * @property {{kind:'blank'}|{kind:'example', file:string}} source
  *           — how the doc is obtained: built from `createBlankDoc`, or a bundled
  *             example JSON resolved by the controller's import map.
+ * @property {boolean} [wizard] — start the guided-intake wizard right after the
+ *           doc is adopted (ADR-063 Phase 5 — the gallery is a wizard entry point).
  */
 
 /** @type {TemplateMeta[]} */
 export const TEMPLATE_CATALOG = [
   {
-    id:          'blank',
-    name:        'Empty Project',
-    description: 'Enter actors, variables, and requirements from scratch.',
+    id:          'guided',
+    name:        'Guided Intake (Wizard)',
+    description: 'Answer one question at a time — who, what is decided, what must hold. Every field starts from a list or an asset; you never face a blank form.',
     category:    'Starter',
     source:      { kind: 'blank' },
+    wizard:      true,
   },
   {
     id:          'cell_simple',
@@ -61,6 +64,16 @@ export const TEMPLATE_CATALOG = [
     description: 'Measured reach margins and contact clearances drive robot_reach / collision_free verdicts. Answer the gripper question to unblock a check.',
     category:    'Robot Cell',
     source:      { kind: 'example', file: 'cell_robotics_context.json' },
+  },
+  // ADR-063 Phase 5 — the blank sheet is the EXPERT escape hatch, not the front
+  // door (Goal 3: the full-customisation route survives, shelved after the
+  // selection-first entries).
+  {
+    id:          'blank',
+    name:        'Empty Project',
+    description: 'Enter actors, variables, and requirements from scratch (expert route — blank forms, no guidance).',
+    category:    'Expert',
+    source:      { kind: 'blank' },
   },
 ]
 
