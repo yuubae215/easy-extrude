@@ -645,7 +645,18 @@ result surface; the shared primitives live in `FeedbackPrimitives` / `FeedbackMa
 presentation history behind a delta chip / landing flash stays component-local — never a
 store field, never a wire field.
 
-*Underlies CODE_CONTRACTS rules: Grasp Contract Is Derived, Never Defined; BffClient Surfaces the Contract-Error Envelope (ADR-054); ContextController Grasp Walkthrough (ADR-057 score-first); ADR-060 contract governance; ADR-059 client-derived ghost; Shared Feedback Primitives (ADR-062)*
+**Scope note (ADR-064, 2026-07-08)**: symmetric to the play-side note above, *rigor* is the
+default for **every wire** (HTTP route, WS message, file format, DSL), not a property of the
+grasp thread it was distilled from. Every wire is one of two states — (a) it has a closed,
+versioned schema with a CI conformance test, or (b) it is *explicitly declared* out of rigor
+scope with a reason and a deadline. There is no third state (implicit no-contract) — an
+undeclared uncontracted wire is the silent failure #11 forbids, one layer up. The repo's own
+declared surface (Layout/Context DSL) gets the same schema treatment grasp-contract received:
+the schema is the **shape** contract (`additionalProperties:false`, enum vocabularies), the JS
+validator keeps the **meaning** contract (semantic rules a schema cannot express), and a drift
+test pins the two vocabularies equal so neither becomes a silent second source (§1.1).
+
+*Underlies CODE_CONTRACTS rules: Grasp Contract Is Derived, Never Defined; BffClient Surfaces the Contract-Error Envelope (ADR-054); ContextController Grasp Walkthrough (ADR-057 score-first); ADR-060 contract governance; ADR-059 client-derived ghost; Shared Feedback Primitives (ADR-062); DSL Schema Is the SHAPE Contract (ADR-064 Phase 2)*
 
 ---
 

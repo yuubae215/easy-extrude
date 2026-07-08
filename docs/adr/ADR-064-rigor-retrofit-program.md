@@ -1,6 +1,6 @@
 # 064. Rigor 側の遡及プログラム — CI ゲート化・DSL スキーマ昇格・未契約ワイヤの明示宣言・play の検証
 
-- Status: Accepted (Phase 1 実装済 2026-07-08; Phase 2–4 後続)
+- Status: Accepted (Phase 1+2 実装済 2026-07-08; Phase 3–4 後続)
 - Date: 2026-07-08
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -164,6 +164,17 @@ ADR-062 が play 側で行ったのと対称に、rigor 側の scope note を #2
     （required status check = `gate`）の設定が必要 — リポジトリ管理者の操作。
   - Phase 2: `examples/*.json` 全件が新スキーマの conformance テストを通る。
     スキーマ違反サンプル（余剰フィールド）が **fail する**ことをネガティブテストで示す。
+    **実装時のローカル証拠 (2026-07-08)**: `schema/layout-1.0.schema.json` +
+    `schema/context-0.4.schema.json`（両者 `additionalProperties:false` + 版フィールド、
+    ajv draft-2020-12）を新設。conformance テスト `src/schema/{Layout,Context}Schema.test.js`
+    = 37 本（全 6 例が PASS、余剰フィールド／不正 enum／不正版が FAIL、
+    hydrated `{$fact}` leaf・requirements-only doc は PASS）。**ドリフト束縛**: 各 enum が
+    `LayoutDslSchema.js` / `ContextDslSchema.js` の export 定数と機械的に一致することを
+    assert（§1.1 — 二重定義がサイレントにずれない）。JS バリデータの**意味**検査
+    （R1–R9 / ref 解決）は無改変で validator 側に残す（スキーマ=形、validator=意味）。
+    glob 実行のテスト数 443 → 480（+37）。typecheck・vite build・`test:contract` 16/16
+    すべて green。ajv を root devDependency に追加（BFF と別インスタンス）。
+    置き場所は in-repo `schema/`（submodule 分離せず — 正本はここ）+ CLI `schema/tools/validate.mjs`。
   - Phase 3: `/api/scenes` への不正 JSON 書き込みが 400 を返すテスト。対象外ワイヤの
     宣言コメントの存在。
   - Phase 4: reduced-motion 環境での退行形の描画テスト + E2E スモーク green。
