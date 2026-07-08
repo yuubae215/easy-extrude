@@ -4,6 +4,16 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-07-08** (5): Infra/UX — **ADR-064 Phase 4 実装（play 側の残欠: 検証と逃げ道）→ Accepted (Phase 1+2+3+4 実装済 = 本 ADR 完了)**。ユーザ指示「ADR-064 Phase 4 を進めて」。
+  - **(1) `prefers-reduced-motion` 対応（アクセシビリティの逃げ道）**: 演出（フラッシュ・パルス）は motion 削減時、アニメなしの静的な色/アイコン変化へ退行する — 情報（「事実が変わった / 要注意」）は失わず動きだけ落とす（#29「演出の意味はフラッシュではなく通知」、#11 無言消失の禁止）。
+    - 形の決定は純粋 `flashStyle(tone, reduced)`（`src/view/FeedbackMath.js`）: `reduced=false`→700ms キーフレーム fade、`true`→静的 tint（同じ緑/琥珀の色系）。ユニット 3 本で両分岐を拘束。
+    - 副作用境界は `FeedbackPrimitives.jsx` に集約: `prefersReducedMotion()`（非フック `flashAnim` 用）と `useReducedMotion()` フック（live コンポーネント用）。`window.matchMedia('(prefers-reduced-motion: reduce)')` の読みはこの 1 箇所のみ（§1.1）、非ブラウザ env（node --test）は `false`=motion 許可で既定描画不変。
+    - `flashAnim`/`LandingFlash` は `flashStyle` へ委譲。`ContextInspector` Badge の無限 opacity パルス（連続点滅=前庭系リスク）と `IntakePanel` Section バッジの scale ポップ（動き）は reduced 時 `animation:none` へ退行（バッジ自体は残す）。glob 492→495。
+  - **(2) Playwright スモーク E2E（体感層の配線の生死検証）**: `playwright.config.js` + `e2e/smoke.spec.js` 4 本 — boot（canvas+React overlay+`__easyExtrude`）/ box 追加+undo（`[aria-label=Delete]` カウント往復）/ テンプレート読み込み→negotiate タブ（Context ▾ → New Project → Robot Cell — Simple → ContextLayer negotiate）/ reduced-motion 退行が死んでいない。網羅は狙わず配線の生死のみ（#20）。
+    - dev サーバ（`pnpm dev`）を回すことで vite が COOP/COEP を付与 → `crossOriginIsolated=true` → coi-serviceworker が自己スキップ → headless でのリロードループ回避。test-id は追加せず可視テキスト/role で選択（`Scene Collection`/`+ Add`/`Negotiate`/`Matrix`）。
+    - CI は unit `gate` と**別ジョブ `e2e`**（flakiness が型/契約ゲートを塞がない — #20）。`@playwright/test` を 1.56.x（sandbox の chromium build 1194 と一致）で root devDep 追加、CI は `playwright install chromium` で取得（ブラウザ DL はプロキシ非許可のためローカルは pre-installed を使用）。artifacts（`test-results/`・`playwright-report/`）は gitignore。ローカル全 4 PASS 8.8s。
+  - 波及: `FeedbackMath.js`・`FeedbackPrimitives.jsx`・`ContextInspector.jsx`・`IntakePanel.jsx`・`ci.yml`・`package.json`・`.gitignore` + 新設 `playwright.config.js`/`e2e/`。CODE_CONTRACTS §1 に 2 ルール追加、PHILOSOPHY は #29/#20 の適用のため新原則なし。typecheck・build・unit 495 green。契約/BFF/ドメイン/DSL 版・schema 無改変。
+
 - **2026-07-08** (4): Infra — **ADR-064 Phase 3 実装（未契約ワイヤの二択確定）→ Accepted (Phase 1+2+3 実装済; Phase 4 後続)**。ユーザとの設計対話（Blender の datablock 設計 = 捨てるところは捨て守るところは守る）を受けて `/api/scenes` を rigor 対象化。
   - **設計レンズ**: scene ペイロードは均質でなく、グラフ骨格（`objects[]` 型付きフィールド + 参照、`links[]` = SpatialLink 参照エッジ、`transformGraph` nodes/edges）と バルクジオメトリ（`ImportedMesh` の base64 バッファ）に分かれる。実コード観測（`SceneSerializer` v1.3）で blob は ImportedMesh の 3 バッファのみ・Solid は primary triple の構造化データと確認。
   - `schema/scene-1.3.schema.json`: 骨格を `additionalProperties:false` で守り、ジオメトリを opaque base64 blob 葉として封筒だけ検証（頂点の正気は消費側の `THREE.Mesh` 契約に委任）。`operationGraph`（ADR-017 Phase B、Phase C 見直し予定）も宣言済み・開いた葉。8 オブジェクト型を判別共用体（type const）でモデル。

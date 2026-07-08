@@ -1,6 +1,6 @@
 # 064. Rigor 側の遡及プログラム — CI ゲート化・DSL スキーマ昇格・未契約ワイヤの明示宣言・play の検証
 
-- Status: Accepted (Phase 1+2+3 実装済 2026-07-08; Phase 4 後続)
+- Status: Accepted (Phase 1+2+3+4 実装済 2026-07-08)
 - Date: 2026-07-08
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -211,6 +211,22 @@ ADR-062 が play 側で行ったのと対称に、rigor 側の scope note を #2
     BFF `test:contract` を glob 化（`test/**/*.test.js`）= Phase 1 と同じ silent-failure
     構造除去、新テスト自動収集。glob 480→492、contract 16→23、typecheck・build green。
   - Phase 4: reduced-motion 環境での退行形の描画テスト + E2E スモーク green。
+    **実装時のローカル証拠 (2026-07-08)**: (1) `prefers-reduced-motion` 対応 —
+    純粋な `flashStyle(tone, reduced)` を `src/view/FeedbackMath.js` に新設
+    (motion 許可=700ms キーフレーム fade、motion 削減=静的 tint。情報=「事実が
+    変わった」は保持、動きだけ落とす)。副作用境界 `prefersReducedMotion()` /
+    `useReducedMotion()` を `FeedbackPrimitives.jsx` に集約 (matchMedia を 1 箇所で読み、
+    非ブラウザ env は false=motion 許可)。`flashAnim`/`LandingFlash` は `flashStyle`
+    へ委譲、`ContextInspector` の Badge 無限パルス と `IntakePanel` の Section
+    バッジ scale ポップは reduced 時 `animation:none` へ退行 (バッジ自体は残る)。
+    退行形の正確な shape は `FeedbackMath.test.js` の `flashStyle` ユニットテスト
+    3 本で拘束 (glob 495)。(2) Playwright スモーク — `playwright.config.js` +
+    `e2e/smoke.spec.js` 4 本 (boot / box 追加+undo / テンプレート読み込み→negotiate
+    タブ / reduced-motion 退行が死んでいない)。dev サーバ (`pnpm dev`) を回すことで
+    COOP/COEP が付き coi-serviceworker が自己スキップ = リロードループ回避。CI は
+    unit `gate` と別ジョブ `e2e` (flakiness がゲートを塞がない — #20)。ローカル全 4
+    PASS 8.8s (chromium 1194 / @playwright/test 1.56.1)。網羅は狙わず配線の生死のみ
+    検証。ブラウザ DL はプロキシ非許可のため CI は `playwright install chromium` で取得。
 - **波及（blast radius）**: `.github/workflows/`、`package.json` scripts、
   `src/layout/` / `src/context/` のバリデータ、`server/src/routes/scenes.js`、
   `FeedbackPrimitives.jsx`、`docs/PHILOSOPHY.md` #29、CLAUDE.md（Notes for changes の

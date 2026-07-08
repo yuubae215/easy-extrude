@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { refsSignature } from '../../view/FeedbackMath.js'
+import { useState, useEffect } from 'react'
+import { refsSignature, flashStyle } from '../../view/FeedbackMath.js'
 
 /**
  * FeedbackPrimitives — the shared vocabulary of proof-feedback presentation
@@ -39,23 +39,60 @@ export function FeedbackDefs() {
 }
 
 /**
+ * Reduced-motion detection (ADR-064 Phase 4) — the single side-effect boundary
+ * for the playful primitives. The OS/browser `prefers-reduced-motion` setting
+ * decides whether the flash/pulse animations play or degrade to a static cue.
+ * Guarded for non-browser (test / SSR) environments where `matchMedia` is
+ * absent → treated as "motion allowed" so default rendering is unchanged.
+ */
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+
+export function prefersReducedMotion() {
+  return typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(REDUCED_MOTION_QUERY).matches
+}
+
+/**
+ * Hook form: re-renders the consumer when the preference flips (a user toggling
+ * the OS setting mid-session), so a live view degrades or re-animates without a
+ * reload.
+ */
+export function useReducedMotion() {
+  const [reduced, setReduced] = useState(prefersReducedMotion)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia(REDUCED_MOTION_QUERY)
+    const onChange = () => setReduced(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return reduced
+}
+
+/**
  * Inline-style fragment replaying the landing-flash animation. Merge into an
  * existing element's style when a wrapper div would break the layout
- * (e.g. IntakePanel's EntryCard).
+ * (e.g. IntakePanel's EntryCard). Reads `prefers-reduced-motion` at call time,
+ * so under reduced motion it returns a static tint instead of a fade
+ * (ADR-064 Phase 4). Shape derivation lives in the pure `flashStyle`.
  */
 export function flashAnim(tone = 'green') {
-  return { animation: `${tone === 'amber' ? 'eaFlashAmber' : 'eaFlashGreen'} 700ms ease-out` }
+  return flashStyle(tone, prefersReducedMotion())
 }
 
 /**
  * Landing-flash wrapper: replays the flash whenever `tick` changes while
  * `active` is true. `tick` should be a value that changes exactly when the
  * underlying facts change (e.g. the FeedbackMath refs signature) — the key
- * remount is what replays the CSS animation.
+ * remount is what replays the CSS animation. Under reduced motion the wrapper
+ * shows the static tint instead (the hook keeps it live across a preference
+ * change).
  */
 export function LandingFlash({ tick, active = true, tone = 'green', style, children }) {
+  const reduced = useReducedMotion()
   return (
-    <div key={tick ?? 'idle'} style={{ ...(active && tick != null ? flashAnim(tone) : {}), ...style }}>
+    <div key={tick ?? 'idle'} style={{ ...(active && tick != null ? flashStyle(tone, reduced) : {}), ...style }}>
       {children}
     </div>
   )
