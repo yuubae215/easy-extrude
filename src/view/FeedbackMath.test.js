@@ -4,7 +4,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { refsSignature, listDelta, settledRefs } from './FeedbackMath.js'
+import { refsSignature, listDelta, settledRefs, flashStyle } from './FeedbackMath.js'
 
 const Q = (ref) => ({ ref, prompt: `p_${ref}` })
 
@@ -71,4 +71,28 @@ test('settledRefs does not mutate its inputs', () => {
   settledRefs(prev, cur)
   assert.deepEqual(prev, prevCopy)
   assert.deepEqual(cur, curCopy)
+})
+
+// ── flashStyle (ADR-064 Phase 4: reduced-motion degradation) ────────────────────
+
+test('flashStyle animates by default (motion allowed)', () => {
+  assert.deepEqual(flashStyle('green', false), { animation: 'eaFlashGreen 700ms ease-out' })
+  assert.deepEqual(flashStyle('amber', false), { animation: 'eaFlashAmber 700ms ease-out' })
+  // default reduced flag is false → unchanged from the pre-Phase-4 behaviour
+  assert.deepEqual(flashStyle('green'), { animation: 'eaFlashGreen 700ms ease-out' })
+})
+
+test('flashStyle degrades to a static tint under reduced motion (no animation, info kept)', () => {
+  const green = flashStyle('green', true)
+  const amber = flashStyle('amber', true)
+  assert.equal(green.animation, undefined)
+  assert.equal(amber.animation, undefined)
+  assert.match(green.background, /34,197,94/)   // green family retained
+  assert.match(amber.background, /213,162,58/)  // amber family retained
+  assert.notEqual(green.background, amber.background)
+})
+
+test('flashStyle treats an unknown tone as green in both modes', () => {
+  assert.deepEqual(flashStyle('bogus', false), { animation: 'eaFlashGreen 700ms ease-out' })
+  assert.deepEqual(flashStyle('bogus', true), flashStyle('green', true))
 })

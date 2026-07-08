@@ -1,7 +1,7 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from './ConflictMatrix.jsx'
 import { NegotiationClusterView } from './NegotiationClusterView.jsx'
-import { FeedbackDefs } from '../Feedback/FeedbackPrimitives.jsx'
+import { FeedbackDefs, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 
 /**
  * ContextInspector — requirement tree panel for the Context DSL demo (ADR-047).
@@ -160,15 +160,20 @@ export function Row({ onClick, selected, children }) {
 }
 
 export function Badge({ color, children, pulse = false }) {
+  // Reduced motion: drop the continuous opacity pulse (an infinite blink is the
+  // exact motion `prefers-reduced-motion` guards against) — the badge stays at
+  // full opacity, so the "needs attention" marker is still shown, just static
+  // (ADR-064 Phase 4).
+  const animate = pulse && !useReducedMotion()
   return (
     <span style={{
       display: 'inline-block', padding: '0 5px', borderRadius: '3px',
       border: `1px solid ${color}`, color, fontSize: '9px', marginLeft: '5px',
       verticalAlign: 'middle',
-      animation: pulse ? 'ee-demo-pulse 1.2s ease-in-out infinite' : 'none',
+      animation: animate ? 'ee-demo-pulse 1.2s ease-in-out infinite' : 'none',
     }}>
       {children}
-      {pulse && (
+      {animate && (
         <style>{'@keyframes ee-demo-pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }'}</style>
       )}
     </span>

@@ -28,7 +28,7 @@ import {
   NEGOTIABILITY,
   UNITS,
 } from '../../context/IntakeVocabulary.js'
-import { FeedbackDefs, flashAnim } from '../Feedback/FeedbackPrimitives.jsx'
+import { FeedbackDefs, flashAnim, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 
 /**
  * IntakePanel — direct entry addition UI for blank-doc authoring (ADR-051 Phase 1).
@@ -299,6 +299,10 @@ function KpiAssetChips({ chips, onPick }) {
 // ── Section header ─────────────────────────────────────────────────────────────
 
 function Section({ title, count, children, open, onToggle }) {
+  // Reduced motion: the count badge's scale-in pop is movement — drop it
+  // (ADR-064 Phase 4). The key-remount still re-renders the badge, so a new
+  // entry is still reflected; only the pop animation is suppressed.
+  const badgePop = !useReducedMotion()
   return (
     <div style={{ marginBottom: '8px' }}>
       <button
@@ -318,7 +322,7 @@ function Section({ title, count, children, open, onToggle }) {
           <span key={count} style={{
             background: '#2a4a2a', color: '#22C55E', borderRadius: '7px',
             padding: '0 5px', fontSize: '9px', marginLeft: 'auto',
-            animation: 'eaBadgePulse 450ms ease-out',
+            ...(badgePop ? { animation: 'eaBadgePulse 450ms ease-out' } : {}),
           }}>
             {count}
           </span>

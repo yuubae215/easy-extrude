@@ -150,6 +150,12 @@ wasm-engine/target/
 # C++ → WASM build artifacts (Emscripten output in src/engine/robotics-wasm/ is committed)
 robotics-wasm/build/
 
+# Playwright smoke E2E (ADR-064 Phase 4) — artifacts, never committed
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # test data
 server/tests/data/*.step
 server/tests/data/*.STEP
