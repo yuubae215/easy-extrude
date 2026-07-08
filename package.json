@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "concurrently --kill-others-on-fail -n bff,vite -c cyan,green \"pnpm server:dev\" \"wait-on tcp:localhost:3001 && vite\"",
-    "build": "pnpm build:wasm && vite build",
+    "build": "vite build",
+    "build:full": "pnpm build:wasm && vite build",
     "build:wasm": "wasm-pack build wasm-engine --target web --out-dir ../src/engine/wasm --out-name wasm_engine && printf '# wasm-pack output committed to git — do not replace with *\\n' > src/engine/wasm/.gitignore",
     "setup:toolchain": "bash scripts/setup-toolchain.sh",
     "build:robotics-wasm": "bash scripts/build-robotics-wasm.sh",
@@ -18,6 +19,7 @@
     "server:start": "pnpm --filter easy-extrude-bff run start",
     "test:contract": "pnpm --filter easy-extrude-bff run test:contract",
     "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.js\"",
     "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml",
     "test:layout": "node --test src/layout/LayoutDecompiler.test.js",
     "test:context": "node --test src/context/ContextCompiler.test.js src/context/ContextConflict.test.js src/context/ContextPhase2.test.js src/context/ContextPhase3.test.js src/context/ContextPhase4.test.js src/context/DocBuilder.test.js src/context/TemplateCatalog.test.js src/context/SeedAnchor.test.js src/context/NlIntake.test.js src/context/ProvenanceTree.test.js src/context/CanonicalForm.test.js src/context/SynonymQuotient.test.js src/context/ProvenanceNarrative.test.js src/context/RoboticsPredicate.test.js src/robotics/Robotics.test.js src/service/ContextService.test.js src/service/RoboticsService.test.js src/service/BffClient.test.js src/command/ApproveDecisionCommand.test.js src/command/EditAdmissibleCommand.test.js src/command/AnswerQuestionCommand.test.js src/command/AddDocEntryCommand.test.js src/command/DocEditCommand.test.js src/controller/GraspController.test.js src/view/GraspGhostMath.test.js src/view/GraspFunnelMath.test.js src/context/IntakeAssist.test.js src/context/RoleKpiCatalog.test.js src/context/IntakeVocabulary.test.js src/context/WizardCatalog.test.js src/context/ParametricAssets.test.js src/view/FeedbackMath.test.js src/view/CheckFeedbackMath.test.js src/view/TemplatePreviewMath.test.js",
