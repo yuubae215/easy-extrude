@@ -4,6 +4,20 @@ Full history of all development sessions. See `CLAUDE.md` for the 3 most recent 
 
 ---
 
+- **2026-07-08** (4): Infra — **ADR-064 Phase 3 実装（未契約ワイヤの二択確定）→ Accepted (Phase 1+2+3 実装済; Phase 4 後続)**。ユーザとの設計対話（Blender の datablock 設計 = 捨てるところは捨て守るところは守る）を受けて `/api/scenes` を rigor 対象化。
+  - **設計レンズ**: scene ペイロードは均質でなく、グラフ骨格（`objects[]` 型付きフィールド + 参照、`links[]` = SpatialLink 参照エッジ、`transformGraph` nodes/edges）と バルクジオメトリ（`ImportedMesh` の base64 バッファ）に分かれる。実コード観測（`SceneSerializer` v1.3）で blob は ImportedMesh の 3 バッファのみ・Solid は primary triple の構造化データと確認。
+  - `schema/scene-1.3.schema.json`: 骨格を `additionalProperties:false` で守り、ジオメトリを opaque base64 blob 葉として封筒だけ検証（頂点の正気は消費側の `THREE.Mesh` 契約に委任）。`operationGraph`（ADR-017 Phase B、Phase C 見直し予定）も宣言済み・開いた葉。8 オブジェクト型を判別共用体（type const）でモデル。
+  - 観測で判明した穴「wire に `version` 無し」を **BFF stamp** で閉じる（grasp の `contractVersion` と同扱い・既存クライアント非破壊）。`server/src/scenes/sceneContract.js` は in-repo schema を*読んで*検証子 + `SCENE_VERSION`（= `version.const`）を導出（restate せず）。`scenes.js` POST/PUT が版を刻み検証、非適合は `{error, details}` で 400。
+  - `/api/ws`（geometry セッション）・`/api/import`（STEP）は理由 + Phase C 期限つきで**対象外を明示宣言**（各ルート冒頭コメント）= PHILOSOPHY #29 (b)。WS の scene 書き込みは `updateScene` 直呼びで REST 検証を意図的に迂回する別の未契約ワイヤ。
+  - ドメイン層変更は `SceneImporter.KNOWN_TYPES` の export 化のみ（挙動不変、schema ドリフト束縛の単一源）。
+  - テスト: `src/schema/SceneSchema.test.js` 12（全型 DTO 適合・base64 葉 pass・余剰/不正 enum FAIL・version⇔`SCENE_JSON_VERSION`・型⇔`KNOWN_TYPES`・joint/semantic⇔Layout 語彙のドリフト束縛）+ BFF `test/scenes.contract.test.js` 7（不正 skeleton→400・余剰→400・正当→201 + 版 stamp、DB 行クリーンアップ）。BFF `test:contract` を glob 化（`test/**/*.test.js`）= Phase 1 と同じ silent-failure 除去。glob 480→492、contract 16→23、typecheck・build green。契約 (`vendor/grasp-contract`)・DSL 版無改変。
+
+- **2026-07-08** (3): Infra — **ADR-064 Phase 2 実装（DSL スキーマ昇格 — 本業の rigor 化）→ Accepted (Phase 1+2 実装済; Phase 3–4 後続)**。ユーザ指示「次は ADR-064 Phase 2 から」。
+  - `layout/1.0` と `context/0.4` を in-repo JSON Schema 成果物へ昇格: `schema/{layout-1.0,context-0.4}.schema.json`（両者 `additionalProperties:false` + 版フィールド、ajv draft-2020-12、grasp-contract と同形）。正本はここなので submodule 分離せず。CLI `schema/tools/validate.mjs` + `schema/README.md`。
+  - **形と意味の分離**: スキーマは shape（閉じたフィールド集合 + enum 語彙）のみ。意味検査（`LayoutValidator` の ref 解決/一意性、`ContextValidator` の R1–R9）は無改変で JS 側に残す — 「全 spec に trace がある」はスキーマで表現不能。`Fact.attrs`/`constraint.properties`/`meta.baseline` はドメイン開放バッグとして意図的に `additionalProperties:true`（grasp-contract の `graspSearchDeclaration` と同方針）。hydrated `specification.layout` の `{$fact}/{$decision}/{$expr}` 葉を `numOrRef` union でモデル。
+  - conformance テスト `src/schema/{Layout,Context}Schema.test.js` 37 本: 全 6 例 PASS・余剰フィールド/不正 enum/不正版 FAIL・hydrated leaf/requirements-only doc（ADR-051 Entry A）PASS。**ドリフト束縛**: 各 schema enum が `*DslSchema.js` の export 定数と機械一致することを assert（§1.1 — 二重定義がサイレントにずれない）。context 版 enum = `SUPPORTED_VERSIONS`（0.1–0.4 は additive superset）。
+  - glob 443→480、typecheck・vite build・`test:contract` 16/16 green。ajv を root devDep 追加（BFF と別インスタンス）。契約/BFF/ドメイン/DSL 版・JS バリデータ無改変。
+
 - **2026-07-08** (2): Infra — **ADR-064 Phase 1 実装（CI ゲート化 — 規律の機械化）→ Accepted (Phase 1 実装済; Phase 2–4 後続)**。ユーザ指示「ADR-064 Phase1 から進めてください。まずは CI 導入から」。
   - `.github/workflows/ci.yml` 新設: トリガ `pull_request` + `push: main/master`、単一 `gate` ジョブ（`timeout-minutes: 15` + `concurrency`/`cancel-in-progress`）で ①`pnpm test` ②`pnpm test:contract` ③`pnpm typecheck` ④`pnpm build` を逐次実行。submodule は `vendor/grasp-contract` のみ init（robotics-wasm の vendor 3 本は checkout しない — committed WASM artifact を使用、Rust/C++ ツールチェーン不要）。
   - `pnpm test` 新設 = glob 実行 `node --test "src/**/*.test.js"`。**証拠**: glob 443 テスト = 手動列挙合計（`test:context` 434 + `test:layout` 9）と全件一致 — テストファイル追加漏れの silent-failure 構造（#11）を除去。手動列挙 scripts は互換のため残置、CI は glob のみを回す。

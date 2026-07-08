@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-extrude.dev/schema/scene-1.3.json",
+  "title": "SceneDTO",
+  "description": "Shape contract for the /api/scenes persistence payload (SceneSerializer v1.3, ADR-015/016/038; ADR-064 Phase 3). Designed on the Blender datablock principle: the GRAPH SKELETON (objects with typed refs, SpatialLink edges, transformGraph nodes/edges) is protected with additionalProperties:false; bulk GEOMETRY (ImportedMesh position/normal/index buffers) rides as an opaque base64 blob leaf whose envelope is validated but whose contents are not (semantic sanity is the consumer's THREE.Mesh contract). The BFF stamps `version`. The MEANING contract (ref resolution across objects/links/graph) is deferred to the domain reconstruct path, not expressed here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "objects"],
+  "properties": {
+    "version": {
+      "const": "1.3",
+      "description": "Scene JSON version. Bound to SCENE_JSON_VERSION; stamped by the BFF on write."
+    },
+    "objects": { "type": "array", "items": { "$ref": "#/$defs/object" } },
+    "links": { "type": "array", "items": { "$ref": "#/$defs/link" } },
+    "transformGraph": { "$ref": "#/$defs/transformGraph" },
+    "operationGraph": {
+      "type": "object",
+      "description": "Geometry-service operation DAG (ADR-017 Phase B). Declared but kept open (additionalProperties:true): the DAG shape is dev-phase and slated for Phase C review — the same opaque-envelope treatment as the geometry blob (PHILOSOPHY #29 (b)).",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "vec3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "quaternion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z", "w"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "w": { "type": "number" }
+      }
+    },
+    "idVertex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "id": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "base64Buffer": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "description": "Opaque geometry buffer (base64 of a typed array). Envelope-validated only — vertex/index sanity is the consumer's THREE.Mesh contract, never re-checked on the wire."
+    },
+    "object": {
+      "oneOf": [
+        { "$ref": "#/$defs/solid" },
+        { "$ref": "#/$defs/profile" },
+        { "$ref": "#/$defs/measureLine" },
+        { "$ref": "#/$defs/coordinateFrame" },
+        { "$ref": "#/$defs/importedMesh" },
+        { "$ref": "#/$defs/annotatedLine" },
+        { "$ref": "#/$defs/annotatedRegion" },
+        { "$ref": "#/$defs/annotatedPoint" }
+      ]
+    },
+    "solid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "position", "orientation", "localCorners"],
+      "properties": {
+        "type": { "const": "Solid" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "ifcClass": { "type": ["string", "null"] },
+        "position": { "$ref": "#/$defs/vec3" },
+        "orientation": { "$ref": "#/$defs/quaternion" },
+        "localCorners": { "type": "array", "items": { "$ref": "#/$defs/vec3" } }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "const": "Profile" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "sketchRect": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["p1", "p2"],
+              "properties": {
+                "p1": { "$ref": "#/$defs/vec3" },
+                "p2": { "$ref": "#/$defs/vec3" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "measureLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "p1", "p2"],
+      "properties": {
+        "type": { "const": "MeasureLine" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "p1": { "$ref": "#/$defs/vec3" },
+        "p2": { "$ref": "#/$defs/vec3" },
+        "anchorRef0": { "type": ["string", "null"] },
+        "anchorRef1": { "type": ["string", "null"] }
+      }
+    },
+    "coordinateFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "translation", "rotation"],
+      "properties": {
+        "type": { "const": "CoordinateFrame" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "parentId": { "type": ["string", "null"] },
+        "declaredBy": { "type": ["string", "null"] },
+        "translation": { "$ref": "#/$defs/vec3" },
+        "rotation": { "$ref": "#/$defs/quaternion" }
+      }
+    },
+    "importedMesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "positions"],
+      "properties": {
+        "type": { "const": "ImportedMesh" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ifcClass": { "type": ["string", "null"] },
+        "positions": { "$ref": "#/$defs/base64Buffer" },
+        "normals": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/base64Buffer" }] },
+        "indices": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/base64Buffer" }] },
+        "offset": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "annotatedLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "vertices"],
+      "properties": {
+        "type": { "const": "AnnotatedLine" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "placeType": { "type": ["string", "null"] },
+        "vertices": { "type": "array", "items": { "$ref": "#/$defs/idVertex" } }
+      }
+    },
+    "annotatedRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "vertices"],
+      "properties": {
+        "type": { "const": "AnnotatedRegion" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "placeType": { "type": ["string", "null"] },
+        "vertices": { "type": "array", "items": { "$ref": "#/$defs/idVertex" } }
+      }
+    },
+    "annotatedPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "vertex"],
+      "properties": {
+        "type": { "const": "AnnotatedPoint" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "placeType": { "type": ["string", "null"] },
+        "vertex": { "$ref": "#/$defs/idVertex" }
+      }
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "sourceId", "targetId"],
+      "properties": {
+        "type": { "const": "SpatialLink" },
+        "id": { "type": "string" },
+        "sourceId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "jointType": {
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["fixed", "revolute", "continuous", "prismatic", "floating", "planar"] }
+          ]
+        },
+        "semanticType": {
+          "enum": [
+            "fastened", "mounts", "aligned",
+            "contains", "adjacent", "above", "connects",
+            "references", "represents", "bounded_by"
+          ]
+        },
+        "properties": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "transformGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "objectId": { "type": "string" },
+              "label": { "type": "string" },
+              "transform": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "translation": { "type": "array", "items": { "type": "number" } },
+                  "rotation": { "type": "array", "items": { "type": "number" } }
+                }
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "parentId", "childId"],
+            "properties": {
+              "id": { "type": "string" },
+              "parentId": { "type": "string" },
+              "childId": { "type": "string" },
+              "constraint": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

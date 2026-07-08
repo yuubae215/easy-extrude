@@ -13,6 +13,7 @@
 import { Router }  from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import { listScenes, getScene, createScene, updateScene, deleteScene } from '../services/sceneStore.js'
+import { validateSceneData, SCENE_VERSION } from '../scenes/sceneContract.js'
 
 export const scenesRouter = Router()
 
@@ -38,6 +39,15 @@ scenesRouter.post('/', async (req, res) => {
   }
   if (!Array.isArray(data.objects)) {
     data.objects = []
+  }
+
+  // ADR-064 Phase 3: the BFF stamps the scene version and validates the graph
+  // skeleton against scene-1.3 before persisting. An invalid payload is rejected
+  // with 400 instead of silently becoming DB garbage (PHILOSOPHY #11/#29).
+  if (data.version === undefined) data.version = SCENE_VERSION
+  const check = validateSceneData(data)
+  if (!check.valid) {
+    return res.status(400).json({ error: 'scene data does not conform to scene-1.3 schema', details: check.errors })
   }
 
   const id = `scene_${uuidv4().replace(/-/g, '').slice(0, 16)}`
@@ -69,6 +79,14 @@ scenesRouter.put('/:id', async (req, res) => {
     }
     if (!data.transformGraph) data.transformGraph = { nodes: [], edges: [] }
     if (!Array.isArray(data.objects)) data.objects = []
+
+    // ADR-064 Phase 3: stamp version + validate the shape before persisting (400
+    // on a non-conforming skeleton — same discipline as create).
+    if (data.version === undefined) data.version = SCENE_VERSION
+    const check = validateSceneData(data)
+    if (!check.valid) {
+      return res.status(400).json({ error: 'scene data does not conform to scene-1.3 schema', details: check.errors })
+    }
     patch.data = data
   }
 

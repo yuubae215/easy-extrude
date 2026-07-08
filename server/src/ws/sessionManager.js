@@ -9,6 +9,17 @@
  *
  * Sessions are stored in-memory only. All sessions are lost on BFF restart.
  * Clients should reconnect and send `session.resume` to restore graph state.
+ *
+ * ── RIGOR SCOPE DECLARATION (ADR-064 Phase 3, PHILOSOPHY #29 (b)) ────────────
+ * The WebSocket geometry-session protocol (session.*, graph.*, geometry.update,
+ * import.progress messages) is DECLARED OUT of schema-rigor scope, deliberately
+ * and with a deadline — not a silent no-contract (#11). These are dev-phase
+ * messages tied to the geometry service (ADR-017 Phase B); they get a closed
+ * versioned message schema OR are removed at the BFF redesign (Phase C). Note
+ * this path persists scenes via `updateScene` directly, bypassing the REST
+ * scene-1.3 validation on purpose — it is its own uncontracted wire until Phase C.
+ * The geometry.update payload is opaque mesh (encoded buffers): a blob leaf, so
+ * contracting it later is an envelope, not per-vertex validation.
  */
 
 import { v4 as uuidv4 } from 'uuid'

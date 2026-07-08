@@ -1,6 +1,6 @@
 # 064. Rigor 側の遡及プログラム — CI ゲート化・DSL スキーマ昇格・未契約ワイヤの明示宣言・play の検証
 
-- Status: Accepted (Phase 1+2 実装済 2026-07-08; Phase 3–4 後続)
+- Status: Accepted (Phase 1+2+3 実装済 2026-07-08; Phase 4 後続)
 - Date: 2026-07-08
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -128,6 +128,28 @@ BFF の残り 3 ワイヤに対し二択を確定する:
 - 運用セキュリティ（secret 必須化・CORS・WS auth・ユーザースコープ）は別 ADR へ
   （本 ADR の References に追補予定）。
 
+**設計ノート（Blender datablock レンズ、2026-07-08）**: scene ペイロードを「丸ごと
+スキーマ化」と捉えるのは粗い。Blender の秀逸さは *捨てるところは捨て、守るところは守る* —
+ID/datablock グラフ（参照構造）は正規化して守り、頂点バルクは per-element 正規化せず
+フラット blob として受け入れる。scene ペイロードも均質でなく、**グラフ骨格**（`objects[]`
+の型付きフィールド + 参照、`links[]` = SpatialLink 参照エッジ、`transformGraph` の
+nodes/edges = 参照構造）と **ジオメトリ・ペイロード**（`ImportedMesh` の
+positions/normals/indices = base64 バッファ）に分かれる。実コード観測（`SceneSerializer`
+v1.3）では blob は ImportedMesh の 3 バッファのみで、Solid は primary triple の小さな
+構造化データ（blob でない）。したがって schema-1.3 は **骨格を `additionalProperties:false`
+で守り**、**ジオメトリを opaque な base64 blob 葉として封筒だけ検証**する（頂点の正気は
+消費側の `THREE.Mesh は有効ジオメトリを要求する`契約に委ねる — ワイヤで毎頂点検証はしない、
+そもそも意味を所有しない）。これは PHILOSOPHY #29 の「封筒は閉じ、葉は開く」の再演で、
+Phase 2 の `Fact.attrs`/`constraint.properties` や grasp-contract の
+`graspSearchDeclaration` と同じ形。同じ理由で `operationGraph`（ADR-017 Phase B の DAG、
+Phase C で見直し予定）も *宣言済みだが開いた* 葉として置く。**観測で判明した穴**: wire は
+`version` フィールドを持っていなかった。rigor 化に版は必須なので、**BFF が書き込み時に
+版を刻む**（grasp の `contractVersion` と同じ扱い — 既存クライアント非破壊）。版文字列の
+正本は schema の `version.const`（BFF は schema から読む）で、`src/schema` のドリフト
+テストが schema ↔ `SCENE_JSON_VERSION` を機械束縛する（§1.1）。WS の scene 書き込みは
+`updateScene` 直呼びで REST 検証を迂回する = それ自体が別の未契約ワイヤ（上記 (b) 宣言に
+含む）。
+
 ### Phase 4 — play 側の残欠（検証と逃げ道）
 
 1. `FeedbackPrimitives` に `prefers-reduced-motion` 対応: `flashAnim` / `LandingFlash` /
@@ -177,6 +199,17 @@ ADR-062 が play 側で行ったのと対称に、rigor 側の scope note を #2
     置き場所は in-repo `schema/`（submodule 分離せず — 正本はここ）+ CLI `schema/tools/validate.mjs`。
   - Phase 3: `/api/scenes` への不正 JSON 書き込みが 400 を返すテスト。対象外ワイヤの
     宣言コメントの存在。
+    **実装時のローカル証拠 (2026-07-08)**: `schema/scene-1.3.schema.json`（骨格
+    `additionalProperties:false` + ジオメトリ opaque base64 blob 葉 + `version` 必須）。
+    BFF `server/src/scenes/sceneContract.js` は schema を *読んで* 検証子と版を導出
+    （restate せず）。`scenes.js` の POST/PUT が版を刻み検証、非適合は 400。対象外宣言は
+    `routes/import.js` と `ws/sessionManager.js` の冒頭コメント（理由 + Phase C 期限つき）。
+    テスト: `src/schema/SceneSchema.test.js` 12 本（全型 DTO 適合・base64 葉 pass・
+    余剰/不正 enum FAIL・version⇔`SCENE_JSON_VERSION`・型 enum⇔`KNOWN_TYPES`・
+    joint/semantic⇔Layout 語彙のドリフト束縛）+ BFF `test/scenes.contract.test.js` 7 本
+    （不正 skeleton→400・余剰→400・正当→201 + 版 stamp、DB 行はクリーンアップ）。
+    BFF `test:contract` を glob 化（`test/**/*.test.js`）= Phase 1 と同じ silent-failure
+    構造除去、新テスト自動収集。glob 480→492、contract 16→23、typecheck・build green。
   - Phase 4: reduced-motion 環境での退行形の描画テスト + E2E スモーク green。
 - **波及（blast radius）**: `.github/workflows/`、`package.json` scripts、
   `src/layout/` / `src/context/` のバリデータ、`server/src/routes/scenes.js`、
