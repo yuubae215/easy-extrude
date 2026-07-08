@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-extrude.dev/schema/layout-1.0.json",
+  "title": "LayoutDSL",
+  "description": "Public schema for Layout DSL v1.0 (ADR-045, ADR-055). This is the SHAPE contract: it fixes the closed set of fields and the enum vocabularies. Cross-reference resolution, ref uniqueness, and other MEANING checks stay in LayoutValidator.js (ADR-064 Phase 2). additionalProperties:false makes an unknown field a rejection, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "entities"],
+  "properties": {
+    "version": {
+      "const": "layout/1.0",
+      "description": "Layout DSL version. Bound to LAYOUT_DSL_VERSION by the drift test."
+    },
+    "meta": { "$ref": "#/$defs/meta" },
+    "strategy": {
+      "description": "Placement strategy for unpositioned entities. Bound to VALID_STRATEGIES.",
+      "enum": ["linear", "grid", "stack", "radial", "manual"]
+    },
+    "strategyOptions": { "$ref": "#/$defs/strategyOptions" },
+    "entities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/constraint" }
+    }
+  },
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "strategyOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "description": "Axis token for linear/radial strategies. Bound to VALID_AXES.",
+          "enum": ["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
+        },
+        "spacing": { "type": "number" },
+        "cols": { "type": "integer" },
+        "baseZ": { "type": "number" }
+      }
+    },
+    "vec3": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "vec2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "quaternion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z", "w"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "w": { "type": "number" }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name"],
+      "properties": {
+        "ref": { "type": "string" },
+        "name": { "type": "string" },
+        "translation": { "$ref": "#/$defs/vec3" }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "type", "name"],
+      "properties": {
+        "ref": { "type": "string" },
+        "type": {
+          "description": "Entity type expressible in Layout DSL. Bound to VALID_ENTITY_TYPES.",
+          "enum": [
+            "Solid", "CoordinateFrame",
+            "AnnotatedLine", "AnnotatedRegion", "AnnotatedPoint"
+          ]
+        },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "placeType": { "type": "string" },
+        "ifcClass": { "type": "string" },
+        "dimensions": { "$ref": "#/$defs/vec3" },
+        "rotation": { "$ref": "#/$defs/quaternion" },
+        "position": { "$ref": "#/$defs/vec3" },
+        "frames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/frame" }
+        },
+        "vertices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/vec2" }
+        }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "target", "semanticType"],
+      "properties": {
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "jointType": {
+          "description": "URDF kinematic joint type, or null for a topological-only link. Bound to VALID_JOINT_TYPES.",
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["fixed", "revolute", "continuous", "prismatic", "floating", "planar"] }
+          ]
+        },
+        "semanticType": {
+          "description": "Domain semantic type. Bound to VALID_SEMANTIC_TYPES.",
+          "enum": [
+            "fastened", "mounts", "aligned",
+            "contains", "adjacent", "above", "connects",
+            "references", "represents", "bounded_by"
+          ]
+        },
+        "properties": {
+          "type": "object",
+          "description": "Domain-open property bag (connector, distance_mm, voltage_V, note, ...). Kept open on purpose — property names are extensible.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

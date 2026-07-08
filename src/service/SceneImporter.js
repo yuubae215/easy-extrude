@@ -21,6 +21,17 @@
 
 const SUPPORTED_VERSIONS = new Set(['1.0', '1.1', '1.2', '1.3'])
 
+/**
+ * Scene object types that round-trip through serialize/deserialize. Single
+ * source for the type set (memory_management contract "SceneImporter KNOWN_TYPES
+ * Coverage"); the scene-1.3 JSON Schema binds its object-type enum to this
+ * (ADR-064 Phase 3 drift test).
+ */
+export const KNOWN_TYPES = [
+  'Solid', 'Profile', 'MeasureLine', 'CoordinateFrame', 'ImportedMesh',
+  'AnnotatedLine', 'AnnotatedRegion', 'AnnotatedPoint',
+]
+
 const VALID_JOINT_TYPES    = new Set(['fixed', 'revolute', 'continuous', 'prismatic', 'floating', 'planar'])
 const VALID_SEMANTIC_TYPES = new Set([
   'fastened', 'mounts', 'aligned',
@@ -59,13 +70,10 @@ export function parseImportJson(jsonText) {
   }
 
   // Light per-entry type check (no deep validation — invalid entries are skipped on import)
-  const KNOWN_TYPES = new Set([
-    'Solid', 'Profile', 'MeasureLine', 'CoordinateFrame', 'ImportedMesh',
-    'AnnotatedLine', 'AnnotatedRegion', 'AnnotatedPoint',
-  ])
+  const knownTypes = new Set(KNOWN_TYPES)
   const objects = root.objects.filter(o => {
     if (!o || typeof o !== 'object') return false
-    if (!KNOWN_TYPES.has(o.type))    return false
+    if (!knownTypes.has(o.type))     return false
     if (typeof o.id !== 'string' || !o.id) return false
     return true
   })
