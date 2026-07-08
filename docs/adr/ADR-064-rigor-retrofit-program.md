@@ -1,6 +1,6 @@
 # 064. Rigor 側の遡及プログラム — CI ゲート化・DSL スキーマ昇格・未契約ワイヤの明示宣言・play の検証
 
-- Status: Proposed
+- Status: Accepted (Phase 1 実装済 2026-07-08; Phase 2–4 後続)
 - Date: 2026-07-08
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -155,6 +155,13 @@ ADR-062 が play 側で行ったのと対称に、rigor 側の scope note を #2
 - **検証（証拠）**:
   - Phase 1: 故意に失敗するテストを含む PR が**マージ不能**になることを 1 回実証する。
     glob 実行のテスト数が手動列挙時の実行数以上であることを CI ログで確認。
+    **実装時のローカル証拠 (2026-07-08)**: glob `node --test "src/**/*.test.js"` = 443 テスト
+    = 手動列挙の合計（`test:context` 434 + `test:layout` 9）と全件一致（漏れゼロ）。
+    `test:contract` 16/16、`typecheck` クリーン、`vite build` は Rust ツールチェーン
+    なしで 4 秒（committed artifact）。CI が必要とする submodule は
+    `vendor/grasp-contract` のみ（robotics-wasm の vendor 3 本は不要）。
+    ※「赤い PR がマージ不能」の完成には GitHub 側で branch protection
+    （required status check = `gate`）の設定が必要 — リポジトリ管理者の操作。
   - Phase 2: `examples/*.json` 全件が新スキーマの conformance テストを通る。
     スキーマ違反サンプル（余剰フィールド）が **fail する**ことをネガティブテストで示す。
   - Phase 3: `/api/scenes` への不正 JSON 書き込みが 400 を返すテスト。対象外ワイヤの

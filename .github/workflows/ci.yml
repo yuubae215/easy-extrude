@@ -1,0 +1,57 @@
+name: CI
+
+# ADR-064 Phase 1 — the merge gate. Every wire's documented discipline
+# (tests, contract drift, types, build) is enforced by machine, not memory.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Only the contract submodule is needed (test:contract). The
+      # robotics-wasm vendor submodules (Eigen/KDL/ruckig) stay out —
+      # CI uses the committed WASM artifacts, never a C++/Rust toolchain.
+      - name: Init grasp-contract submodule
+        run: git submodule update --init vendor/grasp-contract
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Glob execution — a new *.test.js under src/ is picked up
+      # automatically; there is no manual list to forget (PHILOSOPHY #11).
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Contract conformance + drift
+        run: pnpm test:contract
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Build (committed WASM artifacts)
+        run: pnpm build

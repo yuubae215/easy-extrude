@@ -31,16 +31,9 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # ubuntu-latest ships with Rust; we just need the wasm32 target + wasm-pack.
-      - name: Setup Rust wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        run: |
-          curl -L "https://github.com/rustwasm/wasm-pack/releases/download/v0.14.0/wasm-pack-v0.14.0-x86_64-unknown-linux-musl.tar.gz" \
-            | tar xz --strip-components=1 -C /tmp
-          sudo mv /tmp/wasm-pack /usr/local/bin/wasm-pack
-
+      # No Rust/Emscripten toolchain: the committed WASM artifacts in
+      # src/engine/ are what ships (ADR-064 Phase 1, ADR-053 §11).
+      # Regenerating them is a local, deliberate act via `pnpm build:full`.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
