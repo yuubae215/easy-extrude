@@ -163,8 +163,11 @@ export function Badge({ color, children, pulse = false }) {
   // Reduced motion: drop the continuous opacity pulse (an infinite blink is the
   // exact motion `prefers-reduced-motion` guards against) — the badge stays at
   // full opacity, so the "needs attention" marker is still shown, just static
-  // (ADR-064 Phase 4).
-  const animate = pulse && !useReducedMotion()
+  // (ADR-064 Phase 4). The hook must run unconditionally: `pulse` flips at
+  // runtime (ConflictsTab passes `pulse={!c.resolvedBy}`), and short-circuiting
+  // the hook behind it would change the hook count between renders and throw.
+  const reduced = useReducedMotion()
+  const animate = pulse && !reduced
   return (
     <span style={{
       display: 'inline-block', padding: '0 5px', borderRadius: '3px',
