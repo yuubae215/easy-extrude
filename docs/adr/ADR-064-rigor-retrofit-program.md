@@ -7,7 +7,8 @@
 - References: PHILOSOPHY #29（Rigor on the Wire, Play in the Client — 本 ADR はその **rigor 側**の全域展開。play 側の全域展開 = ADR-062 と対称）,
   #11（Silent Failures）, #19（Documentation Drift）, ADR-062（三層方針 — play 側 scope note）,
   ADR-060（Grasp 契約統治 — rigor の模範形）, ADR-054（BFF 素通し + エラーエンベロープ）,
-  ADR-045（Layout DSL）, ADR-046（Context DSL）, ADR-015/017（BFF / WebSocket）, ADR-053（robotics WASM lane）
+  ADR-045（Layout DSL）, ADR-046（Context DSL）, ADR-015/017（BFF / WebSocket）, ADR-053（robotics WASM lane）,
+  ADR-065（体感層の全面遊戯化プログラム — 本 ADR Phase 4 の reduced-motion 単一境界を 3D tick ループへ移設・延長する）
 
 ## Context — Goal と力学（§1.2）
 

@@ -76,6 +76,7 @@ This directory records the project's design decisions.
 | [ADR-062](ADR-062-ux-upgrade-three-layer-policy.md) | **UX アップグレード三層方針 — 証明は接続先、契約はカノニカル、体感はゲーム感覚** | Accepted (全フェーズ実装済) | 2026-07-05 | ADR-063, ADR-060, ADR-061, ADR-059, ADR-058, ADR-057, ADR-054, ADR-053, ADR-051, ADR-050 |
 | [ADR-063](ADR-063-selection-first-intake-wizard.md) | **選択優先インテーク — ウィザード・パラメトリックアセット・KPI 式カタログ（白紙入力不能の前提）** | Accepted (全 5 フェーズ実装済) | 2026-07-05 | ADR-062, ADR-051, ADR-058, ADR-050, ADR-049, ADR-045, ADR-047 |
 | [ADR-064](ADR-064-rigor-retrofit-program.md) | **Rigor 側の遡及プログラム — CI ゲート化・DSL スキーマ昇格・未契約ワイヤの明示宣言・play の検証** | Accepted (Phase 1 実装済) | 2026-07-08 | ADR-062, ADR-060, ADR-054, ADR-045, ADR-046, ADR-053, ADR-015, ADR-017 |
+| [ADR-065](ADR-065-front-playfulness-program.md) | **体感層の全面遊戯化プログラム — front は遊び場、back は証明のまま** | Proposed (Phase 0–6 未実装) | 2026-07-09 | ADR-062, ADR-064, ADR-061, ADR-059, ADR-058, ADR-047 |
 
 ## How to Add a New ADR
 

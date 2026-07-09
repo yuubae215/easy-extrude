@@ -6,6 +6,8 @@
 - Supersedes / Superseded by: なし
 - References: ADR-063（選択優先インテーク — 体感層の中核実装計画）,
   ADR-064（rigor 側の遡及プログラム — 本 ADR の play 側 scope note と対称）,
+  ADR-065（体感層の全面遊戯化プログラム — 本 ADR を廃止せず拡張: Motion Tier /
+  セレブレーション / 設定永続の 3 Widening を立法し、未到達面へ展開）,
   PHILOSOPHY #29（Rigor on the Wire, Play in the Client — 本 ADR はその全域展開）,
   #11（Silent Failures）, #3（純粋/副作用分離）, ADR-060（契約統治）, ADR-061（診断ファネル）,
   ADR-059（空間ゴースト）, ADR-058（fork & tweak + 遊びの入力面）, ADR-057（Grasp UI FSM）,
