@@ -180,3 +180,36 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
 > Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.
 
 Export/Import hidden on mobile; replaced by `_moreMenuBtn` (⋯) dropdown. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. Map button hides its `<span>` text label on mobile (padding tightened to `4px`) — without this the N-panel icon is clipped on 375px viewports. Header has `overflow:hidden`. Mode dropdown (`_modeDropdownEl`) is appended to `document.body` with `position:fixed` and positioned via `getBoundingClientRect()` — if placed inside the header it gets clipped by `overflow:hidden`
+
+---
+
+## Disabled-as-Quest: Locked Chrome Controls Explain Their Gate (ADR-065 Phase 3)
+
+Every disable-able chrome control (mobile toolbar slots, header undo/redo)
+derives its `disabled` flag AND the rendered reason from ONE gate-predicate
+return value in `src/view/ChromeGates.js` (`{enabled, reason}`). The shape
+makes the ADR-058 "same function reference" rule structural: a locked gate
+always carries a non-empty reason and an open gate always carries
+`reason: null` (machine-tested in `ChromeGates.test.js`), so a disable can
+never drift apart from its explanation and a *silent* disabled is
+unrepresentable (PHILOSOPHY #11/#25).
+
+- Presentation: the locked state is stylized (`ChromeMath.lockedStyle()` —
+  dashed border, legible label, `cursor:help`), replacing the former mute
+  `opacity:0.35`-only treatment. Tapping a locked control calls
+  `onLockedTap(reason)` → info toast (`uiStore.actions.pushToast`); desktop
+  additionally sets `title={reason}`. Do NOT set the native `disabled`
+  attribute — it swallows the tap and the quest reason with it; use
+  `aria-disabled` instead.
+- The gates restate the entity-capability contracts (§1 "Entity Capability
+  Contracts", PHILOSOPHY #2 instanceof); when a capability changes, update the
+  gate and the contract row in the same commit.
+- Tier A chrome motion (press spring, hover lift, active-tool breathing glow,
+  toast/menu/hint entry) derives via the pure `ChromeMath` (PHILOSOPHY #30):
+  fragments carry ONLY transform/transition/animation — colours stay
+  component-owned so affordance motion cannot fake a Tier F judgment. Under
+  reduced motion every fragment degrades to the static colour/glow cue
+  (single boundary `src/theme/motion.js` via `useReducedMotion`). Keyframes
+  live in `ChromeMath.CHROME_CSS`, mounted once by `ChromeDefs` in `UIShell`;
+  the breathing-glow keyframes are generated from `MotionMath.breathe` so the
+  CSS and the curve cannot drift (§1.1).

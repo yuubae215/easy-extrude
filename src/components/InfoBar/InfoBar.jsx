@@ -1,5 +1,7 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { getInfoText } from '../../utils/infoBarText.js'
+import { enterMotion } from '../../view/ChromeMath.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 
 const isMobile = () => window.matchMedia('(pointer: coarse)').matches
 
@@ -8,8 +10,13 @@ export function InfoBar() {
   const editSubtype = useUIStore(s => s.editSubtype)
   const statusParts = useUIStore(s => s.statusParts)
   const extraHint   = useUIStore(s => s.extraHint)
+  const reduced     = useReducedMotion()
 
   const mobile = isMobile()
+  // Keyed remount replays the entry slide-fade exactly when the hint set
+  // changes (mode/substate switch) — Tier A "these shortcuts are new"
+  // (ADR-065 Phase 3); reduced motion swaps the hints in place.
+  const hintsKey = `${mode}/${editSubtype ?? ''}/${extraHint?.key ?? ''}`
 
   return (
     <div style={{
@@ -32,7 +39,11 @@ export function InfoBar() {
       gap: 0,
       overflow: 'hidden',
     }}>
-      {!mobile && <HintsContent shortcuts={getInfoText(mode, editSubtype)} extraHint={extraHint} />}
+      {!mobile && (
+        <div key={hintsKey} style={{ display: 'flex', alignItems: 'center', minWidth: 0, ...enterMotion(reduced) }}>
+          <HintsContent shortcuts={getInfoText(mode, editSubtype)} extraHint={extraHint} />
+        </div>
+      )}
     </div>
   )
 }

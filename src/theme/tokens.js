@@ -30,6 +30,8 @@ export const COLOR = Object.freeze({
   accent:        '#5c5cff',
   danger:        '#c04040',
   success:       '#3a7a3a',
+  // Chrome — active tool / indicator cyan (mobile toolbar, ADR-065 Phase 3)
+  accentActive:  '#4fc3f7',
   // 3D scene accents
   measure:       '#f5a623',
   axisX:         '#e05252',
@@ -51,12 +53,20 @@ export const DURATION = Object.freeze({
   ripple:     600,   // 3D link-acceptance ripple (RippleEffect)
   landingPop: 450,   // ADR-065 Phase 2 spawn pop
   landingSettle: 400, // ADR-065 Phase 2 settle / rewind pulse
+  press:        90,   // ADR-065 Phase 3 press-down (Tier A)
+  pressRelease: 260,  // ADR-065 Phase 3 spring-back on release (Tier A)
+  hover:        150,  // ADR-065 Phase 3 hover ease
+  breathe:      2600, // ADR-065 Phase 3 active-tool breathing glow cycle
+  chromeEnter:  180,  // ADR-065 Phase 3 toast / hint entry slide-fade
 })
 
 /** CSS easing vocabulary for DOM animations. */
 export const EASING = Object.freeze({
   out:   'ease-out',
   inOut: 'ease-in-out',
+  // Overshoot-and-settle curve — the CSS form of MotionMath.easeOutBack,
+  // used for the Tier A press-release spring (ADR-065 Phase 3).
+  spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
 })
 
 /**

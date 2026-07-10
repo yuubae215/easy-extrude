@@ -1,6 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ModeDropdown } from './ModeDropdown.jsx'
+import { COLOR } from '../../theme/tokens.js'
+import { tierAMotion, lockedStyle, enterMotion } from '../../view/ChromeMath.js'
+import { gateUndo, gateRedo } from '../../view/ChromeGates.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
 
 // ── SVG icon constants (matching ICONS in UIView.js) ──────────────────────
 const SVG_UNDO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>`
@@ -57,13 +62,18 @@ export function Header() {
 
 function MobileHeaderContents() {
   const callbacks   = useUIStore(s => s.callbacks)
+  const pushToast   = useUIStore(s => s.actions.pushToast)
   const undoEnabled = useUIStore(s => s.undoEnabled)
   const redoEnabled = useUIStore(s => s.redoEnabled)
+  // disabled-as-quest (ADR-065 named rule 5): the disable flag AND its reason
+  // come from the same gate-predicate return value.
+  const gUndo = gateUndo(undoEnabled)
+  const gRedo = gateRedo(redoEnabled)
   return (
     <>
       <IconBtn svg={SVG_HAMBURGER} label="Toggle outliner"       onClick={() => callbacks.onOutlinerToggle?.()} />
-      <IconBtn svg={SVG_UNDO}      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border disabled={!undoEnabled} />
-      <IconBtn svg={SVG_REDO}      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!redoEnabled} />
+      <IconBtn svg={SVG_UNDO}      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border disabled={!gUndo.enabled} reason={gUndo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
+      <IconBtn svg={SVG_REDO}      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!gRedo.enabled} reason={gRedo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
       <ModeDropdown />
       <MapButton />
       {/* Invisible flex:1 spacer — keeps ⋯ and N right-aligned (matching UIView's visibility:hidden pattern) */}
@@ -111,16 +121,19 @@ function DesktopHeaderContents() {
 function MapButton() {
   const isMobile  = useIsMobile()
   const callbacks = useUIStore(s => s.callbacks)
+  const reduced   = useReducedMotion()
+  const { hovered, pressed, handlers } = useHoverPress()
   return (
     <button
       title="Open 2D Map Mode for spatial annotation"
       onClick={() => callbacks.onMapModeClick?.()}
+      {...handlers}
       style={{
         padding:      isMobile ? '4px' : '4px 8px',
-        background:   'transparent',
-        border:       '1px solid #3a3a3a',
+        background:   hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
+        border:       `1px solid ${hovered ? '#4a4a4a' : '#3a3a3a'}`,
         borderRadius: '5px',
-        color:        '#aaa',
+        color:        hovered ? '#ccc' : '#aaa',
         cursor:       'pointer',
         fontSize:     '12px',
         fontFamily:   'system-ui, -apple-system, sans-serif',
@@ -130,6 +143,7 @@ function MapButton() {
         alignItems:   'center',
         gap:          '5px',
         pointerEvents:'auto',
+        ...tierAMotion({ hovered, pressed, reduced }),
       }}
     >
       <span dangerouslySetInnerHTML={{ __html: SVG_MAP }} style={{ display: 'flex' }} />
@@ -169,26 +183,41 @@ function HeaderStatus() {
   )
 }
 
-function IconBtn({ svg, label, onClick, border = false, disabled = false }) {
+function IconBtn({ svg, label, onClick, border = false, disabled = false, reason = null, onLockedTap = null }) {
+  const reduced = useReducedMotion()
+  const { hovered, pressed, handlers } = useHoverPress()
+  // disabled-as-quest: the locked state is stylized (dashed border, legible
+  // glyph) and a tap surfaces the gate reason — never a silent no-op (#11).
+  function handleClick() {
+    if (disabled) {
+      if (reason && onLockedTap) onLockedTap(reason)
+      return
+    }
+    onClick?.()
+  }
   return (
     <button
       aria-label={label}
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
+      aria-disabled={disabled || undefined}
+      title={disabled && reason ? reason : undefined}
+      onClick={handleClick}
+      {...(disabled ? {} : handlers)}
       style={{
         padding:      '5px 7px',
-        background:   'transparent',
+        background:   !disabled && hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
         border:       border ? '1px solid #3a3a3a' : 'none',
         borderRadius: '6px',
-        color:        '#c0c0c0',
-        cursor:       disabled ? 'default' : 'pointer',
+        color:        disabled ? '#5f5f5f' : '#c0c0c0',
+        cursor:       disabled ? 'help' : 'pointer',
         lineHeight:   '1',
         display:      'flex',
         alignItems:   'center',
         justifyContent: 'center',
         flexShrink:   '0',
         pointerEvents:'auto',
-        opacity:      disabled ? 0.35 : 1,
+        ...(disabled
+          ? (border ? lockedStyle() : { cursor: 'help' })
+          : tierAMotion({ hovered, pressed, reduced })),
       }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
@@ -196,16 +225,19 @@ function IconBtn({ svg, label, onClick, border = false, disabled = false }) {
 }
 
 function SmallBtn({ onClick, title, children, active = false, icon }) {
+  const reduced = useReducedMotion()
+  const { hovered, pressed, handlers } = useHoverPress()
   return (
     <button
       onClick={onClick}
       title={title}
+      {...handlers}
       style={{
         padding:      '4px 8px',
-        background:   'transparent',
-        border:       `1px solid ${active ? '#3a7bd5' : '#3a3a3a'}`,
+        background:   hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
+        border:       `1px solid ${active ? COLOR.fxBlue : hovered ? '#4a4a4a' : '#3a3a3a'}`,
         borderRadius: '5px',
-        color:        active ? '#5a9bf5' : '#aaa',
+        color:        active ? '#5a9bf5' : hovered ? '#ccc' : '#aaa',
         cursor:       'pointer',
         fontSize:     '11px',
         fontFamily:   'system-ui, -apple-system, sans-serif',
@@ -215,6 +247,7 @@ function SmallBtn({ onClick, title, children, active = false, icon }) {
         alignItems:   'center',
         gap:          '4px',
         pointerEvents:'auto',
+        ...tierAMotion({ hovered, pressed, reduced }),
       }}
     >
       {icon && <span dangerouslySetInnerHTML={{ __html: icon }} style={{ display: 'flex' }} />}
@@ -237,6 +270,8 @@ function ContextDropdown() {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const [pos, setPos] = useState({ top: 40, right: 8 })
+  const reduced = useReducedMotion()
+  const { hovered, pressed, handlers } = useHoverPress()
 
   useEffect(() => {
     if (!open) return
@@ -281,13 +316,15 @@ function ContextDropdown() {
         ref={btnRef}
         onClick={handleToggle}
         title="Context-first — requirements / conflicts / negotiation"
+        {...handlers}
         style={{
-          padding: '4px 8px', background: 'transparent',
-          border: `1px solid ${open ? '#3a7bd5' : '#3a3a3a'}`, borderRadius: '5px',
-          color: open ? '#5a9bf5' : '#aaa', cursor: 'pointer', fontSize: '11px',
+          padding: '4px 8px', background: hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
+          border: `1px solid ${open ? COLOR.fxBlue : hovered ? '#4a4a4a' : '#3a3a3a'}`, borderRadius: '5px',
+          color: open ? '#5a9bf5' : hovered ? '#ccc' : '#aaa', cursor: 'pointer', fontSize: '11px',
           fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: '1',
           flexShrink: '0', display: 'flex', alignItems: 'center', gap: '4px',
           pointerEvents: 'auto',
+          ...tierAMotion({ hovered, pressed, reduced }),
         }}
       >
         <span dangerouslySetInnerHTML={{ __html: SVG_DEMO }} style={{ display: 'flex' }} />
@@ -296,9 +333,10 @@ function ContextDropdown() {
       {open && (
         <div style={{
           position: 'fixed', top: pos.top, right: pos.right,
-          background: '#2b2b2b', border: '1px solid #555', borderRadius: '6px',
+          background: COLOR.bgSecondary, border: '1px solid #555', borderRadius: '6px',
           overflow: 'hidden', zIndex: '200', minWidth: '200px',
           boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
+          ...enterMotion(reduced),
         }}>
           {item('New Project',     callbacks.onOpenTemplateGallery)}
           {item('Import Context…', callbacks.onImportCtxJson)}
@@ -327,6 +365,7 @@ function MoreMenu() {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const [pos, setPos] = useState({ top: 40, right: 8 })
+  const reduced = useReducedMotion()
 
   useEffect(() => {
     if (!open) return
@@ -403,7 +442,7 @@ function MoreMenu() {
           position:   'fixed',
           top:        pos.top,
           right:      pos.right,
-          background: '#2b2b2b',
+          background: COLOR.bgSecondary,
           border:     '1px solid #555',
           borderRadius: '6px',
           overflow:   'hidden',
@@ -411,6 +450,7 @@ function MoreMenu() {
           minWidth:   '160px',
           boxShadow:  '0 4px 16px rgba(0,0,0,0.6)',
           pointerEvents: 'auto',
+          ...enterMotion(reduced),
         }}>
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}

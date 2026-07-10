@@ -42,6 +42,17 @@ block-beta
   F["[F] Mobile Toolbar\n(mobile only)"]:3
 ```
 
+**Disabled controls (all screens, ADR-065 Phase 3 "disabled-as-quest")**: a
+`disabled` toolbar/header button renders as a stylized *locked* state (dashed
+border, legible label, `cursor:help`) instead of the former mute
+`opacity:0.35`. Tapping/clicking a locked control shows the unmet gate
+condition as an info toast (e.g. "Select an object first", "The Origin frame
+is fixed to its Solid") — the reason and the disable flag derive from the
+SAME gate-predicate return value (`src/view/ChromeGates.js`); a silent
+disabled tap is unrepresentable (PHILOSOPHY #11/#25). The per-screen toolbar
+tables below list *which* slots are disabled; the reason wording lives in the
+gate module.
+
 **[G] Link Network Overlay** (auto-visible, all Object/Edit screens):
 bottom-left panel shown automatically while the scene contains at least one
 SpatialLink; hidden when none exist and force-hidden during the Context demo

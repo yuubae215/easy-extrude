@@ -14,6 +14,7 @@ import { ToolbarButton } from './ToolbarButton.jsx'
  */
 export function MobileToolbar() {
   const toolbar = useUIStore(s => s.toolbar)
+  const pushToast = useUIStore(s => s.actions.pushToast)
   const isMobile = useIsMobile()
 
   if (!isMobile) return null
@@ -56,6 +57,8 @@ export function MobileToolbar() {
             danger={btn.danger}
             disabled={btn.disabled}
             indicator={btn.indicator}
+            reason={btn.reason ?? null}
+            onLockedTap={(reason) => pushToast(reason, 'info')}
           />
         )
       })}

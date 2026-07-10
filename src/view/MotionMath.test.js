@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clamp01, easeOutCubic, easeOutBack, springStep, staggerProgress } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutBack, breathe, springStep, staggerProgress } from './MotionMath.js'
 
 test('clamp01 clamps and absorbs NaN', () => {
   assert.equal(clamp01(-1), 0)
@@ -25,6 +25,15 @@ test('easeOutBack starts at 0, ends at 1, overshoots past 1 in between', () => {
   assert.ok(Math.abs(easeOutBack(1) - 1) < 1e-9)
   const peak = Math.max(...Array.from({ length: 21 }, (_, k) => easeOutBack(k / 20)))
   assert.ok(peak > 1, 'must overshoot (the pop)')
+})
+
+test('breathe is a seamless cycle: zero endpoints, unit peak, symmetric', () => {
+  assert.ok(breathe(0) < 1e-12, 'starts at rest')
+  assert.ok(breathe(1) < 1e-12, 'ends at rest (loop has no seam)')
+  assert.equal(breathe(0.5), 1)
+  assert.ok(Math.abs(breathe(0.25) - breathe(0.75)) < 1e-12, 'symmetric about the peak')
+  assert.equal(breathe(NaN), 0)
+  assert.ok(breathe(2) < 1e-12, 'out-of-range clamps to the rest endpoint')
 })
 
 test('springStep converges to target without oscillation', () => {
