@@ -176,7 +176,8 @@ export class LinkCreationHandler {
     if (srcPos && tgtPos) {
       const midpoint = srcPos.clone().lerp(tgtPos, 0.5)
       const color    = LINK_TYPE_COLORS[option.semanticType] ?? 0x888888
-      ctrl._activeRipples.push(new RippleEffect(ctrl._sceneView.scene, midpoint, color))
+      ctrl._motion.spawn(reduced =>
+        new RippleEffect(ctrl._sceneView.scene, midpoint, color, 0.15, { reduced }))
     }
     ctrl._service._linkViews.get(link.id)?.triggerFlash?.()
   }

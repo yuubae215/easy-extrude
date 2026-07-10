@@ -230,32 +230,54 @@ See CODE_CONTRACTS §3 "Edge-Anchored Panels Must Coordinate Occupancy".
 
 ## Color Palette
 
-| Usage | Color |
-|-------|-------|
-| Background (header, panels) | `#242424` |
-| Background (secondary) | `#2b2b2b` |
-| Background (buttons) | `#383838` |
-| Border | `#4a4a4a` |
-| Text (primary) | `#e0e0e0` |
-| Text (secondary) | `#888888` |
-| Accent (selected) | `#3d3d6b` / `#5c5cff` |
-| Danger (Delete) | `#c04040` |
-| Success (Confirm) | `#3a7a3a` |
-| 3D face highlight | Cyan (Three.js material) |
-| Measure line | Amber (`#f5a623`) |
-| CoordinateFrame axes | X: red `#e05252` / Y: green `#52e052` / Z: blue `#5252e0` |
+The token column is pinned equal to `COLOR` in `src/theme/tokens.js` by the
+drift test `src/theme/tokens.test.js` (ADR-065 Phase 0 — same mechanism as the
+ADR-064 schema drift tests). One row = one token = one hex. Rows without a
+token (`—`) are outside the token vocabulary (e.g. Three.js material presets).
+Touched lines carrying one of these hex literals must be migrated to the token.
+
+| Usage | Token | Color |
+|-------|-------|-------|
+| Background (header, panels) | `bgPanel` | `#242424` |
+| Background (secondary) | `bgSecondary` | `#2b2b2b` |
+| Background (buttons) | `bgButton` | `#383838` |
+| Border | `border` | `#4a4a4a` |
+| Text (primary) | `textPrimary` | `#e0e0e0` |
+| Text (secondary) | `textSecondary` | `#888888` |
+| Accent (selected row) | `accentSoft` | `#3d3d6b` |
+| Accent (selected control) | `accent` | `#5c5cff` |
+| Danger (Delete) | `danger` | `#c04040` |
+| Success (Confirm) | `success` | `#3a7a3a` |
+| 3D face highlight | — | Cyan (Three.js material) |
+| Measure line | `measure` | `#f5a623` |
+| CoordinateFrame axis X | `axisX` | `#e05252` |
+| CoordinateFrame axis Y | `axisY` | `#52e052` |
+| CoordinateFrame axis Z | `axisZ` | `#5252e0` |
+| Feedback flash — settled fact (ADR-062) | `fxGreen` | `#22c55e` |
+| Feedback flash — seed/example (ADR-058) | `fxAmber` | `#d5a23a` |
+| Decision blue / landing settle (ADR-047/065) | `fxBlue` | `#3a7bd5` |
+| Reveal ripple green (ADR-047) | `fxReveal` | `#10b981` |
 
 ---
 
 ## Animations & Transitions
 
+Durations are tokenised in `src/theme/tokens.js` `DURATION` (ADR-065 Phase 0).
+All transient 3D effects run through `MotionGovernor` (budget 8, reduced-motion
+→ static held cue — ADR-065 Phase 1).
+
 | Element | Animation | Duration |
 |---------|-----------|----------|
-| Drawer slide in/out | `transform: translateX()` | 200ms ease |
+| Drawer slide in/out | `transform: translateX()` | 200ms ease (`drawer`) |
 | Dropdown show/hide | `display: block/none` (immediate) | — |
-| Toast appear | `opacity: 0 → 1` | 150ms |
-| Toast disappear | after 5000ms: `opacity: 1 → 0` | 300ms |
+| Toast appear | `opacity: 0 → 1` | 150ms (`toastIn`) |
+| Toast disappear | after 5000ms: `opacity: 1 → 0` | 300ms (`toastOut`) |
 | Button hover | `background` change | immediate |
+| Proof-feedback landing flash (DOM, ADR-062) | keyframe fade / static tint when reduced | 700ms (`flash`) |
+| Link-acceptance ripple (3D) | wireframe sphere expand 1×→4× + fade | 600ms (`ripple`) |
+| Landing pulse — spawn (3D, ADR-065 Phase 2) | green overshoot pop 0.4×→1.6× + fade (`fxGreen`) | 450ms (`landingPop`) |
+| Landing pulse — settle / redo (3D) | blue expand + fade (`fxBlue`) | 400ms (`landingSettle`) |
+| Landing pulse — undo rewind (3D) | amber CONTRACTING 1.6×→0.4× + fade (`fxAmber`) | 400ms (`landingSettle`) |
 
 ---
 

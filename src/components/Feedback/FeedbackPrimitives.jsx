@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { refsSignature, flashStyle } from '../../view/FeedbackMath.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../../theme/motion.js'
+import { COLOR, rgba } from '../../theme/tokens.js'
 
 /**
  * FeedbackPrimitives — the shared vocabulary of proof-feedback presentation
@@ -25,11 +27,11 @@ import { refsSignature, flashStyle } from '../../view/FeedbackMath.js'
 // root; duplicate mounts are harmless (identical keyframes).
 const FEEDBACK_CSS = `
 @keyframes eaFlashGreen {
-  0%   { background: rgba(34,197,94,0.28); }
+  0%   { background: ${rgba(COLOR.fxGreen, 0.28)}; }
   100% { background: transparent; }
 }
 @keyframes eaFlashAmber {
-  0%   { background: rgba(213,162,58,0.30); }
+  0%   { background: ${rgba(COLOR.fxAmber, 0.3)}; }
   100% { background: transparent; }
 }
 `
@@ -39,19 +41,12 @@ export function FeedbackDefs() {
 }
 
 /**
- * Reduced-motion detection (ADR-064 Phase 4) — the single side-effect boundary
- * for the playful primitives. The OS/browser `prefers-reduced-motion` setting
- * decides whether the flash/pulse animations play or degrade to a static cue.
- * Guarded for non-browser (test / SSR) environments where `matchMedia` is
- * absent → treated as "motion allowed" so default rendering is unchanged.
+ * Reduced-motion detection (ADR-064 Phase 4). The single side-effect boundary
+ * MOVED to `src/theme/motion.js` (ADR-065 Phase 1) so the 3D tick loop's
+ * MotionGovernor shares the same authority; re-exported here so every existing
+ * DOM consumer keeps its import path — the boundary moved, it did not fork.
  */
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
-
-export function prefersReducedMotion() {
-  return typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia(REDUCED_MOTION_QUERY).matches
-}
+export { prefersReducedMotion }
 
 /**
  * Hook form: re-renders the consumer when the preference flips (a user toggling
@@ -60,13 +55,7 @@ export function prefersReducedMotion() {
  */
 export function useReducedMotion() {
   const [reduced, setReduced] = useState(prefersReducedMotion)
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
-    const mq = window.matchMedia(REDUCED_MOTION_QUERY)
-    const onChange = () => setReduced(mq.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
+  useEffect(() => onReducedMotionChange(setReduced), [])
   return reduced
 }
 

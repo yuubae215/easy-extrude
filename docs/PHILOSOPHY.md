@@ -660,6 +660,52 @@ test pins the two vocabularies equal so neither becomes a silent second source (
 
 ---
 
+### 30. Motion Tier — 動きは事実か能力を語る。何も語らない動きは装飾であり不採用
+
+Every animation in the client belongs to exactly one of three tiers, decided
+*before* it is written (ADR-065 Widening 1):
+
+| Tier | Speaks about | Governance |
+|------|--------------|------------|
+| **Tier F — fact-driven** | "your committed input worked / almost / failed" | ADR-062 unchanged: proof-layer fact → pure derivation → null degrade |
+| **Tier A — affordance** | "you can act here / why you can't" | pure function of (interaction state × the SAME gate predicate that enables the control — #25/#14); stateless; never implies a judgment or a correct answer |
+| **Forbidden — decoration** | nothing | not adopted (background particles, logo pulses) |
+
+**The one-sentence boundary test**: *"その動きが止まったとき、ユーザーが知れなく
+なることは何か?"* — if the answer is "nothing", the motion is decoration and is
+rejected. An idle motion is admissible only as affordance (a breathing handle
+says "grab me" = Tier A; a swaying header says nothing = decoration).
+
+Two structural corollaries, both machine-pinned:
+
+- **One reduced-motion boundary.** Every tier degrades under
+  `prefers-reduced-motion` to a *static styled cue* — information preserved,
+  movement dropped — never to nothing (#11). The preference is read at exactly
+  ONE place (`src/theme/motion.js`), pinned by the grep test in
+  `src/theme/motion.test.js`; DOM primitives re-export it and the 3D
+  `MotionGovernor` injects it into every transient effect. The boundary may
+  move; it must never fork (核 §1.1).
+- **Transients have one owner.** Transient 3D effects live in the
+  `MotionGovernor` (concurrency budget + oldest-evicted-with-dispose, #9);
+  their fact source is a *committed* transition (e.g. a CommandStack landing),
+  never an optimistic preview or an initial load.
+
+**Why it matters**: without the tier decision, every new animation re-opens the
+same three drifts — decoration creep (motion that costs attention and says
+nothing), judgment forgery ("the glowing button must be the right answer" —
+Tier F authority faked by a Tier A surface), and reduced-motion regressions
+(each animation inventing its own matchMedia read). The tier table turns those
+review debates into a lookup. Contexts already spanned: the DOM proof-feedback
+primitives (ADR-062/064) and the 3D transient effects + core-modeling landing
+pulses (ADR-065 Phase 1–2); the chrome refresh (Phase 3) consumes the same rule.
+
+*Underlies CODE_CONTRACTS rules: MotionGovernor Is the Single Owner of Transient
+3D Effects (ADR-065 Phase 1); Landing Effects Fire From the CommandStack Landing
+Only (ADR-065 Phase 2); Reduced Motion Degrades the Play Layer to a Static Cue
+(ADR-064 Phase 4)*
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
@@ -716,3 +762,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
 | 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |
+| 30 | Motion Tier — 動きは事実か能力を語る | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
