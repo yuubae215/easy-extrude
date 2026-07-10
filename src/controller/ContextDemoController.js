@@ -332,8 +332,8 @@ export class ContextDemoController {
         const entity = this._layoutDsl.entities.find(e => e.ref === prov.entityRef)
         const pos = new THREE.Vector3(entity.position.x, entity.position.y, entity.position.z)
         const d   = entity.dimensions
-        ctrl._activeRipples.push(new RippleEffect(
-          ctrl._sceneView.scene, pos, 0x3a7bd5, Math.max(d.x, d.y, d.z) * 0.5,
+        ctrl._motion.spawn(reduced => new RippleEffect(
+          ctrl._sceneView.scene, pos, 0x3a7bd5, Math.max(d.x, d.y, d.z) * 0.5, { reduced },
         ))
         useUIStore.getState().actions.demoApproveDecision(prov.ref)
       },
@@ -429,8 +429,8 @@ export class ContextDemoController {
         if (item) {
           const obj = this._ctrl._scene.getObject(item.id)
           obj?.meshView.setVisible(true)
-          this._ctrl._activeRipples.push(new RippleEffect(
-            this._ctrl._sceneView.scene, item.pos, 0x10b981, item.radius,
+          this._ctrl._motion.spawn(reduced => new RippleEffect(
+            this._ctrl._sceneView.scene, item.pos, 0x10b981, item.radius, { reduced },
           ))
           this._reveal.nextAt = t + REVEAL_INTERVAL
         }

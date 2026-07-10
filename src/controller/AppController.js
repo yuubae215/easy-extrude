@@ -61,7 +61,9 @@ import { RectSelectState }   from '../core/states/RectSelectState.js'
 import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
-import { RippleEffect }               from '../view/RippleEffect.js'
+import { MotionGovernor }             from '../view/MotionGovernor.js'
+import { LandingPulse }               from '../view/LandingEffects.js'
+import { landingDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
@@ -458,8 +460,13 @@ export class AppController {
     this._quickDragHandler     = new QuickDragState()
     /** @type {import('../view/SpatialLinkView.js').SpatialLinkView|null} Ghost link during drag suggestion */
     this._ghostLinkView        = null
-    /** @type {import('../view/RippleEffect.js').RippleEffect[]} Active link-acceptance ripple animations */
-    this._activeRipples        = []
+    /**
+     * Single owner of transient 3D effects (ripples, landing pulses) —
+     * ADR-065 Phase 1. Effects are spawned via `_motion.spawn(reduced => fx)`
+     * so every transient consults the one reduced-motion boundary and shares
+     * the concurrency budget (#9-symmetric eviction).
+     */
+    this._motion               = new MotionGovernor()
     this._rectSelHandler       = new RectSelectState()
 
     // ── Face extrude handler (delegated to FaceExtrudeHandler) ──────────────
@@ -694,6 +701,16 @@ export class AppController {
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()
+
+    // ── Core-modeling landing effects (ADR-065 Phase 2) ───────────────────
+    // The single fact source is the CommandStack landing: post-hoc push means
+    // the operation is a COMMITTED fact (optimistic previews never land here).
+    // Attached AFTER the initial clear() so the boot-created solid fires no
+    // effect — initial load is not a transition. Deferred one microtask so the
+    // anchor reads the POST-operation selection (e.g. _addObject pushes, then
+    // switches active to the new solid synchronously).
+    this._commandStack.setLandingListener(landing =>
+      queueMicrotask(() => this._spawnLandingFx(landing)))
 
     // Expose console API for role-based provenance (ADR-034 §8.3)
     // + Context DSL demo entry (ADR-047)
@@ -3100,6 +3117,27 @@ export class AppController {
     )
   }
 
+  // ─── Core-modeling landing effects (ADR-065 Phase 2) ──────────────────────
+
+  /**
+   * Render a transient landing pulse for a committed core-modeling operation.
+   * Fired by the CommandStack landing listener — never called directly from
+   * input handlers (the stack is the one authoritative landing point, #1).
+   *
+   * Honest degrades (#11 as silence, not fabrication): an unrecognised label
+   * (context/doc commands own their ADR-062 feedback) or a missing anchor
+   * (deleted entity, CoordinateFrame without corners) spawns nothing.
+   * @param {{phase: 'push'|'undo'|'redo', label: string}} landing
+   */
+  _spawnLandingFx(landing) {
+    const desc = landingDescriptor(landing)
+    if (!desc) return
+    const bounds = boundsOf(this._activeObj?.corners)
+    if (!bounds) return
+    this._motion.spawn(reduced =>
+      new LandingPulse(this._sceneView.scene, bounds, desc, { reduced }))
+  }
+
   // ─── Animation loop ────────────────────────────────────────────────────────
   start() {
     const loop = () => {
@@ -3174,14 +3212,9 @@ export class AppController {
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
         }
       }
-      // Tick and prune completed link-acceptance ripple animations.
-      if (this._activeRipples.length > 0) {
-        this._activeRipples = this._activeRipples.filter(r => {
-          const done = r.tick(t)
-          if (done) r.dispose()
-          return !done
-        })
-      }
+      // Tick and prune transient effects (ripples, landing pulses) — the
+      // MotionGovernor owns their lifetime (ADR-065 Phase 1).
+      this._motion.tick(t)
       // Context DSL demo: ghost pulse/collapse + staggered reveal (ADR-047).
       this._demoCtrl.tick(t)
       // Production Context overlay: authoring widgets + region ghosts (ADR-050 Phase 3).
