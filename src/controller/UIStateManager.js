@@ -19,6 +19,10 @@ import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { SpatialLink }     from '../domain/SpatialLink.js'
 import { getCentroid }     from '../model/CuboidModel.js'
 import { ICONS }           from '../view/UIView.js'
+import {
+  gateGrab, gateEdit, gateStack, gateDelete,
+  gateFrameTransform, gateExtrudeRect,
+} from '../view/ChromeGates.js'
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
 import {
@@ -237,13 +241,15 @@ export class UIStateManager {
       const hasObj = ctrl._objSelected
 
       if (hasObj && ctrl._activeObj instanceof CoordinateFrame) {
-        const isOriginCF = ctrl._activeObj.name === 'Origin'
+        // disabled-as-quest (ADR-065 named rule 5): the disable flag and the
+        // rendered reason both come from ONE gate-predicate return value.
+        const gFrame = gateFrameTransform(ctrl._activeObj)
         ctrl._uiView.setMobileToolbar([
           { icon: ICONS.frame,  label: 'Add Frame', onClick: () => ctrl._promptAddFrame(ctrl._scene.activeId) },
-          { icon: ICONS.grab,   label: 'Move',      onClick: () => ctrl._grabHandler.start(),                                              disabled: isOriginCF },
+          { icon: ICONS.grab,   label: 'Move',      onClick: () => ctrl._grabHandler.start(),                                              disabled: !gFrame.enabled, reason: gFrame.reason },
           { spacer: true },
-          { icon: ICONS.delete, label: 'Delete',    onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: !isOriginCF, disabled: isOriginCF },
-          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => ctrl._rotateHandler.start(true),                                              disabled: isOriginCF },
+          { icon: ICONS.delete, label: 'Delete',    onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: gFrame.enabled, disabled: !gFrame.enabled, reason: gFrame.reason },
+          { icon: ICONS.rotate, label: 'Rotate',    onClick: () => ctrl._rotateHandler.start(true),                                              disabled: !gFrame.enabled, reason: gFrame.reason },
         ])
         return
       }
@@ -268,11 +274,14 @@ export class UIStateManager {
         return
       }
 
-      const canGrab   = hasObj && !(ctrl._activeObj instanceof ImportedMesh)
-      const canEdit   = hasObj && !(ctrl._activeObj instanceof ImportedMesh) && !(ctrl._activeObj instanceof CoordinateFrame) && !_isAnnotated(ctrl._activeObj) && !_isSpatialLink(ctrl._activeObj)
-      const canStack  = hasObj && !(ctrl._activeObj instanceof ImportedMesh) && !(ctrl._activeObj instanceof MeasureLine)
-        && !_isAnnotated(ctrl._activeObj)
-        && !_isSpatialLink(ctrl._activeObj)
+      // disabled-as-quest (ADR-065 named rule 5): each button's disable flag
+      // and rendered reason derive from the SAME gate-predicate return value
+      // (ChromeGates — the type-capability contracts, PHILOSOPHY #2/#25).
+      const sel       = hasObj ? ctrl._activeObj : null
+      const gGrab     = gateGrab(sel)
+      const gEdit     = gateEdit(sel)
+      const gDelete   = gateDelete(sel)
+      const gStack    = gateStack(sel)
       const canRotate = hasObj && ctrl._activeObj instanceof Solid
       ctrl._uiView.setMobileToolbar([
         {
@@ -289,12 +298,12 @@ export class UIStateManager {
             )
           },
         },
-        { icon: ICONS.grab,      label: 'Grab',   onClick: () => ctrl._grabHandler.start(),                                        disabled: !canGrab },
-        { icon: ICONS.edit,      label: 'Edit',   onClick: () => ctrl.setMode('edit'),                                             disabled: !canEdit },
-        { icon: ICONS.delete,    label: 'Delete', onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: hasObj,         disabled: !hasObj },
+        { icon: ICONS.grab,      label: 'Grab',   onClick: () => ctrl._grabHandler.start(),                                        disabled: !gGrab.enabled,   reason: gGrab.reason },
+        { icon: ICONS.edit,      label: 'Edit',   onClick: () => ctrl.setMode('edit'),                                             disabled: !gEdit.enabled,   reason: gEdit.reason },
+        { icon: ICONS.delete,    label: 'Delete', onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: hasObj,         disabled: !gDelete.enabled, reason: gDelete.reason },
         canRotate
           ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => ctrl._rotateHandler.start(true) }
-          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { ctrl._grabHandler.toggleStackMode(); this.updateMobileToolbar() }, active: ctrl._grabHandler.stackMode, disabled: !canStack },
+          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { ctrl._grabHandler.toggleStackMode(); this.updateMobileToolbar() }, active: ctrl._grabHandler.stackMode, disabled: !gStack.enabled, reason: gStack.reason },
       ])
       return
     }
@@ -303,11 +312,12 @@ export class UIStateManager {
       const hasRect = ctrl._sketch.p1 && ctrl._sketch.p2 &&
         (Math.abs(ctrl._sketch.p2.x - ctrl._sketch.p1.x) > 0.01 ||
          Math.abs(ctrl._sketch.p2.y - ctrl._sketch.p1.y) > 0.01)
+      const gExtrude = gateExtrudeRect(hasRect)
       ctrl._uiView.setMobileToolbar([
         { icon: ICONS.back,    label: 'Object',  onClick: () => ctrl.setMode('object') },
         { spacer: true },
         { spacer: true },
-        { icon: ICONS.extrude, label: 'Extrude', onClick: () => ctrl._enterExtrudePhase(), disabled: !hasRect },
+        { icon: ICONS.extrude, label: 'Extrude', onClick: () => ctrl._enterExtrudePhase(), disabled: !gExtrude.enabled, reason: gExtrude.reason },
       ])
       return
     }

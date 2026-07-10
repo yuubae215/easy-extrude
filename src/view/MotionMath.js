@@ -34,6 +34,19 @@ export function easeOutBack(p, s = 1.70158) {
 }
 
 /**
+ * One breathing cycle — the Tier A idle-affordance curve (ADR-065 Phase 3):
+ * a smooth swell-and-release with zero velocity at both endpoints, so a
+ * looping animation built on it has no seam. sin²(π·p): f(0)=f(1)=0, f(½)=1,
+ * symmetric about the peak. Consumed by ChromeMath's breathing-glow keyframes.
+ * @param {number} p cycle progress ∈ [0,1] (clamped; NaN → 0)
+ * @returns {number} intensity ∈ [0,1]
+ */
+export function breathe(p) {
+  const s = Math.sin(Math.PI * clamp01(p))
+  return s * s
+}
+
+/**
  * One integration step of a critically-damped spring (no oscillation, no
  * overshoot — the "settle" primitive for interruptible/reversible motion).
  * Semi-implicit Euler, stable for the dt range of a rAF loop.

@@ -701,6 +701,11 @@ export class AppController {
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()
+    // Re-sync the undo/redo UI state: setMode() above ran while the boot
+    // solid's commands were still on the stack, so the store was left saying
+    // "undo available" (stale until the next command; the mobile header undo
+    // rendered enabled at boot — same contract as _onContextLoaded).
+    this._refreshUndoRedoState()
 
     // ── Core-modeling landing effects (ADR-065 Phase 2) ───────────────────
     // The single fact source is the CommandStack landing: post-hoc push means

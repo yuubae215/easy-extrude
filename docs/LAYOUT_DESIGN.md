@@ -248,6 +248,7 @@ Touched lines carrying one of these hex literals must be migrated to the token.
 | Accent (selected control) | `accent` | `#5c5cff` |
 | Danger (Delete) | `danger` | `#c04040` |
 | Success (Confirm) | `success` | `#3a7a3a` |
+| Active tool / indicator cyan (mobile toolbar, ADR-065 Phase 3) | `accentActive` | `#4fc3f7` |
 | 3D face highlight | — | Cyan (Three.js material) |
 | Measure line | `measure` | `#f5a623` |
 | CoordinateFrame axis X | `axisX` | `#e05252` |
@@ -269,10 +270,14 @@ All transient 3D effects run through `MotionGovernor` (budget 8, reduced-motion
 | Element | Animation | Duration |
 |---------|-----------|----------|
 | Drawer slide in/out | `transform: translateX()` | 200ms ease (`drawer`) |
-| Dropdown show/hide | `display: block/none` (immediate) | — |
-| Toast appear | `opacity: 0 → 1` | 150ms (`toastIn`) |
+| Dropdown show/hide (Context ▾ / ⋯ menus) | `eaChromeEnter` slide-fade on open / none when reduced (ADR-065 Phase 3) | 180ms (`chromeEnter`) |
+| Toast appear | `eaChromeEnter` slide-fade / in place when reduced (ADR-065 Phase 3) | 150ms (`toastIn`) |
 | Toast disappear | after 5000ms: `opacity: 1 → 0` | 300ms (`toastOut`) |
-| Button hover | `background` change | immediate |
+| Button hover (header chrome) | `background`/`border` brighten + 1px lift (`tierAMotion`); colour only when reduced | 150ms (`hover`) |
+| Button press (chrome, Tier A) | scale 0.94 down / spring back (`EASING.spring`); none when reduced | 90ms down (`press`), 260ms back (`pressRelease`) |
+| Active tool glow (mobile toolbar) | `eaBreatheGlow` breathing box-shadow / static midpoint glow when reduced | 2600ms loop (`breathe`) |
+| Locked control (disabled-as-quest, ADR-065 rule 5) | static: dashed border + `cursor:help`; tap prints the gate reason as a toast | — |
+| Info-bar hints swap (mode change) | `eaChromeEnter` slide-fade of the new hint set / in place when reduced | 180ms (`chromeEnter`) |
 | Proof-feedback landing flash (DOM, ADR-062) | keyframe fade / static tint when reduced | 700ms (`flash`) |
 | Link-acceptance ripple (3D) | wireframe sphere expand 1×→4× + fade | 600ms (`ripple`) |
 | Landing pulse — spawn (3D, ADR-065 Phase 2) | green overshoot pop 0.4×→1.6× + fade (`fxGreen`) | 450ms (`landingPop`) |

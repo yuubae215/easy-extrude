@@ -18,6 +18,10 @@ import { Onboarding } from './Onboarding/Onboarding.jsx'
 import { ContextDemoLayer } from './ContextDemo/ContextDemoLayer.jsx'
 import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
+import { ChromeDefs } from './Chrome/ChromePrimitives.jsx'
+import { useReducedMotion } from './Feedback/FeedbackPrimitives.jsx'
+import { enterMotion } from '../view/ChromeMath.js'
+import { COLOR, DURATION } from '../theme/tokens.js'
 
 /**
  * React UI root — Phase 2d–2g + Phase 3 + Phase 4.
@@ -51,6 +55,7 @@ export function UIShell() {
 
   return (
     <>
+      <ChromeDefs />
       <Header />
       <MobileToolbar />
       <NPanel />
@@ -76,6 +81,7 @@ export function UIShell() {
 
 function ToastStack({ toasts }) {
   const dismissToast = useUIStore(s => s.actions.dismissToast)
+  const reduced = useReducedMotion()
 
   if (toasts.length === 0) return null
 
@@ -100,7 +106,7 @@ function ToastStack({ toasts }) {
             background: toast.type === 'error' ? '#7a1f1f'
                       : toast.type === 'warn'  ? '#5a4a1a'
                       : '#1e1e1e',
-            color: '#e0e0e0',
+            color: COLOR.textPrimary,
             padding: '6px 14px',
             borderRadius: '4px',
             fontSize: '13px',
@@ -108,6 +114,9 @@ function ToastStack({ toasts }) {
             pointerEvents: 'auto',
             cursor: 'pointer',
             boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+            // Entry slide-fade says "a new notification arrived" (Tier A,
+            // ADR-065 Phase 3); reduced motion shows it in place.
+            ...enterMotion(reduced, DURATION.toastIn),
           }}
         >
           {toast.msg}
