@@ -59,6 +59,7 @@ export const DURATION = Object.freeze({
   breathe:      2600, // ADR-065 Phase 3 active-tool breathing glow cycle
   chromeEnter:  180,  // ADR-065 Phase 3 toast / hint entry slide-fade
   celebration:  1600, // ADR-065 Phase 4 celebration burst (DOM banner + 3D field)
+  regionResolve: 700, // ADR-065 Phase 5 region-conflict resolve: recolor → dissolve (3D)
 })
 
 /** CSS easing vocabulary for DOM animations. */

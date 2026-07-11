@@ -12,6 +12,10 @@ import {
   scoreColor,
   ghostLineStyle,
   nearestTargetIndex,
+  REVEAL_TIMELINE,
+  revealFrame,
+  mixHex,
+  NEUTRAL_GLYPH_COLOR,
 } from './GraspGhostMath.js'
 
 // ── renderableEndEffectorFrame: the capability gate (ADR-059 §A-1) ─────────────
@@ -88,6 +92,72 @@ test('ghostLineStyle: all three verdicts true → solid, any false/missing → d
   assert.equal(ghostLineStyle({ withinReach: true, ikSolvable: false, interferenceFree: true }), 'dashed')
   assert.equal(ghostLineStyle({ withinReach: true, ikSolvable: true }), 'dashed')
   assert.equal(ghostLineStyle(undefined), 'dashed')
+})
+
+// ── revealFrame: the three-beat reveal timeline (ADR-065 Phase 5) ───────────────
+
+test('reveal timeline stays under the ~1s information-delay cap (ADR-065 §7)', () => {
+  const total = REVEAL_TIMELINE.approachMs + REVEAL_TIMELINE.closeMs + REVEAL_TIMELINE.scoreMs
+  assert.ok(total <= 1000)
+})
+
+test('revealFrame beats are sequential: approach, then close, then score', () => {
+  const { approachMs, closeMs } = REVEAL_TIMELINE
+  const t0 = revealFrame(0)
+  assert.deepEqual(t0, { approach: 0, close: 0, score: 0 })
+  // Mid-approach: fingers have not started closing, score not revealed.
+  const mid = revealFrame(approachMs / 2)
+  assert.ok(mid.approach > 0 && mid.approach < 1)
+  assert.equal(mid.close, 0)
+  assert.equal(mid.score, 0)
+  // Approach done, close in flight, score still hidden.
+  const closing = revealFrame(approachMs + closeMs / 2)
+  assert.equal(closing.approach, 1)
+  assert.ok(closing.close > 0 && closing.close < 1)
+  assert.equal(closing.score, 0)
+  // Past the whole timeline: everything settled at 1.
+  assert.deepEqual(revealFrame(10000), { approach: 1, close: 1, score: 1 })
+})
+
+test('revealFrame under reduced motion jumps to the final stage (never a silent skip)', () => {
+  assert.deepEqual(revealFrame(0, true), { approach: 1, close: 1, score: 1 })
+  assert.deepEqual(revealFrame(REVEAL_TIMELINE.approachMs / 2, true), { approach: 1, close: 1, score: 1 })
+})
+
+test('revealFrame on a non-finite clock shows the final stage — facts are never hidden (#11)', () => {
+  assert.deepEqual(revealFrame(Infinity), { approach: 1, close: 1, score: 1 })
+  assert.deepEqual(revealFrame(NaN), { approach: 1, close: 1, score: 1 })
+})
+
+test('revealFrame progress is monotone non-decreasing per beat', () => {
+  let prev = revealFrame(0)
+  for (let t = 20; t <= 1000; t += 20) {
+    const cur = revealFrame(t)
+    assert.ok(cur.approach >= prev.approach)
+    assert.ok(cur.close >= prev.close)
+    assert.ok(cur.score >= prev.score)
+    prev = cur
+  }
+})
+
+// ── mixHex: the neutral → score colour flood ───────────────────────────────────
+
+test('mixHex endpoints and midpoint mix per channel', () => {
+  assert.equal(mixHex(0x000000, 0xffffff, 0), 0x000000)
+  assert.equal(mixHex(0x000000, 0xffffff, 1), 0xffffff)
+  assert.equal(mixHex(0x000000, 0xff0000, 0.5), 0x800000)
+})
+
+test('mixHex clamps out-of-range t and stays on the first colour for NaN', () => {
+  assert.equal(mixHex(0x102030, 0x405060, -3), 0x102030)
+  assert.equal(mixHex(0x102030, 0x405060, 9), 0x405060)
+  assert.equal(mixHex(0x102030, 0x405060, NaN), 0x102030)
+})
+
+test('neutral glyph colour is a valid 24-bit colour distinct from both score endpoints', () => {
+  assert.ok(NEUTRAL_GLYPH_COLOR >= 0 && NEUTRAL_GLYPH_COLOR <= 0xffffff)
+  assert.notEqual(NEUTRAL_GLYPH_COLOR, scoreColor(0))
+  assert.notEqual(NEUTRAL_GLYPH_COLOR, scoreColor(1))
 })
 
 // ── nearestTargetIndex: display-only proximity pick ─────────────────────────────

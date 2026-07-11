@@ -25,13 +25,12 @@
  * @module view/RegionGhostView
  */
 import * as THREE from 'three'
+import { gapBandRects, GAP_COLOR, RESOLVE_COLOR } from './RegionGhostMath.js'
 
 /** Persona palette — distinct hues mapped by actor index (ctx.actors order). */
 export const PERSONA_PALETTE = [0x3a7bd5, 0xe0b030, 0x10b981, 0xc05cd0, 0xe06650]
 /** Bright agreement-zone colour (intersection non-empty). */
 const AGREE_COLOR    = 0xffffff
-/** Conflict gap colour (intersection empty). */
-const GAP_COLOR      = 0xcc3333
 const Z_FILL_BASE    = 2   // mm lift for the first persona fill
 const Z_FILL_STEP    = 0.4 // mm stagger per persona so layers don't z-fight
 const Z_OVERLAY      = 4   // mm lift for the agreement / gap overlay (above fills)
@@ -133,22 +132,22 @@ export class RegionGhostView {
     }
 
     // Empty intersection — draw the gap band on each empty axis so "共通部分が
-    // 空 = 衝突" is visible. For an axis-aligned footprint there is typically one
-    // empty axis; the band spans the no-man's-land on it and the overlap on the
-    // other axes (box[other] is the non-empty common range there).
-    const axes = ghost.axes
-    for (const axis of x.emptyAxes) {
-      const [glo, ghi] = x.gap[axis] // [hi, lo] → glo > ghi (no-man's-land)
-      const other = axes.find(a => a !== axis) ?? (axis === 'x' ? 'y' : 'x')
-      const orange = x.box[other] // common range on the non-empty axis
-      const oRange = (orange && orange[0] < orange[1]) ? orange : (ghost.domain?.[other] ?? [-100, 100])
-      // band spans gap on `axis`, oRange on `other`
-      const lo = Math.min(glo, ghi), hi = Math.max(glo, ghi)
-      const bx = axis === 'x' ? [lo, hi] : oRange
-      const by = axis === 'y' ? [lo, hi] : oRange
+    // 空 = 衝突" is visible. Band geometry comes from the pure gapBandRects
+    // (shared with RegionResolveEffect — one derivation, 核 §1.1). When a
+    // Decision settled the conflict (state 'resolved') the emptiness fact
+    // remains but the cell is no longer live — the band renders in the settled
+    // green with an honest label instead of the red conflict claim (ADR-065
+    // Phase 5; a "= conflict" label over a resolved cell would be a stale
+    // judgment — PHILOSOPHY #11).
+    const settled = ghost.state === 'resolved'
+    const bandColor = settled ? RESOLVE_COLOR : GAP_COLOR
+    const bandCss = `#${bandColor.toString(16).padStart(6, '0')}`
+    for (const rect of gapBandRects(ghost)) {
+      const { axis, x: bx, y: by, gap } = rect
+      const [lo, hi] = gap
       const cx = (bx[0] + bx[1]) / 2, cy = (by[0] + by[1]) / 2
       const mat = new THREE.MeshBasicMaterial({
-        color: GAP_COLOR, transparent: true, opacity: 0.3,
+        color: bandColor, transparent: true, opacity: settled ? 0.18 : 0.3,
         depthTest: true, depthWrite: false, side: THREE.DoubleSide,
       })
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
@@ -157,8 +156,11 @@ export class RegionGhostView {
       mesh.renderOrder = 5
       this._group.add(mesh)
       this._disposables.push({ geometry: mesh.geometry, material: mat })
-      const lbl = this._makeLabel(
-        `✕ No intersection = conflict · ${axis} gap [${Math.round(lo)}, ${Math.round(hi)})`, '#ff8080')
+      const lbl = settled
+        ? this._makeLabel(
+            `✓ Gap settled by ${ghost.resolvedBy ?? 'decision'} · ${axis} gap [${Math.round(lo)}, ${Math.round(hi)})`, bandCss)
+        : this._makeLabel(
+            `✕ No intersection = conflict · ${axis} gap [${Math.round(lo)}, ${Math.round(hi)})`, '#ff8080')
       this._labels.push({ el: lbl, anchor: new THREE.Vector3(cx, cy, Z_OVERLAY) })
     }
   }

@@ -103,6 +103,62 @@ export function ghostLineStyle(score) {
 }
 
 /**
+ * Three-beat reveal timeline for a committed candidate select (ADR-065 Phase 5):
+ * beat 1 the approach slide, beat 2 the finger close, beat 3 the score reveal
+ * (neutral glyph floods to the score colour + the caption appears). Total
+ * 900 ms — under the ~1 s information-delay cap (ADR-065 Consequences §7: the
+ * choreography must never make the user wait for the fact; the panel's score
+ * bars show the numbers instantly regardless).
+ */
+export const REVEAL_TIMELINE = Object.freeze({ approachMs: 400, closeMs: 240, scoreMs: 260 })
+
+/**
+ * Stage progress of the three-beat reveal at `elapsedMs` since the select.
+ * Sequential beats; `approach`/`close` are ease-out curves (they drive motion),
+ * `score` is linear (it drives a colour/opacity ramp).
+ *
+ * Reduced motion — and any non-finite elapsed (the hover path passes Infinity;
+ * a malformed clock must not hide facts, PHILOSOPHY #11) — jumps to the final
+ * stage: everything the animation would eventually show is shown immediately.
+ *
+ * @param {number} elapsedMs — ms since the select landed
+ * @param {boolean} [reduced=false] — prefers-reduced-motion (single boundary)
+ * @returns {{approach: number, close: number, score: number}} each ∈ [0,1]
+ */
+export function revealFrame(elapsedMs, reduced = false) {
+  if (reduced || !Number.isFinite(elapsedMs)) return { approach: 1, close: 1, score: 1 }
+  const { approachMs, closeMs, scoreMs } = REVEAL_TIMELINE
+  const seg = (t0, dur) => Math.min(1, Math.max(0, (elapsedMs - t0) / dur))
+  const easeOut = (p) => 1 - (1 - p) * (1 - p)
+  return {
+    approach: easeOut(seg(0, approachMs)),
+    close:    easeOut(seg(approachMs, closeMs)),
+    score:    seg(approachMs + closeMs, scoreMs),
+  }
+}
+
+/** Neutral glyph colour shown before the score beat floods in (beat 3). */
+export const NEUTRAL_GLYPH_COLOR = 0x8a94a0
+
+/**
+ * Per-channel linear mix of two 0xRRGGBB colours. t is clamped to [0,1];
+ * NaN clamps to 0 (stay on the first colour rather than fabricate one).
+ *
+ * @param {number} a — 0xRRGGBB
+ * @param {number} b — 0xRRGGBB
+ * @param {number} t
+ * @returns {number} 0xRRGGBB
+ */
+export function mixHex(a, b, t) {
+  const p = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0
+  const ch = (shift) => {
+    const ca = (a >> shift) & 0xff, cb = (b >> shift) & 0xff
+    return Math.round(ca + (cb - ca) * p)
+  }
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0)
+}
+
+/**
  * Nearest-target pick for the grasped-object highlight: index of the centre
  * closest to the TCP position, or null when `centers` is empty or the closest
  * one is farther than `maxDist`. Display-only proximity heuristic (permitted by

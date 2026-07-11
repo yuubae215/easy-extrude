@@ -61,6 +61,8 @@ import {
 import { ParametricPreviewView } from '../view/ParametricPreviewView.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
+import { regionResolveTransitions } from '../view/RegionGhostMath.js'
+import { RegionResolveEffect } from '../view/RegionResolveEffect.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
@@ -113,6 +115,10 @@ export class ContextController {
     this._regionGhosts = []
     /** @type {string|null} last persona filter pushed to the ghost views */
     this._ghostFilter = null
+    /** @type {object[]|null} last committed ghost projection rendered in 3-D —
+     * controller-local presentation history behind the resolve choreography
+     * (ADR-065 Phase 5; same rule as grasp hover — never a store field) */
+    this._ghostData = null
 
     // ── Live intake preview (ADR-051 Phase 3, Entry D) ─────────────────────────
     /** @type {UncertaintyGhostView|null} live admissible-interval ghost (sole owner) */
@@ -897,14 +903,7 @@ export class ContextController {
     // The compiled zone meshes are hidden — the persona ghosts ARE the regions.
     this._hideDerivedMeshes()
 
-    const actorOrder = (doc.actors ?? []).map(a => a.ref)
-    this._regionGhosts = []
-    for (const g of this._ctxService.projectGhosts()) {
-      const regions = g.regions.map(r => ({
-        ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
-      }))
-      this._regionGhosts.push(new RegionGhostView(ctrl._sceneView.scene, document.body, { ...g, regions }))
-    }
+    this._buildRegionGhosts()
 
     this._fitToCompiled()
 
@@ -924,6 +923,53 @@ export class ContextController {
     ui.contextSetTab('matrix')
     this._mode = 'ghost'
     this._ghostFilter = null
+  }
+
+  /**
+   * (Re)build the 3-D persona ghosts from a committed projection — the sole
+   * builder for both the overlay entry and the ghost-mode re-projection
+   * (ADR-065 Phase 5). Disposes any previous views first (PHILOSOPHY #9) and
+   * records the projection as the controller-local presentation history the
+   * resolve choreography diffs against.
+   *
+   * @param {object[]} [ghosts] — projectGhosts() output (recomputed if absent)
+   */
+  _buildRegionGhosts(ghosts = this._ctxService.projectGhosts()) {
+    const ctrl = this._ctrl
+    for (const v of this._regionGhosts) v.dispose()
+    const actorOrder = (this._ctxService.getDoc()?.actors ?? []).map(a => a.ref)
+    this._regionGhosts = ghosts.map(g => {
+      const regions = g.regions.map(r => ({
+        ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
+      }))
+      return new RegionGhostView(ctrl._sceneView.scene, document.body, { ...g, regions })
+    })
+    if (this._ghostFilter) for (const v of this._regionGhosts) v.setPersonaFilter(this._ghostFilter)
+    this._ghostData = ghosts
+  }
+
+  /**
+   * Ghost-mode re-projection (ADR-065 Phase 5): the committed doc changed under
+   * the open overlay (undo/redo of an approval or region edit), so rebuild the
+   * 3-D ghosts from the fresh projection — the overlay must never go stale
+   * (PHILOSOPHY #5, one re-projection path). Any conflict cell that settled
+   * between the two committed projections is narrated by the transient
+   * recolor→dissolve effect (pure recognition in `regionResolveTransitions`;
+   * spawned only through the MotionGovernor). The NEW state renders instantly
+   * underneath — the effect narrates the old band's departure, never delays
+   * the fact (ADR-065 Consequences §7).
+   */
+  _refreshRegionGhosts() {
+    const fresh = this._ctxService.projectGhosts()
+    if (JSON.stringify(fresh) === JSON.stringify(this._ghostData)) return
+    // A region-edit undo/redo regenerated the scene — re-hide derived meshes
+    // (the persona ghosts ARE the regions here, same as on entry).
+    this._hideDerivedMeshes()
+    for (const tr of regionResolveTransitions(this._ghostData, fresh)) {
+      this._ctrl._motion.spawn(reduced =>
+        new RegionResolveEffect(this._ctrl._sceneView.scene, tr.rects, { reduced }))
+    }
+    this._buildRegionGhosts(fresh)
   }
 
   // ── Decision approval (undoable doc mutation, ADR-050 §3.5) ───────────────────
@@ -1080,6 +1126,9 @@ export class ContextController {
           ui.contextSetProvenance(prov?.found ? prov : null)
         }
       }
+      // Ghost mode: refresh the 3-D persona ghosts too — the matrix repaint
+      // above and the 3-D overlay must not diverge (ADR-065 Phase 5).
+      if (this._mode === 'ghost') this._refreshRegionGhosts()
     } else if (this._mode === 'author') {
       // A committed / undone region edit regenerated the scene — re-hide the
       // derived meshes, resync the edit clone, and recolour from the new doc.
@@ -1121,6 +1170,7 @@ export class ContextController {
       for (const v of this._regionGhosts) v.dispose()
       this._regionGhosts = []
       this._ghostFilter = null
+      this._ghostData = null
       this._showDerivedMeshes()
     }
 
