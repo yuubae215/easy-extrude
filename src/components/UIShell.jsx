@@ -15,6 +15,7 @@ import { DragSuggestionTooltip } from './SemanticSuggestion/DragSuggestionToolti
 import { ImportProgress } from './ImportUI/ImportProgress.jsx'
 import { Outliner } from './Outliner/Outliner.jsx'
 import { Onboarding } from './Onboarding/Onboarding.jsx'
+import { TourCard } from './Onboarding/TourCard.jsx'
 import { ContextDemoLayer } from './ContextDemo/ContextDemoLayer.jsx'
 import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
@@ -44,6 +45,7 @@ import { COLOR, DURATION } from '../theme/tokens.js'
  * 16. ImportProgress: file import progress bar
  * 17. Outliner: scene collection left sidebar
  * 18. Onboarding: mobile first-visit gesture hint overlay
+ * 19. TourCard: desktop onboarding tour quest card (ADR-065 Phase 6)
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -71,6 +73,7 @@ export function UIShell() {
       <ImportProgress />
       <Outliner />
       <Onboarding />
+      <TourCard />
       <ContextDemoLayer />
       <ContextLayer />
       <TemplateGallery />

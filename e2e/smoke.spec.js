@@ -20,7 +20,8 @@ async function boot(page) {
   // 3D scene mounted (canvas appended to #canvas-container by SceneView) …
   await expect(page.locator('#canvas-container canvas')).toBeVisible()
   // … and the React overlay booted (Outliner is always present on desktop).
-  await expect(page.getByText('Scene Collection')).toBeVisible()
+  // exact: the tour card's quest text also mentions "Scene Collection".
+  await expect(page.getByText('Scene Collection', { exact: true })).toBeVisible()
   // The controller finished wiring (exposes its console API).
   await expect
     .poll(() => page.evaluate(() => typeof window.__easyExtrude === 'object' && window.__easyExtrude !== null))
@@ -98,6 +99,27 @@ test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', as
   await page.keyboard.press('Control+z')
   await page.keyboard.press('Control+z')
   await expect.poll(() => deleteButtons(page).count()).toBeLessThan(before)
+})
+
+test('desktop onboarding tour derives its quest from scene facts', async ({ page }) => {
+  // Fresh browser context = no ee_tour flag → the first quest opens at boot
+  // (ADR-065 Phase 6; the tour never blocks input — it is a corner card).
+  await boot(page)
+  await expect(page.getByText('Getting started · 1/5')).toBeVisible()
+  await expect(page.getByText('Add a box')).toBeVisible()
+
+  // Completing the quest through the real affordance advances the trail:
+  // the added box is auto-selected, so "select" is skipped and "grab" opens.
+  await page.getByRole('button', { name: /\+ Add/ }).click()
+  await expect(page.getByText('Move it')).toBeVisible()
+
+  // Skip hides the card and persists the dismissal as a display setting
+  // (Widening 3) — a reload does not re-seed the tour.
+  await page.getByRole('button', { name: 'Skip tour' }).click()
+  await expect(page.getByText('Move it')).not.toBeVisible()
+  await page.reload()
+  await expect(page.getByText('Scene Collection', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Getting started/)).not.toBeVisible()
 })
 
 test('template load opens the negotiate tab (production Context overlay)', async ({ page }) => {

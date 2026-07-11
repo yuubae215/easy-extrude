@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { IFC_CLASS_MAP } from '../../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP } from '../../domain/PlaceTypeRegistry.js'
+import { tourAnchor, tourVisible } from '../../view/TourMath.js'
+import { activeGlow } from '../../view/ChromeMath.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 
 // ── Icon config matching OutlinerView._createRow ──────────────────────────────
 const TYPE_ICON = {
@@ -255,6 +258,17 @@ export function Outliner() {
   const activeId   = useUIStore(s => s.outlinerActiveId)
   const drawerOpen = useUIStore(s => s.outlinerDrawerOpen)
   const callbacks  = useUIStore(s => s.callbacks)
+  // Onboarding tour anchor (ADR-065 Phase 6): while the open quest points at
+  // "+ Add", the button breathes — Tier A affordance motion ("act here"),
+  // derived from the SAME tour state + visibility predicate as the TourCard
+  // so the card and the pulsed control cannot disagree (§1.1).
+  const tour          = useUIStore(s => s.tour)
+  const contextActive = useUIStore(s => s.context.active)
+  const demoActive    = useUIStore(s => s.demo.active)
+  const galleryOpen   = useUIStore(s => s.templateGalleryOpen)
+  const reduced       = useReducedMotion()
+  const pulseAdd = tourVisible(tour, { contextActive, demoActive, galleryOpen })
+    && tourAnchor(tour) === 'outliner-add'
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [draggingId, setDraggingId] = useState(null)
@@ -339,6 +353,7 @@ export function Outliner() {
             background: '#3c3c3c', border: '1px solid #555',
             borderRadius: 3, color: '#e8e8e8', fontSize: 11,
             cursor: 'pointer', fontFamily: 'sans-serif',
+            ...activeGlow(pulseAdd, reduced),
           }}
         >
           + Add  [Shift+A]

@@ -26,6 +26,7 @@ Defines the structure and content of information displayed on each screen of eas
 | `S-09` | Measure placement in progress | M key |
 | `S-10` | Rect selection in progress (desktop only) | Drag on empty space |
 | `S-17` | Context DSL Demo overlay (ADR-047) | Header **Demo** button / `?demo=context` / `window.__easyExtrude.demoContext()` |
+| `S-18` | Onboarding tour quest card (ADR-065 Phase 6, desktop only) | First run on a fine pointer (no `ee_tour` localStorage flag); advances from scene facts; suppressed while any Context/demo/gallery overlay is active |
 
 ---
 
@@ -861,6 +862,26 @@ UI only declares the request and displays candidates — solving is the external
 Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Project** /
 **Import Context…** / **Save Context** + production **Negotiate** / **Author** / **Region Ghosts**
 + demo **Tutorial**). Mobile: the same items inside the ⋯ MoreMenu.
+
+---
+
+### S-18: Onboarding tour quest card (ADR-065 Phase 6, desktop only)
+
+A small fixed card in the bottom-left corner (offset past the Outliner and the InfoBar —
+PHILOSOPHY #26) that renders the **open quest** of the desktop onboarding tour: label
+`GETTING STARTED · n/5`, quest title + one-line instruction (with `kbd` chips for keys),
+progress dots, and a ✕ **Skip tour** button. The trail is the core-modeling loop:
+**add → select → move (G) → Edit Mode (Tab) → face extrude**. Step eligibility derives
+from committed scene facts via the pure `TourMath` (object count, selection, mode, last
+CommandStack landing) — a step the user already satisfied is skipped, progress never
+regresses, and malformed facts render nothing (#11: no hint beats a wrong hint). While the
+open quest is **add**, the Outliner "+ Add" button breathes (`activeGlow` — Tier A
+affordance motion pointing at the same anchor the card names). Completing the last quest
+shows the green `TOUR COMPLETE` banner (✕ **Close tour**). The card never blocks input
+(corner placement, no backdrop); any Context / demo / template-gallery overlay hides it
+without resetting progress. Done/dismissed persists to localStorage (`ee_tour`) as a
+display **setting** (Widening 3); the mobile counterpart stays the S-01 first-visit
+gesture overlay (`pointer: coarse`).
 
 ---
 
