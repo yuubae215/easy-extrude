@@ -676,6 +676,19 @@ Every animation in the client belongs to exactly one of three tiers, decided
 rejected. An idle motion is admissible only as affordance (a breathing handle
 says "grab me" = Tier A; a swaying header says nothing = decoration).
 
+**Volume corollary (2026-07-11 revision)**: the test applies *per firing*, not
+per feature. A Tier F cue attached to a high-frequency operation whose result
+is already fully visible at the anchor (a moved solid IS its own feedback)
+answers the test with "nothing" on every firing — it is decoration wearing a
+fact costume, and at per-operation frequency it reads as noise. Tier F motion
+earns its production value in inverse proportion to how visible the fact
+already is: an entity *vanishing* (nothing left to look at afterwards) merits
+the loudest cue; an entity *appearing* a brief one; a pose change none. The
+first application: the ADR-065 Phase 2 landing pulse fired identically on
+every Move/Rotate/Add/undo — user-reported as "fireworks on every operation";
+revised so only existence transitions render (voxel materialize/dissolve) and
+routine pose ops are machine-pinned silent.
+
 Two structural corollaries, both machine-pinned:
 
 - **One reduced-motion boundary.** Every tier degrades under
@@ -700,9 +713,9 @@ primitives (ADR-062/064) and the 3D transient effects + core-modeling landing
 pulses (ADR-065 Phase 1–2); the chrome refresh (Phase 3) consumes the same rule.
 
 *Underlies CODE_CONTRACTS rules: MotionGovernor Is the Single Owner of Transient
-3D Effects (ADR-065 Phase 1); Landing Effects Fire From the CommandStack Landing
-Only (ADR-065 Phase 2); Reduced Motion Degrades the Play Layer to a Static Cue
-(ADR-064 Phase 4)*
+3D Effects (ADR-065 Phase 1); Landing Effects Speak Only Entity Lifecycle
+(ADR-065 Phase 2, volume revision); Reduced Motion Degrades the Play Layer to a
+Static Cue (ADR-064 Phase 4)*
 
 ---
 

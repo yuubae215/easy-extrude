@@ -809,7 +809,7 @@ export class SceneService extends EventEmitter {
   _clearScene() {
     for (const [id, obj] of this._model.objects) {
       obj.meshView.dispose(this._threeScene)
-      this.emit('objectRemoved', id)
+      this.emit('objectRemoved', id, obj)
     }
     for (const [id] of this._model.links) {
       this._linkViews.get(id)?.dispose(this._threeScene)
@@ -2078,7 +2078,7 @@ export class SceneService extends EventEmitter {
     obj.meshView.dispose(this._threeScene)
     this._model.removeObject(id)
     this._worldPoseCache.delete(id)
-    this.emit('objectRemoved', id)
+    this.emit('objectRemoved', id, obj)
   }
 
   /**
@@ -2585,7 +2585,7 @@ export class SceneService extends EventEmitter {
     const solid = profile.extrude(height)
     this._model.removeObject(id)
     this._model.addObject(solid)
-    this.emit('objectRemoved', id)
+    this.emit('objectRemoved', id, profile)
     this.emit('objectAdded', solid)
     // Body frame: Origin CF always exists at Solid centroid (ADR-037)
     this.createCoordinateFrame(solid.id, 'Origin', null)
@@ -2613,7 +2613,7 @@ export class SceneService extends EventEmitter {
     if (!obj) return
     this._model.removeObject(id)
     this._worldPoseCache.delete(id)
-    this.emit('objectRemoved', id)
+    this.emit('objectRemoved', id, obj)
   }
 
   /**

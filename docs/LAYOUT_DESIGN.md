@@ -280,9 +280,8 @@ All transient 3D effects run through `MotionGovernor` (budget 8, reduced-motion
 | Info-bar hints swap (mode change) | `eaChromeEnter` slide-fade of the new hint set / in place when reduced | 180ms (`chromeEnter`) |
 | Proof-feedback landing flash (DOM, ADR-062) | keyframe fade / static tint when reduced | 700ms (`flash`) |
 | Link-acceptance ripple (3D) | wireframe sphere expand 1×→4× + fade | 600ms (`ripple`) |
-| Landing pulse — spawn (3D, ADR-065 Phase 2) | green overshoot pop 0.4×→1.6× + fade (`fxGreen`) | 450ms (`landingPop`) |
-| Landing pulse — settle / redo (3D) | blue expand + fade (`fxBlue`) | 400ms (`landingSettle`) |
-| Landing pulse — undo rewind (3D) | amber CONTRACTING 1.6×→0.4× + fade (`fxAmber`) | 400ms (`landingSettle`) |
+| Lifecycle voxel — materialize (3D, ADR-065 Phase 2 volume revision) | green voxel shell converges onto the appearing entity with a deterministic glitch flicker, then evaporates (`fxGreen`, `voxelFrame` curve); static held shell when reduced | 520ms (`voxelMaterialize`) |
+| Lifecycle voxel — dissolve (3D) | cyan voxel fragments scatter outward, tumble, shrink and fade (`accentActive`); static held shell when reduced. Pose ops (Move / Rotate / Face Extrude + their undo/redo) render NOTHING — silent by the volume design | 700ms (`voxelDissolve`) |
 | Celebration burst (DOM, ADR-065 Phase 4) | `eaCelebrateBanner` pop + `eaCelebrateParticle` radial fan / static glowing banner, no particles when reduced | 1600ms (`celebration`) |
 | Celebration field (3D, ADR-065 Phase 4) | InstancedMesh radial particle burst (`particleFrame` curve) / frozen mid-burst cue when reduced | 1600ms (`celebration`) |
 
