@@ -11,7 +11,11 @@
  *
  * The band pulses while idle; startCollapse() animates it snapping to the
  * nominal position — the visual for "an interval is only collapsed by an
- * explicit Decision" (ADR-046 invariant 2).
+ * explicit Decision" (ADR-046 invariant 2). During the snap the two extreme
+ * wireframes converge onto the nominal (ADR-065 Phase 5): the interval's ends
+ * visibly agree on the decided value. Under reduced motion the idle pulse is
+ * a static band and the collapse jumps to the snapped state, holding a static
+ * shell — information preserved, movement dropped (PHILOSOPHY #30/#11).
  *
  * Lifecycle mirrors RippleEffect: constructor adds to scene; tick(t) returns
  * true when the collapse animation has fully finished; the owning controller
@@ -19,6 +23,7 @@
  * sole owner is ContextDemoController — PHILOSOPHY #4)
  */
 import * as THREE from 'three'
+import { prefersReducedMotion } from '../theme/motion.js'
 
 const COLLAPSE_DURATION = 0.8   // seconds: band shrinks onto the nominal box
 const FADE_DURATION     = 0.25  // seconds: residual fade-out after the snap
@@ -51,6 +56,8 @@ export class UncertaintyGhostView {
     this._collapseStart = 0
     this._onSnapped     = null
     this._onDone        = null
+    // Single boundary read (src/theme/motion.js); re-sampled per collapse.
+    this._reduced       = prefersReducedMotion()
 
     // ── Band mesh: swept volume of the entity over the interval ─────────────
     // Extent along the interval axis = (hi - lo) + entity size on that axis.
@@ -186,6 +193,7 @@ export class UncertaintyGhostView {
     this._collapseStart = performance.now() / 1000
     this._onSnapped     = onSnapped ?? null
     this._onDone        = onDone ?? null
+    this._reduced       = prefersReducedMotion()
   }
 
   /** True once startCollapse() has been called. */
@@ -204,8 +212,9 @@ export class UncertaintyGhostView {
     if (!this._visible) return false
 
     if (this._phase === 'idle') {
-      // Gentle opacity pulse: 0.08 .. 0.16
-      this._band.material.opacity = 0.12 + 0.04 * Math.sin(t * 2)
+      // Gentle opacity pulse: 0.08 .. 0.16 — static band under reduced motion
+      // (the information is "unresolved interval here", not the pulse).
+      this._band.material.opacity = this._reduced ? 0.12 : 0.12 + 0.04 * Math.sin(t * 2)
       this._updateLabel(camera, renderer)
       return false
     }
@@ -213,6 +222,27 @@ export class UncertaintyGhostView {
     const elapsed = t - this._collapseStart
 
     if (this._phase === 'collapsing') {
+      if (this._reduced) {
+        // Reduced motion: jump to the snapped state and hold a static shell —
+        // the interval visibly became the nominal (information preserved,
+        // movement dropped — PHILOSOPHY #30/#11; never a silent skip).
+        this._band.scale[this._axis]    = this._dims[this._axis]
+        this._band.position[this._axis] = this._nominal
+        this._band.material.opacity     = 0.3
+        for (const m of this._extremeMats) m.opacity = 0
+        this._nominalMat.opacity = 0
+        this._label.style.display = 'none'
+        this._onSnapped?.()
+        this._onSnapped = null
+        if (elapsed >= COLLAPSE_DURATION) {
+          this._phase = 'done'
+          this._onDone?.()
+          this._onDone = null
+          return true
+        }
+        return false
+      }
+
       const p    = Math.min(elapsed / COLLAPSE_DURATION, 1)
       const ease = 1 - Math.pow(1 - p, 3)   // cubic ease-out
 
@@ -223,7 +253,12 @@ export class UncertaintyGhostView {
       this._band.position[this._axis] = center
       this._band.material.opacity = 0.16 + 0.24 * ease   // brighten as it condenses
 
-      // Extremes and nominal wire fade out during the snap.
+      // The extremes converge onto the nominal while fading (ADR-065 Phase 5):
+      // the interval's two ends visibly agree on the decided value.
+      for (let i = 0; i < this._extremes.length; i++) {
+        const from = i === 0 ? this._lo : this._hi
+        this._extremes[i].position[this._axis] = from + (this._nominal - from) * ease
+      }
       for (const m of this._extremeMats) m.opacity = 0.55 * (1 - ease)
       this._nominalMat.opacity = 0.9 * (1 - ease)
       this._label.style.display = 'none'

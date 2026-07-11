@@ -21,10 +21,19 @@
  * Sizing follows the PHILOSOPHY #27 pair rule: target size in screen pixels
  * (~40 px glyph), clamped to a world-space cap derived from the scene radius.
  *
+ * A committed select plays the three-beat reveal (ADR-065 Phase 5): approach
+ * slide → finger close → score flood + caption. The timeline is the pure
+ * `revealFrame` (GraspGhostMath); reduced motion jumps to the final stage
+ * (static fully-formed ghost — information preserved, movement dropped, #30).
+ *
  * @module view/GraspGhostView
  */
 import * as THREE from 'three'
-import { approachVector, scoreColor, ghostLineStyle } from './GraspGhostMath.js'
+import {
+  approachVector, scoreColor, ghostLineStyle,
+  revealFrame, mixHex, NEUTRAL_GLYPH_COLOR,
+} from './GraspGhostMath.js'
+import { prefersReducedMotion } from '../theme/motion.js'
 
 /**
  * Base frame the contract's `cartesianFrame` is *assumed* to be expressed in.
@@ -40,7 +49,6 @@ const GLYPH_MIN_WORLD   = 0.05  // never collapse below this world size
 const HOVER_OPACITY     = 0.4   // candidate row hover = preview (ADR-059 §B-3)
 const SELECT_OPACITY    = 0.9   // click select = committed ghost
 const FADE_MS           = 150
-const APPROACH_MS       = 400
 const APPROACH_START    = 1.5   // glyph-lengths back along the approach vector
 
 /** Build one finger box (unit glyph space; approach along local −Z, TCP at origin). */
@@ -140,6 +148,9 @@ export class GraspGhostView {
     this._lastTick    = 0
     this._worldCap    = Infinity
     this._approach    = [0, 0, -1]
+    this._scoreHex    = NEUTRAL_GLYPH_COLOR
+    this._reduced     = false     // sampled per reveal (ADR-065 Phase 5)
+    this._scoreRevealed = false   // beat-3 gate for the caption
   }
 
   /**
@@ -158,11 +169,9 @@ export class GraspGhostView {
     this._group.visible = true
     this._approach = approachVector(frame.orientation)
 
-    const color = scoreColor(score?.totalScore ?? 0)
-    this._fillMat.color.setHex(color)
-    this._lineMat.color.setHex(color)
-    this._dashMat.color.setHex(color)
-    this._targetMat.color.setHex(color)
+    // The score colour is the third reveal beat's destination — tick() floods the
+    // glyph from NEUTRAL_GLYPH_COLOR to it as revealFrame().score ramps up.
+    this._scoreHex = scoreColor(score?.totalScore ?? 0)
 
     const style = ghostLineStyle(score)
     for (const { solidLine, dashedLine } of this._glyphEdges) {
@@ -175,7 +184,12 @@ export class GraspGhostView {
     const wasSelectSame = this._mode === 'select' && this._shownRank === (rank ?? null)
     this._mode = mode
     this._shownRank = rank ?? null
-    if (mode === 'select' && !wasSelectSame) this._animStart = this._lastTick || 0
+    if (mode === 'select' && !wasSelectSame) {
+      this._animStart = this._lastTick || 0
+      // Read the preference once per reveal (same per-spawn discipline as the
+      // MotionGovernor) — the single boundary is src/theme/motion.js.
+      this._reduced = prefersReducedMotion()
+    }
 
     const total = score?.totalScore
     this._label.textContent =
@@ -230,9 +244,15 @@ export class GraspGhostView {
     this._lastTick = t
     const targetOpacity = this._mode === 'select' ? SELECT_OPACITY
       : this._mode === 'hover' ? HOVER_OPACITY : 0
-    // Frame-rate independent-enough exponential-ish step toward the target.
-    const step = Math.min(1, 16 / FADE_MS * 2)
-    this._opacity += (targetOpacity - this._opacity) * step
+    if (this._reduced && this._mode === 'select') {
+      // Reduced motion: the fade is dropped along with the slide — the ghost is
+      // a static, fully-formed cue (information preserved, movement dropped).
+      this._opacity = targetOpacity
+    } else {
+      // Frame-rate independent-enough exponential-ish step toward the target.
+      const step = Math.min(1, 16 / FADE_MS * 2)
+      this._opacity += (targetOpacity - this._opacity) * step
+    }
     this._fillMat.opacity   = this._opacity * 0.35
     this._lineMat.opacity   = this._opacity
     this._dashMat.opacity   = this._opacity
@@ -240,19 +260,29 @@ export class GraspGhostView {
 
     if (!this._group.visible || !camera || !renderer) return
 
-    // Approach slide: glyph starts APPROACH_START glyph-lengths back along +Z
-    // (local; the approach direction is −Z) and eases out to the TCP.
-    let p = 1
-    if (this._mode === 'select') {
-      p = Math.min(1, Math.max(0, (t - this._animStart) / APPROACH_MS))
-      p = 1 - (1 - p) * (1 - p)   // ease-out
-    }
-    this._glyph.position.set(0, 0, APPROACH_START * (1 - p))
-    // Fingers close slightly on landing (last 20% of the slide).
-    const closeT = Math.max(0, (p - 0.8) / 0.2)
+    // Three-beat reveal (ADR-065 Phase 5): approach slide → finger close →
+    // score flood. Hover previews pass Infinity = final stage immediately;
+    // reduced motion jumps there too (revealFrame owns both rules).
+    const elapsed = this._mode === 'select' ? t - this._animStart : Infinity
+    const beat = revealFrame(elapsed, this._reduced)
+
+    // Beat 1 — approach slide: glyph starts APPROACH_START glyph-lengths back
+    // along +Z (local; the approach direction is −Z) and eases out to the TCP.
+    this._glyph.position.set(0, 0, APPROACH_START * (1 - beat.approach))
+    // Beat 2 — fingers close onto the target.
     for (const { mesh, side } of this._fingers) {
-      mesh.position.x = side * (0.34 - 0.08 * closeT)
+      mesh.position.x = side * (0.34 - 0.08 * beat.close)
     }
+    // Beat 3 — the judgement lands: neutral glyph floods to the score colour
+    // and the caption (score number) appears. The panel's score bars show the
+    // committed numbers instantly regardless — this never delays the fact
+    // beyond the timeline's <1s cap.
+    const hex = mixHex(NEUTRAL_GLYPH_COLOR, this._scoreHex, beat.score)
+    this._fillMat.color.setHex(hex)
+    this._lineMat.color.setHex(hex)
+    this._dashMat.color.setHex(hex)
+    this._targetMat.color.setHex(hex)
+    this._scoreRevealed = beat.score > 0
 
     // Screen-pixel target size clamped in world space (PHILOSOPHY #27 pair rule).
     if (camera.isPerspectiveCamera) {
@@ -264,9 +294,9 @@ export class GraspGhostView {
       this._group.scale.setScalar(worldSize)
     }
 
-    // Caption above the TCP.
+    // Caption above the TCP — gated on the score beat (the caption IS the score).
     const ndc = this._group.position.clone().project(camera)
-    if (ndc.z > 1 || this._opacity < 0.05) { this._label.style.display = 'none'; return }
+    if (ndc.z > 1 || this._opacity < 0.05 || !this._scoreRevealed) { this._label.style.display = 'none'; return }
     const rect = renderer.domElement.getBoundingClientRect()
     const sx = (ndc.x + 1) / 2 * rect.width + rect.left
     const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
