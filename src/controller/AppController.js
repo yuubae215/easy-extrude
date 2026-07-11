@@ -28,6 +28,7 @@ import { LinkNetworkView } from '../view/LinkNetworkView.js'
 import { CommandStack }              from '../service/CommandStack.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
+import { createAddProfileCommand }    from '../command/AddProfileCommand.js'
 import { createDeleteCommand }        from '../command/DeleteCommand.js'
 import { createRenameCommand }        from '../command/RenameCommand.js'
 import { createSetIfcClassCommand }   from '../command/SetIfcClassCommand.js'
@@ -1128,6 +1129,48 @@ export class AppController {
   }
 
   /**
+   * Adds a new Profile (Sketch) entity and enters Edit Mode 2D so the
+   * rectangle can be dragged out immediately — one continuous flow from the
+   * Add menu to drawing (PHILOSOPHY #12). Entering '2d-sketch' is also what
+   * lets SketchDrawState disable OrbitControls for the draw drag, so a touch
+   * one-finger drag draws the rectangle instead of orbiting (#14).
+   */
+  _addProfileObject() {
+    // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+
+    const obj = this._service.createProfile()
+
+    // ── Record undo snapshot (ADR-022 Phase 3) ────────────────────────────
+    const cmd = createAddProfileCommand(
+      obj, this._service,
+      () => {
+        // onAfterUndo: the Profile vanishes. We are usually still in Edit
+        // Mode 2D on it (add auto-enters), so leave through the single mode
+        // entry point first (Mode Transition Flow contract), then switch
+        // active to any remaining geometry object — same policy as AddSolid.
+        if (this._scene.selectionMode === 'edit') this.setMode('object')
+        const nextId = [...this._scene.objects.entries()]
+          .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
+        if (nextId) {
+          this._switchActiveObject(nextId, true)
+        } else {
+          this._objSelected = false
+          this._selectedIds.clear()
+          this._refreshObjectModeStatus()
+          this._updateMobileToolbar()
+        }
+      },
+      (id) => this._switchActiveObject(id, true),
+    )
+    this._commandStack.push(cmd)
+
+    this._switchActiveObject(obj.id, true)
+    // Profile dispatch in setMode('edit') lands in _enterEditMode2D → '2d-sketch'
+    this.setMode('edit')
+  }
+
+  /**
    * Begins the CoordinateFrame placement pick sub-mode (ADR-034 §6).
    * No-ops with a toast if no suitable parent is selected.
    */
@@ -1765,6 +1808,11 @@ export class AppController {
         { text: 'Drag to redraw · Enter to extrude', color: '#888' },
       ])
     } else {
+      // No rect on this Profile — clear any stale p1/p2 left by a previous
+      // sketch session (kept across confirm for _enterExtrudePhase), otherwise
+      // the Extrude gate would open for a rectangle this Profile never drew.
+      this._sketch.p1 = null
+      this._sketch.p2 = null
       this._uiView.setStatusRich([
         { text: 'Sketch', bold: true, color: '#4fc3f7' },
         { text: 'Click and drag to draw rectangle', color: '#888' },
