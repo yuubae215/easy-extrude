@@ -65,6 +65,8 @@ import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
 import { LandingPulse }               from '../view/LandingEffects.js'
 import { landingDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
+import { CelebrationField }           from '../view/CelebrationField.js'
+import { commandMilestone, celebrationDescriptor } from '../view/CelebrationMath.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
@@ -715,6 +717,10 @@ export class AppController {
     // effect — initial load is not a transition. Deferred one microtask so the
     // anchor reads the POST-operation selection (e.g. _addObject pushes, then
     // switches active to the new solid synchronously).
+    // Previous stack depth behind the milestone celebration (ADR-065 Phase 4).
+    // Controller-local presentation history (never a uiStore/wire field —
+    // ADR-062 §2); seeded AFTER clear(), so the boot solid is not a milestone.
+    this._lastCommandDepth = this._commandStack.depth
     this._commandStack.setLandingListener(landing =>
       queueMicrotask(() => this._spawnLandingFx(landing)))
 
@@ -3183,12 +3189,40 @@ export class AppController {
    * @param {{phase: 'push'|'undo'|'redo', label: string}} landing
    */
   _spawnLandingFx(landing) {
+    // ── Session command milestone (ADR-065 Phase 4) ───────────────────────
+    // Every push counts (context/doc commands included — the fact is the stack
+    // depth, not the label), so the milestone check runs before the label
+    // filter below. The previous depth is controller-local presentation
+    // history; undo never fires (commandMilestone is upward-only).
+    const depth = this._commandStack.depth
+    const milestone = landing?.phase === 'push'
+      ? commandMilestone(this._lastCommandDepth, depth)
+      : null
+    this._lastCommandDepth = depth
+    if (milestone !== null) this._spawnCelebrationFx(milestone)
+
     const desc = landingDescriptor(landing)
     if (!desc) return
     const bounds = boundsOf(this._activeObj?.corners)
     if (!bounds) return
     this._motion.spawn(reduced =>
       new LandingPulse(this._sceneView.scene, bounds, desc, { reduced }))
+  }
+
+  /**
+   * Render the 3D celebration burst for a crossed session-command milestone
+   * (ADR-065 Phase 4, named rule 4: a fact *transition*, transient, budgeted
+   * by the MotionGovernor, persisted nowhere). Anchored on the active entity —
+   * a missing anchor spawns nothing (#11 as honest silence).
+   * @param {number} milestone
+   */
+  _spawnCelebrationFx(milestone) {
+    const desc = celebrationDescriptor('milestone', { milestone })
+    if (!desc) return
+    const bounds = boundsOf(this._activeObj?.corners)
+    if (!bounds) return
+    this._motion.spawn(reduced =>
+      new CelebrationField(this._sceneView.scene, bounds, desc, { reduced }))
   }
 
   // ─── Animation loop ────────────────────────────────────────────────────────
