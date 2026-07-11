@@ -283,6 +283,8 @@ All transient 3D effects run through `MotionGovernor` (budget 8, reduced-motion
 | Landing pulse — spawn (3D, ADR-065 Phase 2) | green overshoot pop 0.4×→1.6× + fade (`fxGreen`) | 450ms (`landingPop`) |
 | Landing pulse — settle / redo (3D) | blue expand + fade (`fxBlue`) | 400ms (`landingSettle`) |
 | Landing pulse — undo rewind (3D) | amber CONTRACTING 1.6×→0.4× + fade (`fxAmber`) | 400ms (`landingSettle`) |
+| Celebration burst (DOM, ADR-065 Phase 4) | `eaCelebrateBanner` pop + `eaCelebrateParticle` radial fan / static glowing banner, no particles when reduced | 1600ms (`celebration`) |
+| Celebration field (3D, ADR-065 Phase 4) | InstancedMesh radial particle burst (`particleFrame` curve) / frozen mid-burst cue when reduced | 1600ms (`celebration`) |
 
 ---
 

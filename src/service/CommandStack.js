@@ -92,4 +92,11 @@ export class CommandStack {
 
   get canUndo() { return this._undo.length > 0 }
   get canRedo() { return this._redo.length > 0 }
+
+  /**
+   * Current undo-stack depth — an observable session fact (ADR-065 Phase 4:
+   * the milestone celebration input; Widening 2 allows session facts, never
+   * cross-session persistence).
+   */
+  get depth() { return this._undo.length }
 }

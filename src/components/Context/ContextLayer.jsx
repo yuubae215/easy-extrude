@@ -10,6 +10,7 @@ import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 import { WhyTreeView } from './WhyTreeView.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 import { FeedbackDefs, DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
+import { CelebrationDefs, ContextCelebration } from '../Feedback/Celebration.jsx'
 import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 
 /**
@@ -105,6 +106,12 @@ export function ContextLayer() {
       boxSizing:  'border-box',
     }}>
       <FeedbackDefs />
+      <CelebrationDefs />
+      {/* Celebration (ADR-065 Phase 4): ONE watcher at the overlay root — it
+          sees all three fact lists regardless of the active tab (a panel-local
+          watcher would lose its history on tab switch), and mounting exactly
+          one enforces the budget of 1 concurrent celebration structurally. */}
+      <ContextCelebration />
       <div style={{ padding: '8px 10px 4px', fontWeight: 'bold', display: 'flex', alignItems: 'baseline' }}>
         <span style={{ color: '#c8c8c8' }}>{TITLE[ctx.mode] ?? 'Context'}</span>
         <span style={{ marginLeft: '6px', fontWeight: 'normal', fontSize: '10px', color: '#888' }}>

@@ -214,6 +214,30 @@ import { SetLynchClassCommand } from '../command/SetLynchClassCommand.js'
 const cmd = new SetLynchClassCommand(id, oldClass, newClass, service)
 ```
 
+## Add Sketch Auto-Enters Edit Mode 2D; Controller Wiring Has No Static Guard
+
+- **Principle**: A UI entry point whose handler throws is a silent no-op to the user
+  (PHILOSOPHY #11 — the exception dies in the click handler, nothing renders). The
+  Add-menu "Sketch" entry called `this._addProfileObject()` which did not exist —
+  the method was lost in a history rewrite while its call site survived. Because
+  `tsconfig.json` scopes `checkJs` to `src/types/` + `src/domain/` (Phase 2 decision),
+  a dangling method call in the controller layer is invisible to `pnpm typecheck`;
+  the smoke E2E is the ONLY liveness guard for controller wiring (ADR-064).
+  The user-visible symptom was misleading: still in Object Mode, a touch drag
+  orbits the camera — reported as "OrbitControls beats the sketch drag" when the
+  sketch mode was simply never entered.
+- **Concrete Rule**: `_addProfileObject()` creates the Profile via
+  `SceneService.createProfile()`, records `createAddProfileCommand` (a Profile is
+  not a Solid — no cuboid geometry, no child Origin CF, so `createAddSolidCommand`'s
+  redo path does not apply, PHILOSOPHY #2), then auto-enters Edit Mode via
+  `setMode('edit')` → `_enterEditMode2D` → `'2d-sketch'` (one continuous flow, #12).
+  Its `onAfterUndo` runs while the user may still be in Edit Mode 2D on the vanished
+  Profile: it must leave through `setMode('object')` (Mode Transition Flow) before
+  switching active. `_enterEditMode2D` with no `sketchRect` must clear stale
+  `_sketch.p1/p2` (kept across confirm for `_enterExtrudePhase`) so a fresh Profile
+  never inherits the previous rect through the Extrude gate. Every Add-menu entry
+  must be exercised by `e2e/smoke.spec.js` — there is no other guard.
+
 ## CommandStack: push() vs execute() — Post-Hoc Recording
 
 - **Principle**: `CommandStack.execute(cmd)` calls `cmd.execute()` then pushes to the undo stack. Using it for a just-completed operation double-applies the effect.

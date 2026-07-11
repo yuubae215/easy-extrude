@@ -63,6 +63,43 @@ test('box add then undo round-trips through the command stack', async ({ page })
   await expect.poll(() => deleteButtons(page).count()).toBe(before)
 })
 
+test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', async ({ page }) => {
+  // Regression guard: _addObject('sketch') called a method that did not exist,
+  // so the Add-menu Sketch entry threw and the user stayed in Object Mode —
+  // where a touch drag orbits instead of drawing. typecheck does not cover the
+  // controller layer (tsconfig include is scoped to types/domain), so this
+  // wiring has no static guard; the smoke is its only liveness check (ADR-064).
+  await boot(page)
+
+  await page.keyboard.press('Shift+A')
+  await page.locator('div').filter({ hasText: /^Sketch$/ }).last().click()
+  // Adding a Sketch lands directly in Edit Mode 2D ready to draw.
+  await expect(page.getByText('Click and drag to draw rectangle')).toBeVisible()
+
+  // Drag out the rectangle on the ground plane (input-agnostic wiring: the
+  // same _onPointerDown path serves mouse and touch).
+  const canvas = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = canvas.x + canvas.width / 2
+  const cy = canvas.y + canvas.height / 2
+  await page.mouse.move(cx - 60, cy - 40)
+  await page.mouse.down()
+  await page.mouse.move(cx + 60, cy + 40, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByText(/Press Enter to extrude/)).toBeVisible()
+
+  // Enter → extrude phase, Enter → confirm (lands in Edit Mode 3D:
+  // the sub-element status line "1 Vertex  2 Edge  3 Face" appears).
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await expect(page.getByText(/1 Vertex\s+2 Edge\s+3 Face/)).toBeVisible()
+
+  // Undo chain: extrude → add; the scene returns to its boot state.
+  const before = await deleteButtons(page).count()
+  await page.keyboard.press('Control+z')
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => deleteButtons(page).count()).toBeLessThan(before)
+})
+
 test('template load opens the negotiate tab (production Context overlay)', async ({ page }) => {
   await boot(page)
   await loadTemplateIntoNegotiate(page)
