@@ -45,14 +45,14 @@ emit('objectAdded', entity)
 ### objectRemoved
 
 ```
-emit('objectRemoved', id)
+emit('objectRemoved', id, entity)
 ```
 
 | Item | Description |
 |------|-------------|
-| Payload | `id: string` |
-| Fired when | `deleteObject()`, `detachObject()` |
-| Primary receivers | `OutlinerView.removeObject()` — removes a row from the Outliner |
+| Payload | `id: string`, `entity` (additive 2nd arg, ADR-065 Phase 2 volume revision — the just-removed entity, still readable thanks to soft delete; existing 1-arg subscribers are unaffected) |
+| Fired when | `deleteObject()`, `detachObject()`, `extrudeProfile()` (Profile→Solid swap), `_clearScene()` |
+| Primary receivers | `OutlinerView.removeObject()` — removes a row from the Outliner; `AppController` lifecycle-effect anchor capture (`boundsOf(entity.corners)`) |
 | Note | In `_clearScene()`, `objectRemoved` must be emitted for each object BEFORE replacing `this._model` |
 
 ### objectRenamed

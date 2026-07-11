@@ -1,80 +1,84 @@
 /**
  * CommandFeedbackMath — pure derivation from a CommandStack landing to a
- * landing-effect descriptor (ADR-065 Phase 2, the core-modeling flagship).
+ * lifecycle-effect descriptor (ADR-065 Phase 2, revised by the volume design).
+ *
+ * VOLUME DESIGN (ADR-065 Phase 2 revision, 2026-07-11): a landing effect fires
+ * ONLY when an entity APPEARED or VANISHED — the discrete existence transition
+ * is the one fact the scene itself does not keep showing (after a delete there
+ * is nothing left to look at; after an add the "it just arrived" moment is
+ * gone a frame later). Routine pose/geometry operations (Move / Rotate /
+ * Face Extrude and their undo/redo) are SILENT: their result is already
+ * visible at the anchor, so a same-shaped pulse per operation carries zero
+ * information = decoration by the PHILOSOPHY #30 one-sentence test, and reads
+ * as noise during modeling.
  *
  * FACT SOURCE (ADR-062 discipline, unchanged): the input is always a
  * *committed* operation — the CommandStack landing notification fired by
  * `push()` (post-hoc recording = the operation has already been applied) and
  * `undo()`/`redo()`. Optimistic previews (live grab/extrude drags) never reach
- * here; neither does the boot-created initial solid (the listener attaches
- * after the constructor's `clear()` — initial load is not a transition).
+ * here; neither does the boot-created initial solid or a scene load (the
+ * listener attaches after the constructor's `clear()`, and loads push no
+ * command — initial load is not a transition).
  *
- * Only *recognised core-modeling labels* yield a descriptor; everything else
- * (context/doc commands, links, renames, class changes) returns `null` — those
- * surfaces own their own ADR-062 feedback, and a fabricated pulse at the wrong
- * anchor would be dishonest (#11: degrade to nothing, never guess).
+ * Only *entity-lifecycle labels* yield a descriptor; everything else
+ * (pose ops, context/doc commands, links, renames) returns `null` — honest
+ * silence, never a guessed celebration (#11).
  *
  * Pure and THREE-free (`node --test`): the view (`LandingEffects.js`) renders
- * descriptors; per-frame shape comes from `pulseFrame` so the animation curve
+ * descriptors; per-frame shape comes from `voxelFrame` so the animation curve
  * itself is unit-testable.
  */
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
-import { clamp01, easeOutCubic, easeOutBack } from './MotionMath.js'
+import { clamp01, easeOutCubic } from './MotionMath.js'
 
 /**
- * Landing kinds for recognised core-modeling command labels.
+ * Commands whose apply/undo CREATES or REMOVES an entity. `push` is the
+ * transition on push AND redo (redo re-applies); `undo` is its inverse.
  * Label vocabulary is the commands' own `label` fields (src/command/*.js).
- *  - spawn:  something new appeared (Add solid/frame, sketch extrude, face extrude)
- *  - settle: an existing entity landed at a new pose (move / rotate)
  */
-const LABEL_KINDS = [
-  // vanishesOnUndo: undoing this command REMOVES the entity — there is no
-  // honest anchor left, so the undo phase renders nothing (a rewind pulse at
-  // whatever object becomes active instead would be a fabricated signal, #11).
-  { re: /^Add "/,          kind: 'spawn', vanishesOnUndo: true },  // AddSolidCommand (box add, duplicate)
-  { re: /^Add Frame "/,    kind: 'spawn', vanishesOnUndo: true },  // CreateCoordinateFrameCommand
-  { re: /^Extrude$/,       kind: 'spawn'  },   // ExtrudeSketchCommand (undo swaps back to the Profile — anchor survives)
-  { re: /^Face Extrude$/,  kind: 'spawn'  },   // FaceExtrudeHandler command (undo retracts the face)
-  { re: /^Move( |$)/,      kind: 'settle' },   // MoveCommand ('Move' / 'Move N objects')
-  { re: /^Rotate (Solid|Frame)$/, kind: 'settle' },
+const LIFECYCLE_LABELS = [
+  { re: /^Add "/,       push: 'appear', undo: 'vanish' }, // AddSolidCommand / AddProfileCommand (box add, duplicate, sketch)
+  { re: /^Add Frame "/, push: 'appear', undo: 'vanish' }, // CreateCoordinateFrameCommand (no corners → anchor degrades to silence)
+  { re: /^Extrude$/,    push: 'appear', undo: 'vanish' }, // ExtrudeSketchCommand: Profile→Solid swap — the Solid is what (dis)appears
+  { re: /^Delete "/,    push: 'vanish', undo: 'appear' }, // DeleteCommand (soft delete)
 ]
 
 function entryOf(label) {
-  for (const entry of LABEL_KINDS) {
+  for (const entry of LIFECYCLE_LABELS) {
     if (entry.re.test(label)) return entry
   }
   return null
 }
 
 /**
- * Derive the effect descriptor for one CommandStack landing.
+ * Derive the lifecycle-effect descriptor for one CommandStack landing.
+ *
+ * `direction` names which domain-event anchor the effect renders at:
+ * `'added'` (the entity that just appeared) or `'removed'` (the entity that
+ * just vanished) — the controller captures both from `objectAdded` /
+ * `objectRemoved` and feeds the matching one.
  *
  * @param {{phase?: string, label?: string}} [landing]
- * @returns {{kind: 'spawn'|'settle'|'rewind'|'replay', color: number,
- *            expand: 1|-1, overshoot: boolean, duration: number}|null}
- *   `null` for malformed input or an unrecognised label (no effect — honest
- *   silence, not a guessed celebration).
+ * @returns {{kind: 'materialize'|'dissolve', direction: 'added'|'removed',
+ *            color: number, duration: number}|null}
+ *   `null` for malformed input, a pose/geometry label (silent by the volume
+ *   design), or an unrecognised label — no effect, honest silence (#11).
  */
-export function landingDescriptor(landing) {
+export function lifecycleDescriptor(landing) {
   if (!landing || typeof landing !== 'object') return null
   const { phase, label } = landing
   if (typeof label !== 'string') return null
   if (phase !== 'push' && phase !== 'undo' && phase !== 'redo') return null
   const entry = entryOf(label)
   if (!entry) return null
-  const kind = entry.kind
-  const sec = ms => ms / 1000
-  if (phase === 'undo') {
-    if (entry.vanishesOnUndo) return null
-    // Rewind cue: a CONTRACTING amber pulse — visually "time flowed backwards".
-    return { kind: 'rewind', color: hexNumber(COLOR.fxAmber), expand: -1, overshoot: false, duration: sec(DURATION.landingSettle) }
-  }
-  if (phase === 'redo') {
-    return { kind: 'replay', color: hexNumber(COLOR.fxBlue), expand: 1, overshoot: false, duration: sec(DURATION.landingSettle) }
-  }
-  return kind === 'spawn'
-    ? { kind: 'spawn',  color: hexNumber(COLOR.fxGreen), expand: 1, overshoot: true,  duration: sec(DURATION.landingPop) }
-    : { kind: 'settle', color: hexNumber(COLOR.fxBlue),  expand: 1, overshoot: false, duration: sec(DURATION.landingSettle) }
+  const transition = phase === 'undo' ? entry.undo : entry.push
+  return transition === 'appear'
+    ? { kind: 'materialize', direction: 'added',
+        color: hexNumber(COLOR.fxGreen),
+        duration: DURATION.voxelMaterialize / 1000 }
+    : { kind: 'dissolve', direction: 'removed',
+        color: hexNumber(COLOR.accentActive),
+        duration: DURATION.voxelDissolve / 1000 }
 }
 
 /**
@@ -107,27 +111,74 @@ export function boundsOf(points) {
 }
 
 /**
- * Per-frame shape of a landing pulse. The whole animation is this pure curve;
- * the view only applies `{scale, opacity}` to its overlay mesh.
+ * Per-frame shape of one lifecycle voxel. The whole animation is this pure
+ * curve; the view only composes `{dist, opacity, scale, spin}` into instance
+ * matrices.
  *
  * Motion allowed:
- *   - expand +1: scale grows 0.4 → 1.6 (spawn uses the overshooting back-ease
- *     = the "pop"), opacity fades 0.85 → 0.
- *   - expand −1 (rewind): scale CONTRACTS 1.6 → 0.4, same fade.
- * Reduced motion: a static cue — fixed scale 1, fixed low opacity — held for
- * the descriptor's duration (information preserved, movement dropped).
+ *   - dissolve: fragments fly outward (dist 0.15 → 1), tumble, shrink, fade —
+ *     the entity shatters into voxels that evaporate (the "SAO" scatter).
+ *   - materialize: the exact reverse — a voxel shell converges onto the entity
+ *     (dist 1 → 0.1), grows, then evaporates revealing the real object
+ *     (which is already standing underneath).
+ * Reduced motion: a static held cue — a frozen mid-transition shell, low
+ * opacity — information preserved ("an entity just appeared/vanished here"),
+ * movement dropped (#30/#11).
  *
- * @param {{expand: 1|-1, overshoot: boolean}} desc
+ * @param {'materialize'|'dissolve'} kind
  * @param {number} progress ∈ [0,1]
  * @param {boolean} [reduced]
- * @returns {{scale: number, opacity: number}}
+ * @returns {{dist: number, opacity: number, scale: number, spin: number}}
  */
-export function pulseFrame(desc, progress, reduced = false) {
-  if (reduced) return { scale: 1, opacity: 0.35 }
+export function voxelFrame(kind, progress, reduced = false) {
+  if (reduced) {
+    return kind === 'dissolve'
+      ? { dist: 0.55, opacity: 0.4, scale: 0.8, spin: 0 }
+      : { dist: 0.35, opacity: 0.4, scale: 0.8, spin: 0 }
+  }
   const p = clamp01(progress)
-  const eased = desc.overshoot ? easeOutBack(p) : easeOutCubic(p)
-  const scale = desc.expand === -1
-    ? 1.6 - 1.2 * eased
-    : 0.4 + 1.2 * eased
-  return { scale: Math.max(scale, 0.01), opacity: 0.85 * (1 - p) }
+  const eased = easeOutCubic(p)
+  if (kind === 'dissolve') {
+    return {
+      dist:    0.15 + 0.85 * eased,
+      opacity: p < 0.35 ? 0.9 : 0.9 * (1 - (p - 0.35) / 0.65),
+      scale:   1 - 0.6 * p,
+      spin:    2.4 * eased,
+    }
+  }
+  // materialize
+  return {
+    dist:    1 - 0.9 * eased,
+    opacity: p < 0.3 ? 0.9 * (p / 0.3) : p < 0.75 ? 0.9 : 0.9 * (1 - (p - 0.75) / 0.25),
+    scale:   0.5 + 0.5 * eased,
+    spin:    -1.6 * eased,
+  }
+}
+
+/**
+ * Deterministic per-voxel radius jitter ∈ [0.55, 1) — breaks the perfect
+ * sphere shell into a voxel-cloud silhouette without Math.random (a replayed
+ * effect looks identical; tests stay reproducible).
+ *
+ * @param {number} index
+ * @returns {number}
+ */
+export function voxelJitter(index) {
+  return 0.55 + 0.45 * ((index * 0.6180339887) % 1)
+}
+
+/**
+ * Deterministic glitch flicker gate for the materialize shell: a per-voxel
+ * square wave that momentarily collapses some voxels' scale (InstancedMesh
+ * shares one material, so flicker rides scale, not opacity). Returns 1 (shown)
+ * or 0.25 (glitch-dimmed). Never used under reduced motion (the static held
+ * cue does not flicker).
+ *
+ * @param {number} index
+ * @param {number} progress ∈ [0,1]
+ * @returns {number}
+ */
+export function glitchGate(index, progress) {
+  const step = Math.floor(clamp01(progress) * 24)
+  return ((index * 7 + step) % 6) === 0 ? 0.25 : 1
 }

@@ -141,7 +141,7 @@ export function pickCelebration(facts) {
 
 /**
  * Per-frame shape of one 3D celebration particle (CelebrationField renders it;
- * the curve lives here so it is unit-testable, same split as `pulseFrame`).
+ * the curve lives here so it is unit-testable, same split as `voxelFrame`).
  *
  * Motion allowed: radial flight 0 → 1 of `maxDist` with an ease-out, a slight
  * upward lift, and a fade-out over the last 60%.

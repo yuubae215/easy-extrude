@@ -51,8 +51,8 @@ export const DURATION = Object.freeze({
   toastOut:   300,
   drawer:     200,
   ripple:     600,   // 3D link-acceptance ripple (RippleEffect)
-  landingPop: 450,   // ADR-065 Phase 2 spawn pop
-  landingSettle: 400, // ADR-065 Phase 2 settle / rewind pulse
+  voxelMaterialize: 520, // ADR-065 Phase 2 (volume revision) entity-appear voxel shell
+  voxelDissolve:    700, // ADR-065 Phase 2 (volume revision) entity-vanish voxel scatter
   press:        90,   // ADR-065 Phase 3 press-down (Tier A)
   pressRelease: 260,  // ADR-065 Phase 3 spring-back on release (Tier A)
   hover:        150,  // ADR-065 Phase 3 hover ease

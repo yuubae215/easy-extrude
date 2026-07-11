@@ -63,8 +63,8 @@ import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
-import { LandingPulse }               from '../view/LandingEffects.js'
-import { landingDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
+import { VoxelBurst }                 from '../view/LandingEffects.js'
+import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { CelebrationField }           from '../view/CelebrationField.js'
 import { commandMilestone, celebrationDescriptor } from '../view/CelebrationMath.js'
 import { MapModeController }          from './map/MapModeController.js'
@@ -176,8 +176,19 @@ export class AppController {
     // ── Undo / Redo command history (ADR-022) ─────────────────────────────
     this._commandStack = new CommandStack()
 
+    // Lifecycle-effect anchors (ADR-065 Phase 2 volume revision): the bounds
+    // of the last entity seen appearing / vanishing in domain events, consumed
+    // by the NEXT CommandStack landing (`_spawnLandingFx`). Controller-local
+    // presentation state (ADR-062 §2 — never a uiStore/wire field). Last-wins
+    // is safe: frames have no corners and never override the primary entity,
+    // and every landing resets both slots so stale load/boot anchors cannot
+    // leak past the first committed operation.
+    this._lifecycleAnchors = { added: null, removed: null }
+
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
+      const lifecycleBounds = boundsOf(obj.corners)
+      if (lifecycleBounds) this._lifecycleAnchors.added = lifecycleBounds
       const type = obj instanceof ImportedMesh
         ? 'imported'
         : obj instanceof MeasureLine
@@ -210,7 +221,9 @@ export class AppController {
       outlinerView?.reparentObject(id, newParentId)
       if (id === this._scene.activeId) this._updateNPanel()
     })
-    this._service.on('objectRemoved', id => {
+    this._service.on('objectRemoved', (id, obj) => {
+      const lifecycleBounds = boundsOf(obj?.corners)
+      if (lifecycleBounds) this._lifecycleAnchors.removed = lifecycleBounds
       outlinerView?.removeObject(id)
       this._updateLinkNetwork()
     })
@@ -3176,16 +3189,24 @@ export class AppController {
     )
   }
 
-  // ─── Core-modeling landing effects (ADR-065 Phase 2) ──────────────────────
+  // ─── Core-modeling landing effects (ADR-065 Phase 2, volume revision) ─────
 
   /**
-   * Render a transient landing pulse for a committed core-modeling operation.
-   * Fired by the CommandStack landing listener — never called directly from
-   * input handlers (the stack is the one authoritative landing point, #1).
+   * Render a transient lifecycle effect for a committed core-modeling
+   * operation. Fired by the CommandStack landing listener — never called
+   * directly from input handlers (the stack is the one authoritative landing
+   * point, #1).
    *
-   * Honest degrades (#11 as silence, not fabrication): an unrecognised label
-   * (context/doc commands own their ADR-062 feedback) or a missing anchor
-   * (deleted entity, CoordinateFrame without corners) spawns nothing.
+   * VOLUME DESIGN: only entity APPEAR/VANISH transitions render (voxel
+   * materialize / dissolve at the entity that changed existence); routine pose
+   * ops (Move/Rotate/Face Extrude and their undo/redo) are silent — their
+   * result is already visible, so a per-operation pulse is noise (#30).
+   *
+   * Honest degrades (#11 as silence, not fabrication): an unrecognised or
+   * pose-op label, or a missing anchor (CoordinateFrame without corners)
+   * spawns nothing. Anchors come from the objectAdded/objectRemoved capture
+   * and are consumed (reset) on EVERY landing so a scene load's event flood
+   * cannot anchor a later effect.
    * @param {{phase: 'push'|'undo'|'redo', label: string}} landing
    */
   _spawnLandingFx(landing) {
@@ -3201,12 +3222,15 @@ export class AppController {
     this._lastCommandDepth = depth
     if (milestone !== null) this._spawnCelebrationFx(milestone)
 
-    const desc = landingDescriptor(landing)
+    // ── Entity lifecycle voxel burst ──────────────────────────────────────
+    const anchors = this._lifecycleAnchors
+    this._lifecycleAnchors = { added: null, removed: null } // consumed per landing
+    const desc = lifecycleDescriptor(landing)
     if (!desc) return
-    const bounds = boundsOf(this._activeObj?.corners)
+    const bounds = anchors[desc.direction]
     if (!bounds) return
     this._motion.spawn(reduced =>
-      new LandingPulse(this._sceneView.scene, bounds, desc, { reduced }))
+      new VoxelBurst(this._sceneView.scene, bounds, desc, { reduced }))
   }
 
   /**
