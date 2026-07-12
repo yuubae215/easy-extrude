@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   lifecycleDescriptor, boundsOf, voxelFrame, voxelJitter, glitchGate,
+  voxelDelay, localProgress, voxelFlash, voxelEnvelope, STAGGER_SPREAD,
 } from './CommandFeedbackMath.js'
 import { COLOR, DURATION, hexNumber } from '../theme/tokens.js'
 
@@ -117,6 +118,56 @@ test('voxelJitter is deterministic and within [0.55, 1)', () => {
     assert.ok(j >= 0.55 && j < 1)
     assert.equal(j, voxelJitter(i))               // replay-identical
   }
+})
+
+test('voxelDelay is deterministic, within [0, SPREAD), and scatters neighbours apart', () => {
+  let adjacentTogether = 0
+  for (let i = 0; i < 64; i++) {
+    const d = voxelDelay(i)
+    assert.ok(d >= 0 && d < STAGGER_SPREAD)
+    assert.equal(d, voxelDelay(i))                       // replay-identical
+    if (Math.abs(voxelDelay(i) - voxelDelay(i + 1)) < 0.02) adjacentTogether++
+  }
+  // golden-ratio scatter: adjacent indices should almost never share a delay
+  assert.ok(adjacentTogether <= 2, `neighbours detach together too often (${adjacentTogether})`)
+})
+
+test('localProgress: every voxel spans [delay, delay+(1−SPREAD)] and lands by global 1', () => {
+  // delay 0 completes early (at global 1−SPREAD) then holds at 1
+  assert.equal(localProgress(0, 0), 0)
+  assert.ok(Math.abs(localProgress(1 - STAGGER_SPREAD, 0) - 1) < 1e-9)
+  assert.equal(localProgress(1, 0), 1)                   // held at the end
+  // the latest voxel (delay = SPREAD) only just finishes at global 1
+  assert.equal(localProgress(STAGGER_SPREAD, STAGGER_SPREAD), 0)
+  assert.ok(Math.abs(localProgress(1, STAGGER_SPREAD) - 1) < 1e-9)
+  // malformed delay degrades to 0 offset (no crash, no NaN)
+  assert.equal(localProgress(0.5, NaN), localProgress(0.5, 0))
+  assert.equal(localProgress(NaN, 0), 0)
+})
+
+test('voxelFlash spikes once at the transition instant, then decays to zero', () => {
+  // dissolve: bright crack at the very start, gone by ~18%
+  assert.ok(Math.abs(voxelFlash('dissolve', 0) - 1) < 1e-9)
+  assert.equal(voxelFlash('dissolve', 0.5), 0)
+  assert.equal(voxelFlash('dissolve', 1), 0)
+  // materialize: silent inbound, charges + flashes as the shell lands
+  assert.equal(voxelFlash('materialize', 0.2), 0)
+  assert.ok(voxelFlash('materialize', 0.72) > 0.9)       // peak at assembly
+  assert.equal(voxelFlash('materialize', 1), 0)
+  // bounded and never a strobe (single-humped)
+  for (const kind of ['dissolve', 'materialize']) {
+    for (let p = 0; p <= 1.0001; p += 0.05) {
+      const v = voxelFlash(kind, p)
+      assert.ok(v >= 0 && v <= 1)
+    }
+  }
+})
+
+test('voxelEnvelope holds high then fades out over the final 15%', () => {
+  assert.ok(Math.abs(voxelEnvelope(0) - 0.92) < 1e-9)
+  assert.ok(Math.abs(voxelEnvelope(0.85) - 0.92) < 1e-9)
+  assert.ok(Math.abs(voxelEnvelope(1)) < 1e-9)            // faded to nothing, never popped
+  assert.ok(voxelEnvelope(0.925) < 0.92 && voxelEnvelope(0.925) > 0)
 })
 
 test('glitchGate is a deterministic two-level gate', () => {

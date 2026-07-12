@@ -1,6 +1,9 @@
 // @ts-nocheck
 import * as THREE from 'three'
-import { voxelFrame, voxelJitter, glitchGate } from './CommandFeedbackMath.js'
+import {
+  voxelFrame, voxelJitter, glitchGate,
+  voxelDelay, localProgress, voxelFlash, voxelEnvelope,
+} from './CommandFeedbackMath.js'
 
 /**
  * LandingEffects — transient 3D rendering of an entity LIFECYCLE transition
@@ -41,25 +44,30 @@ export class VoxelBurst {
     this._duration = desc.duration
     this._start    = performance.now() / 1000
     this._center   = new THREE.Vector3(bounds.center.x, bounds.center.y, bounds.center.z)
-    this._maxDist  = Math.max(bounds.radius * 1.6, 0.3)
+    this._maxDist  = Math.max(bounds.radius * 1.7, 0.32)
 
-    const count = 24
+    const count = 40 // richer cloud; still ONE draw call (InstancedMesh)
     this._count = count
-    const size  = Math.max(bounds.radius * 0.13, 0.02)
+    const size  = Math.max(bounds.radius * 0.11, 0.018)
     const geo   = new THREE.BoxGeometry(size, size, size)
+    this._baseColor = new THREE.Color(desc.color)
+    this._flashColor = new THREE.Color(0xffffff)
     const mat   = new THREE.MeshBasicMaterial({
-      color:       desc.color,
+      color:       this._baseColor.clone(),
       transparent: true,
-      opacity:     0.9,
+      opacity:     0.92,
       depthTest:   false,
+      blending:    THREE.AdditiveBlending, // fragments glow where they overlap
     })
     this._mesh = new THREE.InstancedMesh(geo, mat, count)
     this._mesh.renderOrder = 3
 
     // Deterministic directions on a spiral-sphere fan with per-voxel radius
-    // jitter — a voxel cloud, not a perfect shell (no Math.random).
+    // jitter and a per-voxel stagger delay — a voxel cloud that detaches in a
+    // wave, not a perfect shell moving in lockstep (no Math.random).
     this._dirs = []
     this._jitters = []
+    this._delays = []
     for (let i = 0; i < count; i++) {
       const phi   = Math.acos(1 - 2 * (i + 0.5) / count)
       const theta = Math.PI * (1 + Math.sqrt(5)) * i
@@ -69,15 +77,15 @@ export class VoxelBurst {
         Math.cos(phi),
       ))
       this._jitters.push(voxelJitter(i))
+      this._delays.push(voxelDelay(i))
     }
 
     this._applyFrame(0)
     scene.add(this._mesh)
   }
 
-  /** Write one pure-curve frame into the instance matrices. */
+  /** Write one frame into the instance matrices from the pure curves. */
   _applyFrame(progress) {
-    const f = voxelFrame(this._kind, progress, this._reduced)
     const m = new THREE.Matrix4()
     const pos = new THREE.Vector3()
     const quat = new THREE.Quaternion()
@@ -85,28 +93,43 @@ export class VoxelBurst {
     const scl = new THREE.Vector3()
     for (let i = 0; i < this._count; i++) {
       const jitter = this._jitters[i]
+      // Per-voxel LOCAL progress (the stagger): reduced motion holds the shell
+      // at a single frame, so it ignores the offset (static held cue #30).
+      const lp = this._reduced ? progress : localProgress(progress, this._delays[i])
+      const f = voxelFrame(this._kind, lp, this._reduced)
       pos.copy(this._dirs[i])
         .multiplyScalar(f.dist * jitter * this._maxDist)
         .add(this._center)
-      // Deterministic per-voxel tumble: spin the shared curve angle around
-      // alternating signed axes so fragments rotate independently.
+      // Deterministic per-voxel tumble around alternating signed axes so
+      // fragments rotate independently.
       euler.set(
         f.spin * (i % 2 === 0 ? 1 : -1),
         f.spin * jitter,
         f.spin * ((i % 3) - 1),
       )
       quat.setFromEuler(euler)
-      // Glitch flicker rides per-instance scale (one shared material has a
-      // single opacity); dissolve and reduced motion never flicker.
+      // One shared material = one opacity, so BOTH the per-voxel fade and the
+      // glitch flicker ride per-instance scale: size folds in the voxel's own
+      // opacity (staggered evaporation) × the glitch gate (materialize only).
       const gate = (this._kind === 'materialize' && !this._reduced)
-        ? glitchGate(i, progress)
+        ? glitchGate(i, lp)
         : 1
-      scl.setScalar(Math.max(f.scale * gate, 0.001))
+      const visible = this._reduced ? f.scale : f.scale * f.opacity
+      scl.setScalar(Math.max(visible * gate, 0.001))
       m.compose(pos, quat, scl)
       this._mesh.setMatrixAt(i, m)
     }
     this._mesh.instanceMatrix.needsUpdate = true
-    this._mesh.material.opacity = f.opacity
+    // Whole-cloud alpha envelope + boundary flash (colour → white at the
+    // break / assembly instant). Reduced motion: fixed low-opacity, no flash.
+    if (this._reduced) {
+      this._mesh.material.color.copy(this._baseColor)
+      this._mesh.material.opacity = 0.4
+    } else {
+      const flash = voxelFlash(this._kind, progress)
+      this._mesh.material.color.copy(this._baseColor).lerp(this._flashColor, flash * 0.8)
+      this._mesh.material.opacity = voxelEnvelope(progress)
+    }
   }
 
   /**

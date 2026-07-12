@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clamp01, easeOutCubic, easeOutBack, breathe, springStep, staggerProgress } from './MotionMath.js'
+import { clamp01, easeOutCubic, easeOutExpo, easeOutBack, breathe, springStep, staggerProgress } from './MotionMath.js'
 
 test('clamp01 clamps and absorbs NaN', () => {
   assert.equal(clamp01(-1), 0)
@@ -18,6 +18,20 @@ test('easeOutCubic hits endpoints and is monotonic', () => {
     assert.ok(v >= prev - 1e-12, `monotonic at p=${p}`)
     prev = v
   }
+})
+
+test('easeOutExpo hits endpoints, is monotonic, and launches faster than cubic', () => {
+  assert.equal(easeOutExpo(0), 0)
+  assert.equal(easeOutExpo(1), 1)
+  let prev = 0
+  for (let p = 0; p <= 1.0001; p += 0.05) {
+    const v = easeOutExpo(p)
+    assert.ok(v >= prev - 1e-12, `monotonic at p=${p}`)
+    prev = v
+  }
+  // steeper launch: past the origin it leads cubic (a snappier burst)
+  assert.ok(easeOutExpo(0.15) > easeOutCubic(0.15))
+  assert.ok(easeOutExpo(2) === 1 && easeOutExpo(-1) === 0) // clamps
 })
 
 test('easeOutBack starts at 0, ends at 1, overshoots past 1 in between', () => {
