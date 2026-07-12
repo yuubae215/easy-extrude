@@ -259,6 +259,7 @@ Touched lines carrying one of these hex literals must be migrated to the token.
 | Feedback flash — seed/example (ADR-058) | `fxAmber` | `#d5a23a` |
 | Decision blue / landing settle (ADR-047/065) | `fxBlue` | `#3a7bd5` |
 | Reveal ripple green (ADR-047) | `fxReveal` | `#10b981` |
+| Snap lock orange — status caption + engagement flash (ADR-065 Phase 2) | `fxSnap` | `#ff9800` |
 
 ---
 
