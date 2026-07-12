@@ -663,8 +663,8 @@ test pins the two vocabularies equal so neither becomes a silent second source (
 ### 30. Motion Tier — 動きは事実・能力・歓びのいずれかを担う。役割なき欺瞞的な動きだけが不採用
 
 Every animation in the client is classified *before* it is written (ADR-065
-Widening 1; **delight tier added 2026-07-12**) into one of three admitted tiers,
-or the one rejected category:
+Widening 1; **Tier D delight added 2026-07-12 — ADR-066**) into one of three
+admitted tiers, or the one rejected category:
 
 | Tier | Speaks about | Governance |
 |------|--------------|------------|
