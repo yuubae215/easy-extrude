@@ -42,6 +42,7 @@ export const COLOR = Object.freeze({
   fxAmber:       '#d5a23a',
   fxBlue:        '#3a7bd5',
   fxReveal:      '#10b981',
+  fxSnap:        '#ff9800',
 })
 
 /** Motion durations in milliseconds (DOM) — 3D effects use seconds; convert at the view. */
@@ -60,6 +61,7 @@ export const DURATION = Object.freeze({
   chromeEnter:  180,  // ADR-065 Phase 3 toast / hint entry slide-fade
   celebration:  1600, // ADR-065 Phase 4 celebration burst (DOM banner + 3D field)
   regionResolve: 700, // ADR-065 Phase 5 region-conflict resolve: recolor → dissolve (3D)
+  snapFlash:     260, // ADR-065 Phase 2 snap engagement flash (micro band ≤300 — machine-tested)
 })
 
 /** CSS easing vocabulary for DOM animations. */

@@ -65,6 +65,7 @@ import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
 import { VoxelBurst }                 from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
+import { SnapFlash }                  from '../view/SnapFlash.js'
 import { CelebrationField }           from '../view/CelebrationField.js'
 import { commandMilestone, celebrationDescriptor } from '../view/CelebrationMath.js'
 import { startTour, nextTourState }   from '../view/TourMath.js'
@@ -850,6 +851,9 @@ export class AppController {
                   selObj.meshView.updateBoxHelper()
                 }
               }
+              // Snap engagement flash: the quick-drag stack path shares the
+              // handler's snap state, so it shares the same diff/spawn too.
+              this._grabHandler._syncSnapFx()
             }
           }
         }
@@ -2619,6 +2623,9 @@ export class AppController {
         // Snapshot corners of every selected object for this drag (mouse only)
         this._objDragAllStartCorners   = new Map()
         this._objDragAllStartPositions = new Map()
+        // Fresh gesture for the snap engagement flash (quick drag shares the
+        // grab handler's stack-snap state and presentation history).
+        this._grabHandler._snapFxPrev  = { geometry: null, stack: null }
         for (const id of this._selectedIds) {
           const selObj = this._scene.getObject(id)
           // CoordinateFrame uses localOffset (not corners); exclude it from mouse-drag
@@ -3265,6 +3272,21 @@ export class AppController {
     if (!bounds) return
     this._motion.spawn(reduced =>
       new CelebrationField(this._sceneView.scene, bounds, desc, { reduced }))
+  }
+
+  /**
+   * Render the snap engagement flash for a lock transition detected by the
+   * grab handler's `_syncSnapFx` (ADR-065 Phase 2, the last Phase 2
+   * candidate). The descriptor is the pure `snapFlashDescriptor` output; a
+   * null descriptor (malformed state, missing entity bounds) spawns nothing
+   * (#11 as honest silence). Billboarding reads `sceneView.activeCamera`
+   * per tick, so the ortho toggle keeps the cue legible.
+   * @param {object|null} desc
+   */
+  _spawnSnapFx(desc) {
+    if (!desc) return
+    this._motion.spawn(reduced =>
+      new SnapFlash(this._sceneView.scene, this._sceneView, desc, { reduced }))
   }
 
   // ─── Onboarding tour (ADR-065 Phase 6) ─────────────────────────────────────

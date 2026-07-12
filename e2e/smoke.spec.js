@@ -101,6 +101,32 @@ test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', as
   await expect.poll(() => deleteButtons(page).count()).toBeLessThan(before)
 })
 
+test('grab + stack mode engages the snap and its flash wiring stays live', async ({ page }) => {
+  // Liveness guard for the snap engagement flash (ADR-065 Phase 2, last
+  // candidate): `apply()` → `_syncSnapFx()` → `ctrl._spawnSnapFx()` crosses
+  // the controller layer, which checkJs does not cover. If any link in that
+  // chain dangles, the pointermove handler throws before `updateStatus()`
+  // runs, so "Stack: ON" never renders and the pageerror listener fires.
+  const errors = await boot(page)
+
+  // Add a second box (auto-selected) so the initial cube is a stack target.
+  await page.getByRole('button', { name: /\+ Add/ }).click()
+  await expect.poll(() => deleteButtons(page).count()).toBeGreaterThan(1)
+
+  // G grab → S stack, then sweep across the initial cube at scene centre.
+  const canvas = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = canvas.x + canvas.width / 2
+  const cy = canvas.y + canvas.height / 2
+  await page.mouse.move(cx + 100, cy)
+  await page.keyboard.press('g')
+  await page.keyboard.press('s')
+  await page.mouse.move(cx, cy, { steps: 12 })
+  await expect(page.getByText('Stack: ON')).toBeVisible()
+
+  await page.keyboard.press('Escape') // cancel — scene state untouched
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('desktop onboarding tour derives its quest from scene facts', async ({ page }) => {
   // Fresh browser context = no ee_tour flag → the first quest opens at boot
   // (ADR-065 Phase 6; the tour never blocks input — it is a corner card).

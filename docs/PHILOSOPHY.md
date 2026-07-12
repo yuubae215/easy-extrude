@@ -701,7 +701,11 @@ Two structural corollaries, both machine-pinned:
 - **Transients have one owner.** Transient 3D effects live in the
   `MotionGovernor` (concurrency budget + oldest-evicted-with-dispose, #9);
   their fact source is a *committed* transition (e.g. a CommandStack landing),
-  never an optimistic preview or an initial load.
+  never an optimistic preview or an initial load. Clarified by the snap
+  engagement flash (ADR-065 Phase 2 completion, 2026-07-12): what is forbidden
+  is rendering a provisional *result* (an uncommitted pose) — an interaction
+  *event* that already occurred inside a gesture (a snap lock applied to the
+  domain preview) is a committed fact; a later cancel does not un-happen it.
 
 **Why it matters**: without the tier decision, every new animation re-opens the
 same three drifts — decoration creep (motion that costs attention and says

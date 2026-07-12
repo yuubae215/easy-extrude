@@ -31,6 +31,14 @@ import {
 } from '../../model/CuboidModel.js'
 import { computeApproachWarmth } from '../../service/SemanticInferencer.js'
 import { projectToScreen, pickBestSnapTarget } from '../snap/SnapSystem.js'
+import { boundsOf } from '../../view/CommandFeedbackMath.js'
+import {
+  geometrySnapshot,
+  stackSnapshot,
+  snapTransition,
+  snapFlashDescriptor,
+} from '../../view/SnapFeedbackMath.js'
+import { COLOR } from '../../theme/tokens.js'
 
 /**
  * Returns the appropriate handles array for grab/move operations.
@@ -104,6 +112,8 @@ export class GrabOperationHandler {
       stackMode:       false,
       /** True when stacking is actively snapping Z this frame. */
       stacking:        false,
+      /** Bottom-face centre at the landing surface while stacking (flash anchor). @type {{x:number,y:number,z:number}|null} */
+      stackContact:    null,
       /** Last delta applied via _applyDeltaToAll; used for live coordinate display. */
       lastDelta:       new THREE.Vector3(),
       /** True when a live semantic suggestion is showing during G-key grab (ADR-041 Phase 3). */
@@ -111,6 +121,14 @@ export class GrabOperationHandler {
       /** The suggestion currently displayed, or null. @type {object|null} */
       currentSuggestion: null,
     }
+
+    /**
+     * Controller-local presentation history for the snap engagement flash
+     * (ADR-065 Phase 2): the previous frame's per-channel snap snapshots.
+     * Never a store field (same rule as grasp hover / `_ghostData`).
+     * @type {{geometry: {key:string}|null, stack: {key:string}|null}}
+     */
+    this._snapFxPrev = { geometry: null, stack: null }
   }
 
   /** Grid snap sizes cycled by Ctrl+Wheel during grab. */
@@ -219,6 +237,7 @@ export class GrabOperationHandler {
     s.autoSnap         = false
     s.isSuggesting     = false
     s.currentSuggestion = null
+    this._snapFxPrev   = { geometry: null, stack: null } // fresh gesture — no engagement carried over
 
     // ADR-032 §6: for mounted Annotated* entities, constrain drag to host local XY plane.
     // For unmounted Annotated* entities, constrain to world XY (prevents Z drift).
@@ -305,6 +324,7 @@ export class GrabOperationHandler {
     s.snappedTarget = null
     s.stackMode     = false
     s.stacking      = false
+    this._snapFxPrev = { geometry: null, stack: null }
     ctrl._meshView.clearPivotDisplay()
     ctrl._meshView.clearSnapDisplay()
     ctrl._opState.send('CONFIRM')
@@ -361,6 +381,7 @@ export class GrabOperationHandler {
     s.snappedTarget = null
     s.stackMode     = false
     s.stacking      = false
+    this._snapFxPrev = { geometry: null, stack: null }
     ctrl._opState.send('CANCEL')
     // Rubber-band: end drag animation; stay highlighted since entity is still selected.
     ctrl._service.setLinkDragging(new Set(), false)
@@ -497,6 +518,34 @@ export class GrabOperationHandler {
         }
       }
     }
+
+    this._syncSnapFx()
+  }
+
+  /**
+   * Snap engagement flash (ADR-065 Phase 2): diff this frame's snap state
+   * against the previous frame's controller-local snapshots and spawn at most
+   * one flash per frame (geometry lock wins over stack landing). All decision
+   * logic is the pure `SnapFeedbackMath`; this method only feeds it facts and
+   * hands the descriptor to the controller's spawn helper. Holding a lock or
+   * disengaging spawns nothing (volume design — transitions only).
+   */
+  _syncSnapFx() {
+    const { _ctrl: ctrl } = this
+    const s    = this.state
+    const prev = this._snapFxPrev
+    const next = {
+      geometry: geometrySnapshot(s.snapping, s.snappedTarget),
+      stack:    stackSnapshot(s.stacking, s.stackContact),
+    }
+    this._snapFxPrev = next
+    const geomT  = snapTransition(prev.geometry, next.geometry)
+    const stackT = snapTransition(prev.stack, next.stack)
+    const channel = geomT ? 'geometry' : (stackT ? 'stack' : null)
+    if (!channel) return
+    const radius = boundsOf(_grabHandlesOf(ctrl._activeObj))?.radius
+    ctrl._spawnSnapFx(
+      snapFlashDescriptor(channel, geomT ?? stackT, next[channel], radius))
   }
 
   /** Toggles stacking mode on/off during an active grab. */
@@ -548,7 +597,7 @@ export class GrabOperationHandler {
       }
     }
     if (s.snapping && s.snappedTarget) {
-      parts.push({ text: `Snap: ${s.snappedTarget.label}`, bold: true, color: '#ff9800' })
+      parts.push({ text: `Snap: ${s.snappedTarget.label}`, bold: true, color: COLOR.fxSnap })
     } else if (s.autoSnap) {
       parts.push({ text: 'Auto Snap [World]', color: '#80cbc4' })
       parts.push({ text: 'Origin / X / Y / Z', color: '#444' })
@@ -764,6 +813,7 @@ export class GrabOperationHandler {
         if (segStartPos) selObj.move(segStartPos, snapDelta)
       }
     }
+    s.stackContact = { x: center.x, y: center.y, z: highestHitZ }
     s.stacking = true
   }
 
