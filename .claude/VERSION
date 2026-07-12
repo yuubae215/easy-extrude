@@ -1,9 +1,14 @@
 kernel-bundle: portable (in-repo)
-version: 2026-06-27
+version: 2026-07-11
 source: claude-kernel-bundle (canonical)
 notes: |
   これは canonical bundle を本リポジトリへ vendoring したコピー。ドリフト検知用。
   内容を更新するときは canonical 側を直し、本ファイルの version を上げて再配布する。
+changes: |
+  2026-07-11: gsn-meta-framework skill を統合(3モード + gsn_tool.py)。
+    animation-fx skill も併せて導入(2D/3D 演出設計)。
+    /gsn-maintain コマンドで .gsn 論証木の鮮度メンテ、
+    hook に staged .gsn の lint ブロックを追加(fail-open)。
 
   配線(INSTALL-PORTABLE.md の既定どおり):
     - 核は `.claude/rules/00-kernel.md`。launch 時にファイル名順で自動 load される

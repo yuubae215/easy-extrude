@@ -44,6 +44,29 @@ printf '%s' "$command_str" | grep -Eq '(--no-verify|-n[[:space:]]|-n$)' && exit 
 
 # --- テストコマンドの解決(単一の源)---------------------------------------
 project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# --- staged .gsn の lint(§1.2 論証アーティファクトの健全性)-----------------
+# 壊れた論証木を履歴に入れない。ツール/python3 が無ければ素通り(fail-open)。
+gsn_tool="$project_root/.claude/skills/gsn-meta-framework/scripts/gsn_tool.py"
+if [ -f "$gsn_tool" ] && command -v python3 >/dev/null 2>&1; then
+  staged_gsn="$(cd "$project_root" && git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.gsn$' || true)"
+  if [ -n "$staged_gsn" ]; then
+    gsn_log="$(mktemp /tmp/cc-gsn-lint.XXXXXX.log)"
+    if ! ( cd "$project_root" && printf '%s\n' "$staged_gsn" | xargs python3 "$gsn_tool" lint ) >"$gsn_log" 2>&1; then
+      {
+        echo "BLOCKED (§1.2 正当化の鎖): staged .gsn が lint に失敗。壊れた論証木は commit しない。"
+        echo "--- lint 結果 ---"
+        cat "$gsn_log"
+        echo "-----------------"
+        echo "エラーを直して再 commit。バイパスは git commit --no-verify。"
+      } >&2
+      rm -f "$gsn_log"
+      exit 2
+    fi
+    rm -f "$gsn_log"
+  fi
+fi
+
 test_cmd="${CLAUDE_TEST_CMD:-}"
 
 if [ -z "$test_cmd" ] && [ -f "$project_root/.claude/test-command" ]; then
