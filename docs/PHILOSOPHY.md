@@ -660,21 +660,34 @@ test pins the two vocabularies equal so neither becomes a silent second source (
 
 ---
 
-### 30. Motion Tier — 動きは事実か能力を語る。何も語らない動きは装飾であり不採用
+### 30. Motion Tier — 動きは事実・能力・歓びのいずれかを担う。役割なき欺瞞的な動きだけが不採用
 
-Every animation in the client belongs to exactly one of three tiers, decided
-*before* it is written (ADR-065 Widening 1):
+Every animation in the client is classified *before* it is written (ADR-065
+Widening 1; **delight tier added 2026-07-12**) into one of three admitted tiers,
+or the one rejected category:
 
 | Tier | Speaks about | Governance |
 |------|--------------|------------|
 | **Tier F — fact-driven** | "your committed input worked / almost / failed" | ADR-062 unchanged: proof-layer fact → pure derivation → null degrade |
 | **Tier A — affordance** | "you can act here / why you can't" | pure function of (interaction state × the SAME gate predicate that enables the control — #25/#14); stateless; never implies a judgment or a correct answer |
-| **Forbidden — decoration** | nothing | not adopted (background particles, logo pulses) |
+| **Tier D — delight** | nothing propositional — it marks an occasion or gives the surface life (a celebration, an ambient touch, a flourish that makes the moment feel good) | admitted when *chosen deliberately and budgeted* — the same transient owner (`MotionGovernor`) and the same reduced-motion boundary every tier pays; must NOT sit where the user reads fact/affordance feedback (no judgment forgery, below); occasional by design — its value is scarcity, so it is never sprinkled to fill every silence |
+| **Forbidden — undisciplined / deceptive** | falsely implies a higher tier, or escapes the structural governance | a flourish dressed as a correctness signal (fake Tier F), or an unbounded/ungoverned effect with no owner and no reduced-motion path |
 
-**The one-sentence boundary test**: *"その動きが止まったとき、ユーザーが知れなく
-なることは何か?"* — if the answer is "nothing", the motion is decoration and is
-rejected. An idle motion is admissible only as affordance (a breathing handle
-says "grab me" = Tier A; a swaying header says nothing = decoration).
+**The one-sentence routing test**: *"その動きが止まったとき、ユーザーが知れなく
+なることは何か?"* — a concrete propositional answer ("whether my input worked",
+"that I can grab here") routes the motion to Tier F or A and fixes its
+governance. **"Nothing" no longer rejects the motion** — this is the 2026-07-12
+revision that lifted the original restraint (the earlier wording, *"if the
+answer is 'nothing', the motion is decoration and is rejected"*, over-corrected
+by banning delight outright and was found to stifle 遊び心). A "nothing" answer
+now means the motion is not *informational*, so it must justify itself as
+**Tier D delight** — chosen on purpose, budgeted, reduced-motion-aware. What is
+rejected is only motion that *lies* about its tier (a delight flourish worn as a
+fact cue — judgment forgery) or that slips the structural governance. A
+breathing handle says "grab me" (Tier A); a confetti burst on the user's first
+completed model says nothing but marks a real occasion (Tier D, admitted); a
+header swaying with no occasion, no budget, and no owner is neither informational
+nor a deliberate moment (rejected).
 
 **Volume corollary (2026-07-11 revision)**: the test applies *per firing*, not
 per feature. A Tier F cue attached to a high-frequency operation whose result
@@ -687,7 +700,10 @@ the loudest cue; an entity *appearing* a brief one; a pose change none. The
 first application: the ADR-065 Phase 2 landing pulse fired identically on
 every Move/Rotate/Add/undo — user-reported as "fireworks on every operation";
 revised so only existence transitions render (voxel materialize/dissolve) and
-routine pose ops are machine-pinned silent.
+routine pose ops are machine-pinned silent. The same scarcity logic governs
+Tier D from the other side: delight earns its attention by being *rare*, so a
+celebratory flourish on a routine, high-frequency action is the identical noise
+wearing a party hat — admitted delight still spends the volume budget.
 
 Two structural corollaries, both machine-pinned:
 
@@ -708,11 +724,16 @@ Two structural corollaries, both machine-pinned:
   domain preview) is a committed fact; a later cancel does not un-happen it.
 
 **Why it matters**: without the tier decision, every new animation re-opens the
-same three drifts — decoration creep (motion that costs attention and says
-nothing), judgment forgery ("the glowing button must be the right answer" —
-Tier F authority faked by a Tier A surface), and reduced-motion regressions
-(each animation inventing its own matchMedia read). The tier table turns those
-review debates into a lookup. Contexts already spanned: the DOM proof-feedback
+same drifts — **undisciplined delight** (delight sprinkled everywhere until it
+costs attention and means nothing; the pre-2026-07-12 wording over-corrected
+this by banning delight outright, which the tier now channels instead of
+forbids), **judgment forgery** ("the glowing button must be the right answer" —
+Tier F authority faked by a Tier A or D surface), and **reduced-motion
+regressions** (each animation inventing its own matchMedia read). The tier table
+turns those review debates into a lookup: delight is welcome, but it must
+*declare itself as delight* and pay the same governance every tier pays — the
+restraint moved from "no decoration" to "no undeclared, ungoverned, or deceptive
+motion". Contexts already spanned: the DOM proof-feedback
 primitives (ADR-062/064) and the 3D transient effects + core-modeling landing
 pulses (ADR-065 Phase 1–2); the chrome refresh (Phase 3) consumes the same rule.
 
@@ -780,4 +801,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 27 | Overlay Markers Are Sized in Screen Space, Capped in World Space | UI | CoordinateFrame Scale Cap, Annotation Marker Screen-Space Scale, Ground Grid Scale |
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
 | 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |
-| 30 | Motion Tier — 動きは事実か能力を語る | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
+| 30 | Motion Tier — 動きは事実・能力・歓びを担う (delight tier 2026-07-12) | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
