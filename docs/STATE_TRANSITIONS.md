@@ -540,6 +540,52 @@ any
 
 ---
 
+### `tour` — Desktop onboarding tour FSM (ADR-065 Phase 6)
+
+**Why this exists here**: the tour has 3+ states and a wrong hint is an
+experience accident (核 §1.4 trigger — designed in ADR-065 §2 before the
+components). It is user-visible APP state (which quest is open), NOT
+presentation history — the deliberate ADR-065 §2 carve-out from ADR-062's
+"no presentation state in the uiStore".
+
+**States** (stored in top-level `uiStore.tour`, replaced wholesale — a
+discriminated union like `context.grasp`/`context.wizard`)
+
+```
+null (not shown: mobile pointer, or persisted ee_tour flag)
+  ──[boot, fine pointer, no ee_tour — startTour(facts)]→ { status:'active', step:firstOpen }
+active(step)
+  ──[fact source fires, step.done(facts)]──────────────→ active(next open step)   (satisfied steps SKIPPED)
+  ──[fact source fires, last step done]────────────────→ { status:'done' }        (+ persist ee_tour='done')
+  ──[fact source fires, step still open]───────────────→ active(step)             (SAME reference — no store write)
+  ──[malformed facts]──────────────────────────────────→ active(step)             (held, never advanced on garbage)
+  ──[corrupt state (unknown step id)]──────────────────→ null                     (no hint beats a wrong hint #11)
+  ──[✕ Skip — onTourDismiss]───────────────────────────→ null                     (+ persist ee_tour='dismissed')
+done
+  ──[✕ Close — onTourDismiss]──────────────────────────→ null
+```
+
+**Guards / invariants**
+
+- Quest trail (pure `TOUR_STEPS` in `src/view/TourMath.js`): add → select →
+  grab → edit → extrude. Every `done` predicate reads only **committed** facts:
+  Solid count, the committed selection, `selectionMode`, and the last
+  CommandStack landing `{label, phase}` (a landing is a committed operation —
+  optimistic previews never land).
+- Progress only moves FORWARD (`nextTourState` never regresses — undoing the
+  added box does not resurrect the add quest; the affordance was demonstrated).
+- Fact sources → `AppController._updateTour()`: CommandStack landing listener,
+  `objectAdded`, `activeChanged`, `setMode()`. Sole writer: AppController
+  (PHILOSOPHY #5); `TourCard` and the Outliner anchor pulse only read.
+- An active overlay (Context / demo / template gallery) suppresses rendering
+  via the shared `tourVisible` predicate WITHOUT mutating the FSM — the quest
+  resumes when the overlay closes.
+- Persistence is a display **setting** (ADR-065 Widening 3): only the
+  done/dismissed flag (`localStorage.ee_tour`) survives the session; the
+  progression itself persists nowhere.
+
+---
+
 ## CoordinateFrame Body Frame Lifecycle (ADR-037)
 
 ### Origin CF is created atomically with every Solid

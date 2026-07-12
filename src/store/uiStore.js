@@ -107,6 +107,18 @@ export const useUIStore = create((set, get) => ({
   // ── Onboarding (mobile first-visit gesture hint) ───────────────────────────
   onboardingVisible: false,
 
+  // ── Onboarding tour FSM (desktop, ADR-065 Phase 6) ─────────────────────────
+  // Discriminated union, replaced wholesale; sole writer AppController via the
+  // pure TourMath transitions (same discipline as context.grasp/wizard):
+  //   null                            — not shown (mobile, or persisted done/dismissed)
+  //   { status:'active', step }       — the open quest (step = TOUR_STEPS id)
+  //   { status:'done' }               — trail finished (completion banner)
+  // This is user-visible APP state (which quest is open), NOT presentation
+  // history — the uiStore placement is the ADR-065 §2 carve-out from ADR-062.
+  // The done/dismissed flag persists to localStorage as a display SETTING
+  // (Widening 3); the progression itself persists nowhere.
+  tour: null,
+
   // ── Context DSL demo (ADR-046/047) ─────────────────────────────────────────
   // Populated by ContextDemoController at demoStart; null-equivalent when inactive.
   demo: {
@@ -301,6 +313,9 @@ export const useUIStore = create((set, get) => ({
     // ── Onboarding ───────────────────────────────────────────────────────────
     showOnboarding: () => set({ onboardingVisible: true }),
     hideOnboarding: () => set({ onboardingVisible: false }),
+    // ADR-065 Phase 6 — tour FSM state, replaced wholesale (sole writer
+    // AppController; transitions computed by the pure TourMath functions).
+    setTour: (tour) => set({ tour }),
 
     // ── Context DSL demo ─────────────────────────────────────────────────────
     demoStart: (payload) => set(state => ({

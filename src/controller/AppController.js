@@ -67,6 +67,7 @@ import { VoxelBurst }                 from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { CelebrationField }           from '../view/CelebrationField.js'
 import { commandMilestone, celebrationDescriptor } from '../view/CelebrationMath.js'
+import { startTour, nextTourState }   from '../view/TourMath.js'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
@@ -215,6 +216,9 @@ export class AppController {
       }
       if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
       if (obj.placeType) outlinerView?.setObjectPlaceType(obj.id, obj.placeType)
+      // Onboarding tour: the entity count is a tour fact (ADR-065 Phase 6) —
+      // command-less adds (scene import) advance the quest here.
+      this._updateTour()
     })
     // Update outliner hierarchy and N panel when a frame is re-parented (ADR-028)
     this._service.on('frameReparented', ({ id, newParentId }) => {
@@ -238,7 +242,11 @@ export class AppController {
       renamedObj?.meshView?.setName?.(nm)
       this._updateLinkNetwork()
     })
-    this._service.on('activeChanged', id        => outlinerView?.setActive(id))
+    this._service.on('activeChanged', id        => {
+      outlinerView?.setActive(id)
+      // Onboarding tour: the committed selection is a tour fact (ADR-065 Phase 6).
+      this._updateTour()
+    })
     this._service.on('objectIfcClassChanged', (id, ifcClass) => {
       outlinerView?.setObjectIfcClass(id, ifcClass)
     })
@@ -734,8 +742,15 @@ export class AppController {
     // Controller-local presentation history (never a uiStore/wire field —
     // ADR-062 §2); seeded AFTER clear(), so the boot solid is not a milestone.
     this._lastCommandDepth = this._commandStack.depth
+    // The last committed landing is also an onboarding-tour fact (ADR-065
+    // Phase 6): quest predicates read {label, phase} of the latest committed
+    // operation. Controller-local snapshot, consumed by _tourFacts().
+    this._tourLastLanding = null
     this._commandStack.setLandingListener(landing =>
-      queueMicrotask(() => this._spawnLandingFx(landing)))
+      queueMicrotask(() => {
+        this._spawnLandingFx(landing)
+        this._updateTour(landing)
+      }))
 
     // Expose console API for role-based provenance (ADR-034 §8.3)
     // + Context DSL demo entry (ADR-047)
@@ -1791,6 +1806,9 @@ export class AppController {
         this._enterEditMode3D()
       }
     }
+
+    // Onboarding tour: the committed mode is a tour fact (ADR-065 Phase 6).
+    this._updateTour()
   }
 
   _cleanupEditSubstate() {
@@ -3249,6 +3267,73 @@ export class AppController {
       new CelebrationField(this._sceneView.scene, bounds, desc, { reduced }))
   }
 
+  // ─── Onboarding tour (ADR-065 Phase 6) ─────────────────────────────────────
+
+  /**
+   * Seed the desktop quest tour on first run. Mobile keeps the one-shot
+   * gesture overlay (`showOnboardingIfNeeded`) — the tour is its structural
+   * generalisation for fine pointers. The done/dismissed flag is a persisted
+   * display SETTING (localStorage, ADR-065 Widening 3); the progression
+   * itself is session-local and persists nowhere.
+   */
+  _startTourIfNeeded() {
+    if (window.matchMedia('(pointer: coarse)').matches) return
+    let flag = null
+    try { flag = localStorage.getItem('ee_tour') } catch { /* storage denied */ }
+    if (flag) return
+    useUIStore.getState().actions.registerCallback('onTourDismiss', () => this._dismissTour())
+    const tour = startTour(this._tourFacts())
+    if (tour) useUIStore.getState().actions.setTour(tour)
+  }
+
+  /**
+   * Snapshot the committed scene facts the tour predicates read
+   * (TourMath.TourFacts). Pure read — no mutation, no derivation cached.
+   */
+  _tourFacts() {
+    let solidCount = 0
+    for (const o of this._scene.objects.values()) {
+      if (o instanceof Solid) solidCount++
+    }
+    return {
+      solidCount,
+      hasSelection: !!(this._objSelected && this._activeObj),
+      mode: this._scene.selectionMode,
+      lastLabel: this._tourLastLanding?.label ?? null,
+      lastPhase: this._tourLastLanding?.phase ?? null,
+    }
+  }
+
+  /**
+   * Run the pure tour transition against fresh facts and write the result —
+   * AppController is the sole writer of `uiStore.tour` (PHILOSOPHY #5).
+   * Called from the fact sources: CommandStack landings (with the landing),
+   * objectAdded, activeChanged, and setMode. Identity-compare skips the
+   * store write on the (frequent) no-change path.
+   * @param {{phase: string, label: string}|null} [landing]
+   */
+  _updateTour(landing = null) {
+    if (landing) this._tourLastLanding = landing
+    const store = useUIStore.getState()
+    const cur = store.tour
+    if (!cur || cur.status !== 'active') return
+    const next = nextTourState(cur, this._tourFacts())
+    if (next === cur) return
+    store.actions.setTour(next)
+    if (next?.status === 'done') this._persistTourFlag('done')
+  }
+
+  /** ✕ on the TourCard: hide now and never re-seed on later boots. */
+  _dismissTour() {
+    const wasDone = useUIStore.getState().tour?.status === 'done'
+    useUIStore.getState().actions.setTour(null)
+    this._persistTourFlag(wasDone ? 'done' : 'dismissed')
+  }
+
+  _persistTourFlag(value) {
+    try { localStorage.setItem('ee_tour', value) } catch { /* storage denied — session-only tour */ }
+  }
+
   // ─── Animation loop ────────────────────────────────────────────────────────
   start() {
     const loop = () => {
@@ -3337,6 +3422,8 @@ export class AppController {
 
     // Show first-run gesture hints on mobile
     this._uiView.showOnboardingIfNeeded()
+    // …and the fact-driven quest tour on desktop (ADR-065 Phase 6)
+    this._startTourIfNeeded()
 
     // Wire Export / Import JSON buttons
     this._uiView.onExportJson(() => this._exportSceneJson())

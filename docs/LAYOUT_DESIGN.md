@@ -45,6 +45,7 @@ block-beta
 | Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px keeps the panel top clear of the Map toolbar's lower edge on 720px viewports (ADR-048) | 50 |
 | Map Mode toolbar | w:44px min, h:auto | fixed top:50% left:188px (beside Outliner; mobile: left:8px) | 150 |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
+| Onboarding tour card (ADR-065 Phase 6) | w:248px, h:auto | fixed bottom:38px left:192px (offset past Outliner 180px + InfoBar 26px — #26; toasts are bottom-center and never collide) | 100 |
 | Context menu | w:auto | absolute (cursor position) | 200 |
 | Mode dropdown | w:140px | absolute (below button) | 200 |
 
@@ -287,6 +288,7 @@ All transient 3D effects run through `MotionGovernor` (budget 8, reduced-motion
 | Grasp three-beat reveal (3D, ADR-065 Phase 5) | committed select: approach slide → finger close → neutral→score colour flood + caption (`revealFrame`); hover previews and reduced motion jump to the final stage | 900ms total (`REVEAL_TIMELINE` 400/240/260) |
 | Region-conflict resolve (3D, ADR-065 Phase 5) | old gap band recolours red→green then dissolves (`resolveFrame`, `RegionResolveEffect` via MotionGovernor); the rebuilt settled state renders instantly underneath / static settled-green cue when reduced | 700ms (`regionResolve`) |
 | Uncertainty band collapse (3D, ADR-047 + ADR-065 Phase 5) | band condenses onto the nominal while the two extreme wireframes converge onto it; reduced motion snaps immediately and holds a static shell (onSnapped fires at once) | 800ms + 250ms fade (view constants) |
+| Onboarding tour card entry (ADR-065 Phase 6) | `eaChromeEnter` slide-fade keyed per quest advance / in place when reduced; the "+ Add" anchor pulse reuses `eaBreatheGlow` (static midpoint glow when reduced) | 180ms (`chromeEnter`) / 2600ms loop (`breathe`) |
 
 ---
 
