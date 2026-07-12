@@ -63,7 +63,7 @@ import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
-import { VoxelBurst }                 from '../view/LandingEffects.js'
+import { createLandingEffect }        from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { SnapFlash }                  from '../view/SnapFlash.js'
 import { CelebrationField }           from '../view/CelebrationField.js'
@@ -190,7 +190,14 @@ export class AppController {
     // ── Domain event subscriptions — keep View in sync with domain state ──
     this._service.on('objectAdded',   obj       => {
       const lifecycleBounds = boundsOf(obj.corners)
-      if (lifecycleBounds) this._lifecycleAnchors.added = lifecycleBounds
+      if (lifecycleBounds) {
+        // Carry the actual 8 OBB corners for a Solid so the materialize effect
+        // can build the object's outline (WireframeAssembly). Non-cuboid
+        // entities (profiles, etc.) keep bounds only → radial fallback.
+        this._lifecycleAnchors.added = obj.corners?.length === 8
+          ? { ...lifecycleBounds, corners: obj.corners.map(c => ({ x: c.x, y: c.y, z: c.z })) }
+          : lifecycleBounds
+      }
       const type = obj instanceof ImportedMesh
         ? 'imported'
         : obj instanceof MeasureLine
@@ -3255,7 +3262,7 @@ export class AppController {
     const bounds = anchors[desc.direction]
     if (!bounds) return
     this._motion.spawn(reduced =>
-      new VoxelBurst(this._sceneView.scene, bounds, desc, { reduced }))
+      createLandingEffect(this._sceneView.scene, bounds, desc, { reduced }))
   }
 
   /**

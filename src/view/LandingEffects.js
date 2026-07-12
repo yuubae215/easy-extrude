@@ -1,9 +1,32 @@
 // @ts-nocheck
 import * as THREE from 'three'
+import { buildGeometry } from '../model/CuboidModel.js'
+import { easeOutCubic, easeOutExpo } from './MotionMath.js'
 import {
   voxelFrame, voxelJitter, glitchGate,
   voxelDelay, localProgress, voxelFlash, voxelEnvelope,
 } from './CommandFeedbackMath.js'
+
+/**
+ * Pick the landing effect for a lifecycle descriptor. A materialize on a real
+ * cuboid (8 OBB corners carried on the anchor) is rendered as an OUTLINE
+ * CONSTRUCTION — the object's edges draw themselves on and voxel sparks fly in
+ * to assemble the form (`WireframeAssembly`), which reads as "a new object was
+ * built here" far more clearly than particles condensing to a point (user
+ * feedback 2026-07-12). Everything else — every dissolve, and a materialize
+ * without cuboid corners (a flat profile) — stays the radial `VoxelBurst`.
+ *
+ * @param {THREE.Scene} scene
+ * @param {{center:{x,y,z}, radius:number, corners?:Array<{x,y,z}>}} anchor
+ * @param {{kind:'materialize'|'dissolve', color:number, duration:number}} desc
+ * @param {{reduced?: boolean}} [opts]
+ */
+export function createLandingEffect(scene, anchor, desc, opts = {}) {
+  if (desc.kind === 'materialize' && Array.isArray(anchor.corners) && anchor.corners.length === 8) {
+    return new WireframeAssembly(scene, anchor, desc, opts)
+  }
+  return new VoxelBurst(scene, anchor, desc, opts)
+}
 
 /**
  * LandingEffects — transient 3D rendering of an entity LIFECYCLE transition
@@ -149,5 +172,172 @@ export class VoxelBurst {
     this._mesh.geometry.dispose()
     this._mesh.material.dispose()
     this._mesh.dispose()
+  }
+}
+
+/**
+ * WireframeAssembly — the materialize (entity-APPEAR) effect for a real cuboid,
+ * reworked from a radial condense to an OUTLINE CONSTRUCTION (user feedback
+ * 2026-07-12: "particles condensing to a point doesn't read as generation —
+ * build up the mesh / outline instead").
+ *
+ * Two staggered layers, both overlay-only (the entity's own material is never
+ * touched — `_syncEmissive` stays sole owner, PHILOSOPHY #4), deterministic (no
+ * Math.random), and sized from the entity's own bounds (#27):
+ *   1. The 12 OBB edges (built from the actual corners via the same
+ *      `buildGeometry` + `EdgesGeometry` path MeshView uses, so it matches the
+ *      real orientation) DRAW THEMSELVES ON — each edge grows from one corner to
+ *      the other on its own staggered clock (the outline is traced into being,
+ *      never all at once — the anti-vanilla "no simultaneous motion" rule).
+ *   2. Voxel sparks fly IN from outside and LAND on points along those edges
+ *      (the "assembled from blocks" energy, fitting a voxel modeller), then
+ *      evaporate as the real solid stands revealed.
+ * A single assembly flash (`voxelFlash('materialize')`) whitens both layers as
+ * the form completes, then the envelope fades them out (#30 corollary: appear
+ * is a brief cue). Reduced motion: the full outline held static at half
+ * intensity — information preserved, movement dropped (#30/#11).
+ */
+export class WireframeAssembly {
+  /**
+   * @param {THREE.Scene} scene
+   * @param {{center:{x,y,z}, radius:number, corners:Array<{x,y,z}>}} anchor
+   * @param {{color:number, duration:number}} desc (duration in seconds)
+   * @param {{reduced?: boolean}} [opts]
+   */
+  constructor(scene, anchor, desc, { reduced = false } = {}) {
+    this._scene    = scene
+    this._reduced  = reduced
+    this._duration = desc.duration
+    this._start    = performance.now() / 1000
+    this._center   = new THREE.Vector3(anchor.center.x, anchor.center.y, anchor.center.z)
+    this._baseColor  = new THREE.Color(desc.color)
+    this._flashColor = new THREE.Color(0xffffff)
+    const radius = Math.max(anchor.radius, 0.05)
+
+    // ── Layer 1: the exact 12 OBB edges (via MeshView's geometry path) ──────
+    const cornerVecs = anchor.corners.map(c => new THREE.Vector3(c.x, c.y, c.z))
+    const boxGeo   = buildGeometry(cornerVecs)
+    const edgesGeo = new THREE.EdgesGeometry(boxGeo, 1)
+    boxGeo.dispose()
+    const ep = edgesGeo.getAttribute('position')
+    this._edges = []
+    for (let i = 0; i < ep.count; i += 2) {
+      this._edges.push([
+        new THREE.Vector3(ep.getX(i),     ep.getY(i),     ep.getZ(i)),
+        new THREE.Vector3(ep.getX(i + 1), ep.getY(i + 1), ep.getZ(i + 1)),
+      ])
+    }
+    edgesGeo.dispose()
+    this._edgeCount = this._edges.length
+
+    const lineGeo = new THREE.BufferGeometry()
+    lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this._edgeCount * 6), 3))
+    this._lineMat = new THREE.LineBasicMaterial({
+      color:       this._baseColor.clone(),
+      transparent: true,
+      opacity:     0.95,
+      depthTest:   false,
+      blending:    THREE.AdditiveBlending,
+    })
+    this._lines = new THREE.LineSegments(lineGeo, this._lineMat)
+    this._lines.renderOrder = 3
+
+    // ── Layer 2: voxel sparks that land on points along the edges ───────────
+    const sparkCount = 28
+    this._sparkCount = sparkCount
+    const size = Math.max(radius * 0.09, 0.014)
+    const sGeo = new THREE.BoxGeometry(size, size, size)
+    this._sparkMat = new THREE.MeshBasicMaterial({
+      color:       this._baseColor.clone(),
+      transparent: true,
+      opacity:     0.9,
+      depthTest:   false,
+      blending:    THREE.AdditiveBlending,
+    })
+    this._sparks = new THREE.InstancedMesh(sGeo, this._sparkMat, sparkCount)
+    this._sparks.renderOrder = 3
+    this._sparkTargets = []
+    this._sparkStarts  = []
+    this._sparkDelays  = []
+    for (let i = 0; i < sparkCount; i++) {
+      const [a, b] = this._edges[i % this._edgeCount]
+      const t = (i * 0.6180339887) % 1                 // golden param along the edge
+      const target  = a.clone().lerp(b, t)
+      const outward = target.clone().sub(this._center)
+      if (outward.lengthSq() < 1e-9) outward.set(1, 0, 0)
+      outward.normalize()
+      this._sparkTargets.push(target)
+      this._sparkStarts.push(target.clone().add(
+        outward.multiplyScalar(radius * (1.4 + 0.9 * ((i * 0.383) % 1)))))
+      this._sparkDelays.push(voxelDelay(i))
+    }
+
+    this._applyFrame(0)
+    scene.add(this._lines)
+    scene.add(this._sparks)
+  }
+
+  _applyFrame(progress) {
+    const flash = this._reduced ? 0 : voxelFlash('materialize', progress)
+
+    // Layer 1: draw each edge on from corner A toward B on its staggered clock.
+    const lpos = this._lines.geometry.getAttribute('position')
+    const tip = new THREE.Vector3()
+    for (let i = 0; i < this._edgeCount; i++) {
+      const [a, b] = this._edges[i]
+      const grown = this._reduced ? 1 : easeOutCubic(localProgress(progress, voxelDelay(i)))
+      tip.copy(a).lerp(b, grown)
+      lpos.setXYZ(i * 2,     a.x, a.y, a.z)
+      lpos.setXYZ(i * 2 + 1, tip.x, tip.y, tip.z)
+    }
+    lpos.needsUpdate = true
+    this._lineMat.color.copy(this._baseColor).lerp(this._flashColor, flash * 0.85)
+    this._lineMat.opacity = this._reduced ? 0.5 : voxelEnvelope(progress)
+
+    // Layer 2: sparks fly in to their edge point, land, then shrink away.
+    const m = new THREE.Matrix4()
+    const pos = new THREE.Vector3()
+    const quat = new THREE.Quaternion()
+    const euler = new THREE.Euler()
+    const scl = new THREE.Vector3()
+    for (let i = 0; i < this._sparkCount; i++) {
+      const lp  = this._reduced ? 0.6 : localProgress(progress, this._sparkDelays[i])
+      const eIn = easeOutExpo(lp)
+      pos.copy(this._sparkStarts[i]).lerp(this._sparkTargets[i], eIn)
+      // grow on approach, then evaporate after landing (fade rides scale — one
+      // shared material has one opacity, same constraint as VoxelBurst).
+      const vis = this._reduced ? 0.7 : (lp < 0.7 ? 0.35 + 0.65 * eIn : Math.max(1 - (lp - 0.7) / 0.3, 0))
+      const spin = this._reduced ? 0 : (1 - eIn) * 1.3 * (i % 2 === 0 ? 1 : -1)
+      euler.set(spin, spin * 0.5, spin * ((i % 3) - 1))
+      quat.setFromEuler(euler)
+      scl.setScalar(Math.max(vis, 0.001))
+      m.compose(pos, quat, scl)
+      this._sparks.setMatrixAt(i, m)
+    }
+    this._sparks.instanceMatrix.needsUpdate = true
+    this._sparkMat.color.copy(this._baseColor).lerp(this._flashColor, flash * 0.7)
+    this._sparkMat.opacity = this._reduced ? 0.4 : voxelEnvelope(progress)
+  }
+
+  /**
+   * @param {number} t seconds (performance.now()/1000 — the loop clock)
+   * @returns {boolean} true when finished (caller disposes)
+   */
+  tick(t) {
+    const progress = (t - this._start) / this._duration
+    if (progress >= 1) return true
+    if (this._reduced) return false // static held cue — the full outline stands
+    this._applyFrame(progress)
+    return false
+  }
+
+  dispose() {
+    this._scene.remove(this._lines)
+    this._scene.remove(this._sparks)
+    this._lines.geometry.dispose()
+    this._lineMat.dispose()
+    this._sparks.geometry.dispose()
+    this._sparkMat.dispose()
+    this._sparks.dispose()
   }
 }
