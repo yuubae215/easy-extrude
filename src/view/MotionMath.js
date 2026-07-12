@@ -22,6 +22,17 @@ export function easeOutCubic(p) {
 }
 
 /**
+ * Exponential ease-out: a near-instant launch that coasts to rest — the
+ * "snappy" curve for burst/convergence distance (a fragment shoots out, then
+ * drifts). f(0)=0, f(1)=1, steeper than cubic at the start. p ∈ [0,1] → [0,1].
+ * @param {number} p
+ */
+export function easeOutExpo(p) {
+  const t = clamp01(p)
+  return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t)
+}
+
+/**
  * Back ease-out: overshoots past 1 then settles — the "pop" curve for spawn
  * effects. p ∈ [0,1] → [0, ~1.1] with f(0)=0, f(1)=1.
  * @param {number} p
