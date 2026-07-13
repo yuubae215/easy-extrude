@@ -62,6 +62,7 @@ export const DURATION = Object.freeze({
   celebration:  1600, // ADR-065 Phase 4 celebration burst (DOM banner + 3D field)
   regionResolve: 700, // ADR-065 Phase 5 region-conflict resolve: recolor → dissolve (3D)
   snapFlash:     260, // ADR-065 Phase 2 snap engagement flash (micro band ≤300 — machine-tested)
+  bootReveal:   1800, // ADR-067 boot camera fly-in (Tier D — one occasion per session)
 })
 
 /** CSS easing vocabulary for DOM animations. */

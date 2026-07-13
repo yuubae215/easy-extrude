@@ -126,3 +126,7 @@ ADR-065 Widening 1 は Motion Tier 規則を鋳造し、PHILOSOPHY #30 として
   （#29 play 側のみ）。
 - **状態機械（§1.4）**: 本決定は lifecycle を含まない（Motion Tier は分類規律であって
   実体の状態機械ではない）。
+
+## References
+
+- ADR-067(ビューポート常設ステージ + 起動リビール)— 本 ADR が新設した Tier D の最初の適用実績。
