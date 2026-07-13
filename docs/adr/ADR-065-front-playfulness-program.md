@@ -18,7 +18,8 @@
 - Date: 2026-07-09 (Accepted: 2026-07-10)
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし (ADR-062 を廃止せず**拡張**する)
-- References: ADR-062（三層方針 — 本 ADR の親。事実駆動演出の規律は無改変で継承）,
+- References: ADR-066（Widening 1 の Motion Tier に Tier D「delight」を追加する amend — 2026-07-12）,
+  ADR-062（三層方針 — 本 ADR の親。事実駆動演出の規律は無改変で継承）,
   ADR-064（rigor 側プログラム — Phase 4 の reduced-motion 境界を本 ADR Phase 1 が
   3D 層へ移設・延長）, ADR-061（惜しさメーター曲線）, ADR-059（空間ゴースト系譜）,
   ADR-058（無言 disabled 禁止・同一関数参照の検証境界）, ADR-047（ゴースト/リップル系譜）,
@@ -113,6 +114,14 @@ component-local / ワイヤ・uiStore に演出状態を載せない / 判定再
 隣接 3 領域のみ:
 
 **Widening 1 — モーション階層規則（Motion Tier）**
+
+> **Amended by ADR-066 (2026-07-12)**: 下の tier 表と一文テストは **ADR-066** で改訂された。
+> 「何も語らない動き = 装飾 = 不採用」の二値は遊び心を過剰に抑止していたため、
+> **Tier D — delight**（意図的・予算内・reduced 対応の歓び演出）を追加し、一文テストを
+> 「nothing → 不採用」から「nothing → Tier D として自己正当化せよ」へ反転、禁止 tier を
+> 「装飾」→「無規律 / 欺瞞的」に再定義した。構造 corollary（単一 reduced-motion 境界・
+> transient 単一所有者・judgment 偽装禁止）は無改変。下表は **履歴として原文のまま残す**
+> （最新の規範は PHILOSOPHY #30 と ADR-066 を参照）。
 
 | Tier | 意味 | 統治 |
 |------|------|------|
