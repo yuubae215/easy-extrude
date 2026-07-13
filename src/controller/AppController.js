@@ -63,6 +63,7 @@ import { inferSemanticRelationships } from '../service/SemanticInferencer.js'
 import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
+import { BootReveal }                 from '../view/BootReveal.js'
 import { createLandingEffect }        from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { SnapFlash }                  from '../view/SnapFlash.js'
@@ -499,6 +500,13 @@ export class AppController {
      * the concurrency budget (#9-symmetric eviction).
      */
     this._motion               = new MotionGovernor()
+    /**
+     * The boot camera fly-in (ADR-067, Tier D) while it is still animating.
+     * Held so the first canvas pointerdown / wheel / context load can
+     * pre-empt it via _finishBootReveal() — the user always wins.
+     * @type {import('../view/BootReveal.js').BootReveal|null}
+     */
+    this._bootReveal           = null
     this._rectSelHandler       = new RectSelectState()
 
     // ── Face extrude handler (delegated to FaceExtrudeHandler) ──────────────
@@ -1653,6 +1661,7 @@ export class AppController {
    * Everything else falls through to OrbitControls' own wheel zoom.
    */
   _onWheel(e) {
+    this._finishBootReveal()
     if (this._mapModeCtrl.onWheel(e)) return
     if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
       e.preventDefault()
@@ -1677,6 +1686,13 @@ export class AppController {
     this._handlers = null
   }
 
+  /** Snap the boot fly-in (ADR-067) to its final pose — the user always wins. */
+  _finishBootReveal() {
+    if (!this._bootReveal) return
+    this._bootReveal.finish()
+    this._bootReveal = null
+  }
+
   _updateNPanel() { this._uiStateMgr.updateNPanel() }
 
   /**
@@ -1687,6 +1703,8 @@ export class AppController {
    * @param {object} compiled — compileContext() output ({ layoutDsl, ... })
    */
   _onContextLoaded(compiled) {
+    // A context load frames its own scene — the boot fly-in yields (ADR-067).
+    this._finishBootReveal()
     this._commandStack.clear()
     this._refreshUndoRedoState()
     this._selMgr.clearObjectSelection()
@@ -2329,6 +2347,10 @@ export class AppController {
     // Without this guard, button taps trigger _handleEditClick which clears
     // face selection before the button's click handler fires (e.g. Extrude).
     if (e.target !== this._sceneView.renderer.domElement) return
+
+    // The first canvas interaction pre-empts the boot fly-in (ADR-067) so the
+    // camera is settled BEFORE any hit-test below reads it.
+    this._finishBootReveal()
 
     // Update _mouse from the event immediately after the canvas guard.
     // On touch devices pointermove does not fire before the first pointerdown,
@@ -3365,6 +3387,15 @@ export class AppController {
 
   // ─── Animation loop ────────────────────────────────────────────────────────
   start() {
+    // Boot reveal (ADR-067, Tier D): one camera fly-in per session opening,
+    // spawned through the MotionGovernor (reduced motion → the final pose is
+    // the whole show). Skipped when the URL boots straight into the Context
+    // demo — that path frames its own scene via fitCameraToSphere.
+    if (new URLSearchParams(location.search).get('demo') !== 'context') {
+      this._bootReveal = this._motion.spawn(reduced =>
+        new BootReveal(this._sceneView.camera, this._sceneView.controls.target, { reduced }))
+    }
+
     const loop = () => {
       requestAnimationFrame(loop)
       // Keep MeasureLine / AnnotatedPoint HTML labels positioned over the correct screen pixel,
@@ -3437,9 +3468,13 @@ export class AppController {
           obj.meshView.updateLabelPosition(this._sceneView.activeCamera)
         }
       }
+      // Ambient stage: dust drift + entry fade (ADR-067 — persistent view,
+      // owned by SceneView; reduced motion freezes it to a static cue).
+      this._sceneView.stage.tick(t)
       // Tick and prune transient effects (ripples, landing pulses) — the
       // MotionGovernor owns their lifetime (ADR-065 Phase 1).
       this._motion.tick(t)
+      if (this._bootReveal && !this._bootReveal.active) this._bootReveal = null
       // Context DSL demo: ghost pulse/collapse + staggered reveal (ADR-047).
       this._demoCtrl.tick(t)
       // Production Context overlay: authoring widgets + region ghosts (ADR-050 Phase 3).

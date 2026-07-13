@@ -77,7 +77,8 @@ This directory records the project's design decisions.
 | [ADR-063](ADR-063-selection-first-intake-wizard.md) | **選択優先インテーク — ウィザード・パラメトリックアセット・KPI 式カタログ（白紙入力不能の前提）** | Accepted (全 5 フェーズ実装済) | 2026-07-05 | ADR-062, ADR-051, ADR-058, ADR-050, ADR-049, ADR-045, ADR-047 |
 | [ADR-064](ADR-064-rigor-retrofit-program.md) | **Rigor 側の遡及プログラム — CI ゲート化・DSL スキーマ昇格・未契約ワイヤの明示宣言・play の検証** | Accepted (Phase 1 実装済) | 2026-07-08 | ADR-062, ADR-060, ADR-054, ADR-045, ADR-046, ADR-053, ADR-015, ADR-017 |
 | [ADR-065](ADR-065-front-playfulness-program.md) | **体感層の全面遊戯化プログラム — front は遊び場、back は証明のまま** | Accepted (全 7 フェーズ + 全候補実装済 — スナップ係合フラッシュ完了 2026-07-12 でプログラム完結; Widening 1 は ADR-066 で amend) | 2026-07-09 | ADR-062, ADR-064, ADR-061, ADR-059, ADR-058, ADR-047, ADR-066 |
-| [ADR-066](ADR-066-motion-tier-delight-allowance.md) | **Motion Tier に Tier D「delight」を追加 — 遊び心を禁じず統治する** | Accepted | 2026-07-12 | ADR-065, ADR-062, ADR-064 |
+| [ADR-066](ADR-066-motion-tier-delight-allowance.md) | **Motion Tier に Tier D「delight」を追加 — 遊び心を禁じず統治する** | Accepted | 2026-07-12 | ADR-065, ADR-062, ADR-064, ADR-067 |
+| [ADR-067](ADR-067-viewport-stage-boot-reveal.md) | **ビューポート常設ステージ + 起動リビール — Tier D の最初の適用** | Accepted | 2026-07-13 | ADR-066, ADR-065 |
 
 ## How to Add a New ADR
 

@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { SceneStage } from './SceneStage.js'
 
 export class SceneView {
   constructor() {
@@ -17,7 +18,8 @@ export class SceneView {
     canvasContainer.appendChild(this.renderer.domElement)
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x1a1a2e)
+    // Backdrop/fog ownership is delegated to the ambient stage (ADR-067):
+    // SceneStage sets `scene.background` (gradient) and `scene.fog` itself.
 
     this.camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
     this.camera.up.set(0, 0, 1)           // ROS convention: +Z is up
@@ -40,6 +42,9 @@ export class SceneView {
 
     this._setupLighting()
     this._setupGrid()
+    // Ambient stage dressing: gradient backdrop, depth fog, floor glow,
+    // drifting dust, rim light (ADR-067 — Tier D; persistent view owned here).
+    this.stage = new SceneStage(this.scene)
 
     window.addEventListener('resize', () => this._onResize())
   }
@@ -73,6 +78,9 @@ export class SceneView {
     // 20·scale total span ≥ 2·radius  →  scale ≥ radius/10, rounded up to 10^n
     const scale = Math.pow(10, Math.max(0, Math.ceil(Math.log10(radius / 10))))
     this._grid.scale.setScalar(scale)
+    // The ambient stage (dust field, floor glow, fog density) rides the same
+    // power-of-10 scale so it stays proportionate in mm-scale scenes (#27).
+    this.stage.setScale(scale)
   }
 
   _onResize() {
