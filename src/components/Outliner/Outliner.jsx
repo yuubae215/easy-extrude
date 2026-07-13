@@ -5,6 +5,7 @@ import { PLACE_TYPE_MAP } from '../../domain/PlaceTypeRegistry.js'
 import { tourAnchor, tourVisible } from '../../view/TourMath.js'
 import { activeGlow } from '../../view/ChromeMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { DURATION, EASING } from '../../theme/tokens.js'
 
 // ── Icon config matching OutlinerView._createRow ──────────────────────────────
 const TYPE_ICON = {
@@ -44,6 +45,12 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
   const inputRef = useRef(null)
+  const rowRef = useRef(null)
+  const reduced = useReducedMotion()
+  // ADR-068 polish: colour/opacity glide on hover & active, gated by reduced motion.
+  const rowTransition = reduced ? undefined
+    : `background ${DURATION.hover}ms ${EASING.out}, opacity ${DURATION.hover}ms ${EASING.out}`
+  const iconTransition = reduced ? undefined : `opacity ${DURATION.hover}ms ${EASING.out}`
 
   const { id, name, type, visible, locked, ifcClass, placeType, linked, unreferenced } = item
 
@@ -53,6 +60,12 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
       inputRef.current.select()
     }
   }, [editing])
+
+  // Follow the selection: when a row becomes active (e.g. selected from the 3D
+  // canvas, not just clicked here), scroll it into view (ADR-068 polish).
+  useEffect(() => {
+    if (active) rowRef.current?.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' })
+  }, [active, reduced])
 
   // ── IFC badge ──────────────────────────────────────────────────────────────
   const ifcEntry = ifcClass ? IFC_CLASS_MAP.get(ifcClass) : null
@@ -104,6 +117,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
 
   return (
     <div
+      ref={rowRef}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -119,6 +133,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
         outline: isDragTarget ? '2px solid #4fc3f7' : 'none',
         outlineOffset: isDragTarget ? -2 : 0,
         opacity: draggingId === id ? 0.4 : 1,
+        transition: rowTransition,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -227,7 +242,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
         onClick={e => { e.stopPropagation(); callbacks.outlinerOnVisible?.(id, !visible) }}
         style={{
           color: '#aaa', fontSize: 10, flexShrink: 0,
-          opacity: hovered ? 1 : 0,
+          opacity: hovered ? 1 : 0, transition: iconTransition,
           lineHeight: 1, padding: '0 2px', cursor: 'pointer',
         }}
       >
@@ -241,7 +256,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
         onClick={e => { e.stopPropagation(); callbacks.outlinerOnDelete?.(id) }}
         style={{
           color: '#888', fontSize: 10, flexShrink: 0,
-          opacity: hovered ? 1 : 0,
+          opacity: hovered ? 1 : 0, transition: iconTransition,
           lineHeight: 1, padding: '0 2px', cursor: 'pointer',
           background: 'none', border: 'none',
         }}

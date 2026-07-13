@@ -79,6 +79,7 @@ This directory records the project's design decisions.
 | [ADR-065](ADR-065-front-playfulness-program.md) | **体感層の全面遊戯化プログラム — front は遊び場、back は証明のまま** | Accepted (全 7 フェーズ + 全候補実装済 — スナップ係合フラッシュ完了 2026-07-12 でプログラム完結; Widening 1 は ADR-066 で amend) | 2026-07-09 | ADR-062, ADR-064, ADR-061, ADR-059, ADR-058, ADR-047, ADR-066 |
 | [ADR-066](ADR-066-motion-tier-delight-allowance.md) | **Motion Tier に Tier D「delight」を追加 — 遊び心を禁じず統治する** | Accepted | 2026-07-12 | ADR-065, ADR-062, ADR-064, ADR-067 |
 | [ADR-067](ADR-067-viewport-stage-boot-reveal.md) | **ビューポート常設ステージ + 起動リビール — Tier D の最初の適用** | Accepted | 2026-07-13 | ADR-066, ADR-065 |
+| [ADR-068](ADR-068-camera-focus-flight-living-selection.md) | **カメラ・フォーカスフライト + 生きた選択 — ナビの Tier D と実体の Tier A/F** | Accepted | 2026-07-13 | ADR-067, ADR-066, ADR-065 |
 
 ## How to Add a New ADR
 

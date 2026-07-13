@@ -213,6 +213,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `faceExtrude.active` | Calculate distance + `_applyFaceExtrude()` + update label |
 | `grab.active` | `_applyGrab()` |
 | `_endpointDrag.active` | Project to drag plane → update endpoint position live |
+| hover (object mode, nothing active, fine pointer) | `hitAnyObject()` → `_setHoveredEntity()` → `MeshView.setHovered()` warm-emissive affordance (ADR-068 Tier A; touch skipped, #13) |
 | hover (edit 1d, nothing active) | `_findNearestVertex()` → `setEndpointHover()` |
 | hover (edit 3d, nothing active) | `_hitFace/Vertex/Edge()` → `setFaceHighlight()` |
 | Long-press timer active (`_longPressTimer`) | Cancel timer if movement > 8px |
@@ -232,9 +233,18 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 
 | Condition | Action |
 |-----------|--------|
+| Always (first) | `_finishBootReveal()` + `_finishCameraFlight()` — a zoom pre-empts any camera flight (ADR-067/068) |
 | `Ctrl` + `grab.active` | Cycle grid size (0.1, 0.5, 1, 5) |
 | `Ctrl` + `rotate.active` | Cycle rotation step size (1°, 5°, 10°, 45°) |
 | Otherwise | Delegate to OrbitControls zoom |
+
+### dblclick (`_onDblClick`, ADR-068)
+
+| Condition | Action |
+|-----------|--------|
+| Object mode, hits an entity | Select it + `focusSelection()` — flies to frame it |
+| Object mode, empty space | `focusSelection()` — flies to frame the whole scene |
+| Not object mode / non-canvas target | No-op |
 
 ### contextmenu
 
@@ -258,6 +268,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | Key | Condition | Action |
 |-----|-----------|--------|
 | `Tab` | Not in grab.active / faceExtrude.active | Toggle mode (object ↔ edit) |
+| `F` / `Home` | Not in an operation | `focusSelection()` — smooth camera flight framing the selection (or whole scene), ADR-068 |
 | `Escape` | During any operation | Cancel (grab, faceExtrude, rectSel, sketch, rotate, measure) |
 | `Enter` | During any operation | Confirm (grab → `_confirmGrab()`, faceExtrude → `_confirmFaceExtrude()`, 2d-sketch → `_enterExtrudePhase()`) |
 | `Ctrl+Z` | All modes | `_commandStack.undo()` |
