@@ -2,16 +2,33 @@
  * GizmoView - Blender-style world orientation gizmo (top-right corner)
  *
  * Renders X/Y/Z axis indicators on a 2D canvas overlay.
- * Clicking an axis dot snaps the camera to that axis view.
+ * Clicking an axis dot flies the camera to that axis view.
+ *
+ * The camera change is NOT applied here directly. `_onClick` derives the
+ * destination pose (position/target/up) and hands it to the `onRequestView`
+ * callback, which AppController wires to `flyToView` — an interruptible,
+ * eased, reduced-motion-aware `CameraFlight` (ADR-068). The gizmo used to
+ * teleport the camera in a single frame, the one camera surface that bypassed
+ * the app's motion system; routing through the callback removes the
+ * disorienting "jump" and folds the gizmo into the same governance every
+ * other camera move obeys (PHILOSOPHY #30 Tier A — a navigation affordance).
+ * `_applyInstant` is the graceful fallback if no callback is wired, so a
+ * dropped wiring degrades to the old instant snap, never a silent no-op (#11).
  *
  * Side effects: DOM canvas creation, event listeners.
  */
 import * as THREE from 'three'
+import { COLOR, Z, rgba } from '../theme/tokens.js'
 
+const UP_Y = new THREE.Vector3(0, 1, 0)
+
+// Positive-axis colours share the 3D scene axis tokens (COLOR.axisX/Y/Z) so the
+// gizmo and the world axes read as the same colour system; the back-facing
+// (negative) tip is a dimmed, translucent variant of the same hue.
 const AXES = [
-  { label: 'X', dir: new THREE.Vector3(1, 0, 0), color: '#e05555', negColor: 'rgba(110,30,30,0.75)' },
-  { label: 'Y', dir: new THREE.Vector3(0, 1, 0), color: '#50c060', negColor: 'rgba(25,75,35,0.75)' },
-  { label: 'Z', dir: new THREE.Vector3(0, 0, 1), color: '#4d80e6', negColor: 'rgba(25,45,100,0.75)' },
+  { label: 'X', dir: new THREE.Vector3(1, 0, 0), color: COLOR.axisX, negColor: rgba(COLOR.axisX, 0.4) },
+  { label: 'Y', dir: new THREE.Vector3(0, 1, 0), color: COLOR.axisY, negColor: rgba(COLOR.axisY, 0.4) },
+  { label: 'Z', dir: new THREE.Vector3(0, 0, 1), color: COLOR.axisZ, negColor: rgba(COLOR.axisZ, 0.4) },
 ]
 
 const SIZE    = 128
@@ -30,8 +47,8 @@ export class GizmoView {
     this._controls = controls
     this._hovered  = null  // e.g. 'X+', 'Y-'
     this._lastKey      = null   // axis key of last snap, for toggle-back
-    this._prevPosition = null   // camera position before last snap
-    this._prevUp       = null   // camera.up before last snap
+    this._prevPose     = null   // { position, up } captured before the last snap
+    this._requestView  = null   // (pose) => void — set by AppController.onRequestView
 
     this._canvas = document.createElement('canvas')
     this._canvas.width  = SIZE
@@ -45,7 +62,7 @@ export class GizmoView {
       borderRadius: '50%',
       background:   'rgba(24, 24, 40, 0.55)',
       cursor:       'default',
-      zIndex:       '10',
+      zIndex:       String(Z.gizmo),
       userSelect:   'none',
     })
     document.body.appendChild(this._canvas)
@@ -60,6 +77,16 @@ export class GizmoView {
   /** Adjusts the right offset to avoid overlapping the N panel */
   setRightOffset(px) {
     this._canvas.style.right = `${px}px`
+  }
+
+  /**
+   * Register the camera-move sink. AppController wires this to `flyToView` so an
+   * axis click becomes an interruptible eased flight (ADR-068) instead of the
+   * instant snap. When unset, `_onClick` falls back to `_applyInstant`.
+   * @param {(pose:{position:THREE.Vector3, target:THREE.Vector3, up:THREE.Vector3}) => void} fn
+   */
+  onRequestView(fn) {
+    this._requestView = fn
   }
 
   // ── Projection ─────────────────────────────────────────────────────────────
@@ -173,29 +200,32 @@ export class GizmoView {
     const target = this._controls.target.clone()
     const dist   = this._camera.position.distanceTo(target)
 
-    // Toggle: clicking the same axis key a second time restores the previous perspective view
-    if (key === this._lastKey && this._prevPosition) {
-      this._camera.position.copy(this._prevPosition)
-      this._camera.up.copy(this._prevUp)
-      this._camera.lookAt(target)
-      // OrbitControls stores its polar-axis quat at construction time and never recomputes it.
-      // Sync it to the restored camera.up so orbit behaves correctly after the toggle.
-      this._controls._quat.setFromUnitVectors(this._prevUp, new THREE.Vector3(0, 1, 0))
-      this._controls._quatInverse.copy(this._controls._quat).invert()
-      this._controls.update()
-      this.update()
-      this._lastKey      = null
-      this._prevPosition = null
-      this._prevUp       = null
+    // Toggle: clicking the same axis key a second time flies back to the
+    // previous perspective view (position + up captured at the last snap).
+    if (key === this._lastKey && this._prevPose) {
+      const prev = this._prevPose
+      this._lastKey  = null
+      this._prevPose = null
+      this._emitView({ position: prev.position.clone(), target, up: prev.up.clone() })
       return
     }
 
     // Save current camera state so the toggle can restore it
-    this._prevPosition = this._camera.position.clone()
-    this._prevUp       = this._camera.up.clone()
-    this._lastKey      = key
+    this._prevPose = { position: this._camera.position.clone(), up: this._camera.up.clone() }
+    this._lastKey  = key
 
-    // Direction from origin for each axis view
+    const pose = this._poseForKey(key, target, dist)
+    if (!pose) { this._lastKey = null; this._prevPose = null; return }
+    this._emitView(pose)
+  }
+
+  /**
+   * Destination pose for an axis key. The up-vector and OrbitControls polar
+   * axis must change together (see `_applyInstant`); this derives the desired
+   * up so the applier (instant or flight) can enforce that pairing.
+   * @returns {{position:THREE.Vector3, target:THREE.Vector3, up:THREE.Vector3}|null}
+   */
+  _poseForKey(key, target, dist) {
     const viewDirs = {
       'X+': new THREE.Vector3( 1,  0,  0),
       'X-': new THREE.Vector3(-1,  0,  0),
@@ -205,34 +235,49 @@ export class GizmoView {
       'Z-': new THREE.Vector3( 0,  0, -1),
     }
     const dir = viewDirs[key]
-    if (!dir) return
+    if (!dir) return null
 
-    // Snap camera position along that axis direction from the orbit target
-    this._camera.position.copy(target).addScaledVector(dir, dist)
+    const position = target.clone().addScaledVector(dir, dist)
 
-    // Fix up-vector and sync OrbitControls' internal polar-axis quat.
-    // OrbitControls computes _quat = setFromUnitVectors(camera.up, Y) once at construction
-    // and never updates it — changing camera.up without syncing _quat leaves the internal
-    // spherical coordinate system misaligned, causing gimbal lock on the very next drag.
-    //
-    // Z+/Z-: camera looks along ±Z which is parallel to the original up (Z), so we
-    // declare X as the new "screen up" to escape the singularity. The Y epsilon keeps
-    // the camera just off the exact equatorial plane of the X-up sphere (phi=90°±ε),
-    // which keeps OrbitControls stable.
-    // X±/Y±: camera is already at the equator of the Z-up sphere — restore Z-up quat.
+    // Z+/Z-: camera looks along ±Z, parallel to the world up (Z), so we declare
+    // X as the "screen up" to escape the singularity, and nudge the camera off
+    // the exact Z-axis (phi ≠ 90°) so OrbitControls stays stable. X±/Y±: the
+    // camera sits at the equator of the Z-up sphere — keep Z up.
+    let up
     if (key === 'Z+' || key === 'Z-') {
-      this._camera.position.y += 1e-4  // keeps camera off the exact Z-axis so phi ≠ 90°
-      this._camera.up.set(1, 0, 0)
-      this._controls._quat.setFromUnitVectors(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0))
-      this._controls._quatInverse.copy(this._controls._quat).invert()
+      position.y += 1e-4
+      up = new THREE.Vector3(1, 0, 0)
     } else {
-      this._camera.up.set(0, 0, 1)  // ROS convention: +Z is up for all horizontal views
-      this._controls._quat.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0))
+      up = new THREE.Vector3(0, 0, 1)  // ROS convention: +Z is up for horizontal views
+    }
+    return { position, target, up }
+  }
+
+  /** Route the pose to the eased flight if wired, else snap instantly. */
+  _emitView(pose) {
+    if (this._requestView) this._requestView(pose)
+    else this._applyInstant(pose)
+    this.update()
+  }
+
+  /**
+   * Instant camera write — the graceful fallback when no flight sink is wired.
+   * Sets position + up together and re-syncs OrbitControls' internal polar-axis
+   * quat: OrbitControls computes `_quat = setFromUnitVectors(camera.up, Y)` once
+   * and never recomputes it, so changing `camera.up` without syncing `_quat`
+   * leaves the spherical coordinate system misaligned → gimbal lock on the next
+   * drag. AppController.flyToView applies the identical orientation change, then
+   * eases only the position/target.
+   * @param {{position:THREE.Vector3, target:THREE.Vector3, up:THREE.Vector3}} pose
+   */
+  _applyInstant({ position, target, up }) {
+    this._camera.position.copy(position)
+    if (up) {
+      this._camera.up.copy(up)
+      this._controls._quat.setFromUnitVectors(up, UP_Y)
       this._controls._quatInverse.copy(this._controls._quat).invert()
     }
-
     this._camera.lookAt(target)
     this._controls.update()
-    this.update()
   }
 }

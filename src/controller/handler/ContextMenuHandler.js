@@ -16,6 +16,7 @@ import { AnnotatedRegion } from '../../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../../domain/AnnotatedPoint.js'
 import { createMountAnnotationCommand }       from '../../command/MountAnnotationCommand.js'
 import { createCreateCoordinateFrameCommand } from '../../command/CreateCoordinateFrameCommand.js'
+import { createDeleteSpatialLinkCommand }     from '../../command/DeleteSpatialLinkCommand.js'
 
 export class ContextMenuHandler {
   /** @param {import('../AppController.js').AppController} ctrl */
@@ -89,6 +90,31 @@ export class ContextMenuHandler {
         }}]
       : []
 
+    // Topological / annotation links (jointType === null: adjacent, contains,
+    // above, connects, references, represents) carry no kinematic constraint,
+    // so they have no Unfasten path — but they ARE removable
+    // (`detachSpatialLink` is universal). Before this, the only affordance was a
+    // per-row delete buried in the N-panel's Spatial Links section, so users
+    // reported adjacent links as undeletable (#4 — a discoverability gap, not a
+    // hard block). Surface one Disconnect item per topological link here, using
+    // the same undoable detach path as the N-panel (createDeleteSpatialLinkCommand).
+    const topoLinks = ctrl._service.getLinksOf(id).filter(l => l.jointType === null)
+    const disconnectItems = topoLinks.map(l => {
+      const otherId   = l.sourceId === id ? l.targetId : l.sourceId
+      const otherName = ctrl._scene.getObject(otherId)?.name ?? '?'
+      return {
+        label: `Disconnect ⊗ ${l.semanticType} · "${otherName}"`,
+        onClick: () => {
+          const link = ctrl._scene.getLink(l.id)
+          if (!link) return
+          ctrl._service.detachSpatialLink(l.id)
+          ctrl._commandStack.push(createDeleteSpatialLinkCommand(link, ctrl._service))
+          ctrl._uiView.showToast(`Disconnected ${link.semanticType}`)
+          ctrl._updateNPanel()
+        },
+      }
+    })
+
     // ADR-032 §9: generic Link to... for Solid / CoordinateFrame
     const linkItems = isSolidOrCF
       ? [{ label: 'Link to... 🔗', onClick: () => {
@@ -113,6 +139,7 @@ export class ContextMenuHandler {
       }] : []),
       ...mountItems,
       ...unfastenItems,
+      ...disconnectItems,
       ...linkItems,
       ...assemblyItems,
       ...(canAddFrame ? [{
@@ -141,9 +168,14 @@ export class ContextMenuHandler {
   promptAddFrame(parentId) {
     const ctrl = this._ctrl
     if (!ctrl._scene.getObject(parentId)) return
-    ctrl._uiView.showRenameDialog('Frame', (name) => {
+    // Seed the dialog with the same collision-free auto-name the viewport /
+    // N-panel "Add Frame" paths use, so accepting the default yields a unique
+    // "Frame.NNN" instead of a duplicate literal "Frame" (#9). An empty answer
+    // falls back to `null` → the service auto-numbers identically.
+    const suggested = ctrl._service.nextEntityName('Frame')
+    ctrl._uiView.showRenameDialog(suggested, (name) => {
       if (name === null) return
-      const frameName = name || 'Frame'
+      const frameName = name.trim() || null
       // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
       const parentObj = ctrl._scene.getObject(parentId)
       let effectiveParentId = parentId

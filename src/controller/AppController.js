@@ -168,6 +168,11 @@ export class AppController {
     this._uiView             = uiView
     this._gizmoView          = gizmoView
     this._outlinerView       = outlinerView
+    // Route world-gizmo axis clicks through the eased, interruptible flight
+    // (ADR-068) instead of the old instant teleport. The closure is lazy —
+    // `flyToView` runs only at click time, after `_motion` (constructed below)
+    // and `start()` are live.
+    this._gizmoView?.onRequestView?.(pose => this.flyToView(pose))
     this._rotateSectorPreview = new RotateSectorPreview(sceneView.scene)
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
@@ -1761,6 +1766,33 @@ export class AppController {
     this._finishCameraFlight() // never stack two flights
     this._cameraFlight = this._motion.spawn(reduced =>
       new CameraFlight(this._sceneView.camera, this._sceneView.controls, end, { reduced }))
+  }
+
+  /**
+   * Fly the camera to a world-gizmo axis view (ADR-068 sibling of
+   * `focusSelection`). The gizmo derives the destination pose; here we apply the
+   * discrete orientation change (camera.up + OrbitControls' polar-axis quat —
+   * NOT motion, so it applies even under reduced motion, mirroring
+   * GizmoView._applyInstant), then ease only the position/target through a
+   * `MotionGovernor` transient. This replaces the gizmo's old single-frame
+   * teleport that bypassed the whole motion system (the "sudden jump").
+   * @param {{position:THREE.Vector3, target:THREE.Vector3, up:THREE.Vector3}} pose
+   */
+  flyToView({ position, target, up }) {
+    const sv = this._sceneView
+    if (up) {
+      sv.camera.up.copy(up)
+      // Keep OrbitControls' internal spherical frame aligned with the new up so
+      // the next orbit drag doesn't gimbal-lock (same sync as the gizmo's
+      // instant path; OrbitControls never recomputes this from camera.up).
+      sv.controls._quat.setFromUnitVectors(up, new THREE.Vector3(0, 1, 0))
+      sv.controls._quatInverse.copy(sv.controls._quat).invert()
+    }
+    this._finishBootReveal()   // a deliberate view change supersedes the boot fly-in
+    this._finishCameraFlight() // never stack two flights
+    const end = { position, target }
+    this._cameraFlight = this._motion.spawn(reduced =>
+      new CameraFlight(sv.camera, sv.controls, end, { reduced }))
   }
 
   /**
