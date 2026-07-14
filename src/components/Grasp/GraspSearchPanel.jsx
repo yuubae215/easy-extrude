@@ -2,7 +2,18 @@ import { useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
-import { DeltaChip } from '../Feedback/FeedbackPrimitives.jsx'
+import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { DURATION, EASING } from '../../theme/tokens.js'
+
+/**
+ * A `transition: width` for a data bar fill (ADR-068 polish) so the bar glides
+ * to its new fraction instead of snapping. Reduced motion drops the transition
+ * (the number is the information, not the glide — PHILOSOPHY #30). Presentation
+ * only; the fraction still comes verbatim from the contract diagnostics (#29).
+ */
+function barTransition(reduced) {
+  return reduced ? undefined : `width ${DURATION.drawer}ms ${EASING.out}`
+}
 
 /**
  * GraspSearchPanel — UI → DSL → BFF → grasp-search verification (ADR-054 thread,
@@ -275,6 +286,7 @@ function DiagnosticsFunnel({ diagnostics, prev }) {
 }
 
 function FunnelRow({ label, stage, dominant, delta }) {
+  const reduced = useReducedMotion()
   const pct = Math.max(0, Math.min(1, stage.fraction)) * 100
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
@@ -283,7 +295,7 @@ function FunnelRow({ label, stage, dominant, delta }) {
         color: dominant ? '#eb7' : '#aaa', fontWeight: dominant ? 'bold' : 'normal',
       }}>{label}</span>
       <div style={{ flex: 1, height: '9px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: dominant ? '#b58432' : '#3a6a9d' }} />
+        <div style={{ width: `${pct}%`, height: '100%', background: dominant ? '#b58432' : '#3a6a9d', transition: barTransition(reduced) }} />
       </div>
       <span style={{
         width: '34px', fontSize: '10px',
@@ -306,6 +318,7 @@ function FunnelRow({ label, stage, dominant, delta }) {
  * curve and the wording are derived feel.
  */
 function NearMissMeter({ miss, closeness }) {
+  const reduced = useReducedMotion()
   const pct = closeness * 100
   const feel = closeness >= 0.9 ? 'so close!' : closeness >= 0.5 ? 'almost' : 'out of reach'
   return (
@@ -313,7 +326,7 @@ function NearMissMeter({ miss, closeness }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ width: '64px', fontSize: '10px', color: '#eb7', textAlign: 'right' }}>near miss</span>
         <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #7a5a24, #e8b04a)' }} />
+          <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #7a5a24, #e8b04a)', transition: barTransition(reduced) }} />
         </div>
         <span style={{ fontSize: '9px', color: '#eb7', whiteSpace: 'nowrap' }}>{feel}</span>
       </div>
@@ -397,12 +410,13 @@ function PoseFooter({ pose }) {
 }
 
 function ObjectiveBar({ label, value }) {
+  const reduced = useReducedMotion()
   const pct = Math.max(0, Math.min(1, value)) * 100
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
       <span style={{ width: '64px', fontSize: '9px', color: '#aaa', textAlign: 'right' }}>{label}</span>
       <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: '#3a7bd5' }} />
+        <div style={{ width: `${pct}%`, height: '100%', background: '#3a7bd5', transition: barTransition(reduced) }} />
       </div>
       <span style={{ width: '30px', fontSize: '9px', color: '#9ad' }}>{value.toFixed(2)}</span>
     </div>

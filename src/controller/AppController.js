@@ -64,6 +64,8 @@ import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
 import { BootReveal }                 from '../view/BootReveal.js'
+import { CameraFlight }               from '../view/CameraFlight.js'
+import { SelectPulse }                from '../view/SelectPulse.js'
 import { createLandingEffect }        from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { SnapFlash }                  from '../view/SnapFlash.js'
@@ -507,6 +509,17 @@ export class AppController {
      * @type {import('../view/BootReveal.js').BootReveal|null}
      */
     this._bootReveal           = null
+    /**
+     * The focus/frame fly-to-selection flight (ADR-068) while it is animating.
+     * Held so the first canvas pointerdown / wheel can pre-empt it (the user
+     * always wins — same contract as _bootReveal).
+     * @type {import('../view/CameraFlight.js').CameraFlight|null}
+     */
+    this._cameraFlight         = null
+    /** Last Solid id that fired a select pulse — the transition guard (#30). */
+    this._lastSelectFxId       = null
+    /** Entity currently under a desktop hover affordance (ADR-068). */
+    this._hoveredEntity        = null
     this._rectSelHandler       = new RectSelectState()
 
     // ── Face extrude handler (delegated to FaceExtrudeHandler) ──────────────
@@ -1414,6 +1427,15 @@ export class AppController {
 
     const obj = this._scene.getObject(id)
     if (obj) obj.meshView.setObjectSelected(select)
+    // Select "tap" pulse (ADR-068) — only on a transition INTO selection of a
+    // Solid (id changed), never on re-selection churn (#30 volume discipline).
+    if (select && obj instanceof Solid && id !== this._lastSelectFxId && obj.corners?.length === 8) {
+      const corners = obj.corners
+      this._motion.spawn(reduced => new SelectPulse(this._sceneView.scene, corners, { reduced }))
+      this._lastSelectFxId = id
+    } else if (!select) {
+      this._lastSelectFxId = null
+    }
     if (select) {
       if (obj instanceof CoordinateFrame) {
         this._selMgr.showFrameChain(id)
@@ -1643,6 +1665,7 @@ export class AppController {
         }
         this._showLongPressContextMenu(e.clientX, e.clientY, obj)
       },
+      dblclick: e => this._onDblClick(e),
     }
     window.addEventListener('pointermove', this._handlers.pointermove)
     window.addEventListener('pointerdown', this._handlers.pointerdown)
@@ -1651,6 +1674,26 @@ export class AppController {
     window.addEventListener('keyup',       this._handlers.keyup)
     window.addEventListener('wheel',       this._handlers.wheel, { passive: false })
     window.addEventListener('contextmenu', this._handlers.contextmenu)
+    window.addEventListener('dblclick',    this._handlers.dblclick)
+  }
+
+  /**
+   * Double-click a scene entity to select and frame it (ADR-068). Empty-space
+   * double-click frames the whole scene. Object mode only; the flight itself is
+   * spawned by `focusSelection`. (Registered handler must stay defined — the
+   * "Registered Window Handlers Must Stay Defined" contract.)
+   */
+  _onDblClick(e) {
+    if (e.target !== this._sceneView.renderer.domElement) return
+    if (this._scene.selectionMode !== 'object') return
+    this._hitTest.updateMouse(e)
+    const hit = this._hitTest.hitAnyObject()?.obj ?? this._hitTest.hitAnyCoordinateFrame()?.obj
+    if (hit && hit.id !== this._scene.activeId) {
+      this._selMgr.clearObjectSelection()
+      this._switchActiveObject(hit.id, true)
+      this._selectedIds.add(hit.id)
+    }
+    this.focusSelection()
   }
 
   /**
@@ -1662,6 +1705,7 @@ export class AppController {
    */
   _onWheel(e) {
     this._finishBootReveal()
+    this._finishCameraFlight()
     if (this._mapModeCtrl.onWheel(e)) return
     if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
       e.preventDefault()
@@ -1683,6 +1727,7 @@ export class AppController {
     window.removeEventListener('keyup',       this._handlers.keyup)
     window.removeEventListener('wheel',       this._handlers.wheel)
     window.removeEventListener('contextmenu', this._handlers.contextmenu)
+    window.removeEventListener('dblclick',    this._handlers.dblclick)
     this._handlers = null
   }
 
@@ -1691,6 +1736,70 @@ export class AppController {
     if (!this._bootReveal) return
     this._bootReveal.finish()
     this._bootReveal = null
+  }
+
+  /** Snap the focus flight (ADR-068) to its end pose — the user always wins. */
+  _finishCameraFlight() {
+    if (!this._cameraFlight) return
+    this._cameraFlight.finish()
+    this._cameraFlight = null
+  }
+
+  /**
+   * Frame the current selection (or the whole scene if nothing is selected)
+   * with a smooth, interruptible camera flight (ADR-068). "Frame the selection"
+   * is a distinct entry point from `fitCameraToSphere` ("frame the scene"): it
+   * eases to `SceneView.focusPose` via a MotionGovernor transient and does NOT
+   * rescale the ground grid (grid scale stays tied to scene radius, #27).
+   * Bound to F / Home and to double-clicking an entity.
+   */
+  focusSelection() {
+    const sphere = this._focusSphere()
+    if (!sphere) return
+    const end = this._sceneView.focusPose(sphere.center, sphere.radius)
+    this._finishBootReveal()   // a deliberate reframe supersedes the boot fly-in
+    this._finishCameraFlight() // never stack two flights
+    this._cameraFlight = this._motion.spawn(reduced =>
+      new CameraFlight(this._sceneView.camera, this._sceneView.controls, end, { reduced }))
+  }
+
+  /**
+   * Bounding sphere to frame: the selected entities if any, else the whole
+   * scene. Returns null when there is nothing to frame (empty scene).
+   * @returns {{center: THREE.Vector3, radius: number}|null}
+   */
+  _focusSphere() {
+    const box = new THREE.Box3()
+    const ids = (this._objSelected && this._selectedIds.size > 0)
+      ? [...this._selectedIds] : [...this._scene.objects.keys()]
+    for (const id of ids) {
+      const obj = this._scene.getObject(id)
+      if (obj?.corners?.length > 0) {
+        for (const c of obj.corners) box.expandByPoint(c)
+      } else if (obj instanceof CoordinateFrame) {
+        const wp = this._service.worldPoseOf(obj.id)?.position
+        if (wp) box.expandByPoint(wp)
+      }
+    }
+    if (box.isEmpty()) return null
+    return {
+      center: box.getCenter(new THREE.Vector3()),
+      radius: Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.5),
+    }
+  }
+
+  /**
+   * Set/clear the pointer-hover affordance on a scene Solid (ADR-068, Tier A).
+   * One entity hovered at a time; sole caller of `MeshView.setHovered`. Scoped
+   * to Solids (the emissive-bearing bodies) so no polymorphic no-op is owed.
+   * @param {object|null} obj the hovered entity, or null to clear
+   */
+  _setHoveredEntity(obj) {
+    const next = obj instanceof Solid ? obj : null
+    if (next === this._hoveredEntity) return
+    this._hoveredEntity?.meshView?.setHovered?.(false)
+    this._hoveredEntity = next
+    next?.meshView?.setHovered?.(true)
   }
 
   _updateNPanel() { this._uiStateMgr.updateNPanel() }
@@ -1703,8 +1812,9 @@ export class AppController {
    * @param {object} compiled — compileContext() output ({ layoutDsl, ... })
    */
   _onContextLoaded(compiled) {
-    // A context load frames its own scene — the boot fly-in yields (ADR-067).
+    // A context load frames its own scene — the boot fly-in / focus flight yield.
     this._finishBootReveal()
+    this._finishCameraFlight()
     this._commandStack.clear()
     this._refreshUndoRedoState()
     this._selMgr.clearObjectSelection()
@@ -1767,6 +1877,9 @@ export class AppController {
       this._uiView.showToast('Select an object first')
       return
     }
+
+    // Leaving the plain object-mode pointer surface: drop any hover cue (#4).
+    this._setHoveredEntity(null)
 
     // ── Cancel all in-progress operations ──────────────────────────────────
     if (this._opState.is(S_GRAB_ACTIVE))      this._grabHandler.cancel()
@@ -2177,7 +2290,11 @@ export class AppController {
         this._updateNPanel()
         return
       }
-      this._uiView.setCursor((this._hitTest.hitAnyObject() || this._hitTest.hitAnyAnnotation()) ? 'pointer' : 'default')
+      const hit = this._hitTest.hitAnyObject()
+      // Hover affordance (ADR-068, Tier A) — desktop pointers only; touch has
+      // no hover (PHILOSOPHY #13), so a coarse pointer never warms a body.
+      if (e.pointerType !== 'touch') this._setHoveredEntity(hit?.obj ?? null)
+      this._uiView.setCursor((hit || this._hitTest.hitAnyAnnotation()) ? 'pointer' : 'default')
       return
     }
 
@@ -2348,9 +2465,11 @@ export class AppController {
     // face selection before the button's click handler fires (e.g. Extrude).
     if (e.target !== this._sceneView.renderer.domElement) return
 
-    // The first canvas interaction pre-empts the boot fly-in (ADR-067) so the
-    // camera is settled BEFORE any hit-test below reads it.
+    // The first canvas interaction pre-empts the boot fly-in (ADR-067) and any
+    // in-flight focus flight (ADR-068) so the camera is settled BEFORE any
+    // hit-test below reads it.
     this._finishBootReveal()
+    this._finishCameraFlight()
 
     // Update _mouse from the event immediately after the canvas guard.
     // On touch devices pointermove does not fire before the first pointerdown,
@@ -3120,6 +3239,12 @@ export class AppController {
       this._toggleNPanel()
       return
     }
+    // F / Home: frame selection (or whole scene) with a smooth flight (ADR-068)
+    if (e.key === 'f' || e.key === 'F' || e.key === 'Home') {
+      e.preventDefault()
+      this.focusSelection()
+      return
+    }
 
     if (this._scene.selectionMode === 'object') {
       // M: start measure placement
@@ -3475,6 +3600,7 @@ export class AppController {
       // MotionGovernor owns their lifetime (ADR-065 Phase 1).
       this._motion.tick(t)
       if (this._bootReveal && !this._bootReveal.active) this._bootReveal = null
+      if (this._cameraFlight && !this._cameraFlight.active) this._cameraFlight = null
       // Context DSL demo: ghost pulse/collapse + staggered reveal (ADR-047).
       this._demoCtrl.tick(t)
       // Production Context overlay: authoring widgets + region ghosts (ADR-050 Phase 3).

@@ -63,6 +63,8 @@ export const DURATION = Object.freeze({
   regionResolve: 700, // ADR-065 Phase 5 region-conflict resolve: recolor → dissolve (3D)
   snapFlash:     260, // ADR-065 Phase 2 snap engagement flash (micro band ≤300 — machine-tested)
   bootReveal:   1800, // ADR-067 boot camera fly-in (Tier D — one occasion per session)
+  cameraFocus:   620, // ADR-068 focus/frame fly-to-selection (interruptible; user always wins)
+  selectPulse:   360, // ADR-068 selection "tap" outline pulse (overlay-only, entity-sized)
 })
 
 /** CSS easing vocabulary for DOM animations. */

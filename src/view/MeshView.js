@@ -20,6 +20,7 @@ export class MeshView {
   constructor(scene) {
     this._selected           = false
     this._constraintViolated = false
+    this._hovered            = false
 
     // Cuboid mesh
     this.cuboidMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide })
@@ -352,12 +353,31 @@ export class MeshView {
     this._syncEmissive()
   }
 
-  /** Sole writer of cuboidMat.emissive — composes selection and violation states. */
+  /**
+   * Sets or clears the pointer-hover affordance (Tier A, ADR-068): a faint warm
+   * emissive that says "you can act here". Composed by `_syncEmissive` below
+   * selection and violation, so a selected or violating body never loses its
+   * stronger cue to a hover. Desktop-only in practice — AppController gates the
+   * caller to fine pointers (touch has no hover, PHILOSOPHY #13).
+   * @param {boolean} hovered
+   */
+  setHovered(hovered) {
+    if (this._hovered === hovered) return
+    this._hovered = hovered
+    this._syncEmissive()
+  }
+
+  /**
+   * Sole writer of cuboidMat.emissive — composes violation > selection > hover
+   * (highest-priority cue wins; PHILOSOPHY #4 one owner).
+   */
   _syncEmissive() {
     if (this._constraintViolated) {
       this.cuboidMat.emissive.set(0x550000)
     } else if (this._selected) {
       this.cuboidMat.emissive.set(0x112244)
+    } else if (this._hovered) {
+      this.cuboidMat.emissive.set(0x0a1522)
     } else {
       this.cuboidMat.emissive.set(0x000000)
     }

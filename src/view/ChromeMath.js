@@ -88,6 +88,22 @@ export function enterMotion(reduced, duration = DURATION.chromeEnter) {
   return { animation: `eaChromeEnter ${duration}ms ${EASING.out}` }
 }
 
+/**
+ * Exit motion for transient chrome (a toast leaving): the mirror of
+ * `enterMotion` — a short fade-and-slide that says "this notification is done"
+ * instead of popping out abruptly (ADR-068 polish). Reduced → `{ opacity: 0 }`
+ * (the content is simply gone; the caller removes it immediately, no lingering
+ * animation). `fill: both` holds the final (invisible) frame until unmount.
+ *
+ * @param {boolean} reduced
+ * @param {number} [duration] ms (defaults to the toastOut token)
+ * @returns {object} inline-style fragment
+ */
+export function exitMotion(reduced, duration = DURATION.toastOut) {
+  if (reduced) return { opacity: 0 }
+  return { animation: `eaChromeExit ${duration}ms ${EASING.out} both` }
+}
+
 /** Glow shadow at a given breathe intensity (0..1) — one shadow shape, one colour. */
 function breatheShadow(intensity) {
   const a = 0.12 + 0.26 * intensity
@@ -117,6 +133,10 @@ export const CHROME_CSS = `
 @keyframes eaChromeEnter {
   from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: none; }
+}
+@keyframes eaChromeExit {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(5px); }
 }
 @keyframes eaBreatheGlow {
   ${breatheGlowKeyframes()}

@@ -64,6 +64,19 @@ test('box add then undo round-trips through the command stack', async ({ page })
   await expect.poll(() => deleteButtons(page).count()).toBe(before)
 })
 
+test('F frames the selection via the camera flight without a page error', async ({ page }) => {
+  const errors = await boot(page)
+  // The boot scene already has one selected Solid; F spawns the focus flight
+  // (ADR-068). checkJs excludes the controller, so this is the wiring guard for
+  // the key → focusSelection → CameraFlight path. Click the canvas centre first
+  // so key events land on the viewport (not a chrome control).
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('f')
+  // Let the flight tick a few frames (it lands within DURATION.cameraFocus).
+  await page.waitForTimeout(800)
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', async ({ page }) => {
   // Regression guard: _addObject('sketch') called a method that did not exist,
   // so the Add-menu Sketch entry threw and the user stayed in Object Mode —

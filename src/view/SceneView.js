@@ -6,6 +6,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
+import { focusPose as computeFocusPose } from './CameraMath.js'
 
 export class SceneView {
   constructor() {
@@ -97,27 +98,46 @@ export class SceneView {
   }
 
   /**
-   * Repositions the camera to frame a bounding sphere.
-   * Updates OrbitControls target and expands near/far clip planes as needed.
+   * Computes (side-effect-free) the camera pose that frames a bounding sphere,
+   * keeping the current orbital direction. The ONE framing derivation (ADR-068,
+   * 核 §1.1): both the instant `fitCameraToSphere` below and the animated
+   * `CameraFlight` consume this, so a "frame the scene" jump and a "frame the
+   * selection" flight can never drift apart. Does NOT touch the grid scale —
+   * that belongs to scene framing (`fitCameraToSphere`), not selection framing.
+   * @param {THREE.Vector3} center
+   * @param {number} radius
+   * @returns {{position: THREE.Vector3, target: THREE.Vector3, near: number, far: number, dist: number}}
+   */
+  focusPose(center, radius) {
+    const dir = this.camera.position.clone().sub(this.controls.target)
+    const p = computeFocusPose(center, radius, dir, this.camera.fov)
+    return {
+      position: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
+      target:   new THREE.Vector3(p.target.x, p.target.y, p.target.z),
+      near:     Math.min(0.01, radius * 0.001),
+      far:      Math.max(this.camera.far, p.dist * 2 + radius * 4),
+      dist:     p.dist,
+    }
+  }
+
+  /**
+   * Repositions the camera to frame a bounding sphere (instant — "frame the
+   * scene" entry point). Updates OrbitControls target, expands clip planes, and
+   * rescales the ground grid to the scene radius (PHILOSOPHY #27). For a smooth
+   * "frame the selection" journey, AppController eases to `focusPose` via
+   * `CameraFlight` instead — that path deliberately does NOT rescale the grid.
    * @param {THREE.Vector3} center
    * @param {number} radius
    */
   fitCameraToSphere(center, radius) {
-    const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov * 0.5)
-    const dist = (radius / Math.sin(halfFovRad)) * 1.3
-
-    // Keep current orbital direction, move to new distance from center
-    const dir = this.camera.position.clone().sub(this.controls.target)
-    if (dir.lengthSq() < 1e-10) dir.set(1, -0.7, 0.5) // fallback direction
-    dir.normalize().multiplyScalar(dist)
-    this.camera.position.copy(center).add(dir)
-
-    this.controls.target.copy(center)
+    const pose = this.focusPose(center, radius)
+    this.camera.position.copy(pose.position)
+    this.controls.target.copy(pose.target)
     this.controls.update()
 
     // Expand clip planes to encompass the scene
-    this.camera.near = Math.min(0.01, radius * 0.001)
-    this.camera.far  = Math.max(this.camera.far, dist * 2 + radius * 4)
+    this.camera.near = pose.near
+    this.camera.far  = pose.far
     this.camera.updateProjectionMatrix()
 
     // Keep the ground grid visible at this scene scale (mm-scale imports/demo)

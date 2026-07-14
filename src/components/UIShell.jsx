@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUIStore } from '../store/uiStore.js'
 import { Header } from './Header/Header.jsx'
 import { MobileToolbar } from './Toolbar/MobileToolbar.jsx'
@@ -21,7 +21,7 @@ import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
 import { ChromeDefs } from './Chrome/ChromePrimitives.jsx'
 import { useReducedMotion } from './Feedback/FeedbackPrimitives.jsx'
-import { enterMotion } from '../view/ChromeMath.js'
+import { enterMotion, exitMotion } from '../view/ChromeMath.js'
 import { COLOR, DURATION } from '../theme/tokens.js'
 
 /**
@@ -86,7 +86,27 @@ function ToastStack({ toasts }) {
   const dismissToast = useUIStore(s => s.actions.dismissToast)
   const reduced = useReducedMotion()
 
-  if (toasts.length === 0) return null
+  // Keep a toast mounted through its exit fade after it leaves the live list
+  // (manual dismiss OR auto-expire), so it fades out instead of popping (ADR-068
+  // polish). Under reduced motion there is no exit phase — it just unmounts.
+  const [exiting, setExiting] = useState([])
+  const prevRef = useRef([])
+  useEffect(() => {
+    const live = new Set(toasts.map(t => t.id))
+    const gone = prevRef.current.filter(t => !live.has(t.id))
+    prevRef.current = toasts
+    if (reduced || gone.length === 0) return
+    setExiting(prev => [...prev, ...gone.filter(g => !prev.some(p => p.id === g.id))])
+    const goneIds = new Set(gone.map(g => g.id))
+    const timer = setTimeout(
+      () => setExiting(prev => prev.filter(p => !goneIds.has(p.id))),
+      DURATION.toastOut,
+    )
+    return () => clearTimeout(timer)
+  }, [toasts, reduced])
+
+  const items = [...toasts, ...exiting.filter(e => !toasts.some(t => t.id === e.id))]
+  if (items.length === 0) return null
 
   return (
     <div style={{
@@ -101,10 +121,12 @@ function ToastStack({ toasts }) {
       pointerEvents: 'none',
       zIndex: 200,
     }}>
-      {toasts.map(toast => (
+      {items.map(toast => {
+        const isExiting = !toasts.some(t => t.id === toast.id)
+        return (
         <div
           key={toast.id}
-          onClick={() => dismissToast(toast.id)}
+          onClick={() => !isExiting && dismissToast(toast.id)}
           style={{
             background: toast.type === 'error' ? '#7a1f1f'
                       : toast.type === 'warn'  ? '#5a4a1a'
@@ -114,17 +136,20 @@ function ToastStack({ toasts }) {
             borderRadius: '4px',
             fontSize: '13px',
             whiteSpace: 'nowrap',
-            pointerEvents: 'auto',
+            pointerEvents: isExiting ? 'none' : 'auto',
             cursor: 'pointer',
             boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-            // Entry slide-fade says "a new notification arrived" (Tier A,
-            // ADR-065 Phase 3); reduced motion shows it in place.
-            ...enterMotion(reduced, DURATION.toastIn),
+            // Entry slide-fade says "a new notification arrived", exit fade says
+            // "it's done" (Tier A, ADR-065 Phase 3 / ADR-068); reduced motion
+            // shows/removes it in place.
+            ...(isExiting ? exitMotion(reduced, DURATION.toastOut)
+                          : enterMotion(reduced, DURATION.toastIn)),
           }}
         >
           {toast.msg}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
