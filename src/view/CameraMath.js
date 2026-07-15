@@ -45,6 +45,34 @@ export function focusPose(center, radius, dir, fovDeg, margin = 1.3) {
 }
 
 /**
+ * Vertical extent (world units) a perspective camera at distance `dist` frames
+ * on a plane through its target — i.e. the orthographic frustum height that
+ * MATCHES the perspective framing at the moment of a projection swap
+ * (ADR-072 decision 1: Map Mode enter). Inverse of `distanceForFrustum`.
+ *
+ * @param {number} dist  camera→target distance (world units, > 0)
+ * @param {number} fovDeg  perspective vertical FOV in degrees ∈ (0, 180)
+ * @returns {number} frustum height = 2·dist·tan(fov/2)
+ */
+export function frustumForDistance(dist, fovDeg) {
+  return 2 * dist * Math.tan((fovDeg * 0.5) * Math.PI / 180)
+}
+
+/**
+ * Camera→target distance at which a perspective camera frames `frustum`
+ * world units vertically — the staging distance for the Map Mode EXIT swap
+ * (ADR-072 decision 1). Inverse of `frustumForDistance` (round-trip identity
+ * is machine-tested).
+ *
+ * @param {number} frustum  orthographic frustum height (world units, > 0)
+ * @param {number} fovDeg  perspective vertical FOV in degrees ∈ (0, 180)
+ * @returns {number} dist = frustum / (2·tan(fov/2))
+ */
+export function distanceForFrustum(frustum, fovDeg) {
+  return frustum / (2 * Math.tan((fovDeg * 0.5) * Math.PI / 180))
+}
+
+/**
  * Linear interpolation between two 3-vectors at eased fraction `e`.
  * @param {{x:number,y:number,z:number}} a
  * @param {{x:number,y:number,z:number}} b

@@ -37,7 +37,7 @@ import { clamp01, easeOutCubic, easeOutExpo, easeOutBack } from './MotionMath.js
  * Label vocabulary is the commands' own `label` fields (src/command/*.js).
  */
 const LIFECYCLE_LABELS = [
-  { re: /^Add "/,       push: 'appear', undo: 'vanish' }, // AddSolidCommand / AddProfileCommand (box add, duplicate, sketch)
+  { re: /^Add "/,       push: 'appear', undo: 'vanish' }, // AddSolidCommand / AddProfileCommand / AddAnnotationCommand (box add, duplicate, sketch, map placement — ADR-072)
   { re: /^Add Frame "/, push: 'appear', undo: 'vanish' }, // CreateCoordinateFrameCommand (no corners → anchor degrades to silence)
   { re: /^Extrude$/,    push: 'appear', undo: 'vanish' }, // ExtrudeSketchCommand: Profile→Solid swap — the Solid is what (dis)appears
   { re: /^Delete "/,    push: 'vanish', undo: 'appear' }, // DeleteCommand (soft delete)

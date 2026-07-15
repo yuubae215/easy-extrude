@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { focusPose, lerpVec } from './CameraMath.js'
+import { focusPose, lerpVec, frustumForDistance, distanceForFrustum } from './CameraMath.js'
 
 const C0 = { x: 0, y: 0, z: 0 }
 
@@ -36,6 +36,31 @@ test('focusPose falls back to a 3/4 view for a zero-length direction', () => {
 test('focusPose clamps a degenerate (zero) radius without NaN', () => {
   const p = focusPose(C0, 0, { x: 1, y: 0, z: 0 }, 50)
   assert.ok(Number.isFinite(p.dist) && p.dist > 0)
+})
+
+// ── frustum ⇄ distance: the ADR-072 projection-swap matching pair ────────────
+
+test('frustumForDistance/distanceForFrustum are exact inverses (round-trip identity)', () => {
+  for (const fov of [30, 60, 90]) {
+    for (const dist of [0.5, 12, 300]) {
+      const f = frustumForDistance(dist, fov)
+      assert.ok(Math.abs(distanceForFrustum(f, fov) - dist) < 1e-9)
+    }
+    for (const frustum of [2, 50, 500]) {
+      const d = distanceForFrustum(frustum, fov)
+      assert.ok(Math.abs(frustumForDistance(d, fov) - frustum) < 1e-9)
+    }
+  }
+})
+
+test('frustumForDistance matches the perspective vertical extent (fov=60, dist=10)', () => {
+  // 2 · 10 · tan(30°) — the vertical world extent a fov-60 camera frames at 10 units
+  assert.ok(Math.abs(frustumForDistance(10, 60) - 2 * 10 * Math.tan(Math.PI / 6)) < 1e-12)
+})
+
+test('frustumForDistance is positive and monotonic in dist', () => {
+  const a = frustumForDistance(1, 60), b = frustumForDistance(2, 60)
+  assert.ok(a > 0 && b > a)
 })
 
 // ── lerpVec: identity at the endpoints (the flight lands exactly) ────────────

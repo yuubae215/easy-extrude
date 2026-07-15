@@ -97,6 +97,35 @@ test('world gizmo axis click flies the camera without a page error', async ({ pa
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', async ({ page }) => {
+  const errors = await boot(page)
+  const before = await deleteButtons(page).count()
+
+  // Header "Map" enters Map Mode: the enter now flies the camera to the
+  // top-down staging pose (flyToView → CameraFlight) and swaps to the ortho
+  // camera when the flight ends. checkJs excludes the controller layer, so
+  // this is the wiring liveness guard for the whole choreography.
+  await page.getByRole('button', { name: 'Map' }).click()
+  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
+  await page.waitForTimeout(800) // let the enter flight land + projection swap
+
+  // Place an Anchor: tool select → canvas click (pending) → Confirm.
+  await page.locator('button[title="Anchor"]').click()
+  await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
+  await page.locator('button[title="Confirm (Enter)"]').click()
+  await expect.poll(() => deleteButtons(page).count()).toBeGreaterThan(before)
+
+  // Exit flies back to the saved perspective pose …
+  await page.locator('button[title="Exit Map Mode"]').click()
+  await page.waitForTimeout(800)
+
+  // … and the placement is now on the CommandStack: undo removes it.
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => deleteButtons(page).count()).toBe(before)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', async ({ page }) => {
   // Regression guard: _addObject('sketch') called a method that did not exist,
   // so the Add-menu Sketch entry threw and the user stayed in Object Mode —

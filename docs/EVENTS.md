@@ -583,6 +583,7 @@ Commands are recorded post-hoc via `push()` — never use `execute()` for pre-ex
 | `RenameCommand` | After `_confirmRename()` confirmed | Restore previous name |
 | `FrameRotateCommand` | After `_confirmRotate()` confirmed (CoordinateFrame) | Restore startQuat |
 | `SolidRotateCommand` | After `_confirmRotate()` confirmed (Solid) | Restore startCorners |
+| `AddAnnotationCommand` | After Map Mode `_confirmDrawing()` created the entity (ADR-072) | `detachObject()` + `setVisible(false)` (soft delete) |
 
 ---
 

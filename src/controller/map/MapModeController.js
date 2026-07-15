@@ -20,6 +20,16 @@ import { AnnotatedLine }   from '../../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../../domain/AnnotatedPoint.js'
 import { getPlaceTypeEntry } from '../../domain/PlaceTypeRegistry.js'
+import { CoordinateFrame } from '../../domain/CoordinateFrame.js'
+import { frustumForDistance, distanceForFrustum } from '../../view/CameraMath.js'
+import { createAddAnnotationCommand } from '../../command/AddAnnotationCommand.js'
+import { geometrySnapshot, snapTransition, snapFlashDescriptor } from '../../view/SnapFeedbackMath.js'
+import { SnapFlash } from '../../view/SnapFlash.js'
+import { COLOR } from '../../theme/tokens.js'
+
+/** Ortho zoom clamp (world-units frustum height) — shared by wheel and enter. */
+const FRUSTUM_MIN = 2
+const FRUSTUM_MAX = 500
 
 export class MapModeController {
   /**
@@ -74,6 +84,32 @@ export class MapModeController {
        */
       snapCandidate: null,
     }
+
+    /**
+     * Pre-map perspective pose, captured at enter() for the exit return
+     * flight (ADR-072 decision 1). Presentation-only — never part of the
+     * drawing FSM.
+     * @type {{position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3}|null}
+     */
+    this._savedView = null
+    /** True once the enter flight handed the viewport to the ortho camera. */
+    this._orthoSwapped = false
+    /**
+     * Perspective camera position at the moment of the ortho swap — the
+     * external-write guard for exit (CameraFlight `_cameraStolen` sibling):
+     * if anything moved the perspective camera during map mode (a scene load's
+     * fitCameraToSphere), the external writer owns it and exit swaps without
+     * repositioning or flying.
+     * @type {THREE.Vector3|null}
+     */
+    this._stagedPos = null
+    /**
+     * Previous endpoint-snap snapshot for the engagement flash (ADR-072
+     * decision 3) — controller-local presentation history, same rule as the
+     * grab handler's `_snapFxPrev` (ADR-065 Phase 2 completion).
+     * @type {{key: string, x: number, y: number, z: number}|null}
+     */
+    this._snapFxPrev = null
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -84,7 +120,17 @@ export class MapModeController {
   /** True when a drawing tool is selected (map pointerdown guard). */
   get hasTool() { return !!this.state.tool }
 
-  /** Enters 2D Map Mode: switches to orthographic top-down camera, shows map toolbar. */
+  /**
+   * Enters 2D Map Mode (ADR-072 decision 1): the mode state activates
+   * immediately (state first, presentation follows — 核 §1.4); the camera
+   * flies to a top-down staging pose through the same `flyToView` contract as
+   * the world gizmo (ADR-069), and the perspective→ortho projection swap
+   * happens when the flight ends — in ANY way (landing, user interruption,
+   * external write, eviction), so the mode's terminal camera state is always
+   * reached (#11). The staging frustum is derived from the current viewing
+   * distance (`frustumForDistance`) so the swap preserves apparent scale and
+   * the map opens framed on what the user was looking at.
+   */
   enter() {
     const { _ctrl: ctrl, state } = this
     if (state.active) return
@@ -98,20 +144,98 @@ export class MapModeController {
     state.cursor          = null
     state.mobileDragStart = null
     state.isPanning       = false
-    ctrl._sceneView.useOrthoCamera(true, state.frustumSize)
+    this._snapFxPrev      = null
+
+    const sv = ctrl._sceneView
+    this._savedView = {
+      position: sv.camera.position.clone(),
+      target:   sv.controls.target.clone(),
+      up:       sv.camera.up.clone(),
+    }
+    this._orthoSwapped = false
+    this._stagedPos    = null
+    // Orbit must not fight the enter flight or the map's pointer handlers;
+    // useOrthoCamera(true) re-disables it at the swap (idempotent).
+    sv.controls.enabled = false
+
+    const t    = sv.controls.target
+    const dist = Math.max(sv.camera.position.distanceTo(t), 1e-3)
+    state.frustumSize = Math.max(FRUSTUM_MIN,
+      Math.min(FRUSTUM_MAX, frustumForDistance(dist, sv.camera.fov)))
+    const stageDist = distanceForFrustum(state.frustumSize, sv.camera.fov)
+    ctrl.flyToView({
+      position: new THREE.Vector3(t.x, t.y, stageDist),
+      target:   new THREE.Vector3(t.x, t.y, 0),
+      // Screen-north = +Y, matching the ortho camera, so the swap is
+      // orientation-seamless (up ⊥ the top-down view direction — no
+      // singularity, unlike the gizmo's Z+ special case).
+      up:       new THREE.Vector3(0, 1, 0),
+    }, () => this._completeEnterSwap())
+
     ctrl._uiView.setCursor('default')
     ctrl._uiView.setStatus('Map Mode — select a type on the left to start drawing')
     this._refreshToolbar()
     ctrl._updateMobileToolbar()
   }
 
-  /** Exits 2D Map Mode: restores perspective camera, removes map toolbar. */
+  /**
+   * The terminal projection swap at the end of the enter flight. No-ops when
+   * the user already exited map mode mid-flight (exit flips `state.active`
+   * BEFORE it flies back, so a finished enter flight cannot re-swap).
+   */
+  _completeEnterSwap() {
+    const { _ctrl: ctrl, state } = this
+    if (!state.active || this._orthoSwapped) return
+    this._orthoSwapped = true
+    ctrl._sceneView.useOrthoCamera(true, state.frustumSize)
+    this._stagedPos = ctrl._sceneView.camera.position.clone()
+  }
+
+  /**
+   * Exits 2D Map Mode (ADR-072 decision 1, the inverse choreography): the
+   * perspective camera is placed at the pose that MATCHES the current ortho
+   * view (same centre, `distanceForFrustum` height, same screen-north) so the
+   * projection swap back is a seamless one-frame cut, then it flies to the
+   * pose saved at enter. If something else wrote the perspective camera while
+   * the map was open (external-write guard), the external writer owns it:
+   * swap only, no reposition, no flight.
+   */
   exit() {
     const { _ctrl: ctrl, state } = this
     this._cancelDrawing()
     state.active     = false
     state.isPanning  = false
-    ctrl._sceneView.useOrthoCamera(false)
+
+    const sv    = ctrl._sceneView
+    const saved = this._savedView
+    this._savedView = null
+
+    if (this._orthoSwapped) {
+      const staged = this._stagedPos
+      this._stagedPos = null
+      const tol = Math.max(Math.abs(staged?.x ?? 1), Math.abs(staged?.y ?? 1),
+        Math.abs(staged?.z ?? 1), 1) * 1e-4
+      const stolen = !staged ||
+        sv.camera.position.distanceToSquared(staged) > tol * tol
+      if (!stolen) {
+        // Matched staging pose from the CURRENT ortho centre/zoom.
+        const oc = sv.activeCamera // the ortho camera while swapped
+        const h  = distanceForFrustum(state.frustumSize, sv.camera.fov)
+        sv.camera.position.set(oc.position.x, oc.position.y, h)
+        sv.camera.up.set(0, 1, 0)
+        sv.controls.target.set(oc.position.x, oc.position.y, 0)
+        sv.camera.lookAt(oc.position.x, oc.position.y, 0)
+      }
+      sv.useOrthoCamera(false)
+      if (!stolen && saved) ctrl.flyToView(saved)
+    } else {
+      // Exit during the enter flight: never swapped — fly straight back
+      // (flyToView finishes the running enter flight first; its onDone
+      // no-ops because state.active is already false).
+      sv.useOrthoCamera(false)
+      if (saved) ctrl.flyToView(saved)
+    }
+
     ctrl._uiView.hideMapToolbar()
     ctrl._uiView.setCursor('default')
     ctrl._refreshObjectModeStatus()
@@ -219,7 +343,7 @@ export class MapModeController {
         const typeLabel = this._placeTypeForType(state.tool)
         ctrl._uiView.setStatusRich([
           { text: typeLabel, bold: true, color: '#80cbc4' },
-          { text: 'drag to draw rectangle', color: '#888' },
+          { text: 'drag to draw rectangle', color: COLOR.textSecondary },
           { text: '  ESC cancel', color: '#444' },
         ])
         return true
@@ -413,6 +537,7 @@ export class MapModeController {
     state.cursor          = null
     state.mobileDragStart = null
     state.snapCandidate   = null
+    this._snapFxPrev      = null
     this._ctrl._uiView.setCursor('default')
     this._refreshToolbar()
     if (state.active) {
@@ -434,12 +559,13 @@ export class MapModeController {
     state.pendingName   = `${placeType} ${n}`
     state.cursor        = null
     state.snapCandidate = null
+    this._snapFxPrev    = null
     this._clearPreview()
     this._showPendingPreview()
     this._refreshToolbar()
     this._ctrl._uiView.setStatusRich([
       { text: placeType, bold: true, color: '#80cbc4' },
-      { text: '— enter a name and confirm', color: '#888' },
+      { text: '— enter a name and confirm', color: COLOR.textSecondary },
       { text: '  ESC = cancel', color: '#444' },
     ])
   }
@@ -459,26 +585,44 @@ export class MapModeController {
 
     const name = ctrl._uiView.getMapPendingName() ?? pendingName ?? placeType
 
-    let created = false
+    let created = null
     try {
       if (geometry === 'point' && pendingPoints.length >= 1) {
-        const obj = ctrl._service.createAnnotatedPoint(pendingPoints[0], name, {
+        created = ctrl._service.createAnnotatedPoint(pendingPoints[0], name, {
           camera: ctrl._sceneView.camera, renderer, container: document.body,
         })
-        ctrl._service.setPlaceType(obj.id, placeType)
-        created = true
       } else if (geometry === 'line' && pendingPoints.length >= 2) {
-        const obj = ctrl._service.createAnnotatedLine(pendingPoints, name, {
+        created = ctrl._service.createAnnotatedLine(pendingPoints, name, {
           camera: ctrl._sceneView.camera, renderer, container: document.body,
         })
-        ctrl._service.setPlaceType(obj.id, placeType)
-        created = true
       } else if (geometry === 'region' && pendingPoints.length >= 3) {
-        const obj = ctrl._service.createAnnotatedRegion(pendingPoints, name, {
+        created = ctrl._service.createAnnotatedRegion(pendingPoints, name, {
           camera: ctrl._sceneView.camera, renderer, container: document.body,
         })
-        ctrl._service.setPlaceType(obj.id, placeType)
-        created = true
+      }
+      if (created) {
+        ctrl._service.setPlaceType(created.id, placeType)
+        // Post-hoc recording (CommandStack push-vs-execute rule): the
+        // entity already exists — record it so map placement is undoable
+        // like every other add path (ADR-072 decision 2). placeType is set
+        // BEFORE the push so one gesture is one undo step.
+        const obj = created
+        ctrl._commandStack.push(createAddAnnotationCommand(obj, ctrl._service, () => {
+          // Clear a stale selection of the vanished entity (same shape as
+          // _addObject's onAfterUndo); map placement never auto-selects,
+          // but the user may select it later and then undo past the add.
+          if (ctrl._scene.activeId !== obj.id) return
+          const nextId = [...ctrl._scene.objects.entries()]
+            .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
+          if (nextId) {
+            ctrl._switchActiveObject(nextId, true)
+          } else {
+            ctrl._objSelected = false
+            ctrl._selectedIds.clear()
+            ctrl._refreshObjectModeStatus()
+            ctrl._updateMobileToolbar()
+          }
+        }))
       }
     } catch (err) {
       console.error('[MapMode] entity creation failed:', err)
@@ -544,11 +688,40 @@ export class MapModeController {
     if (!this._isMobile()) {
       const { snapped, point } = this._snapToEndpoint(pt, e.clientX, e.clientY)
       this.state.snapCandidate = snapped
+      this._syncSnapFx()
       return point
     }
 
     this.state.snapCandidate = null
     return pt
+  }
+
+  /**
+   * Endpoint-snap engagement flash (ADR-072 decision 3): renders the lock
+   * EVENT (free→locked = engage, endpoint change = retarget) at the snap
+   * point, reusing the ADR-065 Phase 2 vocabulary wholesale — pure math from
+   * `SnapFeedbackMath`, view `SnapFlash`, spawned only through the
+   * MotionGovernor. Same-key hold and disengagement stay silent (volume
+   * design); `_snapFxPrev` is controller-local presentation history.
+   * The map has no grabbed entity, so the size analog is frustum-proportional
+   * (a fixed fraction of the visible world height — screen-stable, #27).
+   */
+  _syncSnapFx() {
+    const { _ctrl: ctrl, state } = this
+    const snap = state.snapCandidate
+    const next = snap
+      ? geometrySnapshot(true, {
+          label: 'map-endpoint',
+          position: { x: snap.x, y: snap.y, z: snap.z },
+        })
+      : null
+    const transition = snapTransition(this._snapFxPrev, next)
+    this._snapFxPrev = next
+    if (!transition) return
+    const desc = snapFlashDescriptor('geometry', transition, next, state.frustumSize * 0.075)
+    if (!desc) return
+    ctrl._motion.spawn(reduced =>
+      new SnapFlash(ctrl._sceneView.scene, ctrl._sceneView, desc, { reduced }))
   }
 
   /**
@@ -774,21 +947,21 @@ export class MapModeController {
     if (geometry === 'point') {
       this._ctrl._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: mobile ? 'Tap to place' : 'Click to place', color: '#888' },
+        { text: mobile ? 'Tap to place' : 'Click to place', color: COLOR.textSecondary },
         { text: '  ESC cancel', color: '#444' },
       ])
     } else if (geometry === 'line') {
       if (mobile) {
         this._ctrl._uiView.setStatusRich([
           { text: typeLabel, bold: true, color: '#80cbc4' },
-          { text: 'Drag to draw a straight line', color: '#888' },
+          { text: 'Drag to draw a straight line', color: COLOR.textSecondary },
           { text: '  ESC cancel', color: '#444' },
         ])
       } else {
         this._ctrl._uiView.setStatusRich([
           { text: typeLabel, bold: true, color: '#80cbc4' },
           { text: `${n} pts`, color: '#aaa' },
-          { text: 'click to add vertex', color: '#888' },
+          { text: 'click to add vertex', color: COLOR.textSecondary },
           { text: n >= 2 ? '  Enter / RMB = done' : '', color: '#aaa' },
           { text: '  ESC cancel', color: '#444' },
         ])
@@ -796,7 +969,7 @@ export class MapModeController {
     } else {
       this._ctrl._uiView.setStatusRich([
         { text: typeLabel, bold: true, color: '#80cbc4' },
-        { text: 'Drag to draw rectangle', color: '#888' },
+        { text: 'Drag to draw rectangle', color: COLOR.textSecondary },
         { text: '  ESC cancel', color: '#444' },
       ])
     }

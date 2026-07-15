@@ -1781,8 +1781,11 @@ export class AppController {
    * `MotionGovernor` transient. This replaces the gizmo's old single-frame
    * teleport that bypassed the whole motion system (the "sudden jump").
    * @param {{position:THREE.Vector3, target:THREE.Vector3, up:THREE.Vector3}} pose
+   * @param {(() => void)|null} [onDone] additive (ADR-072): fires exactly once
+   *   when the flight ends in any way — Map Mode uses it for the terminal
+   *   projection swap. Existing callers (gizmo) omit it.
    */
-  flyToView({ position, target, up }) {
+  flyToView({ position, target, up }, onDone = null) {
     const sv = this._sceneView
     if (up) {
       sv.camera.up.copy(up)
@@ -1796,7 +1799,7 @@ export class AppController {
     this._finishCameraFlight() // never stack two flights
     const end = { position, target }
     this._cameraFlight = this._motion.spawn(reduced =>
-      new CameraFlight(sv.camera, sv.controls, end, { reduced }))
+      new CameraFlight(sv.camera, sv.controls, end, { reduced, onDone }))
   }
 
   /**
