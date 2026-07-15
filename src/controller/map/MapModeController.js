@@ -25,6 +25,8 @@ import { frustumForDistance, distanceForFrustum } from '../../view/CameraMath.js
 import { createAddAnnotationCommand } from '../../command/AddAnnotationCommand.js'
 import { geometrySnapshot, snapTransition, snapFlashDescriptor } from '../../view/SnapFeedbackMath.js'
 import { SnapFlash } from '../../view/SnapFlash.js'
+import { cursorFrame, ringFrame } from '../../view/MapPreviewMath.js'
+import { prefersReducedMotion } from '../../theme/motion.js'
 import { COLOR } from '../../theme/tokens.js'
 
 /** Ortho zoom clamp (world-units frustum height) — shared by wheel and enter. */
@@ -110,6 +112,16 @@ export class MapModeController {
      * @type {{key: string, x: number, y: number, z: number}|null}
      */
     this._snapFxPrev = null
+
+    /**
+     * Preview idle-motion state (ADR-072 refinement, Tier A): birth clocks
+     * for the cursor dot and snap ring, assigned by `tick()` on the first
+     * frame each exists; reduced-motion is sampled once per map session at
+     * enter() from the single boundary (per-spawn discipline, ADR-065 Ph 5).
+     */
+    this._cursorBornAt   = null
+    this._ringBornAt     = null
+    this._previewReduced = false
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -145,6 +157,9 @@ export class MapModeController {
     state.mobileDragStart = null
     state.isPanning       = false
     this._snapFxPrev      = null
+    this._cursorBornAt    = null
+    this._ringBornAt      = null
+    this._previewReduced  = prefersReducedMotion()
 
     const sv = ctrl._sceneView
     this._savedView = {
@@ -482,6 +497,37 @@ export class MapModeController {
     }
 
     return true  // consume all keys while map mode is active
+  }
+
+  /**
+   * Per-frame preview motion (ADR-072 refinement, Tier A) — called from
+   * AppController._animate alongside MotionGovernor.tick. The cursor dot
+   * breathes ("draw mode is live here" — the viewport sibling of the chrome
+   * active-tool glow) and pops on entry; the snap ring settles on appearance
+   * and then holds steady (a lock indicator must not breathe). All curve
+   * shape lives in the pure `MapPreviewMath`; under reduced motion both
+   * scales are exactly 1 — static cues, never a disappearance (#30/#11).
+   * @param {number} t  loop clock (seconds)
+   */
+  tick(t) {
+    const { state } = this
+    if (!state.active) return
+
+    if (state.cursorDot) {
+      if (this._cursorBornAt === null) this._cursorBornAt = t
+      state.cursorDot.scale.setScalar(
+        cursorFrame(t, this._cursorBornAt, this._previewReduced).scale)
+    } else {
+      this._cursorBornAt = null
+    }
+
+    const ring = state.snapRingMesh
+    if (ring?.visible) {
+      if (this._ringBornAt === null) this._ringBornAt = t
+      ring.scale.setScalar(ringFrame(t, this._ringBornAt, this._previewReduced).scale)
+    } else {
+      this._ringBornAt = null
+    }
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────

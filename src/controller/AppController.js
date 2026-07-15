@@ -3653,6 +3653,9 @@ export class AppController {
       this._ctxCtrl.tick(t)
       // Grasp candidate spatial ghost fade/approach animation (ADR-059).
       this._graspCtrl.tick(t)
+      // Map Mode drawing-preview idle motion: cursor breathe + snap-ring
+      // settle (ADR-072 refinement, Tier A — pure MapPreviewMath curves).
+      this._mapModeCtrl.tick(t)
     }
     loop()
 
