@@ -1,6 +1,6 @@
 # 069. UX パリティ・パス Phase 1 — 3D が磨いた基準を周辺面へ
 
-- Status: Accepted (Phase 1 実装済; Phase 2–4 は計画済・未着手)
+- Status: Accepted (Phase 1 実装済; Phase 2 = ADR-070・Phase 3 = ADR-071 として 2026-07-15 Accepted・実装済; Phase 4 = 2D マップ研磨のみ未着手)
 - Date: 2026-07-14
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし(ADR-068 の CameraFlight・ADR-048 の Link Network・

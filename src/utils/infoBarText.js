@@ -13,7 +13,7 @@ export function getInfoText(mode, subtype = null) {
       ['Tab', 'Edit Mode'],
       ['G', 'Grab'],
       ['G > X/Y/Z', 'Axis'],
-      ['G > S', 'Stack'],
+      ['G > S', 'Free place (stack off)'],
       ['G > V', 'Pivot'],
       ['Shift+A', 'Add'],
       ['Shift+D', 'Duplicate'],

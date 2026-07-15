@@ -108,10 +108,18 @@ export class GrabOperationHandler {
       snapTargets:     [],
       /** Grid snap unit size (Ctrl during grab). Cycled with Ctrl+Wheel. */
       gridSize:        1,
-      /** When true, grabbed object snaps Z so its bottom rests on the top surface below. */
-      stackMode:       false,
+      /**
+       * When true, grabbed object snaps Z so its bottom rests on the top
+       * surface below (other objects OR the ground plane). Default ON —
+       * ADR-071 assistive default; S / the mobile Stack button DISABLES it
+       * for intentional free / below-grade placement. Reset to true at each
+       * gesture boundary (start/confirm/cancel — per-gesture default).
+       */
+      stackMode:       true,
       /** True when stacking is actively snapping Z this frame. */
       stacking:        false,
+      /** True once the below-grade warning toast fired this gesture (ADR-071, #11). */
+      groundWarned:    false,
       /** Bottom-face centre at the landing surface while stacking (flash anchor). @type {{x:number,y:number,z:number}|null} */
       stackContact:    null,
       /** Last delta applied via _applyDeltaToAll; used for live coordinate display. */
@@ -205,6 +213,11 @@ export class GrabOperationHandler {
     s.hoveredPivotIdx = -1
     s.snapMode        = 'all'
     s.snapTargets     = []
+    // stackMode is NOT reset here: the mobile object-mode Stack/Free button
+    // toggles it BEFORE start(), so resetting on entry would swallow that
+    // choice. The gesture END (confirm/cancel) restores the assistive default
+    // ON (ADR-071 per-gesture reset).
+    s.groundWarned    = false
     s.startMouse.copy(ctrl._mouse)
     s.startCorners = ctrl._corners.map(c => c.clone())
     // Snapshot corners of every selected object for multi-object grab
@@ -322,8 +335,9 @@ export class GrabOperationHandler {
     s.axis          = null
     s.autoSnap      = false
     s.snappedTarget = null
-    s.stackMode     = false
+    s.stackMode     = true   // back to the assistive default (ADR-071)
     s.stacking      = false
+    s.groundWarned  = false
     this._snapFxPrev = { geometry: null, stack: null }
     ctrl._meshView.clearPivotDisplay()
     ctrl._meshView.clearSnapDisplay()
@@ -379,8 +393,9 @@ export class GrabOperationHandler {
     s.axis          = null
     s.autoSnap      = false
     s.snappedTarget = null
-    s.stackMode     = false
+    s.stackMode     = true   // back to the assistive default (ADR-071)
     s.stacking      = false
+    s.groundWarned  = false
     this._snapFxPrev = { geometry: null, stack: null }
     ctrl._opState.send('CANCEL')
     // Rubber-band: end drag animation; stay highlighted since entity is still selected.
@@ -468,10 +483,14 @@ export class GrabOperationHandler {
     } else {
       this._applyFree()
     }
-    // Stack snap: adjust Z so grabbed objects rest on top of any object below.
+    // Stack snap: adjust Z so grabbed objects rest on top of the surface below
+    // (another object OR the ground plane — ADR-071 assistive default).
+    // An explicit Z-axis constraint expresses vertical intent, so the assist
+    // steps aside instead of silently overriding the user's input (#11).
     // applyPreviewTranslation (called from _applyDeltaToAll) already updated
     // views; re-update after stack snap since it re-applies domain mutations.
-    if (s.stackMode) {
+    const stackApplies = s.stackMode && s.axis !== 'z'
+    if (stackApplies) {
       this._applyStackSnap(s.segmentStartPositions, s.lastDelta)
       for (const id of ctrl._selectedIds) {
         const selObj = ctrl._scene.getObject(id)
@@ -480,8 +499,14 @@ export class GrabOperationHandler {
           selObj.meshView.updateBoxHelper()
         }
       }
+      // Non-Solid grabs (ImportedMesh, MeasureLine) are not stack-snapped —
+      // they can still dip below grade, and never silently (#11).
+      if (!s.stacking) this.warnIfBelowGrade()
     } else {
       s.stacking = false
+      // Free / Z-constrained placement can dip below grade — legitimate for
+      // footings/piles, but never silent (ADR-071, PHILOSOPHY #11).
+      this.warnIfBelowGrade()
     }
 
     // Live inference preview during G-key grab (ADR-041 Phase 3 — mirrors QuickDragState sub-state).
@@ -548,7 +573,27 @@ export class GrabOperationHandler {
       snapFlashDescriptor(channel, geomT ?? stackT, next[channel], radius))
   }
 
-  /** Toggles stacking mode on/off during an active grab. */
+  /**
+   * Once-per-gesture below-grade warning (ADR-071): visible, never blocking —
+   * the judgment lives in SceneService.checkGroundClearance (#25); the user
+   * may keep going down (footings / piles). Shared by G-key grab and the
+   * quick-drag path in AppController.
+   */
+  warnIfBelowGrade() {
+    const { _ctrl: ctrl } = this
+    const s = this.state
+    if (s.groundWarned) return
+    const clearance = ctrl._service.checkGroundClearance(ctrl._selectedIds)
+    if (!clearance.belowGrade) return
+    s.groundWarned = true
+    ctrl._uiView.showToast('Below ground level (Z < 0) — fine for footings/piles; S re-enables stack assist', { type: 'warn' })
+  }
+
+  /**
+   * Toggles stacking assist during an active grab. Stack is ON by default
+   * (ADR-071) — S / the mobile Stack button now DISABLES it, as the escape
+   * hatch for intentional free / overlapping / below-grade placement.
+   */
   toggleStackMode() {
     const { _ctrl: ctrl } = this
     const s = this.state
@@ -595,6 +640,10 @@ export class GrabOperationHandler {
       } else {
         parts.push({ text: 'Stack', color: '#4caf50' })
       }
+    } else {
+      // Stack assist is the default (ADR-071) — the escaped state must be
+      // visible, or free placement reads as a broken snap (#11).
+      parts.push({ text: 'Free (S: stack)', color: '#9e9e9e' })
     }
     if (s.snapping && s.snappedTarget) {
       parts.push({ text: `Snap: ${s.snappedTarget.label}`, bold: true, color: COLOR.fxSnap })
@@ -752,6 +801,9 @@ export class GrabOperationHandler {
    * Stack snap: after all grab movement is applied, cast downward rays from the
    * bottom face of the active grabbed object. If another object is directly below,
    * shift all grabbed objects upward so the bottom face rests on that surface.
+   * The ground plane (Z = 0) is always a landing surface (ADR-071): with nothing
+   * below, the assistive default rests the entity on the ground instead of
+   * letting it float or sink below grade.
    * @param {Map<string, import('three').Vector3>} segStartPositions  per-Solid _position snapshots
    * @param {import('three').Vector3} currentDelta  world delta already applied by the caller
    */
@@ -771,8 +823,6 @@ export class GrabOperationHandler {
     const targetMeshes = [...ctrl._scene.objects.values()]
       .filter(o => !grabbedIds.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
       .map(o => o.meshView.cuboid)
-
-    if (!targetMeshes.length) { s.stacking = false; return }
 
     // Sample the bottom face: 4 corners at gZMin + centroid
     const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < 0.001)
@@ -797,7 +847,8 @@ export class GrabOperationHandler {
       }
     }
 
-    if (highestHitZ === null) { s.stacking = false; return }
+    // Ground plane (Z = 0) is the implicit lowest landing surface (ADR-071).
+    highestHitZ = Math.max(highestHitZ ?? -Infinity, 0)
 
     const zOffset = highestHitZ - gZMin
     // Skip if already resting on the surface (within 1mm tolerance)

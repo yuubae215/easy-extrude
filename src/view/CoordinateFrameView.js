@@ -32,6 +32,7 @@
  * @see ADR-018
  */
 import * as THREE from 'three'
+import { EntityLabel } from './EntityLabel.js'
 
 const AXIS_LENGTH   = 0.5
 const AXIS_RADIUS   = 0.015   // ~3% of axis length; matches TC shaft visual weight
@@ -127,46 +128,20 @@ export class CoordinateFrameView {
      */
     this._ghostGroup = null
 
-    // ── Floating HTML label ────────────────────────────────────────────────
-    /** @type {HTMLElement|null} */
-    this._label = null
+    // ── Floating HTML label (shared EntityLabel helper, ADR-070) ──────────
+    /** @type {EntityLabel|null} */
+    this._label = (camera && renderer && container)
+      ? new EntityLabel(renderer, container)
+      : null
     this._labelVisible = false   // tracks desired visibility (showFull/showDimmed/hide)
 
-    // Label position cache: avoid redundant style updates and prevent mobile jitter
-    // caused by per-frame getBoundingClientRect() variation during viewport animations.
-    this._lblX = null           // last rendered pixel X (integer)
-    this._lblY = null           // last rendered pixel Y (integer)
-    this._lastRawX  = 0        // raw screen X at last write (pre-rounding)
-    this._lastRawY  = 0        // raw screen Y at last write (pre-rounding)
-    this._cachedRect   = null   // cached canvas bounding rect
-    this._cachedRectW  = 0      // canvas clientWidth at cache time
-    this._cachedRectH  = 0      // canvas clientHeight at cache time
-
-    if (camera && renderer && container) {
-      this._label = document.createElement('div')
-      Object.assign(this._label.style, {
-        position:        'fixed',
-        left:            '0',
-        top:             '0',
-        pointerEvents:   'none',
-        userSelect:      'none',
-        fontFamily:      'monospace',
-        fontSize:        '10px',
-        lineHeight:      '1',
-        padding:         '2px 6px',
-        borderRadius:    '3px',
-        background:      'rgba(18,22,36,0.82)',
-        color:           '#b8c4d8',
-        borderLeft:      '2px solid #4488ff',
-        whiteSpace:      'nowrap',
-        zIndex:          '50',
-        display:         'none',
-        transition:      'background 0.12s, border-color 0.12s',
-        transformOrigin: 'left center',
-        willChange:      'transform',
-      })
-      container.appendChild(this._label)
-    }
+    // Label content inputs — composed by the single owner _syncLabelText()
+    // (ADR-070 決定1: name + role glyph + RPY readout when selected).
+    this._name        = ''
+    this._cfSelected  = false
+    /** @type {{r:number,p:number,y:number}|null} last RPY shown (degrees, ZYX) */
+    this._rpy         = null
+    this._eulerTmp    = new THREE.Euler()
   }
 
   // ── Required interface ─────────────────────────────────────────────────────
@@ -185,6 +160,22 @@ export class CoordinateFrameView {
   /** @param {import('three').Quaternion} quaternion */
   updateRotation(quaternion) {
     this._group.quaternion.copy(quaternion)
+    // Informational label (ADR-070 決定1): keep the RPY readout current while
+    // this frame is the active selection. ZYX order = ROS RPY (CODE_CONTRACTS
+    // "Euler Angle Convention"); whole degrees — a pose readout, not a caliper.
+    if (this._cfSelected && this._label) {
+      this._eulerTmp.setFromQuaternion(quaternion, 'ZYX')
+      const d = THREE.MathUtils.radToDeg
+      const rpy = {
+        r: Math.round(d(this._eulerTmp.x)),
+        p: Math.round(d(this._eulerTmp.y)),
+        y: Math.round(d(this._eulerTmp.z)),
+      }
+      if (!this._rpy || rpy.r !== this._rpy.r || rpy.p !== this._rpy.p || rpy.y !== this._rpy.y) {
+        this._rpy = rpy
+        this._syncLabelText()
+      }
+    }
   }
 
   /** Outliner eye-icon toggle. */
@@ -240,11 +231,12 @@ export class CoordinateFrameView {
   // ── Floating label ─────────────────────────────────────────────────────────
 
   /**
-   * Updates the label text (e.g. after rename).
+   * Updates the label name (e.g. after rename).
    * @param {string} name
    */
   setLabelText(name) {
-    if (this._label) this._label.textContent = name
+    this._name = name
+    this._syncLabelText()
   }
 
   /**
@@ -252,22 +244,7 @@ export class CoordinateFrameView {
    * @param {boolean} highlighted
    */
   setLabelHighlighted(highlighted) {
-    if (!this._label) return
-    if (highlighted) {
-      Object.assign(this._label.style, {
-        background:   'rgba(249,115,22,0.88)',
-        borderColor:  '#ffcc00',
-        color:        '#fff',
-        transform:    'scale(1.18)',
-      })
-    } else {
-      Object.assign(this._label.style, {
-        background:   'rgba(18,22,36,0.82)',
-        borderColor:  '#4488ff',
-        color:        '#b8c4d8',
-        transform:    'scale(1)',
-      })
-    }
+    this._label?.setHighlighted(highlighted)
   }
 
   /**
@@ -276,50 +253,27 @@ export class CoordinateFrameView {
    * @param {THREE.Camera} camera  Pass `SceneView.activeCamera` (supports ortho mode).
    */
   updateLabelPosition(camera) {
-    if (!this._label || !this._renderer || !this._labelVisible) return
-
-    const ndc    = this._group.position.clone().project(camera)
-    if (ndc.z > 1) { this._setLabelDisplay(false); return }
-
-    // Cache getBoundingClientRect so mobile browser viewport animations (address-bar
-    // show/hide) cannot introduce per-frame variation in rect.top/rect.left that would
-    // push the rounded label position across a 0.5-pixel boundary on alternate frames.
-    const canvas = this._renderer.domElement
-    const cw = canvas.clientWidth
-    const ch = canvas.clientHeight
-    if (!this._cachedRect || cw !== this._cachedRectW || ch !== this._cachedRectH) {
-      this._cachedRect  = canvas.getBoundingClientRect()
-      this._cachedRectW = cw
-      this._cachedRectH = ch
-    }
-    const rect = this._cachedRect
-
-    const sx = (ndc.x  + 1) / 2 * rect.width  + rect.left
-    const sy = (-ndc.y + 1) / 2 * rect.height + rect.top
-
-    // Dead-zone filter: suppress writes when camera drifts < 0.5 px in screen space.
-    // OrbitControls inertia and touch-sensor noise cause sub-pixel oscillation that,
-    // without this guard, straddles rounding boundaries and toggles the label position
-    // every frame — visible as jitter even when the scene is visually static.
-    if (this._lblX !== null &&
-        Math.hypot(sx - this._lastRawX, sy - this._lastRawY) < 0.5) {
-      this._setLabelDisplay(true)
-      return
-    }
-    this._lastRawX = sx
-    this._lastRawY = sy
-
-    const rx = Math.round(sx + 6)
-    const ry = Math.round(sy - 16)
-    this._lblX = rx
-    this._lblY = ry
-    this._label.style.transform = `translate3d(${rx}px,${ry}px,0)`
-    this._setLabelDisplay(true)
+    if (!this._label) return
+    this._label.setWanted(this._labelVisible)
+    if (this._labelVisible) this._label.updatePosition(camera, this._group.position)
   }
 
   /** @param {boolean} show */
   _setLabelDisplay(show) {
-    if (this._label) this._label.style.display = show ? 'block' : 'none'
+    this._label?.setWanted(show)
+  }
+
+  /**
+   * Sole writer of the label content (PHILOSOPHY #4): composes the frame
+   * glyph + name, plus the RPY readout while selected (ADR-070 決定1).
+   */
+  _syncLabelText() {
+    if (!this._label) return
+    let text = `⌖ ${this._name}`
+    if (this._cfSelected && this._rpy) {
+      text += `  R${this._rpy.r}° P${this._rpy.p}° Y${this._rpy.y}°`
+    }
+    this._label.setText(text)
   }
 
   // ── Selection highlight ────────────────────────────────────────────────────
@@ -336,6 +290,11 @@ export class CoordinateFrameView {
   setObjectSelected(selected) {
     this._originSphere.material.color.setHex(selected ? 0xffcc00 : 0xffffff)
     this._originSphere.scale.setScalar(selected ? 1.6 : 1.0)
+    // Label enrichment (ADR-070): the RPY readout appears only while selected —
+    // staged disclosure keeps the default label short.
+    this._cfSelected = selected
+    if (!selected) this._rpy = null
+    this._syncLabelText()
   }
 
   // ── Parent axes ghost (ADR-034 §7) ────────────────────────────────────────
@@ -436,7 +395,7 @@ export class CoordinateFrameView {
       this._ghostGroup = null
     }
     if (this._label) {
-      this._label.remove()
+      this._label.dispose()
       this._label = null
     }
   }

@@ -900,7 +900,8 @@ To add a new operation state:
         "grab.allStartCorners": "snapshot(_grabHandlesOf(activeObj))",
         "grab.segmentStartCorners": "snapshot(_grabHandlesOf(activeObj))",
         "grab.axis": "null",
-        "grab.pivotSelectMode": "false"
+        "grab.pivotSelectMode": "false",
+        "grab.groundWarned": "false  // ADR-071: below-grade warning re-arms per gesture; stackMode NOT reset here (mobile Stack/Free toggles before start)"
       }
     },
     {
@@ -909,7 +910,8 @@ To add a new operation state:
       "event": "confirmGrab",
       "guard": [],
       "actions": {
-        "commandStack.push": "createMoveCommand(allStartCorners, currentCorners)"
+        "commandStack.push": "createMoveCommand(allStartCorners, currentCorners)",
+        "grab.stackMode": "true  // ADR-071: gesture end restores the assistive default (stack ON; ground plane = implicit landing surface)"
       }
     },
     {
