@@ -80,6 +80,9 @@ This directory records the project's design decisions.
 | [ADR-066](ADR-066-motion-tier-delight-allowance.md) | **Motion Tier に Tier D「delight」を追加 — 遊び心を禁じず統治する** | Accepted | 2026-07-12 | ADR-065, ADR-062, ADR-064, ADR-067 |
 | [ADR-067](ADR-067-viewport-stage-boot-reveal.md) | **ビューポート常設ステージ + 起動リビール — Tier D の最初の適用** | Accepted | 2026-07-13 | ADR-066, ADR-065 |
 | [ADR-068](ADR-068-camera-focus-flight-living-selection.md) | **カメラ・フォーカスフライト + 生きた選択 — ナビの Tier D と実体の Tier A/F** | Accepted | 2026-07-13 | ADR-067, ADR-066, ADR-065 |
+| [ADR-069](ADR-069-ux-parity-pass.md) | **UX パリティ・パス Phase 1 — ギズモを CameraFlight へ / Link Network は動きでなく状態で凡例化 / 位相リンク切断 / Frame 命名統一** | Accepted (Phase 1; Phase 2–4 計画済) | 2026-07-14 | ADR-068, ADR-048, ADR-030, ADR-038, ADR-037 |
+| [ADR-070](ADR-070-entity-identity-ifc.md) | **エンティティ同一性 — 3D ラベル機構の一般化(CF 情報化 + Solid/Mesh ラベル)と IFC クラスの活性化(視覚ティント)** | **Proposed** (Phase 2; IFC 深度の確定待ち) | 2026-07-15 | ADR-069, ADR-025, ADR-034, ADR-037 |
+| [ADR-071](ADR-071-placement-defaults.md) | **物理的妥当性の配置既定 — スタック既定 ON + 地面下アシスト(ハード拘束でなく警告 + 補助; 基礎/杭を守る)** | **Proposed** (Phase 3; アシスト vs ハード拘束の確定待ち) | 2026-07-15 | ADR-069, ADR-040 |
 
 ## How to Add a New ADR
 

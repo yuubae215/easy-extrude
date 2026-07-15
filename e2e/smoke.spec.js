@@ -77,6 +77,26 @@ test('F frames the selection via the camera flight without a page error', async 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('world gizmo axis click flies the camera without a page error', async ({ page }) => {
+  const errors = await boot(page)
+  // Finish the boot fly-in so the camera rests at its default pose (the gizmo
+  // dot projection is computed from it): a click on the viewport pre-empts it.
+  await page.locator('#canvas-container canvas').click()
+  // The gizmo is a separate fixed canvas (aria-labelled). Clicking the +Z dot
+  // (top-centre at canvas 64,23 for the default camera) routes through
+  // GizmoView._onClick → AppController.flyToView → CameraFlight. checkJs
+  // excludes the controller, so this is the wiring guard for that path — the
+  // gizmo used to teleport the camera in one frame (ADR-068).
+  const gizmo = page.getByRole('img', { name: /World orientation gizmo/ })
+  await expect(gizmo).toBeVisible()
+  await gizmo.click({ position: { x: 64, y: 23 } })
+  await page.waitForTimeout(700)          // let the flight land (DURATION.cameraFocus)
+  // Clicking the same axis again flies back (toggle path).
+  await gizmo.click({ position: { x: 64, y: 23 } })
+  await page.waitForTimeout(700)
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', async ({ page }) => {
   // Regression guard: _addObject('sketch') called a method that did not exist,
   // so the Add-menu Sketch entry threw and the user stayed in Object Mode —

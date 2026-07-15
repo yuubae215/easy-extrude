@@ -1997,6 +1997,20 @@ export class SceneService extends EventEmitter {
 
   // ── Use cases ──────────────────────────────────────────────────────────────
 
+  /**
+   * Public accessor for the next collision-free auto-name for a given prefix.
+   * The single naming source: every "add" path (Solid, viewport/N-panel frame
+   * placement, and the mobile Add-frame dialog seed) derives its default from
+   * here, so no path invents a divergent literal that bypasses the numbering
+   * (the mobile path formerly committed a bare `'Frame'`, duplicating names #9).
+   * Pure derived read — scans existing names, mutates nothing (idempotent).
+   * @param {string} prefix
+   * @returns {string}
+   */
+  nextEntityName(prefix) {
+    return this._nextEntityName(prefix)
+  }
+
   _nextEntityName(prefix) {
     const pattern = new RegExp(`^${prefix}(?:\\.(\\d{3}))?$`)
     const used = new Set()

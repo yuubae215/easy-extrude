@@ -7,10 +7,19 @@
  * anchored under its parent Solid even when the Solid itself has no link).
  * Layer 0 holds root entities (Solids, annotations); each CF sits one row
  * below its parent. Parent-child structure is drawn as faint static lines;
- * SpatialLinks keep their semanticType colors, dashes, marching-ants
- * animation, and arrowheads, and bow into a bezier when both endpoints share
- * a layer. Same scene → same pixels, every update (no force simulation, no
- * random scatter). Clicking a node selects the entity in the 3D viewport.
+ * SpatialLinks keep their semanticType colors and arrowheads and curve gently
+ * so opposite-direction edges separate instead of overlapping. Same scene →
+ * same pixels, every update (no force simulation, no random scatter).
+ * Clicking a node selects the entity in the 3D viewport; hovering it (or a
+ * 3D selection) puts the graph into FOCUS+CONTEXT mode.
+ *
+ * READABILITY (the "lines flying everywhere" fix): edges are static — there is
+ * no idle animation. Every edge marching-ants at once carried no per-firing
+ * information and read as chaos (PHILOSOPHY #30: motion must speak a fact or an
+ * affordance, else it is noise). Legibility now comes from *state*, not motion:
+ * with a node focused (hover or selection), its incident edges brighten and the
+ * rest dim to context, so "what connects to this entity" is answerable at a
+ * glance; kinematic links (jointType ≠ null) read heavier than topological ones.
  *
  * Lifecycle: auto-visible when links exist, hidden when none.
  * The panel is collapsible via the header button (−/+).
@@ -60,6 +69,8 @@ export class LinkNetworkView {
     /** @type {Map<string, {source:string, target:string, semanticType:string, directed:boolean}>} */
     this._edges       = new Map()
     this._selectedIds = new Set()
+    /** Node currently hovered in the panel — drives focus+context with selection. */
+    this._hoveredId   = null
     this._collapsed   = false
     /** Current SVG height — MIN_PANEL_H, or MAX_PANEL_H for 3+ layers. */
     this._svgH        = MIN_PANEL_H
@@ -154,15 +165,10 @@ export class LinkNetworkView {
     })
     this._panelEl.appendChild(this._svgEl)
 
-    // ── SVG defs: markers + CSS animation ──────────────────────────────────
+    // ── SVG defs: arrowhead markers ────────────────────────────────────────
+    // Edges are static (no idle animation) — legibility is carried by
+    // focus+context styling, not motion (see class doc / PHILOSOPHY #30).
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
-    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-    style.textContent = `
-      @keyframes lnv-march {
-        from { stroke-dashoffset: 14; }
-        to   { stroke-dashoffset:  0; }
-      }`
-    defs.appendChild(style)
 
     for (const [type, colorInt] of Object.entries(LINK_TYPE_COLORS)) {
       const hex    = '#' + colorInt.toString(16).padStart(6, '0')
@@ -241,6 +247,9 @@ export class LinkNetworkView {
         target:       link.targetId,
         semanticType: link.semanticType ?? 'connects',
         directed:     DIRECTED_TYPES.has(link.semanticType) || link.jointType != null,
+        // Kinematic links (a real URDF joint) read heavier than topological
+        // annotations (adjacent/contains/…, jointType === null).
+        kinematic:    link.jointType != null,
       })
     }
 
@@ -447,6 +456,22 @@ export class LinkNetworkView {
     const nodeById = new Map()
     for (const [id, nd] of this._nodes) nodeById.set(id, nd)
 
+    // Focus+context: the union of the panel-hovered node and the 3D selection.
+    // When non-empty, incident edges brighten and the rest recede to context;
+    // when empty, edges render in a calm neutral state. This is the state
+    // signal that replaces the old idle marching animation (PHILOSOPHY #30).
+    const focusIds = new Set(this._selectedIds)
+    if (this._hoveredId && this._nodes.has(this._hoveredId)) focusIds.add(this._hoveredId)
+    const hasFocus = focusIds.size > 0
+    // Nodes one hop from a focused node — their labels stay legible in dense mode.
+    const neighborIds = new Set()
+    if (hasFocus) {
+      for (const edge of this._edges.values()) {
+        if (focusIds.has(edge.source)) neighborIds.add(edge.target)
+        if (focusIds.has(edge.target)) neighborIds.add(edge.source)
+      }
+    }
+
     // ── Hierarchy edges (parent → child, structural) ───────────────────────
     // Faint static lines underneath the SpatialLink layer: containment is
     // scaffolding, not a semantic relationship — no dash, no marching ants,
@@ -469,6 +494,11 @@ export class LinkNetworkView {
     }
 
     // ── SpatialLink edges ──────────────────────────────────────────────────
+    // All edges are quadratic curves: same-row links bow away from their row
+    // (a straight line would run through every sibling between the endpoints),
+    // and cross-layer links bow to the RIGHT of travel so A→B and B→A separate
+    // instead of stacking into one ambiguous line. Static styling only — width
+    // and opacity encode importance (kinematic vs topological) and focus.
     for (const [, edge] of this._edges) {
       const u = nodeById.get(edge.source), v = nodeById.get(edge.target)
       if (!u || !v) continue
@@ -485,28 +515,33 @@ export class LinkNetworkView {
       const x1 = u.x + nx * R,        y1 = u.y + ny * R
       const x2 = v.x - nx * pullback, y2 = v.y - ny * pullback
 
-      let el
+      let cx, cy
       if (u.layer === v.layer && u !== v) {
-        // Same-row links bow away from the row — a straight line would run
-        // through every sibling node between the endpoints. Layer 0 bows up,
-        // deeper layers bow down (toward free space).
         const bow = u.layer === 0 ? -14 : 14
-        el = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-        el.setAttribute('d', `M ${x1} ${y1} Q ${(x1 + x2) / 2} ${y1 + bow} ${x2} ${y2}`)
-        el.setAttribute('fill', 'none')
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2 + bow
       } else {
-        el = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-        el.setAttribute('x1', x1)
-        el.setAttribute('y1', y1)
-        el.setAttribute('x2', x2)
-        el.setAttribute('y2', y2)
+        const curve = Math.min(Math.max(dist * 0.16, 6), 18)
+        cx = (x1 + x2) / 2 - ny * curve   // perpendicular, right of travel
+        cy = (y1 + y2) / 2 + nx * curve
       }
-      el.setAttribute('stroke',           color)
-      el.setAttribute('stroke-width',     '1.5')
-      el.setAttribute('stroke-opacity',   '0.75')
-      el.setAttribute('stroke-dasharray', '4 3')
-      el.style.animation = 'lnv-march 1.4s linear infinite'
-      if (edge.directed) {
+
+      // active: null = no focus (neutral), true = incident to focus, false = dimmed.
+      const active = !hasFocus ? null : (focusIds.has(edge.source) || focusIds.has(edge.target))
+      const dimmed = active === false
+
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      el.setAttribute('d', `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`)
+      el.setAttribute('fill', 'none')
+      el.setAttribute('stroke',         color)
+      el.setAttribute('stroke-width',   String((edge.kinematic ? 2 : 1.3) + (active ? 0.5 : 0)))
+      el.setAttribute('stroke-opacity', String(
+        dimmed ? 0.1 : active ? 0.95 : edge.kinematic ? 0.62 : 0.42))
+      el.setAttribute('stroke-linecap', 'round')
+      // Kinematic joints render solid (a real constraint); topological
+      // annotations stay dashed (a conceptual relationship).
+      if (!edge.kinematic) el.setAttribute('stroke-dasharray', '4 3')
+      if (edge.directed && !dimmed) {
         el.setAttribute('marker-end', `url(#lnv-arr-${edge.semanticType})`)
       }
       this._graphGrp.appendChild(el)
@@ -522,16 +557,24 @@ export class LinkNetworkView {
     const LABEL_H = 9   // approx line height at font-size 8.5
 
     for (const [id, nd] of this._nodes) {
-      const sel    = this._selectedIds.has(id)
-      const color  = NODE_COLOR[nd.type] ?? NODE_COLOR.default
-      const radius = sel ? 7 : 5
+      const focused  = focusIds.has(id)                    // selected OR hovered
+      const neighbor = neighborIds.has(id)
+      const context  = hasFocus && !focused && !neighbor   // recede to background
+      const color    = NODE_COLOR[nd.type] ?? NODE_COLOR.default
+      const radius   = focused ? 7 : 5
 
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
       g.style.cursor = 'pointer'
       g.addEventListener('click', () => this._onSelect?.(id))
+      // Panel-hover drives focus+context (Tier A affordance — "these are the
+      // links of this entity"); it never mutates the 3D selection.
+      g.addEventListener('mouseenter', () => { this._hoveredId = id; this._renderSVG() })
+      g.addEventListener('mouseleave', () => {
+        if (this._hoveredId === id) { this._hoveredId = null; this._renderSVG() }
+      })
 
-      if (sel) {
-        // Glow ring around selected node
+      if (focused) {
+        // Glow ring around the focused node
         const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
         glow.setAttribute('cx',             nd.x)
         glow.setAttribute('cy',             nd.y)
@@ -539,7 +582,7 @@ export class LinkNetworkView {
         glow.setAttribute('fill',           'none')
         glow.setAttribute('stroke',         color)
         glow.setAttribute('stroke-width',   '1.5')
-        glow.setAttribute('stroke-opacity', '0.35')
+        glow.setAttribute('stroke-opacity', '0.4')
         g.appendChild(glow)
       }
 
@@ -548,12 +591,14 @@ export class LinkNetworkView {
       circle.setAttribute('cy',           nd.y)
       circle.setAttribute('r',            radius)
       circle.setAttribute('fill',         color)
-      circle.setAttribute('stroke',       sel ? '#ffffff' : 'rgba(0,0,0,0.45)')
-      circle.setAttribute('stroke-width', sel ? '1.5' : '0.8')
+      circle.setAttribute('fill-opacity', context ? '0.4' : '1')
+      circle.setAttribute('stroke',       focused ? '#ffffff' : 'rgba(0,0,0,0.45)')
+      circle.setAttribute('stroke-width', focused ? '1.5' : '0.8')
 
-      // Crowded rows degrade to a dot strip: labels only on selected nodes
-      // (clicking a dot still selects + reveals its name).
-      if (this._denseMode && !sel) {
+      // Crowded rows degrade to a dot strip — but the focused node and its
+      // neighbours keep their labels so the local neighbourhood stays readable
+      // without growing the panel (clicking any dot still reveals its name).
+      if (this._denseMode && !focused && !neighbor) {
         g.appendChild(circle)
         this._graphGrp.appendChild(g)
         continue
@@ -598,7 +643,8 @@ export class LinkNetworkView {
       text.setAttribute('x',           lx)
       text.setAttribute('y',           ly)
       text.setAttribute('text-anchor', anchor)
-      text.setAttribute('fill',        sel ? '#ffffff' : '#c0c0c0')
+      text.setAttribute('fill',        focused ? '#ffffff' : '#c0c0c0')
+      text.setAttribute('fill-opacity', context ? '0.45' : '1')
       text.setAttribute('font-size',   '8.5')
       text.setAttribute('font-family', 'system-ui, -apple-system, sans-serif')
       text.setAttribute('pointer-events', 'none')
