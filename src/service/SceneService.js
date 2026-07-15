@@ -61,6 +61,7 @@ import { SpatialLink, migrateLinkType } from '../domain/SpatialLink.js'
 import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
+import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
 
 /**
  * Minimum 2D (XY-projected) distance from any polyline segment to any point.
@@ -187,6 +188,34 @@ export class SceneService extends EventEmitter {
    */
   setViewContext(ctx) {
     this._viewContext = ctx
+  }
+
+  /**
+   * Constructs a MeshView wired with the label view context (ADR-070) —
+   * the single construction point so no creation path forgets the deps.
+   * @returns {MeshView}
+   */
+  _newMeshView() {
+    const { camera = null, renderer = null, container = null } = this._viewContext
+    return new MeshView(this._threeScene, camera, renderer, container)
+  }
+
+  /** ImportedMeshView twin of _newMeshView (ADR-070). */
+  _newImportedMeshView() {
+    const { camera = null, renderer = null, container = null } = this._viewContext
+    return new ImportedMeshView(this._threeScene, camera, renderer, container)
+  }
+
+  /**
+   * Pushes the entity's identity (name + IFC classification) into its mesh
+   * view — floating label text/accent and base-colour tint (ADR-070).
+   * Call after any creation/deserialization path and after setIfcClass.
+   * Views without the label interface are skipped via optional calls.
+   * @param {object} obj  scene entity
+   */
+  _syncIdentityVisuals(obj) {
+    obj.meshView?.setLabelText?.(obj.name)
+    obj.meshView?.setIfcTint?.(getIFCClassEntry(obj.ifcClass ?? null))
   }
 
   // ── BFF integration (ADR-015, Phase A) ────────────────────────────────────
@@ -425,7 +454,7 @@ export class SceneService extends EventEmitter {
         if (dto.position && dto.orientation && dto.localCorners) {
           // v1.3+ format: restore primary triple directly via setPose (ADR-040)
           const vertices = Array.from({ length: 8 }, (_, i) => new Vertex(`${dto.id}_v${i}`, new Vector3()))
-          solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+          solid = new Solid(dto.id, dto.name, vertices, this._newMeshView())
           solid.setPose(
             new Vector3(dto.position.x, dto.position.y, dto.position.z),
             new Quaternion(dto.orientation.x, dto.orientation.y, dto.orientation.z, dto.orientation.w),
@@ -434,7 +463,7 @@ export class SceneService extends EventEmitter {
         } else {
           // Legacy format: vertices are world corners; bodyRotation may be non-identity
           const vertices = dto.vertices.map(v => new Vertex(v.id, new Vector3(v.x, v.y, v.z)))
-          solid = new Solid(dto.id, dto.name, vertices, new MeshView(this._threeScene))
+          solid = new Solid(dto.id, dto.name, vertices, this._newMeshView())
           if (dto.bodyRotation) {
             // _initFromWorldCorners stored localCorners as (worldCorner - centroid), which is the
             // world-space offset, not the body-frame offset. De-rotate to fix them (ADR-040).
@@ -448,12 +477,13 @@ export class SceneService extends EventEmitter {
         }
         solid.description = dto.description ?? ''
         solid.ifcClass    = dto.ifcClass    ?? null
+        this._syncIdentityVisuals(solid)
         // Geometry is rebuilt asynchronously by batchRebuildSolids() after all
         // entities are created — see loadScene() / importFromJson().
         entities.push(solid)
       // Accept both new ('Profile') and legacy ('Sketch') type strings
       } else if (dto.type === 'Profile' || dto.type === 'Sketch') {
-        const meshView = new MeshView(this._threeScene)
+        const meshView = this._newMeshView()
         meshView.setVisible(false)
         const profile = new Profile(dto.id, dto.name, meshView)
         profile.description = dto.description ?? ''
@@ -462,6 +492,7 @@ export class SceneService extends EventEmitter {
           const p2 = new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z)
           profile.setRect(p1, p2)
         }
+        this._syncIdentityVisuals(profile)
         entities.push(profile)
       } else if (dto.type === 'MeasureLine') {
         const { camera, renderer, container = document.body } = viewContext
@@ -478,7 +509,7 @@ export class SceneService extends EventEmitter {
         meshView.update(entity.p1, entity.p2)
         entities.push(entity)
       } else if (dto.type === 'ImportedMesh') {
-        const meshView  = new ImportedMeshView(this._threeScene)
+        const meshView  = this._newImportedMeshView()
         const entity    = new ImportedMesh(dto.id, dto.name, meshView)
         entity.ifcClass = dto.ifcClass ?? null
         const positions = base64ToF32(dto.positions)
@@ -490,6 +521,7 @@ export class SceneService extends EventEmitter {
           meshView.updateBoxHelper()
         }
         entity.initCorners(meshView.getInitialCorners8())
+        this._syncIdentityVisuals(entity)
         entities.push(entity)
       } else if (dto.type === 'CoordinateFrame') {
         const { camera: cfCam = null, renderer: cfRnd = null, container: cfCnt = null } = viewContext
@@ -679,7 +711,7 @@ export class SceneService extends EventEmitter {
         // v1.3+ format (e.g. compileLayout output): restore the primary triple
         // directly via setPose (ADR-040) — mirrors _deserializeEntities.
         const vertices = Array.from({ length: 8 }, (_, i) => new Vertex(`${newId}_v${i}`, new Vector3()))
-        solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
+        solid = new Solid(newId, dto.name ?? 'Solid', vertices, this._newMeshView())
         solid.setPose(
           new Vector3(dto.position.x, dto.position.y, dto.position.z),
           new Quaternion(dto.orientation.x, dto.orientation.y, dto.orientation.z, dto.orientation.w),
@@ -690,16 +722,17 @@ export class SceneService extends EventEmitter {
         const vertices = dto.vertices.map((v, i) =>
           new Vertex(remapId(v.id) || `${newId}_v${i}`, new Vector3(v.x, v.y, v.z))
         )
-        solid = new Solid(newId, dto.name ?? 'Solid', vertices, new MeshView(this._threeScene))
+        solid = new Solid(newId, dto.name ?? 'Solid', vertices, this._newMeshView())
       }
       solid.description = dto.description ?? ''
       solid.ifcClass    = dto.ifcClass    ?? null
+      this._syncIdentityVisuals(solid)
       // Geometry is rebuilt asynchronously by batchRebuildSolids() — see importFromJson().
       return solid
     }
 
     if (dto.type === 'Profile') {
-      const meshView = new MeshView(this._threeScene)
+      const meshView = this._newMeshView()
       meshView.setVisible(false)
       const profile = new Profile(newId, dto.name ?? 'Profile', meshView)
       profile.description = dto.description ?? ''
@@ -708,6 +741,7 @@ export class SceneService extends EventEmitter {
         const p2 = new Vector3(dto.sketchRect.p2.x, dto.sketchRect.p2.y, dto.sketchRect.p2.z)
         profile.setRect(p1, p2)
       }
+      this._syncIdentityVisuals(profile)
       return profile
     }
 
@@ -729,7 +763,7 @@ export class SceneService extends EventEmitter {
 
     if (dto.type === 'ImportedMesh') {
       if (!dto.geometry?.positions) return null   // v1.0 export — no buffers, skip
-      const meshView  = new ImportedMeshView(this._threeScene)
+      const meshView  = this._newImportedMeshView()
       const entity    = new ImportedMesh(newId, dto.name ?? 'ImportedMesh', meshView)
       entity.ifcClass = dto.ifcClass ?? null
       const positions = base64ToF32(dto.geometry.positions)
@@ -741,6 +775,7 @@ export class SceneService extends EventEmitter {
         meshView.updateBoxHelper()
       }
       entity.initCorners(meshView.getInitialCorners8())
+      this._syncIdentityVisuals(entity)
       return entity
     }
 
@@ -2043,8 +2078,9 @@ export class SceneService extends EventEmitter {
     }
 
     const vertices = positions.map((pos, i) => new Vertex(`${id}_v${i}`, pos))
-    const solid    = new Solid(id, name, vertices, new MeshView(this._threeScene))
+    const solid    = new Solid(id, name, vertices, this._newMeshView())
     solid.meshView.updateGeometry(solid.corners)
+    this._syncIdentityVisuals(solid)
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
     // Body frame: Origin CF always exists at Solid centroid (ADR-037)
@@ -2063,10 +2099,11 @@ export class SceneService extends EventEmitter {
     const id   = `obj_${idx}_${Date.now()}`
     const name = this._nextEntityName('Sketch')
 
-    const meshView = new MeshView(this._threeScene)
+    const meshView = this._newMeshView()
     meshView.setVisible(false)  // no geometry until the profile is drawn
 
     const profile = new Profile(id, name, meshView)
+    this._syncIdentityVisuals(profile)
     this._model.addObject(profile)
     this.emit('objectAdded', profile)
     return profile
@@ -2122,6 +2159,9 @@ export class SceneService extends EventEmitter {
     if (!obj) return
     if (!(obj instanceof Solid) && !(obj instanceof ImportedMesh)) return
     obj.ifcClass = ifcClass ?? null
+    // ADR-070 決定2-A: classification is a visible declaration — retint the
+    // body + refresh the label badge through the view's owner methods (#4).
+    this._syncIdentityVisuals(obj)
     this.emit('objectIfcClassChanged', id, obj.ifcClass)
   }
 
@@ -2409,6 +2449,38 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Ground clearance predicate (ADR-071): reports whether any selected
+   * entity's geometry currently dips below the ground plane (Z = 0).
+   *
+   * Pure read over current world corners — it never mutates or clamps. The
+   * caller decides how to assist (warning toast, snap offer); keeping the
+   * judgment here follows PHILOSOPHY #25 (guards live in named service
+   * predicates, not inline handler returns). Entities without world corners
+   * (CoordinateFrame, SpatialLink) are skipped.
+   *
+   * @param {Iterable<string>} selectedIds
+   * @param {number} [tolerance=0.001]  1 mm — matches the stack-snap rest tolerance
+   * @returns {{ belowGrade: boolean, lowestZ: number, suggestedLift: number }}
+   *   suggestedLift is the +Z delta that would rest the lowest point on grade.
+   */
+  checkGroundClearance(selectedIds, tolerance = 0.001) {
+    let lowestZ = Infinity
+    for (const id of selectedIds) {
+      const obj = this._model.getObject(id)
+      if (!obj?.corners?.length) continue
+      for (const c of obj.corners) {
+        if (c.z < lowestZ) lowestZ = c.z
+      }
+    }
+    if (!Number.isFinite(lowestZ)) return { belowGrade: false, lowestZ: 0, suggestedLift: 0 }
+    return {
+      belowGrade:    lowestZ < -tolerance,
+      lowestZ,
+      suggestedLift: Math.max(0, -lowestZ),
+    }
+  }
+
+  /**
    * BFS over jointType === 'fixed' links starting from startEntityId.
    * Returns all reachable entity IDs including the start entity itself.
    * @param {string} startEntityId
@@ -2597,6 +2669,7 @@ export class SceneService extends EventEmitter {
     const profile = this._model.getObject(id)
     if (!(profile instanceof Profile)) return null
     const solid = profile.extrude(height)
+    this._syncIdentityVisuals(solid)
     this._model.removeObject(id)
     this._model.addObject(solid)
     this.emit('objectRemoved', id, profile)
@@ -2664,8 +2737,9 @@ export class SceneService extends EventEmitter {
       return new Vertex(`${newId}_v${i}`, pos)
     })
 
-    const solid = new Solid(newId, newName, vertices, new MeshView(this._threeScene))
+    const solid = new Solid(newId, newName, vertices, this._newMeshView())
     solid.meshView.updateGeometry(solid.corners)
+    this._syncIdentityVisuals(solid)
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
     // Body frame: Origin CF always exists at Solid centroid (ADR-037)
@@ -2684,8 +2758,9 @@ export class SceneService extends EventEmitter {
    * @returns {import('../domain/ImportedMesh.js').ImportedMesh}
    */
   createImportedMesh(id, name) {
-    const meshView = new ImportedMeshView(this._threeScene)
+    const meshView = this._newImportedMeshView()
     const entity   = new ImportedMesh(id, name, meshView)
+    this._syncIdentityVisuals(entity)
     this._model.addObject(entity)
     this.emit('objectAdded', entity)
     return entity

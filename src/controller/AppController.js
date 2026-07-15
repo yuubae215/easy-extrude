@@ -887,6 +887,10 @@ export class AppController {
               // Snap engagement flash: the quick-drag stack path shares the
               // handler's snap state, so it shares the same diff/spawn too.
               this._grabHandler._syncSnapFx()
+            } else {
+              // Stack assist disabled (ADR-071 escape hatch): free placement
+              // may dip below grade — warn once per gesture, never clamp (#11).
+              this._grabHandler.warnIfBelowGrade()
             }
           }
         }
@@ -2804,8 +2808,10 @@ export class AppController {
         this._objDragAllStartCorners   = new Map()
         this._objDragAllStartPositions = new Map()
         // Fresh gesture for the snap engagement flash (quick drag shares the
-        // grab handler's stack-snap state and presentation history).
+        // grab handler's stack-snap state and presentation history), and for
+        // the once-per-gesture below-grade warning (ADR-071).
         this._grabHandler._snapFxPrev  = { geometry: null, stack: null }
+        this._grabHandler.state.groundWarned = false
         for (const id of this._selectedIds) {
           const selObj = this._scene.getObject(id)
           // CoordinateFrame uses localOffset (not corners); exclude it from mouse-drag
@@ -3579,6 +3585,11 @@ export class AppController {
       if (this._gizmoView) this._gizmoView.update()
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()
+        // Entity identity labels (ADR-070): Solid/Profile/ImportedMesh carry a
+        // floating name/class label, disclosed on selection/hover (view-gated).
+        if (obj instanceof Solid || obj instanceof Profile || obj instanceof ImportedMesh) {
+          obj.meshView.updateLabelPosition?.(this._sceneView.activeCamera)
+        }
         if (obj instanceof AnnotatedPoint)  {
           // Constant screen-size marker, capped to 5% of the scene radius so it
           // stays proportionate; floor at the legacy 0.25-unit world radius so

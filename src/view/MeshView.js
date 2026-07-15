@@ -15,17 +15,42 @@
 import * as THREE from 'three'
 import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel.js'
 import { geometryEngine } from '../service/GeometryEngine.js'
+import { EntityLabel } from './EntityLabel.js'
+import { COLOR } from '../theme/tokens.js'
+
+/** Default cuboid body colour (= COLOR.accentActive) — the base setIfcTint restores. */
+const BODY_COLOR = 0x4fc3f7
 
 export class MeshView {
-  constructor(scene) {
+  /**
+   * @param {THREE.Scene} scene
+   * @param {THREE.Camera|null}        [camera]    Required for the floating name label (ADR-070).
+   * @param {THREE.WebGLRenderer|null} [renderer]  Required for the floating name label.
+   * @param {HTMLElement|null}         [container] DOM parent for the label element.
+   */
+  constructor(scene, camera = null, renderer = null, container = null) {
     this._selected           = false
     this._constraintViolated = false
     this._hovered            = false
 
     // Cuboid mesh
-    this.cuboidMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide })
+    this.cuboidMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide })
     this.cuboid = new THREE.Mesh(new THREE.BufferGeometry(), this.cuboidMat)
     scene.add(this.cuboid)
+
+    // ── Floating name/class label (ADR-070 決定1) ─────────────────────────
+    // Staged disclosure: shown while selected or hovered (never always-on —
+    // density control, same focus+context idea as the Link Network).
+    /** @type {EntityLabel|null} */
+    this._label = (camera && renderer && container)
+      ? new EntityLabel(renderer, container, { accent: COLOR.accentActive })
+      : null
+    this._name      = ''
+    /** @type {import('../domain/IFCClassRegistry.js').IFCClassEntry|null} */
+    this._ifcEntry  = null
+    /** Label anchor: top-centre of the body in world space (set by geometry paths). */
+    this._labelAnchor = new THREE.Vector3()
+    this._hasLabelAnchor = false
 
     // Wireframe overlay
     this.wireframe = new THREE.LineSegments(
@@ -269,6 +294,23 @@ export class MeshView {
     this.wireframe.geometry = edgesGeo
     this.boxHelper.geometry.dispose()
     this.boxHelper.geometry = new THREE.EdgesGeometry(newGeo, 1)
+    this._updateLabelAnchor(corners)
+  }
+
+  /**
+   * Recomputes the label anchor (centroid XY, max Z) from world corners.
+   * Display-only derivation — never feeds back into geometry (PHILOSOPHY #24).
+   * @param {import('three').Vector3[]} corners
+   */
+  _updateLabelAnchor(corners) {
+    if (!corners?.length) { this._hasLabelAnchor = false; return }
+    let sx = 0, sy = 0, mz = -Infinity
+    for (const c of corners) {
+      sx += c.x; sy += c.y
+      if (c.z > mz) mz = c.z
+    }
+    this._labelAnchor.set(sx / corners.length, sy / corners.length, mz)
+    this._hasLabelAnchor = true
   }
 
   /**
@@ -295,6 +337,7 @@ export class MeshView {
     this.wireframe.geometry = new THREE.EdgesGeometry(newGeo, 1)
     this.boxHelper.geometry.dispose()
     this.boxHelper.geometry = new THREE.EdgesGeometry(newGeo, 1)
+    this._updateLabelAnchor(corners)
   }
 
   /**
@@ -309,6 +352,22 @@ export class MeshView {
    * @returns {Promise<void>}
    */
   async rebuildExtrudedProfile(vertices2d, height) {
+    // Label anchor from the profile footprint: centroid XY, top of the extrusion.
+    // Accepts both input shapes ({x,y}[] or flat Float32Array).
+    if (vertices2d?.length) {
+      let sx = 0, sy = 0, n = 0
+      if (typeof vertices2d[0] === 'number') {
+        const flat = /** @type {Float32Array} */ (vertices2d)
+        for (let i = 0; i + 1 < flat.length; i += 2) { sx += flat[i]; sy += flat[i + 1]; n++ }
+      } else {
+        const pts = /** @type {Array<{x: number, y: number}>} */ (vertices2d)
+        for (const v of pts) { sx += v.x; sy += v.y; n++ }
+      }
+      if (n > 0) {
+        this._labelAnchor.set(sx / n, sy / n, Math.max(0, height))
+        this._hasLabelAnchor = true
+      }
+    }
     const { positions, normals, indices } = await geometryEngine.computeExtrudedProfile(vertices2d, height)
     const newGeo = new THREE.BufferGeometry()
     newGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -326,7 +385,61 @@ export class MeshView {
   setObjectSelected(sel) {
     this._selected = sel
     this._syncEmissive()
+    this._syncLabel()
     this.boxHelper.visible = sel
+  }
+
+  // ── Entity identity: floating label + IFC base tint (ADR-070) ────────────
+
+  /**
+   * Updates the label name (creation / rename). The label itself only shows
+   * while selected or hovered — see _syncLabel().
+   * @param {string} name
+   */
+  setLabelText(name) {
+    this._name = name
+    this._syncLabel()
+  }
+
+  /**
+   * Sole writer of the cuboid BASE colour after construction (ADR-070 決定2-A,
+   * PHILOSOPHY #4): an assigned IFC class tints the body colour so the
+   * classification is visible in 3D. Deliberately NOT emissive — emissive
+   * stays _syncEmissive's exclusive channel (violation/selection/hover), and
+   * the tint composes UNDER those cues.
+   * @param {import('../domain/IFCClassRegistry.js').IFCClassEntry|null} entry
+   */
+  setIfcTint(entry) {
+    this._ifcEntry = entry ?? null
+    if (this._ifcEntry) {
+      this.cuboidMat.color.setHex(BODY_COLOR).lerp(new THREE.Color(this._ifcEntry.color), 0.65)
+    } else {
+      this.cuboidMat.color.setHex(BODY_COLOR)
+    }
+    this._syncLabel()
+  }
+
+  /**
+   * Sole writer of the label content and desired visibility (PHILOSOPHY #4).
+   * Staged disclosure: label appears while selected or hovered; the IFC class
+   * label rides as a badge and colours the accent bar.
+   */
+  _syncLabel() {
+    if (!this._label) return
+    const badge = this._ifcEntry ? ` · ${this._ifcEntry.label}` : ''
+    this._label.setText(`${this._name}${badge}`)
+    this._label.setAccent(this._ifcEntry ? this._ifcEntry.color : COLOR.accentActive)
+    this._label.setWanted(Boolean(this._name) && this.cuboid.visible && (this._selected || this._hovered))
+  }
+
+  /**
+   * Projects the label anchor to screen space and repositions the HTML label.
+   * Call once per animation frame with `SceneView.activeCamera`.
+   * @param {THREE.Camera} camera
+   */
+  updateLabelPosition(camera) {
+    if (!this._label || !this._hasLabelAnchor) return
+    this._label.updatePosition(camera, this._labelAnchor)
   }
 
   /**
@@ -365,6 +478,7 @@ export class MeshView {
     if (this._hovered === hovered) return
     this._hovered = hovered
     this._syncEmissive()
+    this._syncLabel()
   }
 
   /**
@@ -681,6 +795,7 @@ export class MeshView {
       this.boxHelper.visible = false
       this.hlMesh.visible    = false
     }
+    this._syncLabel()
   }
 
   /**
@@ -718,6 +833,10 @@ export class MeshView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    if (this._label) {
+      this._label.dispose()
+      this._label = null
+    }
     scene.remove(this.cuboid)
     scene.remove(this.wireframe)
     scene.remove(this.boxHelper)

@@ -307,7 +307,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `Y` | Lock to Y axis |
 | `Z` | Lock to Z axis |
 | `V` | Enable Pivot selection mode |
-| `S` | Toggle Stack mode |
+| `S` | Toggle Stack assist (default **ON**, ADR-071 — S disables for free / below-grade placement) |
 | `0`–`9` / `.` | Numeric input mode (requires axis lock) |
 
 ### Face Extrude Active
@@ -404,7 +404,7 @@ Lift finger (pointerup, wasDragging=true) → _confirmFaceExtrude()
 | State | Button | Event | Action |
 |-------|--------|-------|--------|
 | grab.active | ✓ Confirm | `click` | `_confirmGrab()` |
-| grab.active | Stack | `click` | Toggle Stack mode |
+| grab.active | Stack | `click` | Toggle Stack assist (default ON, ADR-071 — the object-mode Stack/Free button is the disable toggle) |
 | grab.active | ✕ Cancel | `click` | `_cancelGrab()` |
 | faceExtrude.active | ✓ Confirm | `click` | `_confirmFaceExtrude()` |
 | faceExtrude.active | ✕ Cancel | `click` | `_cancelFaceExtrude()` |

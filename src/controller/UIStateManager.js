@@ -303,7 +303,10 @@ export class UIStateManager {
         { icon: ICONS.delete,    label: 'Delete', onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: hasObj,         disabled: !gDelete.enabled, reason: gDelete.reason },
         canRotate
           ? { icon: ICONS.rotate, label: 'Rotate', onClick: () => ctrl._rotateHandler.start(true) }
-          : { icon: ICONS.stack,  label: 'Stack',  onClick: () => { ctrl._grabHandler.toggleStackMode(); this.updateMobileToolbar() }, active: ctrl._grabHandler.stackMode, disabled: !gStack.enabled, reason: gStack.reason },
+          // Stack assist is ON by default (ADR-071); the button is the DISABLE
+          // toggle — its label names the current mode so the escape state is
+          // legible ('Free' = assist off, tap to restore).
+          : { icon: ICONS.stack,  label: ctrl._grabHandler.stackMode ? 'Stack' : 'Free', onClick: () => { ctrl._grabHandler.toggleStackMode(); this.updateMobileToolbar() }, active: ctrl._grabHandler.stackMode, disabled: !gStack.enabled, reason: gStack.reason },
       ])
       return
     }

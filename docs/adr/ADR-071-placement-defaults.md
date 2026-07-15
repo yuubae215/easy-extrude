@@ -1,6 +1,6 @@
 # 071. 物理的妥当性の配置既定 — アシスト既定 vs ハード拘束
 
-- Status: **Proposed**(ユーザ承認待ち — 本 ADR の決定を Accepted にしてから実装)
+- Status: **Accepted**(2026-07-15 実装済 — 推奨どおり **A. アシスト既定** で確定)
 - Date: 2026-07-15
 - Deciders: yuubae215, Claude
 - 関連: ADR-069(UX パリティ・パス Phase 3)、GrabOperationHandler の stack/snap、PHILOSOPHY #11/#14/#25/#30
@@ -80,8 +80,27 @@
   EVENTS/CODE_CONTRACTS の同時更新が必須(#19 ドリフト禁止)。
 - 契約・schema・DSL 版・BFF 無改変(純クライアント挙動)。
 
-## Open question(ユーザ確認 = 本 ADR を Accepted にする条件)
+## Open question → 決定(2026-07-15)
 
-- **A(アシスト)で確定してよいか、B(ハード拘束)を望むか、C(後送り)か。**
-  推奨は A。B を選ぶ場合、基礎/杭の下部構造をどう扱うか(例: IFC クラス別に例外)を
-  本 ADR に追記してから実装する。
+- **A(アシスト既定)で確定**(ユーザ指示「最新の ADR の意思決定に従って実装」= 推奨案の承認)。
+
+## 実装記録(2026-07-15)
+
+- **スタック既定 ON**: `GrabOperationHandler.state.stackMode` 初期値 `true`。
+  `confirm()`/`cancel()` が **true にリセット**(ジェスチャ終端で既定 ON へ復帰)。
+  `start()` ではリセット **しない** — モバイルの object-mode Stack/Free ボタンは
+  `start()` の前にトグルするため、入口リセットはその選択を握り潰す。
+- **地面 = 暗黙の着地面**: `_applyStackSnap` は `highestHitZ = max(hit ?? -∞, 0)` —
+  下に何も無ければ地面(Z=0)に載る。下方オブジェクトが地面より下なら地面が勝つ。
+- **Z 軸明示移動は除外**: `apply()` の `stackApplies = stackMode && axis !== 'z'` —
+  G→Z の垂直intent をアシストが黙って上書きしない(#11 系)。
+- **述語**: `SceneService.checkGroundClearance(ids, tol=1mm)` →
+  `{belowGrade, lowestZ, suggestedLift}`(純リード・クランプなし — #25)。
+- **警告**: `GrabOperationHandler.warnIfBelowGrade()` — ジェスチャ 1 回だけ warn トースト
+  (`groundWarned` フラグ; grab start / confirm / cancel / quick-drag start でリセット)。
+  G-grab の自由/Z 拘束経路と quick-drag の stack-off 経路の双方から呼ぶ。
+- **意味反転の可視化**: ステータスバーは stack-off 時 `Free (S: stack)` を表示、
+  モバイルボタンはラベル `Stack`/`Free` で現モードを示す。infoBar `G > S` 文言反転。
+- **演出**: 地面着地は既存 `stackSnapshot`/`SnapFlash`(緑)にそのまま乗る — 新規演出なし。
+- E2E: stack テストを既定 ON 前提に反転(S 押下で `Free (S: stack)` 表示を検証)。
+  unit 640 pass / typecheck clean / build clean / E2E 10 pass。契約・schema・BFF 無改変。

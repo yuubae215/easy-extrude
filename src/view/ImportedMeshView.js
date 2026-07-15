@@ -13,15 +13,22 @@
  * in AppController._hitAnyObject() / _hitActiveCuboid().
  */
 import * as THREE from 'three'
+import { EntityLabel } from './EntityLabel.js'
+
+/** Default imported-mesh body colour — the base setIfcTint restores. */
+const BODY_COLOR = 0x888888
 
 export class ImportedMeshView {
   /**
    * @param {THREE.Scene} scene  Three.js scene to add objects to
+   * @param {THREE.Camera|null}        [camera]    Required for the floating name label (ADR-070).
+   * @param {THREE.WebGLRenderer|null} [renderer]  Required for the floating name label.
+   * @param {HTMLElement|null}         [container] DOM parent for the label element.
    */
-  constructor(scene) {
+  constructor(scene, camera = null, renderer = null, container = null) {
     this._geo = new THREE.BufferGeometry()
     this._mat = new THREE.MeshStandardMaterial({
-      color: 0x888888,
+      color: BODY_COLOR,
       roughness: 0.5,
       metalness: 0.1,
       side: THREE.DoubleSide,
@@ -34,6 +41,16 @@ export class ImportedMeshView {
     this.boxHelper = new THREE.BoxHelper(this.cuboid, 0xaaaaaa)
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
+
+    // ── Floating name/class label (ADR-070; shared EntityLabel helper) ────
+    /** @type {EntityLabel|null} */
+    this._label = (camera && renderer && container)
+      ? new EntityLabel(renderer, container)
+      : null
+    this._name     = ''
+    this._ifcEntry = null
+    this._selected = false
+    this._hovered  = false
 
     /**
      * Centre of the geometry's bounding box in local geometry space (i.e. with
@@ -167,11 +184,74 @@ export class ImportedMeshView {
   /** Shows or hides the mesh. */
   setVisible(visible) {
     this.cuboid.visible = visible
+    this._syncLabel()
   }
 
   /** Shows or hides the BoxHelper selection outline. */
   setObjectSelected(sel) {
     this.boxHelper.visible = sel
+    this._selected = sel
+    this._syncLabel()
+  }
+
+  /** Pointer-hover affordance parity with MeshView (label disclosure only). */
+  setHovered(hovered) {
+    if (this._hovered === hovered) return
+    this._hovered = hovered
+    this._syncLabel()
+  }
+
+  // ── Entity identity: floating label + IFC base tint (ADR-070) ────────────
+
+  /**
+   * Updates the label name (creation / rename).
+   * @param {string} name
+   */
+  setLabelText(name) {
+    this._name = name
+    this._syncLabel()
+  }
+
+  /**
+   * Sole writer of the mesh BASE colour after construction (ADR-070 決定2-A):
+   * an assigned IFC class tints the body colour. Pass null to restore.
+   * @param {import('../domain/IFCClassRegistry.js').IFCClassEntry|null} entry
+   */
+  setIfcTint(entry) {
+    this._ifcEntry = entry ?? null
+    if (this._ifcEntry) {
+      this._mat.color.setHex(BODY_COLOR).lerp(new THREE.Color(this._ifcEntry.color), 0.65)
+    } else {
+      this._mat.color.setHex(BODY_COLOR)
+    }
+    this._syncLabel()
+  }
+
+  /** Sole writer of the label content and desired visibility (PHILOSOPHY #4). */
+  _syncLabel() {
+    if (!this._label) return
+    const badge = this._ifcEntry ? ` · ${this._ifcEntry.label}` : ''
+    this._label.setText(`${this._name}${badge}`)
+    if (this._ifcEntry) this._label.setAccent(this._ifcEntry.color)
+    this._label.setWanted(Boolean(this._name) && this.cuboid.visible && (this._selected || this._hovered))
+  }
+
+  /**
+   * Projects the label anchor (bbox top centre + position offset) to screen
+   * space. Call once per animation frame with `SceneView.activeCamera`.
+   * @param {THREE.Camera} camera
+   */
+  updateLabelPosition(camera) {
+    if (!this._label?.wanted) return
+    const bb = this._geo.boundingBox
+    if (!bb) return
+    const off = this.cuboid.position
+    const anchor = new THREE.Vector3(
+      (bb.min.x + bb.max.x) / 2 + off.x,
+      (bb.min.y + bb.max.y) / 2 + off.y,
+      bb.max.z + off.z,
+    )
+    this._label.updatePosition(camera, anchor)
   }
 
   // ── Snap targets ────────────────────────────────────────────────────────────
@@ -283,6 +363,10 @@ export class ImportedMeshView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    if (this._label) {
+      this._label.dispose()
+      this._label = null
+    }
     scene.remove(this.cuboid)
     scene.remove(this.boxHelper)
     this._geo.dispose()

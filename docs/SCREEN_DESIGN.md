@@ -88,6 +88,11 @@ Dimensions / position → `LAYOUT_DESIGN.md`.
 - Shows the ground grid plane (Z=0)
 - Displays all object meshes (no selection)
 - Top-right: Axis gizmo (mini-axis with X/Y/Z labels)
+- Entity identity labels (ADR-070): Solid/Profile/ImportedMesh carry a floating
+  HTML name label, disclosed on **selection/hover** (staged — never always-on);
+  an assigned IFC class adds a `· Class` badge, colours the accent bar, and
+  tints the mesh base colour. CF labels show `⌖ name` (+ RPY readout while
+  selected). Shared `EntityLabel` helper; screen-space sizing (#27).
 
 #### [D] N Panel
 - Empty (no object selected; hidden or blank)
@@ -276,7 +281,8 @@ Hover text: `Endpoint 1 — Drag to reposition`
 #### [C] 3D Viewport
 - Object follows cursor movement
 - Axis lock active: red/green/blue line along the constrained axis
-- Stack mode ON: projection line shown below object
+- Stack assist (default ON, ADR-071): object rests on the surface below — another
+  object or the ground plane (Z=0); an explicit Z-axis lock suspends the assist
 - Ctrl snap: yellow marker on snap target
 
 #### [D] N Panel
@@ -284,13 +290,15 @@ Hover text: `Endpoint 1 — Drag to reposition`
 |-------|---------|
 | Axis | X / Y / Z / Free |
 | Snap | Off / Geometry |
-| Stack | Off / On |
+| Stack | On (default) / Off |
 | Delta | Δx, Δy, Δz (current displacement) |
 
 #### [E] Status Bar
 ```
-X/Y/Z = Axis lock   V = Pivot select   Ctrl = Snap   S = Stack   Enter = Confirm
+X/Y/Z = Axis lock   V = Pivot select   Ctrl = Snap   S = Free place (stack off)   Enter = Confirm
 ```
+Stack-off shows `Free (S: stack)`; dragging below grade fires a one-shot warning
+toast (never a clamp — footings/piles stay possible, ADR-071).
 
 #### [F] Mobile Toolbar
 | Slot | Button | State |

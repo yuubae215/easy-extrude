@@ -140,23 +140,38 @@ test('grab + stack mode engages the snap and its flash wiring stays live', async
   // the controller layer, which checkJs does not cover. If any link in that
   // chain dangles, the pointermove handler throws before `updateStatus()`
   // runs, so "Stack: ON" never renders and the pageerror listener fires.
+  // ADR-071: stack assist is now ON by default — no S press needed to engage;
+  // S is the escape hatch and must surface the "Free" state (#11).
   const errors = await boot(page)
 
   // Add a second box (auto-selected) so the initial cube is a stack target.
   await page.getByRole('button', { name: /\+ Add/ }).click()
   await expect.poll(() => deleteButtons(page).count()).toBeGreaterThan(1)
 
-  // G grab → S stack, then sweep across the initial cube at scene centre.
+  // G grab (stack default ON), then sweep across the initial cube at centre.
   const canvas = await page.locator('#canvas-container canvas').boundingBox()
   const cx = canvas.x + canvas.width / 2
   const cy = canvas.y + canvas.height / 2
   await page.mouse.move(cx + 100, cy)
   await page.keyboard.press('g')
-  await page.keyboard.press('s')
   await page.mouse.move(cx, cy, { steps: 12 })
   await expect(page.getByText('Stack: ON')).toBeVisible()
 
+  // S now DISABLES the assist (ADR-071) — the escaped state is visible.
+  await page.keyboard.press('s')
+  await expect(page.getByText('Free (S: stack)')).toBeVisible()
+
   await page.keyboard.press('Escape') // cancel — scene state untouched
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('the selected entity shows its floating identity label (ADR-070)', async ({ page }) => {
+  // Wiring liveness only: SceneService._syncIdentityVisuals → MeshView label →
+  // AppController animation loop updateLabelPosition crosses the controller
+  // layer (no checkJs). The boot Solid is auto-selected, so its label div
+  // must render with the entity name.
+  const errors = await boot(page)
+  await expect(page.locator('.ee-entity-label', { hasText: 'Cube' }).first()).toBeVisible()
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
