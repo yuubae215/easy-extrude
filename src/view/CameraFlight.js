@@ -35,9 +35,14 @@ export class CameraFlight {
    * @param {import('three/addons/controls/OrbitControls.js').OrbitControls} controls
    * @param {{position:{x,y,z}, target:{x,y,z}, near?:number, far?:number}} end
    *   the destination pose (from `SceneView.focusPose`)
-   * @param {{reduced?: boolean}} [opts] supplied by MotionGovernor.spawn
+   * @param {{reduced?: boolean, onDone?: () => void}} [opts] `reduced` supplied
+   *   by MotionGovernor.spawn; `onDone` (additive, ADR-072) fires exactly once
+   *   when the flight ends in ANY way — natural landing, `finish()`, an
+   *   external camera write, or budget eviction — so a caller that must reach
+   *   a terminal state after the flight (Map Mode's projection swap) never
+   *   silently stalls (#11). Existing callers omit it (behaviour unchanged).
    */
-  constructor(camera, controls, end, { reduced = false } = {}) {
+  constructor(camera, controls, end, { reduced = false, onDone = null } = {}) {
     this._camera   = camera
     this._controls = controls
     this._end      = end
@@ -45,10 +50,21 @@ export class CameraFlight {
     this._start    = null
     this._from     = { pos: camera.position.clone(), tgt: controls.target.clone() }
     this._done     = false
+    this._onDone   = onDone
+
     this._lastWritten = null
 
-    if (reduced) { this._done = true; this._land() }   // static cue: end pose only
+    if (reduced) { this._markDone(); this._land() }   // static cue: end pose only
     else this._lastWritten = this._apply(0)
+  }
+
+  /** The ONE transition to done — fires the onDone callback exactly once. */
+  _markDone() {
+    if (this._done) return
+    this._done = true
+    const cb = this._onDone
+    this._onDone = null
+    cb?.()
   }
 
   /** Expand clip planes for the destination distance, sync controls, land exactly. */
@@ -78,7 +94,7 @@ export class CameraFlight {
   /** Snap to the end pose now (user input pre-empts the flight). */
   finish() {
     if (this._done) return
-    this._done = true
+    this._markDone()
     if (this._cameraStolen()) return
     this._land()
   }
@@ -96,10 +112,10 @@ export class CameraFlight {
    */
   tick(t) {
     if (this._done) return true
-    if (this._cameraStolen()) { this._done = true; return true }
+    if (this._cameraStolen()) { this._markDone(); return true }
     if (this._start === null) this._start = t
     const p = (t - this._start) / this._duration
-    if (p >= 1) { this._done = true; this._land(); return true }
+    if (p >= 1) { this._markDone(); this._land(); return true }
     this._lastWritten = this._apply(p)
     return false
   }
