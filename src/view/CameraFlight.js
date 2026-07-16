@@ -41,6 +41,11 @@ export class CameraFlight {
    *   external camera write, or budget eviction — so a caller that must reach
    *   a terminal state after the flight (Map Mode's projection swap) never
    *   silently stalls (#11). Existing callers omit it (behaviour unchanged).
+   *   ORDERING CONTRACT: onDone fires only AFTER the camera reaches its
+   *   terminal pose (landed, or left where an external writer put it), so a
+   *   consumer reading `camera.position` inside onDone sees the final pose —
+   *   Map Mode's `_stagedPos` capture depends on this (landing `_land()` before
+   *   the callback, never after).
    */
   constructor(camera, controls, end, { reduced = false, onDone = null } = {}) {
     this._camera   = camera
@@ -54,11 +59,15 @@ export class CameraFlight {
 
     this._lastWritten = null
 
-    if (reduced) { this._markDone(); this._land() }   // static cue: end pose only
+    if (reduced) { this._land(); this._markDone() }   // static cue: end pose only
     else this._lastWritten = this._apply(0)
   }
 
-  /** The ONE transition to done — fires the onDone callback exactly once. */
+  /**
+   * The ONE transition to done — fires the onDone callback exactly once.
+   * Callers MUST have already reached the terminal camera pose (see the
+   * ordering contract above) before invoking this.
+   */
   _markDone() {
     if (this._done) return
     this._done = true
@@ -94,9 +103,11 @@ export class CameraFlight {
   /** Snap to the end pose now (user input pre-empts the flight). */
   finish() {
     if (this._done) return
+    // Land BEFORE firing onDone so the callback sees the terminal pose. When an
+    // external writer already owns the camera we don't land (leave it be), but
+    // onDone still fires last — after the camera is in its final resting state.
+    if (!this._cameraStolen()) this._land()
     this._markDone()
-    if (this._cameraStolen()) return
-    this._land()
   }
 
   /** Someone else wrote the camera since our last frame — they own it now. */
@@ -115,7 +126,7 @@ export class CameraFlight {
     if (this._cameraStolen()) { this._markDone(); return true }
     if (this._start === null) this._start = t
     const p = (t - this._start) / this._duration
-    if (p >= 1) { this._markDone(); this._land(); return true }
+    if (p >= 1) { this._land(); this._markDone(); return true }
     this._lastWritten = this._apply(p)
     return false
   }

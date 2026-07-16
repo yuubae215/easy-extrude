@@ -101,15 +101,25 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   const errors = await boot(page)
   const before = await deleteButtons(page).count()
 
-  // Header "Map" enters Map Mode: the enter now flies the camera to the
-  // top-down staging pose (flyToView → CameraFlight) and swaps to the ortho
-  // camera when the flight ends. checkJs excludes the controller layer, so
-  // this is the wiring liveness guard for the whole choreography.
+  // Let the boot fly-in settle, then snapshot the perspective camera pose. Map
+  // Mode must return the camera here on exit (ADR-072) so the reachable orbit
+  // range is unchanged — the user-reported regression was the camera staying
+  // stuck at the map staging pose because the exit "stolen" guard mis-fired.
+  await page.waitForTimeout(700)
+  const preMap = await page.evaluate(() => window.__easyExtrude.cameraState())
+
+  // Header "Map" enters Map Mode: the enter flies the camera to the top-down
+  // staging pose (flyToView → CameraFlight) and swaps to the ortho camera when
+  // the flight ends. checkJs excludes the controller layer, so this is the
+  // wiring liveness guard for the whole choreography.
   await page.getByRole('button', { name: 'Map' }).click()
   await expect(page.locator('button[title="Anchor"]')).toBeVisible()
-  await page.waitForTimeout(800) // let the enter flight land + projection swap
 
-  // Place an Anchor: tool select → canvas click (pending) → Confirm.
+  // Place an Anchor WITHOUT waiting for the enter flight to land: the canvas
+  // click interrupts the flight (finish() lands it, then the projection swaps).
+  // This is the realistic path and the one that exposed the reset bug — the
+  // interrupted flight captured a mid-flight staging pose, so on exit the
+  // "stolen" guard mis-fired and the return flight was skipped.
   await page.locator('button[title="Anchor"]').click()
   await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
   await page.locator('button[title="Confirm (Enter)"]').click()
@@ -118,6 +128,20 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   // Exit flies back to the saved perspective pose …
   await page.locator('button[title="Exit Map Mode"]').click()
   await page.waitForTimeout(800)
+
+  // … and the camera is back at its pre-map pose (position, orbit target, up),
+  // not stuck at the top-down map staging pose (the reported bug).
+  const postMap = await page.evaluate(() => window.__easyExtrude.cameraState())
+  const near = (a, b, tol = 0.5) => expect(Math.abs(a - b)).toBeLessThan(tol)
+  near(postMap.position.x, preMap.position.x)
+  near(postMap.position.y, preMap.position.y)
+  near(postMap.position.z, preMap.position.z)
+  near(postMap.target.x, preMap.target.x)
+  near(postMap.target.y, preMap.target.y)
+  near(postMap.target.z, preMap.target.z)
+  near(postMap.up.x, preMap.up.x, 0.01)
+  near(postMap.up.y, preMap.up.y, 0.01)
+  near(postMap.up.z, preMap.up.z, 0.01)
 
   // Moving the placed anchor guards the map-object clamp wiring: a map object
   // is a flat plate pinned to max(building top, 0), never floating — annotations

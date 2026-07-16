@@ -792,6 +792,19 @@ export class AppController {
       setRole:     (role) => RoleService.setRole(role),
       getRole:     ()     => RoleService.getRole(),
       demoContext: ()     => this._demoCtrl.enter(),
+      // Read-only camera snapshot (position / orbit target / up). Console debug
+      // aid and the E2E regression guard for the Map Mode camera-reset contract
+      // (ADR-072: exit must return the perspective camera to its pre-map pose,
+      // so the reachable orbit range is unchanged — controllers are outside
+      // checkJs, so the smoke E2E is the only liveness net).
+      cameraState: () => {
+        const c = this._sceneView.camera, t = this._sceneView.controls.target
+        return {
+          position: { x: c.position.x, y: c.position.y, z: c.position.z },
+          target:   { x: t.x, y: t.y, z: t.z },
+          up:       { x: c.up.x, y: c.up.y, z: c.up.z },
+        }
+      },
     }
   }
 

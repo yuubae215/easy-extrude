@@ -25,7 +25,7 @@ import { frustumForDistance, distanceForFrustum } from '../../view/CameraMath.js
 import { createAddAnnotationCommand } from '../../command/AddAnnotationCommand.js'
 import { geometrySnapshot, snapTransition, snapFlashDescriptor } from '../../view/SnapFeedbackMath.js'
 import { SnapFlash } from '../../view/SnapFlash.js'
-import { cursorFrame, ringFrame } from '../../view/MapPreviewMath.js'
+import { cursorFrame, ringFrame, mapGridStep } from '../../view/MapPreviewMath.js'
 import { prefersReducedMotion } from '../../theme/motion.js'
 import { COLOR } from '../../theme/tokens.js'
 
@@ -722,7 +722,10 @@ export class MapModeController {
 
   /**
    * Picks the ground-plane (Z=0) world position under the pointer in Map Mode.
-   * Applies grid snapping (1-unit grid) then, on PC only, endpoint snapping.
+   * Applies zoom-adaptive grid snapping (`mapGridStep`) then, on PC only,
+   * endpoint snapping. The grid step tracks the ortho zoom so the user gets
+   * finer placement by zooming in (ADR-072 addendum — the old fixed 1-unit grid
+   * was "quite coarse", unplaceably so when zoomed in).
    * @param {PointerEvent|MouseEvent} e
    * @returns {THREE.Vector3}
    */
@@ -735,7 +738,7 @@ export class MapModeController {
     ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)
     pt.z = 0
 
-    const GRID = 1.0
+    const GRID = mapGridStep(this.state.frustumSize)
     pt.x = Math.round(pt.x / GRID) * GRID
     pt.y = Math.round(pt.y / GRID) * GRID
 
