@@ -122,6 +122,22 @@ export class SceneStage {
   }
 
   /**
+   * Suspends / restores the depth fog. The fog density is tuned for the
+   * perspective camera's short standoff; the 2D Map Mode ortho camera sits a
+   * fixed ~100 units above the z≈0 map plane, where FogExp2 attenuates ~99.7%
+   * and renders every fogged material (lit cubes AND MeshBasicMaterial
+   * annotations) near-black — "can't see where anything is placed". While the
+   * ortho map camera is active the fog is swapped out; `this._fog` stays the
+   * owned object (its density is still maintained by `setScale`), only what
+   * `scene.fog` points at toggles, so SceneStage remains the sole owner
+   * (PHILOSOPHY #4). Same class of camera-assumption bug as PHILOSOPHY #27.
+   * @param {boolean} suspended
+   */
+  setFogSuspended(suspended) {
+    this._scene.fog = suspended ? null : this._fog
+  }
+
+  /**
    * Advance the ambient drift + entry fade. Called once per frame from
    * `AppController._animate`. Under reduced motion the drift clock holds at 0
    * (frozen field) and the entry fade lands instantly — the stage stays a

@@ -119,6 +119,18 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   await page.locator('button[title="Exit Map Mode"]').click()
   await page.waitForTimeout(800)
 
+  // Moving the placed anchor guards the map-object clamp wiring: a map object
+  // is a flat plate pinned to max(building top, 0), never floating — annotations
+  // route through `_mapObjectPlateDelta` in applyPreviewTranslation (SceneService,
+  // excluded from checkJs). Select via the Outliner, G-grab, sweep, then cancel;
+  // a dangling method throws in the pointermove handler → the pageerror fires.
+  await page.getByText('Anchor', { exact: true }).first().click()
+  const box = await page.locator('#canvas-container canvas').boundingBox()
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2)
+  await page.keyboard.press('g')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 })
+  await page.keyboard.press('Escape') // cancel — the placement command is untouched
+
   // … and the placement is now on the CommandStack: undo removes it.
   await page.keyboard.press('Control+z')
   await expect.poll(() => deleteButtons(page).count()).toBe(before)
