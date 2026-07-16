@@ -177,6 +177,10 @@ export class SceneView {
       this._useOrtho = false
       this.controls.enabled = true
     }
+    // Depth fog is calibrated for the perspective camera's short standoff; the
+    // ortho map camera's fixed ~100-unit height fogs everything to near-black
+    // (SceneStage.setFogSuspended). Fog off ⇔ ortho top-down camera active.
+    this.stage.setFogSuspended(enable)
   }
 
   /**

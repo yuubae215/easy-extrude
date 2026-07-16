@@ -34,7 +34,7 @@
  *  - Callers (AppController) interact with domain state through `service.scene`
  *    for reads and through service methods for writes.
  */
-import { Vector3, Quaternion } from 'three'
+import { Vector3, Quaternion, Raycaster } from 'three'
 import { EventEmitter } from '../core/EventEmitter.js'
 import { SceneModel } from '../model/SceneModel.js'
 import { MeshView } from '../view/MeshView.js'
@@ -2586,6 +2586,72 @@ export class SceneService extends EventEmitter {
     this.emit('activeChanged', id)
   }
 
+  // ── Ground / building-top snapping ────────────────────────────────────────
+
+  /**
+   * Highest solid surface Z under the given XY samples, clamped to the ground
+   * plane (Z=0) as the implicit lowest landing surface (ADR-071). Casts a ray
+   * straight down from far above the scene at each sample against visible
+   * cuboid meshes (excluding `excludeIds` and MeasureLine — annotations carry
+   * no cuboid, so they are never targets). The single source of "rest on the
+   * building roof, else the ground" shared by the grab stack-snap
+   * (GrabOperationHandler._applyStackSnap) and map-object placement/move
+   * (PHILOSOPHY #1.1).
+   * @param {{x:number, y:number}[]} samples2D
+   * @param {Iterable<string>} [excludeIds]
+   * @returns {number} max(highest hit over all samples, 0)
+   */
+  highestSurfaceZAt(samples2D, excludeIds = []) {
+    const exclude = excludeIds instanceof Set ? excludeIds : new Set(excludeIds)
+    const targetMeshes = [...this._model.objects.values()]
+      .filter(o => !exclude.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
+      .map(o => o.meshView.cuboid)
+    const RAY_TOP = 10000
+    const downDir = new Vector3(0, 0, -1)
+    const ray = new Raycaster()
+    let best = null
+    for (const s of samples2D) {
+      ray.set(new Vector3(s.x, s.y, RAY_TOP), downDir)
+      const hits = ray.intersectObjects(targetMeshes)
+      if (hits.length > 0) {
+        const hz = hits[0].point.z
+        if (best === null || hz > best) best = hz
+      }
+    }
+    return Math.max(best ?? -Infinity, 0)
+  }
+
+  /**
+   * True for a "map object" (2D annotated element) — the entity family that
+   * must stay pinned to the ground plane or a building roof, never floating.
+   * @param {*} obj
+   * @returns {boolean}
+   */
+  _isMapObject(obj) {
+    return obj instanceof AnnotatedPoint
+        || obj instanceof AnnotatedLine
+        || obj instanceof AnnotatedRegion
+  }
+
+  /**
+   * Builds the translation delta that slides a map object in XY by `worldDelta`
+   * and re-seats the whole flat plate on `max(building top under it, 0)`. All
+   * vertices share one Z (flat plate), so a single delta suffices: the XY comes
+   * from `worldDelta`, the Z shift lifts/drops the plate from its start height
+   * to the new ground/roof height. Any Z in `worldDelta` is discarded — a map
+   * object cannot be raised into the air.
+   * @param {import('three').Vector3[]} startCorners  drag-start vertex snapshot
+   * @param {import('three').Vector3}   worldDelta
+   * @param {string} selfId  moving entity id (excluded from the surface probe)
+   * @returns {import('three').Vector3}
+   */
+  _mapObjectPlateDelta(startCorners, worldDelta, selfId) {
+    const startZ = startCorners[0]?.z ?? 0
+    const newXYs = startCorners.map(c => ({ x: c.x + worldDelta.x, y: c.y + worldDelta.y }))
+    const targetZ = this.highestSurfaceZAt(newXYs, [selfId])
+    return new Vector3(worldDelta.x, worldDelta.y, targetZ - startZ)
+  }
+
   // ── Preview operations (live drag / rotate) ───────────────────────────────
 
   /**
@@ -2609,6 +2675,12 @@ export class SceneService extends EventEmitter {
       } else if (obj instanceof Solid) {
         const segStartPos = segStartPositions?.get(id)
         if (segStartPos) obj.move(segStartPos, worldDelta)
+      } else if (this._isMapObject(obj)) {
+        // Map objects (annotations) are flat plates pinned to the ground plane
+        // or a building roof — never floating (user requirement). Slide in XY
+        // only, then re-seat the whole plate on max(building top, 0) so a Z
+        // component (free drag or G→Z) can never lift them into the air.
+        obj.move(startCorners, this._mapObjectPlateDelta(startCorners, worldDelta, id))
       } else {
         obj.move(startCorners, worldDelta)
       }

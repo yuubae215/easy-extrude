@@ -631,6 +631,14 @@ export class MapModeController {
 
     const name = ctrl._uiView.getMapPendingName() ?? pendingName ?? placeType
 
+    // Map objects rest on the ground plane or a building roof, never floating
+    // (user requirement). `_pickPoint` returns Z=0 for the ortho top-down
+    // preview (Z is invisible there); the committed entity is a flat plate
+    // seated on max(building top under its footprint, 0), so an annotation
+    // drawn over a Solid lands on the roof instead of buried at Z=0.
+    const groundZ = ctrl._service.highestSurfaceZAt(pendingPoints)
+    pendingPoints.forEach(p => { p.z = groundZ })
+
     let created = null
     try {
       if (geometry === 'point' && pendingPoints.length >= 1) {

@@ -818,11 +818,7 @@ export class GrabOperationHandler {
     let gZMin = Infinity
     gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
 
-    // Collect meshes from non-grabbed objects (excluding MeasureLine)
     const grabbedIds = new Set(ctrl._selectedIds)
-    const targetMeshes = [...ctrl._scene.objects.values()]
-      .filter(o => !grabbedIds.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
-      .map(o => o.meshView.cuboid)
 
     // Sample the bottom face: 4 corners at gZMin + centroid
     const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < 0.001)
@@ -830,25 +826,11 @@ export class GrabOperationHandler {
     bottomCorners.forEach(c => center.add(c))
     center.divideScalar(bottomCorners.length || 1)
 
-    const origins = [...bottomCorners, center]
-    const downDir = new THREE.Vector3(0, 0, -1)
-    const stackRay = new THREE.Raycaster()
-
-    // Cast downward from well above the scene; find the highest surface hit at (x,y).
-    // Using gZMin+ε as origin would miss surfaces above the current bottom face.
-    const RAY_TOP = 10000
-    let highestHitZ = null
-    for (const origin of origins) {
-      stackRay.set(new THREE.Vector3(origin.x, origin.y, RAY_TOP), downDir)
-      const hits = stackRay.intersectObjects(targetMeshes)
-      if (hits.length > 0) {
-        const hz = hits[0].point.z
-        if (highestHitZ === null || hz > highestHitZ) highestHitZ = hz
-      }
-    }
-
-    // Ground plane (Z = 0) is the implicit lowest landing surface (ADR-071).
-    highestHitZ = Math.max(highestHitZ ?? -Infinity, 0)
+    // Highest building roof under the bottom-face footprint, else the ground
+    // plane (Z=0) — the shared "rest on top, else ground" probe (SceneService,
+    // PHILOSOPHY #1.1). Excludes the grabbed objects so a solid never stacks on
+    // itself.
+    const highestHitZ = ctrl._service.highestSurfaceZAt([...bottomCorners, center], grabbedIds)
 
     const zOffset = highestHitZ - gZMin
     // Skip if already resting on the surface (within 1mm tolerance)
