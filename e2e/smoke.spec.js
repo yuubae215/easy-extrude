@@ -162,6 +162,44 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('map mode two-finger pinch zooms the ortho camera (ADR-072)', async ({ page }) => {
+  // Touch devices have no wheel and OrbitControls' pinch is disabled in Map
+  // Mode, so pinch-zoom is wired in MapModeController. Playwright has no native
+  // pinch and checkJs excludes the controller layer — synthetic touch pointer
+  // events are the only liveness guard for the multi-touch wiring.
+  const errors = await boot(page)
+
+  await page.getByRole('button', { name: 'Map' }).click()
+  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
+  // A mouse click finishes the enter flight and swaps to the ortho camera.
+  await page.locator('#canvas-container canvas').click({ position: { x: 400, y: 300 } })
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.mapState().useOrtho)).toBe(true)
+
+  const before = await page.evaluate(() => window.__easyExtrude.mapState().frustumSize)
+
+  const box = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = Math.round(box.x + box.width / 2)
+  const cy = Math.round(box.y + box.height / 2)
+  // Two fingers spread apart → zoom in (smaller ortho frustum).
+  await page.evaluate(({ cx, cy }) => {
+    const el = document.querySelector('#canvas-container canvas')
+    const fire = (type, id, x, y, buttons) => el.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y,
+      button: 0, buttons, bubbles: true, cancelable: true,
+    }))
+    fire('pointerdown', 1, cx - 30, cy, 1)
+    fire('pointerdown', 2, cx + 30, cy, 1)
+    for (let h = 40; h <= 170; h += 15) { fire('pointermove', 1, cx - h, cy, 1); fire('pointermove', 2, cx + h, cy, 1) }
+    fire('pointerup', 1, cx - 170, cy, 0)
+    fire('pointerup', 2, cx + 170, cy, 0)
+  }, { cx, cy })
+
+  const after = await page.evaluate(() => window.__easyExtrude.mapState().frustumSize)
+  expect(after, `pinch-out should shrink the frustum (before ${before}, after ${after})`).toBeLessThan(before)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('sketch add auto-enters draw mode, drag draws the rect, Enter extrudes', async ({ page }) => {
   // Regression guard: _addObject('sketch') called a method that did not exist,
   // so the Add-menu Sketch entry threw and the user stayed in Object Mode —

@@ -85,6 +85,23 @@ export class MapModeController {
        * @type {THREE.Vector3|null}
        */
       snapCandidate: null,
+      /**
+       * Active touch pointers (screen coords), for two-finger pinch-zoom.
+       * Touch devices have no wheel and OrbitControls' pinch is disabled in
+       * Map Mode, so the ortho zoom is driven here instead.
+       * @type {Map<number,{x:number,y:number}>}
+       */
+      touchPoints: new Map(),
+      /**
+       * Live pinch-zoom baseline captured when the 2nd finger lands, or null.
+       * @type {{startDist:number, startFrustum:number}|null}
+       */
+      pinch: null,
+      /**
+       * True from the 2nd finger landing until ALL fingers lift — suppresses
+       * single-finger pan/draw so a leftover finger can't jump after a pinch.
+       */
+      pinchLock: false,
     }
 
     /**
@@ -156,6 +173,9 @@ export class MapModeController {
     state.cursor          = null
     state.mobileDragStart = null
     state.isPanning       = false
+    state.touchPoints.clear()
+    state.pinch           = null
+    state.pinchLock       = false
     this._snapFxPrev      = null
     this._cursorBornAt    = null
     this._ringBornAt      = null
@@ -280,6 +300,15 @@ export class MapModeController {
     const { state } = this
     if (!state.active) return false
 
+    // Two-finger pinch-zoom takes priority over pan/draw (touch only).
+    if (state.touchPoints.has(e.pointerId)) {
+      state.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (state.pinchLock) {
+        if (state.pinch && state.touchPoints.size >= 2) this._updatePinch()
+        return true // a lone leftover finger holds steady — never resumes pan
+      }
+    }
+
     if (state.isPanning && state.panStart) {
       const { frustumSize } = state
       const aspect = innerWidth / innerHeight
@@ -309,6 +338,12 @@ export class MapModeController {
   onPointerDown(e) {
     const { _ctrl: ctrl, state } = this
     if (!state.active) return false
+
+    // Record touch pointers for pinch-zoom. Only the FIRST finger reaches here
+    // (AppController routes the 2nd through `onExtraTouchDown`), so recording
+    // it here never itself starts a pinch — but it makes the first finger's
+    // live position available once the second lands.
+    if (e.pointerType === 'touch') this._trackTouchDown(e)
 
     // Pan: middle button OR left button with no tool selected
     if (e.button === 1 || (e.button === 0 && !state.tool)) {
@@ -401,6 +436,17 @@ export class MapModeController {
   onPointerUp(e) {
     const { _ctrl: ctrl, state } = this
     if (!state.active) return false
+
+    // Pinch-zoom bookkeeping: drop the lifted finger. While a pinch was in
+    // effect (pinchLock), consume every lift so a leftover finger never
+    // completes a pan/draw, and release AppController's drag pointer so a later
+    // touch isn't mistaken for a 2nd finger. The lock clears when all up.
+    if (state.touchPoints.delete(e.pointerId) && state.pinchLock) {
+      if (state.touchPoints.size < 2) state.pinch = null
+      if (ctrl._activeDragPointerId === e.pointerId) ctrl._activeDragPointerId = null
+      if (state.touchPoints.size === 0) state.pinchLock = false
+      return true
+    }
 
     if (state.isPanning) {
       if (ctrl._activeDragPointerId === e.pointerId) {
@@ -528,6 +574,68 @@ export class MapModeController {
     } else {
       this._ringBornAt = null
     }
+  }
+
+  /**
+   * Registers a SECOND touch finger and starts a pinch-zoom. Called by
+   * AppController for a touch pointerdown that its single-drag guard would
+   * otherwise ignore (a 2nd finger while the 1st is panning/drawing). Map Mode
+   * is a full overlay, so it owns multi-touch here rather than OrbitControls
+   * (which is disabled while the ortho camera is active).
+   * @param {PointerEvent} e
+   * @returns {boolean} true (always consumes)
+   */
+  onExtraTouchDown(e) {
+    this._trackTouchDown(e)
+    return true
+  }
+
+  /**
+   * Records a touch pointer; when the second finger lands, begins the pinch.
+   * @param {PointerEvent} e
+   */
+  _trackTouchDown(e) {
+    const { state } = this
+    state.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (state.touchPoints.size === 2) this._beginPinch()
+  }
+
+  /** Captures the pinch baseline (finger distance + current zoom). */
+  _beginPinch() {
+    const { state } = this
+    const pts = [...state.touchPoints.values()]
+    if (pts.length < 2) return
+    const [a, b] = pts
+    state.pinch = {
+      startDist:    Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1),
+      startFrustum: state.frustumSize,
+    }
+    state.pinchLock = true
+    // Pinch supersedes any single-finger pan/draw already in progress.
+    state.isPanning       = false
+    state.panStart        = null
+    state.mobileDragStart = null
+    state.snapCandidate   = null
+    this._snapFxPrev      = null
+    this._clearPreview()
+    this._ctrl._uiView.setCursor('default')
+  }
+
+  /**
+   * Drives the ortho zoom from the live finger separation (spreading fingers
+   * apart zooms in). Centred like the wheel zoom — no recentre. Clamped to the
+   * same [FRUSTUM_MIN, FRUSTUM_MAX] band.
+   */
+  _updatePinch() {
+    const { state } = this
+    const pts = [...state.touchPoints.values()]
+    if (pts.length < 2 || !state.pinch) return
+    const [a, b] = pts
+    const dist   = Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1)
+    const factor = state.pinch.startDist / dist // fingers apart → dist↑ → zoom in
+    state.frustumSize = Math.max(FRUSTUM_MIN,
+      Math.min(FRUSTUM_MAX, state.pinch.startFrustum * factor))
+    this._ctrl._sceneView.setOrthoZoom(state.frustumSize)
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
