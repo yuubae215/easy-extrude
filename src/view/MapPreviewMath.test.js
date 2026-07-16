@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cursorFrame, ringFrame, CURSOR_POP, RING_POP } from './MapPreviewMath.js'
+import { cursorFrame, ringFrame, CURSOR_POP, RING_POP, mapGridStep } from './MapPreviewMath.js'
 
 // ── reduced motion: EXACTLY the static cue (scale 1), never a skip ──────────
 
@@ -48,4 +48,43 @@ test('cursor breathe stays bounded and actually moves', () => {
     if (s > max) max = s
   }
   assert.ok(max - min > 0.02, 'idle motion must not be static under normal motion')
+})
+
+// ── mapGridStep: zoom-adaptive placement grid (ADR-072 addendum) ────────────
+
+test('default frustum (50) keeps the legacy 1.0 step — no regression', () => {
+  assert.equal(mapGridStep(50), 1)
+})
+
+test('zooming in yields a finer step; zooming out a coarser one', () => {
+  assert.equal(mapGridStep(2), 0.02)    // max zoom-in → fine placement
+  assert.equal(mapGridStep(5), 0.1)
+  assert.equal(mapGridStep(10), 0.2)
+  assert.equal(mapGridStep(250), 5)
+  assert.equal(mapGridStep(500), 10)    // max zoom-out → round coordinates
+})
+
+test('step is always a nice 1/2/5 × 10^k mantissa and strictly positive', () => {
+  for (let f = 2; f <= 500; f += 1.3) {
+    const step = mapGridStep(f)
+    assert.ok(step > 0 && Number.isFinite(step), `bad step ${step} for frustum ${f}`)
+    const mantissa = step / Math.pow(10, Math.floor(Math.log10(step) + 1e-9))
+    assert.ok([1, 2, 5].some(m => Math.abs(mantissa - m) < 1e-9),
+      `step ${step} (frustum ${f}) is not a 1/2/5 mantissa`)
+  }
+})
+
+test('step grows monotonically with the frustum (finer when zoomed in)', () => {
+  let prev = 0
+  for (const f of [2, 5, 10, 20, 50, 100, 200, 500]) {
+    const step = mapGridStep(f)
+    assert.ok(step >= prev, `step must not shrink as frustum grows (${f})`)
+    prev = step
+  }
+})
+
+test('malformed frustum degrades to a 1.0 step, never NaN (#11)', () => {
+  for (const bad of [NaN, 0, -10, Infinity, undefined]) {
+    assert.equal(mapGridStep(bad), 1)
+  }
 })

@@ -792,6 +792,27 @@ export class AppController {
       setRole:     (role) => RoleService.setRole(role),
       getRole:     ()     => RoleService.getRole(),
       demoContext: ()     => this._demoCtrl.enter(),
+      // Read-only camera snapshot (position / orbit target / up). Console debug
+      // aid and the E2E regression guard for the Map Mode camera-reset contract
+      // (ADR-072: exit must return the perspective camera to its pre-map pose,
+      // so the reachable orbit range is unchanged — controllers are outside
+      // checkJs, so the smoke E2E is the only liveness net).
+      cameraState: () => {
+        const c = this._sceneView.camera, t = this._sceneView.controls.target
+        return {
+          position: { x: c.position.x, y: c.position.y, z: c.position.z },
+          target:   { x: t.x, y: t.y, z: t.z },
+          up:       { x: c.up.x, y: c.up.y, z: c.up.z },
+        }
+      },
+      // Read-only Map Mode snapshot — console debug aid and the E2E liveness
+      // guard for pinch-zoom (touch multi-touch has no static check; the
+      // controller layer is outside checkJs).
+      mapState: () => ({
+        active:      this._mapModeCtrl.state.active,
+        frustumSize: this._mapModeCtrl.state.frustumSize,
+        useOrtho:    this._sceneView._useOrtho,
+      }),
     }
   }
 
@@ -2230,8 +2251,13 @@ export class AppController {
       }
     }
 
-    // During a drag, only process the pointer that started it
-    if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
+    // During a drag, only process the pointer that started it — EXCEPT in Map
+    // Mode, where the 2nd (non-drag) finger drives the pinch-zoom and must
+    // reach the map handler even though it isn't `_activeDragPointerId`.
+    if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) {
+      if (this._mapModeCtrl.isActive) this._mapModeCtrl.onPointerMove(e)
+      return
+    }
     this._hitTest.updateMouse(e)
 
     // ── Context DSL region authoring (ADR-049 Phase 3): live handle drag ─────
@@ -2488,6 +2514,11 @@ export class AppController {
   _onPointerDown(e) {
     // Ignore secondary touches while an edit drag is already active
     if (this._activeDragPointerId !== null && e.pointerType === 'touch') {
+      // Map Mode owns multi-touch (OrbitControls' pinch is disabled while the
+      // ortho camera is active): a 2nd finger starts a pinch-zoom instead of
+      // being dropped. The canvas guard below never runs for this event, so
+      // route it here.
+      if (this._mapModeCtrl.isActive) { this._mapModeCtrl.onExtraTouchDown(e); return }
       // Second finger while rect selection is active: cancel rect sel so
       // OrbitControls can handle the two-finger orbit/dolly gesture.
       if (this._opState.is(S_RECT_SELECT)) {

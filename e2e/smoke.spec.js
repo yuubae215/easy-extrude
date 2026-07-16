@@ -101,15 +101,25 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   const errors = await boot(page)
   const before = await deleteButtons(page).count()
 
-  // Header "Map" enters Map Mode: the enter now flies the camera to the
-  // top-down staging pose (flyToView → CameraFlight) and swaps to the ortho
-  // camera when the flight ends. checkJs excludes the controller layer, so
-  // this is the wiring liveness guard for the whole choreography.
+  // Let the boot fly-in settle, then snapshot the perspective camera pose. Map
+  // Mode must return the camera here on exit (ADR-072) so the reachable orbit
+  // range is unchanged — the user-reported regression was the camera staying
+  // stuck at the map staging pose because the exit "stolen" guard mis-fired.
+  await page.waitForTimeout(700)
+  const preMap = await page.evaluate(() => window.__easyExtrude.cameraState())
+
+  // Header "Map" enters Map Mode: the enter flies the camera to the top-down
+  // staging pose (flyToView → CameraFlight) and swaps to the ortho camera when
+  // the flight ends. checkJs excludes the controller layer, so this is the
+  // wiring liveness guard for the whole choreography.
   await page.getByRole('button', { name: 'Map' }).click()
   await expect(page.locator('button[title="Anchor"]')).toBeVisible()
-  await page.waitForTimeout(800) // let the enter flight land + projection swap
 
-  // Place an Anchor: tool select → canvas click (pending) → Confirm.
+  // Place an Anchor WITHOUT waiting for the enter flight to land: the canvas
+  // click interrupts the flight (finish() lands it, then the projection swaps).
+  // This is the realistic path and the one that exposed the reset bug — the
+  // interrupted flight captured a mid-flight staging pose, so on exit the
+  // "stolen" guard mis-fired and the return flight was skipped.
   await page.locator('button[title="Anchor"]').click()
   await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
   await page.locator('button[title="Confirm (Enter)"]').click()
@@ -118,6 +128,20 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   // Exit flies back to the saved perspective pose …
   await page.locator('button[title="Exit Map Mode"]').click()
   await page.waitForTimeout(800)
+
+  // … and the camera is back at its pre-map pose (position, orbit target, up),
+  // not stuck at the top-down map staging pose (the reported bug).
+  const postMap = await page.evaluate(() => window.__easyExtrude.cameraState())
+  const near = (a, b, tol = 0.5) => expect(Math.abs(a - b)).toBeLessThan(tol)
+  near(postMap.position.x, preMap.position.x)
+  near(postMap.position.y, preMap.position.y)
+  near(postMap.position.z, preMap.position.z)
+  near(postMap.target.x, preMap.target.x)
+  near(postMap.target.y, preMap.target.y)
+  near(postMap.target.z, preMap.target.z)
+  near(postMap.up.x, preMap.up.x, 0.01)
+  near(postMap.up.y, preMap.up.y, 0.01)
+  near(postMap.up.z, preMap.up.z, 0.01)
 
   // Moving the placed anchor guards the map-object clamp wiring: a map object
   // is a flat plate pinned to max(building top, 0), never floating — annotations
@@ -134,6 +158,44 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   // … and the placement is now on the CommandStack: undo removes it.
   await page.keyboard.press('Control+z')
   await expect.poll(() => deleteButtons(page).count()).toBe(before)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('map mode two-finger pinch zooms the ortho camera (ADR-072)', async ({ page }) => {
+  // Touch devices have no wheel and OrbitControls' pinch is disabled in Map
+  // Mode, so pinch-zoom is wired in MapModeController. Playwright has no native
+  // pinch and checkJs excludes the controller layer — synthetic touch pointer
+  // events are the only liveness guard for the multi-touch wiring.
+  const errors = await boot(page)
+
+  await page.getByRole('button', { name: 'Map' }).click()
+  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
+  // A mouse click finishes the enter flight and swaps to the ortho camera.
+  await page.locator('#canvas-container canvas').click({ position: { x: 400, y: 300 } })
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.mapState().useOrtho)).toBe(true)
+
+  const before = await page.evaluate(() => window.__easyExtrude.mapState().frustumSize)
+
+  const box = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = Math.round(box.x + box.width / 2)
+  const cy = Math.round(box.y + box.height / 2)
+  // Two fingers spread apart → zoom in (smaller ortho frustum).
+  await page.evaluate(({ cx, cy }) => {
+    const el = document.querySelector('#canvas-container canvas')
+    const fire = (type, id, x, y, buttons) => el.dispatchEvent(new PointerEvent(type, {
+      pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y,
+      button: 0, buttons, bubbles: true, cancelable: true,
+    }))
+    fire('pointerdown', 1, cx - 30, cy, 1)
+    fire('pointerdown', 2, cx + 30, cy, 1)
+    for (let h = 40; h <= 170; h += 15) { fire('pointermove', 1, cx - h, cy, 1); fire('pointermove', 2, cx + h, cy, 1) }
+    fire('pointerup', 1, cx - 170, cy, 0)
+    fire('pointerup', 2, cx + 170, cy, 0)
+  }, { cx, cy })
+
+  const after = await page.evaluate(() => window.__easyExtrude.mapState().frustumSize)
+  expect(after, `pinch-out should shrink the frustum (before ${before}, after ${after})`).toBeLessThan(before)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

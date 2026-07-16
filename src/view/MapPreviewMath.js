@@ -29,6 +29,35 @@ import { clamp01, easeOutBack } from './MotionMath.js'
 export const CURSOR_POP = 0.22
 export const RING_POP   = 0.18
 
+/**
+ * Target number of snap cells across the visible ortho height. The placement
+ * step is derived from this so precision tracks zoom (see `mapGridStep`).
+ */
+export const MAP_GRID_SUBDIV = 50
+
+/**
+ * Placement grid step (world units) for the Map Mode drawing snap, adaptive to
+ * the ortho zoom (ADR-072 addendum — user feedback: the fixed 1-unit grid was
+ * "quite coarse", unplaceably so when zoomed in). The step is the largest
+ * "nice" number (1/2/5 × 10^k) at or below `frustumSize / MAP_GRID_SUBDIV`, so
+ * placement stays ~MAP_GRID_SUBDIV cells across the visible height at ANY zoom:
+ * at the default frustum (50) it is exactly 1.0 (no regression); zoom in to
+ * frustum 2 and it drops to 0.02 for fine placement; zoom out and it grows so a
+ * wide layout still snaps to round coordinates. Same "size from the visible
+ * extent, land on round coordinates" discipline as the ground grid (#27).
+ *
+ * @param {number} frustumSize  visible world-units height of the ortho camera
+ * @returns {number} snap step in world units (> 0); 1 for malformed input (#11)
+ */
+export function mapGridStep(frustumSize) {
+  if (!Number.isFinite(frustumSize) || frustumSize <= 0) return 1
+  const raw  = frustumSize / MAP_GRID_SUBDIV
+  const exp  = Math.floor(Math.log10(raw))
+  const base = raw / Math.pow(10, exp)          // ∈ [1, 10)
+  const mult = base >= 5 ? 5 : base >= 2 ? 2 : 1 // largest nice mantissa ≤ base
+  return mult * Math.pow(10, exp)
+}
+
 /** Breathe amplitude/frequencies — two non-integer-ratio sines (no loop feel). */
 const BREATHE_A1 = 0.06,  BREATHE_F1 = 1.9
 const BREATHE_A2 = 0.035, BREATHE_F2 = 3.1
