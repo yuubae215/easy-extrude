@@ -1,7 +1,21 @@
-import { defineConfig } from 'vite'
+import { defineConfig, createLogger } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// The BFF is optional (the app falls back to local-only mode when it is
+// unreachable — see SceneService.connectBff). In CI and BFF-less dev the
+// startup GET /api/auth/token has nothing to proxy to, so Vite logs a noisy
+// `http proxy error: /api/...` line. It is a fast ECONNREFUSED (no time cost),
+// just log noise — filter that one message so a real BFF-down state does not
+// look like a build failure. All other errors pass through unchanged.
+const logger = createLogger()
+const _error = logger.error
+logger.error = (msg, opts) => {
+  if (typeof msg === 'string' && /http proxy error: \/api/.test(msg)) return
+  _error(msg, opts)
+}
+
 export default defineConfig({
+  customLogger: logger,
   plugins: [react()],
   base: '/easy-extrude/',
 
