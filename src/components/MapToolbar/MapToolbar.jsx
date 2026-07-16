@@ -27,35 +27,13 @@ const BTN_BASE = {
 export function MapToolbar() {
   const mapToolbar  = useUIStore(s => s.mapToolbar)
   const callbacks   = useUIStore(s => s.callbacks)
-  const actions     = useUIStore(s => s.actions)
   const [hoveredTool, setHoveredTool] = useState(null)
-  const [inputValue,  setInputValue]  = useState('')
   const isMobile    = useIsMobile()
-
-  // Reset input when pending state changes (new geometry placed)
-  useEffect(() => {
-    setInputValue(mapToolbar.pendingName ?? '')
-  }, [mapToolbar.pendingName])
 
   if (!mapToolbar.visible) return null
 
-  const { activeTool, pendingName, showConfirm, showCancel } = mapToolbar
-
-  const hasPending = pendingName !== null
-  const hasActionButtons = showConfirm || showCancel
-
-  function handleInputChange(e) {
-    const v = e.target.value
-    setInputValue(v)
-    actions.setMapPendingNameInput(v)
-  }
-
-  function handleInputKeyDown(e) {
-    // Swallow all keys to prevent map mode shortcuts from firing while typing
-    e.stopImmediatePropagation()
-    if (e.key === 'Enter')  callbacks.onMapConfirm?.()
-    if (e.key === 'Escape') callbacks.onMapCancel?.()
-  }
+  // ADR-073: no name input / Confirm — map objects create immediately.
+  const { activeTool, showCancel } = mapToolbar
 
   return (
     <div
@@ -98,40 +76,8 @@ export function MapToolbar() {
         )
       })}
 
-      {/* Separator before action buttons (pending state shows input first) */}
-      {(hasPending || hasActionButtons) && SEP}
-
-      {/* Name input — shown during pending state */}
-      {hasPending && (
-        <input
-          type="text"
-          value={inputValue}
-          onChange={handleInputChange}
-          onPointerDown={e => e.stopPropagation()}
-          onKeyDown={handleInputKeyDown}
-          style={{
-            width: '120px', height: '28px',
-            background: '#12121c', border: '1px solid #4a90d9',
-            borderRadius: '4px', color: '#e0e0e0',
-            fontSize: '12px', padding: '0 6px', outline: 'none',
-            boxSizing: 'border-box', alignSelf: 'stretch',
-          }}
-          // No autoFocus: prevents software keyboard on mobile (UIView ADR-031 comment)
-        />
-      )}
-
-      {/* Confirm button */}
-      {showConfirm && (
-        <button
-          title="Confirm (Enter)"
-          onClick={() => callbacks.onMapConfirm?.()}
-          style={{
-            ...BTN_BASE,
-            background: '#1a3a1a', border: '1.5px solid #4caf50', color: '#4caf50',
-          }}
-          dangerouslySetInnerHTML={{ __html: ICONS.confirm }}
-        />
-      )}
+      {/* Separator before Cancel (only while a tool is active) */}
+      {showCancel && SEP}
 
       {/* Cancel button */}
       {showCancel && (

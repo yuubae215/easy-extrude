@@ -120,9 +120,9 @@ test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', a
   // This is the realistic path and the one that exposed the reset bug — the
   // interrupted flight captured a mid-flight staging pose, so on exit the
   // "stolen" guard mis-fired and the return flight was skipped.
+  // ADR-073: the click creates the Anchor immediately — no name form / Confirm.
   await page.locator('button[title="Anchor"]').click()
   await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
-  await page.locator('button[title="Confirm (Enter)"]').click()
   await expect.poll(() => deleteButtons(page).count()).toBeGreaterThan(before)
 
   // Exit flies back to the saved perspective pose …

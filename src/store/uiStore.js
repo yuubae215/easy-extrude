@@ -66,11 +66,8 @@ export const useUIStore = create((set, get) => ({
   mapToolbar: {
     visible:     false,
     activeTool:  null,    // 'route'|'boundary'|'zone'|'hub'|'anchor'|null
-    pendingName: null,    // null = 入力非表示; string = 入力表示
-    showConfirm: false,
-    showCancel:  false,
+    showCancel:  false,   // ADR-073: 命名フォーム / Confirm は廃止（即時生成）
   },
-  mapPendingNameInput: '',  // React コンポーネントが onChange で更新
 
   // ── Context Menu ──────────────────────────────────────────────────────────
   // { x, y, items: [{label, onClick, danger?}] } | null
@@ -255,7 +252,6 @@ export const useUIStore = create((set, get) => ({
     setMapToolbar: (config) => set(state => ({
       mapToolbar: { ...state.mapToolbar, ...config },
     })),
-    setMapPendingNameInput: (value) => set({ mapPendingNameInput: value }),
 
     showContextMenu:   (cfg) => set({ contextMenu: cfg }),
     hideContextMenu:   ()    => set({ contextMenu: null }),

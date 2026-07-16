@@ -1,8 +1,16 @@
 # ADR-031 — Map Mode Interaction Model & Visual Language
 
-**Status:** Accepted
+**Status:** Accepted (amended by **ADR-073** — the `pending` state was removed)
 **Date:** 2026-04-11
-**References:** ADR-023, ADR-024, ADR-029, ADR-006
+**References:** ADR-023, ADR-024, ADR-029, ADR-006, ADR-073
+
+> **Amendment (ADR-073, 2026-07-16):** the three-state `idle → drawing → pending`
+> lifecycle below is now **two-state** `idle → drawing`. The `pending` state existed
+> solely to enter a name and confirm; per user feedback ("ポンポン作りたい") map objects
+> now create IMMEDIATELY on geometry completion with an auto-name (`"<Type> N"`), with no
+> name input and no Confirm step. Rename is a later N-panel act. Everything else in this
+> ADR (platform split, snap ring, visual language, per-type colours) is unchanged. The
+> `pending`/dashed-preview/name-input sections should be read as historical.
 
 ---
 

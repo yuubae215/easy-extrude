@@ -212,27 +212,20 @@ export class UIViewBridge {
 
   // ── Map toolbar ───────────────────────────────────────────────────────────
 
-  showMapToolbar(activeTool, onToolSelect, onConfirm, onCancel, onExit, pendingName = null) {
-    const { registerCallback, setMapToolbar, setMapPendingNameInput } =
-      useUIStore.getState().actions
+  // ADR-073: no name form / Confirm step — map objects create immediately on
+  // geometry completion, so the toolbar carries only tools, Cancel, and Exit.
+  showMapToolbar(activeTool, onToolSelect, onCancel, onExit) {
+    const { registerCallback, setMapToolbar } = useUIStore.getState().actions
     registerCallback('onMapToolSelect', onToolSelect)
-    registerCallback('onMapConfirm', onConfirm ?? null)
-    registerCallback('onMapCancel',  onCancel  ?? null)
+    registerCallback('onMapCancel',  onCancel ?? null)
     registerCallback('onMapExit',    onExit)
-    setMapToolbar({ visible: true, activeTool, pendingName,
-                    showConfirm: !!onConfirm, showCancel: !!onCancel })
-    setMapPendingNameInput(pendingName ?? '')
+    setMapToolbar({ visible: true, activeTool, showCancel: !!onCancel })
   }
 
   hideMapToolbar() {
     useUIStore.getState().actions.setMapToolbar({
-      visible: false, activeTool: null, pendingName: null,
-      showConfirm: false, showCancel: false,
+      visible: false, activeTool: null, showCancel: false,
     })
-  }
-
-  getMapPendingName() {
-    return useUIStore.getState().mapPendingNameInput || null
   }
 
   // ── Onboarding ────────────────────────────────────────────────────────────

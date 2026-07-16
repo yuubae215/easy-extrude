@@ -5,10 +5,11 @@
  * for distortion-free 2D placement of AnnotatedLine / AnnotatedRegion /
  * AnnotatedPoint entities.
  *
- * Three-state drawing model (ADR-031 §1):
+ * Two-state drawing model (ADR-031 §1; ADR-073 removed the old 'pending' state):
  *   idle     → no gesture in progress; tool may or may not be selected
  *   drawing  → gesture in progress (rubber-band follows cursor)
- *   pending  → geometry fully defined; static dashed preview; awaiting name + confirm
+ * Completing the geometry (click a point / release a drag / Enter|RMB a line)
+ * creates the entity IMMEDIATELY with an auto-name — no name form, no confirm.
  *
  * Dependencies:
  *   ctrl — the AppController instance (sceneView, uiView, service, scene, etc.)
@@ -46,14 +47,11 @@ export class MapModeController {
       active: false,
       /** Active drawing tool: 'route'|'boundary'|'zone'|'hub'|'anchor'|null */
       tool:   null,
-      /** 'idle'|'drawing'|'pending' (ADR-031 §1) */
+      /** 'idle'|'drawing' (ADR-031 §1; the old 'pending' name+confirm gate was
+       *  removed by ADR-073 — geometry completion creates immediately) */
       drawState: 'idle',
       /** @type {THREE.Vector3[]} vertex positions collected during drawing */
       points: [],
-      /** @type {THREE.Vector3[]|null} frozen geometry entered when going pending */
-      pendingPoints: null,
-      /** Default name for the pending entity (e.g. "Route 1") */
-      pendingName: null,
       /** @type {THREE.Vector3|null} live cursor world position */
       cursor: null,
       /** THREE.Line preview drawn while placing */
@@ -168,8 +166,6 @@ export class MapModeController {
     state.tool            = null
     state.drawState       = 'idle'
     state.points          = []
-    state.pendingPoints   = null
-    state.pendingName     = null
     state.cursor          = null
     state.mobileDragStart = null
     state.isPanning       = false
@@ -321,7 +317,7 @@ export class MapModeController {
       return true
     }
 
-    // Update preview in drawing state only; pending shows frozen dashed preview
+    // Update preview in drawing state only
     if (state.tool && state.drawState === 'drawing') {
       const pt = this._pickPoint(e)
       state.cursor = pt
@@ -359,14 +355,6 @@ export class MapModeController {
     }
 
     if (e.button === 0 && state.tool) {
-      const { drawState } = state
-
-      // In pending state: LMB on canvas confirms (keyboard-free fallback)
-      if (drawState === 'pending') {
-        this._confirmDrawing()
-        return true
-      }
-
       const pt       = this._pickPoint(e)
       const geometry = this._geometryForType(state.tool)
 
@@ -381,12 +369,13 @@ export class MapModeController {
 
       // PC interaction
       if (geometry === 'point') {
-        this._enterPendingState([pt])
+        // Single click creates immediately — no name form (ADR-073)
+        this._createAnnotation([pt])
         return true
       }
 
       if (geometry === 'region') {
-        // Drag-to-rectangle: record drag start; pointerup enters pending
+        // Drag-to-rectangle: record drag start; pointerup creates the region
         state.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
         state.cursor          = pt.clone()
         ctrl._activeDragPointerId = e.pointerId
@@ -399,7 +388,7 @@ export class MapModeController {
         return true
       }
 
-      // Line (PC): each click adds a vertex; Enter/RMB transitions to pending
+      // Line (PC): each click adds a vertex; Enter/RMB completes → creates
       state.points.push(pt.clone())
       state.cursor = pt.clone()
       this._updatePreview()
@@ -408,17 +397,11 @@ export class MapModeController {
     }
 
     if (e.button === 2 && state.tool) {
-      const { drawState, points, tool: currentTool } = state
-      if (drawState === 'pending') {
-        // RMB in pending → cancel back to drawing (re-select same tool)
-        this._cancelDrawing()
-        if (currentTool) this._setTool(currentTool)
-        return true
-      }
-      // RMB in drawing: for PC Line with ≥2 pts → enter pending; else cancel
+      const { points } = state
+      // RMB in drawing: PC Line with ≥2 pts → create immediately; else cancel
       const geometry = this._geometryForType(state.tool)
       if (geometry === 'line' && points.length >= 2) {
-        this._enterPendingState(points)
+        this._createAnnotation(points)
       } else {
         this._cancelDrawing()
       }
@@ -471,7 +454,7 @@ export class MapModeController {
       const moved    = Math.hypot(e.clientX - sx, e.clientY - sy)
 
       if (geometry === 'point') {
-        this._enterPendingState([startPt])
+        this._createAnnotation([startPt])
         return true
       }
 
@@ -481,7 +464,7 @@ export class MapModeController {
           this._setTool(savedTool)
           return true
         }
-        this._enterPendingState([startPt, pt])
+        this._createAnnotation([startPt, pt])
         return true
       }
 
@@ -493,7 +476,7 @@ export class MapModeController {
         }
         const p1 = startPt
         const p2 = state.cursor ?? pt
-        this._enterPendingState([
+        this._createAnnotation([
           new THREE.Vector3(p1.x, p1.y, 0),
           new THREE.Vector3(p2.x, p1.y, 0),
           new THREE.Vector3(p2.x, p2.y, 0),
@@ -515,14 +498,10 @@ export class MapModeController {
     const { state } = this
     if (!state.active) return false
 
-    const { drawState, tool } = state
+    const { tool } = state
 
     if (e.key === 'Escape') {
-      if (drawState === 'pending') {
-        const savedTool = tool
-        this._cancelDrawing()
-        if (savedTool) this._setTool(savedTool)
-      } else if (tool) {
+      if (tool) {
         this._cancelDrawing()
       } else {
         this.exit()
@@ -530,14 +509,11 @@ export class MapModeController {
       return true
     }
 
+    // Enter finalizes a PC multi-vertex line → creates immediately (ADR-073)
     if (e.key === 'Enter' && tool) {
-      if (drawState === 'pending') {
-        this._confirmDrawing()
-      } else {
-        const geometry = this._geometryForType(tool)
-        if (geometry === 'line' && state.points.length >= 2) {
-          this._enterPendingState(state.points)
-        }
+      const geometry = this._geometryForType(tool)
+      if (geometry === 'line' && state.points.length >= 2) {
+        this._createAnnotation(state.points)
       }
       return true
     }
@@ -671,8 +647,6 @@ export class MapModeController {
     state.tool          = type
     state.drawState     = 'drawing'
     state.points        = []
-    state.pendingPoints = null
-    state.pendingName   = null
     state.cursor        = null
     this._ctrl._uiView.setCursor('crosshair')
     this._refreshToolbar()
@@ -686,8 +660,6 @@ export class MapModeController {
     state.tool            = null
     state.drawState       = 'idle'
     state.points          = []
-    state.pendingPoints   = null
-    state.pendingName     = null
     state.cursor          = null
     state.mobileDragStart = null
     state.snapCandidate   = null
@@ -700,65 +672,47 @@ export class MapModeController {
   }
 
   /**
-   * Transitions from drawing → pending state.
+   * Creates the annotation entity immediately from completed geometry, with an
+   * auto-generated default name (e.g. "Route 1") — NO name form, NO confirm step
+   * (ADR-073: map objects are high-frequency "place a lot, rename later"). Rename
+   * stays a separate deliberate act (N-panel / long-press). After creation the
+   * tool stays active so the next object can be placed straight away ("ポンポン").
    * @param {THREE.Vector3[]} points  the completed geometry vertices
    */
-  _enterPendingState(points) {
-    const { state } = this
-    if (!state.tool) return
-    const placeType = this._placeTypeForType(state.tool)
-    const n = ++state.nameCounters[placeType]
-    state.drawState     = 'pending'
-    state.pendingPoints = points.map(p => p.clone())
-    state.pendingName   = `${placeType} ${n}`
-    state.cursor        = null
-    state.snapCandidate = null
-    this._snapFxPrev    = null
-    this._clearPreview()
-    this._showPendingPreview()
-    this._refreshToolbar()
-    this._ctrl._uiView.setStatusRich([
-      { text: placeType, bold: true, color: '#80cbc4' },
-      { text: '— enter a name and confirm', color: COLOR.textSecondary },
-      { text: '  ESC = cancel', color: '#444' },
-    ])
-  }
-
-  /**
-   * Confirms the pending entity.
-   * Must only be called while drawState === 'pending'.
-   */
-  _confirmDrawing() {
+  _createAnnotation(points) {
     const { _ctrl: ctrl, state } = this
-    const { tool, pendingPoints, pendingName } = state
-    if (!tool || !pendingPoints) return
+    const { tool } = state
+    if (!tool) return
 
     const geometry  = this._geometryForType(tool)
     const placeType = this._placeTypeForType(tool)
     const renderer  = ctrl._sceneView.renderer
-
-    const name = ctrl._uiView.getMapPendingName() ?? pendingName ?? placeType
+    // Auto-name from the per-type counter — the single naming source for map
+    // objects (no user input). Renaming later goes through the N-panel.
+    const n    = ++state.nameCounters[placeType]
+    const name = `${placeType} ${n}`
 
     // Map objects rest on the ground plane or a building roof, never floating
     // (user requirement). `_pickPoint` returns Z=0 for the ortho top-down
     // preview (Z is invisible there); the committed entity is a flat plate
     // seated on max(building top under its footprint, 0), so an annotation
     // drawn over a Solid lands on the roof instead of buried at Z=0.
-    const groundZ = ctrl._service.highestSurfaceZAt(pendingPoints)
-    pendingPoints.forEach(p => { p.z = groundZ })
+    const pts = points.map(p => p.clone())
+    const groundZ = ctrl._service.highestSurfaceZAt(pts)
+    pts.forEach(p => { p.z = groundZ })
 
     let created = null
     try {
-      if (geometry === 'point' && pendingPoints.length >= 1) {
-        created = ctrl._service.createAnnotatedPoint(pendingPoints[0], name, {
+      if (geometry === 'point' && pts.length >= 1) {
+        created = ctrl._service.createAnnotatedPoint(pts[0], name, {
           camera: ctrl._sceneView.camera, renderer, container: document.body,
         })
-      } else if (geometry === 'line' && pendingPoints.length >= 2) {
-        created = ctrl._service.createAnnotatedLine(pendingPoints, name, {
+      } else if (geometry === 'line' && pts.length >= 2) {
+        created = ctrl._service.createAnnotatedLine(pts, name, {
           camera: ctrl._sceneView.camera, renderer, container: document.body,
         })
-      } else if (geometry === 'region' && pendingPoints.length >= 3) {
-        created = ctrl._service.createAnnotatedRegion(pendingPoints, name, {
+      } else if (geometry === 'region' && pts.length >= 3) {
+        created = ctrl._service.createAnnotatedRegion(pts, name, {
           camera: ctrl._sceneView.camera, renderer, container: document.body,
         })
       }
@@ -792,9 +746,9 @@ export class MapModeController {
       this._clearPreview()
       state.drawState     = 'drawing'
       state.points        = []
-      state.pendingPoints = null
-      state.pendingName   = null
       state.cursor        = null
+      state.snapCandidate = null
+      this._snapFxPrev    = null
       this._refreshToolbar()
     }
 
@@ -923,7 +877,6 @@ export class MapModeController {
 
   /**
    * Updates the live preview during map drawing (drawing state only).
-   * In pending state use _showPendingPreview() instead.
    */
   _updatePreview() {
     const { state } = this
@@ -995,75 +948,6 @@ export class MapModeController {
   }
 
   /**
-   * Creates or updates the static dashed preview for the pending state (ADR-031 §3).
-   */
-  _showPendingPreview() {
-    const { state } = this
-    const { tool, pendingPoints } = state
-    if (!tool || !pendingPoints) return
-
-    const scene    = this._ctrl._sceneView.scene
-    const geometry = this._geometryForType(tool)
-    const entry    = getPlaceTypeEntry(this._placeTypeForType(tool))
-    const color    = entry ? parseInt(entry.color.slice(1), 16) : 0x80cbc4
-
-    if (state.cursorDot) {
-      scene.remove(state.cursorDot)
-      state.cursorDot.geometry.dispose()
-      state.cursorDot.material.dispose()
-      state.cursorDot = null
-    }
-    this._updateSnapRing(null, color)
-
-    let previewPts = [...pendingPoints]
-    if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
-
-    if (previewPts.length < 2) {
-      if (state.previewLine) {
-        scene.remove(state.previewLine)
-        state.previewLine.geometry.dispose()
-        state.previewLine.material.dispose()
-        state.previewLine = null
-      }
-      if (previewPts.length === 1) {
-        const g = new THREE.SphereGeometry(0.15, 12, 12)
-        const m = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.85 })
-        const dot = new THREE.Mesh(g, m)
-        dot.position.copy(previewPts[0])
-        dot.renderOrder = 3
-        scene.add(dot)
-        state.previewLine = dot
-      }
-      return
-    }
-
-    const flat = []
-    for (const p of previewPts) flat.push(p.x, p.y, p.z)
-
-    if (state.previewLine) {
-      scene.remove(state.previewLine)
-      state.previewLine.geometry.dispose()
-      state.previewLine.material.dispose()
-      state.previewLine = null
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(flat), 3))
-    const mat = new THREE.LineDashedMaterial({
-      color,
-      dashSize:    0.40,
-      gapSize:     0.20,
-      depthTest:   false,
-      transparent: true,
-      opacity:     0.90,
-    })
-    const line = new THREE.Line(geo, mat)
-    line.computeLineDistances()
-    line.renderOrder = 2
-    scene.add(line)
-    state.previewLine = line
-  }
-
-  /**
    * Shows or hides the endpoint snap indicator ring (PC only, ADR-031 §6).
    * @param {THREE.Vector3|null} snapPt
    * @param {number} color
@@ -1100,9 +984,8 @@ export class MapModeController {
   /** Updates the status bar text during map drawing. */
   _updateStatus() {
     const { state } = this
-    const { tool, points, drawState } = state
+    const { tool, points } = state
     if (!tool) return
-    if (drawState === 'pending') return
 
     const geometry  = this._geometryForType(tool)
     const typeLabel = this._placeTypeForType(tool)
@@ -1142,24 +1025,19 @@ export class MapModeController {
 
   /**
    * Rebuilds the Map toolbar to reflect current state.
-   * In pending state: shows name input + Confirm + Cancel.
-   * In drawing state: shows tool buttons + (Confirm if ready) + Cancel.
+   * Shows tool buttons + Cancel (while a tool is active) + Exit. There is no
+   * name form or Confirm step — geometry completion creates immediately (ADR-073).
    */
   _refreshToolbar() {
     const { state } = this
     if (!state.active) return
-    const { tool, drawState, pendingName } = state
-
-    const isPending  = drawState === 'pending'
-    const canConfirm = isPending
+    const { tool } = state
 
     this._ctrl._uiView.showMapToolbar(
       tool,
       (t) => this._setTool(t),
-      canConfirm ? () => this._confirmDrawing() : null,
-      tool       ? () => this._cancelDrawing()  : null,
-      ()         => this.exit(),
-      isPending ? (pendingName ?? '') : null,
+      tool ? () => this._cancelDrawing() : null,
+      ()   => this.exit(),
     )
   }
 }
