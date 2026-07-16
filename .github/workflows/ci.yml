@@ -83,9 +83,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The Chromium binary (~150 MB) is the e2e job's slowest step. Cache it
+      # keyed on the pinned @playwright/test version so a hit skips the download.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
       # Only Chromium — the smoke targets one engine (no cross-browser matrix).
+      # On a cache hit the browser is already present, so install just the
+      # apt system deps (fast); on a miss, download the browser too.
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            pnpm exec playwright install-deps chromium
+          else
+            pnpm exec playwright install --with-deps chromium
+          fi
 
       - name: Smoke E2E
         run: pnpm test:e2e
