@@ -42,7 +42,9 @@ OBJECT MODE  ──────────────────────�
 `_mapMode.active = true` — orthographic top-down camera; OrbitControls disabled.
 `_mapMode.tool` — the place type currently being drawn (`"Route"` / `"Boundary"` /
 `"Zone"` / `"Hub"` / `"Anchor"`), or `null` (pan-only).
-`_mapMode.drawState` — three-state inner FSM: `"idle"` / `"drawing"` / `"pending"`.
+`_mapMode.drawState` — two-state inner FSM: `"idle"` / `"drawing"` (ADR-073
+removed the old `"pending"` name+confirm gate — geometry completion creates
+the entity immediately with an auto-name; rename is a later N-panel act).
 
 ```
 OBJECT MODE
@@ -54,7 +56,7 @@ MAP MODE  (_mapMode.active = true, drawState = "idle")
     |
     ├─ No tool active  (drawState = "idle", _mapMode.tool = null)
     │    Left-drag / middle-drag → pan camera (XY)
-    │    Scroll wheel            → zoom (frustumSize ±15%)
+    │    Scroll wheel / two-finger pinch → zoom (frustumSize)
     │    ESC → _exitMapMode() → OBJECT MODE
     │
     ├─ Click place type in left toolbar → _setMapTool(type)
@@ -66,14 +68,14 @@ MAP MODE  (_mapMode.active = true, drawState = "idle")
     │   │    first click → drawState = "drawing", points[0] set             │
     │   │    subsequent clicks → append vertex                              │
     │   │    endpoint snap ring (_updateSnapRing, 20 px) near first vertex  │
-    │   │    Enter / RMB (≥2 pts) OR snap-close → drawState = "pending"    │
+    │   │    Enter / RMB (≥2 pts) OR snap-close → _createAnnotation()      │
     │   │                                                                    │
     │   │  Zone (drag-rectangle region)                                     │
     │   │    pointerdown → drawState = "drawing"                            │
-    │   │    pointerup   → drawState = "pending"                            │
+    │   │    pointerup   → _createAnnotation()                             │
     │   │                                                                    │
     │   │  Hub / Anchor (single click point)                                │
-    │   │    click → drawState = "pending"                                  │
+    │   │    click → _createAnnotation()                                   │
     │   │                                                                    │
     │   └────────────────────────────────────────────────────────────────────┘
     │
@@ -82,7 +84,7 @@ MAP MODE  (_mapMode.active = true, drawState = "idle")
     │   │  All types: single drag gesture                                   │
     │   │    pointerdown → drawState = "drawing"                            │
     │   │    pointermove → update preview (cursor set here — no prior hover)│
-    │   │    pointerup   → drawState = "pending"                            │
+    │   │    pointerup   → _createAnnotation()                             │
     │   │                                                                    │
     │   └────────────────────────────────────────────────────────────────────┘
     │
@@ -90,12 +92,11 @@ MAP MODE  (_mapMode.active = true, drawState = "idle")
     │           preview line/shape updates with pointer movement
     │           ESC → drawState = "idle" (discard)
     │
-    │       drawState = "pending"
-    │           showMapToolbar() name input displayed (pre-filled per-type counter)
-    │           Enter / confirm button → _mapConfirmDrawing()
-    │               → create entity (AnnotatedLine / AnnotatedRegion / AnnotatedPoint)
-    │               → drawState = "idle"  (tool stays active for next shape)
-    │           ESC → drawState = "idle" (discard)
+    │       _createAnnotation()  (geometry complete — no name form, ADR-073)
+    │           → auto-name "<Type> N" from per-type counter
+    │           → create entity (AnnotatedLine / AnnotatedRegion / AnnotatedPoint)
+    │           → push AddAnnotationCommand (undoable)
+    │           → drawState = "drawing"  (tool stays active for the next shape)
     │
     └─ Exit Map button / ESC (drawState="idle", no tool) → _exitMapMode() → OBJECT MODE
 ```
@@ -801,7 +802,7 @@ is consumed; target entity fields are never written by `_updateFastenedFrames()`
 - **ADR-024**: Mobile toolbar architecture — fixed slot counts, `disabled` vs hidden, `{spacer: true}`
 - **ADR-029**: Spatial annotation system — `AnnotatedLine/Region/Point`, `PlaceTypeRegistry`
 - **ADR-030**: SpatialLink — typed semantic edges; `L` key two-phase creation flow
-- **ADR-031**: Map Mode interaction model — three-state `drawState`, PC vs Mobile platform split, naming-before-confirm
+- **ADR-031**: Map Mode interaction model — `drawState`, PC vs Mobile platform split (ADR-073 collapsed the FSM to two states: immediate creation, no name form)
 - **ADR-037**: Body Frame Architecture — Origin CF created atomically with Solid; TC proxy follows Origin CF world pose
 
 ---

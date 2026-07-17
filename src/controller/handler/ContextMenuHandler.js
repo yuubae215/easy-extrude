@@ -160,46 +160,42 @@ export class ContextMenuHandler {
   }
 
   /**
-   * Shows a name-input dialog then creates a CoordinateFrame as a child of the
-   * given entity. The frame is recorded on the command stack for undo/redo.
-   * Called from the long-press context menu (mobile, ADR-033 Phase C-3).
+   * Creates a CoordinateFrame as a child of the given entity, immediately, with
+   * a collision-free auto-name (`Frame.NNN` via `nextEntityName` — #9). NO naming
+   * dialog: frames are the archetypal "spawn a lot, rename later" entity, so a
+   * form at creation time is friction (user feedback 2026-07-16). Rename is a
+   * separate deliberate act (long-press → Rename / N-panel). The frame is recorded
+   * on the command stack for undo/redo. Called from the long-press context menu
+   * (mobile, ADR-033 Phase C-3) and the frame N-panel "+ Add Frame" (child frame).
    * @param {string} parentId - ID of the parent entity
    */
   promptAddFrame(parentId) {
     const ctrl = this._ctrl
     if (!ctrl._scene.getObject(parentId)) return
-    // Seed the dialog with the same collision-free auto-name the viewport /
-    // N-panel "Add Frame" paths use, so accepting the default yields a unique
-    // "Frame.NNN" instead of a duplicate literal "Frame" (#9). An empty answer
-    // falls back to `null` → the service auto-numbers identically.
-    const suggested = ctrl._service.nextEntityName('Frame')
-    ctrl._uiView.showRenameDialog(suggested, (name) => {
-      if (name === null) return
-      const frameName = name.trim() || null
-      // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
-      const parentObj = ctrl._scene.getObject(parentId)
-      let effectiveParentId = parentId
-      if (parentObj && !(parentObj instanceof CoordinateFrame)) {
-        const originFrame = [...ctrl._scene.objects.values()]
-          .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
-        if (originFrame) effectiveParentId = originFrame.id
-      }
-      const frame = ctrl._service.createCoordinateFrame(effectiveParentId, frameName)
-      if (!frame) return
-      ctrl._commandStack.push(createCreateCoordinateFrameCommand(
-        frame, ctrl._service,
-        () => {
-          const parent = ctrl._scene.getObject(parentId)
-          if (parent) ctrl._switchActiveObject(parentId, true)
-          else { ctrl._objSelected = false; ctrl._selectedIds.clear(); ctrl._refreshObjectModeStatus(); ctrl._updateMobileToolbar() }
-          ctrl._updateNPanel()
-        },
-        (id) => { ctrl._switchActiveObject(id, true); ctrl._updateNPanel() },
-      ))
-      ctrl._uiView.showToast(`Frame "${frame.name}" added`)
-      ctrl._switchActiveObject(frame.id, true)
-      ctrl._updateNPanel()
-    }, { title: 'Add Interface Frame' })
+    // User CFs are always parented to the Origin CF of the Solid (ADR-037 §2)
+    const parentObj = ctrl._scene.getObject(parentId)
+    let effectiveParentId = parentId
+    if (parentObj && !(parentObj instanceof CoordinateFrame)) {
+      const originFrame = [...ctrl._scene.objects.values()]
+        .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
+      if (originFrame) effectiveParentId = originFrame.id
+    }
+    // null name → service auto-numbers via nextEntityName('Frame') (single naming source, #9)
+    const frame = ctrl._service.createCoordinateFrame(effectiveParentId, null)
+    if (!frame) return
+    ctrl._commandStack.push(createCreateCoordinateFrameCommand(
+      frame, ctrl._service,
+      () => {
+        const parent = ctrl._scene.getObject(parentId)
+        if (parent) ctrl._switchActiveObject(parentId, true)
+        else { ctrl._objSelected = false; ctrl._selectedIds.clear(); ctrl._refreshObjectModeStatus(); ctrl._updateMobileToolbar() }
+        ctrl._updateNPanel()
+      },
+      (id) => { ctrl._switchActiveObject(id, true); ctrl._updateNPanel() },
+    ))
+    ctrl._uiView.showToast(`Frame "${frame.name}" added`)
+    ctrl._switchActiveObject(frame.id, true)
+    ctrl._updateNPanel()
   }
 
   /** Opens the rename prompt for the given object id. */

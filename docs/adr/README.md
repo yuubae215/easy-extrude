@@ -84,6 +84,7 @@ This directory records the project's design decisions.
 | [ADR-070](ADR-070-entity-identity-ifc.md) | **エンティティ同一性 — 3D ラベル機構の一般化(CF 情報化 + Solid/Mesh ラベル)と IFC クラスの活性化(視覚ティント)** | Accepted (決定2=A 視覚+軽い意味; 実装済) | 2026-07-15 | ADR-069, ADR-025, ADR-034, ADR-037 |
 | [ADR-071](ADR-071-placement-defaults.md) | **物理的妥当性の配置既定 — スタック既定 ON + 地面下アシスト(ハード拘束でなく警告 + 補助; 基礎/杭を守る)** | Accepted (案A アシスト既定; 実装済) | 2026-07-15 | ADR-069, ADR-040 |
 | [ADR-072](ADR-072-map-mode-polish.md) | **2D マップ研磨 — 一致ポーズ投影スワップ + CameraFlight で出入り / マップ配置の undo 化(lifecycle 語彙合流) / 端点スナップ係合フラッシュ再利用** | Accepted (実装済 — ADR-069 Phase 4 = パリティ・パス完結) | 2026-07-15 | ADR-069, ADR-068, ADR-031, ADR-022, ADR-065 |
+| [ADR-073](ADR-073-no-creation-time-naming-form.md) | **生成時に命名フォームを出さない — Frame + マップオブジェクトは無言自動命名で即時生成、改名は後の別操作（Map FSM を pending 廃止で 2 状態化）** | Accepted (実装済) | 2026-07-16 | ADR-069, ADR-037, ADR-031, ADR-072 |
 
 ## How to Add a New ADR
 
