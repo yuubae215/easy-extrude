@@ -1,0 +1,48 @@
+{
+  "contractVersion": 1,
+  "layoutVersion": "layout/1.0",
+  "graspSearch": {
+    "robot": {
+      "base": [0, 0, 0],
+      "reachMin": 0.4,
+      "reachMax": 0.95,
+      "wristConeHalfAngle": 0.7
+    },
+    "target": {
+      "surfaceSamples": [
+        { "point": [0.0, 0.0, -0.6], "normal": [0, 0, 1] },
+        { "point": [0.02, 0.0, -0.6], "normal": [0, 0, 1] },
+        { "point": [-0.02, 0.0, -0.6], "normal": [0, 0, 1] },
+        { "point": [0.0, 0.015, -0.6], "normal": [0, 0, 1] },
+        { "point": [0.0, -0.015, -0.6], "normal": [0, 0, 1] }
+      ]
+    },
+    "obstacles": [
+      { "center": [0.08, 0.05, -0.6], "radius": 0.025 },
+      { "center": [-0.07, 0.09, -0.6], "radius": 0.025 },
+      { "center": [0.10, -0.08, -0.6], "radius": 0.025 },
+      { "center": [-0.10, -0.06, -0.6], "radius": 0.025 },
+
+      { "center": [0.15, 0.15, -0.57], "radius": 0.02 },
+      { "center": [0.15, -0.15, -0.57], "radius": 0.02 },
+      { "center": [-0.15, 0.15, -0.57], "radius": 0.02 },
+      { "center": [-0.15, -0.15, -0.57], "radius": 0.02 },
+      { "center": [0.15, 0.0, -0.57], "radius": 0.02 },
+      { "center": [-0.15, 0.0, -0.57], "radius": 0.02 },
+      { "center": [0.0, 0.15, -0.57], "radius": 0.02 },
+      { "center": [0.0, -0.15, -0.57], "radius": 0.02 }
+    ],
+    "sampling": {
+      "approachTiltAngles": [0, 0.17],
+      "rollAngles": [0, 1.5708],
+      "preGraspDistance": 0.1,
+      "clearanceReference": 0.03
+    },
+    "objectiveWeights": {
+      "grasp_stability": 1.0,
+      "approach_clearance": 0.7,
+      "reach_margin": 0.3
+    },
+    "topN": 5
+  }
+}

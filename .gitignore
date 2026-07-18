@@ -161,3 +161,9 @@ server/tests/data/*.step
 server/tests/data/*.STEP
 server/tests/data/*.stp
 server/tests/data/*.STP
+
+# core/ (Python, uv-managed) — uv.lock is committed for reproducibility
+core/.venv/
+core/**/__pycache__/
+core/**/*.pyc
+core/.pytest_cache/
