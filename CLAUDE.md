@@ -17,39 +17,38 @@ For project structure, MVC design, and features see `README.md`.
    from *pessimistic* (consistency-critical, blocking) locking before
    implementing any async or high-frequency operation. See `docs/CONCURRENCY.md`.
 
-## スコープ境界 (このリポジトリの責務)
+## スコープ境界 (レイヤ境界 — 2026-07-19 に repo 境界から改定)
 
-このリポジトリは「宣言とスキーマ」の層であり、制約の **解法 (solving)** は持たない。
+grasp-search バックエンド (`core/`) の同居により、このリポジトリは
+**フロント → 契約 → バックエンド** の 3 層 monorepo になった。かつて
+「repo の外」で守っていた線は、いま **レイヤ間の線** として同じ強度で守る。
 
-- ブラウザ 3D エディタ / 基本ジオメトリ操作 / JSON エクスポート
-- Layout DSL の **公開スキーマ** と **基本コンパイラ** / バリデータ
-- サンプル数個 / ローカル単体動作
+| レイヤ | 置き場所 | 責務 |
+|--------|---------|------|
+| フロント | `src/` (+ `schema/`, `examples/`) | ブラウザ 3D エディタ / Layout・Context DSL の公開スキーマ・コンパイラ・バリデータ / 決定的 core (`SynonymQuotient`・`CanonicalForm`) |
+| 契約 | `vendor/grasp-contract` (submodule = 中立正本) | BFF ⇄ コアAPI の I/O JSON Schema + `contractVersion` (ADR-074) |
+| バックエンド | `server/` (BFF) + `core/` (Python 判定エンジン + FastAPI, uv 管理) | 制約の **解法**: 候補生成 → リーチ/IK/干渉フィルタ → 加重スコア (ADR-075/076)、propose-only レコメンドレーン (ADR-077)、bin-picking シーン層 (ADR-078) |
 
-制約を **解く処理** はこのリポジトリのスコープ外で、外部サービス
-(grasp-search service) が担当する。
+不変の規律 (repo 同居後も変わらない):
 
-- DSL は `ik_solvable` / `no_collision` / `within_reach` などの **参照名** を
-  宣言してよい。
-- それらを **解く実装** (IK ソルバ / 干渉チェッカ / リーチ計算 / wrench cone /
-  把持安定性スコア等) はここに書かない = 外部サービス側の責務。
-
-同じ線引きが **意味マッピング/レコメンド** にも適用される (ADR-056)。
-
-- **決定的 core は in-scope (= スキーマ/契約)**: キュレーション同義語商
-  (`SynonymQuotient`/`QUOTIENT_TABLE`) ＋ 正規形シグネチャ ＋ 構造 diff ＋
-  exact-color reconcile (`CanonicalForm`, 後続実装)。これらは等価/対応を **決定** する。
-- **曖昧マッピングの提案・ランキング層は out-of-scope**: 商で解決できない語を
-  **embedding / コーパス / 外部知** で対応付ける、類似度で並べる処理はここに書かない =
-  外部サービス/システムの責務 (grasp-search service と同じパターン)。外部レコメンダは
-  *提案する* だけで、決定的 core の内部判定には入らない。辞書に行を足せば商が広がり、
-  その語は決定的 core へ昇格する (= 正攻法の拡張点)。
+- **`src/` は解法を持たない。** IK / 干渉 / リーチ / 把持安定性の *解き方* は
+  `core/` にのみ書く。フロントは DSL で `ik_solvable` 等の **参照名を宣言**し、
+  結果は契約経由で受け取って表示するだけ。`src/` から `core/` を import する
+  経路は存在しない (越境は必ず HTTP + 契約)。
+- **decide / propose の動詞境界 (ADR-056/077)。** 等価/対応を **決定** するのは
+  フロント側の決定的 core (キュレーション同義語商 + 正規形シグネチャ + 構造 diff +
+  exact-color reconcile)。embedding / 類似度で **提案・ランキング** するのは
+  `core/recommendation/` の propose-only レーンで、真偽値を返さない。辞書
+  (`QUOTIENT_TABLE`) に行を足せばその語は決定的 core へ昇格する (正攻法の拡張点)。
 
 ## BFF と契約 (越境防止)
 
-契約 (BFF と外部サービスの I/O) の正本は JSON Schema パッケージ
-(`@easy-extrude/grasp-contract`) 側にある。BFF では Schema から型を *導出* する
-だけで、契約を *定義/拡張* しない。契約の変更は Schema 側で行い `contractVersion`
-を上げる。
+契約 (BFF ⇄ コアAPI の I/O) の正本は JSON Schema パッケージ
+(`@easy-extrude/grasp-contract` = `vendor/grasp-contract` submodule) にある。
+BFF (TS) は Schema から型を *導出*、`core/` (Python) は pydantic を Schema への
+*binding* として準拠テストで縛る — どちらも契約を *定義/拡張* しない。契約の変更は
+Schema 側で行い `contractVersion` を上げる (両側同時デプロイ不能なズレは
+コアAPI が 400 で即拒否 — ADR-074)。
 
 統治 (ADR-060 / PHILOSOPHY #29): ワイヤに載せるのは *ソルバが決定した事実* のみ
 (score 層は閉 `additionalProperties:false`、pose は **kind 判別の有界 union**)。
@@ -59,14 +58,20 @@ For project structure, MVC design, and features see `README.md`.
 
 ## AI 向けガード
 
-このリポジトリで「制約の解法」に当たるコード (IK / 干渉 / リーチ / 安定性の
-解き方) を依頼/生成しようとしたら、**作業を中断**し「それはこのリポジトリの
-スコープ外 (外部の grasp-search service が担当) です」と促すこと。
+「制約の解法」に当たるコード (IK / 干渉 / リーチ / 安定性の解き方) を **`src/` に**
+書こうとしたら、**作業を中断**し「解法はバックエンドレイヤ `core/` の責務です
+(フロントは宣言と表示のみ — 越境は契約経由)」と促して `core/` 側へ誘導すること。
+`core/` 内での解法実装は in-scope (ADR-075 の pure/副作用規律に従う)。
 
-同様に、**曖昧な意味マッピングを embedding / コーパス / 外部知で *提案・ランキング*
-するレコメンド層** をこのリポジトリ内に実装しようとしたら、**作業を中断**し「それは
-外部サービスの責務 (本リポジトリは決定的な正規形＋契約まで — ADR-056) です」と促すこと。
-キュレーション辞書 (`QUOTIENT_TABLE`) への行追加と決定的な `CanonicalForm` は in-scope。
+同様に、**embedding / コーパス / 外部知による曖昧マッピングの提案・ランキング** を
+`src/` の決定的 core に混ぜようとしたら、**作業を中断**し「それは `core/recommendation/`
+の propose-only レーンの責務です (決定は `SynonymQuotient`/`CanonicalForm`、提案は
+lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価か否か) を決して返さない。
+キュレーション辞書 (`QUOTIENT_TABLE`) への行追加と決定的な `CanonicalForm` は
+フロント側 in-scope。
+
+契約 (`vendor/grasp-contract`) をこの repo 内で編集しようとしたら中断 — 契約は
+上流で変更し `contractVersion` を上げる (従来どおり)。
 
 ## Document navigation
 
@@ -133,6 +138,9 @@ Before writing or modifying any code, consult the relevant documents.
 | grasp diagnostics / 棄却ファネル / rejection funnel / 惜しさメーター / near miss / reachNearestMiss / candidatesGenerated / 効いた感 / 差分チップ / funnelStages / dominantStage / funnelDelta / nearMissCloseness / prevDiagnostics / DiagnosticsFunnel / contractVersion 3 | ADR-061 (Accepted, 実装済), ADR-060, `src/view/GraspFunnelMath.js`, `src/components/Grasp/GraspSearchPanel.jsx` (`DiagnosticsFunnel`), `src/controller/GraspController.js` (`runGraspSearch` diagnostics/prevDiagnostics) |
 | 証明フィードバックループ / 演出プリミティブ / proof feedback / DeltaChip / LandingFlash / 着地フラッシュ / usePrevOnChange / FeedbackMath / refsSignature / settledRefs / 消化フラッシュ / 未解決カウント差分 / FormPanel 差分チップ / マトリックス解消フラッシュ | ADR-062 (Accepted, 全フェーズ実装済), PHILOSOPHY #29 scope note, `src/components/Feedback/FeedbackPrimitives.jsx`, `src/view/FeedbackMath.js`, `src/view/FeedbackMath.test.js`, `src/components/Context/FormPanel.jsx`, `src/components/ContextDemo/ConflictMatrix.jsx`, `src/components/ContextDemo/NegotiationClusterView.jsx`, `src/components/Context/ContextLayer.jsx` |
 | 測定器フィードバック / Checks タブ / checkResults 表示 / 受入チェック面 / blocked→pass フラッシュ / margin 惜しさメーター / checkMeter / checkStatusKeys / checkTransitions / projectChecks / ChecksPanel / テンプレート構造プレビュー / structurePreview / templateGalleryPreviews / cell_robotics 例 | ADR-062 Phase 4+5 (実装済), ADR-053 §9 (ベイク済オペランド), ADR-061 (惜しさ曲線の共有), `src/view/CheckFeedbackMath.js`, `src/view/TemplatePreviewMath.js`, `src/components/Context/ChecksPanel.jsx`, `src/service/ContextService.js` (`projectChecks`), `src/controller/ContextController.js` (`_templatePreviews`), `examples/cell_robotics_context.json` |
+| grasp backend / 判定エンジン / core API / FastAPI / 段階0 / 候補生成 / feasibility / objectives / 加重スコア / pipeline / pose_codec / uv / pytest / contractVersion ガード / エラー envelope / 内部トークン / /grasp-search / /healthz | ADR-074 (契約) / ADR-075 (エンジン) / ADR-076 (HTTP 境界), `core/README.md`, `core/easy_extrude_core/{engine,api,contract}/`, `core/tests/` |
+| レコメンドレーン / recommendation lane / similarity / propose-only / embedding 注入 / NormSpec / /recommendation | ADR-077, `core/easy_extrude_core/recommendation/` |
+| bin-picking / ピックシーケンス / scene derivation / シーン層 (core 側) / bin-picking テンプレート | ADR-078, ADR-079 (diagnostics proof), `core/easy_extrude_core/scene/` |
 | grasp ゴースト / spatial ghost / グリッパグリフ / 接近ベクトル / approach vector / FRAME_CONVENTION / 能力ゲート / renderableEndEffectorFrame / hover プレビュー / 接近アニメ / 三拍リビール / revealFrame / pose kind union 消費 (endEffector/jointSpace) / 対象アウトライン | ADR-059 (Accepted, 段1 実装済), ADR-060, ADR-065 Phase 5 (三拍リビール), `src/view/GraspGhostMath.js`, `src/view/GraspGhostView.js`, `src/controller/GraspController.js` (`_syncGhost`/`hoverCandidate`/`disposeGhost`) |
 | CI / テストゲート / PR ワークフロー / rigor 遡及 / prefers-reduced-motion / reduced motion / motion 削減 / flashStyle / useReducedMotion / E2E スモーク / Playwright / smoke / 配線の生死 / pnpm test glob 化 | ADR-064 (Accepted, Phase 1+2+3+4 実装済), ADR-062 (play 側の対), PHILOSOPHY #29/#20, `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `src/view/FeedbackMath.js` (`flashStyle`), `src/theme/motion.js` (単一 matchMedia 境界 — ADR-065 Phase 1 で移設; `FeedbackPrimitives.jsx` は再 export), `playwright.config.js`, `e2e/smoke.spec.js` |
 | DSL スキーマ昇格 / Layout·Context DSL JSON Schema 化 / conformance / additionalProperties:false / ドリフト束縛 / 形と意味の分離 / schema:validate | ADR-064 Phase 2 (実装済), PHILOSOPHY #29, `schema/layout-1.0.schema.json`, `schema/context-0.4.schema.json`, `schema/README.md`, `src/schema/LayoutSchema.test.js`, `src/schema/ContextSchema.test.js`; 意味検査は `src/layout/LayoutValidator.js` / `src/context/ContextValidator.js` に残る |
@@ -222,6 +230,18 @@ pnpm build     # production build → dist/
 pnpm preview   # preview production build
 ```
 
+バックエンド (grasp-search) を含むフルスタック:
+
+```bash
+pnpm dev:all                              # BFF (3001) + vite (5173)
+cd core && uv sync --extra dev --extra serve   # 初回のみ (Python は uv 管理)
+cd core && uv run python -m easy_extrude_core.api  # コアAPI (4001 = BFF upstream 既定)
+pnpm test:core                            # core の pytest (契約準拠テスト含む)
+```
+
+コアAPI の URL/認証は env 注入 (`GRASP_SEARCH_URL` / `GRASP_API_INTERNAL_TOKEN`) —
+repo に焼かない (ADR-076)。
+
 ## World coordinate system
 
 **ROS world frame** (+X forward, +Y left, +Z up). Right-handed. Matches ROS REP-103.
@@ -245,6 +265,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 Full log → `docs/SESSION_LOG.md`. **ここには直近 3 件のみ、各 1–3 行の要約で記録する**
 （全文は SESSION_LOG.md 側に書く — CLAUDE.md は 40k 文字制限があり、長文履歴が主因で超過した実績あり）。
 
+- **2026-07-19** (2): Ops — **バックエンド同居後の運用見直し**。前セッションの統合（3ae1054）で生じた統治・CI のズレを是正: ① CI に `core` job 新設（setup-uv + `uv sync --frozen` + pytest、submodule init — Python 106 テストが未ゲートだった。ローカル実証 106 pass/2.65s）② CLAUDE.md スコープ境界を「repo 境界」→「レイヤ境界」に改定（3 層表 + `src/` は解法を持たない・越境は契約経由のみ・decide/propose 動詞境界 — AI ガードも `core/` 誘導型へ）③ Document navigation に ADR-074〜079/core 3 行 ④ `pnpm test:core` + フルスタック起動手順 ⑤ `contract_pkg.py` docstring 旧パス修正。コード・契約・スキーマ無改変。（全文 → SESSION_LOG）
+- **2026-07-19** (1): Feature — **grasp-search バックエンド統合（`core/` + ADR-074〜079、3ae1054）**。Python 判定エンジン（候補生成→リーチ/IK/干渉フィルタ→絶対基準 0-1 正規化→加重スコア→上位N; ADR-075）+ FastAPI HTTP 境界（contractVersion 400 ガード・エラー envelope; ADR-076）+ propose-only レコメンドレーン（ADR-077）+ bin-picking シーン層/テンプレート（ADR-078/079）を同 repo に追加。契約正本は `vendor/grasp-contract` submodule のまま（pydantic は binding + 準拠テスト）。uv 管理・106 pass。（遡及記録; 全文 → SESSION_LOG）
 - **2026-07-16** (4): UX — **生成時に命名フォームを出さない（ADR-073・Frame + マップオブジェクト・実装済）**。ユーザ feedback「Frame とかインスタンスがいくつも生成されるオブジェクトはポンポン作りたい。生成時に命名フォームが出てきてほしくない。後で変更する前提でいい」→ 後続「あとはマップオブジェクトかな」。**Frame**: 生成の全経路のうちモバイル長押し `ContextMenuHandler.promptAddFrame` と CF N パネル子フレーム追加（`_promptAddFrame` 共有）だけが生成前に `showRenameDialog` を割り込ませていた（他経路は既に無言自動命名）。`showRenameDialog` 除去 → `createCoordinateFrame(effectiveParentId, null)` 即時生成（内部 `_nextEntityName('Frame')` 採番＝単一命名源 #9）。undo/redo・親解決（ADR-037）・生成後選択（ADR-069 契約）不変。`showRenameDialog` は改名専用に一本化。**マップオブジェクト**: Map Mode（ADR-031）の描画 FSM `idle→drawing→pending` の `pending` は名前入力 + Confirm 専用ゲート（ジオメトリは pending 前に確定）。`pending` を廃止し 2 状態化、`_enterPendingState`+`_confirmDrawing`→単一 `_createAnnotation`（per-type カウンタで `"Route 1"` 等無言採番・連続配置）。`createAddAnnotationCommand` undo・地面/屋根平板・スナップ不変。死コード除去（`pending*`/`getMapPendingName`/uiStore `mapPendingNameInput`・`showConfirm`/`MapToolbar` 名前入力+Confirm）。カメラ enter/exit フライト（ADR-072）は無改変。docs: **ADR-073** 新規（Frame + 第2適用マップ）+ ADR-069/031/072 相互参照 + STATE_TRANSITIONS Map FSM 2 状態化 + CODE_CONTRACTS「One Naming Source」「Map Placement」拡張。Evidence: unit **653 pass** / typecheck clean / build clean / E2E **12 pass**（map テストは Confirm 除去→クリックで即生成 assert）。契約・schema・DSL 版・BFF 無改変。（全文 → SESSION_LOG）
-- **2026-07-16** (3): Bugfix/UX — **マップモード タッチ ピンチズーム（ADR-072 Addendum・実装済）**。ユーザ feedback「マップモードってズームできないよ」。headless 観測で切り分け: **デスクトップのホイールズームは機能・タッチのピンチは frustum 不変** = ズーム不能はタッチ限定。根因: タッチにホイール無し・ピンチ担当の OrbitControls は正射影 Map Mode で無効なのに Map Mode がピンチ未実装（決定 1 でカメラを引き取った overlay が zoom をタッチで再提供し忘れ）。**実装**: `MapModeController` に `touchPoints`+`pinch`/`pinchLock`、2 本目着地で指間距離×frustum を基準化し距離比で `setOrthoZoom`（clamp [2,500]・ホイールと同じ中心固定）、`pinchLock` が全指離脱まで単指 pan/draw を抑止。AppController 配線: ①2 本目タッチ破棄 guard を `onExtraTouchDown` へ迂回、②`_onPointerMove` の非ドラッグ指無視 guard を Map Mode 例外化（`_updatePinch` が両指の move を見るため #11）。OrbitControls 無改変。docs: ADR-072 Addendum + CODE_CONTRACTS §2 新 1 行 + PHILOSOPHY Yellow Card（overlay がナビ制御を無効化したら全入力モダリティで affordance を再提供する義務・#14 逆義務）+ `__easyExtrude.mapState()` アクセサ。Evidence: unit **653 pass** / typecheck clean / build clean / E2E **12 pass**（新規: 合成 PointerEvent 二本指ピンチ→frustum 縮小 assert; 単指配置/pan 非リグレッション確認）。契約・schema・DSL 版・BFF 無改変。（全文 → SESSION_LOG）
-- **2026-07-16** (2): Bugfix/UX — **マップモード カメラ復帰 + 配置粒度（ADR-072 Addendum C/D・実装済）**。ユーザ feedback 2 件: ①マップモードから戻るとカメラがリセットされず動ける姿勢範囲が変わる ②マップ配置グリッドが粗い。**修正 C**: `CameraFlight` が完了コールバック `onDone` を `_land()`（終端カメラ書き込み）の**前**に発火していた（`_markDone(); _land()`）→ フライト中断（ツール即クリック）や reduced motion 時、Map exit が読む `_stagedPos` がフライト途中ポーズを捕捉 → external-write ガードが誤発火し `flyToView(saved)` をスキップ → カメラ非復帰。修正は三経路すべて `_land(); _markDone()` に順序反転 + 契約明文化。**修正 D**: `_pickPoint` の固定 `GRID=1.0` を新純関数 `MapPreviewMath.mapGridStep(frustumSize)`（`frustumSize/50` 以下の最大 1/2/5×10^k; frustum 50→1.0 回帰なし・2→0.02 細かい・500→10）へ = ズームインで配置粒度が上がる（地面グリッド #27 と同規律）。docs: ADR-072 Addendum C/D + CODE_CONTRACTS §1 新 2 行 + PHILOSOPHY Yellow Card（callback は報告する状態の確定後に発火）+ `__easyExtrude.cameraState()` デバッグ/E2E アクセサ。Evidence: unit **653 pass**（+5）/ typecheck clean / build clean / E2E **11 pass**（map テストを enter フライト中断→配置→退出後カメラ pre/post 一致 assert に変更 — fix なしで fail 実証済）。契約・schema・DSL 版・BFF 無改変。（全文 → SESSION_LOG）

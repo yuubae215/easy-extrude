@@ -56,6 +56,37 @@ jobs:
       - name: Build (committed WASM artifacts)
         run: pnpm build
 
+  # Backend judgement engine (core/ — ADR-075/076). A separate job from the
+  # JS gate: different toolchain (Python via uv), and its contract-conformance
+  # tests (pydantic ⇄ neutral JSON Schema binding) need the same submodule.
+  # Same ADR-064 rule as everything else: the wire's discipline is enforced
+  # by machine, not memory.
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The Python conformance tests read the neutral schema through
+      # core/tests/contract_pkg.py → vendor/grasp-contract.
+      - name: Init grasp-contract submodule
+        run: git submodule update --init vendor/grasp-contract
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: core/uv.lock
+
+      - name: Sync dependencies (locked)
+        working-directory: core
+        run: uv sync --frozen --extra dev --extra serve
+
+      - name: Core tests (engine + api + contract conformance)
+        working-directory: core
+        run: uv run pytest
+
   # ADR-064 Phase 4 — play-side smoke. A separate job so its flakiness never
   # blocks the type/contract gate (PHILOSOPHY #20 — a narrow smoke, not a
   # coverage net). Verifies the experience layer's wiring is live end-to-end:

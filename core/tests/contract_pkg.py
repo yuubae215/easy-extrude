@@ -1,6 +1,6 @@
 """中立契約パッケージ (@easy-extrude/grasp-contract) の取得を一点に集約する。
 
-中立な正本は JSON Schema。submodule `vendor-contract` (外部の中立 repo
+中立な正本は JSON Schema。submodule `vendor/grasp-contract` (外部の中立 repo
 easy-extrude-contract) を pin して参照する。テスト (conformance / HTTP 往復) は
 ここ経由でだけ Schema / contractVersion を読む。
 
