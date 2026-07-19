@@ -2,7 +2,10 @@
 
 **Responsibility**: Represent business logic and domain entities.
 
-Files: `Solid.js`, `Profile.js`, `ImportedMesh.js`, `MeasureLine.js`, `CoordinateFrame.js`
+Files: `Solid.js`, `Profile.js`, `ImportedMesh.js`, `MeasureLine.js`,
+`CoordinateFrame.js`, `AnnotatedLine.js`, `AnnotatedRegion.js`,
+`AnnotatedPoint.js`, `SpatialLink.js`, `IFCClassRegistry.js`,
+`PlaceTypeRegistry.js`
 
 ---
 
@@ -30,15 +33,25 @@ Domain depends on nothing. Every other layer depends on Domain.
 ```
 SceneObject (union)
   ├─ Geometry        — occupies 3D space; user-visible shape
-  │   ├─ Solid         (deformable 3D solid; editable; LocalGeometry)
+  │   ├─ Solid         (deformable 3D solid; editable; LocalGeometry; ADR-040 data model)
   │   └─ ImportedMesh  (server-computed read-only geometry)
   ├─ Frame           — SE(3) reference frame; no intrinsic shape
-  │   └─ CoordinateFrame
-  ├─ Annotation      — measurement overlay; LocalGeometry
-  │   └─ MeasureLine
+  │   └─ CoordinateFrame  (body frames auto-created with Solids — ADR-037)
+  ├─ Annotation      — overlay entities; LocalGeometry
+  │   ├─ MeasureLine     (1D measurement)
+  │   ├─ AnnotatedLine   (map route/boundary — ADR-029)
+  │   ├─ AnnotatedRegion (map zone — ADR-029)
+  │   └─ AnnotatedPoint  (map hub/anchor — ADR-029)
   └─ Draft           — transient 2D cross-section; LocalGeometry
       └─ Profile
+
+Not a SceneObject:
+  SpatialLink — directed semantic edge between entities (jointType +
+  semanticType — ADR-030/038/043); lives in SceneModel._links.
 ```
+
+Registries: `IFCClassRegistry` (IFC4 classes — ADR-025/070) and
+`PlaceTypeRegistry` (map place types — ADR-029) are pure lookup tables.
 
 ## Entity Capability Contracts (ADR-009, ADR-010, ADR-012, ADR-020)
 

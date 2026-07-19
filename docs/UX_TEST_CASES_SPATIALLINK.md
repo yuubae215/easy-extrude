@@ -1,5 +1,10 @@
 # UX Test Cases — SpatialLink Feature Set
 
+> **注 (2026-07-19)**: 2026-04 時点のスナップショット。ケースの多くは現在も
+> 有効だが、`linkType` 単一フィールドは ADR-038/043 で `jointType` +
+> `semanticType` の二軸に分割済みであり、UI 文言・ボタン配置はその後の UX
+> パス (ADR-062…073) で変わっている。再実施時は結果欄を再記録すること。
+
 手動テスト用ケース集。ADR-030 / ADR-032 / ADR-043 / Node Editor S-1/S-2 を対象とする。
 
 テスト環境: `pnpm dev` → http://localhost:5173  

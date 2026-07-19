@@ -1,126 +1,122 @@
 # Architecture
 
-easy-extrude is a web-based 3D modeling app built on the MVC pattern,
-incrementally refactored toward Domain-Driven Design (DDD).
+easy-extrude is a web-based 3D modeling app built on the MVC pattern and
+incrementally refactored toward Domain-Driven Design (DDD). Since the
+grasp-search backend was co-located (2026-07), the repository is a
+**three-layer monorepo**: frontend → contract → backend.
+
+> Maintenance note: this document describes structure at **directory
+> granularity** and delegates per-file inventories to the layer READMEs
+> (`src/*/README.md`, `core/README.md`, `server/src/*/README.md`). Keyword →
+> "read first" lookup lives in `docs/NAVIGATION.md`; decision history lives in
+> `docs/adr/README.md` (ADR-001 … ADR-080). Do not re-grow a per-file listing
+> here — it drifts.
 
 ---
 
-## Overview
+## Monorepo Layers
+
+| Layer | Location | Responsibility |
+|-------|----------|----------------|
+| **Frontend** | `src/` (+ `schema/`, `examples/`, `cli/`) | Browser 3D editor; Layout/Context DSL public schemas, compilers, validators; deterministic core (`SynonymQuotient`, `CanonicalForm`) |
+| **Contract** | `vendor/grasp-contract` (git submodule = neutral canonical source) | BFF ⇄ core-API I/O JSON Schema + `contractVersion` (ADR-074) |
+| **Backend** | `server/` (BFF) + `core/` (Python judgement engine + FastAPI, uv-managed) | Constraint *solving*: candidate generation → reach/IK/collision filters → weighted scoring (ADR-075/076); propose-only recommendation lane (ADR-077); bin-picking scene layer (ADR-078) |
+
+Invariants (see `CLAUDE.md` §スコープ境界 for the enforcement rules):
+
+- `src/` never contains solvers (IK / collision / reach / grasp stability).
+  The frontend *declares* predicate names in the DSL and *displays* results
+  received over the contract. There is no `src/` → `core/` import path.
+- **decide / propose verb boundary** (ADR-056/077): equivalence is *decided*
+  by the frontend deterministic core; embeddings only *propose/rank* in
+  `core/recommendation/` and never return a truth value.
+- The contract is never edited in this repo — change it upstream and bump
+  `contractVersion` (mismatch is rejected with 400 at the core API, ADR-074).
+
+## Repository Layout
+
+```
+easy-extrude/
+  src/               # Frontend (MVC + DDD; see per-directory READMEs)
+  schema/            # Public JSON Schemas: layout-1.0, context-0.4, scene-1.3 (ADR-064)
+  examples/          # Layout/Context DSL gallery seeds (factory, cell_* scenarios)
+  templates/         # Hand-written complete DSL templates = backend acceptance
+                     #   fixtures (consumed by core/tests/test_templates.py)
+  cli/               # `pnpm layout` CLI: compile / import / interpret (ADR-045)
+  server/            # BFF (Node/Express): scenes DB, STEP import, WS geometry,
+                     #   grasp proxy → core API (ADR-015/017/074)
+  core/              # Python judgement engine + FastAPI HTTP boundary
+                     #   (engine / api / contract / recommendation / scene)
+  vendor/
+    grasp-contract/  # Neutral I/O contract submodule (@easy-extrude/grasp-contract)
+  wasm-engine/       # Rust → wasm geometry engine (ADR-027)
+  robotics-wasm/     # C++ KDL + ruckig → wasm build lane (ADR-053 §11)
+  e2e/               # Playwright smoke tests (ADR-064 Phase 4)
+  docs/              # This file, NAVIGATION, ADRs, contracts, philosophy
+```
+
+### Frontend `src/` (directory granularity)
 
 ```
 src/
-  main.js                         # Entry point: assembles MVC and calls start()
-  domain/
-    Solid.js                      # Domain entity: 3D deformable solid (ADR-020)
-    Profile.js                    # Domain entity: 2D cross-section profile (ADR-020)
-    MeasureLine.js                # Domain entity: 1D distance annotation
-    CoordinateFrame.js            # Domain entity: named SE(3) reference frame (ADR-018/019)
-    ImportedMesh.js               # Domain entity: read-only server-computed geometry
-    IFCClassRegistry.js           # IFC semantic class registry (ADR-025)
-    AnnotatedLine.js              # Domain entity: 2D map route annotation (ADR-029)
-    AnnotatedRegion.js            # Domain entity: 2D map boundary/zone annotation (ADR-029)
-    AnnotatedPoint.js             # Domain entity: 2D map hub/anchor annotation (ADR-029)
-    SpatialLink.js                # Domain entity: typed semantic edge between entities (ADR-030)
-    PlaceTypeRegistry.js          # Place type registry for map annotations (ADR-029)
-  graph/
-    Vertex.js                     # Graph primitive: vertex { id, position: Vector3 }
-    Edge.js                       # Graph primitive: edge { id, v0: Vertex, v1: Vertex }
-    Face.js                       # Graph primitive: face { id, vertices: Vertex[4], name, index }
-  model/
-    CuboidModel.js                # Pure functions: geometry computation (stateless)
-    SceneModel.js                 # Aggregate root: scene objects + mode state + editSelection
-  command/
-    MoveCommand.js                # Undo/redo: object move (Grab, Face Extrude) (ADR-022)
-    AddSolidCommand.js            # Undo/redo: add solid (ADR-022)
-    DeleteCommand.js              # Undo/redo: soft-delete (ADR-022)
-    ExtrudeSketchCommand.js       # Undo/redo: Profile → Solid entity swap (ADR-022)
-    RenameCommand.js              # Undo/redo: rename (ADR-022)
-    FrameRotateCommand.js         # Undo/redo: CoordinateFrame rotation (ADR-022)
-    SetIfcClassCommand.js         # Undo/redo: IFC class assignment (ADR-025)
-    SetPlaceTypeCommand.js        # Undo/redo: place type assignment for map annotations (ADR-029)
-    CreateCoordinateFrameCommand.js # Undo/redo: create CoordinateFrame node (ADR-018/019)
-    ReparentFrameCommand.js       # Undo/redo: reparent CoordinateFrame in pose graph (ADR-019)
-    CreateSpatialLinkCommand.js   # Undo/redo: create typed semantic edge (ADR-030)
-    DeleteSpatialLinkCommand.js   # Undo/redo: delete typed semantic edge (ADR-030)
-    MountAnnotationCommand.js     # Undo/redo: mount annotation to CoordinateFrame host (ADR-032)
-  layout/
-    LayoutDslSchema.js            # DSL version constants, strategy/semanticType/jointType enums (pure data)
-    LayoutValidator.js            # validateLayoutDsl(dsl) → {valid, errors[]} (pure computation)
-    LayoutCompiler.js             # compileLayout(dsl) → SceneSerializer v1.3 JSON (pure computation, ADR-045)
-  service/
-    SceneService.js               # ApplicationService: entity creation, CRUD, observable events
-    SceneSerializer.js            # Scene save / load: domain → JSON round-trip (BFF)
-    SceneExporter.js              # Export scene to JSON file (pure computation)
-    SceneImporter.js              # Import scene from JSON file (pure computation)
-    CommandStack.js               # Undo/redo stack (MAX=50) (ADR-022)
-    BffClient.js                  # REST + WebSocket client for BFF (WsChannel)
-  view/
-    SceneView.js                  # Three.js scene / camera / renderer
-    MeshView.js                   # Per-object mesh and visual state
-    CoordinateFrameView.js        # Axis arrows + origin sphere; depth rendering; rotation
-    ImportedMeshView.js           # Triangle mesh (BufferGeometry); updateGeometryBuffers()
-    MeasureLineView.js            # Dashed line + distance label; no-op MeshView interface
-    NodeEditorView.js             # SVG DAG panel; draggable nodes; STEP import trigger
-    UIView.js                     # DOM UI (header / N panel / status bar / mobile toolbar)
-    GizmoView.js                  # World-axis gizmo (top-right)
-    OutlinerView.js               # Scene hierarchy sidebar; multi-level indentation
-    SpatialLinkView.js            # Dashed line + directional arrowhead; color-coded by linkType (ADR-030)
-    AnnotatedLineView.js          # Polyline view for map route annotations (ADR-029)
-    AnnotatedRegionView.js        # Filled polygon + rim ring view for map zones (ADR-029)
-    AnnotatedPointView.js         # Crosshair-pulse marker for map hubs/anchors (ADR-029)
-  controller/
-    AppController.js              # Input handling + view coordination
+  main.js       # Entry point: assembles MVC and calls start()
+  domain/       # Pure entities: Solid, Profile, MeasureLine, CoordinateFrame,
+                #   ImportedMesh, AnnotatedLine/Region/Point, SpatialLink,
+                #   IFCClassRegistry, PlaceTypeRegistry
+  graph/        # Geometry graph primitives: Vertex, Edge, Face (ADR-012)
+  model/        # CuboidModel (pure geometry fns) + SceneModel (aggregate root)
+  core/         # Dependency-free infra: EventEmitter, StateMachine,
+                #   editorStates + states/ (operation FSM, ADR-039)
+  command/      # Undo/redo command classes — one per operation (ADR-022);
+                #   includes context-doc commands (ApproveDecision, DocEdit, …)
+  service/      # Application services: SceneService, SceneSerializer (v1.3),
+                #   Scene{Exporter,Importer}, CommandStack, BffClient,
+                #   ContextService, RoboticsService, GeometryEngine, …
+  layout/       # Layout DSL v1.0: schema consts, validator, compiler (ADR-045),
+                #   decompiler = scene→DSL inverse up to normal form (ADR-055)
+  context/      # Context DSL v0.4 pure layer: compiler/validator, DocBuilder,
+                #   RequirementGraph, PredicateEngine, CanonicalForm,
+                #   SynonymQuotient, intake/wizard/parametric catalogs
+                #   (ADR-046/049/050/051/052/056/058/063)
+  robotics/     # Pure robotics measurement: Kinematics (FK), Collision,
+                #   ComputeBackend (ADR-053)
+  engine/       # Committed wasm artifacts: wasm/ (Rust), robotics-wasm/ (C++)
+  schema/       # Conformance tests binding DSLs to schema/*.schema.json
+  view/         # Three.js + DOM views; paired `*Math.js` pure-computation
+                #   modules with unit tests; MotionGovernor + stage/flight/
+                #   celebration effects (ADR-065–068)
+  components/   # React 19 UI (Context panels, Grasp panel, Outliner, Chrome,
+                #   Feedback primitives, Onboarding tour, …)
+  store/        # uiStore (zustand) — React-side UI state bridge
+  theme/        # Design tokens + motion.js (single reduced-motion boundary)
+  controller/   # AppController + ContextController, GraspController,
+                #   MapModeController (map/), handler/, snap/, HitTestService,
+                #   SelectionManager, UIStateManager
+  types/        # Branded JSDoc coordinate types: WorldVector3 / LocalVector3
+  utils/        # Small pure helpers
+  workers/      # geometry.worker.js
 ```
 
 ---
 
-## Layer Responsibilities
+## Layer Responsibilities (frontend MVC)
 
-### Model
+Per-layer contracts (permitted/prohibited tables, ownership rules) live in
+`src/{domain,graph,model,core,service,view,controller}/README.md`. Summary:
 
-| Module | Responsibility |
-|--------|---------------|
-| `CuboidModel.js` | Pure functions only. No side effects. Geometry construction, normal computation, coordinate transforms. |
-| `SceneModel.js` | Holds domain state: `_objects` / `_activeId` / `_selectionMode` / `_editSubstate` / `_editSelection` |
+| Layer | Responsibility |
+|-------|---------------|
+| **Domain** | Pure entities; no Three.js / DOM / I/O. Depends on nothing. |
+| **Model** | `CuboidModel` pure geometry functions; `SceneModel` aggregate root holding `_objects` / `_links` / `_activeId` / mode state / `editSelection`. No Three.js. |
+| **Service** | The permitted side-effect boundary: CRUD + factories, observable domain events (ADR-013), BFF I/O, world-pose cache, lock ownership. |
+| **View** | Three.js + DOM side-effect sink. Pure companion `*Math.js` modules keep animation/layout math testable (pure/side-effect separation). |
+| **Components + store** | React 19 panels (Context, Grasp, Outliner, Chrome) fed via `src/store/uiStore.js` (zustand); bridged from the controller — React never reaches into the Model directly. |
+| **Controller** | Thin translation of input events into Model/Service calls and View updates; `setMode()` is the sole mode-transition entry point (ADR-008). Split by concern: App / Context / Grasp / MapMode + handler/, snap/. |
 
-`SceneModel` is a pure state container with no dependency on Three.js.
-
-### View
-
-| Module | Responsibility |
-|--------|---------------|
-| `SceneView` | Three.js initialisation (renderer / camera / OrbitControls / grid / lighting); `fitCameraToSphere()` |
-| `MeshView` | 1 Solid/Profile = 1 MeshView. Owns mesh / wireframe / highlight / snap display |
-| `CoordinateFrameView` | Axis arrows + origin sphere. Depth override (X-ray) when selected. `updateRotation(q)` |
-| `ImportedMeshView` | Thin-client triangle mesh. `updateGeometryBuffers(pos, nrm, idx)`. No edit geometry |
-| `MeasureLineView` | Dashed amber line + HTML distance label. Implements no-op MeshView interface |
-| `NodeEditorView` | SVG DAG panel. Draggable nodes, param editor, STEP import trigger, unit dialog |
-| `UIView` | Blender-style DOM UI. `setStatusRich()` / `updateNPanel()` / `showAddMenu()` / `enableSaveLoad()` |
-| `GizmoView` | Draws axis gizmo on a small canvas (top-right). Click to snap camera. |
-| `OutlinerView` | Left sidebar. Multi-level indentation for nested frames. Visibility toggle, delete, rename. |
-| `SpatialLinkView` | Dashed line + directional arrowhead between entity centroids. Color-coded by `linkType`. |
-| `AnnotatedLineView` | Polyline for map routes. Animated particle effect for Route type. |
-| `AnnotatedRegionView` | Filled polygon with rim ring. ShapeGeometry + polygon hole for correct non-circular shapes. |
-| `AnnotatedPointView` | Point marker with crosshair-pulse animation. |
-
-**Visual state ownership** (ADR-008 contract):
-
-| Element | Owner |
-|---------|-------|
-| `hlMesh.visible` | `setFaceHighlight()` |
-| `cuboid.visible` / `wireframe.visible` | `setVisible()` |
-| `boxHelper.visible` | `setObjectSelected()` |
-
-### Controller
-
-`AppController` responsibilities:
-
-- Bind and dispatch DOM events (`_bindEvents`)
-- Hold interaction state (drag, hover, grab, sketch phase, etc.)
-- Read/write `SceneModel` domain state
-- Call Views to update rendering
-- Animation loop (`start()`)
-- `setMode()` — sole entry point for mode transitions (ADR-008)
+**Visual state ownership** (ADR-008 contract): every visual flag has exactly
+one owner method — e.g. `hlMesh.visible` ← `setFaceHighlight()`,
+`cuboid.visible`/`wireframe.visible` ← `setVisible()`, `boxHelper.visible` ←
+`setObjectSelected()`. See `src/view/README.md`.
 
 ---
 
@@ -130,43 +126,61 @@ src/
 User input
     |
     v
-AppController (_onMouseDown / _onKeyDown etc.)
-    |-- Update SceneModel (addObject / setMode / setActiveId etc.)
-    |-- Call Views directly (meshView.updateGeometry / uiView.setStatus etc.)
+Controllers (AppController / ContextController / GraspController / MapModeController)
+    |-- Update SceneModel via SceneService (addObject / setMode / …)
+    |-- Call classic Views directly (meshView.updateGeometry / …)
+    |-- Push React UI state into uiStore (components re-render from the store)
     |
     v
-requestAnimationFrame loop
-    |-- SceneView.render()  → Three.js renders meshes
-    |-- GizmoView.update()  → Redraws gizmo
+requestAnimationFrame loop (AppController.start())
+    |-- SceneView.render()      → Three.js renders meshes
+    |-- per-frame sync          → mounted annotations, link views, stage/motion ticks
+    |-- GizmoView.update()      → redraws gizmo
 ```
 
-Views are updated only by the controller (Views do not reference the Model directly).
+Views are updated only by controllers (Views do not reference the Model).
+Service → Controller communication is event-driven (`objectAdded`,
+`objectRemoved`, `objectRenamed`, `activeChanged`, … — see `docs/EVENTS.md`).
+
+Full-stack path for grasp search (ADR-054/074/076):
+
+```
+UI (GraspController) → Layout DSL → BFF /api/grasp-search → core API /grasp-search
+                                   (contract schema, contractVersion guard)
+```
 
 ---
 
 ## SceneObject Structure
 
-The type (`instanceof`) determines available operations. There is no `dimension` field (removed in ADR-012).
+The type (`instanceof`) determines available operations. There is no
+`dimension` field (removed in ADR-012).
 
-**Solid** (3D, ADR-020):
+**Solid** (3D, ADR-020; data model redesigned in ADR-040):
 ```javascript
 {
-  id:       string,       // "obj_0_1234567890"
-  name:     string,       // "Cube", "Cube.001"
-  vertices: Vertex[8],    // LocalGeometry graph; get corners() → Vector3[]
-  faces:    Face[6],      // ADR-012
-  edges:    Edge[12],     // ADR-012
-  meshView: MeshView,
+  id:           string,        // "obj_0_1234567890"
+  name:         string,        // "Cube", "Cube.001"
+  description:  string,
+  ifcClass:     string|null,   // IFC4 class (ADR-025); drives label + tint (ADR-070)
+  // ADR-040 primary triple — world corners are derived:
+  _position:    Vector3,       // body-frame origin (world)
+  orientation:  Quaternion,    // body rotation (ADR-036/040)
+  localCorners: LocalVector3[8],
+  vertices:     Vertex[8],     // world corners, kept in sync (_rebuildWorldCorners)
+  faces:        Face[6],       // ADR-012
+  edges:        Edge[12],      // ADR-012
+  meshView:     MeshView,
 }
 ```
 
 **Profile** (2D, unextruded, ADR-020):
 ```javascript
 {
-  id:       string,       // "obj_0_1234567890"
-  name:     string,       // "Sketch.001"
-  vertices: Vertex[4],    // LocalGeometry graph (ADR-021)
-  edges:    Edge[4],      // LocalGeometry graph (ADR-021)
+  id:       string,
+  name:     string,           // "Sketch.001"
+  vertices: Vertex[4],        // LocalGeometry graph (ADR-021)
+  edges:    Edge[4],
   meshView: MeshView,
 }
 ```
@@ -176,91 +190,66 @@ The type (`instanceof`) determines available operations. There is no `dimension`
 {
   id:       string,
   name:     string,
-  vertices: Vertex[2],    // [start, end]; LocalGeometry graph (ADR-021)
+  vertices: Vertex[2],        // [start, end]
   edges:    Edge[1],
   meshView: MeasureLineView,
 }
 ```
 
-**CoordinateFrame** (Pose Graph node, ADR-018/019/020/033):
+**CoordinateFrame** (Pose Graph node, ADR-018/019/033/034/037):
 ```javascript
 {
   id:          string,
-  name:        string,    // "Interface Frame.001" — created with explicit user intent only (ADR-033)
-  parentId:    string,    // parent object/frame id; may be a Solid id (implicit local space)
-  translation: Vector3,   // local translation relative to parent
-  rotation:    Quaternion,// local rotation relative to parent (ROS RPY convention)
-  localOffset: LocalVector3[], // SE(3) handle points in local space — NOT corners (WorldVector3[])
+  name:        string,
+  parentId:    string,        // parent object/frame id; may be a Solid id
+  translation: Vector3,       // local translation relative to parent
+  rotation:    Quaternion,    // local rotation relative to parent (ROS RPY convention)
+  localOffset: LocalVector3[],// SE(3) handle points in local space (ADR-033)
   meshView:    CoordinateFrameView,
 }
 ```
-World pose is derived by `SceneService._worldPoseCache` (topological sort), not stored on the entity.
-Auto-generation of Origin frames on Solid creation was **abolished in ADR-033**; frames are created
-only when an explicit relationship (mount, assembly mate) requires them.
+World pose is derived by `SceneService._worldPoseCache` (topological sort),
+never stored on the entity. ADR-033 abolished auto-Origin frames; **ADR-037
+(body frame architecture) reinstated them** — `createSolid()` now creates a
+body `Origin` frame, matching the ROS/URDF link-frame model.
 
-**ImportedMesh** (thin client, read-only):
+**ImportedMesh** (thin client, read-only): `{ id, name, meshView }` —
+geometry streamed from the server via WebSocket; no local graph.
+
+**AnnotatedLine / AnnotatedRegion / AnnotatedPoint** (2D map annotations,
+ADR-029): LocalGeometry entities with a `placeType`
+(Route/Boundary/Zone/Hub/Anchor via `PlaceTypeRegistry`); created in Map Mode
+(ADR-031/072/073), undoable via `AddAnnotationCommand`.
+
+**SpatialLink** (typed semantic edge, ADR-030; two-axis since ADR-038/043):
 ```javascript
 {
-  id:      string,
-  name:    string,
-  meshView: ImportedMeshView, // geometry streamed from server via WebSocket
+  id:           string,
+  sourceId:     string,
+  targetId:     string,
+  jointType:    string|null,  // URDF-style kinematic axis: "fixed" | "revolute" | … (ADR-038)
+  semanticType: string,       // domain meaning: "mounts" | "fastened" | "aligned" |
+                              // "adjacent" | "above" | "contains" | "connects" |
+                              // "bounded_by" | "references" | "represents"
+  properties:   object,
 }
 ```
+The old single `linkType` field (scene ≤ v1.2) is migrated by
+`migrateLinkType()`. `SpatialLink` is not a `SceneObject` — it lives in
+`SceneModel._links` (with `_mountsIndex` / `_mountedByIndex` for O(1) lookup),
+serializes as `scene.links[]`, and renders per-frame via
+`SceneService._linkViews`.
 
-**AnnotatedLine / AnnotatedRegion / AnnotatedPoint** (2D map annotations, ADR-029):
-```javascript
-// AnnotatedLine — map route (polyline)
-{
-  id:        string,
-  name:      string,
-  placeType: string,     // "Route" | "Boundary" (PlaceTypeRegistry)
-  vertices:  Vertex[n],  // n ≥ 2; LocalGeometry interface
-  edges:     Edge[n-1],
-  meshView:  AnnotatedLineView,
-}
-// AnnotatedRegion — map zone (polygon)
-{
-  id:        string,
-  name:      string,
-  placeType: string,     // "Zone" (PlaceTypeRegistry)
-  vertices:  Vertex[n],  // n ≥ 3; closed polygon
-  edges:     Edge[n],
-  meshView:  AnnotatedRegionView,
-}
-// AnnotatedPoint — map landmark / hub
-{
-  id:        string,
-  name:      string,
-  placeType: string,     // "Hub" | "Anchor" (PlaceTypeRegistry)
-  vertices:  Vertex[1],  // single point; LocalGeometry interface
-  edges:     Edge[0],
-  meshView:  AnnotatedPointView,
-}
-```
-
-**SpatialLink** (typed semantic edge, ADR-030):
-```javascript
-{
-  id:       string,
-  sourceId: string,  // id of the source entity
-  targetId: string,  // id of the target entity
-  linkType: string,  // "mounts" | "fastened" | "aligned" | "adjacent" |
-                     // "above" | "contains" | "connects" | "references" | "represents"
-}
-```
-`SpatialLink` is not a `SceneObject` — it lives in `SceneModel._links` (keyed by id).
-It is serialized in `scene.links[]`. Managed via `SceneService.createSpatialLink()` /
-`detachSpatialLink()`. Rendered per-frame by `SceneService._linkViews`.
-
-`Profile.extrude(height)` does not mutate the Profile; it returns a new `Solid`.
-`SceneService.extrudeSketch(id, height)` replaces the Profile with the Solid in the scene.
+`Profile.extrude(height)` does not mutate the Profile; it returns a new
+`Solid`. `SceneService.extrudeSketch(id, height)` swaps the entities and emits
+the lifecycle events (delete → add).
 
 ---
 
 ## Coordinate System
 
-**ROS world frame (+X forward, +Y left, +Z up)**. Right-handed. Three.js `camera.up = (0,0,1)`.
-XY plane (Z=0) is the ground plane.
+**ROS world frame (+X forward, +Y left, +Z up)**. Right-handed. Three.js
+`camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
 ```
       6─────7
@@ -271,16 +260,22 @@ XY plane (Z=0) is the ground plane.
     1─────0
 ```
 
+Coordinate spaces are statically distinguished by branded JSDoc types
+(`WorldVector3` / `LocalVector3`, `src/types/spatial.js`) enforced by
+`pnpm typecheck` (ADR-021 Phase 3).
+
 ---
 
 ## Domain Model — Entity Taxonomy (ADR-020/021)
 
-Entities fall into two graphs: **Boundary Graph** (local geometry) and **Pose Graph** (spatial relationships).
-Type (`instanceof`) determines behaviour; there is no `dimension` field.
+Entities fall into two graphs: **Boundary Graph** (local geometry) and
+**Pose Graph** (spatial relationships). Type (`instanceof`) determines
+behaviour.
 
 ### Boundary Graph — LocalGeometry interface (ADR-021)
 
-All local-geometry entities share `vertices[]`, `edges[]`, `faces[]` and `corners` / `move()`:
+All local-geometry entities share `vertices[]`, `edges[]`, `faces[]` and
+`corners` / `move()`:
 
 | Dimension | Entity | Creating verb | vertices | edges | faces |
 |-----------|--------|---------------|----------|-------|-------|
@@ -292,152 +287,96 @@ All local-geometry entities share `vertices[]`, `edges[]`, `faces[]` and `corner
 | 2D | `AnnotatedPoint` | **Map Mode**: hub/anchor click | 1 | 0 | 0 |
 | 3D | `Solid` | **Extrude**: `Profile.extrude(h)` → new Solid | 8 | 12 | 6 |
 
-Verbs do not mutate entities; they **return a new entity of higher dimension**.
-`SceneService` deletes the old entity and registers the new one under the same ID.
+Verbs do not mutate entities; they **return a new entity of higher
+dimension**. `SceneService` deletes the old entity and registers the new one
+under the same ID.
 
-### Pose Graph — CoordinateFrame (ADR-018/019/020)
+### Pose Graph — CoordinateFrame (ADR-018/019/033/037)
 
-`CoordinateFrame` is a named SE(3) node in a kinematic tree (not a LocalGeometry entity).
-- `parentId` links form the tree; depth-first topological sort propagates poses in one pass.
-- World pose is cached in `SceneService._worldPoseCache` — never stored on the entity.
-- Named frames on a geometry enable assembly-mate-style positioning (future: `matchedFrameId`).
+`CoordinateFrame` is a named SE(3) node in a kinematic tree (not a
+LocalGeometry entity). `parentId` links form the tree; depth-first topological
+sort propagates poses in one pass; world pose is cached in
+`SceneService._worldPoseCache`. Body frames (ADR-037) make the CF the primary
+entity with visual geometry attached — the ROS/URDF link model. Fastened
+chains propagate through CF links with cycle detection (ADR-035).
 
-### Semantic edges — SpatialLink (ADR-030)
+### Semantic edges — SpatialLink (ADR-030/038/043)
 
-`SpatialLink` is a directed, typed semantic edge between any two scene entities.
-It is not a `SceneObject` and has no geometry of its own.
-
-| Category | linkType values |
-|----------|----------------|
-| Geometric | `mounts` `fastened` `aligned` |
-| Topological | `adjacent` `above` `contains` `connects` |
-| Semantic | `references` `represents` |
-
-Links are stored in `SceneModel._links` (and `_mountsIndex` / `_mountedByIndex` for O(1)
-lookup). `SceneService._linkViews` renders each link as a dashed line + arrowhead per frame.
-Mounting (`mounts` link) positions an annotation relative to a `CoordinateFrame` host
-and updates per frame via `SceneService._updateMountedAnnotations()`.
+Directed, typed edge between any two scene entities, carrying an optional
+kinematic `jointType` (URDF taxonomy, ADR-038) and a mandatory
+`semanticType` (geometric / topological / semantic categories — see struct
+above). Mounting (`mounts`) positions an annotation relative to a
+`CoordinateFrame` host, updated per frame (ADR-032).
 
 ### Proxy entity — ImportedMesh
 
-`ImportedMesh` is a thin-client placeholder for server-evaluated geometry.
-It has no local vertex/edge/face graph; geometry lives on the server and is streamed via WebSocket.
-
-### Graph-based model (ADR-012)
-
-```
-Vertex  = { id, position: Vector3 }
-Edge    = { id, v0: Vertex, v1: Vertex }
-Face    = { id, vertices: Vertex[4], name, index }
-Solid   = { vertices: Vertex[8], faces: Face[6], edges: Edge[12], ... }
-Profile = { vertices: Vertex[4], edges: Edge[4], ... }
-MeasureLine = { vertices: Vertex[2], edges: Edge[1], ... }
-```
-
-`SceneModel.editSelection: Set<Vertex|Edge|Face>` holds the unified selection set.
+Thin-client placeholder for server-evaluated geometry (STEP import);
+geometry lives on the server and streams via WebSocket (ADR-017/027).
 
 ---
 
-## DDD Migration Roadmap
+## DSL / Contract Surface (wire rigor — PHILOSOPHY #29)
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| **Phase 0** | SceneModel as state container. AppController holds business logic. | Done 2026-03-20 |
-| **Phase 1** | New `Cuboid` / `Sketch` domain entities (ADR-009) | Done 2026-03-20 |
-| **Phase 2** | Domain entities own behaviour methods (ADR-010) | Done 2026-03-20 |
-| **Phase 3** | New `SceneService` (ApplicationService) (ADR-011) | Done 2026-03-20 |
-| **Phase 4** | Domain events — `SceneService` becomes Observable (ADR-013) | Done 2026-03-20 |
-| **Phase 5-1** | Added `Vertex` layer. `Cuboid.vertices: Vertex[8]` (ADR-012) | Done 2026-03-20 |
-| **Phase 5-2** | Status bar migrated to event-driven updates | Done 2026-03-20 |
-| **Phase 5-3** | `Edge` / `Face` layer, `dimension` removed, unified selection model foundation (ADR-012) | Done 2026-03-20 |
-| **Phase 6** | Sub-element selection (1/2/3 keys), Grab snap across all geometry (ADR-014) | Done 2026-03-20 |
-| **Phase 7** | Entity taxonomy redesign — `Cuboid`→`Solid`, `Sketch`→`Profile`; unified LocalGeometry interface for `MeasureLine`/`Profile`; `CoordinateFrame._worldPos` moved to `SceneService._worldPoseCache`; Euler convention corrected to ROS RPY (ADR-020, ADR-021) | Done 2026-03-26 |
-| **Phase 8** | Undo / Redo via Command Pattern — `CommandStack`, `MoveCommand`, `AddSolidCommand`, `DeleteCommand` (soft-delete), `ExtrudeSketchCommand`, `RenameCommand`, `FrameRotateCommand` (ADR-022) | Done 2026-03-27 |
-| **Phase 9** | Mobile UX — touch gesture model (single-finger orbit, long-press Grab), mobile toolbar fixed-slot layout, `_moreMenuBtn` header overflow fix (ADR-023, ADR-024) | Done 2026-03-29 |
-| **Phase 10** | IFC semantic classification — `IFCClassRegistry`, `SetIfcClassCommand`; N-panel class picker for Solid / ImportedMesh (ADR-025) | Done 2026-04-01 |
-| **Phase 11** | Lynch urban classification → `PlaceTypeRegistry`; `AnnotatedLine/Region/Point` entities; map toolbar; `SetPlaceTypeCommand` (ADR-026, superseded by ADR-029) | Done 2026-04-04 |
-| **Phase 12** | Wasm geometry engine — `GeometryEngine`, `occt-import-js`; COOP/COEP service worker; `SharedArrayBuffer` on GitHub Pages (ADR-027) | Done 2026-04-05 |
-| **Phase 13** | Anchored annotations scene graph — `AnnotatedPoint/Line/Region` can attach to `CoordinateFrame` hosts; `SceneService._mountsIndex` (ADR-028) | Done 2026-04-06 |
-| **Phase 14** | Coordinate space type safety — `WorldVector3` / `LocalVector3` branded JSDoc types; `tsconfig.json`; `pnpm typecheck` CI gate; `CoordinateFrame.localOffset` vs `Solid.corners` structural separation (ADR-021 Phase 3) | Done 2026-04-07 |
-| **Phase 15** | Spatial annotation system refactor — `UrbanPolyline/Polygon/Marker` → `AnnotatedLine/Region/Point`; `LynchClassRegistry` → `PlaceTypeRegistry`; categories Route/Boundary/Zone/Hub/Anchor (ADR-029 supersedes ADR-026) | Done 2026-04-08 |
-| **Phase 16** | SpatialLink — typed semantic edges; `SceneModel._links`; `CreateSpatialLinkCommand` / `DeleteSpatialLinkCommand`; `SpatialLinkView` dashed arrowhead; `L` key two-phase creation flow; Outliner badge; N-panel section; serialization v1.2 (ADR-030 Phases 1–4) | Done 2026-04-09 |
-| **Phase 17** | Map Mode interaction model — three-state `drawState` (idle/drawing/pending); naming-before-confirm; Mobile = single drag, PC = multi-click Line / drag Region / click Point; endpoint snapping PC-only 20 px; Route/Zone/Anchor visual overhaul (ADR-031) | Done 2026-04-11 |
-| **Phase 18** | Geometric host binding — `MountAnnotationCommand`; `SceneService._mountsIndex/_mountedByIndex`; per-frame `_updateMountedAnnotations()`; grab plane constraint to host XY; CoordinateFrame delete warning; long-press Mount/Unmount/Add Interface Frame (ADR-032 H-1 to H-6) | Done 2026-04-15 |
-| **Phase 19** | CoordinateFrame interface contract — auto-Origin abolished; frames created only on explicit user intent; `CoordinateFrame.localOffset` replaces `corners`; `_grabHandlesOf()` helper; `AddSolidCommand.undo()` hide-before-detach (ADR-033 C-3/C-4) | Done 2026-04-15 |
-| **Phase 20** | Node Editor topology editing — port drag-to-create; output port drag + temp dashed line + `onLinkRequested`; `showLinkTypePicker`; edge click select + Delete → `DeleteSpatialLinkCommand`; `_createSpatialLinkDirect()` shared method (ADR-030 Phase S-2) | Done 2026-04-16 |
-| **Phase 21** | MeasureLine Edit Mode (1D) — `setEndpointHover(index)` / `clearEndpointHover()`; `_enterEditMode1D()`; `editSubstate='1d'`; endpoint hover + camera-facing drag plane; post-hoc `createMoveCommand`; `canEdit` allows MeasureLine | Done 2026-04-17 |
-| **Phase 22** | External Layout API (ADR-045) — `src/layout/` pure-function layer (`LayoutDslSchema`, `LayoutValidator`, `LayoutCompiler`); Layout DSL v1.0 encodes 5W1H (ADR-044) as Why/constraints + How/strategy + What/entities; REST endpoints `POST /api/layout/compile` and `POST /api/layout/scenes`; CLI `compile`/`import`/`interpret` commands; `--ai` flag bridges Claude API → DSL (LLM generates DSL, not code); validation scenario `examples/factory_layout.json` (factory cell automation); Swagger spec updated at `GET /api/docs` | Done 2026-06-09 |
+All wires are either **contracted** (closed, versioned JSON Schema) or
+**explicitly declared uncontracted** (ADR-064 Phase 3):
 
----
+| Wire | Contract | Where |
+|------|----------|-------|
+| Layout DSL v1.0 | `schema/layout-1.0.schema.json` | authored / LLM-generated; compiled by `src/layout/LayoutCompiler.js` (ADR-045); inverse `LayoutDecompiler.js` round-trips scene → DSL up to normal form (ADR-055) |
+| Context DSL v0.4 | `schema/context-0.4.schema.json` | requirement context: Facts / Decisions / OpenQuestions / KPIs / regions / robotics predicates (ADR-046/049/053); compiles to Layout DSL |
+| Scene JSON v1.3 | `schema/scene-1.3.schema.json` | `SceneSerializer` round-trip; validated at BFF `/api/scenes` (ADR-064 Phase 3) |
+| BFF ⇄ core API | `vendor/grasp-contract` submodule | grasp search request/response + diagnostics; `contractVersion` guarded (ADR-074/079) |
+| ws geometry / import | declared uncontracted | declarations at `server/src/ws/sessionManager.js` / `server/src/routes/import.js` |
 
-## Layout API (ADR-045)
+Semantic validation stays in `src/layout/LayoutValidator.js` /
+`src/context/ContextValidator.js`; the JSON Schemas bind *shape* only.
 
-An external CLI and REST API for generating scenes from structured requirements, without a running browser session.
+### Layout API (ADR-045)
 
-### Data flow
+External CLI and REST API for generating scenes without a browser session:
 
 ```
-NL text (optional, --ai flag)
-    │  φ  Claude API → Layout DSL  (LLM generates DSL, never code — ADR-044 §Constraints)
+NL text (optional, --ai)
+    │  Claude API → Layout DSL   (LLM generates DSL, never code — ADR-044)
     ▼
-Layout DSL v1.0 JSON             ← SSOT; encodes 5W1H (ADR-044):
-    │                               Why   = constraints (semanticType, jointType)
-    │                               How   = strategy (linear/grid/stack/radial/manual)
-    │                               What  = entities (Solid dims, CF offsets, vertices)
-    │  compileLayout()  (pure function, src/layout/LayoutCompiler.js)
+Layout DSL v1.0 JSON             ← encodes 5W1H (ADR-044/052)
+    │  compileLayout()           (pure, src/layout/LayoutCompiler.js)
     ▼
-SceneSerializer v1.3 JSON        ← SceneImporter-compatible
-    │  importFromJson()  (existing, unchanged)
+Scene v1.3 JSON                  ← SceneImporter-compatible
+    │  importFromJson()
     ▼
 SceneService domain state        ← Solid / CoordinateFrame / SpatialLink
 ```
 
-### Key modules
+Endpoints: `POST /api/layout/compile`, `POST /api/layout/scenes`; CLI:
+`pnpm layout compile|import|interpret` (`--ai` bridges Claude API → DSL).
+Ref namespace for constraints: `"<ref>"` (entity), `"<ref>_origin"`
+(auto body frame, ADR-037), `"<frame.ref>"` (user-defined child CF).
 
-| Module | Responsibility |
-|--------|---------------|
-| `src/layout/LayoutDslSchema.js`       | Pure data: version constant, valid strategy/semanticType/jointType enums |
-| `src/layout/LayoutValidator.js`       | `validateLayoutDsl(dsl)` — pure computation, returns `{valid, errors[]}` |
-| `src/layout/LayoutCompiler.js`        | `compileLayout(dsl)` — pure computation, no Three.js/DOM; generates localCorners (CuboidModel ordering), auto-creates Origin CFs (ADR-037) |
-| `server/src/routes/layout.js`         | `POST /api/layout/compile` (stateless) and `POST /api/layout/scenes` (compile + DB save) |
-| `server/src/services/LayoutService.js`| Side-effects wrapper: calls `compileLayout()` then `sceneStore.createScene()` |
-| `cli/index.js` + `cli/commands/`      | `compile` / `import` / `interpret` commands; `--ai` flag calls Claude API |
+---
 
-### Ref namespace (constraints)
+## History
 
-Every Solid entity exposes three ref forms for use in `constraints[].source/target`:
-
-| Form | Resolves to |
-|------|-------------|
-| `"<ref>"` | The entity itself (Solid ID) |
-| `"<ref>_origin"` | Auto-generated Origin CF (ADR-037) |
-| `"<frame.ref>"` | User-defined child CF (from `entity.frames[]`) |
-
-### Usage
-
-```bash
-# Compile Layout DSL → SceneSerializer v1.3 (no BFF required)
-pnpm layout compile examples/factory_layout.json --pretty
-
-# Compile + persist to BFF DB
-pnpm layout import examples/factory_layout.json --api-url http://localhost:3001
-
-# NL → Layout DSL via Claude API → optional import
-ANTHROPIC_API_KEY=sk-... pnpm layout interpret "ロボット3台を1m間隔で配置" --ai
-
-# Swagger UI (BFF running)
-open http://localhost:3001/api/docs   # → Layout section
-```
+The DDD migration (Phases 0–22, 2026-03 → 2026-06: state container →
+entities → services → events → graph model → undo/redo → mobile → IFC → map
+annotations → wasm → spatial links → layout API) is recorded in the ADR index
+— the phase-by-phase table formerly kept here duplicated it and is retired.
+Canonical history: `git log` + `docs/adr/README.md`. Highlights since:
+Context DSL and requirement negotiation (ADR-046…052), robotics KPI methods
+(ADR-053), grasp search UI + backend co-location (ADR-054…061, 074…079),
+rigor retrofit / CI gates / schema promotion (ADR-064), motion & playfulness
+program (ADR-065…068, 080), UX parity pass (ADR-069…073).
 
 ---
 
 ## Related Documents
 
-- `docs/adr/README.md` — Architecture Decision Record index (ADR-001 … ADR-045)
-- `docs/adr/ADR-044-5w1h-function-mapping.md` — 5W1H homomorphism: NL → ExecutionPlan → Code
-- `docs/adr/ADR-045-external-layout-api.md` — Layout DSL, LayoutCompiler, CLI/REST API
-- `docs/STATE_TRANSITIONS.md` — Mode state transition details
-- `docs/ROADMAP.md` — BFF migration roadmap and feature backlog
-- `docs/CONCURRENCY.md` — Optimistic vs pessimistic locking strategy
-- `docs/CODE_CONTRACTS.md` — Coding rules derived from real bugs (index + detail files)
-- `docs/PHILOSOPHY.md` — Design principles distilled from post-mortems and ADRs
+- `docs/NAVIGATION.md` — keyword → "read first" index (+ design-change impact table)
+- `docs/adr/README.md` — ADR index (ADR-001 … ADR-080; searchable via `/adr <topic>`)
+- `docs/STATE_TRANSITIONS.md` — mode FSM, operation state machine (ADR-039), component lifecycles
+- `docs/SCREEN_DESIGN.md` / `docs/LAYOUT_DESIGN.md` — information architecture / UI layout
+- `docs/EVENTS.md` — domain events, keyboard/pointer events
+- `docs/CONCURRENCY.md` — optimistic vs pessimistic locking strategy
+- `docs/CODE_CONTRACTS.md` — coding rules derived from real bugs (index + detail files)
+- `docs/PHILOSOPHY.md` — design principles (digest: `.claude/rules/10-principles.md`)
+- `core/README.md` / `server/src/*/README.md` — backend layer documentation

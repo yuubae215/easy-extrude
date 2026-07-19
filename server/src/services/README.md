@@ -17,7 +17,7 @@ Files: `sceneStore.js`
 
 ## sceneStore.js — Public API
 
-All functions are `async` and must be `await`ed by callers (see MENTAL_MODEL §3.5).
+All functions are `async` and must be `await`ed by callers (see `docs/code_contracts/server_async.md`).
 
 | Function | Signature | Returns |
 |----------|-----------|---------|

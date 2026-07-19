@@ -45,7 +45,7 @@ Missing fields are initialised to empty defaults on create and update.
 | `POST` | `/step` | Parse an uploaded STEP file and return geometry buffers |
 
 The `/import/step` route is a REST alternative to the WebSocket `import.step` op.
-It uses `occt-import-js` for parsing (see MENTAL_MODEL §3.5 for geometry structure notes).
+It uses `occt-import-js` for parsing (see `docs/code_contracts/server_async.md` for geometry structure notes).
 
 ## Validation rules
 
