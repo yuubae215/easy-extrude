@@ -1,7 +1,8 @@
 # DSL Schemas — the shape contract for Layout DSL and Context DSL
 
 Closed, versioned JSON Schema artifacts for the two DSLs this repository
-declares as its public surface (CLAUDE.md「宣言とスキーマの層」). They give the
+declares as its public surface (CLAUDE.md §スコープ境界 — フロントレイヤの
+「公開スキーマ」). They give the
 Layout / Context DSL the same rigor grasp-contract received: a machine-checked
 shape contract with `additionalProperties:false` and a version field
 (ADR-064 Phase 2, PHILOSOPHY #29 — rigor is the default for every wire).

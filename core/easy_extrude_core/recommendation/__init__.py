@@ -1,4 +1,4 @@
-"""推薦/類似レーン (レイヤ B のコア実装)。ADR-077。
+"""推薦/類似レーン (バックエンドレイヤのコア実装)。ADR-077。
 
 public ADR-056 の決定論的出力 (canonical signature / structural diff / reconcile
 correspondence) の **上に乗り**、曖昧な要件文を仕様候補に対応づける等価性 *候補* を

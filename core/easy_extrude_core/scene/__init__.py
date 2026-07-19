@@ -1,4 +1,4 @@
-"""bin-picking シーン層 (レイヤ B のコア実装)。ADR-078。
+"""bin-picking シーン層 (バックエンドレイヤのコア実装)。ADR-078。
 
 フラットな `obstacles[]` 手書きリストの代わりに、シーンを **属性付きエンティティの集合**
 (`Scene` / `SceneEntity`) で表し、ある 1 ピックの target / obstacles を **属性から導出** する。
