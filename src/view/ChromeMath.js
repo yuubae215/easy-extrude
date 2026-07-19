@@ -104,6 +104,47 @@ export function exitMotion(reduced, duration = DURATION.toastOut) {
   return { animation: `eaChromeExit ${duration}ms ${EASING.out} both` }
 }
 
+/**
+ * Entry motion for a popover/menu container (AddMenu, ContextMenu,
+ * ModeDropdown, LinkTypePicker — ADR-080 Phase 1): a short scale-fade that
+ * GROWS FROM ITS ANCHOR, so the motion says "this menu came from where you
+ * acted" (Tier A — stopped, you could no longer tell where it grew from).
+ * The spring easing lands with a slight overshoot-settle. Visual only — the
+ * menu is interactive from the first frame (the animation never gates input).
+ * Reduced → `{}`: the menu simply appears (the information is its content).
+ *
+ * @param {boolean} reduced
+ * @param {string} [origin] CSS transform-origin naming the anchor side
+ * @returns {object} inline-style fragment
+ */
+export function popoverEnterMotion(reduced, origin = 'top left') {
+  if (reduced) return {}
+  return {
+    transformOrigin: origin,
+    animation: `eaPopoverEnter ${DURATION.popoverEnter}ms ${EASING.spring} both`,
+  }
+}
+
+/**
+ * Entry motion for ONE menu item: the shared `eaChromeEnter` slide-fade,
+ * offset by an equal-interval stagger so items cascade instead of appearing
+ * in lockstep (animation-fx quality gate 2 — no simultaneous motion).
+ * `both` holds opacity 0 through the delay; hit-testing is unaffected.
+ * Reduced → `{}` (all items simply present).
+ *
+ * @param {number} index 0-based item position (non-finite/negative → 0)
+ * @param {boolean} reduced
+ * @returns {object} inline-style fragment
+ */
+export function itemEnterMotion(index, reduced) {
+  if (reduced) return {}
+  const i = Number.isFinite(index) && index > 0 ? Math.floor(index) : 0
+  return {
+    animation: `eaChromeEnter ${DURATION.chromeEnter}ms ${EASING.out} both`,
+    animationDelay: `${i * DURATION.menuStagger}ms`,
+  }
+}
+
 /** Glow shadow at a given breathe intensity (0..1) — one shadow shape, one colour. */
 function breatheShadow(intensity) {
   const a = 0.12 + 0.26 * intensity
@@ -137,6 +178,10 @@ export const CHROME_CSS = `
 @keyframes eaChromeExit {
   from { opacity: 1; transform: none; }
   to   { opacity: 0; transform: translateY(5px); }
+}
+@keyframes eaPopoverEnter {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: none; }
 }
 @keyframes eaBreatheGlow {
   ${breatheGlowKeyframes()}

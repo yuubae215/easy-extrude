@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
+import { DURATION, EASING } from '../../theme/tokens.js'
 
 export function ContextMenu() {
   const contextMenu    = useUIStore(s => s.contextMenu)
   const hideContextMenu = useUIStore(s => s.actions.hideContextMenu)
+  const reduced = useReducedMotion()
   const ref = useRef(null)
 
   useEffect(() => {
@@ -46,6 +50,9 @@ export function ContextMenu() {
         paddingTop: '4px',
         paddingBottom: '4px',
         pointerEvents: 'auto',
+        // Grows toward the pressed entity: flipped above the press point the
+        // origin is the bottom edge, below it the top (Tier A, ADR-080)
+        ...popoverEnterMotion(reduced, top < contextMenu.y ? 'center bottom' : 'center top'),
       }}
     >
       {contextMenu.items.map((item, i) => (
@@ -66,6 +73,8 @@ export function ContextMenu() {
             fontSize: '14px',
             cursor: 'pointer',
             borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+            transition: `background ${DURATION.hover}ms ${EASING.out}`,
+            ...itemEnterMotion(i, reduced),
           }}
           onPointerEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
           onPointerLeave={e => { e.currentTarget.style.background = 'transparent' }}

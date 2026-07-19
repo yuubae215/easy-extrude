@@ -3687,6 +3687,9 @@ export class AppController {
       // Map Mode drawing-preview idle motion: cursor breathe + snap-ring
       // settle (ADR-072 refinement, Tier A — pure MapPreviewMath curves).
       this._mapModeCtrl.tick(t)
+      // Face-extrude growth-front glow decay (ADR-080 Phase 2, Tier A —
+      // the rim's lifetime is owned by the handler, not the governor).
+      this._faceExtrudeHandler.tick(t)
     }
     loop()
 

@@ -65,6 +65,8 @@ export const DURATION = Object.freeze({
   bootReveal:   1800, // ADR-067 boot camera fly-in (Tier D — one occasion per session)
   cameraFocus:   620, // ADR-068 focus/frame fly-to-selection (interruptible; user always wins)
   selectPulse:   360, // ADR-068 selection "tap" outline pulse (overlay-only, entity-sized)
+  popoverEnter:  150, // ADR-080 Phase 1 popover/menu scale-fade entry (Tier A)
+  menuStagger:    24, // ADR-080 Phase 1 per-item entry delay step (anti-lockstep)
 })
 
 /** CSS easing vocabulary for DOM animations. */

@@ -1,9 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
+import { DURATION, EASING } from '../../theme/tokens.js'
 
 export function AddMenu() {
   const addMenu    = useUIStore(s => s.addMenu)
   const hideAddMenu = useUIStore(s => s.actions.hideAddMenu)
+  const reduced = useReducedMotion()
   const ref = useRef(null)
 
   useEffect(() => {
@@ -44,6 +48,8 @@ export function AddMenu() {
         overflow: 'hidden',
         zIndex: 300,
         pointerEvents: 'auto',
+        // Grows from the click point (Tier A, ADR-080 Phase 1)
+        ...popoverEnterMotion(reduced, 'top left'),
       }}
     >
       <div style={{
@@ -68,6 +74,9 @@ export function AddMenu() {
             cursor: 'pointer',
             color: '#e8e8e8',
             fontSize: '13px',
+            transition: `background ${DURATION.hover}ms ${EASING.out}`,
+            // Staggered cascade — items never appear in lockstep (ADR-080)
+            ...itemEnterMotion(i, reduced),
           }}
           onPointerEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
           onPointerLeave={e => { e.currentTarget.style.background = 'transparent' }}

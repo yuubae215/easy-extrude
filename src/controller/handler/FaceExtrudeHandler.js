@@ -15,6 +15,8 @@ import * as THREE from 'three'
 import { Solid }                    from '../../domain/Solid.js'
 import { S_FACE_EXTRUDE }           from '../../core/editorStates.js'
 import { computeOutwardFaceNormal, collectSnapTargets } from '../../model/CuboidModel.js'
+import { ExtrudeFrontView }         from '../../view/ExtrudeFrontView.js'
+import { prefersReducedMotion }     from '../../theme/motion.js'
 
 // Snap distance threshold in world units.
 const SNAP_THRESHOLD = 0.15
@@ -58,6 +60,18 @@ export class FaceExtrudeHandler {
       /** @type {{position: THREE.Vector3, type: string}[]} All snap candidates from last trySnap(). */
       snapTargets:   [],
     }
+
+    /**
+     * Growth-front rim of the face being extruded (ADR-080 Phase 2, Tier A).
+     * Lifetime is owned HERE (start → confirm/cancel via _resetState) — a
+     * tracked persistent view, deliberately NOT a MotionGovernor transient.
+     * @type {ExtrudeFrontView|null}
+     */
+    this._front = null
+    /** Committed dist at the previous preview step (velocity derivation). */
+    this._lastDist = 0
+    /** performance.now() ms of the previous preview step, or null. */
+    this._lastMoveMs = null
   }
 
   // ── Convenience getters ───────────────────────────────────────────────────
@@ -128,6 +142,14 @@ export class FaceExtrudeHandler {
     // Collect snap targets from all other objects in the scene
     s.snapTargets = collectSnapTargets(ctrl._scene.objects, 'all', new Set([ctrl._scene.activeId]))
 
+    // Growth front: rim the face for the whole operation (reduced-motion is
+    // sampled once per spawn from the single boundary — per-spawn discipline).
+    this._front?.dispose()
+    this._front = new ExtrudeFrontView(ctrl._sceneView.scene, { reduced: prefersReducedMotion() })
+    this._front.update(s.savedCorners)
+    this._lastDist = 0
+    this._lastMoveMs = null
+
     ctrl._controls.enabled = false
     this.updateStatus()
     if (window.matchMedia('(pointer: coarse)').matches) ctrl._updateMobileToolbar()
@@ -146,6 +168,7 @@ export class FaceExtrudeHandler {
     obj.extrudeFace(s.face, s.savedLocalFaceCorners, s.localNormal, s.dist)
     obj.meshView.updateGeometry(obj.corners)
     obj.meshView.updateBoxHelper()
+    this._syncFront(s.dist)
   }
 
   /**
@@ -163,6 +186,7 @@ export class FaceExtrudeHandler {
     obj.extrudeFace(s.face, s.savedLocalFaceCorners, s.localNormal, dist)
     obj.meshView.updateGeometry(obj.corners)
     obj.meshView.updateBoxHelper()
+    this._syncFront(dist)
   }
 
   /**
@@ -306,9 +330,40 @@ export class FaceExtrudeHandler {
     return bestDist
   }
 
+  /**
+   * Per-frame hook from `AppController._animate`: lets the growth-front glow
+   * decay while the drag is still (P2 余韻). No-op outside face extrude.
+   * @param {number} t loop clock, seconds
+   */
+  tick(t) {
+    this._front?.tick(t)
+  }
+
   // ── Private ──────────────────────────────────────────────────────────────
 
+  /**
+   * Repositions the rim onto the face's current world corners and feeds the
+   * velocity of this preview step into the intensity dynamics.
+   * @param {number} dist the extrusion distance just applied
+   */
+  _syncFront(dist) {
+    if (!this._front) return
+    const s = this.state
+    if (s.face) this._front.update(s.face.vertices.map(v => v.position))
+    const now = performance.now()
+    if (this._lastMoveMs !== null) {
+      const dt = (now - this._lastMoveMs) / 1000
+      if (dt > 0) this._front.bump((dist - this._lastDist) / dt, dt)
+    }
+    this._lastDist = dist
+    this._lastMoveMs = now
+  }
+
   _resetState() {
+    this._front?.dispose()
+    this._front = null
+    this._lastDist = 0
+    this._lastMoveMs = null
     const s = this.state
     s.face                  = null
     s.savedCorners          = []

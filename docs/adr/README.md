@@ -91,6 +91,7 @@ This directory records the project's design decisions.
 | [ADR-077](ADR-077-recommendation-similarity-lane.md) | **推薦/類似レーン — 曖昧な対応づけを embeddings で propose/rank するのみ、等価性は決めない (ADR-056 の decide/propose 境界)** | Accepted (propose-only core + HTTP 境界 実装済) | 2026-06-23 | ADR-074, ADR-075, ADR-076, ADR-052, ADR-056 |
 | [ADR-078](ADR-078-bin-picking-scene-entities.md) | **bin-picking シーンのエンティティモデル — 障害物集合を属性 (static/dynamic) から導出、cone (許容角) と approach (進入角) を別軸に** | Accepted (実装済) | 2026-06-27 | ADR-074, ADR-075, ADR-076, ADR-077 |
 | [ADR-079](ADR-079-search-diagnostics-proof.md) | **判定の証明 (feasibility funnel + near-miss) を UX 資産として返す — ワイヤに載せるのはソルバが決定した事実だけ** | Accepted (実装済) | 2026-07-04 | ADR-074, ADR-075, ADR-076 |
+| [ADR-080](ADR-080-menu-choreography-extrude-front.md) | **残余モーション空白の被覆 — ポップオーバー入場振付 (ChromeMath 拡張) + 押し出し成長前線 (Tier A)** | Accepted (両 Phase 実装済) | 2026-07-19 | ADR-065, ADR-066, ADR-068 |
 
 ## How to Add a New ADR
 

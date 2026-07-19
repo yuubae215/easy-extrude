@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
+import { DURATION, EASING } from '../../theme/tokens.js'
 
 const SEMANTIC_META = {
   mounts:     { color: '#22C55E', desc: "Source vertices live in host frame's local space" },
@@ -17,6 +20,7 @@ const SEMANTIC_META = {
 export function LinkTypePicker() {
   const linkTypePicker    = useUIStore(s => s.linkTypePicker)
   const hideLinkTypePicker = useUIStore(s => s.actions.hideLinkTypePicker)
+  const reduced = useReducedMotion()
   const ref = useRef(null)
 
   useEffect(() => {
@@ -54,6 +58,8 @@ export function LinkTypePicker() {
         overflow: 'hidden',
         zIndex: 200,
         pointerEvents: 'auto',
+        // Grows from the link endpoint the user just dropped (Tier A, ADR-080)
+        ...popoverEnterMotion(reduced, 'top left'),
       }}
     >
       <div style={{
@@ -79,6 +85,8 @@ export function LinkTypePicker() {
               gap: '8px',
               padding: '7px 10px',
               cursor: 'pointer',
+              transition: `background ${DURATION.hover}ms ${EASING.out}`,
+              ...itemEnterMotion(i, reduced),
             }}
             onPointerEnter={e => { e.currentTarget.style.background = '#333' }}
             onPointerLeave={e => { e.currentTarget.style.background = 'transparent' }}

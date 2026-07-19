@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
+import { DURATION, EASING } from '../../theme/tokens.js'
 
 const MODES = [
   { label: 'Object Mode', value: 'object', hint: 'Tab' },
@@ -18,6 +21,7 @@ export function ModeDropdown() {
   const callbacks = useUIStore(s => s.callbacks)
   const [open, setOpen]   = useState(false)
   const [dropPos, setDropPos] = useState({ top: 42, left: 0 })
+  const reduced = useReducedMotion()
   const btnRef = useRef(null)
 
   // Close on outside click
@@ -89,10 +93,12 @@ export function ModeDropdown() {
             minWidth:   '140px',
             boxShadow:  '0 4px 12px rgba(0,0,0,0.5)',
             pointerEvents: 'auto',
+            // Drops from the trigger button (Tier A, ADR-080 Phase 1)
+            ...popoverEnterMotion(reduced, 'top left'),
           }}
           role="listbox"
         >
-          {MODES.map(({ label, value, hint }) => (
+          {MODES.map(({ label, value, hint }, i) => (
             <div
               key={value}
               role="option"
@@ -107,6 +113,8 @@ export function ModeDropdown() {
                 display:        'flex',
                 justifyContent: 'space-between',
                 alignItems:     'center',
+                transition:     `background ${DURATION.hover}ms ${EASING.out}`,
+                ...itemEnterMotion(i, reduced),
               }}
               onMouseEnter={e => { e.currentTarget.style.background = '#4a4a4a' }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
