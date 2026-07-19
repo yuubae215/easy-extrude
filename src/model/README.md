@@ -30,7 +30,7 @@ export function computeGeometry(params) {
 
 - `SceneModel` is the single canonical collection of domain entities
 - It is the canonical source for mode and substate (`selectionMode`, `editSubstate`)
-- State transitions that bypass `setMode()` are forbidden (see `MENTAL_MODEL.md` §1)
+- State transitions that bypass `setMode()` are forbidden (see `docs/code_contracts/architecture.md`, PHILOSOPHY #1)
 
 ## Concurrency Note
 

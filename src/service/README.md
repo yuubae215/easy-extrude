@@ -3,7 +3,20 @@
 **Responsibility**: Entity persistence (CRUD), cross-domain coordination,
 BFF communication, and lock management.
 
-Files: `SceneService.js`, `SceneSerializer.js`, `BffClient.js`
+Files: `SceneService.js`, `SceneSerializer.js`, `SceneExporter.js`,
+`SceneImporter.js`, `CommandStack.js`, `BffClient.js`, `ContextService.js`,
+`RoboticsService.js`, `GeometryEngine.js`, `ConstraintSolver.js`,
+`SemanticInferencer.js`, `RoleService.js`
+
+| Service | Responsibility |
+|---------|---------------|
+| `SceneService` | Entity factories + CRUD, observable domain events (ADR-013), world-pose cache, link views |
+| `SceneSerializer` / `Exporter` / `Importer` | Scene ⇄ JSON v1.3 round-trip (schema `schema/scene-1.3.schema.json`) |
+| `CommandStack` | Undo/redo stack (ADR-022) + landing listener (ADR-065) |
+| `BffClient` | REST + WebSocket client for the BFF (incl. grasp search — ADR-054) |
+| `ContextService` | Canonical context doc lifecycle; scene as derived projection (ADR-050/052) |
+| `RoboticsService` | Measurement orchestration: FK reach / collision bake → doc facts (ADR-053) |
+| `GeometryEngine` | Rust-wasm geometry engine binding (ADR-027) |
 
 ---
 
@@ -50,7 +63,8 @@ See `docs/CONCURRENCY.md` §3–4.
 
 ## Entity Factory Ownership (ADR-011)
 
-`new Cuboid()` / `new Sketch()` / `new ImportedMesh()` must always go through
-factory methods in `SceneService` (`createBox`, `createSketch`,
-`createImportedMesh`). Controllers and Views must never call `new` directly on
+`new Solid()` / `new Profile()` / `new ImportedMesh()` etc. must always go
+through factory methods in `SceneService` (`createSolid`, `createProfile`,
+`createImportedMesh`, `createCoordinateFrame`, `createAnnotatedLine/Region/Point`,
+`createSpatialLink`). Controllers and Views must never call `new` directly on
 domain entities.

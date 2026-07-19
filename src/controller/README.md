@@ -4,7 +4,12 @@
 `SceneService` / `SceneModel` calls and `View` updates. The Controller is
 intentionally thin — business logic must not live here.
 
-Files: `AppController.js`
+Files: `AppController.js` (3D editor), `ContextController.js` (requirement
+context — ADR-050), `GraspController.js` (grasp search FSM — ADR-057),
+`ContextDemoController.js` (demo layer — ADR-047), `map/MapModeController.js`
+(2D map mode — ADR-031/072), `handler/` (per-operation handlers, e.g.
+`GrabOperationHandler`), `snap/` (snap logic), `HitTestService.js`,
+`SelectionManager.js`, `UIStateManager.js`
 
 ---
 
@@ -17,11 +22,11 @@ logic, domain calculations, or rendering code.
 | Permitted | Prohibited |
 |-----------|------------|
 | Reading `SceneModel` state | Geometry computation (belongs in `CuboidModel`) |
-| Calling `SceneService` factory/CRUD methods | `new Cuboid()` / `new Sketch()` directly |
+| Calling `SceneService` factory/CRUD methods | `new Solid()` / `new Profile()` directly |
 | Calling `View` render/update methods | `THREE.*` object creation or manipulation |
 | Subscribing to `SceneService` events | Duplicating domain logic from entities |
 
-## Mode Transition Contract (ADR-008, MENTAL_MODEL §1)
+## Mode Transition Contract (ADR-008, `docs/code_contracts/architecture.md`)
 
 `AppController.setMode(mode)` is the **single entry point** for all mode
 transitions. Before switching the active object, always call `setMode('object')`
@@ -60,8 +65,8 @@ if (obj instanceof ImportedMesh || obj instanceof MeasureLine) {
 }
 ```
 
-See `MENTAL_MODEL.md §1` for the full list of read-only entity types and
-required feedback messages.
+See `docs/code_contracts/architecture.md` for the full list of read-only
+entity types and required feedback messages.
 
 ## References
 
@@ -69,5 +74,5 @@ required feedback messages.
 - ADR-011 — Service as entity factory (Controller must not call `new` on entities)
 - ADR-013 — Observable pattern (Controller↔Service event wiring)
 - `docs/ARCHITECTURE.md` — Layer dependency diagram
-- `docs/STATE_TRANSITIONS.md` — Mode transition diagram
-- `MENTAL_MODEL.md §1–2` — Mode transition and interaction rules
+- `docs/STATE_TRANSITIONS.md` — Mode transition diagram (+ operation FSM, ADR-039)
+- `docs/code_contracts/architecture.md` / `interaction.md` — Mode transition and interaction rules

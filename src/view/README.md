@@ -2,8 +2,17 @@
 
 **Responsibility**: Rendering, Three.js scene management, DOM UI.
 
-Files: `MeshView.js`, `ImportedMeshView.js`, `SceneView.js`, `UIView.js`,
-`OutlinerView.js`, `GizmoView.js`, `NodeEditorView.js`
+Representative files: per-entity views (`MeshView`, `ImportedMeshView`,
+`CoordinateFrameView`, `MeasureLineView`, `SpatialLinkView`,
+`Annotated{Line,Region,Point}View`), scene infrastructure (`SceneView`,
+`SceneStage`, `GizmoView`), DOM UI (`UIView`, `OutlinerView`,
+`NodeEditorView`, bridges to React), and the motion system
+(`MotionGovernor`, `CameraFlight`, `BootReveal`, effect views — ADR-065…068).
+
+**`*Math.js` companion pattern** (pure/side-effect separation): every
+nontrivial view has a paired pure-computation module with unit tests
+(`StageMath`, `CameraMath`, `FeedbackMath`, `GraspGhostMath`, …). All
+animation/layout math lives there; the view applies results to Three.js/DOM.
 
 ---
 
@@ -13,11 +22,11 @@ The View layer is the designated home for Three.js and DOM side effects.
 
 | Permitted | Prohibited |
 |-----------|------------|
-| Direct `THREE.*` manipulation | Domain logic (re-implementing `Cuboid.extrude()`, etc.) |
+| Direct `THREE.*` manipulation | Domain logic (re-implementing `Profile.extrude()`, etc.) |
 | `document.*` operations | Direct writes to `SceneModel` |
 | Holding visual state | Calling Service methods directly (go through Controller) |
 
-## Visual State Ownership (MENTAL_MODEL §1)
+## Visual State Ownership (PHILOSOPHY #4, `docs/code_contracts/architecture.md`)
 
 Each visual flag has **exactly one mutator method**:
 
@@ -29,13 +38,13 @@ Each visual flag has **exactly one mutator method**:
 
 Never set these flags outside their designated owner.
 
-## Memory Management Symmetry (MENTAL_MODEL §4)
+## Memory Management Symmetry (`docs/code_contracts/memory_management.md`)
 
 Every `scene.add()` and `new THREE.BufferGeometry()` in the constructor must
 have a matching `scene.remove()` and `.dispose()` in `dispose()`. Add teardown
 in the same commit as the allocation.
 
-## Mobile UI Stability (MENTAL_MODEL §3)
+## Mobile UI Stability (`docs/code_contracts/ui_layout.md`)
 
 - The visible button set is fixed per mode. Use `disabled` instead of hiding
   buttons that are temporarily unavailable.

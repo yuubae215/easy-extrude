@@ -56,4 +56,4 @@ index (e.g. `MeshView.setFaceHighlight(face.index, ...)`).
 - ADR-012 — Graph-based geometry model (Phases 5-1 through 5-3)
 - ADR-021 — Unified LocalGeometry graph interface (MeasureLine, Profile, Solid)
 - `src/domain/README.md` — Entity capability contracts
-- `MENTAL_MODEL.md §1` — Entity capability contracts and `instanceof` guards
+- `docs/code_contracts/architecture.md` — Entity capability contracts and `instanceof` guards

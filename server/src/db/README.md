@@ -19,7 +19,7 @@ All other server layers that need DB access must import `db` from here.
 
 ## Key Contracts
 
-- **Journal mode**: `PRAGMA journal_mode = WAL` **must** execute as a standalone `db.execute()` call *before* any `db.batch()`. Running it inside `batch()` causes a `LibsqlBatchError` (see MENTAL_MODEL §3.5).
+- **Journal mode**: `PRAGMA journal_mode = WAL` **must** execute as a standalone `db.execute()` call *before* any `db.batch()`. Running it inside `batch()` causes a `LibsqlBatchError` (see `docs/code_contracts/server_async.md`).
 - **Schema migration**: DDL changes go in `db.batch()` after the PRAGMA call. Use `CREATE TABLE IF NOT EXISTS` to make startup idempotent.
 - **Data directory**: The database file is created at `server/data/scenes.db`. The directory is created automatically via `mkdirSync` at startup.
 

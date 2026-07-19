@@ -56,6 +56,19 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 - **CLI** — compile a Layout DSL file to a loadable scene JSON, or save it directly to the BFF database; no browser required
 - **REST API** — `POST /api/layout/compile` and `POST /api/layout/scenes`; Swagger docs at `GET /api/docs`
 - **NL → Layout DSL via Claude API** — pass `--ai` to the `interpret` command; the LLM generates Layout DSL (never executable code), then `validateLayoutDsl()` catches any schema violations before the scene is built
+- **Scene ⇄ DSL round-trip** — `LayoutDecompiler` inverts a scene back to Layout DSL up to a named normal form (ADR-055)
+
+### Requirement Context & Negotiation (ADR-046 … 052)
+- **Context DSL** — capture requirements as Facts, Decisions, Open Questions, KPIs and admissible regions *before* geometry exists; the scene is a derived projection of the approved context
+- **Multiple intake paths** — blank doc, template gallery, fork-&-tweak seeded examples, guided wizard, parametric 3D assets, and conservative NL → Fact extraction
+- **Conflict negotiation** — conflict matrix, negotiation clusters, per-actor admissible-region ghosts in 3D; approvals are undoable commands
+- **Why provenance** — every scene entity can be traced back through the 5W1H chain to the requirements that justify it (Why breadcrumb / Why tree)
+
+### Robotics & Grasp Search (ADR-053, ADR-074 … 079)
+- **Robotics KPI checks** — URDF-style joint taxonomy, forward kinematics reach sampling, AABB collision baking; results are baked into the context doc as measured facts
+- **C++/Rust wasm engines** — KDL + ruckig compiled to WebAssembly for kinematics/trajectory; Rust wasm geometry engine
+- **Grasp search backend** — Python judgement engine (candidate generation → reach/IK/collision filters → weighted scoring) behind a FastAPI core API, proxied by the BFF under a versioned JSON-Schema contract (`vendor/grasp-contract`); rejection-funnel diagnostics surface *why* candidates were rejected
+- **Propose-only recommendation lane** — embedding similarity only proposes and ranks; deterministic equivalence stays in the frontend core (ADR-056/077)
 
 ### Selection & Navigation
 - **Edit Mode** (`Tab`) — sub-element selection: Vertex (`1`), Edge (`2`), Face (`3`)
@@ -65,8 +78,12 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 
 ### Mobile-First
 - **Mobile Toolbar** — fixed floating buttons adapt to the current mode; slot positions never shift
-- **Touch Gestures** — tap to select, one-finger drag to orbit, long-press for context menu (Grab / Duplicate / Rename / Delete)
+- **Touch Gestures** — tap to select, one-finger drag to orbit, two-finger pinch-zoom (incl. Map Mode), long-press for context menu (Grab / Duplicate / Rename / Delete)
 - **Pointer Events API** — all interactions use unified Pointer Events; no separate touch/mouse branches
+
+### Polish & Motion (ADR-065 … 068, 080)
+- **Governed motion system** — every effect declares its tier (Fact / Affordance / Delight), runs under a `MotionGovernor` budget, and degrades under `prefers-reduced-motion`
+- **Camera focus flight** (`F` / `Home` / double-click), ambient viewport stage with boot reveal, entity lifecycle voxel bursts, onboarding tour
 
 ---
 
@@ -74,8 +91,9 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) ≥ 18
-- [pnpm](https://pnpm.io/) ≥ 9
+- [Node.js](https://nodejs.org/) ≥ 20 (CI runs on 22)
+- [pnpm](https://pnpm.io/) ≥ 10
+- [uv](https://docs.astral.sh/uv/) — only for the optional Python grasp-search core API
 
 ### Run locally
 
@@ -92,6 +110,16 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ```bash
 pnpm dev:all   # starts both the BFF (port 3001) and the Vite dev server
+```
+
+A fresh clone needs the contract submodule: `git submodule update --init --recursive`.
+
+### Full stack with grasp search (Python core API)
+
+```bash
+cd core && uv sync --extra dev --extra serve       # first time only
+cd core && uv run python -m easy_extrude_core.api  # core API on :4001 (BFF upstream default)
+pnpm test:core                                     # core pytest incl. contract conformance
 ```
 
 ### Layout API — generate scenes from the CLI
@@ -135,6 +163,7 @@ pnpm preview   # preview the build locally
 | `S` | Toggle Stack mode during Grab |
 | `Shift+D` | Duplicate selected object |
 | `X` / `Delete` | Delete selected object |
+| `F` / `Home` | Focus camera on selection (flight) |
 | `E` | Extrude selected face (Edit Mode 3D) |
 | `1` / `2` / `3` | Vertex / Edge / Face sub-element (Edit Mode 3D) |
 | `Enter` | Confirm operation |
@@ -148,18 +177,21 @@ pnpm preview   # preview the build locally
 
 ## Architecture
 
-easy-extrude follows a strict **MVC + Domain-Driven Design** layering. The domain layer is pure — it holds no Three.js, no DOM, no I/O.
+easy-extrude is a **three-layer monorepo** — frontend (`src/`) → neutral contract (`vendor/grasp-contract`) → backend (`server/` BFF + `core/` Python judgement engine). The frontend follows a strict **MVC + Domain-Driven Design** layering. The domain layer is pure — it holds no Three.js, no DOM, no I/O.
 
 ```
 src/
-├── domain/          # Pure entities — Solid, Profile, MeasureLine, CoordinateFrame, …
+├── domain/          # Pure entities — Solid, Profile, CoordinateFrame, SpatialLink, annotations, …
 ├── graph/           # Geometry graph — Vertex, Edge, Face
-├── layout/          # Pure computation — LayoutDslSchema, LayoutValidator, LayoutCompiler (ADR-045)
 ├── model/           # Aggregate root (SceneModel) + pure geometry computation (CuboidModel)
 ├── command/         # Undo/redo commands — one class per operation
-├── service/         # Application services — SceneService, Serializer, Exporter, BffClient
-├── view/            # Three.js + DOM views — SceneView, MeshView, UIView, OutlinerView, …
-└── controller/      # AppController — thin input → Model/Service/View coordination
+├── service/         # Application services — SceneService, ContextService, RoboticsService, BffClient, …
+├── layout/          # Layout DSL — validator, compiler (ADR-045), decompiler (ADR-055)
+├── context/         # Context DSL — requirement compiler, predicate engine, canonical forms (ADR-046…)
+├── robotics/        # Pure FK / collision measurement (ADR-053)
+├── view/            # Three.js + DOM views, paired pure *Math.js modules, MotionGovernor
+├── components/      # React 19 UI panels (Context, Grasp, Outliner, Chrome, …) + zustand store/
+└── controller/      # App / Context / Grasp / MapMode controllers — thin coordination
 ```
 
 **Key invariants:**
@@ -167,6 +199,7 @@ src/
 - Controllers are thin — no business logic
 - Every visual flag has exactly one owner method
 - Every async call is awaited at its layer
+- The frontend never solves constraints (IK / collision / reach) — solvers live in `core/`, reached only through the versioned contract
 
 For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the [ADR log](docs/adr/).
 
@@ -177,15 +210,20 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | Technology | Role |
 |-----------|------|
 | [Three.js](https://threejs.org/) 0.172 | 3D rendering, OrbitControls |
+| [React](https://react.dev/) 19 + [zustand](https://zustand.docs.pmnd.rs/) | UI panels (Context, Grasp, Outliner, Chrome) |
 | [Vite](https://vitejs.dev/) 6 | Bundler & dev server |
 | [pnpm](https://pnpm.io/) | Package manager (workspace) |
 | Rust + WebAssembly | High-performance geometry engine (`wasm-engine`) |
-| Node.js / Express | BFF server — scene persistence, geometry service |
+| C++ → WebAssembly (Emscripten) | KDL kinematics + ruckig trajectories (`robotics-wasm`) |
+| Node.js / Express | BFF server — scene persistence, geometry service, grasp proxy |
+| Python / [FastAPI](https://fastapi.tiangolo.com/) / [uv](https://docs.astral.sh/uv/) | Grasp-search judgement engine (`core/`) |
+| JSON Schema / [ajv](https://ajv.js.org/) | DSL & wire contracts (`schema/`, `vendor/grasp-contract`) |
 | SQLite / libsql | Server-side scene storage |
 | WebSocket (`ws`) | Real-time geometry streaming (BFF ↔ frontend) |
 | [occt-import-js](https://github.com/kovacsv/occt-import-js) | Server-side STEP tessellation |
 | [Claude API](https://www.anthropic.com/) | NL → Layout DSL (`interpret --ai`, optional) |
-| GitHub Actions | CI/CD → auto deploy to GitHub Pages |
+| [Playwright](https://playwright.dev/) | E2E smoke tests (ADR-064) |
+| GitHub Actions | CI gate + auto deploy to GitHub Pages |
 
 ---
 
@@ -193,7 +231,8 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 | Document | Contents |
 |----------|----------|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer responsibilities, DDD design, coordinate system |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Monorepo layers, MVC/DDD design, entity taxonomy, coordinate system |
+| [`docs/NAVIGATION.md`](docs/NAVIGATION.md) | Keyword → "read first" index across all docs and ADRs |
 | [`docs/STATE_TRANSITIONS.md`](docs/STATE_TRANSITIONS.md) | Mode FSM, mobile input flow, toolbar states |
 | [`docs/SCREEN_DESIGN.md`](docs/SCREEN_DESIGN.md) | Information architecture per mode |
 | [`docs/LAYOUT_DESIGN.md`](docs/LAYOUT_DESIGN.md) | UI layout, z-index, responsive breakpoints, toolbar slots |
@@ -201,9 +240,9 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Feature backlog and completed milestones |
 | [`docs/CODE_CONTRACTS.md`](docs/CODE_CONTRACTS.md) | Coding rules derived from real bugs |
 | [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) | Design principles distilled from post-mortems |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADR-001 … ADR-045) |
-| [`docs/adr/ADR-045-external-layout-api.md`](docs/adr/ADR-045-external-layout-api.md) | Layout DSL schema, LayoutCompiler algorithm, CLI/REST design |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (ADR-001 … ADR-080) |
 | [`docs/CONCURRENCY.md`](docs/CONCURRENCY.md) | Optimistic vs. pessimistic locking strategy |
+| [`core/README.md`](core/README.md) | Python grasp-search engine and core API |
 
 ---
 

@@ -61,4 +61,4 @@ Clients must reconnect and send `session.resume` to restore graph state from the
 
 After every mutating op, `_autosave(session)` fire-and-forgets a DB write of the current
 graph state back to the scene row. Errors are logged but never propagated to the client.
-See MENTAL_MODEL §3.5 for the async/await contract.
+See `docs/code_contracts/server_async.md` for the async/await contract.
