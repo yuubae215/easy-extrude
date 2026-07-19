@@ -580,7 +580,7 @@ Bugs are also tracked on GitHub Issues #69–#73.
 
 ## Completed phases
 
-Full implementation history in `docs/SESSION_LOG.md`. Detailed design rationale in the respective ADRs.
+Full implementation history in git log. Detailed design rationale in the respective ADRs.
 
 | Feature | Completion | ADR / Notes |
 |---------|------------|-------------|

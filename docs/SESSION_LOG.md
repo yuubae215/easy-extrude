@@ -1,6 +1,8 @@
-# Session Log
+# Session Log — RETIRED (frozen archive)
 
-Full history of all development sessions. See `CLAUDE.md` for the 3 most recent entries.
+> **2026-07-19 をもって運用終了。以後追記しない。**
+> セッション履歴の正準は git log、設計判断は `docs/adr/`、導出ルールは
+> `docs/CODE_CONTRACTS.md` / `docs/PHILOSOPHY.md`。このファイルは過去分の凍結アーカイブ。
 
 ---
 
