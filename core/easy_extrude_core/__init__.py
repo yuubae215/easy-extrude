@@ -1,4 +1,4 @@
-"""easy-extrude コア (レイヤ B)。把持姿勢探索の判定エンジン。
+"""easy-extrude コア (バックエンドレイヤ)。把持姿勢探索の判定エンジン。
 
 - `easy_extrude_core.contract`: BFF <-> コアAPI の I/O 契約の型 (ADR-074)。
 - `easy_extrude_core.engine`: 段階0 判定エンジン (ADR-075)。離散候補 + 安い順フィルタ
