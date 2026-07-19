@@ -735,6 +735,9 @@ export class AppController {
     // ── Map Mode entry ────────────────────────────────────────────────────
     uiView.onMapModeClick(() => this._mapModeCtrl.enter())
 
+    // ── Robot skeleton visibility (grasp-search verification aid) ──────────
+    uiView.onRobotToggle((visible) => this._sceneView.robotStage.setVisible(visible))
+
     // ── CF Link Network Overlay ───────────────────────────────────────────
     this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
     this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)

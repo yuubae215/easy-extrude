@@ -279,6 +279,15 @@ export class UIViewBridge {
     useUIStore.getState().actions.registerCallback('onNodeEditorToggle', wrapped)
   }
 
+  onRobotToggle(cb) {
+    const wrapped = () => {
+      const visible = !useUIStore.getState().robotVisible
+      useUIStore.setState({ robotVisible: visible })
+      cb(visible)
+    }
+    useUIStore.getState().actions.registerCallback('onRobotToggle', wrapped)
+  }
+
   onExportJson(cb) {
     useUIStore.getState().actions.registerCallback('onExportJson', cb)
   }

@@ -6,6 +6,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
+import { RobotStage } from './RobotStage.js'
 import { focusPose as computeFocusPose } from './CameraMath.js'
 
 export class SceneView {
@@ -46,6 +47,9 @@ export class SceneView {
     // Ambient stage dressing: gradient backdrop, depth fog, floor glow,
     // drifting dust, rim light (ADR-067 — Tier D; persistent view owned here).
     this.stage = new SceneStage(this.scene)
+    // grasp-search verification aid: a fixed-pose robot skeleton rendered
+    // clear of the voxel workspace (ADR: see RobotStage.js doc comment).
+    this.robotStage = new RobotStage(this.scene)
 
     window.addEventListener('resize', () => this._onResize())
   }

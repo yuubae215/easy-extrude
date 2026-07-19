@@ -50,6 +50,7 @@ export const useUIStore = create((set, get) => ({
   // ── Header ────────────────────────────────────────────────────────────────
   bffConnected: false,
   nodeEditorOpen: false,
+  robotVisible: true,
   undoEnabled: false,
   redoEnabled: false,
 
