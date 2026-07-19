@@ -5,6 +5,12 @@ notes: |
   これは canonical bundle を本リポジトリへ vendoring したコピー。ドリフト検知用。
   内容を更新するときは canonical 側を直し、本ファイルの version を上げて再配布する。
 changes: |
+  2026-07-19: rules/10-principles.md を追加 — docs/PHILOSOPHY.md(正本)の
+    蒸留ダイジェストを kernel レーンへ統合(常時 load)。本リポジトリ側で先行
+    追加したローカル変更 — 本文はプロジェクト不変の語彙で記述済みのため、
+    「§このリポジトリでの写像」節を除いてそのまま canonical bundle へ
+    バックポート可能(それまで本ファイルが差分の印)。
+
   2026-07-11: gsn-meta-framework skill を統合(3モード + gsn_tool.py)。
     animation-fx skill も併せて導入(2D/3D 演出設計)。
     /gsn-maintain コマンドで .gsn 論証木の鮮度メンテ、

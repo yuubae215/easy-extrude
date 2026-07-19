@@ -75,85 +75,19 @@ lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価
 
 ## Document navigation
 
-Before writing or modifying any code, consult the relevant documents.
+コード変更前に関連ドキュメントを引く。キーワード → 「まず読む」の全索引は
+**`docs/NAVIGATION.md`** (on-demand — 自動ロードしない)。主要な入口だけ挙げる:
 
-| Trigger in prompt | Read first |
-|-------------------|-----------|
-| philosophy / principles / why we do it this way | `docs/PHILOSOPHY.md` |
-| architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
-| state machine / mode transition / state | `docs/STATE_TRANSITIONS.md`, ADR-008 |
-| StateMachine class / FSM / editorStates / operation state constants / _opState | `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039 |
-| cache / derived state / lifecycle / UNINIT / STALE / freshness | `docs/STATE_TRANSITIONS.md` § Internal Component State Machines |
-| new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
-| screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
-| layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
-| Layout API / Layout DSL / compileLayout / LayoutCompiler / scene from CLI or API | ADR-045, `src/layout/LayoutCompiler.js` |
-| Scene ⇄ DSL Mutual / decompileLayout / scene→DSL inverse / reverse compile / round-trip / scene fixpoint / 正規形までの相互変換 / Solid rotation additive / unconvertible warnings | ADR-055, `src/layout/LayoutDecompiler.js`, `src/layout/LayoutDecompiler.test.js` |
-| Computable structural isomorphism / canonical form / 正規形シグネチャ / 出力形 / canonicalForm / CANONICAL_FORM_VERSION / verify / 往復検証 / docSignature / rootSignature / canonicalSignature / color refinement / Weisfeiler–Leman / WL_ROUNDS / identityPayload / structuralDiff / reconcile / 商上の構造同型を計算可能化 / 等価判定 / 突き合わせ / レコメンド基盤 / 曖昧マッピングは外部 (embedding は out-of-scope) | ADR-056 (Accepted, 実装済), `src/context/CanonicalForm.js`, `src/context/CanonicalForm.test.js`, `src/context/ProvenanceTree.js`, `src/context/SynonymQuotient.js` |
-| Context DSL / requirement context / Fact / Decision / OpenQuestion / interval / compileContext | ADR-046, `src/context/`, `examples/factory_context.json` |
-| Context demo / uncertainty ghost / Decision approval / StoryBar / Context Inspector | ADR-047, `src/controller/ContextDemoController.js`, `src/view/UncertaintyGhostView.js` |
-| Requirement / Conflict / KPI / クライテリア / 許容領域 / 交渉クラスター / 共有設計変数 / Variable | ADR-049, `src/context/RequirementGraph.js`, `examples/cell_conflict_context.json` |
-| 領域 Variable / AABB / footprint / フットプリント / 述語エンジン / predicate / no_overlap / reach_covers / swept volume / acceptance check | ADR-049 §8 Phase 3, `src/context/RegionGeometry.js`, `src/context/PredicateEngine.js`, `examples/cell_region_context.json` |
-| 領域オーサリング / 双方向ゴースト / 3D authoring widget / ドラッグで衝突解消 / live conflict / RegionAuthoringWidget | ADR-049 §5.2/§8 Phase 3, `src/view/RegionAuthoringWidget.js`, `src/context/ContextEditModel.js`, `src/controller/ContextController.js` (`enterAuthoring`) |
-| 衝突マトリックス / 交渉クラスター DAG / 解消順序 / ペルソナ射影 / persona projection / DSM partitioning / actor × variable / conflict matrix / n-ary 承認 / approval gate / approvedRefs / proposed / 合同確定 / approveDecision | ADR-049 §5.3/§8 Phase 4, `src/context/PersonaProjection.js`, `src/components/ContextDemo/ConflictMatrix.jsx`, `src/components/ContextDemo/NegotiationClusterView.jsx`, `src/controller/ContextController.js` (`enterNegotiation`, `approveDecision`) |
-| 許容領域ゴースト / actor 別色分け / region ghost / 共通部分が空 / no-man's-land バンド / persona 色重畳 / projectRegionGhosts / RegionGhostView / enterRegionGhost / gap band / 解消演出 / recolor→dissolve / ghost モードの再射影 | ADR-049 §5.3/§8 Phase 4, ADR-065 Phase 5 (解消演出 + ghost 再射影), `src/context/PersonaProjection.js` (`projectRegionGhosts`), `src/view/RegionGhostView.js`, `src/view/RegionGhostMath.js`, `src/view/RegionResolveEffect.js`, `src/controller/ContextController.js` (`enterRegionGhost`/`_refreshRegionGhosts`) |
-| Context-first project / 正準 context doc / シーンは導出射影 / loadContext / 承認=doc 変異 / ContextService / contextLoaded / .ctx.json / 本番機能化 / PoC → production | ADR-050, `src/service/ContextService.js`, `src/service/ContextService.test.js` |
-| 本番 Negotiation / ContextController / 交渉設計(本番)/ context スライス / アンドゥ可能な承認 / ApproveDecisionCommand / Context ▾ メニュー / ContextLayer / prop 駆動 Matrix・Cluster | ADR-050 §4/§6 Phase 2, `src/controller/ContextController.js`, `src/command/ApproveDecisionCommand.js`, `src/components/Context/ContextLayer.jsx` |
-| 本番 Authoring / 領域オーサリング(本番)/ ライブ recolor / ドラッグ終了で再生成 / アンドゥ可能な領域編集 / EditAdmissibleCommand / 本番 領域ゴースト / context mode (negotiate/author/ghost) | ADR-050 §4.5/§6 Phase 3, `src/controller/ContextController.js`, `src/command/EditAdmissibleCommand.js`, `src/view/RegionAuthoringWidget.js`, `src/view/RegionGhostView.js` |
-| 動的フォーム / OpenQuestion intake / FormPanel / answerKind / AnswerQuestionCommand / .ctx.json import-save / applyQuestionAnswer | ADR-050 §4.4/§5/§6 Phase 4, `src/controller/ContextController.js`, `src/command/AnswerQuestionCommand.js`, `src/context/FormApplication.js`, `src/components/Context/FormPanel.jsx` |
-| 要件入力 / requirement intake / あいまい要件の入口 / 複数入口 / blank-slate authoring / テンプレートギャラリー / 自然言語インテーク / NL→Fact / 入力UX / デモがどの例を読むか | ADR-051, ADR-050 §2/§5 (正準 doc), ADR-047 §7 (デモ挙動), ADR-044 (5W1H NL bridge) |
-| blank doc / New Context / createBlankDoc / adoptDoc / addActor / addVariable / addRequirement / addFact / AddDocEntryCommand / IntakePanel / 要件直接追加 | ADR-051 §3 Phase 1, `src/context/DocBuilder.js`, `src/command/AddDocEntryCommand.js`, `src/components/Context/IntakePanel.jsx`, `src/controller/ContextController.js` (`newContext`, `addDocEntry`) |
-| テンプレートギャラリー / starter テンプレート / TemplateCatalog / TemplateGallery / selectTemplate / テンプレートから開始 / スターター .ctx.json | ADR-051 §3 Phase 2, `src/context/TemplateCatalog.js`, `src/components/Context/TemplateGallery.jsx`, `src/controller/ContextController.js` (`openTemplateGallery`, `selectTemplate`) |
-| 入力中ライブプレビュー / 不確実バンド即時表示 / intake preview / previewIntake / setIntervalPreview / 許容区間 3D ゴースト | ADR-051 §3 Phase 3, `src/view/UncertaintyGhostView.js` (`setIntervalPreview`), `src/controller/ContextController.js` (`previewIntake`), `src/components/Context/IntakePanel.jsx` (RequirementForm `onPreview`) |
-| 例を土台に編集 / fork & tweak / fork example / 類推オーサリング / シード・アンカー / authorSeed / forkExample / buildSeedIndex / seed chip / 埋まった手本 / onForkTemplate / in-place 編集 / クリックで編集 / EntryCard / editDocEntry / removeDocEntry / updateActor / updateVariable / updateRequirement / createDocEditCommand / エントリ編集 / 保存フラッシュ | ADR-058 (Accepted, Phase 1 + Phase 2 in-place 編集 実装済), `src/context/SeedAnchor.js`, `src/context/DocBuilder.js` (`updateActor`/`updateVariable`/`updateRequirement`/`removeDocEntry`), `src/command/DocEditCommand.js`, `src/controller/ContextController.js` (`forkExample`/`editDocEntry`/`removeDocEntry`), `src/components/Context/TemplateGallery.jsx` (fork action), `src/components/Context/IntakePanel.jsx` (dual-mode forms・EntryCard・Reveal・seed anchor), uiStore `context.authorSeed`/`contextSetSeed`/`context.requirements`/`contextSetRequirements` |
-| 遊びの入力面 / IntakeAssist / seed-diff tint / ref 空き番提案 / refStatus / suggestRef / matchesSeed / 不足理由 / actorGaps / requirementGaps / GapNote / 無言 disabled 廃止 / KPI カタログ chips / kpiCatalogChips / dual-handle スライダ / DualRange / Why-first トレイル / validator 述語の同一関数参照 / isInterval export | ADR-058 「UX 具体化」節 (実装済), `src/context/IntakeAssist.js`, `src/context/IntakeAssist.test.js`, `src/context/ContextValidator.js` (`isInterval` export), `src/components/Context/IntakePanel.jsx`, uiStore `context.requirements`/`contextSetRequirements` |
-| 自然言語インテーク / NL→Fact 抽出 / extractFacts / NlIntake / addNlFacts / 発話から要件 / status:unknown 保守的抽出 / additive canonical 正規化 (NL→doc φ 脚) | ADR-051 §3 Phase 4, ADR-044 (準同型), ADR-052 §2.2 (canonical record), `src/context/NlIntake.js`, `src/context/SynonymQuotient.js` (`canonicalKey`), `src/controller/ContextController.js` (`addNlFacts`), `src/components/Context/IntakePanel.jsx` (`NlIntakeForm`) |
-| KPI 式アセット / role-kpi/2.0 / 式カタログ / exprTemplate / instantiateKpiExpr / KpiAssetChips / 選択リスト / 閉じた語彙 / 白紙撲滅 / IntakeVocabulary / DISCIPLINES / UNITS / recognition over recall / 選択優先インテーク / パラメトリックアセット | ADR-063 (Accepted, Phase 1+2+3 実装済; Phase 4–5 後続), ADR-062 (三層方針), `src/context/RoleKpiCatalog.js`, `src/context/RoleKpiCatalog.test.js`, `src/context/IntakeVocabulary.js`, `src/context/IntakeVocabulary.test.js`, `src/context/IntakeAssist.js` (`kpiCardLines`), `src/components/Context/IntakePanel.jsx` (`KpiAssetChips`) |
-| ウィザード / guided intake / ガイド付きインテーク / WizardCatalog / wizard/1.0 / WizardPanel / wizard タブ / ウィザード FSM / step/review / wizardStepGaps / nextWizardState / wizardTrail / onWizardStart / 段階開示 / 順序付きの器 | ADR-063 §4/Phase 3 (実装済), `src/context/WizardCatalog.js`, `src/context/WizardCatalog.test.js`, `src/components/Context/WizardPanel.jsx`, `src/controller/ContextController.js` (`startWizard`/`wizardNext`/`finishWizard`), uiStore `context.wizard`/`contextSetWizard`, `docs/STATE_TRANSITIONS.md` §context.wizard |
-| パラメトリックアセット / parametric asset / パラメトリックビューワ / ParametricAssets / parametric/1.0 / instantiateAsset / clampParams / applyAssetCommit / ParametricPreviewView / ParametricAssetPanel / Assets タブ / assetSource / スライダで3D / コミットは数値 / Guided Intake カード / Empty Project エキスパート棚 | ADR-063 §2/Phase 4+5 (実装済), `src/context/ParametricAssets.js`, `src/context/ParametricAssets.test.js`, `src/view/ParametricPreviewView.js`, `src/components/Context/ParametricAssetPanel.jsx`, `src/controller/ContextController.js` (`openAssetViewer`/`setAssetParam`/`commitAsset`), uiStore `context.assetViewer`/`contextSetAssetViewer` |
-| 5W1H ユビキタス言語 / Mutual / NL⇄データ準同型 / Why ルート / KPI-Gap-Acceptance ツリー / 同義語商上の構造同型 / φ⁻¹ 来歴復元 / なぜシーンは Why を落とすか / CFツリーと SpatialLink は What/How 射影 | ADR-052, ADR-044 (φ 準同型), ADR-046 (L2/L5), ADR-049 (KPI/criterion/gap), ADR-048 §2.2.1 (構造関係) |
-| Why ツリー構築 / 来歴復元 / provenance / buildWhyTree / recoverProvenance / シーンエンティティ→Why / KPI 遡及 / φ⁻¹ 実装 | ADR-052 §2.1/§2.2 Phase 1, `src/context/ProvenanceTree.js`, `src/service/ContextService.js` (`whyTree`, `recoverProvenance`) |
-| Why パンくず / 来歴提示 UI / シーン操作→Why / 選択→provenance / Why タブ / Gap 表示 / showProvenance / WhyBreadcrumb | ADR-052 §3 Phase 2, `src/components/Context/WhyBreadcrumb.jsx`, `src/controller/ContextController.js` (`showProvenance`), `src/controller/AppController.js` (`_syncContextProvenance`), `src/service/ContextService.js` (`recoverProvenance` Gap join) |
-| Why ツリー俯瞰 / 全体来歴ビュー / 俯瞰タブ / Why ルート apex / buildWhyTree UI / 5W1H 3層 / WhyTreeView | ADR-052 §2.1 Phase 3, `src/components/Context/WhyTreeView.jsx`, `src/service/ContextService.js` (`whyTree`), `src/controller/ContextController.js` (`_startNegotiation`/`_reproject` の `contextSetWhyTree`) |
-| NL ⇄ doc 往復 / doc → NL ナレーション / 同義語商 / synonym quotient / canonicalize / localize / Why の自然言語化 / φ⁻¹ 返り脚 / narrateProvenance / narrateWhyTree | ADR-052 §2.2 Phase 4, ADR-044 (`why.keywords`), `src/context/SynonymQuotient.js`, `src/context/ProvenanceNarrative.js`, `src/service/ContextService.js` (`recoverProvenance` の `narrative` / `whyTreeNarrative`), `src/components/Context/WhyBreadcrumb.jsx`・`WhyTreeView.jsx` |
-| ロボティクス / robotics / URDF / kinematics / KDL / ruckig / リーチ / 到達性 / 自己干渉 / 障害物干渉 / サイクルタイム / 軌道生成 / swept volume / TCP 教示 / IK 可視検証 / 測定器 KPI / ComputeBackend / 入力→計算→可視化→検証 | ADR-053 (Accepted, Phase 1+2+3 実装済), ADR-038 (jointType), ADR-049 (KPI 項), ADR-047 (ゴースト系譜) |
-| C++→WASM ビルドレーン / Emscripten / emsdk / emcmake / KDL・ruckig WASM 化 / wasm-pack / ツールチェーン導入 / robotics-wasm / embind / vendor submodule / setup-toolchain / build:robotics-wasm | ADR-053 §11 Phase 3, `robotics-wasm/CMakeLists.txt`, `robotics-wasm/src/bindings.cpp`, `robotics-wasm/vendor/{ruckig,orocos_kdl,eigen}`, `scripts/setup-toolchain.sh`, `scripts/build-robotics-wasm.sh`, `src/engine/robotics-wasm/` (committed artifact), `robotics-wasm/robotics_engine.test.mjs` |
-| robot_reach / collision_free 述語 / 到達性述語 / 干渉述語 / 事前ベイクオペランド / measured operand / reachable / contact clearance / marginMin / scope self·env / context/0.4 | ADR-053 §9 Phase 1, `src/context/PredicateEngine.js` (`evalRobotReach`/`evalCollisionFree`), `src/context/ContextDslSchema.js` (`VALID_PREDICATE_KINDS`/`CONTEXT_DSL_VERSION`), `src/context/RoboticsPredicate.test.js` |
-| 測定器 純粋計算 / FK / 順運動学 / forwardKinematics / FK サンプリング 到達性 / reachTargets / AABB 干渉ベイク / bakeContacts / ComputeBackend / LocalComputeBackend / RoboticsService / 測定→doc ベイク / applyMeasuredFact / measureReach / measureCollision | ADR-053 §10 Phase 2, `src/robotics/Kinematics.js`, `src/robotics/Collision.js`, `src/robotics/ComputeBackend.js`, `src/service/RoboticsService.js`, `src/robotics/Robotics.test.js`, `src/service/RoboticsService.test.js` |
-| Link Network / link graph / リンク図 / layered layout / node panel / 複数親に見える / 包含 vs 制約エッジ | ADR-048 §2.2.1, `src/view/LinkNetworkView.js` |
-| 5W1H / NL to code / function mapping / FunctionDescriptor / ExecutionPlan | ADR-044 |
-| events / domain events / keyboard / pointer / touch / click | `docs/EVENTS.md` |
-| controls / mouse / keyboard / orbit | ADR-003, ADR-006 |
-| mode / edit mode / object mode / sketch | ADR-002, ADR-004, ADR-008 |
-| object / hierarchy / 1D / 2D / 3D | ADR-005 |
-| cuboid / shape / corners / geometry / extrude | ADR-007, ADR-002 |
-| SceneModel / domain state / MVC / DDD | `docs/ARCHITECTURE.md` |
-| mobile / touch / gesture / pointer / OrbitControls | ADR-023, `docs/code_contracts/interaction.md` |
-| mobile toolbar / slot / spacer / UI layout | ADR-024, ADR-042, `docs/code_contracts/ui_layout.md` |
-| unified entity transform / mental model / fixed-slot / grab rotate deselect add | ADR-042 |
-| entity capability / instanceof / MeasureLine / ImportedMesh / CoordinateFrame | `docs/code_contracts/architecture.md` |
-| visual flag / meshview / dispose / memory / Three.js cleanup | `docs/code_contracts/memory_management.md` |
-| BFF / sceneStore / database / WebSocket / occt / STEP import | `docs/code_contracts/server_async.md` |
-| Grasp search / 検証ウォークスルー / UI→DSL→BFF→API / compileLayout 往復 / graspSearch / GraspController / 右ドック grasp タブ / 判別共用体 FSM (idle/no-layout/compiling/solving/results/error) / objectiveScores バー / スコア優先 / selectCandidate / selectedRank / objectiveWeights / topN / 候補 candidates / 正規アクセスルート getCompiled().layoutDsl / graspPanelOpen 廃止 | ADR-057 (placement+FSM), ADR-054 (thread), `src/controller/GraspController.js`, `src/components/Grasp/GraspSearchPanel.jsx` (ContextLayer `'grasp'` タブ), `src/service/BffClient.js`, `src/controller/GraspController.test.js` |
-| grasp diagnostics / 棄却ファネル / rejection funnel / 惜しさメーター / near miss / reachNearestMiss / candidatesGenerated / 効いた感 / 差分チップ / funnelStages / dominantStage / funnelDelta / nearMissCloseness / prevDiagnostics / DiagnosticsFunnel / contractVersion 3 | ADR-061 (Accepted, 実装済), ADR-060, `src/view/GraspFunnelMath.js`, `src/components/Grasp/GraspSearchPanel.jsx` (`DiagnosticsFunnel`), `src/controller/GraspController.js` (`runGraspSearch` diagnostics/prevDiagnostics) |
-| 証明フィードバックループ / 演出プリミティブ / proof feedback / DeltaChip / LandingFlash / 着地フラッシュ / usePrevOnChange / FeedbackMath / refsSignature / settledRefs / 消化フラッシュ / 未解決カウント差分 / FormPanel 差分チップ / マトリックス解消フラッシュ | ADR-062 (Accepted, 全フェーズ実装済), PHILOSOPHY #29 scope note, `src/components/Feedback/FeedbackPrimitives.jsx`, `src/view/FeedbackMath.js`, `src/view/FeedbackMath.test.js`, `src/components/Context/FormPanel.jsx`, `src/components/ContextDemo/ConflictMatrix.jsx`, `src/components/ContextDemo/NegotiationClusterView.jsx`, `src/components/Context/ContextLayer.jsx` |
-| 測定器フィードバック / Checks タブ / checkResults 表示 / 受入チェック面 / blocked→pass フラッシュ / margin 惜しさメーター / checkMeter / checkStatusKeys / checkTransitions / projectChecks / ChecksPanel / テンプレート構造プレビュー / structurePreview / templateGalleryPreviews / cell_robotics 例 | ADR-062 Phase 4+5 (実装済), ADR-053 §9 (ベイク済オペランド), ADR-061 (惜しさ曲線の共有), `src/view/CheckFeedbackMath.js`, `src/view/TemplatePreviewMath.js`, `src/components/Context/ChecksPanel.jsx`, `src/service/ContextService.js` (`projectChecks`), `src/controller/ContextController.js` (`_templatePreviews`), `examples/cell_robotics_context.json` |
-| grasp backend / 判定エンジン / core API / FastAPI / 段階0 / 候補生成 / feasibility / objectives / 加重スコア / pipeline / pose_codec / uv / pytest / contractVersion ガード / エラー envelope / 内部トークン / /grasp-search / /healthz | ADR-074 (契約) / ADR-075 (エンジン) / ADR-076 (HTTP 境界), `core/README.md`, `core/easy_extrude_core/{engine,api,contract}/`, `core/tests/` |
-| レコメンドレーン / recommendation lane / similarity / propose-only / embedding 注入 / NormSpec / /recommendation | ADR-077, `core/easy_extrude_core/recommendation/` |
-| bin-picking / ピックシーケンス / scene derivation / シーン層 (core 側) / bin-picking テンプレート | ADR-078, ADR-079 (diagnostics proof), `core/easy_extrude_core/scene/` |
-| grasp ゴースト / spatial ghost / グリッパグリフ / 接近ベクトル / approach vector / FRAME_CONVENTION / 能力ゲート / renderableEndEffectorFrame / hover プレビュー / 接近アニメ / 三拍リビール / revealFrame / pose kind union 消費 (endEffector/jointSpace) / 対象アウトライン | ADR-059 (Accepted, 段1 実装済), ADR-060, ADR-065 Phase 5 (三拍リビール), `src/view/GraspGhostMath.js`, `src/view/GraspGhostView.js`, `src/controller/GraspController.js` (`_syncGhost`/`hoverCandidate`/`disposeGhost`) |
-| CI / テストゲート / PR ワークフロー / rigor 遡及 / prefers-reduced-motion / reduced motion / motion 削減 / flashStyle / useReducedMotion / E2E スモーク / Playwright / smoke / 配線の生死 / pnpm test glob 化 | ADR-064 (Accepted, Phase 1+2+3+4 実装済), ADR-062 (play 側の対), PHILOSOPHY #29/#20, `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `src/view/FeedbackMath.js` (`flashStyle`), `src/theme/motion.js` (単一 matchMedia 境界 — ADR-065 Phase 1 で移設; `FeedbackPrimitives.jsx` は再 export), `playwright.config.js`, `e2e/smoke.spec.js` |
-| DSL スキーマ昇格 / Layout·Context DSL JSON Schema 化 / conformance / additionalProperties:false / ドリフト束縛 / 形と意味の分離 / schema:validate | ADR-064 Phase 2 (実装済), PHILOSOPHY #29, `schema/layout-1.0.schema.json`, `schema/context-0.4.schema.json`, `schema/README.md`, `src/schema/LayoutSchema.test.js`, `src/schema/ContextSchema.test.js`; 意味検査は `src/layout/LayoutValidator.js` / `src/context/ContextValidator.js` に残る |
-| scene JSON スキーマ / /api/scenes 検証 / scene-1.3 / Blender datablock / グラフ骨格 vs ジオメトリ blob / opaque base64 葉 / 未契約ワイヤ宣言 / ws·import 対象外 / BFF が版を刻む | ADR-064 Phase 3 (実装済), PHILOSOPHY #29, `schema/scene-1.3.schema.json`, `server/src/scenes/sceneContract.js`, `server/src/routes/scenes.js`, `src/schema/SceneSchema.test.js`, `server/test/scenes.contract.test.js`; 対象外宣言は `server/src/routes/import.js` / `server/src/ws/sessionManager.js` の冒頭 |
-| 遊び心 / ワクワク感 / playfulness / 遊戯化 / モーション階層 / Motion Tier / Tier A / affordance motion / アフォーダンス・モーション / Tier D / delight tier / 歓びティア / 遊びの許容 / MotionGovernor / MotionMath / 演出予算 / transient 演出 / celebration / セレブレーション / デザイントークン / design tokens / tokens.js / パレット ドリフトテスト / `src/theme/` / motion.js 単一境界 / disabled-as-quest / コアモデリング演出 / 着地演出 / 音量設計 / volume corollary / voxel / VoxelBurst / dissolve / materialize / SAO 飛散 / グリッチ明滅 / lifecycleDescriptor / voxelFrame / _lifecycleAnchors / objectRemoved 第2引数 / pose 操作は無音 / LandingEffects / CommandFeedbackMath / setLandingListener / クローム刷新 / ロック状態 / locked / ゲート述語 reason / ChromeGates / ChromeMath / ChromePrimitives / useHoverPress / 押下バネ / press spring / hover 呼吸 / breathe / activeGlow / 呼吸グロー / enterMotion / トースト entry / disabled タップ理由 toast / 三拍リビール / three-beat reveal / revealFrame / REVEAL_TIMELINE / mixHex / RegionGhostMath / gapBandRects / regionResolveTransitions / resolveFrame / RegionResolveEffect / _refreshRegionGhosts / _buildRegionGhosts / 領域 recolor→dissolve / settled gap band / 不確実バンド extremes 収束 / 永続ゴースト reduced 対応 / スナップ係合フラッシュ / snap engagement flash / SnapFeedbackMath / SnapFlash / snapTransition / snapFlashFrame / _syncSnapFx / fxSnap / engage / retarget | ADR-065 (Accepted, **全 7 フェーズ + 全候補実装済** — スナップ係合フラッシュ完了 2026-07-12 でプログラム完結), PHILOSOPHY #30 (Motion Tier + volume corollary + delight tier — 2026-07-12: 「何も語らない動きは不採用」を緩め、意図的・予算内・reduced 対応の歓び演出を Tier D として許容), `src/theme/tokens.js`+`tokens.test.js`, `src/theme/motion.js`+`motion.test.js` (grep 固定の単一境界), `src/view/MotionMath.js`, `src/view/MotionGovernor.js`, `src/view/CommandFeedbackMath.js`, `src/view/LandingEffects.js`, `src/service/CommandStack.js` (`setLandingListener`/`depth`), `src/view/ChromeGates.js`+`ChromeMath.js` (Phase 3 純粋層), `src/components/Chrome/ChromePrimitives.jsx`, `src/view/CelebrationMath.js`+`CelebrationMath.test.js`+`CelebrationField.js`, `src/components/Feedback/Celebration.jsx` (Phase 4 — 遷移述語/バースト/節目), `src/view/GraspGhostMath.js` (`revealFrame`/`mixHex`)+`GraspGhostView.js`, `src/view/RegionGhostMath.js`+`RegionGhostMath.test.js`+`RegionResolveEffect.js`, `src/view/UncertaintyGhostView.js` (Phase 5 — 振付 + reduced), `src/view/SnapFeedbackMath.js`+`SnapFeedbackMath.test.js`+`SnapFlash.js` (Phase 2 完結 — 係合フラッシュ), ADR-062 (親方針・無改変継承) |
-| オンボーディングツアー / onboarding tour / ツアー / quest card / クエスト / TourMath / TourCard / tour FSM / ee_tour / 次のアフォーダンス / 漸進ヒント / progressive hint / + Add パルス / uiStore.tour / startTour / nextTourState / tourVisible / tourAnchor / 設定 vs 履歴の永続線引き / Widening 3 / Getting started | ADR-065 Phase 6 (実装済 2026-07-11, named rule 6), `docs/STATE_TRANSITIONS.md` §tour, `docs/SCREEN_DESIGN.md` S-18, `src/view/TourMath.js`+`TourMath.test.js`, `src/components/Onboarding/TourCard.jsx` (モバイルは従来の `Onboarding.jsx`), `src/controller/AppController.js` (`_updateTour`/`_startTourIfNeeded`/`_tourFacts`), uiStore `tour`/`setTour`, `src/components/Outliner/Outliner.jsx` (+ Add アンカーパルス) |
-| ビューポートステージ / 常設環境演出 / ambient stage / SceneStage / StageMath / 背景グラデーション / フォグ / fog / ダスト / dust / フロアグロー / リムライト / 起動リビール / boot reveal / BootReveal / 起動カメラフライト / flightFrame / dustField / dustDrift / entryEnvelope / fogDensityFor / Tier D 適用 / _finishBootReveal / external-write ガード | ADR-067 (Accepted, 実装済 — ADR-066 Tier D の最初の適用), ADR-066, `src/view/StageMath.js`+`StageMath.test.js`, `src/view/SceneStage.js`(SceneView 所有・`scene.background`/`fog` 単独書き手), `src/view/BootReveal.js`(MotionGovernor transient・割込み契約), `src/view/SceneView.js`(`stage`/`_updateGridScale` 連動), `src/controller/AppController.js` (`_finishBootReveal`/start spawn/stage tick) |
-| カメラフォーカスフライト / focus selection / frame selected / fly-to-selection / F キー / Home キー / ダブルクリックで寄る / CameraFlight / CameraMath / focusPose / lerpVec / scene framing vs selection framing / 生きた選択 / select pulse / 選択パルス / SelectPulse / hover affordance / 実体ホバー / setHovered / _hovered / トースト退場フェード / exitMotion / eaChromeExit / Grasp バー transition / Outliner scrollIntoView | ADR-068 (Accepted, 実装済), ADR-067 (BootReveal 系譜), `src/view/CameraMath.js`+`CameraMath.test.js`, `src/view/CameraFlight.js`, `src/view/SelectPulse.js`, `src/view/SceneView.js` (`focusPose`/`fitCameraToSphere` は同一導出源・グリッドは scene framing 専属), `src/view/MeshView.js` (`_syncEmissive` 3 フラグ), `src/controller/AppController.js` (`focusSelection`/`_focusSphere`/`_finishCameraFlight`/`_setHoveredEntity`/`_onDblClick`), `src/view/ChromeMath.js` (`exitMotion`), polish: `src/components/{UIShell.jsx,Grasp/GraspSearchPanel.jsx,Outliner/Outliner.jsx}` |
-| エンティティ同一性 / entity identity / 3D ラベル / floating label / EntityLabel / setLabelText / setIfcTint / IFC ティント / IFC 活用 / IFC クラス可視化 / CF ラベル情報化 / RPY 読み出し / _syncLabel / _syncIdentityVisuals / _newMeshView / ee-entity-label / 段階開示ラベル | ADR-070 (Accepted, 決定2=A 実装済; B フル産業は別 ADR 候補), ADR-025, `src/view/EntityLabel.js`, `src/view/MeshView.js` (`setIfcTint`/`_syncLabel`), `src/view/ImportedMeshView.js`, `src/view/CoordinateFrameView.js` (`_syncLabelText`), `src/service/SceneService.js` (`_newMeshView`/`_syncIdentityVisuals`), `src/domain/IFCClassRegistry.js` |
-| 配置既定 / placement defaults / スタック既定 ON / stack default / stack assist / 地面下 / below grade / ground clearance / checkGroundClearance / warnIfBelowGrade / groundWarned / 地面着地 / Free place / S キー反転 / 基礎 杭 footing pile | ADR-071 (Accepted, 案A アシスト既定 実装済), `src/controller/handler/GrabOperationHandler.js` (`stackMode`/`_applyStackSnap`/`warnIfBelowGrade`), `src/service/SceneService.js` (`checkGroundClearance`), `src/controller/UIStateManager.js` (Stack/Free ボタン) |
-| 2D マップ研磨 / Map Mode / MapModeController / 正射影 / ortho camera / 投影スワップ / projection swap / frustumForDistance / distanceForFrustum / マップ配置 undo / AddAnnotationCommand / マップ出入りフライト / _completeEnterSwap / マップ端点スナップフラッシュ / _syncSnapFx / MapPreviewMath / カーソル呼吸 / cursorFrame / ringFrame / リング出現セトル | ADR-072 (Accepted, 実装済 + 洗練 Addendum — ADR-069 Phase 4 = パリティ・パス完結), ADR-031 (三状態描画), `src/controller/map/MapModeController.js` (`tick`), `src/command/AddAnnotationCommand.js`, `src/view/CameraMath.js` (`frustumForDistance`/`distanceForFrustum`), `src/view/CameraFlight.js` (加算的 `onDone`), `src/view/MapPreviewMath.js`+テスト |
-| concurrency / async / locking / isProcessing | `docs/CONCURRENCY.md` |
-| validation / process / agent workflow / meta | `.claude/DEVELOPMENT.md` |
+| Topic | Read first |
+|-------|-----------|
+| philosophy / 原則 #N | `docs/PHILOSOPHY.md` (正本; 常時 load のダイジェストは `.claude/rules/10-principles.md`) |
+| architecture / design / why | `docs/ARCHITECTURE.md` → `docs/adr/README.md` (`/adr <topic>` で検索) |
+| state machine / mode / FSM | `docs/STATE_TRANSITIONS.md`, ADR-008/039 |
+| screen / UI / layout | `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md` |
+| events / input | `docs/EVENTS.md` |
+| concurrency / async | `docs/CONCURRENCY.md` |
+| 実装ルール | `docs/CODE_CONTRACTS.md` (index → detail 必要分のみ) |
+| 上記以外のキーワード | `docs/NAVIGATION.md` の trigger 表 |
 
 **`/adr <topic>`** — slash command to search the ADR index.
 
@@ -164,62 +98,19 @@ Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 
 ## Design change impact
 
-When a new requirement arrives, update **all** documents marked ✅ below.
-Documents marked ⚠️ need review but may not require changes.
-
-| Requirement type | STATE_TRANSITIONS | SCREEN_DESIGN | LAYOUT_DESIGN | EVENTS | ARCHITECTURE | ADR | CODE_CONTRACTS | PHILOSOPHY |
-|------------------|:-----------------:|:-------------:|:-------------:|:------:|:------------:|:---:|:--------------:|:----------:|
-| **新しいモード / サブステートを追加** | ✅ | ✅ (全エリア) | ✅ (ツールバースロット) | ✅ (keyboard) | ⚠️ | ✅ ADR-008 更新 | ⚠️ §1 | — |
-| **既存モードにサブ操作を追加** (grab, measure など) | ✅ (FSM §Formal Spec + `_opState` 遷移テーブル更新必須) | ✅ (ステータスバー・ツールバー行) | ⚠️ (スロット数変化なら ✅) | ✅ (pointer/keyboard 節) | — | ✅ ADR-039 参照 | ⚠️ §2 | — |
-| **新しいエンティティ型を追加** (domain entity) | ⚠️ | ✅ (N パネル・アウトライナー行) | — | ✅ (objectAdded など) | ✅ (taxonomy 表) | ✅ 新 ADR | ✅ §1 | ⚠️ (§2 Type contract) |
-| **新しい UI 画面 / パネルを追加** | ⚠️ | ✅ (画面 ID 追加) | ✅ (寸法・z-index) | ✅ (UI events 節) | — | ⚠️ | ⚠️ §3 | — |
-| **キーボードショートカットを追加 / 変更** | — | ✅ (ステータスバー欄) | — | ✅ (keyboard 表) | — | — | — | — |
-| **モバイル操作 / ジェスチャーを追加** | ✅ (touch FSM) | ✅ (モバイル差分表) | ✅ (ツールバースロット) | ✅ (touch 節) | — | ✅ ADR-023/024 更新 | ✅ §2, §3 | ⚠️ (§V Interaction) |
-| **レイアウト寸法 / z-index 変更** | — | ⚠️ | ✅ | — | — | — | ✅ §3 | — |
-| **新しいドメインイベントを追加** | — | — | — | ✅ (domain events 節) | ⚠️ | ⚠️ ADR-013 | — | — |
-| **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 | — |
-| **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 | — |
-| **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (下記ルール参照) | ⚠️ (下記ルール参照) |
-
-> **PHILOSOPHY column rule**: mark ⚠️ only when the same root value has been
-> violated in **two or more unrelated contexts**. A single bug → CODE_CONTRACTS.
-> A recurring pattern across contexts → extract or update a PHILOSOPHY principle.
-
-### 更新チェックリスト (コードを書く前に実行)
-
-```
-1. 上の表で ✅ の列を確認
-2. 各ドキュメントの対象セクションを読む (Document navigation 表を参照)
-3. 非自明な設計選択 → 新 ADR を作成、docs/adr/README.md インデックスを更新
-4. コード変更後 → ✅ ドキュメントを更新してから commit
-```
-
----
+新しい要件が来たら `docs/NAVIGATION.md` §Design change impact の表で ✅ 対象ドキュメントを
+確認し、コード変更後に更新してから commit する。非自明・不可逆な設計選択は新 ADR +
+`docs/adr/README.md` インデックス更新。
 
 ## After fixing a bug
 
-After every bug fix, **before committing**, ask these two questions in order:
+commit 前に二問を順に問う (核 §1.2 / 原則 #19):
 
-**Q1 — Rule missing?**
-> "Did this bug exist because an implicit rule was missing or misunderstood?"
-
-If yes → add the rule to the relevant `docs/code_contracts/*.md` detail file,
-then update the summary row in `docs/CODE_CONTRACTS.md` index.
-Use the criteria in CODE_CONTRACTS's "What belongs here" section.
-When in doubt, add it — stale entries are easier to clean up than missing ones.
-
-**Q2 — Pattern repeating?**
-> "Have we violated the same *underlying value* in two or more unrelated places?"
-
-If yes → this signals a missing or under-specified principle in `docs/PHILOSOPHY.md`.
-Either add a new principle or sharpen an existing one. Link it to the CODE_CONTRACTS
-rules it underlies. See PHILOSOPHY's "When to update" table for exact triggers.
-
-If **almost** (same value, but only 1 context so far) → add a row to the
-**Yellow Cards** table in `docs/PHILOSOPHY.md`. A Yellow Card is a first strike:
-it records the candidate principle and its first context so it can be found
-when the second violation surfaces. Without this, single-context patterns are
-forgotten and PHILOSOPHY never grows.
+- **Q1 — Rule missing?** 暗黙ルールの欠落が原因なら → `docs/code_contracts/*.md` detail に
+  追記し、`docs/CODE_CONTRACTS.md` index の行を更新。迷ったら足す。
+- **Q2 — Pattern repeating?** 同じ根本価値の違反が **2+ の無関係な文脈**にあれば →
+  `docs/PHILOSOPHY.md` の原則を追加/研磨 (+ `.claude/rules/10-principles.md` の該当行)。
+  1 文脈のみなら PHILOSOPHY の **Yellow Cards** 表に行を足す (2 例目で昇格)。
 
 ## Development commands
 
@@ -247,7 +138,8 @@ repo に焼かない (ADR-076)。
 **ROS world frame** (+X forward, +Y left, +Z up). Right-handed. Matches ROS REP-103.
 Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 
-@docs/CODE_CONTRACTS.md
+**コード変更前に `docs/CODE_CONTRACTS.md` の該当セクションを読むこと**（自動ロードしない —
+index 表で該当領域を特定し、detail ファイル `docs/code_contracts/*.md` を必要分だけ読む）。
 
 @docs/CLAUDE_FABLE5_BEHAVIOR.md
 
@@ -258,13 +150,13 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 - WASM build lanes are **not** needed for `pnpm build` (= `vite build` only; both lanes ship committed artifacts in `src/engine/`, and CI/deploy consume those artifacts — ADR-064 Phase 1, ADR-053 §11). To regenerate them run `pnpm setup:toolchain` once (installs wasm-pack + Emscripten SDK + inits `robotics-wasm/vendor` submodules), then `pnpm build:full` (Rust wasm regen + vite build) or the individual lanes `pnpm build:wasm` (Rust) / `pnpm build:robotics-wasm` (C++ KDL+ruckig → `src/engine/robotics-wasm/`). On a fresh clone run `git submodule update --init --recursive` before the C++ build.
 - The neutral I/O contract `@easy-extrude/grasp-contract` is vendored as a **git submodule** at `vendor/grasp-contract` (a pnpm-workspace package the BFF depends on as `workspace:*`). A fresh clone needs `git submodule update --init --recursive`. The BFF only *derives* from it: `pnpm --filter easy-extrude-bff run gen:contract-types` regenerates the committed `.d.ts` from the schema, and `pnpm test:contract` runs the conformance + contractVersion-drift tests. Never edit the contract here — change it upstream and bump `contractVersion`.
 
-@docs/PHILOSOPHY.md
+設計原則: 蒸留ダイジェストは `.claude/rules/10-principles.md`(kernel 統合済み 2026-07-19、
+常時 load)。正本 (全文・事例・Yellow Cards) は `docs/PHILOSOPHY.md` — 原則番号 #N の
+詳細が要るときだけ該当節を読む。
 
 ## Session history
 
-Full log → `docs/SESSION_LOG.md`. **ここには直近 3 件のみ、各 1–3 行の要約で記録する**
-（全文は SESSION_LOG.md 側に書く — CLAUDE.md は 40k 文字制限があり、長文履歴が主因で超過した実績あり）。
-
-- **2026-07-19** (2): Ops — **バックエンド同居後の運用見直し**。前セッションの統合（3ae1054）で生じた統治・CI のズレを是正: ① CI に `core` job 新設（setup-uv + `uv sync --frozen` + pytest、submodule init — Python 106 テストが未ゲートだった。ローカル実証 106 pass/2.65s）② CLAUDE.md スコープ境界を「repo 境界」→「レイヤ境界」に改定（3 層表 + `src/` は解法を持たない・越境は契約経由のみ・decide/propose 動詞境界 — AI ガードも `core/` 誘導型へ）③ Document navigation に ADR-074〜079/core 3 行 ④ `pnpm test:core` + フルスタック起動手順 ⑤ `contract_pkg.py` docstring 旧パス修正。コード・契約・スキーマ無改変。（全文 → SESSION_LOG）
-- **2026-07-19** (1): Feature — **grasp-search バックエンド統合（`core/` + ADR-074〜079、3ae1054）**。Python 判定エンジン（候補生成→リーチ/IK/干渉フィルタ→絶対基準 0-1 正規化→加重スコア→上位N; ADR-075）+ FastAPI HTTP 境界（contractVersion 400 ガード・エラー envelope; ADR-076）+ propose-only レコメンドレーン（ADR-077）+ bin-picking シーン層/テンプレート（ADR-078/079）を同 repo に追加。契約正本は `vendor/grasp-contract` submodule のまま（pydantic は binding + 準拠テスト）。uv 管理・106 pass。（遡及記録; 全文 → SESSION_LOG）
-- **2026-07-16** (4): UX — **生成時に命名フォームを出さない（ADR-073・Frame + マップオブジェクト・実装済）**。ユーザ feedback「Frame とかインスタンスがいくつも生成されるオブジェクトはポンポン作りたい。生成時に命名フォームが出てきてほしくない。後で変更する前提でいい」→ 後続「あとはマップオブジェクトかな」。**Frame**: 生成の全経路のうちモバイル長押し `ContextMenuHandler.promptAddFrame` と CF N パネル子フレーム追加（`_promptAddFrame` 共有）だけが生成前に `showRenameDialog` を割り込ませていた（他経路は既に無言自動命名）。`showRenameDialog` 除去 → `createCoordinateFrame(effectiveParentId, null)` 即時生成（内部 `_nextEntityName('Frame')` 採番＝単一命名源 #9）。undo/redo・親解決（ADR-037）・生成後選択（ADR-069 契約）不変。`showRenameDialog` は改名専用に一本化。**マップオブジェクト**: Map Mode（ADR-031）の描画 FSM `idle→drawing→pending` の `pending` は名前入力 + Confirm 専用ゲート（ジオメトリは pending 前に確定）。`pending` を廃止し 2 状態化、`_enterPendingState`+`_confirmDrawing`→単一 `_createAnnotation`（per-type カウンタで `"Route 1"` 等無言採番・連続配置）。`createAddAnnotationCommand` undo・地面/屋根平板・スナップ不変。死コード除去（`pending*`/`getMapPendingName`/uiStore `mapPendingNameInput`・`showConfirm`/`MapToolbar` 名前入力+Confirm）。カメラ enter/exit フライト（ADR-072）は無改変。docs: **ADR-073** 新規（Frame + 第2適用マップ）+ ADR-069/031/072 相互参照 + STATE_TRANSITIONS Map FSM 2 状態化 + CODE_CONTRACTS「One Naming Source」「Map Placement」拡張。Evidence: unit **653 pass** / typecheck clean / build clean / E2E **12 pass**（map テストは Confirm 除去→クリックで即生成 assert）。契約・schema・DSL 版・BFF 無改変。（全文 → SESSION_LOG）
+廃止 (2026-07-19)。セッションで起きたことの正準は git log、設計判断の正準は ADR、
+導出ルールの正準は CODE_CONTRACTS / PHILOSOPHY — 履歴をここに複製しない (核 §1.1)。
+Orient は `git log --oneline -15` + `docs/adr/README.md` で行う。
+旧全文は `docs/SESSION_LOG.md` (凍結アーカイブ) に残存。
