@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<!--
+[animation-fx sample] blade-trail — 剣の残影プレイグラウンド (2D Canvas / ゲームフィール)
+体現する原則 (references/principles.md):
+  P1 タメツメ   : 火花は初速最大→強い空気抵抗で急減速 (pow(0.3,dt))
+  P2 余韻      : 寿命後半55%だけノイズで漂う「消え際のうねり」(parts更新ループ)
+  P4 境界      : 二層リボンの白コア / 斬撃アークの白エッジライン
+  P5 間と〆    : 3連スラッシュ → queue{at:0.28}の静寂 → finisher()
+  P6 時間操作  : stop(130) は〆にだけ。連打ビート中は使わない (リズム保護)
+  P8 生命感    : 全粒子の寿命・速度・色に乱数幅 / ゴースト入力のリサージュ
+  P12 堅牢性   : 半径のMath.max / 進行度の両側クランプ / speedのisFiniteガード
+読み方: moveTip() が抽象契約 (入力→速度→発火判定)、frame() 内の各配列処理が具体化。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BLADE TRAIL — ribbon, lingering sparks, rhythm finisher</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background:#0a0812; overscroll-behavior:none; }
+  #stage { touch-action:none; cursor:none; }
+  .bl { transition: transform .14s cubic-bezier(0.33,1,0.68,1), border-color .2s, opacity .2s; }
+  .bl:active { transform:scale(0.9); transition-duration:.06s; }
+  .bl.on { border-color:var(--c); box-shadow:0 0 14px -4px var(--c); }
+  @keyframes comboPop { 0%{transform:scale(1)} 35%{transform:scale(1.3)} 100%{transform:scale(1)} }
+  .combo-pop { animation: comboPop .26s cubic-bezier(0.34,1.56,0.64,1); }
+</style>
+</head>
+<body class="antialiased text-slate-200 h-screen overflow-hidden select-none">
+
+<div id="stage" class="fixed inset-0"><canvas id="c" class="block w-full h-full"></canvas></div>
+
+<div class="fixed top-4 left-4 pointer-events-none">
+  <p class="text-[10px] font-mono uppercase tracking-[0.3em] text-sky-300/70">Blade Trail</p>
+  <h1 class="text-lg font-black text-slate-100">なぞって斬る。速く振ると斬撃、<br>3連撃で — 〆。</h1>
+  <p id="chainLabel" class="font-mono text-2xl font-black text-amber-300 mt-1 drop-shadow-[0_0_10px_rgba(251,191,36,.5)]">
+    <span id="chainN">0</span> <span class="text-xs text-amber-200/60">/ 3 SLASH</span></p>
+</div>
+
+<div class="fixed bottom-5 left-1/2 -translate-x-1/2 flex gap-2.5 z-10">
+  <button data-c="#7dd3fc" class="bl on w-9 h-9 rounded-full border-2 border-slate-600" style="--c:#7dd3fc;background:radial-gradient(circle at 35% 35%, #e0f2fe, #7dd3fc)"></button>
+  <button data-c="#fbbf24" class="bl w-9 h-9 rounded-full border-2 border-slate-600" style="--c:#fbbf24;background:radial-gradient(circle at 35% 35%, #fef3c7, #fbbf24)"></button>
+  <button data-c="#e879f9" class="bl w-9 h-9 rounded-full border-2 border-slate-600" style="--c:#e879f9;background:radial-gradient(circle at 35% 35%, #fae8ff, #e879f9)"></button>
+</div>
+
+<script>
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Ease = { outExpo:x=>x===1?1:1-Math.pow(2,-10*x), outCubic:x=>1-Math.pow(1-x,3),
+               outBack:x=>1+2.70158*Math.pow(x-1,3)+1.70158*Math.pow(x-1,2) };
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const dpr = Math.min(devicePixelRatio, 2);
+let W=0, H=0;
+function fit(){ W=innerWidth; H=innerHeight;
+  canvas.width=W*dpr; canvas.height=H*dpr;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0); }
+addEventListener('resize', fit); fit();
+
+/* ============ 状態 ============ */
+let GLOW = '#7dd3fc', CORE = '#e0f2fe';
+const hist = [];                     /* ストライプ: 剣先の位置履歴 */
+const parts = [], rings = [], slashes = [], texts = [], queue = [];
+let trauma = 0, hitStop = 0, flashA = 0, seedT = 0;
+let speed = 0, px = 0, py = 0, lastMoveT = performance.now();
+let chain = 0, lastSlashT = -9, pendingFin = false;
+let auto = true;                     /* 初回はゴーストが手本を見せる */
+const CAP = 600;
+
+document.querySelectorAll('.bl').forEach(b => b.addEventListener('click', e => {
+  document.querySelectorAll('.bl').forEach(o => o.classList.remove('on'));
+  b.classList.add('on'); GLOW = b.dataset.c;
+  CORE = { '#7dd3fc':'#e0f2fe', '#fbbf24':'#fef3c7', '#e879f9':'#fae8ff' }[GLOW];
+  e.stopPropagation();
+}));
+
+/* ============ 部品 (IMPACT LAB系 + 余韻のうねり) ============ */
+function spark(x, y, angle, spread, n, sp, life){
+  for (let i=0; i<n && parts.length<CAP; i++){
+    const a = angle + (Math.random()-0.5)*spread;
+    const s = sp*(0.4+Math.random()*0.9);
+    parts.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, g:420,
+      life:life*(0.7+Math.random()*0.9), max:life,
+      w:1.4+Math.random()*1.6, seed:Math.random()*10,
+      color: Math.random()>0.4 ? GLOW : CORE });
+  }
+}
+function ring(x, y, R, dur, w){ rings.push({x, y, R, dur, t:0, w, color:GLOW}); }
+function crescent(x, y, angle, R){ slashes.push({x, y, angle, R, t:0, dur:0.16, color:CORE}); }
+function textPop(x, y, label, big){ texts.push({x, y, label, t:0, dur:big?1.0:0.6, big}); }
+function addTrauma(v){ if(!REDUCED) trauma = Math.min(trauma+v, 1); }
+function stop(ms){ if(!REDUCED) hitStop = Math.max(hitStop, ms/1000); }
+function flash(a){ if(!REDUCED) flashA = Math.max(flashA, a); }
+
+/* ============ 剣先の移動 (ユーザー入力 or ゴースト) ============ */
+function moveTip(x, y, now){
+  const mdt = Math.max((now - lastMoveT)/1000, 1/240);
+  const d = Math.hypot(x-px, y-py);
+  speed = speed*0.55 + (d/mdt)*0.45;                  /* 平滑化した剣速 */
+  if (!isFinite(speed) || speed < 0) speed = 0;       /* 外部入力由来は必ずガード */
+  const ang = Math.atan2(y-py, x-px);
+
+  /* 剣速に比例した火花 (進行方向の左右へ) */
+  if (d > 2 && !REDUCED){
+    const n = Math.min(speed/900|0, 4);
+    if (n > 0){ spark(x, y, ang+Math.PI/2, 0.5, n, speed*0.22, 0.5);
+                spark(x, y, ang-Math.PI/2, 0.5, n, speed*0.22, 0.5); }
+  }
+  /* スラッシュ判定: 高速閾値 + クールダウン。〆待機中は静寂を守る */
+  const tNow = now/1000;
+  if (speed > 2400 && tNow - lastSlashT > 0.22 && !pendingFin){
+    lastSlashT = tNow;
+    crescent(x, y, ang, Math.max(10, 70 + Math.min(speed*0.02, 70)));
+    ring(x, y, 90, 0.3, 3);
+    flash(0.05); addTrauma(0.2);
+    chain++;
+    syncChain(true);
+    if (chain >= 3){                                   /* 構成のタメツメ発動 */
+      pendingFin = true;
+      queue.push({ at: 0.28, fn: () => finisher(x, y) });  /* ← 一拍の「間」 */
+    }
+  }
+  hist.unshift({ x, y, t: now/1000 });
+  px = x; py = y; lastMoveT = now;
+}
+function finisher(x, y){
+  flash(0.28); stop(130); addTrauma(0.85);
+  ring(x, y, 250, 0.55, 8); ring(x, y, 330, 0.7, 3);
+  const base = Math.random()*Math.PI;
+  crescent(x, y, base, 150); crescent(x, y, base+2.1, 130);
+  spark(x, y, 0, Math.PI*2, 44, 700, 0.6);
+  textPop(x, y - 30, 'FINISH!!', true);
+  chain = 0; pendingFin = false; syncChain(false);
+}
+function syncChain(pop){
+  const el = document.getElementById('chainN');
+  el.textContent = chain;
+  if (pop){ const p = el.parentElement;
+    p.classList.remove('combo-pop'); void p.offsetWidth; p.classList.add('combo-pop'); }
+}
+
+const stage = document.getElementById('stage');
+stage.addEventListener('pointermove', e => { auto = false; moveTip(e.clientX, e.clientY, performance.now()); });
+stage.addEventListener('pointerdown', e => { auto = false; moveTip(e.clientX, e.clientY, performance.now()); });
+
+/* ============ ループ ============ */
+let last = performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  const realDt = Math.min((now-last)/1000, 0.05); last = now;
+  const tNow = now/1000;
+  let dt;
+  if (hitStop > 0){ hitStop -= realDt; dt = 0; } else dt = realDt;
+
+  /* ゴーストの手本: リサージュ軌道で振る (初回操作までのデモ) */
+  if (auto && !REDUCED){
+    const gx = W/2 + Math.sin(tNow*1.4)*W*0.3;
+    const gy = H*0.45 + Math.sin(tNow*2.3 + 1.2)*H*0.22;
+    moveTip(gx, gy, now);
+  }
+
+  for (let i=queue.length-1; i>=0; i--){
+    queue[i].at -= dt;
+    if (queue[i].at <= 0){ queue[i].fn(); queue.splice(i,1); }
+  }
+  /* コンボの鮮度: 0.9s 途切れたらリセット */
+  if (chain > 0 && !pendingFin && tNow - lastSlashT > 0.9){ chain = 0; syncChain(false); }
+
+  trauma = Math.max(0, trauma - realDt*2.0);
+  flashA = Math.max(0, flashA - realDt*3.0);
+  speed *= Math.pow(0.02, realDt);                    /* 入力が止まれば剣速も鎮まる */
+  seedT += realDt*60;
+
+  /* 薄塗りクリア = 残像 */
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(10,8,18,0.32)';
+  ctx.fillRect(0,0,W,H);
+
+  const sh = trauma*trauma;
+  ctx.save();
+  ctx.translate((Math.sin(seedT*1.3)+Math.sin(seedT*2.7))*6*sh,
+                (Math.cos(seedT*1.7)+Math.sin(seedT*2.3))*6*sh);
+  ctx.globalCompositeOperation = 'lighter';
+
+  /* --- ストライプ (リボントレイル): 履歴を先細り二層ポリラインで --- */
+  while (hist.length && (tNow - hist[hist.length-1].t > 0.22 || hist.length > 26)) hist.pop();
+  const widthBoost = 1 + Math.min(speed/2200, 1.6);   /* 速いほど太く明るい刃 */
+  for (let pass = 0; pass < 2; pass++){               /* 外層=色 / 内層=白コア */
+    for (let i = 1; i < hist.length; i++){
+      const h0 = hist[i-1], h1 = hist[i];
+      const age = (tNow - h1.t) / 0.22;               /* 0=新しい 1=消える */
+      const taper = (1 - i/hist.length) * (1 - age);
+      if (taper <= 0.01) continue;
+      ctx.strokeStyle = pass ? CORE : GLOW;
+      ctx.globalAlpha = taper * (pass ? 0.9 : 0.55);
+      ctx.lineWidth = (pass ? 3.5 : 11) * taper * widthBoost;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(h0.x, h0.y); ctx.lineTo(h1.x, h1.y); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  /* --- 斬撃アーク --- */
+  for (let i=slashes.length-1; i>=0; i--){ const s = slashes[i];
+    s.t += dt; const p = Math.max(0, Math.min(s.t/s.dur, 1));
+    const R = Math.max(0.01, s.R * (0.6 + Ease.outExpo(p)*0.55)), alpha = (1-p)*(1-p);
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.angle + p*0.4);
+    const g = ctx.createRadialGradient(0, 0, Math.max(0, R*0.4), 0, 0, Math.max(R, 0.01));
+    g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(0.75, GLOW);
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.globalAlpha = alpha; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0,0,R,-0.95,0.95); ctx.arc(0,0,R*0.55,0.95,-0.95,true);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`; ctx.lineWidth = 2.5*(1-p)+0.5;
+    ctx.beginPath(); ctx.arc(0,0,R*0.98,-0.95,0.95); ctx.stroke();
+    ctx.restore();
+    if (p>=1) slashes.splice(i,1);
+  }
+  ctx.globalAlpha = 1;
+
+  /* --- 衝撃波リング --- */
+  for (let i=rings.length-1; i>=0; i--){ const r = rings[i];
+    r.t += dt; const p = Math.min(r.t/r.dur, 1);
+    ctx.strokeStyle = r.color; ctx.globalAlpha = (1-p)*(1-p)*0.9;
+    ctx.lineWidth = r.w*(1-p)+0.5;
+    ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(0, r.R*Ease.outExpo(p)), 0, 7); ctx.stroke();
+    if (p>=1) rings.splice(i,1);
+  }
+
+  /* --- 火花: 急減速 → 消え際の「余韻のうねり」 --- */
+  for (let i=parts.length-1; i>=0; i--){ const q = parts[i];
+    q.life -= dt;
+    if (q.life <= 0){ parts.splice(i,1); continue; }
+    q.vy += q.g*dt; q.x += q.vx*dt; q.y += q.vy*dt;
+    q.vx *= Math.pow(0.3, dt); q.vy *= Math.pow(0.45, dt);
+    const lp = q.life / q.max;
+    if (lp < 0.55){                                    /* 余韻ゾーンだけ漂う */
+      const w = (0.55 - lp) * 640;
+      q.vx += Math.sin(tNow*7.3 + q.seed*9.0) * w * dt;
+      q.vy += Math.cos(tNow*6.1 + q.seed*7.0) * w * dt * 0.8;
+    }
+    const a = Math.pow(lp, 1.4);
+    ctx.strokeStyle = q.color; ctx.globalAlpha = a; ctx.lineWidth = q.w*a;
+    ctx.beginPath();
+    ctx.moveTo(q.x - q.vx*0.03, q.y - q.vy*0.03); ctx.lineTo(q.x, q.y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  /* --- テキストポップ --- */
+  ctx.globalCompositeOperation = 'source-over';
+  for (let i=texts.length-1; i>=0; i--){ const n = texts[i];
+    n.t += dt; const p = Math.min(n.t/n.dur, 1);
+    const pop = Ease.outBack(Math.min(p*4, 1));
+    const alpha = p < 0.65 ? 1 : 1-(p-0.65)/0.35;
+    const size = (n.big ? 52 : 22) * pop;
+    ctx.font = `900 ${size}px ui-monospace, monospace`;
+    ctx.textAlign = 'center'; ctx.globalAlpha = alpha;
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(10,8,18,.9)';
+    const yy = n.y - Ease.outCubic(p)*44;
+    ctx.strokeText(n.label, n.x, yy);
+    ctx.fillStyle = n.big ? '#fde047' : CORE;
+    ctx.fillText(n.label, n.x, yy);
+    if (p>=1) texts.splice(i,1);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (flashA > 0.005){
+    ctx.fillStyle = `rgba(255,248,225,${Math.min(flashA, 0.3)})`;
+    ctx.fillRect(0,0,W,H);
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

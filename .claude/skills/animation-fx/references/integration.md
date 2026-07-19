@@ -132,7 +132,21 @@ attribute を追加した geometry (particles) は切替のたび再生成。
 | draw call | ヒーロー演出で <60。群体は InstancedMesh 必須 |
 | `discard` 多用シェーダー | 単一ヒーローは無問題。複数体・全画面は注意 (early-Z 無効) |
 
-## 7. アクセシビリティ (省略不可)
+## 7. GLSL の落とし穴 (実戦で踏んだものを蓄積)
+
+- **予約語を変数名に使わない**: WebGL1では通るのにWebGL2(GLSL ES 3.0)で
+  コンパイルエラーになる語がある。特に踏みやすいのは
+  `active` `filter` `input` `output` `common` `partition` `sample` `buffer` `shared`
+  `resource` `precision` `smooth` `flat` `patch`。
+  演出系で使いたくなる名前ばかりなので、`flashAmt` `blurAmt` `inputUv` のように
+  修飾を付けて回避する。three.js はWebGL2優先でコンテキストを取るため必ず顕在化する。
+- サンプラー(`sampler2D`)は三項演算子・関数引数の動的分岐に使えない。
+  両方サンプルして `mix()` するか、UVオフセット側に条件を畳み込む。
+- `if (x) discard;` 多用は early-Z を無効化する (性能予算表参照)。
+- 整数除算・`%` はGLSL ES 1.0に無い。`mod()` と `floor()` で書く。
+- ループ回数は定数のみ (ES 1.0)。fbm のオクターブは `const int` で。
+
+## 8. アクセシビリティ (省略不可)
 
 ```css
 @media (prefers-reduced-motion: reduce) {

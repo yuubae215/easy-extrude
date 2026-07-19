@@ -123,6 +123,34 @@ col = mix(col, uGlowColor * 0.6, smoothstep(0.65, 0.95, v));
 ヒーローセクションの背景として最強のコスパ。opacity 0.5 程度で敷き、
 `prefers-reduced-motion` では uTime を固定する。
 
+## 5. DOM×WebGLハイブリッド (VFX-JS方式: 本文にシェーダーをかける)
+
+エフェクトを「キャンバスの中の作品」でなく**ページの実要素 (見出し・画像・ボタン) そのもの**
+にかける技法。VFX-JS が広めた構成で、体験の質が一段違う。
+
+構成: ①透明な全画面WebGLキャンバスを `position:fixed; pointer-events:none` で最前面に
+②対象要素ごとに板ポリを1枚持ち、**毎フレーム `getBoundingClientRect` で位置同期**
+(スクロール追従の核心) ③要素内容をテクスチャ化し、シェーダーで描画
+④元のDOM要素は `opacity:0` (レイアウト・イベント・a11yは生かしたまま描画だけ引き継ぐ)。
+
+```javascript
+// rect → ortho座標 (カメラは -W/2..W/2, H/2..-H/2)
+mesh.position.set(r.left + r.width/2 - W/2, H/2 - (r.top + r.height/2), 0);
+```
+
+- **テクスチャ化**: テキストは computedStyle (font/color/lineHeight) を写して
+  Canvas 2D に描く。画像は同一オリジン or 手続き生成。歪みのはみ出し用に
+  **周囲 20–30px のパディング**をテクスチャと板ポリ両方に足す。
+- **強度は必ずバネ**: hover/tap → `target=1`、`v += (target-v)*(1-pow(0.002,dt))`。
+  アイドル強度 0.1–0.2 を常時残す (静止禁止)。モバイルには数秒おきの自動バーストを。
+- **リサイズ**: rect もフォントサイズも変わるため、デバウンス後にテクスチャと
+  ジオメトリを作り直す (旧リソースは dispose)。
+- 起動は `document.fonts.ready` 待ち (Webフォント読込前に描くと字が化ける)。
+- `prefers-reduced-motion` では初期化自体をスキップし素のDOMを見せる — この方式は
+  代替が自明に用意できるのが利点。
+- 相性の良いエフェクト: glitch (行テア+RGB分離+ブロック欠落)、wave (二軸サイン変位)、
+  hologram (走査線+降下する光帯+明滅)。いずれも強度 k を uniform で受ける設計に。
+
 ## パフォーマンス
 
 - フルスクリーンfragmentのコストは解像度に比例。`setPixelRatio(min(dpr, 1.5))` まで

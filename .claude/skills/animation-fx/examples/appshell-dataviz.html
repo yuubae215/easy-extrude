@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<!--
+[animation-fx sample] appshell-dataviz — シェル+ノードグラフ+チャート+階層図 (業務UI)
+体現する原則 (references/principles.md):
+  P3 伝播      : シェル(方向別)→メニュー(45ms)→カード(90ms)→中身、の4段伝播。
+                グラフは深さ順pop、ツリーは 順序×深さ の複合遅延
+  P4 境界      : 折れ線の先端ドットが線を先導 / エッジのdash描画
+  P7 文脈      : hover時は関係エッジをhotに「する」より無関係をdimに「沈める」
+  P10 物理     : FLIPでレイアウト変化を transform の連続移動に変換 (瞬間移動禁止)
+  P11 抑制     : 業務UIの振幅は控えめ / モバイルはドロワー化し入場振付から除外
+読み方: enter() がオーケストレーション (抽象タイムライン)、CSS変数 --i/--d が
+伝播遅延の具体化。強制reflowによるtransitionリセットは再入場の定石。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Console — Shell & Dataviz Choreography</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --glow:#3b82f6; --ease-out:cubic-bezier(0.16,1,0.3,1); --back:cubic-bezier(0.34,1.56,0.64,1); }
+  body { background:#070a13; }
+
+  /* ---- シェル入場: 各領域が「来た方向」から滑り込む ---- */
+  .shell { transition: transform .6s var(--ease-out), opacity .45s ease-out; }
+  .from-top    { transform:translateY(-102%); opacity:0; }
+  .from-bottom { transform:translateY(102%);  opacity:0; }
+  .ready .shell { transform:none; opacity:1; }
+  .ready #header  { transition-delay:0ms; }
+  .ready #footer  { transition-delay:260ms; }
+
+  /* デスクトップ: サイドバーは入場振付に参加 */
+  @media (min-width:1024px) {
+    #lside { transform:translateX(-102%); opacity:0; }
+    #rside { transform:translateX(102%);  opacity:0; }
+    .ready #lside { transform:none; opacity:1; transition-delay:90ms; }
+    .ready #rside { transform:none; opacity:1; transition-delay:180ms; }
+  }
+  /* モバイル: サイドバーはドロワー化して入場振付から除外 (メインを全幅に) */
+  @media (max-width:1023px) {
+    #lside, #rside { position:fixed; top:52px; bottom:32px; width:min(78vw,280px); z-index:40;
+      opacity:1; transition: transform .45s var(--ease-out);
+      box-shadow: 0 0 60px rgba(0,0,0,.65); overflow-y:auto; }
+    #lside { left:0; transform:translateX(-105%); }
+    #rside { right:0; transform:translateX(105%); }
+    #lside.open, #rside.open { transform:none; }
+    .ready #lside:not(.open) { transform:translateX(-105%); }
+    .ready #rside:not(.open) { transform:translateX(105%); }
+  }
+  #backdrop { opacity:0; pointer-events:none; transition: opacity .3s ease-out; }
+  #backdrop.show { opacity:1; pointer-events:auto; }
+  .icon-btn { transition: transform .15s cubic-bezier(0.33,1,0.68,1), background .2s; }
+  .icon-btn:active { transform:scale(0.9); transition-duration:.08s; }
+
+  /* メニュー項目: シェルの後にスタッガー */
+  .mi { opacity:0; transform:translateX(-14px);
+        transition: opacity .35s ease-out, transform .45s var(--ease-out);
+        transition-delay: calc(340ms + var(--i) * 45ms); }
+  .ready .mi { opacity:1; transform:none; }
+  .mi-btn { position:relative; transition: color .2s, background .2s; }
+  .mi-btn::before { content:''; position:absolute; left:0; top:20%; bottom:20%; width:2.5px;
+    background:var(--glow); border-radius:2px; transform:scaleY(0);
+    transition: transform .25s var(--back); }
+  .mi-btn:hover::before, .mi-btn.active::before { transform:scaleY(1); }
+  .mi-btn:active { transform:scale(0.97); }
+
+  /* カード: フェードアップのスタッガー */
+  .card { opacity:0; transform:translateY(18px);
+          transition: opacity .45s ease-out, transform .55s var(--ease-out);
+          transition-delay: calc(480ms + var(--i) * 90ms); }
+  .ready .card { opacity:1; transform:none; }
+
+  /* ---- ノードグラフ ---- */
+  .node { transform-box: fill-box; transform-origin: center; transform: scale(0); }
+  .go .node { animation: nodePop .55s var(--back) both; animation-delay: var(--d); }
+  @keyframes nodePop { 0%{transform:scale(0)} 70%{transform:scale(1.12)} 100%{transform:scale(1)} }
+  .edge { transition: stroke .25s, stroke-width .25s, opacity .25s; }
+  .edge.dim { opacity:.15; }
+  .edge.hot { stroke:var(--glow); stroke-width:2; }
+  .nodeg { cursor:pointer; }
+  .nodeg.dim { opacity:.25; transition: opacity .25s; }
+
+  /* ---- バーチャート ---- */
+  .bar { transform-box: fill-box; transform-origin: bottom; transform: scaleY(0); }
+  .go .bar { animation: barGrow .7s var(--back) both; animation-delay: var(--d); }
+  @keyframes barGrow { to { transform: scaleY(1); } }
+  .bar:hover { filter: brightness(1.4); }
+
+  /* ---- 階層ツリー ---- */
+  .row { opacity:0; transform:translateX(-10px);
+         transition: opacity .35s ease-out, transform .45s var(--ease-out);
+         transition-delay: var(--d); }
+  .go .row { opacity:1; transform:none; }
+  .row:hover { background:rgba(59,130,246,.07); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shell,.mi,.card,.row { opacity:1 !important; transform:none !important; transition:none !important; }
+    .node,.bar { animation:none !important; transform:scale(1) !important; }
+  }
+</style>
+</head>
+<body class="antialiased text-slate-300 h-screen overflow-hidden">
+<div id="app" class="h-screen grid grid-rows-[52px_1fr_32px] grid-cols-1 lg:grid-cols-[210px_1fr_230px] gap-0">
+
+  <!-- ヘッダー -->
+  <header id="header" class="shell from-top col-span-full flex items-center justify-between px-3 lg:px-4 bg-slate-900/80 backdrop-blur border-b border-slate-800">
+    <div class="flex items-center gap-2">
+      <button id="menuBtn" class="icon-btn lg:hidden w-8 h-8 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800" aria-label="メニュー">☰</button>
+      <div class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-indigo-500"></div>
+      <span class="text-sm font-bold text-slate-100">Console</span>
+      <span class="hidden md:inline text-[9px] font-mono uppercase tracking-widest text-slate-500 mt-0.5">shell choreography</span>
+    </div>
+    <div class="flex items-center gap-3 lg:gap-5 font-mono text-xs">
+      <div class="hidden md:block">THROUGHPUT <span id="stat1" class="text-blue-400 font-bold">0</span></div>
+      <div class="hidden md:block">NODES <span id="stat2" class="text-emerald-400 font-bold">0</span></div>
+      <button id="replay" class="text-[11px] border border-slate-700 hover:border-blue-500 rounded-lg px-3 py-1 transition-colors">↻ Replay</button>
+      <button id="bellBtn" class="icon-btn lg:hidden w-8 h-8 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800" aria-label="アクティビティ">◔</button>
+    </div>
+  </header>
+
+  <!-- 左サイドバー: メインメニュー -->
+  <nav id="lside" class="shell bg-slate-950 lg:bg-slate-950/60 border-r border-slate-800 p-3 space-y-0.5">
+    <p class="text-[9px] font-mono uppercase tracking-widest text-slate-600 px-2 mb-2 mi" style="--i:0">Main Menu</p>
+    <div class="mi" style="--i:1"><button class="mi-btn active w-full text-left text-[13px] px-3 py-2 rounded-lg text-slate-100 bg-slate-800/60">◈ ダッシュボード</button></div>
+    <div class="mi" style="--i:2"><button class="mi-btn w-full text-left text-[13px] px-3 py-2 rounded-lg hover:text-slate-100 hover:bg-slate-800/40">⬡ パイプライン</button></div>
+    <div class="mi" style="--i:3"><button class="mi-btn w-full text-left text-[13px] px-3 py-2 rounded-lg hover:text-slate-100 hover:bg-slate-800/40">▤ データセット</button></div>
+    <div class="mi" style="--i:4"><button class="mi-btn w-full text-left text-[13px] px-3 py-2 rounded-lg hover:text-slate-100 hover:bg-slate-800/40">◔ モニタリング</button></div>
+    <div class="mi" style="--i:5"><button class="mi-btn w-full text-left text-[13px] px-3 py-2 rounded-lg hover:text-slate-100 hover:bg-slate-800/40">⚙ 設定</button></div>
+  </nav>
+
+  <!-- メイン -->
+  <main class="overflow-y-auto p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4 auto-rows-min">
+    <!-- ノードグラフ -->
+    <section id="graphCard" class="card lg:col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl p-4" style="--i:0">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-slate-500 mb-2">Pipeline Graph <span class="text-slate-700">— hoverで依存をハイライト</span></h2>
+      <svg id="graph" viewBox="0 0 720 190" class="w-full"></svg>
+    </section>
+
+    <!-- バーチャート -->
+    <section id="barCard" class="card bg-slate-900/50 border border-slate-800 rounded-2xl p-4" style="--i:1">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-slate-500 mb-2">Daily Jobs</h2>
+      <svg id="bars" viewBox="0 0 320 150" class="w-full"></svg>
+    </section>
+
+    <!-- ラインチャート -->
+    <section id="lineCard" class="card bg-slate-900/50 border border-slate-800 rounded-2xl p-4" style="--i:2">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-slate-500 mb-2">Latency (p95)</h2>
+      <svg id="line" viewBox="0 0 320 150" class="w-full"></svg>
+    </section>
+
+    <!-- 階層図 -->
+    <section id="treeCard" class="card lg:col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl p-4" style="--i:3">
+      <h2 class="text-xs font-mono uppercase tracking-widest text-slate-500 mb-2">Resource Hierarchy</h2>
+      <div id="tree" class="font-mono text-[12px]"></div>
+    </section>
+  </main>
+
+  <!-- 右サイドバー -->
+  <aside id="rside" class="shell bg-slate-950 lg:bg-slate-950/60 border-l border-slate-800 p-3">
+    <p class="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-2 px-1">Activity</p>
+    <div id="activity" class="space-y-1.5 text-[11px]"></div>
+  </aside>
+
+  <!-- フッター -->
+  <footer id="footer" class="shell from-bottom col-span-full flex items-center justify-between px-4 bg-slate-900/80 border-t border-slate-800 font-mono text-[10px] text-slate-500">
+    <span><span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>All systems operational</span>
+    <span>animation-fx / dataviz-appshell demo</span>
+  </footer>
+</div>
+<div id="backdrop" class="fixed inset-0 bg-black/55 backdrop-blur-[2px] z-30 lg:hidden"></div>
+
+<script>
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Ease = { outExpo: x=>x===1?1:1-Math.pow(2,-10*x) };
+const NS = 'http://www.w3.org/2000/svg';
+const svgEl = (tag, attrs) => { const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+/* ============ ノードグラフ: 深さスタッガーpop + エッジ描画 + フローパーティクル ============ */
+const NODES = [
+  { id:'src',  x:60,  y:95,  label:'Ingest',   depth:0, c:'#3b82f6' },
+  { id:'val',  x:210, y:45,  label:'Validate', depth:1, c:'#8b5cf6' },
+  { id:'tf',   x:210, y:145, label:'Transform',depth:1, c:'#8b5cf6' },
+  { id:'ml',   x:380, y:95,  label:'Enrich',   depth:2, c:'#ec4899' },
+  { id:'agg',  x:540, y:45,  label:'Aggregate',depth:3, c:'#f59e0b' },
+  { id:'sink', x:660, y:110, label:'Store',    depth:4, c:'#22c55e' },
+];
+const EDGES = [['src','val'],['src','tf'],['val','ml'],['tf','ml'],['ml','agg'],['ml','sink'],['agg','sink']];
+const graph = document.getElementById('graph');
+const nodeMap = Object.fromEntries(NODES.map(n => [n.id, n]));
+const edgeEls = [], particles = [];
+
+function edgePath(a, b){  /* 水平ベジェで有機的に繋ぐ */
+  const mx = (a.x + b.x) / 2;
+  return `M ${a.x} ${a.y} C ${mx} ${a.y}, ${mx} ${b.y}, ${b.x} ${b.y}`;
+}
+EDGES.forEach(([f, t], i) => {
+  const p = svgEl('path', { d: edgePath(nodeMap[f], nodeMap[t]), fill:'none',
+    stroke:'#334155', 'stroke-width':1.5, class:'edge' });
+  p.dataset.from = f; p.dataset.to = t;
+  graph.appendChild(p); edgeEls.push(p);
+  particles.push({ path:p, t:Math.random(), speed:0.10 + Math.random()*0.08,
+    dot:svgEl('circle', { r:2.2, fill:'#93c5fd', opacity:0 }) });
+});
+particles.forEach(pt => graph.appendChild(pt.dot));
+NODES.forEach(n => {
+  const g = svgEl('g', { class:'nodeg' }); g.dataset.id = n.id;
+  const node = svgEl('g', { class:'node' });
+  node.style.setProperty('--d', `${200 + n.depth * 140}ms`);          /* 深さスタッガー */
+  node.appendChild(svgEl('circle', { cx:n.x, cy:n.y, r:15, fill:'#0f172a',
+    stroke:n.c, 'stroke-width':2 }));
+  node.appendChild(svgEl('circle', { cx:n.x, cy:n.y, r:5, fill:n.c,
+    style:`filter:drop-shadow(0 0 6px ${n.c})` }));
+  const tx = svgEl('text', { x:n.x, y:n.y+32, 'text-anchor':'middle',
+    fill:'#94a3b8', 'font-size':10, 'font-family':'monospace' });
+  tx.textContent = n.label; node.appendChild(tx);
+  g.appendChild(node); graph.appendChild(g);
+  /* ホバー: 接続エッジをhot、無関係をdim (依存の可視化) */
+  g.addEventListener('pointerenter', () => {
+    edgeEls.forEach(e => e.classList.add(
+      (e.dataset.from === n.id || e.dataset.to === n.id) ? 'hot' : 'dim'));
+    document.querySelectorAll('.nodeg').forEach(o => {
+      const linked = o.dataset.id === n.id || EDGES.some(([f,t]) =>
+        (f===n.id&&t===o.dataset.id)||(t===n.id&&f===o.dataset.id));
+      if (!linked) o.classList.add('dim');
+    });
+  });
+  g.addEventListener('pointerleave', () => {
+    edgeEls.forEach(e => e.classList.remove('hot','dim'));
+    document.querySelectorAll('.nodeg').forEach(o => o.classList.remove('dim'));
+  });
+});
+/* エッジ: ノードの後にdash描画 (WAAPI) */
+function drawEdges(){
+  edgeEls.forEach((p, i) => {
+    const len = p.getTotalLength();
+    p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
+    p.animate([{strokeDashoffset:len},{strokeDashoffset:0}],
+      { duration: REDUCED?1:600, delay: REDUCED?0:700 + i*70,
+        easing:'cubic-bezier(0.16,1,0.3,1)', fill:'forwards' });
+  });
+}
+
+/* ============ バーチャート: 下から生えるスタッガー + outBack ============ */
+const barsSvg = document.getElementById('bars');
+const DATA = [42, 68, 55, 90, 74, 96, 61, 83];
+DATA.forEach((v, i) => {
+  const h = v * 1.15, x = 18 + i * 37;
+  const r = svgEl('rect', { x, y:135-h, width:22, height:h, rx:4,
+    fill:'url(#bgrad)', class:'bar' });
+  r.style.setProperty('--d', `${900 + i*55}ms`);
+  barsSvg.appendChild(r);
+});
+barsSvg.insertAdjacentHTML('afterbegin', `<defs><linearGradient id="bgrad" x1="0" y1="1" x2="0" y2="0">
+  <stop offset="0" stop-color="#1d4ed8"/><stop offset="1" stop-color="#60a5fa"/></linearGradient></defs>
+  <line x1="10" y1="135" x2="310" y2="135" stroke="#1e293b"/>`);
+
+/* ============ ラインチャート: draw-on + エリア追い焚き + 先端ドット ============ */
+const lineSvg = document.getElementById('line');
+const PTS = [120,95,105,70,80,52,60,38,48,30].map((y,i)=>[20+i*31, y+15]);
+const dAttr = 'M' + PTS.map(p=>p.join(',')).join(' L');
+lineSvg.innerHTML = `<defs><linearGradient id="lgrad" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#3b82f6" stop-opacity=".35"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>
+  <path id="larea" d="${dAttr} L ${PTS.at(-1)[0]},140 L ${PTS[0][0]},140 Z" fill="url(#lgrad)" opacity="0"/>
+  <path id="lpath" d="${dAttr}" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"/>
+  <circle id="ldot" r="4" fill="#93c5fd" opacity="0" style="filter:drop-shadow(0 0 6px #3b82f6)"/>`;
+function drawLine(){
+  const p = document.getElementById('lpath'), len = p.getTotalLength();
+  p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
+  p.animate([{strokeDashoffset:len},{strokeDashoffset:0}],
+    { duration:REDUCED?1:1100, delay:REDUCED?0:950, easing:'cubic-bezier(0.16,1,0.3,1)', fill:'forwards' });
+  /* 先端ドットが線を先導する */
+  const dot = document.getElementById('ldot'), t0 = performance.now() + (REDUCED?0:950);
+  (function head(now){
+    const pr = Math.min(Math.max((now - t0)/1100, 0), 1);
+    const pos = p.getPointAtLength(len * (1-Math.pow(1-pr,3)));
+    dot.setAttribute('cx', pos.x); dot.setAttribute('cy', pos.y);
+    dot.setAttribute('opacity', pr > 0 && pr < 1 ? 1 : (pr>=1?1:0));
+    if (pr < 1) requestAnimationFrame(head);
+  })(performance.now());
+  document.getElementById('larea').animate([{opacity:0},{opacity:1}],
+    { duration:600, delay:REDUCED?0:1750, fill:'forwards', easing:'ease-out' }); /* 追従(overlap) */
+}
+
+/* ============ 階層図: 深さ×順序スタッガー ============ */
+const TREE = [
+  ['prod-cluster', 0, '#3b82f6'], ['api-gateway', 1, '#8b5cf6'],
+  ['auth-service', 2, '#94a3b8'], ['rate-limiter', 2, '#94a3b8'],
+  ['worker-pool', 1, '#8b5cf6'], ['job-runner-a', 2, '#94a3b8'],
+  ['job-runner-b', 2, '#94a3b8'], ['gpu-node-01', 3, '#f59e0b'],
+  ['storage', 1, '#8b5cf6'], ['pg-primary', 2, '#94a3b8'], ['pg-replica', 2, '#94a3b8'],
+];
+const tree = document.getElementById('tree');
+TREE.forEach(([name, depth, c], i) => {
+  const row = document.createElement('div');
+  row.className = 'row flex items-center gap-2 px-2 py-1 rounded-md';
+  row.style.setProperty('--d', `${1050 + i*55 + depth*40}ms`);   /* 順序+深さの複合遅延 */
+  row.style.paddingLeft = `${8 + depth*22}px`;
+  row.innerHTML = `${depth ? '<span class="text-slate-700">'+'│&nbsp;'.repeat(depth-1)+'├─</span>' : ''}
+    <span class="w-1.5 h-1.5 rounded-full" style="background:${c}; box-shadow:0 0 5px ${c}"></span>
+    <span class="text-slate-300">${name}</span>
+    <span class="ml-auto text-slate-600">${depth===3?'GPU':'ok'}</span>`;
+  tree.appendChild(row);
+});
+
+/* ============ 右サイドバー: アクティビティのスタッガー ============ */
+const ACT = ['ジョブ #4821 完了','デプロイ v2.4.1','ノード追加: gpu-01','アラート解消 (p95)','バックアップ完了'];
+const act = document.getElementById('activity');
+ACT.forEach((s, i) => {
+  const d = document.createElement('div');
+  d.className = 'row bg-slate-900/60 border border-slate-800/60 rounded-lg px-2.5 py-2 text-slate-400';
+  d.style.setProperty('--d', `${600 + i*70}ms`);
+  d.textContent = s; act.appendChild(d);
+});
+
+/* ============ カウンター: ロールアップ ============ */
+function rollUp(el, target, delay){
+  const t0 = performance.now() + delay;
+  (function tick(now){
+    const p = Math.min(Math.max((now - t0)/900, 0), 1);
+    el.textContent = Math.round(target * Ease.outExpo(p)).toLocaleString();
+    if (p < 1) requestAnimationFrame(tick);
+  })(performance.now());
+}
+
+/* ============ オーケストレーション ============ */
+function enter(){
+  document.body.classList.remove('ready');
+  document.querySelectorAll('.go').forEach(e => e.classList.remove('go'));
+  void document.body.offsetHeight;                       /* reflowでtransitionをリセット */
+  document.body.classList.add('ready');
+  ['graphCard','barCard','lineCard','treeCard'].forEach(id =>
+    document.getElementById(id).classList.add('go'));
+  drawEdges(); drawLine();
+  rollUp(document.getElementById('stat1'), 12840, REDUCED?0:500);
+  rollUp(document.getElementById('stat2'), 6, REDUCED?0:650);
+}
+document.getElementById('replay').addEventListener('click', enter);
+requestAnimationFrame(() => requestAnimationFrame(enter));
+
+/* フローパーティクル: エッジ描画後に流れ始める (dt非依存) */
+let last = performance.now(), flowOn = 0;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min((now-last)/1000, 0.05); last = now;
+  flowOn = Math.min(flowOn + dt * 0.5, 1);
+  if (!REDUCED) particles.forEach(pt => {
+    pt.t = (pt.t + dt * pt.speed) % 1;
+    const len = pt.path.getTotalLength();
+    const pos = pt.path.getPointAtLength(len * pt.t);
+    pt.dot.setAttribute('cx', pos.x); pt.dot.setAttribute('cy', pos.y);
+    /* 端でフェード (出入りの瞬間を柔らかく) */
+    const fade = Math.min(pt.t, 1-pt.t) * 8;
+    pt.dot.setAttribute('opacity', Math.min(fade, 0.9) * flowOn);
+  });
+}
+
+/* ============ モバイルドロワー: 開くたびに項目を再スタッガー ============ */
+const lside = document.getElementById('lside'), rside = document.getElementById('rside'),
+      backdrop = document.getElementById('backdrop');
+function setDrawer(el, open){
+  el.classList.toggle('open', open);
+  if (open && !REDUCED) {
+    const items = el.querySelectorAll(el === lside ? '.mi' : '.row');
+    const dx = el === lside ? '-14px' : '14px';
+    items.forEach((m, i) => m.animate(
+      [{opacity:0, transform:`translateX(${dx})`}, {opacity:1, transform:'none'}],
+      { duration:350, delay:80 + i*40, easing:'cubic-bezier(0.16,1,0.3,1)', fill:'backwards' }));
+  }
+  backdrop.classList.toggle('show',
+    lside.classList.contains('open') || rside.classList.contains('open'));
+}
+document.getElementById('menuBtn').addEventListener('click',
+  () => { setDrawer(rside, false); setDrawer(lside, !lside.classList.contains('open')); });
+document.getElementById('bellBtn').addEventListener('click',
+  () => { setDrawer(lside, false); setDrawer(rside, !rside.classList.contains('open')); });
+backdrop.addEventListener('click', () => { setDrawer(lside, false); setDrawer(rside, false); });
+
+setTimeout(() => requestAnimationFrame(frame), REDUCED ? 0 : 1500);
+</script>
+</body>
+</html>

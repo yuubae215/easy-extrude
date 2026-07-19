@@ -1,10 +1,17 @@
 kernel-bundle: portable (in-repo)
-version: 2026-07-11
+version: 2026-07-18
 source: claude-kernel-bundle (canonical)
 notes: |
   これは canonical bundle を本リポジトリへ vendoring したコピー。ドリフト検知用。
   内容を更新するときは canonical 側を直し、本ファイルの version を上げて再配布する。
 changes: |
+  2026-07-19: canonical 2026-07-18 版へ再同期。00-kernel.md(§1.4 状態台帳・
+    §2 一拍俯瞰・§6 自己適用)、CLAUDE.project-template.md(状態台帳節)、
+    kernel-log.md を取り込み。hooks/evidence-before-commit.sh は本リポジトリ
+    ローカル拡張(.gsn lint 節)を保持したまま(canonical との差分は意図的)。
+    animation-fx skill も 2026-07-19 版へ更新(principles.md 抽象レイヤー +
+    examples/ 3本 + game-vfx / dataviz-appshell / evolution / changelog)。
+
   2026-07-19: rules/10-principles.md を追加 — docs/PHILOSOPHY.md(正本)の
     蒸留ダイジェストを kernel レーンへ統合(常時 load)。本リポジトリ側で先行
     追加したローカル変更 — 本文はプロジェクト不変の語彙で記述済みのため、

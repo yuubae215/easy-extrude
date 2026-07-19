@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<!--
+[animation-fx sample] metamorph — A→破片→B 変身遷移 (three.js / カスタムGLSL)
+体現する原則 (references/principles.md):
+  P3 伝播      : 面ごとの遅延 clamp((uT - aRand.x*0.12)/0.88) で割れが波として走る
+  P4 境界      : 破片化した面から色がガラス光へ遷移 smoothstep(0.03,0.3,vS)
+  P6 時間操作  : 定着の瞬間のフラッシュ+スケールパンチ (punch減衰)
+  P7 文脈      : Nebula系アトモスフィア (紫光塵) + glow色の全要素共有
+  P9 対称設計  : 飛散量はベル曲線 pow(sin(tt·π),0.85) — 1つのuTで出て戻る。
+                「帰る家」(位置/重心/法線) は破片が最も散る0.35-0.65ですり替え
+読み方: 面数パディングと aDup のz-fight回避が「異なる具体 (形状) を同じ抽象 (面配列)
+に揃える」操作そのもの。regenScatter() が P8 (毎回違う砕け方)。
+-->
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>METAMORPH — shatter into another form</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  body { overflow:hidden;
+    background: linear-gradient(180deg, #120a24 0%, #170e2e 55%, #1a1033 100%); }
+  .cta { transition: transform .15s cubic-bezier(0.33,1,0.68,1), border-color .2s, color .2s, background .2s; }
+  .cta:active { transform:scale(0.93); transition-duration:.06s; }
+  .cta.on { border-color:#c084fc; color:#f3e8ff; background:rgba(192,132,252,.12); }
+  #formLabel { transition: color .3s; }
+</style>
+</head>
+<body class="antialiased text-slate-200">
+<div id="stage" class="fixed inset-0"><canvas id="c" class="block w-full h-full"></canvas></div>
+
+<div class="fixed top-5 left-5 pointer-events-none">
+  <p class="text-[10px] font-mono uppercase tracking-[0.3em] text-purple-300/70">Metamorph</p>
+  <h1 class="text-xl font-black text-slate-100">砕けて、別のかたちへ。</h1>
+  <p class="font-mono text-xs mt-2 text-slate-400">FORM: <span id="formLabel" class="text-purple-300 font-bold">KNOT</span></p>
+</div>
+
+<div class="fixed bottom-6 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+  <button id="btnNext" class="cta font-mono text-xs font-bold border-2 border-slate-600 rounded-xl px-5 py-2.5 bg-slate-900/60 backdrop-blur">NEXT FORM ▸</button>
+  <button id="btnAuto" class="cta on font-mono text-xs font-bold border-2 border-slate-600 rounded-xl px-4 py-2.5 bg-slate-900/60 backdrop-blur">AUTO</button>
+</div>
+
+<script>
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Ease = { inOutSine:x=>-(Math.cos(Math.PI*x)-1)/2, outExpo:x=>x===1?1:1-Math.pow(2,-10*x) };
+const GLOW = '#c084fc', BASE = '#2d2250';
+
+const stage = document.getElementById('stage'), canvas = document.getElementById('c');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setClearColor(0x000000, 0);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+scene.add(new THREE.AmbientLight('#d8c8ff', 0.3));
+const key = new THREE.DirectionalLight('#ffffff', 0.8); key.position.set(4, 8, 5); scene.add(key);
+const rim = new THREE.DirectionalLight(GLOW, 0.6); rim.position.set(-4, 2, -6); scene.add(rim);
+
+/* 環境: 紫の光塵 */
+const dustGeo = new THREE.BufferGeometry();
+const dp = new Float32Array(160*3);
+for (let i=0;i<dp.length;i+=3){ dp[i]=(Math.random()-.5)*14; dp[i+1]=(Math.random()-.5)*8+1; dp[i+2]=(Math.random()-.5)*14; }
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dp,3));
+scene.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({
+  color:GLOW, size:0.03, transparent:true, opacity:0.3, depthWrite:false })));
+
+/* ============ 形状データ: 全形状を同一の面数Fにパディングして抽出 ============ */
+const FORMS = [
+  { name:'KNOT',    geo:new THREE.TorusKnotGeometry(0.6, 0.2, 90, 14) },
+  { name:'RING',    geo:new THREE.TorusGeometry(0.78, 0.3, 26, 44) },
+  { name:'CRYSTAL', geo:new THREE.OctahedronGeometry(1.02, 3) },
+];
+function extract(src){
+  const g = src.toNonIndexed();
+  return { faces: g.attributes.position.count/3, pos: g.attributes.position.array };
+}
+const raw = FORMS.map(f => extract(f.geo));
+const F = Math.max(...raw.map(r => r.faces));      /* 共通面数 */
+
+function padded(data){
+  const pos = new Float32Array(F*9), cent = new Float32Array(F*9),
+        norm = new Float32Array(F*9), dup = new Float32Array(F*3);
+  const A=new THREE.Vector3(), B=new THREE.Vector3(), C=new THREE.Vector3(),
+        AB=new THREE.Vector3(), AC=new THREE.Vector3(), N=new THREE.Vector3(), Ce=new THREE.Vector3();
+  for (let f=0; f<F; f++){
+    const src = f % data.faces;                    /* 足りない分は面を再利用 */
+    const layer = Math.floor(f / data.faces);      /* 重複面はz-fight回避の微オフセット層 */
+    for (let k=0;k<9;k++) pos[f*9+k] = data.pos[src*9+k];
+    A.fromArray(pos, f*9); B.fromArray(pos, f*9+3); C.fromArray(pos, f*9+6);
+    Ce.copy(A).add(B).add(C).multiplyScalar(1/3);
+    AB.copy(B).sub(A); AC.copy(C).sub(A);
+    N.copy(AB).cross(AC).normalize();
+    for (let k=0;k<3;k++){
+      cent.set([Ce.x,Ce.y,Ce.z], (f*3+k)*3);
+      norm.set([N.x,N.y,N.z], (f*3+k)*3);
+      dup[f*3+k] = layer * 0.002;
+    }
+  }
+  return { pos, cent, norm, dup };
+}
+const shapeData = raw.map(padded);
+
+/* ============ モーフ・シャッター ジオメトリ ============ */
+const geo = new THREE.BufferGeometry();
+const mk = (arr, n) => new THREE.BufferAttribute(arr, n);
+const cur = 0;
+geo.setAttribute('position', mk(shapeData[0].pos.slice(), 3));   /* A側 (現在形) */
+geo.setAttribute('aCentA',  mk(shapeData[0].cent.slice(), 3));
+geo.setAttribute('aNormA',  mk(shapeData[0].norm.slice(), 3));
+geo.setAttribute('aDupA',   mk(shapeData[0].dup.slice(), 1));
+geo.setAttribute('aPosB',   mk(shapeData[1].pos.slice(), 3));    /* B側 (次形) */
+geo.setAttribute('aCentB',  mk(shapeData[1].cent.slice(), 3));
+geo.setAttribute('aNormB',  mk(shapeData[1].norm.slice(), 3));
+geo.setAttribute('aDupB',   mk(shapeData[1].dup.slice(), 1));
+geo.setAttribute('aDir',    mk(new Float32Array(F*9), 3));
+geo.setAttribute('aAxis',   mk(new Float32Array(F*9), 3));
+geo.setAttribute('aRand',   mk(new Float32Array(F*9), 3));
+
+function regenScatter(){
+  const dir = geo.attributes.aDir.array, axis = geo.attributes.aAxis.array,
+        rand = geo.attributes.aRand.array;
+  const cA = geo.attributes.aCentA.array, cB = geo.attributes.aCentB.array;
+  const v = new THREE.Vector3();
+  for (let f=0; f<F; f++){
+    /* 飛散方向: A/B重心の中間方向 + 乱れ (行きも帰りも自然な外周軌道になる) */
+    v.set(cA[f*9]+cB[f*9], cA[f*9+1]+cB[f*9+1], cA[f*9+2]+cB[f*9+2]).normalize()
+     .add(new THREE.Vector3((Math.random()-.5)*1.1,(Math.random()-.5)*1.1,(Math.random()-.5)*1.1)).normalize();
+    let rx=(Math.random()-.5), ry=(Math.random()-.5), rz=(Math.random()-.5);
+    const al = Math.hypot(rx,ry,rz)||1; rx/=al; ry/=al; rz/=al;
+    const delay = Math.random(), spin = (Math.random()-.5)*2, dist = Math.random();
+    for (let k=0;k<3;k++){
+      dir.set([v.x,v.y,v.z], (f*3+k)*3);
+      axis.set([rx,ry,rz], (f*3+k)*3);
+      rand.set([delay, spin, dist], (f*3+k)*3);
+    }
+  }
+  ['aDir','aAxis','aRand'].forEach(n => geo.attributes[n].needsUpdate = true);
+}
+regenScatter();
+
+const mat = new THREE.ShaderMaterial({
+  uniforms: { uT:{value:0}, uTime:{value:0}, uFlash:{value:0},
+    uBaseColor:{value:new THREE.Color(BASE)}, uGlowColor:{value:new THREE.Color(GLOW)} },
+  side: THREE.DoubleSide,
+  vertexShader:`
+    attribute vec3 aCentA; attribute vec3 aNormA; attribute float aDupA;
+    attribute vec3 aPosB; attribute vec3 aCentB; attribute vec3 aNormB; attribute float aDupB;
+    attribute vec3 aDir; attribute vec3 aAxis; attribute vec3 aRand;
+    uniform float uT; uniform float uTime;
+    varying float vS; varying vec3 vNormal;
+    vec3 rot(vec3 v, vec3 ax, float a){
+      return v*cos(a) + cross(ax,v)*sin(a) + ax*dot(ax,v)*(1.0-cos(a)); }
+    void main(){
+      /* 帰る家をA→Bへ: 破片が飛んでいる最中 (0.35-0.65) にすり替える */
+      float m = smoothstep(0.35, 0.65, uT);
+      vec3 basePos = mix(position, aPosB, m);
+      vec3 cent    = mix(aCentA, aCentB, m);
+      vec3 nrm     = normalize(mix(aNormA, aNormB, m));
+      float dup    = mix(aDupA, aDupB, m);
+      /* 飛散量: ベル曲線 (出て、戻る) を面ごとの遅延つきで */
+      float tt = clamp((uT - aRand.x*0.12)/0.88, 0.0, 1.0);
+      float s = pow(sin(tt*3.14159), 0.85);
+      vS = s;
+      vec3 local = rot(basePos - cent, aAxis, s*aRand.y*6.5) * (1.0 - s*0.3);
+      vec3 drift = vec3(sin(uTime*1.7+aRand.z*9.0), cos(uTime*1.4+aRand.y*7.0), sin(uTime*2.0+aRand.x*8.0));
+      vec3 pos = cent + local
+        + aDir * s * (1.3 + aRand.z*2.1)
+        + vec3(0.0, s*s*0.7, 0.0)
+        + drift * 0.05 * s
+        + nrm * dup;                                 /* 重複面のz-fight回避 */
+      vNormal = normalize(normalMatrix * nrm);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }`,
+  fragmentShader:`
+    uniform vec3 uBaseColor; uniform vec3 uGlowColor; uniform float uFlash;
+    varying float vS; varying vec3 vNormal;
+    void main(){
+      float diff = max(dot(vNormal, normalize(vec3(0.4,0.8,0.5))), 0.35);
+      float fres = pow(1.0 - abs(vNormal.z), 2.5);
+      vec3 solid = uBaseColor*diff + uGlowColor*fres*0.4;
+      vec3 shard = mix(uGlowColor*1.7, vec3(1.0), 0.4);
+      vec3 col = mix(solid, shard, smoothstep(0.03, 0.3, vS));  /* 飛行中はガラス光 */
+      col += uGlowColor * vS * 0.35;                             /* 帯電 */
+      col += vec3(1.0) * uFlash;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+const mesh = new THREE.Mesh(geo, mat);
+mesh.position.y = 0.5; scene.add(mesh);
+
+/* 集光オーブ + 床リング (test10の定着セット) */
+function orbTex(){
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const x = cv.getContext('2d');
+  const g = x.createRadialGradient(64,64,0,64,64,64);
+  g.addColorStop(0,'rgba(250,245,255,0.95)'); g.addColorStop(0.35,'rgba(192,132,252,0.5)');
+  g.addColorStop(1,'rgba(192,132,252,0)');
+  x.fillStyle = g; x.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(cv);
+}
+const orb = new THREE.Sprite(new THREE.SpriteMaterial({ map:orbTex(), transparent:true,
+  opacity:0, depthWrite:false, blending:THREE.AdditiveBlending }));
+orb.position.copy(mesh.position); scene.add(orb);
+const ringMesh = new THREE.Mesh(new THREE.RingGeometry(0.96, 1.0, 64),
+  new THREE.MeshBasicMaterial({ color:GLOW, transparent:true, opacity:0,
+    side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending }));
+ringMesh.rotation.x = -Math.PI/2; ringMesh.position.y = -0.95; scene.add(ringMesh);
+
+/* ============ 遷移制御 ============ */
+let current = 0, next = 1, animT = 1, DUR = 2.3;
+let flash = 0, shake = 0, ringT = 1, punch = 0, auto = !REDUCED, autoWait = 1.2;
+const label = document.getElementById('formLabel');
+
+function commit(){
+  /* B側を現在形として確定し、タイムラインを0へ */
+  const s = shapeData[next];
+  geo.attributes.position.array.set(s.pos);
+  geo.attributes.aCentA.array.set(s.cent);
+  geo.attributes.aNormA.array.set(s.norm);
+  geo.attributes.aDupA.array.set(s.dup);
+  ['position','aCentA','aNormA','aDupA'].forEach(n => geo.attributes[n].needsUpdate = true);
+  current = next;
+  mat.uniforms.uT.value = 0;
+}
+function startMorph(){
+  if (animT < 1) return;
+  next = (current + 1) % FORMS.length;
+  const s = shapeData[next];
+  geo.attributes.aPosB.array.set(s.pos);
+  geo.attributes.aCentB.array.set(s.cent);
+  geo.attributes.aNormB.array.set(s.norm);
+  geo.attributes.aDupB.array.set(s.dup);
+  ['aPosB','aCentB','aNormB','aDupB'].forEach(n => geo.attributes[n].needsUpdate = true);
+  regenScatter();                                  /* 毎回違う砕け方 */
+  animT = 0;
+  flash = REDUCED ? 0 : 0.45; shake = REDUCED ? 0 : 0.4; ringT = 0;
+  label.textContent = FORMS[current].name + ' → ' + FORMS[next].name;
+  label.style.color = '#f0abfc';
+}
+document.getElementById('btnNext').addEventListener('click', () => { auto=false; syncAuto(); startMorph(); });
+document.getElementById('btnAuto').addEventListener('click', () => { auto=!auto; syncAuto(); });
+function syncAuto(){ document.getElementById('btnAuto').classList.toggle('on', auto); }
+if (REDUCED) DUR = 0.01;
+
+let last = performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt = Math.min((now-last)/1000, 0.05); last = now;
+  const t = now/1000;
+
+  if (animT < 1){
+    animT = Math.min(animT + dt/DUR, 1);
+    mat.uniforms.uT.value = Ease.inOutSine(animT);
+    if (animT >= 1){                               /* 定着 */
+      commit();
+      if (!REDUCED){ flash = 0.32; ringT = 0; punch = 1; shake = 0.25; }
+      label.textContent = FORMS[current].name;
+      label.style.color = '#d8b4fe';
+    }
+  } else if (auto && !REDUCED){
+    autoWait -= dt;
+    if (autoWait <= 0){ autoWait = 1.6; startMorph(); }
+  }
+  flash = Math.max(0, flash - dt*3.0);
+  shake = Math.max(0, shake - dt*1.8);
+  punch = Math.max(0, punch - dt*3.2);
+  ringT = Math.min(ringT + dt/0.7, 1);
+
+  mat.uniforms.uTime.value = t;
+  mat.uniforms.uFlash.value = flash;
+
+  /* 集光オーブ: 破片が最も散る中盤〜終盤で光が凝る */
+  const ta = animT < 1 ? Ease.inOutSine(animT) : 0;
+  orb.material.opacity = Math.sin(Math.min(Math.max((ta-0.3)/0.7,0),1)*Math.PI)*0.85 + punch*0.4;
+  const os = 1.0 + ta*1.8 + punch*0.8;
+  orb.scale.set(os, os, 1);
+  orb.position.copy(mesh.position);
+
+  const rp = Ease.outExpo(ringT);
+  ringMesh.scale.setScalar(0.25 + rp*3.0);
+  ringMesh.material.opacity = (1-ringT)*(1-ringT)*0.85;
+
+  const solid = animT >= 1 ? 1 : 0;
+  mesh.position.y = 0.5 + solid*(Math.sin(t*0.8)*0.05 + Math.sin(t*1.3)*0.02);
+  mesh.rotation.y += 0.12*dt;
+  mesh.scale.setScalar(1 + punch*punch*0.07);
+
+  const sh = shake*shake;
+  const orbit = t*0.12;
+  camera.position.set(
+    Math.sin(orbit)*4.5 + (Math.sin(t*37)+Math.sin(t*23))*0.03*sh,
+    1.3 + Math.cos(t*31)*0.03*sh,
+    Math.cos(orbit)*4.5);
+  camera.lookAt(0, 0.5, 0);
+
+  renderer.render(scene, camera);
+}
+function onResize(){
+  const r = stage.getBoundingClientRect();
+  camera.aspect = r.width/r.height; camera.updateProjectionMatrix();
+  renderer.setSize(r.width, r.height);
+}
+addEventListener('resize', onResize);
+setTimeout(onResize, 100); onResize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
