@@ -83,7 +83,10 @@ reach near-miss のみでドメイン別の「惜しさ」が測れない。
   宣言し、結果を契約経由で受け取る (CLAUDE.md スコープ境界)。
 - ワイヤに載せるのは「ソルバが決定した事実」のみ。KPI の提示・階梯マッピング・演出は
   クライアント導出 (PHILOSOPHY #29 / ADR-060/079)。
-- 契約の変更は上流 (`vendor/grasp-contract`) で行い contractVersion を上げる (ADR-074)。
+- 契約の変更は正本 (`packages/grasp-contract` — ADR-082 で repo 内へ吸収済み) で
+  contractVersion bump とともに行う (ADR-074/082。本 ADR 初稿の「上流 (外部 repo) で変更」
+  は ADR-082 により「repo 内正本で版上げとともに変更」へ読み替え — 手順が同一 PR で
+  完結する以外、統治は不変)。
 - **リクエスト側とレスポンス側で統治が異なる**: `graspSearch` 宣言は open payload で
   厳密形は Layout DSL 正本 (layoutVersion) に属する。一方レスポンスの `ScoreBreakdown` /
   `diagnostics` は閉 (additionalProperties:false) で contractVersion 統治。→ camera /

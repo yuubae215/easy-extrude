@@ -10,7 +10,7 @@ artifacts
 
     context Adr081Scope
     uuid 652ff5ea-1fa2-4ef7-bfb9-fe333f62967c
-    summary "ADR-081: 階梯 L1-L6 の定義 / 段階0 エンジン現状 / 統治前提 (解法は core/ のみ、ワイヤはソルバ決定事実のみ、契約変更は上流 v4)"
+    summary "ADR-081: 階梯 L1-L6 の定義 / 段階0 エンジン現状 / 統治前提 (解法は core/ のみ、ワイヤはソルバ決定事実のみ、契約変更は packages/grasp-contract での版上げ v4 — ADR-082)"
 
     strategy ByDomainGates
     uuid b158cd1f-7781-4aaf-8ac0-d15e35e69f7b
@@ -151,7 +151,7 @@ artifacts
 
             solution TemplateTestsNow
             uuid bf54bdd0-bffb-457e-a349-cac1a70d4d0e
-            summary "cd core && uv run pytest tests/test_templates.py -q — pass @ 755266a (届くか領域のみ: ランキング成立 / 最上位 top-down / 契約準拠。要 git submodule update --init vendor/grasp-contract)"
+            summary "cd core && uv run pytest tests/test_templates.py -q — pass @ 755266a (届くか領域のみ: ランキング成立 / 最上位 top-down / 契約準拠。契約は repo 内 packages/grasp-contract — ADR-082 以降 submodule init 不要)"
             artifacts
             - "core/tests/test_templates.py"
             - "templates/bin-picking-thin-container/grasp-search.request.json"

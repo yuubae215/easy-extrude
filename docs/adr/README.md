@@ -85,7 +85,7 @@ This directory records the project's design decisions.
 | [ADR-071](ADR-071-placement-defaults.md) | **物理的妥当性の配置既定 — スタック既定 ON + 地面下アシスト(ハード拘束でなく警告 + 補助; 基礎/杭を守る)** | Accepted (案A アシスト既定; 実装済) | 2026-07-15 | ADR-069, ADR-040 |
 | [ADR-072](ADR-072-map-mode-polish.md) | **2D マップ研磨 — 一致ポーズ投影スワップ + CameraFlight で出入り / マップ配置の undo 化(lifecycle 語彙合流) / 端点スナップ係合フラッシュ再利用** | Accepted (実装済 — ADR-069 Phase 4 = パリティ・パス完結) | 2026-07-15 | ADR-069, ADR-068, ADR-031, ADR-022, ADR-065 |
 | [ADR-073](ADR-073-no-creation-time-naming-form.md) | **生成時に命名フォームを出さない — Frame + マップオブジェクトは無言自動命名で即時生成、改名は後の別操作（Map FSM を pending 廃止で 2 状態化）** | Accepted (実装済) | 2026-07-16 | ADR-069, ADR-037, ADR-031, ADR-072 |
-| [ADR-074](ADR-074-bff-core-api-contract.md) | **BFF <-> コアAPI の I/O 契約 — バージョン不一致を実行時に弾く境界の明文化** | Accepted | 2026-06-21 | ADR-075, ADR-076 |
+| [ADR-074](ADR-074-bff-core-api-contract.md) | **BFF <-> コアAPI の I/O 契約 — バージョン不一致を実行時に弾く境界の明文化** | Accepted (§6 置き場所のみ ADR-082 で改訂) | 2026-06-21 | ADR-075, ADR-076, ADR-082 |
 | [ADR-075](ADR-075-stage0-judgement-engine.md) | **段階0 判定エンジンの設計方針 — 離散候補生成 -> 安い順フィルタ -> 加重和スコア -> 上位N件** | Accepted (実装済) | 2026-06-21 | ADR-074, ADR-076 |
 | [ADR-076](ADR-076-core-api-endpoint-layer.md) | **コアAPI エンドポイント層 (HTTP 境界) — contractVersion ガード・エラー envelope・BFF 背後隔離** | Accepted (実装済) | 2026-06-21 | ADR-074, ADR-075 |
 | [ADR-077](ADR-077-recommendation-similarity-lane.md) | **推薦/類似レーン — 曖昧な対応づけを embeddings で propose/rank するのみ、等価性は決めない (ADR-056 の decide/propose 境界)** | Accepted (propose-only core + HTTP 境界 実装済) | 2026-06-23 | ADR-074, ADR-075, ADR-076, ADR-052, ADR-056 |
@@ -93,6 +93,7 @@ This directory records the project's design decisions.
 | [ADR-079](ADR-079-search-diagnostics-proof.md) | **判定の証明 (feasibility funnel + near-miss) を UX 資産として返す — ワイヤに載せるのはソルバが決定した事実だけ** | Accepted (実装済) | 2026-07-04 | ADR-074, ADR-075, ADR-076 |
 | [ADR-080](ADR-080-menu-choreography-extrude-front.md) | **残余モーション空白の被覆 — ポップオーバー入場振付 (ChromeMath 拡張) + 押し出し成長前線 (Tier A)** | Accepted (両 Phase 実装済) | 2026-07-19 | ADR-065, ADR-066, ADR-068 |
 | [ADR-081](ADR-081-domain-staged-validation-fallback-ladder-kpi.md) | **ドメイン段階バリデーション (見える/届く/掴める) + 運用フォールバック階梯の設計時 KPI 検証** | Proposed | 2026-07-19 | ADR-049, ADR-053, ADR-057, ADR-061, ADR-063, ADR-074, ADR-075, ADR-076, ADR-078, ADR-079 |
+| [ADR-082](ADR-082-absorb-contract-submodule.md) | **契約 submodule の repo 内吸収 — 壁は repo 分離ではなく CI ガードで守る** | Accepted (実装済) | 2026-07-19 | ADR-074, ADR-064, ADR-060, ADR-079, ADR-081 |
 
 ## How to Add a New ADR
 

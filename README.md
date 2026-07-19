@@ -67,7 +67,7 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 ### Robotics & Grasp Search (ADR-053, ADR-074 … 079)
 - **Robotics KPI checks** — URDF-style joint taxonomy, forward kinematics reach sampling, AABB collision baking; results are baked into the context doc as measured facts
 - **C++/Rust wasm engines** — KDL + ruckig compiled to WebAssembly for kinematics/trajectory; Rust wasm geometry engine
-- **Grasp search backend** — Python judgement engine (candidate generation → reach/IK/collision filters → weighted scoring) behind a FastAPI core API, proxied by the BFF under a versioned JSON-Schema contract (`vendor/grasp-contract`); rejection-funnel diagnostics surface *why* candidates were rejected
+- **Grasp search backend** — Python judgement engine (candidate generation → reach/IK/collision filters → weighted scoring) behind a FastAPI core API, proxied by the BFF under a versioned JSON-Schema contract (`packages/grasp-contract`); rejection-funnel diagnostics surface *why* candidates were rejected
 - **Propose-only recommendation lane** — embedding similarity only proposes and ranks; deterministic equivalence stays in the frontend core (ADR-056/077)
 
 ### Selection & Navigation
@@ -112,7 +112,9 @@ Open [http://localhost:5173](http://localhost:5173).
 pnpm dev:all   # starts both the BFF (port 3001) and the Vite dev server
 ```
 
-A fresh clone needs the contract submodule: `git submodule update --init --recursive`.
+The neutral contract lives in-repo (`packages/grasp-contract` — ADR-082), so no submodule
+init is needed for the dev stack. (`git submodule update --init --recursive` is only for
+the optional C++ WASM build lane — see `robotics-wasm/`.)
 
 ### Full stack with grasp search (Python core API)
 
@@ -177,7 +179,7 @@ pnpm preview   # preview the build locally
 
 ## Architecture
 
-easy-extrude is a **three-layer monorepo** — frontend (`src/`) → neutral contract (`vendor/grasp-contract`) → backend (`server/` BFF + `core/` Python judgement engine). The frontend follows a strict **MVC + Domain-Driven Design** layering. The domain layer is pure — it holds no Three.js, no DOM, no I/O.
+easy-extrude is a **three-layer monorepo** — frontend (`src/`) → neutral contract (`packages/grasp-contract`) → backend (`server/` BFF + `core/` Python judgement engine). The frontend follows a strict **MVC + Domain-Driven Design** layering. The domain layer is pure — it holds no Three.js, no DOM, no I/O.
 
 ```
 src/
@@ -217,7 +219,7 @@ For the full design rationale see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | C++ → WebAssembly (Emscripten) | KDL kinematics + ruckig trajectories (`robotics-wasm`) |
 | Node.js / Express | BFF server — scene persistence, geometry service, grasp proxy |
 | Python / [FastAPI](https://fastapi.tiangolo.com/) / [uv](https://docs.astral.sh/uv/) | Grasp-search judgement engine (`core/`) |
-| JSON Schema / [ajv](https://ajv.js.org/) | DSL & wire contracts (`schema/`, `vendor/grasp-contract`) |
+| JSON Schema / [ajv](https://ajv.js.org/) | DSL & wire contracts (`schema/`, `packages/grasp-contract`) |
 | SQLite / libsql | Server-side scene storage |
 | WebSocket (`ws`) | Real-time geometry streaming (BFF ↔ frontend) |
 | [occt-import-js](https://github.com/kovacsv/occt-import-js) | Server-side STEP tessellation |
