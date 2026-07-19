@@ -1,7 +1,8 @@
 packages:
   - "."
   - "server"
-  # External neutral I/O contract (git submodule). Referenced as a workspace
-  # package so the BFF can derive types/validators from it by name; the
-  # contract itself is owned upstream and is never edited here.
-  - "vendor/grasp-contract"
+  # Neutral I/O contract (in-repo canonical since ADR-082; formerly a git
+  # submodule). Referenced as a workspace package so the BFF can derive
+  # types/validators from it by name. Editing it is a deliberate versioned
+  # act: schema changes require a contractVersion bump (CI contract-wall).
+  - "packages/grasp-contract"

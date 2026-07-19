@@ -52,11 +52,17 @@ importers:
         specifier: ^9.0.4
         version: 9.0.4
 
+  packages/grasp-contract:
+    devDependencies:
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
+
   server:
     dependencies:
       '@easy-extrude/grasp-contract':
         specifier: workspace:*
-        version: link:../vendor/grasp-contract
+        version: link:../packages/grasp-contract
       '@libsql/client':
         specifier: ^0.17.0
         version: 0.17.2
@@ -91,12 +97,6 @@ importers:
       json-schema-to-typescript:
         specifier: ^15.0.3
         version: 15.0.4
-
-  vendor/grasp-contract:
-    devDependencies:
-      ajv:
-        specifier: ^8.17.1
-        version: 8.20.0
 
 packages:
 
@@ -1029,7 +1029,6 @@ packages:
 
   libsql@0.5.28:
     resolution: {integrity: sha512-wKqx9FgtPcKHdPfR/Kfm0gejsnbuf8zV+ESPmltFvsq5uXwdeN9fsWn611DmqrdXj1e94NkARcMA2f1syiAqOg==}
-    cpu: [x64, arm64, wasm32, arm]
     os: [darwin, linux, win32]
 
   lodash.includes@4.3.0:

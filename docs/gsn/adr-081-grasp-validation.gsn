@@ -1,0 +1,157 @@
+GOALS adr081_grasp_validation
+
+goal AppPredictsRework
+uuid 6deb3ff1-eb2a-40a6-aafb-c74f631a39c2
+summary "easy-extrude の grasp-search 通し検証は、設定完了後に運用フォールバック階梯 L4 以上へ戻るリスクを設計時に顕在化できる"
+state ToBeDeveloped
+labels adr-081, grasp-search
+artifacts
+- "docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md"
+
+    context Adr081Scope
+    uuid 652ff5ea-1fa2-4ef7-bfb9-fe333f62967c
+    summary "ADR-081: 階梯 L1-L6 の定義 / 段階0 エンジン現状 / 統治前提 (解法は core/ のみ、ワイヤはソルバ決定事実のみ、契約変更は packages/grasp-contract での版上げ v4 — ADR-082)"
+
+    strategy ByDomainGates
+    uuid b158cd1f-7781-4aaf-8ac0-d15e35e69f7b
+    summary "Argument by 判定ドメイン (見える/届く/掴める) の段階ゲート被覆"
+
+        goal PathGateExists
+        uuid 1b63e6c0-2e10-4d1a-8450-cb06eb9a0b49
+        summary "届くか: リーチ/IK/干渉のハードゲートが実装され、棄却が排他的にファネルへ集計される"
+        state ToBeReviewed
+
+            solution PathGateTests
+            uuid 7e83cea8-8d58-41ef-a2bc-56cd1341e193
+            summary "cd core && uv run pytest tests/test_engine.py -q — pass @ 755266a (閉殻リーチ / naive IK 手首コーン / naive 干渉 / 棄却除外 / 注入差し替え)"
+            artifacts
+            - "core/tests/test_engine.py"
+
+        goal VisionGateExists
+        uuid ab31bf32-2eec-4ffb-9429-055535136974
+        summary "見えるか: camera 宣言に基づく可視性ゲートがエンティティ粒度 (targetable 絞り込み) と候補粒度 (フィルタ段) の両方に存在する"
+        state ToBeDeveloped
+        groups phase-1
+
+            assumption VisionGatePlanned
+            uuid 8c153209-162d-4837-b618-0ea63d1ebd98
+            summary "証拠予定: VisibilityChecker Protocol + naive 既定 (線分-球遮蔽) の pytest を core/tests/test_engine.py へ追加 (Phase 1)"
+
+        goal GraspGateExists
+        uuid b8ee9352-cebb-4872-a8b7-0193fea504a3
+        summary "掴めるか: gripper 宣言に基づく把持性ゲート (開口幅/指クリアランス/antipodal) が存在し、wrench cone が安定性 objective を埋める"
+        state ToBeDeveloped
+        groups phase-1, phase-4
+
+            assumption GraspGatePlanned
+            uuid cea03623-237f-4c17-bb36-6ff3c4853a74
+            summary "証拠予定: GraspChecker Protocol + naive 既定 (幅/クリアランス/antipodal) の pytest (Phase 1)、wrench cone 差し替えの数値検証 (Phase 4)"
+
+        goal FunnelIdentityHolds
+        uuid 6550f308-8741-4742-b9cf-cff9f6b222f2
+        summary "ファネル恒等式 generated = Σ rejected_by_* + feasible が全フィルタ段構成で成立する"
+        state ToBeDeveloped
+
+            solution FunnelIdentityTest
+            uuid 6b622a32-9766-4569-bde0-65aa8bce9525
+            summary "cd core && uv run pytest tests/test_engine.py::test_search_report_funnel_partitions_generated -q — pass @ 755266a (現行 3 段 + feasible)"
+            artifacts
+            - "core/tests/test_engine.py"
+
+            assumption FiveStageIdentity
+            uuid 4618c654-c905-4213-ae55-8941e1923355
+            summary "可視性/把持性の 2 段追加後も恒等式テストを 5 段へ拡張して維持する (Phase 1/2 で証拠に置換)"
+
+    strategy ByKpiChain
+    uuid 4db8bfe2-464f-480d-b7f2-9d6e03d92ab9
+    summary "Argument by KPI 導出鎖の決定性 (ワイヤ事実 → KPI → 階梯リスク)"
+
+        goal KpiDerivedNotSecondSource
+        uuid 1814c09c-c962-438c-a669-a905b3abf9e9
+        summary "ドメイン KPI はワイヤの決定事実 (ファネル/near-miss) からの純粋導出であり、第二の源を持たない"
+        state ToBeDeveloped
+        groups phase-3
+
+            assumption KpiDerivationPlanned
+            uuid 4718be93-ee89-4549-97e3-baf073a7f4c0
+            summary "証拠予定: GraspFunnelMath 系譜の純粋導出関数のユニットテスト (契約 v4 事実 → KPI 値、Phase 3)"
+
+        goal LadderMapSingleOwner
+        uuid 664d8bcc-fa23-4edd-b116-af563dc50181
+        summary "KPI → 階梯リスク写像は提示層の表引き一箇所が所有し、判定ロジックの再実装を含まない"
+        state ToBeDeveloped
+        groups phase-3
+
+            assumption LadderMapPlanned
+            uuid 8da856f7-c5a5-473f-bfb3-81e5aad5142f
+            summary "証拠予定: 階梯対応表の単一所有テスト + src/ に判定再実装が無いことの grep 検査 (Phase 3)"
+
+    strategy ByConvergence
+    uuid ca0c8be3-ad0f-4d7b-a35f-2ef919902caf
+    summary "Argument by 収束機構 — 単側 KPI でなく双対対の一致 (ADR-081 Open 仮説 H1/H2)"
+
+        goal IterationConverges
+        uuid 2190a5bb-48ab-4d73-ac52-900e9e29cf43
+        summary "設計イテレーション (設定変更 → 通し検証 → KPI 確認) は、双対対の突き合わせで得た実行可能領域の内側で、ユーザ固有スイートスポット領域への到達により収束する"
+        state ToBeDeveloped
+
+            assumption ConvergenceBySweetSpot
+            uuid 8ae4cf48-cbd2-4ae5-91f1-48abb1e05ffd
+            summary "H (改 2026-07-19): 収束判定関数は一意に立たない。多軸 KPI 空間のユーザ固有スイートスポット領域 (ADR-049 criterion の個別化) への到達で判定し、領域自体は実データ較正 (泥臭いデータどり) で獲得する — 一意の最適解は存在しない"
+
+            justification CaOneSidedPingPong
+            uuid ee89a93a-a9ae-4816-a4d6-1db29c1308e4
+            summary "Withstands challenge: 単側 KPI の逐次最適化は共有設計変数上で循環し得る (非凸)。Modify 適用 (2026-07-19): 初稿の『双対 KPI との類似度一致』は判定関数として立たないと反証方向で判断 — スイートスポット領域到達 + 実データ較正へ修正 (旧 assumption DualSimilarity を ConvergenceBySweetSpot に改稿)"
+
+            goal InterDomainDual
+            uuid e37e2bc4-d646-4620-b95f-b4fb7c20d554
+            summary "H1: 共有設計変数 (カメラ姿勢/基台位置/進入角) 上の同時許容領域の非空判定 (ADR-049 交差機構) が通し検証に組み込まれている"
+            state ToBeDeveloped
+
+                assumption InterDomainDualPlanned
+                uuid 1fd92cc5-dbd7-4460-83d4-7a8adc5886f8
+                summary "証拠予定: thin-container テンプレでカメラ姿勢を共有変数とした 2 ドメイン (見える×届く) の許容領域交差の再現例を固定 (仮説検証イテレーション)"
+
+            goal ForecastActualDual
+            uuid e43eae24-b3a5-4847-8b86-431444e7bf8f
+            summary "H2: 設計時 KPI 予報と運用フォールバック実績のキャリブレーション gap が測定可能である — スイートスポット領域獲得のためのデータ収集 (予報 KPI ベクトル + ユーザ採否 + 運用実績のログ) を一級成果物として含む"
+            state ToBeDeveloped
+
+                assumption ForecastActualPlanned
+                uuid 083b4ff4-b56f-4449-b7f6-185adc694abc
+                summary "証拠予定: KPI ベクトル + ユーザ採否/調整のログ形式を定義 (設計時から取れる分を先行)、運用フォールバック実績の取り込みと突き合わせ集計は実運用データ入手後 (Phase 3 以降)"
+
+            goal SweetSpotProposeLane
+            uuid 1b5aee5d-256f-4ebb-ba2b-fb456c93d301
+            summary "スイートスポット領域の学習・提案は propose-only レーン (core/recommendation, ADR-077) に置かれ真偽値を返さない — 合格ラインの決定は明示 criterion (decide) に残る"
+            state ToBeDeveloped
+
+                assumption SweetSpotLanePlanned
+                uuid 32c01a6a-b586-454e-a22a-b591ee46ae95
+                summary "証拠予定: 蓄積ログからの領域提案 API を recommendation レーンに追加し、propose-only 契約テスト (真偽値を返さないこと) で固定 (データ蓄積後)"
+
+    strategy ByTemplateFidelity
+    uuid c786752e-5e9a-441d-bc42-8a1ff2dcdcf0
+    summary "Argument by 基準器の忠実度 (テンプレ = 受け入れフィクスチャ)"
+
+        goal TemplatesSceneDerived
+        uuid 9da7e82d-2628-46d5-9091-3e94a1883582
+        summary "テンプレは scene 形式 (属性からの obstacles 導出) であり、手書き再構築を含まない"
+        state ToBeDeveloped
+        groups phase-1
+
+            assumption SceneMigrationPlanned
+            uuid 1c5a852e-9e03-4140-ada0-ca500bf9149e
+            summary "証拠予定: thin-container を scene 形式へ移行し、導出 obstacles が旧手書きリストと一致することの回帰テスト (Phase 1)"
+
+        goal TemplatesPinThreeDomains
+        uuid e8bed7c6-5ce7-42e5-a195-3978e3ef2985
+        summary "各テンプレの 3 ドメイン手検証値 (見える/届く/掴める) が受け入れテストで固定される"
+        state ToBeDeveloped
+
+            solution TemplateTestsNow
+            uuid bf54bdd0-bffb-457e-a349-cac1a70d4d0e
+            summary "cd core && uv run pytest tests/test_templates.py -q — pass @ 755266a (届くか領域のみ: ランキング成立 / 最上位 top-down / 契約準拠。契約は repo 内 packages/grasp-contract — ADR-082 以降 submodule init 不要)"
+            artifacts
+            - "core/tests/test_templates.py"
+            - "templates/bin-picking-thin-container/grasp-search.request.json"

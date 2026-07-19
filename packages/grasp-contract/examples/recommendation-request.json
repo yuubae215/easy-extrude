@@ -1,0 +1,30 @@
+{
+  "contractVersion": 3,
+  "layoutVersion": "layout/1.0",
+  "requirement": {
+    "text": "L-bracket that mounts with two M6 bolts",
+    "signature": "sig:1a2b3c"
+  },
+  "references": [
+    {
+      "refId": "ref-042",
+      "text": "L-bracket, M6, 2 holes",
+      "signature": "sig:9f8e7d",
+      "diff": {
+        "distance": 0.12,
+        "detail": "hole count differs (2 vs 3)"
+      }
+    },
+    {
+      "refId": "ref-107",
+      "text": "flat plate, M6, 2 holes",
+      "signature": "sig:5c4d3e",
+      "diff": {
+        "distance": 0.41,
+        "detail": "no vertical flange"
+      }
+    }
+  ],
+  "topN": 3,
+  "similarityWeights": { "semantic": 0.5, "lexical": 0.2, "structural": 0.3 }
+}

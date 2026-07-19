@@ -7,6 +7,3 @@
 [submodule "robotics-wasm/vendor/eigen"]
 	path = robotics-wasm/vendor/eigen
 	url = https://gitlab.com/libeigen/eigen.git
-[submodule "vendor/grasp-contract"]
-	path = vendor/grasp-contract
-	url = https://github.com/yuubae215/easy-extrude-contract.git

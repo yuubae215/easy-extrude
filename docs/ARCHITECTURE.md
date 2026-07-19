@@ -19,7 +19,7 @@ grasp-search backend was co-located (2026-07), the repository is a
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
 | **Frontend** | `src/` (+ `schema/`, `examples/`, `cli/`) | Browser 3D editor; Layout/Context DSL public schemas, compilers, validators; deterministic core (`SynonymQuotient`, `CanonicalForm`) |
-| **Contract** | `vendor/grasp-contract` (git submodule = neutral canonical source) | BFF ⇄ core-API I/O JSON Schema + `contractVersion` (ADR-074) |
+| **Contract** | `packages/grasp-contract` (in-repo neutral canonical source — absorbed from the former git submodule, ADR-082) | BFF ⇄ core-API I/O JSON Schema + `contractVersion` (ADR-074) |
 | **Backend** | `server/` (BFF) + `core/` (Python judgement engine + FastAPI, uv-managed) | Constraint *solving*: candidate generation → reach/IK/collision filters → weighted scoring (ADR-075/076); propose-only recommendation lane (ADR-077); bin-picking scene layer (ADR-078) |
 
 Invariants (see `CLAUDE.md` §スコープ境界 for the enforcement rules):
@@ -47,8 +47,8 @@ easy-extrude/
                      #   grasp proxy → core API (ADR-015/017/074)
   core/              # Python judgement engine + FastAPI HTTP boundary
                      #   (engine / api / contract / recommendation / scene)
-  vendor/
-    grasp-contract/  # Neutral I/O contract submodule (@easy-extrude/grasp-contract)
+  packages/
+    grasp-contract/  # Neutral I/O contract (@easy-extrude/grasp-contract, in-repo — ADR-082)
   wasm-engine/       # Rust → wasm geometry engine (ADR-027)
   robotics-wasm/     # C++ KDL + ruckig → wasm build lane (ADR-053 §11)
   e2e/               # Playwright smoke tests (ADR-064 Phase 4)
@@ -325,7 +325,7 @@ All wires are either **contracted** (closed, versioned JSON Schema) or
 | Layout DSL v1.0 | `schema/layout-1.0.schema.json` | authored / LLM-generated; compiled by `src/layout/LayoutCompiler.js` (ADR-045); inverse `LayoutDecompiler.js` round-trips scene → DSL up to normal form (ADR-055) |
 | Context DSL v0.4 | `schema/context-0.4.schema.json` | requirement context: Facts / Decisions / OpenQuestions / KPIs / regions / robotics predicates (ADR-046/049/053); compiles to Layout DSL |
 | Scene JSON v1.3 | `schema/scene-1.3.schema.json` | `SceneSerializer` round-trip; validated at BFF `/api/scenes` (ADR-064 Phase 3) |
-| BFF ⇄ core API | `vendor/grasp-contract` submodule | grasp search request/response + diagnostics; `contractVersion` guarded (ADR-074/079) |
+| BFF ⇄ core API | `packages/grasp-contract` (in-repo, ADR-082) | grasp search request/response + diagnostics; `contractVersion` guarded (ADR-074/079) |
 | ws geometry / import | declared uncontracted | declarations at `server/src/ws/sessionManager.js` / `server/src/routes/import.js` |
 
 Semantic validation stays in `src/layout/LayoutValidator.js` /

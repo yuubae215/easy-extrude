@@ -1,0 +1,34 @@
+%% easy-extrude 概念図(トポロジ)
+%% この図が「トポロジ」の正準 = 文脈・依存の向き・主要ノードの接続。
+%% 契約の *意味*・不変条件・goal ツリーは .claude/CLAUDE.md 側。二重化しない。
+%% 記法: 実線矢印 = 依存/データの向き(矢の先が依存される側) / 矢印ラベル = 契約名。
+
+flowchart TB
+    %% ---- 文脈境界 (§1.1 DDD) = リポジトリ境界 (ADR-0006) ----
+    subgraph PUBLIC["public repo — ゲーム感覚 UI + BFF(入力体験・演出の所有者)"]
+        UI["game-feel UI(演出は frame+規約からクライアント導出)"]
+        BFF["BFF"]
+    end
+
+    subgraph PRIVATE["private repo — 証明/探索 API ロジック(非公開)"]
+        GS["grasp-search service"]
+        REC["recommendation service"]
+    end
+
+    subgraph CONTRACT["contract repo(このリポジトリ)— カノニカル契約・依存なし"]
+        ENV["contract-version.json(封筒: 版の唯一の権威)"]
+        SCH["schema/*.schema.json(契約の唯一の源)"]
+        EX["examples/*.json(導出物・テストで drift 検証)"]
+    end
+
+    %% ---- データフロー(実行時) ----
+    UI --> BFF
+    BFF -->|"grasp-search req/res(封筒: contractVersion 不一致→400)"| GS
+    BFF -->|"recommendation req/res(候補のみ・verdict なし)"| REC
+
+    %% ---- 依存方向 (§1.1 Clean Arch): 両 consumer → contract、contract → なし ----
+    BFF -->|"型生成・検証"| SCH
+    GS -->|"型生成・検証"| SCH
+    REC -->|"型生成・検証"| SCH
+    SCH --> ENV
+    EX -.->|"derived(正準はスキーマ)"| SCH

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --watch --max-old-space-size=8192 index.js",
     "start": "node --max-old-space-size=8192 index.js",
-    "gen:contract-types": "json2ts -i ../vendor/grasp-contract/schema/grasp-search-request.schema.json -o src/grasp/contract.request.d.ts && json2ts -i ../vendor/grasp-contract/schema/grasp-search-response.schema.json -o src/grasp/contract.response.d.ts",
+    "gen:contract-types": "json2ts -i ../packages/grasp-contract/schema/grasp-search-request.schema.json -o src/grasp/contract.request.d.ts && json2ts -i ../packages/grasp-contract/schema/grasp-search-response.schema.json -o src/grasp/contract.response.d.ts",
     "test:contract": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {

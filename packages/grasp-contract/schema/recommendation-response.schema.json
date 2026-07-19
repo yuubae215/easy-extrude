@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-extrude.dev/schema/recommendation-response.json",
+  "title": "RecommendationResponse",
+  "description": "recommendation service -> BFF output. A ranking of equivalence *candidates* (similarity / structural distance / confidence / evidence). It never returns a boolean equivalence verdict. Wire form uses camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "type": "integer",
+      "description": "Internal contract version (see contract-version.json)."
+    },
+    "proposals": {
+      "type": "array",
+      "description": "Equivalence candidates, rank ascending (1 = strongest candidate). Candidates only, never a verdict.",
+      "items": { "$ref": "#/$defs/equivalenceProposal" }
+    }
+  },
+  "required": ["proposals"],
+  "$defs": {
+    "equivalenceProposal": {
+      "type": "object",
+      "description": "One equivalence *candidate*. Carries no boolean decision field: the contract proposes, it does not decide. additionalProperties:false forbids smuggling a verdict in.",
+      "additionalProperties": false,
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "refId": { "type": "string" },
+        "similarity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "structuralDistance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "$ref": "#/$defs/proposalEvidence" }
+      },
+      "required": ["rank", "refId", "similarity", "structuralDistance", "confidence", "evidence"]
+    },
+    "proposalEvidence": {
+      "type": "object",
+      "description": "Per-proposal evidence breakdown (all absolute 0-1). Explains the ranking; carries no verdict.",
+      "additionalProperties": false,
+      "properties": {
+        "semantic": { "type": "number", "minimum": 0, "maximum": 1 },
+        "lexical": { "type": "number", "minimum": 0, "maximum": 1 },
+        "structuralDistance": { "type": "number", "minimum": 0, "maximum": 1 },
+        "structuralSupport": { "type": "number", "minimum": 0, "maximum": 1 },
+        "notes": { "type": "string" }
+      },
+      "required": ["semantic", "lexical", "structuralDistance", "structuralSupport"]
+    }
+  }
+}

@@ -17,6 +17,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ADR-082 — the contract wall. The neutral contract is in-repo now, so the
+  # "you cannot casually edit the contract" friction the old submodule provided
+  # is enforced here instead: a PR that changes the schema without bumping
+  # contract-version.json fails. (Conformance/drift of the *content* is the
+  # gate/core jobs' business — this job only guards the versioning act.)
+  contract-wall:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (full history for base comparison)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Schema change requires a contractVersion bump
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          git fetch origin "${{ github.base_ref }}" --quiet
+          if git diff --quiet "$BASE"...HEAD -- packages/grasp-contract/schema; then
+            echo "contract schema unchanged — wall not engaged"
+          elif git diff --quiet "$BASE"...HEAD -- packages/grasp-contract/contract-version.json; then
+            echo "::error::packages/grasp-contract/schema changed without a contractVersion bump (packages/grasp-contract/contract-version.json). Contract changes are deliberate versioned acts (ADR-082/074)."
+            exit 1
+          else
+            echo "schema changed together with a contractVersion bump — OK"
+          fi
+
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -24,12 +52,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Only the contract submodule is needed (test:contract). The
-      # robotics-wasm vendor submodules (Eigen/KDL/ruckig) stay out —
-      # CI uses the committed WASM artifacts, never a C++/Rust toolchain.
-      - name: Init grasp-contract submodule
-        run: git submodule update --init vendor/grasp-contract
-
+      # No submodule init needed: the neutral contract lives in-repo at
+      # packages/grasp-contract (ADR-082). The robotics-wasm vendor
+      # submodules (Eigen/KDL/ruckig) stay out — CI uses the committed
+      # WASM artifacts, never a C++/Rust toolchain.
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -57,8 +83,9 @@ jobs:
         run: pnpm build
 
   # Backend judgement engine (core/ — ADR-075/076). A separate job from the
-  # JS gate: different toolchain (Python via uv), and its contract-conformance
-  # tests (pydantic ⇄ neutral JSON Schema binding) need the same submodule.
+  # JS gate: different toolchain (Python via uv). Its contract-conformance
+  # tests (pydantic ⇄ neutral JSON Schema binding) read the in-repo schema
+  # through core/tests/contract_pkg.py → packages/grasp-contract (ADR-082).
   # Same ADR-064 rule as everything else: the wire's discipline is enforced
   # by machine, not memory.
   core:
@@ -67,11 +94,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # The Python conformance tests read the neutral schema through
-      # core/tests/contract_pkg.py → vendor/grasp-contract.
-      - name: Init grasp-contract submodule
-        run: git submodule update --init vendor/grasp-contract
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
@@ -98,9 +120,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Init grasp-contract submodule
-        run: git submodule update --init vendor/grasp-contract
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
