@@ -92,16 +92,16 @@ artifacts
 
         goal IterationConverges
         uuid 2190a5bb-48ab-4d73-ac52-900e9e29cf43
-        summary "設計イテレーション (設定変更 → 通し検証 → KPI 確認) は双対対の一致シグナルにより収束する"
+        summary "設計イテレーション (設定変更 → 通し検証 → KPI 確認) は、双対対の突き合わせで得た実行可能領域の内側で、ユーザ固有スイートスポット領域への到達により収束する"
         state ToBeDeveloped
 
-            assumption DualSimilarity
+            assumption ConvergenceBySweetSpot
             uuid 8ae4cf48-cbd2-4ae5-91f1-48abb1e05ffd
-            summary "H: 各 KPI はその双対位置の KPI との一致/類似により収束判定できる (判定関数と『一致を測る空間』は未確定 — イテレーションで確定し証拠に置換)"
+            summary "H (改 2026-07-19): 収束判定関数は一意に立たない。多軸 KPI 空間のユーザ固有スイートスポット領域 (ADR-049 criterion の個別化) への到達で判定し、領域自体は実データ較正 (泥臭いデータどり) で獲得する — 一意の最適解は存在しない"
 
             justification CaOneSidedPingPong
             uuid ee89a93a-a9ae-4816-a4d6-1db29c1308e4
-            summary "Withstands challenge: 単側 KPI の逐次最適化は共有設計変数上で循環し得る (同時許容領域が非凸の場合)。収束判定の対立候補 = (a) 同時許容領域の非空 (b) 支配フィルタの均衡。類似度一致が反証されたら本枝を Modify で更新する"
+            summary "Withstands challenge: 単側 KPI の逐次最適化は共有設計変数上で循環し得る (非凸)。Modify 適用 (2026-07-19): 初稿の『双対 KPI との類似度一致』は判定関数として立たないと反証方向で判断 — スイートスポット領域到達 + 実データ較正へ修正 (旧 assumption DualSimilarity を ConvergenceBySweetSpot に改稿)"
 
             goal InterDomainDual
             uuid e37e2bc4-d646-4620-b95f-b4fb7c20d554
@@ -114,12 +114,21 @@ artifacts
 
             goal ForecastActualDual
             uuid e43eae24-b3a5-4847-8b86-431444e7bf8f
-            summary "H2: 設計時 KPI 予報と運用フォールバック実績のキャリブレーション gap が測定可能である (運用データの取り込み経路を含む)"
+            summary "H2: 設計時 KPI 予報と運用フォールバック実績のキャリブレーション gap が測定可能である — スイートスポット領域獲得のためのデータ収集 (予報 KPI ベクトル + ユーザ採否 + 運用実績のログ) を一級成果物として含む"
             state ToBeDeveloped
 
                 assumption ForecastActualPlanned
                 uuid 083b4ff4-b56f-4449-b7f6-185adc694abc
-                summary "証拠予定: 運用フォールバック発生ログの取り込み形式を定義し、予報 KPI との突き合わせ集計を実装 (Phase 3 以降 — 実運用データ要)"
+                summary "証拠予定: KPI ベクトル + ユーザ採否/調整のログ形式を定義 (設計時から取れる分を先行)、運用フォールバック実績の取り込みと突き合わせ集計は実運用データ入手後 (Phase 3 以降)"
+
+            goal SweetSpotProposeLane
+            uuid 1b5aee5d-256f-4ebb-ba2b-fb456c93d301
+            summary "スイートスポット領域の学習・提案は propose-only レーン (core/recommendation, ADR-077) に置かれ真偽値を返さない — 合格ラインの決定は明示 criterion (decide) に残る"
+            state ToBeDeveloped
+
+                assumption SweetSpotLanePlanned
+                uuid 32c01a6a-b586-454e-a22a-b591ee46ae95
+                summary "証拠予定: 蓄積ログからの領域提案 API を recommendation レーンに追加し、propose-only 契約テスト (真偽値を返さないこと) で固定 (データ蓄積後)"
 
     strategy ByTemplateFidelity
     uuid c786752e-5e9a-441d-bc42-8a1ff2dcdcf0
