@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-extrude.dev/schema/grasp-search-request.json",
+  "title": "GraspSearchRequest",
+  "description": "BFF -> grasp-search service input. Wire form uses camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "type": "integer",
+      "description": "Internal contract version (see contract-version.json). Mismatch is rejected with 400."
+    },
+    "layoutVersion": {
+      "type": "string",
+      "description": "Layout DSL schema version this declaration targets, e.g. 'layout/1.0'. References the public schema; not redefined here."
+    },
+    "graspSearch": { "$ref": "#/$defs/graspSearchDeclaration" }
+  },
+  "required": ["layoutVersion", "graspSearch"],
+  "$defs": {
+    "graspSearchDeclaration": {
+      "type": "object",
+      "description": "The graspSearch declaration. Its detailed shape (hardConstraints / objectives) is owned by the Layout DSL schema named by layoutVersion; kept open here on purpose.",
+      "additionalProperties": true,
+      "properties": {
+        "objectiveWeights": {
+          "type": "object",
+          "description": "objective name -> weight. Keys correspond to score breakdown keys.",
+          "additionalProperties": { "type": "number" }
+        },
+        "topN": {
+          "type": "integer",
+          "description": "How many ranked candidates to return (fallback material for the BFF).",
+          "minimum": 1,
+          "default": 5
+        }
+      }
+    }
+  }
+}

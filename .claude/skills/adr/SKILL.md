@@ -29,6 +29,10 @@ Context = **Goal / 力学**、Decision = **Strategy**、Consequences = **Evidenc
    旧 ADR の Status を `Superseded by ADR-NNNN` にして相互リンクする。履歴は書き換えない。
 4. **証拠を具体に(§1.2 / §5)。** Consequences の検証欄は主張でなく test / bench /
    proof / 参照で埋める。埋まらない判断は Proposed 止まりにし、欠落を明示する。
+5. **証拠が大半未来形なら GSN 併設を自分から提案する(核 §3 の対応行)。** 検証欄が
+   ToBeDeveloped 主体(実装前 ADR・多イテレーション前提)なら、§1.2 の鎖を証拠実行
+   可能な GSN 論証木(`docs/gsn/`、gsn-meta-framework で作成・gsn-maintain で鮮度更新)
+   に外部化し、ADR ヘッダから相互参照する。仮説の反証・修正は木に記録する。
 
 ## 置き場所・命名
 - パス: `docs/adr/NNNN-kebab-title.md`(NNNN は 4 桁ゼロ詰め連番)。

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-extrude.dev/schema/recommendation-request.json",
+  "title": "RecommendationRequest",
+  "description": "BFF -> recommendation service input. Maps an ambiguous requirement onto reference candidates, carrying the deterministic public outputs (canonical signature / structural diff) as opaque inputs. Wire form uses camelCase.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "type": "integer",
+      "description": "Internal contract version (see contract-version.json)."
+    },
+    "layoutVersion": {
+      "type": "string",
+      "description": "Layout DSL schema version this request assumes (references the public schema)."
+    },
+    "requirement": { "$ref": "#/$defs/requirementQuery" },
+    "references": {
+      "type": "array",
+      "description": "Reference candidates to rank against.",
+      "items": { "$ref": "#/$defs/referenceCandidate" }
+    },
+    "topN": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many ranked candidates to return. Omitted = all."
+    },
+    "similarityWeights": {
+      "type": "object",
+      "description": "metric name -> weight for combining similarity (absolute basis). Omitted = server default.",
+      "additionalProperties": { "type": "number" }
+    }
+  },
+  "required": ["layoutVersion", "requirement"],
+  "$defs": {
+    "requirementQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "signature": {
+          "type": ["string", "null"],
+          "description": "Opaque canonical signature from the public deterministic output. Uninterpreted here."
+        }
+      },
+      "required": ["text"]
+    },
+    "referenceCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "refId": { "type": "string" },
+        "text": { "type": "string" },
+        "signature": {
+          "type": "string",
+          "description": "Opaque canonical signature (uninterpreted at this boundary)."
+        },
+        "diff": { "$ref": "#/$defs/structuralDiff" }
+      },
+      "required": ["refId", "text", "signature"]
+    },
+    "structuralDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Consumed structural diff from the public deterministic output. Not recomputed here.",
+      "properties": {
+        "distance": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Absolute 0-1 structural distance decided by the public side (0 = isomorphic). Consumed, not recomputed."
+        },
+        "detail": { "type": "string", "description": "Human-readable diff note. Uninterpreted." }
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "contractVersion": 3,
+  "candidates": [
+    {
+      "rank": 1,
+      "pose": {
+        "kind": "endEffector",
+        "frame": {
+          "position": [0.42, -0.13, 0.3],
+          "orientation": [0.0, 0.0, 0.0, 1.0]
+        }
+      },
+      "score": {
+        "withinReach": true,
+        "ikSolvable": true,
+        "interferenceFree": true,
+        "objectiveScores": { "clearance": 0.9, "manipulability": 0.7 },
+        "totalScore": 0.82
+      }
+    },
+    {
+      "rank": 2,
+      "pose": {
+        "kind": "jointSpace",
+        "chainRef": "ur5e/arm",
+        "joints": [0.0, -1.57, 1.57, -1.57, -1.57, 0.0]
+      },
+      "score": {
+        "withinReach": true,
+        "ikSolvable": true,
+        "interferenceFree": true,
+        "totalScore": 0.55
+      }
+    }
+  ],
+  "diagnostics": {
+    "candidatesGenerated": 5,
+    "rejectedByReach": 2,
+    "rejectedByIk": 0,
+    "rejectedByInterference": 1,
+    "feasible": 2,
+    "returned": 2,
+    "reachNearestMiss": 0.031
+  }
+}

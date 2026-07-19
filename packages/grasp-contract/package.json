@@ -1,0 +1,26 @@
+{
+  "name": "@easy-extrude/grasp-contract",
+  "version": "0.1.0",
+  "description": "Neutral I/O contract (JSON Schema) shared by the BFF and the grasp-search and recommendation services. Language-agnostic source of truth.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "files": [
+    "schema",
+    "examples",
+    "contract-version.json"
+  ],
+  "scripts": {
+    "test": "npm run test:contract",
+    "test:contract": "node test/contract.test.mjs",
+    "validate": "node tools/validate.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  },
+  "exports": {
+    "./contract-version.json": "./contract-version.json",
+    "./schema/*.schema.json": "./schema/*.schema.json",
+    "./examples/*.json": "./examples/*.json"
+  }
+}
