@@ -33,6 +33,23 @@
           "description": "How many ranked candidates to return (fallback material for the BFF).",
           "minimum": 1,
           "default": 5
+        },
+        "robot": {
+          "type": "object",
+          "description": "Declares where the robot base is (ADR-083). The engine already used this as the reach/IK reference point via the open payload; this makes it a typed, optional field. Reach/IK evaluation itself stays solved in core/ -- this only declares the base pose.",
+          "additionalProperties": false,
+          "properties": {
+            "base": {
+              "type": "array",
+              "description": "[x, y, z] world-frame position of the robot base (ROS convention, Z up).",
+              "items": { "type": "number" },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "reachMin": { "type": "number", "minimum": 0 },
+            "reachMax": { "type": "number", "minimum": 0 },
+            "wristConeHalfAngle": { "type": "number", "minimum": 0 }
+          }
         }
       }
     }

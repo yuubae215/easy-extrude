@@ -97,6 +97,7 @@ function DesktopHeaderContents() {
       <ModeDropdown />
       <MapButton />
       <RobotButton />
+      <RobotPositionInputs />
       <HeaderStatus />
       {bffConnected && (
         <>
@@ -187,6 +188,54 @@ function RobotButton() {
       <span dangerouslySetInnerHTML={{ __html: SVG_ROBOT }} style={{ display: 'flex' }} />
       {!isMobile && <span>Robot</span>}
     </button>
+  )
+}
+
+// Robot base X/Y (ADR-083) — desktop only (mobile header has no room). Z stays
+// on the ground plane and is not user-editable here. Commits on blur/Enter so
+// grasp-search isn't re-requested keystroke-by-keystroke.
+function RobotPositionInputs() {
+  const callbacks = useUIStore(s => s.callbacks)
+  const robotBase = useUIStore(s => s.robotBase)
+  const [x, setX] = useState(robotBase[0])
+  const [y, setY] = useState(robotBase[1])
+
+  useEffect(() => { setX(robotBase[0]); setY(robotBase[1]) }, [robotBase[0], robotBase[1]])
+
+  const commit = (nx, ny) => {
+    if (Number.isFinite(nx) && Number.isFinite(ny)) callbacks.onRobotBaseChange?.(nx, ny)
+  }
+
+  const inputStyle = {
+    width:        '44px',
+    padding:      '3px 4px',
+    background:   '#1a1a1a',
+    border:       '1px solid #3a3a3a',
+    borderRadius: '4px',
+    color:        '#ccc',
+    fontSize:     '11px',
+    fontFamily:   'system-ui, -apple-system, sans-serif',
+  }
+
+  return (
+    <div title="Robot base position (X, Y) — feeds grasp-search reach/IK" style={{
+      display: 'flex', alignItems: 'center', gap: '3px', flexShrink: '0',
+    }}>
+      <span style={{ color: '#777', fontSize: '11px' }}>X</span>
+      <input
+        type="number" step="0.1" value={x} style={inputStyle}
+        onChange={(e) => setX(e.target.valueAsNumber)}
+        onBlur={() => commit(x, y)}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+      />
+      <span style={{ color: '#777', fontSize: '11px' }}>Y</span>
+      <input
+        type="number" step="0.1" value={y} style={inputStyle}
+        onChange={(e) => setY(e.target.valueAsNumber)}
+        onBlur={() => commit(x, y)}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+      />
+    </div>
   )
 }
 

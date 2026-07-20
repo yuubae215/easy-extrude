@@ -23,6 +23,7 @@ const LAYOUT = { version: 'layout/1.0', entities: [{}, {}] }
 function fakeStore() {
   const state = {
     context: { grasp: null, inspectorTab: 'matrix' },
+    robotBase: [-2, 2, 0],
     actions: {
       registerCallback() {},
       contextSetGrasp(grasp) { state.context.grasp = grasp },
@@ -120,7 +121,7 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   assert.equal(g.candidates.length, 2)
   assert.equal(g.selectedRank, null)
   assert.equal(g.compiledObjects, 3)
-  assert.deepEqual(g.request, { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5 } })
+  assert.deepEqual(g.request, { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5, robot: { base: [-2, 2, 0] } } })
 })
 
 // ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────

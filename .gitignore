@@ -167,3 +167,6 @@ core/.venv/
 core/**/__pycache__/
 core/**/*.pyc
 core/.pytest_cache/
+
+# scratch/reference material, not part of the app
+sample/

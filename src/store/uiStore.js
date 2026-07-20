@@ -51,6 +51,9 @@ export const useUIStore = create((set, get) => ({
   bffConnected: false,
   nodeEditorOpen: false,
   robotVisible: true,
+  // Robot base position (ADR-083). [x, y, z], world frame, Z up, ground = 0.
+  // Sole writer: UIViewBridge.onRobotBaseChange's wrapped callback below.
+  robotBase: [-2, 2, 0],
   undoEnabled: false,
   redoEnabled: false,
 

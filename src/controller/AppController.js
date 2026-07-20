@@ -738,6 +738,10 @@ export class AppController {
     // ── Robot skeleton visibility (grasp-search verification aid) ──────────
     uiView.onRobotToggle((visible) => this._sceneView.robotStage.setVisible(visible))
 
+    // ── Robot base position (ADR-083) — moves the view transform; the same
+    // value is threaded into GraspController's request as `robot.base`.
+    uiView.onRobotBaseChange((x, y, z) => this._sceneView.robotStage.setPosition(x, y, z))
+
     // ── CF Link Network Overlay ───────────────────────────────────────────
     this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
     this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)

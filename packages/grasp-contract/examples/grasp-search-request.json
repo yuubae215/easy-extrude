@@ -3,6 +3,7 @@
   "layoutVersion": "layout/1.0",
   "graspSearch": {
     "objectiveWeights": { "clearance": 0.6, "manipulability": 0.4 },
-    "topN": 5
+    "topN": 5,
+    "robot": { "base": [-2, 2, 0] }
   }
 }

@@ -33,5 +33,20 @@ export interface GraspSearchDeclaration {
    * How many ranked candidates to return (fallback material for the BFF).
    */
   topN?: number;
+  /**
+   * Declares where the robot base is (ADR-083). The engine already used this as the reach/IK reference point via the open payload; this makes it a typed, optional field. Reach/IK evaluation itself stays solved in core/ -- this only declares the base pose.
+   */
+  robot?: {
+    /**
+     * [x, y, z] world-frame position of the robot base (ROS convention, Z up).
+     *
+     * @minItems 3
+     * @maxItems 3
+     */
+    base?: [number, number, number];
+    reachMin?: number;
+    reachMax?: number;
+    wristConeHalfAngle?: number;
+  };
   [k: string]: unknown;
 }

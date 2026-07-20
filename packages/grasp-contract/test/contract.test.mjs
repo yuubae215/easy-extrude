@@ -265,6 +265,32 @@ test("grasp-search request without layoutVersion is rejected", () => {
   rejects("grasp-search-request", rest);
 });
 
+// --- robot base declaration (ADR-083, optional, contractVersion unchanged) ---
+test("grasp-search request's robot.base is the canonical example's declared pose", () =>
+  assert.deepEqual(examples["grasp-search-request"].graspSearch.robot.base, [-2, 2, 0]));
+
+test("grasp-search request without robot still conforms (optional field)", () => {
+  const example = examples["grasp-search-request"];
+  const { robot, ...graspSearch } = example.graspSearch;
+  accepts("grasp-search-request", { ...example, graspSearch });
+});
+
+test("grasp-search request rejects a malformed robot.base (wrong length)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, robot: { base: [0, 0] } },
+  });
+});
+
+test("grasp-search request rejects unknown fields under robot (closed)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, robot: { base: [0, 0, 0], sneaky: true } },
+  });
+});
+
 test("recommendation request without requirement.text is rejected", () => {
   const example = examples["recommendation-request"];
   rejects("recommendation-request", {

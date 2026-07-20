@@ -158,7 +158,14 @@ export class GraspController {
 
     const objectiveWeights = params.weights ?? { reach: 0.6, clearance: 0.4 }
     const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
-    const request = { layoutVersion: dsl.version, graspSearch: { objectiveWeights, topN } }
+    // Robot base (ADR-083): declared from wherever the user placed it in the
+    // viewport (uiStore.robotBase); reach/IK evaluation against it happens in
+    // core/, not here — this only carries the declared pose across the seam.
+    const robotBase = this._store.getState().robotBase
+    const request = {
+      layoutVersion: dsl.version,
+      graspSearch: { objectiveWeights, topN, robot: { base: robotBase } },
+    }
 
     // Step A — round-trip verify the DSL compiles to a scene on the BFF.
     ui.contextSetGrasp({ status: 'compiling', layout })

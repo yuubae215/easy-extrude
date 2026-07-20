@@ -94,6 +94,8 @@ This directory records the project's design decisions.
 | [ADR-080](ADR-080-menu-choreography-extrude-front.md) | **残余モーション空白の被覆 — ポップオーバー入場振付 (ChromeMath 拡張) + 押し出し成長前線 (Tier A)** | Accepted (両 Phase 実装済) | 2026-07-19 | ADR-065, ADR-066, ADR-068 |
 | [ADR-081](ADR-081-domain-staged-validation-fallback-ladder-kpi.md) | **ドメイン段階バリデーション (見える/届く/掴める) + 運用フォールバック階梯の設計時 KPI 検証** | Proposed | 2026-07-19 | ADR-049, ADR-053, ADR-057, ADR-061, ADR-063, ADR-074, ADR-075, ADR-076, ADR-078, ADR-079 |
 | [ADR-082](ADR-082-absorb-contract-submodule.md) | **契約 submodule の repo 内吸収 — 壁は repo 分離ではなく CI ガードで守る** | Accepted (実装済) | 2026-07-19 | ADR-074, ADR-064, ADR-060, ADR-079, ADR-081 |
+| [ADR-083](ADR-083-robot-base-placement-grasp-contract.md) | **ロボット base position をユーザーが動かし、grasp-search 契約に正式に載せる (optional 追加、version 据え置き)** | Accepted (実装済; フロント実装は ADR-084 で置き換え予定) | 2026-07-20 | ADR-074, ADR-075, ADR-078, ADR-057, ADR-060 |
+| [ADR-084](ADR-084-tcp-oriented-ik-entity-grounded-geometry.md) | **TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化 — grasp宣言の生座標を廃し幾何の正本をLayout DSLに一本化** | Proposed (レビュー待ち) | 2026-07-20 | ADR-083, ADR-081, ADR-078, ADR-074, ADR-018, ADR-034 |
 
 ## How to Add a New ADR
 

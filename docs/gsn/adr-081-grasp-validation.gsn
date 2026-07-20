@@ -27,6 +27,18 @@ artifacts
             artifacts
             - "core/tests/test_engine.py"
 
+            goal ConeAxisIsTcpOriented
+            uuid 3f6a9c2e-6b1d-4a7f-9e2c-8d4b5f1a7c60
+            summary "ADR-084: 手首コーンの基準軸が『base→candidate』の代理ではなく、CoordinateFrame実体化されたTCPの実姿勢 (ROS正準ワールド座標系で解決済み) から導出される。tcp_orientation未宣言時は旧代理軸へフォールバックし既存挙動を無言で変えない"
+            state ToBeDeveloped
+            groups adr-084
+            artifacts
+            - "docs/adr/ADR-084-tcp-oriented-ik-entity-grounded-geometry.md"
+
+                assumption TcpConeAxisPlanned
+                uuid 9b2e4f7a-1c8d-4e3f-a6b9-2d5c8e1f4a73
+                summary "証拠予定: core/ に Quaternion 型 + rotate 演算を追加し、NaiveIkSolver の基準軸を tcp_orientation 由来 (FORWARD_AXIS=+X, pose_codec.py の -Z gauge とは無関係) に変更した pytest (フォールバック分岐含む) を test_engine.py へ追加 (ADR-084 Phase 1)"
+
         goal VisionGateExists
         uuid ab31bf32-2eec-4ffb-9429-055535136974
         summary "見えるか: camera 宣言に基づく可視性ゲートがエンティティ粒度 (targetable 絞り込み) と候補粒度 (フィルタ段) の両方に存在する"

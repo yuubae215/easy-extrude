@@ -74,6 +74,17 @@ export class RobotStage {
     this._group.visible = visible
   }
 
+  /**
+   * Moves the robot base. A pure view-layer transform (ADR-083) -- reach/IK
+   * evaluation of this position happens in core/, not here.
+   * @param {number} x
+   * @param {number} y
+   * @param {number} [z]
+   */
+  setPosition(x, y, z = 0) {
+    this._group.position.set(x, y, z)
+  }
+
   /** Symmetric teardown (#9): every scene.add above has its remove+dispose here. */
   dispose() {
     if (this.robot) {
