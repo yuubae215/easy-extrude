@@ -351,3 +351,70 @@ test('a new run and disposeGhost clean up the ghost (PHILOSOPHY #9)', async () =
   gc.disposeGhost()
   assert.ok(ghosts[0].calls.some(c => c[0] === 'dispose'))
 })
+
+// ── Domain declarations: camera / gripper ride the request (ADR-081 Dec. 5) ────
+
+test('camera and gripper declarations ride the request open payload verbatim', async () => {
+  let sent = null
+  const bff = {
+    async compileLayout() { return { objects: [] } },
+    async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc } = setup({ bff })
+  const camera  = { position: [0, 0, 1.2], viewAxis: [0, 0, -1], fovHalfAngle: 0.6 }
+  const gripper = { maxOpening: 0.06, fingerClearance: 0.01 }
+  await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera, gripper })
+  assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
+  assert.deepEqual(sent.graspSearch.gripper, gripper)
+  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0] })
+})
+
+test('an undeclared camera / gripper omits the key entirely (vacuously-true gate)', async () => {
+  let sent = null
+  const bff = {
+    async compileLayout() { return { objects: [] } },
+    async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc } = setup({ bff })
+  await gc.runGraspSearch({ camera: null, gripper: undefined })
+  assert.ok(!('camera' in sent.graspSearch))
+  assert.ok(!('gripper' in sent.graspSearch))
+})
+
+// ── captureViewportCamera (ADR-081 Dec. 5 「今この視点から見えるか」) ──────────
+
+/** Column-major identity matrixWorld (camera at origin looking down world −Z). */
+const CAM_IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+test('captureViewportCamera snapshots the active camera as a wire declaration', () => {
+  const { gc, ctrl } = setup({})
+  let updated = 0
+  ctrl._sceneView = {
+    activeCamera: {
+      position: { x: 1, y: -2, z: 3 },
+      matrixWorld: { elements: CAM_IDENTITY },
+      fov: 60,
+      updateMatrixWorld() { updated += 1 },
+    },
+  }
+  const snap = gc.captureViewportCamera()
+  assert.equal(updated, 1)                       // fresh matrix, not a stale frame
+  assert.deepEqual(snap.position, [1, -2, 3])
+  assert.deepEqual(snap.viewAxis, [0, 0, -1])
+  assert.ok(Math.abs(snap.fovHalfAngle - Math.PI / 6) < 1e-3)
+})
+
+test('captureViewportCamera: ortho camera (no fov) degrades to fovHalfAngle null', () => {
+  const { gc, ctrl } = setup({})
+  ctrl._sceneView = {
+    activeCamera: { position: { x: 0, y: 0, z: 5 }, matrixWorld: { elements: CAM_IDENTITY } },
+  }
+  const snap = gc.captureViewportCamera()
+  assert.deepEqual(snap.viewAxis, [0, 0, -1])
+  assert.equal(snap.fovHalfAngle, null)
+})
+
+test('captureViewportCamera returns null without a camera (THREE-free lane) — never a guess', () => {
+  const { gc } = setup({})
+  assert.equal(gc.captureViewportCamera(), null)
+})

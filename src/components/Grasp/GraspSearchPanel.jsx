@@ -3,6 +3,10 @@ import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
+import {
+  CAMERA_PRESETS, GRIPPER_PRESETS, matchingPresetId,
+  cameraDeclarationGaps, gripperDeclarationGaps,
+} from '../../context/GraspDeclarationCatalog.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { DURATION, EASING } from '../../theme/tokens.js'
 
@@ -27,6 +31,14 @@ function barTransition(reduced) {
  * writer is GraspController — PHILOSOPHY #5) and fires registered callbacks; it owns
  * no FSM state, only the local form inputs.
  *
+ * Input is organised as three domain declaration cards — Seen (camera) /
+ * Reached (robot base + weights) / Grasped (gripper) — per ADR-081 Decision 5.
+ * Cards seed from GraspDeclarationCatalog presets (fork & tweak, ADR-063's
+ * selection-first premise), the vision card can copy the live viewport camera
+ * ("use current view" → onCaptureViewportCamera), and each enabled card's gap
+ * list is the Run button's submit predicate (reasons printed — #11). The cards
+ * only DECLARE; every gate is solved in core/ behind the contract.
+ *
  * Scoring is built from the contract's `score` only (ADR-057 §F): the three boolean
  * chips plus labelled `objectiveScores` bars (objective name → 0..1, comparable
  * across requests on an absolute basis per the contract). Ranking never comes from
@@ -41,9 +53,33 @@ function barTransition(reduced) {
 
 const BORDER = '1px solid #3a3a3a'
 
+// ── Domain-card form parsing (local, pure) ───────────────────────────────────
+//
+// Form fields hold strings; these parse them into the wire-shaped declaration
+// the gap predicates (GraspDeclarationCatalog) and the request consume. A
+// blank field parses to NaN (never a silent 0 — Number('') is 0, the #11
+// trap), except the OPTIONAL fovHalfAngle / fingerClearance, where blank
+// means "leave the key out".
+
+const parseNum = (s) => (typeof s === 'string' && s.trim() === '') ? NaN : Number(s)
+const isBlank  = (s) => typeof s === 'string' && s.trim() === ''
+
+function parseCameraForm(v) {
+  const cam = { position: v.position.map(parseNum), viewAxis: v.viewAxis.map(parseNum) }
+  if (!isBlank(v.fovHalfAngle)) cam.fovHalfAngle = parseNum(v.fovHalfAngle)
+  return cam
+}
+
+function parseGripperForm(g) {
+  const out = { maxOpening: parseNum(g.maxOpening) }
+  if (!isBlank(g.fingerClearance)) out.fingerClearance = parseNum(g.fingerClearance)
+  return out
+}
+
 export function GraspSearchPanel() {
   const grasp     = useUIStore(s => s.context.grasp)
   const callbacks = useUIStore(s => s.callbacks)
+  const robotBase = useUIStore(s => s.robotBase)
 
   const [reach, setReach]         = useState(0.6)
   const [clearance, setClearance] = useState(0.4)
@@ -52,11 +88,64 @@ export function GraspSearchPanel() {
   // (a grasp request is invariant — ADR-057 §Rendering).
   const [sortKey, setSortKey]     = useState('total')
 
+  // Domain declaration cards (ADR-081 Decision 5). Both cards seed from their
+  // catalog's FIRST preset (selection-first premise, ADR-063 — never a blank
+  // numeric form); the toggle controls whether the declaration rides the
+  // request at all (off = key omitted = that gate passes vacuously).
+  const [vision, setVision] = useState(() => ({
+    enabled: false,
+    position:     CAMERA_PRESETS[0].params.position.map(String),
+    viewAxis:     CAMERA_PRESETS[0].params.viewAxis.map(String),
+    fovHalfAngle: String(CAMERA_PRESETS[0].params.fovHalfAngle),
+  }))
+  const [grip, setGrip] = useState(() => ({
+    enabled: false,
+    maxOpening:      String(GRIPPER_PRESETS[0].params.maxOpening),
+    fingerClearance: String(GRIPPER_PRESETS[0].params.fingerClearance),
+  }))
+  const [captureNote, setCaptureNote] = useState(null)
+
+  const camParams  = useMemo(() => parseCameraForm(vision), [vision])
+  const gripParams = useMemo(() => parseGripperForm(grip), [grip])
+  // The gap lists ARE the submit predicate (ADR-058 UX discipline): non-empty
+  // disables Run and every reason is printed below the button.
+  const visionGaps = vision.enabled ? cameraDeclarationGaps(camParams) : []
+  const gripGaps   = grip.enabled ? gripperDeclarationGaps(gripParams) : []
+  const gaps       = [...visionGaps, ...gripGaps]
+
+  const applyCameraPreset = (p) => setVision(v => ({
+    ...v,
+    position:     p.params.position.map(String),
+    viewAxis:     p.params.viewAxis.map(String),
+    fovHalfAngle: String(p.params.fovHalfAngle),
+  }))
+  const applyGripperPreset = (p) => setGrip(g => ({
+    ...g,
+    maxOpening:      String(p.params.maxOpening),
+    fingerClearance: String(p.params.fingerClearance),
+  }))
+
+  // "Use current view" (ADR-081 §5): the controller snapshots the active
+  // viewport camera; a null (no camera) is reported, never silently ignored.
+  const captureCamera = () => {
+    const snap = callbacks.onCaptureViewportCamera?.() ?? null
+    if (!snap) { setCaptureNote('viewport camera unavailable'); return }
+    setCaptureNote(null)
+    setVision(v => ({
+      ...v, enabled: true,
+      position: snap.position.map(String),
+      viewAxis: snap.viewAxis.map(String),
+      fovHalfAngle: snap.fovHalfAngle != null ? String(snap.fovHalfAngle) : v.fovHalfAngle,
+    }))
+  }
+
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
   const run = () => callbacks.onRunGraspSearch?.({
-    weights: { reach: Number(reach), clearance: Number(clearance) },
-    topN:    Number(topN),
+    weights:  { reach: Number(reach), clearance: Number(clearance) },
+    topN:     Number(topN),
+    camera:   vision.enabled ? camParams : null,
+    gripper:  grip.enabled ? gripParams : null,
   })
 
   // Objective names present across the returned candidates (for sort buttons).
@@ -93,24 +182,90 @@ export function GraspSearchPanel() {
         <span>{grasp?.layout?.entities ?? 0} entit{(grasp?.layout?.entities === 1) ? 'y' : 'ies'}</span>
       </div>
 
-      {/* Objective weights + topN */}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-        <NumField label="reach"     value={reach}     step="0.1" onChange={setReach} />
-        <NumField label="clearance" value={clearance} step="0.1" onChange={setClearance} />
-        <NumField label="topN"      value={topN}      step="1" min="1" onChange={setTopN} />
-      </div>
-
-      <button
-        onClick={run}
-        disabled={busy}
-        style={{
-          padding: '6px 14px', borderRadius: '5px', border: '1px solid #3a7bd5',
-          background: busy ? '#2a3a52' : '#1d4f8f', color: '#dceaff',
-          cursor: busy ? 'default' : 'pointer', fontSize: '12px', fontWeight: 'bold',
-        }}
+      {/* Three domain declaration cards (ADR-081 Decision 5): 見える / 届く /
+          掴める. Each card only DECLARES (camera / robot base / gripper) —
+          the gates themselves are solved in core/ and their results come back
+          through the contract funnel below. */}
+      <DomainCard
+        title="Seen" domain="vision"
+        enabled={vision.enabled}
+        onToggle={(on) => setVision(v => ({ ...v, enabled: on }))}
+        offHint="no camera declared — visibility passes everything"
+        offExtra={
+          // The one-tap capture stays reachable with the card OFF (ADR-081 §5
+          // 「ワンタップで写し取る」): tapping it declares AND fills in one gesture.
+          <CaptureButton onClick={captureCamera} note={captureNote} />
+        }
       >
-        {busy ? 'Running…' : 'Run grasp search'}
-      </button>
+        <PresetChips
+          presets={CAMERA_PRESETS}
+          activeId={matchingPresetId(CAMERA_PRESETS, camParams)}
+          onPick={applyCameraPreset}
+        />
+        <CaptureButton onClick={captureCamera} note={captureNote} />
+        <Vec3Fields label="position" values={vision.position}
+          onChange={(pos) => setVision(v => ({ ...v, position: pos }))} />
+        <Vec3Fields label="view axis" values={vision.viewAxis}
+          onChange={(ax) => setVision(v => ({ ...v, viewAxis: ax }))} />
+        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+          <NumField label="FOV half angle (rad)" value={vision.fovHalfAngle} step="0.05"
+            onChange={(s) => setVision(v => ({ ...v, fovHalfAngle: s }))} />
+        </div>
+      </DomainCard>
+
+      <DomainCard title="Reached" domain="path" alwaysOn
+        offHint={null}
+      >
+        <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
+          robot base <code style={{ color: '#9ad' }}>
+            [{(robotBase ?? []).map(n => (typeof n === 'number' ? n.toFixed(2) : '—')).join(', ')}]
+          </code>
+          <span style={{ color: '#667' }}> — place it in the viewport (Robot ▾)</span>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <NumField label="reach weight"     value={reach}     step="0.1" onChange={setReach} />
+          <NumField label="clearance weight" value={clearance} step="0.1" onChange={setClearance} />
+        </div>
+      </DomainCard>
+
+      <DomainCard
+        title="Grasped" domain="grasp"
+        enabled={grip.enabled}
+        onToggle={(on) => setGrip(g => ({ ...g, enabled: on }))}
+        offHint="no gripper declared — graspability passes everything"
+      >
+        <PresetChips
+          presets={GRIPPER_PRESETS}
+          activeId={matchingPresetId(GRIPPER_PRESETS, gripParams)}
+          onPick={applyGripperPreset}
+        />
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <NumField label="max opening" value={grip.maxOpening} step="0.005"
+            onChange={(s) => setGrip(g => ({ ...g, maxOpening: s }))} />
+          <NumField label="finger clearance" value={grip.fingerClearance} step="0.005"
+            onChange={(s) => setGrip(g => ({ ...g, fingerClearance: s }))} />
+        </div>
+      </DomainCard>
+
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginTop: '2px' }}>
+        <NumField label="topN" value={topN} step="1" min="1" onChange={setTopN} />
+        <button
+          onClick={run}
+          disabled={busy || gaps.length > 0}
+          style={{
+            padding: '6px 14px', borderRadius: '5px', border: '1px solid #3a7bd5',
+            background: (busy || gaps.length > 0) ? '#2a3a52' : '#1d4f8f', color: '#dceaff',
+            cursor: (busy || gaps.length > 0) ? 'default' : 'pointer', fontSize: '12px', fontWeight: 'bold',
+          }}
+        >
+          {busy ? 'Running…' : 'Run grasp search'}
+        </button>
+      </div>
+      {/* The gap list is the submit predicate — a disabled Run always prints
+          its reasons (never a silent disabled, PHILOSOPHY #11). */}
+      {gaps.map((g, i) => (
+        <div key={i} style={{ fontSize: '10px', color: '#caa', marginTop: '3px' }}>· {g}</div>
+      ))}
 
       <StatusLine grasp={grasp} />
 
@@ -198,6 +353,96 @@ function SortChip({ label, active, onClick }) {
         color: active ? '#9cf' : '#aaa', fontFamily: 'inherit',
       }}
     >{label}</button>
+  )
+}
+
+// ── Domain declaration cards (ADR-081 Decision 5) ────────────────────────────
+
+/**
+ * One card per verification domain (Seen / Reached / Grasped). A disabled
+ * card keeps its slot and states the consequence of not declaring (Fixed
+ * Slots — PHILOSOPHY #15; the vacuously-true gate is stated, never implied).
+ * The Path card is `alwaysOn`: reach / IK / interference always run.
+ */
+function DomainCard({ title, domain, enabled, onToggle, alwaysOn, offHint, offExtra, children }) {
+  const on = alwaysOn || enabled
+  return (
+    <div style={{ marginBottom: '8px', padding: '7px 9px', borderRadius: '5px', background: '#222', border: BORDER }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: on ? '6px' : '3px' }}>
+        <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#cdd' }}>{title}</span>
+        <span style={{ fontSize: '9px', color: '#667' }}>({domain})</span>
+        {alwaysOn ? (
+          <span style={{ marginLeft: 'auto', fontSize: '9px', color: '#7a9' }}>always on</span>
+        ) : (
+          <label style={{ marginLeft: 'auto', fontSize: '10px', color: '#aaa', display: 'flex', gap: '4px', cursor: 'pointer', alignItems: 'center' }}>
+            <input type="checkbox" checked={enabled} onChange={e => onToggle(e.target.checked)} />
+            declare
+          </label>
+        )}
+      </div>
+      {on ? children : (
+        <>
+          <div style={{ fontSize: '10px', color: '#776' }}>{offHint}</div>
+          {offExtra}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** "Use current view" capture button + its honest unavailable note (#11). */
+function CaptureButton({ onClick, note }) {
+  return (
+    <div style={{ marginTop: '4px', marginBottom: '4px' }}>
+      <button
+        onClick={onClick}
+        title="Copy the current viewport camera into this declaration"
+        style={{
+          fontSize: '10px', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer',
+          border: '1px solid #3a6a5d', background: '#1d3a33', color: '#9dc8b8',
+        }}
+      >📷 use current view</button>
+      {note && (
+        <div style={{ fontSize: '10px', color: '#caa', marginTop: '3px' }}>{note}</div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Preset chip row (fork & tweak — ADR-063/058): picking a chip seeds the
+ * card's fields; the active chip is DERIVED by value equality
+ * (`matchingPresetId`), so any edit forks to "custom" with no stored flag.
+ */
+function PresetChips({ presets, activeId, onPick }) {
+  return (
+    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '6px', alignItems: 'center' }}>
+      <span style={{ fontSize: '10px', color: '#888' }}>preset:</span>
+      {presets.map(p => (
+        <SortChip key={p.id} label={p.label} active={p.id === activeId} onClick={() => onPick(p)} />
+      ))}
+      {activeId == null && <span style={{ fontSize: '9px', color: '#997' }}>custom (forked)</span>}
+    </div>
+  )
+}
+
+/** Labelled x/y/z triple of number inputs (form-local string values). */
+function Vec3Fields({ label, values, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '4px' }}>
+      <span style={{ fontSize: '10px', color: '#aaa', width: '58px', textAlign: 'right' }}>{label}</span>
+      {['x', 'y', 'z'].map((axis, i) => (
+        <input
+          key={axis} type="number" value={values[i]} step="0.05"
+          aria-label={`${label} ${axis}`}
+          onChange={e => { const next = [...values]; next[i] = e.target.value; onChange(next) }}
+          style={{
+            width: '52px', padding: '3px 5px', borderRadius: '4px',
+            border: '1px solid #444', background: '#1a1a1a', color: '#e0e0e0', fontSize: '11px',
+          }}
+        />
+      ))}
+    </div>
   )
 }
 

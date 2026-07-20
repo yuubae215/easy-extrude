@@ -43,6 +43,7 @@
  * (ADR-059 §C: the ghost is a derived projection, not a new FSM).
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
+import { visionFromViewportCamera } from '../context/GraspDeclarationCatalog.js'
 
 export class GraspController {
   /**
@@ -66,6 +67,7 @@ export class GraspController {
     registerCallback('onRunGraspSearch',      (params) => this.runGraspSearch(params))
     registerCallback('onSelectGraspCandidate', (rank)  => this.selectCandidate(rank))
     registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
+    registerCallback('onCaptureViewportCamera', ()     => this.captureViewportCamera())
   }
 
   // ── Entry: select the grasp tab inside the negotiate overlay (ADR-057 §B) ─────
@@ -117,7 +119,8 @@ export class GraspController {
    * CommandStack. Failures surface their *reason* (400/502/503) — never a silent
    * no-op (PHILOSOPHY #11).
    *
-   * @param {{ weights?: Record<string,number>, topN?: number }} [params]
+   * @param {{ weights?: Record<string,number>, topN?: number,
+   *           camera?: object|null, gripper?: object|null }} [params]
    */
   async runGraspSearch(params = {}) {
     const ctrl = this._ctrl
@@ -162,9 +165,19 @@ export class GraspController {
     // viewport (uiStore.robotBase); reach/IK evaluation against it happens in
     // core/, not here — this only carries the declared pose across the seam.
     const robotBase = this._store.getState().robotBase
+    // Vision / grasp domain declarations (ADR-081 Decision 5): the panel's
+    // domain cards pass parsed camera / gripper declarations, gap-checked by
+    // GraspDeclarationCatalog's predicates before Run enables. They ride the
+    // request's open payload verbatim (declaration only — visibility / grasp
+    // judgment stays in core/); an undeclared card simply omits the key and
+    // the corresponding gate passes everything (vacuously-true contract).
     const request = {
       layoutVersion: dsl.version,
-      graspSearch: { objectiveWeights, topN, robot: { base: robotBase } },
+      graspSearch: {
+        objectiveWeights, topN, robot: { base: robotBase },
+        ...(params.camera  ? { camera:  params.camera }  : {}),
+        ...(params.gripper ? { gripper: params.gripper } : {}),
+      },
     }
 
     // Step A — round-trip verify the DSL compiles to a scene on the BFF.
@@ -312,6 +325,35 @@ export class GraspController {
     for (const c of corners) { x += c.x; y += c.y; z += c.z }
     const n = corners.length
     return [x / n, y / n, z / n]
+  }
+
+  // ── Viewport-camera capture (ADR-081 Decision 5 「今この視点から見えるか」) ────
+
+  /**
+   * Snapshot the active viewport camera as a vision declaration for the
+   * panel's "use current view" button. This is the side-effect half of the
+   * capture: it reads the live camera (position / matrixWorld / perspective
+   * fov) and delegates ALL derivation to the pure
+   * `visionFromViewportCamera` (GraspDeclarationCatalog) — the same split as
+   * the ghost's capability gate. Returns the wire-shaped declaration
+   * `{position, viewAxis, fovHalfAngle|null}` or null when no camera is
+   * available (THREE-free test lane / detached view) — the panel reports the
+   * null instead of writing a guessed declaration (PHILOSOPHY #11).
+   *
+   * Uses `SceneView.activeCamera` (never a captured perspective-only camera —
+   * the "HTML Overlay Active Camera" contract): in Map Mode the ortho camera
+   * is captured, whose missing fov degrades to fovHalfAngle null.
+   */
+  captureViewportCamera() {
+    const cam = this._ctrl._sceneView?.activeCamera
+    if (!cam) return null
+    cam.updateMatrixWorld?.()
+    const p = cam.position
+    return visionFromViewportCamera({
+      position: p ? { x: p.x, y: p.y, z: p.z } : null,
+      matrixWorldElements: cam.matrixWorld?.elements ?? null,
+      fovDeg: typeof cam.fov === 'number' ? cam.fov : null,
+    })
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
