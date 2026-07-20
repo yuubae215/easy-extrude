@@ -103,11 +103,33 @@ class RobotWire(_ContractModel):
     wrist_cone_half_angle: float = math.pi  # 既定は無制限 (engine.types.Robot と同じ)
 
 
+class CameraWire(_ContractModel):
+    """カメラ宣言 (ADR-081 「見えるか」)。grasp-search 契約の camera と同形。
+
+    宣言のみ (可視性の判定はコア側)。viewAxis + fovHalfAngle の両宣言時だけ
+    視野円錐が効く。
+    """
+
+    position: list[float]
+    view_axis: Optional[list[float]] = None
+    fov_half_angle: Optional[float] = Field(default=None, ge=0.0)
+
+
+class GripperWire(_ContractModel):
+    """グリッパ宣言 (ADR-081 「掴めるか」)。grasp-search 契約の gripper と同形。"""
+
+    max_opening: float = Field(ge=0.0)
+    finger_clearance: float = Field(default=0.0, ge=0.0)
+
+
 class GraspSettingsWire(_ContractModel):
     """1 シーンの全ピックで共有する把持探索設定 (per-entity でない部分)。
 
     Decision 3 の用語境界を wire でも保つ: `robot.wristConeHalfAngle` = 許容角 (届く向き) /
     `approachTiltAngles` / `rollAngles` = 進入角 (試す向き)。混ぜない。
+
+    camera / gripper (ADR-081) は省略可の宣言 (器)。省略 = 該当ドメインゲート無効
+    (コア側の既定と一致)。
     """
 
     robot: RobotWire
@@ -117,6 +139,8 @@ class GraspSettingsWire(_ContractModel):
     pre_grasp_distance: float = 0.1
     clearance_reference: float = 0.1
     top_n: int = Field(default=5, ge=1)
+    camera: Optional[CameraWire] = None
+    gripper: Optional[GripperWire] = None
 
 
 class PickSequenceRequest(_ContractModel):

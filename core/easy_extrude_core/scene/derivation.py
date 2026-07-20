@@ -20,7 +20,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 
 from ..contract import CONTRACT_VERSION, GraspSearchRequest
-from ..engine.types import Obstacle
+from ..engine.feasibility import sightline_occlusion_miss
+from ..engine.types import Camera, Obstacle
 from .types import Scene, SceneEntity
 from .settings import GraspSettings
 
@@ -61,6 +62,40 @@ def targetable_entities(
         for e in scene.entities
         if e.is_targetable and e.entity_id not in picked
     )
+
+
+def viewable_entities(
+    scene: Scene,
+    camera: Camera | None,
+    entities: Sequence[SceneEntity],
+    picked_ids: Iterable[str] = (),
+) -> tuple[SceneEntity, ...]:
+    """カメラから見えるエンティティだけに絞る (純粋, ADR-081 Decision 1)。
+
+    エンティティ粒度の可視性: 把持点 (surface_samples) の少なくとも 1 点への視線が
+    通るエンティティを「見える」とする。遮蔽物は **自分以外** の未ピック エンティティの
+    干渉球 (自分の球で自分を遮らない — per-pick 導出の対象除外と同じ罠回避)。
+    視線判定は候補粒度と同じ `sightline_occlusion_miss` (第二の源を作らない)。
+
+    camera 未宣言 (None) は絞り込みなし (top_z 順という従来代理のまま)。ADR-081:
+    top_z 順の「上 = 見える」という暗黙の代理が、カメラ宣言に基づく判定へ昇格する。
+    """
+    if camera is None:
+        return tuple(entities)
+    picked = set(picked_ids)
+    visible_list: list[SceneEntity] = []
+    for entity in entities:
+        occluders: list[Obstacle] = []
+        for other in scene.entities:
+            if other.entity_id == entity.entity_id or other.entity_id in picked:
+                continue
+            occluders.extend(other.collision_spheres)
+        occluder_tuple = tuple(occluders)
+        for point, _normal in entity.surface_samples:
+            if sightline_occlusion_miss(camera, point, occluder_tuple) <= 0.0:
+                visible_list.append(entity)
+                break
+    return tuple(visible_list)
 
 
 def order_by_topmost(entities: Sequence[SceneEntity]) -> tuple[SceneEntity, ...]:
@@ -122,6 +157,20 @@ def build_request(
         "objectiveWeights": dict(settings.objective_weights),
         "topN": settings.top_n,
     }
+    # camera / gripper 宣言 (ADR-081)。未宣言はキーごと出さない (エンジン側の
+    # ゲート無効の規約と一致。空 dict を送って意味を曖昧にしない)。
+    if settings.camera is not None:
+        camera_wire: dict = {"position": settings.camera.position.as_list()}
+        if settings.camera.view_axis is not None:
+            camera_wire["viewAxis"] = settings.camera.view_axis.as_list()
+        if settings.camera.fov_half_angle is not None:
+            camera_wire["fovHalfAngle"] = settings.camera.fov_half_angle
+        grasp_search["camera"] = camera_wire
+    if settings.gripper is not None:
+        grasp_search["gripper"] = {
+            "maxOpening": settings.gripper.max_opening,
+            "fingerClearance": settings.gripper.finger_clearance,
+        }
     return GraspSearchRequest.model_validate(
         {
             "contractVersion": CONTRACT_VERSION,

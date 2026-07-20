@@ -16,8 +16,12 @@ from easy_extrude_core.contract import (
     GraspSearchRequest,
 )
 from easy_extrude_core.engine import (
+    Camera,
     GraspCandidate,
+    Gripper,
     NaiveIkSolver,
+    NaiveParallelJawGraspChecker,
+    NaiveSightlineVisibilityChecker,
     NaiveSphereCollisionChecker,
     NormSpec,
     Obstacle,
@@ -28,6 +32,7 @@ from easy_extrude_core.engine import (
     Vec3,
     evaluate_objectives,
     generate_candidates,
+    graspable,
     ik_solvable,
     interference_free,
     pose_from_payload,
@@ -36,6 +41,7 @@ from easy_extrude_core.engine import (
     reach_miss,
     search,
     search_report,
+    visible,
     weighted_sum,
     within_reach,
 )
@@ -353,3 +359,242 @@ def test_injected_solver_overrides_naive():
     req = _build_request(_declaration_dict())
     resp = search(req, ik_solver=_NeverSolver())
     assert resp.candidates == []
+
+
+# --- 可視性ゲート (見えるか, ADR-081) -----------------------------------------
+
+
+def test_naive_visibility_measures_sightline_occlusion():
+    checker = NaiveSightlineVisibilityChecker()
+    camera = Camera(position=Vec3(0, 0, 1))
+    cand = _candidate_at(Vec3(1, 0, 0), Vec3(0, 0, -1), Vec3(0, 0, 1))
+    # 視線 (0,0,1)->(1,0,0) の中点 (0.5,0,0.5) を中心とする球 -> 食い込み = 半径。
+    blocking = (Obstacle(center=Vec3(0.5, 0.0, 0.5), radius=0.2),)
+    assert math.isclose(checker.occlusion_miss(cand, camera, blocking), 0.2)
+    # 視線から離れた球は遮らない -> 0.0 (見える)。
+    far = (Obstacle(center=Vec3(0.5, 5.0, 0.5), radius=0.2),)
+    assert checker.occlusion_miss(cand, camera, far) == 0.0
+
+
+def test_naive_visibility_fov_cone_is_unmeasurable_inf():
+    checker = NaiveSightlineVisibilityChecker()
+    # 視軸 +Z (対象と逆) + 狭い FOV -> 円錐外 = inf (遮蔽量では測れない棄却)。
+    camera = Camera(
+        position=Vec3(0, 0, 1), view_axis=Vec3(0, 0, 1), fov_half_angle=0.3
+    )
+    cand = _candidate_at(Vec3(1, 0, 0), Vec3(0, 0, -1), Vec3(0, 0, 1))
+    assert checker.occlusion_miss(cand, camera, ()) == math.inf
+    # 視軸だけ宣言 (FOV 半角なし) なら視野判定は効かない -> 見える。
+    axis_only = Camera(position=Vec3(0, 0, 1), view_axis=Vec3(0, 0, 1))
+    assert checker.occlusion_miss(cand, axis_only, ()) == 0.0
+
+
+def test_visible_gate_off_without_camera_declaration():
+    checker = NaiveSightlineVisibilityChecker()
+    cand = _candidate_at(Vec3(1, 0, 0), Vec3(0, 0, -1), Vec3(0, 0, 1))
+    # camera 未宣言 (None) はゲート無効 = 常に True (既存挙動を変えない)。
+    assert visible(cand, None, (), checker) is True
+
+
+# --- 把持性ゲート (掴めるか, ADR-081) -----------------------------------------
+
+
+def _flat_target(width_x: float, width_y: float) -> TargetObject:
+    """上面 (法線 +Z) の平置き対象。x/y 半幅の 4 隅 + 中心のサンプル。"""
+    up = Vec3(0, 0, 1)
+    hx, hy = width_x / 2.0, width_y / 2.0
+    return TargetObject(
+        surface_samples=(
+            (Vec3(0, 0, 0), up),
+            (Vec3(hx, 0, 0), up),
+            (Vec3(-hx, 0, 0), up),
+            (Vec3(0, hy, 0), up),
+            (Vec3(0, -hy, 0), up),
+        )
+    )
+
+
+def test_naive_grasp_checker_gates_on_projected_width():
+    checker = NaiveParallelJawGraspChecker()
+    target = _flat_target(width_x=0.04, width_y=0.03)
+    # top-down (approach -Z), roll=0。FRAME_CONVENTION の閉じ軸は y 方向
+    # -> 幅 0.03。開口 0.06 >= 0.03 + 0.01 -> 合格 (不足 0)。
+    top_down = GraspCandidate(
+        pose=Pose(position=Vec3(0, 0, 0), approach=Vec3(0, 0, -1), roll=0.0),
+        pre_grasp=Vec3(0, 0, 0.1),
+        surface_normal=Vec3(0, 0, 1),
+    )
+    wide = Gripper(max_opening=0.06, finger_clearance=0.01)
+    assert checker.opening_miss(top_down, wide, target) == 0.0
+    # 開口 0.035 < 0.03 + 0.01 -> 不足 0.005。
+    narrow = Gripper(max_opening=0.035, finger_clearance=0.01)
+    assert math.isclose(checker.opening_miss(top_down, narrow, target), 0.005)
+
+
+def test_naive_grasp_checker_roll_rotates_closing_axis():
+    checker = NaiveParallelJawGraspChecker()
+    target = _flat_target(width_x=0.04, width_y=0.03)
+    # roll=90deg で閉じ軸が x 方向へ回る -> 幅 0.04。開口 0.045 は
+    # 0.04 + 0.01 に 0.005 不足 (roll=0 の幅 0.03 なら合格していた開口)。
+    rolled = GraspCandidate(
+        pose=Pose(position=Vec3(0, 0, 0), approach=Vec3(0, 0, -1), roll=math.pi / 2),
+        pre_grasp=Vec3(0, 0, 0.1),
+        surface_normal=Vec3(0, 0, 1),
+    )
+    gripper = Gripper(max_opening=0.045, finger_clearance=0.01)
+    assert math.isclose(checker.opening_miss(rolled, gripper, target), 0.005)
+
+
+def test_naive_grasp_checker_degenerate_contact_pair_is_inf():
+    checker = NaiveParallelJawGraspChecker()
+    gripper = Gripper(max_opening=1.0)
+    cand = GraspCandidate(
+        pose=Pose(position=Vec3(0, 0, 0), approach=Vec3(0, 0, -1), roll=0.0),
+        pre_grasp=Vec3(0, 0, 0.1),
+        surface_normal=Vec3(0, 0, 1),
+    )
+    # サンプル 1 点以下 -> 接触対を定義できない -> inf (幅では測れない棄却)。
+    single = TargetObject(surface_samples=((Vec3(0, 0, 0), Vec3(0, 0, 1)),))
+    assert checker.opening_miss(cand, gripper, single) == math.inf
+
+
+def test_graspable_gate_off_without_gripper_declaration():
+    checker = NaiveParallelJawGraspChecker()
+    cand = GraspCandidate(
+        pose=Pose(position=Vec3(0, 0, 0), approach=Vec3(0, 0, -1), roll=0.0),
+        pre_grasp=Vec3(0, 0, 0.1),
+        surface_normal=Vec3(0, 0, 1),
+    )
+    empty = TargetObject(surface_samples=())
+    assert graspable(cand, None, empty, checker) is True
+
+
+# --- 5 段ファネル (ADR-081: 恒等式 + ドメイン別 near-miss) --------------------
+
+
+def _funnel_total(d) -> int:
+    return (
+        d.rejected_by_reach
+        + d.rejected_by_visibility
+        + d.rejected_by_ik
+        + d.rejected_by_interference
+        + d.rejected_by_grasp
+        + d.feasible
+    )
+
+
+def test_search_report_without_declarations_keeps_new_stages_at_zero():
+    # camera/gripper 未宣言 -> 新 2 段の棄却は常に 0、near-miss は None
+    # (既存リクエストの挙動を無言で変えない)。
+    d = search_report(_build_request(_declaration_dict())).diagnostics
+    assert d.rejected_by_visibility == 0
+    assert d.rejected_by_grasp == 0
+    assert d.occlusion_nearest_miss is None
+    assert d.opening_nearest_miss is None
+    assert _funnel_total(d) == d.candidates_generated
+
+
+def test_search_report_counts_visibility_rejections_with_occlusion_miss():
+    # カメラ (0,0,1)。球 (0.5,0,0.5) r=0.2 が deg=0 サンプル (1,0,0) への視線だけを
+    # 遮る (中点で食い込み 0.2)。他サンプルの視線は通る。
+    decl = _declaration_dict()
+    decl["camera"] = {"position": [0.0, 0.0, 1.0]}
+    decl["obstacles"] = [{"center": [0.5, 0.0, 0.5], "radius": 0.2}]
+    decl["topN"] = 10
+    report = search_report(_build_request(decl))
+    d = report.diagnostics
+    assert d.rejected_by_visibility == 1
+    assert d.occlusion_nearest_miss is not None
+    assert math.isclose(d.occlusion_nearest_miss, 0.2)
+    assert _funnel_total(d) == d.candidates_generated == 4
+    positions = [tuple(c.pose["frame"]["position"]) for c in report.response.candidates]
+    assert (1.0, 0.0, 0.0) not in positions
+
+
+def test_search_report_fov_only_rejection_has_no_measurable_occlusion():
+    # 視軸を対象と逆に向けた狭 FOV -> 全候補が視野外棄却。遮蔽量では測れないので
+    # occlusion_nearest_miss は None のまま (規約: 測れない棄却は集計に入れない)。
+    decl = _declaration_dict()
+    decl["camera"] = {
+        "position": [0.0, 0.0, 1.0],
+        "viewAxis": [0.0, 0.0, 1.0],
+        "fovHalfAngle": 0.2,
+    }
+    d = search_report(_build_request(decl)).diagnostics
+    assert d.rejected_by_visibility == 4
+    assert d.feasible == 0
+    assert d.occlusion_nearest_miss is None
+    assert _funnel_total(d) == d.candidates_generated
+
+
+def test_search_report_counts_grasp_rejections_with_opening_miss():
+    # 円弧サンプル (半径 1 の 0..90deg) の射影幅は閉じ軸によらず >= ~0.7。
+    # 開口 0.5 では掴めない -> リーチ/IK を通った候補が全て把持段で落ちる。
+    decl = _declaration_dict()
+    decl["gripper"] = {"maxOpening": 0.5, "fingerClearance": 0.0}
+    d = search_report(_build_request(decl)).diagnostics
+    assert d.rejected_by_grasp == 4
+    assert d.feasible == 0
+    assert d.opening_nearest_miss is not None
+    assert d.opening_nearest_miss > 0.0
+    assert _funnel_total(d) == d.candidates_generated
+
+
+def test_search_report_five_stage_funnel_partitions_generated():
+    # 4 サンプルを 4 つの異なる段 (可視/IK/干渉/把持) に 1 つずつ落とすのは幾何が
+    # 絡み合うため、素直に「宣言全部乗せ + 障害物」で混成させ、恒等式と排他性を固定する。
+    decl = _declaration_dict()
+    decl["camera"] = {"position": [0.0, 0.0, 1.0]}
+    decl["gripper"] = {"maxOpening": 2.0, "fingerClearance": 0.0}
+    decl["obstacles"] = [
+        {"center": [0.5, 0.0, 0.5], "radius": 0.2},
+        {"center": [0.9, 0.0, 0.0], "radius": 0.15},
+    ]
+    decl["topN"] = 10
+    d = search_report(_build_request(decl)).diagnostics
+    assert _funnel_total(d) == d.candidates_generated == 4
+    # 生存候補の 5 判定はすべて True で wire に載る。
+    report = search_report(_build_request(decl))
+    for c in report.response.candidates:
+        assert c.score.within_reach and c.score.visible and c.score.ik_solvable
+        assert c.score.interference_free and c.score.graspable
+
+
+def test_injected_visibility_and_grasp_checkers_override_naive():
+    class _NothingVisible:
+        def occlusion_miss(self, candidate, camera, obstacles):
+            return math.inf
+
+    class _NothingGraspable:
+        def opening_miss(self, candidate, gripper, target):
+            return math.inf
+
+    decl = _declaration_dict()
+    decl["camera"] = {"position": [0.0, 0.0, 1.0]}
+    decl["gripper"] = {"maxOpening": 2.0}
+    req = _build_request(decl)
+    d_vis = search_report(req, visibility_checker=_NothingVisible()).diagnostics
+    assert d_vis.rejected_by_visibility == d_vis.candidates_generated == 4
+    d_grasp = search_report(req, grasp_checker=_NothingGraspable()).diagnostics
+    assert d_grasp.rejected_by_grasp == 4
+    assert d_grasp.feasible == 0
+
+
+def test_problem_from_declaration_reads_camera_and_gripper():
+    decl = dict(_declaration_dict())
+    decl["camera"] = {
+        "position": [0.1, 0.2, 0.3],
+        "viewAxis": [0.0, 0.0, -1.0],
+        "fovHalfAngle": 0.5,
+    }
+    decl["gripper"] = {"maxOpening": 0.08, "fingerClearance": 0.01}
+    problem = problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
+    assert problem.camera == Camera(
+        position=Vec3(0.1, 0.2, 0.3), view_axis=Vec3(0.0, 0.0, -1.0), fov_half_angle=0.5
+    )
+    assert problem.gripper == Gripper(max_opening=0.08, finger_clearance=0.01)
+    # 未宣言なら None (ゲート無効)。
+    bare = problem_from_declaration(
+        GraspSearchDeclaration.model_validate(_declaration_dict())
+    )
+    assert bare.camera is None and bare.gripper is None

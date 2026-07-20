@@ -48,5 +48,41 @@ export interface GraspSearchDeclaration {
     reachMax?: number;
     wristConeHalfAngle?: number;
   };
+  /**
+   * Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true).
+   */
+  camera?: {
+    /**
+     * [x, y, z] world-frame position of the camera's optical center.
+     *
+     * @minItems 3
+     * @maxItems 3
+     */
+    position: [number, number, number];
+    /**
+     * Optional viewing direction (need not be unit length; the solver normalizes). The field-of-view cone applies only when both viewAxis and fovHalfAngle are declared.
+     *
+     * @minItems 3
+     * @maxItems 3
+     */
+    viewAxis?: [number, number, number];
+    /**
+     * Optional field-of-view half angle in radians (cone around viewAxis).
+     */
+    fovHalfAngle?: number;
+  };
+  /**
+   * Declares the parallel-jaw gripper for the 'can it be grasped' domain gate (ADR-081). Declaration only -- the geometric grasp gate itself is solved in core/. Optional: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true).
+   */
+  gripper?: {
+    /**
+     * Maximum jaw opening width (same length unit as the request geometry).
+     */
+    maxOpening: number;
+    /**
+     * Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance).
+     */
+    fingerClearance?: number;
+  };
   [k: string]: unknown;
 }

@@ -23,15 +23,23 @@ export interface GraspSearchResponse {
    */
   candidates: PoseCandidate[];
   /**
-   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Invariant: candidatesGenerated = rejectedByReach + rejectedByIk + rejectedByInterference + feasible (stages are exclusive; the filter short-circuits). Presentation (wording, colors, meters, suggestions) is derived client-side and never carried here.
+   * Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here.
    */
   diagnostics: {
     candidatesGenerated: number;
     rejectedByReach: number;
+    /**
+     * Rejected because the declared camera cannot see the grasp point (occluded sightline or outside the field of view). Always 0 when the request declares no camera.
+     */
+    rejectedByVisibility: number;
     rejectedByIk: number;
     rejectedByInterference: number;
     /**
-     * Candidates that passed all three checks (= scored).
+     * Rejected by the geometric grasp gate of the declared gripper (opening width / finger clearance / contact-pair existence). Always 0 when the request declares no gripper.
+     */
+    rejectedByGrasp: number;
+    /**
+     * Candidates that passed all five checks (= scored).
      */
     feasible: number;
     /**
@@ -42,6 +50,14 @@ export interface GraspSearchResponse {
      * Smallest distance by which a reach-rejected candidate missed the reachable shell (same length unit as the request geometry). null when nothing was rejected by reach.
      */
     reachNearestMiss: number | null;
+    /**
+     * Smallest occlusion depth among visibility-rejected candidates (how deep the most-blocking obstacle cuts the closest-to-visible sightline; same length unit as the request geometry). null when no visibility rejection has a measurable occlusion depth (e.g. only outside-FOV rejections, or none at all).
+     */
+    occlusionNearestMiss: number | null;
+    /**
+     * Smallest opening-width shortfall among grasp-rejected candidates (required width minus the gripper's max opening; same length unit as the request geometry). null when no grasp rejection has a measurable width shortfall (e.g. only contact-pair-missing rejections, or none at all).
+     */
+    openingNearestMiss: number | null;
   };
 }
 export interface PoseCandidate {
@@ -90,12 +106,14 @@ export interface PoseJointSpace {
   joints: number[];
 }
 /**
- * Per-candidate score breakdown explaining why a pose ranked where it did.
+ * Per-candidate score breakdown explaining why a pose ranked where it did. Contract v4 (ADR-081): the five booleans mirror the domain-staged filter (visible = Vision domain, withinReach/ikSolvable/interferenceFree = Path domain, graspable = Grasp domain). A returned candidate passed every stage, so all five are true; `visible` / `graspable` are vacuously true when the request declared no camera / no gripper (the request itself carries which case applies).
  */
 export interface ScoreBreakdown {
   withinReach: boolean;
+  visible: boolean;
   ikSolvable: boolean;
   interferenceFree: boolean;
+  graspable: boolean;
   /**
    * objective name -> normalized 0-1 value (absolute basis, so scores are comparable across requests).
    */

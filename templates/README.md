@@ -14,8 +14,11 @@
 
 各テンプレに必須:
 - 対応 `version` (例: "layout/1.0") を埋め込む。
-- 手検証の注記「IK 可 / 干渉なし / リーチ内を確認済み」(`core/tests/test_templates.py` が
-  受け入れテストとして検証する)。
+- 手検証の注記を **3 ドメイン** で: 「見える (可視) / 届く (リーチ・IK・干渉) / 掴める
+  (開口幾何) を確認済み」(ADR-081。`core/tests/test_templates.py` が受け入れテストとして
+  検証する)。
+- scene 形式 (`pick-sequence.request.json`) を正本にし、obstacles を手書きしない
+  (属性からの導出 — ADR-078/081。単発の `grasp-search.request.json` は導出値のピン留め)。
 - OpenQuestion (現場で必ず聞かれる曖昧点) を添える。
 
 ## テンプレ一覧

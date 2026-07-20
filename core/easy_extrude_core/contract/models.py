@@ -67,12 +67,20 @@ class GraspSearchRequest(_ContractModel):
 
 
 class ScoreBreakdown(_ContractModel):
-    """1 候補のスコア内訳 (ADR-074)。テンプレの「なぜこの姿勢か」の可視化材料。"""
+    """1 候補のスコア内訳 (ADR-074 / 契約 v4 でドメイン 5 段, ADR-081)。
 
-    # 安い順フィルタの結果 (リーチ -> IK -> 干渉)。
+    テンプレの「なぜこの姿勢か」の可視化材料。visible / graspable はリクエストが
+    camera / gripper を宣言していない場合は空虚に True (どちらだったかはリクエスト
+    宣言の有無から読める — Schema の記述と同一)。
+    """
+
+    # ドメイン段階フィルタの結果 (5 判定。段の実行順はエンジン所有 = 安い順実測,
+    # engine/pipeline.py)。
     within_reach: bool
+    visible: bool
     ik_solvable: bool
     interference_free: bool
+    graspable: bool
     # 各 objective の正規化済み (0-1) 値。キーは objective 名。
     objective_scores: dict[str, float] = Field(default_factory=dict)
     # 加重和の総合スコア (0-1 正規化値の重み付き和)。
@@ -91,31 +99,38 @@ class PoseCandidate(_ContractModel):
 
 
 class SearchDiagnostics(_ContractModel):
-    """探索全体の棄却ファネル + reach near-miss (契約 v3, ADR-079)。
+    """探索全体の棄却ファネル + ドメイン別 near-miss (契約 v4, ADR-079/081)。
 
     載せるのは「ソルバが決定した事実」の集計のみ。演出 (文言/色/メーター) は
-    クライアント導出でここには含めない。不変条件 (上流 Schema と同一):
-    candidates_generated = rejected_by_reach + rejected_by_ik
-    + rejected_by_interference + feasible。
+    クライアント導出でここには含めない。不変条件 (正本 Schema と同一):
+    candidates_generated = rejected_by_reach + rejected_by_visibility + rejected_by_ik
+    + rejected_by_interference + rejected_by_grasp + feasible。
     """
 
     candidates_generated: int = Field(ge=0)
     rejected_by_reach: int = Field(ge=0)
+    rejected_by_visibility: int = Field(ge=0)
     rejected_by_ik: int = Field(ge=0)
     rejected_by_interference: int = Field(ge=0)
-    # 3 判定すべて通過した候補数 (= 採点対象)。
+    rejected_by_grasp: int = Field(ge=0)
+    # 5 判定すべて通過した候補数 (= 採点対象)。
     feasible: int = Field(ge=0)
     # 実際に candidates[] へ載せた件数 (= min(feasible, topN))。
     returned: int = Field(ge=0)
     # リーチ棄却候補の到達殻までの最小不足距離。リーチ棄却ゼロなら None。
     reach_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
+    # 可視棄却候補の最小遮蔽量。測定可能な可視棄却が無ければ None (視野外のみ等)。
+    occlusion_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
+    # 把持棄却候補の最小開口不足量。測定可能な把持棄却が無ければ None (接触対なし等)。
+    opening_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
 
 
 class GraspSearchResponse(_ContractModel):
-    """コアAPI -> BFF の出力。上位N件 + スコア内訳 + 診断 (契約 v3)。"""
+    """コアAPI -> BFF の出力。上位N件 + スコア内訳 + 診断 (契約 v4)。"""
 
     contract_version: int = Field(default=CONTRACT_VERSION)
     # rank 昇順 (1 が最良) で並んだ上位N件。最良 1 件だけにしない。
     candidates: list[PoseCandidate] = Field(default_factory=list)
-    # 探索全体の棄却ファネル + near-miss (契約 v3 で必須, ADR-079)。producer は常に emit する。
+    # 探索全体の棄却ファネル + near-miss (v3 で必須化, v4 で 5 段, ADR-079/081)。
+    # producer は常に emit する。
     diagnostics: SearchDiagnostics

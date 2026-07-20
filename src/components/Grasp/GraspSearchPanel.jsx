@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
+import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { DURATION, EASING } from '../../theme/tokens.js'
 
@@ -219,15 +220,17 @@ function StatusLine({ grasp }) {
   return <div style={{ marginTop: '8px', fontSize: '11px', color: s.color }}>{s.text}</div>
 }
 
-// ── Rejection funnel (contract v3 `diagnostics`) ──────────────────────────────
+// ── Rejection funnel (contract v4 `diagnostics`, ADR-081 domain stages) ───────
 //
-// The wire carries only the solver-decided funnel counts + reachNearestMiss;
-// everything visual here (stage labels, bar widths, dominant highlight, delta
-// chips, the near-miss meter curve, all wording) is client-derived presentation
-// via the pure GraspFunnelMath helpers (PHILOSOPHY #29 / ADR-060). No reach /
-// IK / collision judgment is re-implemented client-side.
+// The wire carries only the solver-decided funnel counts + the per-domain
+// nearest-misses; everything visual here (stage labels, bar widths, dominant
+// highlight, delta chips, the near-miss meter curves, the KPI → fallback-ladder
+// forecast, all wording) is client-derived presentation via the pure
+// GraspFunnelMath / GraspLadderMath helpers (PHILOSOPHY #29 / ADR-060/081). No
+// reach / IK / visibility / collision / grasp judgment is re-implemented
+// client-side.
 
-const STAGE_LABELS = { reach: 'reach', ik: 'IK', interference: 'clearance' }
+const STAGE_LABELS = { reach: 'reach', ik: 'IK', grasp: 'grasp', visibility: 'visible', interference: 'clearance' }
 
 function DiagnosticsFunnel({ diagnostics, prev }) {
   const funnel = funnelStages(diagnostics)
@@ -251,7 +254,16 @@ function DiagnosticsFunnel({ diagnostics, prev }) {
 
   const dominant = dominantStage(diagnostics)
   const delta    = funnelDelta(prev, diagnostics)
-  const closeness = nearMissCloseness(diagnostics.reachNearestMiss)
+  const kpis     = domainKpis(diagnostics)
+  const risks    = ladderRisks(kpis)
+  // One meter per measurable domain nearest-miss (ADR-081): reach (Path),
+  // occlusion (Vision), opening (Grasp). Null facts render no meter.
+  const meters = [
+    { key: 'reach',     miss: diagnostics.reachNearestMiss,     what: 'missed reach by' },
+    { key: 'occlusion', miss: diagnostics.occlusionNearestMiss, what: 'occluded by' },
+    { key: 'opening',   miss: diagnostics.openingNearestMiss,   what: 'opening short by' },
+  ].map(m => ({ ...m, closeness: nearMissCloseness(m.miss) }))
+   .filter(m => m.closeness != null)
 
   return (
     <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '5px', background: '#222', border: BORDER }}>
@@ -278,9 +290,47 @@ function DiagnosticsFunnel({ diagnostics, prev }) {
         {delta && <DeltaChip value={delta.feasible} goodWhenPositive label="feasible" />}
       </div>
 
-      {closeness != null && (
-        <NearMissMeter miss={diagnostics.reachNearestMiss} closeness={closeness} />
-      )}
+      {meters.map(m => (
+        <NearMissMeter key={m.key} label={m.key} what={m.what} miss={m.miss} closeness={m.closeness} />
+      ))}
+
+      {risks.length > 0 && <LadderRisks risks={risks} kpis={kpis} />}
+    </div>
+  )
+}
+
+/**
+ * Operation-fallback ladder forecast (ADR-081 Decision 3): the KPI → ladder
+ * table lookup from GraspLadderMath, rendered deepest risk first. Wording and
+ * levels come verbatim from the single-owner table — this is an empirical
+ * forecast of rework depth, not an assurance verdict, so it is captioned as
+ * such.
+ */
+function LadderRisks({ risks, kpis }) {
+  return (
+    <div style={{ marginTop: '7px', paddingTop: '6px', borderTop: '1px solid #333' }}>
+      <div style={{ fontSize: '10px', color: '#888', marginBottom: '3px' }}>
+        fallback-ladder forecast (heuristic, not a guarantee)
+        {kpis && (
+          <span style={{ color: '#667', marginLeft: '6px' }}>
+            seen {(kpis.vision.rate * 100).toFixed(0)}% · path {(kpis.path.rate * 100).toFixed(0)}% · grasp {(kpis.grasp.rate * 100).toFixed(0)}%
+          </span>
+        )}
+      </div>
+      {risks.map(r => (
+        <div key={`${r.domain}-${r.level}`} style={{ display: 'flex', gap: '6px', alignItems: 'baseline', marginTop: '2px' }}>
+          <span style={{
+            fontSize: '9px', fontWeight: 'bold', padding: '1px 5px', borderRadius: '3px',
+            background: r.level >= 5 ? '#3a2222' : '#332a1d',
+            color: r.level >= 5 ? '#d99' : '#eb7',
+            border: `1px solid ${r.level >= 5 ? '#6a3333' : '#6a5533'}`,
+          }}>L{r.level}</span>
+          <span style={{ fontSize: '10px', color: '#bba' }}>
+            {r.reason}
+            <span style={{ color: '#776' }}> → {r.label} ({r.cost})</span>
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -313,25 +363,26 @@ function FunnelRow({ label, stage, dominant, delta }) {
 // rendering, now reused by FormPanel / ConflictMatrix / ContextLayer.
 
 /**
- * "Almost reached" meter: reachNearestMiss is the wire fact (smallest distance
- * a reach-rejected pose missed by, in the request's geometry unit); the fill
- * curve and the wording are derived feel.
+ * "Almost passed" meter, one per measurable domain nearest-miss (ADR-081):
+ * reach / occlusion / opening are wire facts (the smallest amount by which a
+ * rejected pose missed that domain's pass boundary, in the request's geometry
+ * unit); the fill curve and the wording are derived feel.
  */
-function NearMissMeter({ miss, closeness }) {
+function NearMissMeter({ label, what, miss, closeness }) {
   const reduced = useReducedMotion()
   const pct = closeness * 100
-  const feel = closeness >= 0.9 ? 'so close!' : closeness >= 0.5 ? 'almost' : 'out of reach'
+  const feel = closeness >= 0.9 ? 'so close!' : closeness >= 0.5 ? 'almost' : 'far off'
   return (
     <div style={{ marginTop: '7px', paddingTop: '6px', borderTop: '1px solid #333' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <span style={{ width: '64px', fontSize: '10px', color: '#eb7', textAlign: 'right' }}>near miss</span>
+        <span style={{ width: '64px', fontSize: '10px', color: '#eb7', textAlign: 'right' }}>{label} miss</span>
         <div style={{ flex: 1, height: '7px', background: '#1a1a1a', borderRadius: '4px', overflow: 'hidden' }}>
           <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #7a5a24, #e8b04a)', transition: barTransition(reduced) }} />
         </div>
         <span style={{ fontSize: '9px', color: '#eb7', whiteSpace: 'nowrap' }}>{feel}</span>
       </div>
       <div style={{ fontSize: '9px', color: '#997', marginTop: '2px', marginLeft: '70px' }}>
-        closest rejected pose missed reach by {miss} (geometry unit)
+        closest rejected pose {what} {miss} (geometry unit)
       </div>
     </div>
   )
@@ -364,10 +415,15 @@ function Candidate({ c, selected, onSelect, onHover }) {
           score {typeof sc.totalScore === 'number' ? sc.totalScore.toFixed(3) : '—'}
         </span>
       </div>
+      {/* Five domain-stage chips (contract v4, ADR-081): visible/graspable are
+          vacuously true when the request declared no camera/gripper; on legacy
+          v3 payloads the two chips are simply absent (degrade, no guessing). */}
       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: objectiveScores ? '6px' : 0 }}>
         {chip('reach', sc.withinReach)}
+        {typeof sc.visible === 'boolean' && chip('seen', sc.visible)}
         {chip('IK', sc.ikSolvable)}
         {chip('clear', sc.interferenceFree)}
+        {typeof sc.graspable === 'boolean' && chip('grasp', sc.graspable)}
       </div>
       {/* objectiveScores bars — the order-explaining signal (ADR-057 G2). Absent on
           legacy solvers → bars omitted, totalScore alone (degrade — §1.3). */}

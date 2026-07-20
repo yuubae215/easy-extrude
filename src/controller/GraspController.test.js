@@ -33,15 +33,19 @@ function fakeStore() {
   return { getState: () => state, _state: state }
 }
 
-/** Contract-v3 diagnostics fixture: candidates present, nothing reach-rejected. */
+/** Contract-v4 diagnostics fixture: candidates present, nothing reach-rejected. */
 const DIAG_OK = {
   candidatesGenerated: 4,
   rejectedByReach: 0,
+  rejectedByVisibility: 0,
   rejectedByIk: 1,
   rejectedByInterference: 1,
+  rejectedByGrasp: 0,
   feasible: 2,
   returned: 2,
   reachNearestMiss: null,
+  occlusionNearestMiss: null,
+  openingNearestMiss: null,
 }
 
 const okBff = {
@@ -153,8 +157,10 @@ test('a second run carries the previous run diagnostics for the delta view', asy
 
 test('zero-candidate response lands in results with the funnel explaining why', async () => {
   const diag = {
-    candidatesGenerated: 8, rejectedByReach: 8, rejectedByIk: 0, rejectedByInterference: 0,
+    candidatesGenerated: 8, rejectedByReach: 8, rejectedByVisibility: 0, rejectedByIk: 0,
+    rejectedByInterference: 0, rejectedByGrasp: 0,
     feasible: 0, returned: 0, reachNearestMiss: 0.12,
+    occlusionNearestMiss: null, openingNearestMiss: null,
   }
   const bff = {
     async compileLayout() { return { objects: [{}] } },

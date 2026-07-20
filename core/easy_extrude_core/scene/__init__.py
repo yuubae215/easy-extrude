@@ -35,6 +35,7 @@ from .derivation import (
     derive_obstacles,
     order_by_topmost,
     targetable_entities,
+    viewable_entities,
 )
 from .orchestration import PickResult, pick_sequence, run_pick_sequence
 from .settings import GraspSettings
@@ -51,6 +52,7 @@ __all__ = [
     # 導出 (純粋: target/obstacles 導出, 最上面順, 契約 request 組み立て)
     "derive_obstacles",
     "targetable_entities",
+    "viewable_entities",
     "order_by_topmost",
     "build_request",
     # ピック列 orchestration (副作用境界: 最上面順の反復ピック)

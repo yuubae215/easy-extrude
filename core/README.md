@@ -17,7 +17,7 @@ uv run python -m easy_extrude_core.api  # ローカル起動 (既定 127.0.0.1:4
 `uv.lock` はコミットする (再現性)。`.venv/` は gitignore 済み。
 
 ## 段階0 (実装済み: `easy_extrude_core/engine/`)
-離散候補生成 -> 安い順フィルタ (リーチ -> IK 可解 -> 干渉) -> objectives を加重和スコア -> 上位N件。
+離散候補生成 -> ドメイン段階フィルタ (安い順の実測順: リーチ -> IK 可解 -> 把持性 -> 可視性 -> 干渉, ADR-081) -> objectives を加重和スコア -> 上位N件。camera/gripper 未宣言なら可視性/把持性ゲートはスキップ (従来挙動)。
 最適化ソルバではなく「評価関数つき全探索」。数百〜数千候補なら一瞬。詳細設計は ADR-075。
 
 公開エントリは `engine.search(GraspSearchRequest) -> GraspSearchResponse` (契約 = ADR-074)。
@@ -25,7 +25,7 @@ uv run python -m easy_extrude_core.api  # ローカル起動 (既定 127.0.0.1:4
 ### モジュール構成
 - `engine/types.py`      : ドメイン型 + 数値ヘルパ (純粋。Vec3 / Pose / Problem ほか)。
 - `engine/candidates.py` : 離散候補生成 (純粋)。
-- `engine/feasibility.py`: リーチ判定 (純粋) + IK/干渉の注入 Protocol + naive 既定実装。
+- `engine/feasibility.py`: リーチ判定 (純粋) + IK/干渉/可視性/把持性の注入 Protocol + naive 既定実装 (near-miss は不足量として同じ計算で返す — ADR-081)。
 - `engine/objectives.py` : objective の raw 計算 + 絶対基準 0-1 正規化 (純粋)。
 - `engine/scoring.py`    : 正規化済み値の加重平均 (純粋)。
 - `engine/pipeline.py`   : 探索 orchestration (副作用境界。注入ソルバを呼ぶのはここだけ)。

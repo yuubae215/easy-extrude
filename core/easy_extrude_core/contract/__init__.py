@@ -18,7 +18,9 @@ from .recommendation_models import (
     StructuralDiffWire,
 )
 from .scene_models import (
+    CameraWire,
     GraspSettingsWire,
+    GripperWire,
     PickSequenceRequest,
     PickSequenceResponse,
     PickStepWire,
@@ -61,5 +63,7 @@ __all__ = [
     "SurfaceSampleWire",
     "GraspSettingsWire",
     "RobotWire",
+    "CameraWire",
+    "GripperWire",
     "PickStepWire",
 ]

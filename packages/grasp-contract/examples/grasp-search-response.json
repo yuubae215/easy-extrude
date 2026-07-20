@@ -1,5 +1,5 @@
 {
-  "contractVersion": 3,
+  "contractVersion": 4,
   "candidates": [
     {
       "rank": 1,
@@ -12,8 +12,10 @@
       },
       "score": {
         "withinReach": true,
+        "visible": true,
         "ikSolvable": true,
         "interferenceFree": true,
+        "graspable": true,
         "objectiveScores": { "clearance": 0.9, "manipulability": 0.7 },
         "totalScore": 0.82
       }
@@ -27,19 +29,25 @@
       },
       "score": {
         "withinReach": true,
+        "visible": true,
         "ikSolvable": true,
         "interferenceFree": true,
+        "graspable": true,
         "totalScore": 0.55
       }
     }
   ],
   "diagnostics": {
-    "candidatesGenerated": 5,
+    "candidatesGenerated": 8,
     "rejectedByReach": 2,
+    "rejectedByVisibility": 1,
     "rejectedByIk": 0,
     "rejectedByInterference": 1,
+    "rejectedByGrasp": 2,
     "feasible": 2,
     "returned": 2,
-    "reachNearestMiss": 0.031
+    "reachNearestMiss": 0.031,
+    "occlusionNearestMiss": 0.008,
+    "openingNearestMiss": 0.012
   }
 }

@@ -1,5 +1,5 @@
 {
-  "contractVersion": 3,
+  "contractVersion": 4,
   "layoutVersion": "layout/1.0",
   "requirement": {
     "text": "L-bracket that mounts with two M6 bolts",
