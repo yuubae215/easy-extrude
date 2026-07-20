@@ -1,7 +1,8 @@
 # ADR-081: ドメイン段階バリデーション (見える/届く/掴める) + 運用フォールバック階梯の設計時 KPI 検証
 
-- Status: Accepted (Phase 1-3 実装済 2026-07-20 — §実施記録。Phase 4 と Open 節の
-  収束仮説は未着手のまま)
+- Status: Accepted (Phase 1-3 実装済 2026-07-20 — §実施記録。Phase 3 の宣言 UI
+  (3 ドメインカード / プリセット fork&tweak / カメラ写し取り) は同日の追記で完了。
+  残: pick-sequence 集計レポート UI と Phase 4、Open 節の収束仮説)
 - Date: 2026-07-19
 - Deciders: yuubae215 (product) / 設計セッション
 - Supersedes / Superseded by: なし (ADR-075 のパイプラインを拡張、ADR-079 の診断を一般化)
@@ -311,6 +312,29 @@ Phase 1〜3 を実装した (契約が repo 内正本になったため — ADR-
 パネル 5 段/3 メーター/階梯表示)。Phase 3 の残り (3 ドメインカード入力・プリセット
 fork&tweak・ビューポートカメラ写し取り・pick-sequence 集計レポート UI) と Phase 4
 (実ソルバ差し替え) は未着手。証拠の正準は GSN 木 (ヘッダ参照) を更新済み。
+
+### 追記 (2026-07-20, 同日続き) — Decision 5 の宣言 UI
+
+3 ドメインカード入力・プリセット fork&tweak・ビューポートカメラ写し取りを実装した
+(すべて宣言側の提示層 — 契約不変, open payload / layoutVersion 統治)。具体化 3 点:
+
+1. **プリセットとギャップ述語は純粋カタログ一箇所** (`src/context/GraspDeclarationCatalog.js`)。
+   アクティブなプリセット chip は値の同値性からの導出 (`matchingPresetId`) で、
+   「カスタム化」フラグを持たない (編集 = fork, ADR-063/058 の白紙入力不能に合流)。
+   各カードのギャップリストが Run の submit 述語 (理由を印字, 無言 disabled 禁止)。
+   viewAxis 無しの fovHalfAngle 宣言は「無言で不活性な入力」になるため意図的にギャップ。
+2. **カメラ写し取りは純粋/副作用の分割**: `GraspController.captureViewportCamera()` が
+   `SceneView.activeCamera` を読み、導出 (視軸 = matrixWorld 第 3 列の負規格化、
+   fov 半角 = 垂直 fov/2) は純粋関数 `visionFromViewportCamera` に委譲 —
+   コントローラは THREE-free のまま。ortho (Map Mode) は fovHalfAngle null に退化、
+   カメラ不在は null をパネルが明示報告 (推測宣言はしない)。
+3. **未宣言カードはキー自体を省略** (vacuously-true ゲートの契約文言どおり)。off の
+   カードはスロットを保ち、その帰結を明記する (Fixed Slots #15)。
+
+pick-sequence 集計レポート UI は**未着手のまま残す**: BFF に pick-sequence ルートが
+無く、契約パッケージにも pick-sequence Schema が無い (現状は core 内部 wire —
+scene_models.py)。レポート UI はスキーマ追加 = contractVersion 版上げ行為を伴うため、
+別チャンク (後続 PR) として切り出す。Phase 4 (実ソルバ差し替え) も未着手。
 
 ## Lens notes
 

@@ -878,6 +878,44 @@ The stage-1 spatial ghost translates the **typed** wire facts (`pose.kind:'endEf
 
 ---
 
+## Grasp Domain Declaration Cards: Presets Seed, Values Own, Gaps Gate; Capture Splits Pure/Side-Effect (ADR-081 Decision 5)
+
+The grasp panel's input is three domain declaration cards — Seen (camera) / Reached (robot
+base + weights) / Grasped (gripper). Everything they produce is **declaration** riding the
+request's open payload (`graspSearch.camera` / `.gripper` — layoutVersion governance, no
+contractVersion bump, ADR-081 §2); no card ever judges visibility/graspability (AI 向けガード).
+Contracts:
+
+- **`GraspDeclarationCatalog` (`src/context/`, pure/THREE-free) is the single source** of the
+  camera/gripper presets, the `cameraDeclarationGaps`/`gripperDeclarationGaps` submit
+  predicates, and the `visionFromViewportCamera` capture conversion. The panel and the
+  controller both consume it; never re-list a preset or re-implement a gap check inline (§1.1).
+- **Fork & tweak has no stored flag.** A card seeds from the catalog's FIRST preset (ADR-063
+  selection-first premise — never a blank numeric form); the active preset chip is DERIVED by
+  value equality (`matchingPresetId`), so editing any field is the fork and "custom (forked)"
+  is a derivation, not a second source (§1.1 — same discipline as the ADR-058 seed mirror).
+- **The gap list IS the Run predicate** (ADR-058 UX rule): each enabled card's `*Gaps()`
+  disables Run AND prints every reason — no silent disabled (#11). A declared `fovHalfAngle`
+  without a `viewAxis` is a gap on purpose: the solver applies the FOV cone only when both are
+  declared, so the combination would be silently inert input (the #11 failure shape). Blank
+  fields parse to `NaN` via `parseNum` — never `Number('')`'s silent `0`.
+- **An undisabled card omits its key entirely** (`camera: null` → no `camera` key): the
+  corresponding core gate then passes vacuously (`visible`/`graspable` true, rejected count 0)
+  per the contract wording. The off-state card keeps its slot and states this consequence
+  (Fixed Slots #15).
+- **Viewport capture splits pure from side-effect (PHILOSOPHY #3).**
+  `GraspController.captureViewportCamera()` (the `onCaptureViewportCamera` callback — a
+  synchronous VALUE-RETURNING callback, unlike the fire-and-forget rows) only reads the live
+  `SceneView.activeCamera` (never a captured perspective-only camera — the "HTML Overlay
+  Active Camera" rule) and hands position/matrixWorld-elements/fov to the pure
+  `visionFromViewportCamera`, which derives `viewAxis` from the negated third matrixWorld
+  column (so the controller stays THREE-free — no `getWorldDirection`, no THREE.Vector3).
+  Ortho camera (Map Mode) → `fovHalfAngle: null` and the form keeps its previous value; no
+  camera → `null` and the panel prints "viewport camera unavailable" — never a guessed
+  declaration (#11).
+
+---
+
 ## LayoutDecompiler Is the Scene→DSL Normal-Form Inverse; the Scene Fixpoint Is the Law; Context Stays Canonical (ADR-055)
 
 > Migrated verbatim from the CODE_CONTRACTS.md index row (2026-07-02); the index now carries a summary.

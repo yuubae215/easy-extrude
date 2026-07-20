@@ -848,10 +848,18 @@ negotiate overlay (the tab's host), seeds `context.grasp`, and selects the tab; 
 top-level `graspPanelOpen` flag is gone (the tab appears once seeded, and only when a
 renderable layout exists). It rides on `ContextLayer`'s existing 280px right dock, so it adds
 **no new screen-edge footprint** (PHILOSOPHY #26). Shows the source-layout summary (`version`,
-entity count from `ContextService.getCompiled().layoutDsl`), `objectiveWeights` (reach /
-clearance) + `topN` inputs, a **Run** button (`onRunGraspSearch`), a status line driven by the
-discriminated-union `status` (idle → compiling → solving → results / error), and the ranked
-candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
+entity count from `ContextService.getCompiled().layoutDsl`), then **three domain declaration
+cards** (ADR-081 Decision 5) — **Seen** (vision camera: preset chips, a **📷 use current view**
+button that copies the live viewport camera via `onCaptureViewportCamera`, position / view axis /
+FOV fields), **Reached** (always on: robot-base readout from `uiStore.robotBase` + reach /
+clearance objective weights), **Grasped** (gripper: preset chips, max opening / finger
+clearance). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
+the vacuously-true consequence (PHILOSOPHY #15/#11). Presets come from the pure
+`GraspDeclarationCatalog` (fork & tweak — the active chip is derived by value equality, editing
+forks to "custom"); each enabled card's gap list disables **Run** and prints its reasons.
+Below the cards: `topN` + the **Run** button (`onRunGraspSearch`, now carrying the optional
+`camera`/`gripper` declarations), a status line driven by the discriminated-union `status`
+(idle → compiling → solving → results / error), and the ranked candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
 interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
 explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
 re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`). **Stage-1

@@ -71,6 +71,21 @@ artifacts
             uuid 2f8c1d4e-6a3b-4f7c-9e1d-5b8a2c4f6e70
             summary "証拠予定: wrench cone 差し替えの数値検証 (Phase 4, Protocol 内で契約不変)"
 
+        goal DeclarationsProvisioned
+        uuid 4e7a1c9d-3b52-4f8e-a1c6-9d2e5b7f8a34
+        summary "宣言 (camera/gripper/robot base) がフロントの 3 ドメインカード UI (プリセット fork&tweak + ビューポートカメラ写し取り) から契約 open payload へ検証済みで載る — 判定は一切フロントに無い"
+        state ToBeReviewed
+        groups phase-3
+
+            solution DeclarationCatalogTests
+            uuid 8b3f5d2a-7c1e-4a9b-b4d8-6e0c2f9a1d57
+            summary "node --test src/context/GraspDeclarationCatalog.test.js src/controller/GraspController.test.js — pass @ 2026-07-20 追記コミット (プリセットは自らのギャップ述語を満たす / fork = 値同値性の導出 / ギャップが Run を塞ぎ理由を印字 / 写し取りは純粋関数で導出し ortho・カメラ不在は正直に退化 / 宣言は request へ逐語で載り未宣言はキー省略)"
+            artifacts
+            - "src/context/GraspDeclarationCatalog.js"
+            - "src/context/GraspDeclarationCatalog.test.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"
+            - "src/controller/GraspController.js"
+
         goal FunnelIdentityHolds
         uuid 6550f308-8741-4742-b9cf-cff9f6b222f2
         summary "ファネル恒等式 generated = Σ rejected_by_* + feasible が全フィルタ段構成で成立する"
@@ -116,7 +131,7 @@ artifacts
 
             assumption Phase3UiRemainder
             uuid 7c2e9b1a-4d6f-4a8e-b3c5-1f9d7e5a3b82
-            summary "未着手の Phase 3 残り: 3 ドメインカード入力 / プリセット fork&tweak / ビューポートカメラ写し取り / pick-sequence 集計レポート UI (ADR-081 §5。ファネル 5 段表示・3 メーター・階梯リスク表示は実装済)"
+            summary "未着手の Phase 3 残り: pick-sequence 集計レポート UI のみ (BFF ルート + 契約パッケージへの pick-sequence Schema 追加 = contractVersion 版上げ行為を伴うため別チャンク — ADR-081 実施記録追記 2026-07-20)。3 ドメインカード / プリセット fork&tweak / カメラ写し取りは DeclarationsProvisioned へ昇格済み"
 
     strategy ByConvergence
     uuid ca0c8be3-ad0f-4d7b-a35f-2ef919902caf
