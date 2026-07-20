@@ -112,16 +112,28 @@ def _quaternion_to_columns(q: list[float]) -> tuple[Vec3, Vec3, Vec3]:
     return x_axis, y_axis, z_axis
 
 
-def pose_to_payload(pose: Pose) -> dict[str, Any]:
-    """Pose を契約 v2 の pose union (endEffector 枝) に写す。
+def frame_axes(pose: Pose) -> tuple[Vec3, Vec3, Vec3]:
+    """FRAME_CONVENTION に従う end-effector frame の world 軸 (x, y, z) を返す (純粋)。
 
-    approach = frame の -Z、roll = approach 軸まわり回転、という規約で四元数を組む。
+    z = -approach、x = roll 適用後の基準軸、y = 右手系の残り。encode
+    (pose_to_payload) とここが同一 gauge を共有する唯一の実装であり、frame 軸を
+    参照する判定 (例: naive 把持ゲートの閉じ軸 = x 軸, ADR-081) はこの関数を通す
+    (規約の第二の源を作らない)。
     """
     z = pose.approach.normalized().scaled(-1.0)  # +Z(world) = -approach
     bx, by = _basis_from_z(z)
     c, s = math.cos(pose.roll), math.sin(pose.roll)
     x = bx.scaled(c) + by.scaled(s)  # roll 適用後の x 軸
     y = _cross(z, x)  # 右手系を保証
+    return x, y, z
+
+
+def pose_to_payload(pose: Pose) -> dict[str, Any]:
+    """Pose を契約 v2 の pose union (endEffector 枝) に写す。
+
+    approach = frame の -Z、roll = approach 軸まわり回転、という規約で四元数を組む。
+    """
+    x, y, z = frame_axes(pose)
     orientation = _matrix_to_quaternion(x, y, z)
     return {
         "kind": POSE_KIND_END_EFFECTOR,

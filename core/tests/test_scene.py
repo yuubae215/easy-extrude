@@ -10,11 +10,12 @@ ADR-078 の確定方針を押さえる:
 """
 
 import math
+from dataclasses import replace
 
 import pytest
 
 from easy_extrude_core.engine import pose_from_payload
-from easy_extrude_core.engine.types import Obstacle, Robot, Vec3
+from easy_extrude_core.engine.types import Camera, Gripper, Obstacle, Robot, Vec3
 from easy_extrude_core.scene import (
     EntityKind,
     GraspSettings,
@@ -27,6 +28,7 @@ from easy_extrude_core.scene import (
     order_by_topmost,
     run_pick_sequence,
     targetable_entities,
+    viewable_entities,
 )
 
 
@@ -238,3 +240,80 @@ def test_run_pick_sequence_respects_max_picks():
     scene = _bin_scene()
     results = run_pick_sequence(scene, _settings(), max_picks=1)
     assert [r.target_id for r in results] == ["w_top"]
+
+
+# --- エンティティ粒度の可視性絞り込み (見えるか, ADR-081) ----------------------
+
+
+def _camera_above() -> Camera:
+    # ビン中央の真上。真下視 + 広めの FOV。
+    return Camera(
+        position=Vec3(0.0, 0.0, 0.0), view_axis=Vec3(0.0, 0.0, -1.0), fov_half_angle=1.0
+    )
+
+
+def test_viewable_entities_without_camera_is_passthrough():
+    scene = _bin_scene()
+    targets = targetable_entities(scene)
+    assert viewable_entities(scene, None, targets) == targets
+
+
+def test_viewable_entities_drops_fully_occluded_entity():
+    # w_mid (0.1,0,-0.6) の真上 (0.1,0,-0.3) に大きめの遮蔽球 (fixture) を置く。
+    # 真上カメラから w_mid の全把持点への視線だけが遮られ、他ワークは見える。
+    blocker = SceneEntity(
+        entity_id="canopy",
+        kind=EntityKind.FIXTURE,
+        collision_spheres=(Obstacle(center=Vec3(0.1, 0.0, -0.3), radius=0.06),),
+    )
+    scene = Scene(entities=(*_bin_scene().entities, blocker))
+    targets = targetable_entities(scene)
+    viewable = viewable_entities(scene, _camera_above(), targets)
+    ids = [e.entity_id for e in viewable]
+    assert "w_mid" not in ids
+    assert {"w_top", "w_low"} <= set(ids)
+
+
+def test_viewable_entities_do_not_self_occlude():
+    # 自分の干渉球の中に把持点がある (中心サンプル) が、自分の球で自分を遮らない
+    # (per-pick 導出の対象除外と同じ罠回避)。
+    scene = Scene(entities=(_workpiece("solo", 0.0, 0.0, -0.6),))
+    targets = targetable_entities(scene)
+    viewable = viewable_entities(scene, _camera_above(), targets)
+    assert [e.entity_id for e in viewable] == ["solo"]
+
+
+def test_run_pick_sequence_skips_unseen_entity_when_camera_declared():
+    # 遮蔽された w_mid はカメラ宣言時にはピック対象から外れる (top_z 順という代理が
+    # カメラ判定に昇格 — ADR-081)。camera 未宣言なら従来どおり 3 個ともピックする。
+    blocker = SceneEntity(
+        entity_id="canopy",
+        kind=EntityKind.FIXTURE,
+        collision_spheres=(Obstacle(center=Vec3(0.1, 0.0, -0.3), radius=0.06),),
+    )
+    scene = Scene(entities=(*_bin_scene().entities, blocker))
+    with_camera = replace(_settings(), camera=_camera_above())
+    results = run_pick_sequence(scene, with_camera)
+    assert [r.target_id for r in results] == ["w_top", "w_low"]
+    without_camera = run_pick_sequence(scene, _settings())
+    assert [r.target_id for r in without_camera] == ["w_top", "w_mid", "w_low"]
+
+
+def test_build_request_carries_camera_and_gripper_declarations():
+    settings = replace(
+        _settings(),
+        camera=Camera(position=Vec3(0, 0, 0), view_axis=Vec3(0, 0, -1), fov_half_angle=0.6),
+        gripper=Gripper(max_opening=0.06, finger_clearance=0.01),
+    )
+    req = build_request(_bin_scene(), "w_top", settings)
+    data = req.grasp_search.model_dump(by_alias=True)
+    assert data["camera"] == {
+        "position": [0.0, 0.0, 0.0],
+        "viewAxis": [0.0, 0.0, -1.0],
+        "fovHalfAngle": 0.6,
+    }
+    assert data["gripper"] == {"maxOpening": 0.06, "fingerClearance": 0.01}
+    # 未宣言ならキーごと出さない (空 dict で意味を曖昧にしない)。
+    bare = build_request(_bin_scene(), "w_top", _settings())
+    bare_data = bare.grasp_search.model_dump(by_alias=True)
+    assert "camera" not in bare_data and "gripper" not in bare_data

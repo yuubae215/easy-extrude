@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from ..engine.types import Robot
+from ..engine.types import Camera, Gripper, Robot
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,8 @@ class GraspSettings:
     - `approach_tilt_angles` / `roll_angles`: 進入角 = 「試す向き」(ADR-078 Decision 3)。
     - `pre_grasp_distance`: プリグラスプ後退距離。`clearance_reference`: クリアランス基準。
     - `top_n`: 各ピックで返す上位件数。`layout_version`: 参照する public スキーマ版。
+    - `camera` / `gripper`: ドメイン段階ゲートの宣言 (ADR-081)。None = 宣言なし =
+      該当ゲート無効 (エンティティ粒度の可視性絞り込みも行わない)。
     """
 
     robot: Robot
@@ -38,3 +40,5 @@ class GraspSettings:
     clearance_reference: float = 0.1
     top_n: int = 5
     layout_version: str = "layout/1.0"
+    camera: Camera | None = None
+    gripper: Gripper | None = None

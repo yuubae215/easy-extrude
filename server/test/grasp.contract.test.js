@@ -76,23 +76,27 @@ test('valid response instance conforms to the response schema (both pose kinds)'
       {
         rank: 1,
         pose: { kind: 'endEffector', frame: { position: [0.1, 0.2, 0.3], orientation: [0, 0, 0, 1] } },
-        score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.92 },
+        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92 },
       },
       {
         rank: 2,
         pose: { kind: 'jointSpace', chainRef: 'arm_left', joints: [0, 0.5, -0.5, 0, 1.2, 0] },
-        score: { withinReach: true, ikSolvable: true, interferenceFree: false, totalScore: 0.41 },
+        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: false, graspable: true, totalScore: 0.41 },
       },
     ],
     // v3 rejection funnel — invariant: generated = reach + ik + interference + feasible
     diagnostics: {
       candidatesGenerated: 5,
       rejectedByReach: 2,
+      rejectedByVisibility: 0,
       rejectedByIk: 1,
       rejectedByInterference: 0,
+      rejectedByGrasp: 0,
       feasible: 2,
       returned: 2,
       reachNearestMiss: 0.03,
+      occlusionNearestMiss: null,
+      openingNearestMiss: null,
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -104,7 +108,7 @@ test('pre-union opaque pose shape is rejected (pose is a closed kind union since
       {
         rank: 1,
         pose: { joints: [0, 0, 0] }, // v1 opaque shape — no kind discriminator
-        score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.92 },
+        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92 },
       },
     ],
   })
@@ -121,11 +125,15 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
     diagnostics: {
       candidatesGenerated: 8,
       rejectedByReach: 8,
+      rejectedByVisibility: 0,
       rejectedByIk: 0,
       rejectedByInterference: 0,
+      rejectedByGrasp: 0,
       feasible: 0,
       returned: 0,
       reachNearestMiss: 0.12,
+      occlusionNearestMiss: null,
+      openingNearestMiss: null,
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -134,7 +142,7 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
 test('pre-v3 response without diagnostics fails conformance (diagnostics is required)', () => {
   const { valid, errors } = validateResponse({
     contractVersion: CONTRACT_VERSION,
-    candidates: [{ rank: 1, score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.5 } }],
+    candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5 } }],
   })
   assert.equal(valid, false)
   assert.match(errors.join(' '), /diagnostics/)
@@ -146,11 +154,15 @@ test('diagnostics with a smuggled presentation field fails (additionalProperties
     diagnostics: {
       candidatesGenerated: 0,
       rejectedByReach: 0,
+      rejectedByVisibility: 0,
       rejectedByIk: 0,
       rejectedByInterference: 0,
+      rejectedByGrasp: 0,
       feasible: 0,
       returned: 0,
       reachNearestMiss: null,
+      occlusionNearestMiss: null,
+      openingNearestMiss: null,
       meterColor: '#f00', // presentation is derived client-side, never on the wire
     },
   })
@@ -217,15 +229,21 @@ test('valid request is delegated and a conforming upstream response passes throu
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION,
-      candidates: [{ rank: 1, score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.5 } }],
+      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5 } }],
       diagnostics: {
         candidatesGenerated: 1,
         rejectedByReach: 0,
+        rejectedByVisibility: 0,
         rejectedByIk: 0,
         rejectedByInterference: 0,
+        rejectedByGrasp: 0,
         feasible: 1,
         returned: 1,
         reachNearestMiss: null,
+        occlusionNearestMiss: null,
+        openingNearestMiss: null,
+      occlusionNearestMiss: null,
+      openingNearestMiss: null,
       },
     }))
   })
@@ -239,11 +257,15 @@ test('valid request is delegated and a conforming upstream response passes throu
     assert.deepEqual(json.diagnostics, {
       candidatesGenerated: 1,
       rejectedByReach: 0,
+      rejectedByVisibility: 0,
       rejectedByIk: 0,
       rejectedByInterference: 0,
+      rejectedByGrasp: 0,
       feasible: 1,
       returned: 1,
       reachNearestMiss: null,
+      occlusionNearestMiss: null,
+      openingNearestMiss: null,
     })
   } finally {
     upstream.close()
@@ -256,7 +278,7 @@ test('upstream version drift is rejected with 502', async () => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION + 7,
-      candidates: [{ rank: 1, score: { withinReach: true, ikSolvable: true, interferenceFree: true, totalScore: 0.5 } }],
+      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5 } }],
     }))
   })
   process.env.GRASP_SEARCH_URL = `http://localhost:${upstream.address().port}`

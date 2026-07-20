@@ -1,0 +1,120 @@
+{
+  "contractVersion": 4,
+  "layoutVersion": "layout/1.0",
+  "scene": {
+    "entities": [
+      {
+        "entityId": "work-center",
+        "kind": "workpiece",
+        "collisionSpheres": [
+          { "center": [0.0, 0.0, -0.6], "radius": 0.025 }
+        ],
+        "surfaceSamples": [
+          { "point": [0.0, 0.0, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.02, 0.0, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.02, 0.0, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.0, 0.015, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.0, -0.015, -0.6], "normal": [0, 0, 1] }
+        ]
+      },
+      {
+        "entityId": "work-ne",
+        "kind": "workpiece",
+        "collisionSpheres": [
+          { "center": [0.08, 0.05, -0.6], "radius": 0.025 }
+        ],
+        "surfaceSamples": [
+          { "point": [0.08, 0.05, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.1, 0.05, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.06, 0.05, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.08, 0.065, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.08, 0.035, -0.6], "normal": [0, 0, 1] }
+        ]
+      },
+      {
+        "entityId": "work-nw",
+        "kind": "workpiece",
+        "collisionSpheres": [
+          { "center": [-0.07, 0.09, -0.6], "radius": 0.025 }
+        ],
+        "surfaceSamples": [
+          { "point": [-0.07, 0.09, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.05, 0.09, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.09, 0.09, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.07, 0.105, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.07, 0.075, -0.6], "normal": [0, 0, 1] }
+        ]
+      },
+      {
+        "entityId": "work-se",
+        "kind": "workpiece",
+        "collisionSpheres": [
+          { "center": [0.1, -0.08, -0.6], "radius": 0.025 }
+        ],
+        "surfaceSamples": [
+          { "point": [0.1, -0.08, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.12, -0.08, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.08, -0.08, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.1, -0.065, -0.6], "normal": [0, 0, 1] },
+          { "point": [0.1, -0.095, -0.6], "normal": [0, 0, 1] }
+        ]
+      },
+      {
+        "entityId": "work-sw",
+        "kind": "workpiece",
+        "collisionSpheres": [
+          { "center": [-0.1, -0.06, -0.6], "radius": 0.025 }
+        ],
+        "surfaceSamples": [
+          { "point": [-0.1, -0.06, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.08, -0.06, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.12, -0.06, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.1, -0.045, -0.6], "normal": [0, 0, 1] },
+          { "point": [-0.1, -0.075, -0.6], "normal": [0, 0, 1] }
+        ]
+      },
+      {
+        "entityId": "container-rim",
+        "kind": "wall",
+        "collisionSpheres": [
+          { "center": [0.15, 0.15, -0.57], "radius": 0.02 },
+          { "center": [0.15, -0.15, -0.57], "radius": 0.02 },
+          { "center": [-0.15, 0.15, -0.57], "radius": 0.02 },
+          { "center": [-0.15, -0.15, -0.57], "radius": 0.02 },
+          { "center": [0.15, 0.0, -0.57], "radius": 0.02 },
+          { "center": [-0.15, 0.0, -0.57], "radius": 0.02 },
+          { "center": [0.0, 0.15, -0.57], "radius": 0.02 },
+          { "center": [0.0, -0.15, -0.57], "radius": 0.02 }
+        ],
+        "surfaceSamples": []
+      }
+    ]
+  },
+  "settings": {
+    "robot": {
+      "base": [0, 0, 0],
+      "reachMin": 0.4,
+      "reachMax": 0.95,
+      "wristConeHalfAngle": 0.7
+    },
+    "camera": {
+      "position": [0, 0, 0],
+      "viewAxis": [0, 0, -1],
+      "fovHalfAngle": 0.6
+    },
+    "gripper": {
+      "maxOpening": 0.06,
+      "fingerClearance": 0.01
+    },
+    "objectiveWeights": {
+      "grasp_stability": 1.0,
+      "approach_clearance": 0.7,
+      "reach_margin": 0.3
+    },
+    "approachTiltAngles": [0, 0.17],
+    "rollAngles": [0, 1.5708],
+    "preGraspDistance": 0.1,
+    "clearanceReference": 0.03,
+    "topN": 5
+  }
+}

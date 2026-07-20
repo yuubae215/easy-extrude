@@ -47,8 +47,10 @@ def test_request_instance_conforms_to_schema():
 def _score() -> ScoreBreakdown:
     return ScoreBreakdown(
         within_reach=True,
+        visible=True,
         ik_solvable=True,
         interference_free=True,
+        graspable=True,
         objective_scores={"reach_margin": 0.8},
         total_score=0.8,
     )
@@ -58,11 +60,15 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
     base = dict(
         candidates_generated=1,
         rejected_by_reach=0,
+        rejected_by_visibility=0,
         rejected_by_ik=0,
         rejected_by_interference=0,
+        rejected_by_grasp=0,
         feasible=1,
         returned=1,
         reach_nearest_miss=None,
+        occlusion_nearest_miss=None,
+        opening_nearest_miss=None,
     )
     base.update(overrides)
     return SearchDiagnostics(**base)
@@ -133,11 +139,15 @@ def test_response_diagnostics_rejects_unknown_field():
         "diagnostics": {
             "candidatesGenerated": 0,
             "rejectedByReach": 0,
+            "rejectedByVisibility": 0,
             "rejectedByIk": 0,
             "rejectedByInterference": 0,
+            "rejectedByGrasp": 0,
             "feasible": 0,
             "returned": 0,
             "reachNearestMiss": None,
+            "occlusionNearestMiss": None,
+            "openingNearestMiss": None,
             "extraField": "not allowed",
         },
     }
@@ -155,8 +165,10 @@ def test_schema_rejects_opaque_pose():
                 "pose": {"joints": [0.0, 0.1, 0.2]},
                 "score": {
                     "withinReach": True,
+                    "visible": True,
                     "ikSolvable": True,
                     "interferenceFree": True,
+                    "graspable": True,
                     "objectiveScores": {"reach_margin": 0.8},
                     "totalScore": 0.8,
                 },
@@ -176,8 +188,10 @@ def test_schema_rejects_unnormalized_objective_score():
                 "rank": 1,
                 "score": {
                     "withinReach": True,
+                    "visible": True,
                     "ikSolvable": True,
                     "interferenceFree": True,
+                    "graspable": True,
                     "objectiveScores": {"reach_margin": 1.5},
                     "totalScore": 1.5,
                 },

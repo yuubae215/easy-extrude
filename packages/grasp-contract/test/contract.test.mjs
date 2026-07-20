@@ -190,11 +190,15 @@ const emptyByReach = {
   diagnostics: {
     candidatesGenerated: 4,
     rejectedByReach: 4,
+    rejectedByVisibility: 0,
     rejectedByIk: 0,
     rejectedByInterference: 0,
+    rejectedByGrasp: 0,
     feasible: 0,
     returned: 0,
     reachNearestMiss: 0.12,
+    occlusionNearestMiss: null,
+    openingNearestMiss: null,
   },
 };
 test("empty result rejected by reach (numeric reachNearestMiss) conforms", () =>
@@ -206,11 +210,15 @@ const emptyByIk = {
   diagnostics: {
     candidatesGenerated: 3,
     rejectedByReach: 0,
+    rejectedByVisibility: 0,
     rejectedByIk: 3,
     rejectedByInterference: 0,
+    rejectedByGrasp: 0,
     feasible: 0,
     returned: 0,
     reachNearestMiss: null,
+    occlusionNearestMiss: null,
+    openingNearestMiss: null,
   },
 };
 test("empty result with no reach rejections (null reachNearestMiss) conforms", () =>
@@ -247,11 +255,17 @@ for (const [label, d] of [
   test(`funnel invariant holds for ${label}`, () => {
     assert.equal(
       d.candidatesGenerated,
-      d.rejectedByReach + d.rejectedByIk + d.rejectedByInterference + d.feasible,
+      d.rejectedByReach + d.rejectedByVisibility + d.rejectedByIk +
+        d.rejectedByInterference + d.rejectedByGrasp + d.feasible,
     );
     assert.ok(d.returned <= d.feasible, "returned must not exceed feasible");
     // reachNearestMiss is null exactly when nothing was rejected by reach.
     assert.equal(d.reachNearestMiss === null, d.rejectedByReach === 0);
+    // The domain near-misses may be null even with rejections present (an
+    // unmeasurable rejection: outside-FOV / missing contact pair), but they
+    // must be null when their stage rejected nothing at all.
+    if (d.rejectedByVisibility === 0) assert.equal(d.occlusionNearestMiss, null);
+    if (d.rejectedByGrasp === 0) assert.equal(d.openingNearestMiss, null);
   });
 }
 
@@ -288,6 +302,51 @@ test("grasp-search request rejects unknown fields under robot (closed)", () => {
   rejects("grasp-search-request", {
     ...example,
     graspSearch: { ...example.graspSearch, robot: { base: [0, 0, 0], sneaky: true } },
+  });
+});
+
+// --- v4 score booleans: the five domain-stage flags are all required --------
+test("score missing `visible` is rejected (v4 required)", () => {
+  const { visible, ...rest } = score;
+  rejects("grasp-search-response", withDiag([{ rank: 1, pose: endEffectorPose, score: rest }]));
+});
+
+test("score missing `graspable` is rejected (v4 required)", () => {
+  const { graspable, ...rest } = score;
+  rejects("grasp-search-response", withDiag([{ rank: 1, pose: endEffectorPose, score: rest }]));
+});
+
+// --- camera / gripper declarations (ADR-081, optional, request side) ---------
+test("grasp-search request without camera/gripper still conforms (optional)", () => {
+  const example = examples["grasp-search-request"];
+  const { camera, gripper, ...graspSearch } = example.graspSearch;
+  accepts("grasp-search-request", { ...example, graspSearch });
+});
+
+test("grasp-search request rejects a camera without position (required)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, camera: { viewAxis: [0, 0, -1] } },
+  });
+});
+
+test("grasp-search request rejects unknown fields under camera (closed)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: {
+      ...example.graspSearch,
+      camera: { position: [0, 0, 1], ghostColor: "#00ff00" },
+    },
+  });
+});
+
+test("grasp-search request rejects a gripper without maxOpening (required)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, gripper: { fingerClearance: 0.01 } },
   });
 });
 

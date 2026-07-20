@@ -138,6 +138,40 @@ class Obstacle:
 
 
 @dataclass(frozen=True)
+class Camera:
+    """カメラ宣言 (ADR-081 「見えるか」ドメインの入力)。
+
+    - position: カメラ光学中心の位置。可視性 naive はここから把持点への視線
+      (線分) が障害物球に遮られないかを判定する。
+    - view_axis: 任意の視軸 (カメラが向く方向, 単位でなくてよい — 判定側で正規化)。
+    - fov_half_angle: 任意の視野円錐の半角 (ラジアン)。view_axis と両方宣言された
+      ときだけ視野判定が効く (片方だけなら視野は無制限として扱う)。
+
+    宣言は graspSearch open payload の `camera` キー (layoutVersion 統治,
+    contractVersion 版上げ不要 — ADR-081 §統治上の前提)。
+    """
+
+    position: Vec3
+    view_axis: Vec3 | None = None
+    fov_half_angle: float | None = None
+
+
+@dataclass(frozen=True)
+class Gripper:
+    """グリッパ宣言 (ADR-081 「掴めるか」ドメインの入力)。
+
+    - max_opening: 平行ジョーの最大開口幅。
+    - finger_clearance: 指が対象の脇へ進入するのに要する追加クリアランス
+      (naive ゲートは max_opening >= 対象幅 + finger_clearance を課す)。
+
+    宣言は graspSearch open payload の `gripper` キー (camera と同じ統治)。
+    """
+
+    max_opening: float
+    finger_clearance: float = 0.0
+
+
+@dataclass(frozen=True)
 class TargetObject:
     """把持対象。表面サンプル (点 + 外向き法線) の集合として与える。
 
@@ -165,6 +199,11 @@ class Problem:
     approach_tilt_angles: tuple[float, ...] = (0.0,)
     roll_angles: tuple[float, ...] = (0.0,)
     pre_grasp_distance: float = 0.1
+
+    # ドメイン段階ゲートの宣言 (ADR-081)。None = 宣言なし = そのゲートは判定しない
+    # (既存挙動を無言で変えない — ADR-084 のフォールバック規律と同じ)。
+    camera: Camera | None = None
+    gripper: Gripper | None = None
 
     # objective の正規化で参照する絶対基準の追加パラメータ (objectives.py が使う)。
     # 進入経路クリアランスを 0-1 化する基準距離 (これ以上離れていれば満点)。

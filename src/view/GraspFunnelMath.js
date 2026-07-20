@@ -1,15 +1,16 @@
 /**
  * GraspFunnelMath — pure presentation derivations over the contract's
- * `diagnostics` rejection funnel (contractVersion 3, ADR-0007 upstream).
+ * `diagnostics` rejection funnel (contractVersion 4, ADR-081 domain stages).
  *
  * SCOPE / GOVERNANCE (PHILOSOPHY #29, ADR-060): the wire carries only the
  * solver-decided aggregate facts (`candidatesGenerated`, per-stage rejection
- * counts, `feasible`, `returned`, `reachNearestMiss`). Everything in this
- * module — stage ordering for display, the dominant-stage pick, run-over-run
- * deltas, the near-miss meter curve — is CLIENT-DERIVED presentation. Nothing
- * here re-implements or second-guesses the solver (no reach / IK / collision
- * logic); malformed input degrades to `null`, never a fabricated funnel
- * (PHILOSOPHY #11).
+ * counts, `feasible`, `returned`, and the per-domain near-misses
+ * `reachNearestMiss` / `occlusionNearestMiss` / `openingNearestMiss`).
+ * Everything in this module — stage ordering for display, the dominant-stage
+ * pick, run-over-run deltas, the near-miss meter curve — is CLIENT-DERIVED
+ * presentation. Nothing here re-implements or second-guesses the solver (no
+ * reach / IK / visibility / collision / grasp logic); malformed input degrades
+ * to `null`, never a fabricated funnel (PHILOSOPHY #11).
  *
  * Pure and THREE-free: runs in the bare `node --test` lane (test:context).
  *
@@ -19,20 +20,26 @@
  */
 
 /**
- * Display order of the rejection stages — mirrors the contract invariant
- * `candidatesGenerated = rejectedByReach + rejectedByIk + rejectedByInterference
- * + feasible` (stages are exclusive; the filter short-circuits in this order).
+ * Display order of the rejection stages — mirrors the contract v4 invariant
+ * `candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk
+ * + rejectedByInterference + rejectedByGrasp + feasible` and the engine's
+ * measured cheapest-first short-circuit order (reach → IK → grasp → visibility
+ * → interference — see the schema description; the order decides which single
+ * stage a multiply-infeasible candidate is attributed to, so the sequential
+ * "entered/remaining" walk below is only meaningful in this order).
  */
 export const FUNNEL_STAGES = Object.freeze([
   Object.freeze({ key: 'reach',        field: 'rejectedByReach' }),
   Object.freeze({ key: 'ik',           field: 'rejectedByIk' }),
+  Object.freeze({ key: 'grasp',        field: 'rejectedByGrasp' }),
+  Object.freeze({ key: 'visibility',   field: 'rejectedByVisibility' }),
   Object.freeze({ key: 'interference', field: 'rejectedByInterference' }),
 ])
 
 /** True when `d` carries every numeric funnel field the contract requires. */
-function isFunnel(d) {
+export function isFunnel(d) {
   if (!d || typeof d !== 'object') return false
-  const nums = ['candidatesGenerated', 'rejectedByReach', 'rejectedByIk', 'rejectedByInterference', 'feasible', 'returned']
+  const nums = ['candidatesGenerated', 'rejectedByReach', 'rejectedByVisibility', 'rejectedByIk', 'rejectedByInterference', 'rejectedByGrasp', 'feasible', 'returned']
   return nums.every((k) => typeof d[k] === 'number' && Number.isFinite(d[k]))
 }
 
@@ -72,7 +79,7 @@ export function funnelStages(d) {
  * (it filtered first). `null` when nothing was rejected (or input malformed).
  *
  * @param {GraspDiagnostics|null|undefined} d
- * @returns {'reach'|'ik'|'interference'|null}
+ * @returns {'reach'|'ik'|'grasp'|'visibility'|'interference'|null}
  */
 export function dominantStage(d) {
   if (!isFunnel(d)) return null
@@ -93,7 +100,7 @@ export function dominantStage(d) {
  *
  * @param {GraspDiagnostics|null|undefined} prev
  * @param {GraspDiagnostics|null|undefined} cur
- * @returns {null | { generated: number, reach: number, ik: number, interference: number, feasible: number, returned: number }}
+ * @returns {null | { generated: number, reach: number, ik: number, grasp: number, visibility: number, interference: number, feasible: number, returned: number }}
  */
 export function funnelDelta(prev, cur) {
   if (!isFunnel(prev) || !isFunnel(cur)) return null
@@ -101,6 +108,8 @@ export function funnelDelta(prev, cur) {
     generated:    cur.candidatesGenerated    - prev.candidatesGenerated,
     reach:        cur.rejectedByReach        - prev.rejectedByReach,
     ik:           cur.rejectedByIk           - prev.rejectedByIk,
+    grasp:        cur.rejectedByGrasp        - prev.rejectedByGrasp,
+    visibility:   cur.rejectedByVisibility   - prev.rejectedByVisibility,
     interference: cur.rejectedByInterference - prev.rejectedByInterference,
     feasible:     cur.feasible               - prev.feasible,
     returned:     cur.returned               - prev.returned,
@@ -108,12 +117,13 @@ export function funnelDelta(prev, cur) {
 }
 
 /**
- * Near-miss meter fill (0..1) from `reachNearestMiss`: 1 at miss 0 (touching
- * the reachable shell), monotonically toward 0 as the miss grows. This is a
- * pure display curve `1 / (1 + miss)` over the wire fact — the number itself
- * (in the request's geometry length unit) is what the panel prints; the curve
- * only drives the "so close" feel. Returns `null` for `null`/invalid input
- * (nothing was rejected by reach → no meter).
+ * Near-miss meter fill (0..1) from a per-domain nearest-miss fact
+ * (`reachNearestMiss` / `occlusionNearestMiss` / `openingNearestMiss`, ADR-081):
+ * 1 at miss 0 (touching the pass boundary), monotonically toward 0 as the miss
+ * grows. This is a pure display curve `1 / (1 + miss)` over the wire fact — the
+ * number itself (in the request's geometry length unit) is what the panel
+ * prints; the curve only drives the "so close" feel. Returns `null` for
+ * `null`/invalid input (no measurable rejection in that domain → no meter).
  *
  * @param {number|null|undefined} miss
  * @returns {number|null}

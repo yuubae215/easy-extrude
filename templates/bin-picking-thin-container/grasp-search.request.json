@@ -1,5 +1,5 @@
 {
-  "contractVersion": 1,
+  "contractVersion": 4,
   "layoutVersion": "layout/1.0",
   "graspSearch": {
     "robot": {
@@ -7,6 +7,15 @@
       "reachMin": 0.4,
       "reachMax": 0.95,
       "wristConeHalfAngle": 0.7
+    },
+    "camera": {
+      "position": [0, 0, 0],
+      "viewAxis": [0, 0, -1],
+      "fovHalfAngle": 0.6
+    },
+    "gripper": {
+      "maxOpening": 0.06,
+      "fingerClearance": 0.01
     },
     "target": {
       "surfaceSamples": [

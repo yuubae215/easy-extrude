@@ -19,11 +19,15 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
     base = dict(
         candidates_generated=1,
         rejected_by_reach=0,
+        rejected_by_visibility=0,
         rejected_by_ik=0,
         rejected_by_interference=0,
+        rejected_by_grasp=0,
         feasible=1,
         returned=1,
         reach_nearest_miss=None,
+        occlusion_nearest_miss=None,
+        opening_nearest_miss=None,
     )
     base.update(overrides)
     return SearchDiagnostics(**base)
@@ -59,8 +63,10 @@ def test_response_roundtrip_top_n_with_breakdown():
                 pose={"joints": [0.0, 0.1, 0.2]},
                 score=ScoreBreakdown(
                     within_reach=True,
+                    visible=True,
                     ik_solvable=True,
                     interference_free=True,
+                    graspable=True,
                     objective_scores={"reach_margin": 0.8},
                     total_score=0.8,
                 ),

@@ -1,10 +1,20 @@
 # bin-picking-thin-container (薄型コンテナ + ランダム平置きワーク)
 
 薄型 (浅い) コンテナの底にランダムに平置きされたワークを、ロボットが上面から把持する
-シナリオの grasp search テンプレ。手で書ききった完成 DSL/入力で、既存の段階0 エンジン
-(`core/`) がそのまま実行できる。
+シナリオのテンプレ。段階0 エンジン (`core/`) がそのまま実行できる。
 
 `version`: "layout/1.0" (入力 JSON の `layoutVersion`)。
+
+## ファイル構成 (ADR-081 で scene 形式へ移行)
+
+- **`pick-sequence.request.json` — 正本 (scene 形式)**。属性付きエンティティ
+  (workpiece x5 + wall リム) + 共有設定 (robot / camera / gripper / sampling)。
+  障害物は手書きせず、per-pick に `core/` の scene 層が属性から**導出**する
+  (ADR-078 Decision 2。手書き再構築が精度劣化の主因だった — ADR-081 Decision 4)。
+- `grasp-search.request.json` — 1 ピックぶんのエンジン契約リクエスト例 (対象 =
+  work-center)。`obstacles[]` は scene 正本からの**導出値のピン留め**であり、
+  `core/tests/test_templates.py` の回帰テストが scene 導出との一致を固定する
+  (手で編集する場合は必ず scene 側を直してから導出し直す)。
 
 ## シナリオと座標系
 
@@ -34,9 +44,13 @@
 
 ## DSL <-> エンジンの線引き (混ぜない)
 
-- **hardConstraints** (`reachable` / `ik_solvable` / `collision_free`) は**参照名のみ**。
-  解く実装はテンプレに書かない。エンジンの安い順フィルタ (リーチ -> IK -> 干渉) が暗黙に
-  適用する (`engine/pipeline.py`)。
+- **hardConstraints** (`reachable` / `ik_solvable` / `collision_free` / `visible` /
+  `graspable`) は**参照名のみ**。解く実装はテンプレに書かない。エンジンのドメイン段階
+  フィルタ (リーチ -> IK -> 把持性 -> 可視性 -> 干渉, 安い順の実測は
+  `engine/pipeline.py`) が暗黙に適用する。
+- **camera / gripper** (ADR-081) も**宣言のみ**: カメラは位置 + 視軸 + FOV 半角、
+  グリッパは開口幅 + 指クリアランス。可視性 (視線遮蔽) と把持性 (開口幾何) の判定は
+  `core/` が解く。
 - **objectives** は `objectiveWeights` で宣言:
   - `grasp_stability` (1.0): 進入が上面法線の逆向き = top-down ほど高い。
   - `approach_clearance` (0.7): 進入経路から壁・隣接ワークまでの距離。薄型ゆえ重視。
@@ -47,17 +61,28 @@
   `rollAngles [0, 90deg]` (平行ハンドの向き 2 種), `preGraspDistance 0.1` (10cm 上から降下),
   `clearanceReference 0.03` (壁・隣接ワークへの安全距離 3cm)。
 
-## 手検証メモ (受け入れテスト `core/tests/test_templates.py` の根拠値)
+## 手検証メモ — 3 ドメイン (受け入れテスト `core/tests/test_templates.py` の根拠値)
 
-代表値で手計算 + エンジン実行で確認済み:
+代表値で手計算 + エンジン実行で、**見える / 届く / 掴める** (ADR-081) を確認済み:
 
-- 中心 top-down 候補 (`point [0,0,-0.6]`, `approach ~ [0,0,-1]`) は
+- **届くか (Path)**: 中心 top-down 候補 (`point [0,0,-0.6]`, `approach ~ [0,0,-1]`) は
   **リーチ内** (距離 0.6 in [0.4,0.95]) / **IK 可** (なす角 ~0deg <= 0.7) /
-  **干渉なし** (最近接障害物まで ~0.069m > 0) で、`grasp_stability`・`approach_clearance`
-  ともに満点付近 -> **rank 1**。
-- 端寄り / 傾けた候補は壁・隣接ワーク球で一部脱落、または clearance スコア低下で下位に入る。
+  **干渉なし** (最近接障害物まで ~0.069m > 0)。
+- **見えるか (Vision)**: カメラ `[0,0,0]` 真下視 (FOV 半角 0.6rad) から全把持点への
+  視線が通る (最近接の隣接ワーク球まで ~0.094m > 0.025、壁リム球まで >= 0.15m >
+  0.02。全サンプルの視線角 <= ~0.24rad < 0.6)。`rejectedByVisibility = 0`。
+- **掴めるか (Grasp)**: 対象幅は閉じ軸 roll=0 で 0.03m / roll=90deg で 0.04m。
+  開口 0.06 >= 幅 + 指クリアランス 0.01 (最悪 0.05) で全 roll 合格。
+  `rejectedByGrasp = 0`。
+- 総合: `grasp_stability`・`approach_clearance` とも満点付近の中心 top-down が **rank 1**。
+  端寄り / 傾けた候補は壁・隣接ワーク球で一部脱落、または clearance スコア低下で下位。
+- **L3 リスクの再現例 (ADR-081 KPI/階梯の固定ケース)**: カメラを壁側
+  `[0.3, 0, -0.52]` に寄せて斜めから覗くと、壁リム球 `[0.15, 0, -0.57]` が全把持点の
+  視線を遮り `rejectedByVisibility` が立つ (可視率 0 = 運用なら L3 再認識リトライ常連 →
+  カメラ再配置 L5 相当の設計時警告)。受け入れテストが固定する。
 
-受け入れテスト: `core/tests/test_templates.py` がこの JSON を読み、上記を自動で検証する。
+受け入れテスト: `core/tests/test_templates.py` が scene 正本と導出の一致・上記 3 ドメインの
+挙動・契約 v4 準拠を自動で検証する。
 
 ## OpenQuestion (現場で必ず聞かれる曖昧点)
 
@@ -71,8 +96,11 @@
   追加 (エンジン拡張) が後続課題 (段階0 では意図的に未対応)。
 - **実機パラメータ**: ロボットのリーチ範囲・手首可動 (`wristConeHalfAngle`)・コンテナ寸法・
   ワーク寸法と把持点は現場値に差し替える。ここは代表値の仮置き。
-- **ワーク姿勢ばらつき**: 「平置き」の実際の傾き (法線が厳密に +Z でない)・平行ハンドの
-  開き幅は段階0 の範囲外。
+- **ワーク姿勢ばらつき**: 「平置き」の実際の傾き (法線が厳密に +Z でない) は段階0 の
+  範囲外。平行ハンドの開口幅は ADR-081 で `gripper` 宣言 + naive 幾何ゲート (幅 +
+  クリアランス + 凸代理の接触対) に昇格した — 摩擦・力閉包 (wrench cone) は Phase 4。
+- **カメラ忠実度**: naive 可視性は視線 (線分) と球遮蔽 + 視野円錐のみ。メッシュ遮蔽・
+  被写界深度・露光は Phase 4 以降 (ADR-081 Consequences)。
 
 ## 実行方法
 

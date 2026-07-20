@@ -42,37 +42,46 @@ artifacts
         goal VisionGateExists
         uuid ab31bf32-2eec-4ffb-9429-055535136974
         summary "見えるか: camera 宣言に基づく可視性ゲートがエンティティ粒度 (targetable 絞り込み) と候補粒度 (フィルタ段) の両方に存在する"
-        state ToBeDeveloped
+        state ToBeReviewed
         groups phase-1
 
-            assumption VisionGatePlanned
+            solution VisionGateTests
             uuid 8c153209-162d-4837-b618-0ea63d1ebd98
-            summary "証拠予定: VisibilityChecker Protocol + naive 既定 (線分-球遮蔽) の pytest を core/tests/test_engine.py へ追加 (Phase 1)"
+            summary "cd core && uv run pytest tests/test_engine.py tests/test_scene.py -q — pass @ 2026-07-20 実装コミット (候補粒度: naive 線分-球遮蔽 + FOV 円錐 + occlusion near-miss + 注入差し替え / エンティティ粒度: viewable_entities 絞り込み + pick-sequence スキップ + 自己遮蔽回避。宣言なし = ゲート無効の不変も固定)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "core/tests/test_scene.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
+            - "core/easy_extrude_core/scene/derivation.py"
 
         goal GraspGateExists
         uuid b8ee9352-cebb-4872-a8b7-0193fea504a3
         summary "掴めるか: gripper 宣言に基づく把持性ゲート (開口幅/指クリアランス/antipodal) が存在し、wrench cone が安定性 objective を埋める"
-        state ToBeDeveloped
+        state ToBeReviewed
         groups phase-1, phase-4
 
-            assumption GraspGatePlanned
+            solution GraspGateNaiveTests
             uuid cea03623-237f-4c17-bb36-6ff3c4853a74
-            summary "証拠予定: GraspChecker Protocol + naive 既定 (幅/クリアランス/antipodal) の pytest (Phase 1)、wrench cone 差し替えの数値検証 (Phase 4)"
+            summary "cd core && uv run pytest tests/test_engine.py -q — pass @ 2026-07-20 実装コミット (naive 平行ジョー: 射影幅 + 指クリアランス + 凸代理の接触対、roll で閉じ軸が回る、退化 = inf、opening near-miss、注入差し替え)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
+
+            assumption WrenchConePlanned
+            uuid 2f8c1d4e-6a3b-4f7c-9e1d-5b8a2c4f6e70
+            summary "証拠予定: wrench cone 差し替えの数値検証 (Phase 4, Protocol 内で契約不変)"
 
         goal FunnelIdentityHolds
         uuid 6550f308-8741-4742-b9cf-cff9f6b222f2
         summary "ファネル恒等式 generated = Σ rejected_by_* + feasible が全フィルタ段構成で成立する"
-        state ToBeDeveloped
+        state ToBeReviewed
 
             solution FunnelIdentityTest
             uuid 6b622a32-9766-4569-bde0-65aa8bce9525
-            summary "cd core && uv run pytest tests/test_engine.py::test_search_report_funnel_partitions_generated -q — pass @ 755266a (現行 3 段 + feasible)"
+            summary "cd core && uv run pytest tests/test_engine.py -q -k 'funnel or search_report' — pass @ 2026-07-20 実装コミット (5 段拡張: 宣言なし/可視棄却/FOV棄却/把持棄却/混成の各構成で恒等式を固定。段の実行順はコスト実測で確定 — pipeline.py docstring)"
             artifacts
             - "core/tests/test_engine.py"
-
-            assumption FiveStageIdentity
-            uuid 4618c654-c905-4213-ae55-8941e1923355
-            summary "可視性/把持性の 2 段追加後も恒等式テストを 5 段へ拡張して維持する (Phase 1/2 で証拠に置換)"
+            - "packages/grasp-contract/schema/grasp-search-response.schema.json"
 
     strategy ByKpiChain
     uuid 4db8bfe2-464f-480d-b7f2-9d6e03d92ab9
@@ -81,22 +90,33 @@ artifacts
         goal KpiDerivedNotSecondSource
         uuid 1814c09c-c962-438c-a669-a905b3abf9e9
         summary "ドメイン KPI はワイヤの決定事実 (ファネル/near-miss) からの純粋導出であり、第二の源を持たない"
-        state ToBeDeveloped
+        state ToBeReviewed
         groups phase-3
 
-            assumption KpiDerivationPlanned
+            solution KpiDerivationTests
             uuid 4718be93-ee89-4549-97e3-baf073a7f4c0
-            summary "証拠予定: GraspFunnelMath 系譜の純粋導出関数のユニットテスト (契約 v4 事実 → KPI 値、Phase 3)"
+            summary "node --test src/view/GraspLadderMath.test.js src/view/GraspFunnelMath.test.js — pass @ 2026-07-20 実装コミット (domainKpis は v4 事実からの純粋導出。v3 形/生成ゼロ/不正入力は null に退化し捏造しない)"
+            artifacts
+            - "src/view/GraspLadderMath.js"
+            - "src/view/GraspLadderMath.test.js"
+            - "src/view/GraspFunnelMath.js"
 
         goal LadderMapSingleOwner
         uuid 664d8bcc-fa23-4edd-b116-af563dc50181
         summary "KPI → 階梯リスク写像は提示層の表引き一箇所が所有し、判定ロジックの再実装を含まない"
-        state ToBeDeveloped
+        state ToBeReviewed
         groups phase-3
 
-            assumption LadderMapPlanned
+            solution LadderMapTests
             uuid 8da856f7-c5a5-473f-bfb3-81e5aad5142f
-            summary "証拠予定: 階梯対応表の単一所有テスト + src/ に判定再実装が無いことの grep 検査 (Phase 3)"
+            summary "node --test src/view/GraspLadderMath.test.js — pass @ 2026-07-20 実装コミット (LADDER 表 + RISK_RULES が単一所有者。行は表のラベルを逐語で運ぶことをテストで固定。入力はワイヤ事実のみ = 判定再実装なし)"
+            artifacts
+            - "src/view/GraspLadderMath.js"
+            - "src/view/GraspLadderMath.test.js"
+
+            assumption Phase3UiRemainder
+            uuid 7c2e9b1a-4d6f-4a8e-b3c5-1f9d7e5a3b82
+            summary "未着手の Phase 3 残り: 3 ドメインカード入力 / プリセット fork&tweak / ビューポートカメラ写し取り / pick-sequence 集計レポート UI (ADR-081 §5。ファネル 5 段表示・3 メーター・階梯リスク表示は実装済)"
 
     strategy ByConvergence
     uuid ca0c8be3-ad0f-4d7b-a35f-2ef919902caf
@@ -149,21 +169,25 @@ artifacts
         goal TemplatesSceneDerived
         uuid 9da7e82d-2628-46d5-9091-3e94a1883582
         summary "テンプレは scene 形式 (属性からの obstacles 導出) であり、手書き再構築を含まない"
-        state ToBeDeveloped
+        state ToBeReviewed
         groups phase-1
 
-            assumption SceneMigrationPlanned
+            solution SceneMigrationRegression
             uuid 1c5a852e-9e03-4140-ada0-ca500bf9149e
-            summary "証拠予定: thin-container を scene 形式へ移行し、導出 obstacles が旧手書きリストと一致することの回帰テスト (Phase 1)"
+            summary "cd core && uv run pytest tests/test_templates.py -q — pass @ 2026-07-20 実装コミット (正本 pick-sequence.request.json から導出した work-center の 1 ピック request が、ピン留めした grasp-search.request.json と完全一致 — 手書き obstacles の廃止を回帰で固定)"
+            artifacts
+            - "templates/bin-picking-thin-container/pick-sequence.request.json"
+            - "core/tests/test_templates.py"
 
         goal TemplatesPinThreeDomains
         uuid e8bed7c6-5ce7-42e5-a195-3978e3ef2985
         summary "各テンプレの 3 ドメイン手検証値 (見える/届く/掴める) が受け入れテストで固定される"
-        state ToBeDeveloped
+        state ToBeReviewed
 
             solution TemplateTestsNow
             uuid bf54bdd0-bffb-457e-a349-cac1a70d4d0e
-            summary "cd core && uv run pytest tests/test_templates.py -q — pass @ 755266a (届くか領域のみ: ランキング成立 / 最上位 top-down / 契約準拠。契約は repo 内 packages/grasp-contract — ADR-082 以降 submodule init 不要)"
+            summary "cd core && uv run pytest tests/test_templates.py -q — pass @ 2026-07-20 実装コミット (3 ドメイン: 5 判定 True のランキング成立 / 最上位 top-down / 基準設定で可視・把持棄却ゼロ / カメラを壁側 [0.3,0,-0.52] に寄せると全候補が可視性棄却 = L3 リスク再現例 / pick-sequence で全 5 ワーク成立 / 契約 v4 準拠)"
             artifacts
             - "core/tests/test_templates.py"
             - "templates/bin-picking-thin-container/grasp-search.request.json"
+            - "templates/bin-picking-thin-container/pick-sequence.request.json"

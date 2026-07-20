@@ -28,8 +28,13 @@ from ..contract import (
 )
 from ..engine.feasibility import CollisionChecker, IkSolver
 from ..engine.pipeline import search
-from ..engine.types import Obstacle, Robot, Vec3
-from .derivation import build_request, order_by_topmost, targetable_entities
+from ..engine.types import Camera, Gripper, Obstacle, Robot, Vec3
+from .derivation import (
+    build_request,
+    order_by_topmost,
+    targetable_entities,
+    viewable_entities,
+)
 from .settings import GraspSettings
 from .types import EntityKind, Persistence, Scene, SceneEntity
 
@@ -82,7 +87,13 @@ def run_pick_sequence(
     results: list[PickResult] = []
 
     while max_picks is None or len(picked_ids) < max_picks:
-        ordered = order_by_topmost(targetable_entities(scene, picked_ids))
+        # targetable -> (camera 宣言時のみ) 見えるものへ絞り込み -> 最上面順 (ADR-081:
+        # top_z 順の「上 = 見える」代理がカメラ宣言に基づく判定へ昇格する)。
+        ordered = order_by_topmost(
+            viewable_entities(
+                scene, settings.camera, targetable_entities(scene, picked_ids), picked_ids
+            )
+        )
         progressed = False
         for entity in ordered:
             request = build_request(scene, entity.entity_id, settings, picked_ids)
@@ -155,6 +166,20 @@ def _settings_from_wire(request: PickSequenceRequest) -> GraspSettings:
         reach_max=r.reach_max,
         wrist_cone_half_angle=r.wrist_cone_half_angle,  # 許容角 (届く向き, Decision 3)
     )
+    # camera / gripper 宣言 (ADR-081)。省略はドメイン型でも None (ゲート無効)。
+    camera = None
+    if s.camera is not None:
+        camera = Camera(
+            position=_vec(s.camera.position),
+            view_axis=_vec(s.camera.view_axis) if s.camera.view_axis is not None else None,
+            fov_half_angle=s.camera.fov_half_angle,
+        )
+    gripper = None
+    if s.gripper is not None:
+        gripper = Gripper(
+            max_opening=s.gripper.max_opening,
+            finger_clearance=s.gripper.finger_clearance,
+        )
     return GraspSettings(
         robot=robot,
         objective_weights=dict(s.objective_weights),
@@ -164,6 +189,8 @@ def _settings_from_wire(request: PickSequenceRequest) -> GraspSettings:
         clearance_reference=s.clearance_reference,
         top_n=s.top_n,
         layout_version=request.layout_version,
+        camera=camera,
+        gripper=gripper,
     )
 
 

@@ -50,6 +50,51 @@
             "reachMax": { "type": "number", "minimum": 0 },
             "wristConeHalfAngle": { "type": "number", "minimum": 0 }
           }
+        },
+        "camera": {
+          "type": "object",
+          "description": "Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true).",
+          "additionalProperties": false,
+          "properties": {
+            "position": {
+              "type": "array",
+              "description": "[x, y, z] world-frame position of the camera's optical center.",
+              "items": { "type": "number" },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "viewAxis": {
+              "type": "array",
+              "description": "Optional viewing direction (need not be unit length; the solver normalizes). The field-of-view cone applies only when both viewAxis and fovHalfAngle are declared.",
+              "items": { "type": "number" },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "fovHalfAngle": {
+              "type": "number",
+              "description": "Optional field-of-view half angle in radians (cone around viewAxis).",
+              "minimum": 0
+            }
+          },
+          "required": ["position"]
+        },
+        "gripper": {
+          "type": "object",
+          "description": "Declares the parallel-jaw gripper for the 'can it be grasped' domain gate (ADR-081). Declaration only -- the geometric grasp gate itself is solved in core/. Optional: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true).",
+          "additionalProperties": false,
+          "properties": {
+            "maxOpening": {
+              "type": "number",
+              "description": "Maximum jaw opening width (same length unit as the request geometry).",
+              "minimum": 0
+            },
+            "fingerClearance": {
+              "type": "number",
+              "description": "Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance).",
+              "minimum": 0
+            }
+          },
+          "required": ["maxOpening"]
         }
       }
     }
