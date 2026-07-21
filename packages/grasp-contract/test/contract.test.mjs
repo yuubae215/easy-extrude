@@ -305,6 +305,48 @@ test("grasp-search request rejects unknown fields under robot (closed)", () => {
   });
 });
 
+// --- plan{} + robot.tcpOrientation (ADR-084, optional, contractVersion held) --
+test("grasp-search request's plan carries the canonical judgement params", () =>
+  assert.deepEqual(examples["grasp-search-request"].graspSearch.plan, {
+    reachMin: 0.2,
+    reachMax: 1.4,
+    wristConeHalfAngle: 0.8,
+  }));
+
+test("grasp-search request without plan still conforms (optional field)", () => {
+  const example = examples["grasp-search-request"];
+  const { plan, ...graspSearch } = example.graspSearch;
+  accepts("grasp-search-request", { ...example, graspSearch });
+});
+
+test("grasp-search request rejects unknown fields under plan (closed)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, plan: { reachMin: 0.2, sneaky: true } },
+  });
+});
+
+test("grasp-search request's robot.tcpOrientation is the canonical identity quat", () =>
+  assert.deepEqual(examples["grasp-search-request"].graspSearch.robot.tcpOrientation, [0, 0, 0, 1]));
+
+test("grasp-search request without robot.tcpOrientation still conforms (optional)", () => {
+  const example = examples["grasp-search-request"];
+  const { tcpOrientation, ...robot } = example.graspSearch.robot;
+  accepts("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, robot },
+  });
+});
+
+test("grasp-search request rejects a malformed robot.tcpOrientation (wrong length)", () => {
+  const example = examples["grasp-search-request"];
+  rejects("grasp-search-request", {
+    ...example,
+    graspSearch: { ...example.graspSearch, robot: { base: [0, 0, 0], tcpOrientation: [0, 0, 1] } },
+  });
+});
+
 // --- v4 score booleans: the five domain-stage flags are all required --------
 test("score missing `visible` is rejected (v4 required)", () => {
   const { visible, ...rest } = score;

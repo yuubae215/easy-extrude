@@ -34,16 +34,31 @@ export interface GraspSearchDeclaration {
    */
   topN?: number;
   /**
-   * Declares where the robot base is (ADR-083). The engine already used this as the reach/IK reference point via the open payload; this makes it a typed, optional field. Reach/IK evaluation itself stays solved in core/ -- this only declares the base pose.
+   * Declares the 'can it be reached' (Plan) domain judgement parameters (ADR-081 Sense/Plan/Act axis, forward-wrapped by ADR-084 §4). These were formerly written directly on `robot.*`; they move here so a later `sense{}`/`act{}` split does not have to move them again. Declaration only -- reach/IK evaluation stays solved in core/. Reading precedence: when a key is present in both `plan` and the legacy `robot`, `plan` wins (backward-compat fallback in the core adapter).
+   */
+  plan?: {
+    reachMin?: number;
+    reachMax?: number;
+    wristConeHalfAngle?: number;
+  };
+  /**
+   * Declares the resolved robot geometry (ADR-083/084). `base` and `tcpOrientation` are resolved from the Layout DSL CoordinateFrame entities on the front side (transformGraph composed to world pose) before being sent -- core/ never knows about entities. The judgement params (reach* /wristConeHalfAngle) moved to `plan{}` (ADR-084 §4); they are still accepted here as a backward-compat fallback. Reach/IK/cone evaluation itself stays solved in core/.
    */
   robot?: {
     /**
-     * [x, y, z] world-frame position of the robot base (ROS convention, Z up).
+     * [x, y, z] world-frame position of the robot base (ROS convention, Z up). Resolved from the `robot_base` CoordinateFrame entity (ADR-084 §2).
      *
      * @minItems 3
      * @maxItems 3
      */
     base?: [number, number, number];
+    /**
+     * [x, y, z, w] world-frame quaternion of the gripper (TCP) pose, resolved from the `tcp` CoordinateFrame entity (ADR-084 §3). Same axis order as the response `cartesianFrame.orientation`. When declared, the naive cone judgement measures the required approach against the TCP forward axis (+X rotated by this quaternion) instead of the base->candidate proxy axis; omitting it keeps the legacy proxy-axis behavior (no silent change).
+     *
+     * @minItems 4
+     * @maxItems 4
+     */
+    tcpOrientation?: [number, number, number, number];
     reachMin?: number;
     reachMax?: number;
     wristConeHalfAngle?: number;

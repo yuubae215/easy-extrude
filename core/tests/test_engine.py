@@ -27,9 +27,11 @@ from easy_extrude_core.engine import (
     Obstacle,
     Pose,
     Problem,
+    Quaternion,
     Robot,
     TargetObject,
     Vec3,
+    angle_between,
     evaluate_objectives,
     generate_candidates,
     graspable,
@@ -82,6 +84,85 @@ def test_naive_ik_respects_wrist_cone():
     sideways = _candidate_at(Vec3(1.0, 0, 0), Vec3(0, 1, 0), Vec3(-1, 0, 0))
     # なす角 90deg > 30deg -> 不可解。
     assert ik_solvable(sideways, robot, solver) is False
+
+
+# --- Quaternion 型 + 回転演算 (ADR-084 §3) ------------------------------------
+
+
+def test_quaternion_identity_rotate_is_noop():
+    # 恒等回転 (0,0,0,1) は任意ベクトルを変えない。
+    q = Quaternion(0.0, 0.0, 0.0, 1.0)
+    v = Vec3(1.0, 2.0, 3.0)
+    assert q.rotate(v).as_list() == pytest.approx(v.as_list(), abs=1e-12)
+
+
+def test_quaternion_rotates_x_to_y_about_z_90deg():
+    # +Z 軸まわり +90deg: +X -> +Y (右手系)。軸順 [x,y,z,w]。
+    half = math.pi / 4
+    q = Quaternion(0.0, 0.0, math.sin(half), math.cos(half))
+    rotated = q.rotate(Vec3(1.0, 0.0, 0.0))
+    assert rotated.as_list() == pytest.approx([0.0, 1.0, 0.0], abs=1e-9)
+
+
+def test_quaternion_normalizes_before_rotate():
+    # 非正規化四元数を渡しても rotate は単位化してから適用する (退化ガード)。
+    half = math.pi / 4
+    q = Quaternion(0.0, 0.0, math.sin(half), math.cos(half)).__class__(
+        0.0, 0.0, 2.0 * math.sin(half), 2.0 * math.cos(half)  # スケール x2
+    )
+    rotated = q.rotate(Vec3(1.0, 0.0, 0.0))
+    assert rotated.as_list() == pytest.approx([0.0, 1.0, 0.0], abs=1e-9)
+
+
+def test_angle_between_degenerate_is_pi():
+    # ゼロ長は方向未定義 -> π (コーン判定で常に棄却側)。
+    assert angle_between(Vec3(0, 0, 0), Vec3(1, 0, 0)) == pytest.approx(math.pi)
+    assert angle_between(Vec3(1, 0, 0), Vec3(1, 0, 0)) == pytest.approx(0.0, abs=1e-12)
+
+
+# --- TCP 姿勢基準の cone (ADR-084 §3) -----------------------------------------
+
+
+def test_tcp_orientation_flips_cone_reference_axis():
+    # TCP が +X を向く (恒等姿勢) と approach=+X が cone 中心 -> 可解。
+    # 同じ候補でも TCP を +Y 向き (Z 90deg) に回すと approach=+X は 90deg 外れて不可解。
+    # base->把持点 の代理軸 (旧挙動) では両者の判定が同じになってしまう場所を選ぶ。
+    solver = NaiveIkSolver()
+    cone = math.radians(30)
+    # 把持点は base の +Y にあるが approach は +X 向き。
+    cand = _candidate_at(Vec3(0.0, 1.0, 0.0), Vec3(1, 0, 0), Vec3(0, -1, 0))
+
+    tcp_forward_x = Quaternion(0.0, 0.0, 0.0, 1.0)  # +X を向く
+    robot_x = Robot(
+        base=Vec3(0, 0, 0), reach_min=0.5, reach_max=1.5,
+        wrist_cone_half_angle=cone, tcp_orientation=tcp_forward_x,
+    )
+    # 基準軸 = +X、approach = +X -> なす角 0 -> 可解。
+    assert ik_solvable(cand, robot_x, solver) is True
+
+    half = math.pi / 4
+    tcp_forward_y = Quaternion(0.0, 0.0, math.sin(half), math.cos(half))  # +Y を向く
+    robot_y = Robot(
+        base=Vec3(0, 0, 0), reach_min=0.5, reach_max=1.5,
+        wrist_cone_half_angle=cone, tcp_orientation=tcp_forward_y,
+    )
+    # 基準軸 = +Y、approach = +X -> なす角 90deg > 30 -> 不可解。
+    assert ik_solvable(cand, robot_y, solver) is False
+
+
+def test_no_tcp_orientation_uses_legacy_proxy_axis():
+    # tcp_orientation 未宣言 -> 旧挙動 (base->把持点 代理軸)。
+    # 把持点 +Y、approach +Y (代理軸に正対) は可解、approach +X は不可解。
+    solver = NaiveIkSolver()
+    cone = math.radians(30)
+    robot = Robot(
+        base=Vec3(0, 0, 0), reach_min=0.5, reach_max=1.5,
+        wrist_cone_half_angle=cone,  # tcp_orientation=None (既定)
+    )
+    aligned = _candidate_at(Vec3(0.0, 1.0, 0.0), Vec3(0, 1, 0), Vec3(0, -1, 0))
+    assert ik_solvable(aligned, robot, solver) is True
+    off = _candidate_at(Vec3(0.0, 1.0, 0.0), Vec3(1, 0, 0), Vec3(0, -1, 0))
+    assert ik_solvable(off, robot, solver) is False
 
 
 def test_naive_collision_blocks_approach_path():
@@ -329,6 +410,30 @@ def test_problem_from_declaration_reads_wire_keys():
     assert problem.robot.reach_max == 1.5
     assert len(problem.target.surface_samples) == 4
     assert problem.pre_grasp_distance == 0.2
+
+
+def test_problem_from_declaration_reads_plan_and_tcp_orientation():
+    # ADR-084 §4: judgement params を plan{} で宣言、robot.tcpOrientation を追加。
+    decl_dict = _declaration_dict()
+    decl_dict["plan"] = {"reachMin": 0.3, "reachMax": 2.0, "wristConeHalfAngle": 0.5}
+    decl_dict["robot"] = {"base": [1.0, 0.0, 0.0], "tcpOrientation": [0.0, 0.0, 0.0, 1.0]}
+    problem = problem_from_declaration(GraspSearchDeclaration.model_validate(decl_dict))
+    assert problem.robot.reach_min == 0.3
+    assert problem.robot.reach_max == 2.0
+    assert problem.robot.wrist_cone_half_angle == 0.5
+    assert problem.robot.base == Vec3(1.0, 0.0, 0.0)
+    assert problem.robot.tcp_orientation == Quaternion(0.0, 0.0, 0.0, 1.0)
+
+
+def test_problem_from_declaration_plan_wins_over_legacy_robot_params():
+    # 同キーが plan{} と旧 robot.* の両方に在れば plan{} が勝つ (後方互換の優先順位)。
+    decl_dict = _declaration_dict()
+    decl_dict["plan"] = {"reachMin": 0.9}
+    decl_dict["robot"] = {"reachMin": 0.1, "reachMax": 1.5}
+    problem = problem_from_declaration(GraspSearchDeclaration.model_validate(decl_dict))
+    assert problem.robot.reach_min == 0.9    # plan{} 優先
+    assert problem.robot.reach_max == 1.5    # plan{} に無いので robot.* フォールバック
+    assert problem.robot.tcp_orientation is None  # 未宣言 -> フォールバック挙動
 
 
 def test_pose_payload_round_trips():

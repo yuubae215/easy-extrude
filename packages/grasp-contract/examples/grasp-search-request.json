@@ -4,7 +4,8 @@
   "graspSearch": {
     "objectiveWeights": { "clearance": 0.6, "manipulability": 0.4 },
     "topN": 5,
-    "robot": { "base": [-2, 2, 0] },
+    "plan": { "reachMin": 0.2, "reachMax": 1.4, "wristConeHalfAngle": 0.8 },
+    "robot": { "base": [-2, 2, 0], "tcpOrientation": [0, 0, 0, 1] },
     "camera": {
       "position": [0.0, 0.0, 1.2],
       "viewAxis": [0.0, 0.0, -1.0],

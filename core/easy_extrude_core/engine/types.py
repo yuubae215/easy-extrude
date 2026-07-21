@@ -49,6 +49,13 @@ class Vec3:
     def dot(self, other: "Vec3") -> float:
         return self.x * other.x + self.y * other.y + self.z * other.z
 
+    def cross(self, other: "Vec3") -> "Vec3":
+        return Vec3(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x,
+        )
+
     def norm(self) -> float:
         # math.hypot は中間オーバーフロー/アンダーフローに強い (数値的安定性優先)。
         return math.hypot(self.x, self.y, self.z)
@@ -69,6 +76,66 @@ class Vec3:
 
     def as_list(self) -> list[float]:
         return [self.x, self.y, self.z]
+
+
+@dataclass(frozen=True)
+class Quaternion:
+    """不変の単位四元数 (回転)。軸順は [x, y, z, w] — `pose_codec.py` の慣例および
+    grasp-contract wire の `cartesianFrame.orientation` 配列と一致させる (ADR-084 §3)。
+
+    段階0 では TCP の姿勢 (`Robot.tcp_orientation`) を named type 化するために導入する。
+    生リスト `[qx,qy,qz,qw]` を持ち回すだけだった箇所を型で縛り、回転演算を一箇所に
+    集約する (第二の源を作らない)。数値的安定性を最優先: 正規化前のゼロ長ガード、
+    定義域クランプを徹底する。
+    """
+
+    x: float
+    y: float
+    z: float
+    w: float
+
+    @staticmethod
+    def from_list(raw: "list[float] | tuple[float, ...]") -> "Quaternion":
+        """wire 配列 [qx, qy, qz, qw] から構築する (軸順は pose_codec と共通)。"""
+        return Quaternion(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3]))
+
+    def as_list(self) -> list[float]:
+        return [self.x, self.y, self.z, self.w]
+
+    def norm(self) -> float:
+        return math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
+
+    def normalized(self) -> "Quaternion":
+        """単位四元数。退化 (ゼロ長) は恒等回転 (0,0,0,1) を返す (ゼロ割り回避)。"""
+        n = self.norm()
+        if n < _EPS:
+            return Quaternion(0.0, 0.0, 0.0, 1.0)
+        inv = 1.0 / n
+        return Quaternion(self.x * inv, self.y * inv, self.z * inv, self.w * inv)
+
+    def rotate(self, v: Vec3) -> Vec3:
+        """ベクトル v をこの回転で回した新しい Vec3 を返す (純粋)。
+
+        v' = v + 2w(q_xyz × v) + 2 q_xyz × (q_xyz × v) の安定形を使う
+        (四元数積の展開; 単位化してから適用してジンバルロック・非正規化を避ける)。
+        """
+        q = self.normalized()
+        qxyz = Vec3(q.x, q.y, q.z)
+        t = qxyz.cross(v).scaled(2.0)
+        return v + t.scaled(q.w) + qxyz.cross(t)
+
+
+def angle_between(a: Vec3, b: Vec3) -> float:
+    """2 ベクトルのなす角 (ラジアン, 0..π)。どちらかが退化 (ゼロ長) なら π を返す
+    (方向未定義 = 最も広い角 = コーン判定では常に棄却側に倒す, 純粋)。
+
+    dot を厳密に [-1, 1] へ丸めて acos の定義域を守る (数値的安定性)。
+    """
+    an, bn = a.normalized(), b.normalized()
+    if an.norm() < _EPS or bn.norm() < _EPS:
+        return math.pi
+    cos_angle = clamp(an.dot(bn), -1.0, 1.0)
+    return math.acos(cos_angle)
 
 
 def distance_point_to_segment(p: Vec3, a: Vec3, b: Vec3) -> float:
@@ -120,13 +187,18 @@ class Robot:
     - base: ベース原点。
     - reach_min / reach_max: 球殻状の到達域 (近似)。base からの距離がこの範囲なら届く前提。
     - wrist_cone_half_angle: naive IK が「手首を向けられる」とみなす角度上限 (ラジアン)。
-      base->把持点 方向と approach のなす角がこの範囲なら可解とみなす素朴な近似。
+      TCP 前方軸 (tcp_orientation で回した +X) と approach のなす角がこの範囲なら
+      可解とみなす素朴な近似 (ADR-084 §3)。
+    - tcp_orientation: グリッパ (TCP) のワールド姿勢 (ADR-084)。宣言されると cone の
+      基準軸が「TCP 前方 = +X を回したもの」になる。None なら後方互換フォールバック
+      (base->把持点 方向を代理軸に使う旧挙動) — 宣言しない限り挙動を無言で変えない。
     """
 
     base: Vec3
     reach_min: float
     reach_max: float
     wrist_cone_half_angle: float = math.pi  # 既定は無制限 (どの向きでも可解)
+    tcp_orientation: "Quaternion | None" = None
 
 
 @dataclass(frozen=True)

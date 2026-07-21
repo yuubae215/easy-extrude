@@ -58,7 +58,17 @@ from .feasibility import (
 from .objectives import evaluate_objectives
 from .pose_codec import pose_to_payload
 from .scoring import weighted_sum
-from .types import Camera, Gripper, Obstacle, Pose, Problem, Robot, TargetObject, Vec3
+from .types import (
+    Camera,
+    Gripper,
+    Obstacle,
+    Pose,
+    Problem,
+    Quaternion,
+    Robot,
+    TargetObject,
+    Vec3,
+)
 
 
 # --- 契約宣言 -> ドメイン Problem の adapter -------------------------------------
@@ -91,11 +101,29 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
     data = declaration.model_dump(by_alias=True)
 
     robot_raw = data.get("robot") or {}
+    # ADR-084 §4: judgement パラメータ (reach*/wristConeHalfAngle) は `plan{}` へ移設。
+    # 旧 `robot.*` 直書きは後方互換フォールバックとして読む (既存テンプレ・呼び出しを
+    # 無言で壊さない — ADR-084 のフォールバック規律)。同キーが両方在れば plan{} が勝つ。
+    plan_raw = data.get("plan") or {}
+
+    def _judgement(key: str, default: float) -> float:
+        if key in plan_raw and plan_raw[key] is not None:
+            return float(plan_raw[key])
+        if key in robot_raw and robot_raw[key] is not None:
+            return float(robot_raw[key])
+        return default
+
+    # tcp_orientation (ADR-084 §3): 宣言されると cone の基準軸が TCP 前方 (+X 回転) に
+    # なる。ワールド姿勢に解決済みの四元数 [x,y,z,w] として渡る前提 (解決はフロント責務)。
+    tcp_raw = robot_raw.get("tcpOrientation")
+    tcp_orientation = Quaternion.from_list(tcp_raw) if tcp_raw is not None else None
+
     robot = Robot(
         base=_vec3(robot_raw.get("base"), Vec3(0.0, 0.0, 0.0)),
-        reach_min=float(robot_raw.get("reachMin", 0.0)),
-        reach_max=float(robot_raw.get("reachMax", float("inf"))),
-        wrist_cone_half_angle=float(robot_raw.get("wristConeHalfAngle", math.pi)),
+        reach_min=_judgement("reachMin", 0.0),
+        reach_max=_judgement("reachMax", float("inf")),
+        wrist_cone_half_angle=_judgement("wristConeHalfAngle", math.pi),
+        tcp_orientation=tcp_orientation,
     )
 
     target_raw = data.get("target") or {}

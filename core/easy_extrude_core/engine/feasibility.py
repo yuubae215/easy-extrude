@@ -34,6 +34,7 @@ from .types import (
     Robot,
     TargetObject,
     Vec3,
+    angle_between,
     distance_point_to_segment,
 )
 
@@ -93,21 +94,41 @@ class IkSolver(Protocol):
 class NaiveIkSolver:
     """外部依存ゼロの素朴な IK 既定実装。
 
-    「可解」の素朴な定義: リーチ球殻に入っていて (within_reach)、かつ base->把持点 方向と
+    「可解」の素朴な定義: リーチ球殻に入っていて (within_reach)、かつ手首コーンの基準軸と
     進入方向 approach のなす角が手首コーン (robot.wrist_cone_half_angle) 以内なら、手首を
     その向きに合わせられるとみなして 1 解を返す。実 IK (関節限界・特異点) は将来差し替え。
+
+    cone の基準軸 (ADR-084 §3):
+    - `robot.tcp_orientation` が宣言されていれば、TCP body frame の前方軸
+      `FORWARD_AXIS = +X` (ROS/URDF 慣例, CLAUDE.md の世界座標系正準 +X前方 と一致) を
+      その姿勢で回したワールド方向を基準にする。tcp_orientation はフロント側で
+      transformGraph を根までたどって**ワールド姿勢に合成済み**の四元数として渡る前提
+      (`core/` は entity も親フレームも知らない — ADR-084 §2/§3)。
+    - 未宣言 (None) なら旧挙動の代理軸 (base->把持点 方向) にフォールバックする。
+      宣言した瞬間にだけ TCP 姿勢基準へ切り替わる (挙動を無言で変えない — #11 の双対)。
+
+    注意: `FORWARD_AXIS = +X` は `pose_codec.py` が候補 frame を四元数へ往復させるための
+    内部 gauge (`-Z`) とは**無関係の別概念**。前者はロボット実体の body-frame 規約、
+    後者は candidate frame の任意 gauge であり、"前方軸" という言葉を安易に同一視しない。
     """
+
+    # TCP body frame の前方 = +X (ROS/URDF 慣例)。pose_codec の -Z gauge とは無関係。
+    FORWARD_AXIS = Vec3(1.0, 0.0, 0.0)
 
     def solve(self, candidate: GraspCandidate, robot: Robot) -> Optional[IkSolution]:
         if not within_reach(candidate, robot):
             return None
-        to_target = (candidate.pose.position - robot.base).normalized()
-        approach = candidate.pose.approach.normalized()
-        if to_target.norm() < _EPS or approach.norm() < _EPS:
+        if robot.tcp_orientation is not None:
+            # TCP 姿勢基準 (ワールド座標系で解決済み) で FORWARD_AXIS を回す。
+            reference_axis = robot.tcp_orientation.rotate(self.FORWARD_AXIS)
+        else:
+            # 後方互換フォールバック: base->把持点 方向の代理軸 (旧挙動)。
+            reference_axis = candidate.pose.position - robot.base
+        approach = candidate.pose.approach
+        if reference_axis.norm() < _EPS or approach.norm() < _EPS:
             return None
-        # なす角 = acos(clamp(dot, -1, 1))。dot を厳密に [-1,1] に丸めて acos の定義域を守る。
-        cos_angle = max(-1.0, min(1.0, to_target.dot(approach)))
-        angle = math.acos(cos_angle)
+        # なす角 (angle_between が正規化 + 定義域クランプを担う, ADR-084)。
+        angle = angle_between(reference_axis, approach)
         if angle > robot.wrist_cone_half_angle + _EPS:
             return None
         # 占位の関節値 (素朴版では検証以外に使わない)。

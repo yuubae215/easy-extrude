@@ -1,6 +1,7 @@
 # ADR-084: TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化
 
-- Status: Proposed (レビュー待ち — 実装は未着手)
+- Status: Accepted (Phase 1 = core + Phase 4 = 契約 実装済 2026-07-21;
+  Phase 2-3 = フロント entity 化 + Header/`uiStore.robotBase` 撤去 は未着手)
 - Date: 2026-07-20
 - 関連: ADR-083 (ロボット base position を grasp-search 契約に載せる — 本 ADR は
   そのフロント側実装 (`uiStore.robotBase` + Header 手打ち入力) を置き換える) /
@@ -168,12 +169,28 @@ graspSearch: {
 
 ## 実施フェーズ (段階摘出、ADR-081 §6 と同形)
 
-| Phase | 内容 | 契約影響 |
-|-------|------|----------|
-| 1 | `core/`: `Quaternion`型 + `Robot.tcp_orientation` + `NaiveIkSolver`基準軸変更 (フォールバック込み) + テスト | なし (open payload) |
-| 2 | フロント: `robot_base`/`tcp` CoordinateFrame entity の既定自動生成 (ADR-073パターン) + `SceneService`のワールド姿勢解決ロジックの再利用可能な切り出し | なし |
-| 3 | フロント: `GraspController`が名前規約でentity解決 → `plan{}`/`robot{}`構造で送信、Header X/Y入力 + `uiStore.robotBase`撤去 | なし (契約は Phase 1 で追加済みのoptionalフィールドを使うだけ) |
-| 4 | 契約: `grasp-search-request.schema.json`に`plan{}`/`tcpOrientation`追加、conformance test、BFF型再生成 | contractVersion据え置き (optional) |
+| Phase | 内容 | 契約影響 | 状態 |
+|-------|------|----------|------|
+| 1 | `core/`: `Quaternion`型 + `Robot.tcp_orientation` + `NaiveIkSolver`基準軸変更 (フォールバック込み) + テスト | なし (open payload) | **実装済** (2026-07-21) |
+| 2 | フロント: `robot_base`/`tcp` CoordinateFrame entity の既定自動生成 (ADR-073パターン) + `SceneService`のワールド姿勢解決ロジックの再利用可能な切り出し | なし | 未着手 |
+| 3 | フロント: `GraspController`が名前規約でentity解決 → `plan{}`/`robot{}`構造で送信、Header X/Y入力 + `uiStore.robotBase`撤去 | なし (契約は Phase 1 で追加済みのoptionalフィールドを使うだけ) | 未着手 |
+| 4 | 契約: `grasp-search-request.schema.json`に`plan{}`/`tcpOrientation`追加、conformance test、BFF型再生成 | contractVersion据え置き (optional) | **実装済** (2026-07-21) |
+
+### Phase 1 + 4 の実装メモ (2026-07-21)
+
+- `core/`: `engine/types.py` に不変 `Quaternion` 型 (軸順 `[x,y,z,w]`、`normalized`/
+  `rotate`/`from_list`/`as_list`) と `angle_between(a,b)` (退化は π) + `Vec3.cross` を追加。
+  `Robot.tcp_orientation: Quaternion | None` を追加。`NaiveIkSolver.solve` は
+  `FORWARD_AXIS = +X` を `tcp_orientation` で回した軸を cone 基準にし、未宣言なら
+  旧 base→candidate 代理軸へフォールバック (挙動を無言で変えない)。
+- 契約: `grasp-search-request.schema.json` に閉じた `plan{reachMin,reachMax,
+  wristConeHalfAngle}` と `robot.tcpOrientation:[x,y,z,w]` を optional 追加
+  (contractVersion 据え置き — request 側 open payload、ADR-083 の先例と同型)。
+  adapter (`problem_from_declaration`) は judgement param を `plan{}` 優先で読み、
+  旧 `robot.*` へフォールバック。BFF `.d.ts` を `gen:contract-types` で再生成。
+- 証拠: `core` pytest 137 passed (engine の Quaternion/回転/TCP cone/フォールバック/
+  plan 優先 を含む 8 ケース追加)、grasp-contract conformance 全 green
+  (plan/tcpOrientation の optional・closed・malformed を追加)。
 
 Phase 1→core実装を先行させ、Phase 2/3→フロント追従という順序はADR-079/081が既に
 使った「コア実装+テスト先行 → 契約 → 消費追従」と同型。
