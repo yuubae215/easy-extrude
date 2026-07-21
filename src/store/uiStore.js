@@ -51,9 +51,10 @@ export const useUIStore = create((set, get) => ({
   bffConnected: false,
   nodeEditorOpen: false,
   robotVisible: true,
-  // Robot base position (ADR-083). [x, y, z], world frame, Z up, ground = 0.
-  // Sole writer: UIViewBridge.onRobotBaseChange's wrapped callback below.
-  robotBase: [-2, 2, 0],
+  // NOTE: the robot's placement (ADR-083's `robotBase` raw coords) was removed
+  // in ADR-084 §2 — the robot geometry now lives in the scene as the
+  // `robot_base` / `tcp` CoordinateFrame entities (single source of truth,
+  // §1.1), edited via the CF gizmo / N-panel, not a header input.
   undoEnabled: false,
   redoEnabled: false,
 

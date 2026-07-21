@@ -69,6 +69,42 @@ test('auto-Origin CFs are folded away; user frames reappear under their Solid', 
   assert.deepEqual(workbench.frames[0].translation, { x: 0, y: 0, z: 400 })
 })
 
+test('standalone world CF (robot_base / tcp) round-trips via position + rotation (ADR-084 §2)', () => {
+  // 45° about +Z, to prove orientation survives the round-trip.
+  const s = Math.sin(Math.PI / 8), c = Math.cos(Math.PI / 8)
+  const dsl0 = {
+    version: 'layout/1.0',
+    strategy: 'manual',
+    entities: [
+      { ref: 'box', type: 'Solid', name: 'Box',
+        dimensions: { x: 100, y: 100, z: 100 }, position: { x: 0, y: 0, z: 50 } },
+      { ref: 'robot_base', type: 'CoordinateFrame', name: 'robot_base',
+        position: { x: -2, y: 2, z: 0 } },
+      { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp',
+        position: { x: -2, y: 2, z: 500 }, rotation: { x: 0, y: 0, z: s, w: c } },
+    ],
+  }
+
+  const scene1 = compileLayout(dsl0)
+  // The two standalone CFs are world-parented in the scene (parentId null).
+  const sceneCFs = scene1.objects.filter(o => o.type === 'CoordinateFrame' && o.parentId === null)
+  assert.equal(sceneCFs.length, 2)
+
+  const { dsl } = decompileLayout(scene1)
+  const base = dsl.entities.find(e => e.ref === 'robot_base')
+  const tcp  = dsl.entities.find(e => e.ref === 'tcp')
+  assert.deepEqual(base.position, { x: -2, y: 2, z: 0 })
+  assert.equal(base.rotation, undefined)               // identity rotation is omitted (normal form)
+  assert.deepEqual(tcp.position, { x: -2, y: 2, z: 500 })
+  assert.ok(Math.abs(tcp.rotation.z - s) < 1e-9 && Math.abs(tcp.rotation.w - c) < 1e-9)
+
+  // Schema-clean output (no parentRef / translation / declaredBy leakage).
+  assert.equal(validateLayoutDsl(dsl).valid, true, validateLayoutDsl(dsl).errors.join('\n'))
+
+  // Scene fixpoint law (ADR-055).
+  assert.deepEqual(compileLayout(dsl), scene1)
+})
+
 test('constraints recover entity / origin / frame ref namespaces', () => {
   const scene = compileLayout(factoryLayout)
   const { dsl } = decompileLayout(scene)

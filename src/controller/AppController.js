@@ -21,6 +21,7 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
+import { ROBOT_BASE_FRAME_NAME } from '../domain/robotFrames.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -738,9 +739,10 @@ export class AppController {
     // ── Robot skeleton visibility (grasp-search verification aid) ──────────
     uiView.onRobotToggle((visible) => this._sceneView.robotStage.setVisible(visible))
 
-    // ── Robot base position (ADR-083) — moves the view transform; the same
-    // value is threaded into GraspController's request as `robot.base`.
-    uiView.onRobotBaseChange((x, y, z) => this._sceneView.robotStage.setPosition(x, y, z))
+    // Robot placement (ADR-084 §2): the skeleton follows the `robot_base`
+    // CoordinateFrame entity's world pose (resolved by SceneService), not a
+    // uiStore value — the CF is the single geometry source (§1.1). The follow
+    // runs in the animation loop via _syncRobotStage().
 
     // ── CF Link Network Overlay ───────────────────────────────────────────
     this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
@@ -827,6 +829,33 @@ export class AppController {
 
   /** Shorthand to access SceneModel through the ApplicationService. */
   get _scene() { return this._service.scene }
+
+  /**
+   * Robot skeleton follows the `robot_base` CoordinateFrame's world pose
+   * (ADR-084 §2) — the CF is the single geometry source (§1.1), replacing the
+   * removed uiStore.robotBase → RobotStage.setPosition wiring. Runs each frame
+   * after _updateWorldPoses(). The base-frame reference is cached and only
+   * re-scanned when it leaves the scene (delete / reload), so the common frame
+   * is an O(1) cache hit + one worldPoseOf() read.
+   */
+  _syncRobotStage() {
+    const stage = this._sceneView?.robotStage
+    if (!stage) return
+    let frame = this._robotBaseFrame
+    if (!frame || this._scene.getObject(frame.id) !== frame) {
+      frame = null
+      for (const o of this._scene.objects.values()) {
+        if (o instanceof CoordinateFrame && o.name === ROBOT_BASE_FRAME_NAME && o.parentId === null) {
+          frame = o
+          break
+        }
+      }
+      this._robotBaseFrame = frame
+    }
+    if (!frame) return
+    const pose = this._service.worldPoseOf(frame.id)
+    if (pose) stage.setPose(pose.position, pose.quaternion)
+  }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
 
@@ -3622,6 +3651,7 @@ export class AppController {
       // without this ordering, link arrows lag one frame behind the entity during movement.)
       // updateLabelPosition() below also reads _group.position set here — no change needed.
       this._service._updateWorldPoses()
+      this._syncRobotStage()   // robot skeleton follows the robot_base CF (ADR-084 §2)
       this._sceneView.render()
       if (this._gizmoView) this._gizmoView.update()
       for (const obj of this._scene.objects.values()) {

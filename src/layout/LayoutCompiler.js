@@ -285,16 +285,21 @@ function generateObjects(entities, refMap, positions) {
       }
 
       case 'CoordinateFrame': {
-        const id       = refMap.get(entity.ref)
-        const parentId = entity.parentRef ? (refMap.get(entity.parentRef) ?? null) : null
+        // Standalone (world-parented) CF — e.g. robot_base / tcp (ADR-084 §2).
+        // The schema carries its world pose in `position` + `rotation`; a
+        // world-parented scene CF stores that world pose directly as its
+        // translation / rotation (parentId null — the parentless branch of
+        // _updateWorldPoses resolves translation/rotation AS the world pose).
+        const id  = refMap.get(entity.ref)
+        const pos = entity.position ?? entity.translation ?? { x: 0, y: 0, z: 0 }
         objects.push({
           type:        'CoordinateFrame',
           id,
           name:        entity.name,
-          parentId,
+          parentId:    null,
           declaredBy:  entity.declaredBy ?? 'modeller',
-          translation: entity.translation ?? { x: 0, y: 0, z: 0 },
-          rotation:    entity.rotation    ?? IDENTITY_QUATERNION,
+          translation: { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 },
+          rotation:    entity.rotation ?? IDENTITY_QUATERNION,
         })
         break
       }

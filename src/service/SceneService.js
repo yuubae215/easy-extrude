@@ -51,6 +51,7 @@ import { MeasureLine } from '../domain/MeasureLine.js'
 import { MeasureLineView } from '../view/MeasureLineView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
+import { ROBOT_FRAME_DEFAULTS } from '../domain/robotFrames.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
@@ -633,6 +634,10 @@ export class SceneService extends EventEmitter {
     // Migration: ensure every Solid has an Origin CF (ADR-037 §6).
     this._ensureOriginFrames(solids)
 
+    // Robot placement frames (ADR-084 §2): auto-seed robot_base / tcp on a fresh
+    // scene; a no-op when the imported .ctx.json already carried them.
+    this._ensureRobotFrames()
+
     // Import SpatialLinks (v1.2+); silently skip on older exports.
     for (const dto of (parsed.links ?? [])) {
       try {
@@ -945,7 +950,19 @@ export class SceneService extends EventEmitter {
 
     for (const frame of allFrames) {
       const parent = this._model.getObject(frame.parentId)
-      if (!parent) continue
+      if (!parent) {
+        // World-parented frame (parentId null — ADR-084 §2, e.g. robot_base / tcp):
+        // it IS a root of the TF tree, so its stored translation / rotation ARE
+        // its world pose (no parent transform to compose). Grasp-search resolves
+        // these via worldPoseOf() (§1.1 single geometry source).
+        this._worldPoseCache.set(frame.id, {
+          position:   frame.translation.clone(),
+          quaternion: frame.rotation.clone(),
+        })
+        frame.meshView?.updatePosition?.(frame.translation)
+        frame.meshView?.updateRotation?.(frame.rotation)
+        continue
+      }
 
       // ROS TF forward kinematics: worldPose = parentWorldPose * localTransform
       // worldPos  = parentWorldPos  + parentWorldQuat * frame.translation
@@ -2960,6 +2977,69 @@ export class SceneService extends EventEmitter {
     this._model.addObject(frame)
     this.emit('objectAdded', frame)
     return frame
+  }
+
+  /**
+   * Creates a world-parented (root) CoordinateFrame (ADR-084 §2).
+   *
+   * Unlike createCoordinateFrame(), this frame has NO parent (parentId = null):
+   * its `translation` / `rotation` ARE its world pose, resolved directly by
+   * _updateWorldPoses() (the parentless branch). Used for the robot_base / tcp
+   * frames whose world geometry is the single source of truth grasp-search
+   * declares against (§1.1) — silent auto-naming per ADR-073 (no creation form).
+   *
+   * @param {string} name
+   * @param {{position?: {x:number,y:number,z:number}, rotation?: {x:number,y:number,z:number,w:number}}} [pose]
+   * @returns {CoordinateFrame}
+   */
+  createWorldFrame(name, pose = {}) {
+    const idx = this._model.objects.size
+    const id  = `frame_${idx}_${Date.now()}`
+
+    const { camera, renderer, container } = this._viewContext
+    const meshView = new CoordinateFrameView(this._threeScene, camera ?? null, renderer ?? null, container ?? null)
+    meshView.setLabelText(name)
+    const frame = new CoordinateFrame(id, name, null, meshView)
+    frame.declaredBy = RoleService.getRole()
+
+    const p = pose.position ?? { x: 0, y: 0, z: 0 }
+    const r = pose.rotation ?? { x: 0, y: 0, z: 0, w: 1 }
+    frame.translation.set(p.x, p.y, p.z)
+    frame.rotation.set(r.x, r.y, r.z, r.w)
+
+    // Seed the world-pose cache + view so the frame is placed before the next
+    // animation frame (mirrors createCoordinateFrame; _updateWorldPoses keeps it fresh).
+    this._worldPoseCache.set(frame.id, {
+      position:   frame.translation.clone(),
+      quaternion: frame.rotation.clone(),
+    })
+    meshView.updatePosition(frame.translation)
+    meshView.updateRotation(frame.rotation)
+
+    this._model.addObject(frame)
+    this.emit('objectAdded', frame)
+    return frame
+  }
+
+  /**
+   * Ensures the robot's placement frames exist (ADR-084 §2, silent
+   * auto-generation per ADR-073). Idempotent by name: called at the end of
+   * importFromJson() after every scene (re)build, so a scene reloaded from a
+   * saved .ctx.json (which already carries the frames) is a no-op, while a fresh
+   * scene gets exactly one robot_base + one tcp at their defaults.
+   *
+   * The frames are ordinary serialized entities (§1.1): they ride Scene ⇄ Layout
+   * DSL round-trip (ADR-055) and .ctx.json like any other CoordinateFrame.
+   */
+  _ensureRobotFrames() {
+    const byName = new Set(
+      [...this._model.objects.values()]
+        .filter(o => o instanceof CoordinateFrame)
+        .map(o => o.name),
+    )
+    for (const [name, pose] of Object.entries(ROBOT_FRAME_DEFAULTS)) {
+      if (!byName.has(name)) this.createWorldFrame(name, pose)
+    }
   }
 
   /**

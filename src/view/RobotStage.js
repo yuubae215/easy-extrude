@@ -75,14 +75,16 @@ export class RobotStage {
   }
 
   /**
-   * Moves the robot base. A pure view-layer transform (ADR-083) -- reach/IK
-   * evaluation of this position happens in core/, not here.
-   * @param {number} x
-   * @param {number} y
-   * @param {number} [z]
+   * Places the robot base at a world pose. A pure view-layer transform: the
+   * skeleton follows the `robot_base` CoordinateFrame entity's world pose
+   * (ADR-084 §2), driven by AppController._syncRobotStage() each frame. Reach/IK
+   * evaluation of this placement happens in core/, not here.
+   * @param {{x:number,y:number,z:number}} position
+   * @param {{x:number,y:number,z:number,w:number}} [quaternion]
    */
-  setPosition(x, y, z = 0) {
-    this._group.position.set(x, y, z)
+  setPose(position, quaternion) {
+    this._group.position.set(position.x, position.y, position.z)
+    if (quaternion) this._group.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w)
   }
 
   /** Symmetric teardown (#9): every scene.add above has its remove+dispose here. */

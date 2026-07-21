@@ -44,6 +44,7 @@
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { visionFromViewportCamera } from '../context/GraspDeclarationCatalog.js'
+import { ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../domain/robotFrames.js'
 
 export class GraspController {
   /**
@@ -161,10 +162,13 @@ export class GraspController {
 
     const objectiveWeights = params.weights ?? { reach: 0.6, clearance: 0.4 }
     const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
-    // Robot base (ADR-083): declared from wherever the user placed it in the
-    // viewport (uiStore.robotBase); reach/IK evaluation against it happens in
-    // core/, not here — this only carries the declared pose across the seam.
-    const robotBase = this._store.getState().robotBase
+    // Robot geometry (ADR-084 §2): resolved from the scene's robot_base / tcp
+    // CoordinateFrame entities (the single geometry source — §1.1), NOT the
+    // former uiStore.robotBase raw coords. `base` = resolved world position;
+    // `tcpOrientation` = resolved world quaternion that becomes core/'s
+    // wrist-cone reference axis (ADR-084 §3). Only present keys ride the wire;
+    // reach/IK evaluation against them happens in core/, never here.
+    const robot = this._resolveRobotDeclaration()
     // Vision / grasp domain declarations (ADR-081 Decision 5): the panel's
     // domain cards pass parsed camera / gripper declarations, gap-checked by
     // GraspDeclarationCatalog's predicates before Run enables. They ride the
@@ -174,7 +178,12 @@ export class GraspController {
     const request = {
       layoutVersion: dsl.version,
       graspSearch: {
-        objectiveWeights, topN, robot: { base: robotBase },
+        objectiveWeights, topN,
+        ...(Object.keys(robot).length ? { robot } : {}),
+        // Judgement params ride plan{} (ADR-084 §4) when the caller supplies
+        // them; the front collects none today, so plan{} is normally omitted
+        // and core/ uses its defaults (no invented values — kernel §5).
+        ...(params.plan ? { plan: params.plan } : {}),
         ...(params.camera  ? { camera:  params.camera }  : {}),
         ...(params.gripper ? { gripper: params.gripper } : {}),
       },
@@ -357,6 +366,50 @@ export class GraspController {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Resolve the robot's declared geometry from the scene's world-parented
+   * `robot_base` / `tcp` CoordinateFrame entities (ADR-084 §2). 1-robot scope:
+   * a plain name lookup — no `refs` field, no selection UI (§4). World pose is
+   * read from `SceneService.worldPoseOf` — the SAME resolution the service runs
+   * each frame, reused rather than re-implemented (§1.1); the composition to
+   * world space stays on the front (light deterministic math) while core/ gets
+   * only the resolved position / quaternion and never sees the entity.
+   *
+   * Returns a sparse object: keys are present only when their frame resolves,
+   * so an absent frame simply omits its wire key (the ADR-084 §3 core fallback
+   * then keeps the prior base→candidate proxy axis for `tcpOrientation`).
+   *
+   * @returns {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }}
+   */
+  _resolveRobotDeclaration() {
+    const scene   = this._ctrl._scene
+    const service = this._ctrl._service
+    if (!scene?.objects || typeof service?.worldPoseOf !== 'function') return {}
+
+    const findFrame = (name) => {
+      for (const o of scene.objects.values()) {
+        if (o.name === name && o.parentId === null) return o
+      }
+      return null
+    }
+    const baseFrame = findFrame(ROBOT_BASE_FRAME_NAME)
+    const tcpFrame  = findFrame(TCP_FRAME_NAME)
+    const basePose  = baseFrame ? service.worldPoseOf(baseFrame.id) : null
+    const tcpPose   = tcpFrame  ? service.worldPoseOf(tcpFrame.id)  : null
+
+    /** @type {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }} */
+    const robot = {}
+    if (basePose) {
+      const p = basePose.position
+      robot.base = [p.x, p.y, p.z]
+    }
+    if (tcpPose) {
+      const q = tcpPose.quaternion
+      robot.tcpOrientation = [q.x, q.y, q.z, q.w]
+    }
+    return robot
+  }
 
   /** Record a walkthrough failure and toast its reason (status-aware). */
   _graspError(err, stage) {
