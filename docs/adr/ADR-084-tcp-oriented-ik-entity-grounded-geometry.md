@@ -213,6 +213,26 @@ Phase 1→core実装を先行させ、Phase 2/3→フロント追従という順
 - 明示的にやらないこと (Still deferred): 関節/キネマティックチェーン、実IK、
   wrench cone 安定性 (いずれも ADR-081 Phase4 の管轄のまま)。
 
+## Phase 2-3 の再開メモ (2026-07-21 確定)
+
+次セッションで Phase 2-3 (フロント entity 化) を再開する。着手前に確定した設計点:
+
+- **`robot_base`/`tcp` entity は Layout DSL に一本化 (シリアライズする)** — 非シリアライズ
+  な既定ステージ扱いにはしない。これが本 ADR の狙い (§1.1 幾何の正本を Layout DSL の
+  CoordinateFrame に一本化) に沿う唯一の選択。よって既定自動生成した 2 つの CF は
+  Scene ⇄ Layout DSL の round-trip (ADR-055) と `.ctx.json` の両方に載る。
+- 影響確認が要る先 (着手時): テンプレの round-trip テスト (`core/tests/test_templates.py`
+  と front の `LayoutDecompiler.test.js`)、outliner 表示、undo/redo、CF N-panel 編集 UI、
+  ADR-073 の無言自動命名パターンでの既定生成箇所。
+- 解決ロジックは既存の `SceneService.worldPoseOf(frameId)` を `GraspController` から
+  再利用する (ワールド姿勢は position + quaternion で既に得られる — §2 の切り出しは
+  新規実装ではなく公開メソッド呼び出しで足りる可能性が高い、着手時に確認)。
+- 送信: 名前規約 (`name === "robot_base"` / `"tcp"`) で scene から解決 → `plan{}` +
+  `robot.base`/`robot.tcpOrientation` (Phase 4 で契約追加済みの optional) に載せる。
+- 撤去: Header の X/Y 入力、`uiStore.robotBase`、`UIViewBridge.onRobotBaseChange`、
+  `AppController` の該当配線、`RobotStage.setPosition` の uiStore 由来呼び出し
+  (RobotStage は `robot_base` CF のワールド姿勢追従に切り替える)。
+
 ## Decided (2026-07-20 レビューで確定)
 
 - **`robot_base`/`tcp` entity の既定生成**: 新規プロジェクトで手動配置させず、
