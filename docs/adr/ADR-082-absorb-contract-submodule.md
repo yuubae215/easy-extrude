@@ -7,7 +7,8 @@
   contractVersion ガード・導出規律は ADR-074 のまま有効)
 - 関連: ADR-074 (BFF <-> コアAPI 契約) / ADR-064 (CI ゲート = 規律を機械で強制) /
   ADR-060 (契約統治: 閉層 + kind union) / ADR-079 (版上げ運用の先例) /
-  ADR-081 (契約 v4 申し送り — 本 ADR で変更手順が repo 内完結になる)
+  ADR-081 (契約 v4 申し送り — 本 ADR で変更手順が repo 内完結になる) /
+  ADR-084 (§4 で `contract-wall` の監視範囲を response スキーマ限定に絞る改訂 — 下記)
 
 ## Context — Goal と力学 (§1.2 Goal)
 
@@ -97,3 +98,30 @@ repo 分離が事実上担っていた唯一の固有機能は「契約を気軽
   契約レイヤの*物理配置*のみで、依存方向・導出規律は据え置き。
 - **黒箱**: BFF/core から見た契約の入出力 (パッケージ名での import / Schema ファイル形状)
   は不変 — 参照パスの 2 箇所以外、両側のコードは無変更で通る。
+
+## 改訂 (2026-07-21, ADR-084 §4) — 壁の監視範囲を response 限定に絞る
+
+**背景**: 当初の `contract-wall` は `packages/grasp-contract/schema/` **ディレクトリ全体**の
+差分を「版上げ必須」の対象にしていた (Decision 3)。しかしこれは ADR-074 §5 / ADR-081 /
+ADR-084 §4 が定義する **request/response の非対称**と矛盾していた:
+
+- **response** スキーマ = デプロイ境界の契約。消費者 (BFF・別デプロイのコアAPI) が形に
+  依存し、不一致は実行時に 400 で弾かれる (ADR-074)。構造変更は意図的な contractVersion
+  bump であるべき — 壁が守るべき対象。
+- **request** スキーマ = open payload / layoutVersion 統治。optional 追加 (ADR-083 の
+  `robot.base`、ADR-084 の `plan{}`/`robot.tcpOrientation`) は contractVersion を上げない。
+  版上げの対象ではない。
+
+ディレクトリ全体を見る壁は両者を混同し、request のみの optional 追加でも fail していた
+(ADR-084 Phase 4 の PR で顕在化)。
+
+**改訂**: `contract-wall` の監視対象を `*-response.schema.json`
+(`grasp-search-response` / `recommendation-response`) に絞る。response 契約の版上げ忘れは
+従来どおり fail させ、request 側の open payload 追加は素通しする。契約統治の他の 3 本柱
+(単一正本・実行時 contractVersion ガード・conformance/drift テスト) は不変で、壁が守る
+「版上げ忘れ」の強度も response については不変 — 混同していた request 側を正しく外すだけ。
+
+- Goal ← Strategy ← Evidence: 「壁を非対称に整合させる」← 「監視 glob を response 2 本に
+  限定」← 「ci.yml 更新 + request-only 変更で wall 不発・response 変更で従来どおり fail を
+  ローカル模擬 diff で確認」。
+- 承認: yuubae215 (2026-07-21)。

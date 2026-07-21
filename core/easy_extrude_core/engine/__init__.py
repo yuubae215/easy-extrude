@@ -55,9 +55,11 @@ from .types import (
     Obstacle,
     Pose,
     Problem,
+    Quaternion,
     Robot,
     TargetObject,
     Vec3,
+    angle_between,
 )
 
 __all__ = [
@@ -70,6 +72,8 @@ __all__ = [
     "SearchReport",
     # ドメイン型
     "Vec3",
+    "Quaternion",
+    "angle_between",
     "Pose",
     "GraspCandidate",
     "Robot",
