@@ -285,18 +285,24 @@ function generateObjects(entities, refMap, positions) {
       }
 
       case 'CoordinateFrame': {
-        // Standalone (world-parented) CF — e.g. robot_base / tcp (ADR-084 §2).
-        // The schema carries its world pose in `position` + `rotation`; a
-        // world-parented scene CF stores that world pose directly as its
-        // translation / rotation (parentId null — the parentless branch of
-        // _updateWorldPoses resolves translation/rotation AS the world pose).
-        const id  = refMap.get(entity.ref)
+        // Standalone CF — e.g. robot_base / tcp (ADR-084 §2, TF tree revised).
+        //
+        //   • No `parentRef`  → world-parented root (e.g. robot_base). `position`
+        //     + `rotation` ARE its world pose, stored directly as its
+        //     translation / rotation (parentId null — the parentless branch of
+        //     _updateWorldPoses resolves them AS the world pose).
+        //   • With `parentRef` → a TF child (e.g. tcp → robot_base). `position` +
+        //     `rotation` are the LOCAL offset from the referenced parent;
+        //     _updateWorldPoses composes the parent chain to derive the world
+        //     pose (identical machinery as a Solid's child frames).
+        const id       = refMap.get(entity.ref)
+        const parentId = entity.parentRef ? (refMap.get(entity.parentRef) ?? null) : null
         const pos = entity.position ?? entity.translation ?? { x: 0, y: 0, z: 0 }
         objects.push({
           type:        'CoordinateFrame',
           id,
           name:        entity.name,
-          parentId:    null,
+          parentId,
           declaredBy:  entity.declaredBy ?? 'modeller',
           translation: { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 },
           rotation:    entity.rotation ?? IDENTITY_QUATERNION,

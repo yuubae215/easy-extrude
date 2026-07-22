@@ -46,6 +46,13 @@ import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGho
 import { visionFromViewportCamera } from '../context/GraspDeclarationCatalog.js'
 import { ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../domain/robotFrames.js'
 
+/**
+ * TemplateCatalog example id auto-loaded when grasp-search is opened with no
+ * context (fast entry). A robot-cell starter (geometry + reach/gripper
+ * declarations) so Run is immediately meaningful.
+ */
+const GRASP_QUICKSTART_TEMPLATE_ID = 'cell_robotics'
+
 export class GraspController {
   /**
    * @param {import('./AppController.js').AppController} ctrl
@@ -78,21 +85,53 @@ export class GraspController {
    * host) and select the `'grasp'` tab. Guarded on a renderable layout — a blank /
    * requirements-only doc has none, so we guide the user instead of seeding a tab
    * that can never Run (PHILOSOPHY #11).
+   *
+   * Fast entry (no forms): when NO context is loaded yet, rather than dead-ending
+   * with "go build one through New Project", auto-load a robot-cell starter and
+   * drop the user straight into grasp-search. The boot scene carries no context
+   * work to lose, and the example path needs no wizard forms — it collapses the
+   * old multi-form detour into a single click.
    */
   openGrasp() {
     const ctxCtrl = this._ctrl._ctxCtrl
     if (!ctxCtrl.isNegotiation) {
       if (!this._ctrl._ctxService.loaded) {
-        this._ctrl._uiView.showToast(
-          'No context loaded. Start one from New Project or import a .ctx.json first.',
-          { type: 'warn' },
-        )
+        this._quickStartIntoGrasp()
         return
       }
       ctxCtrl.enterNegotiation()
       if (!ctxCtrl.isNegotiation) return   // enter was itself guarded out
     }
 
+    this._openGraspTab()
+  }
+
+  /**
+   * Load the grasp quick-start example, then open the grasp tab once negotiation
+   * is live. Kept off the synchronous path (loadContext is async). Falls back to
+   * the honest "no context" guidance when the injected ctxCtrl cannot load
+   * examples (the THREE-free unit lane passes a minimal stub).
+   */
+  _quickStartIntoGrasp() {
+    const ctxCtrl = this._ctrl._ctxCtrl
+    if (typeof ctxCtrl.quickStartExample !== 'function') {
+      this._ctrl._uiView.showToast(
+        'No context loaded. Start one from New Project or import a .ctx.json first.',
+        { type: 'warn' },
+      )
+      return
+    }
+    this._ctrl._uiView.showToast('Loading a robot-cell starter for grasp-search…', { type: 'info' })
+    Promise.resolve(ctxCtrl.quickStartExample(GRASP_QUICKSTART_TEMPLATE_ID))
+      .then(ok => { if (ok) this._openGraspTab() })
+  }
+
+  /**
+   * Shared tail: guard on a renderable layout, then seed the idle FSM slice and
+   * select the grasp tab. Reached both directly (a context already loaded) and
+   * after the quick-start example finishes loading.
+   */
+  _openGraspTab() {
     const layout = this._layoutMeta()
     if (!layout) {
       this._ctrl._uiView.showToast(
@@ -368,10 +407,12 @@ export class GraspController {
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
   /**
-   * Resolve the robot's declared geometry from the scene's world-parented
-   * `robot_base` / `tcp` CoordinateFrame entities (ADR-084 §2). 1-robot scope:
-   * a plain name lookup — no `refs` field, no selection UI (§4). World pose is
-   * read from `SceneService.worldPoseOf` — the SAME resolution the service runs
+   * Resolve the robot's declared geometry from the scene's `robot_base` (world
+   * root) and `tcp` (its TF child) CoordinateFrame entities (ADR-084 §2, TF tree
+   * ADR-085). 1-robot scope: a plain name lookup — no `refs` field, no selection
+   * UI (§4). World pose is read from `SceneService.worldPoseOf` — the SAME
+   * resolution the service runs (so tcp's world quaternion is already composed
+   * through robot_base; a rotated base rotates the wrist-cone reference axis)
    * each frame, reused rather than re-implemented (§1.1); the composition to
    * world space stays on the front (light deterministic math) while core/ gets
    * only the resolved position / quaternion and never sees the entity.
@@ -387,14 +428,27 @@ export class GraspController {
     const service = this._ctrl._service
     if (!scene?.objects || typeof service?.worldPoseOf !== 'function') return {}
 
-    const findFrame = (name) => {
+    // robot_base is the world-parented root of the robot TF tree (parentId null).
+    const baseFrame = (() => {
       for (const o of scene.objects.values()) {
-        if (o.name === name && o.parentId === null) return o
+        if (o.name === ROBOT_BASE_FRAME_NAME && o.parentId === null) return o
       }
       return null
-    }
-    const baseFrame = findFrame(ROBOT_BASE_FRAME_NAME)
-    const tcpFrame  = findFrame(TCP_FRAME_NAME)
+    })()
+    // tcp is a CHILD of robot_base (TF tree, ADR-084 §2 revised) — a name lookup,
+    // NOT constrained to parentId === null. Its world quaternion (resolved through
+    // robot_base by worldPoseOf) is what rides the wire; the parent link is why a
+    // rotated base now rotates the wrist-cone reference axis. Prefer the tcp
+    // parented under robot_base if several share the name (1-robot scope).
+    const tcpFrame = (() => {
+      let fallback = null
+      for (const o of scene.objects.values()) {
+        if (o.name !== TCP_FRAME_NAME) continue
+        if (baseFrame && o.parentId === baseFrame.id) return o
+        fallback ??= o
+      }
+      return fallback
+    })()
     const basePose  = baseFrame ? service.worldPoseOf(baseFrame.id) : null
     const tcpPose   = tcpFrame  ? service.worldPoseOf(tcpFrame.id)  : null
 

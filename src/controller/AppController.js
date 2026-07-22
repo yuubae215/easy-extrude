@@ -1719,6 +1719,7 @@ export class AppController {
           result = cfResult ?? solidResult
         }
         if (!result) result = this._hitTest.hitAnyAnnotation()
+        if (!result) result = this._hitTest.hitRobotStage()   // robot skeleton → robot_base
         if (!result) return
         const { obj } = result
         if (!this._selectedIds.has(obj.id)) {
@@ -1760,6 +1761,7 @@ export class AppController {
     if (this._scene.selectionMode !== 'object') return
     this._hitTest.updateMouse(e)
     const hit = this._hitTest.hitAnyObject()?.obj ?? this._hitTest.hitAnyCoordinateFrame()?.obj
+      ?? this._hitTest.hitRobotStage()?.obj
     if (hit && hit.id !== this._scene.activeId) {
       this._selMgr.clearObjectSelection()
       this._switchActiveObject(hit.id, true)
@@ -2401,7 +2403,9 @@ export class AppController {
       // Hover affordance (ADR-068, Tier A) — desktop pointers only; touch has
       // no hover (PHILOSOPHY #13), so a coarse pointer never warms a body.
       if (e.pointerType !== 'touch') this._setHoveredEntity(hit?.obj ?? null)
-      this._uiView.setCursor((hit || this._hitTest.hitAnyAnnotation()) ? 'pointer' : 'default')
+      this._uiView.setCursor(
+        (hit || this._hitTest.hitAnyAnnotation() || this._hitTest.hitRobotStage()) ? 'pointer' : 'default',
+      )
       return
     }
 
@@ -2809,6 +2813,11 @@ export class AppController {
         result = cfResult ?? solidResult
       }
       if (!result) result = this._hitTest.hitAnyAnnotation()
+      // Lowest priority: a click on the robot skeleton selects its robot_base
+      // proxy (ADR-084 §2) — the skeleton is a view-only decoration, so this is
+      // how "select the robot in the viewport" works. Below every real entity so
+      // it never shadows a smaller/closer target (PHILOSOPHY #22).
+      if (!result) result = this._hitTest.hitRobotStage()
 
       // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
       if (result) {

@@ -163,7 +163,7 @@ function RobotButton() {
   const { hovered, pressed, handlers } = useHoverPress()
   return (
     <button
-      title="Show / hide the robot skeleton. To place the robot, select the robot_base / tcp frames in the Outliner and move them (G / R or the N-panel)."
+      title="Show / hide the robot skeleton. To place the robot, click it in the viewport (or select the robot_base / tcp frames in the Outliner) and move it with G / R or the N-panel. Moving robot_base carries the tcp with it."
       onClick={() => callbacks.onRobotToggle?.()}
       {...handlers}
       style={{

@@ -112,6 +112,25 @@ export function validateLayoutDsl(dsl) {
     }
   }
 
+  // Standalone CoordinateFrame TF-parent links (ADR-084 §2 revised): a
+  // `parentRef` must reference an existing top-level entity and not itself.
+  // Checked after the first pass so a forward reference (parent declared later)
+  // still resolves. The runtime reparent guard (_isDescendant) rejects deeper
+  // cycles; here we only catch the trivial self-parent.
+  for (const [i, entity] of dsl.entities.entries()) {
+    if (!entity || typeof entity !== 'object') continue
+    if (entity.parentRef === undefined || entity.parentRef === null) continue
+    if (entity.type !== 'CoordinateFrame') {
+      errors.push(`entities[${i}] ("${entity.ref}") "parentRef" is only valid on a CoordinateFrame`)
+      continue
+    }
+    if (entity.parentRef === entity.ref) {
+      errors.push(`entities[${i}] (CoordinateFrame "${entity.ref}") "parentRef" cannot reference itself`)
+    } else if (!entityRefs.has(entity.parentRef)) {
+      errors.push(`entities[${i}] (CoordinateFrame "${entity.ref}") "parentRef" "${entity.parentRef}" does not match any entity ref`)
+    }
+  }
+
   // All resolvable refs: entity refs + frame refs + implicit <ref>_origin for Solids
   const originRefs = new Set([...entityRefs].map(r => `${r}_origin`))
   const allRefs    = new Set([...entityRefs, ...frameRefs, ...originRefs])

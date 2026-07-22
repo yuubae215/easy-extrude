@@ -180,16 +180,22 @@ export function decompileLayout(sceneJson) {
       case 'CoordinateFrame': {
         if (originIds.has(o.id)) break               // auto-Origin: folded away
         if (originIds.has(o.parentId)) break          // user frame: folded into Solid
-        // Standalone (world-parented) CF — e.g. robot_base / tcp (ADR-084 §2).
-        // Its `translation` / `rotation` ARE its world pose, so it maps to the
-        // schema's top-level `position` + `rotation` (ADR-084 §1: reuse the
-        // existing CoordinateFrame entity fields — no new schema keys).
+        // Standalone CF — e.g. robot_base / tcp (ADR-084 §2, TF tree revised).
+        //   • World-parented root (robot_base): parentId null → no `parentRef`;
+        //     `translation` / `rotation` ARE its world pose → schema `position` +
+        //     `rotation`.
+        //   • TF child (tcp → robot_base): parentId is another standalone CF →
+        //     emit `parentRef`; `translation` / `rotation` are already LOCAL to
+        //     that parent, so they map to `position` + `rotation` unchanged
+        //     (the compiler re-reads them as a local offset).
+        const parentRef = o.parentId ? idToRef.get(o.parentId) : undefined
         const entity = {
           ref:      idToRef.get(o.id),
           type:     'CoordinateFrame',
           name:     o.name,
           position: vec(o.translation ?? { x: 0, y: 0, z: 0 }),
         }
+        if (parentRef) entity.parentRef = parentRef
         if (!isIdentityQuat(o.rotation)) entity.rotation = quat(o.rotation)
         entities.push(entity)
         break

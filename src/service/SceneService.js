@@ -2989,9 +2989,10 @@ export class SceneService extends EventEmitter {
    *
    * Unlike createCoordinateFrame(), this frame has NO parent (parentId = null):
    * its `translation` / `rotation` ARE its world pose, resolved directly by
-   * _updateWorldPoses() (the parentless branch). Used for the robot_base / tcp
-   * frames whose world geometry is the single source of truth grasp-search
-   * declares against (§1.1) — silent auto-naming per ADR-073 (no creation form).
+   * _updateWorldPoses() (the parentless branch). Used for the robot_base frame —
+   * the world-parented root whose world geometry is the single source of truth
+   * grasp-search declares against (§1.1). (tcp is seeded as robot_base's TF child
+   * via createCoordinateFrame — ADR-085.) Silent auto-naming per ADR-073.
    *
    * @param {string} name
    * @param {{position?: {x:number,y:number,z:number}, rotation?: {x:number,y:number,z:number,w:number}}} [pose]
@@ -3041,13 +3042,33 @@ export class SceneService extends EventEmitter {
    * DSL round-trip (ADR-055) and .ctx.json like any other CoordinateFrame.
    */
   ensureRobotFrames() {
-    const byName = new Set(
-      [...this._model.objects.values()]
-        .filter(o => o instanceof CoordinateFrame)
-        .map(o => o.name),
-    )
-    for (const [name, pose] of Object.entries(ROBOT_FRAME_DEFAULTS)) {
-      if (!byName.has(name)) this.createWorldFrame(name, pose)
+    const frames = [...this._model.objects.values()].filter(o => o instanceof CoordinateFrame)
+    const byName = new Map(frames.map(o => [o.name, o]))
+
+    // robot_base is the world-parented root of the robot TF tree.
+    let base = byName.get(ROBOT_BASE_FRAME_NAME)
+    if (!base) base = this.createWorldFrame(ROBOT_BASE_FRAME_NAME, ROBOT_FRAME_DEFAULTS[ROBOT_BASE_FRAME_NAME])
+
+    // tcp is a CHILD of robot_base (TF tree world → robot_base → tcp, ADR-084 §2
+    // revised 2026-07-22): the tool point is expressed in the robot's own frame,
+    // so moving/rotating the base carries it along. createCoordinateFrame seeds
+    // it at local (0,0,0)/identity — coincident with the base until re-aimed.
+    const tcp = byName.get(TCP_FRAME_NAME)
+    if (!tcp) {
+      this.createCoordinateFrame(base.id, TCP_FRAME_NAME, null)
+    } else if (tcp.parentId === null && tcp.id !== base.id) {
+      // Lossless upgrade of a legacy scene (tcp saved as a world-parented frame
+      // before the TF-tree revision): re-home it under robot_base while
+      // preserving its current world pose (reparentFrame back-derives the local
+      // translation/rotation from the world-pose cache). One-time; a scene
+      // already carrying the tree is a no-op above.
+      //
+      // This runs on scene-entry paths BEFORE the outer _updateWorldPoses() pass
+      // (importFromJson / loadScene), so the cache would otherwise be stale and
+      // collapse a moved tcp onto the base. Refresh it first so the world pose is
+      // truly preserved.
+      this._updateWorldPoses()
+      this.reparentFrame(tcp.id, base.id)
     }
   }
 

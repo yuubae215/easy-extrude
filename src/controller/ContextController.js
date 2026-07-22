@@ -263,6 +263,35 @@ export class ContextController {
   }
 
   /**
+   * Load a starter example straight into negotiation for a one-click entry into a
+   * downstream overlay (grasp-search) — no gallery, no wizard, no forms. It is
+   * ADR-051's example-load path minus the picking step, exposed as an awaitable
+   * so the caller (GraspController.openGrasp when no context is loaded) can
+   * continue into its own tab once the derived scene exists and negotiation is
+   * active. Any active overlay is exited first (PHILOSOPHY #9 — dispose before
+   * replace). Returns false (with a toast) for an unknown / non-example id or a
+   * load failure, so the caller never opens a tab over a scene that never loaded.
+   *
+   * @param {string} id — TemplateCatalog example id
+   * @returns {Promise<boolean>} true once negotiation is active on the loaded example
+   */
+  async quickStartExample(id) {
+    const meta = getTemplateMeta(id)
+    if (!meta || meta.source.kind !== 'example') {
+      this._ctrl._uiView.showToast(`Unknown starter: ${id}`, { type: 'warn' })
+      return false
+    }
+    if (this.isActive) this.exit()
+    const doc = TEMPLATE_DOCS[meta.source.file]
+    if (!doc) {
+      this._ctrl._uiView.showToast(`Starter definition not found: ${meta.source.file}`, { type: 'error' })
+      return false
+    }
+    await this._loadThen(doc, () => this._startNegotiation())
+    return this.isNegotiation
+  }
+
+  /**
    * Fork an example as the starting point (ADR-058 — "fork & tweak"). The example
    * doc is *cloned* into the working doc (so editing never touches the bundled
    * module), the scene is regenerated from it, and the **original example is
