@@ -21,7 +21,7 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
-import { ROBOT_BASE_FRAME_NAME } from '../domain/robotFrames.js'
+import { isRobotBaseFrame } from '../domain/robotFrames.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -736,8 +736,10 @@ export class AppController {
     // ── Map Mode entry ────────────────────────────────────────────────────
     uiView.onMapModeClick(() => this._mapModeCtrl.enter())
 
-    // ── Robot skeleton visibility (grasp-search verification aid) ──────────
-    uiView.onRobotToggle((visible) => this._sceneView.robotStage.setVisible(visible))
+    // Robot skeleton visibility (ADR-087): the former header toggle is gone —
+    // the skeleton is the geometry of the `robot_base` entity, so its
+    // show/hide is owned by that entity's Outliner eye, routed through
+    // _setObjectVisible() (原則 #4 — one owner).
 
     // Robot placement (ADR-084 §2): the skeleton follows the `robot_base`
     // CoordinateFrame entity's world pose (resolved by SceneService), not a
@@ -851,7 +853,7 @@ export class AppController {
     if (!frame || this._scene.getObject(frame.id) !== frame) {
       frame = null
       for (const o of this._scene.objects.values()) {
-        if (o instanceof CoordinateFrame && o.name === ROBOT_BASE_FRAME_NAME && o.parentId === null) {
+        if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) {
           frame = o
           break
         }
@@ -1327,6 +1329,14 @@ export class AppController {
 
   _setObjectVisible(id, visible) {
     this._service.setObjectVisible(id, visible)
+    // The robot skeleton is the geometry of the `robot_base` entity (ADR-084 §2);
+    // ADR-087 makes that entity's Outliner eye the single owner (原則 #4) of the
+    // skeleton's visibility, replacing the removed header toggle. The CF axes are
+    // handled by setObjectVisible() above; here we carry the skeleton along.
+    const obj = this._scene.getObject(id)
+    if (obj instanceof CoordinateFrame && isRobotBaseFrame(obj)) {
+      this._sceneView?.robotStage?.setVisible(visible)
+    }
   }
 
   _renameObject(id, name) {

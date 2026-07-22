@@ -31,6 +31,21 @@ export const ROBOT_BASE_FRAME_NAME = 'robot_base'
 export const TCP_FRAME_NAME = 'tcp'
 
 /**
+ * True when `obj` is the world-parented root robot_base frame — the entity whose
+ * geometry is the robot skeleton and whose Outliner eye owns the skeleton's
+ * visibility (ADR-087). Duck-typed on name + null parent, matching this module's
+ * name-based resolution contract (the byName lookup in SceneService.ensureRobotFrames
+ * identifies robot_base the same way); callers that need a hard type guard pair it
+ * with `instanceof CoordinateFrame`. THREE-free so the grasp-search test lane can
+ * import it.
+ * @param {{name?: string, parentId?: string|null}|null|undefined} obj
+ * @returns {boolean}
+ */
+export function isRobotBaseFrame(obj) {
+  return !!obj && obj.parentId === null && obj.name === ROBOT_BASE_FRAME_NAME
+}
+
+/**
  * Default placement of the auto-seeded robot frames (ADR-084 §2, silent
  * auto-generation per ADR-073).
  *

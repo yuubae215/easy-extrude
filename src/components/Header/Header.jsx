@@ -11,7 +11,6 @@ import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
 const SVG_UNDO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>`
 const SVG_REDO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4"/></svg>`
 const SVG_MAP  = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>`
-const SVG_ROBOT = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="10" width="12" height="9" rx="2"/><circle cx="9.5" cy="14.5" r="1"/><circle cx="14.5" cy="14.5" r="1"/><path d="M12 10V6"/><circle cx="12" cy="4" r="2"/><line x1="3" y1="14" x2="6" y2="14"/><line x1="18" y1="14" x2="21" y2="14"/></svg>`
 const SVG_HAMBURGER = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`
 const SVG_NPANEL = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`
 const SVG_MORE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`
@@ -77,7 +76,6 @@ function MobileHeaderContents() {
       <IconBtn svg={SVG_REDO}      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!gRedo.enabled} reason={gRedo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
       <ModeDropdown />
       <MapButton />
-      <RobotButton />
       {/* Invisible flex:1 spacer — keeps ⋯ and N right-aligned (matching UIView's visibility:hidden pattern) */}
       <div style={{ flex: '1', visibility: 'hidden' }} />
       <MoreMenu />
@@ -96,7 +94,6 @@ function DesktopHeaderContents() {
     <>
       <ModeDropdown />
       <MapButton />
-      <RobotButton />
       <HeaderStatus />
       {bffConnected && (
         <>
@@ -155,44 +152,12 @@ function MapButton() {
   )
 }
 
-function RobotButton() {
-  const isMobile   = useIsMobile()
-  const callbacks  = useUIStore(s => s.callbacks)
-  const robotVisible = useUIStore(s => s.robotVisible)
-  const reduced    = useReducedMotion()
-  const { hovered, pressed, handlers } = useHoverPress()
-  return (
-    <button
-      title="Show / hide the robot skeleton. To place the robot, click it in the viewport (or select the robot_base / tcp frames in the Outliner) and move it with G / R or the N-panel. Moving robot_base carries the tcp with it."
-      onClick={() => callbacks.onRobotToggle?.()}
-      {...handlers}
-      style={{
-        padding:      isMobile ? '4px' : '4px 8px',
-        background:   hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
-        border:       `1px solid ${robotVisible ? COLOR.fxBlue : hovered ? '#4a4a4a' : '#3a3a3a'}`,
-        borderRadius: '5px',
-        color:        robotVisible ? '#5a9bf5' : hovered ? '#ccc' : '#aaa',
-        cursor:       'pointer',
-        fontSize:     '12px',
-        fontFamily:   'system-ui, -apple-system, sans-serif',
-        lineHeight:   '1',
-        flexShrink:   '0',
-        display:      'flex',
-        alignItems:   'center',
-        gap:          '5px',
-        pointerEvents:'auto',
-        ...tierAMotion({ hovered, pressed, reduced }),
-      }}
-    >
-      <span dangerouslySetInnerHTML={{ __html: SVG_ROBOT }} style={{ display: 'flex' }} />
-      {!isMobile && <span>Robot</span>}
-    </button>
-  )
-}
-
 // Robot placement moved out of the header in ADR-084 §2: the robot geometry is
 // now the `robot_base` / `tcp` CoordinateFrame entities (edited via the CF gizmo
-// / N-panel), so the former X/Y header inputs were removed.
+// / N-panel), so the former X/Y header inputs were removed. The show/hide toggle
+// was removed too (ADR-087): the robot skeleton is the geometry of the
+// `robot_base` entity, so its visibility is governed by that entity's Outliner
+// eye icon (原則 #4 — one owner), the same control every other entity uses.
 
 function HeaderStatus() {
   const parts = useUIStore(s => s.statusParts)
