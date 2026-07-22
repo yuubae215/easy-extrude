@@ -765,6 +765,12 @@ export class AppController {
 
     // Create the initial object
     this._addObject()
+    // Seed the robot placement frames for the default scene (ADR-084 §2). The
+    // boot path builds the scene via _addObject(), not importFromJson(), so
+    // without this call robot_base / tcp would never exist on a fresh start —
+    // they'd be absent from the Outliner and the robot could not be placed via
+    // the CF gizmo / N-panel. Idempotent (name-keyed), so no duplicates.
+    this._service.ensureRobotFrames()
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()

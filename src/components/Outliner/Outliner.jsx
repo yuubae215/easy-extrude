@@ -6,6 +6,17 @@ import { tourAnchor, tourVisible } from '../../view/TourMath.js'
 import { activeGlow } from '../../view/ChromeMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { DURATION, EASING } from '../../theme/tokens.js'
+import { ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../../domain/robotFrames.js'
+
+// ── Robot placement frames (ADR-084 §2) ──────────────────────────────────────
+// These two world-parented CoordinateFrames carry the robot's placement (the
+// single source grasp-search declares against). They look like any other frame
+// in the tree, so a badge + tooltip tells the user what they are and how to move
+// them — otherwise "how do I place the robot?" has no visible answer.
+const ROBOT_FRAME_HINT = {
+  [ROBOT_BASE_FRAME_NAME]: 'Robot base — where the arm stands. Select and move with G / R or the N-panel to place the robot.',
+  [TCP_FRAME_NAME]:        'Robot TCP — how the gripper is aimed (drives the grasp wrist-cone). Select and rotate with R or the N-panel.',
+}
 
 // ── Icon config matching OutlinerView._createRow ──────────────────────────────
 const TYPE_ICON = {
@@ -66,6 +77,9 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
   useEffect(() => {
     if (active) rowRef.current?.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' })
   }, [active, reduced])
+
+  // ── Robot placement frame hint (ADR-084 §2) ───────────────────────────────
+  const robotHint = type === 'frame' ? ROBOT_FRAME_HINT[name] : undefined
 
   // ── IFC badge ──────────────────────────────────────────────────────────────
   const ifcEntry = ifcClass ? IFC_CLASS_MAP.get(ifcClass) : null
@@ -183,6 +197,18 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
           onDoubleClick={e => { e.stopPropagation(); startEdit() }}
         >
           {name}
+        </span>
+      )}
+
+      {/* Robot placement frame badge (ADR-084 §2) */}
+      {robotHint && (
+        <span title={robotHint} style={{
+          display: 'inline-block', fontSize: 9, fontWeight: 'bold',
+          padding: '1px 4px', borderRadius: 2, flexShrink: 0,
+          lineHeight: 1.4, cursor: 'default',
+          background: '#5a9bf522', border: '1px solid #5a9bf5', color: '#5a9bf5',
+        }}>
+          ROBOT
         </span>
       )}
 

@@ -163,7 +163,7 @@ function RobotButton() {
   const { hovered, pressed, handlers } = useHoverPress()
   return (
     <button
-      title="Toggle robot skeleton (grasp-search verification)"
+      title="Show / hide the robot skeleton. To place the robot, select the robot_base / tcp frames in the Outliner and move them (G / R or the N-panel)."
       onClick={() => callbacks.onRobotToggle?.()}
       {...handlers}
       style={{
