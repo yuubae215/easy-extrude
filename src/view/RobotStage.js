@@ -75,6 +75,22 @@ export class RobotStage {
   }
 
   /**
+   * First raycast intersection against the visible skeleton, or null. The
+   * skeleton is a view-only decoration (not a scene entity), so it is invisible
+   * to the entity raycasts; this lets the controller treat a click on the arm as
+   * a click on its `robot_base` proxy entity (ADR-084 §2) — the answer to "why
+   * can I select the cube but not the robot". Returns null while hidden or
+   * before the URDF has loaded.
+   * @param {THREE.Raycaster} raycaster  already aimed from the pointer
+   * @returns {THREE.Intersection|null}
+   */
+  raycast(raycaster) {
+    if (!this._group.visible || !this.robot) return null
+    const hits = raycaster.intersectObject(this._group, true)
+    return hits.length ? hits[0] : null
+  }
+
+  /**
    * Places the robot base at a world pose. A pure view-layer transform: the
    * skeleton follows the `robot_base` CoordinateFrame entity's world pose
    * (ADR-084 §2), driven by AppController._syncRobotStage() each frame. Reach/IK

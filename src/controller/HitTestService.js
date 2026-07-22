@@ -14,6 +14,7 @@ import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { toNDC }           from '../model/CuboidModel.js'
+import { ROBOT_BASE_FRAME_NAME } from '../domain/robotFrames.js'
 
 export class HitTestService {
   /**
@@ -135,6 +136,30 @@ export class HitTestService {
       obj = this._ctrl._scene.getObject(obj.parentId)
     }
     return false
+  }
+
+  /**
+   * Hits the visible robot skeleton (RobotStage) and resolves it to its
+   * `robot_base` CoordinateFrame proxy — the entity that drives the skeleton's
+   * pose (ADR-084 §2). The skeleton itself is a view-only decoration absent from
+   * `scene.objects`, so without this a click on the arm/body selects nothing.
+   * Used as a LOW-priority fallback in _onPointerDown (after CF / Solid /
+   * annotation), so the base gizmo and any overlapping entity still win
+   * (PHILOSOPHY #22 — the large skeleton volume must not shadow smaller targets).
+   * @returns {{ obj: object }|null}
+   */
+  hitRobotStage() {
+    const { _ctrl: ctrl } = this
+    const stage = ctrl._sceneView?.robotStage
+    if (!stage?.raycast) return null
+    ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
+    if (!stage.raycast(ctrl._raycaster)) return null
+    for (const o of ctrl._scene.objects.values()) {
+      if (o instanceof CoordinateFrame && o.name === ROBOT_BASE_FRAME_NAME && o.parentId === null) {
+        return { obj: o }
+      }
+    }
+    return null
   }
 
   /** Hits only the active object's mesh. */

@@ -80,8 +80,9 @@ export class CoordinateFrame {
     /**
      * ID of the parent object. Normally a geometry object or another CF.
      * `null` marks a world-parented (root) frame whose translation / rotation
-     * ARE its world pose (ADR-084 §2, e.g. robot_base / tcp) — resolved by
-     * SceneService._updateWorldPoses()'s parentless branch.
+     * ARE its world pose (ADR-084 §2, e.g. robot_base) — resolved by
+     * SceneService._updateWorldPoses()'s parentless branch. (tcp is NOT a root:
+     * it is a TF child of robot_base — ADR-085 — so its parentId is set.)
      */
     this.parentId = parentId
     this.meshView = meshView

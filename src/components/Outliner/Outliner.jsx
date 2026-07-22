@@ -8,11 +8,13 @@ import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { DURATION, EASING } from '../../theme/tokens.js'
 import { ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../../domain/robotFrames.js'
 
-// ── Robot placement frames (ADR-084 §2) ──────────────────────────────────────
-// These two world-parented CoordinateFrames carry the robot's placement (the
-// single source grasp-search declares against). They look like any other frame
-// in the tree, so a badge + tooltip tells the user what they are and how to move
-// them — otherwise "how do I place the robot?" has no visible answer.
+// ── Robot placement frames (ADR-084 §2, TF tree ADR-085) ─────────────────────
+// These two CoordinateFrames carry the robot's placement (the single source
+// grasp-search declares against): robot_base is world-parented, tcp is its TF
+// child (world → robot_base → tcp), so moving the base carries the tcp. They
+// look like any other frame in the tree, so a badge + tooltip tells the user
+// what they are and how to move them — otherwise "how do I place the robot?"
+// has no visible answer.
 const ROBOT_FRAME_HINT = {
   [ROBOT_BASE_FRAME_NAME]: 'Robot base — where the arm stands. Select and move with G / R or the N-panel to place the robot.',
   [TCP_FRAME_NAME]:        'Robot TCP — how the gripper is aimed (drives the grasp wrist-cone). Select and rotate with R or the N-panel.',

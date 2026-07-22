@@ -106,6 +106,10 @@
         "dimensions": { "$ref": "#/$defs/vec3" },
         "rotation": { "$ref": "#/$defs/quaternion" },
         "position": { "$ref": "#/$defs/vec3" },
+        "parentRef": {
+          "description": "For a standalone CoordinateFrame, the ref of another entity it is a TF child of (e.g. tcp → robot_base). When present, `position`/`rotation` are the LOCAL offset from that parent; when absent, they are the world pose (world-parented root). Robot TF tree world → robot_base → tcp (ADR-084 §2 revised).",
+          "type": "string"
+        },
         "frames": {
           "type": "array",
           "items": { "$ref": "#/$defs/frame" }

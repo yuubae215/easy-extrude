@@ -105,6 +105,64 @@ test('standalone world CF (robot_base / tcp) round-trips via position + rotation
   assert.deepEqual(compileLayout(dsl), scene1)
 })
 
+test('TF-tree CF: tcp as a child of robot_base round-trips via parentRef + local pose (ADR-084 §2 revised)', () => {
+  // 45° about +Z as tcp's LOCAL orientation, to prove the local pose survives.
+  const s = Math.sin(Math.PI / 8), c = Math.cos(Math.PI / 8)
+  const dsl0 = {
+    version: 'layout/1.0',
+    strategy: 'manual',
+    entities: [
+      { ref: 'box', type: 'Solid', name: 'Box',
+        dimensions: { x: 100, y: 100, z: 100 }, position: { x: 0, y: 0, z: 50 } },
+      { ref: 'robot_base', type: 'CoordinateFrame', name: 'robot_base',
+        position: { x: -2, y: 2, z: 0 } },
+      // tcp is a TF child of robot_base — its position/rotation are LOCAL offsets.
+      { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp', parentRef: 'robot_base',
+        position: { x: 0, y: 0, z: 1 }, rotation: { x: 0, y: 0, z: s, w: c } },
+    ],
+  }
+
+  const scene1 = compileLayout(dsl0)
+  const baseObj = scene1.objects.find(o => o.name === 'robot_base')
+  const tcpObj  = scene1.objects.find(o => o.name === 'tcp')
+  // robot_base is world-parented; tcp is parented to robot_base (the TF tree).
+  assert.equal(baseObj.parentId, null)
+  assert.equal(tcpObj.parentId, baseObj.id)
+  // The child's stored translation is LOCAL (not the composed world pose).
+  assert.deepEqual(tcpObj.translation, { x: 0, y: 0, z: 1 })
+
+  const { dsl } = decompileLayout(scene1)
+  const tcp = dsl.entities.find(e => e.ref === 'tcp')
+  assert.equal(tcp.parentRef, 'robot_base')            // the parent link survives
+  assert.deepEqual(tcp.position, { x: 0, y: 0, z: 1 }) // local offset, unchanged
+  assert.ok(Math.abs(tcp.rotation.z - s) < 1e-9 && Math.abs(tcp.rotation.w - c) < 1e-9)
+
+  // Schema-clean + valid (parentRef references an existing entity ref).
+  assert.equal(validateLayoutDsl(dsl).valid, true, validateLayoutDsl(dsl).errors.join('\n'))
+
+  // Scene fixpoint law (ADR-055): the parented tree is a fixpoint too.
+  assert.deepEqual(compileLayout(dsl), scene1)
+})
+
+test('validator rejects a parentRef that names no entity, a self-parent, or a non-CF host', () => {
+  const base = { version: 'layout/1.0', strategy: 'manual', entities: [
+    { ref: 'robot_base', type: 'CoordinateFrame', name: 'robot_base', position: { x: 0, y: 0, z: 0 } },
+  ] }
+  const dangling = { ...base, entities: [ ...base.entities,
+    { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp', parentRef: 'nope', position: { x: 0, y: 0, z: 0 } } ] }
+  assert.equal(validateLayoutDsl(dangling).valid, false)
+
+  const self = { ...base, entities: [ ...base.entities,
+    { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp', parentRef: 'tcp', position: { x: 0, y: 0, z: 0 } } ] }
+  assert.equal(validateLayoutDsl(self).valid, false)
+
+  const onSolid = { version: 'layout/1.0', strategy: 'manual', entities: [
+    { ref: 'robot_base', type: 'CoordinateFrame', name: 'robot_base', position: { x: 0, y: 0, z: 0 } },
+    { ref: 'box', type: 'Solid', name: 'Box', parentRef: 'robot_base',
+      dimensions: { x: 100, y: 100, z: 100 }, position: { x: 0, y: 0, z: 0 } } ] }
+  assert.equal(validateLayoutDsl(onSolid).valid, false)
+})
+
 test('constraints recover entity / origin / frame ref namespaces', () => {
   const scene = compileLayout(factoryLayout)
   const { dsl } = decompileLayout(scene)

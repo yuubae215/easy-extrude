@@ -95,7 +95,8 @@ This directory records the project's design decisions.
 | [ADR-081](ADR-081-domain-staged-validation-fallback-ladder-kpi.md) | **ドメイン段階バリデーション (見える/届く/掴める) + 運用フォールバック階梯の設計時 KPI 検証** | Accepted (Phase 1-3 実装済; Phase 4 と収束仮説は未着手) | 2026-07-19 | ADR-049, ADR-053, ADR-057, ADR-061, ADR-063, ADR-074, ADR-075, ADR-076, ADR-078, ADR-079 |
 | [ADR-082](ADR-082-absorb-contract-submodule.md) | **契約 submodule の repo 内吸収 — 壁は repo 分離ではなく CI ガードで守る** | Accepted (実装済) | 2026-07-19 | ADR-074, ADR-064, ADR-060, ADR-079, ADR-081 |
 | [ADR-083](ADR-083-robot-base-placement-grasp-contract.md) | **ロボット base position をユーザーが動かし、grasp-search 契約に正式に載せる (optional 追加、version 据え置き)** | Accepted (契約は現行; フロント実装は ADR-084 §2 で CoordinateFrame entity に置き換え済み) | 2026-07-20 | ADR-074, ADR-075, ADR-078, ADR-057, ADR-060 |
-| [ADR-084](ADR-084-tcp-oriented-ik-entity-grounded-geometry.md) | **TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化 — grasp宣言の生座標を廃し幾何の正本をLayout DSLに一本化** | Accepted (全 Phase 実装済 — Phase 1 core + Phase 4 契約 + Phase 2-3 フロント entity 化) | 2026-07-20 | ADR-083, ADR-081, ADR-078, ADR-074, ADR-018, ADR-034 |
+| [ADR-084](ADR-084-tcp-oriented-ik-entity-grounded-geometry.md) | **TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化 — grasp宣言の生座標を廃し幾何の正本をLayout DSLに一本化** | Accepted (全 Phase 実装済; §2 の「独立2フレーム」は ADR-085 で TF 親子化に改訂) | 2026-07-20 | ADR-083, ADR-081, ADR-078, ADR-074, ADR-018, ADR-034 |
+| [ADR-085](ADR-085-robot-tf-tree-selectable-fast-grasp-entry.md) | **ロボットを TF 親子ツリー (world→robot_base→tcp) で接地 + 骨格を直接選択可能に + grasp-search を無フォームで開く** | Accepted (全 3 点 実装済) | 2026-07-22 | ADR-084, ADR-083, ADR-055, ADR-051, ADR-018, ADR-034 |
 
 ## How to Add a New ADR
 

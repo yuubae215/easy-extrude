@@ -62,9 +62,11 @@ const okBff = {
 
 /**
  * Fake scene + world-pose service mirroring the robot_base / tcp resolution
- * GraspController now performs (ADR-084 §2). The two world-parented CFs sit at
- * ADR-083's default base [-2,2,0] with an identity TCP orientation, so the
- * resolved `robot` payload is deterministic in this THREE-free lane.
+ * GraspController now performs (ADR-084 §2, TF tree revised). robot_base is the
+ * world-parented root; tcp is its CHILD (parentId f_base). worldPoseOf returns
+ * the composed WORLD pose (as SceneService does), so the resolved `robot`
+ * payload is deterministic in this THREE-free lane. tcpOrientation is the tcp's
+ * world quaternion — here identity, matching the default base + local-identity.
  */
 const ROBOT_POSES = {
   robot_base: { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
@@ -73,7 +75,7 @@ const ROBOT_POSES = {
 function fakeRobotScene() {
   const objects = new Map([
     ['f_base', { id: 'f_base', name: 'robot_base', parentId: null }],
-    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: null }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: 'f_base' }],
   ])
   const poseById = { f_base: ROBOT_POSES.robot_base, f_tcp: ROBOT_POSES.tcp }
   return {
@@ -137,6 +139,32 @@ test('openGrasp enters negotiate first when inactive but a doc is loaded', () =>
   gc.openGrasp()
   assert.equal(ctrl._ctxCtrl.isNegotiation, true)
   assert.equal(grasp().status, 'idle')
+})
+
+test('openGrasp with no context auto-loads the starter and opens the grasp tab (fast entry)', async () => {
+  const { gc, ctrl, store, grasp } = setup({ isNegotiation: false, loaded: false })
+  let requested = null
+  // Stub the ctxCtrl quick-start: mark negotiation live + a renderable layout,
+  // mirroring a real example load, and resolve true.
+  ctrl._ctxCtrl.quickStartExample = async (id) => {
+    requested = id
+    ctrl._ctxCtrl.isNegotiation = true
+    ctrl._ctxService.loaded = true          // a context now exists (layout renderable via getCompiled)
+    return true
+  }
+  gc.openGrasp()
+  await Promise.resolve(); await Promise.resolve()   // let the quick-start promise settle
+  assert.equal(requested, 'cell_robotics')
+  assert.equal(grasp().status, 'idle')
+  assert.equal(store.getState().context.inspectorTab, 'grasp')
+})
+
+test('openGrasp with no context and no example loader falls back to honest guidance', () => {
+  const { gc, ctrl, store } = setup({ isNegotiation: false, loaded: false })
+  // Default fake ctxCtrl has no quickStartExample — the THREE-free minimal stub.
+  gc.openGrasp()
+  assert.equal(ctrl._uiView.toasts.at(-1).opt.type, 'warn')
+  assert.notEqual(store.getState().context.inspectorTab, 'grasp')
 })
 
 // ── runGraspSearch: happy path ─────────────────────────────────────────────────
@@ -402,6 +430,25 @@ test('a scene without robot_base / tcp frames omits robot entirely (ADR-084 §3 
   const { gc } = setup({ bff, robotScene: false })
   await gc.runGraspSearch({})
   assert.ok(!('robot' in sent.graspSearch))   // no frames resolved → no wire key (core keeps its fallback)
+})
+
+test('a legacy world-parented tcp (parentId null) still resolves via the name fallback', async () => {
+  let sent = null
+  const bff = {
+    async compileLayout() { return { objects: [] } },
+    async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  // Robot scene where tcp predates the TF-tree revision — still world-parented.
+  const objects = new Map([
+    ['f_base', { id: 'f_base', name: 'robot_base', parentId: null }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: null }],
+  ])
+  const poseById = { f_base: ROBOT_POSES.robot_base, f_tcp: ROBOT_POSES.tcp }
+  const { gc } = setup({ bff, robotScene: false })
+  gc._ctrl._scene = { objects }
+  gc._ctrl._service.worldPoseOf = (id) => poseById[id] ?? null   // keep bff / connectBff
+  await gc.runGraspSearch({})
+  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
 })
 
 test('an undeclared camera / gripper omits the key entirely (vacuously-true gate)', async () => {

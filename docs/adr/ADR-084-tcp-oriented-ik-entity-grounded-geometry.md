@@ -49,6 +49,12 @@
   どちらかを動かしても他方は追従しない (今回はモーション計画のスコープ外、既存の
   `semanticType: "mounts"` 拘束で将来つなぐ余地は残すが今は使わない)。
 
+  > **改訂 (ADR-085, 2026-07-22)**: この「独立2フレーム」簡素化は改訂された。`tcp` は
+  > `robot_base` の **子** (TF ツリー world → robot_base → tcp) となり、base を動かすと
+  > tcp が追従する (TCP はロボット座標系で表現される点、という直感に一致)。cone 基準軸を
+  > TCP 姿勢由来にする本 ADR §3 の狙いはむしろ強化される (回転した base が基準軸を回す)。
+  > 関節/キネマティクスを持たない点は不変。詳細は ADR-085。
+
 Robot ボタン脇の Header X/Y 入力 (ADR-083 実装分) は撤去し、ロボット位置編集は
 既存の CoordinateFrame N-panel 編集 UI に統合する。`uiStore.robotBase` state も
 撤去 (第二の源だったものを正本の domain entity に一本化)。
