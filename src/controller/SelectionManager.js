@@ -123,19 +123,37 @@ export class SelectionManager {
   }
 
   /**
-   * Shows the full frame tree of the geometry root that `frameId` belongs to.
+   * Shows the full frame tree that `frameId` belongs to.
    * The selected frame is full opacity; all others are dimmed.
+   *
+   * A CoordinateFrame tree is rooted at EITHER a geometry Solid (user frames
+   * hang off a Solid via its Origin frame, ADR-037) OR a world-parented root
+   * CoordinateFrame that hangs off no geometry — the robot TF tree
+   * (robot_base → tcp / user frames, ADR-084/085). The earlier version assumed
+   * the former and bailed out (`if (!geoRoot) return`) whenever the walk reached
+   * a parentless root frame, so selecting the robot — or adding / selecting any
+   * robot-attached frame — showed nothing in the viewport (no CF axes, no tap
+   * feedback). We now root the tree at that root CoordinateFrame instead.
    * @param {string} frameId
    */
   showFrameChain(frameId) {
     const ctrl = this._ctrl
-    let geoRoot = ctrl._scene.getObject(frameId)
-    while (geoRoot instanceof CoordinateFrame) {
-      geoRoot = ctrl._scene.getObject(geoRoot.parentId)
-    }
-    if (!geoRoot) return
+    const start = ctrl._scene.getObject(frameId)
+    if (!(start instanceof CoordinateFrame)) return
 
-    const treeIds = this.collectAllDescendantFrames(geoRoot.id)
+    // Walk up the parentId chain, remembering the last CoordinateFrame seen.
+    let node   = start
+    let rootCf = start
+    while (node instanceof CoordinateFrame) {
+      rootCf = node
+      node   = ctrl._scene.getObject(node.parentId)
+    }
+    // `node` is the geometry root (a Solid) when the walk found one, else null
+    // (frame-rooted tree). collectAllDescendantFrames() excludes the id passed
+    // to it, so for a frame-rooted tree we add the root CoordinateFrame back in.
+    const geoRoot = node
+    const treeIds = this.collectAllDescendantFrames((geoRoot ?? rootCf).id)
+    if (!geoRoot) treeIds.add(rootCf.id)
     ctrl._activeFrameChain = treeIds
 
     for (const fid of treeIds) {
@@ -144,7 +162,12 @@ export class SelectionManager {
       const isSelected = fid === frameId
       if (isSelected) f.meshView.showFull()
       else            f.meshView.showDimmed()
-      if (!ctrl._scene.isLinkEndpoint(fid)) f.meshView.showConnection(!isSelected)
+      // A connection line runs from the parent's origin (a Solid centroid or a
+      // CoordinateFrame origin). A world-parented root frame (robot_base) has no
+      // parent, and SceneService skips updating its line (it would be a
+      // degenerate origin→origin segment), so it gets no connection line.
+      const hasParent = ctrl._scene.getObject(f.parentId) != null
+      if (hasParent && !ctrl._scene.isLinkEndpoint(fid)) f.meshView.showConnection(!isSelected)
     }
   }
 

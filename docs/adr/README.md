@@ -98,6 +98,7 @@ This directory records the project's design decisions.
 | [ADR-084](ADR-084-tcp-oriented-ik-entity-grounded-geometry.md) | **TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化 — grasp宣言の生座標を廃し幾何の正本をLayout DSLに一本化** | Accepted (全 Phase 実装済; §2 の「独立2フレーム」は ADR-085 で TF 親子化に改訂) | 2026-07-20 | ADR-083, ADR-081, ADR-078, ADR-074, ADR-018, ADR-034 |
 | [ADR-085](ADR-085-robot-tf-tree-selectable-fast-grasp-entry.md) | **ロボットを TF 親子ツリー (world→robot_base→tcp) で接地 + 骨格を直接選択可能に + grasp-search を無フォームで開く** | Accepted (全 3 点 実装済) | 2026-07-22 | ADR-084, ADR-083, ADR-055, ADR-051, ADR-018, ADR-034 |
 | [ADR-086](ADR-086-deterministic-boot-slice-in-required-gate.md) | **e2e は非必須のまま、boot 保証の決定的スライス (起動時 ReferenceError 不在) だけを必須 gate に落とす** | Accepted (実装済 — PR #341) | 2026-07-22 | ADR-064, ADR-085 |
+| [ADR-087](ADR-087-cf-grounded-object-model-robot-visibility-outliner.md) | **CF 接地オブジェクトモデルの統一 + ロボット可視性を Outliner の所有下へ (ヘッダートグル撤去)** | Accepted | 2026-07-22 | ADR-037, ADR-084, ADR-085 |
 
 ## How to Add a New ADR
 

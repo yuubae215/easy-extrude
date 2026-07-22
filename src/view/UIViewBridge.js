@@ -279,14 +279,9 @@ export class UIViewBridge {
     useUIStore.getState().actions.registerCallback('onNodeEditorToggle', wrapped)
   }
 
-  onRobotToggle(cb) {
-    const wrapped = () => {
-      const visible = !useUIStore.getState().robotVisible
-      useUIStore.setState({ robotVisible: visible })
-      cb(visible)
-    }
-    useUIStore.getState().actions.registerCallback('onRobotToggle', wrapped)
-  }
+  // onRobotToggle removed in ADR-087: the header show/hide toggle is gone; the
+  // robot skeleton's visibility is now owned by the `robot_base` entity's
+  // Outliner eye (routed through AppController._setObjectVisible).
 
   onExportJson(cb) {
     useUIStore.getState().actions.registerCallback('onExportJson', cb)

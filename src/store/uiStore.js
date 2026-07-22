@@ -50,11 +50,12 @@ export const useUIStore = create((set, get) => ({
   // ── Header ────────────────────────────────────────────────────────────────
   bffConnected: false,
   nodeEditorOpen: false,
-  robotVisible: true,
   // NOTE: the robot's placement (ADR-083's `robotBase` raw coords) was removed
   // in ADR-084 §2 — the robot geometry now lives in the scene as the
   // `robot_base` / `tcp` CoordinateFrame entities (single source of truth,
-  // §1.1), edited via the CF gizmo / N-panel, not a header input.
+  // §1.1), edited via the CF gizmo / N-panel, not a header input. The former
+  // `robotVisible` flag + header toggle were removed in ADR-087: the skeleton's
+  // visibility is owned by the `robot_base` entity's Outliner eye (原則 #4).
   undoEnabled: false,
   redoEnabled: false,
 
