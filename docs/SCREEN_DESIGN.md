@@ -851,8 +851,9 @@ renderable layout exists). It rides on `ContextLayer`'s existing 280px right doc
 entity count from `ContextService.getCompiled().layoutDsl`), then **three domain declaration
 cards** (ADR-081 Decision 5) — **Seen** (vision camera: preset chips, a **📷 use current view**
 button that copies the live viewport camera via `onCaptureViewportCamera`, position / view axis /
-FOV fields), **Reached** (always on: robot-base readout from `uiStore.robotBase` + reach /
-clearance objective weights), **Grasped** (gripper: preset chips, max opening / finger
+FOV fields), **Reached** (always on: a note that robot placement follows the `robot_base` / `tcp`
+CoordinateFrame entities — edited via the CF gizmo / N-panel, not a header input (ADR-084 §2) —
++ reach / clearance objective weights), **Grasped** (gripper: preset chips, max opening / finger
 clearance). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
 the vacuously-true consequence (PHILOSOPHY #15/#11). Presets come from the pure
 `GraspDeclarationCatalog` (fork & tweak — the active chip is derived by value equality, editing

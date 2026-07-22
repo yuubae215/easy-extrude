@@ -1,6 +1,8 @@
 # ADR-083: ロボット base position をユーザーが動かし、grasp-search 契約に正式に載せる
 
-- Status: Accepted (実装済)
+- Status: Accepted (契約 (`robot.base` optional 追加) は現行; フロント実装
+  (`uiStore.robotBase` + Header X/Y 入力) は ADR-084 §2 で CoordinateFrame entity に
+  置き換え済み 2026-07-21)
 - Date: 2026-07-20
 - 関連: ADR-074 (BFF <-> コアAPI 契約 / contractVersion bump 規則) / ADR-075 (段階0 判定エンジン:
   `robot.base` を IK/reach の基準点として既に使用) / ADR-078 (cone/approach の用語境界) /

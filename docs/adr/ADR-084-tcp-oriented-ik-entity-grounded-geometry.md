@@ -1,7 +1,7 @@
 # ADR-084: TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化
 
-- Status: Accepted (Phase 1 = core + Phase 4 = 契約 実装済 2026-07-21;
-  Phase 2-3 = フロント entity 化 + Header/`uiStore.robotBase` 撤去 は未着手)
+- Status: Accepted (全 Phase 実装済 — Phase 1 core + Phase 4 契約 2026-07-21;
+  Phase 2-3 フロント entity 化 + Header/`uiStore.robotBase` 撤去 2026-07-21)
 - Date: 2026-07-20
 - 関連: ADR-083 (ロボット base position を grasp-search 契約に載せる — 本 ADR は
   そのフロント側実装 (`uiStore.robotBase` + Header 手打ち入力) を置き換える) /
@@ -172,8 +172,8 @@ graspSearch: {
 | Phase | 内容 | 契約影響 | 状態 |
 |-------|------|----------|------|
 | 1 | `core/`: `Quaternion`型 + `Robot.tcp_orientation` + `NaiveIkSolver`基準軸変更 (フォールバック込み) + テスト | なし (open payload) | **実装済** (2026-07-21) |
-| 2 | フロント: `robot_base`/`tcp` CoordinateFrame entity の既定自動生成 (ADR-073パターン) + `SceneService`のワールド姿勢解決ロジックの再利用可能な切り出し | なし | 未着手 |
-| 3 | フロント: `GraspController`が名前規約でentity解決 → `plan{}`/`robot{}`構造で送信、Header X/Y入力 + `uiStore.robotBase`撤去 | なし (契約は Phase 1 で追加済みのoptionalフィールドを使うだけ) | 未着手 |
+| 2 | フロント: `robot_base`/`tcp` CoordinateFrame entity の既定自動生成 (ADR-073パターン) + `SceneService`のワールド姿勢解決ロジックの再利用可能な切り出し | なし | **実装済** (2026-07-21) |
+| 3 | フロント: `GraspController`が名前規約でentity解決 → `plan{}`/`robot{}`構造で送信、Header X/Y入力 + `uiStore.robotBase`撤去 | なし (契約は Phase 1 で追加済みのoptionalフィールドを使うだけ) | **実装済** (2026-07-21) |
 | 4 | 契約: `grasp-search-request.schema.json`に`plan{}`/`tcpOrientation`追加、conformance test、BFF型再生成 | contractVersion据え置き (optional) | **実装済** (2026-07-21) |
 
 ### Phase 1 + 4 の実装メモ (2026-07-21)
@@ -195,6 +195,37 @@ graspSearch: {
 Phase 1→core実装を先行させ、Phase 2/3→フロント追従という順序はADR-079/081が既に
 使った「コア実装+テスト先行 → 契約 → 消費追従」と同型。
 
+### Phase 2-3 の実装メモ (2026-07-21)
+
+- **世界フレームの一級化**: `CoordinateFrame` の `parentId` は `null` を許容するように
+  なった (旧不変条件「never null」を改訂)。`SceneService._updateWorldPoses()` の
+  親なし分岐が、親を持たないフレームの `translation`/`rotation` を **そのまま世界姿勢**
+  として cache するので、`worldPoseOf()` が world フレームにも効く (ROS TF の根)。
+- **既定自動生成**: `src/domain/robotFrames.js` が正準名 (`robot_base`/`tcp`) と既定姿勢
+  (base=ADR-083 既定 `[-2,2,0]`、tcp は同位置+単位回転) を保持。`SceneService`に
+  `createWorldFrame(name, pose)` (親なし CF 生成) と `_ensureRobotFrames()` (名前で冪等)
+  を追加し、`importFromJson()` 末尾 (`_ensureOriginFrames` の直後) で毎回呼ぶ — 新規
+  シーンは 2 フレームを seed、保存済み `.ctx.json` からの復元は no-op (ADR-073 無言命名)。
+- **Layout DSL 往復**: standalone (world-parented) CF を schema の `position`+`rotation`
+  で表現 (ADR-084 §1 = 既存フィールド再利用)。`LayoutCompiler` は `position`→scene CF の
+  `translation`/`parentId:null` に写像、`LayoutDecompiler` は親なし CF を
+  `{position, rotation}` で schema-clean に出力 (旧 `parentRef`/`translation`/`declaredBy`
+  出力は schema 非適合だったので廃止)。`LayoutDecompiler.test.js` に robot_base/tcp の
+  往復 + scene fixpoint + validator 適合テストを追加。
+- **GraspController**: `_resolveRobotDeclaration()` が `scene.objects` を名前規約で引き、
+  `SceneService.worldPoseOf()` で world 姿勢を解決 → `robot.base`/`robot.tcpOrientation`
+  を組む (解決できたキーだけ載せる = 未解決なら core の §3 フォールバックに委ねる)。
+  judgement params は `params.plan` があれば `plan{}` に載せる (フロントは現状収集しない
+  ので通常は省略、core 既定に委ねる — kernel §5 の先出し回避)。
+- **撤去**: `uiStore.robotBase`、`UIViewBridge.onRobotBaseChange`、Header の X/Y 入力
+  (`RobotPositionInputs`)、`AppController` の該当配線、`GraspSearchPanel` の生座標表示。
+  `RobotStage` は `setPosition(x,y,z)` を `setPose(position, quaternion)` に替え、
+  `AppController._syncRobotStage()` が毎フレーム `robot_base` CF の world 姿勢へ追従させる
+  (base フレーム参照は cache、離脱時のみ再走査)。
+- 証拠: JS 全 688 tests green (LayoutDecompiler 往復 + GraspController robot 解決/
+  フォールバックの新規ケース含む)、`pnpm build` green、`test:contract` 23 green、
+  `core` pytest 137 green (core/契約は本 Phase で不変)。
+
 ## Consequences
 
 - 肯定的:
@@ -213,9 +244,9 @@ Phase 1→core実装を先行させ、Phase 2/3→フロント追従という順
 - 明示的にやらないこと (Still deferred): 関節/キネマティックチェーン、実IK、
   wrench cone 安定性 (いずれも ADR-081 Phase4 の管轄のまま)。
 
-## Phase 2-3 の再開メモ (2026-07-21 確定)
+## Phase 2-3 の再開メモ (2026-07-21 確定 — 実装済、下記は設計時のメモ)
 
-次セッションで Phase 2-3 (フロント entity 化) を再開する。着手前に確定した設計点:
+Phase 2-3 (フロント entity 化) 着手前に確定していた設計点 (実装は上記メモ参照):
 
 - **`robot_base`/`tcp` entity は Layout DSL に一本化 (シリアライズする)** — 非シリアライズ
   な既定ステージ扱いにはしない。これが本 ADR の狙い (§1.1 幾何の正本を Layout DSL の

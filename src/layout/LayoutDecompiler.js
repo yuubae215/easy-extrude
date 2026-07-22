@@ -180,15 +180,17 @@ export function decompileLayout(sceneJson) {
       case 'CoordinateFrame': {
         if (originIds.has(o.id)) break               // auto-Origin: folded away
         if (originIds.has(o.parentId)) break          // user frame: folded into Solid
+        // Standalone (world-parented) CF — e.g. robot_base / tcp (ADR-084 §2).
+        // Its `translation` / `rotation` ARE its world pose, so it maps to the
+        // schema's top-level `position` + `rotation` (ADR-084 §1: reuse the
+        // existing CoordinateFrame entity fields — no new schema keys).
         const entity = {
-          ref:       idToRef.get(o.id),
-          type:      'CoordinateFrame',
-          name:      o.name,
-          parentRef: o.parentId != null ? (idToRef.get(o.parentId) ?? null) : null,
+          ref:      idToRef.get(o.id),
+          type:     'CoordinateFrame',
+          name:     o.name,
+          position: vec(o.translation ?? { x: 0, y: 0, z: 0 }),
         }
-        entity.translation = vec(o.translation ?? { x: 0, y: 0, z: 0 })
         if (!isIdentityQuat(o.rotation)) entity.rotation = quat(o.rotation)
-        if (o.declaredBy && o.declaredBy !== 'modeller') entity.declaredBy = o.declaredBy
         entities.push(entity)
         break
       }

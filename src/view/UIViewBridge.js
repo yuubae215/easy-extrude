@@ -288,16 +288,6 @@ export class UIViewBridge {
     useUIStore.getState().actions.registerCallback('onRobotToggle', wrapped)
   }
 
-  /** ADR-083: robot base X/Y edited via Header inputs -> uiStore -> RobotStage transform. */
-  onRobotBaseChange(cb) {
-    const wrapped = (x, y) => {
-      const z = useUIStore.getState().robotBase[2] ?? 0
-      useUIStore.setState({ robotBase: [x, y, z] })
-      cb(x, y, z)
-    }
-    useUIStore.getState().actions.registerCallback('onRobotBaseChange', wrapped)
-  }
-
   onExportJson(cb) {
     useUIStore.getState().actions.registerCallback('onExportJson', cb)
   }

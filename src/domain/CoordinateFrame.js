@@ -77,7 +77,12 @@ export class CoordinateFrame {
   constructor(id, name, parentId, meshView) {
     this.id       = id
     this.name     = name
-    /** ID of the parent geometry object. Never null for a CoordinateFrame. */
+    /**
+     * ID of the parent object. Normally a geometry object or another CF.
+     * `null` marks a world-parented (root) frame whose translation / rotation
+     * ARE its world pose (ADR-084 §2, e.g. robot_base / tcp) — resolved by
+     * SceneService._updateWorldPoses()'s parentless branch.
+     */
     this.parentId = parentId
     this.meshView = meshView
 

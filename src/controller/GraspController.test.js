@@ -23,7 +23,6 @@ const LAYOUT = { version: 'layout/1.0', entities: [{}, {}] }
 function fakeStore() {
   const state = {
     context: { grasp: null, inspectorTab: 'matrix' },
-    robotBase: [-2, 2, 0],
     actions: {
       registerCallback() {},
       contextSetGrasp(grasp) { state.context.grasp = grasp },
@@ -61,14 +60,39 @@ const okBff = {
   },
 }
 
-function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined } = {}) {
+/**
+ * Fake scene + world-pose service mirroring the robot_base / tcp resolution
+ * GraspController now performs (ADR-084 §2). The two world-parented CFs sit at
+ * ADR-083's default base [-2,2,0] with an identity TCP orientation, so the
+ * resolved `robot` payload is deterministic in this THREE-free lane.
+ */
+const ROBOT_POSES = {
+  robot_base: { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+  tcp:        { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+}
+function fakeRobotScene() {
+  const objects = new Map([
+    ['f_base', { id: 'f_base', name: 'robot_base', parentId: null }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: null }],
+  ])
+  const poseById = { f_base: ROBOT_POSES.robot_base, f_tcp: ROBOT_POSES.tcp }
+  return {
+    scene:   { objects },
+    service: { worldPoseOf: (id) => poseById[id] ?? null },
+  }
+}
+
+function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true } = {}) {
+  const robot = robotScene ? fakeRobotScene() : { scene: undefined, service: {} }
   return {
     _uiView: {
       toasts: [],
       showToast(msg, opt) { this.toasts.push({ msg, opt }) },
     },
+    _scene: robot.scene,
     _service: {
       bff,
+      ...robot.service,
       async connectBff() { if (connectSets !== undefined) this.bff = connectSets },
     },
     _ctxService: {
@@ -125,7 +149,7 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   assert.equal(g.candidates.length, 2)
   assert.equal(g.selectedRank, null)
   assert.equal(g.compiledObjects, 3)
-  assert.deepEqual(g.request, { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5, robot: { base: [-2, 2, 0] } } })
+  assert.deepEqual(g.request, { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5, robot: { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] } } })
 })
 
 // ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────
@@ -366,7 +390,18 @@ test('camera and gripper declarations ride the request open payload verbatim', a
   await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera, gripper })
   assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
   assert.deepEqual(sent.graspSearch.gripper, gripper)
-  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0] })
+  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
+})
+
+test('a scene without robot_base / tcp frames omits robot entirely (ADR-084 §3 fallback)', async () => {
+  let sent = null
+  const bff = {
+    async compileLayout() { return { objects: [] } },
+    async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc } = setup({ bff, robotScene: false })
+  await gc.runGraspSearch({})
+  assert.ok(!('robot' in sent.graspSearch))   // no frames resolved → no wire key (core keeps its fallback)
 })
 
 test('an undeclared camera / gripper omits the key entirely (vacuously-true gate)', async () => {

@@ -79,7 +79,6 @@ function parseGripperForm(g) {
 export function GraspSearchPanel() {
   const grasp     = useUIStore(s => s.context.grasp)
   const callbacks = useUIStore(s => s.callbacks)
-  const robotBase = useUIStore(s => s.robotBase)
 
   const [reach, setReach]         = useState(0.6)
   const [clearance, setClearance] = useState(0.4)
@@ -217,10 +216,9 @@ export function GraspSearchPanel() {
         offHint={null}
       >
         <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
-          robot base <code style={{ color: '#9ad' }}>
-            [{(robotBase ?? []).map(n => (typeof n === 'number' ? n.toFixed(2) : '—')).join(', ')}]
-          </code>
-          <span style={{ color: '#667' }}> — place it in the viewport (Robot ▾)</span>
+          robot placement follows the <code style={{ color: '#9ad' }}>robot_base</code> /{' '}
+          <code style={{ color: '#9ad' }}>tcp</code> frames
+          <span style={{ color: '#667' }}> — move / aim them in the viewport (G / R) or the N-panel</span>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <NumField label="reach weight"     value={reach}     step="0.1" onChange={setReach} />
