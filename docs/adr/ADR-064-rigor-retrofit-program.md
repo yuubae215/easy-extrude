@@ -8,7 +8,8 @@
   #11（Silent Failures）, #19（Documentation Drift）, ADR-062（三層方針 — play 側 scope note）,
   ADR-060（Grasp 契約統治 — rigor の模範形）, ADR-054（BFF 素通し + エラーエンベロープ）,
   ADR-045（Layout DSL）, ADR-046（Context DSL）, ADR-015/017（BFF / WebSocket）, ADR-053（robotics WASM lane）,
-  ADR-065（体感層の全面遊戯化プログラム — 本 ADR Phase 4 の reduced-motion 単一境界を 3D tick ループへ移設・延長する）
+  ADR-065（体感層の全面遊戯化プログラム — 本 ADR Phase 4 の reduced-motion 単一境界を 3D tick ループへ移設・延長する）,
+  ADR-086（本 ADR Phase 4 の e2e 非必須判断を補完 — boot 保証の決定的スライスだけを必須 gate に落とす）
 
 ## Context — Goal と力学（§1.2）
 

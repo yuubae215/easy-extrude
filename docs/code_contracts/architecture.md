@@ -238,6 +238,28 @@ const cmd = new SetLynchClassCommand(id, oldClass, newClass, service)
   never inherits the previous rect through the Extrude gate. Every Add-menu entry
   must be exercised by `e2e/smoke.spec.js` — there is no other guard.
 
+## Boot-Wiring Guard: Runtime Modules Must Resolve Every Name They Reference
+
+- **Principle**: `tsconfig.json` scopes `checkJs` to `src/types/` + `src/domain/`,
+  so a runtime-layer module (service/controller/view/…) that references an
+  identifier it never imported is invisible to `pnpm typecheck`. `pnpm test`
+  never constructs the boot stack, and the Playwright boot smoke lives in the
+  separate, non-required `e2e` CI job — so such a bug can ship green. It then
+  throws `ReferenceError` the instant that line runs, and because
+  `AppController`'s constructor calls into the service layer, the *whole app*
+  dies at boot with a blank canvas (ADR-085 regression: `SceneService.js` used
+  `ROBOT_BASE_FRAME_NAME`/`TCP_FRAME_NAME` but imported only `ROBOT_FRAME_DEFAULTS`).
+- **Concrete Rule**: `src/BootWiring.test.js` (in the always-required `gate`)
+  runs the TypeScript checker over every runtime `.js` module and fails on the
+  *resolution* diagnostics only — TS2304/TS2552 (unresolved value name) and
+  TS2305 (named import the module does not export). It intentionally ignores the
+  deferred deep-type diagnostics (TS2339 property-does-not-exist, TS2345, …) so
+  it adds no typing burden. Its scope is exactly "a boot cannot ReferenceError."
+  It does **not** cover a call to a method that exists nowhere (that surfaces as
+  TS2339, excluded) — the Add-menu/e2e guard above still owns that subclass.
+  `typescript` is a pinned devDependency so both this guard and `pnpm typecheck`
+  run the real compiler (the ambient `tsc` was a no-op shim).
+
 ## CommandStack: push() vs execute() — Post-Hoc Recording
 
 - **Principle**: `CommandStack.execute(cmd)` calls `cmd.execute()` then pushes to the undo stack. Using it for a just-completed operation double-applies the effect.
