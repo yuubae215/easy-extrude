@@ -409,6 +409,11 @@ export class SceneService extends EventEmitter {
       // Migration: ensure every Solid has an Origin CF (ADR-037 §6).
       this._ensureOriginFrames(solids)
 
+      // Robot placement frames (ADR-084 §2): auto-seed robot_base / tcp so a
+      // remotely-loaded scene predating the frames still gets them (idempotent
+      // when the persisted scene already carried them).
+      this.ensureRobotFrames()
+
       // One synchronous world-pose pass so _worldPoseCache is populated, then
       // reactivate geometric constraints (_fixedJointTransforms / _mountLocalPositions).
       this._updateWorldPoses()
@@ -636,7 +641,7 @@ export class SceneService extends EventEmitter {
 
     // Robot placement frames (ADR-084 §2): auto-seed robot_base / tcp on a fresh
     // scene; a no-op when the imported .ctx.json already carried them.
-    this._ensureRobotFrames()
+    this.ensureRobotFrames()
 
     // Import SpatialLinks (v1.2+); silently skip on older exports.
     for (const dto of (parsed.links ?? [])) {
@@ -3023,15 +3028,19 @@ export class SceneService extends EventEmitter {
 
   /**
    * Ensures the robot's placement frames exist (ADR-084 §2, silent
-   * auto-generation per ADR-073). Idempotent by name: called at the end of
-   * importFromJson() after every scene (re)build, so a scene reloaded from a
-   * saved .ctx.json (which already carries the frames) is a no-op, while a fresh
-   * scene gets exactly one robot_base + one tcp at their defaults.
+   * auto-generation per ADR-073). Idempotent by name, so every scene-entry path
+   * calls it and only a scene missing the frames actually seeds them: at the end
+   * of importFromJson() / loadScene() after a (re)build (a saved .ctx.json that
+   * already carries them is a no-op), and once at boot for the default scene —
+   * `AppController` calls it after creating the initial object, because that
+   * path never goes through importFromJson (a fresh scene must still get exactly
+   * one robot_base + one tcp at their defaults, or they would never appear in
+   * the Outliner and the robot could not be placed via the CF gizmo / N-panel).
    *
    * The frames are ordinary serialized entities (§1.1): they ride Scene ⇄ Layout
    * DSL round-trip (ADR-055) and .ctx.json like any other CoordinateFrame.
    */
-  _ensureRobotFrames() {
+  ensureRobotFrames() {
     const byName = new Set(
       [...this._model.objects.values()]
         .filter(o => o instanceof CoordinateFrame)

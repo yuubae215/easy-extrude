@@ -195,6 +195,26 @@ graspSearch: {
 Phase 1→core実装を先行させ、Phase 2/3→フロント追従という順序はADR-079/081が既に
 使った「コア実装+テスト先行 → 契約 → 消費追従」と同型。
 
+### Phase 2-3 のフォローアップ修正 (2026-07-22)
+
+Phase 2 の自動 seed は `ensureRobotFrames()` を `importFromJson()` 末尾でだけ呼んで
+いたため、**JSON インポート/コンテキスト生成を経ないパスでは robot_base/tcp が
+生成されなかった**。特にアプリ起動時の既定シーンは `AppController` 起動列の
+`_addObject()` (→ `SceneService.createSolid()`) で作られ `importFromJson()` を通らない。
+結果、初期キューブだけのシーンでは 2 フレームが一度も生成されず、Outliner に出ず、
+CF gizmo / N-panel で配置する導線が存在しなかった (RobotStage は `robot_base` 不在時
+`_syncRobotStage()` が no-op になり既定位置に留まる = ロボットがどの CF にも駆動されない)。
+ADR/CODE_CONTRACTS の「per scene で seed」という記述と実装のドリフト (#19)。
+
+- 修正: `_ensureRobotFrames` を public `ensureRobotFrames()` に改名し、**全シーン入口**で
+  呼ぶ — 既定シーン (`AppController` が `_addObject()` 直後に呼ぶ)、`importFromJson()`、
+  `loadScene()` (リモート復元)。冪等 (名前キー) なので重複は生じない。
+- 発見性 (UX): Outliner の robot_base/tcp 行に `ROBOT` バッジ + 配置方法の tooltip を
+  追加 (`ROBOT_FRAME_HINT`、正準名は `robotFrames.js` から import = §1.1)。Header の
+  Robot ボタン title を「表示切替 + 配置は Outliner のフレームを G/R/N-panel で」に更新。
+- CODE_CONTRACTS「Robot Geometry Is a CoordinateFrame Entity」行に seed 入口 3 経路を
+  明示 (どれか 1 つでも欠けると frames が出ない、を規約に固定 — #19)。
+
 ### Phase 2-3 の実装メモ (2026-07-21)
 
 - **世界フレームの一級化**: `CoordinateFrame` の `parentId` は `null` を許容するように
@@ -203,7 +223,7 @@ Phase 1→core実装を先行させ、Phase 2/3→フロント追従という順
   として cache するので、`worldPoseOf()` が world フレームにも効く (ROS TF の根)。
 - **既定自動生成**: `src/domain/robotFrames.js` が正準名 (`robot_base`/`tcp`) と既定姿勢
   (base=ADR-083 既定 `[-2,2,0]`、tcp は同位置+単位回転) を保持。`SceneService`に
-  `createWorldFrame(name, pose)` (親なし CF 生成) と `_ensureRobotFrames()` (名前で冪等)
+  `createWorldFrame(name, pose)` (親なし CF 生成) と `ensureRobotFrames()` (名前で冪等)
   を追加し、`importFromJson()` 末尾 (`_ensureOriginFrames` の直後) で毎回呼ぶ — 新規
   シーンは 2 フレームを seed、保存済み `.ctx.json` からの復元は no-op (ADR-073 無言命名)。
 - **Layout DSL 往復**: standalone (world-parented) CF を schema の `position`+`rotation`
