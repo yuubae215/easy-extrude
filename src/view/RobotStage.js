@@ -1,6 +1,8 @@
 // @ts-nocheck
 import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
+import { ROBOT_REST_POSE } from '../domain/robotConfig.js'
+import { ROBOT_URDF_TEXT } from './robotSkeleton.js'
 
 /**
  * RobotStage — loads and displays a fixed-pose robot-arm skeleton in the main
@@ -35,33 +37,29 @@ export class RobotStage {
     this._group.position.set(x, y, z)
     scene.add(this._group)
 
+    // Parse the SAME bundled URDF string the tcp seed is derived from
+    // (ROBOT_URDF_TEXT, ADR-088 §1.1) — one source drives both the drawn flange
+    // and the seed, and no runtime fetch is needed. `parse` is synchronous.
     const loader = new URDFLoader()
-    const urdfUrl = `${import.meta.env.BASE_URL}robot/skeleton_arm.urdf`
-    loader.load(urdfUrl, (robot) => {
-      // ROS (+Z up) and THREE.js world (+Z up here, per SceneView.camera.up)
-      // already agree — URDFLoader instantiates links in URDF-native axes
-      // with no reframing needed (see URDFLoader.js header comment).
-      robot.rotation.x = 0
-      this.robot = robot
-      this._group.add(robot)
-      this._applyRestPose()
-    })
+    const robot = loader.parse(ROBOT_URDF_TEXT)
+    // ROS (+Z up) and THREE.js world (+Z up here, per SceneView.camera.up)
+    // already agree — URDFLoader instantiates links in URDF-native axes
+    // with no reframing needed (see URDFLoader.js header comment).
+    robot.rotation.x = 0
+    this.robot = robot
+    this._group.add(robot)
+    this._applyRestPose()
   }
 
   /**
-   * A legible bent-elbow UR rest pose (not a straight totem pole). These angles
-   * are a COUPLED PAIR with ROBOT_FRAME_DEFAULTS[tcp]: that constant is the
-   * forward-kinematics flange (tool0) position of THIS pose, so the tcp marker
-   * seeds at the skeleton's hand. Change one → recompute the other.
+   * Applies the shared rest pose (ADR-088). The angles live in ONE place —
+   * `ROBOT_REST_POSE` (domain/robotConfig) — and the tcp seed is DERIVED from
+   * this same pose via forward kinematics, so the two can no longer drift: the
+   * former "coupled pair, recompute the other" hand-discipline is now structural.
    */
   _applyRestPose() {
     if (!this.robot) return
-    this.setJointValues({
-      shoulder_lift_joint: -1.0,
-      elbow_joint: 1.2,
-      wrist_1_joint: -1.8,
-      wrist_2_joint: -1.5708,
-    })
+    this.setJointValues(ROBOT_REST_POSE)
   }
 
   /**

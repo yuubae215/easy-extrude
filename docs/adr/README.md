@@ -99,7 +99,7 @@ This directory records the project's design decisions.
 | [ADR-085](ADR-085-robot-tf-tree-selectable-fast-grasp-entry.md) | **ロボットを TF 親子ツリー (world→robot_base→tcp) で接地 + 骨格を直接選択可能に + grasp-search を無フォームで開く** | Accepted (全 3 点 実装済) | 2026-07-22 | ADR-084, ADR-083, ADR-055, ADR-051, ADR-018, ADR-034 |
 | [ADR-086](ADR-086-deterministic-boot-slice-in-required-gate.md) | **e2e は非必須のまま、boot 保証の決定的スライス (起動時 ReferenceError 不在) だけを必須 gate に落とす** | Accepted (実装済 — PR #341) | 2026-07-22 | ADR-064, ADR-085 |
 | [ADR-087](ADR-087-cf-grounded-object-model-robot-visibility-outliner.md) | **CF 接地オブジェクトモデルの統一 + ロボット可視性を Outliner の所有下へ (ヘッダートグル撤去)** | Accepted | 2026-07-22 | ADR-037, ADR-084, ADR-085 |
-| [ADR-088](ADR-088-tcp-seed-derived-from-urdf-fk.md) | **robot_base→tcp の既定 seed を URDF スケルトンの FK から導出 — フランジ位置の真実の源を URDF に一本化し手写し定数を廃す** | Proposed | 2026-07-23 | ADR-084, ADR-085, ADR-053, ADR-018 |
+| [ADR-088](ADR-088-tcp-seed-derived-from-urdf-fk.md) | **robot_base→tcp の既定 seed を URDF スケルトンの FK から導出 — フランジ位置の真実の源を URDF に一本化し手写し定数を廃す** | Accepted (実装済) | 2026-07-23 | ADR-084, ADR-085, ADR-053, ADR-018 |
 
 ## How to Add a New ADR
 

@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStage } from './RobotStage.js'
+import { TCP_LOCAL_SEED } from './robotSkeleton.js'
 import { focusPose as computeFocusPose } from './CameraMath.js'
 
 export class SceneView {
@@ -50,6 +51,10 @@ export class SceneView {
     // grasp-search verification aid: a fixed-pose robot skeleton rendered
     // clear of the voxel workspace (ADR: see RobotStage.js doc comment).
     this.robotStage = new RobotStage(this.scene)
+    // The tcp default seed, DERIVED from the same bundled URDF the skeleton is
+    // drawn from (ADR-088). Handed to SceneService via AppController so the tool
+    // point seeds at the rendered flange — one source, no drift.
+    this.robotTcpSeed = TCP_LOCAL_SEED
 
     window.addEventListener('resize', () => this._onResize())
   }

@@ -116,11 +116,19 @@ function _xyPointInPolygon(px, py, poly) {
 export class SceneService extends EventEmitter {
   /**
    * @param {import('three').Scene} threeScene  Three.js scene used for MeshView creation/disposal
+   * @param {{ tcpSeed?: {x:number,y:number,z:number}|null }} [opts]  ADR-088: the
+   *   tcp frame's default LOCAL translation, DERIVED from the URDF flange FK at the
+   *   shared rest pose and injected by the browser composition root (AppController
+   *   ← view/robotSkeleton.js). Absent in headless/test contexts (no skeleton is
+   *   rendered), where tcp then seeds at the base origin — the correct "no arm"
+   *   default. Never a hand-copied constant (§1.1).
    */
-  constructor(threeScene) {
+  constructor(threeScene, opts = {}) {
     super()
     this._threeScene = threeScene
     this._model      = new SceneModel()
+    /** @type {{x:number,y:number,z:number}|null} */
+    this._tcpSeed    = opts.tcpSeed ?? null
     /** @type {BffClient|null} */
     this._bff        = null
     /** Server-assigned scene id when synced with the BFF. */
@@ -3053,15 +3061,16 @@ export class SceneService extends EventEmitter {
     // revised 2026-07-22): the tool point is expressed in the robot's own frame,
     // so moving/rotating the base carries it along. createCoordinateFrame seeds
     // it at local (0,0,0); we then place it at the skeleton's flange (tool0) so
-    // the tool point defaults to the arm's HAND, not buried in the base — the
-    // ROBOT_FRAME_DEFAULTS[tcp] local translation is the UR5e flange FK at
-    // RobotStage's rest pose. _updateWorldPoses (each frame / entry paths)
-    // composes it through robot_base into the world pose the marker renders at.
+    // the tool point defaults to the arm's HAND, not buried in the base. The
+    // flange position is the injected `_tcpSeed` — DERIVED from the URDF FK at the
+    // shared rest pose (ADR-088), no longer a hand-copied constant. When absent
+    // (headless/test, no skeleton drawn), tcp stays at the base origin.
+    // _updateWorldPoses (each frame / entry paths) composes it through robot_base
+    // into the world pose the marker renders at.
     const tcp = byName.get(TCP_FRAME_NAME)
     if (!tcp) {
       const created = this.createCoordinateFrame(base.id, TCP_FRAME_NAME, null)
-      const seed = ROBOT_FRAME_DEFAULTS[TCP_FRAME_NAME].position
-      if (created) created.translation.set(seed.x, seed.y, seed.z)
+      if (created && this._tcpSeed) created.translation.set(this._tcpSeed.x, this._tcpSeed.y, this._tcpSeed.z)
     } else if (tcp.parentId === null && tcp.id !== base.id) {
       // Lossless upgrade of a legacy scene (tcp saved as a world-parented frame
       // before the TF-tree revision): re-home it under robot_base while
