@@ -27,6 +27,7 @@ Defines the structure and content of information displayed on each screen of eas
 | `S-10` | Rect selection in progress (desktop only) | Drag on empty space |
 | `S-17` | Context DSL Demo overlay (ADR-047) | Header **Demo** button / `?demo=context` / `window.__easyExtrude.demoContext()` |
 | `S-18` | Onboarding tour quest card (ADR-065 Phase 6, desktop only) | First run on a fine pointer (no `ee_tour` localStorage flag); advances from scene facts; suppressed while any Context/demo/gallery overlay is active |
+| `S-19` | Home / Launch screen (ADR-089) | On startup when no `ee_home='skip'` flag; reopened via Header **Layout gallery** slot |
 
 ---
 
@@ -899,6 +900,48 @@ shows the green `TOUR COMPLETE` banner (✕ **Close tour**). The card never bloc
 without resetting progress. Done/dismissed persists to localStorage (`ee_tour`) as a
 display **setting** (Widening 3); the mobile counterpart stays the S-01 first-visit
 gesture overlay (`pointer: coarse`).
+
+---
+
+### S-19: Home / Launch screen (ADR-089)
+
+The app's launch entry — a full-screen overlay (z-index above all edge panels,
+PHILOSOPHY #26) shown **on startup** unless the `ee_home='skip'` localStorage flag
+is set. Its job is to lower the first-contact "what do I even start with?" barrier
+by turning the first move from *recall* (filling a blank canvas / blank Context)
+into *recognition* (picking a process layout from a gallery). It is the **Layout DSL**
+entry, distinct from the **Context DSL** `New Project` gallery (S-17 [N], ADR-051).
+
+#### [C] Background (Viewport)
+- The BootReveal camera fly-in (ADR-067, Tier D) plays **behind** the overlay so
+  the launch screen sits over a living stage rather than a dead splash. The scene
+  behind it is the default boot scene until a template replaces it.
+
+#### [P] Home overlay
+| Element | Content |
+|---------|---------|
+| Title | App name / short tagline |
+| Layout template cards | One card per `examples/layout_*.json` (Starter: **Pick & Place Cell** / **Conveyor Line** / **Palletizing** / **Factory Cell**) + an **Empty Project** card (escape hatch). Each card: name + one-line description; hover = Tier B affordance. |
+| Selecting a layout card | `onSelectLayoutTemplate(id)` → `compileLayout(dsl)` → `SceneService.importFromJson(scene, {clear:true})` (the single authoritative load path — PHILOSOPHY #1) → close overlay → land in **S-01**. |
+| Empty Project card | `onStartEmptyProject()` → close overlay onto the default boot scene → **S-01** (no scene replacement). |
+| "起動時に表示しない" checkbox | `onToggleHomeSkip(bool)` → persists `ee_home='skip'` (a display **setting**, same流儀 as `ee_tour` — ADR-065 Widening 3). Blender-style. |
+| ✕ close | `onCloseHome()` → close onto whatever scene is loaded (equivalent to Empty when nothing was picked). |
+
+The scene-replacement consequence is stated in the footer up front (same
+transparency rule as S-17 [N], ADR-051 §7) so no second confirm dialog is shown.
+
+#### [A] Header (reopen affordance)
+A **fixed** header slot (desktop) / ⋯ MoreMenu item (mobile) reopens the Home
+overlay after it has been skipped — the entry is never hidden (PHILOSOPHY #15
+fixed slots / #11 no silent gate).
+
+#### Motion (ADR-089 §5, PHILOSOPHY #30)
+Overlay entrance = **Tier D (delight)**, spawned via the MotionGovernor; under
+`prefers-reduced-motion` the final state is the whole show. The single motion
+reduction boundary stays in `src/theme/motion.js`.
+
+FSM: `uiStore.home` (`null | { status:'open' }`), sole writer `AppController` —
+see `docs/STATE_TRANSITIONS.md` § `home`.
 
 ---
 
