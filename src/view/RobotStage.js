@@ -15,10 +15,11 @@ import URDFLoader from 'urdf-loader'
  * there), same pattern as `SceneStage` — no MotionGovernor involvement since
  * nothing here animates on its own.
  *
- * The robot model is a self-contained synthetic 6-DOF "skeleton" URDF
- * (`public/robot/skeleton_arm.urdf`) built entirely from primitive
- * <geometry> (box/cylinder) — no external mesh assets, so URDFLoader needs no
- * `packages` mapping or mesh loader override.
+ * The robot model is a self-contained 6-DOF "skeleton" URDF
+ * (`public/robot/skeleton_arm.urdf`) whose joint origins reproduce the
+ * Universal Robots UR5e link transforms (recognizable UR silhouette), drawn
+ * from primitive <geometry> (cylinder) bones — no external mesh assets, so
+ * URDFLoader needs no `packages` mapping or mesh loader override.
  */
 export class RobotStage {
   /**
@@ -47,13 +48,19 @@ export class RobotStage {
     })
   }
 
-  /** A visually legible bent-elbow rest pose instead of a straight totem pole. */
+  /**
+   * A legible bent-elbow UR rest pose (not a straight totem pole). These angles
+   * are a COUPLED PAIR with ROBOT_FRAME_DEFAULTS[tcp]: that constant is the
+   * forward-kinematics flange (tool0) position of THIS pose, so the tcp marker
+   * seeds at the skeleton's hand. Change one → recompute the other.
+   */
   _applyRestPose() {
     if (!this.robot) return
     this.setJointValues({
-      shoulder_lift_joint: -0.6,
-      elbow_joint: 1.0,
-      wrist_1_joint: -0.4,
+      shoulder_lift_joint: -1.0,
+      elbow_joint: 1.2,
+      wrist_1_joint: -1.8,
+      wrist_2_joint: -1.5708,
     })
   }
 

@@ -3052,10 +3052,16 @@ export class SceneService extends EventEmitter {
     // tcp is a CHILD of robot_base (TF tree world → robot_base → tcp, ADR-084 §2
     // revised 2026-07-22): the tool point is expressed in the robot's own frame,
     // so moving/rotating the base carries it along. createCoordinateFrame seeds
-    // it at local (0,0,0)/identity — coincident with the base until re-aimed.
+    // it at local (0,0,0); we then place it at the skeleton's flange (tool0) so
+    // the tool point defaults to the arm's HAND, not buried in the base — the
+    // ROBOT_FRAME_DEFAULTS[tcp] local translation is the UR5e flange FK at
+    // RobotStage's rest pose. _updateWorldPoses (each frame / entry paths)
+    // composes it through robot_base into the world pose the marker renders at.
     const tcp = byName.get(TCP_FRAME_NAME)
     if (!tcp) {
-      this.createCoordinateFrame(base.id, TCP_FRAME_NAME, null)
+      const created = this.createCoordinateFrame(base.id, TCP_FRAME_NAME, null)
+      const seed = ROBOT_FRAME_DEFAULTS[TCP_FRAME_NAME].position
+      if (created) created.translation.set(seed.x, seed.y, seed.z)
     } else if (tcp.parentId === null && tcp.id !== base.id) {
       // Lossless upgrade of a legacy scene (tcp saved as a world-parented frame
       // before the TF-tree revision): re-home it under robot_base while

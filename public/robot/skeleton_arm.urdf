@@ -1,28 +1,49 @@
 <?xml version="1.0"?>
 <!--
-  Self-contained 6-DOF "skeleton" arm for in-app visualization/verification of
+  UR5e-shaped 6-DOF "skeleton" arm for in-app visualization/verification of
   grasp-search results (see CLAUDE.md AI 向けガード: this app never solves IK —
-  it only displays poses/joint angles it receives). All links use primitive
-  <geometry> (box/cylinder) so no external mesh assets are required; URDFLoader
-  builds THREE.BoxGeometry/CylinderGeometry directly from this file. World
-  frame follows ROS REP-103 (+X forward, +Y left, +Z up).
+  it only DISPLAYS poses/joint angles it receives).
+
+  KINEMATICS: the joint origins reproduce the Universal Robots UR5e link
+  transforms (the published DH parameters d1=0.1625, a2=-0.425, a3=-0.3922,
+  d4=0.1333, d5=0.0997, d6=0.0996), so the chain has the recognizable UR
+  silhouette — the two offset arm links + the three-axis wrist cluster — rather
+  than a coaxial totem pole. Every joint axis is the link's local +Z, exactly
+  as in the official UR URDF; the rpy on shoulder_lift / wrist_2 / wrist_3 sets
+  up the elbow and wrist planes.
+
+  GEOMETRY: no external mesh assets. We are not shipping the UR visual meshes
+  (they need STL/DAE files and a `packages` mapping); instead each link draws a
+  primitive-<geometry> "bone + knuckle" skeleton — a cylinder around each joint
+  axis plus a cylinder spanning to the next joint. URDFLoader builds
+  THREE.CylinderGeometry directly from this, so the file stays self-contained
+  and GitHub-Pages friendly. World frame follows ROS REP-103 (+X forward,
+  +Y left, +Z up).
+
+  Joint names match the UR convention (shoulder_pan/lift, elbow, wrist_1/2/3)
+  so RobotStage._applyRestPose and any future grasp-contract joint payload key
+  against the same names.
 -->
-<robot name="skeleton_arm">
+<robot name="ur5e_skeleton">
 
   <material name="base_gray">
-    <color rgba="0.25 0.27 0.30 1"/>
+    <color rgba="0.28 0.30 0.33 1"/>
   </material>
   <material name="link_blue">
-    <color rgba="0.35 0.55 0.85 1"/>
+    <color rgba="0.38 0.56 0.86 1"/>
+  </material>
+  <material name="joint_dark">
+    <color rgba="0.20 0.22 0.26 1"/>
   </material>
   <material name="flange_orange">
     <color rgba="0.95 0.55 0.15 1"/>
   </material>
 
+  <!-- ── base_link: mounting can, up to the shoulder-pan joint (d1) ── -->
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 0.04" rpy="0 0 0"/>
-      <geometry><box size="0.16 0.16 0.08"/></geometry>
+      <origin xyz="0 0 0.0815" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.075" length="0.163"/></geometry>
       <material name="base_gray"/>
     </visual>
   </link>
@@ -30,15 +51,16 @@
   <joint name="shoulder_pan_joint" type="revolute">
     <parent link="base_link"/>
     <child link="shoulder_link"/>
-    <origin xyz="0 0 0.08" rpy="0 0 0"/>
+    <origin xyz="0 0 0.1625" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-2.967" upper="2.967" effort="150" velocity="3.14"/>
+    <limit lower="-6.2832" upper="6.2832" effort="150" velocity="3.14"/>
   </joint>
 
+  <!-- shoulder_link: the vertical pan barrel; local +Z = pan axis -->
   <link name="shoulder_link">
     <visual>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.055" length="0.12"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.062" length="0.14"/></geometry>
       <material name="link_blue"/>
     </visual>
   </link>
@@ -46,15 +68,21 @@
   <joint name="shoulder_lift_joint" type="revolute">
     <parent link="shoulder_link"/>
     <child link="upper_arm_link"/>
-    <origin xyz="0 0 0.12" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-2.0944" upper="2.0944" effort="150" velocity="3.14"/>
+    <origin xyz="0 0 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.2832" upper="6.2832" effort="150" velocity="3.14"/>
   </joint>
 
+  <!-- upper_arm_link: horizontal shoulder knuckle + bone spanning a2 along -X -->
   <link name="upper_arm_link">
     <visual>
-      <origin xyz="0 0 0.15" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.045" length="0.30"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.058" length="0.13"/></geometry>
+      <material name="joint_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.2125 0 0" rpy="0 1.570796327 0"/>
+      <geometry><cylinder radius="0.05" length="0.425"/></geometry>
       <material name="link_blue"/>
     </visual>
   </link>
@@ -62,15 +90,27 @@
   <joint name="elbow_joint" type="revolute">
     <parent link="upper_arm_link"/>
     <child link="forearm_link"/>
-    <origin xyz="0 0 0.30" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-2.618" upper="2.618" effort="100" velocity="3.14"/>
+    <origin xyz="-0.425 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.1416" upper="3.1416" effort="150" velocity="3.14"/>
   </joint>
 
+  <!-- forearm_link: elbow knuckle + bone spanning a3 along -X, plus the d4
+       wrist-plane offset that rises in +Z toward wrist_1 -->
   <link name="forearm_link">
     <visual>
-      <origin xyz="0 0 0.125" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.035" length="0.25"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.046" length="0.11"/></geometry>
+      <material name="joint_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.1961 0 0" rpy="0 1.570796327 0"/>
+      <geometry><cylinder radius="0.04" length="0.3922"/></geometry>
+      <material name="link_blue"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.3922 0 0.06665" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.038" length="0.1333"/></geometry>
       <material name="link_blue"/>
     </visual>
   </link>
@@ -78,47 +118,65 @@
   <joint name="wrist_1_joint" type="revolute">
     <parent link="forearm_link"/>
     <child link="wrist_1_link"/>
-    <origin xyz="0 0 0.25" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-3.14159" upper="3.14159" effort="30" velocity="6.28"/>
+    <origin xyz="-0.3922 0 0.1333" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.2832" upper="6.2832" effort="28" velocity="6.28"/>
   </joint>
 
+  <!-- wrist_1_link: knuckle + bone spanning d5 along -Y to wrist_2 -->
   <link name="wrist_1_link">
     <visual>
-      <origin xyz="0 0 0.04" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.03" length="0.08"/></geometry>
-      <material name="base_gray"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.042" length="0.09"/></geometry>
+      <material name="joint_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 -0.04985 0" rpy="1.570796327 0 0"/>
+      <geometry><cylinder radius="0.038" length="0.0997"/></geometry>
+      <material name="link_blue"/>
     </visual>
   </link>
 
   <joint name="wrist_2_joint" type="revolute">
     <parent link="wrist_1_link"/>
     <child link="wrist_2_link"/>
-    <origin xyz="0 0 0.08" rpy="0 0 0"/>
-    <axis xyz="1 0 0"/>
-    <limit lower="-3.14159" upper="3.14159" effort="30" velocity="6.28"/>
+    <origin xyz="0 -0.0997 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-6.2832" upper="6.2832" effort="28" velocity="6.28"/>
   </joint>
 
+  <!-- wrist_2_link: knuckle + bone spanning d6 along +Y to wrist_3 -->
   <link name="wrist_2_link">
     <visual>
-      <origin xyz="0 0 0.03" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.025" length="0.06"/></geometry>
-      <material name="base_gray"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04" length="0.085"/></geometry>
+      <material name="joint_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0.0498 0" rpy="1.570796327 0 0"/>
+      <geometry><cylinder radius="0.036" length="0.0996"/></geometry>
+      <material name="link_blue"/>
     </visual>
   </link>
 
   <joint name="wrist_3_joint" type="revolute">
     <parent link="wrist_2_link"/>
-    <child link="flange"/>
-    <origin xyz="0 0 0.06" rpy="0 0 0"/>
+    <child link="wrist_3_link"/>
+    <origin xyz="0 0.0996 0" rpy="1.570796327 3.141592654 3.141592654"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-3.14159" upper="3.14159" effort="30" velocity="6.28"/>
+    <limit lower="-6.2832" upper="6.2832" effort="28" velocity="6.28"/>
   </joint>
 
-  <link name="flange">
+  <!-- wrist_3_link: the tool flange (tool0). +Z points out of the flange face. -->
+  <link name="wrist_3_link">
     <visual>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
-      <geometry><box size="0.05 0.05 0.02"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.038" length="0.05"/></geometry>
+      <material name="joint_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0.03" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.031" length="0.02"/></geometry>
       <material name="flange_orange"/>
     </visual>
   </link>
