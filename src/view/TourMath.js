@@ -190,5 +190,5 @@ export function tourAnchor(state) {
  */
 export function tourVisible(state, overlays = {}) {
   if (!state || (state.status !== 'active' && state.status !== 'done')) return false
-  return !(overlays.contextActive || overlays.demoActive || overlays.galleryOpen)
+  return !(overlays.contextActive || overlays.demoActive || overlays.galleryOpen || overlays.homeOpen)
 }

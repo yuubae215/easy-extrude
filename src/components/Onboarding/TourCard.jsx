@@ -27,10 +27,11 @@ export function TourCard() {
   const contextActive = useUIStore(s => s.context.active)
   const demoActive    = useUIStore(s => s.demo.active)
   const galleryOpen   = useUIStore(s => s.templateGalleryOpen)
+  const homeOpen      = useUIStore(s => !!s.home)
   const callbacks     = useUIStore(s => s.callbacks)
   const reduced       = useReducedMotion()
 
-  if (!tourVisible(tour, { contextActive, demoActive, galleryOpen })) return null
+  if (!tourVisible(tour, { contextActive, demoActive, galleryOpen, homeOpen })) return null
   const step = tourStepDescriptor(tour)
   const done = tour.status === 'done'
   if (!step && !done) return null

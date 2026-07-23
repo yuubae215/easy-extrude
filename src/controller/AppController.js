@@ -73,6 +73,16 @@ import { SnapFlash }                  from '../view/SnapFlash.js'
 import { CelebrationField }           from '../view/CelebrationField.js'
 import { commandMilestone, celebrationDescriptor } from '../view/CelebrationMath.js'
 import { startTour, nextTourState }   from '../view/TourMath.js'
+// Launch / Home screen (ADR-089): the Layout DSL entry. The catalog is pure
+// metadata; the controller owns the file → DSL import map (a static JSON import
+// side effect, PHILOSOPHY #3), and the scene load rides the same
+// compileLayout → importFromJson path as the context demo (§1.1).
+import { compileLayout }              from '../layout/LayoutCompiler.js'
+import { getLayoutTemplateMeta }      from '../layout/LayoutTemplateCatalog.js'
+import layoutPickPlace                from '../../examples/layout_pick_place_cell.json'
+import layoutConveyor                 from '../../examples/layout_conveyor_line.json'
+import layoutPalletizing              from '../../examples/layout_palletizing.json'
+import layoutFactoryCell              from '../../examples/factory_layout.json'
 import { MapModeController }          from './map/MapModeController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
@@ -1939,8 +1949,21 @@ export class AppController {
 
     // A blank / spec-less doc (ADR-051 Entry A) adopts with `compiled: null` —
     // there is no layout to frame, so fall through to the empty-box default fit.
+    this._frameLayoutDsl(compiled?.layoutDsl)
+  }
+
+  /**
+   * Frame the perspective camera around the axis-aligned bounds of a Layout DSL
+   * (mm-scale derived scenes need explicit framing — PHILOSOPHY #27). Shared by
+   * the context load (`_onContextLoaded`) and the Home layout-template load
+   * (`_loadLayoutTemplateDsl`) so the framing math has one source (§1.1).
+   * Entities placed only by a strategy (no explicit `position`) are bounded by
+   * any sibling region vertices; an empty box falls back to the origin fit.
+   * @param {object|null|undefined} layoutDsl
+   */
+  _frameLayoutDsl(layoutDsl) {
     const box = new THREE.Box3()
-    for (const e of compiled?.layoutDsl?.entities ?? []) {
+    for (const e of layoutDsl?.entities ?? []) {
       if (e.position && e.dimensions) {
         const { x, y, z } = e.position
         const d = e.dimensions
@@ -3646,6 +3669,115 @@ export class AppController {
     try { localStorage.setItem('ee_tour', value) } catch { /* storage denied — session-only tour */ }
   }
 
+  // ─── Launch / Home screen (ADR-089) ────────────────────────────────────────
+
+  /**
+   * File → Layout DSL import map for the Home template catalog. Keyed by the
+   * `source.file` each catalog entry declares; a missing key is surfaced by
+   * `_selectLayoutTemplate`, never a silent no-op (PHILOSOPHY #11).
+   */
+  _layoutTemplateDsls() {
+    return {
+      'layout_pick_place_cell.json': layoutPickPlace,
+      'layout_conveyor_line.json':   layoutConveyor,
+      'layout_palletizing.json':     layoutPalletizing,
+      'factory_layout.json':         layoutFactoryCell,
+    }
+  }
+
+  /**
+   * Open the launch Home overlay on boot unless the user skipped it
+   * (localStorage `ee_home='skip'`) or the URL boots straight into the Context
+   * demo (that path frames its own scene). Callbacks are registered
+   * unconditionally so the header "Layouts" slot can reopen Home after a skip.
+   */
+  _openHomeIfNeeded() {
+    const { registerCallback } = useUIStore.getState().actions
+    registerCallback('onSelectLayoutTemplate', (id) => this._selectLayoutTemplate(id))
+    registerCallback('onStartEmptyProject',    ()   => this._closeHome())
+    registerCallback('onToggleHomeSkip',       (on) => this._persistHomeFlag(on ? 'skip' : null))
+    registerCallback('onCloseHome',            ()   => this._closeHome())
+    registerCallback('onOpenHome',             ()   => this._openHome())
+
+    if (new URLSearchParams(location.search).get('demo') === 'context') return
+    let flag = null
+    try { flag = localStorage.getItem('ee_home') } catch { /* storage denied */ }
+    if (flag === 'skip') return
+    this._openHome()
+  }
+
+  _openHome()  { useUIStore.getState().actions.setHome({ status: 'open' }) }
+  _closeHome() { useUIStore.getState().actions.setHome(null) }
+
+  /** Persist (or clear) the Blender-style "don't show on startup" preference. */
+  _persistHomeFlag(value) {
+    try {
+      if (value) localStorage.setItem('ee_home', value)
+      else       localStorage.removeItem('ee_home')
+    } catch { /* storage denied — session-only preference */ }
+  }
+
+  /**
+   * Resolve a Home template id to its Layout DSL and load it (scene
+   * replacement), then close the overlay. The Empty card fires
+   * `onStartEmptyProject` instead, so it never reaches here; an unknown id or a
+   * missing DSL is surfaced, never a silent no-op (PHILOSOPHY #11).
+   * @param {string} id
+   */
+  _selectLayoutTemplate(id) {
+    const meta = getLayoutTemplateMeta(id)
+    if (!meta || meta.source.kind !== 'example') { this._closeHome(); return }
+    const dsl = this._layoutTemplateDsls()[meta.source.file]
+    if (!dsl) {
+      this._uiView.showToast(`Layout template not found: ${meta.source.file}`, { type: 'error' })
+      return
+    }
+    this._loadLayoutTemplateDsl(dsl).then(ok => { if (ok) this._closeHome() })
+  }
+
+  /**
+   * Load a Layout DSL into the scene through the single authoritative path
+   * (compileLayout → SceneService.importFromJson(clear) — §1.1), the same
+   * sequence the Context demo uses. A template load is a project-open boundary,
+   * not a user edit: it clears undo history, drops stale selection, and frames
+   * the new scene (PHILOSOPHY #27).
+   * @param {object} dsl — a layout/1.0 DSL object
+   * @returns {Promise<boolean>} true on success
+   */
+  async _loadLayoutTemplateDsl(dsl) {
+    let scene
+    try {
+      scene = compileLayout(dsl)
+    } catch (err) {
+      this._uiView.showToast(`Layout compile failed: ${err.message}`, { type: 'error' })
+      console.error('[AppController] layout template compile', err)
+      return false
+    }
+    // The Home load frames its own scene — the boot fly-in / focus flight yield.
+    this._finishBootReveal()
+    this._finishCameraFlight()
+    const viewContext = {
+      camera:    this._camera,
+      renderer:  this._sceneView.renderer,
+      container: document.body,
+    }
+    try {
+      await this._service.importFromJson(scene, viewContext, { clear: true })
+    } catch (err) {
+      this._uiView.showToast(`Layout load failed: ${err.message}`, { type: 'error' })
+      console.error('[AppController] layout template load', err)
+      return false
+    }
+    // Not a user edit — keep it out of undo history (same contract as the demo /
+    // the constructor's boot solid).
+    this._commandStack.clear()
+    this._refreshUndoRedoState()
+    this._selMgr.clearObjectSelection()
+    this._selMgr.setObjectSelected(false)
+    this._frameLayoutDsl(dsl)
+    return true
+  }
+
   // ─── Animation loop ────────────────────────────────────────────────────────
   start() {
     // Boot reveal (ADR-067, Tier D): one camera fly-in per session opening,
@@ -3758,6 +3890,10 @@ export class AppController {
     }
     loop()
 
+    // Launch Home screen (ADR-089): the layout-template entry, shown over the
+    // boot reveal unless skipped. Registered before the tour so an open Home
+    // suppresses the quest card (tourVisible) — the tour resumes when Home closes.
+    this._openHomeIfNeeded()
     // Show first-run gesture hints on mobile
     this._uiView.showOnboardingIfNeeded()
     // …and the fact-driven quest tour on desktop (ADR-065 Phase 6)

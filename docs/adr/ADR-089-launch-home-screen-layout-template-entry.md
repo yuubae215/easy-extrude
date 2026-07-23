@@ -1,6 +1,6 @@
 # 089. 起動ホーム画面 — 工程レイアウトテンプレ選択を起点にする（Blender 式スキップ設定つき）
 
-- Status: Proposed
+- Status: Accepted (実装済)
 - Date: 2026-07-23
 - Deciders: yuubae（オーナー）, Claude
 - Supersedes / Superseded by: なし

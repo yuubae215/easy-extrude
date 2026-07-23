@@ -19,6 +19,7 @@ import { TourCard } from './Onboarding/TourCard.jsx'
 import { ContextDemoLayer } from './ContextDemo/ContextDemoLayer.jsx'
 import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
+import { HomeScreen } from './Home/HomeScreen.jsx'
 import { ChromeDefs } from './Chrome/ChromePrimitives.jsx'
 import { useReducedMotion } from './Feedback/FeedbackPrimitives.jsx'
 import { enterMotion, exitMotion } from '../view/ChromeMath.js'
@@ -77,6 +78,7 @@ export function UIShell() {
       <ContextDemoLayer />
       <ContextLayer />
       <TemplateGallery />
+      <HomeScreen />
       <ToastStack toasts={toasts} />
     </>
   )
