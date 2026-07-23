@@ -55,27 +55,18 @@ export function isRobotBaseFrame(obj) {
  * cube. It stays world-parented (the same world frame the world gizmo and the
  * starter cube share).
  *
- * `tcp` seeds as a CHILD of robot_base, so its pose here is LOCAL to the base.
- * The tool point belongs at the arm's *hand*, not on the mounting base — so its
- * default LOCAL translation is the UR5e skeleton's flange (tool0) position at
- * RobotStage's rest pose, forward-kinematics of `public/robot/skeleton_arm.urdf`
- * (base-frame `(-0.717, -0.133, 0.346)`). This is why the TCP marker now sits at
- * the wrist instead of buried in the base. Keep this in sync with
- * RobotStage._applyRestPose: the two are a coupled pair (skeleton FK ⇄ tcp seed)
- * documented in both places — changing the rest pose means recomputing this.
- * Orientation stays identity (axes world-aligned): only `tcpOrientation` rides
- * the grasp-search wire (GraspController._resolveRobotDeclaration), and the
- * identity default keeps that contract unchanged until the user re-aims it
- * through the CoordinateFrame edit UI (G / R / N-panel). Being parented, moving
- * or rotating the base carries the tcp along (TF tree world → robot_base → tcp).
+ * The `tcp` frame's default LOCAL translation is NO LONGER a constant here
+ * (ADR-088): it is the UR5e flange (tool0) position at the shared rest pose,
+ * DERIVED by forward kinematics of `public/robot/skeleton_arm.urdf` and injected
+ * into `SceneService` (see `view/robotSkeleton.js` → `TCP_LOCAL_SEED`). The
+ * flange fact now has one authority — the URDF + `ROBOT_REST_POSE` — so it can no
+ * longer silently drift from a hand-copied number when either input changes.
+ * (The tcp seed's orientation stays identity, keeping the `tcpOrientation` wire
+ * contract unchanged until the user re-aims it through the CF edit UI.)
  */
 export const ROBOT_FRAME_DEFAULTS = Object.freeze({
   [ROBOT_BASE_FRAME_NAME]: Object.freeze({
     position: Object.freeze({ x: -2, y: 2, z: 0 }),
-    rotation: Object.freeze({ x: 0, y: 0, z: 0, w: 1 }),
-  }),
-  [TCP_FRAME_NAME]: Object.freeze({
-    position: Object.freeze({ x: -0.717, y: -0.133, z: 0.346 }),
     rotation: Object.freeze({ x: 0, y: 0, z: 0, w: 1 }),
   }),
 })

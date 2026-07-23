@@ -177,7 +177,10 @@ export class AppController {
     this._rotateSectorPreview = new RotateSectorPreview(sceneView.scene)
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
-    this._service = new SceneService(sceneView.scene)
+    // Inject the DERIVED tcp seed (URDF flange FK at the shared rest pose,
+    // ADR-088) from the view that renders the skeleton, so the tool point seeds
+    // at the drawn flange from one source instead of a hand-copied constant.
+    this._service = new SceneService(sceneView.scene, { tcpSeed: sceneView.robotTcpSeed })
     this._service.setViewContext({
       camera:    sceneView.camera,
       renderer:  sceneView.renderer,

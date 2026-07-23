@@ -1,6 +1,6 @@
 # 088. robot_base→tcp の既定 seed を URDF スケルトンの FK から導出する（真実の源を URDF に一本化）
 
-- Status: Proposed
+- Status: Accepted (実装済)
 - Date: 2026-07-23
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし（ADR-084 §2 / ADR-085 の tcp seed 実装を精緻化）
@@ -90,15 +90,16 @@ BFF `ComputeBackend`、FK・可視化ループはフロント、という ADR-05
   (3) パーサは自前 URDF の書式前提なので、外部の任意 URDF には未対応（意図的スコープ — 
   一般 URDF 対応は非目標）。
 
-- **検証（証拠、実装フェーズで満たす）**:
-  - `parseUrdfChain` の単体テスト（`skeleton_arm.urdf` → 期待 chain）＋
-    `forwardKinematics(chain, restPose)` のフランジ位置が現行 seed `(-0.717,-0.133,0.346)` と
-    一致（本ブランチで urdf-loader 実レンダリングと一致を実測済 — この値が回帰の基準）。
-  - レストポーズを変えた fixture で「seed が追従し、手写し定数が残っていない」ことを固定。
-  - 既存 `GraspController.test`（`tcpOrientation:[0,0,0,1]` / `base:[-2,2,0]`）が不変で
-    通ること＝ワイヤ契約への非波及の証拠。
-  - 全 JS スイート green + `vite build` クリーン。
-  - ※ 現時点では上記は未実行（Proposed）。Accepted 後に実装フェーズで満たす。
+- **検証（証拠 — 実装フェーズで充足済）**:
+  - `src/robotics/UrdfChain.test.js`: `parseUrdfChain(skeleton_arm.urdf)` が期待 6-joint chain
+    （base→flange 順）を返し、`forwardKinematics(chain, ROBOT_REST_POSE)` のフランジ位置が
+    旧 seed `(-0.717,-0.133,0.346)` に 3dp 一致（回帰の基準）。**✓ 実行済**。
+  - 同テストのレストポーズ改変 fixture（base yaw を 90° 回す）で「seed が追従し（x/y が
+    90° 回転・z 不変）、手写し定数が残っていない」ことを固定。**✓ 実行済**。
+  - 既存 `GraspController.test`（`tcpOrientation:[0,0,0,1]` / `base:[-2,2,0]`）が不変で通る
+    ＝ワイヤ契約への非波及の証拠。**✓（全 708 JS テスト green、うち BootWiring 型解決 gate 含む）**。
+  - `pnpm typecheck` クリーン + `vite build` クリーン（URDF は `?raw` でバンドルへインライン、
+    実行時 fetch なし）。**✓ 実行済**。
 
 - **波及（blast radius）**: `src/robotics/`（新パーサ）, `src/domain/robotFrames.js`
   （tcp 定数削除＋レストポーズ定数化）, `src/view/RobotStage.js`（共有レストポーズを読む）,
