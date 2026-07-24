@@ -8,7 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStage } from './RobotStage.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
-import { focusPose as computeFocusPose } from './CameraMath.js'
+import { focusPose as computeFocusPose, clipPlanesFor } from './CameraMath.js'
 
 export class SceneView {
   constructor() {
@@ -120,11 +120,12 @@ export class SceneView {
   focusPose(center, radius) {
     const dir = this.camera.position.clone().sub(this.controls.target)
     const p = computeFocusPose(center, radius, dir, this.camera.fov)
+    const { near, far } = clipPlanesFor(radius, p.dist, this.camera.far)
     return {
       position: new THREE.Vector3(p.position.x, p.position.y, p.position.z),
       target:   new THREE.Vector3(p.target.x, p.target.y, p.target.z),
-      near:     Math.min(0.01, radius * 0.001),
-      far:      Math.max(this.camera.far, p.dist * 2 + radius * 4),
+      near,
+      far,
       dist:     p.dist,
     }
   }

@@ -44,6 +44,40 @@ export function focusPose(center, radius, dir, fovDeg, margin = 1.3) {
   }
 }
 
+/** Absolute near-plane floor (world units) so tiny scenes keep a small near. */
+const NEAR_FLOOR = 0.01
+
+/**
+ * Clip planes that frame a bounding sphere at camera distance `dist`, sharing
+ * the framing derivation with `focusPose` (核 §1.1 single source — both the
+ * instant `fitCameraToSphere` and the animated `CameraFlight` consume this).
+ *
+ * The near plane SCALES WITH the scene (`radius · 0.001`, floored at
+ * `NEAR_FLOOR`), it is not capped at it. A fixed 0.01 near in a scene that is
+ * thousands of units across (mm-authored layouts) collapses depth-buffer
+ * precision at Z=0, so coplanar surfaces — a Solid's base and a Zone fill plane
+ * both at Z=0 — Z-fight into shimmering "gabigabi" shading even though a
+ * `polygonOffset` is meant to separate them. Scaling near with the scene keeps
+ * the near:far ratio bounded, restoring precision where the geometry actually
+ * sits. The `radius · 0.001` term stays well in front of the nearest visible
+ * geometry (`dist − radius`), so nothing is clipped.
+ *
+ * Far never shrinks below the camera's current far (monotone growth as scenes
+ * or selections are framed), matching the pre-extraction behaviour.
+ *
+ * @param {number} radius   bounding-sphere radius (world units)
+ * @param {number} dist     camera→target distance (world units, from focusPose)
+ * @param {number} currentFar  the camera's present far plane (never reduced)
+ * @returns {{near:number, far:number}}
+ */
+export function clipPlanesFor(radius, dist, currentFar) {
+  const r = Math.max(radius, 0)
+  return {
+    near: Math.max(NEAR_FLOOR, r * 0.001),
+    far:  Math.max(currentFar, dist * 2 + r * 4),
+  }
+}
+
 /**
  * Vertical extent (world units) a perspective camera at distance `dist` frames
  * on a plane through its target — i.e. the orthographic frustum height that
