@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { focusPose, lerpVec, frustumForDistance, distanceForFrustum } from './CameraMath.js'
+import { focusPose, clipPlanesFor, lerpVec, frustumForDistance, distanceForFrustum } from './CameraMath.js'
 
 const C0 = { x: 0, y: 0, z: 0 }
 
@@ -36,6 +36,34 @@ test('focusPose falls back to a 3/4 view for a zero-length direction', () => {
 test('focusPose clamps a degenerate (zero) radius without NaN', () => {
   const p = focusPose(C0, 0, { x: 1, y: 0, z: 0 }, 50)
   assert.ok(Number.isFinite(p.dist) && p.dist > 0)
+})
+
+// ── clipPlanesFor: near scales WITH the scene, floored not capped ────────────
+
+test('clipPlanesFor floors near at 0.01 for small (meter-scale) scenes', () => {
+  // radius 5 → radius·0.001 = 0.005, below the floor → clamps up to 0.01.
+  const { near } = clipPlanesFor(5, 13, 100)
+  assert.equal(near, 0.01)
+})
+
+test('clipPlanesFor scales near UP for large (mm-authored) scenes', () => {
+  // The regression: a mm-scale layout (radius ~1400) must NOT pin near at 0.01,
+  // or Z=0 depth precision collapses and coplanar surfaces Z-fight ("gabigabi").
+  const radius = 1400
+  const dist = focusPose(C0, radius, { x: 1, y: -0.7, z: 0.5 }, 60).dist
+  const { near, far } = clipPlanesFor(radius, dist, 100)
+  assert.equal(near, radius * 0.001)                 // = 1.4, well above 0.01
+  assert.ok(near > 0.01, 'near lifts off the floor for a large scene')
+  // near stays in front of the nearest visible geometry (front of the sphere),
+  // so scaling it up never clips the model.
+  assert.ok(near < dist - radius, 'near does not clip the framed geometry')
+  // Near:far ratio is bounded enough for a 24-bit depth buffer (was ~1:1e6).
+  assert.ok(far / near < 1e5, 'near:far ratio stays within depth precision')
+})
+
+test('clipPlanesFor never shrinks far below the camera current far', () => {
+  const { far } = clipPlanesFor(2, 6, 5000)
+  assert.equal(far, 5000, 'far grows monotonically, never reduced')
 })
 
 // ── frustum ⇄ distance: the ADR-072 projection-swap matching pair ────────────
