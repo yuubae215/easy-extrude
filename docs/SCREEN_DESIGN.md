@@ -923,7 +923,7 @@ entry, distinct from the **Context DSL** `New Project` gallery (S-17 [N], ADR-05
 | Title | App name / short tagline |
 | Layout template cards | One card per `examples/layout_*.json` (Starter: **Pick & Place Cell** / **Conveyor Line** / **Palletizing** / **Factory Cell**) + an **Empty Project** card (escape hatch). Each card: name + one-line description; hover = Tier B affordance. |
 | Selecting a layout card | `onSelectLayoutTemplate(id)` → `compileLayout(dsl)` → `SceneService.importFromJson(scene, {clear:true})` (the single authoritative load path — PHILOSOPHY #1) → close overlay → land in **S-01**. |
-| Empty Project card | `onStartEmptyProject()` → close overlay onto the default boot scene → **S-01** (no scene replacement). |
+| Empty Project card | `onStartEmptyProject()` → close overlay onto the default boot scene → **S-01** (no scene replacement). The default boot scene is a tidy starter: one 1 m Cube resting on the ground plane, with the robot skeleton hidden by default (frames kept for grasp; revealed via the `robot_base` Outliner eye — ADR-089 follow-up). |
 | "起動時に表示しない" checkbox | `onToggleHomeSkip(bool)` → persists `ee_home='skip'` (a display **setting**, same流儀 as `ee_tour` — ADR-065 Widening 3). Blender-style. |
 | ✕ close | `onCloseHome()` → close onto whatever scene is loaded (equivalent to Empty when nothing was picked). |
 

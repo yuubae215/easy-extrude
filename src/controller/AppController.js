@@ -778,14 +778,23 @@ export class AppController {
     this._bindEvents()
     this._initMobileAxisGuide()
 
-    // Create the initial object
+    // Create the initial object, then tidy it into a deliberate starter (ADR-089
+    // follow-up): the default cube was a 2 m box centred on the origin, so half
+    // of it sank below the ground plane and it read as oversized. Rest a modest
+    // 1 m cube on the ground (base at z=0) instead.
     this._addObject()
+    this._restStarterCube()
     // Seed the robot placement frames for the default scene (ADR-084 §2). The
     // boot path builds the scene via _addObject(), not importFromJson(), so
     // without this call robot_base / tcp would never exist on a fresh start —
     // they'd be absent from the Outliner and the robot could not be placed via
-    // the CF gizmo / N-panel. Idempotent (name-keyed), so no duplicates.
+    // the CF gizmo / N-panel. Idempotent (name-keyed), so no duplicates. The
+    // skeleton itself is hidden by default (ADR-089 follow-up): a lone arm
+    // standing 2.8 m off with nothing around it read as clutter on the empty
+    // scene. The frames stay (grasp needs them); the user reveals the arm via
+    // the robot_base Outliner eye (原則 #4 owner).
     this._service.ensureRobotFrames()
+    this._hideRobotByDefault()
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()
@@ -876,6 +885,42 @@ export class AppController {
     if (!frame) return
     const pose = this._service.worldPoseOf(frame.id)
     if (pose) stage.setPose(pose.position, pose.quaternion)
+  }
+
+  /**
+   * One-time tidy of the boot starter cube (ADR-089 follow-up). The default
+   * Solid is a 2 m cube centred on the origin (localCorners ±1), so half of it
+   * sinks below the ground plane and it reads as oversized. Shrink it to a
+   * modest 1 m cube and rest its base on z=0 through the aggregate `setPose`
+   * API (§1.1 — no direct field pokes). No-op when the active object is not a
+   * Solid (defensive; the boot path always adds one first).
+   */
+  _restStarterCube() {
+    const solid = this._activeObj
+    if (!(solid instanceof Solid)) return
+    // Halve the ±1 localCorners → a 1 m cube; centroid at z=0.5 rests the base
+    // on the ground plane. Orientation stays identity.
+    const local = solid.localCorners.map(c => c.clone().multiplyScalar(0.5))
+    solid.setPose(new THREE.Vector3(0, 0, 0.5), solid.orientation, local)
+    solid.meshView.updateGeometry(solid.corners)
+    solid.meshView.updateBoxHelper?.()
+  }
+
+  /**
+   * Hide the robot skeleton on the default / freshly-loaded scene (ADR-089
+   * follow-up) through the ADR-087 owner — the robot_base Outliner eye — so the
+   * eye state and the skeleton stay consistent (原則 #4). The frames remain
+   * (grasp needs them); the user reveals the arm by toggling the eye. No-op
+   * when robot_base is absent.
+   */
+  _hideRobotByDefault() {
+    let id = null
+    for (const o of this._scene.objects.values()) {
+      if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) { id = o.id; break }
+    }
+    if (!id) return
+    useUIStore.getState().actions.outlinerUpdateItem(id, { visible: false })
+    this._setObjectVisible(id, false)
   }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
@@ -3774,6 +3819,11 @@ export class AppController {
     this._refreshUndoRedoState()
     this._selMgr.clearObjectSelection()
     this._selMgr.setObjectSelected(false)
+    // importFromJson re-seeds robot_base/tcp; keep the skeleton hidden by
+    // default here too (ADR-089 follow-up) so a template's own robot Solid
+    // isn't shadowed by the orphan UR5e decoration. The user reveals it via the
+    // robot_base Outliner eye.
+    this._hideRobotByDefault()
     this._frameLayoutDsl(dsl)
     return true
   }
