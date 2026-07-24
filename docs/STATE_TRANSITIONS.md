@@ -587,6 +587,50 @@ done
 
 ---
 
+### `home` — Launch / Home screen FSM (ADR-089)
+
+**Why this exists here**: Home touches the **boot flow** (a hard-to-reverse app
+entry) and toggles app-visible state (whether the launch overlay is up). It is
+modelled as a discriminated union replaced wholesale — the same流儀 as
+`tour` / `context.wizard` — so an illegal shape (e.g. "open" with no overlay) is
+unrepresentable. It is a small 2-state machine (§0 cheapest-lens: BPMN-style
+open→resolve, not CMMN); the **skip preference** is a persisted display setting
+(`localStorage.ee_home`), NOT an FSM state (§1.1 — settings/derived never smuggled
+into the state).
+
+**States** (stored in top-level `uiStore.home`)
+
+```
+null (not shown: persisted ee_home='skip' flag at boot, or after resolve)
+  ──[boot, no ee_home flag — openHome()]───────────────→ { status:'open' }
+  ──[Header "Layout gallery" slot — openHome()]─────────→ { status:'open' }   (reopen after skip)
+open
+  ──[select layout card — onSelectLayoutTemplate(id)]──→ null   (+ compileLayout → importFromJson(clear) → land S-01)
+  ──[Empty Project — onStartEmptyProject()]────────────→ null   (close onto default boot scene → S-01)
+  ──[✕ close — onCloseHome()]──────────────────────────→ null   (close onto whatever scene is loaded)
+any
+  ──[toggle "起動時に表示しない" — onToggleHomeSkip(b)]→ (same state)   (persists ee_home; NOT a transition)
+```
+
+**Guards / invariants**
+
+- Sole writer: `AppController` (PHILOSOPHY #5). `HomeScreen` only reads `uiStore.home`
+  and fires `onSelectLayoutTemplate` / `onStartEmptyProject` / `onToggleHomeSkip` /
+  `onCloseHome` callbacks (same discipline as the tour / wizard panels).
+- Layout load rides the **single authoritative path** `compileLayout` →
+  `SceneService.importFromJson(scene, {clear:true})` (PHILOSOPHY #1) — Home adds no
+  new load logic. Empty Project performs no scene replacement (keeps the default
+  boot scene).
+- Persistence is a display **setting** (ADR-065 Widening 3, ADR-089 §3): only the
+  skip flag (`localStorage.ee_home`) survives the session; the open/null state
+  persists nowhere. Boot reads the flag once to decide the initial state.
+- Reopen affordance lives in a **fixed** header slot / ⋯ MoreMenu item so a skipped
+  Home is never a dead end (PHILOSOPHY #15 / #11).
+- The ADR-086 deterministic boot slice (no startup ReferenceError) holds on the Home
+  path as well.
+
+---
+
 ## CoordinateFrame Body Frame Lifecycle (ADR-037)
 
 ### Origin CF is created atomically with every Solid

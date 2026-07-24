@@ -1,0 +1,82 @@
+{
+  "version": "layout/1.0",
+  "meta": {
+    "name": "直線コンベアライン",
+    "description": "投入・加工×2・払い出しの4ステーションを搬送方向 (+X) に等間隔で並べた直線ライン。ステーションは linear ストラテジで自動整列する。"
+  },
+  "strategy": "linear",
+  "strategyOptions": {
+    "axis": "+X",
+    "spacing": 1500
+  },
+  "entities": [
+    {
+      "ref": "conveyor_lane",
+      "type": "AnnotatedRegion",
+      "name": "搬送レーン専有面積",
+      "description": "コンベアラインが占有する床面積",
+      "placeType": "Zone",
+      "vertices": [
+        { "x": -900, "y": -500 },
+        { "x": 5400, "y": -500 },
+        { "x": 5400, "y":  500 },
+        { "x": -900, "y":  500 }
+      ]
+    },
+    {
+      "ref": "infeed_station",
+      "type": "Solid",
+      "name": "投入ステーション",
+      "description": "ワークをラインへ投入する始点。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 600, "y": 600, "z": 900 }
+    },
+    {
+      "ref": "process_station_1",
+      "type": "Solid",
+      "name": "加工ステーション 1",
+      "description": "第一加工工程。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 600, "y": 600, "z": 900 }
+    },
+    {
+      "ref": "process_station_2",
+      "type": "Solid",
+      "name": "加工ステーション 2",
+      "description": "第二加工工程。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 600, "y": 600, "z": 900 }
+    },
+    {
+      "ref": "outfeed_station",
+      "type": "Solid",
+      "name": "払い出しステーション",
+      "description": "完成ワークをラインから払い出す終点。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 600, "y": 600, "z": 900 }
+    }
+  ],
+  "constraints": [
+    {
+      "source": "process_station_1",
+      "target": "infeed_station",
+      "jointType": null,
+      "semanticType": "adjacent",
+      "properties": { "note": "搬送方向に隣接" }
+    },
+    {
+      "source": "process_station_2",
+      "target": "process_station_1",
+      "jointType": null,
+      "semanticType": "adjacent",
+      "properties": { "note": "搬送方向に隣接" }
+    },
+    {
+      "source": "outfeed_station",
+      "target": "process_station_2",
+      "jointType": null,
+      "semanticType": "adjacent",
+      "properties": { "note": "搬送方向に隣接" }
+    }
+  ]
+}

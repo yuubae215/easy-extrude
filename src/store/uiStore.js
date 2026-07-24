@@ -122,6 +122,16 @@ export const useUIStore = create((set, get) => ({
   // (Widening 3); the progression itself persists nowhere.
   tour: null,
 
+  // ── Launch / Home screen FSM (ADR-089) ─────────────────────────────────────
+  // Discriminated union, replaced wholesale; sole writer AppController:
+  //   null                     — not shown (skipped via ee_home, or resolved)
+  //   { status:'open' }        — the launch overlay is up (HomeScreen.jsx)
+  // The skip preference is a persisted display SETTING (localStorage.ee_home),
+  // NOT an FSM state (§1.1 — settings never smuggled into the state). Selecting a
+  // layout card rides the single authoritative compileLayout → importFromJson
+  // (clear) path; the Empty card resolves to null without replacing the scene.
+  home: null,
+
   // ── Context DSL demo (ADR-046/047) ─────────────────────────────────────────
   // Populated by ContextDemoController at demoStart; null-equivalent when inactive.
   demo: {
@@ -318,6 +328,10 @@ export const useUIStore = create((set, get) => ({
     // ADR-065 Phase 6 — tour FSM state, replaced wholesale (sole writer
     // AppController; transitions computed by the pure TourMath functions).
     setTour: (tour) => set({ tour }),
+
+    // ADR-089 — Home/Launch FSM state, replaced wholesale (sole writer
+    // AppController; the skip flag lives in localStorage, not here).
+    setHome: (home) => set({ home }),
 
     // ── Context DSL demo ─────────────────────────────────────────────────────
     demoStart: (payload) => set(state => ({

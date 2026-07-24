@@ -1,0 +1,137 @@
+{
+  "version": "layout/1.0",
+  "meta": {
+    "name": "パレタイジングセル",
+    "description": "床置きペデスタル上の単腕ロボットが、隣接するパレット上へ箱を2×2で積み付けるパレタイジングセル。"
+  },
+  "strategy": "manual",
+  "entities": [
+    {
+      "ref": "cell_footprint",
+      "type": "AnnotatedRegion",
+      "name": "セル専有面積",
+      "description": "このセルが占有する床面積",
+      "placeType": "Zone",
+      "vertices": [
+        { "x": -700, "y": -1100 },
+        { "x": 1400, "y": -1100 },
+        { "x": 1400, "y":  1100 },
+        { "x": -700, "y":  1100 }
+      ]
+    },
+    {
+      "ref": "robot_pedestal",
+      "type": "Solid",
+      "name": "ロボットペデスタル",
+      "description": "床固定のロボット架台。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": { "x": 400, "y": 400, "z": 700 },
+      "position": { "x": 0, "y": 0, "z": 350 },
+      "frames": [
+        {
+          "ref": "robot_mount",
+          "name": "ロボット取付面",
+          "translation": { "x": 0, "y": 0, "z": 350 }
+        }
+      ]
+    },
+    {
+      "ref": "palletizer_robot",
+      "type": "Solid",
+      "name": "パレタイジングロボット",
+      "description": "ペデスタル天面に締結する高可搬6軸ロボット。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 300, "y": 300, "z": 700 },
+      "position": { "x": 0, "y": 0, "z": 1050 },
+      "frames": [
+        {
+          "ref": "robot_base",
+          "name": "ロボットベース (取付基準面)",
+          "translation": { "x": 0, "y": 0, "z": -350 }
+        }
+      ]
+    },
+    {
+      "ref": "pallet",
+      "type": "Solid",
+      "name": "パレット",
+      "description": "積み付け先のパレット。1100×900mm。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": { "x": 1100, "y": 900, "z": 140 },
+      "position": { "x": 0, "y": 900, "z": 70 }
+    },
+    {
+      "ref": "box_1",
+      "type": "Solid",
+      "name": "積付箱 1",
+      "description": "パレット上の積み付けワーク。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 400, "y": 300, "z": 250 },
+      "position": { "x": -250, "y": 700, "z": 265 }
+    },
+    {
+      "ref": "box_2",
+      "type": "Solid",
+      "name": "積付箱 2",
+      "description": "パレット上の積み付けワーク。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 400, "y": 300, "z": 250 },
+      "position": { "x": 250, "y": 700, "z": 265 }
+    },
+    {
+      "ref": "box_3",
+      "type": "Solid",
+      "name": "積付箱 3",
+      "description": "パレット上の積み付けワーク。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 400, "y": 300, "z": 250 },
+      "position": { "x": -250, "y": 1100, "z": 265 }
+    },
+    {
+      "ref": "box_4",
+      "type": "Solid",
+      "name": "積付箱 4",
+      "description": "パレット上の積み付けワーク。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 400, "y": 300, "z": 250 },
+      "position": { "x": 250, "y": 1100, "z": 265 }
+    }
+  ],
+  "constraints": [
+    {
+      "source": "robot_base",
+      "target": "robot_mount",
+      "jointType": "fixed",
+      "semanticType": "fastened",
+      "properties": { "note": "ロボットをペデスタルに締結" }
+    },
+    {
+      "source": "box_1",
+      "target": "pallet",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "パレット上へ積み付け" }
+    },
+    {
+      "source": "box_2",
+      "target": "pallet",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "パレット上へ積み付け" }
+    },
+    {
+      "source": "box_3",
+      "target": "pallet",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "パレット上へ積み付け" }
+    },
+    {
+      "source": "box_4",
+      "target": "pallet",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "パレット上へ積み付け" }
+    }
+  ]
+}

@@ -16,6 +16,12 @@ const deleteButtons = (page) => page.locator('[aria-label="Delete"]')
 async function boot(page) {
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
+  // Skip the launch Home overlay (ADR-089) so these tests boot straight into the
+  // interactive editor — the same escape the Blender-style "don't show on
+  // startup" checkbox persists. Runs on every navigation (incl. reload), like
+  // the ee_tour flag the tour test relies on. The Home surface itself is
+  // covered by its own test below.
+  await page.addInitScript(() => { try { localStorage.setItem('ee_home', 'skip') } catch { /* storage denied */ } })
   await page.goto('/easy-extrude/')
   // 3D scene mounted (canvas appended to #canvas-container by SceneView) …
   await expect(page.locator('#canvas-container canvas')).toBeVisible()
@@ -302,6 +308,34 @@ test('desktop onboarding tour derives its quest from scene facts', async ({ page
 test('template load opens the negotiate tab (production Context overlay)', async ({ page }) => {
   await boot(page)
   await loadTemplateIntoNegotiate(page)
+})
+
+test('launch Home screen loads a process-layout template (ADR-089)', async ({ page }) => {
+  // Deliberately does NOT use boot() — a fresh context has no ee_home flag, so
+  // the launch overlay opens over the boot stage (the feature under test).
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/')
+  // The launch overlay is up (its subtitle is unique to HomeScreen).
+  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+
+  // Selecting a layout card replaces the scene through compileLayout →
+  // importFromJson and closes Home; the conveyor's stations land in the Outliner.
+  await page.getByText('直線コンベアライン', { exact: true }).click()
+  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect(page.getByText('投入ステーション', { exact: true }).first()).toBeVisible()
+
+  // The header "Layouts" slot reopens Home after it has closed.
+  await page.getByRole('button', { name: /Layouts/ }).click()
+  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+
+  // Checking "起動時に表示しない" persists the skip flag → Home stays down on reload.
+  await page.getByText('起動時に表示しない').click()
+  await page.reload()
+  await expect(page.getByText('Scene Collection', { exact: true })).toBeVisible()
+  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
 test('experience layer renders under prefers-reduced-motion (degraded, not dead)', async ({ page }) => {

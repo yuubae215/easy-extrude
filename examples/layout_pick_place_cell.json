@@ -1,0 +1,137 @@
+{
+  "version": "layout/1.0",
+  "meta": {
+    "name": "単腕ピック&プレイスセル",
+    "description": "作業台上のペデスタルに単腕ロボットを搭載し、供給ビンから取り出したワークを排出トレイへ載せ替える最小構成のピッキングセル。"
+  },
+  "strategy": "manual",
+  "entities": [
+    {
+      "ref": "cell_footprint",
+      "type": "AnnotatedRegion",
+      "name": "セル専有面積",
+      "description": "このセルが占有する床面積",
+      "placeType": "Zone",
+      "vertices": [
+        { "x": -700, "y": -800 },
+        { "x": 1200, "y": -800 },
+        { "x": 1200, "y":  800 },
+        { "x": -700, "y":  800 }
+      ]
+    },
+    {
+      "ref": "power_inlet",
+      "type": "AnnotatedPoint",
+      "name": "電源インレット (100V)",
+      "description": "床置きコンセント。セル電源の給電点。",
+      "placeType": "Anchor",
+      "position": { "x": -500, "y": -600, "z": 0 }
+    },
+    {
+      "ref": "worktable",
+      "type": "Solid",
+      "name": "作業台",
+      "description": "高さ800mm、天面600×500mm。",
+      "ifcClass": "IfcFurniture",
+      "dimensions": { "x": 600, "y": 500, "z": 800 },
+      "position": { "x": 0, "y": 0, "z": 400 },
+      "frames": [
+        {
+          "ref": "worktable_top",
+          "name": "作業台天面中心",
+          "translation": { "x": 0, "y": 0, "z": 400 }
+        }
+      ]
+    },
+    {
+      "ref": "robot_pedestal",
+      "type": "Solid",
+      "name": "ロボットペデスタル",
+      "description": "作業台天面に固定するロボット架台。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": { "x": 300, "y": 300, "z": 120 },
+      "position": { "x": -120, "y": 0, "z": 860 },
+      "frames": [
+        {
+          "ref": "robot_mount",
+          "name": "ロボット取付面",
+          "translation": { "x": 0, "y": 0, "z": 60 }
+        }
+      ]
+    },
+    {
+      "ref": "arm_robot",
+      "type": "Solid",
+      "name": "単腕ロボット",
+      "description": "ペデスタル天面にボルト締結する6軸ロボット。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 220, "y": 220, "z": 500 },
+      "position": { "x": -120, "y": 0, "z": 1170 },
+      "frames": [
+        {
+          "ref": "robot_base",
+          "name": "ロボットベース (取付基準面)",
+          "translation": { "x": 0, "y": 0, "z": -250 }
+        }
+      ]
+    },
+    {
+      "ref": "part_bin",
+      "type": "Solid",
+      "name": "供給ビン (バラ積みワーク)",
+      "description": "作業台天面の右手前。取り出し対象のワークを収容。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 200, "y": 150, "z": 150 },
+      "position": { "x": 200, "y": 150, "z": 875 }
+    },
+    {
+      "ref": "output_tray",
+      "type": "Solid",
+      "name": "排出トレイ",
+      "description": "作業台天面の右奥。整列配置の載せ替え先。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": { "x": 250, "y": 150, "z": 40 },
+      "position": { "x": 200, "y": -150, "z": 820 }
+    }
+  ],
+  "constraints": [
+    {
+      "source": "robot_pedestal",
+      "target": "worktable",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "ペデスタルを作業台天面にボルト固定" }
+    },
+    {
+      "source": "robot_base",
+      "target": "robot_mount",
+      "jointType": "fixed",
+      "semanticType": "fastened",
+      "properties": { "note": "ロボットをペデスタルに締結" }
+    },
+    {
+      "source": "part_bin",
+      "target": "worktable",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "供給ビンを天面に設置" }
+    },
+    {
+      "source": "output_tray",
+      "target": "worktable",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": { "note": "排出トレイを天面に設置" }
+    },
+    {
+      "source": "power_inlet",
+      "target": "worktable_origin",
+      "jointType": null,
+      "semanticType": "connects",
+      "properties": {
+        "voltage_V": 100,
+        "note": "電源インレットからセルへ給電"
+      }
+    }
+  ]
+}

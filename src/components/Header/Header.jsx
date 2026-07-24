@@ -18,6 +18,7 @@ const SVG_NODES = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 const SVG_EXPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
 const SVG_IMPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 14 12 9 17 14"/><line x1="12" y1="9" x2="12" y2="21"/></svg>`
 const SVG_DEMO = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
+const SVG_LAYOUTS = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
 
 /**
  * Header — React replacement for UIView's 40px top bar.
@@ -109,6 +110,7 @@ function DesktopHeaderContents() {
           </SmallBtn>
         </>
       )}
+      <SmallBtn onClick={() => callbacks.onOpenHome?.()} title="Open the layout gallery (Home)" icon={SVG_LAYOUTS}>Layouts</SmallBtn>
       <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
       <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
       <ContextDropdown />
@@ -459,6 +461,7 @@ function MoreMenu() {
           pointerEvents: 'auto',
           ...enterMotion(reduced),
         }}>
+          {item('Layouts', SVG_LAYOUTS, callbacks.onOpenHome)}
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
           {item('New Project',     SVG_DEMO, callbacks.onOpenTemplateGallery)}
