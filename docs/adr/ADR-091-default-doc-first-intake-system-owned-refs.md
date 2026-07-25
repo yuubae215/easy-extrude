@@ -172,8 +172,12 @@ Checks パネルに「まだ既定のまま N 件」を出す。ブロックは�
 - e2e — 起動 → Guided → **一度も入力せず** review 段に到達でき、そこに
   「まだ既定のまま N 件」が出ている。
 
-証拠が全面的に未来形であるため、必要なら §1.2 の鎖を `docs/gsn/` の論証木に外部化して
-実装イテレーションごとに鮮度を更新する（gsn-meta-framework / gsn-maintain）。
+証拠が全面的に未来形であるため、§1.2 の鎖は **`docs/gsn/profit-growth.gsn` に外部化済み**
+（枝 `UsersReachGraspValue` 以下。上位は 利益拡大 → 売上最大化 → 採用ファネルの障壁除去）。
+既定値そのものは当事者の dogfooding で獲得する前提なので、その枝
+`DefaultsAreAcceptableToPractitioner` は assumption `DefaultsFromDogfooding` に載っており、
+探索記録（`docs/dogfooding/`）が assumption を solution へ置き換える。仮説の反証・修正は
+木に記録する（gsn-maintain で鮮度更新）。
 本 ADR は Accepted 化の条件を「上記テストが緑であること」と定義しておく。
 
 ### 波及（blast radius）

@@ -158,11 +158,14 @@ pnpm preview   # preview production build
 バックエンド (grasp-search) を含むフルスタック:
 
 ```bash
-pnpm dev:all                              # BFF (3001) + vite (5173)
 cd core && uv sync --extra dev --extra serve   # 初回のみ (Python は uv 管理)
-cd core && uv run python -m easy_extrude_core.api  # コアAPI (4001 = BFF upstream 既定)
+pnpm dev:stack                            # コアAPI (4001) + BFF (3001) + vite (5173) — grasp を触るならこれ
+pnpm dev:all                              # BFF + vite のみ (コアAPI を上げないので grasp は 503)
+cd core && uv run python -m easy_extrude_core.api  # コアAPI 単体 (4001 = BFF upstream 既定)
 pnpm test:core                            # core の pytest (契約準拠テスト含む)
 ```
+
+当事者が実際に触って値を獲得する手順と記録様式は `docs/dogfooding/README.md`。
 
 コアAPI の URL/認証は env 注入 (`GRASP_SEARCH_URL` / `GRASP_API_INTERNAL_TOKEN`) —
 repo に焼かない (ADR-076)。
