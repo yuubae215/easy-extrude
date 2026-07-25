@@ -14,7 +14,7 @@ import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { toNDC }           from '../model/CuboidModel.js'
-import { ROBOT_BASE_FRAME_NAME } from '../domain/robotFrames.js'
+import { isRobotBaseFrame } from '../domain/robotFrames.js'
 
 export class HitTestService {
   /**
@@ -155,7 +155,7 @@ export class HitTestService {
     ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
     if (!stage.raycast(ctrl._raycaster)) return null
     for (const o of ctrl._scene.objects.values()) {
-      if (o instanceof CoordinateFrame && o.name === ROBOT_BASE_FRAME_NAME && o.parentId === null) {
+      if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) {
         return { obj: o }
       }
     }

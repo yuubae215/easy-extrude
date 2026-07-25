@@ -1,8 +1,9 @@
 # ADR-081: ドメイン段階バリデーション (見える/届く/掴める) + 運用フォールバック階梯の設計時 KPI 検証
 
-- Status: Accepted (Phase 1-3 実装済 2026-07-20 — §実施記録。Phase 3 の宣言 UI
+- Status: Accepted
+- 実施記録: Phase 1-3 実装済 2026-07-20 — §実施記録。Phase 3 の宣言 UI
   (3 ドメインカード / プリセット fork&tweak / カメラ写し取り) は同日の追記で完了。
-  残: pick-sequence 集計レポート UI と Phase 4、Open 節の収束仮説)
+  残: pick-sequence 集計レポート UI と Phase 4、Open 節の収束仮説
 - Date: 2026-07-19
 - Deciders: yuubae215 (product) / 設計セッション
 - Supersedes / Superseded by: なし (ADR-075 のパイプラインを拡張、ADR-079 の診断を一般化)

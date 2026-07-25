@@ -88,6 +88,12 @@ jobs:
       - name: Contract conformance + drift
         run: pnpm test:contract
 
+      # ADR ヘッダの機械可読性 (2026-07-25). Status が自由記述・複数行に折り返すと
+      # 鮮度チェックも supersede グラフ検証も /adr-validate も載せられない —
+      # 統治の前提条件なので、散文の約束ではなく gate で守る。
+      - name: ADR status headers are machine-readable
+        run: pnpm test:adr
+
       - name: Type check
         run: pnpm typecheck
 

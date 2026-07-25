@@ -1,8 +1,9 @@
 # ADR-078: bin-picking シーンのエンティティモデル (障害物ロール属性 / 許容角 vs 進入角) + UI 申し送り
 
-- Status: Accepted (設計方針を固定 + scene 層を実装 + HTTP 境界 `POST /pick-sequence` を配線。
+- Status: Accepted
+- 実施記録: 設計方針を固定 + scene 層を実装 + HTTP 境界 `POST /pick-sequence` を配線。
   実装: `core/easy_extrude_core/scene/` + `contract/scene_models.py` + `api/app.py`。
-  templates/bin-picking-thin-container の運用検討から派生)
+  templates/bin-picking-thin-container の運用検討から派生
 - Date: 2026-06-27
 - 関連: ADR-074 (BFF <-> コアAPI 契約) / ADR-075 (段階0 判定エンジン: pure/副作用・正規化・球近似 deferred) /
   ADR-076 (HTTP 境界) /

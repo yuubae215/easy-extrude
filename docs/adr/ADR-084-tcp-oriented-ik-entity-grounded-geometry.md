@@ -1,7 +1,8 @@
 # ADR-084: TCP 姿勢基準の許容角判定 + ロボット base/TCP の CoordinateFrame 実体化
 
-- Status: Accepted (全 Phase 実装済 — Phase 1 core + Phase 4 契約 2026-07-21;
-  Phase 2-3 フロント entity 化 + Header/`uiStore.robotBase` 撤去 2026-07-21)
+- Status: Accepted
+- 実施記録: 全 Phase 実装済 — Phase 1 core + Phase 4 契約 2026-07-21;
+  Phase 2-3 フロント entity 化 + Header/`uiStore.robotBase` 撤去 2026-07-21
 - Date: 2026-07-20
 - 関連: ADR-083 (ロボット base position を grasp-search 契約に載せる — 本 ADR は
   そのフロント側実装 (`uiStore.robotBase` + Header 手打ち入力) を置き換える) /
