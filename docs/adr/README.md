@@ -103,6 +103,7 @@ This directory records the project's design decisions.
 | [ADR-089](ADR-089-launch-home-screen-layout-template-entry.md) | **起動ホーム画面 — 工程レイアウトテンプレ選択を起点にする（Blender 式スキップ設定つき）** | Accepted (実装済) | 2026-07-23 | ADR-067, ADR-051, ADR-063, ADR-065, ADR-066, ADR-045, ADR-055 |
 | [ADR-090](ADR-090-robot-identity-multi-robot-zero-robot-state.md) | **ロボットの同一性を名前から実体へ — 複数台の受け入れ、0 台を一級の状態に、grasp は選択された 1 台で解く (契約は不動)** | Accepted (実装済) | 2026-07-25 | ADR-084, ADR-087, ADR-060, ADR-082 |
 | [ADR-091](ADR-091-default-doc-first-intake-system-owned-refs.md) | **入力の起点を「白紙からの生成」から「既定値入り完成文書の訂正」へ — ref をシステム所有にする** | Proposed | 2026-07-25 | ADR-063, ADR-058, ADR-051, ADR-050, ADR-089, ADR-090 |
+| [ADR-092](ADR-092-prompt-dilution-commit-observability.md) | **常時ロードから一般モデル挙動の写しを外し、観測はプロンプトではなくコミットに刻む (−42.4%、Task-Class は決定的導出)** | Accepted (実装済) | 2026-07-25 | ADR-082, ADR-086 |
 
 ## How to Add a New ADR
 

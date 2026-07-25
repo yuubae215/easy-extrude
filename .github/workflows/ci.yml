@@ -102,6 +102,14 @@ jobs:
       - name: GSN trees have no undeclared empty branches
         run: pnpm test:gsn
 
+      # コミット観測メタデータの導出規則 (2026-07-25). 分類規則が静かに変わると、
+      # 既存履歴の遡及分類と新規コミットの分類がズレて母集団が比較不能になる。
+      # 「追跡中の全ファイルが宣言済みレイヤに落ちる」検査も含む — 新しいトップ
+      # レベルディレクトリは、どのバケツにも現れないまま分類から漏れるので
+      # (不在は辿れない, 原則 #31)、個数を数える形で gate に載せる。
+      - name: Commit metadata derivation rules
+        run: pnpm test:commit-meta
+
       - name: Type check
         run: pnpm typecheck
 

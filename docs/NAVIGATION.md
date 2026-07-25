@@ -17,6 +17,8 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
 | GSN / 論証木 / assurance case / claim tree / 証拠の鮮度 / 利益 / 売上 / 経費 / なぜこの開発をやるのか | `docs/gsn/profit-growth.gsn` (事業メタゴールから枝を辿る正本), `docs/gsn/adr-081-grasp-validation.gsn` (grasp 判定の枝) |
 | GSN lint / 空枝 / 支えの無い goal / support-exploring / support-unexplored / 未探索 / 探索中 / evidence debt の内訳 / artifact が実在しない | `pnpm test:gsn` (CI gate), `.claude/skills/gsn-meta-framework/references/dsl-output.md` §Support cardinality, `docs/STATE_TRANSITIONS.md` §GSN goal support, PHILOSOPHY #31 |
+| プロンプト希釈 / 常時ロードが重い / CLAUDE.md を削りたい / 一般モデル挙動の写し / 規範を散文で持つか機械で持つか | **ADR-092**, CLAUDE.md「After fixing a bug」Q3 (ルールは*どこで*問われるか), 核 §1.1 / §4 (repo が持つのはプロジェクト固有の制約だけ) |
+| コミット観測 / Model-Effort / Task-Class / effort レベルの記録 / どのモデルが書いたか / 作業種別の集計 / commit トレーラ / hook で刻む | **ADR-092**, `scripts/commit-meta.mjs` (導出規則の正本 — 純粋関数), `.claude/hooks/commit-trailers.sh` (唯一の書き手), `pnpm metrics:commits` (集計), `pnpm test:commit-meta` (CI gate), `docs/STATE_TRANSITIONS.md` §Commit observation metadata |
 | dogfooding / 実際に触る / 既定値の獲得 / フルスタック起動 / ユーザフィードバック | `docs/dogfooding/README.md` (`pnpm dev:stack` + 記録様式) |
 | screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
 | layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
@@ -109,6 +111,7 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 | — |
 | **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 | — |
 | **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (CLAUDE.md「After fixing a bug」参照) | ⚠️ (同左) |
+| **統治レーンを足す / 変える** (hook・CI gate・観測メタデータ) | ⚠️ (レーン自体が状態を持つなら ✅) | — | — | — | — | ✅ 新 ADR | ⚠️ | ⚠️ |
 
 > **STATE_LEDGER rule** (列にせず規則として書く — 列を増やすと行ごとに判断が要るが、
 > この規則は例外なし): status・flag・mode・lifecycle・**存在 (基数)** に触る変更は

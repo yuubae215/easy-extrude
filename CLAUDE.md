@@ -180,8 +180,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 **コード変更前に `docs/CODE_CONTRACTS.md` の該当セクションを読むこと**（自動ロードしない —
 index 表で該当領域を特定し、detail ファイル `docs/code_contracts/*.md` を必要分だけ読む）。
 
-@docs/CLAUDE_FABLE5_BEHAVIOR.md
-
 ## Notes for changes
 
 - `vite.config.js` `base` must match the repo name (`/easy-extrude/`)
