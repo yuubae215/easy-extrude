@@ -3,7 +3,7 @@
 - Status: Accepted (Phase 1 + seed chips + UX 具体化〔遊びの入力面・堅い検証境界〕+ Phase 2 in-place 編集 実装済)
 - Date: 2026-06-30
 - Deciders: yuubae215, Claude
-- Supersedes / Superseded by: なし
+- Supersedes / Superseded by: なし（本 ADR の seed 機構を「例から fork したとき」限定から既定経路へ広げるのは ADR-091）
 - References: ADR-051（Requirement Intake / テンプレートギャラリー）, ADR-050（Context-first / 単一権威入口）, ADR-046（Context DSL / OpenQuestion・FormProjection）, ADR-049（KPI/criterion/admissible/RoleKpiCatalog）, ADR-052（Why / 同義語商）, ADR-057（Grasp UI — API 価値の出口）
 
 ## Context — Goal と力学（§1.2 Goal）
