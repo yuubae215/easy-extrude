@@ -919,7 +919,8 @@ export class AppController {
       if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) { id = o.id; break }
     }
     if (!id) return
-    useUIStore.getState().actions.outlinerUpdateItem(id, { visible: false })
+    // Row state is carried by _setObjectVisible itself now (it owns BOTH the
+    // meshes and the Outliner row) — no separate store poke to drift from it.
     this._setObjectVisible(id, false)
   }
 
@@ -1395,6 +1396,12 @@ export class AppController {
     if (obj instanceof CoordinateFrame && isRobotBaseFrame(obj)) {
       this._sceneView?.robotStage?.setVisible(visible)
     }
+    // …and the Outliner row, which is what the USER reads the state off (its eye
+    // glyph + grey-out). Writing the meshes but not the row left the row's flag
+    // frozen at its seeded value: the toggle always sent the same `!visible`, so
+    // an entity could be shown once and then never hidden again — the input was
+    // consumed and nothing happened (#11). One owner, both channels (#4).
+    this._outlinerView?.setObjectVisible(id, visible)
   }
 
   _renameObject(id, name) {

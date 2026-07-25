@@ -81,9 +81,17 @@ Dimensions / position → `LAYOUT_DESIGN.md`.
 
 #### [B] Outliner
 - Lists all objects in the scene
-- Each row: icon + name + visibility toggle
+- Each row: icon + name + badges + visibility toggle (eye) + delete
 - Active row: highlighted
 - CoordinateFrames displayed indented under their parent object
+- **Hidden rows announce themselves without hover** (`OutlinerRowMath`): the eye
+  becomes a *closed* eye and stays at full opacity (on a visible row it is
+  hover-revealed), and the row greys out — name dimmed + italic, icon/badges at
+  40% opacity. Three independent channels (glyph / colour / slant) so the state
+  survives low contrast and colour-vision differences. The active row keeps its
+  selection colour while hidden. This is the surface where the robot skeleton is
+  shown/hidden (ADR-087) and it ships hidden on the default scene, so it is the
+  first hidden entity a user meets.
 
 #### [C] 3D Viewport
 - Shows the ground grid plane (Z=0)
