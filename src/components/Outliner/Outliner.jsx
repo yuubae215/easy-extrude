@@ -4,6 +4,7 @@ import { IFC_CLASS_MAP } from '../../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP } from '../../domain/PlaceTypeRegistry.js'
 import { tourAnchor, tourVisible } from '../../view/TourMath.js'
 import { activeGlow } from '../../view/ChromeMath.js'
+import { visibilityAffordance } from '../../view/OutlinerRowMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { DURATION, EASING } from '../../theme/tokens.js'
 import { ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../../domain/robotFrames.js'
@@ -32,6 +33,35 @@ const TYPE_ICON = {
   'annot-point':  { glyph: '⬤', color: '#888888', title: 'Annotated point (Hub / Anchor)' },
 }
 const DEFAULT_ICON = { glyph: '⬡', color: '#4fc3f7', title: '' }
+
+// ── Eye glyph ─────────────────────────────────────────────────────────────────
+// Drawn rather than typed: there is no closed-eye counterpart to 👁 that renders
+// consistently across platforms, and the emoji's own colour ignores the row's
+// state tint. Two paths, `currentColor`, so the state derivation in
+// `OutlinerRowMath` owns the colour (#4).
+function EyeIcon({ open }) {
+  const common = {
+    width: 13, height: 13, viewBox: '0 0 16 16', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.3,
+    strokeLinecap: 'round', strokeLinejoin: 'round',
+    style: { display: 'block' }, 'aria-hidden': true,
+  }
+  return open ? (
+    <svg {...common}>
+      <path d="M1.5 8S4 3.9 8 3.9 14.5 8 14.5 8 12 12.1 8 12.1 1.5 8 1.5 8Z" />
+      <circle cx="8" cy="8" r="1.9" />
+    </svg>
+  ) : (
+    <svg {...common}>
+      {/* Lowered lid + lashes — a shut eye, not a struck-through one. */}
+      <path d="M1.5 7.1c1.9 2.5 4.1 3.8 6.5 3.8s4.6-1.3 6.5-3.8" />
+      <path d="M3.1 10.2 1.9 12" />
+      <path d="M6.2 11.7 5.7 13.6" />
+      <path d="m9.8 11.7.5 1.9" />
+      <path d="M12.9 10.2 14.1 12" />
+    </svg>
+  )
+}
 
 // ── DFS pre-order traversal ───────────────────────────────────────────────────
 function buildOrderedItems(items) {
@@ -90,6 +120,12 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
   const ptEntry = placeType ? PLACE_TYPE_MAP.get(placeType) : null
   const iconDef = TYPE_ICON[type] ?? DEFAULT_ICON
   const iconColor = ptEntry ? ptEntry.color : iconDef.color
+
+  // ── Visibility affordance (eye glyph + grey-out) ──────────────────────────
+  // Single derivation point for "this row is hidden" (#4); a hidden row states
+  // so without needing hover (#11) — see OutlinerRowMath.
+  const vis = visibilityAffordance({ visible, hovered, active })
+  const dimStyle = { opacity: vis.contentOpacity, transition: iconTransition }
 
   // ── Triangle / connector glyph ────────────────────────────────────────────
   const triStyle = depth > 0
@@ -166,7 +202,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
       </span>
 
       {/* Icon */}
-      <span style={{ color: iconColor, fontSize: 12, flexShrink: 0, lineHeight: 1 }}
+      <span style={{ color: iconColor, fontSize: 12, flexShrink: 0, lineHeight: 1, ...dimStyle }}
             title={iconDef.title}>
         {iconDef.glyph}
       </span>
@@ -193,8 +229,9 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
       ) : (
         <span
           style={{
-            flex: 1, color: active ? '#ff8c69' : '#e0e0e0', fontSize: 12,
+            flex: 1, color: vis.nameColor, fontStyle: vis.nameStyle, fontSize: 12,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            transition: rowTransition,
           }}
           onDoubleClick={e => { e.stopPropagation(); startEdit() }}
         >
@@ -209,6 +246,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
           padding: '1px 4px', borderRadius: 2, flexShrink: 0,
           lineHeight: 1.4, cursor: 'default',
           background: '#5a9bf522', border: '1px solid #5a9bf5', color: '#5a9bf5',
+          ...dimStyle,
         }}>
           ROBOT
         </span>
@@ -222,6 +260,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
           maxWidth: 52, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           lineHeight: 1.4, cursor: 'default',
           background: ifcEntry.color + '22', border: `1px solid ${ifcEntry.color}`, color: ifcEntry.color,
+          ...dimStyle,
         }}>
           {ifcEntry.label}
         </span>
@@ -235,6 +274,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
           maxWidth: 52, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           lineHeight: 1.4, cursor: 'default',
           background: ptEntry.color + '22', border: `1px solid ${ptEntry.color}`, color: ptEntry.color,
+          ...dimStyle,
         }}>
           {ptEntry.name}
         </span>
@@ -243,7 +283,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
       {/* SpatialLink source badge */}
       {linked.asSource && (
         <span title="Sends spatial links to other entities (source / child role)"
-              style={{ fontSize: 10, color: '#F59E0B', flexShrink: 0, cursor: 'default' }}>
+              style={{ fontSize: 10, color: '#F59E0B', flexShrink: 0, cursor: 'default', ...dimStyle }}>
           ⟡→
         </span>
       )}
@@ -251,7 +291,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
       {/* SpatialLink target badge */}
       {linked.asTarget && (
         <span title="Other entities spatially link to this (target / parent role)"
-              style={{ fontSize: 10, color: '#14B8A6', flexShrink: 0, cursor: 'default' }}>
+              style={{ fontSize: 10, color: '#14B8A6', flexShrink: 0, cursor: 'default', ...dimStyle }}>
           ←⟡
         </span>
       )}
@@ -259,22 +299,29 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
       {/* Unreferenced frame badge */}
       {type === 'frame' && unreferenced && (
         <span title="No SpatialLink references this frame"
-              style={{ fontSize: 10, color: '#666', flexShrink: 0, cursor: 'default' }}>
+              style={{ fontSize: 10, color: '#666', flexShrink: 0, cursor: 'default', ...dimStyle }}>
           ⊡
         </span>
       )}
 
-      {/* Eye — always in DOM to avoid layout shift, opacity controls visibility */}
+      {/* Eye — always in DOM to avoid layout shift. On a VISIBLE row it stays a
+          hover-revealed control; on a HIDDEN row it is pinned on as the status
+          glyph, because nothing else on screen says the entity is not drawn
+          (#11). Opacity/colour/glyph all come from the one derivation (#4). */}
       <span
-        title={visible ? 'Hide' : 'Show'}
+        role="button"
+        aria-label={vis.eyeTitle}
+        aria-pressed={vis.hidden}
+        title={vis.eyeTitle}
         onClick={e => { e.stopPropagation(); callbacks.outlinerOnVisible?.(id, !visible) }}
         style={{
-          color: '#aaa', fontSize: 10, flexShrink: 0,
-          opacity: hovered ? 1 : 0, transition: iconTransition,
+          color: vis.eyeColor, flexShrink: 0,
+          opacity: vis.eyeOpacity, transition: iconTransition,
           lineHeight: 1, padding: '0 2px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center',
         }}
       >
-        👁
+        <EyeIcon open={vis.eyeOpen} />
       </span>
 
       {/* Delete */}

@@ -306,3 +306,10 @@ Phase 2-3 (フロント entity 化) 着手前に確定していた設計点 (実
   座標変換であり、曖昧写像ではないのでpropose laneは無関係。
 - **状態機械 (§1.4)**: grasp status FSM (idle/compiling/solving/results/error) は
   不変。entity解決はcompiling段階の内部処理として増えるのみで新状態は増えない。
+
+---
+
+**Follow-up**: 本 ADR §2/§4 の「1-robot scope — no `refs` field, no selection UI」前提は
+[ADR-090](ADR-090-robot-identity-multi-robot-zero-robot-state.md) (Proposed) で解除が提案
+されている (同一性を名前から実体へ、0/1/N 台を明示状態化)。ワイヤ形 `graspSearch.robot`
+と「`core/` は実体を知らない」規律は ADR-090 でも不変。

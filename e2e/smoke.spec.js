@@ -352,3 +352,30 @@ test('experience layer renders under prefers-reduced-motion (degraded, not dead)
   await loadTemplateIntoNegotiate(page)
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('the Outliner eye round-trips an entity between hidden and shown (ADR-087)', async ({ page }) => {
+  // The controller layer is outside checkJs, so this is the only net for the
+  // eye's wiring. It regresses a real one-way bug: `_setObjectVisible` drove
+  // the meshes and the robot skeleton but never the Outliner row, so the row's
+  // `visible` flag stayed frozen at its seeded value and the toggle kept
+  // sending the same argument — the robot could be revealed once and then never
+  // hidden again, with the click consumed and nothing happening (#11).
+  const errors = await boot(page)
+
+  // robot_base ships HIDDEN on the default scene (ADR-089 follow-up), so its
+  // eye offers the "Show" action and is visible without hover.
+  const row = page.getByText('robot_base', { exact: true }).locator('..')
+  const eye = row.getByRole('button').first()
+  await expect(eye).toHaveAttribute('aria-label', 'Show')
+
+  // Show → the eye flips to the "Hide" action …
+  await row.hover()
+  await eye.click()
+  await expect(eye).toHaveAttribute('aria-label', 'Hide')
+
+  // … and hiding again works, which the frozen flag made impossible.
+  await eye.click()
+  await expect(eye).toHaveAttribute('aria-label', 'Show')
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
