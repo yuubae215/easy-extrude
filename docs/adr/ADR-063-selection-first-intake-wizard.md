@@ -3,7 +3,7 @@
 - Status: Accepted (全 5 フェーズ実装済 — Phase 1+2+3: 2026-07-05, Phase 4+5: 2026-07-07)
 - Date: 2026-07-05
 - Deciders: yuubae215, Claude
-- Supersedes / Superseded by: なし（ADR-051 の入口カタログを拡張、ADR-058 の seed 系を包含する上位設計）
+- Supersedes / Superseded by: なし（ADR-051 の入口カタログを拡張、ADR-058 の seed 系を包含する上位設計。段階開示の上に「既定文書から始める」段を積むのは ADR-091）
 - References: ADR-062（三層方針 — 本 ADR は体感層の中核実装計画）, ADR-051（要件入力の複数入口）,
   ADR-058（fork & tweak / IntakeAssist）, ADR-050（正準 doc / シーンは導出）, ADR-049（KPI/クライテリア,
   RoleKpiCatalog R8）, ADR-045（Layout DSL）, ADR-047（ゴースト系譜）, PHILOSOPHY #1/#3/#11/#28/#29

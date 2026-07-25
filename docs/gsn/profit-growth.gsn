@@ -1,0 +1,188 @@
+GOALS profit_growth
+
+goal ProfitGrows
+uuid e04d9c0c-05a8-40fa-a5bc-a2b5de079dde
+summary "easy-extrude 事業は、対象期間内で投下開発費を上回る利益を継続的に拡大している"
+state ToBeDeveloped
+labels meta-goal
+
+    context ProfitScope
+    uuid 2fac7d7f-f104-40dd-aaeb-0744955d761c
+    summary "対象セグメント・期間・利益の定義は未確定 (プレースホルダ)。本木が構造として固定するのは『利益 = 売上 − 経費』の恒等分解だけで、数値目標は BusinessTargetsUnset が保持する"
+
+    context MetaGoalPosition
+    uuid d8557d86-a4d1-4a0b-b96b-edfdc2a9ede1
+    summary "本木は開発活動のメタゴール層から出発する: 個々の開発判断 (ADR) は、売上最大化か経費最小化のいずれかの枝に接続できて初めて正当化される。接続できない開発は本木に枝を持たない = 正当化の鎖 (核 §1.2) が閉じない"
+    artifacts
+    - ".claude/rules/00-kernel.md"
+    - "docs/adr/README.md"
+
+    assumption BusinessTargetsUnset
+    uuid d2b9244d-44b4-4c5a-920f-ca5fc16648f6
+    summary "プレースホルダ: 売上・経費・利益の数値目標と測定期間は未設定。設定されるまで上位 2 ゴールは方向性のみを与え、真偽としては判定できない"
+
+    strategy ByRevenueAndCost
+    uuid a2cb7e61-0c57-46aa-aab1-e728452a46a4
+    summary "Argument by 利益の恒等分解 (売上最大化 × 経費最小化) — 網羅的だが排他的ではない: 両方に効く枝が在りうるので、枝は主たる寄与先に吊り、副次的な寄与は justification/assumption で名指しする"
+
+        goal RevenueMaximized
+        uuid 38eab2aa-ac07-4bdd-aa06-49ddc7a78a81
+        summary "対象セグメントにおいて売上が最大化されている"
+        state ToBeDeveloped
+        labels meta-goal
+
+            strategy ByAdoptionFunnel
+            uuid 011e8259-7e02-4a77-a840-3e68a931960b
+            summary "Argument by 採用ファネルの通過障壁の除去 — 売上はユーザが価値に到達した回数の関数であり、到達前に脱落させる障壁が売上の上限を決める"
+
+                goal UsersReachGraspValue
+                uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f
+                summary "新規ユーザは、ドメイン知識の事前想起なしにコンテキストを成立させ、grasp-search の判定結果 (価値の出口) に到達できる"
+                state ToBeDeveloped
+                labels adr-091
+                groups context-intake
+
+                    context Adr091Scope
+                    uuid 94026b75-efe6-41f2-b732-30b1c874a82f
+                    summary "ADR-091 (Proposed): 入力の起点を白紙からの生成ではなく既定値入り完成文書の訂正にする / ref をシステム所有にする。ADR-051→058→063 で摩擦・手本・想起を順に下げたのに同じ痛みが 3 度報告された、という観測地点から出発する"
+                    artifacts
+                    - "docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md"
+                    - "docs/adr/ADR-063-selection-first-intake-wizard.md"
+
+                    justification WhyCorrectionOverCreation
+                    uuid ab2801a3-afe0-4700-907a-02ccf3db22fb
+                    summary "訂正を選ぶ根拠: 生成は想起を要し、選択は判断を要するが、訂正は提示された値との照合だけで済む — 事前知識ゼロで実行できる唯一の入力行為。ADR-058 が fork & tweak として既に発見していた性質を、例外パスから既定パスへ移す"
+
+                    strategy ByCorrectionOnlyIntake
+                    uuid 7b3addd2-feef-4ae3-bf5a-444f686db52d
+                    summary "Argument by 訂正のみで到達できることの成立条件 (ADR-091 §1-§4 の 4 条件の充足)"
+
+                        goal DefaultsAreAcceptableToPractitioner
+                        uuid b31dae22-eb0a-40dd-ba92-ca87bc9ccce3
+                        summary "既定文書の初期値は、実際に grasp-search を通した当事者が『訂正せずに通してよい』と判断する値になっている"
+                        state ToBeDeveloped
+                        groups dogfooding
+
+                            assumption DefaultsFromDogfooding
+                            uuid dc61ccd1-2708-433c-9da9-79fde7699a3b
+                            summary "H: 既定値は机上では決まらず、当事者が実際に通した記録からしか得られない (一意の最適解は存在しない — ADR-081 ConvergenceBySweetSpot と同じ立場の小さな一例)。証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の『獲得した値』表が埋まり、createDefaultCellDoc() の中身として引用されること"
+
+                            solution DogfoodingRunbook
+                            uuid 91ff7980-a66e-4afa-8c52-d56ffd276db6
+                            summary "docs/dogfooding/README.md — 探索の起動手順 (pnpm dev:stack) と記録様式が固定済み。これは『探索が実施可能である』ことの証拠であって『既定値が妥当である』ことの証拠ではない (値の欄はまだ空)"
+                            artifacts
+                            - "docs/dogfooding/README.md"
+                            - "docs/dogfooding/2026-07-25-context-defaults.md"
+
+                        goal ZeroInputArtifactExists
+                        uuid 23970575-7cb6-46aa-8287-247e36d4b358
+                        summary "0 入力の時点で妥当な成果物が存在する: validator がエラー 0 で通り、checks が非空の結果を返し、3D が描画されている"
+                        state ToBeDeveloped
+
+                            assumption ZeroInputPlanned
+                            uuid f78e8ea9-b6a5-4573-a7df-c93041989cff
+                            summary "証拠予定: DocBuilder.test.js に、createDefaultCellDoc() が ContextValidator でエラー 0 かつ actors/variables/requirements いずれも非空であることを固定 (ADR-091 §1)"
+
+                        goal PristineResidueIsVisible
+                        uuid 61514d04-2b09-46d9-8efc-559a33ad45ed
+                        summary "訂正されていない既定値の残余が件数として可視であり、既定のまま提出できる静かな失敗が告知される"
+                        state ToBeDeveloped
+
+                            assumption PristineCountPlanned
+                            uuid 781e07f8-9711-4e8a-98fa-4a8f63e4dfca
+                            summary "証拠予定: IntakeAssist に pristineCount を追加し、全欄未訂正で総欄数・1 欄訂正で −1 を固定。review 段と Checks への表示 (ADR-091 §3 / 原則 #11)"
+
+                        goal IdentityNotUserAuthored
+                        uuid b79c4165-5663-4006-bc22-7416f548986d
+                        summary "doc 内の同一性 (ref) の命名がユーザに要求されず、採番の単一所有者から鋳造される"
+                        state ToBeDeveloped
+
+                            assumption MintRefPlanned
+                            uuid fb7b5107-73ab-4662-baf9-d09c593bbc5f
+                            summary "証拠予定: mintRef の決定性・一意性の property テストと、suggestRef を呼んでいること (採番の単一源) の参照同一性テスト (ADR-091 §4 / §1.1)"
+
+                    strategy ByFeedbackLoop
+                    uuid f5a1aae8-d932-4c58-9cc6-9bbd9fa42f68
+                    summary "Argument by フィードバック反映ループの成立 — 既定値が 1 回の設計では当たらない前提を受け入れ、当たるまで回る機構の存在自体を主張する"
+
+                        goal EnvironmentIsReproducible
+                        uuid 6e1768f9-6607-46ee-8113-4be2614b6f38
+                        summary "当事者は自分の手でフルスタック (コアAPI → BFF → フロント) を起動し、grasp-search を通した探索を再現できる"
+                        state ToBeReviewed
+                        groups dogfooding
+
+                            solution StackBootEvidence
+                            uuid 1c956ca9-6b77-4f45-999e-5b3914b9ceeb
+                            summary "実行検証 2026-07-25 (アプリコード状態 = d310545、起動スクリプトは本コミットで追加): pnpm install → cd core && uv sync --extra dev --extra serve → pnpm dev:stack で 3 プロセスが起動し全ポート応答 (コアAPI 127.0.0.1:4001 / BFF 3001 / vite 5173)。露出版 pnpm dev:stack:host も同様に検証済み (vite Network バインドあり)。経路の通しは curl -X POST localhost:3001/api/grasp/search --data @templates/bin-picking-thin-container/grasp-search.request.json が contractVersion 4 の候補 5 件 (rank 1 = 5 判定すべて true, totalScore 0.9593) を返すことで確認"
+                            artifacts
+                            - "package.json"
+                            - "docs/dogfooding/README.md"
+                            - "templates/bin-picking-thin-container/grasp-search.request.json"
+
+                            solution SuiteGreenEvidence
+                            uuid 071aa289-d1ab-4e73-9970-33f34ab8b2b3
+                            summary "実行検証 @ d310545: pnpm test:core 137 passed / pnpm test:contract 23 tests 23 pass / pnpm test:context 474 tests 474 pass / pnpm test:adr 91 本 OK — 探索の出発点が既知の緑であり、探索中に出た不具合を既存の壊れと切り分けられる"
+
+                        goal FeedbackIsCaptured
+                        uuid 9c3a827f-683a-4c02-bf38-2664af6e1870
+                        summary "探索中の詰まりと獲得値が、後続セッションと突き合わせ可能な固定様式で記録される"
+                        state ToBeDeveloped
+
+                            assumption FeedbackLedgerPlanned
+                            uuid 22e5b511-8137-4c83-9397-a2b494d0c87e
+                            summary "証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の 4 節 (環境 / 獲得した値 / 詰まり / 判定結果) が実際に埋まること。様式は固定済みだが、記録は当事者の探索後にしか存在しない"
+
+                        goal IterationUpdatesTheDefault
+                        uuid f10648c6-15b4-408a-9d54-0bf6f4b008ff
+                        summary "記録された詰まりと獲得値が、次イテレーションで既定文書と ADR-091 の改稿に反映される"
+                        state ToBeDeveloped
+
+                            assumption IterationPlanned
+                            uuid df5b25c2-28e7-4e31-9cc9-9955f2edbc75
+                            summary "証拠予定: 探索記録の『ADR-091 に返す修正』節 → ADR-091 の改稿 (または Accepted 化) → createDefaultCellDoc() の値差分、の 3 点が同一の記録から辿れること"
+
+                goal OtherAdoptionBranchesCovered
+                uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e
+                summary "コンテキスト入力以外の採用障壁 (価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
+                state ToBeDeveloped
+
+                    assumption AdoptionBranchesUnexplored
+                    uuid d126c790-2083-480a-a074-851c18e6ad4b
+                    summary "プレースホルダ: 本木は現時点でコンテキスト入力の枝のみを展開している。この goal は『この decomposition が何を省いたか』を明示するために置かれており、埋まっていないこと自体が既知の欠落である (false rigour 対策)"
+
+        goal CostMinimized
+        uuid 942a60a6-889d-448c-8682-0212e9c70623
+        summary "同一の品質・信頼性水準を保ったまま経費が最小化されている"
+        state ToBeDeveloped
+        labels meta-goal
+
+            strategy ByCostDrivers
+            uuid 58977951-4a26-4a09-b86e-677c1fe5c218
+            summary "Argument by 経費ドライバの分解 (手戻り / サポート / 運用)"
+
+                goal ReworkCostMinimized
+                uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16
+                summary "仕様の不確実性が実装前に消費され、実装後の手戻りが最小化されている"
+                state ToBeDeveloped
+
+                    assumption ReworkEvidenceUnset
+                    uuid 877510c8-c8a6-4437-855c-402a6577753b
+                    summary "プレースホルダ: ADR・GSN・状態台帳による事前の不確実性消費は既に運用中だが、手戻り量の測定は未着手。ADR-091 の『訂正されない既定値』リスクはこの枝にも接続する (既定のまま提出された doc は後工程の手戻りになる)"
+
+                goal SupportCostMinimized
+                uuid 3bf47205-f6df-4673-aa5f-74523c6a02fb
+                summary "ユーザが自力で価値に到達できるため、問い合わせ由来のサポート工数が最小化されている"
+                state ToBeDeveloped
+
+                    assumption SupportEvidenceUnset
+                    uuid 2eac608c-aed7-4fc4-b5bf-25a865236ecf
+                    summary "プレースホルダ: UsersReachGraspValue と同じ改善が経費側にも効く (入力できないユーザは問い合わせに来る) — 枝は売上側に吊ったが寄与は両側。測定手段は未設定"
+
+                goal RunCostMinimized
+                uuid 9a307994-630b-4ddb-ba6b-a907ed96b23c
+                summary "実行時コスト (計算・ホスティング・外部 API) が最小化されている"
+                state ToBeDeveloped
+
+                    assumption RunCostEvidenceUnset
+                    uuid 81ec7eee-7bc6-4096-8207-66aa438e1519
+                    summary "プレースホルダ: コアAPI は全探索方式 (ADR-075) で候補数に対し線形。『数千候補までは一瞬』という段階0 の観測はあるが、コスト測定は未着手"

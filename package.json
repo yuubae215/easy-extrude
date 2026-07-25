@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "concurrently --kill-others-on-fail -n bff,vite -c cyan,green \"pnpm server:dev\" \"wait-on tcp:localhost:3001 && vite\"",
+    "dev:stack": "concurrently --kill-others-on-fail -n core,bff,vite -c magenta,cyan,green \"cd core && uv run python -m easy_extrude_core.api\" \"wait-on tcp:127.0.0.1:4001 && pnpm server:dev\" \"wait-on tcp:127.0.0.1:3001 && vite\"",
+    "dev:stack:host": "concurrently --kill-others-on-fail -n core,bff,vite -c magenta,cyan,green \"cd core && uv run python -m easy_extrude_core.api\" \"wait-on tcp:127.0.0.1:4001 && pnpm server:dev\" \"wait-on tcp:127.0.0.1:3001 && vite --host\"",
     "build": "vite build",
     "build:full": "pnpm build:wasm && vite build",
     "build:wasm": "wasm-pack build wasm-engine --target web --out-dir ../src/engine/wasm --out-name wasm_engine && printf '# wasm-pack output committed to git — do not replace with *\\n' > src/engine/wasm/.gitignore",

@@ -15,6 +15,8 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | StateMachine class / FSM / editorStates / operation state constants / _opState | `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039 |
 | cache / derived state / lifecycle / UNINIT / STALE / freshness | `docs/STATE_TRANSITIONS.md` § Internal Component State Machines |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
+| GSN / 論証木 / assurance case / claim tree / 証拠の鮮度 / 利益 / 売上 / 経費 / なぜこの開発をやるのか | `docs/gsn/profit-growth.gsn` (事業メタゴールから枝を辿る正本), `docs/gsn/adr-081-grasp-validation.gsn` (grasp 判定の枝) |
+| dogfooding / 実際に触る / 既定値の獲得 / フルスタック起動 / ユーザフィードバック | `docs/dogfooding/README.md` (`pnpm dev:stack` + 記録様式) |
 | screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
 | layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
 | Layout API / Layout DSL / compileLayout / LayoutCompiler / scene from CLI or API | ADR-045, `src/layout/LayoutCompiler.js` |
