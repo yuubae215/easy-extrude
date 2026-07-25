@@ -14,6 +14,9 @@ import {
   deriveTaskClass,
   readSessionModelEffort,
   buildTrailers,
+  stripHeredocs,
+  tokenizeCommand,
+  detectsCommitPushChain,
 } from './commit-meta.mjs';
 
 test('conventional type — scope 付き・破壊的変更・型なしを見分ける', () => {
@@ -133,6 +136,64 @@ test('session 不明でも unknown/unknown を宣言する — 人間のコミ�
     'Model-Effort: unknown/unknown',
     'Task-Class: fix/front',
   ]);
+});
+
+test('commit && push の連鎖を検出する (刻む隙間が無い形)', () => {
+  assert.equal(detectsCommitPushChain('git commit -m x && git push'), true);
+  assert.equal(detectsCommitPushChain('git add -A; git commit -m x; git push -u origin main'), true);
+  assert.equal(detectsCommitPushChain('git commit -m x || git push'), true);
+});
+
+test('連鎖でないものを連鎖と言わない', () => {
+  assert.equal(detectsCommitPushChain('git commit -m x'), false);
+  assert.equal(detectsCommitPushChain('git push -u origin main'), false);
+  // push が先・commit が後は「刻む隙間が無い」形ではない。
+  assert.equal(detectsCommitPushChain('git push && git commit -m x'), false);
+  assert.equal(detectsCommitPushChain('git log --oneline -15'), false);
+});
+
+test('引用の中の語をコマンドとして読まない', () => {
+  // メッセージが push に**言及**しているだけで発火してはいけない。
+  assert.equal(
+    detectsCommitPushChain('git commit -m "explain why git commit && git push is bad"'),
+    false,
+  );
+  assert.equal(detectsCommitPushChain("git commit -m 'do not git push here'"), false);
+});
+
+test('heredoc 本体の文面で発火しない (ADR-092 導入コミット自身が踏んだ誤発動)', () => {
+  // 実際に起きた形: -F - + heredoc のコミットメッセージが
+  // 「`git commit && git push` の連鎖」と説明していたため助言が誤発火した。
+  const cmd = [
+    "git commit -q -F - <<'MSG'",
+    'chore(governance): 観測をコミットへ刻む',
+    '',
+    '塞げない穴: `git commit && git push` の連鎖は刻む隙間が無い。',
+    'MSG',
+    "echo '--- committed ---'",
+  ].join('\n');
+  assert.equal(detectsCommitPushChain(cmd), false);
+});
+
+test('heredoc の外にある本物の連鎖は heredoc があっても検出する', () => {
+  const cmd = ["git commit -F - <<'MSG'", 'subject line', 'MSG', 'git push -u origin main'].join('\n');
+  assert.equal(detectsCommitPushChain(cmd), true);
+});
+
+test('改行はコマンド区切り — 別行の push も同一呼び出しなら連鎖', () => {
+  // 1 回の Bash 呼び出しに収まっている限り、`&&` でも改行でも刻む隙間は無い。
+  assert.equal(detectsCommitPushChain('git commit -m x\ngit push'), true);
+  // 行継続は区切りではない。
+  assert.equal(detectsCommitPushChain('git commit \\\n  -m x'), false);
+});
+
+test('stripHeredocs / tokenizeCommand の単体挙動', () => {
+  assert.equal(stripHeredocs("a <<'E'\nbody\nE\nb").split('\n').includes('body'), false);
+  assert.deepEqual(tokenizeCommand('git commit -m "a b" && git push'), [
+    'git', 'commit', '-m', 'a b', '&&', 'git', 'push',
+  ]);
+  // 空の引用は 1 トークンとして残る (欠落させない)。
+  assert.deepEqual(tokenizeCommand('git commit -m ""'), ['git', 'commit', '-m', '']);
 });
 
 test('トレーラ行は git interpret-trailers が読める key: value 形式', () => {

@@ -42,8 +42,19 @@ event="$(read_json 'd.get("hook_event_name","")')"
 if [ "$event" = "PreToolUse" ]; then
   cmd="$(read_json 'd.get("tool_input",{}).get("command","")')"
   session="$(read_json 'd.get("session_id","")')"
-  printf '%s' "$cmd" | grep -Eq 'git[^|;&]*commit' || exit 0
-  printf '%s' "$cmd" | grep -Eq '(&&|;|\|\|)[[:space:]]*git[^|;&]*push' || exit 0
+  pre_cwd="$(read_json 'd.get("cwd","")')"
+  [ -n "$cmd" ] || exit 0
+
+  # 安い足切り (push を含まないコマンドで node を起動しない)。
+  printf '%s' "$cmd" | grep -q 'push' || exit 0
+
+  # 連鎖判定は **正規表現ではなく** トークン化して行う。素朴な grep は
+  # コミットメッセージ本文 (heredoc / 引用の中) の文字列で誤発火する —
+  # ADR-092 の導入コミット自身がそれを踏んだ。規則は
+  # scripts/commit-meta.mjs の純粋関数にあり、テストで固定してある。
+  pre_repo="$(git -C "${pre_cwd:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" || exit 0
+  [ -f "$pre_repo/scripts/commit-meta.mjs" ] || exit 0
+  [ "$(node "$pre_repo/scripts/commit-meta.mjs" detect-chain --command "$cmd" 2>/dev/null)" = "chained" ] || exit 0
 
   # 鬱陶しい誤発動は「レンズを殺す」ので 1 セッション 1 回だけ (核 §6 シグナル(b))。
   marker_dir="${TMPDIR:-/tmp}/cc-commit-trailers"

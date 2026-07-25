@@ -103,6 +103,92 @@ export function readSessionModelEffort(transcriptText) {
 }
 
 /**
+ * heredoc 本体を落とす。
+ *
+ * コミットメッセージは hook から見ればコマンド文字列の一部なので、素朴に正規表現を
+ * かけると**メッセージ本文に書かれた文字列**で発火する。本 ADR の導入コミット自身が
+ * それを踏んだ (メッセージが「`git commit && git push` の連鎖」と説明していた)。
+ */
+export function stripHeredocs(command) {
+  const lines = String(command ?? '').split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    out.push(lines[i]);
+    const m = /<<-?\s*(['"]?)(\w+)\1/.exec(lines[i]);
+    if (!m) continue;
+    const delim = m[2];
+    i += 1;
+    while (i < lines.length && lines[i].trim() !== delim) i += 1;
+  }
+  return out.join('\n');
+}
+
+/**
+ * シェル風トークン化 (引用を尊重する)。
+ * `-m "... git push ..."` が 1 トークンに畳まれるので、引用内の語は
+ * コマンドとして解釈されない — 誤発動を防ぐ本体。
+ */
+export function tokenizeCommand(command) {
+  const src = String(command ?? '');
+  const tokens = [];
+  let cur = '';
+  let quote = null;
+  let hasCur = false;
+  const push = () => { if (hasCur) { tokens.push(cur); cur = ''; hasCur = false; } };
+
+  for (let i = 0; i < src.length; i += 1) {
+    const c = src[i];
+    if (quote) {
+      if (c === quote) quote = null;
+      else { cur += c; hasCur = true; }
+      continue;
+    }
+    // 行継続 (`\` + 改行) は区切りではない。
+    if (c === '\\') {
+      i += 1;
+      if (i < src.length && src[i] !== '\n') { cur += src[i]; hasCur = true; }
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; hasCur = true; continue; }
+    // 引用の外の**改行はコマンド区切り**。空白扱いにすると
+    // `git commit ...\ngit push` が 1 セグメントに融合して連鎖を見落とす。
+    if (c === '\n') { push(); tokens.push(';'); continue; }
+    if (/\s/.test(c)) { push(); continue; }
+    if (c === '&' || c === '|' || c === ';') {
+      push();
+      const two = src.slice(i, i + 2);
+      if (two === '&&' || two === '||') { tokens.push(two); i += 1; } else tokens.push(c);
+      continue;
+    }
+    cur += c; hasCur = true;
+  }
+  push();
+  return tokens;
+}
+
+const SHELL_OPS = new Set(['&&', '||', ';', '|', '&']);
+
+/**
+ * `git commit` と `git push` が 1 コマンドに連鎖しているか。
+ *
+ * true のときだけ助言する。この形は観測トレーラを刻む隙間が無く、コミットが
+ * 静かに分析対象から漏れる (ADR-092 §4)。
+ */
+export function detectsCommitPushChain(command) {
+  const tokens = tokenizeCommand(stripHeredocs(command));
+  const segments = [[]];
+  for (const t of tokens) {
+    if (SHELL_OPS.has(t)) segments.push([]);
+    else segments[segments.length - 1].push(t);
+  }
+  const isGit = (seg, verb) =>
+    seg.length > 0 && /(^|\/)git$/.test(seg[0]) && seg.slice(1).includes(verb);
+  const ci = segments.findIndex((s) => isGit(s, 'commit'));
+  const pi = segments.findIndex((s) => isGit(s, 'push'));
+  return ci !== -1 && pi !== -1 && pi > ci;
+}
+
+/**
  * トレーラ行を組み立てる。
  *
  * model が読めなくても `unknown/unknown` を**宣言**する — hook が走った時点で
@@ -224,14 +310,20 @@ function argFor(argv, name) {
   return i === -1 ? undefined : argv[i + 1];
 }
 
+function cmdDetectChain(argv) {
+  if (detectsCommitPushChain(argFor(argv, '--command') ?? '')) process.stdout.write('chained\n');
+}
+
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const [, , sub, ...rest] = process.argv;
   if (sub === 'derive') cmdDerive(rest);
   else if (sub === 'report') cmdReport(rest);
+  else if (sub === 'detect-chain') cmdDetectChain(rest);
   else {
     console.error('usage: commit-meta.mjs derive --transcript <path> [--rev HEAD] [--repo <dir>]');
     console.error('       commit-meta.mjs report [--since <date>] [--until <date>]');
+    console.error('       commit-meta.mjs detect-chain --command <shell command>');
     process.exit(2);
   }
 }
