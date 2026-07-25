@@ -631,6 +631,49 @@ any
 
 ---
 
+### GSN goal support — 未探索 / 探索中 / 支えあり (PHILOSOPHY #31)
+
+**Why this exists here**: the ledger crossed the 3-state threshold for a `.gsn`
+goal's *support* on 2026-07-25 (核 §1.4). This is not a runtime entity, but it is
+a state set with an illegal region that used to be reachable in silence: a goal
+with **zero** support (0 strategy, 0 solution, 0 sub-goal) rendered identically to
+a fully evidenced one, because absence has no node to inspect. The state is now
+declared rather than inferred, and the guards are executable
+(`gsn_tool.py lint`, CI `pnpm test:gsn`) — the transitions below are enforced, not
+described.
+
+**States** (support is structural + a reserved `labels` value; `state` stays the
+extension's *freshness* axis and is deliberately orthogonal)
+
+```
+unexplored  (labels support-unexplored — nothing named yet, not falsifiable)
+  ──[write an assumption naming the check that would settle it]──→ exploring
+exploring   (labels support-exploring + ≥1 assumption child — "証拠予定: …")
+  ──[run the check; assumption → solution, drop the label]───────→ supported
+  ──[decompose instead; add a strategy, drop the label]──────────→ supported
+supported   (≥1 strategy / solution / sub-goal, no support label)
+  ──[evidence goes stale]───────────────────────────────────────→ (state ToBeReviewed; still supported)
+```
+
+**Guards / invariants** — each one is a lint error, not a convention:
+
+- **No undeclared zero.** A goal with no support and no `support-*` label is an
+  error. This is the whole point: the empty branch can no longer pass silently.
+- **Exactly one declaration.** Two `support-*` labels on one goal is an error.
+- **`support-exploring` requires an assumption child.** Without a named check it is
+  `support-unexplored` wearing a costume — the label would claim in-flight work
+  that does not exist.
+- **A declaration of absence dies when support arrives.** A `support-*` label on a
+  goal that has gained a strategy/solution/sub-goal is an error, so the forward
+  transitions cannot be taken half-way.
+- **Support labels are goal-only.** The same label on a strategy or solution is an error.
+- Backward transitions (supported → exploring) are not modelled: evidence that goes
+  stale moves on the freshness axis (`state ToBeReviewed`), and deleting a branch to
+  tidy the tree is forbidden by `/gsn-maintain`'s guardrails — a removed zero is an
+  invisible zero again.
+
+---
+
 ## CoordinateFrame Body Frame Lifecycle (ADR-037)
 
 ### Origin CF is created atomically with every Solid
