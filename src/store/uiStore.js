@@ -102,7 +102,8 @@ export const useUIStore = create((set, get) => ({
   // ── Outliner ───────────────────────────────────────────────────────────────
   // Flat array in insertion order; React renders via DFS pre-order traversal.
   // Item shape: { id, name, type, parentId, visible, locked,
-  //               ifcClass, placeType, linked:{asSource,asTarget}, unreferenced }
+  //               ifcClass, placeType, linked:{asSource,asTarget}, unreferenced,
+  //               robotRole:'base'|'tcp'|null }
   outlinerItems: [],
   outlinerActiveId: null,
   outlinerDrawerOpen: false,
@@ -188,11 +189,20 @@ export const useUIStore = create((set, get) => ({
     // grasp tab is not seeded (no renderable layout / never opened). Shapes:
     //   { status:'idle',      layout }
     //   { status:'no-layout' }
+    //   { status:'no-robot',  layout, reason, robotCount }   — ADR-090 Decision 4
     //   { status:'compiling', layout }
     //   { status:'solving',   layout, request }
     //   { status:'results',   layout, request, candidates, compiledObjects, selectedRank }
     //   { status:'error',     stage:'compile'|'solve'|'bff', httpStatus, message, details }
     grasp: null,
+    // ADR-090 — the scene's robot roster as a DERIVED read-model for the grasp
+    // panel's selector. Sole writer GraspController.refreshRobots() (原則 #4);
+    // the SCENE stays the authority on which robots exist (§1.1 — nothing writes
+    // back through here). Shape:
+    //   { list: [{ id, label, hasTcp }], selectedId, cardinality:'none'|'single'|'multi' }
+    // `cardinality` names the 0 / 1 / N state so the panel can be honest about
+    // zero instead of rendering an empty dropdown (原則 #31).
+    robots: { list: [], selectedId: null, cardinality: 'none' },
     // ADR-063 Phase 3 wizard FSM — sole writer ContextController via the pure
     // WizardCatalog transition functions; the panel only reads + fires callbacks.
     // null = inactive (the wizard tab shows its start screen). Shapes:
@@ -294,6 +304,7 @@ export const useUIStore = create((set, get) => ({
         id, name, type, parentId: parentId ?? null,
         visible: true, locked: false,
         ifcClass: null, placeType: null,
+        robotRole: null,   // ADR-090 — declared robot TF role; drives the ROBOT badge
         linked: { asSource: false, asTarget: false },
         unreferenced: false,
       }],
@@ -435,6 +446,11 @@ export const useUIStore = create((set, get) => ({
     // from a prior status survive a transition.
     contextSetGrasp: (grasp) => set(state => ({
       context: { ...state.context, grasp },
+    })),
+    // ADR-090 — replace the derived robot roster wholesale (sole writer
+    // GraspController; the scene is the authority, this is the panel's read-model).
+    contextSetRobots: (robots) => set(state => ({
+      context: { ...state.context, robots },
     })),
     setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
     setTemplateGalleryPreviews: (previews) => set({ templateGalleryPreviews: previews }),

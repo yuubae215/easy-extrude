@@ -134,6 +134,10 @@
         "name": { "type": "string" },
         "parentId": { "type": ["string", "null"] },
         "declaredBy": { "type": ["string", "null"] },
+        "robotRole": {
+          "description": "Declared role inside a robot's TF tree (ADR-090): 'base' | 'tcp' | null. Robot identity is the entity carrying this role, not the frame's name, so a scene can hold N robots.",
+          "enum": ["base", "tcp", null]
+        },
         "translation": { "$ref": "#/$defs/vec3" },
         "rotation": { "$ref": "#/$defs/quaternion" }
       }

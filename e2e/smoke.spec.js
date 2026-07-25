@@ -353,6 +353,78 @@ test('experience layer renders under prefers-reduced-motion (degraded, not dead)
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('deleting the robot asks first, and a template load does not resurrect it (ADR-090)', async ({ page }) => {
+  // The two defects ADR-090 measured, in one flow. Before: the ✕ took the robot
+  // (and its tcp child) away with NO dialog and no toast (§力学(2)), and the very
+  // next scene entry re-seeded it because `ensureRobotFrames` "repaired" every
+  // entry path — the seed rule outranked the user's scene (§力学(4)).
+  const errors = await boot(page)
+
+  const robotRow = page.getByText('robot_base', { exact: true }).locator('..')
+  await robotRow.hover()
+  await robotRow.locator('[aria-label="Delete"]').click()
+
+  // 1. It asks, and the question names what is being removed and what remains.
+  await expect(page.getByText('Delete Robot', { exact: true })).toBeVisible()
+  await expect(page.getByText(/The scene will have no robot/)).toBeVisible()
+  // The dialog's confirm button carries the label as TEXT; the Outliner rows' ✕
+  // buttons only carry it as aria-label, so text-is disambiguates.
+  await page.locator('button:text-is("Delete")').click()
+
+  // 2. Zero robots is a state the scene can actually hold: both frames are gone.
+  await expect(page.getByText('robot_base', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('tcp', { exact: true })).toHaveCount(0)
+
+  // 3. …and it survives a scene entry (loading a template) instead of springing back.
+  await loadTemplateIntoNegotiate(page)
+  await expect(page.getByText('robot_base', { exact: true })).toHaveCount(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('a second robot can be added and is a distinct entity (ADR-090 G1)', async ({ page }) => {
+  const errors = await boot(page)
+
+  // Shift+A → Robot. The entry is unconditional (it is the way OUT of 0 robots),
+  // unlike "Coordinate Frame", which needs a selected parent.
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Robot', { exact: true }).click()
+
+  // Two robots now: distinct rows, each wearing the ROBOT badge that is keyed off
+  // the DECLARED role (a name-keyed badge would have missed this second base).
+  // (the active-object header echoes the name too, hence first())
+  await expect(page.getByText('robot_base_2', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('tcp_2', { exact: true }).first()).toBeVisible()
+  expect(await page.getByText('ROBOT', { exact: true }).count()).toBe(4)
+
+  // One eye moves ONE arm (ADR-090): the boot robot ships hidden, the just-added
+  // one is drawn. A single shared RobotStage could not even express this — and the
+  // aria-label assertions below/above cannot see it, since they read the row, not
+  // the scene.
+  const roster = await page.evaluate(() => window.__easyExtrude.robotState())
+  expect(roster.map(r => r.label)).toEqual(['robot_base', 'robot_base_2'])
+  expect(roster.map(r => r.skeletonVisible)).toEqual([false, true])
+  expect(roster.every(r => r.hasTcp)).toBe(true)
+
+  // Revealing the first robot leaves the second one alone (per-robot keying).
+  const firstRow = page.getByText('robot_base', { exact: true }).locator('..')
+  await firstRow.hover()
+  await firstRow.getByRole('button', { name: 'Show' }).click()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState()))
+      .map(r => r.skeletonVisible))
+    .toEqual([true, true])
+
+  // Undo removes the pair together (one command owns the base + tcp pairing).
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Control+z')
+  await expect(page.getByText('robot_base_2', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('tcp_2', { exact: true })).toHaveCount(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('the Outliner eye round-trips an entity between hidden and shown (ADR-087)', async ({ page }) => {
   // The controller layer is outside checkJs, so this is the only net for the
   // eye's wiring. It regresses a real one-way bug: `_setObjectVisible` drove

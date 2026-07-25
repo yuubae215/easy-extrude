@@ -348,6 +348,19 @@ export class OutlinerView {
   }
 
   /**
+   * Current eye state of a row — the visibility owner's accessor (ADR-087: the
+   * row's eye owns it, 原則 #4), so a view that appears LATE can adopt the state
+   * instead of assuming a default (ADR-090: a robot skeleton created when its
+   * robot returns via redo must respect an eye that was closed).
+   * Unknown ids read as visible (the default a new row starts at).
+   * @param {string} id
+   * @returns {boolean}
+   */
+  isObjectVisible(id) {
+    return this._items.get(id)?.visible ?? true
+  }
+
+  /**
    * Locks or unlocks a frame row for dragging (ADR-028).
    * Locked rows (Origin frames) cannot be dragged to a new parent.
    * @param {string} id

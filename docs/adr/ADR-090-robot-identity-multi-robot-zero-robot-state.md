@@ -1,11 +1,12 @@
 # 090. ロボットの同一性を名前から実体へ — 複数台の受け入れ、0 台を一級の状態に、grasp は選択された 1 台で解く
 
-- Status: Proposed
+- Status: Accepted (実装済 — 契約 `packages/grasp-contract` / `core/` は不動)
 - Date: 2026-07-25
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: なし (ADR-084 §2/§4 の「1-robot scope」前提を明示的に解除)
-- 状態台帳: `docs/STATE_LEDGER.md` の「ロボット」行 (基数 `⚠ 実装は 1 固定・実際は 0..N が
-  到達可能`)。本 ADR はその行を `0..N` へ確定させる変更であり、台帳の §既知の負債 (2) を閉じる
+- 状態台帳: `docs/STATE_LEDGER.md` の「ロボット (台数)」行 (基数 `0..N` に確定) と
+  「ロボット CF の TF ロール」行。本 ADR で台帳の §既知の負債 (2) を閉じた。
+  遷移図の正本は `docs/STATE_TRANSITIONS.md` §Robot roster
 
 ## Context — Goal と力学 (§1.2 Goal)
 
@@ -144,25 +145,55 @@ grasp を解く = 幽霊ロボット)。閾値を越えているので、クラ�
   N 台時にユーザーが 1 台選ぶ手間が増える (0/1 台では自動選択で隠す)。`ensureRobotFrames`
   の弱体化により、「必ず `robot_base` が在る」前提に乗っていた経路は 0 台を扱えるように
   する必要がある (下記 blast radius)。
-- **検証 (証拠)**: **本 ADR は実装前であり、検証欄は大半が未来形である。** 内訳:
-  - *測定済み (現状の欠陥として)*: 力学 (2) 削除の無ガード = E2E 実測 (削除後に
+- **検証 (証拠)** — 実装完了時点で、Proposed 時の未来形はすべて実行可能な証拠に置換した。
+  - *測定済み (実装前の欠陥として)*: 力学 (2) 削除の無ガード = E2E 実測 (削除後に
     `robot_base` / `tcp` の行数 0、確認ダイアログ・toast なし)。力学 (3) 幽霊ロボット既定 =
     コード参照 `core/easy_extrude_core/engine/pipeline.py:120` + 前面の省略経路
-    `GraspController.js:221`。力学 (4) 再 seed = E2E 実測 (削除 → テンプレ読込 →
+    (旧 `GraspController.js:221`)。力学 (4) 再 seed = E2E 実測 (削除 → テンプレ読込 →
     `robot_base` 復活)。力学 (5) 契約の非対称性 = スキーマ実測 (request `robot` は
     `additionalProperties:false` の閉objects、response に robot 参照ゼロ)。
-  - *未来形 (ToBeDeveloped)*: 同一性の単一解決点、0 台ゲート、削除確認、N 台の選択 UI。
-  - → adr skill §5 に従い、**GSN 論証木の併設を提案する** (`docs/gsn/`)。証拠の大半が
-    未来形で複数イテレーションを跨ぐため、鎖を証拠実行可能な木へ外部化し、実装の進行に
-    応じて鮮度を更新する (gsn-meta-framework で作成 / gsn-maintain で更新)。
+  - *G1 同一性 (実装済)*: `src/domain/robotFrames.test.js` — 宣言ロールが名前に優先する
+    (両方向)、同名 2 台が別実体として解決される、tcp の対応付けが `parentId` で行われる、
+    レガシー (role 欄なし) が名前で 1 台だけ解決される。
+    Scene ⇄ Layout DSL の往復は `src/layout/LayoutDecompiler.test.js`
+    (`robotRole` の fixpoint + 「ロールを持たない CF は欄を出さない」)。
+    E2E: 2 台目を Shift+A → Robot で追加でき、ROBOT バッジが両方に付き、undo で
+    base+tcp が対で消える (`e2e/smoke.spec.js`)。
+  - *G2 前提を偽らない (実装済)*: `src/controller/GraspController.test.js` — 0 台は
+    `no-robot` で停止し **BFF 呼び出し 0 回**、N 台で未選択も同様、選択後は
+    *その* ロボットの base/tcp がワイヤに載り、形状は単数のまま (`robots` / `robotId` 不在)、
+    削除済み選択は黙って再利用されず落ちる。
+  - *G3 0 台の安定 (実装済)*: E2E — 削除は「Delete Robot」確認を出し、確定後は
+    base/tcp とも行 0、**テンプレ読込後も復活しない**。加えて
+    `src/RobotRosterAuthority.test.js` が seed 呼び出しの **個数**を数え、boot 経路以外の
+    seed を落とす (0 台を再び表現不能にする「最短の修正」を機械が拒否する — Q3)。
+  - *契約不動 (実装済)*: `pnpm test:contract` 23 pass、`packages/grasp-contract` と
+    `core/` の diff ゼロ、`contractVersion` 据え置き。
+  - *回帰網 (実測)*: `pnpm test` 743 pass / `pnpm test:context` 478 pass /
+    `pnpm typecheck` clean / `pnpm test:adr` 91 OK / `pnpm build` OK /
+    `pnpm test:e2e` 16 pass (新規 2 本含む)。
+  - GSN 論証木の併設 (Proposed 時の提案) は **不要になった**: 未来形の証拠が
+    テスト/CI に降りたため、鎖は `.gsn` の外で実行可能になっている (§5 — トリガの
+    消えたレンズをインスタンス化しない)。ADR-081 のように証拠が複数イテレーション
+    未来形のまま残る判断では引き続き有効。
+- **実装のかたち (Proposed からの差分)**: 同一性の担体は `CoordinateFrame.robotRole`
+  (`'base'|'tcp'|null`) — *宣言されたロール*であり、読むのは `robotFrames.js` の解決点
+  だけ、外の層は型付き `Robot` 集約で分岐する (原則 #2 の意図: タグを呼び出し側の分岐に
+  漏らさない)。roster の view 側は `RobotStageSet` (1 スケルトン/1 ロボット、
+  `sync()` が生成と破棄を対で持つ — 原則 #9) に移し、単一 `RobotStage` の
+  「最後の書き込み勝ち」を構造的に無くした。0 台からの復帰路として Add メニューに
+  `Robot` を追加した (これが無いと 0 台は状態ではなく罠になる)。
 - **波及 (blast radius)**: `src/domain/robotFrames.js`(同一性の単一解決点),
   `src/service/SceneService.js`(`ensureRobotFrames` の seed 条件),
   `src/controller/GraspController.js`(`_resolveRobotDeclaration` / `runGraspSearch` の guard),
   `src/controller/HitTestService.js`, `src/controller/AppController.js`
   (`_setObjectVisible` / `_hideRobotByDefault` / `_syncRobotStage` / `_deleteObject`),
-  `src/view/RobotStage.js` + `SceneView`(単一インスタンス → N),
+  `src/view/RobotStageSet.js`(新規) + `SceneView`(単一インスタンス → N),
   `src/components/Grasp/GraspSearchPanel.jsx`(選択 UI), `src/store/uiStore.js`(`no-robot` 状態),
-  `src/components/Outliner/Outliner.jsx`(ROBOT バッジの複数台対応)。
+  `src/components/Outliner/Outliner.jsx`(ROBOT バッジをロール駆動へ),
+  `src/command/AddRobotCommand.js`(新規 — base+tcp 対の undo),
+  `src/domain/CoordinateFrame.js`(`robotRole`) + `SceneSerializer` / `LayoutCompiler` /
+  `LayoutDecompiler` / `schema/{scene-1.3,layout-1.0}.schema.json`(ロールの往復)。
   **不変**: `packages/grasp-contract/`, `core/`, `server/`。
 
 ## Lens notes

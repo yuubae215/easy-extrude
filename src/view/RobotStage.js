@@ -79,6 +79,9 @@ export class RobotStage {
     this._group.visible = visible
   }
 
+  /** Whether the skeleton is currently drawn (read-only accessor for the owner). */
+  get visible() { return this._group.visible }
+
   /**
    * First raycast intersection against the visible skeleton, or null. The
    * skeleton is a view-only decoration (not a scene entity), so it is invisible

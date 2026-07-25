@@ -50,6 +50,15 @@ const IDENTITY_RULES = [
     all: [/ROBOT_BASE_FRAME_NAME|['"`]robot_base['"`]/, /parentId/],
     why: 'ロボットの同一性が複数箇所で決まると、2 台目が入った瞬間にすべてが同時に壊れる (ADR-090 §力学(1))',
   },
+  {
+    // ADR-090 で同一性を名前から実体 (`robotRole`) へ移した。移した先で同じ
+    // 再実装が始まらないよう、値の解釈もドメイン 1 箇所に閉じる。
+    name: 'robot TF ロールの解釈 (robotRole の値比較)',
+    owners: ['src/domain/robotFrames.js'],
+    use: "isRobotBaseFrame(obj) / isRobotTcpFrame(obj) / isRobotRole(v) / resolveRobots(objects)",
+    all: [/robotRole/, /===\s*(ROBOT_ROLE\.|['"`](base|tcp)['"`])/],
+    why: 'ロール値の解釈が散ると、語彙を増やしたときに更新漏れの箇所が黙って古い判定を続ける (ADR-090 Decision 1)',
+  },
 ]
 
 /** src/ 配下の .js を列挙 (テストと生成物を除く)。 */

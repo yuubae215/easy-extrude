@@ -67,6 +67,19 @@ emit('objectRenamed', id, newName)
 | Fired when | `renameObject()` |
 | Primary receivers | `OutlinerView.setObjectName()`, `AppController` (status update) |
 
+### robotRoleChanged
+
+```
+emit('robotRoleChanged', id, role)
+```
+
+| Item | Description |
+|------|-------------|
+| Payload | `id: string`, `role: 'base' \| 'tcp' \| null` — the frame's declared robot TF role (ADR-090) |
+| Fired when | `SceneService._setRobotRole()` — the sole writer of the field: `addRobot()` and `_upgradeLegacyRobotFrames()` (legacy scene entry). Idempotent: an unchanged role emits nothing |
+| Primary receivers | `AppController` → `OutlinerBridge.setRobotRole()` (the ROBOT badge is role-driven, not name-driven) and `_invalidateRobotRoster()` → `GraspController.refreshRobots()` (the grasp panel's roster read-model) |
+| Note | Identity itself is the base frame's entity **id**; this event announces the *declaration* that makes an entity part of a robot, so views/read-models never poll for it (原則 #5/#18) |
+
 ### activeChanged
 
 ```
@@ -285,7 +298,7 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `G` | `_startGrab()` |
 | `R` | `_startRotate()` (CoordinateFrame or Solid selected, ADR-019/ADR-036) |
 | `M` | `_startMeasurePlacement()` |
-| `Shift+A` | Show add menu |
+| `Shift+A` | Show add menu (Box / Sketch / Measure Line / Coordinate Frame (needs a parent) / **Robot** (always available — the way out of a robot-less scene, ADR-090) / Import STEP) |
 | `Shift+D` | Duplicate selected object |
 | `X` / `Delete` | Delete selected object |
 
@@ -585,6 +598,7 @@ Commands are recorded post-hoc via `push()` — never use `execute()` for pre-ex
 | `FrameRotateCommand` | After `_confirmRotate()` confirmed (CoordinateFrame) | Restore startQuat |
 | `SolidRotateCommand` | After `_confirmRotate()` confirmed (Solid) | Restore startCorners |
 | `AddAnnotationCommand` | After Map Mode `_confirmDrawing()` created the entity (ADR-072) | `detachObject()` + `setVisible(false)` (soft delete) |
+| `AddRobotCommand` | After `_addRobot()` created the base + tcp pair (ADR-090) | Detach both frames, child first (the pair is one unit — a half-robot must not be reachable through undo) |
 
 ---
 

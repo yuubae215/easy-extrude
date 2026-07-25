@@ -11,7 +11,7 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | philosophy / principles / why we do it this way | `docs/PHILOSOPHY.md` |
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
 | state machine / mode transition / state | `docs/STATE_LEDGER.md` (台帳=索引・基数列) → `docs/STATE_TRANSITIONS.md` (図の正本), ADR-008 |
-| 基数 / cardinality / 0 台 / N 台 / 存在しない / 複数ある / 実体の同一性 / どれを指すか / 空なのに通る / 不在が見えない | **PHILOSOPHY #31** (Zero Is a State That Does Not Look Like One), `docs/STATE_LEDGER.md` §基数列, ADR-090 (ロボット 0/1/N の先例), `pnpm test:gsn` (空枝の検査) |
+| 基数 / cardinality / 0 台 / N 台 / 存在しない / 複数ある / 実体の同一性 / どれを指すか / 空なのに通る / 不在が見えない | **PHILOSOPHY #31** (Zero Is a State That Does Not Look Like One), `docs/STATE_LEDGER.md` §基数列, ADR-090 (ロボット 0/1/N の先例 — 実装済), `docs/STATE_TRANSITIONS.md` §Robot roster, `src/domain/robotFrames.js` (`resolveRobots`/`selectRobot`/`robotCardinality` = 同一性と基数の唯一の解決点), `src/RobotRosterAuthority.test.js` (seed 経路の個数), `pnpm test:gsn` (空枝の検査) |
 | StateMachine class / FSM / editorStates / operation state constants / _opState | `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039 |
 | cache / derived state / lifecycle / UNINIT / STALE / freshness | `docs/STATE_TRANSITIONS.md` § Internal Component State Machines |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |

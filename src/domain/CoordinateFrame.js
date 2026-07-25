@@ -111,6 +111,19 @@ export class CoordinateFrame {
      * @type {'modeller' | 'integrator' | null}
      */
     this.declaredBy = null
+
+    /**
+     * Declared role inside a robot's TF tree (ADR-090 Decision 1) — the field
+     * that moved robot identity from the magic name `robot_base` onto the
+     * entity, so a rename is a label change and a scene can hold N robots.
+     * null = an ordinary frame, not part of any robot.
+     *
+     * Only `domain/robotFrames.js` reads this value (it resolves the roster into
+     * typed `Robot` aggregates every other layer branches on — 原則 #2).
+     * Serialized with the frame (scene JSON + Layout DSL) so it round-trips.
+     * @type {'base' | 'tcp' | null}
+     */
+    this.robotRole = null
   }
 
   /** @param {string} name */

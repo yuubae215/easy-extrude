@@ -1019,7 +1019,7 @@ The desktop onboarding tour (`uiStore.tour`, quest card + anchor pulse) is the o
   消えたときにガードが空振りで緑になり続けないよう、対の存在確認テストも持つ。
 - **規則を足す**: `IDENTITY_RULES` に 1 エントリ (`owners` / `use` / `all` / `why`)。
   `why` は違反時のエラーメッセージに出るので、「なぜ 1 箇所でなければならないか」を書く。
-- **現在の登録**: `robot_base` の同一性 → `isRobotBaseFrame()` (`src/domain/robotFrames.js`)。
+- **現在の登録**: (1) ロボット base の同一性 → `isRobotBaseFrame()`、(2) robot TF ロール値の解釈 → `isRobotRole()` / `isRobotTcpFrame()` (いずれも所有は `src/domain/robotFrames.js`。ADR-090 で同一性を名前から `robotRole` へ移した際、移した先で同じ再実装が始まらないよう 2 本目を登録した)。
   `GraspController._resolveRobotDeclaration` と `HitTestService.hitRobotStage` は
   2026-07-25 にこの述語へ寄せた。
 - **射程外**: `*.test.js` の fixture (述語に食わせるデータであって規則の再実装ではない)。

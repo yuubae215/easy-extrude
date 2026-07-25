@@ -304,6 +304,10 @@ function generateObjects(entities, refMap, positions) {
           name:        entity.name,
           parentId,
           declaredBy:  entity.declaredBy ?? 'modeller',
+          // Robot TF role (ADR-090) — a declared fact, so it rides the DSL. null
+          // for an ordinary frame; a legacy DSL that names a robot without the
+          // role still resolves through the name path in domain/robotFrames.js.
+          robotRole:   entity.robotRole ?? null,
           translation: { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 },
           rotation:    entity.rotation ?? IDENTITY_QUATERNION,
         })
