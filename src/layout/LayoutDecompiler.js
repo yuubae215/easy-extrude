@@ -197,6 +197,10 @@ export function decompileLayout(sceneJson) {
         }
         if (parentRef) entity.parentRef = parentRef
         if (!isIdentityQuat(o.rotation)) entity.rotation = quat(o.rotation)
+        // Robot TF role (ADR-090): identity is the entity's declared role, so it
+        // must survive Scene → DSL → Scene. Omitted when null, keeping ordinary
+        // frames byte-identical to pre-ADR-090 output.
+        if (o.robotRole) entity.robotRole = o.robotRole
         entities.push(entity)
         break
       }

@@ -110,6 +110,10 @@
           "description": "For a standalone CoordinateFrame, the ref of another entity it is a TF child of (e.g. tcp → robot_base). When present, `position`/`rotation` are the LOCAL offset from that parent; when absent, they are the world pose (world-parented root). Robot TF tree world → robot_base → tcp (ADR-084 §2 revised).",
           "type": "string"
         },
+        "robotRole": {
+          "description": "Declared role of a CoordinateFrame inside a robot's TF tree (ADR-090): 'base' = world-parented root (where the arm stands), 'tcp' = its tool-point child. This is what makes a robot identifiable as an ENTITY rather than by the magic name `robot_base`, so a scene can carry N robots. Absent = an ordinary frame belonging to no robot.",
+          "enum": ["base", "tcp"]
+        },
         "frames": {
           "type": "array",
           "items": { "$ref": "#/$defs/frame" }

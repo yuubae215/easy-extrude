@@ -21,7 +21,6 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
-import { isRobotBaseFrame } from '../domain/robotFrames.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -45,6 +44,7 @@ import { SpatialLink } from '../domain/SpatialLink.js'
 import { createSpatialLinkCommand }           from '../command/CreateSpatialLinkCommand.js'
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
+import { createAddRobotCommand }              from '../command/AddRobotCommand.js'
 import { createMountAnnotationCommand }       from '../command/MountAnnotationCommand.js'
 import { createFastenFrameCommand }           from '../command/FastenFrameCommand.js'
 import { RoleService }                        from '../service/RoleService.js'
@@ -243,12 +243,23 @@ export class AppController {
       // New CoordinateFrame always starts unreferenced (ADR-033 Phase C-4)
       if (obj instanceof CoordinateFrame) {
         outlinerView?.setFrameUnreferenced(obj.id, true)
+        // Robot rows wear their DECLARED role, not their name (ADR-090), and a
+        // new base/tcp changes the roster the grasp panel selects from.
+        if (obj.robotRole) outlinerView?.setRobotRole(obj.id, obj.robotRole)
+        this._invalidateRobotRoster()
       }
       if (obj.ifcClass) outlinerView?.setObjectIfcClass(obj.id, obj.ifcClass)
       if (obj.placeType) outlinerView?.setObjectPlaceType(obj.id, obj.placeType)
       // Onboarding tour: the entity count is a tour fact (ADR-065 Phase 6) —
       // command-less adds (scene import) advance the quest here.
       this._updateTour()
+    })
+    // A frame's declared robot role was set (add / legacy upgrade — ADR-090): the
+    // Outliner's ROBOT badge is role-driven, and the roster the grasp panel picks
+    // from just changed.
+    this._service.on('robotRoleChanged', (id, role) => {
+      outlinerView?.setRobotRole(id, role)
+      this._invalidateRobotRoster()
     })
     // Update outliner hierarchy and N panel when a frame is re-parented (ADR-028)
     this._service.on('frameReparented', ({ id, newParentId }) => {
@@ -260,9 +271,17 @@ export class AppController {
       if (lifecycleBounds) this._lifecycleAnchors.removed = lifecycleBounds
       outlinerView?.removeObject(id)
       this._updateLinkNetwork()
+      // A removed base frame drops a robot from the roster (ADR-090) — including
+      // to ZERO, which is a legal state nothing silently repairs. The entity
+      // payload is additive (older emitters omit it), so an absent `obj` also
+      // invalidates: guessing "not a frame" would silently keep a stale roster.
+      if (!obj || obj instanceof CoordinateFrame) this._invalidateRobotRoster()
     })
     this._service.on('objectRenamed', (id, nm)  => {
       outlinerView?.setObjectName(id, nm)
+      // A rename only changes a robot's LABEL now (identity is the entity id —
+      // ADR-090), but the panel's roster shows labels, so re-publish it.
+      if (this._scene.getObject(id) instanceof CoordinateFrame) this._invalidateRobotRoster()
       if (id === this._scene.activeId && this._scene.selectionMode === 'object') {
         this._refreshObjectModeStatus()
       }
@@ -784,16 +803,17 @@ export class AppController {
     // 1 m cube on the ground (base at z=0) instead.
     this._addObject()
     this._restStarterCube()
-    // Seed the robot placement frames for the default scene (ADR-084 §2). The
-    // boot path builds the scene via _addObject(), not importFromJson(), so
-    // without this call robot_base / tcp would never exist on a fresh start —
-    // they'd be absent from the Outliner and the robot could not be placed via
-    // the CF gizmo / N-panel. Idempotent (name-keyed), so no duplicates. The
-    // skeleton itself is hidden by default (ADR-089 follow-up): a lone arm
-    // standing 2.8 m off with nothing around it read as clutter on the empty
-    // scene. The frames stay (grasp needs them); the user reveals the arm via
-    // the robot_base Outliner eye (原則 #4 owner).
-    this._service.ensureRobotFrames()
+    // Seed ONE robot for the fresh default scene (ADR-084 §2, `{ seed: true }`
+    // per ADR-090 Decision 2 — this is the ONLY caller that seeds; scene-entry
+    // paths upgrade without seeding, so a deleted robot stays deleted). The boot
+    // path builds the scene via _addObject(), not importFromJson(), so without
+    // this call a fresh start would have no robot at all — nothing in the
+    // Outliner to place via the CF gizmo / N-panel, and the grasp panel gated off
+    // on an empty roster. The skeleton itself is hidden by default (ADR-089
+    // follow-up): a lone arm standing 2.8 m off with nothing around it read as
+    // clutter on the empty scene. The frames stay (grasp needs them); the user
+    // reveals the arm via the base frame's Outliner eye (原則 #4 owner).
+    this._service.ensureRobotFrames({ seed: true })
     this._hideRobotByDefault()
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
@@ -852,6 +872,18 @@ export class AppController {
         frustumSize: this._mapModeCtrl.state.frustumSize,
         useOrtho:    this._sceneView._useOrtho,
       }),
+      // Read-only robot roster snapshot (ADR-090) — console debug aid and the
+      // E2E guard for roster ⇄ skeleton reconciliation: which robots exist and
+      // whether each one's arm is drawn. With N robots the per-robot keying is
+      // the whole point (one eye must move ONE arm), and a stage created after
+      // its eye was already closed must adopt that state; neither is visible to
+      // aria-label assertions, and the controller/view layers are outside checkJs.
+      robotState: () => this._robots().map(r => ({
+        id: r.id,
+        label: r.label,
+        hasTcp: r.hasTcp,
+        skeletonVisible: this._sceneView?.robotStages?.isVisible(r.id) ?? null,
+      })),
     }
   }
 
@@ -861,30 +893,55 @@ export class AppController {
   get _scene() { return this._service.scene }
 
   /**
-   * Robot skeleton follows the `robot_base` CoordinateFrame's world pose
-   * (ADR-084 §2) — the CF is the single geometry source (§1.1), replacing the
-   * removed uiStore.robotBase → RobotStage.setPosition wiring. Runs each frame
-   * after _updateWorldPoses(). The base-frame reference is cached and only
-   * re-scanned when it leaves the scene (delete / reload), so the common frame
-   * is an O(1) cache hit + one worldPoseOf() read.
+   * Every robot's skeleton follows ITS base frame's world pose (ADR-084 §2, N
+   * robots per ADR-090) — the frames are the single geometry source (§1.1),
+   * replacing the removed uiStore.robotBase → RobotStage.setPosition wiring. Runs
+   * each frame after _updateWorldPoses().
+   *
+   * The roster is cached (`_robotRoster`) and re-resolved only when entity
+   * lifecycle invalidates it (`_invalidateRobotRoster` on add / remove / rename),
+   * so the common frame is one Map read per robot + one worldPoseOf() each. The
+   * stage set reconciles create/dispose from the same roster, so a robot that
+   * left the scene takes its skeleton with it (原則 #9).
    */
   _syncRobotStage() {
-    const stage = this._sceneView?.robotStage
-    if (!stage) return
-    let frame = this._robotBaseFrame
-    if (!frame || this._scene.getObject(frame.id) !== frame) {
-      frame = null
-      for (const o of this._scene.objects.values()) {
-        if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) {
-          frame = o
-          break
-        }
+    const stages = this._sceneView?.robotStages
+    if (!stages) return
+    const robots = this._robots()
+    if (stages.sync(robots.map(r => r.id))) {
+      // A skeleton that just appeared adopts its base frame's current row state,
+      // so an eye toggled while the robot was absent (undo / redo) is not lost.
+      for (const robot of robots) {
+        const visible = this._outlinerView?.isObjectVisible?.(robot.id)
+        if (visible === false) stages.setVisible(robot.id, false)
       }
-      this._robotBaseFrame = frame
     }
-    if (!frame) return
-    const pose = this._service.worldPoseOf(frame.id)
-    if (pose) stage.setPose(pose.position, pose.quaternion)
+    for (const robot of robots) {
+      const pose = this._service.worldPoseOf(robot.baseFrame.id)
+      if (pose) stages.setPose(robot.id, pose.position, pose.quaternion)
+    }
+  }
+
+  /**
+   * The scene's robot roster (ADR-090), memoised per lifecycle epoch. Resolution
+   * itself belongs to `SceneService.getRobots()` → `domain/robotFrames.js`; this
+   * only caches it for the per-frame loop.
+   * @returns {import('../domain/robotFrames.js').Robot[]}
+   */
+  _robots() {
+    this._robotRoster ??= this._service.getRobots()
+    return this._robotRoster
+  }
+
+  /**
+   * Drop the memoised roster and re-publish the grasp panel's read-model. Called
+   * from the entity lifecycle events that can change WHICH robots exist (add /
+   * remove) or how they are labelled (rename). GraspController stays the sole
+   * writer of the `context.robots` projection (原則 #4) — this only pokes it.
+   */
+  _invalidateRobotRoster() {
+    this._robotRoster = null
+    this._graspCtrl?.refreshRobots()
   }
 
   /**
@@ -907,21 +964,18 @@ export class AppController {
   }
 
   /**
-   * Hide the robot skeleton on the default / freshly-loaded scene (ADR-089
-   * follow-up) through the ADR-087 owner — the robot_base Outliner eye — so the
-   * eye state and the skeleton stay consistent (原則 #4). The frames remain
-   * (grasp needs them); the user reveals the arm by toggling the eye. No-op
-   * when robot_base is absent.
+   * Hide the robot skeletons on the default / freshly-loaded scene (ADR-089
+   * follow-up) through the ADR-087 owner — each robot's base-frame Outliner eye —
+   * so the eye state and the skeleton stay consistent (原則 #4). The frames remain
+   * (grasp needs them); the user reveals an arm by toggling its eye. A robot-less
+   * scene is simply a no-op (0 is a legal roster — ADR-090).
    */
   _hideRobotByDefault() {
-    let id = null
-    for (const o of this._scene.objects.values()) {
-      if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) { id = o.id; break }
+    for (const robot of this._robots()) {
+      // Row state is carried by _setObjectVisible itself now (it owns BOTH the
+      // meshes and the Outliner row) — no separate store poke to drift from it.
+      this._setObjectVisible(robot.id, false)
     }
-    if (!id) return
-    // Row state is carried by _setObjectVisible itself now (it owns BOTH the
-    // meshes and the Outliner row) — no separate store poke to drift from it.
-    this._setObjectVisible(id, false)
   }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
@@ -1213,6 +1267,26 @@ export class AppController {
     }
 
     if (target instanceof CoordinateFrame) {
+      // Deleting a robot's base frame deletes the ROBOT (its tcp child goes with
+      // it). ADR-090 Decision 5: not forbidden — being able to remove a robot is
+      // exactly what makes 0 robots a real state — but never silent either. Before
+      // this, the ✕ took the arm away with no dialog and no toast, and the grasp
+      // panel then quietly solved against core/'s ghost default (§力学(2)+(3)).
+      const robot = this._robots().find(r => r.id === id)
+      if (robot) {
+        const remaining = this._robots().length - 1
+        this._uiView.showConfirmDialog(
+          `Delete robot "${robot.label}"?\n` +
+          (robot.hasTcp ? `Its tcp frame is deleted with it. ` : '') +
+          (remaining === 0
+            ? 'The scene will have no robot, and grasp search stays disabled until you add one.'
+            : `${remaining} robot${remaining > 1 ? 's' : ''} will remain.`),
+          (confirmed) => { if (confirmed) this._execDeleteObject(id, target) },
+          { title: 'Delete Robot', confirmLabel: 'Delete', danger: true },
+        )
+        return
+      }
+
       const links = this._service.getLinksOf(id)
       if (links.length > 0) {
         const n = links.length
@@ -1294,6 +1368,7 @@ export class AppController {
     if (type === 'sketch')  { this._addProfileObject();    return }
     if (type === 'measure') { this._measureHandler.start(); return }
     if (type === 'frame')   { this._addCoordinateFrame();  return }
+    if (type === 'robot')   { this._addRobot();            return }
 
     // Exit Edit Mode cleanly before adding, so the previous object's visual state is cleared
     if (this._scene.selectionMode === 'edit') this.setMode('object')
@@ -1370,6 +1445,36 @@ export class AppController {
   }
 
   /**
+   * Adds a robot to the scene (ADR-090 Decision 2): the reverse of deleting one,
+   * so 0 robots is a state the user can leave — without it, "0 is legal" would be
+   * a trap rather than a state (the grasp gate would tell you to add a robot with
+   * no way to do it). Undoable like any other add: one command detaches / restores
+   * the base + tcp pair together.
+   */
+  _addRobot() {
+    if (this._scene.selectionMode === 'edit') this.setMode('object')
+
+    const robot = this._service.addRobot()
+    this._commandStack.push(createAddRobotCommand(
+      robot, this._service,
+      () => {
+        // onAfterUndo: the robot vanished — clear a selection that pointed at it
+        // and let the roster/stage set converge on the next frame.
+        if (this._scene.activeId === robot.id) {
+          this._objSelected = false
+          this._selectedIds.clear()
+          this._refreshObjectModeStatus()
+          this._updateMobileToolbar()
+        }
+      },
+      (id) => this._switchActiveObject(id, true),
+    ))
+
+    this._switchActiveObject(robot.id, true)
+    this._uiView.showToast(`Robot "${robot.label}" added — place it with G / R`, { type: 'info' })
+  }
+
+  /**
    * Begins the CoordinateFrame placement pick sub-mode (ADR-034 §6).
    * No-ops with a toast if no suitable parent is selected.
    */
@@ -1388,13 +1493,13 @@ export class AppController {
 
   _setObjectVisible(id, visible) {
     this._service.setObjectVisible(id, visible)
-    // The robot skeleton is the geometry of the `robot_base` entity (ADR-084 §2);
-    // ADR-087 makes that entity's Outliner eye the single owner (原則 #4) of the
-    // skeleton's visibility, replacing the removed header toggle. The CF axes are
-    // handled by setObjectVisible() above; here we carry the skeleton along.
-    const obj = this._scene.getObject(id)
-    if (obj instanceof CoordinateFrame && isRobotBaseFrame(obj)) {
-      this._sceneView?.robotStage?.setVisible(visible)
+    // A robot skeleton is the geometry of ITS base frame (ADR-084 §2); ADR-087
+    // makes that entity's Outliner eye the single owner (原則 #4) of the skeleton's
+    // visibility, replacing the removed header toggle. The CF axes are handled by
+    // setObjectVisible() above; here we carry the matching skeleton along — keyed
+    // by robot id, so with N robots one eye moves one arm (ADR-090).
+    if (this._sceneView?.robotStages?.has(id)) {
+      this._sceneView.robotStages.setVisible(id, visible)
     }
     // …and the Outliner row, which is what the USER reads the state off (its eye
     // glyph + grey-out). Writing the meshes but not the row left the row's flag
@@ -3507,6 +3612,9 @@ export class AppController {
           () => this._addObject('measure'),
           () => this._triggerStepImport(),
           canAddFrame ? () => this._addObject('frame') : undefined,
+          // Robot (ADR-090): always available — this is the way OUT of the 0-robot
+          // state, so it must not depend on what is currently selected.
+          () => this._addObject('robot'),
         )
         return
       }

@@ -44,7 +44,7 @@
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { visionFromViewportCamera } from '../context/GraspDeclarationCatalog.js'
-import { isRobotBaseFrame, TCP_FRAME_NAME } from '../domain/robotFrames.js'
+import { resolveRobots, selectRobot, robotCardinality } from '../domain/robotFrames.js'
 
 /**
  * TemplateCatalog example id auto-loaded when grasp-search is opened with no
@@ -69,6 +69,16 @@ export class GraspController {
     this._ghost = null
     /** transient hovered rank (never in the grasp FSM slice — ADR-059 §C) */
     this._hoverRank = null
+    /**
+     * Which robot a grasp is solved for (ADR-090 Decision 3). The user's CHOICE
+     * lives here (the scene owns the roster; this owns the pick), and it is only
+     * meaningful with N robots — `selectRobot` resolves 0/1 without it, so the
+     * panel shows no selector below two robots (原則 #15).
+     * @type {string|null}
+     */
+    this._selectedRobotId = null
+    /** last published `context.robots` signature — change detection, not a source */
+    this._robotsSignature = null
 
     const { registerCallback } = store.getState().actions
     registerCallback('onOpenGrasp',          ()       => this.openGrasp())
@@ -76,6 +86,72 @@ export class GraspController {
     registerCallback('onSelectGraspCandidate', (rank)  => this.selectCandidate(rank))
     registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
     registerCallback('onCaptureViewportCamera', ()     => this.captureViewportCamera())
+    registerCallback('onSelectRobot',          (id)    => this.selectRobot(id))
+    this.refreshRobots()
+  }
+
+  // ── Robot roster + selection (ADR-090) ───────────────────────────────────────
+
+  /**
+   * The live roster, resolved through the domain's single resolution point
+   * (§1.1 — this controller never asks "is this frame a robot base?" itself).
+   * @returns {import('../domain/robotFrames.js').Robot[]}
+   */
+  _robots() {
+    const objects = this._ctrl._scene?.objects
+    return objects ? resolveRobots(objects.values()) : []
+  }
+
+  /**
+   * The robot this run is about, or null when the cardinality forbids an answer
+   * (0 robots, or N with no explicit pick). The rule itself is the domain's named
+   * predicate — resolved here, decided there (原則 #25).
+   * @returns {import('../domain/robotFrames.js').Robot|null}
+   */
+  _selectedRobot() {
+    return selectRobot(this._robots(), this._selectedRobotId)
+  }
+
+  /**
+   * Publish the roster as a DERIVED projection for the panel
+   * (`context.robots` — sole writer, 原則 #4/#5). The scene stays the authority;
+   * this is a read-model refreshed from entity lifecycle events (AppController
+   * calls it on objectAdded / objectRemoved / objectRenamed), never a second
+   * source anything writes back to (§1.1).
+   *
+   * A selection that no longer resolves (its robot was deleted) is dropped here,
+   * so a stale id can never make the gate think a robot is chosen.
+   */
+  refreshRobots() {
+    const robots = this._robots()
+    // Drop a dangling selection BEFORE resolving, so the id we keep and the id we
+    // publish can never disagree.
+    if (this._selectedRobotId && !robots.some(r => r.id === this._selectedRobotId)) {
+      this._selectedRobotId = null
+    }
+    const selected = selectRobot(robots, this._selectedRobotId)
+    const projection = {
+      list:        robots.map(r => ({ id: r.id, label: r.label, hasTcp: r.hasTcp })),
+      selectedId:  selected?.id ?? null,
+      cardinality: robotCardinality(robots),
+    }
+    // Publish only on an actual change: this is called from every entity
+    // lifecycle event, and a bulk removal (scene clear / reload) would otherwise
+    // re-render the panel once per entity with an identical roster.
+    const signature = JSON.stringify(projection)
+    if (signature === this._robotsSignature) return
+    this._robotsSignature = signature
+    this._store.getState().actions.contextSetRobots?.(projection)
+  }
+
+  /**
+   * Pick the robot a grasp search is solved for (panel selector). Only the choice
+   * changes — no request is re-run, since the pick is an input to the NEXT run.
+   * @param {string|null} id  base-frame entity id
+   */
+  selectRobot(id) {
+    this._selectedRobotId = id ?? null
+    this.refreshRobots()
   }
 
   // ── Entry: select the grasp tab inside the negotiate overlay (ADR-057 §B) ─────
@@ -142,6 +218,7 @@ export class GraspController {
     }
 
     this._clearGhost()   // idle carries no candidate to ghost (ADR-059 §B-5)
+    this.refreshRobots() // the panel's selector reads a fresh roster on open
     const ui = this._store.getState().actions
     ui.contextSetGrasp({ status: 'idle', layout })
     ui.contextSetTab('grasp')
@@ -186,6 +263,27 @@ export class GraspController {
     }
     const layout = { version: dsl.version, entities: (dsl.entities ?? []).length }
 
+    // Guard: a grasp is solved FOR a robot (ADR-090 Decision 4). With no robot in
+    // the scene — or N robots and no explicit pick — there is no premise to solve
+    // against, and omitting `robot` from the request would let core/ fall back to
+    // its default `Robot(base=(0,0,0), reach_max=inf, wrist_cone=π)`: an infinite-
+    // reach ghost standing at the origin, whose "candidates" are unexecutable on
+    // any real cell (ADR-090 §力学(3)). Stop with the reason instead (#11) — the
+    // input is never consumed silently.
+    const robotEntity = this._selectedRobot()
+    const robot = robotEntity ? this._resolveRobotDeclaration(robotEntity) : {}
+    if (!robotEntity || robot.base === undefined) {
+      const robots = this._robots()
+      const reason = robots.length === 0
+        ? 'No robot in the scene — add one (Shift+A → Robot) before searching for a grasp.'
+        : !robotEntity
+          ? `${robots.length} robots in the scene — pick which one to solve for.`
+          : `Robot "${robotEntity.label}" has no resolvable base pose — place it in the scene first.`
+      ui.contextSetGrasp({ status: 'no-robot', layout, reason, robotCount: robots.length })
+      ctrl._uiView.showToast(reason, { type: 'warn' })
+      return
+    }
+
     // Ensure a JWT'd BffClient (the routes are protected). connectBff fetches a dev
     // token and nulls _bff when the BFF itself is unreachable.
     let bff = ctrl._service.bff
@@ -201,13 +299,6 @@ export class GraspController {
 
     const objectiveWeights = params.weights ?? { reach: 0.6, clearance: 0.4 }
     const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
-    // Robot geometry (ADR-084 §2): resolved from the scene's robot_base / tcp
-    // CoordinateFrame entities (the single geometry source — §1.1), NOT the
-    // former uiStore.robotBase raw coords. `base` = resolved world position;
-    // `tcpOrientation` = resolved world quaternion that becomes core/'s
-    // wrist-cone reference axis (ADR-084 §3). Only present keys ride the wire;
-    // reach/IK evaluation against them happens in core/, never here.
-    const robot = this._resolveRobotDeclaration()
     // Vision / grasp domain declarations (ADR-081 Decision 5): the panel's
     // domain cards pass parsed camera / gripper declarations, gap-checked by
     // GraspDeclarationCatalog's predicates before Run enables. They ride the
@@ -218,7 +309,13 @@ export class GraspController {
       layoutVersion: dsl.version,
       graspSearch: {
         objectiveWeights, topN,
-        ...(Object.keys(robot).length ? { robot } : {}),
+        // Robot geometry (ADR-084 §2): the world pose of the SELECTED robot's
+        // base / tcp entities (the single geometry source — §1.1). Still exactly
+        // the ADR-084 shape — one robot, no id — because identity is a front-side
+        // concern (ADR-090 Decision 3): the contract and core/ are untouched by
+        // multi-robot support. The gate above guarantees `base` is present, so
+        // core/'s ghost-robot default is unreachable from here.
+        robot,
         // Judgement params ride plan{} (ADR-084 §4) when the caller supplies
         // them; the front collects none today, so plan{} is normally omitted
         // and core/ uses its defaults (no invented values — kernel §5).
@@ -407,65 +504,46 @@ export class GraspController {
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
   /**
-   * Resolve the robot's declared geometry from the scene's `robot_base` (world
-   * root) and `tcp` (its TF child) CoordinateFrame entities (ADR-084 §2, TF tree
-   * ADR-085). 1-robot scope: a plain name lookup — no `refs` field, no selection
-   * UI (§4). World pose is read from `SceneService.worldPoseOf` — the SAME
-   * resolution the service runs (so tcp's world quaternion is already composed
-   * through robot_base; a rotated base rotates the wrist-cone reference axis)
-   * each frame, reused rather than re-implemented (§1.1); the composition to
+   * Resolve ONE robot's declared geometry — its base frame's world position and
+   * its tcp child's world quaternion (ADR-084 §2, TF tree ADR-085).
+   *
+   * Which robot is decided upstream (`_selectedRobot()` → the domain's
+   * `selectRobot`); this method only reads the poses of the aggregate it is
+   * handed, so the "which one" question has exactly one owner (ADR-090
+   * Decision 3). World pose comes from `SceneService.worldPoseOf` — the SAME
+   * resolution the service runs each frame (so the tcp's world quaternion is
+   * already composed through the base; a rotated base rotates the wrist-cone
+   * reference axis), reused rather than re-implemented (§1.1). The composition to
    * world space stays on the front (light deterministic math) while core/ gets
-   * only the resolved position / quaternion and never sees the entity.
+   * only the resolved position / quaternion and never sees the entity — which is
+   * exactly why the wire stays SINGULAR and the contract untouched: the id is a
+   * front-side concern (原則 #29 / ADR-090 Decision 3).
    *
-   * Returns a sparse object: keys are present only when their frame resolves,
-   * so an absent frame simply omits its wire key (the ADR-084 §3 core fallback
-   * then keeps the prior base→candidate proxy axis for `tcpOrientation`).
+   * Returns a sparse object: keys are present only when their frame resolves. An
+   * absent `base` is what the caller's gate reads as "not solvable" — it never
+   * ships a robot-less request for core/ to fill with defaults.
    *
+   * @param {import('../domain/robotFrames.js').Robot} robot
    * @returns {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }}
    */
-  _resolveRobotDeclaration() {
-    const scene   = this._ctrl._scene
+  _resolveRobotDeclaration(robot) {
     const service = this._ctrl._service
-    if (!scene?.objects || typeof service?.worldPoseOf !== 'function') return {}
+    if (!robot || typeof service?.worldPoseOf !== 'function') return {}
 
-    // robot_base is the world-parented root of the robot TF tree (parentId null).
-    // The identity test itself lives in domain/robotFrames.js (isRobotBaseFrame) —
-    // re-deriving it here would make the resolution rule's source plural (§1.1),
-    // which is exactly the defect ADR-090 §力学(1) names.
-    const baseFrame = (() => {
-      for (const o of scene.objects.values()) {
-        if (isRobotBaseFrame(o)) return o
-      }
-      return null
-    })()
-    // tcp is a CHILD of robot_base (TF tree, ADR-084 §2 revised) — a name lookup,
-    // NOT constrained to parentId === null. Its world quaternion (resolved through
-    // robot_base by worldPoseOf) is what rides the wire; the parent link is why a
-    // rotated base now rotates the wrist-cone reference axis. Prefer the tcp
-    // parented under robot_base if several share the name (1-robot scope).
-    const tcpFrame = (() => {
-      let fallback = null
-      for (const o of scene.objects.values()) {
-        if (o.name !== TCP_FRAME_NAME) continue
-        if (baseFrame && o.parentId === baseFrame.id) return o
-        fallback ??= o
-      }
-      return fallback
-    })()
-    const basePose  = baseFrame ? service.worldPoseOf(baseFrame.id) : null
-    const tcpPose   = tcpFrame  ? service.worldPoseOf(tcpFrame.id)  : null
+    const basePose = service.worldPoseOf(robot.baseFrame.id)
+    const tcpPose  = robot.tcpFrame ? service.worldPoseOf(robot.tcpFrame.id) : null
 
     /** @type {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }} */
-    const robot = {}
+    const declaration = {}
     if (basePose) {
       const p = basePose.position
-      robot.base = [p.x, p.y, p.z]
+      declaration.base = [p.x, p.y, p.z]
     }
     if (tcpPose) {
       const q = tcpPose.quaternion
-      robot.tcpOrientation = [q.x, q.y, q.z, q.w]
+      declaration.tcpOrientation = [q.x, q.y, q.z, q.w]
     }
-    return robot
+    return declaration
   }
 
   /** Record a walkthrough failure and toast its reason (status-aware). */

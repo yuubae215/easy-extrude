@@ -880,6 +880,63 @@ is consumed; target entity fields are never written by `_updateFastenedFrames()`
 
 ---
 
+## Robot roster — 0 / 1 / N robots (ADR-090)
+
+**基数そのものが状態である**実体 (原則 #31)。`mode` や `status` と違って欄が無いため
+状態に見えないが、遷移を誤ると事故になる (0 台のまま grasp を解く = 原点に立つ
+無限リーチの幽霊ロボットで「候補が出た」と表示する) ので、クラスより先に確定した。
+
+### 状態集合と遷移
+
+```
+                    ┌──── seed (新規 boot シーンのみ ─ ensureRobotFrames({seed:true})) ────┐
+                    ▼                                                                      │
+              ┌──────────┐   addRobot()      ┌────────────┐   addRobot()    ┌───────────┐
+              │  none    │ ───────────────▶  │   single   │ ──────────────▶ │   multi   │
+              │  (0 台)  │ ◀───────────────  │   (1 台)   │ ◀────────────── │  (N 台)   │
+              └──────────┘  delete (要確認)  └────────────┘  delete (要確認) └───────────┘
+                    │                              │                              │
+   grasp: no-robot (理由つきで停止)      grasp: 暗黙に 1 台を選択     grasp: 明示選択が無ければ no-robot
+```
+
+- **権威**: scene (`objects` 内の base/tcp CoordinateFrame 対)。解決は
+  `domain/robotFrames.js: resolveRobots()` の 1 箇所 (§1.1)。同一性は base フレームの
+  **entity id** — 名前ではない (rename は label 変更にすぎない)。
+- **禁止遷移**: **入口通過による none → single** (`importFromJson` / `loadScene` は
+  upgrade のみ)。これを許すと台数の真実の源が scene から seed 規則へ戻り、
+  ユーザーが削除した 0 台がテンプレ読込で復活する (ADR-090 §力学(4))。
+  機械側の問い所は `src/RobotRosterAuthority.test.js` (seed 呼び出しの個数を数える)。
+- **guard**: 各遷移の前提は名前付き述語に集約 (原則 #25) —
+  `selectRobot(robots, selectedId)` が「どれのことか」を、
+  `robotCardinality(robots)` が 0/1/N を返す。呼び出し側で数を数え直さない。
+- **削除**: 0 台への遷移を含むため `Origin` のような無条件禁止ではなく **確認**
+  (`showConfirmDialog` — 「無言で消える」だけを潰す)。undo は base+tcp を対で復元
+  (`AddRobotCommand` / `DeleteCommand`)。
+
+### 各ロボットの TF ロール (`CoordinateFrame.robotRole`)
+
+```
+world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:'tcp', parentId=base.id)
+```
+
+- 1 台につき base ちょうど 1、tcp は `0..1` (tcp 不在も正当 — `tcpOrientation` を
+  省いた要求は core/ が代替軸へフォールバックする。ADR-084 §3)。
+- 書き手は `SceneService._setRobotRole()` の 1 箇所で、`robotRoleChanged` を発行する
+  (Outliner の ROBOT バッジと grasp パネルの roster は購読側 — 原則 #5/#18)。
+- レガシー経路: role 欄を持たない scene / DSL は名前 (`robot_base` + `parentId===null`)
+  で 1 台だけ解決し、シーン入口で role を刻む (`_upgradeLegacyRobotFrames`) ので
+  名前解決は移行ランプに留まる。
+
+### grasp-search FSM への影響
+
+`context.grasp` の判別 union に `no-robot` が加わった (7 状態)。`no-layout` の直後に
+評価され、**BFF へは何も送らない**: 理由つき toast + パネルの gap 表示で止まる
+(原則 #11 — 入力が消費されて何も起きない状態を作らない)。ワイヤ形状は ADR-084 の
+単数 `robot { base, tcpOrientation }` のまま — 同一性はフロント側の関心なので
+契約 (`packages/grasp-contract`) と `core/` は本 ADR で一切変わらない (原則 #29)。
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow
@@ -891,6 +948,7 @@ is consumed; target entity fields are never written by `_updateFastenedFrames()`
 - **ADR-030**: SpatialLink — typed semantic edges; `L` key two-phase creation flow
 - **ADR-031**: Map Mode interaction model — `drawState`, PC vs Mobile platform split (ADR-073 collapsed the FSM to two states: immediate creation, no name form)
 - **ADR-037**: Body Frame Architecture — Origin CF created atomically with Solid; TC proxy follows Origin CF world pose
+- **ADR-090**: Robot roster — identity moved from the magic name to the entity (`robotRole`), 0/1/N cardinality as an explicit state, grasp gated on a resolved robot
 
 ---
 

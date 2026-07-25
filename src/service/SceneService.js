@@ -51,7 +51,10 @@ import { MeasureLine } from '../domain/MeasureLine.js'
 import { MeasureLineView } from '../view/MeasureLineView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
-import { ROBOT_FRAME_DEFAULTS, ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../domain/robotFrames.js'
+import {
+  ROBOT_ROLE, Robot, isRobotRole,
+  resolveRobots, robotBaseSeedPose, nextRobotBaseName, nextRobotTcpName,
+} from '../domain/robotFrames.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
@@ -417,9 +420,10 @@ export class SceneService extends EventEmitter {
       // Migration: ensure every Solid has an Origin CF (ADR-037 §6).
       this._ensureOriginFrames(solids)
 
-      // Robot placement frames (ADR-084 §2): auto-seed robot_base / tcp so a
-      // remotely-loaded scene predating the frames still gets them (idempotent
-      // when the persisted scene already carried them).
+      // Robot frames (ADR-084 §2 / ADR-090 Decision 2): UPGRADE only — stamp the
+      // declared roles / re-home a legacy tcp on a scene that predates them. No
+      // seeding: a loaded scene with no robot legitimately has none, and
+      // re-seeding here would let the seed rule overrule the stored scene (§1.1).
       this.ensureRobotFrames()
 
       // One synchronous world-pose pass so _worldPoseCache is populated, then
@@ -552,6 +556,7 @@ export class SceneService extends EventEmitter {
         if (dto.declaredBy === 'modeller' || dto.declaredBy === 'integrator') {
           frame.declaredBy = dto.declaredBy
         }
+        _restoreRobotRole(frame, dto)
         entities.push(frame)
       } else if (dto.type === 'AnnotatedLine') {
         const { camera = null, renderer = null, container = document.body } = viewContext
@@ -647,8 +652,9 @@ export class SceneService extends EventEmitter {
     // Migration: ensure every Solid has an Origin CF (ADR-037 §6).
     this._ensureOriginFrames(solids)
 
-    // Robot placement frames (ADR-084 §2): auto-seed robot_base / tcp on a fresh
-    // scene; a no-op when the imported .ctx.json already carried them.
+    // Robot frames (ADR-084 §2 / ADR-090 Decision 2): UPGRADE only — an imported
+    // .ctx.json / compiled layout carrying no robot stays at zero robots (a
+    // first-class state), instead of the entry path silently repairing it to one.
     this.ensureRobotFrames()
 
     // Import SpatialLinks (v1.2+); silently skip on older exports.
@@ -815,6 +821,7 @@ export class SceneService extends EventEmitter {
       if (dto.declaredBy === 'modeller' || dto.declaredBy === 'integrator') {
         frame.declaredBy = dto.declaredBy
       }
+      _restoreRobotRole(frame, dto)
       return frame
     }
 
@@ -3036,55 +3043,128 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Ensures the robot's placement frames exist (ADR-084 §2, silent
-   * auto-generation per ADR-073). Idempotent by name, so every scene-entry path
-   * calls it and only a scene missing the frames actually seeds them: at the end
-   * of importFromJson() / loadScene() after a (re)build (a saved .ctx.json that
-   * already carries them is a no-op), and once at boot for the default scene —
-   * `AppController` calls it after creating the initial object, because that
-   * path never goes through importFromJson (a fresh scene must still get exactly
-   * one robot_base + one tcp at their defaults, or they would never appear in
-   * the Outliner and the robot could not be placed via the CF gizmo / N-panel).
+   * The scene's robot roster (ADR-090) — resolved through the single resolution
+   * point in `domain/robotFrames.js`, never re-derived here (§1.1). Cardinality
+   * 0 / 1 / N are all legal states; callers gate on them explicitly.
+   *
+   * @returns {import('../domain/robotFrames.js').Robot[]}
+   */
+  getRobots() {
+    return resolveRobots(this._model.objects.values())
+  }
+
+  /**
+   * Scene-entry maintenance for robot frames (ADR-090 Decision 2, revising
+   * ADR-084 §2's "repair to one robot at every entry").
+   *
+   * Two jobs, deliberately separated:
+   *
+   *  • **upgrade** (always) — a scene written before ADR-090 identifies its robot
+   *    by the magic name only, and a scene written before ADR-085 stores `tcp` as
+   *    a world-parented sibling. Stamp the declared roles and re-home the tcp so
+   *    the legacy name path is a one-time ramp, not the steady state.
+   *
+   *  • **seed** (opt-in, `{ seed: true }`) — create one robot when the scene has
+   *    none. ONLY the fresh-boot scene passes this. The old behaviour (seed at
+   *    every entry) made the seed rule, not the scene, the authority on how many
+   *    robots exist: a user who deleted the robot got it back by merely loading a
+   *    template (ADR-090 §力学(4)), and zero robots could never be held. Import /
+   *    load paths therefore upgrade only — a layout with no robot stays at zero,
+   *    which is now a first-class state, and the grasp gate says so out loud
+   *    instead of solving against a ghost.
    *
    * The frames are ordinary serialized entities (§1.1): they ride Scene ⇄ Layout
    * DSL round-trip (ADR-055) and .ctx.json like any other CoordinateFrame.
+   *
+   * @param {{seed?: boolean}} [opts]
    */
-  ensureRobotFrames() {
-    const frames = [...this._model.objects.values()].filter(o => o instanceof CoordinateFrame)
-    const byName = new Map(frames.map(o => [o.name, o]))
+  ensureRobotFrames({ seed = false } = {}) {
+    this._upgradeLegacyRobotFrames()
+    if (seed && this.getRobots().length === 0) this.addRobot()
+  }
 
-    // robot_base is the world-parented root of the robot TF tree.
-    let base = byName.get(ROBOT_BASE_FRAME_NAME)
-    if (!base) base = this.createWorldFrame(ROBOT_BASE_FRAME_NAME, ROBOT_FRAME_DEFAULTS[ROBOT_BASE_FRAME_NAME])
-
-    // tcp is a CHILD of robot_base (TF tree world → robot_base → tcp, ADR-084 §2
-    // revised 2026-07-22): the tool point is expressed in the robot's own frame,
-    // so moving/rotating the base carries it along. createCoordinateFrame seeds
-    // it at local (0,0,0); we then place it at the skeleton's flange (tool0) so
-    // the tool point defaults to the arm's HAND, not buried in the base. The
-    // flange position is the injected `_tcpSeed` — DERIVED from the URDF FK at the
-    // shared rest pose (ADR-088), no longer a hand-copied constant. When absent
-    // (headless/test, no skeleton drawn), tcp stays at the base origin.
-    // _updateWorldPoses (each frame / entry paths) composes it through robot_base
-    // into the world pose the marker renders at.
-    const tcp = byName.get(TCP_FRAME_NAME)
-    if (!tcp) {
-      const created = this.createCoordinateFrame(base.id, TCP_FRAME_NAME, null)
-      if (created && this._tcpSeed) created.translation.set(this._tcpSeed.x, this._tcpSeed.y, this._tcpSeed.z)
-    } else if (tcp.parentId === null && tcp.id !== base.id) {
-      // Lossless upgrade of a legacy scene (tcp saved as a world-parented frame
-      // before the TF-tree revision): re-home it under robot_base while
-      // preserving its current world pose (reparentFrame back-derives the local
-      // translation/rotation from the world-pose cache). One-time; a scene
-      // already carrying the tree is a no-op above.
-      //
-      // This runs on scene-entry paths BEFORE the outer _updateWorldPoses() pass
-      // (importFromJson / loadScene), so the cache would otherwise be stale and
-      // collapse a moved tcp onto the base. Refresh it first so the world pose is
-      // truly preserved.
-      this._updateWorldPoses()
-      this.reparentFrame(tcp.id, base.id)
+  /**
+   * One-time migration of pre-ADR-090 / pre-ADR-085 robot frames: stamp the
+   * declared `robotRole` onto the frames the legacy name path resolves, and
+   * re-home a world-parented `tcp` under its base.
+   *
+   * Resolution comes from `getRobots()` — which understands both the declared
+   * role and the legacy names — so this method never asks "is this robot_base?"
+   * itself (§1.1: the identity rule has one owner).
+   */
+  _upgradeLegacyRobotFrames() {
+    for (const robot of this.getRobots()) {
+      const base = robot.baseFrame
+      const tcp  = robot.tcpFrame
+      this._setRobotRole(base, ROBOT_ROLE.BASE)
+      if (!tcp) continue
+      this._setRobotRole(tcp, ROBOT_ROLE.TCP)
+      if (tcp.parentId === null && tcp.id !== base.id) {
+        // Lossless upgrade of a legacy scene (tcp saved as a world-parented frame
+        // before the TF-tree revision): re-home it under its base while
+        // preserving its current world pose (reparentFrame back-derives the local
+        // translation/rotation from the world-pose cache).
+        //
+        // This runs on scene-entry paths BEFORE the outer _updateWorldPoses() pass
+        // (importFromJson / loadScene), so the cache would otherwise be stale and
+        // collapse a moved tcp onto the base. Refresh it first so the world pose is
+        // truly preserved.
+        this._updateWorldPoses()
+        this.reparentFrame(tcp.id, base.id)
+      }
     }
+  }
+
+  /**
+   * Adds one robot to the scene: a world-parented base frame + its tcp child,
+   * both carrying their declared `robotRole` (ADR-090 Decision 1). The single
+   * authoritative way a robot comes into existence (原則 #1) — the boot seed, the
+   * Add menu and undo/redo all go through here.
+   *
+   * The base lands at the ADR-083 default pose, offset per robot already present
+   * so a second arm does not spawn inside the first. The tcp is a CHILD of the
+   * base (TF tree world → base → tcp, ADR-084 §2 revised): the tool point is
+   * expressed in the robot's own frame, so moving/rotating the base carries it
+   * along. createCoordinateFrame seeds it at local (0,0,0); it is then placed at
+   * the skeleton's flange (tool0) so the tool point defaults to the arm's HAND,
+   * not buried in the base. That flange position is the injected `_tcpSeed` —
+   * DERIVED from the URDF FK at the shared rest pose (ADR-088), never a
+   * hand-copied constant. When absent (headless/test, no skeleton drawn), tcp
+   * stays at the base origin. _updateWorldPoses composes it through the base into
+   * the world pose the marker renders at.
+   *
+   * @returns {import('../domain/robotFrames.js').Robot} the added robot
+   */
+  addRobot() {
+    const existing = this.getRobots().length
+    const objects  = [...this._model.objects.values()]
+
+    const base = this.createWorldFrame(nextRobotBaseName(objects), robotBaseSeedPose(existing))
+    this._setRobotRole(base, ROBOT_ROLE.BASE)
+
+    const tcp = this.createCoordinateFrame(base.id, nextRobotTcpName(objects), null)
+    if (tcp) {
+      this._setRobotRole(tcp, ROBOT_ROLE.TCP)
+      if (this._tcpSeed) tcp.translation.set(this._tcpSeed.x, this._tcpSeed.y, this._tcpSeed.z)
+    }
+
+    return new Robot(base, tcp ?? null)
+  }
+
+  /**
+   * The single writer of a frame's declared robot role (原則 #4), announcing the
+   * change so the views that show it (the Outliner's ROBOT badge) and the read
+   * models that derive from it (the grasp panel's roster) update through events
+   * rather than polling (原則 #5/#18 — emit the event, then swap). Idempotent: an
+   * unchanged role emits nothing.
+   *
+   * @param {CoordinateFrame} frame
+   * @param {'base'|'tcp'|null} role
+   */
+  _setRobotRole(frame, role) {
+    if (!frame || frame.robotRole === role) return
+    frame.robotRole = role
+    this.emit('robotRoleChanged', frame.id, role)
   }
 
   /**
@@ -3101,6 +3181,19 @@ export class SceneService extends EventEmitter {
 }
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Restores a deserialized frame's robot TF role (ADR-090), validating the value
+ * against the declared vocabulary — an unknown / missing key leaves it null, so
+ * pre-ADR-090 saves load as ordinary frames and the legacy name path in
+ * `robotFrames.js` picks the single robot up. Pure (mutates only its argument).
+ *
+ * @param {CoordinateFrame} frame
+ * @param {{robotRole?: unknown}} dto
+ */
+function _restoreRobotRole(frame, dto) {
+  if (isRobotRole(dto.robotRole)) frame.robotRole = dto.robotRole
+}
 
 /**
  * Converts a flat positions array (from Geometry Service) to a corners array

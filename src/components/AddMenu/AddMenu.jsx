@@ -30,6 +30,9 @@ export function AddMenu() {
     cbs.onBox        && { label: 'Box',          hint: 'Shift+A',   cb: cbs.onBox },
     cbs.onSketch     && { label: 'Sketch',       hint: null,        cb: cbs.onSketch },
     cbs.onFrame      && { label: 'Coordinate Frame', hint: null,    cb: cbs.onFrame },
+    // Robot = base + tcp frame pair (ADR-090). Always offered: it is how a scene
+    // with zero robots gets one, so it cannot be gated on the selection.
+    cbs.onRobot      && { label: 'Robot',        hint: null,        cb: cbs.onRobot },
     cbs.onImportStep && { label: 'Import STEP',  hint: null,        cb: cbs.onImportStep },
   ].filter(Boolean)
 

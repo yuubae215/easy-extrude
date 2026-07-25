@@ -6,7 +6,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
-import { RobotStage } from './RobotStage.js'
+import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
 import { focusPose as computeFocusPose, clipPlanesFor } from './CameraMath.js'
 
@@ -48,9 +48,11 @@ export class SceneView {
     // Ambient stage dressing: gradient backdrop, depth fog, floor glow,
     // drifting dust, rim light (ADR-067 — Tier D; persistent view owned here).
     this.stage = new SceneStage(this.scene)
-    // grasp-search verification aid: a fixed-pose robot skeleton rendered
-    // clear of the voxel workspace (ADR: see RobotStage.js doc comment).
-    this.robotStage = new RobotStage(this.scene)
+    // grasp-search verification aid: one fixed-pose robot skeleton PER ROBOT in
+    // the scene (0 / 1 / N — ADR-090). The set owns each stage's lifecycle and is
+    // reconciled from the roster by AppController._syncRobotStage; a robot-less
+    // scene simply draws none (ADR: see RobotStage.js / RobotStageSet.js).
+    this.robotStages = new RobotStageSet(this.scene)
     // The tcp default seed, DERIVED from the same bundled URDF the skeleton is
     // drawn from (ADR-088). Handed to SceneService via AppController so the tool
     // point seeds at the rendered flange — one source, no drift.

@@ -76,8 +76,39 @@ function parseGripperForm(g) {
   return out
 }
 
+/**
+ * Submit gaps contributed by the robot roster (ADR-090) — pure, mirroring the
+ * camera / gripper gap predicates. Reads the DERIVED `context.robots` read-model
+ * (authority: the scene, via GraspController.refreshRobots):
+ *
+ *   0 robots           → the scene has no premise to solve against. Rather than
+ *                        omitting `robot` from the request and letting core/
+ *                        substitute an infinite-reach ghost at the origin
+ *                        (ADR-090 §力学(3)), say so and disable Run.
+ *   N with no selection → "which one" is unanswered; picking is the user's call,
+ *                        never a silent "first one wins".
+ *   1 robot            → no gap and no selector (原則 #15 — the slot stays, the
+ *                        card shows which robot is implied).
+ *
+ * A robot with no tcp frame is NOT a gap: an absent `tcpOrientation` has a
+ * documented core/ fallback (the base→candidate proxy axis, ADR-084 §3), so the
+ * card notes it instead of blocking — the gaps here mirror the controller's gate
+ * exactly, or a disabled Run would forbid a run the controller would allow.
+ *
+ * @param {{list: {id: string, label: string, hasTcp: boolean}[], selectedId: string|null}} robots
+ * @returns {string[]}
+ */
+function robotDeclarationGaps(robots) {
+  const list = robots?.list ?? []
+  if (list.length === 0) return ['no robot in the scene — add one with Shift+A → Robot']
+  const selected = list.length === 1 ? list[0] : list.find(r => r.id === robots?.selectedId)
+  if (!selected) return [`${list.length} robots in the scene — pick which one to solve for`]
+  return []
+}
+
 export function GraspSearchPanel() {
   const grasp     = useUIStore(s => s.context.grasp)
+  const robots    = useUIStore(s => s.context.robots)
   const callbacks = useUIStore(s => s.callbacks)
 
   const [reach, setReach]         = useState(0.6)
@@ -110,7 +141,11 @@ export function GraspSearchPanel() {
   // disables Run and every reason is printed below the button.
   const visionGaps = vision.enabled ? cameraDeclarationGaps(camParams) : []
   const gripGaps   = grip.enabled ? gripperDeclarationGaps(gripParams) : []
-  const gaps       = [...visionGaps, ...gripGaps]
+  // A grasp is solved FOR a robot (ADR-090): with none in the scene, or several
+  // and no pick, there is no premise — so it is a submit gap like any missing
+  // declaration, printed under a disabled Run rather than discovered by failing.
+  const robotGaps  = robotDeclarationGaps(robots)
+  const gaps       = [...robotGaps, ...visionGaps, ...gripGaps]
 
   const applyCameraPreset = (p) => setVision(v => ({
     ...v,
@@ -215,8 +250,12 @@ export function GraspSearchPanel() {
       <DomainCard title="Reached" domain="path" alwaysOn
         offHint={null}
       >
+        {/* Which robot this search is solved for (ADR-090 Decision 3). A fixed
+            slot: it is always here, and reports 0 / 1 / N honestly instead of
+            appearing only when several robots exist (原則 #15). */}
+        <RobotPicker robots={robots} onSelect={(id) => callbacks.onSelectRobot?.(id)} />
         <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
-          robot placement follows the <code style={{ color: '#9ad' }}>robot_base</code> /{' '}
+          robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
           <span style={{ color: '#667' }}> — move / aim them in the viewport (G / R) or the N-panel</span>
         </div>
@@ -444,11 +483,68 @@ function Vec3Fields({ label, values, onChange }) {
   )
 }
 
+/**
+ * Robot picker — "which robot is this grasp for?" (ADR-090 Decision 3).
+ *
+ * One component, three cardinalities, always occupying the same slot:
+ *   none   — an honest empty state naming the way out (Add menu), not a blank
+ *            dropdown the user can only stare at (原則 #11/#15).
+ *   single — the implied robot's label, read-only: no choice to make.
+ *   multi  — a real <select>, unset until the user picks (no default: solving for
+ *            an arm nobody chose is the failure this whole ADR is about).
+ */
+function RobotPicker({ robots, onSelect }) {
+  const list        = robots?.list ?? []
+  const cardinality = robots?.cardinality ?? 'none'
+  const selectedId  = robots?.selectedId ?? ''
+
+  const label = (
+    <span style={{ fontSize: '10px', color: '#889', minWidth: '38px' }}>robot</span>
+  )
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+      {label}
+      {cardinality === 'none' && (
+        <span style={{ fontSize: '10px', color: '#caa' }}>
+          none in scene — add one with <code style={{ color: '#9ad' }}>Shift+A → Robot</code>
+        </span>
+      )}
+      {cardinality === 'single' && (
+        <span style={{ fontSize: '11px', color: '#cde' }}>
+          {list[0]?.label}
+          {list[0]?.hasTcp === false && (
+            <span style={{ color: '#caa' }}> (no tcp — wrist aim falls back to the approach axis)</span>
+          )}
+        </span>
+      )}
+      {cardinality === 'multi' && (
+        <select
+          value={selectedId}
+          onChange={(e) => onSelect(e.target.value || null)}
+          style={{
+            background: '#1f2530', color: '#dceaff', border: '1px solid #3a4a60',
+            borderRadius: '4px', fontSize: '11px', padding: '2px 4px', flex: 1,
+          }}
+        >
+          <option value="">— pick one of {list.length} —</option>
+          {list.map(r => (
+            <option key={r.id} value={r.id}>{r.label}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  )
+}
+
 function StatusLine({ grasp }) {
   const status = grasp?.status ?? 'idle'
   const map = {
     'idle':      { text: 'Ready.', color: '#999' },
     'no-layout': { text: 'No renderable layout to search.', color: '#caa' },
+    // ADR-090 Decision 4 — the gate that replaced silently solving for a ghost
+    // robot. Carries its own reason, so the line never says just "failed".
+    'no-robot':  { text: grasp?.reason ?? 'No robot to solve for.', color: '#caa' },
     'compiling': { text: 'Compiling layout on BFF…', color: '#cc9' },
     'solving':   { text: 'BFF compile OK — requesting grasp candidates…', color: '#9c9' },
     'results':   {

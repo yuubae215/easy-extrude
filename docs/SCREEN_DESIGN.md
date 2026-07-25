@@ -860,16 +860,23 @@ renderable layout exists). It rides on `ContextLayer`'s existing 280px right doc
 entity count from `ContextService.getCompiled().layoutDsl`), then **three domain declaration
 cards** (ADR-081 Decision 5) — **Seen** (vision camera: preset chips, a **📷 use current view**
 button that copies the live viewport camera via `onCaptureViewportCamera`, position / view axis /
-FOV fields), **Reached** (always on: a note that robot placement follows the `robot_base` / `tcp`
-CoordinateFrame entities — edited via the CF gizmo / N-panel, not a header input (ADR-084 §2) —
-+ reach / clearance objective weights), **Grasped** (gripper: preset chips, max opening / finger
+FOV fields), **Reached** (always on: the **robot picker** (ADR-090) in a fixed slot that
+reports the roster's cardinality honestly — `none` names the way out ("add one with Shift+A →
+Robot"), `single` shows the implied robot read-only, `multi` is a `<select>` that starts UNSET
+("— pick one of N —") so no arm is solved for by default (`onSelectRobot`); then a note that
+placement follows that robot's `base` / `tcp` CoordinateFrame entities — edited via the CF gizmo /
+N-panel, not a header input (ADR-084 §2) — + reach / clearance objective weights), **Grasped** (gripper: preset chips, max opening / finger
 clearance). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
 the vacuously-true consequence (PHILOSOPHY #15/#11). Presets come from the pure
 `GraspDeclarationCatalog` (fork & tweak — the active chip is derived by value equality, editing
-forks to "custom"); each enabled card's gap list disables **Run** and prints its reasons.
+forks to "custom"); each enabled card's gap list disables **Run** and prints its reasons — and the
+robot roster contributes to that same gap list (0 robots / N-with-no-pick), so Run is never
+enabled for a search that has no robot to solve for.
 Below the cards: `topN` + the **Run** button (`onRunGraspSearch`, now carrying the optional
 `camera`/`gripper` declarations), a status line driven by the discriminated-union `status`
-(idle → compiling → solving → results / error), and the ranked candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
+(idle → compiling → solving → results / error, plus the **`no-robot`** gate that carries its own
+reason — ADR-090 Decision 4: with no resolvable robot nothing is sent to the BFF, because an
+omitted `robot` would let `core/` solve for an infinite-reach ghost at the origin), and the ranked candidate list. Each candidate shows the three boolean chips (`withinReach / ikSolvable /
 interferenceFree`), the `totalScore`, and **labelled `objectiveScores` bars** (the order-
 explaining signal — ADR-057 §F/G2) with **client-side sort** chips (total / per-objective, never
 re-runs the query); clicking a card sets `selectedRank` (`onSelectGraspCandidate`). **Stage-1

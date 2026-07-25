@@ -101,7 +101,7 @@ This directory records the project's design decisions.
 | [ADR-087](ADR-087-cf-grounded-object-model-robot-visibility-outliner.md) | **CF 接地オブジェクトモデルの統一 + ロボット可視性を Outliner の所有下へ (ヘッダートグル撤去)** | Accepted | 2026-07-22 | ADR-037, ADR-084, ADR-085 |
 | [ADR-088](ADR-088-tcp-seed-derived-from-urdf-fk.md) | **robot_base→tcp の既定 seed を URDF スケルトンの FK から導出 — フランジ位置の真実の源を URDF に一本化し手写し定数を廃す** | Accepted (実装済) | 2026-07-23 | ADR-084, ADR-085, ADR-053, ADR-018 |
 | [ADR-089](ADR-089-launch-home-screen-layout-template-entry.md) | **起動ホーム画面 — 工程レイアウトテンプレ選択を起点にする（Blender 式スキップ設定つき）** | Accepted (実装済) | 2026-07-23 | ADR-067, ADR-051, ADR-063, ADR-065, ADR-066, ADR-045, ADR-055 |
-| [ADR-090](ADR-090-robot-identity-multi-robot-zero-robot-state.md) | **ロボットの同一性を名前から実体へ — 複数台の受け入れ、0 台を一級の状態に、grasp は選択された 1 台で解く (契約は不動)** | Proposed | 2026-07-25 | ADR-084, ADR-087, ADR-060, ADR-082 |
+| [ADR-090](ADR-090-robot-identity-multi-robot-zero-robot-state.md) | **ロボットの同一性を名前から実体へ — 複数台の受け入れ、0 台を一級の状態に、grasp は選択された 1 台で解く (契約は不動)** | Accepted (実装済) | 2026-07-25 | ADR-084, ADR-087, ADR-060, ADR-082 |
 | [ADR-091](ADR-091-default-doc-first-intake-system-owned-refs.md) | **入力の起点を「白紙からの生成」から「既定値入り完成文書の訂正」へ — ref をシステム所有にする** | Proposed | 2026-07-25 | ADR-063, ADR-058, ADR-051, ADR-050, ADR-089, ADR-090 |
 
 ## How to Add a New ADR

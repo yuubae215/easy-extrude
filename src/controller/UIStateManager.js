@@ -295,6 +295,7 @@ export class UIStateManager {
               () => ctrl._addObject('measure'),
               () => ctrl._triggerStepImport(),
               canAddFrame ? () => ctrl._addObject('frame') : undefined,
+              () => ctrl._addObject('robot'),
             )
           },
         },

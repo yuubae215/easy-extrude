@@ -27,6 +27,9 @@ function fakeStore() {
       registerCallback() {},
       contextSetGrasp(grasp) { state.context.grasp = grasp },
       contextSetTab(tab)     { state.context.inspectorTab = tab },
+      // ADR-090 — the derived robot roster the panel reads (sole writer: the
+      // controller under test, via refreshRobots()).
+      contextSetRobots(robots) { state.context.robots = robots },
     },
   }
   return { getState: () => state, _state: state }
@@ -421,15 +424,106 @@ test('camera and gripper declarations ride the request open payload verbatim', a
   assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
 })
 
-test('a scene without robot_base / tcp frames omits robot entirely (ADR-084 §3 fallback)', async () => {
+// ── 0 / 1 / N robots: the gate and the selection (ADR-090) ───────────────────
+
+test('a robot-less scene lands in no-robot and never reaches the BFF (ADR-090 Dec. 4)', async () => {
+  let calls = 0
+  const bff = {
+    async compileLayout() { calls += 1; return { objects: [] } },
+    async graspSearch()    { calls += 1; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc, ctrl, grasp } = setup({ bff, robotScene: false })
+  await gc.runGraspSearch({})
+  // The old behaviour omitted `robot` and let core/ substitute an infinite-reach
+  // ghost at the origin (§力学(3)) — plausible candidates, none executable.
+  assert.equal(grasp().status, 'no-robot')
+  assert.equal(calls, 0)                                   // nothing was solved
+  assert.match(grasp().reason, /No robot in the scene/)
+  assert.equal(ctrl._uiView.toasts.length, 1)              // the reason is surfaced (#11)
+})
+
+/** Two robots, each a base + tcp pair carrying declared roles (ADR-090). */
+function fakeTwoRobotScene() {
+  const objects = new Map([
+    ['f_base', { id: 'f_base', name: 'robot_base',   parentId: null,    robotRole: 'base' }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',          parentId: 'f_base', robotRole: 'tcp' }],
+    ['g_base', { id: 'g_base', name: 'robot_base_2', parentId: null,    robotRole: 'base' }],
+    ['g_tcp',  { id: 'g_tcp',  name: 'tcp_2',        parentId: 'g_base', robotRole: 'tcp' }],
+  ])
+  const poseById = {
+    f_base: { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+    f_tcp:  { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+    g_base: { position: { x: -2, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+    g_tcp:  { position: { x: -2, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 1, w: 0 } },
+  }
+  return { objects, worldPoseOf: (id) => poseById[id] ?? null }
+}
+
+/** Attach a two-robot scene to an existing fake ctrl, keeping bff / connectBff. */
+function useTwoRobots(gc) {
+  const two = fakeTwoRobotScene()
+  gc._ctrl._scene = { objects: two.objects }
+  gc._ctrl._service.worldPoseOf = two.worldPoseOf
+  gc.refreshRobots()
+}
+
+test('N robots with no pick refuse to run — "which one" is never guessed', async () => {
+  let calls = 0
+  const bff = {
+    async compileLayout() { calls += 1; return { objects: [] } },
+    async graspSearch()    { calls += 1; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc, store, grasp } = setup({ bff })
+  useTwoRobots(gc)
+  assert.equal(store.getState().context.robots.cardinality, 'multi')
+  assert.equal(store.getState().context.robots.selectedId, null)
+
+  await gc.runGraspSearch({})
+  assert.equal(grasp().status, 'no-robot')
+  assert.equal(calls, 0)
+  assert.match(grasp().reason, /2 robots/)
+})
+
+test('the picked robot is the one solved for — its own base / tcp ride the wire', async () => {
   let sent = null
   const bff = {
     async compileLayout() { return { objects: [] } },
     async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
   }
-  const { gc } = setup({ bff, robotScene: false })
+  const { gc, store } = setup({ bff })
+  useTwoRobots(gc)
+  gc.selectRobot('g_base')
+  assert.equal(store.getState().context.robots.selectedId, 'g_base')
+
   await gc.runGraspSearch({})
-  assert.ok(!('robot' in sent.graspSearch))   // no frames resolved → no wire key (core keeps its fallback)
+  // The SECOND robot's geometry, and still the singular ADR-084 wire shape: no id,
+  // no array — identity stayed on the front, so the contract never moved.
+  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 0, 0], tcpOrientation: [0, 0, 1, 0] })
+  assert.ok(!('robots' in sent.graspSearch))
+  assert.ok(!('robotId' in sent.graspSearch.robot))
+})
+
+test('a selection whose robot left the scene is dropped, not silently reused', async () => {
+  const { gc, store, grasp } = setup({})
+  useTwoRobots(gc)
+  gc.selectRobot('g_base')
+  // The second robot is deleted (its frames leave the scene).
+  gc._ctrl._scene.objects.delete('g_base')
+  gc._ctrl._scene.objects.delete('g_tcp')
+  gc.refreshRobots()
+
+  // One robot left → implicit selection resolves to it (no UI needed, 原則 #15).
+  assert.equal(store.getState().context.robots.cardinality, 'single')
+  assert.equal(store.getState().context.robots.selectedId, 'f_base')
+  assert.equal(grasp(), null)                       // no run was attempted
+})
+
+test('refreshRobots publishes the roster as a labelled read-model', () => {
+  const { gc, store } = setup({})
+  gc.refreshRobots()
+  const robots = store.getState().context.robots
+  assert.equal(robots.cardinality, 'single')
+  assert.deepEqual(robots.list, [{ id: 'f_base', label: 'robot_base', hasTcp: true }])
 })
 
 test('a legacy world-parented tcp (parentId null) still resolves via the name fallback', async () => {

@@ -157,10 +157,10 @@ export class UIViewBridge {
     useUIStore.getState().actions.hideContextMenu()
   }
 
-  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame) {
+  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame, onRobot) {
     useUIStore.getState().actions.showAddMenu({
       x, y,
-      cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame },
+      cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame, onRobot },
     })
   }
 

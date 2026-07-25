@@ -794,8 +794,13 @@ a zero you left implicit is a blind spot with good posture.
 *Asked at (Q3 — this principle has no CODE_CONTRACTS row on purpose; its carrier is a check,
 not prose): the mandatory cardinality column in `docs/STATE_LEDGER.md` + the write-time nudge
 `.claude/hooks/state-ledger-nudge.sh`; `gsn_tool.py lint` via CI `pnpm test:gsn` (unsupported
-goals, `docs/STATE_TRANSITIONS.md` §GSN goal support); ADR-090 (an absent `robot` declaration
-is rejected at the boundary, not defaulted)*
+goals, `docs/STATE_TRANSITIONS.md` §GSN goal support); for the robot case, now three executable
+checks rather than the ADR's prose — `src/domain/robotFrames.test.js` (zero resolves to the named
+`none` state and selects nothing), `src/controller/GraspController.test.js` (a robot-less run
+stops at `no-robot` with **zero** solver calls, so the absent declaration is never defaulted),
+and `src/RobotRosterAuthority.test.js`, which counts the seed call sites — because the cheapest
+"fix" for a missing robot is to re-seed it at every scene entry, which makes zero unrepresentable
+again*
 
 ---
 

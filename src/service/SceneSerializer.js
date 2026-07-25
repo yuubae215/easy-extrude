@@ -146,6 +146,10 @@ export function serializeScene(scene) {
         name:       obj.name,
         parentId:   obj.parentId,
         declaredBy: obj.declaredBy ?? null,
+        // Robot TF role (ADR-090): identity is the entity, so the role must ride
+        // the save file — otherwise a reloaded scene falls back to the legacy
+        // name path and any robot but the first loses its identity.
+        robotRole:  obj.robotRole ?? null,
         translation: {
           x: obj.translation.x,
           y: obj.translation.y,

@@ -14,7 +14,6 @@ import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { toNDC }           from '../model/CuboidModel.js'
-import { isRobotBaseFrame } from '../domain/robotFrames.js'
 
 export class HitTestService {
   /**
@@ -140,7 +139,7 @@ export class HitTestService {
 
   /**
    * Hits the visible robot skeleton (RobotStage) and resolves it to its
-   * `robot_base` CoordinateFrame proxy — the entity that drives the skeleton's
+   * base CoordinateFrame proxy — the entity that drives that skeleton's
    * pose (ADR-084 §2). The skeleton itself is a view-only decoration absent from
    * `scene.objects`, so without this a click on the arm/body selects nothing.
    * Used as a LOW-priority fallback in _onPointerDown (after CF / Solid /
@@ -150,16 +149,17 @@ export class HitTestService {
    */
   hitRobotStage() {
     const { _ctrl: ctrl } = this
-    const stage = ctrl._sceneView?.robotStage
-    if (!stage?.raycast) return null
+    const stages = ctrl._sceneView?.robotStages
+    if (!stages?.raycast) return null
     ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
-    if (!stage.raycast(ctrl._raycaster)) return null
-    for (const o of ctrl._scene.objects.values()) {
-      if (o instanceof CoordinateFrame && isRobotBaseFrame(o)) {
-        return { obj: o }
-      }
-    }
-    return null
+    const hit = stages.raycast(ctrl._raycaster)
+    if (!hit) return null
+    // The stage set reports WHICH robot was hit (its id = its base frame's entity
+    // id — ADR-090), so clicking the second arm selects the second base frame.
+    // The old single-stage path scanned for "the" robot_base and would have
+    // returned the first robot no matter which arm the pointer was on.
+    const obj = ctrl._scene.getObject(hit.id)
+    return obj ? { obj } : null
   }
 
   /** Hits only the active object's mesh. */

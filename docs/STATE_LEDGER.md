@@ -43,8 +43,9 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | Edit Mode 操作 | `EO_IDLE` / `EO_1D_DRAG` / `EO_2D_SKETCH_DRAW` (3) | 1 | `AppController._editOpState` (`StateMachine`) | STATE_TRANSITIONS §Edit Mode — Operation States |
 | Edit Mode 部分状態 | `3d` / `2d-sketch` / `2d-extrude` / `1d` (4) | 1 | `SceneModel._editSubstate` | STATE_TRANSITIONS §Edit Mode Substates |
 | マップ描画 | `idle` / `drawing` (2) | 1 | `MapModeController.state.drawState` | ADR-031 §1 / ADR-073 (`pending` を廃止) |
-| grasp-search | `idle` / `no-layout` / `compiling` / `solving` / `results` / `error` (6) | 1 | `GraspController` — `uiStore.context.grasp` を丸ごと置換 (判別 union) | ADR-057 · `src/store/uiStore.js` |
-| ロボット | 実体としては未モデル (名前 `robot_base` + `parentId === null` の duck-type) | ⚠ 実装は `1` 固定・実際は `0..N` が到達可能 | `SceneService.ensureRobotFrames()` が全入口で「1 台へ修復」= 権威が scene ではなく seed 規則 | **ADR-090 (Proposed)** — 同一性を実体へ、0/1/N を明示状態に |
+| grasp-search | `idle` / `no-layout` / **`no-robot`** / `compiling` / `solving` / `results` / `error` (7) | 1 | `GraspController` — `uiStore.context.grasp` を丸ごと置換 (判別 union) | ADR-057 · ADR-090 (`no-robot` の追加) · `src/store/uiStore.js` |
+| ロボット (台数) | 基数そのものが状態: `none` / `single` / `multi` (3 — `ROBOT_CARDINALITY`) | **`0..N`**。0 = 正当かつ安定 (grasp は `no-robot` で停止し理由を出す / 入口通過で復活しない)。N = どれかは **明示選択**が必要 (`selectRobot`; 1 台なら暗黙、0 台なら null — 既定で 1 台目を選ばない) | **scene** (`objects` 内の base/tcp CF 対) — 解決は `domain/robotFrames.js: resolveRobots()` の 1 箇所。生成の入口は `SceneService.addRobot()` のみ、seed は boot 経路のみ (`ensureRobotFrames({ seed: true })`) | **ADR-090** · STATE_TRANSITIONS §Robot roster · `src/domain/robotFrames.test.js` / `src/RobotRosterAuthority.test.js` |
+| ロボット CF の TF ロール | `base` / `tcp` / 不在 (3) | ロボット 1 台につき base ちょうど 1 + tcp `0..1` (tcp 不在も正当 — `tcpOrientation` は core/ の代替軸へフォールバック。ADR-084 §3) | `SceneService._setRobotRole()` (唯一の書き手、`robotRoleChanged` を発行) — 値の解釈は `isRobotRole()` の 1 箇所 | ADR-090 Decision 1 · `CoordinateFrame.robotRole` (scene JSON / Layout DSL に往復) |
 | 誘導入力ウィザード | `step` / `review` (2) + 不在 | 0..1 | `ContextController` — `uiStore.context.wizard` を丸ごと置換 | ADR-063 Phase 3 / STATE_TRANSITIONS §context.wizard |
 | オンボーディングツアー | `active` / `done` + `null` (3) | 0..1 | `AppController` (純粋遷移は `TourMath`) | ADR-065 Phase 6 / STATE_TRANSITIONS §tour |
 | Home / 起動画面 | `open` + `null` (2) | 0..1 | `AppController` | ADR-089 / STATE_TRANSITIONS §home |
@@ -68,8 +69,10 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
    (boolean) の直積。`edit` かつ `mapMode.active` は型として表現可能で、
    これを禁じているのは遷移経路の慣習だけ。3 値の enum 一つに畳めば
    不正状態が表現不能になる (§1.4「make illegal states unrepresentable」)。
-2. **ロボットの基数が未モデル。** ADR-090 (Proposed) の対象。台帳の基数列が
-   最初から存在していれば、`0..N` を埋める段で必ず問われていた欠陥。
+2. ~~**ロボットの基数が未モデル。**~~ **閉じた (ADR-090 実装)。** 基数は
+   `ROBOT_CARDINALITY` (`none`/`single`/`multi`) として明示状態になり、権威は
+   seed 規則から scene へ移った。台帳の基数列が最初から存在していれば、`0..N` を
+   埋める段で必ず問われていた欠陥 — 記録として残す (原則 #31 の初出事例)。
 3. **退役した状態が enum に残る。** `DS_PENDING = 'pending'` は ADR-073 で
    廃止済みだが `src/core/editorStates.js:38` に生存し、参照は 0 件。
    状態集合に「退役時に消す」責任者がいないことの痕跡

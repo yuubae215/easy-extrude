@@ -44,6 +44,34 @@ export class OutlinerBridge {
       useUIStore.getState().actions.outlinerUpdateItem(id, { visible })
   }
 
+  /**
+   * Reads the row's current eye state (ADR-090) — the same accessor as
+   * OutlinerView's, resolved against whichever side is live. Unknown ids read as
+   * visible (a new row's default).
+   * @param {string} id
+   * @returns {boolean}
+   */
+  isObjectVisible(id) {
+    if (this._reactEnabled) {
+      return useUIStore.getState().outlinerItems.find(i => i.id === id)?.visible ?? true
+    }
+    return this._native?.isObjectVisible?.(id) ?? true
+  }
+
+  /**
+   * Declared robot TF role of a row (ADR-090) → the Outliner's ROBOT badge. The
+   * badge used to key off the frame's NAME, which stopped identifying anything
+   * the moment a second robot existed; the role travels with the entity instead.
+   * The native (pre-React) outliner carries no robot badge, hence the optional call.
+   * @param {string} id
+   * @param {'base'|'tcp'|null} robotRole
+   */
+  setRobotRole(id, robotRole) {
+    this._native?.setRobotRole?.(id, robotRole)
+    if (this._reactEnabled)
+      useUIStore.getState().actions.outlinerUpdateItem(id, { robotRole })
+  }
+
   setObjectName(id, name) {
     if (this._native) this._native.setObjectName(id, name)
     if (this._reactEnabled)

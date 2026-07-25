@@ -64,4 +64,4 @@
 - #18: `objectRemoved`/`objectAdded`
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`
-- #31: 基数の累積器 = `docs/STATE_LEDGER.md` の基数列 (核 §1.4)、機械側の問い所 = `pnpm test:gsn` (支えの無い goal) と ADR-090 (0 台のロボット)
+- #31: 基数の累積器 = `docs/STATE_LEDGER.md` の基数列 (核 §1.4)、機械側の問い所 = `pnpm test:gsn` (支えの無い goal) と `src/RobotRosterAuthority.test.js` / `src/domain/robotFrames.test.js` (0 台のロボット — ADR-090)
