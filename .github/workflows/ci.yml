@@ -94,6 +94,14 @@ jobs:
       - name: ADR status headers are machine-readable
         run: pnpm test:adr
 
+      # GSN 論証木の空枝検査 (2026-07-25). 支えの無い goal (strategy 0 本・solution 0 本・
+      # 下位 goal 0 本) と実在しない solution artifact は、*不在* なので検査対象のノードが
+      # 存在せず、書いた側にもレビューにも見えないまま完成した枝として通る。lint を
+      # /gsn-maintain の手動実行だけに置くとその「黙って通る」性質が残るので gate に載せる。
+      # selftest を先に走らせるのは、検査が黙って発火しなくなる失敗も同じ形だから。
+      - name: GSN trees have no undeclared empty branches
+        run: pnpm test:gsn
+
       - name: Type check
         run: pnpm typecheck
 

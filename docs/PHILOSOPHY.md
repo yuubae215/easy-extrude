@@ -746,6 +746,59 @@ Static Cue (ADR-064 Phase 4)*
 
 ---
 
+## I. Design Philosophy (cont.)
+
+### 31. Zero Is a State That Does Not Look Like One — Iterate Over Required Kinds, Not Present Items
+
+`mode` and `status` are recognised as states by every reviewer, every linter, and every AI:
+they are a *field holding a value*, so something exists to inspect, name, and get wrong.
+**Cardinality is a state too — and it has no such field.** "Zero of them" and "N of them"
+are conditions of the *world*, not values in it. An absent thing carries no node, no key,
+no row, so every check written by walking what is present passes over it in silence. The
+empty case is therefore not merely unhandled; it is *invisible*, and invisibility reads as
+correctness right up until the moment it produces a confident wrong answer.
+
+Two manifestations in this repo, in unrelated layers:
+
+- **Zero robots became one phantom robot (ADR-090, `core/…/engine/pipeline.py`).** When a
+  scene declares no robot frames the front omits the `robot` key entirely, and the solver
+  filled the gap with per-field defaults: base at the origin, `reach_min 0.0`,
+  `reach_max inf`, wrist cone π. Every candidate then passes reach and wrist filtering, so
+  the user is shown ranked grasps for a robot that does not exist and cannot execute any of
+  them. Each default was reasonable *as an optional-parameter fallback*; the defect is that
+  the same defaults also covered the case where the whole required declaration was absent,
+  making "0 robots" indistinguishable from "1 robot, unconstrained". No exception, no empty
+  result — a silent *plausible* answer, which is worse than a silent no-op (#11) because
+  nothing prompts the user to doubt it.
+- **Zero strategies became a finished branch (`gsn_tool.py`, 2026-07-25).** The GSN linter
+  validated malformed content thoroughly — bad UUIDs, invalid states, unquoted summaries —
+  by iterating over the nodes each entity *had*. A goal supported by nothing (0 strategy,
+  0 solution, 0 sub-goal) has no node to iterate, so it produced no finding and rendered
+  identically to a fully evidenced one. Thirteen such branches had accumulated across two
+  argument trees, in files whose entire purpose is to make the state of an argument legible.
+
+The shared root: **a check that inspects present items can never see an absence.** The fix
+in both cases has the same shape — enumerate the *required kinds* and test their count,
+then make a legitimate zero a **declaration** rather than an inference. An absent required
+input is rejected at the boundary (400 / an explicit `no-robot` state) instead of defaulted;
+an unsupported goal must carry `support-unexplored` / `support-exploring` instead of merely
+looking like every other goal. Defaults then apply only to fields that are genuinely
+optional *within* a present declaration.
+
+The corollary for state design: `docs/STATE_LEDGER.md` carries a **cardinality column**
+precisely because the state-set column cannot express this. Filling in `0..1` / `0..N` /
+`1` is the moment the question "what happens at zero?" is forced to be answered; ADR-090's
+defect is exactly what that column being empty looks like. A zero you declared is a state;
+a zero you left implicit is a blind spot with good posture.
+
+*Asked at (Q3 — this principle has no CODE_CONTRACTS row on purpose; its carrier is a check,
+not prose): the mandatory cardinality column in `docs/STATE_LEDGER.md` + the write-time nudge
+`.claude/hooks/state-ledger-nudge.sh`; `gsn_tool.py lint` via CI `pnpm test:gsn` (unsupported
+goals, `docs/STATE_TRANSITIONS.md` §GSN goal support); ADR-090 (an absent `robot` declaration
+is rejected at the boundary, not defaulted)*
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
@@ -770,7 +823,7 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | An overlay that disables the shared navigation controls owes their affordances on every input modality | 2026-07-16 · `MapModeController.js` · Map Mode swaps to an ortho camera and disables OrbitControls, but only re-provided zoom via the mouse wheel — so on touch devices (no wheel; OrbitControls' pinch disabled) there was NO way to zoom ("マップモードってズームできない"). The wheel path worked, hiding the gap on desktop; the failure was modality-specific and invisible unless you tested touch. Fixed by implementing two-finger pinch-zoom in the controller. Kin to #14 (disable controls only when input truly conflicts) but the inverse obligation: once you HAVE disabled the shared controls, you must re-offer every navigation affordance they provided (zoom, pan, orbit-equivalent) across mouse AND touch — a per-modality audit, not just "wire the one gesture the developer happens to use". Graduate if a second overlay (or a new gesture) re-opens the same modality-blind gap. | Map Mode Owns Two-Finger Pinch-Zoom |
 | A completion callback must fire after the state it reports is finalized | 2026-07-16 · `CameraFlight.js` · `onDone` (via `_markDone`) fired BEFORE `_land()` wrote the terminal camera pose. A consumer reading `camera.position` in the callback (Map Mode's `_completeEnterSwap` capturing `_stagedPos`) therefore saw a mid-flight pose whenever the flight was interrupted (`finish()`) or reduced-motion; `_land()`'s subsequent jump left `_stagedPos ≠ camera.position`, so the exit external-write guard mis-fired and skipped the return flight — the camera never reset (user: "movable pose range differs after Map Mode"). The failure was asymmetric: a natural landing hid it (easeOutCubic shrinks the last-frame gap under the guard's tolerance), so only the interrupt/reduced paths broke. Fixed by reordering to `_land(); _markDone()` on every exit path and pinning the contract in the docstring. Candidate value: a "done"/completion signal must be emitted only after the state it advertises has been committed — an observer that reads state in the callback is reading a promise, not a fact, if it fires first. Graduate if a second unrelated callback-before-commit ordering bug appears. | CameraFlight Fires `onDone` AFTER the Terminal Camera Write |
 | A layer excluded from static checks needs an explicit liveness guard | 2026-07-11 · `AppController.js` · `_addObject('sketch')` called `this._addProfileObject()`, a method that did not exist — the Add-menu Sketch entry threw a TypeError inside the click handler and the user silently stayed in Object Mode (touch drag then orbits, misdiagnosed as an OrbitControls conflict). `tsconfig.json` scopes `checkJs` to `src/types/` + `src/domain/` (a documented Phase-2 tradeoff), so the controller layer has NO static guard for dangling calls; nothing else exercised the path. Fixed by implementing `_addProfileObject` + `createAddProfileCommand` and adding the sketch flow to the smoke E2E. The candidate value: whenever a static check is deliberately scoped down, the excluded layer must name its substitute guard (here: every Add-menu entry appears in the smoke). | Add Sketch Auto-Enters Edit Mode 2D; Controller Wiring Has No Static Guard |
-| A missing *required* input must fail loudly, never be filled by a permissive default | 2026-07-25 · `core/easy_extrude_core/engine/pipeline.py:120-127` · When the scene has no robot frames the front omits the `robot` key entirely, and the solver builds `Robot(base=(0,0,0), reach_min=0.0, reach_max=inf, wrist_cone_half_angle=π)` — a **phantom robot standing at the origin with infinite reach and a free wrist**. Every candidate passes reach/wrist filtering, so the user sees "候補が出た" for a robot that does not exist and cannot execute one of them. The defaults are individually reasonable as *optional-parameter* fallbacks; the defect is that they also cover the case where the whole required declaration is absent, so absence is indistinguishable from "declared, unconstrained". Kin to #11 (no silent failures) but the inverse shape: not a silent no-op — a silent *plausible* result, which is worse because nothing prompts the user to doubt it. Correct form: an absent required declaration is rejected at the boundary (400 / explicit `no-robot` state), and defaults apply only to fields that are genuinely optional *within* a present declaration. Graduate if a second required input is found being defaulted rather than rejected. | — (ADR-090 §力学(3) が解消予定; 台帳 `docs/STATE_LEDGER.md` のロボット行) |
+| *(graduated to principle #31 — Zero Is a State That Does Not Look Like One; contexts: ADR-090 phantom robot + `gsn_tool.py` unsupported goals, 2026-07-25)* | | |
 | A vocabulary/taxonomy revision is closed by a repo-wide grep for the old vocabulary, not by declaration | 2026-07-19 · `templates/README.md` ほか · The 2026-07-19 layer-boundary revision declared "別 repo 分割前提の文言の除去" done, but the retired taxonomy (レイヤ A/B/C, 2a/2b, 売り物/Booth/Gumroad, old grasp-search ADR numbering `ADR-005-bin-picking-...`) survived in `templates/README.md`, `core/README.md`, five `core/` docstrings, and `schema/README.md`'s citation of a CLAUDE.md heading that no longer exists — living documents contradicting the canonical layer map for a full session generation. Fixed by sweeping all non-historical files (ADR bodies and the frozen SESSION_LOG keep their era's wording on purpose). Candidate value: renaming a shared vocabulary is a §1.1 single-source change; its cleanup is only closed by evidence (a grep for every retired token over living docs), never by asserting completion. Graduate if a second rename leaves the same kind of residue. | — (process rule; no code contract row) |
 
 ---
@@ -809,3 +862,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
 | 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |
 | 30 | Motion Tier — 動きは事実・能力・歓びを担う (delight tier 2026-07-12) | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
+| 31 | Zero Is a State That Does Not Look Like One (2026-07-25) | Design | State Ledger cardinality column (核 §1.4); GSN support cardinality (`pnpm test:gsn`); absent required declaration rejected not defaulted (ADR-090) |

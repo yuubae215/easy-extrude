@@ -23,6 +23,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/**/*.test.js\"",
     "test:adr": "node scripts/check-adr-status.mjs",
+    "test:gsn": "python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py selftest && python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py lint docs/gsn/*.gsn",
     "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml",
     "test:layout": "node --test src/layout/LayoutDecompiler.test.js",
     "test:schema": "node --test \"src/schema/**/*.test.js\"",

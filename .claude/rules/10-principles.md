@@ -48,6 +48,7 @@
 23. **Accessors Own Freshness** — 導出状態のアクセサは自身で鮮度を保証する。呼び手に事前 refresh を要求する規約は N-1 箇所で破られる。
 28. **Mutual = Round-Trip Up to Normal Form** — 多対一の相互変換に逆写像の同一性を求めない。商・正規形を名指しし、その上の fixpoint / 同型で検証する。
 29. **Rigor on the Wire, Play in the Client** — ワイヤ (API・ファイル形式・DSL) は閉じた版付き契約で「決定された事実」のみ運ぶ。演出・提示はクライアントで導出し、契約に足さない。全ワイヤは「契約あり」か「明示的対象外宣言」の二状態のみ。
+31. **Zero Is a State That Does Not Look Like One** — `mode`/`status` は値を持つ欄なので状態として認識されるが、基数 (0 個・N 個) には欄が無い。不在は検査対象のノードを持たないため、*在るもの*を辿る検査は必ず素通りする。**必要な種別を列挙して個数を検査**し、正当な 0 は推論させず**宣言**させる (既定値で埋めない / 台帳の基数列を空にしない)。
 
 ## Living Docs
 19. **Documentation Drift Is a Bug** — バグ修正・設計判断のたび、欠けていた暗黙ルール/理由をルール台帳・ADR・原則集に反映してから commit する。
@@ -63,3 +64,4 @@
 - #18: `objectRemoved`/`objectAdded`
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`
+- #31: 基数の累積器 = `docs/STATE_LEDGER.md` の基数列 (核 §1.4)、機械側の問い所 = `pnpm test:gsn` (支えの無い goal) と ADR-090 (0 台のロボット)

@@ -20,12 +20,12 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 記録する — 記録しない限り累積しないため。行を足した結果その実体が 3 状態以上に
 なったら、クラスを書く前に状態機械を設計し `docs/STATE_TRANSITIONS.md` に節を起こす。
 
-**基数列は必ず埋める。** `mode` や `status` という語はレビューでも AI でも
-状態として認識されるが、**「0 個」「N 個」は状態に見えない** — 実際 ADR-090 が
-見つけた欠陥 (0 台のロボットが到達可能・無言・不安定で、原点に立つ無限リーチの
-幽霊ロボットを生む) は、基数が状態として一度も書き出されなかったことが原因。
-`0` が正当なら「0 のとき何が起きるか」を、`N` が正当なら「どれのことか」を
-この列で名指しする。
+**基数列は必ず埋める。** 理由の正本は **PHILOSOPHY #31**
+(Zero Is a State That Does Not Look Like One — 不在は検査対象のノードを持たないので、
+*在るもの*を辿る検査は必ず素通りする)。この列はその原則の累積器側の現れであり、
+埋める行為そのものが「0 のとき何が起きるか」を問わせる装置。
+`0` が正当なら 0 のときの挙動を、`N` が正当なら「どれのことか」をこの列で名指しする。
+空欄で通した結果が ADR-090 (原点に立つ無限リーチの幽霊ロボット)。
 
 ---
 
@@ -52,6 +52,7 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | Origin CF ライフサイクル | Solid と原子的に生成・削除 | Solid 1 個につき 1 | `SceneService` (Solid 生成/削除経路) | ADR-037 / STATE_TRANSITIONS §Origin CF Lifecycle |
 | `_worldPoseCache` | 有効 / 無効 (2) | 1 | `SceneService` — アクセサが鮮度を保証 (原則 #23) | STATE_TRANSITIONS §`_worldPoseCache` |
 | 削除された実体 | 可視 / 不可視保持 / 実解放 (3) | 0..N | `CommandStack` が手放した時点で実解放 (原則 #10) | PHILOSOPHY #10 / `docs/code_contracts/memory_management.md` |
+| GSN goal の支え | `unexplored` / `exploring` / 支えあり (3) — 鮮度軸 `state` とは直交 | 支え = strategy `0..N` + solution `0..N` + 下位 goal `0..N`。**総和 0 は宣言必須** (無宣言の 0 は lint エラー) | `.gsn` の木構造 + 予約 `labels` — 検査は `gsn_tool.py lint` (CI `pnpm test:gsn`) | STATE_TRANSITIONS §GSN goal support / PHILOSOPHY #31 / `.claude/skills/gsn-meta-framework/references/dsl-output.md` |
 
 ---
 

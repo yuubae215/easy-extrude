@@ -11,11 +11,12 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | philosophy / principles / why we do it this way | `docs/PHILOSOPHY.md` |
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
 | state machine / mode transition / state | `docs/STATE_LEDGER.md` (台帳=索引・基数列) → `docs/STATE_TRANSITIONS.md` (図の正本), ADR-008 |
-| 基数 / cardinality / 0 台 / N 台 / 存在しない / 複数ある / 実体の同一性 / どれを指すか | `docs/STATE_LEDGER.md` §基数列, ADR-090 (ロボット 0/1/N の先例) |
+| 基数 / cardinality / 0 台 / N 台 / 存在しない / 複数ある / 実体の同一性 / どれを指すか / 空なのに通る / 不在が見えない | **PHILOSOPHY #31** (Zero Is a State That Does Not Look Like One), `docs/STATE_LEDGER.md` §基数列, ADR-090 (ロボット 0/1/N の先例), `pnpm test:gsn` (空枝の検査) |
 | StateMachine class / FSM / editorStates / operation state constants / _opState | `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039 |
 | cache / derived state / lifecycle / UNINIT / STALE / freshness | `docs/STATE_TRANSITIONS.md` § Internal Component State Machines |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
 | GSN / 論証木 / assurance case / claim tree / 証拠の鮮度 / 利益 / 売上 / 経費 / なぜこの開発をやるのか | `docs/gsn/profit-growth.gsn` (事業メタゴールから枝を辿る正本), `docs/gsn/adr-081-grasp-validation.gsn` (grasp 判定の枝) |
+| GSN lint / 空枝 / 支えの無い goal / support-exploring / support-unexplored / 未探索 / 探索中 / evidence debt の内訳 / artifact が実在しない | `pnpm test:gsn` (CI gate), `.claude/skills/gsn-meta-framework/references/dsl-output.md` §Support cardinality, `docs/STATE_TRANSITIONS.md` §GSN goal support, PHILOSOPHY #31 |
 | dogfooding / 実際に触る / 既定値の獲得 / フルスタック起動 / ユーザフィードバック | `docs/dogfooding/README.md` (`pnpm dev:stack` + 記録様式) |
 | screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
 | layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
