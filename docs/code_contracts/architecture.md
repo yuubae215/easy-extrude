@@ -1002,3 +1002,24 @@ The desktop onboarding tour (`uiStore.tour`, quest card + anchor pulse) is the o
 - **Predicates read only committed facts**: Solid count, the committed selection, `selectionMode`, and the last CommandStack landing `{label, phase}` (controller-local `_tourLastLanding`) — optimistic previews never land, so they never advance a quest.
 - **One visibility predicate.** `tourVisible(state, overlays)` is shared by the card and every anchor consumer (§1.1) — an active Context/demo/gallery overlay suppresses BOTH without mutating the FSM. The anchor pulse is Tier A affordance motion (`activeGlow`, reduced-aware) keyed off `tourAnchor(state)` — the card and the pulsed control cannot disagree.
 - **Persistence line (ADR-065 named rule 6, Widening 3).** Only the done/dismissed flag persists (`localStorage.ee_tour` — a display *setting*); the progression itself persists nowhere. Presentation *history* (previous snapshots behind chips/flashes) stays component-local per ADR-062 — this rule does not open the store to it.
+
+## Identity Derivations Have One Owner, Enforced by a Test (§1.1 / ADR-090)
+
+「この実体はどれか」を決める述語 (同一性の導出規則) は、**ドメインの 1 モジュール**が
+所有し、呼び出し側は必ずそれを呼ぶ。呼び出し側で `name === X && parentId === null` の
+ように条件を並べ直すことは、たとえ 1 行でも規則の第二の源を作る行為とみなす。
+
+- **なぜルールが必要か (Q1).** SSOT 違反の多くはデータではなく *導出*の複製として
+  生まれる。データの重複は grep とレビューで見えるが、導出の重複は見えない — 各箇所は
+  単体では妥当な 3 行のローカル判断だから。ADR-090 §力学(1) が実測したのは、ロボットの
+  同一性が 4 箇所に独立実装され、**2 台目が入った瞬間に 4 箇所すべてが同時に壊れる**状態。
+- **どこで問われるか (Q3).** 散文ではなくテスト。`src/IdentityContainment.test.js` が
+  `IDENTITY_RULES` 表を持ち、各規則の *inline 再導出*が所有モジュール以外に現れたら
+  fail する (コメントは除去して当てるので散文の言及では発火しない)。所有側から規則が
+  消えたときにガードが空振りで緑になり続けないよう、対の存在確認テストも持つ。
+- **規則を足す**: `IDENTITY_RULES` に 1 エントリ (`owners` / `use` / `all` / `why`)。
+  `why` は違反時のエラーメッセージに出るので、「なぜ 1 箇所でなければならないか」を書く。
+- **現在の登録**: `robot_base` の同一性 → `isRobotBaseFrame()` (`src/domain/robotFrames.js`)。
+  `GraspController._resolveRobotDeclaration` と `HitTestService.hitRobotStage` は
+  2026-07-25 にこの述語へ寄せた。
+- **射程外**: `*.test.js` の fixture (述語に食わせるデータであって規則の再実装ではない)。

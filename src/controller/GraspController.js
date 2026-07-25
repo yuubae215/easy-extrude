@@ -44,7 +44,7 @@
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { visionFromViewportCamera } from '../context/GraspDeclarationCatalog.js'
-import { ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME } from '../domain/robotFrames.js'
+import { isRobotBaseFrame, TCP_FRAME_NAME } from '../domain/robotFrames.js'
 
 /**
  * TemplateCatalog example id auto-loaded when grasp-search is opened with no
@@ -429,9 +429,12 @@ export class GraspController {
     if (!scene?.objects || typeof service?.worldPoseOf !== 'function') return {}
 
     // robot_base is the world-parented root of the robot TF tree (parentId null).
+    // The identity test itself lives in domain/robotFrames.js (isRobotBaseFrame) —
+    // re-deriving it here would make the resolution rule's source plural (§1.1),
+    // which is exactly the defect ADR-090 §力学(1) names.
     const baseFrame = (() => {
       for (const o of scene.objects.values()) {
-        if (o.name === ROBOT_BASE_FRAME_NAME && o.parentId === null) return o
+        if (isRobotBaseFrame(o)) return o
       }
       return null
     })()

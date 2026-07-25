@@ -93,7 +93,7 @@ lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価
 |-------|-----------|
 | philosophy / 原則 #N | `docs/PHILOSOPHY.md` (正本; 常時 load のダイジェストは `.claude/rules/10-principles.md`) |
 | architecture / design / why | `docs/ARCHITECTURE.md` → `docs/adr/README.md` (`/adr <topic>` で検索) |
-| state machine / mode / FSM | `docs/STATE_TRANSITIONS.md`, ADR-008/039 |
+| state machine / mode / FSM | `docs/STATE_LEDGER.md` (台帳=索引) → `docs/STATE_TRANSITIONS.md` (図の正本), ADR-008/039 |
 | screen / UI / layout | `docs/SCREEN_DESIGN.md`, `docs/LAYOUT_DESIGN.md` |
 | events / input | `docs/EVENTS.md` |
 | concurrency / async | `docs/CONCURRENCY.md` |
@@ -101,6 +101,11 @@ lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価
 | 上記以外のキーワード | `docs/NAVIGATION.md` の trigger 表 |
 
 **`/adr <topic>`** — slash command to search the ADR index.
+
+**`/whiteboard [作業]`** — 実装前の一拍俯瞰 (核 §2)。Goal / 触る実体の状態表 (**基数 0·1·N
+込み**) / 同一性の所有者 / blast radius / 検証の形 を、コードを書く前に出させる。
+「憲法に従って」より狭く名指しした要求のほうが通る (原則 #20) ので、その狭い要求を
+コマンドとして常備したもの。
 
 Create a new ADR when a design choice is non-obvious or hard to reverse.
 Update `docs/adr/README.md` index whenever an ADR is added or superseded.
@@ -113,15 +118,33 @@ Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 確認し、コード変更後に更新してから commit する。非自明・不可逆な設計選択は新 ADR +
 `docs/adr/README.md` インデックス更新。
 
+## 状態台帳 (核 §1.4 の累積器)
+
+核 §1.4 の閾値判定に使う**状態台帳の正本は `docs/STATE_LEDGER.md`**
+(このファイルは名指しするだけ — 表を複製しない, §1.1)。
+
+status・flag・mode・lifecycle・**存在 (基数 0/1/N)** に触る変更は、コードと同じ
+コミットで台帳の行を追加・更新する。閾値未満でも記録する — 記録しなければ累積せず、
+判定がプロンプト単位に退化して閾値が永遠に跨がれない。累積の結果 3 状態以上に
+なった実体は、クラスを書く前に状態機械を設計し `docs/STATE_TRANSITIONS.md` に節を起こす。
+
+`mode` / `status` は状態として認識されるが **「0 個」「N 個」は状態に見えない** —
+台帳の基数列はそのための欄なので必ず埋める (ADR-090 の欠陥はここが空だったこと)。
+
 ## After fixing a bug
 
-commit 前に二問を順に問う (核 §1.2 / 原則 #19):
+commit 前に三問を順に問う (核 §1.2 / 原則 #19):
 
 - **Q1 — Rule missing?** 暗黙ルールの欠落が原因なら → `docs/code_contracts/*.md` detail に
   追記し、`docs/CODE_CONTRACTS.md` index の行を更新。迷ったら足す。
 - **Q2 — Pattern repeating?** 同じ根本価値の違反が **2+ の無関係な文脈**にあれば →
   `docs/PHILOSOPHY.md` の原則を追加/研磨 (+ `.claude/rules/10-principles.md` の該当行)。
   1 文脈のみなら PHILOSOPHY の **Yellow Cards** 表に行を足す (2 例目で昇格)。
+- **Q3 — Where is it asked?** そのルールは**書く瞬間にどこで問われるか**を名指しする。
+  答えが「誰も開かない散文」なら、成果物は文書の行ではなく**チェック**である:
+  テスト (`src/**/*.test.js` は glob 実行なので置くだけで走る) / CI ステップ /
+  `.claude/hooks/` の書き込み時 hook のいずれかに降ろす。Q1・Q2 だけだと文書が
+  太り続け、原則を引き当てるコストが上がって守られなさが悪化する (希釈)。
 
 ## Development commands
 

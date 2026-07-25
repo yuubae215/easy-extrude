@@ -5,6 +5,15 @@ notes: |
   これは canonical bundle を本リポジトリへ vendoring したコピー。ドリフト検知用。
   内容を更新するときは canonical 側を直し、本ファイルの version を上げて再配布する。
 changes: |
+  2026-07-25: 00-kernel.md §1.4/§3/§4 を本リポジトリ側で先行改訂(kernel-log
+    2026-07-25 の c シグナル)。台帳の置き場所を「project CLAUDE.md が名指しする」
+    へ委譲し、§4 に「大きい表・図は名指しした別ファイルに置いてよい」を明記。
+    併せて「累積器が実在しなければ規律は発動しない」の明文化、基数(0·1·N)の
+    追記対象化、図の置き場所を `docs/state-<entity>.mermaid` 固定からプロジェクト
+    定義へ緩和(核にインスタンスを置かない — §4 末尾の自己適用)。
+    本文はプロジェクト不変の語彙のみなので canonical bundle へそのまま
+    バックポート可能(それまで本ファイルが差分の印)。
+
   2026-07-19: canonical 2026-07-18 版へ再同期。00-kernel.md(§1.4 状態台帳・
     §2 一拍俯瞰・§6 自己適用)、CLAUDE.project-template.md(状態台帳節)、
     kernel-log.md を取り込み。hooks/evidence-before-commit.sh は本リポジトリ

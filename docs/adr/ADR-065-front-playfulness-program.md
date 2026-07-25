@@ -1,6 +1,7 @@
 # 065. 体感層の全面遊戯化プログラム — front は遊び場、back は証明のまま
 
-- Status: Accepted (Phase 0+1+2+3+4+5 実装済 — Phase 5: 2026-07-11。Phase 2 は
+- Status: Accepted
+- 実施記録: Phase 0+1+2+3+4+5 実装済 — Phase 5: 2026-07-11。Phase 2 は
   2026-07-11 の**音量改訂**で再設計: 毎着地パルスを廃止し、実体の出現/消滅遷移のみ
   voxel materialize/dissolve を描画（Move/Rotate/Face Extrude とその undo/redo は
   機械固定の無音）。Phase 2 残のうち**選択パルスは音量改訂により不採用**
@@ -14,7 +15,7 @@
   reduced-motion 対応〕を実装。Phase 6（オンボーディングツアー）は 2026-07-11 に
   実装 — **全 7 フェーズ完了**。Phase 2 残のスナップ係合フラッシュは 2026-07-12 に
   実装（animation-fx スキル導入セッション — 実装ノート参照）。**残候補ゼロ =
-  プログラム完結**)
+  プログラム完結**
 - Date: 2026-07-09 (Accepted: 2026-07-10)
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし (ADR-062 を廃止せず**拡張**する)

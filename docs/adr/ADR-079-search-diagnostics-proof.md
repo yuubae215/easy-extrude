@@ -1,10 +1,11 @@
 # ADR-079: 判定の証明 (feasibility funnel + near-miss) を UX 資産として返す
 
-- Status: Accepted, implemented (エンジンのファネル収集 + reach near-miss + wire 露出まで
+- Status: Accepted
+- 実施記録: エンジンのファネル収集 + reach near-miss + wire 露出まで
   完了。上流 contract は v3 に版上げ済み、core は emit 追従済み = producer 側は完結。
   残るは BFF/UI 側の消費追従。
   実装: `core/easy_extrude_core/engine/pipeline.py` (search_report) + `feasibility.py` (reach_miss)
-  + `contract/models.py` (SearchDiagnostics wire, contractVersion=3))
+  + `contract/models.py` (SearchDiagnostics wire, contractVersion=3)
 - Date: 2026-07-04
 - 関連: ADR-074 (BFF <-> コアAPI 契約) / ADR-075 (段階0 判定エンジン) /
   ADR-076 (HTTP 境界) / 契約統治の先例:「ワイヤに載せてよいのは決定した事実だけ」

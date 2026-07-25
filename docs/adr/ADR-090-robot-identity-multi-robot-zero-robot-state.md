@@ -4,6 +4,8 @@
 - Date: 2026-07-25
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: なし (ADR-084 §2/§4 の「1-robot scope」前提を明示的に解除)
+- 状態台帳: `docs/STATE_LEDGER.md` の「ロボット」行 (基数 `⚠ 実装は 1 固定・実際は 0..N が
+  到達可能`)。本 ADR はその行を `0..N` へ確定させる変更であり、台帳の §既知の負債 (2) を閉じる
 
 ## Context — Goal と力学 (§1.2 Goal)
 

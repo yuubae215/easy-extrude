@@ -10,7 +10,8 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 |-------------------|-----------|
 | philosophy / principles / why we do it this way | `docs/PHILOSOPHY.md` |
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
-| state machine / mode transition / state | `docs/STATE_TRANSITIONS.md`, ADR-008 |
+| state machine / mode transition / state | `docs/STATE_LEDGER.md` (台帳=索引・基数列) → `docs/STATE_TRANSITIONS.md` (図の正本), ADR-008 |
+| 基数 / cardinality / 0 台 / N 台 / 存在しない / 複数ある / 実体の同一性 / どれを指すか | `docs/STATE_LEDGER.md` §基数列, ADR-090 (ロボット 0/1/N の先例) |
 | StateMachine class / FSM / editorStates / operation state constants / _opState | `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039 |
 | cache / derived state / lifecycle / UNINIT / STALE / freshness | `docs/STATE_TRANSITIONS.md` § Internal Component State Machines |
 | new feature / implementation plan | `docs/ROADMAP.md`, then related ADRs |
@@ -105,6 +106,11 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 | — |
 | **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 | — |
 | **バグ修正** | ⚠️ | ⚠️ | ⚠️ | ⚠️ | — | — | ✅ (CLAUDE.md「After fixing a bug」参照) | ⚠️ (同左) |
+
+> **STATE_LEDGER rule** (列にせず規則として書く — 列を増やすと行ごとに判断が要るが、
+> この規則は例外なし): status・flag・mode・lifecycle・**存在 (基数)** に触る変更は
+> 上表のどの行であっても `docs/STATE_LEDGER.md` の該当行を同じコミットで更新する。
+> 閾値未満でも記録する (累積器なので、記録しなければ判定が働かない)。
 
 > **PHILOSOPHY column rule**: mark ⚠️ only when the same root value has been
 > violated in **two or more unrelated contexts**. A single bug → CODE_CONTRACTS.

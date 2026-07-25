@@ -1,7 +1,8 @@
 # ADR-074: BFF <-> コアAPI の I/O 契約
 
-- Status: Accepted (§6 契約型の置き場所のみ ADR-082 で改訂 — 外部 repo submodule →
-  repo 内 `packages/grasp-contract`。意味論・contractVersion ガード・導出規律は有効なまま)
+- Status: Accepted
+- 実施記録: §6 契約型の置き場所のみ ADR-082 で改訂 — 外部 repo submodule →
+  repo 内 `packages/grasp-contract`。意味論・contractVersion ガード・導出規律は有効なまま
 - Date: 2026-06-21
 - 関連 (追記): ADR-082 (置き場所の吸収 + 契約壁 CI ガード)
 
