@@ -5,17 +5,16 @@ For project structure, MVC design, and features see `README.md`.
 
 ## Constitutional Rules (read before any code change)
 
-1. **DDD Entity Core** — the design center is always the domain entities in
-   `src/domain/`. All other layers depend inward; domain depends on nothing.
-2. **Pure / Side-Effect Separation** — every function and class must be clearly
-   categorised as either a *pure computation* (deterministic, no I/O) or a
-   *side-effectful operation* (DOM, Three.js, network, state mutation). Never mix.
-3. **MVC coordination** — the Controller is thin; it translates input events
-   into Model/Service calls and View updates. Business logic lives in Domain;
-   rendering in View.
-4. **Concurrency strategy** — distinguish *optimistic* (real-time, non-blocking)
-   from *pessimistic* (consistency-critical, blocking) locking before
-   implementing any async or high-frequency operation. See `docs/CONCURRENCY.md`.
+一般則は常時 load の `.claude/rules/` にある — 純粋/副作用の分離は**原則 #3**、
+locking 戦略を実装前に決めるのは**原則 #7** (`docs/CONCURRENCY.md`)、依存を内向きに
+保つのは**核 §1.1「依存方向 (Clean Architecture)」**。ここに書き写さない (§1.1)。
+
+このリポジトリ固有の写像だけを置く (**番号で参照しない** — 番号は行が増減するたびに
+外部の引用を静かに壊す。名前で引く):
+
+- **DDD Entity Core** — 設計の中心は `src/domain/` のドメイン実体。
+- **MVC coordination** — Controller は薄く、入力イベントを Model/Service 呼び出しと
+  View 更新へ翻訳するだけ。ビジネスロジックは Domain、描画は View。
 
 ## スコープ境界 (レイヤ境界 — 2026-07-19 に repo 境界から改定)
 
@@ -110,6 +109,10 @@ lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価
 Create a new ADR when a design choice is non-obvious or hard to reverse.
 Update `docs/adr/README.md` index whenever an ADR is added or superseded.
 
+Orient (核 §2) は `git log --oneline -15` + `docs/adr/README.md`。セッション履歴の
+複製は持たない — 起きたことの正準は git log、設計判断は ADR
+(`docs/SESSION_LOG.md` は凍結アーカイブ。追記しない)。
+
 ---
 
 ## Design change impact
@@ -180,8 +183,6 @@ Three.js `camera.up = (0,0,1)`. XY plane (Z=0) is the ground plane.
 **コード変更前に `docs/CODE_CONTRACTS.md` の該当セクションを読むこと**（自動ロードしない —
 index 表で該当領域を特定し、detail ファイル `docs/code_contracts/*.md` を必要分だけ読む）。
 
-@docs/CLAUDE_FABLE5_BEHAVIOR.md
-
 ## Notes for changes
 
 - `vite.config.js` `base` must match the repo name (`/easy-extrude/`)
@@ -193,9 +194,3 @@ index 表で該当領域を特定し、detail ファイル `docs/code_contracts/
 常時 load)。正本 (全文・事例・Yellow Cards) は `docs/PHILOSOPHY.md` — 原則番号 #N の
 詳細が要るときだけ該当節を読む。
 
-## Session history
-
-廃止 (2026-07-19)。セッションで起きたことの正準は git log、設計判断の正準は ADR、
-導出ルールの正準は CODE_CONTRACTS / PHILOSOPHY — 履歴をここに複製しない (核 §1.1)。
-Orient は `git log --oneline -15` + `docs/adr/README.md` で行う。
-旧全文は `docs/SESSION_LOG.md` (凍結アーカイブ) に残存。

@@ -53,6 +53,7 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | Origin CF ライフサイクル | Solid と原子的に生成・削除 | Solid 1 個につき 1 | `SceneService` (Solid 生成/削除経路) | ADR-037 / STATE_TRANSITIONS §Origin CF Lifecycle |
 | `_worldPoseCache` | 有効 / 無効 (2) | 1 | `SceneService` — アクセサが鮮度を保証 (原則 #23) | STATE_TRANSITIONS §`_worldPoseCache` |
 | 削除された実体 | 可視 / 不可視保持 / 実解放 (3) | 0..N | `CommandStack` が手放した時点で実解放 (原則 #10) | PHILOSOPHY #10 / `docs/code_contracts/memory_management.md` |
+| コミットの観測メタデータ | `未刻印` / `刻印済` / `刻印不能` (3 — 最後は push 済みで amend 不可になった終端) | コミット 1 個につき **`0..1`**。0 = 人間のコミット (帰属として正しい) か、`commit && push` 連鎖で刻む隙間が無かったもの。後者は `report` の `with Model-Effort: N / 総数` で**母数に現れる** (隠さず数える — 原則 #31) | `.claude/hooks/commit-trailers.sh` (唯一の書き手。PostToolUse で `--amend --only`) — 導出規則の正本は `scripts/commit-meta.mjs` の純粋関数 | **ADR-092** · STATE_TRANSITIONS §Commit observation metadata · `scripts/commit-meta.test.mjs` |
 | GSN goal の支え | `unexplored` / `exploring` / 支えあり (3) — 鮮度軸 `state` とは直交 | 支え = strategy `0..N` + solution `0..N` + 下位 goal `0..N`。**総和 0 は宣言必須** (無宣言の 0 は lint エラー) | `.gsn` の木構造 + 予約 `labels` — 検査は `gsn_tool.py lint` (CI `pnpm test:gsn`) | STATE_TRANSITIONS §GSN goal support / PHILOSOPHY #31 / `.claude/skills/gsn-meta-framework/references/dsl-output.md` |
 
 ---

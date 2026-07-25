@@ -97,7 +97,7 @@ marching-ants を親子線に使わないのは意図的 — アニメーショ�
 `AppController._updateLinkNetwork()` の `entityInfos` に `parentId` を 1 フィールド
 追加するのみ(`{ name, type, parentId }`)。祖先展開・レイヤー計算はすべて view 側
 (`LinkNetworkView.update()` / `_runLayout()`)— Controller は thin のまま
-(Constitutional Rule 3)。`update(entityInfos, links)` シグネチャ不変。
+(憲法 §MVC coordination — 当時は Constitutional Rule 3)。`update(entityInfos, links)` シグネチャ不変。
 
 ## 3. Consequences
 

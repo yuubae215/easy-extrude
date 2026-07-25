@@ -937,6 +937,43 @@ world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:
 
 ---
 
+## Commit observation metadata — 未刻印 / 刻印済 / 刻印不能 (ADR-092)
+
+コミット 1 個が持つ観測トレーラ (`Model-Effort` / `Task-Class`) の有無。3 状態あるが
+第 3 の状態は**不在の終端**なので状態に見えない (原則 #31) — 明示的に置く。
+
+```
+                  ┌──────────┐
+   git commit ───▶│  未刻印   │
+   (Claude)       └──────────┘
+                    │      │
+   PostToolUse hook │      │ 同一コマンド内で push 済み
+   (amend --only)   │      │ (刻む隙間が無い ─ 恒久)
+                    ▼      ▼
+              ┌──────────┐  ┌────────────┐
+              │  刻印済   │  │  刻印不能   │  ← report が母数として数える
+              └──────────┘  └────────────┘
+                    │
+                    └── 再実行しても SHA 不動 (値が同じなら no-op = 冪等)
+```
+
+- **権威**: `.claude/hooks/commit-trailers.sh` の 1 箇所のみ (§1.1)。導出規則は
+  `scripts/commit-meta.mjs` の純粋関数に置き、書き手 (hook) と読み手 (`report`) が
+  同じ規則を**参照**する。二重実装すると遡及分類と新規分類が静かにズレる。
+- **禁止遷移**: **公開済みコミットの刻印**。`git branch -r --contains HEAD` が非空なら
+  何もしない — amend は SHA を変えるので、push 済みを書き換えると履歴が分岐する。
+  安全側に倒した結果が「刻印不能」という終端状態であり、これは*失敗*ではなく
+  **宣言された欠測**として `report` の母数に現れる。
+- **guard**: rebase / merge 進行中・detached HEAD・マージコミット・直近 300 秒に
+  新しいコミットが無い (= コマンド失敗) のいずれかで素通り。判定のどこかが失敗しても
+  fail-open (統治の hook がユーザーの作業を壊さない)。
+- **副作用の告知**: 刻印は SHA を変えるため、`additionalContext` と `systemMessage`
+  で `before → after` を告げる (原則 #11 — 黙って変えない)。
+- **人間のコミットは「未刻印」のまま正しい。** hook は Claude のツール呼び出しに
+  だけ発火するので、トレーラの不在がそのまま帰属の情報になる。
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow
