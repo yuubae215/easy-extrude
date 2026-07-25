@@ -99,3 +99,11 @@ blast radius: `Header.jsx`(ボタン撤去)、`uiStore.robotVisible` / `UIViewBr
 - **状態機械**: `robotVisible` は 2 状態の単純フラグで不正遷移が事故にならない (§1.4 の
   発動条件未満) ため状態機械化は不要 — むしろ実体 (`robot_base`) の可視性へ吸収して
   独立フラグを消す方向が正しい。
+
+---
+
+**Follow-up**: 「可視性は `robot_base` の Outliner eye が所有する」は
+[ADR-090](ADR-090-robot-identity-multi-robot-zero-robot-state.md) (Proposed) で複数台へ
+一般化される (実体ごとの eye はそのまま、同一性が名前から id へ移る)。なお本 ADR が
+受け入れた発見性コストの一部は、非表示行の閉じた目 + グレーアウト (原則 #11/#15) で
+別途埋めた。
