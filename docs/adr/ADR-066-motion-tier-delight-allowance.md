@@ -130,3 +130,4 @@ ADR-065 Widening 1 は Motion Tier 規則を鋳造し、PHILOSOPHY #30 として
 ## References
 
 - ADR-067(ビューポート常設ステージ + 起動リビール)— 本 ADR が新設した Tier D の最初の適用実績。
+- ADR-093(Map 注釈の視覚言語)— Tier A/D/F の三分類を Map 注釈へ適用し、Tier A の主張(place type の意味)を Tier D の演出が上塗りしない形を示した実績。

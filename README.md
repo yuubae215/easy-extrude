@@ -40,7 +40,7 @@ It runs on desktop **and mobile**. It speaks the **ROS coordinate frame** conven
 - **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`) — full command history for every operation
 
 ### Spatial Annotations & Mapping
-- **Map Mode** — draw Routes, Zones, Boundaries, Hubs, and Anchors over the scene
+- **Map Mode** — draw Routes, Zones, Boundaries, Hubs, and Anchors over the scene. Each place type carries its own drafting-table visual language (hatched zones, survey datum marks, hatched barriers, comet flow) animated on a phase derived from the entity's own identity, so a population of annotations never moves in lockstep
 - **Measure Tool** (`M`) — snap two endpoints; renders an amber dashed line with a live distance label
 - **Coordinate Frames** (`Shift+A → Frame`) — named SE(3) reference frames in a pose graph; supports nested hierarchy and `R`-key rotation
 - **Spatial Links** (`L`) — create typed directional relationships between any two entities; visualised as arrowheads in the scene

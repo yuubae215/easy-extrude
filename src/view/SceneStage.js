@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
 import { STAGE, dustField, dustDrift, entryEnvelope, fogDensityFor } from './StageMath.js'
+import { radialSprite } from './DecalTextures.js'
 
 /**
  * SceneStage — the viewport's ambient stage dressing (ADR-067; Tier D
@@ -60,7 +61,10 @@ export class SceneStage {
 
     // ③ Floor glow: an additive radial pool under the grid, tinted with the
     //    chrome's active accent so the stage and the UI share one glow hue.
-    this._glowTexture = this._makeRadialTexture(COLOR.accentActive)
+    // The radial sprite recipe is shared with the Map annotation halos so the
+    // stage glow and the annotation glows cannot drift apart (ADR-093 —
+    // `DecalTextures` owns and caches it; never disposed from here).
+    this._glowTexture = radialSprite(COLOR.accentActive)
     const glowMat = new THREE.MeshBasicMaterial({
       map: this._glowTexture,
       transparent: true,
@@ -75,7 +79,7 @@ export class SceneStage {
     this._group.add(this._glow)
 
     // ④ Dust: two deterministic drifting layers (near/far parallax).
-    this._spriteTexture = this._makeRadialTexture('#ffffff')
+    this._spriteTexture = radialSprite('#ffffff')
     this._layers = STAGE.dust.map((layer) => {
       const field = dustField(layer)
       const positions = new Float32Array(field.length * 3)
@@ -185,23 +189,13 @@ export class SceneStage {
     return tex
   }
 
-  /** Soft radial sprite/glow texture (generated once, 64×64). */
-  _makeRadialTexture(hex) {
-    const canvas = document.createElement('canvas')
-    canvas.width = canvas.height = 64
-    const ctx = canvas.getContext('2d')
-    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
-    grad.addColorStop(0, `${hex}ff`)
-    grad.addColorStop(0.4, `${hex}66`)
-    grad.addColorStop(1, `${hex}00`)
-    ctx.fillStyle = grad
-    ctx.fillRect(0, 0, 64, 64)
-    const tex = new THREE.CanvasTexture(canvas)
-    tex.colorSpace = THREE.SRGBColorSpace
-    return tex
-  }
-
-  /** Symmetric teardown (#9): every scene.add above has its remove+dispose here. */
+  /**
+   * Symmetric teardown (#9): every scene.add above has its remove+dispose here.
+   * EXCEPT the two radial sprites — they are module-owned cached constants from
+   * `DecalTextures.radialSprite()`, shared with the Map annotation halos, so
+   * disposing them here would blank another view's glow (see that module's
+   * ownership note).
+   */
   dispose() {
     this._unsubReduced()
     this._scene.remove(this._group)
@@ -212,8 +206,6 @@ export class SceneStage {
     }
     this._glow.geometry.dispose()
     this._glow.material.dispose()
-    this._glowTexture.dispose()
-    this._spriteTexture.dispose()
     this._scene.fog = null
     this._scene.background = new THREE.Color(0x1a1a2e) // the pre-stage flat backdrop
     this._bgTexture.dispose()

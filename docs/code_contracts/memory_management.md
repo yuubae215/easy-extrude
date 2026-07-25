@@ -76,6 +76,57 @@ _clearScene() {
 - **Concrete Rule** (`AnnotatedPointView`): the disc geometry is translated so its bottom rests at z=0 (`_geo.translate(0, MARKER_HEIGHT/2, 0)` before the X-rotation). Flat overlay parts (ring, sonar, crosshairs) are lifted to the disc's top face by `_applyLift()` — called from the constructor, `_setPoint()`, and `updateScale()` because the lift scales with `_viewScale`. The disc material sets `transparent: true, opacity: 1` deliberately: it joins the transparent queue where `renderOrder` (disc 2 > zone fill 1) — not the opaque/transparent split — decides compositing against region fills.
 - **Root bug** (2026-06-12, Context DSL demo): the floor-outlet Anchor marker appeared as "blue and purple meshes overlapping" — the cell-area Zone fill rendered over the marker disc's top face (slope-scaled polygonOffset beat the disc's true depth), while the half-buried cylinder and z=0 ring added parallax misregistration. The Anchor crosshairs were also invisible (coplanar with the fill).
 
+## Looping Animation Phase Must Come From Entity Identity (ADR-093)
+
+- **Principle**: A looping animation whose phase comes from the raw loop clock is
+  correct for ONE entity and wrong for N — every instance moves on the same frame.
+  The population reads as a machine, and **the defect is invisible while testing
+  with a single entity** (PHILOSOPHY #31: cardinality is a state that does not look
+  like one). This is not a polish issue; it is a modelling one.
+- **Concrete Rule**: any per-frame loop (ping, breathe, pulse, flow, drift) takes a
+  per-entity `phase ∈ [0,1)` from `MapVisualMath.phaseFor(entityId)`. Seed it from
+  the entity **id** only: geometry-seeded phases jump on every drag frame and
+  name-seeded phases jump on rename. Views never mint an id — `SceneService` owns
+  it and passes it to the view constructor.
+- **Also**: variance that must not accumulate belongs on POSITION, not on speed.
+  Per-item speed offsets integrate, so an evenly spaced convoy bunches into one
+  clump after ~30 s (Route beads did exactly this); a bounded positional wobble
+  keeps the average spacing even forever.
+- **Root bug** (2026-07-25): four Hubs pinged in perfect unison, every Zone breathed
+  in the same direction, and both linear ramps (`1 + phase*3`, `1 - phase`) came
+  straight from ADR-031 §8 — the map looked three implementation generations behind
+  the rest of the app, which is exactly what it was.
+
+## Animated Views Must Consult the One Reduced-Motion Boundary
+
+- **Principle**: `src/theme/motion.test.js` pins `matchMedia` to a single file, so a
+  view that simply never asks about the preference passes every check while ignoring
+  it — the grep guard catches a second READER, not a missing one. Three annotation
+  views animated unconditionally for three months for this reason.
+- **Concrete Rule**: a view with a `tick(t)` that changes appearance over time reads
+  `prefersReducedMotion()` at construction AND subscribes with
+  `onReducedMotionChange` (a mid-session OS toggle must land without a reload), then
+  passes `reduced` into its pure math module. Unsubscribe in `dispose()` (#9).
+  Reduced motion renders a HELD frame, never a blank one — parked ring, frozen
+  hatch, mid-band fill (#11/#30).
+- **Where it is asked**: pure frame functions take `reduced` as a parameter, and the
+  module's test enumerates its own exports against a registration table — a new
+  frame function without a static branch fails the suite (`MapVisualMath.test.js`).
+
+## Module-Owned Decal Textures Are Deliberately Not Disposed
+
+- **Principle**: canvas-generated sprite textures (radial glow, hatch) are program
+  constants, like a font. Caching them per colour and letting several views share
+  one instance is correct; disposing one from a view's `dispose()` then blanks
+  another live view's glow.
+- **Concrete Rule** (`src/view/DecalTextures.js`): `radialSprite(hex)` is
+  module-owned and cached — callers must NOT dispose it (the cache is bounded by the
+  number of distinct colours drawn). `hatchTexture()` returns a caller-owned clone
+  (its own `repeat`/`offset`, sharing the base's GPU upload via `Texture.source`) and
+  MUST be disposed by its owner. A texture with per-entity `repeat`/`offset` can
+  never be shared; one without per-entity state should never be cloned — the two
+  function names encode that split so a call site cannot pick the wrong lifetime.
+
 ## ImportedMesh Serialization: Base64 Typed Arrays + Position Offset
 
 - **Principle**: Raw Float32/Uint32 buffers cannot be stored directly in JSON. Base64 encoding is used so geometry survives round-trip through the BFF DB without loss.
