@@ -23,8 +23,12 @@ ADR を Supersede したとき。対象の絞り込み: $ARGUMENTS
    python3 $TOOL lint  <見つかった全ファイル>
    python3 $TOOL stats <見つかった全ファイル>
    ```
-   lint エラーは他の何より先に直す(壊れた論証木は保守できない)。
-   stats の evidence debt(ToBeDeveloped 率)と stale(ToBeReviewed)件数を控える。
+   lint エラーは他の何より先に直す(壊れた論証木は保守できない)。CI の `pnpm test:gsn`
+   が同じ lint を回しているので、ここでエラーが出るなら gate も赤い。
+   stats は 2 つの数を出す — evidence debt(ToBeDeveloped 率)と stale(ToBeReviewed)件数、
+   そして **未探索/探索中の内訳**。後者が本コマンドの作業量そのもの:
+   `support-exploring` は「名指しされた検査を走らせれば閉じる枝」、
+   `support-unexplored` は「何を走らせるか決める段から要る枝」で、手順 3 の対象は前者のみ。
 
 2. **鮮度判定.** 各 `.gsn` の Solution ノードは `summary` にコマンド、末尾に
    `(commit <hash>, <date>)` を刻んでいる(verification-mode の規約)。
@@ -38,6 +42,9 @@ ADR を Supersede したとき。対象の絞り込み: $ARGUMENTS
    - summary に刻まれたコマンドをそのまま実行し、決定的な出力(件数・exit code・数値)を捕捉。
    - **合格:** summary の刻印を現コミット・今日の日付に更新、親 goal を `Approved` に。
      Assumption が実証拠に昇格できるなら `assumption` → `solution` に置換(§1.2 の成熟)。
+     置換した goal は支えを得たので **`labels support-exploring` を外す**(支えの宣言は
+     不在の宣言なので、支えが実在した時点で矛盾になる — lint がエラーで教える)。
+     solution の `artifacts` に書いたパスは repo ルート相対で**実在必須**(lint がエラー)。
    - **不合格:** これは *発見* であり隠さない。親 goal を `Disapproved` にし、
      対応する ADR の再検討(Supersede 候補)としてレポートに載せる。
    - **実行不能:** 理由を assumption の summary に追記し `ToBeDeveloped` を維持。
@@ -62,3 +69,7 @@ ADR を Supersede したとき。対象の絞り込み: $ARGUMENTS
 - 実行していない検査を fresh に塗り替えない(証拠なき完了禁止)。
 - 失敗した証拠を握りつぶして `Approved` を維持しない(暗黙の冗長=現実との乖離)。
 - 変更が無い枝の全再実行で時間を溶かさない(過剰モデリング禁止の実行版)。
+- **`support-unexplored` を黙って `support-exploring` に格上げしない。** 検査を名指しする
+  assumption を実際に書いた時だけ格上げできる(lint が assumption 0 本の exploring を
+  エラーにするのはこのため)。逆に、埋まらない枝を消して木を綺麗にするのも禁止 —
+  空枝は既知の欠落であり、消せば 0 は再び「見えないから無い」に戻る。

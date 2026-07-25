@@ -166,6 +166,9 @@ server/tests/data/*.STP
 core/.venv/
 core/**/__pycache__/
 core/**/*.pyc
+# .claude/ のツール (gsn_tool.py 等) を import したときの副産物
+**/__pycache__/
+*.pyc
 core/.pytest_cache/
 
 # scratch/reference material, not part of the app

@@ -78,6 +78,7 @@ labels meta-goal
                         uuid 23970575-7cb6-46aa-8287-247e36d4b358
                         summary "0 入力の時点で妥当な成果物が存在する: validator がエラー 0 で通り、checks が非空の結果を返し、3D が描画されている"
                         state ToBeDeveloped
+                        labels support-exploring
 
                             assumption ZeroInputPlanned
                             uuid f78e8ea9-b6a5-4573-a7df-c93041989cff
@@ -87,6 +88,7 @@ labels meta-goal
                         uuid 61514d04-2b09-46d9-8efc-559a33ad45ed
                         summary "訂正されていない既定値の残余が件数として可視であり、既定のまま提出できる静かな失敗が告知される"
                         state ToBeDeveloped
+                        labels support-exploring
 
                             assumption PristineCountPlanned
                             uuid 781e07f8-9711-4e8a-98fa-4a8f63e4dfca
@@ -96,6 +98,7 @@ labels meta-goal
                         uuid b79c4165-5663-4006-bc22-7416f548986d
                         summary "doc 内の同一性 (ref) の命名がユーザに要求されず、採番の単一所有者から鋳造される"
                         state ToBeDeveloped
+                        labels support-exploring
 
                             assumption MintRefPlanned
                             uuid fb7b5107-73ab-4662-baf9-d09c593bbc5f
@@ -127,6 +130,7 @@ labels meta-goal
                         uuid 9c3a827f-683a-4c02-bf38-2664af6e1870
                         summary "探索中の詰まりと獲得値が、後続セッションと突き合わせ可能な固定様式で記録される"
                         state ToBeDeveloped
+                        labels support-exploring
 
                             assumption FeedbackLedgerPlanned
                             uuid 22e5b511-8137-4c83-9397-a2b494d0c87e
@@ -136,6 +140,7 @@ labels meta-goal
                         uuid f10648c6-15b4-408a-9d54-0bf6f4b008ff
                         summary "記録された詰まりと獲得値が、次イテレーションで既定文書と ADR-091 の改稿に反映される"
                         state ToBeDeveloped
+                        labels support-exploring
 
                             assumption IterationPlanned
                             uuid df5b25c2-28e7-4e31-9cc9-9955f2edbc75
@@ -145,6 +150,7 @@ labels meta-goal
                 uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e
                 summary "コンテキスト入力以外の採用障壁 (価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
                 state ToBeDeveloped
+                labels support-unexplored
 
                     assumption AdoptionBranchesUnexplored
                     uuid d126c790-2083-480a-a074-851c18e6ad4b
@@ -164,6 +170,7 @@ labels meta-goal
                 uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16
                 summary "仕様の不確実性が実装前に消費され、実装後の手戻りが最小化されている"
                 state ToBeDeveloped
+                labels support-unexplored
 
                     assumption ReworkEvidenceUnset
                     uuid 877510c8-c8a6-4437-855c-402a6577753b
@@ -173,6 +180,7 @@ labels meta-goal
                 uuid 3bf47205-f6df-4673-aa5f-74523c6a02fb
                 summary "ユーザが自力で価値に到達できるため、問い合わせ由来のサポート工数が最小化されている"
                 state ToBeDeveloped
+                labels support-unexplored
 
                     assumption SupportEvidenceUnset
                     uuid 2eac608c-aed7-4fc4-b5bf-25a865236ecf
@@ -182,6 +190,7 @@ labels meta-goal
                 uuid 9a307994-630b-4ddb-ba6b-a907ed96b23c
                 summary "実行時コスト (計算・ホスティング・外部 API) が最小化されている"
                 state ToBeDeveloped
+                labels support-unexplored
 
                     assumption RunCostEvidenceUnset
                     uuid 81ec7eee-7bc6-4096-8207-66aa438e1519

@@ -31,6 +31,7 @@ artifacts
             uuid 3f6a9c2e-6b1d-4a7f-9e2c-8d4b5f1a7c60
             summary "ADR-084: 手首コーンの基準軸が『base→candidate』の代理ではなく、CoordinateFrame実体化されたTCPの実姿勢 (ROS正準ワールド座標系で解決済み) から導出される。tcp_orientation未宣言時は旧代理軸へフォールバックし既存挙動を無言で変えない"
             state ToBeDeveloped
+            labels support-exploring
             groups adr-084
             artifacts
             - "docs/adr/ADR-084-tcp-oriented-ik-entity-grounded-geometry.md"
@@ -154,6 +155,7 @@ artifacts
             uuid e37e2bc4-d646-4620-b95f-b4fb7c20d554
             summary "H1: 共有設計変数 (カメラ姿勢/基台位置/進入角) 上の同時許容領域の非空判定 (ADR-049 交差機構) が通し検証に組み込まれている"
             state ToBeDeveloped
+            labels support-exploring
 
                 assumption InterDomainDualPlanned
                 uuid 1fd92cc5-dbd7-4460-83d4-7a8adc5886f8
@@ -163,6 +165,7 @@ artifacts
             uuid e43eae24-b3a5-4847-8b86-431444e7bf8f
             summary "H2: 設計時 KPI 予報と運用フォールバック実績のキャリブレーション gap が測定可能である — スイートスポット領域獲得のためのデータ収集 (予報 KPI ベクトル + ユーザ採否 + 運用実績のログ) を一級成果物として含む"
             state ToBeDeveloped
+            labels support-exploring
 
                 assumption ForecastActualPlanned
                 uuid 083b4ff4-b56f-4449-b7f6-185adc694abc
@@ -172,6 +175,7 @@ artifacts
             uuid 1b5aee5d-256f-4ebb-ba2b-fb456c93d301
             summary "スイートスポット領域の学習・提案は propose-only レーン (core/recommendation, ADR-077) に置かれ真偽値を返さない — 合格ラインの決定は明示 criterion (decide) に残る"
             state ToBeDeveloped
+            labels support-exploring
 
                 assumption SweetSpotLanePlanned
                 uuid 32c01a6a-b586-454e-a22a-b591ee46ae95

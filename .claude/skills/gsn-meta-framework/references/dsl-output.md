@@ -41,10 +41,30 @@ summary "..."
 
 ## Optional properties
 
-- `state Approved` — one of `Approved`, `Disapproved`, `UnderReview`, `ToBeReviewed`, `ToBeDeveloped`. Use `ToBeDeveloped` for goals still resting on assumptions.
-- `artifacts` — a list of supporting document paths/URLs, each on a `- "…"` line.
-- `labels safety-critical, automotive` — classification tags.
+- `state Approved` — one of `Approved`, `Disapproved`, `UnderReview`, `ToBeReviewed`, `ToBeDeveloped`. Use `ToBeDeveloped` for goals still resting on assumptions. `state` tracks **freshness of evidence**, not whether support exists at all — see the support labels below.
+- `artifacts` — a list of supporting document paths/URLs, each on a `- "…"` line. Paths are resolved **relative to the repo root** and must exist; the linter errors on a dangling path under a `solution` (a solution asserts the evidence is there) and warns under other node types (a context may cite a document still to be written).
+- `labels safety-critical, automotive` — classification tags. Two values are **reserved and linted** — see below.
 - `groups module-A, phase-1` — grouping.
+
+## Support cardinality — a goal with nothing under it must say so
+
+A goal supported by nothing has no node to inspect. Every check written against the content
+a goal *has* passes it in silence, so an unstarted branch reads exactly like a finished one.
+The linter therefore tests the **zero itself**: a goal must either be supported (≥1 `strategy`,
+`solution`, or sub-`goal`) or carry exactly one reserved label declaring which zero it is.
+
+| Label | Meaning | Requirement | Next action |
+|---|---|---|---|
+| `support-exploring` | 探索中 — the check that would settle this goal is named, but has not run | ≥1 `assumption` child naming it (usually `"証拠予定: …"`) | run or write that check |
+| `support-unexplored` | 未探索 — nothing has been named yet | none | decide what would settle it |
+
+Both are the same `state ToBeDeveloped`, which is why the distinction needs its own field:
+one has a falsifiable next step, the other only an admission. `gsn_tool.py stats` reports the
+split, so "14/15 ToBeDeveloped" resolves into how much is actually in flight.
+
+The labels are declarations of **absence** — the linter errors if one survives on a goal that
+has since gained support, and if `support-exploring` names no assumption ("`support-unexplored`
+wearing a costume").
 
 ## Namespace
 
@@ -127,9 +147,10 @@ state ToBeReviewed
 Run the linter — do not hand-verify what it checks:
 
 ```bash
-python scripts/gsn_tool.py lint <file>.gsn      # indentation, required fields, UUID uniqueness/format
-python scripts/gsn_tool.py stats <file>.gsn     # depth (keep 3–5), fan-out (2–7 per strategy), evidence debt
+python scripts/gsn_tool.py lint <file>.gsn      # required fields, UUIDs, support cardinality, artifact existence
+python scripts/gsn_tool.py stats <file>.gsn     # depth (keep 3–5), fan-out (2–7 per strategy), evidence debt split
 python scripts/gsn_tool.py mermaid <file>.gsn   # optional: diagram for review
+python scripts/gsn_tool.py selftest             # the linter's own fixtures (run after editing gsn_tool.py)
 ```
 
 Fix every error the linter reports, re-run until clean, then present the finished `.gsn` file to the user with `present_files` (or leave it in the repo when working in Claude Code).
