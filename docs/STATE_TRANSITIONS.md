@@ -974,6 +974,51 @@ world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:
 
 ---
 
+## Map annotation motion — entering / idle × urgent × reduced (ADR-093)
+
+Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegionView`) の
+**運動**の状態。台帳の閾値 (3 状態以上) を跨いだので図を起こす。重要なのは
+**1 本の軸に潰さないこと**: ライフサイクル軸 2 状態 × 直交する修飾子 2 つであり、
+4 状態の平坦な集合ではない (平坦化すると `entering` かつ `urgent` のような正当な
+組み合わせが表現不能になる — 不正状態ではなく*正当*状態を消してしまう)。
+
+```
+  ライフサイクル軸 (実体 1 個につき 1)
+
+     construct / setVisible(true)
+            │  _bornAt = null
+            ▼
+     ┌──────────────┐   t - _bornAt ≥ ENTRY_POP (0.28 s)   ┌──────────┐
+     │   entering   │ ────────────────────────────────────▶│   idle   │
+     │ (entry pop)  │                                      │ (loop)   │
+     └──────────────┘                                      └──────────┘
+            ▲                                                   │
+            └───────────────────────────────────────────────────┘
+                       setVisible(true) が再武装 (soft-delete の undo)
+
+  直交する修飾子 (どちらもライフサイクル軸と独立に立つ)
+
+     urgent  ← ドメインの違反アラーム (setTactTimeViolated / setToleranceViolated /
+               setTactViolated / setContainsViolated) — 周期を詰め、色を danger に
+     reduced ← OS 設定 (単一境界 src/theme/motion.js の購読)
+```
+
+- **権威**: 各 view の `tick(t)` が**唯一の書き手**。位相・曲線は純粋
+  `MapVisualMath` が返し、view はそれを scale/opacity へ適用するだけ (原則 #3)。
+  `updateScale()` は基準スケールだけを記録し、アニメーション値は書かない — 書くと
+  同じチャンネルに 2 人の書き手が生まれる (原則 #4)。
+- **基数が本体の状態**: 実体は `0..N`。0 = 空のマップ (tick される view が無い) は
+  正当。**N が問題の所在**で、位相が全個体で同一だと「全部が同時に動く」
+  = lockstep になる。これは 1 個で試すと**絶対に見えない** (原則 #31)。位相は
+  `phaseFor(entityId)` で同一性から導くので、実体が増えるほど散る。
+- **禁止**: 幾何 (位置) や名前から位相を導くこと。ドラッグ中/リネーム時に位相が
+  飛び、アイドルが痙攣する。id だけが安定同一性であり所有者は `SceneService`。
+- **`reduced` は情報を落とさない**: パークしたリング・凍結ハッチ・中間帯の fill・
+  停止した bead が残る (原則 #11/#30)。「動きを止める」が「見えなくする」に
+  退化しないことは `MapVisualMath.test.js` が全 export について機械で検査する。
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow
@@ -985,6 +1030,7 @@ world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:
 - **ADR-030**: SpatialLink — typed semantic edges; `L` key two-phase creation flow
 - **ADR-031**: Map Mode interaction model — `drawState`, PC vs Mobile platform split (ADR-073 collapsed the FSM to two states: immediate creation, no name form)
 - **ADR-037**: Body Frame Architecture — Origin CF created atomically with Solid; TC proxy follows Origin CF world pose
+- **ADR-093**: Map annotation motion — per-entity animation phase from the entity id (population lockstep is a cardinality defect, #31); ADR-031 §8 replaced
 - **ADR-090**: Robot roster — identity moved from the magic name to the entity (`robotRole`), 0/1/N cardinality as an explicit state, grasp gated on a resolved robot
 
 ---

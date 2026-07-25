@@ -3,12 +3,25 @@
  *
  * Renders:
  *  - A flat circle mesh (CylinderGeometry, low height) in place-type color; grey when unclassified
+ *  - An additive ground halo (glow pool) sharing the stage's sprite recipe
  *  - An HTML label showing the point name, positioned above the mesh
  *  - A BoxHelper for selection highlight
  *
- * Animations (called via tick(t) each frame):
- *  - Hub:    sonar-ping ring expands and fades every 2 s (beacon / junction feel)
- *  - Anchor: crosshair pulse — 4 line segments (±X, ±Y) scale 1.0×→1.3×, 4 s sine (ADR-031 §8)
+ * Animations — all curves live in `MapVisualMath` (pure, tested); this view only
+ * applies them (ADR-093 replaces the ADR-031 §8 parameters):
+ *  - Hub:    a TRAIN of two sonar rings, eased outward (easeOutCubic distance
+ *            against a cubic alpha tail — brightest while small) on a per-entity
+ *            phase, over a breathing core and halo: a broadcasting junction,
+ *            not a metronome.
+ *  - Anchor: a graduated survey crosshair (arms + tick marks + a 45° datum
+ *            square) that HOLDS still and is periodically re-seated with a short
+ *            overshoot — "pinned in place" asserted by stillness.
+ *  - Both:   an easeOutBack entry pop on the first frames of existence.
+ *
+ * Reduced motion: every part stays visible at a held frame (a parked ring, a
+ * still crosshair, a steady halo) — information preserved, movement dropped
+ * (PHILOSOPHY #30/#11). The preference is read from the ONE boundary
+ * (`src/theme/motion.js`) and re-read live via `onReducedMotionChange`.
  *
  * Exposes the same minimal no-op interface as MeasureLineView / ImportedMeshView
  * so AppController's setMode() and mode-agnostic calls are safe.
@@ -16,16 +29,25 @@
  * Note: no `cuboid` property — AnnotatedPoint is excluded from raycasting.
  * Move support: updateGeometry([position]) refreshes point position.
  *
- * @see ADR-029, ADR-031
+ * @see ADR-029, ADR-031, ADR-093
  */
 import * as THREE from 'three'
 import { getPlaceTypeEntry } from '../domain/PlaceTypeRegistry.js'
+import { prefersReducedMotion, onReducedMotionChange } from '../theme/motion.js'
+import { radialSprite } from './DecalTextures.js'
+import {
+  phaseFor, entryFrame, hubPingFrame, hubCoreFrame, anchorFrame, HUB_PING_RINGS,
+} from './MapVisualMath.js'
 
 const DEFAULT_COLOR     = 0x888888
 const MARKER_RADIUS     = 0.25
 const MARKER_HEIGHT     = 0.04
 const CROSSHAIR_LEN     = 0.45   // half-length; extends beyond MARKER_RADIUS so arms are visible outside the dot
 const CROSSHAIR_OPACITY = 0.90   // high opacity for contrast against colored marker
+const TICK_AT           = 0.62   // graduation tick position along each crosshair arm (fraction of CROSSHAIR_LEN)
+const TICK_HALF         = 0.11   // graduation tick half-width (world units at scale 1)
+const DATUM_HALF        = 0.17   // half-diagonal of the 45° datum square around the dot
+const HALO_RADIUS       = MARKER_RADIUS * 2.0
 
 export class AnnotatedPointView {
   /**
@@ -36,12 +58,20 @@ export class AnnotatedPointView {
    * @param {THREE.Vector3} point       anchor position
    * @param {string}        name        entity name (shown in label)
    * @param {string|null}   placeType   'Hub' | 'Anchor' | null
+   * @param {string|null}   [entityId]  owning entity id — the ONLY source of the
+   *   per-entity animation phase (ADR-093). Omitted → phase 0, i.e. the
+   *   single-entity look; `SceneService` passes the real id at every call site.
    */
-  constructor(scene, camera, container, renderer, point, name, placeType) {
+  constructor(scene, camera, container, renderer, point, name, placeType, entityId = null) {
     this._scene    = scene
     this._camera   = camera
     this._renderer = renderer
     this._placeType = placeType
+    // Per-entity phase: the fix for population lockstep (PHILOSOPHY #31).
+    this._phase   = phaseFor(entityId)
+    this._reduced = prefersReducedMotion()
+    this._unsubReduced = onReducedMotionChange(r => { this._reduced = r })
+    this._bornAt  = null          // loop-clock seconds at the first tick
 
     // ── Circle marker mesh ─────────────────────────────────────────────────
     this._geo = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 16)
@@ -89,25 +119,59 @@ export class AnnotatedPointView {
     this._ring.renderOrder = 3
     scene.add(this._ring)
 
-    // ── Sonar-ping ring (Hub animation) ───────────────────────────────────
-    // Expands from the marker outward and fades, giving a "broadcasting node" feel.
-    // For non-Hub types the ring stays invisible (opacity: 0).
-    this._sonarGeo = new THREE.RingGeometry(MARKER_RADIUS * 0.85, MARKER_RADIUS, 16)
-    this._sonarMat = new THREE.MeshBasicMaterial({
+    // ── Ground halo (additive glow pool) ───────────────────────────────────
+    // Ties the marker to the stage's own accent glow so a map annotation reads
+    // as LIT BY the scene rather than pasted onto it (PHILOSOPHY #7). Additive +
+    // depthWrite:false + polygonOffset, same ground-decal rules as the rings.
+    // The sprite is white and tinted here, so one cached texture serves every
+    // place-type colour (DecalTextures ownership note).
+    this._haloMat = new THREE.MeshBasicMaterial({
+      map:                radialSprite('#ffffff'),
       color:              this._colorForType(placeType),
-      depthTest:          true,
-      depthWrite:         false,
       transparent:        true,
       opacity:            0,
+      depthTest:          true,
+      depthWrite:         false,
+      blending:           THREE.AdditiveBlending,
       side:               THREE.DoubleSide,
       polygonOffset:      true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -4,
+      fog:                false,
     })
-    this._sonarRing = new THREE.Mesh(this._sonarGeo, this._sonarMat)
-    this._sonarRing.position.copy(point)
-    this._sonarRing.renderOrder = 4
-    scene.add(this._sonarRing)
+    this._haloGeo = new THREE.PlaneGeometry(HALO_RADIUS * 2, HALO_RADIUS * 2)
+    this._halo = new THREE.Mesh(this._haloGeo, this._haloMat)
+    this._halo.position.copy(point)
+    this._halo.renderOrder = 1     // under the disc (2) and the rings (3/4)
+    scene.add(this._halo)
+
+    // ── Sonar-ping rings (Hub animation) ──────────────────────────────────
+    // A TRAIN of `HUB_PING_RINGS` rings spaced evenly through the cycle: one
+    // ring per period reads as a tick, several as an emission. They share one
+    // geometry and each owns a material (independent per-ring opacity).
+    // For non-Hub types they stay invisible (opacity 0 written every frame).
+    this._sonarGeo = new THREE.RingGeometry(MARKER_RADIUS * 0.94, MARKER_RADIUS, 48)
+    /** @type {Array<{mesh: THREE.Mesh, mat: THREE.MeshBasicMaterial}>} */
+    this._sonarRings = []
+    for (let i = 0; i < HUB_PING_RINGS; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color:              this._colorForType(placeType),
+        depthTest:          true,
+        depthWrite:         false,
+        transparent:        true,
+        opacity:            0,
+        side:               THREE.DoubleSide,
+        blending:           THREE.AdditiveBlending, // rings glow where they cross
+        polygonOffset:      true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -4,
+      })
+      const mesh = new THREE.Mesh(this._sonarGeo, mat)
+      mesh.position.copy(point)
+      mesh.renderOrder = 4
+      scene.add(mesh)
+      this._sonarRings.push({ mesh, mat })
+    }
 
     // ── Anchor crosshair (ADR-031 §8) ──────────────────────────────────────
     // 4 line segments radiating from the central dot (±X, ±Y, length CROSSHAIR_LEN).
@@ -135,6 +199,42 @@ export class AnnotatedPointView {
     this._crosshairs.renderOrder = 4
     this._crosshairs.visible = false   // shown only for Anchor
     scene.add(this._crosshairs)
+
+    // ── Anchor graduation (ADR-093) ─────────────────────────────────────────
+    // What turns four bare arms into a SURVEY MARK: a graduation tick across
+    // each arm plus a 45° datum square around the dot. Drafting detail is the
+    // cheapest richness available at this size — it costs 8 line segments and
+    // survives reduced motion untouched (it is information, not movement).
+    // Separate object from the arms because its opacity animates independently
+    // (one material = one opacity — the same constraint LandingEffects works
+    // around with per-instance scale).
+    const tx = TICK_AT * L
+    const datumPositions = new Float32Array([
+      // graduation ticks, perpendicular to each arm
+       tx, -TICK_HALF, 0,   tx,  TICK_HALF, 0,
+      -tx, -TICK_HALF, 0,  -tx,  TICK_HALF, 0,
+      -TICK_HALF,  tx, 0,   TICK_HALF,  tx, 0,
+      -TICK_HALF, -tx, 0,   TICK_HALF, -tx, 0,
+      // 45° datum square (diamond) around the centre dot
+       DATUM_HALF, 0, 0,  0,  DATUM_HALF, 0,
+       0,  DATUM_HALF, 0, -DATUM_HALF, 0, 0,
+      -DATUM_HALF, 0, 0,  0, -DATUM_HALF, 0,
+       0, -DATUM_HALF, 0,  DATUM_HALF, 0, 0,
+    ])
+    const datumGeo = new THREE.BufferGeometry()
+    datumGeo.setAttribute('position', new THREE.Float32BufferAttribute(datumPositions, 3))
+    this._datumMat = new THREE.LineBasicMaterial({
+      color:       0xffffff,
+      depthTest:   true,
+      depthWrite:  false,
+      transparent: true,
+      opacity:     0.75,
+    })
+    this._datum = new THREE.LineSegments(datumGeo, this._datumMat)
+    this._datum.position.copy(point)
+    this._datum.renderOrder = 4
+    this._datum.visible = false        // shown only for Anchor
+    scene.add(this._datum)
 
     // ── BoxHelper ──────────────────────────────────────────────────────────
     this.boxHelper = new THREE.BoxHelper(this._mesh, 0xffffff)
@@ -188,8 +288,12 @@ export class AnnotatedPointView {
     const lift = this._point ? MARKER_HEIGHT * this._viewScale * 1.05 : 0
     const z = (this._point?.z ?? 0) + lift
     this._ring.position.z       = z
-    this._sonarRing.position.z  = z
     this._crosshairs.position.z = z
+    this._datum.position.z      = z
+    for (const r of this._sonarRings) r.mesh.position.z = z
+    // The halo sits just BELOW the overlay parts (it is a floor pool, not a
+    // decal on the disc) but still above z=0 so it never fights the grid.
+    this._halo.position.z = (this._point?.z ?? 0) + lift * 0.35
   }
 
   // ── Geometry ───────────────────────────────────────────────────────────────
@@ -202,8 +306,10 @@ export class AnnotatedPointView {
     this._point.copy(point)
     this._mesh.position.copy(point)
     this._ring.position.copy(point)
-    this._sonarRing.position.copy(point)
     this._crosshairs.position.copy(point)
+    this._datum.position.copy(point)
+    this._halo.position.copy(point)
+    for (const r of this._sonarRings) r.mesh.position.copy(point)
     this._applyLift()
     if (this.boxHelper.visible) this.boxHelper.update()
   }
@@ -220,19 +326,19 @@ export class AnnotatedPointView {
    * @param {string|null} placeType
    */
   _applyPlaceTypeVisuals(placeType) {
-    if (placeType === 'Anchor') {
-      this._crosshairs.visible = true
-      this._sonarMat.opacity   = 0
-      this._ringMat.opacity    = 0.40   // subtle constant outline for Anchor
-    } else if (placeType === 'Hub') {
-      this._crosshairs.visible = false
-      this._ringMat.opacity    = 0.6
+    const isAnchor = placeType === 'Anchor'
+    this._crosshairs.visible = isAnchor
+    this._datum.visible      = isAnchor
+    if (isAnchor) {
+      this._ringMat.opacity = 0.40   // subtle constant outline for Anchor
+      for (const r of this._sonarRings) r.mat.opacity = 0
     } else {
-      this._crosshairs.visible = false
-      this._ringMat.opacity    = 0.6
+      this._ringMat.opacity = 0.6
     }
     // Reset crosshair scale so pulse starts from 1.0× (in view-scale units)
-    this._crosshairs.scale.setScalar(this._viewScale ?? 1)
+    const s = this._viewScale ?? 1
+    this._crosshairs.scale.setScalar(s)
+    this._datum.scale.setScalar(s)
   }
 
   /**
@@ -257,12 +363,17 @@ export class AnnotatedPointView {
     const s = worldRadius / MARKER_RADIUS
     if (Math.abs(s - this._viewScale) < 1e-6) return
     this._viewScale = s
-    this._mesh.scale.setScalar(s)
+    // Every animated scale is recomposed by `tick()` from `_viewScale` × the
+    // entry pop × the per-type animation, so this method only records the base
+    // and fixes the parts tick() does not own. Writing an animated scale here
+    // too would give it two writers (PHILOSOPHY #4).
     this._ring.scale.setScalar(s)
-    // Sonar / crosshair scales are recomposed by tick(); keep them in range for
-    // non-animated place types so a static frame never shows a stale size.
-    this._sonarRing.scale.setScalar(s)
-    if (this._placeType !== 'Anchor') this._crosshairs.scale.setScalar(s)
+    this._mesh.scale.setScalar(s)
+    for (const r of this._sonarRings) r.mesh.scale.setScalar(s)
+    if (this._placeType !== 'Anchor') {
+      this._crosshairs.scale.setScalar(s)
+      this._datum.scale.setScalar(s)
+    }
     this._applyLift()
     if (this.boxHelper.visible) this.boxHelper.update()
   }
@@ -275,24 +386,50 @@ export class AnnotatedPointView {
    */
   tick(t) {
     if (!this._mesh.visible) return
+    if (this._bornAt === null) this._bornAt = t
+    const reduced = this._reduced
+    const phase   = this._phase
+    const vs      = this._viewScale
+    // Entry pop: the boundary moment "this annotation now exists" (P4). Rides
+    // every scale below, so the whole marker arrives as one object.
+    const entry = entryFrame(t, this._bornAt, reduced)
+    const base  = vs * entry.scale
+
+    this._mesh.scale.setScalar(base)
+    this._ring.scale.setScalar(base)
+    this._ringMat.opacity = (this._placeType === 'Anchor' ? 0.40 : 0.6) * entry.opacity
+    this._mat.opacity = entry.opacity
+
     if (this._placeType === 'Hub') {
-      // Sonar ping: ring expands 1× → 4× and fades over a 2 s cycle normally.
-      // When tact-time is violated: faster period (0.6 s) and higher peak opacity.
-      const period = this._tactViolated ? 0.6 : 2.0
-      const phase  = (t % period) / period
-      this._sonarRing.scale.setScalar((1 + phase * 3) * this._viewScale)
-      this._sonarMat.opacity = (1 - phase) * (this._tactViolated ? 0.9 : 0.65)
-      // Outline ring: steady
-      this._ringMat.opacity = 0.6
+      const urgent = this._tactViolated
+      // Core breathe + halo swell: the marker itself is never perfectly still.
+      const core = hubCoreFrame(t, phase, { urgent, reduced })
+      this._mesh.scale.setScalar(base * core.scale)
+      this._halo.scale.setScalar(base * core.haloScale)
+      this._haloMat.opacity = core.haloOpacity * entry.opacity
+      // The ring train: eased distance, quadratic alpha tail, per-ring offset.
+      for (let i = 0; i < this._sonarRings.length; i++) {
+        const f = hubPingFrame(t, phase, i, { urgent, reduced })
+        this._sonarRings[i].mesh.scale.setScalar(f.scale * base)
+        this._sonarRings[i].mat.opacity = f.opacity * entry.opacity
+      }
     } else if (this._placeType === 'Anchor') {
-      // Crosshair pulse: scale 1.0×→1.3×. Normal = 4 s calm; violated = 1 s urgent.
-      // Conveys "pinned in place" (ADR-031 §8); urgency when tolerance exceeded (ADR-043 §4).
-      const freq  = this._toleranceViolated ? 2.0 : 0.5   // radians/s → 1 s or 4 s period
-      const scale = 1.0 + 0.30 * (Math.sin(t * Math.PI * freq) * 0.5 + 0.5)
-      this._crosshairs.scale.setScalar(scale * this._viewScale)
-      this._sonarMat.opacity = 0
+      const urgent = this._toleranceViolated
+      const f = anchorFrame(t, phase, { urgent, reduced })
+      this._crosshairs.scale.setScalar(f.scale * base)
+      this._datum.scale.setScalar(f.scale * base)
+      this._crosshairMat.opacity = CROSSHAIR_OPACITY * entry.opacity
+      this._datumMat.opacity     = f.tickOpacity * entry.opacity
+      this._halo.scale.setScalar(base)
+      this._haloMat.opacity = f.haloOpacity * entry.opacity
+      for (const r of this._sonarRings) r.mat.opacity = 0
     } else {
-      this._sonarMat.opacity = 0
+      // Unclassified: no type claim to assert, so no Tier A motion — but not a
+      // dead frame either (品質ゲート5). A faint steady halo keeps it present,
+      // and the entry pop still plays.
+      this._halo.scale.setScalar(base)
+      this._haloMat.opacity = 0.12 * entry.opacity
+      for (const r of this._sonarRings) r.mat.opacity = 0
     }
   }
 
@@ -354,13 +491,14 @@ export class AnnotatedPointView {
     const hex = this._colorForType(placeType)
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
-    this._sonarMat.color.setHex(hex)
+    this._haloMat.color.setHex(hex)
+    for (const r of this._sonarRings) r.mat.color.setHex(hex)
     // Crosshair stays white for contrast — do not tint with place-type color
     this.boxHelper.material?.color.setHex(hex)
     const hexStr = hex.toString(16).padStart(6, '0')
     this._label.style.borderLeft = `3px solid #${hexStr}`
     // Reset sonar scale so the ping animation restarts cleanly from the new type
-    this._sonarRing.scale.setScalar(this._viewScale)
+    for (const r of this._sonarRings) r.mesh.scale.setScalar(this._viewScale)
     if (name) {
       this._name = name
       this._label.textContent = name
@@ -377,12 +515,18 @@ export class AnnotatedPointView {
   // ── Visual state ───────────────────────────────────────────────────────────
 
   setVisible(visible) {
-    this._mesh.visible      = visible
-    this._ring.visible      = visible
-    this._sonarRing.visible = visible
+    this._mesh.visible = visible
+    this._ring.visible = visible
+    this._halo.visible = visible
+    for (const r of this._sonarRings) r.mesh.visible = visible
     this._crosshairs.visible = visible && this._placeType === 'Anchor'
+    this._datum.visible      = visible && this._placeType === 'Anchor'
     this._label.style.display = visible ? 'block' : 'none'
     if (!visible) this.boxHelper.visible = false
+    // A re-shown annotation (undo of a soft delete) replays its entry pop: the
+    // reappearance is a boundary moment too, and re-arming here keeps the pop
+    // owned by one place (#4) instead of duplicated at the undo call site.
+    if (visible) this._bornAt = null
   }
 
   setObjectSelected(sel) {
@@ -401,8 +545,9 @@ export class AnnotatedPointView {
     this._tactViolated = violated
     const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
     this._mat.color.setHex(hex)
-    this._sonarMat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
+    this._haloMat.color.setHex(hex)
+    for (const r of this._sonarRings) r.mat.color.setHex(hex)
     this.boxHelper.material?.color.setHex(hex)
   }
 
@@ -423,7 +568,9 @@ export class AnnotatedPointView {
     const hex = violated ? 0xEF4444 : this._colorForType(this._placeType)
     this._mat.color.setHex(hex)
     this._ringMat.color.setHex(hex)
+    this._haloMat.color.setHex(hex)
     this._crosshairMat.color.setHex(violated ? 0xEF4444 : 0xffffff)
+    this._datumMat.color.setHex(violated ? 0xEF4444 : 0xffffff)
     this.boxHelper.material?.color.setHex(violated ? 0xEF4444 : 0xffffff)
     // Dispose bridge line when clearing violation.
     if (!violated && this._bridgeLine) {
@@ -487,10 +634,13 @@ export class AnnotatedPointView {
    * @param {THREE.Scene} scene
    */
   dispose(scene) {
+    this._unsubReduced()
     scene.remove(this._mesh)
     scene.remove(this._ring)
-    scene.remove(this._sonarRing)
+    scene.remove(this._halo)
+    for (const r of this._sonarRings) scene.remove(r.mesh)
     scene.remove(this._crosshairs)
+    scene.remove(this._datum)
     scene.remove(this.boxHelper)
     if (this._bridgeLine) {
       scene.remove(this._bridgeLine)
@@ -502,10 +652,15 @@ export class AnnotatedPointView {
     this._mat.dispose()
     this._ringGeo.dispose()
     this._ringMat.dispose()
-    this._sonarGeo.dispose()
-    this._sonarMat.dispose()
+    this._sonarGeo.dispose()                 // shared by every ring in the train
+    for (const r of this._sonarRings) r.mat.dispose()
+    this._sonarRings = []
+    this._haloGeo.dispose()
+    this._haloMat.dispose()                  // the sprite map is module-owned (DecalTextures)
     this._crosshairs.geometry.dispose()
     this._crosshairMat.dispose()
+    this._datum.geometry.dispose()
+    this._datumMat.dispose()
     this._label.remove()
   }
 }

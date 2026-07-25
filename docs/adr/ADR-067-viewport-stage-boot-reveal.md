@@ -128,3 +128,7 @@
 - **黒箱**: OrbitControls の入出力契約(position 手動書き + `update()` の恒等性)は
   fitCameraToSphere が既に依存している既知の性質のみ利用。外部書込みは
   ガードで検出し譲る(カメラの権威は常に「最後に意図を持って書いた者」)。
+
+## References
+
+- ADR-093(Map 注釈の視覚言語)— 本 ADR の radial sprite レシピを `src/view/DecalTextures.js` へ一本化し、Map 注釈のグロー(halo)と共有した。舞台と注釈のグローが同じ源から出るのは #7(文脈の同時設計)の要件。

@@ -42,7 +42,7 @@ This directory records the project's design decisions.
 | [ADR-028](ADR-028-anchored-annotations-scene-graph.md) | **Anchored Annotations & Scene Graph API** | Accepted | 2026-04-06 | ADR-012, ADR-016, ADR-018, ADR-019, ADR-021 |
 | [ADR-029](ADR-029-spatial-annotation-system.md) | **Spatial Annotation System — AnnotatedLine/Region/Point with Place Types** | Accepted | 2026-04-08 | ADR-020, ADR-021, ADR-022, ADR-025, ADR-013, ADR-028 |
 | [ADR-030](ADR-030-spatial-link.md) | **SpatialLink — Typed Semantic Edges Between Annotated Elements** | Accepted | 2026-04-09 | ADR-029, ADR-028, ADR-013, ADR-020, ADR-022 |
-| [ADR-031](ADR-031-map-mode-interaction-model.md) | **Map Mode Interaction Model & Visual Language** | Accepted | 2026-04-11 | ADR-023, ADR-024, ADR-029, ADR-006 |
+| [ADR-031](ADR-031-map-mode-interaction-model.md) | **Map Mode Interaction Model & Visual Language** | Partially superseded by ADR-093 (§8 Animations のみ; §1-§7 は Accepted) | 2026-04-11 | ADR-023, ADR-024, ADR-029, ADR-006 |
 | [ADR-032](ADR-032-geometric-host-binding.md) | **Geometric Host Binding — Map Elements Mounted on Scene Objects** | Accepted | 2026-04-13 | ADR-029, ADR-030, ADR-016, ADR-018, ADR-019 |
 | [ADR-033](ADR-033-coordinate-frame-phase-c.md) | **CoordinateFrame Phase C — Interface Contract Model** | Accepted | 2026-04-15 | ADR-018, ADR-019, ADR-032, ADR-030 |
 | [ADR-034](ADR-034-coordinate-frame-placement-policy.md) | **CoordinateFrame Placement and Pose Policy** | Accepted | 2026-04-20 | ADR-033, ADR-032, ADR-030, ADR-018, ADR-019 |
@@ -104,6 +104,7 @@ This directory records the project's design decisions.
 | [ADR-090](ADR-090-robot-identity-multi-robot-zero-robot-state.md) | **ロボットの同一性を名前から実体へ — 複数台の受け入れ、0 台を一級の状態に、grasp は選択された 1 台で解く (契約は不動)** | Accepted (実装済) | 2026-07-25 | ADR-084, ADR-087, ADR-060, ADR-082 |
 | [ADR-091](ADR-091-default-doc-first-intake-system-owned-refs.md) | **入力の起点を「白紙からの生成」から「既定値入り完成文書の訂正」へ — ref をシステム所有にする** | Proposed | 2026-07-25 | ADR-063, ADR-058, ADR-051, ADR-050, ADR-089, ADR-090 |
 | [ADR-092](ADR-092-prompt-dilution-commit-observability.md) | **常時ロードから一般モデル挙動の写しを外し、観測はプロンプトではなくコミットに刻む (−42.4%、Task-Class は決定的導出)** | Accepted (実装済) | 2026-07-25 | ADR-082, ADR-086 |
+| [ADR-093](ADR-093-map-annotation-visual-language-per-entity-phase.md) | **Map 注釈の視覚言語を刷新 — アニメーション位相を実体の同一性から導き「基数 N の lockstep」を構造で消す** | Accepted (実装済) | 2026-07-25 | ADR-031, ADR-029, ADR-065, ADR-066, ADR-067, ADR-072, ADR-043 |
 
 ## How to Add a New ADR
 

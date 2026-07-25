@@ -758,7 +758,7 @@ no row, so every check written by walking what is present passes over it in sile
 empty case is therefore not merely unhandled; it is *invisible*, and invisibility reads as
 correctness right up until the moment it produces a confident wrong answer.
 
-Two manifestations in this repo, in unrelated layers:
+Three manifestations in this repo, in unrelated layers:
 
 - **Zero robots became one phantom robot (ADR-090, `core/…/engine/pipeline.py`).** When a
   scene declares no robot frames the front omits the `robot` key entirely, and the solver
@@ -776,6 +776,16 @@ Two manifestations in this repo, in unrelated layers:
   0 solution, 0 sub-goal) has no node to iterate, so it produced no finding and rendered
   identically to a fully evidenced one. Thirteen such branches had accumulated across two
   argument trees, in files whose entire purpose is to make the state of an argument legible.
+- **N annotations became one annotation, N times (ADR-093, `src/view/Annotated*View.js`).**
+  Every Map annotation animation derived its phase from the raw loop clock, which is exactly
+  correct for one entity: a Hub pings, a Zone breathes, and it looks alive. Place four Hubs
+  on the map and all four ping on the same frame forever — a population moving in unison
+  reads as a mechanism, and the visual quality the animation was written to deliver inverts.
+  Nothing was unhandled; the cardinality simply never entered the model, and **the defect is
+  invisible in every single-entity test, screenshot, and review.** Cardinality here is not
+  even about zero: it is that "1" and "N" are different worlds, and only one of them was
+  designed for. The fix has the same shape as the others — the phase is derived from the
+  entity's own identity, so being one of N is represented rather than inferred.
 
 The shared root: **a check that inspects present items can never see an absence.** The fix
 in both cases has the same shape — enumerate the *required kinds* and test their count,
@@ -868,4 +878,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
 | 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |
 | 30 | Motion Tier — 動きは事実・能力・歓びを担う (delight tier 2026-07-12) | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
-| 31 | Zero Is a State That Does Not Look Like One (2026-07-25) | Design | State Ledger cardinality column (核 §1.4); GSN support cardinality (`pnpm test:gsn`); absent required declaration rejected not defaulted (ADR-090) |
+| 31 | Zero Is a State That Does Not Look Like One (2026-07-25) | Design | State Ledger cardinality column (核 §1.4); GSN support cardinality (`pnpm test:gsn`); absent required declaration rejected not defaulted (ADR-090); animation phase derived from entity identity so 1-of-N is represented, not inferred (ADR-093, `MapVisualMath.test.js`) |

@@ -1,6 +1,6 @@
 # ADR-031 — Map Mode Interaction Model & Visual Language
 
-**Status:** Accepted (amended by **ADR-073** — the `pending` state was removed)
+**Status:** Partially superseded by ADR-093 (§8 Animations のみ; §1-§7 の相互作用モデルは Accepted。ADR-073 で `pending` 状態は撤去済み)
 **Date:** 2026-04-11
 **References:** ADR-023, ADR-024, ADR-029, ADR-006, ADR-073
 
@@ -165,6 +165,15 @@ The Cancel button is always visible in the Map toolbar while a tool is active (d
 slots are fixed; Cancel occupies a dedicated slot.
 
 ### 8. Animations
+
+> **Superseded by [ADR-093](ADR-093-map-annotation-visual-language-per-entity-phase.md)
+> (2026-07-25).** The parameters below are kept as the historical record of what
+> was decided here; they are no longer what the code does. ADR-093 replaces them
+> because every cycle in this section derives its phase from the RAW loop clock,
+> which is correct for ONE annotation and wrong for N (every Hub pinged on the
+> same frame — PHILOSOPHY #31), and because the ramps are linear. The Boundary
+> "no animation" decision is explicitly reversed there. §1–§7 of this ADR (the
+> interaction model) remain in force.
 
 #### Route (AnnotatedLineView) — Bug Fix
 

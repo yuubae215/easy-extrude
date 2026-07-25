@@ -561,7 +561,7 @@ export class SceneService extends EventEmitter {
       } else if (dto.type === 'AnnotatedLine') {
         const { camera = null, renderer = null, container = document.body } = viewContext
         const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-        const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, dto.name ?? '')
+        const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, dto.name ?? '', dto.id)
         const entity   = AnnotatedLine.fromPoints(dto.id, dto.name, points, meshView)
         entity.description = dto.description ?? ''
         entity.placeType   = dto.placeType   ?? null
@@ -570,7 +570,7 @@ export class SceneService extends EventEmitter {
       } else if (dto.type === 'AnnotatedRegion') {
         const { camera = null, renderer = null, container = document.body } = viewContext
         const points  = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-        const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, dto.name ?? '')
+        const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, dto.name ?? '', dto.id)
         const entity   = AnnotatedRegion.fromPoints(dto.id, dto.name, points, meshView)
         entity.description = dto.description ?? ''
         entity.placeType   = dto.placeType   ?? null
@@ -580,7 +580,7 @@ export class SceneService extends EventEmitter {
         const { camera = null, renderer = null, container = document.body } = viewContext
         const point  = new Vector3(dto.vertex.x, dto.vertex.y, dto.vertex.z)
         const meshView = new AnnotatedPointView(
-          this._threeScene, camera, container, renderer, point, dto.name, dto.placeType ?? null,
+          this._threeScene, camera, container, renderer, point, dto.name, dto.placeType ?? null, dto.id,
         )
         const entity  = AnnotatedPoint.fromPoint(dto.id, dto.name, point, meshView)
         entity.description = dto.description ?? ''
@@ -829,7 +829,7 @@ export class SceneService extends EventEmitter {
       const { camera = null, renderer = null, container = document.body } = viewContext
       const lineName = dto.name ?? 'Line'
       const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-      const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, lineName)
+      const meshView = new AnnotatedLineView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, lineName, newId)
       const entity   = AnnotatedLine.fromPoints(newId, lineName, points, meshView)
       entity.description = dto.description ?? ''
       entity.placeType   = dto.placeType   ?? null
@@ -841,7 +841,7 @@ export class SceneService extends EventEmitter {
       const { camera = null, renderer = null, container = document.body } = viewContext
       const regionName = dto.name ?? 'Region'
       const points   = dto.vertices.map(v => new Vector3(v.x, v.y, v.z))
-      const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, regionName)
+      const meshView = new AnnotatedRegionView(this._threeScene, points, dto.placeType ?? null, renderer, camera, container, regionName, newId)
       const entity   = AnnotatedRegion.fromPoints(newId, regionName, points, meshView)
       entity.description = dto.description ?? ''
       entity.placeType   = dto.placeType   ?? null
@@ -853,7 +853,7 @@ export class SceneService extends EventEmitter {
       const { camera = null, renderer = null, container = document.body } = viewContext
       const point    = new Vector3(dto.vertex.x, dto.vertex.y, dto.vertex.z)
       const meshView = new AnnotatedPointView(
-        this._threeScene, camera, container, renderer, point, dto.name ?? 'Point', dto.placeType ?? null,
+        this._threeScene, camera, container, renderer, point, dto.name ?? 'Point', dto.placeType ?? null, newId,
       )
       const entity   = AnnotatedPoint.fromPoint(newId, dto.name ?? 'Point', point, meshView)
       entity.description = dto.description ?? ''
@@ -2234,7 +2234,7 @@ export class SceneService extends EventEmitter {
     const id      = `annot_line_${Date.now()}`
     const lineName = name ?? 'Line'
     const { camera = null, renderer = null, container = document.body } = viewContext
-    const meshView = new AnnotatedLineView(this._threeScene, points, null, renderer, camera, container, lineName)
+    const meshView = new AnnotatedLineView(this._threeScene, points, null, renderer, camera, container, lineName, id)
     const obj     = AnnotatedLine.fromPoints(id, lineName, points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
@@ -2254,7 +2254,7 @@ export class SceneService extends EventEmitter {
     const id      = `annot_region_${Date.now()}`
     const regionName = name ?? 'Region'
     const { camera = null, renderer = null, container = document.body } = viewContext
-    const meshView = new AnnotatedRegionView(this._threeScene, points, null, renderer, camera, container, regionName)
+    const meshView = new AnnotatedRegionView(this._threeScene, points, null, renderer, camera, container, regionName, id)
     const obj     = AnnotatedRegion.fromPoints(id, regionName, points, meshView)
     this._model.addObject(obj)
     this.emit('objectAdded', obj)
@@ -2274,7 +2274,7 @@ export class SceneService extends EventEmitter {
     const pointName = name ?? 'Point'
     const { camera = null, renderer = null, container = document.body } = viewContext
     const meshView = new AnnotatedPointView(
-      this._threeScene, camera, container, renderer, point, pointName, null,
+      this._threeScene, camera, container, renderer, point, pointName, null, id,
     )
     const obj = AnnotatedPoint.fromPoint(id, pointName, point, meshView)
     this._model.addObject(obj)
