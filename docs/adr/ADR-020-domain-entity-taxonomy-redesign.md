@@ -39,7 +39,7 @@ product.
 
 `CoordinateFrame._worldPos` is computed by the animation loop in `SceneService`
 and stored directly on the entity. This violates the pure/side-effect separation
-rule (CLAUDE.md Constitutional Rule 2): a domain entity's fields should be
+rule (PHILOSOPHY #3 — 当時は CLAUDE.md Constitutional Rule 2): a domain entity's fields should be
 domain invariants, not service-layer cache values.
 
 ### Problem 4 — Flat type union without categorical structure
