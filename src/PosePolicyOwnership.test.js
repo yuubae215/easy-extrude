@@ -73,6 +73,45 @@ const POSE_WRITE_RULES = [
 ]
 
 /**
+ * **支持プローブの種分岐** (ADR-098) — 「この種の底はどこか」に答える行。
+ *
+ * ADR-097 は「`instanceof` の連鎖が在ってよい唯一の場所は `placementKindOf()`」と
+ * 決めたが、`SceneService` の 4 メソッド (`_footprintSamplesOf` / `_bottomZOf` /
+ * `_segmentStartBottomZ` / `_destinationSamples`) は `instanceof CoordinateFrame` で
+ * **方針表と同じ問いに別の場所で答え続けていた** — 規則が在るのに問われていな
+ * かった箇所である。非対称が欠陥の形だった: 種を足したとき方針表は throw して
+ * 気づかせるが、プローブは黙って `corners = []` → `null` を返して「支持なし」に
+ * 見せる (原則 #31 — 不在は検査対象のノードを持たない)。
+ *
+ * 検査の単位が**メソッド本体**なのは、ファイル全体では広すぎ (SceneService には
+ * 配置と無関係な正当な `instanceof` が多数在る)、1 行では狭すぎる (分岐は
+ * 複数行に散る) ため。名指ししたメソッドの中に種分岐が 0 個であることを問う。
+ */
+const PROBE_METHODS = [
+  { file: 'src/service/SceneService.js', method: '_footprintSamplesOf' },
+  { file: 'src/service/SceneService.js', method: '_bottomZOf' },
+  { file: 'src/service/SceneService.js', method: '_segmentStartBottomZ' },
+  { file: 'src/service/SceneService.js', method: '_destinationSamples' },
+  { file: 'src/service/SceneService.js', method: '_probeGeometryOf' },
+  { file: 'src/service/SceneService.js', method: '_snapshotGeometryOf' },
+  { file: 'src/service/SceneService.js', method: '_applyStackAssist' },
+]
+
+/**
+ * 種分岐が**在ってよい**メソッドと、その宣言された理由。
+ *
+ * 「例外が在ること」ではなく「例外が数えられていること」が要点 —
+ * `DECLARED_EXCEPTIONS` と同じ規律を分岐側にも当てる。
+ */
+const DECLARED_TYPE_DISPATCH = [
+  {
+    file: 'src/service/SceneService.js',
+    method: '_applyEntityDelta',
+    why: 'pose を**どう書くか** (CF は parent-local delta / Solid は _position スナップショット / それ以外は corners) の ABI であって、どの方針が当たるかではない。方針は呼ばれる前に _policyDelta が決めている。この 1 箇所に集めたからこそ、補助 (_applyStackAssist) が種の門を持たずに同じ ABI を使える (ADR-098)',
+  },
+]
+
+/**
  * **足さなかった規則と、その理由** (原則 #20 — 広域スキャンは注意を薄める)
  *
  * 「注釈 3 種を `instanceof` で並べる分岐」を分類の再導出として落とす規則を書き、
@@ -138,6 +177,22 @@ function stripComments(source) {
 
 const isDomainDefinition = rel => rel.startsWith(`src${sep}domain${sep}`)
 
+/**
+ * クラスメソッド 1 本の本体を切り出す (インデント 2 の `name(` から インデント 2 の
+ * `}` まで)。検査の単位をファイルより狭く・行より広く取るための道具。
+ * @param {string[]} lines  stripComments 済みの行 (行番号は保存されている)
+ * @param {string} method
+ * @returns {{start: number, body: string[]}|null}
+ */
+function extractMethodBody(lines, method) {
+  const head = new RegExp(`^ {2}${method}\\s*\\(`)
+  const start = lines.findIndex(l => head.test(l))
+  if (start === -1) return null
+  let end = start + 1
+  while (end < lines.length && lines[end].trimEnd() !== '  }') end++
+  return { start, body: lines.slice(start, Math.min(end + 1, lines.length)) }
+}
+
 test('pose を書く入口のうち、方針を適用していないものは 0 個 (ADR-097 / 原則 #31)', () => {
   const files = collectSources(SRC_ROOT)
   assert.ok(files.length > 50, `src/ の走査に失敗している (${files.length} files)`)
@@ -188,6 +243,70 @@ test('入口は実在し、実際に方針を適用している (規則が空回
   const body  = entry.slice(0, entry.indexOf('_applyStackAssist(segStartCorners'))
   assert.ok(/_policyDelta\(obj,/.test(body),
     'applyPreviewTranslation が _policyDelta を通らずに move している')
+})
+
+test('支持プローブの中に実体種の分岐は 0 個 (ADR-098 / 原則 #31)', () => {
+  const violations = []
+  const missing    = []
+
+  for (const { file, method } of PROBE_METHODS) {
+    const lines = stripComments(readFileSync(join(REPO_ROOT, file.split('/').join(sep)), 'utf8'))
+    const found = extractMethodBody(lines, method)
+    if (!found) {
+      // 対象が消えたことは規則が守られていることと区別がつかない (原則 #31 の同型)。
+      missing.push(`${file}: ${method}() が実在しない — 表から外すか、名前を追うこと`)
+      continue
+    }
+    found.body.forEach((line, i) => {
+      if (!/\binstanceof\b/.test(line)) return
+      violations.push(
+        `${file}:${found.start + i + 1}  (${method})\n` +
+        '      支持プローブが実体種で分岐している。\n' +
+        '      → supportProbeOf(entity) で宣言を引き、footprintSamplesFor / bottomZFor へ幾何を渡す\n' +
+        '      なぜ: 「この種の底はどこか」は方針表と同じ問いであり、別の場所で答えると第二の源になる。' +
+        '種を足したとき方針表は throw するのに、プローブは黙って「支持なし」を返す (ADR-098 §Decision 2)',
+      )
+    })
+  }
+
+  assert.deepEqual(missing, [], `\n${missing.join('\n')}\n`)
+  assert.deepEqual(violations, [], `\n${violations.join('\n\n')}\n`)
+})
+
+test('宣言されていない種分岐の例外は 0 個 (pose の書き込み ABI だけが例外)', () => {
+  // 例外が在ること自体は正常 (CF と Solid では pose の書き方そのものが違う)。
+  // 問題は「数えられていない例外」なので、宣言された場所に宣言された形が実在するかを
+  // 逆向きに検査する。
+  const missing = []
+  for (const ex of DECLARED_TYPE_DISPATCH) {
+    const lines = stripComments(readFileSync(join(REPO_ROOT, ex.file.split('/').join(sep)), 'utf8'))
+    const found = extractMethodBody(lines, ex.method)
+    if (!found || !found.body.some(l => /\binstanceof\b/.test(l))) {
+      missing.push(
+        `${ex.file}: 宣言された種分岐 ${ex.method}() が実在しない (宣言を削るか、経路を確認する)\n` +
+        `      理由: ${ex.why}`,
+      )
+    }
+  }
+  assert.deepEqual(missing, [], `\n${missing.join('\n\n')}\n`)
+})
+
+test('プローブの宣言表は placement.js にあり、サービスはそれを引いている', () => {
+  // 規則が空回りしていないこと — 宣言側と消費側の両方が実在するかを問う。
+  const decl = readFileSync(join(REPO_ROOT, 'src/domain/placement.js'), 'utf8')
+  for (const needle of [
+    'SUPPORT_PROBE_BY_KIND', 'supportProbeFor', 'supportProbeOf',
+    'footprintSamplesFor', 'bottomZFor', 'stackAssistApplies',
+  ]) {
+    assert.ok(decl.includes(needle), `placement.js に ${needle} が無い`)
+  }
+  assert.ok(/throw new Error\(\s*\n?\s*`\[placement\] no declared support probe/.test(decl),
+    'supportProbeFor() の throw が消えている — 未宣言の種が黙って「支持なし」に落ちる')
+
+  const svc = readFileSync(join(REPO_ROOT, POSE_ENTRY), 'utf8')
+  for (const needle of ['supportProbeOf(', 'footprintSamplesFor(', 'bottomZFor(', 'stackAssistApplies(']) {
+    assert.ok(svc.includes(needle), `${POSE_ENTRY} が ${needle} を引いていない`)
+  }
 })
 
 test('方針の分類器 (placementOf) は 1 モジュールにしか無い', () => {

@@ -3,7 +3,7 @@ GOALS adr098_support_domain_is_policy
 goal WhatCanRestOnWhatIsAPolicyConsequence
 uuid 7844f644-a4b0-4390-818a-ef2b39cbd08f
 summary "『この実体は何の上に載れるか』が配置方針の帰結として決まり、実体種で分岐しない。ロボットもマップ注釈もキューブと同じ規則で面に載り、grounded という 1 語が種によって違う意味を持たない"
-state ToBeDeveloped
+state UnderReview
 labels adr-098, placement, stacking
 artifacts
 - "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"
@@ -11,7 +11,7 @@ artifacts
 
     context Adr098Scope
     uuid 77e9c7cd-7e2f-4b24-8ef8-94ccbd059109
-    summary "ADR-098 (Proposed, 2026-07-26): stack assist の適用可否を純粋述語 stackAssistApplies(placement) から導き、_applyStackAssist の instanceof Solid の門を 2 枚とも外す。併せて支持プローブ (footprint / bottom の求め方) を SUPPORT_PROBE_BY_KIND として方針表の隣で種ごとに宣言し、未宣言の種で throw する。ドメイン + サービス層に閉じ、契約・BFF・core は不変"
+    summary "ADR-098 (Accepted・実装済み, 2026-07-26): stack assist の適用可否を純粋述語 stackAssistApplies(placement) から導き、_applyStackAssist の instanceof Solid の門を 2 枚とも外す。併せて支持プローブ (footprint / bottom の求め方) を SUPPORT_PROBE_BY_KIND として方針表の隣で種ごとに宣言し、未宣言の種で throw する。ドメイン + サービス層に閉じ、契約・BFF・core は不変"
     artifacts
     - "src/domain/placement.js"
     - "src/service/SceneService.js"
@@ -30,7 +30,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid ab09dab5-a366-444d-81c5-a4ebe134ca8a
-    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけで木が証拠実行可能でなくなる)。接続予定先は ADR-097 が既に起こした goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) で、種を列挙する個数検査と症状回帰が実在した時点で solution として吊る。ADR-097 と同じ Goal に効く追加証拠なので、新しい枝は起こさない"
+    summary "事業木への接続は**実施済み** (起票時は証拠が全て未来形だったため保留していた)。個数検査と症状回帰が実在したので、予告どおり profit-growth.gsn の goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) へ solution SupportDomainIsPolicyNotKind として吊った。ADR-097 と同じ Goal に効く追加証拠なので新しい枝は起こしていない。当該 goal は『動かしやすくなったか』が主観であるため ToBeReviewed のまま (当事者の実利用待ち)"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -59,36 +59,55 @@ artifacts
         goal StackAssistIsAFunctionOfPolicy
         uuid b6c507a9-e070-48fc-a502-c29f639bc061
         summary "stack assist の適用可否が placement から導かれ、_applyStackAssist に実体種の門が 0 枚になる。free な実体 (ユーザー CF / MeasureLine / Profile) が除外される理由は『種が違うから』ではなく『方針が free だから』になる"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckPolicyPredicateTable
+            solution PolicyPredicateTableIsGreen
             uuid a2a9feca-a0e4-404d-855f-9ee744aa264f
-            summary "この goal を決着させる検査を名指しする (未実行): src/domain/placement.test.js に stackAssistApplies(placement) の表テストを足し、3 方針すべてを列挙して固定する。加えて src/PosePolicyOwnership.test.js を拡張し、instanceof で種を分ける行が placement.js の外に 0 個であることを src 全走査で数える。今日は _applyStackAssist の 2 枚と _footprintSamplesOf / _bottomZOf の 2 箇所が数えられていない — 規則は ADR-097 で宣言済みなのに問う場所が無い状態"
+            summary "node --test src/domain/placement.test.js — pass (31/31)。stackAssistApplies を 3 方針すべてで固定し、加えて『grounded は 1 つの意味しか持たない』を Solid と robot_base が同じ答えを出す形で問う (当事者の報告を方針の側から固定したもの)。逆向きに free な CF が false であることも同じテストで数え、『全部に効かせた』と『方針どおりに効いた』を区別する。実装上 stackAssistApplies は hasGroundInvariant へ委譲する — 同一本体の述語を 2 本書くと第二の源になるため、名前 (問い) は 2 つ・実装は 1 つにした"
             artifacts
+            - "src/domain/placement.js"
             - "src/domain/placement.test.js"
-            - "src/PosePolicyOwnership.test.js"
 
+            solution TypeGateCensusIsGreen
+            uuid 2f1c9a04-7c8e-4b31-9d20-6a1f0e73c5aa
+            summary "node --test src/PosePolicyOwnership.test.js — pass (8/8)。プローブ 7 メソッド (_footprintSamplesOf / _bottomZOf / _segmentStartBottomZ / _destinationSamples / _probeGeometryOf / _snapshotGeometryOf / _applyStackAssist) を名指しし、その本体内の instanceof を 0 個に数える。pose の書き込み ABI (_applyEntityDelta) だけを宣言された例外として表に持ち、宣言の無い例外が 0 個であることを逆向きにも数える。**検査が空回りしていないことを変異で確認した**: _bottomZOf へ instanceof CoordinateFrame を 1 行戻すと当該行番号を名指しして fail する"
+            artifacts
+            - "src/PosePolicyOwnership.test.js"
+            - "src/service/SceneService.js"
+
+            assumption WholeSrcScanWasNarrowedToNamedMethods
+            uuid 6b3d0e51-4a29-4f0c-9c1e-2d5c8a71b7e3
+            summary "起票時との差 (隠さず宣言する): ADR は『instanceof で種を分ける行が placement.js の外に 0 個』と書いたが、src 全走査ではそのまま実装できない — ヒットテスト・N パネル・ツールバーに配置と無関係な正当な instanceof が多数あり、ADR-097 が既に『そこへ規則を書いて外した』と記録している。全域規則は無視される規則になり、無視される規則は規則が無いより悪い (希釈)。よって検査単位をファイルでも行でもなく『名指ししたメソッド本体』へ狭めた。弱くなった点: 将来 8 つ目のプローブ的メソッドが増えたとき、表へ足すまで数えられない。埋め方は ADR-097 の入口検査と同じで、増えた時点で名前を足す"
         goal SupportProbeIsDeclaredPerKind
         uuid 62b9fbb5-5339-48b5-9665-f244aca6125d
         summary "『この種の footprint と底はどう求めるか』が SUPPORT_PROBE_BY_KIND として方針表の隣で宣言され、未宣言の種で throw する。プローブを持たない種 ('none') は既定ではなく宣言であり、新しい実体種を足すとき方針とプローブの両方が未宣言で落ちる"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckKindEnumerationBothWays
+            solution KindEnumerationBothWaysIsGreen
             uuid 2bbb0968-9295-426c-8edf-830afba4bd12
-            summary "この goal を決着させる検査を名指しする (未実行): src/domain/placement.test.js で PLACEMENT_KIND を列挙し、SUPPORT_PROBE_BY_KIND の欠落が 0 個・余りが 0 個であることを両向きに数える (PLACEMENT_BY_KIND の既存検査と同じ形)。在る行を辿るのではなく必要な種を列挙して個数を問う形にするのは、欠落した行が『支持なし』という正当に見える答えを返すため (原則 #31)"
+            summary "node --test src/domain/placement.test.js — pass (31/31)。PLACEMENT_KIND を列挙し SUPPORT_PROBE_BY_KIND の欠落 0 個・余り 0 個を両向きに数える (7 種ちょうど)。加えて (a) 宣言値が語彙の中にあること、(b) footprint と bottom が対で宣言されること (片肺の none は書き間違いなので表そのものに問う)、(c) 未宣言の種で supportProbeFor が throw、(d) 未知のプローブ値で footprintSamplesFor / bottomZFor が throw (fall-through で『誰も考えなかった値』を『宣言された既定』に見せない)、(e) 支持を問える種と補助の対象が一致すること (G3 を表の上で対応させる) を固定した"
             artifacts
+            - "src/domain/placement.js"
             - "src/domain/placement.test.js"
 
+            solution ProbeBranchesWereFourNotTwo
+            uuid 8d5e2b17-3c4a-4f60-9b81-71e2c0a3d9f4
+            summary "実装時の発見 (起票時は種分岐を 2 箇所と見積もっていた): _segmentStartBottomZ / _destinationSamples も同じ instanceof CoordinateFrame 分岐を持っており、セグメント開始時点の幾何に対して『この種の底/足跡はどこか』という同じ問いに答える 1 フレーム前の写しだった。4 つとも宣言表へ寄せた。さらに 3 つの呼び出し箇所が互いに違う足跡を使っていた (全 corners / 全 corners 重心なし / 最下面 corners + 重心) ため、足跡 = 接地面という定義で統一し、値名を bottomFaceAndCentroid へ改名した。傾いた Solid の座り位置が変わりうる (側面の張り出しで浮かなくなる = 改善方向)"
+            artifacts
+            - "src/service/SceneService.js"
         goal GroundedMeansOneThing
         uuid ca267bef-9016-4ff9-9db6-1a2219bf6b9b
         summary "当事者の観測『キューブはスタックするのにロボットはスタックしない』が消え、grounded が全種で『床を割らない かつ 直下の面に載る』の 1 つの意味になる。同時に free な実体は載らないままである (全部に効かせたのではなく方針どおりに効いた、が区別できる)"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckDifferentialSymptomRegression
+            solution DifferentialSymptomRegressionIsGreen
             uuid b66321aa-7e17-4800-81d1-3d0e4955b29e
-            summary "この goal を決着させる検査を名指しする (未実行): e2e/smoke.spec.js に差分ペアで足す。(1) ロボット base をキューブの上へドラッグすると supportOf(robot_base).kind === 'entity'、(2) 同じジェスチャで S を押すと載らない — 片方だけではジェスチャがそもそも効いていない可能性を排除できない (ADR-097 の回帰が採った形)。(3) 逆向き: free な CF (tcp / ユーザー CF) は同じジェスチャで載らない。SceneService は vite 専用 import を持ち node --test で構築できないため、シーンを要する不変条件はこのレーンでしか問えない"
+            summary "playwright test e2e/smoke.spec.js — pass (24/24、うち本 ADR は 3 本)。(1) robot_base をキューブの真上へ運ぶと supportOf(robot_base).kind === 'entity' かつ id がキューブ、bottomZ > 0。(2) 同じジェスチャで S を押すと載らず、かつ床も割らない (補助は降りるが方針は降りない)。(3) 逆向き: free な tcp は同じジェスチャで支持面へ吸い付かない。ジェスチャは数値 Grab (G → 軸 → 距離 → Enter) を使い画面座標を経由しないので、カメラ姿勢にも投影位置にも依存せず『たまたま届いた』と取り違えない。**変異で空回りしていないことを確認した**: instanceof Solid の門を 1 行戻すと (1) だけが fail し、負の対照 (2)(3) は緑のまま — 差分ペアが意図どおり働いている"
             artifacts
             - "e2e/smoke.spec.js"
+
+            solution DeadSnapModeBranchFoundByTheRegression
+            uuid 4a7c8e92-5d13-4b8e-a0f2-3c9d6e1b7052
+            summary "範囲外の欠陥を 1 件露出させ、同じ PR で直した: 数値 Grab の '1'/'2'/'3' が this._setSnapMode(...) — src のどこにも存在しないメソッド — を呼び、毎回 TypeError を投げたうえで数値入力の分岐より先に return していた。つまり 1・2・3 を含む距離を打つとその桁が黙って消えていた (入力は消費され何も起きない = 原則 #11 の最悪形)。snap の『モード』という概念は SnapSystem に存在せず復元先が無いので、宙に浮いた分岐を削除した。画面座標に依存しないジェスチャを選んだ結果この道を初めて通ったので、証拠の形の選択そのものが発見を生んだ事例になっている"
+            artifacts
+            - "src/controller/AppController.js"

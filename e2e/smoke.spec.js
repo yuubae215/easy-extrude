@@ -626,3 +626,106 @@ test('supported な実体で支持を持たないものは 0 個 (ADR-097 / 原�
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+// ── ADR-098: 「何の上に載れるか」は種ではなく方針の帰結 ─────────────────────────
+//
+// 当事者の報告「キューブはスタックするのにロボットはスタックしない」への 1:1 の
+// 回帰。ADR-097 が pose の入口を 1 つにした後も、その入口の**中**に
+// `instanceof Solid` の門が 2 枚残っており、方針語 `grounded` が種によって
+// 2 つの意味を持っていた。
+//
+// ジェスチャは**数値 Grab** (`G` → 軸 → 距離 → Enter) を使う。画面座標を経由しない
+// ので、カメラ姿勢にも実体の投影位置にも依存せず、「たまたま届いた」と
+// 「方針どおりに効いた」を取り違えない。数値 Grab は軸が `z` でない限り
+// stack assist を通る経路なので、補助そのものを問うている。
+
+/** 選択中の実体を数値 Grab で 1 軸だけ動かす (画面座標に依存しないジェスチャ)。 */
+async function numericGrab(page, axis, distance) {
+  await page.keyboard.press('g')
+  await page.keyboard.press(axis)
+  for (const ch of distance.toFixed(3)) {
+    await page.keyboard.press(ch === '-' ? 'Minus' : ch === '.' ? 'Period' : ch)
+  }
+  await page.keyboard.press('Enter')
+}
+
+/** Outliner の行から実体を選ぶ (3D ラベルとテキストが衝突しないよう行に限定)。 */
+async function selectRow(page, name) {
+  await page.locator('[draggable="true"]').filter({ hasText: name }).first().click()
+}
+
+/** robot_base をキューブの真上へ運び、その後の placement 行を返す。 */
+async function carryRobotOverCube(page, { escapeAssist = false } = {}) {
+  const rows  = await page.evaluate(() => window.__easyExtrude.placementState())
+  const robot = rows.find(r => r.name === 'robot_base')
+  const cube  = rows.find(r => r.name === 'Cube')
+  await selectRow(page, 'robot_base')
+  // S は Grab 中に補助を降ろすトグル (ADR-071)。X の移動でだけ押して、
+  // 「同じジェスチャで補助だけが違う」差分ペアにする。
+  await page.keyboard.press('g')
+  await page.keyboard.press('x')
+  if (escapeAssist) await page.keyboard.press('s')
+  for (const ch of (cube.footprint.x - robot.footprint.x).toFixed(3)) {
+    await page.keyboard.press(ch === '-' ? 'Minus' : ch === '.' ? 'Period' : ch)
+  }
+  await page.keyboard.press('Enter')
+  await numericGrab(page, 'y', cube.footprint.y - robot.footprint.y)
+  return { cube, after: await page.evaluate(() => window.__easyExtrude.placementState()) }
+}
+
+test('ロボットもキューブと同じ規則で面に載る (ADR-098 G1/G2 — 当事者の報告に 1:1)', async ({ page }) => {
+  const errors = await boot(page)
+
+  // 前提: 両者は同じ方針を宣言している。症状が方針の差でないことを先に固定する
+  // — ここが違っていたら、以下の差は「正しく違う」であって欠陥ではない。
+  const atBoot = await placementRows(page)
+  expect(byName(atBoot, 'Cube').placement, 'キューブの方針').toBe('grounded')
+  expect(byName(atBoot, 'robot_base').placement, 'ロボットの方針').toBe('grounded')
+  expect(byName(atBoot, 'robot_base').footprint, 'ロボットの足跡が宣言されていない').not.toBeNull()
+
+  const { cube, after } = await carryRobotOverCube(page)
+  const seated = byName(after, 'robot_base')
+
+  expect(seated.support, 'ロボットが支持を持たない (載っていない)').not.toBeNull()
+  expect(seated.support.kind, `ロボットが床のまま (support=${JSON.stringify(seated.support)})`).toBe('entity')
+  expect(seated.support.id, '載った先がキューブでない').toBe(cube.id)
+  expect(seated.bottomZ, 'キューブの天面に届いていない').toBeGreaterThan(0.001)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('同じジェスチャで S を押すとロボットは載らない (ADR-098 — 差分ペア)', async ({ page }) => {
+  // 片方だけでは「ジェスチャがそもそも効いていない」可能性を排除できない
+  // (ADR-097 の回帰が採った形)。逃げ道が効くことも同時に示す。
+  const errors = await boot(page)
+
+  const { after } = await carryRobotOverCube(page, { escapeAssist: true })
+  const robot = byName(after, 'robot_base')
+
+  expect(robot.bottomZ, 'S を押したのに天面へ吸い付いた (補助が降りていない)').toBeLessThan(0.001)
+  expect(robot.bottomZ, '床を割った (方針は補助と一緒に降りてはいけない)').toBeGreaterThan(-0.001)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('free と宣言された CF は同じジェスチャで載らない (ADR-098 — 逆向きの回帰)', async ({ page }) => {
+  // 「全部に効かせた」ことと「方針どおりに効いた」ことを区別する。tcp は free
+  // なので、キューブの真上へ運んでも天面へは吸い付かない (アームの先端は
+  // 空中に在ってよい)。
+  const errors = await boot(page)
+
+  const atBoot = await placementRows(page)
+  const tcp  = byName(atBoot, 'tcp')
+  const cube = byName(atBoot, 'Cube')
+  expect(tcp.placement, 'tcp の方針').toBe('free')
+
+  const z0 = tcp.bottomZ
+  await selectRow(page, 'tcp')
+  await numericGrab(page, 'x', cube.footprint.x - tcp.footprint.x)
+  await numericGrab(page, 'y', cube.footprint.y - tcp.footprint.y)
+
+  const moved = byName(await placementRows(page), 'tcp')
+  expect(moved.bottomZ, 'free な CF が支持面へ吸い付いた (方針が無視されている)').toBeCloseTo(z0, 3)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
