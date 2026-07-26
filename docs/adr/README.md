@@ -59,7 +59,7 @@ This directory records the project's design decisions.
 | [ADR-045](ADR-045-external-layout-api.md) | **External Layout API — CLI/REST-Driven Scene Composition via Layout DSL** | Accepted | 2026-06-09 | ADR-044, ADR-015, ADR-022, ADR-030, ADR-037, ADR-040 |
 | [ADR-046](ADR-046-context-dsl.md) | **Context DSL — 要件文脈の一級データ構造化と仕様への追跡可能コンパイル** | Draft | 2026-06-10 | ADR-044, ADR-045, ADR-037, ADR-030, ADR-047 |
 | [ADR-047](ADR-047-context-demo-layer.md) | **Context Demo Layer — 要求文脈の可視化オーバーレイ (UncertaintyGhost / Inspector / StoryBar)** | Accepted | 2026-06-11 | ADR-046, ADR-045, ADR-040, ADR-041 |
-| [ADR-048](ADR-048-link-network-layered-layout.md) | **Link Network 決定的階層レイアウト — 力学レイアウト廃止と親子構造の可視化** | Accepted | 2026-06-12 | ADR-030, ADR-037, ADR-038 |
+| [ADR-048](ADR-048-link-network-layered-layout.md) | **Link Network 決定的階層レイアウト — 力学レイアウト廃止と親子構造の可視化** | Accepted (§2.1 ノード集合と §2.2.1 は ADR-094 で改訂。§2.1 決定性・§2.3 寸法・§2.4 契約は有効) | 2026-06-12 | ADR-030, ADR-037, ADR-038, ADR-094 |
 | [ADR-049](ADR-049-requirement-conflict-model.md) | **Requirement / Conflict モデル — KPI 由来の許容領域・衝突検出・交渉クラスター** | Accepted | 2026-06-14 | ADR-046, ADR-047, ADR-044, ADR-035 |
 | [ADR-050](ADR-050-context-first-project-model.md) | **Context-First Project Model — 要求/衝突/交渉 の PoC から本番機能化** | Accepted | 2026-06-14 | ADR-049, ADR-046, ADR-047, ADR-045, ADR-022, ADR-013, ADR-011 |
 | [ADR-051](ADR-051-requirement-intake.md) | **要件入力（Requirement Intake）— あいまい要件を起点化する複数入口アーキテクチャ** | Accepted (全 4 フェーズ実装済) | 2026-06-16 | ADR-052, ADR-050, ADR-049, ADR-047, ADR-046, ADR-044, ADR-022, ADR-013 |
@@ -105,6 +105,7 @@ This directory records the project's design decisions.
 | [ADR-091](ADR-091-default-doc-first-intake-system-owned-refs.md) | **入力の起点を「白紙からの生成」から「既定値入り完成文書の訂正」へ — ref をシステム所有にする** | Proposed | 2026-07-25 | ADR-063, ADR-058, ADR-051, ADR-050, ADR-089, ADR-090 |
 | [ADR-092](ADR-092-prompt-dilution-commit-observability.md) | **常時ロードから一般モデル挙動の写しを外し、観測はプロンプトではなくコミットに刻む (−42.4%、Task-Class は決定的導出)** | Accepted (実装済) | 2026-07-25 | ADR-082, ADR-086 |
 | [ADR-093](ADR-093-map-annotation-visual-language-per-entity-phase.md) | **Map 注釈の視覚言語を刷新 — アニメーション位相を実体の同一性から導き「基数 N の lockstep」を構造で消す** | Accepted (実装済) | 2026-07-25 | ADR-031, ADR-029, ADR-065, ADR-066, ADR-067, ADR-072, ADR-043 |
+| [ADR-094](ADR-094-link-network-tf-tree-fused-origin-node.md) | **LINK NETWORK を TF ツリーへ回帰 — Solid と Origin CF を 1 ノードに融合し、木辺を骨格に戻す (モバイルでは唯一の常設構造ビュー)** | Proposed (設計確定・実装は後続 PR) | 2026-07-26 | ADR-048, ADR-037, ADR-038, ADR-030, ADR-090, ADR-093 |
 
 ## How to Add a New ADR
 

@@ -44,6 +44,8 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | Edit Mode 部分状態 | `3d` / `2d-sketch` / `2d-extrude` / `1d` (4) | 1 | `SceneModel._editSubstate` | STATE_TRANSITIONS §Edit Mode Substates |
 | マップ描画 | `idle` / `drawing` (2) | 1 | `MapModeController.state.drawState` | ADR-031 §1 / ADR-073 (`pending` を廃止) |
 | Map 注釈ビューの motion | ライフサイクル `entering` / `idle` (2) × **直交する修飾子** `urgent` (違反アラーム) / `reduced` (静止した手掛かり) — 平坦な 4 状態ではない (平坦化すると `entering` かつ `urgent` が表現不能になる) | **`0..N`** — 0 = 空のマップは正当 (tick される view が無い)。**N が問題の所在**: 各注釈は `phaseFor(entityId)` 由来の独立位相を持つ。位相が同一なら全個体が同一フレームで動く lockstep で、1 個で試すと絶対に見えない (原則 #31) | 各 `Annotated*View.tick(t)` が唯一の書き手 (曲線は純粋 `MapVisualMath`、id の所有者は `SceneService`、`reduced` は単一境界 `src/theme/motion.js` の購読) | **ADR-093** · STATE_TRANSITIONS §Map annotation motion · `src/view/MapVisualMath.test.js` |
+| LINK NETWORK パネル (可視性) | **直交する 2 軸** — `forceHidden` (外部オーバーレイ所有: Context DSL デモが段階③の種明かしを守るため伏せる) × `collapsed` (ユーザー所有: ヘッダの −/+)。平坦な 3 状態ではない (平坦化すると「デモ中にユーザーが畳んだ」が表現不能になり、デモ終了時に畳んだ意思が失われる) | 1 | `LinkNetworkView` — display の唯一の書き手は `_applyVisibility()` (原則 #4)。ただし `collapsed` は `_toggleCollapse()` が SVG の display を別途書いており、**軸ごとに書き手が分かれている** (統合は ADR-094 実装時) | **ADR-094** · ADR-048 §2.3 · `src/view/LinkNetworkView.js` |
+| LINK NETWORK グラフのノード | 各ノードの表示状態 `focused` / `neighbor` / `context` / 通常 (4) — focus 源は「パネル hover ∪ 3D 選択」の合併 | **`0..N`** — 0 = リンクが 1 本も無い (パネルごと非表示。`_hasContent`)。**1 と N は別世界**: 行の重なり・ラベル衝突・`_denseMode` (行スロット < 22px) は Solid が N 個あって初めて出るので、1 個の fixture では絶対に見えない (原則 #31 / ADR-093 と同じ構図)。ADR-094 以降は **Solid と その Origin CF が 1 ノードへ融合**するため、ノードの基数は「TF フレームの数」であって実体の数ではない | `LinkNetworkView.update()` → `_runLayout()` (ADR-094 で純粋 `computeLayout()` へ分離予定 — 現状は `this._nodes` を変異する副作用付きで原則 #3 に反し、テストが 1 本も無い) | **ADR-094** · ADR-048 · `src/view/LinkNetworkLayout.test.js` (ADR-094 で新設) |
 | grasp-search | `idle` / `no-layout` / **`no-robot`** / `compiling` / `solving` / `results` / `error` (7) | 1 | `GraspController` — `uiStore.context.grasp` を丸ごと置換 (判別 union) | ADR-057 · ADR-090 (`no-robot` の追加) · `src/store/uiStore.js` |
 | ロボット (台数) | 基数そのものが状態: `none` / `single` / `multi` (3 — `ROBOT_CARDINALITY`) | **`0..N`**。0 = 正当かつ安定 (grasp は `no-robot` で停止し理由を出す / 入口通過で復活しない)。N = どれかは **明示選択**が必要 (`selectRobot`; 1 台なら暗黙、0 台なら null — 既定で 1 台目を選ばない) | **scene** (`objects` 内の base/tcp CF 対) — 解決は `domain/robotFrames.js: resolveRobots()` の 1 箇所。生成の入口は `SceneService.addRobot()` のみ、seed は boot 経路のみ (`ensureRobotFrames({ seed: true })`) | **ADR-090** · STATE_TRANSITIONS §Robot roster · `src/domain/robotFrames.test.js` / `src/RobotRosterAuthority.test.js` |
 | ロボット CF の TF ロール | `base` / `tcp` / 不在 (3) | ロボット 1 台につき base ちょうど 1 + tcp `0..1` (tcp 不在も正当 — `tcpOrientation` は core/ の代替軸へフォールバック。ADR-084 §3) | `SceneService._setRobotRole()` (唯一の書き手、`robotRoleChanged` を発行) — 値の解釈は `isRobotRole()` の 1 箇所 | ADR-090 Decision 1 · `CoordinateFrame.robotRole` (scene JSON / Layout DSL に往復) |
@@ -79,3 +81,11 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
    廃止済みだが `src/core/editorStates.js:38` に生存し、参照は 0 件。
    状態集合に「退役時に消す」責任者がいないことの痕跡
    (原則 #19 — documentation drift is a bug の、コード側の同型)。
+4. **Origin CF の同一性が 22 箇所に散っている。** `name === 'Origin'` の inline 再導出が
+   10 ファイル (`SceneService`・`ChromeGates`・`AppController`・ハンドラ 3 種・
+   `LayoutDecompiler` ほか) に存在する。規則は 2 種類 —「これは Origin か」と
+   「この親の Origin を探す」。ADR-090 が `robot_base` に対して閉じた欠陥
+   (**同一性を名前で決め、呼び出し側で再導出する**) の未移行分そのもので、
+   `IDENTITY_RULES` という機械の番人まで用意済みなのに Origin だけ登録されていない。
+   ADR-094 の実装が Origin をレイアウト判定に使うため、**述語 (`isOriginFrame` /
+   `findOriginFrame`) の新設と登録を先行 PR で閉じる**。
