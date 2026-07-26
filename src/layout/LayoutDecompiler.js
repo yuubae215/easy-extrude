@@ -32,6 +32,7 @@
  */
 
 import { LAYOUT_DSL_VERSION } from './LayoutDslSchema.js'
+import { isOriginFrame } from '../domain/originFrame.js'
 
 const IDENTITY_QUATERNION = { x: 0, y: 0, z: 0, w: 1 }
 
@@ -113,7 +114,7 @@ export function decompileLayout(sceneJson) {
   const solidIdByOrigin = new Map()
   for (const o of objects) {
     if (o.type !== 'CoordinateFrame') continue
-    if (solidIds.has(o.parentId) && o.name === 'Origin') {
+    if (solidIds.has(o.parentId) && isOriginFrame(o)) {
       originIds.add(o.id)
       solidIdByOrigin.set(o.id, o.parentId)
       idToRef.set(o.id, `${solidRefById.get(o.parentId)}_origin`)

@@ -27,6 +27,7 @@ import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { SpatialLink }     from '../domain/SpatialLink.js'
+import { isOriginFrame }   from '../domain/originFrame.js'
 
 const OPEN = Object.freeze({ enabled: true, reason: null })
 const locked = (reason) => ({ enabled: false, reason })
@@ -72,7 +73,7 @@ export function gateDelete(obj) {
  */
 export function gateFrameTransform(frame) {
   if (!frame) return locked('Select a frame first')
-  if (frame.name === 'Origin') return locked('The Origin frame is fixed to its Solid')
+  if (isOriginFrame(frame)) return locked('The Origin frame is fixed to its Solid')
   return OPEN
 }
 

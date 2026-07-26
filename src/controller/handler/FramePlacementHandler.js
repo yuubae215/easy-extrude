@@ -18,6 +18,7 @@
 
 import * as THREE from 'three'
 import { CoordinateFrame }                      from '../../domain/CoordinateFrame.js'
+import { findOriginFrame }                      from '../../domain/originFrame.js'
 import { S_FRAME_PLACEMENT }                    from '../../core/editorStates.js'
 import { createCreateCoordinateFrameCommand }   from '../../command/CreateCoordinateFrameCommand.js'
 
@@ -178,9 +179,11 @@ export class FramePlacementHandler {
     const parentObj = ctrl._scene.getObject(parentId)
     let effectiveParentId = parentId
     if (parentObj && !(parentObj instanceof CoordinateFrame)) {
-      const originFrame = [...ctrl._scene.objects.values()]
-        .find(o => o instanceof CoordinateFrame && o.parentId === parentId && o.name === 'Origin')
-      if (originFrame) effectiveParentId = originFrame.id
+      const originFrame = findOriginFrame(ctrl._scene.objects.values(), parentId)
+      // The type guard stays at the call site (the rule is about the name, the
+      // guard about the entity's capabilities) — a stray non-frame child that
+      // carries the name must not become a parent.
+      if (originFrame instanceof CoordinateFrame) effectiveParentId = originFrame.id
     }
 
     const frame = ctrl._service.createCoordinateFrame(effectiveParentId, null, worldPos)

@@ -55,6 +55,9 @@ import {
   ROBOT_ROLE, Robot, isRobotRole,
   resolveRobots, robotBaseSeedPose, nextRobotBaseName, nextRobotTcpName,
 } from '../domain/robotFrames.js'
+import {
+  ORIGIN_FRAME_NAME, isOriginFrame, isOriginFrameName, findOriginFrame,
+} from '../domain/originFrame.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
@@ -1956,7 +1959,7 @@ export class SceneService extends EventEmitter {
    *
    * No-ops (returns false) when:
    *   - frameId is not a CoordinateFrame
-   *   - frame.name === 'Origin' (locked to its geometry object)
+   *   - the frame is a Solid's Origin CF (locked to its geometry object)
    *   - newParentId is unknown, a MeasureLine, or an ImportedMesh
    *   - newParentId === frameId (self-reference)
    *   - newParentId is a descendant of frameId (would create a cycle)
@@ -1972,7 +1975,7 @@ export class SceneService extends EventEmitter {
   reparentFrame(frameId, newParentId, forcedTranslation = null) {
     const frame = this._model.getObject(frameId)
     if (!(frame instanceof CoordinateFrame)) return false
-    if (frame.name === 'Origin') return false
+    if (isOriginFrame(frame)) return false
 
     const newParent = this._model.getObject(newParentId)
     if (!newParent) return false
@@ -2121,7 +2124,7 @@ export class SceneService extends EventEmitter {
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
     // Body frame: Origin CF always exists at Solid centroid (ADR-037)
-    this.createCoordinateFrame(solid.id, 'Origin', null)
+    this.createCoordinateFrame(solid.id, ORIGIN_FRAME_NAME, null)
     return solid
   }
 
@@ -2170,17 +2173,33 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Renames an entity.
-   * No-ops if id is unknown or name is empty.
+   * Renames an entity — the authoritative entry point, so the Origin CF's name
+   * protection lives here rather than only in the controller that happens to be
+   * calling (原則 #1).
+   *
+   * ADR-037 §4 listed the rename guard in ONE direction: an Origin CF cannot be
+   * renamed away. The reverse was never guarded, so any frame could be renamed
+   * *to* `Origin` and become a second, locked, undeletable body frame for a Solid
+   * that already had its own. Both directions are the same rule, asked through
+   * `domain/originFrame.js`.
+   *
+   * No-ops (returns false) if id is unknown, name is empty, the target is the
+   * Origin CF, or the requested name is the reserved one. The caller reports the
+   * refusal — a blocked rename must never look like a silent no-op (原則 #11);
+   * `AppController._renameObject` asks the same predicates to word the toast.
+   *
    * Emits: 'objectRenamed'
    * @param {string} id
    * @param {string} name
+   * @returns {boolean} whether the rename was applied
    */
   renameObject(id, name) {
     const obj = this._model.getObject(id)
-    if (!obj || !name) return
+    if (!obj || !name) return false
+    if (isOriginFrame(obj) || isOriginFrameName(name)) return false
     obj.rename(name)
     this.emit('objectRenamed', id, name)
+    return true
   }
 
   /**
@@ -2346,15 +2365,19 @@ export class SceneService extends EventEmitter {
    * has run so that _worldPoseCache is populated.
    *
    * Migration pass for scenes saved before ADR-037.
-   * For each Solid in `solids` that has no direct child CF named 'Origin',
-   * creates one at the centroid (translation=0, rotation=identity).
+   * For each Solid in `solids` that has no Origin CF, creates one at the centroid
+   * (translation=0, rotation=identity) — the named repair of cardinality 0, which
+   * `findOriginFrame` reports rather than papering over (原則 #31).
    * @param {import('../domain/Solid.js').Solid[]} solids
    */
   _ensureOriginFrames(solids) {
     for (const solid of solids) {
-      const hasOrigin = [...this._model.getChildren(solid.id)]
-        .some(o => o instanceof CoordinateFrame && o.name === 'Origin')
-      if (!hasOrigin) this.createCoordinateFrame(solid.id, 'Origin', null)
+      const origin = findOriginFrame(this._model.getChildren(solid.id), solid.id)
+      // The type guard is the caller's, not the rule's: a non-frame child that
+      // somehow carries the name must not suppress the real body frame.
+      if (!(origin instanceof CoordinateFrame)) {
+        this.createCoordinateFrame(solid.id, ORIGIN_FRAME_NAME, null)
+      }
     }
   }
 
@@ -2784,7 +2807,7 @@ export class SceneService extends EventEmitter {
     this.emit('objectRemoved', id, profile)
     this.emit('objectAdded', solid)
     // Body frame: Origin CF always exists at Solid centroid (ADR-037)
-    this.createCoordinateFrame(solid.id, 'Origin', null)
+    this.createCoordinateFrame(solid.id, ORIGIN_FRAME_NAME, null)
     return solid
   }
 
@@ -2852,7 +2875,7 @@ export class SceneService extends EventEmitter {
     this._model.addObject(solid)
     this.emit('objectAdded', solid)
     // Body frame: Origin CF always exists at Solid centroid (ADR-037)
-    this.createCoordinateFrame(solid.id, 'Origin', null)
+    this.createCoordinateFrame(solid.id, ORIGIN_FRAME_NAME, null)
     return solid
   }
 

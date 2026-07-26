@@ -53,7 +53,7 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | オンボーディングツアー | `active` / `done` + `null` (3) | 0..1 | `AppController` (純粋遷移は `TourMath`) | ADR-065 Phase 6 / STATE_TRANSITIONS §tour |
 | Home / 起動画面 | `open` + `null` (2) | 0..1 | `AppController` | ADR-089 / STATE_TRANSITIONS §home |
 | CF 運動学ロール | fixed-joint 制約下のロール群 | 0..N | `SceneService._updateFastenedFrames()` | ADR-038 / STATE_TRANSITIONS §CF Kinematic Role |
-| Origin CF ライフサイクル | Solid と原子的に生成・削除 | Solid 1 個につき 1 | `SceneService` (Solid 生成/削除経路) | ADR-037 / STATE_TRANSITIONS §Origin CF Lifecycle |
+| Origin CF ライフサイクル | Solid と原子的に生成・削除 (2) | **Solid 1 個につき ちょうど 1**。0 = ADR-037 以前の保存シーン (到達可能・不正)。`findOriginFrame()` が `null` を返し、修復は名前付きの明示手順 `_ensureOriginFrames()` — 既定値で埋めない。N = 1 Solid に Origin 2 個は不正状態。生成経路は作らず、**予約名ガード** (`isOriginFrameName`) が改名からの到達を塞ぐ | 生成/削除 = `SceneService` (Solid 生成/削除経路)。**同一性の判定 = `src/domain/originFrame.js` の 1 箇所** (`isOriginFrame` / `findOriginFrame` / `ORIGIN_FRAME_NAME`) — 再導出は `IDENTITY_RULES` が落とす。改名の権威は `SceneService.renameObject()` (原則 #1) | ADR-037 §1/§4 · ADR-094 §波及 · STATE_TRANSITIONS §Origin CF Lifecycle · `src/domain/originFrame.test.js` |
 | `_worldPoseCache` | 有効 / 無効 (2) | 1 | `SceneService` — アクセサが鮮度を保証 (原則 #23) | STATE_TRANSITIONS §`_worldPoseCache` |
 | 削除された実体 | 可視 / 不可視保持 / 実解放 (3) | 0..N | `CommandStack` が手放した時点で実解放 (原則 #10) | PHILOSOPHY #10 / `docs/code_contracts/memory_management.md` |
 | コミットの観測メタデータ | `未刻印` / `刻印済` / `刻印不能` (3 — 最後は push 済みで amend 不可になった終端) | コミット 1 個につき **`0..1`**。0 = 人間のコミット (帰属として正しい) か、`commit && push` 連鎖で刻む隙間が無かったもの。後者は `report` の `with Model-Effort: N / 総数` で**母数に現れる** (隠さず数える — 原則 #31) | `.claude/hooks/commit-trailers.sh` (唯一の書き手。PostToolUse で `--amend --only`) — 導出規則の正本は `scripts/commit-meta.mjs` の純粋関数 | **ADR-092** · STATE_TRANSITIONS §Commit observation metadata · `scripts/commit-meta.test.mjs` |
@@ -81,11 +81,21 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
    廃止済みだが `src/core/editorStates.js:38` に生存し、参照は 0 件。
    状態集合に「退役時に消す」責任者がいないことの痕跡
    (原則 #19 — documentation drift is a bug の、コード側の同型)。
-4. **Origin CF の同一性が 22 箇所に散っている。** `name === 'Origin'` の inline 再導出が
-   10 ファイル (`SceneService`・`ChromeGates`・`AppController`・ハンドラ 3 種・
-   `LayoutDecompiler` ほか) に存在する。規則は 2 種類 —「これは Origin か」と
-   「この親の Origin を探す」。ADR-090 が `robot_base` に対して閉じた欠陥
-   (**同一性を名前で決め、呼び出し側で再導出する**) の未移行分そのもので、
-   `IDENTITY_RULES` という機械の番人まで用意済みなのに Origin だけ登録されていない。
-   ADR-094 の実装が Origin をレイアウト判定に使うため、**述語 (`isOriginFrame` /
-   `findOriginFrame`) の新設と登録を先行 PR で閉じる**。
+4. ~~**Origin CF の同一性が 22 箇所に散っている。**~~ **閉じた (述語 PR / ADR-094 §波及)。**
+   実測 16 箇所の判定 + 5 箇所の生成種名が 10 ファイルに散っていたものを
+   `src/domain/originFrame.js` の 1 箇所へ集約し、`IDENTITY_RULES` に登録した
+   (以後 `'Origin'` リテラルが所有モジュールの外に現れると CI が落ちる)。
+
+   **集約の過程で見つかった穴も同時に閉じた。** ADR-037 §4 の保護表は
+   「Origin を改名できない」しか列挙しておらず、**他の CF を `Origin` へ改名する**
+   逆向きが無防備だった — 実行すると Solid が「自分のものではない、編集ロックされた
+   削除不能な 2 つ目の body frame」を得る (上表の不正状態 N が改名だけで到達可能だった)。
+   予約名ガードを権威側 (`SceneService.renameObject`) に置いて塞いだ。
+   *名前を同一性に使う設計は、その名前を誰も後から獲得できないときにだけ健全*
+   — 表を埋める作業がこの前提の欠落を炙り出した。
+
+   なお同一性を宣言フィールド (`frameRole: 'origin'`、ADR-090 と同形) へ昇格させる
+   選択肢は**未実施のまま開いている**。`robot_base` と違い `Origin` は親スコープ内で
+   一意なので名前は正当なキーであり、scene JSON / Layout DSL / schema / 移行パスに
+   波及する版上げ行為を今回の Goal は要求しなかった (§5 過剰モデリング禁止)。
+   昇格が要るときは述語 1 モジュールの変更で済む — それが集約の配当。

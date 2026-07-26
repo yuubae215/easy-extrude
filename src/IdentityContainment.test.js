@@ -59,6 +59,19 @@ const IDENTITY_RULES = [
     all: [/robotRole/, /===\s*(ROBOT_ROLE\.|['"`](base|tcp)['"`])/],
     why: 'ロール値の解釈が散ると、語彙を増やしたときに更新漏れの箇所が黙って古い判定を続ける (ADR-090 Decision 1)',
   },
+  {
+    // ADR-094 §波及 が先行 PR として名指しした未移行分。ADR-090 が robot_base に対して
+    // 閉じた欠陥 (同一性を呼び出し側で再導出する) が、Origin CF では 16 箇所 / 10 ファイルに
+    // 残っていた。robot 規則と違い `all` が 1 本なのは、この名前には**正当な住所が
+    // ちょうど一つ**しか無いため — 生成の種名も判定規則も同じ ORIGIN_FRAME_NAME に
+    // 集約したので、src/ の他のどこかにリテラルが現れること自体が再導出のサイン。
+    // 散文中の 'Origin frame cannot be…' 等はクォートが隣接しないので当たらない。
+    name: 'Origin CF の同一性 (Solid の body frame の名前)',
+    owners: ['src/domain/originFrame.js'],
+    use: "isOriginFrame(obj) / findOriginFrame(objects, parentId) / ORIGIN_FRAME_NAME  — import from 'src/domain/originFrame.js'",
+    all: [/['"`]Origin['"`]/],
+    why: 'body frame の判定が散ると、Origin の扱いを一つ変えるたび 16 箇所を同時に直す必要が生まれ、漏れた箇所は黙って古い規則で編集ロックを外す (ADR-037 §4 / ADR-094 §波及)',
+  },
 ]
 
 /** src/ 配下の .js を列挙 (テストと生成物を除く)。 */

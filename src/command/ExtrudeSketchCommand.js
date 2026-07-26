@@ -1,3 +1,5 @@
+import { findOriginFrame } from '../domain/originFrame.js'
+
 /**
  * ExtrudeSketchCommand — records a Profile→Solid extrude operation for undo/redo.
  * (ADR-022 Phase 2)
@@ -31,7 +33,7 @@ export function createExtrudeSketchCommand(profileRef, height, sceneService, onA
       // Undo: Solid → Profile.
       // Delete auto-created Origin frame (created by extrudeProfile / execute).
       const children = sceneService.scene.getChildren(profileRef.id)
-      const originFrame = children.find(o => o.name === 'Origin')
+      const originFrame = findOriginFrame(children, profileRef.id)
       if (originFrame) sceneService.deleteObject(originFrame.id)
 
       // Detach Solid without disposing (MeshView is shared with Profile).
