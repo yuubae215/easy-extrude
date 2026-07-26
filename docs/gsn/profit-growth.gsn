@@ -199,6 +199,14 @@ labels meta-goal
                             - "src/domain/placement.test.js"
                             - "src/PosePolicyOwnership.test.js"
 
+                            solution SupportDomainIsPolicyNotKind
+                            uuid 5e8b1d47-9c02-4f36-b1a8-7d3e0c4a6f19
+                            summary "ADR-098 実装 (Accepted): ADR-097 が剥がし残した種の門を閉じた。stack assist の instanceof Solid が 2 枚残っていたため方針語 grounded が種によって 2 つの意味を持っており (Solid = 床を割らない かつ 面に載る / robot_base = 床を割らない だけ)、当事者の『キューブはスタックするのにロボットはスタックしない』はその現れだった。適用可否を方針の述語へ、支持プローブを方針表の隣の宣言へ移し、種分岐は 4 箇所 (起票時の見積もりは 2 箇所) すべて撤去。証拠は node --test src/domain/placement.test.js 31/31 + src/PosePolicyOwnership.test.js 8/8 + playwright 24/24 (症状回帰は差分ペアで、同じ数値 Grab が S の有無だけで載るか載らないかに分かれる)。両検査とも変異を入れて空回りしていないことを確認済み。『ロボットが箱の上に立つことが grasp として意味を持つか』は当事者の実利用待ちなので、この goal は ToBeReviewed のまま。詳細は adr-098-support-domain-is-policy.gsn"
+                            artifacts
+                            - "docs/gsn/adr-098-support-domain-is-policy.gsn"
+                            - "src/domain/placement.js"
+                            - "e2e/smoke.spec.js"
+
         goal CostMinimized
         uuid 942a60a6-889d-448c-8682-0212e9c70623
         summary "同一の品質・信頼性水準を保ったまま経費が最小化されている"

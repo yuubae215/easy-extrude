@@ -25,10 +25,20 @@
  * 実体種を足すときにこの欄を空にできない (原則 #31 — 正当な「支持なし」は
  * 推論させず宣言させる)。`placementFor()` は未宣言の種で throw する。
  *
+ * ## 「載る」も方針の関数である (ADR-098)
+ *
+ * ADR-097 は pose の入口を 1 つにしたが、その入口の**中に種の門が残っていた** —
+ * stack assist は `instanceof Solid` で閉じ、支持プローブ (`_footprintSamplesOf` /
+ * `_bottomZOf`) は `instanceof CoordinateFrame` で分岐していた。入口を 1 つにしても
+ * 入口の中で種が分かれれば結果は同じなので、ADR-098 が
+ * `stackAssistApplies()` と `SUPPORT_PROBE_BY_KIND` をここへ引き取った。
+ *
  * ## この木が成立する範囲
  *
  * 支持の導出は下向きレイに依存するので、扱えるのは**水平支持面だけ**である
  * (壁面・天井・傾斜面へのマウントは表現できない — ADR-097 §受け入れるコスト)。
+ * ロボットのスケルトンと非表示の実体は支持面ではない (レイは可視 cuboid のみを
+ * 撃つ — ADR-098 §範囲の限界 / ADR-096)。
  *
  * 純粋モジュール: THREE も DOM も持たず、plain な `{x,y,z}` で入出力する。
  * ドメインクラスの `instanceof` はこのファイルの中だけに在り (原則 #2)、
@@ -164,6 +174,191 @@ export function placementOf(entity) {
 /** その方針が床の不変条件を持つか (= 支持を問う意味があるか)。 */
 export function hasGroundInvariant(placement) {
   return placement === PLACEMENT.SUPPORTED || placement === PLACEMENT.GROUNDED
+}
+
+/**
+ * **stack assist の適用可否は種ではなく方針が決める** (ADR-098 §Decision 1)。
+ *
+ * ADR-097 は `_applyStackSnap` から「床を作る」責務を剥がしたが、残った補助
+ * (`SceneService._applyStackAssist`) には `instanceof Solid` の門が 2 枚残っていた。
+ * 帰結として方針表の `grounded` が種によって 2 つの意味を持っていた —
+ * Solid では「床を割らない**かつ**直下の面に載る」、robot_base では
+ * 「床を割らない**だけ**」。当事者の「キューブはスタックするのにロボットは
+ * スタックしない」は、方針の差ではなく**同じ方針語の下に別実装が残っていた**
+ * ことの現れである。
+ *
+ * 除外の理由が「種」から「方針」へ移るのがこの関数の意味であって、判定そのものは
+ * `hasGroundInvariant` と一致する — 床の不変条件を持つ実体はすべて「何かの上に
+ * 載せる」補助の対象になる。同じ述語を 2 本書くと第二の源になる (§1.1) ので
+ * **委譲**する。将来この 2 つの問いが分かれたときに、分岐点はここ 1 箇所になる。
+ *
+ * @param {string} placement `PLACEMENT` メンバ
+ * @returns {boolean}
+ */
+export function stackAssistApplies(placement) {
+  return hasGroundInvariant(placement)
+}
+
+// ── 支持プローブの宣言 (ADR-098 §Decision 2) ────────────────────────────────
+
+/**
+ * 足跡 (XY サンプル) の取り方。
+ *
+ * `NONE` は「プローブを持たない」の**宣言**であって既定ではない — `PLACEMENT.FREE`
+ * と同じ扱い (原則 #31)。
+ */
+export const FOOTPRINT_PROBE = Object.freeze({
+  /** 最下面の corners + その重心。屋根の縁をまたぐ底面が角だけで浮かないように重心も見る。 */
+  BOTTOM_FACE_AND_CENTROID: 'bottomFaceAndCentroid',
+  /** world 原点 1 点。CF は足跡を持たない — 立っているのは原点である (ADR-085)。 */
+  ORIGIN_POINT:             'originPoint',
+  /** 足跡の概念を持たない。 */
+  NONE:                     'none',
+})
+
+/** 最下点 Z の取り方。値の意味は `FOOTPRINT_PROBE` と対。 */
+export const BOTTOM_PROBE = Object.freeze({
+  MIN_CORNER_Z: 'minCornerZ',
+  ORIGIN_Z:     'originZ',
+  NONE:         'none',
+})
+
+/**
+ * 種ごとに**宣言された**支持プローブ (ADR-098 §Decision 2)。
+ *
+ * ## なぜ方針表の隣に居るのか
+ *
+ * 「この種の底はどこか」は、ADR-097 以前は `SceneService._footprintSamplesOf` /
+ * `_bottomZOf` が `instanceof CoordinateFrame` で答えていた。ADR-097 は
+ * 「`instanceof` の連鎖が在ってよい唯一の場所は `placementKindOf()`」と決めたのに、
+ * この 2 つは**方針表と同じ問いに別の場所で答え続けていた** (§1.1 の第二の源)。
+ *
+ * 症状の非対称がその証拠になる: 種を足したとき、方針表は throw して気づかせるが、
+ * プローブは黙って `corners = []` → `null` を返して「支持なし」に見せる
+ * (原則 #31 — 不在は検査対象のノードを持たない)。
+ *
+ * robot_base の底が base 原点である根拠は ADR-085 (`world → robot_base → tcp` の
+ * TF で base 原点が床に立つ)。ここで新しく決めるのではなく既存の決定を**写す**。
+ */
+export const SUPPORT_PROBE_BY_KIND = Object.freeze({
+  [PLACEMENT_KIND.ANNOTATION]:       Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
+  [PLACEMENT_KIND.SOLID]:            Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
+  [PLACEMENT_KIND.IMPORTED_MESH]:    Object.freeze({ footprint: FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID, bottom: BOTTOM_PROBE.MIN_CORNER_Z }),
+  [PLACEMENT_KIND.ROBOT_BASE_FRAME]: Object.freeze({ footprint: FOOTPRINT_PROBE.ORIGIN_POINT,             bottom: BOTTOM_PROBE.ORIGIN_Z    }),
+  [PLACEMENT_KIND.COORDINATE_FRAME]: Object.freeze({ footprint: FOOTPRINT_PROBE.ORIGIN_POINT,             bottom: BOTTOM_PROBE.ORIGIN_Z    }),
+  // 計測線は「二点の間」に在る。断面はスケッチ平面の上に在り、その平面は床とは
+  // 限らない — どちらも底を持たないことの宣言であって、未記入ではない。
+  [PLACEMENT_KIND.MEASURE_LINE]:     Object.freeze({ footprint: FOOTPRINT_PROBE.NONE, bottom: BOTTOM_PROBE.NONE }),
+  [PLACEMENT_KIND.PROFILE]:          Object.freeze({ footprint: FOOTPRINT_PROBE.NONE, bottom: BOTTOM_PROBE.NONE }),
+})
+
+/** プローブを持たない実体の宣言 (分類できない実体の答え)。 */
+const NO_PROBE = Object.freeze({ footprint: FOOTPRINT_PROBE.NONE, bottom: BOTTOM_PROBE.NONE })
+
+/**
+ * 種の宣言された支持プローブ。未宣言の種は throw する — `placementFor()` と同じ形
+ * であることに意味がある (原則 #31)。
+ *
+ * @param {string} kind `PLACEMENT_KIND` メンバ
+ * @returns {{footprint: string, bottom: string}}
+ */
+export function supportProbeFor(kind) {
+  if (!Object.prototype.hasOwnProperty.call(SUPPORT_PROBE_BY_KIND, kind)) {
+    throw new Error(
+      `[placement] no declared support probe for kind "${kind}". ` +
+      'Add a row to SUPPORT_PROBE_BY_KIND — an undeclared probe silently answers ' +
+      '"no support", which is the defect ADR-098 removes.',
+    )
+  }
+  return SUPPORT_PROBE_BY_KIND[kind]
+}
+
+/**
+ * 実体の支持プローブ。分類できない実体 (SpatialLink 等) は「持たない」の宣言を
+ * 返す — `placementOf()` が `free` を返すのと同じ扱い。
+ *
+ * @param {*} entity
+ * @returns {{footprint: string, bottom: string}}
+ */
+export function supportProbeOf(entity) {
+  const kind = placementKindOf(entity)
+  return kind === null ? NO_PROBE : supportProbeFor(kind)
+}
+
+/**
+ * 最下面の corners — 最小 Z から `SUPPORT_TOLERANCE` 以内のものだけ。
+ * 傾いた実体では側面の輪郭ではなく**接地している面**が足跡である。
+ * @param {{x:number,y:number,z:number}[]} corners
+ */
+function bottomFaceCorners(corners) {
+  if (!corners?.length) return []
+  const minZ = corners.reduce((lo, c) => Math.min(lo, c.z), Infinity)
+  return corners.filter(c => Math.abs(c.z - minZ) < SUPPORT_TOLERANCE)
+}
+
+/**
+ * **宣言どおりに足跡を取る純粋関数** — 幾何は呼び手が渡す (原則 #3)。
+ *
+ * `SceneService` 側は宣言を読んで幾何を渡すだけの薄い実行系になり、種の分岐を
+ * 持たない。未知のプローブ値で throw するのは、種ごとの既定表が未宣言の種で
+ * throw するのと同じ理由 — fall-through は「宣言された既定」と「誰も考えなかった
+ * 値」を区別不能にする (原則 #31)。
+ *
+ * @param {{footprint: string}} probe
+ * @param {object} geometry
+ * @param {{x:number,y:number,z:number}[]} [geometry.corners]
+ * @param {{x:number,y:number,z:number}|null} [geometry.worldPosition]
+ * @returns {{x:number,y:number}[]}
+ */
+export function footprintSamplesFor(probe, { corners = [], worldPosition = null } = {}) {
+  const kind = probe?.footprint
+  if (kind === FOOTPRINT_PROBE.NONE) return []
+  if (kind === FOOTPRINT_PROBE.ORIGIN_POINT) {
+    return worldPosition ? [{ x: worldPosition.x, y: worldPosition.y }] : []
+  }
+  if (kind === FOOTPRINT_PROBE.BOTTOM_FACE_AND_CENTROID) {
+    const face = bottomFaceCorners(corners)
+    if (face.length === 0) return []
+    const samples = face.map(c => ({ x: c.x, y: c.y }))
+    const cx = samples.reduce((a, s) => a + s.x, 0) / samples.length
+    const cy = samples.reduce((a, s) => a + s.y, 0) / samples.length
+    samples.push({ x: cx, y: cy })
+    return samples
+  }
+  throw new Error(
+    `[placement] unknown footprint probe "${kind}". ` +
+    'Every FOOTPRINT_PROBE member needs a branch here — a fall-through would ' +
+    'make an unconsidered value indistinguishable from a declared one.',
+  )
+}
+
+/**
+ * **宣言どおりに最下点 Z を取る純粋関数**。`footprintSamplesFor` と対。
+ *
+ * @param {{bottom: string}} probe
+ * @param {object} geometry
+ * @param {{x:number,y:number,z:number}[]} [geometry.corners]
+ * @param {{x:number,y:number,z:number}|null} [geometry.worldPosition]
+ * @returns {number|null} 底を持たない宣言なら null
+ */
+export function bottomZFor(probe, { corners = [], worldPosition = null } = {}) {
+  const kind = probe?.bottom
+  if (kind === BOTTOM_PROBE.NONE) return null
+  if (kind === BOTTOM_PROBE.ORIGIN_Z) return worldPosition ? worldPosition.z : null
+  if (kind === BOTTOM_PROBE.MIN_CORNER_Z) {
+    if (!corners?.length) return null
+    return corners.reduce((lo, c) => Math.min(lo, c.z), Infinity)
+  }
+  throw new Error(
+    `[placement] unknown bottom probe "${kind}". ` +
+    'Every BOTTOM_PROBE member needs a branch here (see footprintSamplesFor).',
+  )
+}
+
+/** そのプローブが world 原点を要るか (呼び手が幾何を集めるときの判定)。 */
+export function probeNeedsWorldOrigin(probe) {
+  return probe?.footprint === FOOTPRINT_PROBE.ORIGIN_POINT ||
+         probe?.bottom    === BOTTOM_PROBE.ORIGIN_Z
 }
 
 /**

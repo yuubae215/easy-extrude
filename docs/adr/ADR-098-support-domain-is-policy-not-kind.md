@@ -1,6 +1,6 @@
 # 098. 「何の上に載れるか」を種から方針へ — stack assist の型ゲートを外し、支持プローブを方針表の隣で宣言する
 
-- Status: Proposed
+- Status: Accepted (実装済み — `stackAssistApplies()` + `SUPPORT_PROBE_BY_KIND` の宣言、種の門 2 枚の撤去、プローブ 4 メソッドの `instanceof` 撤去、種分岐の個数検査、差分ペアの e2e 3 本)
 - Date: 2026-07-26
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: なし (ADR-097 が剥がし残した半分を引き継ぐ。ADR-071 の補助はここで種から解放される)
@@ -193,6 +193,49 @@ stack 中の接触点 FX (`stackContact`) はハンドラの所有のまま。�
   `_bottomZOf`)、`src/domain/placement.test.js`、`src/PosePolicyOwnership.test.js`、
   `docs/STATE_LEDGER.md` (基数列: 支持を持つ/持たない実体の個数は既に ADR-097 の
   行が持つ — 種の追加のみ)。契約・BFF・`core/` は不変。
+
+## 実装で変わったこと (起票時との差 — 黙って上書きしない)
+
+俯瞰と実装が食い違ったら食い違いのほうを書く (原則 #19)。起票時の記述を書き換えず、
+下に差分だけ足す。
+
+1. **種分岐は 2 箇所ではなく 4 箇所あった。** §Decision 2 は `_footprintSamplesOf` /
+   `_bottomZOf` を名指ししたが、実装時に **`_segmentStartBottomZ` /
+   `_destinationSamples`** が同じ `instanceof CoordinateFrame` 分岐を持っていた —
+   セグメント開始時点の幾何に対して「この種の底はどこか」に答える*同じ問い*の、
+   1 フレーム前の写しである。4 つとも宣言表へ寄せた。
+
+2. **`cornersAndCentroid` → `bottomFaceAndCentroid` に改名し、意味を狭めた。**
+   起票時の名前は「全 corners + 重心」だったが、実装時に 3 つの呼び出し箇所が
+   *それぞれ違う足跡*を使っていたことが判明した (`_footprintSamplesOf` = 全 corners、
+   `_destinationSamples` = 全 corners で重心なし、`_applyStackAssist` = **最下面の
+   corners + その重心**)。足跡とは接地している面であり、傾いた実体の側面輪郭ではない
+   ので、3 つを最下面基準へ統一した。名前が意味を語らないと第二の源に戻る (§1.1)。
+   非自明な帰結: 傾いた Solid の座り位置が変わりうる (側面の張り出しが屋根に
+   当たって浮くことが無くなる = 改善方向)。水平な実体・軸整列の箱では不変。
+
+3. **`stackAssistApplies()` は `hasGroundInvariant()` へ委譲する。** 起票時は
+   「兄弟の述語」と書いたが、本体が同一の述語を 2 本書くのは第二の源そのもの
+   だった。名前 (= 問い) は 2 つ、実装は 1 つにし、将来 2 つの問いが分かれたときの
+   分岐点を 1 箇所に用意した。
+
+4. **`PosePolicyOwnership.test.js` の検査単位はファイルでも行でもなく
+   「名指ししたメソッド本体」にした。** §Consequences は「`instanceof` で種を分ける行が
+   `placement.js` の外に 0 個」と書いたが、これは**そのままでは実装できない** —
+   `src/` にはヒットテスト・N パネル・ツールバーなど配置と無関係な正当な
+   `instanceof` が多数あり (ADR-097 が既に「そこへ規則を書いて外した」と記録して
+   いる)、全域規則は無視される規則になる (希釈 — 憲法 Q3)。プローブ 7 メソッドを
+   名指しし、その本体内の `instanceof` を 0 個に数える形に狭めた。**pose の書き込み
+   ABI (`_applyEntityDelta`) だけは宣言された例外**として表に持ち、宣言の無い例外が
+   0 個であることを逆向きにも数える。
+
+5. **範囲外で 1 件バグを直した (検証を通すために不可避)。** 数値 Grab の
+   `1`/`2`/`3` が `this._setSnapMode(...)` — **`src/` のどこにも存在しないメソッド** —
+   を呼んでおり、毎回 TypeError を投げたうえで数値入力の分岐より先に `return`
+   していた。つまり **1・2・3 を含む距離を打つとその桁が黙って消えていた**
+   (入力は消費され何も起きない = 原則 #11 の最悪形)。snap の *モード* という概念は
+   `SnapSystem` に存在しないので復元先が無く、宙に浮いた分岐を削除した。
+   ADR-098 の e2e (画面座標に依存しない数値 Grab) が、この道を初めて通って露出させた。
 
 ## Lens notes
 

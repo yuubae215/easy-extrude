@@ -916,14 +916,30 @@ export class AppController {
       // imports and does not construct under `node --test`, so this snapshot is
       // where the scene-level invariant is actually asked (same reason as
       // visibilityState — ADR-096).
-      placementState: () => [...this._scene.objects.values()].map(o => ({
-        id:               o.id,
-        name:             o.name,
-        placement:        this._service.placementOf(o),
-        belowGradeIntent: this._service.belowGradeIntentOf(o.id),
-        support:          this._service.supportOf(o.id),
-        bottomZ:          this._service._bottomZOf(o),
-      })),
+      // `footprint` (ADR-098) is the entity's probed footprint centroid — the
+      // origin point for a frame, the bottom-face centroid for a geometry
+      // entity, null for a kind that declares no footprint. It reports the
+      // DECLARED probe rather than a second idea of "where this thing is", and
+      // it lets a regression aim a gesture at another entity without going
+      // through screen coordinates: the numeric grab (`G` → axis → distance)
+      // takes a world delta, so a test can compute the exact distance between
+      // two entities and type it. The camera-dependent form of the same test
+      // would only prove that some sweep happened to land.
+      placementState: () => [...this._scene.objects.values()].map(o => {
+        const samples = this._service._footprintSamplesOf(o)
+        return {
+          id:               o.id,
+          name:             o.name,
+          placement:        this._service.placementOf(o),
+          belowGradeIntent: this._service.belowGradeIntentOf(o.id),
+          support:          this._service.supportOf(o.id),
+          bottomZ:          this._service._bottomZOf(o),
+          footprint:        samples.length === 0 ? null : {
+            x: samples.reduce((a, s) => a + s.x, 0) / samples.length,
+            y: samples.reduce((a, s) => a + s.y, 0) / samples.length,
+          },
+        }
+      }),
     }
   }
 
@@ -3469,9 +3485,15 @@ export class AppController {
           gh.confirm()
           return
         case 'Escape':       gh.cancel();     return
-        case '1': this._setSnapMode('vertex'); return
-        case '2': this._setSnapMode('edge');   return
-        case '3': this._setSnapMode('face');   return
+        // NOTE (found while writing the ADR-098 regression): '1'/'2'/'3' used to
+        // call `this._setSnapMode(...)`, a method that exists NOWHERE in src/.
+        // The branch therefore threw a TypeError on every press AND returned
+        // before the numeric-input branch below, so any typed grab distance
+        // containing a 1, 2 or 3 silently lost those digits — the input was
+        // consumed and nothing happened (原則 #11). There is no snap-MODE concept
+        // in the snap subsystem to restore it to (`SnapSystem` has no modes), so
+        // the dangling branch is removed and the digits reach the numeric input
+        // they were always meant to reach.
       }
       if (gs.axis) {
         if ((e.key >= '0' && e.key <= '9') || e.key === '.') {

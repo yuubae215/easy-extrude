@@ -76,6 +76,8 @@ import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
 import {
   PLACEMENT, SUPPORT_TOLERANCE,
   placementOf, hasGroundInvariant, resolvePlacementDelta, supportUnder,
+  stackAssistApplies, supportProbeOf, footprintSamplesFor, bottomZFor,
+  probeNeedsWorldOrigin,
 } from '../domain/placement.js'
 
 /**
@@ -2854,34 +2856,43 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * Current world XY samples of the entity's footprint (probe origins).
-   * CoordinateFrames have no footprint — their single world position is used.
+   * Live geometry handed to the declared probe (ADR-098 §Decision 2).
+   *
+   * This is the whole of the service's part in "where is this kind's bottom":
+   * gather geometry, hand it to the declaration. The `instanceof` chain that used
+   * to answer that question here now lives only in `placementKindOf()` — these two
+   * methods were answering the SAME question as the policy table, in a second
+   * place, which is the defect ADR-098 removes (§1.1).
+   *
+   * The world pose is resolved only when the declaration asks for it, so a Solid
+   * probe never pays for a cache lookup it does not read.
+   *
+   * @param {*} obj
+   * @param {{footprint: string, bottom: string}} probe
+   */
+  _probeGeometryOf(obj, probe) {
+    return {
+      corners: obj?.corners ?? [],
+      worldPosition: probeNeedsWorldOrigin(probe)
+        ? (this.worldPoseOf(obj.id)?.position ?? null)
+        : null,
+    }
+  }
+
+  /**
+   * Current world XY samples of the entity's footprint (probe origins), taken as
+   * the entity's kind declares (`SUPPORT_PROBE_BY_KIND`).
    * @returns {{x:number, y:number}[]}
    */
   _footprintSamplesOf(obj) {
-    if (obj instanceof CoordinateFrame) {
-      const pos = this.worldPoseOf(obj.id)?.position
-      return pos ? [{ x: pos.x, y: pos.y }] : []
-    }
-    const corners = obj?.corners ?? []
-    if (corners.length === 0) return []
-    const samples = corners.map(c => ({ x: c.x, y: c.y }))
-    // Centroid too: a bottom face spanning a roof edge must not "hover" on the
-    // strength of its corners alone.
-    const cx = samples.reduce((a, s) => a + s.x, 0) / samples.length
-    const cy = samples.reduce((a, s) => a + s.y, 0) / samples.length
-    samples.push({ x: cx, y: cy })
-    return samples
+    const probe = supportProbeOf(obj)
+    return footprintSamplesFor(probe, this._probeGeometryOf(obj, probe))
   }
 
-  /** Current lowest world Z of the entity, or null when it has no geometry. */
+  /** Current lowest world Z of the entity, or null when its kind declares no bottom. */
   _bottomZOf(obj) {
-    if (obj instanceof CoordinateFrame) {
-      return this.worldPoseOf(obj.id)?.position?.z ?? null
-    }
-    const corners = obj?.corners ?? []
-    if (corners.length === 0) return null
-    return corners.reduce((lo, c) => Math.min(lo, c.z), Infinity)
+    const probe = supportProbeOf(obj)
+    return bottomZFor(probe, this._probeGeometryOf(obj, probe))
   }
 
   /**
@@ -2900,29 +2911,44 @@ export class SceneService extends EventEmitter {
    * @returns {number|null}
    */
   _segmentStartBottomZ(obj, startCorners) {
-    if (obj instanceof CoordinateFrame) {
-      const local = startCorners?.[0]
-      if (!local) return null
-      const world = local.clone()
+    const probe = supportProbeOf(obj)
+    return bottomZFor(probe, this._snapshotGeometryOf(obj, startCorners, probe))
+  }
+
+  /**
+   * Snapshot geometry handed to the declared probe — the segment-start twin of
+   * `_probeGeometryOf`.
+   *
+   * These two used to branch on `instanceof CoordinateFrame` themselves, which
+   * made FOUR places answering "where is this kind's bottom" (ADR-098 §Decision 2
+   * names two of them; the segment-start pair is the same second source one
+   * frame earlier). For a CoordinateFrame the snapshot is a PARENT-LOCAL
+   * translation, so it is lifted to world with the parent's pose — the parent
+   * does not move during this entity's own drag, and if it does, the parent's own
+   * policy governs it.
+   *
+   * @param {*} obj
+   * @param {import('three').Vector3[]} startCorners
+   * @param {{footprint: string, bottom: string}} probe
+   */
+  _snapshotGeometryOf(obj, startCorners, probe) {
+    const corners = startCorners ?? []
+    if (!probeNeedsWorldOrigin(probe)) return { corners, worldPosition: null }
+    const local = corners[0]
+    if (!local) return { corners, worldPosition: null }
+    return {
+      corners,
+      worldPosition: local.clone()
         .applyQuaternion(this._getParentWorldQuat(obj))
-        .add(this._getParentWorldPos(obj))
-      return world.z
+        .add(this._getParentWorldPos(obj)),
     }
-    if (!startCorners?.length) return null
-    return startCorners.reduce((lo, c) => Math.min(lo, c.z), Infinity)
   }
 
   /** Destination XY samples for the probe: segment-start footprint slid by the delta. */
   _destinationSamples(obj, startCorners, worldDelta) {
-    if (obj instanceof CoordinateFrame) {
-      const local = startCorners?.[0]
-      if (!local) return []
-      const world = local.clone()
-        .applyQuaternion(this._getParentWorldQuat(obj))
-        .add(this._getParentWorldPos(obj))
-      return [{ x: world.x + worldDelta.x, y: world.y + worldDelta.y }]
-    }
-    return (startCorners ?? []).map(c => ({ x: c.x + worldDelta.x, y: c.y + worldDelta.y }))
+    const probe = supportProbeOf(obj)
+    const samples = footprintSamplesFor(probe, this._snapshotGeometryOf(obj, startCorners, probe))
+    return samples.map(s => ({ x: s.x + worldDelta.x, y: s.y + worldDelta.y }))
   }
 
   /**
@@ -2987,8 +3013,10 @@ export class SceneService extends EventEmitter {
    * @param {Map<string, import('three').Vector3>|null} segStartPositions  per-Solid _position snapshots
    * @param {import('three').Vector3} worldDelta  the REQUESTED delta (pre-policy)
    * @param {{stackAssist?: boolean, activeId?: string|null}} [options]
-   *   stackAssist — additionally rest the grabbed Solids on the surface below
+   *   stackAssist — additionally rest the moving entities on the surface below
    *   (ADR-071's remaining value: "put it on top of that", never "make a floor").
+   *   Which entities that reaches is decided by their declared policy, not by
+   *   their type (ADR-098 §Decision 1).
    * @returns {{stacking: boolean, stackContact: {x:number,y:number,z:number}|null}}
    *   the stack-assist outcome, for the caller's snap FX (the handler owns the
    *   feedback, the service owns the geometry).
@@ -3001,25 +3029,45 @@ export class SceneService extends EventEmitter {
       const obj = this._model.getObject(id)
       if (!obj) continue
       const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds)
-      if (obj instanceof CoordinateFrame) {
-        const parentWorldQuat = this._getParentWorldQuat(obj)
-        const localDelta = delta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
-        obj.move(startCorners, localDelta)
-      } else if (obj instanceof Solid) {
-        const segStartPos = segStartPositions?.get(id)
-        if (segStartPos) obj.move(segStartPos, delta)
-      } else {
-        obj.move(startCorners, delta)
-      }
-      const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
-      obj.meshView?.updateGeometry(handles)
-      obj.meshView?.updateBoxHelper()
+      this._applyEntityDelta(obj, startCorners, segStartPositions?.get(id), delta)
     }
 
     const stackContact = stackAssist
       ? this._applyStackAssist(segStartCorners, segStartPositions, worldDelta, activeId, movingIds)
       : null
     return { stacking: stackContact !== null, stackContact }
+  }
+
+  /**
+   * **Writes the pose** for one entity — the mutation ABI, dispatched by type.
+   *
+   * This dispatch is about HOW to write a pose (a CoordinateFrame takes a
+   * parent-local delta, a Solid takes its `_position` snapshot, everything else
+   * takes its corners snapshot), NOT about what policy applies — the policy was
+   * already decided by `_policyDelta` before this is called. Keeping the two
+   * apart is what lets ADR-098 delete the type gates from the assist without
+   * duplicating this ABI knowledge: both the entry loop and the stack assist call
+   * here, so neither can grow its own idea of what a "movable" entity is.
+   *
+   * @param {*} obj
+   * @param {import('three').Vector3[]} startCorners
+   * @param {import('three').Vector3|undefined} segStartPos  Solid `_position` snapshot
+   * @param {import('three').Vector3} delta  post-policy delta
+   */
+  _applyEntityDelta(obj, startCorners, segStartPos, delta) {
+    if (obj instanceof CoordinateFrame) {
+      const parentWorldQuat = this._getParentWorldQuat(obj)
+      const localDelta = delta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
+      obj.move(startCorners, localDelta)
+    } else if (obj instanceof Solid) {
+      if (!segStartPos) return
+      obj.move(segStartPos, delta)
+    } else {
+      obj.move(startCorners, delta)
+    }
+    const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
+    obj.meshView?.updateGeometry(handles)
+    obj.meshView?.updateBoxHelper()
   }
 
   /**
@@ -3034,22 +3082,33 @@ export class SceneService extends EventEmitter {
    * handler — which was the most direct expression of "there is no one
    * authoritative entry point" (PHILOSOPHY #1).
    *
+   * ADR-098 §Decision 1 took the LAST type gate out of it. It used to open with
+   * `if (!(grabbed instanceof Solid)) return null` and skip every non-Solid in the
+   * moving set, which meant the policy word `grounded` carried two different
+   * meanings: "does not break the floor AND rests on the surface below" for a
+   * Solid, "does not break the floor" only for a robot_base frame. That is what
+   * the report "the cube stacks but the robot does not" was seeing — not a
+   * difference in policy, but two implementations living under one policy word.
+   * The exclusion is now stated by the policy (`stackAssistApplies`), so a `free`
+   * entity (user CF / MeasureLine / Profile) is still passed over — for a reason
+   * that is declared rather than inferred from its type.
+   *
    * @returns {{x:number,y:number,z:number}|null} contact point, or null when not stacking
    */
   _applyStackAssist(segStartCorners, segStartPositions, worldDelta, activeId, movingIds) {
     const grabbed = activeId ? this._model.getObject(activeId) : null
-    if (!(grabbed instanceof Solid)) return null
+    if (!grabbed || !stackAssistApplies(placementOf(grabbed))) return null
 
-    const gCorners = grabbed.corners
-    let gZMin = Infinity
-    gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
+    // The footprint the assist probes with is the one the entity's kind declares,
+    // so a robot_base (a single origin point) is as probeable as a cube (its
+    // bottom face). `supportOf()` could already answer for both; only the seating
+    // path was closed — the question and the answer now have the same reach (G3).
+    const gZMin = this._bottomZOf(grabbed)
+    if (gZMin === null || !Number.isFinite(gZMin)) return null
+    const samples = this._footprintSamplesOf(grabbed)
+    if (samples.length === 0) return null
 
-    const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < SUPPORT_TOLERANCE)
-    const center = new Vector3()
-    bottomCorners.forEach(c => center.add(c))
-    center.divideScalar(bottomCorners.length || 1)
-
-    const highestHitZ = this.highestSurfaceZAt([...bottomCorners, center], movingIds)
+    const highestHitZ = this.highestSurfaceZAt(samples, movingIds)
     const zOffset = highestHitZ - gZMin
     if (Math.abs(zOffset) < SUPPORT_TOLERANCE) return null   // already resting
 
@@ -3059,17 +3118,18 @@ export class SceneService extends EventEmitter {
     const assisted = worldDelta.clone().add(new Vector3(0, 0, zOffset))
     for (const id of movingIds) {
       const selObj = this._model.getObject(id)
-      if (!(selObj instanceof Solid)) continue
-      const segStartPos = segStartPositions?.get(id)
-      if (!segStartPos) continue
+      if (!selObj || !stackAssistApplies(placementOf(selObj))) continue
       // The policy still gets the last word: an assisted delta that would push a
       // grounded entity below grade is clamped like any other request.
       const delta = this._policyDelta(selObj, segStartCorners.get(id), assisted, movingIds)
-      selObj.move(segStartPos, delta)
-      selObj.meshView?.updateGeometry(selObj.corners)
-      selObj.meshView?.updateBoxHelper()
+      this._applyEntityDelta(selObj, segStartCorners.get(id), segStartPositions?.get(id), delta)
     }
-    return { x: center.x, y: center.y, z: highestHitZ }
+
+    // Contact point for the handler's snap FX — the centroid of the probed
+    // footprint, which for an origin-point probe is that single point.
+    const cx = samples.reduce((a, s) => a + s.x, 0) / samples.length
+    const cy = samples.reduce((a, s) => a + s.y, 0) / samples.length
+    return { x: cx, y: cy, z: highestHitZ }
   }
 
   /**
