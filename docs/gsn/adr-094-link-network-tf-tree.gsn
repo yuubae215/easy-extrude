@@ -1,0 +1,147 @@
+GOALS adr094_link_network_tf_tree
+
+goal LinkNetworkAnswersBothAtAGlance
+uuid 20f0f9ee-738b-469f-9e68-4381f294688f
+summary "モバイルの 220x160px の LINK NETWORK パネルで、『この座標系は TF ツリーのどこにいるか』と『この実体はどの制約で誰と結ばれているか』に、視線を移さず同時に答えられる"
+state ToBeDeveloped
+labels adr-094, link-network
+artifacts
+- "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
+- "docs/adr/ADR-048-link-network-layered-layout.md"
+
+    context Adr094Scope
+    uuid e022be4a-0a02-4e74-a628-cb59b8fd5fe2
+    summary "ADR-094 (Proposed): Solid と Origin CF を 1 つの融合ノードに畳み、木辺 (parentId) を骨格に戻し、レイアウトを純粋関数へ切り出す。ADR-048 の §2.1 ノード集合と §2.2.1 (未実装の凡例決定) を置き換え、決定性・寸法・データ契約 {name,type,parentId} は無改変で継承する"
+    artifacts
+    - "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
+    - "docs/adr/ADR-037-body-frame-architecture.md"
+
+    context MobileIsTheOnlyStandingStructureView
+    uuid 7cb0bd91-e31b-4195-b0fd-f41b3f48d480
+    summary "運用実態 (この木の前提): モバイルでは Outliner がドロワーで既定非表示 (OutlinerView.js:145 の translateX(-100%))、NodeEditor は当事者がほぼ使っていない。ゆえに LINK NETWORK が唯一の常設構造ビューであり、委譲先が画面に無い。この前提が崩れる (Outliner が常設になる等) と、下の分割却下の論拠も同時に失効する"
+    artifacts
+    - "src/view/LinkNetworkView.js"
+
+    context BusinessTreeAttachPoint
+    uuid 76a6d502-ec5b-40eb-8ec9-d7e50d546b79
+    summary "接続予定先: profit-growth.gsn の RevenueMaximized -> ByAdoptionFunnel -> OtherAdoptionBranchesCovered (uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e)。その goal の assumption AdoptionBranchesUnexplored は『本木は現時点でコンテキスト入力の枝のみを展開している』と宣言しており、モバイルでの可読性はまさにその省かれた枠に入る。接続は実装 PR で行う — いま接ぐと証拠が全て未来形のまま事業木の ToBeDeveloped を増やすだけで、木が『証拠実行可能』でなくなる。テストが実在した時点で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyFuseNotSplit
+    uuid 9f007a67-19df-4ee9-b6fe-97689cb5f546
+    summary "融合を選ぶ根拠: 画面に載っているのは分けるべき 2 視点ではなく 1 グラフの 2 辺クラス (CF ツリー = 運動学的全域木 / SpatialLink = ループを閉じる余木辺 — ADR-048 §2.2.1 が既に持っていた定式化)。全域木 + 余木辺の同時作図の標準解は分割ではなく『木に幾何を持たせ、非木辺を余りとして上に乗せる』。かつ Solid : Origin CF は 1:1 全単射 (ADR-037 §1) なので 1 ノードに畳める — Solid を囲いへ降格する案 (Option D) が必要とした『帯に矢印が刺さる』特殊ケースが概念ごと消える"
+    artifacts
+    - "docs/adr/ADR-038-urdf-link-taxonomy.md"
+
+    assumption OriginSeparateSelectionHarmless
+    uuid e64e085f-7842-47b7-a7a0-e63218e92fe4
+    summary "反証されうる仮説 (ADR-094 §受け入れるコスト): 融合後はパネルから Solid と Origin CF を別々に選べなくなるが、Origin CF は編集ロック済み (ADR-037 §4) なので実害は無い。これは当事者の実利用でしか反証できず、テストでは閉じない。反証されたら融合ノードに副次的な選択経路 (long-press 等) を足す方向で回収する"
+
+    strategy ByRemovingTheThreeDefects
+    uuid 2b0521f7-ba10-452d-9625-2711cb75d168
+    summary "Argument by 魔改造の 3 欠陥 (D1 ノード集合の category error / D2 無情報な Origin 行 / D3 逆向きの視覚差) を対症のラベル調整ではなく構造で消すこと — 3 つは網羅ではなく、苦情『Origin が真ん中で分かりづらい』の観測から遡って同定された原因集合である"
+
+        goal NodesAreFramesOnly
+        uuid 0950bce5-a4d7-4215-8b39-b2623ac7179e
+        summary "D1: グラフのノード集合が純粋に座標系だけになり、Y 軸が『TF 深さ』のみを意味する。融合ノードは TF 上 Origin CF (body frame) を正体とし、ラベルに Solid 名を持つ。body frame を持たない根 (annot-* / measure / sketch / imported) は素のノードとして残る"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TfInvariantTestPlanned
+            uuid 4cf77717-7192-4d3b-bdfc-8b31468989c2
+            summary "証拠予定: src/view/LinkNetworkLayout.test.js (新設) の TF 不変条件 — 非根ノードは必ず親より下の行にある / 木辺だけを辿ると Solid ごとに単一根へ到達する。『Y 軸は TF 深さのみを意味する』という本 ADR の新しい規律が書く瞬間に問われる場所はここであり、散文ではない (憲法 Q3)。src/**/*.test.js は glob 実行なので置くだけで走る"
+
+        goal OriginRowRemoved
+        uuid 33e107ba-76bd-44f0-82dd-a23e2b99c998
+        summary "D2: N 個の Solid に対して 'Origin' が N 個並ぶ無情報な行が消え、L >= 3 判定が解けて、本命のユーザー CF が最下行の圧迫から解放される。Solid 端点のリンクと Origin CF 端点のリンクは同一の融合ノードへ解決される"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption FusionInvariantTestPlanned
+            uuid 80808ecb-28e9-49b0-9e88-36c19bd12419
+            summary "証拠予定: LinkNetworkLayout.test.js の融合不変条件 — 融合ノードは常に Origin CF の TF 位置を持ちラベルは Solid 名 / Solid 端点と Origin CF 端点のリンクが同一ノードに解決される / 行数 L が現状の 3 から 2 へ落ちる。傍証として LayoutDecompiler.js:111 が DSL 出力で既に auto-Origin を fold 済み (DSL 層は『Origin はユーザーにとって意味を持たない』と判定済みで、パネルだけが同意していなかった)"
+            artifacts
+            - "src/layout/LayoutDecompiler.js"
+
+        goal TreeEdgesReadAsSkeleton
+        uuid ff758985-ff18-4007-8a73-4e9f140ccd22
+        summary "D3: 木辺が最も読める実線の骨格になり、SpatialLink が色付きの弧として上に乗る『余りの辺』として読める。凡例 2 行 (木辺 = TF 親子 / 色付き弧 = 制約) が出る。ADR-048 §2.2.1 の未実装決定がここで閉じる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption LegendAndScreenshotPlanned
+            uuid 1dd61e26-fc82-4865-bf30-0ce023ac8e21
+            summary "証拠予定: 視覚差の向きはユニットテストで固定できない (色と線幅の意味は人が見る) ため、モバイル幅 390px の Playwright スクリーンショットを docs/dogfooding/README.md の様式で記録し、前後を並べる。marching-ants を親子線に使わない ADR-048 §2.2 の判断は維持する"
+            artifacts
+            - "docs/dogfooding/README.md"
+
+    strategy ByPureDeterministicLayout
+    uuid 44c816a9-ee19-4834-9102-c244acadcd57
+    summary "Argument by レイアウトの純粋関数化 — 上の 3 欠陥が『直った』ことを機械で言えるようにする前提条件。現状の _runLayout() は this._nodes を変異する副作用付きで (原則 #3 違反)、そのためにテストが 1 本も無い"
+
+        goal LayoutIsPureFunction
+        uuid 7d16b51d-de9c-4b19-a632-ac929227b820
+        summary "computeLayout(entityInfos, links) -> { nodes, edges, rows } が純粋関数として切り出され、LinkNetworkView は描画のみを持つ。AppController._updateLinkNetwork() のデータ契約 {name, type, parentId} と update(entityInfos, links) シグネチャは不変 (ADR-048 §2.4『Controller は thin のまま』の継承)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PureLayoutExtractionPlanned
+            uuid 71281e9d-774f-4245-8a23-0089623e7dc3
+            summary "証拠予定: src/view/LinkNetworkLayout.js (新設) が this を持たず、同じ入力で呼び直しても入力オブジェクトを変異しないことをテストで固定する。契約不変の側は AppController 無改変で既存テストが通ることが証拠になる"
+            artifacts
+            - "src/controller/AppController.js"
+
+        goal SameSceneSamePixels
+        uuid e942dcc9-39ef-4ad9-9f2c-cc440c648110
+        summary "ADR-048 の核心性質『同一シーン → 同一ピクセル』(決定的階層レイアウト) が、散文の約束ではなく機械で固定される"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption DeterminismTestPlanned
+            uuid 12cbe1f6-0293-4369-bd51-d1a87127cd29
+            summary "証拠予定: LinkNetworkLayout.test.js で同一入力 → 同一出力 (深い等価) を固定し、入力配列の順序に依存しないこと (シーンの列挙順が変わっても同じ絵) を併せて固定する。ADR-048 が 2 年近く散文でしか持っていなかった性質を初めて機械が持つ"
+
+        goal CardinalityIsCovered
+        uuid 8723802b-a994-4f37-94cb-2e07ce93cd15
+        summary "原則 #31: 0 リンク (パネル非表示) / ノード 1 個 / Solid N 個 の 3 基数がすべて fixture で覆われている。行の重なり・ラベル衝突は N でしか出ず、1 個の fixture では絶対に見えない (ADR-093 の lockstep と同じ構図)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption CardinalityFixturesPlanned
+            uuid db7d363d-8d9a-4307-bdb1-eca574bca3ae
+            summary "証拠予定: LinkNetworkLayout.test.js に 0 / 1 / N の 3 fixture を置く。併せて docs/STATE_LEDGER.md の『LINK NETWORK グラフのノード』行の基数欄が埋まっていること (ADR-090 の欠陥は基数欄が空だったこと — 累積器に書かなければ閾値は永遠に跨がれない)"
+            artifacts
+            - "docs/STATE_LEDGER.md"
+
+    strategy ByIdentitySingleOwner
+    uuid dbbd0dec-1661-4f14-afe1-9bd39a76ffb8
+    summary "Argument by 同一性の単一所有者 — 上の 2 戦略はどちらも『これは Origin CF か』をレイアウトで判定する。述語が無いままやると 23 箇所目の inline 再導出になるので、この枝は先行 PR として独立に閉じる (ADR-094 §非目標 / STATE_LEDGER 既知の負債 #4)"
+
+        goal OriginIdentityHasOneOwner
+        uuid b663e954-a631-4667-beeb-248f772ff318
+        summary "『これは Origin CF か』(isOriginFrame) と『この親の Origin を探す』(findOriginFrame) の 2 規則がドメイン 1 箇所に閉じ、name === 'Origin' の inline 再導出 22 箇所 / 10 ファイル (SceneService・ChromeGates・AppController・FramePlacementHandler・ContextMenuHandler・GrabOperationHandler・UIStateManager・LayoutDecompiler・ExtrudeSketchCommand ほか) がその呼び出しへ移行している"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PredicatePrPlanned
+            uuid fe0bd122-51d0-47a2-80ff-ebe61c0ac233
+            summary "証拠予定: 述語の新設 + 22 箇所の移行 PR。ADR-090 が robot_base に対して閉じた欠陥 (同一性を名前で決め、呼び出し側で再導出する) の未移行分そのもので、先例として src/domain/robotFrames.js の isRobotBaseFrame がある。作業順は ①述語 PR → ②ADR-094 実装 PR — 逆にすると融合判定が 23 箇所目になる"
+            artifacts
+            - "src/domain/robotFrames.js"
+
+        goal MachineBlocksReDerivation
+        uuid 975a6233-07d2-4cfd-9ffd-68322d7e7ebd
+        summary "移行後の再発を人のレビューではなく機械が落とす: isOriginFrame の規則が IDENTITY_RULES に登録され、以後 src/ に書かれた name === 'Origin' の inline 再導出はテストで失敗する。IDENTITY_RULES という番人は ADR-090 で既に用意済みで、Origin だけが登録されていなかった"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption IdentityRuleRegistrationPlanned
+            uuid 19f8fedc-259c-4cba-b15b-2da79e1b1168
+            summary "証拠予定: src/IdentityContainment.test.js の IDENTITY_RULES に Origin CF の同一性エントリを追加 (owners = 新設ドメインファイル、all = /['\"`]Origin['\"`]/ と CoordinateFrame 判定の対)。match は inline 再導出にだけ当たり、名前付き述語の呼び出しには当たらない形に保つこと"
+            artifacts
+            - "src/IdentityContainment.test.js"
+
+            justification WhyMachineNotProse
+            uuid fe8b13dc-bffb-45f8-b80d-92ea9ef18fab
+            summary "Withstands challenge: 『述語を作れば以後みんな使う』は 22 箇所という実績が反証している (規則自体は ADR-037 の時点で存在していた)。憲法 Q3 の答えが『誰も開かない散文』になる典型で、成果物は文書の行ではなくチェックでなければならない"
