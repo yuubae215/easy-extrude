@@ -22,6 +22,7 @@ import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
+import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -717,14 +718,18 @@ export class AppController {
         // ADR-040: use _position directly — getCentroid(corners) introduces FP rounding
         // that feeds back into _position each call (PHILOSOPHY #24 manifestation c).
         delta[axis] = val - obj._position[axis]
-        obj.move(obj._position.clone(), delta)
       } else {
-        const currentCentroid = getCentroid(corners)
-        delta[axis] = val - currentCentroid[axis]
-        const startCorners = corners.map(c => c.clone())
-        obj.move(startCorners, delta)
+        delta[axis] = val - getCentroid(corners)[axis]
       }
-      obj.meshView.updateGeometry(corners)
+      // The numeric-entry path (ADR-097 §Context "数値入力"): it wrote pose
+      // directly and was subject to neither the placement policy nor the stack
+      // assist — the eighth site the ADR predicted, already present. It now goes
+      // through the same entry as every gesture, so typing Z = -5 into a
+      // grounded entity clamps exactly like dragging it down does.
+      const startCorners = new Map([[obj.id, corners.map(c => c.clone())]])
+      const startPositions = (obj instanceof Solid)
+        ? new Map([[obj.id, obj._position.clone()]]) : null
+      this._service.applyPreviewTranslation(startCorners, startPositions, delta)
       if (this._objSelected) obj.meshView.updateBoxHelper()
     })
 
@@ -904,6 +909,21 @@ export class AppController {
         contextual: this._service.contextualVisibilityOf(o.id),
         drawn:      o.meshView?.group?.visible ?? o.meshView?.cuboid?.visible ?? null,
       })),
+      // Read-only placement snapshot (ADR-097) — the E2E guard for the invariant
+      // that used to live only in prose ("never floating"). `support` is DERIVED
+      // on every read, so a `supported` entity answering null is the illegal
+      // state itself, not a stale mirror of it. SceneService needs vite-only
+      // imports and does not construct under `node --test`, so this snapshot is
+      // where the scene-level invariant is actually asked (same reason as
+      // visibilityState — ADR-096).
+      placementState: () => [...this._scene.objects.values()].map(o => ({
+        id:               o.id,
+        name:             o.name,
+        placement:        this._service.placementOf(o),
+        belowGradeIntent: this._service.belowGradeIntentOf(o.id),
+        support:          this._service.supportOf(o.id),
+        bottomZ:          this._service._bottomZOf(o),
+      })),
     }
   }
 
@@ -1055,26 +1075,25 @@ export class AppController {
             const delta = pt.clone().sub(this._objDragStart)
             const _qdTension = this._service.getLinkDragTension()
             if (_qdTension > 0) delta.multiplyScalar(Math.max(0.15, 1.0 - Math.min(_qdTension, 1.0) * 0.85))
-            this._service.applyPreviewTranslation(
+            // Same entry, same policy as the G-key grab (ADR-097 §Decision 3).
+            // This path used to reach into `_grabHandler._applyStackSnap(...)` —
+            // another handler's private method — which was the most direct
+            // expression of there being no one authoritative entry point (#1).
+            const { stacking, stackContact } = this._service.applyPreviewTranslation(
               this._objDragAllStartCorners,
               this._objDragAllStartPositions,
               delta,
+              { stackAssist: this._grabHandler.stackMode, activeId: this._activeObj?.id ?? null },
             )
-            if (this._grabHandler.stackMode) {
-              this._grabHandler._applyStackSnap(this._objDragAllStartPositions, delta)
-              for (const [id] of this._objDragAllStartCorners) {
-                const selObj = this._scene.getObject(id)
-                if (selObj) {
-                  selObj.meshView.updateGeometry(selObj.corners)
-                  selObj.meshView.updateBoxHelper()
-                }
-              }
+            this._grabHandler.state.stacking = stacking
+            if (stackContact) this._grabHandler.state.stackContact = stackContact
+            if (stacking) {
               // Snap engagement flash: the quick-drag stack path shares the
               // handler's snap state, so it shares the same diff/spawn too.
               this._grabHandler._syncSnapFx()
             } else {
-              // Stack assist disabled (ADR-071 escape hatch): free placement
-              // may dip below grade — warn once per gesture, never clamp (#11).
+              // Below grade is reachable only by declaration now, but it is
+              // still never silent (ADR-071, PHILOSOPHY #11).
               this._grabHandler.warnIfBelowGrade()
             }
           }
@@ -2945,9 +2964,16 @@ export class AppController {
           gs.centroid.copy(grabCenter)
           gs.pivot.copy(grabCenter)
           gs.lastDelta.set(0, 0, 0)
-          const camDir = new THREE.Vector3()
-          this._camera.getWorldDirection(camDir)
-          gs.dragPlane.setFromNormalAndCoplanarPoint(camDir, grabCenter)
+          // Touch re-grab was a FOURTH drag-plane implementation, and the only
+          // one with no entity branch at all — on touch even a mounted
+          // annotation lost its host plane the moment the finger came back down.
+          // Found by the entry census, not by reading (ADR-097 §Decision 5).
+          gs.dragPlane.setFromNormalAndCoplanarPoint(
+            resolveDragPlaneNormal(this._activeObj, {
+              camera: this._camera, scene: this._scene, service: this._service,
+            }),
+            grabCenter,
+          )
           this._raycaster.setFromCamera(this._mouse, this._camera)
           const _segPt = new THREE.Vector3()
           if (this._raycaster.ray.intersectPlane(gs.dragPlane, _segPt)) {
@@ -3131,9 +3157,16 @@ export class AppController {
         // Ctrl+drag (rotate) only works for locally-editable objects (Cuboid).
         this._objCtrlDrag = e.ctrlKey && !(obj instanceof ImportedMesh) && !(obj instanceof MeasureLine) && !(obj instanceof CoordinateFrame)
 
-        const camDir = new THREE.Vector3()
-        this._camera.getWorldDirection(camDir)
-        this._objDragPlane.setFromNormalAndCoplanarPoint(camDir, hit.point)
+        // ADR-097 §Decision 5: the quick-drag plane had no entity branch at all —
+        // every entity was dragged on the camera-facing plane, which is what made
+        // a grounded entity acquire Z from the camera and then fight the stack
+        // assist for it. It now follows the same policy as the G-key grab.
+        this._objDragPlane.setFromNormalAndCoplanarPoint(
+          resolveDragPlaneNormal(obj, {
+            camera: this._camera, scene: this._scene, service: this._service,
+          }),
+          hit.point,
+        )
         this._objDragStart.copy(hit.point)
         this._objDragStartCorners = this._corners.map(c => c.clone())
 

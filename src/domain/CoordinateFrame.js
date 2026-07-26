@@ -124,6 +124,22 @@ export class CoordinateFrame {
      * @type {'base' | 'tcp' | null}
      */
     this.robotRole = null
+
+    /**
+     * Declared intent to sit below grade (ADR-097 §Decision 6 / G3).
+     *
+     * Only meaningful for frames whose declared placement is `grounded` — today
+     * `robot_base`. `false` means "nobody has declared this", which is why it is
+     * the blocking value: an entity that ends up under the floor without anyone
+     * saying so is the accident this ADR separates from the intent.
+     *
+     * Written only through `SceneService.setBelowGradeIntent()`. Not serialized —
+     * on import it is re-derived from the loaded geometry, so a scene saved with
+     * a base in a pit loads back into a pit without a scene-schema version bump
+     * (ADR-097 §Consequences: never silently rewrite loaded data).
+     * @type {boolean}
+     */
+    this.belowGradeIntent = false
   }
 
   /** @param {string} name */

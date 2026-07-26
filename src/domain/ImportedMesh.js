@@ -28,6 +28,13 @@ export class ImportedMesh {
     this.meshView = meshView
     /** @type {string|null} IFC4 class name (e.g. 'IfcWall'); null = unclassified. @see ADR-025 */
     this.ifcClass = null
+    /**
+     * Declared intent to sit below grade (ADR-097 §Decision 6 / G3).
+     * `false` = undeclared = blocked. Written only through
+     * `SceneService.setBelowGradeIntent()`; re-derived on import, not serialized.
+     * @type {boolean}
+     */
+    this.belowGradeIntent = false
     /** @type {import('../types/spatial.js').WorldVector3[]} synthetic 8 AABB corners for grab/drag — set by initCorners() */
     this._corners8 = []
   }

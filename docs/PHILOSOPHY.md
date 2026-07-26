@@ -787,6 +787,19 @@ Three manifestations in this repo, in unrelated layers:
   designed for. The fix has the same shape as the others — the phase is derived from the
   entity's own identity, so being one of N is represented rather than inferred.
 
+- **Zero pose-write entry points became "the ones I happened to know about" (ADR-097,
+  `src/service/SceneService.js` + three controllers).** The rule "an entity must not sink
+  through the floor" was implemented per gesture path, so it existed on the free grab and
+  not under an axis constraint, on `Solid` and not on anything else, on the drag-time
+  re-seat and not on the per-frame `mounts` follow. Every path that had it looked correct;
+  the defect lived entirely in the paths that had *nothing* — and a path with no clamp has
+  no clamp to inspect, so reading the code that implements the rule can never reveal it.
+  The census that replaced this found **two further entry points nobody had named**: the
+  N-panel numeric Location field, and a fourth drag-plane implementation on touch re-grab.
+  Neither was found by reading. The blast radius here is not the set of entity kinds — it
+  is *the set of places that can write a pose*, and that set is only knowable by
+  enumerating and counting it.
+
 The shared root: **a check that inspects present items can never see an absence.** The fix
 in both cases has the same shape — enumerate the *required kinds* and test their count,
 then make a legitimate zero a **declaration** rather than an inference. An absent required
@@ -810,7 +823,19 @@ checks rather than the ADR's prose — `src/domain/robotFrames.test.js` (zero re
 stops at `no-robot` with **zero** solver calls, so the absent declaration is never defaulted),
 and `src/RobotRosterAuthority.test.js`, which counts the seed call sites — because the cheapest
 "fix" for a missing robot is to re-seed it at every scene entry, which makes zero unrepresentable
-again*
+again; for the pose-entry case, `src/PosePolicyOwnership.test.js`, which counts the pose writes
+outside the one entry (and whose declared-exception table makes "an exception exists" different
+from "an exception nobody counted")*
+
+**A second corollary, from ADR-096 and ADR-097 arriving at the same shape independently:**
+when behaviour depends on an entity's *kind*, the per-kind table must **throw on an
+undeclared kind** rather than fall through to a value. `EXPLICIT_DEFAULTS` (visibility) and
+`PLACEMENT_BY_KIND` (placement) both do this, because in both cases the original defect was
+a default nobody had chosen — a `true` seeded into an Outliner row, a floor that only some
+entity kinds happened to get. A fall-through default makes "this kind was considered and
+declared free" indistinguishable from "this kind was added and nobody thought about it",
+which is the zero-shaped blind spot one level up: not a missing *item*, but a missing
+*decision*. Adding an entity kind without deciding its behaviour should be a test failure.
 
 ---
 
