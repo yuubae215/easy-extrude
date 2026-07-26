@@ -29,10 +29,32 @@ Context = **Goal / 力学**、Decision = **Strategy**、Consequences = **Evidenc
    旧 ADR の Status を `Superseded by ADR-NNNN` にして相互リンクする。履歴は書き換えない。
 4. **証拠を具体に(§1.2 / §5)。** Consequences の検証欄は主張でなく test / bench /
    proof / 参照で埋める。埋まらない判断は Proposed 止まりにし、欠落を明示する。
-5. **証拠が大半未来形なら GSN 併設を自分から提案する(核 §3 の対応行)。** 検証欄が
-   ToBeDeveloped 主体(実装前 ADR・多イテレーション前提)なら、§1.2 の鎖を証拠実行
-   可能な GSN 論証木(`docs/gsn/`、gsn-meta-framework で作成・gsn-maintain で鮮度更新)
-   に外部化し、ADR ヘッダから相互参照する。仮説の反証・修正は木に記録する。
+5. **ADR を起票するなら GSN も起こす(無条件)。** → 下記 §GSN 併設。
+
+## GSN 併設(起票と同じ PR で。規律の正本はここ)
+
+ADR を新規に起こすときは、**同じ PR で `docs/gsn/<adr-slug>.gsn` に論証木を起こす。**
+「証拠が未来形かどうか」で判断しない — 核 §3 の GSN トリガはもともと条件付き
+(「Evidence が大半未来形なら」)だったが、ここで**無条件化する**。
+
+理由(この条文自身が生んだ実例が ADR-094): 実装前 ADR の Evidence は定義上ほぼ全部が
+未来形で、「1 イテレーションで閉じる見込み」は**書いた本人の見込みでしかない**。
+散文の「検証」節は goal ごとの支えの有無を持たないので、未着手の枝と完了した枝が
+同じ顔で並ぶ(原則 #31 — 不在は検査対象のノードを持たない)。条件を書き手の自己申告に
+置くと、条件は満たされていても発動しない。
+
+- **top goal は ADR の Goal**(解ではなく性質)。却下案の理由は `justification`、
+  反証されうる前提は `assumption`、前提が崩れたら論拠ごと失効する運用実態は `context`。
+- 支えの無い goal は `support-exploring`(証拠予定を名指しした `assumption` を 1 つ以上持つ)
+  か `support-unexplored` を**宣言必須**。`pnpm test:gsn` が未宣言の 0 を落とす。
+- **事業木への接続は保留してよい。** `docs/gsn/profit-growth.gsn` へ接ぐのは実装 PR で、
+  テストが実在した時点で `solution` として吊る。証拠が全部未来形のうちに接ぐと事業木の
+  `ToBeDeveloped` を増やすだけで、木が「証拠実行可能」でなくなる。**接続予定先の
+  goal 名 + uuid と保留理由は `context` に書いて残す** — 保留は忘却ではない。
+- ADR 本文の「検証(証拠)」節から `.gsn` を名指しする。**goal ごとの支えの正本は `.gsn`
+  側**で、ADR は入口だけを持つ(第二の源にしない — 核 §1.1)。
+- 作成は gsn-meta-framework(様式は `references/dsl-output.md`)、鮮度更新は gsn-maintain。
+  仮説の反証・修正は木に記録する。**`pnpm test:gsn` が緑になるまで直してから commit。**
 
 ## 置き場所・命名
 - パス: `docs/adr/NNNN-kebab-title.md`(NNNN は 4 桁ゼロ詰め連番)。
