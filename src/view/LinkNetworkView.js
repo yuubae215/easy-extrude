@@ -1,32 +1,43 @@
 // @ts-nocheck
 /**
- * LinkNetworkView — 2D SVG overlay showing the SpatialLink graph.
+ * LinkNetworkView — 2D SVG overlay drawing the scene's TF tree with the
+ * SpatialLink constraints laid over it (ADR-094).
  *
- * Renders a deterministic layered hierarchy of all entities that participate
- * in at least one SpatialLink, plus their ancestor entities (a linked CF is
- * anchored under its parent Solid even when the Solid itself has no link).
- * Layer 0 holds root entities (Solids, annotations); each CF sits one row
- * below its parent. Parent-child structure is drawn as faint static lines;
- * SpatialLinks keep their semanticType colors and arrowheads and curve gently
- * so opposite-direction edges separate instead of overlapping. Same scene →
- * same pixels, every update (no force simulation, no random scatter).
- * Clicking a node selects the entity in the 3D viewport; hovering it (or a
- * 3D selection) puts the graph into FOCUS+CONTEXT mode.
+ * The panel shows ONE graph with two edge classes: the CF tree is the kinematic
+ * spanning tree and SpatialLinks are the cotree edges closing loops (ADR-038).
+ * The tree carries the geometry — it is the **skeleton**, drawn as the most
+ * legible line on the canvas — and the constraints ride above it as coloured
+ * arcs, the "leftover" edges. A two-line legend names that pairing. This is the
+ * reversal ADR-094 E2 made: containment lines used to be the faintest thing in
+ * the panel, which is backwards for a view whose subject is the TF tree, and the
+ * legend ADR-048 §2.2.1 decided on had never been drawn.
+ *
+ * Every node is a coordinate frame. A Solid and its auto body frame render as
+ * ONE fused node (ADR-094 E1): the node's TF identity is the body frame, its
+ * label is the Solid's name, clicking it selects the Solid (the body frame is
+ * edit-locked, ADR-037 §4), and a 3D selection of *either* entity highlights it.
+ * All of that resolution happens in `LinkNetworkLayout.computeLayout()`, which
+ * is pure — this class does nothing but draw the result and route input.
  *
  * READABILITY (the "lines flying everywhere" fix): edges are static — there is
  * no idle animation. Every edge marching-ants at once carried no per-firing
  * information and read as chaos (PHILOSOPHY #30: motion must speak a fact or an
- * affordance, else it is noise). Legibility now comes from *state*, not motion:
+ * affordance, else it is noise). Legibility comes from *state*, not motion:
  * with a node focused (hover or selection), its incident edges brighten and the
  * rest dim to context, so "what connects to this entity" is answerable at a
  * glance; kinematic links (jointType ≠ null) read heavier than topological ones.
  *
- * Lifecycle: auto-visible when links exist, hidden when none.
- * The panel is collapsible via the header button (−/+).
+ * Visibility is two orthogonal axes — `forceHidden` (an overlay owns the
+ * viewport) × `collapsed` (the user's −/+ button) — and `_applyVisibility()` is
+ * the sole writer of both (PHILOSOPHY #4). Flattening them into one enum would
+ * make "the user collapsed the panel during the demo" unrepresentable.
  *
- * @see ADR-030 (SpatialLink architecture), ADR-048 (layered layout)
+ * @see ADR-094 (TF tree regression), ADR-030 (SpatialLink), ADR-048 (layout)
  */
 import { LINK_TYPE_COLORS } from './SpatialLinkView.js'
+import {
+  computeLayout, PANEL_W, MIN_PANEL_H, LEGEND_H,
+} from './LinkNetworkLayout.js'
 
 /** Node fill color by entity type (matches AppController type strings). */
 const NODE_COLOR = {
@@ -41,22 +52,9 @@ const NODE_COLOR = {
   default:        '#9CA3AF',
 }
 
-/** semanticType values that carry a directional arrowhead. */
-const DIRECTED_TYPES = new Set([
-  'mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents',
-])
-
-const PANEL_W = 220
-// SVG height: grows to MAX when the hierarchy has 3+ layers (Solid → Origin CF
-// → user CF). Width never grows (left-edge occupancy contract). The MAX cap is
-// set by the Map vertical toolbar, which shares the left:188px column
-// (top:50%, ~259px tall): on a 720px viewport the panel top
-// (720 − 34 bottom − 28 header − MAX) must stay below the toolbar's lower
-// edge (~490px). 160 leaves ~8px clearance; measured via Playwright.
-const MIN_PANEL_H = 152
-const MAX_PANEL_H = 160
-/** Max parentId hops when walking ancestor chains (cycle/corruption guard). */
-const MAX_ANCESTOR_HOPS = 16
+/** Tree edge (TF parent → child): the skeleton, the most legible line here. */
+const TREE_STROKE = 'rgba(255,255,255,0.62)'
+const TREE_WIDTH  = 1.6
 
 export class LinkNetworkView {
   /**
@@ -64,16 +62,26 @@ export class LinkNetworkView {
    */
   constructor(onSelectEntity) {
     this._onSelect    = onSelectEntity
-    /** @type {Map<string, {label:string, type:string, x:number, y:number}>} */
+    /** @type {Map<string, import('./LinkNetworkLayout.js').LayoutNode>} laid-out nodes */
     this._nodes       = new Map()
     /** @type {Map<string, {source:string, target:string, semanticType:string, directed:boolean}>} */
     this._edges       = new Map()
+    /**
+     * entity id → node id. A fused node is reachable from BOTH the Solid and its
+     * body frame, so a 3D selection of either highlights it (ADR-094 E1).
+     * @type {Map<string, string>}
+     */
+    this._nodeIdByEntity = new Map()
+    /** 3D selection as ENTITY ids — mapped to node ids at render time, so a
+     *  selection set before the next layout is not stale. */
     this._selectedIds = new Set()
     /** Node currently hovered in the panel — drives focus+context with selection. */
     this._hoveredId   = null
     this._collapsed   = false
     /** Current SVG height — MIN_PANEL_H, or MAX_PANEL_H for 3+ layers. */
     this._svgH        = MIN_PANEL_H
+    /** Graph area height (SVG minus the legend strip). */
+    this._graphH      = MIN_PANEL_H - LEGEND_H
     /** True when rows are too crowded for labels (selection still labelled). */
     this._denseMode   = false
     /** True while an overlay (e.g. the Context DSL demo) suppresses the panel. */
@@ -203,64 +211,20 @@ export class LinkNetworkView {
    * @param {import('../domain/SpatialLink.js').SpatialLink[]} links
    */
   update(entityInfos, links) {
-    this._nodes.clear()
-    this._edges.clear()
+    // All graph derivation — fusion, ancestor expansion, layering, positions —
+    // is the pure layout's job (ADR-094 E3). Nothing here reads or writes it.
+    const layout = computeLayout(entityInfos, links)
+    this._nodes          = layout.nodes
+    this._edges          = layout.edges
+    this._nodeIdByEntity = layout.nodeIdByEntity
+    this._svgH           = layout.svgH
+    this._graphH         = layout.graphH
+    this._denseMode      = layout.denseMode
 
-    const usedIds = new Set()
-    for (const link of links) {
-      usedIds.add(link.sourceId)
-      usedIds.add(link.targetId)
-    }
-
-    // Include ancestor entities so every linked CF is anchored under its root
-    // Solid — the root itself may carry no link (e.g. a fastened child CF
-    // whose parent Solid is otherwise unreferenced).
-    const includedIds = new Set()
-    for (const id of usedIds) {
-      let cur = id
-      for (let hop = 0; hop < MAX_ANCESTOR_HOPS && cur != null; hop++) {
-        if (includedIds.has(cur)) break
-        if (!entityInfos.has(cur)) break
-        includedIds.add(cur)
-        cur = entityInfos.get(cur).parentId ?? null
-      }
-    }
-
-    for (const id of includedIds) {
-      const info = entityInfos.get(id)
-      // Positions are always assigned by the deterministic layered layout —
-      // no random seed, no carry-over from the previous update.
-      this._nodes.set(id, {
-        label:    info.name,
-        type:     info.type,
-        parentId: info.parentId ?? null,
-        layer:    0,
-        x: 0,
-        y: 0,
-      })
-    }
-
-    for (const link of links) {
-      if (!this._nodes.has(link.sourceId) || !this._nodes.has(link.targetId)) continue
-      this._edges.set(link.id, {
-        source:       link.sourceId,
-        target:       link.targetId,
-        semanticType: link.semanticType ?? 'connects',
-        directed:     DIRECTED_TYPES.has(link.semanticType) || link.jointType != null,
-        // Kinematic links (a real URDF joint) read heavier than topological
-        // annotations (adjacent/contains/…, jointType === null).
-        kinematic:    link.jointType != null,
-      })
-    }
-
-    const hasContent = this._edges.size > 0
-    this._hasContent = hasContent
+    this._hasContent = layout.edges.size > 0
     this._applyVisibility()
 
-    if (hasContent) {
-      this._runLayout()
-      this._renderSVG()
-    }
+    if (this._hasContent) this._renderSVG()
   }
 
   /**
@@ -275,12 +239,24 @@ export class LinkNetworkView {
     this._applyVisibility()
   }
 
-  /** Sole writer of the panel's display style (PHILOSOPHY #4). */
+  /**
+   * Sole writer of every display style in the panel (PHILOSOPHY #4).
+   *
+   * The two axes are independent and both land here: `forceHidden`/`hasContent`
+   * decide whether the panel exists on screen, `collapsed` decides whether the
+   * canvas inside it does. They used to have separate writers (`_toggleCollapse`
+   * wrote the SVG's display directly), which is how a shared visual flag drifts.
+   */
   _applyVisibility() {
     this._panelEl.style.display = (this._hasContent && !this._forceHidden) ? 'flex' : 'none'
+    this._svgEl.style.display   = this._collapsed ? 'none' : 'block'
   }
 
-  /** Highlights nodes whose IDs are in the provided selection set. */
+  /**
+   * Highlights the nodes carrying the given ENTITY ids. A fused node is
+   * highlighted by either of its two members (ADR-094 E1) — the mapping is the
+   * layout's, resolved at render time so it always matches the current graph.
+   */
   setSelection(ids) {
     this._selectedIds = new Set(ids)
     this._renderSVG()
@@ -304,147 +280,6 @@ export class LinkNetworkView {
     this._panelEl.remove()
   }
 
-  // ── Layout ──────────────────────────────────────────────────────────────────
-
-  /**
-   * Deterministic layered hierarchy layout (ADR-048).
-   *
-   * Layer = parentId depth among included nodes (roots at 0, CFs below their
-   * parent). X order: roots stable-sorted by (name, id), refined by one
-   * barycenter pass over SpatialLink partners; children grouped under their
-   * parent's x with min-gap sweeps. The output is a pure function of the
-   * input graph — identical scene state yields identical pixels, which
-   * replaces the old force layout's `prevPos` carry-over as the stability
-   * mechanism.
-   *
-   * Side outputs (read by `_renderSVG()`): `nd.layer`, `this._svgH`,
-   * `this._denseMode`, and `this._nodes` rebuilt in left-to-right /
-   * top-to-bottom order so greedy label placement resolves deterministically.
-   */
-  _runLayout() {
-    const ids = [...this._nodes.keys()]
-    const n = ids.length
-    if (n === 0) return
-
-    // ── Layer assignment (memoized parentId walk) ───────────────────────────
-    const layerOf = (id, hop = 0) => {
-      const nd = this._nodes.get(id)
-      const pid = nd.parentId
-      if (hop >= MAX_ANCESTOR_HOPS || pid == null || !this._nodes.has(pid)) return 0
-      return 1 + layerOf(pid, hop + 1)
-    }
-    let maxLayer = 0
-    for (const id of ids) {
-      const layer = layerOf(id)
-      this._nodes.get(id).layer = layer
-      maxLayer = Math.max(maxLayer, layer)
-    }
-    const L = maxLayer + 1
-
-    // ── Vertical: panel height + row positions ──────────────────────────────
-    this._svgH = L >= 3 ? MAX_PANEL_H : MIN_PANEL_H
-    const TOP = 24, BOT = 26
-    const rowY = (layer) =>
-      L === 1 ? this._svgH / 2 : TOP + layer * (this._svgH - TOP - BOT) / (L - 1)
-
-    // ── Roots: stable (name, id) order + one barycenter refinement pass ─────
-    const byNameId = (a, b) => {
-      const na = this._nodes.get(a).label, nb = this._nodes.get(b).label
-      return na < nb ? -1 : na > nb ? 1 : a < b ? -1 : a > b ? 1 : 0
-    }
-    const rootOf = (id) => {
-      let cur = id
-      for (let hop = 0; hop < MAX_ANCESTOR_HOPS; hop++) {
-        const pid = this._nodes.get(cur)?.parentId
-        if (pid == null || !this._nodes.has(pid)) return cur
-        cur = pid
-      }
-      return cur
-    }
-    let roots = ids.filter(id => this._nodes.get(id).layer === 0).sort(byNameId)
-    const initialIdx = new Map(roots.map((id, i) => [id, i]))
-    const bary = new Map()
-    for (const id of roots) {
-      const partners = []
-      for (const e of this._edges.values()) {
-        const ru = rootOf(e.source), rv = rootOf(e.target)
-        if (ru === id && rv !== id) partners.push(initialIdx.get(rv))
-        if (rv === id && ru !== id) partners.push(initialIdx.get(ru))
-      }
-      bary.set(id, partners.length
-        ? partners.reduce((s, v) => s + v, 0) / partners.length
-        : initialIdx.get(id))
-    }
-    roots = roots.sort((a, b) => (bary.get(a) - bary.get(b)) || byNameId(a, b))
-
-    const MARGIN = 12
-    const W = PANEL_W - 2 * MARGIN
-    const rootSlot = W / roots.length
-    roots.forEach((id, i) => {
-      const nd = this._nodes.get(id)
-      nd.x = MARGIN + (i + 0.5) * rootSlot
-      nd.y = rowY(0)
-    })
-
-    // ── Child rows: group under parent x, then min-gap sweeps ───────────────
-    let maxRowCount = roots.length
-    for (let layer = 1; layer < L; layer++) {
-      const row = ids.filter(id => this._nodes.get(id).layer === layer)
-      maxRowCount = Math.max(maxRowCount, row.length)
-      // Group order by parent's x, then stable (name, id) within the group.
-      row.sort((a, b) => {
-        const pa = this._nodes.get(this._nodes.get(a).parentId)
-        const pb = this._nodes.get(this._nodes.get(b).parentId)
-        return (pa.x - pb.x) || byNameId(a, b)
-      })
-      // Ideal: spread each sibling group around the parent's x.
-      const groupIndex = new Map()
-      for (const id of row) {
-        const pid = this._nodes.get(id).parentId
-        if (!groupIndex.has(pid)) groupIndex.set(pid, [])
-        groupIndex.get(pid).push(id)
-      }
-      for (const [pid, members] of groupIndex) {
-        const px = this._nodes.get(pid).x
-        members.forEach((id, j) => {
-          this._nodes.get(id).x = px + (j - (members.length - 1) / 2) * 20
-        })
-      }
-      // Left-to-right min-gap sweep, then right-to-left to fix edge pileup.
-      const minGap = 16
-      for (let i = 0; i < row.length; i++) {
-        const nd = this._nodes.get(row[i])
-        const prev = i > 0 ? this._nodes.get(row[i - 1]).x + minGap : MARGIN
-        nd.x = Math.max(nd.x, prev)
-        nd.y = rowY(layer)
-      }
-      for (let i = row.length - 1; i >= 0; i--) {
-        const nd = this._nodes.get(row[i])
-        const next = i < row.length - 1
-          ? this._nodes.get(row[i + 1]).x - minGap
-          : PANEL_W - MARGIN
-        nd.x = Math.min(nd.x, next)
-      }
-      for (let i = 0; i < row.length; i++) {
-        const nd = this._nodes.get(row[i])
-        nd.x = Math.max(MARGIN, Math.min(PANEL_W - MARGIN, nd.x))
-      }
-    }
-
-    // Dense scenes degrade to a labelled-on-selection dot strip (ADR-048 §MVP).
-    this._denseMode = W / maxRowCount < 22
-
-    // Rebuild the node Map in render order (top-to-bottom, left-to-right) so
-    // the greedy label pass in _renderSVG resolves left-neighbor-first.
-    const ordered = ids.sort((a, b) => {
-      const u = this._nodes.get(a), v = this._nodes.get(b)
-      return (u.layer - v.layer) || (u.x - v.x) || byNameId(a, b)
-    })
-    const rebuilt = new Map()
-    for (const id of ordered) rebuilt.set(id, this._nodes.get(id))
-    this._nodes = rebuilt
-  }
-
   // ── Rendering ───────────────────────────────────────────────────────────────
 
   _renderSVG() {
@@ -453,14 +288,17 @@ export class LinkNetworkView {
 
     this._svgEl.setAttribute('height', this._svgH)
 
-    const nodeById = new Map()
-    for (const [id, nd] of this._nodes) nodeById.set(id, nd)
-
     // Focus+context: the union of the panel-hovered node and the 3D selection.
     // When non-empty, incident edges brighten and the rest recede to context;
     // when empty, edges render in a calm neutral state. This is the state
     // signal that replaces the old idle marching animation (PHILOSOPHY #30).
-    const focusIds = new Set(this._selectedIds)
+    // Selection arrives as entity ids; a fused node answers to both of its
+    // members, so it is resolved through the layout's map (ADR-094 E1).
+    const focusIds = new Set()
+    for (const entityId of this._selectedIds) {
+      const nodeId = this._nodeIdByEntity.get(entityId)
+      if (nodeId != null) focusIds.add(nodeId)
+    }
     if (this._hoveredId && this._nodes.has(this._hoveredId)) focusIds.add(this._hoveredId)
     const hasFocus = focusIds.size > 0
     // Nodes one hop from a focused node — their labels stay legible in dense mode.
@@ -472,12 +310,15 @@ export class LinkNetworkView {
       }
     }
 
-    // ── Hierarchy edges (parent → child, structural) ───────────────────────
-    // Faint static lines underneath the SpatialLink layer: containment is
-    // scaffolding, not a semantic relationship — no dash, no marching ants,
-    // no arrowhead (those encode SpatialLink semantics, ADR-030/038).
+    // ── Tree edges (TF parent → child) — the skeleton ──────────────────────
+    // Solid, unbroken, and the brightest neutral line in the panel: this is the
+    // kinematic spanning tree the whole view is about, so it must read as
+    // structure at a glance (ADR-094 E2 — the old faint hairline said the
+    // opposite). Still no dash, no arrowhead, no marching ants: those encode
+    // SpatialLink semantics (ADR-030/038), and the tree's direction is already
+    // carried by the vertical axis, which now means TF depth and nothing else.
     for (const [id, nd] of this._nodes) {
-      const parent = nd.parentId != null ? nodeById.get(nd.parentId) : null
+      const parent = nd.parentId != null ? this._nodes.get(nd.parentId) : null
       if (!parent) continue
       const dx   = nd.x - parent.x, dy = nd.y - parent.y
       const dist = Math.sqrt(dx * dx + dy * dy) || 1
@@ -488,8 +329,9 @@ export class LinkNetworkView {
       line.setAttribute('y1', parent.y + ny * R)
       line.setAttribute('x2', nd.x - nx * R)
       line.setAttribute('y2', nd.y - ny * R)
-      line.setAttribute('stroke',       'rgba(255,255,255,0.18)')
-      line.setAttribute('stroke-width', '1')
+      line.setAttribute('stroke',       TREE_STROKE)
+      line.setAttribute('stroke-width', String(TREE_WIDTH))
+      line.setAttribute('stroke-linecap', 'round')
       this._graphGrp.appendChild(line)
     }
 
@@ -500,7 +342,7 @@ export class LinkNetworkView {
     // instead of stacking into one ambiguous line. Static styling only — width
     // and opacity encode importance (kinematic vs topological) and focus.
     for (const [, edge] of this._edges) {
-      const u = nodeById.get(edge.source), v = nodeById.get(edge.target)
+      const u = this._nodes.get(edge.source), v = this._nodes.get(edge.target)
       if (!u || !v) continue
 
       const colorInt = LINK_TYPE_COLORS[edge.semanticType] ?? 0x888888
@@ -535,8 +377,11 @@ export class LinkNetworkView {
       el.setAttribute('fill', 'none')
       el.setAttribute('stroke',         color)
       el.setAttribute('stroke-width',   String((edge.kinematic ? 2 : 1.3) + (active ? 0.5 : 0)))
+      // Neutral opacities sit above the skeleton's, not below it: the arcs are
+      // the layer ON TOP of the tree, and a coloured arc must not read fainter
+      // than the white line it crosses (ADR-094 E2).
       el.setAttribute('stroke-opacity', String(
-        dimmed ? 0.1 : active ? 0.95 : edge.kinematic ? 0.62 : 0.42))
+        dimmed ? 0.12 : active ? 0.95 : edge.kinematic ? 0.78 : 0.58))
       el.setAttribute('stroke-linecap', 'round')
       // Kinematic joints render solid (a real constraint); topological
       // annotations stay dashed (a conceptual relationship).
@@ -633,7 +478,9 @@ export class LinkNetworkView {
 
       let ly = nd.y + 3.5
       for (const dy of [0, LABEL_H, -LABEL_H, LABEL_H * 2]) {
-        const cand = Math.min(Math.max(nd.y + 3.5 + dy, LABEL_H), this._svgH - 2)
+        // Clamped to the GRAPH area — a label must never fall into the legend
+        // strip, where it would read as a third legend entry.
+        const cand = Math.min(Math.max(nd.y + 3.5 + dy, LABEL_H), this._graphH - 2)
         if (!intersects(boxFor(cand))) { ly = cand; break }
         ly = cand   // all candidates collide → keep the last (least-bad) one
       }
@@ -654,6 +501,53 @@ export class LinkNetworkView {
       g.appendChild(text)
       this._graphGrp.appendChild(g)
     }
+
+    this._renderLegend()
+  }
+
+  /**
+   * Two-line legend naming the two edge classes (ADR-048 §2.2.1's decision,
+   * finally drawn — ADR-094 E2).
+   *
+   * It answers the report that started ADR-048 §2.2.1 ("nodes look like they
+   * have several parents"): the tree is single-parent, the coloured arcs are the
+   * constraint graph laid over it. After the fusion this is a confirmation
+   * rather than an instruction manual — a picture that needs its manual read
+   * first has not been fixed, which is why the legend alone was rejected as the
+   * whole answer (ADR-094 Option F).
+   */
+  _renderLegend() {
+    const y = this._svgH - 5
+    const swatch = (x, stroke, dash) => {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      line.setAttribute('x1', x)
+      line.setAttribute('y1', y - 2.5)
+      line.setAttribute('x2', x + 13)
+      line.setAttribute('y2', y - 2.5)
+      line.setAttribute('stroke',       stroke)
+      line.setAttribute('stroke-width', dash ? '1.3' : String(TREE_WIDTH))
+      line.setAttribute('stroke-linecap', 'round')
+      if (dash) line.setAttribute('stroke-dasharray', '4 3')
+      this._graphGrp.appendChild(line)
+    }
+    const caption = (x, txt) => {
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+      text.setAttribute('x', x)
+      text.setAttribute('y', y)
+      text.setAttribute('fill',        '#7b7b7b')
+      text.setAttribute('font-size',   '7.5')
+      text.setAttribute('font-family', 'system-ui, -apple-system, sans-serif')
+      text.setAttribute('pointer-events', 'none')
+      text.textContent = txt
+      this._graphGrp.appendChild(text)
+    }
+    swatch(10, TREE_STROKE, false)
+    caption(27, 'TF parent')
+    // The constraint swatch borrows a real semanticType colour rather than a
+    // neutral grey, so the legend and the graph share one vocabulary.
+    const linkColor = '#' + (LINK_TYPE_COLORS.mounts ?? 0x888888).toString(16).padStart(6, '0')
+    swatch(108, linkColor, true)
+    caption(125, 'constraint')
   }
 
   /**
@@ -670,7 +564,9 @@ export class LinkNetworkView {
 
   _toggleCollapse() {
     this._collapsed = !this._collapsed
-    this._svgEl.style.display      = this._collapsed ? 'none' : 'block'
+    // The canvas's display belongs to `_applyVisibility()` (PHILOSOPHY #4) —
+    // this handler owns the *axis*, never the pixel.
+    this._applyVisibility()
     this._collapseBtn.textContent  = this._collapsed ? '+' : '−'
     this._collapseBtn.setAttribute('aria-label',
       this._collapsed ? 'Expand link network panel' : 'Collapse link network panel')

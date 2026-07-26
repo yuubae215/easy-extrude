@@ -148,13 +148,30 @@ labels meta-goal
 
                 goal OtherAdoptionBranchesCovered
                 uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e
-                summary "コンテキスト入力以外の採用障壁 (価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
+                summary "コンテキスト入力以外の採用障壁 (画面の可読性・価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
                 state ToBeDeveloped
-                labels support-unexplored
 
                     assumption AdoptionBranchesUnexplored
                     uuid d126c790-2083-480a-a074-851c18e6ad4b
-                    summary "プレースホルダ: 本木は現時点でコンテキスト入力の枝のみを展開している。この goal は『この decomposition が何を省いたか』を明示するために置かれており、埋まっていないこと自体が既知の欠落である (false rigour 対策)"
+                    summary "既知の欠落 (縮小した): 本 goal の下は可読性の枝が 1 本だけ埋まっており、価格・導入形態・CAD/PLC 接続・信頼性の証明は依然として未展開である。この assumption は『この decomposition が何を省いたか』を明示し続けるために残す (false rigour 対策) — 枝が 1 本入ったことで goal 全体が閉じたと読ませない"
+
+                    strategy ByScreenBandwidthBarriers
+                    uuid 3a8d1c60-9b47-4e52-8f13-6c0a5d2e97b4
+                    summary "Argument by 『主戦場の画面が構造を読ませられるか』という採用障壁の除去。fan-out が 1 本しか無いのは網羅したからではなく、この goal で展開済みの枝が 1 本だけだからである (残りの障壁は assumption AdoptionBranchesUnexplored が宣言している)"
+
+                        goal MobileStructureViewIsReadable
+                        uuid 9e5a3f21-4c7d-4b8e-a2f6-1d3c8b7e0a45
+                        summary "モバイルで唯一の常設構造ビュー (LINK NETWORK パネル) が、TF ツリー上の位置と制約の相手を同時に読ませる。当事者はモバイルで見ていることが多く Outliner はドロワー・NodeEditor はほぼ未使用なので、この 220x160px が構造理解の全帯域である — 読めないことは採用障壁そのもの"
+                        state ToBeReviewed
+                        groups adr-094
+
+                            solution LinkNetworkTfTreeRegression
+                            uuid 7f2c6b48-3e91-4a5d-9c07-52b8d1e4f6a3
+                            summary "ADR-094 実装 (Accepted): 融合ノードで無情報な行を消し (行 3->2、SVG 160->152px)、木辺を骨格へ、凡例 2 行。証拠は node --test src/view/LinkNetworkLayout.test.js 27/27 pass と 390px 実測記録。詳細な論証木は adr-094-link-network-tf-tree.gsn (top goal は当事者の実利用待ちで ToBeReviewed — 融合で Origin CF を単独選択できなくなる件は仮説のまま)"
+                            artifacts
+                            - "docs/gsn/adr-094-link-network-tf-tree.gsn"
+                            - "src/view/LinkNetworkLayout.test.js"
+                            - "docs/dogfooding/2026-07-26-link-network-tf-tree.md"
 
         goal CostMinimized
         uuid 942a60a6-889d-448c-8682-0212e9c70623
