@@ -163,7 +163,7 @@ labels meta-goal
                         uuid 9e5a3f21-4c7d-4b8e-a2f6-1d3c8b7e0a45
                         summary "モバイルで唯一の常設構造ビュー (LINK NETWORK パネル) が、TF ツリー上の位置と制約の相手を同時に読ませる。当事者はモバイルで見ていることが多く Outliner はドロワー・NodeEditor はほぼ未使用なので、この 220x160px が構造理解の全帯域である — 読めないことは採用障壁そのもの"
                         state ToBeReviewed
-                        groups adr-094
+                        groups adr-094, adr-095
 
                             solution LinkNetworkTfTreeRegression
                             uuid 7f2c6b48-3e91-4a5d-9c07-52b8d1e4f6a3
@@ -172,6 +172,14 @@ labels meta-goal
                             - "docs/gsn/adr-094-link-network-tf-tree.gsn"
                             - "src/view/LinkNetworkLayout.test.js"
                             - "docs/dogfooding/2026-07-26-link-network-tf-tree.md"
+
+                            solution LinkNetworkIndentedOutline
+                            uuid 4d1b8e07-2a5f-4c93-b6e1-8f0a3c7d2b19
+                            summary "ADR-095 実装 (Accepted): 幾何割当を『深さ→y / 兄弟→x』から『ノード順→y / 深さ→x』へ入れ替え、denseMode を廃止。390px / Solid 12 個の実測で実体ラベルが 0 個から 24 個になった (before は凡例 2 行以外に文字が無く点 24 個だけ) — 『この 220x160px が構造理解の全帯域』というこの goal の前提に対し、その帯域が実運用規模で 0 だったことの是正。証拠は node --test src/view/LinkNetworkLayout.test.js 39/39 pass と 390px before/after 実測。詳細は adr-095-link-network-indented-outline.gsn"
+                            artifacts
+                            - "docs/gsn/adr-095-link-network-indented-outline.gsn"
+                            - "src/view/LinkNetworkLayout.test.js"
+                            - "docs/dogfooding/2026-07-26-link-network-indented-outline.md"
 
         goal CostMinimized
         uuid 942a60a6-889d-448c-8682-0212e9c70623
