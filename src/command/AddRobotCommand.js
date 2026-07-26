@@ -33,6 +33,9 @@ export function createAddRobotCommand(robot, service, onAfterUndo, onAfterRedo) 
     execute() {
       service.reattachObject(base)          // parent first (TF order)
       if (tcp) service.reattachObject(tcp)
+      // No visibility call here: `reattachObject` re-composes on the way back in
+      // (ADR-096), and the base's `explicit` axis survived the round trip — which
+      // is what makes a redone robot reappear rather than come back invisible.
       onAfterRedo(base.id)
     },
 
@@ -40,8 +43,14 @@ export function createAddRobotCommand(robot, service, onAfterUndo, onAfterRedo) 
       // Child first, so the tcp is never left pointing at a detached parent.
       for (const frame of [tcp, base]) {
         if (!frame) continue
-        frame.meshView?.hide?.()
-        frame.meshView?.hideConnection?.()
+        // The lifecycle primitive, NOT an axis write (ADR-096): after
+        // detachObject the composition resolves through getObject() and can no
+        // longer reach this frame, so it must be hidden first. Called
+        // unconditionally — the optional-call form this replaces (`hide?.()`)
+        // went silently no-op the moment the method was renamed, leaving the
+        // arm's axes on screen after an undo (原則 #17).
+        frame.meshView.setVisible(false)
+        frame.meshView.hideConnection()
         service.detachObject(frame.id)
       }
       onAfterUndo()

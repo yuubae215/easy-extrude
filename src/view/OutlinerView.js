@@ -187,7 +187,17 @@ export class OutlinerView {
    * @param {'cuboid'|'sketch'|'imported'|'measure'|'frame'|'annot-line'|'annot-region'|'annot-point'} [type='cuboid']
    * @param {string|null} [parentId=null]
    */
-  addObject(id, name, type = 'cuboid', parentId = null) {
+  addObject(id, name, type = 'cuboid', parentId = null, explicitVisible = undefined) {
+    // The eye's initial value must be DECLARED by the caller, never defaulted
+    // here (ADR-096 §G1 / 原則 #31). The hardcoded `visible: true` this replaces
+    // was a value nobody had chosen, indistinguishable from a stated one — which
+    // is exactly how a row came to say "eye open" over an empty viewport.
+    if (typeof explicitVisible !== 'boolean') {
+      throw new TypeError(
+        `[OutlinerView] addObject("${id}") needs a declared explicitVisible: ` +
+        'ask SceneService.isExplicitVisible(id) — a row must not seed its own eye state (ADR-096).',
+      )
+    }
     const depth = parentId ? this._getDepth(parentId) + 1 : 0
     const { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, sourceBadgeEl, targetBadgeEl, unreferencedBadgeEl, iconEl } = this._createRow(id, name, type, depth)
 
@@ -208,7 +218,8 @@ export class OutlinerView {
       this._listEl.appendChild(rowEl)
     }
 
-    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, sourceBadgeEl, targetBadgeEl, unreferencedBadgeEl, iconEl, visible: true, parentId, locked: false })
+    this._items.set(id, { rowEl, eyeEl, nameEl, triEl, ifcBadgeEl, placeTypeBadgeEl, sourceBadgeEl, targetBadgeEl, unreferencedBadgeEl, iconEl, visible: explicitVisible, parentId, locked: false })
+    this.setObjectVisible(id, explicitVisible)
   }
 
   /**
@@ -347,18 +358,11 @@ export class OutlinerView {
     item.eyeEl.title = visible ? 'Hide' : 'Show'
   }
 
-  /**
-   * Current eye state of a row — the visibility owner's accessor (ADR-087: the
-   * row's eye owns it, 原則 #4), so a view that appears LATE can adopt the state
-   * instead of assuming a default (ADR-090: a robot skeleton created when its
-   * robot returns via redo must respect an eye that was closed).
-   * Unknown ids read as visible (the default a new row starts at).
-   * @param {string} id
-   * @returns {boolean}
-   */
-  isObjectVisible(id) {
-    return this._items.get(id)?.visible ?? true
-  }
+  // NOTE (ADR-096): no `isObjectVisible()` accessor. The row DISPLAYS the
+  // `explicit` visibility axis; the axis itself lives in SceneService, and a
+  // late-appearing view (a robot skeleton restored by redo) asks
+  // `SceneService.isExplicitVisible(id)` rather than a row that may not exist yet
+  // and used to answer "visible" for unknown ids.
 
   /**
    * Locks or unlocks a frame row for dragging (ADR-028).
@@ -647,9 +651,11 @@ export class OutlinerView {
       e.stopPropagation()
       const item = this._items.get(id)
       if (!item) return
-      const newVisible = !item.visible
-      this.setObjectVisible(id, newVisible)
-      if (this._onVisibleCb) this._onVisibleCb(id, newVisible)
+      // Report the intent only — the row does not write its own state (ADR-096).
+      // The `explicit` axis is owned by SceneService; it writes back through
+      // setObjectVisible(), so the glyph shows the axis rather than a local copy
+      // that can disagree with it (原則 #4/#5).
+      if (this._onVisibleCb) this._onVisibleCb(id, !item.visible)
     })
 
     // Delete button

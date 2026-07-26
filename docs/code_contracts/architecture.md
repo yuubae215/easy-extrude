@@ -93,25 +93,25 @@ this._measure.snapMeshView = null
 
 ## CoordinateFrame Depth Rendering and Visibility Policy
 
-- **Principle**: Gizmo-style objects (axes, labels) cause visual noise when always visible, and are buried inside parent geometry when idle. Frames should only appear when the user is actively working with them.
-- **Concrete Rule — parent-gated visibility**: `CoordinateFrameView` is `visible = false` by default. `setParentSelected(true)` is called by `AppController._setChildFramesVisible()` whenever the parent object is selected; `setParentSelected(false)` hides it when the parent is deselected. `setParentSelected(true)` also applies X-ray (`depthTest: false`, `renderOrder: 1`) so the frame is always visible through the parent geometry.
-- **Concrete Rule — self-selection highlight**: `setObjectSelected(selected)` ONLY changes the origin sphere color (gold `#ffcc00` + scale 1.6x when selected, white + 1.0x when not). It does NOT change `visible` or `depthTest` — those are managed by `showFull`/`showDimmed`/`hide`.
-- **Visibility ownership table** (CoordinateFrame-specific):
+- **Principle**: Gizmo-style objects (axes, labels) cause visual noise when always visible, and are buried inside parent geometry when idle. Frames should only appear when the user is actively working with them — AND a user who has said "always show this" must be obeyed over any transient context.
+- **Concrete Rule — two axes, one composition (ADR-096)**: visibility is composed from two orthogonal axes and written to a mesh view in exactly one place, `SceneService.applyEntityVisibility(id)`. Nothing else may touch a mesh view's visibility for an entity that is in the scene; `src/VisibilityOwnership.test.js` fails the build if it does.
 
-| Trigger | Method | Effect |
-|---------|--------|--------|
-| Geometry parent selected | `showFull()` | visible + full opacity + X-ray |
-| Frame selected (active frame in tree) | `showFull()` + `setObjectSelected(true)` | visible + full opacity + X-ray + gold sphere |
-| Non-selected frame in same tree | `showDimmed()` | visible + 0.30 opacity + X-ray (de-emphasised) |
-| Frame/geometry deselected | `hide()` | `visible = false` |
-| Outliner eye icon | `setVisible(bool)` | `visible` on/off |
-| Connection line (child -> parent frame) | `showConnection(dimmed)` / `hideConnection()` | dashed line between frame origins |
+| Axis | Meaning | Lifetime | Sole writer |
+|------|---------|----------|-------------|
+| `explicit: boolean` | "always show this" — the Outliner eye | persists in the session | `SceneService.setExplicitVisible()` (eye) / `declareExplicitVisible()` (birth) |
+| `contextual: 'full' \| 'dimmed' \| null` | "show this for now" — selection, link-pick mode | until the context changes | `SceneService.setContextualFrames(map)` — **whole-map replacement only** |
 
-- **Frame tree visibility entry points** in `AppController`:
-  - `_showGeometryFrameTree(geoId)` — called when a geometry object is selected. Collects ALL descendant CoordinateFrames via `_collectAllDescendantFrames`, calls `showFull()` on each, shows connection lines at full opacity. Stores IDs in `_activeFrameChain`.
-  - `_showFrameChain(frameId)` — called when a CoordinateFrame is selected. Walks up the `parentId` chain to find the **tree root**, then shows the entire frame tree: selected frame via `showFull()` (full opacity + gold sphere), all others via `showDimmed()` (0.30 opacity). Connection lines are full opacity for the selected frame, dimmed for the rest, and **suppressed for a frame with no parent object** (a world-parented root frame — its line would be a degenerate origin→origin segment `SceneService` never updates). **A frame tree is rooted at EITHER a geometry Solid (user frames, ADR-037) OR a world-parented root CoordinateFrame (the robot TF tree `robot_base → tcp` / user frames, ADR-084/085).** The walk must NOT assume a geometry root: bailing out (`if (!geoRoot) return`) when it reaches a parentless root frame left the robot — and any robot-attached frame — invisible on selection and gave no tap feedback (fixed 2026-07-22; when there is no geometry ancestor, root the tree at the last CoordinateFrame in the walk and include it in the shown set — `collectAllDescendantFrames` excludes the id it is given).
-  - `_hideFrameChain()` — hides all frames in `_activeFrameChain` via `hide()` + `hideConnection()`. Called on deselect, switch, edit-mode entry.
-  - `_setChildFramesVisible(parentId, visible)` — thin wrapper: `true` -> `_showGeometryFrameTree`, `false` -> `_hideFrameChain`.
+  Composition: `visible = explicit || contextual !== null`; `dimmed = visible && !explicit && contextual === 'dimmed'`. The pure function is `composeVisibility()` in `src/view/VisibilityAxes.js` (truth table test: all 6 combinations).
+- **Concrete Rule — declared defaults, never seeded ones**: an entity's `explicit` default comes from `EXPLICIT_DEFAULTS`, keyed by kind (geometry `true`, CoordinateFrame `false`) — and for `robot_base`, keyed by the **entry point it was born through** (boot/import seed `false`, `addRobot()` from the Add menu `true`). `defaultExplicit()` **throws** for an undeclared kind: a new entity kind must decide its default, not inherit one nobody chose (原則 #31). The Outliner row takes the value as a required `addObject(..., explicitVisible)` argument and never seeds its own.
+- **Concrete Rule — self-selection highlight**: `setObjectSelected(selected)` ONLY changes the origin sphere color (gold `#ffcc00` + scale 1.6x when selected, white + 1.0x when not). It does NOT change `visible` or `depthTest` — those belong to `applyVisibility()`.
+- **Concrete Rule — the lifecycle exception**: `meshView.setVisible(false)` before `detachObject()` (undo of an add/delete) is NOT an axis write. Once the entity leaves the scene model the composition resolves through `getObject()` and can no longer reach it, so it must be hidden first — see "Frame View Must Be Hidden Before Detach".
+- **Frame tree context entry points** in `SelectionManager` — each computes WHICH frames its context wants and hands the map over; none of them paints:
+  - `showGeometryFrameTree(geoId)` — a geometry object was selected. Collects ALL descendant CoordinateFrames via `collectAllDescendantFrames` and claims them at `'full'`.
+  - `showFrameChain(frameId)` — a CoordinateFrame was selected. Walks up the `parentId` chain to the **tree root**, then claims the whole tree: the selected frame at `'full'`, the rest at `'dimmed'`. **A frame tree is rooted at EITHER a geometry Solid (user frames, ADR-037) OR a world-parented root CoordinateFrame (the robot TF tree `robot_base → tcp` / user frames, ADR-084/085).** The walk must NOT assume a geometry root: bailing out (`if (!geoRoot) return`) when it reaches a parentless root frame left the robot — and any robot-attached frame — invisible on selection and gave no tap feedback (fixed 2026-07-22; when there is no geometry ancestor, root the tree at the last CoordinateFrame in the walk and include it in the claimed set — `collectAllDescendantFrames` excludes the id it is given).
+  - `hideFrameChain()` — releases the claim (empty map). Frames whose `explicit` axis is set STAY VISIBLE; before ADR-096 this hid them while their row still showed an open eye.
+  - `refreshFrameContext()` — recomputes the claim from the current selection. Used by transient sub-modes (link creation) to hand the axis back instead of re-deriving what should be on screen.
+  - `setChildFramesVisible(parentId, visible)` — thin wrapper: `true` -> `showGeometryFrameTree`, `false` -> `hideFrameChain`.
+- **Connection lines follow their frame**: the dashed child→parent line is drawn by the same composition — visible when the frame is visible, dimmed with it, and **suppressed for a frame with no parent object** (a world-parented root frame; its line would be a degenerate origin→origin segment `SceneService` never updates) or for a link endpoint (which draws its own relationship).
 - **No selection ring**: the orange wireframe selection sphere was removed. Selection state is conveyed solely by the depth override (arrows pop to the front when selected).
 - **Axis label sprites** (`_labelX/Y/Z`): `THREE.Sprite` with `CanvasTexture` bearing the letter in the axis colour. Positioned at `AXIS_LENGTH + 0.09` along each axis so the letter sits just past the arrowhead. Must be included in the `depthTest`/`renderOrder` loop and their `material.map` must be disposed in `dispose()`.
 

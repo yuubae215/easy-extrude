@@ -1,6 +1,6 @@
 # 096. 可視性を「永続 (eye) × 文脈 (選択)」の直交 2 軸にし、既定を種ごとに宣言する — 目が開いているのに何も見えない状態を消す
 
-- Status: Proposed
+- Status: Accepted (実装済み — 2026-07-26)
 - Date: 2026-07-26
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: なし (ADR-087 の「eye が唯一の所有者」を CoordinateFrame へ拡張して完成させる)
@@ -145,6 +145,45 @@ CF 軸へ適用する**のが本 ADR の骨子。
   (`showFull`/`showDimmed`/`hide`/`setVisible` の 4 入口 → 合成 1 入口)、
   `src/service/SceneService.js` (`setObjectVisible`)、`docs/STATE_LEDGER.md`
   (CF 可視性の行を新設 — 基数 `0..N`)。契約・DSL・ワイヤは無改変。
+
+## 実装で変わったこと (2026-07-26 — 起票時の見立てとの差分)
+
+前提が実装で変わるのは正常なので、俯瞰を黙って書き換えず**差分として**残す (原則 #19)。
+
+1. **書き手は 2 つではなく 3 つだった。** 起票時の力学表は「永続 (eye) / 文脈 (選択)」の
+   2 経路を数えていたが、`LinkCreationHandler` が link mode 中に**全 CF を直接**
+   `showFull()` で塗り、終了時に `_restoreCFVisibility()` が「active の自分か子か」で
+   選択規則を**再実装**して復元していた。これは選択の規則の第二実装 (§1.1) であり、
+   同じ欠陥の 3 例目。同じ `contextual` 軸の借り手として吸収し、返却は所有者の
+   再計算 (`SelectionManager.refreshFrameContext()`) に一本化した。
+2. **合成関数の名前は `applyEntityVisibility()`。** 起票時は `applyFrameVisibility()`
+   と書いたが、eye は Solid にも効くので合成は CF 専用ではない。CF だけが薄字表示と
+   接続線を持つため、合成の中に**型による分岐が 1 つ**だけ立つ (原則 #2 — 分岐は型で、
+   かつ 1 箇所)。
+3. **接続線も合成に入れた。** 起票時は軸だけを見ていたが、線は「そのフレームが
+   描かれているか」に完全に従属する (親が無い根フレームと link endpoint は例外)。
+   `SelectionManager` に残すと 4 つ目の書き手になるので合成へ移した。
+4. **`hide()` / `showFull()` / `showDimmed()` / `setParentSelected()` は削除、
+   `setVisible()` は残した。** 後者は「実体がシーンから外れる直前に伏せる」
+   lifecycle primitive で、detach 後は合成が `getObject()` で辿り着けないため軸では
+   代替できない (CODE_CONTRACTS §Frame View Must Be Hidden Before Detach)。
+   全 view が共有する形なので多態の穴も開かない (原則 #17)。
+5. **ブート回帰は unit ではなく e2e で閉じた。** 起票時は「起動直後に
+   `explicit === true` の CoordinateFrame が 0 個」を統合テストで問う予定だったが、
+   `SceneService` は vite 固有の import (`?url` / `?worker`) を通るため
+   `node --test` レーンで構築できない (repo のテストが THREE-free なのはこの制約)。
+   実アプリで問う形へ移し、`window.__easyExtrude.visibilityState()`
+   (`robotState()` / `mapState()` と同じ読み取り専用スナップショットの作法) を足して
+   e2e に 4 症状すべての回帰を書いた。要となる 1 行は
+   **`drawn === (explicit || contextual !== null)` を全実体で固定する**こと —
+   「行が開いているのに描かれない」と「閉じているのに描かれる」は同じ等式の両辺なので、
+   両向きの嘘が 1 本で落ちる。
+6. **e2e が実装バグを 1 件捕まえた。** 合成の中で接続線を判定する
+   `isLinkEndpoint()` を `SceneService` 自身に生えていると書いていた (実際の所有者は
+   `SceneModel`)。unit・typecheck・build はいずれも素通りし、ブート時に
+   `TypeError` で AppController の構築が丸ごと落ちていた —
+   `docs/CODE_CONTRACTS.md` §Boot-Wiring Guard が想定する「名前は解決するが
+   メソッドが無い (TS2339)」の穴で、e2e だけが網。
 
 ## Lens notes
 

@@ -2,9 +2,18 @@
  * SelectionManager — object selection, frame-chain visibility, and rectangle
  * selection finalization for AppController.
  *
- * State (_selectedIds, _objSelected, _activeFrameChain, _rectSel, _rectSelEl)
- * lives on AppController for backward compatibility; this manager reads/writes
- * it via ctrl.
+ * State (_selectedIds, _objSelected, _rectSel, _rectSelEl) lives on
+ * AppController for backward compatibility; this manager reads/writes it via
+ * ctrl.
+ *
+ * Visibility (ADR-096): this manager writes the `contextual` axis and nothing
+ * else. It used to call `meshView.showFull()/showDimmed()/hide()` directly,
+ * which made it a second writer of the same pixels the Outliner eye writes —
+ * neither read the other, so opening a frame's eye and then selecting anything
+ * else wiped the frame while its row still said "visible". The set of frames the
+ * current selection wants is now handed to `SceneService.setContextualFrames()`,
+ * which composes it with the `explicit` axis. Handlers own axes; pixels have one
+ * owner (原則 #4).
  *
  * Owned by AppController as this._selMgr.
  */
@@ -12,6 +21,7 @@
 import * as THREE from 'three'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { projectToScreen }  from './snap/SnapSystem.js'
+import { CONTEXTUAL }       from '../view/VisibilityAxes.js'
 
 /** Computes 8 world-space bbox corners for a mesh entity that lacks .corners. */
 function _meshBboxCorners(obj) {
@@ -111,15 +121,8 @@ export class SelectionManager {
    * @param {string} geoId
    */
   showGeometryFrameTree(geoId) {
-    const ctrl = this._ctrl
     const treeIds = this.collectAllDescendantFrames(geoId)
-    ctrl._activeFrameChain = treeIds
-    for (const fid of treeIds) {
-      const f = ctrl._scene.getObject(fid)
-      if (!f) continue
-      f.meshView.showFull()
-      if (!ctrl._scene.isLinkEndpoint(fid)) f.meshView.showConnection(false)
-    }
+    this._claimContext(new Map([...treeIds].map(fid => [fid, CONTEXTUAL.FULL])))
   }
 
   /**
@@ -154,34 +157,47 @@ export class SelectionManager {
     const geoRoot = node
     const treeIds = this.collectAllDescendantFrames((geoRoot ?? rootCf).id)
     if (!geoRoot) treeIds.add(rootCf.id)
-    ctrl._activeFrameChain = treeIds
 
-    for (const fid of treeIds) {
-      const f = ctrl._scene.getObject(fid)
-      if (!f) continue
-      const isSelected = fid === frameId
-      if (isSelected) f.meshView.showFull()
-      else            f.meshView.showDimmed()
-      // A connection line runs from the parent's origin (a Solid centroid or a
-      // CoordinateFrame origin). A world-parented root frame (robot_base) has no
-      // parent, and SceneService skips updating its line (it would be a
-      // degenerate origin→origin segment), so it gets no connection line.
-      const hasParent = ctrl._scene.getObject(f.parentId) != null
-      if (hasParent && !ctrl._scene.isLinkEndpoint(fid)) f.meshView.showConnection(!isSelected)
-    }
+    this._claimContext(new Map([...treeIds].map(fid => [
+      fid,
+      fid === frameId ? CONTEXTUAL.FULL : CONTEXTUAL.DIMMED,
+    ])))
   }
 
-  /** Hides all frames in _activeFrameChain and clears connection lines. */
+  /**
+   * Releases this manager's claim on the contextual axis — the frames it was
+   * showing go back to whatever their `explicit` axis says, which for a frame
+   * the user opened by hand means STAYING VISIBLE (ADR-096 §症状 4; it used to
+   * mean vanishing while the row's eye stayed open).
+   */
   hideFrameChain() {
+    this._claimContext(new Map())
+  }
+
+  /**
+   * Recomputes the contextual claim from the current selection. Called by
+   * transient sub-modes (link creation) that borrow the axis and must hand it
+   * back without guessing what was on screen before — the guess is what let the
+   * two writers drift apart.
+   */
+  refreshFrameContext() {
     const ctrl = this._ctrl
-    const chain = ctrl._activeFrameChain
-    ctrl._activeFrameChain = new Set()
-    for (const fid of chain) {
-      const f = ctrl._scene.getObject(fid)
-      if (!f) continue
-      f.meshView.hide()
-      f.meshView.hideConnection()
-    }
+    const activeId = ctrl._scene.activeId
+    if (!activeId || !ctrl._objSelected) { this.hideFrameChain(); return }
+    const active = ctrl._scene.getObject(activeId)
+    if (active instanceof CoordinateFrame) this.showFrameChain(activeId)
+    else                                   this.setChildFramesVisible(activeId, true)
+  }
+
+  /**
+   * Hands a contextual claim to its owner (原則 #4). The manager decides WHICH
+   * frames its context wants and how strongly; `SceneService` composes that with
+   * the `explicit` axis and is the only thing that touches a mesh view.
+   * @param {Map<string, string>} frames  id → CONTEXTUAL member
+   */
+  _claimContext(frames) {
+    const ctrl = this._ctrl
+    ctrl._service.setContextualFrames(frames)
   }
 
   /** Updates the CSS overlay to reflect the current drag rectangle. */

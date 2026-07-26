@@ -107,7 +107,7 @@ This directory records the project's design decisions.
 | [ADR-093](ADR-093-map-annotation-visual-language-per-entity-phase.md) | **Map 注釈の視覚言語を刷新 — アニメーション位相を実体の同一性から導き「基数 N の lockstep」を構造で消す** | Accepted (実装済) | 2026-07-25 | ADR-031, ADR-029, ADR-065, ADR-066, ADR-067, ADR-072, ADR-043 |
 | [ADR-094](ADR-094-link-network-tf-tree-fused-origin-node.md) | **LINK NETWORK を TF ツリーへ回帰 — Solid と Origin CF を 1 ノードに融合し、木辺を骨格に戻す (モバイルでは唯一の常設構造ビュー)** | Accepted (実装済み — 純粋 `computeLayout()` + 融合ノード + 骨格化した木辺) | 2026-07-26 | ADR-048, ADR-037, ADR-038, ADR-030, ADR-090, ADR-093 |
 | [ADR-095](ADR-095-link-network-indented-outline-tree.md) | **LINK NETWORK を「1 ノード 1 行」のインデントツリーへ — 希少な軸 (固定幅) に可変量 (兄弟数) を割り当てるのをやめ、縮退の向きをラベルからリンクへ反転させる** | Accepted (実装済み — 行=ノード / x=深さ、`denseMode` 廃止、余木辺の決定的レーン割当、パネル内スクロール) | 2026-07-26 | ADR-094, ADR-048, ADR-093 |
-| [ADR-096](ADR-096-visibility-two-axes-declared-defaults.md) | **可視性を「永続 (eye) × 文脈 (選択)」の直交 2 軸にし、既定を種と入口ごとに宣言する — 目が開いているのに何も見えない状態を消す** | Proposed | 2026-07-26 | ADR-087, ADR-094, ADR-090, ADR-089, ADR-037 |
+| [ADR-096](ADR-096-visibility-two-axes-declared-defaults.md) | **可視性を「永続 (eye) × 文脈 (選択)」の直交 2 軸にし、既定を種と入口ごとに宣言する — 目が開いているのに何も見えない状態を消す** | Accepted (実装済み — `VisibilityAxes` 純粋合成 + `SceneService.applyEntityVisibility()` 単一書き手、既定表の宣言化、`_hideRobotByDefault()` 削除、書き手の静的ガード) | 2026-07-26 | ADR-087, ADR-094, ADR-090, ADR-089, ADR-037 |
 | [ADR-097](ADR-097-support-is-entity-state-not-gesture-side-effect.md) | **接地を「ジェスチャの副作用」から「実体の状態」へ — 配置方針を型で宣言し、pose の唯一の入口で強制する (床下は事故ではなく宣言)** | Proposed | 2026-07-26 | ADR-071, ADR-032, ADR-040, ADR-090, ADR-093, ADR-083 |
 
 ## How to Add a New ADR

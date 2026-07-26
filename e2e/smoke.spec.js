@@ -451,3 +451,50 @@ test('the Outliner eye round-trips an entity between hidden and shown (ADR-087)'
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('the row never lies: no CF ships shown, one click reveals, and the selection cannot take it back (ADR-096)', async ({ page }) => {
+  // The four symptoms ADR-096 opens with, asked of the live app. The unit lane
+  // cannot ask them: SceneService goes through vite-only imports (`?url` /
+  // `?worker`) so it does not construct under `node --test`, and the pure lane
+  // can only prove the composition, not that the boot path routes through it.
+  const errors = await boot(page)
+  const state = () => page.evaluate(() => window.__easyExtrude.visibilityState())
+
+  // 症状 1/3 — at boot, the number of CoordinateFrames claiming to be shown is
+  // ZERO. Counted over an enumerated kind, not eyeballed off the rows: the old
+  // defect was `tcp` sitting there with an open eye and nothing drawn, and a
+  // check that walks what is visible would never have visited it (原則 #31).
+  const atBoot = await state()
+  const framesShown = atBoot.filter(o => o.isFrame && o.explicit)
+  expect(framesShown.map(o => o.name), 'ブート直後に explicit が真の CF').toEqual([])
+  // …and no entity is drawn while its row says otherwise, in either direction.
+  for (const o of atBoot) {
+    expect(o.drawn, `${o.name}: 行が語る値と描画が食い違う`).toBe(o.explicit || o.contextual !== null)
+  }
+
+  // 症状 2 — ONE click on the tcp eye changes something. It used to send
+  // "hide" to something already hidden: the input was consumed, nothing moved.
+  // Scoped to the Outliner row: once tcp is drawn it also owns a floating 3D
+  // label with the same text, so a bare text lookup stops being unique.
+  const tcpRow = page.locator('[draggable="true"]').filter({ hasText: 'tcp' }).first()
+  await tcpRow.click()                      // select it → the CONTEXT draws it …
+  await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.drawn).toBe(true)
+  await tcpRow.hover()
+  const tcpEye = tcpRow.getByRole('button').first()
+  // … while the eye still reads "Show", because the eye is the persistent axis,
+  // not the pixel. One click must move that axis.
+  await expect(tcpEye).toHaveAttribute('aria-label', 'Show')
+  await tcpEye.click()
+  await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.explicit).toBe(true)
+
+  // 症状 4 — selecting another entity does not take it back. The context axis
+  // moves; the axis the user wrote does not.
+  const outliner = page.getByText('Scene Collection', { exact: true }).locator('..')
+  await outliner.getByText('Cube', { exact: true }).click()
+  await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.contextual).toBe(null)
+  const afterSelect = (await state()).find(o => o.name === 'tcp')
+  expect(afterSelect.explicit, 'eye で開けた軸が選択変更で落ちている').toBe(true)
+  expect(afterSelect.drawn, '別の実体を選んだ瞬間に軸が消えている (症状 4)').toBe(true)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
