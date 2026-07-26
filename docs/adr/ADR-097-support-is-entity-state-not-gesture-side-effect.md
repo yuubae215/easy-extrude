@@ -42,10 +42,22 @@
   「*the entity family that must stay pinned to the ground plane or a building roof,
   never floating*」と書いているが、これを問う検査はどこにも無い。憲法 Q3 の答えが
   「誰も開かない散文」になっている典型 (原則 #19 / 核 §1.2)。
-- **同じ規則が 2 箇所に別実装で書かれている** (§1.1 違反)。`applyPreviewTranslation()` の
-  `_isMapObject` 分岐 (Z を捨てて表面へ座り直させる) と、`GrabOperationHandler.start()` の
-  ドラッグ平面選択 (mounted → ホスト local XY / unmounted → world XY)。前者は「表面に
-  載る」、後者は「掴んだ高さの平面に留まる」で、そもそも**規則が違う**。
+- **同じ規則が 3 箇所に別実装で書かれている** (§1.1 違反) — うち 1 箇所は**規則が
+  丸ごと欠けている**:
+
+  | 実装場所 | 規則 |
+  |---------|------|
+  | `SceneService.applyPreviewTranslation()` の `_isMapObject` 分岐 | Z を捨てて `max(屋根, 0)` へ座り直させる (「表面に載る」) |
+  | `GrabOperationHandler.start()` のドラッグ平面選択 | mounted → ホスト local XY / unmounted → world XY (「掴んだ高さの平面に留まる」) |
+  | `AppController` のクイックドラッグ (`_objDragPlane`) | **無条件でカメラ正対面** — 実体種の分岐が存在しない |
+
+  当事者の「**move 操作 (これも Grab とは違うのか?)**」への答えはここにある: **違う**。
+  マウスドラッグ (クイックドラッグ) と G キーの Grab は別々のコードパスで、共有しているのは
+  `applyPreviewTranslation()` と、クイックドラッグ側が**他ハンドラの private メソッドへ
+  手を伸ばして呼んでいる** `this._grabHandler._applyStackSnap(...)` だけである
+  (原則 #1 — 唯一の権威ある入口が無いことの、最も直接的な現れ)。
+  さらに 4 つ目の「動かす主体」はユーザーのジェスチャですらない —
+  `_updateMountedAnnotations()` が毎フレーム書き戻している。
 - **地面が実体ではない。** `mounts` は SpatialLink なので端点は実体でなければならず、
   「地面の上」は `mounts` で表現できない。ゆえに最も普通のケースが**語彙の外**にあり、
   コードはその穴をジェスチャ局所のヒューリスティックで埋めている。

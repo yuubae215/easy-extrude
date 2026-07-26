@@ -30,7 +30,7 @@ artifacts
 
     justification WhyOneEntryPointNotPerPathClamps
     uuid 28dc66a4-ffcf-4265-b22e-3fa4d53f2a63
-    summary "対症案 (各経路に clamp を足す) を却下する根拠は、今回の 5 症状がまさにその案を過去に実行した結果だという実績である。stack snap は Grab の自由ドラッグには入っていて軸拘束には入っておらず (stackApplies = stackMode && axis !== 'z')、Solid には入っていて非 Solid には入っておらず (instanceof Solid の早期 return)、ドラッグ中の注釈には入っていて毎フレームの mounts 追従には入っていない。経路ごとに足す手を続けると 8 箇所目で同じ苦情が出る。原則 #1 (唯一の権威ある入口) はここで問われている"
+    summary "対症案 (各経路に clamp を足す) を却下する根拠は、今回の 5 症状がまさにその案を過去に実行した結果だという実績である。stack snap は Grab の自由ドラッグには入っていて軸拘束には入っておらず (stackApplies = stackMode && axis !== 'z')、Solid には入っていて非 Solid には入っておらず (instanceof Solid の早期 return)、ドラッグ中の注釈には入っていて毎フレームの mounts 追従には入っていない。決定的な証拠はクイックドラッグ経路で、ドラッグ平面を無条件にカメラ正対面へ置き (実体種の分岐が存在しない)、stack snap は他ハンドラの private メソッド _grabHandler._applyStackSnap(...) へ手を伸ばして呼んでいる — 唯一の権威ある入口が無いことの直接の現れ。経路ごとに足す手を続けると 8 箇所目で同じ苦情が出る。原則 #1 はここで問われている"
     artifacts
     - "src/controller/handler/GrabOperationHandler.js"
 
