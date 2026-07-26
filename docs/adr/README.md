@@ -109,6 +109,9 @@ This directory records the project's design decisions.
 | [ADR-095](ADR-095-link-network-indented-outline-tree.md) | **LINK NETWORK を「1 ノード 1 行」のインデントツリーへ — 希少な軸 (固定幅) に可変量 (兄弟数) を割り当てるのをやめ、縮退の向きをラベルからリンクへ反転させる** | Accepted (実装済み — 行=ノード / x=深さ、`denseMode` 廃止、余木辺の決定的レーン割当、パネル内スクロール) | 2026-07-26 | ADR-094, ADR-048, ADR-093 |
 | [ADR-096](ADR-096-visibility-two-axes-declared-defaults.md) | **可視性を「永続 (eye) × 文脈 (選択)」の直交 2 軸にし、既定を種と入口ごとに宣言する — 目が開いているのに何も見えない状態を消す** | Accepted (実装済み — `VisibilityAxes` 純粋合成 + `SceneService.applyEntityVisibility()` 単一書き手、既定表の宣言化、`_hideRobotByDefault()` 削除、書き手の静的ガード) | 2026-07-26 | ADR-087, ADR-094, ADR-090, ADR-089, ADR-037 |
 | [ADR-097](ADR-097-support-is-entity-state-not-gesture-side-effect.md) | **接地を「ジェスチャの副作用」から「実体の状態」へ — 配置方針を型で宣言し、pose の唯一の入口で強制する (床下は事故ではなく宣言)** | Accepted (実装済み — `domain/placement.js` の宣言表 + 純粋な方針適用、`applyPreviewTranslation` を唯一の並進入口へ、`_applyStackSnap`/`_isMapObject` 廃止、ドラッグ平面を方針の関数へ、入口の個数検査) | 2026-07-26 | ADR-071, ADR-032, ADR-040, ADR-090, ADR-093, ADR-083 |
+| [ADR-098](ADR-098-support-domain-is-policy-not-kind.md) | **「何の上に載れるか」を種から方針へ — stack assist の型ゲートを外し、支持プローブを方針表の隣で宣言する** | Proposed | 2026-07-26 | ADR-097, ADR-071, ADR-085, ADR-096, ADR-083 |
+| [ADR-099](ADR-099-selection-round-trip-one-entry.md) | **選択の往復を 1 つの入口へ — hover が click を殺す再構築の閉路を断ち、選択を「見えること」まで含む 1 つの決定にする** | Proposed | 2026-07-26 | ADR-094, ADR-095, ADR-096, ADR-097, ADR-090, ADR-093 |
+| [ADR-100](ADR-100-color-says-state-not-kind.md) | **色は「実体の種」ではなく「状態」を語る — 既定サーフェスを中立にし、アクセントを 1 つに畳み、宣言外の色を ratchet で止める** | Proposed | 2026-07-26 | ADR-065, ADR-064, ADR-062, ADR-093, ADR-067 |
 
 ## How to Add a New ADR
 

@@ -1,0 +1,106 @@
+GOALS adr099_selection_round_trip
+
+goal SelectionIsOneFactSeenThroughEveryWindow
+uuid 8db2216c-7071-473f-8fdb-e3d3b5cfa7cb
+summary "パネルとビューポートが『1 つの選択』の 2 つの窓になる。どちらから触っても同じ事実が動き、両方が同じように追従し、選択という決定はその結果が見えるところまでを含む (選べたのに画面が沈黙する、が構造的に表現不能になる)"
+state ToBeDeveloped
+labels adr-099, selection, link-network
+artifacts
+- "docs/adr/ADR-099-selection-round-trip-one-entry.md"
+- "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
+
+    context Adr099Scope
+    uuid d2ea4c73-5b53-4c66-a24d-16b954a3ec38
+    summary "ADR-099 (Proposed, 2026-07-26): LinkNetworkView の focus/context 表現を全再構築から属性更新へ変えて行 DOM の同一性をジェスチャより長くし、SelectionManager に選択の公開 API (selectOnly / addToSelection / clearSelection) を置いて _selectedIds・_objSelected・可視ハイライトの唯一の書き手にし、選択が contextual 可視性を主張する (explicit 軸には触らない — ADR-096 の所有者は eye のまま)。View + Controller に閉じ、ドメイン・契約・core は不変"
+    artifacts
+    - "src/view/LinkNetworkView.js"
+    - "src/controller/SelectionManager.js"
+
+    context MeasuredNotInferred
+    uuid d2e124ca-f969-4788-8c25-ea2c68f162f1
+    summary "この木の出発点は推論ではなく実測である (2026-07-26, Chromium/playwright, 既定シーン + Cube-robot_base の Adjacent リンク)。パネル行にポインタを置いて押下・離上したとき、SVG に capture で仕掛けた計測は mouseover/mouseenter を 76 件 (19 + 57)、MutationObserver が子要素の変異を 114〜120 件 (実行ごとに揺れる = 有界でない) 観測し、mousedown / mouseup / click は 0 件、ステータスバーは前後とも 'Cube · selected' のままだった。つまり click ハンドラは一度も呼ばれていない。この計測が本 ADR の診断の正本であり、力学 2・3 (入口の部分集合 / 見えない実体の選択) は同じ計測では確認されていない — コードの読みからの予測である"
+    artifacts
+    - "src/view/LinkNetworkView.js"
+
+    context BusinessTreeAttachPoint
+    uuid 2d9676de-9cd3-4d24-b7ec-4294b25d753a
+    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけ)。接続予定先は ADR-094 が既に吊った goal MobileStructureViewIsReadable (uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e の採用ファネル系列) — モバイルでは LINK NETWORK が唯一の常設構造ビューであり、そこから選べないことは可読性ではなく到達性の欠落なので、同じ枝に solution として吊る。往復の回帰と入口の個数検査が実在した時点で接ぐ"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotJustTheIdempotenceGuard
+    uuid 8b71353b-b0b2-4061-8db7-d30edd7c7c4a
+    summary "1 行の冪等ガード (mouseenter で this._hoveredId === id なら return) を単独では採らない根拠: 実測された閉路は止まり症状も消えるが、『hover のたびに DOM を全部作り直す』設計はそのまま残る。_renderSVG() を呼ぶ状態が増えたとき (選択・スクロール・レイアウト更新) 同じ閉路が別の入口で再発し、しかも次回は誰も計測しない。同一性はガードではなく構造で守る — ガードは再発防止として併用する。これは原則 #24 が数値について言っていることの DOM 版で、導出値 (hover 対象) を自身の入力 (hit target の生成) に戻す閉路そのものを断つ必要がある"
+    artifacts
+    - "src/view/LinkNetworkView.js"
+
+    justification WhyOneSelectionEntryPoint
+    uuid 332e634f-5c74-40be-bb9c-a0dfad76391f
+    summary "選択の唯一の権威ある入口を作る根拠は、窓ごとの手続きの差が実在することである。ビューポートピック / ダブルクリック / 矩形選択は事前に clearObjectSelection() を呼ぶが Outliner と LINK NETWORK は呼ばない。Outliner だけが edit → object の mode 正規化を持つ。_selectedIds を書く行は AppController だけで 8 箇所、可視ハイライトの書き手は 3 つに分かれている。窓を 1 つ足すたびに部分集合が書かれ、書かれなかった部分が症状になる — ADR-097 が pose について見つけた構造が、選択について未解決のまま残っている"
+    artifacts
+    - "src/controller/AppController.js"
+
+    assumption ClickReachingIsNotSufficient
+    uuid 31e88197-a81f-4791-b291-c228a520f994
+    summary "反証されうる仮説: 閉路を断って click が発火すれば、当事者の苦情は全部消えるかもしれない (力学 2・3 は予測であって観測ではない)。逆に、CF ノードを選んでも原点球が金になるだけで軸が描かれていなければ画面は沈黙し続ける可能性がある。実装は閉路の修正を先に入れて再計測し、そこで残る症状を見てから reveal-on-select と入口の一本化の必要性を確認する — 予測のまま 3 つ同時に入れると、どれが効いたのか分からなくなる"
+
+    assumption IncrementalRenderIntroducesStaleness
+    uuid 1dcee3a4-52af-4d08-ba86-35cb7d451616
+    summary "反証されうる仮説 (ADR-099 §受け入れるコスト): 全再構築をやめて差分更新にすると『レイアウトが変わったのに DOM が古い』という新しい欠陥が入りうる。ADR-095 が意図的に選んだ全再構築の単純さを一部手放すことになる。回収の形は、レイアウト結果の同値判定を純粋関数側 (LinkNetworkLayout) へ置いて表テストで固定すること — 判定を View の中の勘に置いたらこの仮説は反証されたものとして扱う"
+
+    assumption RevealOnSelectMayFloodTheView
+    uuid 191b21e9-81df-47ef-b34a-52a95bd1bc53
+    summary "反証されうる仮説: 選択が contextual 可視性を主張すると、多数選択時に大量の CF 軸が一度に現れて画面が混む。既存の showFrameChain が持つ強度規則 (選択本体 FULL / 連鎖 DIMMED) を再利用して緩和する想定だが、N が大きいときの見え方は測っていない。反証されたら『選択本体だけ FULL、連鎖は主張しない』へ狭める — 主張をやめる方向へは戻さない (それは G2 の放棄になる)"
+
+    strategy ByRestoringTheTargetLifetimeThenTheEntry
+    uuid 4ecec83c-fe90-48dc-a872-243145670f1d
+    summary "Argument by 順序のある一本化 — まず入力が到達すること (要素の同一性)、次に到達した先が全窓で同じ手続きであること (唯一の入口)、最後にその結果が見えること (可視性の主張)。3 つは別々の症状に見えるが、いずれも『選択という 1 つの事実が、それを表示する仕組みの都合で分裂している』の現れである。順序に意味があり、逆順に入れると何が効いたか判別できない"
+
+        goal RowIdentityOutlivesTheGesture
+        uuid 9ffca747-5178-4947-bf31-5413823c3caa
+        summary "行の DOM 同一性がポインタジェスチャより長く生き、hover による無限再構築が止まる。click が押下と離上の共通祖先として合成され、ハンドラへ到達する。副次的に、パネル上でポインタを止めているだけで走り続けていた再描画コストが消える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckMutationCountIsBounded
+            uuid 45bcab1e-190f-443d-b062-094e32547880
+            summary "この goal を決着させる検査を名指しする (未実行): e2e/smoke.spec.js に、実測手順をそのまま回帰として置く。パネル行にポインタを置いて 300ms 待ち、MutationObserver が数えた SVG 子要素の変異が有界 (閾値以下) であること。今日の値は 114〜120 件で実行ごとに揺れる = 有界でないことが、この検査が意味を持つ証拠になっている。閾値は固定値ではなく『hover 1 回につき定数』の形で書く"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+        goal EverySelectionWindowCallsTheSameEntry
+        uuid dd8650ac-13b7-49f1-a776-1dc6468e5bc3
+        summary "選択集合と可視ハイライトを書く場所が SelectionManager の公開 API ちょうど 1 箇所になり、5 つの窓 (Outliner / ビューポートピック / ダブルクリック / 矩形選択 / LINK NETWORK) はそれを呼ぶだけになる。mode の正規化など今日 1 つの窓だけが持つ手続きが、全窓に効く"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckSelectionWriterCensus
+            uuid 47199d02-4b3e-4598-97ca-85c17adc2671
+            summary "この goal を決着させる検査を名指しする (未実行): PosePolicyOwnership.test.js と同じ形の個数検査を選択について書き、_selectedIds / _objSelected を SelectionManager の外から書く行が 0 個であることを src 全走査で数える。宣言された例外は表に持ち、宣言の無い例外が 0 個であることを逆向きにも数える。在る窓を辿る検査では次に足される 6 つ目の窓を素通りする — 今回の欠陥がまさにその作られ方だった (原則 #31)"
+            artifacts
+            - "src/controller/SelectionManager.js"
+
+        goal SelectionCannotBeSilent
+        uuid 85ad9c66-b5a5-4cd3-8dc5-603c9c1af494
+        summary "選択された実体は選択中だけ見える (contextual 軸への主張)。explicit で消してある tcp をパネルから選ぶと軸が現れ、選択を外すと eye の宣言どおり消える。ADR-096 の合成規則がそのまま効き、可視性の書き手は増えない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckCompositionTableAndRoundTrip
+            uuid bf99036a-f896-4fe9-9c10-e0acdb05be27
+            summary "この goal を決着させる検査を名指しする (未実行): (1) 単体 — VisibilityAxes の合成表を explicit × contextual × selected へ拡張し、行数そのものを assert する (ADR-096 の既存表と同じ形)。(2) e2e — パネルの robot_base 行をクリックしてステータスバーが 'robot_base · selected' になることを、逆向き (3D で選んでパネルが光る) と同じ 1 本の差分ペアで見る。片方向だけ通ると『テストが何も動かしていない』状態と区別できない"
+            artifacts
+            - "src/view/VisibilityAxes.test.js"
+            - "e2e/smoke.spec.js"
+
+        goal SelectionCardinalityIsRepresentable
+        uuid eb9f1a10-f00b-4f95-b68a-480ce8179286
+        summary "選択の基数 (0 個 / 1 個 / N 個) が 1 つの表現で持たれ、不正状態が表現不能になる。今日は _objSelected: boolean と _selectedIds: Set の 2 つに分裂しており、_objSelected === true かつ _selectedIds.size === 0 が表現可能である"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckLedgerRowAndIllegalState
+            uuid fb93f435-2fcb-4126-b80b-203e61573647
+            summary "この goal を決着させる検査を名指しする (未実行): docs/STATE_LEDGER.md に選択の行 (基数 0·1·N) を起こし — 今日この行が無いことが、選択について §1.4 の累積判定が一度も発動していない理由である — 公開 API の設計と同じコミットで不正状態を表現不能にする。検査は単体で、API を通した任意の操作列の後に『_objSelected と _selectedIds.size の整合が崩れた状態が 0 個』であること。mode / status は状態として認識されるが基数には欄が無い (原則 #31) — 台帳の基数列がその欄"
+            artifacts
+            - "docs/STATE_LEDGER.md"
