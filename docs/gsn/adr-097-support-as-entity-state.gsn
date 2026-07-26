@@ -1,0 +1,105 @@
+GOALS adr097_support_as_entity_state
+
+goal WhatRestsOnWhatIsADurableFact
+uuid f1eadaa1-e40e-4a3b-8495-cbf13e8b22e8
+summary "『この実体は何の上に載っているか』がシーンの持続する事実になり、どの入力経路 (自由 Grab / 軸拘束 / クイックドラッグ / 数値入力 / import / undo / 毎フレームの制約解決) を通っても壊れない。かつ接地している実体は接地面に沿って素直に動かせる"
+state ToBeDeveloped
+labels adr-097, placement, grounding
+artifacts
+- "docs/adr/ADR-097-support-is-entity-state-not-gesture-side-effect.md"
+- "docs/adr/ADR-071-placement-defaults.md"
+
+    context Adr097Scope
+    uuid b28ca59c-336e-43ca-9467-56d6c16cdcaf
+    summary "ADR-097 (Proposed): 配置方針 placement (supported / grounded / free) を実体種ごとに宣言し、支持 supportOf() は幾何から毎回導出する (保存しない)。強制は SceneService の pose 書き込み入口 1 箇所に集約し、ハンドラから clamp とドラッグ平面の実体種分岐を取り上げる。床下は永続フラグ belowGradeIntent による宣言にする。地面を SpatialLink の端点になる一級実体へ昇格させるのはスコープ外"
+    artifacts
+    - "src/service/SceneService.js"
+    - "src/controller/handler/GrabOperationHandler.js"
+
+    context HorizontalSupportOnly
+    uuid aec4e0cb-073a-4204-94ee-15b286f25ae5
+    summary "この木が成立する範囲 (前提が崩れたら論拠ごと失効する): 支持の導出は highestSurfaceZAt() の下向きレイに依存するため、扱えるのは水平支持面だけである。壁面・天井・傾斜面へのマウントは表現できない。垂直面の要件が立った時点で supportOf の形 ({kind, id} に法線が要る) から見直しになるので、その要件は別 ADR として起こす"
+    artifacts
+    - "src/service/SceneService.js"
+
+    context BusinessTreeAttachPoint
+    uuid e7fe9d9e-b671-47af-880c-90cf3be22008
+    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけ)。接続予定先は profit-growth.gsn の採用ファネル配下、直接操作の信頼性に関わる枝で、経路網羅の個数検査と 5 本の症状回帰が実在した時点で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyOneEntryPointNotPerPathClamps
+    uuid 28dc66a4-ffcf-4265-b22e-3fa4d53f2a63
+    summary "対症案 (各経路に clamp を足す) を却下する根拠は、今回の 5 症状がまさにその案を過去に実行した結果だという実績である。stack snap は Grab の自由ドラッグには入っていて軸拘束には入っておらず (stackApplies = stackMode && axis !== 'z')、Solid には入っていて非 Solid には入っておらず (instanceof Solid の早期 return)、ドラッグ中の注釈には入っていて毎フレームの mounts 追従には入っていない。経路ごとに足す手を続けると 8 箇所目で同じ苦情が出る。原則 #1 (唯一の権威ある入口) はここで問われている"
+    artifacts
+    - "src/controller/handler/GrabOperationHandler.js"
+
+    justification WhyDeriveSupportNotStoreIt
+    uuid 11bd4cfe-978d-4afc-b6c6-5c20adc12481
+    summary "支持を保存フィールドにしない根拠 (§1.1): 幾何が真実の源であり、支持は幾何の関数である。保存すると『実体を動かしたが支持フィールドが古い』という第二の源のドリフトが生まれ、それは今日 mounts の Z 二重書き込みが起こしている事故と同型になる。方針 (placement) は宣言、支持 (support) は導出 — この非対称が本決定の骨格"
+
+    assumption SupportedIsNotTooRestrictive
+    uuid 28e0e8fc-8293-4c86-92cf-c5fe0252e332
+    summary "反証されうる仮説 (ADR-097 §受け入れるコスト): placement='supported' の強制が『屋根の上に意図的に載せる』『少し浮かせて重ねる』といった正当な作業を難しくしうる。当事者の実利用でしか反証できずテストでは閉じない。反証されたら supported にも belowGradeIntent と同型の明示的な逃げ道 (floatIntent) を足す方向で回収する — 逃げ道はジェスチャ局所ではなく実体の宣言として持つ、が本 ADR の一貫した立場"
+
+    assumption ImportedScenesToleratePolicy
+    uuid bd6d5100-c3f9-4a9e-9036-f8c61cd153ae
+    summary "反証されうる仮説: 既存の保存シーン (床下に置かれたロボット base を含みうる) の読み込みで、方針適用が pose を書き換えてしまう危険がある。本 ADR は『読み込んだ値を尊重し belowGradeIntent を立てて受け入れる』側に倒すと決めているが、実データで検証していない。無言でデータを書き換えたらこの仮説は反証され、import の扱いを ADR ごと見直す (原則 #11 — 無言のデータ改変は最悪の失敗形)"
+
+    strategy ByMovingEnforcementToThePoseEntry
+    uuid 23e02e61-307f-4171-931f-9b122fec7e33
+    summary "Argument by 強制点の移動 — 症状が実体種ごとに現れたのは入口ごとに実装したからで、種の問題に見えたのは症状の側である。blast radius は『pose を書ける入口の集合』であって実体種の集合ではない。レンズを入口集合に当て直すのがこの戦略"
+
+        goal NoPoseEntryBypassesThePolicy
+        uuid 1aa2316d-94fb-4c86-9b34-23e81b3450b6
+        summary "pose を書きうる入口をすべて列挙でき、方針を適用していない入口が 0 個である。ハンドラは delta を渡すだけで clamp を持たない。症状 2 (Z 拘束) と症状 3 (非 Solid) は入口が種で早期 return しなくなることで消える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedEntryPointCensus
+            uuid 9a5abcd4-6808-4509-b0ab-dadf6a53c6fc
+            summary "予定している検査: pose 書き込み入口を宣言リストとして持ち、そのリストに載っていない入口が src/ に 0 個であることを検査する (IDENTITY_RULES と同型の番人 — ADR-090/094 で機能している形)。*在るもの* (今日の 2 経路) を辿る検査では次に足される 3 本目を素通りする。それが今回の欠陥の作られ方そのものなので、検査は必ず『列挙して個数を問う』形にする (原則 #31)"
+
+        goal MountZHasOneWriter
+        uuid 926a9ae7-e393-4568-b9a0-8688ce6deef6
+        summary "症状 5 の直接の原因である Z の二重書き込みが消える。placement='supported' の実体では mounts はホストの XY 追従だけを担い、Z は常に支持の導出に譲る。空中のホストへ mounts しても注釈はその XY 直下の支持面に座る"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedTwoWriterRegression
+            uuid 7b7d928e-ac71-4f9f-b40a-cb40cb7b1416
+            summary "予定している検査: 空中の CF へ mounts した注釈を N フレーム進めた後も supportOf() が非 null であること (今日は _updateMountedAnnotations が毎フレーム後から書くので落ちる)。書き手が 1 つであることの機械側の問い所は『時間を進めても不変条件が保たれる』形にする — 最後の書き込み勝ちの競合はワンショットの検査では捕まらない"
+
+        goal SupportedEntitiesNeverFloat
+        uuid 6da89726-dcaf-4b03-9fd8-98429cbf482d
+        summary "SceneService._isMapObject() の JSDoc にしかない散文の不変条件 (『must stay pinned to the ground plane or a building roof, never floating』) が述語 + 検査になる。任意の delta 列を supported 実体へ適用した後、supportOf() は常に非 null"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedInvariantAndSymptomTests
+            uuid 87b33613-5a40-412d-804d-89372ba6cd5e
+            summary "予定している検査: (a) 不変条件テスト — ランダムな delta 列に対し supported は常に支持を持ち、grounded かつ belowGradeIntent=false は常に lowestZ >= -tolerance。(b) 当事者の報告に 1:1 対応する症状回帰 5 本 (Z 拘束で床を抜けない / ロボットが抜けない / マップオブジェクトが抜けない / 空中ホストの注釈が座る / grounded の自由ドラッグ平面がカメラ向きに依存しない)。散文が誰も開かない場所にあったのが今回の根なので、成果物は文書の行ではなく検査でなければならない (憲法 Q3)"
+
+    strategy ByMakingIntentExplicit
+    uuid de9910e4-a66b-4567-9db5-3654f6528931
+    summary "Argument by 意図の明示化 — 床下も『動かしやすさ』も、補助のオン/オフというジェスチャ局所の概念で扱ってきた。宣言へ昇格させると、警告が意味を取り戻し、ドラッグ平面が方針から導ける"
+
+        goal BelowGradeIsDeclaredNotAccidental
+        uuid c3ea4899-87cd-430d-87a3-9cf9b722a0c2
+        summary "床下が事故と宣言に分かれる。belowGradeIntent は実体の永続状態なので、基礎・杭は『そう宣言された実体』になり、checkGroundClearance() の警告 (ADR-071) は『宣言していない実体が潜った』ときだけ出る本来の意味を取り戻す。今日の『Grab 中に S を押す』はジェスチャ局所で何も残らない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedIntentPersistence
+            uuid 2ce30ebe-a227-4b75-a057-129564269c65
+            summary "予定している検査: belowGradeIntent=false の grounded 実体を床下へ動かそうとしても潜らない / true なら潜る / 一度立てた intent がジェスチャ終了後も残る (今日の stackMode は confirm() で true へリセットされる — その行が『残らない』ことの証拠)。台帳 docs/STATE_LEDGER.md に基数 0..N の行を追加する"
+
+        goal DragPlaneFollowsPolicyNotEntityKind
+        uuid 3cc2cd3a-7a64-4bf7-b2e9-1ea4b754a7ed
+        summary "自由ドラッグ平面の選択が『注釈だけ特別扱い』から『方針の関数』になる。supported / grounded は支持面に平行、free はカメラ正対面。『カメラ平面で動かした結果を stack snap が Z で引き戻す』二重のねじれが消え、当事者の『すごく動かしづらい』の機構的な原因がなくなる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedPlaneAndDogfooding
+            uuid 5b5473ae-c5bd-4e16-877d-383b14eed2b1
+            summary "予定している検査: 純粋関数 dragPlaneFor(placement, hostPose) の表テスト (3 方針 × ホスト有無)。加えて grounded 実体のドラッグ平面がカメラ姿勢を入力に取らないこと (関数のシグネチャで静的に言える形にする)。ただし『動かしやすい』は主観なのでテストでは閉じない — 証拠は当事者の dogfooding 記録 (docs/dogfooding/) であり、そう宣言している"

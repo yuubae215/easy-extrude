@@ -297,6 +297,7 @@ solution として吊る (保留理由は `.gsn` の `context BusinessTreeAttach
 ## References
 
 - ADR-048 (Link Network 決定的階層レイアウト) — 本 ADR が §2.1 ノード集合 / §2.2.1 を置き換える
+- ADR-095 (LINK NETWORK を「1 ノード 1 行」のインデントツリーへ) — 本 ADR のノード集合・辺クラス・決定性を継承し、**幾何割当だけ**を置き換える後続決定
 - ADR-037 (Auto Origin Frame) — Solid : Origin CF の 1:1 全単射と編集ロックの根拠
 - ADR-038 (URDF 二層分類) — 木辺 / 非木辺の意味の出どころ
 - ADR-030 (SpatialLink architecture)
