@@ -30,6 +30,7 @@ import {
   collectSnapTargets,
   collectWorldSnapTargets,
 } from '../../model/CuboidModel.js'
+import { resolveDragPlaneNormal } from '../dragPlaneNormal.js'
 import { computeApproachWarmth } from '../../service/SemanticInferencer.js'
 import { projectToScreen, pickBestSnapTarget } from '../snap/SnapSystem.js'
 import { boundsOf } from '../../view/CommandFeedbackMath.js'
@@ -218,6 +219,15 @@ export class GrabOperationHandler {
     // toggles it BEFORE start(), so resetting on entry would swallow that
     // choice. The gesture END (confirm/cancel) restores the assistive default
     // ON (ADR-071 per-gesture reset).
+    //
+    // ADR-097 §Decision 6: an entity that has DECLARED below-grade intent starts
+    // in Free. Without this the per-gesture reset would turn the assist back on
+    // and lift a declared footing out of its pit the next time it is grabbed —
+    // the declaration has to survive the gesture on the behaviour side too, not
+    // just as a stored flag.
+    if ([...ctrl._selectedIds].some(id => ctrl._service.belowGradeIntentOf(id))) {
+      s.stackMode = false
+    }
     s.groundWarned    = false
     s.startMouse.copy(ctrl._mouse)
     s.startCorners = ctrl._corners.map(c => c.clone())
@@ -253,32 +263,15 @@ export class GrabOperationHandler {
     s.currentSuggestion = null
     this._snapFxPrev   = { geometry: null, stack: null } // fresh gesture — no engagement carried over
 
-    // ADR-032 §6: for mounted Annotated* entities, constrain drag to host local XY plane.
-    // For unmounted Annotated* entities, constrain to world XY (prevents Z drift).
-    // For all other entities, use the camera-facing plane (existing behaviour).
-    const isAnnotated = ctrl._activeObj instanceof AnnotatedLine ||
-      ctrl._activeObj instanceof AnnotatedRegion ||
-      ctrl._activeObj instanceof AnnotatedPoint
-    let planeNormal = null
-    if (isAnnotated) {
-      const mountLink = ctrl._scene.getMountsLink(ctrl._scene.activeId)
-      if (mountLink) {
-        // Mounted: use host CoordinateFrame's local Z axis as drag plane normal
-        const hostPose = ctrl._service.worldPoseOf(mountLink.targetId)
-        if (hostPose) {
-          planeNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(hostPose.quaternion)
-        }
-      }
-      if (!planeNormal) {
-        // Unmounted Annotated*: use world Z (XY plane)
-        planeNormal = new THREE.Vector3(0, 0, 1)
-      }
-    } else {
-      const camDir = new THREE.Vector3()
-      ctrl._camera.getWorldDirection(camDir)
-      planeNormal = camDir
-    }
-    s.dragPlane.setFromNormalAndCoplanarPoint(planeNormal, s.pivot)
+    // Drag plane follows the DECLARED PLACEMENT, not the entity's class
+    // (ADR-097 §Decision 5): supported / grounded slide along the support plane,
+    // free entities keep the camera-facing plane.
+    s.dragPlane.setFromNormalAndCoplanarPoint(
+      resolveDragPlaneNormal(ctrl._activeObj, {
+        camera: ctrl._camera, scene: ctrl._scene, service: ctrl._service,
+      }),
+      s.pivot,
+    )
 
     ctrl._raycaster.setFromCamera(ctrl._mouse, ctrl._camera)
     const pt = new THREE.Vector3()
@@ -484,29 +477,16 @@ export class GrabOperationHandler {
     } else {
       this._applyFree()
     }
-    // Stack snap: adjust Z so grabbed objects rest on top of the surface below
-    // (another object OR the ground plane — ADR-071 assistive default).
+    // Stack assist (ADR-071, narrowed by ADR-097): "rest it on top of that".
     // An explicit Z-axis constraint expresses vertical intent, so the assist
-    // steps aside instead of silently overriding the user's input (#11).
-    // applyPreviewTranslation (called from _applyDeltaToAll) already updated
-    // views; re-update after stack snap since it re-applies domain mutations.
-    const stackApplies = s.stackMode && s.axis !== 'z'
-    if (stackApplies) {
-      this._applyStackSnap(s.segmentStartPositions, s.lastDelta)
-      for (const id of ctrl._selectedIds) {
-        const selObj = ctrl._scene.getObject(id)
-        if (selObj) {
-          selObj.meshView.updateGeometry(_grabHandlesOf(selObj))
-          selObj.meshView.updateBoxHelper()
-        }
-      }
-      // Non-Solid grabs (ImportedMesh, MeasureLine) are not stack-snapped —
-      // they can still dip below grade, and never silently (#11).
-      if (!s.stacking) this.warnIfBelowGrade()
-    } else {
-      s.stacking = false
-      // Free / Z-constrained placement can dip below grade — legitimate for
-      // footings/piles, but never silent (ADR-071, PHILOSOPHY #11).
+    // steps aside — and since ADR-097 the FLOOR does not step aside with it
+    // (that is the placement policy's, applied inside the pose entry), which is
+    // what symptom 2 was. The delta application in _applyDeltaToAll already ran
+    // the assist and returned its outcome; this only mirrors it into the state
+    // the snap FX reads.
+    if (!s.stacking) {
+      // Below-grade is only reachable now by declaring it (S / Free), so the
+      // warning names an intentional state instead of an accident (#11).
       this.warnIfBelowGrade()
     }
 
@@ -592,14 +572,27 @@ export class GrabOperationHandler {
 
   /**
    * Toggles stacking assist during an active grab. Stack is ON by default
-   * (ADR-071) — S / the mobile Stack button now DISABLES it, as the escape
-   * hatch for intentional free / overlapping / below-grade placement.
+   * (ADR-071) — S / the mobile Stack button DISABLES it, as the escape hatch for
+   * intentional free / overlapping / below-grade placement.
+   *
+   * ADR-097 §Decision 6 (G3): the escape hatch is no longer gesture-local. Since
+   * the floor is now an invariant of the pose entry rather than a side effect of
+   * the assist, switching the assist off would leave `grounded` entities still
+   * unable to go under — the ability the S key used to grant would vanish
+   * silently (#11). So S also DECLARES below-grade intent on the selected
+   * grounded entities, and that declaration survives the gesture: footings and
+   * piles become entities that were *declared* to be under grade, and
+   * `checkGroundClearance()`'s warning regains its original meaning.
    */
   toggleStackMode() {
     const { _ctrl: ctrl } = this
     const s = this.state
     s.stackMode = !s.stackMode
     s.stacking  = false
+    // Free = "I mean to place this below grade"; Stack = "no, keep it on top".
+    for (const id of ctrl._selectedIds) {
+      ctrl._service.setBelowGradeIntent(id, !s.stackMode)
+    }
     this.apply()
     this.updateStatus()
     ctrl._updateMobileToolbar()
@@ -772,10 +765,15 @@ export class GrabOperationHandler {
   restartFromPivot() {
     const { _ctrl: ctrl } = this
     const s = this.state
-    const pivot  = s.pivot
-    const camDir = new THREE.Vector3()
-    ctrl._camera.getWorldDirection(camDir)
-    s.dragPlane.setFromNormalAndCoplanarPoint(camDir, pivot)
+    const pivot = s.pivot
+    // Same policy as start() — a pivot change must not silently swap a grounded
+    // entity back onto the camera plane (this path had no entity branch at all).
+    s.dragPlane.setFromNormalAndCoplanarPoint(
+      resolveDragPlaneNormal(ctrl._activeObj, {
+        camera: ctrl._camera, scene: ctrl._scene, service: ctrl._service,
+      }),
+      pivot,
+    )
     s.startPoint.copy(pivot)
     s.axis     = null
     s.inputStr = ''
@@ -799,59 +797,6 @@ export class GrabOperationHandler {
   }
 
   /**
-   * Stack snap: after all grab movement is applied, cast downward rays from the
-   * bottom face of the active grabbed object. If another object is directly below,
-   * shift all grabbed objects upward so the bottom face rests on that surface.
-   * The ground plane (Z = 0) is always a landing surface (ADR-071): with nothing
-   * below, the assistive default rests the entity on the ground instead of
-   * letting it float or sink below grade.
-   * @param {Map<string, import('three').Vector3>} segStartPositions  per-Solid _position snapshots
-   * @param {import('three').Vector3} currentDelta  world delta already applied by the caller
-   */
-  _applyStackSnap(segStartPositions, currentDelta) {
-    const { _ctrl: ctrl } = this
-    const s = this.state
-    const grabbed = ctrl._activeObj
-    if (!(grabbed instanceof Solid)) { s.stacking = false; return }
-
-    // Find bottom Z of the grabbed object
-    const gCorners = grabbed.corners
-    let gZMin = Infinity
-    gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
-
-    const grabbedIds = new Set(ctrl._selectedIds)
-
-    // Sample the bottom face: 4 corners at gZMin + centroid
-    const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < 0.001)
-    const center = new THREE.Vector3()
-    bottomCorners.forEach(c => center.add(c))
-    center.divideScalar(bottomCorners.length || 1)
-
-    // Highest building roof under the bottom-face footprint, else the ground
-    // plane (Z=0) — the shared "rest on top, else ground" probe (SceneService,
-    // PHILOSOPHY #1.1). Excludes the grabbed objects so a solid never stacks on
-    // itself.
-    const highestHitZ = ctrl._service.highestSurfaceZAt([...bottomCorners, center], grabbedIds)
-
-    const zOffset = highestHitZ - gZMin
-    // Skip if already resting on the surface (within 1mm tolerance)
-    if (Math.abs(zOffset) < 0.001) { s.stacking = false; return }
-
-    // Apply additional Z shift via the public Solid.move() API (ADR-040: never mutate
-    // corners directly — _position and localCorners must remain the SSOT).
-    const snapDelta = currentDelta.clone().add(new THREE.Vector3(0, 0, zOffset))
-    for (const id of ctrl._selectedIds) {
-      const selObj = ctrl._scene.getObject(id)
-      if (selObj instanceof Solid) {
-        const segStartPos = segStartPositions?.get(id)
-        if (segStartPos) selObj.move(segStartPos, snapDelta)
-      }
-    }
-    s.stackContact = { x: center.x, y: center.y, z: highestHitZ }
-    s.stacking = true
-  }
-
-  /**
    * Applies `delta` to the active object and all other selected objects.
    * Uses each object's own startCorners snapshot from `state.allStartCorners`.
    * @param {import('three').Vector3} delta
@@ -860,11 +805,16 @@ export class GrabOperationHandler {
     const { _ctrl: ctrl } = this
     const s = this.state
     s.lastDelta.copy(delta)
-    ctrl._service.applyPreviewTranslation(
+    // The handler asks; the entry decides. Every clamp this method used to run
+    // afterwards now lives inside applyPreviewTranslation (ADR-097 §Decision 3).
+    const { stacking, stackContact } = ctrl._service.applyPreviewTranslation(
       s.segmentStartCorners,
       s.segmentStartPositions,
       delta,
+      { stackAssist: s.stackMode && s.axis !== 'z', activeId: ctrl._activeObj?.id ?? null },
     )
+    s.stacking = stacking
+    if (stackContact) s.stackContact = stackContact
   }
 
   /**

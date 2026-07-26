@@ -3,7 +3,7 @@ GOALS adr097_support_as_entity_state
 goal WhatRestsOnWhatIsADurableFact
 uuid f1eadaa1-e40e-4a3b-8495-cbf13e8b22e8
 summary "『この実体は何の上に載っているか』がシーンの持続する事実になり、どの入力経路 (自由 Grab / 軸拘束 / クイックドラッグ / 数値入力 / import / undo / 毎フレームの制約解決) を通っても壊れない。かつ接地している実体は接地面に沿って素直に動かせる"
-state ToBeDeveloped
+state UnderReview
 labels adr-097, placement, grounding
 artifacts
 - "docs/adr/ADR-097-support-is-entity-state-not-gesture-side-effect.md"
@@ -11,7 +11,7 @@ artifacts
 
     context Adr097Scope
     uuid b28ca59c-336e-43ca-9467-56d6c16cdcaf
-    summary "ADR-097 (Proposed): 配置方針 placement (supported / grounded / free) を実体種ごとに宣言し、支持 supportOf() は幾何から毎回導出する (保存しない)。強制は SceneService の pose 書き込み入口 1 箇所に集約し、ハンドラから clamp とドラッグ平面の実体種分岐を取り上げる。床下は永続フラグ belowGradeIntent による宣言にする。地面を SpatialLink の端点になる一級実体へ昇格させるのはスコープ外"
+    summary "ADR-097 (Accepted, 実装済み 2026-07-26): 配置方針 placement (supported / grounded / free) を実体種ごとに宣言し、支持 supportOf() は幾何から毎回導出する (保存しない)。強制は SceneService の pose 書き込み入口 1 箇所に集約し、ハンドラから clamp とドラッグ平面の実体種分岐を取り上げる。床下は永続フラグ belowGradeIntent による宣言にする。地面を SpatialLink の端点になる一級実体へ昇格させるのはスコープ外"
     artifacts
     - "src/service/SceneService.js"
     - "src/controller/handler/GrabOperationHandler.js"
@@ -24,7 +24,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid e7fe9d9e-b671-47af-880c-90cf3be22008
-    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけ)。接続予定先は profit-growth.gsn の採用ファネル配下、直接操作の信頼性に関わる枝で、経路網羅の個数検査と 5 本の症状回帰が実在した時点で solution として吊る"
+    summary "事業木へ接続済み (起票時の条件『経路網羅の個数検査と症状回帰が実在した時点で吊る』を満たしたため): profit-growth.gsn の採用ファネル配下に strategy ByDirectManipulationTrust → goal PlacementIsPredictable を新設し、本 ADR の実装を solution PlacementPolicyAtOneEntry として吊った。読めること (既存の ByScreenBandwidthBarriers) と信じられることは別の障壁なので、既存の可読性の枝にぶら下げずに兄弟の strategy を起こしている。当該 goal は『動かしやすくなったか』が主観であるため ToBeReviewed"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -53,32 +53,61 @@ artifacts
         goal NoPoseEntryBypassesThePolicy
         uuid 1aa2316d-94fb-4c86-9b34-23e81b3450b6
         summary "pose を書きうる入口をすべて列挙でき、方針を適用していない入口が 0 個である。ハンドラは delta を渡すだけで clamp を持たない。症状 2 (Z 拘束) と症状 3 (非 Solid) は入口が種で早期 return しなくなることで消える"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedEntryPointCensus
-            uuid 9a5abcd4-6808-4509-b0ab-dadf6a53c6fc
-            summary "予定している検査: pose 書き込み入口を宣言リストとして持ち、そのリストに載っていない入口が src/ に 0 個であることを検査する (IDENTITY_RULES と同型の番人 — ADR-090/094 で機能している形)。*在るもの* (今日の 2 経路) を辿る検査では次に足される 3 本目を素通りする。それが今回の欠陥の作られ方そのものなので、検査は必ず『列挙して個数を問う』形にする (原則 #31)"
+            solution EntryPointCensusIsGreen
+            uuid c91b8071-aea7-4003-ac0f-2caa298b1d2f
+            summary "node --test src/PosePolicyOwnership.test.js — pass (5/5)。pose を書く形を列挙し、所有者 (SceneService) の外にある個数を数える: entity.move / 退役した _applyStackSnap / 退役した _isMapObject・_mapObjectPlateDelta。実測で src/ 全走査の並進書き込みは SceneService の 4 行だけになった (実装前は AppController・GrabOperationHandler にも在った)。undo/回転の復元は『宣言された例外』として別表に持ち、宣言の無い例外が 0 個であることを逆向きにも検査する。規則が空回りする状態 (所有者が消える) も別テストで塞ぐ"
+            artifacts
+            - "src/PosePolicyOwnership.test.js"
+            - "src/service/SceneService.js"
+
+            solution PolicyDecisionTableIsGreen
+            uuid 31f2f7b8-011f-497a-a937-be0b4ba3b046
+            summary "node --test src/domain/placement.test.js — pass (16/16)。純粋関数 resolvePlacementDelta の表テストを 3 方針 × (支持あり/なし) × (Z 成分あり/なし) の 13 行で固定し、加えて『種を列挙して方針の宣言が 0 個欠けていないこと』を両向きに数える (未宣言の種は placementFor が throw)。症状 2 の形 — supported は軸拘束の有無に関わらず同じ結果 — と、clamp の冪等性 (導出値を入力へ戻す閉路が無いこと・原則 #24) もここで固定した"
+            artifacts
+            - "src/domain/placement.js"
+            - "src/domain/placement.test.js"
+
+            solution FourthAndFifthEntryFoundByTheCensus
+            uuid 839b8e3a-c330-4ec5-8921-a72901afdc29
+            summary "実装時の発見 (起票時の力学表は入口を 3 つと見積もっていた): (4) N パネルの Location 数値入力 onLocationChange が obj.move() を直接呼び、方針にも補助にも掛かっていなかった — ADR が対症案の却下根拠として予言した『8 箇所目』が既に在った。(5) タッチ再グラブ (AppController pointerdown / S_GRAB_ACTIVE) が 4 つ目のドラッグ平面実装で、実体種の分岐がまったく無く、指を置き直した瞬間に mounts した注釈もカメラ正対面へ落ちていた。どちらも読んで見つけたのではなく**個数検査が落として**見つかった — これが『列挙して数える』形を選んだ理由そのものの実証になっている"
+            artifacts
+            - "src/controller/AppController.js"
 
         goal MountZHasOneWriter
         uuid 926a9ae7-e393-4568-b9a0-8688ce6deef6
         summary "症状 5 の直接の原因である Z の二重書き込みが消える。placement='supported' の実体では mounts はホストの XY 追従だけを担い、Z は常に支持の導出に譲る。空中のホストへ mounts しても注釈はその XY 直下の支持面に座る"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedTwoWriterRegression
-            uuid 7b7d928e-ac71-4f9f-b40a-cb40cb7b1416
-            summary "予定している検査: 空中の CF へ mounts した注釈を N フレーム進めた後も supportOf() が非 null であること (今日は _updateMountedAnnotations が毎フレーム後から書くので落ちる)。書き手が 1 つであることの機械側の問い所は『時間を進めても不変条件が保たれる』形にする — 最後の書き込み勝ちの競合はワンショットの検査では捕まらない"
+            solution MountXyOnlyAndTimeAdvancedInvariant
+            uuid 38573de2-7af4-4391-9a04-901a718d1e04
+            summary "実装: _updateMountedAnnotations は supported な source に対し world XY だけをホストから取り、Z は毎フレーム supportOf の導出へ譲る (書き手が 1 つ — 原則 #4)。検査は playwright test e2e/smoke.spec.js — pass (21/21) の『supported な実体で支持を持たないものは 0 個』で、マップ注釈を実際に置いてから毎フレームの解決が数フレーム回った後の状態を問う。最後の書き込み勝ちの競合はワンショットでは捕まらないので、時間が進んだ後に問う形になっている"
+            artifacts
+            - "src/service/SceneService.js"
+            - "e2e/smoke.spec.js"
+
+            assumption AirborneHostNotDirectlyExercised
+            uuid 66f9aaaf-5843-4291-864a-ad4ac697249f
+            summary "残っている穴 (隠さず数える): 検査は『マップ注釈を置いた実シーンで supported が 0 個浮いていない』ところまでで、**空中の CF へ明示的に mounts した注釈**という最も鋭いケースは e2e で組み立てていない (mounts の作成を UI から driving する手順が長く、今回の PR では書かなかった)。コード上は同じ 1 本の経路を通るが、証拠としてはワンランク弱いのでそう宣言する。要件が立てば mounts 作成を含む e2e を足すのが埋め方"
 
         goal SupportedEntitiesNeverFloat
         uuid 6da89726-dcaf-4b03-9fd8-98429cbf482d
         summary "SceneService._isMapObject() の JSDoc にしかない散文の不変条件 (『must stay pinned to the ground plane or a building roof, never floating』) が述語 + 検査になる。任意の delta 列を supported 実体へ適用した後、supportOf() は常に非 null"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedInvariantAndSymptomTests
-            uuid 87b33613-5a40-412d-804d-89372ba6cd5e
-            summary "予定している検査: (a) 不変条件テスト — ランダムな delta 列に対し supported は常に支持を持ち、grounded かつ belowGradeIntent=false は常に lowestZ >= -tolerance。(b) 当事者の報告に 1:1 対応する症状回帰 5 本 (Z 拘束で床を抜けない / ロボットが抜けない / マップオブジェクトが抜けない / 空中ホストの注釈が座る / grounded の自由ドラッグ平面がカメラ向きに依存しない)。散文が誰も開かない場所にあったのが今回の根なので、成果物は文書の行ではなく検査でなければならない (憲法 Q3)"
+            solution ProseInvariantIsNowAPredicate
+            uuid 29766f54-e09a-41ba-bd18-1d64815b53c1
+            summary "playwright test e2e/smoke.spec.js — pass (21/21)。SceneService._isMapObject() の JSDoc にしかなかった散文 (『must stay pinned to the ground plane or a building roof, never floating』) が supportOf() という述語になり、e2e が『supported な種を列挙して、支持を持たない個体の個数が 0 か』を問う。母数が 0 だと不変条件の成立と区別がつかないので、マップ注釈を 1 個置いてから supported.length > 0 を先に assert する。grounded 側の対 (宣言なしで床下に居る個体が 0 個) も同じ 1 本で数える。SceneService は vite 専用 import を持ち node --test で構築できないため、シーンを要する不変条件はこのレーンでしか問えない (ADR-096 の visibilityState と同じ理由)"
+            artifacts
+            - "e2e/smoke.spec.js"
+            - "src/service/SceneService.js"
+
+            solution SymptomRegressionsAreDifferential
+            uuid 133f312b-8d12-4c0c-acba-cca9bbd40663
+            summary "症状回帰 4 本 (起票時の見積もりは 5 本) が pass。うち 2 本が**差分ペア**になっているのが証拠として重要: 同一のジェスチャ (g → z → 下へ 400px) が、宣言なしでは bottomZ >= -0.001 に留まり、S で宣言すると bottomZ < -0.001 まで潜る。片方だけならジェスチャがそもそも動いていない可能性を排除できないが、対で通ることは clamp が実在して効いていることの証明になる。残り 2 本はカメラ姿勢非依存 (症状 4 の機構) と supported の個数検査。ロボット base の回帰は Outliner からの選択手順が長く今回は書いていない — 同じ policy 表を通る種なので単体側 (placement.test.js の種 → 方針の写像) で代替した"
+            artifacts
+            - "e2e/smoke.spec.js"
 
     strategy ByMakingIntentExplicit
     uuid de9910e4-a66b-4567-9db5-3654f6528931
@@ -87,19 +116,27 @@ artifacts
         goal BelowGradeIsDeclaredNotAccidental
         uuid c3ea4899-87cd-430d-87a3-9cf9b722a0c2
         summary "床下が事故と宣言に分かれる。belowGradeIntent は実体の永続状態なので、基礎・杭は『そう宣言された実体』になり、checkGroundClearance() の警告 (ADR-071) は『宣言していない実体が潜った』ときだけ出る本来の意味を取り戻す。今日の『Grab 中に S を押す』はジェスチャ局所で何も残らない"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedIntentPersistence
-            uuid 2ce30ebe-a227-4b75-a057-129564269c65
-            summary "予定している検査: belowGradeIntent=false の grounded 実体を床下へ動かそうとしても潜らない / true なら潜る / 一度立てた intent がジェスチャ終了後も残る (今日の stackMode は confirm() で true へリセットされる — その行が『残らない』ことの証拠)。台帳 docs/STATE_LEDGER.md に基数 0..N の行を追加する"
+            solution IntentSurvivesTheGesture
+            uuid 1e3350f8-3b45-437b-a3c3-9080fd4e9ac7
+            summary "playwright test e2e/smoke.spec.js — pass。S (Free) が選択中の grounded 実体へ belowGradeIntent を宣言し、Enter でジェスチャを終えた後も残り、掴み直したときに補助が復活して基礎をピットから持ち上げる、ということが起きない (start() が宣言を読んで Free で始まる)。実装中に気づいて塞いだ穴がここで、宣言をフィールドに置くだけでは不十分だった — ジェスチャ終端の stackMode = true という既存の 1 行が、次のグラブで宣言を無効化していた。台帳 docs/STATE_LEDGER.md に基数 0..N の行を追加済み"
+            artifacts
+            - "src/controller/handler/GrabOperationHandler.js"
+            - "docs/STATE_LEDGER.md"
 
         goal DragPlaneFollowsPolicyNotEntityKind
         uuid 3cc2cd3a-7a64-4bf7-b2e9-1ea4b754a7ed
         summary "自由ドラッグ平面の選択が『注釈だけ特別扱い』から『方針の関数』になる。supported / grounded は支持面に平行、free はカメラ正対面。『カメラ平面で動かした結果を stack snap が Z で引き戻す』二重のねじれが消え、当事者の『すごく動かしづらい』の機構的な原因がなくなる"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedPlaneAndDogfooding
+            solution PlaneIsAFunctionOfPolicy
             uuid 5b5473ae-c5bd-4e16-877d-383b14eed2b1
-            summary "予定している検査: 純粋関数 dragPlaneFor(placement, hostPose) の表テスト (3 方針 × ホスト有無)。加えて grounded 実体のドラッグ平面がカメラ姿勢を入力に取らないこと (関数のシグネチャで静的に言える形にする)。ただし『動かしやすい』は主観なのでテストでは閉じない — 証拠は当事者の dogfooding 記録 (docs/dogfooding/) であり、そう宣言している"
+            summary "node --test src/domain/placement.test.js — pass。純粋関数 dragPlaneNormalFor({placement, hostNormal, cameraNormal}) の表テスト (3 方針 × ホスト有無) と、『カメラ法線を変えても grounded の平面は動かない』の 1 本。加えて src/PosePolicyOwnership.test.js が、ドラッグ平面を書く行が resolveDragPlaneNormal を経ていることを書く瞬間に問う — この規則がタッチ再グラブという 4 つ目の実装を落とした。実装前は 3 実装が別々の規則を持ち、うち 2 つには実体種の分岐が存在しなかった"
+            artifacts
+            - "src/controller/dragPlaneNormal.js"
+            - "src/PosePolicyOwnership.test.js"
+
+            assumption EaseOfUseIsNotClosedByTests
+            uuid ba2a2e6d-3d2e-4c58-8a97-9c3f8a1f2b40
+            summary "反証されうる仮説 (テストでは閉じない): 『すごく動かしづらい』が実際に解消したかは主観であり、閉じたのは *機構* だけである — カメラ姿勢由来の Z がドラッグに漏れない (e2e)、平面が方針の関数である (単体)。副作用として grounded 実体は自由ドラッグで持ち上げられなくなり、上下は G→Z へ移った。これが『動かしやすくなった』側に効くのか『持ち上げられなくて不便』側に出るのかは当事者の実利用でしか分からない。証拠は docs/dogfooding/ の記録であり、そう宣言する"

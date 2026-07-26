@@ -73,6 +73,10 @@ import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
 import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
+import {
+  PLACEMENT, SUPPORT_TOLERANCE,
+  placementOf, hasGroundInvariant, resolvePlacementDelta, supportUnder,
+} from '../domain/placement.js'
 
 /**
  * Minimum 2D (XY-projected) distance from any polyline segment to any point.
@@ -464,6 +468,9 @@ export class SceneService extends EventEmitter {
       // reactivate geometric constraints (_fixedJointTransforms / _mountLocalPositions).
       this._updateWorldPoses()
       this._reactivateLiveLinks()
+      // Honour what was saved: below-grade geometry becomes a declaration rather
+      // than being clamped away (ADR-097 §Consequences / #11).
+      this._adoptBelowGradeIntent()
 
       return true
     } catch (err) {
@@ -720,6 +727,7 @@ export class SceneService extends EventEmitter {
     // reactivate geometric constraints for any imported fastened / mounts links.
     this._updateWorldPoses()
     this._reactivateLiveLinks()
+    this._adoptBelowGradeIntent()
 
     return { imported, skipped }
   }
@@ -1135,6 +1143,23 @@ export class SceneService extends EventEmitter {
       for (let j = 0; j < n; j++) {
         corners.push(new Vector3(worldPts[j * 3], worldPts[j * 3 + 1], worldPts[j * 3 + 2]))
       }
+
+      // ADR-097 §Decision 4 — Z has ONE writer (PHILOSOPHY #4).
+      //
+      // Symptom 5 was this loop and the drag-time re-seating fighting over the
+      // same Z every frame, with this one running last and therefore winning: an
+      // annotation mounted to a CF floating in the air followed it into the air,
+      // in defiance of the invariant that a map object is never floating.
+      //
+      // For a `supported` source the mount now carries XY only, and Z always
+      // yields to the derived support. A host in the air still drags the
+      // annotation across the ground — it just cannot lift it off.
+      if (placementOf(source) === PLACEMENT.SUPPORTED) {
+        const seatZ = this.highestSurfaceAt(
+          corners.map(c => ({ x: c.x, y: c.y })), [sourceId]).z
+        corners.forEach(c => { c.z = seatZ })
+      }
+
       source.vertices.forEach((v, i) => { if (corners[i]) v.position.copy(corners[i]) })
       source.meshView.updateGeometry(corners)
       if (source.meshView.boxHelper?.visible) source.meshView.updateBoxHelper()
@@ -2413,6 +2438,33 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * Import-time placement reconciliation (ADR-097 §Consequences).
+   *
+   * A saved scene may hold a `grounded` entity below grade — a footing that was
+   * placed deliberately before the policy existed, or a robot base someone put in
+   * a pit. The policy must not silently move it: rewriting loaded data without
+   * saying so is the worst failure mode there is (PHILOSOPHY #11). So the load
+   * honours the stored geometry and ADOPTS it as the declaration — the entity
+   * comes back exactly where it was saved, now with the intent that explains it.
+   *
+   * This is also why `belowGradeIntent` is not serialized: geometry already
+   * carries the fact, and re-deriving it keeps the scene schema unversioned
+   * (§1.1 — the same fact does not get a second home on the wire).
+   *
+   * Never clears an intent: an entity resting on grade may still be a declared
+   * footing that happens to be at Z=0 right now.
+   */
+  _adoptBelowGradeIntent() {
+    for (const obj of this._model.objects.values()) {
+      if (placementOf(obj) !== PLACEMENT.GROUNDED) continue
+      const bottomZ = this._bottomZOf(obj)
+      if (bottomZ !== null && Number.isFinite(bottomZ) && bottomZ < -SUPPORT_TOLERANCE) {
+        obj.belowGradeIntent = true
+      }
+    }
+  }
+
+  /**
    * Used at the end of loadScene() and importFromJson() to make constraints live
    * again after entities and links have been reconstructed from serialized data.
    */
@@ -2693,92 +2745,331 @@ export class SceneService extends EventEmitter {
    * @returns {number} max(highest hit over all samples, 0)
    */
   highestSurfaceZAt(samples2D, excludeIds = []) {
+    return this.highestSurfaceAt(samples2D, excludeIds).z
+  }
+
+  /**
+   * The same downward probe as `highestSurfaceZAt`, but also naming WHICH entity
+   * owns the winning surface — the extra fact `supportOf()` needs to answer
+   * `{kind:'entity', id}` vs `{kind:'ground'}` (ADR-097 §Decision 2).
+   *
+   * `entityId === null` means the ground plane won (nothing was hit above Z=0),
+   * which is why the ground can be *named* without being an entity: promoting it
+   * to a SpatialLink endpoint is explicitly out of scope (ADR-097 §Decision 2).
+   *
+   * @param {{x:number, y:number}[]} samples2D
+   * @param {Iterable<string>} [excludeIds]
+   * @returns {{ z: number, entityId: string|null }}
+   */
+  highestSurfaceAt(samples2D, excludeIds = []) {
     const exclude = excludeIds instanceof Set ? excludeIds : new Set(excludeIds)
-    const targetMeshes = [...this._model.objects.values()]
+    const targets = [...this._model.objects.values()]
       .filter(o => !exclude.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
-      .map(o => o.meshView.cuboid)
+    const meshToId = new Map(targets.map(o => [o.meshView.cuboid, o.id]))
+    const targetMeshes = targets.map(o => o.meshView.cuboid)
     const RAY_TOP = 10000
     const downDir = new Vector3(0, 0, -1)
     const ray = new Raycaster()
     let best = null
+    let bestId = null
     for (const s of samples2D) {
       ray.set(new Vector3(s.x, s.y, RAY_TOP), downDir)
       const hits = ray.intersectObjects(targetMeshes)
       if (hits.length > 0) {
         const hz = hits[0].point.z
-        if (best === null || hz > best) best = hz
+        if (best === null || hz > best) {
+          best   = hz
+          bestId = meshToId.get(hits[0].object) ?? null
+        }
       }
     }
-    return Math.max(best ?? -Infinity, 0)
+    // The ground plane (Z=0) is the implicit lowest landing surface (ADR-071).
+    if (best === null || best < 0) return { z: 0, entityId: null }
+    return { z: best, entityId: bestId }
   }
 
+  // ── Placement policy (ADR-097) ────────────────────────────────────────────
+
   /**
-   * True for a "map object" (2D annotated element) — the entity family that
-   * must stay pinned to the ground plane or a building roof, never floating.
+   * The entity's declared placement policy. Thin delegation so callers never
+   * re-derive the classification (`instanceof` chains live in one place —
+   * `src/domain/placement.js`, guarded by PosePolicyOwnership.test.js).
    * @param {*} obj
-   * @returns {boolean}
+   * @returns {string} a `PLACEMENT` member
    */
-  _isMapObject(obj) {
-    return obj instanceof AnnotatedPoint
-        || obj instanceof AnnotatedLine
-        || obj instanceof AnnotatedRegion
+  placementOf(obj) {
+    return placementOf(obj)
   }
 
   /**
-   * Builds the translation delta that slides a map object in XY by `worldDelta`
-   * and re-seats the whole flat plate on `max(building top under it, 0)`. All
-   * vertices share one Z (flat plate), so a single delta suffices: the XY comes
-   * from `worldDelta`, the Z shift lifts/drops the plate from its start height
-   * to the new ground/roof height. Any Z in `worldDelta` is discarded — a map
-   * object cannot be raised into the air.
-   * @param {import('three').Vector3[]} startCorners  drag-start vertex snapshot
-   * @param {import('three').Vector3}   worldDelta
-   * @param {string} selfId  moving entity id (excluded from the surface probe)
-   * @returns {import('three').Vector3}
+   * Declares that an entity is MEANT to sit below grade (footing / pile / pit).
+   * ADR-097 §Decision 6 (G3): below grade stops being an accident and becomes a
+   * statement that survives the gesture, so `checkGroundClearance()`'s warning
+   * regains its meaning ("an entity that never declared this went under").
+   *
+   * Only `grounded` entities carry the flag — for `supported` there is no escape
+   * hatch (a map object under the ground has no support), and `free` entities
+   * were never blocked.
+   *
+   * @param {string} id
+   * @param {boolean} intent
+   * @returns {boolean} true when the flag was actually written
    */
-  _mapObjectPlateDelta(startCorners, worldDelta, selfId) {
-    const startZ = startCorners[0]?.z ?? 0
-    const newXYs = startCorners.map(c => ({ x: c.x + worldDelta.x, y: c.y + worldDelta.y }))
-    const targetZ = this.highestSurfaceZAt(newXYs, [selfId])
-    return new Vector3(worldDelta.x, worldDelta.y, targetZ - startZ)
+  setBelowGradeIntent(id, intent) {
+    const obj = this._model.getObject(id)
+    if (!obj || placementOf(obj) !== PLACEMENT.GROUNDED) return false
+    obj.belowGradeIntent = Boolean(intent)
+    return true
+  }
+
+  /** Reads the declared below-grade intent (absent = not declared = false). */
+  belowGradeIntentOf(id) {
+    return this._model.getObject(id)?.belowGradeIntent === true
+  }
+
+  /**
+   * **Support is derived, never stored** (ADR-097 §Decision 2). Geometry is the
+   * source; storing it would create the same second-source drift that the
+   * `mounts` double Z write causes today.
+   *
+   * This is the predicate form of the invariant that used to live only in prose
+   * (`_isMapObject`'s "never floating" JSDoc): a `supported` entity must always
+   * answer non-null here.
+   *
+   * Limited to horizontal support surfaces — the probe is a downward ray, so
+   * walls / ceilings / slopes cannot be expressed (ADR-097 §受け入れるコスト).
+   *
+   * @param {string} entityId
+   * @returns {{kind:'ground'}|{kind:'entity', id:string}|null}
+   */
+  supportOf(entityId) {
+    const obj = this._model.getObject(entityId)
+    if (!obj) return null
+    const samples = this._footprintSamplesOf(obj)
+    if (samples.length === 0) return null
+    const bottomZ = this._bottomZOf(obj)
+    if (bottomZ === null) return null
+    const { z, entityId: surfaceId } = this.highestSurfaceAt(samples, [entityId])
+    return supportUnder({ bottomZ, surfaceZ: z, surfaceEntityId: surfaceId })
+  }
+
+  /**
+   * Current world XY samples of the entity's footprint (probe origins).
+   * CoordinateFrames have no footprint — their single world position is used.
+   * @returns {{x:number, y:number}[]}
+   */
+  _footprintSamplesOf(obj) {
+    if (obj instanceof CoordinateFrame) {
+      const pos = this.worldPoseOf(obj.id)?.position
+      return pos ? [{ x: pos.x, y: pos.y }] : []
+    }
+    const corners = obj?.corners ?? []
+    if (corners.length === 0) return []
+    const samples = corners.map(c => ({ x: c.x, y: c.y }))
+    // Centroid too: a bottom face spanning a roof edge must not "hover" on the
+    // strength of its corners alone.
+    const cx = samples.reduce((a, s) => a + s.x, 0) / samples.length
+    const cy = samples.reduce((a, s) => a + s.y, 0) / samples.length
+    samples.push({ x: cx, y: cy })
+    return samples
+  }
+
+  /** Current lowest world Z of the entity, or null when it has no geometry. */
+  _bottomZOf(obj) {
+    if (obj instanceof CoordinateFrame) {
+      return this.worldPoseOf(obj.id)?.position?.z ?? null
+    }
+    const corners = obj?.corners ?? []
+    if (corners.length === 0) return null
+    return corners.reduce((lo, c) => Math.min(lo, c.z), Infinity)
+  }
+
+  /**
+   * Lowest world Z of the entity AT SEGMENT START, computed from the snapshot
+   * rather than from live state.
+   *
+   * Reading the live pose here would feed a derived value back into its own
+   * input every frame (PHILOSOPHY #24) — the clamp would drift downward one
+   * epsilon per pointer move. For a CoordinateFrame the snapshot is a
+   * PARENT-LOCAL translation, so it is lifted to world with the parent's pose
+   * (the parent does not move during this entity's own drag; if it does, the
+   * parent's own policy governs it).
+   *
+   * @param {*} obj
+   * @param {import('three').Vector3[]} startCorners
+   * @returns {number|null}
+   */
+  _segmentStartBottomZ(obj, startCorners) {
+    if (obj instanceof CoordinateFrame) {
+      const local = startCorners?.[0]
+      if (!local) return null
+      const world = local.clone()
+        .applyQuaternion(this._getParentWorldQuat(obj))
+        .add(this._getParentWorldPos(obj))
+      return world.z
+    }
+    if (!startCorners?.length) return null
+    return startCorners.reduce((lo, c) => Math.min(lo, c.z), Infinity)
+  }
+
+  /** Destination XY samples for the probe: segment-start footprint slid by the delta. */
+  _destinationSamples(obj, startCorners, worldDelta) {
+    if (obj instanceof CoordinateFrame) {
+      const local = startCorners?.[0]
+      if (!local) return []
+      const world = local.clone()
+        .applyQuaternion(this._getParentWorldQuat(obj))
+        .add(this._getParentWorldPos(obj))
+      return [{ x: world.x + worldDelta.x, y: world.y + worldDelta.y }]
+    }
+    return (startCorners ?? []).map(c => ({ x: c.x + worldDelta.x, y: c.y + worldDelta.y }))
+  }
+
+  /**
+   * **Applies the declared policy to a requested delta** — the enforcement point
+   * ADR-097 §Decision 3 moves the clamps to. Handlers pass a delta and hold no
+   * clamp of their own; this runs for EVERY entity on EVERY pose entry, so no
+   * path can opt out by entity type or by axis constraint (symptoms 2 and 3).
+   *
+   * @param {*} obj
+   * @param {import('three').Vector3[]} startCorners
+   * @param {import('three').Vector3} worldDelta
+   * @param {Set<string>} movingIds  entities moving together (excluded from the probe)
+   * @returns {import('three').Vector3} the delta the policy allows
+   */
+  _policyDelta(obj, startCorners, worldDelta, movingIds) {
+    const placement = placementOf(obj)
+    if (!hasGroundInvariant(placement)) return worldDelta.clone()
+
+    const startBottomZ = this._segmentStartBottomZ(obj, startCorners)
+    if (startBottomZ === null || !Number.isFinite(startBottomZ)) return worldDelta.clone()
+
+    // `grounded` only needs the ground plane, so the ray probe is skipped —
+    // it is `supported` that has to know which surface it lands on.
+    let supportZ = null
+    if (placement === PLACEMENT.SUPPORTED) {
+      const samples = this._destinationSamples(obj, startCorners, worldDelta)
+      supportZ = samples.length ? this.highestSurfaceAt(samples, movingIds).z : null
+    }
+
+    const d = resolvePlacementDelta({
+      placement,
+      belowGradeIntent: obj.belowGradeIntent === true,
+      requested:        { x: worldDelta.x, y: worldDelta.y, z: worldDelta.z },
+      startBottomZ,
+      supportZ,
+    })
+    return new Vector3(d.x, d.y, d.z)
   }
 
   // ── Preview operations (live drag / rotate) ───────────────────────────────
 
   /**
-   * Applies a world-space translation to all objects in a selection snapshot during
-   * a live drag (G-key Grab or mouse-drag preview). Dispatches by entity type:
-   * CoordinateFrame receives a parent-local delta; Solid uses the primary triple
-   * (_position snapshot + world delta); all other entities use their corners snapshot.
-   * Mesh views are updated in the same call.
+   * **THE pose write entry** for translation (ADR-097 §Decision 3 / PHILOSOPHY #1).
+   *
+   * Every path that moves entities — free grab, axis-constrained grab, numeric
+   * grab input, quick mouse drag, the N-panel Location fields — comes through
+   * here, and the declared placement policy is applied to each entity on the way
+   * in. Handlers pass a requested delta and hold no clamp of their own, which is
+   * why an axis constraint (symptom 2) or a non-Solid entity (symptom 3) can no
+   * longer step around the floor: there is nowhere left to step around it.
+   *
+   * The policy is applied PER ENTITY, not once for the selection. A mixed
+   * selection is not moved rigidly — each entity keeps its own invariant, which
+   * is the thing that must not break; rigid group motion is not.
+   *
+   * Dispatches by entity type for the mutation itself: CoordinateFrame receives
+   * a parent-local delta; Solid uses the primary triple (_position snapshot +
+   * world delta); all other entities use their corners snapshot. Mesh views are
+   * updated in the same call.
+   *
    * @param {Map<string, import('three').Vector3[]>} segStartCorners  per-entity snapshots
    * @param {Map<string, import('three').Vector3>|null} segStartPositions  per-Solid _position snapshots
-   * @param {import('three').Vector3} worldDelta
+   * @param {import('three').Vector3} worldDelta  the REQUESTED delta (pre-policy)
+   * @param {{stackAssist?: boolean, activeId?: string|null}} [options]
+   *   stackAssist — additionally rest the grabbed Solids on the surface below
+   *   (ADR-071's remaining value: "put it on top of that", never "make a floor").
+   * @returns {{stacking: boolean, stackContact: {x:number,y:number,z:number}|null}}
+   *   the stack-assist outcome, for the caller's snap FX (the handler owns the
+   *   feedback, the service owns the geometry).
    */
-  applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta) {
+  applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta, options = {}) {
+    const { stackAssist = false, activeId = null } = options
+    const movingIds = new Set(segStartCorners.keys())
+
     for (const [id, startCorners] of segStartCorners) {
       const obj = this._model.getObject(id)
       if (!obj) continue
+      const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds)
       if (obj instanceof CoordinateFrame) {
         const parentWorldQuat = this._getParentWorldQuat(obj)
-        const localDelta = worldDelta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
+        const localDelta = delta.clone().applyQuaternion(parentWorldQuat.clone().conjugate())
         obj.move(startCorners, localDelta)
       } else if (obj instanceof Solid) {
         const segStartPos = segStartPositions?.get(id)
-        if (segStartPos) obj.move(segStartPos, worldDelta)
-      } else if (this._isMapObject(obj)) {
-        // Map objects (annotations) are flat plates pinned to the ground plane
-        // or a building roof — never floating (user requirement). Slide in XY
-        // only, then re-seat the whole plate on max(building top, 0) so a Z
-        // component (free drag or G→Z) can never lift them into the air.
-        obj.move(startCorners, this._mapObjectPlateDelta(startCorners, worldDelta, id))
+        if (segStartPos) obj.move(segStartPos, delta)
       } else {
-        obj.move(startCorners, worldDelta)
+        obj.move(startCorners, delta)
       }
       const handles = (obj instanceof CoordinateFrame) ? obj.localOffset : obj.corners
       obj.meshView?.updateGeometry(handles)
       obj.meshView?.updateBoxHelper()
     }
+
+    const stackContact = stackAssist
+      ? this._applyStackAssist(segStartCorners, segStartPositions, worldDelta, activeId, movingIds)
+      : null
+    return { stacking: stackContact !== null, stackContact }
+  }
+
+  /**
+   * Stack assist (ADR-071, narrowed by ADR-097 §Decision 3): rest the grabbed
+   * Solids on top of whatever surface is under the active one.
+   *
+   * It no longer "makes a floor" — that duty moved to the placement policy,
+   * which is why this can stay an opt-in assist that an axis constraint or the
+   * S key may switch off without the floor going away with it. It also lives
+   * here rather than on GrabOperationHandler because the quick-drag path used to
+   * reach into `_grabHandler._applyStackSnap(...)` — a private method on another
+   * handler — which was the most direct expression of "there is no one
+   * authoritative entry point" (PHILOSOPHY #1).
+   *
+   * @returns {{x:number,y:number,z:number}|null} contact point, or null when not stacking
+   */
+  _applyStackAssist(segStartCorners, segStartPositions, worldDelta, activeId, movingIds) {
+    const grabbed = activeId ? this._model.getObject(activeId) : null
+    if (!(grabbed instanceof Solid)) return null
+
+    const gCorners = grabbed.corners
+    let gZMin = Infinity
+    gCorners.forEach(c => { if (c.z < gZMin) gZMin = c.z })
+
+    const bottomCorners = gCorners.filter(c => Math.abs(c.z - gZMin) < SUPPORT_TOLERANCE)
+    const center = new Vector3()
+    bottomCorners.forEach(c => center.add(c))
+    center.divideScalar(bottomCorners.length || 1)
+
+    const highestHitZ = this.highestSurfaceZAt([...bottomCorners, center], movingIds)
+    const zOffset = highestHitZ - gZMin
+    if (Math.abs(zOffset) < SUPPORT_TOLERANCE) return null   // already resting
+
+    // Re-apply from the segment start so the assist is a function of the request,
+    // not of the previous frame's result (PHILOSOPHY #24 — no derived value
+    // feeding its own input).
+    const assisted = worldDelta.clone().add(new Vector3(0, 0, zOffset))
+    for (const id of movingIds) {
+      const selObj = this._model.getObject(id)
+      if (!(selObj instanceof Solid)) continue
+      const segStartPos = segStartPositions?.get(id)
+      if (!segStartPos) continue
+      // The policy still gets the last word: an assisted delta that would push a
+      // grounded entity below grade is clamped like any other request.
+      const delta = this._policyDelta(selObj, segStartCorners.get(id), assisted, movingIds)
+      selObj.move(segStartPos, delta)
+      selObj.meshView?.updateGeometry(selObj.corners)
+      selObj.meshView?.updateBoxHelper()
+    }
+    return { x: center.x, y: center.y, z: highestHitZ }
   }
 
   /**

@@ -49,6 +49,15 @@ export class Solid {
     this.description = ''
     /** @type {string|null} IFC4 class name (e.g. 'IfcWall'); null = unclassified. @see ADR-025 */
     this.ifcClass    = null
+    /**
+     * Declared intent to sit below grade (ADR-097 §Decision 6 / G3) — footings,
+     * piles, pits. `false` = nobody declared it, which is the blocking value:
+     * "I noticed it had sunk" and "I decided to sink it" must not look alike.
+     * Written only through `SceneService.setBelowGradeIntent()`; re-derived from
+     * geometry on import rather than serialized.
+     * @type {boolean}
+     */
+    this.belowGradeIntent = false
     /** @type {import('../graph/Vertex.js').Vertex[]} */
     this.vertices    = vertices
 

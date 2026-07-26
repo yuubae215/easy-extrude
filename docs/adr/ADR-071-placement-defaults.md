@@ -1,6 +1,7 @@
 # 071. 物理的妥当性の配置既定 — アシスト既定 vs ハード拘束
 
 - Status: **Accepted**(2026-07-15 実装済 — 推奨どおり **A. アシスト既定** で確定)
+  / **ADR-097 (2026-07-26) で一般化** — 廃止ではない。下記「ADR-097 による範囲の変更」を参照
 - Date: 2026-07-15
 - Deciders: yuubae215, Claude
 - 関連: ADR-069(UX パリティ・パス Phase 3)、GrabOperationHandler の stack/snap、PHILOSOPHY #11/#14/#25/#30
@@ -104,3 +105,28 @@
 - **演出**: 地面着地は既存 `stackSnapshot`/`SnapFlash`(緑)にそのまま乗る — 新規演出なし。
 - E2E: stack テストを既定 ON 前提に反転(S 押下で `Free (S: stack)` 表示を検証)。
   unit 640 pass / typecheck clean / build clean / E2E 10 pass。契約・schema・BFF 無改変。
+
+## ADR-097 による範囲の変更(2026-07-26)
+
+本 ADR は**補助**を宣言した ADR であって、**不変条件**を宣言した ADR ではなかった。
+当事者はスタック既定 ON の挙動を見て「床は抜けない」を不変条件だと学習し、
+Z 拘束(`stackApplies = stackMode && axis !== 'z'`)と非 Solid
+(`_applyStackSnap` 冒頭の `instanceof Solid` 早期 return)で裏切られた —
+無言の**非適用**(原則 #11 の変種)。
+
+ADR-097 はこれを廃止せず**役割を分けた**:
+
+| 関心 | 実装前(本 ADR) | ADR-097 以降 |
+|------|--------------|-------------|
+| **床を割らない** | stack assist の副作用。補助が退くと床も消える | **配置方針の不変条件**。`SceneService` の pose 入口が全実体・全経路で強制 |
+| **他の実体の上に載せる** | 同上 | **補助として残る**(`_applyStackAssist`)。軸拘束や S で退いてよい — 床は一緒に退かない |
+| **床下へ行く** | ジェスチャ局所の `stackMode` off。シーンに何も残らない | 実体の**宣言** `belowGradeIntent`。ジェスチャを越えて残る |
+
+したがって本 ADR で決めたことのうち、**「スタック既定 ON」「S が逃げ道」「警告は
+出すがブロックしない」「述語 `checkGroundClearance` は純リード」は生きている**。
+変わったのは実装の置き場所(`GrabOperationHandler._applyStackSnap` →
+`SceneService._applyStackAssist`)と、S の意味が「補助を切る」から
+「**補助を切り、床下を宣言する**」へ広がったこと。
+
+`checkGroundClearance()` の警告は、ADR-097 以降「**宣言していない実体が潜った**」
+ときだけ出る本来の意味を取り戻している。

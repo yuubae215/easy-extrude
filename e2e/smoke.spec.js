@@ -498,3 +498,131 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+// ── ADR-097: 接地は実体の状態であってジェスチャの副作用ではない ────────────────
+//
+// 当事者の報告に 1:1 対応する回帰。症状はすべて「入口ごとに実装していた」ことの
+// 直接の結果だったので、検査も入口ごとに置く — 1 本でも落ちたら、その入口が方針を
+// 迂回し始めたということ。
+//
+// SceneService は vite 専用 import を持ち `node --test` では構築できないため、
+// シーンを要する不変条件はここでしか問えない (ADR-096 の visibilityState と同じ
+// 理由)。純粋な決定 (3 方針 × 支持有無 × Z 成分有無) は src/domain/placement.test.js。
+
+const placementRows = (page) => page.evaluate(() => window.__easyExtrude.placementState())
+const byName = (rows, name) => rows.find(r => r.name === name)
+
+test('Z 拘束の Grab で床を抜けない (ADR-097 症状 2)', async ({ page }) => {
+  // 「キューブも Z 拘束するとなぜか突き抜ける」— 軸拘束は「垂直方向の意図」として
+  // stack assist を降ろす設計で、降ろした先に床が無かった。床は補助ではなく方針が
+  // 持つようになったので、もう一緒には降りない。
+  const errors = await boot(page)
+  const canvas = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = canvas.x + canvas.width / 2
+  const cy = canvas.y + canvas.height / 2
+
+  await page.mouse.move(cx, cy)
+  await page.keyboard.press('g')
+  await page.keyboard.press('z')                       // 垂直方向の意図 = 補助は退く
+  await page.mouse.move(cx, cy + 400, { steps: 15 })   // 画面下 = 世界の下へ
+  await page.keyboard.press('Enter')
+
+  const cube = byName(await placementRows(page), 'Cube')
+  expect(cube.placement).toBe('grounded')
+  expect(cube.belowGradeIntent, '宣言していないのに床下の意図が立っている').toBe(false)
+  expect(cube.bottomZ, `Z 拘束のドラッグで床を抜けた (bottomZ=${cube.bottomZ})`).toBeGreaterThan(-0.001)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('S が床下を「宣言」にし、宣言はジェスチャを越えて残る (ADR-097 G3)', async ({ page }) => {
+  // 今日の「Grab 中に S を押して stack assist を切る」はジェスチャ局所で、シーンに
+  // 何も残らなかった — だから次に触ったときにまた潜る/戻るが再現しない。宣言に
+  // 昇格させると、基礎・杭は「そう宣言された実体」になる。
+  const errors = await boot(page)
+  const canvas = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = canvas.x + canvas.width / 2
+  const cy = canvas.y + canvas.height / 2
+
+  await page.mouse.move(cx, cy)
+  await page.keyboard.press('g')
+  await page.keyboard.press('s')                       // Free = 床下を宣言する
+  await expect(page.getByText('Free (S: stack)')).toBeVisible()
+  await page.keyboard.press('z')
+  await page.mouse.move(cx, cy + 400, { steps: 15 })
+  await page.keyboard.press('Enter')                   // ジェスチャ終了
+
+  const cube = byName(await placementRows(page), 'Cube')
+  expect(cube.belowGradeIntent, '宣言がジェスチャ終了で消えている (今日の stackMode と同じ失敗)').toBe(true)
+  expect(cube.bottomZ, '宣言したのに潜れていない — 逃げ道が塞がっている (G3)').toBeLessThan(-0.001)
+
+  // 宣言は次のジェスチャにも効く: 掴み直しただけで補助が復活し、宣言された基礎が
+  // ピットから黙って持ち上げられる、ということが起きない。
+  await page.mouse.move(cx, cy)
+  await page.keyboard.press('g')
+  await expect(page.getByText('Free (S: stack)')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('接地した実体のドラッグ結果がカメラの向きに依存しない (ADR-097 症状 4)', async ({ page }) => {
+  // 「Grab は突き抜けても良い前提で設計されているので、すごく動かしづらい」の
+  // 機構的な原因: 自由ドラッグ平面がカメラ正対面だったので、カメラを回すと同じ
+  // マウス操作が違う Z を生み、そこへ stack snap が Z を引き戻していた。
+  //
+  // 「動かしやすい」自体は主観なのでテストでは閉じない (証拠は当事者の dogfooding
+  // 記録)。ここで閉じるのは *機構* の方だけであり、そう宣言する。
+  const errors = await boot(page)
+  const canvas = await page.locator('#canvas-container canvas').boundingBox()
+  const cx = canvas.x + canvas.width / 2
+  const cy = canvas.y + canvas.height / 2
+
+  // カメラを大きく回してから、同じ形のクイックドラッグを行う。
+  await page.mouse.move(cx + 200, cy + 150)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(cx + 340, cy - 60, { steps: 12 })
+  await page.mouse.up({ button: 'middle' })
+  await page.waitForTimeout(200)
+
+  await page.mouse.move(cx, cy)
+  await page.mouse.down()
+  await page.mouse.move(cx + 60, cy + 90, { steps: 12 })
+  await page.mouse.up()
+
+  const cube = byName(await placementRows(page), 'Cube')
+  expect(cube.bottomZ, `カメラ姿勢由来の Z がドラッグに漏れている (bottomZ=${cube.bottomZ})`).toBeGreaterThan(-0.001)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('supported な実体で支持を持たないものは 0 個 (ADR-097 / 原則 #31)', async ({ page }) => {
+  // 散文にしか無かった不変条件 ("must stay pinned to the ground plane or a
+  // building roof, never floating") を述語で問う。
+  //
+  // 形が重要: *在るもの* を辿るのではなく「支持を要する種を列挙して、支持を持たない
+  // 個体の**個数**が 0 か」を問う。支持が **無い** 状態は検査対象のノードを持たない
+  // ので、前者の形では必ず素通りする (ADR-090 / ADR-093 と同じ構図の 3 例目)。
+  const errors = await boot(page)
+
+  // マップオブジェクトを 1 個置いて母数が 0 でないことを先に確かめる — 対象が
+  // 0 個であることは、不変条件が成り立っていることと区別がつかない。
+  await page.getByRole('button', { name: 'Map' }).click()
+  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
+  await page.locator('button[title="Anchor"]').click()
+  await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
+  await page.waitForTimeout(400)
+
+  const rows = await placementRows(page)
+  const supported = rows.filter(r => r.placement === 'supported')
+  expect(supported.length, 'supported な実体が 1 個も無い — 検査が空回りしている').toBeGreaterThan(0)
+
+  const floating = supported.filter(r => r.support === null)
+  expect(floating.map(r => `${r.name} (bottomZ=${r.bottomZ})`), '浮いている supported 実体').toEqual([])
+
+  // grounded 側の対の不変条件: 宣言していない実体は床下に居ない。
+  const sunk = rows.filter(r => r.placement === 'grounded' && !r.belowGradeIntent && r.bottomZ < -0.001)
+  expect(sunk.map(r => `${r.name} (bottomZ=${r.bottomZ})`), '宣言なしで床下に居る grounded 実体').toEqual([])
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

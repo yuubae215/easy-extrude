@@ -181,6 +181,24 @@ labels meta-goal
                             - "src/view/LinkNetworkLayout.test.js"
                             - "docs/dogfooding/2026-07-26-link-network-indented-outline.md"
 
+                    strategy ByDirectManipulationTrust
+                    uuid 84c5ee34-d94e-47eb-8d8d-acbcdc3445b5
+                    summary "Argument by 『触った結果が予測どおりか』という採用障壁の除去。読めること (ByScreenBandwidthBarriers) と信じられることは別の障壁で、後者は当事者の言葉では『すごく動かしづらい』『なぜか突き抜ける』として届いた。直接操作が予測を裏切る画面は、機能が揃っていても使われない — 障壁の位置が理解ではなく操作にある枝"
+
+                        goal PlacementIsPredictable
+                        uuid d17c02f9-f551-4d7b-a927-0636126d4dfb
+                        summary "実体を動かしたとき、どの入力経路を通っても『何の上に載っているか』が壊れない。床を抜けるか抜けないかがジェスチャの種類・実体の種類・カメラの向きによって変わらず、床下は事故ではなく宣言として起きる"
+                        state ToBeReviewed
+                        groups adr-097
+
+                            solution PlacementPolicyAtOneEntry
+                            uuid 2b754e6c-7a01-4555-a145-64867d56425c
+                            summary "ADR-097 実装 (Accepted): 接地をジェスチャの副作用から実体の状態へ移し、配置方針 (supported / grounded / free) を種ごとに宣言して pose 書き込みの入口 1 箇所で強制した。当事者が報告した 5 症状はすべて『経路ごとに実装していた』ことの直接の結果で、実装中に個数検査が入口をさらに 2 つ (N パネル数値入力・タッチ再グラブ) 見つけた。証拠は node --test src/domain/placement.test.js 16/16 + src/PosePolicyOwnership.test.js 5/5 + playwright 21/21 (症状回帰は差分ペアで、同じジェスチャが宣言の有無だけで床下へ行くか止まるかが分かれる)。『動かしやすくなったか』は主観なので当事者の実利用待ちで ToBeReviewed。詳細は adr-097-support-as-entity-state.gsn"
+                            artifacts
+                            - "docs/gsn/adr-097-support-as-entity-state.gsn"
+                            - "src/domain/placement.test.js"
+                            - "src/PosePolicyOwnership.test.js"
+
         goal CostMinimized
         uuid 942a60a6-889d-448c-8682-0212e9c70623
         summary "同一の品質・信頼性水準を保ったまま経費が最小化されている"
