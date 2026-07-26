@@ -1,6 +1,6 @@
 # 094. LINK NETWORK を TF ツリーへ回帰 — Solid と Origin CF を 1 ノードに融合し、木辺を骨格に戻す
 
-- Status: Proposed (設計確定・実装は後続 PR。実装完了時に Accepted へ上げる)
+- Status: Accepted (実装済み — `src/view/LinkNetworkLayout.js` + `LinkNetworkView.js`。証拠は §検証)
 - Date: 2026-07-26
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: ADR-048 の §2.1「ノード集合」と §2.2.1「未実装の凡例決定」を置き換える (ADR-048 の §2.1 決定的レイアウト・§2.3 パネル寸法・§2.4 データ契約は無改変で継承)
@@ -201,11 +201,24 @@ D1/D2 を直した後は説明書ではなく確認になる。
 
 ### 検証 (証拠)
 
-**本 ADR 時点の証拠はすべて未来形である** — 実装は後続 PR。Status を Proposed に
-留めているのはこのため。証拠として設置するもの:
+> **実装後の追記 (2026-07-26)**: 以下は起票時「すべて未来形」だった。実装 PR で
+> 現在形になった分を各項に実測値で追記し、Status を Accepted へ上げた。
+> 起票時に予定していなかった 2 点が実装中に出たので、隠さずここに書く:
+> **(a) 辺の描画順**も「同一シーン → 同一ピクセル」の一部だった。弧が交差したときの
+> 重なり順は入力リンク列の順序に依存しており、それは*シーンの変更履歴*の順序である
+> (無関係なリンクを消して足し直すと絵が変わる)。`computeLayout` は辺を
+> (source, target, id) の正準順で返すようにした — 決定性テストが入力順の入れ替えで
+> 落ちて初めて見えた欠陥で、散文の「決定的」では永遠に見えなかった。
+> **(b) 可視性の書き手**を `_applyVisibility()` に統合した (台帳が「統合は ADR-094
+> 実装時」と予告していた分 — `_toggleCollapse()` が SVG の display を別途書いていた)。
+>
+> 逆に、起票時に想定した「凡例が説明書に見えるかもしれない」懸念は実測で消えた
+> (`docs/dogfooding/2026-07-26-link-network-tf-tree.md`)。
+
+証拠として設置するもの:
 
 - `src/view/LinkNetworkLayout.test.js` (新設 — `src/**/*.test.js` は glob 実行なので
-  置くだけで走る):
+  置くだけで走る)。**実装後: 27 本、全緑。`pnpm test` 全体 809/809** (782 + 27):
   - **TF 不変条件**: 非根ノードは必ず親より下の行にある / 木辺だけを辿ると
     Solid ごとに単一根へ到達する。← 「Y 軸は TF 深さのみを意味する」という本 ADR の
     新しい規律は、散文ではなく**ここで問われる** (憲法 Q3)。
@@ -216,9 +229,12 @@ D1/D2 を直した後は説明書ではなく確認になる。
     (ADR-093 の lockstep と同じ構図)。
   - **決定性**: 同一入力 → 同一出力。ADR-048 の核心性質を初めて機械で固定する。
 - 同一性: `isOriginFrame` を `src/IdentityContainment.test.js` の `IDENTITY_RULES` に登録
-  (別 PR)。以後の再導出は機械が落とす。
-- 実物: モバイル幅 390px の Playwright スクリーンショット。記録様式は
-  `docs/dogfooding/README.md`。
+  (別 PR)。以後の再導出は機械が落とす。→ **完了** (`8239f18`、述語は
+  `src/domain/originFrame.js`)。本 ADR の実装はその述語を呼ぶだけで、23 箇所目を作らない。
+- 実物: モバイル幅 390px の Playwright スクリーンショット。→ **完了**:
+  `docs/dogfooding/2026-07-26-link-network-tf-tree.md` (before/after の絵 + DOM 実測)。
+  主要な実測差分は **行数 3 → 2 / SVG 高さ 160 → 152px / ラベルから "Origin" × 3 が消滅 /
+  木辺 `0.18` 幅 1 → `0.62` 幅 1.6 / 凡例 0 → 2 行**。
 
 証拠が未来形主体なので、鎖の正本は **GSN 論証木
 `docs/gsn/adr-094-link-network-tf-tree.gsn`** に外部化する。上の箇条書きは入口であって
@@ -234,6 +250,9 @@ goal ごとの支えの有無は木側が持つ (第二の源にしない — �
 > 実装前 ADR の証拠は定義上ほぼ全部が未来形であり、「1 イテレーションで閉じる見込み」は
 > 書いた本人の見込みでしかなく、未着手の枝と完了した枝が散文では同じ顔で並ぶ
 > (原則 #31)。木にすれば `support-exploring` の宣言が必須になり、機械が問う。
+
+**実装後**: 木の 7 goal はすべて `ToBeReviewed` + solution へ移り、事業木への接続も
+下記のとおり実施した (テストが実在するので `ToBeDeveloped` を増やさない)。
 
 事業木 (`docs/gsn/profit-growth.gsn`) への接続予定先は
 `RevenueMaximized → ByAdoptionFunnel → OtherAdoptionBranchesCovered`
@@ -252,7 +271,8 @@ solution として吊る (保留理由は `.gsn` の `context BusinessTreeAttach
 - `docs/STATE_LEDGER.md` — この実体の行が存在しなかったので新設 (本 PR で実施)。
 - **依存する別 PR**: `isOriginFrame` / `findOriginFrame` の新設。本 ADR の実装が
   「これは Origin CF か」をレイアウトで判定するため、述語が無ければ 23 箇所目の
-  inline 再導出になる。**述語 PR を先行させる。**
+  inline 再導出になる。**述語 PR を先行させる。** → 済 (`8239f18`)。
+- `docs/dogfooding/2026-07-26-link-network-tf-tree.md` (+ `img/`) — 実測記録 (新設)。
 - 変えないもの: Outliner、NodeEditor、SpatialLink ドメイン、契約パッケージ。
 
 ---

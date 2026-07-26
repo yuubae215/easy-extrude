@@ -105,7 +105,7 @@ This directory records the project's design decisions.
 | [ADR-091](ADR-091-default-doc-first-intake-system-owned-refs.md) | **入力の起点を「白紙からの生成」から「既定値入り完成文書の訂正」へ — ref をシステム所有にする** | Proposed | 2026-07-25 | ADR-063, ADR-058, ADR-051, ADR-050, ADR-089, ADR-090 |
 | [ADR-092](ADR-092-prompt-dilution-commit-observability.md) | **常時ロードから一般モデル挙動の写しを外し、観測はプロンプトではなくコミットに刻む (−42.4%、Task-Class は決定的導出)** | Accepted (実装済) | 2026-07-25 | ADR-082, ADR-086 |
 | [ADR-093](ADR-093-map-annotation-visual-language-per-entity-phase.md) | **Map 注釈の視覚言語を刷新 — アニメーション位相を実体の同一性から導き「基数 N の lockstep」を構造で消す** | Accepted (実装済) | 2026-07-25 | ADR-031, ADR-029, ADR-065, ADR-066, ADR-067, ADR-072, ADR-043 |
-| [ADR-094](ADR-094-link-network-tf-tree-fused-origin-node.md) | **LINK NETWORK を TF ツリーへ回帰 — Solid と Origin CF を 1 ノードに融合し、木辺を骨格に戻す (モバイルでは唯一の常設構造ビュー)** | Proposed (設計確定・実装は後続 PR) | 2026-07-26 | ADR-048, ADR-037, ADR-038, ADR-030, ADR-090, ADR-093 |
+| [ADR-094](ADR-094-link-network-tf-tree-fused-origin-node.md) | **LINK NETWORK を TF ツリーへ回帰 — Solid と Origin CF を 1 ノードに融合し、木辺を骨格に戻す (モバイルでは唯一の常設構造ビュー)** | Accepted (実装済み — 純粋 `computeLayout()` + 融合ノード + 骨格化した木辺) | 2026-07-26 | ADR-048, ADR-037, ADR-038, ADR-030, ADR-090, ADR-093 |
 
 ## How to Add a New ADR
 
