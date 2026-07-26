@@ -13,6 +13,7 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }    from '../domain/ImportedMesh.js'
 import { MeasureLine }     from '../domain/MeasureLine.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
+import { isOriginFrame } from '../domain/originFrame.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
@@ -44,7 +45,7 @@ export class UIStateManager {
 
     if (obj instanceof CoordinateFrame) {
       const frameUnreferenced = ctrl._service.getLinksOf(obj.id).length === 0
-      if (obj.name === 'Origin') {
+      if (isOriginFrame(obj)) {
         const wp = ctrl._service.worldPoseOf(obj.id)?.position ?? obj.translation
         ctrl._uiView.updateNPanelForFrame(
           { x: wp.x, y: wp.y, z: wp.z },

@@ -14,6 +14,7 @@
 
 import { SCENE_JSON_VERSION, DEFAULT_STRATEGY_OPTIONS } from './LayoutDslSchema.js'
 import { validateLayoutDsl } from './LayoutValidator.js'
+import { ORIGIN_FRAME_NAME } from '../domain/originFrame.js'
 
 // ── ID helpers ────────────────────────────────────────────────────────────────
 
@@ -212,7 +213,7 @@ function generateObjects(entities, refMap, positions) {
         objects.push({
           type:        'CoordinateFrame',
           id:          originId,
-          name:        'Origin',
+          name:        ORIGIN_FRAME_NAME,
           parentId:    id,
           declaredBy:  'modeller',
           translation: { x: 0, y: 0, z: 0 },

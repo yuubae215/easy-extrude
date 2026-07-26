@@ -10,6 +10,7 @@
 
 import * as THREE from 'three'
 import { CoordinateFrame } from '../../domain/CoordinateFrame.js'
+import { isOriginFrame }   from '../../domain/originFrame.js'
 import { Solid }           from '../../domain/Solid.js'
 import { MeasureLine }     from '../../domain/MeasureLine.js'
 import { ImportedMesh }    from '../../domain/ImportedMesh.js'
@@ -184,7 +185,7 @@ export class GrabOperationHandler {
       return
     }
     // Origin frames are fixed at the Solid centroid — cannot be grabbed (ADR-037)
-    if (ctrl._activeObj instanceof CoordinateFrame && ctrl._activeObj.name === 'Origin') {
+    if (ctrl._activeObj instanceof CoordinateFrame && isOriginFrame(ctrl._activeObj)) {
       ctrl._uiView.showToast('Origin frame is fixed at the centroid', { type: 'warn' })
       return
     }

@@ -88,7 +88,9 @@ with the rotated body frame axes rather than the world axes.
 
 ### 4. Origin CF is permanently protected
 
-All editing operations are blocked on a CF with `name === 'Origin'`:
+All editing operations are blocked on a CF that `isOriginFrame()` recognises
+(`src/domain/originFrame.js` — the single owner of that rule; the guards below
+call it rather than re-deriving `name === 'Origin'`):
 
 | Operation | Guard |
 |-----------|-------|
@@ -98,6 +100,17 @@ All editing operations are blocked on a CF with `name === 'Origin'`:
 | Rename | `_renameObject()` |
 | Delete | `_deleteObject()` |
 | Reparent | `onReparent`, `onFrameParentChange`, `reparentFrame()` |
+| **Rename *to* `Origin`** (any entity) | `SceneService.renameObject()` |
+
+**Amended (2026-07-26, predicate PR).** The table above originally guarded one
+direction only: an Origin CF cannot be renamed away. Nothing stopped the reverse —
+renaming *another* frame **to** `Origin`, which handed the Solid a second body
+frame that every guard in this table would then protect: locked, undeletable, and
+not the Solid's own. The name is only a sound identity while no entity can acquire
+it after creation, so the reserved-name check (`isOriginFrameName()`) sits at the
+authoritative rename entry point, where no caller-side path can bypass it
+(PHILOSOPHY #1). Cardinality N for this entity is now unreachable rather than
+merely unintended (PHILOSOPHY #31).
 
 ### 5. Undo/redo is handled by existing AddSolidCommand infrastructure
 

@@ -21,6 +21,7 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
+import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -237,7 +238,7 @@ export class AppController {
                     : 'cuboid'
       outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
       // Origin frames are locked — cannot be dragged to a new parent (ADR-028)
-      if (obj instanceof CoordinateFrame && obj.name === 'Origin') {
+      if (obj instanceof CoordinateFrame && isOriginFrame(obj)) {
         outlinerView?.setObjectLocked(obj.id, true)
       }
       // New CoordinateFrame always starts unreferenced (ADR-033 Phase C-4)
@@ -634,7 +635,7 @@ export class AppController {
       // Drag-and-drop re-parent (ADR-028)
       outlinerView.onReparent((frameId, targetId) => {
         const frame = this._scene.getObject(frameId)
-        if (!frame || frame.name === 'Origin') {
+        if (!frame || isOriginFrame(frame)) {
           this._uiView.showToast('Origin frames cannot be re-parented', { type: 'warn' })
           return
         }
@@ -650,7 +651,7 @@ export class AppController {
     // N panel parent dropdown (ADR-028)
     uiView.onFrameParentChange((newParentId) => {
       const obj = this._activeObj
-      if (!(obj instanceof CoordinateFrame) || obj.name === 'Origin') return
+      if (!(obj instanceof CoordinateFrame) || isOriginFrame(obj)) return
       const cmd = createReparentFrameCommand(obj.id, newParentId, this._service)
       if (!this._service.reparentFrame(obj.id, newParentId)) {
         this._uiView.showToast('Cannot re-parent: invalid target or cycle detected', { type: 'warn' })
@@ -686,7 +687,7 @@ export class AppController {
     })
     uiView.onFramePositionChange((axis, val) => {
       const frame = this._activeObj
-      if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
+      if (!(frame instanceof CoordinateFrame) || isOriginFrame(frame)) return
       // translation is already in parent-local space (ROS TF) — set directly
       frame.translation[axis] = val
       this._service.invalidateWorldPose(frame.id)
@@ -695,7 +696,7 @@ export class AppController {
     })
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
-      if (!(frame instanceof CoordinateFrame) || frame.name === 'Origin') return
+      if (!(frame instanceof CoordinateFrame) || isOriginFrame(frame)) return
       if (this._rotateHandler.isFastenedRotationBlocked(frame)) return
       // rotation is already in parent-local space (ROS TF) — edit directly
       const localEuler = new THREE.Euler().setFromQuaternion(frame.rotation, 'ZYX')
@@ -1244,7 +1245,7 @@ export class AppController {
     const target = this._scene.getObject(id)
     if (!target) return
 
-    if (target instanceof CoordinateFrame && target.name === 'Origin') {
+    if (target instanceof CoordinateFrame && isOriginFrame(target)) {
       this._uiView.showToast('Origin frame cannot be deleted', { type: 'warn' })
       return
     }
@@ -1513,9 +1514,22 @@ export class AppController {
     const oldName = this._scene.getObject(id)?.name
     if (!oldName || oldName === name) return
     const obj = this._scene.getObject(id)
-    // Origin frames are the body frame — renaming would strip protection (ADR-037)
-    if (obj instanceof CoordinateFrame && obj.name === 'Origin') {
+    // Origin frames are the body frame — renaming would strip protection (ADR-037 §4).
+    // Asked WITHOUT an `instanceof CoordinateFrame` narrowing on purpose: the
+    // authority (`renameObject`) refuses on the name alone, so narrowing here
+    // would let a non-frame entity carrying the reserved name reach a refusal
+    // with no toast behind it — a silent no-op (原則 #11). Both sides ask the
+    // same question.
+    if (isOriginFrame(obj)) {
       this._uiView.showToast('Origin frame cannot be renamed', { type: 'warn' })
+      return
+    }
+    // …and the reverse: nothing may BECOME an Origin, or the Solid ends up with a
+    // second locked, undeletable body frame that is not its own. `renameObject`
+    // refuses this too (原則 #1 — the authority cannot be bypassed); the toast is
+    // here because a refusal the user cannot see is the worst failure (原則 #11).
+    if (isOriginFrameName(name)) {
+      this._uiView.showToast(`"${name}" is reserved for a Solid's body frame`, { type: 'warn' })
       return
     }
     // Provenance check for CoordinateFrame (ADR-034 §8.2)
