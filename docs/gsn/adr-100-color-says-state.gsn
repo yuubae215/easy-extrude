@@ -1,0 +1,99 @@
+GOALS adr100_color_says_state
+
+goal SaturationIsSpentOnStateNotOnDefaults
+uuid 868df6e7-8299-415f-9c2b-538fdad3041c
+summary "画面の彩度が状態にだけ配られ、既定には配られない。何も起きていないときの画面は落ち着いており、色が付いているものには意味がある。1 つの意味には 1 つの色が対応し、色の語彙は宣言され、宣言の外の色が増えない"
+state ToBeDeveloped
+labels adr-100, color, design-tokens
+artifacts
+- "docs/adr/ADR-100-color-says-state-not-kind.md"
+- "src/theme/tokens.js"
+
+    context Adr100Scope
+    uuid 85247982-bece-4020-96cb-a94b7603c49a
+    summary "ADR-100 (Proposed, 2026-07-26): トークンを値の名前から役割の名前へ寄せ、実体の既定サーフェスを中立グレーに、accent を単一のオレンジにして『いま操作の対象である』専用にする。宣言外の hex リテラルの個数を ratchet (ベースライン以下でのみ緑) で数え、データが持つ意味の色 (LINK_TYPE_COLORS / PERSONA_PALETTE / 注釈カテゴリ) は別語彙として明示的に対象外と宣言する。View + theme に閉じ、ドメイン・契約・DSL・core は不変"
+    artifacts
+    - "src/theme/tokens.js"
+    - "docs/LAYOUT_DESIGN.md"
+
+    context MeasuredPaletteState
+    uuid b84f582d-ffee-4ee7-ae86-c809413dd60b
+    summary "起票時の実測 (2026-07-26, src/**/*.js): 色リテラルの出現 420 箇所、相異なる色 150 色、COLOR の語彙 21 色。キューブ本体の BODY_COLOR = #4fc3f7 は COLOR.accentActive (Active tool / indicator cyan) と同一 hex であり、同じシアンが『実体である』と『いま有効なツールである』の両方を言っている。『選択されている』を表す色は 4 つある (Outliner 行 #ff8c69 / COLOR.accent #5c5cff / 3D のシアン族 / CF 原点球 #ffcc00)。COLOR.measure = #f5a623 が宣言されているのに実コードは #f9a825 を 13 箇所で使っている。この数値が ratchet のベースラインと削減の測り方の出発点になる"
+    artifacts
+    - "src/view/MeshView.js"
+    - "src/view/MeasureLineView.js"
+
+    context Adr065GovernedVocabularyNotUsage
+    uuid 5e3fe01f-7f9b-4feb-9113-ae716117d12a
+    summary "運用実態 (この木の前提): ADR-065 Phase 0 は tokens.js を作り、docs/LAYOUT_DESIGN.md の表と両向きにピン留めして語彙の無言の増殖を塞いだ。塞がなかったのは使用の側で、統治は tokens.js 自身が書く『触った行だけ移行する』という opportunistic rule に委ねられている。これは誰も開かない散文ではないが誰も問わないルールであり、触らない 400 行は永遠に残る (憲法 Q3 — 成果物は文書の行ではなくチェック)。本 ADR は ADR-065 を否定せず、語彙に与えた保証と同じ強度の保証を使用側へ広げる"
+    artifacts
+    - "src/theme/tokens.js"
+    - "src/theme/tokens.test.js"
+
+    context BusinessTreeAttachPoint
+    uuid d5c3a77f-b42f-43f0-9251-53be4be514e5
+    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけ)。接続予定先は採用ファネル配下 strategy ByScreenBandwidthBarriers の系列 — 図と地が同色相であることは帯域の問題であり可読性の障壁の一種として同じ枝に属する。ratchet と 1 意味 1 色の検査が実在した時点で solution として吊る。『飽きにくくなったか』は主観なので、吊る先の goal は ToBeReviewed になる見込み (ADR-097 の PlacementIsPredictable と同じ扱い)"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyLiftTheTasteRequestToAProperty
+    uuid 2ed0ea84-4675-4aec-abf6-c74b14fd5d2e
+    summary "『グレーとオレンジ』は解の形で来た要件なので Goal へ持ち上げた (核 §1.2)。持ち上げた結果、当事者の好みは既存の矛盾の解決と一致していた — Outliner は既にオレンジ (#ff8c69) で選択を表しており、トークンが宣言する accent (#5c5cff) と食い違っている。好みだから採るのではなく、好みと構造が同じ方向を指しているから採る。定数 2 つを変える最小案を却下する根拠も同じで、最小案では『選択』の 4 色は 4 色のまま宣言外の 130 色も残り、次の機能追加で同じ濁りに戻る — 今回の観測がまさに『ADR-065 Phase 0 の後に濁った』結果である"
+    artifacts
+    - "src/view/OutlinerView.js"
+
+    justification WhyRatchetNotBigBang
+    uuid bedfdacc-aedb-41b5-bcdb-bc402fec75fc
+    summary "宣言外リテラルを一度に 0 にする案を却下する根拠: 420 箇所を 1 PR で移行すると差分がレビュー不能になり、色の変更と移行が混ざって『意味が変わったのか名前が変わったのか』が判別できなくなる。ratchet (現在値をベースラインとして宣言し、超えたら fail・下回ったら下げよと促す) は緑でも汚いことを隠さない代わりに、単調減少を機械が保証する。数えるのは在るトークンではなく宣言の外にある個数である — 在るものを辿る検査は宣言外の色を必ず素通りする (原則 #31)"
+
+    assumption NeutralBodiesMayReadAsCheap
+    uuid d7965589-3466-4d39-b3a1-d3029d990f76
+    summary "反証されうる仮説 (ADR-100 §受け入れるコスト): 中立グレーの実体は『地味』『安っぽい』に振れうる。当事者の主観でしか反証できずテストでは閉じない。反証されたら中立サーフェス + マテリアル (反射・陰影・微細なグラデーション) で質感を出す方向へ回収する — 色相で主張を取り戻す方向へは戻さない。それは『彩度は状態にだけ配る』という G1 の放棄になる"
+
+    assumption OrangeCollidesWithExistingWarmTones
+    uuid 199857d8-15b0-4170-b3a5-79b546b03ba0
+    summary "反証されうる仮説: accent をオレンジにすると measure (#f5a623 / 実際は #f9a825) と fxSnap (#ff9800) が色相で近接し、『選択されている』と『計測線である』と『スナップした』が見分けにくくなる。実装時にどれかを hue ごと動かす前提だが、どれを動かすのが自然かは決めていない。近接を許さないことは規則であり、どの色を動かすかは実装の判断 — 近接したまま出荷したらこの仮説は反証されたものとして扱う"
+
+    assumption ContrastNotYetMeasured
+    uuid 4fa773ec-6276-4a82-84fa-0f4466dbe676
+    summary "反証されうる仮説: 中立グレーの実体 + 暗い背景という組み合わせは、選択ハイライトのコントラストを落としうる。起票時点でコントラスト比を一度も測っていない。実装時に最低比を決めて数える検査を置き、既定サーフェスとアクセントの対が閾値を割るなら、グレーの明度側を動かして回収する (アクセントの彩度を上げる方向は G1 と衝突するので採らない)"
+
+    strategy ByGivingUsageTheSameGuaranteeAsVocabulary
+    uuid 39730526-e525-4eca-b76f-41c119e6f2ab
+    summary "Argument by 保証の対称化 — ADR-065 は語彙にチェックを与え、使用には散文の規約しか与えなかった。150 色のうち 21 色だけが宣言されているという実測はその非対称の帰結である。役割語彙 (所有者) + ratchet (予算) + ベースライン低下 (削減経路) の 3 点セットで使用側にも同じ強度の保証を与える。これは原則 #30 が動きに与えた統治の形をそのまま色へ適用したもの"
+
+        goal FigureAndGroundDifferInHue
+        uuid af453d7a-339a-4945-84e9-caa767922ac6
+        summary "実体の既定サーフェスが中立になり、背景・グリッドと色相を共有しなくなる。彩度を持つものが状態を持つものと一致し、当事者の『飽きやすい』の構造的な中身 (常に全面が彩度を持ち、その彩度が何も区別しない) が消える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckEntityDefaultIsNeutral
+            uuid f378df6b-4908-4baa-aee7-7a474a047e10
+            summary "この goal を決着させる検査を名指しする (未実行): src/theme/tokens.test.js に、entityDefault の彩度が閾値以下 (中立) であること、および entityDefault と背景・グリッド各色の明度差が閾値以上であることを数値で問う検査を足す。『中立にした』を人が見て判断するのではなく、トークンの値そのものに述語を掛ける形にする。BODY_COLOR がトークンを引いていること自体は下の 1 意味 1 色の検査が数える"
+            artifacts
+            - "src/theme/tokens.test.js"
+
+        goal OneMeaningOneColor
+        uuid 858c9bf1-19d3-448a-beaa-9f632f61757c
+        summary "『いま操作の対象である』を描く箇所がすべて accent トークンを引き、今日の 4 色 (Outliner のオレンジ / COLOR.accent の青紫 / 3D のシアン / CF 原点球の金) が 1 つになる。逆向きに、1 つの hue が 2 つの意味へ割り当てられない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckSelectionPaintersEnumerated
+            uuid 72d22d89-4ea1-4ee8-ad85-2dd46e40bb3b
+            summary "この goal を決着させる検査を名指しする (未実行): 選択を描く種類を列挙して数える — Outliner 行 / 3D ハイライト / CF 原点球 / N パネル / LINK NETWORK の focus / モバイルツールバーのアクティブ。在る箇所を辿るのではなく必要な種類を列挙して、accent 以外の色を持つものが 0 個であることを問う (原則 #31)。併せて役割トークン同士の色相角が閾値以上離れていることを数え、accent と measure / cautionTone の衝突を機械で止める"
+            artifacts
+            - "src/theme/tokens.test.js"
+
+        goal UndeclaredColorsDecreaseMonotonically
+        uuid c5ae1dfe-fd3c-4c8d-bed4-6a9dcd7df699
+        summary "宣言外の色リテラルの個数が単調減少する。ベースライン (起票時 420 出現 / 150 色 / うちトークン 21) は明示的に宣言され、超えたら fail する。データが持つ意味の色は別語彙として対象外を宣言し、分母から分けて数える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckRatchetWithDeclaredExclusions
+            uuid b98ee191-425a-4475-9471-98086c4d1506
+            summary "この goal を決着させる検査を名指しする (未実行): src/theme/tokens.test.js を拡張し、src/** を走査して宣言外 hex の個数がベースライン定数以下であることを問う。対象外語彙 (LINK_TYPE_COLORS / PERSONA_PALETTE / 注釈カテゴリ色) は theme/ 側で別語彙として分離し、分母から除く — 対象外を書かないと次に数えたときこの 3 つが宣言外として現れて規則が空回りする (原則 #29 の『契約ありか明示的対象外宣言かの二状態』と同じ形)。ベースライン値はテストのコメントに起票時の実測として残し、減ったことを後から言えるようにする"
+            artifacts
+            - "src/theme/tokens.test.js"

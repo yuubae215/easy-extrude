@@ -1,0 +1,94 @@
+GOALS adr098_support_domain_is_policy
+
+goal WhatCanRestOnWhatIsAPolicyConsequence
+uuid 7844f644-a4b0-4390-818a-ef2b39cbd08f
+summary "『この実体は何の上に載れるか』が配置方針の帰結として決まり、実体種で分岐しない。ロボットもマップ注釈もキューブと同じ規則で面に載り、grounded という 1 語が種によって違う意味を持たない"
+state ToBeDeveloped
+labels adr-098, placement, stacking
+artifacts
+- "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"
+- "docs/adr/ADR-097-support-is-entity-state-not-gesture-side-effect.md"
+
+    context Adr098Scope
+    uuid 77e9c7cd-7e2f-4b24-8ef8-94ccbd059109
+    summary "ADR-098 (Proposed, 2026-07-26): stack assist の適用可否を純粋述語 stackAssistApplies(placement) から導き、_applyStackAssist の instanceof Solid の門を 2 枚とも外す。併せて支持プローブ (footprint / bottom の求め方) を SUPPORT_PROBE_BY_KIND として方針表の隣で種ごとに宣言し、未宣言の種で throw する。ドメイン + サービス層に閉じ、契約・BFF・core は不変"
+    artifacts
+    - "src/domain/placement.js"
+    - "src/service/SceneService.js"
+
+    context Adr097ClosedOnlyTheFloor
+    uuid cb8c539f-540d-4856-b758-9e55049a89e6
+    summary "運用実態 (この木の前提): ADR-097 は _applyStackSnap から『床を作る』責務を剥がして方針表と pose の唯一の入口へ移したが、補助そのものに残っていた種の門 (instanceof Solid) は剥がさなかった。ADR-097 §Decision 3 は『入口は実体種で早期 return せず方針表を引く』と宣言しており、その宣言が補助について嘘になっている。ADR-097 を否定するのではなく未完部分を閉じる — ADR-096 に対する ADR-087 と同じ関係"
+    artifacts
+    - "src/service/SceneService.js"
+
+    context HorizontalVisibleCuboidSurfacesOnly
+    uuid eb179bd8-4069-4d48-9691-0dc917a92fd5
+    summary "この木が成立する範囲 (前提が崩れたら論拠ごと失効する): highestSurfaceAt() は可視の cuboid メッシュへ下向きレイを撃つ。よってロボットのスケルトンは支持面ではなく (ロボットの上には載らない)、ADR-096 の explicit 軸で消した実体も支持面ではなく、水平面のみを扱う (ADR-097 から継承)。本 ADR はこの 3 つを変えない。『アームの上に載せたい』が要件として立った時点で highestSurfaceAt のレイ対象と supportOf の形 (法線が要る) から見直しになるので、その要件は別 ADR として起こす"
+    artifacts
+    - "src/service/SceneService.js"
+
+    context BusinessTreeAttachPoint
+    uuid ab09dab5-a366-444d-81c5-a4ebe134ca8a
+    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけで木が証拠実行可能でなくなる)。接続予定先は ADR-097 が既に起こした goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) で、種を列挙する個数検査と症状回帰が実在した時点で solution として吊る。ADR-097 と同じ Goal に効く追加証拠なので、新しい枝は起こさない"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotJustDeleteTheTypeGate
+    uuid 7139b7ff-9307-4e09-ae5a-e89610857090
+    summary "最小案 (instanceof Solid を消すだけ) を却下する根拠は実績である。ADR-097 がまさに『種ではなく入口の問題だ』と正しく診断しながら、補助の中の種の門を 1 枚残した結果が今回の苦情だった。同じ手を繰り返せば、残る種分岐 — _footprintSamplesOf / _bottomZOf の instanceof CoordinateFrame — が次の苦情になる。この 2 つは方針表と同じ問い (この種の底はどこか) に別の場所で答えており (§1.1 の第二の源)、しかも新しい種に対して throw せず corners=[] 経由で黙って null を返す = 『支持なし』に見せる (原則 #31 — 不在は検査対象のノードを持たない)。門を消すなら分岐も同じコミットで表へ移す"
+    artifacts
+    - "src/service/SceneService.js"
+
+    justification WhyNotAFourthPlacementValue
+    uuid 284355b6-663f-4cea-b73d-8a99dcfc364d
+    summary "PLACEMENT に 4 値目 (stackable) を足す案を却下する根拠: PLACEMENT の 3 値は『不変条件の強さ』の軸であり、assist の有無は『ジェスチャ支援』の軸で、この 2 つは直交する。直交する 2 軸を 1 つの enum へ畳むと『載るが床は割ってよい』のような組み合わせが表現不能になり、robot_base をどちらにするかという同じ議論が値の選択として再発するだけで語が増える。ADR-096 が可視性を 1 つの enum へ畳まなかったのと同じ判断"
+
+    assumption RobotOnBoxIsMeaningfulForGrasp
+    uuid e727b628-224e-4032-b2c6-8cd8e4a9aa74
+    summary "反証されうる仮説: ロボット base が箱の天面に載れるようになると、コアAPI へ送る base pose の値が変わりうる (契約は不動)。箱の上に立つロボットが grasp 解として意味を持つのか、それとも『事故で載った』が増えるだけなのかは当事者の実利用でしか分からない。反証されたら robot_base だけ assist の対象外にする — ただしそれは種による除外なので、除外の理由を方針の語彙 (例: 支持ドメインを ground に限る宣言) として表に書ける形でのみ行う。instanceof を戻さない、が本 ADR の一貫した立場"
+
+    assumption LiftingRobotsStillNeeded
+    uuid d7462f1a-be1e-4ae4-916a-c28315987bbc
+    summary "反証されうる仮説 (ADR-097 §受け入れるコストの継承): grounded な実体は自由ドラッグで浮かせられなくなるコストを、ロボットにも払うことになる。ロボットを架台の高さに置きたい作業が頻出するなら、S キーによる belowGradeIntent と同型の逃げ道だけでは足りず『高さを数値で置く』導線が要る。反証されたら N パネルの Location 入力を主導線として案内する方向で回収する (経路自体は ADR-097 で方針の下に入った)"
+
+    strategy ByAligningTheQuestionAndTheApplication
+    uuid 3d770760-ca9b-4075-b4b2-3ee1661e17ef
+    summary "Argument by 適用範囲の一致 — 支持を『問う』側 (supportOf / _footprintSamplesOf / _bottomZOf) は既に全種で動き、robot_base の支持も答えられる。壊れているのは答えを『適用する』側だけで、幾何の困難ではない。問いと適用の適用範囲を一致させれば症状は消え、種を足したときの分岐も消える"
+
+        goal StackAssistIsAFunctionOfPolicy
+        uuid b6c507a9-e070-48fc-a502-c29f639bc061
+        summary "stack assist の適用可否が placement から導かれ、_applyStackAssist に実体種の門が 0 枚になる。free な実体 (ユーザー CF / MeasureLine / Profile) が除外される理由は『種が違うから』ではなく『方針が free だから』になる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckPolicyPredicateTable
+            uuid a2a9feca-a0e4-404d-855f-9ee744aa264f
+            summary "この goal を決着させる検査を名指しする (未実行): src/domain/placement.test.js に stackAssistApplies(placement) の表テストを足し、3 方針すべてを列挙して固定する。加えて src/PosePolicyOwnership.test.js を拡張し、instanceof で種を分ける行が placement.js の外に 0 個であることを src 全走査で数える。今日は _applyStackAssist の 2 枚と _footprintSamplesOf / _bottomZOf の 2 箇所が数えられていない — 規則は ADR-097 で宣言済みなのに問う場所が無い状態"
+            artifacts
+            - "src/domain/placement.test.js"
+            - "src/PosePolicyOwnership.test.js"
+
+        goal SupportProbeIsDeclaredPerKind
+        uuid 62b9fbb5-5339-48b5-9665-f244aca6125d
+        summary "『この種の footprint と底はどう求めるか』が SUPPORT_PROBE_BY_KIND として方針表の隣で宣言され、未宣言の種で throw する。プローブを持たない種 ('none') は既定ではなく宣言であり、新しい実体種を足すとき方針とプローブの両方が未宣言で落ちる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckKindEnumerationBothWays
+            uuid 2bbb0968-9295-426c-8edf-830afba4bd12
+            summary "この goal を決着させる検査を名指しする (未実行): src/domain/placement.test.js で PLACEMENT_KIND を列挙し、SUPPORT_PROBE_BY_KIND の欠落が 0 個・余りが 0 個であることを両向きに数える (PLACEMENT_BY_KIND の既存検査と同じ形)。在る行を辿るのではなく必要な種を列挙して個数を問う形にするのは、欠落した行が『支持なし』という正当に見える答えを返すため (原則 #31)"
+            artifacts
+            - "src/domain/placement.test.js"
+
+        goal GroundedMeansOneThing
+        uuid ca267bef-9016-4ff9-9db6-1a2219bf6b9b
+        summary "当事者の観測『キューブはスタックするのにロボットはスタックしない』が消え、grounded が全種で『床を割らない かつ 直下の面に載る』の 1 つの意味になる。同時に free な実体は載らないままである (全部に効かせたのではなく方針どおりに効いた、が区別できる)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCheckDifferentialSymptomRegression
+            uuid b66321aa-7e17-4800-81d1-3d0e4955b29e
+            summary "この goal を決着させる検査を名指しする (未実行): e2e/smoke.spec.js に差分ペアで足す。(1) ロボット base をキューブの上へドラッグすると supportOf(robot_base).kind === 'entity'、(2) 同じジェスチャで S を押すと載らない — 片方だけではジェスチャがそもそも効いていない可能性を排除できない (ADR-097 の回帰が採った形)。(3) 逆向き: free な CF (tcp / ユーザー CF) は同じジェスチャで載らない。SceneService は vite 専用 import を持ち node --test で構築できないため、シーンを要する不変条件はこのレーンでしか問えない"
+            artifacts
+            - "e2e/smoke.spec.js"
