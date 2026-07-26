@@ -1,0 +1,107 @@
+GOALS adr096_visibility_two_axes
+
+goal WhatTheUiSaysIsWhatIsDrawn
+uuid 8a2e249b-c6c1-40ea-be50-9b1356c2b3bd
+summary "Outliner の行が語る可視性と、実際にビューポートへ描かれているものが常に一致し、eye を 1 回押すと必ず何かが変わる — 『目が開いているのに何も見えない』『押しても何も起きない』が構造的に表現不能になる"
+state ToBeDeveloped
+labels adr-096, visibility, outliner
+artifacts
+- "docs/adr/ADR-096-visibility-two-axes-declared-defaults.md"
+- "docs/adr/ADR-087-cf-grounded-object-model-robot-visibility-outliner.md"
+
+    context Adr096Scope
+    uuid 34e83923-9866-44df-af96-0099d9dc3b42
+    summary "ADR-096 (Proposed): CF 軸の可視性を explicit (eye 所有・永続) × contextual (選択所有・一時) の直交 2 軸にし、実際の描画は 2 軸の合成を 1 箇所で計算する。既定は種ごとに宣言する (CF は explicit=false、外形は true、robot_base は生まれた入口で分岐)。presentation/chrome 層に閉じ、ドメイン・契約・DSL には触れない"
+    artifacts
+    - "src/controller/SelectionManager.js"
+    - "src/view/OutlinerView.js"
+
+    context Adr087ClosedOnlyForSkeletons
+    uuid 3282453c-3225-4553-b168-a7075f22c0ef
+    summary "運用実態 (この木の前提): ADR-087 は『可視性の所有者は Outliner の eye ちょうど 1 箇所』を宣言したが、実際に閉じたのはロボットスケルトンについてだけだった。CF 軸には選択駆動の書き手 (SelectionManager.showFrameChain / hideFrameChain / showGeometryFrameTree) が別に存在し、eye を読みも書きもしない。ADR-087 の宣言が CF について嘘になっているのが本 ADR の出発点であり、ADR-087 を否定するのではなく未完部分を閉じる"
+    artifacts
+    - "src/controller/SelectionManager.js"
+
+    context BusinessTreeAttachPoint
+    uuid 407f7285-4090-48ec-ab43-e7fb34109cc8
+    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけ)。接続予定先は profit-growth.gsn の採用ファネル配下 goal ByAdoptionFunnel (uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e の親系列) で、真理値表テストとブート回帰が実在した時点で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyTwoAxesNotOneOwner
+    uuid d33b48f7-e9d5-4645-b79e-94eb9de5087b
+    summary "採用の根拠: 書き手が 2 つあるのが欠陥だが、機能が 2 つあるのは欠陥ではない。永続の意思表示 (eye) と一時の文脈表示 (選択) は寿命も所有者も異なる別の関心で、片方を消す案 B は『Solid を選ぶと接地 CF が出る』という ADR-087 §G1 の視覚的裏づけを失う。平坦な 3 状態へ畳む案も『文脈表示中にユーザーが常時表示を要求した』が表現不能になる — ADR-094 の forceHidden × collapsed を平坦化できなかったのと同型。直交 2 軸 + 合成 1 箇所は、この repo で既に一度採って機能している形である"
+    artifacts
+    - "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
+
+    assumption ClosedEyeWhileDimlyVisibleIsAcceptable
+    uuid 81d5d1a4-cd52-4bba-bc40-d43d214e293d
+    summary "反証されうる仮説 (ADR-096 §受け入れるコスト): eye が『今見えているか』ではなく『常時表示を要求しているか』を意味するようになるので、文脈表示中は『閉じた eye の実体が薄く見えている』状態が正当になる。これが当事者に『行がまだ嘘をついている』と読まれる可能性が残る。当事者の実利用でしか反証できずテストでは閉じない。反証されたら行に文脈表示のマーク (薄い眼) を足す方向で回収する — 軸を畳むのではなく、2 軸目を行にも見せる"
+
+    strategy ByRemovingTheSecondWriter
+    uuid dce4fea9-6a78-4385-ba3e-2d9a27bb646e
+    summary "Argument by 書き手の一本化 — 観測された 4 症状 (起動時の嘘 / 1 回押しても無反応 / tcp だけ目が開いている / 選択を変えると開けた軸が消える) は、meshView の可視性に書き手が 2 つあることと、行が既定値 true の種を持つことの合成として厳密に予測できる。この 2 つを消せば 4 症状はまとめて消える"
+
+        goal CompositionHasExactlyOneWriter
+        uuid 0e9da64f-1a8d-4553-90da-12a7f72b8206
+        summary "meshView の可視性と不透明度を書く場所が applyFrameVisibility() ちょうど 1 箇所になり、SelectionManager も _setObjectVisible も meshView を直接叩かない。ハンドラは軸を所有し、ピクセルは所有しない (原則 #4 / ADR-094 で LINK NETWORK パネルに採ったのと同じ形)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedTruthTableTest
+            uuid 55b10545-21ef-4bf5-9f3a-31acab793678
+            summary "予定している検査: 純粋関数 frameVisibility({explicit, contextual}) の真理値表テスト (boolean × 3 値 = 6 通り全部)。純粋関数として切り出すこと自体が『合成が 1 箇所にある』ことの機械側の問い所であり、DOM を持つ層に残すと検査できないので切り出しは必須である (ADR-094 で computeLayout を切り出したのと同じ理由)"
+
+        goal RowsCarryAxesNotSeeds
+        uuid bd20e810-1c89-4706-9db0-4a58d6fd479e
+        summary "OutlinerView の行が持つ値が『生成時にハードコードした visible: true』から『explicit 軸そのもの』になり、view を一度も読まずに真を語れるようになる。行は起動直後から嘘をつかない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedBootZeroCountCheck
+            uuid 5c0fdd04-d6c8-4293-b346-d4dc0a10cae6
+            summary "予定している検査: 起動直後に explicit === true の CoordinateFrame が 0 個であること。*在るもの* (行) を辿って眺めるのではなく、種別を列挙して個数を検査する形にする (原則 #31) — 今回の欠陥はまさに『既定値 true で埋めたので、まだ誰も何も言っていない状態が見えている状態と区別できなかった』ものであり、0 の検査でしか捕まらない"
+
+        goal EveryToggleChangesSomething
+        uuid c6349973-fd23-4be4-a18c-c2bc1cc8b187
+        summary "eye を 1 回押すと explicit が必ず反転する。既に非表示のものへ『非表示』を送って何も起きない経路 (入力が消費されたのに何も起きない — 原則 #11) が存在しない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedToggleInvariant
+            uuid 63b93cc6-a2fb-4b47-887b-ba24eae1e5be
+            summary "予定している検査: 任意の実体・任意の初期軸値から eye トグルを 1 回打つと explicit が反転する、を全種で。加えて『explicit === true の CF は他の実体を選択しても描画され続ける』(症状 4 の回帰)。後者は 3D 描画を伴うので、純粋な合成関数のレベル (contextual が null になっても explicit が true なら可視) で問う"
+
+    strategy ByDeclaringDefaultsInsteadOfProcedures
+    uuid a03e0923-bda1-46c6-959a-08a31a1254f0
+    summary "Argument by 既定の宣言化 — 『起動時にロボットを伏せる』は今日ブート経路の手続き _hideRobotByDefault() が実現している。手続きは対象を取りこぼす (base だけを伏せて tcp を取りこぼしたのが症状 3 そのもの) ので、既定を種と入口の宣言へ降ろす"
+
+        goal DefaultsAreDeclaredPerKindAndEntryPoint
+        uuid a41daaff-a117-4c55-8433-96c275e58494
+        summary "explicit の既定が表として宣言され (外形 = true / CF = false / robot_base はブート seed 由来なら false・addRobot() 由来なら true)、新しい実体種を足すときにこの欄を空にできない。_hideRobotByDefault() は宣言に吸収されて削除される"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedDefaultTableTest
+            uuid dd0c9041-2cf6-44de-a928-603c8cd5f693
+            summary "予定している検査: 既定表を宣言データとして持ち、全実体種がその表に行を持つことを検査する (種の列挙 → 個数検査。未宣言の種が 0 個)。加えてブート後と addRobot() 後で robot_base の explicit が異なることの回帰。ensureRobotFrames({seed:true}) と addRobot() の区別は ADR-090 で既に存在するので、新しい概念は導入しない"
+
+        goal HidingUnitMatchesTheRobotUnit
+        uuid dcd2dbbe-93d5-431b-a4eb-449bbcda5eed
+        summary "『ロボット 1 台 = base CF + tcp CF + スケルトン』を伏せる単位が揃い、tcp だけ目が開いている状態が特別扱いなしに消える。ADR-090 の『1 つの eye が 1 本の腕を動かす』が可視性の全部品について成立する"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedRobotUnitCheck
+            uuid d1fb2ded-199f-4310-8104-59a10660d421
+            summary "予定している検査: ブート直後、ロボット 1 台に属する CF (base + tcp) の explicit がすべて false であること (個数検査)。N 台のときに 1 台分だけが伏せられる/現れることの回帰も同じ形で書く — 基数 N は ADR-090 で既に一級の状態なので fixture が既にある"
+
+        goal PersistenceScopeIsDecidedNotDrifted
+        uuid ff6dfd60-4cae-433b-aeca-8fdc45c177d8
+        summary "explicit をシーン JSON に往復させるかが明示的に決められている。本 ADR ではセッション内状態に留める (presentation 状態をワイヤへ載せない — 原則 #29) と宣言し、要件が立てば別 ADR とする"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedSerializationGuard
+            uuid a9f75094-1c4a-47b4-a32a-210d714949dc
+            summary "予定している検査: SceneSerializer の往復テストに explicit が現れないこと (載せないと決めたものが黙って載り始めるドリフトを機械が落とす)。台帳 docs/STATE_LEDGER.md の該当行に『永続化しない』を明記し、権威列に合成関数を書く"

@@ -1,0 +1,107 @@
+GOALS adr095_link_network_indented_outline
+
+goal LinkNetworkStaysReadableAsTheSceneGrows
+uuid df83f3f6-5a60-47a8-a4bb-d0a35d1646ba
+summary "220px 幅の LINK NETWORK パネルで、シーンの実体が増えてもノードのラベルが読め続け、TF 深さが辺を目で辿らずに分かる — 『情報が増えるほど読めなくなる』方向の設計をやめる"
+state ToBeDeveloped
+labels adr-095, link-network
+artifacts
+- "docs/adr/ADR-095-link-network-indented-outline-tree.md"
+- "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
+
+    context Adr095Scope
+    uuid 7d516125-ea07-42c4-911b-28169e7a9abb
+    summary "ADR-095 (Proposed): computeLayout() の幾何割当を『深さ→y / 兄弟→x』から『ノード順→y / 深さ→x』へ入れ替える。ノード集合 (ADR-094 の融合ノード)・辺の 2 クラス (全域木 / 余木辺)・決定性・データ契約 {name,type,parentId}・update() シグネチャはすべて無改変で継承する。変わるのは返り値の x/y/svgH と LinkNetworkView の描画だけ"
+    artifacts
+    - "src/view/LinkNetworkLayout.js"
+    - "src/view/LinkNetworkView.js"
+
+    context MobileIsTheOnlyStandingStructureView
+    uuid 47fb1f1b-4cbd-4e03-9e63-7e467c055410
+    summary "運用実態 (ADR-094 から継承した前提): モバイルでは Outliner がドロワーで既定非表示、NodeEditor はほぼ使われていない。ゆえに LINK NETWORK が唯一の常設構造ビューであり、Outliner へ委譲する案 (Option C) の委譲先が画面に無い。この前提が崩れる (Outliner が常設になる等) と Option C の却下理由も同時に失効する"
+    artifacts
+    - "src/view/OutlinerView.js"
+
+    context BusinessTreeAttachPoint
+    uuid 5a837064-abf3-4f17-a703-e5edf2446b62
+    summary "事業木への接続は保留 (adr skill の規律に従う — 証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけで木が証拠実行可能でなくなる)。接続予定先は profit-growth.gsn の goal MobileStructureViewIsReadable (ADR-094 が既に吊った枝、uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e の配下) で、実装 PR でテストが実在した時点で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyIndentNotWiderPanel
+    uuid f1d4a36a-fb61-42be-beb0-0fc6f06722c9
+    summary "採用の根拠は美観ではなく資源配分: 横は固定 196px (左端は共有資源 — 原則 #26。left:188px の列を Map の縦ツールバーと共有しており広げられない)、縦はスクロールで可変にできる。現状はその固定・希少な軸に可変量 (兄弟数) を、可変にできる軸にほぼ定数 (TF 深さ = 実測 2) を割り当てている。DENSE_SLOT=22 の縮退則は『情報が増えたらラベルを諦める』と明文で書いた行であり、当事者の苦情はその行の実行結果である"
+    artifacts
+    - "src/view/LinkNetworkLayout.js"
+
+    assumption SiblingComparisonLossIsAcceptable
+    uuid 3db17910-7592-497b-b11f-2f09c7333fc5
+    summary "反証されうる仮説 (ADR-095 §受け入れるコスト): 兄弟が横一列に並ばなくなるので『兄弟同士の比較』が縦の走査になる。当事者の苦情はまさにその横並びだったので意図した交換だが、逆向きの不満 (『兄弟が見比べにくくなった』) が出る可能性は残る。当事者の実利用でしか反証できずテストでは閉じない。反証されたら兄弟をインデント同一の連続行として視覚的に括る (グループ罫) 方向で回収する"
+
+    strategy ByInvertingTheDegradationDirection
+    uuid 753a6ec9-3493-42c5-b59b-27992ab1a27e
+    summary "Argument by 縮退の向きの反転 — 混雑時に捨てるものを『ラベル』から『リンクの弧』へ移す。構造ビューが最後まで守るべきは『誰が』であって『どの線が』ではない。3 つの下位 goal は網羅ではなく、苦情『横にツリーが同じ行として伸びてるのが見づらい』から遡って同定した必要条件である"
+
+        goal LabelsNeverDegradeToDots
+        uuid 493f8c42-03cb-4469-adf2-09708fb6450e
+        summary "ノードのラベル幅が『196px ÷ 兄弟数』から『196px − インデント − 右ガター』へ変わり、兄弟数に依存しなくなる。denseMode (ドット縮退) は状態ごと廃止される"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedLabelWidthCheck
+            uuid 89b282f7-b544-43f4-904e-fac079297ac0
+            summary "予定している検査 (実装 PR で solution へ昇格): src/view/LinkNetworkLayout.test.js に『ラベルに使える幅が兄弟数に依存しない』を fixture 2 種 (Solid 3 個 / Solid 12 個) で固定する。現行の denseMode 縮退テストは削除ではなく『denseMode がもう返らない』へ書き換える (退役した状態が enum に残る負債 — 台帳 §既知の負債 3 — を繰り返さない)"
+
+        goal DepthIsReadableWithoutTracingEdges
+        uuid c4e303fa-67bc-4ac3-aece-4251645c0f73
+        summary "x が深さの単調非減少関数になり、行頭の階段として深さが直接読める。深さが MAX_INDENT_DEPTH を超えたらインデントは飽和し、行頭の深さバッジが数値で答える (横も有限資源なので、可変量を無制限に流し込む今の過ちを x 側で繰り返さない)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedDepthMonotonicityCheck
+            uuid 00f2ba55-a735-4bb1-ac03-c99b74b792b2
+            summary "予定している検査: 『子の x は親の x 以上』『x は min(depth, MAX_INDENT_DEPTH) の関数であり他の入力に依存しない』『深さ飽和時にバッジ値が実深さと一致する』。ADR-094 が確立した不変条件『非根ノードは親より下の行にある』は DFS 前順でも成立するので、既存テストを書き換えずに通ることが『契約の変更ではない』側の証拠になる"
+
+        goal CotreeEdgesDegradeInsteadOfLabels
+        uuid a5b7ab7e-b2dd-41f5-bccd-a9930f1cf464
+        summary "SpatialLink (余木辺) は右ガターのレーンへ決定的に割り当てられ、同時レーン数が MAX_LANES を超えた分は行末バッジ (+N) へ縮退する。混雑のコストをリンク表示が払い、ラベルは払わない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedLaneAssignmentCheck
+            uuid 7163febb-9d6a-465f-b111-a772fbb68b82
+            summary "予定している検査: レーン割当が入力リンクの列挙順に依存しない (ADR-094 で実際に落ちた EdgeOrderDefect と同型の検査 — 辺の正準順 (source,target,id) をそのまま使う)。レーン上限超過時にバッジ数が落ちた辺の本数と一致する (無言で消さない — 原則 #11)。git graph 型のレーン割当は新しいアルゴリズム = 新しいバグ面であり、決定性が最も壊れやすい箇所だと予測している"
+
+    strategy ByInheritingAdr094Contracts
+    uuid 692a5651-73e1-4aad-bd98-2ea90241dc6f
+    summary "Argument by 契約の継承 — 幾何だけを入れ替えたことを機械で言えるようにする。ADR-094 の 27 本のうち決定性・純粋性・基数の各本が『書き換えずに通る』ことが、この変更が presentation 層の内側で閉じている証拠になる"
+
+        goal ContractsSurviveTheGeometrySwap
+        uuid 7d825dfa-a344-48a4-a1c4-cae2f6a05d3d
+        summary "computeLayout は純粋なまま、同一シーン → 同一スナップショット、入力順非依存、AppController のデータ契約 {name,type,parentId} と update() シグネチャは無改変。契約側のテストは 1 行も書き換わらない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedContractRegression
+            uuid 55f45a9a-5ab5-4e65-8b79-1cdfd2b6e546
+            summary "予定している検査: 既存の決定性・純粋性テストを無改変のまま pass させ、pnpm test / typecheck / build がすべて緑であること。幾何テスト (行/列の期待値) だけが書き換わり、契約テストが 1 本も書き換わらないという diff の形そのものが証拠になる"
+
+        goal CardinalityIsCoveredForTheNewGeometry
+        uuid 8bd40ffe-2618-4144-95eb-7b47836957ac
+        summary "原則 #31: 0 (リンク皆無 → 空の結果、パネル非表示) / 1 (単一ノード → 行 1 本。現行の L===1 ゼロ除算回避は rows===1 でも同型の分岐が要る) / N (レーン衝突・行あふれ・インデント飽和は N でしか出ない) の 3 基数が新しい幾何のもとで覆われている"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedCardinalityFixtures
+            uuid fe73989f-66ad-42ce-b795-c5fb52aea98c
+            summary "予定している検査: 既存の 0/1/N fixture を流用し、期待値だけを新幾何へ更新する。加えて新幾何固有の N ケース (行数が MAX_PANEL_H を超えてスクロールへ移る境界) を追加する。1 個の fixture では絶対に見えない性質という点で ADR-093 の lockstep・ADR-094 の行crowding と同じ構図"
+
+        goal ScrollPositionIsGovernedOrAbsent
+        uuid 448b45a9-9de9-43ac-bd9a-480a5b2cc1d1
+        summary "縦スクロールを導入するなら、スクロール位置は状態であり所有者と基数を持つ (台帳の行)。導入しない (行数上限で打ち切る) ならそれを宣言する — 『既定で埋める』を選ばない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption PlannedLedgerRow
+            uuid 2de9a7e4-eb5c-4b5c-a630-1850f94a198c
+            summary "予定している成果物: docs/STATE_LEDGER.md に『LINK NETWORK パネル (スクロール位置)』の行を追加するか、追加しないことを ADR 本文で宣言する。同じコミットで denseMode の消滅も台帳へ反映する。証拠は台帳の行そのもの (DOM を持つ層なのでユニットテストでは閉じない) であり、そう宣言している"

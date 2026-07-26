@@ -99,3 +99,45 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
    一意なので名前は正当なキーであり、scene JSON / Layout DSL / schema / 移行パスに
    波及する版上げ行為を今回の Goal は要求しなかった (§5 過剰モデリング禁止)。
    昇格が要るときは述語 1 モジュールの変更で済む — それが集約の配当。
+5. **CoordinateFrame 軸の可視性に書き手が 2 つあり、行は既定値の種を持つ。**
+   `meshView` の可視性を書く経路が 2 本ある — 永続の eye
+   (`AppController._setObjectVisible` → `SceneService.setObjectVisible`) と、選択駆動の
+   `SelectionManager.showFrameChain` / `showGeometryFrameTree` / `hideFrameChain`。
+   後者は eye を読みも書きもしないので、最後に走った方が勝つ (原則 #4)。加えて
+   `OutlinerView._createRow` の行は `visible: true` を**ハードコードした種**として持ち、
+   view (`CoordinateFrameView` は生成時 `_group.visible = false`) を一度も読まない。
+
+   帰結として起動直後、`tcp` 行の eye は開いているのに軸は描かれていない
+   — **行は最初から嘘をついている**。その eye を 1 回押しても `!visible` = `false` が
+   送られるだけで何も起きない (原則 #11)。`robot_base` だけ閉じて見えるのは、ブート経路の
+   `_hideRobotByDefault()` が base フレームにだけ手続き的に打っているから。
+
+   ADR-087 が宣言した「可視性の所有者は Outliner の eye ちょうど 1 箇所」は、
+   **スケルトンについてだけ**閉じており CF 軸については未達。**ADR-096 (Proposed)** が
+   `explicit × contextual` の直交 2 軸 + 合成 1 箇所で閉じる予定。実装時にこの行を
+   台帳本表 (基数 `0..N`、権威 = 合成関数) へ昇格させる。
+
+   *boolean の既定値 `true` は「まだ誰も何も言っていない」を「見えている」と区別できない*
+   — 基数の欄を空欄で通したのと同型の失敗が、真偽値の既定で起きている (原則 #31)。
+
+6. **接地 (支持) が実体の状態ではなく、ジェスチャの副作用でしかない。**
+   「地面より下に行かない」は不変条件ではなく `GrabOperationHandler._applyStackSnap()` の
+   補助 (ADR-071) で、ジェスチャが終われば何も残らない。したがって経路が変わると消える —
+   軸拘束 `z` では降ろされ (`stackApplies = stackMode && axis !== 'z'`)、非 Solid では
+   冒頭で早期 return し、`mounts` の毎フレーム追従 (`_updateMountedAnnotations`) は
+   ドラッグ中の座り直し (`_mapObjectPlateDelta`) を後から上書きする (原則 #4)。
+
+   **不変条件は散文にしか無い**: `SceneService._isMapObject()` の JSDoc が
+   「must stay pinned to the ground plane or a building roof, never floating」と書いて
+   いるが、これを問う検査はどこにも存在しない (憲法 Q3 の答えが「誰も開かない散文」)。
+   さらに `mounts` は SpatialLink なので端点が実体でなければならず、**地面は実体ではない**
+   ため「地面の上」は語彙の外にある。
+
+   **ADR-097 (Proposed)** が `placement` (`supported`/`grounded`/`free` — 生成時決定・不変) と
+   `belowGradeIntent` (可変・基数 `0..N`) を宣言し、支持は幾何から導出 (保存しない)、
+   強制は pose の唯一の入口へ集約する予定。実装時にこの 2 実体を台帳本表へ昇格させる。
+
+   *この欠陥の blast radius は「実体種の集合」ではなく「pose を書ける入口の集合」だった*
+   — 症状が種ごとに現れたのは入口ごとに実装したからで、種の問題に見えたのは症状の側。
+   ゆえに検査も「支持を持つべき種を列挙して、支持を持たない個体の個数が 0 か」を問う形に
+   なる (ADR-090 の 0 台・ADR-093 の N 個に続く原則 #31 の 3 例目)。
