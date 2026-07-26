@@ -299,10 +299,15 @@ export const useUIStore = create((set, get) => ({
     // ImportModal uses existing showModal({ type:'import', filename, resolve }) / closeModal()
 
     // ── Outliner ──────────────────────────────────────────────────────────────
-    outlinerAddItem: (id, name, type, parentId) => set(state => ({
+    // `visible` is the entity's `explicit` visibility axis (ADR-096), DECLARED by
+    // the caller — it used to be a hardcoded `true` the row had derived from
+    // nothing, which is why a freshly booted `tcp` row showed an open eye over a
+    // viewport that drew no axes (原則 #31 — a default nobody chose is
+    // indistinguishable from a stated value).
+    outlinerAddItem: (id, name, type, parentId, visible) => set(state => ({
       outlinerItems: [...state.outlinerItems, {
         id, name, type, parentId: parentId ?? null,
-        visible: true, locked: false,
+        visible, locked: false,
         ifcClass: null, placeType: null,
         robotRole: null,   // ADR-090 — declared robot TF role; drives the ROBOT badge
         linked: { asSource: false, asTarget: false },

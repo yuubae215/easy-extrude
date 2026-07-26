@@ -18,6 +18,7 @@ import { createMountAnnotationCommand } from '../../command/MountAnnotationComma
 import { createFastenFrameCommand }     from '../../command/FastenFrameCommand.js'
 import { LINK_TYPE_COLORS }             from '../../view/SpatialLinkView.js'
 import { RippleEffect }                 from '../../view/RippleEffect.js'
+import { CONTEXTUAL }                   from '../../view/VisibilityAxes.js'
 import { S_LINK_MODE, S_MOUNT_PICKING } from '../../core/editorStates.js'
 
 // ── Module-level helper ───────────────────────────────────────────────────────
@@ -111,10 +112,16 @@ export class LinkCreationHandler {
     ctrl._opState.send('BEGIN_LINK')
     this.state.sourceId        = ctrl._scene.activeId
     this.state.pendingTargetId = null
-    // Show all CFs so the target frame is visible for picking regardless of selection state
-    for (const obj of ctrl._scene.objects.values()) {
-      if (obj instanceof CoordinateFrame && obj.meshView) obj.meshView.showFull()
-    }
+    // Show all CFs so the target frame is pickable regardless of selection state.
+    // This is a CONTEXTUAL claim like any other (ADR-096): link mode borrows the
+    // axis for its duration, and a frame the user explicitly opened stays open
+    // under it. Painting the frames directly — as this did — made link mode a
+    // third writer of the same pixels.
+    ctrl._service.setContextualFrames(
+      [...ctrl._scene.objects.values()]
+        .filter(obj => obj instanceof CoordinateFrame)
+        .map(obj => [obj.id, CONTEXTUAL.FULL]),
+    )
     ctrl._uiView.setStatus('Click target entity  [Esc: cancel]')
     ctrl._uiView.setCursor('crosshair')
   }
@@ -259,19 +266,13 @@ export class LinkCreationHandler {
   // ── Private ─────────────────────────────────────────────────────────────────
 
   /**
-   * Restores CF visibility after link-creation mode:
-   * show only CFs whose parent (or self) is the active object.
+   * Hands the contextual axis back to the selection after link-creation mode
+   * (ADR-096). This used to re-derive "what should be on screen" from the active
+   * id — a second implementation of the selection's own rule, which is why it
+   * could disagree with it (and why it hid frames the user had explicitly
+   * opened). The owner recomputes instead.
    */
   _restoreCFVisibility() {
-    const { _ctrl: ctrl } = this
-    const activeId = ctrl._activeObj?.id
-    for (const obj of ctrl._scene.objects.values()) {
-      if (!(obj instanceof CoordinateFrame) || !obj.meshView) continue
-      if (obj.id === activeId || obj.parentId === activeId) {
-        obj.meshView.showFull()
-      } else {
-        obj.meshView.hide()
-      }
-    }
+    this._ctrl._selMgr.refreshFrameContext()
   }
 }

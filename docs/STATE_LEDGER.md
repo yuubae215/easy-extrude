@@ -57,6 +57,7 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | Home / 起動画面 | `open` + `null` (2) | 0..1 | `AppController` | ADR-089 / STATE_TRANSITIONS §home |
 | CF 運動学ロール | fixed-joint 制約下のロール群 | 0..N | `SceneService._updateFastenedFrames()` | ADR-038 / STATE_TRANSITIONS §CF Kinematic Role |
 | Origin CF ライフサイクル | Solid と原子的に生成・削除 (2) | **Solid 1 個につき ちょうど 1**。0 = ADR-037 以前の保存シーン (到達可能・不正)。`findOriginFrame()` が `null` を返し、修復は名前付きの明示手順 `_ensureOriginFrames()` — 既定値で埋めない。N = 1 Solid に Origin 2 個は不正状態。生成経路は作らず、**予約名ガード** (`isOriginFrameName`) が改名からの到達を塞ぐ | 生成/削除 = `SceneService` (Solid 生成/削除経路)。**同一性の判定 = `src/domain/originFrame.js` の 1 箇所** (`isOriginFrame` / `findOriginFrame` / `ORIGIN_FRAME_NAME`) — 再導出は `IDENTITY_RULES` が落とす。改名の権威は `SceneService.renameObject()` (原則 #1) | ADR-037 §1/§4 · ADR-094 §波及 · STATE_TRANSITIONS §Origin CF Lifecycle · `src/domain/originFrame.test.js` |
+| 実体の可視性 | **直交する 2 軸** — `explicit` boolean (ユーザー所有・永続: Outliner の eye が「常に見せろ」と言ったか) × `contextual` `full`/`dimmed`/不在 (選択所有・一時: 選択や link mode がその場だけ見せたい強さ)。平坦な 3 状態ではない (平坦化すると「文脈表示中にユーザーが常時表示を要求した」が表現不能になり、選択を変えた瞬間にユーザーの意思が消える — ADR-094 の `forceHidden × collapsed` を平坦化できなかったのと同型)。遷移に guard は無く不正遷移も存在しないので状態機械の節は起こさない (§1.4 の発動条件は「3 状態以上 **かつ/または** 不正遷移が事故」の論理和で、後者が立たない) | **`0..N`** — 0 = 実体が 1 つも無いシーン (合成が呼ばれない = 正当)。**`explicit` は「未宣言」を持たない**: 種ごとに**宣言**された既定 (`EXPLICIT_DEFAULTS`) が答え、未宣言の種は `defaultExplicit()` が throw する (既定値で埋めない — 原則 #31)。`robot_base` だけは既定が**種ではなく生まれた入口**で決まる (seed = 伏せる / `addRobot()` = 見せる)。**永続化しない** — presentation 状態はワイヤに載せない (原則 #29)、要件が立てば別 ADR | 合成 = `SceneService.applyEntityVisibility()` **ただ 1 箇所** (原則 #4)。`explicit` の書き手は `setExplicitVisible()` / `declareExplicitVisible()`、`contextual` の書き手は `setContextualFrames()` (**丸ごと置換のみ** — 個別削除を許さないので「文脈から外れたのに消し忘れた 1 個」が書けない)。Outliner の行・robot skeleton は軸を**表示**するだけで写しを持たない | **ADR-096** · ADR-087 · `src/view/VisibilityAxes.test.js` / `src/VisibilityOwnership.test.js` / `src/controller/SelectionManager.test.js` |
 | `_worldPoseCache` | 有効 / 無効 (2) | 1 | `SceneService` — アクセサが鮮度を保証 (原則 #23) | STATE_TRANSITIONS §`_worldPoseCache` |
 | 削除された実体 | 可視 / 不可視保持 / 実解放 (3) | 0..N | `CommandStack` が手放した時点で実解放 (原則 #10) | PHILOSOPHY #10 / `docs/code_contracts/memory_management.md` |
 | コミットの観測メタデータ | `未刻印` / `刻印済` / `刻印不能` (3 — 最後は push 済みで amend 不可になった終端) | コミット 1 個につき **`0..1`**。0 = 人間のコミット (帰属として正しい) か、`commit && push` 連鎖で刻む隙間が無かったもの。後者は `report` の `with Model-Effort: N / 総数` で**母数に現れる** (隠さず数える — 原則 #31) | `.claude/hooks/commit-trailers.sh` (唯一の書き手。PostToolUse で `--amend --only`) — 導出規則の正本は `scripts/commit-meta.mjs` の純粋関数 | **ADR-092** · STATE_TRANSITIONS §Commit observation metadata · `scripts/commit-meta.test.mjs` |
@@ -102,26 +103,19 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
    一意なので名前は正当なキーであり、scene JSON / Layout DSL / schema / 移行パスに
    波及する版上げ行為を今回の Goal は要求しなかった (§5 過剰モデリング禁止)。
    昇格が要るときは述語 1 モジュールの変更で済む — それが集約の配当。
-5. **CoordinateFrame 軸の可視性に書き手が 2 つあり、行は既定値の種を持つ。**
-   `meshView` の可視性を書く経路が 2 本ある — 永続の eye
-   (`AppController._setObjectVisible` → `SceneService.setObjectVisible`) と、選択駆動の
-   `SelectionManager.showFrameChain` / `showGeometryFrameTree` / `hideFrameChain`。
-   後者は eye を読みも書きもしないので、最後に走った方が勝つ (原則 #4)。加えて
-   `OutlinerView._createRow` の行は `visible: true` を**ハードコードした種**として持ち、
-   view (`CoordinateFrameView` は生成時 `_group.visible = false`) を一度も読まない。
-
-   帰結として起動直後、`tcp` 行の eye は開いているのに軸は描かれていない
-   — **行は最初から嘘をついている**。その eye を 1 回押しても `!visible` = `false` が
-   送られるだけで何も起きない (原則 #11)。`robot_base` だけ閉じて見えるのは、ブート経路の
-   `_hideRobotByDefault()` が base フレームにだけ手続き的に打っているから。
-
-   ADR-087 が宣言した「可視性の所有者は Outliner の eye ちょうど 1 箇所」は、
-   **スケルトンについてだけ**閉じており CF 軸については未達。**ADR-096 (Proposed)** が
-   `explicit × contextual` の直交 2 軸 + 合成 1 箇所で閉じる予定。実装時にこの行を
-   台帳本表 (基数 `0..N`、権威 = 合成関数) へ昇格させる。
+5. ~~**CoordinateFrame 軸の可視性に書き手が 2 つあり、行は既定値の種を持つ。**~~
+   **閉じた (ADR-096 実装)。** 本表「実体の可視性」の行へ昇格した。書き手は
+   `explicit` / `contextual` の 2 軸に分かれ、ピクセルを書くのは合成
+   `SceneService.applyEntityVisibility()` ただ 1 箇所。行の `visible: true` の種は
+   消え、既定は種ごとの**宣言** (`EXPLICIT_DEFAULTS`) になった
+   (`_hideRobotByDefault()` はその宣言に吸収されて削除)。
 
    *boolean の既定値 `true` は「まだ誰も何も言っていない」を「見えている」と区別できない*
-   — 基数の欄を空欄で通したのと同型の失敗が、真偽値の既定で起きている (原則 #31)。
+   — 基数の欄を空欄で通したのと同型の失敗が、真偽値の既定で起きていた (原則 #31)。
+   **未宣言の種を `defaultExplicit()` が throw する**のが、その同型を再発させないための
+   機械側の問い所 (`src/view/VisibilityAxes.test.js`)。**発見された 3 人目の書き手**:
+   `LinkCreationHandler` が link mode 中に全 CF を直接塗っており、ADR 起票時の波及表には
+   無かった (探索で出た — 俯瞰は書き手を 2 つと見積もっていた)。
 
 6. **接地 (支持) が実体の状態ではなく、ジェスチャの副作用でしかない。**
    「地面より下に行かない」は不変条件ではなく `GrabOperationHandler._applyStackSnap()` の

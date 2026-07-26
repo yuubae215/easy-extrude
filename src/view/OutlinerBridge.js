@@ -20,10 +20,21 @@ export class OutlinerBridge {
 
   // ── Object mutations ──────────────────────────────────────────────────────
 
-  addObject(id, name, type, parentId) {
-    if (this._native) this._native.addObject(id, name, type, parentId)
+  /**
+   * @param {string} id
+   * @param {string} name
+   * @param {string} type
+   * @param {string|null} parentId
+   * @param {boolean} explicitVisible  The entity's `explicit` visibility axis at
+   *   birth (ADR-096) — DECLARED by the caller from
+   *   `SceneService.isExplicitVisible()`. Not optional and not defaulted: a row
+   *   that seeds its own eye state is a second source that starts out wrong (the
+   *   `tcp` row's open eye over an empty viewport).
+   */
+  addObject(id, name, type, parentId, explicitVisible) {
+    if (this._native) this._native.addObject(id, name, type, parentId, explicitVisible)
     if (this._reactEnabled)
-      useUIStore.getState().actions.outlinerAddItem(id, name, type, parentId)
+      useUIStore.getState().actions.outlinerAddItem(id, name, type, parentId, explicitVisible)
   }
 
   removeObject(id) {
@@ -44,19 +55,11 @@ export class OutlinerBridge {
       useUIStore.getState().actions.outlinerUpdateItem(id, { visible })
   }
 
-  /**
-   * Reads the row's current eye state (ADR-090) — the same accessor as
-   * OutlinerView's, resolved against whichever side is live. Unknown ids read as
-   * visible (a new row's default).
-   * @param {string} id
-   * @returns {boolean}
-   */
-  isObjectVisible(id) {
-    if (this._reactEnabled) {
-      return useUIStore.getState().outlinerItems.find(i => i.id === id)?.visible ?? true
-    }
-    return this._native?.isObjectVisible?.(id) ?? true
-  }
+  // NOTE (ADR-096): there is deliberately no `isObjectVisible()` here any more.
+  // The row is a DISPLAY of the `explicit` visibility axis, and asking a display
+  // for the truth is what made it a second source — its `?? true` fallback
+  // answered "visible" for every id it had not heard about yet. The authority is
+  // `SceneService.isExplicitVisible(id)`.
 
   /**
    * Declared robot TF role of a row (ADR-090) → the Outliner's ROBOT badge. The

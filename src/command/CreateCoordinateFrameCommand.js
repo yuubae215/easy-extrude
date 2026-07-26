@@ -31,7 +31,7 @@ export function createCreateCoordinateFrameCommand(frameRef, service, onAfterUnd
 
     undo() {
       // Must hide before detach (CODE_CONTRACTS §Frame View Must Be Hidden Before Detach)
-      frameRef.meshView.hide()
+      frameRef.meshView.setVisible(false)
       frameRef.meshView.hideConnection()
       service.detachObject(frameRef.id)
       onAfterUndo()

@@ -11,14 +11,19 @@
  * Arrow heads and text labels have been removed — the TC gizmo (TransformControls)
  * serves as the interactive representation when a frame is selected on mobile.
  *
- * Visibility modes (mutually exclusive visual states):
- *   hidden      – group.visible = false (default, e.g. parent geometry not selected)
- *   showFull()  – full opacity + X-ray; used when the parent geometry is selected,
- *                 or when this frame is the active/selected frame in its chain
- *   showDimmed()– reduced opacity + X-ray; used for non-selected frames that are
- *                 shown as context when another frame in the same tree is selected
+ * Visibility (ADR-096 — ONE entry, `applyVisibility({visible, dimmed})`):
+ *   This view does not decide whether it is drawn. Visibility is composed from
+ *   two orthogonal axes — `explicit` (the Outliner eye, persistent) and
+ *   `contextual` (selection, transient) — by `SceneService.applyEntityVisibility()`,
+ *   the single writer (原則 #4). The former `showFull()` / `showDimmed()` /
+ *   `hide()` / `setParentSelected()` quartet WAS that second writer: four public
+ *   doors into the same pixels, each reachable without reading the eye, which is
+ *   how an entity could be "eye open, nothing drawn". They are gone; `setVisible`
+ *   survives only as the lifecycle primitive every mesh view shares (原則 #17),
+ *   used when an entity is detached from the scene and the composition can no
+ *   longer reach it.
  *
- * setObjectSelected(bool) is layered ON TOP of the visibility mode:
+ * setObjectSelected(bool) is layered ON TOP of the visibility state:
  *   true  → origin sphere turns gold + scales up (marks the active frame)
  *   false → origin sphere white + normal scale
  *
@@ -178,54 +183,43 @@ export class CoordinateFrameView {
     }
   }
 
-  /** Outliner eye-icon toggle. */
+  /**
+   * Lifecycle primitive — the shape every mesh view shares (原則 #17), used
+   * when an entity leaves the scene (detach before undo) and the visibility
+   * composition can no longer reach it. NOT the eye's route: the eye writes the
+   * `explicit` axis and the composition calls `applyVisibility()`.
+   * @param {boolean} visible
+   */
   setVisible(visible) {
+    this.applyVisibility({ visible, dimmed: false })
+  }
+
+  // ── Visibility (ADR-096: one entry, called by the composition alone) ───────
+
+  /**
+   * Applies the composed visibility. The ONLY method that decides whether these
+   * axes are on screen and at what opacity — its single caller is
+   * `SceneService.applyEntityVisibility()`, which owns the composition of the
+   * `explicit` × `contextual` axes (原則 #4).
+   *
+   * `dimmed` de-emphasises a frame that is only on screen as context for another
+   * frame's selection; it also resets the origin sphere, because a frame that
+   * lost the selection must not keep the gold marker of the one that has it.
+   *
+   * @param {{visible: boolean, dimmed?: boolean}} composed
+   */
+  applyVisibility({ visible, dimmed = false }) {
     this._group.visible = visible
-    if (!visible) this._setLabelDisplay(false)
-  }
-
-  // ── Visibility modes ───────────────────────────────────────────────────────
-
-  /**
-   * Show at full opacity with X-ray rendering.
-   * Used when the parent geometry object is selected (all frames in the tree),
-   * or for the active/selected frame itself within its tree.
-   */
-  showFull() {
-    this._group.visible = true
-    this._applyXray(OPACITY_FULL)
-    this._labelVisible = true
-  }
-
-  /**
-   * Show at reduced opacity with X-ray rendering.
-   * Used for non-selected context frames when another frame in the same tree
-   * is the active selection — keeps them visible but shifts focus to the
-   * selected frame.
-   */
-  showDimmed() {
-    this._group.visible = true
-    // Reset sphere to un-selected state before applying dimming
-    this._originSphere.material.color.setHex(0xffffff)
-    this._originSphere.scale.setScalar(1.0)
-    this._applyXray(OPACITY_DIMMED)
-    this._labelVisible = true
-  }
-
-  /** Hide completely. Visibility restored by showFull() or showDimmed(). */
-  hide() {
-    this._group.visible = false
-    this._labelVisible  = false
-    this._setLabelDisplay(false)
-  }
-
-  /**
-   * Backward-compatibility alias.
-   * @param {boolean} selected  true → showFull(), false → hide()
-   */
-  setParentSelected(selected) {
-    if (selected) this.showFull()
-    else this.hide()
+    this._labelVisible  = visible
+    if (!visible) {
+      this._setLabelDisplay(false)
+      return
+    }
+    if (dimmed) {
+      this._originSphere.material.color.setHex(0xffffff)
+      this._originSphere.scale.setScalar(1.0)
+    }
+    this._applyXray(dimmed ? OPACITY_DIMMED : OPACITY_FULL)
   }
 
   // ── Floating label ─────────────────────────────────────────────────────────

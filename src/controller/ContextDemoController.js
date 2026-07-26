@@ -170,7 +170,9 @@ export class ContextDemoController {
     }
 
     // Hide everything; story steps reveal progressively. CoordinateFrames are
-    // skipped — they are hidden by default and owned by setParentSelected().
+    // skipped — their `explicit` axis defaults to hidden and their appearance is
+    // owned by the visibility composition (ADR-096), which this demo must not
+    // reach into.
     for (const obj of ctrl._scene.objects.values()) {
       if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
     }

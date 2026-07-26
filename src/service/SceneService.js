@@ -52,7 +52,11 @@ import { MeasureLineView } from '../view/MeasureLineView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { CoordinateFrameView } from '../view/CoordinateFrameView.js'
 import {
-  ROBOT_ROLE, Robot, isRobotRole,
+  CONTEXTUAL, VISIBILITY_ENTRY,
+  visibilityKindOf, defaultExplicit, composeVisibility,
+} from '../view/VisibilityAxes.js'
+import {
+  ROBOT_ROLE, Robot, isRobotRole, isRobotBaseFrame,
   resolveRobots, robotBaseSeedPose, nextRobotBaseName, nextRobotTcpName,
 } from '../domain/robotFrames.js'
 import {
@@ -156,6 +160,33 @@ export class SceneService extends EventEmitter {
      * @type {Map<string, SpatialLinkView>}
      */
     this._linkViews = new Map()
+    /**
+     * The `explicit` visibility axis (ADR-096) — "the user said always show
+     * this". Only entities whose value was actually DECLARED appear here; an
+     * absent entry means "nobody has said anything yet" and reads back as the
+     * declared default for its kind (`VisibilityAxes.defaultExplicit`). That
+     * distinction is the whole point: the defect this replaces was a row seeded
+     * with `true` that could not be told apart from a stated `true` (原則 #31).
+     *
+     * Keyed by the ENTITY, not by id, so it (a) cannot leak — a deleted entity
+     * takes its axis with it (原則 #9) — and (b) survives the detach/reattach
+     * an undo of a delete performs, which keeps the same instance. An eye closed
+     * before an undo is still closed after the redo (ADR-090's requirement).
+     *
+     * Session state on purpose: NOT serialized. Presentation state does not go
+     * on the wire (原則 #29 / ADR-096 §Consequences); if a requirement for
+     * persisting it appears, that is a new ADR, not a quiet extra field.
+     * @type {WeakMap<object, boolean>}
+     */
+    this._explicitVisible = new WeakMap()
+    /**
+     * The `contextual` visibility axis (ADR-096) — "show this for now, because
+     * of what is selected". Replaced WHOLESALE by `setContextualFrames()`; no
+     * caller adds or removes single entries, which is what makes "the context
+     * forgot to hide one of them" unrepresentable rather than merely unlikely.
+     * @type {Map<string, string>}  entityId → CONTEXTUAL member
+     */
+    this._contextualFrames = new Map()
     /**
      * Local-space vertex positions for mounted Annotated* entities (ADR-032 Phase H-2).
      * Keyed by SpatialLink.id (mounts link).
@@ -2839,11 +2870,21 @@ export class SceneService extends EventEmitter {
    * Re-inserts a previously detached entity into the model.
    * Does NOT re-add children — caller is responsible for re-inserting children if needed.
    * Emits: 'objectAdded'
+   *
+   * Re-composes the entity's visibility on the way back in (ADR-096). While
+   * detached, the composition could not reach it — `applyEntityVisibility()`
+   * resolves through `getObject()` — so its mesh view is wherever the detaching
+   * command left it. The `explicit` axis survived the round trip (it is keyed by
+   * the entity, and undo/redo hands back the same instance), so an entity the
+   * user had explicitly shown comes back shown instead of quietly returning at
+   * its kind's default.
+   *
    * @param {object} entity  A domain entity (Solid, Profile, etc.)
    */
   reattachObject(entity) {
     this._model.addObject(entity)
     this.emit('objectAdded', entity)
+    this.applyEntityVisibility(entity.id)
   }
 
   /**
@@ -3103,7 +3144,12 @@ export class SceneService extends EventEmitter {
    */
   ensureRobotFrames({ seed = false } = {}) {
     this._upgradeLegacyRobotFrames()
-    if (seed && this.getRobots().length === 0) this.addRobot()
+    // The seed entry declares the hidden default (ADR-096 §Decision 3): an arm
+    // standing alone on an otherwise empty scene reads as clutter. This replaces
+    // the boot path's `_hideRobotByDefault()` sweep, which hid the base frame and
+    // silently missed `tcp` — a procedure that walks a list drops whatever the
+    // list forgot; a declared default cannot.
+    if (seed && this.getRobots().length === 0) this.addRobot({ entry: VISIBILITY_ENTRY.SEED })
   }
 
   /**
@@ -3156,14 +3202,24 @@ export class SceneService extends EventEmitter {
    * stays at the base origin. _updateWorldPoses composes it through the base into
    * the world pose the marker renders at.
    *
+   * The `entry` decides the robot's visibility default and nothing else
+   * (ADR-096 §Decision 3): `'seed'` — the scene put it there, so it stays down;
+   * `'userAdded'` (the default here, because the Add menu and undo/redo are what
+   * call this without an argument) — the user asked for it, so it appears, since
+   * a gesture that produces nothing visible is the worst failure (原則 #11).
+   *
+   * @param {{entry?: string}} [opts]
    * @returns {import('../domain/robotFrames.js').Robot} the added robot
    */
-  addRobot() {
+  addRobot({ entry = VISIBILITY_ENTRY.USER_ADDED } = {}) {
     const existing = this.getRobots().length
     const objects  = [...this._model.objects.values()]
 
     const base = this.createWorldFrame(nextRobotBaseName(objects), robotBaseSeedPose(existing))
     this._setRobotRole(base, ROBOT_ROLE.BASE)
+    // Declared AFTER the role is stamped: the role is what makes this a robot
+    // base rather than an ordinary frame, and the kind decides the default.
+    this.declareExplicitVisible(base, entry)
 
     const tcp = this.createCoordinateFrame(base.id, nextRobotTcpName(objects), null)
     if (tcp) {
@@ -3190,16 +3246,167 @@ export class SceneService extends EventEmitter {
     this.emit('robotRoleChanged', frame.id, role)
   }
 
+  // ── Visibility: two axes, one composition (ADR-096) ───────────────────────
+
   /**
-   * Sets the visibility of an entity's mesh.
-   * No-ops if id is unknown.
+   * The `explicit` axis of an entity — "the user asked for this to always be
+   * shown". Falls back to the DECLARED default for the entity's kind when
+   * nobody has said anything yet (`VisibilityAxes.EXPLICIT_DEFAULTS`); the
+   * fallback throws rather than inventing a value for an unlisted kind.
+   *
+   * This is the accessor the Outliner row and the robot skeleton read, so both
+   * show the axis rather than a copy of it that can drift (原則 #23 — the
+   * accessor owns freshness; ADR-096 §G1 — the row never lies).
+   *
+   * @param {string} id
+   * @returns {boolean}
+   */
+  isExplicitVisible(id) {
+    const obj = this._model.getObject(id)
+    return obj ? this._explicitVisibleOf(obj) : false
+  }
+
+  /**
+   * Writes the `explicit` axis and re-composes. The eye's only route
+   * (AppController._setObjectVisible → here), and the only writer of that axis
+   * apart from `declareExplicitVisible()` at birth.
+   *
+   * Always writes, so a toggle always moves the axis: the old path sent
+   * "hide" to something already hidden and the user saw nothing happen
+   * (原則 #11 / ADR-096 §G2).
+   *
    * @param {string} id
    * @param {boolean} visible
    */
-  setObjectVisible(id, visible) {
+  setExplicitVisible(id, visible) {
     const obj = this._model.getObject(id)
     if (!obj) return
-    obj.meshView.setVisible(visible)
+    this._explicitVisible.set(obj, visible)
+    this.applyEntityVisibility(id)
+  }
+
+  /**
+   * Declares an entity's `explicit` default at birth, for the one case where
+   * the default depends on WHICH ENTRY POINT it was born through rather than on
+   * its kind: a robot seeded onto the boot scene stays down, a robot the user
+   * just added appears (ADR-096 §Decision 3, resting on the seed/add split
+   * ADR-090 already draws).
+   *
+   * Deliberately NOT called for every entity: an entity whose default is a pure
+   * function of its kind needs no declaration here — its kind already carries
+   * one, and writing it would only create a copy to drift from.
+   *
+   * @param {object} obj    the entity
+   * @param {string} entry  a `VISIBILITY_ENTRY` member
+   */
+  declareExplicitVisible(obj, entry) {
+    if (!obj) return
+    this._explicitVisible.set(obj, defaultExplicit(this._visibilityKindOf(obj, entry)))
+    this.applyEntityVisibility(obj.id)
+  }
+
+  /** The entity ids the contextual axis currently claims (read-only view). */
+  get contextualFrameIds() {
+    return new Set(this._contextualFrames.keys())
+  }
+
+  /**
+   * The contextual axis of one entity, or null when no context claims it.
+   * @param {string} id
+   * @returns {string|null} a `CONTEXTUAL` member, or null
+   */
+  contextualVisibilityOf(id) {
+    return this._contextualFrames.get(id) ?? null
+  }
+
+  /**
+   * THE writer of the `contextual` axis (ADR-096 §Decision 2). Replaces the
+   * whole map and re-composes the UNION of the outgoing and incoming ids, so a
+   * frame that dropped out of the context is re-composed rather than left
+   * behind. That is why this takes a map instead of add/remove calls: the class
+   * of bug where a chain-hide walked a stale id set and missed a frame cannot be
+   * written.
+   *
+   * Callers (SelectionManager, LinkCreationHandler) own the AXIS — which frames
+   * their context wants and how strongly. They do not own pixels.
+   *
+   * @param {Map<string, string>|Iterable<[string, string]>} [frames]  id → CONTEXTUAL member
+   */
+  setContextualFrames(frames = new Map()) {
+    const next    = frames instanceof Map ? new Map(frames) : new Map(frames)
+    const touched = new Set([...this._contextualFrames.keys(), ...next.keys()])
+    this._contextualFrames = next
+    for (const id of touched) this.applyEntityVisibility(id)
+  }
+
+  /**
+   * THE composition (ADR-096 §Decision 2) — the single place that turns the two
+   * axes into pixels (原則 #4). Every other participant writes an axis and
+   * lands here; nothing else touches a mesh view's visibility for an entity
+   * that is in the scene.
+   *
+   * The type branch is on the CLASS, not on a flag (原則 #2), and it exists
+   * once: only a CoordinateFrame has a dimmed presentation and a connection
+   * line to its parent, so only it takes the composed pair. Everything else has
+   * the `explicit` axis alone and takes the lifecycle primitive every view
+   * shares.
+   *
+   * @param {string} id
+   */
+  applyEntityVisibility(id) {
+    const obj = this._model.getObject(id)
+    if (!obj?.meshView) return
+
+    const composed = composeVisibility({
+      explicit:   this._explicitVisibleOf(obj),
+      contextual: this._contextualFrames.get(id) ?? null,
+    })
+
+    if (!(obj instanceof CoordinateFrame)) {
+      obj.meshView.setVisible(composed.visible)
+      return
+    }
+
+    obj.meshView.applyVisibility(composed)
+    // The dashed line to the parent's origin follows the frame it belongs to.
+    // A world-parented root (robot_base) has no parent to draw to — the segment
+    // would be a degenerate origin→origin — and a link endpoint draws its own
+    // relationship, so neither gets one.
+    const hasParent = this._model.getObject(obj.parentId) != null
+    if (composed.visible && hasParent && !this._model.isLinkEndpoint(id)) {
+      obj.meshView.showConnection(composed.dimmed)
+    } else {
+      obj.meshView.hideConnection()
+    }
+  }
+
+  /**
+   * Reads the `explicit` axis, falling back to the declared default for the
+   * entity's kind. Private: callers ask `isExplicitVisible(id)` so the fallback
+   * rule stays in one place (§1.1).
+   * @param {object} obj
+   * @returns {boolean}
+   */
+  _explicitVisibleOf(obj) {
+    if (this._explicitVisible.has(obj)) return this._explicitVisible.get(obj)
+    return defaultExplicit(this._visibilityKindOf(obj, VISIBILITY_ENTRY.SEED))
+  }
+
+  /**
+   * Narrows an entity to a visibility kind. The one `instanceof` for this
+   * purpose (原則 #2), which is why `VisibilityAxes` itself stays free of
+   * domain imports and testable as a pure table.
+   * @param {object} obj
+   * @param {string} entry  a `VISIBILITY_ENTRY` member
+   * @returns {string} a `VISIBILITY_KIND` member
+   */
+  _visibilityKindOf(obj, entry) {
+    const isFrame = obj instanceof CoordinateFrame
+    return visibilityKindOf({
+      isFrame,
+      isRobotBase: isFrame && isRobotBaseFrame(obj),
+      entry,
+    })
   }
 }
 

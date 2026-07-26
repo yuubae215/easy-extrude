@@ -40,10 +40,11 @@ export class RobotStageSet {
    * has none, dispose the ones whose robot is gone. Idempotent — an unchanged
    * roster does no work, so this is safe to call from the animation loop.
    *
-   * A newly created skeleton is VISIBLE: it appears because a robot was added,
-   * and the Outliner eye (the visibility owner, ADR-087) starts a new entity
-   * visible. The boot scene's default-hidden arm is a separate, explicit act
-   * (AppController._hideRobotByDefault) rather than a default hidden here.
+   * A newly created skeleton is VISIBLE; whether it STAYS visible is decided by
+   * its base frame's `explicit` visibility axis, which the caller adopts right
+   * after sync() (AppController._syncRobotStage). The boot scene's hidden arm is
+   * that axis' DECLARED default for a seeded robot (ADR-096 §Decision 3), not a
+   * default chosen here — this class must not hold a second opinion about it.
    *
    * @param {Iterable<string>} ids  robot ids currently in the scene
    * @returns {boolean} true when the set changed (a stage was added or removed)

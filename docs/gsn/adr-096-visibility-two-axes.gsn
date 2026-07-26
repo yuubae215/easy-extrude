@@ -3,7 +3,7 @@ GOALS adr096_visibility_two_axes
 goal WhatTheUiSaysIsWhatIsDrawn
 uuid 8a2e249b-c6c1-40ea-be50-9b1356c2b3bd
 summary "Outliner の行が語る可視性と、実際にビューポートへ描かれているものが常に一致し、eye を 1 回押すと必ず何かが変わる — 『目が開いているのに何も見えない』『押しても何も起きない』が構造的に表現不能になる"
-state ToBeDeveloped
+state UnderReview
 labels adr-096, visibility, outliner
 artifacts
 - "docs/adr/ADR-096-visibility-two-axes-declared-defaults.md"
@@ -11,7 +11,7 @@ artifacts
 
     context Adr096Scope
     uuid 34e83923-9866-44df-af96-0099d9dc3b42
-    summary "ADR-096 (Proposed): CF 軸の可視性を explicit (eye 所有・永続) × contextual (選択所有・一時) の直交 2 軸にし、実際の描画は 2 軸の合成を 1 箇所で計算する。既定は種ごとに宣言する (CF は explicit=false、外形は true、robot_base は生まれた入口で分岐)。presentation/chrome 層に閉じ、ドメイン・契約・DSL には触れない"
+    summary "ADR-096 (Accepted, 実装済み 2026-07-26): CF 軸の可視性を explicit (eye 所有・永続) × contextual (選択所有・一時) の直交 2 軸にし、実際の描画は 2 軸の合成を 1 箇所で計算する。既定は種ごとに宣言する (CF は explicit=false、外形は true、robot_base は生まれた入口で分岐)。presentation/chrome 層に閉じ、ドメイン・契約・DSL には触れない"
     artifacts
     - "src/controller/SelectionManager.js"
     - "src/view/OutlinerView.js"
@@ -45,32 +45,75 @@ artifacts
         goal CompositionHasExactlyOneWriter
         uuid 0e9da64f-1a8d-4553-90da-12a7f72b8206
         summary "meshView の可視性と不透明度を書く場所が applyFrameVisibility() ちょうど 1 箇所になり、SelectionManager も _setObjectVisible も meshView を直接叩かない。ハンドラは軸を所有し、ピクセルは所有しない (原則 #4 / ADR-094 で LINK NETWORK パネルに採ったのと同じ形)"
-        state ToBeDeveloped
-        labels support-exploring
+        state Approved
 
-            assumption PlannedTruthTableTest
-            uuid 55b10545-21ef-4bf5-9f3a-31acab793678
-            summary "予定している検査: 純粋関数 frameVisibility({explicit, contextual}) の真理値表テスト (boolean × 3 値 = 6 通り全部)。純粋関数として切り出すこと自体が『合成が 1 箇所にある』ことの機械側の問い所であり、DOM を持つ層に残すと検査できないので切り出しは必須である (ADR-094 で computeLayout を切り出したのと同じ理由)"
+            solution TruthTableAllSixCombinations
+            uuid 45f5bf15-46da-43e6-9eda-f6b6ce11c6d3
+            summary "node --test src/view/VisibilityAxes.test.js — pass (9/9)。純粋関数 composeVisibility({explicit, contextual}) の真理値表を 2 × 3 = 6 通り全部固定し、表の行数そのものを 6 と assert する (行が抜けたら『抜けたこと』が落ちる — 抜けた行が症状になるので)。名前は起票時の frameVisibility から composeVisibility へ: eye は Solid にも効くので合成は CF 専用ではない。載っている非自明な規則は explicit が立っているとき他人の選択で薄字にされない、の 1 行"
+            artifacts
+            - "src/view/VisibilityAxes.js"
+            - "src/view/VisibilityAxes.test.js"
+
+            solution PixelWriterUniquenessGuard
+            uuid 08c1234f-40b0-4706-9c55-c279c044b0cc
+            summary "node --test src/VisibilityOwnership.test.js — pass (3/3)。『合成に触れてよいファイル』を表で列挙し、それ以外での meshView.applyVisibility / 退役した showFull・showDimmed・setParentSelected / 軸マップへの直接代入を src 全走査で落とす (IdentityContainment.test.js と同じ形 — 散文で禁じても n+1 個目の呼び出しが最小抵抗経路になる)。所有者側が消えて規則が空回りする状態も別テストで塞ぐ (規則の対象が 0 個であることと、規則が守られていることは区別がつかない — 原則 #31 の同型)"
+            artifacts
+            - "src/VisibilityOwnership.test.js"
+            - "src/service/SceneService.js"
+
+            solution ThirdWriterFoundAndAbsorbed
+            uuid e8a4c86b-ec7c-4096-bd9a-d02ef9d60a09
+            summary "実装時の発見 (起票時の力学表は書き手を 2 つと見積もっていた): LinkCreationHandler が link mode 中に全 CF を直接 showFull() で塗り、終了時に『active の自分か子か』で選択規則を再実装して復元していた = 3 人目の書き手かつ選択規則の第二実装。同じ contextual 軸の借り手として吸収し、返却は所有者の再計算 SelectionManager.refreshFrameContext() に一本化 (node --test src/controller/SelectionManager.test.js — pass 10/10 に返却の 2 ケースを含む)"
+            artifacts
+            - "src/controller/handler/LinkCreationHandler.js"
+            - "src/controller/SelectionManager.test.js"
 
         goal RowsCarryAxesNotSeeds
         uuid bd20e810-1c89-4706-9db0-4a58d6fd479e
         summary "OutlinerView の行が持つ値が『生成時にハードコードした visible: true』から『explicit 軸そのもの』になり、view を一度も読まずに真を語れるようになる。行は起動直後から嘘をつかない"
-        state ToBeDeveloped
-        labels support-exploring
+        state Approved
 
-            assumption PlannedBootZeroCountCheck
-            uuid 5c0fdd04-d6c8-4293-b346-d4dc0a10cae6
-            summary "予定している検査: 起動直後に explicit === true の CoordinateFrame が 0 個であること。*在るもの* (行) を辿って眺めるのではなく、種別を列挙して個数を検査する形にする (原則 #31) — 今回の欠陥はまさに『既定値 true で埋めたので、まだ誰も何も言っていない状態が見えている状態と区別できなかった』ものであり、0 の検査でしか捕まらない"
+            solution RowTakesDeclaredValueOrThrows
+            uuid c0754db0-080d-458a-a56d-cf022a36b916
+            summary "行の初期値は呼び出し側が宣言する必須引数になった: OutlinerView.addObject(id, name, type, parentId, explicitVisible) は boolean でなければ TypeError を投げ、uiStore.outlinerAddItem からは visible: true の直書きが消えた (node --test src/VisibilityOwnership.test.js — pass、直書きの再発と引数の欠落を静的に落とす)。AppController は SceneService.isExplicitVisible(id) の値をそのまま渡すので、行は生成の瞬間から軸そのものを表示する"
+            artifacts
+            - "src/view/OutlinerView.js"
+            - "src/store/uiStore.js"
+            - "src/VisibilityOwnership.test.js"
+
+            solution SecondSourceAccessorRemoved
+            uuid ccb58b99-c133-47c7-b627-55eb5aaddf94
+            summary "行を権威として問う経路 (OutlinerView.isObjectVisible / OutlinerBridge.isObjectVisible) を削除した。両者は未知の id に `?? true` で答えており、『まだ行が無い』を『見えている』と答える第二の源だった。唯一の読み手だった _syncRobotStage は SceneService.isExplicitVisible(id) を問うように移した — 表示に真偽を問い返さない (原則 #23 — アクセサが鮮度を所有する)"
+            artifacts
+            - "src/view/OutlinerBridge.js"
+            - "src/controller/AppController.js"
+
+            solution BootZeroCountClosedInTheLiveApp
+            uuid 81ec2eb1-677d-42ca-8392-fee40eeff746
+            summary "pnpm test:e2e — 17/17 pass (新規 'the row never lies…')。起票時に予定した『起動直後 explicit === true の CoordinateFrame が 0 個』は unit レーンでは閉じられなかった (SceneService は vite 固有の import (?url / ?worker) を通るため node --test で構築できない — repo のテストが THREE-free なのはこの制約) ので、実アプリで問う形へ移した: window.__easyExtrude.visibilityState() が実体ごとに explicit / contextual / 実際に描かれているかの 3 つを返し、テストは (a) explicit が真の CF を**数えて** 0、(b) 全実体で drawn === (explicit || contextual !== null) を固定する。(b) が両向きの嘘を同時に落とす — 『行が開いているのに描かれない』と『閉じているのに描かれる』は同じ 1 本の等式の両辺"
+            artifacts
+            - "e2e/smoke.spec.js"
+            - "src/controller/AppController.js"
 
         goal EveryToggleChangesSomething
         uuid c6349973-fd23-4be4-a18c-c2bc1cc8b187
         summary "eye を 1 回押すと explicit が必ず反転する。既に非表示のものへ『非表示』を送って何も起きない経路 (入力が消費されたのに何も起きない — 原則 #11) が存在しない"
-        state ToBeDeveloped
-        labels support-exploring
+        state Approved
 
-            assumption PlannedToggleInvariant
-            uuid 63b93cc6-a2fb-4b47-887b-ba24eae1e5be
-            summary "予定している検査: 任意の実体・任意の初期軸値から eye トグルを 1 回打つと explicit が反転する、を全種で。加えて『explicit === true の CF は他の実体を選択しても描画され続ける』(症状 4 の回帰)。後者は 3D 描画を伴うので、純粋な合成関数のレベル (contextual が null になっても explicit が true なら可視) で問う"
+            solution ToggleAlwaysMovesTheAxis
+            uuid ce668387-69a7-498e-bbb4-772c636bfaa8
+            summary "トグルが『何もしない』経路は構造的に消えた: 行はクリックで自分の flag を書かず意図だけを報告し (OutlinerView の eye ハンドラ)、AppController._setObjectVisible は SceneService.setExplicitVisible を常に呼んで軸を書く — 『既に非表示のものを非表示にする』が書けない。純粋側では node --test src/view/VisibilityAxes.test.js — pass が、既定 false の CF について反転後に visible === true になることを固定している"
+            artifacts
+            - "src/view/OutlinerView.js"
+            - "src/controller/AppController.js"
+            - "src/view/VisibilityAxes.test.js"
+
+            solution ExplicitSurvivesSelectionChange
+            uuid 52e44628-1ed6-4e46-93db-98ee8c24166b
+            summary "症状 4 の回帰: node --test src/controller/SelectionManager.test.js — pass (10/10)。別実体を選択すると contextual 主張から base が外れることを SelectionManager 側で確かめ、その値を本物の composeVisibility に通して visible === true を固定する (規則をテスト内で書き直さない)。文脈だけで出ていたフレームは逆に消えることも対で固定した — 片側だけだと『常に見える』でも通ってしまう"
+            artifacts
+            - "src/controller/SelectionManager.test.js"
+            - "src/view/VisibilityAxes.js"
 
     strategy ByDeclaringDefaultsInsteadOfProcedures
     uuid a03e0923-bda1-46c6-959a-08a31a1254f0
@@ -79,29 +122,46 @@ artifacts
         goal DefaultsAreDeclaredPerKindAndEntryPoint
         uuid a41daaff-a117-4c55-8433-96c275e58494
         summary "explicit の既定が表として宣言され (外形 = true / CF = false / robot_base はブート seed 由来なら false・addRobot() 由来なら true)、新しい実体種を足すときにこの欄を空にできない。_hideRobotByDefault() は宣言に吸収されて削除される"
-        state ToBeDeveloped
-        labels support-exploring
+        state Approved
 
-            assumption PlannedDefaultTableTest
-            uuid dd0c9041-2cf6-44de-a928-603c8cd5f693
-            summary "予定している検査: 既定表を宣言データとして持ち、全実体種がその表に行を持つことを検査する (種の列挙 → 個数検査。未宣言の種が 0 個)。加えてブート後と addRobot() 後で robot_base の explicit が異なることの回帰。ensureRobotFrames({seed:true}) と addRobot() の区別は ADR-090 で既に存在するので、新しい概念は導入しない"
+            solution DefaultTableIsEnumeratedAndCounted
+            uuid 3857f326-2bf8-4b91-9cc5-dc3cd1a77349
+            summary "node --test src/view/VisibilityAxes.test.js — pass (11/11)。EXPLICIT_DEFAULTS の行数と VISIBILITY_KIND の種の数が一致することを**個数**で assert し (行を辿るだけでは、書かれなかった行に訪ねるノードが無いので必ず素通りする — 原則 #31)、未宣言の種に対して defaultExplicit() が throw することを固定した。既定を決めずに種を足す経路が存在しない = 今回の欠陥 (誰も選んでいない true) の再発経路が塞がっている"
+            artifacts
+            - "src/view/VisibilityAxes.js"
+            - "src/view/VisibilityAxes.test.js"
+
+            solution EntryPointSplitsTheDefault
+            uuid ca302d5c-b3f7-4fa4-b673-6a94b5bdc3b2
+            summary "既定が『種』ではなく『生まれた入口』で分かれることを固定した (同上 pass): visibilityKindOf({isRobotBase:true, entry}) が seed / userAdded で別の種を返し、その 2 つの既定が notEqual であること。実装側では SceneService.addRobot({entry}) が declareExplicitVisible() を打ち、ensureRobotFrames({seed:true}) だけが SEED を渡す — ADR-090 が既に持っていた区別に既定を吊るしただけで、新しい概念は導入していない"
+            artifacts
+            - "src/service/SceneService.js"
+            - "src/view/VisibilityAxes.test.js"
 
         goal HidingUnitMatchesTheRobotUnit
         uuid dcd2dbbe-93d5-431b-a4eb-449bbcda5eed
         summary "『ロボット 1 台 = base CF + tcp CF + スケルトン』を伏せる単位が揃い、tcp だけ目が開いている状態が特別扱いなしに消える。ADR-090 の『1 つの eye が 1 本の腕を動かす』が可視性の全部品について成立する"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedRobotUnitCheck
-            uuid d1fb2ded-199f-4310-8104-59a10660d421
-            summary "予定している検査: ブート直後、ロボット 1 台に属する CF (base + tcp) の explicit がすべて false であること (個数検査)。N 台のときに 1 台分だけが伏せられる/現れることの回帰も同じ形で書く — 基数 N は ADR-090 で既に一級の状態なので fixture が既にある"
+            solution RobotUnitHidesAsOneUnit
+            uuid c678c479-0f78-4448-8a7f-3f8d6fd68d4c
+            summary "node --test src/view/VisibilityAxes.test.js — pass。『ロボット 1 台』を構成する CF の種を列挙し、explicit が真のものを**数えて** 0 個であることを固定した (base は ROBOT_BASE_SEEDED、tcp は COORDINATE_FRAME 経由でどちらも false)。手続き _hideRobotByDefault() は base だけを回って tcp を取りこぼしていた — 在るものを辿る形の失敗であり、種を列挙して個数を検査する形なら漏れようがない。手続き自体は削除され、その不在を静的ガードが守る"
+            artifacts
+            - "src/view/VisibilityAxes.test.js"
+            - "src/VisibilityOwnership.test.js"
+
+            assumption NRobotCardinalityNotExercisedHere
+            uuid 6074c75b-f0da-4dc0-843f-265f6e1c8686
+            summary "残る未検査 (基数 N): 『N 台のうち 1 台分だけが伏せられる/現れる』は、軸が実体ごとに独立であること (WeakMap のキーが実体) から構造的に従うが、2 台目を立てた状態では回していない。既存 e2e 'a second robot can be added and is a distinct entity' (pass) は同一性を確かめるが可視性は問わない。1 と N は別世界なので (ADR-093/095 と同じ構図) 1 台の fixture では絶対に見えない — 次に触るときは visibilityState() を 2 台で読む形が最短"
 
         goal PersistenceScopeIsDecidedNotDrifted
         uuid ff6dfd60-4cae-433b-aeca-8fdc45c177d8
         summary "explicit をシーン JSON に往復させるかが明示的に決められている。本 ADR ではセッション内状態に留める (presentation 状態をワイヤへ載せない — 原則 #29) と宣言し、要件が立てば別 ADR とする"
-        state ToBeDeveloped
-        labels support-exploring
+        state Approved
 
-            assumption PlannedSerializationGuard
+            solution PresentationStateStaysOffTheWire
             uuid a9f75094-1c4a-47b4-a32a-210d714949dc
-            summary "予定している検査: SceneSerializer の往復テストに explicit が現れないこと (載せないと決めたものが黙って載り始めるドリフトを機械が落とす)。台帳 docs/STATE_LEDGER.md の該当行に『永続化しない』を明記し、権威列に合成関数を書く"
+            summary "node --test src/VisibilityOwnership.test.js — pass (4/4)。SceneSerializer に explicitVisible / contextualFrames / applyEntityVisibility が現れないことを検査し、『載せないと決めたもの』が黙って載り始めるドリフトを落とす。構造としても軸は SceneService の WeakMap / Map にあり、シリアライズ対象の実体には生えていない。台帳 docs/STATE_LEDGER.md の『実体の可視性』行に『永続化しない』と権威 (合成関数) を明記した"
+            artifacts
+            - "src/VisibilityOwnership.test.js"
+            - "docs/STATE_LEDGER.md"

@@ -236,7 +236,14 @@ export class AppController {
                   : obj instanceof AnnotatedPoint
                     ? 'annot-point'
                     : 'cuboid'
-      outlinerView?.addObject(obj.id, obj.name, type, obj.parentId ?? null)
+      // The row's eye is DECLARED at birth, from the axis itself (ADR-096 §G1).
+      // It used to be a hardcoded `visible: true` the row had never derived from
+      // anything: at boot the `tcp` row said "eye open" while nothing was drawn,
+      // and the first click then sent `false` to something already hidden.
+      outlinerView?.addObject(
+        obj.id, obj.name, type, obj.parentId ?? null,
+        this._service.isExplicitVisible(obj.id),
+      )
       // Origin frames are locked — cannot be dragged to a new parent (ADR-028)
       if (obj instanceof CoordinateFrame && isOriginFrame(obj)) {
         outlinerView?.setObjectLocked(obj.id, true)
@@ -571,12 +578,6 @@ export class AppController {
     /** Unsubscribe function for the active import.progress WS listener, or null */
     this._importProgressUnsub = null
 
-    /**
-     * Set of CoordinateFrame IDs currently visible because of frame-chain selection.
-     * Cleared by _hideFrameChain(). Used to restore correct visibility on deselect.
-     * @type {Set<string>}
-     */
-    this._activeFrameChain = new Set()
 
     // ── Mobile axis guide (replaces TransformControls on touch devices) ──────
     /** THREE.Line for the world-axis guide shown during axis-constrained grab. @type {THREE.Line|null} */
@@ -813,9 +814,12 @@ export class AppController {
     // on an empty roster. The skeleton itself is hidden by default (ADR-089
     // follow-up): a lone arm standing 2.8 m off with nothing around it read as
     // clutter on the empty scene. The frames stay (grasp needs them); the user
-    // reveals the arm via the base frame's Outliner eye (原則 #4 owner).
+    // reveals the arm via the base frame's Outliner eye (原則 #4 owner). That
+    // default is now DECLARED by the seed entry point itself (ADR-096 §Decision
+    // 3) — the `_hideRobotByDefault()` sweep that used to follow this line hid
+    // the base frame and missed `tcp`, which is why `tcp` sat there with an open
+    // eye and no axes drawn.
     this._service.ensureRobotFrames({ seed: true })
-    this._hideRobotByDefault()
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()
@@ -885,6 +889,21 @@ export class AppController {
         hasTcp: r.hasTcp,
         skeletonVisible: this._sceneView?.robotStages?.isVisible(r.id) ?? null,
       })),
+      // Read-only visibility snapshot (ADR-096) — the E2E guard for the claim
+      // this ADR rests on: what the row says and what is DRAWN never disagree.
+      // Both axes plus the pixel are reported per entity, because the defect was
+      // precisely that these three could differ while every one of them looked
+      // locally correct. A count over `explicit` is the "0 is a state" check the
+      // unit lane cannot run (SceneService needs vite-only imports, so it does
+      // not construct under `node --test`).
+      visibilityState: () => [...this._scene.objects.values()].map(o => ({
+        id:         o.id,
+        name:       o.name,
+        isFrame:    o instanceof CoordinateFrame,
+        explicit:   this._service.isExplicitVisible(o.id),
+        contextual: this._service.contextualVisibilityOf(o.id),
+        drawn:      o.meshView?.group?.visible ?? o.meshView?.cuboid?.visible ?? null,
+      })),
     }
   }
 
@@ -910,11 +929,13 @@ export class AppController {
     if (!stages) return
     const robots = this._robots()
     if (stages.sync(robots.map(r => r.id))) {
-      // A skeleton that just appeared adopts its base frame's current row state,
+      // A skeleton that just appeared adopts its base frame's `explicit` axis,
       // so an eye toggled while the robot was absent (undo / redo) is not lost.
+      // Asked of the axis' owner rather than of the Outliner row: the row is a
+      // DISPLAY of the axis (ADR-096), and a display that is also consulted as
+      // an authority is the second source this ADR removes (§1.1).
       for (const robot of robots) {
-        const visible = this._outlinerView?.isObjectVisible?.(robot.id)
-        if (visible === false) stages.setVisible(robot.id, false)
+        if (!this._service.isExplicitVisible(robot.id)) stages.setVisible(robot.id, false)
       }
     }
     for (const robot of robots) {
@@ -962,21 +983,6 @@ export class AppController {
     solid.setPose(new THREE.Vector3(0, 0, 0.5), solid.orientation, local)
     solid.meshView.updateGeometry(solid.corners)
     solid.meshView.updateBoxHelper?.()
-  }
-
-  /**
-   * Hide the robot skeletons on the default / freshly-loaded scene (ADR-089
-   * follow-up) through the ADR-087 owner — each robot's base-frame Outliner eye —
-   * so the eye state and the skeleton stay consistent (原則 #4). The frames remain
-   * (grasp needs them); the user reveals an arm by toggling its eye. A robot-less
-   * scene is simply a no-op (0 is a legal roster — ADR-090).
-   */
-  _hideRobotByDefault() {
-    for (const robot of this._robots()) {
-      // Row state is carried by _setObjectVisible itself now (it owns BOTH the
-      // meshes and the Outliner row) — no separate store poke to drift from it.
-      this._setObjectVisible(robot.id, false)
-    }
   }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
@@ -1315,7 +1321,9 @@ export class AppController {
 
     const wasActive = this._scene.activeId === id
 
-    if (wasActive && target instanceof CoordinateFrame && this._activeFrameChain.size > 0) {
+    // The contextual claim is owned by SceneService (ADR-096) — asked, not
+    // mirrored, so the "which frames is the selection showing" fact has one home.
+    if (wasActive && target instanceof CoordinateFrame && this._service.contextualFrameIds.size > 0) {
       this._selMgr.hideFrameChain()
     }
     if (wasActive && !(target instanceof CoordinateFrame)) {
@@ -1493,20 +1501,26 @@ export class AppController {
   }
 
   _setObjectVisible(id, visible) {
-    this._service.setObjectVisible(id, visible)
+    // The eye writes ONE axis — `explicit`, "always show this" (ADR-096). It no
+    // longer paints: SceneService composes it with the selection-owned
+    // `contextual` axis and is the only thing that touches a mesh view. Writing
+    // the axis is also why a toggle now always does something: the old path sent
+    // `false` to an already-hidden entity and the click evaporated (原則 #11).
+    this._service.setExplicitVisible(id, visible)
     // A robot skeleton is the geometry of ITS base frame (ADR-084 §2); ADR-087
     // makes that entity's Outliner eye the single owner (原則 #4) of the skeleton's
     // visibility, replacing the removed header toggle. The CF axes are handled by
-    // setObjectVisible() above; here we carry the matching skeleton along — keyed
-    // by robot id, so with N robots one eye moves one arm (ADR-090).
+    // the composition above; here we carry the matching skeleton along — keyed
+    // by robot id, so with N robots one eye moves one arm (ADR-090). The skeleton
+    // follows the `explicit` axis ALONE: it is the robot's body, not context
+    // furniture, so selecting something else must not make an arm appear.
     if (this._sceneView?.robotStages?.has(id)) {
       this._sceneView.robotStages.setVisible(id, visible)
     }
-    // …and the Outliner row, which is what the USER reads the state off (its eye
-    // glyph + grey-out). Writing the meshes but not the row left the row's flag
-    // frozen at its seeded value: the toggle always sent the same `!visible`, so
-    // an entity could be shown once and then never hidden again — the input was
-    // consumed and nothing happened (#11). One owner, both channels (#4).
+    // …and the Outliner row, which is where the USER reads the state off (its eye
+    // glyph + grey-out). The row DISPLAYS the axis: it no longer flips its own
+    // flag on click, so the glyph cannot disagree with what the axis says
+    // (原則 #4/#5 — one owner, the row subscribes).
     this._outlinerView?.setObjectVisible(id, visible)
   }
 
@@ -3948,11 +3962,11 @@ export class AppController {
     this._refreshUndoRedoState()
     this._selMgr.clearObjectSelection()
     this._selMgr.setObjectSelected(false)
-    // importFromJson re-seeds robot_base/tcp; keep the skeleton hidden by
-    // default here too (ADR-089 follow-up) so a template's own robot Solid
-    // isn't shadowed by the orphan UR5e decoration. The user reveals it via the
-    // robot_base Outliner eye.
-    this._hideRobotByDefault()
+    // A template's robot arrives through the scene, not through the user's Add
+    // menu, so it carries the seeded default and stays down (ADR-096 §Decision
+    // 3) — a template's own robot Solid isn't shadowed by the orphan UR5e
+    // decoration. The explicit `_hideRobotByDefault()` sweep this replaces is
+    // gone: the default is declared, not swept.
     this._frameLayoutDsl(dsl)
     return true
   }
