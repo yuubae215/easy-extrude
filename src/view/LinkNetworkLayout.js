@@ -1,12 +1,13 @@
 /**
  * LinkNetworkLayout — the LINK NETWORK panel's layout as a PURE function
- * (ADR-094 E1/E3, refining ADR-048's deterministic layered layout).
+ * (ADR-094 E1/E3, ADR-095 geometry).
  *
  * `computeLayout(entityInfos, links)` takes the scene facts the controller
  * already publishes (`{ name, type, parentId }` per entity + the SpatialLink
  * list — ADR-048 §2.4, unchanged) and returns the finished picture: node
- * positions, resolved edges, row count, panel height. It reads no DOM, holds no
- * `this`, and mutates neither argument. `LinkNetworkView` only draws the result.
+ * positions, resolved edges, cotree lane assignment, panel height. It reads no
+ * DOM, holds no `this`, and mutates neither argument. `LinkNetworkView` only
+ * draws the result.
  *
  * ## Why the panel draws a TF tree (ADR-094)
  *
@@ -19,65 +20,82 @@
  *
  *   - Layer 0 held **Solids**, which are not TF frames at all — a Solid's body
  *     frame is its auto Origin CF (ADR-037 §1). The Y axis therefore meant
- *     neither TF depth nor containment depth but a mix of the two, and the row
- *     of item names on top was that category error made visible.
+ *     neither TF depth nor containment depth but a mix of the two.
  *   - The body-frame row carried no information: every Solid's body frame has
- *     the same, uneditable name, so N Solids produced N identical labels. That
- *     row alone pushed the hierarchy to 3 layers and the panel to its max height,
- *     crushing the user's own CFs into the bottom row. (`LayoutDecompiler` had
- *     already folded that frame out of the DSL — the DSL layer knew the row was
- *     noise before the panel did.)
+ *     the same, uneditable name, so N Solids produced N identical labels.
  *
- * ## The fusion (E1)
+ * ## The fusion (ADR-094 E1)
  *
  * Solid : body frame is a 1:1 bijection — the frame is created with the Solid,
  * sits at its centroid with its orientation, and cannot be renamed or deleted
  * (ADR-037 §1/§4). Two entities that always come in pairs and always share a
  * pose are ONE thing on a 220px canvas, so they are drawn as one node:
  *
- *   - TF identity  → the body frame (the node IS the frame; the Y axis now means
- *     TF depth and nothing else, and user CFs sit one row below it, not two).
- *   - Label        → the Solid's name (the body frame's meaningful identity —
- *     ROS names a body frame after its link, not "origin").
+ *   - TF identity  → the body frame (the node IS the frame).
+ *   - Label        → the Solid's name (ROS names a body frame after its link).
  *   - Click        → selects the **Solid**, because the body frame is edit-locked
  *     and can never be the target of an operation (ADR-037 §4).
  *   - Highlight    → either entity's 3D selection lights the fused node, via
  *     `nodeIdByEntity`. The round trip is deliberately asymmetric and lives here,
  *     in one place, rather than in the view's event handlers.
  *
- * Roots without a body frame (annotations, measures, sketches, imported meshes)
- * are untouched: they stay plain nodes on row 0. Fusing needs no new visual
- * vocabulary — no group bands, no band-edge stubs — which is exactly why it was
- * chosen over demoting Solids to enclosures (ADR-094 Option D): a Solid can be a
- * SpatialLink endpoint itself, and an arrow into a band would have been a new
- * special case.
+ * ## Why an indented outline and not a hierarchy drawing (ADR-095)
+ *
+ * The two axes of this panel have wildly different supply, and the layered
+ * drawing spent them backwards:
+ *
+ *   - **x is fixed at 196px** (`PANEL_W − 2·MARGIN`). The left edge is a shared
+ *     resource (原則 #26): the `left:188px` column is shared with the Map's
+ *     vertical toolbar, so the panel cannot be widened. It was carrying the
+ *     **sibling count**, which grows with the scene.
+ *   - **y can be made scrollable**, i.e. unbounded. It was carrying **TF depth**,
+ *     which after the ADR-094 fusion is nearly constant (measured: 2).
+ *
+ * The consequence was written down in code as `DENSE_SLOT = 22`: past a dozen
+ * Solids the panel *dropped every label* and became a strip of dots. That line
+ * is "when information grows, give up on knowing who" spelled out.
+ *
+ * So the assignment is swapped: **row = node** (tree DFS preorder) and
+ * **x = depth** (indent). A label's width now depends on depth, not on how many
+ * siblings it has, and depth is readable as the staircase of line starts rather
+ * than by tracing edges. Crowding still has to be paid for somewhere — it is
+ * paid by the **cotree arcs**, which are packed into right-gutter lanes and
+ * degrade to a `+N` badge past `MAX_LANES`. Inverting the direction of that
+ * degradation is the whole point: a structure view must keep answering "who",
+ * even when it has given up on drawing "which line".
+ *
+ * x is still finite, so depth is NOT poured into it without a bound either —
+ * indentation saturates at `MAX_INDENT_DEPTH` and the true depth is stated by a
+ * badge (repeating the old mistake on the other axis would be the same bug).
  *
  * ## Cardinality (原則 #31 — the reason this file is testable at all)
  *
  *   0 — no links at all: no nodes, no edges. The caller hides the whole panel;
  *       `computeLayout` reports it as an empty result rather than an empty canvas.
- *   1 — a single node: `L === 1`, so the row formula has no interval to divide
- *       and the node is centred instead (a naive `layer/(L-1)` divides by zero).
- *   N — the interesting one. Row crowding, label collision and the dense-mode
- *       degradation only ever appear with several Solids; a one-Solid fixture
- *       cannot see them (the same blind spot ADR-093 hit with lockstep).
+ *       No cotree edge → `gutterW === 0`: the label gets the full width back
+ *       rather than a default-sized gutter reserved "just in case".
+ *   1 — a single node: one row, and `rows === 1` must not divide by anything.
+ *   N — the interesting one. Lane collisions, row overflow into scrolling and
+ *       indent saturation only ever appear with several entities; a one-Solid
+ *       fixture cannot see them (the same blind spot ADR-093 hit with lockstep).
  *
  * Pure and THREE-free, so it runs under bare `node --test`. Entities are
  * duck-typed on `{ name, type, parentId }`; body-frame identity is asked of
  * `domain/originFrame.js` (never re-derived here — ADR-090 / ADR-094 §波及).
  *
- * @see ADR-094 (TF tree regression, fused node), ADR-048 (layered layout),
- *      ADR-037 (auto body frame), ADR-038 (two-layer taxonomy)
+ * @see ADR-095 (indented outline), ADR-094 (TF tree regression, fused node),
+ *      ADR-048 (panel dimensions, data contract), ADR-037 (auto body frame)
  */
 import { isOriginFrame } from '../domain/originFrame.js'
 
 /** Panel width — fixed by the left-edge occupancy contract (ADR-048 §2.3). */
 export const PANEL_W = 220
 /**
- * SVG height: MAX only when the hierarchy still reaches 3 layers. After the
- * fusion that needs a user CF *under* a user CF, so the common scene sits at
- * MIN. The cap is set by the Map vertical toolbar sharing the left:188px column
- * (~490px lower edge @720px viewport); 160 leaves ~8px clearance (ADR-048 §2.3).
+ * Panel height bounds — unchanged by ADR-095. The cap is set by the Map vertical
+ * toolbar sharing the left:188px column (~490px lower edge @720px viewport);
+ * 160 leaves ~8px clearance (ADR-048 §2.3). What ADR-095 changes is what happens
+ * when the content wants more: it scrolls inside the cap instead of dropping
+ * labels.
  */
 export const MIN_PANEL_H = 152
 export const MAX_PANEL_H = 160
@@ -91,20 +109,43 @@ export const DIRECTED_TYPES = new Set([
   'mounts', 'fastened', 'aligned', 'contains', 'above', 'references', 'represents',
 ])
 
-const TOP = 22          // graph-area padding above row 0
-const BOT = 22          // graph-area padding below the last row
-const MARGIN = 12       // horizontal padding
-const MIN_GAP = 16      // minimum x distance between siblings in a row
-const SIBLING_SPREAD = 20
-const DENSE_SLOT = 22   // row slot narrower than this → labelled-on-focus dots
+/** One outline row per node — the unit the whole layout is denominated in. */
+export const ROW_H = 16
+/** Horizontal step per TF depth level. */
+export const INDENT = 11
+/**
+ * Indentation stops here and a depth badge takes over. x is a finite resource
+ * too: pouring an unbounded quantity into it is exactly the mistake this ADR
+ * removes from the sibling axis (ADR-095 Decision 2).
+ */
+export const MAX_INDENT_DEPTH = 4
+/** Node dot radius — geometry, so it belongs with the rest of the geometry. */
+export const NODE_R = 3.5
+/** Width of one cotree lane in the right gutter. */
+export const LANE_W = 7
+/**
+ * Lane budget. Past this, a cotree edge is not drawn — it is counted into the
+ * row's `+N` badge. Dropping it silently would be 原則 #11.
+ */
+export const MAX_LANES = 3
+
+const TOP = 8           // padding above row 0
+const BOT = 8           // padding below the last row
+const MARGIN = 12       // left padding
+const RIGHT_PAD = 4     // right padding, outside the gutter
+const LANE_PAD = 3      // gap between the label column and the first lane
+const LABEL_GAP = 4     // dot → label gap
+const DEPTH_BADGE_W = 13 // reserved for the "5·" prefix when indentation saturates
+const OVERFLOW_BADGE_W = 16 // reserved for the "+N" dropped-link badge
 
 /**
  * @typedef {{name: string, type: string, parentId?: string|null}} EntityInfo
  * @typedef {{id: string, sourceId: string, targetId: string,
  *            semanticType?: string|null, jointType?: string|null}} LinkInfo
  * @typedef {{label: string, type: string, parentId: string|null, layer: number,
- *            x: number, y: number, entityId: string, frameId: string|null,
- *            fused: boolean}} LayoutNode
+ *            row: number, x: number, y: number, labelX: number, labelW: number,
+ *            indentDepth: number, depthSaturated: boolean, overflow: number,
+ *            entityId: string, frameId: string|null, fused: boolean}} LayoutNode
  */
 
 /**
@@ -137,21 +178,27 @@ function buildFusion(entityInfos) {
 }
 
 /**
- * Deterministic layered layout for the LINK NETWORK panel.
+ * Deterministic indented-outline layout for the LINK NETWORK panel.
  *
  * Identical scene state yields identical output — no force simulation, no random
  * seed, no carry-over from the previous call, and no dependence on the iteration
  * order of the inputs (every comparator ends in a total order on ids). That
  * property is ADR-048's core promise; being a pure function is what finally lets
- * a test hold it.
+ * a test hold it. ADR-095 adds a second thing that must be order-independent:
+ * the **lane assignment** of cotree edges, which is derived from the canonical
+ * edge order rather than from the caller's link list.
  *
  * @param {Map<string, EntityInfo>|null|undefined} entityInfos every scene entity
  * @param {Iterable<LinkInfo>|null|undefined} links the SpatialLinks
  * @returns {{nodes: Map<string, LayoutNode>,
  *            edges: Map<string, {source:string, target:string, semanticType:string,
- *                                directed:boolean, kinematic:boolean}>,
+ *                                directed:boolean, kinematic:boolean,
+ *                                fromRow:number, toRow:number,
+ *                                lane:number|null, dropped:boolean}>,
  *            nodeIdByEntity: Map<string, string>,
- *            rows: number, svgH: number, graphH: number, denseMode: boolean}}
+ *            rows: number, depth: number, lanes: number, gutterW: number,
+ *            dropped: number, contentH: number, svgH: number, graphH: number,
+ *            scrollable: boolean}}
  */
 export function computeLayout(entityInfos, links) {
   const infos = entityInfos instanceof Map ? entityInfos : new Map()
@@ -159,7 +206,9 @@ export function computeLayout(entityInfos, links) {
 
   const empty = {
     nodes: new Map(), edges: new Map(), nodeIdByEntity: new Map(),
-    rows: 0, svgH: MIN_PANEL_H, graphH: MIN_PANEL_H - LEGEND_H, denseMode: false,
+    rows: 0, depth: 0, lanes: 0, gutterW: 0, dropped: 0,
+    contentH: TOP + BOT, svgH: MIN_PANEL_H, graphH: MIN_PANEL_H - LEGEND_H,
+    scrollable: false,
   }
 
   const { fuseInto, frameOf } = buildFusion(infos)
@@ -204,9 +253,15 @@ export function computeLayout(entityInfos, links) {
       label:    info.name,
       type:     info.type,
       parentId: parentOf(id),
-      layer:    0,
+      layer:    0,          // TF depth — the meaning the Y axis used to carry
+      row:      0,          // outline row — what Y carries now
       x:        0,
       y:        0,
+      labelX:   0,
+      labelW:   0,
+      indentDepth:    0,
+      depthSaturated: false,
+      overflow:       0,
       entityId: id,        // click target — the Solid, never the locked body frame
       frameId,             // TF identity of a fused node
       fused:    frameId != null,
@@ -234,13 +289,14 @@ export function computeLayout(entityInfos, links) {
       directed:     DIRECTED_TYPES.has(link.semanticType) || link.jointType != null,
       // Kinematic links (a real URDF joint) read heavier than topological ones.
       kinematic:    link.jointType != null,
+      fromRow: 0, toRow: 0, lane: null, dropped: false,
     })
   }
   if (edges.size === 0) return empty
-  // Canonical edge order. Overlapping arcs are drawn in iteration order, so the
-  // z-stacking of two crossing links is part of "same scene → same pixels" —
-  // and the caller's link list is ordered by scene mutation history, which
-  // changes when an unrelated link is deleted and re-added.
+  // Canonical edge order. It fixes two things at once: the z-stacking of two
+  // crossing arcs, and — since ADR-095 — the LANE each arc is assigned. The
+  // caller's link list is ordered by scene mutation history, which changes when
+  // an unrelated link is deleted and re-added.
   const orderedEdges = new Map([...edges].sort(([ia, a], [ib, b]) =>
     (a.source < b.source ? -1 : a.source > b.source ? 1 : 0) ||
     (a.target < b.target ? -1 : a.target > b.target ? 1 : 0) ||
@@ -260,105 +316,134 @@ export function computeLayout(entityInfos, links) {
     nodes.get(id).layer = layer
     maxLayer = Math.max(maxLayer, layer)
   }
-  const L = maxLayer + 1
 
-  // ── Vertical: panel height + row positions ─────────────────────────────────
-  const svgH   = L >= 3 ? MAX_PANEL_H : MIN_PANEL_H
-  const graphH = svgH - LEGEND_H
-  const rowY = (layer) =>
-    L === 1 ? graphH / 2 : TOP + layer * (graphH - TOP - BOT) / (L - 1)
-
-  // ── Roots: stable (name, id) order + one barycenter refinement pass ────────
+  // ── Row order = DFS preorder over the TREE edges ───────────────────────────
+  // The child order is the existing (name, id) total order. ADR-048's barycenter
+  // refinement pass is dropped here on purpose: it minimised edge *crossings*
+  // between columns, and an indented outline has no columns to cross between
+  // (ADR-095 Decision 1). Keeping it would be an unfalsifiable ritual — a sort
+  // key nothing reads.
   const byNameId = (a, b) => {
     const na = nodes.get(a).label, nb = nodes.get(b).label
     return na < nb ? -1 : na > nb ? 1 : a < b ? -1 : a > b ? 1 : 0
   }
-  const rootOf = (id) => {
-    let cur = id
-    for (let hop = 0; hop < MAX_ANCESTOR_HOPS; hop++) {
-      const pid = nodes.get(cur)?.parentId
-      if (pid == null || !nodes.has(pid)) return cur
-      cur = pid
-    }
-    return cur
+  const childrenOf = new Map(ids.map(id => [id, []]))
+  const roots = []
+  for (const id of ids) {
+    const pid = nodes.get(id).parentId
+    if (pid != null && nodes.has(pid)) childrenOf.get(pid).push(id)
+    else roots.push(id)
   }
-  let roots = ids.filter(id => nodes.get(id).layer === 0).sort(byNameId)
-  const initialIdx = new Map(roots.map((id, i) => [id, i]))
-  const bary = new Map()
-  for (const id of roots) {
-    const partners = []
-    for (const e of edges.values()) {
-      const ru = rootOf(e.source), rv = rootOf(e.target)
-      if (ru === id && rv !== id) partners.push(initialIdx.get(rv))
-      if (rv === id && ru !== id) partners.push(initialIdx.get(ru))
-    }
-    bary.set(id, partners.length
-      ? partners.reduce((s, v) => s + v, 0) / partners.length
-      : initialIdx.get(id))
-  }
-  roots = roots.sort((a, b) => (bary.get(a) - bary.get(b)) || byNameId(a, b))
+  roots.sort(byNameId)
+  for (const list of childrenOf.values()) list.sort(byNameId)
 
-  const W = PANEL_W - 2 * MARGIN
-  const rootSlot = W / roots.length
-  roots.forEach((id, i) => {
+  const order = []
+  const walk = (id, hop) => {
+    if (hop > MAX_ANCESTOR_HOPS) return
+    order.push(id)
+    for (const child of childrenOf.get(id)) walk(child, hop + 1)
+  }
+  for (const root of roots) walk(root, 0)
+  // A cycle in `parentId` would leave nodes unvisited. They still exist and can
+  // still be a link endpoint, so they are appended rather than dropped (原則 #11).
+  if (order.length < ids.length) {
+    const seen = new Set(order)
+    for (const id of [...ids].sort(byNameId)) if (!seen.has(id)) order.push(id)
+  }
+
+  order.forEach((id, row) => {
     const nd = nodes.get(id)
-    nd.x = MARGIN + (i + 0.5) * rootSlot
-    nd.y = rowY(0)
+    nd.row = row
+    nd.y   = TOP + row * ROW_H + ROW_H / 2
+    nd.indentDepth    = Math.min(nd.layer, MAX_INDENT_DEPTH)
+    nd.depthSaturated = nd.layer > MAX_INDENT_DEPTH
+    nd.x = MARGIN + nd.indentDepth * INDENT
   })
 
-  // ── Child rows: group under parent x, then min-gap sweeps ──────────────────
-  let maxRowCount = roots.length
-  for (let layer = 1; layer < L; layer++) {
-    const row = ids.filter(id => nodes.get(id).layer === layer)
-    maxRowCount = Math.max(maxRowCount, row.length)
-    row.sort((a, b) => {
-      const pa = nodes.get(nodes.get(a).parentId)
-      const pb = nodes.get(nodes.get(b).parentId)
-      return (pa.x - pb.x) || byNameId(a, b)
-    })
-    const groupIndex = new Map()
-    for (const id of row) {
-      const pid = nodes.get(id).parentId
-      if (!groupIndex.has(pid)) groupIndex.set(pid, [])
-      groupIndex.get(pid).push(id)
+  // ── Cotree lanes: deterministic interval colouring in the right gutter ─────
+  // Each cotree edge spans the row interval between its endpoints. Two edges may
+  // share a lane only if their intervals are disjoint — touching counts as a
+  // collision, because two arcs that meet at a row are exactly the ambiguity the
+  // lanes exist to remove. Edges are coloured in the canonical order above, so
+  // the assignment is a function of the scene and not of the link list's order.
+  /** @type {{a: number, b: number}[][]} */
+  const laneIntervals = []
+  let dropped = 0
+  for (const [, e] of orderedEdges) {
+    const ru = nodes.get(e.source).row, rv = nodes.get(e.target).row
+    e.fromRow = ru
+    e.toRow   = rv
+    const a = Math.min(ru, rv), b = Math.max(ru, rv)
+    let lane = -1
+    for (let l = 0; l < MAX_LANES; l++) {
+      if (laneIntervals[l] == null) laneIntervals[l] = []
+      if (laneIntervals[l].every(iv => b < iv.a || a > iv.b)) { lane = l; break }
     }
-    for (const [pid, members] of groupIndex) {
-      const px = nodes.get(pid).x
-      members.forEach((id, j) => {
-        nodes.get(id).x = px + (j - (members.length - 1) / 2) * SIBLING_SPREAD
-      })
+    if (lane < 0) {
+      // No lane left. The edge is not drawn — and not silently forgotten: both
+      // endpoint rows count it into a "+N" badge (原則 #11).
+      e.dropped = true
+      dropped++
+      nodes.get(e.source).overflow++
+      nodes.get(e.target).overflow++
+      continue
     }
-    // Left-to-right min-gap sweep, then right-to-left to fix edge pileup.
-    for (let i = 0; i < row.length; i++) {
-      const nd = nodes.get(row[i])
-      const prev = i > 0 ? nodes.get(row[i - 1]).x + MIN_GAP : MARGIN
-      nd.x = Math.max(nd.x, prev)
-      nd.y = rowY(layer)
-    }
-    for (let i = row.length - 1; i >= 0; i--) {
-      const nd = nodes.get(row[i])
-      const next = i < row.length - 1
-        ? nodes.get(row[i + 1]).x - MIN_GAP
-        : PANEL_W - MARGIN
-      nd.x = Math.min(nd.x, next)
-    }
-    for (const id of row) {
-      const nd = nodes.get(id)
-      nd.x = Math.max(MARGIN, Math.min(PANEL_W - MARGIN, nd.x))
-    }
+    laneIntervals[lane].push({ a, b })
+    e.lane = lane
+  }
+  const lanes = laneIntervals.filter(l => l != null && l.length > 0).length
+  const gutterW = lanes > 0 ? LANE_PAD + lanes * LANE_W : 0
+
+  // ── Label column: what is left after the indent and the gutter ─────────────
+  // The width no longer divides by the sibling count, which is the whole of G1.
+  for (const id of order) {
+    const nd = nodes.get(id)
+    nd.labelX = nd.x + NODE_R + LABEL_GAP + (nd.depthSaturated ? DEPTH_BADGE_W : 0)
+    nd.labelW = Math.max(0,
+      PANEL_W - RIGHT_PAD - gutterW - (nd.overflow > 0 ? OVERFLOW_BADGE_W : 0) - nd.labelX)
   }
 
-  // Dense scenes degrade to a labelled-on-focus dot strip (ADR-048 §MVP).
-  const denseMode = W / maxRowCount < DENSE_SLOT
+  // ── Vertical: content grows with rows, the panel does not ──────────────────
+  const rows     = order.length
+  const contentH = TOP + rows * ROW_H + BOT
+  const graphH   = Math.min(Math.max(contentH, MIN_PANEL_H - LEGEND_H), MAX_PANEL_H - LEGEND_H)
+  const svgH     = graphH + LEGEND_H
 
-  // Render order (top-to-bottom, left-to-right) so the view's greedy label pass
-  // resolves left-neighbour-first — part of "same scene → same pixels".
-  const ordered = ids.sort((a, b) => {
-    const u = nodes.get(a), v = nodes.get(b)
-    return (u.layer - v.layer) || (u.x - v.x) || byNameId(a, b)
-  })
+  // Render order = row order, so the view draws top to bottom.
   const rendered = new Map()
-  for (const id of ordered) rendered.set(id, nodes.get(id))
+  for (const id of order) rendered.set(id, nodes.get(id))
 
-  return { nodes: rendered, edges: orderedEdges, nodeIdByEntity, rows: L, svgH, graphH, denseMode }
+  return {
+    nodes: rendered,
+    edges: orderedEdges,
+    nodeIdByEntity,
+    rows,
+    depth: maxLayer + 1,
+    lanes,
+    gutterW,
+    dropped,
+    contentH,
+    svgH,
+    graphH,
+    scrollable: contentH > graphH,
+  }
+}
+
+/**
+ * x of a cotree lane's centre line. Exported so the view never re-derives the
+ * gutter arithmetic — the layout owns every coordinate in this panel.
+ * @param {number} lane
+ * @param {number} lanes total lanes in use (from `computeLayout`)
+ */
+export function laneX(lane, lanes) {
+  return PANEL_W - RIGHT_PAD - lanes * LANE_W + lane * LANE_W + LANE_W / 2
+}
+
+/**
+ * x where the right gutter starts = the right edge of the label column, and the
+ * point every cotree arc and every "+N" badge is anchored to.
+ * @param {number} gutterW from `computeLayout`
+ */
+export function gutterX(gutterW) {
+  return PANEL_W - RIGHT_PAD - gutterW
 }

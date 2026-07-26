@@ -1,12 +1,20 @@
 # ADR-048 — Link Network 決定的階層レイアウト
 
-**Status**: Accepted — ただし **§2.1「ノード集合」と §2.2.1 は ADR-094 で改訂**
-(Solid はノードではなく Origin CF との融合ノードになり、木辺が骨格へ。§2.2.1 が決めた
-凡例は未実装のまま ADR-094 が回収する)。§2.1 の決定性、§2.2 のアニメーション方針、
-§2.3 パネル寸法、§2.4 データ契約は無改変で有効。
+**Status**: Accepted — ただし **改訂が 2 段入っている**:
+- **ADR-094**: §2.1「ノード集合」と §2.2.1 (Solid はノードではなく Origin CF との
+  融合ノードになり、木辺が骨格へ。§2.2.1 が決めた凡例をここで実装)。
+- **ADR-095**: §2.1 の**幾何割当**「レイヤー = 深さ (y) / X 順序 = 兄弟」と
+  §2.3 の**過密縮退**は失効。行 = ノード (DFS 前順)、x = 深さ (インデント)、
+  余木辺は右ガターのレーンへ。「行スロット幅 < 22px でラベルを捨てる」規則は
+  **削除**され (実測で「名前が全部消える」だった)、代わりに超過リンクが `+N` へ
+  縮退する。§2.3 の**寸法** (幅 220 / 高さ 152・160 とその根拠) は無改変で有効 —
+  上限を超えた分はパネル内スクロールが吸収する。
+
+§2.1 の**決定性**、§2.2 のアニメーション方針、§2.3 の寸法、§2.4 データ契約は
+一貫して無改変で有効 (ADR-095 は決定性の対象にレーン割当を 1 つ足しただけ)。
 **Date**: 2026-06-12
-**Related**: ADR-030 (SpatialLink architecture), ADR-037 (Auto Origin Frame), ADR-038 (Two-Layer Taxonomy), ADR-094 (TF ツリーへの回帰)
-**Implementation**: `src/view/LinkNetworkView.js`, `src/controller/AppController.js` (`_updateLinkNetwork`)
+**Related**: ADR-030 (SpatialLink architecture), ADR-037 (Auto Origin Frame), ADR-038 (Two-Layer Taxonomy), ADR-094 (TF ツリーへの回帰), ADR-095 (インデントアウトライン)
+**Implementation**: `src/view/LinkNetworkLayout.js` (純粋レイアウト), `src/view/LinkNetworkView.js` (描画のみ), `src/controller/AppController.js` (`_updateLinkNetwork`)
 
 ---
 
@@ -92,8 +100,11 @@ marching-ants を親子線に使わないのは意図的 — アニメーショ�
   `bottom:34px` から上に伸び、同じ `left:188px` 列の Map 縦ツールバー
   (`top:50%`・実測高 259px・下端 ≈490px @720px ビューポート)と重なってはならない。
   192px 案は実測で 23.5px 重なり、160px で 8.5px クリアランス(Playwright 実測)。
-- **過密縮退**: 行スロット幅 < 22px でラベルは選択ノードのみ表示(ドット列に退化、
-  クリック選択は維持)。スクロール・ズームは MVP 外。
+- ~~**過密縮退**: 行スロット幅 < 22px でラベルは選択ノードのみ表示(ドット列に退化、
+  クリック選択は維持)。スクロール・ズームは MVP 外。~~ → **ADR-095 で削除**。
+  実測すると縮退は「ラベルが小さくなる」ではなく Solid 12 個で**実体名が 0 個**
+  だった。縮退の対象はラベルではなく余木辺の弧へ移り、パネル内**縦スクロールは
+  MVP 外ではなくなった**(寸法上限は据え置きのまま、その中でスクロールする)。
 
 ### 2.4 データ契約
 

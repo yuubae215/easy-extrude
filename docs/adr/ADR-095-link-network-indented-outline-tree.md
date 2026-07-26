@@ -1,6 +1,6 @@
 # 095. LINK NETWORK を「1 ノード 1 行」のインデントツリーへ — 希少な軸に可変量を割り当てるのをやめる
 
-- Status: Proposed
+- Status: Accepted (実装済み — `src/view/LinkNetworkLayout.js` + `LinkNetworkView.js`。証拠は §Consequences 検証)
 - Date: 2026-07-26
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: なし (ADR-048 §2.1 の *幾何割当* と ADR-094 の行/列配置を改訂。ノード集合・辺クラス・決定性・データ契約は ADR-094 から無改変で継承)
@@ -116,18 +116,57 @@ ADR-094 で 3 行 → 2 行に減らして svgH が 160→152 に戻ったのは
     まさにその横並びだったので意図した交換だが、逆向きの不満が出うる仮説として
     GSN に立てる。
 - **検証 (証拠):** 論証木は `docs/gsn/adr-095-link-network-indented-outline.gsn`
-  (goal ごとの支えの正本はそちら。本節は入口のみ — §1.1)。
-  起票時点の証拠は**すべて未来形**であり、そう宣言している。実装時に閉じる予定の検査:
-  - `src/view/LinkNetworkLayout.test.js` — 既存 27 本のうち決定性・純粋性・基数
-    (0/1/N) の各本は幾何が変わっても**そのまま通る**こと (契約不変の証拠)。
-  - 新規: 「どの 2 ノードも同じ行を共有しない」「行番号は木の DFS 前順と一致する」
-    「x は深さの単調非減少関数」「レーン割当が入力順に依存しない」。
-  - モバイル 390px の実測 (`docs/dogfooding/`) — Solid 12 個のシーンで、before は
-    `denseMode`、after はラベルが全行読めることの before/after。
-- **波及 (blast radius):** `src/view/LinkNetworkLayout.js` (幾何のみ)、
-  `src/view/LinkNetworkLayout.test.js`、`src/view/LinkNetworkView.js` (描画・スクロール)、
-  `docs/STATE_LEDGER.md` (`denseMode` 行の削除、スクロール位置を状態として持つなら追加)、
-  ADR-048 §2.1/§2.3 の幾何記述。`AppController` は無改変。契約・DSL・ワイヤは無改変。
+  (goal ごとの支えの正本はそちら。本節は入口のみ — §1.1)。起票時点の証拠は
+  **すべて未来形**だった。実装で閉じた分:
+  - `src/view/LinkNetworkLayout.test.js` — **39 本 pass**。うち決定性・純粋性・融合・
+    基数 0 の各本は幾何が変わっても**1 行も書き換えずに通った** (契約不変の証拠)。
+    書き換わったのは幾何期待値のみ (`rows` の意味、`nd.y <= graphH` → `contentH`)。
+  - 新規: ラベル幅が兄弟数に依存しない / x は深さのみの関数 / 子は親より左に来ない /
+    インデント飽和時にバッジ値が実深さと一致 / 同一レーンの区間は重ならない /
+    レーン割当が入力順に依存しない / 上限超過バッジ数 = 落ちた辺数 × 2 (両端で数える) /
+    行ピッチがシーン規模に依らず一定 / **`denseMode` が返り値から消えている**。
+  - `pnpm test` 821/821 · `pnpm typecheck` · `pnpm build` · `pnpm test:gsn` すべて緑。
+  - モバイル 390px 実測 (`docs/dogfooding/2026-07-26-link-network-indented-outline.md`) —
+    **before: Solid 12 個でラベル 0 個** (凡例の 2 行以外は文字が 1 つも無く、点 24 個
+    だけ)。after: 24 ラベルすべて描画、スクロール高 400px / 表示 146px。
+    `denseMode` は理論上の縮退ではなく、実測で「名前が全部消える」だった。
+
+- **波及 (blast radius) — 実際に触った到達可能ノード:**
+  `src/view/LinkNetworkLayout.js` (幾何のみ — ノード集合・融合・辺解決は無改変)、
+  `src/view/LinkNetworkLayout.test.js` (39 本)、`src/view/LinkNetworkView.js`
+  (描画・スクロール DOM・凡例の固定)、`docs/STATE_LEDGER.md` (`denseMode` の消滅 +
+  レーン / インデント飽和 / スクロール位置の 3 行を追加)、`docs/CODE_CONTRACTS.md`
+  (Link Network の 2 規則)、ADR-048 (§2.1 幾何割当と §2.3 過密縮退の失効を明記)、
+  `docs/NAVIGATION.md`、`docs/adr/README.md`、
+  `docs/gsn/adr-095-link-network-indented-outline.gsn` (assumption → solution) と
+  `docs/gsn/profit-growth.gsn` (事業木へ接続)。
+  **触らなかったと宣言するもの:** `AppController` (データ契約 `{name,type,parentId}` と
+  `update(entityInfos, links)` シグネチャ)、ノード集合・融合・辺の 2 クラス・
+  `nodeIdByEntity` の非対称往復・`isOriginFrame` への委譲、`PANEL_W`/`MIN_PANEL_H`/
+  `MAX_PANEL_H` (左端占有契約 ADR-048 §2.3)、grasp 契約・DSL・ワイヤ (presentation 層で閉じる)。
+
+### 実装で起票時と変わった点 (黙って俯瞰を書き換えない — 原則 #19)
+
+1. **`rows` の意味が変わったので `depth` を足した。** 旧 `rows` は層数 `L`。新しい
+   `rows` は行数 (= ノード数) で、TF 深さは `depth` として別フィールドになった。
+   1 つの名前に 2 つの意味を持たせるより、返り値を 1 つ増やすほうが安い (§1.1)。
+   パネル高は `depth` ではなく `rows` から決まる — 深さは x が払うようになったため。
+2. **barycenter パスは捨てた** (§Decision 1 の二択のうち安い側)。目的関数だった
+   「列間の交差削減」がインデント木には存在しない。読み手のいないソートキーは
+   反証不能な儀式になる。
+3. **「ラベル幅は兄弟数に依存しない」の検査は途中で一度落ちた** — 最初の fixture が
+   *兄弟数*と*リンク本数*を同時に動かしており、ガター幅 (レーン数) の差を兄弟数の
+   差として読んでいた。ガター幅がリンク混雑に依存するのは本 ADR が**受け入れた**
+   コスト (上限で頭打ち) であって主張の反証ではないので、レーン数を固定したまま
+   兄弟数だけを動かす fixture へ作り直した。主張のほうを弱めていない。
+4. **最下行が意図的に見切れる。** 表示域 146px は行ピッチ 16px の整数倍ではないので、
+   スクロール可能なとき最終行が途中で切れる。行数へスナップすると `MIN_PANEL_H`
+   の床 (ADR-048 §2.3) を割るため採らない。切れた行は「まだ下がある」の
+   アフォーダンスとして機能する (原則 #16) ので、欠陥ではなく既知の見えとして記録する。
+5. **スクロール位置の権威は DOM 要素 1 つ** (`_scrollEl.scrollTop`)。JS 側に鏡像を
+   持たない — 再描画は SVG の子要素を作り直すがコンテナは触らないので、hover して
+   もユーザーのスクロールは残る。台帳の行はこの「鏡像を作らない」ほうを記録する。
+
 
 ## Lens notes
 
