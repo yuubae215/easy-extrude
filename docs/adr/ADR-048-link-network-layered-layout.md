@@ -1,8 +1,11 @@
 # ADR-048 — Link Network 決定的階層レイアウト
 
-**Status**: Accepted
+**Status**: Accepted — ただし **§2.1「ノード集合」と §2.2.1 は ADR-094 で改訂**
+(Solid はノードではなく Origin CF との融合ノードになり、木辺が骨格へ。§2.2.1 が決めた
+凡例は未実装のまま ADR-094 が回収する)。§2.1 の決定性、§2.2 のアニメーション方針、
+§2.3 パネル寸法、§2.4 データ契約は無改変で有効。
 **Date**: 2026-06-12
-**Related**: ADR-030 (SpatialLink architecture), ADR-037 (Auto Origin Frame), ADR-038 (Two-Layer Taxonomy)
+**Related**: ADR-030 (SpatialLink architecture), ADR-037 (Auto Origin Frame), ADR-038 (Two-Layer Taxonomy), ADR-094 (TF ツリーへの回帰)
 **Implementation**: `src/view/LinkNetworkView.js`, `src/controller/AppController.js` (`_updateLinkNetwork`)
 
 ---
