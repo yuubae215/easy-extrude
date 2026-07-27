@@ -729,3 +729,89 @@ test('free と宣言された CF は同じジェスチャで載らない (ADR-09
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+// ── ADR-101: 同じ要求は同じ pose を生む (補助が自分の出力を読まない) ──────────
+//
+// 当事者の報告「Grab でキューブのところまで運ぶと、スタックしたり戻ったりする /
+// 分身しているように見える」への 1:1 の回帰。ADR-098 でロボットは載るように
+// なったが、載せる補助が**自分が今書いた pose を測り直して**次の判断をしていた。
+// frame 由来の実体の world 原点は rAF ごとにしか再計算されないので、補助は前
+// フレームの結果を読む → 載った → 「もう載っている」→ 補助を降ろす → 落ちる →
+// 載せる … と 2 周期で振動する。
+//
+// 検査の形は「同じ要求を繰り返して、同じ pose になるか」。ジェスチャの途中で
+// 数字を打ち足す (`2.500` → `2.5000`) と parseFloat は同じ値なので、**同一の要求**
+// が何度も入口を通る。前フレームの結果が入力に混ざっていれば値が交互に変わり、
+// 要求だけの関数なら変わらない。画面座標を経由しないので、カメラ姿勢にも依存
+// しない (ADR-098 の数値 Grab と同じ理由)。
+
+/** 1 セグメントの Grab でキューブの上へ到達し、同じ要求を n 回繰り返した pose 列。 */
+async function samplesUnderRepeatedRequest(page, name, { select = true, repeats = 5 } = {}) {
+  const cube  = byName(await placementRows(page), 'Cube')
+  const start = byName(await placementRows(page), name)
+
+  // Y を先に合わせて確定する (別セグメント)。残る 1 軸の移動でキューブへ「到達」
+  // させたいので、到達がセグメントの途中で起きることがこの検査の前提になる。
+  // Outliner の行を持つのは frame だけなので、既に選択済みの実体は選び直さない。
+  if (select) await selectRow(page, name)
+  await numericGrab(page, 'y', cube.footprint.y - start.footprint.y)
+
+  const aligned = byName(await placementRows(page), name)
+  await page.keyboard.press('g')
+  await page.keyboard.press('x')
+  for (const ch of (cube.footprint.x - aligned.footprint.x).toFixed(3)) {
+    await page.keyboard.press(ch === '-' ? 'Minus' : ch === '.' ? 'Period' : ch)
+  }
+
+  const samples = []
+  for (let i = 0; i < repeats; i++) {
+    // 直前の要求が描画まで反映されてから読む (キャッシュ更新は rAF ごと)。
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+    samples.push(byName(await placementRows(page), name))
+    await page.keyboard.press('0')   // 末尾 0 = parseFloat は同値 = 同一の要求
+  }
+  await page.keyboard.press('Escape')
+  return samples
+}
+
+test('同じ要求を繰り返してもロボットの pose は変わらない (ADR-101 — 当事者の報告に 1:1)', async ({ page }) => {
+  const errors = await boot(page)
+
+  const samples = await samplesUnderRepeatedRequest(page, 'robot_base')
+  const zs = samples.map(s => Number(s.bottomZ.toFixed(6)))
+
+  // 振動の形をそのまま落とす: 欠陥時は [0, 1, 0, 1, 0] のように交互になる。
+  expect(new Set(zs).size,
+    `同じ要求が違う pose を生んでいる (bottomZ の列 = ${JSON.stringify(zs)}) — ` +
+    '補助が前フレームの結果を読んでいる').toBe(1)
+
+  // 「動かないこと」だけでは、そもそも載っていない場合と区別がつかない。
+  expect(samples[0].support, 'ロボットが載っていない (検査が空回りしている)').not.toBeNull()
+  expect(samples[0].support.kind, 'ロボットが床のまま').toBe('entity')
+  expect(zs[0], 'キューブの天面に届いていない').toBeGreaterThan(0.001)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('同じ不変条件が corners で測る実体にも成り立つ (ADR-101 — 種に依らない)', async ({ page }) => {
+  // 欠陥が長く見えなかったのは、Solid が corners を同期的に書くので live 読みでも
+  // たまたま新鮮だったから。片方だけを固定すると「キューブでは前から通っていた」
+  // ことが記録されず、次に鮮度の軸で壊れたときに同じ非対称が再発する。
+  const errors = await boot(page)
+
+  await page.getByRole('button', { name: /\+ Add/ }).click()
+  await expect.poll(() => deleteButtons(page).count()).toBeGreaterThan(1)
+  // 追加ボタンにフォーカスが残ると Grab のキー入力がボタンへ行く (新しい箱は
+  // 追加時点で選択済みなので、選び直す必要はない)。
+  await page.evaluate(() => document.activeElement?.blur())
+
+  const added = (await placementRows(page)).filter(r => r.placement === 'grounded' && r.footprint).at(-1)
+  const samples = await samplesUnderRepeatedRequest(page, added.name, { select: false })
+  const zs = samples.map(s => Number(s.bottomZ.toFixed(6)))
+
+  expect(new Set(zs).size,
+    `同じ要求が違う pose を生んでいる (bottomZ の列 = ${JSON.stringify(zs)})`).toBe(1)
+  expect(samples[0].support?.kind, 'キューブが載っていない (検査が空回りしている)').toBe('entity')
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

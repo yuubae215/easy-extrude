@@ -20,7 +20,7 @@
 ## Concurrency
 7. **Locking Strategy Before Code** — optimistic (応答性優先・非ブロック) か pessimistic (整合性優先・ブロック) かを実装前に決める。場当たり混在は UI 凍結か無言のデータ破損を生む。
 8. **Await at Its Layer** — 非同期呼び出しはその層で完結させる。未解決の結果 (Promise 等) をデータとして下流に通さない。
-24. **Derive from Invariant Sources** — 周期計算の導出値を同じ計算の入力に戻さない。導出→入力の閉路は誤差を毎周期蓄積する (エラーフィードバックループ)。
+24. **Derive from Invariant Sources** — 周期計算の導出値を同じ計算の入力に戻さない。連続量なら閉路は誤差を毎周期蓄積し (エラーフィードバックループ)、離散判断なら分岐の間で振動する。**書き込みではなく周期で更新されるキャッシュはこの閉路の辺**であり、しかも読みの鮮度が実体種で変わるとコードを読んでも見えない。
 
 ## Memory / Lifecycle
 9. **Symmetric Alloc/Dealloc** — 資源の確保と解放は同じモジュールに対で書き、同じコミットで入れる。
@@ -61,6 +61,7 @@
 - #1: `setMode()` / 集約の公開 pose API (`restorePose`/`move`/`rotate`)
 - #2: `instanceof Solid` 等 (JS 実行時型)
 - #14: OrbitControls
+- #24: pose を計算する側の入力 = セグメント開始の写し + 要求 delta。禁じられた形 (live プローブ / `_worldPoseCache`) の個数を問う所 = `src/PosePolicyOwnership.test.js` の `POSE_COMPUTING_METHODS` × `LIVE_PROBES` (ADR-101)
 - #18: `objectRemoved`/`objectAdded`
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`

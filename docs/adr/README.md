@@ -112,6 +112,7 @@ This directory records the project's design decisions.
 | [ADR-098](ADR-098-support-domain-is-policy-not-kind.md) | **「何の上に載れるか」を種から方針へ — stack assist の型ゲートを外し、支持プローブを方針表の隣で宣言する** | Accepted (実装済み — `stackAssistApplies()` + `SUPPORT_PROBE_BY_KIND` の宣言、種の門 2 枚の撤去、プローブ 4 メソッドの `instanceof` 撤去、種分岐の個数検査、差分ペアの e2e 3 本) | 2026-07-26 | ADR-097, ADR-071, ADR-085, ADR-096, ADR-083 |
 | [ADR-099](ADR-099-selection-round-trip-one-entry.md) | **選択の往復を 1 つの入口へ — hover が click を殺す再構築の閉路を断ち、選択を「見えること」まで含む 1 つの決定にする** | Proposed | 2026-07-26 | ADR-094, ADR-095, ADR-096, ADR-097, ADR-090, ADR-093 |
 | [ADR-100](ADR-100-color-says-state-not-kind.md) | **色は「実体の種」ではなく「状態」を語る — 既定サーフェスを中立にし、アクセントを 1 つに畳み、宣言外の色を ratchet で止める** | Proposed | 2026-07-26 | ADR-065, ADR-064, ADR-062, ADR-093, ADR-067 |
+| [ADR-101](ADR-101-pose-writers-derive-from-request-not-rendered-state.md) | **pose を計算する入力は「要求 + セグメント開始の写し」だけ — 補助が自分の出力を測り直すのをやめる (描画済みの状態は query 専用)** | Accepted (実装済み — `_applyStackAssist` の live 読み撤去、入口が適用済み delta を渡す形、座り Z を絶対目標へ、live プローブの query 専用宣言、writer の鮮度検査、同一要求の回帰 2 本) | 2026-07-27 | ADR-098, ADR-097, ADR-071, ADR-085, ADR-090 |
 
 ## How to Add a New ADR
 

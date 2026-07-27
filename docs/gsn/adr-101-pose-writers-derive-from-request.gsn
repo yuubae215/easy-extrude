@@ -1,0 +1,81 @@
+GOALS adr101_pose_writers_derive_from_request
+
+goal SameRequestProducesSamePose
+uuid 303c76ad-ddcb-4f4f-bc38-15eac97a9278
+summary "ドラッグ 1 セグメントの中で pose は要求 (ポインタ位置 / 打った数値) の関数であり、直前のフレームの結果の関数ではない。同じ要求を何度通しても同じ pose になり、実体種によって『測るときの新しさ』が変わらない"
+state UnderReview
+labels adr-101, placement, stacking, freshness
+artifacts
+- "docs/adr/ADR-101-pose-writers-derive-from-request-not-rendered-state.md"
+- "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"
+
+    context Adr101Scope
+    uuid ad175028-6d32-4294-bfc6-7514e3b21dd3
+    summary "ADR-101 (Accepted・実装済み, 2026-07-27): _applyStackAssist の入力を『セグメント開始のスナップショット + 方針が許した delta』へ差し替え、live プローブ (_bottomZOf / _footprintSamplesOf) の読みを 0 個にする。座らせる Z は補正量ではなく絶対の目標 (seatDeltaZ = 支持面Z − セグメント開始の底Z) で表す。サービス層に閉じ、ドメイン (placement.js)・契約・BFF・core は不変"
+    artifacts
+    - "src/service/SceneService.js"
+
+    context TheDefectWasFreshnessNotKind
+    uuid c7451e2d-0321-448f-953b-a5fec3531305
+    summary "運用実態 (この木の前提): ADR-097/098 は『どの実体に規則が当たるか』の軸 (種 → 方針) を閉じたが、『その規則がどの時点の幾何を見るか』の軸は宣言されないまま _worldPoseCache の更新周期に委ねられていた。キャッシュは rAF ごとにしか再計算されず、pose の書き込みで無効化されない。よって corners で測る実体 (Solid) は live 読みでも同期的に新鮮で、原点で測る実体 (robot_base / CF) だけが 1 フレーム遅れる。同じコードがキューブでは安定しロボットでは 2 周期で振動した — ADR-098 を否定するのではなく、その隣にあった別の軸を閉じる"
+    artifacts
+    - "src/service/SceneService.js"
+
+    context WorldPoseCacheStillNotSelfFreshening
+    uuid 5e8abd19-90b3-4677-87ce-2d32bb053168
+    summary "この木が成立する範囲 (前提が崩れたら論拠ごと失効する): 本 ADR は writer をキャッシュから切り離しただけで、_worldPoseCache 自身の鮮度 (原則 #23) は直していない。読み取り側 (N パネル / supportOf / E2E スナップショット) にとって『1 フレーム前 = いま描画されているもの』は正しい答えなので、キャッシュの意味論は変えていない。次に『ドラッグ中に CF の world 位置を読んで何かを決める』要求が立ったら、_updateWorldPoses() の副作用 (mounts の Wasm 変換・fastened の書き戻し・リンクビュー更新) を分離したうえで dirty フラグを入れる案 A を再検討する"
+    artifacts
+    - "src/service/SceneService.js"
+
+    context BusinessTreeAttachPoint
+    uuid 07ecfece-2015-4eda-a0df-80c6d36db887
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) で、ADR-097/098 と同じ goal に効く追加証拠になる。保留理由: 当該 goal は ToBeReviewed のまま (当事者の実利用待ち) であり、振動が止まったことが『動かしやすくなった』へどれだけ効くかは dogfooding でしか分からない。当事者が Grab を実際に触った記録が出た時点で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotAWiderStateMachine
+    uuid 8667b843-1ae3-47e3-a8e6-9090123cbf2c
+    summary "当事者の直感『2 値で判断しているのか / ステートマシンならフリックしない』を、直訳では採らない根拠。振動したのは述語の値域ではなく入力で、stacking を 3 値以上へ広げても入力の閉路が残る限り位相が増えるだけで消える。状態機械が振動しないのは値域が広いからではなく、遷移関数が (状態, 入力) の関数であって『自分の出力』を引数に取らないからである。直感が指していた方向は正しく、設計すべきだったのは状態の数ではなく遷移関数の引数だった。値域を増やすのは、区別したい状態が実在するという理由が別に立ったときに別 ADR で行う"
+
+    justification WhyNotHysteresis
+    uuid 00f0c26d-6103-4441-8653-eac7b76069f2
+    summary "ヒステリシス (前回 stacking なら閾値を緩める) を却下する根拠: 振動を見えなくする補正であって、pose が履歴に依存する事実は残る。同じ要求から違う結果が出る性質は undo・数値入力・再現テストで生き続け、次にそれが表面化したときには『補正のせいで見えなくなっていた』分だけ診断が難しくなる。閉路そのものを断つほうが安い"
+
+    justification WhyLiveProbesAreKeptNotDeleted
+    uuid 0c909738-7728-4ccc-ba5e-f6c991a4a678
+    summary "_bottomZOf / _footprintSamplesOf を消さない根拠: N パネル・supportOf()・E2E の placement スナップショットにとって『いま描画されている姿』は正しい答えである。欠陥は読み取りの存在ではなく writer が読んだことなので、消すのではなく役割 (query 専用) を宣言し、writer 側で個数を数える。消すと query 側が別の場所で同じ計算を再実装し、第二の源になる (§1.1)"
+
+    assumption SnapshotLiftingHoldsForNestedFrames
+    uuid 2e20d9fd-5ddd-434f-9ad5-c0ee6ca4193e
+    summary "反証されうる仮説: スナップショット由来のプローブ (_snapshotGeometryOf) は CF の parent-local な写しを親の world pose で world へ持ち上げる。この持ち上げは『自分のドラッグ中に親は動かない』という前提に立つ (前提は ADR-098 実装時から明記済み)。robot_base は親を持たないので今回の経路では常に成立するが、親子がまとめて選択されて同時に動くジェスチャが実装されたら親の pose も 1 フレーム古くなる。反証されたら親の delta も appliedDeltas から引く (Map は既に全 moving 実体を持っている) 形で回収する"
+
+    assumption StackingBooleanStaysStableInPractice
+    uuid fb457aeb-6b41-4f6d-a7cd-70f36a865df0
+    summary "反証されうる仮説: 入力が安定すれば 2 値の stacking も安定する (実測でそうなった)。ただし支持面の縁をなぞるドラッグでは、足跡サンプルが天面から外れる/戻るに従って supportZ が実際に切り替わるため、幾何として正当な切り替わりが残る。これが体感として『ちらつき』に見えるなら、それは入力の閉路ではなく縁の扱い (足跡の何割が載っていれば載ったと見なすか) の問題なので、別の決定として起こす。今日それを先回りで実装しない (§5)"
+
+    strategy ByCuttingTheDerivedToInputCycle
+    uuid ea1756d3-aa02-4d5c-b862-0e95df8f1370
+    summary "Argument by 閉路の切断 (原則 #24) — pose 書き込み → _worldPoseCache → 補助 → pose 書き込み という 1 本の閉路があり、その辺のうち 1 つ (キャッシュ更新が rAF ごと) だけが遅延辺なので周期 2 の振動になる。補助の入力を、この閉路が触れない不変な源 (セグメント開始の写し + 要求 delta) に置き換えれば閉路自体が消える。同じ源は _policyDelta が既に使っており、補助だけが例外だった"
+
+        goal AssistIsAFunctionOfTheRequest
+        uuid 36a3ece6-550b-451b-8ac6-c8d3efe0dc80
+        summary "stack assist が『描画済みの pose』を一切読まず、セグメント開始のスナップショットと方針が許した delta だけから座り位置を決める。同じ要求を繰り返し通しても pose が 1 種類にとどまる"
+        state UnderReview
+
+            solution RepeatedRequestRegressionIsGreen
+            uuid 74c82143-2d40-4298-9f5c-a48d1cb731a3
+            summary "playwright test e2e/smoke.spec.js — pass (26/26、うち本 ADR は 2 本)。ジェスチャ途中で末尾に 0 を打ち足すと parseFloat は同値なので、同一の要求が入口を 5 回通る。(1) robot_base: bottomZ が 1 種類、かつ support.kind === 'entity' (載っていないのに『動かない』で通る空回りを排除)。(2) 同じ不変条件を corners で測る実体 (追加した箱) にも問う — 種に依らないことを記録する。画面座標を経由しないのでカメラ姿勢に依存しない (ADR-098 と同じ理由)。**変異で空回りしていないことを確認した**: 修正を戻すとロボット側だけが bottomZ の列 = [0,1,0,1,0] を名指しして fail し、箱側は緑のまま = 当事者が見た非対称そのものが再現する"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+        goal NoPoseWriterReadsRenderedState
+        uuid 9d1c0f5a-4b77-4c2e-9a31-6b0f2c8e4d13
+        summary "『描画済みの状態を答えるアクセサ』と『次の pose を決める計算』が分離され、その分離が書いた瞬間に問われる。live プローブは query 専用として残り (N パネル / supportOf / E2E スナップショットには正しい答え)、writer の中では 0 個であることが数えられる"
+        state UnderReview
+
+            solution PoseWriterFreshnessCensusIsGreen
+            uuid e4a8a1e1-f2e5-4f9b-ab4b-4e83ee277c77
+            summary "node --test src/PosePolicyOwnership.test.js — pass (12/12)。pose を計算する 4 メソッド (applyPreviewTranslation / _policyDelta / _applyStackAssist / _applyEntityDelta) を名指しし、その本体に live プローブ (_bottomZOf / _footprintSamplesOf / worldPoseOf / _worldPoseCache) が 0 個であることを数える。逆向きに、補助が _segmentStartBottomZ / _destinationSamples / appliedDeltas を実際に引いていることも固定した (禁じられた形が 0 個だけでは、経路ごと消えても通ってしまう — 原則 #31 の同型)。**変異で確認済み**: _bottomZOf の呼び出しを 1 行戻すと当該行番号を名指しして fail する。散文では足りない理由は罠が実装を読んでも見えないこと — _bottomZOf(grabbed) は Solid では新鮮に見え、robot_base でだけ古い"
+            artifacts
+            - "src/PosePolicyOwnership.test.js"
+            - "src/service/SceneService.js"

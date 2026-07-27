@@ -98,6 +98,39 @@ const PROBE_METHODS = [
 ]
 
 /**
+ * **pose を計算するメソッド** — 次の pose を決める側 (ADR-101)。
+ *
+ * ここに並ぶメソッドは `LIVE_PROBES` を読んではならない。live プローブは
+ * *描画されている状態* を答える (frame 由来の実体は `_worldPoseCache` を引き、
+ * このキャッシュは rAF ごとにしか再計算されない) ので、pose を書いている最中に
+ * 読むと **自分の前フレームの出力**が入力に戻る (原則 #24 の閉路)。
+ *
+ * この罠が種によって見え方を変えるのが厄介だった: corners で測る実体
+ * (Solid) は `_applyEntityDelta` が同期的に corners を書くので live 読みでも
+ * たまたま新鮮で、原点で測る実体 (robot_base / CF) だけが 1 フレーム遅れる。
+ * 同じコードがキューブでは安定しロボットでは 2 周期で振動した — ADR-098 が
+ * 「種ではなく方針」で閉じたはずの非対称が、**幾何の鮮度**という別の軸で
+ * 残っていた形である。
+ *
+ * 検査が *在るもの* (今日の呼び出し) ではなく **禁じられた形の個数**を数えるのは
+ * 原則 #31 と同じ理由 — 次に足される writer は今日のリストに載っていない。
+ */
+const POSE_COMPUTING_METHODS = [
+  { file: 'src/service/SceneService.js', method: 'applyPreviewTranslation' },
+  { file: 'src/service/SceneService.js', method: '_policyDelta' },
+  { file: 'src/service/SceneService.js', method: '_applyStackAssist' },
+  { file: 'src/service/SceneService.js', method: '_applyEntityDelta' },
+]
+
+/** 描画済みの状態を答えるアクセサ (query 専用 — writer が読んではならない)。 */
+const LIVE_PROBES = [
+  { match: /this\._bottomZOf\s*\(/,          use: 'this._segmentStartBottomZ(obj, startCorners)' },
+  { match: /this\._footprintSamplesOf\s*\(/, use: 'this._destinationSamples(obj, startCorners, delta)' },
+  { match: /this\.worldPoseOf\s*\(/,         use: 'セグメント開始スナップショット + 要求 delta から導く' },
+  { match: /this\._worldPoseCache\b/,        use: 'セグメント開始スナップショット + 要求 delta から導く' },
+]
+
+/**
  * 種分岐が**在ってよい**メソッドと、その宣言された理由。
  *
  * 「例外が在ること」ではなく「例外が数えられていること」が要点 —
@@ -271,6 +304,52 @@ test('支持プローブの中に実体種の分岐は 0 個 (ADR-098 / 原則 #
 
   assert.deepEqual(missing, [], `\n${missing.join('\n')}\n`)
   assert.deepEqual(violations, [], `\n${violations.join('\n\n')}\n`)
+})
+
+test('pose を計算する側が「描画済みの状態」を読む箇所は 0 個 (ADR-101 / 原則 #24)', () => {
+  const violations = []
+  const missing    = []
+
+  for (const { file, method } of POSE_COMPUTING_METHODS) {
+    const lines = stripComments(readFileSync(join(REPO_ROOT, file.split('/').join(sep)), 'utf8'))
+    const found = extractMethodBody(lines, method)
+    if (!found) {
+      // 対象が消えたことは規則が守られていることと区別がつかない (原則 #31 の同型)。
+      missing.push(`${file}: ${method}() が実在しない — 表から外すか、名前を追うこと`)
+      continue
+    }
+    found.body.forEach((line, i) => {
+      for (const probe of LIVE_PROBES) {
+        if (!probe.match.test(line)) continue
+        violations.push(
+          `${file}:${found.start + i + 1}  (${method})\n` +
+          '      次の pose を決める計算が、いま描画されている pose を読んでいる。\n' +
+          `      → ${probe.use}\n` +
+          '      なぜ: live プローブは frame 由来の実体で _worldPoseCache を引き、' +
+          'このキャッシュは rAF ごとにしか更新されない。ドラッグ中に読むと自分の' +
+          '前フレームの出力が入力に戻り、載る→戻る の 2 周期で振動する (ADR-101)',
+        )
+      }
+    })
+  }
+
+  assert.deepEqual(missing, [], `\n${missing.join('\n')}\n`)
+  assert.deepEqual(violations, [], `\n${violations.join('\n\n')}\n`)
+})
+
+test('スナップショット由来のプローブが実在し、補助がそれを引いている (規則が空回りしていない)', () => {
+  // 「禁じられた形が 0 個」だけでは、経路ごと消えても通ってしまう (原則 #31)。
+  // 正しい入力が実際に引かれていることを逆向きに固定する。
+  const lines = stripComments(readFileSync(join(REPO_ROOT, POSE_ENTRY), 'utf8'))
+  const assist = extractMethodBody(lines, '_applyStackAssist')
+  assert.ok(assist, '_applyStackAssist() が実在しない')
+  const body = assist.body.join('\n')
+  assert.match(body, /_segmentStartBottomZ\s*\(/,
+    '補助がセグメント開始の底を引いていない — 入力が要求の関数でなくなっている')
+  assert.match(body, /_destinationSamples\s*\(/,
+    '補助が行き先の足跡を引いていない — 入力が要求の関数でなくなっている')
+  assert.match(body, /appliedDeltas\s*\.\s*get\s*\(/,
+    '補助が入口の適用済み delta を受け取っていない — 方針の結果を測り直している')
 })
 
 test('宣言されていない種分岐の例外は 0 個 (pose の書き込み ABI だけが例外)', () => {

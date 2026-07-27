@@ -2882,6 +2882,23 @@ export class SceneService extends EventEmitter {
   /**
    * Current world XY samples of the entity's footprint (probe origins), taken as
    * the entity's kind declares (`SUPPORT_PROBE_BY_KIND`).
+   *
+   * **This and `_bottomZOf` answer for the RENDERED state, and a pose writer may
+   * not read them** (ADR-101). They resolve a frame's origin through
+   * `_worldPoseCache`, which is recomputed once per animation frame — so between
+   * frames they report the pose that was last drawn, not the pose just written.
+   * That is the right answer for a query (the N panel, `supportOf`, the E2E
+   * placement snapshot: "where is this thing now?") and the wrong one for
+   * anything computing the next pose, which would be reading its own previous
+   * output (PHILOSOPHY #24). Writers derive from the segment-start snapshot and
+   * the requested delta instead — `_segmentStartBottomZ` / `_destinationSamples`.
+   *
+   * The trap is invisible for a corner-probed entity: `corners` are mutated
+   * synchronously by `_applyEntityDelta`, so a live read there happens to be
+   * fresh. It only bites the kinds whose declared probe is the frame origin
+   * (robot_base / CF) — which is why the same code was steady for a cube and
+   * oscillated for a robot.
+   *
    * @returns {{x:number, y:number}[]}
    */
   _footprintSamplesOf(obj) {
@@ -2889,7 +2906,11 @@ export class SceneService extends EventEmitter {
     return footprintSamplesFor(probe, this._probeGeometryOf(obj, probe))
   }
 
-  /** Current lowest world Z of the entity, or null when its kind declares no bottom. */
+  /**
+   * Lowest world Z of the entity AS RENDERED, or null when its kind declares no
+   * bottom. Query-only — see `_footprintSamplesOf` for why a pose writer must
+   * use `_segmentStartBottomZ` instead (ADR-101).
+   */
   _bottomZOf(obj) {
     const probe = supportProbeOf(obj)
     return bottomZFor(probe, this._probeGeometryOf(obj, probe))
@@ -3025,15 +3046,22 @@ export class SceneService extends EventEmitter {
     const { stackAssist = false, activeId = null } = options
     const movingIds = new Set(segStartCorners.keys())
 
+    // What the policy actually allowed, per entity. The assist reads this rather
+    // than measuring the entities afterwards: the pose it would measure is the
+    // one this very method just wrote, so measuring it closes a loop from the
+    // result back onto the input (PHILOSOPHY #24, ADR-101).
+    /** @type {Map<string, import('three').Vector3>} */
+    const appliedDeltas = new Map()
     for (const [id, startCorners] of segStartCorners) {
       const obj = this._model.getObject(id)
       if (!obj) continue
       const delta = this._policyDelta(obj, startCorners, worldDelta, movingIds)
+      appliedDeltas.set(id, delta)
       this._applyEntityDelta(obj, startCorners, segStartPositions?.get(id), delta)
     }
 
     const stackContact = stackAssist
-      ? this._applyStackAssist(segStartCorners, segStartPositions, worldDelta, activeId, movingIds)
+      ? this._applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds)
       : null
     return { stacking: stackContact !== null, stackContact }
   }
@@ -3093,29 +3121,53 @@ export class SceneService extends EventEmitter {
    * entity (user CF / MeasureLine / Profile) is still passed over — for a reason
    * that is declared rather than inferred from its type.
    *
+   * ADR-101 took the LIVE READ out of it. It used to measure the grabbed entity
+   * with the live probes (`_bottomZOf` / `_footprintSamplesOf`) after the entry
+   * loop had moved it — i.e. it measured its own output. For a Solid that reads
+   * `corners`, which the entry loop had just written, so the loop closed within
+   * the frame and the result happened to be right. For a frame-probed entity
+   * (robot_base) it reads `_worldPoseCache`, which is only refreshed once per
+   * animation frame, so the assist consumed the PREVIOUS frame's seated pose:
+   * seated → "already resting" → no assist → dropped → seated → … a 2-cycle at
+   * pointer-move rate ("it stacks, then it goes back"). The inputs are now the
+   * segment-start snapshot and the delta the policy allowed — the same invariant
+   * sources `_policyDelta` derives from, none of which this method writes.
+   *
+   * @param {Map<string, import('three').Vector3[]>} segStartCorners
+   * @param {Map<string, import('three').Vector3>|null} segStartPositions
+   * @param {Map<string, import('three').Vector3>} appliedDeltas  per-entity post-policy deltas
+   * @param {string|null} activeId
+   * @param {Set<string>} movingIds
    * @returns {{x:number,y:number,z:number}|null} contact point, or null when not stacking
    */
-  _applyStackAssist(segStartCorners, segStartPositions, worldDelta, activeId, movingIds) {
+  _applyStackAssist(segStartCorners, segStartPositions, appliedDeltas, activeId, movingIds) {
     const grabbed = activeId ? this._model.getObject(activeId) : null
     if (!grabbed || !stackAssistApplies(placementOf(grabbed))) return null
+
+    const startCorners = segStartCorners.get(activeId)
+    const applied      = appliedDeltas.get(activeId)
+    if (!startCorners || !applied) return null
 
     // The footprint the assist probes with is the one the entity's kind declares,
     // so a robot_base (a single origin point) is as probeable as a cube (its
     // bottom face). `supportOf()` could already answer for both; only the seating
     // path was closed — the question and the answer now have the same reach (G3).
-    const gZMin = this._bottomZOf(grabbed)
-    if (gZMin === null || !Number.isFinite(gZMin)) return null
-    const samples = this._footprintSamplesOf(grabbed)
+    const startBottomZ = this._segmentStartBottomZ(grabbed, startCorners)
+    if (startBottomZ === null || !Number.isFinite(startBottomZ)) return null
+    const samples = this._destinationSamples(grabbed, startCorners, applied)
     if (samples.length === 0) return null
 
     const highestHitZ = this.highestSurfaceZAt(samples, movingIds)
-    const zOffset = highestHitZ - gZMin
-    if (Math.abs(zOffset) < SUPPORT_TOLERANCE) return null   // already resting
+    // The Z delta that would seat the grabbed entity's declared bottom on that
+    // surface, measured from the segment start — an absolute target, not a
+    // correction to whatever the entity's Z happens to be right now.
+    const seatDeltaZ = highestHitZ - startBottomZ
+    if (Math.abs(seatDeltaZ - applied.z) < SUPPORT_TOLERANCE) return null   // already resting
 
     // Re-apply from the segment start so the assist is a function of the request,
     // not of the previous frame's result (PHILOSOPHY #24 — no derived value
     // feeding its own input).
-    const assisted = worldDelta.clone().add(new Vector3(0, 0, zOffset))
+    const assisted = new Vector3(applied.x, applied.y, seatDeltaZ)
     for (const id of movingIds) {
       const selObj = this._model.getObject(id)
       if (!selObj || !stackAssistApplies(placementOf(selObj))) continue
