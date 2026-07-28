@@ -115,3 +115,32 @@ commands・skills・hook は読まれない**。「核だけ持ち運ぶ軽量�
 
 Claude Code の仕様(rules の自動 load、プロジェクト settings の hook、`$CLAUDE_PROJECT_DIR`、
 `--add-dir` の load 対象)はバージョンで変わり得る。挙動が合わなければ現行ドキュメントで確認すること。
+
+## 追補 (v2 / 2026-07-18)
+- `dot-claude/kernel-log.md` → `<repo>/.claude/kernel-log.md`: 核の改訂記録(§6)。load されない。
+  portable では核改訂は canonical 側で行い(§6/§1.1)、ログも canonical が正準。VERSION と共に各 repo へ再同期。
+- 核に追加: §6 自己メンテナンス / §2 一拍俯瞰 / §1.4 台帳による累積判定(台帳スロットは project template 側)。
+
+## 追補 (v3): 一発インストール
+手順書 §1 の手作業の代わりに、解凍ディレクトリで:
+```bash
+bash install.sh /path/to/repo    # 省略時カレント
+```
+非破壊(既存は SKIP)・冪等。test-command の雛形生成と次の手順の案内まで行う。
+
+## 追補 (v4 / 2026-07-27)
+- 核 §1.2 に gsn-meta-framework skill へのエスカレーションを追記。
+- `dot-claude/skills/animation-fx/` を同梱(v3.2: Step 1.5 モーション・アイデンティティ)。
+  不要なリポジトリでは skills/animation-fx を削除してから commit してよい。
+
+## 追補 (v5 / 2026-07-27)
+- 核 §0 に三位一体の表現(テキスト/図(Mermaid)/式)を追加。§1.2・§3・adr skill に接続。
+
+## 追補 (v6 / 2026-07-28): 実運用からのバックポート
+- easy-extrude の 2026-07-25 先行改訂(§1.4 累積器実在の明文化・基数・§4 名指し委譲)を
+  canonical に取込。運用中リポジトリはこの版へ再同期すると v4(GSNエスカレーション)/
+  v5(三位一体)/animation v3.2(Step 1.5)も同時に入る。ローカル拡張(追加 command/hook/rules)は保持してよい。
+
+## 追補 (v7 / 2026-07-28): 結晶化した原則レーン
+- `dot-claude/rules/10-principles.md` を同梱。原産(easy-extrude)側は既存の自リポジトリ版を保持
+  してよい(§写像つき)。他リポジトリはこの版を使い、写像節を各自ローカル追記。

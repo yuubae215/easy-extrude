@@ -47,6 +47,8 @@ then *what it means*, *how it manifests here*, *why it matters*. Update the **In
 and commit together with the motivating change (commit message names the principle).
 常時 load の蒸留ダイジェストが `.claude/rules/10-principles.md` にある(**導出物** — 本ファイルが
 正本)。原則の追加・改稿・退役時はダイジェストの該当行も同じコミットで更新する。
+ダイジェストは canonical kernel bundle が他リポジトリへ運ぶレーンでもある(核 §4「結晶化した
+原則」)。昇格順は **本ファイル → ダイジェスト → canonical** — 逆流させない。
 Lifecycle: unmarked = active; ✗ Retired = superseded or encoded structurally, kept as history.
 
 ---

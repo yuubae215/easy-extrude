@@ -34,8 +34,9 @@ Context = **Goal / 力学**、Decision = **Strategy**、Consequences = **Evidenc
 ## GSN 併設(起票と同じ PR で。規律の正本はここ)
 
 ADR を新規に起こすときは、**同じ PR で `docs/gsn/<adr-slug>.gsn` に論証木を起こす。**
-「証拠が未来形かどうか」で判断しない — 核 §3 の GSN トリガはもともと条件付き
-(「Evidence が大半未来形なら」)だったが、ここで**無条件化する**。
+「証拠が未来形かどうか」で判断しない — 核側の GSN 起動はもともと条件付き
+(§3 の「Evidence が大半未来形なら」行 → canonical 2026-07-28 版で §1.2 の
+「assurance 級ならエスカレーション」へ統合)だが、ADR ではここで**無条件化する**。
 
 理由(この条文自身が生んだ実例が ADR-094): 実装前 ADR の Evidence は定義上ほぼ全部が
 未来形で、「1 イテレーションで閉じる見込み」は**書いた本人の見込みでしかない**。
@@ -65,6 +66,14 @@ ADR を新規に起こすときは、**同じ PR で `docs/gsn/<adr-slug>.gsn` �
 ## Status ライフサイクル
 `Proposed → Accepted → (Superseded by ADR-NNNN | Deprecated)`
 新規作成時の既定は **Proposed**。ユーザが採択を明言したら Accepted。
+
+## 表現(三位一体 / 核 §0)
+ADR は証明の文書化。テキストだけで書かない — 該当する側面があれば必ず添える:
+- 図: Context の位置づけ(層・グラフ上のどこか)や Decision が変える構造・遷移を
+  Mermaid で本文に埋める(状態が絡めば stateDiagram)。
+- 式: 性能予算・容量・周期・不変条件など量的関係は式・不等式で明示する
+  (例: T_loop ≤ 10ms, N_retry × T_backoff < T_timeout)。
+正準の置き場は §1.1 に従う(既に docs/ に正準図があるなら再掲せず参照)。
 
 ## テンプレート(これを埋めて出力する)
 
