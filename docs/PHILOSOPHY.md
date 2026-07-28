@@ -180,14 +180,43 @@ Fixed by replacing `avg(corners)` with `parent._position` directly (the authorit
 ADR-040 primary triple). In `_updateFastenedFrames`, `solidLocalOffset` now seeds from
 `new Vector3()` (exact zero) instead of `avg(localCorners)` (≈ zero but not exact).
 
+**d) A pose writer measuring the pose it had just written** (fourth fix, ADR-101)
+The stack assist opened by measuring the grabbed entity (`_bottomZOf` /
+`_footprintSamplesOf`) *after* the same call had already moved it, so the assist's
+input was its own output one frame earlier:
+
+```
+_applyStackAssist → _applyEntityDelta → _worldPoseCache (rAF) → _applyStackAssist
+```
+
+Unlike (a)–(c) this cycle does not drift, it **oscillates**: exactly one edge is
+delayed (the cache is refreshed once per animation frame and no pose write
+invalidates it), so the loop has period 2 — seated → "already resting, do nothing"
+→ dropped → seated → … The user sees the entity in two places at once. Fixed by
+giving the assist the same invariant inputs `_policyDelta` already used: the
+segment-start snapshot and the delta the policy allowed.
+
+**Freshness can differ by entity kind, which is what hid it.** The very same line
+`this._bottomZOf(grabbed)` read `obj.corners` for a Solid — mutated synchronously
+by the write path, therefore fresh — and `_worldPoseCache` for a frame-probed
+entity (`robot_base`), therefore one frame stale. One code path, two behaviours,
+no branch to notice. Reading the code cannot reveal this; only naming which
+accessors answer for *rendered* state and forbidding writers from touching them
+can.
+
 **The general rule**: if a derived quantity feeds back into the computation that
-produced it — even indirectly, even across two different methods — the cycle
-accumulates error every frame. Audit any path where a per-frame output becomes
-a per-frame input.
+produced it — even indirectly, even across two different methods — the cycle is a
+defect. With a continuous quantity it accumulates error every frame (a–c); with a
+discrete decision it oscillates between branches (d). Audit any path where a
+per-frame output becomes a per-frame input, and treat a cache refreshed on a
+schedule (rather than on write) as exactly such a path.
 
 **The failure mode is asymmetric**: the code is valid JavaScript, throws no exception,
 and produces a value that is a plausible scene position — invisible until the error
-compounds enough to be visually obvious, which can take seconds or minutes.
+compounds enough to be visually obvious, which can take seconds or minutes. In the
+oscillating form it is visible immediately but reads as a *rendering* glitch
+("it flickers", "it looks duplicated"), which points attention at the view layer
+rather than at the input of a predicate.
 
 **The invariant to check**: if removing the derived quantity and replacing it with the
 invariant source produces the same mathematical result, the derived path is a liability

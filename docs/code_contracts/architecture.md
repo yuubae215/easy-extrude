@@ -627,6 +627,40 @@ After a stack snap (which re-applies domain mutations via `selObj.move()`), the 
 
 Entity mutation during live drag previews belongs in `SceneService`. Three methods: `applyPreviewTranslation(segStartCorners, segStartPositions, worldDelta)` — Grab/mouse-drag; `applyPreviewRotation(obj, snap, deltaQ)` — R-key rotate; `applyPreviewEndpointMove(obj, endpointIndex, worldPoint)` — 1D endpoint drag. `AppController` and handler classes compute input deltas and delegate all entity mutation to these service methods. Handler cancel paths must also use service methods to keep view in sync. See `docs/code_contracts/architecture.md` §"Preview Pipeline".
 
+## A Pose Writer's Inputs Are the Request and the Snapshot — Never the Rendered State (ADR-101)
+
+- **Principle**: anything that computes the *next* pose reads only (a) the
+  segment-start snapshot and (b) the requested delta. Reading the entity's
+  current geometry means reading a value the same pipeline just wrote, which
+  closes a derived→input cycle (PHILOSOPHY #24).
+- **Why it is invisible when you read the code**: freshness differs by kind.
+  `obj.corners` are mutated synchronously by `_applyEntityDelta`, so a live read
+  is fresh for a Solid; a frame-probed entity (`robot_base` / CF) resolves through
+  `_worldPoseCache`, which `_updateWorldPoses()` refreshes **once per animation
+  frame** and which no pose write invalidates. Identical code was therefore steady
+  for a cube and oscillated with period 2 for a robot ("it stacks, then it goes
+  back") — see ADR-101 §力学.
+- **Query vs writer** (the live probes are NOT deprecated):
+
+  | Reading | Use | Answers |
+  |---------|-----|---------|
+  | Query — "where is this now?" (N panel, `supportOf()`, E2E placement snapshot) | `_footprintSamplesOf` / `_bottomZOf` / `worldPoseOf` | the **rendered** pose (up to one frame old — which is what a query wants) |
+  | Writer — "where should this go?" (`applyPreviewTranslation`, `_policyDelta`, `_applyStackAssist`, `_applyEntityDelta`) | `_segmentStartBottomZ` / `_destinationSamples` / the `appliedDeltas` the entry loop recorded | a function of the **request** alone |
+
+- **Concrete rule**: seat targets are absolute, not corrective —
+  `seatDeltaZ = surfaceZ − segmentStartBottomZ`, never
+  `currentBottomZ + offset`. A corrective form silently double-counts whatever
+  the policy already clamped this frame.
+- **Where it is asked**: `src/PosePolicyOwnership.test.js` names the pose-computing
+  methods and counts live probes inside them (must be 0), and counts the
+  snapshot-derived inputs the assist must actually use (must be present — a rule
+  that only forbids passes when the path is deleted, 原則 #31). The E2E pair in
+  `e2e/smoke.spec.js` puts the *same* request through the entry five times and
+  requires one pose, for a frame-probed and a corner-probed entity alike.
+- This narrows the "Centroid Is Validation-Only" entry below: its advice to use
+  `_worldPoseCache.get(id).position` for a CoordinateFrame is right for a
+  **query** and wrong inside a pose writer.
+
 ## Centroid Is Validation-Only — Never Use for Verification or Geometry Traversal
 
 - **Principle**: `getCentroid(corners)` / `avg(corners)` is a **measurement operation** computed by summing floating-point world-space vertices. Due to floating-point accumulation, the result diverges from the true geometric origin as coordinates grow large (PHILOSOPHY #24). It is suitable only for display and heuristics (Validation), never for computations whose correctness must be guaranteed (Verification).
