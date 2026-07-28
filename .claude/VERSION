@@ -1,10 +1,36 @@
 kernel-bundle: portable (in-repo)
-version: 2026-07-18
+version: 2026-07-28.2
 source: claude-kernel-bundle (canonical)
 notes: |
   これは canonical bundle を本リポジトリへ vendoring したコピー。ドリフト検知用。
   内容を更新するときは canonical 側を直し、本ファイルの version を上げて再配布する。
 changes: |
+  2026-07-28: canonical 2026-07-28.2 版へ再同期(INSTALL-PORTABLE.md 追補 v4–v7)。
+    取り込み(canonical 正本のまま上書き):
+    - rules/00-kernel.md: §0 三位一体の表現(テキスト/図/式)、§1.2 gsn-meta-framework
+      へのエスカレーション、§3 に三位一体の行、§4 に第三チャネル「結晶化した原則」と
+      昇格順(auto memory → 原則 → canonical)。2026-07-25 の本リポジトリ先行改訂
+      (§1.4 累積器の実在・基数・§4 名指し委譲)は canonical v6 が backport 済みで
+      往復一致 — **本ファイルによる 00-kernel の差分表示はこれで解消**。
+    - rules/10-principles.md: 系譜 header(正本ポインタ + UI 節のスコープ注記)へ差替。
+      本文 1–31 は往復一致(canonical v7 が本リポジトリ版を backport)。
+      「§このリポジトリでの写像」は規約どおりローカル保持(原産である旨を明記)。
+    - kernel-log.md / KERNEL-INSTALL-PORTABLE.md / skills/animation-fx(v3.2 Step 1.5
+      モーション・アイデンティティ)。
+    合流(canonical の追加分のみ取り込み、ローカル拡張は保持):
+    - skills/adr/SKILL.md: canonical の §表現(三位一体)を追加。ローカルの §GSN 併設
+      (ADR-094 由来・無条件化)は保持。核 §3 の GSN 行は canonical で §1.2
+      エスカレーションへ統合されたため、参照先を更新(docs/NAVIGATION.md も同じ行)。
+    - templates/CLAUDE.project-template.md: canonical の §モーション・アイデンティティを
+      追加。ローカルの台帳基数列・名指し委譲コメントは保持(canonical 未 backport)。
+    非取り込み(意図的な差分。canonical は基底、本リポジトリは上位集合):
+    - settings.json: PreToolUse に commit-trailers / state-ledger-nudge、PostToolUse に
+      commit-trailers を追加配線したまま(canonical は evidence hook のみ)。
+    - hooks/evidence-before-commit.sh: staged .gsn lint 節を保持。
+    - commands/(adr-validate, gsn-maintain, qc, sqa, ux, validate-all, whiteboard)、
+      skills/gsn-meta-framework、hooks/commit-trailers.sh、hooks/state-ledger-nudge.sh、
+      .claude/DEVELOPMENT.md は本リポジトリ専用。
+
   2026-07-25: 00-kernel.md §1.4/§3/§4 を本リポジトリ側で先行改訂(kernel-log
     2026-07-25 の c シグナル)。台帳の置き場所を「project CLAUDE.md が名指しする」
     へ委譲し、§4 に「大きい表・図は名指しした別ファイルに置いてよい」を明記。
