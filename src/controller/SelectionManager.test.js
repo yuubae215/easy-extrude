@@ -151,14 +151,18 @@ test('robot tree: selecting a user frame added under robot_base claims it', () =
   assert.equal(ctrl.contextual.get('tcp'),  CONTEXTUAL.DIMMED)
 })
 
-test('a geometry selection claims its frame tree at full opacity', () => {
+test('a geometry selection claims its whole frame tree — 当人 FULL・連鎖 DIMMED', () => {
   const ctrl = makeCtrl([makeSolid('solid'), makeFrame('origin', 'solid'), makeFrame('child', 'origin')])
   const mgr = new SelectionManager(ctrl)
 
   mgr.selectOnly('solid')
 
+  // 到達 (どの id が現れるか) は ADR-087 のまま — 狭めたのは強度だけ。
   assert.deepEqual([...ctrl.contextual.keys()].sort(), ['child', 'origin', 'solid'])
-  assert.deepEqual([...new Set(ctrl.contextual.values())], [CONTEXTUAL.FULL])
+  assert.equal(ctrl.contextual.get('solid'),  CONTEXTUAL.FULL,
+    '選ばれた当人がフル — Solid の手応えは自身のメッシュであってフレームではない')
+  assert.equal(ctrl.contextual.get('origin'), CONTEXTUAL.DIMMED, '連鎖は薄字')
+  assert.equal(ctrl.contextual.get('child'),  CONTEXTUAL.DIMMED, '連鎖は薄字')
 })
 
 // ── 2. The claim is replaced wholesale ───────────────────────────────────────
@@ -335,6 +339,73 @@ test('FULL は DIMMED に勝つ — 2 つの選択が同じフレームについ
 
   assert.equal(ctrl.contextual.get('tcp'),  CONTEXTUAL.FULL)
   assert.equal(ctrl.contextual.get('base'), CONTEXTUAL.FULL)
+})
+
+// ── 基数 N と強度: reveal-on-select は N で溢れない ──────────────────────────
+//
+// ADR-099 の assumption `RevealOnSelectMayFloodTheView` の回収 (2026-07-29 実測)。
+// 「N が大きいと大量の軸が一度に現れる」は量の問題として起票されたが、測ると
+// 量 (到達する id の数) ではなく**強度**の問題だった: geometry 分岐だけが連鎖を
+// FULL で主張していたので、Solid を 50 個矩形選択すると 200 個が全部フル強度に
+// なっていた (CF 分岐は最初から連鎖 DIMMED)。強度規則を両分岐で 1 つにした結果が
+// 下の不変条件で、これは N を振って初めて見える (1 個では両者が区別できない)。
+
+/** FULL で主張されている id の集合。 */
+const fullIds = (ctrl) => [...ctrl.contextual.entries()]
+  .filter(([, m]) => m === CONTEXTUAL.FULL).map(([id]) => id).sort()
+
+test('フル強度で現れるのは選択集合ちょうど — 連鎖は何個あっても DIMMED', () => {
+  // 1 本の木を深くする: 連鎖の長さが FULL の個数に効いてはならない。
+  const objs = [makeSolid('s'), makeFrame('f0', 's')]
+  for (let i = 1; i < 12; i++) objs.push(makeFrame(`f${i}`, `f${i - 1}`))
+  const ctrl = makeCtrl(objs)
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly('s')
+
+  assert.equal(ctrl.contextual.size, 13, '到達は木の全体 — ADR-087 の振る舞いは変えない')
+  assert.deepEqual(fullIds(ctrl), ['s'],
+    'フルは選んだ 1 個だけ。連鎖を FULL で主張すると、木が深いほど画面が強く光る')
+})
+
+test('基数 N を振っても FULL の個数は選択基数のまま (溢れの上界)', () => {
+  // 形は矩形選択 = 各 Solid が 3 フレームを持つ N 個の実体。旧実装ではここで
+  // FULL が 4N まで伸びていた (N=25 で 100)。
+  const N = 25
+  const objs = []
+  for (let i = 0; i < N; i++) {
+    objs.push(makeSolid(`s${i}`))
+    objs.push(makeFrame(`s${i}_origin`, `s${i}`))
+    objs.push(makeFrame(`s${i}_tip`, `s${i}_origin`))
+  }
+  const ctrl = makeCtrl(objs)
+  const mgr = new SelectionManager(ctrl)
+  const ids = objs.filter(o => o.id.startsWith('s') && !o.id.includes('_')).map(o => o.id)
+
+  mgr.selectMany(ids, { activeId: ids[0] })
+
+  assert.equal(mgr.count, N)
+  assert.equal(ctrl.contextual.size, 3 * N, '到達は 3N (各実体 + その 2 フレーム)')
+  assert.equal(fullIds(ctrl).length, N,
+    'FULL は選択の基数で抑えられる — これが「N で溢れない」の意味であって、' +
+    '主張をやめること (G2 の放棄) ではない')
+  assert.deepEqual(fullIds(ctrl), [...mgr.ids].sort(), 'FULL = 選択集合、ちょうど')
+})
+
+test('強度規則は分岐に依存しない — CF を選んでも Solid を選んでも同じ形', () => {
+  // 同じ木を 2 通りに選ぶ。当人が誰であれ「当人 FULL・残り DIMMED」が答え。
+  const objs = () => [makeSolid('s'), makeFrame('origin', 's'), makeFrame('tip', 'origin')]
+
+  const viaSolid = makeCtrl(objs())
+  new SelectionManager(viaSolid).selectOnly('s')
+
+  const viaFrame = makeCtrl(objs())
+  new SelectionManager(viaFrame).selectOnly('tip')
+
+  // 到達は同じ木。違うのは誰がフルかだけ — 分岐ごとに別の規則を持たない。
+  assert.deepEqual([...viaSolid.contextual.keys()].sort(), ['origin', 's', 'tip'])
+  assert.deepEqual(fullIds(viaSolid), ['s'])
+  assert.deepEqual(fullIds(viaFrame), ['tip'])
 })
 
 // ── Handing the axis back (link creation borrows it) ─────────────────────────

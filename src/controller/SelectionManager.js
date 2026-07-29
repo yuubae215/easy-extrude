@@ -45,8 +45,10 @@
  *   - the selected entities themselves, at FULL. This is what makes selection
  *     unable to be silent (原則 #11): selecting a `tcp` whose eye is closed
  *     shows it *while selected* and lets the eye have it back afterwards.
- *   - their frame context — a CF's whole TF tree DIMMED, a geometry entity's
- *     descendant frames FULL — which is the ADR-087 behaviour, unchanged.
+ *   - their frame context, at DIMMED — a selected CF's TF tree, a selected
+ *     geometry entity's descendant frames. Same intensity rule on both branches,
+ *     which is what bounds FULL by the selection's cardinality at any N; see
+ *     `_claimContext` for the measurement that produced it.
  *
  * The `explicit` axis is never touched here; its owner is the Outliner eye.
  * Handlers own axes, pixels have one owner (原則 #4).
@@ -303,6 +305,39 @@ export class SelectionManager {
    *
    * FULL beats DIMMED when two selected entities disagree about the same frame —
    * "someone is looking straight at it" is the stronger statement.
+   *
+   * ## The intensity rule, and why it is the same on both branches
+   *
+   * **What is selected is FULL; what merely hangs off it is DIMMED.** One rule,
+   * both branches, so the invariant below holds no matter what mix is selected:
+   *
+   *     FULL(claim) === the selection      (exactly — never a superset)
+   *     DIMMED(claim) === ⋃ chains − the selection
+   *
+   * ADR-099 named this as its mitigation for `RevealOnSelectMayFloodTheView`
+   * ("contextual 軸の DIMMED を使い、選択本体だけ FULL にする") but the first
+   * implementation applied it only to the CoordinateFrame branch: geometry
+   * claimed its descendant frames at FULL, carrying over the single-selection
+   * behaviour without asking what N does to it. Measured (2026-07-29, N Solids of
+   * 3 frames each, rectangle selection):
+   *
+   * | N  | total | FULL (before) | FULL (after) |
+   * |---:|------:|--------------:|-------------:|
+   * |  1 |     4 |             4 |            1 |
+   * | 10 |    40 |            40 |           10 |
+   * | 50 |   200 |           200 |           50 |
+   *
+   * The *total* is unchanged (ADR-087 keeps its behaviour — selecting a Solid
+   * still reveals its frames, and `visible = explicit || contextual !== null`
+   * does not care which member it is), so this narrows the claim's **intensity**
+   * and not its reach. That distinction is why the repair could stay short of the
+   * "連鎖は主張しない" fallback the ADR held in reserve: dropping the chain would
+   * have cost G2, dimming it costs nothing but emphasis.
+   *
+   * A Solid selected alone still has a full-intensity response — itself, whose
+   * mesh the `want(id, FULL)` line below reveals. The frames around it were never
+   * the tactile answer to "I picked this"; they are the context for it, which is
+   * precisely what the CF branch has always called DIMMED.
    */
   _claimContext() {
     const claim = new Map()
@@ -319,7 +354,8 @@ export class SelectionManager {
       if (obj instanceof CoordinateFrame) {
         for (const [fid, strength] of this._frameChainClaim(id)) want(fid, strength)
       } else {
-        for (const fid of this.collectAllDescendantFrames(id)) want(fid, CONTEXTUAL.FULL)
+        // The chain, not the pick — DIMMED (see the intensity rule above).
+        for (const fid of this.collectAllDescendantFrames(id)) want(fid, CONTEXTUAL.DIMMED)
       }
     }
     this._ctrl._service.setContextualFrames(claim)

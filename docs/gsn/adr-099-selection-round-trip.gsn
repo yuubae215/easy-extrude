@@ -50,7 +50,10 @@ artifacts
 
     assumption RevealOnSelectMayFloodTheView
     uuid 191b21e9-81df-47ef-b34a-52a95bd1bc53
-    summary "反証されうる仮説 (**未検証のまま残る**): 選択が contextual 可視性を主張すると、多数選択時に大量の CF 軸が一度に現れて画面が混む。既存の showFrameChain が持つ強度規則 (選択本体 FULL / 連鎖 DIMMED) を再利用して緩和した — 実装では主張が選択集合全体の**和**になったので、N が大きいときの総量は起票時の想定より*増えて*いる (per-entity 置換だった旧実装は最後の 1 個ぶんしか出していなかった = そもそも壊れていた)。N が大きいときの見え方は測っていない。反証されたら『選択本体だけ FULL、連鎖は主張しない』へ狭める — 主張をやめる方向へは戻さない (それは G2 の放棄になる)"
+    summary "**測って回収した (2026-07-29)。当たっていたが、量ではなく強度の問題だった。** 仮説は『選択が contextual 可視性を主張すると、多数選択時に大量の CF 軸が一度に現れて画面が混む』。N を振って主張の総量と FULL/DIMMED の分布を測ると: (A) 1 本の木 (13 フレーム) の中から N 個の CF を選ぶと総量は **N に不変** (13) で強度だけが DIMMED→FULL へ移る — 主張は集合の和なので同じ木では総量が木の大きさで止まる。(C) 木をまたいで N 個の CF を選ぶと総量 2N・FULL は N。(B) N 個の Solid を矩形選択すると総量 4N で **FULL も 4N** (N=50 で 200 個がフル強度)。つまり溢れていたのは形 B だけで、原因は『緩和策として名指しした強度規則 (当人 FULL / 連鎖 DIMMED) が CF 分岐にしか実装されていなかった』こと — geometry 分岐は 1 個選択のときの ADR-087 の振る舞いを N へそのまま持ち込んでいた。回収は起票時に予備していた『連鎖は主張しない』**より狭くない**形で足りた: 両分岐の強度規則を 1 つに揃えると FULL(claim) === 選択集合 ちょうど・DIMMED(claim) === ⋃chains − 選択集合 になり、到達 (どの id が現れるか) は不変なので ADR-087 の振る舞いも G2 も失わない。狭めたのは強度だけ。**残る主観**: DIMMED の 0.30 が薄すぎないか / 50 個選んだ画面が実際に読めるかは当事者の目でしか閉じない (dogfooding 未取得) — 測ったのは個数と強度の割り当てであって見え方そのものではない"
+    artifacts
+    - "src/controller/SelectionManager.js"
+    - "src/controller/SelectionManager.test.js"
 
     strategy ByRestoringTheTargetLifetimeThenTheEntry
     uuid 4ecec83c-fe90-48dc-a872-243145670f1d
@@ -119,6 +122,13 @@ artifacts
             artifacts
             - "src/controller/SelectionManager.test.js"
             - "src/view/VisibilityAxes.js"
+
+            solution FullIntensityIsBoundedByCardinality
+            uuid 6c2a7f84-0e51-4d3b-9a76-2f8b1c5e4d09
+            summary "node --test src/controller/SelectionManager.test.js — pass (22/22、うち本件 3 本)。G2 (選択は沈黙しない) が背負うコストは『選択しただけで画面が変わる』側なので、その上界を式で固定した: FULL(claim) === 選択集合 ちょうど / DIMMED(claim) === ⋃chains − 選択集合。3 本は (a) 木を 12 段深くしても FULL は選んだ 1 個だけ (連鎖の長さが強度に効かない)、(b) N=25 の矩形選択で 到達 3N・FULL は N のまま (旧実装はここが 4N)、(c) 強度規則が CF 分岐と geometry 分岐で同一。**N=25 を焼いたのは 1 個では 4N と N が区別できないため** — 1 と N は別世界 (原則 #31)。**変異で空回りしていないことを確認した**: geometry 分岐を FULL へ戻すと 4 本 (既存 1 + 新規 3) が落ちる"
+            artifacts
+            - "src/controller/SelectionManager.js"
+            - "src/controller/SelectionManager.test.js"
 
         goal SelectionCardinalityIsRepresentable
         uuid eb9f1a10-f00b-4f95-b68a-480ce8179286

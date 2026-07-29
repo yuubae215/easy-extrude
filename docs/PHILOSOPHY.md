@@ -789,7 +789,7 @@ no row, so every check written by walking what is present passes over it in sile
 empty case is therefore not merely unhandled; it is *invisible*, and invisibility reads as
 correctness right up until the moment it produces a confident wrong answer.
 
-Three manifestations in this repo, in unrelated layers:
+Manifestations in this repo, in unrelated layers (the list grows; do not cite it by count):
 
 - **Zero robots became one phantom robot (ADR-090, `core/…/engine/pipeline.py`).** When a
   scene declares no robot frames the front omits the `robot` key entirely, and the solver
@@ -831,6 +831,20 @@ Three manifestations in this repo, in unrelated layers:
   is *the set of places that can write a pose*, and that set is only knowable by
   enumerating and counting it.
 
+- **One entity's emphasis rule became N entities' glare (ADR-099, `src/controller/
+  SelectionManager.js`).** Selection reveals what it selected, and the ADR named its own
+  mitigation for crowding in advance — "use the DIMMED contextual level, keep FULL for the
+  pick itself". The implementation applied it to the CoordinateFrame branch and not to the
+  geometry branch, which kept claiming a selected Solid's descendant frames at FULL because
+  that is what looked right for **one** selection. Rectangle-select fifty Solids and two
+  hundred frames arrive at full intensity. Nothing was unhandled and no rule was missing
+  from the file — there were *two* rules for the same relationship, and the difference
+  between them is invisible at N=1, where `4N` and `N` are the same number. The fix makes
+  one rule serve both branches, which turns the bound into something writable:
+  `FULL(claim) === the selection, exactly`. Note what the ADR's prose could not do here: it
+  *stated* the mitigation and still shipped half of it, because prose is not asked at the
+  moment the second branch is written.
+
 The shared root: **a check that inspects present items can never see an absence.** The fix
 in both cases has the same shape — enumerate the *required kinds* and test their count,
 then make a legitimate zero a **declaration** rather than an inference. An absent required
@@ -856,7 +870,11 @@ and `src/RobotRosterAuthority.test.js`, which counts the seed call sites — bec
 "fix" for a missing robot is to re-seed it at every scene entry, which makes zero unrepresentable
 again; for the pose-entry case, `src/PosePolicyOwnership.test.js`, which counts the pose writes
 outside the one entry (and whose declared-exception table makes "an exception exists" different
-from "an exception nobody counted")*
+from "an exception nobody counted"); for the selection case, `src/SelectionOwnership.test.js`
+(the count of places that can write a selection) and `src/controller/SelectionManager.test.js`,
+whose intensity tests are **fixtured at N=25 on purpose** — the bound `FULL(claim) === the
+selection` and the defect `FULL === 4 × the selection` agree on every value a one-entity
+fixture can produce*
 
 **A second corollary, from ADR-096 and ADR-097 arriving at the same shape independently:**
 when behaviour depends on an entity's *kind*, the per-kind table must **throw on an
