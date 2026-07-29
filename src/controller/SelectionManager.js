@@ -1,27 +1,72 @@
 /**
- * SelectionManager — object selection, frame-chain visibility, and rectangle
- * selection finalization for AppController.
+ * SelectionManager — THE selection (ADR-099).
  *
- * State (_selectedIds, _objSelected, _rectSel, _rectSelEl) lives on
- * AppController for backward compatibility; this manager reads/writes it via
- * ctrl.
+ * ## Why this class owns the whole decision
  *
- * Visibility (ADR-096): this manager writes the `contextual` axis and nothing
- * else. It used to call `meshView.showFull()/showDimmed()/hide()` directly,
- * which made it a second writer of the same pixels the Outliner eye writes —
- * neither read the other, so opening a frame's eye and then selecting anything
- * else wiped the frame while its row still said "visible". The set of frames the
- * current selection wants is now handed to `SceneService.setContextualFrames()`,
- * which composes it with the `explicit` axis. Handlers own axes; pixels have one
- * owner (原則 #4).
+ * Selection used to be a *procedure that every window re-implemented*. Five
+ * windows could select something (Outliner row, viewport pick, double-click,
+ * rectangle drag, LINK NETWORK row) and each wrote a different subset:
+ *
+ * | 窓 | 事前の clear | mode の正規化 | 選択集合への追加 |
+ * |----|:---:|:---:|:---:|
+ * | Outliner            | —   | あり | `_switchActiveObject` 内 |
+ * | ビューポートのピック | あり | —   | 呼び出し側 |
+ * | ダブルクリック       | あり | —   | 呼び出し側 |
+ * | 矩形選択            | あり | —   | 呼び出し側 |
+ * | LINK NETWORK        | —   | —   | `_switchActiveObject` 内 |
+ *
+ * `_selectedIds` was written from 8 places in `AppController` alone and the
+ * visible highlight had three writers. Adding a window therefore meant writing a
+ * subset, and whatever was left out became a symptom — which is precisely how
+ * the panel (the newest window, holding the smallest subset) came to select
+ * without the viewport following. Same shape ADR-097 found for pose.
+ *
+ * So the verbs below are the ONLY way to change what is selected, and
+ * `src/SelectionOwnership.test.js` asks that by counting: writes to the
+ * selection set / the highlight outside this file must be **0**. A census, not
+ * a walk of today's callers — the sixth window is not in today's list (原則 #31).
+ *
+ * ## Cardinality (原則 #31 / ADR-099 §状態機械)
+ *
+ * Selection is a `0 / 1 / N` cardinality, and it used to be spread over two
+ * fields: `_objSelected: boolean` and `_selectedIds: Set`. `_objSelected ===
+ * true && _selectedIds.size === 0` was representable, and reachable (any path
+ * that cleared one without the other). There is now ONE representation — the set
+ * — and `AppController._objSelected` is a getter over it, so the illegal state
+ * cannot be written down and every assignment to it throws.
+ *
+ * ## Visibility (ADR-096 / ADR-099 §3)
+ *
+ * This manager writes the `contextual` axis and nothing else. The claim is
+ * recomputed WHOLESALE from the current selection on every change — never
+ * patched — so "the context forgot to release one" is unrepresentable rather
+ * than merely unlikely. Two things go into it:
+ *
+ *   - the selected entities themselves, at FULL. This is what makes selection
+ *     unable to be silent (原則 #11): selecting a `tcp` whose eye is closed
+ *     shows it *while selected* and lets the eye have it back afterwards.
+ *   - their frame context — a CF's whole TF tree DIMMED, a geometry entity's
+ *     descendant frames FULL — which is the ADR-087 behaviour, unchanged.
+ *
+ * The `explicit` axis is never touched here; its owner is the Outliner eye.
+ * Handlers own axes, pixels have one owner (原則 #4).
+ *
+ * State lives on AppController (`_selMgr._ids` is read through
+ * `ctrl._selectedIds`) for the many read-only call sites; this manager is its
+ * only writer.
  *
  * Owned by AppController as this._selMgr.
+ *
+ * @see docs/adr/ADR-099-selection-round-trip-one-entry.md
+ * @see docs/gsn/adr-099-selection-round-trip.gsn
  */
 
 import * as THREE from 'three'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
-import { projectToScreen }  from './snap/SnapSystem.js'
-import { CONTEXTUAL }       from '../view/VisibilityAxes.js'
+import { Solid }           from '../domain/Solid.js'
+import { projectToScreen } from './snap/SnapSystem.js'
+import { SelectPulse }     from '../view/SelectPulse.js'
+import { CONTEXTUAL }      from '../view/VisibilityAxes.js'
 
 /** Computes 8 world-space bbox corners for a mesh entity that lacks .corners. */
 function _meshBboxCorners(obj) {
@@ -48,41 +93,276 @@ export class SelectionManager {
    */
   constructor(ctrl) {
     this._ctrl = ctrl
+    /**
+     * THE selection. Its cardinality (0 / 1 / N) is the state; `_objSelected` is
+     * a getter over `size > 0` and has no storage of its own.
+     * @type {Set<string>}
+     */
+    this._ids = new Set()
+    /** Last entity that got a select pulse — keeps re-selection churn quiet (#30). */
+    this._lastFxId = null
+  }
+
+  // ── Reading ─────────────────────────────────────────────────────────────────
+
+  /** The live selection set. Read-only by convention; the census test enforces it. */
+  get ids() { return this._ids }
+
+  /** Selection cardinality — 0, 1 or N (原則 #31). */
+  get count() { return this._ids.size }
+
+  /** @param {string} id */
+  has(id) { return this._ids.has(id) }
+
+  // ── The public entry points (原則 #1) ────────────────────────────────────────
+
+  /**
+   * Selects exactly one entity and makes it active. The verb every window uses
+   * for "the user picked this".
+   *
+   * @param {string} id
+   * @param {{fx?: boolean}} [opts]  `fx:false` for a RESTORE (returning from Edit
+   *   Mode re-asserts a selection the user never dropped, so it must not fire the
+   *   select pulse again — the pulse means "this just became selected").
+   */
+  selectOnly(id, { fx = true } = {}) {
+    if (id == null) return
+    this._normalizeMode()
+    this._apply([id], id, { fx })
   }
 
   /**
-   * Sets the visual selection state on the active object and updates frame
-   * visibility, status bar, and toolbar.
-   * @param {boolean} sel
+   * Selects a whole set at once, with `activeId` as the one the panels talk
+   * about (rectangle selection, assembly selection).
+   *
+   * There is deliberately no `addToSelection(id)`: no window asks for
+   * single-item additive selection today, and an unused public verb is a second
+   * entry point waiting to drift out of step with this one (§5).
+   *
+   * @param {Iterable<string>} ids
+   * @param {{activeId?: string|null}} [opts]
    */
-  setObjectSelected(sel) {
-    const ctrl = this._ctrl
-    ctrl._objSelected = sel
-    if (ctrl._meshView) ctrl._meshView.setObjectSelected(sel)
-    if (ctrl._scene.activeId) {
-      const active = ctrl._scene.getObject(ctrl._scene.activeId)
-      if (active instanceof CoordinateFrame) {
-        if (sel) this.showFrameChain(ctrl._scene.activeId)
-        else     this.hideFrameChain()
-      } else {
-        this.setChildFramesVisible(ctrl._scene.activeId, sel)
-      }
+  selectMany(ids, { activeId = null } = {}) {
+    const list = [...ids]
+    if (list.length === 0) { this.clearSelection(); return }
+    this._normalizeMode()
+    // No pulse for a bulk selection: the pulse answers "which one did I just
+    // pick", and with N it answers nothing while costing N effects (#30).
+    this._apply(list, activeId ?? list[0], { fx: false })
+  }
+
+  /**
+   * Drops the whole selection. The active entity stays active — the N panel and
+   * the mode machinery keep talking about it, exactly as before ADR-099.
+   */
+  clearSelection() {
+    this._apply([], this._ctrl._scene.activeId ?? null, { fx: false })
+  }
+
+  /**
+   * Moves the active entity WITHIN the current selection (clicking an
+   * already-selected object must not collapse a multi-selection to one).
+   * @param {string} id
+   */
+  activateWithinSelection(id) {
+    if (!this._ids.has(id)) { this.selectOnly(id); return }
+    this._apply([...this._ids], id, { fx: false })
+  }
+
+  /**
+   * Forgets an entity that is leaving the scene. Called by the delete path
+   * BEFORE anything else re-selects, so a detached id can never survive inside
+   * the selection or inside the contextual claim.
+   * @param {string} id
+   */
+  forget(id) {
+    if (!this._ids.has(id)) return
+    // The active entity is NOT chosen here: the delete path already knows which
+    // entity should take over and says so with `selectOnly`. Guessing one would
+    // be a second opinion about the same fact (§1.1).
+    this._apply([...this._ids].filter(x => x !== id), this._ctrl._scene.activeId ?? null)
+  }
+
+  /**
+   * Re-asserts the selection highlight after something REPLACED the mesh under
+   * a selected entity (rotation rebuilds a Solid's geometry). It changes no
+   * state — it re-runs the presentation of the state that is already there, and
+   * it exists so that "rebuild the mesh" does not become a fourth writer of the
+   * highlight (原則 #4).
+   */
+  reassertHighlight() {
+    for (const id of this._ids) {
+      const obj = this._ctrl._scene.getObject(id)
+      obj?.meshView?.setObjectSelected(true)
     }
+  }
+
+  /**
+   * Recomputes the contextual claim from the current selection. Called by
+   * transient sub-modes (link creation) that borrow the axis and must hand it
+   * back without guessing what was on screen before — the guess is what let the
+   * two writers drift apart.
+   */
+  refreshFrameContext() {
+    this._claimContext()
+  }
+
+  // ── The single writer ───────────────────────────────────────────────────────
+
+  /**
+   * THE state transition. Everything above is vocabulary; this is the only code
+   * that writes the selection set, the visible highlight and the contextual
+   * claim, and it always writes all three together — which is what makes "a
+   * window that forgot a step" unrepresentable rather than merely discouraged.
+   *
+   * @param {string[]} ids       the selection AFTER this transition
+   * @param {string|null} activeId
+   * @param {{fx?: boolean}} [opts]
+   */
+  _apply(ids, activeId, { fx = false } = {}) {
+    const ctrl = this._ctrl
+    const next = new Set(ids)
+
+    // 1. Release the entities leaving the selection. An entity already detached
+    //    from the scene resolves to null and is simply skipped.
+    for (const id of this._ids) {
+      if (next.has(id)) continue
+      const obj = ctrl._scene.getObject(id)
+      if (!obj?.meshView) continue
+      obj.meshView.setObjectSelected(false)
+      if (obj instanceof CoordinateFrame) obj.meshView.hideParentAxesGhost?.()
+    }
+
+    // 2. The set itself.
+    this._ids = next
+
+    // 3. Active entity. `setActiveObject` is the scene's own entry point; a
+    //    selection with no active entity is legal (0 selected after a clear).
+    if (activeId != null && activeId !== ctrl._scene.activeId) {
+      ctrl._service.setActiveObject(activeId)
+    }
+
+    // 4. Highlight every selected entity, and hang the parent-axes ghost on the
+    //    active CF only (ADR-034 §7 — it answers "relative to what", which is a
+    //    question about the one entity the panels are talking about).
+    for (const id of next) {
+      const obj = ctrl._scene.getObject(id)
+      if (!obj?.meshView) continue
+      obj.meshView.setObjectSelected(true)
+      if (!(obj instanceof CoordinateFrame)) continue
+      const ghostPos = id === ctrl._scene.activeId ? ctrl._geometryAncestorCentroid(id) : null
+      if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
+      else          obj.meshView.hideParentAxesGhost?.()
+    }
+
+    // 5. Visibility: one wholesale claim derived from the whole selection.
+    this._claimContext()
+
+    // 6. The windows that display the selection. They are told; they never poll
+    //    (原則 #5), and the LINK NETWORK resolves entity → node itself (ADR-094).
+    ctrl._service.updateLinkSelectionHighlight(this._ids)
+    ctrl._linkNetworkView?.setSelection(this._ids)
+
+    // 7. Presentation of the transition itself (ADR-068). Only on entering the
+    //    selection of a Solid, never on re-selection churn (#30 volume discipline).
+    const activeObj = activeId != null ? ctrl._scene.getObject(activeId) : null
+    if (fx && next.has(activeId) && activeObj instanceof Solid &&
+        activeId !== this._lastFxId && activeObj.corners?.length === 8) {
+      const corners = activeObj.corners
+      ctrl._motion.spawn(reduced => new SelectPulse(ctrl._sceneView.scene, corners, { reduced }))
+      this._lastFxId = activeId
+    } else if (next.size === 0) {
+      this._lastFxId = null
+    }
+
+    // 8. Everything downstream that reads the selection.
     ctrl._refreshObjectModeStatus()
+    ctrl._updateNPanel()
     ctrl._updateMobileToolbar()
     ctrl._syncContextProvenance?.()
   }
 
-  /** Clears visual selection highlight for all currently selected objects. */
-  clearObjectSelection() {
+  /**
+   * Normalises the mode so that "select something" means the same thing from
+   * every window. Only the Outliner used to do this, so selecting from the
+   * viewport while in Edit Mode left the app in a state the status bar could not
+   * describe.
+   */
+  _normalizeMode() {
     const ctrl = this._ctrl
-    this.hideFrameChain()
-    for (const id of ctrl._selectedIds) {
-      const obj = ctrl._scene.getObject(id)
-      if (obj) obj.meshView.setObjectSelected(false)
+    if (ctrl._scene.selectionMode === 'edit') ctrl.setMode('object')
+  }
+
+  // ── The contextual axis (ADR-096) ───────────────────────────────────────────
+
+  /**
+   * Hands ONE claim, derived from the whole selection, to the axis' owner.
+   * Wholesale replacement is the point: the manager decides which entities its
+   * context wants and how strongly, `SceneService` composes that with the
+   * `explicit` axis, and nothing accumulates.
+   *
+   * FULL beats DIMMED when two selected entities disagree about the same frame —
+   * "someone is looking straight at it" is the stronger statement.
+   */
+  _claimContext() {
+    const claim = new Map()
+    const want = (id, strength) => {
+      if (claim.get(id) === CONTEXTUAL.FULL) return
+      claim.set(id, strength)
     }
-    ctrl._selectedIds.clear()
-    ctrl._service.updateLinkSelectionHighlight(new Set())
+    for (const id of this._ids) {
+      const obj = this._ctrl._scene.getObject(id)
+      if (!obj) continue
+      // The selected entity itself — ADR-099 G2. Without this line, selecting an
+      // entity whose eye is closed is a decision with no visible consequence.
+      want(id, CONTEXTUAL.FULL)
+      if (obj instanceof CoordinateFrame) {
+        for (const [fid, strength] of this._frameChainClaim(id)) want(fid, strength)
+      } else {
+        for (const fid of this.collectAllDescendantFrames(id)) want(fid, CONTEXTUAL.FULL)
+      }
+    }
+    this._ctrl._service.setContextualFrames(claim)
+  }
+
+  /**
+   * The claim a selected CoordinateFrame makes: its whole TF tree, itself at
+   * FULL and the rest DIMMED.
+   *
+   * A CoordinateFrame tree is rooted at EITHER a geometry Solid (user frames
+   * hang off a Solid via its Origin frame, ADR-037) OR a world-parented root
+   * CoordinateFrame that hangs off no geometry — the robot TF tree
+   * (robot_base → tcp / user frames, ADR-084/085). An earlier version assumed
+   * the former and bailed out (`if (!geoRoot) return`) whenever the walk reached
+   * a parentless root frame, so selecting the robot — or adding / selecting any
+   * robot-attached frame — showed nothing in the viewport.
+   *
+   * @param {string} frameId
+   * @returns {Map<string, string>} id → CONTEXTUAL member
+   */
+  _frameChainClaim(frameId) {
+    const ctrl = this._ctrl
+    const start = ctrl._scene.getObject(frameId)
+    if (!(start instanceof CoordinateFrame)) return new Map()
+
+    // Walk up the parentId chain, remembering the last CoordinateFrame seen.
+    let node   = start
+    let rootCf = start
+    while (node instanceof CoordinateFrame) {
+      rootCf = node
+      node   = ctrl._scene.getObject(node.parentId)
+    }
+    // `node` is the geometry root (a Solid) when the walk found one, else null
+    // (frame-rooted tree). collectAllDescendantFrames() excludes the id passed
+    // to it, so for a frame-rooted tree we add the root CoordinateFrame back in.
+    const geoRoot = node
+    const treeIds = this.collectAllDescendantFrames((geoRoot ?? rootCf).id)
+    if (!geoRoot) treeIds.add(rootCf.id)
+
+    return new Map([...treeIds].map(fid => [
+      fid,
+      fid === frameId ? CONTEXTUAL.FULL : CONTEXTUAL.DIMMED,
+    ]))
   }
 
   /**
@@ -105,100 +385,7 @@ export class SelectionManager {
     return result
   }
 
-  /**
-   * Shows or hides the frame tree attached to a geometry object.
-   * @param {string|null} parentId
-   * @param {boolean} visible
-   */
-  setChildFramesVisible(parentId, visible) {
-    if (!parentId) return
-    if (visible) this.showGeometryFrameTree(parentId)
-    else         this.hideFrameChain()
-  }
-
-  /**
-   * Shows all CoordinateFrame descendants of a geometry object at full opacity.
-   * @param {string} geoId
-   */
-  showGeometryFrameTree(geoId) {
-    const treeIds = this.collectAllDescendantFrames(geoId)
-    this._claimContext(new Map([...treeIds].map(fid => [fid, CONTEXTUAL.FULL])))
-  }
-
-  /**
-   * Shows the full frame tree that `frameId` belongs to.
-   * The selected frame is full opacity; all others are dimmed.
-   *
-   * A CoordinateFrame tree is rooted at EITHER a geometry Solid (user frames
-   * hang off a Solid via its Origin frame, ADR-037) OR a world-parented root
-   * CoordinateFrame that hangs off no geometry — the robot TF tree
-   * (robot_base → tcp / user frames, ADR-084/085). The earlier version assumed
-   * the former and bailed out (`if (!geoRoot) return`) whenever the walk reached
-   * a parentless root frame, so selecting the robot — or adding / selecting any
-   * robot-attached frame — showed nothing in the viewport (no CF axes, no tap
-   * feedback). We now root the tree at that root CoordinateFrame instead.
-   * @param {string} frameId
-   */
-  showFrameChain(frameId) {
-    const ctrl = this._ctrl
-    const start = ctrl._scene.getObject(frameId)
-    if (!(start instanceof CoordinateFrame)) return
-
-    // Walk up the parentId chain, remembering the last CoordinateFrame seen.
-    let node   = start
-    let rootCf = start
-    while (node instanceof CoordinateFrame) {
-      rootCf = node
-      node   = ctrl._scene.getObject(node.parentId)
-    }
-    // `node` is the geometry root (a Solid) when the walk found one, else null
-    // (frame-rooted tree). collectAllDescendantFrames() excludes the id passed
-    // to it, so for a frame-rooted tree we add the root CoordinateFrame back in.
-    const geoRoot = node
-    const treeIds = this.collectAllDescendantFrames((geoRoot ?? rootCf).id)
-    if (!geoRoot) treeIds.add(rootCf.id)
-
-    this._claimContext(new Map([...treeIds].map(fid => [
-      fid,
-      fid === frameId ? CONTEXTUAL.FULL : CONTEXTUAL.DIMMED,
-    ])))
-  }
-
-  /**
-   * Releases this manager's claim on the contextual axis — the frames it was
-   * showing go back to whatever their `explicit` axis says, which for a frame
-   * the user opened by hand means STAYING VISIBLE (ADR-096 §症状 4; it used to
-   * mean vanishing while the row's eye stayed open).
-   */
-  hideFrameChain() {
-    this._claimContext(new Map())
-  }
-
-  /**
-   * Recomputes the contextual claim from the current selection. Called by
-   * transient sub-modes (link creation) that borrow the axis and must hand it
-   * back without guessing what was on screen before — the guess is what let the
-   * two writers drift apart.
-   */
-  refreshFrameContext() {
-    const ctrl = this._ctrl
-    const activeId = ctrl._scene.activeId
-    if (!activeId || !ctrl._objSelected) { this.hideFrameChain(); return }
-    const active = ctrl._scene.getObject(activeId)
-    if (active instanceof CoordinateFrame) this.showFrameChain(activeId)
-    else                                   this.setChildFramesVisible(activeId, true)
-  }
-
-  /**
-   * Hands a contextual claim to its owner (原則 #4). The manager decides WHICH
-   * frames its context wants and how strongly; `SceneService` composes that with
-   * the `explicit` axis and is the only thing that touches a mesh view.
-   * @param {Map<string, string>} frames  id → CONTEXTUAL member
-   */
-  _claimContext(frames) {
-    const ctrl = this._ctrl
-    ctrl._service.setContextualFrames(frames)
-  }
+  // ── Rectangle selection ─────────────────────────────────────────────────────
 
   /** Updates the CSS overlay to reflect the current drag rectangle. */
   updateRectSelDisplay() {
@@ -231,11 +418,7 @@ export class SelectionManager {
     const w = Math.abs(currentPx.x - startPx.x)
     const h = Math.abs(currentPx.y - startPx.y)
 
-    if (w < 3 && h < 3) {
-      this.clearObjectSelection()
-      this.setObjectSelected(false)
-      return
-    }
+    if (w < 3 && h < 3) { this.clearSelection(); return }
 
     const isRight = currentPx.x >= startPx.x
     const minX = Math.min(startPx.x, currentPx.x)
@@ -265,25 +448,8 @@ export class SelectionManager {
       }
     }
 
-    this.clearObjectSelection()
-    if (matched.length === 0) {
-      this.setObjectSelected(false)
-      return
-    }
-
-    for (const obj of matched) {
-      obj.meshView.setObjectSelected(true)
-      this.setChildFramesVisible(obj.id, true)
-      ctrl._selectedIds.add(obj.id)
-    }
-
-    const first = matched[0]
-    if (first.id !== ctrl._scene.activeId) {
-      ctrl._service.setActiveObject(first.id)
-    }
-    ctrl._objSelected = true
-    ctrl._refreshObjectModeStatus()
-    ctrl._updateNPanel()
-    ctrl._syncContextProvenance?.()
+    // 0 matches is a legal outcome and means "deselect" — it goes through the
+    // same entry as everything else rather than through a bespoke branch.
+    this.selectMany(matched.map(o => o.id), { activeId: matched[0]?.id ?? null })
   }
 }

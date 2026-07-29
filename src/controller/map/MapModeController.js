@@ -731,12 +731,9 @@ export class MapModeController {
           const nextId = [...ctrl._scene.objects.entries()]
             .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
           if (nextId) {
-            ctrl._switchActiveObject(nextId, true)
+            ctrl._selMgr.selectOnly(nextId)
           } else {
-            ctrl._objSelected = false
-            ctrl._selectedIds.clear()
-            ctrl._refreshObjectModeStatus()
-            ctrl._updateMobileToolbar()
+            ctrl._selMgr.clearSelection()
           }
         }))
       }

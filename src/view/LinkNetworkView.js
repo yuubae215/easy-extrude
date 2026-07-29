@@ -50,12 +50,37 @@
  * children but never the container, so the user's scroll survives a hover
  * without this class holding a second copy of it to drift.
  *
- * @see ADR-095 (indented outline), ADR-094 (TF tree regression), ADR-030
- *      (SpatialLink), ADR-048 (panel dimensions)
+ * ## Two render paths, and why (ADR-099)
+ *
+ * A row's `<g>` must outlive the pointer gesture aimed at it (ADR-099 G3).
+ * Until ADR-099 every render rebuilt the whole SVG, including on `mouseenter` —
+ * so the element under the pointer was destroyed and recreated, the browser saw
+ * a new hover target and fired `mouseenter` again, and the loop never settled.
+ * Measured on the reported scene: 76 hover events and 114–120 child mutations
+ * per touch, and **zero** `mousedown` / `mouseup` / `click` — `click` is only
+ * synthesised when press and release reach a common element, so the panel's
+ * click handler had never once run. That is 原則 #24 (a derived value fed back
+ * into its own input) wearing a DOM face: the derived value is "which row is
+ * hovered", and it was feeding the code that *creates the hit targets*.
+ *
+ * So there are two paths now:
+ *
+ *   - `_rebuildGraph()` — elements are created. Runs only when the LAYOUT
+ *     changed, judged by `layoutSignature()` on the pure side (the view holds no
+ *     opinion about equivalence — ADR-099 pays the "stale DOM" cost there).
+ *   - `_applyFocus()`  — attributes are written on existing elements. Runs on
+ *     hover, on selection, and after a rebuild.
+ *
+ * The idempotence guard on `mouseenter` stays as well: it prevents the loop from
+ * REAPPEARING through some future caller of the rebuild path, but it is not what
+ * breaks it. Identity is protected by structure, not by a guard (ADR-099 §1).
+ *
+ * @see ADR-099 (selection round trip), ADR-095 (indented outline), ADR-094 (TF
+ *      tree regression), ADR-030 (SpatialLink), ADR-048 (panel dimensions)
  */
 import { LINK_TYPE_COLORS } from './SpatialLinkView.js'
 import {
-  computeLayout, laneX, gutterX,
+  computeLayout, layoutSignature, laneX, gutterX,
   PANEL_W, MIN_PANEL_H, LEGEND_H, ROW_H, NODE_R,
 } from './LinkNetworkLayout.js'
 
@@ -98,9 +123,14 @@ export class LinkNetworkView {
      * @type {Map<string, string>}
      */
     this._nodeIdByEntity = new Map()
-    /** 3D selection as ENTITY ids — mapped to node ids at render time, so a
-     *  selection set before the next layout is not stale. */
-    this._selectedIds = new Set()
+    /**
+     * The 3D selection as ENTITY ids, as last announced to this panel — mapped
+     * to node ids at focus time, so a selection set before the next layout is
+     * not stale. A display copy of an event payload, deliberately NOT named
+     * `_selectedIds`: the authority is `SelectionManager._ids` and one concept
+     * gets one name (§1.1 / ADR-099).
+     */
+    this._selectionEntityIds = new Set()
     /** Row currently hovered in the panel — drives focus+context with selection. */
     this._hoveredId   = null
     this._collapsed   = false
@@ -115,6 +145,20 @@ export class LinkNetworkView {
     this._forceHidden = false
     /** Cached link-existence flag from the last update() — drives auto-visibility. */
     this._hasContent  = false
+    /**
+     * Signature of the layout the current DOM was built from (ADR-099). `null`
+     * = nothing built yet. Compared, never interpreted — the equivalence rule
+     * lives in the pure layout module.
+     * @type {string|null}
+     */
+    this._layoutSig   = null
+    /**
+     * Live element handles, so focus can be written without creating anything.
+     * @type {Map<string, {g: SVGGElement, hit: SVGRectElement, circle: SVGCircleElement, text: SVGTextElement}>}
+     */
+    this._rowEls      = new Map()
+    /** @type {Map<string, SVGPathElement>} edge id → its drawn arc (dropped edges absent) */
+    this._edgeEls     = new Map()
 
     this._buildDOM()
   }
@@ -141,6 +185,11 @@ export class LinkNetworkView {
       boxShadow:       '0 4px 20px rgba(0,0,0,0.45)',
       pointerEvents:   'auto',
     })
+    // Named region: on mobile this panel is the only permanent structure view,
+    // so it needs an accessible name — and it gives the round-trip regression a
+    // handle that is not a style selector (ADR-099 §Consequences).
+    this._panelEl.setAttribute('role', 'region')
+    this._panelEl.setAttribute('aria-label', 'Link Network panel')
     document.body.appendChild(this._panelEl)
 
     // ── Header row ──────────────────────────────────────────────────────────
@@ -276,7 +325,14 @@ export class LinkNetworkView {
     this._hasContent = layout.edges.size > 0
     this._applyVisibility()
 
-    if (this._hasContent) this._renderSVG()
+    // Elements are created only when the picture itself changed. Everything a
+    // selection or a hover does is an attribute write on what is already there.
+    const sig = layoutSignature(layout)
+    if (sig !== this._layoutSig) {
+      this._layoutSig = sig
+      this._rebuildGraph()
+    }
+    this._applyFocus()
   }
 
   /**
@@ -310,8 +366,8 @@ export class LinkNetworkView {
    * layout's, resolved at render time so it always matches the current graph.
    */
   setSelection(ids) {
-    this._selectedIds = new Set(ids)
-    this._renderSVG()
+    this._selectionEntityIds = new Set(ids)
+    this._applyFocus()
   }
 
   /**
@@ -334,8 +390,17 @@ export class LinkNetworkView {
 
   // ── Rendering ───────────────────────────────────────────────────────────────
 
-  _renderSVG() {
+  /**
+   * Creates the elements. THE ONLY place that does — every other visual change
+   * is an attribute write in `_applyFocus()` (ADR-099 §1).
+   *
+   * Called only when `layoutSignature()` says the picture changed, which is what
+   * makes a row's `<g>` outlive the gesture aimed at it.
+   */
+  _rebuildGraph() {
     while (this._graphGrp.firstChild) this._graphGrp.removeChild(this._graphGrp.firstChild)
+    this._rowEls.clear()
+    this._edgeEls.clear()
     if (this._nodes.size === 0) return
 
     // The SVG is as tall as the outline; the container is capped and scrolls.
@@ -343,11 +408,24 @@ export class LinkNetworkView {
     this._svgEl.setAttribute('height', this._contentH)
     this._scrollEl.style.height = `${this._graphH}px`
 
-    // Focus+context: the union of the panel-hovered row and the 3D selection.
-    // Selection arrives as entity ids; a fused node answers to both of its
-    // members, so it is resolved through the layout's map (ADR-094 E1).
+    this._renderTreeElbows()
+    this._buildCotreeArcs()
+    this._buildRows()
+  }
+
+  /**
+   * Writes focus+context onto the existing elements. Creates and removes
+   * nothing, so it is safe to call from a pointer handler (ADR-099 G3).
+   *
+   * Focus is the union of the panel-hovered row and the 3D selection. Selection
+   * arrives as ENTITY ids; a fused node answers to both of its members, so it is
+   * resolved through the layout's map (ADR-094 E1).
+   */
+  _applyFocus() {
+    if (this._rowEls.size === 0) return
+
     const focusIds = new Set()
-    for (const entityId of this._selectedIds) {
+    for (const entityId of this._selectionEntityIds) {
       const nodeId = this._nodeIdByEntity.get(entityId)
       if (nodeId != null) focusIds.add(nodeId)
     }
@@ -363,9 +441,35 @@ export class LinkNetworkView {
       }
     }
 
-    this._renderTreeElbows()
-    this._renderCotreeArcs(focusIds, hasFocus)
-    this._renderRows(focusIds, neighborIds, hasFocus)
+    for (const [id, edge] of this._edges) {
+      const el = this._edgeEls.get(id)
+      if (!el) continue                       // dropped edge — drawn as a "+N" badge
+      // active: null = no focus (neutral), true = incident to focus, false = dimmed.
+      const active = !hasFocus ? null : (focusIds.has(edge.source) || focusIds.has(edge.target))
+      const dimmed = active === false
+      el.setAttribute('stroke-width', String((edge.kinematic ? 1.8 : 1.2) + (active ? 0.5 : 0)))
+      // Neutral opacities sit above the skeleton's: the arcs are the layer ON TOP
+      // of the tree, and a coloured arc must not read fainter than the white line
+      // it crosses (ADR-094 E2).
+      el.setAttribute('stroke-opacity', String(
+        dimmed ? 0.12 : active ? 0.95 : edge.kinematic ? 0.78 : 0.58))
+      if (edge.directed && !dimmed) el.setAttribute('marker-end', `url(#lnv-arr-${edge.semanticType})`)
+      else                          el.removeAttribute('marker-end')
+    }
+
+    for (const [id, els] of this._rowEls) {
+      const focused  = focusIds.has(id)                    // selected OR hovered
+      const neighbor = neighborIds.has(id)
+      const context  = hasFocus && !focused && !neighbor   // recede to background
+
+      els.hit.setAttribute('fill', focused ? 'rgba(255,255,255,0.09)' : 'transparent')
+      els.circle.setAttribute('r',            focused ? NODE_R + 1.5 : NODE_R)
+      els.circle.setAttribute('fill-opacity', context ? '0.4' : '1')
+      els.circle.setAttribute('stroke',       focused ? '#ffffff' : 'rgba(0,0,0,0.45)')
+      els.circle.setAttribute('stroke-width', focused ? '1.2' : '0.8')
+      els.text.setAttribute('fill',         focused ? '#ffffff' : '#c8c8c8')
+      els.text.setAttribute('fill-opacity', context ? '0.45' : '1')
+    }
   }
 
   /**
@@ -427,11 +531,14 @@ export class LinkNetworkView {
    * interval colouring over the canonical edge order, which is what keeps two
    * crossing constraints from swapping places when an unrelated link is deleted
    * and re-added. Edges the layout could not fit (`dropped`) are drawn by
-   * `_renderRows` as a "+N" badge instead of vanishing (原則 #11).
+   * `_buildRows` as a "+N" badge instead of vanishing (原則 #11).
+   *
+   * Focus-dependent attributes (width, opacity, arrowhead) are NOT set here —
+   * they belong to `_applyFocus()`, which runs against these same elements.
    */
-  _renderCotreeArcs(focusIds, hasFocus) {
+  _buildCotreeArcs() {
     const gx = gutterX(this._gutterW)
-    for (const [, edge] of this._edges) {
+    for (const [edgeId, edge] of this._edges) {
       if (edge.dropped) continue
       const u = this._nodes.get(edge.source), v = this._nodes.get(edge.target)
       if (!u || !v) continue
@@ -445,28 +552,16 @@ export class LinkNetworkView {
       const d = `M ${gx} ${u.y} L ${lx - r} ${u.y} Q ${lx} ${u.y} ${lx} ${u.y + dir * r}`
               + ` L ${lx} ${v.y - dir * r} Q ${lx} ${v.y} ${lx - r} ${v.y} L ${gx + 1} ${v.y}`
 
-      // active: null = no focus (neutral), true = incident to focus, false = dimmed.
-      const active = !hasFocus ? null : (focusIds.has(edge.source) || focusIds.has(edge.target))
-      const dimmed = active === false
-
       const el = document.createElementNS(SVG_NS, 'path')
       el.setAttribute('d', d)
       el.setAttribute('fill', 'none')
       el.setAttribute('stroke',       color)
-      el.setAttribute('stroke-width', String((edge.kinematic ? 1.8 : 1.2) + (active ? 0.5 : 0)))
-      // Neutral opacities sit above the skeleton's: the arcs are the layer ON TOP
-      // of the tree, and a coloured arc must not read fainter than the white line
-      // it crosses (ADR-094 E2).
-      el.setAttribute('stroke-opacity', String(
-        dimmed ? 0.12 : active ? 0.95 : edge.kinematic ? 0.78 : 0.58))
       el.setAttribute('stroke-linejoin', 'round')
       // Kinematic joints render solid (a real constraint); topological
       // annotations stay dashed (a conceptual relationship).
       if (!edge.kinematic) el.setAttribute('stroke-dasharray', '3.5 2.5')
-      if (edge.directed && !dimmed) {
-        el.setAttribute('marker-end', `url(#lnv-arr-${edge.semanticType})`)
-      }
       this._graphGrp.appendChild(el)
+      this._edgeEls.set(edgeId, el)
     }
   }
 
@@ -477,24 +572,35 @@ export class LinkNetworkView {
    * one row, so two labels cannot land on each other and the width available to
    * a label never divides by the sibling count. That deletion IS the ADR-095
    * change; everything else here is the same vocabulary as before.
+   *
+   * Focus-dependent attributes are left to `_applyFocus()` — this method decides
+   * WHAT EXISTS, never how it currently reads (ADR-099 §1).
    */
-  _renderRows(focusIds, neighborIds, hasFocus) {
+  _buildRows() {
     const gx = gutterX(this._gutterW)
 
     for (const [id, nd] of this._nodes) {
-      const focused  = focusIds.has(id)                    // selected OR hovered
-      const neighbor = neighborIds.has(id)
-      const context  = hasFocus && !focused && !neighbor   // recede to background
-      const color    = NODE_COLOR[nd.type] ?? NODE_COLOR.default
+      const color = NODE_COLOR[nd.type] ?? NODE_COLOR.default
 
       const g = document.createElementNS(SVG_NS, 'g')
       g.style.cursor = 'pointer'
       g.addEventListener('click', () => this._onSelect?.(id))
       // Panel-hover drives focus+context (Tier A affordance — "these are the
       // links of this entity"); it never mutates the 3D selection.
-      g.addEventListener('mouseenter', () => { this._hoveredId = id; this._renderSVG() })
+      //
+      // Both handlers are idempotent. `mouseleave` always was; `mouseenter` was
+      // not, and with a rebuilding renderer behind it that asymmetry was the
+      // loop (ADR-099 力学 1). The guard is kept as re-entry protection even
+      // though `_applyFocus` no longer touches this element's existence.
+      g.addEventListener('mouseenter', () => {
+        if (this._hoveredId === id) return
+        this._hoveredId = id
+        this._applyFocus()
+      })
       g.addEventListener('mouseleave', () => {
-        if (this._hoveredId === id) { this._hoveredId = null; this._renderSVG() }
+        if (this._hoveredId !== id) return
+        this._hoveredId = null
+        this._applyFocus()
       })
 
       // Full-width hit area: in an outline the row is the target, not the dot.
@@ -503,18 +609,15 @@ export class LinkNetworkView {
       hit.setAttribute('y',      String(nd.y - ROW_H / 2))
       hit.setAttribute('width',  String(PANEL_W))
       hit.setAttribute('height', String(ROW_H))
-      hit.setAttribute('fill',   focused ? 'rgba(255,255,255,0.09)' : 'transparent')
-      if (focused) hit.setAttribute('rx', '3')
+      hit.setAttribute('fill',   'transparent')
+      hit.setAttribute('rx',     '3')
       g.appendChild(hit)
 
       const circle = document.createElementNS(SVG_NS, 'circle')
-      circle.setAttribute('cx',           nd.x)
-      circle.setAttribute('cy',           nd.y)
-      circle.setAttribute('r',            focused ? NODE_R + 1.5 : NODE_R)
-      circle.setAttribute('fill',         color)
-      circle.setAttribute('fill-opacity', context ? '0.4' : '1')
-      circle.setAttribute('stroke',       focused ? '#ffffff' : 'rgba(0,0,0,0.45)')
-      circle.setAttribute('stroke-width', focused ? '1.2' : '0.8')
+      circle.setAttribute('cx',   nd.x)
+      circle.setAttribute('cy',   nd.y)
+      circle.setAttribute('r',    String(NODE_R))
+      circle.setAttribute('fill', color)
       g.appendChild(circle)
 
       // Indent saturated: the staircase stopped, so the number says it outright
@@ -534,8 +637,7 @@ export class LinkNetworkView {
       const text = document.createElementNS(SVG_NS, 'text')
       text.setAttribute('x',            nd.labelX)
       text.setAttribute('y',            nd.y + 3.2)
-      text.setAttribute('fill',         focused ? '#ffffff' : '#c8c8c8')
-      text.setAttribute('fill-opacity', context ? '0.45' : '1')
+      text.setAttribute('fill',         '#c8c8c8')
       text.setAttribute('font-size',    String(LABEL_SIZE))
       text.setAttribute('font-family',  FONT)
       text.setAttribute('pointer-events', 'none')
@@ -557,6 +659,7 @@ export class LinkNetworkView {
       }
 
       this._graphGrp.appendChild(g)
+      this._rowEls.set(id, { g, hit, circle, text })
     }
   }
 

@@ -162,7 +162,7 @@ export class MeasurePlacementHandler {
         document.body,
         { p1: p1Anchor, p2: p2Anchor },
       )
-      ctrl._switchActiveObject(obj.id, true)
+      ctrl._selMgr.selectOnly(obj.id)
       if (window.matchMedia('(pointer: coarse)').matches) ctrl._controls.enabled = true
       ctrl._uiView.setCursor('default')
       ctrl._refreshObjectModeStatus()

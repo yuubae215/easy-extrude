@@ -3,7 +3,7 @@ GOALS adr099_selection_round_trip
 goal SelectionIsOneFactSeenThroughEveryWindow
 uuid 8db2216c-7071-473f-8fdb-e3d3b5cfa7cb
 summary "パネルとビューポートが『1 つの選択』の 2 つの窓になる。どちらから触っても同じ事実が動き、両方が同じように追従し、選択という決定はその結果が見えるところまでを含む (選べたのに画面が沈黙する、が構造的に表現不能になる)"
-state ToBeDeveloped
+state UnderReview
 labels adr-099, selection, link-network
 artifacts
 - "docs/adr/ADR-099-selection-round-trip-one-entry.md"
@@ -11,7 +11,7 @@ artifacts
 
     context Adr099Scope
     uuid d2ea4c73-5b53-4c66-a24d-16b954a3ec38
-    summary "ADR-099 (Proposed, 2026-07-26): LinkNetworkView の focus/context 表現を全再構築から属性更新へ変えて行 DOM の同一性をジェスチャより長くし、SelectionManager に選択の公開 API (selectOnly / addToSelection / clearSelection) を置いて _selectedIds・_objSelected・可視ハイライトの唯一の書き手にし、選択が contextual 可視性を主張する (explicit 軸には触らない — ADR-096 の所有者は eye のまま)。View + Controller に閉じ、ドメイン・契約・core は不変"
+    summary "ADR-099 (Accepted・実装済み, 2026-07-29): LinkNetworkView の focus/context 表現を全再構築から属性更新へ変えて行 DOM の同一性をジェスチャより長くし、SelectionManager に選択の公開 verb (selectOnly / selectMany / clearSelection / activateWithinSelection / forget) を置いて選択集合・可視ハイライト・文脈可視性の唯一の書き手にし、選択が contextual 可視性を主張する (explicit 軸には触らない — ADR-096 の所有者は eye のまま)。View + Controller に閉じ、ドメイン・契約・core は不変"
     artifacts
     - "src/view/LinkNetworkView.js"
     - "src/controller/SelectionManager.js"
@@ -24,7 +24,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 2d9676de-9cd3-4d24-b7ec-4294b25d753a
-    summary "事業木への接続は保留 (証拠が全て未来形のうちに接ぐと profit-growth.gsn の ToBeDeveloped を増やすだけ)。接続予定先は ADR-094 が既に吊った goal MobileStructureViewIsReadable (uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e の採用ファネル系列) — モバイルでは LINK NETWORK が唯一の常設構造ビューであり、そこから選べないことは可読性ではなく到達性の欠落なので、同じ枝に solution として吊る。往復の回帰と入口の個数検査が実在した時点で接ぐ"
+    summary "事業木への接続は**まだ実施していない** (起票時の保留を継続)。証拠は未来形でなくなったので接続の前提は満たしたが、接続予定先 MobileStructureViewIsReadable (uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e) が問うのは『モバイルで構造ビューが読めるか』であり、往復の到達性はその必要条件にすぎない。当事者の dogfooding (往復が自然か = 主観) が 1 回でも入った時点で solution として吊る — 機械で閉じた到達性だけを事業木へ吊ると、読めるかどうかを問うていない証拠が読める根拠として並ぶ"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -42,15 +42,15 @@ artifacts
 
     assumption ClickReachingIsNotSufficient
     uuid 31e88197-a81f-4791-b291-c228a520f994
-    summary "反証されうる仮説: 閉路を断って click が発火すれば、当事者の苦情は全部消えるかもしれない (力学 2・3 は予測であって観測ではない)。逆に、CF ノードを選んでも原点球が金になるだけで軸が描かれていなければ画面は沈黙し続ける可能性がある。実装は閉路の修正を先に入れて再計測し、そこで残る症状を見てから reveal-on-select と入口の一本化の必要性を確認する — 予測のまま 3 つ同時に入れると、どれが効いたのか分からなくなる"
+    summary "**部分的に反証された (2026-07-29 実装時の再計測)**。仮説は『閉路を断って click が発火すれば当事者の苦情は全部消えるかもしれない / 逆に CF を選んでも軸が描かれていなければ沈黙し続けるかもしれない』だった。後者は CF については**外れ**である: showFrameChain は選ばれた当人を CONTEXTUAL.FULL で主張済みで、ADR-096 の合成は visible = explicit || contextual !== null なので、CF の往復は閉路を断つだけで成立していた。実際に沈黙していたのは eye で伏せた **geometry** で、主張の宛先が『フレーム木』に限られていたためである。決定 §3 は残るが理由が一段一般化された (宛先はフレームではなく選択された実体そのもの)。この反証は検査の設計に直接効いた — 予測どおりに書いた最初の e2e (robot_base を選んで軸が出るか) は修正の有無にかかわらず通り、何も問うていなかった。『予測のまま 3 つ同時に入れず順に再計測せよ』というこの仮説の指示がそれを救っている"
 
     assumption IncrementalRenderIntroducesStaleness
     uuid 1dcee3a4-52af-4d08-ba86-35cb7d451616
-    summary "反証されうる仮説 (ADR-099 §受け入れるコスト): 全再構築をやめて差分更新にすると『レイアウトが変わったのに DOM が古い』という新しい欠陥が入りうる。ADR-095 が意図的に選んだ全再構築の単純さを一部手放すことになる。回収の形は、レイアウト結果の同値判定を純粋関数側 (LinkNetworkLayout) へ置いて表テストで固定すること — 判定を View の中の勘に置いたらこの仮説は反証されたものとして扱う"
+    summary "反証されうる仮説 (ADR-099 §受け入れるコスト、**未決着のまま残る**): 全再構築をやめて差分更新にすると『レイアウトが変わったのに DOM が古い』という新しい欠陥が入りうる。回収の形として宣言していた『判定を純粋関数側へ置く』は実施済み (LinkNetworkLayout.layoutSignature + 欄の勘定検査)。それでも仮説が閉じないのは、署名の欄が完全であることは検査できても、**描画がその欄しか読んでいないこと**は静的には検査できないため — 将来 view が nd.frameId を描き始めたら署名は変わらないのに DOM は古くなる。反証されたら『描画が読む欄』を view 側から宣言させて突き合わせる方向で回収する (今日は過剰モデリング — §5)"
 
     assumption RevealOnSelectMayFloodTheView
     uuid 191b21e9-81df-47ef-b34a-52a95bd1bc53
-    summary "反証されうる仮説: 選択が contextual 可視性を主張すると、多数選択時に大量の CF 軸が一度に現れて画面が混む。既存の showFrameChain が持つ強度規則 (選択本体 FULL / 連鎖 DIMMED) を再利用して緩和する想定だが、N が大きいときの見え方は測っていない。反証されたら『選択本体だけ FULL、連鎖は主張しない』へ狭める — 主張をやめる方向へは戻さない (それは G2 の放棄になる)"
+    summary "反証されうる仮説 (**未検証のまま残る**): 選択が contextual 可視性を主張すると、多数選択時に大量の CF 軸が一度に現れて画面が混む。既存の showFrameChain が持つ強度規則 (選択本体 FULL / 連鎖 DIMMED) を再利用して緩和した — 実装では主張が選択集合全体の**和**になったので、N が大きいときの総量は起票時の想定より*増えて*いる (per-entity 置換だった旧実装は最後の 1 個ぶんしか出していなかった = そもそも壊れていた)。N が大きいときの見え方は測っていない。反証されたら『選択本体だけ FULL、連鎖は主張しない』へ狭める — 主張をやめる方向へは戻さない (それは G2 の放棄になる)"
 
     strategy ByRestoringTheTargetLifetimeThenTheEntry
     uuid 4ecec83c-fe90-48dc-a872-243145670f1d
@@ -59,48 +59,83 @@ artifacts
         goal RowIdentityOutlivesTheGesture
         uuid 9ffca747-5178-4947-bf31-5413823c3caa
         summary "行の DOM 同一性がポインタジェスチャより長く生き、hover による無限再構築が止まる。click が押下と離上の共通祖先として合成され、ハンドラへ到達する。副次的に、パネル上でポインタを止めているだけで走り続けていた再描画コストが消える"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckMutationCountIsBounded
+            solution BoundedWorkUnderRestingPointerIsGreen
             uuid 45bcab1e-190f-443d-b062-094e32547880
-            summary "この goal を決着させる検査を名指しする (未実行): e2e/smoke.spec.js に、実測手順をそのまま回帰として置く。パネル行にポインタを置いて 300ms 待ち、MutationObserver が数えた SVG 子要素の変異が有界 (閾値以下) であること。今日の値は 114〜120 件で実行ごとに揺れる = 有界でないことが、この検査が意味を持つ証拠になっている。閾値は固定値ではなく『hover 1 回につき定数』の形で書く"
+            summary "playwright test e2e/smoke.spec.js — pass (『パネル行に触れ続けても仕事が増え続けない』)。実測手順をそのまま回帰にした: パネル行へポインタを置き、MutationObserver で 300ms × 2 回計測する。**有界性を『閾値以下』ではなく『増えない』で問う**形に変えた — 閾値で書くと閉路が遅くなっただけの修正が通ってしまい、実測値が 114〜120 で揺れていたこと自体が閾値を選ぶ根拠の不在を示していた。子要素の変異が 0 件、かつポインタ静止中に属性書き込みが増えないこと、そのうえで click が合成されて選択が動くことを同じ 1 本で見る。**変異で空回りしていないことを確認した**: mouseenter を _rebuildGraph() へ戻すと child = 42 で fail する"
             artifacts
             - "e2e/smoke.spec.js"
+            - "src/view/LinkNetworkView.js"
+
+            solution LayoutEquivalenceLivesInThePureModule
+            uuid c3f0a1b8-77e2-4d3a-9a51-6f0e2d5c4b19
+            summary "node --test src/view/LinkNetworkLayout.test.js — pass (42/42、うち本 ADR は 3 本)。再構築するか否かの判定を view の勘ではなく純粋関数 layoutSignature() に置き、(a) 署名の欄が**両向きに勘定が合う** (未分類のフィールドが 0 個・宣言したのに実在しない欄が 0 個)、(b) 同じシーンは同じ署名、(c) 描画を変える 5 種の変更 (ラベル / 実体種 / ノード追加 / リンク種 / 関節) がすべて署名を変える、を固定した。(a) が原則 #31 の形 — 勘定に入れ忘れたフィールドは検査対象のノードを持たないので、宣言された欄を辿る検査では永久に見えない"
+            artifacts
+            - "src/view/LinkNetworkLayout.js"
+            - "src/view/LinkNetworkLayout.test.js"
 
         goal EverySelectionWindowCallsTheSameEntry
         uuid dd8650ac-13b7-49f1-a776-1dc6468e5bc3
-        summary "選択集合と可視ハイライトを書く場所が SelectionManager の公開 API ちょうど 1 箇所になり、5 つの窓 (Outliner / ビューポートピック / ダブルクリック / 矩形選択 / LINK NETWORK) はそれを呼ぶだけになる。mode の正規化など今日 1 つの窓だけが持つ手続きが、全窓に効く"
-        state ToBeDeveloped
-        labels support-exploring
+        summary "選択集合と可視ハイライトを書く場所が SelectionManager の公開 verb ちょうど 1 箇所になり、5 つの窓 (Outliner / ビューポートピック / ダブルクリック / 矩形選択 / LINK NETWORK) はそれを呼ぶだけになる。mode の正規化など今日 1 つの窓だけが持つ手続きが、全窓に効く"
+        state UnderReview
 
-            assumption PlannedCheckSelectionWriterCensus
+            solution SelectionWriterCensusIsGreen
             uuid 47199d02-4b3e-4598-97ca-85c17adc2671
-            summary "この goal を決着させる検査を名指しする (未実行): PosePolicyOwnership.test.js と同じ形の個数検査を選択について書き、_selectedIds / _objSelected を SelectionManager の外から書く行が 0 個であることを src 全走査で数える。宣言された例外は表に持ち、宣言の無い例外が 0 個であることを逆向きにも数える。在る窓を辿る検査では次に足される 6 つ目の窓を素通りする — 今回の欠陥がまさにその作られ方だった (原則 #31)"
+            summary "node --test src/SelectionOwnership.test.js — pass (6/6)。PosePolicyOwnership.test.js と同じ形の個数検査を選択について書き、src 全走査で 6 規則を数える: 選択集合の変異 / _objSelected への代入 (どこにも 0 個 — 導出になったので) / meshView.setObjectSelected の呼び出し / 退役した _switchActiveObject / 退役した clearObjectSelection+setObjectSelected の対 / 退役した showFrameChain 系。宣言された例外の表は**空のまま持ち、件数そのものを assert する** (0 件であることを空欄ではなく宣言として持つ)。逆向きに『入口が実在し 5 verb を持つ』『_apply が 1 遷移で 5 つの書き込み先すべてを書く』『_objSelected / _selectedIds が setter を持たない getter である』も数える。**変異で空回りしていないことを確認した**: ハンドラへ 3 種の書き込みを 1 行ずつ注入すると 9 件の違反として行番号ごと名指しされる"
             artifacts
+            - "src/SelectionOwnership.test.js"
             - "src/controller/SelectionManager.js"
+
+            solution NoWindowCanWriteASubsetIsGreen
+            uuid 5e2b91a7-3c40-4f8e-9d61-8a7c2f4e0b33
+            summary "node --test src/controller/SelectionManager.test.js — pass (19/19)。個数検査が『書ける場所』を数えるのに対し、こちらは『書いた結果』を数える: どの verb (selectOnly / selectMany / activateWithinSelection / forget / clearSelection) を通った後でも、3 つの書き込み先 — 可視ハイライト・リンク強調・LINK NETWORK パネル — が選択集合と一致することを毎回 assert する。加えて mode 正規化が入口にあること (旧: Outliner だけが持っていた 1 行)、既に選択済みの実体を掴んでも多重選択が 1 個へ潰れないことを固定した"
+            artifacts
+            - "src/controller/SelectionManager.test.js"
+
+            solution UndoCallbacksWereTheFourthWindow
+            uuid 9a4d3f21-6b58-4e07-8c92-1d5b3a7e6c40
+            summary "実装時の発見 (起票時の波及表に無かった): 選択を書く『窓』は 5 つではなかった。undo コールバックの中で `_objSelected = false; _selectedIds.clear(); _refreshObjectModeStatus(); _updateMobileToolbar()` を 4 行手書きする形が MapModeController / ContextMenuHandler / FramePlacementHandler / AppController の 4 箇所に複製されていた。ハンドラの中の undo 経路は『選択の窓』に見えないので、窓を辿る数え方では絶対に出てこない — 個数検査が形を数える理由がこれである。逆に波及表が挙げていた OutlinerBridge / OutlinerView は**触っていない** (読み手側は既にイベントで追従できていた)"
+            artifacts
+            - "src/controller/map/MapModeController.js"
+            - "src/controller/handler/ContextMenuHandler.js"
+            - "src/controller/handler/FramePlacementHandler.js"
 
         goal SelectionCannotBeSilent
         uuid 85ad9c66-b5a5-4cd3-8dc5-603c9c1af494
-        summary "選択された実体は選択中だけ見える (contextual 軸への主張)。explicit で消してある tcp をパネルから選ぶと軸が現れ、選択を外すと eye の宣言どおり消える。ADR-096 の合成規則がそのまま効き、可視性の書き手は増えない"
-        state ToBeDeveloped
-        labels support-exploring
+        summary "選択された実体は選択中だけ見える (contextual 軸への主張)。explicit で伏せてある実体をパネルから選ぶと現れ、選択を外すと eye の宣言どおり消える。ADR-096 の合成規則がそのまま効き、可視性の書き手は増えない"
+        state UnderReview
 
-            assumption PlannedCheckCompositionTableAndRoundTrip
+            solution RevealOnSelectRegressionIsGreen
             uuid bf99036a-f896-4fe9-9c10-e0acdb05be27
-            summary "この goal を決着させる検査を名指しする (未実行): (1) 単体 — VisibilityAxes の合成表を explicit × contextual × selected へ拡張し、行数そのものを assert する (ADR-096 の既存表と同じ形)。(2) e2e — パネルの robot_base 行をクリックしてステータスバーが 'robot_base · selected' になることを、逆向き (3D で選んでパネルが光る) と同じ 1 本の差分ペアで見る。片方向だけ通ると『テストが何も動かしていない』状態と区別できない"
+            summary "playwright test e2e/smoke.spec.js — pass (『eye を閉じた実体をパネルから選ぶと、選択中だけ現れる』)。差分が出る側で問う: Outliner の eye で Cube を伏せ (explicit = false, drawn = false)、パネルの Cube 行をクリック → drawn = true、explicit は false のまま (選択は explicit 軸を書き換えない — 所有者は eye)、選択を外すと drawn = false へ戻る。報告者のシーンそのもの (CF) の往復も同じ 1 本で見る。**変異で確認した**: _claimContext から『選ばれた当人を FULL で主張する』行を外すと『選べたのに画面が沈黙する』で fail する。最初に書いた CF 版は修正の有無にかかわらず通っており (assumption ClickReachingIsNotSufficient の部分反証)、差分の出る形へ書き直して初めて証拠になった"
             artifacts
-            - "src/view/VisibilityAxes.test.js"
             - "e2e/smoke.spec.js"
+            - "src/controller/SelectionManager.js"
+
+            solution ContextualClaimTableIsGreen
+            uuid a71e4c93-5d28-4b16-9f03-2e6c8b7d1a45
+            summary "node --test src/controller/SelectionManager.test.js — pass (19/19)。起票時に予定した『VisibilityAxes を explicit × contextual × selected の 3 軸へ拡張』は**採らなかった** — selected を軸にすると合成の書き手が増え、ADR-096 が閉じた 2 軸設計が崩れる。選択は軸ではなく contextual 軸の**源**なので、表は『選択 → どの id をどの強度で主張するか』の側に置き (CF は木を自分 FULL・連鎖 DIMMED、geometry は自分 + 子孫フレーム FULL)、本物の composeVisibility を通して両端を繋いだ。ADR-096 の症状 4 (eye が選択変更を生き延びる) はそのまま緑"
+            artifacts
+            - "src/controller/SelectionManager.test.js"
+            - "src/view/VisibilityAxes.js"
 
         goal SelectionCardinalityIsRepresentable
         uuid eb9f1a10-f00b-4f95-b68a-480ce8179286
         summary "選択の基数 (0 個 / 1 個 / N 個) が 1 つの表現で持たれ、不正状態が表現不能になる。今日は _objSelected: boolean と _selectedIds: Set の 2 つに分裂しており、_objSelected === true かつ _selectedIds.size === 0 が表現可能である"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckLedgerRowAndIllegalState
+            solution IllegalStateIsUnwritableIsGreen
             uuid fb93f435-2fcb-4126-b80b-203e61573647
-            summary "この goal を決着させる検査を名指しする (未実行): docs/STATE_LEDGER.md に選択の行 (基数 0·1·N) を起こし — 今日この行が無いことが、選択について §1.4 の累積判定が一度も発動していない理由である — 公開 API の設計と同じコミットで不正状態を表現不能にする。検査は単体で、API を通した任意の操作列の後に『_objSelected と _selectedIds.size の整合が崩れた状態が 0 個』であること。mode / status は状態として認識されるが基数には欄が無い (原則 #31) — 台帳の基数列がその欄"
+            summary "node --test src/SelectionOwnership.test.js + playwright test e2e/smoke.spec.js — pass。表現は SelectionManager._ids ただ 1 つになり、AppController._objSelected / _selectedIds は setter を持たない getter (代入は strict モードで TypeError)。静的側は個数検査が『代入しようとした行が 0 個』を数え、動的側は e2e が 1 個 → 0 個の遷移で objSelected === (count > 0) かつ count === names.length を問う。両方要るのは、実行されない経路の代入は実行時に落ちないため。docs/STATE_LEDGER.md に基数列を持つ行を起こした"
             artifacts
+            - "src/SelectionOwnership.test.js"
+            - "e2e/smoke.spec.js"
             - "docs/STATE_LEDGER.md"
+
+            solution NWasBrokenNotJustUnrepresented
+            uuid 3f8c6d15-4a29-4b73-8e50-9c1a2f7b6e84
+            summary "実装時の発見 (基数 N 側にしか無い欠陥): 矩形選択とアセンブリ選択はメンバーごとに setChildFramesVisible(id, true) を呼んでいたが、文脈の主張は ADR-096 の設計どおり**丸ごと置換**なので、最後の呼び出しが前を消していた — N 個選んでも 1 個ぶんの文脈しか出ていない。1 個の fixture では絶対に見えず、実装を読んでも『per-entity に正しく呼んでいる』ようにしか見えない (ADR-093 の lockstep と同じ構図)。主張を選択集合全体からの和として 1 回で計算する形にして消えた。SelectionManager.test.js の『基数 N の文脈主張は和であって最後の 1 個ではない』が問い所"
+            artifacts
+            - "src/controller/SelectionManager.js"
+            - "src/controller/SelectionManager.test.js"

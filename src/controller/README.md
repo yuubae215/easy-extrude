@@ -34,9 +34,21 @@ first if currently in Edit mode. This guarantees all in-progress operations
 and visual states are cleaned up before the swap.
 
 ```js
-if (this._selectionMode === 'edit') this.setMode('object')
-// ... then _switchActiveObject(newId, true)
+// Selecting normalises the mode itself (ADR-099) — the caller does NOT
+// pre-switch. `_switchActiveObject` is retired: its `select` flag meant one
+// window could switch the active entity without selecting it.
+this._selMgr.selectOnly(newId)
 ```
+
+## Selection Contract (ADR-099, `src/SelectionOwnership.test.js`)
+
+`SelectionManager` is the **single entry point** for selection. Five verbs
+(`selectOnly` / `selectMany` / `clearSelection` / `activateWithinSelection` /
+`forget`) all funnel into one transition that writes the selection set, the
+visible highlight, the contextual visibility claim, the link highlight and the
+LINK NETWORK panel **together** — a window cannot write a subset. `_objSelected`
+and `_selectedIds` on the controller are read-only getters over that one set;
+assigning to them throws, and the census test counts the write sites.
 
 ## Event Routing Pattern
 

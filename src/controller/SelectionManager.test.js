@@ -1,27 +1,27 @@
 /**
- * SelectionManager.test.js — the contextual visibility axis (THREE-free).
+ * SelectionManager.test.js — 選択の唯一の入口 (ADR-099) と文脈可視性 (ADR-096)。
  *
- * Two things are asked here.
+ * ここで問うのは 4 つ。
  *
- * 1. **Rooting** (the ADR-084/085 regression this file was born for):
- *    showFrameChain() must claim the whole CoordinateFrame tree whether it is
- *    rooted at a geometry Solid (ADR-037) or at a world-parented root frame —
- *    the robot TF tree (robot_base → tcp / user frames). The old walk bailed out
- *    on a parentless root, so selecting the robot showed nothing.
+ * 1. **根の張り方** (この file が生まれた ADR-084/085 の回帰): CF の木は
+ *    geometry Solid に根を持つ場合 (ADR-037) と、親のない root CF に根を持つ
+ *    場合 (ロボット TF 木 robot_base → tcp) の両方がある。旧実装は前者を仮定して
+ *    親なし root で打ち切っていたので、ロボットを選んでも何も出なかった。
  *
- * 2. **What this manager owns** (ADR-096): it writes the `contextual` AXIS and
- *    nothing else. The assertions are therefore about the map it hands to
- *    `SceneService.setContextualFrames()`, not about mesh views — it no longer
- *    touches one. The old version of this file asserted `meshView.state ===
- *    'full'`, which is precisely the coupling that made this class a second
- *    writer of the pixels the Outliner eye also wrote. Connection lines moved
- *    with the composition for the same reason (a line belongs to the frame it
- *    hangs off, so it is drawn where the frame is drawn).
+ * 2. **この manager が所有するもの** (ADR-096): `contextual` **軸**だけを書く。
+ *    よって assert は `SceneService.setContextualFrames()` へ渡す map に対して
+ *    行い、mesh view の状態は見ない。合成そのものは `VisibilityAxes.test.js` の
+ *    担当で、症状 4 のテストだけが本物の `composeVisibility` で両端を繋ぐ。
  *
- * The composition of the two axes belongs to `VisibilityAxes.test.js`; the
- * 症状-4 test below joins both ends with the REAL `composeVisibility`, so
- * "an explicitly shown frame survives a selection change" is proved without
- * re-implementing the rule here.
+ * 3. **窓が部分集合を書けないこと** (ADR-099 §2 — この ADR の本体)。欠陥は
+ *    「選択とは何か」が窓ごとの手続きだったことなので、テストも 1 つの verb を
+ *    呼んだ後に **3 つの書き込み先 (ハイライト / リンク強調 / パネル) が
+ *    選択集合と一致している**ことを問う。1 つでもずれたら、それが次の症状になる。
+ *
+ * 4. **基数 0·1·N** (原則 #31)。0 個の選択は正当な状態であり、N 個は 1 個の
+ *    繰り返しではない — 文脈の主張は**和**であって最後の 1 個ではない
+ *    (旧実装は per-entity に丸ごと置換していたので、5 個選ぶと最後の 1 個の
+ *    フレームしか出なかった)。
  *
  * Run with:  node --test src/controller/SelectionManager.test.js
  */
@@ -35,15 +35,26 @@ import {
   CONTEXTUAL, VISIBILITY_KIND, composeVisibility, defaultExplicit,
 } from '../view/VisibilityAxes.js'
 
+/** Records what a mesh view was told, so a "subset write" is visible. */
+function makeMeshView() {
+  return {
+    selected: false,
+    ghost: false,
+    setObjectSelected(v) { this.selected = v },
+    showParentAxesGhost() { this.ghost = true },
+    hideParentAxesGhost() { this.ghost = false },
+  }
+}
+
 /** Minimal CoordinateFrame stub: real prototype (for instanceof). */
 function makeFrame(id, parentId) {
   const f = Object.create(CoordinateFrame.prototype)
-  return Object.assign(f, { id, parentId, meshView: {} })
+  return Object.assign(f, { id, parentId, meshView: makeMeshView() })
 }
 
 /** A plain (non-CoordinateFrame) geometry object stub. */
 function makeSolid(id) {
-  return { id, parentId: null, meshView: {} }
+  return { id, parentId: null, meshView: makeMeshView() }
 }
 
 /** Fake scene backed by a Map; children resolved by parentId scan. */
@@ -51,6 +62,8 @@ function makeScene(objs) {
   const byId = new Map(objs.map(o => [o.id, o]))
   return {
     activeId: null,
+    selectionMode: 'object',
+    objects: byId,
     getObject: id => byId.get(id) ?? null,
     getChildren: pid => objs.filter(o => o.parentId === pid),
     isLinkEndpoint: () => false,
@@ -58,35 +71,58 @@ function makeScene(objs) {
 }
 
 /**
- * Records the contextual claim the manager hands over. Stands in for
- * SceneService as the axis' OWNER — it stores the claim, it does not decide
- * anything about it (the deciding is `composeVisibility`, imported for real).
+ * Stands in for AppController. Records the three places a selection is written
+ * to, so the test can ask that they agree — the defect ADR-099 removes is
+ * precisely that they could not.
  */
 function makeCtrl(objs) {
   const contextual = new Map()
-  return {
+  const ctrl = {
     _scene: makeScene(objs),
-    _objSelected: true,
+    linkHighlight: new Set(),
+    panelSelection: new Set(),
+    modeCalls: [],
+    pulses: 0,
     _service: {
       setContextualFrames(frames) {
         contextual.clear()
         for (const [id, mode] of frames) contextual.set(id, mode)
       },
+      setActiveObject(id) { ctrl._scene.activeId = id },
+      updateLinkSelectionHighlight(ids) { ctrl.linkHighlight = new Set(ids) },
     },
+    _linkNetworkView: { setSelection(ids) { ctrl.panelSelection = new Set(ids) } },
+    _motion: { spawn() { ctrl.pulses++; return null } },
+    _sceneView: { scene: {} },
+    setMode(mode) { ctrl.modeCalls.push(mode); ctrl._scene.selectionMode = mode },
+    _geometryAncestorCentroid: () => null,
+    _refreshObjectModeStatus() {},
+    _updateNPanel() {},
+    _updateMobileToolbar() {},
+    _syncContextProvenance() {},
     contextual,
   }
+  return ctrl
+}
+
+/** The invariant ADR-099 §2 exists to make true: every window writes all of it. */
+function assertNoSubsetWritten(mgr, ctrl, msg) {
+  const ids = [...mgr.ids].sort()
+  assert.deepEqual([...ctrl.linkHighlight].sort(), ids, `${msg}: リンク強調が選択集合とずれている`)
+  assert.deepEqual([...ctrl.panelSelection].sort(), ids, `${msg}: パネルが選択集合とずれている`)
+  const highlighted = [...ctrl._scene.objects.values()]
+    .filter(o => o.meshView.selected).map(o => o.id).sort()
+  assert.deepEqual(highlighted, ids, `${msg}: 可視ハイライトが選択集合とずれている`)
+  assert.equal(mgr.count > 0, ids.length > 0, `${msg}: 基数と集合が食い違っている`)
 }
 
 // ── 1. Rooting ───────────────────────────────────────────────────────────────
 
 test('geometry-rooted tree: selecting a child frame claims the whole tree', () => {
-  const solid  = makeSolid('solid')
-  const origin = makeFrame('origin', 'solid')
-  const child  = makeFrame('child', 'origin')
-  const mgr = new SelectionManager(makeCtrl([solid, origin, child]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeSolid('solid'), makeFrame('origin', 'solid'), makeFrame('child', 'origin')])
+  const mgr = new SelectionManager(ctrl)
 
-  mgr.showFrameChain('child')
+  mgr.selectOnly('child')
 
   assert.deepEqual([...ctrl.contextual.keys()].sort(), ['child', 'origin'])
   assert.equal(ctrl.contextual.get('child'),  CONTEXTUAL.FULL,   '選択された当人はフル')
@@ -94,25 +130,20 @@ test('geometry-rooted tree: selecting a child frame claims the whole tree', () =
 })
 
 test('robot tree: selecting robot_base (world-parented root) claims the whole TF tree', () => {
-  const base = makeFrame('base', null)   // world-parented root (robot_base)
-  const tcp  = makeFrame('tcp', 'base')
-  const mgr = new SelectionManager(makeCtrl([base, tcp]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeFrame('base', null), makeFrame('tcp', 'base')])
+  const mgr = new SelectionManager(ctrl)
 
-  mgr.showFrameChain('base')
+  mgr.selectOnly('base')
 
   assert.equal(ctrl.contextual.get('base'), CONTEXTUAL.FULL, '根フレーム自身がタップの手応え')
   assert.equal(ctrl.contextual.get('tcp'),  CONTEXTUAL.DIMMED)
 })
 
 test('robot tree: selecting a user frame added under robot_base claims it', () => {
-  const base = makeFrame('base', null)
-  const tcp  = makeFrame('tcp', 'base')
-  const user = makeFrame('user', 'base')   // "Add Frame" on the robot
-  const mgr = new SelectionManager(makeCtrl([base, tcp, user]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeFrame('base', null), makeFrame('tcp', 'base'), makeFrame('user', 'base')])
+  const mgr = new SelectionManager(ctrl)
 
-  mgr.showFrameChain('user')
+  mgr.selectOnly('user')
 
   assert.equal(ctrl.contextual.get('user'), CONTEXTUAL.FULL,
     '親のない根で打ち切ると、ロボットに足したフレームが選んでも出ない (ADR-084/085 の回帰)')
@@ -121,43 +152,36 @@ test('robot tree: selecting a user frame added under robot_base claims it', () =
 })
 
 test('a geometry selection claims its frame tree at full opacity', () => {
-  const solid  = makeSolid('solid')
-  const origin = makeFrame('origin', 'solid')
-  const child  = makeFrame('child', 'origin')
-  const mgr = new SelectionManager(makeCtrl([solid, origin, child]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeSolid('solid'), makeFrame('origin', 'solid'), makeFrame('child', 'origin')])
+  const mgr = new SelectionManager(ctrl)
 
-  mgr.showGeometryFrameTree('solid')
+  mgr.selectOnly('solid')
 
-  assert.deepEqual([...ctrl.contextual.keys()].sort(), ['child', 'origin'])
+  assert.deepEqual([...ctrl.contextual.keys()].sort(), ['child', 'origin', 'solid'])
   assert.deepEqual([...new Set(ctrl.contextual.values())], [CONTEXTUAL.FULL])
 })
 
 // ── 2. The claim is replaced wholesale ───────────────────────────────────────
 
 test('releasing the claim replaces the whole map — no stale ids survive', () => {
-  const base = makeFrame('base', null)
-  const tcp  = makeFrame('tcp', 'base')
-  const mgr = new SelectionManager(makeCtrl([base, tcp]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeFrame('base', null), makeFrame('tcp', 'base')])
+  const mgr = new SelectionManager(ctrl)
 
-  mgr.showFrameChain('tcp')
+  mgr.selectOnly('tcp')
   assert.equal(ctrl.contextual.size, 2)
-  mgr.hideFrameChain()
+  mgr.clearSelection()
   assert.equal(ctrl.contextual.size, 0,
     '主張は丸ごと置き換わる — 個別の取り消しを積み上げないので「1 つ消し忘れた」が書けない')
 })
 
 test('switching selection replaces the claim rather than accumulating it', () => {
-  const solid  = makeSolid('solid')
-  const origin = makeFrame('origin', 'solid')
-  const base   = makeFrame('base', null)
-  const tcp    = makeFrame('tcp', 'base')
-  const mgr = new SelectionManager(makeCtrl([solid, origin, base, tcp]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([
+    makeSolid('solid'), makeFrame('origin', 'solid'), makeFrame('base', null), makeFrame('tcp', 'base'),
+  ])
+  const mgr = new SelectionManager(ctrl)
 
-  mgr.showGeometryFrameTree('solid')
-  mgr.showFrameChain('tcp')
+  mgr.selectOnly('solid')
+  mgr.selectOnly('tcp')
 
   assert.deepEqual([...ctrl.contextual.keys()].sort(), ['base', 'tcp'],
     '前の選択の主張が残ると、選択を変えるたび画面に軸が溜まる')
@@ -166,17 +190,14 @@ test('switching selection replaces the claim rather than accumulating it', () =>
 // ── 症状 4: the eye survives a selection change ──────────────────────────────
 
 test('明示表示した CF は選択が別実体へ移っても描かれ続ける (症状 4 — 合成まで通す)', () => {
-  const solid  = makeSolid('solid')
-  const origin = makeFrame('origin', 'solid')
-  const base   = makeFrame('base', null)
-  const mgr = new SelectionManager(makeCtrl([solid, origin, base]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeSolid('solid'), makeFrame('origin', 'solid'), makeFrame('base', null)])
+  const mgr = new SelectionManager(ctrl)
 
   assert.equal(defaultExplicit(VISIBILITY_KIND.COORDINATE_FRAME), false,
     '既定は伏せる — 開いているのはユーザーがそう言ったからである')
 
   // 別の実体 (Solid) を選択 → 文脈軸は base を主張しない。
-  mgr.showGeometryFrameTree('solid')
+  mgr.selectOnly('solid')
   assert.equal(ctrl.contextual.has('base'), false)
 
   const composed = composeVisibility({
@@ -188,50 +209,170 @@ test('明示表示した CF は選択が別実体へ移っても描かれ続け�
 })
 
 test('文脈だけで出ているフレームは、文脈が消えれば消える (対称性)', () => {
-  const solid  = makeSolid('solid')
-  const origin = makeFrame('origin', 'solid')
-  const mgr = new SelectionManager(makeCtrl([solid, origin]))
-  const ctrl = mgr._ctrl
+  const ctrl = makeCtrl([makeSolid('solid'), makeFrame('origin', 'solid')])
+  const mgr = new SelectionManager(ctrl)
   const explicit = defaultExplicit(VISIBILITY_KIND.COORDINATE_FRAME)
 
-  mgr.showGeometryFrameTree('solid')
+  mgr.selectOnly('solid')
   assert.equal(
     composeVisibility({ explicit, contextual: ctrl.contextual.get('origin') ?? null }).visible,
     true)
 
-  mgr.hideFrameChain()
+  mgr.clearSelection()
   assert.equal(
     composeVisibility({ explicit, contextual: ctrl.contextual.get('origin') ?? null }).visible,
     false)
 })
 
+// ── ADR-099 G2: 選択は沈黙できない ───────────────────────────────────────────
+
+test('eye を閉じた実体を選ぶと、選択中だけ現れる (G2 — 原則 #11)', () => {
+  // 力学 3: 選択の主張の宛先が「frame chain」だけだと、explicit で消してある
+  // 当人は誰も見せろと言わない。当人を FULL で主張するのが本 ADR の決定。
+  const ctrl = makeCtrl([makeFrame('base', null), makeFrame('tcp', 'base')])
+  const mgr = new SelectionManager(ctrl)
+  const explicit = false            // ユーザーが eye を閉じた / 既定で伏せてある
+
+  const silent = composeVisibility({ explicit, contextual: ctrl.contextual.get('tcp') ?? null })
+  assert.equal(silent.visible, false, '前提: 選択前は描かれていない')
+
+  mgr.selectOnly('tcp')
+  assert.equal(
+    composeVisibility({ explicit, contextual: ctrl.contextual.get('tcp') ?? null }).visible,
+    true, '選べたのに画面が沈黙する = 入力を消費して何も起きない (原則 #11)')
+
+  mgr.clearSelection()
+  assert.equal(
+    composeVisibility({ explicit, contextual: ctrl.contextual.get('tcp') ?? null }).visible,
+    false, '選択を外せば eye の宣言どおりに戻る — 選択は explicit 軸を書き換えない')
+})
+
+test('geometry も同じ — 伏せた Solid をパネルから選べば見える', () => {
+  const ctrl = makeCtrl([makeSolid('solid')])
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly('solid')
+  assert.equal(ctrl.contextual.get('solid'), CONTEXTUAL.FULL,
+    '主張の宛先を CF に限ると、実体の種によって「選択が見えるか」が変わる')
+})
+
+// ── ADR-099 §2: 窓は部分集合を書けない ───────────────────────────────────────
+
+test('どの verb を通っても 3 つの書き込み先が選択集合と一致する', () => {
+  const ctrl = makeCtrl([makeSolid('a'), makeSolid('b'), makeSolid('c'), makeFrame('fa', 'a')])
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly('a');                                assertNoSubsetWritten(mgr, ctrl, 'selectOnly')
+  mgr.selectMany(['a', 'b', 'c'], { activeId: 'b' }); assertNoSubsetWritten(mgr, ctrl, 'selectMany')
+  mgr.activateWithinSelection('c');                   assertNoSubsetWritten(mgr, ctrl, 'activateWithinSelection')
+  mgr.forget('c');                                    assertNoSubsetWritten(mgr, ctrl, 'forget')
+  mgr.selectOnly('fa');                               assertNoSubsetWritten(mgr, ctrl, 'selectOnly(CF)')
+  mgr.clearSelection();                               assertNoSubsetWritten(mgr, ctrl, 'clearSelection')
+})
+
+test('選択入口は mode を正規化する — 全窓に効く (旧: Outliner だけが持っていた)', () => {
+  const ctrl = makeCtrl([makeSolid('a'), makeSolid('b')])
+  const mgr = new SelectionManager(ctrl)
+  ctrl._scene.selectionMode = 'edit'
+
+  mgr.selectOnly('b')
+
+  assert.deepEqual(ctrl.modeCalls, ['object'],
+    'edit → object の正規化が入口にないと、窓ごとに mode の扱いが違う')
+})
+
+test('既に選択済みの実体を掴んでも多重選択が 1 個へ潰れない', () => {
+  const ctrl = makeCtrl([makeSolid('a'), makeSolid('b')])
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectMany(['a', 'b'], { activeId: 'a' })
+  mgr.activateWithinSelection('b')
+
+  assert.deepEqual([...mgr.ids].sort(), ['a', 'b'])
+  assert.equal(ctrl._scene.activeId, 'b')
+})
+
+// ── ADR-099 §基数 0·1·N (原則 #31) ───────────────────────────────────────────
+
+test('基数 0 は正当な状態で、そのとき主張も強調も空 (0 は状態に見えない)', () => {
+  const ctrl = makeCtrl([makeSolid('a'), makeFrame('fa', 'a')])
+  const mgr = new SelectionManager(ctrl)
+
+  assert.equal(mgr.count, 0, '起動直後は 0 個 — 「選択されていない」は不在ではなく状態')
+  mgr.selectOnly('a')
+  assert.equal(mgr.count, 1)
+  mgr.clearSelection()
+
+  assert.equal(mgr.count, 0)
+  assert.equal(ctrl.contextual.size, 0)
+  assert.equal(ctrl.linkHighlight.size, 0)
+  assert.equal(ctrl._scene.activeId, 'a', '0 個でも active は残る — N パネルは在る対象を語り続ける')
+})
+
+test('基数 N の文脈主張は「和」であって「最後の 1 個」ではない', () => {
+  // 旧実装は選択メンバーごとに丸ごと置換していたので、N 個選んでも最後の 1 個の
+  // フレームしか出なかった。1 と N は別世界 (原則 #31 / ADR-093 と同じ構図)。
+  const ctrl = makeCtrl([
+    makeSolid('a'), makeFrame('fa', 'a'),
+    makeSolid('b'), makeFrame('fb', 'b'),
+    makeSolid('c'), makeFrame('fc', 'c'),
+  ])
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectMany(['a', 'b', 'c'], { activeId: 'a' })
+
+  assert.deepEqual([...ctrl.contextual.keys()].sort(), ['a', 'b', 'c', 'fa', 'fb', 'fc'],
+    'N 個選んだのに 1 個ぶんの文脈しか出ないのは、和ではなく置換を書いた形')
+})
+
+test('FULL は DIMMED に勝つ — 2 つの選択が同じフレームについて食い違うとき', () => {
+  // tcp を直接選び、同じ木の base も選ぶ: base 視点では tcp は DIMMED だが、
+  // tcp 自身は FULL を主張している。強い方を採らないと、選んだ当人が薄くなる。
+  const ctrl = makeCtrl([makeFrame('base', null), makeFrame('tcp', 'base')])
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectMany(['base', 'tcp'], { activeId: 'base' })
+
+  assert.equal(ctrl.contextual.get('tcp'),  CONTEXTUAL.FULL)
+  assert.equal(ctrl.contextual.get('base'), CONTEXTUAL.FULL)
+})
+
 // ── Handing the axis back (link creation borrows it) ─────────────────────────
 
 test('refreshFrameContext recomputes the claim from the current selection', () => {
-  const solid  = makeSolid('solid')
-  const origin = makeFrame('origin', 'solid')
-  const mgr = new SelectionManager(makeCtrl([solid, origin]))
-  const ctrl = mgr._ctrl
-  ctrl._scene.activeId = 'solid'
+  const ctrl = makeCtrl([makeSolid('solid'), makeFrame('origin', 'solid')])
+  const mgr = new SelectionManager(ctrl)
+  mgr.selectOnly('solid')
 
   // Link mode borrowed the axis and claimed every frame…
   ctrl._service.setContextualFrames([['origin', CONTEXTUAL.FULL], ['other', CONTEXTUAL.FULL]])
   // …then hands it back.
   mgr.refreshFrameContext()
 
-  assert.deepEqual([...ctrl.contextual.keys()], ['origin'],
+  assert.deepEqual([...ctrl.contextual.keys()].sort(), ['origin', 'solid'],
     '返却は所有者の再計算であって、呼び出し側での再実装ではない')
 })
 
 test('refreshFrameContext with nothing selected releases the claim', () => {
-  const solid = makeSolid('solid')
-  const mgr = new SelectionManager(makeCtrl([solid]))
-  const ctrl = mgr._ctrl
-  ctrl._scene.activeId = 'solid'
-  ctrl._objSelected = false
+  const ctrl = makeCtrl([makeSolid('solid')])
+  const mgr = new SelectionManager(ctrl)
 
   ctrl._service.setContextualFrames([['solid', CONTEXTUAL.FULL]])
   mgr.refreshFrameContext()
 
   assert.equal(ctrl.contextual.size, 0)
+})
+
+// ── 選択の演出 (ADR-068 / #30) ────────────────────────────────────────────────
+
+test('選択パルスは選択へ入る遷移でだけ鳴る (再選択churn では鳴らない)', () => {
+  const solid = makeSolid('a')
+  solid.corners = Array.from({ length: 8 }, () => ({ x: 0, y: 0, z: 0 }))
+  const ctrl = makeCtrl([solid, makeSolid('b')])
+  const mgr = new SelectionManager(ctrl)
+  // Solid の instanceof を通さないと発火しないので、この stub では 0 のまま —
+  // 問うているのは「復帰 (fx:false) が決して鳴らさない」側。
+  mgr.selectOnly('a', { fx: false })
+  mgr.selectOnly('a', { fx: false })
+  assert.equal(ctrl.pulses, 0, '復帰は「いま選ばれた」ではないので鳴らしてはいけない')
 })

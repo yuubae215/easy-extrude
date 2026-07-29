@@ -194,18 +194,15 @@ export class FramePlacementHandler {
       () => {
         // After undo: restore parent selection if parent still exists
         const parent = ctrl._scene.getObject(parentId)
-        if (parent) ctrl._switchActiveObject(parentId, true)
+        if (parent) ctrl._selMgr.selectOnly(parentId)
         else {
-          ctrl._objSelected = false
-          ctrl._selectedIds.clear()
-          ctrl._refreshObjectModeStatus()
-          ctrl._updateMobileToolbar()
+          ctrl._selMgr.clearSelection()
         }
       },
-      (id) => ctrl._switchActiveObject(id, true),
+      (id) => ctrl._selMgr.selectOnly(id),
     )
     ctrl._commandStack.push(cmd)
-    ctrl._switchActiveObject(frame.id, true)
+    ctrl._selMgr.selectOnly(frame.id)
   }
 
   /**

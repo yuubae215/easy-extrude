@@ -210,7 +210,9 @@ export class RotationHandler {
       }
     }
 
-    if (ctrl._activeObj instanceof Solid) ctrl._activeObj.meshView.setObjectSelected(true)
+    // The rotate rebuilt the mesh under the selection — re-assert the highlight
+    // through its owner rather than writing the flag here (原則 #4 / ADR-099).
+    ctrl._selMgr.reassertHighlight()
     this._resetState()
     ctrl._rotateSectorPreview.hide()
     ctrl._opState.send('CONFIRM')
@@ -236,7 +238,7 @@ export class RotationHandler {
     } else if (obj instanceof Solid && s.startOrientation) {
       obj.restorePose(s.startPos, s.startOrientation)
       obj.meshView.updateGeometry(obj.corners)
-      obj.meshView.setObjectSelected(true)
+      ctrl._selMgr.reassertHighlight()
     }
     this._resetState()
     ctrl._rotateSectorPreview.hide()

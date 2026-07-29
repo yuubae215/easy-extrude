@@ -150,8 +150,7 @@ export class ContextDemoController {
 
     // Clear stale selection state from the replaced scene (header would keep
     // showing "<old object> selected" otherwise) — same pattern as empty-tap deselect.
-    ctrl._selMgr.clearObjectSelection()
-    ctrl._selMgr.setObjectSelected(false)
+    ctrl._selMgr.clearSelection()
 
     const layoutDsl = compiled.layoutDsl
     this._layoutDsl = layoutDsl
@@ -380,7 +379,7 @@ export class ContextDemoController {
         ctrl._uiView.showToast(`→ ${obj.name} (appears in a later step)`)
         return
       }
-      ctrl._switchActiveObject(id, true)
+      ctrl._selMgr.selectOnly(id)
       return
     }
 

@@ -74,7 +74,7 @@ export class UIStateManager {
       }, obj.name, false, parentOptions, obj.parentId, frameUnreferenced,
         childFrames,
         () => ctrl._promptAddFrame(obj.id),
-        (fid) => ctrl._switchActiveObject(fid, true),
+        (fid) => ctrl._selMgr.selectOnly(fid),
       )
       return
     }
@@ -151,7 +151,7 @@ export class UIStateManager {
         ctrl._updateNPanel()
       }
       onSelectFrame = (frameId) => {
-        ctrl._switchActiveObject(frameId)
+        ctrl._selMgr.selectOnly(frameId)
       }
     }
 
