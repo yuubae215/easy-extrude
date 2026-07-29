@@ -447,3 +447,91 @@ export function laneX(lane, lanes) {
 export function gutterX(gutterW) {
   return PANEL_W - RIGHT_PAD - gutterW
 }
+
+// ── Layout equivalence (ADR-099) ─────────────────────────────────────────────
+//
+// The view no longer rebuilds its DOM on every render: a row's `<g>` must
+// outlive the pointer gesture aimed at it, or `mouseenter → rebuild → mouseenter`
+// closes a loop that destroys the element between `mousedown` and `mouseup` and
+// `click` is never synthesised (原則 #24 on the DOM: the derived value — which
+// row is hovered — was feeding the input that *creates the hit targets*).
+//
+// So the view needs to answer "did the LAYOUT change, or only the focus?" and
+// that judgement is made HERE, not by a feeling inside the view. ADR-099 accepts
+// one cost — "the layout changed but the DOM is stale" becomes newly writable —
+// and this is where it is paid: the signature is a pure function of the layout,
+// and its field list is asserted COMPLETE by counting (原則 #31). A field added
+// to a layout node without a decision about it fails the test rather than
+// silently dropping out of the equivalence.
+
+/**
+ * Node fields the panel's DOM is a function of. Anything here differing means
+ * the elements must be built again.
+ */
+export const NODE_SIGNATURE_FIELDS = Object.freeze([
+  'label',          // the row's text
+  'type',           // dot colour
+  'parentId',       // tree elbows + indent guides
+  'x', 'y',         // dot position
+  'labelX', 'labelW', // label placement / truncation
+  'depthSaturated', 'layer',  // the "5·" depth badge and its text
+  'overflow',       // the "+N" badge and its text
+  'entityId',       // the click target (equal to the node key today — a node
+                    // whose selection target changed must be rebuilt, not restyled)
+])
+
+/**
+ * Node fields that provably do NOT reach the DOM, and why. Declared rather than
+ * omitted: an unlisted field is a field nobody decided about.
+ *   row          — the DOM reads `y`, which is derived from it
+ *   indentDepth  — likewise, via `x`
+ *   frameId/fused— TF identity carried for the caller; never drawn
+ */
+export const NODE_PRESENTATION_IRRELEVANT = Object.freeze([
+  'row', 'indentDepth', 'frameId', 'fused',
+])
+
+/** Edge fields the arcs are a function of. */
+export const EDGE_SIGNATURE_FIELDS = Object.freeze([
+  'source', 'target',   // endpoints → path geometry
+  'semanticType',       // colour + arrowhead marker id
+  'directed', 'kinematic',
+  'lane',               // x of the bracket
+  'dropped',            // drawn at all
+])
+
+/**
+ * Edge fields that do not reach the DOM: `fromRow`/`toRow` are the lane
+ * assignment's inputs, and the drawn geometry uses the endpoint nodes' `y`.
+ */
+export const EDGE_PRESENTATION_IRRELEVANT = Object.freeze(['fromRow', 'toRow'])
+
+/** Panel-level fields the SVG/scroll-container sizes are a function of. */
+export const PANEL_SIGNATURE_FIELDS = Object.freeze([
+  'contentH', 'graphH', 'lanes', 'gutterW',
+])
+
+// 名前や id に現れ得ない制御文字を区切りにする — "a|b" と "a"+"|b" が
+// 同じ署名へ潰れない (境界の曖昧さは署名の意味を静かに壊す)。
+const SIG_FIELD  = '\u0001'
+const SIG_RECORD = '\u0002'
+const SIG_GROUP  = '\u0003'
+
+/**
+ * A value identifying everything the panel's DOM depends on — but NOT the focus
+ * state (selection / hover), which is written onto existing elements.
+ *
+ * Iteration order is part of the signature on purpose: the map order IS the
+ * render order, and the render order is the arcs' z-stacking (ADR-095).
+ *
+ * @param {ReturnType<typeof computeLayout>} layout
+ * @returns {string}
+ */
+export function layoutSignature(layout) {
+  const nodes = [...(layout?.nodes ?? new Map())].map(([id, nd]) =>
+    [id, ...NODE_SIGNATURE_FIELDS.map(f => nd[f])].join(SIG_FIELD))
+  const edges = [...(layout?.edges ?? new Map())].map(([id, e]) =>
+    [id, ...EDGE_SIGNATURE_FIELDS.map(f => e[f])].join(SIG_FIELD))
+  const panel = PANEL_SIGNATURE_FIELDS.map(f => layout?.[f]).join(SIG_FIELD)
+  return [panel, nodes.join(SIG_RECORD), edges.join(SIG_RECORD)].join(SIG_GROUP)
+}

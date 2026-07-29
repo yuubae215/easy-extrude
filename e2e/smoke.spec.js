@@ -649,9 +649,16 @@ async function numericGrab(page, axis, distance) {
   await page.keyboard.press('Enter')
 }
 
-/** Outliner の行から実体を選ぶ (3D ラベルとテキストが衝突しないよう行に限定)。 */
+/**
+ * Outliner の行から実体を選ぶ (3D ラベルとテキストが衝突しないよう行に限定)。
+ *
+ * セレクタは `[draggable]` — 値ではなく属性の有無で引く。行の `draggable` は
+ * **再親子化できるか** (CF だけ true) を表しており、選べるかどうかではない。
+ * `[draggable="true"]` で引くと geometry の行が静かに 0 件になり、テストは
+ * 「何も起きなかった」ではなく「見つからない」で落ちる (ADR-099 実装時に踏んだ)。
+ */
 async function selectRow(page, name) {
-  await page.locator('[draggable="true"]').filter({ hasText: name }).first().click()
+  await page.locator('[draggable]').filter({ hasText: name }).first().click()
 }
 
 /** robot_base をキューブの真上へ運び、その後の placement 行を返す。 */
@@ -812,6 +819,182 @@ test('同じ不変条件が corners で測る実体にも成り立つ (ADR-101 �
   expect(new Set(zs).size,
     `同じ要求が違う pose を生んでいる (bottomZ の列 = ${JSON.stringify(zs)})`).toBe(1)
   expect(samples[0].support?.kind, 'キューブが載っていない (検査が空回りしている)').toBe('entity')
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+// ── ADR-099: 選択の往復は 1 つの決定 ─────────────────────────────────────────
+//
+// 当事者の報告「LINK NETWORK の項目を選択してもビューポート側がハイライトされない。
+// 逆は有効なのに」への 1:1 の回帰。診断は実測だった: パネル行にポインタを置くと
+// mouseover が 76 件、SVG 子要素の変異が 114〜120 件 (実行ごとに揺れる = 有界でない)
+// 出る一方で、mousedown / mouseup / click は **0 件**。hover のたびに DOM を全部
+// 作り直していたので、押下と離上が同じ要素に届かず click が合成されなかった
+// (原則 #24 の DOM 版 — 導出値 hover が hit target の生成に戻る閉路)。
+//
+// テストは**差分ペア**にする。片方向だけ通ると「テストが何も動かしていない」状態と
+// 区別できない — ADR-097 の回帰が採った形。
+
+/** LINK NETWORK パネルの行を、ラベルと focus 状態の対で読む。 */
+async function linkNetworkRows(page) {
+  return page.evaluate(() => {
+    const panel = document.querySelector('[aria-label="Link Network panel"]')
+    if (!panel) return null
+    const graph = panel.querySelector('svg > g')
+    if (!graph) return []
+    return [...graph.querySelectorAll(':scope > g')].map(g => ({
+      label:   g.querySelector('text')?.textContent ?? '',
+      // focus は hit 矩形の塗りで表される (透明 = 非 focus)。
+      focused: (g.querySelector('rect')?.getAttribute('fill') ?? 'transparent') !== 'transparent',
+    }))
+  })
+}
+
+/** Cube → robot_base の Adjacent リンクを張り、LINK NETWORK パネルを開かせる。 */
+async function openLinkNetwork(page) {
+  await selectRow(page, 'Cube')
+  await page.keyboard.press('l')
+  await selectRow(page, 'robot_base')             // link mode ではこれが「相手」
+  await page.getByText('Adjacent', { exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Link Network panel' })).toBeVisible()
+}
+
+test('LINK NETWORK ↔ ビューポートの選択は同じ 1 つの事実 (ADR-099 G1 — 差分ペア)', async ({ page }) => {
+  const errors = await boot(page)
+  await openLinkNetwork(page)
+
+  // ── 向き 1: パネル → 3D。当事者が「効かない」と報告した側。
+  const panelRow = page.locator('[aria-label="Link Network panel"] svg > g > g')
+    .filter({ hasText: 'robot_base' })
+  await panelRow.click()
+
+  const afterPanelClick = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(afterPanelClick.names, 'パネルの行をクリックしても選択が動かない').toEqual(['robot_base'])
+  expect(afterPanelClick.activeName).toBe('robot_base')
+  expect(afterPanelClick.count, '基数 1').toBe(1)
+
+  // ── 向き 2: 3D (Outliner) → パネル。既に効いていた側。両方を同じ 1 本で見ないと、
+  //    片方向だけ通って「テストが何も動かしていない」ことに気づけない。
+  await selectRow(page, 'Cube')
+  const afterOutliner = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(afterOutliner.names).toEqual(['Cube'])
+
+  const rows = await linkNetworkRows(page)
+  const focused = rows.filter(r => r.focused).map(r => r.label)
+  expect(focused, 'ビューポートで選んだ実体がパネルで光っていない').toEqual(['Cube'])
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('パネル行に触れ続けても仕事が増え続けない (ADR-099 G3 — 実測手順そのまま)', async ({ page }) => {
+  const errors = await boot(page)
+  await openLinkNetwork(page)
+
+  // 実測と同じ計測器を仕掛ける: 行の DOM が作り直されるたびに childList が動く。
+  await page.evaluate(() => {
+    const graph = document.querySelector('[aria-label="Link Network panel"] svg > g')
+    window.__lnv = { child: 0, attr: 0 }
+    new MutationObserver(recs => {
+      for (const r of recs) {
+        if (r.type === 'childList') window.__lnv.child += r.addedNodes.length + r.removedNodes.length
+        else                        window.__lnv.attr += 1
+      }
+    }).observe(graph, { childList: true, subtree: true, attributes: true })
+  })
+
+  const row = page.locator('[aria-label="Link Network panel"] svg > g > g')
+    .filter({ hasText: 'robot_base' })
+  await row.hover()
+  await page.waitForTimeout(300)
+  const resting = await page.evaluate(() => ({ ...window.__lnv }))
+  await page.waitForTimeout(300)
+  const later = await page.evaluate(() => ({ ...window.__lnv }))
+
+  // 有界性は「閾値以下」ではなく「増えない」で問う。閾値だと、閉路が遅くなっただけの
+  // 修正が通ってしまう (実測値は 114〜120 で実行ごとに揺れていた = 有界でない)。
+  expect(resting.child, 'hover が行の DOM を作り直している — 閉路が戻っている').toBe(0)
+  expect(later.attr, 'ポインタを止めているのに描画が走り続けている')
+    .toBe(resting.attr)
+
+  // 閉路が断たれた結果として click が合成されること (計測の主目的はこちら)。
+  await row.click()
+  expect((await page.evaluate(() => window.__easyExtrude.selectionState())).names)
+    .toEqual(['robot_base'])
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('eye を閉じた実体をパネルから選ぶと、選択中だけ現れる (ADR-099 G2 — 原則 #11)', async ({ page }) => {
+  // 力学 3 は ADR 起票時「CF を選んでも軸が描かれていなければ画面が沈黙する」と
+  // 予測していたが、実装時の計測でその予測は **CF については外れて**いた:
+  // showFrameChain は選ばれた当人を FULL で主張済みだったので、robot_base を
+  // 選べば軸は出る。実際に沈黙していたのは **eye で伏せた geometry** で、
+  // 文脈の主張の宛先が「フレーム」に限られていたからである。
+  //
+  // よってこのテストは差分が出る側 = Cube を eye で伏せてからパネルで選ぶ、を問う。
+  // (GSN assumption ClickReachingIsNotSufficient が「予測のまま 3 つ同時に入れず
+  //  実装時に再計測せよ」と言っていた、その再計測の結果がこれ。)
+  const errors = await boot(page)
+  await openLinkNetwork(page)
+
+  const drawn = async (name) => (await page.evaluate(() => window.__easyExtrude.visibilityState()))
+    .find(v => v.name === name)
+
+  // 先に選択を Cube から外す — 選択中は文脈がそれを見せているので、
+  // 「伏せたのに見えている」が前提として成立しない (それ自体が本 ADR の効果)。
+  await selectRow(page, 'robot_base')
+
+  // Outliner の eye で Cube を伏せる (explicit 軸の所有者はこのボタンだけ — ADR-096)。
+  const cubeRow = page.locator('[draggable]').filter({ hasText: 'Cube' }).first()
+  await cubeRow.hover()
+  await cubeRow.getByRole('button', { name: 'Hide' }).click()
+
+  const hidden = await drawn('Cube')
+  expect(hidden.explicit, '前提: eye を閉じた').toBe(false)
+  expect(hidden.drawn,    '前提: 伏せた実体は描かれていない').toBe(false)
+
+  // パネルの行から選ぶ。選択という決定は「その結果が見えるところまで」を含む。
+  await page.locator('[aria-label="Link Network panel"] svg > g > g')
+    .filter({ hasText: 'Cube' }).click()
+
+  const selected = await drawn('Cube')
+  expect(selected.drawn, '選べたのに画面が沈黙する = 入力を消費して何も起きない').toBe(true)
+  expect(selected.explicit, '選択が explicit 軸を書き換えている — eye の所有者は Outliner (ADR-096)')
+    .toBe(false)
+
+  // 選択を外すと eye の宣言どおりへ戻る (文脈は一時的な主張であって上書きではない)。
+  await selectRow(page, 'robot_base')
+  expect((await drawn('Cube')).drawn, '選択を外したのに文脈が残っている').toBe(false)
+
+  // 報告者のシーンそのもの (CF) も往復すること — こちらは frame chain の主張で
+  // 既に成立していた側で、上の geometry と対にして初めて「宛先が実体である」が言える。
+  await page.locator('[aria-label="Link Network panel"] svg > g > g')
+    .filter({ hasText: 'robot_base' }).click()
+  expect((await drawn('robot_base')).drawn, 'CF 側の往復が壊れた').toBe(true)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('選択の基数 0·1·N が 1 つの表現で持たれる (ADR-099 §基数 / 原則 #31)', async ({ page }) => {
+  // `_objSelected` と `_selectedIds` が別々の欄だったころ、
+  // 「選択されているが 0 個」が表現可能かつ到達可能だった。導出にした今、
+  // 両者が食い違う状態は書けない — その不可能性をシーン越しに 1 回問う。
+  const errors = await boot(page)
+
+  const snap = () => page.evaluate(() => window.__easyExtrude.selectionState())
+  const agrees = (s) => s.objSelected === (s.count > 0) && s.count === s.names.length
+
+  await selectRow(page, 'Cube')
+  const one = await snap()
+  expect(one.count, '1 個').toBe(1)
+  expect(agrees(one), `基数と集合が食い違っている: ${JSON.stringify(one)}`).toBe(true)
+
+  // 0 個 — 空きスペースのクリックで解除。0 は「状態の不在」ではなく状態である。
+  await page.locator('#canvas-container canvas').click({ position: { x: 1000, y: 200 } })
+  const zero = await snap()
+  expect(zero.count, '0 個').toBe(0)
+  expect(zero.objSelected, '0 個なのに「選択されている」').toBe(false)
+  expect(agrees(zero), `基数と集合が食い違っている: ${JSON.stringify(zero)}`).toBe(true)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

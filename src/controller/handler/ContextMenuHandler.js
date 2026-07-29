@@ -190,14 +190,14 @@ export class ContextMenuHandler {
       frame, ctrl._service,
       () => {
         const parent = ctrl._scene.getObject(parentId)
-        if (parent) ctrl._switchActiveObject(parentId, true)
-        else { ctrl._objSelected = false; ctrl._selectedIds.clear(); ctrl._refreshObjectModeStatus(); ctrl._updateMobileToolbar() }
+        if (parent) ctrl._selMgr.selectOnly(parentId)
+        else ctrl._selMgr.clearSelection()
         ctrl._updateNPanel()
       },
-      (id) => { ctrl._switchActiveObject(id, true); ctrl._updateNPanel() },
+      (id) => { ctrl._selMgr.selectOnly(id); ctrl._updateNPanel() },
     ))
     ctrl._uiView.showToast(`Frame "${frame.name}" added`)
-    ctrl._switchActiveObject(frame.id, true)
+    ctrl._selMgr.selectOnly(frame.id)
     ctrl._updateNPanel()
   }
 

@@ -68,11 +68,11 @@
 
 本リポジトリが**原産** — 上の「系譜」が指す正本は同一 repo 内の `docs/PHILOSOPHY.md`。
 
-- #1: `setMode()` / 集約の公開 pose API (`restorePose`/`move`/`rotate`)
+- #1: `setMode()` / 集約の公開 pose API (`restorePose`/`move`/`rotate`) / 選択の公開 verb (`SelectionManager.selectOnly` ほか — ADR-099)
 - #2: `instanceof Solid` 等 (JS 実行時型)
 - #14: OrbitControls
 - #24: pose を計算する側の入力 = セグメント開始の写し + 要求 delta。禁じられた形 (live プローブ / `_worldPoseCache`) の個数を問う所 = `src/PosePolicyOwnership.test.js` の `POSE_COMPUTING_METHODS` × `LIVE_PROBES` (ADR-101)
 - #18: `objectRemoved`/`objectAdded`
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`
-- #31: 基数の累積器 = `docs/STATE_LEDGER.md` の基数列 (核 §1.4)、機械側の問い所 = `pnpm test:gsn` (支えの無い goal) と `src/RobotRosterAuthority.test.js` / `src/domain/robotFrames.test.js` (0 台のロボット — ADR-090) と `src/view/MapVisualMath.test.js` (N 個の注釈が同位相 = lockstep — ADR-093。1 と N は別世界で、設計されていたのは片方だけだった) と `src/PosePolicyOwnership.test.js` (pose を書く入口の個数 — ADR-097。規則を持つ経路ではなく**持たない経路**が欠陥だったので、実装を読んでも見えない)。未宣言の種で throw する表 = `EXPLICIT_DEFAULTS` (ADR-096) / `PLACEMENT_BY_KIND` (ADR-097)
+- #31: 基数の累積器 = `docs/STATE_LEDGER.md` の基数列 (核 §1.4)、機械側の問い所 = `pnpm test:gsn` (支えの無い goal) と `src/RobotRosterAuthority.test.js` / `src/domain/robotFrames.test.js` (0 台のロボット — ADR-090) と `src/view/MapVisualMath.test.js` (N 個の注釈が同位相 = lockstep — ADR-093。1 と N は別世界で、設計されていたのは片方だけだった) と `src/PosePolicyOwnership.test.js` (pose を書く入口の個数 — ADR-097。規則を持つ経路ではなく**持たない経路**が欠陥だったので、実装を読んでも見えない) と `src/SelectionOwnership.test.js` (選択を書く入口の個数 — ADR-099。窓は 5 つに見えて実は undo コールバックの中に 4 つ複製されており、*窓*を辿る数え方では出てこなかった)。未宣言の種で throw する表 = `EXPLICIT_DEFAULTS` (ADR-096) / `PLACEMENT_BY_KIND` (ADR-097)

@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  computeLayout, laneX, gutterX,
+  computeLayout, layoutSignature, laneX, gutterX,
   PANEL_W, MIN_PANEL_H, MAX_PANEL_H, LEGEND_H, ROW_H, MAX_INDENT_DEPTH, MAX_LANES,
+  NODE_SIGNATURE_FIELDS, NODE_PRESENTATION_IRRELEVANT,
+  EDGE_SIGNATURE_FIELDS, EDGE_PRESENTATION_IRRELEVANT, PANEL_SIGNATURE_FIELDS,
 } from './LinkNetworkLayout.js'
 import { ORIGIN_FRAME_NAME } from '../domain/originFrame.js'
 
@@ -659,5 +661,86 @@ test('panel height never exceeds the Map toolbar clearance cap', () => {
     const { svgH } = computeLayout(infos, links)
     assert.ok(svgH <= MAX_PANEL_H, `svgH=${svgH} for ${n} Solids`)
     assert.ok(svgH >= MIN_PANEL_H, `svgH=${svgH} shrank below the floor for ${n} Solids`)
+  }
+})
+
+// ── 11. Layout equivalence (ADR-099) ────────────────────────────────────────
+//
+// The view rebuilds its DOM only when this signature changes, so the panel's
+// row elements outlive the pointer gesture aimed at them (ADR-099 G3). That
+// buys back the `click` event and costs one new failure mode — "the layout
+// changed but the DOM did not" — which is payable only here, on the pure side.
+//
+// The field list is therefore asserted COMPLETE by counting rather than by
+// eyeballing: a field added to a layout node without a decision about it fails
+// this test instead of quietly dropping out of the equivalence (原則 #31 — the
+// unaccounted field has no node to walk, so a check that walks the declared
+// fields would never see it).
+
+test('署名の欄は勘定が合っている — 未分類のフィールドが 0 個 (両向き)', () => {
+  const { infos, links } = nSolidScene(4)
+  const layout = computeLayout(infos, links)
+  assert.ok(layout.nodes.size > 0 && layout.edges.size > 0, '検査が空回りしている')
+
+  const nodeDeclared = new Set([...NODE_SIGNATURE_FIELDS, ...NODE_PRESENTATION_IRRELEVANT])
+  for (const nd of layout.nodes.values()) {
+    assert.deepEqual(Object.keys(nd).filter(k => !nodeDeclared.has(k)), [],
+      'レイアウトノードに、署名でも「描画に無関係」でもないフィールドが在る')
+    assert.deepEqual([...nodeDeclared].filter(k => !Object.hasOwn(nd, k)), [],
+      '宣言された欄が実在しない — 署名が実体から離れている')
+  }
+
+  const edgeDeclared = new Set([...EDGE_SIGNATURE_FIELDS, ...EDGE_PRESENTATION_IRRELEVANT])
+  for (const e of layout.edges.values()) {
+    assert.deepEqual(Object.keys(e).filter(k => !edgeDeclared.has(k)), [])
+    assert.deepEqual([...edgeDeclared].filter(k => !Object.hasOwn(e, k)), [])
+  }
+
+  for (const f of PANEL_SIGNATURE_FIELDS) {
+    assert.ok(Object.hasOwn(layout, f), `パネル欄 ${f} がレイアウト結果に無い`)
+  }
+})
+
+test('同じシーンは同じ署名 — hover しても選択しても再構築されない', () => {
+  const { infos, links } = twoSolidScene()
+  // 署名は選択・hover を一切見ない (見ていたら、見た瞬間にあの閉路が戻る)。
+  assert.equal(layoutSignature(computeLayout(infos, links)),
+               layoutSignature(computeLayout(infos, links)))
+})
+
+test('レイアウトを変える変更はすべて署名を変える (DOM が古くならない)', () => {
+  const base = () => {
+    const { infos, links } = twoSolidScene()
+    return { infos, links }
+  }
+  const sig = (m) => {
+    const { infos, links } = base()
+    m(infos, links)
+    return layoutSignature(computeLayout(infos, links))
+  }
+  const original = sig(() => {})
+
+  const mutations = {
+    'ラベルの変更 (行のテキスト)': (infos) => {
+      infos.set('solidA', { ...infos.get('solidA'), name: 'Renamed' })
+    },
+    '実体種の変更 (ドットの色)': (infos) => {
+      infos.set('solidA', { ...infos.get('solidA'), type: 'imported' })
+    },
+    'ノードの追加 (行が増える)': (infos, links) => {
+      infos.set('solidC', { name: 'Extra', type: 'cuboid', parentId: null })
+      links.push(link('l2', 'cfA', 'solidC'))
+    },
+    'リンク種の変更 (弧の色と矢印)': (infos, links) => {
+      links[0] = link('l1', 'cfA', 'cfB', { semanticType: 'adjacent' })
+    },
+    '関節の付与 (弧の太さ)': (infos, links) => {
+      links[0] = link('l1', 'cfA', 'cfB', { jointType: 'revolute' })
+    },
+  }
+
+  for (const [what, mutate] of Object.entries(mutations)) {
+    assert.notEqual(sig(mutate), original,
+      `${what} が署名に現れない — 「レイアウトが変わったのに DOM が古い」が書ける`)
   }
 })

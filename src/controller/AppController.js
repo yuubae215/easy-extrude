@@ -68,7 +68,6 @@ import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
 import { BootReveal }                 from '../view/BootReveal.js'
 import { CameraFlight }               from '../view/CameraFlight.js'
-import { SelectPulse }                from '../view/SelectPulse.js'
 import { createLandingEffect }        from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { SnapFlash }                  from '../view/SnapFlash.js'
@@ -484,7 +483,12 @@ export class AppController {
     }
 
     // ── Object mode state ──────────────────────────────────────────────────
-    this._objSelected           = false
+    // `_objSelected` and `_selectedIds` are GETTERS over SelectionManager's set
+    // (ADR-099) — see their definitions below. They used to be two independent
+    // fields, which made `_objSelected === true && _selectedIds.size === 0`
+    // representable and reachable from any path that cleared one without the
+    // other. Assigning to either now throws (原則 #31: the illegal state is not
+    // discouraged, it is unwritable).
     this._objCtrlDrag           = false  // true during Ctrl+drag rotate within S_QUICK_DRAG
     this._objDragPlane          = new THREE.Plane()
     this._objDragStart          = new THREE.Vector3()
@@ -502,8 +506,6 @@ export class AppController {
     this._objRotateStartPos         = null
 
     // ── Rectangle selection state ──────────────────────────────────────────
-    /** @type {Set<string>} IDs of all currently selected objects (multi-select) */
-    this._selectedIds = new Set()
     this._rectSel = {
       active:    false,
       startPx:   { x: 0, y: 0 },
@@ -563,8 +565,6 @@ export class AppController {
      * @type {import('../view/CameraFlight.js').CameraFlight|null}
      */
     this._cameraFlight         = null
-    /** Last Solid id that fired a select pulse — the transition guard (#30). */
-    this._lastSelectFxId       = null
     /** Entity currently under a desktop hover affordance (ADR-068). */
     this._hoveredEntity        = null
     this._rectSelHandler       = new RectSelectState()
@@ -786,7 +786,7 @@ export class AppController {
     // runs in the animation loop via _syncRobotStage().
 
     // ── CF Link Network Overlay ───────────────────────────────────────────
-    this._linkNetworkView = new LinkNetworkView(id => this._switchActiveObject(id, true))
+    this._linkNetworkView = new LinkNetworkView(id => this._selMgr.selectOnly(id))
     this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)
 
     // ── Gizmo right-edge occupancy ────────────────────────────────────────
@@ -909,6 +909,21 @@ export class AppController {
         contextual: this._service.contextualVisibilityOf(o.id),
         drawn:      o.meshView?.group?.visible ?? o.meshView?.cuboid?.visible ?? null,
       })),
+      // Read-only selection snapshot (ADR-099) — the E2E guard for the round
+      // trip. It reports the CARDINALITY next to the set, because the defect
+      // this ADR closes lived in the gap between them: `_objSelected` was an
+      // independent boolean and could say "something is selected" while the set
+      // was empty (原則 #31 — 0 and N are states that do not look like states).
+      // Both are derived from one representation now, so a disagreement here is
+      // not merely unlikely, it is unwritable — which is exactly what makes the
+      // assertion cheap to keep.
+      selectionState: () => ({
+        count:       this._selMgr.count,
+        objSelected: this._objSelected,
+        activeId:    this._scene.activeId,
+        activeName:  this._activeObj?.name ?? null,
+        names:       [...this._selectedIds].map(id => this._scene.getObject(id)?.name ?? id),
+      }),
       // Read-only placement snapshot (ADR-097) — the E2E guard for the invariant
       // that used to live only in prose ("never floating"). `support` is DERIVED
       // on every read, so a `supported` entity answering null is the illegal
@@ -1027,6 +1042,24 @@ export class AppController {
   get _activeObj() {
     return this._scene.activeObject
   }
+
+  // ─── Selection accessors (ADR-099) ────────────────────────────────────────
+  //
+  // Read-only projections of the ONE representation, `SelectionManager._ids`.
+  // Writing selection goes through the manager's verbs (`selectOnly` /
+  // `selectMany` / `clearSelection` / `activateWithinSelection` / `forget`);
+  // assigning to either of these throws, and `src/SelectionOwnership.test.js`
+  // counts the mutation sites so the next window cannot quietly grow a sixth.
+
+  /** @type {Set<string>} the currently selected entity ids (0, 1 or N) */
+  get _selectedIds() { return this._selMgr.ids }
+
+  /**
+   * Whether anything is selected. DERIVED — the boolean that used to shadow the
+   * set is what made "selected, but nothing is selected" writable (原則 #31).
+   * @type {boolean}
+   */
+  get _objSelected() { return this._selMgr.count > 0 }
 
   /** Returns the grab-handle array for the active object.
    *  Geometry → world-space corners; CoordinateFrame → localOffset. */
@@ -1271,9 +1304,7 @@ export class AppController {
     if (this._scene.selectionMode === 'edit') this.setMode('object')
     const copy = this._service.duplicateSolid(id)
     if (!copy) return
-    this._selectedIds.clear()
-    this._selectedIds.add(copy.id)
-    this._switchActiveObject(copy.id, true)
+    this._selMgr.selectOnly(copy.id)
     this._grabHandler.start()
   }
 
@@ -1356,14 +1387,11 @@ export class AppController {
 
     const wasActive = this._scene.activeId === id
 
-    // The contextual claim is owned by SceneService (ADR-096) — asked, not
-    // mirrored, so the "which frames is the selection showing" fact has one home.
-    if (wasActive && target instanceof CoordinateFrame && this._service.contextualFrameIds.size > 0) {
-      this._selMgr.hideFrameChain()
-    }
-    if (wasActive && !(target instanceof CoordinateFrame)) {
-      this._selMgr.setChildFramesVisible(id, false)
-    }
+    // The entity is leaving. Telling the selection so is enough: the contextual
+    // claim is RECOMPUTED from the selection (ADR-099 §3), so there is no
+    // per-kind release to get wrong — which is what the two branches here used
+    // to be, one of them reading the claim's size to decide whether to release it.
+    this._selMgr.forget(id)
 
     const nextId = wasActive
       ? (
@@ -1386,19 +1414,19 @@ export class AppController {
 
     const cmd = createDeleteCommand(
       target, childrenRefs, this._service,
-      (restoredId) => this._switchActiveObject(restoredId, true),
+      (restoredId) => this._selMgr.selectOnly(restoredId),
       (deletedId) => {
         const nxt = [...this._scene.objects.entries()]
           .find(([k, o]) => k !== deletedId && !(o instanceof CoordinateFrame))?.[0]
           ?? [...this._scene.objects.keys()].find(k => k !== deletedId)
           ?? null
-        if (nxt) this._switchActiveObject(nxt, true)
+        if (nxt) this._selMgr.selectOnly(nxt)
       },
     )
     this._commandStack.push(cmd)
 
     if (wasActive && nextId) {
-      this._switchActiveObject(nextId, true)
+      this._selMgr.selectOnly(nextId)
     }
   }
 
@@ -1431,19 +1459,16 @@ export class AppController {
         const nextId = [...this._scene.objects.entries()]
           .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
         if (nextId) {
-          this._switchActiveObject(nextId, true)
+          this._selMgr.selectOnly(nextId)
         } else {
-          this._objSelected = false
-          this._selectedIds.clear()
-          this._refreshObjectModeStatus()
-          this._updateMobileToolbar()
+          this._selMgr.clearSelection()
         }
       },
-      (id) => this._switchActiveObject(id, true),
+      (id) => this._selMgr.selectOnly(id),
     )
     this._commandStack.push(cmd)
 
-    this._switchActiveObject(obj.id, true)
+    this._selMgr.selectOnly(obj.id)
   }
 
   /**
@@ -1471,19 +1496,16 @@ export class AppController {
         const nextId = [...this._scene.objects.entries()]
           .find(([k, o]) => k !== obj.id && !(o instanceof CoordinateFrame))?.[0] ?? null
         if (nextId) {
-          this._switchActiveObject(nextId, true)
+          this._selMgr.selectOnly(nextId)
         } else {
-          this._objSelected = false
-          this._selectedIds.clear()
-          this._refreshObjectModeStatus()
-          this._updateMobileToolbar()
+          this._selMgr.clearSelection()
         }
       },
-      (id) => this._switchActiveObject(id, true),
+      (id) => this._selMgr.selectOnly(id),
     )
     this._commandStack.push(cmd)
 
-    this._switchActiveObject(obj.id, true)
+    this._selMgr.selectOnly(obj.id)
     // Profile dispatch in setMode('edit') lands in _enterEditMode2D → '2d-sketch'
     this.setMode('edit')
   }
@@ -1505,16 +1527,13 @@ export class AppController {
         // onAfterUndo: the robot vanished — clear a selection that pointed at it
         // and let the roster/stage set converge on the next frame.
         if (this._scene.activeId === robot.id) {
-          this._objSelected = false
-          this._selectedIds.clear()
-          this._refreshObjectModeStatus()
-          this._updateMobileToolbar()
+          this._selMgr.clearSelection()
         }
       },
-      (id) => this._switchActiveObject(id, true),
+      (id) => this._selMgr.selectOnly(id),
     ))
 
-    this._switchActiveObject(robot.id, true)
+    this._selMgr.selectOnly(robot.id)
     this._uiView.showToast(`Robot "${robot.label}" added — place it with G / R`, { type: 'info' })
   }
 
@@ -1623,13 +1642,12 @@ export class AppController {
       }
       return  // don't change active selection while in link mode
     }
-    if (this._scene.selectionMode === 'edit') this.setMode('object')
-    if (id !== this._scene.activeId) {
-      this._switchActiveObject(id, true)
-    } else {
-      // Clicking the already-active row just re-selects it
-      this._selMgr.setObjectSelected(true)
-    }
+    // Mode normalisation used to live HERE and only here, which is why
+    // selecting from any other window while in Edit Mode behaved differently.
+    // It is part of `selectOnly` now, so this window has no procedure of its own
+    // left (ADR-099 §2) — and re-clicking the active row is the same call, since
+    // the entry is idempotent.
+    this._selMgr.selectOnly(id)
   }
 
   // ── Mobile axis guide ─────────────────────────────────────────────────────
@@ -1710,62 +1728,12 @@ export class AppController {
   }
 
   // ── Active object switching ────────────────────────────────────────────────
-
-  /**
-   * Switches the active object, updating visual selection, frame visibility,
-   * link highlighting, and all UI components.
-   * @param {string} id
-   * @param {boolean} [select=false]
-   */
-  _switchActiveObject(id, select = false) {
-    if (this._scene.activeId && this._scene.activeId !== id) {
-      const prev = this._scene.getObject(this._scene.activeId)
-      if (prev) {
-        prev.meshView.setObjectSelected(false)
-        if (prev instanceof CoordinateFrame) {
-          this._selMgr.hideFrameChain()
-          prev.meshView.hideParentAxesGhost()
-        } else {
-          this._selMgr.setChildFramesVisible(this._scene.activeId, false)
-        }
-      }
-    }
-
-    this._service.setActiveObject(id)
-    this._objSelected = select
-    if (select) {
-      this._selectedIds.clear()
-      this._selectedIds.add(id)
-    }
-    this._service.updateLinkSelectionHighlight(select && id ? this._selectedIds : new Set())
-    this._linkNetworkView?.setSelection(select && id ? this._selectedIds : new Set())
-
-    const obj = this._scene.getObject(id)
-    if (obj) obj.meshView.setObjectSelected(select)
-    // Select "tap" pulse (ADR-068) — only on a transition INTO selection of a
-    // Solid (id changed), never on re-selection churn (#30 volume discipline).
-    if (select && obj instanceof Solid && id !== this._lastSelectFxId && obj.corners?.length === 8) {
-      const corners = obj.corners
-      this._motion.spawn(reduced => new SelectPulse(this._sceneView.scene, corners, { reduced }))
-      this._lastSelectFxId = id
-    } else if (!select) {
-      this._lastSelectFxId = null
-    }
-    if (select) {
-      if (obj instanceof CoordinateFrame) {
-        this._selMgr.showFrameChain(id)
-        const ghostPos = this._geometryAncestorCentroid(id)
-        if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
-      } else {
-        this._selMgr.setChildFramesVisible(id, true)
-      }
-    }
-
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
-    this._syncContextProvenance()
-  }
+  //
+  // `_switchActiveObject(id, select)` is GONE (ADR-099). It was the second entry
+  // point to selection — some windows called it after `clearObjectSelection()`
+  // and some instead of it, some normalised the mode and some did not, and the
+  // one that did the least was the newest one. Every caller now says
+  // `this._selMgr.selectOnly(id)`, which is the same procedure by construction.
 
   /**
    * Push the current single-selection's Why provenance to the context overlay
@@ -1965,20 +1933,10 @@ export class AppController {
         if (!result) result = this._hitTest.hitRobotStage()   // robot skeleton → robot_base
         if (!result) return
         const { obj } = result
-        if (!this._selectedIds.has(obj.id)) {
-          this._selMgr.clearObjectSelection()
-          if (obj.id !== this._scene.activeId) {
-            this._switchActiveObject(obj.id, true)
-          } else if (!this._objSelected) {
-            this._selMgr.setObjectSelected(true)
-          }
-          this._selectedIds.add(obj.id)
-        } else if (obj.id !== this._scene.activeId) {
-          this._service.setActiveObject(obj.id)
-          this._objSelected = true
-          this._refreshObjectModeStatus()
-          this._updateNPanel()
-        }
+        // Right-clicking something already selected keeps the whole selection
+        // and only moves the active entity; anything else selects just it.
+        if (this._selMgr.has(obj.id)) this._selMgr.activateWithinSelection(obj.id)
+        else                          this._selMgr.selectOnly(obj.id)
         this._showLongPressContextMenu(e.clientX, e.clientY, obj)
       },
       dblclick: e => this._onDblClick(e),
@@ -2005,11 +1963,7 @@ export class AppController {
     this._hitTest.updateMouse(e)
     const hit = this._hitTest.hitAnyObject()?.obj ?? this._hitTest.hitAnyCoordinateFrame()?.obj
       ?? this._hitTest.hitRobotStage()?.obj
-    if (hit && hit.id !== this._scene.activeId) {
-      this._selMgr.clearObjectSelection()
-      this._switchActiveObject(hit.id, true)
-      this._selectedIds.add(hit.id)
-    }
+    if (hit && hit.id !== this._scene.activeId) this._selMgr.selectOnly(hit.id)
     this.focusSelection()
   }
 
@@ -2164,8 +2118,7 @@ export class AppController {
     this._finishCameraFlight()
     this._commandStack.clear()
     this._refreshUndoRedoState()
-    this._selMgr.clearObjectSelection()
-    this._selMgr.setObjectSelected(false)
+    this._selMgr.clearSelection()
 
     // A blank / spec-less doc (ADR-051 Entry A) adopts with `compiled: null` —
     // there is no layout to frame, so fall through to the empty-box default fit.
@@ -2283,23 +2236,18 @@ export class AppController {
 
     if (mode === 'object') {
       // Restore selection state when returning from Edit Mode — the active
-      // object is still valid but _objSelected was cleared on Edit entry.
+      // object is still valid but the selection was dropped on Edit entry.
+      // `fx:false`: this re-asserts a selection the user never let go of, and
+      // the select pulse means "this just became selected" (#30).
       if (this._activeObj && !this._objSelected) {
-        this._objSelected = true
-        this._activeObj.meshView.setObjectSelected(true)
-        if (this._activeObj instanceof CoordinateFrame) {
-          this._selMgr.showFrameChain(this._scene.activeId)
-        } else {
-          this._selMgr.setChildFramesVisible(this._scene.activeId, true)
-        }
+        this._selMgr.selectOnly(this._scene.activeId, { fx: false })
       }
       this._refreshObjectModeStatus()
       this._uiView.updateMode('object')
       this._updateMobileToolbar()
     } else {
       // edit mode — dispatch on entity type
-      this._selMgr.clearObjectSelection()
-      this._selMgr.setObjectSelected(false)
+      this._selMgr.clearSelection()
       if (this._activeObj instanceof Profile) {
         this._enterEditMode2D()
       } else if (this._activeObj instanceof MeasureLine) {
@@ -2447,7 +2395,7 @@ export class AppController {
     // ── Record undo snapshot ──────────────────────────────────────────────
     const cmd = createExtrudeSketchCommand(
       profileRef, height, this._service,
-      (id) => { this._switchActiveObject(id, true) },
+      (id) => { this._selMgr.selectOnly(id) },
     )
     this._commandStack.push(cmd)
 
@@ -2521,20 +2469,11 @@ export class AppController {
       return
     }
 
-    this._selMgr.clearObjectSelection()
-    for (const id of assemblyIds) {
-      const obj = this._scene.getObject(id)
-      if (!obj?.meshView) continue
-      obj.meshView.setObjectSelected(true)
-      this._selMgr.setChildFramesVisible(obj.id, true)
-      this._selectedIds.add(id)
-    }
-
-    if (this._scene.activeId !== startId) this._service.setActiveObject(startId)
-    this._objSelected = true
-    this._refreshObjectModeStatus()
-    this._updateNPanel()
-    this._updateMobileToolbar()
+    // The N-selection verb. The per-entity loop this replaces claimed frame
+    // context once per member and each claim REPLACED the previous one, so
+    // selecting an assembly showed only the last member's frames — the union is
+    // computed in one place now (ADR-099 §3).
+    this._selMgr.selectMany(assemblyIds, { activeId: startId })
     this._uiView.showToast(`${assemblyIds.size} objects selected`)
   }
 
@@ -3085,24 +3024,11 @@ export class AppController {
       // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
       if (result) {
         const { hit, obj } = result
-        if (!this._selectedIds.has(obj.id)) {
-          // Clicked an unselected object — clear previous selection, select only this
-          this._selMgr.clearObjectSelection()
-          if (obj.id !== this._scene.activeId) {
-            this._switchActiveObject(obj.id, true)
-          } else if (!this._objSelected) {
-            this._selMgr.setObjectSelected(true)
-          }
-          this._selectedIds.add(obj.id)
-        } else {
-          // Clicked an already-selected object — keep all selected, update active
-          if (obj.id !== this._scene.activeId) {
-            this._service.setActiveObject(obj.id)
-            this._objSelected = true
-            this._refreshObjectModeStatus()
-            this._updateNPanel()
-          }
-        }
+        // Clicked an unselected object → select only it. Clicked one that is
+        // already selected → keep the whole selection and just move the active
+        // entity, so a multi-selection survives being grabbed by one member.
+        if (this._selMgr.has(obj.id)) this._selMgr.activateWithinSelection(obj.id)
+        else                          this._selMgr.selectOnly(obj.id)
 
         // MeasureLine, CoordinateFrame, and annotation entities cannot be pointer-dragged
         // (use G key to move them after selecting).
@@ -3216,8 +3142,7 @@ export class AppController {
       } else {
         // No object hit: touch tap → deselect; desktop → start rectangle selection.
         if (e.pointerType === 'touch') {
-          this._selMgr.clearObjectSelection()
-          this._selMgr.setObjectSelected(false)
+          this._selMgr.clearSelection()
           return
         }
         // Do NOT disable _controls here: orbit (right-click / two-finger) uses
@@ -4015,8 +3940,7 @@ export class AppController {
     // the constructor's boot solid).
     this._commandStack.clear()
     this._refreshUndoRedoState()
-    this._selMgr.clearObjectSelection()
-    this._selMgr.setObjectSelected(false)
+    this._selMgr.clearSelection()
     // A template's robot arrives through the scene, not through the user's Add
     // menu, so it carries the seeded default and stays down (ADR-096 §Decision
     // 3) — a template's own robot Solid isn't shadowed by the orphan UR5e
