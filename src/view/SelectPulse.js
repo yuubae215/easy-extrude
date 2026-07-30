@@ -45,7 +45,7 @@ export class SelectPulse {
     solidGeo.dispose()
 
     this._mat = new THREE.LineBasicMaterial({
-      color: hexNumber(COLOR.accentActive), transparent: true, opacity: 0.9, depthTest: false,
+      color: hexNumber(COLOR.accent), transparent: true, opacity: 0.9, depthTest: false,
     })
     this._lines = new THREE.LineSegments(this._edges, this._mat)
     this._lines.renderOrder = 3

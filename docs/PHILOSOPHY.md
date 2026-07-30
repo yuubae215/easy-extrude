@@ -845,6 +845,21 @@ Manifestations in this repo, in unrelated layers (the list grows; do not cite it
   *stated* the mitigation and still shipped half of it, because prose is not asked at the
   moment the second branch is written.
 
+
+- **The palette declared 21 colours while the code drew 225 (ADR-100, `src/theme/`).** ADR-065
+  had already pinned the token vocabulary to its documentation, both ways, so the *declared*
+  set could not grow in silence. What no check ever asked was how many colours lived
+  **outside** that set — and an undeclared colour has no token, no row, no key, so a test that
+  iterates `COLOR` sees a clean vocabulary forever while the screen drifts. The governance in
+  place was a sentence ("migrate any line you TOUCH"), which is asked only of lines somebody
+  happens to touch; the untouched 400 were never going to move. The fix counts the complement:
+  a ratchet over hex literals NOT in the vocabulary, with legitimately-excluded vocabularies
+  named rather than inferred, failing when the number rises **and** when it falls without the
+  declared baseline coming down with it. The same shape appeared one level in: "how many
+  windows paint *selected*?" walked as windows gives six, enumerated as kinds gives nine — the
+  rubber band, the floating label, and the React outliner do not look like selection painters
+  from the outside, which is exactly why three of them had reached for their own hex.
+
 The shared root: **a check that inspects present items can never see an absence.** The fix
 in both cases has the same shape — enumerate the *required kinds* and test their count,
 then make a legitimate zero a **declaration** rather than an inference. An absent required
@@ -953,4 +968,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 28 | Mutual Means Round-Trip Up to a Normal Form, Never a Literal Inverse | Contracts | LayoutDecompiler scene fixpoint (ADR-055); SynonymQuotient / ProvenanceNarrative (ADR-052); CanonicalForm WL normal form (ADR-056) |
 | 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |
 | 30 | Motion Tier — 動きは事実・能力・歓びを担う (delight tier 2026-07-12) | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
-| 31 | Zero Is a State That Does Not Look Like One (2026-07-25) | Design | State Ledger cardinality column (核 §1.4); GSN support cardinality (`pnpm test:gsn`); absent required declaration rejected not defaulted (ADR-090); animation phase derived from entity identity so 1-of-N is represented, not inferred (ADR-093, `MapVisualMath.test.js`) |
+| 31 | Zero Is a State That Does Not Look Like One (2026-07-25) | Design | State Ledger cardinality column (核 §1.4); GSN support cardinality (`pnpm test:gsn`); absent required declaration rejected not defaulted (ADR-090); animation phase derived from entity identity so 1-of-N is represented, not inferred (ADR-093, `MapVisualMath.test.js`); **count what is NOT declared** — undeclared colour literals ratcheted, selection painters enumerated by kind (ADR-100, `src/theme/tokens.test.js`) |

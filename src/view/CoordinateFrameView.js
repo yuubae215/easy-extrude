@@ -38,6 +38,7 @@
  */
 import * as THREE from 'three'
 import { EntityLabel } from './EntityLabel.js'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 
 const AXIS_LENGTH   = 0.5
 const AXIS_RADIUS   = 0.015   // ~3% of axis length; matches TC shaft visual weight
@@ -275,14 +276,16 @@ export class CoordinateFrameView {
   /**
    * Highlights the origin sphere to mark this frame as the active selection.
    * Layered on top of the current visibility mode (showFull / showDimmed).
-   *   selected = true  → gold sphere (#ffcc00) + scale 1.6×
+   *   selected = true  → `accent` sphere + scale 1.6×
    *   selected = false → white sphere + scale 1.0
+   * The sphere used to be gold (#ffcc00) — a fourth colour for one meaning.
+   * ADR-100 G2 put every selection painter on `accent`.
    * Does NOT change visibility or depthTest — those are managed by the
    * visibility methods above.
    * @param {boolean} selected
    */
   setObjectSelected(selected) {
-    this._originSphere.material.color.setHex(selected ? 0xffcc00 : 0xffffff)
+    this._originSphere.material.color.setHex(selected ? hexNumber(COLOR.accent) : 0xffffff)
     this._originSphere.scale.setScalar(selected ? 1.6 : 1.0)
     // Label enrichment (ADR-070): the RPY readout appears only while selected —
     // staged disclosure keeps the default label short.

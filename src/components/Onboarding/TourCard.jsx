@@ -47,9 +47,9 @@ export function TourCard() {
         bottom: 38,          // InfoBar (26) + gutter
         width: 248,
         zIndex: Z.overlay,
-        background: COLOR.bgPanel,
+        background: COLOR.surface,
         border: `1px solid ${COLOR.border}`,
-        borderLeft: `3px solid ${done ? COLOR.fxGreen : COLOR.accentActive}`,
+        borderLeft: `3px solid ${done ? COLOR.factTone : COLOR.accent}`,
         borderRadius: 6,
         padding: '10px 12px',
         color: COLOR.textPrimary,
@@ -64,7 +64,7 @@ export function TourCard() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{
           fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: done ? COLOR.fxGreen : COLOR.accentActive, flex: 1,
+          color: done ? COLOR.factTone : COLOR.accent, flex: 1,
         }}>
           {done ? 'Tour complete' : `Getting started · ${step.index}/${step.total}`}
         </span>
@@ -100,7 +100,7 @@ export function TourCard() {
               <span key={i} style={{
                 width: 6, height: 6, borderRadius: '50%',
                 background: i < step.index
-                  ? COLOR.accentActive
+                  ? COLOR.accent
                   : rgba(COLOR.textSecondary, 0.35),
               }} />
             ))}
@@ -120,7 +120,7 @@ function Kbd({ children }) {
       border: `1px solid ${COLOR.border}`,
       borderBottomWidth: 2,
       borderRadius: 3,
-      background: COLOR.bgButton,
+      background: COLOR.surfaceRaised,
       fontFamily: 'monospace',
       fontSize: 11,
       lineHeight: '16px',

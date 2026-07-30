@@ -25,10 +25,14 @@
  * @module view/RegionGhostView
  */
 import * as THREE from 'three'
+import { PERSONA_PALETTE } from '../theme/semantic.js'
 import { gapBandRects, GAP_COLOR, RESOLVE_COLOR } from './RegionGhostMath.js'
 
-/** Persona palette — distinct hues mapped by actor index (ctx.actors order). */
-export const PERSONA_PALETTE = [0x3a7bd5, 0xe0b030, 0x10b981, 0xc05cd0, 0xe06650]
+/**
+ * Persona palette — distinct hues mapped by actor index (`ctx.actors` order).
+ * Values live in the declared data-meaning vocabulary (ADR-100 Decision 5).
+ */
+export { PERSONA_PALETTE }
 /** Bright agreement-zone colour (intersection non-empty). */
 const AGREE_COLOR    = 0xffffff
 const Z_FILL_BASE    = 2   // mm lift for the first persona fill

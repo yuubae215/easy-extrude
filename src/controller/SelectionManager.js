@@ -68,6 +68,7 @@ import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { Solid }           from '../domain/Solid.js'
 import { projectToScreen } from './snap/SnapSystem.js'
 import { SelectPulse }     from '../view/SelectPulse.js'
+import { COLOR, rgba }     from '../theme/tokens.js'
 import { CONTEXTUAL }      from '../view/VisibilityAxes.js'
 
 /** Computes 8 world-space bbox corners for a mesh entity that lacks .corners. */
@@ -438,8 +439,12 @@ export class SelectionManager {
       top:         y + 'px',
       width:       w + 'px',
       height:      h + 'px',
-      border:      '1px ' + (isRight ? 'solid' : 'dashed') + ' ' + (isRight ? '#4fc3f7' : '#ffa726'),
-      background:  isRight ? 'rgba(79,195,247,0.05)' : 'rgba(255,167,38,0.05)',
+      // A SEVENTH selection painter, not in ADR-100's blast-radius table —
+      // found while collapsing the other six. Enclosed vs touch mode is
+      // carried by the LINE STYLE (solid/dashed), which is what already
+      // distinguished them; the two hues were saying "selecting" twice.
+      border:      '1px ' + (isRight ? 'solid' : 'dashed') + ' ' + COLOR.accent,
+      background:  rgba(COLOR.accent, 0.05),
     })
   }
 

@@ -74,10 +74,10 @@ export function lifecycleDescriptor(landing) {
   const transition = phase === 'undo' ? entry.undo : entry.push
   return transition === 'appear'
     ? { kind: 'materialize', direction: 'added',
-        color: hexNumber(COLOR.fxGreen),
+        color: hexNumber(COLOR.factTone),
         duration: DURATION.voxelMaterialize / 1000 }
     : { kind: 'dissolve', direction: 'removed',
-        color: hexNumber(COLOR.accentActive),
+        color: hexNumber(COLOR.infoTone),
         duration: DURATION.voxelDissolve / 1000 }
 }
 

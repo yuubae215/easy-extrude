@@ -16,10 +16,36 @@ import * as THREE from 'three'
 import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel.js'
 import { geometryEngine } from '../service/GeometryEngine.js'
 import { EntityLabel } from './EntityLabel.js'
-import { COLOR } from '../theme/tokens.js'
+import { COLOR, hexNumber, dim } from '../theme/tokens.js'
+import { SUBELEMENT_COLORS } from '../theme/semantic.js'
 
-/** Default cuboid body colour (= COLOR.accentActive) — the base setIfcTint restores. */
-const BODY_COLOR = 0x4fc3f7
+/**
+ * Default cuboid body colour — the base `setIfcTint` restores.
+ *
+ * Neutral by ADR-100 G1: an entity with nothing to report spends no saturation.
+ * It used to be `0x4fc3f7`, the SAME hex as the indicator cyan, so one colour
+ * was saying both "this is a body" and "this tool is active" while the backdrop
+ * sat in the same blue family — figure and ground sharing a hue is the
+ * mechanism behind "the scheme gets stale". Colour on a body now means a state
+ * is on it (IFC tint, selection, hover, violation).
+ */
+const BODY_COLOR = hexNumber(COLOR.entityDefault)
+
+/**
+ * Emissive strengths for the three body cues, DERIVED from their tokens.
+ *
+ * They were three hand-written literals (`0x550000`, `0x112244`, `0x0a1522`),
+ * which meant "a dim accent" had its own hex and stopped tracking `accent` the
+ * moment the accent moved — exactly the second source §1.1 forbids. Selection
+ * and hover are the same meaning at two strengths, so they are one token at two
+ * factors, not two colours.
+ */
+/** Face-snap marker tint — the sub-element KIND, not a state (theme/semantic.js). */
+const FACE_MARKER = hexNumber(SUBELEMENT_COLORS.face)
+
+const EMISSIVE_VIOLATION = hexNumber(dim(COLOR.dangerTone, 0.45))
+const EMISSIVE_SELECTED  = hexNumber(dim(COLOR.accent, 0.30))
+const EMISSIVE_HOVERED   = hexNumber(dim(COLOR.accent, 0.12))
 
 export class MeshView {
   /**
@@ -43,7 +69,7 @@ export class MeshView {
     // density control, same focus+context idea as the Link Network).
     /** @type {EntityLabel|null} */
     this._label = (camera && renderer && container)
-      ? new EntityLabel(renderer, container, { accent: COLOR.accentActive })
+      ? new EntityLabel(renderer, container, { accent: COLOR.accent })
       : null
     this._name      = ''
     /** @type {import('../domain/IFCClassRegistry.js').IFCClassEntry|null} */
@@ -62,9 +88,11 @@ export class MeshView {
     // Selection highlight: LineSegments from actual corner edges (OBB, not AABB).
     // THREE.BoxHelper computes an AABB which diverges from the solid after R-key
     // rotation because corners are baked as world-space vertices with no mesh transform.
+    // The steady selection outline — one of the six selection painters ADR-100
+    // collapsed onto `accent`. It was cyan; cyan also meant "active tool".
     this.boxHelper = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0x4fc3f7 }),
+      new THREE.LineBasicMaterial({ color: hexNumber(COLOR.accent) }),
     )
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
@@ -175,7 +203,7 @@ export class MeshView {
     scene.add(this._snapNearEdge)
 
     this._snapNearFaceGeo = new THREE.BufferGeometry()
-    this._snapNearFace = new THREE.Points(this._snapNearFaceGeo, _makeSnapNearMat(_texSquare,   0x4fc3f7))
+    this._snapNearFace = new THREE.Points(this._snapNearFaceGeo, _makeSnapNearMat(_texSquare,   FACE_MARKER))
     this._snapNearFace.visible = false
     scene.add(this._snapNearFace)
 
@@ -200,7 +228,7 @@ export class MeshView {
     scene.add(this._snapLockedEdge)
 
     this._snapLockedFaceGeo = new THREE.BufferGeometry()
-    this._snapLockedFace = new THREE.Points(this._snapLockedFaceGeo, _makeSnapLockMat(_texSquare,   0x4fc3f7))
+    this._snapLockedFace = new THREE.Points(this._snapLockedFaceGeo, _makeSnapLockMat(_texSquare,   FACE_MARKER))
     this._snapLockedFace.visible = false
     scene.add(this._snapLockedFace)
 
@@ -222,7 +250,7 @@ export class MeshView {
     this._sketchRectGeo = new THREE.BufferGeometry()
     this._sketchRectLines = new THREE.LineLoop(
       this._sketchRectGeo,
-      new THREE.LineBasicMaterial({ color: 0x4fc3f7, depthTest: false }),
+      new THREE.LineBasicMaterial({ color: FACE_MARKER, depthTest: false }),
     )
     this._sketchRectLines.visible = false
     scene.add(this._sketchRectLines)
@@ -230,7 +258,7 @@ export class MeshView {
     this._sketchFillGeo = new THREE.BufferGeometry()
     this._sketchFill = new THREE.Mesh(
       this._sketchFillGeo,
-      new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false }),
+      new THREE.MeshBasicMaterial({ color: FACE_MARKER, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthTest: false }),
     )
     this._sketchFill.visible = false
     scene.add(this._sketchFill)
@@ -428,7 +456,7 @@ export class MeshView {
     if (!this._label) return
     const badge = this._ifcEntry ? ` · ${this._ifcEntry.label}` : ''
     this._label.setText(`${this._name}${badge}`)
-    this._label.setAccent(this._ifcEntry ? this._ifcEntry.color : COLOR.accentActive)
+    this._label.setAccent(this._ifcEntry ? this._ifcEntry.color : COLOR.accent)
     this._label.setWanted(Boolean(this._name) && this.cuboid.visible && (this._selected || this._hovered))
   }
 
@@ -487,11 +515,11 @@ export class MeshView {
    */
   _syncEmissive() {
     if (this._constraintViolated) {
-      this.cuboidMat.emissive.set(0x550000)
+      this.cuboidMat.emissive.set(EMISSIVE_VIOLATION)
     } else if (this._selected) {
-      this.cuboidMat.emissive.set(0x112244)
+      this.cuboidMat.emissive.set(EMISSIVE_SELECTED)
     } else if (this._hovered) {
-      this.cuboidMat.emissive.set(0x0a1522)
+      this.cuboidMat.emissive.set(EMISSIVE_HOVERED)
     } else {
       this.cuboidMat.emissive.set(0x000000)
     }
@@ -655,10 +683,10 @@ export class MeshView {
 
   /** Color per snap target type */
   static _SNAP_COLOR = {
-    vertex: new THREE.Color(0x69f0ae),
-    edge:   new THREE.Color(0xffd740),
-    face:   new THREE.Color(0x4fc3f7),
-    world:  new THREE.Color(0xffffff),
+    vertex: new THREE.Color(SUBELEMENT_COLORS.vertex),
+    edge:   new THREE.Color(SUBELEMENT_COLORS.edge),
+    face:   new THREE.Color(SUBELEMENT_COLORS.face),
+    world:  new THREE.Color(SUBELEMENT_COLORS.world),
   }
 
   /**

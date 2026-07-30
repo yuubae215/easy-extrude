@@ -13,6 +13,7 @@
  *   setObjectIfcClass(id, ifcClass) — updates the coloured IFC badge shown
  *   to the right of the object name. Pass null to hide the badge.
  */
+import { COLOR, rgba }    from '../theme/tokens.js'
 import { IFC_CLASS_MAP }    from '../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP } from '../domain/PlaceTypeRegistry.js'
 
@@ -345,8 +346,11 @@ export class OutlinerView {
     this._activeId = id
     this._items.forEach((item, rowId) => {
       const isActive = rowId === id
-      item.rowEl.style.background = isActive ? 'rgba(255,112,67,0.18)' : 'transparent'
-      item.rowEl.querySelector('.obj-name').style.color = isActive ? '#ff8c69' : '#e0e0e0'
+      // Both cues derive from ONE token (ADR-100 G2). They used to be two
+      // literals — `rgba(255,112,67,…)` and `#ff8c69` — a third and fourth
+      // salmon that neither matched each other nor the declared `accent`.
+      item.rowEl.style.background = isActive ? rgba(COLOR.accent, 0.18) : 'transparent'
+      item.rowEl.querySelector('.obj-name').style.color = isActive ? COLOR.accent : COLOR.textPrimary
     })
   }
 
@@ -566,12 +570,12 @@ export class OutlinerView {
     const iconEl = document.createElement('span')
     let iconText  = '⬡'
     let iconTitle = ''
-    let iconColor = '#4fc3f7'
+    let iconColor = COLOR.entityDefault
 
     if (type === 'measure') {
       iconText  = '↔'
       iconTitle = 'Measure line'
-      iconColor = '#f9a825'
+      iconColor = COLOR.measure
     } else if (type === 'imported') {
       iconTitle = 'Imported mesh (read-only)'
       iconColor = '#888888'
@@ -751,7 +755,7 @@ export class OutlinerView {
       Object.assign(input.style, {
         flex: '1',
         background: '#1a1a2e',
-        border: '1px solid #4fc3f7',
+        border: `1px solid ${COLOR.accent}`,
         borderRadius: '2px',
         color: '#e8e8e8',
         fontSize: '12px',
@@ -819,7 +823,7 @@ export class OutlinerView {
       if (!this._draggingId || this._draggingId === id) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
-      rowEl.style.outline = '2px solid #4fc3f7'
+      rowEl.style.outline = `2px solid ${COLOR.accent}`
       rowEl.style.outlineOffset = '-2px'
     })
     rowEl.addEventListener('dragleave', () => {

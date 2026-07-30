@@ -1,3 +1,4 @@
+import { COLOR } from '../../theme/tokens.js'
 import { useRef } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { Section, NumRow, EditRow, NameInput, AXIS_COLORS } from './npanelShared.jsx'
@@ -98,7 +99,7 @@ function ParentSection({ parentOptions, currentParentId, onParentChange }) {
         defaultValue={currentParentId ?? ''}
         key={currentParentId}
         onChange={e => onParentChange?.(e.target.value)}
-        onFocus={e => { e.target.style.borderColor = '#4fc3f7' }}
+        onFocus={e => { e.target.style.borderColor = COLOR.accent }}
         onBlur={e => { e.target.style.borderColor = '#444' }}
         onKeyDown={e => e.stopPropagation()}
         style={{

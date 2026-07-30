@@ -60,7 +60,7 @@ export function CelebrationBurst({ descriptor, tick }) {
   const banner = (
     <div style={{
       padding: '6px 14px', borderRadius: '14px',
-      background: rgba(COLOR.bgPanel, 0.92),
+      background: rgba(COLOR.surface, 0.92),
       border: `1px solid ${color}`,
       boxShadow: `0 0 14px ${rgba(color, 0.55)}`,
       color, fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap',

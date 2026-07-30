@@ -33,7 +33,7 @@ export class ExtrudeFrontView {
     this._intensity = FRONT_BASE
     this._lastT = null
 
-    this._base = new THREE.Color(hexNumber(COLOR.fxGreen))
+    this._base = new THREE.Color(hexNumber(COLOR.factTone))
     this._white = new THREE.Color(0xffffff)
 
     this._geometry = new THREE.BufferGeometry()

@@ -235,31 +235,72 @@ The token column is pinned equal to `COLOR` in `src/theme/tokens.js` by the
 drift test `src/theme/tokens.test.js` (ADR-065 Phase 0 — same mechanism as the
 ADR-064 schema drift tests). One row = one token = one hex. Rows without a
 token (`—`) are outside the token vocabulary (e.g. Three.js material presets).
-Touched lines carrying one of these hex literals must be migrated to the token.
+
+**Names are roles, not values (ADR-100).** A token is named after what it
+REPORTS, never after its hue — `fxGreen` could not survive its own colour
+changing, `factTone` can. Adding a colour starts with "what state does this
+report?"; a colour with no state to report should be neutral.
+
+**Saturation is spent on state (ADR-100 G1).** The entity default is neutral so
+that "carries colour" and "carries meaning" are the same set on screen. The
+ground (backdrop, grid) is unchanged from ADR-067 — it was the FIGURE that moved
+to neutral, not the ground.
+
+**One meaning, one colour (ADR-100 G2).** `accent` is the only colour for "this
+is what you are operating on". It replaced four (Outliner salmon, `accent`
+blue-violet, indicator cyan, CF origin gold). The reverse rule holds too: two
+meanings never share a hue, machine-checked over `STATE_TOKENS` at
+`COLOR_RULES.minHueSeparationDeg`.
+
+**Using a colour is checked too, not just declaring one (ADR-100 G3).** The old
+rule — "migrate any line you touch" — was never asked at the moment of writing.
+`tokens.test.js` now counts hex literals living OUTSIDE this vocabulary and
+fails when that count goes up. Colours that carry DATA meaning (link types,
+personas, node types, IFC classes) are declared out of scope in
+`src/theme/semantic.js` and excluded from that count by name.
 
 | Usage | Token | Color |
 |-------|-------|-------|
-| Background (header, panels) | `bgPanel` | `#242424` |
-| Background (secondary) | `bgSecondary` | `#2b2b2b` |
-| Background (buttons) | `bgButton` | `#383838` |
+| Background (header, panels) | `surface` | `#242424` |
+| Background (recessed) | `surfaceSunken` | `#2b2b2b` |
+| Background (buttons, raised) | `surfaceRaised` | `#383838` |
 | Border | `border` | `#4a4a4a` |
 | Text (primary) | `textPrimary` | `#e0e0e0` |
-| Text (secondary) | `textSecondary` | `#888888` |
-| Accent (selected row) | `accentSoft` | `#3d3d6b` |
-| Accent (selected control) | `accent` | `#5c5cff` |
-| Danger (Delete) | `danger` | `#c04040` |
-| Success (Confirm) | `success` | `#3a7a3a` |
-| Active tool / indicator cyan (mobile toolbar, ADR-065 Phase 3) | `accentActive` | `#4fc3f7` |
-| 3D face highlight | — | Cyan (Three.js material) |
-| Measure line | `measure` | `#f5a623` |
-| CoordinateFrame axis X | `axisX` | `#e05252` |
-| CoordinateFrame axis Y | `axisY` | `#52e052` |
-| CoordinateFrame axis Z | `axisZ` | `#5252e0` |
-| Feedback flash — settled fact (ADR-062) | `fxGreen` | `#22c55e` |
-| Feedback flash — seed/example (ADR-058) | `fxAmber` | `#d5a23a` |
-| Decision blue / landing settle (ADR-047/065) | `fxBlue` | `#3a7bd5` |
-| Reveal ripple green (ADR-047) | `fxReveal` | `#10b981` |
-| Snap lock orange — status caption + engagement flash (ADR-065 Phase 2) | `fxSnap` | `#ff9800` |
+| Text (secondary — lifted from `#888888` for WCAG AA, ADR-100) | `textSecondary` | `#9a9a9a` |
+| Scene backdrop, top stop (ADR-067) | `backdropTop` | `#262a4a` |
+| Scene backdrop, mid stop / flat pre-stage | `backdropMid` | `#1a1a2e` |
+| Scene backdrop, deep stop | `backdropDeep` | `#0e0e18` |
+| Ground grid, major lines | `gridMajor` | `#444466` |
+| Ground grid, minor lines | `gridMinor` | `#222244` |
+| **Entity default body — neutral, no state to report (ADR-100 G1)** | `entityDefault` | `#b9bcc0` |
+| **Selection / active / focus — the only colour for it (ADR-100 G2)** | `accent` | `#ff7d2e` |
+| Selected-row ground (same meaning, lower strength) | `accentSoft` | `#4a2c18` |
+| Feedback — a result is settled (ADR-062, was `fxGreen`) | `factTone` | `#22c55e` |
+| Feedback — seed / example / take care (ADR-058, was `fxAmber`) | `cautionTone` | `#d9b23c` |
+| Feedback — a decision landed (ADR-047/065, was `fxBlue`) | `infoTone` | `#3a7bd5` |
+| Reveal ripple — something came into view (ADR-047, was `fxReveal`) | `revealTone` | `#0dbd97` |
+| Snap lock — a constraint engaged (ADR-065 Phase 2, was `fxSnap` orange) | `snapTone` | `#a86ceb` |
+| Destructive (Delete, was `danger`) | `dangerTone` | `#c04040` |
+| Confirmed (Confirm, was `success`) | `successTone` | `#3a7a3a` |
+| Measure line (was `#f5a623` declared / `#f9a825` drawn — one meaning, two sources) | `measure` | `#1fb6d6` |
+| CoordinateFrame axis X (ROS REP-103 — never re-tuned here) | `axisX` | `#e05252` |
+| CoordinateFrame axis Y (ROS REP-103) | `axisY` | `#52e052` |
+| CoordinateFrame axis Z (ROS REP-103) | `axisZ` | `#5252e0` |
+| Stage glow / rim light — atmosphere, not state (ADR-067) | `stageGlow` | `#4fc3f7` |
+| 3D face highlight | — | Yellow (Three.js material) |
+
+### Why `snapTone` and `measure` moved hue
+
+`accent` is orange, and the wheel around 20–40° was already crowded: snap
+(`#ff9800`, 36°), measure (`#f9a825`, 38°) and caution (`#d5a23a`, 40°) all sat
+within 16° of it. "One hue, one meaning" is a rule, so something had to move.
+Danger keeps red and caution keeps yellow (both culturally locked); snap and
+measure have no such anchor, so they moved — measure to cyan, which is the
+conventional CAD dimension colour and which the retired indicator cyan vacated.
+
+Today's tightest pair is `successTone` ↔ `factTone` at ~22°, against a 20°
+budget. A new state colour must find ~20° of clear wheel or displace an existing
+meaning; that cost is deliberate.
 
 ---
 

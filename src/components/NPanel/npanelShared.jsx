@@ -1,3 +1,4 @@
+import { COLOR } from '../../theme/tokens.js'
 import { useRef } from 'react'
 
 // ── Shared building blocks for NPanel components ──────────────────────────
@@ -80,7 +81,7 @@ export function EditRow({ axis, color, value, onChange }) {
         step="0.001"
         defaultValue={value.toFixed(3)}
         key={value}
-        onFocus={e => { e.target.style.borderColor = '#4fc3f7' }}
+        onFocus={e => { e.target.style.borderColor = COLOR.accent }}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         style={{
@@ -123,7 +124,7 @@ export function NameInput({ name, onCommit }) {
       type="text"
       key={name}
       defaultValue={name}
-      onFocus={e => { e.target.style.borderColor = '#4fc3f7' }}
+      onFocus={e => { e.target.style.borderColor = COLOR.accent }}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       style={{

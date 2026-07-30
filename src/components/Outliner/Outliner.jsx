@@ -6,7 +6,7 @@ import { tourAnchor, tourVisible } from '../../view/TourMath.js'
 import { activeGlow } from '../../view/ChromeMath.js'
 import { visibilityAffordance } from '../../view/OutlinerRowMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
-import { DURATION, EASING } from '../../theme/tokens.js'
+import { COLOR, DURATION, EASING, rgba } from '../../theme/tokens.js'
 import { ROBOT_ROLE } from '../../domain/robotFrames.js'
 
 // ── Robot placement frames (ADR-084 §2, TF tree ADR-085) ─────────────────────
@@ -27,16 +27,16 @@ const ROBOT_FRAME_HINT = {
 
 // ── Icon config matching OutlinerView._createRow ──────────────────────────────
 const TYPE_ICON = {
-  cuboid:       { glyph: '⬡', color: '#4fc3f7', title: '' },
+  cuboid:       { glyph: '⬡', color: COLOR.entityDefault, title: '' },
   sketch:       { glyph: '⬡', color: '#80cbc4', title: '' },
   imported:     { glyph: '⬡', color: '#888888', title: 'Imported mesh (read-only)' },
-  measure:      { glyph: '↔', color: '#f9a825', title: 'Measure line' },
+  measure:      { glyph: '↔', color: COLOR.measure, title: 'Measure line' },
   frame:        { glyph: '⊕', color: '#a0c8ff', title: 'Coordinate frame' },
   'annot-line':   { glyph: '⟿', color: '#888888', title: 'Annotated line (Route / Boundary)' },
   'annot-region': { glyph: '⬡', color: '#888888', title: 'Annotated region (Zone)' },
   'annot-point':  { glyph: '⬤', color: '#888888', title: 'Annotated point (Hub / Anchor)' },
 }
-const DEFAULT_ICON = { glyph: '⬡', color: '#4fc3f7', title: '' }
+const DEFAULT_ICON = { glyph: '⬡', color: COLOR.entityDefault, title: '' }
 
 // ── Eye glyph ─────────────────────────────────────────────────────────────────
 // Drawn rather than typed: there is no closed-eye counterpart to 👁 that renders
@@ -181,12 +181,12 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
         cursor: 'pointer',
         gap: 4,
         background: active
-          ? 'rgba(255,112,67,0.18)'
+          ? rgba(COLOR.accent, 0.18)
           : hovered
             ? 'rgba(255,255,255,0.05)'
             : 'transparent',
         borderBottom: '1px solid transparent',
-        outline: isDragTarget ? '2px solid #4fc3f7' : 'none',
+        outline: isDragTarget ? `2px solid ${COLOR.accent}` : 'none',
         outlineOffset: isDragTarget ? -2 : 0,
         opacity: draggingId === id ? 0.4 : 1,
         transition: rowTransition,
@@ -224,7 +224,7 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
             if (e.key === 'Escape') { e.preventDefault(); inputRef.current?.removeEventListener('blur', commitEdit); cancelEdit() }
           }}
           style={{
-            flex: 1, background: '#1a1a2e', border: '1px solid #4fc3f7',
+            flex: 1, background: COLOR.backdropMid, border: `1px solid ${COLOR.accent}`,
             borderRadius: 2, color: '#e8e8e8', fontSize: 12,
             fontFamily: 'sans-serif', padding: '0 3px', outline: 'none', minWidth: 0,
           }}

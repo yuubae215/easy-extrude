@@ -23,6 +23,7 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | dogfooding / 実際に触る / 既定値の獲得 / フルスタック起動 / ユーザフィードバック | `docs/dogfooding/README.md` (`pnpm dev:stack` + 記録様式) |
 | screen / information architecture / UI screens / what shows on screen | `docs/SCREEN_DESIGN.md` |
 | layout / dimensions / z-index / responsive / breakpoint / toolbar slots | `docs/LAYOUT_DESIGN.md` |
+| 色 / カラースキーム / パレット / アクセントカラー / デザイントークン / design token / 役割トークン / `entityDefault` / `accent` / `stageGlow` / `*Tone` / 中立サーフェス / 図と地 / 彩度 / 色相分離 / hue separation / コントラスト比 / WCAG / 宣言外の色 / hex リテラル / ratchet / 色の予算 / `theme/semantic.js` / `LINK_TYPE_COLORS` / `PERSONA_PALETTE` / `SUBELEMENT_COLORS` / 選択の色 / 1 意味 1 色 / colorMath / hslOf / hueDistance / contrastRatio / dim() | **ADR-100** (Accepted, 実装済 — 役割語彙・中立な既定・単一アクセント・使用の ratchet), ADR-065 Phase 0 (語彙の両向きピン留め), `src/theme/tokens.js`+`tokens.test.js`, `src/theme/colorMath.js`+`colorMath.test.js`, `src/theme/semantic.js`, `docs/LAYOUT_DESIGN.md` § Color Palette, PHILOSOPHY #29/#31 |
 | Layout API / Layout DSL / compileLayout / LayoutCompiler / scene from CLI or API | ADR-045, `src/layout/LayoutCompiler.js` |
 | Scene ⇄ DSL Mutual / decompileLayout / scene→DSL inverse / reverse compile / round-trip / scene fixpoint / 正規形までの相互変換 / Solid rotation additive / unconvertible warnings | ADR-055, `src/layout/LayoutDecompiler.js`, `src/layout/LayoutDecompiler.test.js` |
 | Computable structural isomorphism / canonical form / 正規形シグネチャ / 出力形 / canonicalForm / CANONICAL_FORM_VERSION / verify / 往復検証 / docSignature / rootSignature / canonicalSignature / color refinement / Weisfeiler–Leman / WL_ROUNDS / identityPayload / structuralDiff / reconcile / 商上の構造同型を計算可能化 / 等価判定 / 突き合わせ / レコメンド基盤 / 曖昧マッピングは外部 (embedding は out-of-scope) | ADR-056 (Accepted, 実装済), `src/context/CanonicalForm.js`, `src/context/CanonicalForm.test.js`, `src/context/ProvenanceTree.js`, `src/context/SynonymQuotient.js` |
@@ -111,6 +112,7 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | **キーボードショートカットを追加 / 変更** | — | ✅ (ステータスバー欄) | — | ✅ (keyboard 表) | — | — | — | — |
 | **モバイル操作 / ジェスチャーを追加** | ✅ (touch FSM) | ✅ (モバイル差分表) | ✅ (ツールバースロット) | ✅ (touch 節) | — | ✅ ADR-023/024 更新 | ✅ §2, §3 | ⚠️ (§V Interaction) |
 | **レイアウト寸法 / z-index 変更** | — | ⚠️ | ✅ | — | — | — | ✅ §3 | — |
+| **色を足す / 変える** (トークン・アクセント・状態の手掛かり) | ⚠️ (表示状態を足すなら ✅) | ⚠️ | ✅ (§ Color Palette — 両向きピン留め) | — | — | ⚠️ ADR-100 参照 (役割の新設や hue 予算の消費なら ✅ 新 ADR) | ✅ §3 | ⚠️ (#29/#31) |
 | **新しいドメインイベントを追加** | — | — | — | ✅ (domain events 節) | ⚠️ | ⚠️ ADR-013 | — | — |
 | **新しい Undo/Redo コマンドを追加** | — | — | — | ✅ (undo 表) | — | ⚠️ ADR-022 | ✅ §1 | — |
 | **BFF API / WebSocket エンドポイント追加** | — | — | — | ⚠️ (wsConnected など) | ⚠️ | ✅ ADR-015/017 | ✅ §3.5 | — |

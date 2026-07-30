@@ -96,14 +96,14 @@ export function celebrationDescriptor(kind, detail = {}) {
   const base = { particles: 14, durationMs: DURATION.celebration }
   switch (kind) {
     case 'all-green':
-      return { ...base, kind, label: 'All checks pass', color: COLOR.fxGreen }
+      return { ...base, kind, label: 'All checks pass', color: COLOR.factTone }
     case 'conflicts-cleared':
-      return { ...base, kind, label: 'All conflicts resolved', color: COLOR.fxGreen }
+      return { ...base, kind, label: 'All conflicts resolved', color: COLOR.factTone }
     case 'questions-cleared':
-      return { ...base, kind, label: 'All questions answered', color: COLOR.fxBlue }
+      return { ...base, kind, label: 'All questions answered', color: COLOR.infoTone }
     case 'milestone': {
       if (!Number.isFinite(detail.milestone)) return null
-      return { ...base, kind, label: `${detail.milestone} operations this session`, color: COLOR.fxBlue, particles: 10 }
+      return { ...base, kind, label: `${detail.milestone} operations this session`, color: COLOR.infoTone, particles: 10 }
     }
     default:
       return null

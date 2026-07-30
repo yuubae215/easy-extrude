@@ -78,24 +78,18 @@
  * @see ADR-099 (selection round trip), ADR-095 (indented outline), ADR-094 (TF
  *      tree regression), ADR-030 (SpatialLink), ADR-048 (panel dimensions)
  */
-import { LINK_TYPE_COLORS } from './SpatialLinkView.js'
+import { LINK_TYPE_COLORS, NODE_TYPE_COLORS } from '../theme/semantic.js'
+import { COLOR } from '../theme/tokens.js'
 import {
   computeLayout, layoutSignature, laneX, gutterX,
   PANEL_W, MIN_PANEL_H, LEGEND_H, ROW_H, NODE_R,
 } from './LinkNetworkLayout.js'
 
-/** Node fill color by entity type (matches AppController type strings). */
-const NODE_COLOR = {
-  cuboid:         '#60A5FA',
-  frame:          '#FB923C',
-  measure:        '#A78BFA',
-  imported:       '#94A3B8',
-  sketch:         '#FCD34D',
-  'annot-line':   '#34D399',
-  'annot-region': '#34D399',
-  'annot-point':  '#34D399',
-  default:        '#9CA3AF',
-}
+/**
+ * Node fill colour by entity type. A data-meaning vocabulary, declared out of
+ * scope for the state palette and owned by `theme/semantic.js` (ADR-100 §5).
+ */
+const NODE_COLOR = NODE_TYPE_COLORS
 
 /** Tree edge (TF parent → child): the skeleton, the most legible line here. */
 const TREE_STROKE = 'rgba(255,255,255,0.62)'
@@ -465,9 +459,9 @@ export class LinkNetworkView {
       els.hit.setAttribute('fill', focused ? 'rgba(255,255,255,0.09)' : 'transparent')
       els.circle.setAttribute('r',            focused ? NODE_R + 1.5 : NODE_R)
       els.circle.setAttribute('fill-opacity', context ? '0.4' : '1')
-      els.circle.setAttribute('stroke',       focused ? '#ffffff' : 'rgba(0,0,0,0.45)')
+      els.circle.setAttribute('stroke',       focused ? COLOR.accent : 'rgba(0,0,0,0.45)')
       els.circle.setAttribute('stroke-width', focused ? '1.2' : '0.8')
-      els.text.setAttribute('fill',         focused ? '#ffffff' : '#c8c8c8')
+      els.text.setAttribute('fill',         focused ? COLOR.accent : '#c8c8c8')
       els.text.setAttribute('fill-opacity', context ? '0.45' : '1')
     }
   }

@@ -34,10 +34,10 @@ test('descriptor names the domain-event anchor direction it renders at', () => {
 
 test('materialize is green; dissolve is the SAO-blue accent; durations from tokens', () => {
   const mat = lifecycleDescriptor({ phase: 'push', label: 'Add "Box"' })
-  assert.equal(mat.color, hexNumber(COLOR.fxGreen))
+  assert.equal(mat.color, hexNumber(COLOR.factTone))
   assert.ok(Math.abs(mat.duration - DURATION.voxelMaterialize / 1000) < 1e-12)
   const dis = lifecycleDescriptor({ phase: 'push', label: 'Delete "Box"' })
-  assert.equal(dis.color, hexNumber(COLOR.accentActive))
+  assert.equal(dis.color, hexNumber(COLOR.infoTone))
   assert.ok(Math.abs(dis.duration - DURATION.voxelDissolve / 1000) < 1e-12)
 })
 

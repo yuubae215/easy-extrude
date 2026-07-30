@@ -46,7 +46,7 @@ export class SceneStage {
     // ① Backdrop: vertical gradient (deep navy → the classic 0x1a1a2e → near
     //    black) replaces the flat colour — depth without touching entities.
     this._bgTexture = this._makeGradientTexture(
-      [[0, '#262a4a'], [0.45, '#1a1a2e'], [1, '#0e0e18']],
+      [[0, COLOR.backdropTop], [0.45, COLOR.backdropMid], [1, COLOR.backdropDeep]],
     )
     scene.background = this._bgTexture
 
@@ -64,7 +64,7 @@ export class SceneStage {
     // The radial sprite recipe is shared with the Map annotation halos so the
     // stage glow and the annotation glows cannot drift apart (ADR-093 —
     // `DecalTextures` owns and caches it; never disposed from here).
-    this._glowTexture = radialSprite(COLOR.accentActive)
+    this._glowTexture = radialSprite(COLOR.stageGlow)
     const glowMat = new THREE.MeshBasicMaterial({
       map: this._glowTexture,
       transparent: true,
@@ -87,7 +87,7 @@ export class SceneStage {
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       const mat = new THREE.PointsMaterial({
         map: this._spriteTexture,
-        color: hexNumber(COLOR.accentActive),
+        color: hexNumber(COLOR.stageGlow),
         size: layer.size,
         sizeAttenuation: true,
         transparent: true,
@@ -103,7 +103,7 @@ export class SceneStage {
 
     // ⑤ Rim light: a cool fill opposite the key light so MeshStandardMaterial
     //    entities get a game-like edge separation from the dark backdrop.
-    this._rimLight = new THREE.DirectionalLight(hexNumber(COLOR.accentActive), 0.45)
+    this._rimLight = new THREE.DirectionalLight(hexNumber(COLOR.stageGlow), 0.45)
     this._rimLight.position.set(-6, 5, 3)
     scene.add(this._rimLight)
 
@@ -207,7 +207,7 @@ export class SceneStage {
     this._glow.geometry.dispose()
     this._glow.material.dispose()
     this._scene.fog = null
-    this._scene.background = new THREE.Color(0x1a1a2e) // the pre-stage flat backdrop
+    this._scene.background = new THREE.Color(hexNumber(COLOR.backdropMid)) // the pre-stage flat backdrop
     this._bgTexture.dispose()
     this._layers = []
   }
