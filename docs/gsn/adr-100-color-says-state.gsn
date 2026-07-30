@@ -3,7 +3,7 @@ GOALS adr100_color_says_state
 goal SaturationIsSpentOnStateNotOnDefaults
 uuid 868df6e7-8299-415f-9c2b-538fdad3041c
 summary "画面の彩度が状態にだけ配られ、既定には配られない。何も起きていないときの画面は落ち着いており、色が付いているものには意味がある。1 つの意味には 1 つの色が対応し、色の語彙は宣言され、宣言の外の色が増えない"
-state ToBeDeveloped
+state UnderReview
 labels adr-100, color, design-tokens
 artifacts
 - "docs/adr/ADR-100-color-says-state-not-kind.md"
@@ -48,15 +48,15 @@ artifacts
 
     assumption NeutralBodiesMayReadAsCheap
     uuid d7965589-3466-4d39-b3a1-d3029d990f76
-    summary "反証されうる仮説 (ADR-100 §受け入れるコスト): 中立グレーの実体は『地味』『安っぽい』に振れうる。当事者の主観でしか反証できずテストでは閉じない。反証されたら中立サーフェス + マテリアル (反射・陰影・微細なグラデーション) で質感を出す方向へ回収する — 色相で主張を取り戻す方向へは戻さない。それは『彩度は状態にだけ配る』という G1 の放棄になる"
+    summary "**未決着 (2026-07-30 実装時点)** — テストでは閉じない仮説であり、当事者の dogfooding 待ち。反証されうる仮説 (ADR-100 §受け入れるコスト): 中立グレーの実体は『地味』『安っぽい』に振れうる。当事者の主観でしか反証できずテストでは閉じない。反証されたら中立サーフェス + マテリアル (反射・陰影・微細なグラデーション) で質感を出す方向へ回収する — 色相で主張を取り戻す方向へは戻さない。それは『彩度は状態にだけ配る』という G1 の放棄になる"
 
     assumption OrangeCollidesWithExistingWarmTones
     uuid 199857d8-15b0-4170-b3a5-79b546b03ba0
-    summary "反証されうる仮説: accent をオレンジにすると measure (#f5a623 / 実際は #f9a825) と fxSnap (#ff9800) が色相で近接し、『選択されている』と『計測線である』と『スナップした』が見分けにくくなる。実装時にどれかを hue ごと動かす前提だが、どれを動かすのが自然かは決めていない。近接を許さないことは規則であり、どの色を動かすかは実装の判断 — 近接したまま出荷したらこの仮説は反証されたものとして扱う"
+    summary "**反証されず、ただし見立てより広かった (2026-07-30)** — ADR は『どちらか一方を動かす』としていたが実測では snapTone 35.8° / measure 38.4° / cautionTone 40.3° が全員 accent 22.7° の 20° 以内にいて、さらに revealTone↔factTone が 18° で ADR の知らない違反が既に在った。赤=危険・黄=注意は文化的に固定なのでアンカーを持たない snapTone を菫 (268°) へ、measure を CAD 慣習のシアン (190°) へ動かし、cautionTone と revealTone は微調整した。以下は起票時の記述: 反証されうる仮説: accent をオレンジにすると measure (#f5a623 / 実際は #f9a825) と fxSnap (#ff9800) が色相で近接し、『選択されている』と『計測線である』と『スナップした』が見分けにくくなる。実装時にどれかを hue ごと動かす前提だが、どれを動かすのが自然かは決めていない。近接を許さないことは規則であり、どの色を動かすかは実装の判断 — 近接したまま出荷したらこの仮説は反証されたものとして扱う"
 
     assumption ContrastNotYetMeasured
     uuid 4fa773ec-6276-4a82-84fa-0f4466dbe676
-    summary "反証されうる仮説: 中立グレーの実体 + 暗い背景という組み合わせは、選択ハイライトのコントラストを落としうる。起票時点でコントラスト比を一度も測っていない。実装時に最低比を決めて数える検査を置き、既定サーフェスとアクセントの対が閾値を割るなら、グレーの明度側を動かして回収する (アクセントの彩度を上げる方向は G1 と衝突するので採らない)"
+    summary "**測った、反証されず (2026-07-30)** — entityDefault (#b9bcc0) は背景・グリッド 5 面すべてに対し 4.87〜10.06 : 1 (閾値 3.0)、テキストと accent は宣言されたペアリングで 4.59〜11.76 : 1 (WCAG AA 4.5)。総当たりにしなかったのは textSecondary × surfaceRaised = 4.17 が『secondary が secondary でなくなるまで明るくしろ』を要求するため — 閾値を全員に対して緩めるのではなくペアリングを名指しした。副産物として textSecondary が #888888 で AA 未満 (4.38) だったことが判明し #9a9a9a へ上げた。以下は起票時の記述: 反証されうる仮説: 中立グレーの実体 + 暗い背景という組み合わせは、選択ハイライトのコントラストを落としうる。起票時点でコントラスト比を一度も測っていない。実装時に最低比を決めて数える検査を置き、既定サーフェスとアクセントの対が閾値を割るなら、グレーの明度側を動かして回収する (アクセントの彩度を上げる方向は G1 と衝突するので採らない)"
 
     strategy ByGivingUsageTheSameGuaranteeAsVocabulary
     uuid 39730526-e525-4eca-b76f-41c119e6f2ab
@@ -65,35 +65,64 @@ artifacts
         goal FigureAndGroundDifferInHue
         uuid af453d7a-339a-4945-84e9-caa767922ac6
         summary "実体の既定サーフェスが中立になり、背景・グリッドと色相を共有しなくなる。彩度を持つものが状態を持つものと一致し、当事者の『飽きやすい』の構造的な中身 (常に全面が彩度を持ち、その彩度が何も区別しない) が消える"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckEntityDefaultIsNeutral
-            uuid f378df6b-4908-4baa-aee7-7a474a047e10
-            summary "この goal を決着させる検査を名指しする (未実行): src/theme/tokens.test.js に、entityDefault の彩度が閾値以下 (中立) であること、および entityDefault と背景・グリッド各色の明度差が閾値以上であることを数値で問う検査を足す。『中立にした』を人が見て判断するのではなく、トークンの値そのものに述語を掛ける形にする。BODY_COLOR がトークンを引いていること自体は下の 1 意味 1 色の検査が数える"
+            solution NeutralityAndFigureGroundSeparationAreGreen
+            uuid c7b8d8bd-12ab-4f59-9f46-ed7d48e1295f
+            summary "node --test src/theme/tokens.test.js — pass (14/14、うち本 goal は 3 本)。『中立にした』を人の目で判断せず、トークンの値そのものに述語を掛けた: entityDefault (#b9bcc0) の HSL 彩度が 5.3% で中立予算 12% 以下、クローム 6 色も同じ予算以下、そして entityDefault と背景・グリッド 5 面すべてのコントラスト比が 4.87〜10.06 : 1 (閾値 3.0)。図を中立へ寄せると図と地の分離が**色相から明度へ移る**ので、明度差は仮定できず測るしかない — ADR が『コントラストを一度も測っていない』と宣言した仮説がここで仮説でなくなった。BODY_COLOR = hexNumber(COLOR.entityDefault) は下の 1 意味 1 色側が数える"
             artifacts
             - "src/theme/tokens.test.js"
+            - "src/theme/colorMath.js"
+            - "src/view/MeshView.js"
+
+            solution ThePredicatesUnderTheChecksAreThemselvesTested
+            uuid 1eec0837-e970-4823-b638-95c720f32876
+            summary "node --test src/theme/colorMath.test.js — pass (8/8)。上の 3 本は算術の上に載った主張なので、算術が黙って間違っていたら衝突したまま緑で出荷できる。hslOf が原色を色相環へ正しく置くこと、**グレーが hue 0 ではなく hue null を返すこと** (hue 0 だと彩度を見忘れた呼び手にとって赤と区別できない — ADR-096 の既定表と同じ形)、hueDistance が環を巻き戻すこと (355° と 15° は 20° 離れている、340° ではない)、relativeLuminance が WCAG のアンカー値に一致すること、rgbOf が不正入力で throw すること (推測を返すと以後の全数値が『誰も書いていない色』についての報告になる)"
+            artifacts
+            - "src/theme/colorMath.test.js"
 
         goal OneMeaningOneColor
         uuid 858c9bf1-19d3-448a-beaa-9f632f61757c
         summary "『いま操作の対象である』を描く箇所がすべて accent トークンを引き、今日の 4 色 (Outliner のオレンジ / COLOR.accent の青紫 / 3D のシアン / CF 原点球の金) が 1 つになる。逆向きに、1 つの hue が 2 つの意味へ割り当てられない"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckSelectionPaintersEnumerated
-            uuid 72d22d89-4ea1-4ee8-ad85-2dd46e40bb3b
-            summary "この goal を決着させる検査を名指しする (未実行): 選択を描く種類を列挙して数える — Outliner 行 / 3D ハイライト / CF 原点球 / N パネル / LINK NETWORK の focus / モバイルツールバーのアクティブ。在る箇所を辿るのではなく必要な種類を列挙して、accent 以外の色を持つものが 0 個であることを問う (原則 #31)。併せて役割トークン同士の色相角が閾値以上離れていることを数え、accent と measure / cautionTone の衝突を機械で止める"
+            solution SelectionPainterCensusIsGreen
+            uuid 2fc251e0-e8e9-4e00-9a34-2b4a900758a2
+            summary "node --test src/theme/tokens.test.js — pass (本 goal は 2 本)。SELECTION_PAINTERS に選択を描く**種類を列挙**し、各々が COLOR.accent を引くことを問う。そのうえで退役した選択色 7 パターン (#ff8c69 / rgba(255,112,67) / #5c5cff / #3d3d6b / ffcc00 / 手書きの emissive 112244・0a1522) の出現数が src 全体で **0 であること**を、コメントを潰した上で問う。列挙が要る理由: コードを辿る検査は『今日在る描き手』しか見つけられず、明日足される描き手はリテラルに手を伸ばす — 0 個検査だけがそれを捕まえる (原則 #31)"
             artifacts
+            - "src/theme/tokens.test.js"
+            - "src/view/OutlinerRowMath.js"
+            - "src/view/MeshView.js"
+
+            solution PaintersWereNineNotSix
+            uuid 0347a59e-d22c-41a2-a0ed-7a8ca1c11446
+            summary "実装時の発見 (起票時の波及表に無かった): 選択を描く窓は 6 つではなく 9 つだった。追加で出たもの — 矩形選択のラバーバンド (SelectionManager がシアンと橙の **2 色**を使い、enclosed/touch の区別は既に実線/破線が担っていた)、実体の浮動ラベル (EntityLabel の金色ハイライト)、Outliner の React 側 (Outliner.jsx が DOM 版と同じ規則を独立に複製)。ADR-099 の『undo コールバックが 4 つ目の窓だった』と同じ構図で、*窓* を辿る数え方では出てこない。副産物として §1.1 違反 2 件を回収: vertex/edge/face の 3 色表が 3 モジュールに逐語複製、LINK_TYPE_COLORS が view に住んで他 view 2 つから import されていた"
+            artifacts
+            - "src/controller/SelectionManager.js"
+            - "src/view/EntityLabel.js"
+            - "src/theme/semantic.js"
+
+            solution HueSeparationIsGreenAndTheBudgetIsNearlySpent
+            uuid 7f023058-a2b6-4c17-9fdd-74d0af9b8ddd
+            summary "node --test src/theme/tokens.test.js — pass。状態トークン 9 個の総当たりで最小色相角 ≥ 20° を問い、最小ペアと角度を失敗メッセージに出す。逆向きに『STATE_TOKENS でも EXCLUDED_WITH_REASON でもないトークンが 0 個』も問う — 未登録のトークンは規則を黙って弱めるだけで何も残さない (原則 #29)。**ADR の見立てより違反は多かった**: 起票時 accent 22.7° に対し snapTone 35.8° / measure 38.4° / cautionTone 40.3° が全員 20° 以内で、『どちらか一方を動かす』では足りなかった。加えて revealTone↔factTone が起票時から 18° で、**ADR が知らなかった違反**が既に在った。今日の最小は successTone↔factTone の 22.1° = 予算はほぼ使い切りで、新しい状態色は 20° の空きを見つけるか既存の意味を退けるかの意図的な行為になる"
+            artifacts
+            - "src/theme/tokens.js"
             - "src/theme/tokens.test.js"
 
         goal UndeclaredColorsDecreaseMonotonically
         uuid c5ae1dfe-fd3c-4c8d-bed4-6a9dcd7df699
         summary "宣言外の色リテラルの個数が単調減少する。ベースライン (起票時 420 出現 / 150 色 / うちトークン 21) は明示的に宣言され、超えたら fail する。データが持つ意味の色は別語彙として対象外を宣言し、分母から分けて数える"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
 
-            assumption PlannedCheckRatchetWithDeclaredExclusions
-            uuid b98ee191-425a-4475-9471-98086c4d1506
-            summary "この goal を決着させる検査を名指しする (未実行): src/theme/tokens.test.js を拡張し、src/** を走査して宣言外 hex の個数がベースライン定数以下であることを問う。対象外語彙 (LINK_TYPE_COLORS / PERSONA_PALETTE / 注釈カテゴリ色) は theme/ 側で別語彙として分離し、分母から除く — 対象外を書かないと次に数えたときこの 3 つが宣言外として現れて規則が空回りする (原則 #29 の『契約ありか明示的対象外宣言かの二状態』と同じ形)。ベースライン値はテストのコメントに起票時の実測として残し、減ったことを後から言えるようにする"
+            solution RatchetIsGreenAndTurnsInBothDirections
+            uuid 977f822b-92a7-4d1b-9c73-8df293cecc53
+            summary "node --test src/theme/tokens.test.js — pass。src/** の .js + .jsx を走査し (テストと生成物を除き、コメントを潰して)、宣言外 hex リテラルの**出現数 790 / 相異なる色 206** をベースライン定数として宣言する。超えたら fail、**下回っても fail** して『ベースラインを下げよ』と促す — 下げない ratchet は削減分の余白を黙って再開放するので、回らない ratchet は ratchet ではない。失敗メッセージは重い順に 8 ファイルを印字するので、次に触る場所が自分で名乗る。数えるのは *在るトークン* ではなく**宣言の外にある個数**である (原則 #31)"
             artifacts
+            - "src/theme/tokens.test.js"
+
+            solution ExclusionsAreDeclaredByNameAndProvenNonIdle
+            uuid e82a23ae-c1c2-40b9-ba40-5b31a601578f
+            summary "node --test src/theme/tokens.test.js — pass。対象外語彙を DECLARED_VOCABULARIES に**名前で**宣言した: theme/semantic.js (リンク種 / ペルソナ / ノード種 / 部分要素種) と domain/IFCClassRegistry.js (IFC 分類色 — ドメインが theme/ に依存してはならないので domain 側に残す, 核 §1.1 依存方向)。ADR は『注釈カテゴリ色』を挙げていたが実在せず、代わりにノード種と部分要素種が在った。併せて『除外したファイルが実際に色を持っている』ことも問う — 対象が消えた除外は、正しい除外と区別がつかないまま緑になる (ADR-099 の『入口が実在する』検査と同じ形)"
+            artifacts
+            - "src/theme/semantic.js"
             - "src/theme/tokens.test.js"
