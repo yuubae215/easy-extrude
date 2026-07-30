@@ -33,6 +33,9 @@ import {
   BOTTOM_PROBE,
   SUPPORT_PROBE_BY_KIND,
   supportProbeFor,
+  SUPPORT_SURFACE_BY_KIND,
+  providesSupportSurfaceFor,
+  providesSupportSurface,
   supportProbeOf,
   footprintSamplesFor,
   bottomZFor,
@@ -265,6 +268,47 @@ test('未宣言の種は throw する — プローブも方針と同じ形 (原
 test('未知のプローブ値は throw する — fall-through で既定に見せない', () => {
   assert.throws(() => footprintSamplesFor({ footprint: 'madeUp' }, {}), /unknown footprint probe/)
   assert.throws(() => bottomZFor({ bottom: 'madeUp' }, {}), /unknown bottom probe/)
+})
+
+// ── 支える側の宣言 (ADR-102 §Decision 2) ────────────────────────────────────
+//
+// 「この種の底はどこか」(載る側) の**鏡像**が「この種は面を差し出すか」(支える側)。
+// 鏡像なので検査も鏡像にする — 非対称を残すと、片側だけが未宣言の種で throw し、
+// もう片側は黙って落ちる。その非対称こそ ADR-098 が消した欠陥の形だった。
+
+test('すべての PLACEMENT_KIND が支持面の有無を宣言している (未宣言の種は 0 個)', () => {
+  const kinds      = Object.values(PLACEMENT_KIND)
+  const undeclared = kinds.filter(k => !Object.hasOwn(SUPPORT_SURFACE_BY_KIND, k))
+  assert.deepEqual(undeclared, [],
+    '支持面の有無を宣言していない種がある — 表に行を足すこと。' +
+    '未宣言のまま通すと「その種の上には何も載らない」が誰も決めていないのに決まる (原則 #31)')
+  const orphaned = Object.keys(SUPPORT_SURFACE_BY_KIND).filter(k => !kinds.includes(k))
+  assert.deepEqual(orphaned, [], 'PLACEMENT_KIND に無い行が支持面表に残っている')
+  assert.equal(kinds.length, Object.keys(SUPPORT_SURFACE_BY_KIND).length)
+})
+
+test('未宣言の種は throw する — 支える側も載る側と同じ形 (原則 #31)', () => {
+  assert.throws(() => providesSupportSurfaceFor('somethingNobodyDeclared'),
+    /no declared support surface/)
+})
+
+test('支持面の宣言は退役した instanceof の門と同じ答えを出す (振る舞いの保存)', () => {
+  // 置換であって変更ではないことを固定する。退役した門は
+  // `!(o instanceof MeasureLine)` ただ 1 つで、それ以外の種は素通りしていた。
+  assert.equal(providesSupportSurfaceFor(PLACEMENT_KIND.MEASURE_LINE), false)
+  assert.equal(providesSupportSurfaceFor(PLACEMENT_KIND.SOLID),        true)
+  assert.equal(providesSupportSurfaceFor(PLACEMENT_KIND.ANNOTATION),   true)
+  assert.equal(providesSupportSurfaceFor(PLACEMENT_KIND.IMPORTED_MESH), true)
+  // フレームは cuboid メッシュを持たないので、旧実装でも実際には支持面に
+  // ならなかった。false は挙動の変更ではなく、既にそうだった事実の宣言。
+  assert.equal(providesSupportSurfaceFor(PLACEMENT_KIND.COORDINATE_FRAME),  false)
+  assert.equal(providesSupportSurfaceFor(PLACEMENT_KIND.ROBOT_BASE_FRAME),  false)
+})
+
+test('分類できない実体は支持面を差し出さない (0 個の側を宣言する)', () => {
+  // `placementOf` が free を、`supportProbeOf` が NO_PROBE を返すのと同じ扱い。
+  assert.equal(providesSupportSurface(null), false)
+  assert.equal(providesSupportSurface({ id: 'x' }), false)
 })
 
 test('実体の種別がプローブへ写る — CF は原点、幾何実体は最下面', () => {

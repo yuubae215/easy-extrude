@@ -42,12 +42,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const SRC_ROOT  = fileURLToPath(new URL('.', import.meta.url))
-const REPO_ROOT = join(SRC_ROOT, '..')
+import { readFileSync } from 'node:fs'
+import { collectSources, relPath, repoPath } from './census/sources.js'
+import { assertDeclarationsExist } from './census/partition.js'
 
 /**
  * **宣言された欠落** — 実在するが本 PR の範囲外の呼び先不在。
@@ -83,19 +80,6 @@ const DECLARED_GAPS = [
   },
 ]
 
-/** src/ 配下の .js を列挙 (テストと生成物を除く)。 */
-function collectSources(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'engine') continue   // engine/ は生成物 (wasm glue)
-    const abs = join(dir, entry)
-    if (statSync(abs).isDirectory()) { collectSources(abs, out); continue }
-    if (!/\.jsx?$/.test(entry)) continue
-    if (entry.endsWith('.test.js')) continue
-    out.push(abs)
-  }
-  return out
-}
-
 /** コメントと文字列を潰す (散文・ログ文字列中の言及で発火させない)。 */
 function stripNonCode(source) {
   return source
@@ -125,8 +109,8 @@ function calledSelfMethods(code) {
 /** @returns {{file: string, method: string}[]} 呼んでいるのに定義の無いもの */
 function censusDanglingCalls() {
   const found = []
-  for (const abs of collectSources(SRC_ROOT)) {
-    const rel  = relative(REPO_ROOT, abs).split(sep).join('/')
+  for (const abs of collectSources()) {
+    const rel  = relPath(abs)
     const code = stripNonCode(readFileSync(abs, 'utf8'))
     const defs = definedNames(code)
     for (const name of [...calledSelfMethods(code)].sort()) {
@@ -156,21 +140,22 @@ test('存在しない自メソッドの呼び出しは、宣言されたもの�
 test('宣言された欠落は実在する — 直したら宣言も消す (逆向き)', () => {
   // 宣言が残り続けると「予算」が減らない。埋めたのに宣言が残っている状態を落とす。
   const actual = new Set(censusDanglingCalls().map(d => `${d.file}::${d.method}`))
-  const stale  = DECLARED_GAPS
-    .filter(g => !actual.has(`${g.file}::${g.method}`))
-    .map(g => `${g.file}: 宣言された欠落 ${g.method} は既に埋まっている — DECLARED_GAPS から行を消すこと\n      理由: ${g.why}`)
-
-  assert.deepEqual(stale, [], `\n${stale.join('\n\n')}\n`)
+  assertDeclarationsExist({
+    what: '呼び先が存在しない自メソッド (宣言された欠落)',
+    declarations: DECLARED_GAPS.map(g => ({ key: `${g.file}::${g.method}`, why: g.why })),
+    exists: key => actual.has(key),
+    onStale: '既に埋まっている — DECLARED_GAPS から行を消すこと (予算が減らないと ratchet が回らない)',
+  })
 })
 
 test('走査そのものが空回りしていない (母数の liveness)', () => {
   // 対象が 0 個であることは、規則が守られていることと区別がつかない (原則 #31)。
-  const files = collectSources(SRC_ROOT)
+  const files = collectSources()
   assert.ok(files.length > 50, `src/ の走査に失敗している (${files.length} files)`)
 
   // 実在する自メソッド呼び出しを数え、走査が本当にコードを読めていることを示す。
   const controller = stripNonCode(
-    readFileSync(join(REPO_ROOT, 'src/controller/AppController.js'), 'utf8'))
+    readFileSync(repoPath('src/controller/AppController.js'), 'utf8'))
   assert.ok(calledSelfMethods(controller).size > 30,
     'AppController の自メソッド呼び出しが見つからない — 正規表現が壊れている')
   assert.ok(definedNames(controller).has('_updateNPanel'),

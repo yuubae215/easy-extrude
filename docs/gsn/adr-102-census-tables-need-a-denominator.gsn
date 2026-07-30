@@ -1,0 +1,116 @@
+GOALS adr102_census_tables_need_a_denominator
+
+goal CensusToolsDoNotSilentlyGoStale
+uuid 685b33c9-f201-4e54-a5bc-ed4fdcc550f8
+summary "原則 #31 の道具 (列挙して 0 個を数える検査) それ自体が鮮度を持つ。『この列挙表は現実を覆っているか』が人の記憶ではなく機械に問われ、表が古びたときに静かに緑のまま通ることが無い"
+state UnderReview
+labels adr-102, census, principle-31, self-application
+artifacts
+- "docs/adr/ADR-102-census-tables-need-a-denominator.md"
+- "src/CensusCoverage.test.js"
+
+    context Adr102Scope
+    uuid 87b737e7-cbac-45a7-8d9f-a2a0f65788a4
+    summary "ADR-102 (Accepted・実装済み, 2026-07-30): 列挙表を 4 種 (shape-census / derived-partition / declared-exception / place-list) に型付けし、母集団を持たない place-list を種別として存在させない。pose 決定の母集団は applyPreviewTranslation からの呼び出し閉包、色の母集団は COLOR.accent を引くファイル、表そのものの母集団は census 形 test ファイルの構文から導出する。検査レイヤとドメインの宣言表に閉じ、契約・BFF・core は不変"
+    artifacts
+    - "src/census/sources.js"
+    - "src/census/partition.js"
+
+    context TheLimitWasDeclaredNotHidden
+    uuid dc79518f-6534-4733-b126-68bf8954c589
+    summary "運用実態 (この木の前提): ADR-098 と ADR-101 は『検査は名指しした本体にしか当たらない。8 つ目が増えたら表に足すまで数えられない』と Consequences に自分で書いて出荷した。限界は隠れていたのではなく宣言されていたが、埋める行為が『誰かが気づくこと』を前提にしていたため、必要になる日 (気づかなかった日) には必ず不在だった。2 本の ADR が同じ限界を 2 回出荷している事実が、レビューでの注意に賭けない根拠である"
+    artifacts
+    - "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"
+    - "docs/adr/ADR-101-pose-writers-derive-from-request-not-rendered-state.md"
+
+    context TablesWereAlreadyStaleWhenMeasured
+    uuid d7581919-7c8a-4da6-8911-b5d90e57d41f
+    summary "この木の出発点は仮説ではなく実測である: 母集団を導出させた初回の実行で、手書き表の外に 3 件が落ちた。(1) highestSurfaceAt が !(o instanceof MeasureLine) で『支える側』を種で門番していた (PROBE_METHODS 7 行の外)。(2) _getParentWorldPos / _getParentWorldQuat が pose 決定閉包の 1 hop 内側で _worldPoseCache を読んでいた (POSE_COMPUTING_METHODS 4 行の外)。(3) SelectPulse.js が選択の tap cue を塗っていた (SELECTION_PAINTERS 9 行の外)。『8 つ目』は増えたのではなく最初から表の外に在った"
+    artifacts
+    - "src/service/SceneService.js"
+    - "src/view/SelectPulse.js"
+
+    context BusinessTreeAttachPoint
+    uuid b9acd2be-4c6c-4673-a0dc-95eacdc6101c
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) — 本 ADR が直した highestSurfaceAt の種の門は『計測線の上には載らないが、新しい種の上にも載らない』を誰も決めずに決めていたので、配置の予測可能性へ効く。保留理由: 本 ADR の一次的な受益者は開発の規律であって当事者の操作感ではなく、支持面の宣言化が体感に出るのは新しい実体種を足したときである。その種が実際に足された PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotTheWidestPopulation
+    uuid edcd4acf-8901-4cbe-94fa-0ae29a8f8707
+    summary "母集団を最大に取る案 (SceneService の全メソッド / 全 test ファイルの全大文字 const) を却下する根拠: 実測で SceneService は 126 メソッド中 37 本が instanceof を含み、その大半は配置と無関係 (保存/読込・祖先探索・IFC クラス設定)。test ファイルの大文字 const は 32 個で半分が fixture。広い母集団は宣言を大量に要求し、無視される規則になる — 無視される規則は規則が無いより悪い (希釈、憲法 Q3 / 原則 #20)。狭く名指しした母集団のほうが通る"
+
+    justification WhyCallClosureIsTheRightBoundary
+    uuid 8806d0cf-c15a-44c5-9050-d2613abafce8
+    summary "pose の母集団に呼び出し閉包を選ぶ根拠: 広すぎず狭すぎない境界であり、しかも境界の位置を人が選んでいない。入口を 1 つ名指しすれば残りはコードが決めるので、『どこまでを pose 決定と見なすか』という判断が毎回の記憶に依存しない。ファイル単位では広すぎ (無関係な正当形を巻き込む)、手書きのメソッド一覧では狭すぎる (書いた日の理解の写しになる) — その中間を機械が引く"
+
+    justification WhyKindsAreClosedVocabulary
+    uuid d5e6fd78-52aa-481b-8eff-2dc0398474d3
+    summary "place-list を『書けない』形で禁じる根拠: 種別を足せる限り次の place-list は必ず生まれる。禁止を散文の注意書きに置くと、次に表を書く人はその散文を読まない。語彙 (KIND) に無い種別で throw する形にすると、place-list を登録しようとした瞬間に落ちる — 原則 #31 の『種ごとの既定表は未宣言の種で throw する』を、道具の語彙そのものに当てたもの"
+
+    assumption FingerprintsCannotProveHonestKind
+    uuid 9ba247eb-e6c8-4f2e-b1e3-dc3668bd45ed
+    summary "反証されうる仮説: 種別ごとの痕跡 (shape-census なら collectSources( が同じファイルに在ること等) は『その種別で使われていれば必ず在るもの』であって『それ以外では在り得ないもの』ではない。したがって place-list を shape-census と名乗ることは、同じファイルに別の shape-census が在れば通ってしまう。完全な静的判定は不可能なので宣言と実装の距離を詰めるところで止めた。反証される形は『登録簿に載っているのに何も検査していない表』が実際に見つかること — そのときは痕跡を表名との共起 (assertCoversPopulation の引数に当該表名が現れること) まで強める"
+    artifacts
+    - "src/CensusCoverage.test.js"
+
+    assumption CensusShapedFileBoundaryHoldsAsTablesGrow
+    uuid b3fe956b-b8b4-4e53-8c4a-b93e9511b441
+    summary "反証されうる仮説: 列挙表は『ソースを読む test ファイル』にしか作られない、という境界が今後も成り立つ。今日は成り立っている (census 形 6 ファイルに 15 表、非 census 形の表は fixture のみ) が、実行時の値から母集団を導く表 (MapVisualMath.test.js の FRAME_FUNCTIONS 形 — module の export を母集団にする) が増えたら境界の外に列挙表が育つ。反証されたら母集団の導出を『ソースを読む』から『母集団を導出している』へ広げる (assertCoversPopulation を引くファイル = census 形、という定義に寄せる)"
+    artifacts
+    - "src/view/MapVisualMath.test.js"
+
+    assumption StaticScanMissesDynamicDispatch
+    uuid 385436e2-01c3-43ec-86f3-8cc06c7189c1
+    summary "反証されうる仮説: pose を決める経路は同一ファイル内の this._x() 辺だけで辿れる。他オブジェクト経由・動的ディスパッチ・文字列によるメソッド呼び出しで pose を決める経路が生まれたら閉包から漏れる。今日そうした経路は無い (入口は 1 つで、補助も同じクラス内)。反証されたら閉包の辺を『サービス層をまたぐ呼び出し』へ広げるが、広げるほど母集団が膨らむので、漏れが実際に観測されるまで先回りしない (§5 過剰モデリング禁止)"
+
+    strategy ByDerivingThePopulationFromCode
+    uuid dca637b4-4ce4-4ba8-a55d-c352c90118f9
+    summary "Argument by 母集団の導出 (原則 #31 の自己適用) — 検査の規則そのものは健全で、欠けていたのは『表が母集団を覆っているか』を問う辺だった。表を発見の結果ではなく分類の宣言に変え、覆うべき集合をコードから導出して未分類の個数を 0 に保つ。人の記憶が母集団の権威でなくなれば、気づかなかった日にも数えられる"
+
+        goal EveryTableHasAMachineCountedPopulation
+        uuid a51d6f15-f286-47a1-8600-712f9980179d
+        summary "この repo の原則 #31 の列挙表はすべて 4 種のいずれかに登録され、母集団を持たない表 (place-list) は 0 個である。新しい表を足せば登録するまで CI が落ち、登録簿そのものも同じ問いを免れない"
+        state UnderReview
+
+            solution CensusCoverageIsGreen
+            uuid 541ac88c-5c9f-4c27-a3e6-469d16029f15
+            summary "node --test src/CensusCoverage.test.js — pass (4/4)。母集団は構文から導出する: census 形 test ファイル (census/sources.js を引くもの) に現れる `const 大文字 = [` / `= {`。手書きのファイル名リストも表名リストも持たない。未登録が 0 個 / 種別ごとの痕跡が同じファイルに在る / place-list が語彙に存在しない / 母数の liveness (表が 12 個未満なら検出が壊れている) を問う。**変異で確認済み**: 登録簿から自分の行を抜くと src/CensusCoverage.test.js::CENSUS_REGISTRY を名指しして fail する = 表を数える表もまた数えられている"
+            artifacts
+            - "src/CensusCoverage.test.js"
+            - "src/census/partition.js"
+
+        goal PoseDecisionPopulationIsTheCallClosure
+        uuid 685b33c9-f201-4e54-a5bc-ed4fdcc5f001
+        summary "pose 決定に参加するメソッドの母集団が入口からの呼び出し閉包として導出され、その中の種分岐と live プローブ読みが宣言されたもの以外 0 個である。閉包に入る新しいメソッドは、誰も表を触らなくても母集団に入る"
+        state UnderReview
+
+            solution ClosureCensusCatchesTheEighthProbe
+            uuid 87b737e7-cbac-45a7-8d9f-a2a0f6578f02
+            summary "node --test src/PosePolicyOwnership.test.js — pass (12/12)。母集団 = applyPreviewTranslation からの this._x() 閉包 (実測 11 本)。閉包 ∩ 実体種の分岐 = DECLARED_TYPE_DISPATCH のみ、閉包 ∩ live プローブ読み = DECLARED_LIVE_PROBE_READERS のみ、プローブ表 = 宣言表を引くメソッド集合と両方向に一致。**変異で 2 種確認済み**: (a) providesSupportSurface を instanceof MeasureLine に戻すと 3 本が highestSurfaceAt を名指しして fail、(b) 閉包に到達する新メソッド (種分岐 + live 読み) を注入すると 2 本が _topZOfNewProbe を名指しして fail — 表を 1 行も触っていないのに数えられる。これが ADR-098/101 が『埋められない』と宣言した限界そのものである"
+            artifacts
+            - "src/PosePolicyOwnership.test.js"
+            - "src/census/sources.js"
+
+        goal SupportSurfaceIsDeclaredNotGatedByKind
+        uuid dc79518f-6534-4733-b126-68bf8954cf03
+        summary "『この種は支持面を差し出すか』が宣言表として存在し、未宣言の種では throw する。載る側 (SUPPORT_PROBE_BY_KIND) の鏡像であり、鏡像なので検査も鏡像である — 片側だけが throw してもう片側が黙って落ちる非対称が残らない"
+        state UnderReview
+
+            solution SupportSurfaceDeclarationIsGreen
+            uuid d7581919-7c8a-4da6-8911-b5d90e57df04
+            summary "node --test src/domain/placement.test.js — pass (35/35)。SUPPORT_SURFACE_BY_KIND の両向き個数検査 (未宣言の種 0 / 表の余り 0 / 個数一致)、providesSupportSurfaceFor が未宣言の種で throw、分類できない実体は false。加えて**振る舞いの保存**を明示的に固定した: 退役した !(o instanceof MeasureLine) の門と同じ答えを全種で出す (CF / robot_base の false は挙動の変更ではなく、cuboid メッシュを持たないため既にそうだった事実の宣言)。置換であって変更ではないことを、置換した側のテストで示す"
+            artifacts
+            - "src/domain/placement.test.js"
+            - "src/domain/placement.js"
+
+        goal AccentConsumersArePartitioned
+        uuid b9acd2be-4c6c-4673-a0dc-95eacdc6cf05
+        summary "『操作対象を塗る』意味を持つ色の消費者が母集団として導出され、描き手と『別の意味 (focus / mode / step / 誘目)』に分割される。未分類は 0 個で、10 個目の描き手は分類を求められる"
+        state UnderReview
+
+            solution AccentPartitionIsGreen
+            uuid edcd4acf-8901-4cbe-94fa-0ae29a8f87f6
+            summary "node --test src/theme/tokens.test.js — pass (15/15)。母集団 = src/** のうち COLOR.accent を引くファイル (実測 16)。SELECTION_PAINTERS 10 + ACCENT_NON_PAINTERS 6 で覆い、未分類 0 個を両方向に問う。この分割の初回実行が SelectPulse.js (ADR-068 の選択 tap cue) を落とした — ADR-100 が 9 種を列挙したときに漏れていた 10 個目で、描き手を辿る検査では定義上見えなかったもの。ratchet (790/206) は不変 = 色の移行ではなく分類の追加であることを数字が示している"
+            artifacts
+            - "src/theme/tokens.test.js"

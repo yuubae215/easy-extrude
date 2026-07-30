@@ -38,37 +38,19 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   COLOR, DURATION, EASING, Z, hexNumber, rgba, dim,
   STATE_TOKENS, COLOR_RULES, CONTRAST_PAIRINGS, SCENE_GROUNDS,
 } from './tokens.js'
 import { hslOf, hueDistance, contrastRatio, isNeutral } from './colorMath.js'
+import { assertCoversPopulation, assertDeclarationsExist } from '../census/partition.js'
+import { collectSources, stripComments, relPath } from '../census/sources.js'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const srcRoot  = join(repoRoot, 'src')
 
-/** `src/**` sources, minus tests and the generated wasm glue. */
-function collectSources(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'engine') continue   // engine/ is generated
-    const abs = join(dir, entry)
-    if (statSync(abs).isDirectory()) { collectSources(abs, out); continue }
-    if (!/\.jsx?$/.test(entry) || entry.endsWith('.test.js')) continue
-    out.push(abs)
-  }
-  return out
-}
-
-/** Blank out comments so prose ABOUT a colour is not counted as a USE of it. */
-function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
-    .split('\n')
-    .map(line => line.replace(/\/\/.*$/, ''))
-}
 
 // ─── ADR-065 Phase 0: the vocabulary is pinned to the doc, both ways ─────────
 
@@ -233,6 +215,13 @@ test('STATE_TOKENS names real tokens, and every non-listed token has a stated re
  * the ones that already exist. The rubber band below was NOT in ADR-100's
  * blast-radius table — it turned up while collapsing the other six, the same way
  * ADR-096 turned up a third writer its own ADR had missed.
+ *
+ * ADR-102 gave the list a DENOMINATOR. On its own this table can only be checked
+ * one way — "does each listed painter still reach for the token?" — which is
+ * silent about the tenth painter nobody listed. The population is derivable:
+ * every `src/**` file that references `COLOR.accent` is either a selection
+ * painter (here) or declared to use the accent for something else
+ * (`ACCENT_NON_PAINTERS`). Unclassified must be zero.
  */
 const SELECTION_PAINTERS = [
   { kind: 'Outliner row (colour derivation)', file: 'src/view/OutlinerRowMath.js' },
@@ -244,6 +233,30 @@ const SELECTION_PAINTERS = [
   { kind: 'Mobile toolbar active tool',       file: 'src/components/Toolbar/ToolbarButton.jsx' },
   { kind: 'Entity floating label',            file: 'src/view/EntityLabel.js' },
   { kind: 'Rubber-band rectangle select',     file: 'src/controller/SelectionManager.js' },
+  // Found by ADR-102's denominator, not by reading: the selection "tap" cue
+  // (ADR-068) paints exactly this meaning — "this is the thing you just picked"
+  // — and was missing from the nine ADR-100 enumerated. A list with no
+  // population to check against cannot report what is absent from it.
+  { kind: 'Selection tap pulse (Tier A/F)',   file: 'src/view/SelectPulse.js' },
+]
+
+/**
+ * Files that consume `COLOR.accent` for something that is NOT entity selection,
+ * with the meaning they paint instead.
+ *
+ * The accent means "what you are operating on" (ADR-100 G2), and that meaning is
+ * wider than *entity* selection: the focused input, the current mode, the step
+ * you are on. These are declared rather than inferred so that the count of
+ * unclassified accent users stays zero — an omission here reads exactly like a
+ * deliberate exclusion if nobody writes one down (原則 #29 / ADR-102).
+ */
+const ACCENT_NON_PAINTERS = [
+  { key: 'src/components/NPanel/NPanelFrame.jsx',   why: 'keyboard focus ring on a numeric input (DOM focus, not entity selection)' },
+  { key: 'src/components/NPanel/NPanelGeneric.jsx', why: 'keyboard focus ring on a numeric input' },
+  { key: 'src/components/NPanel/npanelShared.jsx',  why: 'keyboard focus ring shared by the N-panel field primitives' },
+  { key: 'src/components/Header/ModeDropdown.jsx',  why: 'the currently active MODE in the dropdown — a mode is not an entity' },
+  { key: 'src/components/Onboarding/TourCard.jsx',  why: 'the onboarding step you are on (ADR-063 tour), paired with factTone for done steps' },
+  { key: 'src/view/ChromeMath.js',                  why: 'the breathing glow that marks an affordance asking for attention (ADR-065/080) — an invitation, not a selection' },
 ]
 
 /**
@@ -260,6 +273,24 @@ const RETIRED_SELECTION_COLORS = [
   { pattern: /(#|0x)0a1522/i,                   was: 'MeshView hovered emissive (a dimmer cyan by hand)' },
 ]
 
+test('every accent consumer is classified — painter or declared otherwise (ADR-102)', () => {
+  // The denominator the enumeration was missing. Walking the painters can only
+  // ever confirm the painters; the tenth one is invisible to it (原則 #31).
+  const population = collectSources()
+    .filter(abs => /COLOR\.accent\b/.test(stripComments(readFileSync(abs, 'utf8')).join('\n')))
+    .map(abs => relPath(abs))
+
+  assertCoversPopulation({
+    what: 'COLOR.accent の消費者',
+    population,
+    declared: SELECTION_PAINTERS.map(p => p.file),
+    excluded: ACCENT_NON_PAINTERS,
+    howDerived: 'src/** のうち COLOR.accent を参照するファイル (コメントは除去済み)',
+    onNew: 'それが「操作対象の実体」を塗るなら SELECTION_PAINTERS へ、'
+         + '別の意味 (focus / mode / step / 誘目) を塗るなら ACCENT_NON_PAINTERS へ理由付きで足す',
+  })
+})
+
 test('every enumerated selection painter consumes the accent token (G2)', () => {
   const missing = []
   for (const { kind, file } of SELECTION_PAINTERS) {
@@ -274,8 +305,8 @@ test('every enumerated selection painter consumes the accent token (G2)', () => 
 
 test('retired selection colours appear zero times in src/** (G2)', () => {
   const found = []
-  for (const abs of collectSources(srcRoot)) {
-    const rel = relative(repoRoot, abs).split('\\').join('/')
+  for (const abs of collectSources()) {
+    const rel = relPath(abs)
     stripComments(readFileSync(abs, 'utf8')).forEach((line, i) => {
       for (const { pattern, was } of RETIRED_SELECTION_COLORS) {
         if (pattern.test(line)) found.push(`${rel}:${i + 1} — ${was}`)
@@ -335,8 +366,8 @@ function scanUndeclared() {
   let occurrences = 0
   const distinct = new Set()
   const byFile = []
-  for (const abs of collectSources(srcRoot)) {
-    const rel = relative(repoRoot, abs).split('\\').join('/')
+  for (const abs of collectSources()) {
+    const rel = relPath(abs)
     if (rel in DECLARED_VOCABULARIES) continue
     const hits = stripComments(readFileSync(abs, 'utf8')).join('\n').match(HEX_LITERAL) ?? []
     if (hits.length) byFile.push([rel, hits.length])
@@ -374,11 +405,17 @@ test('the declared vocabularies exist and actually hold colours (the exclusions 
   // An exclusion whose file has no colours in it is indistinguishable from an
   // exclusion that is wrong. Same shape as ADR-099's "the entry point is real"
   // test: a rule whose subject vanished passes for the wrong reason.
-  for (const [file, why] of Object.entries(DECLARED_VOCABULARIES)) {
-    const src = readFileSync(join(repoRoot, file), 'utf8')
-    HEX_LITERAL.lastIndex = 0
-    assert.ok(HEX_LITERAL.test(src),
-      `${file} is excluded from the ratchet (${why}) but contains no colour literals — stale exclusion`)
-    HEX_LITERAL.lastIndex = 0
-  }
+  assertDeclarationsExist({
+    what: 'ratchet の分母から外した色語彙',
+    declarations: Object.entries(DECLARED_VOCABULARIES).map(([key, why]) => ({ key, why })),
+    exists: (file) => {
+      const src = readFileSync(join(repoRoot, file), 'utf8')
+      HEX_LITERAL.lastIndex = 0
+      const hit = HEX_LITERAL.test(src)
+      HEX_LITERAL.lastIndex = 0
+      return hit
+    },
+    onStale: 'that file holds no colour literals any more — drop the exclusion, '
+           + 'otherwise the ratchet quietly stops counting a file that could refill with hexes',
+  })
 })

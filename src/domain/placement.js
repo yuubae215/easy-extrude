@@ -256,6 +256,75 @@ export const SUPPORT_PROBE_BY_KIND = Object.freeze({
 const NO_PROBE = Object.freeze({ footprint: FOOTPRINT_PROBE.NONE, bottom: BOTTOM_PROBE.NONE })
 
 /**
+ * 種ごとに**宣言された**「支える側になれるか」(ADR-102 §Decision 2)。
+ *
+ * ## なぜこの行が必要だったか (見つかり方が要点)
+ *
+ * `SUPPORT_PROBE_BY_KIND` が答えるのは「この種の**底**はどこか」= 載る側の問い。
+ * その鏡像である「この種は**面**を差し出すか」= 支える側の問いは、宣言されないまま
+ * `SceneService.highestSurfaceAt()` の `!(o instanceof MeasureLine)` という
+ * 1 個の門に残っていた。ADR-097 が「`instanceof` の連鎖が在ってよい唯一の場所は
+ * `placementKindOf()`」と決め、ADR-098 が載る側の門を 2 枚外した後も、支える側は
+ * 誰も見ていなかった。
+ *
+ * **人が気づいたのではない。** ADR-102 が pose 決定の**呼び出し閉包**を母集団として
+ * 数えさせた初回に、この門が「分類されていない種分岐」として落ちてきた。ADR-098 が
+ * 自分で予告した「8 つ目のプローブが増えたら数えられない」— その 8 つ目は増えたのでは
+ * なく、**最初から表の外に在った**。*在るもの* (表の 7 行) を辿る検査が構造的に
+ * 見ないのはこの形である (原則 #31)。
+ *
+ * 非対称が欠陥の証拠: 種を足したとき載る側 (`supportProbeFor`) は throw して
+ * 気づかせるが、支える側は黙って「支持面ではない」に落ちる = 新しい種の上には
+ * 何も載らない、と誰も宣言していないのに決まる。
+ */
+export const SUPPORT_SURFACE_BY_KIND = Object.freeze({
+  // 建物・取り込み形状・マップ注釈 (床板・屋根) は上に物が載る面を持つ。
+  [PLACEMENT_KIND.ANNOTATION]:       true,
+  [PLACEMENT_KIND.SOLID]:            true,
+  [PLACEMENT_KIND.IMPORTED_MESH]:    true,
+  // フレームは空間の目印であって面ではない。robot_base も同様 — ロボットは床に
+  // 立つが、その原点の上に何かが載る面は存在しない (ADR-085)。実際の描画でも
+  // CF は cuboid メッシュを持たないので、この宣言は現状の挙動の**明文化**である。
+  [PLACEMENT_KIND.ROBOT_BASE_FRAME]: false,
+  [PLACEMENT_KIND.COORDINATE_FRAME]: false,
+  // 計測線は二点の間に在る線であって面ではない (退役した instanceof の門が
+  // 唯一名指ししていた種)。断面は押し出し前の 2D で、厚みを持たない。
+  [PLACEMENT_KIND.MEASURE_LINE]:     false,
+  [PLACEMENT_KIND.PROFILE]:          false,
+})
+
+/**
+ * 種は支持面を差し出すか。未宣言の種は throw する — `supportProbeFor()` /
+ * `placementFor()` と同じ形であることに意味がある (原則 #31 — 種ごとの既定表は
+ * 未宣言の種で throw し、「宣言された既定」と「誰も考えなかった種」を区別する)。
+ *
+ * @param {string} kind `PLACEMENT_KIND` メンバ
+ * @returns {boolean}
+ */
+export function providesSupportSurfaceFor(kind) {
+  if (!Object.prototype.hasOwnProperty.call(SUPPORT_SURFACE_BY_KIND, kind)) {
+    throw new Error(
+      `[placement] no declared support surface for kind "${kind}". ` +
+      'Add a row to SUPPORT_SURFACE_BY_KIND — an undeclared kind silently answers ' +
+      '"nothing lands on me", which is a decision nobody made (ADR-102).',
+    )
+  }
+  return SUPPORT_SURFACE_BY_KIND[kind]
+}
+
+/**
+ * 実体は支持面を差し出すか。分類できない実体 (SpatialLink 等) は差し出さない —
+ * `placementOf()` が `free` を、`supportProbeOf()` が `NO_PROBE` を返すのと同じ扱い。
+ *
+ * @param {*} entity
+ * @returns {boolean}
+ */
+export function providesSupportSurface(entity) {
+  const kind = placementKindOf(entity)
+  return kind === null ? false : providesSupportSurfaceFor(kind)
+}
+
+/**
  * 種の宣言された支持プローブ。未宣言の種は throw する — `placementFor()` と同じ形
  * であることに意味がある (原則 #31)。
  *

@@ -19,12 +19,8 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const SRC_ROOT  = fileURLToPath(new URL('.', import.meta.url))
-const REPO_ROOT = join(SRC_ROOT, '..')
+import { readFileSync } from 'node:fs'
+import { collectSources, stripComments, repoPath, relPath } from './census/sources.js'
 
 /**
  * @typedef {object} OwnershipRule
@@ -76,38 +72,18 @@ const OWNERSHIP_RULES = [
   },
 ]
 
-/** src/ 配下の .js を列挙 (テストと生成物を除く)。 */
-function collectSources(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'engine') continue   // engine/ は生成物 (wasm glue)
-    const abs = join(dir, entry)
-    if (statSync(abs).isDirectory()) { collectSources(abs, out); continue }
-    if (!entry.endsWith('.js') && !entry.endsWith('.jsx')) continue
-    if (entry.endsWith('.test.js')) continue
-    out.push(abs)
-  }
-  return out
-}
-
-/** コメントを取り除く (純粋関数)。散文の説明で発火させないため。行番号は保存する。 */
-function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
-    .split('\n')
-    .map(line => line.replace(/\/\/.*$/, ''))
-}
 
 test('可視性のピクセルを書くのは合成 1 箇所だけ (ADR-096 / 原則 #4)', () => {
-  const files = collectSources(SRC_ROOT)
+  const files = collectSources()
   assert.ok(files.length > 50, `src/ の走査に失敗している (${files.length} files)`)
 
   /** @type {string[]} */
   const violations = []
 
   for (const rule of OWNERSHIP_RULES) {
-    const owners = new Set(rule.owners.map(p => p.split('/').join(sep)))
+    const owners = new Set(rule.owners)
     for (const abs of files) {
-      const rel = relative(REPO_ROOT, abs)
+      const rel = relPath(abs)
       if (owners.has(rel)) continue
       stripComments(readFileSync(abs, 'utf8')).forEach((line, i) => {
         if (!rule.match.test(line)) return
@@ -129,7 +105,7 @@ test('合成の所有者は実在し、両方の軸を読んでいる', () => {
   // 所有者が消えた / 名前が変わったときに、上のルールが「誰も違反していない」で
   // 空回りするのを防ぐ (規則の対象が 0 個になったことは、規則が守られていることと
   // 区別がつかない — 原則 #31 の同型)。
-  const svc = readFileSync(join(REPO_ROOT, 'src/service/SceneService.js'), 'utf8')
+  const svc = readFileSync(repoPath('src/service/SceneService.js'), 'utf8')
   for (const needle of [
     'applyEntityVisibility(',
     'composeVisibility(',
@@ -145,7 +121,7 @@ test('可視性はワイヤに載らない — シリアライザに explicit �
   // ADR-096 は「往復させない」を**決めた**。決めたことが黙って崩れるのを落とす:
   // presentation 状態が scene JSON に生え始めたら、それは別 ADR で行う版上げ行為
   // であって、フィールドが 1 つ増える偶発ではない。
-  const ser = readFileSync(join(REPO_ROOT, 'src/service/SceneSerializer.js'), 'utf8')
+  const ser = readFileSync(repoPath('src/service/SceneSerializer.js'), 'utf8')
   for (const needle of ['explicitVisible', 'contextualFrames', 'applyEntityVisibility']) {
     assert.ok(!ser.includes(needle),
       `SceneSerializer に ${needle} が現れた — セッション内の presentation 状態をワイヤに載せない (ADR-096 §Consequences)`)
@@ -155,7 +131,7 @@ test('可視性はワイヤに載らない — シリアライザに explicit �
 test('Outliner の行は eye の初期値を自分で決めない (ADR-096 §G1)', () => {
   // 行の `visible: true` が「誰も何も言っていない」と「見せろと言われた」を
   // 区別できなかったのが、起動直後に行が嘘をついた原因 (原則 #31)。
-  const store = readFileSync(join(REPO_ROOT, 'src/store/uiStore.js'), 'utf8')
+  const store = readFileSync(repoPath('src/store/uiStore.js'), 'utf8')
   const addItem = store.slice(store.indexOf('outlinerAddItem:'))
   const body = addItem.slice(0, addItem.indexOf('outlinerRemoveItem:'))
   assert.ok(

@@ -30,12 +30,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const SRC_ROOT  = fileURLToPath(new URL('.', import.meta.url))
-const REPO_ROOT = join(SRC_ROOT, '..')
+import { readFileSync } from 'node:fs'
+import { collectSources, stripComments, repoPath, relPath } from './census/sources.js'
+import { assertDeclarationsExist } from './census/partition.js'
 
 /** 選択という決定の唯一の入口を持つモジュール。 */
 const SELECTION_ENTRY = 'src/controller/SelectionManager.js'
@@ -116,27 +113,6 @@ const SELECTION_WRITE_RULES = [
  */
 const DECLARED_EXCEPTIONS = []
 
-/** src/ 配下の .js を列挙 (テストと生成物を除く)。 */
-function collectSources(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'engine') continue   // engine/ は生成物 (wasm glue)
-    const abs = join(dir, entry)
-    if (statSync(abs).isDirectory()) { collectSources(abs, out); continue }
-    if (!/\.jsx?$/.test(entry)) continue
-    if (entry.endsWith('.test.js')) continue
-    out.push(abs)
-  }
-  return out
-}
-
-/** コメントを潰す (散文中の言及で発火させない)。行番号は保存する。 */
-function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
-    .split('\n')
-    .map(line => line.replace(/\/\/.*$/, ''))
-}
-
 /**
  * `setObjectSelected(sel) {` のような **定義**行か。view はこのメソッドを持つ
  * 実装側であって、選択を決める呼び手ではない (原則 #17 — 多態的に呼ばれる
@@ -145,16 +121,16 @@ function stripComments(source) {
 const isMethodDefinition = line => /^\s*setObjectSelected\s*\([^)]*\)\s*\{/.test(line)
 
 test('選択を書く入口のうち、所有者の外にあるものは 0 個 (ADR-099 / 原則 #1 / #31)', () => {
-  const files = collectSources(SRC_ROOT)
+  const files = collectSources()
   assert.ok(files.length > 50, `src/ の走査に失敗している (${files.length} files)`)
 
   /** @type {string[]} */
   const violations = []
 
   for (const rule of SELECTION_WRITE_RULES) {
-    const owners = new Set(rule.owners.map(p => p.split('/').join(sep)))
+    const owners = new Set(rule.owners)
     for (const abs of files) {
-      const rel = relative(REPO_ROOT, abs)
+      const rel = relPath(abs)
       if (owners.has(rel)) continue
       stripComments(readFileSync(abs, 'utf8')).forEach((line, i) => {
         if (!rule.match.test(line)) return
@@ -176,7 +152,7 @@ test('選択を書く入口のうち、所有者の外にあるものは 0 個 (
 test('入口は実在し、5 つの verb を実際に持っている (規則が空回りしていない)', () => {
   // 対象が 0 個になったことは、規則が守られていることと区別がつかない
   // (原則 #31 の同型) — 所有者側が消えたら落とす。
-  const mgr = readFileSync(join(REPO_ROOT, SELECTION_ENTRY.split('/').join(sep)), 'utf8')
+  const mgr = readFileSync(repoPath(SELECTION_ENTRY), 'utf8')
   for (const needle of [
     'selectOnly(', 'selectMany(', 'clearSelection(', 'activateWithinSelection(', 'forget(',
     '_apply(',            // 唯一の遷移
@@ -191,7 +167,7 @@ test('入口は実在し、5 つの verb を実際に持っている (規則が�
 test('_apply がひとつの遷移で 3 つの書き込み先すべてを書く', () => {
   // ADR-099 の欠陥は「窓ごとに部分集合」だった。所有者の中でさえ 3 つが別々の
   // メソッドに分かれていたら、同じ形が内側で再発する。
-  const mgr  = readFileSync(join(REPO_ROOT, SELECTION_ENTRY.split('/').join(sep)), 'utf8')
+  const mgr  = readFileSync(repoPath(SELECTION_ENTRY), 'utf8')
   const body = mgr.slice(mgr.indexOf('_apply(ids, activeId'))
   const end  = body.indexOf('\n  _normalizeMode(')
   const apply = body.slice(0, end === -1 ? undefined : end)
@@ -212,7 +188,7 @@ test('_objSelected / _selectedIds は getter であって欄ではない (不正
   // 基数 (0/1/N) の権威は集合ただ 1 つ。boolean が別に在ると
   // 「選択されているが 0 個」が書けてしまう — mode/status と違い、基数には
   // 欄が無いので、欄を作った瞬間にそれが第二の源になる (原則 #31)。
-  const app = readFileSync(join(REPO_ROOT, SELECTION_READER.split('/').join(sep)), 'utf8')
+  const app = readFileSync(repoPath(SELECTION_READER), 'utf8')
   assert.match(app, /get _objSelected\(\)\s*\{\s*return this\._selMgr\.count > 0/,
     'AppController._objSelected が集合からの導出でなくなっている')
   assert.match(app, /get _selectedIds\(\)\s*\{\s*return this\._selMgr\.ids/,
@@ -223,14 +199,15 @@ test('_objSelected / _selectedIds は getter であって欄ではない (不正
 })
 
 test('宣言されていない例外は 0 個 (今日の宣言は空である、という宣言)', () => {
-  const missing = []
-  for (const ex of DECLARED_EXCEPTIONS) {
-    const lines = stripComments(readFileSync(join(REPO_ROOT, ex.file.split('/').join(sep)), 'utf8'))
-    if (!lines.some(l => ex.match.test(l))) {
-      missing.push(`${ex.file}: 宣言された例外 ${ex.match} が実在しない\n      理由: ${ex.why}`)
-    }
-  }
-  assert.deepEqual(missing, [], `\n${missing.join('\n\n')}\n`)
+  assertDeclarationsExist({
+    what: '選択を書く例外',
+    declarations: DECLARED_EXCEPTIONS.map(ex => ({ key: ex.file, why: ex.why })),
+    exists: key => {
+      const ex = DECLARED_EXCEPTIONS.find(e => e.file === key)
+      return stripComments(readFileSync(repoPath(key), 'utf8')).some(l => ex.match.test(l))
+    },
+    onStale: '宣言を削るか、経路を確認すること',
+  })
   assert.equal(DECLARED_EXCEPTIONS.length, 0,
     '例外が増えたのに件数の宣言が更新されていない — 例外は在ってよいが、数えられていなければならない')
 })
@@ -238,7 +215,7 @@ test('宣言されていない例外は 0 個 (今日の宣言は空である、
 test('パネルは選択の「写し」であって権威ではない (名前が概念を 1 つに保つ)', () => {
   // 同じ名前で違うものを指すと、grep も規則も両方を撃つ。表示側の写しは
   // イベント payload の複製 (原則 #5) なので、別の名前を持つ。
-  const view = readFileSync(join(REPO_ROOT, 'src/view/LinkNetworkView.js'), 'utf8')
+  const view = readFileSync(repoPath('src/view/LinkNetworkView.js'), 'utf8')
   assert.ok(!/this\._selectedIds/.test(view),
     'LinkNetworkView が `_selectedIds` を名乗っている — 権威 (SelectionManager._ids) と同名の写しは §1.1 違反')
   assert.ok(view.includes('this._selectionEntityIds'),
