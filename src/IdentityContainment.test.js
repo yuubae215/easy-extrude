@@ -25,12 +25,8 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const SRC_ROOT  = fileURLToPath(new URL('.', import.meta.url))
-const REPO_ROOT = join(SRC_ROOT, '..')
+import { readFileSync } from 'node:fs'
+import { collectSources, stripComments, relPath, repoPath } from './census/sources.js'
 
 /**
  * @typedef {object} IdentityRule
@@ -74,41 +70,17 @@ const IDENTITY_RULES = [
   },
 ]
 
-/** src/ 配下の .js を列挙 (テストと生成物を除く)。 */
-function collectSources(dir, out = []) {
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'engine') continue   // engine/ は生成物 (wasm glue)
-    const abs = join(dir, entry)
-    if (statSync(abs).isDirectory()) { collectSources(abs, out); continue }
-    if (!entry.endsWith('.js')) continue
-    if (entry.endsWith('.test.js')) continue
-    out.push(abs)
-  }
-  return out
-}
-
-/**
- * コメントを取り除く (純粋関数)。散文の説明文で発火させないため。
- * ブロックコメントを空行に潰して行番号を保存する。
- */
-function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
-    .split('\n')
-    .map(line => line.replace(/\/\/.*$/, ''))
-}
-
 test('同一性の導出規則は所有モジュール 1 箇所にのみ存在する (§1.1)', () => {
-  const files = collectSources(SRC_ROOT)
+  const files = collectSources({ jsx: false })
   assert.ok(files.length > 50, `src/ の走査に失敗している (${files.length} files)`)
 
   /** @type {string[]} */
   const violations = []
 
   for (const rule of IDENTITY_RULES) {
-    const owners = new Set(rule.owners.map(p => p.split('/').join(sep)))
+    const owners = new Set(rule.owners)
     for (const abs of files) {
-      const rel = relative(REPO_ROOT, abs)
+      const rel = relPath(abs)
       if (owners.has(rel)) continue
       const lines = stripComments(readFileSync(abs, 'utf8'))
       lines.forEach((line, i) => {
@@ -137,7 +109,7 @@ test('所有モジュール自身は規則を実装している (ガードが空
   // これが無いと、規則の実装が消えたときテストは「違反ゼロ」で緑になり続ける。
   for (const rule of IDENTITY_RULES) {
     const found = rule.owners.some(owner => {
-      const lines = stripComments(readFileSync(join(REPO_ROOT, owner), 'utf8'))
+      const lines = stripComments(readFileSync(repoPath(owner), 'utf8'))
       return lines.some(line => rule.all.every(re => re.test(line)))
     })
     assert.ok(found, `規則「${rule.name}」が所有モジュール (${rule.owners.join(', ')}) に見つからない — ` +

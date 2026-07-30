@@ -77,7 +77,7 @@ import {
   PLACEMENT, SUPPORT_TOLERANCE,
   placementOf, hasGroundInvariant, resolvePlacementDelta, supportUnder,
   stackAssistApplies, supportProbeOf, footprintSamplesFor, bottomZFor,
-  probeNeedsWorldOrigin,
+  probeNeedsWorldOrigin, providesSupportSurface,
 } from '../domain/placement.js'
 
 /**
@@ -2765,8 +2765,12 @@ export class SceneService extends EventEmitter {
    */
   highestSurfaceAt(samples2D, excludeIds = []) {
     const exclude = excludeIds instanceof Set ? excludeIds : new Set(excludeIds)
+    // 「支える側になれるか」は種ではなく宣言が決める (ADR-102 §Decision 2)。
+    // ここに在った `!(o instanceof MeasureLine)` が、載る側を方針へ移した
+    // ADR-098 の後も残っていた最後の種の門である。`cuboid?.visible` は
+    // 種の判定ではなく描画の事実 (見えない物には載れない) なので残す。
     const targets = [...this._model.objects.values()]
-      .filter(o => !exclude.has(o.id) && !(o instanceof MeasureLine) && o.meshView?.cuboid?.visible)
+      .filter(o => !exclude.has(o.id) && providesSupportSurface(o) && o.meshView?.cuboid?.visible)
     const meshToId = new Map(targets.map(o => [o.meshView.cuboid, o.id]))
     const targetMeshes = targets.map(o => o.meshView.cuboid)
     const RAY_TOP = 10000
