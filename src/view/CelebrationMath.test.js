@@ -94,7 +94,7 @@ test('milestones stay within the CommandStack.MAX=50 reachable range', () => {
 
 test('descriptors derive from tokens', () => {
   const d = celebrationDescriptor('all-green')
-  assert.equal(d.color, COLOR.fxGreen)
+  assert.equal(d.color, COLOR.factTone)
   assert.equal(d.durationMs, DURATION.celebration)
   assert.equal(typeof d.label, 'string')
   assert.ok(d.particles > 0)

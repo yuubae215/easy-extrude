@@ -5,6 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { refsSignature, listDelta, settledRefs, flashStyle } from './FeedbackMath.js'
+import { COLOR, rgba } from '../theme/tokens.js'
 
 const Q = (ref) => ({ ref, prompt: `p_${ref}` })
 
@@ -87,8 +88,12 @@ test('flashStyle degrades to a static tint under reduced motion (no animation, i
   const amber = flashStyle('amber', true)
   assert.equal(green.animation, undefined)
   assert.equal(amber.animation, undefined)
-  assert.match(green.background, /34,197,94/)   // green family retained
-  assert.match(amber.background, /213,162,58/)  // amber family retained
+  // Derived from the tokens rather than re-typed as RGB triples: the claim is
+  // "the static tint still carries the same MEANING", and a literal here would
+  // be a second source that fails the day a token legitimately moves
+  // (ADR-100 nudged cautionTone's hue and this assertion is what noticed).
+  assert.equal(green.background, rgba(COLOR.factTone, 0.16))
+  assert.equal(amber.background, rgba(COLOR.cautionTone, 0.18))
   assert.notEqual(green.background, amber.background)
 })
 

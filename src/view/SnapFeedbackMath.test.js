@@ -71,8 +71,8 @@ test('descriptor: geometry lock = snap orange, stack landing = settled green', (
   const snap = geometrySnapshot(true, TARGET)
   const g = snapFlashDescriptor('geometry', 'engage', snap, 2)
   const s = snapFlashDescriptor('stack', 'engage', stackSnapshot(true, { x: 0, y: 0, z: 1 }), 2)
-  assert.equal(g.color, hexNumber(COLOR.fxSnap))
-  assert.equal(s.color, hexNumber(COLOR.fxGreen))
+  assert.equal(g.color, hexNumber(COLOR.snapTone))
+  assert.equal(s.color, hexNumber(COLOR.factTone))
   assert.deepEqual([g.x, g.y, g.z], [1, 2, 3])
 })
 
