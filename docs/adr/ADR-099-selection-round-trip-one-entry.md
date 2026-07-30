@@ -1,6 +1,6 @@
 # 099. 選択の往復を 1 つの入口へ — hover が click を殺す再構築の閉路を断ち、選択を「見えること」まで含む 1 つの決定にする
 
-- Status: Accepted (2026-07-29 実装)
+- Status: Accepted (2026-07-29 実装 — `SelectionManager` の 5 verb + `_apply()` 単一遷移、`_objSelected`/`_selectedIds` の getter 化、hover 由来の SVG 全再構築を `layoutSignature` で遮断、選択が contextual 可視性を要求、溢れの上界 `FULL(claim) === 選択集合`、入口の個数検査)
 - Date: 2026-07-26
 - Deciders: yuubae215, Claude (pairing)
 - Supersedes / Superseded by: なし (ADR-094/095 が定めた LINK NETWORK の往復契約を、実際に閉じる)
