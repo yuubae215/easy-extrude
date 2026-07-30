@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
-import { DURATION, EASING } from '../../theme/tokens.js'
+import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
 const MODES = [
   { label: 'Object Mode', value: 'object', hint: 'Tab' },
@@ -106,7 +106,7 @@ export function ModeDropdown() {
               onClick={() => handleSelect(value)}
               style={{
                 padding:        '7px 12px',
-                color:          mode === value ? '#4fc3f7' : '#e8e8e8',
+                color:          mode === value ? COLOR.accent : '#e8e8e8',
                 cursor:         'pointer',
                 fontSize:       '13px',
                 fontFamily:     'sans-serif',

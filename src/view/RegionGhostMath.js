@@ -19,7 +19,7 @@ import { COLOR, hexNumber } from '../theme/tokens.js'
  * RegionGhostView band and the RegionResolveEffect recolor start. */
 export const GAP_COLOR = 0xcc3333
 /** Resolution flood colour (the "it settled" green — token-derived). */
-export const RESOLVE_COLOR = hexNumber(COLOR.fxGreen)
+export const RESOLVE_COLOR = hexNumber(COLOR.factTone)
 
 /** Fallback range when neither the intersection box nor the domain bounds the
  * non-empty axis (mirrors the view's historical fallback). */

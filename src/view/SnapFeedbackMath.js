@@ -116,7 +116,7 @@ export function snapFlashDescriptor(channel, transition, snap, entityRadius) {
   return {
     x: snap.x, y: snap.y, z: snap.z,
     radius:    Math.max(entityRadius * 0.4, 0.02),
-    color:     hexNumber(channel === 'stack' ? COLOR.fxGreen : COLOR.fxSnap),
+    color:     hexNumber(channel === 'stack' ? COLOR.factTone : COLOR.snapTone),
     duration:  transition === 'retarget' ? base * RETARGET_DURATION_SCALE : base,
     intensity: INTENSITY[transition],
   }

@@ -22,11 +22,19 @@
  *   - Sole derivation point for "is this row shown as hidden?" (#4 — one owner
  *     per visual flag).
  */
+import { COLOR } from '../theme/tokens.js'
 
-/** Row-name colour when the row is the active/selected one. */
-const NAME_ACTIVE = '#ff8c69'
+/**
+ * Row-name colour when the row is the active/selected one.
+ *
+ * One of the six selection painters ADR-100 collapsed onto `accent`. This one
+ * was already orange (`#ff8c69`) while the token vocabulary declared selection
+ * to be blue-violet — the stakeholder's "make the accent orange" was really a
+ * request to make the declaration agree with what the Outliner already did.
+ */
+const NAME_ACTIVE = COLOR.accent
 /** Row-name colour, normal (visible) row. */
-const NAME_NORMAL = '#e0e0e0'
+const NAME_NORMAL = COLOR.textPrimary
 /** Row-name colour, hidden row — legible but clearly demoted. */
 const NAME_HIDDEN = '#6f6f6f'
 

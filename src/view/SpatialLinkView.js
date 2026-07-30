@@ -29,24 +29,15 @@
  * @see ADR-030
  */
 import * as THREE from 'three'
+import { LINK_TYPE_COLORS } from '../theme/semantic.js'
 
-/** Color hex values by semanticType (ADR-038). */
-export const LINK_TYPE_COLORS = {
-  // Category A — Geometric
-  mounts:     0x22C55E,  // green
-  fastened:   0x10B981,  // emerald
-  aligned:    0x14B8A6,  // teal
-  // Category B — Topological
-  contains:   0x8B5CF6,  // violet
-  above:      0x6366F1,  // indigo
-  adjacent:   0x64748B,  // slate
-  connects:   0x06B6D4,  // cyan
-  // Category C — Semantic
-  references: 0xF59E0B,  // amber
-  represents: 0xF43F5E,  // rose
-  // Category D — Safety constraint
-  bounded_by: 0xFB923C,  // orange
-}
+/**
+ * Link colour by `semanticType` (ADR-038). Re-exported from the declared
+ * data-meaning vocabulary — ADR-100 Decision 5 moved the values to
+ * `theme/semantic.js` so a view is no longer the source for a table two
+ * other views import.
+ */
+export { LINK_TYPE_COLORS }
 
 /**
  * Link types that carry a directional arrowhead (source → target).

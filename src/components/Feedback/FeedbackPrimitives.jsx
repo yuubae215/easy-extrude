@@ -27,11 +27,11 @@ import { COLOR, rgba } from '../../theme/tokens.js'
 // root; duplicate mounts are harmless (identical keyframes).
 const FEEDBACK_CSS = `
 @keyframes eaFlashGreen {
-  0%   { background: ${rgba(COLOR.fxGreen, 0.28)}; }
+  0%   { background: ${rgba(COLOR.factTone, 0.28)}; }
   100% { background: transparent; }
 }
 @keyframes eaFlashAmber {
-  0%   { background: ${rgba(COLOR.fxAmber, 0.3)}; }
+  0%   { background: ${rgba(COLOR.cautionTone, 0.3)}; }
   100% { background: transparent; }
 }
 `

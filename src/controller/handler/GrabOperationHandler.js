@@ -41,6 +41,7 @@ import {
   snapFlashDescriptor,
 } from '../../view/SnapFeedbackMath.js'
 import { COLOR } from '../../theme/tokens.js'
+import { SUBELEMENT_COLORS } from '../../theme/semantic.js'
 
 /**
  * Returns the appropriate handles array for grab/move operations.
@@ -606,7 +607,7 @@ export class GrabOperationHandler {
     const s = this.state
     if (s.pivotSelectMode) {
       const MODE_LABEL = { all: 'All', vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-      const MODE_COLOR = { all: '#aaa', vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
+      const MODE_COLOR = { all: '#aaa', ...SUBELEMENT_COLORS }
       const m = s.pivotMode ?? 'all'
       ctrl._uiView.setStatusRich([
         { text: 'Select Pivot', bold: true, color: '#e8e8e8' },
@@ -640,7 +641,7 @@ export class GrabOperationHandler {
       parts.push({ text: 'Free (S: stack)', color: '#9e9e9e' })
     }
     if (s.snapping && s.snappedTarget) {
-      parts.push({ text: `Snap: ${s.snappedTarget.label}`, bold: true, color: COLOR.fxSnap })
+      parts.push({ text: `Snap: ${s.snappedTarget.label}`, bold: true, color: COLOR.snapTone })
     } else if (s.autoSnap) {
       parts.push({ text: 'Auto Snap [World]', color: '#80cbc4' })
       parts.push({ text: 'Origin / X / Y / Z', color: '#444' })

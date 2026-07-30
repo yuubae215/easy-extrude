@@ -14,6 +14,7 @@ import { CoordinateFrame } from '../../domain/CoordinateFrame.js'
 import { collectSnapTargets } from '../../model/CuboidModel.js'
 import { S_MEASURE_PLACING } from '../../core/editorStates.js'
 import { pickBestSnapTarget } from '../snap/SnapSystem.js'
+import { COLOR, hexNumber } from '../../theme/tokens.js'
 
 export class MeasurePlacementHandler {
   /**
@@ -179,19 +180,19 @@ export class MeasurePlacementHandler {
     const s = this.state
     if (!s.p1) {
       ctrl._uiView.setStatusRich([
-        { text: 'Measure', bold: true, color: '#f9a825' },
+        { text: 'Measure', bold: true, color: COLOR.measure },
         { text: 'Click to set start point', color: '#888' },
         { text: 'ESC cancel', color: '#444' },
       ])
     } else {
       const parts = [
-        { text: 'Measure', bold: true, color: '#f9a825' },
+        { text: 'Measure', bold: true, color: COLOR.measure },
         { text: 'Click to set end point', color: '#888' },
       ]
       if (s.p2) {
         const d = s.p1.distanceTo(s.p2)
         const f = d < 1 ? `${(d * 100).toFixed(1)} cm` : `${d.toFixed(3)} m`
-        parts.push({ text: f, bold: true, color: '#f9a825' })
+        parts.push({ text: f, bold: true, color: COLOR.measure })
       }
       if (s.snapping && s.snappedTarget) {
         parts.push({ text: `Snap: ${s.snappedTarget.label}`, color: '#ff9800' })
@@ -245,7 +246,7 @@ export class MeasurePlacementHandler {
     if (!s.previewLine) {
       const geo = new THREE.BufferGeometry()
       const mat = new THREE.LineDashedMaterial({
-        color: 0xf9a825, dashSize: 0.15, gapSize: 0.08, depthTest: false,
+        color: hexNumber(COLOR.measure), dashSize: 0.15, gapSize: 0.08, depthTest: false,
       })
       s.previewLine = new THREE.Line(geo, mat)
       s.previewLine.renderOrder = 1

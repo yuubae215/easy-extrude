@@ -22,13 +22,13 @@
  * HTML overlay rule (CODE_CONTRACTS §1): callers pass `SceneView.activeCamera`
  * to updatePosition() so ortho mode projects correctly.
  */
-import { Z } from '../theme/tokens.js'
+import { Z, COLOR, rgba } from '../theme/tokens.js'
 
 const BG_DEFAULT     = 'rgba(18,22,36,0.82)'
 const FG_DEFAULT     = '#b8c4d8'
-const ACCENT_DEFAULT = '#4488ff'
-const BG_HIGHLIGHT   = 'rgba(249,115,22,0.88)'
-const ACCENT_HL      = '#ffcc00'
+const ACCENT_DEFAULT = COLOR.accent
+const BG_HIGHLIGHT   = rgba(COLOR.accent, 0.88)
+const ACCENT_HL      = COLOR.accent
 
 export class EntityLabel {
   /**

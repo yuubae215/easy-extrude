@@ -1,3 +1,4 @@
+import { COLOR } from '../../theme/tokens.js'
 import { useState, useRef, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { IFC_CLASSES } from '../../domain/IFCClassRegistry.js'
@@ -217,7 +218,7 @@ function IfcPicker({ onSelect, onClose }) {
             background: '#383838', border: '1px solid #555', borderRadius: '3px',
             color: '#e8e8e8', fontSize: '12px', fontFamily: 'sans-serif', outline: 'none',
           }}
-          onFocus={e => { e.target.style.borderColor = '#4fc3f7' }}
+          onFocus={e => { e.target.style.borderColor = COLOR.accent }}
           onBlur={e => { e.target.style.borderColor = '#555' }}
         />
         <div style={{ overflowY: 'auto', flex: '1', padding: '0 4px 6px' }}>
@@ -529,7 +530,7 @@ function DescriptionSection({ description, onCommit }) {
         defaultValue={description}
         rows={4}
         placeholder="Add a description…"
-        onFocus={e => { e.target.style.borderColor = '#4fc3f7' }}
+        onFocus={e => { e.target.style.borderColor = COLOR.accent }}
         onBlur={e => {
           e.target.style.borderColor = '#444'
           onCommit?.(e.target.value)

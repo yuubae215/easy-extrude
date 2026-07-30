@@ -15,6 +15,7 @@
  * objects are excluded from raycasting in AppController._hitAnyObject().
  */
 import * as THREE from 'three'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 
 export class MeasureLineView {
   /**
@@ -32,7 +33,7 @@ export class MeasureLineView {
     // ── Line geometry ──────────────────────────────────────────────────────
     this._geo = new THREE.BufferGeometry()
     this._mat = new THREE.LineDashedMaterial({
-      color:       0xf9a825,   // amber — clearly distinct from grid / wireframe
+      color:       hexNumber(COLOR.measure),   // amber — clearly distinct from grid / wireframe
       dashSize:    0.15,
       gapSize:     0.08,
       linewidth:   1,          // only 1 is guaranteed cross-browser
@@ -46,8 +47,8 @@ export class MeasureLineView {
     const dotGeo = new THREE.SphereGeometry(0.05, 8, 8)
     // Separate materials per dot so hover colour can be changed independently.
     this._dotMats = [
-      new THREE.MeshBasicMaterial({ color: 0xf9a825, depthTest: false }),
-      new THREE.MeshBasicMaterial({ color: 0xf9a825, depthTest: false }),
+      new THREE.MeshBasicMaterial({ color: hexNumber(COLOR.measure), depthTest: false }),
+      new THREE.MeshBasicMaterial({ color: hexNumber(COLOR.measure), depthTest: false }),
     ]
     this._dot1 = new THREE.Mesh(dotGeo, this._dotMats[0])
     this._dot2 = new THREE.Mesh(dotGeo, this._dotMats[1])
@@ -61,7 +62,7 @@ export class MeasureLineView {
     // We attach to an invisible helper object whose bounding-box wraps the line.
     this._helperObj = new THREE.Object3D()
     scene.add(this._helperObj)
-    this.boxHelper = new THREE.BoxHelper(this._helperObj, 0xf9a825)
+    this.boxHelper = new THREE.BoxHelper(this._helperObj, hexNumber(COLOR.measure))
     this.boxHelper.visible = false
     scene.add(this.boxHelper)
 
@@ -72,12 +73,12 @@ export class MeasureLineView {
       pointerEvents: 'none',
       userSelect:    'none',
       background:    'rgba(30, 30, 30, 0.82)',
-      color:         '#f9a825',
+      color:         COLOR.measure,
       fontSize:      '12px',
       fontFamily:    'monospace',
       padding:       '2px 6px',
       borderRadius:  '3px',
-      border:        '1px solid #f9a825',
+      border:        `1px solid ${COLOR.measure}`,
       whiteSpace:    'nowrap',
       display:       'none',
       zIndex:        '50',
@@ -221,8 +222,8 @@ export class MeasureLineView {
 
   /** Restores both endpoint spheres to the default amber colour. */
   clearEndpointHover() {
-    this._dotMats[0].color.set(0xf9a825)
-    this._dotMats[1].color.set(0xf9a825)
+    this._dotMats[0].color.set(hexNumber(COLOR.measure))
+    this._dotMats[1].color.set(hexNumber(COLOR.measure))
   }
 
   // ── Edit-mode no-ops (keeps AppController.setMode() safe) ─────────────────

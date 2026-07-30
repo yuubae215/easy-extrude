@@ -27,9 +27,9 @@ export function ToolbarButton({
   const reduced = useReducedMotion()
   const { pressed, handlers } = useHoverPress()
 
-  const bg     = indicator ? rgba(COLOR.accentActive, 0.06) : disabled ? 'transparent'              : active ? rgba(COLOR.accentActive, 0.15) : danger ? 'rgba(192,57,43,0.18)'  : 'rgba(255,255,255,0.06)'
-  const border = indicator ? rgba(COLOR.accentActive, 0.18) : disabled ? 'rgba(255,255,255,0.14)'   : active ? rgba(COLOR.accentActive, 0.5)  : danger ? 'rgba(231,76,60,0.5)'   : 'rgba(255,255,255,0.12)'
-  const color  = indicator ? COLOR.accentActive             : disabled ? '#6a6a6a'                  : active ? COLOR.accentActive             : danger ? '#e74c3c'                : '#d8d8d8'
+  const bg     = indicator ? rgba(COLOR.accent, 0.06) : disabled ? 'transparent'              : active ? rgba(COLOR.accent, 0.15) : danger ? 'rgba(192,57,43,0.18)'  : 'rgba(255,255,255,0.06)'
+  const border = indicator ? rgba(COLOR.accent, 0.18) : disabled ? 'rgba(255,255,255,0.14)'   : active ? rgba(COLOR.accent, 0.5)  : danger ? 'rgba(231,76,60,0.5)'   : 'rgba(255,255,255,0.12)'
+  const color  = indicator ? COLOR.accent             : disabled ? '#6a6a6a'                  : active ? COLOR.accent             : danger ? '#e74c3c'                : '#d8d8d8'
 
   const Tag = indicator ? 'div' : 'button'
   const interactive = !indicator && !disabled

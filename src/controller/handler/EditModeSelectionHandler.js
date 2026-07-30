@@ -11,6 +11,7 @@
  */
 
 import { projectToScreen } from '../snap/SnapSystem.js'
+import { SUBELEMENT_COLORS } from '../../theme/semantic.js'
 
 export class EditModeSelectionHandler {
   /**
@@ -23,7 +24,7 @@ export class EditModeSelectionHandler {
   /** Status bar for Edit Mode · 3D showing current sub-element mode. */
   refreshStatus() {
     const LABEL = { vertex: 'Vertex', edge: 'Edge', face: 'Face' }
-    const COLOR = { vertex: '#69f0ae', edge: '#ffd740', face: '#4fc3f7' }
+    const COLOR = SUBELEMENT_COLORS
     const m = this._ctrl._editSelectMode
     this._ctrl._uiView.setStatusRich([
       { text: 'Edit', color: '#888' },

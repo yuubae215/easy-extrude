@@ -244,7 +244,7 @@ function SmallBtn({ onClick, title, children, active = false, icon }) {
       style={{
         padding:      '4px 8px',
         background:   hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
-        border:       `1px solid ${active ? COLOR.fxBlue : hovered ? '#4a4a4a' : '#3a3a3a'}`,
+        border:       `1px solid ${active ? COLOR.infoTone : hovered ? '#4a4a4a' : '#3a3a3a'}`,
         borderRadius: '5px',
         color:        active ? '#5a9bf5' : hovered ? '#ccc' : '#aaa',
         cursor:       'pointer',
@@ -328,7 +328,7 @@ function ContextDropdown() {
         {...handlers}
         style={{
           padding: '4px 8px', background: hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
-          border: `1px solid ${open ? COLOR.fxBlue : hovered ? '#4a4a4a' : '#3a3a3a'}`, borderRadius: '5px',
+          border: `1px solid ${open ? COLOR.infoTone : hovered ? '#4a4a4a' : '#3a3a3a'}`, borderRadius: '5px',
           color: open ? '#5a9bf5' : hovered ? '#ccc' : '#aaa', cursor: 'pointer', fontSize: '11px',
           fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: '1',
           flexShrink: '0', display: 'flex', alignItems: 'center', gap: '4px',
@@ -342,7 +342,7 @@ function ContextDropdown() {
       {open && (
         <div style={{
           position: 'fixed', top: pos.top, right: pos.right,
-          background: COLOR.bgSecondary, border: '1px solid #555', borderRadius: '6px',
+          background: COLOR.surfaceSunken, border: '1px solid #555', borderRadius: '6px',
           overflow: 'hidden', zIndex: '200', minWidth: '200px',
           boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
           ...enterMotion(reduced),
@@ -451,7 +451,7 @@ function MoreMenu() {
           position:   'fixed',
           top:        pos.top,
           right:      pos.right,
-          background: COLOR.bgSecondary,
+          background: COLOR.surfaceSunken,
           border:     '1px solid #555',
           borderRadius: '6px',
           overflow:   'hidden',

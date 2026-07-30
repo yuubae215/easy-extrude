@@ -9,6 +9,7 @@ import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
 import { focusPose as computeFocusPose, clipPlanesFor } from './CameraMath.js'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 
 export class SceneView {
   constructor() {
@@ -70,7 +71,7 @@ export class SceneView {
 
   _setupGrid() {
     // GridHelper is in XZ plane by default; rotate 90deg around X to put it in XY plane (Z=0 ground)
-    this._grid = new THREE.GridHelper(20, 20, 0x444466, 0x222244)
+    this._grid = new THREE.GridHelper(20, 20, hexNumber(COLOR.gridMajor), hexNumber(COLOR.gridMinor))
     this._grid.rotation.x = Math.PI / 2
     this._grid.material.transparent = true
     this._grid.material.opacity = 0.4

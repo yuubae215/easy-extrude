@@ -148,7 +148,7 @@ export function itemEnterMotion(index, reduced) {
 /** Glow shadow at a given breathe intensity (0..1) — one shadow shape, one colour. */
 function breatheShadow(intensity) {
   const a = 0.12 + 0.26 * intensity
-  return `0 0 0 1px ${rgba(COLOR.accentActive, +a.toFixed(3))}, 0 0 10px ${rgba(COLOR.accentActive, +(a * 0.7).toFixed(3))}`
+  return `0 0 0 1px ${rgba(COLOR.accent, +a.toFixed(3))}, 0 0 10px ${rgba(COLOR.accent, +(a * 0.7).toFixed(3))}`
 }
 
 /**
