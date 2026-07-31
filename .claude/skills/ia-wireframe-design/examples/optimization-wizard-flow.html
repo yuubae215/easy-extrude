@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>シーン最適化ウィザード — フローワイヤーフレーム</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:760px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .wiz{
+    max-width:760px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:flex;flex-direction:column;min-height:480px;font-size:12px;
+  }
+
+  /* ステップインジケータ */
+  .steps{display:flex;border-bottom:1px dashed var(--line);padding:10px 12px;gap:4px;overflow-x:auto;}
+  .step{
+    display:flex;align-items:center;gap:5px;padding:4px 8px;border-radius:4px;
+    color:var(--muted);white-space:nowrap;font-size:11px;
+  }
+  .step .dot{
+    width:18px;height:18px;border-radius:50%;border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;
+  }
+  .step.cur{background:var(--sel);color:var(--ink);font-weight:700;}
+  .step.cur .dot{background:var(--note);border-color:var(--note);color:#fff;}
+  .step.done{color:var(--ink);}
+  .step.done .dot{background:#e5e7eb;border-color:var(--line-dark);}
+  .step .arrow{color:var(--line);}
+
+  .body{flex:1;padding:16px 18px;}
+  .body h2{font-size:14px;margin-bottom:4px;}
+  .body .why{font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.7;}
+  .pane{display:none;}
+  .pane.cur{display:block;}
+
+  .frow{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .frow label{width:150px;color:var(--muted);flex-shrink:0;}
+  .field{
+    border:1px solid var(--line-dark);border-radius:3px;background:#fff;
+    padding:4px 8px;min-width:110px;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);
+    font-weight:600;
+  }
+  .unit{color:var(--muted);font-size:11px;}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--line-dark);border-radius:12px;padding:3px 10px;background:#fff;}
+  .chip.on{background:var(--sel);border-color:var(--note);font-weight:700;}
+  .lockcap{font-size:10px;color:var(--muted);margin:14px 0 6px;letter-spacing:.05em;font-weight:700;}
+
+  /* パレート候補 */
+  .cands{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;}
+  @media(max-width:560px){.cands{grid-template-columns:1fr;}}
+  .cand{
+    border:1px solid var(--line);border-radius:6px;padding:10px;cursor:pointer;
+    transition:background .15s;
+  }
+  .cand:hover{background:#f9fafb;}
+  .cand.sel{background:var(--sel);border:2px solid var(--note);}
+  .cand .cn{font-weight:700;margin-bottom:4px;}
+  .cand .thumb{height:52px;border:1px dashed var(--line);border-radius:4px;margin-bottom:8px;background:repeating-linear-gradient(45deg,transparent,transparent 10px,#f3f4f6 10px,#f3f4f6 11px);}
+  .cand .kv{display:flex;justify-content:space-between;padding:1px 0;font-size:11px;}
+  .cand .k{color:var(--muted);}
+  .cand .v{font-weight:700;}
+  .cand .tag{font-size:10px;color:var(--muted);margin-top:6px;}
+  .pareto-note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.7;border-top:1px dotted var(--line);padding-top:8px;}
+
+  /* サマリ */
+  .sum{border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px;}
+  .sum .cap{font-size:10px;color:var(--muted);font-weight:700;margin-bottom:4px;display:flex;justify-content:space-between;}
+  .sum .edit{color:var(--note);font-size:10px;cursor:pointer;}
+  .sum p{font-size:11px;line-height:1.7;}
+
+  .foot{
+    border-top:1px dashed var(--line);padding:10px 14px;
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+  }
+  .wf-btn{
+    border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    font-size:12px;color:var(--ink);padding:6px 14px;cursor:pointer;
+  }
+  .wf-btn.primary{background:var(--line-dark);color:#fff;font-weight:700;}
+  .wf-btn:disabled{opacity:.35;cursor:default;}
+  .foot .esc{font-size:10px;color:var(--muted);}
+
+  .note-panel{max-width:760px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>シーン最適化ウィザード — フローワイヤーフレーム</h1>
+  <p>入口:メニュー「シーン最適化…」/ 出口:候補をシーンに適用→ワークベンチで微調整。「次へ」で実際に流れを体験できます。</p>
+  <span class="hint">💡 各ステップの下部に、そのステップの設計根拠が表示されます</span>
+</header>
+
+<div class="wiz">
+  <div class="steps" id="steps">
+    <div class="step" data-s="0"><span class="dot">1</span>工程要求</div><span class="step arrow">→</span>
+    <div class="step" data-s="1"><span class="dot">2</span>コスト条件</div><span class="step arrow">→</span>
+    <div class="step" data-s="2"><span class="dot">3</span>可変範囲</div><span class="step arrow">→</span>
+    <div class="step" data-s="3"><span class="dot">4</span>候補から選ぶ</div><span class="step arrow">→</span>
+    <div class="step" data-s="4"><span class="dot">5</span>確認・適用</div>
+  </div>
+
+  <div class="body">
+    <!-- STEP 1 -->
+    <div class="pane" data-p="0">
+      <h2>Step 1:工程要求(変えられない制約)</h2>
+      <p class="why">物理・工程上の絶対条件。ここが解空間の外枠になります。</p>
+      <div class="frow"><label>ワーク重量</label><span class="field">2.5</span><span class="unit">kg</span></div>
+      <div class="frow"><label>必要リーチ</label><span class="field">600</span><span class="unit">mm</span></div>
+      <div class="frow"><label>目標サイクルタイム</label><span class="field">5.0</span><span class="unit">s 以下</span></div>
+      <div class="frow"><label>工程タイプ</label>
+        <div class="chips"><span class="chip on">ピック&プレース</span><span class="chip">パレタイズ</span><span class="chip">組立</span></div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="pane" data-p="1">
+      <h2>Step 2:コスト条件(交渉可能な制約)</h2>
+      <p class="why">超えたくない線。ただしStep 4で「少し超えるが速い」候補も参考表示されます。</p>
+      <div class="frow"><label>設備予算上限</label><span class="field">3,000,000</span><span class="unit">円</span></div>
+      <div class="frow"><label>設置面積上限</label><span class="field">2.0 × 2.0</span><span class="unit">m</span></div>
+      <div class="lockcap">確定済みの制約(Step 1)▸ ワーク2.5kg / リーチ600mm / 5.0s以下</div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="pane" data-p="2">
+      <h2>Step 3:最適化に任せる範囲(変数)</h2>
+      <p class="why">値ではなく「動かしてよい範囲」だけを指定。決めるのは最適化の仕事です。</p>
+      <div class="frow"><label>ロボット機種</label>
+        <div class="chips"><span class="chip on">4軸を許可</span><span class="chip on">6軸を許可</span></div>
+      </div>
+      <div class="frow"><label>ロボット配置</label>
+        <div class="chips"><span class="chip on">自動配置に任せる</span><span class="chip">現在位置に固定</span></div>
+      </div>
+      <div class="frow"><label>作業台レイアウト</label>
+        <div class="chips"><span class="chip">自動配置に任せる</span><span class="chip on">現状を維持</span></div>
+      </div>
+      <div class="lockcap">確定済みの制約 ▸ ワーク2.5kg / リーチ600mm / 5.0s以下 / 予算300万円</div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="pane" data-p="3">
+      <h2>Step 4:候補から選ぶ(トレードオフの解決)</h2>
+      <p class="why">重みの数値入力は不要。パレート最適な3案を比較して選ぶだけです。</p>
+      <div class="cands" id="cands">
+        <div class="cand" data-c="A">
+          <div class="cn">案A:コスト優先</div>
+          <div class="thumb"></div>
+          <div class="kv"><span class="k">コスト</span><span class="v">248万円</span></div>
+          <div class="kv"><span class="k">サイクル</span><span class="v">4.9 s</span></div>
+          <div class="kv"><span class="k">構成</span><span class="v">4軸×1</span></div>
+          <div class="tag">目標ぎりぎり。余裕なし</div>
+        </div>
+        <div class="cand sel" data-c="B">
+          <div class="cn">案B:バランス ★推奨</div>
+          <div class="thumb"></div>
+          <div class="kv"><span class="k">コスト</span><span class="v">287万円</span></div>
+          <div class="kv"><span class="k">サイクル</span><span class="v">4.2 s</span></div>
+          <div class="kv"><span class="k">構成</span><span class="v">6軸×1</span></div>
+          <div class="tag">タクト16%の余裕</div>
+        </div>
+        <div class="cand" data-c="C">
+          <div class="cn">案C:速度優先</div>
+          <div class="thumb"></div>
+          <div class="kv"><span class="k">コスト</span><span class="v">334万円 ⚠</span></div>
+          <div class="kv"><span class="k">サイクル</span><span class="v">3.1 s</span></div>
+          <div class="kv"><span class="k">構成</span><span class="v">6軸×1+ツール</span></div>
+          <div class="tag">予算超過(+34万)。参考</div>
+        </div>
+      </div>
+      <p class="pareto-note">※ 3案はいずれもパレート最適(どれかを良くするには別のどれかを犠牲にするしかない解)。予算をわずかに超える案Cも「制約を緩めたら何が得られるか」の判断材料としてあえて提示——制約の価値を可視化するのもウィザードの仕事です。</p>
+    </div>
+
+    <!-- STEP 5 -->
+    <div class="pane" data-p="4">
+      <h2>Step 5:確認して適用</h2>
+      <p class="why">全入力の要約。各項目から該当ステップに戻れます(ウィザードの原則:後戻り自由)。</p>
+      <div class="sum"><div class="cap">工程要求 <span class="edit">編集 ▸ Step 1</span></div><p>ピック&プレース / ワーク2.5kg / リーチ600mm / 目標5.0s以下</p></div>
+      <div class="sum"><div class="cap">コスト条件 <span class="edit">編集 ▸ Step 2</span></div><p>予算300万円 / 設置2.0×2.0m</p></div>
+      <div class="sum"><div class="cap">採用する案 <span class="edit">編集 ▸ Step 4</span></div><p><b>案B:バランス</b> — 6軸×1 / 287万円 / 4.2s(自動配置)</p></div>
+      <div class="sum" style="border-style:dashed;"><div class="cap">適用後</div><p>シーンが案Bの構成に置き換わります。現在のシーンは「最適化前」として自動バックアップ。適用後はいつも通り手動で微調整できます。</p></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>
+      <button class="wf-btn" id="back">← 戻る</button>
+      <span class="esc">いつでも「キャンセル」で破棄可(シーンは無傷)</span>
+    </span>
+    <button class="wf-btn primary" id="next">次へ →</button>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <div class="np-title">このステップの設計根拠</div>
+  <p id="noteBody"></p>
+</div>
+
+<script>
+const stepNotes = [
+  "最初に聞くのは『変えられないもの』。物理制約が解空間の外枠を作り、以降のステップで矛盾した入力が起きえなくなります。工程タイプをチップ(選択肢)にしているのは、自由入力より速く、最適化エンジンが解釈できる形で受け取れるから。ウィザードでは可能な限り『選ばせる』が原則です。",
+  "コストは『交渉可能な制約』なので2番目。画面下部に前ステップの確定内容を常に表示しているのに注目——ウィザードは1画面1関心事に絞る代わりに、確定済みの文脈を失わせない工夫が必須です(そうしないと『あれ、リーチいくつで入れたっけ』と戻る羽目に)。",
+  "ここが設計の勘所:値を聞かず『任せてよい範囲』だけ聞く。ユーザーが機種を先に決めてしまうと最適化の余地が消え、ウィザードの価値が半減します。『固定/任せる』のトグルは、熟練者が一部だけ手動で握る抜け道にもなっています(自動化と手動のグラデーション)。",
+  "トレードオフ解決の本丸。重みスライダーを置かず、パレート最適の具体案を並べて選ばせる——人間は抽象的な重み付けは苦手でも、具体案の比較は得意だからです。推奨(★)でデフォルトの答えも示す。予算超過の案Cをあえて見せるのは『制約を10%緩めたら速度が25%上がる』という制約の価格を教えるため。これが次回の予算交渉の材料になります。",
+  "最終確認は全ウィザード共通の必須ステップ。各項目に『編集』リンクを付けて任意のステップへ戻れるように(直線的に見えて実は自由に行き来できるのが良いウィザード)。『適用前に自動バックアップ』の一文が安心感を作り、実験を促します——元に戻せる操作は試してもらえる、これもUXの原則です。"
+];
+let cur = 0;
+const panes = document.querySelectorAll(".pane");
+const steps = document.querySelectorAll(".step[data-s]");
+const noteBody = document.getElementById("noteBody");
+const nextBtn = document.getElementById("next");
+const backBtn = document.getElementById("back");
+
+function render(){
+  panes.forEach(p => p.classList.toggle("cur", +p.dataset.p === cur));
+  steps.forEach(s => {
+    const i = +s.dataset.s;
+    s.classList.toggle("cur", i === cur);
+    s.classList.toggle("done", i < cur);
+  });
+  noteBody.textContent = stepNotes[cur];
+  backBtn.disabled = cur === 0;
+  nextBtn.textContent = cur === 4 ? "シーンに適用 ✓" : (cur === 2 ? "最適化を実行 →" : "次へ →");
+}
+nextBtn.addEventListener("click", () => {
+  if (cur < 4) { cur++; render(); }
+  else { nextBtn.textContent = "適用しました(ワークベンチへ戻る)"; }
+});
+backBtn.addEventListener("click", () => { if (cur > 0){ cur--; render(); } });
+steps.forEach(s => s.addEventListener("click", () => {
+  const i = +s.dataset.s;
+  if (i <= cur) { cur = i; render(); }  // 到達済みステップのみジャンプ可
+}));
+document.querySelectorAll(".cand").forEach(c => {
+  c.addEventListener("click", () => {
+    document.querySelectorAll(".cand").forEach(x => x.classList.remove("sel"));
+    c.classList.add("sel");
+  });
+});
+render();
+</script>
+</body>
+</html>

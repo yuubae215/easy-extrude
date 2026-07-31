@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新規テンプレート作成(プリミティブ合成)— ワイヤーフレーム</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;
+    --ax-z:#1d4ed8;--tpl:#7c3aed;--tpl-bg:#f5f3ff;--tpl-sel:#ede9fe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1000px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1000px;margin:0 auto;background:var(--box);
+    border:2px solid var(--tpl);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:36px 1fr;
+    grid-template-columns:185px 1fr 205px;
+    grid-template-areas:"menu menu menu" "left main right";
+    height:560px;
+  }
+  @media (max-width:640px){
+    .frame{grid-template-columns:132px 1fr 156px;height:520px;font-size:10px;}
+  }
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .zone:hover,.zone.active{background:#faf8ff;}
+  .zone.active{outline:2px solid var(--tpl);outline-offset:-2px;}
+  .zone-label{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--tpl);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--tpl-bg);border-bottom:1px solid var(--tpl);}
+  .crumb{font-size:11px;color:var(--muted);}
+  .crumb b{color:var(--tpl);}
+  .crumb .back{color:var(--note);text-decoration:underline;}
+  .spacer{flex:1;}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:10px;color:var(--ink);padding:3px 8px;white-space:nowrap;cursor:pointer;}
+  .wf-btn.primary{background:var(--tpl);border-color:var(--tpl);color:#fff;font-weight:700;}
+
+  /* --- 左:パレット+構造 --- */
+  .left{grid-area:left;display:grid;grid-template-rows:auto 1fr;border:none;}
+  .palette,.struct{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .palette:hover,.palette.active,.struct:hover,.struct.active{background:#faf8ff;}
+  .palette.active,.struct.active{outline:2px solid var(--tpl);outline-offset:-2px;}
+  .palette{padding:22px 6px 8px;}
+  .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;}
+  .pshape{
+    border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;font-size:8px;color:var(--muted);cursor:grab;
+  }
+  .pshape .g{font-size:15px;color:var(--ink);}
+  .pshape:hover{background:var(--tpl-sel);border-color:var(--tpl);}
+  .pcap{font-size:8px;color:var(--muted);margin-top:5px;line-height:1.5;}
+
+  .struct{padding:22px 6px 6px;overflow:hidden;}
+  .tree{list-style:none;}
+  .tree li{padding:2px 4px;border-radius:3px;display:flex;align-items:center;gap:4px;}
+  .lv1{margin-left:12px;}
+  .lv2{margin-left:24px;}
+  .tree .selected{background:var(--tpl-sel);border:1px solid var(--tpl);font-weight:700;}
+  .tw{color:var(--muted);font-size:9px;width:8px;flex-shrink:0;}
+  .fi{color:var(--tpl);}
+  .grp-btns{display:flex;gap:4px;margin-top:8px;}
+
+  /* --- 中央:隔離ビュー(コンベア組立中) --- */
+  .main{grid-area:main;position:relative;background:#fafafa;}
+  .iso-cap{position:absolute;top:22px;left:8px;font-size:9px;color:var(--tpl);font-weight:700;letter-spacing:.06em;}
+  .stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+  .conv{position:relative;width:300px;height:140px;}
+  .prim{position:absolute;border:2px solid var(--line-dark);background:#fff;}
+  .frame-l{left:0;top:52px;width:300px;height:16px;}
+  .frame-r{left:0;top:100px;width:300px;height:12px;opacity:.5;border-style:dashed;}
+  .roller{width:22px;height:22px;border-radius:50%;top:32px;}
+  .roller.sel{border-color:var(--tpl);background:var(--tpl-sel);box-shadow:0 0 0 4px rgba(124,58,237,.15);}
+  .leg{width:10px;height:44px;top:68px;border-top:none;}
+  .snapline{
+    position:absolute;left:0;right:0;top:54px;height:0;
+    border-top:1.5px dashed var(--tpl);display:flex;justify-content:flex-end;
+  }
+  .snapline span{font-size:8px;color:var(--tpl);background:#fafafa;padding:0 3px;transform:translateY(-14px);}
+  .ghost-drag{
+    position:absolute;right:14px;top:6px;width:22px;height:22px;border-radius:50%;
+    border:2px dashed var(--tpl);background:rgba(237,233,254,.6);
+  }
+  .ghost-drag::after{content:"ドラッグ中…";position:absolute;left:26px;top:2px;font-size:8px;color:var(--tpl);white-space:nowrap;}
+  .hover-hint{
+    position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+    font-size:10px;color:var(--muted);background:rgba(255,255,255,.9);
+    border:1px dashed var(--line);border-radius:4px;padding:3px 10px;white-space:nowrap;
+  }
+
+  /* --- 右:インスペクタ --- */
+  .right{grid-area:right;padding:24px 8px 8px;display:flex;flex-direction:column;gap:7px;overflow:hidden;}
+  .ctx-cap{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--tpl);letter-spacing:.05em;}
+  .insp{border:1px solid var(--line);border-radius:4px;padding:6px;}
+  .insp .cap{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:4px;}
+  .hy{display:flex;align-items:center;gap:5px;padding:2px 0;}
+  .hy .k{color:var(--muted);width:44px;flex-shrink:0;font-size:10px;}
+  .hyfield{flex:1;height:15px;border:1px solid var(--line-dark);border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:flex-end;padding:0 4px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .memo{font-size:9px;color:var(--muted);line-height:1.6;margin-top:4px;}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--line-dark);border-radius:11px;padding:2px 8px;background:#fff;font-size:10px;}
+  .chip.on{background:var(--tpl-sel);border-color:var(--tpl);font-weight:700;}
+
+  .note-panel{max-width:1000px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:96px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>新規テンプレート作成(プリミティブ合成)— ワイヤーフレーム</h1>
+  <p>状況設定:白紙テンプレートから「コンベア」をポンチ絵で組み立て中。ローラー(円柱)を1本ドラッグ追加しているところ。入口はインベントリの「+ 新規テンプレート」カード。</p>
+  <span class="hint">💡 各エリアをタップで設計根拠</span>
+</header>
+
+<div class="frame">
+  <div class="zone menu" data-note="1">
+    <span class="badge">1</span>
+    <span class="crumb"><span class="back">◂ シーンに戻る</span> ▸ <b>新規テンプレート:コンベア(未保存)</b></span>
+    <span class="spacer"></span>
+    <span class="wf-btn">キャンセル</span>
+    <span class="wf-btn primary">保存してインベントリへ</span>
+  </div>
+
+  <div class="left">
+    <div class="palette" data-note="2">
+      <span class="zone-label">シェイプパレット</span>
+      <span class="badge">2</span>
+      <div class="pgrid">
+        <div class="pshape"><span class="g">▭</span>箱</div>
+        <div class="pshape"><span class="g">⬤</span>円柱</div>
+        <div class="pshape"><span class="g">●</span>球</div>
+        <div class="pshape"><span class="g">▲</span>円錐</div>
+        <div class="pshape"><span class="g">◎</span>トーラス</div>
+        <div class="pshape"><span class="g">◇</span>マウント</div>
+      </div>
+      <div class="pcap">ドラッグして隔離ビューへ。◇マウントポイントも同じパレットの住人です</div>
+    </div>
+    <div class="struct" data-note="3">
+      <span class="zone-label">テンプレート構造</span>
+      <span class="badge">3</span>
+      <ul class="tree">
+        <li><span class="tw">▾</span> コンベア(作成中)</li>
+        <li class="lv1"><span class="tw">▾</span> 🗀 ローラー部(グループ)</li>
+        <li class="lv2"><span class="tw"></span> ⬤ ローラー_1</li>
+        <li class="lv2"><span class="tw"></span> ⬤ ローラー_2</li>
+        <li class="lv2 selected"><span class="tw"></span> ⬤ ローラー_3</li>
+        <li class="lv1"><span class="tw"></span> ▭ フレーム</li>
+        <li class="lv1"><span class="tw"></span> ▭ 脚_1 / 脚_2</li>
+        <li class="lv1"><span class="tw"></span><span class="fi">◇</span> 搬入端</li>
+      </ul>
+      <div class="grp-btns">
+        <span class="wf-btn">🗀 グループ化</span>
+        <span class="wf-btn">複製</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="zone main" data-note="4">
+    <span class="zone-label">隔離ビュー</span>
+    <span class="badge">4</span>
+    <span class="iso-cap">TEMPLATE SPACE — コンベア組立中</span>
+    <div class="stage">
+      <div class="conv">
+        <span class="prim frame-l"></span>
+        <span class="prim frame-r"></span>
+        <span class="prim roller" style="left:30px;"></span>
+        <span class="prim roller" style="left:90px;"></span>
+        <span class="prim roller sel" style="left:150px;"></span>
+        <span class="prim leg" style="left:20px;"></span>
+        <span class="prim leg" style="left:270px;"></span>
+        <span class="snapline"><span>整列スナップ:ローラー_1,_2 と上端が一致</span></span>
+        <span class="ghost-drag"></span>
+      </div>
+    </div>
+    <div class="hover-hint">パレットからドラッグ→既存形状の面・軸に吸着 / 等間隔配置も提案</div>
+  </div>
+
+  <div class="zone right" data-note="5">
+    <span class="badge">5</span>
+    <span class="ctx-cap">インスペクタ:⬤ ローラー_3</span>
+
+    <div class="insp" style="margin-top:8px;">
+      <div class="cap">寸法(円柱)</div>
+      <div class="hy"><span class="k">半径</span><div class="hyfield"><span>25.0</span></div></div>
+      <div class="hy"><span class="k">長さ</span><div class="hyfield"><span>400.0</span></div></div>
+      <div class="memo">形状の種類ごとにパラメータが変わる(箱なら幅/奥行/高さ)</div>
+    </div>
+
+    <div class="insp">
+      <div class="cap">位置(テンプレートローカル)</div>
+      <div class="hy"><span class="k">X</span><div class="hyfield"><span>300.0</span></div></div>
+      <div class="hy"><span class="k">Y</span><div class="hyfield"><span>0.0</span></div></div>
+      <div class="hy"><span class="k">Z</span><div class="hyfield"><span>720.0</span></div></div>
+    </div>
+
+    <div class="insp">
+      <div class="cap">役割</div>
+      <div class="chips"><span class="chip on">見た目+衝突</span><span class="chip">見た目のみ</span><span class="chip">衝突のみ</span></div>
+      <div class="memo">シミュレーション用の割り切り:飾りの形状は衝突計算から外して軽く</div>
+    </div>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。テーマは「drawioのイディオムを、既存のテンプレート編集モードにそのまま接ぎ木する」です。</p>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "モードバー:新規作成も同じモードの一形態",
+    body: "「テンプレート編集(既存)」と「新規テンプレート(白紙)」は同じモードで、初期状態が空かどうかの違いだけ。(未保存)の表示と『保存してインベントリへ』ボタンで、この作業の出口=インベントリにカードが増えること、を予告しています。"
+  },
+  "2": {
+    title: "シェイプパレット:drawioイディオムの移植",
+    body: "あなたが手に馴染ませてきた『左のパレットからドラッグ』をそのまま採用——既存ツールで獲得済みのスキルを転用させるのは最良のオンボーディングです。注目は◇マウントポイントもパレットの住人にしたこと:『形状を置く』と『接続点を置く』が同じ操作文法に統一され、覚えることが増えません。"
+  },
+  "3": {
+    title: "テンプレート構造:グループ化=親子付け",
+    body: "ローラー3本を『ローラー部』にグループ化。この🗀グループの正体はシーングラフの中間ノードで、シーン階層のマウント(親子付け替え)と同じ仕組みの再利用です。ローラー部ごと動かす・複製する、が可能になります。drawioのグループ化と概念が完全に一致するので、あなたのメンタルモデルそのままで操作できます。"
+  },
+  "4": {
+    title: "隔離ビュー:整列スナップと等間隔提案",
+    body: "ドラッグ中のローラー(点線ゴースト)が既存ローラーと上端一致すると整列ガイド(紫点線)が走る——drawio/PowerPointの整列ガイドの3D版で、マウントポイント作成で使った候補点スナップと同じ推測エンジンの別の顔です。ローラーのような繰り返し形状には『等間隔に5本』のような配列複製を効かせると、ポンチ絵作りが一気に速くなります。"
+  },
+  "5": {
+    title: "インスペクタ:パラメトリック寸法と「役割」",
+    body: "プリミティブは頂点の集まりではなくパラメータ(半径・長さ)で持つ——後から『ローラーを太く』が一発で効くパラメトリック方式です。もう1つの工夫が『役割』:見た目+衝突/見た目のみ/衝突のみ。URDFが visual と collision を分けるのと同じで、ポンチ絵の割り切りがそのままシミュレーションの計算量削減に直結します。あなたの『ポンチ絵好き』は、この世界では性能最適化のセンスでもあるんです。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let active = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id) return;
+    if (active) active.classList.remove("active");
+    el.classList.add("active"); active = el;
+    const n = notes[id];
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + n.title + '</div>' +
+      '<p>' + n.body + '</p>';
+  });
+});
+</script>
+</body>
+</html>

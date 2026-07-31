@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>最適化ウィザード v3 — 3D連動型</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1000px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1000px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;font-size:11px;
+    grid-template-rows:36px 1fr 52px;
+    grid-template-columns:300px 1fr;
+    grid-template-areas:"menu menu" "wpanel view" "foot foot";
+    height:600px;
+  }
+  @media(max-width:640px){
+    .frame{grid-template-columns:1fr;grid-template-rows:36px auto 1fr 52px;
+      grid-template-areas:"menu" "wpanel" "view" "foot";height:auto;}
+  }
+
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px dashed var(--line);background:#fafafa;}
+  .menu .mode{font-size:10px;font-weight:700;color:var(--note);background:var(--sel);border:1px solid var(--note);border-radius:3px;padding:2px 8px;}
+  .menu .dim{color:var(--muted);font-size:10px;}
+
+  /* --- 左:ウィザードパネル --- */
+  .wpanel{grid-area:wpanel;border-right:1px dashed var(--line);display:flex;flex-direction:column;overflow:hidden;}
+  .steps{display:flex;gap:2px;padding:8px;border-bottom:1px dashed var(--line);flex-wrap:wrap;}
+  .sdot{width:20px;height:20px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);cursor:pointer;}
+  .sdot.cur{background:var(--note);border-color:var(--note);color:#fff;font-weight:700;}
+  .sdot.done{background:#e5e7eb;border-color:var(--line-dark);color:var(--ink);}
+  .sline{flex:0 0 10px;height:1px;background:var(--line);align-self:center;}
+  .wbody{flex:1;padding:12px;overflow-y:auto;}
+  .wbody h2{font-size:13px;margin-bottom:4px;}
+  .wbody .why{font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.7;}
+  .pane{display:none;}
+  .pane.cur{display:block;}
+
+  .frow{margin-bottom:10px;}
+  .frow label{display:block;color:var(--muted);font-size:10px;margin-bottom:3px;}
+  .field{border:1px solid var(--line-dark);border-radius:3px;background:#fff;padding:3px 8px;display:inline-block;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);font-weight:600;}
+  .select{border:1px solid var(--line-dark);border-radius:3px;background:#fff;padding:3px 8px;font-weight:600;display:inline-block;cursor:pointer;}
+  .select::after{content:" ▾";color:var(--muted);}
+  .select.hl{background:var(--sel);border-color:var(--note);}
+  .unit{color:var(--muted);font-size:10px;}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--line-dark);border-radius:11px;padding:2px 9px;background:#fff;cursor:pointer;}
+  .chip.on{background:var(--sel);border-color:var(--note);font-weight:700;}
+  .derived{display:block;font-size:10px;color:var(--muted);border:1px dashed var(--line);border-radius:3px;padding:3px 8px;margin-top:6px;}
+  .derived b{color:var(--ink);}
+  .vhint{font-size:10px;color:var(--note);margin-top:10px;line-height:1.6;}
+
+  .cand-list{display:flex;flex-direction:column;gap:6px;}
+  .cand{border:1px solid var(--line);border-radius:5px;padding:7px;cursor:pointer;}
+  .cand.sel{background:var(--sel);border:2px solid var(--note);}
+  .cand .cn{font-weight:700;font-size:11px;}
+  .cand .kv{display:flex;gap:10px;font-size:10px;margin-top:2px;}
+  .cand .k{color:var(--muted);}
+
+  .wfoot{border-top:1px dashed var(--line);padding:8px 12px;display:flex;justify-content:space-between;}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:11px;color:var(--ink);padding:4px 12px;cursor:pointer;}
+  .wf-btn.primary{background:var(--line-dark);color:#fff;font-weight:700;}
+  .wf-btn:disabled{opacity:.35;}
+
+  /* --- 右:3Dビュー(上面図モック) --- */
+  .view{grid-area:view;position:relative;background:repeating-linear-gradient(0deg,transparent,transparent 24px,#eef0f2 24px,#eef0f2 25px),repeating-linear-gradient(90deg,transparent,transparent 24px,#eef0f2 24px,#eef0f2 25px);min-height:300px;}
+  .cam{position:absolute;top:6px;left:8px;font-size:9px;color:var(--muted);font-weight:700;letter-spacing:.08em;}
+  .ent{position:absolute;border:2px solid var(--line-dark);background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;border-radius:3px;transition:all .3s;}
+  .ent.dim{opacity:.25;}
+  .ent.hl{border-color:var(--note);background:var(--sel);box-shadow:0 0 0 3px rgba(37,99,235,.2);}
+  .ent.ghost{border-style:dashed;opacity:.55;background:transparent;}
+  #tray{top:22%;left:16%;width:90px;height:64px;}
+  #table{top:56%;left:58%;width:110px;height:70px;}
+  #obst{top:20%;left:66%;width:52px;height:44px;}
+  #robot{top:42%;left:40%;width:56px;height:56px;border-radius:50%;}
+  #robotB{top:36%;left:34%;width:64px;height:64px;border-radius:50%;display:none;}
+
+  .path{position:absolute;top:38%;left:25%;width:44%;height:2px;background:var(--note);transform:rotate(18deg);transform-origin:left center;display:none;}
+  .path::after{content:"▶";position:absolute;right:-6px;top:-7px;color:var(--note);font-size:11px;}
+  .dist{position:absolute;top:30%;left:40%;font-size:10px;font-weight:700;color:var(--note);background:#fff;border:1px solid var(--note);border-radius:3px;padding:1px 6px;display:none;}
+  .bound{position:absolute;top:14%;left:12%;width:66%;height:70%;border:2px dashed var(--line-dark);display:none;}
+  .bound .bl{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--ink);background:#fff;padding:0 4px;font-weight:700;}
+  .zone-free{position:absolute;top:30%;left:26%;width:36%;height:44%;background:repeating-linear-gradient(45deg,rgba(37,99,235,.08),rgba(37,99,235,.08) 6px,transparent 6px,transparent 12px);border:1px dashed var(--note);display:none;}
+  .zone-free .zl{position:absolute;top:2px;left:4px;font-size:9px;color:var(--note);font-weight:700;}
+  .kpi-tag{position:absolute;bottom:8px;right:8px;border:1px solid var(--line-dark);background:rgba(255,255,255,.94);border-radius:4px;padding:5px 8px;font-size:10px;display:none;}
+  .kpi-tag b{font-size:11px;}
+
+  .foot{grid-area:foot;border-top:1px dashed var(--line);padding:8px 12px;display:flex;align-items:center;justify-content:space-between;background:#fafafa;}
+  .foot .esc{font-size:10px;color:var(--muted);}
+
+  .note-panel{max-width:1000px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>最適化ウィザード v3 — ワークベンチ同居・3D連動型</h1>
+  <p>モーダル廃止。左=ウィザード、右=3Dビュー(上面図)が各ステップの入力内容をリアルタイムに可視化します。</p>
+  <span class="hint">💡 「次へ」で進むと右の3Dビューが連動して変化します。Step 1ではドロップダウンや3D上の物体もタップ可</span>
+</header>
+
+<div class="frame">
+  <div class="menu">
+    <span class="mode">最適化ウィザード実行中</span>
+    <span class="dim">通常の編集はウィザード終了後に(誤操作防止のためロック中)</span>
+  </div>
+
+  <div class="wpanel">
+    <div class="steps">
+      <span class="sdot cur" data-s="0">1</span><span class="sline"></span>
+      <span class="sdot" data-s="1">2</span><span class="sline"></span>
+      <span class="sdot" data-s="2">3</span><span class="sline"></span>
+      <span class="sdot" data-s="3">4</span><span class="sline"></span>
+      <span class="sdot" data-s="4">5</span>
+    </div>
+    <div class="wbody">
+      <!-- STEP1 -->
+      <div class="pane cur" data-p="0">
+        <h2>Step 1:工程の内容</h2>
+        <p class="why">いま人がやっている作業をそのままの言葉で。</p>
+        <div class="frow"><label>何を</label><span class="select">ワーク(箱)</span></div>
+        <div class="frow"><label>どこから</label><span class="select hl" id="selFrom">パーツトレイ</span></div>
+        <div class="frow"><label>どこへ</label><span class="select hl" id="selTo">作業台</span></div>
+        <div class="frow"><label>作業のペース</label><span class="field">720</span> <span class="unit">個/時</span>
+          <span class="derived">≒ <b>5.0 s/個</b> として計算</span>
+        </div>
+        <p class="vhint">▶ 右の3Dビュー:選択中の「から/へ」がハイライトされ、経路と距離が表示されています。3D側の物体をタップしても選べます(双方向)。</p>
+      </div>
+      <!-- STEP2 -->
+      <div class="pane" data-p="1">
+        <h2>Step 2:コスト条件</h2>
+        <div class="frow"><label>設備予算上限</label><span class="field">3,000,000</span> <span class="unit">円</span></div>
+        <div class="frow"><label>設置面積上限</label><span class="field">2.0 × 2.0</span> <span class="unit">m</span></div>
+        <p class="vhint">▶ 3Dビュー:設置面積の上限が床の点線枠に。予算は空間で表せないためテキストのまま——3D化できる情報と、できない情報があります。</p>
+      </div>
+      <!-- STEP3 -->
+      <div class="pane" data-p="2">
+        <h2>Step 3:最適化に任せる範囲</h2>
+        <div class="frow"><label>ロボット機種</label>
+          <div class="chips"><span class="chip on">4軸を許可</span><span class="chip on">6軸を許可</span></div>
+        </div>
+        <div class="frow"><label>ロボット配置</label>
+          <div class="chips"><span class="chip on">自動配置に任せる</span><span class="chip">現在位置に固定</span></div>
+        </div>
+        <p class="vhint">▶ 3Dビュー:自動配置してよい領域が網掛けに、現在のロボットはゴースト(点線)に変化——「これは確定ではなくなった」の視覚表現です。</p>
+      </div>
+      <!-- STEP4 -->
+      <div class="pane" data-p="3">
+        <h2>Step 4:候補から選ぶ</h2>
+        <p class="why">タップすると右の3Dが差し替わります。</p>
+        <div class="cand-list">
+          <div class="cand sel" data-c="A"><div class="cn">案A:コスト優先 — 248万円</div><div class="kv"><span class="k">能力</span>734個/時<span class="k">構成</span>4軸×1</div></div>
+          <div class="cand" data-c="B"><div class="cn">案B:バランス ★ — 287万円</div><div class="kv"><span class="k">能力</span>857個/時<span class="k">構成</span>6軸×1</div></div>
+          <div class="cand" data-c="C"><div class="cn">案C:能力優先 — 334万円 ⚠</div><div class="kv"><span class="k">能力</span>1,161個/時<span class="k">構成</span>6軸×1+ツール</div></div>
+        </div>
+        <p class="vhint">▶ 数字の比較は左で、空間の比較(配置・干渉の余裕)は右で。同じ候補を2つの表現で吟味できます。</p>
+      </div>
+      <!-- STEP5 -->
+      <div class="pane" data-p="4">
+        <h2>Step 5:確認して適用</h2>
+        <p class="why">適用でゴーストが実体化し、現在のシーンはバックアップされます。</p>
+        <div class="derived">工程:箱をトレイ→作業台 / 720個/時 / 2.5kg<br>条件:予算300万 / 2.0×2.0m<br>採用:<b>案A — 4軸×1 / 248万円 / 734個/時</b> <span id="sumC"></span></div>
+        <p class="vhint">▶ 3Dビュー:採用案が確定表示(実線)に戻り、適用後の姿を最終確認。</p>
+      </div>
+    </div>
+    <div class="wfoot">
+      <button class="wf-btn" id="back">← 戻る</button>
+      <button class="wf-btn primary" id="next">次へ →</button>
+    </div>
+  </div>
+
+  <div class="view" id="view">
+    <span class="cam" id="cam">TOP VIEW(自動切替)</span>
+    <div class="bound" id="bound"><span class="bl">設置上限 2.0×2.0m</span></div>
+    <div class="zone-free" id="zoneFree"><span class="zl">自動配置エリア</span></div>
+    <div class="ent" id="tray">パーツトレイ</div>
+    <div class="ent" id="obst">障害物</div>
+    <div class="ent" id="table">作業台</div>
+    <div class="ent" id="robot">🦾4軸</div>
+    <div class="ent ghost" id="robotB">🦾6軸</div>
+    <div class="path" id="path"></div>
+    <div class="dist" id="dist">0.85 m</div>
+    <div class="kpi-tag" id="kpiTag"><b>案A</b> 734個/時 / 248万円</div>
+  </div>
+
+  <div class="foot">
+    <span class="esc">キャンセルでいつでも破棄(シーンは無傷)</span>
+    <span class="esc">ウィザード終了後、通常のワークベンチに戻ります</span>
+  </div>
+</div>
+
+<div class="note-panel">
+  <div class="np-title">このステップの設計根拠</div>
+  <p id="noteBody"></p>
+</div>
+
+<script>
+const stepNotes = [
+  "入力とその解釈を同時・同画面で見せる(フィードフォワード)。「どこから/どこへ」を選ぶと3D側がハイライトし、経路の矢印と距離0.85mが出る——Step1の時点で『必要リーチ』に相当する情報が視覚的に共有されます。3D側の物体タップでも入力欄が埋まる双方向にすることで、フォームと直接操作の good parts を両取り。カメラは上面図に自動切替(レイアウトの吟味は真上からが最適)。",
+  "設置面積上限は床の点線枠として空間化。一方で予算は空間表現を持たないのでテキストのまま——なんでも3Dにすればいいわけではなく、情報の性質ごとに最適な表現を選ぶのが可視化設計です。枠がトレイや作業台と重なっていないかも、この時点で目視確認できます。",
+  "『任せる』の可視化が肝。自動配置エリアは網掛け、現在のロボットは実線→点線ゴーストへ——『確定』と『ドラフト』を線種で描き分ける製図由来の慣習です。SSOTで言えば、ゴースト=ドラフト状態のレンダリング。ユーザーは『何が動かされうるのか』を一目で把握できます。",
+  "案をタップすると3Dのゴースト構成が差し替わる。数値比較(左)と空間比較(右)の二刀流で、『案Cは速いが障害物との余裕が薄い』のような数値に出ない気づきが得られます。テキストと3Dは競合ではなく、それぞれ違う種類の判断を支えている点に注目。",
+  "適用直前、ゴーストが実線に戻った『適用後の姿』で最終確認。Step1から一貫して、ユーザーの入力→システムの解釈→結果、のすべてが同じ3D空間上で起きました。『そういうこと言ってたの?』が構造的に発生しなくなっています。"
+];
+let cur = 0, cand = "A";
+const panes = document.querySelectorAll(".pane");
+const dots = document.querySelectorAll(".sdot");
+const noteBody = document.getElementById("noteBody");
+const nextBtn = document.getElementById("next");
+const backBtn = document.getElementById("back");
+const $ = id => document.getElementById(id);
+
+function renderView(){
+  const tray=$("tray"),table=$("table"),obst=$("obst"),robot=$("robot"),robotB=$("robotB");
+  const path=$("path"),dist=$("dist"),bound=$("bound"),zoneFree=$("zoneFree"),kpi=$("kpiTag");
+  // reset
+  [tray,table,obst,robot].forEach(e=>{e.classList.remove("hl","dim","ghost");});
+  robotB.style.display="none";robot.style.display="flex";
+  path.style.display="none";dist.style.display="none";bound.style.display="none";
+  zoneFree.style.display="none";kpi.style.display="none";
+  if(cur===0){
+    tray.classList.add("hl");table.classList.add("hl");
+    obst.classList.add("dim");robot.classList.add("dim");
+    path.style.display="block";dist.style.display="block";
+  }else if(cur===1){
+    bound.style.display="block";
+  }else if(cur===2){
+    bound.style.display="block";zoneFree.style.display="block";
+    robot.classList.add("ghost");
+  }else if(cur===3||cur===4){
+    bound.style.display="block";kpi.style.display="block";
+    const g = cur===3;
+    if(cand==="A"){robot.style.display="flex";robotB.style.display="none";
+      if(g)robot.classList.add("ghost");
+      kpi.innerHTML="<b>案A</b> 734個/時 / 248万円";}
+    else{robot.style.display="none";robotB.style.display="flex";
+      robotB.classList.toggle("ghost", g);
+      kpi.innerHTML=cand==="B"?"<b>案B</b> 857個/時 / 287万円":"<b>案C</b> 1,161個/時 / 334万円 ⚠";}
+  }
+}
+function render(){
+  panes.forEach(p=>p.classList.toggle("cur",+p.dataset.p===cur));
+  dots.forEach(d=>{const i=+d.dataset.s;
+    d.classList.toggle("cur",i===cur);d.classList.toggle("done",i<cur);});
+  noteBody.textContent=stepNotes[cur];
+  backBtn.disabled=cur===0;
+  nextBtn.textContent=cur===4?"シーンに適用 ✓":(cur===2?"最適化を実行 →":"次へ →");
+  renderView();
+}
+nextBtn.addEventListener("click",()=>{if(cur<4){cur++;render();}else{nextBtn.textContent="適用しました ✓";}});
+backBtn.addEventListener("click",()=>{if(cur>0){cur--;render();}});
+dots.forEach(d=>d.addEventListener("click",()=>{const i=+d.dataset.s;if(i<=cur){cur=i;render();}}));
+document.querySelectorAll(".cand").forEach(c=>{
+  c.addEventListener("click",()=>{
+    document.querySelectorAll(".cand").forEach(x=>x.classList.remove("sel"));
+    c.classList.add("sel");cand=c.dataset.c;
+    $("sumC") && ($("sumC").textContent="");
+    renderView();
+  });
+});
+// Step1: 3D側タップで選択(双方向のデモ)
+["tray","table"].forEach(id=>{
+  $(id).addEventListener("click",()=>{if(cur===0){$(id).classList.add("hl");}});
+});
+render();
+</script>
+</body>
+</html>
