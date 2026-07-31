@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ロボットアームシミュレータ — ワイヤーフレーム v1</title>
+<style>
+  :root{
+    --paper:#f5f5f4;
+    --box:#ffffff;
+    --line:#9ca3af;
+    --line-dark:#4b5563;
+    --ink:#374151;
+    --muted:#9ca3af;
+    --note:#2563eb;
+    --note-bg:#eff6ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    padding:16px;
+  }
+  header{max-width:960px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;letter-spacing:.02em;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.6;}
+  .hint{
+    display:inline-block;margin-top:8px;font-size:11px;color:var(--note);
+    background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;
+  }
+
+  /* ====== ワイヤーフレーム本体 ====== */
+  .frame{
+    max-width:960px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;
+    grid-template-rows:36px 1fr 72px;
+    grid-template-columns:170px 1fr 150px;
+    grid-template-areas:
+      "menu menu menu"
+      "left main right"
+      "time time time";
+    height:520px;
+    font-size:11px;
+  }
+  @media (max-width:640px){
+    .frame{
+      grid-template-columns:120px 1fr 110px;
+      height:440px;font-size:10px;
+    }
+  }
+
+  .zone{
+    position:relative;border:1px dashed var(--line);
+    cursor:pointer;transition:background .15s;
+  }
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{
+    position:absolute;top:4px;left:6px;
+    font-size:9px;font-weight:700;color:var(--muted);
+    letter-spacing:.08em;text-transform:uppercase;
+  }
+  .badge{
+    position:absolute;top:3px;right:5px;
+    width:16px;height:16px;border-radius:50%;
+    background:var(--note);color:#fff;
+    font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* --- メニューバー --- */
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px 0 68px;}
+  .menu .wf-btn{padding:3px 10px;}
+
+  /* --- 左:関節制御 --- */
+  .left{grid-area:left;padding:26px 8px 8px;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+  .joint{display:flex;flex-direction:column;gap:3px;}
+  .joint .row{display:flex;justify-content:space-between;align-items:center;}
+  .joint .name{color:var(--ink);font-weight:600;}
+  .joint .val{color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px;min-width:34px;text-align:right;}
+  .slider{height:10px;border:1px solid var(--line);border-radius:5px;position:relative;background:#fff;}
+  .slider::after{
+    content:"";position:absolute;top:-3px;left:45%;
+    width:14px;height:14px;border-radius:50%;
+    border:1px solid var(--line-dark);background:#e5e7eb;
+  }
+
+  /* --- 中央:3Dビュー --- */
+  .main{
+    grid-area:main;position:relative;
+    background:
+      repeating-linear-gradient(45deg,transparent,transparent 14px,#e5e7eb 14px,#e5e7eb 15px);
+  }
+  .main .cross{
+    position:absolute;inset:0;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.1em;
+  }
+  .overlay-tools{
+    position:absolute;top:24px;right:8px;
+    display:flex;flex-direction:column;gap:4px;
+  }
+  .overlay-tools .wf-icon{
+    width:26px;height:26px;border:1px solid var(--line-dark);
+    border-radius:4px;background:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;color:var(--ink);
+  }
+
+  /* --- 右:表示系 --- */
+  .right{grid-area:right;padding:26px 8px 8px;display:flex;flex-direction:column;gap:10px;}
+  .readout{border:1px solid var(--line);border-radius:4px;padding:6px;}
+  .readout .cap{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:4px;}
+  .readout .kv{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #e5e7eb;}
+  .readout .kv:last-child{border-bottom:none;}
+  .readout .k{color:var(--muted);}
+  .readout .v{font-weight:600;}
+
+  /* --- 下:タイムライン --- */
+  .time{grid-area:time;padding:22px 10px 8px;display:flex;align-items:center;gap:8px;}
+  .transport{display:flex;gap:4px;}
+  .wf-icon{
+    width:24px;height:24px;border:1px solid var(--line-dark);border-radius:4px;
+    background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;
+  }
+  .track{
+    flex:1;height:26px;border:1px solid var(--line);border-radius:4px;
+    position:relative;background:#fff;overflow:hidden;
+  }
+  .key{
+    position:absolute;top:7px;width:10px;height:10px;
+    background:#d1d5db;border:1px solid var(--line-dark);
+    transform:rotate(45deg);
+  }
+  .playhead{position:absolute;top:0;bottom:0;left:38%;width:2px;background:var(--line-dark);}
+
+  .wf-btn{
+    border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    font-size:10px;color:var(--ink);padding:3px 8px;white-space:nowrap;
+  }
+  .app-title{
+    position:absolute;top:8px;left:8px;
+    font-size:10px;font-weight:700;color:var(--line-dark);
+  }
+
+  /* ====== 注釈パネル ====== */
+  .note-panel{
+    max-width:960px;margin:12px auto 0;
+    background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;
+    padding:12px 14px;min-height:88px;
+  }
+  .note-panel .np-title{
+    font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;
+    display:flex;align-items:center;gap:6px;
+  }
+  .note-panel .np-num{
+    width:18px;height:18px;border-radius:50%;background:var(--note);color:#fff;
+    font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .note-panel p{font-size:12px;line-height:1.8;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ロボットアームシミュレータ — ワイヤーフレーム v1</h1>
+  <p>忠実度:ミドル(グレーボックス)/ 対象:デスクトップ幅</p>
+  <span class="hint">💡 各エリアをタップすると、その配置のIA的な根拠が下に表示されます</span>
+</header>
+
+<div class="frame">
+  <div class="zone menu" data-note="1">
+    <span class="app-title">ARM SIM</span>
+    <span class="badge">1</span>
+    <span class="wf-btn">ポーズ保存</span>
+    <span class="wf-btn">ポーズ呼び出し ▾</span>
+    <span class="wf-btn">新規シーン</span>
+  </div>
+
+  <div class="zone left" data-note="2">
+    <span class="zone-label">関節制御</span>
+    <span class="badge">2</span>
+    <div class="joint"><div class="row"><span class="name">J1 基部旋回</span><span class="val">45°</span></div><div class="slider"></div></div>
+    <div class="joint"><div class="row"><span class="name">J2 肩</span><span class="val">-30°</span></div><div class="slider"></div></div>
+    <div class="joint"><div class="row"><span class="name">J3 肘</span><span class="val">90°</span></div><div class="slider"></div></div>
+    <div class="joint"><div class="row"><span class="name">J4 手首回転</span><span class="val">0°</span></div><div class="slider"></div></div>
+    <div class="joint"><div class="row"><span class="name">J5 手首曲げ</span><span class="val">15°</span></div><div class="slider"></div></div>
+    <div class="joint"><div class="row"><span class="name">グリッパ開閉</span><span class="val">60%</span></div><div class="slider"></div></div>
+  </div>
+
+  <div class="zone main" data-note="3">
+    <span class="zone-label">3Dビュー</span>
+    <span class="badge">3</span>
+    <div class="cross">3D VIEWPORT</div>
+    <div class="overlay-tools" data-note="4">
+      <span class="badge" style="position:static;">4</span>
+      <span class="wf-icon">⟳</span>
+      <span class="wf-icon">#</span>
+      <span class="wf-icon">⌂</span>
+    </div>
+  </div>
+
+  <div class="zone right" data-note="5">
+    <span class="zone-label">ステータス</span>
+    <span class="badge">5</span>
+    <div class="readout">
+      <div class="cap">手先位置 (mm)</div>
+      <div class="kv"><span class="k">X</span><span class="v">320.5</span></div>
+      <div class="kv"><span class="k">Y</span><span class="v">-45.2</span></div>
+      <div class="kv"><span class="k">Z</span><span class="v">512.0</span></div>
+    </div>
+    <div class="readout">
+      <div class="cap">手先姿勢 (deg)</div>
+      <div class="kv"><span class="k">Roll</span><span class="v">0.0</span></div>
+      <div class="kv"><span class="k">Pitch</span><span class="v">75.0</span></div>
+      <div class="kv"><span class="k">Yaw</span><span class="v">45.0</span></div>
+    </div>
+  </div>
+
+  <div class="zone time" data-note="6">
+    <span class="zone-label">タイムライン</span>
+    <span class="badge">6</span>
+    <div class="transport">
+      <span class="wf-icon">▶</span>
+      <span class="wf-icon">■</span>
+    </div>
+    <div class="track">
+      <span class="key" style="left:10%"></span>
+      <span class="key" style="left:38%"></span>
+      <span class="key" style="left:70%"></span>
+      <span class="playhead"></span>
+    </div>
+    <span class="wf-btn">+ キー追加</span>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ ワイヤーフレームのエリアをタップしてください。「なぜそこに置くのか」の設計根拠が表示されます。</p>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "メニューバー:ポーズ保存・呼び出し",
+    body: "あなたの指摘どおり、シーン全体に影響する操作はここ。操作の「スコープ」が大きいものほど画面の外周・上部に置くのが原則です。頻度は低いが重要な操作、という性質もメニューバー向きです。"
+  },
+  "2": {
+    title: "左サイドバー:関節制御(入力)",
+    body: "「左=入力」の動線の起点。スライダーには必ず①関節名 ②現在値の数値表示 をセットにします(スライダーだけだと正確な値が分からない)。関節はJ1→J6と根元から先端の順に並べると、実機の構造とUIの順序が一致して学習コストが下がります(=メンタルモデルの一致)。"
+  },
+  "3": {
+    title: "中央:3Dビュー(最大面積)",
+    body: "ユーザーが最も長く注視する対象に最大の面積を割り当てる「ビジュアルヒエラルキー」の基本。画面の主役をユーザーに問われたら即答できる状態が良いレイアウトです。斜線ハッチはワイヤーフレームで「画像・描画領域」を表す慣習記法です。"
+  },
+  "4": {
+    title: "オーバーレイツール:リセット・グリッド・視点",
+    body: "「3Dビューと近い」というあなたの直感の正解形。ビューにだけ作用する操作は、ビューの上に浮かべる(近接の原則)。サイドバーに混ぜると「アームへの操作」と「見え方の操作」が同居してグルーピングが濁ります。"
+  },
+  "5": {
+    title: "右サイドバー:手先位置(出力)",
+    body: "「右=出力・結果」の動線の終点。左のスライダーを動かす→中央でアームが動く→右で数値が変わる、という因果の流れが視線の流れと一致します。編集不可の表示系は、入力系と視覚的に区別する(枠のみ・背景なし等)のがポイント。"
+  },
+  "6": {
+    title: "下部:タイムライン",
+    body: "時間は横軸・左から右へ、という万国共通のメタファー。動画編集や3DCGツールが全て下部に置くため、ユーザーの既存の学習を再利用できます(慣習に従うことも立派なIA判断)。◆はキーフレーム、縦線は再生ヘッドの慣習記法です。"
+  }
+};
+
+const panel = document.getElementById("notePanel");
+let activeZone = null;
+
+document.querySelectorAll(".zone, .overlay-tools").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id) return;
+    if (activeZone) activeZone.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); activeZone = el; }
+    const n = notes[id];
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + n.title + '</div>' +
+      '<p>' + n.body + '</p>';
+  });
+});
+</script>
+</body>
+</html>

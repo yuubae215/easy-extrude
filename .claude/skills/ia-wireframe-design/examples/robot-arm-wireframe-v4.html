@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ロボットアームシミュレータ — ワイヤーフレーム v4</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1000px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1000px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;
+    grid-template-rows:36px 1fr 72px;
+    grid-template-columns:160px 1fr 200px;
+    grid-template-areas:"menu menu menu" "left main right" "time time time";
+    height:580px;font-size:11px;
+  }
+  @media (max-width:640px){
+    .frame{grid-template-columns:110px 1fr 150px;height:530px;font-size:10px;}
+  }
+
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--note);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px 0 68px;}
+  .app-title{position:absolute;top:8px;left:8px;font-size:10px;font-weight:700;color:var(--line-dark);}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:10px;color:var(--ink);padding:3px 8px;white-space:nowrap;cursor:pointer;}
+
+  .left{grid-area:left;padding:22px 6px 6px;overflow:hidden;}
+  .tree{list-style:none;}
+  .tree li{padding:3px 4px;border-radius:3px;display:flex;align-items:center;gap:4px;}
+  .tree .lv1{margin-left:12px;}
+  .tree .selected{background:var(--sel);border:1px solid var(--note);font-weight:700;}
+  .tree .tw{color:var(--muted);font-size:9px;width:8px;}
+  .eye{margin-left:auto;color:var(--muted);font-size:10px;}
+  .tree-foot{margin-top:10px;padding-top:8px;border-top:1px dotted var(--line);}
+
+  .main{grid-area:main;position:relative;background:repeating-linear-gradient(45deg,transparent,transparent 14px,#e5e7eb 14px,#e5e7eb 15px);}
+  .main .cross{position:absolute;inset:0;display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.1em;text-align:center;}
+  .gizmo{width:70px;height:70px;border:2px solid var(--line-dark);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--ink);background:#fff;letter-spacing:0;position:relative;}
+  .gizmo::before,.gizmo::after{content:"";position:absolute;background:var(--line-dark);}
+  .gizmo::before{width:2px;height:16px;top:-16px;left:50%;margin-left:-1px;}
+  .gizmo::after{height:2px;width:16px;right:-16px;top:50%;margin-top:-1px;}
+  .overlay-tools{position:absolute;top:24px;right:8px;display:flex;flex-direction:column;gap:4px;}
+  .wf-icon{width:26px;height:26px;border:1px solid var(--line-dark);border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--ink);}
+
+  /* --- KPI HUD --- */
+  .hud{
+    position:absolute;top:24px;left:8px;
+    border:1px solid var(--line-dark);border-radius:4px;background:rgba(255,255,255,.94);
+    padding:6px 8px;min-width:128px;
+  }
+  .hud .cap{font-size:8px;color:var(--muted);letter-spacing:.08em;margin-bottom:3px;}
+  .hud .kpi{display:flex;justify-content:space-between;gap:10px;padding:1px 0;}
+  .hud .k{color:var(--muted);}
+  .hud .v{font-weight:700;}
+  .hud .ok::before{content:"●";color:#9ca3af;margin-right:3px;font-size:8px;}
+  .hud .ng{border-bottom:2px solid var(--line-dark);}
+
+  .right{grid-area:right;padding:24px 8px 8px;display:flex;flex-direction:column;gap:7px;overflow:hidden;}
+  .ctx-cap{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--note);letter-spacing:.05em;}
+  .insp{border:1px solid var(--line);border-radius:4px;padding:6px;}
+  .insp .cap{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;}
+  .hy{display:flex;align-items:center;gap:5px;padding:2px 0;}
+  .hy .k{color:var(--muted);width:48px;flex-shrink:0;}
+  .hyfield{flex:1;height:15px;border:1px solid var(--line-dark);border-radius:3px;background:#fff;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:flex-end;padding:0 4px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .hyfield .fill{position:absolute;left:0;top:0;bottom:0;background:#e5e7eb;}
+  .hyfield span{position:relative;}
+  .pose-row{display:flex;align-items:center;gap:4px;padding:2px 3px;border-radius:3px;}
+  .pose-row.cur{background:var(--sel);border:1px solid var(--note);font-weight:700;}
+  .pose-row .go{margin-left:auto;font-size:9px;border:1px solid var(--line-dark);border-radius:3px;padding:0 4px;background:#fff;}
+
+  .time{grid-area:time;padding:22px 10px 8px;display:flex;align-items:center;gap:8px;}
+  .transport{display:flex;gap:4px;}
+  .transport .wf-icon{width:24px;height:24px;font-size:10px;}
+  .track{flex:1;height:26px;border:1px solid var(--line);border-radius:4px;position:relative;background:#fff;overflow:hidden;}
+  .key{position:absolute;top:7px;width:10px;height:10px;background:#d1d5db;border:1px solid var(--line-dark);transform:rotate(45deg);}
+  .playhead{position:absolute;top:0;bottom:0;left:38%;width:2px;background:var(--line-dark);}
+
+  /* --- モーダル:テンプレートインベントリ --- */
+  .modal-back{
+    position:absolute;inset:0;background:rgba(75,85,99,.35);
+    display:none;align-items:center;justify-content:center;z-index:10;
+  }
+  .modal-back.open{display:flex;}
+  .modal{
+    width:min(420px,86%);background:#fff;border:2px solid var(--line-dark);
+    border-radius:6px;padding:12px;position:relative;cursor:pointer;
+  }
+  .modal .m-title{font-size:12px;font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;}
+  .modal .close{border:1px solid var(--line-dark);border-radius:3px;padding:0 6px;font-size:11px;background:#fff;}
+  .m-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .m-card{border:1px solid var(--line);border-radius:4px;padding:6px;text-align:center;}
+  .m-thumb{height:44px;border:1px dashed var(--line);border-radius:3px;margin-bottom:4px;background:repeating-linear-gradient(45deg,transparent,transparent 8px,#f3f4f6 8px,#f3f4f6 9px);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);}
+  .m-card .n{font-size:10px;font-weight:600;}
+
+  .note-panel{max-width:1000px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:96px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ロボットアームシミュレータ — ワイヤーフレーム v4</h1>
+  <p>v3からの変更:③KPI HUD(トレードオフ指標の同時表示) ⑤ポーズをインスペクタへ移設 ①「+ エンティティ追加」でテンプレートインベントリのモーダルが実際に開きます</p>
+  <span class="hint">💡 エリアをタップで設計根拠を表示 / メニューの「+ エンティティ追加」をタップするとモーダルが開きます</span>
+</header>
+
+<div class="frame">
+  <div class="zone menu" data-note="1">
+    <span class="app-title">ARM SIM</span>
+    <span class="badge">1</span>
+    <span class="wf-btn">新規シーン</span>
+    <span class="wf-btn" id="openInv">+ エンティティ追加</span>
+    <span class="wf-btn">シーン保存</span>
+  </div>
+
+  <div class="zone left" data-note="2">
+    <span class="zone-label">シーン階層</span>
+    <span class="badge">2</span>
+    <ul class="tree">
+      <li><span class="tw">▾</span> Scene <span class="eye"></span></li>
+      <li class="lv1 selected"><span class="tw">▸</span> 🦾 RobotArm <span class="eye">👁</span></li>
+      <li class="lv1"><span class="tw"></span> ▦ 作業台 <span class="eye">👁</span></li>
+      <li class="lv1"><span class="tw"></span> ◻ ワーク <span class="eye">👁</span></li>
+      <li class="lv1"><span class="tw"></span> ⬡ 障害物 <span class="eye">👁</span></li>
+    </ul>
+    <div class="tree-foot">
+      <span class="wf-btn" style="width:100%;display:block;text-align:center;" id="openInv2">+ 追加</span>
+    </div>
+  </div>
+
+  <div class="zone main" data-note="3">
+    <span class="zone-label">3Dビュー</span>
+    <span class="badge">3</span>
+    <div class="cross">
+      <div class="gizmo">手先ドラッグ<br>(IK)</div>
+      3D VIEWPORT
+    </div>
+    <div class="hud" data-note="4">
+      <span class="badge" style="position:absolute;top:-8px;right:-8px;">4</span>
+      <div class="cap">SCENE KPI(常時)</div>
+      <div class="kpi"><span class="k">サイクル</span><span class="v">4.2 s</span></div>
+      <div class="kpi"><span class="k">リーチ</span><span class="v ok">到達可</span></div>
+      <div class="kpi"><span class="k">干渉</span><span class="v ok">なし</span></div>
+    </div>
+    <div class="overlay-tools" data-note="5">
+      <span class="badge" style="position:static;">5</span>
+      <span class="wf-icon">⟳</span>
+      <span class="wf-icon">#</span>
+      <span class="wf-icon">⌂</span>
+    </div>
+  </div>
+
+  <div class="zone right" data-note="6">
+    <span class="badge">6</span>
+    <span class="ctx-cap">インスペクタ:RobotArm</span>
+
+    <div class="insp" style="margin-top:8px;">
+      <div class="cap"><span>▾ 関節角度</span></div>
+      <div class="hy"><span class="k">J1 基部</span><div class="hyfield"><div class="fill" style="width:62%"></div><span>45°</span></div></div>
+      <div class="hy"><span class="k">J2 肩</span><div class="hyfield"><div class="fill" style="width:33%"></div><span>-30°</span></div></div>
+      <div class="hy"><span class="k">J3 肘</span><div class="hyfield"><div class="fill" style="width:75%"></div><span>90°</span></div></div>
+      <div class="hy"><span class="k">グリッパ</span><div class="hyfield"><div class="fill" style="width:60%"></div><span>60%</span></div></div>
+    </div>
+
+    <div class="insp">
+      <div class="cap"><span>▸ 手先(IK)</span></div>
+    </div>
+
+    <div class="insp" data-note="7" style="cursor:pointer;">
+      <div class="cap"><span>▾ ポーズ</span><span class="badge" style="position:static;">7</span></div>
+      <div class="pose-row cur">◆ Home <span class="go">移動</span></div>
+      <div class="pose-row">◆ Pick <span class="go">移動</span></div>
+      <div class="pose-row">◆ Place <span class="go">移動</span></div>
+      <div style="margin-top:4px;"><span class="wf-btn" style="width:100%;display:block;text-align:center;">+ 現在の姿勢を保存</span></div>
+    </div>
+  </div>
+
+  <div class="zone time" data-note="8">
+    <span class="zone-label">タイムライン</span>
+    <span class="badge">8</span>
+    <div class="transport">
+      <span class="wf-icon">▶</span>
+      <span class="wf-icon">■</span>
+    </div>
+    <div class="track">
+      <span class="key" style="left:10%"></span>
+      <span class="key" style="left:38%"></span>
+      <span class="key" style="left:70%"></span>
+      <span class="playhead"></span>
+    </div>
+    <span class="wf-btn">+ キー追加</span>
+  </div>
+
+  <!-- テンプレートインベントリ:モーダル -->
+  <div class="modal-back" id="modalBack">
+    <div class="modal" data-note="9">
+      <div class="m-title">エンティティ追加 — テンプレートインベントリ <span class="close" id="closeInv">✕</span></div>
+      <div class="m-grid">
+        <div class="m-card"><div class="m-thumb">🦾</div><div class="n">6軸アーム</div></div>
+        <div class="m-card"><div class="m-thumb">🦿</div><div class="n">4軸アーム</div></div>
+        <div class="m-card"><div class="m-thumb">▦</div><div class="n">作業台</div></div>
+        <div class="m-card"><div class="m-thumb">◻</div><div class="n">ワーク(箱)</div></div>
+        <div class="m-card"><div class="m-thumb">⬡</div><div class="n">障害物</div></div>
+        <div class="m-card"><div class="m-thumb">≡</div><div class="n">コンベア</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。v4の新要素は ④KPI HUD、⑦ポーズ、⑨モーダル(メニューから開く)です。</p>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "メニューバー:ポーズが去り、シーン操作だけに",
+    body: "ポーズ保存/呼び出しはRobotArm個体のプロパティだと判明したためインスペクタへ移設。残ったのはシーンスコープの操作のみで、ゾーンの責務がさらに純化されました。『保存』も対象がシーンであることを明示するため『シーン保存』にラベル変更しています。"
+  },
+  "2": {
+    title: "シーン階層(継続)",
+    body: "変更なし。Sceneの行を選択するとインスペクタがシーン全体のプロパティ(KPI詳細内訳を含む)に切り替わる想定です。"
+  },
+  "3": {
+    title: "3Dビュー(継続)",
+    body: "手先ドラッグ(IK)+クリック選択。HUDが加わったことで、ドラッグ中に左上のKPIがリアルタイムに変わる即時フィードバックのループが完成します。"
+  },
+  "4": {
+    title: "KPI HUD(NEW):トレードオフ指標の同時表示",
+    body: "サイクルタイムとリーチ/干渉は互いにトレードオフの関係——だから必ず同一視野に並べます。分離すると『片方を直したらもう片方が壊れたのに気づかない』事故が起きる。操作対象(3Dビュー)のすぐそばに置くのは、調整→結果確認の視線移動を最短にするため。NG時はここが強調表示に変わり(ワイヤーでは下線で表現)、詳細な内訳はScene選択時のインスペクタで見る2段構えです(段階的開示)。"
+  },
+  "5": {
+    title: "オーバーレイツール(継続)",
+    body: "HUD(左上)とツール(右上)で3Dビューの四隅を使い分け。オーバーレイ同士が重ならないよう、隅ごとに役割を割り当てるのが定石です(左上=情報、右上=操作、など)。"
+  },
+  "6": {
+    title: "インスペクタ:セクションの折りたたみが本領発揮",
+    body: "関節角度・手先(IK)・ポーズと3セクションになり、v3で仕込んだ折りたたみ(▾/▸)が効いてきました。ここでは『手先(IK)』を畳んだ状態を描いています。ワイヤーフレームでは全部開いた状態と畳んだ状態、両方の面積を確認しておくと実装後に『入りきらない』事故を防げます。"
+  },
+  "7": {
+    title: "ポーズ(移設):エンティティのプロパティとして",
+    body: "スコープ分析の結果、メニューからここへ。ハイライト行は現在のポーズ。『移動』ボタンで各ポーズへ遷移し、これがタイムラインのキーフレームの素材にもなります。ロボットが2台になっても、それぞれのインスペクタに自分のポーズリストが表示されるだけ——スコープに従った配置は拡張に強いのです。"
+  },
+  "8": {
+    title: "タイムライン(継続)",
+    body: "変更なし。ポーズリストとの関係(ポーズをタイムラインへドラッグしてキー化、など)は実装フェーズで詰める領域として残しています。"
+  },
+  "9": {
+    title: "テンプレートインベントリ(NEW):モーダルという選択",
+    body: "『シーンに実体を生む』クラスレベルの機能で、使う瞬間しか要らない→モーダルが適切。サムネイル+名前のカードグリッドはアセットブラウザの定型です。もし将来『何十個もドラッグ配置する』ワークフローが中心になったら、下部常設のアセットシェルフに昇格させます。頻度が上がるほどモーダル→ドロワー→常設へ、というのが置き場所の原則。✕とモーダル外タップで閉じる、はユーザーの期待どおりに。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let active = null;
+function showNote(id, el){
+  if (active) active.classList.remove("active");
+  if (el && el.classList.contains("zone")) { el.classList.add("active"); active = el; }
+  const n = notes[id];
+  panel.innerHTML =
+    '<div class="np-title"><span class="np-num">' + id + '</span>' + n.title + '</div>' +
+    '<p>' + n.body + '</p>';
+}
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    showNote(el.dataset.note, el);
+  });
+});
+const back = document.getElementById("modalBack");
+document.getElementById("openInv").addEventListener("click", e => {
+  e.stopPropagation(); back.classList.add("open"); showNote("9");
+});
+document.getElementById("openInv2").addEventListener("click", e => {
+  e.stopPropagation(); back.classList.add("open"); showNote("9");
+});
+document.getElementById("closeInv").addEventListener("click", e => {
+  e.stopPropagation(); back.classList.remove("open");
+});
+back.addEventListener("click", e => {
+  if (e.target === back) back.classList.remove("open");
+});
+</script>
+</body>
+</html>

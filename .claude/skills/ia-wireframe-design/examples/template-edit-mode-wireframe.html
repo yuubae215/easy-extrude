@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>テンプレート編集モード — ワイヤーフレーム</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+    --ax-x:#b91c1c;--ax-y:#15803d;--ax-z:#1d4ed8;
+    --tpl:#7c3aed;--tpl-bg:#f5f3ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1000px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1000px;margin:0 auto;background:var(--box);
+    border:2px solid var(--tpl);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:36px 1fr;
+    grid-template-columns:185px 1fr 210px;
+    grid-template-areas:"menu menu menu" "left main right";
+    height:560px;
+  }
+  @media (max-width:640px){
+    .frame{grid-template-columns:130px 1fr 160px;height:520px;font-size:10px;}
+  }
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .zone:hover,.zone.active{background:#faf8ff;}
+  .zone.active{outline:2px solid var(--tpl);outline-offset:-2px;}
+  .zone-label{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--tpl);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  /* パンくず付きモードバー */
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px;background:var(--tpl-bg);border-bottom:1px solid var(--tpl);}
+  .crumb{font-size:11px;color:var(--muted);}
+  .crumb b{color:var(--tpl);}
+  .crumb .back{color:var(--note);cursor:pointer;text-decoration:underline;}
+  .spacer{flex:1;}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:10px;color:var(--ink);padding:3px 8px;white-space:nowrap;cursor:pointer;}
+  .wf-btn.primary{background:var(--tpl);border-color:var(--tpl);color:#fff;font-weight:700;}
+
+  /* --- 左:テンプレート構造 --- */
+  .left{grid-area:left;padding:22px 6px 6px;overflow:hidden;}
+  .tree{list-style:none;}
+  .tree li{padding:2px 4px;border-radius:3px;display:flex;align-items:center;gap:4px;}
+  .lv1{margin-left:12px;}
+  .tree .selected{background:#ede9fe;border:1px solid var(--tpl);font-weight:700;}
+  .tw{color:var(--muted);font-size:9px;width:8px;flex-shrink:0;}
+  .fi{color:var(--tpl);}
+  .add-mp{margin-top:10px;padding-top:8px;border-top:1px dotted var(--line);}
+  .usage{margin-top:12px;border:1px dashed var(--line);border-radius:4px;padding:5px 6px;font-size:9px;color:var(--muted);line-height:1.6;}
+
+  /* --- 中央:隔離ビュー --- */
+  .main{grid-area:main;position:relative;background:#fafafa;}
+  .iso-cap{position:absolute;top:22px;left:8px;font-size:9px;color:var(--tpl);font-weight:700;letter-spacing:.06em;}
+  .stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+  /* 作業台の形状(上面斜め見立て) */
+  .tabletop{
+    position:relative;width:270px;height:150px;
+    border:2px solid var(--line-dark);background:#fff;
+    transform:perspective(500px) rotateX(38deg);
+  }
+  .leg{position:absolute;bottom:-34px;width:10px;height:34px;border:2px solid var(--line-dark);border-top:none;background:#fff;}
+  .leg.l1{left:14px;} .leg.l2{right:14px;}
+  /* 推測スナップ候補点 */
+  .cand{position:absolute;width:12px;height:12px;border-radius:50%;border:2px solid var(--line);background:#fff;transform:translate(-50%,-50%);cursor:pointer;transition:all .15s;}
+  .cand:hover{border-color:var(--tpl);background:#ede9fe;box-shadow:0 0 0 4px rgba(124,58,237,.15);}
+  .cand.face{border-style:solid;}
+  .cand.corner{border-radius:2px;width:9px;height:9px;}
+  .cand.made{border-color:var(--tpl);background:var(--tpl);}
+  .cand.made::after{
+    content:"◇ 天板マウント";position:absolute;left:14px;top:-4px;
+    font-size:9px;color:var(--tpl);white-space:nowrap;font-weight:700;
+    background:rgba(255,255,255,.92);padding:0 3px;border-radius:2px;
+  }
+  .normal-arrow{
+    position:absolute;left:50%;top:50%;width:2px;height:40px;
+    background:var(--ax-z);transform:translate(-50%,-100%);
+  }
+  .normal-arrow::after{content:"▲";position:absolute;top:-9px;left:-5px;color:var(--ax-z);font-size:10px;}
+  .normal-cap{position:absolute;left:54%;top:8%;font-size:9px;color:var(--ax-z);font-weight:700;}
+  .origin-triad{position:absolute;left:10px;bottom:-52px;font-size:9px;color:var(--muted);}
+  .origin-triad .o{display:inline-block;width:8px;height:8px;border:2px solid var(--line-dark);border-radius:50%;background:#fff;margin-right:4px;vertical-align:middle;}
+  .hover-hint{
+    position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+    font-size:10px;color:var(--muted);background:rgba(255,255,255,.9);
+    border:1px dashed var(--line);border-radius:4px;padding:3px 10px;white-space:nowrap;
+  }
+
+  /* --- 右:インスペクタ --- */
+  .right{grid-area:right;padding:24px 8px 8px;display:flex;flex-direction:column;gap:7px;overflow:hidden;}
+  .ctx-cap{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--tpl);letter-spacing:.05em;}
+  .insp{border:1px solid var(--line);border-radius:4px;padding:6px;}
+  .insp .cap{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:4px;}
+  .hy{display:flex;align-items:center;gap:5px;padding:2px 0;}
+  .hy .k{color:var(--muted);width:34px;flex-shrink:0;font-weight:700;font-size:10px;}
+  .kx{color:var(--ax-x)!important;} .ky{color:var(--ax-y)!important;} .kz{color:var(--ax-z)!important;}
+  .hyfield{flex:1;height:15px;border:1px solid var(--line-dark);border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:flex-end;padding:0 4px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .namefield{border:1px solid var(--line-dark);border-radius:3px;background:#fff;padding:3px 6px;font-weight:700;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;}
+  .chip{border:1px solid var(--line-dark);border-radius:11px;padding:2px 8px;background:#fff;font-size:10px;}
+  .chip.on{background:#ede9fe;border-color:var(--tpl);font-weight:700;}
+  .memo{font-size:9px;color:var(--muted);line-height:1.6;margin-top:4px;}
+
+  .note-panel{max-width:1000px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:96px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>テンプレート編集モード — ワイヤーフレーム</h1>
+  <p>入口:インベントリのカード「編集」/ シーン上のインスタンス右クリック。シーンから隔離された「作業台テンプレートだけの空間」で、◇マウントポイントを定義します。紫=テンプレート編集モードのテーマ色(モードの違いを色で常時明示)。</p>
+  <span class="hint">💡 各エリアをタップで設計根拠。中央の候補点(○や□)にもホバー/タップしてみてください</span>
+</header>
+
+<div class="frame">
+  <div class="zone menu" data-note="1">
+    <span class="badge">1</span>
+    <span class="crumb"><span class="back">◂ シーンに戻る</span> ▸ <b>テンプレート編集:作業台</b></span>
+    <span class="spacer"></span>
+    <span class="wf-btn">キャンセル</span>
+    <span class="wf-btn primary">保存(全インスタンスに反映)</span>
+  </div>
+
+  <div class="zone left" data-note="2">
+    <span class="zone-label">テンプレート構造</span>
+    <span class="badge">2</span>
+    <ul class="tree">
+      <li><span class="tw">▾</span> ▦ 作業台(テンプレート)</li>
+      <li class="lv1"><span class="tw"></span> 形状:天板・脚</li>
+      <li class="lv1 selected"><span class="tw"></span><span class="fi">◇</span> 天板マウント</li>
+      <li class="lv1"><span class="tw"></span><span class="fi">◇</span> 側面治具ポート</li>
+    </ul>
+    <div class="add-mp">
+      <span class="wf-btn" style="display:block;text-align:center;">+ マウントポイント追加</span>
+      <div class="memo" style="padding:4px 2px;">→ 追加モード中は形状上に候補点が表示されます</div>
+    </div>
+    <div class="usage">このテンプレートの使用状況:<br>シーン内 <b>2インスタンス</b><br>保存すると両方に◇が反映されます</div>
+  </div>
+
+  <div class="zone main" data-note="3">
+    <span class="zone-label">隔離ビュー</span>
+    <span class="badge">3</span>
+    <span class="iso-cap">TEMPLATE SPACE — ローカル原点基準・シーン非表示</span>
+    <div class="stage">
+      <div class="tabletop">
+        <span class="leg l1"></span><span class="leg l2"></span>
+        <!-- 候補点:面中心・辺中点・頂点 -->
+        <span class="cand face made" style="left:50%;top:50%;" data-note="4"></span>
+        <span class="normal-arrow"></span>
+        <span class="normal-cap">法線=Z軸(自動)</span>
+        <span class="cand" style="left:50%;top:0;"></span>
+        <span class="cand" style="left:50%;top:100%;"></span>
+        <span class="cand" style="left:0;top:50%;"></span>
+        <span class="cand" style="left:100%;top:50%;"></span>
+        <span class="cand corner" style="left:0;top:0;"></span>
+        <span class="cand corner" style="left:100%;top:0;"></span>
+        <span class="cand corner" style="left:0;top:100%;"></span>
+        <span class="cand corner" style="left:100%;top:100%;"></span>
+        <span class="origin-triad"><span class="o"></span>テンプレートのローカル原点(0,0,0)</span>
+      </div>
+    </div>
+    <div class="hover-hint">形状にホバー → 面中心○ / 辺中点○ / 頂点□ が候補に。クリックで◇生成</div>
+  </div>
+
+  <div class="zone right" data-note="5">
+    <span class="badge">5</span>
+    <span class="ctx-cap">インスペクタ:◇ 天板マウント</span>
+
+    <div class="insp" style="margin-top:8px;">
+      <div class="cap">名前</div>
+      <div class="namefield">天板マウント</div>
+      <div class="memo">名前はマウント時のUIに出ます。「面3」ではなく用途で命名を</div>
+    </div>
+
+    <div class="insp">
+      <div class="cap">位置(テンプレートローカル)</div>
+      <div class="hy"><span class="k kx">X</span><div class="hyfield"><span>0.0</span></div></div>
+      <div class="hy"><span class="k ky">Y</span><div class="hyfield"><span>0.0</span></div></div>
+      <div class="hy"><span class="k kz">Z</span><div class="hyfield"><span>740.0</span></div></div>
+      <div class="memo">クリックで粗く生成 → ここで精密に。基準の切替は無し:このモードにはローカルしか存在しないため</div>
+    </div>
+
+    <div class="insp">
+      <div class="cap">向き(Z軸=取付方向)</div>
+      <div class="chips"><span class="chip on">面の法線から自動</span><span class="chip">手動指定</span></div>
+    </div>
+
+    <div class="insp">
+      <div class="cap">受け入れ制約(任意)</div>
+      <div class="chips"><span class="chip on">ロボット基部</span><span class="chip">治具</span><span class="chip">なんでも可</span></div>
+      <div class="memo">スナップ時の相手を型で制限。誤マウント防止の語彙です</div>
+    </div>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。テーマは「クラスの編集は、隔離された空間で・ジオメトリから・全インスタンスへ」です。</p>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "モードバー:パンくず+テーマ色+明示的な出口",
+    body: "モードに入ったことを3重に伝えます:①パンくず『シーンに戻る ▸ テンプレート編集:作業台』、②紫のテーマ色(通常モードと一目で区別)、③保存/キャンセルの明示ボタン。『保存(全インスタンスに反映)』とボタン自体に影響範囲を書くのがポイント——クラス編集は影響が大きいので、コミットの瞬間にスコープを再確認させます。"
+  },
+  "2": {
+    title: "テンプレート構造:シーン階層の相似形",
+    body: "レイアウト文法は通常モードと同じ(左=構造ツリー)。中身がシーンからテンプレートの内部構造に入れ替わっただけなので、ユーザーは操作方法を学び直さずに済みます(一貫性の原則)。下部の『使用状況:2インスタンス』は、これから行う編集の影響範囲の事前開示——保存ボタンの注記と対になっています。"
+  },
+  "3": {
+    title: "隔離ビュー:ワールドが消え、ローカルだけが残る",
+    body: "あなたの指摘『ワールドに依存しない情報』の帰結がこの画面。シーンも床グリッドも消え、テンプレートが自分のローカル原点に置かれた空間だけがあります。余計な座標系が視界にないので『この形状のどこか』だけに集中できる。CADの部品編集と組立編集の分離、Unityのプレハブ編集モードと同じ構造です。"
+  },
+  "4": {
+    title: "候補点:ジオメトリからの推測スナップ",
+    body: "マウントポイントの生成はXYZ手入力ではなく、形状ホバーで浮かぶ候補(○面中心/○辺中点/□頂点)のクリックで。位置はジオメトリが知っているのだから、ユーザーに数値を写経させない。向きも『面の法線=Z軸』を自動採用(取付面から垂直、が直感)。生成=粗い操作、その後インスペクタで数値の追い込み=精密——この二段構えはもうお馴染みですね。"
+  },
+  "5": {
+    title: "インスペクタ:名前・制約という新しい語彙",
+    body: "注目3点。①基準ドロップダウンが無い:このモードにはローカル座標系しか存在しないので、切替UI自体が不要(モードが概念を減らしてくれる)。②名前は用途で付けさせる:『天板マウント』はマウント操作時のスナップUIにそのまま出る語彙になります。③受け入れ制約:『この◇にはロボット基部だけが刺さる』という型を持たせると、誤マウントがシステム的に防げます——USBの形状が違うから挿し間違えない、のソフトウェア版です。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let active = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id) return;
+    if (active) active.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); active = el; }
+    const n = notes[id];
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + n.title + '</div>' +
+      '<p>' + n.body + '</p>';
+  });
+});
+</script>
+</body>
+</html>

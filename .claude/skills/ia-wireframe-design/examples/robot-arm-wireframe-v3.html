@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ロボットアームシミュレータ — ワイヤーフレーム v3</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1000px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1000px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;
+    grid-template-rows:36px 1fr 72px;
+    grid-template-columns:160px 1fr 200px;
+    grid-template-areas:"menu menu menu" "left main right" "time time time";
+    height:560px;font-size:11px;
+  }
+  @media (max-width:640px){
+    .frame{grid-template-columns:110px 1fr 150px;height:510px;font-size:10px;}
+  }
+
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--note);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px 0 68px;}
+  .app-title{position:absolute;top:8px;left:8px;font-size:10px;font-weight:700;color:var(--line-dark);}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:10px;color:var(--ink);padding:3px 8px;white-space:nowrap;}
+
+  /* --- 左:階層(全面) --- */
+  .left{grid-area:left;padding:22px 6px 6px;overflow:hidden;}
+  .tree{list-style:none;}
+  .tree li{padding:3px 4px;border-radius:3px;display:flex;align-items:center;gap:4px;}
+  .tree .lv1{margin-left:12px;}
+  .tree .selected{background:var(--sel);border:1px solid var(--note);font-weight:700;}
+  .tree .tw{color:var(--muted);font-size:9px;width:8px;}
+  .eye{margin-left:auto;color:var(--muted);font-size:10px;}
+  .tree-foot{margin-top:10px;padding-top:8px;border-top:1px dotted var(--line);}
+
+  /* --- 中央 --- */
+  .main{grid-area:main;position:relative;background:repeating-linear-gradient(45deg,transparent,transparent 14px,#e5e7eb 14px,#e5e7eb 15px);}
+  .main .cross{position:absolute;inset:0;display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.1em;text-align:center;}
+  .gizmo{width:74px;height:74px;border:2px solid var(--line-dark);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--ink);background:#fff;letter-spacing:0;position:relative;}
+  .gizmo::before,.gizmo::after{content:"";position:absolute;background:var(--line-dark);}
+  .gizmo::before{width:2px;height:16px;top:-16px;left:50%;margin-left:-1px;}
+  .gizmo::after{height:2px;width:16px;right:-16px;top:50%;margin-top:-1px;}
+  .overlay-tools{position:absolute;top:24px;right:8px;display:flex;flex-direction:column;gap:4px;}
+  .wf-icon{width:26px;height:26px;border:1px solid var(--line-dark);border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--ink);}
+
+  /* --- 右:インスペクタ(統合) --- */
+  .right{grid-area:right;padding:24px 8px 8px;display:flex;flex-direction:column;gap:8px;overflow:hidden;}
+  .ctx-cap{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--note);letter-spacing:.05em;}
+  .insp{border:1px solid var(--line);border-radius:4px;padding:6px;}
+  .insp .cap{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:5px;display:flex;justify-content:space-between;}
+  .insp .fold{color:var(--line-dark);}
+
+  /* ハイブリッド:スライダー内蔵数値フィールド */
+  .hy{display:flex;align-items:center;gap:5px;padding:2px 0;}
+  .hy .k{color:var(--muted);width:52px;flex-shrink:0;}
+  .hyfield{
+    flex:1;height:16px;border:1px solid var(--line-dark);border-radius:3px;
+    background:#fff;position:relative;overflow:hidden;
+    display:flex;align-items:center;justify-content:flex-end;
+    padding:0 4px;font-weight:600;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.07);
+  }
+  .hyfield .fill{position:absolute;left:0;top:0;bottom:0;background:#e5e7eb;}
+  .hyfield span{position:relative;}
+
+  .kv{display:flex;justify-content:space-between;align-items:center;padding:2px 0;gap:4px;}
+  .kv .k{color:var(--muted);}
+  .ro{color:var(--muted);font-weight:600;}
+
+  /* --- 下 --- */
+  .time{grid-area:time;padding:22px 10px 8px;display:flex;align-items:center;gap:8px;}
+  .transport{display:flex;gap:4px;}
+  .transport .wf-icon{width:24px;height:24px;font-size:10px;}
+  .track{flex:1;height:26px;border:1px solid var(--line);border-radius:4px;position:relative;background:#fff;overflow:hidden;}
+  .key{position:absolute;top:7px;width:10px;height:10px;background:#d1d5db;border:1px solid var(--line-dark);transform:rotate(45deg);}
+  .playhead{position:absolute;top:0;bottom:0;left:38%;width:2px;background:var(--line-dark);}
+
+  .note-panel{max-width:1000px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:96px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ロボットアームシミュレータ — ワイヤーフレーム v3(最終候補)</h1>
+  <p>v2からの変更:左下の操作パネルを廃止し、関節制御を「スライダー+数値入力のハイブリッドウィジェット」としてインスペクタに統合。動線は「選択→操作→編集」に。</p>
+  <span class="hint">💡 エリアをタップで設計根拠を表示</span>
+</header>
+
+<div class="frame">
+  <div class="zone menu" data-note="1">
+    <span class="app-title">ARM SIM</span>
+    <span class="badge">1</span>
+    <span class="wf-btn">新規シーン</span>
+    <span class="wf-btn">ポーズ保存</span>
+    <span class="wf-btn">ポーズ呼び出し ▾</span>
+    <span class="wf-btn">+ エンティティ追加 ▾</span>
+  </div>
+
+  <div class="zone left" data-note="2">
+    <span class="zone-label">シーン階層</span>
+    <span class="badge">2</span>
+    <ul class="tree">
+      <li><span class="tw">▾</span> Scene <span class="eye"></span></li>
+      <li class="lv1 selected"><span class="tw">▸</span> 🦾 RobotArm <span class="eye">👁</span></li>
+      <li class="lv1"><span class="tw"></span> ▦ 作業台 <span class="eye">👁</span></li>
+      <li class="lv1"><span class="tw"></span> ◻ ワーク <span class="eye">👁</span></li>
+      <li class="lv1"><span class="tw"></span> ⬡ 障害物 <span class="eye">👁</span></li>
+    </ul>
+    <div class="tree-foot">
+      <span class="wf-btn" style="width:100%;display:block;text-align:center;">+ 追加</span>
+    </div>
+  </div>
+
+  <div class="zone main" data-note="3">
+    <span class="zone-label">3Dビュー</span>
+    <span class="badge">3</span>
+    <div class="cross">
+      <div class="gizmo">手先ドラッグ<br>(IK)</div>
+      3D VIEWPORT
+    </div>
+    <div class="overlay-tools" data-note="4">
+      <span class="badge" style="position:static;">4</span>
+      <span class="wf-icon">⟳</span>
+      <span class="wf-icon">#</span>
+      <span class="wf-icon">⌂</span>
+    </div>
+  </div>
+
+  <div class="zone right" data-note="5">
+    <span class="badge">5</span>
+    <span class="ctx-cap">インスペクタ:RobotArm</span>
+
+    <div class="insp" style="margin-top:8px;">
+      <div class="cap"><span>▾ 関節角度 — ドラッグ or クリックで入力</span></div>
+      <div class="hy"><span class="k">J1 基部</span><div class="hyfield"><div class="fill" style="width:62%"></div><span>45°</span></div></div>
+      <div class="hy"><span class="k">J2 肩</span><div class="hyfield"><div class="fill" style="width:33%"></div><span>-30°</span></div></div>
+      <div class="hy"><span class="k">J3 肘</span><div class="hyfield"><div class="fill" style="width:75%"></div><span>90°</span></div></div>
+      <div class="hy"><span class="k">J4 手首回転</span><div class="hyfield"><div class="fill" style="width:50%"></div><span>0°</span></div></div>
+      <div class="hy"><span class="k">J5 手首曲げ</span><div class="hyfield"><div class="fill" style="width:54%"></div><span>15°</span></div></div>
+      <div class="hy"><span class="k">グリッパ</span><div class="hyfield"><div class="fill" style="width:60%"></div><span>60%</span></div></div>
+    </div>
+
+    <div class="insp">
+      <div class="cap"><span>▾ 手先(IK)</span></div>
+      <div class="hy"><span class="k">X (mm)</span><div class="hyfield"><span>320.5</span></div></div>
+      <div class="hy"><span class="k">Y (mm)</span><div class="hyfield"><span>-45.2</span></div></div>
+      <div class="hy"><span class="k">Z (mm)</span><div class="hyfield"><span>512.0</span></div></div>
+    </div>
+
+    <div class="insp">
+      <div class="cap"><span>状態 — 表示のみ</span></div>
+      <div class="kv"><span class="k">IK解</span><span class="ro">到達可</span></div>
+      <div class="kv"><span class="k">干渉</span><span class="ro">なし</span></div>
+    </div>
+  </div>
+
+  <div class="zone time" data-note="6">
+    <span class="zone-label">タイムライン</span>
+    <span class="badge">6</span>
+    <div class="transport">
+      <span class="wf-icon">▶</span>
+      <span class="wf-icon">■</span>
+    </div>
+    <div class="track">
+      <span class="key" style="left:10%"></span>
+      <span class="key" style="left:38%"></span>
+      <span class="key" style="left:70%"></span>
+      <span class="playhead"></span>
+    </div>
+    <span class="wf-btn">+ キー追加</span>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。v3で変わった点を中心に設計根拠を表示します。</p>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "メニューバー(v2から継続)",
+    body: "変更なし。ワークフロー順(新規→保存→呼出)+シーンスコープの操作。なお左パネル下にも「+ 追加」を置きました。同じ機能を2箇所に置く『冗長な導線』は、使用頻度が高い操作に限り許される手法です。"
+  },
+  "2": {
+    title: "シーン階層:左カラム全面に昇格",
+    body: "操作パネル廃止で、階層ツリーが左カラムを専有。エンティティが増えても(将来ロボット2台とか)スクロールで対応できる余裕が生まれました。左カラムの役割は『ナビゲーション専用』と純化され、1カラム=1責務に。ゾーンの責務が単純な言葉で言い切れるかは良いIAの試金石です。"
+  },
+  "3": {
+    title: "3Dビュー:粗い操作の場",
+    body: "手先ドラッグ(IK)+エンティティのクリック選択。3Dビュー内でワークをクリックしても選択が変わる=階層ツリーと3Dビューは『選択』という同じ状態を共有する2つのビューです。SSOTの selectedEntity がここでも効いています。"
+  },
+  "4": {
+    title: "オーバーレイツール(継続)",
+    body: "視点リセット・グリッド・ホームポジション。近接の原則によりビュー上に浮遊。v1から3世代変わらず生き残った、最初の判断が正しかったゾーンです。"
+  },
+  "5": {
+    title: "インスペクタ:全編集の統合先(v3の核心)",
+    body: "ハイブリッドウィジェット(Blender式):フィールド内の網掛けがスライダーの現在値、横ドラッグで粗く、クリックでキーボード入力。『粗い操作と精密な操作の統合』を1ウィジェットで実現し、面積を大幅節約。関節角度も手先座標も『選択物のプロパティ』として同格に並び、ルールは『選択したものの詳細は右』の1つだけになりました。セクション見出しの ▾ は折りたたみ可能を示す慣習記法で、プロパティが増えたときの保険です。"
+  },
+  "6": {
+    title: "タイムライン(継続)",
+    body: "変更なし。実装フェーズでは後回しにできる独立性の高いゾーンなので、まず上3カラムを動かしてからここに着手する開発順序が組めます。ゾーン分割が良いと、開発の分割も良くなります。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let active = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id) return;
+    if (active) active.classList.remove("active");
+    el.classList.add("active"); active = el;
+    const n = notes[id];
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + n.title + '</div>' +
+      '<p>' + n.body + '</p>';
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ロボットアームシミュレータ — ワイヤーフレーム v5(座標系)</title>
+<style>
+  :root{
+    --paper:#f5f5f4;--box:#fff;--line:#9ca3af;--line-dark:#4b5563;
+    --ink:#374151;--muted:#9ca3af;--note:#2563eb;--note-bg:#eff6ff;--sel:#dbeafe;
+    --ax-x:#b91c1c;--ax-y:#15803d;--ax-z:#1d4ed8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1000px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1000px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:36px 1fr;
+    grid-template-columns:185px 1fr 210px;
+    grid-template-areas:"menu menu menu" "left main right";
+    height:560px;
+  }
+  @media (max-width:640px){
+    .frame{grid-template-columns:130px 1fr 160px;height:520px;font-size:10px;}
+  }
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;background:var(--note);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  .menu{grid-area:menu;display:flex;align-items:center;gap:8px;padding:0 10px 0 68px;}
+  .app-title{position:absolute;top:8px;left:8px;font-size:10px;font-weight:700;color:var(--line-dark);}
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;font-size:10px;color:var(--ink);padding:3px 8px;white-space:nowrap;}
+
+  /* --- 階層 --- */
+  .left{grid-area:left;padding:22px 6px 6px;overflow:hidden;}
+  .tree{list-style:none;}
+  .tree li{padding:2px 4px;border-radius:3px;display:flex;align-items:center;gap:4px;}
+  .lv1{margin-left:12px;}
+  .lv2{margin-left:24px;}
+  .lv3{margin-left:36px;}
+  .tree .selected{background:var(--sel);border:1px solid var(--note);font-weight:700;}
+  .tw{color:var(--muted);font-size:9px;width:8px;flex-shrink:0;}
+  .frame-node{color:var(--muted);font-size:10px;}
+  .frame-node .fi{color:var(--note);}
+  .drop-hint{
+    margin:6px 4px;border:1px dashed var(--note);border-radius:4px;
+    padding:4px 6px;font-size:9px;color:var(--note);background:var(--note-bg);line-height:1.5;
+  }
+
+  /* --- 3Dビュー --- */
+  .main{grid-area:main;position:relative;background:repeating-linear-gradient(45deg,transparent,transparent 14px,#e5e7eb 14px,#e5e7eb 15px);}
+  .main .cross{position:absolute;inset:0;display:flex;flex-direction:column;gap:4px;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.1em;}
+  .triad{position:relative;width:90px;height:90px;margin-bottom:6px;}
+  .triad .origin{position:absolute;left:30px;top:56px;width:10px;height:10px;border:2px solid var(--line-dark);border-radius:50%;background:#fff;}
+  .ax{position:absolute;font-size:9px;font-weight:700;}
+  .ax-line{position:absolute;height:2px;transform-origin:left center;}
+  .axx .ax-line{width:48px;background:var(--ax-x);left:38px;top:60px;}
+  .axx .ax{color:var(--ax-x);left:88px;top:54px;}
+  .axy .ax-line{width:44px;background:var(--ax-y);left:38px;top:60px;transform:rotate(-58deg);}
+  .axy .ax{color:var(--ax-y);left:58px;top:14px;}
+  .axz .ax-line{width:40px;background:var(--ax-z);left:38px;top:60px;transform:rotate(24deg);}
+  .axz .ax{color:var(--ax-z);left:76px;top:76px;}
+  .triad .cap{position:absolute;left:0;top:96px;font-size:9px;color:var(--muted);white-space:nowrap;}
+  .snap{
+    position:absolute;right:20%;bottom:24%;
+    width:14px;height:14px;border:2px solid var(--note);border-radius:50%;
+    background:rgba(219,234,254,.8);
+  }
+  .snap::after{content:"◇ 天板マウント(スナップ先)";position:absolute;left:18px;top:-2px;font-size:9px;color:var(--note);white-space:nowrap;background:rgba(255,255,255,.9);padding:0 3px;border-radius:2px;}
+  .overlay-tools{position:absolute;top:24px;right:8px;display:flex;flex-direction:column;gap:4px;}
+  .wf-icon{width:26px;height:26px;border:1px solid var(--line-dark);border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--ink);}
+  .wf-icon.toggle{font-size:8px;font-weight:700;line-height:1;}
+
+  /* --- インスペクタ --- */
+  .right{grid-area:right;padding:24px 8px 8px;display:flex;flex-direction:column;gap:7px;overflow:hidden;}
+  .ctx-cap{position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:var(--note);letter-spacing:.05em;}
+  .insp{border:1px solid var(--line);border-radius:4px;padding:6px;}
+  .insp .cap{font-size:9px;color:var(--muted);letter-spacing:.06em;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;}
+  .hy{display:flex;align-items:center;gap:5px;padding:2px 0;}
+  .hy .k{color:var(--muted);width:14px;flex-shrink:0;font-weight:700;}
+  .kx{color:var(--ax-x)!important;}
+  .ky{color:var(--ax-y)!important;}
+  .kz{color:var(--ax-z)!important;}
+  .hyfield{flex:1;height:15px;border:1px solid var(--line-dark);border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:flex-end;padding:0 4px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .ref{display:flex;align-items:center;gap:5px;margin-bottom:6px;}
+  .ref .k{color:var(--muted);font-size:10px;}
+  .select{border:1px solid var(--line-dark);border-radius:3px;background:#fff;padding:2px 6px;font-weight:700;font-size:10px;cursor:pointer;}
+  .select::after{content:" ▾";color:var(--muted);}
+  .parent-line{font-size:10px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;}
+  .parent-line b{color:var(--ink);}
+  .mini{font-size:9px;border:1px solid var(--line-dark);border-radius:3px;padding:1px 5px;background:#fff;}
+
+  .note-panel{max-width:1000px;margin:12px auto 0;background:var(--note-bg);border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:96px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.8;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ワイヤーフレーム v5 — 座標系とマウント</h1>
+  <p>状況設定:RobotArmを作業台の「◇天板マウント」に取り付けた(親子付け替え)直後。タイムラインは省略し、座標系まわりに注目した図です。</p>
+  <span class="hint">💡 各エリアをタップで設計根拠を表示</span>
+</header>
+
+<div class="frame">
+  <div class="zone menu" data-note="1">
+    <span class="app-title">ARM SIM</span>
+    <span class="badge">1</span>
+    <span class="wf-btn">新規シーン</span>
+    <span class="wf-btn">+ エンティティ追加</span>
+    <span class="wf-btn">シーン最適化…</span>
+    <span class="wf-btn">シーン保存</span>
+  </div>
+
+  <div class="zone left" data-note="2">
+    <span class="zone-label">シーン階層(=シーングラフ)</span>
+    <span class="badge">2</span>
+    <ul class="tree">
+      <li><span class="tw">▾</span> Scene</li>
+      <li class="lv1"><span class="tw">▾</span> ▦ 作業台</li>
+      <li class="lv2 frame-node"><span class="tw"></span><span class="fi">◇</span> 天板マウント</li>
+      <li class="lv2 selected"><span class="tw">▾</span> 🦾 RobotArm</li>
+      <li class="lv3 frame-node"><span class="tw"></span><span class="fi">◇</span> 基部フレーム</li>
+      <li class="lv3 frame-node"><span class="tw"></span><span class="fi">◇</span> フランジ(工具取付)</li>
+      <li class="lv1"><span class="tw"></span> ◻ ワーク</li>
+      <li class="lv1"><span class="tw"></span> ⬡ 障害物</li>
+    </ul>
+    <div class="drop-hint">↕ ドラッグで親子付け替え=マウント。<br>RobotArmは作業台の子になったので、作業台を動かせば一緒に動く</div>
+  </div>
+
+  <div class="zone main" data-note="3">
+    <span class="zone-label">3Dビュー</span>
+    <span class="badge">3</span>
+    <div class="cross">
+      <div class="triad">
+        <span class="origin"></span>
+        <span class="axx"><span class="ax-line"></span><span class="ax">X</span></span>
+        <span class="axy"><span class="ax-line"></span><span class="ax">Z</span></span>
+        <span class="axz"><span class="ax-line"></span><span class="ax">Y</span></span>
+        <span class="cap">選択中エンティティのローカル軸(赤X/緑Y/青Z)</span>
+      </div>
+      3D VIEWPORT
+    </div>
+    <div class="snap"></div>
+    <div class="overlay-tools" data-note="4">
+      <span class="badge" style="position:static;">4</span>
+      <span class="wf-icon toggle">ローカル<br>/ワールド</span>
+      <span class="wf-icon">⟳</span>
+      <span class="wf-icon">#</span>
+    </div>
+  </div>
+
+  <div class="zone right" data-note="5">
+    <span class="badge">5</span>
+    <span class="ctx-cap">インスペクタ:RobotArm</span>
+
+    <div class="insp" style="margin-top:8px;">
+      <div class="cap"><span>▾ トランスフォーム</span></div>
+      <div class="parent-line" style="margin-bottom:6px;">親:<b>作業台 ◇天板マウント</b><span class="mini">解除</span></div>
+      <div class="ref"><span class="k">基準</span><span class="select">親(天板マウント)</span></div>
+      <div class="hy"><span class="k kx">X</span><div class="hyfield"><span>0.0</span></div><span style="color:var(--muted);font-size:9px;">mm</span></div>
+      <div class="hy"><span class="k ky">Y</span><div class="hyfield"><span>0.0</span></div><span style="color:var(--muted);font-size:9px;">mm</span></div>
+      <div class="hy"><span class="k kz">Z</span><div class="hyfield"><span>0.0</span></div><span style="color:var(--muted);font-size:9px;">mm</span></div>
+      <div class="parent-line" style="margin-top:5px;font-size:9px;">参考:ワールドでは (850.0, 320.0, 740.0)</div>
+    </div>
+
+    <div class="insp">
+      <div class="cap"><span>▸ 関節角度</span></div>
+    </div>
+    <div class="insp">
+      <div class="cap"><span>▸ 手先(IK)</span></div>
+    </div>
+    <div class="insp">
+      <div class="cap"><span>▸ ポーズ</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。v5のテーマは「座標系は新しい画面ではなく、既存の3ゾーンに溶ける」です。</p>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "メニュー(継続)+ウィザード入口",
+    body: "「シーン最適化…」が定位置に。『…』はダイアログ/モードが開く合図の伝統記法です。座標系関連の機能はメニューには増えていない——スコープ分析するとすべてエンティティ・ビューのスコープに収まるからです。"
+  },
+  "2": {
+    title: "階層ツリー=シーングラフ:マウントは親子付け替え",
+    body: "v3で作ったツリーの正体が明かされた回。親子関係は座標系の連鎖(シーングラフ)であり、RobotArmを作業台の下にドラッグする=天板の座標系にマウントする、です。◇はマウントポイント(名前付き子フレーム)で、テンプレート側で定義済みのものがインスタンスに付いてきます。◇もツリーの住人なので、選択→インスペクタ編集という既存ルールがそのまま通用。新しい編集画面は不要でした。"
+  },
+  "3": {
+    title: "3Dビュー:ローカル軸の常時表示とスナップ",
+    body: "選択エンティティの原点に座標軸を表示。赤=X/緑=Y/青=Zは3Dソフト共通の世界標準色で、ここは慣習に完全に従うべき場所(独自色は事故のもと)。右下の◇はスナップ先の可視化——ドラッグ中、マウントポイント同士が近づくと磁石のように吸着し、位置合わせの精密作業を省きます(CADのメイトと同じ)。"
+  },
+  "4": {
+    title: "ローカル/ワールド切替:ギズモの座標系",
+    body: "移動ギズモの矢印を『ワールドの軸』に沿わせるか『自分のローカル軸』に沿わせるかのトグル。傾いた作業台の上でロボットを『台に沿って』ずらしたいときはローカル、床基準で動かしたいときはワールド。Blender/Unity共通装備で、ビューの操作に関する切替なのでオーバーレイツールが住所です。"
+  },
+  "5": {
+    title: "インスペクタ:基準ドロップダウンと格納/表示の分離",
+    body: "v5の核心。位置(0,0,0)は『親=天板マウントから見て』の値で、基準ドロップダウンでワールド表示にも切替可能。ただしSSOTへの格納は常に親相対(ローカル)一択で、他は表示時に計算する導出値——格納形式と表示形式の分離です。マウント直後に(0,0,0)になるのは『ぴったり取り付いた』ことの何よりの証拠で、数値自体が状態の健全性を語ってくれます。X/Y/Zのラベル色も3D側の軸色と揃えて、2つの表現の対応を明示。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let active = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id) return;
+    if (active) active.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); active = el; }
+    const n = notes[id];
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + n.title + '</div>' +
+      '<p>' + n.body + '</p>';
+  });
+});
+</script>
+</body>
+</html>
