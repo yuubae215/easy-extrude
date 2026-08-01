@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>easy-extrude — IA再設計ワイヤーフレーム v4</title>
+<style>
+  :root{
+    --paper:#f5f5f4; --box:#ffffff; --line:#9ca3af; --line-dark:#4b5563;
+    --ink:#374151; --muted:#9ca3af; --note:#2563eb; --note-bg:#eff6ff; --sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+    background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1040px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.75;}
+  .diff{max-width:1040px;margin:0 auto 12px;background:#f0fdf4;border:1px solid #bbf7d0;
+    border-radius:6px;padding:10px 13px;font-size:12px;line-height:1.85;}
+  .diff b{color:#15803d;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);
+    background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+  .state{display:inline-block;margin-top:8px;margin-left:6px;font-size:11px;color:#92400e;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1040px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:34px 1fr 0px 22px;
+    grid-template-columns:176px 1fr 200px;
+    grid-template-areas:
+      "head head head"
+      "left main right"
+      "ba   ba   ba"
+      "foot foot foot";
+    height:600px;
+    transition:grid-template-rows .22s ease;
+  }
+  .frame.ba-open{grid-template-rows:34px 1fr 186px 22px;}
+  @media (max-width:700px){
+    .frame{grid-template-columns:120px 1fr 132px;height:560px;font-size:10px;}
+  }
+
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;overflow:hidden;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:3px;left:6px;font-size:9px;font-weight:700;
+    color:var(--muted);letter-spacing:.08em;z-index:2;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;
+    background:var(--note);color:#fff;font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;z-index:4;}
+
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    font-size:10px;color:var(--ink);padding:3px 7px;white-space:nowrap;cursor:pointer;font-family:inherit;}
+  .canvas-hatch{background:repeating-linear-gradient(45deg,transparent,transparent 15px,
+    #e9ebee 15px,#e9ebee 16px);}
+  .field{border:1px solid var(--line-dark);border-radius:3px;background:#fff;
+    padding:1px 5px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .ro{color:var(--muted);}
+
+  /* 選択の強度: focused / neighbor(既存語彙 — 台帳の LINK NETWORK ノード) */
+  .focused{background:var(--sel);border:1px solid var(--note);font-weight:700;color:#1e3a8a;}
+  .neighbor{background:#f3f4f6;border:1px dashed var(--line);color:#6b7280;}
+
+  .hd{display:flex;align-items:center;gap:6px;padding:0 8px;height:100%;}
+  .hd .sp{flex:1;}
+  .warn{border:1px solid #b45309;background:#fffbeb;color:#92400e;border-radius:4px;
+    font-size:10px;font-weight:700;padding:3px 8px;cursor:pointer;font-family:inherit;}
+  .warn.on{background:#b45309;color:#fff;}
+
+  .lf{padding:20px 6px 6px;height:100%;display:flex;flex-direction:column;gap:5px;overflow:auto;}
+  .toggle{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;flex-shrink:0;}
+  .toggle button{flex:1;border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:9px;padding:3px 0;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .toggle button:last-child{border-right:none;}
+  .toggle button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .row{padding:2px 4px;border-bottom:1px dotted #e5e7eb;display:flex;
+    justify-content:space-between;align-items:center;cursor:pointer;}
+  .ind{padding-left:12px !important;color:#6b7280;}
+  .pane{display:none;} .pane.on{display:block;}
+  .sec{font-size:8.5px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    margin-top:5px;padding-bottom:1px;border-bottom:1px solid #e5e7eb;}
+  .gedge{text-align:center;color:var(--muted);font-size:9px;line-height:1.1;}
+  .gedge.dash{color:var(--note);}
+  .legend{margin-top:5px;font-size:8.5px;color:#9ca3af;line-height:1.5;}
+
+  .main-wrap{position:relative;height:100%;}
+  .hud{position:absolute;top:20px;left:8px;width:152px;border:1px solid var(--line-dark);
+    background:rgba(255,255,255,.95);border-radius:4px;padding:5px 6px;font-size:9.5px;line-height:1.6;z-index:3;}
+  .hud .ht{font-weight:700;font-size:9px;letter-spacing:.05em;color:var(--muted);margin-bottom:3px;}
+  .hud .kr{display:flex;justify-content:space-between;}
+  .hud .zero{color:#92400e;}
+  .hud .way{color:var(--note);text-decoration:underline;cursor:pointer;}
+
+  /* ギズモ = 向きの唯一の入口。隣に投影方式トグルだけ */
+  .gzwrap{position:absolute;top:20px;right:8px;z-index:3;display:flex;flex-direction:column;
+    align-items:center;gap:3px;}
+  .gizmo{width:52px;height:52px;border:1px solid var(--line-dark);border-radius:50%;
+    background:rgba(255,255,255,.95);position:relative;cursor:pointer;}
+  .gizmo span{position:absolute;font-size:8.5px;font-weight:700;color:#6b7280;
+    width:14px;height:14px;border-radius:50%;border:1px solid var(--line);background:#fff;
+    display:flex;align-items:center;justify-content:center;}
+  .gizmo span.on{background:var(--sel);border-color:var(--note);color:#1e3a8a;}
+  .gz-x{left:36px;top:19px;} .gz-y{left:19px;top:36px;} .gz-z{left:19px;top:2px;}
+  .gz-c{left:19px;top:19px;border:none !important;background:none !important;color:#9ca3af !important;}
+  .projtog{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;
+    background:#fff;}
+  .projtog button{border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:8px;padding:2px 4px;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .projtog button:last-child{border-right:none;}
+  .projtog button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+
+  .scene{position:absolute;inset:0;display:none;}
+  .scene.on{display:block;}
+  .obj{position:absolute;border:1px solid var(--line-dark);background:#fff;font-size:9px;
+    display:flex;align-items:center;justify-content:center;color:#6b7280;border-radius:2px;}
+  .obj.focused{background:var(--sel);border:2px solid var(--note);color:#1e3a8a;font-weight:700;}
+  .obj.neighbor{border-style:dashed;color:#9ca3af;}
+  .ghostband{position:absolute;display:none;border:1px dashed #b45309;
+    background:repeating-linear-gradient(45deg,transparent,transparent 5px,#fde68a 5px,#fde68a 6px);
+    align-items:flex-end;justify-content:center;font-size:8.5px;color:#92400e;padding-bottom:2px;}
+  .ghostband.on{display:flex;}
+  .ghostband.focused{border:2px solid var(--note);}
+  /* 未解決の束縛を受けている実体 */
+  .obj.unres{border:2px dashed #b45309;background:#fffbeb;color:#92400e;}
+  .obj .warnmark{position:absolute;top:-7px;right:-7px;width:14px;height:14px;border-radius:50%;
+    background:#b45309;color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;}
+  /* 権限: 書ける行 / 🔒 読めるだけの行 */
+  .own{font-weight:700;}
+  .lock{color:var(--muted);}
+  .lockmark{font-size:8.5px;color:var(--muted);}
+  .whobar{font-size:8.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:3px;padding:2px 4px;line-height:1.5;}
+
+  .rt{padding:20px 7px 6px;height:100%;display:flex;flex-direction:column;gap:4px;overflow:auto;}
+  .grp{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    border-bottom:1px solid #e5e7eb;padding-bottom:2px;margin-top:3px;}
+  .kv{display:flex;justify-content:space-between;gap:4px;align-items:center;}
+  .chip{border:1px solid var(--line-dark);border-radius:8px;padding:0 5px;font-size:9px;}
+  .ok{color:#15803d;border-color:#15803d;}
+  .cap{font-size:8.5px;color:var(--muted);line-height:1.5;margin-top:2px;}
+  .rpane{display:none;} .rpane.on{display:flex;flex-direction:column;gap:4px;}
+
+  .ft{display:flex;align-items:center;padding:0 8px;height:100%;gap:10px;
+    font-size:9.5px;color:var(--muted);}
+
+  .ba{padding:0;height:100%;display:flex;flex-direction:column;background:#fcfcfc;}
+  .bh{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line);
+    font-size:10px;font-weight:700;flex-shrink:0;}
+  .bb{display:flex;gap:12px;padding:7px 9px;overflow:auto;flex:1;}
+  table.mx{border-collapse:collapse;font-size:9.5px;flex-shrink:0;}
+  table.mx th,table.mx td{border:1px solid var(--line);padding:3px 7px;text-align:center;white-space:nowrap;}
+  table.mx th{background:#f3f4f6;font-weight:700;}
+  table.mx th.col{cursor:pointer;}
+  table.mx th.col.on{background:var(--sel);color:#1e3a8a;}
+  table.mx td.x{background:#fef2f2;color:#b91c1c;font-weight:700;}
+  table.mx td.o{background:#f0fdf4;color:#15803d;}
+  .gapbox{font-size:10px;line-height:1.75;border-left:1px dashed var(--line);padding-left:12px;min-width:0;}
+  .gapbox .lead{font-weight:700;color:#92400e;}
+
+  .note-panel{max-width:1040px;margin:12px auto 0;background:var(--note-bg);
+    border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:104px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);
+    margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);
+    color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.85;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+  .tension{max-width:1040px;margin:14px auto 0;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.85;}
+  .tension b{color:#92400e;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>easy-extrude — IA再設計ワイヤーフレーム v4</h1>
+  <p>忠実度はグレーボックスのまま。<b>「自分は誰か」が状態になりました</b> — ヘッダの[自分]を切り替えると、書けるもの/書けないものが変わります。</p>
+  <span class="hint">💡 各エリアをタップすると設計根拠が下に出ます</span>
+  <span class="state">▶ 動く:ヘッダの<b>[自分:▾]</b>(未設定/robot_eng/vision_eng) / [⚠3 未解決] / <b>d_ref 列</b>で選択が移る / ギズモ X Y Z / [正射|透視] / HUD の0件</span>
+</header>
+
+<div class="diff">
+  <b>v3 → v4 の変更点(3件。すべて「編集の住所は所有権で決まる」という訂正からの帰結)</b><br>
+  <b>①</b> <b>「自分は誰か」を状態にした。</b>これまでアプリに <code>currentActor</code> は<b>存在しなかった</b>
+  (<code>uiStore.js:158</code> の <code>personaFilter</code> は <code>persona projection highlight</code> ——
+  見た目を減光するだけで書き込みを一切ゲートしない)。ヘッダに<b>視点の主体</b>を置き、
+  <b>自分の主張だけが入力可</b>・他人の主張は 🔒 読み取り専用にした(編集可否を見た目で区別:入力可=枠+内側の影、表示のみ=枠なし)。<br>
+  <b>②</b> <b>3D に未解決エンティティのハイライト。</b><code>d_ref</code> を選ぶと、それが束縛している実体
+  (Robot / Conveyor)が 3D で ⚠ 表示になる。これで「どの変数が揉めているか」が
+  <b>左パネルのトグルに依存せず</b>届く —— 3D ビューは [幾何]/[意味] のどちらを見ていても隠れないから。<br>
+  <b>③</b> <b>場が小さくなった。</b>場は「変える場所」ではなく<b>合意する場所</b>。編集は所有権があればどこでも起こる
+  (3D ドラッグ = <code>createEditAdmissibleCommand</code> で既に実装済み。モードに閉じ込められているだけ)。
+  <b>訂正</b>:v1〜v3 は「発見/解消」の 1 軸で切って編集を場に寄せていた。正しくは
+  <b>所有権(誰が書けるか)</b>と<b>合意の必要性(場に行くか)</b>は<b>直交する 2 軸</b>。
+</div>
+
+<div class="frame" id="frame">
+
+  <div class="zone" style="grid-area:head;" data-note="1">
+    <span class="badge">1</span>
+    <div class="hd">
+      <span class="wf-btn">Mode ▾</span>
+      <span class="wf-btn">+ 追加 ▾</span>
+      <span class="wf-btn">↩</span><span class="wf-btn">↪</span>
+      <span class="sp"></span>
+      <button class="warn" id="openBa" data-note="6">⚠ 3 未解決</button>
+      <span class="sp"></span>
+      <button class="wf-btn" id="whoBtn" style="border-color:#2563eb;color:#1e3a8a;">自分: robot_eng ▾</button>
+      <span class="wf-btn">始める ▾</span>
+      <span class="wf-btn">ファイル ▾</span>
+    </div>
+  </div>
+
+  <!-- 左 -->
+  <div class="zone" style="grid-area:left;" data-note="2">
+    <span class="zone-label">構造(選ぶ)</span><span class="badge">2</span>
+    <div class="lf">
+      <div class="toggle">
+        <button id="tGeo" class="on">幾何</button><button id="tSem">意味</button>
+      </div>
+
+      <div class="pane on" id="paneGeo">
+        <div class="row" data-sel="cube"><span>□ Cube</span><span class="ro">👁</span></div>
+        <div class="row" id="rowRobotG" data-sel="robot"><span>□ Robot</span><span class="ro">👁</span></div>
+        <div class="row ind"><span>⌖ base</span><span class="ro">👁</span></div>
+        <div class="row ind"><span>⌖ tcp</span><span class="ro">👁</span></div>
+        <div class="row"><span>□ Conveyor</span><span class="ro">👁</span></div>
+        <div class="row"><span>⟿ 通路A</span><span class="ro">👁</span></div>
+        <div class="row"><span>⬡ 作業ゾーン</span><span class="ro">👁</span></div>
+        <div class="legend">⟿ ⬡ = 旧マップ要素。<br>通常オブジェクトとして同居</div>
+      </div>
+
+      <div class="pane" id="paneSem">
+        <div class="sec">実体と関係</div>
+        <div class="row" id="rowRobotS" data-sel="robot"><span>Robot</span></div>
+        <div class="gedge dash">┆ feeds ┆</div>
+        <div class="row"><span>Conveyor</span></div>
+        <div class="sec">共有変数</div>
+        <div class="row" id="rowDref" data-sel="dref"><span>d_ref</span><span class="ro">⚠</span></div>
+        <div class="row"><span>cycle</span></div>
+        <div class="row"><span>mount_h</span></div>
+        <div class="legend">点線=SpatialLink<br>⚠=未解決の衝突あり</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中央 -->
+  <div class="zone canvas-hatch" style="grid-area:main;" data-note="3">
+    <span class="zone-label">3Dビュー(入力の検算)</span><span class="badge">3</span>
+    <div class="main-wrap">
+
+      <div class="scene on" id="scPersp">
+        <div class="obj" id="oRobotP" style="left:38%;top:40%;width:19%;height:20%;">Robot</div>
+        <div class="obj" id="oConvP" style="left:62%;top:58%;width:20%;height:12%;">Conveyor</div>
+        <div class="ghostband" id="gbP" style="left:32%;top:36%;width:28%;height:28%;">d_ref 200–1200 未確定</div>
+      </div>
+
+      <div class="scene" id="scTop">
+        <div class="obj" style="left:10%;top:22%;width:32%;height:44%;">⬡ 作業ゾーン</div>
+        <div class="obj" style="left:50%;top:16%;width:34%;height:8%;border-style:dashed;">⟿ 通路A</div>
+        <div class="obj" id="oRobotT" style="left:54%;top:42%;width:20%;height:22%;">Robot</div>
+        <div class="obj" id="oConvT" style="left:16%;top:70%;width:22%;height:10%;">Conveyor</div>
+        <div class="ghostband" id="gbT" style="left:32%;top:34%;width:26%;height:28%;">d_ref 未確定</div>
+      </div>
+
+      <div class="hud" data-note="4" id="hud">
+        <div class="ht">シーンのKPI</div>
+        <div id="hudFull">
+          <div class="kr"><span>受け入れ</span><span>4 / 6 パス</span></div>
+          <div class="kr"><span>リーチ余裕</span><span>+38 mm</span></div>
+          <div class="kr"><span>干渉</span><span>0 件</span></div>
+        </div>
+        <div id="hudZero" style="display:none;">
+          <div class="zero">検証項目なし</div>
+          <div class="zero" style="font-size:9px;">受け入れ基準が未定義</div>
+          <div class="way">→ 基準を定義する</div>
+        </div>
+        <div style="margin-top:3px;"><button class="wf-btn" id="zeroBtn" style="font-size:8.5px;padding:1px 4px;">0件の状態</button></div>
+      </div>
+
+      <div class="gzwrap" data-note="8">
+        <div class="gizmo" title="軸をクリックで視点スナップ">
+          <span class="gz-z" id="gzZ">Z</span><span class="gz-x" id="gzX">X</span>
+          <span class="gz-y" id="gzY">Y</span><span class="gz-c">◦</span>
+        </div>
+        <div class="projtog">
+          <button id="pOrtho">正射</button><button id="pPersp" class="on">透視</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 右 -->
+  <div class="zone" style="grid-area:right;" data-note="5">
+    <span class="zone-label" id="rightLabel">Robot の詳細(編集)</span><span class="badge">5</span>
+    <div class="rt">
+
+      <div class="rpane on" id="rpRobot">
+        <div class="grp">実体</div>
+        <div class="kv"><span>名前</span><span class="field">Robot</span></div>
+        <div class="grp">位置・姿勢</div>
+        <div class="kv"><span>X</span><span class="field">1.20</span></div>
+        <div class="kv"><span>Y</span><span class="field">0.40</span></div>
+        <div class="kv"><span>Z</span><span class="field">0.00</span></div>
+        <div class="grp">この実体の検証 <span style="font-weight:400;">(戻り値)</span></div>
+        <div class="kv"><span>リーチ</span><span class="chip ok">✓ 届く</span></div>
+        <div class="kv"><span>干渉</span><span class="chip ok">✓ なし</span></div>
+        <div class="kv"><span>把持候補</span><span class="chip">12 件 ▸</span></div>
+        <div class="kv"><span>来歴</span><span class="chip">なぜここ? ▸</span></div>
+      </div>
+
+      <div class="rpane" id="rpDref">
+        <div class="grp">共有変数</div>
+        <div class="kv"><span>名前</span><span class="field">d_ref</span></div>
+        <div class="kv"><span>単位</span><span class="ro">mm</span></div>
+        <div class="grp">主張されている区間</div>
+        <div class="kv" id="clVision"><span>vision_eng</span><span class="ro">200–350 <span class="lockmark">🔒</span></span></div>
+        <div class="kv" id="clRobot"><span>robot_eng</span><span class="field">380–600</span></div>
+        <div class="kv" id="clMech"><span>mech_eng</span><span class="ro">600–1200 <span class="lockmark">🔒</span></span></div>
+        <div class="kv"><span>共通部分</span><span class="chip" style="color:#b91c1c;border-color:#b91c1c;">なし</span></div>
+        <div class="whobar" id="whoBar">自分 = robot_eng。<b>自分の行だけ編集可</b>。3Dで Robot を動かしても同じ主張が書き換わる。</div>
+        <div class="grp">束縛している実体</div>
+        <div class="kv"><span>Robot</span><span class="chip">▸ 選ぶ</span></div>
+        <div class="kv"><span>Conveyor</span><span class="chip">▸ 選ぶ</span></div>
+        <div class="cap">位置も姿勢も持たない実体。3Dでの姿は<b>未確定帯</b>と、<b>束縛している実体の ⚠ ハイライト</b>。</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 場 -->
+  <div class="zone" style="grid-area:ba;" data-note="6">
+    <span class="badge" style="top:5px;">6</span>
+    <div class="ba">
+      <div class="bh">
+        <span>場 — 要件コンフリクトの解消</span>
+        <span style="font-weight:400;color:var(--muted);">3Dは上に生きている(隠さない)</span>
+        <span style="flex:1"></span>
+        <button class="wf-btn" id="closeBa">✕ 閉じる</button>
+      </div>
+      <div class="bb">
+        <table class="mx">
+          <tr><th></th><th class="col on" id="colD">d_ref</th><th class="col" id="colC">cycle</th><th class="col" id="colM">mount_h</th></tr>
+          <tr><th>vision_eng</th><td class="x">✕</td><td></td><td></td></tr>
+          <tr><th>robot_eng</th><td class="x">✕</td><td class="o">✓</td><td></td></tr>
+          <tr><th>mech_eng</th><td class="x">✕</td><td></td><td class="o">✓</td></tr>
+        </table>
+        <div class="gapbox" id="gapBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="zone" style="grid-area:foot;" data-note="7">
+    <span class="badge" style="top:2px;">7</span>
+    <div class="ft"><span>G = 移動</span><span>R = 回転</span><span>Tab = 編集</span><span>Ctrl = スナップ</span></div>
+  </div>
+
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。「なぜそこに置くのか」の設計根拠が表示されます。</p>
+</div>
+
+<div class="tension">
+  <b>⚠ v4 に残した引っかかり(次の反復のタネ)</b><br>
+  <b>①「自分」の基数 N が未対応です。</b>ヘッダの[自分]は 0(未設定)と 1(1人のロール)しか表現できません。
+  でも小さいチームでは<b>1人が robot_eng と mech_eng を兼ねる</b>のは普通です。兼務者は
+  「今どちらとして書いているか」を毎回選ぶのですか? それとも両方の行が同時に編集可になりますか?
+  ——<code>ROBOT_CARDINALITY</code>(none/single/multi, ADR-090)と<b>同じ形の穴</b>で、
+  あのときは台帳の基数列が空だったのが欠陥でした。<br>
+  <b>②「自分」はどこに保存されますか?</b> 文書(.ctx.json)に入れると、ファイルを渡した相手も
+  あなたとして書けてしまう。ブラウザに入れると、同じ人が別の端末で開いたとき誰でもなくなる。
+  <b>これは設定ですか、それとも文書の一部ですか?</b><br>
+  <b>③</b> 3D で Robot を動かすと robot_eng の主張が書き換わります。では
+  <b>vision_eng として名乗っている人が Robot を動かしたら?</b> 動かせないのか、
+  動かせるが主張は書き換わらないのか、警告が出るのか。<b>幾何の編集権</b>と<b>主張の編集権</b>は
+  同じものですか?
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "ヘッダ:シーンスコープ +「発見」の集約",
+    body: "スコープの大きい操作ほど外周・上部へ。<b>⚠3 未解決</b>は「集約=常設・展開=呼び出し」の集約側で、<b>場を開かなくても場に入る必要があるかが分かる</b>ために外に出してある(現行は ContextLayer の中でしか描画されず循環依存だった)。Map ボタンは v2 で消滅、<code>+ 追加</code> が昇格(Lynch 5種を含む「置く」が最頻の入口)。"
+  },
+  "2": {
+    title: "左:構造ナビゲータ — 幾何 ⇄ 意味。v3 で意味側に「共有変数」が入った",
+    body: "「左=選ぶ / 中央=触る / 右=編集」。既定を<b>幾何</b>にしたのは初期頻度(関係性の論理は最初は考えない)——Blender の Outliner 表示モード、Figma の Layers/Assets タブと同型。<br><b>v3 の追加:意味側に共有変数 (d_ref / cycle / mount_h) が並んだ。</b>『d_ref を選んだら d_ref がアクティブになる』を通すと、<b>選択できるのにどのナビゲータにも載っていない実体</b>が生まれてしまう。文書の変数は<b>意味の層の住人</b>なので住所はここ。旧マップ要素(⟿⬡)が幾何側に同居したのと対になる整理。<br>トグルの奥に「発見」は入れない——だから未解決件数はヘッダにある。"
+  },
+  "3": {
+    title: "中央:3Dビュー —「主役」ではなく「入力の検算」",
+    body: "3Dは成果物ではなく<b>エコーバック</b>。数値だけでは人間が空間を想像できないから置く検算面(ADR-063 Goal 2『the numbers are the artifact』の一般化)。§フィードフォワード:<b>入力とその解釈を同時・同画面で</b>見せる——「そういう意味だったの?」事故は解釈の可視化が<b>確定後</b>に来るから起きる。<br>面積が最大なのは変わらない:ビジュアルヒエラルキーは<b>注視時間</b>の話であって正本性の話ではない(車のフロントガラスは運転の成果物ではないが最大面積を持つ)。<br>この位置づけが<b>禁止事項</b>を1つ生む:<b>3Dを覆う置き方をしない</b>。v1 の場=モーダルはこれに違反していたので v2 で下部へ移した。"
+  },
+  "4": {
+    title: "KPI HUD:シーンスコープの検証を選択に依存させない",
+    body: "右パネルの契約は<b>選択物</b>の詳細なので、シーンスコープを混ぜると1カラム1責務が壊れる。加えて KPI は<b>操作しながら</b>見るもので、ドラッグ中の視線は3Dビューにある。四隅分担の慣習で左上=情報/HUD、右上=操作ツール。<br><b>0件(原則 #31)</b>:『✓全部パス』は<b>嘘</b>(検査していないだけ)、消すのは #15 Fixed Slots 違反。<b>正当な0は推論させず宣言させる</b>+出口を名指し。ADR-090『0台のロボット』と同じ形。"
+  },
+  "5": {
+    title: "右:選択物の詳細 —「選択」の中身が2種類になった",
+    body: "エンティティスコープの精密編集。<b>リーチ/干渉/把持候補</b>がここに来たのが最大の移動——『37 Grasp Search は 4 Robot の近くにあるべき』の実装で、<b>置く→届くか見る→置き直す</b>のループを閉じる。<br><b>v3 の変更:d_ref を選ぶとパネルの中身が入れ替わる。</b>選択モデルは1つ(selectedEntity)で、全ゾーンはその<b>ビュー</b>——階層ツリー・3D・このパネル・場の行列が同じ選択状態を見る。<br>懸念だったのは『これまで選択できたものは全部3Dに姿を持っていた。d_ref は区間であって物ではないので、選択しても3Dが無反応=<b>無言</b>になる(原則 #11)』——だが<b>未確定帯が d_ref の3Dでの姿</b>なので無言にならない。<br>Robot の選択が消える件は、台帳の LINK NETWORK ノードが既に持っていた <code>focused / neighbor / context</code> の語彙で解ける(<b>新概念ゼロ</b>)。"
+  },
+  "6": {
+    title: "場:下部に展開。3Dを覆わず、表の形に器を合わせる",
+    body: "<b>食い違いは1人の視野の中には存在しない</b>ので計算では出せず、集まる場所が要る。vision 200–350 / robot 380–600 / mech 600–1200 mm——誰も間違っていないのに共通部分が空。<br>下部にした理由は2つ。①<b>3Dを覆えない</b>:d_ref は<b>空間量</b>なので、隠して交渉するのは解釈の可視化なしで確定すること。列を選ぶと3Dに未確定帯が出る(フィードフォワード)。②<b>形が合う</b>:actor × variable は<b>表</b>=横長で、280px の縦ストリップは表に最悪の器だった——現行が10タブを縦ストリップに押し込んで文字が入らなくなったのと同じ症状(器と中身の形の不一致)。<br>常設はしない(展開は呼び出し)。集約(⚠3)だけがヘッダに常駐。"
+  },
+  "7": {
+    title: "下:ヒント/状態 — 22px。場が開いても動かない",
+    body: "タイムラインを持たないので、下部は<b>空きを埋めずに主役へ面積を返す</b>判断。場は<b>この上に</b>開き、ステータスバー自体は位置も高さも変えない(#15 Fixed Slots)。場の開閉で下端が動くと、キーヒントを読む位置が毎回変わってしまう。"
+  },
+  "8": {
+    title: "ギズモ:視点の唯一の入口。v3 でプリセット行を吸収した",
+    body: "<b>v3 最大の削除。</b>v2 は視点プリセット [斜め|上|正面] を足したが、<b>軸ギズモが既にその機能を持っていた</b>——<code>GizmoView.js:57</code> の aria-label は『World orientation gizmo: click an axis to snap the camera』、ADR-068 で interruptible eased flight まで実装済み。足したボタン列は<b>冗長な導線</b>で、冗長が許されるのは高頻度操作だけ。<br>ここから旧 Map モードの評価が変わる:<b>Map のカメラは最初からギズモの中にあった。</b>Map モードは『住所の要る機能』ですらなく<b>既存コントロールの重複</b>だった。だから削除に際して<b>何も足す必要がない</b>。<br>残る本当の差分は<b>投影方式</b>だけ——Map は歪みのない配置のため正射投影を使う(MapModeController)。向きとは独立したビュー設定なので、ギズモの真下に小さなトグル1つ。Fusion 360 / Onshape も向きと投影を別コントロールで持つ。<br>置き場所の根拠は<b>近接の原則</b>:ビューにだけ効く操作はビュー上のオーバーレイに浮かべ、サイドバーに混ぜない(混ぜるとグルーピングが濁る)。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let activeZone = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id || !notes[id]) return;
+    if (activeZone) activeZone.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); activeZone = el; }
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + notes[id].title + '</div>' +
+      '<p>' + notes[id].body + '</p>';
+  });
+});
+
+// ---- 選択モデル(唯一の真実):'robot' | 'dref' ----
+let sel = "robot";
+const rowRobotG=document.getElementById("rowRobotG"), rowRobotS=document.getElementById("rowRobotS"),
+      rowDref=document.getElementById("rowDref"),
+      oRobotP=document.getElementById("oRobotP"), oRobotT=document.getElementById("oRobotT"),
+      oConvP=document.getElementById("oConvP"), oConvT=document.getElementById("oConvT"),
+      gbP=document.getElementById("gbP"), gbT=document.getElementById("gbT"),
+      rpRobot=document.getElementById("rpRobot"), rpDref=document.getElementById("rpDref"),
+      rightLabel=document.getElementById("rightLabel"), colD=document.getElementById("colD");
+
+function applySelection(){
+  const isD = sel === "dref";
+  [rowRobotG,rowRobotS].forEach(r=>{
+    r.classList.toggle("focused", !isD); r.classList.toggle("neighbor", isD);
+  });
+  rowDref.classList.toggle("focused", isD);
+  // 3D: d_ref が束縛している実体を ⚠ ハイライト(左のトグルに依存せず届く)
+  [[oRobotP,"Robot"],[oRobotT,"Robot"],[oConvP,"Conveyor"],[oConvT,"Conveyor"]].forEach(([o,name])=>{
+    if(!o) return;
+    const isRobot = name==="Robot";
+    o.classList.toggle("unres", isD);
+    o.classList.toggle("focused", !isD && isRobot);
+    o.classList.toggle("neighbor", false);
+    o.textContent = isD ? "⚠ "+name : name;
+  });
+  [gbP,gbT].forEach(g=>{ g.classList.toggle("on", isD); g.classList.toggle("focused", isD); });
+  rpRobot.classList.toggle("on", !isD); rpDref.classList.toggle("on", isD);
+  rightLabel.textContent = isD ? "d_ref の詳細(共有変数)" : "Robot の詳細(編集)";
+  for (const k in cols) cols[k].classList.toggle("on", isD ? k==="d" : false);
+  if (isD) { curCol="d"; document.getElementById("gapBox").innerHTML = gapTexts.d; }
+}
+function select(what){ sel = what; applySelection(); }
+document.querySelectorAll("[data-sel]").forEach(el=>{
+  el.addEventListener("click", e=>{ e.stopPropagation(); select(el.dataset.sel==="dref"?"dref":"robot"); });
+});
+
+// ---- 左 幾何/意味 ----
+const tGeo=document.getElementById("tGeo"), tSem=document.getElementById("tSem");
+const pGeo=document.getElementById("paneGeo"), pSem=document.getElementById("paneSem");
+function setPane(semantic){
+  tGeo.classList.toggle("on",!semantic); tSem.classList.toggle("on",semantic);
+  pGeo.classList.toggle("on",!semantic); pSem.classList.toggle("on",semantic);
+}
+tGeo.addEventListener("click",e=>{e.stopPropagation();setPane(false);});
+tSem.addEventListener("click",e=>{e.stopPropagation();setPane(true);});
+
+// ---- 場の開閉 ----
+const frame=document.getElementById("frame"), openBa=document.getElementById("openBa");
+function setBa(open){ frame.classList.toggle("ba-open",open); openBa.classList.toggle("on",open); }
+openBa.addEventListener("click",()=>setBa(!frame.classList.contains("ba-open")));
+document.getElementById("closeBa").addEventListener("click",e=>{e.stopPropagation();setBa(false);});
+
+// ---- 場の列 → 選択が移る ----
+const cols={d:colD,c:document.getElementById("colC"),m:document.getElementById("colM")};
+let curCol="d";
+const gapTexts={
+  d:'<span class="lead">d_ref に共通部分なし(ギャップ 30mm)</span><br>vision 200–350 &nbsp;/&nbsp; robot 380–600 &nbsp;/&nbsp; mech 600–1200<br><span style="color:#6b7280;">誰も間違っていない。食い違いは3人の主張の和の中にしかない。</span><br><span style="color:var(--note);">→ d_ref が選択され、3Dに未確定帯・右パネルに詳細が出ています</span><br><button class="wf-btn" style="margin-top:5px;">この変数を確定する</button>',
+  c:'<span class="lead">cycle — 衝突なし</span><br>robot_eng のみが主張。<br><span style="color:#6b7280;">所有者が1人なら計算で出る=戻り値でよい。場に居る必要のない変数。</span><br><span style="color:var(--note);">空間量ではないので3Dに描くものが無い(すべての情報が空間表現に向くわけではない)。</span>',
+  m:'<span class="lead">mount_h — 衝突なし</span><br>mech_eng のみが主張。<br><span style="color:#6b7280;">同上。場に残っているのは「まだ他者が主張していない」だけかもしれない。</span>'
+};
+colD.addEventListener("click",e=>{e.stopPropagation();select("dref");});
+["c","m"].forEach(k=>cols[k].addEventListener("click",e=>{
+  e.stopPropagation(); curCol=k;
+  for(const j in cols) cols[j].classList.toggle("on",j===k);
+  document.getElementById("gapBox").innerHTML=gapTexts[k];
+}));
+
+// ---- ギズモ(向き)と投影方式 ----
+const scP=document.getElementById("scPersp"), scT=document.getElementById("scTop");
+const gzZ=document.getElementById("gzZ"), gzX=document.getElementById("gzX"), gzY=document.getElementById("gzY");
+function setAxis(z){
+  scT.classList.toggle("on",z); scP.classList.toggle("on",!z);
+  gzZ.classList.toggle("on",z); gzX.classList.remove("on"); gzY.classList.remove("on");
+  if(z){ pOrtho.click(); }
+}
+gzZ.addEventListener("click",e=>{e.stopPropagation();setAxis(true);document.querySelector('.gzwrap').click();});
+[gzX,gzY].forEach(g=>g.addEventListener("click",e=>{e.stopPropagation();setAxis(false);
+  g.classList.add("on");document.querySelector('.gzwrap').click();}));
+
+const pOrtho=document.getElementById("pOrtho"), pPersp=document.getElementById("pPersp");
+pOrtho.addEventListener("click",e=>{e.stopPropagation();pOrtho.classList.add("on");pPersp.classList.remove("on");});
+pPersp.addEventListener("click",e=>{e.stopPropagation();pPersp.classList.add("on");pOrtho.classList.remove("on");});
+
+// ---- HUD 0件 ----
+let zero=false;
+const zBtn=document.getElementById("zeroBtn");
+zBtn.addEventListener("click",e=>{
+  e.stopPropagation(); zero=!zero;
+  document.getElementById("hudFull").style.display=zero?"none":"block";
+  document.getElementById("hudZero").style.display=zero?"block":"none";
+  zBtn.textContent=zero?"検証あり":"0件の状態";
+  document.getElementById("hud").click();
+});
+
+// ---- 「自分は誰か」= 視点の主体。基数 0 / 1 (N は未対応と宣言) ----
+const WHO = [
+  { ref:null,          label:"— 未設定",   note:"誰も名乗っていない(基数 0)。<b>正当な 0 は宣言させる</b>——既定で全員書けるようにすると『他人の主張を黙って書き換える』が既定になり、既定で誰も書けなくすると名乗るまで何も編集できない。どちらも推論させず選ばせる(原則 #31 / ADR-090 の ROBOT_CARDINALITY と同じ形)。" },
+  { ref:"robot_eng",   label:"自分: robot_eng",  note:"自分 = robot_eng。<b>自分の行だけ編集可</b>。3Dで Robot を動かしても同じ主張が書き換わる(createEditAdmissibleCommand は実装済み——モードに閉じ込められているだけ)。" },
+  { ref:"vision_eng",  label:"自分: vision_eng", note:"自分 = vision_eng。robot_eng の行は 🔒 になり、vision_eng の行が編集可になった。<b>編集の住所は所有権で決まる</b>——場に行くかどうかとは直交する別の軸。" },
+];
+let whoIdx = 1;
+const whoBtn=document.getElementById("whoBtn"), whoBar=document.getElementById("whoBar");
+const claimRows={ vision_eng:document.getElementById("clVision"),
+                  robot_eng:document.getElementById("clRobot"),
+                  mech_eng:document.getElementById("clMech") };
+const claimVals={ vision_eng:"200–350", robot_eng:"380–600", mech_eng:"600–1200" };
+function applyWho(){
+  const w = WHO[whoIdx];
+  whoBtn.textContent = w.label + " ▾";
+  whoBtn.style.borderColor = w.ref ? "#2563eb" : "#b45309";
+  whoBtn.style.color       = w.ref ? "#1e3a8a" : "#92400e";
+  for (const ref in claimRows){
+    const row = claimRows[ref], mine = (ref === w.ref);
+    row.classList.toggle("own", mine); row.classList.toggle("lock", !mine);
+    row.lastElementChild.className = mine ? "field" : "ro";
+    row.lastElementChild.innerHTML = claimVals[ref] + (mine ? "" : ' <span class="lockmark">🔒</span>');
+  }
+  whoBar.innerHTML = w.note;
+}
+whoBtn.addEventListener("click", e=>{ e.stopPropagation(); whoIdx=(whoIdx+1)%WHO.length; applyWho(); });
+
+document.getElementById("gapBox").innerHTML = gapTexts.d;
+applySelection();
+applyWho();
+</script>
+</body>
+</html>
