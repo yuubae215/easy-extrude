@@ -41,6 +41,14 @@ import { createEditAdmissibleCommand } from '../command/EditAdmissibleCommand.js
 import { createAnswerQuestionCommand } from '../command/AnswerQuestionCommand.js'
 import { createAddDocEntryCommand } from '../command/AddDocEntryCommand.js'
 import { createDocEditCommand } from '../command/DocEditCommand.js'
+import { createProposeChangeCommand } from '../command/ProposeChangeCommand.js'
+import { createApproveProposalCommand } from '../command/ApproveProposalCommand.js'
+import { createWithdrawProposalCommand } from '../command/WithdrawProposalCommand.js'
+import { createTableConflictCommand } from '../command/TableConflictCommand.js'
+import { createSettleAgendaCommand, createCloseUndecidedCommand } from '../command/CloseAgendaCommand.js'
+import { EDIT_PERMISSION, TARGET_KIND } from '../context/Ownership.js'
+import { makeProposal, PROPOSAL_REF_PREFIX } from '../context/Proposal.js'
+import { AGENDA_REF_PREFIX, AGENDA_SOURCE } from '../context/Agenda.js'
 import { validateContext } from '../context/ContextValidator.js'
 import { applyAdmissibleEdit } from '../context/ContextEditModel.js'
 import { applyQuestionAnswer } from '../context/FormApplication.js'
@@ -164,6 +172,18 @@ export class ContextController {
     registerCallback('onAssetParam',             (key, value) => this.setAssetParam(key, value))
     registerCallback('onAssetViewerCommit',      ()           => this.commitAsset())
     registerCallback('onAssetViewerClose',       ()           => this.closeAssetViewer())
+    // ── ADR-104 ownership / proposals / agenda ────────────────────────────────
+    registerCallback('onProposalSubmitDraft',    (why, by)    => this.submitProposalDraft(why, by))
+    registerCallback('onProposalDiscardDraft',   ()           => this.discardProposalDraft())
+    registerCallback('onProposalApprove',        (ref)        => this.approveProposal(ref))
+    registerCallback('onProposalWithdraw',       (ref)        => this.withdrawProposal(ref))
+    registerCallback('onConflictTable',          (ref, by)    => this.tableConflict(ref, by))
+    registerCallback('onAgendaSettle',           (ref)        => this.settleAgendaItem(ref))
+    registerCallback('onAgendaClose',            (ref, by)    => this.closeAgendaItemUndecided(ref, by))
+    // A read, not a command: the panel asks the same predicate that decides, so
+    // a disabled control always has the reason next to it (PHILOSOPHY #11 —
+    // deriving the reason separately is how a flag and its explanation drift).
+    registerCallback('onAgendaGuards',           (row)        => this.guardsFor(row))
     registerCallback('onContextExit',            ()           => this.exit())
     registerCallback('onImportCtxJson',          ()           => this.importContextFile())
     registerCallback('onExportCtxJson',          ()           => this.exportContextFile())
@@ -889,6 +909,28 @@ export class ContextController {
    */
   _commitRegionEdit(reqRef, before, after) {
     const ctrl = this._ctrl
+
+    // ADR-104 D3: the same gesture lands in one of two places depending on who
+    // owns the claim. This is the whole "propose vs. decide" boundary made
+    // physical — dragging a region you do not own is not refused (that would be
+    // the silent no-op #11 forbids) and does not silently overwrite someone
+    // else's claim either. It becomes a proposal carrying the diff you drew.
+    const target = { kind: TARGET_KIND.REQUIREMENT_ADMISSIBLE, ref: reqRef }
+    const { permission, reason } = this._ctxService.editPermission(this._keyring, target)
+    if (permission !== EDIT_PERMISSION.DIRECT) {
+      // Roll the widget back: the canonical claim has not moved, and a widget
+      // left at the proposed position would be a second, disagreeing answer to
+      // "where is this region?" (§1.1).
+      const entry = this._authorWidgets.find(w => w.reqRef === reqRef)
+      entry?.widget.setRegion(before.region)
+      this._editCtx = applyAdmissibleEdit(this._editCtx, reqRef, before)
+      this._recolourAuthoring(validateContext(this._editCtx))
+
+      useUIStore.getState().actions.contextSetProposalDraft({ target, from: before, to: after, reason })
+      ctrl._uiView.showToast(`${reason} Write a reason to put it on the floor.`, { type: 'info' })
+      return
+    }
+
     const cmd = createEditAdmissibleCommand(this._ctxService, reqRef, before, after, this._viewContext())
     Promise.resolve(cmd.execute())
       .then(() => {
@@ -1032,6 +1074,176 @@ export class ContextController {
     ctrl._uiView.showToast(`${kind}: ${decisionRef}${detail ? ` — ${detail}` : ''}`, { type: 'info' })
   }
 
+  // ── Ownership / proposals / agenda (ADR-104) ─────────────────────────────────
+  //
+  // Every verb here goes through the CommandStack and through ContextService's
+  // single writers; none of them re-derives a permission inline (the gates live
+  // in the pure layer and hand back their reasons with their answer).
+
+  /** The keys held right now — session state, read from the store (ADR-104 D1). */
+  get _keyring() { return useUIStore.getState().context.keyring }
+
+  /**
+   * Raise a proposal against a claim someone else owns (ADR-104 D3).
+   *
+   * The 3D gesture that produced `to` already happened; this is where "trying to
+   * move it" is recorded rather than refused. Nothing is blocked and nobody's
+   * key is needed — that is what makes the third permission state usable rather
+   * than a politer way of saying no.
+   *
+   * @param {{kind: string, ref: string}} target
+   * @param {any} from — the claim's value when the gesture started
+   * @param {any} to   — the wanted value
+   * @param {string} rationale
+   * @param {string} by — the proposing actor
+   */
+  proposeChange(target, from, to, rationale, by) {
+    const ctrl = this._ctrl
+    let proposal
+    try {
+      proposal = makeProposal({
+        ref: `${PROPOSAL_REF_PREFIX}${Date.now().toString(36)}`,
+        by, target, from, to, rationale,
+      })
+    } catch (err) {
+      // A diffless or reasonless proposal is refused loudly, never dropped
+      // (PHILOSOPHY #11 — the input was consumed, so something must be said).
+      ctrl._uiView.showToast(err.message, { type: 'error' })
+      return null
+    }
+
+    const cmd = createProposeChangeCommand(this._ctxService, proposal, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+      ctrl._uiView.showToast(
+        `Proposed a change to ${target.ref} — it is on the floor for its owner to approve`, { type: 'info' })
+      return proposal.ref
+    })
+  }
+
+  /**
+   * Approve a proposal (ADR-104 U1 — claim + receipt in one command).
+   *
+   * The signature comes from the service, which refuses when the guards refuse
+   * and hands back the reasons. A refusal is shown, never swallowed: "the button
+   * did nothing" is the worst failure shape (PHILOSOPHY #11 / ADR-065).
+   */
+  approveProposal(proposalRef) {
+    const ctrl = this._ctrl
+    const signature = this._ctxService.signatureForProposal(proposalRef, this._keyring)
+    if (!signature) {
+      const { reasons } = this._ctxService.approvalGuards(proposalRef, this._keyring)
+      ctrl._uiView.showToast(reasons.join(' '), { type: 'error' })
+      return null
+    }
+
+    const cmd = createApproveProposalCommand(this._ctxService, proposalRef, signature, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+      ctrl._uiView.showToast(
+        `Approved ${proposalRef} — the claim moved and the receipt is in the Why trail`, { type: 'info' })
+    }).catch(err => {
+      ctrl._uiView.showToast(`Could not approve: ${err.message}`, { type: 'error' })
+      console.error('[ContextController]', err)
+    })
+  }
+
+  /**
+   * The guard verdict for one agenda row, from the predicate that decides it.
+   * Proposals go through `approvalGuards`, tabled conflicts through
+   * `settlementGuards` — the row says which it is, so the panel never picks.
+   *
+   * @param {{ref: string, source: string}} row
+   * @returns {{ok: boolean, reasons: string[]}}
+   */
+  guardsFor(row) {
+    return row.source === AGENDA_SOURCE.PROPOSAL
+      ? this._ctxService.approvalGuards(row.ref, this._keyring)
+      : this._ctxService.settlementGuards(row.ref, this._keyring)
+  }
+
+  /**
+   * Turn the pending draft into a proposal once the reason is written (D3).
+   *
+   * The draft exists because a proposal **must** carry a rationale, and there is
+   * no honest default for "why do you want this?" — inventing one would fill a
+   * required field with a placeholder, which is the failure ADR-104 is built to
+   * avoid one level up (PHILOSOPHY #31 / the Yellow Card on defaulting missing
+   * required input). So the gesture is captured, and the reason is asked for.
+   */
+  submitProposalDraft(rationale, by) {
+    const ui = useUIStore.getState()
+    const draft = ui.context.proposalDraft
+    if (!draft) return null
+    return Promise.resolve(this.proposeChange(draft.target, draft.from, draft.to, rationale, by))
+      .then(ref => {
+        if (ref) ui.actions.contextSetProposalDraft(null)
+        return ref
+      })
+  }
+
+  /** Drop the pending draft — the gesture is abandoned, nothing is recorded. */
+  discardProposalDraft() {
+    useUIStore.getState().actions.contextSetProposalDraft(null)
+  }
+
+  /** Withdraw one's own proposal — terminal, and kept in the record (D4). */
+  withdrawProposal(proposalRef) {
+    const ctrl = this._ctrl
+    const cmd = createWithdrawProposalCommand(this._ctxService, proposalRef, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+    })
+  }
+
+  /**
+   * Put a derived conflict on the floor (ADR-104 D4) — the act that starts the
+   * record. Looking at conflicts leaves no trace; this does.
+   *
+   * @param {string} conflictRef
+   * @param {string} by
+   * @param {{supersedes?: string}} [opts] — set when re-tabling a settled item (U3)
+   */
+  tableConflict(conflictRef, by, opts = {}) {
+    const ctrl = this._ctrl
+    const ref = `${AGENDA_REF_PREFIX}${Date.now().toString(36)}`
+    const cmd = createTableConflictCommand(this._ctxService, ref, conflictRef, by, opts, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+      return ref
+    })
+  }
+
+  /** Settle a tabled conflict — needs every involved party's key (D5). */
+  settleAgendaItem(agendaRef) {
+    const ctrl = this._ctrl
+    const signature = this._ctxService.signatureForSettlement(agendaRef, this._keyring)
+    if (!signature) {
+      const { reasons } = this._ctxService.settlementGuards(agendaRef, this._keyring)
+      ctrl._uiView.showToast(reasons.join(' '), { type: 'error' })
+      return null
+    }
+    const cmd = createSettleAgendaCommand(this._ctxService, agendaRef, signature, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+    })
+  }
+
+  /** Close a tabled conflict undecided — also a receipt (D4). */
+  closeAgendaItemUndecided(agendaRef, by, note) {
+    const ctrl = this._ctrl
+    const cmd = createCloseUndecidedCommand(this._ctxService, agendaRef, { by, note }, this._viewContext())
+    return Promise.resolve(cmd.execute()).then(() => {
+      ctrl._commandStack.push(cmd)
+      ctrl._refreshUndoRedoState()
+    })
+  }
+
   // ── Form answer (undoable doc mutation, ADR-050 §3.5) ────────────────────────
 
   /**
@@ -1132,6 +1344,10 @@ export class ContextController {
         this._ctxService.projectOrder(),
       )
       ui.contextSetConflicts(result.conflicts)
+      // ADR-104 D4: the agenda a person reads is assembled here from tabled
+      // conflicts ∪ live proposals, and the three counters ride along. Conflicts
+      // themselves are never stored — `result.conflicts` is re-derived output.
+      ui.contextSetAgenda(this._ctxService.projectAgenda(), this._ctxService.agendaCounters())
       // Update the form so answered questions disappear immediately (PHILOSOPHY #5).
       // Also refresh actors and variables so IntakePanel dropdowns stay current.
       if (this._mode === 'negotiate') {
@@ -1165,6 +1381,11 @@ export class ContextController {
       this._editCtx = JSON.parse(JSON.stringify(this._ctxService.getDoc()))
       this._syncAuthorWidgets()
       this._recolourAuthoring(this._ctxService.getValidatorResult())
+      // Authoring is where proposals are born (a drag on a claim you do not
+      // own), so the agenda has to be live here too — otherwise a proposal
+      // would exist with nowhere on screen showing it (PHILOSOPHY #11).
+      useUIStore.getState().actions.contextSetAgenda(
+        this._ctxService.projectAgenda(), this._ctxService.agendaCounters())
     }
   }
 

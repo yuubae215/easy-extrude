@@ -65,6 +65,25 @@ export function applyQuestionAnswer(doc, question, answer) {
       newDoc.requirements.push(answer.requirement)
       break
     }
+
+    case 'owner': {
+      // R10: target = requirement ref (ADR-104 D2). The answer is an actor ref
+      // or OWNER_NONE_DECLARED — "it belongs to nobody" is an answer, not a
+      // blank, which is the whole point of asking (PHILOSOPHY #31).
+      const req = (newDoc.requirements ?? []).find(r => r.ref === question.target)
+      if (req) req.owner = answer.owner
+      break
+    }
+
+    default:
+      // A silently ignored answer is the worst failure shape there is: the input
+      // was consumed and nothing happened (PHILOSOPHY #11). The switch used to
+      // end here with no default, so a new answer kind would have been dropped
+      // without a word.
+      throw new Error(
+        `[FormApplication] no application for answer kind "${question.answerKind}". ` +
+        'Every kind FormProjection can emit must be applicable here, or answering ' +
+        'the question does nothing and the form never empties.')
   }
 
   return newDoc

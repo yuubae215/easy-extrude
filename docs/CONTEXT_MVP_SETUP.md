@@ -2,7 +2,7 @@
 
 > **📦 凍結アーカイブ (2026-07-19)** — 本手順は ADR-046 ドラフト時点の MVP
 > 検証用で、現在は**役目を終えている**。`src/context/` は本体に取り込み済みで
-> zip 展開は不要。Context DSL は v0.4 (`schema/context-0.4.schema.json`) まで
+> zip 展開は不要。Context DSL は v0.5 (`schema/context-0.5.schema.json`) まで
 > 進化し、本番機能化されている (ADR-050)。現行の実行方法は `pnpm test:context`。
 > 入口は `docs/NAVIGATION.md` の Context 系トリガ行を参照。以下は歴史的記録。
 

@@ -19,11 +19,16 @@ import {
 
 // ── version + registration ────────────────────────────────────────────────────
 
-test('CONTEXT_DSL_VERSION bumped to context/0.4 with backward-compatible SUPPORTED_VERSIONS', () => {
-  assert.equal(CONTEXT_DSL_VERSION, 'context/0.4')
+test('context/0.4 stays supported, and CONTEXT_DSL_VERSION is the newest supported version', () => {
+  // ADR-053 introduced 0.4; later bumps (0.5 — ADR-104) must not drop it. The
+  // assertion is the *invariant* (every prior version still reads, current is
+  // the last one), not the version number of the day this test was written —
+  // pinning the number made this test fail on the next additive bump while
+  // saying nothing about whether backward compatibility actually held.
   for (const v of ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4']) {
-    assert.ok(SUPPORTED_VERSIONS.includes(v), `0.4 bump must keep ${v} supported`)
+    assert.ok(SUPPORTED_VERSIONS.includes(v), `every additive bump must keep ${v} supported`)
   }
+  assert.equal(CONTEXT_DSL_VERSION, SUPPORTED_VERSIONS[SUPPORTED_VERSIONS.length - 1])
 })
 
 test('the two robotics kinds are registered in both the schema list and the engine', () => {

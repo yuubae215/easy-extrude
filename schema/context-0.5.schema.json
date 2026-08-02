@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://easy-extrude.dev/schema/context-0.4.json",
+  "$id": "https://easy-extrude.dev/schema/context-0.5.json",
   "title": "ContextDSL",
-  "description": "Public schema for Context DSL up to context/0.4 (ADR-046, ADR-049, ADR-053). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R9: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is a strict additive superset of the prior, so 0.1-0.4 docs all conform here; `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
+  "description": "Public schema for Context DSL up to context/0.5 (ADR-046, ADR-049, ADR-053, ADR-104). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R11: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is a strict additive superset of the prior, so 0.1-0.5 docs all conform here; `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],
   "properties": {
     "version": {
       "description": "Context DSL version. Bound to SUPPORTED_VERSIONS.",
-      "enum": ["context/0.1", "context/0.2", "context/0.3", "context/0.4"]
+      "enum": ["context/0.1", "context/0.2", "context/0.3", "context/0.4", "context/0.5"]
     },
     "meta": { "$ref": "#/$defs/meta" },
     "actors": { "type": "array", "items": { "$ref": "#/$defs/actor" } },
@@ -20,6 +20,16 @@
     "variables": { "type": "array", "items": { "$ref": "#/$defs/variable" } },
     "requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
     "decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } },
+    "proposals": {
+      "description": "ADR-104 D3. What an edit gesture becomes when its author holds no key for the claim's owner: a stored diff plus a rationale. Cardinality 0..N — several proposals may stand against the same claim at once; approval carries the optimistic-locking guard (from === current value, U2) rather than last-write-wins.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/proposal" }
+    },
+    "agenda": {
+      "description": "ADR-104 D4. TABLED CONFLICTS ONLY. Conflicts are re-derived by R6 on every validate and are never stored; proposals are agenda items by existing. The agenda a person reads is the union, assembled on demand by Agenda.projectAgenda() so neither side is stored twice.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/agendaItem" }
+    },
     "specification": { "$ref": "#/$defs/specification" },
     "acceptance": { "type": "array", "items": { "$ref": "#/$defs/acceptance" } }
   },
@@ -175,6 +185,10 @@
       "properties": {
         "ref": { "type": "string" },
         "by": { "type": "string" },
+        "owner": {
+          "description": "ADR-104 D2. Who may write this claim: an actor ref, or \"none\" declaring that it belongs to nobody. Distinct from `by`, which is provenance (who said it) — inferring one from the other would fill a declared-zero with a default. The field's ABSENCE is the counted case: R10 raises an OpenQuestion instead of guessing (PHILOSOPHY #31).",
+          "type": "string"
+        },
         "kpi": {
           "type": "object",
           "additionalProperties": false,
@@ -253,7 +267,73 @@
             "newCriterion": { "$ref": "#/$defs/criterion" },
             "note": { "type": "string" }
           }
+        },
+        "keyCardinalityAtDecision": {
+          "description": "ADR-104 U4. How many keys were held when this receipt was written. Never a gate — later arrivals do not invalidate past decisions; the count is kept so that 'decided while only one party was in the room' stays visible, because that context cannot be re-derived afterwards.",
+          "type": "integer",
+          "minimum": 0
         }
+      }
+    },
+
+    "proposal": {
+      "description": "ADR-104 D3 / U1 / U2. States and transitions: docs/STATE_TRANSITIONS.md §提案. There is deliberately no `stale` state — whether a proposal has gone stale is `from === current value`, derived on every read (U2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "by", "target", "from", "to", "rationale", "state"],
+      "properties": {
+        "ref": { "type": "string" },
+        "by": { "description": "The proposing actor.", "type": "string" },
+        "target": { "$ref": "#/$defs/claimTarget" },
+        "from": { "description": "The claim's value when the gesture started — the left side of the diff and the operand of the optimistic-locking guard." },
+        "to": { "description": "The wanted value. A proposal whose from equals its to cannot be built: the receipt would state nothing." },
+        "rationale": { "description": "Why. Lands verbatim in Decision.rationale on approval.", "type": "string" },
+        "state": {
+          "description": "Proposal lifecycle. Bound to VALID_PROPOSAL_STATE.",
+          "enum": ["proposed", "approved", "withdrawn"]
+        },
+        "decidedBy": {
+          "description": "Held keys at approval — the intersection of the approver's keyring with the owner, never caller-supplied (U4).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "keyCardinalityAtDecision": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "claimTarget": {
+      "description": "What a proposal is about. `kind` is bound to TARGET_KIND in Ownership.js, where an undeclared kind throws rather than falling through to a default (PHILOSOPHY #31).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "enum": ["requirement.admissible", "requirement.criterion", "conflict"] },
+        "ref": { "type": "string" }
+      }
+    },
+
+    "agendaItem": {
+      "description": "ADR-104 D4 / U3. A conflict somebody put on the floor. States and transitions: docs/STATE_TRANSITIONS.md §議題. A settled item that re-flares becomes a NEW item carrying `supersedes` — receipts stay an append-only line so 'what is the current conclusion' has exactly one answer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "conflict", "by", "state"],
+      "properties": {
+        "ref": { "type": "string" },
+        "conflict": { "description": "The R6 conflict ref this item tabled.", "type": "string" },
+        "by": { "description": "Who tabled it — the human act that starts the record.", "type": "string" },
+        "state": {
+          "description": "Agenda lifecycle. Bound to VALID_AGENDA_STATE. `closed_undecided` is a receipt too: not concluding is a conclusion.",
+          "enum": ["open", "settled", "closed_undecided"]
+        },
+        "supersedes": { "description": "The settled item this one re-opens (U3).", "type": "string" },
+        "decidedBy": {
+          "description": "Every involved party's key at settlement (n-ary, same shape as ADR-049 invariant 8).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "keyCardinalityAtDecision": { "type": "integer", "minimum": 0 },
+        "closedBy": { "type": "string" },
+        "note": { "type": "string" }
       }
     },
     "specification": {

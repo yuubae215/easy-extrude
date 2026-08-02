@@ -38,7 +38,7 @@ Invariants (see `CLAUDE.md` §スコープ境界 for the enforcement rules):
 ```
 easy-extrude/
   src/               # Frontend (MVC + DDD; see per-directory READMEs)
-  schema/            # Public JSON Schemas: layout-1.0, context-0.4, scene-1.3 (ADR-064)
+  schema/            # Public JSON Schemas: layout-1.0, context-0.5, scene-1.3 (ADR-064)
   examples/          # Layout/Context DSL gallery seeds (factory, cell_* scenarios)
   templates/         # Hand-written complete DSL templates = backend acceptance
                      #   fixtures (consumed by core/tests/test_templates.py)
@@ -323,7 +323,7 @@ All wires are either **contracted** (closed, versioned JSON Schema) or
 | Wire | Contract | Where |
 |------|----------|-------|
 | Layout DSL v1.0 | `schema/layout-1.0.schema.json` | authored / LLM-generated; compiled by `src/layout/LayoutCompiler.js` (ADR-045); inverse `LayoutDecompiler.js` round-trips scene → DSL up to normal form (ADR-055) |
-| Context DSL v0.4 | `schema/context-0.4.schema.json` | requirement context: Facts / Decisions / OpenQuestions / KPIs / regions / robotics predicates (ADR-046/049/053); compiles to Layout DSL |
+| Context DSL v0.5 | `schema/context-0.5.schema.json` | requirement context: Facts / Decisions / OpenQuestions / KPIs / regions / robotics predicates (ADR-046/049/053) + ownership / proposals / agenda (ADR-104); compiles to Layout DSL |
 | Scene JSON v1.3 | `schema/scene-1.3.schema.json` | `SceneSerializer` round-trip; validated at BFF `/api/scenes` (ADR-064 Phase 3) |
 | BFF ⇄ core API | `packages/grasp-contract` (in-repo, ADR-082) | grasp search request/response + diagnostics; `contractVersion` guarded (ADR-074/079) |
 | ws geometry / import | declared uncontracted | declarations at `server/src/ws/sessionManager.js` / `server/src/routes/import.js` |

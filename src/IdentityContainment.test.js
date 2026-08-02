@@ -68,6 +68,41 @@ const IDENTITY_RULES = [
     all: [/['"`]Origin['"`]/],
     why: 'body frame の判定が散ると、Origin の扱いを一つ変えるたび 16 箇所を同時に直す必要が生まれ、漏れた箇所は黙って古い規則で編集ロックを外す (ADR-037 §4 / ADR-094 §波及)',
   },
+  {
+    // ADR-104 D2。所有者の **0 は 2 種類ある** — 宣言済みの 0 (正当) と未宣言の 0
+    // (「本当にいない」「名乗り忘れ」「チキンレース」が潰れたもの)。値としては
+    // どちらも「actor 名が無い」に見えるので、比較を呼び出し側で書き直すと、
+    // いつか片方だけを見た判定が生まれる。それは落ちずに *片方の 0 を黙って
+    // もう片方として扱う* ので、原則 #31 が名指しする「0 は状態に見えない」形。
+    name: '所有者の 2 種類の 0 (未宣言 / 宣言済みの none)',
+    owners: ['src/context/Ownership.js'],
+    use: "isOwnerUndeclared(owner) / isOwnerlessDeclared(owner)  — import from 'src/context/Ownership.js'",
+    all: [/owner/i, /[!=]==\s*(undefined|OWNER_NONE_DECLARED|['"`]none['"`])/],
+    why: '未宣言の 0 と宣言済みの 0 を取り違えると、「誰も名乗っていない」が「誰のものでもない」として直接編集可になり、他人の主張が黙って書き換わる (ADR-104 D2)',
+  },
+  {
+    // ADR-104 D3。「鍵を持っているか」の判定は権限そのもの。呼び出し側で
+    // keys.has(owner) を書き直すと判定は複製できるが、**理由**は複製されない —
+    // 無効フラグとその理由は同じ述語の返り値から来る必要がある (原則 #11)。
+    name: '編集権限の判定 (鍵 × 所有者)',
+    // 2 箇所あるのは階層が違うため: 鍵集合の素の所属判定は Keyring が持ち、
+    // それを「編集できるか + 理由」へ翻訳するのは Ownership が持つ。
+    owners: ['src/context/Ownership.js', 'src/context/Keyring.js'],
+    use: "editPermission(keyring, ctx, target) → { permission, reason } / hasKey(keyring, actorRef)",
+    all: [/keys?(?:ring)?\.(?:has|includes)\s*\(/, /owner/i],
+    why: '判定だけ複製すると理由が失われ、無効化された操作が「押せないが why が言えない」状態になる。ADR-065 の disabled-as-quest はそこで壊れる',
+  },
+  {
+    // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
+    // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
+    name: '提案の陳腐化判定 (from === 現在値)',
+    owners: ['src/context/Proposal.js'],
+    use: "isStale(ctx, proposal) / approvalGuards(ctx, proposal, keyring)  — import from 'src/context/Proposal.js'",
+    // `from` を **現在値と** 比べる形だけを狙う。`from` と `to` を比べる形
+    // (差分の有無 — R11) は別の問いなので当てない。
+    all: [/\.from\b/, /readClaim\s*\(/],
+    why: '陳腐化を各所で導出し直すと、比較の仕方が場所ごとにずれ、「まだ有効な提案」と「古い提案」の境界が呼び出し側の数だけ生まれる (ADR-104 U2)',
+  },
 ]
 
 test('同一性の導出規則は所有モジュール 1 箇所にのみ存在する (§1.1)', () => {

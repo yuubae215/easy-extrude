@@ -1018,11 +1018,12 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 
 ---
 
-## 提案 (proposal) — 提案 / 承認 / 取り下げ (ADR-104 D3 · 未実装)
+## 提案 (proposal) — 提案 / 承認 / 取り下げ (ADR-104 D3)
 
-**まだコードに無い。** 核 §1.4 は「クラスを書く前に状態を論理設計する」ことを
-求めるので、実装 (IA 再設計 Phase 4) より先にここへ図を起こす。台帳側の行は
-`docs/STATE_LEDGER.md` §提案中の実体。
+実装は `src/context/Proposal.js` (純粋な遷移表 + guard) と `ContextService` の
+`proposeChange` / `approveProposal` / `withdrawProposal` (+ 各 undo)。台帳側の行は
+`docs/STATE_LEDGER.md` の本表。**この図が先に在り、コードが後から来た** —
+核 §1.4 の「クラスを書く前に状態を論理設計する」の実例なので、順序を残しておく。
 
 鍵を持たない実体・変数を動かそうとしたときに生まれる差分。**「動かそうとすること
 はできる」= 提案**であり、これは repo が既に統治している decide / propose の動詞境界
@@ -1062,7 +1063,7 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 - **禁止遷移**: `承認 → 提案` / `取り下げ → 提案` (終端からの復帰)。再度動かしたい
   ときは**新しい提案**を起こす — 履歴を書き換えず追記だけで進む (U3 と同じ規律)。
 
-## 議題 (agenda item) — 議題 / 決着 / 未決のまま閉会 (ADR-104 D4 · 未実装)
+## 議題 (agenda item) — 議題 / 決着 / 未決のまま閉会 (ADR-104 D4)
 
 場 (合意する場所) に上がったもの。**議題 = 議題化された衝突 ∪ 提案**。
 
@@ -1099,7 +1100,9 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
   鍵集合から選ぶ形にして、「持っていない鍵で決めた」を表現不能にする。
   決定時点の鍵集合の基数も焼き込む — 遡って無効化はせず、**当事者が 1 人だった時期の
   決定の個数を数えて出す** (ADR-100 の ratchet と同形)。
-- **基数 `0..N`**: 0 = 場に何も上がっていない (正当・頻出)。
+- **基数 `0..N`**: 0 = 場に何も上がっていない (正当・頻出)。実装は
+  `src/context/Agenda.js` (遷移表 + `settlementGuards`) と `ContextService` の
+  `tableConflict` / `settleAgendaItem` / `closeAgendaItemUndecided` (+ undo)。
 
 ---
 

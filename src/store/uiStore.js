@@ -181,7 +181,26 @@ export const useUIStore = create((set, get) => ({
     conflictMatrix: null,    // ContextService.projectMatrix() | null
     resolutionOrder: [],     // ContextService.projectOrder() — DSM meeting order
     personaFilter: null,     // actorRef | null
-    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why' | 'tree' | 'intake' | 'grasp'
+    // ── ADR-104: ownership / proposals / agenda ──────────────────────────────
+    // `keyring` is SESSION state, not document state: which actors you may write
+    // as. Cardinality 0..N and **0 is not filled in** — an empty keyring means
+    // every owned claim is propose-only, which is the honest third answer
+    // between "everyone writes" and "nobody writes" (PHILOSOPHY #31 / D1).
+    // It is a set, not a choice, so holding two keys needs no switch — that is
+    // what keeps permissions from becoming a mode.
+    keyring: [],             // actorRef[] — written only by contextGrantKey / contextRevokeKey
+    // Read-only projections of the document (like `conflicts` above). The doc is
+    // the authority; these are what the panel renders. Deliberately NOT named
+    // `proposals` / `agenda`: those names belong to the document's arrays, and
+    // a same-named mirror here is how a view copy grows into a second source.
+    agendaRows: [],          // ContextService.projectAgenda() — tabled conflicts ∪ live proposals
+    agendaCounters: { conflicts: 0, agenda: 0, unowned: 0 },  // three numbers, never summed (D4)
+    // A gesture on someone else's claim, captured and waiting for its reason.
+    // NOT a proposal yet — a proposal must carry a rationale (D3), and there is
+    // no honest default for "why do you want this?", so the draft exists rather
+    // than a placeholder being invented. `null` = nothing pending.
+    proposalDraft: null,     // { target, from, to, reason } | null
+    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why' | 'tree' | 'intake' | 'grasp' | 'agenda'
     form: [],                // projectForm() output — open intake questions (Phase 4)
     checks: [],              // ContextService.projectChecks() — acceptance verdicts + baked predicates (ADR-062 Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
@@ -417,6 +436,22 @@ export const useUIStore = create((set, get) => ({
     contextSetPersonaFilter: (personaFilter) => set(state => ({
       context: { ...state.context, personaFilter },
     })),
+    // ── ADR-104 ───────────────────────────────────────────────────────────────
+    // The keyring's only two writers (PHILOSOPHY #1 / #4). Both are idempotent
+    // because a set has no "already there" failure to report, and neither can
+    // express "switch to acting as X" — there is nothing to switch.
+    contextGrantKey: (actorRef) => set(state => ({
+      context: { ...state.context, keyring: [...new Set([...state.context.keyring, actorRef])] },
+    })),
+    contextRevokeKey: (actorRef) => set(state => ({
+      context: { ...state.context, keyring: state.context.keyring.filter(k => k !== actorRef) },
+    })),
+    contextSetAgenda: (agendaRows, agendaCounters) => set(state => ({
+      context: { ...state.context, agendaRows, agendaCounters },
+    })),
+    contextSetProposalDraft: (proposalDraft) => set(state => ({
+      context: { ...state.context, proposalDraft },
+    })),
     contextSetTab: (inspectorTab) => set(state => ({
       context: { ...state.context, inspectorTab },
     })),
@@ -489,7 +524,11 @@ export const useUIStore = create((set, get) => ({
     })),
 
     contextEnd: () => set(state => ({
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null },
+      // `keyring` is deliberately NOT cleared here: which keys you hold is about
+      // the person at the keyboard, not about the document that was closed
+      // (ADR-104 D1/D6). The projections are cleared because they mirror a doc
+      // that is gone.
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null, agendaRows: [], agendaCounters: { conflicts: 0, agenda: 0, unowned: 0 } },
     })),
   },
 }))

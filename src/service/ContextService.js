@@ -40,6 +40,31 @@ import {
   projectRegionGhosts,
 } from '../context/PersonaProjection.js'
 import { projectForm } from '../context/FormProjection.js'
+import {
+  addProposal,
+  removeProposal,
+  withdrawProposal,
+  restoreProposalState,
+  approveProposal,
+  unapproveProposal,
+  findProposal,
+  approvalGuards,
+  PROPOSAL_STATE,
+} from '../context/Proposal.js'
+import {
+  tableConflict,
+  removeAgendaItem,
+  settleAgendaItem,
+  closeAgendaItemUndecided,
+  restoreAgendaState,
+  settlementGuards,
+  projectAgenda,
+  agendaCounters,
+  findAgendaItem,
+  AGENDA_STATE,
+} from '../context/Agenda.js'
+import { declareOwner, undeclaredOwners, editPermission } from '../context/Ownership.js'
+import { keyCardinality, signatureFor } from '../context/Keyring.js'
 import { buildWhyTree, recoverProvenance } from '../context/ProvenanceTree.js'
 import { narrateProvenance, narrateWhyTree } from '../context/ProvenanceNarrative.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
@@ -264,6 +289,175 @@ export class ContextService extends EventEmitter {
   /** Reverse of `approveDecision` (`agreed → proposed`) — the undo path (§3.5). */
   unapproveDecision(ref, viewContext) {
     return this.applyContextDoc(this._withDecisionStatus(ref, 'proposed'), viewContext)
+  }
+
+  // ── Ownership / proposals / agenda (ADR-104) ────────────────────────────────
+  //
+  // These are the document's **single writer** for the ownership model: every
+  // state transition in `docs/STATE_TRANSITIONS.md` §提案 / §議題 passes through
+  // exactly one method here (PHILOSOPHY #1), and each is paired with its undo so
+  // the CommandStack can hold it. The rules themselves live in the pure layer —
+  // this service only sequences the side effects (PHILOSOPHY #3).
+
+  /**
+   * Declare (or clear) who owns a claim. Answers R10.
+   * @param {string} reqRef
+   * @param {string|null} owner — actor ref, `OWNER_NONE_DECLARED`, or null to un-declare
+   */
+  declareOwner(reqRef, owner, viewContext) {
+    return this.applyContextDoc(declareOwner(this._doc, reqRef, owner), viewContext)
+  }
+
+  /**
+   * Put a proposal on the table. No regeneration: a proposal changes no claim,
+   * which is exactly why it is safe to make without anyone's key (ADR-104 D3).
+   * @param {object} proposal — built by `makeProposal()`
+   */
+  proposeChange(proposal, viewContext) {
+    const p = this.applyContextDoc(addProposal(this._doc, proposal), viewContext)
+    this.emit('proposalRaised', { ref: proposal.ref })
+    return p
+  }
+
+  /** Undo of `proposeChange` — history rewind, not withdrawal (which is kept). */
+  unproposeChange(ref, viewContext) {
+    return this.applyContextDoc(removeProposal(this._doc, ref), viewContext)
+  }
+
+  /** The proposer takes it back. Terminal, and kept in the record (D4). */
+  withdrawProposal(ref, viewContext) {
+    return this.applyContextDoc(withdrawProposal(this._doc, ref), viewContext)
+  }
+
+  /** Undo of `withdrawProposal`. */
+  unwithdrawProposal(ref, viewContext) {
+    return this.applyContextDoc(
+      restoreProposalState(this._doc, ref, PROPOSAL_STATE.PROPOSED), viewContext)
+  }
+
+  /**
+   * **Approve — claim + receipt in one document transform** (ADR-104 U1).
+   *
+   * Regenerates, because unlike a Decision status flip this moves a claim and
+   * the claim drives geometry. `signature` comes from `signatureForProposal()`,
+   * which derives it from the keyring — callers cannot hand in a `decidedBy`
+   * they do not hold (U4).
+   *
+   * @param {string} ref
+   * @param {{decidedBy: string[], keyCardinality: number}} signature
+   */
+  approveProposal(ref, signature, viewContext) {
+    const p = this.applyContextDoc(
+      approveProposal(this._doc, ref, signature), viewContext, { regenerate: true })
+    this.emit('proposalApproved', { ref })
+    return p
+  }
+
+  /** Undo of `approveProposal` — unwinds claim, state and receipt together. */
+  unapproveProposal(ref, viewContext) {
+    return this.applyContextDoc(unapproveProposal(this._doc, ref), viewContext, { regenerate: true })
+  }
+
+  /** Table a conflict — the human act that starts the record (D4). */
+  tableConflict(ref, conflictRef, by, opts, viewContext) {
+    const p = this.applyContextDoc(
+      tableConflict(this._doc, ref, conflictRef, by, opts), viewContext)
+    this.emit('conflictTabled', { ref, conflict: conflictRef })
+    return p
+  }
+
+  /** Undo of `tableConflict`. */
+  untableConflict(ref, viewContext) {
+    return this.applyContextDoc(removeAgendaItem(this._doc, ref), viewContext)
+  }
+
+  /** Settle a tabled conflict with every involved party's key. Terminal. */
+  settleAgendaItem(ref, signature, viewContext) {
+    const p = this.applyContextDoc(settleAgendaItem(this._doc, ref, signature), viewContext)
+    this.emit('agendaSettled', { ref })
+    return p
+  }
+
+  /** Close a tabled conflict without a conclusion — also a receipt (D4). */
+  closeAgendaItemUndecided(ref, closer, viewContext) {
+    const p = this.applyContextDoc(closeAgendaItemUndecided(this._doc, ref, closer), viewContext)
+    this.emit('agendaClosed', { ref })
+    return p
+  }
+
+  /** Undo of either terminal agenda transition. */
+  restoreAgendaItem(ref, viewContext) {
+    return this.applyContextDoc(restoreAgendaState(this._doc, ref, AGENDA_STATE.OPEN), viewContext)
+  }
+
+  // ── Ownership reads (gates and projections) ─────────────────────────────────
+
+  /**
+   * May this keyring write this claim, and why (ADR-104 D3). One call returns
+   * both — a caller that disables an affordance always has the reason to show
+   * (PHILOSOPHY #11).
+   */
+  editPermission(keyring, target) {
+    return editPermission(keyring, this._doc, target)
+  }
+
+  /** Every reason approving this proposal would be refused (G0 / G1 / G2). */
+  approvalGuards(ref, keyring) {
+    const proposal = findProposal(this._doc, ref)
+    if (!proposal) return { ok: false, reasons: [`No proposal "${ref}".`], owner: undefined }
+    return approvalGuards(this._doc, proposal, keyring)
+  }
+
+  /**
+   * The signature for approving a proposal: the held keys intersected with the
+   * claim's owner, plus the keyring's size at this moment (U4). Returns `null`
+   * when the guards refuse — the same predicate decides both, so an approval
+   * cannot be signed past its own gate.
+   */
+  signatureForProposal(ref, keyring) {
+    const guards = this.approvalGuards(ref, keyring)
+    if (!guards.ok) return null
+    return {
+      decidedBy: signatureFor(keyring, [guards.owner]),
+      keyCardinality: keyCardinality(keyring),
+    }
+  }
+
+  /** Every reason settling this agenda item would be refused. */
+  settlementGuards(ref, keyring) {
+    const item = findAgendaItem(this._doc, ref)
+    if (!item) return { ok: false, reasons: [`No agenda item "${ref}".`], required: [], held: [] }
+    const conflict = (this._validatorResult?.conflicts ?? []).find(c => c.ref === item.conflict)
+    return settlementGuards(this._doc, item, conflict, keyring)
+  }
+
+  /** The signature for settling — every involved owner's key, or `null`. */
+  signatureForSettlement(ref, keyring) {
+    const guards = this.settlementGuards(ref, keyring)
+    if (!guards.ok) return null
+    return { decidedBy: guards.required, keyCardinality: keyCardinality(keyring) }
+  }
+
+  /** The agenda as a person sees it: tabled conflicts ∪ live proposals (D4). */
+  projectAgenda() {
+    return projectAgenda(this._doc ?? {}, this._validatorResult ?? {})
+  }
+
+  /**
+   * The three header counters (D4). Deliberately three numbers, not a sum:
+   * an ignored conflict stays unresolved, an ignored proposal simply leaves the
+   * current value standing, and reading opposite urgencies as one number would
+   * mislead whichever way the reader guessed.
+   */
+  agendaCounters() {
+    return agendaCounters(this._doc ?? {}, this._validatorResult ?? {}, {
+      undeclaredOwners: undeclaredOwners(this._doc ?? {}).length,
+    })
+  }
+
+  /** Claims nobody has claimed ownership of — the counted case (D2). */
+  undeclaredOwners() {
+    return undeclaredOwners(this._doc ?? {})
   }
 
   // ── Pure-projection wrappers (approvedRefs derived from the doc) ────────────
