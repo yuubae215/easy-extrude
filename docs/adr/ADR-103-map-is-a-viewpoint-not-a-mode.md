@@ -112,6 +112,15 @@ this._canvas.setAttribute('aria-label',
   形に降ろした (ADR-100 の `RETIRED_SELECTION_COLORS` と同形)。
 - **未解決だった「ツール選択で視点を倒すか」は倒さないまま。** 実測で問題になったら
   再検討する、を維持している。
+- **リネームは `src/**` の census が構造的に見ない場所を壊した。** `RETIRED_MODE_SHAPES`
+  は緑、`pnpm test` も緑のまま、CI の gate が落ちた — `docs/gsn/adr-099-*.gsn` の
+  solution が `src/controller/map/MapModeController.js` を artifact として手書きで
+  参照しており、走査範囲 (`src/**`) の外だったため。**規則を足す場面ではない**:
+  `pnpm test:gsn` は既に問い所として存在し CI の gate にも入っていて、正しく
+  ERROR を出した (見落としたのは人の側)。記録しておく価値があるのは
+  *「ファイルの住所を変える変更は、コードの外にある参照 — `.gsn` の artifact、
+  ADR の References、NAVIGATION の索引 — を壊す。走査は `src/**` で止まるので、
+  そこは別の検査 (`test:gsn`) が数えている」* という**境界の所在**のほうである。
 
 ## References
 
