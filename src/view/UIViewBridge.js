@@ -17,7 +17,6 @@ export class UIViewBridge {
   _reactExtrusionLabel     = false
   _reactInfoBar            = false
   _reactModals             = false
-  _reactMapToolbar         = false
   _reactContextMenu        = false
   _reactAddMenu            = false
   _reactLinkTypePicker     = false
@@ -37,7 +36,6 @@ export class UIViewBridge {
   enableReactExtrusionLabel()     { this._reactExtrusionLabel = true }
   enableReactInfoBar()            { this._reactInfoBar = true }
   enableReactModals()             { this._reactModals = true }
-  enableReactMapToolbar()         { this._reactMapToolbar = true }
   enableReactContextMenu()        { this._reactContextMenu = true }
   enableReactAddMenu()            { this._reactAddMenu = true }
   enableReactLinkTypePicker()     { this._reactLinkTypePicker = true }
@@ -157,11 +155,18 @@ export class UIViewBridge {
     useUIStore.getState().actions.hideContextMenu()
   }
 
-  showAddMenu(x, y, onBox, onSketch, onMeasure, onImportStep, onFrame, onRobot) {
-    useUIStore.getState().actions.showAddMenu({
-      x, y,
-      cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame, onRobot },
-    })
+  /**
+   * Opens the Add menu. Takes an options object rather than a positional tail:
+   * ADR-103 moved the five place-type tools in here, and a 7th / 8th positional
+   * callback is exactly how a caller silently passes the wrong verb.
+   * @param {number} x
+   * @param {number} y
+   * @param {{onBox?:Function, onSketch?:Function, onMeasure?:Function,
+   *          onImportStep?:Function, onFrame?:Function, onRobot?:Function,
+   *          onPlace?:(type:string)=>void}} cbs
+   */
+  showAddMenu(x, y, cbs) {
+    useUIStore.getState().actions.showAddMenu({ x, y, cbs })
   }
 
   hideAddMenu() {
@@ -210,22 +215,19 @@ export class UIViewBridge {
     })
   }
 
-  // ── Map toolbar ───────────────────────────────────────────────────────────
+  // ── Projection axis (ADR-103) ─────────────────────────────────────────────
 
-  // ADR-073: no name form / Confirm step — map objects create immediately on
-  // geometry completion, so the toolbar carries only tools, Cancel, and Exit.
-  showMapToolbar(activeTool, onToolSelect, onCancel, onExit) {
-    const { registerCallback, setMapToolbar } = useUIStore.getState().actions
-    registerCallback('onMapToolSelect', onToolSelect)
-    registerCallback('onMapCancel',  onCancel ?? null)
-    registerCallback('onMapExit',    onExit)
-    setMapToolbar({ visible: true, activeTool, showCancel: !!onCancel })
-  }
+  // The former Map toolbar is gone: its camera lives on the gizmo, its
+  // projection on the toggle below, and its five drawing tools in the Add menu.
 
-  hideMapToolbar() {
-    useUIStore.getState().actions.setMapToolbar({
-      visible: false, activeTool: null, showCancel: false,
-    })
+  /**
+   * Reflects the current projection into the chrome. The AUTHORITY is
+   * `SceneView._projection`; this is the display copy, written on the one path
+   * that also writes the authority (AppController.onProjectionChange).
+   * @param {'perspective'|'orthographic'} kind
+   */
+  setProjection(kind) {
+    useUIStore.getState().actions.setProjection(kind)
   }
 
   // ── Onboarding ────────────────────────────────────────────────────────────
@@ -267,8 +269,8 @@ export class UIViewBridge {
     useUIStore.getState().actions.registerCallback('onRedoClick', cb)
   }
 
-  onMapModeClick(cb) {
-    useUIStore.getState().actions.registerCallback('onMapModeClick', cb)
+  onProjectionChange(cb) {
+    useUIStore.getState().actions.registerCallback('onProjectionChange', cb)
   }
 
   onNodeEditorToggle(cb) {

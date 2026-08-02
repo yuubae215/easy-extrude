@@ -4,7 +4,7 @@
  *
  * Splits the grasp walkthrough out of ContextController (single responsibility,
  * §1.1) into a dedicated persistent-overlay coordinator parallel to
- * ContextController / MapModeController. It is NOT a `setMode()` FSM state
+ * ContextController / PlaceToolController. It is NOT a `setMode()` FSM state
  * (ADR-057 §H / ADR-047 §2.1): orbit / select / grab stay live underneath while
  * the user reads candidates.
  *

@@ -125,21 +125,14 @@ export class SceneStage {
     this._fog.density = fogDensityFor(s)
   }
 
-  /**
-   * Suspends / restores the depth fog. The fog density is tuned for the
-   * perspective camera's short standoff; the 2D Map Mode ortho camera sits a
-   * fixed ~100 units above the z≈0 map plane, where FogExp2 attenuates ~99.7%
-   * and renders every fogged material (lit cubes AND MeshBasicMaterial
-   * annotations) near-black — "can't see where anything is placed". While the
-   * ortho map camera is active the fog is swapped out; `this._fog` stays the
-   * owned object (its density is still maintained by `setScale`), only what
-   * `scene.fog` points at toggles, so SceneStage remains the sole owner
-   * (PHILOSOPHY #4). Same class of camera-assumption bug as PHILOSOPHY #27.
-   * @param {boolean} suspended
-   */
-  setFogSuspended(suspended) {
-    this._scene.fog = suspended ? null : this._fog
-  }
+  // `setFogSuspended()` was retired by ADR-103. It existed because the old Map
+  // Mode ortho camera sat at a FIXED ~100 units above the map plane, where the
+  // perspective-tuned FogExp2 attenuated ~99.7% and rendered everything
+  // near-black. The projection axis derives the ortho camera from the
+  // perspective camera's own eye point, so the fogged depth is identical in both
+  // projections and there is nothing left to suspend. A retired method kept
+  // "just in case" is the same debt as a retired value left in an enum
+  // (STATE_LEDGER §既知の負債 3).
 
   /**
    * Advance the ambient drift + entry fade. Called once per frame from

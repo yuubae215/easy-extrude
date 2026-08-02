@@ -18,25 +18,32 @@
 
 核 §1.4 の閾値を既に跨いでいる (提案・議題がそれぞれ 3 状態)。**クラスを書く前に**:
 
-- [ ] `docs/STATE_TRANSITIONS.md` に **提案** (`提案 → 承認 / 取り下げ`) と
+- [x] `docs/STATE_TRANSITIONS.md` に **提案** (`提案 → 承認 / 取り下げ`) と
       **議題** (`議題 → 決着 / 未決のまま閉会`) の節を起こす。guard と禁止遷移を列挙。
-- [ ] ADR-104 の**未解決 4 点**を決める。特に **#1「承認は主張を更新するか」**は
-      他の全段に波及する (承認が undoable command になるか、単なる記録かが変わる)。
-- [ ] ADR-103 / ADR-104 を Accepted へ (または差し戻し)。
+- [x] ADR-104 の**未解決 4 点**を決める → ADR-104 §未解決 4 点の決着 (U1〜U4)。
+      **#1 は yes** (承認 = 主張更新 + 証憑記録の 1 undoable command)、#2 は楽観ロック
+      guard で併存、#3 は新議題 + `supersedes`、#4 は記録時点の鍵集合を焼き込む。
+- [x] ADR-103 / ADR-104 を Accepted へ。
 
-**完了条件:** 不正状態が型で表現不能になる設計が図で描けている。
+**完了条件: 達成。** 不正状態が型で表現不能になる設計が図で描けている
+(`stale` を状態にしない・`decidedBy ⊆ 決定時点の鍵集合`・終端からの復帰なし)。
 
 ## Phase 1 — Map の再分類 (ADR-103)
 
 他のどの段にも依存しない**独立した削除**なので、最初に片付けると以降の見通しが良くなる。
 
-- [ ] `MapModeController.state.active` の撤去。描画状態 (`idle` / `drawing`) はツール状態として残す。
-- [ ] Lynch 5 種を `+ 追加` へ。ヘッダの Map ボタンと Map ツールバー (`left:188px`) を削除。
-- [ ] 投影方式 (正射 / 透視) をギズモ隣のトグルへ。向きの入口はギズモのまま (足さない)。
-- [ ] 随伴更新: `STATE_LEDGER` (行の削除 + 負債 #1 を閉じる) / `STATE_TRANSITIONS` §Map Mode /
-      `SCREEN_DESIGN` S-14〜S-16 / `LAYOUT_DESIGN` (左端の占有計算 — 原則 #26)。
+- [x] `MapModeController.state.active` の撤去 → `PlaceToolController` へ再分類。
+      描画状態 (`idle` / `drawing`) はツール状態として残った。
+- [x] Lynch 5 種を `+ 追加` の **Place** グループへ。ヘッダの Map ボタンと Map ツールバー
+      (`left:188px`) を削除。pan / wheel / pinch は OrbitControls へ返した。
+- [x] 投影方式 (正射 / 透視) をギズモ直下のトグルへ。向きの入口はギズモのまま (足さない)。
+      正射カメラは透視カメラからの**毎フレーム導出**にした (状態を持たない)。
+- [x] 随伴更新: `STATE_LEDGER` (行の入れ替え + 負債 #1 と #3 を閉じる) /
+      `STATE_TRANSITIONS` §Top-level Modes・§Place tool・§Projection /
+      `SCREEN_DESIGN` S-14〜S-16 / `LAYOUT_DESIGN` / `CODE_CONTRACTS` 4 行 / `NAVIGATION`。
 
-**完了条件:** トップレベルモードが OBJECT / EDIT の 2 値になり、`edit` かつ真上から見られる。
+**完了条件: 達成。** トップレベルモードは 2 値で、`edit` かつ正射で真上から見られる
+(e2e「正射のまま Edit Mode に入れる」が焼いている)。
 
 ## Phase 2 — 発見を場の外へ (最小で効果が最大)
 

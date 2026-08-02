@@ -1,15 +1,44 @@
 /**
- * MapModeController — owns all 2D Map Mode state and interaction logic.
+ * PlaceToolController — owns the annotation DRAWING TOOL and nothing else.
  *
- * Entered via the "Map" header button. Uses an orthographic top-down camera
- * for distortion-free 2D placement of AnnotatedLine / AnnotatedRegion /
- * AnnotatedPoint entities.
+ * ## What this used to be (ADR-103)
  *
- * Two-state drawing model (ADR-031 §1; ADR-073 removed the old 'pending' state):
- *   idle     → no gesture in progress; tool may or may not be selected
- *   drawing  → gesture in progress (rubber-band follows cursor)
+ * This was `MapModeController`, a third top-level mode alongside OBJECT / EDIT.
+ * The mode fused three unrelated things: a camera ORIENTATION (top-down), a
+ * PROJECTION (orthographic), and a set of DRAWING TOOLS. Fusing them made
+ * `edit ∧ mapMode.active` representable (an illegal state held off only by
+ * convention) while making "edit while looking straight down" — a thing users
+ * actually want — unreachable. ADR-103 took the three apart and put each back
+ * on a shelf that already existed:
+ *
+ *   - orientation → the world gizmo (Z axis click, eased flight since ADR-068)
+ *   - projection  → `SceneView.setProjection()` (a view setting, not a mode)
+ *   - tools       → the `+ Add` menu, next to every other "place a thing" verb
+ *   - entities    → plain scene objects (they always were)
+ *
+ * What survives is this: the tool state. It is orthogonal to both the camera and
+ * the mode, exactly like Sketch drawing.
+ *
+ * ## State (STATE_LEDGER §配置ツール)
+ *
+ *   tool       'route'|'boundary'|'zone'|'hub'|'anchor'|null   cardinality 0..1
+ *   drawState  'idle'|'drawing'   (ADR-031 §1; ADR-073 removed 'pending')
+ *
+ * `tool === null` is the common, legitimate case: no tool selected means the
+ * viewport behaves exactly as it always does (select, orbit, grab). Nothing here
+ * intercepts input while the cardinality is 0.
+ *
  * Completing the geometry (click a point / release a drag / Enter|RMB a line)
  * creates the entity IMMEDIATELY with an auto-name — no name form, no confirm.
+ *
+ * ## What this controller deliberately does NOT own
+ *
+ * Camera. There is no pan, no wheel zoom, no pinch handling here any more:
+ * OrbitControls owns all three, and `SceneView.setDrawGestureActive()` suspends
+ * only the two gestures a drawing tool truly consumes (RMB, one-finger drag —
+ * 原則 #14). The old code carried its own pan state, its own frustum size, its
+ * own pinch tracker and its own saved-view/stolen-camera guard; every one of
+ * those existed only because the mode had taken the camera hostage.
  *
  * Dependencies:
  *   ctrl — the AppController instance (sceneView, uiView, service, scene, etc.)
@@ -22,7 +51,7 @@ import { AnnotatedRegion } from '../../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../../domain/AnnotatedPoint.js'
 import { getPlaceTypeEntry } from '../../domain/PlaceTypeRegistry.js'
 import { CoordinateFrame } from '../../domain/CoordinateFrame.js'
-import { frustumForDistance, distanceForFrustum } from '../../view/CameraMath.js'
+import { frustumForDistance } from '../../view/CameraMath.js'
 import { createAddAnnotationCommand } from '../../command/AddAnnotationCommand.js'
 import { geometrySnapshot, snapTransition, snapFlashDescriptor } from '../../view/SnapFeedbackMath.js'
 import { SnapFlash } from '../../view/SnapFlash.js'
@@ -30,21 +59,31 @@ import { cursorFrame, ringFrame, mapGridStep } from '../../view/MapPreviewMath.j
 import { prefersReducedMotion } from '../../theme/motion.js'
 import { COLOR } from '../../theme/tokens.js'
 
-/** Ortho zoom clamp (world-units frustum height) — shared by wheel and enter. */
-const FRUSTUM_MIN = 2
-const FRUSTUM_MAX = 500
+/**
+ * The place types this tool can draw, in the order they are offered. The single
+ * source for "which tools exist" — the Add menu reads it rather than repeating
+ * the list (§1.1).
+ */
+export const PLACE_TOOLS = Object.freeze([
+  { type: 'route',    label: 'Route',    geometry: 'line'   },
+  { type: 'boundary', label: 'Boundary', geometry: 'line'   },
+  { type: 'zone',     label: 'Zone',     geometry: 'region' },
+  { type: 'hub',      label: 'Hub',      geometry: 'point'  },
+  { type: 'anchor',   label: 'Anchor',   geometry: 'point'  },
+])
 
-export class MapModeController {
+/** Tool type → entry. Unknown types throw rather than defaulting (原則 #31). */
+const TOOL_BY_TYPE = new Map(PLACE_TOOLS.map(t => [t.type, t]))
+
+export class PlaceToolController {
   /**
    * @param {import('../AppController.js').AppController} ctrl
    */
   constructor(ctrl) {
     this._ctrl = ctrl
 
-    /** @type {object} All mutable map-mode state */
+    /** @type {object} All mutable place-tool state */
     this.state = {
-      /** Whether map mode is currently active */
-      active: false,
       /** Active drawing tool: 'route'|'boundary'|'zone'|'hub'|'anchor'|null */
       tool:   null,
       /** 'idle'|'drawing' (ADR-031 §1; the old 'pending' name+confirm gate was
@@ -58,17 +97,12 @@ export class MapModeController {
       previewLine: null,
       /** THREE.Mesh cursor dot */
       cursorDot:   null,
-      /** Panning state */
-      isPanning:   false,
-      panStart:    null,   // { screenX, screenY, camX, camY }
-      /** Current orthographic frustum height (world units) */
-      frustumSize: 50,
       /**
-       * Mobile drag start: set on pointerdown for Line/Region/Point tools.
-       * Cleared on pointerup.
+       * Drag start: set on pointerdown for the drag-shaped gestures (all types
+       * on touch, Region on PC). Cleared on pointerup.
        * @type {{ pt: THREE.Vector3, screenX: number, screenY: number }|null}
        */
-      mobileDragStart: null,
+      dragStart: null,
       /**
        * Per-type creation counters for default name generation ("Route 1", "Zone 2" …).
        */
@@ -83,43 +117,8 @@ export class MapModeController {
        * @type {THREE.Vector3|null}
        */
       snapCandidate: null,
-      /**
-       * Active touch pointers (screen coords), for two-finger pinch-zoom.
-       * Touch devices have no wheel and OrbitControls' pinch is disabled in
-       * Map Mode, so the ortho zoom is driven here instead.
-       * @type {Map<number,{x:number,y:number}>}
-       */
-      touchPoints: new Map(),
-      /**
-       * Live pinch-zoom baseline captured when the 2nd finger lands, or null.
-       * @type {{startDist:number, startFrustum:number}|null}
-       */
-      pinch: null,
-      /**
-       * True from the 2nd finger landing until ALL fingers lift — suppresses
-       * single-finger pan/draw so a leftover finger can't jump after a pinch.
-       */
-      pinchLock: false,
     }
 
-    /**
-     * Pre-map perspective pose, captured at enter() for the exit return
-     * flight (ADR-072 decision 1). Presentation-only — never part of the
-     * drawing FSM.
-     * @type {{position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3}|null}
-     */
-    this._savedView = null
-    /** True once the enter flight handed the viewport to the ortho camera. */
-    this._orthoSwapped = false
-    /**
-     * Perspective camera position at the moment of the ortho swap — the
-     * external-write guard for exit (CameraFlight `_cameraStolen` sibling):
-     * if anything moved the perspective camera during map mode (a scene load's
-     * fitCameraToSphere), the external writer owns it and exit swaps without
-     * repositioning or flying.
-     * @type {THREE.Vector3|null}
-     */
-    this._stagedPos = null
     /**
      * Previous endpoint-snap snapshot for the engagement flash (ADR-072
      * decision 3) — controller-local presentation history, same rule as the
@@ -131,8 +130,8 @@ export class MapModeController {
     /**
      * Preview idle-motion state (ADR-072 refinement, Tier A): birth clocks
      * for the cursor dot and snap ring, assigned by `tick()` on the first
-     * frame each exists; reduced-motion is sampled once per map session at
-     * enter() from the single boundary (per-spawn discipline, ADR-065 Ph 5).
+     * frame each exists; reduced-motion is sampled once per tool activation
+     * from the single boundary (per-spawn discipline, ADR-065 Ph 5).
      */
     this._cursorBornAt   = null
     this._ringBornAt     = null
@@ -141,227 +140,89 @@ export class MapModeController {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /** True when map mode is currently active. */
-  get isActive() { return this.state.active }
-
-  /** True when a drawing tool is selected (map pointerdown guard). */
+  /** True when a drawing tool is selected (the pointer-handler guard). */
   get hasTool() { return !!this.state.tool }
 
   /**
-   * Enters 2D Map Mode (ADR-072 decision 1): the mode state activates
-   * immediately (state first, presentation follows — 核 §1.4); the camera
-   * flies to a top-down staging pose through the same `flyToView` contract as
-   * the world gizmo (ADR-069), and the perspective→ortho projection swap
-   * happens when the flight ends — in ANY way (landing, user interruption,
-   * external write, eviction), so the mode's terminal camera state is always
-   * reached (#11). The staging frustum is derived from the current viewing
-   * distance (`frustumForDistance`) so the swap preserves apparent scale and
-   * the map opens framed on what the user was looking at.
+   * Selects a place tool — the ONE entry point for arming the drawing gesture
+   * (原則 #1). Wired to the `+ Add` menu's Place group; there is no mode to
+   * enter first and the camera is not touched (ADR-103: if the user wants a
+   * top-down view they press the gizmo's Z axis, which is where that control
+   * has always lived).
+   * @param {string} type  'route'|'boundary'|'zone'|'hub'|'anchor'
    */
-  enter() {
-    const { _ctrl: ctrl, state } = this
-    if (state.active) return
-    if (ctrl._scene.selectionMode === 'edit') ctrl.setMode('object')
-    state.active          = true
-    state.tool            = null
-    state.drawState       = 'idle'
-    state.points          = []
-    state.cursor          = null
-    state.mobileDragStart = null
-    state.isPanning       = false
-    state.touchPoints.clear()
-    state.pinch           = null
-    state.pinchLock       = false
-    this._snapFxPrev      = null
-    this._cursorBornAt    = null
-    this._ringBornAt      = null
-    this._previewReduced  = prefersReducedMotion()
-
-    const sv = ctrl._sceneView
-    this._savedView = {
-      position: sv.camera.position.clone(),
-      target:   sv.controls.target.clone(),
-      up:       sv.camera.up.clone(),
-    }
-    this._orthoSwapped = false
-    this._stagedPos    = null
-    // Orbit must not fight the enter flight or the map's pointer handlers;
-    // useOrthoCamera(true) re-disables it at the swap (idempotent).
-    sv.controls.enabled = false
-
-    const t    = sv.controls.target
-    const dist = Math.max(sv.camera.position.distanceTo(t), 1e-3)
-    state.frustumSize = Math.max(FRUSTUM_MIN,
-      Math.min(FRUSTUM_MAX, frustumForDistance(dist, sv.camera.fov)))
-    const stageDist = distanceForFrustum(state.frustumSize, sv.camera.fov)
-    ctrl.flyToView({
-      position: new THREE.Vector3(t.x, t.y, stageDist),
-      target:   new THREE.Vector3(t.x, t.y, 0),
-      // Screen-north = +Y, matching the ortho camera, so the swap is
-      // orientation-seamless (up ⊥ the top-down view direction — no
-      // singularity, unlike the gizmo's Z+ special case).
-      up:       new THREE.Vector3(0, 1, 0),
-    }, () => this._completeEnterSwap())
-
-    ctrl._uiView.setCursor('default')
-    ctrl._uiView.setStatus('Map Mode — select a type on the left to start drawing')
-    this._refreshToolbar()
-    ctrl._updateMobileToolbar()
+  setTool(type) {
+    if (!TOOL_BY_TYPE.has(type)) throw new Error(`[PlaceTool] unknown place tool "${type}"`)
+    this.cancel()
+    const { state } = this
+    state.tool           = type
+    state.drawState      = 'drawing'
+    state.points         = []
+    state.cursor         = null
+    this._previewReduced = prefersReducedMotion()
+    this._ctrl._sceneView.setDrawGestureActive(true)
+    this._ctrl._uiView.setCursor('crosshair')
+    this._updateStatus()
+    this._ctrl._updateMobileToolbar()
   }
 
   /**
-   * The terminal projection swap at the end of the enter flight. No-ops when
-   * the user already exited map mode mid-flight (exit flips `state.active`
-   * BEFORE it flies back, so a finished enter flight cannot re-swap).
+   * Disarms the tool and discards any in-progress geometry — the ONE exit
+   * (原則 #1). Idempotent: calling it with no tool active is a no-op, so ESC in
+   * an ordinary viewport is not intercepted.
    */
-  _completeEnterSwap() {
-    const { _ctrl: ctrl, state } = this
-    if (!state.active || this._orthoSwapped) return
-    this._orthoSwapped = true
-    ctrl._sceneView.useOrthoCamera(true, state.frustumSize)
-    this._stagedPos = ctrl._sceneView.camera.position.clone()
+  cancel() {
+    const { state } = this
+    const had = !!state.tool
+    this._clearPreview()
+    state.tool          = null
+    state.drawState     = 'idle'
+    state.points        = []
+    state.cursor        = null
+    state.dragStart     = null
+    state.snapCandidate = null
+    this._snapFxPrev    = null
+    this._cursorBornAt  = null
+    this._ringBornAt    = null
+    if (!had) return
+    this._ctrl._sceneView.setDrawGestureActive(false)
+    this._ctrl._uiView.setCursor('default')
+    this._ctrl._refreshObjectModeStatus()
+    this._ctrl._updateMobileToolbar()
   }
 
   /**
-   * Exits 2D Map Mode (ADR-072 decision 1, the inverse choreography): the
-   * perspective camera is placed at the pose that MATCHES the current ortho
-   * view (same centre, `distanceForFrustum` height, same screen-north) so the
-   * projection swap back is a seamless one-frame cut, then it flies to the
-   * pose saved at enter. If something else wrote the perspective camera while
-   * the map was open (external-write guard), the external writer owns it:
-   * swap only, no reposition, no flight.
-   */
-  exit() {
-    const { _ctrl: ctrl, state } = this
-    this._cancelDrawing()
-    state.active     = false
-    state.isPanning  = false
-
-    const sv    = ctrl._sceneView
-    const saved = this._savedView
-    this._savedView = null
-
-    if (this._orthoSwapped) {
-      const staged = this._stagedPos
-      this._stagedPos = null
-      const tol = Math.max(Math.abs(staged?.x ?? 1), Math.abs(staged?.y ?? 1),
-        Math.abs(staged?.z ?? 1), 1) * 1e-4
-      const stolen = !staged ||
-        sv.camera.position.distanceToSquared(staged) > tol * tol
-      if (!stolen) {
-        // Matched staging pose from the CURRENT ortho centre/zoom.
-        const oc = sv.activeCamera // the ortho camera while swapped
-        const h  = distanceForFrustum(state.frustumSize, sv.camera.fov)
-        sv.camera.position.set(oc.position.x, oc.position.y, h)
-        sv.camera.up.set(0, 1, 0)
-        sv.controls.target.set(oc.position.x, oc.position.y, 0)
-        sv.camera.lookAt(oc.position.x, oc.position.y, 0)
-      }
-      sv.useOrthoCamera(false)
-      if (!stolen && saved) ctrl.flyToView(saved)
-    } else {
-      // Exit during the enter flight: never swapped — fly straight back
-      // (flyToView finishes the running enter flight first; its onDone
-      // no-ops because state.active is already false).
-      sv.useOrthoCamera(false)
-      if (saved) ctrl.flyToView(saved)
-    }
-
-    ctrl._uiView.hideMapToolbar()
-    ctrl._uiView.setCursor('default')
-    ctrl._refreshObjectModeStatus()
-    ctrl._updateMobileToolbar()
-  }
-
-  /**
-   * Handles wheel zoom event in map mode.
-   * @param {WheelEvent} e
-   * @returns {boolean} true if event was consumed
-   */
-  onWheel(e) {
-    if (!this.state.active) return false
-    e.preventDefault()
-    const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15
-    this.state.frustumSize = Math.max(2, Math.min(500, this.state.frustumSize * factor))
-    this._ctrl._sceneView.setOrthoZoom(this.state.frustumSize)
-    return true
-  }
-
-  /**
-   * Handles pointermove in map mode (pan + drawing preview).
+   * Handles pointermove while a tool is armed (drawing preview only — panning
+   * belongs to OrbitControls now).
    * @param {PointerEvent} e
    * @returns {boolean} true if event was consumed
    */
   onPointerMove(e) {
     const { state } = this
-    if (!state.active) return false
-
-    // Two-finger pinch-zoom takes priority over pan/draw (touch only).
-    if (state.touchPoints.has(e.pointerId)) {
-      state.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      if (state.pinchLock) {
-        if (state.pinch && state.touchPoints.size >= 2) this._updatePinch()
-        return true // a lone leftover finger holds steady — never resumes pan
-      }
-    }
-
-    if (state.isPanning && state.panStart) {
-      const { frustumSize } = state
-      const aspect = innerWidth / innerHeight
-      const dx = (e.clientX - state.panStart.screenX) * (frustumSize * aspect / innerWidth)
-      const dy = (e.clientY - state.panStart.screenY) * (frustumSize / innerHeight)
-      this._ctrl._sceneView.panOrthoCamera(
-        state.panStart.camX - dx,
-        state.panStart.camY + dy,
-      )
-      return true
-    }
-
-    // Update preview in drawing state only
-    if (state.tool && state.drawState === 'drawing') {
-      const pt = this._pickPoint(e)
-      state.cursor = pt
-      this._updatePreview()
-    }
+    if (!state.tool) return false
+    if (state.drawState !== 'drawing') return false
+    state.cursor = this._pickPoint(e)
+    this._updatePreview()
     return true
   }
 
   /**
-   * Handles pointerdown in map mode (pan start + drawing clicks).
+   * Handles pointerdown while a tool is armed.
    * @param {PointerEvent} e
    * @returns {boolean} true if event was consumed
    */
   onPointerDown(e) {
     const { _ctrl: ctrl, state } = this
-    if (!state.active) return false
+    if (!state.tool) return false
 
-    // Record touch pointers for pinch-zoom. Only the FIRST finger reaches here
-    // (AppController routes the 2nd through `onExtraTouchDown`), so recording
-    // it here never itself starts a pinch — but it makes the first finger's
-    // live position available once the second lands.
-    if (e.pointerType === 'touch') this._trackTouchDown(e)
-
-    // Pan: middle button OR left button with no tool selected
-    if (e.button === 1 || (e.button === 0 && !state.tool)) {
-      state.isPanning = true
-      const cam = ctrl._sceneView.activeCamera
-      state.panStart = {
-        screenX: e.clientX, screenY: e.clientY,
-        camX: cam.position.x, camY: cam.position.y,
-      }
-      ctrl._uiView.setCursor('grabbing')
-      ctrl._activeDragPointerId = e.pointerId
-      return true
-    }
-
-    if (e.button === 0 && state.tool) {
+    if (e.button === 0) {
       const pt       = this._pickPoint(e)
       const geometry = this._geometryForType(state.tool)
 
       if (this._isMobile()) {
         // Mobile: single drag gesture for all types (ADR-031 §2)
-        state.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
-        state.cursor          = pt.clone()
+        state.dragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
+        state.cursor    = pt.clone()
         ctrl._activeDragPointerId = e.pointerId
         this._updatePreview()
         return true
@@ -376,8 +237,8 @@ export class MapModeController {
 
       if (geometry === 'region') {
         // Drag-to-rectangle: record drag start; pointerup creates the region
-        state.mobileDragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
-        state.cursor          = pt.clone()
+        state.dragStart = { pt: pt.clone(), screenX: e.clientX, screenY: e.clientY }
+        state.cursor    = pt.clone()
         ctrl._activeDragPointerId = e.pointerId
         const typeLabel = this._placeTypeForType(state.tool)
         ctrl._uiView.setStatusRich([
@@ -396,129 +257,100 @@ export class MapModeController {
       return true
     }
 
-    if (e.button === 2 && state.tool) {
+    if (e.button === 2) {
       const { points } = state
-      // RMB in drawing: PC Line with ≥2 pts → create immediately; else cancel
+      // RMB while armed: PC Line with ≥2 pts → create immediately; else disarm.
+      // OrbitControls' RMB orbit is suspended while a tool is armed
+      // (setDrawGestureActive — a true gesture conflict, 原則 #14).
       const geometry = this._geometryForType(state.tool)
       if (geometry === 'line' && points.length >= 2) {
         this._createAnnotation(points)
       } else {
-        this._cancelDrawing()
+        this.cancel()
       }
       return true
     }
 
-    return true  // always consume while map mode is active
+    return false  // middle button → OrbitControls dolly
   }
 
   /**
-   * Handles pointerup in map mode (end pan + drag gesture completion).
+   * Handles pointerup while a tool is armed (drag gesture completion).
    * @param {PointerEvent} e
    * @returns {boolean} true if event was consumed
    */
   onPointerUp(e) {
     const { _ctrl: ctrl, state } = this
-    if (!state.active) return false
+    if (!state.tool) return false
 
-    // Pinch-zoom bookkeeping: drop the lifted finger. While a pinch was in
-    // effect (pinchLock), consume every lift so a leftover finger never
-    // completes a pan/draw, and release AppController's drag pointer so a later
-    // touch isn't mistaken for a 2nd finger. The lock clears when all up.
-    if (state.touchPoints.delete(e.pointerId) && state.pinchLock) {
-      if (state.touchPoints.size < 2) state.pinch = null
-      if (ctrl._activeDragPointerId === e.pointerId) ctrl._activeDragPointerId = null
-      if (state.touchPoints.size === 0) state.pinchLock = false
-      return true
-    }
-
-    if (state.isPanning) {
-      if (ctrl._activeDragPointerId === e.pointerId) {
-        ctrl._activeDragPointerId = null
-        state.isPanning  = false
-        state.panStart   = null
-        ctrl._uiView.setCursor(state.tool ? 'crosshair' : 'default')
-      }
-      return true
-    }
-
-    if (state.mobileDragStart && ctrl._activeDragPointerId === e.pointerId) {
-      const { pt: startPt, screenX: sx, screenY: sy } = state.mobileDragStart
-      state.mobileDragStart             = null
-      ctrl._activeDragPointerId         = null
+    if (state.dragStart && ctrl._activeDragPointerId === e.pointerId) {
+      const { pt: startPt, screenX: sx, screenY: sy } = state.dragStart
+      state.dragStart           = null
+      ctrl._activeDragPointerId = null
 
       const savedTool = state.tool
-      if (!savedTool) return true
-
-      const pt       = this._pickPoint(e)
-      const geometry = this._geometryForType(savedTool)
-      const moved    = Math.hypot(e.clientX - sx, e.clientY - sy)
+      const pt        = this._pickPoint(e)
+      const geometry  = this._geometryForType(savedTool)
+      const moved     = Math.hypot(e.clientX - sx, e.clientY - sy)
 
       if (geometry === 'point') {
         this._createAnnotation([startPt])
         return true
       }
 
+      if (moved < 8) {
+        // A tap where a drag was needed: re-arm the same tool rather than
+        // silently dropping the gesture (原則 #11).
+        this.cancel()
+        this.setTool(savedTool)
+        return true
+      }
+
       if (geometry === 'line') {
-        if (moved < 8) {
-          this._cancelDrawing()
-          this._setTool(savedTool)
-          return true
-        }
         this._createAnnotation([startPt, pt])
         return true
       }
 
-      if (geometry === 'region') {
-        if (moved < 8) {
-          this._cancelDrawing()
-          this._setTool(savedTool)
-          return true
-        }
-        const p1 = startPt
-        const p2 = state.cursor ?? pt
-        this._createAnnotation([
-          new THREE.Vector3(p1.x, p1.y, 0),
-          new THREE.Vector3(p2.x, p1.y, 0),
-          new THREE.Vector3(p2.x, p2.y, 0),
-          new THREE.Vector3(p1.x, p2.y, 0),
-        ])
-        return true
-      }
+      const p1 = startPt
+      const p2 = state.cursor ?? pt
+      this._createAnnotation([
+        new THREE.Vector3(p1.x, p1.y, 0),
+        new THREE.Vector3(p2.x, p1.y, 0),
+        new THREE.Vector3(p2.x, p2.y, 0),
+        new THREE.Vector3(p1.x, p2.y, 0),
+      ])
+      return true
     }
 
     return false
   }
 
   /**
-   * Handles keydown in map mode (Escape / Enter).
+   * Handles keydown while a tool is armed (Escape / Enter). Every other key
+   * falls through — the tool is not a mode, so it does not swallow the app's
+   * keyboard (the old Map Mode consumed ALL keys).
    * @param {KeyboardEvent} e
    * @returns {boolean} true if event was consumed
    */
   onKeyDown(e) {
     const { state } = this
-    if (!state.active) return false
-
-    const { tool } = state
+    if (!state.tool) return false
 
     if (e.key === 'Escape') {
-      if (tool) {
-        this._cancelDrawing()
-      } else {
-        this.exit()
-      }
+      this.cancel()
       return true
     }
 
     // Enter finalizes a PC multi-vertex line → creates immediately (ADR-073)
-    if (e.key === 'Enter' && tool) {
-      const geometry = this._geometryForType(tool)
+    if (e.key === 'Enter') {
+      const geometry = this._geometryForType(state.tool)
       if (geometry === 'line' && state.points.length >= 2) {
         this._createAnnotation(state.points)
+        return true
       }
-      return true
     }
 
-    return true  // consume all keys while map mode is active
+    return false
   }
 
   /**
@@ -533,7 +365,7 @@ export class MapModeController {
    */
   tick(t) {
     const { state } = this
-    if (!state.active) return
+    if (!state.tool) return
 
     if (state.cursorDot) {
       if (this._cursorBornAt === null) this._cursorBornAt = t
@@ -552,68 +384,6 @@ export class MapModeController {
     }
   }
 
-  /**
-   * Registers a SECOND touch finger and starts a pinch-zoom. Called by
-   * AppController for a touch pointerdown that its single-drag guard would
-   * otherwise ignore (a 2nd finger while the 1st is panning/drawing). Map Mode
-   * is a full overlay, so it owns multi-touch here rather than OrbitControls
-   * (which is disabled while the ortho camera is active).
-   * @param {PointerEvent} e
-   * @returns {boolean} true (always consumes)
-   */
-  onExtraTouchDown(e) {
-    this._trackTouchDown(e)
-    return true
-  }
-
-  /**
-   * Records a touch pointer; when the second finger lands, begins the pinch.
-   * @param {PointerEvent} e
-   */
-  _trackTouchDown(e) {
-    const { state } = this
-    state.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    if (state.touchPoints.size === 2) this._beginPinch()
-  }
-
-  /** Captures the pinch baseline (finger distance + current zoom). */
-  _beginPinch() {
-    const { state } = this
-    const pts = [...state.touchPoints.values()]
-    if (pts.length < 2) return
-    const [a, b] = pts
-    state.pinch = {
-      startDist:    Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1),
-      startFrustum: state.frustumSize,
-    }
-    state.pinchLock = true
-    // Pinch supersedes any single-finger pan/draw already in progress.
-    state.isPanning       = false
-    state.panStart        = null
-    state.mobileDragStart = null
-    state.snapCandidate   = null
-    this._snapFxPrev      = null
-    this._clearPreview()
-    this._ctrl._uiView.setCursor('default')
-  }
-
-  /**
-   * Drives the ortho zoom from the live finger separation (spreading fingers
-   * apart zooms in). Centred like the wheel zoom — no recentre. Clamped to the
-   * same [FRUSTUM_MIN, FRUSTUM_MAX] band.
-   */
-  _updatePinch() {
-    const { state } = this
-    const pts = [...state.touchPoints.values()]
-    if (pts.length < 2 || !state.pinch) return
-    const [a, b] = pts
-    const dist   = Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1)
-    const factor = state.pinch.startDist / dist // fingers apart → dist↑ → zoom in
-    state.frustumSize = Math.max(FRUSTUM_MIN,
-      Math.min(FRUSTUM_MAX, state.pinch.startFrustum * factor))
-    this._ctrl._sceneView.setOrthoZoom(state.frustumSize)
-  }
-
   // ── Private helpers ─────────────────────────────────────────────────────────
 
   /** Returns true when running on a coarse-pointer (touch) device. */
@@ -622,53 +392,34 @@ export class MapModeController {
   }
 
   /**
+   * The visible world height at the orbit target — the screen-space size analog
+   * the old code read off `state.frustumSize`. Derived from the camera rather
+   * than stored, so it is correct in BOTH projections and cannot go stale
+   * (原則 #23/#27: a screen-px target paired with a scene-derived world cap).
+   * @returns {number}
+   */
+  _visibleWorldHeight() {
+    const sv = this._ctrl._sceneView
+    const dist = Math.max(sv.camera.position.distanceTo(sv.controls.target), 1e-3)
+    return frustumForDistance(dist, sv.camera.fov)
+  }
+
+  /**
    * Returns the geometry kind for a place-type drawing tool.
    * @param {string} type
    * @returns {'line'|'region'|'point'}
    */
   _geometryForType(type) {
-    if (type === 'zone') return 'region'
-    if (type === 'hub' || type === 'anchor') return 'point'
-    return 'line'
+    const entry = TOOL_BY_TYPE.get(type)
+    if (!entry) throw new Error(`[PlaceTool] unknown place tool "${type}"`)
+    return entry.geometry
   }
 
-  /** Returns the place type name capitalised from a tool type string. */
+  /** Returns the place type name for a tool type string. */
   _placeTypeForType(type) {
-    return type.charAt(0).toUpperCase() + type.slice(1)
-  }
-
-  /**
-   * Sets the active map drawing tool, resetting to drawing state.
-   * @param {string} type  PlaceType name lowercase: 'route'|'boundary'|'zone'|'hub'|'anchor'
-   */
-  _setTool(type) {
-    this._cancelDrawing()
-    const { state } = this
-    state.tool          = type
-    state.drawState     = 'drawing'
-    state.points        = []
-    state.cursor        = null
-    this._ctrl._uiView.setCursor('crosshair')
-    this._refreshToolbar()
-    this._updateStatus()
-  }
-
-  /** Cancels the current drawing without creating an entity. */
-  _cancelDrawing() {
-    this._clearPreview()
-    const { state } = this
-    state.tool            = null
-    state.drawState       = 'idle'
-    state.points          = []
-    state.cursor          = null
-    state.mobileDragStart = null
-    state.snapCandidate   = null
-    this._snapFxPrev      = null
-    this._ctrl._uiView.setCursor('default')
-    this._refreshToolbar()
-    if (state.active) {
-      this._ctrl._uiView.setStatus('Map Mode — select a type on the left to start drawing')
-    }
+    const entry = TOOL_BY_TYPE.get(type)
+    if (!entry) throw new Error(`[PlaceTool] unknown place tool "${type}"`)
+    return entry.label
   }
 
   /**
@@ -693,10 +444,10 @@ export class MapModeController {
     const name = `${placeType} ${n}`
 
     // Map objects rest on the ground plane or a building roof, never floating
-    // (user requirement). `_pickPoint` returns Z=0 for the ortho top-down
-    // preview (Z is invisible there); the committed entity is a flat plate
-    // seated on max(building top under its footprint, 0), so an annotation
-    // drawn over a Solid lands on the roof instead of buried at Z=0.
+    // (user requirement). `_pickPoint` returns Z=0 on the ground plane; the
+    // committed entity is a flat plate seated on max(building top under its
+    // footprint, 0), so an annotation drawn over a Solid lands on the roof
+    // instead of buried at Z=0.
     const pts = points.map(p => p.clone())
     const groundZ = ctrl._service.highestSurfaceZAt(pts)
     pts.forEach(p => { p.z = groundZ })
@@ -738,7 +489,7 @@ export class MapModeController {
         }))
       }
     } catch (err) {
-      console.error('[MapMode] entity creation failed:', err)
+      console.error('[PlaceTool] entity creation failed:', err)
     } finally {
       this._clearPreview()
       state.drawState     = 'drawing'
@@ -746,11 +497,11 @@ export class MapModeController {
       state.cursor        = null
       state.snapCandidate = null
       this._snapFxPrev    = null
-      this._refreshToolbar()
     }
 
     if (created) {
-      ctrl._uiView.setStatus(`Map Mode — ${placeType} placed. Draw another or select a different type.`)
+      ctrl._uiView.setStatus(
+        `${placeType} placed. Draw another, or ESC to finish.`)
     }
   }
 
@@ -780,11 +531,15 @@ export class MapModeController {
   }
 
   /**
-   * Picks the ground-plane (Z=0) world position under the pointer in Map Mode.
-   * Applies zoom-adaptive grid snapping (`mapGridStep`) then, on PC only,
-   * endpoint snapping. The grid step tracks the ortho zoom so the user gets
+   * Picks the ground-plane (Z=0) world position under the pointer. Applies
+   * zoom-adaptive grid snapping (`mapGridStep`) then, on PC only, endpoint
+   * snapping. The grid step tracks the visible world height so the user gets
    * finer placement by zooming in (ADR-072 addendum — the old fixed 1-unit grid
    * was "quite coarse", unplaceably so when zoomed in).
+   *
+   * Raycasts through `activeCamera`, so it is correct under BOTH projections —
+   * drawing no longer requires a top-down ortho camera, it just reads better
+   * there (ADR-103 §未解決: the tool does not tilt the camera for you).
    * @param {PointerEvent|MouseEvent} e
    * @returns {THREE.Vector3}
    */
@@ -797,7 +552,7 @@ export class MapModeController {
     ctrl._raycaster.ray.intersectPlane(ctrl._groundPlane, pt)
     pt.z = 0
 
-    const GRID = mapGridStep(this.state.frustumSize)
+    const GRID = mapGridStep(this._visibleWorldHeight())
     pt.x = Math.round(pt.x / GRID) * GRID
     pt.y = Math.round(pt.y / GRID) * GRID
 
@@ -819,8 +574,8 @@ export class MapModeController {
    * `SnapFeedbackMath`, view `SnapFlash`, spawned only through the
    * MotionGovernor. Same-key hold and disengagement stay silent (volume
    * design); `_snapFxPrev` is controller-local presentation history.
-   * The map has no grabbed entity, so the size analog is frustum-proportional
-   * (a fixed fraction of the visible world height — screen-stable, #27).
+   * There is no grabbed entity here, so the size analog is a fraction of the
+   * visible world height — screen-stable in both projections (#27).
    */
   _syncSnapFx() {
     const { _ctrl: ctrl, state } = this
@@ -834,7 +589,8 @@ export class MapModeController {
     const transition = snapTransition(this._snapFxPrev, next)
     this._snapFxPrev = next
     if (!transition) return
-    const desc = snapFlashDescriptor('geometry', transition, next, state.frustumSize * 0.075)
+    const desc = snapFlashDescriptor('geometry', transition, next,
+      this._visibleWorldHeight() * 0.075)
     if (!desc) return
     ctrl._motion.spawn(reduced =>
       new SnapFlash(ctrl._sceneView.scene, ctrl._sceneView, desc, { reduced }))
@@ -873,11 +629,11 @@ export class MapModeController {
   }
 
   /**
-   * Updates the live preview during map drawing (drawing state only).
+   * Updates the live preview during drawing (drawing state only).
    */
   _updatePreview() {
     const { state } = this
-    const { tool, points, cursor, mobileDragStart, drawState } = state
+    const { tool, points, cursor, dragStart, drawState } = state
     if (!tool || drawState !== 'drawing') return
     if (!cursor) return
 
@@ -901,8 +657,8 @@ export class MapModeController {
 
     let previewPts = null
 
-    if (geometry === 'region' && mobileDragStart) {
-      const p1 = mobileDragStart.pt
+    if (geometry === 'region' && dragStart) {
+      const p1 = dragStart.pt
       const p2 = cursor
       previewPts = [
         new THREE.Vector3(p1.x, p1.y, 0),
@@ -911,8 +667,8 @@ export class MapModeController {
         new THREE.Vector3(p1.x, p2.y, 0),
         new THREE.Vector3(p1.x, p1.y, 0),
       ]
-    } else if (geometry === 'line' && mobileDragStart) {
-      previewPts = [mobileDragStart.pt, cursor]
+    } else if (geometry === 'line' && dragStart) {
+      previewPts = [dragStart.pt, cursor]
     } else if (geometry !== 'point' && points.length > 0) {
       previewPts = [...points, cursor]
       if (geometry === 'region' && previewPts.length >= 3) previewPts.push(previewPts[0])
@@ -978,7 +734,7 @@ export class MapModeController {
     state.snapRingMesh.position.z = 0
   }
 
-  /** Updates the status bar text during map drawing. */
+  /** Updates the status bar text while a tool is armed. */
   _updateStatus() {
     const { state } = this
     const { tool, points } = state
@@ -1018,23 +774,5 @@ export class MapModeController {
         { text: '  ESC cancel', color: '#444' },
       ])
     }
-  }
-
-  /**
-   * Rebuilds the Map toolbar to reflect current state.
-   * Shows tool buttons + Cancel (while a tool is active) + Exit. There is no
-   * name form or Confirm step — geometry completion creates immediately (ADR-073).
-   */
-  _refreshToolbar() {
-    const { state } = this
-    if (!state.active) return
-    const { tool } = state
-
-    this._ctrl._uiView.showMapToolbar(
-      tool,
-      (t) => this._setTool(t),
-      tool ? () => this._cancelDrawing() : null,
-      ()   => this.exit(),
-    )
   }
 }

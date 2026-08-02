@@ -90,7 +90,7 @@ src/
   store/        # uiStore (zustand) — React-side UI state bridge
   theme/        # Design tokens + motion.js (single reduced-motion boundary)
   controller/   # AppController + ContextController, GraspController,
-                #   MapModeController (map/), handler/, snap/, HitTestService,
+                #   PlaceToolController (place/), handler/, snap/, HitTestService,
                 #   SelectionManager, UIStateManager
   types/        # Branded JSDoc coordinate types: WorldVector3 / LocalVector3
   utils/        # Small pure helpers
@@ -126,7 +126,7 @@ one owner method — e.g. `hlMesh.visible` ← `setFaceHighlight()`,
 User input
     |
     v
-Controllers (AppController / ContextController / GraspController / MapModeController)
+Controllers (AppController / ContextController / GraspController / PlaceToolController)
     |-- Update SceneModel via SceneService (addObject / setMode / …)
     |-- Call classic Views directly (meshView.updateGeometry / …)
     |-- Push React UI state into uiStore (components re-render from the store)
@@ -218,7 +218,7 @@ geometry streamed from the server via WebSocket; no local graph.
 
 **AnnotatedLine / AnnotatedRegion / AnnotatedPoint** (2D map annotations,
 ADR-029): LocalGeometry entities with a `placeType`
-(Route/Boundary/Zone/Hub/Anchor via `PlaceTypeRegistry`); created in Map Mode
+(Route/Boundary/Zone/Hub/Anchor via `PlaceTypeRegistry`); created by the place tool (`+ Add ▸ Place`, ADR-103)
 (ADR-031/072/073), undoable via `AddAnnotationCommand`.
 
 **SpatialLink** (typed semantic edge, ADR-030; two-axis since ADR-038/043):
@@ -282,9 +282,9 @@ All local-geometry entities share `vertices[]`, `edges[]`, `faces[]` and
 | 0D | `Vertex` | — | — | — | — |
 | 1D | `MeasureLine` | **Measure** (M key) | 2 | 1 | 0 |
 | 2D | `Profile` | **Sketch**: draw a rectangle | 4 | 4 | 0 |
-| 2D | `AnnotatedLine` | **Map Mode**: route/boundary drag or multi-click | n≥2 | n-1 | 0 |
-| 2D | `AnnotatedRegion` | **Map Mode**: zone drag rectangle | n≥3 | n | 0 |
-| 2D | `AnnotatedPoint` | **Map Mode**: hub/anchor click | 1 | 0 | 0 |
+| 2D | `AnnotatedLine` | **Place tool**: route/boundary drag or multi-click | n≥2 | n-1 | 0 |
+| 2D | `AnnotatedRegion` | **Place tool**: zone drag rectangle | n≥3 | n | 0 |
+| 2D | `AnnotatedPoint` | **Place tool**: hub/anchor click | 1 | 0 | 0 |
 | 3D | `Solid` | **Extrude**: `Profile.extrude(h)` → new Solid | 8 | 12 | 6 |
 
 Verbs do not mutate entities; they **return a new entity of higher

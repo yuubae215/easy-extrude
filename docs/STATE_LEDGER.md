@@ -37,12 +37,11 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | 実体 | 状態集合 | 基数 | 権威 (唯一の書き手) | 詳細 |
 |------|---------|------|-------------------|------|
 | 選択モード | `object` / `edit` (2) | 1 | `SceneModel._selectionMode` — 入口は `setMode()` のみ (原則 #1) | STATE_TRANSITIONS §Top-level Modes / ADR-008 |
-| マップモード | `active` boolean (2) | 1 | `MapModeController.state.active` | STATE_TRANSITIONS §Map Mode / ADR-031。**ADR-103 (Proposed) で消滅予定** — カメラは視点 (ギズモ)、描画はツール、実体は通常オブジェクトへ分解 |
-| ⚠ *上二つの合成* | 文書上は OBJECT / EDIT / MAP の 3 択だが、実装は **別々の所有者に載る 2 変数** | — | 権威が二つ = `edit` かつ `mapMode.active` が表現可能 (不正状態が表現可能・§1.1) | **ADR-103 (Proposed)** — 畳んで禁止するのではなく Map をモードから降ろす方向で閉じる。実装まで現状のまま |
+| 投影方式 | `perspective` / `orthographic` (2) — **状態ではなく視点のパラメータ**。カメラの向き (ギズモ所有) ともトップレベルモードとも直交し、遷移に guard は無い | **1** — 常にどちらか。**0 は無い** (「投影なし」は描画できない)。未宣言の値は `setProjection()` が throw する (既定値で埋めない — 原則 #31) | `SceneView.setProjection()` ただ 1 箇所 (原則 #4)。**正射カメラは状態を持たない** — 位置・向き・frustum を透視カメラ + `controls.target` から毎フレーム導出する (`_syncOrthoCamera`)。逆向きの書き込みが存在しないので閉路にならない (原則 #24)。UI 側 `uiStore.projection` は表示用の写しで、書き手は同じ 1 経路 | **ADR-103** · SCREEN_DESIGN S-14 · `src/ProjectionAxisOwnership.test.js` |
+| 配置ツール (place tool) | `null` / `route` / `boundary` / `zone` / `hub` / `anchor` (6) + 描画状態 `idle` / `drawing` (2)。ツールはモードではない — 武装中も `selectionMode` は動かず、キーボードもカメラも奪わない | **`0..1`** — **0 = 未武装が既定かつ頻出** (通常の選択・編集がそのまま動く)。0 のとき pointer/key ハンドラは即 `false` を返し何も横取りしない。N は無い (択一) | `PlaceToolController.setTool()` / `.cancel()` の 2 verb のみ (原則 #1)。奪うジェスチャは RMB と 1 本指ドラッグだけで、その宣言は `SceneView.setDrawGestureActive()` ただ 1 箇所 (原則 #14) | **ADR-103** · ADR-031 §1 / ADR-073 · STATE_TRANSITIONS §Place tool |
 | Object Mode 操作 | `S_OBJECT_IDLE` ほか 10 | 1 | `AppController._opState` (`StateMachine`) | STATE_TRANSITIONS §Formal FSM · `src/core/editorStates.js` |
 | Edit Mode 操作 | `EO_IDLE` / `EO_1D_DRAG` / `EO_2D_SKETCH_DRAW` (3) | 1 | `AppController._editOpState` (`StateMachine`) | STATE_TRANSITIONS §Edit Mode — Operation States |
 | Edit Mode 部分状態 | `3d` / `2d-sketch` / `2d-extrude` / `1d` (4) | 1 | `SceneModel._editSubstate` | STATE_TRANSITIONS §Edit Mode Substates |
-| マップ描画 | `idle` / `drawing` (2) | 1 | `MapModeController.state.drawState` | ADR-031 §1 / ADR-073 (`pending` を廃止) |
 | Map 注釈ビューの motion | ライフサイクル `entering` / `idle` (2) × **直交する修飾子** `urgent` (違反アラーム) / `reduced` (静止した手掛かり) — 平坦な 4 状態ではない (平坦化すると `entering` かつ `urgent` が表現不能になる) | **`0..N`** — 0 = 空のマップは正当 (tick される view が無い)。**N が問題の所在**: 各注釈は `phaseFor(entityId)` 由来の独立位相を持つ。位相が同一なら全個体が同一フレームで動く lockstep で、1 個で試すと絶対に見えない (原則 #31) | 各 `Annotated*View.tick(t)` が唯一の書き手 (曲線は純粋 `MapVisualMath`、id の所有者は `SceneService`、`reduced` は単一境界 `src/theme/motion.js` の購読) | **ADR-093** · STATE_TRANSITIONS §Map annotation motion · `src/view/MapVisualMath.test.js` |
 | LINK NETWORK パネル (可視性) | **直交する 2 軸** — `forceHidden` (外部オーバーレイ所有: Context DSL デモが段階③の種明かしを守るため伏せる) × `collapsed` (ユーザー所有: ヘッダの −/+)。平坦な 3 状態ではない (平坦化すると「デモ中にユーザーが畳んだ」が表現不能になり、デモ終了時に畳んだ意思が失われる) | 1 | `LinkNetworkView._applyVisibility()` — **パネルと SVG の両方の display を書く唯一の場所** (原則 #4)。軸ごとに書き手が分かれていた分裂 (`_toggleCollapse()` が SVG の display を直接書いていた) は ADR-094 実装で解消済み。ハンドラは**軸**を所有し、ピクセルは所有しない | **ADR-094** · ADR-048 §2.3 · `src/view/LinkNetworkView.js` |
 | LINK NETWORK グラフのノード | 各ノードの表示状態 `focused` / `neighbor` / `context` / 通常 (4) — focus 源は「パネル hover ∪ 3D 選択」の合併。**`denseMode` は ADR-095 で廃止** (返り値から消滅 — 退役した状態を enum に残さない。台帳 §既知の負債 3 の同型を作らない) | **`0..N`** — 0 = リンクが 1 本も無い (パネルごと非表示。`_hasContent`)。**1 と N は別世界**: レーン衝突・行あふれ (スクロールへの移行)・インデント飽和は N でしか出ないので、1 個の fixture では絶対に見えない (原則 #31 / ADR-093 と同じ構図)。ADR-094 以降は **Solid と その Origin CF が 1 ノードへ融合**するため、ノードの基数は「TF フレームの数」であって実体の数ではない (実体 2 個 → ノード 1 個。`nodeIdByEntity` が「どの実体がどのノードを光らせるか」を 1 箇所で持つ)。ADR-095 以降は **1 ノード = 1 行**で、基数はそのまま行数 | 純粋関数 `LinkNetworkLayout.computeLayout()` — 行順・インデント・レーン・ラベル幅・パネル高の唯一の決定者。`LinkNetworkView` は結果を描くだけで座標を 1 つも計算しない (ADR-094 E3 で `_runLayout()` の副作用を分離。**辺の列挙順も出力の一部** = 交差した弧の重なり順とレーン割当は入力リンク列の順序に依存してはならない) | **ADR-095** · ADR-094 · ADR-048 · `src/view/LinkNetworkLayout.test.js` |
@@ -58,7 +57,7 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 | CF 運動学ロール | fixed-joint 制約下のロール群 | 0..N | `SceneService._updateFastenedFrames()` | ADR-038 / STATE_TRANSITIONS §CF Kinematic Role |
 | Origin CF ライフサイクル | Solid と原子的に生成・削除 (2) | **Solid 1 個につき ちょうど 1**。0 = ADR-037 以前の保存シーン (到達可能・不正)。`findOriginFrame()` が `null` を返し、修復は名前付きの明示手順 `_ensureOriginFrames()` — 既定値で埋めない。N = 1 Solid に Origin 2 個は不正状態。生成経路は作らず、**予約名ガード** (`isOriginFrameName`) が改名からの到達を塞ぐ | 生成/削除 = `SceneService` (Solid 生成/削除経路)。**同一性の判定 = `src/domain/originFrame.js` の 1 箇所** (`isOriginFrame` / `findOriginFrame` / `ORIGIN_FRAME_NAME`) — 再導出は `IDENTITY_RULES` が落とす。改名の権威は `SceneService.renameObject()` (原則 #1) | ADR-037 §1/§4 · ADR-094 §波及 · STATE_TRANSITIONS §Origin CF Lifecycle · `src/domain/originFrame.test.js` |
 | 選択 (選択集合) | **状態は基数そのもの** — `0 個` / `1 個` / `N 個`。`mode` や `status` と違い値を持つ欄が無いので、実装を読んでも状態に見えない (原則 #31)。遷移に guard は無く不正遷移も存在しないため状態機械の節は起こさない — 効くのは**不正状態を表現不能にする**方 | **`0..N`**。**0 = 正当かつ頻出** (空きスペースのクリック・Edit Mode 進入・シーン差し替え)。0 のとき `activeId` は残る — N パネルとモード機構は在る対象を語り続けるので、「選択されていない」と「対象が無い」は別物。**N は 1 の繰り返しではない**: 文脈可視性の主張は選択集合全体からの**和**であって最後の 1 個ではなく、per-entity に丸ごと置換していた旧実装は N 個選んでも 1 個ぶんしか出していなかった (1 個の fixture では絶対に見えない — ADR-093 の lockstep と同じ構図)。**基数は到達ではなく強度に効く**: 主張が和になったので到達する id の数は N に比例せず (同じ木の中で N 個選んでも総量は木の大きさで止まる) 、代わりに *フル強度の個数* が N の関数になる。上界は式で固定してある — `FULL(claim) === 選択集合 ちょうど` / `DIMMED(claim) === ⋃chains − 選択集合`。geometry 分岐だけが連鎖まで FULL を主張していた旧実装は N=50 の矩形選択で 200 個がフル強度になっており、これも 1 個の fixture では 4N と N が区別できない (回帰は N=25 を焼く) | **`SelectionManager._ids` ただ 1 つ**。書く入口は 5 verb (`selectOnly` / `selectMany` / `clearSelection` / `activateWithinSelection` / `forget`) のみで、遷移は `_apply()` 1 本が選択集合・可視ハイライト・文脈可視性・リンク強調・パネルを**同時に**書く (窓ごとの部分集合が書けない)。`AppController._objSelected` / `_selectedIds` は setter を持たない **getter** — 代入は TypeError で、`_objSelected === true かつ size === 0` は書けない。**永続化しない** (presentation 状態はワイヤに載せない — 原則 #29) | **ADR-099** · ADR-096 (contextual 軸の主張先) · `src/SelectionOwnership.test.js` / `src/controller/SelectionManager.test.js` / `e2e/smoke.spec.js` |
-| 実体の表示色 (状態の手掛かり) | **合成される 4 状態** — `violation` > `selected` > `hovered` > 既定 の優先順 (最強の手掛かりが勝つ)。**直交して** base 色が `entityDefault` (中立) か IFC 分類色かの 2 値を取り、状態の手掛かりは base の**上に**重なる。平坦な 8 状態ではない — 平坦化すると「分類済みで、かつ選択中」が表現不能になる | **`0..N`** — 0 = 実体が 1 つも無いシーン (正当)。**N が問題の所在だった**: 「選択されている」を描く窓が 9 つあり、そのうち 4 つが**別々の色**を持っていた (Outliner の橙 `#ff8c69` / 宣言だけで誰も consume しない `accent` の青紫 / 3D のシアン / CF 原点球の金)。1 つの窓だけを見ても矛盾は見えず、*窓を辿る*数え方では 6 つしか見つからない (ラバーバンド・浮動ラベル・Outliner の React 側が漏れた) — だから検査は **描き手の種類を列挙して、accent 以外の色を持つものが 0 個**を問う形になっている (原則 #31)。**永続化しない** (presentation 状態はワイヤに載せない — 原則 #29) | 状態の手掛かり = `MeshView._syncEmissive()` **ただ 1 箇所** (原則 #4)、base 色 = `MeshView.setIfcTint()` ただ 1 箇所。**値の権威は `src/theme/tokens.js` の `COLOR` ただ 1 つ**で、「薄いアクセント」は手書きの hex ではなく `dim(COLOR.accent, f)` の**関数**。宣言外の hex は `tokens.test.js` の ratchet が個数で数える (790 出現 / 206 色 — 超えても**下回っても** fail)。*データ*が持つ意味の色 (リンク種・ペルソナ・ノード種・部分要素種) は別語彙 `src/theme/semantic.js` として**明示的に対象外を宣言**する | **ADR-100** · ADR-065 Phase 0 · `src/theme/tokens.test.js` / `src/theme/colorMath.test.js` |
+| 実体の表示色 (状態の手掛かり) | **合成される 4 状態** — `violation` > `selected` > `hovered` > 既定 の優先順 (最強の手掛かりが勝つ)。**直交して** base 色が `entityDefault` (中立) か IFC 分類色かの 2 値を取り、状態の手掛かりは base の**上に**重なる。平坦な 8 状態ではない — 平坦化すると「分類済みで、かつ選択中」が表現不能になる | **`0..N`** — 0 = 実体が 1 つも無いシーン (正当)。**N が問題の所在だった**: 「選択されている」を描く窓が 9 つあり、そのうち 4 つが**別々の色**を持っていた (Outliner の橙 `#ff8c69` / 宣言だけで誰も consume しない `accent` の青紫 / 3D のシアン / CF 原点球の金)。1 つの窓だけを見ても矛盾は見えず、*窓を辿る*数え方では 6 つしか見つからない (ラバーバンド・浮動ラベル・Outliner の React 側が漏れた) — だから検査は **描き手の種類を列挙して、accent 以外の色を持つものが 0 個**を問う形になっている (原則 #31)。**永続化しない** (presentation 状態はワイヤに載せない — 原則 #29) | 状態の手掛かり = `MeshView._syncEmissive()` **ただ 1 箇所** (原則 #4)、base 色 = `MeshView.setIfcTint()` ただ 1 箇所。**値の権威は `src/theme/tokens.js` の `COLOR` ただ 1 つ**で、「薄いアクセント」は手書きの hex ではなく `dim(COLOR.accent, f)` の**関数**。宣言外の hex は `tokens.test.js` の ratchet が個数で数える (779 出現 / 203 色 — 超えても**下回っても** fail。ADR-103 の MapToolbar 削除で 790/206 から下がったので同じコミットで下げた)。*データ*が持つ意味の色 (リンク種・ペルソナ・ノード種・部分要素種) は別語彙 `src/theme/semantic.js` として**明示的に対象外を宣言**する | **ADR-100** · ADR-065 Phase 0 · `src/theme/tokens.test.js` / `src/theme/colorMath.test.js` |
 | 実体の可視性 | **直交する 2 軸** — `explicit` boolean (ユーザー所有・永続: Outliner の eye が「常に見せろ」と言ったか) × `contextual` `full`/`dimmed`/不在 (選択所有・一時: 選択や link mode がその場だけ見せたい強さ)。平坦な 3 状態ではない (平坦化すると「文脈表示中にユーザーが常時表示を要求した」が表現不能になり、選択を変えた瞬間にユーザーの意思が消える — ADR-094 の `forceHidden × collapsed` を平坦化できなかったのと同型)。遷移に guard は無く不正遷移も存在しないので状態機械の節は起こさない (§1.4 の発動条件は「3 状態以上 **かつ/または** 不正遷移が事故」の論理和で、後者が立たない) | **`0..N`** — 0 = 実体が 1 つも無いシーン (合成が呼ばれない = 正当)。**`explicit` は「未宣言」を持たない**: 種ごとに**宣言**された既定 (`EXPLICIT_DEFAULTS`) が答え、未宣言の種は `defaultExplicit()` が throw する (既定値で埋めない — 原則 #31)。`robot_base` だけは既定が**種ではなく生まれた入口**で決まる (seed = 伏せる / `addRobot()` = 見せる)。**永続化しない** — presentation 状態はワイヤに載せない (原則 #29)、要件が立てば別 ADR | 合成 = `SceneService.applyEntityVisibility()` **ただ 1 箇所** (原則 #4)。`explicit` の書き手は `setExplicitVisible()` / `declareExplicitVisible()`、`contextual` の書き手は `setContextualFrames()` (**丸ごと置換のみ** — 個別削除を許さないので「文脈から外れたのに消し忘れた 1 個」が書けない)。Outliner の行・robot skeleton は軸を**表示**するだけで写しを持たない | **ADR-096** · ADR-087 · `src/view/VisibilityAxes.test.js` / `src/VisibilityOwnership.test.js` / `src/controller/SelectionManager.test.js` |
 | 実体の配置方針 (`placement`) | `supported` (必ず何かの上) / `grounded` (床下は宣言が要る) / `free` (支持の概念なし) の 3。**生成時に種で決まり遷移しない**ので分類であって lifecycle ではない — §1.4 の「3 状態以上」は形式的に立つが「不正遷移が事故」が立たないため遷移図は起こさない。代わりに効くのは **不正状態を表現不能にする**方: `supported` かつ支持なしは*組み合わせとして*到達可能なので、それを書けない API 形状 (入口 1 つ + 支持は導出) にするのが ADR-097 の決定そのもの | 実体 1 個につき **ちょうど 1**。**「未宣言」を持たない** — 種ごとに**宣言**された表 (`PLACEMENT_BY_KIND`) が答え、未宣言の種は `placementFor()` が throw する (既定値で埋めない — 原則 #31。ADR-096 の `EXPLICIT_DEFAULTS` と同じ形)。`robot_base` CF だけは同じ `CoordinateFrame` の中でロールで分かれる (base = `grounded` / tcp = `free`) | **保存しない。種の関数**。`src/domain/placement.js` の `placementOf()` ただ 1 箇所が `instanceof` の連鎖を持ち、呼び出し側での再導出は `src/PosePolicyOwnership.test.js` が落とす | **ADR-097** · ADR-071 · `src/domain/placement.test.js` |
 | 床下の宣言 (`belowGradeIntent`) | `true` (基礎・杭・ピットとして意図的) / `false` (誰も宣言していない) の 2 | **`0..N`** — 0 = 誰も宣言していないシーン (通常)。**既定 `false` は「宣言されていない」の意味であり、潜れない側に倒す** (「気づいたら潜っていた」と「潜ると決めた」を区別するのが目的なので、既定で潜れると区別が消える)。`grounded` 実体だけが持ち、`supported` には逃げ道が無い (支持の無いマップオブジェクトは意味を持たない) | `SceneService.setBelowGradeIntent()` ただ 1 箇所。入口は Grab 中の S (Free) と import 時の `_adoptBelowGradeIntent()`。**永続化しない** — 幾何が既に事実を持つので、読み込み時に幾何から再導出する (第二の源を作らない・scene schema を上げない — §1.1) | **ADR-097** §Decision 6 · `e2e/smoke.spec.js` (宣言がジェスチャを越えて残る) |
@@ -87,11 +86,13 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 |------|---------|------|-------------------|------|
 | 鍵の集合 (誰として書けるか) | 解除済み `actorRef` の集合 | **`0..N`** — **0 = 誰も名乗っていない**。既定値で埋めない (全員書けるを既定にすると「他人の主張を黙って書き換える」が既定になり、誰も書けないを既定にすると名乗るまで何も編集できない — 原則 #31)。**N = 兼務者**が正当。`ROBOT_CARDINALITY` と違い択一ではなく**集合**なので、切替が要らず**モードにならない** | 未定 (UI 層。将来チェックはサーバ側へ — ADR-104 D6) | **ADR-104** D1 |
 | 実体の所有者 | `actorRef` \| なし | **`0..1`** — **0 が 2 種類ある**: **宣言済みの 0** (本当にいない・正当) と **未宣言の 0** (本当にいない / 名乗り忘れ / 誰が名乗るかのチキンレース の 3 つが潰れている)。後者は**個数を数えて警告**する (ADR-100 の ratchet と同形) | 未定 (実体側の属性) | **ADR-104** D2 |
-| 提案 | `提案` / `承認` / `取り下げ` (3) — 差分 (現在値 → 希望値) と理由を運ぶ。差分のない提案は証憑として不完全 | **`0..N`** — 0 = 誰も他人のものを触っていない (正当・**放置しても現状のまま進む**)。N が問題の所在: 同一変数への複数提案は現状**後勝ちで上書き**され、それ自体が新しい衝突になりうる (ADR-104 未解決 2) | 未定 | **ADR-104** D3 |
-| 議題 (場に上がったもの) | `議題` / `決着` / `未決のまま閉会` (3) | **`0..N`** — 議題 = **議題化された衝突 ∪ 提案**。0 = 場に何も上がっていない。**衝突そのものは数えない** (文書から毎回導出できるので保存すると第二の源 — §1.1 / 原則 #24)。人が議題化した時点で初めて記録が始まる | 未定 | **ADR-104** D4 |
+| 提案 | `提案` / `承認` / `取り下げ` (3) — 差分 (現在値 → 希望値) と理由を運ぶ。差分のない提案は証憑として不完全。**`stale` という 4 つ目は作らない** — 古びているかは毎回 `from === 現在値` で導出する (保存すると導出できる事実の第二の源 — §1.1) | **`0..N`** — 0 = 誰も他人のものを触っていない (正当・**放置しても現状のまま進む**)。N = 同一変数に複数提案が**併存する**。後勝ちで上書きしない — 承認が**楽観ロックの guard** (`from === 現在値`) を持ち、不一致は理由つきで拒否する (ADR-104 U2 で決着。原則 #7 の locking 戦略 = optimistic) | 未定 (Phase 4)。承認は**主張の更新と証憑の追記を 1 コマンド**で行う (ADR-104 U1) ので、書き手は既存 `createApproveDecisionCommand` と同位相 | **ADR-104** D3 / U1 / U2 · STATE_TRANSITIONS §提案 |
+| 議題 (場に上がったもの) | `議題` / `決着` / `未決のまま閉会` (3) | **`0..N`** — 議題 = **議題化された衝突 ∪ 提案**。0 = 場に何も上がっていない。**衝突そのものは数えない** (文書から毎回導出できるので保存すると第二の源 — §1.1 / 原則 #24)。人が議題化した時点で初めて記録が始まる。閉会した衝突の**再燃は新しい議題** (`supersedes` 参照) — 証憑は枝分かれさせず追記のみの線形列に保つ (ADR-104 U3) | 未定 (Phase 4)。`decidedBy` は**決定時点の鍵集合の部分集合**で、決定時点の基数も焼き込む (ADR-104 U4 — 遡って無効化せず、当事者 1 人の時期の決定を数える) | **ADR-104** D4 / U3 / U4 · STATE_TRANSITIONS §議題 |
 
-3 状態以上の実体が 2 つ (提案・議題) 含まれるため、**実装前に `docs/STATE_TRANSITIONS.md` へ
-節を起こすこと** (核 §1.4 の閾値を跨いでいる)。
+3 状態以上の実体が 2 つ (提案・議題) 含まれるため、**実装前に節を起こす**義務は
+核 §1.4 が要求していた。**閉じた (2026-08-02)** — `docs/STATE_TRANSITIONS.md` の
+§提案 / §議題 に遷移図・guard・禁止遷移を起こし、ADR-104 の未解決 4 点も同じ日に
+決着させた (ADR-104 §未解決 4 点の決着)。この節の 4 行は**実装 (Phase 4) で本表へ移す**。
 
 ---
 
@@ -101,26 +102,34 @@ status・flag・mode・lifecycle・**存在 (基数)** のいずれかに触る�
 いずれもこのコミットでは直さない (設計変更のため ADR が先) — 台帳の目的は
 「見えるようにする」ところまで。
 
-1. **モードの権威が二つある。** `STATE_TRANSITIONS.md` §Top-level Modes は
-   OBJECT / EDIT / MAP を対等な 3 モードとして描くが、実装は
-   `SceneModel._selectionMode` (2 値) と `MapModeController.state.active`
-   (boolean) の直積。`edit` かつ `mapMode.active` は型として表現可能で、
-   これを禁じているのは遷移経路の慣習だけ。3 値の enum 一つに畳めば
-   不正状態が表現不能になる (§1.4「make illegal states unrepresentable」)。
-   **→ ADR-103 (Proposed) が別解で閉じる。** 畳んで**禁止**すると
-   「`edit` かつ真上から見る」まで表現不能になるが、それは実際にやりたい操作である。
-   欠陥は 2 変数の直積ではなく一段上の**論理の誤分類** — ビューのパラメータ
-   (カメラの向き・投影) をモードとしてモデル化したこと。物理側 (enum) で畳むと
-   誤分類が固定される (核 §0「論理 → 物理の順」)。Map をモードから降ろせば
-   不正状態は禁止ではなく**消滅**し、状態が 1 つ減る。
+1. ~~**モードの権威が二つある。**~~ **閉じた (ADR-103 実装)。** 畳んで**禁止**する
+   処方 (3 値 enum) を採らなかったのが要点 — 畳むと「`edit` かつ真上から見る」まで
+   表現不能になるが、それは実際にやりたい操作である。欠陥は 2 変数の直積ではなく
+   一段上の**論理の誤分類**だった: ビューのパラメータ (カメラの向き・投影) を
+   モードとしてモデル化したこと。物理側 (enum) で畳むと誤分類が固定される
+   (核 §0「論理 → 物理の順」)。
+
+   Map をモードから降ろした結果、不正状態 `edit ∧ mapMode.active` は禁止ではなく
+   **表現する対象が消滅**した。トップレベルモードは 2 値のまま、投影と配置ツールは
+   別々の軸として上表に載っている。**消えた状態は 5 つ**
+   (`active` / `frustumSize` / pan / pinch / `_savedView`) — 向きはギズモ、
+   ズームとパンは OrbitControls が元から持っていた。
+
+   *「モードを 1 つ足す」より「これは本当にモードか」を先に問うほうが安い* —
+   足した後は、それを消すのに 5 つの状態と 1 つの画面と 4 本の e2e が付いてくる。
+   退役した形が戻らないことは `src/ProjectionAxisOwnership.test.js` が
+   `RETIRED_MODE_SHAPES` の出現数 0 で問う (負債 3 の同型を作らないため)。
 2. ~~**ロボットの基数が未モデル。**~~ **閉じた (ADR-090 実装)。** 基数は
    `ROBOT_CARDINALITY` (`none`/`single`/`multi`) として明示状態になり、権威は
    seed 規則から scene へ移った。台帳の基数列が最初から存在していれば、`0..N` を
    埋める段で必ず問われていた欠陥 — 記録として残す (原則 #31 の初出事例)。
-3. **退役した状態が enum に残る。** `DS_PENDING = 'pending'` は ADR-073 で
-   廃止済みだが `src/core/editorStates.js:38` に生存し、参照は 0 件。
-   状態集合に「退役時に消す」責任者がいないことの痕跡
-   (原則 #19 — documentation drift is a bug の、コード側の同型)。
+3. ~~**退役した状態が enum に残る。**~~ **閉じた (ADR-103 実装)。**
+   `DS_PENDING = 'pending'` (ADR-073 で廃止・参照 0 件) を削除した。
+   「状態集合に退役時に消す責任者がいない」ことが痕跡の正体だったので、
+   責任者を**検査**に置いた: `RETIRED_MODE_SHAPES` は退役した形を並べ、
+   `src/**` 全体での出現数が 0 であることを数える (ADR-100 の
+   `RETIRED_SELECTION_COLORS` と同形)。退役の腐敗は違反を*見逃す*のではなく
+   **緑を出す**ので、数えない限り誰も気づかない。
 4. ~~**Origin CF の同一性が 22 箇所に散っている。**~~ **閉じた (述語 PR / ADR-094 §波及)。**
    実測 16 箇所の判定 + 5 箇所の生成種名が 10 ファイルに散っていたものを
    `src/domain/originFrame.js` の 1 箇所へ集約し、`IDENTITY_RULES` に登録した

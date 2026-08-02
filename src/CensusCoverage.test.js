@@ -126,6 +126,13 @@ const CENSUS_REGISTRY = [
   { file: 'src/theme/tokens.test.js',        table: 'EXCLUDED_WITH_REASON',        kind: KIND.DERIVED_PARTITION,
     why: '母集団 = Object.keys(COLOR)。STATE_TOKENS との和が全トークンを覆う (ADR-102 以前からの手本)' },
 
+  // ── 投影軸 (ADR-103) ──
+  { file: 'src/ProjectionAxisOwnership.test.js', table: 'RETIRED_MODE_SHAPES',   kind: KIND.SHAPE_CENSUS,
+    why: '退役した Map モードの形。src/** 全体での出現数が 0 であることを数える '
+       + '(ADR-100 の RETIRED_SELECTION_COLORS と同形 — 退役した状態が enum に残る腐敗は緑を出す)' },
+  { file: 'src/ProjectionAxisOwnership.test.js', table: 'PROJECTION_WRITE_RULES', kind: KIND.SHAPE_CENSUS,
+    why: '投影軸を書く形。所有者 (SceneView) の外の個数を src/** 全体で数える' },
+
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

@@ -68,6 +68,7 @@ import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
 import { BootReveal }                 from '../view/BootReveal.js'
 import { CameraFlight }               from '../view/CameraFlight.js'
+import { frustumForDistance }         from '../view/CameraMath.js'
 import { createLandingEffect }        from '../view/LandingEffects.js'
 import { lifecycleDescriptor, boundsOf } from '../view/CommandFeedbackMath.js'
 import { SnapFlash }                  from '../view/SnapFlash.js'
@@ -84,7 +85,7 @@ import layoutPickPlace                from '../../examples/layout_pick_place_cel
 import layoutConveyor                 from '../../examples/layout_conveyor_line.json'
 import layoutPalletizing              from '../../examples/layout_palletizing.json'
 import layoutFactoryCell              from '../../examples/factory_layout.json'
-import { MapModeController }          from './map/MapModeController.js'
+import { PlaceToolController }        from './place/PlaceToolController.js'
 import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
@@ -435,10 +436,11 @@ export class AppController {
       sourceId: null,
     }
 
-    // ── 2D Map Mode (delegated to MapModeController) ─────────────────────
-    // All map mode state and interaction logic live in MapModeController.
-    // AppController accesses map state via this._mapModeCtrl.isActive / .hasTool.
-    this._mapModeCtrl = new MapModeController(this)
+    // ── Annotation place tool (delegated to PlaceToolController) ─────────
+    // ADR-103 retired Map Mode: what is left is a drawing TOOL, orthogonal to
+    // the top-level mode and to the camera. AppController only asks
+    // `.hasTool` — cardinality 0..1, and 0 means "do not intercept anything".
+    this._placeToolCtrl = new PlaceToolController(this)
 
     // ── Context DSL demo (ADR-046/047, delegated to ContextDemoController) ─
     // Registers its own uiStore callbacks; AppController only ticks it.
@@ -772,8 +774,14 @@ export class AppController {
       this._refreshUndoRedoState()
     })
 
-    // ── Map Mode entry ────────────────────────────────────────────────────
-    uiView.onMapModeClick(() => this._mapModeCtrl.enter())
+    // ── Projection axis (ADR-103) ─────────────────────────────────────────
+    // A view setting, not a mode: it never touches `setMode()` and never moves
+    // the camera. Orientation stays with the gizmo, which has offered a
+    // top-down snap since it was written.
+    uiView.onProjectionChange(kind => {
+      this._sceneView.setProjection(kind)
+      this._uiView.setProjection(kind)
+    })
 
     // Robot skeleton visibility (ADR-087): the former header toggle is gone —
     // the skeleton is the geometry of the `robot_base` entity, so its
@@ -874,13 +882,22 @@ export class AppController {
           up:       { x: c.up.x, y: c.up.y, z: c.up.z },
         }
       },
-      // Read-only Map Mode snapshot — console debug aid and the E2E liveness
-      // guard for pinch-zoom (touch multi-touch has no static check; the
-      // controller layer is outside checkJs).
-      mapState: () => ({
-        active:      this._mapModeCtrl.state.active,
-        frustumSize: this._mapModeCtrl.state.frustumSize,
-        useOrtho:    this._sceneView._useOrtho,
+      // Read-only projection / place-tool snapshot (ADR-103) — console debug
+      // aid and the E2E liveness guard for the axis being ORTHOGONAL: mode and
+      // tool are reported next to the projection precisely because the defect
+      // this ADR closes was the three of them being one variable. The
+      // controller/view layers are outside checkJs.
+      viewState: () => ({
+        projection: this._sceneView.projection,
+        mode:       this._scene.selectionMode,
+        placeTool:  this._placeToolCtrl.state.tool,
+        // Visible world height at the orbit target — the same derivation the
+        // ortho frustum uses, so a "did the zoom actually change" assertion
+        // reads one number in BOTH projections.
+        worldHeight: (() => {
+          const c = this._sceneView.camera, t = this._sceneView.controls.target
+          return frustumForDistance(Math.max(c.position.distanceTo(t), 1e-3), c.fov)
+        })(),
       }),
       // Read-only robot roster snapshot (ADR-090) — console debug aid and the
       // E2E guard for roster ⇄ skeleton reconciliation: which robots exist and
@@ -1630,7 +1647,12 @@ export class AppController {
     const s = useUIStore.getState()
     const inspectorOpen = !mobile && s.demo.active && !!s.demo.inspectorTab   // 280px (ADR-047)
     const nPanelOpen    = !mobile && s.nPanelVisible                          // 200px
-    this._gizmoView.setRightOffset(16 + (nPanelOpen ? 200 : 0) + (inspectorOpen ? 280 : 0))
+    const offset = 16 + (nPanelOpen ? 200 : 0) + (inspectorOpen ? 280 : 0)
+    this._gizmoView.setRightOffset(offset)
+    // The projection toggle sits under the gizmo and shares the same edge, so it
+    // reads the SAME computation instead of repeating it (原則 #26 — a screen
+    // edge is a shared resource; the occupancy offset is computed in one place).
+    s.actions.setGizmoRightOffset(offset)
   }
 
   /** Called when user clicks a row in the outliner */
@@ -1968,16 +1990,16 @@ export class AppController {
   }
 
   /**
-   * Window wheel handler. Three consumers, in priority order:
-   * 1. Map mode — scroll zooms the orthographic camera (MapModeController.onWheel)
-   * 2. Rotate + Ctrl — cycles the angle snap step (RotationHandler.cycleStepSize)
-   * 3. Grab + Ctrl — cycles the grid snap size (GrabOperationHandler.cycleGridSize)
-   * Everything else falls through to OrbitControls' own wheel zoom.
+   * Window wheel handler. Two consumers, in priority order:
+   * 1. Rotate + Ctrl — cycles the angle snap step (RotationHandler.cycleStepSize)
+   * 2. Grab + Ctrl — cycles the grid snap size (GrabOperationHandler.cycleGridSize)
+   * Everything else falls through to OrbitControls' own wheel zoom — including
+   * while the place tool is armed and while the ortho projection is active
+   * (ADR-103: the tool consumes only the gestures it truly needs, 原則 #14).
    */
   _onWheel(e) {
     this._finishBootReveal()
     this._finishCameraFlight()
-    if (this._mapModeCtrl.onWheel(e)) return
     if (this._opState.is(S_ROTATE_ACTIVE) && this._ctrlHeld) {
       e.preventDefault()
       this._rotateHandler.cycleStepSize(e.deltaY)
@@ -2490,13 +2512,10 @@ export class AppController {
       }
     }
 
-    // During a drag, only process the pointer that started it — EXCEPT in Map
-    // Mode, where the 2nd (non-drag) finger drives the pinch-zoom and must
-    // reach the map handler even though it isn't `_activeDragPointerId`.
-    if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) {
-      if (this._mapModeCtrl.isActive) this._mapModeCtrl.onPointerMove(e)
-      return
-    }
+    // During a drag, only process the pointer that started it. A 2nd finger now
+    // reaches OrbitControls (pinch) instead of a mode-local pinch tracker —
+    // ADR-103 removed the map's private multi-touch handling.
+    if (this._activeDragPointerId !== null && e.pointerId !== this._activeDragPointerId) return
     this._hitTest.updateMouse(e)
 
     // ── Context DSL region authoring (ADR-049 Phase 3): live handle drag ─────
@@ -2547,8 +2566,8 @@ export class AppController {
       return
     }
 
-    // ── 2D Map Mode: pan or drawing hover ────────────────────────────────
-    if (this._mapModeCtrl.onPointerMove(e)) return
+    // ── Place tool: drawing hover (no-op when no tool is armed) ──────────
+    if (this._placeToolCtrl.onPointerMove(e)) return
 
     // ── Measure placement hover ───────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
@@ -2755,11 +2774,6 @@ export class AppController {
   _onPointerDown(e) {
     // Ignore secondary touches while an edit drag is already active
     if (this._activeDragPointerId !== null && e.pointerType === 'touch') {
-      // Map Mode owns multi-touch (OrbitControls' pinch is disabled while the
-      // ortho camera is active): a 2nd finger starts a pinch-zoom instead of
-      // being dropped. The canvas guard below never runs for this event, so
-      // route it here.
-      if (this._mapModeCtrl.isActive) { this._mapModeCtrl.onExtraTouchDown(e); return }
       // Second finger while rect selection is active: cancel rect sel so
       // OrbitControls can handle the two-finger orbit/dolly gesture.
       if (this._opState.is(S_RECT_SELECT)) {
@@ -2797,7 +2811,7 @@ export class AppController {
     this._contextMenuSuppressed = e.button === 2 && (
       this._opState.is(S_ROTATE_ACTIVE) || this._opState.is(S_MOUNT_PICKING) ||
       this._opState.is(S_LINK_MODE) || this._opState.is(S_GRAB_ACTIVE) ||
-      this._opState.is(S_FACE_EXTRUDE) || this._mapModeCtrl.hasTool || this._opState.is(S_MEASURE_PLACING) ||
+      this._opState.is(S_FACE_EXTRUDE) || this._placeToolCtrl.hasTool || this._opState.is(S_MEASURE_PLACING) ||
       this._opState.is(S_FRAME_PLACEMENT)
     )
 
@@ -2958,8 +2972,8 @@ export class AppController {
       return
     }
 
-    // ── 2D Map Mode: drawing clicks and pan start ────────────────────────
-    if (this._mapModeCtrl.onPointerDown(e)) return
+    // ── Place tool: drawing clicks (no-op when no tool is armed) ─────────
+    if (this._placeToolCtrl.onPointerDown(e)) return
 
     // ── Measure placement clicks ──────────────────────────────────────────
     if (this._opState.is(S_MEASURE_PLACING)) {
@@ -3223,8 +3237,8 @@ export class AppController {
     if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerUp(e)) return
     if (this._ctxCtrl.isAuthoring && this._ctxCtrl.onAuthorPointerUp(e)) return
 
-    // ── 2D Map Mode: end panning / drag gesture completion ───────────────
-    if (this._mapModeCtrl.onPointerUp(e)) return
+    // ── Place tool: drag gesture completion ──────────────────────────────
+    if (this._placeToolCtrl.onPointerUp(e)) return
 
     // ── Endpoint drag confirmation (1D Edit Mode) ────────────────────────
     if (this._editOpState.is(EO_1D_DRAG) && this._activeDragPointerId === e.pointerId) {
@@ -3445,8 +3459,8 @@ export class AppController {
       return
     }
 
-    // ── 2D Map Mode keys ────────────────────────────────────────────────────
-    if (this._mapModeCtrl.onKeyDown(e)) return
+    // ── Place tool keys (ESC disarms, Enter completes a polyline) ───────────
+    if (this._placeToolCtrl.onKeyDown(e)) return
 
     // ── Frame placement pick sub-mode keys (ADR-034 §6) ──────────────────
     if (this._opState.is(S_FRAME_PLACEMENT)) {
@@ -3614,16 +3628,19 @@ export class AppController {
         const screenX = (this._mouse.x + 1) / 2 * innerWidth
         const screenY = (-this._mouse.y + 1) / 2 * innerHeight
         const canAddFrame = this._objSelected && !(this._activeObj instanceof MeasureLine) && !(this._activeObj instanceof ImportedMesh)
-        this._uiView.showAddMenu(screenX, screenY,
-          () => this._addObject('box'),
-          () => this._addObject('sketch'),
-          () => this._addObject('measure'),
-          () => this._triggerStepImport(),
-          canAddFrame ? () => this._addObject('frame') : undefined,
+        this._uiView.showAddMenu(screenX, screenY, {
+          onBox:        () => this._addObject('box'),
+          onSketch:     () => this._addObject('sketch'),
+          onMeasure:    () => this._addObject('measure'),
+          onImportStep: () => this._triggerStepImport(),
+          onFrame:      canAddFrame ? () => this._addObject('frame') : undefined,
           // Robot (ADR-090): always available — this is the way OUT of the 0-robot
           // state, so it must not depend on what is currently selected.
-          () => this._addObject('robot'),
-        )
+          onRobot:      () => this._addObject('robot'),
+          // The five place types (ADR-103) — annotations are ordinary objects,
+          // so they are added the same way everything else is.
+          onPlace:      (type) => this._placeToolCtrl.setTool(type),
+        })
         return
       }
       // X / Delete: delete active object
@@ -4053,9 +4070,9 @@ export class AppController {
       this._ctxCtrl.tick(t)
       // Grasp candidate spatial ghost fade/approach animation (ADR-059).
       this._graspCtrl.tick(t)
-      // Map Mode drawing-preview idle motion: cursor breathe + snap-ring
+      // Place-tool drawing-preview idle motion: cursor breathe + snap-ring
       // settle (ADR-072 refinement, Tier A — pure MapPreviewMath curves).
-      this._mapModeCtrl.tick(t)
+      this._placeToolCtrl.tick(t)
       // Face-extrude growth-front glow decay (ADR-080 Phase 2, Tier A —
       // the rim's lifetime is owned by the handler, not the governor).
       this._faceExtrudeHandler.tick(t)

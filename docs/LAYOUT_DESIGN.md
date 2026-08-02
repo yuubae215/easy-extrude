@@ -42,8 +42,8 @@ block-beta
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
 | Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
-| Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px keeps the panel top clear of the Map toolbar's lower edge on 720px viewports (ADR-048) | 50 |
-| Map Mode toolbar | w:44px min, h:auto | fixed top:50% left:188px (beside Outliner; mobile: left:8px) | 150 |
+| Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px は元々 Map ツールバー下端との干渉を避ける値だった。ADR-103 でツールバーが消え左端は空いたが、cap 自体は 720px 高でのパネル収まり (原則 #26) として残す (ADR-048) | 50 |
+| Projection toggle | w:128px, h:22px | fixed top:182px, right = gizmo offset (ADR-103 — ギズモ直下。右端の占有計算は `_updateGizmoOffset()` ただ 1 箇所が持つ, 原則 #26) | 10 (`Z.gizmo`) |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
 | Onboarding tour card (ADR-065 Phase 6) | w:248px, h:auto | fixed bottom:38px left:192px (offset past Outliner 180px + InfoBar 26px — #26; toasts are bottom-center and never collide) | 100 |
 | Context menu | w:auto | absolute (cursor position) | 200 |

@@ -4,7 +4,7 @@
  *
  * Where ContextDemoController drives the hard-coded tutorial story, this
  * controller operates on the **canonical document owned by ContextService** and
- * persists its edits through it. Like MapModeController it is a persistent
+ * persists its edits through it. Like PlaceToolController it is a persistent
  * overlay coordinator, NOT a `setMode()` FSM state (ADR-050 §4.2 / ADR-047 §2.1):
  * orbit / select / grab stay live underneath, and the overlay carries requirement
  * state that would tangle uselessly with geometry-edit sub-states.

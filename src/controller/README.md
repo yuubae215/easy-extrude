@@ -6,7 +6,7 @@ intentionally thin — business logic must not live here.
 
 Files: `AppController.js` (3D editor), `ContextController.js` (requirement
 context — ADR-050), `GraspController.js` (grasp search FSM — ADR-057),
-`ContextDemoController.js` (demo layer — ADR-047), `map/MapModeController.js`
+`ContextDemoController.js` (demo layer — ADR-047), `place/PlaceToolController.js`
 (2D map mode — ADR-031/072), `handler/` (per-operation handlers, e.g.
 `GrabOperationHandler`), `snap/` (snap logic), `HitTestService.js`,
 `SelectionManager.js`, `UIStateManager.js`

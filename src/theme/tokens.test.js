@@ -31,7 +31,7 @@
  *
  * ## Baselines are declarations, not achievements
  *
- * The ratchet baseline says "today we tolerate 790 undeclared literals". That is
+ * The ratchet baseline says "today we tolerate 779 undeclared literals". That is
  * an ugly number and it is stated rather than hidden: counting while dirty beats
  * not counting (ADR-100 Consequences). When you migrate a file, LOWER the
  * baseline in the same commit — the test tells you the new number.
@@ -257,6 +257,7 @@ const ACCENT_NON_PAINTERS = [
   { key: 'src/components/Header/ModeDropdown.jsx',  why: 'the currently active MODE in the dropdown — a mode is not an entity' },
   { key: 'src/components/Onboarding/TourCard.jsx',  why: 'the onboarding step you are on (ADR-063 tour), paired with factTone for done steps' },
   { key: 'src/view/ChromeMath.js',                  why: 'the breathing glow that marks an affordance asking for attention (ADR-065/080) — an invitation, not a selection' },
+  { key: 'src/components/ProjectionToggle/ProjectionToggle.jsx', why: 'the active PROJECTION (ADR-103) — a view setting, the same "what you are operating in" meaning as ModeDropdown, not an entity' },
 ]
 
 /**
@@ -346,6 +347,7 @@ const DECLARED_VOCABULARIES = {
  *   lane                     before ADR-100        after
  *   `.js` only               333 occ / 111 hues    257 occ /  85 hues
  *   `.js` + `.jsx` (this)    878 occ / 225 hues    790 occ / 206 hues
+ *                             (ADR-103 が MapToolbar を削除して 779 occ / 203 hues へ)
  *
  * Both columns use THIS function — same exclusions, same comment stripping —
  * because a before/after pair measured two ways proves nothing. ADR-100's own
@@ -357,8 +359,8 @@ const DECLARED_VOCABULARIES = {
  * React panels are where most of the colour lives. Counting it is not a
  * regression against the ADR; NOT counting it would have been.
  */
-const UNDECLARED_OCCURRENCE_BASELINE = 790
-const UNDECLARED_DISTINCT_BASELINE   = 206
+const UNDECLARED_OCCURRENCE_BASELINE = 779
+const UNDECLARED_DISTINCT_BASELINE   = 203
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g
 

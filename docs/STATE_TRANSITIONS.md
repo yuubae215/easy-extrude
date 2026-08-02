@@ -12,20 +12,18 @@ See ADR-008 for UI mode implementation details.
 
 ## Top-level Modes
 
+**2 値。** ADR-103 が Map をモードから降ろしたので、トップレベルの選択肢は
+OBJECT / EDIT だけになった。視点 (向き・投影) と配置ツールは**直交する別の軸**で、
+モードの値ではない — だから `edit` かつ真上から正射で見る、が正当な組み合わせとして
+表現できる (旧 MAP モードでは表現不能だった)。
+
 ```
                     Tab
   ┌─────────────────────────────────────────────────┐
   |                                                 |
   v                                                 |
 OBJECT MODE  ──────────────────────────────> EDIT MODE
-  |     |                                           |
-  |     | Map button / _enterMapMode()              | (dispatches on active object dimension)
-  |     v                                           |
-  |  MAP MODE  (orthographic top-down camera)       |
-  |     |                                           |
-  |     | Escape (no tool) / Exit Map button        |
-  |     | _exitMapMode() → OBJECT MODE              |
-  |                                                 |
+  |                                                 | (dispatches on active object dimension)
   | Shift+A → Add Box                               |
   |   → _addObject('box') → OBJECT MODE             |
   |                                                 |
@@ -35,73 +33,74 @@ OBJECT MODE  ──────────────────────�
   | X / Delete (selected)                           |
   |   → _deleteObject() → OBJECT MODE               |
   └─────────────────────────────────────────────────┘
+
+  直交する軸 (モードの値ではない — どのモードでも独立に動く)
+
+    投影      perspective / orthographic   ← SceneView.setProjection()
+    向き      任意 (Z 軸スナップを含む)      ← 軸ギズモ / OrbitControls
+    配置ツール null / route|boundary|zone|hub|anchor  ← PlaceToolController
 ```
 
-### Map Mode (2D Spatial Annotation — ADR-031)
+### Place tool — 配置ツール (ADR-103 · 旧 Map Mode の描画部分)
 
-`_mapMode.active = true` — orthographic top-down camera; OrbitControls disabled.
-`_mapMode.tool` — the place type currently being drawn (`"Route"` / `"Boundary"` /
-`"Zone"` / `"Hub"` / `"Anchor"`), or `null` (pan-only).
-`_mapMode.drawState` — two-state inner FSM: `"idle"` / `"drawing"` (ADR-073
-removed the old `"pending"` name+confirm gate — geometry completion creates
-the entity immediately with an auto-name; rename is a later N-panel act).
+`PlaceToolController.state.tool` — 描いている place type (`route` / `boundary` /
+`zone` / `hub` / `anchor`)、または `null` (基数 `0..1`、**0 が既定かつ頻出**)。
+`state.drawState` — 内側の 2 値 FSM: `idle` / `drawing` (ADR-073 が旧 `pending`
+の命名 + 確認ゲートを廃止 — 幾何の完成が即座に自動名で実体を作る)。
+
+**モードではない。** 武装しても `selectionMode` は動かず、カメラも動かず、
+キーボードも奪わない。奪うのは *その入力ジェスチャを完全に消費する* 2 つだけ
+(RMB = 折れ線の確定 / 一本指ドラッグ = 描画) で、これは原則 #14 の条件を満たす
+唯一の場合。ホイール・中ドラッグ・二本指は OrbitControls に残る。
 
 ```
-OBJECT MODE
-    |
-    Map button header click → _enterMapMode()
-    |
-    v
-MAP MODE  (_mapMode.active = true, drawState = "idle")
-    |
-    ├─ No tool active  (drawState = "idle", _mapMode.tool = null)
-    │    Left-drag / middle-drag → pan camera (XY)
-    │    Scroll wheel / two-finger pinch → zoom (frustumSize)
-    │    ESC → _exitMapMode() → OBJECT MODE
+tool = null  (何も横取りしない — 通常の選択・編集・orbit)
     │
-    ├─ Click place type in left toolbar → _setMapTool(type)
-    │       drawState stays "idle" until the first input gesture
+    │ + Add ▸ Place ▸ <type>  → setTool(type)
+    │     SceneView.setDrawGestureActive(true)   ← RMB と 1 本指だけ抑制
+    ▼
+tool = <type>, drawState = "drawing"
     │
-    │   ┌─ PC platform ─────────────────────────────────────────────────────┐
-    │   │                                                                    │
-    │   │  Route / Boundary (multi-click polyline)                          │
-    │   │    first click → drawState = "drawing", points[0] set             │
-    │   │    subsequent clicks → append vertex                              │
-    │   │    endpoint snap ring (_updateSnapRing, 20 px) near first vertex  │
-    │   │    Enter / RMB (≥2 pts) OR snap-close → _createAnnotation()      │
-    │   │                                                                    │
-    │   │  Zone (drag-rectangle region)                                     │
-    │   │    pointerdown → drawState = "drawing"                            │
-    │   │    pointerup   → _createAnnotation()                             │
-    │   │                                                                    │
-    │   │  Hub / Anchor (single click point)                                │
-    │   │    click → _createAnnotation()                                   │
-    │   │                                                                    │
-    │   └────────────────────────────────────────────────────────────────────┘
+    │   ┌─ PC ───────────────────────────────────────────────────────────┐
+    │   │  Route / Boundary   click で頂点追加 → Enter / RMB (≥2) で生成 │
+    │   │  Zone               pointerdown → pointerup で矩形生成          │
+    │   │  Hub / Anchor       click で即生成                              │
+    │   └─────────────────────────────────────────────────────────────────┘
+    │   ┌─ Mobile ───────────────────────────────────────────────────────┐
+    │   │  全種: 一本指ドラッグ 1 回 (down → move で preview → up で生成) │
+    │   └─────────────────────────────────────────────────────────────────┘
     │
-    │   ┌─ Mobile platform ─────────────────────────────────────────────────┐
-    │   │                                                                    │
-    │   │  All types: single drag gesture                                   │
-    │   │    pointerdown → drawState = "drawing"                            │
-    │   │    pointermove → update preview (cursor set here — no prior hover)│
-    │   │    pointerup   → _createAnnotation()                             │
-    │   │                                                                    │
-    │   └────────────────────────────────────────────────────────────────────┘
+    │   _createAnnotation()  (幾何が完成 — 命名フォーム無し, ADR-073)
+    │       → 自動名 "<Type> N" (種ごとのカウンタ)
+    │       → 実体生成 (AnnotatedLine / AnnotatedRegion / AnnotatedPoint)
+    │       → AddAnnotationCommand を push (undo 可)
+    │       → drawState = "drawing" のまま (連続配置)
     │
-    │       drawState = "drawing"
-    │           preview line/shape updates with pointer movement
-    │           ESC → drawState = "idle" (discard)
-    │
-    │       _createAnnotation()  (geometry complete — no name form, ADR-073)
-    │           → auto-name "<Type> N" from per-type counter
-    │           → create entity (AnnotatedLine / AnnotatedRegion / AnnotatedPoint)
-    │           → push AddAnnotationCommand (undoable)
-    │           → drawState = "drawing"  (tool stays active for the next shape)
-    │
-    └─ Exit Map button / ESC (drawState="idle", no tool) → _exitMapMode() → OBJECT MODE
+    └─ ESC / RMB (頂点 <2) → cancel() → tool = null
+           setDrawGestureActive(false) で orbit が戻る
 ```
 
----
+- **禁止**: ツール選択がカメラを倒すこと。描きやすさのために視点を自動で真上へ
+  倒すと、それは裏口から復活したモードになる (ADR-103 §未解決)。ユーザーが
+  ギズモの Z 軸を押す。
+- **`_pickPoint` は `activeCamera` を使う**ので、透視でも正射でも地面 (Z=0) を
+  正しく拾う。描画は正射を*要求*しない — 読みやすいだけである。
+
+### Projection — 投影方式 (ADR-103)
+
+`SceneView._projection` — `perspective` / `orthographic`、基数ちょうど 1。
+書き手は `setProjection()` ただ 1 箇所で、未知の値は throw する (原則 #31)。
+
+**正射カメラは状態を持たない。** 位置・向き・frustum 高は毎フレーム透視カメラと
+`controls.target` から導出される (`_syncOrthoCamera`) ので、保存された姿勢も
+独立したズームもパンオフセットも存在しない = ドリフトする対象が無い
+(原則 #24 — 逆向きの書き込みは 1 つも無いので閉路にならない)。帰結:
+
+- 投影を切り替えてもカメラは 1 mm も動かない (往復して同じ姿勢に戻る)。
+- orbit / dolly / pan / ピンチはどちらの投影でも OrbitControls がそのまま担当する
+  (dolly が距離を変え、距離が frustum 高を決めるので「ズーム」として効く)。
+- fog を退避する必要が無い (旧 Map の ortho カメラは固定 ~100 units 上空に居たので
+  退避が要った — `SceneStage.setFogSuspended()` は同じ ADR で削除した)。
 
 ## Edit Mode Substates
 
@@ -397,7 +396,7 @@ App state                   Toolbar buttons (→ always the same count)
 ──────────────────────────────────────────────────────────────────────────
 grab.active                 [✓ Confirm]  [✕ Cancel]
 faceExtrude.active          [✓ Confirm]  [✕ Cancel]
-mapMode.active              [← Exit Map]  (left-side map toolbar handles drawing)
+placeTool !== null          [✕ Done]     (ADR-103: モードではないので「抜ける」ではなく「解除」)
 ──────────────────────────────────────────────────────────────────────────
 Object Mode                 [+ Add]  [Edit*]  [Delete*]
   * disabled if no selection
@@ -1019,6 +1018,91 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 
 ---
 
+## 提案 (proposal) — 提案 / 承認 / 取り下げ (ADR-104 D3 · 未実装)
+
+**まだコードに無い。** 核 §1.4 は「クラスを書く前に状態を論理設計する」ことを
+求めるので、実装 (IA 再設計 Phase 4) より先にここへ図を起こす。台帳側の行は
+`docs/STATE_LEDGER.md` §提案中の実体。
+
+鍵を持たない実体・変数を動かそうとしたときに生まれる差分。**「動かそうとすること
+はできる」= 提案**であり、これは repo が既に統治している decide / propose の動詞境界
+(ADR-056/077) を幾何の編集へ適用したものである。
+
+```
+                   鍵を持たない対象へ編集ジェスチャ
+                              │
+                              ▼
+                   ┌─────────────────────┐
+      提案者が撤回  │        提案         │  所有者が承認 (guard: G1 ∧ G2)
+    ┌──────────────│  from → to + 理由   │──────────────┐
+    │              └─────────────────────┘              │
+    ▼                        ▲                          ▼
+┌──────────┐                 │                    ┌──────────┐
+│ 取り下げ │                 │ (guard 失敗は      │  承認    │
+│ (終端)   │                 │  ここへ戻る —      │ (終端)   │
+└──────────┘                 │  状態は変えない)   └──────────┘
+                             └────────────────────────┘
+```
+
+- **guard G1 (権限)**: 承認できるのは**対象の所有者の鍵を持つ人だけ** (D5)。
+  無効時は理由を同じ述語の返り値から出す (disabled-as-quest / 原則 #11)。
+- **guard G2 (楽観ロック)**: `proposal.from === 現在値`。不一致 =
+  「提案が書かれた後に誰かが主張を動かした」で、承認は**拒否して理由を出す**
+  (ADR-104 U2)。原則 #7 の locking 戦略はここで **optimistic** と決めてある —
+  提案を書く側はブロックしない。
+- **`stale` という 4 つ目の状態は作らない。** 古びているかは毎回 G2 で**導出**する。
+  保存すると導出できる事実の第二の源になる (§1.1 / D4)。
+- **承認は 1 コマンド** (ADR-104 U1): 主張を `to` へ書き換える遷移と `Decision` の
+  追記は同じ undoable command。「証憑だけ残して主張を戻す」は書けない。
+- **差分のない提案は作れない** (D3): `from`・`to`・理由が揃わなければ提案にならない。
+  理由はそのまま `Decision.rationale` へ。
+- **基数 `0..N`**: 同一変数に複数の提案が**併存する** (後勝ちで上書きしない — U2)。
+  0 = 誰も他人のものを触っていない。放置しても現状のまま進むので、衝突とは
+  性質が逆 (D4 のカウンタが 3 本に割れている理由)。
+- **禁止遷移**: `承認 → 提案` / `取り下げ → 提案` (終端からの復帰)。再度動かしたい
+  ときは**新しい提案**を起こす — 履歴を書き換えず追記だけで進む (U3 と同じ規律)。
+
+## 議題 (agenda item) — 議題 / 決着 / 未決のまま閉会 (ADR-104 D4 · 未実装)
+
+場 (合意する場所) に上がったもの。**議題 = 議題化された衝突 ∪ 提案**。
+
+```
+   衝突 (文書から毎回導出・揮発)            提案 (上の図)
+          │                                    │
+          │ 人が「場に上げる」                  │ 提案は生まれた時点で議題
+          ▼                                    ▼
+        ┌────────────────────────────────────────┐
+        │                 議題                    │
+        └────────────────────────────────────────┘
+             │                          │
+   関与者全員の鍵で解決        │        閉会 (結論が出なかった)
+             ▼                          ▼
+        ┌──────────┐              ┌──────────────────┐
+        │  決着    │              │ 未決のまま閉会    │
+        │ (証憑)   │              │ (これも証憑)      │
+        └──────────┘              └──────────────────┘
+             │                          │
+             └──── 再燃は「新しい議題」(supersedes: 前回 id) ────┘
+```
+
+- **記録の開始点は人の行為** (D4 の 1 行規則): *導出値は保存しない。人の行為は保存する。*
+  衝突そのものは文書から毎回導出できるので**保存しない** — 「場を開いて見ているだけ」
+  では何も残らない。議題化・承認・閉会は人の行為で再計算できないので残す。
+- **「未決のまま閉会」も証憑**: 結論が出なかったことも結論の一種。議題化が歴史なら、
+  一方通行に消すのは筋が通らない。
+- **再燃は新しい議題** (ADR-104 U3): `supersedes` 参照を持つ**新規行**として起こし、
+  証憑の列は追記のみの線形列に保つ。枝分かれ履歴にすると「どれが今の結論か」の
+  権威が枝の数だけ生まれる (§1.1)。来歴は Why タブ (ADR-052) が参照を辿って再構成する。
+- **決着の guard**: 衝突の解消には**関与する全員の鍵**が要る (既存の n-ary 合同確定と
+  同形)。提案の承認は所有者ひとりの鍵 (上の G1)。
+- **`decidedBy` は決定時点の鍵集合の部分集合** (ADR-104 U4)。コマンドの引数を
+  鍵集合から選ぶ形にして、「持っていない鍵で決めた」を表現不能にする。
+  決定時点の鍵集合の基数も焼き込む — 遡って無効化はせず、**当事者が 1 人だった時期の
+  決定の個数を数えて出す** (ADR-100 の ratchet と同形)。
+- **基数 `0..N`**: 0 = 場に何も上がっていない (正当・頻出)。
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow
@@ -1028,10 +1112,12 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 - **ADR-024**: Mobile toolbar architecture — fixed slot counts, `disabled` vs hidden, `{spacer: true}`
 - **ADR-029**: Spatial annotation system — `AnnotatedLine/Region/Point`, `PlaceTypeRegistry`
 - **ADR-030**: SpatialLink — typed semantic edges; `L` key two-phase creation flow
-- **ADR-031**: Map Mode interaction model — `drawState`, PC vs Mobile platform split (ADR-073 collapsed the FSM to two states: immediate creation, no name form)
+- **ADR-031**: Map Mode interaction model — `drawState`, PC vs Mobile platform split (ADR-073 collapsed the FSM to two states: immediate creation, no name form; **ADR-103 took the mode away and kept the tool**)
 - **ADR-037**: Body Frame Architecture — Origin CF created atomically with Solid; TC proxy follows Origin CF world pose
 - **ADR-093**: Map annotation motion — per-entity animation phase from the entity id (population lockstep is a cardinality defect, #31); ADR-031 §8 replaced
 - **ADR-090**: Robot roster — identity moved from the magic name to the entity (`robotRole`), 0/1/N cardinality as an explicit state, grasp gated on a resolved robot
+- **ADR-103**: Map is a viewpoint, not a mode — top-level modes back to 2, projection and place tool as orthogonal axes
+- **ADR-104**: Ownership / proposal / receipt — the 提案 and 議題 sections above (design only; implementation is IA redesign Phase 4)
 
 ---
 

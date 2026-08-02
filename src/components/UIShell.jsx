@@ -6,7 +6,7 @@ import { NPanel } from './NPanel/NPanel.jsx'
 import { ExtrusionLabel } from './ExtrusionLabel/ExtrusionLabel.jsx'
 import { InfoBar } from './InfoBar/InfoBar.jsx'
 import { ModalLayer } from './Modal/ModalLayer.jsx'
-import { MapToolbar } from './MapToolbar/MapToolbar.jsx'
+import { ProjectionToggle } from './ProjectionToggle/ProjectionToggle.jsx'
 import { ContextMenu } from './ContextMenu/ContextMenu.jsx'
 import { AddMenu } from './AddMenu/AddMenu.jsx'
 import { LinkTypePicker } from './LinkTypePicker/LinkTypePicker.jsx'
@@ -37,7 +37,7 @@ import { COLOR, DURATION } from '../theme/tokens.js'
  * 6. ExtrusionLabel: floating 3D extrusion amount label
  * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
  * 8. ModalLayer: RenameDialog, ConfirmDialog, ImportModal
- * 9. MapToolbar: Map Mode left vertical toolbar (tool buttons + name input)
+ * 9. ProjectionToggle: ortho/perspective switch under the world gizmo (ADR-103)
  * 10. ContextMenu: long-press / right-click context menu
  * 12. AddMenu: Shift+A add object menu
  * 13. LinkTypePicker: L-key SpatialLink type picker
@@ -65,7 +65,7 @@ export function UIShell() {
       <ExtrusionLabel />
       <InfoBar />
       <ModalLayer />
-      <MapToolbar />
+      <ProjectionToggle />
       <ContextMenu />
       <AddMenu />
       <LinkTypePicker />
