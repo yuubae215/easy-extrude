@@ -533,87 +533,70 @@ G = Grab   X = Delete   Lynch class: Node / Landmark
 
 ---
 
-### S-14: 2D Map Mode — No Active Tool (Pan / Zoom)
+### S-14: Projection toggle (ADR-103 — 旧 2D Map Mode の視点)
 
-Entered from the **Map** button in the header or from the mobile toolbar of a selected Urban entity.
+**画面ではない。** ADR-103 が Map モードを解体したので、かつての S-14〜S-16 は
+「モードの中の 3 画面」ではなく **既存画面の上の視点 + ツール状態**になった。
+モードが消えたので、Object / Edit のどちらに居ても以下は等しく使える。
 
-#### [C] Viewport (Orthographic Top-Down)
-- Full-screen orthographic camera looking straight down along −Z
-- Existing 3D objects and Urban entities visible from above
-- Ground-plane grid visible
-- OrbitControls disabled; custom 2D pan/zoom active
+#### [B] 投影トグル (ギズモの直下・右端)
+| 表示 | 状態 | 押すと |
+|------|------|--------|
+| `PERSP` (地味) | 透視投影 (既定) | 正射へ |
+| `ORTHO` (accent 枠) | 正射投影 | 透視へ |
 
-#### [G] Left Map Toolbar (desktop)
-| Button | Color | Tooltip |
-|--------|-------|---------|
-| ⟿ (Path) | #4A90D9 | Path (Linear) |
-| ⟿ (Edge) | #E74C3C | Edge (Boundary) |
-| ⬡ (District) | #27AE60 | District (Area) |
-| ⬤ (Node) | #F39C12 | Node (Junction) |
-| ⬤ (Landmark) | #9B59B6 | Landmark (Point) |
-| ← | #aaa | Exit Map Mode |
+- 位置: `top:182px` (ギズモ 46px + 128px + 8px)、`right` は
+  `AppController._updateGizmoOffset()` が計算した**同一のオフセット**を読む
+  (画面端は共有資源 — 原則 #26)。
+- **カメラを動かさない。** 向きの入口は従来どおり**軸ギズモ** (Z 軸クリックで
+  真上、ADR-068 の eased flight)。投影と向きは直交する。
+- 正射カメラは透視カメラからの**毎フレームの導出**なので、orbit / dolly / pan /
+  ピンチはどちらの投影でも OrbitControls がそのまま担当する。
 
-All type buttons toggle the active drawing tool.
+---
+
+### S-15: Place tool 武装中 (Route / Boundary / Zone)
+
+`+ Add ▸ Place` から Route / Boundary / Zone を選ぶと武装する。**モードには入らない**
+(`viewState().mode` は `object` のまま)。真上から見たほうが描きやすいので、必要なら
+ユーザーが自分でギズモの Z 軸を押す — ツールが視点を倒すことはしない
+(倒すと裏口から復活したモードになる — ADR-103 §未解決)。
+
+#### [C] Viewport
+- カーソルドット (place type の色) がポインタを追う
+- 確定済み頂点からカーソルまでプレビュー線
+- 端点スナップ (PC・20 px) でリングとスナップフラッシュ
 
 #### [E] Status Bar
 ```
-Map Mode — select a Lynch type on the left to start drawing
+[Type]  N pts  click to add vertex   Enter / RMB = done   ESC cancel
 ```
 
-#### [F] Mobile Toolbar (1 slot used)
+#### [F] Mobile Toolbar (1 slot used — 固定スロット, 原則 #15)
 | Slot | Button |
 |------|--------|
-| 1 | ← Exit Map |
+| 1 | ✕ Done (ツール解除) |
 | 2–4 | (spacers) |
 
 #### Interaction
 | Input | Action |
 |-------|--------|
-| Left-drag (no tool) | Pan camera |
-| Middle-drag | Pan camera |
-| Scroll wheel | Zoom in/out (frustumSize ±15%) |
-| ESC (no tool) | Exit map mode |
+| Left-click | 頂点追加 (PC 折れ線) / Region はドラッグ |
+| Enter / RMB (≥ 2 pts) | 確定して即生成 (ADR-073 — 命名フォーム無し) |
+| ESC | ツール解除 (抜けるモードは無い) |
+| Middle-drag / wheel / 2 本指 | OrbitControls (ツールは奪わない — 原則 #14) |
+| RMB / 1 本指ドラッグ | ツールが消費するので orbit は一時停止 |
+
+確定後も同じツールが武装したままなので連続配置できる ("ポンポン")。
 
 ---
 
-### S-15: 2D Map Mode — Drawing (Polyline / Polygon)
+### S-16: Place tool 武装中 (Hub / Anchor)
 
-Active when a Path, Edge, or District tool is selected in the map toolbar.
-
-#### [C] Viewport
-- Cursor dot (Lynch color) follows mouse
-- Preview line connects confirmed vertices to cursor
-- Polygon: preview ring closes when cursor is near first vertex (< 20 px)
-
-#### [G] Left Map Toolbar
-- Active type button highlighted with Lynch color border
-- Confirm button (✓, green) shown when ≥ 2 pts (polyline) or ≥ 3 pts (polygon)
-- Cancel button (✕, red) shown while drawing
-
-#### [E] Status Bar
-```
-[Type]  N pts  click to add  Enter / RMB = confirm   ESC cancel
-```
-
-#### Interaction
-| Input | Action |
-|-------|--------|
-| Left-click | Add vertex |
-| Click near first vertex (polygon ≥ 3 pts) | Confirm and close polygon |
-| Enter / RMB (≥ 2 pts polyline, ≥ 3 pts polygon) | Confirm shape |
-| ESC | Cancel drawing (stay in map mode) |
-
-After confirmation the entity is created with the Lynch class matching the tool type.
-The same tool remains active for rapid repeated placement.
-
----
-
-### S-16: 2D Map Mode — Drawing (Marker)
-
-Active when Node or Landmark tool is selected.
+`+ Add ▸ Place` から Hub / Anchor を選んだ状態。
 
 #### [C] Viewport
-- Cursor dot follows mouse in Lynch color
+- カーソルドットのみ
 
 #### [E] Status Bar
 ```
@@ -621,7 +604,7 @@ Active when Node or Landmark tool is selected.
 ```
 
 #### Interaction
-Single left-click places the marker immediately; the tool remains active.
+シングルクリックで即座に配置。ツールは武装したまま。
 
 ---
 

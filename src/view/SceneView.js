@@ -8,8 +8,20 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
-import { focusPose as computeFocusPose, clipPlanesFor } from './CameraMath.js'
+import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance } from './CameraMath.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
+
+/**
+ * The projection axis (ADR-103). Two values, cardinality exactly 1 — there is no
+ * "no projection". Orthogonal to camera ORIENTATION (owned by the gizmo /
+ * OrbitControls) and to the top-level MODE (`SceneModel._selectionMode`): the
+ * former Map Mode fused all three, which is why `edit` + top-down was
+ * unreachable while `edit ∧ mapMode.active` was representable.
+ */
+export const PROJECTION = Object.freeze({
+  PERSPECTIVE:  'perspective',
+  ORTHOGRAPHIC: 'orthographic',
+})
 
 export class SceneView {
   constructor() {
@@ -30,8 +42,13 @@ export class SceneView {
     this.camera.position.set(6, -4, 3)    // front (+X), right (-Y), above (+Z)
     this.camera.lookAt(0, 0, 0)
 
+    // The orthographic camera is a DERIVED VIEW of the perspective camera, never
+    // a second pose source (原則 #24 / §1.1). It is created lazily on the first
+    // switch to ortho and re-derived every frame from `camera` + `controls.target`;
+    // nothing ever writes the perspective camera FROM it, so there is no cycle.
     this._orthoCamera = null
-    this._useOrtho    = false
+    /** @type {'perspective'|'orthographic'} — written only by `setProjection()`. */
+    this._projection  = PROJECTION.PERSPECTIVE
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = false
@@ -43,6 +60,13 @@ export class SceneView {
 
     // Prevent browser scroll/pan interference on the canvas
     this.renderer.domElement.style.touchAction = 'none'
+    // The orbit gestures a drawing tool fully consumes, captured once so the
+    // suspension below is a restore rather than a second declaration (§1.1).
+    this._orbitDefaults = {
+      right: this.controls.mouseButtons.RIGHT,
+      touchOne: this.controls.touches.ONE,
+    }
+    this._drawGestureActive = false
 
     this._setupLighting()
     this._setupGrid()
@@ -100,13 +124,8 @@ export class SceneView {
     this.camera.aspect = innerWidth / innerHeight
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(innerWidth, innerHeight)
-    if (this._orthoCamera) {
-      const aspect = innerWidth / innerHeight
-      const h = this._orthoCamera.top - this._orthoCamera.bottom
-      this._orthoCamera.left   = -h * aspect / 2
-      this._orthoCamera.right  =  h * aspect / 2
-      this._orthoCamera.updateProjectionMatrix()
-    }
+    // The ortho camera needs no resize branch: `render()` re-derives it (aspect
+    // included) from the perspective camera every frame while it is active.
   }
 
   /**
@@ -157,78 +176,96 @@ export class SceneView {
     this._updateGridScale(radius)
   }
 
+  /** The current projection (`PROJECTION.*`). */
+  get projection() { return this._projection }
+
   /**
-   * Switches between the perspective camera and an orthographic top-down camera.
-   * When enabling, the ortho camera is centred over the current OrbitControls target.
-   * @param {boolean} enable
-   * @param {number} [frustumSize=50] - visible world-units height in ortho view
+   * Sets the projection — **the only writer of the projection axis** (原則 #4).
+   *
+   * ADR-103: projection is a VIEW SETTING orthogonal to orientation, not a mode.
+   * Switching does not move the camera, does not touch OrbitControls, and does
+   * not touch `SceneModel._selectionMode`; orbit / dolly / pan keep working
+   * identically because the perspective camera stays the pose authority and the
+   * ortho camera is re-derived from it each frame (`_syncOrthoCamera`).
+   *
+   * @param {'perspective'|'orthographic'} kind
    */
-  useOrthoCamera(enable, frustumSize = 50) {
-    if (enable) {
-      const aspect = innerWidth / innerHeight
-      if (!this._orthoCamera) {
-        this._orthoCamera = new THREE.OrthographicCamera(
-          -frustumSize * aspect / 2,  frustumSize * aspect / 2,
-           frustumSize / 2,           -frustumSize / 2,
-          -1000, 1000,
-        )
-      } else {
-        this._orthoCamera.left   = -frustumSize * aspect / 2
-        this._orthoCamera.right  =  frustumSize * aspect / 2
-        this._orthoCamera.top    =  frustumSize / 2
-        this._orthoCamera.bottom = -frustumSize / 2
-      }
-      // Centre ortho camera over the perspective camera's focus point (XY plane)
-      const t = this.controls.target
-      this._orthoCamera.position.set(t.x, t.y, 100)
-      this._orthoCamera.up.set(0, 1, 0)
-      this._orthoCamera.lookAt(t.x, t.y, 0)
-      this._orthoCamera.updateProjectionMatrix()
-      this._useOrtho = true
-      this.controls.enabled = false
-    } else {
-      this._useOrtho = false
-      this.controls.enabled = true
+  setProjection(kind) {
+    if (kind !== PROJECTION.PERSPECTIVE && kind !== PROJECTION.ORTHOGRAPHIC) {
+      // Unknown kind throws rather than falling through to a default: a silent
+      // default makes "declared" and "nobody thought about it" indistinguishable
+      // (原則 #31, the same rule as PLACEMENT_BY_KIND / EXPLICIT_DEFAULTS).
+      throw new Error(`[SceneView] unknown projection "${kind}"`)
     }
-    // Depth fog is calibrated for the perspective camera's short standoff; the
-    // ortho map camera's fixed ~100-unit height fogs everything to near-black
-    // (SceneStage.setFogSuspended). Fog off ⇔ ortho top-down camera active.
-    this.stage.setFogSuspended(enable)
+    if (kind === this._projection) return
+    this._projection = kind
+    if (kind === PROJECTION.ORTHOGRAPHIC) this._syncOrthoCamera()
   }
 
   /**
-   * Adjusts the orthographic frustum height (zoom level) while keeping the camera centred.
-   * @param {number} frustumSize
+   * Re-derives the orthographic camera from the perspective camera. Called once
+   * per rendered frame while ortho is active — the ortho camera holds NO state of
+   * its own (no saved pose, no independent zoom, no pan offset), so there is
+   * nothing that can drift out of sync with the perspective camera and nothing
+   * to restore when switching back (原則 #24: a derived value must never feed
+   * its own input — nothing writes `this.camera` from here).
+   *
+   * Same eye point and same orientation ⇒ toggling projection is a pure change
+   * of projection, never a jump. The frustum height is the perspective camera's
+   * visible world height at the orbit target (`frustumForDistance`), so apparent
+   * scale at the focus point is preserved and OrbitControls' dolly keeps working
+   * as "zoom" in ortho too.
    */
-  setOrthoZoom(frustumSize) {
-    if (!this._orthoCamera) return
+  _syncOrthoCamera() {
     const aspect = innerWidth / innerHeight
-    this._orthoCamera.left   = -frustumSize * aspect / 2
-    this._orthoCamera.right  =  frustumSize * aspect / 2
-    this._orthoCamera.top    =  frustumSize / 2
-    this._orthoCamera.bottom = -frustumSize / 2
-    this._orthoCamera.updateProjectionMatrix()
+    if (!this._orthoCamera) this._orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1)
+    const oc   = this._orthoCamera
+    const dist = Math.max(this.camera.position.distanceTo(this.controls.target), 1e-3)
+    const h    = frustumForDistance(dist, this.camera.fov)
+
+    oc.left   = -h * aspect / 2
+    oc.right  =  h * aspect / 2
+    oc.top    =  h / 2
+    oc.bottom = -h / 2
+    // Symmetric depth box around the eye: an ortho frustum has linear depth, so a
+    // generous range costs no precision, and clipping the scene when the user
+    // merely changed projection would be a silent loss (原則 #11).
+    const depth = dist * 2 + 1000
+    oc.near   = -depth
+    oc.far    =  depth
+    oc.position.copy(this.camera.position)
+    oc.quaternion.copy(this.camera.quaternion)
+    oc.up.copy(this.camera.up)
+    oc.updateProjectionMatrix()
+    oc.updateMatrixWorld(true)
   }
 
   /**
-   * Translates the orthographic camera in XY (world-space pan).
-   * @param {number} x
-   * @param {number} y
+   * Suspends exactly the orbit gestures a drawing tool fully consumes, and
+   * nothing else (原則 #14 — disable shared controls only on a true conflict).
+   * RMB completes a polyline and a one-finger drag draws, so those two are taken;
+   * middle-drag dolly, wheel zoom and two-finger pinch stay with OrbitControls,
+   * which is why the place tool needs no pan/zoom/pinch code of its own.
+   * @param {boolean} active
    */
-  panOrthoCamera(x, y) {
-    if (!this._orthoCamera) return
-    this._orthoCamera.position.set(x, y, 100)
-    this._orthoCamera.lookAt(x, y, 0)
+  setDrawGestureActive(active) {
+    if (active === this._drawGestureActive) return
+    this._drawGestureActive = active
+    this.controls.mouseButtons.RIGHT = active ? null : this._orbitDefaults.right
+    this.controls.touches.ONE        = active ? null : this._orbitDefaults.touchOne
   }
 
   /** The camera currently being used for rendering. */
   get activeCamera() {
-    return (this._useOrtho && this._orthoCamera) ? this._orthoCamera : this.camera
+    return (this._projection === PROJECTION.ORTHOGRAPHIC && this._orthoCamera)
+      ? this._orthoCamera
+      : this.camera
   }
 
   /** Updates controls and renders the scene (call from the animation loop) */
   render() {
-    if (!this._useOrtho) this.controls.update()
+    this.controls.update()
+    if (this._projection === PROJECTION.ORTHOGRAPHIC) this._syncOrthoCamera()
     this.renderer.render(this.scene, this.activeCamera)
   }
 }

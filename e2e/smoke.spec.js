@@ -103,105 +103,165 @@ test('world gizmo axis click flies the camera without a page error', async ({ pa
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
-test('map mode enter flight, anchor placement, and undo round-trip (ADR-072)', async ({ page }) => {
+// ── ADR-103: Map はモードではなく視点 ───────────────────────────────────────
+//
+// 旧 Map モードは「向き・投影・ツール・トップレベルモード」を 1 つのボタンで同時に
+// 変えていた。分解した後に問うべきは **4 つが独立に動くか** であって、個々の機能が
+// 動くことではない (機能は前から動いていた — 動かなかったのは *組み合わせ* である)。
+
+const HEADING = (page) => page.evaluate(() => window.__easyExtrude.viewState())
+
+test('投影は往復する — 同じ操作を 2 回通して姿勢が戻る (ADR-103)', async ({ page }) => {
+  const errors = await boot(page)
+  await page.locator('#canvas-container canvas').click()
+  await page.waitForTimeout(700)   // boot fly-in settles
+
+  const before  = await page.evaluate(() => window.__easyExtrude.cameraState())
+  const toggle  = page.getByRole('button', { name: /projection/i })
+  await expect(toggle).toBeVisible()
+
+  // 1 回目: 透視 → 正射。カメラの姿勢は **1 mm も動かない** — 投影は向きと直交する
+  // ビュー設定であって、視点を倒す操作ではない (ADR-103 §未解決: ツールが勝手に
+  // 視点を倒すと、それは裏口から復活したモードになる)。
+  await toggle.click()
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.viewState().projection))
+    .toBe('orthographic')
+  const mid = await page.evaluate(() => window.__easyExtrude.cameraState())
+  const near = (a, b, tol = 1e-6) => expect(Math.abs(a - b)).toBeLessThan(tol)
+  near(mid.position.x, before.position.x)
+  near(mid.position.y, before.position.y)
+  near(mid.position.z, before.position.z)
+
+  // 2 回目: 正射 → 透視。同じ要求を 2 回通すのが要点 — 1 回だけの証拠は「1 フレーム
+  // 古い状態を読む」欠陥を構造的に隠す (ADR-098 が緑のまま出荷し ADR-101 で起票し
+  // 直した先例)。往復して元の値ちょうどに戻ること。
+  await toggle.click()
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.viewState().projection))
+    .toBe('perspective')
+  const after = await page.evaluate(() => window.__easyExtrude.cameraState())
+  near(after.position.x, before.position.x)
+  near(after.position.y, before.position.y)
+  near(after.position.z, before.position.z)
+  near(after.target.x,   before.target.x)
+  near(after.target.y,   before.target.y)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('正射のまま Edit Mode に入れる — 旧 Map モードでは表現不能だった組み合わせ (ADR-103)', async ({ page }) => {
+  const errors = await boot(page)
+  await page.locator('#canvas-container canvas').click()
+  await page.waitForTimeout(700)
+
+  // 台帳 §既知の負債 1 の逆向き。畳んで禁止する処方では `edit ∧ 真上から見る` まで
+  // 表現不能になるが、それは実際にやりたい操作である。3 つの軸 (mode / projection /
+  // tool) が同時に読めることそのものが、直積が正当になった証拠。
+  await page.getByRole('button', { name: /projection/i }).click()
+  await page.getByRole('img', { name: /World orientation gizmo/ }).click({ position: { x: 64, y: 23 } })
+  await page.waitForTimeout(700)   // Z 軸スナップの eased flight が着地
+
+  // Outliner から Solid を選び、Tab で Edit Mode へ (起動直後の選択は CF なので
+  // Tab の分岐が変わる — 対象を明示的に選び直す)。
+  await page.getByText('Cube', { exact: true }).first().click()
+  await page.keyboard.press('Tab')
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.viewState().mode)).toBe('edit')
+
+  const view = await HEADING(page)
+  expect(view.projection, '正射のまま').toBe('orthographic')
+  expect(view.mode, 'かつ Edit Mode').toBe('edit')
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('place tool: Anchor は + Add から置け、undo で消える (ADR-103 / ADR-073)', async ({ page }) => {
   const errors = await boot(page)
   const before = await deleteButtons(page).count()
-
-  // Let the boot fly-in settle, then snapshot the perspective camera pose. Map
-  // Mode must return the camera here on exit (ADR-072) so the reachable orbit
-  // range is unchanged — the user-reported regression was the camera staying
-  // stuck at the map staging pose because the exit "stolen" guard mis-fired.
+  await page.locator('#canvas-container canvas').click()
   await page.waitForTimeout(700)
-  const preMap = await page.evaluate(() => window.__easyExtrude.cameraState())
 
-  // Header "Map" enters Map Mode: the enter flies the camera to the top-down
-  // staging pose (flyToView → CameraFlight) and swaps to the ortho camera when
-  // the flight ends. checkJs excludes the controller layer, so this is the
-  // wiring liveness guard for the whole choreography.
-  await page.getByRole('button', { name: 'Map' }).click()
-  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
+  // 5 つの place type は `+ Add` の Place グループに居る — モードに入る必要は無い。
+  // Shift+A で Add メニューを開く (Outliner の "+ Add" は Box 直行なので別経路)。
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Anchor', { exact: true }).click()
 
-  // Place an Anchor WITHOUT waiting for the enter flight to land: the canvas
-  // click interrupts the flight (finish() lands it, then the projection swaps).
-  // This is the realistic path and the one that exposed the reset bug — the
-  // interrupted flight captured a mid-flight staging pose, so on exit the
-  // "stolen" guard mis-fired and the return flight was skipped.
-  // ADR-073: the click creates the Anchor immediately — no name form / Confirm.
-  await page.locator('button[title="Anchor"]').click()
+  // ツールが武装しただけで、モードもカメラも動いていないこと (これが ADR-103)。
+  const armed = await HEADING(page)
+  expect(armed.placeTool).toBe('anchor')
+  expect(armed.mode, 'ツールはモードではない').toBe('object')
+
+  // ADR-073: クリックで即生成 — 命名フォームも Confirm も無い。
   await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
   await expect.poll(() => deleteButtons(page).count()).toBeGreaterThan(before)
 
-  // Exit flies back to the saved perspective pose …
-  await page.locator('button[title="Exit Map Mode"]').click()
-  await page.waitForTimeout(800)
+  // ESC はツールを解除するだけ (抜けるモードが無い)。
+  await page.keyboard.press('Escape')
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.viewState().placeTool)).toBe(null)
 
-  // … and the camera is back at its pre-map pose (position, orbit target, up),
-  // not stuck at the top-down map staging pose (the reported bug).
-  const postMap = await page.evaluate(() => window.__easyExtrude.cameraState())
-  const near = (a, b, tol = 0.5) => expect(Math.abs(a - b)).toBeLessThan(tol)
-  near(postMap.position.x, preMap.position.x)
-  near(postMap.position.y, preMap.position.y)
-  near(postMap.position.z, preMap.position.z)
-  near(postMap.target.x, preMap.target.x)
-  near(postMap.target.y, preMap.target.y)
-  near(postMap.target.z, preMap.target.z)
-  near(postMap.up.x, preMap.up.x, 0.01)
-  near(postMap.up.y, preMap.up.y, 0.01)
-  near(postMap.up.z, preMap.up.z, 0.01)
-
-  // Moving the placed anchor guards the map-object clamp wiring: a map object
-  // is a flat plate pinned to max(building top, 0), never floating — annotations
-  // route through `_mapObjectPlateDelta` in applyPreviewTranslation (SceneService,
-  // excluded from checkJs). Select via the Outliner, G-grab, sweep, then cancel;
-  // a dangling method throws in the pointermove handler → the pageerror fires.
+  // 置いた Anchor を動かす: map オブジェクトは平板で、床か屋根に必ず座る
+  // (ADR-097/098 の clamp 配線のライブネス — SceneService は checkJs の外)。
   await page.getByText('Anchor', { exact: true }).first().click()
   const box = await page.locator('#canvas-container canvas').boundingBox()
   await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2)
   await page.keyboard.press('g')
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 10 })
-  await page.keyboard.press('Escape') // cancel — the placement command is untouched
+  await page.keyboard.press('Escape') // cancel — 配置コマンドには触らない
 
-  // … and the placement is now on the CommandStack: undo removes it.
+  // 配置は CommandStack に載っている: undo で消える。
   await page.keyboard.press('Control+z')
   await expect.poll(() => deleteButtons(page).count()).toBe(before)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
-test('map mode two-finger pinch zooms the ortho camera (ADR-072)', async ({ page }) => {
-  // Touch devices have no wheel and OrbitControls' pinch is disabled in Map
-  // Mode, so pinch-zoom is wired in MapModeController. Playwright has no native
-  // pinch and checkJs excludes the controller layer — synthetic touch pointer
-  // events are the only liveness guard for the multi-touch wiring.
+test('二本指ピンチは OrbitControls へ返っている — ツール武装中も (ADR-103)', async ({ page }) => {
+  // 旧 Map モードは OrbitControls を止めて自前の pinch トラッカーを持っていた。
+  // ADR-103 はカメラを返したので、ピンチ・パン・ホイールは全部 OrbitControls が
+  // 持つ。ツールが奪うのは RMB と一本指ドラッグだけ (原則 #14)。
+  // Playwright にネイティブ pinch は無く controller は checkJs 外なので、合成
+  // ポインタイベントがこの配線の唯一のライブネス検査。
   const errors = await boot(page)
+  await page.locator('#canvas-container canvas').click()
+  await page.waitForTimeout(700)
 
-  await page.getByRole('button', { name: 'Map' }).click()
-  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
-  // A mouse click finishes the enter flight and swaps to the ortho camera.
-  await page.locator('#canvas-container canvas').click({ position: { x: 400, y: 300 } })
-  await expect.poll(() => page.evaluate(() => window.__easyExtrude.mapState().useOrtho)).toBe(true)
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Route', { exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.viewState().placeTool)).toBe('route')
 
-  const before = await page.evaluate(() => window.__easyExtrude.mapState().frustumSize)
+  const before = await page.evaluate(() => window.__easyExtrude.viewState().worldHeight)
 
   const box = await page.locator('#canvas-container canvas').boundingBox()
   const cx = Math.round(box.x + box.width / 2)
   const cy = Math.round(box.y + box.height / 2)
-  // Two fingers spread apart → zoom in (smaller ortho frustum).
   await page.evaluate(({ cx, cy }) => {
     const el = document.querySelector('#canvas-container canvas')
-    const fire = (type, id, x, y, buttons) => el.dispatchEvent(new PointerEvent(type, {
-      pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y,
-      button: 0, buttons, bubbles: true, cancelable: true,
-    }))
-    fire('pointerdown', 1, cx - 30, cy, 1)
-    fire('pointerdown', 2, cx + 30, cy, 1)
-    for (let h = 40; h <= 170; h += 15) { fire('pointermove', 1, cx - h, cy, 1); fire('pointermove', 2, cx + h, cy, 1) }
-    fire('pointerup', 1, cx - 170, cy, 0)
-    fire('pointerup', 2, cx + 170, cy, 0)
+    // 合成 PointerEvent は本物のポインタキャプチャを作らないので、OrbitControls の
+    // set/releasePointerCapture が InvalidStateError を投げる。これは**計測装置の
+    // 制約**であって製品の欠陥ではないため、この 1 回の dispatch の間だけ無害化して
+    // 元に戻す (pageerror の assertion を緩めない — 緩めると本物のエラーも見逃す)。
+    const setCap = Element.prototype.setPointerCapture
+    const relCap = Element.prototype.releasePointerCapture
+    Element.prototype.setPointerCapture = function () {}
+    Element.prototype.releasePointerCapture = function () {}
+    try {
+      const fire = (type, id, x, y, buttons) => el.dispatchEvent(new PointerEvent(type, {
+        pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y,
+        button: 0, buttons, bubbles: true, cancelable: true,
+      }))
+      fire('pointerdown', 1, cx - 30, cy, 1)
+      fire('pointerdown', 2, cx + 30, cy, 1)
+      for (let h = 40; h <= 170; h += 15) { fire('pointermove', 1, cx - h, cy, 1); fire('pointermove', 2, cx + h, cy, 1) }
+      fire('pointerup', 1, cx - 170, cy, 0)
+      fire('pointerup', 2, cx + 170, cy, 0)
+    } finally {
+      Element.prototype.setPointerCapture = setCap
+      Element.prototype.releasePointerCapture = relCap
+    }
   }, { cx, cy })
+  await page.waitForTimeout(200)
 
-  const after = await page.evaluate(() => window.__easyExtrude.mapState().frustumSize)
-  expect(after, `pinch-out should shrink the frustum (before ${before}, after ${after})`).toBeLessThan(before)
+  const after = await page.evaluate(() => window.__easyExtrude.viewState().worldHeight)
+  expect(after, `指を広げたら見える世界が狭まるはず (before ${before}, after ${after})`)
+    .toBeLessThan(before)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -607,10 +667,11 @@ test('supported な実体で支持を持たないものは 0 個 (ADR-097 / 原�
 
   // マップオブジェクトを 1 個置いて母数が 0 でないことを先に確かめる — 対象が
   // 0 個であることは、不変条件が成り立っていることと区別がつかない。
-  await page.getByRole('button', { name: 'Map' }).click()
-  await expect(page.locator('button[title="Anchor"]')).toBeVisible()
-  await page.locator('button[title="Anchor"]').click()
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Anchor', { exact: true }).click()
   await page.locator('#canvas-container canvas').click({ position: { x: 480, y: 320 } })
+  await page.keyboard.press('Escape')
   await page.waitForTimeout(400)
 
   const rows = await placementRows(page)

@@ -32,7 +32,9 @@ export const EO_IDLE          = 'EO_IDLE'          // no edit operation in progr
 export const EO_1D_DRAG       = 'EO_1D_DRAG'       // endpoint drag (MeasureLine 1D Edit Mode)
 export const EO_2D_SKETCH_DRAW = 'EO_2D_SKETCH_DRAW' // rectangle sketch drag (Profile 2D Edit Mode)
 
-// ── Map Mode draw states (_mapMode.drawState) ────────────────────────────────
+// ── Place-tool draw states (PlaceToolController.state.drawState) ─────────────
+// `DS_PENDING = 'pending'` was retired by ADR-073 and lived on here with zero
+// references — STATE_LEDGER §既知の負債 3, "a retired value left in the enum".
+// ADR-103 removed it: a state set nobody prunes stops describing the system.
 export const DS_IDLE    = 'idle'
 export const DS_DRAWING = 'drawing'
-export const DS_PENDING = 'pending'

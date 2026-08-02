@@ -68,19 +68,25 @@ export const useUIStore = create((set, get) => ({
   // ── Callbacks registered by AppController ─────────────────────────────────
   callbacks: {},
 
-  // ── Map Toolbar ─────────────────────────────────────────────────────────────
-  mapToolbar: {
-    visible:     false,
-    activeTool:  null,    // 'route'|'boundary'|'zone'|'hub'|'anchor'|null
-    showCancel:  false,   // ADR-073: 命名フォーム / Confirm は廃止（即時生成）
-  },
+  // ── 投影方式 (ADR-103) ──────────────────────────────────────────────────────
+  // 'perspective' | 'orthographic' — 基数はちょうど 1 (「投影なし」は無い)。
+  // カメラの向き (ギズモ) ともトップレベルモードとも**直交する**。ここは
+  // SceneView が持つ権威の *表示用の写し*であって第二の源ではない: 書き手は
+  // AppController の onProjectionChange 経由の 1 経路のみ (原則 #4)。
+  projection: 'perspective',
+
+  // ── 右端の占有オフセット (原則 #26) ─────────────────────────────────────────
+  // 画面端は共有資源。占有量を計算するのは AppController._updateGizmoOffset()
+  // ただ 1 箇所で、ギズモ (DOM canvas) と投影トグル (React) の両方がそれを読む。
+  // 呼び出し箇所ごとにパッチを当てない。
+  gizmoRightOffset: 16,
 
   // ── Context Menu ──────────────────────────────────────────────────────────
   // { x, y, items: [{label, onClick, danger?}] } | null
   contextMenu: null,
 
   // ── Add Menu (Shift+A) ────────────────────────────────────────────────────
-  // { x, y, cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame } } | null
+  // { x, y, cbs: { onBox, onSketch, onMeasure, onImportStep, onFrame, onRobot, onPlace } } | null
   addMenu: null,
 
   // ── Link Type Picker (L-key) ───────────────────────────────────────────────
@@ -275,9 +281,9 @@ export const useUIStore = create((set, get) => ({
       return { callbacks: rest }
     }),
 
-    setMapToolbar: (config) => set(state => ({
-      mapToolbar: { ...state.mapToolbar, ...config },
-    })),
+    setProjection: (kind) => set({ projection: kind }),
+
+    setGizmoRightOffset: (px) => set({ gizmoRightOffset: px }),
 
     showContextMenu:   (cfg) => set({ contextMenu: cfg }),
     hideContextMenu:   ()    => set({ contextMenu: null }),

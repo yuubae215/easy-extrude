@@ -100,7 +100,7 @@ artifacts
             uuid 9a4d3f21-6b58-4e07-8c92-1d5b3a7e6c40
             summary "実装時の発見 (起票時の波及表に無かった): 選択を書く『窓』は 5 つではなかった。undo コールバックの中で `_objSelected = false; _selectedIds.clear(); _refreshObjectModeStatus(); _updateMobileToolbar()` を 4 行手書きする形が MapModeController / ContextMenuHandler / FramePlacementHandler / AppController の 4 箇所に複製されていた。ハンドラの中の undo 経路は『選択の窓』に見えないので、窓を辿る数え方では絶対に出てこない — 個数検査が形を数える理由がこれである。逆に波及表が挙げていた OutlinerBridge / OutlinerView は**触っていない** (読み手側は既にイベントで追従できていた)"
             artifacts
-            - "src/controller/map/MapModeController.js"
+            - "src/controller/place/PlaceToolController.js"
             - "src/controller/handler/ContextMenuHandler.js"
             - "src/controller/handler/FramePlacementHandler.js"
 

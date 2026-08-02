@@ -186,9 +186,12 @@ export class UIStateManager {
     const mode     = ctrl._scene.selectionMode
     const substate = ctrl._scene.editSubstate
 
-    if (ctrl._mapModeCtrl.isActive) {
+    // A place tool is armed (ADR-103): the only extra affordance a drawing
+    // gesture needs is a way OUT of it. Fixed slots — the row keeps its shape
+    // (原則 #15).
+    if (ctrl._placeToolCtrl.hasTool) {
       ctrl._uiView.setMobileToolbar([
-        { icon: ICONS.back, label: 'Exit Map', onClick: () => ctrl._mapModeCtrl.exit() },
+        { icon: ICONS.cancel, label: 'Done', onClick: () => ctrl._placeToolCtrl.cancel(), danger: true },
         { spacer: true },
         { spacer: true },
         { spacer: true },
@@ -268,7 +271,7 @@ export class UIStateManager {
       if (hasObj && _isAnnotated(ctrl._activeObj)) {
         ctrl._uiView.setMobileToolbar([
           { icon: ICONS.grab,   label: 'Grab',   onClick: () => ctrl._grabHandler.start() },
-          { icon: ICONS.map,    label: 'Map',    onClick: () => ctrl._mapModeCtrl.enter() },
+          { spacer: true },
           { icon: ICONS.delete, label: 'Delete', onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: true },
           { spacer: true },
         ])
@@ -290,14 +293,15 @@ export class UIStateManager {
           onClick: () => {
             const canAddFrame = ctrl._objSelected && !(ctrl._activeObj instanceof MeasureLine) && !(ctrl._activeObj instanceof ImportedMesh)
             ctrl._uiView.showAddMenu(
-              window.innerWidth / 2, window.innerHeight / 2,
-              () => ctrl._addObject('box'),
-              () => ctrl._addObject('sketch'),
-              () => ctrl._addObject('measure'),
-              () => ctrl._triggerStepImport(),
-              canAddFrame ? () => ctrl._addObject('frame') : undefined,
-              () => ctrl._addObject('robot'),
-            )
+              window.innerWidth / 2, window.innerHeight / 2, {
+                onBox:        () => ctrl._addObject('box'),
+                onSketch:     () => ctrl._addObject('sketch'),
+                onMeasure:    () => ctrl._addObject('measure'),
+                onImportStep: () => ctrl._triggerStepImport(),
+                onFrame:      canAddFrame ? () => ctrl._addObject('frame') : undefined,
+                onRobot:      () => ctrl._addObject('robot'),
+                onPlace:      (type) => ctrl._placeToolCtrl.setTool(type),
+              })
           },
         },
         { icon: ICONS.grab,      label: 'Grab',   onClick: () => ctrl._grabHandler.start(),                                        disabled: !gGrab.enabled,   reason: gGrab.reason },
