@@ -333,4 +333,6 @@ goal ごとの支えの正本は `.gsn` 側 (ここには複製しない — §1
 - `docs/ia-redesign/02-grouping-criteria.md` (発見 / 解消の物差しと、タブ列の物理的破綻の実測)
 - `docs/ia-redesign/easy-extrude-wireframe-v8.html` (配置とその根拠 — 住所の正本)
 - `docs/LAYOUT_DESIGN.md` §214-226 (端の予算と寸法の正本)
+- ADR-107 (選択できるものが 2 種になる — 本 ADR が場と N パネルを**同時に見せる**ことで
+  必ず踏むことになる未決。器を動かすまでこの衝突は存在できなかった)
 - `docs/gsn/adr-106-the-floor-is-a-table-not-a-strip.gsn` (goal ごとの支えの正本)

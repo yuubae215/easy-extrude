@@ -1,0 +1,103 @@
+GOALS adr107_selection_has_two_kinds
+
+goal AllZonesSpeakOfTheSameSelection
+uuid 81db89c7-cac6-4606-bf05-01e49339dc62
+summary "選んだものについて全ゾーンが同じことを語る。選べるものが『3D に姿を持つ実体』だけでなくなっても、選択の入口は 1 つのままで、種の混在は書けず、どの種を選んでも 3D が無言にならない"
+state UnderReview
+labels adr-107, selection, ia-redesign, principle-2, principle-11, principle-31, kind-union
+artifacts
+- "docs/adr/ADR-107-selection-has-two-kinds.md"
+- "docs/ia-redesign/02-grouping-criteria.md"
+
+    context Adr107Scope
+    uuid 3ed881b8-1d6b-4db3-9a63-67336dde492b
+    summary "ADR-107 (Proposed 2026-08-02): 文書の共有変数 (d_ref / cycle / mount_h) を実体と同じ 1 つの選択モデルへ入れる。選択を kind 判別の有界 union (empty | entities | variables) にし、混在を表現不能にし、選択可能な種は 3D の姿を宣言表で宣言し、右パネルの分岐は未宣言の種で throw する。ADR-099 の『入口は 5 verb』は変えない — 変わるのは選択集合の要素の種であって入口の個数ではない。契約・BFF・core は不変 (選択は presentation 状態でワイヤに載らない)"
+    artifacts
+    - "src/controller/SelectionManager.js"
+    - "docs/ia-redesign/easy-extrude-wireframe-v8.html"
+
+    context DecidedInV8NeverRecorded
+    uuid 89f99059-d87e-4b5f-b4c6-d6174b5a7ca2
+    summary "出発点: この判断はワイヤーフレーム v8 の注釈②⑤で既に決まっている (共有変数は左の意味側に並ぶ / 選ぶと右パネルの中身が入れ替わる / 選択モデルは 1 つ) が、記録した ADR が無い。かつ 02-grouping-criteria.md §未決 が『場で変数を選んでいる間の選択の所有者 — いま選択されているのは Robot か d_ref か。選択モデル (ADR-099) との衝突』として明示的に開いたまま挙げている。決まっているのに記録が無い判断は、次に触る人にとって決まっていないのと同じである"
+
+    context ThePreviousExclusionHidThisConflict
+    uuid b29cbe0f-9c60-4b21-ae4a-560ec1ed6f89
+    summary "この衝突はこれまで存在できなかった: 場に入ると N パネルは ContextController の 3 箇所で強制的に消されていたので、『場で変数を選んでいる間、右パネルは誰のものか』という問いは右パネルがそこに無いため起こりようがなかった。ADR-106 が器を下部へ移して場と N パネルが同時に見えた瞬間から、この問いは毎回起きる。したがって本 ADR は Phase 3 の前提条件ではなく帰結であり、ADR-106 を実装すると必ず踏む。設計欠陥が回避策に隠されていた例で、回避策を外すと隠れていた問いが出てくる"
+    artifacts
+    - "docs/adr/ADR-106-the-floor-is-a-table-not-a-strip.md"
+
+    context BusinessTreeAttachPoint
+    uuid 9a3b143c-c2ba-4b0e-b88d-072e8f4fdf0e
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (uuid d17c02f9-f551-4d7b-a927-0636126d4dfb、ByDirectManipulationTrust 配下) — 選んだものと画面が語るものが食い違わないことは直接操作への信頼そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形であり、かつ ADR-106 の器が実装されるまで変数選択の窓 (場の行列の列ヘッダ) が存在しない。ADR-106 の実装 PR で窓が実在し、e2e が焼けた時点で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotASecondSelectionField
+    uuid fbc37fcd-9da7-48be-918b-0795228ee5d5
+    summary "却下案 A (変数用に第二の選択状態 selectedVariable を持つ) への反証: 最小の差分だが、ADR-099 が畳んだものを再び割る。『いまアクティブなのはどっちか』の決定が全窓に複製され、窓ごとに部分集合を書く形が戻る。決定的なのは検査側で、SelectionOwnership.test.js の census は entity 側の書き込みしか数えないので、割れたことに気づけない — 緑のまま壊れる。ADR-103 が名指しした最悪の形 (退役・分裂の腐敗は違反を見逃すのではなく緑を出す) がそのまま当てはまる"
+    artifacts
+    - "src/SelectionOwnership.test.js"
+
+    justification WhyNotMixVariablesIntoTheEntityIdSet
+    uuid abc4ecff-7c94-44b9-85e8-8c4f51b850cf
+    summary "却下案 B (変数を仮想的な entity として _ids に混ぜる) への反証: 既存コードはほぼそのまま動くが、種がプロパティ値や id の接頭辞で分岐することになり原則 #2 (能力分岐は型で行う) に違反する。実体 id と文書 ref は別の世界の名前で、たまたま文字列として比較できるだけなので、衝突は実行時にしか出ない。加えて右パネルの分岐が fall-through すると『宣言された既定』と『誰も考えなかった種』が区別不能になる (原則 #31)。原則 #21 が座標空間について要求した『型・API 形状で静的に区別する。命名規約やレビューに頼らない』を、名前空間へそのまま当てる"
+
+    justification WhyMixedSelectionIsUnrepresentable
+    uuid a9070f93-274b-46a3-be65-207c7f7d2617
+    summary "混在 (Robot 1 個 + d_ref 1 個) を表現不能にする根拠: 混在を許すと N パネルが『どちらの詳細を出すか』を決めねばならず、その決定に自然な答えが無い — 決定の不在を既定値で埋める形になる (原則 #31)。かつ矩形選択もビューポートのピックも幾何側しか拾わないので、混在は意図した操作ではなく事故でしか生まれない。『Robot を見ながら d_ref も選びたい』という要求に対する答えは混在ではなく文脈の強度 (D5 の DIMMED) であり、実測で不足ならそちらを強める — 混在を後から許すのは union の枝を 1 つ足す意図的な行為として残しておく"
+
+    assumption VariableHasAThreeDShape
+    uuid b13c27d2-3168-409a-8027-71cef0bc8086
+    summary "反証されうる仮説: 共有変数は 3D の姿を持つので、選択しても無言にならない (原則 #11)。今日この仮説を採る根拠は v8 注釈⑤の答え『未確定帯が d_ref の 3D での姿』であり、未確定帯は ADR-050 の region ghost の系譜として既に存在する。反証される形は、姿を持てない変数 (例: 単位を持たない比率、時間軸のサイクルタイム) が文書に現れ、選択しても 3D に何も描けないこと。そのときの答えは無言を許すことではなく、その種を選択可能にしないか (D4 の宣言表が throw する)、姿を新しく定義するかの二択を宣言として書くこと"
+
+    assumption ContextualDimmedIsEnoughToKeepTheRobot
+    uuid 23ce69d8-8657-4016-9877-3bae9d2d3f88
+    summary "反証されうる仮説: 変数を選んだとき、その変数が制約している実体を contextual 軸の DIMMED で残せば『Robot の選択が消えた』は問題にならない。根拠は ADR-096 の 2 軸と ADR-099 の _claimContext が既にこの表現を持っていること (新概念ゼロ)。反証される形は、dogfooding で『変数を選んだあと Robot に戻るのに毎回 Outliner を辿っている』が観測されること — そのときの一手は混在を許すことではなく、直前の選択へ戻る動線 (焦点の履歴) を足すか、DIMMED の強度を上げるかであり、どちらも選択モデルの種を増やさない"
+    artifacts
+    - "src/view/VisibilityAxes.js"
+
+    strategy ByWideningTheElementKindWithoutWideningTheEntrance
+    uuid b4f5289b-e96f-4ac6-89f6-4b8a88e6209b
+    summary "Argument by 要素の種だけを広げる — ADR-099 が確立したのは『選択を変える入口は 1 つ』であって『選べるものは実体だけ』ではない。したがって正しい拡張は入口を増やさずに要素の種を union へ広げることで、その正しさは (a) 入口の個数が増えていないこと、(b) 混在が構築できないこと、(c) 新しい種が姿と分岐を宣言せずに入れないこと、の 3 つを個数で問うことで示せる。Set は種を持たないので、種の分裂は実装を読んでも見えない — だから読むのではなく数える"
+
+        goal EntranceCountIsUnchanged
+        uuid 55ec49d8-4d58-4f74-a5c1-1491adc7f594
+        summary "選択集合に書く入口が 5 個のままである (selectOnly / selectMany / clearSelection / activateWithinSelection / forget)。種が 1 → 2 になっても増えない。Outliner の意味側・場の行列の列ヘッダ・未確定帯のクリックは窓であって入口ではない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption EntranceCensusSurvivesTheKindWidening
+            uuid 260938d2-e5c2-4bc3-a56c-a319b286abc4
+            summary "証拠予定: SelectionOwnership.test.js の既存 census が、母集団の作り方を変えずに種の追加後も効くこと。これは単なる回帰ではなく設計の判定装置である — census を作り直さないと通らないなら、それは選択が実質的に 2 つに割れた (却下案 A を選んだ) 証拠になる。したがって『テストを直して緑にする』が禁じ手であることを、テスト自身のコメントに書いておく。変異で確認する形: 変数選択を SelectionManager の外から書くと、その呼び出し元を名指しして fail すること"
+
+        goal MixedSelectionIsUnrepresentable
+        uuid b8a9eb4c-5ce2-48a0-8ee1-573ca53d19a8
+        summary "実体と変数が混在した選択を構築できる経路が 0 個である。選択は empty / entities(N≥1) / variables(N≥1) の 3 枝で、空の entities と空の variables という 2 通りの『0』が書けない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption UnionShapeCensusIsPlanned
+            uuid 0f5c8a31-7e24-4b96-a1d3-62b8e7d40915
+            summary "証拠予定: 5 verb の引数型から母集団を導出し、混在した値を渡せる経路が 0 個であることを問う単体テスト。加えて 0 個の表現が 1 通りであること (empty 枝だけ) を、entities/variables に空配列を渡した呼び出しが empty へ正規化されるか throw するかのどちらかであることで焼く。反証されうるのは『矩形選択が幾何側だけを拾うので混在は起きえず、型で禁じるのは過剰』という主張で、それは今日の窓についてだけ正しい — 6 番目の窓は今日の一覧に無い (原則 #31 / ADR-099 が census を書いた理由そのもの)"
+
+        goal EverySelectableKindDeclaresItsShapeAndPanel
+        uuid 1d8f6b03-4a25-49c7-b8e1-3c7a05e29d64
+        summary "選択可能な種のうち、3D の姿を宣言していないものが 0 個であり、右パネルの種分岐が未宣言の種で throw する (fall-through が 0 個)。『今の 2 種は姿を持つ』は事実であって規則ではない — 規則にしないと 3 種目が無言を再導入し、しかもテストは緑のままになる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption KindDeclarationTablesArePlanned
+            uuid 4e2b91d7-6c30-4f85-a92c-8b17e5c3d206
+            summary "証拠予定: 種ごとの宣言表 2 つ (3D の姿 / 右パネルの中身) を EXPLICIT_DEFAULTS・PLACEMENT_BY_KIND・SUPPORT_SURFACE_BY_KIND と同じ規律で書き、未宣言の種で throw することを単体テストで焼く。母集団は Selection union の kind の枝から導出する (手書きの種リストにしない — 枝を足したのに表を足さなければ落ちる形にする)。加えて e2e: 場の行列の列ヘッダから 1 クリックで変数が選べ、3D に未確定帯が出ること (無言でない — 原則 #11)"
+            artifacts
+            - "src/controller/SelectionManager.test.js"
+
+        goal SelectingAVariableKeepsItsEntitiesInView
+        uuid 7a3c0e58-9b41-4d26-8f07-1e5b2d94c803
+        summary "変数を選んだとき、その変数が制約している実体が contextual 軸の DIMMED で残る。強度の上界は実体側と同じ式 — FULL = 選択集合ちょうど / DIMMED = 連鎖 − 選択集合。新しい語彙は 1 つも足さない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption VariableChainIntensityIsPlanned
+            uuid 5c9d24f0-8e13-4a67-b502-9f36a1e7d8b4
+            summary "証拠予定: 変数の『連鎖』(その変数を制約する要求が指す実体の集合) について、FULL と DIMMED の上界を N で焼く。ADR-099 が N=25 で焼いたのと同じ理由 — 1 個の fixture では 4N と N が区別できないので、1 個の変数が 1 個の実体を制約する例では上界の誤りが見えない。反証されうるのは『変数の連鎖は実体の TF 連鎖と違って深さを持たないので上界の式が異なる』ことで、その場合は式を分けて両方を宣言する (共有しているように見せて実は違う、が最悪)"
