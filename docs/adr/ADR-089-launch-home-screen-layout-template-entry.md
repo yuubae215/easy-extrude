@@ -4,7 +4,7 @@
 - Date: 2026-07-23
 - Deciders: yuubae（オーナー）, Claude
 - Supersedes / Superseded by: なし
-- Related: ADR-067（ビューポート常設ステージ + 起動リビール）, ADR-051（Requirement Intake / Template Gallery）, ADR-063（選択優先インテーク）, ADR-065（体感層遊戯化 / tour FSM）, ADR-066（Motion Tier D）, ADR-045（External Layout API / Layout DSL）, ADR-055（Scene ⇄ Layout DSL Mutual）
+- Related: **ADR-108**（ヘッダの常設**再入口**を動詞ごとに畳む — 本 ADR が決めた**起動経路**は不変。畳むのは初手ではなく再入口）, ADR-067（ビューポート常設ステージ + 起動リビール）, ADR-051（Requirement Intake / Template Gallery）, ADR-063（選択優先インテーク）, ADR-065（体感層遊戯化 / tour FSM）, ADR-066（Motion Tier D）, ADR-045（External Layout API / Layout DSL）, ADR-055（Scene ⇄ Layout DSL Mutual）
 
 ## Context — Goal と力学（§1.2 Goal）
 
