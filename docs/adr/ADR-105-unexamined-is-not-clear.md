@@ -1,6 +1,6 @@
 # 105. 「検証されていない」は「問題が無い」ではない — 発見の集約を場の外へ出す
 
-- Status: Proposed
+- Status: Accepted (実装済み — 3 カウンタ + KPI HUD を場の外へ / `DiscoverySummary` の 2 union と 未宣言の種で throw する宣言表 / 書き手を `contextSetDiscovery` 1 つへ / 配線を場ではなく文書の辺へ / `Checks` タブを常設スロットへ / N パネルの entity-scope 入口 / 母集団を導出する個数検査 + e2e 4 本)
 - Date: 2026-08-02
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし (ADR-104 D4 が作ったカウンタに**住所**を与え、ADR-050 の
@@ -180,9 +180,10 @@ ADR-085 の「grasp-search を無フォームで開く」が既に作った先�
   現在 Context 配線は `ContextController` に閉じているので配線が 1 本増える。
 
 **検証 (証拠):** `docs/gsn/adr-105-unexamined-is-not-clear.gsn`。
-goal ごとの支えの正本は `.gsn` 側 (ここには複製しない — §1.1)。
-本 ADR は **Proposed** なので証拠は全て未来形であり、`.gsn` の goal は
-`support-exploring` として、何を実行すれば決着するかを `assumption` で名指ししてある。
+goal ごとの支えの正本は `.gsn` 側 (ここには複製しない — §1.1)。実装 PR で
+`src/DiscoveryOutsideTheFloor.test.js` / `src/context/DiscoverySummary.test.js` /
+`e2e/smoke.spec.js` の 4 本が入り、`.gsn` の goal は `support-exploring` から
+solution つきへ移った。
 
 数える形 (原則 #31 / ADR-102 — 母集団はコードから導出し、手書きの場所リストにしない):
 
@@ -202,6 +203,41 @@ goal ごとの支えの正本は `.gsn` 側 (ここには複製しない — §1
 | `packages/grasp-contract` · `server/` · `core/` | **不変** — ワイヤに載る事実は変わらない (原則 #29) |
 | `docs/STATE_LEDGER.md` | 「発見の集約」の行を追加 (基数列 = 文書 `0..1` × 検査 `0..N`) |
 | `docs/LAYOUT_DESIGN.md` · `docs/SCREEN_DESIGN.md` | 常設要素の追加に伴い更新 |
+
+## 実装で測れたこと (Proposed → Accepted の差分)
+
+ADR は Proposed 時点で 3 つの未来形を持っていた。実装が決着させたものだけを記す
+(推測の書き直しではなく、**測った結果**である — 原則 #19)。
+
+### R1. D5 の反証仮説のほうが正しかった
+
+`.gsn` の `SelectionDrivenEntryIsPlanned` は「無文書でも開けるのは grasp だけで、
+リーチ / 干渉は文書由来の acceptance を要求するかもしれない」を反証形で持っていた。
+切り分けの基準も先に書いてあった — **`projectChecks()` の入力が文書のどの節に依存するか**。
+
+実測: `projectChecks()` は `doc.acceptance` と `validatorResult.checkResults` の join である。
+したがって **反証側が実際の姿**だった。3 つは同じ住所に置けない:
+
+- **把持候補** — 選択駆動・文書不要 (ADR-085 の無フォーム入口をそのまま使う)。1 クリックで届く。
+- **リーチ / 干渉** — *宣言された検査*なので、宣言した文書があるぶんだけ存在する。
+  隠さず、D3 の 4 種 union として N パネルにも述べる。「誰も宣言していない」が
+  「問題が無い」に読めないことがこの節の要点で、これは D5 の後退ではなく D3 の適用範囲の拡大である。
+
+### R2. 端の所有者は「2 つに分かれる」ほうだった
+
+`EdgeOwnerIsPlanned` の反証形「上端と左上は互いに素なので所有者を共有する必要がない」が
+正しかった。右端は N パネル / Inspector の**開閉で動く**のでストア購読を持つ所有者
+(`_updateGizmoOffset()`) が要るが、左端と上端は動かない (desktop の Outliner は常設、
+ヘッダは常に 40px) ので**純粋関数**でよい。`src/view/EdgeOccupancy.js` を起こし、
+`LinkNetworkView` の `left:188px` literal をそこへ畳んだ — 禁じているのは所有者が
+複数あることではなく、**同じ端の占有量が複数箇所で計算されること**である (原則 #26)。
+
+### R3. 逆向き検査が初回実行で空回りを 1 件検出した
+
+`NOT_A_RENDERER` に `src/store/uiStore.js` を書いていたが、ストアは集約を *読まない*
+(スライスを宣言し、渡された値を代入するだけ) ので母集団に入らず、除外の宣言は
+最初から空回りしていた。ADR-102 が「対象が消えたことと規則が守られていることは
+区別がつかない」として入れた逆向きの問いが、**書いたその日に**効いた事例である。
 
 ## Lens notes
 

@@ -75,6 +75,7 @@ export class UIStateManager {
         childFrames,
         () => ctrl._promptAddFrame(obj.id),
         (fid) => ctrl._selMgr.selectOnly(fid),
+        { robotRole: obj.robotRole ?? null },
       )
       return
     }

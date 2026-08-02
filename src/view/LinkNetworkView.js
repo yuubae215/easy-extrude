@@ -80,6 +80,7 @@
  */
 import { LINK_TYPE_COLORS, NODE_TYPE_COLORS } from '../theme/semantic.js'
 import { COLOR } from '../theme/tokens.js'
+import { leftEdgeOffset } from './EdgeOccupancy.js'
 import {
   computeLayout, layoutSignature, laneX, gutterX,
   PANEL_W, MIN_PANEL_H, LEGEND_H, ROW_H, NODE_R,
@@ -375,7 +376,10 @@ export class LinkNetworkView {
    */
   setMobile(isMobile) {
     this._panelEl.style.bottom = isMobile ? '94px' : '34px'
-    this._panelEl.style.left   = isMobile ? '8px'  : '188px'
+    // The left offset is no longer a literal here: ADR-105 added a second
+    // occupant of the same edge (the scene-checks HUD), and two occupants
+    // computing the same offset separately is exactly what 原則 #26 forbids.
+    this._panelEl.style.left   = `${leftEdgeOffset({ isMobile })}px`
   }
 
   dispose() {

@@ -194,7 +194,18 @@ export const useUIStore = create((set, get) => ({
     // `proposals` / `agenda`: those names belong to the document's arrays, and
     // a same-named mirror here is how a view copy grows into a second source.
     agendaRows: [],          // ContextService.projectAgenda() — tabled conflicts ∪ live proposals
-    agendaCounters: { conflicts: 0, agenda: 0, unowned: 0 },  // three numbers, never summed (D4)
+    // ── ADR-105: the discovery aggregate, which lives OUTSIDE the floor ───────
+    // A `kind`-discriminated union, not three numbers (ADR-105 D2): the reader
+    // has to say which of the three zeroes they are looking at before they can
+    // print one. The initial value is `unexamined` — the honest state at boot,
+    // and NOT a default filling in for "nobody wired this up" (PHILOSOPHY #31).
+    //   { kind: 'unexamined' }
+    //   { kind: 'examined', conflicts, agenda, unowned }   ← never summed (ADR-104 D4)
+    discovery: { kind: 'unexamined' },
+    // Shared-KPI aggregate, same discipline (ADR-105 D3): 'unexamined' /
+    // 'none-declared' / 'all-pass' / 'failing'. "No checks declared" and
+    // "everything passed" are different facts with different next moves.
+    checksSummary: { kind: 'unexamined' },
     // A gesture on someone else's claim, captured and waiting for its reason.
     // NOT a proposal yet — a proposal must carry a rationale (D3), and there is
     // no honest default for "why do you want this?", so the draft exists rather
@@ -446,8 +457,20 @@ export const useUIStore = create((set, get) => ({
     contextRevokeKey: (actorRef) => set(state => ({
       context: { ...state.context, keyring: state.context.keyring.filter(k => k !== actorRef) },
     })),
-    contextSetAgenda: (agendaRows, agendaCounters) => set(state => ({
-      context: { ...state.context, agendaRows, agendaCounters },
+    contextSetAgenda: (agendaRows) => set(state => ({
+      context: { ...state.context, agendaRows },
+    })),
+    // ── ADR-105 D4: the derived aggregate has exactly ONE writer ──────────────
+    // Before ADR-105 there were two: this reducer and `contextEnd`, which reset
+    // the counters to `{0,0,0}` along with fourteen other slices. That made the
+    // zero on screen ambiguous at the source — a domain-counted zero and a
+    // UI-lifecycle-written zero are the same three characters.
+    //
+    // "The user left the Context overlay" is **not a reason for the aggregate to
+    // change** — the conflicts are still three. So the only writer is the one
+    // that re-derives from ContextService (PHILOSOPHY #4 / #24).
+    contextSetDiscovery: (discovery, checksSummary) => set(state => ({
+      context: { ...state.context, discovery, checksSummary },
     })),
     contextSetProposalDraft: (proposalDraft) => set(state => ({
       context: { ...state.context, proposalDraft },
@@ -528,7 +551,15 @@ export const useUIStore = create((set, get) => ({
       // the person at the keyboard, not about the document that was closed
       // (ADR-104 D1/D6). The projections are cleared because they mirror a doc
       // that is gone.
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null, agendaRows: [], agendaCounters: { conflicts: 0, agenda: 0, unowned: 0 } },
+      //
+      // `discovery` / `checksSummary` are NOT cleared either, and for a different
+      // reason (ADR-105 D4): they are not "the floor's contents" but the derived
+      // fact about the document, which is still adopted after the overlay closes.
+      // Writing `{0,0,0}` here was the second writer that made an honest zero
+      // indistinguishable from a lifecycle-written one. If the document itself is
+      // dropped, the aggregate transitions to `unexamined` through its one writer
+      // — never by being blanked from a lifecycle reducer.
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null, agendaRows: [] },
     })),
   },
 }))

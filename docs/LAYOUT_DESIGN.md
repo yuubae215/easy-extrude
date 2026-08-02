@@ -44,6 +44,8 @@ block-beta
 | Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
 | Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px は元々 Map ツールバー下端との干渉を避ける値だった。ADR-103 でツールバーが消え左端は空いたが、cap 自体は 720px 高でのパネル収まり (原則 #26) として残す (ADR-048) | 50 |
 | Projection toggle | w:128px, h:22px | fixed top:182px, right = gizmo offset (ADR-103 — ギズモ直下。右端の占有計算は `_updateGizmoOffset()` ただ 1 箇所が持つ, 原則 #26) | 10 (`Z.gizmo`) |
+| Scene checks HUD (ADR-105 D1/D3) | w:auto (max-w:244px), h:auto | fixed top:46px left:188px (**左端の占有計算は `view/EdgeOccupancy.js` の `leftEdgeOffset()` ただ 1 箇所が持つ** — Link Network も同じ関数を引く, 原則 #26 / ADR-105 D6。上端は `belowHeaderOffset()`)。場の開閉と独立に常設 — `ctx.active` を読まない | 10 (`Z.gizmo`) |
+| Discovery counters (ADR-105 D1) | w:auto, h:22px | ヘッダ内 (`Context ▾` の左隣)。desktop は `≈ conflicts / ⚑ on the floor / ◇ unowned`、mobile は glyph + 数のみ (`compact`)。**新しい端は食わない** — ヘッダの既存 flex 行に載る | 100 (Header) |
 | Toast | w:auto, max-w:320px | fixed bottom:32px, centered | 150 |
 | Onboarding tour card (ADR-065 Phase 6) | w:248px, h:auto | fixed bottom:38px left:192px (offset past Outliner 180px + InfoBar 26px — #26; toasts are bottom-center and never collide) | 100 |
 | Context menu | w:auto | absolute (cursor position) | 200 |
@@ -220,6 +222,14 @@ z:0    ── 3D canvas (Three.js renderer)
 | Uncertainty ghost label | HTML overlay, projected via `SceneView.activeCamera` | z-index 50 (Three.js label tier) |
 
 Demo colors: uncertainty amber `#d5a23a`, decision blue `#3a7bd5`, reveal ripple green `#10b981`.
+
+**左端の占有 (ADR-105 D6):** 左端に張り付く要素は 2 つになった (Link Network Overlay と
+Scene checks HUD)。占有オフセットの計算は **`src/view/EdgeOccupancy.js`** ただ 1 箇所が持ち、
+両者がそれを引く — `188px` の literal を 2 箇所目に書いた瞬間が原則 #26 の違反になるので、
+2 つ目の占有者が生まれる PR で literal を関数へ昇格させた。右端の所有者
+(`AppController._updateGizmoOffset()`) と分かれているのは、右端が N パネル / Inspector の
+**開閉で動く**のに対し左端と上端は動かないため — 所有者は端ごとに 1 つであればよく、
+全端で 1 つである必要はない。
 
 **Right-edge occupancy while the Inspector is open** (`demo.active && demo.inspectorTab`, desktop):
 the N Panel shifts to `right:280px` and the world gizmo offset becomes

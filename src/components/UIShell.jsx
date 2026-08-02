@@ -21,6 +21,7 @@ import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
 import { HomeScreen } from './Home/HomeScreen.jsx'
 import { ChromeDefs } from './Chrome/ChromePrimitives.jsx'
+import { SceneChecksHud } from './Chrome/SceneChecksHud.jsx'
 import { useReducedMotion } from './Feedback/FeedbackPrimitives.jsx'
 import { enterMotion, exitMotion } from '../view/ChromeMath.js'
 import { COLOR, DURATION } from '../theme/tokens.js'
@@ -38,6 +39,7 @@ import { COLOR, DURATION } from '../theme/tokens.js'
  * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
  * 8. ModalLayer: RenameDialog, ConfirmDialog, ImportModal
  * 9. ProjectionToggle: ortho/perspective switch under the world gizmo (ADR-103)
+ * 9b. SceneChecksHud: scene-scope acceptance verdicts, outside the floor (ADR-105)
  * 10. ContextMenu: long-press / right-click context menu
  * 12. AddMenu: Shift+A add object menu
  * 13. LinkTypePicker: L-key SpatialLink type picker
@@ -66,6 +68,7 @@ export function UIShell() {
       <InfoBar />
       <ModalLayer />
       <ProjectionToggle />
+      <SceneChecksHud />
       <ContextMenu />
       <AddMenu />
       <LinkTypePicker />

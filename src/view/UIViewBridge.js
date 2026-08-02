@@ -326,6 +326,7 @@ export class UIViewBridge {
     childFrames = null,
     onAddChildFrame = null,
     onSelectChildFrame = null,
+    opts = {},
   ) {
     useUIStore.getState().actions.setNPanelData({
       type: 'frame',
@@ -333,6 +334,10 @@ export class UIViewBridge {
       eulerDeg: { x: eulerDeg.x, y: eulerDeg.y, z: eulerDeg.z },
       name, locked, parentOptions, currentParentId,
       unreferenced, childFrames, onAddChildFrame, onSelectChildFrame,
+      // The DECLARED role (ADR-090 Decision 1), carried so the N panel can offer
+      // entity-scope validation off the selection alone (ADR-105 D5). Deliberately
+      // the role and not the name — the name is not unique across robots.
+      robotRole: opts.robotRole ?? null,
     })
   }
 

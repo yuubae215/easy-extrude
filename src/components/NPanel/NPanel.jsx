@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { NPanelGeneric } from './NPanelGeneric.jsx'
 import { NPanelFrame }   from './NPanelFrame.jsx'
 import { NPanelLink }    from './NPanelLink.jsx'
+import { EntityChecks }  from './EntityChecks.jsx'
 
 /**
  * NPanel — React replacement for UIView's 200px right-side properties panel.
@@ -86,6 +87,12 @@ export function NPanel() {
         {nPanelData?.type === 'generic' && <NPanelGeneric data={nPanelData} />}
         {nPanelData?.type === 'frame'   && <NPanelFrame   data={nPanelData} />}
         {nPanelData?.type === 'link'    && <NPanelLink    data={nPanelData} />}
+
+        {/* Entity-scope validation, beside the thing it is about (ADR-105 D5).
+            Availability follows the SELECTION — not `ctx.active`, not whether a
+            document exists — so `place → see if it reaches → place again` closes
+            without a detour through the floor. */}
+        {nPanelData && <EntityChecks />}
       </div>
     </>
   )

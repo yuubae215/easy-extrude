@@ -11,7 +11,7 @@ artifacts
 
     context Adr105Scope
     uuid 2e20894f-dda0-4f75-8f1b-dd744c54b5c1
-    summary "ADR-105 (Proposed 2026-08-02、実装 = IA 再設計 Phase 2): 発見の集約 (3 カウンタ + シーンスコープ KPI) を Context オーバーレイの外の描き手へ移し、集約の型を kind 判別の union (unexamined | examined) にして未検証を第一級の値にし、導出値の書き手を 1 つへ畳み、エンティティスコープの検証を文書ではなく選択に従わせる。ドメイン (ContextValidator / agendaCounters / projectChecks) は 1 行も変えない — 中身は ADR-104 D4 で既に正しい。契約パッケージ・BFF・core も不変で、ワイヤに載る事実は変わらない (原則 #29)"
+    summary "ADR-105 (Accepted・実装済み 2026-08-02、IA 再設計 Phase 2): 発見の集約 (3 カウンタ + シーンスコープ KPI) を Context オーバーレイの外の描き手へ移し、集約の型を kind 判別の union (unexamined | examined) にして未検証を第一級の値にし、導出値の書き手を 1 つへ畳み、エンティティスコープの検証を文書ではなく選択に従わせる。ドメイン (ContextValidator / agendaCounters / projectChecks) は 1 行も変えない — 中身は ADR-104 D4 で既に正しい。契約パッケージ・BFF・core も不変で、ワイヤに載る事実は変わらない (原則 #29)"
     artifacts
     - "src/context/Agenda.js"
     - "docs/STATE_LEDGER.md"
@@ -25,7 +25,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid e607f755-fcca-461d-b2e6-5954f5c89b66
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal ReworkCostMinimized (uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16、strategy ByCostDrivers 配下) — 食い違いの発見が場の往復を待たずに起きれば、不確実性が実装前に消費され手戻りが減る、というのが 02-grouping-criteria.md の shift-left の主張そのものだから。保留理由が 2 つある: (a) 本 ADR は Proposed で証拠が全部未来形、(b) ReworkCostMinimized 自身が support-unexplored (手戻り量の測定手段が未設定) なので、今つなぐと未測定の枝に未実装の枝を吊ることになる。テストが実在し、かつ手戻りの測定が始まった PR で solution として吊る"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal ReworkCostMinimized (uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16、strategy ByCostDrivers 配下) — 食い違いの発見が場の往復を待たずに起きれば、不確実性が実装前に消費され手戻りが減る、というのが 02-grouping-criteria.md の shift-left の主張そのものだから。保留理由は 1 つに減った: (a) は解消した (実装済みで証拠は実在する) が、(b) ReworkCostMinimized 自身が support-unexplored (手戻り量の測定手段が未設定) なのは変わらないので、今つなぐと未測定の枝に実装済みの枝を吊ることになり、親の主張は 1 mm も強くならない。手戻りの測定が始まった PR で solution として吊る — 接続を急がないことが記録の一部である"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -56,51 +56,90 @@ artifacts
         goal AggregateRendersWithoutTheFloor
         uuid 1b8b513e-7204-401a-85b4-71ba746bba42
         summary "発見の集約を描く箇所のうち ctx.active に依存するものが 0 個である。母集団は agendaCounters / projectChecks の消費者の閉包から導出し、在る描き手を辿らない — 10 個目の描き手が場の中に生まれたら、誰も表を触らなくても落ちる"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
             assumption AggregateCensusIsPlanned
             uuid b31ed06c-9b4a-4e9f-8309-a7a7e1c95bb5
             summary "証拠予定: src/DiscoveryOutsideTheFloor.test.js (新規) — 母集団 = src/** のうち agendaCounters または projectChecks 由来のストアスライスを読むファイル (構文から導出、ファイル名リストを持たない)。その集合と『ctx.active を読むファイル』の交わりが 0 個であることを問う。変異で確認する形も決めてある: 集約の描き手を 1 つ ContextLayer の中へ戻すと、そのファイル名を名指しして fail すること。実行前なので個数はまだ無い"
 
+
+            solution AggregateCensusIsGreen
+            uuid 8c8d6a54-d8b6-4176-9897-277d0000bdad
+            summary "node --test src/DiscoveryOutsideTheFloor.test.js — pass (10/10)。母集団はファイル名リストではなく構文から導出する: src/** のうち AGGREGATE_READS のいずれか (context.discovery / context.checksSummary / discoverySummary( / checksSummary( / *Declaration( ) に一致するファイル。そこから『描き手ではない』と理由つきで宣言した 3 ファイルを除いた集合と、FLOOR_GATES (ctx.active / isNegotiation) を読むファイルの交わりが 0 個であることを問う。変異で確認済み — DiscoveryCounters.jsx に `if (!ctx.active) return null` を戻すと、そのファイル名を名指しして落ちた。逆向き (宣言の空回り) も同時に問い、初回実行で uiStore.js の空回りを 1 件検出して表から外した"
+            artifacts
+            - "src/DiscoveryOutsideTheFloor.test.js"
+            - "src/components/Chrome/DiscoveryCounters.jsx"
+            - "src/components/Chrome/SceneChecksHud.jsx"
         goal ThreeZerosAreDistinctValues
         uuid 042a14a7-f364-4c57-9287-0e709d3146ab
         summary "『未検証』『検査対象なし』『全部パス』が別々の値として存在し、消費者は kind を分岐せずに集約を読めない。0 を出せば済む書き方が型として存在しないので、3 種のうちどれかを宣言せずに画面へ出す経路が無い"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
             assumption UnionExhaustivenessIsPlanned
             uuid c2272836-751a-407e-89d2-d99e558251c1
             summary "証拠予定: 集約を構築する純粋関数の単体テスト — 文書なし / 文書あり検査 0 件 / 検査あり全部パス / 検査あり失敗あり の 4 入力が 4 通りの異なる値を返すこと、および未宣言の kind で throw すること (EXPLICIT_DEFAULTS・PLACEMENT_BY_KIND と同じ既定表の規律 — fall-through は『宣言された既定』と『誰も考えなかった種』を区別不能にする)。加えて kind を分岐せずに読む消費者が 0 個であることを個数で問う。反証されうるのは『4 種目 (検査あり失敗あり) は失敗件数で表現できるので kind を要さない』という主張で、そうなら union は 3 枝に縮むが、縮小は宣言として書く"
 
+
+            solution UnionExhaustivenessIsGreen
+            uuid 4a807ec4-4a33-48b8-9177-449716711a89
+            summary "node --test src/context/DiscoverySummary.test.js — pass (10/10)。4 入力 (文書なし / 文書あり検査 0 件 / 検査あり全部パス / 検査あり失敗あり) が 4 通りの異なる kind を返し、集合の要素数が 4 であることを問う。Proposed 時点の反証仮説『4 種目は失敗件数で表現できるので kind を要さない』は採らなかった — 縮小の宣言ではなく 4 枝のまま出す判断で、理由は failing だけが件数の内訳 (failed / blocked / passed / total) を運び、他の 3 枝はそもそも件数を持たないため。加えて宣言表 (DISCOVERY_DECLARATION / CHECKS_DECLARATION) が未宣言の種で throw すること、出口を持たない種が all-pass ただ 1 つであること (原則 #11)、loaded なのに counters / checks が無ければ throw すること (0 で埋めない) を焼く。消費側は DiscoveryOutsideTheFloor.test.js が『kind を分岐せずに読む消費者 0 個』として数える"
+            artifacts
+            - "src/context/DiscoverySummary.js"
+            - "src/context/DiscoverySummary.test.js"
         goal DerivedAggregateHasOneWriter
         uuid 8f5dd545-4256-4d58-9628-465ce1844c49
         summary "context.agendaCounters を書くストア入口が 1 個である (現在 2 個 — uiStore.js:449 の contextSetAgenda と :531 の退出リデューサ)。UI のライフサイクル遷移は導出されたドメインの事実の書き手ではない。Context を抜けても衝突は 3 件のままである"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
             assumption WriterCensusIsPlanned
             uuid e48df15a-9a4a-43dc-8885-a1173f11d728
             summary "証拠予定: 書き手の個数検査 — uiStore のリデューサのうち context.agendaCounters (および集約スライス) に代入するものを構文から数え、1 個であることを問う。SelectionOwnership.test.js と PosePolicyOwnership.test.js の先例に倣う。あの 2 件が示したのは『窓を辿る数え方では、undo コールバックの中に複製された書き手が出てこない』ことで、ここでも退出リデューサは 15 個のスライスを一括で戻す 1 行の中に隠れており、カウンタの description を読んでも見えない。反証されうるのは『退出時に集約を保持すると、次に別の文書を採るまで古い数が残る』という指摘で、そのときの答えは 0 で埋めることではなく未検証を表す値へ遷移させること (D2 の union がそれを可能にする)"
 
+
+            solution WriterCensusIsGreen
+            uuid c501dc05-b281-4482-a5bf-29a5b30def3a
+            summary "node --test src/DiscoveryOutsideTheFloor.test.js — pass (10/10)。uiStore.js の行を走査し、集約スライスへ代入する形 (AGGREGATE_WRITES) がちょうど 1 個であることを問う。退役形 `agendaCounters: {` を同じ表に入れてあるので、退出リデューサの {0,0,0} が戻れば個数が 2 になって落ちる。予告した通り、退出時に古い数が残る問題への答えは 0 で埋めることではなかった — contextEnd は集約に触れず、文書を手放したときだけ discoverySummary() が unexamined を返して 1 つの書き手経由で遷移する。加えて e2e『文書を採ると集約は数へ変わり、場を閉じても消えない』が、場の ✕ を押したあとカウンタの文字列が 1 文字も変わらないことを画面越しに焼く"
+            artifacts
+            - "src/store/uiStore.js"
+            - "src/DiscoveryOutsideTheFloor.test.js"
+            - "e2e/smoke.spec.js"
         goal EntityScopeValidationFollowsSelection
         uuid da0f7378-d456-4b11-b866-30ba8e393f35
         summary "リーチ / 干渉 / 把持候補の可用性が ctx.active でも文書の有無でもなく、その実体が選ばれているかで決まる。Robot を選んだ状態から 1 クリックで届き、置く → 届くか見る → 置き直す のループが閉じる"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
             assumption SelectionDrivenEntryIsPlanned
             uuid 1ab27a82-01f8-42e3-a9dc-32ef7e86ada9
-            summary "証拠予定: e2e — Context 文書を 1 つも採らずに Robot を選び、N パネルから grasp の入口へ到達できること。ADR-085 が既に『grasp-search を無フォームで開く』を実装しているので、この goal は新機能ではなく入口の付け替えである。反証されうる仮説は『無文書でも開けるのは grasp だけで、リーチ / 干渉は文書由来の acceptance を要求する』こと — もしそうなら 3 つは同じ住所に置けず、文書を要する検証は場の側に残る。その切り分けは projectChecks の入力が文書のどの節に依存するかで決まり、実装の最初の一手として確認する"
+            summary "**反証された (採用は反証側)。** 実測は ADR-105 §R1 と下の solution に在る。当初の予定: e2e — Context 文書を 1 つも採らずに Robot を選び、N パネルから grasp の入口へ到達できること。ADR-085 が既に『grasp-search を無フォームで開く』を実装しているので、この goal は新機能ではなく入口の付け替えである。反証されうる仮説は『無文書でも開けるのは grasp だけで、リーチ / 干渉は文書由来の acceptance を要求する』こと — もしそうなら 3 つは同じ住所に置けず、文書を要する検証は場の側に残る。その切り分けは projectChecks の入力が文書のどの節に依存するかで決まり、実装の最初の一手として確認する"
 
+
+            solution SelectionDrivenEntryIsGreen
+            uuid 1c3987cf-3eaa-4d2e-831f-751d4272eb45
+            summary "playwright test — pass (36/36、うち ADR-105 は 4 本)。『Robot を選ぶと N パネルから grasp へ 1 クリックで届く』が、Context 文書を 1 つも採らずに robot_base を選び、N パネルの ◇ Grasp candidates… から grasp タブへ到達することを焼く。『ロボットでない実体では grasp の入口が理由つきで閉じている』が逆向き — 入口は消えず理由を運ぶ (原則 #11 / #15)。**反証仮説のほうが正しかった**: projectChecks() は doc.acceptance と checkResults の join なので、リーチ / 干渉は文書由来である。したがって 3 つは同じ住所に置けず、把持候補だけが選択駆動・文書不要で、リーチ / 干渉は同じ 4 種 union として N パネルに述べる形にした (ADR-105 §R1 に記録)。可用性が場を読まないことは DiscoveryOutsideTheFloor.test.js が個数で問い、種の宣言表は NPanel.jsx の分岐から導出した母集団を覆う"
+            artifacts
+            - "e2e/smoke.spec.js"
+            - "src/view/EntityScopeChecks.js"
+            - "src/DiscoveryOutsideTheFloor.test.js"
         goal ScreenEdgeBudgetHasOneOwner
         uuid 932f8e90-e10c-4e73-b02e-2200bc1112f9
         summary "ヘッダと 3D ビュー上の常設オーバーレイが端を食うとき、占有オフセットの計算は 1 箇所が持つ。呼び出し箇所ごとのパッチが 0 個である (原則 #26)"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
             assumption EdgeOwnerIsPlanned
             uuid b0c250a3-5845-454e-a070-24bc1386f441
-            summary "証拠予定: 右端については _updateGizmoOffset() が既に唯一の所有者で、LAYOUT_DESIGN.md の投影トグル行が『右端の占有計算は _updateGizmoOffset() ただ 1 箇所が持つ』と宣言済み (ADR-103)。本 ADR が足すのはヘッダ (上端) と 3D 左上の HUD で、左上には Link Network が bottom:34px left:188px で既に居る。占有の衝突が実際に起きるかは HUD の寸法が決まるまで判定できないので、まず LAYOUT_DESIGN.md の寸法表に行を足し、衝突があれば計算の所有者を 1 つ名指しする。反証されうるのは『上端と左上は互いに素なので所有者を共有する必要がない』こと — その場合この goal は 2 つの独立した所有者の宣言に分かれる"
+            summary "**反証された (採用は反証側 — 所有者は端ごとに分かれた)。** 実測は ADR-105 §R2 と下の solution に在る。当初の予定: 右端については _updateGizmoOffset() が既に唯一の所有者で、LAYOUT_DESIGN.md の投影トグル行が『右端の占有計算は _updateGizmoOffset() ただ 1 箇所が持つ』と宣言済み (ADR-103)。本 ADR が足すのはヘッダ (上端) と 3D 左上の HUD で、左上には Link Network が bottom:34px left:188px で既に居る。占有の衝突が実際に起きるかは HUD の寸法が決まるまで判定できないので、まず LAYOUT_DESIGN.md の寸法表に行を足し、衝突があれば計算の所有者を 1 つ名指しする。反証されうるのは『上端と左上は互いに素なので所有者を共有する必要がない』こと — その場合この goal は 2 つの独立した所有者の宣言に分かれる"
             artifacts
             - "docs/LAYOUT_DESIGN.md"
+
+            solution EdgeOwnerIsDeclared
+            uuid e8cf77b7-8a38-4292-b37e-22824d397b9f
+            summary "所有者は 2 つに分かれた — 反証形『上端と左上は互いに素なので所有者を共有する必要がない』のほうが正しかった (ADR-105 §R2)。右端は N パネル / Inspector の開閉で動くのでストア購読を持つ AppController._updateGizmoOffset() が要るが、左端と上端は動かない (desktop の Outliner は常設、ヘッダは常に 40px) ので純粋関数でよい。src/view/EdgeOccupancy.js を起こし、LinkNetworkView.setMobile() に literal として在った left:188px をそこへ畳んだ — 2 つ目の占有者 (KPI HUD) が生まれる瞬間が literal を計算へ昇格させる瞬間である。LAYOUT_DESIGN.md の寸法表に HUD とヘッダカウンタの 2 行、および §左端の占有 の宣言を足した。禁じているのは所有者が複数あることではなく、同じ端の占有量が複数箇所で計算されることである (原則 #26)"
+            artifacts
+            - "src/view/EdgeOccupancy.js"
+            - "docs/LAYOUT_DESIGN.md"
+            - "src/view/LinkNetworkView.js"
