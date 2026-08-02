@@ -1,6 +1,7 @@
 import { Badge, Ref } from './ContextInspector.jsx'
 import { DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
 import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
+import { COLOR, rgba } from '../../theme/tokens.js'
 
 /**
  * ConflictMatrix — actor × variable grid (ADR-049 Phase 4, §5.3).
@@ -17,10 +18,24 @@ import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
  * (`context` slice). Callers supply the projected matrix, the current persona
  * filter, and the filter toggle.
  *
+ * ## The variable header is a WINDOW onto the selection (ADR-107 D2)
+ *
+ * Clicking a variable's header selects that variable — through the same five
+ * verbs (`SelectionManager`) every other window uses, never through a second
+ * selection field of its own. That is the whole point of ADR-107: the element
+ * kind widened, the entrance count did not. The row is highlighted from the
+ * store's *copy* of the selection, so this component still reads no authority.
+ *
+ * (The wireframe drew variables as columns; the implementation has them as rows
+ * with actors as columns. "Column header" in ADR-107 means the variable's header
+ * cell — the orientation is a layout choice, the window is the same.)
+ *
  * @param {object}   props
  * @param {object|null} props.matrix    — projectConflictMatrix() result
  * @param {string|null} props.filter    — selected actor ref (persona filter)
  * @param {(actor:string|null)=>void} props.onSetFilter — toggle handler
+ * @param {string[]} [props.selectedVariables] — refs the selection currently holds
+ * @param {(ref:string)=>void} [props.onSelectVariable] — the window's verb
  */
 
 const CELL = {
@@ -37,7 +52,7 @@ const fmtGap = (gap) => Array.isArray(gap)
   ? `[${gap[0]}, ${gap[1]})`
   : Object.entries(gap).map(([ax, g]) => `${ax}: [${g[0]}, ${g[1]})`).join('  ')
 
-export function ConflictMatrix({ matrix, filter, onSetFilter }) {
+export function ConflictMatrix({ matrix, filter, onSetFilter, selectedVariables = [], onSelectVariable = null }) {
   // Proof-feedback wiring (ADR-062 Phase 3): an approval / region edit already
   // re-validates and re-projects this matrix; the delta chip and the green
   // flash on a freshly-settled variable card only make that fact FELT. The
@@ -94,12 +109,23 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
           </tr>
         </thead>
         <tbody>
-          {variables.map(v => (
+          {variables.map(v => {
+            const varSelected = selectedVariables.includes(v)
+            return (
             <tr key={v}>
               <td
-                title={v}
+                title={onSelectVariable ? `${v} — click to select this variable` : v}
+                data-variable-header={v}
+                onClick={() => onSelectVariable?.(v)}
                 style={{
-                  padding: '3px 4px', color: '#aaa', fontFamily: 'monospace',
+                  padding: '3px 4px', fontFamily: 'monospace',
+                  // "This is what you are operating on" — the one meaning the
+                  // accent token owns (ADR-100 G2). A variable is a selectable
+                  // kind now (ADR-107), so it is painted with the SAME token as
+                  // every other selection rather than a second blue by hand.
+                  color: varSelected ? COLOR.accent : '#aaa',
+                  background: varSelected ? rgba(COLOR.accent, 0.14) : 'transparent',
+                  cursor: onSelectVariable ? 'pointer' : 'default',
                   whiteSpace: 'nowrap', maxWidth: '78px', overflow: 'hidden',
                   textOverflow: 'ellipsis', borderRight: '1px solid #3a3a3a',
                 }}
@@ -128,7 +154,8 @@ export function ConflictMatrix({ matrix, filter, onSetFilter }) {
                 )
               })}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
 

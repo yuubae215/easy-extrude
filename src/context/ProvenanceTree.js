@@ -151,6 +151,52 @@ export function recoverProvenance(ctx, entityRef) {
   }
 }
 
+/**
+ * The entities a shared design variable constrains — the INVERSE of the
+ * `variables` array `recoverProvenance` returns, and the "chain" a variable
+ * selection claims at DIMMED (ADR-107 D5).
+ *
+ * Reachability is the same relation in both directions, so this walks the same
+ * up-edges rather than introducing a second notion of "related to" that could
+ * drift from φ⁻¹ (§1.1). An entity belongs to the chain when climbing from it
+ * reaches either the variable node itself or a requirement that constrains it.
+ *
+ * A variable that constrains nothing yields `[]` — a legal, meaningful answer
+ * ("this number is not yet tied to anything in the scene"), which the caller
+ * must state rather than treat as an empty default (原則 #31).
+ *
+ * @param {object} ctx — Context DSL object
+ * @param {string} varRef — a `variables[].ref`
+ * @returns {string[]} layout entity refs, sorted (deterministic output)
+ */
+export function entityRefsConstrainedByVariable(ctx, varRef) {
+  if (!varRef) return []
+  const g = new ProvenanceGraph(ctx)
+  const out = []
+  for (const node of g.nodeList()) {
+    if (node.kind !== 'entity') continue
+    if (_reachesVariable(g, node.id, varRef)) out.push(node.ref)
+  }
+  return out.sort()
+}
+
+/** BFS up the derived→source edges, asking whether `varRef` is reached. */
+function _reachesVariable(g, startId, varRef) {
+  const visited = new Set([startId])
+  const queue = [startId]
+  while (queue.length) {
+    for (const to of g.upNeighbours(queue.shift())) {
+      if (visited.has(to)) continue
+      visited.add(to)
+      const node = g.get(to)
+      if (node?.kind === 'variable' && node.ref === varRef) return true
+      if (node?.kind === 'requirement' && (node.data?.constrains ?? []).includes(varRef)) return true
+      queue.push(to)
+    }
+  }
+  return false
+}
+
 // ── Internal graph builder (pure; owns only its own maps) ─────────────────────
 
 class ProvenanceGraph {

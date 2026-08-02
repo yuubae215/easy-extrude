@@ -348,6 +348,27 @@ export class UIViewBridge {
     })
   }
 
+  /**
+   * The panel body for a selected shared design variable (ADR-107 D6). The kind
+   * decides the body; the table that says so is `NPANEL_BY_SELECTION_KIND`.
+   * `hasShape` carries whether the variable answered in 3-D at all, so the panel
+   * can SAY "this number has no shape in the scene yet" instead of leaving the
+   * gesture silent (原則 #11).
+   */
+  updateNPanelForVariable(data) {
+    useUIStore.getState().actions.setNPanelData({ type: 'variable', ...data })
+  }
+
+  /**
+   * Publishes the selection to the display layer (ADR-107). A COPY, deliberately
+   * named unlike the authority (`SelectionManager._sel`) so a panel can never be
+   * mistaken for the source — the same discipline `LinkNetworkView` follows with
+   * `_selectionEntityIds` (§1.1 / 原則 #5).
+   */
+  setSelectionSummary(summary) {
+    useUIStore.getState().actions.setSelectionSummary(summary)
+  }
+
   // ── N-Panel callback bridges ──────────────────────────────────────────────
 
   onNameChange(cb) {

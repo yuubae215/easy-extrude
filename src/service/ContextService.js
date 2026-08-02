@@ -66,7 +66,7 @@ import {
 import { discoverySummary, checksSummary } from '../context/DiscoverySummary.js'
 import { declareOwner, undeclaredOwners, editPermission } from '../context/Ownership.js'
 import { keyCardinality, signatureFor } from '../context/Keyring.js'
-import { buildWhyTree, recoverProvenance } from '../context/ProvenanceTree.js'
+import { buildWhyTree, recoverProvenance, entityRefsConstrainedByVariable } from '../context/ProvenanceTree.js'
 import { narrateProvenance, narrateWhyTree } from '../context/ProvenanceNarrative.js'
 import { compileLayout, buildRefMap, linkIdForConstraint } from '../layout/LayoutCompiler.js'
 import { SCENE_JSON_VERSION } from '../layout/LayoutDslSchema.js'
@@ -596,6 +596,26 @@ export class ContextService extends EventEmitter {
   _refForSceneId(sceneId) {
     for (const [ref, id] of this._refToId) if (id === sceneId) return ref
     return null
+  }
+
+  /**
+   * The SCENE entities a shared design variable constrains (ADR-107 D5) — the
+   * chain a variable selection claims at DIMMED so the entities the number is
+   * about do not vanish while it is being inspected.
+   *
+   * The reachability half is pure (`entityRefsConstrainedByVariable`); this
+   * method owns only the ref → scene-id half, which is the same `_refToId`
+   * bookkeeping φ⁻¹ uses. Refs with no derived entity (a doc whose layout was
+   * never compiled) are dropped rather than guessed.
+   *
+   * @param {string} varRef — a `variables[].ref`
+   * @returns {string[]} scene entity ids, deterministic order
+   */
+  entitiesConstrainedBy(varRef) {
+    if (!this._doc) return []
+    return entityRefsConstrainedByVariable(this._doc, varRef)
+      .map(ref => this._refToId.get(ref))
+      .filter(Boolean)
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────

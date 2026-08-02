@@ -69,6 +69,7 @@ import {
 import { ParametricPreviewView } from '../view/ParametricPreviewView.js'
 import { RegionAuthoringWidget } from '../view/RegionAuthoringWidget.js'
 import { RegionGhostView, personaColor } from '../view/RegionGhostView.js'
+import { SELECTION_KIND, variableRef } from '../domain/selection.js'
 import { regionResolveTransitions } from '../view/RegionGhostMath.js'
 import { RegionResolveEffect } from '../view/RegionResolveEffect.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
@@ -121,6 +122,14 @@ export class ContextController {
     // ── Region ghost overlay (Phase 3, §5.3) ───────────────────────────────────
     /** @type {RegionGhostView[]} sole owner — disposed in exit() (PHILOSOPHY #9) */
     this._regionGhosts = []
+    /**
+     * @type {RegionGhostView[]} the SELECTED variables' undecided bands (ADR-107
+     * D4). Same pixels, different question: `_regionGhosts` answers "show me
+     * every variable's footprint" (ghost mode), this answers "I just selected
+     * this variable". They are mutually exclusive by construction —
+     * `showVariableBands` builds nothing while the mode owns the layer.
+     */
+    this._selectionBands = []
     /** @type {string|null} last persona filter pushed to the ghost views */
     this._ghostFilter = null
     /** @type {object[]|null} last committed ghost projection rendered in 3-D —
@@ -155,12 +164,23 @@ export class ContextController {
     // are the "one extra wire" ADR-105 named as the cost of an honest zero.
     this._ctxService.on('contextLoaded',  () => this._refreshDiscovery())
     this._ctxService.on('contextChanged', () => this._refreshDiscovery())
+    // The selected variable's band is derived from the DOCUMENT too (ADR-107 D4):
+    // an approval or a region edit moves the claims the band is drawn from. Wired
+    // to the document edge rather than to the floor, for the same reason the
+    // discovery aggregate is — a band must not go stale just because the floor
+    // happens to be closed (PHILOSOPHY #5, one re-derivation path).
+    this._ctxService.on('contextChanged', () => this.showVariableBands())
 
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onOpenTemplateGallery',    ()           => this.openTemplateGallery())
     registerCallback('onCloseTemplateGallery',   ()           => this.closeTemplateGallery())
     registerCallback('onSelectTemplate',         (id)         => this.selectTemplate(id))
     registerCallback('onForkTemplate',           (id)         => this.forkExample(id))
+    // A WINDOW onto the one selection, not a second entrance (ADR-107 D2): the
+    // matrix's variable header goes through the same five verbs every other
+    // window uses, with the ref wrapped in its namespace token so it can never
+    // be confused with an entity id (D3).
+    registerCallback('onSelectVariable',         (ref)        => this.selectVariable(ref))
     registerCallback('onContextNegotiate',       ()           => this.enterNegotiation())
     registerCallback('onContextAuthor',          ()           => this.enterAuthoring())
     registerCallback('onContextRegionGhost',     ()           => this.enterRegionGhost())
@@ -789,6 +809,23 @@ export class ContextController {
     ui.contextSetTab('why')
   }
 
+  /**
+   * Select a shared design variable (ADR-107). Clicking the same variable again
+   * clears the selection, so the header behaves like every other toggle in the
+   * matrix — and clearing goes through `clearSelection()`, the same verb, rather
+   * than through a bespoke "unselect variable" path.
+   *
+   * @param {string} ref — a `variables[].ref`
+   */
+  selectVariable(ref) {
+    const sel = this._ctrl._selMgr
+    if (sel.selection.kind === SELECTION_KIND.VARIABLES && sel.variableRefs.has(ref)) {
+      sel.clearSelection()
+      return
+    }
+    sel.selectOnly(variableRef(ref))
+  }
+
   // ── Region authoring (Phase 3, §4.5) ─────────────────────────────────────────
 
   /**
@@ -1014,17 +1051,56 @@ export class ContextController {
    * @param {object[]} [ghosts] — projectGhosts() output (recomputed if absent)
    */
   _buildRegionGhosts(ghosts = this._ctxService.projectGhosts()) {
-    const ctrl = this._ctrl
     for (const v of this._regionGhosts) v.dispose()
-    const actorOrder = (this._ctxService.getDoc()?.actors ?? []).map(a => a.ref)
-    this._regionGhosts = ghosts.map(g => {
-      const regions = g.regions.map(r => ({
-        ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
-      }))
-      return new RegionGhostView(ctrl._sceneView.scene, document.body, { ...g, regions })
-    })
+    this._regionGhosts = ghosts.map(g => this._makeGhostView(g))
     if (this._ghostFilter) for (const v of this._regionGhosts) v.setPersonaFilter(this._ghostFilter)
     this._ghostData = ghosts
+    // Ghost mode already shows every variable's band, so the selection-driven
+    // ones would be a second layer of the same pixels (原則 #4).
+    this._disposeSelectionBands()
+  }
+
+  /** One construction of a band view — shared by the mode-driven and the
+   *  selection-driven owners so the persona colouring cannot diverge (§1.1). */
+  _makeGhostView(g) {
+    const actorOrder = (this._ctxService.getDoc()?.actors ?? []).map(a => a.ref)
+    const regions = g.regions.map(r => ({
+      ...r, color: personaColor(Math.max(0, actorOrder.indexOf(r.actor))),
+    }))
+    return new RegionGhostView(this._ctrl._sceneView.scene, document.body, { ...g, regions })
+  }
+
+  /**
+   * THE undecided band of the SELECTED variables (ADR-107 D4) — the 3-D shape a
+   * `variables` selection declares, so that picking a column in the floor's
+   * matrix is not a silent no-op (原則 #11).
+   *
+   * Bands are `f(mode, selection)` and this is the one place that derives them:
+   * ghost mode already paints every variable's band, so the selection-driven
+   * layer stays empty there; everywhere else the selected refs get theirs. It is
+   * a WHOLESALE rebuild — deselecting is `showVariableBands([])`, not a patch
+   * somebody has to remember (same discipline as `_claimContext`).
+   *
+   * Called by `SelectionManager`'s declared painter (the push), and re-derived
+   * here whenever the OTHER input changes — entering / leaving ghost mode. That
+   * is an edge, not a poll (原則 #5).
+   *
+   * @param {string[]} [refs] — selected variable refs; defaults to re-reading the
+   *   selection authority when only the mode changed
+   */
+  showVariableBands(refs = [...(this._ctrl._selMgr?.variableRefs ?? [])]) {
+    this._disposeSelectionBands()
+    if (refs.length === 0 || this._mode === 'ghost' || !this._ctxService.loaded) return
+    const wanted = new Set(refs)
+    this._selectionBands = this._ctxService.projectGhosts()
+      .filter(g => wanted.has(g.variable))
+      .map(g => this._makeGhostView(g))
+  }
+
+  /** Symmetric release of the selection-driven bands (原則 #9). */
+  _disposeSelectionBands() {
+    for (const v of this._selectionBands) v.dispose()
+    this._selectionBands = []
   }
 
   /**
@@ -1455,11 +1531,24 @@ export class ContextController {
     ui.contextEnd()
     this._mode = null
     this._provenanceSceneId = null
+    // The mode just changed, and bands are `f(mode, selection)` — leaving ghost
+    // mode hands the layer back to the selection, so re-derive instead of
+    // leaving the 3-D disagreeing with what is selected (ADR-107 D4). Runs after
+    // `_mode` is cleared: the derivation reads it.
+    this.showVariableBands()
   }
 
   // ── Per-frame animation (driven by AppController's loop) ──────────────────────
 
   tick(t) {
+    // The selected variable's band lives outside the overlay's modes — a
+    // variable can be selected with the floor closed, and its 3-D shape must
+    // animate the same way there (ADR-107 D4).
+    if (this._selectionBands.length > 0) {
+      const cam = this._ctrl._sceneView.activeCamera
+      const rdr = this._ctrl._sceneView.renderer
+      for (const v of this._selectionBands) v.tick(t, cam, rdr)
+    }
     // Live intake preview pulses in negotiate mode (Phase 3 — Entry D).
     if (this._intakeGhost) {
       this._intakeGhost.tick(t, this._ctrl._sceneView.activeCamera, this._ctrl._sceneView.renderer)

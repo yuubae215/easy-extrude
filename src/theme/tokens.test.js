@@ -238,6 +238,12 @@ const SELECTION_PAINTERS = [
   // — and was missing from the nine ADR-100 enumerated. A list with no
   // population to check against cannot report what is absent from it.
   { kind: 'Selection tap pulse (Tier A/F)',   file: 'src/view/SelectPulse.js' },
+  // ADR-107: a shared design variable became the SECOND selectable kind, so the
+  // floor's matrix header now paints "what you are operating on" too. It reaches
+  // for the same token rather than a second blue by hand — which is the whole
+  // reason the accent is one token: the meaning did not change, only the kind of
+  // thing carrying it.
+  { kind: 'Floor matrix variable header',     file: 'src/components/ContextDemo/ConflictMatrix.jsx' },
 ]
 
 /**

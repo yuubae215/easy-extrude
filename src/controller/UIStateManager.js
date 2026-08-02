@@ -30,6 +30,7 @@ import {
   S_GRAB_ACTIVE, S_ROTATE_ACTIVE,
   S_MEASURE_PLACING, S_FRAME_PLACEMENT,
 } from '../core/editorStates.js'
+import { npanelBodyFor } from '../view/SelectionKinds.js'
 
 export class UIStateManager {
   /** @param {import('./AppController.js').AppController} ctrl */
@@ -37,9 +38,21 @@ export class UIStateManager {
     this._ctrl = ctrl
   }
 
+  /**
+   * The N panel's content, chosen by the SELECTION KIND (ADR-107 D6).
+   *
+   * The branch is a declaration table (`NPANEL_BY_SELECTION_KIND`), not an `if`
+   * chain: an undeclared kind throws here rather than falling through to the
+   * entity body, because a fall-through makes "the declared default" and "the
+   * kind nobody thought about" indistinguishable (原則 #31).
+   */
   updateNPanel() {
     const ctrl = this._ctrl
     if (!ctrl._uiView.nPanelVisible) return
+
+    const body = npanelBodyFor(ctrl._selMgr.selection.kind).body
+    if (body === 'variable') { this._updateNPanelForVariables(); return }
+
     const obj = ctrl._activeObj
     if (!obj) return
 
@@ -171,6 +184,54 @@ export class UIStateManager {
       onAddFrame,
       onSelectFrame,
     })
+  }
+
+  /**
+   * The panel body for a `variables` selection (ADR-107 D6) — what the floor's
+   * matrix cell only summarises: who staked what, where the gap is, and which
+   * scene entities the number is about.
+   *
+   * `shape` is the honest report of the 3-D answer this selection produced:
+   * `band` (an undecided band was drawn), `entities` (no footprint, but the
+   * constrained entities are dimmed in view), or `none`. The last one is a
+   * legal outcome for a variable nothing spatial hangs off yet, and the panel
+   * SAYS it — an unanswered gesture must never be silent (原則 #11), and the
+   * three cases are declared rather than collapsed into a falsy default
+   * (原則 #31).
+   */
+  _updateNPanelForVariables() {
+    const ctrl = this._ctrl
+    const svc  = ctrl._ctxService
+    const doc  = svc?.getDoc?.() ?? null
+    const matrix = svc?.loaded ? svc.projectMatrix() : null
+    const ghostVars = new Set((svc?.loaded ? svc.projectGhosts() : []).map(g => g.variable))
+
+    const variables = [...ctrl._selMgr.variableRefs].map(ref => {
+      const decl     = (doc?.variables ?? []).find(v => v.ref === ref) ?? null
+      const claims   = (doc?.requirements ?? [])
+        .filter(r => (r.constrains ?? []).includes(ref))
+        .map(r => ({
+          requirement:   r.ref,
+          actor:         r.by ?? null,
+          negotiability: r.negotiability ?? null,
+          admissible:    r.admissible?.interval ?? r.admissible?.region ?? null,
+        }))
+      const entityIds = svc?.entitiesConstrainedBy(ref) ?? []
+      const entities  = entityIds.map(id => ({ id, name: ctrl._scene.getObject(id)?.name ?? id }))
+      const shape = ghostVars.has(ref) ? 'band' : (entities.length > 0 ? 'entities' : 'none')
+      return {
+        ref,
+        description: decl?.description ?? null,
+        unit:        decl?.unit ?? null,
+        summary:     matrix?.variableSummary?.[ref] ?? null,
+        claims,
+        entities,
+        shape,
+        onSelectEntity: (id) => ctrl._selMgr.selectOnly(id),
+      }
+    })
+
+    ctrl._uiView.updateNPanelForVariable({ variables })
   }
 
   refreshUndoRedoState() {

@@ -1140,3 +1140,82 @@ test('ロボットでない実体では grasp の入口が理由つきで閉じ�
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+// ── ADR-107: 選択できるものが 2 種になる ─────────────────────────────────────
+//
+// 場の行列の変数ヘッダは**窓**であって入口ではない。ここで焼くのは 3 つ:
+// ① 1 クリックで変数が選べること、② 選んだ結果が 3D と右パネルに出ること
+// (無言でない — 原則 #11)、③ 変数を選んでも、その変数が束縛している実体が
+// 視界から消えないこと (D5 — DIMMED で残る)。
+//
+// **この e2e が構造的に見逃すもの**: 未確定帯そのものの*見え方* (WebGL の描画結果)。
+// 帯が「出た」ことは選択の種と contextual の主張で確かめており、ピクセルは見て
+// いない。逆に、種の入れ替わりは同じ操作を 2 回通して確かめる — 1 回だけの
+// 検査は「2 回目に前の種が残る」形を隠す (ADR-098 が数値 Grab で緑のまま
+// 振動を出荷した件と同じ理由)。
+
+// 領域 Variable を持つテンプレを場へ。`Robot Cell — Simple` は変数 1 個だが
+// **実体を 1 つも持たない**ので、変数の連鎖 (D5) が構造的に 0 になる —
+// 「0 でないこと」を問うテストがそこを使うと、通っても何も示さない。
+async function loadRegionTemplateIntoMatrix(page) {
+  await page.getByRole('button', { name: /Context/ }).click()
+  await page.getByText('New Project', { exact: true }).click()
+  await expect(page.getByText(/Start from a blank project/)).toBeVisible()
+  await page.getByRole('button', { name: 'Robot Cell — Regions' }).click()
+  await expect(page.getByText('Negotiate', { exact: true })).toBeVisible()
+  // 読み込み直後のタブは文書側の事情で決まる (Why / Questions)。行列は明示的に開く。
+  await page.getByRole('button', { name: 'Matrix' }).click()
+}
+
+test('場の行列で変数を選べ、3D と右パネルが同じ 1 つの選択を語る (ADR-107 D1/D4/D6)', async ({ page }) => {
+  const errors = await boot(page)
+  await loadRegionTemplateIntoMatrix(page)
+
+  // 窓: 変数の見出しセル。列 (actor) ではなく行 (variable) が変数の住所。
+  const header = page.locator('[data-variable-header]').first()
+  await expect(header).toBeVisible()
+  const varRef = await header.getAttribute('data-variable-header')
+
+  await header.click()
+
+  const afterVar = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(afterVar.kind, '変数を選んでも種が entities のまま = 種が無い Set のまま').toBe('variables')
+  expect(afterVar.variables).toEqual([varRef])
+  expect(afterVar.names, '変数選択中に実体が選ばれたままになっている (混在)').toEqual([])
+  expect(afterVar.count).toBe(1)
+
+  // 右パネルが種で入れ替わる (v8 注釈⑤)。N パネルは `n` で開く。
+  await page.keyboard.press('n')
+  await expect(page.getByText('Shared variable')).toBeVisible()
+
+  // 同じ窓をもう一度 = 選択を落とす。0 個の表現は 1 通りだけ (`empty`)。
+  await header.click()
+  const afterToggle = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(afterToggle.kind).toBe('empty')
+  expect(afterToggle.count).toBe(0)
+
+  // 2 回目の往復: 種が入れ替わっても前の種が残らないこと。
+  await header.click()
+  const second = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(second.kind, '2 回目で種が戻らない').toBe('variables')
+  expect(second.names).toEqual([])
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('変数を選んでも、束縛している実体は視界から消えない (ADR-107 D5)', async ({ page }) => {
+  const errors = await boot(page)
+  await loadRegionTemplateIntoMatrix(page)
+
+  // `v_base_footprint` は 2 つの Zone 実体を trace で束縛している変数。
+  await page.locator('[data-variable-header]').first().click()
+
+  const state = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(state.kind).toBe('variables')
+  // FULL は選択集合 ∩ 実体 = ∅ なので、実体側の答えは DIMMED でなければならない。
+  // 0 個なら「変数を選ぶと Robot が消える」= v8 が名指しした懸念そのもの。
+  expect(state.contextualDimmed.length,
+    '変数が束縛している実体が 1 つも文脈に残っていない (選択が無言になっている)').toBeGreaterThan(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

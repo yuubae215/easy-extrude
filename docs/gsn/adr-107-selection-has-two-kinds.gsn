@@ -11,7 +11,7 @@ artifacts
 
     context Adr107Scope
     uuid 3ed881b8-1d6b-4db3-9a63-67336dde492b
-    summary "ADR-107 (Proposed 2026-08-02): 文書の共有変数 (d_ref / cycle / mount_h) を実体と同じ 1 つの選択モデルへ入れる。選択を kind 判別の有界 union (empty | entities | variables) にし、混在を表現不能にし、選択可能な種は 3D の姿を宣言表で宣言し、右パネルの分岐は未宣言の種で throw する。ADR-099 の『入口は 5 verb』は変えない — 変わるのは選択集合の要素の種であって入口の個数ではない。契約・BFF・core は不変 (選択は presentation 状態でワイヤに載らない)"
+    summary "ADR-107 (Accepted・実装済み 2026-08-02、IA 再設計 Phase 3.5): 文書の共有変数 (d_ref / cycle / mount_h) を実体と同じ 1 つの選択モデルへ入れる。選択を kind 判別の有界 union (empty | entities | variables) にし、混在を表現不能にし、選択可能な種は 3D の姿を宣言表で宣言し、右パネルの分岐は未宣言の種で throw する。ADR-099 の『入口は 5 verb』は変えない — 変わるのは選択集合の要素の種であって入口の個数ではない。契約・BFF・core は不変 (選択は presentation 状態でワイヤに載らない)。実装で分かったこと 3 点: (a) 変数の窓は ADR-106 を待たずに今日の器の中に実在した (場の行列 = ConflictMatrix.jsx は実装では変数が*行*・actor が*列*なので「列ヘッダ」は変数の見出しセルを指す)、(b) 3D の姿は 1 種類ではなく 3 通りの帰結を持つ — 領域を持つ変数は未確定帯、スカラーは束縛実体の DIMMED、どちらも無い変数は N パネルがそう述べる (無言にしない代わりに宣言する)、(c) Outliner の意味側 (v8 注釈②) は着手していない — 窓は 1 つでも入口の個数の主張は成立し、器が動く Phase 3 と同時のほうが安い"
     artifacts
     - "src/controller/SelectionManager.js"
     - "docs/ia-redesign/easy-extrude-wireframe-v8.html"
@@ -28,7 +28,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 9a3b143c-c2ba-4b0e-b88d-072e8f4fdf0e
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (uuid d17c02f9-f551-4d7b-a927-0636126d4dfb、ByDirectManipulationTrust 配下) — 選んだものと画面が語るものが食い違わないことは直接操作への信頼そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形であり、かつ ADR-106 の器が実装されるまで変数選択の窓 (場の行列の列ヘッダ) が存在しない。ADR-106 の実装 PR で窓が実在し、e2e が焼けた時点で solution として吊る"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (uuid d17c02f9-f551-4d7b-a927-0636126d4dfb、ByDirectManipulationTrust 配下) — 選んだものと画面が語るものが食い違わないことは直接操作への信頼そのものだから。保留理由が変わった (解消ではない): 証拠は未来形でなくなり (実装済み・e2e 2 本が緑)、窓も今日の器の中に実在する。それでも吊らないのは、この goal が主張する「選んだものと画面が語るものが食い違わない」の効き目が出るのは**場と N パネルが同時に見える**ときであり、それは ADR-106 の器の移動が前提だから — 今つなぐと、まだ誰も同時に見ていない画面についての主張を親へ渡すことになる。ADR-106 の実装 PR で solution として吊る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -63,41 +63,52 @@ artifacts
         goal EntranceCountIsUnchanged
         uuid 55ec49d8-4d58-4f74-a5c1-1491adc7f594
         summary "選択集合に書く入口が 5 個のままである (selectOnly / selectMany / clearSelection / activateWithinSelection / forget)。種が 1 → 2 になっても増えない。Outliner の意味側・場の行列の列ヘッダ・未確定帯のクリックは窓であって入口ではない"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption EntranceCensusSurvivesTheKindWidening
-            uuid 260938d2-e5c2-4bc3-a56c-a319b286abc4
-            summary "証拠予定: SelectionOwnership.test.js の既存 census が、母集団の作り方を変えずに種の追加後も効くこと。これは単なる回帰ではなく設計の判定装置である — census を作り直さないと通らないなら、それは選択が実質的に 2 つに割れた (却下案 A を選んだ) 証拠になる。したがって『テストを直して緑にする』が禁じ手であることを、テスト自身のコメントに書いておく。変異で確認する形: 変数選択を SelectionManager の外から書くと、その呼び出し元を名指しして fail すること"
+            solution EntranceCensusStillCountsFive
+            uuid 4d1f5a92-2b7e-4c31-9f6a-8e0d3c7b1a45
+            summary "node --test src/SelectionOwnership.test.js — pass (8/8)。既存 census (SELECTION_WRITE_RULES × collectSources) を**作り直さずに**通った: 母集団の作り方も規則の形も同じで、変わったのは `_apply` の本体を切り出す錨だけ (引数名 ids → 選択の union)。5 verb の実在検査もそのまま緑。加えて 2 本足した — (a) 種ごとの painter の呼び手が `_apply` の 2 行ちょうどであること (宣言表を足したこと自体が遷移を割る新しい機会なので、呼び手の個数を問う)、(b) union のリテラル (kind: entities 等) を SelectionManager と domain/selection.js の外で組み立てる経路が 0 個であること。ADR-099 の census が entity 側しか数えないという却下案 A の兆候は現れていない — 変数選択は同じ 5 verb と同じ 1 本の _apply を通る"
+            artifacts
+            - "src/SelectionOwnership.test.js"
+            - "src/controller/SelectionManager.js"
 
         goal MixedSelectionIsUnrepresentable
         uuid b8a9eb4c-5ce2-48a0-8ee1-573ca53d19a8
         summary "実体と変数が混在した選択を構築できる経路が 0 個である。選択は empty / entities(N≥1) / variables(N≥1) の 3 枝で、空の entities と空の variables という 2 通りの『0』が書けない"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption UnionShapeCensusIsPlanned
-            uuid 0f5c8a31-7e24-4b96-a1d3-62b8e7d40915
-            summary "証拠予定: 5 verb の引数型から母集団を導出し、混在した値を渡せる経路が 0 個であることを問う単体テスト。加えて 0 個の表現が 1 通りであること (empty 枝だけ) を、entities/variables に空配列を渡した呼び出しが empty へ正規化されるか throw するかのどちらかであることで焼く。反証されうるのは『矩形選択が幾何側だけを拾うので混在は起きえず、型で禁じるのは過剰』という主張で、それは今日の窓についてだけ正しい — 6 番目の窓は今日の一覧に無い (原則 #31 / ADR-099 が census を書いた理由そのもの)"
+            solution MixedSelectionThrowsAtConstruction
+            uuid 6b2c8e14-7f39-4a05-9c81-2d4e6f0a3b57
+            summary "node --test src/domain/selection.test.js — pass (7/7) + src/controller/SelectionManager.test.js — pass (29/29)。0 個の表現が 1 通りであることは makeSelection([]) === EMPTY_SELECTION の同一性で焼き、empty 枝が ids も refs も持たない (= 空の集合を読めない) ことも問う。混在は makeSelection が throw し、verb 経由でも throw することを確認したうえで、**失敗した構築が状態を半分だけ書いていない**ことも見る (遷移は全部か無か)。実体 id は素の文字列なので『未知の名前空間が実体に落ちる』が最も起きやすい fall-through で、kindOfMember は null / 数値 / ref を持たない偽トークン / 空文字すべてで throw する。反証されうる主張『矩形選択は幾何側しか拾わないので型で禁じるのは過剰』は今日の窓についてだけ正しく、6 番目の窓は今日の一覧に無い"
+            artifacts
+            - "src/domain/selection.js"
+            - "src/domain/selection.test.js"
 
         goal EverySelectableKindDeclaresItsShapeAndPanel
         uuid 1d8f6b03-4a25-49c7-b8e1-3c7a05e29d64
         summary "選択可能な種のうち、3D の姿を宣言していないものが 0 個であり、右パネルの種分岐が未宣言の種で throw する (fall-through が 0 個)。『今の 2 種は姿を持つ』は事実であって規則ではない — 規則にしないと 3 種目が無言を再導入し、しかもテストは緑のままになる"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption KindDeclarationTablesArePlanned
-            uuid 4e2b91d7-6c30-4f85-a92c-8b17e5c3d206
-            summary "証拠予定: 種ごとの宣言表 2 つ (3D の姿 / 右パネルの中身) を EXPLICIT_DEFAULTS・PLACEMENT_BY_KIND・SUPPORT_SURFACE_BY_KIND と同じ規律で書き、未宣言の種で throw することを単体テストで焼く。母集団は Selection union の kind の枝から導出する (手書きの種リストにしない — 枝を足したのに表を足さなければ落ちる形にする)。加えて e2e: 場の行列の列ヘッダから 1 クリックで変数が選べ、3D に未確定帯が出ること (無言でない — 原則 #11)"
+            solution KindDeclarationTablesAreCounted
+            uuid 8e5a0c73-1d64-4b28-a3f7-5c9b2e6d4081
+            summary "node --test src/SelectionKindDeclarations.test.js — pass (6/6)。母集団は手書きの種リストではなく SELECTION_KIND の枝から導出し (assertCoversPopulation)、empty は理由つきの対象外として宣言する — 枝を足して行を足さなければ落ちる。両向きに問う: 宣言された painter が _painters に実在し、実在する painter が宣言されている (誰も描かない宣言も、宣言の無い描き手も、どちらも緑を出す)。shapeForKind / npanelBodyFor は未宣言の種で throw し、ADR-105 の ENTITY_SCOPE_BY_KIND にも variable の行が要ることを個数で確認する (原則 #17)。e2e (playwright 2 本、38/38 緑) は行列の変数見出しから 1 クリックで選択の種が variables へ変わり、右パネルが Shared variable へ入れ替わり、同じ窓をもう一度押すと empty へ戻ることを焼く — 種の入れ替わりは 2 回通す (1 回だけの検査は『2 回目に前の種が残る』形を隠す)。**この e2e が構造的に見逃すもの**: 未確定帯そのものの描画結果 (WebGL のピクセル)。帯が出たことは選択の種と painter への到達で確かめており、見えたかは見ていない"
             artifacts
-            - "src/controller/SelectionManager.test.js"
+            - "src/view/SelectionKinds.js"
+            - "src/SelectionKindDeclarations.test.js"
+            - "e2e/smoke.spec.js"
 
         goal SelectingAVariableKeepsItsEntitiesInView
         uuid 7a3c0e58-9b41-4d26-8f07-1e5b2d94c803
         summary "変数を選んだとき、その変数が制約している実体が contextual 軸の DIMMED で残る。強度の上界は実体側と同じ式 — FULL = 選択集合ちょうど / DIMMED = 連鎖 − 選択集合。新しい語彙は 1 つも足さない"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption VariableChainIntensityIsPlanned
-            uuid 5c9d24f0-8e13-4a67-b502-9f36a1e7d8b4
-            summary "証拠予定: 変数の『連鎖』(その変数を制約する要求が指す実体の集合) について、FULL と DIMMED の上界を N で焼く。ADR-099 が N=25 で焼いたのと同じ理由 — 1 個の fixture では 4N と N が区別できないので、1 個の変数が 1 個の実体を制約する例では上界の誤りが見えない。反証されうるのは『変数の連鎖は実体の TF 連鎖と違って深さを持たないので上界の式が異なる』ことで、その場合は式を分けて両方を宣言する (共有しているように見せて実は違う、が最悪)"
+            solution VariableChainIntensityIsBurnedAtN
+            uuid 9f4d1b60-3a27-4e59-8c02-7b6e5a1f2d38
+            summary "node --test src/controller/SelectionManager.test.js — pass (29/29)。変数側の上界を N=25 で焼いた: 1 個の変数が N 個の実体を束縛する fixture で FULL が 0 個・到達が連鎖ちょうどであること (誤って『当人 FULL』を書くと N=25 で 25 になる — 1 個の fixture では区別できない、ADR-099 の測定と同じ理由)。式は実体側と**同じ 1 つ**のまま: FULL = 選択集合 ∩ 実体 (変数選択では空) / DIMMED = 連鎖 − 選択集合。Proposed 時点の反証仮説『変数の連鎖は深さを持たないので式が異なる』は起きなかった — 連鎖は φ⁻¹ の到達関係そのもので (entityRefsConstrainedByVariable、node --test src/context/ProvenanceTree.test.js 17/17 が逆向きの一致も問う)、深さの有無は上界の式に効かない。文書が無い経路でも落ちず、連鎖 0 個は既定値で埋めない空の主張として通る。e2e は場のテンプレを領域 Variable を持つものへ差し替えて DIMMED が 0 個でないことを問う — Robot Cell — Simple は実体を 1 つも持たないので、そこで測ると通っても何も示さない"
+            artifacts
+            - "src/context/ProvenanceTree.js"
+            - "src/controller/SelectionManager.test.js"
