@@ -1,0 +1,106 @@
+GOALS adr105_unexamined_is_not_clear
+
+goal UnexaminedNeverReadsAsClear
+uuid 35632e1e-3d56-4879-97f5-83a054aa2e22
+summary "「まだ検証していない」が「問題が無い」と同じ見え方をしない。かつ、場に入る必要があるかは場に入らずに分かる。発見の集約は場の開閉・文書の有無と独立に存在し、そこに出る 0 は必ず 3 種のいずれかとして宣言されている"
+state UnderReview
+labels adr-105, discovery, principle-31, zero-state, ia-phase-2
+artifacts
+- "docs/adr/ADR-105-unexamined-is-not-clear.md"
+- "docs/ia-redesign/03-implementation-order.md"
+
+    context Adr105Scope
+    uuid 2e20894f-dda0-4f75-8f1b-dd744c54b5c1
+    summary "ADR-105 (Proposed 2026-08-02、実装 = IA 再設計 Phase 2): 発見の集約 (3 カウンタ + シーンスコープ KPI) を Context オーバーレイの外の描き手へ移し、集約の型を kind 判別の union (unexamined | examined) にして未検証を第一級の値にし、導出値の書き手を 1 つへ畳み、エンティティスコープの検証を文書ではなく選択に従わせる。ドメイン (ContextValidator / agendaCounters / projectChecks) は 1 行も変えない — 中身は ADR-104 D4 で既に正しい。契約パッケージ・BFF・core も不変で、ワイヤに載る事実は変わらない (原則 #29)"
+    artifacts
+    - "src/context/Agenda.js"
+    - "docs/STATE_LEDGER.md"
+
+    context TheCounterLivesInsideTheThingItDescribes
+    uuid d4bc1ce5-bd4e-4f02-99c7-e24d9025a0e5
+    summary "出発点の実測: agendaCounters() は Agenda.js:282 に実装済みで 3 数を合算せず返し 0 も隠さない — 中身は正しい。しかし描き手は AgendaPanel.jsx:233 の 1 箇所だけで、それは ContextLayer.jsx:62 の `if (!ctx.active) return null` の内側にいる。場に入る必要があるかを教えるカウンタが、場に入らないと存在しない。加えて uiStore.js:531 の退出リデューサがカウンタを {0,0,0} へ戻すため、画面に残りうる 0 には『ドメインが数えた 0』と『UI ライフサイクルが書いた 0』の 2 つの出所がある"
+    artifacts
+    - "src/components/Context/ContextLayer.jsx"
+    - "src/store/uiStore.js"
+
+    context BusinessTreeAttachPoint
+    uuid e607f755-fcca-461d-b2e6-5954f5c89b66
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal ReworkCostMinimized (uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16、strategy ByCostDrivers 配下) — 食い違いの発見が場の往復を待たずに起きれば、不確実性が実装前に消費され手戻りが減る、というのが 02-grouping-criteria.md の shift-left の主張そのものだから。保留理由が 2 つある: (a) 本 ADR は Proposed で証拠が全部未来形、(b) ReworkCostMinimized 自身が support-unexplored (手戻り量の測定手段が未設定) なので、今つなぐと未測定の枝に未実装の枝を吊ることになる。テストが実在し、かつ手戻りの測定が始まった PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyAUnionAndNotABooleanOrNull
+    uuid a77148ed-b274-4735-bfcf-4945cbbbf6be
+    summary "集約の型を kind 判別の union にする根拠 (却下案 B = 3 数 + hasDocument boolean への反証): boolean は状態を暗黙化する形で、核 §1.4 が名指しで禁じている。かつ表現力が足りない — 割るべき 0 は『文書が無い』『文書は在るが検査 0 件』『検査が在って全部パス』の 3 種で、次の一手が全部違う。boolean 1 本では 2 種までしか割れず、3 種目 (検査 0 件) が『全部パス』に潰れたまま残る。null / undefined / 0 での代用も同じ理由で却下 — それらは読み手に推論させる形であり、本 ADR が消そうとしているものそのものである。ADR-060 が契約の pose に課した『kind 判別の有界 union』と同じ形を画面上の集約へ適用したにすぎず、新しい概念を足していない"
+
+    justification WhyNotJustMoveTheRenderer
+    uuid 8aeb7f96-b52a-43a4-a1a8-f954de03fa4f
+    summary "却下案 A (描き手をヘッダへ足すだけ、数値のまま) への反証: 循環依存は確かに切れるが、文書 0 件のとき `0 0 0` と出る。いま嘘は場の中に隠れているので目に触れる頻度が低いが、A はそれを常設のヘッダへ昇格させる — 害が減るのではなく増える。移設だけで済むかどうかは『移設先に文書が無い時間帯が存在するか』で決まり、ContextService._doc の初期値は null なので存在する (起動直後・ホーム画面・テンプレ選択前はすべて通常経路)。移設と型の変更は同時にしか正しくならない"
+
+    assumption UnexaminedIsNormalNotAnError
+    uuid 5187fb04-5178-4eaa-ae33-b2329878cc01
+    summary "反証されうる仮説: 『未検証』は異常系ではなく起動直後の通常状態なので、警告色・バッジ・注意喚起で出さない。今日この仮説を採る根拠は ContextService.js:87 の _doc = null が初期値であること、および ADR-089 のホーム画面が文書を持たない状態を正規の入口として設計していること。反証される形は『未検証のまま長時間作業してしまい、あとで衝突がまとめて出る』事例が dogfooding で観測されること — そのときは未検証の提示を強めるが、強め方は色ではなく出口の名指し (何をすれば検証が始まるか) を先に試す"
+    artifacts
+    - "src/service/ContextService.js"
+
+    assumption DomainCountersAreAlreadyCorrect
+    uuid c777ef8d-2d86-4d7c-8ea3-529287e0906f
+    summary "反証されうる仮説: agendaCounters() と projectChecks() の中身は正しく、本 ADR はドメインを 1 行も変えなくてよい。根拠は ADR-104 D4 の実装 (3 数を合算しない・衝突は保存せず毎回導出・0 を隠さない) と ProposalCommands.test.js の既存アサーション。反証される形は、集約を場の外で読み始めた瞬間に『文書が無い経路では validatorResult が null なので projectAgenda が空配列を返す』のような、場の中でしか踏まれていなかった前提が露出すること。そのときドメインが変わるのではなく、未検証を表す値がドメイン側から返るべきかという境界の再判断になる (D2 の union をどの層が構築するか)"
+    artifacts
+    - "src/command/ProposalCommands.test.js"
+
+    strategy ByMakingTheDishonestZeroUnwritable
+    uuid a309c8dd-1906-4648-a8d0-68c8443441f0
+    summary "Argument by 不誠実な 0 の表現不能化 + 母集団からの個数検査 — 4 つの規律 (場に依存せず描く / 3 つの 0 を型で割る / 書き手を 1 つにする / 検証を選択に従わせる) はどれも『在るものを読んでも見えない』形をしている。不在は検査対象のノードを持たないので、描き手を辿る数え方では永久に出てこない。したがって型で書けなくしたうえで、母集団をコードから導出した個数として問う (ADR-102 の規律 — 手書きの場所リストにしない)"
+
+        goal AggregateRendersWithoutTheFloor
+        uuid 1b8b513e-7204-401a-85b4-71ba746bba42
+        summary "発見の集約を描く箇所のうち ctx.active に依存するものが 0 個である。母集団は agendaCounters / projectChecks の消費者の閉包から導出し、在る描き手を辿らない — 10 個目の描き手が場の中に生まれたら、誰も表を触らなくても落ちる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption AggregateCensusIsPlanned
+            uuid b31ed06c-9b4a-4e9f-8309-a7a7e1c95bb5
+            summary "証拠予定: src/DiscoveryOutsideTheFloor.test.js (新規) — 母集団 = src/** のうち agendaCounters または projectChecks 由来のストアスライスを読むファイル (構文から導出、ファイル名リストを持たない)。その集合と『ctx.active を読むファイル』の交わりが 0 個であることを問う。変異で確認する形も決めてある: 集約の描き手を 1 つ ContextLayer の中へ戻すと、そのファイル名を名指しして fail すること。実行前なので個数はまだ無い"
+
+        goal ThreeZerosAreDistinctValues
+        uuid 042a14a7-f364-4c57-9287-0e709d3146ab
+        summary "『未検証』『検査対象なし』『全部パス』が別々の値として存在し、消費者は kind を分岐せずに集約を読めない。0 を出せば済む書き方が型として存在しないので、3 種のうちどれかを宣言せずに画面へ出す経路が無い"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption UnionExhaustivenessIsPlanned
+            uuid c2272836-751a-407e-89d2-d99e558251c1
+            summary "証拠予定: 集約を構築する純粋関数の単体テスト — 文書なし / 文書あり検査 0 件 / 検査あり全部パス / 検査あり失敗あり の 4 入力が 4 通りの異なる値を返すこと、および未宣言の kind で throw すること (EXPLICIT_DEFAULTS・PLACEMENT_BY_KIND と同じ既定表の規律 — fall-through は『宣言された既定』と『誰も考えなかった種』を区別不能にする)。加えて kind を分岐せずに読む消費者が 0 個であることを個数で問う。反証されうるのは『4 種目 (検査あり失敗あり) は失敗件数で表現できるので kind を要さない』という主張で、そうなら union は 3 枝に縮むが、縮小は宣言として書く"
+
+        goal DerivedAggregateHasOneWriter
+        uuid 8f5dd545-4256-4d58-9628-465ce1844c49
+        summary "context.agendaCounters を書くストア入口が 1 個である (現在 2 個 — uiStore.js:449 の contextSetAgenda と :531 の退出リデューサ)。UI のライフサイクル遷移は導出されたドメインの事実の書き手ではない。Context を抜けても衝突は 3 件のままである"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption WriterCensusIsPlanned
+            uuid e48df15a-9a4a-43dc-8885-a1173f11d728
+            summary "証拠予定: 書き手の個数検査 — uiStore のリデューサのうち context.agendaCounters (および集約スライス) に代入するものを構文から数え、1 個であることを問う。SelectionOwnership.test.js と PosePolicyOwnership.test.js の先例に倣う。あの 2 件が示したのは『窓を辿る数え方では、undo コールバックの中に複製された書き手が出てこない』ことで、ここでも退出リデューサは 15 個のスライスを一括で戻す 1 行の中に隠れており、カウンタの description を読んでも見えない。反証されうるのは『退出時に集約を保持すると、次に別の文書を採るまで古い数が残る』という指摘で、そのときの答えは 0 で埋めることではなく未検証を表す値へ遷移させること (D2 の union がそれを可能にする)"
+
+        goal EntityScopeValidationFollowsSelection
+        uuid da0f7378-d456-4b11-b866-30ba8e393f35
+        summary "リーチ / 干渉 / 把持候補の可用性が ctx.active でも文書の有無でもなく、その実体が選ばれているかで決まる。Robot を選んだ状態から 1 クリックで届き、置く → 届くか見る → 置き直す のループが閉じる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption SelectionDrivenEntryIsPlanned
+            uuid 1ab27a82-01f8-42e3-a9dc-32ef7e86ada9
+            summary "証拠予定: e2e — Context 文書を 1 つも採らずに Robot を選び、N パネルから grasp の入口へ到達できること。ADR-085 が既に『grasp-search を無フォームで開く』を実装しているので、この goal は新機能ではなく入口の付け替えである。反証されうる仮説は『無文書でも開けるのは grasp だけで、リーチ / 干渉は文書由来の acceptance を要求する』こと — もしそうなら 3 つは同じ住所に置けず、文書を要する検証は場の側に残る。その切り分けは projectChecks の入力が文書のどの節に依存するかで決まり、実装の最初の一手として確認する"
+
+        goal ScreenEdgeBudgetHasOneOwner
+        uuid 932f8e90-e10c-4e73-b02e-2200bc1112f9
+        summary "ヘッダと 3D ビュー上の常設オーバーレイが端を食うとき、占有オフセットの計算は 1 箇所が持つ。呼び出し箇所ごとのパッチが 0 個である (原則 #26)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption EdgeOwnerIsPlanned
+            uuid b0c250a3-5845-454e-a070-24bc1386f441
+            summary "証拠予定: 右端については _updateGizmoOffset() が既に唯一の所有者で、LAYOUT_DESIGN.md の投影トグル行が『右端の占有計算は _updateGizmoOffset() ただ 1 箇所が持つ』と宣言済み (ADR-103)。本 ADR が足すのはヘッダ (上端) と 3D 左上の HUD で、左上には Link Network が bottom:34px left:188px で既に居る。占有の衝突が実際に起きるかは HUD の寸法が決まるまで判定できないので、まず LAYOUT_DESIGN.md の寸法表に行を足し、衝突があれば計算の所有者を 1 つ名指しする。反証されうるのは『上端と左上は互いに素なので所有者を共有する必要がない』こと — その場合この goal は 2 つの独立した所有者の宣言に分かれる"
+            artifacts
+            - "docs/LAYOUT_DESIGN.md"
