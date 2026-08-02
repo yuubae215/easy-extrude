@@ -225,3 +225,5 @@ goal ごとの支えの正本は `.gsn` 側 (ここには複製しない — §1
 - `docs/ia-redesign/02-grouping-criteria.md` (発見 / 解消の物差しと shift-left の導出)
 - `docs/ia-redesign/easy-extrude-wireframe-v8.html` (配置とその根拠 — 住所の正本)
 - `docs/gsn/adr-105-unexamined-is-not-clear.gsn` (goal ごとの支えの正本)
+- ADR-106 (場を下部へ / 右端 280px スロットの退役 — Phase 3。本 ADR が場の外へ出す `Checks` / `Grasp` の
+  「出ていったあとの器」を決める ADR。D1 の「`ctx.active` に依存しない」が依存すべき軸 (`loaded`) を名指しする)

@@ -1,0 +1,101 @@
+GOALS adr108_entrances_are_verbs_not_objects
+
+goal EntranceCountIsIndependentOfObjectCount
+uuid b340f294-9a64-451b-ad9e-19398c861816
+summary "入口の個数が、対象の種類が増えても増えない。ユーザーは「どれを押すのか」ではなく「何をしたいのか」で選べ、かつ 01-inventory の 48 行すべてがどこかのグループに属している"
+state UnderReview
+labels adr-108, ia-phase-5, entrances, principle-31, bounded-growth, census
+artifacts
+- "docs/adr/ADR-108-entrances-are-verbs-not-objects.md"
+- "docs/ia-redesign/02-grouping-criteria.md"
+
+    context Adr108Scope
+    uuid 32a0aa55-2e2a-4ea6-ab85-c2ed5cb2971e
+    summary "ADR-108 (Proposed 2026-08-02、実装 = IA 再設計 Phase 5): ヘッダの常設入口を動詞ごとに畳み (ファイル系 6 → 2、始める系 5 → 1)、対象を引数へ落とし、入口の個数に宣言された上界を置いて検査する。加えて機能 40 (Node Editor) を表示条件の一致で決まっていた住所から出す。各入口の中身・演出・目的は不変 — 変えるのは並べ方だけで、ドメイン・契約・BFF・core は 1 行も変わらない。ADR-089 が決めた起動経路も不変 (畳むのは再入口であって初手ではない)"
+    artifacts
+    - "src/components/Header/Header.jsx"
+    - "docs/ia-redesign/01-inventory.md"
+
+    context TheProductIsTheEntranceCount
+    uuid 400efa0b-36e2-42b7-924d-ec066ee81aeb
+    summary "出発点の実測 (Header.jsx から構文で導出、記憶からではない): 『始める』入口は Layouts (:110, ADR-089) / New Project (:319, ADR-051) / Tutorial (:332, ADR-047) / Tour カード (TourCard.jsx, ADR-065 Phase 6) / Wizard (ContextLayer タブ, ADR-063) の 5 つ — 03-implementation-order.md は『4 重導線』と書いており Tutorial が落ちていた。ファイル操作は {持ち出す, 持ち込む} × {シーン JSON, サーバ, Context 文書} = 6 入口がヘッダに平坦に並ぶ (Export :111 / Import :112 / Save :98 / Load :99 / Save Context :321 / Import Context… :320)。2 帯は別の課題に見えて、どちらも『動詞 × 対象の直積が入口の個数になっている』という同じ 1 つの欠陥である"
+
+    context TheFirstCriterionDidNotApply
+    uuid 514393a8-5880-4f90-816c-a42c317978a9
+    summary "第二の物差しが要った理由: 02-grouping-criteria.md が 25-37 を割った物差し『クライテリアの所有者は単数か複数か』は検証の物差しであり、ファイル操作にも入口にも効かない (どちらもそもそも検証ではない)。効かないこと自体を導出条件として扱い、実測から第二の物差し『入口は動詞で数える。対象は入口ではなく引数である』を起こした。物差しが 1 つで足りると仮定していたら、この帯は『当てはまらないので後回し』のまま残っていた"
+
+    context BusinessTreeAttachPoint
+    uuid 22301551-60b7-4b97-8785-1c0f801f1b05
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 初手で 5 つの入口から正しい 1 つを当てさせることが、価値に到達するまでの離脱点そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形であり、かつ『どの入口から入った人が価値に到達したか』の測定手段が無い。dogfooding で入口ごとの到達が記録され始めた PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotJustNestThemInAMenu
+    uuid 4d842c9a-6c2d-4d5e-a94f-e8804683c5c9
+    summary "却下案 A (入口をメニューの階層へ押し込む — File ▾ の下に 6 項目) への反証: ヘッダの横幅は縮むが個数は減らず、深さへ移すだけである。『保存したい』から『どの保存か』を当てにいく構造はそのまま残り、対象が 4 つ目になれば項目も増える。症状 (横幅) だけを見て根本 (直積) を見ない一手で、ADR-106 の却下案 A (器を 280 → 420px に広げる) と同型 — どちらも有界でない成長を、一度だけ買える猶予と取り違えている"
+
+    justification WhyNotMergeTheObjects
+    uuid f03b06ce-c6aa-4168-a286-5d3c17861ebc
+    summary "却下案 C (対象を 1 つに統合し、シーンと Context を 1 ファイル形式にする) への反証: 入口は確かに 2 つになるが、これは IA ではなくデータモデルの変更である。ADR-050 が決めた区別 (.ctx.json が正準、raw ジオメトリでは .json) を UI の都合で消すことになり、依存を外向きに向ける (核 §1.1 Clean Architecture 違反)。IA は対象の数を減らせない — 並べ方だけを決められる。この境界を明示しておかないと、次に入口が増えたとき『じゃあ対象を統合しよう』が安易な出口として復活する"
+
+    justification WhyTheBoundMattersMoreThanTheFolding
+    uuid c17f48ae-33c4-4b04-a942-09db15901d85
+    summary "D2 (入口の個数に上界を宣言して検査する) を本体とみなす根拠: D1 の畳み込みだけなら今日の 11 個が 3 個になるだけで、明日また生える。生やす側を止めなければ同じ ADR を 2 年後にもう一度書くことになる。ADR-060 が契約について『optional 兄弟を生やさない』を統治として置いたのと同じ構造で、共通の道具は上界の宣言である。ADR-100 の ratchet が示したのは、正当な非ゼロを隠さず定数に焼き、超えても下回っても fail させる形が実際に効くということ"
+
+    assumption StartupPathCompensatesForDeeperOnboarding
+    uuid 28168f65-7f06-4f3e-9ecc-7437dbdfd1ca
+    summary "反証されうる仮説: 『始める』を 1 入口に畳むと Tutorial と Tour への到達が 1 段深くなるが、ADR-089 の起動経路 (起動時にホーム画面へ着地する) がそれを補うので初回ユーザーは困らない。今日この仮説を採る根拠は、初回ユーザーはヘッダを探す前に起動画面に着地するという ADR-089 の設計そのもの。反証される形は、Blender 式スキップ設定を有効にした 2 回目以降のユーザーが Tutorial に戻れなくなること — スキップした人にはホーム画面が出ないので、補いが効かない層がちょうど存在する。実装の最初の一手としてこの層の経路を確認する"
+    artifacts
+    - "docs/adr/ADR-089-launch-home-screen-layout-template-entry.md"
+
+    assumption ExpertShortcutsCanBeDesignedSeparately
+    uuid 0f9307b6-c0fe-44af-9e71-797c7e98efc3
+    summary "反証されうる仮説: Export が 1 手から 2 手になるコストは、近道 (キーバインド Ctrl+E は既に在る / 直近の対象を既定にする) で吸収できる。根拠は Ctrl+E / Ctrl+I が既に実装されていること (Header.jsx の title 属性)。反証される形は、直近の対象を既定にすると『前回と違う対象へ保存したいのに気づかず上書きした』が起きること — その場合の答えは既定を持たないことであり、2 手を受け入れる。近道を設計しないまま畳むと熟練者にとっては純粋な劣化になるので、近道の設計は同じ PR の一部であって後続ではない"
+
+    strategy ByCollapsingTheProductAndBoundingTheGrowth
+    uuid 508fbef0-36ad-4e80-a8b1-7cb274524b26
+    summary "Argument by 直積の畳み込み + 成長の有界化 — 直積の片側 (対象) を引数へ落とせば入口の個数は動詞の個数になり、対象が増えても入口は増えない。ただし畳み込みは一度きりの是正であって統治ではないので、入口の個数に宣言された上界を置き、母集団をコードから導出して数える。数えるべきは『今ある入口』ではなく『宣言された上界を超えた個数』であり、在るものを並べた表 (place-list) では次に生えた 1 つが出てこない"
+
+        goal EntranceCountIsBoundedAndDeclared
+        uuid 5e448419-9d19-4445-8bd9-c840f3d2b3a6
+        summary "ヘッダの常設入口が宣言された上界以下である。母集団は Header.jsx のボタン / メニュー項目を構文から導出し、手書きの入口リストを持たない。現在の実測値をベースラインとして定数に焼き、超えても下回っても fail する"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption EntranceRatchetIsPlanned
+            uuid 03b473a3-39f9-40ab-a95e-09ec6f18c05b
+            summary "証拠予定: 入口の ratchet 検査 (新規) — ADR-100 の宣言外リテラル ratchet と同じ形。母集団は Header.jsx の JSX から SmallBtn / item() 呼び出しを構文で数え、モバイル側の More ⋯ メニューも同じ母集団に入れる (デスクトップだけ数えると、モバイルに生えた入口が出てこない)。下回っても fail させるのは、畳んだあと誰かが黙って戻したときに気づくため。反証されうるのは『条件つき表示の入口 (BFF 接続時のみ) を数えるべきか』で、答えは数える — 表示条件は住所の根拠ではない、というのが D4 の主張そのものだから"
+
+        goal EveryInventoryRowBelongsSomewhere
+        uuid 66efdbaf-1218-4bc2-bfc8-d0b8adcd4c34
+        summary "01-inventory.md の 48 行のうち、どのグループにも Phase にも属さない行が 0 個である。現在 1 個 (機能 40 Geometry DAG / Node Editor) — 表に在るのに誰も触れていない行があったということは、グルーピングの母集団が実質 47 だったということ"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption InventoryCoverageCensusIsPlanned
+            uuid 1c4e70a8-5b39-4d2f-9e61-8a03b7c25d14
+            summary "証拠予定: CensusCoverage.test.js の形をドキュメントへ当てる被覆検査 — 01-inventory.md の行を母集団とし、02-grouping-criteria.md の適用結果と 03-implementation-order.md の Phase 群に現れない番号を数える。数えるべきは表の行ではなく『表が覆えていない個数』(ADR-102)。反証されうるのは『インベントリは実装から抽出した時点のスナップショットなので、機能が増えたら表の方が古くなる』ことで、そのとき検査は 0 を守れない — その場合の答えは検査を緩めることではなく、インベントリを導出物として再生成可能にすることであり、それ自体が別の判断になる"
+            artifacts
+            - "src/CensusCoverage.test.js"
+
+        goal OneVerbHasOneEntrance
+        uuid 2a7f5c19-8d64-4e03-b571-9f18c604ae37
+        summary "同じ動詞の入口が対象ごとに複数存在しない。『持ち出す』が 3 つ、『持ち込む』が 3 つ、『始める』が 5 つある状態が解消され、対象は入口の中で選ぶ引数になっている"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption VerbToEntranceMapIsPlanned
+            uuid 8b03d5e7-1f42-4a96-8c25-6e7043b91fa2
+            summary "証拠予定: 動詞 → 入口の写像を宣言し、像の各点の逆像が高々 1 個であることを問う検査。母集団は動詞の enum から導出する。加えて e2e: 畳んだあとも 5 種すべて (レイアウトテンプレ / Context テンプレ / 物語 / クエスト / 誘導フォーム) と 3 対象すべて (シーン / サーバ / Context 文書) へ到達できること — 畳むことは消すことではない (原則 #16、ADR-106 D3 と同じ規律)。反証されうるのは『Save (サーバ) と Export (ファイル) は同じ動詞ではない』という指摘で、その場合は動詞が 2 つではなく 3 つになる。境界がどこであれ、動詞の個数が入口の個数であるという主張自体は変わらない"
+
+        goal DisplayConditionIsNotAnAddress
+        uuid 4f6a2b90-7c31-4d58-b0e9-15c8a7e34d62
+        summary "表示条件が同じであることを住所の根拠にしている入口が 0 個である。機能 40 (Node Editor) は『BFF 接続時のみ』が Save / Load と一致するという理由でファイル群に並んでいるが、持ち出し / 持ち込みの動詞を持たない第二の編集器である"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption MisclassificationByConditionIsARule
+            uuid 6d2c81f4-3e57-4b09-a7d6-0c94f8e12b35
+            summary "証拠予定: Node Editor を動詞で分類し直し、ファイル群の母集団から外れることを D1 の写像検査で確認する。これを 1 件の是正ではなく規則として書く根拠は 2 例目だから — 1 例目は 32 Assets (実装された時期が Context だったので ContextLayer のタブになった。ADR-106 D3 で + 追加 へ移した)、2 例目が Node Editor (表示条件が Save/Load と同じだったのでその隣になった)。同じ根本価値の違反が 2 つの無関係な文脈にあるので、CLAUDE.md の Q2 に従い Yellow Card ではなく規則へ昇格する。反証されうるのは『2 例は同じ根本ではない (時期 vs 条件)』という指摘で、その場合は Yellow Card に留めて 3 例目を待つ"
+            artifacts
+            - "docs/PHILOSOPHY.md"

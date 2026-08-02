@@ -1,0 +1,136 @@
+GOALS adr106_the_floor_is_a_table_not_a_strip
+
+goal SubjectAndFloorAreVisibleTogether
+uuid 331a0d20-04d6-4a9d-9a70-5cddb2e89eb1
+summary "交渉している対象を見ながら交渉できる。場が開いている間も、選んだ実体の詳細 (N パネル)・関係グラフ (LINK NETWORK)・ギズモ・投影トグルは消えず被されもしない。かつ各ゾーンの責務が一言で言え、次に機能を足す人が住所を議論せずに決められる"
+state UnderReview
+labels adr-106, ia-phase-3, screen-edge, principle-26, principle-31, container-shape
+artifacts
+- "docs/adr/ADR-106-the-floor-is-a-table-not-a-strip.md"
+- "docs/ia-redesign/03-implementation-order.md"
+
+    context Adr106Scope
+    uuid 16155fd1-db31-4c97-925b-4a9ca6075a32
+    summary "ADR-106 (Proposed 2026-08-02、実装 = IA 再設計 Phase 3): 解消の器を右端 280px の縦ストリップから下部の展開パネルへ移し、右端 280px スロットそのものを (production の場とチュートリアルの Inspector の両方について) 退役させ、器に残す責務を『解消』と『その記録』の 2 種に絞り、出ていく 5 タブの行き先を名指しする。扱うのは器であって中身ではない — ドメイン (context/** · ProposalCommands) は 1 行も変えない。Phase 4 が『器への依存は表示層だけだった』を既に実証しているので、この不変性は仮説ではなく実測である"
+    artifacts
+    - "src/components/Context/ContextLayer.jsx"
+    - "docs/LAYOUT_DESIGN.md"
+
+    context ThreeWorkaroundsForOneCollision
+    uuid eb18e026-0ec4-4ea6-b7df-8164b59b80cc
+    summary "出発点の実測: 右端 right:0 を 3 者 (N パネル 200px / production の場 280px / チュートリアルの Inspector 280px) が要求し、同じ 1 つの衝突に互いに知らない 3 つの回避策が当たっている。(1) ずらす = NPanel.jsx:33 の `right: inspectorOpen ? '280px' : '0'`、(2) 消す = ContextController.js:720/827/982 の setNPanelVisible(false) と :716/807/973 の setForceHidden(true)、(3) 被せる = ContextLayer.jsx:101 の zIndex:100。3 つ目が最も見えにくい — ギズモは right:16px 幅 96px = 右端 [16,112] を占め、これは場の [0,280] に完全に含まれるので、production の場を開いている間ギズモと投影トグル (ADR-103 が常設に出したもの) は見えない。さらに _updateGizmoOffset() の式は production の場を項として持たず、原則 #26 の『一箇所で計算する』はチュートリアルについてしか成立していない"
+    artifacts
+    - "src/controller/AppController.js"
+    - "src/controller/ContextController.js"
+
+    context ContainerShapeMismatchIsMeasured
+    uuid dfe1e8d1-865e-4f48-82e7-c2b1c9c50e2a
+    summary "器と中身の形の不一致は測ってある: ContextLayer.jsx:133-152 はタブを flex:1 で並べ、器は 280px。タブは定数 8 枚 + 条件つき 3 枚 = 最大 11 枚で、w_tab = 280/n - 4。n=10 で 24px、fontSize:10px の 'Overview' は約 45px を要するので物理的に入らない (02-grouping-criteria.md の実測)。中身は actor × variable の表 = 横長であり、縦ストリップは表に対して最悪の器である。タブが読めないのは症状で、根本は形の不一致"
+    artifacts
+    - "docs/ia-redesign/02-grouping-criteria.md"
+
+    context BusinessTreeAttachPoint
+    uuid 3c01651b-6e47-4297-87df-fd9448f53237
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 『置く → 届くか見る → 置き直す』のループが器の排他で切れていることが、価値に到達するまでの往復回数を直接押し上げるから。保留理由が 2 つ: (a) 本 ADR は Proposed で証拠が全部未来形、(b) 到達までの往復回数を測る手段がまだ無く、今つなぐと未測定の枝に未実装の枝を吊ることになる。dogfooding (docs/dogfooding/README.md) で往復が記録され始めた PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyMoveTheAddressInsteadOfFormalisingTheExclusion
+    uuid 3129ce6c-e921-4c6f-a7b7-310c0b3d6b2c
+    summary "却下案 B (排他を正式な方針として固める — _updateGizmoOffset に production の項を足し『場では N パネルを畳む』を仕様化する) への反証: 一貫はするが、『交渉している対象を見ながら交渉できない』を仕様として固定する。ADR-104 が 3D ドラッグ由来の提案を作れるようにした直後にそれと正面から矛盾し、ADR-103 が示した教訓 (誤分類を物理側で固めると誤分類が固定される — 核 §0 論理 → 物理の順) の再演になる。排他は方針の顔をしていたが実際には住所の衝突を回避するために書かれたので、住所を変えれば守るべき衝突が消え、方針は書く理由を失う。辺を切るのではなく、辺が引かれた理由を消す"
+
+    justification WhyNotJustWidenTheStrip
+    uuid a8dac696-fed7-4a0e-a94c-d6212cd7f105
+    summary "却下案 A (器を 280 → 420px に広げる / タブを 2 段にする) への反証: 文字は入るようになるが、表はまだ縦のままなので形の不一致は残り、右端の奪い合いは悪化して 3D の面積をさらに削る。症状 (文字が入らない) だけを見て根本 (器と中身の形) を見ない一手であり、しかも次にタブが増えたときに同じ判断をもう一度迫られる。器の幅は有界な資源なので、幅で買える猶予は必ず尽きる"
+
+    justification WhyTheTutorialMovesToo
+    uuid 090f341f-8edc-4cf4-b786-2df491486a84
+    summary "チュートリアル (ADR-047 系の ContextInspector 343 行 + StoryBar 121 行) を production と一緒に動かす根拠: チュートリアルは本番の画面を教えるものなので、本番の器が変わったのに右端の縦ストリップを教え続けるなら、それはもうチュートリアルではない。教える画面と使う画面の不一致は UI における §1.1 違反 — 『場はどこにあるか』という同じ事実が 2 箇所に書かれ、片方が古い。加えて機械的にも、右端 280px スロットを残す限り _updateGizmoOffset の +280 項は消えず、Phase 3 の完了条件は閉じない。実装順序ドキュメントが『+280 項が消える』と書いたときその項の出所を取り違えていた (出所は production の場ではなくチュートリアルの Inspector) ことも、この取り違えが production の場は占有計算に参加していないという事実の帰結であることも、ADR 本文に訂正として記録した (原則 #19)"
+
+    assumption DomainIsIndependentOfTheContainer
+    uuid 4c2228f6-3367-45e3-ab82-adc34475325b
+    summary "反証されうる仮説: 提案・議題・証憑のドメインとコマンドは器に依存しないので、器を動かしても 1 行も変わらない。今日この仮説を採る根拠は実測 — Phase 4 (ADR-104) は器が未着手のまま出荷され、表示は既存 ContextLayer の Floor タブに間借りしており、ProposalCommands.test.js の 3 本は器を知らずに焼いている。反証される形は、下部の器が『行を横に並べる』ことで新しい投影 (例: 議題を列方向に畳む) を要求し、それが Agenda.projectAgenda の返り値の形に跳ね返ること。そのときも決定は投影を足すことであってドメインを変えることではない"
+    artifacts
+    - "src/command/ProposalCommands.test.js"
+
+    assumption BottomEdgeHasRoomForTheFloor
+    uuid 0db41cfc-c482-4940-b7c9-885364374705
+    summary "反証されうる仮説: 下端に場を開く余地があり、3D を覆わずに actor × variable の表が読める。下端には既に InfoBar (bottom:0, 26px)・LINK NETWORK オーバーレイ (bottom:34px left:188px)・Toast (bottom:96px) が住んでいるので、余地は無条件ではない。反証される形は、表の可読な最小高さと 3D に残すべき最小高さの和がビューポート高を超えること — 特にモバイルと 720px 高のノート PC。そうなった場合の答えは『覆う』ではなく、表側の情報量を落とす (列を畳む・行を仮想化する) か、場を開いたときだけ 3D を縮める (覆うのではなく退かせる) かの選択になり、どちらを採るかは LAYOUT_DESIGN の寸法が決まった時点で判断する"
+    artifacts
+    - "docs/LAYOUT_DESIGN.md"
+
+    assumption ProvisionalAddressesStayProvisional
+    uuid a2a30e51-b62b-4bcf-bc8c-dca91979012f
+    summary "反証されうる仮説: Wizard / Intake の暫定住所 (文書の入口) は Phase 5 の入口統合まで暫定として保たれ、恒久化しない。宣言しない暫定は恒久になるので、暫定であること自体を成果物に書く。反証される形は、Phase 5 が着手されないまま暫定住所が既定の導線として定着すること — その兆候は dogfooding で『Wizard へどこから入ったか』が暫定住所に偏ることで観測でき、観測されたら暫定を畳むのではなく Phase 5 の優先度を上げる判断材料にする"
+
+    strategy ByRemovingTheCollisionInsteadOfTheSymptom
+    uuid 0a5bd20c-e9c1-4386-9913-2636d02edfc2
+    summary "Argument by 衝突そのものの除去 + 退役の計数 — 3 つの回避策 (ずらす / 消す / 被せる) はどれも独立に書かれ、互いを知らない。したがって 1 つずつ直すと残り 2 つが生き残り、しかも『直した』という緑が出る。住所を変えて衝突を消し、回避策が書く理由を失ったことを個数で問う。消えたことを数えるのは ADR-103 の規律 (退役の腐敗は違反を見逃すのではなく緑を出す) で、母集団はコードから導出する — 在る要素を並べた表は place-list であり ADR-102 が語彙から消した形"
+
+        goal ExclusionWritersAreZero
+        uuid 6ab75085-6efa-44c1-9518-fcb65f4dcbff
+        summary "場の開閉に反応して他パネルの可視性を書く入口が 0 個である。現在 7 個 — setNPanelVisible(false) × 3 (ContextController.js:720/827/982) と setForceHidden(true/false) × 4 (:716/807/973/1427)。場が開いている間も N パネル・LINK NETWORK・ギズモ・投影トグルが見える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption ExclusionCensusIsPlanned
+            uuid 6f918ad8-afb0-4495-83e0-9a6b29ebeebf
+            summary "証拠予定: 排他の個数検査 (新規) — 母集団は ContextController の場の入口 3 メソッド (_startNegotiation / _startAuthoring / _startRegionGhost) と退出経路の呼び出し閉包から導出し、その中で他パネルの可視性 API (setNPanelVisible / setForceHidden) を呼ぶ箇所を数える。ファイル名リストを持たない — 4 つ目の入口が生まれても閉包に入る。加えて e2e: 場を開いた状態でギズモと投影トグルが可視であること (ADR-103 の『正射のまま Edit Mode に入れる』と対になる回帰)。変異で確認する形も決めてある — 排他を 1 行戻すと、そのメソッド名を名指しして fail すること"
+
+        goal RightEdgeHasOneResident
+        uuid 7ccb2b9f-5734-4e59-bc45-8dee4e270cde
+        summary "右端を占有する常設 fixed 要素が 1 個 (N パネル 200px) である。_updateGizmoOffset() の項が 2 個 (定数 16 + N パネル 200) で、280 の項が 0 個。右端 280px スロットは production の場とチュートリアルの Inspector の両方について退役している"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption EdgeCensusIsPlanned
+            uuid 49919d05-48b4-44a1-8710-f3337aafe377
+            summary "証拠予定: 右端の占有検査 — 母集団は src/components/** の position:'fixed' を持つスタイルオブジェクトを構文から導出し、そのうち right が 0 相当かつ常設のものを数える。手書きの場所リストにしない (ADR-102)。加えて _updateGizmoOffset の項数を式の構文から数え、280 のリテラルが 0 個であることを問う。反証されうるのは『チュートリアルの Inspector は transient なので常設 fixed の母集団に入らない』という指摘で、そうであってもギズモの offset 項には現れるので、2 つの数え方が同じ結論を出すかどうか自体が検証になる"
+
+        goal ContainerHoldsResolutionAndItsRecordOnly
+        uuid 3f9b2c14-8e5a-4d61-9c73-1a0e5f8b6d24
+        summary "器に残る責務が『解消』と『その記録』の 2 種だけである。出ていく 5 タブ (Checks / Grasp / Assets / Wizard / Intake) が新しい住所から到達可能であり、消えていない。移設の証拠は『消えたこと』ではなく『着いたこと』である (原則 #16 — 発見可能性は成果物)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption RelocationReachabilityIsPlanned
+            uuid 0c7d4a91-52e6-4b83-a17f-6e9b2d38f5c0
+            summary "証拠予定: 移設先ごとの到達 e2e 5 本 — Assets は + 追加 から、Grasp は Robot を選んだ N パネルから (ADR-105 D5 と同じ入口)、Checks は 3D HUD から (ADR-105 D3)、Wizard / Intake は文書の入口から。ADR-063 Phase 4 の Assets は『作者本人が UI から到達できることを認識していなかった』という実績があるので (02-grouping-criteria.md)、到達可能性は主張ではなく実行で示す。反証されうるのは『Checks と Grasp の移設は ADR-105 の担当なので Phase 3 の検査対象ではない』という切り分けで、そのとき本 goal は残り 3 本に縮むが、縮小は宣言として書く (器から出たのに誰の担当でもないタブが 0 個であることが本 goal の要点)"
+            artifacts
+            - "docs/ia-redesign/02-grouping-criteria.md"
+
+        goal RetiredTabValuesAreCounted
+        uuid 8a2e6f37-b14c-4d90-8f52-c3e7091ab4d6
+        summary "context.inspectorTab の値域に退役した値 (checks / grasp / assets / wizard / intake) が 0 個である。退役の腐敗は違反を見逃すのではなく緑を出すので、消したこと自体を数える"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption RetirementCensusIsPlanned
+            uuid 5d0f8b26-9a71-4c38-b5e4-27f10c6d3e89
+            summary "証拠予定: ProjectionAxisOwnership.test.js が DS_PENDING について作った道具と同型の退役検査 — 退役した値の文字列が inspectorTab の値域宣言にもタブ描画の分岐にも現れないことを構文から問う。ADR-103 の実例が示したのは、DS_PENDING が廃止後も 3 リリース enum に残り、その間ずっとテストは緑だったこと。反証されうるのは『inspectorTab は文字列でありオープンな値域なので、宣言そのものが存在しない』ことで、その場合はまず値域を有界な宣言 (定数表) にする作業が先に立つ — 数えられない形は数える前に直す"
+            artifacts
+            - "src/ProjectionAxisOwnership.test.js"
+
+        goal OpenIsIndependentOfLoaded
+        uuid 1e6a3c85-7f42-4d09-b8a3-9c05e2f7b148
+        summary "context.active が『下部の場が開いているか』だけを意味し、文書の有無の権威は ContextService ただ 1 つである。読み手 0 個の写し uiStore.context.loaded が 0 個 (退役)。『文書は在るが場は閉じている』が正当かつ既定の状態として存在する"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption LoadedMirrorRetirementIsPlanned
+            uuid 2f8b47d0-6c13-4e97-a5d8-83b1e0947c6a
+            summary "証拠予定: uiStore.context.loaded の読み手が 0 個であることを構文から確認したうえでフィールドを消し、文書の有無を要する描き手 (ADR-105 の集約) が ContextService 由来の 1 つの投影を読むことを個数で問う。現在の実測は書き手 1 (contextStart のペイロード) / 読み手 0 で、読み手はすべて ContextService.loaded という別の権威を見ている (ContextController.js:699/794/959, GraspController.js:174)。反証されうるのは『ADR-105 の集約を配線する過程で store 側の投影が必要になる』ことで、その場合 loaded は消えるのではなく ContextService から導出される単一の投影へ置き換わる — どちらでも権威が 1 つになることが要点で、フィールドの生死は結論ではない"
+            artifacts
+            - "src/store/uiStore.js"
+
+        goal BottomEdgeHasOneOwner
+        uuid 9b41e2a7-3d56-4c81-b70f-4a8e7c19d052
+        summary "下端の占有オフセットを計算する箇所が 1 個である (原則 #26)。下端には既に InfoBar (bottom:0)・LINK NETWORK (bottom:34px left:188px)・Toast (bottom:96px) が住んでおり、場が開けば必ず干渉する。右端で起きた『ずらす / 消す / 被せる』を下端で再演しない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption BottomEdgeOwnerIsPlanned
+            uuid 7c3a90d8-1b64-4e25-9f07-6d28b3e5a417
+            summary "証拠予定: 下端の占有計算の所有者を 1 つ置き、呼び出し箇所ごとのパッチが 0 個であることを個数で問う (右端の _updateGizmoOffset() と同じ役割・同じ検査の形)。順序が重要で、この所有者は場を下部へ移す前に置く — 後から置くと、その時点で既に書かれたパッチを剥がす作業になり、剥がし残しが緑を出す。反証されうるのは『場は開いている間だけ下端を占有する transient なので、常設の占有計算に参加すべきでない』という指摘で、その場合でも LINK NETWORK は常設なので所有者は要り、場は所有者に対する一時的な入力になる (Toast の bottom:96px が今その形で書かれているかは実装時に確認する — 書かれていなければそれ自体がパッチ 1 個目)"
+            artifacts
+            - "docs/LAYOUT_DESIGN.md"
