@@ -6,6 +6,7 @@ import { tierAMotion, lockedStyle, enterMotion } from '../../view/ChromeMath.js'
 import { gateUndo, gateRedo } from '../../view/ChromeGates.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
+import { DiscoveryCounters } from '../Chrome/DiscoveryCounters.jsx'
 
 // ── SVG icon constants (matching ICONS in UIView.js) ──────────────────────
 const SVG_UNDO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>`
@@ -77,6 +78,11 @@ function MobileHeaderContents() {
       <ModeDropdown />
       {/* Invisible flex:1 spacer — keeps ⋯ and N right-aligned (matching UIView's visibility:hidden pattern) */}
       <div style={{ flex: '1', visibility: 'hidden' }} />
+      {/* Compact on mobile: glyphs + numbers, no words. Present on BOTH layouts —
+          "the small screen can skip it" would make the circular dependency
+          ADR-105 closed come back for exactly the users with the least room to
+          go looking (ADR-105 D1). */}
+      <DiscoveryCounters compact />
       <MoreMenu />
       <IconBtn svg={SVG_NPANEL} label="Toggle properties panel" onClick={() => callbacks.onNPanelToggle?.()} />
     </>
@@ -110,6 +116,11 @@ function DesktopHeaderContents() {
       <SmallBtn onClick={() => callbacks.onOpenHome?.()} title="Open the layout gallery (Home)" icon={SVG_LAYOUTS}>Layouts</SmallBtn>
       <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
       <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
+      {/* The discovery aggregate is PERMANENT chrome (ADR-105 D1) — it must be
+          readable without opening the floor, because its whole job is to tell you
+          whether the floor needs opening. It sits next to Context ▾ (the floor's
+          entrance) so the reading and the door are one glance apart. */}
+      <DiscoveryCounters />
       <ContextDropdown />
     </>
   )

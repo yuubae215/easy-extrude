@@ -19,19 +19,15 @@ const ALPHA = { settled: 'rgba(34,197,94,0.15)', pending: 'rgba(217,178,60,0.06)
  * AgendaPanel — the floor: who holds which key, what is on the table, and what
  * the record says (ADR-104 D1 / D3 / D4 / D5).
  *
- * Three parts, in the order the questions arise:
+ * Two parts, in the order the questions arise. (The three counters were a third
+ * part until ADR-105 moved them to the header — see the note above `STATE_STYLE`.)
  *
  *   1. **Keyring** — which actors you may write as. A row of toggles, not a
  *      selector: holding two keys is one person covering two roles, and a
  *      selector would force a switch, which is a mode (ADR-104 D1). Zero keys
  *      is a legitimate, displayed state — everything owned becomes propose-only
  *      rather than either "all editable" or "nothing editable".
- *   2. **Counters** — `≈ conflicts` (derived, volatile) / `⚑ agenda` (on the
- *      floor) / `◇ unowned` (undeclared). Deliberately three numbers and never a
- *      sum: an ignored conflict stays unresolved while an ignored proposal just
- *      leaves the current value standing, so adding them would mislead whichever
- *      way the reader guessed. **Zero is printed, not hidden** (PHILOSOPHY #15).
- *   3. **Rows** — tabled conflicts ∪ live proposals, each with the action its
+ *   2. **Rows** — tabled conflicts ∪ live proposals, each with the action its
  *      kind allows. A disabled action always carries its reason, because the
  *      reason and the flag come back from the same predicate call
  *      (`onAgendaGuards` → `approvalGuards` / `settlementGuards`) — never from a
@@ -47,27 +43,13 @@ const STATE_STYLE = {
   [AGENDA_STATE.CLOSED_UNDECIDED]: { label: 'undecided',    color: TONE.muted },
 }
 
-const COUNTER_META = [
-  { key: 'conflicts', glyph: '≈', label: 'conflicts', hint: 'Derived from the document every time it is validated — never stored. Ignoring one does not make it go away.' },
-  { key: 'agenda',    glyph: '⚑', label: 'on the floor', hint: 'Tabled conflicts plus live proposals. Ignoring a proposal simply leaves the current value standing.' },
-  { key: 'unowned',   glyph: '◇', label: 'unowned', hint: 'Claims nobody has declared an owner for. Until someone does, changing them can only be proposed.' },
-]
-
-function Counters({ counters }) {
-  return (
-    <div style={{ display: 'flex', gap: '10px', padding: '6px 10px', borderBottom: `1px solid ${TONE.border}` }}>
-      {COUNTER_META.map(c => (
-        <span key={c.key} title={c.hint} style={{ fontSize: '11px', color: TONE.text, cursor: 'help' }}>
-          <span style={{ color: TONE.muted }}>{c.glyph}</span>{' '}
-          {/* 0 is shown. A counter that disappears when it reaches zero cannot
-              be told apart from a counter nobody wired up (PHILOSOPHY #31). */}
-          <strong style={{ color: counters?.[c.key] > 0 ? TONE.text : TONE.muted }}>{counters?.[c.key] ?? 0}</strong>{' '}
-          <span style={{ color: TONE.muted }}>{c.label}</span>
-        </span>
-      ))}
-    </div>
-  )
-}
+// The three counters used to be drawn HERE, and only here (ADR-104 D4). ADR-105
+// moved them to `Chrome/DiscoveryCounters.jsx`, because this file renders inside
+// `ContextLayer`, which starts with `if (!ctx.active) return null` — the counter
+// that tells you whether to enter the floor did not exist unless you were already
+// standing on it. The floor is the container for *resolution*; the aggregate that
+// says whether resolution is needed is discovery, and discovery is not the floor's
+// (ADR-105 D1 / `02-grouping-criteria.md`).
 
 function Keyring({ actors, keyring, onGrant, onRevoke }) {
   return (
@@ -230,7 +212,6 @@ export function AgendaPanel() {
 
   return (
     <div>
-      <Counters counters={ctx.agendaCounters} />
       <Keyring actors={actors} keyring={keyring} onGrant={grantKey} onRevoke={revokeKey} />
 
       {ctx.proposalDraft && (

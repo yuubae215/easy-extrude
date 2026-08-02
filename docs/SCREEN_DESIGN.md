@@ -941,6 +941,56 @@ reduction boundary stays in `src/theme/motion.js`.
 FSM: `uiStore.home` (`null | { status:'open' }`), sole writer `AppController` —
 see `docs/STATE_TRANSITIONS.md` § `home`.
 
+### S-20: 発見の集約 — 常設カウンタと KPI HUD (ADR-105)
+
+**画面ではなく、全画面に常在する 2 つの読み取り。** ADR-105 以前、この 2 つは
+`ContextLayer` の中 (S-17) にしか存在せず、そこは `if (!ctx.active) return null` の
+内側だった — **場に入る必要があるかを教えるものが、場に入らないと存在しなかった**。
+本節が定義するのは、その循環を切ったあとの常設要素である。
+
+#### [A] Header — 発見カウンタ (`DiscoveryCounters`)
+
+| 状態 (`context.discovery.kind`) | 表示 | クリックの行き先 |
+|---|---|---|
+| `unexamined` | `◌ Unexamined — no context adopted` (mobile: `◌ Unexamined`) | Template Gallery (文書を採る) |
+| `examined` | `≈ n conflicts · ⚑ n on the floor · ◇ n unowned` (mobile: glyph + 数) | 場を開く (negotiate) |
+
+3 数は**合算しない** (ADR-104 D4)。**0 は印字する** — 0 で消えるカウンタは、
+誰も配線していないカウンタと区別がつかない (原則 #31)。文書が無いときに `0 0 0` と
+出さないのが `unexamined` を第一級の枝にした理由で、これが却下案 A との差である。
+
+#### [C] 3D ビュー左上 — 共有 KPI HUD (`SceneChecksHud`)
+
+| 状態 (`context.checksSummary.kind`) | 表示 | 次の一手 |
+|---|---|---|
+| `unexamined` | `◌ Unexamined` | 文書を採る |
+| `none-declared` | `◌ No checks declared` | 検査を宣言する (Intake / Wizard) |
+| `all-pass` | `✓ All pass · n checks` | **無し** (出口を持たない唯一の種) |
+| `failing` | `! Not clear · n failed · n blocked · n/n pass` | 場を開く → Checks |
+
+`✓` を名乗れるのは `all-pass` だけである。検査 0 件で「全部パス」と出すのは嘘であり、
+何も出さないのは原則 #15 (Fixed Slots) 違反 — スロットは常に在り、変わるのは中の文である。
+未検証は**失敗ではない**ので警告色で出さない (起動直後の通常状態 — ADR-089 のホーム画面は
+文書を持たないことが正規)。
+
+占有は `src/view/EdgeOccupancy.js` が計算する (LAYOUT_DESIGN §左端の占有)。
+
+#### [P] N Panel — entity-scope の検証 (`EntityChecks`, ADR-105 D5)
+
+選択された実体の隣に出る「Checks (this entity)」節。可用性の軸は**選択**だけで、
+`ctx.active` も文書の有無も読まない — `置く → 届くか見る → 置き直す` のループは
+場への往復を挟むと閉じないからである。
+
+| 選択 | `◇ Grasp candidates…` | 添えられる文 |
+|---|---|---|
+| ロボットフレーム (`robotRole` が宣言済み) | 有効 — 1 クリックで grasp へ (無フォーム, ADR-085) | — |
+| その他の実体 / リンク / 未選択 | 無効だが**消えない**。理由を運ぶ (原則 #11 / #15) | 「なぜ使えないか」 |
+
+リーチ / 干渉は文書の `acceptance` 由来なので、同じ節で `checksSummary` の 4 種として
+述べる — 「誰も宣言していない」が「問題が無い」に読めないことがこの節の要点である。
+
+---
+
 ---
 
 ## Related Documents

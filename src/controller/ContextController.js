@@ -148,6 +148,14 @@ export class ContextController {
     // edit, undo, and redo uniformly (they all mutate the doc through the service).
     this._ctxService.on('contextChanged', () => this._reproject())
 
+    // The discovery aggregate is wired to the DOCUMENT, not to the overlay
+    // (ADR-105 D1). `_reproject()` above returns early unless the floor is open,
+    // which is exactly why the counters used to vanish outside it — the wiring
+    // that told you whether to go in only ran once you were in. These two edges
+    // are the "one extra wire" ADR-105 named as the cost of an honest zero.
+    this._ctxService.on('contextLoaded',  () => this._refreshDiscovery())
+    this._ctxService.on('contextChanged', () => this._refreshDiscovery())
+
     const { registerCallback } = useUIStore.getState().actions
     registerCallback('onOpenTemplateGallery',    ()           => this.openTemplateGallery())
     registerCallback('onCloseTemplateGallery',   ()           => this.closeTemplateGallery())
@@ -1347,7 +1355,7 @@ export class ContextController {
       // ADR-104 D4: the agenda a person reads is assembled here from tabled
       // conflicts ∪ live proposals, and the three counters ride along. Conflicts
       // themselves are never stored — `result.conflicts` is re-derived output.
-      ui.contextSetAgenda(this._ctxService.projectAgenda(), this._ctxService.agendaCounters())
+      ui.contextSetAgenda(this._ctxService.projectAgenda())
       // Update the form so answered questions disappear immediately (PHILOSOPHY #5).
       // Also refresh actors and variables so IntakePanel dropdowns stay current.
       if (this._mode === 'negotiate') {
@@ -1384,9 +1392,25 @@ export class ContextController {
       // Authoring is where proposals are born (a drag on a claim you do not
       // own), so the agenda has to be live here too — otherwise a proposal
       // would exist with nowhere on screen showing it (PHILOSOPHY #11).
-      useUIStore.getState().actions.contextSetAgenda(
-        this._ctxService.projectAgenda(), this._ctxService.agendaCounters())
+      useUIStore.getState().actions.contextSetAgenda(this._ctxService.projectAgenda())
     }
+  }
+
+  /**
+   * Re-derive the discovery aggregate (ADR-105 D1 / D4).
+   *
+   * **The only writer** of `context.discovery` / `context.checksSummary`. Called
+   * from every path that can change the document — including the ones that never
+   * open the floor (adopt / import / drop), because the aggregate's whole job is
+   * to be readable *without* entering the floor. Before ADR-105 the counters only
+   * existed while `ctx.active`, i.e. the thing telling you whether you need to go
+   * in did not exist unless you had already gone in.
+   */
+  _refreshDiscovery() {
+    useUIStore.getState().actions.contextSetDiscovery(
+      this._ctxService.discoverySummary(),
+      this._ctxService.checksSummary(),
+    )
   }
 
   /** Resync widget regions to the canonical doc (after undo / redo of an edit). */

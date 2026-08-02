@@ -150,6 +150,21 @@ const CENSUS_REGISTRY = [
     why: '作らないと決めた状態語 (stale / expired / reopened)。宣言の向きが逆 '
        + '— 「実在する」= 状態語として存在しないこと' },
 
+  // ── 発見の集約 (ADR-105) ──
+  { file: 'src/DiscoveryOutsideTheFloor.test.js', table: 'AGGREGATE_READS', kind: KIND.SHAPE_CENSUS,
+    why: '「集約を読んでいる」と認める形。src/** 全体を走査して母集団そのものを切り出す '
+       + '— 在る描き手のファイル名リストを持たないための道具' },
+  { file: 'src/DiscoveryOutsideTheFloor.test.js', table: 'FLOOR_GATES', kind: KIND.SHAPE_CENSUS,
+    why: '「場が開いているか」を読む形。母集団との交わりが 0 個であることを src/** 全体で数える' },
+  { file: 'src/DiscoveryOutsideTheFloor.test.js', table: 'AGGREGATE_WRITES', kind: KIND.SHAPE_CENSUS,
+    why: '集約スライスへ代入する形。uiStore の行を走査して書き手が 1 個であることを数える' },
+  { file: 'src/DiscoveryOutsideTheFloor.test.js', table: 'NOT_A_RENDERER', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = 集約を読むファイル。描き手 / 描き手でない に分割し、未分類 0 個と '
+       + '宣言の空回りを両方向に問う (初回実行で uiStore の空回りを実際に検出した)' },
+  { file: 'src/DiscoveryOutsideTheFloor.test.js', table: 'RETIRED_FORMS', kind: KIND.DECLARED_EXCEPTION,
+    why: 'ADR-105 が退役させた形 (agendaCounters スライス / 場に相乗りする集約更新)。'
+       + '退役の腐敗は違反を見逃すのではなく緑を出すので、消したこと自体を逆向きに問う' },
+
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

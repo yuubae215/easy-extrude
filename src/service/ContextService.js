@@ -63,6 +63,7 @@ import {
   findAgendaItem,
   AGENDA_STATE,
 } from '../context/Agenda.js'
+import { discoverySummary, checksSummary } from '../context/DiscoverySummary.js'
 import { declareOwner, undeclaredOwners, editPermission } from '../context/Ownership.js'
 import { keyCardinality, signatureFor } from '../context/Keyring.js'
 import { buildWhyTree, recoverProvenance } from '../context/ProvenanceTree.js'
@@ -452,6 +453,39 @@ export class ContextService extends EventEmitter {
   agendaCounters() {
     return agendaCounters(this._doc ?? {}, this._validatorResult ?? {}, {
       undeclaredOwners: undeclaredOwners(this._doc ?? {}).length,
+    })
+  }
+
+  /**
+   * The discovery aggregate as a `kind`-discriminated union (ADR-105 D2).
+   *
+   * The three counters above answer "how many"; this answers the question that
+   * comes **first** — whether anything was counted at all. The axis is `loaded`
+   * (a document was adopted), never `ctx.active` (the floor is open): closing the
+   * overlay is not a reason for conflicts to stop existing (D4).
+   *
+   * Service glue only — `agendaCounters()` is untouched (ADR-104 D4 got the
+   * contents right; what was missing was an address and a word for "not yet").
+   */
+  discoverySummary() {
+    return discoverySummary({
+      loaded:   this.loaded,
+      counters: this.loaded ? this.agendaCounters() : null,
+    })
+  }
+
+  /**
+   * The shared-KPI aggregate as a `kind`-discriminated union (ADR-105 D3).
+   *
+   * Splits the two honest zeroes that `projectChecks()` returns as the same empty
+   * array: **no checks declared** (the doc never asked) and **all pass** (it asked
+   * and everything held). Printing "✓ all pass" for the former is a lie; printing
+   * nothing is a Fixed-Slots violation (PHILOSOPHY #15).
+   */
+  checksSummary() {
+    return checksSummary({
+      loaded: this.loaded,
+      checks: this.loaded ? this.projectChecks() : null,
     })
   }
 

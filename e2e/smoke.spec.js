@@ -1059,3 +1059,84 @@ test('選択の基数 0·1·N が 1 つの表現で持たれる (ADR-099 §基�
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+// ── ADR-105 Phase 2: 発見を場の外へ ────────────────────────────────────────
+
+test('場に入らずに「未検証」と分かる — 0 件ではなく未検証と書いてある (ADR-105 D2/D3)', async ({ page }) => {
+  // Phase 2 の完了条件の前半。ADR-105 以前、この画面 (文書を採っていない起動直後)
+  // に発見の集約は**存在しなかった** — 唯一の描き手が `if (!ctx.active) return null`
+  // の内側に居たからである。場に入る必要があるかを教えるものが、場に入らないと
+  // 存在しない、という循環がここで切れているかを問う。
+  const errors = await boot(page)
+
+  // ヘッダの集約: 3 つのゼロではなく「未検証」の語。
+  const aggregate = page.getByRole('button', { name: /Unexamined/ })
+  await expect(aggregate).toBeVisible()
+
+  // 3D 左上の KPI HUD も同じ判断を持つ。「✓ 全部パス」は**出ていない** —
+  // 検査していないことと検査して通ったことは別の事実である。
+  const hud = page.getByText('Unexamined', { exact: true })
+  await expect(hud.first()).toBeVisible()
+  await expect(page.getByText('All pass')).toHaveCount(0)
+
+  // 0 は宣言され、出口が名指しされている (原則 #11 / #15)。
+  await expect(page.getByText(/Adopt a context document/)).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('文書を採ると集約は数へ変わり、場を閉じても消えない (ADR-105 D4)', async ({ page }) => {
+  // 書き手が 2 つあったころ、Context を抜けるリデューサがカウンタを {0,0,0} へ
+  // 戻していた。「抜けた」は集約が変わる理由ではない — 抜けても衝突は同じ件数の
+  // ままである。ここは*画面越しに*その 1 点を焼く。
+  const errors = await boot(page)
+  await loadTemplateIntoNegotiate(page)
+
+  // 採ったので「未検証」は消え、3 数が出る。
+  await expect(page.getByRole('button', { name: 'Unexamined — adopt a context document' })).toHaveCount(0)
+  const counted = page.getByRole('button', { name: 'Open the floor' })
+  await expect(counted).toBeVisible()
+  const whileOpen = (await counted.textContent()).trim()
+
+  // 場を閉じる (ContextLayer ヘッダの ✕ = onContextExit)。集約は残る。
+  await page.getByRole('button', { name: '✕' }).click()
+  await expect(page.getByRole('button', { name: 'Matrix' })).toHaveCount(0)
+  await expect(counted).toBeVisible()
+  expect((await counted.textContent()).trim(),
+    '場を閉じたら集約が変わった — UI のライフサイクルが導出値を書いている (原則 #4/#24)')
+    .toBe(whileOpen)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('Robot を選ぶと N パネルから grasp へ 1 クリックで届く (ADR-105 D5)', async ({ page }) => {
+  // Phase 2 完了条件の後半。文書を 1 つも採らずに、選択だけを軸に entity-scope の
+  // 検証へ入れること — `置く → 届くか見る → 置き直す` のループが場への往復なしで
+  // 閉じるか。ADR-085 が既に無フォームの入口を作ってあるので、これは新機能では
+  // なく**入口の付け替え**である。
+  const errors = await boot(page)
+
+  await selectRow(page, 'robot_base')
+  await page.keyboard.press('n')          // N パネルを開く (デスクトップの入口)
+  const grasp = page.getByRole('button', { name: /Grasp candidates/ })
+  await expect(grasp).toBeVisible()
+  await grasp.click()
+
+  // 1 クリックで grasp のタブまで到達する (starter は自動で採られる — ADR-085)。
+  await expect(page.getByRole('button', { name: 'Grasp', exact: true })).toBeVisible({ timeout: 30_000 })
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('ロボットでない実体では grasp の入口が理由つきで閉じている (原則 #11)', async ({ page }) => {
+  // 無言の no-op を作らないこと。使えない入口は「消える」のではなく、
+  // *その位置に残ったまま*理由を運ぶ (原則 #15 — Fixed Slots)。
+  const errors = await boot(page)
+
+  await selectRow(page, 'Cube')
+  await page.keyboard.press('n')
+  await expect(page.getByRole('button', { name: /Grasp candidates/ })).toBeVisible()
+  await expect(page.getByText(/select a robot frame/i)).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

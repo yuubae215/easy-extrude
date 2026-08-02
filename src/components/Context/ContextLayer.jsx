@@ -74,9 +74,14 @@ export function ContextLayer() {
       // reason to remove the tab (PHILOSOPHY #15).
       { id: 'agenda',    label: 'Floor' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
-      // Acceptance verdicts + measurement feedback (ADR-062 Phase 4) — only
-      // when the doc declares checks (no empty tab for authoring-stage docs).
-      ...(ctx.checks?.length > 0 ? [{ id: 'checks', label: 'Checks' }] : []),
+      // Acceptance verdicts + measurement feedback (ADR-062 Phase 4). The tab
+      // used to appear only when `ctx.checks?.length > 0`, which made the most
+      // widely shared fact in the app the most document-bound thing on screen:
+      // a doc that declared no checks looked exactly like a doc whose checks all
+      // passed. Now the slot is fixed (PHILOSOPHY #15) and ChecksPanel states the
+      // empty case in words; the scene-scope aggregate lives outside the floor
+      // entirely, in `SceneChecksHud` (ADR-105 D3 / 力学 4).
+      { id: 'checks', label: 'Checks' },
       { id: 'why',       label: 'Why' },
       { id: 'tree',      label: 'Overview' },
       // Guided intake (ADR-063 Phase 3) sits beside the expert Intake tab —
