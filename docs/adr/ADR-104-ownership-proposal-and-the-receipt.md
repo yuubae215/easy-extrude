@@ -239,5 +239,6 @@ Phase 3 (場を下部へ) が未着手のため、提案・議題の表示は既
 - ADR-050 (Context-first 交渉オーバーレイ) / ADR-049 (要求衝突モデル) / ADR-052 (Why 来歴)
 - ADR-056 / ADR-077 (decide / propose の動詞境界) / ADR-090 (基数の明示状態化)
 - ADR-100 (宣言外を ratchet で数える) / ADR-065 (disabled-as-quest) / ADR-103 (Map の再分類)
+- ADR-105 (D4 の 3 カウンタに住所を与え、文書 0 件のときの「未検証」を第一級の値にする)
 - `docs/ia-redesign/easy-extrude-wireframe-v8.html` (この判断の設計根拠と代表状態)
 - `docs/ia-redesign/02-grouping-criteria.md` (住所の物差しの導出と、却下した物差し)

@@ -116,6 +116,7 @@ This directory records the project's design decisions.
 | [ADR-102](ADR-102-census-tables-need-a-denominator.md) | **列挙表は母集団を持つ — 「場所を並べた表」を廃し、覆うべき集合をコードから導出する (原則 #31 の自己適用)** | Accepted (実装済み — 表の 4 種型付けと `place-list` の語彙からの排除、pose 決定の呼び出し閉包を母集団へ、`SUPPORT_SURFACE_BY_KIND` の宣言化、`COLOR.accent` 消費者の分割、登録簿 `CENSUS_REGISTRY` の自己登録、走査道具の `src/census/` 一本化) | 2026-07-30 | ADR-098, ADR-101, ADR-097, ADR-100, ADR-099, ADR-096, ADR-090, ADR-093 |
 | [ADR-103](ADR-103-map-is-a-viewpoint-not-a-mode.md) | **Map はモードではなく視点 — 台帳の負債 #1 を「禁止」ではなく「再分類」で閉じる** | Accepted (実装済み — `SceneView.setProjection()` 単一書き手 + 毎フレーム導出の ortho、`PlaceToolController` への再分類、Map ボタン/ツールバー/pinch/pan/wheel の撤去、`DS_PENDING`・`setFogSuspended` の退役、退役形と投影書き手の個数検査) | 2026-08-02 | ADR-031, ADR-073, ADR-093, ADR-068, ADR-008, ADR-104 |
 | [ADR-104](ADR-104-ownership-proposal-and-the-receipt.md) | **編集の住所は所有権で決まり、記録は人の行為から始まる — 所有権・提案・証憑モデル** | Accepted (実装済み — 鍵の集合 `Keyring` / 実体ごとの `owner` と 2 種の 0 / 権限 3 状態 `EDIT_PERMISSION` / 提案・議題の遷移表と guard / 承認 = 主張更新 + 証憑追記の 1 コマンド / context/0.5 加算 (`proposals[]`・`agenda[]`) / R10・R11 / 全 9 通りの権限事例と退役語彙の個数検査) | 2026-08-02 | ADR-050, ADR-049, ADR-052, ADR-056, ADR-077, ADR-090, ADR-100, ADR-065, ADR-103 |
+| [ADR-105](ADR-105-unexamined-is-not-clear.md) | **「検証されていない」は「問題が無い」ではない — 発見の集約を場の外へ出す** | Proposed (IA 再設計 Phase 2) | 2026-08-02 | ADR-104, ADR-103, ADR-090, ADR-085, ADR-060, ADR-050, ADR-102 |
 
 ## How to Add a New ADR
 
