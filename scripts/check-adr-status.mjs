@@ -19,6 +19,7 @@
  *   - **ADR-091 以降**は、状態・基数の語彙を持つ ADR が `STATE_LEDGER.md` を
  *     参照していること (既存 90 本は遡及適用しない — 遡及は大量修正になり、
  *     ガードの導入自体が止まるため。前向きにだけ効かせる)。
+ *   - **段を持たない IA 再設計 ADR が 0 本**であること (下の PHASED_PLANS 参照)。
  *
  * 使い方: pnpm test:adr   (CI の gate ジョブからも実行)
  */
@@ -63,6 +64,43 @@ function statusValue(line) {
 
 /** 状態・基数の語彙 (ADR-091 以降に台帳参照を求める判定用)。 */
 const STATE_VOCAB = /状態機械|ステートマシン|\bFSM\b|状態遷移|基数|cardinality|0 台|N 台/
+
+/**
+ * 段階計画を持つ設計群と、その順序表の所在。
+ *
+ * **なぜ必要か (原則 #31 / ADR-102):** ADR は「起票された」だけでは実装されない。
+ * 実装の順序表に段を持たない ADR は「順序の外」ではなく **誰も実装しない ADR** に
+ * なる。実際 ADR-107 は ADR-106 の*帰結*として起票されたのに、順序表にも依存図にも
+ * 現れないまま 1 度 commit された — 起票済み ADR を辿る読み方でも、順序表の段を
+ * 辿る読み方でも、**無い段は出てこない**。数えるべきは在る段ではなく *段が覆えて
+ * いない ADR* である。
+ *
+ * **母集団は導出する。** 手書きの ADR 番号リストは、それ自身が母集団を持たない表に
+ * なる (ADR-102 の `place-list`)。ここでは「順序表と同じディレクトリを参照している
+ * ADR」= その設計群に属する、という構文から導く — 新しい ADR は書いた日から母集団に
+ * 入り、人の記憶が権威でなくなる。
+ *
+ * **限界 (宣言しておく — 推論させない):** 個々の ADR の母集団は導出されるが、
+ * *設計群そのもの*の一覧であるこの配列は手書きである。二つ目の段階計画が別の
+ * ディレクトリに生まれ、ここへ登録されなければこの検査は見ない — ADR-102 が
+ * 名指しした `place-list` の形が一段上に残っている。今日それを導出へ広げない
+ * (段階計画は 1 つしか無く、母集団を導出する規則 = 「順序表とは何か」を先回りで
+ * 定義することになる — §5 過剰モデリング禁止)。二つ目が生まれた日が、
+ * この配列を導出へ差し替えるトリガである。
+ *
+ * この表は `src/CensusCoverage.test.js` の登録簿には載らない。あちらの母集団は
+ * `src/census/sources.js` を引く test ファイルに閉じており (境界はあちらが宣言済み)、
+ * ここは `scripts/` かつ test ではない。境界の外に在ることを、ここで宣言しておく。
+ */
+const PHASED_PLANS = [
+  {
+    /** 順序表の所在 (repo ルートからの相対パス)。 */
+    order: 'docs/ia-redesign/03-implementation-order.md',
+    /** この文字列を参照する ADR が母集団。順序表自身のディレクトリで導出する。 */
+    belongs: 'docs/ia-redesign/',
+    label: 'IA 再設計',
+  },
+]
 
 const errors = []
 const files = readdirSync(ADR_DIR)
@@ -126,6 +164,40 @@ for (const file of files) {
     errors.push(
       `${file}: 状態・基数を扱う ADR なのに docs/STATE_LEDGER.md を参照していない。\n` +
       `    台帳の該当行 (状態集合・基数 0/1/N・権威) を同じ変更で更新し、ADR から名指しすること (核 §1.4)。`
+    )
+  }
+}
+
+// 段を持たない ADR の**個数**を問う (PHASED_PLANS の JSDoc 参照)。
+// 在る段を並べるのではなく、母集団のうち順序表が名指ししていないものを数える。
+for (const plan of PHASED_PLANS) {
+  const orderPath = join(ADR_DIR, '..', '..', plan.order)
+  let order
+  try {
+    order = readFileSync(orderPath, 'utf8')
+  } catch {
+    errors.push(
+      `${plan.order}: 順序表が読めない。PHASED_PLANS が指す先が消えた/移動したなら、` +
+      `検査ごと畳むか行き先を名指しすること (無言で通すと段の欠落が検出できなくなる)。`
+    )
+    continue
+  }
+
+  const members = files.filter(f => readFileSync(join(ADR_DIR, f), 'utf8').includes(plan.belongs))
+  if (members.length === 0) {
+    errors.push(
+      `${plan.order}: 母集団が 0 本。'${plan.belongs}' を参照する ADR が 1 本も無いのは` +
+      `導出の失敗であって、達成ではない (0 は宣言させる — 原則 #31)。`
+    )
+    continue
+  }
+
+  const unphased = members.map(f => f.slice(0, 7)).filter(id => !order.includes(id))
+  if (unphased.length > 0) {
+    errors.push(
+      `${plan.label}: 順序表に段を持たない ADR が ${unphased.length} 本 — ${unphased.join(', ')}\n` +
+      `    ${plan.order} に段 (チェックリスト + 完了条件) を起こし、正本リストと依存図にも載せること。\n` +
+      `    段の無い ADR は「順序の外」ではなく、誰も実装しない ADR になる (原則 #31)。`
     )
   }
 }

@@ -129,3 +129,5 @@ this._canvas.setAttribute('aria-label',
 - ADR-068 (ギズモの eased flight) / ADR-008 (モード遷移の状態機械)
 - ADR-104 (所有権・提案・証憑 — 同じセッションの IA 再設計)
 - `docs/ia-redesign/easy-extrude-wireframe-v3.html` 注釈⑧ (この判断の設計根拠)
+- `docs/ia-redesign/03-implementation-order.md` §Phase 1 (順序と完了条件)
+- `docs/gsn/adr-103-map-is-a-viewpoint-not-a-mode.gsn` (goal ごとの支えの正本 — §1.2 の鎖)

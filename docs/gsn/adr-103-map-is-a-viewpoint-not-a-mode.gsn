@@ -1,0 +1,110 @@
+GOALS adr103_map_is_a_viewpoint_not_a_mode
+
+goal ViewpointIsNotAMode
+uuid 9edad865-ebc4-4599-8aad-339090f6b581
+summary "トップレベルモードの権威が一つになり、しかも『edit のまま歪みのない真上から見る』が失われない。カメラの向き・投影方式・描画ツールはモードと直交する軸として、それぞれ唯一の所有者を持つ"
+state UnderReview
+labels adr-103, mode, projection, retirement, census
+artifacts
+- "docs/adr/ADR-103-map-is-a-viewpoint-not-a-mode.md"
+- "docs/STATE_LEDGER.md"
+
+    context Adr103Scope
+    uuid d70492b2-e49f-4dcd-9e17-1fce9280c3fe
+    summary "ADR-103 (Accepted・実装済み, 2026-08-02): Map をモードから降ろし 3 つに分解して既存の棚へ戻す — 上からの正射カメラは軸ギズモ、投影方式はギズモ直下のトグル、Lynch 5 種の描画ツールは『置く』グループ (PlaceToolController)、Annotated* は通常オブジェクト。ヘッダの Map ボタンと左ツールバー (left:188px) は削除し、pan / wheel / pinch は OrbitControls へ返した。view / controller 層に閉じ、ドメイン・契約・BFF・core は不変"
+    artifacts
+    - "src/view/SceneView.js"
+    - "src/controller/place/PlaceToolController.js"
+
+    context TheLedgerPrescribedForbiddingAndThatWasWrong
+    uuid 28b5907c-98c2-46bc-a550-48d507f12adb
+    summary "運用実態 (この木の前提): 台帳 §既知の負債 1 は『モードの権威が二つある』を自分で書き、処方として『3 値の enum 一つに畳んで不正状態を表現不能にする』を挙げていた。しかし畳むと edit ∧ 真上からの正射も同時に表現不能になる — それは禁じたい事故ではなく、平面配置を編集しながら歪み無く確認する正当な操作である。欠陥は『2 変数が直積であること』ではなく一段上、ビューのパラメータ (向き・投影) をモードとしてモデル化したという論理の誤分類にあった。物理側 (enum) で畳むと誤分類が固定される (核 §0 論理 → 物理の順)"
+    artifacts
+    - "docs/STATE_LEDGER.md"
+
+    context TheCameraEntranceAlreadyExisted
+    uuid ed720c26-5573-4dc2-90d9-293ee444c681
+    summary "分解が『既存の棚へ戻す』で済んだ根拠 (新設が 0 件である理由): 軸ギズモは ADR-068 の時点で eased flight つきの視点スナップを持っていた (GizmoView の aria-label が 'click an axis to snap the camera' と自称している)。Map で描く実体も既に通常オブジェクトで、_updateLinkNetwork は scene.objects 全件を走査して AnnotatedLine / AnnotatedRegion / AnnotatedPoint を同じ関係グラフへ流していた。旧 Map モードは『住所の要る機能』ですらなく既存コントロールの重複だったので、降ろすときに足すものが無い"
+    artifacts
+    - "src/view/GizmoView.js"
+    - "src/controller/AppController.js"
+
+    context OrthoPoseIsDerivedNotStored
+    uuid d0e3e635-6ae6-47a6-8199-0f34ee7e5150
+    summary "この木が成立する範囲 (前提が崩れたら論拠ごと失効する): 正射カメラは状態を持たず、位置・向き・frustum を透視カメラ + controls.target から毎フレーム導出する (_syncOrthoCamera)。逆向きの書き込みが無いので閉路にならない (原則 #24)。この形が成り立つのは『両投影で同じ眼点を使ってよい』間だけで、正射側に独立ズームや保存視点を持たせる要求が立った瞬間に第二の権威が生まれ、投影の書き手が 1 つという主張も導出の無閉路性も同時に崩れる。そのときは別 ADR として起こす"
+    artifacts
+    - "src/view/SceneView.js"
+
+    justification WhyReclassificationBeatsFolding
+    uuid c2f8543f-1842-498f-af03-f44e24e28604
+    summary "台帳自身の処方 (3 値 enum に畳む) を採らない根拠: 畳む案は不正状態 edit ∧ mapMode.active を型で消せるが、同じ操作で正当な組み合わせ edit ∧ 正射も消す。§1.4 の『make illegal states unrepresentable』が求めているのは表現の禁止ではなく、不正なものが表現の対象でなくなることであり、再分類はそれをガード無しで達成する。加えて畳む案は状態を 1 つ残すのに対し、再分類は 5 つ消した (active / frustumSize / pan / pinch / _savedView) — 起票時に『何も足さない』と書いたが、実際には足さないどころか減った"
+
+    justification WhyRetirementIsCountedNotDocumented
+    uuid 4f0df7f9-e99b-4025-87d4-5ace00166c04
+    summary "『消した』を散文ではなく個数で問う根拠: 退役した状態が enum に残る腐敗は違反を*見逃す*のではなく **緑を出す**。この repo には先例があり、DS_PENDING は ADR-073 で廃止された後 3 リリース分 enum に残り続けた (台帳 §既知の負債 3) — 落ちないので誰も気づかない。したがって成果物は文書の行ではなく検査であり (原則 #19 Q3)、RETIRED_MODE_SHAPES として形を並べ src/** 全体での出現数が 0 であることを数える (ADR-100 の RETIRED_SELECTION_COLORS と同形)。同時に『Map モードを復活させる最小抵抗経路』も塞がる"
+
+    justification WhyTheToolStateStays
+    uuid f03b2320-034e-4b10-b772-7d58542f1aca
+    summary "MapModeController.state.drawState (idle / drawing) を消さない根拠: 描画ジェスチャの最中かどうかはカメラともトップレベルモードとも直交し、Sketch 描画と同じ位相にある。降ろす対象は『モードとして誤分類されていた軸』であって、ツールが本来持つ状態ではない。消すと武装中のジェスチャ横取り (RMB と 1 本指ドラッグ) の宣言先が失われ、原則 #14 の所在が散る"
+
+    assumption ToolDoesNotTiltTheCamera
+    uuid d1ab7b2b-f00f-4805-bdfd-801337a896cf
+    summary "反証されうる仮説: Lynch 描画ツールは真上からでないと実質描けないが、ツール選択で視点を自動的に倒さない (ユーザーが自分でギズモを押す) 運用で足りる。倒す実装は裏口から復活したモードになるので、描きにくさより誤分類の再導入を避けることを優先した。反証 = 実測で描画開始までの手数が問題になったら、モードではなく『推奨視点の提示』(倒すのではなく促す) の形で別 ADR に起こす。ADR-103 §未解決 が同じ宣言を明示的に残しており、02-grouping-criteria.md §未決 はこれを決着済みとして記録している"
+
+    assumption ReferencesOutsideSrcAreCountedElsewhere
+    uuid 588162ba-5f3c-4188-815d-412645ea3e20
+    summary "反証されうる仮説: コードの外にある参照 (.gsn の artifact・ADR の References・NAVIGATION の索引) は src/** を走査する census が構造的に見ないが、そこは pnpm test:gsn が数えているので抜けない。実測: MapModeController のリネーム時に RETIRED_MODE_SHAPES も pnpm test も緑のまま CI の gate が落ちた — adr-099 の solution が旧パスを artifact として手書き参照していたためで、問い所は既に在り正しく ERROR を出した (見落としたのは人の側)。反証 = test:gsn が見ない種類のコード外参照 (例: README の相対リンク) が壊れたら、そのとき初めて走査範囲を足す。今日は先回りしない (§5)"
+    artifacts
+    - "docs/gsn/adr-099-selection-round-trip.gsn"
+
+    strategy ByReclassifyingTheAxesAndCountingWhatWasRemoved
+    uuid beac53d0-fd3b-4de6-ae42-0aac9e9fc4bf
+    summary "Argument by 再分類 + 退役の計数 — (1) モードとして誤分類されていた 3 要素を直交する軸へ戻すことで、不正な組み合わせは禁止されるのではなく指す対象を失う。(2) しかし『消えたこと』は誰も問わなければ戻ってくるので、退役した形の個数と投影を書く入口の個数を機械に数えさせる。(3) 静的検査は『トグルを押したとき実際に切り替わるか』を見ないので、そこは e2e が同じ操作を 2 回通す往復で焼く — 1 回だけの証拠は 1 フレーム古い状態を読む欠陥を隠す (ADR-098 → ADR-101 の先例)"
+
+        goal IllegalCombinationHasNoObjectLeft
+        uuid 3b80b87b-e6aa-49e1-a3f4-d8eff30bf7db
+        summary "トップレベルモードが 2 値になり、かつ台帳の処方では失われるはずだった操作が残っている — 正射のまま Edit Mode に入れ、投影トグルはカメラの姿勢を 1 mm も動かさずに往復する。mode / projection / tool の 3 軸が互いに独立であることが、静的な軸の分離と実行時の往復の両方で言える"
+        state UnderReview
+
+            solution ModeAxisCensusIsGreen
+            uuid 7c1f0a4e-6b52-4d71-9f83-2ac5b1e0d6a7
+            summary "node --test src/ProjectionAxisOwnership.test.js — pass (4/4)。うち『トップレベルモードは 2 値 — 投影とツールは別の軸に居る (ADR-103 の完了条件)』が、選択モードの値域と投影・ツールの軸が同じ変数に潰れていないことを構文から問う。母集団は走査範囲そのものなので、新しいファイルは書いた日から入る (ADR-102)"
+            artifacts
+            - "src/ProjectionAxisOwnership.test.js"
+
+            solution OrthoInEditModeIsGreen
+            uuid 5a9e2d31-8c47-4f60-b1d2-3e7c94f8a05b
+            summary "playwright test -g 'ADR-103' — pass (4/4)。『正射のまま Edit Mode に入れる — 旧 Map モードでは表現不能だった組み合わせ』が、台帳の畳む案では失われていた組み合わせを実際に通す。『投影は往復する — 同じ操作を 2 回通して姿勢が戻る』が、往復で姿勢が戻ることを viewState() から読む — 1 回だけの証拠では 1 フレーム古い状態を読む欠陥が隠れる。『二本指ピンチは OrbitControls へ返っている — ツール武装中も』が、pan / pinch を返した先が武装中も奪われないことを焼く"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+        goal RetiredModeShapesAreZero
+        uuid 2f6b8c05-4d19-4e73-a1c8-90db3f7e15c2
+        summary "旧 Map モードの形が src/** のどこにも残っていない — mapMode / MapModeController / useOrthoCamera / setOrthoZoom / panOrthoCamera / showMapToolbar / onMapModeClick / setFogSuspended、および ADR-073 で廃止済みだった DS_PENDING。消したことそのものが個数として問われ、復活は書いた瞬間に赤くなる"
+        state UnderReview
+
+            solution RetiredShapeCensusIsGreen
+            uuid 9d4a17be-3f28-4c05-b6e1-72fc8a90e3d4
+            summary "node --test src/ProjectionAxisOwnership.test.js — pass (4/4)。RETIRED_MODE_SHAPES の 10 形について src/** 全体 (コメント除去後) の出現数が 0 であることを数え、残っていた場合はどの形がどこに在るかを名指しする。DS_PENDING を同じ表に入れてあるのが要点 — 台帳 §既知の負債 3 として 3 リリース分放置された実物を、負債の記述ではなく検査として回収している"
+            artifacts
+            - "src/ProjectionAxisOwnership.test.js"
+            - "docs/STATE_LEDGER.md"
+
+            solution PlaceToolRoundTripIsGreen
+            uuid 4e83b0d7-1c96-4a52-8f30-6bd5197ac0f1
+            summary "playwright test -g 'ADR-103' — pass (4/4)。『place tool: Anchor は + Add から置け、undo で消える (ADR-103 / ADR-073)』が、Lynch 5 種の新しい住所 (+ 追加の Place グループ) から実際に置けること、置いたものが通常オブジェクトとしてコマンドスタックに載ること (undo で消える) を焼く。退役形が 0 個であることだけでは『消えたが着いていない』が通ってしまう — 移設の証拠は消えたことではなく着いたことである (原則 #11 / #16)"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+        goal ProjectionHasExactlyOneWriter
+        uuid 8b25f3ca-70d4-4e19-b3f6-05c1a7e9d283
+        summary "投影軸を書く入口が SceneView.setProjection() ちょうど 1 つ。呼び出し側が _projection を直接書いたり ortho カメラを自前で作ったりする経路が 0 個で、未宣言の値は throw する (既定値で埋めない)"
+        state UnderReview
+
+            solution ProjectionWriterCensusIsGreen
+            uuid 1a7f49e2-5b83-4c07-92d1-c6e0b4d5083f
+            summary "node --test src/ProjectionAxisOwnership.test.js — pass (4/4)。PROJECTION_WRITE_RULES が投影軸に触れる形を並べ、SceneView 以外のファイルでの出現数が 0 であることを数える (原則 #4 / §1.1)。UI 側 uiStore.projection は表示用の写しで、書き手は同じ 1 経路であることを台帳の投影方式行が宣言している。0 が正当な軸ではないこと (『投影なし』は描画できない = 基数は常に 1) も同じ行が宣言する — 未宣言の値で throw するのはそのため (原則 #31)"
+            artifacts
+            - "src/ProjectionAxisOwnership.test.js"
+            - "src/view/SceneView.js"
+            - "docs/STATE_LEDGER.md"

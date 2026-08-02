@@ -249,4 +249,6 @@ goal は `support-exploring` として決着条件を `assumption` で名指し�
 - ADR-096 / ADR-097 / ADR-102 (種ごとの宣言表 — 未宣言の種で throw する先例)
 - `docs/ia-redesign/02-grouping-criteria.md` §未決 (この項目の出所)
 - `docs/ia-redesign/easy-extrude-wireframe-v8.html` 注釈②⑤ (決定そのもの — 住所の正本)
+- `docs/ia-redesign/03-implementation-order.md` §Phase 3.5 (順序と完了条件 —
+  Phase 3 と同じ PR か直後の PR という制約もそこが正本)
 - `docs/gsn/adr-107-selection-has-two-kinds.gsn` (goal ごとの支えの正本)
