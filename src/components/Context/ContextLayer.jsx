@@ -1,25 +1,23 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from '../ContextDemo/ConflictMatrix.jsx'
 import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.jsx'
-import { ChecksPanel } from './ChecksPanel.jsx'
 import { FormPanel } from './FormPanel.jsx'
-import { IntakePanel } from './IntakePanel.jsx'
 import { AgendaPanel } from './AgendaPanel.jsx'
-import { WizardPanel } from './WizardPanel.jsx'
-import { ParametricAssetPanel } from './ParametricAssetPanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
 import { WhyTreeView } from './WhyTreeView.jsx'
-import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 import { FeedbackDefs, DeltaChip, LandingFlash, usePrevOnChange } from '../Feedback/FeedbackPrimitives.jsx'
 import { CelebrationDefs, ContextCelebration } from '../Feedback/Celebration.jsx'
 import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
+import { FLOOR_TAB, FLOOR_TABS } from '../../view/FloorTabs.js'
+import { BOTTOM_TIER, bottomEdgeOffset, floorHeight } from '../../view/EdgeOccupancy.js'
 
 /**
- * ContextLayer — production Context-first overlay (ADR-050).
+ * ContextLayer — the floor: where claims are settled, and where the record of
+ * settling them lives (ADR-050, re-addressed by ADR-106).
  *
  * Reads the persistent `context` slice (driven by ContextController over the
  * canonical document owned by ContextService), in contrast to ContextDemoLayer
- * which reads the transient tutorial `demo` slice. The overlay has three modes
+ * which reads the transient tutorial `demo` slice. The floor has three modes
  * (ADR-050 §4.3 / §6):
  *   - `negotiate` (Phase 2) — conflict matrix + resolution order; approval is
  *     undoable (`onApproveContextDecision` → createApproveDecisionCommand).
@@ -28,10 +26,33 @@ import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
  *   - `ghost` (Phase 3) — actor-coloured footprint ghosts in 3-D; this panel shows
  *     the conflict matrix whose actor-column persona filter dims the ghosts.
  *
- * Data-only overlay with no persistent edge-panel footprint, so full-width on
- * mobile is allowed (a transient overlay, not a persistent edge panel — PHILOSOPHY
- * #26). The Matrix / Cluster presentational components are shared with the demo
- * (prop-driven, ADR-050 §4.4).
+ * ## Why it is at the bottom (ADR-106 D1)
+ *
+ * The container used to be a 280px strip on the right edge, and its contents are
+ * an `actor × variable` **table** — a wide thing in the narrowest possible frame.
+ * The tabs were the visible symptom (`w_tab = 280/n − 4`; at n=10 that is 24px and
+ * the word "Overview" needs ~45), but widening the strip would only have bought
+ * time: the mismatch is between the container's shape and its contents' shape.
+ *
+ * The strip also had two other residents on the same edge (the N panel and the
+ * tutorial Inspector), and the collision was being worked around in three mutually
+ * unaware ways — shift, delete, and cover. The third is why opening the floor used
+ * to hide the world gizmo and the projection toggle. Moving the address deletes
+ * the reason all three were written (ADR-106 D2).
+ *
+ * It does **not** cover the 3-D view: `d_ref` is a spatial quantity, and a
+ * negotiation whose subject is hidden is the failure this move exists to fix. The
+ * bottom edge is a shared resource too, so the occupancy is computed by ONE owner
+ * (`view/EdgeOccupancy.js`, 原則 #26 / D6) — the InfoBar keeps its position and
+ * height, and everything else at that edge steps up rather than being deleted.
+ *
+ * ## What is in it, and what is not (ADR-106 D3)
+ *
+ * Two duties only: **resolution** (owners are plural — agreement is required) and
+ * **its record**. Discovery (Checks / Grasp) and input (Assets / Wizard / Intake)
+ * moved out to addresses named in `view/FloorTabs.js`; they were here because of
+ * history, not design. The Matrix / Cluster presentational components are shared
+ * with the demo (prop-driven, ADR-050 §4.4).
  */
 
 const TITLE = {
@@ -63,50 +84,32 @@ export function ContextLayer() {
 
   const isMobile = window.innerWidth < 768
   const liveConflicts = liveConflictRefs.length
-  // negotiate shows matrix + cluster + questions (if any open); ghost shows matrix
-  // only (read-only persona filter); author has no matrix — only the conflict list.
+  // negotiate shows the resolution + record tabs (Questions only when the doc has
+  // open ones); ghost shows matrix only (read-only persona filter); author has no
+  // tabs at all — the 3-D widgets do the editing and the panel is a readout.
   const tabs =
-    ctx.mode === 'negotiate' ? [
-      { id: 'matrix',    label: 'Matrix' },
-      { id: 'cluster',   label: 'Cluster' },
-      // The floor (ADR-104): keys held, what is on the table, what the record
-      // says. Always present — an empty floor is a result worth stating, not a
-      // reason to remove the tab (PHILOSOPHY #15).
-      { id: 'agenda',    label: 'Floor' },
-      ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
-      // Acceptance verdicts + measurement feedback (ADR-062 Phase 4). The tab
-      // used to appear only when `ctx.checks?.length > 0`, which made the most
-      // widely shared fact in the app the most document-bound thing on screen:
-      // a doc that declared no checks looked exactly like a doc whose checks all
-      // passed. Now the slot is fixed (PHILOSOPHY #15) and ChecksPanel states the
-      // empty case in words; the scene-scope aggregate lives outside the floor
-      // entirely, in `SceneChecksHud` (ADR-105 D3 / 力学 4).
-      { id: 'checks', label: 'Checks' },
-      { id: 'why',       label: 'Why' },
-      { id: 'tree',      label: 'Overview' },
-      // Guided intake (ADR-063 Phase 3) sits beside the expert Intake tab —
-      // progressive disclosure: wizard ⊃ assisted forms ⊃ expert forms.
-      { id: 'wizard',    label: 'Wizard' },
-      // Parametric 3-D assets (ADR-063 Phase 4) — shape sliders, commit numbers.
-      { id: 'assets',    label: 'Assets' },
-      { id: 'intake',    label: 'Intake' },
-      // Grasp tab appears once seeded (a renderable layout exists — ADR-057 §B).
-      ...(ctx.grasp ? [{ id: 'grasp', label: 'Grasp' }] : []),
-    ]
-    : ctx.mode === 'ghost' ? [{ id: 'matrix', label: 'Matrix' }]
+    ctx.mode === 'negotiate'
+      ? FLOOR_TABS.filter(t => t.when !== 'hasForm' || ctx.form?.length > 0)
+    : ctx.mode === 'ghost' ? FLOOR_TABS.filter(t => t.id === FLOOR_TAB.MATRIX)
     : []
 
   return (
     <div style={{
       position:   'fixed',
-      top:        '40px',
-      bottom:     '26px',
-      ...(isMobile
-        ? { left: '0', right: '0', width: 'auto' }
-        : { right: '0', width: '280px' }),
+      // 下部の展開パネル (ADR-106 D1)。3D を覆わず、常設しない。
+      // 下端の占有量は EdgeOccupancy ただ 1 箇所が計算する (原則 #26 / D6) —
+      // InfoBar は位置も高さも変えず、場はその上に開く (原則 #15 Fixed Slots)。
+      left:       '0',
+      right:      '0',
+      bottom:     `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.FLOOR })}px`,
+      height:     `${floorHeight({ isMobile })}px`,
       background: 'rgba(30, 30, 30, 0.96)',
-      borderLeft: '1px solid #3a3a3a',
-      zIndex:     100,
+      borderTop:  '1px solid #3a3a3a',
+      // Below the edge docks (Outliner / N panel, z:90 → they keep their own
+      // width and step up instead of being covered) and below the gizmo tier,
+      // because covering the subject of the negotiation is the defect this move
+      // exists to remove. It used to be z:100 over everything at the right edge.
+      zIndex:     85,
       display:    'flex',
       flexDirection: 'column',
       fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -145,20 +148,23 @@ export function ContextLayer() {
           {tabs.map(tab => {
             const active = ctx.inspectorTab === tab.id
             const badge =
-              tab.id === 'matrix'    ? (ctx.conflictMatrix ? Object.values(ctx.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
-              tab.id === 'cluster'   ? (ctx.resolutionOrder?.filter(s => !s.approved).length ?? 0) :
-              tab.id === 'questions' ? (ctx.form?.length ?? 0) :
-              tab.id === 'checks'    ? (ctx.checks?.filter(c => c.status !== 'pass').length ?? 0) :
-              tab.id === 'why'       ? (ctx.provenance?.gaps?.filter(g => !g.resolved).length ?? 0) : 0
+              tab.id === FLOOR_TAB.MATRIX    ? (ctx.conflictMatrix ? Object.values(ctx.conflictMatrix.variableSummary).filter(s => s.inConflict && !s.approved).length : 0) :
+              tab.id === FLOOR_TAB.CLUSTER   ? (ctx.resolutionOrder?.filter(s => !s.approved).length ?? 0) :
+              tab.id === FLOOR_TAB.QUESTIONS ? (ctx.form?.length ?? 0) :
+              tab.id === FLOOR_TAB.AGENDA    ? (ctx.agendaRows?.filter(r => !r.settled).length ?? 0) :
+              tab.id === FLOOR_TAB.WHY       ? (ctx.provenance?.gaps?.filter(g => !g.resolved).length ?? 0) : 0
             return (
               <button
                 key={tab.id}
                 onClick={() => setTab(tab.id)}
                 style={{
-                  flex: 1, padding: '6px 2px', background: 'transparent', border: 'none',
+                  // No `flex: 1`. The tab row does not have to divide a fixed
+                  // 280px any more, so labels get the width they need — the
+                  // container's shape is the fix, not a smaller font (D1).
+                  padding: '6px 14px', background: 'transparent', border: 'none',
                   borderBottom: active ? '2px solid #3a7bd5' : '2px solid transparent',
-                  color: active ? '#5a9bf5' : '#999', cursor: 'pointer', fontSize: '10px',
-                  fontFamily: 'inherit',
+                  color: active ? '#5a9bf5' : '#999', cursor: 'pointer', fontSize: '11px',
+                  fontFamily: 'inherit', whiteSpace: 'nowrap',
                 }}
               >
                 {tab.label}
@@ -189,16 +195,16 @@ export function ContextLayer() {
             just created would have nowhere to appear (PHILOSOPHY #11). */}
         {ctx.mode === 'author' && <><AuthorConflicts conflicts={ctx.conflicts} /><AgendaPanel /></>}
 
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'agenda' && <AgendaPanel />}
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === FLOOR_TAB.AGENDA && <AgendaPanel />}
 
-        {(ctx.mode === 'negotiate' || ctx.mode === 'ghost') && ctx.inspectorTab === 'matrix' && (
+        {(ctx.mode === 'negotiate' || ctx.mode === 'ghost') && ctx.inspectorTab === FLOOR_TAB.MATRIX && (
           <ConflictMatrix
             matrix={ctx.conflictMatrix}
             filter={ctx.personaFilter}
             onSetFilter={setFilter}
           />
         )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'cluster' && (
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === FLOOR_TAB.CLUSTER && (
           <NegotiationClusterView
             order={ctx.resolutionOrder}
             clusters={ctx.negotiationClusters}
@@ -206,29 +212,14 @@ export function ContextLayer() {
             onApprove={ref => callbacks.onApproveContextDecision?.(ref)}
           />
         )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'questions' && (
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === FLOOR_TAB.QUESTIONS && (
           <FormPanel />
         )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'checks' && (
-          <ChecksPanel />
-        )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'why' && (
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === FLOOR_TAB.WHY && (
           <WhyBreadcrumb />
         )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'tree' && (
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === FLOOR_TAB.TREE && (
           <WhyTreeView />
-        )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'wizard' && (
-          <WizardPanel />
-        )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'assets' && (
-          <ParametricAssetPanel />
-        )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'intake' && (
-          <IntakePanel />
-        )}
-        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'grasp' && (
-          <GraspSearchPanel />
         )}
       </div>
     </div>

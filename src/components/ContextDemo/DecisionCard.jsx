@@ -31,7 +31,10 @@ export function DecisionCard() {
   return (
     <div style={{
       position:     'fixed',
-      right:        isMobile ? '12px' : '292px',   // left of the 280px inspector
+      // The 280px right-edge slot it used to dodge is retired (ADR-106 D2): the
+      // Inspector is at the bottom now, so the card sits on the edge like any
+      // other transient card.
+      right:        '12px',
       // Top-anchored: bottom placements either intercepted the StoryBar's ✕
       // or covered the workbench position — the ghost-collapse animation (the
       // demo's centerpiece) must stay visible while the card is on screen.

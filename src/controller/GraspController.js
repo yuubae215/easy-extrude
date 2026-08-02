@@ -154,13 +154,19 @@ export class GraspController {
     this.refreshRobots()
   }
 
-  // ── Entry: select the grasp tab inside the negotiate overlay (ADR-057 §B) ─────
+  // ── Entry: the grasp panel, beside the robot it is about (ADR-105 D5 / ADR-106 D3) ──
 
   /**
-   * Open the grasp panel: ensure the negotiate overlay is active (the grasp tab's
-   * host) and select the `'grasp'` tab. Guarded on a renderable layout — a blank /
-   * requirements-only doc has none, so we guide the user instead of seeding a tab
-   * that can never Run (PHILOSOPHY #11).
+   * Open the grasp panel. Guarded on a renderable layout — a blank /
+   * requirements-only doc has none, so we guide the user instead of seeding a
+   * panel that can never Run (PHILOSOPHY #11).
+   *
+   * **No longer opens the floor first (ADR-106 D3).** The panel used to be the
+   * `'grasp'` tab of the negotiation overlay, so reaching it meant entering a
+   * negotiation — "can this robot pick this up" is a question with ONE owner
+   * (the solver answers it) routed through the room built for questions with
+   * several. It lives in the N panel now, next to the selected robot, which is
+   * what closes the `place → see if it reaches → place again` loop.
    *
    * Fast entry (no forms): when NO context is loaded yet, rather than dead-ending
    * with "go build one through New Project", auto-load a robot-cell starter and
@@ -169,17 +175,11 @@ export class GraspController {
    * old multi-form detour into a single click.
    */
   openGrasp() {
-    const ctxCtrl = this._ctrl._ctxCtrl
-    if (!ctxCtrl.isNegotiation) {
-      if (!this._ctrl._ctxService.loaded) {
-        this._quickStartIntoGrasp()
-        return
-      }
-      ctxCtrl.enterNegotiation()
-      if (!ctxCtrl.isNegotiation) return   // enter was itself guarded out
+    if (!this._ctrl._ctxService.loaded) {
+      this._quickStartIntoGrasp()
+      return
     }
-
-    this._openGraspTab()
+    this._openGraspPanel()
   }
 
   /**
@@ -199,15 +199,15 @@ export class GraspController {
     }
     this._ctrl._uiView.showToast('Loading a robot-cell starter for grasp-search…', { type: 'info' })
     Promise.resolve(ctxCtrl.quickStartExample(GRASP_QUICKSTART_TEMPLATE_ID))
-      .then(ok => { if (ok) this._openGraspTab() })
+      .then(ok => { if (ok) this._openGraspPanel() })
   }
 
   /**
    * Shared tail: guard on a renderable layout, then seed the idle FSM slice and
-   * select the grasp tab. Reached both directly (a context already loaded) and
-   * after the quick-start example finishes loading.
+   * surface the N panel that hosts it. Reached both directly (a context already
+   * loaded) and after the quick-start example finishes loading.
    */
-  _openGraspTab() {
+  _openGraspPanel() {
     const layout = this._layoutMeta()
     if (!layout) {
       this._ctrl._uiView.showToast(
@@ -221,7 +221,11 @@ export class GraspController {
     this.refreshRobots() // the panel's selector reads a fresh roster on open
     const ui = this._store.getState().actions
     ui.contextSetGrasp({ status: 'idle', layout })
-    ui.contextSetTab('grasp')
+    // The seeded slice IS the panel's availability (NPanel renders it while
+    // `context.grasp` is non-null), so the only thing left is to make sure the
+    // host panel is on screen — an entrance that lands nowhere visible is a
+    // silent no-op (原則 #11).
+    ui.setNPanelVisible(true)
   }
 
   // ── Run: declare → compile (round-trip verify) → solve (BFF delegates) ────────

@@ -165,6 +165,20 @@ const CENSUS_REGISTRY = [
     why: 'ADR-105 が退役させた形 (agendaCounters スライス / 場に相乗りする集約更新)。'
        + '退役の腐敗は違反を見逃すのではなく緑を出すので、消したこと自体を逆向きに問う' },
 
+  // ── 器と画面端 (ADR-106) ──
+  { file: 'src/FloorContainerCensus.test.js', table: 'RETIRED_FLOOR_SHAPES', kind: KIND.SHAPE_CENSUS,
+    why: '退役した器の形 (右端 280px のシフト / 280 項 / context.loaded の写し / 退役タブ 5 値)。'
+       + 'src/** 全体での出現数が 0 であることを数える — 退役の腐敗は違反を見逃すのではなく緑を出す' },
+  { file: 'src/FloorContainerCensus.test.js', table: 'EXCLUSION_WRITES', kind: KIND.SHAPE_CENSUS,
+    why: '「他パネルの可視性を書く」形。src/** 全体では正当なので、母集団を場の入口の'
+       + '呼び出し閉包に絞って交わりを 0 個で数える (禁じているのは呼び出しではなく、場がそれを呼ぶこと)' },
+  { file: 'src/FloorContainerCensus.test.js', table: 'RIGHT_EDGE_RESIDENTS', kind: KIND.DERIVED_PARTITION,
+    why: "母集団 = position:'fixed' で right が 0 相当かつ全幅でないスタイルオブジェクト (構文から導出)。"
+       + '在る要素を並べた表 (place-list) にしない — 4 人目の住人が生まれた日に黙って古びる' },
+  { file: 'src/FloorContainerCensus.test.js', table: 'BOTTOM_EDGE_EXEMPT', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = 下端に張り付く fixed 要素。占有計算の所有者を引く側 / 引かない側に分割し、'
+       + '未分類 0 個を問う (初回実行で Toast と TourCard の literal パッチを実際に検出した)' },
+
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

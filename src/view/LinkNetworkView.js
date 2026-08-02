@@ -80,7 +80,7 @@
  */
 import { LINK_TYPE_COLORS, NODE_TYPE_COLORS } from '../theme/semantic.js'
 import { COLOR } from '../theme/tokens.js'
-import { leftEdgeOffset } from './EdgeOccupancy.js'
+import { leftEdgeOffset, bottomEdgeOffset, BOTTOM_TIER } from './EdgeOccupancy.js'
 import {
   computeLayout, layoutSignature, laneX, gutterX,
   PANEL_W, MIN_PANEL_H, LEGEND_H, ROW_H, NODE_R,
@@ -164,8 +164,12 @@ export class LinkNetworkView {
     this._panelEl = document.createElement('div')
     Object.assign(this._panelEl.style, {
       position:        'fixed',
-      bottom:          '8px',
-      left:            '8px',
+      // Both offsets are placeholders until `setEdgeOffsets()` runs — they are
+      // NOT a second computation of the edges' occupancy (原則 #26). Writing a
+      // usable literal here is how a panel ends up correct on first paint and
+      // wrong forever after, so these stay obviously provisional.
+      bottom:          '0',
+      left:            '0',
       width:           `${PANEL_W}px`,
       background:      'rgba(20, 20, 22, 0.93)',
       border:          '1px solid rgba(255,255,255,0.10)',
@@ -366,19 +370,22 @@ export class LinkNetworkView {
   }
 
   /**
-   * Adjusts the panel offsets per viewport.
-   * Bottom: clears the mobile toolbar (60px) + info bar (26px) on mobile, and
-   * the 26px info bar on desktop.
-   * Left: on desktop the Outliner sidebar (180px, z:90, opaque) permanently
-   * occupies the left edge — sit beside it, never behind it. On mobile the
-   * Outliner is a drawer (hidden by default), so the edge itself is free.
-   * @param {boolean} isMobile
+   * Adjusts the panel offsets per viewport and per bottom-edge occupancy.
+   *
+   * Neither offset is a literal here: both edges are shared resources whose
+   * occupancy is computed by `EdgeOccupancy` alone (原則 #26). The left edge got
+   * a second occupant in ADR-105 (the scene-checks HUD); the bottom edge got one
+   * in ADR-106 (the floor). The panel used to be *deleted* when the floor opened
+   * (`setForceHidden(true)` from `ContextController`) — that was one of the three
+   * mutually-unaware workarounds for a single address collision. It now steps up
+   * instead, which is why negotiating while reading the relation graph is possible
+   * at all.
+   *
+   * @param {{isMobile: boolean, floorOpen?: boolean}} occupancy
    */
-  setMobile(isMobile) {
-    this._panelEl.style.bottom = isMobile ? '94px' : '34px'
-    // The left offset is no longer a literal here: ADR-105 added a second
-    // occupant of the same edge (the scene-checks HUD), and two occupants
-    // computing the same offset separately is exactly what 原則 #26 forbids.
+  setEdgeOffsets({ isMobile, floorOpen = false }) {
+    this._panelEl.style.bottom =
+      `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.FLOATING, floorOpen })}px`
     this._panelEl.style.left   = `${leftEdgeOffset({ isMobile })}px`
   }
 

@@ -1,4 +1,6 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
+import { floorIsOpen } from '../../view/FloorTabs.js'
 
 /**
  * StoryBar — step navigation for the Context DSL demo (ADR-047).
@@ -11,8 +13,13 @@ import { useUIStore } from '../../store/uiStore.js'
 export function StoryBar() {
   const demo      = useUIStore(s => s.demo)
   const callbacks = useUIStore(s => s.callbacks)
+  // The tutorial Inspector shares the production floor's address (ADR-106 D2),
+  // so the bar reads the SAME "is the bottom container open" predicate everyone
+  // else at that edge reads — one fact, one home (§1.1).
+  const floorOpen = useUIStore(floorIsOpen)
 
   const isMobile = window.innerWidth < 768
+
   const last     = demo.steps.length - 1
   const stepInfo = demo.steps[demo.step] ?? { title: '', narration: '' }
 
@@ -29,7 +36,9 @@ export function StoryBar() {
       position:     'fixed',
       left:         '50%',
       transform:    'translateX(-50%)',
-      bottom:       isMobile ? '96px' : '36px',  // above mobile toolbar / InfoBar
+      // 下端の占有量は EdgeOccupancy ただ 1 箇所が計算する (原則 #26 / ADR-106 D6)。
+      // チュートリアルの Inspector も下部の器へ移ったので、StoryBar はその上に乗る。
+      bottom:       `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.FLOATING, floorOpen })}px`,
       width:        'min(620px, calc(100vw - 24px))',
       background:   'rgba(24, 26, 30, 0.96)',
       border:       '1px solid #3a3a3a',

@@ -328,6 +328,10 @@ function ContextDropdown() {
           ...enterMotion(reduced),
         }}>
           {item('New Project',     callbacks.onOpenTemplateGallery)}
+          {/* The document entrance (ADR-106 D3). Wizard + Intake used to be tabs
+              INSIDE the floor, i.e. you had to open a negotiation to build the
+              thing the negotiation is about. Provisional until ADR-108. */}
+          {item('Document intake…', () => callbacks.onOpenDocIntake?.('wizard'))}
           {item('Import Context…', callbacks.onImportCtxJson)}
           {item('Save Context',    callbacks.onExportCtxJson)}
           <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
@@ -445,6 +449,7 @@ function MoreMenu() {
           {item('Export', SVG_EXPORT, callbacks.onExportJson)}
           {item('Import', SVG_IMPORT, callbacks.onImportJson)}
           {item('New Project',     SVG_DEMO, callbacks.onOpenTemplateGallery)}
+          {item('Document intake…', SVG_DEMO, () => callbacks.onOpenDocIntake?.('wizard'))}
           {item('Import Context…', SVG_DEMO, callbacks.onImportCtxJson)}
           {item('Save Context',    SVG_DEMO, callbacks.onExportCtxJson)}
           {item('Negotiate', SVG_DEMO, callbacks.onContextNegotiate)}

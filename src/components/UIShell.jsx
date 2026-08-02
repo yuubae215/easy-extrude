@@ -19,11 +19,14 @@ import { TourCard } from './Onboarding/TourCard.jsx'
 import { ContextDemoLayer } from './ContextDemo/ContextDemoLayer.jsx'
 import { ContextLayer } from './Context/ContextLayer.jsx'
 import { TemplateGallery } from './Context/TemplateGallery.jsx'
+import { DocIntakeLayer } from './Doc/DocIntakeLayer.jsx'
 import { HomeScreen } from './Home/HomeScreen.jsx'
 import { ChromeDefs } from './Chrome/ChromePrimitives.jsx'
 import { SceneChecksHud } from './Chrome/SceneChecksHud.jsx'
 import { useReducedMotion } from './Feedback/FeedbackPrimitives.jsx'
 import { enterMotion, exitMotion } from '../view/ChromeMath.js'
+import { BOTTOM_TIER, bottomEdgeOffset } from '../view/EdgeOccupancy.js'
+import { floorIsOpen } from '../view/FloorTabs.js'
 import { COLOR, DURATION } from '../theme/tokens.js'
 
 /**
@@ -49,6 +52,8 @@ import { COLOR, DURATION } from '../theme/tokens.js'
  * 17. Outliner: scene collection left sidebar
  * 18. Onboarding: mobile first-visit gesture hint overlay
  * 19. TourCard: desktop onboarding tour quest card (ADR-065 Phase 6)
+ * 20. DocIntakeLayer: document intake (Wizard / Intake) — the provisional address
+ *     of the two input panels that left the floor (ADR-106 D3)
  */
 export function UIShell() {
   const cursor = useUIStore(s => s.cursor)
@@ -81,6 +86,7 @@ export function UIShell() {
       <ContextDemoLayer />
       <ContextLayer />
       <TemplateGallery />
+      <DocIntakeLayer />
       <HomeScreen />
       <ToastStack toasts={toasts} />
     </>
@@ -90,6 +96,11 @@ export function UIShell() {
 function ToastStack({ toasts }) {
   const dismissToast = useUIStore(s => s.actions.dismissToast)
   const reduced = useReducedMotion()
+  // Both containers that can own the bottom edge (production floor + tutorial
+  // Inspector) share one address (ADR-106 D2), so ONE predicate covers both —
+  // and it lives in one place, or the fact acquires a copy per reader (§1.1).
+  const floorOpen = useUIStore(floorIsOpen)
+  const isMobile  = window.innerWidth < 768
 
   // Keep a toast mounted through its exit fade after it leaves the live list
   // (manual dismiss OR auto-expire), so it fades out instead of popping (ADR-068
@@ -116,7 +127,12 @@ function ToastStack({ toasts }) {
   return (
     <div style={{
       position: 'fixed',
-      bottom: '96px',
+      // `96px` was a literal here — and it was the same literal on mobile, where
+      // the toolbar alone eats 86px. That is the "patch at the call site" 原則 #26
+      // forbids, and ADR-106's GSN predicted finding exactly one of them at the
+      // bottom edge. The owner computes it now (Toast rides above the StoryBar /
+      // floor header, hence its own tier).
+      bottom: `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.TOAST, floorOpen })}px`,
       left: '50%',
       transform: 'translateX(-50%)',
       display: 'flex',

@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { FLOOR_TAB, floorTabOrThrow } from '../view/FloorTabs.js'
+import { docIntakeTabOrThrow } from '../view/DocIntake.js'
 
 let _toastId = 0
 
@@ -164,15 +166,27 @@ export const useUIStore = create((set, get) => ({
     personaFilter: null,     // actorRef | null — persona projection highlight
   },
 
+  // ── 文書の入口 (ADR-106 D3 — 暫定住所) ──────────────────────────────────────
+  // `null` = 閉じている / `{ tab }` = 開いている。Wizard と Intake は「入力」で
+  // あって「解消」ではないので場のタブではなく、最終的な住所は Phase 5 (ADR-108)
+  // が決める。基数は 0..1 で、0 は既定値ではなく「まだ入口を開いていない」。
+  docIntake: null,
+
   // ── Context-first project (ADR-050) ────────────────────────────────────────
   // Persistent slice (parallel to `demo`, never auto-reset on a new payload).
   // Populated by ContextController; reads the canonical doc through ContextService.
   // The `demo` slice above stays untouched — tutorial story vs. production are
   // decoupled (ADR-050 §4.1/§4.3).
   context: {
-    active: false,           // an overlay (negotiate / author / ghost) is shown
+    // **The floor is open.** That is all this means (ADR-106 D4). It used to sit
+    // beside a `loaded` mirror ("a document has been adopted"), and the two only
+    // ever moved together — but the authority for "is there a document" is
+    // `ContextService.loaded`, which is what every reader already read. The mirror
+    // had 1 writer and 0 readers: a second source that had not been used *yet*,
+    // which is the only moment it is cheap to delete. "The document exists and the
+    // floor is closed" is legitimate — and after ADR-105 it is the normal case.
+    active: false,           // the bottom floor is open (negotiate / author / ghost)
     mode: null,              // 'negotiate' | 'author' | 'ghost' | null (ADR-050 §4.3)
-    loaded: false,           // a context document has been adopted
     docMeta: null,           // { name, version } of the loaded doc
     decisions: [],           // doc.decisions (for detail lookups)
     actors: [],              // doc.actors (for actorRef form widgets — Phase 4)
@@ -211,7 +225,10 @@ export const useUIStore = create((set, get) => ({
     // no honest default for "why do you want this?", so the draft exists rather
     // than a placeholder being invented. `null` = nothing pending.
     proposalDraft: null,     // { target, from, to, reason } | null
-    inspectorTab: 'matrix',  // 'matrix' | 'cluster' | 'conflicts' | 'questions' | 'why' | 'tree' | 'intake' | 'grasp' | 'agenda'
+    // The domain lives in ONE place (view/FloorTabs.js) and is enforced at the
+    // write (contextSetTab). A JSDoc union is prose — it cannot be counted, and a
+    // value that has been retired for three releases still reads as legal in it.
+    inspectorTab: FLOOR_TAB.MATRIX,
     form: [],                // projectForm() output — open intake questions (Phase 4)
     checks: [],              // ContextService.projectChecks() — acceptance verdicts + baked predicates (ADR-062 Phase 4)
     variables: [],           // doc.variables — for IntakePanel requirement constrains dropdown (Phase 1)
@@ -436,7 +453,12 @@ export const useUIStore = create((set, get) => ({
     // the context overlay is persistent (a loaded project, not a transient
     // tutorial). It merges the payload and marks the overlay active.
     contextStart: (payload) => set(state => ({
-      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null, ...payload, active: true },
+      // `assetViewer` is NOT reset here (ADR-106 D3): the parametric viewer is
+      // entered from `+ Add` and lives in the N panel, so its lifetime is owned
+      // by openAssetViewer / closeAssetViewer alone (原則 #9). Blanking it from a
+      // floor lifecycle reducer is what forced two extra `_disposeAssetPreview()`
+      // calls to exist — the asymmetry was the container's, not the asset's.
+      context: { ...state.context, provenance: null, grasp: null, authorSeed: null, ...payload, active: true },
     })),
     contextSetMatrix: (conflictMatrix, negotiationClusters, resolutionOrder) => set(state => ({
       context: { ...state.context, conflictMatrix, negotiationClusters, resolutionOrder },
@@ -475,8 +497,17 @@ export const useUIStore = create((set, get) => ({
     contextSetProposalDraft: (proposalDraft) => set(state => ({
       context: { ...state.context, proposalDraft },
     })),
+    // 文書の入口の開閉 (ADR-106 D3)。`null` で閉じる。未宣言の面では throw する
+    // ので、面を増やすには宣言表に足すしかない (原則 #31)。
+    setDocIntake: (tab) => set({ docIntake: tab === null ? null : { tab: docIntakeTabOrThrow(tab) } }),
+
+    // The floor's tab domain is a bounded declaration now (ADR-106 D5): an
+    // undeclared value throws instead of being stored, so a retired tab cannot
+    // come back through a caller nobody re-read. Retiring a value silently is the
+    // corruption that shows GREEN (ADR-103's `DS_PENDING`), so the guard is at the
+    // write, not in a comment.
     contextSetTab: (inspectorTab) => set(state => ({
-      context: { ...state.context, inspectorTab },
+      context: { ...state.context, inspectorTab: floorTabOrThrow(inspectorTab) },
     })),
     contextSetForm: (form) => set(state => ({
       context: { ...state.context, form },
@@ -559,7 +590,7 @@ export const useUIStore = create((set, get) => ({
       // indistinguishable from a lifecycle-written one. If the document itself is
       // dropped, the aggregate transitions to `unexamined` through its one writer
       // — never by being blanked from a lifecycle reducer.
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, wizard: null, assetViewer: null, agendaRows: [] },
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, agendaRows: [] },
     })),
   },
 }))

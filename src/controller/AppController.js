@@ -27,6 +27,7 @@ import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
 import { LinkNetworkView } from '../view/LinkNetworkView.js'
+import { floorIsOpen }     from '../view/FloorTabs.js'
 import { CommandStack }              from '../service/CommandStack.js'
 import { createExtrudeSketchCommand } from '../command/ExtrudeSketchCommand.js'
 import { createAddSolidCommand }      from '../command/AddSolidCommand.js'
@@ -795,17 +796,19 @@ export class AppController {
 
     // ── CF Link Network Overlay ───────────────────────────────────────────
     this._linkNetworkView = new LinkNetworkView(id => this._selMgr.selectOnly(id))
-    this._linkNetworkView.setMobile(window.matchMedia('(pointer: coarse)').matches)
+    this._updateLinkNetworkEdges()
 
-    // ── Gizmo right-edge occupancy ────────────────────────────────────────
+    // ── Edge occupancy (right + bottom) ───────────────────────────────────
     // The gizmo offset is owned by _updateGizmoOffset() alone (PHILOSOPHY #4);
-    // it tracks every right-edge panel (N panel, Context Inspector) through
-    // a single store subscription instead of per-toggle call sites.
+    // the link-network panel's bottom offset by _updateLinkNetworkEdges(). Both
+    // ride one store subscription instead of per-toggle call sites. `context.active`
+    // is here because the floor is a bottom-edge occupant now (ADR-106 D6) — it
+    // used to *delete* the panel instead, from three unrelated call sites.
     useUIStore.subscribe((s, prev) => {
-      if (s.nPanelVisible !== prev.nPanelVisible ||
-          s.demo.active !== prev.demo.active ||
+      if (s.nPanelVisible !== prev.nPanelVisible) this._updateGizmoOffset()
+      if (s.context.active !== prev.context.active ||
           s.demo.inspectorTab !== prev.demo.inspectorTab) {
-        this._updateGizmoOffset()
+        this._updateLinkNetworkEdges()
       }
     })
 
@@ -1639,20 +1642,40 @@ export class AppController {
    * Repositions the world gizmo left of whichever right-edge panels are open.
    * Sole owner of the gizmo right offset — driven by the uiStore subscription
    * registered in the constructor; never call setRightOffset() elsewhere.
-   * Desktop only: on mobile the N panel is a drawer and the demo inspector is hidden.
+   * Desktop only: on mobile the N panel is a drawer.
+   *
+   * **Two terms, not three (ADR-106 D2).** The `280·[demo.active ∧ inspectorTab]`
+   * term is gone because the right-edge 280px slot itself is retired: both the
+   * production floor and the tutorial Inspector live at the bottom now. Moving
+   * only the production floor would NOT have removed it — the term's source was
+   * always the tutorial, and production never appeared in this sum at all, which
+   * is exactly why the floor could quietly *cover* the gizmo instead (原則 #26
+   * held for the tutorial only).
    */
   _updateGizmoOffset() {
     if (!this._gizmoView) return
     const mobile = window.innerWidth < 768
     const s = useUIStore.getState()
-    const inspectorOpen = !mobile && s.demo.active && !!s.demo.inspectorTab   // 280px (ADR-047)
-    const nPanelOpen    = !mobile && s.nPanelVisible                          // 200px
-    const offset = 16 + (nPanelOpen ? 200 : 0) + (inspectorOpen ? 280 : 0)
+    const nPanelOpen = !mobile && s.nPanelVisible                             // 200px
+    const offset = 16 + (nPanelOpen ? 200 : 0)
     this._gizmoView.setRightOffset(offset)
     // The projection toggle sits under the gizmo and shares the same edge, so it
     // reads the SAME computation instead of repeating it (原則 #26 — a screen
     // edge is a shared resource; the occupancy offset is computed in one place).
     s.actions.setGizmoRightOffset(offset)
+  }
+
+  /**
+   * Re-applies the link-network panel's edge offsets. Sole caller of
+   * `setEdgeOffsets()` — the panel steps up when the floor opens instead of being
+   * force-hidden by whoever opened it (ADR-106 D2 / 原則 #26).
+   */
+  _updateLinkNetworkEdges() {
+    const s = useUIStore.getState()
+    this._linkNetworkView?.setEdgeOffsets({
+      isMobile:  window.matchMedia('(pointer: coarse)').matches,
+      floorOpen: floorIsOpen(s),
+    })
   }
 
   /** Called when user clicks a row in the outliner */
@@ -3640,6 +3663,9 @@ export class AppController {
           // The five place types (ADR-103) — annotations are ordinary objects,
           // so they are added the same way everything else is.
           onPlace:      (type) => this._placeToolCtrl.setTool(type),
+          // Parametric assets (ADR-106 D3): shaping a jig / conveyor / cell floor
+          // is modelling, so its entrance is the same one every other object uses.
+          onAsset:      (assetId) => this._ctxCtrl.openAssetViewer(assetId),
         })
         return
       }

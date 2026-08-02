@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
 import { PLACE_TOOLS } from '../../controller/place/PlaceToolController.js'
+import { PARAMETRIC_CATALOG } from '../../context/ParametricAssets.js'
 import { DURATION, EASING } from '../../theme/tokens.js'
 
 export function AddMenu() {
@@ -45,23 +46,48 @@ export function AddMenu() {
     ? PLACE_TOOLS.map(t => ({ label: t.label, hint: null, cb: () => cbs.onPlace(t.type) }))
     : []
 
+  // Parametric assets (ADR-063 Phase 4) — jigs, conveyors, cell floors. They were
+  // the `Assets` tab of the floor, which put "build a workbench" in the room where
+  // people agree on requirements. Shaping one is MODELLING: it belongs with every
+  // other "place a thing" verb (ADR-106 D3, same reasoning ADR-103 used to move
+  // the five Lynch place types here). The catalog IS this group — the panel keeps
+  // no second copy of which assets exist (§1.1); the sliders land in the N panel.
+  const assetItems = cbs.onAsset
+    ? PARAMETRIC_CATALOG.map(a => ({ label: a.name, hint: null, cb: () => cbs.onAsset(a.id) }))
+    : []
+
+  // The menu opens AT the pointer, so its own height decides whether the last
+  // group is reachable. It grew a group in ADR-106 (Assets), and a pointer in the
+  // lower half of the viewport pushed those items off-screen — an entry that
+  // cannot be clicked is a silent dead end (原則 #11), and "discovery is a
+  // deliverable" (#16) is not satisfied by an item that exists but is unreachable.
+  // So the menu is anchored to whichever edge has room and scrolls if neither does.
+  const flipUp = y > window.innerHeight * 0.55
+  const anchor = flipUp
+    ? { bottom: `${Math.max(8, window.innerHeight - y)}px` }
+    : { top: `${y}px` }
+  const maxHeight = (flipUp ? y : window.innerHeight - y) - 16
+
   return (
     <div
       ref={ref}
       style={{
         position: 'fixed',
-        left: `${x}px`,
-        top: `${y}px`,
+        // Clamp horizontally too — a click near the right edge used to render the
+        // labels past it.
+        left: `${Math.max(4, Math.min(x, window.innerWidth - 180))}px`,
+        ...anchor,
         background: '#2b2b2b',
         border: '1px solid #555',
         borderRadius: '4px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
         minWidth: '140px',
-        overflow: 'hidden',
+        maxHeight: `${Math.max(120, maxHeight)}px`,
+        overflowY: 'auto',
         zIndex: 300,
         pointerEvents: 'auto',
         // Grows from the click point (Tier A, ADR-080 Phase 1)
-        ...popoverEnterMotion(reduced, 'top left'),
+        ...popoverEnterMotion(reduced, flipUp ? 'bottom left' : 'top left'),
       }}
     >
       <GroupLabel>Add</GroupLabel>
@@ -71,6 +97,10 @@ export function AddMenu() {
       {placeItems.length > 0 && <GroupLabel>Place</GroupLabel>}
       {placeItems.map((item, i) => (
         <Item key={`place-${i}`} item={item} index={items.length + i} reduced={reduced} onPick={hideAddMenu} />
+      ))}
+      {assetItems.length > 0 && <GroupLabel>Assets</GroupLabel>}
+      {assetItems.map((item, i) => (
+        <Item key={`asset-${i}`} item={item} index={items.length + placeItems.length + i} reduced={reduced} onPick={hideAddMenu} />
       ))}
     </div>
   )

@@ -176,9 +176,11 @@ export class ContextDemoController {
       if (!(obj instanceof CoordinateFrame)) obj.meshView.setVisible(false)
     }
     for (const id of this._linkIds) ctrl._service.setLinkViewVisible(id, false)
-    // The Link Network panel would spoil the staged step-⑤ reveal (it lists
-    // every link from the start) and sits under the StoryBar — hide it for
-    // the duration of the demo overlay.
+    // The Link Network panel would spoil the staged step-⑤ reveal (it lists every
+    // link from the start), so the tutorial hides it for the duration of the
+    // overlay. This is CHOREOGRAPHY, not an address collision: the "and it sits
+    // under the StoryBar" half of the old reason is gone with ADR-106 D6 — the
+    // bottom edge has one owner now and the panel steps up on its own.
     ctrl._linkNetworkView?.setForceHidden(true)
 
     // Uncertainty ghost from the decision-marker provenance entry (the demo
@@ -205,8 +207,11 @@ export class ContextDemoController {
     const { center, radius } = this._computeBounds(layoutDsl)
     ctrl._sceneView.fitCameraToSphere(center, radius)
 
+    // The N panel is NOT hidden here any more (ADR-106 D2). The tutorial teaches
+    // the real screen: production stopped deleting side panels when the floor
+    // opens, so a tutorial that still did would be teaching a screen that no
+    // longer exists (§1.1 — the same fact written twice, one copy stale).
     const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
     ui.demoStart({
       steps:         DEMO_STEPS,
       facts:         factoryContext.given,

@@ -302,6 +302,9 @@ export class UIStateManager {
                 onFrame:      canAddFrame ? () => ctrl._addObject('frame') : undefined,
                 onRobot:      () => ctrl._addObject('robot'),
                 onPlace:      (type) => ctrl._placeToolCtrl.setTool(type),
+                // Parametric assets (ADR-106 D3): shaping a jig / conveyor / cell floor
+                // is modelling, so its entrance is the same one every other object uses.
+                onAsset:      (assetId) => ctrl._ctxCtrl.openAssetViewer(assetId),
               })
           },
         },
