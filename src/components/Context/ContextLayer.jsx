@@ -4,6 +4,7 @@ import { NegotiationClusterView } from '../ContextDemo/NegotiationClusterView.js
 import { ChecksPanel } from './ChecksPanel.jsx'
 import { FormPanel } from './FormPanel.jsx'
 import { IntakePanel } from './IntakePanel.jsx'
+import { AgendaPanel } from './AgendaPanel.jsx'
 import { WizardPanel } from './WizardPanel.jsx'
 import { ParametricAssetPanel } from './ParametricAssetPanel.jsx'
 import { WhyBreadcrumb } from './WhyBreadcrumb.jsx'
@@ -68,6 +69,10 @@ export function ContextLayer() {
     ctx.mode === 'negotiate' ? [
       { id: 'matrix',    label: 'Matrix' },
       { id: 'cluster',   label: 'Cluster' },
+      // The floor (ADR-104): keys held, what is on the table, what the record
+      // says. Always present — an empty floor is a result worth stating, not a
+      // reason to remove the tab (PHILOSOPHY #15).
+      { id: 'agenda',    label: 'Floor' },
       ...(ctx.form?.length > 0 ? [{ id: 'questions', label: 'Questions' }] : []),
       // Acceptance verdicts + measurement feedback (ADR-062 Phase 4) — only
       // when the doc declares checks (no empty tab for authoring-stage docs).
@@ -174,7 +179,12 @@ export function ContextLayer() {
       </LandingFlash>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 8px' }}>
-        {ctx.mode === 'author' && <AuthorConflicts conflicts={ctx.conflicts} />}
+        {/* Authoring is where a drag on someone else's claim becomes a proposal,
+            so the floor is rendered here too — otherwise the proposal a gesture
+            just created would have nowhere to appear (PHILOSOPHY #11). */}
+        {ctx.mode === 'author' && <><AuthorConflicts conflicts={ctx.conflicts} /><AgendaPanel /></>}
+
+        {ctx.mode === 'negotiate' && ctx.inspectorTab === 'agenda' && <AgendaPanel />}
 
         {(ctx.mode === 'negotiate' || ctx.mode === 'ghost') && ctx.inspectorTab === 'matrix' && (
           <ConflictMatrix

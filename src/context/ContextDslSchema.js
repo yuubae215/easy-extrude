@@ -58,12 +58,36 @@
  *                           heavy FK/IK/BVH geometry lives in a future side-effect
  *                           layer, never in the pure predicate. No prior field
  *                           changes shape, so 0.1–0.3 docs remain valid.
+ *
+ * context/0.5 (ADR-104) additive fields (all optional, backward compatible):
+ *   requirement.owner       actorRef | "none" — who may write this claim. Its
+ *                           ABSENCE is meaningful and counted: an undeclared
+ *                           owner collapses "really nobody" / "forgot" /
+ *                           "waiting for someone else" into one silence, so R10
+ *                           raises an OpenQuestion rather than defaulting it
+ *                           (PHILOSOPHY #31 — see Ownership.js).
+ *   proposals[]             what an edit gesture becomes without the owner's
+ *                           key: a stored diff (from → to) + rationale. Human
+ *                           acts are stored (ADR-104 D4).
+ *   agenda[]                TABLED CONFLICTS ONLY. Conflicts themselves are
+ *                           re-derived by R6 every validate and never written
+ *                           down; proposals are agenda items by existing. The
+ *                           agenda a person reads is assembled on demand
+ *                           (Agenda.projectAgenda) so nothing is stored twice.
+ *   decision.keyCardinalityAtDecision
+ *                           how many keys were held when the receipt was
+ *                           written (ADR-104 U4). Not a gate — a count, so
+ *                           "decided while only one party was in the room"
+ *                           stays visible after more people join.
  */
 
-export const CONTEXT_DSL_VERSION = 'context/0.4'
+import { PROPOSAL_STATE, PROPOSAL_REF_PREFIX } from './Proposal.js'
+import { AGENDA_STATE, AGENDA_REF_PREFIX } from './Agenda.js'
+
+export const CONTEXT_DSL_VERSION = 'context/0.5'
 
 /** Accepted input versions — each is a strict additive superset of the prior. */
-export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4']
+export const SUPPORTED_VERSIONS = ['context/0.1', 'context/0.2', 'context/0.3', 'context/0.4', 'context/0.5']
 
 /** Actor roles — the four user personas plus the customer. */
 export const VALID_ROLES = ['developer', 'maintainer', 'endUser', 'agent', 'customer']
@@ -91,6 +115,17 @@ export const UNASSIGNED = 'unassigned'
 
 /** Requirement negotiability — which side bends when a conflict is resolved. */
 export const VALID_NEGOTIABILITY = ['must', 'should']
+
+/**
+ * Proposal / agenda vocabularies (ADR-104). **Derived from the behavioural
+ * enums**, not retyped here — the transition tables in Proposal.js / Agenda.js
+ * own these states, and a hand-copied list in the shape contract would be the
+ * one that quietly disagrees after a state is added (§1.1).
+ */
+export const VALID_PROPOSAL_STATE = Object.freeze(Object.values(PROPOSAL_STATE))
+export const VALID_AGENDA_STATE   = Object.freeze(Object.values(AGENDA_STATE))
+
+export { PROPOSAL_REF_PREFIX, AGENDA_REF_PREFIX }
 
 /**
  * Provenance of a Requirement's admissible region (ADR-049 invariant 6).

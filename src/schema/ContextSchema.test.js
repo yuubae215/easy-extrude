@@ -1,7 +1,7 @@
 /**
  * Context DSL schema conformance + drift binding (ADR-064 Phase 2).
  *
- * The schema (schema/context-0.4.schema.json) is the SHAPE contract for the
+ * The schema (schema/context-0.5.schema.json) is the SHAPE contract for the
  * Context DSL — a closed, versioned JSON Schema artifact (PHILOSOPHY #29).
  * This suite proves:
  *
@@ -33,13 +33,16 @@ import {
   VALID_ADMISSIBLE_SOURCE,
   VALID_REGION_KINDS,
   VALID_PREDICATE_KINDS,
+  VALID_PROPOSAL_STATE,
+  VALID_AGENDA_STATE,
 } from '../context/ContextDslSchema.js'
+import { TARGET_KIND } from '../context/Ownership.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
 const readJson = (p) => JSON.parse(readFileSync(join(root, p), 'utf8'))
 
-const schema = readJson('schema/context-0.4.schema.json')
+const schema = readJson('schema/context-0.5.schema.json')
 const ajv = new Ajv2020({ allErrors: true, strict: false })
 const validate = ajv.compile(schema)
 
@@ -54,7 +57,7 @@ const EXAMPLES = [
 // ── 1. Conformance: every bundled context example passes ─────────────────────
 
 for (const f of EXAMPLES) {
-  test(`${f} conforms to context-0.4 schema`, () => {
+  test(`${f} conforms to context-0.5 schema`, () => {
     const valid = validate(readJson(`examples/${f}`))
     assert.equal(valid, true, JSON.stringify(validate.errors, null, 2))
   })
@@ -167,4 +170,55 @@ test('schema region kind enum matches VALID_REGION_KINDS', () => {
 
 test('schema predicate kind enum matches VALID_PREDICATE_KINDS', () => {
   assert.deepEqual(schema.$defs.predicateObject.properties.kind.enum, VALID_PREDICATE_KINDS)
+})
+
+// ── ADR-104: ownership / proposal / agenda (context/0.5) ─────────────────────
+
+test('schema proposal state enum matches VALID_PROPOSAL_STATE', () => {
+  assert.deepEqual(schema.$defs.proposal.properties.state.enum, [...VALID_PROPOSAL_STATE])
+})
+
+test('schema agenda state enum matches VALID_AGENDA_STATE', () => {
+  assert.deepEqual(schema.$defs.agendaItem.properties.state.enum, [...VALID_AGENDA_STATE])
+})
+
+test('schema claim-target kind enum matches TARGET_KIND', () => {
+  assert.deepEqual(schema.$defs.claimTarget.properties.kind.enum, Object.values(TARGET_KIND))
+})
+
+test('a context/0.5 doc with ownership, a proposal and an agenda item conforms', () => {
+  assert.equal(validate({
+    version: 'context/0.5',
+    actors: [{ ref: 'mech', role: 'developer' }, { ref: 'vision', role: 'developer' }],
+    requirements: [{ ref: 'r_a', by: 'vision', owner: 'vision' }, { ref: 'r_b', by: 'mech', owner: 'none' }],
+    proposals: [{
+      ref: 'prop_1', by: 'mech', target: { kind: 'requirement.admissible', ref: 'r_a' },
+      from: { interval: [200, 350] }, to: { interval: [300, 450] },
+      rationale: 'lens change moves the working distance', state: 'proposed',
+    }],
+    agenda: [{ ref: 'ag_1', conflict: 'conflict_v_standoff', by: 'mech', state: 'open' }],
+  }), true, JSON.stringify(validate.errors))
+})
+
+test('a proposal without a diff is still SHAPE-valid — the refusal is a meaning rule', () => {
+  // The schema is the shape contract; "from must differ from to" is R11 in the
+  // validator (and `makeProposal` refuses to build one at all). Asserting the
+  // split keeps the two layers from silently swapping responsibilities.
+  assert.equal(validate({
+    version: 'context/0.5',
+    proposals: [{
+      ref: 'prop_1', by: 'mech', target: { kind: 'requirement.admissible', ref: 'r_a' },
+      from: { interval: [1, 2] }, to: { interval: [1, 2] }, rationale: 'x', state: 'proposed',
+    }],
+  }), true, JSON.stringify(validate.errors))
+})
+
+test('a smuggled proposal field is rejected', () => {
+  assert.equal(validate({
+    version: 'context/0.5',
+    proposals: [{
+      ref: 'prop_1', by: 'mech', target: { kind: 'requirement.admissible', ref: 'r_a' },
+      from: 1, to: 2, rationale: 'x', state: 'proposed', stale: true,
+    }],
+  }), false, 'a `stale` field must not be storable — staleness is derived (ADR-104 U2)')
 })

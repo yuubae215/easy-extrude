@@ -3,7 +3,7 @@
 //
 //   node schema/tools/validate.mjs <schema> <instance.json | ->
 //
-//   schema:   layout-1.0 | context-0.4
+//   schema:   layout-1.0 | context-0.5
 //   instance: path to a JSON file, or "-" to read stdin.
 //
 // Exit 0 = the instance conforms to the SHAPE contract. Exit 1 = it would be
@@ -18,7 +18,7 @@ import Ajv2020 from 'ajv/dist/2020.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const schemaDir = join(here, '..')
 
-const schemas = { 'layout-1.0': 'layout-1.0.schema.json', 'context-0.4': 'context-0.4.schema.json' }
+const schemas = { 'layout-1.0': 'layout-1.0.schema.json', 'context-0.5': 'context-0.5.schema.json' }
 
 const [name, instancePath] = process.argv.slice(2)
 
@@ -31,7 +31,7 @@ if (!schemas[name] || !instancePath) {
     '',
     'examples:',
     '  node schema/tools/validate.mjs layout-1.0 examples/factory_layout.json',
-    '  node schema/tools/validate.mjs context-0.4 examples/cell_robotics_context.json',
+    '  node schema/tools/validate.mjs context-0.5 examples/cell_robotics_context.json',
   ].join('\n'))
   process.exit(1)
 }

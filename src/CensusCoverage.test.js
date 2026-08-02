@@ -133,6 +133,23 @@ const CENSUS_REGISTRY = [
   { file: 'src/ProjectionAxisOwnership.test.js', table: 'PROJECTION_WRITE_RULES', kind: KIND.SHAPE_CENSUS,
     why: '投影軸を書く形。所有者 (SceneView) の外の個数を src/** 全体で数える' },
 
+  // ── 所有権・提案・証憑 (ADR-104) ──
+  { file: 'src/OwnershipProposalCensus.test.js', table: 'FORBIDDEN_STORAGE_SHAPES', kind: KIND.SHAPE_CENSUS,
+    why: '保存が禁じられた導出値 (stale / 衝突) の形。src/** 全体での出現数が 0 であることを数える。'
+       + 'ADR-100 の RETIRED_SELECTION_COLORS と同形だが、退役ではなく「最初から作らないと決めた形」を数える '
+       + '— 保存された導出値は違反を見逃すのではなく「古い正解」として緑を出す' },
+  { file: 'src/OwnershipProposalCensus.test.js', table: 'LEGAL_PROPOSAL_TRANSITIONS', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = PROPOSAL_STATE の全ペア。「終端から戻れない」は*書かなかったこと*で表現されるので、'
+       + '実装を読んでも見えない — 全ペアを実際に通して分割を問う' },
+  { file: 'src/OwnershipProposalCensus.test.js', table: 'LEGAL_AGENDA_TRANSITIONS', kind: KIND.DERIVED_PARTITION,
+    why: '同上を議題側へ。再燃が「新しい議題」であることは、復帰の辺が無いことでしか表せない (ADR-104 U3)' },
+  { file: 'src/OwnershipProposalCensus.test.js', table: 'PERMISSION_BY_CASE', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = 所有者 3 種 × 鍵 3 種 の直積。手で並べると「誰も考えなかった組合せ」が表の外に残り、'
+       + 'そこで「全員書ける」か「誰も書けない」が黙って既定になる (ADR-104 D1)' },
+  { file: 'src/OwnershipProposalCensus.test.js', table: 'RETIRED_VOCABULARY', kind: KIND.DECLARED_EXCEPTION,
+    why: '作らないと決めた状態語 (stale / expired / reopened)。宣言の向きが逆 '
+       + '— 「実在する」= 状態語として存在しないこと' },
+
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

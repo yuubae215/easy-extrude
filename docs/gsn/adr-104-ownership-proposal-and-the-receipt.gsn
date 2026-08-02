@@ -1,0 +1,110 @@
+GOALS adr104_ownership_proposal_and_the_receipt
+
+goal NobodyRewritesSomeoneElsesClaimSilently
+uuid 6e147dff-189e-4f5f-9bbc-410081088569
+summary "他人の主張が無言で書き換わらない。かつ、そのためにモードが 1 つも増えない。記録は人が行為した瞬間にだけ始まり、導出できる事実 (衝突・提案の陳腐化) は保存されない"
+state UnderReview
+labels adr-104, ownership, proposal, receipt, principle-31
+artifacts
+- "docs/adr/ADR-104-ownership-proposal-and-the-receipt.md"
+- "src/OwnershipProposalCensus.test.js"
+
+    context Adr104Scope
+    uuid 249e3bb5-3166-43a0-a95c-1dfba0799cff
+    summary "ADR-104 (Accepted 2026-08-02, 実装 = IA 再設計 Phase 4): 権限を鍵の集合 (0..N) として持ち、実体ごとに所有者を宣言し、鍵の無い編集ジェスチャを提案 (差分 + 理由) に変え、承認で主張の更新と証憑の追記を 1 つの undoable command として行う。Context DSL は 0.5 へ加算 (proposals[] / agenda[] / requirement.owner / decision.keyCardinalityAtDecision)。フロントの宣言と表示に閉じ、契約パッケージ・BFF・core は不変 — 鍵は誤操作防止であって認証ではない (D6)"
+    artifacts
+    - "schema/context-0.5.schema.json"
+    - "docs/STATE_TRANSITIONS.md"
+
+    context TheAppHadNoNotionOfWhoYouAre
+    uuid c79af019-450d-4000-bc70-b52fd300f206
+    summary "出発点の実測: actors は在るが currentActor に相当する状態が存在せず、uiStore の personaFilter は自身のコメントどおり persona projection highlight — 減光するだけで書き込みを一切ゲートしない。結果、全員が全員の主張を黙って書き換えられるのが既定だった。一方 3D から主張を書き換える経路 (createEditAdmissibleCommand) は既に実装済みで、Context ▾ → 領域オーサリングというモードの中に閉じ込められていた。ADR-103 の Map と同じ形 — 機能は既にあり、モードが不要"
+    artifacts
+    - "src/store/uiStore.js"
+    - "src/controller/ContextController.js"
+
+    context BusinessTreeAttachPoint
+    uuid 1003323b-09a7-48bc-95d5-f9b3220f7d2b
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal 群のうち ByDirectManipulationTrust 配下 — 提案が『動かそうとしたことが消えない』を保証するので直接操作の信頼に効く。保留理由: 本 ADR の受益が観測できるのは当事者が 2 人以上いる案件であり、1 人プロジェクトでは D5 のとおり証憑が増えないのが正しい姿である。複数当事者の dogfooding が回った PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyASetAndNotAMode
+    uuid f8e39139-ef8e-42db-ace8-ced11d6934da
+    summary "権限をモード (今どちらとして書いているか) にしない根拠: 択一は切替を要求し、切替は状態遷移であり、それはモードである。ADR-103 が Map を降ろした直後に権限でモードを 1 つ戻すのは、同じ PR 群で逆向きの判断をすることになる。集合 (どの鍵を持っているか) なら兼務が正当な既定として表現でき、切り替える対象が無いのでモードにならない。ROBOT_CARDINALITY (ADR-090) と同じ基数の形だが、択一ではなく集合である点だけが異なる"
+
+    justification WhyProposeInsteadOfRefuse
+    uuid 926c1317-7d72-47b7-a9a1-ca1e1b3127a0
+    summary "鍵の無いジェスチャを拒否しない根拠: 拒否は『入力は消費されたのに何も起きない』へ退化しやすく、それは原則 #11 が名指しする最悪の失敗形である。提案にすれば同じジェスチャが記録になり、しかもフォームを埋めて交渉を始める手順が要らなくなる。これは repo が既に統治している decide / propose の動詞境界 (ADR-056/077) を幾何へ適用したもので、新しい概念ではない"
+
+    justification WhyOptimisticLocking
+    uuid 9d661b0e-1af9-4a4f-bb38-88e5785e1657
+    summary "楽観ロックを選ぶ根拠 (原則 #7 は実装前の決定を要求する): 提案を書く側をブロックすると、他人の主張に触れるたびに待ちが発生し、提案という仕組みの利点 (誰の許可も要らない) が消える。衝突は承認の瞬間にだけ検出すればよく、そこは人が判断している瞬間なので理由を出せる。悲観ロックが必要になる条件は『提案の作成自体が高コスト』だが、提案は差分 1 本なので該当しない"
+
+    assumption KeysAreNotAuthentication
+    uuid 1d2979cc-93d6-4a76-938f-ca3f08d17d94
+    summary "宣言された限界 (仮説ではなく既知の非目標): クライアント側の鍵は誤操作防止であって認証ではない — 文書 JSON も devtools も開ける。焼き込んだ鍵の基数も自己申告であり、この木が示すのは『申告が残っているか』であって『申告が真か』ではない。実際のリスクは攻撃者ではなく他人の主張をうっかり書き換えることなので目的は達する。証明が要る要件が立ったらサーバ側 (BFF / core) の責務として別 ADR を起こす。鍵の集合という構造は変わらず、チェックだけが移る"
+
+    assumption OwnerIsNotDerivableFromProvenance
+    uuid 77b0a8a9-8dfe-434f-8b48-1abd2ab647a5
+    summary "反証されうる仮説: 『誰が言ったか (by)』と『誰が変えてよいか (owner)』は別物であり、前者から後者を推論してはならない。今日この仮説を採る根拠は、推論すると未宣言の 0 が『名乗り忘れ』『チキンレース』『本当にいない』の 3 つを潰したまま既定で埋まり、原則 #31 の欠陥をそのまま作り込むこと。反証される形は『実運用で owner を by と違う値にした事例が 1 件も出ない』こと — そのときは owner を by の既定つきに縮退させてよいが、縮退は宣言として書く (黙って埋めない)"
+    artifacts
+    - "src/context/Ownership.js"
+
+    assumption ExistingFixturesPredateOwnership
+    uuid 37c6a3fa-e2d3-4eb5-93b5-e76f8f7f2b41
+    summary "反証されうる仮説: 同梱例 (0.2〜0.4 の 5 文書) の未宣言所有者 12 件は負債であって仕様ではない。ratchet のベースラインとして定数に固定してあり、宣言すれば下がる。反証される形は『例文書に owner を書くとシナリオの意図が壊れる』ことが判明する場合 — そのときは例ごとに対象外を理由つきで宣言する (予算を黙って上げない)"
+    artifacts
+    - "src/OwnershipProposalCensus.test.js"
+
+    strategy ByMakingTheWrongStatesUnwritable
+    uuid 7c667486-1ed7-4d9e-a851-c3514361b4be
+    summary "Argument by 不正状態の表現不能化 + 個数の検査 — 4 つの規律 (stale を作らない / 承認を分割しない / 0 を 2 種に分ける / 単独決定の文脈を残す) はどれも『在るものを読んでも見えない』形をしている。規則を持つ経路ではなく持たない経路が欠陥になるので、型で書けなくしたうえで、書けないことを母集団から導出した個数として問う"
+
+        goal StalenessCannotBecomeAFourthState
+        uuid c26e2193-6372-4bbd-ae35-eb05323817e3
+        summary "提案が古びているかは毎回 from === 現在値 で導出され、保存された欄としてはどこにも存在しない。guard に落ちた提案は状態を変えずその場に残り、承認は理由つきで拒否される"
+        state UnderReview
+
+            solution DerivedStalenessIsGreenAndCounted
+            uuid da29b9a1-2998-4ff5-98cf-55745058491a
+            summary "node --test src/OwnershipProposalCensus.test.js — pass (18/18)。stale / isStale / storedConflicts / conflictCache の保存形を src/** 全体で数えて 0 個 (ADR-100 の RETIRED_SELECTION_COLORS と同形)。JSON Schema 側も additionalProperties:false で stale フィールドを拒否する (schema test)。楽観ロックは **同じ要求を 2 回通す**形で焼いてある: 1 手目は通り、別経路で主張を動かし、3 手目の同じ承認が拒否されて理由が出る — 1 手順だけの検査は 1 フレーム古い読みを隠すという ADR-098 → ADR-101 の教訓に従った形"
+            artifacts
+            - "src/OwnershipProposalCensus.test.js"
+            - "src/schema/ContextSchema.test.js"
+
+        goal ApprovalMovesClaimAndReceiptTogether
+        uuid 18325d27-ccc8-4baa-a50e-43b45e53b5e4
+        summary "承認は主張の更新・提案状態・証憑の追記を 1 つの文書変換として行い、undo も 3 つまとめて巻き戻す。『証憑は合意したと言い、R6 はまだ衝突していると言う』文書は書けない"
+        state UnderReview
+
+            solution IndivisibleApprovalIsGreenBothWays
+            uuid 541ac88c-5c9f-4c27-a3e6-419b2c104001
+            summary "node --test src/OwnershipProposalCensus.test.js src/command/ProposalCommands.test.js — pass (18/18, 15/15)。純粋層では 1 回の approveProposal が 3 つを動かすことを、service/command 層では createApproveProposalCommand の execute/undo が往復することを焼く。**引き剥がしを明示的に構成して確認済み**: 証憑を残したまま主張と提案状態だけ戻した文書を手で作ると、validator が『resolves proposal prop_1, which is proposed』で拒否する = 分けた状態は書けるが通らない。署名は service が鍵集合から作り、guard に落ちると null を返すので、コマンドを組み立てる側から入口を迂回できない (原則 #1)"
+            artifacts
+            - "src/command/ProposalCommands.test.js"
+            - "src/context/Proposal.js"
+
+        goal ZeroIsDeclaredNotDefaulted
+        uuid 9c0f4a71-7b2e-4d55-9a13-3e1c58f9a2b0
+        summary "鍵 0 個は『全員書ける』にも『誰も書けない』にも落ちず、所有者の 0 は宣言済みと未宣言の 2 種に型で分かれ、未宣言の個数は ratchet で数えられる"
+        state UnderReview
+
+            solution PermissionCartesianProductIsDeclared
+            uuid 3f5c9d84-6a11-4c27-8e0b-72d4a6b13e55
+            summary "node --test src/OwnershipProposalCensus.test.js — pass。権限の母集団を『所有者 3 種 × 鍵 3 種』の直積として機械に作らせ、9 通りすべてに期待値を宣言させる (未分類 0 個)。手で事例を並べると誰も考えなかった組合せが表の外に残り、そこで既定が黙って決まる。未宣言の種 (requirement.colour 等) は editPermission / readClaim / ownerOf のいずれでも throw する。0 の 2 種は isOwnerUndeclared / isOwnerlessDeclared として 1 箇所に閉じ、IDENTITY_RULES が呼び出し側での再導出を落とす。未宣言所有者は R10 が 1 件 1 問の OpenQuestion として出し、同梱例の 12 件は ratchet のベースラインとして宣言してある"
+            artifacts
+            - "src/context/Ownership.js"
+            - "src/IdentityContainment.test.js"
+
+        goal TheRecordStartsAtAHumanAct
+        uuid 5b8e2c30-94af-4f6d-b1c7-8d2059e7a614
+        summary "衝突は文書から毎回導出され保存されない。議題化・承認・閉会だけが残り、未決のまま閉会も証憑として残る。再燃は supersedes を持つ新しい議題であり、証憑の列は追記のみの線形列に保たれる"
+        state UnderReview
+
+            solution AgendaIsAssembledNotStoredTwice
+            uuid 8d41f6b2-2c70-4e98-a5f3-06b9c4d7e128
+            summary "node --test src/command/ProposalCommands.test.js — pass (15/15)。衝突が在る文書を読み込んだ直後 agenda は undefined で projectAgenda() は 0 行 — 『場を開いて見ているだけでは何も残らない』が数で出る。議題化して初めて 1 行になり、決着は関与者全員の鍵を要求して片方だけでは missing を名指しして拒否する (n-ary、ADR-049 invariant 8 と同形)。未決のまま閉会は closedBy と note を残す。開いたままの議題を supersede しようとすると validator が still open で落とす = 同じ問いが場に 2 つ在る状態を防ぐ。提案は agenda[] に複製されず、projectAgenda が読み時に合成する"
+            artifacts
+            - "src/context/Agenda.js"
+            - "src/command/ProposalCommands.test.js"

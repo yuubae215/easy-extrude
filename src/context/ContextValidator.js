@@ -49,9 +49,14 @@ import {
   VALID_PREDICATE_KINDS,
   REGION_AXES,
   CONFLICT_REF_PREFIX,
+  VALID_PROPOSAL_STATE,
+  VALID_AGENDA_STATE,
   UNKNOWN,
   UNASSIGNED,
 } from './ContextDslSchema.js'
+import { PROPOSAL_REF_PREFIX, PROPOSAL_STATE, sameClaimValue } from './Proposal.js'
+import { AGENDA_REF_PREFIX, AGENDA_STATE } from './Agenda.js'
+import { OWNER_NONE_DECLARED, TARGET_KIND, isOwnerUndeclared } from './Ownership.js'
 import { detectConflicts, detectNegotiationClusters } from './RequirementGraph.js'
 import { promoteAdmissible } from './AdmissiblePromotion.js'
 import { requiredKpis } from './RoleKpiCatalog.js'
@@ -81,6 +86,8 @@ export function validateContext(ctx) {
   const intents      = new Map((ctx.intents      ?? []).map(g => [g.ref, g]))
   const obligations  = new Map((ctx.obligations  ?? []).map(o => [o.ref, o]))
   const decisions    = new Map((ctx.decisions    ?? []).map(d => [d.ref, d]))
+  const proposals    = new Map((ctx.proposals    ?? []).map(p => [p.ref, p]))
+  const agenda       = new Map((ctx.agenda       ?? []).map(a => [a.ref, a]))
   const variables    = new Map((ctx.variables    ?? []).map(v => [v.ref, v]))
   const requirements = new Map((ctx.requirements ?? []).map(r => [r.ref, r]))
 
@@ -281,16 +288,109 @@ export function validateContext(ctx) {
       } else {
         conflict.resolvedBy = decision.ref
       }
+    } else if (typeof resolves === 'string' && resolves.startsWith(PROPOSAL_REF_PREFIX)) {
+      // ADR-104 U1: an approval receipt resolves the proposal it accepted. The
+      // receipt and the claim move in one transform, so a receipt pointing at a
+      // proposal that is not approved means the two came apart somewhere.
+      const proposal = proposals.get(resolves)
+      if (!proposal) {
+        errors.push(`decision "${decision.ref}": resolves "${resolves}" does not reference any proposal in proposals[]`)
+      } else if (proposal.state !== PROPOSAL_STATE.APPROVED) {
+        errors.push(`decision "${decision.ref}": resolves proposal "${resolves}", which is "${proposal.state}" — a receipt exists only for an approved proposal, and approval writes both in one command (ADR-104 U1)`)
+      }
     } else if (typeof resolves === 'string') {
       if (!facts.has(resolves) && !variables.has(resolves)) {
-        errors.push(`decision "${decision.ref}": resolves "${resolves}" does not reference any fact, variable, or conflict`)
+        errors.push(`decision "${decision.ref}": resolves "${resolves}" does not reference any fact, variable, conflict, or proposal`)
       }
     } else {
-      errors.push(`decision "${decision.ref}": resolves must be a fact ref, a conflict ref, or an array of variable refs`)
+      errors.push(`decision "${decision.ref}": resolves must be a fact ref, a conflict ref, a proposal ref, or an array of variable refs`)
     }
 
     if (decision.relaxes !== undefined && !liveRequirements.has(decision.relaxes.requirement)) {
       errors.push(`decision "${decision.ref}": relaxes.requirement "${decision.relaxes?.requirement}" does not reference any requirement in requirements[]`)
+    }
+  }
+
+  // ── R10: undeclared ownership → OpenQuestion (ADR-104 D2) ───────────────────
+  // An absent `owner` is not "no owner". It collapses three situations —
+  // genuinely unowned / the owner forgot to say so / everyone is waiting for
+  // someone else to claim it — and only the first is legitimate. Zero has no
+  // field of its own to look wrong in (PHILOSOPHY #31), so the count is raised
+  // here rather than defaulted away. `by` is deliberately not promoted: that
+  // would be the default this rule exists to refuse.
+  for (const req of liveRequirements.values()) {
+    if (isOwnerUndeclared(req.owner)) {
+      openQuestions.push({
+        ref:      `oq_owner_${req.ref}`,
+        raisedBy: 'R10:undeclared-owner',
+        about:    req.ref,
+        summary:  `Nobody has declared who owns "${req.ref}" — until someone does, changing it can only be proposed. Declare an owner, or declare "${OWNER_NONE_DECLARED}" if it genuinely belongs to no one`,
+      })
+    }
+  }
+
+  // ── R11: proposal integrity (ADR-104 D3 / U2) ───────────────────────────────
+  for (const proposal of proposals.values()) {
+    if (!proposal.ref?.startsWith(PROPOSAL_REF_PREFIX)) {
+      errors.push(`proposal "${proposal.ref}": ref must start with "${PROPOSAL_REF_PREFIX}"`)
+    }
+    if (!VALID_PROPOSAL_STATE.includes(proposal.state)) {
+      errors.push(`proposal "${proposal.ref}": state "${proposal.state}" is not valid. Use one of: ${VALID_PROPOSAL_STATE.join(', ')}`)
+    }
+    if (!proposal.rationale?.trim()) {
+      errors.push(`proposal "${proposal.ref}": a proposal must carry a rationale — it becomes Decision.rationale, and a receipt without one cannot say why the change was accepted (ADR-104 D3)`)
+    }
+    if (sameClaimValue(proposal.from, proposal.to)) {
+      errors.push(`proposal "${proposal.ref}": from and to are equal — a proposal carries a diff, and approving a no-op would record a receipt that states nothing (ADR-104 D3)`)
+    }
+    if (!Object.values(TARGET_KIND).includes(proposal.target?.kind)) {
+      errors.push(`proposal "${proposal.ref}": target.kind "${proposal.target?.kind}" is not a declared claim kind (${Object.values(TARGET_KIND).join(', ')})`)
+    } else if (proposal.target.kind !== TARGET_KIND.CONFLICT && !liveRequirements.has(proposal.target.ref)) {
+      errors.push(`proposal "${proposal.ref}": target "${proposal.target.ref}" does not reference any requirement in requirements[]`)
+    }
+    // Staleness is NOT checked here. Whether `from` still matches is derived at
+    // the moment approval is attempted (U2) — recording it as a document error
+    // would turn a live question into a stored answer, which is the second
+    // source this design refuses (§1.1). A stale proposal is a legal document.
+    if (proposal.state === PROPOSAL_STATE.APPROVED) {
+      const receipt = [...decisions.values()].find(d => d.resolves === proposal.ref)
+      if (!receipt) {
+        errors.push(`proposal "${proposal.ref}": approved but no Decision resolves it — approval writes the claim and the receipt in one command (ADR-104 U1), so a missing receipt means the two came apart`)
+      }
+      if (!proposal.decidedBy?.length) {
+        errors.push(`proposal "${proposal.ref}": approved without decidedBy — the receipt exists to record that the owner agreed (ADR-104 D5)`)
+      }
+    }
+  }
+
+  // ── R11': agenda integrity (ADR-104 D4 / U3) ────────────────────────────────
+  for (const item of agenda.values()) {
+    if (!item.ref?.startsWith(AGENDA_REF_PREFIX)) {
+      errors.push(`agenda item "${item.ref}": ref must start with "${AGENDA_REF_PREFIX}"`)
+    }
+    if (!VALID_AGENDA_STATE.includes(item.state)) {
+      errors.push(`agenda item "${item.ref}": state "${item.state}" is not valid. Use one of: ${VALID_AGENDA_STATE.join(', ')}`)
+    }
+    if (!item.by) {
+      errors.push(`agenda item "${item.ref}": tabling is a human act — it must name who did it (ADR-104 D4)`)
+    }
+    if (typeof item.conflict !== 'string' || !item.conflict.startsWith(CONFLICT_REF_PREFIX)) {
+      errors.push(`agenda item "${item.ref}": conflict "${item.conflict}" is not a conflict ref — only R6 output can be tabled (ADR-049 invariant 7)`)
+    }
+    // A tabled conflict R6 no longer derives is NOT an error: the disagreement
+    // may well have been resolved by the edit that made it disappear, and the
+    // act of tabling it stays part of the history either way (D4). The
+    // settlement gate is where "the conflict is gone" has consequences.
+    if (item.supersedes !== undefined) {
+      const prior = agenda.get(item.supersedes)
+      if (!prior) {
+        errors.push(`agenda item "${item.ref}": supersedes "${item.supersedes}" does not reference any agenda item`)
+      } else if (prior.state === AGENDA_STATE.OPEN) {
+        errors.push(`agenda item "${item.ref}": supersedes "${item.supersedes}", which is still open — a re-flare supersedes a *closed* item, otherwise the same question is on the floor twice (ADR-104 U3)`)
+      }
+    }
+    if (item.state === AGENDA_STATE.SETTLED && !item.decidedBy?.length) {
+      errors.push(`agenda item "${item.ref}": settled without decidedBy — settling a conflict needs every involved party's key (ADR-104 D5)`)
     }
   }
 

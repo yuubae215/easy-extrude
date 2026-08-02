@@ -184,6 +184,11 @@ test('form projection: answering every question empties the form (machine-checka
       kpi: { name: 'cycleTime', expr: 'v_working_distance', unit: 's' },
       criterion: { op: '<=', value: 1000 }, admissible: { interval: [100, 1000], source: 'stated' } },
   )
+  // answer R10 (ADR-104 D2): say who owns each claim. `by` is deliberately not
+  // promoted to `owner` by the validator — provenance is not authority — so
+  // "everyone has stated a requirement" does not by itself silence R10, and the
+  // completion property now includes having decided who may change what.
+  for (const req of ctx.requirements) req.owner = req.by
 
   const form = projectForm(validateContext(ctx))
   assert.deepStrictEqual(form, [], '全問に答えるとフォームが空になること')
