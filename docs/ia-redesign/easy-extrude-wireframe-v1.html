@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>easy-extrude — IA再設計ワイヤーフレーム v1</title>
+<style>
+  :root{
+    --paper:#f5f5f4; --box:#ffffff; --line:#9ca3af; --line-dark:#4b5563;
+    --ink:#374151; --muted:#9ca3af; --note:#2563eb; --note-bg:#eff6ff; --sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+    background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1040px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.7;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);
+    background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+  .state{display:inline-block;margin-top:8px;margin-left:6px;font-size:11px;color:#92400e;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1040px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:34px 1fr 22px;
+    grid-template-columns:172px 1fr 194px;
+    grid-template-areas:
+      "head head head"
+      "left main right"
+      "foot foot foot";
+    height:560px;
+  }
+  @media (max-width:700px){
+    .frame{grid-template-columns:120px 1fr 132px;height:520px;font-size:10px;}
+  }
+
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:3px;left:6px;font-size:9px;font-weight:700;
+    color:var(--muted);letter-spacing:.08em;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;
+    background:var(--note);color:#fff;font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;z-index:3;}
+
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    font-size:10px;color:var(--ink);padding:3px 7px;white-space:nowrap;cursor:pointer;font-family:inherit;}
+  .wf-btn.on{background:var(--sel);border-color:var(--note);font-weight:700;color:#1e3a8a;}
+  .canvas-hatch{background:repeating-linear-gradient(45deg,transparent,transparent 15px,
+    #e9ebee 15px,#e9ebee 16px);}
+  .field{border:1px solid var(--line-dark);border-radius:3px;background:#fff;
+    padding:1px 5px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .ro{color:var(--muted);}
+  .selected{background:var(--sel);border:1px solid var(--note);font-weight:700;}
+
+  /* ---- header zone ---- */
+  .hd{display:flex;align-items:center;gap:6px;padding:0 8px;height:100%;}
+  .hd .sp{flex:1;}
+  .warn{border:1px solid #b45309;background:#fffbeb;color:#92400e;border-radius:4px;
+    font-size:10px;font-weight:700;padding:3px 8px;cursor:pointer;font-family:inherit;}
+
+  /* ---- left zone ---- */
+  .lf{padding:20px 6px 6px;height:100%;display:flex;flex-direction:column;gap:5px;}
+  .toggle{display:flex;gap:0;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;}
+  .toggle button{flex:1;border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:9px;padding:3px 0;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .toggle button:last-child{border-right:none;}
+  .toggle button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .tree div{padding:2px 4px;border-bottom:1px dotted #e5e7eb;display:flex;
+    justify-content:space-between;align-items:center;}
+  .ind{padding-left:12px !important;color:#6b7280;}
+  .pane{display:none;}
+  .pane.on{display:block;}
+  .gnode{border:1px solid var(--line-dark);border-radius:3px;padding:2px 4px;
+    background:#fff;text-align:center;font-size:9px;}
+  .gedge{text-align:center;color:var(--muted);font-size:9px;line-height:1.1;}
+  .gedge.dash{color:var(--note);}
+
+  /* ---- main / HUD ---- */
+  .main-wrap{position:relative;height:100%;}
+  .hud{position:absolute;top:20px;left:8px;width:158px;border:1px solid var(--line-dark);
+    background:rgba(255,255,255,.95);border-radius:4px;padding:5px 6px;font-size:9.5px;line-height:1.6;}
+  .hud .ht{font-weight:700;font-size:9px;letter-spacing:.05em;color:var(--muted);margin-bottom:3px;}
+  .hud .row{display:flex;justify-content:space-between;}
+  .hud .zero{color:#92400e;}
+  .hud .way{color:var(--note);text-decoration:underline;cursor:pointer;}
+  .gizmo{position:absolute;top:20px;right:8px;width:44px;height:44px;border:1px solid var(--line);
+    border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:9px;}
+  .robot{position:absolute;left:44%;top:46%;transform:translate(-50%,-50%);
+    border:2px solid var(--note);background:var(--sel);padding:10px 16px;border-radius:3px;
+    font-size:10px;font-weight:700;color:#1e3a8a;}
+  .hudtoggle{position:absolute;bottom:6px;left:8px;font-size:9px;}
+
+  /* ---- right zone ---- */
+  .rt{padding:20px 7px 6px;height:100%;display:flex;flex-direction:column;gap:4px;}
+  .grp{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    border-bottom:1px solid #e5e7eb;padding-bottom:2px;margin-top:3px;}
+  .kv{display:flex;justify-content:space-between;gap:4px;align-items:center;}
+  .chip{border:1px solid var(--line-dark);border-radius:8px;padding:0 5px;font-size:9px;}
+  .ok{color:#15803d;border-color:#15803d;}
+  .ng{color:#b91c1c;border-color:#b91c1c;}
+
+  /* ---- foot ---- */
+  .ft{display:flex;align-items:center;padding:0 8px;height:100%;gap:10px;
+    font-size:9.5px;color:var(--muted);}
+
+  /* ---- 場 modal ---- */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.35);z-index:10;
+    display:none;align-items:center;justify-content:center;padding:14px;}
+  .scrim.on{display:flex;}
+  .dlg{background:#fff;border:2px solid var(--line-dark);border-radius:6px;
+    width:min(560px,100%);max-height:100%;overflow:auto;position:relative;cursor:pointer;}
+  .dlg .dh{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);}
+  .dlg .db{padding:10px;}
+  table.mx{border-collapse:collapse;width:100%;font-size:9.5px;}
+  table.mx th,table.mx td{border:1px solid var(--line);padding:3px 4px;text-align:center;}
+  table.mx th{background:#f3f4f6;font-weight:700;}
+  table.mx td.x{background:#fef2f2;color:#b91c1c;font-weight:700;}
+  table.mx td.o{background:#f0fdf4;color:#15803d;}
+  .gapline{margin-top:8px;font-size:10px;line-height:1.8;border-top:1px dashed var(--line);padding-top:7px;}
+
+  .note-panel{max-width:1040px;margin:12px auto 0;background:var(--note-bg);
+    border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:104px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);
+    margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);
+    color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.85;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+  .tension{max-width:1040px;margin:14px auto 0;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.85;}
+  .tension b{color:#92400e;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>easy-extrude — IA再設計ワイヤーフレーム v1</h1>
+  <p>
+    初版。忠実度は<b>グレーボックス</b>(色・実データ・装飾なし、注釈用の青1色のみ)で、議論の対象は<b>配置と優先度</b>だけ。
+    対象幅はアプリ全体のIA(直接モデリング/意味の層/検証/交渉)。<br>
+    描いている代表状態:<b>「Robot 選択中・未解決コンフリクト3件・Context文書あり」</b>。
+    段階2で導出した基準(住所は対象の性質でなく<b>クライテリアの所有者数</b>で決まる／集約=常設・展開=呼び出し)を画面に落としたもの。
+  </p>
+  <span class="hint">💡 各エリアをタップすると設計根拠が下に出ます</span>
+  <span class="state">▶ 動かせます:左パネルの[幾何|意味]切替 / ヘッダの[⚠3 未解決]で「場」を開く / ビュー内の「検証0件の状態を見る」</span>
+</header>
+
+<div class="frame">
+
+  <!-- 1 ヘッダ -->
+  <div class="zone" style="grid-area:head;" data-note="1">
+    <span class="badge">1</span>
+    <div class="hd">
+      <span class="wf-btn">Mode ▾</span>
+      <span class="wf-btn">↩</span><span class="wf-btn">↪</span>
+      <span class="sp"></span>
+      <button class="warn" id="openBa" data-note="6">⚠ 3 未解決</button>
+      <span class="sp"></span>
+      <span class="wf-btn">始める ▾</span>
+      <span class="wf-btn">ファイル ▾</span>
+    </div>
+  </div>
+
+  <!-- 2 左:構造ナビゲータ -->
+  <div class="zone" style="grid-area:left;" data-note="2">
+    <span class="zone-label">構造(選ぶ)</span><span class="badge">2</span>
+    <div class="lf">
+      <div class="toggle">
+        <button id="tGeo" class="on">幾何</button>
+        <button id="tSem">意味</button>
+      </div>
+
+      <div class="pane on" id="paneGeo">
+        <div class="tree">
+          <div><span>□ Cube</span><span class="ro">👁</span></div>
+          <div class="selected"><span>□ Robot</span><span class="ro">👁</span></div>
+          <div class="ind"><span>⌖ base</span><span class="ro">👁</span></div>
+          <div class="ind"><span>⌖ tcp</span><span class="ro">👁</span></div>
+          <div><span>□ Conveyor</span><span class="ro">👁</span></div>
+          <div><span>⊡ Sketch</span><span class="ro">👁</span></div>
+        </div>
+      </div>
+
+      <div class="pane" id="paneSem">
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div class="gnode selected">Robot</div>
+          <div class="gedge dash">┆ feeds ┆</div>
+          <div class="gnode">Conveyor</div>
+          <div class="gedge">│ 親子</div>
+          <div class="gnode">Cell 床</div>
+          <div class="gedge dash">┆ within ┆</div>
+          <div class="gnode" style="border-style:dashed;">◇ 作業ゾーン</div>
+          <div style="margin-top:4px;font-size:8.5px;color:#9ca3af;line-height:1.5;">
+            実線=親子構造<br>点線=SpatialLink(意味)<br>◇=Lynch注釈
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 中央:3Dビュー -->
+  <div class="zone canvas-hatch" style="grid-area:main;" data-note="3">
+    <span class="zone-label">3Dビュー(触る)</span><span class="badge">3</span>
+    <div class="main-wrap">
+      <div class="gizmo">軸</div>
+      <div class="robot">Robot<br><span style="font-weight:400;font-size:9px;">(選択中)</span></div>
+
+      <!-- 4 KPI HUD -->
+      <div class="hud" data-note="4" id="hud">
+        <div class="ht">シーンのKPI</div>
+        <div id="hudFull">
+          <div class="row"><span>受け入れ</span><span>4 / 6 パス</span></div>
+          <div class="row"><span>リーチ余裕</span><span>+38 mm</span></div>
+          <div class="row"><span>干渉</span><span>0 件</span></div>
+        </div>
+        <div id="hudZero" style="display:none;">
+          <div class="zero">検証項目なし</div>
+          <div class="zero" style="font-size:9px;">受け入れ基準が未定義</div>
+          <div class="way">→ 基準を定義する</div>
+        </div>
+      </div>
+      <div class="hudtoggle"><button class="wf-btn" id="zeroBtn">検証0件の状態を見る</button></div>
+    </div>
+  </div>
+
+  <!-- 5 右:選択物の詳細 -->
+  <div class="zone" style="grid-area:right;" data-note="5">
+    <span class="zone-label">Robot の詳細(編集)</span><span class="badge">5</span>
+    <div class="rt">
+      <div class="grp">実体</div>
+      <div class="kv"><span>名前</span><span class="field">Robot</span></div>
+      <div class="grp">位置・姿勢</div>
+      <div class="kv"><span>X</span><span class="field">1.20</span></div>
+      <div class="kv"><span>Y</span><span class="field">0.40</span></div>
+      <div class="kv"><span>Z</span><span class="field">0.00</span></div>
+      <div class="grp">この実体の検証 <span style="font-weight:400;">(戻り値)</span></div>
+      <div class="kv"><span>リーチ</span><span class="chip ok">✓ 届く</span></div>
+      <div class="kv"><span>干渉</span><span class="chip ok">✓ なし</span></div>
+      <div class="kv"><span>把持候補</span><span class="chip">12 件 ▸</span></div>
+      <div class="kv"><span>来歴</span><span class="chip">なぜここ? ▸</span></div>
+    </div>
+  </div>
+
+  <!-- 6 下 -->
+  <div class="zone" style="grid-area:foot;" data-note="7">
+    <span class="badge" style="top:2px;">7</span>
+    <div class="ft"><span>G = 移動</span><span>R = 回転</span><span>Tab = 編集</span><span>Ctrl = スナップ</span></div>
+  </div>
+
+  <!-- 6 場(モーダル) -->
+  <div class="scrim" id="scrim">
+    <div class="dlg" data-note="6">
+      <span class="badge" style="top:6px;right:34px;">6</span>
+      <div class="dh">
+        <b style="font-size:11px;">場 — 要件コンフリクトの解消</b>
+        <span style="flex:1"></span>
+        <button class="wf-btn" id="closeBa">✕ 閉じる</button>
+      </div>
+      <div class="db">
+        <table class="mx">
+          <tr><th></th><th>d_ref</th><th>cycle</th><th>mount_h</th></tr>
+          <tr><th>vision_eng</th><td class="x">✕</td><td></td><td></td></tr>
+          <tr><th>robot_eng</th><td class="x">✕</td><td class="o">✓</td><td></td></tr>
+          <tr><th>mech_eng</th><td class="x">✕</td><td></td><td class="o">✓</td></tr>
+        </table>
+        <div class="gapline">
+          <b>d_ref に共通部分なし</b><br>
+          vision 200–350 / robot 380–600 / mech 600–1200 &nbsp;→&nbsp; ギャップ 30mm<br>
+          <span style="color:#6b7280;">誰も間違っていない。食い違いは3人の主張の和の中にしかない。</span><br>
+          <button class="wf-btn" style="margin-top:6px;">この変数を確定する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。「なぜそこに置くのか」の設計根拠が表示されます。</p>
+</div>
+
+<div class="tension">
+  <b>⚠ v1 に残した引っかかり(次の反復のタネ)</b><br>
+  この v1 は「場」を<b>モーダル</b>にしました。常設スロットを取らせないためです。
+  でも <code>35 領域オーサリング</code> は<b>3Dビューの上で領域をドラッグしながら交渉する</b>機能で、
+  場と3Dビューが<b>同時に</b>要ります。モーダルは3Dを覆い隠すので、この機能だけ入りません。<br>
+  つまり「場」は1種類ではないのでは?—<b>データだけの場</b>(Matrix/承認)と<b>空間の場</b>(領域を動かす)は、
+  同じ置き方でよいですか?
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "ヘッダ:シーン全体のスコープ + 「発見」の集約",
+    body: "スコープの大きい操作ほど外周・上部へ(スコープ×頻度)。ここが担うのは Mode/Undo と、ファイル・開始の2つのドロップダウン。—— 最重要は中央の <b>⚠3 未解決</b>。これは「集約=常設、展開=呼び出し」の集約側で、<b>場を開かなくても、場に入る必要があるかが分かる</b>ために外に出してある。現行実装ではこの件数が ContextLayer の中でしか描画されず(ContextLayer.jsx:138)、『場に入らないと場に入るべきかが分からない』という循環依存になっていた。共有KPIを場まで待たせないのは shift-left(CI が結合テストフェーズを push の戻り値に変えたのと同型)。"
+  },
+  "2": {
+    title: "左:構造ナビゲータ —「選ぶ」。幾何 ⇄ 意味 をトグル",
+    body: "エディタ系の収斂形は「左=選ぶ / 中央=触る / 右=編集」。左を占めるのは<b>幾何のツリー(既定)</b>で、<b>意味のグラフ</b>は同じ枠のトグルで切り替える。既定を幾何にした根拠は<b>初期頻度</b>——関係性の論理は最初は考えないので、常設スロットは高頻度側が取る(スコープ×頻度)。同じ形は Blender の Outliner 表示モード(View Layer / Scene / Blender File)、Figma の Layers/Assets タブ。<br>ただし条件が1つ:<b>トグルの奥に「発見」を入れない</b>。未解決件数をここに隠すと、4クリックが1トグルに浅くなるだけで循環依存の形は同じ。だから件数バッジは①のヘッダにある。<br>意味側には SpatialLink と Lynch 注釈が同居する——実装上もこの2つは1つのグラフ(AppController.js:1813-1822 が注釈をノード種別として同じ関係グラフに流し込んでいる)。"
+  },
+  "3": {
+    title: "中央:3Dビュー —「触る」。主役なので最大面積",
+    body: "ビジュアルヒエラルキー:最も長く注視する対象に最大面積。「画面の主役は?」に即答できる状態が良いレイアウト。<br>ここが主役である以上、<b>ビューにだけ効くもの(視点・グリッド・軸ギズモ)はビュー上のオーバーレイに浮かべ</b>、サイドバーに混ぜない(混ぜるとグルーピングが濁る)。右上=軸ギズモは現行踏襲。"
+  },
+  "4": {
+    title: "KPI HUD(左上オーバーレイ):シーンスコープの検証を、選択に依存させない",
+    body: "「シーン全体のKPIは右パネルに置けない」——右パネルの契約は<b>選択物</b>の詳細であり、シーンスコープを混ぜると1カラム1責務が壊れるから。加えて<b>KPIは操作しながら見る</b>もので、ロボットをドラッグ中に視線は3Dビューにある。240px先の数字は視野に入らない(§トレードオフ指標は操作対象の直近=HUDへ、詳細内訳は要求時に)。<b>オーバーレイの四隅分担</b>の慣習では左上=情報/HUD、右上=操作ツール——現行で右上はギズモ占有、左上は空いていた。<br><b>0件の扱い(原則 #31)</b>:Context文書がなければ受け入れ判定は0件。そこで『✓全部パス』は<b>嘘</b>(検査していないだけ)、消すのは #15 Fixed Slots 違反。<b>正当な0は推論させず宣言させる</b>——『検証項目なし/基準が未定義』+ 出口の名指し。ADR-090『0台のロボット』と同じ形。「検証0件の状態を見る」で切り替わります。"
+  },
+  "5": {
+    title: "右:選択物の詳細 —「編集」+ その実体の検証(戻り値)",
+    body: "エンティティスコープの精密編集。ここに<b>リーチ/干渉/把持候補</b>が入ったのが v1 の最大の移動:『37 Grasp Search は 4 Robot の近くにあるべき』の実装。現行は AddMenu(左上)と Context▾ の奥のタブ(右端4クリック)で画面の正反対にあり、<b>置く→届くか見る→置き直す</b>のループが閉じていなかった。<br>基準は「クライテリアの所有者が単数か複数か」——自分の入力を自分の基準で測るものは計算で出るので<b>戻り値</b>(対象の隣に、待たずに)。所有者が複数のものだけが<b>場</b>へ行く。RoboDK / Visual Components もロボットを置いた瞬間にリーチ包絡を返す。"
+  },
+  "6": {
+    title: "場:要件コンフリクトの解消 — 常設スロットを取らない",
+    body: "<b>食い違いは1人の視野の中には存在しない</b>ので計算では出せず、集まる場所が要る。vision 200–350 / robot 380–600 / mech 600–1200 mm——誰も間違っていないのに共通部分が空。各自が自分の画面を見ている限り要件は完璧に満たされている。<br>ここは<b>展開</b>側なので常設しない(呼び出したときだけ)。集約(⚠3)はヘッダに常設。同じデータの解像度違いを1つのタブに畳んでいたのが現行の問題で、段階的開示で分けた。<br>現行 ContextLayer は 280px に最大10タブを flex:1 で並べており、1枚28px・文字に使えるのは24px——10pxフォントの『Overview』は約45px必要で<b>物理的に入らない</b>(ContextLayer.jsx:133-152)。場を全幅で開くのはこの制約からの解放でもある。"
+  },
+  "7": {
+    title: "下:ヒント/状態 — 24px を維持",
+    body: "下部ゾーンの定番のうち『ステータスバー』を選択。タイムラインを持たないアプリなので、<b>空きを埋めずに主役へ面積を返す</b>のも判断のうち。現行の24pxを踏襲する(慣習への準拠も立派なIA判断——既存の学習の再利用)。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let active = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id || !notes[id]) return;
+    if (active) active.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); active = el; }
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + notes[id].title + '</div>' +
+      '<p>' + notes[id].body + '</p>';
+  });
+});
+
+// 左パネル 幾何/意味 トグル
+const tGeo = document.getElementById("tGeo"), tSem = document.getElementById("tSem");
+const pGeo = document.getElementById("paneGeo"), pSem = document.getElementById("paneSem");
+function setPane(sem){
+  tGeo.classList.toggle("on", !sem); tSem.classList.toggle("on", sem);
+  pGeo.classList.toggle("on", !sem); pSem.classList.toggle("on", sem);
+}
+tGeo.addEventListener("click", () => setPane(false));
+tSem.addEventListener("click", () => setPane(true));
+
+// 場の開閉
+const scrim = document.getElementById("scrim");
+document.getElementById("openBa").addEventListener("click", () => scrim.classList.add("on"));
+document.getElementById("closeBa").addEventListener("click", e => { e.stopPropagation(); scrim.classList.remove("on"); });
+scrim.addEventListener("click", e => { if (e.target === scrim) scrim.classList.remove("on"); });
+
+// HUD の 0件状態
+let zero = false;
+const zBtn = document.getElementById("zeroBtn");
+zBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  zero = !zero;
+  document.getElementById("hudFull").style.display = zero ? "none" : "block";
+  document.getElementById("hudZero").style.display = zero ? "block" : "none";
+  zBtn.textContent = zero ? "検証ありの状態に戻す" : "検証0件の状態を見る";
+  document.querySelector('[data-note="4"]').click();
+});
+</script>
+</body>
+</html>

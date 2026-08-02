@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>easy-extrude — IA再設計ワイヤーフレーム v7</title>
+<style>
+  :root{
+    --paper:#f5f5f4; --box:#ffffff; --line:#9ca3af; --line-dark:#4b5563;
+    --ink:#374151; --muted:#9ca3af; --note:#2563eb; --note-bg:#eff6ff; --sel:#dbeafe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+    background:var(--paper);color:var(--ink);padding:16px;}
+  header{max-width:1040px;margin:0 auto 12px;}
+  header h1{font-size:15px;font-weight:700;}
+  header p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.75;}
+  .diff{max-width:1040px;margin:0 auto 12px;background:#f0fdf4;border:1px solid #bbf7d0;
+    border-radius:6px;padding:10px 13px;font-size:12px;line-height:1.85;}
+  .diff b{color:#15803d;}
+  .hint{display:inline-block;margin-top:8px;font-size:11px;color:var(--note);
+    background:var(--note-bg);border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px;}
+  .state{display:inline-block;margin-top:8px;margin-left:6px;font-size:11px;color:#92400e;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:4px 8px;}
+
+  .frame{
+    max-width:1040px;margin:0 auto;background:var(--box);
+    border:2px solid var(--line-dark);border-radius:6px;overflow:hidden;
+    display:grid;position:relative;font-size:11px;
+    grid-template-rows:34px 1fr 0px 22px;
+    grid-template-columns:176px 1fr 200px;
+    grid-template-areas:
+      "head head head"
+      "left main right"
+      "ba   ba   ba"
+      "foot foot foot";
+    height:600px;
+    transition:grid-template-rows .22s ease;
+  }
+  .frame.ba-open{grid-template-rows:34px 1fr 186px 22px;}
+  @media (max-width:700px){
+    .frame{grid-template-columns:120px 1fr 132px;height:560px;font-size:10px;}
+  }
+
+  .zone{position:relative;border:1px dashed var(--line);cursor:pointer;transition:background .15s;overflow:hidden;}
+  .zone:hover,.zone.active{background:#f0f7ff;}
+  .zone.active{outline:2px solid var(--note);outline-offset:-2px;}
+  .zone-label{position:absolute;top:3px;left:6px;font-size:9px;font-weight:700;
+    color:var(--muted);letter-spacing:.08em;z-index:2;}
+  .badge{position:absolute;top:3px;right:5px;width:16px;height:16px;border-radius:50%;
+    background:var(--note);color:#fff;font-size:10px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;z-index:4;}
+
+  .wf-btn{border:1px solid var(--line-dark);border-radius:4px;background:#fff;
+    font-size:10px;color:var(--ink);padding:3px 7px;white-space:nowrap;cursor:pointer;font-family:inherit;}
+  .canvas-hatch{background:repeating-linear-gradient(45deg,transparent,transparent 15px,
+    #e9ebee 15px,#e9ebee 16px);}
+  .field{border:1px solid var(--line-dark);border-radius:3px;background:#fff;
+    padding:1px 5px;font-weight:600;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .ro{color:var(--muted);}
+
+  /* 選択の強度: focused / neighbor(既存語彙 — 台帳の LINK NETWORK ノード) */
+  .focused{background:var(--sel);border:1px solid var(--note);font-weight:700;color:#1e3a8a;}
+  .neighbor{background:#f3f4f6;border:1px dashed var(--line);color:#6b7280;}
+
+  .hd{display:flex;align-items:center;gap:6px;padding:0 8px;height:100%;}
+  .hd .sp{flex:1;}
+  .warn{border:1px solid #b45309;background:#fffbeb;color:#92400e;border-radius:4px;
+    font-size:10px;font-weight:700;padding:3px 8px;cursor:pointer;font-family:inherit;}
+  .warn.on{background:#b45309;color:#fff;}
+
+  .lf{padding:20px 6px 6px;height:100%;display:flex;flex-direction:column;gap:5px;overflow:auto;}
+  .toggle{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;flex-shrink:0;}
+  .toggle button{flex:1;border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:9px;padding:3px 0;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .toggle button:last-child{border-right:none;}
+  .toggle button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+  .row{padding:2px 4px;border-bottom:1px dotted #e5e7eb;display:flex;
+    justify-content:space-between;align-items:center;cursor:pointer;}
+  .ind{padding-left:12px !important;color:#6b7280;}
+  .pane{display:none;} .pane.on{display:block;}
+  .sec{font-size:8.5px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    margin-top:5px;padding-bottom:1px;border-bottom:1px solid #e5e7eb;}
+  .gedge{text-align:center;color:var(--muted);font-size:9px;line-height:1.1;}
+  .gedge.dash{color:var(--note);}
+  .legend{margin-top:5px;font-size:8.5px;color:#9ca3af;line-height:1.5;}
+
+  .main-wrap{position:relative;height:100%;}
+  .hud{position:absolute;top:20px;left:8px;width:152px;border:1px solid var(--line-dark);
+    background:rgba(255,255,255,.95);border-radius:4px;padding:5px 6px;font-size:9.5px;line-height:1.6;z-index:3;}
+  .hud .ht{font-weight:700;font-size:9px;letter-spacing:.05em;color:var(--muted);margin-bottom:3px;}
+  .hud .kr{display:flex;justify-content:space-between;}
+  .hud .zero{color:#92400e;}
+  .hud .way{color:var(--note);text-decoration:underline;cursor:pointer;}
+
+  /* ギズモ = 向きの唯一の入口。隣に投影方式トグルだけ */
+  .gzwrap{position:absolute;top:20px;right:8px;z-index:3;display:flex;flex-direction:column;
+    align-items:center;gap:3px;}
+  .gizmo{width:52px;height:52px;border:1px solid var(--line-dark);border-radius:50%;
+    background:rgba(255,255,255,.95);position:relative;cursor:pointer;}
+  .gizmo span{position:absolute;font-size:8.5px;font-weight:700;color:#6b7280;
+    width:14px;height:14px;border-radius:50%;border:1px solid var(--line);background:#fff;
+    display:flex;align-items:center;justify-content:center;}
+  .gizmo span.on{background:var(--sel);border-color:var(--note);color:#1e3a8a;}
+  .gz-x{left:36px;top:19px;} .gz-y{left:19px;top:36px;} .gz-z{left:19px;top:2px;}
+  .gz-c{left:19px;top:19px;border:none !important;background:none !important;color:#9ca3af !important;}
+  .projtog{display:flex;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;
+    background:#fff;}
+  .projtog button{border:none;border-right:1px solid var(--line-dark);background:#fff;
+    font-size:8px;padding:2px 4px;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .projtog button:last-child{border-right:none;}
+  .projtog button.on{background:var(--sel);font-weight:700;color:#1e3a8a;}
+
+  .scene{position:absolute;inset:0;display:none;}
+  .scene.on{display:block;}
+  .obj{position:absolute;border:1px solid var(--line-dark);background:#fff;font-size:9px;
+    display:flex;align-items:center;justify-content:center;color:#6b7280;border-radius:2px;}
+  .obj.focused{background:var(--sel);border:2px solid var(--note);color:#1e3a8a;font-weight:700;}
+  .obj.neighbor{border-style:dashed;color:#9ca3af;}
+  .ghostband{position:absolute;display:none;border:1px dashed #b45309;
+    background:repeating-linear-gradient(45deg,transparent,transparent 5px,#fde68a 5px,#fde68a 6px);
+    align-items:flex-end;justify-content:center;font-size:8.5px;color:#92400e;padding-bottom:2px;}
+  .ghostband.on{display:flex;}
+  .ghostband.focused{border:2px solid var(--note);}
+  /* 未解決の束縛を受けている実体 */
+  .obj.unres{border:2px dashed #b45309;background:#fffbeb;color:#92400e;}
+  .obj .warnmark{position:absolute;top:-7px;right:-7px;width:14px;height:14px;border-radius:50%;
+    background:#b45309;color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;}
+  /* 権限: 書ける行 / 🔒 読めるだけの行 */
+  .own{font-weight:700;}
+  .lock{color:var(--muted);}
+  .lockmark{font-size:8.5px;color:var(--muted);}
+  .whobar{font-size:8.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:3px;padding:2px 4px;line-height:1.5;}
+  .ownbadge{font-size:7.5px;border:1px solid var(--line);border-radius:6px;padding:0 3px;
+    color:#6b7280;background:#fafafa;margin-left:3px;}
+  .ownbadge.mine{border-color:var(--note);color:#1e3a8a;background:var(--sel);}
+  .proposal{position:absolute;border:2px dashed #7c3aed;background:rgba(124,58,237,.10);
+    color:#5b21b6;font-size:8.5px;display:none;align-items:center;justify-content:center;border-radius:2px;}
+  .proposal.on{display:flex;}
+  .keypanel{position:absolute;top:34px;right:8px;z-index:20;background:#fff;border:1px solid var(--line-dark);
+    border-radius:5px;padding:7px 8px;box-shadow:0 4px 14px rgba(0,0,0,.18);width:190px;display:none;}
+  .keypanel.on{display:block;}
+  .keypanel .kt{font-size:9px;font-weight:700;color:var(--muted);margin-bottom:4px;}
+  .keypanel .kr2{display:flex;align-items:center;gap:4px;margin-bottom:3px;font-size:9.5px;}
+  .keypanel input{width:46px;border:1px solid var(--line-dark);border-radius:3px;font-size:9px;
+    padding:1px 3px;font-family:inherit;box-shadow:inset 0 1px 2px rgba(0,0,0,.07);}
+  .keypanel .done{color:#15803d;font-weight:700;}
+  .keynote{font-size:8px;color:#92400e;line-height:1.5;margin-top:4px;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:3px;padding:2px 4px;}
+  .counters{display:flex;gap:0;border:1px solid var(--line-dark);border-radius:4px;overflow:hidden;
+    cursor:pointer;font-size:9.5px;font-weight:700;font-family:inherit;background:#fff;}
+  .counters span{padding:3px 6px;border-right:1px solid var(--line-dark);white-space:nowrap;}
+  .counters span:last-child{border-right:none;}
+  .c-conf{background:#fef2f2;color:#b91c1c;}
+  .c-prop{background:#f5f3ff;color:#5b21b6;}
+  .c-own{background:#fffbeb;color:#92400e;}
+  .counters span.clean{background:#f0fdf4 !important;color:#15803d !important;}
+  .pbtn{border:1px solid var(--line-dark);border-radius:3px;background:#fff;font-size:8.5px;
+    padding:0 4px;cursor:pointer;font-family:inherit;margin-left:3px;}
+  .prow{color:#5b21b6;margin-bottom:3px;line-height:1.5;}
+  .arow{color:#15803d;margin-bottom:2px;line-height:1.5;}
+  .ownwarn{font-size:8px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:3px;padding:3px 4px;line-height:1.5;margin-top:3px;}
+  .c-drv{background:#f3f4f6;color:#6b7280;}
+  .c-ag{background:#f5f3ff;color:#5b21b6;}
+  .pbtn[disabled]{border-style:dashed;color:#b0b0b0;cursor:help;background:#fafafa;}
+  .gatewhy{font-size:7.5px;color:#92400e;line-height:1.4;}
+  .propbtn{border:1px solid #7c3aed;color:#5b21b6;background:#f5f3ff;border-radius:3px;
+    font-size:8px;padding:0 4px;cursor:pointer;font-family:inherit;}
+
+  .rt{padding:20px 7px 6px;height:100%;display:flex;flex-direction:column;gap:4px;overflow:auto;}
+  .grp{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    border-bottom:1px solid #e5e7eb;padding-bottom:2px;margin-top:3px;}
+  .kv{display:flex;justify-content:space-between;gap:4px;align-items:center;}
+  .chip{border:1px solid var(--line-dark);border-radius:8px;padding:0 5px;font-size:9px;}
+  .ok{color:#15803d;border-color:#15803d;}
+  .cap{font-size:8.5px;color:var(--muted);line-height:1.5;margin-top:2px;}
+  .rpane{display:none;} .rpane.on{display:flex;flex-direction:column;gap:4px;}
+
+  .ft{display:flex;align-items:center;padding:0 8px;height:100%;gap:10px;
+    font-size:9.5px;color:var(--muted);}
+
+  .ba{padding:0;height:100%;display:flex;flex-direction:column;background:#fcfcfc;}
+  .bh{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line);
+    font-size:10px;font-weight:700;flex-shrink:0;}
+  .bb{display:flex;gap:12px;padding:7px 9px;overflow:auto;flex:1;}
+  table.mx{border-collapse:collapse;font-size:9.5px;flex-shrink:0;}
+  table.mx th,table.mx td{border:1px solid var(--line);padding:3px 7px;text-align:center;white-space:nowrap;}
+  table.mx th{background:#f3f4f6;font-weight:700;}
+  table.mx th.col{cursor:pointer;}
+  table.mx th.col.on{background:var(--sel);color:#1e3a8a;}
+  table.mx td.x{background:#fef2f2;color:#b91c1c;font-weight:700;}
+  table.mx td.o{background:#f0fdf4;color:#15803d;}
+  .gapbox{font-size:10px;line-height:1.75;border-left:1px dashed var(--line);padding-left:12px;min-width:0;}
+  .gapbox .lead{font-weight:700;color:#92400e;}
+
+  .note-panel{max-width:1040px;margin:12px auto 0;background:var(--note-bg);
+    border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;min-height:104px;}
+  .note-panel .np-title{font-size:12px;font-weight:700;color:var(--note);
+    margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .note-panel .np-num{width:18px;height:18px;border-radius:50%;background:var(--note);
+    color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .note-panel p{font-size:12px;line-height:1.85;}
+  .note-panel .placeholder{color:var(--muted);font-size:12px;line-height:1.8;}
+  .tension{max-width:1040px;margin:14px auto 0;background:#fffbeb;border:1px solid #fde68a;
+    border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.85;}
+  .tension b{color:#92400e;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>easy-extrude — IA再設計ワイヤーフレーム v7</h1>
+  <p>忠実度はグレーボックスのまま。<b>衝突と提案が同じライフサイクルに畳まれました</b> — 計算されただけ(揮発)→ 人が場に上げた(議題)→ 決着した(証憑)。</p>
+  <span class="hint">💡 各エリアをタップすると設計根拠が下に出ます</span>
+  <span class="state">▶ 動く:[🔑 鍵](1111/2222/3333) / 右パネルの他人の行の<b>[✎ 提案]</b> / [この実体を動かす] / 場の<b>[議題にする]</b>と<b>[承認]</b>(鍵がないと理由付きで無効) / [所有者なしと宣言]</span>
+</header>
+
+<div class="diff">
+  <b>v6 → v7 の変更点(3件。v6 の引っかかり 3 つをすべて回収)</b><br>
+  <b>①</b> <b>「直接編集不可・提案可」を第三の状態にした。</b>他人の主張区間は 🔒 で触れなかったが、
+  実体を動かすのは提案できるのに数値は提案すらできないのは<b>非対称</b>だった。
+  いま行は 3 状態:<b>直接編集可</b>(自分・枠+内側の影)/ <b>直接編集不可・提案可</b>(他人・[✎ 提案])/
+  <b>—</b>。実体でも数値でも規則は 1 つ:<b>鍵があれば確定、なければ提案</b>。<br>
+  <b>②</b> <b>承認は所有者の鍵を持つ人だけ。</b>証憑の価値は「<b>所有者が</b>良いと言った」ことなので、
+  誰でも押せると <code>decidedBy</code> に書く名前の根拠がない。無効時は<b>理由を明示</b>する
+  (repo の disabled-as-quest — 無効フラグとその理由は同じ述語の返り値から来る。無言の no-op は禁止 #11)。
+  衝突の解消は<b>関与する全員の鍵</b>が要る(既存の n-ary 合同確定と同じ)。<br>
+  <b>③</b> <b>衝突と提案を同じライフサイクルに畳んだ。</b>
+  「開催されるまではただの戻り値、開催後は歴史」から規則が 1 行で出る ——
+  <b>導出値は保存しない。人の行為は保存する。</b>衝突は文書から毎回導出できるので保存すると
+  第二の源になる(§1.1 / 原則 #24)。「議題にする」「これで良い」は人の行為なので残す。
+  帰結:<b>場の議題 = 議題化された衝突 ∪ 提案</b>。カウンタも
+  <code>≈ 衝突(揮発)</code> / <code>⚑ 議題(場にある)</code> / <code>◇ 未所有</code> の 3 本に整理された。
+</div>
+
+<div class="frame" id="frame">
+
+  <div class="zone" style="grid-area:head;" data-note="1">
+    <span class="badge">1</span>
+    <div class="hd">
+      <span class="wf-btn">Mode ▾</span>
+      <span class="wf-btn">+ 追加 ▾</span>
+      <span class="wf-btn">↩</span><span class="wf-btn">↪</span>
+      <span class="sp"></span>
+      <button class="counters" id="openBa" data-note="6"><span class="c-drv" id="cConf">≈ 3 衝突</span><span class="c-ag" id="cProp">⚑ 0 議題</span><span class="c-own" id="cOwn">◇ 2 未所有</span></button>
+      <span class="sp"></span>
+      <button class="wf-btn" id="whoBtn" style="border-color:#b45309;color:#92400e;">🔑 鍵: 0 ▾</button>
+      <span class="wf-btn">始める ▾</span>
+      <span class="wf-btn">ファイル ▾</span>
+    </div>
+  </div>
+
+  <div class="keypanel" id="keyPanel">
+    <div class="kt">鍵を解除(誤操作防止)</div>
+    <div class="kr2"><span style="flex:1">vision_eng</span><input id="kVision" placeholder="1111"><span id="sVision"></span></div>
+    <div class="kr2"><span style="flex:1">robot_eng</span><input id="kRobot" placeholder="2222"><span id="sRobot"></span></div>
+    <div class="kr2"><span style="flex:1">mech_eng</span><input id="kMech" placeholder="3333"><span id="sMech"></span></div>
+    <div class="keynote">これは<b>認証ではなく誤操作防止の鍵</b>。サーバのないクライアント側チェックなので秘密は守れない。
+    実際のリスクは攻撃者ではなく「他人の主張をうっかり書き換える」こと。鍵の<b>集合</b>という構造は将来も変わらず、
+    チェックだけが後でサーバ側へ移る(認証は BFF/core の責務)。</div>
+  </div>
+
+  <!-- 左 -->
+  <div class="zone" style="grid-area:left;" data-note="2">
+    <span class="zone-label">構造(選ぶ)</span><span class="badge">2</span>
+    <div class="lf">
+      <div class="toggle">
+        <button id="tGeo" class="on">幾何</button><button id="tSem">意味</button>
+      </div>
+
+      <div class="pane on" id="paneGeo">
+        <div class="row" data-sel="cube"><span>□ Cube</span><span class="ownbadge" id="bCube">◇ 未所有</span></div>
+        <div class="row" data-sel="fixture"><span>□ Fixture</span><span class="ownbadge" id="bFixture">◇ 未所有</span></div>
+        <div class="row" id="rowRobotG" data-sel="robot"><span>□ Robot</span><span class="ownbadge" data-own="robot_eng">robot</span></div>
+        <div class="row ind" data-sel="base"><span>⌖ base</span><span class="ownbadge" data-own="mech_eng">mech</span></div>
+        <div class="row ind"><span>⌖ tcp</span><span class="ownbadge" data-own="robot_eng">robot</span></div>
+        <div class="row"><span>□ Conveyor</span><span class="ownbadge" data-own="mech_eng">mech</span></div>
+        <div class="row"><span>⟿ 通路A</span><span class="ownbadge" data-own="vision_eng">vision</span></div>
+        <div class="row"><span>⬡ 作業ゾーン</span><span class="ownbadge" data-own="vision_eng">vision</span></div>
+        <div class="legend">⟿ ⬡ = 旧マップ要素。<br>通常オブジェクトとして同居</div>
+      </div>
+
+      <div class="pane" id="paneSem">
+        <div class="sec">実体と関係</div>
+        <div class="row" id="rowRobotS" data-sel="robot"><span>Robot</span></div>
+        <div class="gedge dash">┆ feeds ┆</div>
+        <div class="row"><span>Conveyor</span></div>
+        <div class="sec">共有変数</div>
+        <div class="row" id="rowDref" data-sel="dref"><span>d_ref</span><span class="ro">⚠</span></div>
+        <div class="row"><span>cycle</span></div>
+        <div class="row"><span>mount_h</span></div>
+        <div class="legend">点線=SpatialLink<br>⚠=未解決の衝突あり</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中央 -->
+  <div class="zone canvas-hatch" style="grid-area:main;" data-note="3">
+    <span class="zone-label">3Dビュー(入力の検算)</span><span class="badge">3</span>
+    <div class="main-wrap">
+
+      <div class="scene on" id="scPersp">
+        <div class="obj" id="oRobotP" style="left:38%;top:40%;width:19%;height:20%;">Robot</div>
+        <div class="obj" id="oConvP" style="left:62%;top:58%;width:20%;height:12%;">Conveyor</div>
+        <div class="ghostband" id="gbP" style="left:32%;top:36%;width:28%;height:28%;">d_ref 200–1200 未確定</div>
+        <div class="proposal" id="prP" style="left:18%;top:66%;width:22%;height:14%;">提案(承認待ち)</div>
+      </div>
+
+      <div class="scene" id="scTop">
+        <div class="obj" style="left:10%;top:22%;width:32%;height:44%;">⬡ 作業ゾーン</div>
+        <div class="obj" style="left:50%;top:16%;width:34%;height:8%;border-style:dashed;">⟿ 通路A</div>
+        <div class="obj" id="oRobotT" style="left:54%;top:42%;width:20%;height:22%;">Robot</div>
+        <div class="obj" id="oConvT" style="left:16%;top:70%;width:22%;height:10%;">Conveyor</div>
+        <div class="ghostband" id="gbT" style="left:32%;top:34%;width:26%;height:28%;">d_ref 未確定</div>
+      </div>
+
+      <div class="hud" data-note="4" id="hud">
+        <div class="ht">シーンのKPI</div>
+        <div id="hudFull">
+          <div class="kr"><span>受け入れ</span><span>4 / 6 パス</span></div>
+          <div class="kr"><span>リーチ余裕</span><span>+38 mm</span></div>
+          <div class="kr"><span>干渉</span><span>0 件</span></div>
+        </div>
+        <div id="hudZero" style="display:none;">
+          <div class="zero">検証項目なし</div>
+          <div class="zero" style="font-size:9px;">受け入れ基準が未定義</div>
+          <div class="way">→ 基準を定義する</div>
+        </div>
+        <div style="margin-top:3px;"><button class="wf-btn" id="zeroBtn" style="font-size:8.5px;padding:1px 4px;">0件の状態</button></div>
+      </div>
+
+      <div class="gzwrap" data-note="8">
+        <div class="gizmo" title="軸をクリックで視点スナップ">
+          <span class="gz-z" id="gzZ">Z</span><span class="gz-x" id="gzX">X</span>
+          <span class="gz-y" id="gzY">Y</span><span class="gz-c">◦</span>
+        </div>
+        <div class="projtog">
+          <button id="pOrtho">正射</button><button id="pPersp" class="on">透視</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 右 -->
+  <div class="zone" style="grid-area:right;" data-note="5">
+    <span class="zone-label" id="rightLabel">Robot の詳細(編集)</span><span class="badge">5</span>
+    <div class="rt">
+
+      <div class="rpane on" id="rpRobot">
+        <div class="grp">実体</div>
+        <div class="kv"><span>名前</span><span class="field" id="entName">Robot</span></div>
+        <div class="kv"><span>所有者</span><span class="ownbadge" id="entOwner">robot</span></div>
+        <div class="kv"><span>あなたの権限</span><span class="chip" id="entPerm">鍵なし</span></div>
+        <div style="margin-top:2px;"><button class="wf-btn" id="moveBtn" style="width:100%;">この実体を動かす</button></div>
+        <div class="whobar" id="moveNote">鍵なし。動かすと<b>提案</b>になります。</div>
+        <div class="ownwarn" id="ownWarn" style="display:none;">
+          <b>◇ 所有者がいません。</b>これは3つのうちどれですか——<b>本当にいない</b> /
+          <b>名乗り忘れ</b> / <b>誰が名乗るかのチキンレース</b>。正当なのは1つだけなので、
+          正当なら<b>宣言</b>してください(推論させない — 原則 #31)。
+          <div style="margin-top:3px;"><button class="pbtn" id="declBtn">所有者なし と宣言する</button></div>
+        </div>
+        <div class="grp">位置・姿勢</div>
+        <div class="kv"><span>X</span><span class="field">1.20</span></div>
+        <div class="kv"><span>Y</span><span class="field">0.40</span></div>
+        <div class="kv"><span>Z</span><span class="field">0.00</span></div>
+        <div class="grp">この実体の検証 <span style="font-weight:400;">(戻り値)</span></div>
+        <div class="kv"><span>リーチ</span><span class="chip ok">✓ 届く</span></div>
+        <div class="kv"><span>干渉</span><span class="chip ok">✓ なし</span></div>
+        <div class="kv"><span>把持候補</span><span class="chip">12 件 ▸</span></div>
+        <div class="kv"><span>来歴</span><span class="chip">なぜここ? ▸</span></div>
+      </div>
+
+      <div class="rpane" id="rpDref">
+        <div class="grp">共有変数</div>
+        <div class="kv"><span>名前</span><span class="field">d_ref</span></div>
+        <div class="kv"><span>単位</span><span class="ro">mm</span></div>
+        <div class="grp">主張されている区間</div>
+        <div class="kv" id="clVision"><span>vision_eng</span><span class="ro">200–350</span></div>
+        <div class="kv" id="clRobot"><span>robot_eng</span><span class="ro">380–600</span></div>
+        <div class="kv" id="clMech"><span>mech_eng</span><span class="ro">600–1200</span></div>
+        <div class="kv"><span>共通部分</span><span class="chip" style="color:#b91c1c;border-color:#b91c1c;">なし</span></div>
+        <div class="whobar" id="whoBar">自分 = robot_eng。<b>自分の行だけ編集可</b>。3Dで Robot を動かしても同じ主張が書き換わる。</div>
+        <div class="grp">束縛している実体</div>
+        <div class="kv"><span>Robot</span><span class="chip">▸ 選ぶ</span></div>
+        <div class="kv"><span>Conveyor</span><span class="chip">▸ 選ぶ</span></div>
+        <div class="cap">位置も姿勢も持たない実体。3Dでの姿は<b>未確定帯</b>と、<b>束縛している実体の ⚠ ハイライト</b>。</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 場 -->
+  <div class="zone" style="grid-area:ba;" data-note="6">
+    <span class="badge" style="top:5px;">6</span>
+    <div class="ba">
+      <div class="bh">
+        <span>場 — 要件コンフリクトの解消</span>
+        <span style="font-weight:400;color:var(--muted);">3Dは上に生きている(隠さない)</span>
+        <span style="flex:1"></span>
+        <button class="wf-btn" id="closeBa">✕ 閉じる</button>
+      </div>
+      <div class="bb">
+        <table class="mx">
+          <tr><th></th><th class="col on" id="colD">d_ref</th><th class="col" id="colC">cycle</th><th class="col" id="colM">mount_h</th></tr>
+          <tr><th>vision_eng</th><td class="x">✕</td><td></td><td></td></tr>
+          <tr><th>robot_eng</th><td class="x">✕</td><td class="o">✓</td><td></td></tr>
+          <tr><th>mech_eng</th><td class="x">✕</td><td></td><td class="o">✓</td></tr>
+        </table>
+        <div class="gapbox" id="gapBox"></div>
+        <div class="gapbox" id="propBox" style="min-width:196px;">
+          <span class="lead" style="color:#6b7280;">≈ 衝突(導出値 — 保存しない)</span>
+          <div id="confList"></div>
+          <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:5px;">
+            <span class="lead" style="color:#5b21b6;">⚑ 議題(人が場に上げた — 減る)</span>
+            <div id="propList" style="color:#6b7280;">まだありません。</div>
+          </div>
+          <div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:5px;">
+            <span class="lead" style="color:#15803d;">✓ 証憑(人の行為 — 増える一方)</span>
+            <div id="apprList" style="color:#6b7280;">まだありません。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="zone" style="grid-area:foot;" data-note="7">
+    <span class="badge" style="top:2px;">7</span>
+    <div class="ft"><span>G = 移動</span><span>R = 回転</span><span>Tab = 編集</span><span>Ctrl = スナップ</span></div>
+  </div>
+
+</div>
+
+<div class="note-panel" id="notePanel">
+  <p class="placeholder">↑ エリアをタップしてください。「なぜそこに置くのか」の設計根拠が表示されます。</p>
+</div>
+
+<div class="tension">
+  <b>⚠ v7 に残した引っかかり(次の反復のタネ)</b><br>
+  <b>① 提案の内容が空です。</b>いま「✎ 提案」は<b>提案したという事実</b>だけを作り、
+  <b>どの値にしたいのか</b>を運んでいません。承認する側は「良いって言ったよね?」の<b>何を</b>承認したのか
+  分からない —— 証憑としては不完全です。提案は<b>差分</b>(現在値 → 希望値 + 理由)を持つべきでは?
+  持つなら、それは <code>Decision</code> の <code>rationale</code> にそのまま入ります。<br>
+  <b>② 議題化した衝突を「やっぱり議題から外す」導線がありません。</b>提案には取り下げがあるのに、
+  衝突の議題化は一方通行です。開催そのものが人の行為(=歴史)なら、
+  <b>「議題にしたが結論を出さずに閉じた」も歴史</b>のはず —— 消すのではなく
+  <b>「未決のまま閉会」として証憑に残す</b>のが筋ではありませんか?<br>
+  <b>③ 鍵を全部持つと、この設計は何も止めません。</b>兼務者(鍵 3 つ)は提案を経ずに全部確定できます。
+  それは正しい —— でも<b>証憑が一つも残りません</b>。1 人で全部決められる状況こそ
+  「あとで誰も経緯を辿れない」状態です。<b>単独決定にも記録が要りますか?</b>
+</div>
+
+<script>
+const notes = {
+  "1": {
+    title: "ヘッダ:シーンスコープ +「発見」の集約",
+    body: "スコープの大きい操作ほど外周・上部へ。<b>⚠3 未解決</b>は「集約=常設・展開=呼び出し」の集約側で、<b>場を開かなくても場に入る必要があるかが分かる</b>ために外に出してある(現行は ContextLayer の中でしか描画されず循環依存だった)。Map ボタンは v2 で消滅、<code>+ 追加</code> が昇格(Lynch 5種を含む「置く」が最頻の入口)。"
+  },
+  "2": {
+    title: "左:構造ナビゲータ — 幾何 ⇄ 意味。v3 で意味側に「共有変数」が入った",
+    body: "「左=選ぶ / 中央=触る / 右=編集」。既定を<b>幾何</b>にしたのは初期頻度(関係性の論理は最初は考えない)——Blender の Outliner 表示モード、Figma の Layers/Assets タブと同型。<br><b>v3 の追加:意味側に共有変数 (d_ref / cycle / mount_h) が並んだ。</b>『d_ref を選んだら d_ref がアクティブになる』を通すと、<b>選択できるのにどのナビゲータにも載っていない実体</b>が生まれてしまう。文書の変数は<b>意味の層の住人</b>なので住所はここ。旧マップ要素(⟿⬡)が幾何側に同居したのと対になる整理。<br>トグルの奥に「発見」は入れない——だから未解決件数はヘッダにある。"
+  },
+  "3": {
+    title: "中央:3Dビュー —「主役」ではなく「入力の検算」",
+    body: "3Dは成果物ではなく<b>エコーバック</b>。数値だけでは人間が空間を想像できないから置く検算面(ADR-063 Goal 2『the numbers are the artifact』の一般化)。§フィードフォワード:<b>入力とその解釈を同時・同画面で</b>見せる——「そういう意味だったの?」事故は解釈の可視化が<b>確定後</b>に来るから起きる。<br>面積が最大なのは変わらない:ビジュアルヒエラルキーは<b>注視時間</b>の話であって正本性の話ではない(車のフロントガラスは運転の成果物ではないが最大面積を持つ)。<br>この位置づけが<b>禁止事項</b>を1つ生む:<b>3Dを覆う置き方をしない</b>。v1 の場=モーダルはこれに違反していたので v2 で下部へ移した。"
+  },
+  "4": {
+    title: "KPI HUD:シーンスコープの検証を選択に依存させない",
+    body: "右パネルの契約は<b>選択物</b>の詳細なので、シーンスコープを混ぜると1カラム1責務が壊れる。加えて KPI は<b>操作しながら</b>見るもので、ドラッグ中の視線は3Dビューにある。四隅分担の慣習で左上=情報/HUD、右上=操作ツール。<br><b>0件(原則 #31)</b>:『✓全部パス』は<b>嘘</b>(検査していないだけ)、消すのは #15 Fixed Slots 違反。<b>正当な0は推論させず宣言させる</b>+出口を名指し。ADR-090『0台のロボット』と同じ形。"
+  },
+  "5": {
+    title: "右:選択物の詳細 —「選択」の中身が2種類になった",
+    body: "エンティティスコープの精密編集。<b>リーチ/干渉/把持候補</b>がここに来たのが最大の移動——『37 Grasp Search は 4 Robot の近くにあるべき』の実装で、<b>置く→届くか見る→置き直す</b>のループを閉じる。<br><b>v3 の変更:d_ref を選ぶとパネルの中身が入れ替わる。</b>選択モデルは1つ(selectedEntity)で、全ゾーンはその<b>ビュー</b>——階層ツリー・3D・このパネル・場の行列が同じ選択状態を見る。<br>懸念だったのは『これまで選択できたものは全部3Dに姿を持っていた。d_ref は区間であって物ではないので、選択しても3Dが無反応=<b>無言</b>になる(原則 #11)』——だが<b>未確定帯が d_ref の3Dでの姿</b>なので無言にならない。<br>Robot の選択が消える件は、台帳の LINK NETWORK ノードが既に持っていた <code>focused / neighbor / context</code> の語彙で解ける(<b>新概念ゼロ</b>)。"
+  },
+  "6": {
+    title: "場:下部に展開。3Dを覆わず、表の形に器を合わせる",
+    body: "<b>食い違いは1人の視野の中には存在しない</b>ので計算では出せず、集まる場所が要る。vision 200–350 / robot 380–600 / mech 600–1200 mm——誰も間違っていないのに共通部分が空。<br>下部にした理由は2つ。①<b>3Dを覆えない</b>:d_ref は<b>空間量</b>なので、隠して交渉するのは解釈の可視化なしで確定すること。列を選ぶと3Dに未確定帯が出る(フィードフォワード)。②<b>形が合う</b>:actor × variable は<b>表</b>=横長で、280px の縦ストリップは表に最悪の器だった——現行が10タブを縦ストリップに押し込んで文字が入らなくなったのと同じ症状(器と中身の形の不一致)。<br>常設はしない(展開は呼び出し)。集約(⚠3)だけがヘッダに常駐。"
+  },
+  "7": {
+    title: "下:ヒント/状態 — 22px。場が開いても動かない",
+    body: "タイムラインを持たないので、下部は<b>空きを埋めずに主役へ面積を返す</b>判断。場は<b>この上に</b>開き、ステータスバー自体は位置も高さも変えない(#15 Fixed Slots)。場の開閉で下端が動くと、キーヒントを読む位置が毎回変わってしまう。"
+  },
+  "8": {
+    title: "ギズモ:視点の唯一の入口。v3 でプリセット行を吸収した",
+    body: "<b>v3 最大の削除。</b>v2 は視点プリセット [斜め|上|正面] を足したが、<b>軸ギズモが既にその機能を持っていた</b>——<code>GizmoView.js:57</code> の aria-label は『World orientation gizmo: click an axis to snap the camera』、ADR-068 で interruptible eased flight まで実装済み。足したボタン列は<b>冗長な導線</b>で、冗長が許されるのは高頻度操作だけ。<br>ここから旧 Map モードの評価が変わる:<b>Map のカメラは最初からギズモの中にあった。</b>Map モードは『住所の要る機能』ですらなく<b>既存コントロールの重複</b>だった。だから削除に際して<b>何も足す必要がない</b>。<br>残る本当の差分は<b>投影方式</b>だけ——Map は歪みのない配置のため正射投影を使う(MapModeController)。向きとは独立したビュー設定なので、ギズモの真下に小さなトグル1つ。Fusion 360 / Onshape も向きと投影を別コントロールで持つ。<br>置き場所の根拠は<b>近接の原則</b>:ビューにだけ効く操作はビュー上のオーバーレイに浮かべ、サイドバーに混ぜない(混ぜるとグルーピングが濁る)。"
+  }
+};
+const panel = document.getElementById("notePanel");
+let activeZone = null;
+document.querySelectorAll("[data-note]").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    const id = el.dataset.note;
+    if (!id || !notes[id]) return;
+    if (activeZone) activeZone.classList.remove("active");
+    if (el.classList.contains("zone")) { el.classList.add("active"); activeZone = el; }
+    panel.innerHTML =
+      '<div class="np-title"><span class="np-num">' + id + '</span>' + notes[id].title + '</div>' +
+      '<p>' + notes[id].body + '</p>';
+  });
+});
+
+// ---- 選択モデル(唯一の真実):'robot' | 'dref' ----
+let sel = "robot";
+const rowRobotG=document.getElementById("rowRobotG"), rowRobotS=document.getElementById("rowRobotS"),
+      rowDref=document.getElementById("rowDref"),
+      oRobotP=document.getElementById("oRobotP"), oRobotT=document.getElementById("oRobotT"),
+      oConvP=document.getElementById("oConvP"), oConvT=document.getElementById("oConvT"),
+      gbP=document.getElementById("gbP"), gbT=document.getElementById("gbT"),
+      rpRobot=document.getElementById("rpRobot"), rpDref=document.getElementById("rpDref"),
+      rightLabel=document.getElementById("rightLabel"), colD=document.getElementById("colD");
+
+const ENT = {
+  robot:{ name:"Robot",                     owner:"robot_eng" },
+  base: { name:"base (ロボットベース座標系)", owner:"mech_eng"  },
+  cube: { name:"Cube",                      owner:null        },
+  fixture:{ name:"Fixture",                 owner:null        },
+};
+const declaredNoOwner = new Set();
+const approvals = [];                 // 証憑(人の行為)— 消えない
+const CONFLICTS = [                   // 導出値 — 毎回計算できるので保存しない
+  { ref:"d_ref", label:"d_ref \u306b\u5171\u901a\u90e8\u5206\u306a\u3057", actors:["vision_eng","robot_eng","mech_eng"] },
+  { ref:"cycle_margin", label:"cycle \u30de\u30fc\u30b8\u30f3\u4e0d\u8db3", actors:["robot_eng"] },
+  { ref:"reach_edge", label:"reach \u304c\u5883\u754c\u4e0a", actors:["robot_eng","mech_eng"] },
+];
+function applySelection(){
+  const isD = sel === "dref";
+  const ent = isD ? null : (ENT[sel] || ENT.robot);
+  [rowRobotG,rowRobotS].forEach(r=>{
+    r.classList.toggle("focused", !isD && sel==="robot"); r.classList.toggle("neighbor", isD);
+  });
+  rowDref.classList.toggle("focused", isD);
+  [[oRobotP,"Robot"],[oRobotT,"Robot"],[oConvP,"Conveyor"],[oConvT,"Conveyor"]].forEach(([o,name])=>{
+    if(!o) return;
+    o.classList.toggle("unres", isD);
+    o.classList.toggle("focused", !isD && name==="Robot" && sel==="robot");
+    o.textContent = isD ? "\u26a0 "+name : name;
+  });
+  [gbP,gbT].forEach(g=>{ g.classList.toggle("on", isD); g.classList.toggle("focused", isD); });
+  rpRobot.classList.toggle("on", !isD); rpDref.classList.toggle("on", isD);
+  rightLabel.textContent = isD ? "d_ref \u306e\u8a73\u7d30(\u5171\u6709\u5909\u6570)" : (ent.name + " \u306e\u8a73\u7d30(\u7de8\u96c6)");
+  if (!isD){
+    document.getElementById("entName").textContent  = ent.name;
+    document.getElementById("entOwner").textContent = ent.owner ? ent.owner.replace("_eng","") : "\u2014";
+  }
+  for (const k in cols) cols[k].classList.toggle("on", isD ? k==="d" : false);
+  if (isD) { curCol="d"; document.getElementById("gapBox").innerHTML = gapTexts.d; }
+  applyKeys();
+}
+function select(what){ sel = what; applySelection(); }
+document.querySelectorAll("[data-sel]").forEach(el=>{
+  el.addEventListener("click", e=>{ e.stopPropagation(); select(el.dataset.sel); });
+});
+
+// ---- 左 幾何/意味 ----
+const tGeo=document.getElementById("tGeo"), tSem=document.getElementById("tSem");
+const pGeo=document.getElementById("paneGeo"), pSem=document.getElementById("paneSem");
+function setPane(semantic){
+  tGeo.classList.toggle("on",!semantic); tSem.classList.toggle("on",semantic);
+  pGeo.classList.toggle("on",!semantic); pSem.classList.toggle("on",semantic);
+}
+tGeo.addEventListener("click",e=>{e.stopPropagation();setPane(false);});
+tSem.addEventListener("click",e=>{e.stopPropagation();setPane(true);});
+
+// ---- 場の開閉 ----
+const frame=document.getElementById("frame"), openBa=document.getElementById("openBa");
+function setBa(open){ frame.classList.toggle("ba-open",open); openBa.classList.toggle("on",open); }
+openBa.addEventListener("click",()=>setBa(!frame.classList.contains("ba-open")));
+document.getElementById("closeBa").addEventListener("click",e=>{e.stopPropagation();setBa(false);});
+
+// ---- 場の列 → 選択が移る ----
+const cols={d:colD,c:document.getElementById("colC"),m:document.getElementById("colM")};
+let curCol="d";
+const gapTexts={
+  d:'<span class="lead">d_ref に共通部分なし(ギャップ 30mm)</span><br>vision 200–350 &nbsp;/&nbsp; robot 380–600 &nbsp;/&nbsp; mech 600–1200<br><span style="color:#6b7280;">誰も間違っていない。食い違いは3人の主張の和の中にしかない。</span><br><span style="color:var(--note);">→ d_ref が選択され、3Dに未確定帯・右パネルに詳細が出ています</span><br><button class="wf-btn" style="margin-top:5px;">この変数を確定する</button>',
+  c:'<span class="lead">cycle — 衝突なし</span><br>robot_eng のみが主張。<br><span style="color:#6b7280;">所有者が1人なら計算で出る=戻り値でよい。場に居る必要のない変数。</span><br><span style="color:var(--note);">空間量ではないので3Dに描くものが無い(すべての情報が空間表現に向くわけではない)。</span>',
+  m:'<span class="lead">mount_h — 衝突なし</span><br>mech_eng のみが主張。<br><span style="color:#6b7280;">同上。場に残っているのは「まだ他者が主張していない」だけかもしれない。</span>'
+};
+colD.addEventListener("click",e=>{e.stopPropagation();select("dref");});
+["c","m"].forEach(k=>cols[k].addEventListener("click",e=>{
+  e.stopPropagation(); curCol=k;
+  for(const j in cols) cols[j].classList.toggle("on",j===k);
+  document.getElementById("gapBox").innerHTML=gapTexts[k];
+}));
+
+// ---- ギズモ(向き)と投影方式 ----
+const scP=document.getElementById("scPersp"), scT=document.getElementById("scTop");
+const gzZ=document.getElementById("gzZ"), gzX=document.getElementById("gzX"), gzY=document.getElementById("gzY");
+function setAxis(z){
+  scT.classList.toggle("on",z); scP.classList.toggle("on",!z);
+  gzZ.classList.toggle("on",z); gzX.classList.remove("on"); gzY.classList.remove("on");
+  if(z){ pOrtho.click(); }
+}
+gzZ.addEventListener("click",e=>{e.stopPropagation();setAxis(true);document.querySelector('.gzwrap').click();});
+[gzX,gzY].forEach(g=>g.addEventListener("click",e=>{e.stopPropagation();setAxis(false);
+  g.classList.add("on");document.querySelector('.gzwrap').click();}));
+
+const pOrtho=document.getElementById("pOrtho"), pPersp=document.getElementById("pPersp");
+pOrtho.addEventListener("click",e=>{e.stopPropagation();pOrtho.classList.add("on");pPersp.classList.remove("on");});
+pPersp.addEventListener("click",e=>{e.stopPropagation();pPersp.classList.add("on");pOrtho.classList.remove("on");});
+
+// ---- HUD 0件 ----
+let zero=false;
+const zBtn=document.getElementById("zeroBtn");
+zBtn.addEventListener("click",e=>{
+  e.stopPropagation(); zero=!zero;
+  document.getElementById("hudFull").style.display=zero?"none":"block";
+  document.getElementById("hudZero").style.display=zero?"block":"none";
+  zBtn.textContent=zero?"検証あり":"0件の状態";
+  document.getElementById("hud").click();
+});
+
+// ---- 権限 = 解除済みの鍵の集合(基数 0..N)。モードではないので切替が要らない ----
+const CODES = { vision_eng:"1111", robot_eng:"2222", mech_eng:"3333" };
+const keys  = new Set();
+let agenda = [];   // 議題 = 議題化された衝突 ∪ 提案
+const BASE_UNRESOLVED = 3;
+const whoBtn=document.getElementById("whoBtn"), keyPanel=document.getElementById("keyPanel");
+const whoBar=document.getElementById("whoBar");
+const claimRows={ vision_eng:document.getElementById("clVision"),
+                  robot_eng:document.getElementById("clRobot"),
+                  mech_eng:document.getElementById("clMech") };
+const claimVals={ vision_eng:"200\u2013350", robot_eng:"380\u2013600", mech_eng:"600\u20131200" };
+const keyInputs={ vision_eng:["kVision","sVision"], robot_eng:["kRobot","sRobot"], mech_eng:["kMech","sMech"] };
+
+function unownedCount(){
+  return Object.keys(ENT).filter(k=>!ENT[k].owner && !declaredNoOwner.has(k)).length;
+}
+function openConflicts(){ return CONFLICTS.filter(c=>!agenda.some(a2=>a2.ref===c.ref) && !approvals.some(a2=>a2.ref===c.ref)); }
+function renderCounters(){
+  const cC=document.getElementById("cConf"), cP=document.getElementById("cProp"), cO=document.getElementById("cOwn");
+  const own=unownedCount();
+  cC.textContent="\u2248 "+openConflicts().length+" \u885d\u7a81";
+  cP.textContent="\u2691 "+agenda.length+" \u8b70\u984c";
+  cO.textContent="\u25c7 "+own+" \u672a\u6240\u6709";
+  cP.classList.toggle("clean", agenda.length===0);
+  cO.classList.toggle("clean", own===0);
+}
+function gateApprove(item){
+  // 提案 = 所有者の鍵 / 衝突 = 関与する全員の鍵(n-ary 合同確定)
+  const need = item.kind==="proposal" ? [item.owner] : item.actors;
+  const missing = need.filter(r=>!keys.has(r));
+  return { ok: missing.length===0, missing };
+}
+function renderBa(){
+  document.getElementById("confList").innerHTML =
+    openConflicts().length
+      ? openConflicts().map(c=>'<div style="color:#6b7280;margin-bottom:2px;">\u2248 '+c.label+
+          '<button class="pbtn" data-conv="'+c.ref+'">\u8b70\u984c\u306b\u3059\u308b</button></div>').join("")
+        + '<div style="font-size:7.5px;color:#9ca3af;margin-top:2px;">\u6587\u66f8\u304b\u3089\u6bce\u56de\u5c0e\u51fa\u3055\u308c\u308b\u3002\u898b\u3066\u3044\u308b\u3060\u3051\u306a\u3089\u4f55\u3082\u6b8b\u3089\u306a\u3044\u3002</div>'
+      : '<span style="color:#15803d;">\u306a\u3057</span>';
+  const pl=document.getElementById("propList");
+  pl.innerHTML = agenda.length
+    ? agenda.map((it,i)=>{
+        const g=gateApprove(it);
+        const btn = g.ok
+          ? '<button class="pbtn" data-appr="'+i+'">'+(it.kind==="proposal"?"\u627f\u8a8d":"\u5408\u540c\u78ba\u5b9a")+'</button>'
+          : '<button class="pbtn" data-appr="'+i+'" disabled title="\u9375\u304c\u8db3\u308a\u307e\u305b\u3093">'+(it.kind==="proposal"?"\u627f\u8a8d":"\u5408\u540c\u78ba\u5b9a")+'</button>';
+        const why = g.ok ? "" : '<div class="gatewhy">\u2514 '+g.missing.join(" / ")+' \u306e\u9375\u304c\u8981\u308a\u307e\u3059</div>';
+        const wd = it.kind==="proposal" ? '<button class="pbtn" data-with="'+i+'">\u53d6\u308a\u4e0b\u3052</button>' : "";
+        return '<div class="prow">\u2691 '+it.label+btn+wd+why+'</div>';
+      }).join("")
+    : '\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002';
+  const al=document.getElementById("apprList");
+  al.innerHTML = approvals.length
+    ? approvals.map(a2=>'<div class="arow">\u2713 '+a2.label+' <span style="color:#9ca3af;">decidedBy: '+a2.by+'</span></div>').join("")
+      + '<div style="font-size:7.5px;color:#9ca3af;margin-top:2px;">\u4eba\u306e\u884c\u70ba\u306a\u306e\u3067\u518d\u8a08\u7b97\u3067\u304d\u306a\u3044 \u2014\u2014 \u6d88\u3048\u306a\u3044\u3002</div>'
+    : '\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002';
+  document.getElementById("prP").classList.toggle("on", agenda.some(a2=>a2.kind==="proposal"));
+}
+function renderClaims(){
+  for (const ref in claimRows){
+    const row=claimRows[ref], mine=keys.has(ref), cell=row.lastElementChild;
+    if (mine){ cell.className="field"; cell.innerHTML=claimVals[ref]; }
+    else {
+      cell.className="ro";
+      cell.innerHTML = claimVals[ref] +
+        ' <button class="propbtn" data-claim="'+ref+'">\u270e \u63d0\u6848</button>';
+    }
+  }
+}
+function applyKeys(){
+  whoBtn.textContent = "\ud83d\udd11 \u9375: " + keys.size + " \u25be";
+  whoBtn.style.borderColor = keys.size ? "#2563eb" : "#b45309";
+  whoBtn.style.color       = keys.size ? "#1e3a8a" : "#92400e";
+  renderClaims();
+  whoBar.innerHTML = keys.size === 0
+    ? "\u9375\u306a\u3057(\u57fa\u6570 0)\u3002\u3069\u306e\u884c\u3082<b>\u76f4\u63a5\u7de8\u96c6\u4e0d\u53ef\u30fb\u63d0\u6848\u53ef</b>\u3002<b>\u6b63\u5f53\u306a 0 \u306f\u5ba3\u8a00\u3055\u305b\u308b</b>(\u539f\u5247 #31)\u3002"
+    : "\u89e3\u9664\u6e08: <b>" + [...keys].join(", ") + "</b>\u3002\u81ea\u5206\u306e\u884c=<b>\u76f4\u63a5\u7de8\u96c6\u53ef</b>\u3001\u4ed6\u4eba\u306e\u884c=<b>\u76f4\u63a5\u7de8\u96c6\u4e0d\u53ef\u30fb\u63d0\u6848\u53ef</b>\u3002";
+  document.querySelectorAll(".ownbadge[data-own]").forEach(bd=>{
+    bd.classList.toggle("mine", keys.has(bd.dataset.own));
+  });
+  ["cube","fixture"].forEach(k=>{
+    const bd=document.getElementById("b"+k.charAt(0).toUpperCase()+k.slice(1));
+    if(bd) bd.textContent = declaredNoOwner.has(k) ? "\u2014 \u5ba3\u8a00\u6e08" : "\u25c7 \u672a\u6240\u6709";
+  });
+  const ent = ENT[sel];
+  if (ent){
+    const free=!ent.owner, has=free||keys.has(ent.owner);
+    const perm=document.getElementById("entPerm"), note=document.getElementById("moveNote");
+    perm.textContent = free ? (declaredNoOwner.has(sel) ? "\u6240\u6709\u8005\u306a\u3057(\u5ba3\u8a00\u6e08)" : "\u25c7 \u672a\u6240\u6709")
+                            : (has ? "\u2713 \u9375\u3042\u308a" : "\u76f4\u63a5\u4e0d\u53ef\u30fb\u63d0\u6848\u53ef");
+    perm.style.color = has ? "#15803d" : "#5b21b6";
+    perm.style.borderColor = has ? "#15803d" : "#7c3aed";
+    note.innerHTML = has
+      ? "\u52d5\u304b\u3059\u3068<b>\u78ba\u5b9a</b>\u3002\u5834\u306b\u306f\u884c\u304b\u306a\u3044\u3002"
+      : "\u9375\u304c\u306a\u304f\u3066\u3082<b>\u52d5\u304b\u305d\u3046\u3068\u306f\u3067\u304d\u308b</b> \u2014\u2014 \u5b9f\u4f53\u3067\u3082\u6570\u5024\u3067\u3082\u898f\u5247\u306f 1 \u3064\u3002";
+    document.getElementById("ownWarn").style.display =
+      (free && !declaredNoOwner.has(sel)) ? "block" : "none";
+  }
+  renderCounters(); renderBa();
+}
+whoBtn.addEventListener("click", e=>{ e.stopPropagation(); keyPanel.classList.toggle("on"); });
+keyPanel.addEventListener("click", e=>e.stopPropagation());
+for (const ref in keyInputs){
+  const pair=keyInputs[ref];
+  document.getElementById(pair[0]).addEventListener("input", e=>{
+    if (e.target.value.trim() === CODES[ref]){
+      keys.add(ref);
+      document.getElementById(pair[1]).innerHTML='<span class="done">\u2713</span>';
+      e.target.disabled = true;
+      applyKeys();
+    }
+  });
+}
+document.getElementById("moveBtn").addEventListener("click", e=>{
+  e.stopPropagation();
+  const ent = ENT[sel]; if (!ent) return;
+  const has = !ent.owner || keys.has(ent.owner);
+  const note = document.getElementById("moveNote");
+  if (has){
+    note.innerHTML = "\u2713 <b>\u78ba\u5b9a\u3057\u307e\u3057\u305f\u3002</b>" + ent.name + " \u304c\u52d5\u304d\u3001" +
+      (ent.owner ? ent.owner+" \u306e\u4e3b\u5f35" : "\u5e7e\u4f55") + "\u304c\u66f8\u304d\u63db\u308f\u3063\u305f\u3002\u5834\u306b\u306f\u884c\u304b\u306a\u3044\u3002";
+  } else {
+    const label = ent.name + " \u306e\u79fb\u52d5 (" + ent.owner + " \u3078)";
+    if (!agenda.some(pr=>pr.label===label)) agenda.push({ kind:"proposal", label, owner: ent.owner, ref:"m_"+sel });
+    applyKeys();
+    note.innerHTML = "\u25b8 <b>\u63d0\u6848\u3068\u3057\u3066\u767b\u9332\u3057\u307e\u3057\u305f\u3002</b>\u30b4\u30fc\u30b9\u30c8\u3067\u8868\u793a\u3055\u308c\u3001<b>\u5834\u306e\u8b70\u984c\u304c 1 \u3064\u5897\u3048\u307e\u3057\u305f</b>(\u26a0 \u304c +1)\u3002\u627f\u8a8d\u3055\u308c\u308b\u307e\u3067\u78ba\u5b9a\u3057\u306a\u3044\u3002";
+  }
+});
+
+document.getElementById("propBox").addEventListener("click", e=>{
+  const t=e.target;
+  if (t.dataset && t.dataset.conv != null){          // 衝突 → 議題(開催 = 記録の開始)
+    e.stopPropagation();
+    const c = CONFLICTS.find(x=>x.ref===t.dataset.conv);
+    agenda.push({ kind:"conflict", label:c.label, actors:c.actors, ref:c.ref });
+    applyKeys(); return;
+  }
+  if (!t.classList.contains("pbtn")) return;
+  e.stopPropagation();
+  if (t.hasAttribute("disabled")) return;
+  if (t.dataset.appr != null){
+    const it = agenda.splice(+t.dataset.appr,1)[0];
+    approvals.push({ label: it.label, ref: it.ref,
+      by: it.kind==="proposal" ? it.owner : it.actors.join(" + ") });
+  } else if (t.dataset.with != null){
+    agenda.splice(+t.dataset.with,1);                 // 未承認だけ取り下げ可
+  }
+  applyKeys();
+});
+document.getElementById("rpDref").addEventListener("click", e=>{
+  const ref = e.target.dataset && e.target.dataset.claim; if(!ref) return;
+  e.stopPropagation();
+  const label = ref + " \u306e\u533a\u9593\u5909\u66f4\u3092\u63d0\u6848";
+  if (!agenda.some(a2=>a2.label===label)) agenda.push({ kind:"proposal", label, owner:ref, ref:"c_"+ref });
+  applyKeys();
+});
+document.getElementById("declBtn").addEventListener("click", e=>{
+  e.stopPropagation(); declaredNoOwner.add(sel); applyKeys();
+});
+
+
+document.getElementById("gapBox").innerHTML = gapTexts.d;
+applySelection();
+</script>
+</body>
+</html>

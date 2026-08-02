@@ -114,6 +114,8 @@ This directory records the project's design decisions.
 | [ADR-100](ADR-100-color-says-state-not-kind.md) | **色は「実体の種」ではなく「状態」を語る — 既定サーフェスを中立にし、アクセントを 1 つに畳み、宣言外の色を ratchet で止める** | Accepted (実装済み — 役割語彙への改名、`entityDefault` = 中立グレー、`accentActive` 退役と `accent`/`stageGlow` への分割、`snapTone`/`measure` の hue 移動、`theme/semantic.js` の対象外宣言、宣言外リテラルの ratchet 790/206、選択の描き手 9 種の列挙検査、コントラスト検査) | 2026-07-26 | ADR-065, ADR-064, ADR-062, ADR-093, ADR-067 |
 | [ADR-101](ADR-101-pose-writers-derive-from-request-not-rendered-state.md) | **pose を計算する入力は「要求 + セグメント開始の写し」だけ — 補助が自分の出力を測り直すのをやめる (描画済みの状態は query 専用)** | Accepted (実装済み — `_applyStackAssist` の live 読み撤去、入口が適用済み delta を渡す形、座り Z を絶対目標へ、live プローブの query 専用宣言、writer の鮮度検査、同一要求の回帰 2 本) | 2026-07-27 | ADR-098, ADR-097, ADR-071, ADR-085, ADR-090 |
 | [ADR-102](ADR-102-census-tables-need-a-denominator.md) | **列挙表は母集団を持つ — 「場所を並べた表」を廃し、覆うべき集合をコードから導出する (原則 #31 の自己適用)** | Accepted (実装済み — 表の 4 種型付けと `place-list` の語彙からの排除、pose 決定の呼び出し閉包を母集団へ、`SUPPORT_SURFACE_BY_KIND` の宣言化、`COLOR.accent` 消費者の分割、登録簿 `CENSUS_REGISTRY` の自己登録、走査道具の `src/census/` 一本化) | 2026-07-30 | ADR-098, ADR-101, ADR-097, ADR-100, ADR-099, ADR-096, ADR-090, ADR-093 |
+| [ADR-103](ADR-103-map-is-a-viewpoint-not-a-mode.md) | **Map はモードではなく視点 — 台帳の負債 #1 を「禁止」ではなく「再分類」で閉じる** | Proposed | 2026-08-02 | ADR-031, ADR-073, ADR-093, ADR-068, ADR-008, ADR-104 |
+| [ADR-104](ADR-104-ownership-proposal-and-the-receipt.md) | **編集の住所は所有権で決まり、記録は人の行為から始まる — 所有権・提案・証憑モデル** | Proposed | 2026-08-02 | ADR-050, ADR-049, ADR-052, ADR-056, ADR-077, ADR-090, ADR-100, ADR-065, ADR-103 |
 
 ## How to Add a New ADR
 
