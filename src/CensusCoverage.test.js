@@ -102,6 +102,11 @@ const CENSUS_REGISTRY = [
   { file: 'src/SelectionOwnership.test.js',  table: 'DECLARED_EXCEPTIONS',         kind: KIND.DECLARED_EXCEPTION,
     why: '今日は空。空であることの宣言も宣言である (原則 #31)' },
 
+  // ── 選択の要素の種 (ADR-107) ──
+  { file: 'src/SelectionKindDeclarations.test.js', table: 'SHAPE_EXCLUDED',        kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = SELECTION_KIND の枝。3D の姿を宣言する種と、宣言しない理由つきの '
+       + '対象外 (empty) に分割する。枝を足して行を足さなければ落ちる' },
+
   // ── 可視性 (ADR-096) ──
   { file: 'src/VisibilityOwnership.test.js', table: 'OWNERSHIP_RULES',             kind: KIND.SHAPE_CENSUS,
     why: '2 軸の合成・各軸の書き込みの形。所有者の外の個数を src/** 全体で数える' },

@@ -31,9 +31,25 @@
  * Selection is a `0 / 1 / N` cardinality, and it used to be spread over two
  * fields: `_objSelected: boolean` and `_selectedIds: Set`. `_objSelected ===
  * true && _selectedIds.size === 0` was representable, and reachable (any path
- * that cleared one without the other). There is now ONE representation — the set
- * — and `AppController._objSelected` is a getter over it, so the illegal state
- * cannot be written down and every assignment to it throws.
+ * that cleared one without the other). There is now ONE representation — the
+ * union below — and `AppController._objSelected` is a getter over it, so the
+ * illegal state cannot be written down and every assignment to it throws.
+ *
+ * ## Element KIND (原則 #31 一段上 / ADR-107)
+ *
+ * The state is `_sel`, a kind-discriminated union (`src/domain/selection.js`),
+ * not a `Set`. A `Set` has no kind, so the day a second kind of thing became
+ * selectable — the document's shared design variables — the split would have
+ * been invisible in the implementation: the entrance census below counts writes
+ * to the ENTITY side, so a second selection field for variables would have
+ * passed it green (ADR-107 却下案 A). What changes here is the ELEMENT KIND;
+ * the entrance count does not change, and the census that counts it is not
+ * rebuilt — if it had to be rebuilt, that would be the evidence that the
+ * selection had actually split in two.
+ *
+ * Every selectable kind declares its 3-D shape and its N-panel body in
+ * `src/view/SelectionKinds.js`, and both tables throw on an undeclared kind:
+ * "today's two kinds both have a shape" is a fact, not a rule.
  *
  * ## Visibility (ADR-096 / ADR-099 §3)
  *
@@ -53,7 +69,7 @@
  * The `explicit` axis is never touched here; its owner is the Outliner eye.
  * Handlers own axes, pixels have one owner (原則 #4).
  *
- * State lives on AppController (`_selMgr._ids` is read through
+ * State lives on AppController (`_selMgr.ids` is read through
  * `ctrl._selectedIds`) for the many read-only call sites; this manager is its
  * only writer.
  *
@@ -70,6 +86,16 @@ import { projectToScreen } from './snap/SnapSystem.js'
 import { SelectPulse }     from '../view/SelectPulse.js'
 import { COLOR, rgba }     from '../theme/tokens.js'
 import { CONTEXTUAL }      from '../view/VisibilityAxes.js'
+import { shapeForKind }    from '../view/SelectionKinds.js'
+import {
+  SELECTION_KIND,
+  EMPTY_SELECTION,
+  makeSelection,
+  entityIdsOf,
+  variableRefsOf,
+  selectionSize,
+  selectionSummary,
+} from '../domain/selection.js'
 
 /** Computes 8 world-space bbox corners for a mesh entity that lacks .corners. */
 function _meshBboxCorners(obj) {
@@ -97,41 +123,68 @@ export class SelectionManager {
   constructor(ctrl) {
     this._ctrl = ctrl
     /**
-     * THE selection. Its cardinality (0 / 1 / N) is the state; `_objSelected` is
-     * a getter over `size > 0` and has no storage of its own.
-     * @type {Set<string>}
+     * THE selection. Its cardinality (0 / 1 / N) AND its element kind are both
+     * this one value; `_objSelected` is a getter over it with no storage of its
+     * own, and so is `ids`.
+     * @type {{kind: string, ids?: Set<string>, refs?: Set<string>}}
      */
-    this._ids = new Set()
+    this._sel = EMPTY_SELECTION
     /** Last entity that got a select pulse — keeps re-selection churn quiet (#30). */
     this._lastFxId = null
+    /**
+     * The painters the declared 3-D shapes (`SELECTION_SHAPE_BY_KIND`) name. ALL
+     * of them run on every transition with the whole selection, so leaving a
+     * kind releases its paint through the same wholesale write that claims the
+     * new one — the same reason `_claimContext` is recomputed rather than
+     * patched. Keys must match the declared `paint` names exactly; the census
+     * asserts both directions (a painter nobody declared is as broken as a
+     * declaration nobody paints).
+     */
+    this._painters = {
+      meshHighlight: (sel, activeId) => this._paintMeshHighlight(sel, activeId),
+      undecidedBand: (sel)           => this._paintUndecidedBand(sel),
+    }
   }
 
   // ── Reading ─────────────────────────────────────────────────────────────────
 
-  /** The live selection set. Read-only by convention; the census test enforces it. */
-  get ids() { return this._ids }
+  /** THE selection value (kind-discriminated union). Read-only. */
+  get selection() { return this._sel }
 
-  /** Selection cardinality — 0, 1 or N (原則 #31). */
-  get count() { return this._ids.size }
+  /**
+   * The selected ENTITY ids. Empty when a variable is selected — with a variable
+   * selected, no entity is selected, and that is the honest answer for the many
+   * read-only call sites rather than a special case each of them must know.
+   */
+  get ids() { return entityIdsOf(this._sel) }
 
-  /** @param {string} id */
-  has(id) { return this._ids.has(id) }
+  /** The selected VARIABLE refs. Empty when the selection is of another kind. */
+  get variableRefs() { return variableRefsOf(this._sel) }
+
+  /** Selection cardinality — 0, 1 or N, in whatever kind is selected (原則 #31). */
+  get count() { return selectionSize(this._sel) }
+
+  /** Entity membership. A variable ref can never test true here (D3). @param {string} id */
+  has(id) { return this.ids.has(id) }
 
   // ── The public entry points (原則 #1) ────────────────────────────────────────
 
   /**
-   * Selects exactly one entity and makes it active. The verb every window uses
-   * for "the user picked this".
+   * Selects exactly one thing and makes it active. The verb every window uses
+   * for "the user picked this" — the entity windows pass an id, the document
+   * windows (the floor's matrix header, the undecided band) pass a
+   * `variableRef(ref)` token. Widening the kind did not add a verb.
    *
-   * @param {string} id
+   * @param {string|{ns:string,ref:string}} target — entity id, or `variableRef(ref)`
    * @param {{fx?: boolean}} [opts]  `fx:false` for a RESTORE (returning from Edit
    *   Mode re-asserts a selection the user never dropped, so it must not fire the
    *   select pulse again — the pulse means "this just became selected").
    */
-  selectOnly(id, { fx = true } = {}) {
-    if (id == null) return
+  selectOnly(target, { fx = true } = {}) {
+    if (target == null) return
     this._normalizeMode()
-    this._apply([id], id, { fx })
+    const sel = makeSelection([target])
+    this._apply(sel, this._activeIdFor(sel, target), { fx })
   }
 
   /**
@@ -142,16 +195,20 @@ export class SelectionManager {
    * single-item additive selection today, and an unused public verb is a second
    * entry point waiting to drift out of step with this one (§5).
    *
-   * @param {Iterable<string>} ids
+   * A mixed list throws inside `makeSelection` (ADR-107 D1) — mixing is not an
+   * intended gesture, so failing loudly beats silently keeping one half.
+   *
+   * @param {Iterable<string|{ns:string,ref:string}>} members
    * @param {{activeId?: string|null}} [opts]
    */
-  selectMany(ids, { activeId = null } = {}) {
-    const list = [...ids]
+  selectMany(members, { activeId = null } = {}) {
+    const list = [...members]
     if (list.length === 0) { this.clearSelection(); return }
     this._normalizeMode()
+    const sel = makeSelection(list)
     // No pulse for a bulk selection: the pulse answers "which one did I just
     // pick", and with N it answers nothing while costing N effects (#30).
-    this._apply(list, activeId ?? list[0], { fx: false })
+    this._apply(sel, activeId ?? this._activeIdFor(sel, list[0]), { fx: false })
   }
 
   /**
@@ -159,7 +216,7 @@ export class SelectionManager {
    * the mode machinery keep talking about it, exactly as before ADR-099.
    */
   clearSelection() {
-    this._apply([], this._ctrl._scene.activeId ?? null, { fx: false })
+    this._apply(EMPTY_SELECTION, this._ctrl._scene.activeId ?? null, { fx: false })
   }
 
   /**
@@ -168,8 +225,8 @@ export class SelectionManager {
    * @param {string} id
    */
   activateWithinSelection(id) {
-    if (!this._ids.has(id)) { this.selectOnly(id); return }
-    this._apply([...this._ids], id, { fx: false })
+    if (!this.has(id)) { this.selectOnly(id); return }
+    this._apply(this._sel, id, { fx: false })
   }
 
   /**
@@ -179,11 +236,28 @@ export class SelectionManager {
    * @param {string} id
    */
   forget(id) {
-    if (!this._ids.has(id)) return
+    if (!this.has(id)) return
     // The active entity is NOT chosen here: the delete path already knows which
     // entity should take over and says so with `selectOnly`. Guessing one would
     // be a second opinion about the same fact (§1.1).
-    this._apply([...this._ids].filter(x => x !== id), this._ctrl._scene.activeId ?? null)
+    this._apply(
+      makeSelection([...this.ids].filter(x => x !== id)),
+      this._ctrl._scene.activeId ?? null,
+    )
+  }
+
+  /**
+   * Which entity the panels should talk about after selecting `member`.
+   *
+   * Selecting a VARIABLE leaves the active entity where it was: `activeId` names
+   * an entity, and a variable is not one. That is not a gap — it is the same
+   * contract `clearSelection()` has always had ("the active entity stays
+   * active"), and it is what keeps the robot the user was looking at from
+   * disappearing out of the panels while they inspect a number about it (D5
+   * keeps it visible in 3-D at DIMMED).
+   */
+  _activeIdFor(sel, member) {
+    return sel.kind === SELECTION_KIND.ENTITIES ? member : (this._ctrl._scene.activeId ?? null)
   }
 
   /**
@@ -194,7 +268,7 @@ export class SelectionManager {
    * highlight (原則 #4).
    */
   reassertHighlight() {
-    for (const id of this._ids) {
+    for (const id of this.ids) {
       const obj = this._ctrl._scene.getObject(id)
       obj?.meshView?.setObjectSelected(true)
     }
@@ -218,63 +292,64 @@ export class SelectionManager {
    * claim, and it always writes all three together — which is what makes "a
    * window that forgot a step" unrepresentable rather than merely discouraged.
    *
-   * @param {string[]} ids       the selection AFTER this transition
+   * @param {{kind: string, ids?: Set<string>, refs?: Set<string>}} next
+   *   the selection AFTER this transition, built by `makeSelection` (the only
+   *   constructor — which is what makes a mixed selection unreachable from here)
    * @param {string|null} activeId
    * @param {{fx?: boolean}} [opts]
    */
-  _apply(ids, activeId, { fx = false } = {}) {
+  _apply(next, activeId, { fx = false } = {}) {
     const ctrl = this._ctrl
-    const next = new Set(ids)
+    const nextIds = entityIdsOf(next)
 
     // 1. Release the entities leaving the selection. An entity already detached
-    //    from the scene resolves to null and is simply skipped.
-    for (const id of this._ids) {
-      if (next.has(id)) continue
+    //    from the scene resolves to null and is simply skipped. Switching KIND
+    //    releases them all — nothing entity-shaped is selected any more.
+    for (const id of this.ids) {
+      if (nextIds.has(id)) continue
       const obj = ctrl._scene.getObject(id)
       if (!obj?.meshView) continue
       obj.meshView.setObjectSelected(false)
       if (obj instanceof CoordinateFrame) obj.meshView.hideParentAxesGhost?.()
     }
 
-    // 2. The set itself.
-    this._ids = next
+    // 2. The selection itself — one value carrying both cardinality and kind.
+    this._sel = next
 
     // 3. Active entity. `setActiveObject` is the scene's own entry point; a
-    //    selection with no active entity is legal (0 selected after a clear).
+    //    selection with no active entity is legal (0 selected after a clear, and
+    //    any variable selection — a variable is not an entity).
     if (activeId != null && activeId !== ctrl._scene.activeId) {
       ctrl._service.setActiveObject(activeId)
     }
 
-    // 4. Highlight every selected entity, and hang the parent-axes ghost on the
-    //    active CF only (ADR-034 §7 — it answers "relative to what", which is a
-    //    question about the one entity the panels are talking about).
-    for (const id of next) {
-      const obj = ctrl._scene.getObject(id)
-      if (!obj?.meshView) continue
-      obj.meshView.setObjectSelected(true)
-      if (!(obj instanceof CoordinateFrame)) continue
-      const ghostPos = id === ctrl._scene.activeId ? ctrl._geometryAncestorCentroid(id) : null
-      if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
-      else          obj.meshView.hideParentAxesGhost?.()
-    }
+    // 4. The 3-D shape of what is selected. EVERY declared painter runs with the
+    //    whole selection, so a painter releases its own paint when the kind is
+    //    no longer its own; `shapeForKind` is consulted so an undeclared kind
+    //    throws here rather than painting nothing (ADR-107 D4 / 原則 #11).
+    if (next.kind !== SELECTION_KIND.EMPTY) shapeForKind(next.kind)
+    for (const paint of Object.keys(this._painters)) this._painters[paint](next, activeId)
 
     // 5. Visibility: one wholesale claim derived from the whole selection.
     this._claimContext()
 
     // 6. The windows that display the selection. They are told; they never poll
     //    (原則 #5), and the LINK NETWORK resolves entity → node itself (ADR-094).
-    ctrl._service.updateLinkSelectionHighlight(this._ids)
-    ctrl._linkNetworkView?.setSelection(this._ids)
+    //    Both take ENTITY ids — with a variable selected they are told "none",
+    //    which is the truth, not an omission.
+    ctrl._service.updateLinkSelectionHighlight(nextIds)
+    ctrl._linkNetworkView?.setSelection(nextIds)
+    ctrl._uiView?.setSelectionSummary?.(selectionSummary(next))
 
     // 7. Presentation of the transition itself (ADR-068). Only on entering the
     //    selection of a Solid, never on re-selection churn (#30 volume discipline).
     const activeObj = activeId != null ? ctrl._scene.getObject(activeId) : null
-    if (fx && next.has(activeId) && activeObj instanceof Solid &&
+    if (fx && nextIds.has(activeId) && activeObj instanceof Solid &&
         activeId !== this._lastFxId && activeObj.corners?.length === 8) {
       const corners = activeObj.corners
       ctrl._motion.spawn(reduced => new SelectPulse(ctrl._sceneView.scene, corners, { reduced }))
       this._lastFxId = activeId
-    } else if (next.size === 0) {
+    } else if (selectionSize(next) === 0) {
       this._lastFxId = null
     }
 
@@ -283,6 +358,36 @@ export class SelectionManager {
     ctrl._updateNPanel()
     ctrl._updateMobileToolbar()
     ctrl._syncContextProvenance?.()
+  }
+
+  // ── The declared painters (ADR-107 D4) ──────────────────────────────────────
+
+  /**
+   * `entities` — the outline itself, plus the parent-axes ghost on the active CF
+   * only (ADR-034 §7: it answers "relative to what", a question about the one
+   * entity the panels are talking about).
+   */
+  _paintMeshHighlight(sel, activeId) {
+    const ctrl = this._ctrl
+    for (const id of entityIdsOf(sel)) {
+      const obj = ctrl._scene.getObject(id)
+      if (!obj?.meshView) continue
+      obj.meshView.setObjectSelected(true)
+      if (!(obj instanceof CoordinateFrame)) continue
+      const ghostPos = id === ctrl._scene.activeId ? ctrl._geometryAncestorCentroid(id) : null
+      if (ghostPos) obj.meshView.showParentAxesGhost(ghostPos)
+      else          obj.meshView.hideParentAxesGhost?.()
+    }
+  }
+
+  /**
+   * `variables` — the undecided band (ADR-050's region-ghost lineage) for each
+   * selected variable. The bands' sole owner is `ContextController`, which
+   * derives them wholesale from (mode, selection) in one place; handing it the
+   * whole selection (empty set included) is how deselecting releases them.
+   */
+  _paintUndecidedBand(sel) {
+    this._ctrl._ctxCtrl?.showVariableBands?.([...variableRefsOf(sel)])
   }
 
   /**
@@ -339,6 +444,21 @@ export class SelectionManager {
    * mesh the `want(id, FULL)` line below reveals. The frames around it were never
    * the tactile answer to "I picked this"; they are the context for it, which is
    * precisely what the CF branch has always called DIMMED.
+   *
+   * ## The variables branch (ADR-107 D5)
+   *
+   * Selecting a shared design variable claims the entities that variable
+   * constrains — at DIMMED, by the SAME rule: what is selected is FULL, what
+   * merely hangs off it is DIMMED. Since no entity is selected, FULL is empty,
+   * and the invariant above holds unchanged rather than needing a second
+   * formula:
+   *
+   *     FULL(claim) === the selection ∩ entities   (∅ for a variable selection)
+   *     DIMMED(claim) === ⋃ chains − the selection
+   *
+   * This is what keeps the robot the user was looking at from vanishing when
+   * they select a number about it — no new vocabulary, no `focused/neighbor`
+   * second axis, just the claim the manager already makes (ADR-096 / ADR-099).
    */
   _claimContext() {
     const claim = new Map()
@@ -346,7 +466,15 @@ export class SelectionManager {
       if (claim.get(id) === CONTEXTUAL.FULL) return
       claim.set(id, strength)
     }
-    for (const id of this._ids) {
+    for (const ref of this.variableRefs) {
+      // The chain of a variable = the entities the requirements constraining it
+      // point at (ContextService owns the ref → scene-id half; the reachability
+      // is pure). No document loaded ⇒ no chain, which is a legal empty claim.
+      for (const sceneId of this._ctrl._ctxService?.entitiesConstrainedBy(ref) ?? []) {
+        want(sceneId, CONTEXTUAL.DIMMED)
+      }
+    }
+    for (const id of this.ids) {
       const obj = this._ctrl._scene.getObject(id)
       if (!obj) continue
       // The selected entity itself — ADR-099 G2. Without this line, selecting an

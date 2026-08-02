@@ -31,6 +31,7 @@ import assert from 'node:assert/strict'
 
 import { SelectionManager } from './SelectionManager.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
+import { variableRef } from '../domain/selection.js'
 import {
   CONTEXTUAL, VISIBILITY_KIND, composeVisibility, defaultExplicit,
 } from '../view/VisibilityAxes.js'
@@ -446,4 +447,120 @@ test('選択パルスは選択へ入る遷移でだけ鳴る (再選択churn で
   mgr.selectOnly('a', { fx: false })
   mgr.selectOnly('a', { fx: false })
   assert.equal(ctrl.pulses, 0, '復帰は「いま選ばれた」ではないので鳴らしてはいけない')
+})
+
+// ── 5. 要素の種が 2 つになる (ADR-107) ────────────────────────────────────────
+//
+// ADR-099 が確立したのは「選択を変える入口は 1 つ」であって「選べるものは実体だけ」
+// ではない。ここで問うのは、種が 1 → 2 になったときに **入口の個数が増えていない**
+// (それは `SelectionOwnership.test.js` の担当) ことではなく、**種が混ざらない**
+// ことと、**変数を選んでも 3D と文脈が無言にならない**ことである。
+//
+// 上界の式を変数側でも焼くのは ADR-099 が N=25 で焼いたのと同じ理由: 1 個の変数が
+// 1 個の実体を束縛する fixture では `4N` と `N` が区別できない。
+
+/** 変数の束縛先を答える ContextService の stub (実物の純粋部分は ProvenanceTree)。 */
+function withVariables(ctrl, byRef) {
+  ctrl._ctxService = { entitiesConstrainedBy: ref => byRef[ref] ?? [] }
+  ctrl.bands = null
+  ctrl._ctxCtrl = { showVariableBands(refs) { ctrl.bands = [...refs] } }
+  return ctrl
+}
+
+test('変数を選ぶと種が入れ替わる — 実体の選択は 0 個になり、混ざらない (D1)', () => {
+  const ctrl = withVariables(makeCtrl([makeSolid('robot'), makeSolid('camera')]),
+    { v_d_ref: ['robot', 'camera'] })
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly('robot')
+  assert.equal(mgr.selection.kind, 'entities')
+
+  mgr.selectOnly(variableRef('v_d_ref'))
+  assert.equal(mgr.selection.kind, 'variables')
+  assert.deepEqual([...mgr.variableRefs], ['v_d_ref'])
+  assert.equal(mgr.ids.size, 0, '変数選択中に実体が選択されたままになっている')
+  assert.equal(mgr.has('robot'), false)
+  // 前の種のハイライトは、同じ 1 つの遷移で解放される (窓が後始末を覚えていない)。
+  assert.equal(ctrl._scene.getObject('robot').meshView.selected, false)
+  assert.equal(ctrl.linkHighlight.size, 0, 'リンク強調に前の種が残っている')
+  assert.equal(ctrl.panelSelection.size, 0, 'パネルに前の種が残っている')
+})
+
+test('混在した選択は verb からも構築できない (throw する)', () => {
+  const ctrl = withVariables(makeCtrl([makeSolid('robot')]), {})
+  const mgr = new SelectionManager(ctrl)
+  assert.throws(() => mgr.selectMany(['robot', variableRef('v_d_ref')]), /cannot mix kinds/)
+  // 失敗した構築が状態を半分だけ書いていないこと (遷移は 1 本 = 全部か無か)。
+  assert.equal(mgr.selection.kind, 'empty')
+  assert.equal(mgr.count, 0)
+})
+
+test('変数を選ぶと 3D の姿が出る — 未確定帯の painter に届く (D4 / 原則 #11)', () => {
+  const ctrl = withVariables(makeCtrl([makeSolid('robot')]), { v_d_ref: ['robot'] })
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly(variableRef('v_d_ref'))
+  assert.deepEqual(ctrl.bands, ['v_d_ref'], '選んだのに 3D へ何も届いていない = 無言')
+
+  // 選択を離れると同じ経路で解放される — 「消す」を窓が覚えていない。
+  mgr.clearSelection()
+  assert.deepEqual(ctrl.bands, [], '帯が選択から取り残されている')
+})
+
+test('変数を選んでも文脈は消えない — 束縛している実体が DIMMED で残る (D5)', () => {
+  const ctrl = withVariables(makeCtrl([makeSolid('robot'), makeSolid('camera'), makeSolid('other')]),
+    { v_d_ref: ['robot', 'camera'] })
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly(variableRef('v_d_ref'))
+
+  assert.deepEqual([...ctrl.contextual.keys()].sort(), ['camera', 'robot'],
+    '変数の連鎖 = その変数を制約する要求が指す実体')
+  assert.deepEqual(fullIds(ctrl), [],
+    'FULL = 選択集合 ∩ 実体 = ∅。変数は実体ではないので、当人が FULL になることはない')
+  for (const id of ['robot', 'camera']) {
+    assert.equal(ctrl.contextual.get(id), CONTEXTUAL.DIMMED)
+  }
+})
+
+test('変数側でも上界の式は同じ — N を振っても FULL は 0、DIMMED は連鎖ちょうど', () => {
+  // 1 個の fixture では `4N` と `N` が区別できない (ADR-099 の測定と同じ理由)。
+  // 変数側は FULL が常に 0 なので、誤って「当人 FULL」を書くと N=25 で 25 になる。
+  const N = 25
+  const objs = []
+  const chain = []
+  for (let i = 0; i < N; i++) { objs.push(makeSolid(`e${i}`)); chain.push(`e${i}`) }
+  const ctrl = withVariables(makeCtrl(objs), { v_big: chain })
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly(variableRef('v_big'))
+
+  assert.equal(mgr.count, 1, '選択の基数は変数 1 個 — 連鎖の長さではない')
+  assert.equal(ctrl.contextual.size, N, '到達は連鎖ちょうど')
+  assert.equal(fullIds(ctrl).length, 0, 'FULL が連鎖ぶん伸びている (上界の式が別物になっている)')
+})
+
+test('文書が無くても変数選択は落ちない — 連鎖 0 個は正当な空の主張', () => {
+  const ctrl = makeCtrl([makeSolid('robot')])   // _ctxService も _ctxCtrl も無い
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly(variableRef('v_orphan'))
+
+  assert.equal(mgr.selection.kind, 'variables')
+  assert.equal(ctrl.contextual.size, 0, '既定値で埋めず、空の主張として通す')
+})
+
+test('実体へ戻る往復で種は毎回きれいに入れ替わる (片方が残らない)', () => {
+  const ctrl = withVariables(makeCtrl([makeSolid('robot')]), { v_d_ref: ['robot'] })
+  const mgr = new SelectionManager(ctrl)
+
+  mgr.selectOnly(variableRef('v_d_ref'))
+  mgr.selectOnly('robot')
+
+  assert.equal(mgr.selection.kind, 'entities')
+  assert.deepEqual([...mgr.ids], ['robot'])
+  assert.equal(mgr.variableRefs.size, 0)
+  assert.deepEqual(ctrl.bands, [], '変数を離れたのに帯が残っている')
+  assert.deepEqual(fullIds(ctrl), ['robot'], '実体側の強度規則は変わっていない')
+  assertNoSubsetWritten(mgr, ctrl, '種を往復した後')
 })

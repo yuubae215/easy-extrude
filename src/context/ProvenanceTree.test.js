@@ -13,7 +13,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { buildWhyTree, recoverProvenance, PROVENANCE_LAYERS } from './ProvenanceTree.js'
+import {
+  buildWhyTree, recoverProvenance, entityRefsConstrainedByVariable, PROVENANCE_LAYERS,
+} from './ProvenanceTree.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const loadExample = (name) =>
@@ -153,5 +155,31 @@ describe('purity', () => {
     assert.doesNotThrow(() => buildWhyTree({}))
     const p = recoverProvenance({}, 'anything')
     assert.equal(p.found, false)
+  })
+})
+
+describe('entityRefsConstrainedByVariable — φ⁻¹ の逆向き (ADR-107 D5)', () => {
+  it('returns the entities a variable constrains (the chain a variable selection dims)', () => {
+    // `robot_base_zone` は trace で `r_eoat_clearance` に繋がり、その要求が
+    // `v_robot_base_x` を制約している。選択の連鎖はこの到達関係そのもの。
+    assert.deepEqual(entityRefsConstrainedByVariable(cell, 'v_robot_base_x'), ['robot_base_zone'])
+  })
+
+  it('is the inverse of the `variables` recoverProvenance surfaces (one relation, two directions)', () => {
+    // 同じ到達関係を 2 通りの向きから読む。別の「関連」概念を作ると必ずずれる (§1.1)。
+    for (const ref of ['v_robot_base_x', 'v_camera_standoff']) {
+      for (const entity of entityRefsConstrainedByVariable(cell, ref)) {
+        assert.ok(recoverProvenance(cell, entity).variables.includes(ref),
+          `${entity} → ${ref} が逆向きで一致しない`)
+      }
+    }
+  })
+
+  it('a variable nothing hangs off returns [] — a stated 0, not a guess', () => {
+    // 0 個は正当な答え (「この数字はまだ空間の何にも繋がっていない」)。
+    // 呼び手はこれを既定値で埋めず、そう述べる (原則 #31 / #11)。
+    assert.deepEqual(entityRefsConstrainedByVariable(cell, 'v_not_declared'), [])
+    assert.deepEqual(entityRefsConstrainedByVariable(cell, ''), [])
+    assert.deepEqual(entityRefsConstrainedByVariable(null, 'v_robot_base_x'), [])
   })
 })

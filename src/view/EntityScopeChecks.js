@@ -40,6 +40,16 @@ const ENTITY_SCOPE_BY_KIND = Object.freeze({
     grasp: false,
     why:   'A spatial link is a relation, not a body — nothing to reach for.',
   }),
+  variable: Object.freeze({
+    // The second selectable kind (ADR-107). A shared design variable is a number
+    // under negotiation, not a body — but the entry does NOT disappear: a slot
+    // that vanishes teaches nothing, while a disabled one carrying its reason
+    // says what to select instead (原則 #15 / #11, and 原則 #17 — the member
+    // exists on every kind, `false` included).
+    grasp: false,
+    why:   'A shared design variable is a number under negotiation, not a body. ' +
+           'Select one of the entities it constrains to run a grasp search.',
+  }),
 })
 
 /** 宣言表が覆っている実体種 (検査が母集団として引く)。 */

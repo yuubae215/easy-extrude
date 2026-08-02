@@ -37,7 +37,16 @@ export const useUIStore = create((set, get) => ({
   //   { type: 'frame', pos, eulerDeg, name, locked, parentOptions, currentParentId,
   //     unreferenced, childFrames, onAddChildFrame, onSelectChildFrame }
   //   { type: 'link', link, srcName, tgtName, onDelete }
+  //   { type: 'variable', ref, description, unit, summary, claims, hasShape } (ADR-107)
   nPanelData: null,
+
+  // ── 選択の写し (ADR-107) ────────────────────────────────────────────────────
+  // { kind: 'empty'|'entities'|'variables', members: string[] }
+  // 権威は SelectionManager._sel。ここは**表示用の写し**であって第二の源ではない:
+  // 書き手は `_apply()` から降りてくる setSelectionSummary ただ 1 つで、読み手
+  // (場の行列の列ヘッダ) は写しを読むだけ (§1.1 / 原則 #5)。名前を権威と変えて
+  // あるのは、同名の写しが grep でも規則でも権威と区別できなくなるため。
+  selection: { kind: 'empty', members: [] },
   // Backdrop overlay callback — set by showBackdrop(), cleared by hideBackdrop()
   backdropCallback: null,
 
@@ -290,6 +299,7 @@ export const useUIStore = create((set, get) => ({
     setNPanelVisible: (val) => set({ nPanelVisible: val }),
     toggleNPanel: () => set(state => ({ nPanelVisible: !state.nPanelVisible })),
     setNPanelData: (descriptor) => set({ nPanelData: descriptor }),
+    setSelectionSummary: (summary) => set({ selection: summary }),
     setBackdrop: (cb) => set({ backdropCallback: cb }),
 
     setExtrusionLabel: (text, x, y) => set({ extrusionLabel: text != null ? { text, x, y } : null }),

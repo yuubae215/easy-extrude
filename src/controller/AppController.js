@@ -21,6 +21,7 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
+import { CONTEXTUAL }        from '../view/VisibilityAxes.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
 import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
 import { Face }            from '../graph/Face.js'
@@ -934,12 +935,24 @@ export class AppController {
       // Both are derived from one representation now, so a disagreement here is
       // not merely unlikely, it is unwritable — which is exactly what makes the
       // assertion cheap to keep.
+      // ADR-107 added `kind` and `variables`: the element KIND is now part of
+      // the selection's state, and a snapshot that only reported entity names
+      // could not tell "a variable is selected" from "nothing is selected" —
+      // the same shape of blindness the count/flag pair had (原則 #31).
+      // `contextualDimmed` reports the claim a variable selection makes, so the
+      // regression can ask that selecting a number does NOT make the entities it
+      // constrains vanish (D5) rather than merely that it did not crash.
       selectionState: () => ({
+        kind:        this._selMgr.selection.kind,
         count:       this._selMgr.count,
         objSelected: this._objSelected,
         activeId:    this._scene.activeId,
         activeName:  this._activeObj?.name ?? null,
         names:       [...this._selectedIds].map(id => this._scene.getObject(id)?.name ?? id),
+        variables:   [...this._selMgr.variableRefs],
+        contextualDimmed: [...this._scene.objects.values()]
+          .filter(o => this._service.contextualVisibilityOf(o.id) === CONTEXTUAL.DIMMED)
+          .map(o => o.name),
       }),
       // Read-only placement snapshot (ADR-097) — the E2E guard for the invariant
       // that used to live only in prose ("never floating"). `support` is DERIVED
