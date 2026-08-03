@@ -170,6 +170,13 @@ const CENSUS_REGISTRY = [
     why: 'ADR-105 が退役させた形 (agendaCounters スライス / 場に相乗りする集約更新)。'
        + '退役の腐敗は違反を見逃すのではなく緑を出すので、消したこと自体を逆向きに問う' },
 
+  // ── ヘッダの入口 (ADR-108) ──
+  { file: 'src/HeaderEntranceCensus.test.js', table: 'NOT_AN_ENTRANCE', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = Header.jsx の 2 つのレイアウト関数直下に現れる JSX 要素 (構文で導出)。'
+       + '入口として宣言されたもの (HEADER_ENTRANCES) と、入口ではないと理由つきで宣言したもの '
+       + 'に分割する。ヘッダに要素を足せばその日から母集団に入るので、'
+       + '「表に足すまで数えられない」腐り方をしない' },
+
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

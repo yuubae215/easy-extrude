@@ -3810,13 +3810,37 @@ export class AppController {
    * itself is session-local and persists nowhere.
    */
   _startTourIfNeeded() {
+    useUIStore.getState().actions.registerCallback('onTourDismiss',  () => this._dismissTour())
+    useUIStore.getState().actions.registerCallback('onTourRestart',  () => this._restartTour())
     if (window.matchMedia('(pointer: coarse)').matches) return
     let flag = null
     try { flag = localStorage.getItem('ee_tour') } catch { /* storage denied */ }
     if (flag) return
-    useUIStore.getState().actions.registerCallback('onTourDismiss', () => this._dismissTour())
     const tour = startTour(this._tourFacts())
     if (tour) useUIStore.getState().actions.setTour(tour)
+  }
+
+  /**
+   * Re-seed the quest tour on demand — the `Start ▾ → Quest tour` argument
+   * (ADR-108 D3).
+   *
+   * Before ADR-108 the tour had **no entrance at all**: it was seeded once on
+   * first run and `✕` persisted `dismissed`, after which nothing could bring it
+   * back. Folding the five "start" doors into one is only legitimate if all five
+   * are still reachable (原則 #16 — folding is not deleting), so the fifth one
+   * had to be given the entrance it never had. Restarting clears the persisted
+   * flag: the user asked for it, so "never re-seed" no longer holds.
+   */
+  _restartTour() {
+    try { localStorage.removeItem('ee_tour') } catch { /* storage denied — session-only tour */ }
+    const tour = startTour(this._tourFacts())
+    if (tour) {
+      useUIStore.getState().actions.setTour(tour)
+    } else {
+      // Never a silent no-op (原則 #11): the tour predicates can decide there is
+      // nothing left to quest for, and that is a fact worth printing.
+      this._uiView.showToast('The quest tour has nothing left to show for this scene.', { type: 'info' })
+    }
   }
 
   /**

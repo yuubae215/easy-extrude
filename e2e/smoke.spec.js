@@ -35,14 +35,21 @@ async function boot(page) {
   return errors
 }
 
-// Context ▾ → New Project → pick an example template. Selecting an example
-// loads its canonical doc and enters negotiate mode (ADR-051 Phase 2), so the
-// production ContextLayer (Matrix / Cluster tabs, where the Phase-4 flashes
-// live) mounts. Shared by the plain and the reduced-motion test.
-async function loadTemplateIntoNegotiate(page) {
-  await page.getByRole('button', { name: /Context/ }).click()
-  await page.getByText('New Project', { exact: true }).click()
+// Start ▾ → context template → pick an example. Selecting an example loads its
+// canonical doc and enters negotiate mode (ADR-051 Phase 2), so the production
+// ContextLayer (Matrix / Cluster tabs, where the Phase-4 flashes live) mounts.
+// Shared by the plain and the reduced-motion test.
+//
+// The door moved in ADR-108: "New Project" was one of five separate `始める`
+// entrances and is now an ARGUMENT of the single `Start ▾` verb.
+async function startFromContextTemplate(page) {
+  await page.getByRole('button', { name: /Start/ }).click()
+  await page.getByText('From a context template (New Project)', { exact: true }).click()
   await expect(page.getByText(/Start from a blank project/)).toBeVisible()
+}
+
+async function loadTemplateIntoNegotiate(page) {
+  await startFromContextTemplate(page)
   await page.getByRole('button', { name: 'Robot Cell — Simple' }).click()
   // ContextLayer negotiate header + its Matrix tab.
   await expect(page.getByText('Negotiate', { exact: true })).toBeVisible()
@@ -385,8 +392,10 @@ test('launch Home screen loads a process-layout template (ADR-089)', async ({ pa
   await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
   await expect(page.getByText('投入ステーション', { exact: true }).first()).toBeVisible()
 
-  // The header "Layouts" slot reopens Home after it has closed.
-  await page.getByRole('button', { name: /Layouts/ }).click()
+  // The header reopens Home after it has closed — now as an argument of the
+  // single `Start ▾` verb rather than its own `Layouts` button (ADR-108 D1).
+  await page.getByRole('button', { name: /Start/ }).click()
+  await page.getByText('From a layout template', { exact: true }).click()
   await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
 
   // Checking "起動時に表示しない" persists the skip flag → Home stays down on reload.
@@ -1158,9 +1167,7 @@ test('ロボットでない実体では grasp の入口が理由つきで閉じ�
 // **実体を 1 つも持たない**ので、変数の連鎖 (D5) が構造的に 0 になる —
 // 「0 でないこと」を問うテストがそこを使うと、通っても何も示さない。
 async function loadRegionTemplateIntoMatrix(page) {
-  await page.getByRole('button', { name: /Context/ }).click()
-  await page.getByText('New Project', { exact: true }).click()
-  await expect(page.getByText(/Start from a blank project/)).toBeVisible()
+  await startFromContextTemplate(page)
   await page.getByRole('button', { name: 'Robot Cell — Regions' }).click()
   await expect(page.getByText('Negotiate', { exact: true })).toBeVisible()
   // 読み込み直後のタブは文書側の事情で決まる (Why / Questions)。行列は明示的に開く。
@@ -1216,6 +1223,82 @@ test('変数を選んでも、束縛している実体は視界から消えな�
   // 0 個なら「変数を選ぶと Robot が消える」= v8 が名指しした懸念そのもの。
   expect(state.contextualDimmed.length,
     '変数が束縛している実体が 1 つも文脈に残っていない (選択が無言になっている)').toBeGreaterThan(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+// ─── ADR-108: 畳むことは消すことではない ────────────────────────────────────
+//
+// 直積を畳んだあと、5 種の「始める」と 3 対象のファイル操作が**全部**到達可能で
+// あることを焼く。ここが緑でなければ ADR-108 は IA の整理ではなく機能の削除である
+// (原則 #16 — 発見可能性は成果物)。数えるのは入口ではなく **到達できた引数の個数**で、
+// 引数は宣言表から来るので、表に行を足して UI に出し忘れればここで落ちる。
+
+test('始める 5 種すべてが 1 つの入口から到達できる (ADR-108 D1/D3)', async ({ page }) => {
+  const errors = await boot(page)
+
+  // 宣言表 (src/view/HeaderEntrances.js) が正本。ここに文字列を並べ直すのは
+  // 第二の源になるが、e2e はブラウザ側なので import できない — 代わりに
+  // 「5 個ちょうど」を数え、ラベルの一致ではなく**個数と可用性**を問う。
+  await page.getByRole('button', { name: /Start/ }).click()
+  const labels = [
+    'From a layout template',
+    'From a context template (New Project)',
+    'Guided story (tutorial)',
+    'Quest tour (5 quests)',
+    'Guided intake (wizard)',
+  ]
+  for (const label of labels) {
+    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible()
+  }
+
+  // 文書を採る前なので Guided intake は前提を満たさない。**消えず**、理由を持つ
+  // (原則 #11 / #15) — 消えていたら「5 種ある」は接続状態の関数になってしまう。
+  const wizard = page.getByRole('button', { name: 'Guided intake (wizard)', exact: true })
+  await expect(wizard).toHaveAttribute('aria-disabled', 'true')
+  await expect(wizard).toHaveAttribute('title', /No context document adopted/)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('持ち出す / 持ち込む が 2 入口 × 3 対象になっている (ADR-108 D1)', async ({ page }) => {
+  const errors = await boot(page)
+
+  for (const [verb, sceneLabel, serverLabel] of [
+    ['Export', 'Scene as JSON',   'Scene to server'],
+    ['Import', 'Scene from JSON', 'Scene from server'],
+  ]) {
+    await page.getByRole('button', { name: new RegExp(`^${verb}`) }).click()
+    // exact ではなく部分一致 — 行のアクセシブル名にはショートカット表示が入る
+    // (`Scene as JSON Ctrl+E`)。名前の完全一致を要求すると、近道を出したこと自体で落ちる。
+    for (const target of [sceneLabel, serverLabel, 'Context document (.ctx.json)']) {
+      await expect(page.getByRole('button', { name: target })).toBeVisible()
+    }
+    // BFF 未接続でもサーバ対象は**消えない** — 消える入口は入口の個数を接続状態の
+    // 関数にする。消さずに理由を運ぶ (原則 #11 / #15)。
+    const server = page.getByRole('button', { name: serverLabel })
+    await expect(server).toHaveAttribute('aria-disabled', 'true')
+    await expect(server).toHaveAttribute('title', /Not connected to the geometry server/)
+    // 熟練者の近道は畳んでも残る — 対象を選ぶ手が 1 つ増えるコストの受け皿 (ADR-108)。
+    await expect(page.getByRole('button', { name: sceneLabel }))
+      .toContainText(verb === 'Export' ? 'Ctrl+E' : 'Ctrl+I')
+    await page.mouse.click(400, 300)
+  }
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('Node Editor はファイル群から出て、BFF 未接続でも理由つきで残る (ADR-108 D4)', async ({ page }) => {
+  const errors = await boot(page)
+
+  // 表示条件 (BFF) は変えていない。変えたのは分類 — 消えずに理由を運ぶ。
+  const nodes = page.getByRole('button', { name: /Nodes/ })
+  await expect(nodes).toBeVisible()
+  await expect(nodes).toHaveAttribute('aria-disabled', 'true')
+
+  // そして `Export ▾` / `Import ▾` の引数ではない (動詞を共有していない)。
+  await page.getByRole('button', { name: /^Export/ }).click()
+  await expect(page.getByRole('button', { name: /Nodes/ })).toHaveCount(1)  // ヘッダの 1 つだけ
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
