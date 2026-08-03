@@ -41,7 +41,7 @@ block-beta
 | N Panel sidebar | w:240px, h:calc(100vh-64px) | fixed top:40px right:0 | 100 |
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
-| Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
+| Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open — `_updateGizmoOffset()`, **2 項**)。ADR-106 D2 で `+280` (Context Inspector) の項は消えた: 器が下端へ移り、右端の常設は N パネルだけになったため | 10 |
 | Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px は元々 Map ツールバー下端との干渉を避ける値だった。ADR-103 でツールバーが消え左端は空いたが、cap 自体は 720px 高でのパネル収まり (原則 #26) として残す (ADR-048) | 50 |
 | Projection toggle | w:128px, h:22px | fixed top:182px, right = gizmo offset (ADR-103 — ギズモ直下。右端の占有計算は `_updateGizmoOffset()` ただ 1 箇所が持つ, 原則 #26) | 10 (`Z.gizmo`) |
 | Scene checks HUD (ADR-105 D1/D3) | w:auto (max-w:244px), h:auto | fixed top:46px left:188px (**左端の占有計算は `view/EdgeOccupancy.js` の `leftEdgeOffset()` ただ 1 箇所が持つ** — Link Network も同じ関数を引く, 原則 #26 / ADR-105 D6。上端は `belowHeaderOffset()`)。場の開閉と独立に常設 — `ctx.active` を読まない | 10 (`Z.gizmo`) |
@@ -79,7 +79,7 @@ block-beta
 | Mobile toolbar | w:100vw, h:60px | fixed bottom:0 left:0 | 100 |
 | Outliner drawer | w:200px, h:calc(100vh-40px) | fixed top:40px left:0 | 110 |
 | N Panel drawer | w:240px, h:calc(100vh-40px) | fixed top:40px right:0 | 110 |
-| Toast | w:auto, max-w:280px | fixed bottom:**96px**, centered | 150 |
+| Toast | w:auto, max-w:280px | fixed centered、`bottom` は `EdgeOccupancy` の `toast` 段が計算する (ADR-106 D6)。かつては `96px` の literal で、**mobile でも同じ値**だった (ツールバーだけで 86px 食う) | 150 |
 | Context menu | w:auto | absolute (tap position) | 200 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:8px | 50 |
 | Link Network Overlay | w:220px, h:SVG 152–160px + 28px header | fixed bottom:94px left:8px | 50 |
@@ -93,15 +93,28 @@ block-beta
 
 ## Header Internal Layout
 
-### Desktop
+**入口は動詞、対象は引数** (ADR-108)。常設入口の個数は **desktop 7 / mobile 7** で
+固定され、`src/HeaderEntranceCensus.test.js` の ratchet が**超えても下回っても**落とす。
+母集団は `Header.jsx` の JSX から構文で導出するので、ここに書いた図は正本ではなく
+**写し**である (§1.1 — 数の正本は検査、分類の正本は `src/view/HeaderEntrances.js`)。
+
+### Desktop (7)
 ```
-[≡] [↶↷] │ [Mode▾] │ ──flex:1── status ──flex:1── │ [Export] [Import] [Save/Load]
+[Mode▾] [Nodes] │ ──flex:1── status ──flex:1── │ [Start▾] [Export▾] [Import▾] [◌ 発見] [Context▾]
 ```
 
-### Mobile
+`Nodes` は**作業面のトグル**であってファイル動詞ではない (ADR-108 D4 — `Save`/`Load` の
+隣に居たのは表示条件が一致していたからで、動詞を共有していたからではない)。BFF 未接続でも
+消えず、理由つき disabled で在り続ける ⇒ **入口の個数が接続状態の関数にならない**。
+
+### Mobile (7)
 ```
-[≡] [↶↷] │ [Mode▾] │ visibility:hidden (flex:1 spacer) │ [⋯] [N]
+[≡] [↶] [↷] [Mode▾] │ visibility:hidden (flex:1 spacer) │ [◌ 発見] [⋯] [N]
 ```
+
+`⋯` は**動詞を先に**出し (Start / Export / Import / Context)、選んだ動詞の対象を次の段で
+出す。以前はここに 11 項目が平坦に並んでいた — 狭い画面ほど直積が効くので、モバイル側を
+畳まないとデスクトップだけ整理した形になる。
 
 - `_headerStatusEl` must use **`visibility:hidden`**, not `display:none`.
   → It must continue to function as a `flex:1` spacer. Using `display:none` breaks the layout.
@@ -179,6 +192,35 @@ z:0    ── 3D canvas (Three.js renderer)
 │  Y: [  0.0]                     │
 └─────────────────────────────────┘
 ```
+
+**中身は選択の種で入れ替わる (ADR-107).** 上図は `entities` 選択のときの姿。
+`variables` 選択のときは同じ器に別の body が入る — 器の寸法・住所・z は変わらない
+(スロットは固定、変わるのは中の文 — 原則 #15):
+
+```
+┌─────────────────────────────────┐
+│  ITEM                           │
+├─────────────────────────────────┤
+│  SHARED VARIABLE  ───────────── │
+│  v_base_footprint [mm]          │
+│  セル床の設置許容ゾーン         │
+│  3D: 未確定帯を表示中           │  ← 種ごとに宣言された姿 (D4)
+├─────────────────────────────────┤
+│  CLAIMS (2)  ────────────────── │
+│  vision  [200, 350)             │
+│  mech    [600, 1200)            │
+├─────────────────────────────────┤
+│  CONFLICT  ──────────────────── │
+│  共通部分なし — gap [350, 600)  │
+├─────────────────────────────────┤
+│  CONSTRAINS (2)  ────────────── │
+│  視野要求ゾーン                 │  ← クリックで実体の選択へ戻る
+│  据付要求ゾーン                 │
+└─────────────────────────────────┘
+```
+
+どの body が出るかは `NPANEL_BY_SELECTION_KIND` の宣言で決まり、未宣言の種は throw する
+(`src/view/SelectionKinds.js`)。
 
 - Numeric fields are read-only (not directly editable)
 - N Panel width: 240px

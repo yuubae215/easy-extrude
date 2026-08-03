@@ -1,35 +1,40 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ModeDropdown } from './ModeDropdown.jsx'
 import { COLOR } from '../../theme/tokens.js'
-import { tierAMotion, lockedStyle, enterMotion } from '../../view/ChromeMath.js'
+import { tierAMotion, lockedStyle } from '../../view/ChromeMath.js'
 import { gateUndo, gateRedo } from '../../view/ChromeGates.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
 import { DiscoveryCounters } from '../Chrome/DiscoveryCounters.jsx'
-
-// ── SVG icon constants (matching ICONS in UIView.js) ──────────────────────
-const SVG_UNDO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>`
-const SVG_REDO = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4"/></svg>`
-const SVG_HAMBURGER = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`
-const SVG_NPANEL = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>`
-const SVG_MORE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`
-const SVG_NODES = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><line x1="9" y1="12" x2="15" y2="7"/><line x1="9" y1="12" x2="15" y2="17"/></svg>`
-const SVG_EXPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
-const SVG_IMPORT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 14 12 9 17 14"/><line x1="12" y1="9" x2="12" y2="21"/></svg>`
-const SVG_DEMO = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
-const SVG_LAYOUTS = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
+import { VerbMenu, MoreMenu } from './HeaderMenus.jsx'
+import { iconFor } from './HeaderIcons.js'
+import {
+  HEADER_VERB, SURFACE, surfaceToggleFor, availabilityOf,
+} from '../../view/HeaderEntrances.js'
 
 /**
  * Header — React replacement for UIView's 40px top bar.
  *
- * Reads state from the Zustand store (mode, statusParts, bffConnected,
- * nodeEditorOpen) and fires callbacks registered by AppController.
+ * ## Entrances are verbs, not objects (ADR-108)
  *
- * Mobile layout  (<768px):  [☰] [↩] [↪] [Mode▾] [Map] [spacer] [⋯] [N]
- * Desktop layout (≥768px):  [Mode▾] [Map] [··status··] [Save?] [Load?] [Nodes?] [Export] [Import]
- * (Save / Load / Nodes appear only while the BFF is connected — the Node Editor's
- *  primary content is the BFF Geometry Service operation graph.)
+ * The header used to carry the **product** `動詞 × 対象`: two file verbs times
+ * three targets was six flat buttons, and "start" times five kinds was five
+ * more. That grows without bound — every new target lengthens the bar — so the
+ * product was folded: the objects became **arguments** inside one entrance per
+ * verb, and the entrance count is now a function of the verb enum alone.
+ *
+ * Which elements here count as entrances is declared in
+ * `src/view/HeaderEntrances.js` and counted by `src/HeaderEntranceCensus.test.js`
+ * (the population is derived from this file's JSX, not from a hand-written
+ * list — ADR-102). The count is ratcheted: it fails if it rises **or** falls.
+ *
+ * Mobile layout  (<768px):  [☰] [↩] [↪] [Mode▾] [··spacer··] [◌] [⋯] [N]
+ * Desktop layout (≥768px):  [Mode▾] [Nodes] [··status··] [Start▾] [Export▾] [Import▾] [◌] [Context▾]
+ *
+ * Nothing here disappears with the BFF connection any more: `Nodes`, `Save`,
+ * `Load` are shown with their reason when unavailable (原則 #15 / #11), so the
+ * entrance count does not depend on the connection state.
  */
 export function Header() {
   const isMobile = useIsMobile()
@@ -72,9 +77,9 @@ function MobileHeaderContents() {
   const gRedo = gateRedo(redoEnabled)
   return (
     <>
-      <IconBtn svg={SVG_HAMBURGER} label="Toggle outliner"       onClick={() => callbacks.onOutlinerToggle?.()} />
-      <IconBtn svg={SVG_UNDO}      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border disabled={!gUndo.enabled} reason={gUndo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
-      <IconBtn svg={SVG_REDO}      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!gRedo.enabled} reason={gRedo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
+      <IconBtn icon="hamburger" label="Toggle outliner"       onClick={() => callbacks.onOutlinerToggle?.()} />
+      <IconBtn icon="undo"      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border disabled={!gUndo.enabled} reason={gUndo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
+      <IconBtn icon="redo"      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!gRedo.enabled} reason={gRedo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
       <ModeDropdown />
       {/* Invisible flex:1 spacer — keeps ⋯ and N right-aligned (matching UIView's visibility:hidden pattern) */}
       <div style={{ flex: '1', visibility: 'hidden' }} />
@@ -84,7 +89,7 @@ function MobileHeaderContents() {
           go looking (ADR-105 D1). */}
       <DiscoveryCounters compact />
       <MoreMenu />
-      <IconBtn svg={SVG_NPANEL} label="Toggle properties panel" onClick={() => callbacks.onNPanelToggle?.()} />
+      <IconBtn icon="npanel" label="Toggle properties panel" onClick={() => callbacks.onNPanelToggle?.()} />
     </>
   )
 }
@@ -92,36 +97,24 @@ function MobileHeaderContents() {
 // ── Desktop header ────────────────────────────────────────────────────────
 
 function DesktopHeaderContents() {
-  const callbacks      = useUIStore(s => s.callbacks)
-  const bffConnected   = useUIStore(s => s.bffConnected)
-  const nodeEditorOpen = useUIStore(s => s.nodeEditorOpen)
   return (
     <>
       <ModeDropdown />
+      {/* D4 — the Node Editor is a SECOND EDITOR, not a file action. It used to
+          sit beside Save / Load because all three shared the display condition
+          "only while the BFF is connected"; a shared display condition is not a
+          reason to share an address. Its verb is `toggle-surface`. */}
+      <SurfaceToggle surface={SURFACE.NODE_EDITOR} />
       <HeaderStatus />
-      {bffConnected && (
-        <>
-          <SmallBtn onClick={() => callbacks.onSaveScene?.()} title="Save scene to server">Save</SmallBtn>
-          <SmallBtn onClick={() => callbacks.onLoadScene?.()} title="Load scene from server">Load</SmallBtn>
-          <SmallBtn
-            onClick={() => callbacks.onNodeEditorToggle?.()}
-            title="Toggle Node Editor (Geometry DAG)"
-            active={nodeEditorOpen}
-            icon={SVG_NODES}
-          >
-            Nodes
-          </SmallBtn>
-        </>
-      )}
-      <SmallBtn onClick={() => callbacks.onOpenHome?.()} title="Open the layout gallery (Home)" icon={SVG_LAYOUTS}>Layouts</SmallBtn>
-      <SmallBtn onClick={() => callbacks.onExportJson?.()} title="Export scene as JSON (Ctrl+E)" icon={SVG_EXPORT}>Export</SmallBtn>
-      <SmallBtn onClick={() => callbacks.onImportJson?.()} title="Import scene from JSON (Ctrl+I)" icon={SVG_IMPORT}>Import</SmallBtn>
+      <VerbMenu verb={HEADER_VERB.START} />
+      <VerbMenu verb={HEADER_VERB.EXPORT} />
+      <VerbMenu verb={HEADER_VERB.IMPORT} />
       {/* The discovery aggregate is PERMANENT chrome (ADR-105 D1) — it must be
           readable without opening the floor, because its whole job is to tell you
           whether the floor needs opening. It sits next to Context ▾ (the floor's
           entrance) so the reading and the door are one glance apart. */}
       <DiscoveryCounters />
-      <ContextDropdown />
+      <VerbMenu verb={HEADER_VERB.OPEN_FLOOR} />
     </>
   )
 }
@@ -172,7 +165,7 @@ function HeaderStatus() {
   )
 }
 
-function IconBtn({ svg, label, onClick, border = false, disabled = false, reason = null, onLockedTap = null }) {
+function IconBtn({ icon, label, onClick, border = false, disabled = false, reason = null, onLockedTap = null }) {
   const reduced = useReducedMotion()
   const { hovered, pressed, handlers } = useHoverPress()
   // disabled-as-quest: the locked state is stylized (dashed border, legible
@@ -208,26 +201,28 @@ function IconBtn({ svg, label, onClick, border = false, disabled = false, reason
           ? (border ? lockedStyle() : { cursor: 'help' })
           : tierAMotion({ hovered, pressed, reduced })),
       }}
-      dangerouslySetInnerHTML={{ __html: svg }}
+      dangerouslySetInnerHTML={{ __html: iconFor(icon) }}
     />
   )
 }
 
-function SmallBtn({ onClick, title, children, active = false, icon }) {
+function SmallBtn({ onClick, title, children, active = false, icon, disabled = false, reason = null }) {
   const reduced = useReducedMotion()
   const { hovered, pressed, handlers } = useHoverPress()
+  const pushToast = useUIStore(s => s.actions.pushToast)
   return (
     <button
-      onClick={onClick}
-      title={title}
-      {...handlers}
+      onClick={() => { if (disabled) { if (reason) pushToast(reason, 'info') } else onClick?.() }}
+      title={disabled && reason ? reason : title}
+      aria-disabled={disabled || undefined}
+      {...(disabled ? {} : handlers)}
       style={{
         padding:      '4px 8px',
         background:   hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
         border:       `1px solid ${active ? COLOR.infoTone : hovered ? '#4a4a4a' : '#3a3a3a'}`,
         borderRadius: '5px',
         color:        active ? '#5a9bf5' : hovered ? '#ccc' : '#aaa',
-        cursor:       'pointer',
+        cursor:       disabled ? 'help' : 'pointer',
         fontSize:     '11px',
         fontFamily:   'system-ui, -apple-system, sans-serif',
         lineHeight:   '1',
@@ -236,232 +231,55 @@ function SmallBtn({ onClick, title, children, active = false, icon }) {
         alignItems:   'center',
         gap:          '4px',
         pointerEvents:'auto',
-        ...tierAMotion({ hovered, pressed, reduced }),
+        ...(disabled ? lockedStyle() : tierAMotion({ hovered, pressed, reduced })),
       }}
     >
-      {icon && <span dangerouslySetInnerHTML={{ __html: icon }} style={{ display: 'flex' }} />}
+      {icon && <span dangerouslySetInnerHTML={{ __html: iconFor(icon) }} style={{ display: 'flex', opacity: disabled ? 0.5 : 1 }} />}
       {children}
     </button>
   )
 }
 
-// ── Context dropdown (desktop) ────────────────────────────────────────────
+// ── Surface toggles (ADR-108 D4) ──────────────────────────────────────────
 
 /**
- * Context ▾ — single entry point for the Context-first features (ADR-050 §4.4),
- * replacing the four flat demo buttons. `Negotiate` is the production
- * ContextController path (undoable doc approval); `Tutorial` / `Author` /
- * `Region Ghosts` remain the demo (`ContextDemoController`) until later phases
- * migrate them. `.ctx.json` Import / Save arrive in Phase 4.
+ * A workspace surface's switch. Its verb is `toggle-surface`, so it is **not**
+ * folded into a menu: a toggle is the visible state of its surface, and hiding
+ * it behind a menu costs both a step and the state read (原則 #15 / #4).
+ *
+ * It is also never removed. When the surface's requirement is unmet the button
+ * stays and carries the reason — that is what keeps the entrance count
+ * independent of the BFF connection.
  */
-function ContextDropdown() {
-  const callbacks = useUIStore(s => s.callbacks)
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef(null)
-  const [pos, setPos] = useState({ top: 40, right: 8 })
-  const reduced = useReducedMotion()
-  const { hovered, pressed, handlers } = useHoverPress()
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => { if (!btnRef.current?.contains(e.target)) setOpen(false) }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [open])
-
-  function handleToggle(e) {
-    e.stopPropagation()
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect()
-      setPos({ top: rect.bottom, right: window.innerWidth - rect.right })
-    }
-    setOpen(o => !o)
-  }
-
-  function item(label, cb, sub = false) {
-    return (
-      <button
-        key={label}
-        onClick={() => { setOpen(false); cb?.() }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
-          padding: '9px 14px', background: 'transparent', border: 'none',
-          borderBottom: '1px solid #3a3a3a', color: sub ? '#aaa' : '#e0e0e0',
-          cursor: 'pointer', fontSize: '13px', fontFamily: 'system-ui, -apple-system, sans-serif',
-          textAlign: 'left', pointerEvents: 'auto',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-      >
-        <span dangerouslySetInnerHTML={{ __html: SVG_DEMO }} style={{ display: 'flex' }} />
-        <span>{label}</span>
-      </button>
-    )
-  }
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        onClick={handleToggle}
-        title="Context-first — requirements / conflicts / negotiation"
-        {...handlers}
-        style={{
-          padding: '4px 8px', background: hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
-          border: `1px solid ${open ? COLOR.infoTone : hovered ? '#4a4a4a' : '#3a3a3a'}`, borderRadius: '5px',
-          color: open ? '#5a9bf5' : hovered ? '#ccc' : '#aaa', cursor: 'pointer', fontSize: '11px',
-          fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: '1',
-          flexShrink: '0', display: 'flex', alignItems: 'center', gap: '4px',
-          pointerEvents: 'auto',
-          ...tierAMotion({ hovered, pressed, reduced }),
-        }}
-      >
-        <span dangerouslySetInnerHTML={{ __html: SVG_DEMO }} style={{ display: 'flex' }} />
-        <span>Context ▾</span>
-      </button>
-      {open && (
-        <div style={{
-          position: 'fixed', top: pos.top, right: pos.right,
-          background: COLOR.surfaceSunken, border: '1px solid #555', borderRadius: '6px',
-          overflow: 'hidden', zIndex: '200', minWidth: '200px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.6)', pointerEvents: 'auto',
-          ...enterMotion(reduced),
-        }}>
-          {item('New Project',     callbacks.onOpenTemplateGallery)}
-          {/* The document entrance (ADR-106 D3). Wizard + Intake used to be tabs
-              INSIDE the floor, i.e. you had to open a negotiation to build the
-              thing the negotiation is about. Provisional until ADR-108. */}
-          {item('Document intake…', () => callbacks.onOpenDocIntake?.('wizard'))}
-          {item('Import Context…', callbacks.onImportCtxJson)}
-          {item('Save Context',    callbacks.onExportCtxJson)}
-          <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
-            Production
-          </div>
-          {item('Negotiate', callbacks.onContextNegotiate)}
-          {item('Author', callbacks.onContextAuthor)}
-          {item('Region Ghosts', callbacks.onContextRegionGhost)}
-          {item('Grasp Search…', callbacks.onOpenGrasp)}
-          <div style={{ padding: '4px 14px', fontSize: '10px', color: '#666', borderBottom: '1px solid #3a3a3a' }}>
-            Demo (Tutorial)
-          </div>
-          {item('Tutorial', callbacks.onContextDemoClick, true)}
-        </div>
-      )}
-    </>
-  )
-}
-
-// ── More (⋯) dropdown (mobile) ────────────────────────────────────────────
-
-function MoreMenu() {
+function SurfaceToggle({ surface }) {
+  const decl        = surfaceToggleFor(surface)   // throws on an undeclared surface
   const callbacks   = useUIStore(s => s.callbacks)
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef(null)
-  const [pos, setPos] = useState({ top: 40, right: 8 })
-  const reduced = useReducedMotion()
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => {
-      if (!btnRef.current?.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [open])
-
-  function handleToggle(e) {
-    e.stopPropagation()
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect()
-      setPos({ top: rect.bottom, right: window.innerWidth - rect.right })
-    }
-    setOpen(o => !o)
-  }
-
-  function item(label, svgHtml, cb) {
-    return (
-      <button
-        key={label}
-        onClick={() => { setOpen(false); cb?.() }}
-        style={{
-          display:     'flex',
-          alignItems:  'center',
-          gap:         '8px',
-          width:       '100%',
-          padding:     '10px 14px',
-          background:  'transparent',
-          border:      'none',
-          borderBottom:'1px solid #3a3a3a',
-          color:       '#e0e0e0',
-          cursor:      'pointer',
-          fontSize:    '13px',
-          fontFamily:  'system-ui, -apple-system, sans-serif',
-          textAlign:   'left',
-          pointerEvents: 'auto',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = '#3a3a3a' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-      >
-        <span dangerouslySetInnerHTML={{ __html: svgHtml }} style={{ display: 'flex' }} />
-        <span>{label}</span>
-      </button>
-    )
-  }
-
+  const bffConnected = useUIStore(s => s.bffConnected)
+  const active      = useUIStore(s => s[decl.activeFlag])
+  const { enabled, reason } = availabilityOf(decl, { bffConnected, contextLoaded: false, finePointer: true })
   return (
-    <>
-      <button
-        ref={btnRef}
-        aria-label="More file actions"
-        onClick={handleToggle}
-        style={{
-          padding:      '6px',
-          background:   'transparent',
-          border:       'none',
-          color:        '#c0c0c0',
-          cursor:       'pointer',
-          lineHeight:   '1',
-          display:      'flex',
-          alignItems:   'center',
-          justifyContent: 'center',
-          flexShrink:   '0',
-          borderRadius: '6px',
-          pointerEvents:'auto',
-        }}
-        dangerouslySetInnerHTML={{ __html: SVG_MORE }}
-      />
-      {open && (
-        <div style={{
-          position:   'fixed',
-          top:        pos.top,
-          right:      pos.right,
-          background: COLOR.surfaceSunken,
-          border:     '1px solid #555',
-          borderRadius: '6px',
-          overflow:   'hidden',
-          zIndex:     '200',
-          minWidth:   '160px',
-          boxShadow:  '0 4px 16px rgba(0,0,0,0.6)',
-          pointerEvents: 'auto',
-          ...enterMotion(reduced),
-        }}>
-          {item('Layouts', SVG_LAYOUTS, callbacks.onOpenHome)}
-          {item('Export', SVG_EXPORT, callbacks.onExportJson)}
-          {item('Import', SVG_IMPORT, callbacks.onImportJson)}
-          {item('New Project',     SVG_DEMO, callbacks.onOpenTemplateGallery)}
-          {item('Document intake…', SVG_DEMO, () => callbacks.onOpenDocIntake?.('wizard'))}
-          {item('Import Context…', SVG_DEMO, callbacks.onImportCtxJson)}
-          {item('Save Context',    SVG_DEMO, callbacks.onExportCtxJson)}
-          {item('Negotiate', SVG_DEMO, callbacks.onContextNegotiate)}
-          {item('Author', SVG_DEMO, callbacks.onContextAuthor)}
-          {item('Region Ghosts', SVG_DEMO, callbacks.onContextRegionGhost)}
-          {item('Grasp Search…', SVG_DEMO, callbacks.onOpenGrasp)}
-          {item('Tutorial', SVG_DEMO, callbacks.onContextDemoClick)}
-        </div>
-      )}
-    </>
+    <SmallBtn
+      onClick={() => callbacks[decl.callback]?.()}
+      title={decl.title}
+      active={!!active && enabled}
+      icon={decl.icon}
+      disabled={!enabled}
+      reason={reason}
+    >
+      {decl.label}
+    </SmallBtn>
   )
 }
+
+// ── Retired here, declared elsewhere ──────────────────────────────────────
+//
+// `ContextDropdown` and the flat `MoreMenu` used to live in this file, each
+// listing its own hand-written `item(...)` rows. Two bespoke dropdowns meant
+// two places to add the next object to — which is exactly how six flat file
+// buttons and five separate "start" doors accumulated. Both are now one
+// component (`HeaderMenus.jsx`) driven by one declaration
+// (`src/view/HeaderEntrances.js`), so an object can only be added as an
+// ARGUMENT of a verb, never as a new entrance (ADR-108 D1/D2).
 
 // ── Hook ─────────────────────────────────────────────────────────────────
 

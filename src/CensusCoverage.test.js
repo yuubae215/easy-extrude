@@ -102,6 +102,11 @@ const CENSUS_REGISTRY = [
   { file: 'src/SelectionOwnership.test.js',  table: 'DECLARED_EXCEPTIONS',         kind: KIND.DECLARED_EXCEPTION,
     why: '今日は空。空であることの宣言も宣言である (原則 #31)' },
 
+  // ── 選択の要素の種 (ADR-107) ──
+  { file: 'src/SelectionKindDeclarations.test.js', table: 'SHAPE_EXCLUDED',        kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = SELECTION_KIND の枝。3D の姿を宣言する種と、宣言しない理由つきの '
+       + '対象外 (empty) に分割する。枝を足して行を足さなければ落ちる' },
+
   // ── 可視性 (ADR-096) ──
   { file: 'src/VisibilityOwnership.test.js', table: 'OWNERSHIP_RULES',             kind: KIND.SHAPE_CENSUS,
     why: '2 軸の合成・各軸の書き込みの形。所有者の外の個数を src/** 全体で数える' },
@@ -179,6 +184,12 @@ const CENSUS_REGISTRY = [
     why: '母集団 = 下端に張り付く fixed 要素。占有計算の所有者を引く側 / 引かない側に分割し、'
        + '未分類 0 個を問う (初回実行で Toast と TourCard の literal パッチを実際に検出した)' },
 
+  // ── ヘッダの入口 (ADR-108) ──
+  { file: 'src/HeaderEntranceCensus.test.js', table: 'NOT_AN_ENTRANCE', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = Header.jsx の 2 つのレイアウト関数直下に現れる JSX 要素 (構文で導出)。'
+       + '入口として宣言されたもの (HEADER_ENTRANCES) と、入口ではないと理由つきで宣言したもの '
+       + 'に分割する。ヘッダに要素を足せばその日から母集団に入るので、'
+       + '「表に足すまで数えられない」腐り方をしない' },
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

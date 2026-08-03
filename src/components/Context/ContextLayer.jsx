@@ -67,6 +67,7 @@ const fmtGap = (gap) => Array.isArray(gap)
 
 export function ContextLayer() {
   const ctx       = useUIStore(s => s.context)
+  const selection = useUIStore(s => s.selection)
   const callbacks = useUIStore(s => s.callbacks)
   const setTab    = useUIStore(s => s.actions.contextSetTab)
   const setFilter = useUIStore(s => s.actions.contextSetPersonaFilter)
@@ -202,6 +203,11 @@ export function ContextLayer() {
             matrix={ctx.conflictMatrix}
             filter={ctx.personaFilter}
             onSetFilter={setFilter}
+            // The variable header is a WINDOW onto the one selection (ADR-107 D2):
+            // it fires a verb and reads the display copy — it holds no selection
+            // state of its own, which is what keeps the entrance count at five.
+            selectedVariables={selection.kind === 'variables' ? selection.members : []}
+            onSelectVariable={callbacks.onSelectVariable}
           />
         )}
         {ctx.mode === 'negotiate' && ctx.inspectorTab === FLOOR_TAB.CLUSTER && (

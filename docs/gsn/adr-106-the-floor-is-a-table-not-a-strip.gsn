@@ -132,7 +132,7 @@ artifacts
 
             solution LoadedMirrorIsRetired
             uuid 2f8b47d0-6c13-4e97-a5d8-83b1e0947c6a
-            summary "証拠: フィールドを消した (uiStore の context スライスと contextStart の 3 つのペイロードから)。RETIRED_FLOOR_SHAPES が context.loaded の形を src/** で 0 個として数える。反証形 (『ADR-105 の集約を配線する過程で store 側の投影が必要になる』) は起きなかった — 集約は既に ContextService.discoverySummary() / .checksSummary() 由来の 1 投影を読んでおり、写しは書き手 1 / 読み手 0 のまま消せた。副産物として『器は責務だけでなく前提条件も汚染する』が見えた: grasp / assets / wizard / intake の isNegotiation guard はタブの宿主が場だったことの帰結で、住所を移すと『文書が要るか』だけが残り、grasp と assets はそれすら要らなかった。e2e 『文書を採ると集約は数へ変わり、場を閉じても消えない』が、文書と場が別軸であることを画面越しに焼いている"
+            summary "証拠: フィールドを消した (uiStore の context スライスと contextStart の 3 つのペイロードから)。RETIRED_FLOOR_SHAPES が context.loaded の形を src/** で 0 個として数える。反証形 (『ADR-105 の集約を配線する過程で store 側の投影が必要になる』) は **起きた** — ただし ADR-105 側ではなく ADR-108 側で。並行して main へ入った HeaderMenus が REQUIRES.CONTEXT_DOC の門を解くために写しを読んでおり、合流時に FloorContainerCensus の退役検査が名指しした (両ブランチは単独ではどちらも緑だった)。予告どおり答えは写しを戻すことではなく ContextService 由来の 1 投影 (context.discovery.kind !== unexamined) を読むことで、『フィールドの生死は結論ではない、権威が 1 つになることが要点』がそのまま効いた。副次的に分かったのは、退役の検査は退役させた側が最後に merge されると最後まで走らないこと — 集約は既に ContextService.discoverySummary() / .checksSummary() 由来の 1 投影を読んでおり、写しは書き手 1 / 読み手 0 のまま消せた。副産物として『器は責務だけでなく前提条件も汚染する』が見えた: grasp / assets / wizard / intake の isNegotiation guard はタブの宿主が場だったことの帰結で、住所を移すと『文書が要るか』だけが残り、grasp と assets はそれすら要らなかった。e2e 『文書を採ると集約は数へ変わり、場を閉じても消えない』が、文書と場が別軸であることを画面越しに焼いている"
             artifacts
             - "src/store/uiStore.js"
             - "e2e/smoke.spec.js"

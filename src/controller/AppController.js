@@ -21,6 +21,7 @@ import { Profile }         from '../domain/Profile.js'
 import { ImportedMesh }      from '../domain/ImportedMesh.js'
 import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
+import { CONTEXTUAL }        from '../view/VisibilityAxes.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
 import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
 import { Face }            from '../graph/Face.js'
@@ -937,12 +938,24 @@ export class AppController {
       // Both are derived from one representation now, so a disagreement here is
       // not merely unlikely, it is unwritable — which is exactly what makes the
       // assertion cheap to keep.
+      // ADR-107 added `kind` and `variables`: the element KIND is now part of
+      // the selection's state, and a snapshot that only reported entity names
+      // could not tell "a variable is selected" from "nothing is selected" —
+      // the same shape of blindness the count/flag pair had (原則 #31).
+      // `contextualDimmed` reports the claim a variable selection makes, so the
+      // regression can ask that selecting a number does NOT make the entities it
+      // constrains vanish (D5) rather than merely that it did not crash.
       selectionState: () => ({
+        kind:        this._selMgr.selection.kind,
         count:       this._selMgr.count,
         objSelected: this._objSelected,
         activeId:    this._scene.activeId,
         activeName:  this._activeObj?.name ?? null,
         names:       [...this._selectedIds].map(id => this._scene.getObject(id)?.name ?? id),
+        variables:   [...this._selMgr.variableRefs],
+        contextualDimmed: [...this._scene.objects.values()]
+          .filter(o => this._service.contextualVisibilityOf(o.id) === CONTEXTUAL.DIMMED)
+          .map(o => o.name),
       }),
       // Read-only placement snapshot (ADR-097) — the E2E guard for the invariant
       // that used to live only in prose ("never floating"). `support` is DERIVED
@@ -3823,13 +3836,37 @@ export class AppController {
    * itself is session-local and persists nowhere.
    */
   _startTourIfNeeded() {
+    useUIStore.getState().actions.registerCallback('onTourDismiss',  () => this._dismissTour())
+    useUIStore.getState().actions.registerCallback('onTourRestart',  () => this._restartTour())
     if (window.matchMedia('(pointer: coarse)').matches) return
     let flag = null
     try { flag = localStorage.getItem('ee_tour') } catch { /* storage denied */ }
     if (flag) return
-    useUIStore.getState().actions.registerCallback('onTourDismiss', () => this._dismissTour())
     const tour = startTour(this._tourFacts())
     if (tour) useUIStore.getState().actions.setTour(tour)
+  }
+
+  /**
+   * Re-seed the quest tour on demand — the `Start ▾ → Quest tour` argument
+   * (ADR-108 D3).
+   *
+   * Before ADR-108 the tour had **no entrance at all**: it was seeded once on
+   * first run and `✕` persisted `dismissed`, after which nothing could bring it
+   * back. Folding the five "start" doors into one is only legitimate if all five
+   * are still reachable (原則 #16 — folding is not deleting), so the fifth one
+   * had to be given the entrance it never had. Restarting clears the persisted
+   * flag: the user asked for it, so "never re-seed" no longer holds.
+   */
+  _restartTour() {
+    try { localStorage.removeItem('ee_tour') } catch { /* storage denied — session-only tour */ }
+    const tour = startTour(this._tourFacts())
+    if (tour) {
+      useUIStore.getState().actions.setTour(tour)
+    } else {
+      // Never a silent no-op (原則 #11): the tour predicates can decide there is
+      // nothing left to quest for, and that is a fact worth printing.
+      this._uiView.showToast('The quest tour has nothing left to show for this scene.', { type: 'info' })
+    }
   }
 
   /**

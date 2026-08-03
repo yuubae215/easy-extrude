@@ -44,13 +44,13 @@ artifacts
 
     assumption StartupPathCompensatesForDeeperOnboarding
     uuid 28168f65-7f06-4f3e-9ecc-7437dbdfd1ca
-    summary "反証されうる仮説: 『始める』を 1 入口に畳むと Tutorial と Tour への到達が 1 段深くなるが、ADR-089 の起動経路 (起動時にホーム画面へ着地する) がそれを補うので初回ユーザーは困らない。今日この仮説を採る根拠は、初回ユーザーはヘッダを探す前に起動画面に着地するという ADR-089 の設計そのもの。反証される形は、Blender 式スキップ設定を有効にした 2 回目以降のユーザーが Tutorial に戻れなくなること — スキップした人にはホーム画面が出ないので、補いが効かない層がちょうど存在する。実装の最初の一手としてこの層の経路を確認する"
+    summary "反証されうる仮説: 『始める』を 1 入口に畳むと Tutorial と Tour への到達が 1 段深くなるが、ADR-089 の起動経路 (起動時にホーム画面へ着地する) がそれを補うので初回ユーザーは困らない。**実装で部分的に反証された**: 補いが効かない層 (Blender 式スキップを有効にした 2 回目以降) を確認したところ、Tutorial は Context ▾ の奥から到達できていたが、**Tour には入口が 1 つも無かった** — 左下カードは初回だけ種が撒かれ、✕ を押すと ee_tour=dismissed が永続化されて二度と戻らない。つまり 5 種のうち 1 種は『深くなる』のではなく最初から到達不能で、畳む前の状態のほうが悪かった。したがって仮説は『起動経路が補う』ではなく『**畳むにあたって欠けていた再入口を作る**』へ置き換わり、onTourRestart を新設した (AppController._restartTour — 要求されたら永続フラグを消す)。起動経路 (ADR-089) は D5 のとおり不変"
     artifacts
     - "docs/adr/ADR-089-launch-home-screen-layout-template-entry.md"
 
     assumption ExpertShortcutsCanBeDesignedSeparately
     uuid 0f9307b6-c0fe-44af-9e71-797c7e98efc3
-    summary "反証されうる仮説: Export が 1 手から 2 手になるコストは、近道 (キーバインド Ctrl+E は既に在る / 直近の対象を既定にする) で吸収できる。根拠は Ctrl+E / Ctrl+I が既に実装されていること (Header.jsx の title 属性)。反証される形は、直近の対象を既定にすると『前回と違う対象へ保存したいのに気づかず上書きした』が起きること — その場合の答えは既定を持たないことであり、2 手を受け入れる。近道を設計しないまま畳むと熟練者にとっては純粋な劣化になるので、近道の設計は同じ PR の一部であって後続ではない"
+    summary "反証されうる仮説: Export が 1 手から 2 手になるコストは、近道 (キーバインド Ctrl+E は既に在る / 直近の対象を既定にする) で吸収できる。**実装での決着**: キーバインドは残し (Ctrl+E / Ctrl+I は AppController の keydown にそのまま在る)、宣言表の shortcut 欄に載せてメニュー行にも印字した — 近道は隠れていると存在しないのと同じなので、畳んだ入口の中で教える。**直近の対象を既定にする案は採らなかった**: 既定を持つと『前回と違う対象へ保存したいのに気づかず上書きした』が起き、それは 2 手より高い。反証されうる形は変わり『Ctrl+E しか使わない人にとって Context 文書の保存が遠いまま』になった — その場合の答えは対象ごとのキーバインドを足すことで、入口の個数は動かない"
 
     strategy ByCollapsingTheProductAndBoundingTheGrowth
     uuid 508fbef0-36ad-4e80-a8b1-7cb274524b26
@@ -59,40 +59,54 @@ artifacts
         goal EntranceCountIsBoundedAndDeclared
         uuid 5e448419-9d19-4445-8bd9-c840f3d2b3a6
         summary "ヘッダの常設入口が宣言された上界以下である。母集団は Header.jsx のボタン / メニュー項目を構文から導出し、手書きの入口リストを持たない。現在の実測値をベースラインとして定数に焼き、超えても下回っても fail する"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption EntranceRatchetIsPlanned
-            uuid 03b473a3-39f9-40ab-a95e-09ec6f18c05b
-            summary "証拠予定: 入口の ratchet 検査 (新規) — ADR-100 の宣言外リテラル ratchet と同じ形。母集団は Header.jsx の JSX から SmallBtn / item() 呼び出しを構文で数え、モバイル側の More ⋯ メニューも同じ母集団に入れる (デスクトップだけ数えると、モバイルに生えた入口が出てこない)。下回っても fail させるのは、畳んだあと誰かが黙って戻したときに気づくため。反証されうるのは『条件つき表示の入口 (BFF 接続時のみ) を数えるべきか』で、答えは数える — 表示条件は住所の根拠ではない、というのが D4 の主張そのものだから"
+            solution EntranceRatchetCountsBothLayouts
+            uuid bab89cc1-acb3-47c8-94d7-8404039146b8
+            summary "node --test src/HeaderEntranceCensus.test.js — pass (19/19)。母集団は Header.jsx の DesktopHeaderContents / MobileHeaderContents 直下の JSX 要素を構文で切り出したもので、キーは 要素名[:verb|surface|label]。手書きの入口リストは持たないので、ヘッダに要素を足せばその日から母集団に入る — 実際に Save ボタンを 1 つ差し戻す変異を入れて落ちることを確認した (緑が意味を持つことの確認)。ratchet は desktop 7 / mobile 7 を **超えても下回っても** fail する。**当初計画から変わった点が 2 つ**: (a) 数えるのは SmallBtn / item() 呼び出しではなく『レイアウト関数直下の要素』にした — item() は畳んだあと引数であって入口ではないので、それを数えると却下案 A (深さへ移すだけ) と区別がつかなくなる。引数側は別途『宣言表から出ていること』で縛る。(b) 『条件つき表示の入口を数えるか』という反証点は消滅した — Save/Load/Nodes を消さずに理由つき disabled にしたので、条件つき表示の入口が 0 個になり、入口の個数が接続状態の関数でなくなった"
+            artifacts
+            - "src/HeaderEntranceCensus.test.js"
+            - "src/view/HeaderEntrances.js"
 
         goal EveryInventoryRowBelongsSomewhere
         uuid 66efdbaf-1218-4bc2-bfc8-d0b8adcd4c34
         summary "01-inventory.md の 48 行のうち、どのグループにも Phase にも属さない行が 0 個である。現在 1 個 (機能 40 Geometry DAG / Node Editor) — 表に在るのに誰も触れていない行があったということは、グルーピングの母集団が実質 47 だったということ"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption InventoryCoverageCensusIsPlanned
-            uuid 1c4e70a8-5b39-4d2f-9e61-8a03b7c25d14
-            summary "証拠予定: CensusCoverage.test.js の形をドキュメントへ当てる被覆検査 — 01-inventory.md の行を母集団とし、02-grouping-criteria.md の適用結果と 03-implementation-order.md の Phase 群に現れない番号を数える。数えるべきは表の行ではなく『表が覆えていない個数』(ADR-102)。反証されうるのは『インベントリは実装から抽出した時点のスナップショットなので、機能が増えたら表の方が古くなる』ことで、そのとき検査は 0 を守れない — その場合の答えは検査を緩めることではなく、インベントリを導出物として再生成可能にすることであり、それ自体が別の判断になる"
+            solution InventoryCoverageCensusCounts48
+            uuid 386c10d5-cf11-4d0d-b827-46355db7cb23
+            summary "node --test src/InventoryCoverage.test.js — pass (6/6)。母集団 = 01-inventory.md の機能表の行番号 (48 行、構文で導出)、宣言 = 02-grouping-criteria.md に新設した §被覆表 の # 列 (範囲 1–6 を展開)。未分類 0 個 / 宣言の空回り 0 個 / 二重所属 0 個 / 決着が空の行 0 個 を問い、加えて機能 40 (この検査が生まれた原因) の決着が『第二の編集器 = toggle-surface』であることを名指しで焼く。**実装で分かったこと**: 当初は 02 と 03 の既存の記述から番号を拾う計画だったが、行 1-24 (モデリング中核) はどちらにも番号として現れない — 覆えていないのではなく『動かさないと決めた』ものだった。正当な非対象を空欄で通すと忘れられた行と区別がつかないので、被覆表に『対象外』も決着として宣言させる形にした (原則 #31 — 正当な 0 は推論させず宣言させる)。反証点は宣言どおり残る: この検査が守るのは表の中の被覆であって実装の被覆ではない"
             artifacts
-            - "src/CensusCoverage.test.js"
+            - "src/InventoryCoverage.test.js"
+            - "docs/ia-redesign/02-grouping-criteria.md"
 
         goal OneVerbHasOneEntrance
         uuid 2a7f5c19-8d64-4e03-b571-9f18c604ae37
         summary "同じ動詞の入口が対象ごとに複数存在しない。『持ち出す』が 3 つ、『持ち込む』が 3 つ、『始める』が 5 つある状態が解消され、対象は入口の中で選ぶ引数になっている"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption VerbToEntranceMapIsPlanned
-            uuid 8b03d5e7-1f42-4a96-8c25-6e7043b91fa2
-            summary "証拠予定: 動詞 → 入口の写像を宣言し、像の各点の逆像が高々 1 個であることを問う検査。母集団は動詞の enum から導出する。加えて e2e: 畳んだあとも 5 種すべて (レイアウトテンプレ / Context テンプレ / 物語 / クエスト / 誘導フォーム) と 3 対象すべて (シーン / サーバ / Context 文書) へ到達できること — 畳むことは消すことではない (原則 #16、ADR-106 D3 と同じ規律)。反証されうるのは『Save (サーバ) と Export (ファイル) は同じ動詞ではない』という指摘で、その場合は動詞が 2 つではなく 3 つになる。境界がどこであれ、動詞の個数が入口の個数であるという主張自体は変わらない"
+            solution VerbPreimageIsAtMostOne
+            uuid cd14ac17-2707-4505-ac89-46bc890c891a
+            summary "node --test src/HeaderEntranceCensus.test.js — pass (19/19) + playwright -g ADR-108 — pass (3/3)。動詞 → 入口の写像は HEADER_ENTRANCES が持ち、レイアウトごとに逆像が高々 1 個であることを問う。5 種の START_KIND / 2 動詞 × 3 対象 は enum を母集団として両方向に覆われ、startEntryFor / fileTargetsFor / menuFor / surfaceToggleFor / requirementReason は未宣言の値で throw する。e2e は畳んだあとの到達を焼く — 始める 5 種すべてが Start ▾ から見え、Export ▾ / Import ▾ に 3 対象すべてが並ぶ (畳むことは消すことではない — 原則 #16)。**多入口の例外を 1 つ宣言した**: toggle-surface (Outliner / N パネル / Node Editor) は『対象を選んでから実行する』流れではなく、トグルはその面の状態の表示そのものなので、メニューへ畳むと 1 タップの可逆操作が 2 手になり開閉が画面から消える (原則 #15 / #4)。例外を宣言しても D2 の上界は動かないので『書けば済む』にはならない。**反証点『Save と Export は同じ動詞か』は動詞 2 つのまま決着した** — 宛先が違うだけで『持ち出す』は同じで、対象名 (Scene to server / Scene as JSON) が宛先を語る"
+            artifacts
+            - "src/HeaderEntranceCensus.test.js"
+            - "e2e/smoke.spec.js"
 
         goal DisplayConditionIsNotAnAddress
         uuid 4f6a2b90-7c31-4d58-b0e9-15c8a7e34d62
         summary "表示条件が同じであることを住所の根拠にしている入口が 0 個である。機能 40 (Node Editor) は『BFF 接続時のみ』が Save / Load と一致するという理由でファイル群に並んでいるが、持ち出し / 持ち込みの動詞を持たない第二の編集器である"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
+
+            solution NodeEditorIsClassifiedByItsVerb
+            uuid 32a529ed-807e-4a7a-95ba-079335ae98e1
+            summary "node --test src/HeaderEntranceCensus.test.js — pass (19/19) + playwright『Node Editor はファイル群から出て、BFF 未接続でも理由つきで残る』— pass。Node Editor の入口は verb = toggle-surface として宣言され、Export/Import の引数一覧には現れない (検査は両方向: 分類が toggle-surface であることと、BFF を要求する対象がファイル動詞側にちょうど 2 つ = サーバ対象だけであること)。**表示条件そのものは変えていない** — Nodes は今も BFF を要求する。変えたのは分類だけで、消える代わりに理由を運ぶようになった。**規則としての降ろし先は原則の追加ではなく検査にした**: 常時 load の原則行を増やすとプロンプト希釈と衝突するため (ADR-092 / ADR-098 の先例と同じ判断)、PHILOSOPHY には 2 文脈を記録した Yellow Card 行を置き、書く瞬間に問う場所は HeaderEntranceCensus (入口は動詞を宣言しないと母集団に残れない) と CODE_CONTRACTS の 1 行にした"
+            artifacts
+            - "src/HeaderEntranceCensus.test.js"
+            - "docs/PHILOSOPHY.md"
 
             assumption MisclassificationByConditionIsARule
             uuid 6d2c81f4-3e57-4b09-a7d6-0c94f8e12b35

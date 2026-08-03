@@ -28,6 +28,7 @@ Defines the structure and content of information displayed on each screen of eas
 | `S-17` | Context DSL Demo overlay (ADR-047) | Header **Demo** button / `?demo=context` / `window.__easyExtrude.demoContext()` |
 | `S-18` | Onboarding tour quest card (ADR-065 Phase 6, desktop only) | First run on a fine pointer (no `ee_tour` localStorage flag); advances from scene facts; suppressed while any Context/demo/gallery overlay is active |
 | `S-19` | Home / Launch screen (ADR-089) | On startup when no `ee_home='skip'` flag; reopened via Header **Layout gallery** slot |
+| `S-21` | 共有変数を選んでいる (ADR-107) | 場の行列の変数見出しセルをクリック (選択の種が `variables` になる。同じセルの再クリックで `empty` へ) |
 
 ---
 
@@ -77,7 +78,7 @@ Dimensions / position → `LAYOUT_DESIGN.md`.
 |---------|---------|
 | Mode selector | `Object Mode ▾` |
 | Status | (empty) |
-| Header actions | Save / Load / Nodes (desktop, BFF 接続時のみ) / Export / Import / Demo (desktop) / `⋯` menu (mobile) |
+| Header actions | **動詞ごとに 1 入口** (ADR-108): desktop = `Nodes` (作業面トグル) / `Start ▾` / `Export ▾` / `Import ▾` / 発見カウンタ / `Context ▾`、mobile = `⋯` が同じ 4 動詞を畳む。**対象は入口ではなく引数** — シーン JSON / サーバ / Context 文書は `Export ▾` `Import ▾` の中、レイアウトテンプレ / Context テンプレ / 物語 / クエスト / 誘導フォームは `Start ▾` の中。BFF 未接続でも**消えず**理由つき disabled (原則 #15 / #11) |
 
 #### [B] Outliner
 - Lists all objects in the scene
@@ -892,9 +893,11 @@ reference text only). On failure the error state shows the stage + HTTP status +
 UI only declares the request and displays candidates — solving is the external service's job.
 
 #### [A] Header
-Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Project** /
-**Import Context…** / **Save Context** + production **Negotiate** / **Author** / **Region Ghosts**
-+ demo **Tutorial**). Mobile: the same items inside the ⋯ MoreMenu.
+Desktop (ADR-108 — 入口は動詞、対象は引数): **`Start ▾`** (レイアウトテンプレ / Context テンプレ /
+物語 / クエスト / 誘導フォーム) · **`Export ▾`** · **`Import ▾`** (どちらもシーン JSON / サーバ /
+Context 文書の 3 対象) · **`Context ▾`** (Negotiate / Author / Region Ghosts / Grasp Search…)。
+Mobile: `⋯` が**動詞を先に**見せ、選んだ動詞の対象を次の段で出す (同じ宣言表
+`src/view/HeaderEntrances.js` から出るので 2 レイアウトはズレない)。
 
 ---
 
@@ -946,9 +949,11 @@ The scene-replacement consequence is stated in the footer up front (same
 transparency rule as S-17 [N], ADR-051 §7) so no second confirm dialog is shown.
 
 #### [A] Header (reopen affordance)
-A **fixed** header slot (desktop) / ⋯ MoreMenu item (mobile) reopens the Home
-overlay after it has been skipped — the entry is never hidden (PHILOSOPHY #15
-fixed slots / #11 no silent gate).
+`Start ▾ → From a layout template` reopens the Home overlay after it has been
+skipped — desktop and mobile alike (ADR-108 folded the former standalone
+`Layouts` button into the single `Start` verb; the argument is never hidden and
+never removed — PHILOSOPHY #15 fixed slots / #11 no silent gate). The **launch
+path itself is unchanged** (ADR-108 D5): what folded is the re-entrance.
 
 #### Motion (ADR-089 §5, PHILOSOPHY #30)
 Overlay entrance = **Tier D (delight)**, spawned via the MotionGovernor; under
@@ -1005,6 +1010,52 @@ see `docs/STATE_TRANSITIONS.md` § `home`.
 
 リーチ / 干渉は文書の `acceptance` 由来なので、同じ節で `checksSummary` の 4 種として
 述べる — 「誰も宣言していない」が「問題が無い」に読めないことがこの節の要点である。
+
+---
+
+### S-21: 共有変数を選んでいる (ADR-107)
+
+**選べるものが 2 種になったので、画面の状態も種で分かれる。** S-02 / S-03 が
+「実体を選んでいる」画面なら、これは「文書の共有変数を選んでいる」画面である。
+選択モデルは**1 つ**で (`empty` / `entities` / `variables` の kind 判別 union)、
+全ゾーンはその**ビュー** — 混在は表現不能なので「Robot と d_ref を同時に選んでいる」
+画面は存在しない。
+
+#### 入口 (窓であって入口ではない)
+
+場の行列 (Matrix タブ) の**変数の見出しセル**。同じセルをもう一度押すと選択が落ちる。
+窓は `SelectionManager` の 5 verb を通る — 窓が増えても選択を書く入口は増えない
+(ADR-099 / ADR-107 D2)。実装では変数が*行*・actor が*列*なので、v8 が「列ヘッダ」と
+呼んだものは行の見出しセルにあたる (向きは器の都合、窓は同じ)。
+
+#### [C] 3D ビュー — 種ごとに**宣言された**姿 (D4)
+
+| 変数の種類 | 3D の答え | 宣言の所在 |
+|---|---|---|
+| 領域 Variable (footprint を持つ) | **未確定帯** — actor ごとの許容領域と、共通部分が空なら gap 帯 (ADR-050 の系譜) | `SELECTION_SHAPE_BY_KIND.variables` |
+| スカラー Variable (区間) | 帯は無い。**束縛している実体が DIMMED** で残る | 同上 |
+| どちらも無い変数 | 3D は何も描かない。**N パネルがそう述べる** — 無言にはしない (原則 #11) | `NPanelVariable` の shape 行 |
+
+3 種目の選択可能種を足す人は、この表に行を足さなければ `shapeForKind()` が throw する。
+「今の 2 種は姿を持つ」は事実であって規則ではない。
+
+#### [D] N Panel — 中身が種で入れ替わる (D6 / v8 注釈⑤)
+
+| 節 | 中身 |
+|---|---|
+| Shared variable | `ref` / 単位 / 説明 / **3D の答えの宣言行** |
+| Claims (n) | 誰が (actor) どの区間を主張しているか。0 件なら「誰も主張を置いていない」と述べる |
+| Conflict | 共通部分が空なら gap・between・決着の状態 (`◐ 承認待ち` / `✓ resolved`) |
+| Constrains (n) | この変数が束縛している実体。クリックで**実体の選択へ戻る** (種が入れ替わる、混ざらない) |
+
+`Checks (this entity)` の grasp 入口は**消えず**、「変数は身体ではない」という理由を運ぶ
+(原則 #15 / #17 — 多態的な入口は全種に在る)。
+
+#### [B] Outliner
+
+変わらない。実体の選択は 0 個になり、**active 実体はそのまま**である
+(`clearSelection` と同じ契約 — 変数は active になれる種ではない)。v8 注釈②の
+「意味側に共有変数を並べる」は Phase 3 の器と同時に入れる (本 ADR では未着手)。
 
 ---
 

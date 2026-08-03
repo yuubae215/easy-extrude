@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { NPanelGeneric } from './NPanelGeneric.jsx'
 import { NPanelFrame }   from './NPanelFrame.jsx'
 import { NPanelLink }    from './NPanelLink.jsx'
+import { NPanelVariable } from './NPanelVariable.jsx'
 import { EntityChecks }  from './EntityChecks.jsx'
 import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 import { ParametricAssetPanel } from '../Context/ParametricAssetPanel.jsx'
@@ -102,9 +103,14 @@ export function NPanel() {
         </div>
 
         {/* Content — swapped based on entity type */}
-        {nPanelData?.type === 'generic' && <NPanelGeneric data={nPanelData} />}
-        {nPanelData?.type === 'frame'   && <NPanelFrame   data={nPanelData} />}
-        {nPanelData?.type === 'link'    && <NPanelLink    data={nPanelData} />}
+        {nPanelData?.type === 'generic'  && <NPanelGeneric  data={nPanelData} />}
+        {nPanelData?.type === 'frame'    && <NPanelFrame    data={nPanelData} />}
+        {nPanelData?.type === 'link'     && <NPanelLink     data={nPanelData} />}
+        {/* A shared design variable is the second selectable kind (ADR-107):
+            the panel talks about whatever is selected, and the kind decides the
+            body. Which body belongs to which kind is declared in
+            `view/SelectionKinds.js`, not inferred here. */}
+        {nPanelData?.type === 'variable' && <NPanelVariable data={nPanelData} />}
 
         {/* Entity-scope validation, beside the thing it is about (ADR-105 D5).
             Availability follows the SELECTION — not `ctx.active`, not whether a

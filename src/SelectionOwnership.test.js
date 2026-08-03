@@ -167,8 +167,19 @@ test('入口は実在し、5 つの verb を実際に持っている (規則が�
 test('_apply がひとつの遷移で 3 つの書き込み先すべてを書く', () => {
   // ADR-099 の欠陥は「窓ごとに部分集合」だった。所有者の中でさえ 3 つが別々の
   // メソッドに分かれていたら、同じ形が内側で再発する。
+  //
+  // ADR-107 で `_apply` の引数は id の配列から**選択の union** になり (種を持たない
+  // Set が種の分裂を隠すため — D1)、種ごとの描画は宣言表が名指しする painter
+  // (`_paintMeshHighlight` / `_paintUndecidedBand`) へ降りた。**遷移は割れていない**:
+  // painter は全種ぶんが `_apply` から毎回呼ばれ、`_apply` 以外に呼び手を持たない
+  // (下の検査が数える) ので、遷移の本体は依然として 1 本である。
+  //
+  // したがって切り出す範囲を「`_apply` + それが配る painter」= 遷移の本体へ広げた。
+  // **規則も母集団も変えていない** — 数えるのは今も「1 つの遷移がすべての書き込み先を
+  // 書くか」であり、種の追加でこの検査を*書き直す*必要が出たなら、それは選択が実質
+  // 2 つに割れた証拠になる (却下案 A の兆候)。
   const mgr  = readFileSync(repoPath(SELECTION_ENTRY), 'utf8')
-  const body = mgr.slice(mgr.indexOf('_apply(ids, activeId'))
+  const body = mgr.slice(mgr.indexOf('\n  _apply('))
   const end  = body.indexOf('\n  _normalizeMode(')
   const apply = body.slice(0, end === -1 ? undefined : end)
 
@@ -177,11 +188,59 @@ test('_apply がひとつの遷移で 3 つの書き込み先すべてを書く'
     ['_claimContext()',                    '文脈可視性の主張'],
     ['updateLinkSelectionHighlight(',      'リンク強調'],
     ['_linkNetworkView?.setSelection(',    'LINK NETWORK パネル'],
-    ['this._ids = next',                   '選択集合そのもの'],
+    ['this._sel = next',                   '選択そのもの (基数と種を運ぶ 1 つの値)'],
+    ['shapeForKind(',                      '種ごとの 3D の姿の宣言 (ADR-107 D4)'],
   ]) {
     assert.ok(apply.includes(needle),
       `_apply() が ${what} (${needle}) を書いていない — 遷移が分割されると窓ごとの部分集合が戻る`)
   }
+})
+
+test('種ごとの painter の呼び手は _apply ただ 1 つ (遷移が割れていない — ADR-107 D4)', () => {
+  // 宣言表に painter を足したこと自体が、遷移を分割する新しい機会である。
+  // 窓が painter を直に呼べるなら「可視ハイライトだけ書いて文脈可視性を書かない」
+  // が復活する — ADR-099 が消した形そのもの。だから呼び手の**個数**を問う。
+  const files = collectSources()
+  const callers = []
+  for (const abs of files) {
+    stripComments(readFileSync(abs, 'utf8')).forEach((line, i) => {
+      if (!/_paint(MeshHighlight|UndecidedBand)\s*\(/.test(line)) return
+      if (/^\s*_paint(MeshHighlight|UndecidedBand)\s*\(/.test(line)) return // 定義行
+      callers.push(`${relPath(abs)}:${i + 1}  ${line.trim()}`)
+    })
+  }
+  // `_apply` の中の 2 行 (this._painters の初期化) だけが呼び手であること。
+  assert.equal(callers.length, 2,
+    `\n種ごとの painter を _apply の外から呼んでいる:\n${callers.join('\n')}\n` +
+    '  → 選択を変えるのは 5 verb であり、描画はその遷移の内側でしか起きない。\n')
+  for (const c of callers) {
+    assert.ok(c.startsWith(SELECTION_ENTRY), `painter の呼び手が所有者の外にある: ${c}`)
+  }
+})
+
+test('選択の union を SelectionManager の外で組み立てる経路は 0 個 (ADR-107 D1)', () => {
+  // 混在した選択が構築できないのは `makeSelection` が唯一の構築点だからで、
+  // union のリテラル (`{ kind: 'entities', ids: ... }`) を外で組み立てられると
+  // その保証が消える。ADR-099 が「集合を直接触る窓」を数えたのと同じ形を、
+  // 一段上の**値の構築**へ当てたもの。
+  const files = collectSources()
+  const owners = new Set([SELECTION_ENTRY, 'src/domain/selection.js'])
+  const literal = /kind\s*:\s*['"](entities|variables)['"]/
+  const violations = []
+  for (const abs of files) {
+    const rel = relPath(abs)
+    if (owners.has(rel)) continue
+    stripComments(readFileSync(abs, 'utf8')).forEach((line, i) => {
+      if (!literal.test(line)) return
+      violations.push(
+        `${rel}:${i + 1}\n` +
+        '      選択の union をここで組み立てている。\n' +
+        '      → makeSelection([...]) / EMPTY_SELECTION を使うこと (混在は構築時に throw する)\n' +
+        '      なぜ: 構築点が 2 つになると、片方だけが混在を弾く形になる (ADR-107 D1)',
+      )
+    })
+  }
+  assert.deepEqual(violations, [], `\n${violations.join('\n\n')}\n`)
 })
 
 test('_objSelected / _selectedIds は getter であって欄ではない (不正状態が書けない)', () => {

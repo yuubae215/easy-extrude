@@ -308,7 +308,21 @@ goal ごとの支えの正本は `.gsn` 側 (ここには複製しない — §1
    `element is outside of the viewport` として捕まえた。`AddMenu` は開いた位置に
    そのまま出るだけで視野内への収まりを持っていなかったので、余地のある端へ
    アンカーし、無ければスクロールする形にした。**移設は移設先の容量を問う。**
-4. **移設先を作ると、移設元にあった「場に入る」条件が余分だと分かる。** grasp / assets /
+4. **退役させた写しは、次の PR で最初の読み手を得た (合流時に判明)。** D4 は
+   `uiStore.context.loaded` を「書き手 1 / 読み手 0 の第二の源」として退役させたが、
+   本 ADR より先に main へ入った ADR-108 の `HeaderMenus` が、`REQUIRES.CONTEXT_DOC`
+   の門を解くためにその写しを**読んでいた**。両者は合流するまでどちらも緑で、
+   `FloorContainerCensus` の退役検査が初めて名指しした (`context.loaded` が
+   `src/**` に 1 個)。`.gsn` の `LoadedMirrorRetirementIsPlanned` はこの反証形
+   —「配線の過程で store 側の投影が必要になる」— を予告しており、答えも書いてあった:
+   **写しを戻すのではなく、`ContextService` から導出された 1 つの投影を読む**。実装は
+   `context.discovery.kind !== 'unexamined'`（ADR-105 D2 の union）。要点は
+   「フィールドの生死」ではなく「権威が 1 つであること」だという当初の判断が、
+   反証の側から裏書きされた形である。
+   **順序についての教訓:** 退役は、退役させた側が最後に merge されると検査が最後まで
+   走らない。並行する PR が同じ写しに触りうるとき、退役の検査は**先に**入れておくほど
+   効く (この repo では ADR-100 の ratchet が同じ性質を持つ)。
+5. **移設先を作ると、移設元にあった「場に入る」条件が余分だと分かる。** grasp / assets /
    wizard / intake はどれも `isNegotiation` を guard に持っていたが、それは*タブの宿主*が
    場だったことの帰結で、行為の要件ではなかった。住所を移したら guard は「文書が要るか」
    だけになり、grasp と assets はそれすら要らなかった (D4 が言う「権威は `ContextService`」が、

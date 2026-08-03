@@ -224,3 +224,45 @@ unrepresentable (PHILOSOPHY #11/#25).
   live in `ChromeMath.CHROME_CSS`, mounted once by `ChromeDefs` in `UIShell`;
   the breathing-glow keyframes are generated from `MotionMath.breathe` so the
   CSS and the curve cannot drift (§1.1).
+
+---
+
+## An Entrance Is a Verb; Its Objects Are Arguments (ADR-108)
+
+**表示条件が同じであることは、同じ場所に居る理由ではない。** ヘッダの常設入口が
+担うのは**動詞**であり、対象 (シーン / サーバ / Context 文書、レイアウトテンプレ /
+Context テンプレ / 物語 / クエスト / 誘導フォーム) は入口ではなく**引数**である。
+
+### なぜ (実際に起きたこと)
+
+`{持ち出す, 持ち込む} × {シーン, サーバ, Context}` の直積が 6 つの平坦なボタンになり、
+`{始める} × 5 種` が 5 つの入口になっていた。対象ごとに入口を生やすと**対象が増える
+たびにヘッダが伸び、伸びは有界でない** (ADR-060 が契約について禁じた「`optional`
+兄弟を生やさない」の UI 版)。
+
+さらに `Nodes` (Geometry DAG の編集器) が `Save` / `Load` の隣に居たのは、3 つとも
+「BFF 接続時のみ表示」で**表示条件が一致していた**からで、動詞を共有していたからでは
+なかった。同じ誤分類は `Assets` でも起きている (実装された**時期**が住所を決めた)。
+
+### 規則
+
+1. **入口を足すのは動詞を足すこと。** 対象を足したいだけなら宣言表
+   (`FILE_TARGETS_BY_VERB` / `START_ENTRY_BY_KIND`) に行を足す — 入口の個数は動かない。
+2. **分類の権威は `src/view/HeaderEntrances.js` ただ 1 つ。** ヘッダの component が
+   `callbacks.onExportJson?.()` のような配線を直に持つと、その 1 行が第二の源になり、
+   次の対象は「そこにもう 1 行足す」形で入る (= 平坦な 6 個が戻る経路)。
+3. **可用性は住所ではない。** 前提が満たされない入口・引数は**消さず**、
+   `availabilityOf()` が返す理由つきで disabled にする (原則 #15 / #11)。
+   消える入口は「入口の個数」を接続状態の関数にし、上界が二値になる。
+4. **未宣言の種・動詞・前提・作業面で throw する。** fall-through は「宣言された既定」と
+   「誰も考えなかった種」を区別不能にする (原則 #31)。
+5. **多入口が正当な動詞は宣言する** (`MULTI_ENTRANCE_VERBS`)。今日は `toggle-surface`
+   だけ — トグルは対象を選ばず、**その面の状態の表示そのもの**なので、メニューへ畳むと
+   1 タップの可逆操作が 2 手になり開閉が画面から消える (原則 #15 / #4)。
+
+### 機械側の問い所
+
+`src/HeaderEntranceCensus.test.js` — 母集団は `Header.jsx` の 2 つのレイアウト関数直下の
+JSX 要素を**構文で**導出する (手書きの入口リストを持たない — ADR-102)。常設入口の個数は
+desktop 7 / mobile 7 の ratchet で、**超えても下回っても** fail する。
+`src/InventoryCoverage.test.js` — `01-inventory.md` の 48 行のうち住所を持たない行が 0 個。
