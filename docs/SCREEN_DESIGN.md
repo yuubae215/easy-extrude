@@ -78,7 +78,7 @@ Dimensions / position → `LAYOUT_DESIGN.md`.
 |---------|---------|
 | Mode selector | `Object Mode ▾` |
 | Status | (empty) |
-| Header actions | Save / Load / Nodes (desktop, BFF 接続時のみ) / Export / Import / Demo (desktop) / `⋯` menu (mobile) |
+| Header actions | **動詞ごとに 1 入口** (ADR-108): desktop = `Nodes` (作業面トグル) / `Start ▾` / `Export ▾` / `Import ▾` / 発見カウンタ / `Context ▾`、mobile = `⋯` が同じ 4 動詞を畳む。**対象は入口ではなく引数** — シーン JSON / サーバ / Context 文書は `Export ▾` `Import ▾` の中、レイアウトテンプレ / Context テンプレ / 物語 / クエスト / 誘導フォームは `Start ▾` の中。BFF 未接続でも**消えず**理由つき disabled (原則 #15 / #11) |
 
 #### [B] Outliner
 - Lists all objects in the scene
@@ -876,9 +876,11 @@ reference text only). On failure the error state shows the stage + HTTP status +
 UI only declares the request and displays candidates — solving is the external service's job.
 
 #### [A] Header
-Desktop: **Export** / **Import** then a single **Context ▾** dropdown (**New Project** /
-**Import Context…** / **Save Context** + production **Negotiate** / **Author** / **Region Ghosts**
-+ demo **Tutorial**). Mobile: the same items inside the ⋯ MoreMenu.
+Desktop (ADR-108 — 入口は動詞、対象は引数): **`Start ▾`** (レイアウトテンプレ / Context テンプレ /
+物語 / クエスト / 誘導フォーム) · **`Export ▾`** · **`Import ▾`** (どちらもシーン JSON / サーバ /
+Context 文書の 3 対象) · **`Context ▾`** (Negotiate / Author / Region Ghosts / Grasp Search…)。
+Mobile: `⋯` が**動詞を先に**見せ、選んだ動詞の対象を次の段で出す (同じ宣言表
+`src/view/HeaderEntrances.js` から出るので 2 レイアウトはズレない)。
 
 ---
 
@@ -930,9 +932,11 @@ The scene-replacement consequence is stated in the footer up front (same
 transparency rule as S-17 [N], ADR-051 §7) so no second confirm dialog is shown.
 
 #### [A] Header (reopen affordance)
-A **fixed** header slot (desktop) / ⋯ MoreMenu item (mobile) reopens the Home
-overlay after it has been skipped — the entry is never hidden (PHILOSOPHY #15
-fixed slots / #11 no silent gate).
+`Start ▾ → From a layout template` reopens the Home overlay after it has been
+skipped — desktop and mobile alike (ADR-108 folded the former standalone
+`Layouts` button into the single `Start` verb; the argument is never hidden and
+never removed — PHILOSOPHY #15 fixed slots / #11 no silent gate). The **launch
+path itself is unchanged** (ADR-108 D5): what folded is the re-entrance.
 
 #### Motion (ADR-089 §5, PHILOSOPHY #30)
 Overlay entrance = **Tier D (delight)**, spawned via the MotionGovernor; under

@@ -31,7 +31,7 @@
  *
  * ## Baselines are declarations, not achievements
  *
- * The ratchet baseline says "today we tolerate 779 undeclared literals". That is
+ * The ratchet baseline says "today we tolerate 773 undeclared literals". That is
  * an ugly number and it is stated rather than hidden: counting while dirty beats
  * not counting (ADR-100 Consequences). When you migrate a file, LOWER the
  * baseline in the same commit — the test tells you the new number.
@@ -365,7 +365,7 @@ const DECLARED_VOCABULARIES = {
  * React panels are where most of the colour lives. Counting it is not a
  * regression against the ADR; NOT counting it would have been.
  */
-const UNDECLARED_OCCURRENCE_BASELINE = 779
+const UNDECLARED_OCCURRENCE_BASELINE = 773
 const UNDECLARED_DISTINCT_BASELINE   = 203
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

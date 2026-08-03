@@ -93,15 +93,28 @@ block-beta
 
 ## Header Internal Layout
 
-### Desktop
+**入口は動詞、対象は引数** (ADR-108)。常設入口の個数は **desktop 7 / mobile 7** で
+固定され、`src/HeaderEntranceCensus.test.js` の ratchet が**超えても下回っても**落とす。
+母集団は `Header.jsx` の JSX から構文で導出するので、ここに書いた図は正本ではなく
+**写し**である (§1.1 — 数の正本は検査、分類の正本は `src/view/HeaderEntrances.js`)。
+
+### Desktop (7)
 ```
-[≡] [↶↷] │ [Mode▾] │ ──flex:1── status ──flex:1── │ [Export] [Import] [Save/Load]
+[Mode▾] [Nodes] │ ──flex:1── status ──flex:1── │ [Start▾] [Export▾] [Import▾] [◌ 発見] [Context▾]
 ```
 
-### Mobile
+`Nodes` は**作業面のトグル**であってファイル動詞ではない (ADR-108 D4 — `Save`/`Load` の
+隣に居たのは表示条件が一致していたからで、動詞を共有していたからではない)。BFF 未接続でも
+消えず、理由つき disabled で在り続ける ⇒ **入口の個数が接続状態の関数にならない**。
+
+### Mobile (7)
 ```
-[≡] [↶↷] │ [Mode▾] │ visibility:hidden (flex:1 spacer) │ [⋯] [N]
+[≡] [↶] [↷] [Mode▾] │ visibility:hidden (flex:1 spacer) │ [◌ 発見] [⋯] [N]
 ```
+
+`⋯` は**動詞を先に**出し (Start / Export / Import / Context)、選んだ動詞の対象を次の段で
+出す。以前はここに 11 項目が平坦に並んでいた — 狭い画面ほど直積が効くので、モバイル側を
+畳まないとデスクトップだけ整理した形になる。
 
 - `_headerStatusEl` must use **`visibility:hidden`**, not `display:none`.
   → It must continue to function as a `flex:1` spacer. Using `display:none` breaks the layout.
