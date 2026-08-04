@@ -22,6 +22,14 @@
 - **満期は条件で書く。日付でも「次の段」でもない。** 満期を*他人の判断*に相乗りさせると
   空振りする — ADR-106 は満期を「Phase 5 が決める」に置き、Phase 5 は入口を決めて器の
   住所を決めなかったため、2026-08-03 に満期が無言で過ぎた (ADR-112 §力学 2)。
+- **満期の条件が「ある ADR の採択」に一致するなら、満期欄に `満期=ADR-NNN` と書く。**
+  これが**機械が読む唯一の形**であり、その ADR が `Accepted` になった日に Q2 が落ちる
+  (ADR-109 D6)。散文だけの満期は Q2 にとって存在しないのと同じなので、trigger を持たない
+  行の個数は Q5 が ratchet で縛る — **書けないこと自体は正当**だが、黙って 0 件に
+  見えることは許さない (原則 #31)。
+  嘘の trigger を書かないこと: ADR-060 のように**とうに Accepted で、残っているのは
+  追従**という行に `満期=ADR-060` を書けば「満期は去年過ぎた」と主張することになる。
+  辿れない参照は空欄より悪い。
 - **ticket 欄は空にできない。** 段を持たない項目は誰も実装しない (原則 #31)。
   ADR 番号か段のどちらかで、**実在**が検査される (辿れない参照は空欄より悪い)。
 - `lane` は催促の速度を分けるためだけに在る。**レーンが違う残しを表から外さない** —
@@ -34,15 +42,15 @@
 
 | id | 所在 | 満期 (条件) | ticket | lane |
 |---|---|---|---|---|
-| DEF-001 | `src/view/DocIntake.js` · `src/view/FloorTabs.js` · `src/store/uiStore.js` · `src/controller/ContextController.js` · `src/components/Doc/DocIntakeLayer.jsx` · `docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md` | 文書の入口の恒久住所が決まったとき (ADR-112 が Accepted)。**満期は 1 度空振りしている** — 元は ADR-108 を指していた | ADR-112 / Phase 5.2 | ia |
-| DEF-002 | `src/view/HeaderEntrances.js` · `docs/adr/ADR-110-grasp-is-a-check-beside-its-subject-not-an-object-of-the-floor.md` | `FLOOR_TARGETS` の全行が下部の器を開くようになったとき | ADR-110 / Phase 5.1 | ia |
-| DEF-003 | `docs/ia-redesign/03-implementation-order.md` · `docs/adr/ADR-111-the-outliner-has-a-semantic-side.md` | Outliner の意味側 (v8 注釈②) が実装され、住所を持たない選択可能種が 0 個になったとき | ADR-111 / Phase 3.6 | ia |
+| DEF-001 | `src/view/DocIntake.js` · `src/view/FloorTabs.js` · `src/store/uiStore.js` · `src/controller/ContextController.js` · `src/components/Doc/DocIntakeLayer.jsx` · `docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md` | 文書の入口の恒久住所が決まったとき (**満期=ADR-112**)。**満期は 1 度空振りしている** — 元は ADR-108 を指していた | ADR-112 / Phase 5.2 | ia |
+| DEF-002 | `src/view/HeaderEntrances.js` · `docs/adr/ADR-110-grasp-is-a-check-beside-its-subject-not-an-object-of-the-floor.md` | `FLOOR_TARGETS` の全行が下部の器を開くようになったとき (**満期=ADR-110**) | ADR-110 / Phase 5.1 | ia |
+| DEF-003 | `docs/ia-redesign/03-implementation-order.md` · `docs/adr/ADR-111-the-outliner-has-a-semantic-side.md` | Outliner の意味側 (v8 注釈②) が実装され、住所を持たない選択可能種が 0 個になったとき (**満期=ADR-111**) | ADR-111 / Phase 3.6 | ia |
 | DEF-004 | `docs/adr/ADR-060-grasp-contract-data-governance.md` | `Kinematics.js` の連鎖順が契約側 `jointSpace.joints` の順序と一致する契約として doc に名指しされたとき。**他の 4 項目は 2026-08-04 に完了/消滅を確認済み** | ADR-060 | contract |
 | DEF-005 | `docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md` | Phase 4 (実ソルバ差し替え) と pick-sequence 集計レポート UI が出たとき。収束仮説の検証も同段 | ADR-081 | core |
 | DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき | ADR-078 | contract |
 | DEF-007 | `docs/adr/ADR-079-search-diagnostics-proof.md` | ファネル診断の wire 追加に BFF / UI が消費追従したとき (エンジン側は完了済み) | ADR-079 | contract |
 | DEF-008 | `src/DanglingSelfCallCensus.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う) | ADR-098 | app |
-| DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
+| DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
 | DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
 
 ## 覆えていないもの (限界の宣言 — 推論させない)
@@ -57,9 +65,15 @@
 - **覆う粒度はファイル単位である。** 行を 1 つ足すとそのファイル内の以後の残しも
   「宣言済み」に数えられる。所在欄に行番号を書いても検査はファイルまでしか見ない —
   行番号は人が辿るためのもので、機械が数える鍵ではない (行番号は編集のたびにずれる)。
+- **散文の満期は、来たことを機械が知らない。** 現在 10 行中 **6 行** (DEF-004〜008 /
+  010) の満期条件は ADR の採択に対応しないので `満期=ADR-NNN` を持たない。Q5 が
+  この 6 を予算として縛るが、**縛るのは個数であって条件の真偽ではない** — 「Phase 4 が
+  出たとき」が本当に来たかどうかは、今日も人が見るしかない。ここは埋めていない穴として
+  宣言しておく (満期の機械化は 4/10 までしか届いていない)。
 
 ---
 
-**問い所:** `pnpm test:deferrals` (`scripts/check-deferrals.mjs` の 4 つの問い —
-Q1 ratchet / Q2 満期 / Q3 ticket / Q4 逆向き)。
+**問い所:** `pnpm test:deferrals` (`scripts/check-deferrals.mjs` の 5 つの問い —
+Q1 ratchet / Q2 満期 (コード側 `PROVISIONAL_UNTIL` + 登録簿の `満期=ADR-NNN`) /
+Q3 ticket / Q4 逆向き / Q5 満期の機械可読性)。**CI の gate ジョブで毎 PR 走る。**
 **正本:** `docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md`

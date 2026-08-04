@@ -22,16 +22,30 @@
  *   4. **宣言が散文にしか無い残しがある。** コメントに「別の変更として起票する」と
  *      書いてあっても、起票されたかどうかを問う場所が無い。
  *
- * ## 4 つの問い
+ * 5 つ目は**この検査を CI に載せる作業そのもの**が出した (2026-08-04、ADR-109 D6):
+ * 初版は満期を機械化したつもりで、機械が読んでいたのはコード側の `PROVISIONAL_UNTIL`
+ * だけだった。**登録簿の満期欄は 10 行すべてが散文**で、DEF-009 の「ADR-091 が
+ * Accepted になったとき」が到来しても何も落ちない。力学 1 (満期が無言で過ぎる) が、
+ * それを直すために作った成果物の中で再生産されていた — 満期を*書く欄*を作ったことと、
+ * その欄を*読む機械*が在ることは別の事実である。Q5 はその差を数える。
+ *
+ * ## 5 つの問い
  *
  *   Q1 RATCHET   — 登録簿に覆われていない残しの箇所数。**超えても下回っても** fail。
  *                  下回りも落とすのは、債務を払ったのに baseline が古いままだと
  *                  「今いくつ残っているか」が再び記憶の中の数になるから (ADR-103)。
- *   Q2 EXPIRY    — 満期の過ぎた `PROVISIONAL_UNTIL` が 0 件。満期が指す ADR の Status を
- *                  check-adr-status.mjs と**同じ文法**で読む (第二のパーサを作らない)。
+ *   Q2 EXPIRY    — 満期の過ぎた宣言が 0 件。**満期の宣言は 2 箇所に住む** —
+ *                  コード側の `PROVISIONAL_UNTIL` と、登録簿の満期欄の `満期=ADR-NNN`。
+ *                  どちらも指す ADR の Status を check-adr-status.mjs と**同じ文法**で
+ *                  読む (第二のパーサを作らない)。
  *   Q3 TICKET    — 登録簿の全行が実在する ticket (ADR 番号 or 段) を持つ。空欄も、
  *                  実在しない参照も落とす (在るように見えて辿れないほうが空欄より悪い)。
  *   Q4 REVERSE   — 登録簿の行が指す所在に残しが実在する。実装済みの残しの宣言は消す。
+ *   Q5 REACH     — 機械が読める満期 trigger を持たない行の個数を ratchet で縛る。
+ *                  Q2 は「満期が来たか」を問うが、**満期が来たことを機械が知りうるか**は
+ *                  問わない。散文だけの満期は Q2 にとって存在しないのと同じであり、
+ *                  数えなければ「満期を機械が読む」は行ごとに静かに空洞化する
+ *                  (正当な非ゼロは 0 に見えない — 原則 #31)。
  *
  * ## 母集団の作り方 (ここが要点)
  *
@@ -63,6 +77,16 @@ const ORDER = 'docs/ia-redesign/03-implementation-order.md'
 /**
  * 残しの語彙。**ここに行を足すことが母集団を広げる唯一の経路**であり、足すたびに
  * Q1 の baseline が動く (= 意図的な行為になる)。
+ *
+ * **この表自身の母集団について (境界の宣言 — 推論させない):** 本ファイルの列挙表
+ * (`DEFERRAL_VOCAB` / `EXCLUDED` / `SCAN_DIRS`) は `src/CensusCoverage.test.js` の
+ * 登録簿には**載らない**。あちらの母集団は `src/census/sources.js` を引く test ファイル
+ * に閉じており、ここは `scripts/` かつ test ではないからである
+ * (`scripts/check-adr-status.mjs` の `PHASED_PLANS` が既に同じ境界を宣言済み)。
+ * 同様に `src/IdentityContainment.test.js` の `IDENTITY_RULES` も `src/**` 走査に
+ * 閉じているので、覆う鍵を決める `pathsIn()` はその母集団の外に在る。
+ * **境界の外に在ることを、境界の外側から宣言しておく** — 黙って外れていると、
+ * 「登録されていない」と「登録する必要が無い」が区別できなくなる (原則 #31)。
  */
 const DEFERRAL_VOCAB = [
   '未着手', '暫定', '申し送り', '後続 PR', '次セッション', '保留',
@@ -177,6 +201,30 @@ function adrStatuses() {
  */
 const UNDECLARED_BASELINE = 31
 
+/**
+ * 満期欄に機械可読の trigger (`満期=ADR-NNN`) を持たない行の数。**実測値**。
+ *
+ * 0 にできない理由を宣言しておく (推論させない): **満期条件が ADR の採択に
+ * 対応しない行が実在する**。DEF-004 (ADR-060) や DEF-008 (ADR-098) の ADR は
+ * とうに `Accepted` で、残っているのは*その決定への追従*である — ここに
+ * `満期=ADR-060` を書けば「満期は 2026-07-01 に過ぎた」と主張することになり、
+ * 嘘の trigger は満期が無いことより悪い (辿れない参照は空欄より悪い、Q3 と同じ理由)。
+ *
+ * よって trigger を**強制せず、持たない行を数える**。散文の満期は Q2 にとって
+ * 存在しないのと同じであり、数えなければ「満期を機械が読む」は行ごとに静かに
+ * 空洞化する。上下どちらへ動いても fail するので、この数は記憶ではなく事実であり続ける。
+ */
+const PROSE_EXPIRY_BASELINE = 6
+
+/**
+ * 登録簿の満期欄に置く機械可読な trigger。
+ *
+ * **位置ではなく token で読む。** 満期欄の散文は履歴 (「元は ADR-108 を指していた」)
+ * を含みうるので「最初に現れた ADR 番号」のような位置の規則は、散文を書き換えた日に
+ * 黙って別の ADR を指し始める。token なら、trigger を動かす行為が編集として見える。
+ */
+const EXPIRY_TRIGGER = /満期=(ADR-\d{3})/
+
 const errors = []
 const ledger = parseLedger()
 
@@ -243,6 +291,40 @@ for (const file of files.filter(f => /\.(js|jsx|mjs)$/.test(f))) {
   }
 }
 
+// 満期の宣言のもう一方の住所 — 登録簿の満期欄。コード側 (`PROVISIONAL_UNTIL`) だけを
+// 読んでいた初版は、満期を*書く欄*を作ったことと、その欄を*読む機械*が在ることを
+// 取り違えていた (ADR-109 D6)。
+for (const row of ledger ?? []) {
+  const t = EXPIRY_TRIGGER.exec(row.expiry ?? '')
+  if (!t) continue
+  const status = statuses.get(t[1])
+  if (status === undefined) {
+    errors.push(`Q2 EXPIRY: ${LEDGER} の ${row.id} の満期 trigger ${t[1]} が docs/adr に無い。`)
+  } else if (ACCEPTED.test(status)) {
+    errors.push(
+      `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期が過ぎている — ${t[1]} は Accepted。\n` +
+      `    ${t[1]}: ${status}\n` +
+      '    満期の来た残しは**更新ではなく決着**で畳む — 片付いたなら行ごと消して\n' +
+      '    UNDECLARED_BASELINE を実測値へ下げ、片付いていないなら「なぜ trigger が\n' +
+      '    間違っていたか」を満期欄に書いて張り替える (延長は先送りであって決定ではない)。')
+  }
+}
+
+// ── Q5 REACH ─────────────────────────────────────────────────────────────────
+
+const proseExpiry = (ledger ?? []).filter(r => !EXPIRY_TRIGGER.test(r.expiry ?? ''))
+if (ledger !== null && proseExpiry.length !== PROSE_EXPIRY_BASELINE) {
+  const dir = proseExpiry.length > PROSE_EXPIRY_BASELINE ? '増えた' : '減った'
+  errors.push(
+    `Q5 REACH: 機械が読める満期 trigger を持たない行が ${proseExpiry.length} 件 ` +
+    `(baseline ${PROSE_EXPIRY_BASELINE} から ${dir}) — ${proseExpiry.map(r => r.id).join(', ')}\n` +
+    (proseExpiry.length > PROSE_EXPIRY_BASELINE
+      ? '    満期欄に `満期=ADR-NNN` を書けるなら書くこと (その ADR が Accepted になった日に Q2 が落ちる)。\n' +
+        '    書けない満期 — ADR の採択に対応しない条件 — なら baseline を上げ、理由を登録簿に宣言すること。\n'
+      : '    trigger を足したなら baseline をこの実測値へ下げること。下回りも落とすのは、\n' +
+        '    「機械が読めない満期がいくつ在るか」が再び記憶の中の数になるから (ADR-103)。\n'))
+}
+
 // ── Q3 TICKET / Q4 REVERSE ───────────────────────────────────────────────────
 
 const orderText = existsSync(join(ROOT, ORDER)) ? readFileSync(join(ROOT, ORDER), 'utf8') : ''
@@ -305,4 +387,6 @@ if (errors.length > 0) {
 
 console.error(
   `check-deferrals: OK — 宣言済み ${ledger.length} 件 / 宣言外 ${undeclared.length} 箇所 ` +
-  `(baseline ${UNDECLARED_BASELINE}) / 満期切れ 0 件`)
+  `(baseline ${UNDECLARED_BASELINE}) / 満期切れ 0 件 / ` +
+  `満期が機械可読 ${ledger.length - proseExpiry.length} 件・散文のみ ${proseExpiry.length} 件 ` +
+  `(baseline ${PROSE_EXPIRY_BASELINE})`)
