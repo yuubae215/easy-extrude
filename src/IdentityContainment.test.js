@@ -35,6 +35,11 @@ import { collectSources, stripComments, relPath, repoPath } from './census/sourc
  * @property {string}   use       違反時に案内する正しい呼び出し
  * @property {RegExp[]} all       すべてに当たった行を「規則の再導出」とみなす
  * @property {string}   why       なぜ 1 箇所でなければならないか (エラーメッセージ用)
+ * @property {'js'|'all'} [scope] 走査範囲。既定は `js` (従来どおり `.jsx` を見ない)。
+ *           `all` を宣言した規則だけが `.jsx` も走査する — 表示層に住む規則
+ *           (ドロップダウンの帰属など) は `.jsx` を見なければ空振りするが、
+ *           既存規則まで一斉に広げると散文的な一致が増えるので、**広げるのは
+ *           規則ごとの宣言**にしてある (境界は推論ではなく宣言 — ADR-102)。
  */
 
 /** @type {IdentityRule[]} */
@@ -93,6 +98,19 @@ const IDENTITY_RULES = [
     why: '判定だけ複製すると理由が失われ、無効化された操作が「押せないが why が言えない」状態になる。ADR-065 の disabled-as-quest はそこで壊れる',
   },
   {
+    // ADR-113。「この click はこのドロップダウンのものか」は 2 実装あった:
+    // HeaderMenus は引金だけを見て (surface を知らず)、ModeDropdown は器を見る。
+    // 片方だけが fixed パネルを勘定に入れていたので、モバイルの ⋯ は一段目の行を
+    // 押すと閉じるだけになっていた (原則 #11 の「入力は消費されたのに何も起きない」)。
+    // 表示層の規則なので `.jsx` も走査する。
+    name: 'ドロップダウンへの click の帰属 (要素の contains)',
+    owners: ['src/view/DropdownContainment.js'],
+    use: "isInsideDropdown(e.target, { trigger, surface })  — import from 'src/view/DropdownContainment.js'",
+    scope: 'all',
+    all: [/\.contains\??\.?\s*\(/, /target\b/],
+    why: '帰属の判定が呼び出し側ごとに書かれると、fixed で描かれるパネルを勘定に入れ忘れた実装が必ず 1 つ生まれ、そこだけがパネル内の click を「外側」と読む (ADR-113 §力学 1)',
+  },
+  {
     // ADR-104 U2。「この提案は古びているか」は *保存しない* と決めた導出値なので、
     // 導出規則そのものが唯一の住所になる。散ると「4 つ目の状態」が事実上復活する。
     name: '提案の陳腐化判定 (from === 現在値)',
@@ -106,15 +124,17 @@ const IDENTITY_RULES = [
 ]
 
 test('同一性の導出規則は所有モジュール 1 箇所にのみ存在する (§1.1)', () => {
-  const files = collectSources({ jsx: false })
-  assert.ok(files.length > 50, `src/ の走査に失敗している (${files.length} files)`)
+  const jsFiles  = collectSources({ jsx: false })
+  const allFiles = collectSources({ jsx: true })
+  assert.ok(jsFiles.length > 50, `src/ の走査に失敗している (${jsFiles.length} files)`)
+  assert.ok(allFiles.length > jsFiles.length, '.jsx の走査に失敗している (scope:"all" の規則が空振りする)')
 
   /** @type {string[]} */
   const violations = []
 
   for (const rule of IDENTITY_RULES) {
     const owners = new Set(rule.owners)
-    for (const abs of files) {
+    for (const abs of (rule.scope === 'all' ? allFiles : jsFiles)) {
       const rel = relPath(abs)
       if (owners.has(rel)) continue
       const lines = stripComments(readFileSync(abs, 'utf8'))

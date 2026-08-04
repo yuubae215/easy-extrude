@@ -1,5 +1,6 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { TEMPLATE_CATALOG } from '../../context/TemplateCatalog.js'
+import { SCREEN_CLAIM, SCREEN_TIER, stageIs, tierZIndex } from '../../view/ScreenClaim.js'
 
 /**
  * TemplateGallery — starter-template picker modal (ADR-051 Phase 2, Entry B).
@@ -51,11 +52,15 @@ function StructurePreview({ preview }) {
 }
 
 export function TemplateGallery() {
-  const open      = useUIStore(s => s.templateGalleryOpen)
+  // Whether this gallery is up is the ONE stage claim, not a private flag
+  // (ADR-113): when it and the launch Home screen were separate booleans at the
+  // same z-index, opening this one behind the Home screen changed nothing on
+  // screen — the silent no-op 原則 #11 forbids.
+  const stage     = useUIStore(s => s.stage)
   const previews  = useUIStore(s => s.templateGalleryPreviews)
   const callbacks = useUIStore(s => s.callbacks)
 
-  if (!open) return null
+  if (!stageIs(stage, SCREEN_CLAIM.CONTEXT_TEMPLATE_GALLERY)) return null
 
   const close  = () => callbacks.onCloseTemplateGallery?.()
   const select = (id) => callbacks.onSelectTemplate?.(id)
@@ -73,7 +78,7 @@ export function TemplateGallery() {
     <div
       onClick={close}
       style={{
-        position: 'fixed', inset: 0, zIndex: 300,
+        position: 'fixed', inset: 0, zIndex: tierZIndex(SCREEN_TIER.STAGE),
         background: 'rgba(0,0,0,0.6)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: 'system-ui, -apple-system, sans-serif',

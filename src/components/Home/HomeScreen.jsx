@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { LAYOUT_TEMPLATE_CATALOG } from '../../layout/LayoutTemplateCatalog.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { enterMotion } from '../../view/ChromeMath.js'
+import { SCREEN_CLAIM, SCREEN_TIER, stageIs, tierZIndex } from '../../view/ScreenClaim.js'
 
 /**
  * HomeScreen — the app's launch / Home overlay (ADR-089, screen S-19).
@@ -12,7 +13,11 @@ import { enterMotion } from '../../view/ChromeMath.js'
  * on a blank canvas. This is the **Layout DSL** entry, distinct from the Context
  * DSL New Project gallery (ADR-051 / TemplateGallery.jsx).
  *
- * State: `uiStore.home` (`null | { status:'open' }`), sole writer AppController.
+ * State: the `stage` claim (`uiStore.stage`, ADR-113) — this screen is on iff it
+ * is the one claim holding the stage, so it can no longer be silently covered by
+ * the New Project gallery (both used to render at a hand-picked z-index 300 and
+ * the winner was UIShell's mount order). The z comes from the tier owner, never
+ * from a literal here. Sole writer AppController via `claimStage`/`releaseStage`.
  * This component only reads and fires callbacks:
  *   onSelectLayoutTemplate(id) — load a layout template (scene replacement)
  *   onStartEmptyProject()      — close onto the default boot scene (Empty card)
@@ -25,7 +30,7 @@ import { enterMotion } from '../../view/ChromeMath.js'
  * is deliberate (Empty is an explicit card / ✕).
  */
 export function HomeScreen() {
-  const home      = useUIStore(s => s.home)
+  const stage     = useUIStore(s => s.stage)
   const callbacks = useUIStore(s => s.callbacks)
   const reduced   = useReducedMotion()
 
@@ -35,7 +40,7 @@ export function HomeScreen() {
     try { return localStorage.getItem('ee_home') === 'skip' } catch { return false }
   })
 
-  if (home?.status !== 'open') return null
+  if (!stageIs(stage, SCREEN_CLAIM.LAUNCH_HOME)) return null
 
   const select = (id) => callbacks.onSelectLayoutTemplate?.(id)
   const empty  = () => callbacks.onStartEmptyProject?.()
@@ -55,7 +60,7 @@ export function HomeScreen() {
   return (
     <div
       style={{
-        position: 'fixed', inset: 0, zIndex: 300,
+        position: 'fixed', inset: 0, zIndex: tierZIndex(SCREEN_TIER.STAGE),
         // Semi-transparent scrim so the living BootReveal stage glows behind the
         // launch screen (ADR-089 §1 — a living stage, not a dead splash).
         background: 'radial-gradient(120% 100% at 50% 0%, rgba(20,26,36,0.62), rgba(8,10,14,0.82))',

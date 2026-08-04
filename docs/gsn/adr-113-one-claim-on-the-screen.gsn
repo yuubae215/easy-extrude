@@ -1,0 +1,110 @@
+GOALS adr113_one_claim_on_the_screen
+
+goal PressingAnEntranceLandsWhereItSays
+uuid e40cf716-fcb4-46db-b406-180b67abed4e
+summary "入口を押したら、その入口が名指しした先へ、押した回数と無関係に同じように着く。画面を占める面が 2 枚立ちうるとき、勝者が宣言から読める (マウント順のような、どのファイルにも書かれていない事実が決めない)"
+state UnderReview
+labels adr-113, ia-phase-5-3, principle-31, principle-11, one-owner, census
+artifacts
+- "docs/adr/ADR-113-one-claim-on-the-screen.md"
+- "docs/ia-redesign/03-implementation-order.md"
+
+    context Adr113Scope
+    uuid 1ee5b3da-5c76-40ed-90c3-38a3225458a9
+    summary "ADR-113 (Accepted 2026-08-04、実装 = IA 再設計 Phase 5.3): 出所は設計の棚卸しではなくユーザーからの不具合報告 2 件。帰属の述語を 1 つに畳み (D1)、⋯ の段を 1 つの状態にし (D2)、全画面オーバーレイの主張を 1 欄 + 3 段の宣言にする (D3)、そして宣言外の面と自分で z を選んだ面を数える (D4)。ADR-089 / ADR-051 が決めた中身 (何を選ばせるか・どう読み込むか) は 1 行も変えない — 変えるのは枚数と順序の所有者だけで、ドメイン・契約・BFF・core は無関係"
+    artifacts
+    - "src/view/ScreenClaim.js"
+    - "src/view/OverflowMenuState.js"
+    - "src/view/DropdownContainment.js"
+
+    context TheReportedSymptomsWereMeasuredNotAssumed
+    uuid 607a10bc-a602-40ca-a5a3-6d85afaa6fa6
+    summary "出発点の実測 (Playwright で実機再現、記憶からではない): モバイル幅で ⋯ を開くと ['Start›','Export›','Import›','Context›'] が出るが、Export› を押すとメニューが閉じるだけで何も起きず (rows = [])、もう一度 ⋯ を押すと ['Export','Scene as JSON','Scene to server','Context document'] = Export の子メニューが出る。デスクトップの Start ▾ / Export ▾ は同じ useDropdown を使っているのに正常に動く。報告 1 行目 (unexamined → レイアウトテンプレ選択) は実測では再現せず、Unexamined の出口は onOpenTemplateGallery ただ 1 本で New Project が正しく開く — ユーザー確認により 1 行目は仕様どおりの動作と決着した"
+
+    justification WhyTheDesktopMenuHidTheDefect
+    uuid 80595915-f629-4659-8963-2551043f9645
+    summary "同じ欠陥がデスクトップで症状を出さなかった理由: VerbMenu は行を選べばどのみち閉じるのが正しいので、外側 click 判定が誤って閉じても結果が一致する。つまり 2 実装のうち片方が誤っていることを教えてくれる信号は存在せず、正しさではなく症状の出なさが二重化を延命させていた。これは §1.1 が『導出規則の再実装はデータの重複と違って grep で見えない』と言う理由そのもので、名前付き述語が無い限り n+1 個目のコピーが常に最小抵抗経路になる"
+
+    justification WhyCardinalityNeedsAFieldOfItsOwn
+    uuid fab64778-294c-46f2-888a-c4edb9366933
+    summary "全画面オーバーレイ 4 面はそれぞれ flag (home / templateGalleryOpen / modal / onboardingVisible) を持っており、どれも値を持つので状態として認識されていた。持っていなかったのは『同時に何枚立っているか』で、基数には欄が無い (原則 #31)。実費: 起動ホームと New Project はどちらも z-index 300 を各ファイルが独立に選んでおり、両方立ったときの勝者は UIShell.jsx のマウント順 = どちらのコンポーネントにも書かれていない事実だった。負けた面は無言で見えなくなる (原則 #11)。同じファイル内で import ダイアログが 10000 を選んでいたのも同じ症状の別の面"
+
+    justification WhyOneSlotBeatsARuleToResetIt
+    uuid a7b7f33c-5cce-4e3e-8345-6636db52d333
+    summary "却下案 D (閉じるときに verb をリセットするコードを足す) への反証: 閉じる経路は今 3 つ (外側 click / 行の選択 / 引金の再押下) あり、Esc・画面回転・ルート遷移で増えうる。規律で守るものは経路の数だけ破られる — 原則 #23 が『呼び手に事前 refresh を要求する規約は N-1 箇所で破られる』と言ったのと同じ構造。したがって答えは規律ではなく形で、閉が段を持てないようにし、段は閉じるときではなく開くときに決まるようにする。同じ論法が D3 にも効く: 『開くときに他を閉じる』規律ではなく 1 欄にすることで、2 枚同時を表現不能にした"
+
+    justification WhyThreeTiersAndNotOneSlot
+    uuid 3d5b57ee-3c31-4ef2-839b-80f79f166b54
+    summary "却下案 B (全画面オーバーレイ 4 面を 1 スロットに統合) への反証: 不変条件としては最強だが嘘である。confirm ダイアログは『いま見ているものについて』問う面なので下の面を消してはならず、初回ジェスチャヒントは 4 秒で自動退場するので stage を奪うと mobile 起動でホームが食われて戻らない (実害)。不変条件は強ければよいのではなく現実の形と一致していなければならない。よって段 (stage / coach / dialog) で割り、段ごとに 0..1 とした。構造の変更を要したのは衝突が実在した stage だけで、他 2 段は宣言のみ — 動かす理由が無いのに動かすのは過剰モデリング (核 §5)"
+
+    assumption OnlyTheStageTierHadARealCollision
+    uuid 61536030-a57c-42d4-9f90-803d44c8bea9
+    summary "反証されうる仮説: 構造 (1 欄化) が要るのは stage 段だけで、coach と dialog は宣言だけで足りる。根拠は dialog が uiStore.modal という判別 union で既に 0..1 であり、coach が 1 面しか持たないこと。反証されうる形は『coach 段に 2 面目が生まれる』(例: 2 つ目のコーチマーク) で、そのとき段の中の順序はマウント順に戻る — この不可能性は構造によるもので検査が守っているのではない、と ScreenClaimCensus の JSDoc に限界として宣言してある。3 枚目の面を同じ段に足す変更がこの仮説を落とすトリガである"
+    artifacts
+    - "src/ScreenClaimCensus.test.js"
+
+    assumption ThePredicateAloneWouldHaveBeenEnough
+    uuid a8a84d8e-7ca5-4a68-b82c-69dbebae4a61
+    summary "反証された仮説 (俯瞰の時点で立てていた): 帰属の述語に surface を渡せば ⋯ は直る。実装で反証された — surface を渡してもまだ閉じた。React は行の onClick で起きた state 変化を document の click リスナが走る前に flush するので、押された行は既に DOM から外れており、切り離されたノードはどこにも含まれない。つまり述語がどれだけ正しくても『外側』と読む。規則は述語だけでは閉じず、いつ問うか (pointerdown = 再描画より前) までが規則の一部だった。俯瞰では出せなかった項で、判断の履歴として ADR §力学 1 の第二層に残した (原則 #19)"
+
+    context BusinessTreeAttachPoint
+    uuid 4d5ae071-5432-4ff8-811b-a3439b3bd0e4
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 押しても何も起きない入口は価値に到達する前の離脱点そのものだから。保留理由: ADR-108 の同名 context と同じで、どの入口から入った人が価値に到達したかの測定手段が無い。dogfooding で入口ごとの到達が記録され始めた PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    strategy ByGivingEachQuestionExactlyOneOwner
+    uuid 564b1481-28c4-4ae3-a196-b3d39782a59b
+    summary "Argument by 問いごとの単一所有者 + 不正状態の表現不能化 — 報告された 2 症状はどちらも『1 つの問いに 2 つ以上の実装がある』形をしている (帰属の述語が 5 実装 / 開閉と段が 2 欄 / 枚数と順序が 4 ファイルに散った z リテラル)。各問いに所有者を 1 つ与え、かつ不正な組み合わせ (閉なのに段を持つ / 2 枚同時) を型で書けなくする。畳み込みだけでは統治にならないので、母集団をコードから導出して『宣言外の個数』を数える"
+
+        goal InMenuClicksAreNeverReadAsOutside
+        uuid 6a353dd3-513d-445b-828a-715493a9d368
+        summary "パネル内の click が『外側』と判定されない。帰属の判定は 1 箇所に閉じ、片方の要素だけを渡す呼び方が存在しない"
+        state UnderReview
+        labels support-verified
+
+            solution ContainmentPredicateHasOneOwnerAndCaughtFiveCopies
+            uuid 37ed8d8c-9be0-4111-b592-e7792fd053d1
+            summary "node --test src/view/DropdownContainment.test.js — pass (6/6) / src/IdentityContainment.test.js — pass (2/2)。isInsideDropdown(target, {trigger, surface}) が唯一の所有者で、片方だけ渡す呼び方は throw する (欠陥の再生産経路を閉じる形をテストが焼く)。IDENTITY_RULES へ登録するにあたり scope:'all' を導入した — 従来この検査は .jsx を走査しておらず、表示層に住む規則はそのままでは空振りする。既存規則まで一斉に広げると散文的な一致が増えるので、広げるのは規則ごとの宣言にした。**登録した初回実行が想定外の 3 実装を名指しした** (AddMenu / ContextMenu / LinkTypePicker) — 俯瞰では 2 実装と数えていたので、実測が記憶を訂正した 2 度目である。実機 (Playwright, 420x860) で ⋯ → Export› → 戻る → Import› → 行選択 → コールバック実行 まで通ることを確認"
+            artifacts
+            - "src/view/DropdownContainment.js"
+            - "src/IdentityContainment.test.js"
+
+        goal AClosedMenuCarriesNoLevel
+        uuid 71b04e0c-587f-4a5d-ab87-5420d3feb9c8
+        summary "閉じた ⋯ が『前回どこまで潜ったか』を持ち越さない。閉じ方が何通りあっても、次に開けば必ず一段目"
+        state UnderReview
+        labels support-verified
+
+            solution ReopenReturnsToVerbsFromEveryCloser
+            uuid 4d024f17-18ac-46ba-a155-8dfb1c9855b6
+            summary "node --test src/view/OverflowMenuState.test.js — pass (13/13)。状態は null | {level:'verbs'} | {level:'objects',verb} の union で、{open:false, verb:'export'} は isValidMenuState が false を返す形になった。**証拠の形を意図的に選んだ**: 出荷された欠陥は 1 手では見えない (Export› を押した瞬間は『閉じた』にしか見えず、次に開いたときに初めて違うものが出る) ので、同じ要求を 2 回通す形 — 開く→潜る→閉じる→もう一度開く — を、閉じ方 3 通り (外側 click / 行の選択 / 引金の再押下) すべてについて焼いた。1 手ずつ確かめる検査は緑のまま素通りする (ADR-098 の e2e が数値 Grab で書かれていたため振動を出荷し ADR-101 で別途起票することになったのと同じ形)。実機でも 7 手順すべて確認済み"
+            artifacts
+            - "src/view/OverflowMenuState.js"
+            - "src/view/OverflowMenuState.test.js"
+
+        goal AtMostOneStageClaimAndItsWinnerIsDeclared
+        uuid 2881d4b0-a046-4aae-8a69-05777a569f77
+        summary "画面を占める『始め方』が同時に 2 枚立たない。立つ順序 (段) は宣言から読め、面が自分で z-index を選ばない"
+        state UnderReview
+        labels support-verified
+
+            solution StageIsOneSlotAndTiersOwnTheOrder
+            uuid 09bcc9b4-31bb-4579-b56f-cf81eaa44020
+            summary "node --test src/ScreenClaimCensus.test.js — pass (8/8)。uiStore.stage が 1 欄になったので 2 枚同時が表現不能で、書く入口は claimStage / releaseStage の対ちょうど 2 つ (原則 #1 / #9)。解放は主張の同一性つきなので、遅れて来た close が後から立った別の面の主張を消さない (releaseStage(gallery, LAUNCH_HOME) が no-op であることを焼く)。段と z は tierZIndex ただ 1 箇所が持ち、未宣言の段では throw する。**実装中に発見**: 検査を書いた時点で ModalLayer の ImportModal が zIndex:10000 を手で選んでいた — 同じ段の中に、どのファイルからも読めない内部順序が在ったということで、力学 2 の 5 例目にあたる。実機 (Playwright, 1400x900) で 起動ホーム → Empty → Unexamined → New Project → 背景クリック → Start ▾ → From a layout template を通し、どの時点でも 2 枚同時にならないことを確認"
+            artifacts
+            - "src/view/ScreenClaim.js"
+            - "src/store/uiStore.js"
+
+        goal UndeclaredOverlaysAndSelfChosenZAreBothCounted
+        uuid c94fd9fd-0cfa-4fec-a902-b77956e78d60
+        summary "宣言を持たない全画面オーバーレイが 0 枚、かつ自分で z-index を選ぶ全画面オーバーレイが 0 枚。母集団は手書きの面リストではなくコードの走査から導出する"
+        state UnderReview
+        labels support-verified
+
+            solution CensusDerivesThePopulationAndCountsTwoThings
+            uuid 30604de8-df5d-4e67-ba00-ede7b4f2e749
+            summary "node --test src/ScreenClaimCensus.test.js — pass (8/8) / src/CensusCoverage.test.js — pass (4/4)。母集団は src/components/** を走査し position:'fixed' と inset:0 を同じ style オブジェクトに持つ箇所から導出するので、全画面を描いたファイルはその日から数えられる (手書きの面リスト = ADR-102 が語彙から消した place-list にしない)。**2 つ数えるのが要点**: ADR-113 以前も 4 面はそれぞれ flag を持っていたので、面だけを数える検査は緑を出す。壊れていたのは面の存在ではなく面どうしの順序で、それは各ファイルの zIndex:300 というリテラルに散っていた — 在るもの (面) を辿る数え方では構造的に出てこない。逆向き (宣言した住所に面が実在するか) も問い、退役の腐敗が緑を出すのを止める (ADR-103)。限界は宣言済み: inset:0 を使わない全画面 (top/left/right/bottom を 4 行で書く形) は母集団に入らない"
+            artifacts
+            - "src/ScreenClaimCensus.test.js"
+            - "src/CensusCoverage.test.js"

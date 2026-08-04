@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
+import { isInsideDropdown } from '../../view/DropdownContainment.js'
 
 const MODES = [
   { label: 'Object Mode', value: 'object', hint: 'Tab' },
@@ -23,17 +24,21 @@ export function ModeDropdown() {
   const [dropPos, setDropPos] = useState({ top: 42, left: 0 })
   const reduced = useReducedMotion()
   const btnRef = useRef(null)
+  const surfaceRef = useRef(null)
 
-  // Close on outside click
+  // Close on outside click. "Is this click mine?" is ONE predicate for every
+  // dropdown in the header (§1.1) — this component used to answer it via the
+  // `[data-mode-selector]` wrapper while `HeaderMenus` answered it from the
+  // trigger alone, and only one of the two knew about the fixed-position panel.
   useEffect(() => {
     if (!open) return
     const handler = (e) => {
-      if (btnRef.current && !btnRef.current.closest('[data-mode-selector]')?.contains(e.target)) {
+      if (!isInsideDropdown(e.target, { trigger: btnRef.current, surface: surfaceRef.current })) {
         setOpen(false)
       }
     }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
   }, [open])
 
   function handleToggle(e) {
@@ -53,7 +58,7 @@ export function ModeDropdown() {
   const modeLabel = MODES.find(m => m.value === mode)?.label ?? 'Object Mode'
 
   return (
-    <div data-mode-selector="" style={{ position: 'relative', display: 'inline-block' }}>
+    <div style={{ position: 'relative', display: 'inline-block' }}>
       <button
         ref={btnRef}
         onClick={handleToggle}
@@ -81,6 +86,7 @@ export function ModeDropdown() {
 
       {open && (
         <div
+          ref={surfaceRef}
           style={{
             position:   'fixed',
             top:        dropPos.top,

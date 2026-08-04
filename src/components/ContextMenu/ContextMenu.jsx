@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isInsideDropdown } from '../../view/DropdownContainment.js'
 import { useUIStore } from '../../store/uiStore.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { popoverEnterMotion, itemEnterMotion } from '../../view/ChromeMath.js'
@@ -13,7 +14,11 @@ export function ContextMenu() {
   useEffect(() => {
     if (!contextMenu) return
     const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
+      // These popups have no separate trigger element — the whole popup IS the
+      // surface — but "does this click belong to me?" is still the ONE predicate
+      // (ADR-113), so a fourth hand-rolled copy cannot drift the way the header's
+      // two copies did.
+      if (!isInsideDropdown(e.target, { trigger: null, surface: ref.current })) {
         hideContextMenu()
       }
     }

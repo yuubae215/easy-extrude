@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { SCREEN_TIER, tierZIndex } from '../../view/ScreenClaim.js'
 
 export function ModalLayer() {
   const modal      = useUIStore(s => s.modal)
@@ -25,7 +26,9 @@ function Overlay({ onCancel, children }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 500,
+        // The tier owner picks the z (ADR-113) — a dialog asks ABOUT whatever
+        // holds the stage, so it sits above it by declaration, not by literal.
+        zIndex: tierZIndex(SCREEN_TIER.DIALOG),
         pointerEvents: 'auto',
       }}
     >
@@ -160,7 +163,10 @@ function ImportModal({ modal, onClose }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 10000,
+        // Same DIALOG tier as the other two dialogs — this one used to pick
+        // `10000` by hand, which is how a tier gets an undeclared inner order
+        // nobody can read off either file (ADR-113).
+        zIndex: tierZIndex(SCREEN_TIER.DIALOG),
         pointerEvents: 'auto',
       }}
     >

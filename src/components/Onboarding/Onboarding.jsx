@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { SCREEN_TIER, tierZIndex } from '../../view/ScreenClaim.js'
 
 const HINTS = [
   {
@@ -44,7 +45,10 @@ export function Onboarding() {
         position: 'fixed',
         inset: 0,
         background: 'rgba(0,0,0,0.72)',
-        zIndex: 500,
+        // Coach tier (ADR-113): above the stage claim but below dialogs, and
+        // deliberately NOT in the stage slot — it auto-dismisses after 4s, so
+        // sharing the slot would eat the launch Home screen on mobile boot.
+        zIndex: tierZIndex(SCREEN_TIER.COACH),
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

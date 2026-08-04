@@ -2,6 +2,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { enterMotion } from '../../view/ChromeMath.js'
 import { tourStepDescriptor, tourVisible } from '../../view/TourMath.js'
+import { SCREEN_CLAIM, stageIs } from '../../view/ScreenClaim.js'
 import { COLOR, Z, rgba } from '../../theme/tokens.js'
 import { BOTTOM_TIER, bottomEdgeOffset, leftEdgeOffset } from '../../view/EdgeOccupancy.js'
 
@@ -30,8 +31,10 @@ export function TourCard() {
   const tour          = useUIStore(s => s.tour)
   const contextActive = useUIStore(s => s.context.active)
   const demoActive    = useUIStore(s => s.demo.active)
-  const galleryOpen   = useUIStore(s => s.templateGalleryOpen)
-  const homeOpen      = useUIStore(s => !!s.home)
+  // Both "is a full-screen starting point up?" questions read the ONE stage
+  // claim (ADR-113) instead of two independent flags.
+  const galleryOpen   = useUIStore(s => stageIs(s.stage, SCREEN_CLAIM.CONTEXT_TEMPLATE_GALLERY))
+  const homeOpen      = useUIStore(s => stageIs(s.stage, SCREEN_CLAIM.LAUNCH_HOME))
   const callbacks     = useUIStore(s => s.callbacks)
   const reduced       = useReducedMotion()
 
