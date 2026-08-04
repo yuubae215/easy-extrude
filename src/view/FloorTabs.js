@@ -71,7 +71,7 @@ export const RETIRED_FLOOR_TABS = Object.freeze([
   { id: 'assets', movedTo: 'src/components/AddMenu/AddMenu.jsx',
     why: '入力 = モデリング。架台・コンベア・セル床を作る行為は他のオブジェクト追加と同じ (ADR-103 が Lynch 5 種を AddMenu へ移した先例と同型)' },
   { id: 'wizard', movedTo: 'src/components/Doc/DocIntakeLayer.jsx',
-    why: '入力 (誘導・順序あり = BPMN 側)。文書の入口であって場ではない。**暫定住所** — 最終的な住所は Phase 5 (ADR-108) が決める' },
+    why: '入力 (誘導・順序あり = BPMN 側)。文書の入口であって場ではない。**暫定住所** — 最終的な住所は **ADR-112** が決める (満期は 2026-08-04 に ADR-108 から張り替え — ADR-109 §力学 2)' },
   { id: 'intake', movedTo: 'src/components/Doc/DocIntakeLayer.jsx',
     why: '入力 (熟練者のフォーム)。同上 — **暫定住所**' },
 ])

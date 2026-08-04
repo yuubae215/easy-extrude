@@ -1,0 +1,88 @@
+GOALS adr109_a_deferral_is_a_declaration_not_a_memory
+
+goal DeferralsSurviveOnlyAsCountedDeclarations
+uuid cc556cd0-d2d9-40fb-99e0-687774ebe22b
+summary "「後でやる」と書かれたものが、書かれた事実だけで消えない。残しの個数がいつでも数えられ、満期の過ぎた残しと、もう残っていない残しが機械に見える"
+state UnderReview
+labels adr-109, deferral, principle-31, census, ratchet
+artifacts
+- "docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md"
+
+    context Adr109Scope
+    uuid e0d644cc-3fc4-4048-92e5-b3b6617778ca
+    summary "ADR-109 (Proposed 2026-08-04): 残しを宣言・満期・所有者を持つ第一級の対象にする。母集団は残しの語彙から導出し、登録簿は『導出された母集団のうち宣言されたもの』に限る。既存コードの挙動は変えない — 変えるのは PROVISIONAL_UNTIL の文字列 1 つ (満期の付け替え) だけで、残りは新規の登録簿と検査の追加である"
+    artifacts
+    - "docs/ia-redesign/03-implementation-order.md"
+
+    context TheFourMeasuredFailures
+    uuid 32c28306-f019-478d-8335-ce13bb7b4c6b
+    summary "実測 (散文の転記ではない): (1) src/view/DocIntake.js:54 の PROVISIONAL_UNTIL は ADR-108 を満期に指すが、ADR-108 は 2026-08-03 に Accepted・実装済みでこの住所を決めておらず、満期は無言で過ぎた — 同じポインタの写しは 7 箇所。(2) ADR-060 の『本リポジトリ (未着手)』5 項目のうち 3 つは完了済み (GraspSearchPanel.jsx:792 が pose.kind を読んでいる)、1 つは ADR-082 が submodule ごと吸収して対象が消滅、残りは 1 項目だけ。(3) ADR-107 の Outliner 意味側は散文にのみ宣言され段を持たない。ADR-091 は Proposed のまま src/ からの参照 0 件、ADR-043/044/046 は Draft。(4) FLOOR_TARGETS の grasp 行は ADR-106 で動詞を失ったが、宣言はコメントの散文しか無い"
+    artifacts
+    - "src/view/DocIntake.js"
+    - "src/view/HeaderEntrances.js"
+
+    context BusinessTreeAttachPoint
+    uuid fa99368b-c8b9-4037-acb8-8968d043bf95
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal RevenueMaximized 配下 — 残しの滞留は『設計は決まったのに価値が届いていない』量そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形であり、かつ登録簿がまだ存在しないので滞留量を測る手段が無い。scripts/check-deferrals.mjs が実在して宣言外の個数を出力し始めた PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotJustTicketTodaysFour
+    uuid c5362813-2789-4a0f-b9f4-2918776cc653
+    summary "却下案 A (見つけた残しを個別に起票して終える) への反証: 前回の PR は申し送りを**正しく**書いた — FLOOR_TARGETS のコメントも 03-implementation-order.md §Phase 3 の『引き受けなかったもの』も、消さずに宣言するという判断として正しい。それでも今日この検査が要ったのは、宣言が散文だったからである。つまり『次はちゃんと書く』は既に試され、書かれ、そして効かなかった。症状を数えて根本を見ない一手"
+
+    justification WhyNotForbidDeferrals
+    uuid fc704291-e160-41b4-9263-8a9435e1b89a
+    summary "却下案 B (未着手のまま出荷しない) への反証: ADR-106 D3 の暫定住所も ADR-098 の DECLARED_GAPS も正しい判断だった — 範囲外を隠さず宣言する形は、無理に同じ PR へ詰め込むより強い。禁止は分割の粒度を粗くし、宣言されない残し (=捕まえられない残し) を増やす方向に働く。数えられる残しは資産である"
+
+    justification WhyConditionsNotDates
+    uuid b84fd8a9-7a28-4bc5-9830-ce560ddb07c8
+    summary "却下案 D (残しに期限日を付ける) への反証: 日付は誰も守らず、守らなくても何も起きない。満期の正しい形は『何が起きたら満期か』という条件である。PROVISIONAL_UNTIL は既にこの形を選んでいた — 欠けていたのは条件を機械が評価しないことだけで、日付にしていたら 2026-08-03 の空振りすら検出できなかった。様態としても残しは BPMN (逐次の手順) ではなく CMMN (事象駆動の裁量処理) である"
+
+    assumption VocabularyDerivationCoversDeclaredDeferrals
+    uuid a17aa032-6490-4a32-9716-3924514e4a65
+    summary "反証されうる仮説: 残しの語彙 (未着手 / 暫定 / 申し送り / 後続 PR / 次セッション / 保留 / 引き受けなかった / PROVISIONAL_UNTIL) からの導出は、**宣言された**残しに対して十分な母集団を作る。反証される形: 英語で TODO と書く / 『// later』と書く / 語彙を使わずに黙って残す。前 2 者は語彙を足せば入るが、3 つ目は原理的に捕まらない — この検査は『宣言する気のある残し』にしか効かない。限界として ADR 本文にも宣言済み (推論させない)"
+
+    strategy ByDerivingThePopulationAndMechanisingTheExpiry
+    uuid 0a279072-83f9-4afc-9cc4-1cea089bd45b
+    summary "Argument by 母集団の導出 + 満期の機械化 — 残しを登録簿の行にし (id / 所在 / 満期条件 / ticket / lane)、母集団は登録簿ではなく語彙から導出して『宣言されていない残しの個数』を ratchet で縛る。加えて満期条件を機械が評価し (指す ADR が Accepted になったら fail)、逆向きにも問う (実在しない残しの宣言 = 0 個)。数えるべきは在る残しではなく、覆えていない残しである"
+
+        goal UndeclaredDeferralsAreBounded
+        uuid b576a414-6d88-4735-88af-aab6fd8b47df
+        summary "残しの語彙で書かれていながら登録簿の行に覆われていない箇所の個数が、宣言された baseline を**超えても下回っても** fail する。登録簿を分母にしない (それは ADR-102 が語彙から消した place-list そのもの)"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption RatchetBaselineWillBeMeasuredNotGuessed
+            uuid d495e6ff-fc5e-460f-84cc-192758ac8df5
+            summary "証拠の予定: scripts/check-deferrals.mjs が docs/ と src/ を語彙で走査し、登録簿に覆われていない箇所を数える。baseline は実測値を焼く — ADR-100 の UNDECLARED_DISTINCT_BASELINE と同じ形で、『宣言外は 0 であるべきだが今は N 件ある』を隠さず定数にする。0 から始めない理由は、遡及適用が大量修正になり検査の導入自体が止まるから (check-adr-status.mjs が ADR-091 以降にだけ効かせたのと同じ判断)"
+
+        goal ExpiredProvisionalsCannotStayGreen
+        uuid 2af7a677-81b4-4623-bfc2-b4f7ef10e929
+        summary "満期の過ぎた暫定が 0 件である。PROVISIONAL_UNTIL が名指しする ADR が Accepted になった時点で検査が落ち、満期が人の記憶に置かれない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TheCheckFailsTodayAndThatIsCorrect
+            uuid 5d92028e-d897-4a60-9eae-35273ef81926
+            summary "証拠の予定: 検査は ADR ヘッダの Status を statusValue() と同じ文法で読み (check-adr-status.mjs が既に固定した文法の再利用 — 第二のパーサを作らない)、Accepted な ADR を指す PROVISIONAL_UNTIL を落とす。**この規則は書いた瞬間に 1 件落ちる** — それが正しい動作で、落ちるべきものが今日まで落ちていなかったことの証明になる。本 PR はポインタを ADR-112 (Proposed) へ張り替えて緑に戻し、ADR-112 が Accepted になった日に再び発火する"
+
+        goal EveryDeclaredDeferralHasATicket
+        uuid 4f130c55-c7a1-4c01-84ef-6d471797cdf9
+        summary "登録簿の行のうち ticket 欄 (ADR 番号または段) が空のものが 0 件である。段を持たない項目は誰も実装しないという既知の欠陥 (check-adr-status.mjs が ADR 単位で治療済み) を、ADR より細かい粒度へ広げる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TicketColumnIsCheckedNotTrusted
+            uuid eb9efbb9-7da2-404b-88a5-036e9c738e79
+            summary "証拠の予定: 検査は ticket 欄の ADR 番号が docs/adr に実在すること、段の表記が 03-implementation-order.md に実在することの両方を問う。実在しない ticket は空欄より悪い (在るように見えて辿れない) ので、空欄と同じく落とす。lane 欄は催促の速度を分けるためだけに在り、ticket の要求は lane によらず一様である — 外した瞬間に『母集団の外』が再生産される (力学 3)"
+
+        goal CompletedDeferralsLoseTheirDeclaration
+        uuid 6cb7de94-c38b-4666-89ee-8fb007d2e906
+        summary "実在しなくなった残しを指す登録簿の行が 0 件である。宣言だけが生き残って『まだ残っている』という嘘を出し続けることを止める"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption ReverseCheckMirrorsDeclaredGaps
+            uuid 1ae20121-7f30-49fe-a03f-c8e5da6f7c26
+            summary "証拠の予定: DECLARED_GAPS (src/DanglingSelfCallCensus.test.js) と ProjectionAxisOwnership.test.js が既に採っている逆向き検査の形をそのまま使う — 宣言が指す所在に語彙が実在しなければ落とす。ADR-060 の 5 項目 (3 つ完了・1 つ対象消滅・1 つ残存) がこの検査の最初の実データであり、片方向の検査では 4 件を見逃していたことが実測で示される"

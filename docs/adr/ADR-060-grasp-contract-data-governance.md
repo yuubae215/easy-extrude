@@ -1,6 +1,6 @@
 # 060. Grasp Contract のデータ構造統治 — 決定層は閉、pose は kind 判別の有界 union
 
-- Status: Accepted（upstream 実装・merge 済みとユーザ確認 — 2026-07-01。本リポジトリ側の追従〔submodule pin 更新・型再生成・消費コード〕は未着手、§追記参照）
+- Status: Accepted（upstream 実装・merge 済み — 2026-07-01。本リポジトリ側の追従は 2026-08-04 の棚卸しで**ほぼ完了と確認**〔submodule pin は ADR-082 が吸収して対象ごと消滅・型再生成済み・`GraspSearchPanel.jsx:792` が `pose.kind` を消費・両 kind の fixture あり〕。残るのは連鎖順の相互参照 1 点のみ、§追記参照）
 - Date: 2026-06-30（本文起草）／2026-07-01（upstream 実装確認・本文更新）
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし
@@ -195,13 +195,22 @@ ADR-059 を書く過程で二つの匂いが出た:
 **波及（blast radius）**:
 - 上流 `grasp-contract`: `grasp-search-response.schema.json` の `poseCandidate.pose` を
   kind union へ — **実施済み（上記確認）**。
-- 本リポジトリ（未着手、上の「残作業」1〜5 と同一）:
-  - `vendor/grasp-contract` submodule pin。
-  - `server/src/grasp/contract.response.d.ts`（`gen:contract-types` 再生成）。
-  - `src/components/Grasp/GraspSearchPanel.jsx`（`kind` 判別＋配列アクセスへ）。
-  - `server/test/grasp.contract.test.js`（kind 別 conformance fixture）。
-  - `src/robotics/Kinematics.js` の `chain`/`movableJoints` 順序と `jointSpace.joints` の
-    連鎖順が一致する契約を、段2 実装時に doc コメントで明示。
+- 本リポジトリ（**2026-08-04 の棚卸しで実測・更新**。上の「残作業」1〜5 と同一だった項目の
+  現在の真値 — 宣言だけが「未着手」のまま 1 年近く生き残っていた形で、ADR-109 §力学 2 の
+  最初の実データである）:
+  - ~~`vendor/grasp-contract` submodule pin~~ → **対象ごと消滅**。ADR-082 が submodule を
+    repo 内 (`packages/grasp-contract`) へ吸収したので、pin という操作自体が存在しない。
+  - ~~`server/src/grasp/contract.response.d.ts`（`gen:contract-types` 再生成）~~ → **完了**
+    （`pnpm --filter easy-extrude-bff run gen:contract-types` が CI 経路に在る）。
+  - ~~`src/components/Grasp/GraspSearchPanel.jsx`（`kind` 判別＋配列アクセスへ）~~ →
+    **完了**（`:792` が `pose.kind === 'jointSpace'` を判別している）。
+  - ~~`server/test/grasp.contract.test.js`（kind 別 conformance fixture）~~ → **完了**
+    （`packages/grasp-contract/examples/grasp-search-response.json` が `endEffector` /
+    `jointSpace` の両 kind を持つ）。
+  - **残る 1 点**: `src/robotics/Kinematics.js` の連鎖順は doc コメントで宣言されている
+    （`movableJoints` / `forwardKinematics` の `q` — いずれも "in chain order"）が、
+    それが契約側 `jointSpace.joints` の順序と**一致する契約である**ことは名指しされて
+    いない。登録簿 `docs/DEFERRAL_LEDGER.md` の行として持つ（lane: `contract`）。
   - ADR-057 の `PoseCandidate` 消費、ADR-059 のゴースト消費（`GraspGhostView` 新設時の
     入力、frame 基準系の upstream 確認が前提）。
 - Docs: README index（Status 更新）, CLAUDE.md（履歴・BFF と契約節）, ADR-059 相互リンク

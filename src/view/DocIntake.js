@@ -4,8 +4,14 @@
  * ## 暫定であることを宣言する
  *
  * Wizard と Intake は「入力」であって「解消」ではないので、場のタブではない
- * (ADR-106 D3 の行き先表)。しかし**最終的な**住所は Phase 5 = ADR-108
- * (入口は動詞であって対象ではない) が決める — 入口の統合と同じ判断だからである。
+ * (ADR-106 D3 の行き先表)。しかし**最終的な**住所は別の判断が決める。
+ *
+ * **満期の付け替え (2026-08-04):** ADR-106 は満期を Phase 5 = ADR-108 に置いたが、
+ * ADR-108 は入口 (動詞 × 対象) を決めて**器の住所を決めなかった** — 器の住所はその
+ * 直積に現れないからである。満期は 2026-08-03 に無言で過ぎ、この定数は人が読む文字列で
+ * あって機械が読む期限ではないため、何も落ちなかった。満期は **ADR-112 (この問いを
+ * 決着させる ADR)** へ張り替えた。教訓は ADR-109 §力学 2 が持つ —
+ * **満期は他人の判断に相乗りせず、自分の問いが決着する事象に置く。**
  *
  * ADR-106 が決めるのは 2 点だけ:
  *   1. 場のタブではない
@@ -49,9 +55,16 @@ export const DOC_INTAKE_TABS = Object.freeze([
 
 /**
  * この住所が暫定である期限。恒久化したかどうかを人の記憶に置かない。
- * @see docs/adr/ADR-108-entrances-are-verbs-not-objects.md
+ *
+ * **満期は「この問いを決着させる ADR が Accepted になること」** であって、日付でも
+ * 「次の段」でもない (ADR-109 D3 / 却下案 D)。ADR-112 が Accepted になった時点で
+ * `scripts/check-deferrals.mjs` が落ち、そのとき本定数は**更新ではなく削除**される
+ * (決着した暫定の宣言を残すと「まだ残っている」という嘘を出し続ける)。
+ *
+ * @see docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md
+ * @see docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md
  */
-export const PROVISIONAL_UNTIL = 'ADR-108 (IA Phase 5 — 入口の統合)'
+export const PROVISIONAL_UNTIL = 'ADR-112 (文書の入口の恒久住所 — IA Phase 5.2)'
 
 const DOC_INTAKE_TAB_IDS = new Set(Object.values(DOC_INTAKE_TAB))
 

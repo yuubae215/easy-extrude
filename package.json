@@ -23,6 +23,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/**/*.test.js\"",
     "test:adr": "node scripts/check-adr-status.mjs",
+    "test:deferrals": "node scripts/check-deferrals.mjs",
     "test:commit-meta": "node --test scripts/commit-meta.test.mjs",
     "metrics:commits": "node scripts/commit-meta.mjs report",
     "test:gsn": "python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py selftest && python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py lint docs/gsn/*.gsn",

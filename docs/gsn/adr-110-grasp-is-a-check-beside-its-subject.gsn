@@ -1,0 +1,92 @@
+GOALS adr110_grasp_is_a_check_beside_its_subject
+
+goal MenuHeadingsKeepTheirPromise
+uuid d08b3248-d577-4125-8bca-35f0c5653539
+summary "メニューの見出しが約束したことと、その中の項目がすることが一致している。そして『何も選んでいない状態から把持を調べたい』人が、行き先を名指しされた経路でそこへ着く"
+state UnderReview
+labels adr-110, ia-phase-5-1, entrances, verbs, principle-16
+artifacts
+- "docs/adr/ADR-110-grasp-is-a-check-beside-its-subject-not-an-object-of-the-floor.md"
+- "src/view/HeaderEntrances.js"
+
+    context Adr110Scope
+    uuid 7719f28f-2be1-4050-a007-40ba61d03d4b
+    summary "ADR-110 (Proposed 2026-08-04): FLOOR_TARGETS の grasp 行を場の引数から外し、選択が無いときの経路を N パネルの空状態へ理由つき disabled として移す。ADR-105 D5 が決めた『把持は選択駆動で主語の隣』をヘッダ側にも通す是正であって、探索の解法 (core/) にも契約にも触れない"
+    artifacts
+    - "src/components/NPanel/NPanel.jsx"
+
+    context TheRowLostItsVerbWhenTheContainerMoved
+    uuid e347aeaa-b8ed-4842-806e-2c0d5bd431fc
+    summary "実測: FLOOR_TARGETS の 4 行のうち negotiate / author / region-ghosts は下部の器を開くが、grasp は N パネルの把持探索を seed する (NPanel.jsx:127 の `{grasp && <GraspSearchPanel />}`)。トリガのタイトルは今も 'Context-first — requirements / conflicts / negotiation' で、4 行目はその約束を果たさない。ADR-108 D4 が Nodes について名指しした欠陥と同型 — あちらは表示条件の一致で隣に居た、こちらはかつて同じ器を開いていたから隣に居る。どちらも住所の根拠が動詞ではない"
+
+    context TheEntranceCountDoesNotMove
+    uuid 434746b3-1737-4f73-9b1a-a6b078b3fd0b
+    summary "申し送りの前提の訂正 (実測): 『再分類は入口の個数を動かす = ADR-108 D2 の上界に当たる』は成り立たない。HeaderEntranceCensus.test.js が数える母集団は Header.jsx の JSX 要素であり、FLOOR_TARGETS の行は入口ではなく引数である (それが ADR-108 D1 の要点だった)。grasp 行を外しても desktop 7 / mobile 7 は不変で、ratchet に当たるのは『新しい動詞を立てる』案 C を選んだ場合だけ。つまり ratchet に当たるかどうかは再分類そのものではなく、どの案を選ぶかで決まる"
+    artifacts
+    - "src/HeaderEntranceCensus.test.js"
+
+    context BusinessTreeAttachPoint
+    uuid 30a4edf4-08e7-4c19-a9a4-cfb84f732d5c
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f) — 把持探索へ届くまでの経路そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形。e2e が『ロボットを選ぶと入口が enabled になり探索が seed される』を焼いた PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotDeleteTheRow
+    uuid 1013c4f4-52b0-4b3e-bdc2-f49327236e2b
+    summary "却下案 B (行を消す) への反証: context.grasp を seed する経路は 2 つしかなく、片方は選択を要求する。消せば『何も選んでいない状態から把持探索へ入る』唯一の経路が消え、行き先を名指ししない移設 = 無言の削除になる (原則 #16)。消えた経路は『押しても何も起きない』より発見が難しい — 存在したことすら分からない"
+
+    justification WhyNotANewVerb
+    uuid 7f06d144-b059-4924-b26a-284183922138
+    summary "却下案 C (新しい動詞 search を立てて入口を 7 → 8 にする) への反証: 動詞としては正直だが、機能 1 つに動詞 1 つを許すと動詞の個数が機能の個数に比例し始める。ADR-108 が対象について禁じた有界でない成長を、動詞の側で再発させる形であり、D2 の ratchet を上げる根拠としては弱い。ratchet は『上げてはいけない』ではなく『上げるなら意図的な版上げ行為として』だが、この理由では意図が薄い"
+
+    justification WhyNotTheSixthStartKind
+    uuid 4e850994-5949-427d-ad5c-10ecea7da42a
+    summary "却下案 E (START_ENTRY_BY_KIND の 6 種目にする) への反証: 入口の個数は動かず実装も最小だが、START の 5 種はすべて『働き方を始める』(文書を採る / 物語を始める / ツアーに入る) であり、把持探索は現在のシーンへの問い合わせである。押し込むと START が『何かを始める』という無内容な動詞になり、ADR-108 が対象について潰した無限成長を動詞の意味の側で引き受ける。型でも同じ — startEntryFor の返り値が『働き方の始め方』と『検査の起動』の 2 義になる (原則 #2)"
+
+    assumption SubjectlessSearchIsNotNeededOnceTheReasonIsVisible
+    uuid 0513fc50-75c4-4c45-aa01-f55b14d42d45
+    summary "反証されうる仮説: 選択が無いままの探索を構築できなくしても、理由つき disabled が見えていれば誰も困らない (むしろ主語の無い探索がパネル内の第二の選択面へ育つ芽を閉じる — ADR-099 / ADR-107 が 2 本かけて消した形)。反証される形: 実際には『とりあえず把持画面を開いてから対象を決める』が主要な使い方だった場合。そのときの答えは行を戻すことではなく、選択そのものを 1 手で済ませる経路 (Outliner からのロボット選択) を短くすることである"
+
+    assumption ZeroRobotsNeedsItsOwnReason
+    uuid 3dfcb6a4-86c7-4376-9ddf-2575da58db9e
+    summary "反証されうる仮説: 理由文は 1 つで足りる。**実装前から部分的に反証が見えている** — ロボットが 0 台のシーンでは『ロボットを選べ』は嘘になる (選べるロボットが無い)。ADR-090 が名指しした 0 台問題と同じ形なので、理由は最低 2 種 (未選択 / 0 台) として宣言する。1 つの理由文で両方を賄うと、0 台の人に対してだけ静かに間違ったことを言う"
+    artifacts
+    - "docs/adr/ADR-090-robot-identity-multi-robot-zero-robot-state.md"
+
+    strategy ByClassifyingGraspAsACheckAndRelocatingTheSubjectlessPath
+    uuid bad06b59-f32b-45f9-a4ba-7e4635c4bfad
+    summary "Argument by 動詞による再分類 + 行き先を名指しした移設 — 把持探索は『場を開く』でも『始める』でもなく、ADR-105 D5 が既に決めたとおり主語の隣の検査である。したがって場の引数から外し、選択が無いときの経路は N パネルの空状態が理由つき disabled で持つ。入口の個数は動かさず、動かす必要が出たらそれは別案を選んだ証拠として扱う"
+
+        goal EveryFloorArgumentActuallyOpensTheFloor
+        uuid 63966e3c-bbdc-4021-aafd-2eb552c6f2be
+        summary "open-floor の引数のうち、下部の器を開かないものが 0 個である。数えるべきは『場のタブが 3 つある』ではなく『場を開かない引数が 0 個』— 前者は在るものを辿る数え方で今日の欠陥を素通りする"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption FloorArgumentsWillBeCountedNotListed
+            uuid 8840987a-e1b2-4b2e-8143-2eed4cc355da
+            summary "証拠の予定: FloorContainerCensus.test.js の母集団 (contextStart / contextEnd を呼ぶメソッドから導出する呼び出し閉包) をそのまま使い、FLOOR_TARGETS の各行の callback がその閉包に属することを問う。属さない行が 0 個。手書きの『場を開く callback リスト』は作らない — それは母集団を持たない表 (ADR-102 の place-list) になる"
+            artifacts
+            - "src/FloorContainerCensus.test.js"
+
+        goal TheEntranceCountStaysAtSeven
+        uuid 75ed4882-a71e-4778-85f9-c72fcff24b24
+        summary "desktop 7 / mobile 7 の ratchet を上げも下げもせずにこの変更が通る。baseline の変更が要ったら、それは案 C (新しい動詞) を選んだ証拠であり本 ADR の決定と矛盾する"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TheUnchangedBaselineIsTheProof
+            uuid b5cf128d-8b11-4f73-9a52-12948e8892f0
+            summary "証拠の予定: HeaderEntranceCensus.test.js を**書き換えずに**通す。ADR-107 が SelectionOwnership.test.js の母集団を『作り直さずに通ること』を決定の検算に使ったのと同じ形 — 検査を書き換えねば通らない変更は、宣言した決定と違うことをした証拠である"
+
+        goal TheSubjectlessPathIsRelocatedNotDeleted
+        uuid 6e202b00-8ad7-497e-8a19-9da961171005
+        summary "選択が無い状態でも把持探索の入口が画面に在り、押せない理由が読める。ロボットを選ぶと enabled になり探索が seed される"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption AvailabilityAndReasonComeFromOneReturnValue
+            uuid 246aa007-1877-4e8a-9fcf-86a5b7a7fc6e
+            summary "証拠の予定: REQUIRES.ROBOT_SELECTED + REQUIREMENT_REASON の行 + availabilityOf の dispatch を同じコミットで足す — availabilityOf は未宣言の前提で throw するので、3 つ揃わなければ unit が落ちる (ADR-108 が既に置いた安全装置がそのまま効く)。e2e 2 本で (a) 選択なしで入口が理由つき disabled、(b) robot_base を選ぶと enabled → GraspSearchPanel が現れる、を焼く"
+            artifacts
+            - "e2e/smoke.spec.js"
