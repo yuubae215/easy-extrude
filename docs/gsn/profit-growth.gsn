@@ -35,6 +35,31 @@ labels meta-goal
             uuid 011e8259-7e02-4a77-a840-3e68a931960b
             summary "Argument by 採用ファネルの通過障壁の除去 — 売上はユーザが価値に到達した回数の関数であり、到達前に脱落させる障壁が売上の上限を決める"
 
+                goal DecidedValueDoesNotStallBeforeUsers
+                uuid 3e4c73e9-c818-4b37-aae2-8e099839b640
+                summary "設計として決着した価値が、実装されないまま滞留する量が測定されており、増え続けない。ファネルの障壁は『ユーザが到達できない』側だけでなく『価値がユーザまで出てこない』側にも在る"
+                state UnderReview
+                labels adr-109, principle-31
+                groups deferral-governance
+
+                    context DeferralStallIsAFunnelBarrier
+                    uuid e9715854-6f17-4e94-af32-4f4d52605350
+                    summary "この枝が売上側に吊る根拠: 残しとは『設計は決まったのに価値が届いていない』量そのものであり、採用ファネルの手前で価値が止まっている状態である。ADR-109 の gsn (adr-109-a-deferral-is-a-declaration-not-a-memory.gsn) が接続予定先として名指ししていた枝で、接続の満期条件は『scripts/check-deferrals.mjs が実在して宣言外の個数を出力し始めた PR』— 2026-08-04 に到来したので保留を決着させた。**寄与は両側**で、手戻り (CostMinimized → ReworkCostMinimized) にも効くが、主たる寄与先は売上側に吊る (ByRevenueAndCost の規約どおり)"
+                    artifacts
+                    - "docs/gsn/adr-109-a-deferral-is-a-declaration-not-a-memory.gsn"
+                    - "docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md"
+
+                    solution DeferralCountIsMeasuredEveryPR
+                    uuid 78cc9db5-61da-436f-8711-8dd789a1c7b1
+                    summary "pnpm test:deferrals (CI gate) — 宣言済み 10 件 / 宣言外 31 箇所 (baseline 31) / 満期切れ 0 件 / 満期が機械可読 4 件・散文のみ 6 件 (baseline 6)。滞留量が毎 PR で数値として出るので、『増え続けない』が意図ではなく ratchet で担保される。**これは滞留の量が測れる証拠であって、滞留が少ないことの証拠ではない** — baseline 31 は今日の実測値であり、目標値ではない"
+                    artifacts
+                    - "scripts/check-deferrals.mjs"
+                    - "docs/DEFERRAL_LEDGER.md"
+
+                    assumption StallVolumeIsNotYetTiedToRevenue
+                    uuid 6825a0d6-cdd5-4ac2-8f05-f4f9a87526f0
+                    summary "反証されうる仮説: 残しの滞留量の減少は売上に寄与する。今日あるのは滞留量の**測定**だけで、滞留 1 件あたりの売上影響は測っていない (BusinessTargetsUnset が未設定である以上、上位ゴールと同じく方向性のみ)。反証される形: 滞留が減っても採用が動かない / 滞留の大半が当事者に見えない内部規律の項目である — 実際 10 件中 6 件は core・contract レーンでユーザに直接は見えない"
+
                 goal UsersReachGraspValue
                 uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f
                 summary "新規ユーザは、ドメイン知識の事前想起なしにコンテキストを成立させ、grasp-search の判定結果 (価値の出口) に到達できる"
