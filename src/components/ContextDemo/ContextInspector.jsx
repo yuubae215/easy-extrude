@@ -2,18 +2,29 @@ import { useUIStore } from '../../store/uiStore.js'
 import { ConflictMatrix } from './ConflictMatrix.jsx'
 import { NegotiationClusterView } from './NegotiationClusterView.jsx'
 import { FeedbackDefs, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { BOTTOM_TIER, bottomEdgeOffset, floorHeight } from '../../view/EdgeOccupancy.js'
 
 /**
  * ContextInspector — requirement tree panel for the Context DSL demo (ADR-047).
  *
- * Right fixed panel (280px). Tabs follow the story step (set by
- * ContextDemoController) but remain user-clickable. Row click fires
- * onDemoItemSelect → 3D highlight via trace links.
+ * Bottom expanding panel — the SAME address as the production floor (ADR-106 D2).
+ * Tabs follow the story step (set by ContextDemoController) but remain
+ * user-clickable. Row click fires onDemoItemSelect → 3D highlight via trace links.
+ *
+ * ## Why the tutorial moved with production
+ *
+ * A tutorial teaches the real screen. If the real container moves to the bottom
+ * and the tutorial keeps teaching a right-edge strip, it is no longer a tutorial —
+ * it is a second, stale source for the same fact ("where does the floor live",
+ * §1.1). Mechanically it also had to move: this panel, not the production floor,
+ * was the source of the `+280` term in `AppController._updateGizmoOffset()`, so
+ * moving only production would have left the right-edge slot alive and Phase 3's
+ * completion condition open. `03-implementation-order.md` had that backwards and
+ * ADR-106 records the correction (原則 #19).
  *
  * Desktop-first: hidden under 768px (declared in ADR-047) — EXCEPT the
  * negotiation view (ADR-049 Phase 4), which is a pure data overlay with no 3D
- * dependency, so it renders full-width on mobile (a transient overlay, not a
- * persistent edge panel — PHILOSOPHY #26). Negotiation is detected by the
+ * dependency, so it renders on mobile too. Negotiation is detected by the
  * presence of a projected `conflictMatrix`.
  */
 
@@ -53,14 +64,15 @@ export function ContextInspector() {
   return (
     <div style={{
       position:   'fixed',
-      top:        '40px',
-      bottom:     '26px',
-      ...(isMobile
-        ? { left: '0', right: '0', width: 'auto' }
-        : { right: '0', width: '280px' }),
+      // Same container as the production floor (ADR-106 D2) — including the one
+      // owner of the bottom edge's occupancy (原則 #26 / D6).
+      left:       '0',
+      right:      '0',
+      bottom:     `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.FLOOR })}px`,
+      height:     `${floorHeight({ isMobile })}px`,
       background: 'rgba(30, 30, 30, 0.96)',
-      borderLeft: '1px solid #3a3a3a',
-      zIndex:     100,
+      borderTop:  '1px solid #3a3a3a',
+      zIndex:     85,
       display:    'flex',
       flexDirection: 'column',
       fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -93,10 +105,11 @@ export function ContextInspector() {
               key={tab.id}
               onClick={() => setTab(tab.id)}
               style={{
-                flex: 1, padding: '6px 2px', background: 'transparent', border: 'none',
+                // Width-driven, not fraction-driven — the container is wide now.
+                padding: '6px 14px', background: 'transparent', border: 'none',
                 borderBottom: active ? '2px solid #3a7bd5' : '2px solid transparent',
-                color: active ? '#5a9bf5' : '#999', cursor: 'pointer', fontSize: '10px',
-                fontFamily: 'inherit',
+                color: active ? '#5a9bf5' : '#999', cursor: 'pointer', fontSize: '11px',
+                fontFamily: 'inherit', whiteSpace: 'nowrap',
               }}
             >
               {tab.label}

@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { COLOR, Z, rgba } from '../../theme/tokens.js'
 import { CHECKS_KIND, checksDeclaration } from '../../context/DiscoverySummary.js'
 import { leftEdgeOffset, belowHeaderOffset } from '../../view/EdgeOccupancy.js'
+import { ChecksPanel } from '../Context/ChecksPanel.jsx'
 
 /**
  * SceneChecksHud — scene-scope acceptance verdicts, on the 3-D view (ADR-105 D1 / D3).
@@ -30,6 +31,15 @@ import { leftEdgeOffset, belowHeaderOffset } from '../../view/EdgeOccupancy.js'
  *
  * Reads the union's `kind` — never `ctx.active`, never `checks.length` (ADR-105 D1,
  * enforced by `DiscoveryOutsideTheFloor.test.js`).
+ *
+ * ## The detail lives here too (ADR-106 D3)
+ *
+ * ADR-105 moved the *aggregate* out of the floor and left the per-check verdicts
+ * behind in the `Checks` tab. That tab is retired, so the detail comes with the
+ * headline: click it and `ChecksPanel` (verdicts, delta chip, near-miss meters —
+ * ADR-062 Phase 4) expands underneath. Moving a summary without its detail would
+ * have made the detail unreachable, and "it disappeared" is not a relocation
+ * (原則 #11 / #16 — the evidence of a move is ARRIVING, not vanishing).
  */
 
 const TONE = {
@@ -49,6 +59,11 @@ export function SceneChecksHud() {
   const summary   = useUIStore(s => s.context.checksSummary)
   const callbacks = useUIStore(s => s.callbacks)
   const isMobile  = useIsMobile()
+  // Expansion is presentation history, so it is component-local, never a store
+  // field (ADR-062 §2). Only kinds that HAVE verdicts can expand — an
+  // `unexamined` HUD has nothing to show, and offering an empty drawer is the
+  // silent no-op #11 forbids.
+  const [expanded, setExpanded] = useState(false)
 
   // Throws on an undeclared kind (PHILOSOPHY #31) — the declaration table is the
   // single place that decides what each branch says and where it points.
@@ -62,6 +77,8 @@ export function SceneChecksHud() {
   const onExit = summary.kind === CHECKS_KIND.UNEXAMINED
     ? callbacks.onOpenTemplateGallery
     : callbacks.onContextNegotiate
+  const hasDetail = summary.kind === CHECKS_KIND.ALL_PASS || summary.kind === CHECKS_KIND.FAILING
+  const open = expanded && hasDetail
 
   return (
     <div
@@ -71,7 +88,9 @@ export function SceneChecksHud() {
         // desktop sits beside the Outliner, mobile owns the edge (drawer).
         top:           `${belowHeaderOffset()}px`,
         left:          `${leftEdgeOffset({ isMobile })}px`,
-        maxWidth:      '244px',
+        maxWidth:      open ? '340px' : '244px',
+        maxHeight:     open ? '52vh' : undefined,
+        overflowY:     open ? 'auto' : undefined,
         padding:       '5px 9px',
         background:    rgba(COLOR.surface, 0.86),
         border:        `1px solid ${COLOR.border}`,
@@ -85,7 +104,14 @@ export function SceneChecksHud() {
       }}
       title={decl.detail}
     >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+      <div
+        style={{
+          display: 'flex', alignItems: 'baseline', gap: '6px',
+          cursor: hasDetail ? 'pointer' : 'default',
+        }}
+        onClick={() => hasDetail && setExpanded(v => !v)}
+        title={hasDetail ? (open ? 'Hide the per-check verdicts' : 'Show the per-check verdicts') : decl.detail}
+      >
         <span style={{ color: tone, fontWeight: 'bold' }}>{glyph}</span>
         <span style={{ color: tone, fontWeight: 'bold' }}>{decl.headline}</span>
         {summary.kind === CHECKS_KIND.ALL_PASS && (
@@ -96,7 +122,18 @@ export function SceneChecksHud() {
             {summary.failed} failed · {summary.blocked} blocked · {summary.passed}/{summary.total} pass
           </span>
         )}
+        {/* Fixed slot (原則 #15): the caret is present whenever there is detail,
+            so "there is more here" does not depend on hovering to discover. */}
+        {hasDetail && <span style={{ marginLeft: 'auto', color: TONE.quiet }}>{open ? '▾' : '▸'}</span>}
       </div>
+
+      {/* The per-check verdicts that used to be the floor's `Checks` tab. */}
+      {open && (
+        <div style={{ marginTop: '5px', borderTop: `1px solid ${COLOR.border}`, paddingTop: '5px' }}>
+          <ChecksPanel />
+        </div>
+      )}
+
       {/* A stated zero always names its exit — never a silent dead end (#11). */}
       {decl.exit && (
         <button

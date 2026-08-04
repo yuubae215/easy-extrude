@@ -31,6 +31,7 @@ import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
 import { iconFor } from './HeaderIcons.js'
 import { menuFor, availabilityOf, OVERFLOW_VERBS } from '../../view/HeaderEntrances.js'
+import { DISCOVERY_KIND } from '../../context/DiscoverySummary.js'
 
 // ── shared dropdown plumbing ──────────────────────────────────────────────
 
@@ -116,7 +117,14 @@ function MenuRow({ icon, label, shortcut, enabled, reason, trailing, onSelect })
 /** The facts every `requires` gate is resolved against — read in one place. */
 function useAvailabilityFacts() {
   const bffConnected  = useUIStore(s => s.bffConnected)
-  const contextLoaded = useUIStore(s => s.context.loaded)
+  // "Is a document adopted?" is derived from the ONE projection `ContextService`
+  // drives (ADR-105 D2's discovery union), never from a store mirror of the same
+  // fact (ADR-106 D4). This line used to read `context.loaded` — a field with one
+  // writer and zero readers, which ADR-106 retired precisely because an unused
+  // second source drifts the moment it acquires its first reader. It acquired one
+  // here, in the very next PR, which is the falsification ADR-106's GSN named:
+  // the answer is not to bring the mirror back but to read the projection.
+  const contextLoaded = useUIStore(s => s.context.discovery.kind !== DISCOVERY_KIND.UNEXAMINED)
   // A coarse pointer has no quest tour (ADR-065 seeds it for fine pointers only).
   const finePointer = typeof window !== 'undefined' && window.matchMedia
     ? !window.matchMedia('(pointer: coarse)').matches

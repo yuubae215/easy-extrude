@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ToolbarButton } from './ToolbarButton.jsx'
+import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 
 /**
  * MobileToolbar — React replacement for UIView's native mobile toolbar.
@@ -9,7 +10,8 @@ import { ToolbarButton } from './ToolbarButton.jsx'
  * UIViewBridge.setMobileToolbar). Only visible on mobile (<768px), matching
  * UIView's _isMobile() breakpoint.
  *
- * Layout: position:fixed, bottom 26px (above 26px info bar), height 60px.
+ * Layout: position:fixed, sits directly on the InfoBar (EdgeOccupancy owns the
+ * offset — 原則 #26), height 60px.
  * Spacer items keep the 5-slot count stable (ADR-024 / PHILOSOPHY #15).
  */
 export function MobileToolbar() {
@@ -22,7 +24,8 @@ export function MobileToolbar() {
   return (
     <div style={{
       position:            'fixed',
-      bottom:              '26px',
+      // InfoBar の直上 — 場はこのツールバーの**上に**開く (ADR-106 D6)。
+      bottom:              `${bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.ABOVE_INFOBAR })}px`,
       left:                '0',
       right:               '0',
       height:              '60px',

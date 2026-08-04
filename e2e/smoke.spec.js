@@ -1131,8 +1131,88 @@ test('Robot を選ぶと N パネルから grasp へ 1 クリックで届く (AD
   await expect(grasp).toBeVisible()
   await grasp.click()
 
-  // 1 クリックで grasp のタブまで到達する (starter は自動で採られる — ADR-085)。
-  await expect(page.getByRole('button', { name: 'Grasp', exact: true })).toBeVisible({ timeout: 30_000 })
+  // 1 クリックで grasp のパネルまで到達する (starter は自動で採られる — ADR-085)。
+  // ADR-106 D3 でこの到達先は「場の Grasp タブ」から**選んだロボットの隣**へ移った
+  // ので、パネルを開くために場を開く必要は無くなった。**ただしこの経路は場が開く** —
+  // 文書を 1 つも持っていないので starter を採用するからで、文書の採用が場を開くのは
+  // ADR-051 のテンプレ導線の振る舞い (ADR-106 とは直交)。ここで焼くのは「1 クリックで
+  // 着くこと」であって「場が開かないこと」ではない — 後者を主張すると、この経路が
+  // 実際に何をしているかを検査が偽ることになる。
+  await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+// ── ADR-106 Phase 3: 器を下部へ / 右端の奪い合いを解く ─────────────────────
+
+test('場を開いてもギズモ・投影トグル・N パネル・LINK NETWORK が消えない (ADR-106 D1/D2)', async ({ page }) => {
+  // Phase 3 の完了条件そのもの。ADR-103 が「投影はモードの外の直交軸」として常設に
+  // 出したものが、場に入った瞬間に隠れていた — 場が z:100 で右端 [0,280] を覆い、
+  // ギズモの [16,112] はその中に完全に含まれていたからである。しかも同じ 1 つの
+  // 衝突に、N パネルを**消す**辺と LINK NETWORK を**消す**辺が別に書かれていた。
+  // 3 つとも「場が右端に居る」ことの帰結なので、住所を変えれば同時に消える。
+  const errors = await boot(page)
+
+  // 場に入る前の状態を控える (差分ペア — 「元から出ていない」を通してしまわない)。
+  await selectRow(page, 'Cube')
+  await page.keyboard.press('n')
+  const nPanel = page.getByText('Item', { exact: true })
+  await expect(nPanel).toBeVisible()
+  const projection = page.getByRole('button', { name: /projection — switch to/ })
+  await expect(projection).toBeVisible()
+
+  await loadTemplateIntoNegotiate(page)
+
+  // 場は開いている。にもかかわらず右端の住人も投影トグルも生きている。
+  await expect(page.getByRole('button', { name: 'Matrix' })).toBeVisible()
+  await expect(projection).toBeVisible()
+  await expect(nPanel).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('器に残るのは解消と記録だけ — 出ていった 5 タブは場に無い (ADR-106 D3/D5)', async ({ page }) => {
+  // 退役は「消した」ではなく「数えた」で閉じる。静的な側 (FloorContainerCensus)
+  // は値域と形を数えるので、ここは*画面越しに*タブ列そのものを問う。
+  const errors = await boot(page)
+  await loadTemplateIntoNegotiate(page)
+
+  // 名前は**前方一致**で見る。バッジ付きのタブのアクセシブル名は区切りの空白を持たず
+  // "Matrix1" になるので、`exact: true` も `\b` も「タブが在るのに落ちる」検査になる
+  // (誤検知は誤緑と同じくらい規則を殺す)。前方一致なら、出ていったタブが戻ってきた
+  // 場合はバッジの有無に関わらず捕まる。
+  for (const stays of [/^Matrix/, /^Cluster/, /^Floor/, /^Why/, /^Overview/]) {
+    await expect(page.getByRole('button', { name: stays })).toBeVisible()
+  }
+  for (const gone of [/^Checks/, /^Grasp/, /^Assets/, /^Wizard/, /^Intake/]) {
+    await expect(page.getByRole('button', { name: gone })).toHaveCount(0)
+  }
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('移設された入力タブは新住所から到達できる — 消えたのではなく着いた (原則 #16)', async ({ page }) => {
+  // 移設の証拠は「消えたこと」ではなく **「着いたこと」**である。ADR-063 Phase 4 の
+  // Assets は「作者本人が UI から到達できることを認識していなかった」という実績が
+  // あるので、到達可能性は主張ではなく実行で示す。
+  const errors = await boot(page)
+
+  // Assets → `+ 追加` (モデリングの動詞と同じ入口 — ADR-103 の先例と同型)。
+  await page.keyboard.press('Shift+A')
+  await expect(page.getByText('Assets', { exact: true })).toBeVisible()
+  await page.getByText('Robot Pedestal', { exact: true }).click()
+  // スライダーは選んだものの隣 = N パネルに着く。
+  await expect(page.getByRole('button', { name: /Commit as variables/ })).toBeVisible()
+
+  // Wizard / Intake → 文書の入口 (暫定住所。Phase 5 = ADR-108 が最終的な住所を決めた)。
+  // 入口は ADR-108 の `Start ▾ → Guided intake (wizard)` ただ 1 つ — 動詞は「始める」で、
+  // 誘導インテークはその**引数**である。ADR-106 が変えたのは器の側だけで、入口は増えない。
+  await loadTemplateIntoNegotiate(page)
+  await page.getByRole('button', { name: /Start/ }).click()
+  await page.getByText('Guided intake (wizard)', { exact: true }).click()
+  await expect(page.getByText('Document intake', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Expert form' })).toBeVisible()
+  await expect(page.getByText(/Provisional address/)).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

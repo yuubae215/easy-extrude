@@ -74,6 +74,8 @@ import { regionResolveTransitions } from '../view/RegionGhostMath.js'
 import { RegionResolveEffect } from '../view/RegionResolveEffect.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
 import { CoordinateFrame } from '../domain/CoordinateFrame.js'
+import { FLOOR_TAB } from '../view/FloorTabs.js'
+import { DOC_INTAKE_TAB } from '../view/DocIntake.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
 import regionContext from '../../examples/cell_region_context.json'
 import phase2Context from '../../examples/cell_phase2_context.json'
@@ -191,6 +193,10 @@ export class ContextController {
     registerCallback('onRemoveDocEntry',         (type, ref)  => this.removeDocEntry(type, ref))
     registerCallback('onIntakePreview',          (spec)       => this.previewIntake(spec))
     registerCallback('onAddNlFacts',             (facts)      => this.addNlFacts(facts))
+    // 文書の入口 (ADR-106 D3 — 暫定住所)。場のタブではないので、場の開閉とは
+    // 別の入口を持つ。
+    registerCallback('onOpenDocIntake',          (tab)        => this.openDocIntake(tab))
+    registerCallback('onCloseDocIntake',         ()           => this.closeDocIntake())
     registerCallback('onWizardStart',            ()           => this.startWizard())
     registerCallback('onWizardNext',             ()           => this.wizardNext())
     registerCallback('onWizardBack',             ()           => this.wizardBack())
@@ -373,7 +379,7 @@ export class ContextController {
       this._startNegotiation()
       const ui = useUIStore.getState().actions
       ui.contextSetSeed(JSON.parse(JSON.stringify(seed)))   // read-only anchor mirror
-      ui.contextSetTab('intake')                            // open the authoring forms
+      ui.setDocIntake(DOC_INTAKE_TAB.INTAKE)                // the forms live outside the floor now
       this._ctrl._uiView.showToast(`Forked “${meta.name}” — tweak the requirements to make it yours`)
     })
   }
@@ -519,9 +525,36 @@ export class ContextController {
   // AUTHORITATIVE doc (the panel derives the same gaps for display from the
   // projected slice — one predicate, two projections).
 
-  /** Enter the guided-intake wizard at step 0 and show its tab. */
+  // ── 文書の入口 (ADR-106 D3 — 暫定住所) ──────────────────────────────────────
+
+  /**
+   * Open the document-intake container (guided wizard / expert form).
+   *
+   * The gate is the DOCUMENT, not the floor (ADR-106 D4): both panels write doc
+   * entries, so they need a document — but they never needed a *negotiation*, and
+   * requiring one was an artefact of them having been floor tabs.
+   *
+   * @param {string} tab — DOC_INTAKE_TAB value
+   */
+  openDocIntake(tab) {
+    if (!this._ctxService.loaded) {
+      this._ctrl._uiView.showToast(
+        'Start a context first (New Project / Import) — intake writes into a document.',
+        { type: 'warn' },
+      )
+      return
+    }
+    useUIStore.getState().actions.setDocIntake(tab)
+  }
+
+  /** Close the document-intake container. Committed entries stay in the doc. */
+  closeDocIntake() {
+    useUIStore.getState().actions.setDocIntake(null)
+  }
+
+  /** Enter the guided-intake wizard at step 0, in the document-intake container. */
   startWizard() {
-    if (!this.isNegotiation) {
+    if (!this._ctxService.loaded) {
       this._ctrl._uiView.showToast(
         'Open a context first (New Project / Import) to start the guided intake.',
         { type: 'warn' },
@@ -530,7 +563,7 @@ export class ContextController {
     }
     const ui = useUIStore.getState().actions
     ui.contextSetWizard(startWizard(CELL_INTAKE_WIZARD))
-    ui.contextSetTab('wizard')
+    ui.setDocIntake(DOC_INTAKE_TAB.WIZARD)
   }
 
   /**
@@ -541,7 +574,7 @@ export class ContextController {
    */
   wizardNext() {
     const state = useUIStore.getState().context.wizard
-    if (!this.isNegotiation || !state) return
+    if (!state) return
     const def = WIZARD_CATALOG[state.defId]
     const doc = this._ctxService.getDoc() ?? {}
     const gaps = wizardStepGaps(def, state, doc)
@@ -555,7 +588,7 @@ export class ContextController {
   /** Step back (review → last step; step 0 stays). Always allowed. */
   wizardBack() {
     const state = useUIStore.getState().context.wizard
-    if (!this.isNegotiation || !state) return
+    if (!state) return
     const def = WIZARD_CATALOG[state.defId]
     useUIStore.getState().actions.contextSetWizard(prevWizardState(def, state))
   }
@@ -567,16 +600,18 @@ export class ContextController {
    */
   finishWizard() {
     const state = useUIStore.getState().context.wizard
-    if (!this.isNegotiation || !state) return
+    if (!state) return
     const ui = useUIStore.getState().actions
     ui.contextSetWizard(null)
-    ui.contextSetTab('matrix')
+    // Finishing closes the ENTRANCE, it does not open the floor. Building a
+    // document and agreeing on one are different acts with different rooms
+    // (ADR-106 D3) — chaining them was the old container speaking.
+    ui.setDocIntake(null)
     this._ctrl._uiView.showToast('Guided intake finished — the document is ready to negotiate')
   }
 
   /** Leave the wizard at any point; committed steps stay in the doc (undoable). */
   exitWizard() {
-    if (!this.isNegotiation) return
     useUIStore.getState().actions.contextSetWizard(null)
   }
 
@@ -590,19 +625,30 @@ export class ContextController {
   // owner of `_assetPreview` (disposed on close / exit — PHILOSOPHY #4/#9).
 
   /**
-   * Open the parametric viewer on an asset at its schema defaults and render
-   * the live ghost preview. Negotiate-mode only (the panel lives in its tab).
+   * Open the parametric viewer on an asset at its schema defaults and render the
+   * live ghost preview.
+   *
+   * **Not gated on the floor any more (ADR-106 D3).** Shaping an asset is
+   * modelling; its entrance is `+ Add` and its sliders live in the N panel, so
+   * requiring an open negotiation was a consequence of the old address, not of
+   * the act. Committing still needs a document — that guard moved to
+   * `commitAsset()`, where the write actually happens, and it names its reason.
+   *
+   * The N panel is forced open because that is where the sliders are: an entrance
+   * that lands the user on a panel they cannot see is a silent no-op (原則 #11).
+   *
    * @param {string} assetId — PARAMETRIC_CATALOG entry id
    */
   openAssetViewer(assetId) {
-    if (!this.isNegotiation) return
     const asset = getParametricAsset(assetId)
     if (!asset) {
       this._ctrl._uiView.showToast(`Unknown asset: ${assetId}`, { type: 'warn' })
       return
     }
     const values = clampParams(asset, {})
-    useUIStore.getState().actions.contextSetAssetViewer({ assetId, values })
+    const ui = useUIStore.getState().actions
+    ui.contextSetAssetViewer({ assetId, values })
+    ui.setNPanelVisible(true)
 
     if (!this._assetPreview) this._assetPreview = new ParametricPreviewView(this._ctrl._sceneView.scene)
     this._assetPreview.update(instantiateAsset(asset, values).entities)
@@ -622,7 +668,7 @@ export class ContextController {
    */
   setAssetParam(key, value) {
     const viewer = useUIStore.getState().context.assetViewer
-    if (!this.isNegotiation || !viewer) return
+    if (!viewer) return
     const asset = getParametricAsset(viewer.assetId)
     if (!asset) return
     const values = clampParams(asset, { ...viewer.values, [key]: value })
@@ -639,7 +685,16 @@ export class ContextController {
    */
   commitAsset() {
     const viewer = useUIStore.getState().context.assetViewer
-    if (!this.isNegotiation || !viewer) return
+    if (!viewer) return
+    // Shaping is document-free; WRITING is not. The authority for "is there a
+    // document" is ContextService — never a UI mirror (ADR-106 D4).
+    if (!this._ctxService.loaded) {
+      this._ctrl._uiView.showToast(
+        'Committing writes variables into a context document — start one from New Project or import a .ctx.json first.',
+        { type: 'warn' },
+      )
+      return
+    }
     const asset = getParametricAsset(viewer.assetId)
     if (!asset) return
     const beforeDoc = this._ctxService.getDoc()
@@ -732,23 +787,18 @@ export class ContextController {
   }
 
   _startNegotiation() {
-    const ctrl   = this._ctrl
     const doc    = this._ctxService.getDoc()
     const result = this._ctxService.getValidatorResult()
 
-    // contextStart resets the assetViewer slice — dispose its ghost too, or a
-    // re-entry (e.g. importing a new .ctx.json mid-session) would leak the view
-    // with no slice pointing at it (PHILOSOPHY #9).
-    this._disposeAssetPreview()
-
-    ctrl._linkNetworkView?.setForceHidden(true)
-
+    // No panel is hidden or shifted on the way in (ADR-106 D2). The floor is at
+    // the bottom edge now, so the N panel, the LINK NETWORK overlay, the gizmo
+    // and the projection toggle stay where they are — which is the whole point:
+    // ADR-104 made a 3-D drag on someone else's claim produce a proposal, and
+    // until now the panel showing what you dragged was deleted on entry.
     const form = this._ctxService.projectForm()
     const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
     ui.contextStart({
       mode:                'negotiate',
-      loaded:              true,
       docMeta:             { name: doc?.meta?.name ?? 'Context', version: doc?.version },
       decisions:           doc?.decisions ?? [],
       actors:              doc?.actors ?? [],
@@ -764,13 +814,14 @@ export class ContextController {
     // The whole Why-rooted 5W1H tree overview (ADR-052 Phase 3 — bird's-eye
     // complement to the selection-driven Why breadcrumb).
     ui.contextSetWhyTree(this._ctxService.whyTree())
-    // Blank doc (no actors) opens on the wizard tab (ADR-063 Phase 3 — the
-    // guided route is the canonical entry for a doc with nothing in it yet;
-    // the expert Intake tab stays one tab away).
-    const initialTab = form.length > 0 ? 'questions'
-      : (doc?.actors?.length ?? 0) === 0 ? 'wizard'
-      : 'matrix'
-    ui.contextSetTab(initialTab)
+    ui.contextSetTab(form.length > 0 ? FLOOR_TAB.QUESTIONS : FLOOR_TAB.MATRIX)
+    // A blank doc used to open the floor on its `wizard` tab. The wizard is not
+    // in the floor any more (ADR-106 D3), so the entrance is opened instead of a
+    // tab being selected — same intent (ADR-063 Phase 3: the guided route is the
+    // canonical entry for a doc with nothing in it), different address. Opening
+    // the floor over an empty document without saying so would be a room with
+    // nothing to agree on (原則 #11).
+    if ((doc?.actors?.length ?? 0) === 0) ui.setDocIntake(DOC_INTAKE_TAB.WIZARD)
     this._mode = 'negotiate'
     this._provenanceSceneId = null
   }
@@ -806,7 +857,7 @@ export class ContextController {
     }
     this._provenanceSceneId = sceneId
     ui.contextSetProvenance(prov)
-    ui.contextSetTab('why')
+    ui.contextSetTab(FLOOR_TAB.WHY)
   }
 
   /**
@@ -849,8 +900,8 @@ export class ContextController {
     const ctrl = this._ctrl
     const doc  = this._ctxService.getDoc()
 
-    ctrl._linkNetworkView?.setForceHidden(true)
     // The compiled zone meshes are hidden — the draggable widgets ARE the regions.
+    // (Only the *derived meshes* — no side panel is hidden here any more: ADR-106 D2.)
     this._hideDerivedMeshes()
 
     // Mutable clone the live drag recolours; the canonical doc stays authoritative.
@@ -869,14 +920,12 @@ export class ContextController {
     this._fitToCompiled()
 
     const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
     ui.contextStart({
       mode:     'author',
-      loaded:   true,
       docMeta:  { name: doc?.meta?.name ?? 'Context', version: doc?.version },
       conflicts: [],
     })
-    ui.contextSetTab('conflicts')
+    ui.contextSetTab(FLOOR_TAB.CONFLICTS)
     this._mode = 'author'
     this._authorDrag = null
     this._recolourAuthoring(validateContext(this._editCtx))
@@ -1011,11 +1060,9 @@ export class ContextController {
   }
 
   _startRegionGhost() {
-    const ctrl   = this._ctrl
     const doc    = this._ctxService.getDoc()
     const result = this._ctxService.getValidatorResult()
 
-    ctrl._linkNetworkView?.setForceHidden(true)
     // The compiled zone meshes are hidden — the persona ghosts ARE the regions.
     this._hideDerivedMeshes()
 
@@ -1024,10 +1071,8 @@ export class ContextController {
     this._fitToCompiled()
 
     const ui = useUIStore.getState().actions
-    ui.setNPanelVisible(false)
     ui.contextStart({
       mode:                'ghost',
-      loaded:              true,
       docMeta:             { name: doc?.meta?.name ?? 'Context', version: doc?.version },
       decisions:           doc?.decisions ?? [],
       conflicts:           result.conflicts,
@@ -1036,7 +1081,7 @@ export class ContextController {
       resolutionOrder:     this._ctxService.projectOrder(),
     })
     ui.contextSetPersonaFilter(null)
-    ui.contextSetTab('matrix')
+    ui.contextSetTab(FLOOR_TAB.MATRIX)
     this._mode = 'ghost'
     this._ghostFilter = null
   }
@@ -1507,7 +1552,9 @@ export class ContextController {
     const ui = useUIStore.getState().actions
 
     this._disposeIntakeGhost()   // live intake preview is only valid inside an overlay
-    this._disposeAssetPreview()  // asset ghost preview too (ADR-063 Phase 4)
+    // The asset preview is NOT disposed here any more: the viewer no longer lives
+    // in this container (ADR-106 D3), so its allocation and release are the one
+    // symmetric pair openAssetViewer / closeAssetViewer (原則 #9).
 
     if (this._mode === 'author') {
       ctrl._controls.enabled = true
@@ -1524,9 +1571,11 @@ export class ContextController {
       this._showDerivedMeshes()
     }
 
-    ctrl._linkNetworkView?.setForceHidden(false)
-    // The grasp ghost lives inside the negotiate overlay's grasp tab — overlay
-    // exit is its disposal boundary (ADR-059 §B-5, PHILOSOPHY #9).
+    // Nothing to un-hide on the way out either — the paired `setForceHidden(false)`
+    // is gone with its partner (ADR-106 D2). An exclusion that has to be undone on
+    // every exit path is a workaround wearing a policy's face.
+    // The grasp ghost's disposal boundary is still the floor's exit (ADR-059 §B-5,
+    // PHILOSOPHY #9) — that one is a resource lifetime, not a visibility patch.
     ctrl._graspCtrl?.disposeGhost()
     ui.contextEnd()
     this._mode = null

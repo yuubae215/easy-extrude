@@ -11,7 +11,7 @@ artifacts
 
     context Adr106Scope
     uuid 16155fd1-db31-4c97-925b-4a9ca6075a32
-    summary "ADR-106 (Proposed 2026-08-02、実装 = IA 再設計 Phase 3): 解消の器を右端 280px の縦ストリップから下部の展開パネルへ移し、右端 280px スロットそのものを (production の場とチュートリアルの Inspector の両方について) 退役させ、器に残す責務を『解消』と『その記録』の 2 種に絞り、出ていく 5 タブの行き先を名指しする。扱うのは器であって中身ではない — ドメイン (context/** · ProposalCommands) は 1 行も変えない。Phase 4 が『器への依存は表示層だけだった』を既に実証しているので、この不変性は仮説ではなく実測である"
+    summary "ADR-106 (Accepted 2026-08-02、実装 = IA 再設計 Phase 3): 解消の器を右端 280px の縦ストリップから下部の展開パネルへ移し、右端 280px スロットそのものを (production の場とチュートリアルの Inspector の両方について) 退役させ、器に残す責務を『解消』と『その記録』の 2 種に絞り、出ていく 5 タブの行き先を名指しする。扱うのは器であって中身ではない — ドメイン (context/** · ProposalCommands) は 1 行も変えない。Phase 4 が『器への依存は表示層だけだった』を既に実証しているので、この不変性は仮説ではなく実測である"
     artifacts
     - "src/components/Context/ContextLayer.jsx"
     - "docs/LAYOUT_DESIGN.md"
@@ -49,7 +49,7 @@ artifacts
 
     assumption DomainIsIndependentOfTheContainer
     uuid 4c2228f6-3367-45e3-ab82-adc34475325b
-    summary "反証されうる仮説: 提案・議題・証憑のドメインとコマンドは器に依存しないので、器を動かしても 1 行も変わらない。今日この仮説を採る根拠は実測 — Phase 4 (ADR-104) は器が未着手のまま出荷され、表示は既存 ContextLayer の Floor タブに間借りしており、ProposalCommands.test.js の 3 本は器を知らずに焼いている。反証される形は、下部の器が『行を横に並べる』ことで新しい投影 (例: 議題を列方向に畳む) を要求し、それが Agenda.projectAgenda の返り値の形に跳ね返ること。そのときも決定は投影を足すことであってドメインを変えることではない"
+    summary "反証されうる仮説: 提案・議題・証憑のドメインとコマンドは器に依存しないので、器を動かしても 1 行も変わらない。**実装後の実測: 反証されなかった** — 器が右端 280px から下部へ移っても src/context/** と src/command/ProposalCommands.js は 1 行も変わらず、ProposalCommands.test.js の 3 本は器を知らないまま焼き続けている。予告していた反証の形 (下部の器が『行を横に並べる』ことで新しい投影を要求し Agenda.projectAgenda の返り値に跳ね返る) は起きなかった: 器の幅が広がったのは表にとって順方向の変化で、投影の形を要求しない。仮説は生きたまま残す — Phase 3.5 で列 (変数) が選択可能になるとき、同じ問いがもう一度立つ"
     artifacts
     - "src/command/ProposalCommands.test.js"
 
@@ -69,29 +69,41 @@ artifacts
 
         goal ExclusionWritersAreZero
         uuid 6ab75085-6efa-44c1-9518-fcb65f4dcbff
-        summary "場の開閉に反応して他パネルの可視性を書く入口が 0 個である。現在 7 個 — setNPanelVisible(false) × 3 (ContextController.js:720/827/982) と setForceHidden(true/false) × 4 (:716/807/973/1427)。場が開いている間も N パネル・LINK NETWORK・ギズモ・投影トグルが見える"
-        state ToBeDeveloped
-        labels support-exploring
+        summary "場の開閉に反応して他パネルの可視性を書く入口が 0 個である (実装前 7 個 — setNPanelVisible(false) × 3 と setForceHidden(true/false) × 4)。場が開いている間も N パネル・LINK NETWORK・ギズモ・投影トグルが見える"
+        state UnderReview
+        labels support-verified
 
-            assumption ExclusionCensusIsPlanned
+            solution ExclusionCensusIsGreen
             uuid 6f918ad8-afb0-4495-83e0-9a6b29ebeebf
-            summary "証拠予定: 排他の個数検査 (新規) — 母集団は ContextController の場の入口 3 メソッド (_startNegotiation / _startAuthoring / _startRegionGhost) と退出経路の呼び出し閉包から導出し、その中で他パネルの可視性 API (setNPanelVisible / setForceHidden) を呼ぶ箇所を数える。ファイル名リストを持たない — 4 つ目の入口が生まれても閉包に入る。加えて e2e: 場を開いた状態でギズモと投影トグルが可視であること (ADR-103 の『正射のまま Edit Mode に入れる』と対になる回帰)。変異で確認する形も決めてある — 排他を 1 行戻すと、そのメソッド名を名指しして fail すること"
+            summary "証拠: src/FloorContainerCensus.test.js 『場の開閉に反応して他パネルの可視性を書く入口が 0 個』。母集団は手書きの名前リストではなく**呼び出し閉包**で、しかも起点すら導出する — 『場の入口』= contextStart( / contextEnd( を呼ぶメソッド、と定義したので 4 本目の入口が生まれても自動で入る (起点を手で並べれば、それ自体が ADR-102 が消した place-list になる。初回実装ではそう書いて CensusCoverage が未登録の表として落とした)。変異確認も実行済み: _startNegotiation に ui.setNPanelVisible(false) を 1 行戻すと `ContextController._startNegotiation():780  N パネルの可視性` と名指しして fail する。加えて e2e 『場を開いてもギズモ・投影トグル・N パネル・LINK NETWORK が消えない』が差分ペア (場に入る前に見えていたことを先に確認する) で焼いている"
+            artifacts
+            - "src/FloorContainerCensus.test.js"
+            - "e2e/smoke.spec.js"
 
         goal RightEdgeHasOneResident
         uuid 7ccb2b9f-5734-4e59-bc45-8dee4e270cde
         summary "右端を占有する常設 fixed 要素が 1 個 (N パネル 200px) である。_updateGizmoOffset() の項が 2 個 (定数 16 + N パネル 200) で、280 の項が 0 個。右端 280px スロットは production の場とチュートリアルの Inspector の両方について退役している"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption EdgeCensusIsPlanned
+            solution EdgeCensusIsGreen
             uuid 49919d05-48b4-44a1-8710-f3337aafe377
-            summary "証拠予定: 右端の占有検査 — 母集団は src/components/** の position:'fixed' を持つスタイルオブジェクトを構文から導出し、そのうち right が 0 相当かつ常設のものを数える。手書きの場所リストにしない (ADR-102)。加えて _updateGizmoOffset の項数を式の構文から数え、280 のリテラルが 0 個であることを問う。反証されうるのは『チュートリアルの Inspector は transient なので常設 fixed の母集団に入らない』という指摘で、そうであってもギズモの offset 項には現れるので、2 つの数え方が同じ結論を出すかどうか自体が検証になる"
+            summary "証拠: src/FloorContainerCensus.test.js の 2 本 — 『右端 (right:0) を占有する常設 fixed 要素が 1 個』と『_updateGizmoOffset() の項が 2 個 — 280 の項は 0 個』。母集団は position:'fixed' を持つスタイルオブジェクトを**波括弧の釣り合いで切り出して**導出する: 行単位では right と left が同じオブジェクトに在るかを判定できず、左右両端に張る下部の場が『右端の住人』として数えられてしまう。実測 1 個 = NPanel.jsx。2 つの数え方が同じ結論を出すか、という予告どおりの検証も成立した — 占有式の項も [16, 200] で、280 は構文上どこにも無い。誤検知側も焼いてある (『下部の器は右端の住人として数えられない — 全幅の帯である』): 誤検知は誤緑と同じくらい規則を殺す"
+            artifacts
+            - "src/FloorContainerCensus.test.js"
 
         goal ContainerHoldsResolutionAndItsRecordOnly
         uuid 3f9b2c14-8e5a-4d61-9c73-1a0e5f8b6d24
         summary "器に残る責務が『解消』と『その記録』の 2 種だけである。出ていく 5 タブ (Checks / Grasp / Assets / Wizard / Intake) が新しい住所から到達可能であり、消えていない。移設の証拠は『消えたこと』ではなく『着いたこと』である (原則 #16 — 発見可能性は成果物)"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
+
+            solution RelocationIsReachable
+            uuid 4b1c8f30-27ad-4e59-9c62-1f0a5d7e3b84
+            summary "証拠: (a) src/FloorContainerCensus.test.js 『器に残る責務は「解消」と「その記録」の 2 種だけ』— FLOOR_TABS の duty が 2 値しか取らないことを問う。3 値目は器に 4 種目が戻った合図で、そのときはタブではなく住所を決め直す。(b) 同 『退役したタブは消えたのではなく着いている』— RETIRED_FLOOR_TABS が行き先を持ち、行き先のファイルが実在することを逆向きに問う (assertDeclarationsExist)。(c) e2e 2 本 — 器のタブ列に残る 5 枚が在り出ていった 5 枚が 0 枚であること、および `+ 追加 → Robot Pedestal` からスライダーが N パネルに着き、Context ▾ → Document intake… から暫定住所に着くこと。予告どおり『着いたこと』を実行で示した (ADR-063 Phase 4 の Assets は作者本人が到達経路を認識していなかったという実績がある)"
+            artifacts
+            - "src/FloorContainerCensus.test.js"
+            - "e2e/smoke.spec.js"
 
             assumption RelocationReachabilityIsPlanned
             uuid 0c7d4a91-52e6-4b83-a17f-6e9b2d38f5c0
@@ -102,35 +114,39 @@ artifacts
         goal RetiredTabValuesAreCounted
         uuid 8a2e6f37-b14c-4d90-8f52-c3e7091ab4d6
         summary "context.inspectorTab の値域に退役した値 (checks / grasp / assets / wizard / intake) が 0 個である。退役の腐敗は違反を見逃すのではなく緑を出すので、消したこと自体を数える"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption RetirementCensusIsPlanned
+            solution RetirementCensusIsGreen
             uuid 5d0f8b26-9a71-4c38-b5e4-27f10c6d3e89
-            summary "証拠予定: ProjectionAxisOwnership.test.js が DS_PENDING について作った道具と同型の退役検査 — 退役した値の文字列が inspectorTab の値域宣言にもタブ描画の分岐にも現れないことを構文から問う。ADR-103 の実例が示したのは、DS_PENDING が廃止後も 3 リリース enum に残り、その間ずっとテストは緑だったこと。反証されうるのは『inspectorTab は文字列でありオープンな値域なので、宣言そのものが存在しない』ことで、その場合はまず値域を有界な宣言 (定数表) にする作業が先に立つ — 数えられない形は数える前に直す"
+            summary "証拠: src/FloorContainerCensus.test.js の 2 本 — RETIRED_FLOOR_SHAPES (退役 5 値の contextSetTab / 描画分岐、inspectorOpen シフト、right:280px、280 項、context.loaded の写し) が src/** に 0 個であること、および floorTabOrThrow が退役値で throw すること。**予告した反証形のほうが正しかった**: 値域の宣言はそもそも存在せず JSDoc の union コメントしか無かったので、実装は『退役値を消す』ではなく『値域を有界な宣言 (src/view/FloorTabs.js) にする』から始まった。数えられない形は数える前に直す、という予告どおりの順序になった。guard は書き込み (contextSetTab) に置いてある — 散文は数えられず、3 リリース残った退役値も合法に読める"
             artifacts
-            - "src/ProjectionAxisOwnership.test.js"
+            - "src/view/FloorTabs.js"
+            - "src/FloorContainerCensus.test.js"
 
         goal OpenIsIndependentOfLoaded
         uuid 1e6a3c85-7f42-4d09-b8a3-9c05e2f7b148
         summary "context.active が『下部の場が開いているか』だけを意味し、文書の有無の権威は ContextService ただ 1 つである。読み手 0 個の写し uiStore.context.loaded が 0 個 (退役)。『文書は在るが場は閉じている』が正当かつ既定の状態として存在する"
-        state ToBeDeveloped
-        labels support-exploring
+        state UnderReview
+        labels support-verified
 
-            assumption LoadedMirrorRetirementIsPlanned
+            solution LoadedMirrorIsRetired
             uuid 2f8b47d0-6c13-4e97-a5d8-83b1e0947c6a
-            summary "証拠予定: uiStore.context.loaded の読み手が 0 個であることを構文から確認したうえでフィールドを消し、文書の有無を要する描き手 (ADR-105 の集約) が ContextService 由来の 1 つの投影を読むことを個数で問う。現在の実測は書き手 1 (contextStart のペイロード) / 読み手 0 で、読み手はすべて ContextService.loaded という別の権威を見ている (ContextController.js:699/794/959, GraspController.js:174)。反証されうるのは『ADR-105 の集約を配線する過程で store 側の投影が必要になる』ことで、その場合 loaded は消えるのではなく ContextService から導出される単一の投影へ置き換わる — どちらでも権威が 1 つになることが要点で、フィールドの生死は結論ではない"
+            summary "証拠: フィールドを消した (uiStore の context スライスと contextStart の 3 つのペイロードから)。RETIRED_FLOOR_SHAPES が context.loaded の形を src/** で 0 個として数える。反証形 (『ADR-105 の集約を配線する過程で store 側の投影が必要になる』) は **起きた** — ただし ADR-105 側ではなく ADR-108 側で。並行して main へ入った HeaderMenus が REQUIRES.CONTEXT_DOC の門を解くために写しを読んでおり、合流時に FloorContainerCensus の退役検査が名指しした (両ブランチは単独ではどちらも緑だった)。予告どおり答えは写しを戻すことではなく ContextService 由来の 1 投影 (context.discovery.kind !== unexamined) を読むことで、『フィールドの生死は結論ではない、権威が 1 つになることが要点』がそのまま効いた。副次的に分かったのは、退役の検査は退役させた側が最後に merge されると最後まで走らないこと — 集約は既に ContextService.discoverySummary() / .checksSummary() 由来の 1 投影を読んでおり、写しは書き手 1 / 読み手 0 のまま消せた。副産物として『器は責務だけでなく前提条件も汚染する』が見えた: grasp / assets / wizard / intake の isNegotiation guard はタブの宿主が場だったことの帰結で、住所を移すと『文書が要るか』だけが残り、grasp と assets はそれすら要らなかった。e2e 『文書を採ると集約は数へ変わり、場を閉じても消えない』が、文書と場が別軸であることを画面越しに焼いている"
             artifacts
             - "src/store/uiStore.js"
+            - "e2e/smoke.spec.js"
 
         goal BottomEdgeHasOneOwner
         uuid 9b41e2a7-3d56-4c81-b70f-4a8e7c19d052
-        summary "下端の占有オフセットを計算する箇所が 1 個である (原則 #26)。下端には既に InfoBar (bottom:0)・LINK NETWORK (bottom:34px left:188px)・Toast (bottom:96px) が住んでおり、場が開けば必ず干渉する。右端で起きた『ずらす / 消す / 被せる』を下端で再演しない"
-        state ToBeDeveloped
-        labels support-exploring
+        summary "下端の占有オフセットを計算する箇所が 1 個である (原則 #26)。下端には既に InfoBar (bottom:0)・モバイルツールバー・LINK NETWORK・StoryBar・Toast が住んでおり、場が開けば必ず干渉する。右端で起きた『ずらす / 消す / 被せる』を下端で再演しない"
+        state UnderReview
+        labels support-verified
 
-            assumption BottomEdgeOwnerIsPlanned
+            solution BottomEdgeOwnerExists
             uuid 7c3a90d8-1b64-4e25-9f07-6d28b3e5a417
-            summary "証拠予定: 下端の占有計算の所有者を 1 つ置き、呼び出し箇所ごとのパッチが 0 個であることを個数で問う (右端の _updateGizmoOffset() と同じ役割・同じ検査の形)。順序が重要で、この所有者は場を下部へ移す前に置く — 後から置くと、その時点で既に書かれたパッチを剥がす作業になり、剥がし残しが緑を出す。反証されうるのは『場は開いている間だけ下端を占有する transient なので、常設の占有計算に参加すべきでない』という指摘で、その場合でも LINK NETWORK は常設なので所有者は要り、場は所有者に対する一時的な入力になる (Toast の bottom:96px が今その形で書かれているかは実装時に確認する — 書かれていなければそれ自体がパッチ 1 個目)"
+            summary "証拠: src/view/EdgeOccupancy.js の bottomEdgeOffset() が唯一の計算箇所であることを FloorContainerCensus が構文から数え (1 個)、下端に張り付く fixed 要素がすべて所有者を引いていることを母集団分割で問う。反証形は片方が当たった — 場は transient だが LINK NETWORK は常設なので所有者は要り、場は floorOpen という一時的な入力になった。予告した『Toast がパッチ 1 個目かもしれない』は当たり、しかも**実測は 2 個**: Toast は desktop と mobile で同じ 96px を書いており (mobile はツールバーだけで 86px)、TourCard は原則 #26 をコメントで引用しながら left:192 / bottom:38 を literal で書いていた。順序も守った — 所有者を場より先に置いたので、剥がし残しではなく既存パッチの発見になった。段 (BOTTOM_TIER) は未宣言で throw し、EdgeOccupancy.test.js が『場が開くと下端の住人はちょうど場の高さだけ退く』(覆われも消されもしない) と『段は単調』を焼いている"
             artifacts
-            - "docs/LAYOUT_DESIGN.md"
+            - "src/view/EdgeOccupancy.js"
+            - "src/view/EdgeOccupancy.test.js"
+            - "src/FloorContainerCensus.test.js"

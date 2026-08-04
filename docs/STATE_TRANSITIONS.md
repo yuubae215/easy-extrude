@@ -1106,6 +1106,35 @@ Map 注釈ビュー (`AnnotatedPointView` / `AnnotatedLineView` / `AnnotatedRegi
 
 ---
 
+## 場の器 — 閉 / 開 (ADR-106 D1/D4)
+
+閾値未満 (2 状態・不正遷移なし) だが**記録する** — 記録しなければ累積せず、判定が
+プロンプト単位に退化して閾値が永遠に跨がれない (核 §1.4)。
+
+```mermaid
+stateDiagram-v2
+    [*] --> 閉
+    閉 --> 開 : contextStart(mode) — Negotiate / Author / Region Ghosts
+    開 --> 閉 : contextEnd() — ✕ / onContextExit
+```
+
+要点は**遷移ではなく直交性**である。ADR-106 以前、`context.active` の隣には
+`context.loaded` (「文書が採られたか」) が並んでおり、2 つは常に一緒に動いていた —
+にもかかわらず読み手はすべて `ContextService.loaded` という別の権威を見ていた。
+書き手 1 / 読み手 0 の写しは「まだ使われていない第二の源」であり、使われた瞬間に
+ドリフトする。**消せるうちに消した**。
+
+- `context.active` = **下部の場が開いているか**。それだけを意味する。
+- 文書の有無 = `ContextService.loaded`。**権威はここだけ**。
+- 「文書は在るが場は閉じている」は**正当かつ既定**。ADR-105 以降は通常状態である
+  (発見の集約は場の外に住むので、場に入る必要があるかは場に入らずに分かる)。
+
+器が他パネルの可視性を書く辺は **0 本**。かつての 7 本は住所の衝突を回避するために
+書かれたもので方針ではなく、住所を下端へ移した結果 **書く理由を失った**
+(`src/FloorContainerCensus.test.js` が呼び出し閉包で数える)。
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow

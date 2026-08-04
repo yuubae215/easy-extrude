@@ -41,7 +41,7 @@ block-beta
 | N Panel sidebar | w:240px, h:calc(100vh-64px) | fixed top:40px right:0 | 100 |
 | 3D Canvas | w:calc(100vw-440px), h:calc(100vh-64px) | absolute top:40px | 0 |
 | Status bar | w:100vw, h:24px | fixed bottom:0 left:0 | 100 |
-| Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open, +280px when Context Inspector open — `_updateGizmoOffset()`) | 10 |
+| Gizmo | w:96px, h:96px | fixed top:46px right:16px (+200px when N panel open — `_updateGizmoOffset()`, **2 項**)。ADR-106 D2 で `+280` (Context Inspector) の項は消えた: 器が下端へ移り、右端の常設は N パネルだけになったため | 10 |
 | Link Network Overlay | w:220px, h:SVG 152px (160px when 3+ hierarchy layers) + 28px header (collapsed:26px) | fixed bottom:34px left:188px (beside Outliner, above InfoBar); force-hidden during the Context demo. SVG cap 160px は元々 Map ツールバー下端との干渉を避ける値だった。ADR-103 でツールバーが消え左端は空いたが、cap 自体は 720px 高でのパネル収まり (原則 #26) として残す (ADR-048) | 50 |
 | Projection toggle | w:128px, h:22px | fixed top:182px, right = gizmo offset (ADR-103 — ギズモ直下。右端の占有計算は `_updateGizmoOffset()` ただ 1 箇所が持つ, 原則 #26) | 10 (`Z.gizmo`) |
 | Scene checks HUD (ADR-105 D1/D3) | w:auto (max-w:244px), h:auto | fixed top:46px left:188px (**左端の占有計算は `view/EdgeOccupancy.js` の `leftEdgeOffset()` ただ 1 箇所が持つ** — Link Network も同じ関数を引く, 原則 #26 / ADR-105 D6。上端は `belowHeaderOffset()`)。場の開閉と独立に常設 — `ctx.active` を読まない | 10 (`Z.gizmo`) |
@@ -79,7 +79,7 @@ block-beta
 | Mobile toolbar | w:100vw, h:60px | fixed bottom:0 left:0 | 100 |
 | Outliner drawer | w:200px, h:calc(100vh-40px) | fixed top:40px left:0 | 110 |
 | N Panel drawer | w:240px, h:calc(100vh-40px) | fixed top:40px right:0 | 110 |
-| Toast | w:auto, max-w:280px | fixed bottom:**96px**, centered | 150 |
+| Toast | w:auto, max-w:280px | fixed centered、`bottom` は `EdgeOccupancy` の `toast` 段が計算する (ADR-106 D6)。かつては `96px` の literal で、**mobile でも同じ値**だった (ツールバーだけで 86px 食う) | 150 |
 | Context menu | w:auto | absolute (tap position) | 200 |
 | Gizmo | w:96px, h:96px | absolute top:48px right:8px | 50 |
 | Link Network Overlay | w:220px, h:SVG 152–160px + 28px header | fixed bottom:94px left:8px | 50 |
@@ -255,12 +255,14 @@ z:0    ── 3D canvas (Three.js renderer)
 
 | Component | Position | Dimensions |
 |-----------|----------|------------|
-| Context Inspector | `fixed; top:40px; right:0; bottom:26px` | width 280px; hidden < 768px |
-| Context Layer (ADR-050 — production negotiation / authoring / region ghost) | `fixed; top:40px; right:0; bottom:26px` (same right-edge slot as the demo Inspector; the two are never active simultaneously) | width 280px desktop; **full-width on mobile** (3D-independent overlay, PHILOSOPHY #26). All three `context.mode`s (negotiate/author/ghost) share this one slot |
+| Context Inspector (tutorial, ADR-047) | `fixed; left:0; right:0; bottom:<EdgeOccupancy FLOOR>` | height 260px desktop / 220px mobile — **the same container as the production floor** (ADR-106 D2) |
+| Context Layer (ADR-050 — production negotiation / authoring / region ghost) | `fixed; left:0; right:0; bottom:<EdgeOccupancy FLOOR>; z:85` (full-width bottom panel, above the InfoBar) | height 260px desktop / 220px mobile. All three `context.mode`s (negotiate/author/ghost) share this one container. The tab row is width-driven, not `flex:1` |
+| Document intake (ADR-106 D3 — **provisional** until ADR-108) | `fixed; top:40px; left:0; bottom:<EdgeOccupancy DOCK>; z:120` | width 420px desktop / full-width mobile. Transient overlay (like the Template Gallery), so it does NOT join the edge budget |
 | Template Gallery (ADR-051 Phase 2 — starter-template picker) | `fixed; inset:0` centred modal over a `rgba(0,0,0,0.6)` backdrop; **z-index 300** (above all edge panels — transient, PHILOSOPHY #26) | dialog `width: min(720px, 92vw); max-height: 86vh`; category-grouped card grid `repeat(auto-fill, minmax(200px, 1fr))` |
-| Grasp Search panel (ADR-057 placement — UI→DSL→BFF→grasp-search verification) | The `'grasp'` **tab inside `ContextLayer`** (negotiate mode), not a modal — rides on the existing right dock (`right:0; width:280px` desktop / full-width mobile, **z-index 100**), so **no new edge footprint / no `_updateGizmoOffset` term** (PHILOSOPHY #26) | weights/topN input row + Run button + status line + ranked candidate cards (boolean chips + `objectiveScores` bars + client sort + `selectedRank` highlight) |
-| Decision Card | `fixed; right:292px; top:56px` (mobile: `right:12px`) — top-anchored so it never covers the ghost-collapse animation or the StoryBar ✕; shown at step ④ only | width 320px max |
-| Story Bar | `fixed; bottom:36px; left:50%` (mobile: `bottom:96px`) | `min(620px, 100vw − 24px)` |
+| Grasp Search panel (ADR-057 placement — UI→DSL→BFF→grasp-search verification) | A **section inside `NPanel`**, beside the selected robot (ADR-105 D5 / ADR-106 D3). It was the `'grasp'` tab of the floor, which meant a single-owner question was routed through the room built for multi-owner ones. Rides the existing right dock, so **no new edge footprint / no `_updateGizmoOffset` term** (PHILOSOPHY #26) | weights/topN input row + Run button + status line + ranked candidate cards (boolean chips + `objectiveScores` bars + client sort + `selectedRank` highlight) |
+| Parametric asset viewer (ADR-063 Phase 4) | Catalog = the **Assets group of the AddMenu**; sliders = a section inside `NPanel` (ADR-106 D3 — shaping a jig is modelling) | one slider per parameter + commit preview |
+| Decision Card | `fixed; right:12px; top:56px` — top-anchored so it never covers the ghost-collapse animation or the StoryBar ✕; shown at step ④ only. The `292px` dodge is gone with the 280px slot (ADR-106 D2) | width 320px max |
+| Story Bar | `fixed; left:50%; bottom:<EdgeOccupancy FLOATING>` | `min(620px, 100vw − 24px)` |
 | Uncertainty ghost label | HTML overlay, projected via `SceneView.activeCamera` | z-index 50 (Three.js label tier) |
 
 Demo colors: uncertainty amber `#d5a23a`, decision blue `#3a7bd5`, reveal ripple green `#10b981`.
@@ -273,10 +275,31 @@ Scene checks HUD)。占有オフセットの計算は **`src/view/EdgeOccupancy.
 **開閉で動く**のに対し左端と上端は動かないため — 所有者は端ごとに 1 つであればよく、
 全端で 1 つである必要はない。
 
-**Right-edge occupancy while the Inspector is open** (`demo.active && demo.inspectorTab`, desktop):
-the N Panel shifts to `right:280px` and the world gizmo offset becomes
-`16 + 200·(nPanelVisible) + 280` — both computed from the uiStore demo slice
-(gizmo: `AppController._updateGizmoOffset()`, sole owner).
+**右端の占有 (ADR-106 D2):** 右端 `right:0` の**常設は N パネル 200px ただ 1 つ**である。
+かつて 3 者 (N パネル / production の場 / チュートリアル Inspector) が同じ端を要求し、
+互いに知らない 3 つの回避策 — ずらす (`NPanel` の `inspectorOpen` シフト)・消す
+(`ContextController` の排他 7 箇所)・被せる (場の `z:100` がギズモと投影トグルを隠す) —
+が当たっていた。280px スロットの退役でその 3 つは**書く理由を失った**。
+世界ギズモの占有式は `16 + 200·(nPanelVisible)` の **2 項**で、`280` の項は無い
+(所有者は `AppController._updateGizmoOffset()` ただ 1 つ)。個数は
+`src/FloorContainerCensus.test.js` が構文から数える。
+
+**下端の占有 (ADR-106 D6):** 下端も共有資源であり、右端で起きたことを繰り返さないため
+**器を移す前に**所有者を置いた。占有量の計算は `src/view/EdgeOccupancy.js` の
+`bottomEdgeOffset({ isMobile, tier, floorOpen })` ただ 1 箇所。下端は占有物が
+**積み重なる**ので 1 つの数ではなく**段の関数**になっており、段は `BOTTOM_TIER` に
+列挙して**未宣言の段では throw する** (原則 #31):
+
+| 段 | 誰が名乗るか | 場が開いたとき |
+|---|---|---|
+| `above-infobar` | モバイルツールバー | 動かない (InfoBar は下端の基準 — 位置も高さも変えない) |
+| `floor` | 場の器そのもの (production / tutorial) | 自分の高さは数えない |
+| `dock` | Outliner · N パネル · 文書の入口 | 場の高さだけ退く |
+| `floating` | LINK NETWORK · StoryBar · TourCard | 同上 + 余白 |
+| `toast` | Toast | 同上 + 中央下の帯 (StoryBar / 場のヘッダ) の予約分 |
+
+場は 3D を**覆わない** (`d_ref` は空間量なので隠して交渉できない)。覆うなら場ではなく
+モーダルであり、それは v1 で却下済み。
 See CODE_CONTRACTS §3 "Edge-Anchored Panels Must Coordinate Occupancy".
 
 ---

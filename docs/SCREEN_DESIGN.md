@@ -628,7 +628,12 @@ is staged per story step. Exiting (✕) leaves the scene as a normal editable sc
 - Step ⑤: base_plate → robot → container_a/b staggered reveal (150 ms apart,
   green ripple each) followed by all SpatialLink views
 
-#### [G] Context Inspector (right fixed panel, 280px, desktop only)
+#### [G] Context Inspector (bottom expanding panel, desktop only)
+
+住所は **production の場と同じ下部の器** (ADR-106 D2)。かつては右端 280px の縦
+ストリップで、`_updateGizmoOffset()` の `+280` 項の**出所**でもあった — production の場を
+移すだけでは項は消えず、Phase 3 の完了条件は閉じない。教える画面と使う画面の不一致は
+UI における §1.1 違反でもある (「場はどこにあるか」が 2 箇所に書かれ、片方が古い)。
 | Tab | Content |
 |-----|---------|
 | Given | facts with status badges (measured 緑 / asserted 青 / assumed 琥珀 / unknown 赤点滅), interval display |
@@ -688,9 +693,14 @@ clears projections, restores hidden scene + Link Network panel).
 
 #### [M] Context-first Negotiation overlay (ADR-050 Phase 2, production)
 The production counterpart of [K], rendered by `ContextLayer` from the persistent **`context`**
-slice (not the tutorial `demo` slice). Same right-fixed panel (280px desktop; full-width below
-768px — 3D-independent, PHILOSOPHY #26) with **Matrix** / **Cluster** tabs reusing the same
-prop-driven components. Opened via Header **Context ▾ → Negotiate** (`enterNegotiation()`): it
+slice (not the tutorial `demo` slice). A **bottom expanding panel** (ADR-106 D1: `left:0; right:0`,
+height 260px desktop / 220px mobile, above the InfoBar, `z:85`) with **Matrix** / **Cluster** tabs
+reusing the same prop-driven components. The container's shape follows its contents': the matrix is
+an `actor × variable` **table**, and a 280px vertical strip is the worst possible frame for one —
+the unreadable tab labels were the symptom, not the defect. It does **not** cover the 3-D view
+(`d_ref` is a spatial quantity; a negotiation whose subject is hidden is what this move fixes),
+and it does not delete the N panel, the LINK NETWORK overlay, the gizmo or the projection toggle
+— they step up, because the bottom edge has one occupancy owner (`view/EdgeOccupancy.js`). Opened via Header **Context ▾ → Negotiate** (`enterNegotiation()`): it
 operates on the **already-loaded** document and never replaces the scene — if no doc is loaded it
 shows a guiding warn toast instead of bootstrapping an example (2026-06-18; the cell examples are
 reachable as **New Project** templates). The Cluster tab's approve buttons
@@ -799,7 +809,11 @@ stay free-text underneath the suggestions (expert escape hatch).
 
 `ContextLayer` is the single panel for all three production overlay **modes** (ADR-050 §4.3),
 distinguished by `context.mode`:
-- **`negotiate`** (above) — Matrix + Cluster (+ Questions when open) (+ Checks when the doc declares acceptance) + **Why** + **俯瞰** + Wizard + Assets + Intake (+ Grasp when seeded) tabs, undoable approval.
+- **`negotiate`** (above) — **6 tabs, two duties only** (ADR-106 D3): 解消 = Matrix + Cluster +
+  Floor (+ Questions when the doc has open ones), 記録 = **Why** + **Overview** (俯瞰). Undoable
+  approval. The other four duties left: 発見 (Checks → 3-D HUD, Grasp → N panel) and 入力
+  (Assets → AddMenu, Wizard / Intake → document intake). The vocabulary is `src/view/FloorTabs.js`
+  and `contextSetTab` throws on a retired value.
 - **`author`** (Phase 3) — opened via **Context ▾ → 領域オーサリング** (`enterAuthoring()`). No
   tabs; the panel lists the live R6 conflicts (green when clear) while the **3D**
   `RegionAuthoringWidget`s are the editing surface — drag a handle to resize/move a footprint;
@@ -829,17 +843,20 @@ confirm dialog** is shown. ✕ / backdrop click closes (`onCloseTemplateGallery`
 Each example card carries a secondary **✎ Use as a starting point (fork & edit)** action
 (ADR-058 Phase 1) → `onForkTemplate(id)` → `forkExample(id)`: it clones the example as the working
 doc (regenerating the scene like Open) but **retains the original example as a read-only seed** and
-opens on the **Intake** tab. There the RequirementForm shows the seed's filled requirements as amber
+opens the **document intake** container on its Expert-form face (ADR-106 D3 — input is not a floor
+tab; the provisional address is `DocIntakeLayer`, until ADR-108 consolidates the entrances). There the RequirementForm shows the seed's filled requirements as amber
 **seed-anchor chips** — clicking one floods the form with the example's real KPI / criterion /
 admissible values (an editable anchor; the `ref` is suffixed `_copy`) so the user tweaks a filled
 example instead of facing a blank schema. The blank (Empty Project) card has no fork action.
 
 #### [O] Grasp Search panel (ADR-057 placement, ADR-054 thread; Header **Context ▾ → Grasp Search…**)
-The **`'grasp'` tab inside the production `ContextLayer`** (negotiate mode) — no longer a
-central modal (ADR-057 §B). `onOpenGrasp` → `GraspController.openGrasp()` ensures the
-negotiate overlay (the tab's host), seeds `context.grasp`, and selects the tab; the former
-top-level `graspPanelOpen` flag is gone (the tab appears once seeded, and only when a
-renderable layout exists). It rides on `ContextLayer`'s existing 280px right dock, so it adds
+A **section inside the N panel**, beside the robot it is about (ADR-105 D5 / ADR-106 D3) — no
+longer a central modal (ADR-057 §B) and no longer a tab of the floor. `onOpenGrasp` →
+`GraspController.openGrasp()` seeds `context.grasp` (which *is* the section's availability) and
+makes the N panel visible; the former top-level `graspPanelOpen` flag is gone, and so is the
+requirement to open a negotiation first. "Can this robot pick this up" has a **single owner** —
+the solver answers it — so routing it through the room built for questions with several owners
+was an artefact of the old address. It rides the existing 200px right dock, so it adds
 **no new screen-edge footprint** (PHILOSOPHY #26). Shows the source-layout summary (`version`,
 entity count from `ContextService.getCompiled().layoutDsl`), then **three domain declaration
 cards** (ADR-081 Decision 5) — **Seen** (vision camera: preset chips, a **📷 use current view**

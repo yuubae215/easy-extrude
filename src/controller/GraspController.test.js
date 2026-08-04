@@ -23,10 +23,14 @@ const LAYOUT = { version: 'layout/1.0', entities: [{}, {}] }
 function fakeStore() {
   const state = {
     context: { grasp: null, inspectorTab: 'matrix' },
+    nPanelVisible: false,
     actions: {
       registerCallback() {},
       contextSetGrasp(grasp) { state.context.grasp = grasp },
       contextSetTab(tab)     { state.context.inspectorTab = tab },
+      // ADR-106 D3 — the grasp panel's host is the N panel, beside the robot it
+      // is about. The entry surfaces that panel instead of selecting a floor tab.
+      setNPanelVisible(v)    { state.nPanelVisible = v },
       // ADR-090 — the derived robot roster the panel reads (sole writer: the
       // controller under test, via refreshRobots()).
       contextSetRobots(robots) { state.context.robots = robots },
@@ -121,30 +125,37 @@ function setup(opts = {}) {
 
 // ── openGrasp ────────────────────────────────────────────────────────────────
 
-test('openGrasp seeds idle + selects the grasp tab when a layout is renderable', () => {
+test('openGrasp seeds idle + surfaces the N panel when a layout is renderable', () => {
   const { gc, store, grasp } = setup({})
   gc.openGrasp()
   assert.equal(grasp().status, 'idle')
   assert.deepEqual(grasp().layout, { version: 'layout/1.0', entities: 2 })
-  assert.equal(store.getState().context.inspectorTab, 'grasp')
+  // The seeded slice IS the panel's availability; the entry only has to make its
+  // host visible (ADR-106 D3). No floor tab is selected — the floor is not the host.
+  assert.equal(store.getState().nPanelVisible, true)
+  assert.equal(store.getState().context.inspectorTab, 'matrix')
 })
 
-test('openGrasp guides (no seed, no tab) when there is no renderable layout', () => {
+test('openGrasp guides (no seed, no panel) when there is no renderable layout', () => {
   const { gc, ctrl, store, grasp } = setup({ layoutDsl: null })
   gc.openGrasp()
   assert.equal(grasp(), null)
-  assert.notEqual(store.getState().context.inspectorTab, 'grasp')
+  assert.equal(store.getState().nPanelVisible, false)
   assert.equal(ctrl._uiView.toasts.length, 1)
 })
 
-test('openGrasp enters negotiate first when inactive but a doc is loaded', () => {
+test('openGrasp does NOT open the floor when a doc is loaded (ADR-106 D3)', () => {
+  // Before ADR-106 this test asserted the opposite — the grasp panel was a tab
+  // of the negotiation overlay, so reaching it required entering a negotiation.
+  // "Can this robot pick this up" has ONE owner; it never needed the room built
+  // for questions with several.
   const { gc, ctrl, grasp } = setup({ isNegotiation: false, loaded: true })
   gc.openGrasp()
-  assert.equal(ctrl._ctxCtrl.isNegotiation, true)
+  assert.equal(ctrl._ctxCtrl.isNegotiation, false)
   assert.equal(grasp().status, 'idle')
 })
 
-test('openGrasp with no context auto-loads the starter and opens the grasp tab (fast entry)', async () => {
+test('openGrasp with no context auto-loads the starter and opens the panel (fast entry)', async () => {
   const { gc, ctrl, store, grasp } = setup({ isNegotiation: false, loaded: false })
   let requested = null
   // Stub the ctxCtrl quick-start: mark negotiation live + a renderable layout,
@@ -159,7 +170,7 @@ test('openGrasp with no context auto-loads the starter and opens the grasp tab (
   await Promise.resolve(); await Promise.resolve()   // let the quick-start promise settle
   assert.equal(requested, 'cell_robotics')
   assert.equal(grasp().status, 'idle')
-  assert.equal(store.getState().context.inspectorTab, 'grasp')
+  assert.equal(store.getState().nPanelVisible, true)
 })
 
 test('openGrasp with no context and no example loader falls back to honest guidance', () => {
@@ -167,7 +178,7 @@ test('openGrasp with no context and no example loader falls back to honest guida
   // Default fake ctxCtrl has no quickStartExample — the THREE-free minimal stub.
   gc.openGrasp()
   assert.equal(ctrl._uiView.toasts.at(-1).opt.type, 'warn')
-  assert.notEqual(store.getState().context.inspectorTab, 'grasp')
+  assert.equal(store.getState().nPanelVisible, false)
 })
 
 // ── runGraspSearch: happy path ─────────────────────────────────────────────────

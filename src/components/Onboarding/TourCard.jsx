@@ -3,6 +3,7 @@ import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { enterMotion } from '../../view/ChromeMath.js'
 import { tourStepDescriptor, tourVisible } from '../../view/TourMath.js'
 import { COLOR, Z, rgba } from '../../theme/tokens.js'
+import { BOTTOM_TIER, bottomEdgeOffset, leftEdgeOffset } from '../../view/EdgeOccupancy.js'
 
 /**
  * TourCard — the desktop onboarding tour's quest card (ADR-065 Phase 6).
@@ -13,10 +14,13 @@ import { COLOR, Z, rgba } from '../../theme/tokens.js'
  * derived from committed scene facts, not from card clicks).
  *
  * Edge occupancy (#26): anchored to the bottom-left corner, offset past the
- * two persistent occupants — the Outliner (left 0–180, desktop-always) and
- * the InfoBar (bottom 0–26). Toasts live at bottom-CENTER, so they never
- * collide. An active overlay (Context / demo / template gallery) suppresses
- * the card entirely via `tourVisible` — it does not stack against them.
+ * persistent occupants. Both offsets come from `view/EdgeOccupancy.js`, the one
+ * owner of each edge — this file used to cite #26 in a comment while writing
+ * `left: 192` and `bottom: 38` as literals, which is precisely the shape the
+ * principle forbids (a comment is not a computation; the two drift). Toasts live
+ * at bottom-CENTER, so they never collide. An active overlay (Context / demo /
+ * template gallery) suppresses the card entirely via `tourVisible` — it does not
+ * stack against them, which is also why `floorOpen` is not passed here.
  *
  * Entry slide-fade is Tier A chrome motion ("a new quest arrived"), keyed on
  * the step so each advance re-plays it; reduced motion shows the card in
@@ -43,8 +47,8 @@ export function TourCard() {
       key={step?.id ?? 'done'}
       style={{
         position: 'fixed',
-        left: 192,           // Outliner (180) + gutter — #26 offset past the occupant
-        bottom: 38,          // InfoBar (26) + gutter
+        left: leftEdgeOffset({ isMobile: false }),   // desktop-only card (ADR-065 Phase 6)
+        bottom: bottomEdgeOffset({ isMobile: false, tier: BOTTOM_TIER.FLOATING }),
         width: 248,
         zIndex: Z.overlay,
         background: COLOR.surface,

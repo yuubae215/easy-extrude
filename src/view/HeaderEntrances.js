@@ -237,8 +237,9 @@ export const START_ENTRY_BY_KIND = Object.freeze({
   [START_KIND.GUIDED_INTAKE]: Object.freeze({
     label: 'Guided intake (wizard)', callback: 'onWizardStart', shortcut: null, requires: REQUIRES.CONTEXT_DOC,
     adr: 'ADR-063',
-    why: '文書の中を埋める順序つきの器なので、文書が要る。Phase 3 (ADR-106) までは '
-       + '`ContextLayer` のタブに住むが、**入口はここ 1 つ**である。',
+    why: '文書の中を埋める順序つきの器なので、文書が要る。器は ADR-106 (Phase 3) で '
+       + '`ContextLayer` のタブから `DocIntakeLayer` (**暫定住所**) へ移ったが、'
+       + '**入口はここ 1 つのまま**である — 器が動いても入口は増えない、が両 ADR の接点。',
   }),
 })
 
@@ -264,9 +265,14 @@ export function startEntryFor(kind) {
 // ── 場 (ADR-106 が器を動かすまでの現住所) ──────────────────────────────────
 
 /**
- * `場を開く` の引数。ADR-106 (Phase 3) が器を下部へ移すまでの現住所を、
- * 推測させずに**宣言**しておく。ここは動詞ではなく活動が並んでいるので、
- * Phase 3 が住所を決め直す対象である (この表はその時点で縮む)。
+ * `場を開く` の引数。ADR-106 (Phase 3) が器を右端 280px の縦ストリップから下部の
+ * 展開パネルへ移した**後**の並び。この表が「Phase 3 で縮む」と予告していたとおり、
+ * `grasp` は場を開かなくなった (住所は選んだロボットの隣 = N パネル — ADR-105 D5 /
+ * ADR-106 D3) が、**入口としては残している**: 何も選んでいない状態から把持探索へ
+ * 入る経路はここだけで、消せば原則 #16 が言う「移設ではなく無言の削除」になる。
+ * したがって縮んだのは*行の数*ではなく**この行が意味すること**である — 分類の
+ * 見直し (`open-floor` ではない動詞へ移すか) は入口の個数を動かす判断なので、
+ * ADR-108 D2 の上界に当たる別の変更として起票する。
  */
 export const FLOOR_TARGETS = Object.freeze([
   Object.freeze({ object: 'negotiate',     label: 'Negotiate',      callback: 'onContextNegotiate',   shortcut: null, requires: null,
@@ -276,7 +282,8 @@ export const FLOOR_TARGETS = Object.freeze([
   Object.freeze({ object: 'region-ghosts', label: 'Region ghosts',  callback: 'onContextRegionGhost', shortcut: null, requires: null,
     why: '未確定帯の表示 (ADR-050 §5.3)。ADR-107 で変数選択の 3D の姿にもなった。' }),
   Object.freeze({ object: 'grasp',         label: 'Grasp search…',  callback: 'onOpenGrasp',          shortcut: null, requires: null,
-    why: '把持候補の探索 (ADR-057)。N パネルからの 1 クリック経路 (ADR-105) と同じ先。' }),
+    why: '把持候補の探索 (ADR-057)。ADR-106 D3 の後、**パネルは場ではなく N パネルに開く** — '
+       + 'ここはその入口であって器ではない。選択が無い状態からの唯一の経路。' }),
 ])
 
 // ── 作業面のトグル (D4 — Node Editor の住所) ───────────────────────────────

@@ -142,18 +142,43 @@ function AssetViewer({ viewer, callbacks }) {
 
 /**
  * @param {{embedded?: boolean}} props — embedded mode (wizard step) drops the
- *   long intro line; behaviour is otherwise identical (same callbacks, same
- *   single write path).
+ *   long intro line and **never renders the viewer**: the sliders have exactly
+ *   one host, the N panel (ADR-106 D3). Two windows onto `context.assetViewer`
+ *   would each mount their own sliders over one state — a second *window* is
+ *   fine, a second *set of controls for the same state* is how a shared value
+ *   grows two writers (原則 #4). The embedded case says where the sliders went
+ *   instead of showing nothing (原則 #11).
  */
 export function ParametricAssetPanel({ embedded = false } = {}) {
   const viewer    = useUIStore(s => s.context.assetViewer)
   const callbacks = useUIStore(s => s.callbacks)
 
+  if (embedded) {
+    return (
+      <div style={{ paddingBottom: '6px' }}>
+        {viewer
+          ? <ViewerElsewhere viewer={viewer} />
+          : <AssetPicker embedded onOpen={id => callbacks.onAssetViewerOpen?.(id)} />}
+      </div>
+    )
+  }
+
   return (
     <div style={{ paddingBottom: '6px' }}>
       {viewer
         ? <AssetViewer viewer={viewer} callbacks={callbacks} />
-        : <AssetPicker embedded={embedded} onOpen={id => callbacks.onAssetViewerOpen?.(id)} />}
+        : <AssetPicker onOpen={id => callbacks.onAssetViewerOpen?.(id)} />}
+    </div>
+  )
+}
+
+/** Names where the sliders are, rather than duplicating them (ADR-106 D3 / #11). */
+function ViewerElsewhere({ viewer }) {
+  const asset = getParametricAsset(viewer.assetId)
+  return (
+    <div style={{ fontSize: '10px', color: '#9ab', lineHeight: 1.6 }}>
+      Shaping <b>{asset?.name ?? viewer.assetId}</b> — the sliders and the commit
+      button are in the item panel on the right, beside the live 3-D ghost.
     </div>
   )
 }

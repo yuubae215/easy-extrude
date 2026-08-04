@@ -8,6 +8,8 @@ import { visibilityAffordance } from '../../view/OutlinerRowMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING, rgba } from '../../theme/tokens.js'
 import { ROBOT_ROLE } from '../../domain/robotFrames.js'
+import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
+import { floorIsOpen } from '../../view/FloorTabs.js'
 
 // ── Robot placement frames (ADR-084 §2, TF tree ADR-085) ─────────────────────
 // A robot's placement lives in a PAIR of CoordinateFrames (the single source
@@ -358,6 +360,7 @@ export function Outliner() {
   // so the card and the pulsed control cannot disagree (§1.1).
   const tour          = useUIStore(s => s.tour)
   const contextActive = useUIStore(s => s.context.active)
+  const floorOpen     = useUIStore(floorIsOpen)
   const demoActive    = useUIStore(s => s.demo.active)
   const galleryOpen   = useUIStore(s => s.templateGalleryOpen)
   const reduced       = useReducedMotion()
@@ -386,7 +389,9 @@ export function Outliner() {
       top: 40,
       left: 0,
       width: 180,
-      bottom: 26,
+      // 下端は共有資源 (原則 #26 / ADR-106 D6)。場が下部に開いたら**退く** —
+      // 覆われるのでも、消されるのでもない (右端で起きた 3 つの回避策の再演を避ける)。
+      bottom: bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.DOCK, floorOpen }),
       background: '#1c1c1c',
       borderRight: '1px solid #111',
       color: '#e8e8e8',
