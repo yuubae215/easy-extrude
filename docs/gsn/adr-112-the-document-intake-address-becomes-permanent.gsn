@@ -1,0 +1,95 @@
+GOALS adr112_the_document_intake_address_becomes_permanent
+
+goal WhatYouTypeIsEchoedWhereYouCanSeeIt
+uuid 9084d313-bd71-40f5-9a74-c5ebdfd2b7f5
+summary "文書を書いている最中に、いま書いたものがどう効いたかが見えている。そして暫定であることの宣言が、決着によって畳まれる (満期切れのまま生き続けない)"
+state UnderReview
+labels adr-112, ia-phase-5-2, doc-intake, provisional-address, principle-26
+artifacts
+- "docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md"
+- "src/view/DocIntake.js"
+
+    context Adr112Scope
+    uuid 11caf9c7-3172-41f2-9f7b-402c28fb306e
+    summary "ADR-112 (Proposed 2026-08-04): ADR-106 D3 が置いた暫定住所 (DocIntakeLayer) を恒久として確定させ、覆う範囲の規則を面の名前から役割へ変える。入口 (START の GUIDED_INTAKE 行) は ADR-108 が決めたとおり不変で、ヘッダの入口の個数も動かない。本 PR で行うのは満期のポインタの張り替えだけで、宣言の畳み込み (PROVISIONAL_UNTIL の削除) は Accepted 後の実装段に属する"
+    artifacts
+    - "src/components/Doc/DocIntakeLayer.jsx"
+
+    context TheExpiryPassedInSilence
+    uuid 24953829-41c5-403c-a3ed-a1c87a1111ba
+    summary "実測: src/view/DocIntake.js:54 は PROVISIONAL_UNTIL = 'ADR-108 (IA Phase 5 — 入口の統合)' と宣言している。ADR-108 は 2026-08-03 に Accepted・実装済みとなり、この住所を決めなかった。満期は過ぎ、何も落ちなかった — PROVISIONAL_UNTIL は人が読む文字列であって機械が読む期限ではないため。同じポインタの写しは 7 箇所 (FloorTabs の RETIRED_FLOOR_TABS 2 行 / STATE_LEDGER / uiStore / ContextController 2 箇所 / DocIntakeLayer / ADR-106 本文) にあり、7 箇所すべてが同時に静かに古くなった"
+    artifacts
+    - "src/view/FloorTabs.js"
+    - "docs/STATE_LEDGER.md"
+
+    context WhyTheExpiryMissed
+    uuid 6d41d5ba-056c-4c76-84a4-d521ff6745e9
+    summary "満期が空振りした理由は条件が**別の判断**に置かれていたこと。ADR-106 は『入口を統合する段が器の住所も決めるだろう』と見込んだが、ADR-108 が扱ったのは動詞と対象の直積であり、器の住所はその直積に現れない。入口 (onWizardStart) は Phase 5 で確定しているが、その入口が開く器がどこに住むかは同じ判断の中に無かった。一般形: 満期の条件を『別の判断が起きること』に置くと、その判断が自分を含む保証は無い — 満期は『この問いが決着する』で書かねばならない。ADR-109 D1 の登録簿が満期を条件として持つ根拠でもある"
+    artifacts
+    - "docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md"
+
+    context BusinessTreeAttachPoint
+    uuid 22a51849-b69e-4b25-8a2e-09d33d5d05f9
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を最後まで書き切れるかが、その先のすべての判定の前提だから)。保留理由: 本 ADR は Proposed で、決定の主要部 (覆う範囲の規則) は ADR-111 が入って初めて意味を持つ。入力中に意味側が覆われないことを焼く e2e が実在した PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotExtendTheProvisional
+    uuid 2522566d-1497-4c39-ba70-1ccabf422cb8
+    summary "却下案 A (PROVISIONAL_UNTIL を次の Phase へ張り替えて暫定のまま延長) への反証: 実装ゼロだが、暫定を暫定で更新するのは決着の先送りである。ADR-106 の GSN は ProvisionalAddressesStayProvisional を反証されうる仮説として持っており、この案はその仮説を反証しにいく側 (暫定が既定の導線として定着する) そのもの。**なお本 PR が行うポインタの張り替えはこの案ではない** — 張り替え先が『次の Phase』ではなく『この問いを決着させる ADR』だからで、満期条件の書き方としては WhyTheExpiryMissed の一般形に従っている"
+
+    justification WhyNotBackToTheFloor
+    uuid 1c9d071b-09c5-4a4e-ae8e-983c7a791d76
+    summary "却下案 D (下部の器へ戻す) への反証: ADR-106 D3 は『器に残るのは解消とその記録の 2 種だけ』と決めて 11 タブを 6 枚にした。入力を戻せばその線が崩れ、器と中身の形の不一致 (表に縦ストリップ) が再発する。入力は文書を要求するが、交渉は要求しない — 独立性は Phase 3 の実測で確認済み"
+
+    justification WhyNotAModal
+    uuid 8810ea2c-839a-47db-9683-5033b945365d
+    summary "却下案 E (全面モーダル) への反証: IntakePanel は onIntakePreview で 3D に不確かさバンドのゴーストを出す (ADR-051 Entry D)。全面モーダルはそれを覆い、『入力の検算 = エコーバック』という 3D の責務が消える。この根拠は ADR-106 が暫定住所を選んだときのものだが、今日も有効である — つまり暫定だったのは住所が疑わしかったからではなく、Phase 5 と一緒に見直すべきかもしれないという手続き上の留保だった"
+
+    assumption TheAddressWasNeverTheDoubtfulPart
+    uuid 01c568b6-a0f9-47a2-8db5-c00f32ee21a1
+    summary "反証されうる仮説: 留保は果たされ、見直す理由は出てこなかった — 左ドックの一時オーバーレイという形は (a) モーダルでない (b) 常設でないので端の予算を食わない、という 2 つの根拠を今日も保っている。反証される形: dogfooding で『フォームを埋めている間に何かが見えない』が実測される場合。実際 ADR-111 が 1 つ見つけている (下の仮説) ので、この仮説は全面的には保たれない可能性が高い"
+
+    assumption Adr111ChangesWhatMayBeCovered
+    uuid e2ef7cc9-7162-4afe-a625-24ee55820bee
+    summary "反証されうる仮説 (ADR-111 が作る新しい論点): 今日の住所は『Outliner を覆う』ことを選んでおり、それが安全だったのは Outliner が幾何の木で文書と関係が無かったから。ADR-111 の意味側は、いま入力している文書の共有変数を映す面になるので、前提は崩れる — フォームを埋めながらそれが覆われていると、3D のゴーストと同じ理屈でエコーバックが 1 つ消える。したがって本 ADR の決定は ADR-111 の後でなければ完全にならず、順序表でも Phase 3.6 → Phase 5.2 と置く"
+    artifacts
+    - "docs/adr/ADR-111-the-outliner-has-a-semantic-side.md"
+
+    strategy ByDecidingRatherThanRenewingAndByOwningTheCoverageRule
+    uuid c2b3da4b-42ed-47cf-bb36-0293b8f80785
+    summary "Argument by 決着による畳み込み + 覆う範囲の所有者の一元化 — 暫定は延長ではなく決着で畳む (宣言を残せば ADR-109 §力学 2 が名指しした『完了しても生き残る宣言』を自ら作ることになる)。そのうえで、覆ってよい面の規則を面の名前ではなく役割で書き、所有者を 1 つに置いて未宣言の面では throw する。ADR-111 の後は同じ Outliner の中で幾何側は覆えて意味側は覆えないので、面の名前では規則を表せない"
+
+        goal NoProvisionalDeclarationSurvivesTheDecision
+        uuid 8f678a1e-fd23-486b-80d9-89fe84d7a5ba
+        summary "決着後、repo 内に PROVISIONAL_UNTIL を名乗る宣言が 0 個である。7 箇所の写しが 1 つ残らず畳まれる"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TheReverseCheckCountsTheLeftovers
+            uuid ed9c1d7f-3ab7-4b7e-a89e-2dd13dd6c7c4
+            summary "証拠の予定: ADR-109 D4 の逆向き検査 (実在しない残しの宣言 = 0 個) がそのまま消し残しを数える。7 箇所は手で列挙せず語彙から導出する — 8 箇所目がどこかに在っても数え漏らさないため。本 PR の時点ではまだ畳まず、満期のポインタを ADR-108 から ADR-112 へ張り替えるにとどめる (Proposed の ADR で宣言を消すと、決着していないのに決着した顔をすることになる)"
+
+        goal TheCoverageRuleHasOneOwner
+        uuid 8835e43c-19ea-4960-bb35-24ca193eeb6a
+        summary "一時オーバーレイが覆ってよい面が 1 箇所で宣言され、未宣言の面では throw する。呼び出し箇所ごとのパッチが 0 個"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption RoleNotNameIsTheStableKey
+            uuid b95229b0-1a4d-4a01-ba7e-f97b156122e4
+            summary "証拠の予定: src/view/DocIntake.js の宣言表に『覆ってよい面の役割』を置き、unit で未宣言の面が throw することを問う。面の名前 (Outliner) を鍵にすると ADR-111 の後に破綻するので、鍵は役割 (いま入力しているものを映しているか) にする。ADR-090 が badge の鍵を名前から宣言された role へ変えたのと同型 — 名前は N が増えた日に一意でなくなる"
+            artifacts
+            - "src/view/DocIntake.js"
+
+        goal TheEntranceStaysWhereAdr108PutIt
+        uuid 00147d28-e3bd-4cc9-90bf-f1f2c938e471
+        summary "器の住所を恒久化しても入口は増えない。START の GUIDED_INTAKE 行は不変で、ヘッダの入口の個数 (desktop 7 / mobile 7) も動かない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption ContainerAndEntranceStayIndependent
+            uuid 34779c58-c621-43fc-9b7a-b4d7a93c0156
+            summary "証拠の予定: HeaderEntranceCensus.test.js を書き換えずに通す。『器が動いても入口は増えない』は ADR-106 と ADR-108 の接点として既に宣言されており (HeaderEntrances.js の GUIDED_INTAKE 行の why)、恒久化はその接点を動かさない。書き換えが要ったら、それは器の決着に入口の決定を混ぜた証拠になる"
+            artifacts
+            - "src/HeaderEntranceCensus.test.js"

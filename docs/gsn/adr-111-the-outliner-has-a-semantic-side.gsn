@@ -1,0 +1,97 @@
+GOALS adr111_the_outliner_has_a_semantic_side
+
+goal EverySelectableKindLivesInSomeNavigator
+uuid 59aa57be-58d3-42d7-b53f-3854f41d3b8b
+summary "選べるものは、どれかのナビゲータに載っている。左を見れば『このシーンで何が選べるか』が尽くされていて、選択の種が増えてもそれが崩れない"
+state UnderReview
+labels adr-111, ia-phase-3-6, outliner, selection, principle-31
+artifacts
+- "docs/adr/ADR-111-the-outliner-has-a-semantic-side.md"
+- "docs/adr/ADR-107-selection-has-two-kinds.md"
+
+    context Adr111Scope
+    uuid 01fa9674-c66e-4e32-9d93-fd8e00cbee85
+    summary "ADR-111 (Proposed 2026-08-04): 左のナビゲータに幾何 ⇄ 意味の側を与え、意味側に文書の共有変数を並べる。v8 注釈② が仕様の正本。ADR-107 が広げた選択の要素の種に窓を 1 つ与えるだけで、選択モデル (ADR-099 の 5 verb) もドメインも契約も不変"
+    artifacts
+    - "src/components/Outliner/Outliner.jsx"
+    - "docs/ia-redesign/easy-extrude-wireframe-v8.html"
+
+    context TheHoleAdr107Opened
+    uuid c4ef5ebf-882f-4f34-a909-9d49b76de7b2
+    summary "実測: ADR-107 は選択集合の要素を 2 種 (entities / variables) に広げて出荷済みで、変数は今日**選べる** — 場の行列の変数見出しをクリックすると種が入れ替わり、3D に未確定帯が出て N パネルの中身が NPanelVariable に替わる (e2e 2 本が焼いている)。しかし Outliner.jsx (463 行) には幾何 ⇄ 意味のトグルも共有変数の一覧も無い。つまり d_ref は選べるのに左のナビゲータには存在しない。v8 注釈② はこれを先に見抜いており、これは『あると便利な機能』ではなく ADR-107 を出荷したことの帰結として生まれた穴である"
+    artifacts
+    - "src/domain/selection.js"
+
+    context DeclaredTwiceWithoutAPhase
+    uuid ad4125d6-c316-4734-b731-1b57c046ad7b
+    summary "この項目は 2 回、段を持たないまま送られた — ADR-107 §実装で変わったこと (『Outliner の意味側は未着手』) と 03-implementation-order.md §Phase 3『この段が引き受けなかったもの』。混ぜなかった判断は正しい (意味側は器の移動と独立で、混ぜれば 2 つの判断が 1 つの PR で不可分になっていた)。正しくなかったのは、その判断が散文にしか residence を持たなかったこと。check-adr-status.mjs は段を持たない ADR を数えるが粒度が ADR 単位なので、ADR の中の 1 項目は見えない — 本 ADR はその項目に段を与えるものであり、同時に ADR-109 が生まれた 4 実例の 1 つである"
+    artifacts
+    - "docs/ia-redesign/03-implementation-order.md"
+
+    context BusinessTreeAttachPoint
+    uuid 2aacd0c7-b10b-4ff7-8529-f17fe08bf63f
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を書いた人がその成果を辿れることが、文書を書く動機の源だから)。保留理由: 本 ADR は Proposed で証拠が全部未来形。意味側から変数を選べる e2e が実在した PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotMixIntoTheGeometryTree
+    uuid a10f3af8-2a14-438c-bb26-05f170a19c1c
+    summary "却下案 A (共有変数を幾何側の木の末尾グループに混ぜる) への反証: 実装は最小だが木の意味が 2 つになる — 『在るものの構造』を読みに来た人が体を持たない行に出会う。ADR-103 が Lynch 5 種 (⟿⬡) を幾何側に置けたのは**体を持つから**であって『文書由来かどうか』ではない。基準は住所の層である。文書の変数の 3D の姿 (未確定帯) は投影であって体ではなく、ADR-107 が割った 3 通りのうちスカラーには帯すら無い"
+
+    justification WhyNotLeaveItToTheNPanel
+    uuid 3409d582-7d72-444f-8b0c-7365726f808f
+    summary "却下案 B (現状維持 — 変数は N パネルからしか触れない) への反証: 選べるのに載っていない実体が残るだけでなく、場を閉じると変数を選ぶ窓 (行列の見出し) が画面から消えるので**変数を選ぶには必ず場を開く**必要が残る。ADR-105 が断ったのと同型の循環 (場に入らないと場の中のものが触れない) が、選択の側で生き残る"
+
+    justification WhyNotAThirdDock
+    uuid b07adbd6-7390-45b7-8054-fd808b330d8f
+    summary "却下案 D (意味側を第三のドックとして常設) への反証: 画面端の予算 (原則 #26) を 1 つ食う。ADR-106 が右端の奪い合いを住所で解いた直後に、左端で同じ奪い合いを始めることになる"
+
+    assumption GeometryDefaultAbsorbsTheTogglesCost
+    uuid 2eda4a82-425c-443f-bbc6-1007875506c0
+    summary "反証されうる仮説: 既定が幾何側であること (v8 注釈② — 初期頻度、関係性の論理は最初は考えない) が、側が増えるコストの上限を決める。幾何側しか使わない人はトグルの存在に気づかないまま従来どおり使える。反証される形: 文書を採った瞬間から意味側が主戦場になり、毎回手で切り替える羽目になる場合 — そのときの答えは既定を文脈依存にすることだが、それは『既定が状態を持つ』ことなので台帳の行が変わる"
+
+    assumption TheToggleIsPresentationNotEntityState
+    uuid 06797f32-1120-487c-ac3d-3aabcaf734b0
+    summary "反証されうる仮説: outliner.side ∈ {geometry, semantic} は UI transient であり基数は常に 1 (側を持たない Outliner は無い) なので、2 値・不正遷移が事故にならない・導出でもないことから核 §1.4 の閾値を跨がず状態機械は要らない。閾値未満でも台帳には記録する (記録しなければ累積せず、判定がプロンプト単位に退化する)。反証される形: 側が 3 つ目 (例えば『検査』側) を持った日 — そのとき台帳が閾値を跨ぐ"
+    artifacts
+    - "docs/STATE_LEDGER.md"
+
+    strategy ByGivingTheNavigatorTwoSidesAndCountingKindsWithoutAnAddress
+    uuid 37c2d763-ed52-4994-a3f4-3b27ab15d2bd
+    summary "Argument by 層による住所の分割 + 住所を持たない種の計数 — 体を持つ住人は幾何側、文書の住人は意味側に置き、行のクリックは既存の選択 verb を呼ぶ窓にとどめる (入口を増やさない)。そのうえで数えるのは在る行ではなく『選択可能な種のうちナビゲータに住所を持たない種の個数』であり、今日それは 1 (variables) である"
+
+        goal NoSelectableKindLacksAnAddress
+        uuid 5c68e8f0-5e8b-423b-a76a-ac4a3bc18d8f
+        summary "選択可能な種のうち、どちらのナビゲータにも住所を持たないものが 0 個である。母集団は SELECTION_KIND の枝から導出し、手書きの種リストにしない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption AddressTableDerivesFromTheUnionsBranches
+            uuid 9e43f457-93f4-4d26-8927-56e220188667
+            summary "証拠の予定: SelectionKindDeclarations.test.js が既に採っている形 (assertCoversPopulation で SELECTION_KIND の枝から母集団を導出し、empty は理由つきの対象外として宣言する) をそのまま使い、3 つ目の宣言表『種 → ナビゲータの側』を足す。枝を足して行を足さなければ落ちる。在る行を辿る数え方では今日の穴 (variables に住所が無い) が 0 に見えるので、必ず種の側から数える"
+            artifacts
+            - "src/SelectionKindDeclarations.test.js"
+
+        goal TheSemanticSideIsAWindowNotAnEntrance
+        uuid 5c3b4888-61cd-47d4-b02a-186a1d5e01ac
+        summary "意味側の行のクリックが既存の選択 verb を呼ぶだけで、選択の書き手が増えない。ADR-099 の 5 verb は 5 のまま"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TheCensusMustPassWithoutBeingRebuilt
+            uuid 31c803fc-a5bd-43c1-b68f-a391b0732ae0
+            summary "証拠の予定: SelectionOwnership.test.js を**作り直さずに**通す。ADR-107 が同じ検算を使って『窓を足しても入口は増えない』を確かめており、作り直しが要ったらそれは選択に第二の書き手を作った証拠になる。窓は 5 つに見えて undo コールバックの中に 4 つ複製されていたという ADR-099 の実測があるので、窓を辿る数え方には戻さない"
+            artifacts
+            - "src/SelectionOwnership.test.js"
+
+        goal TheEmptySemanticSideDeclaresWhichZeroItIs
+        uuid ec71cf23-8fd0-4a4a-886b-0a0a11fa4d70
+        summary "意味側が空のとき、『文書が無い』と『文書に変数が 0 個』が別の文言として出る。1 つの『空』で両方を賄わない"
+        state ToBeDeveloped
+        labels support-exploring
+
+            assumption TwoZerosAreDeclaredNotInferred
+            uuid 40392e12-55c3-41d4-a359-0ac8bf078e9e
+            summary "証拠の予定: ADR-105 が発見の 0 を 4 種 (unexamined / none-declared / all-pass / failing) に割ったのと同じ形で、意味側の 0 を最低 2 種として宣言し unit で両方を焼く。既定値で埋めない (原則 #31 / ADR-096 の既定表の規律)。文書が無い側の文言は採択への出口を持つ — ADR-105 の unexamined が名指しする先と同じ"
+            artifacts
+            - "docs/adr/ADR-105-unexamined-is-not-clear.md"

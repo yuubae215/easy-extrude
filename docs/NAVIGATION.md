@@ -11,6 +11,7 @@ ADR の正準インデックスは `docs/adr/README.md` (`/adr <topic>` で検�
 | philosophy / principles / why we do it this way | `docs/PHILOSOPHY.md` |
 | architecture / design / why | `docs/ARCHITECTURE.md`, then `docs/adr/README.md` |
 | state machine / mode transition / state | `docs/STATE_LEDGER.md` (台帳=索引・基数列) → `docs/STATE_TRANSITIONS.md` (図の正本), ADR-008 |
+| 残し / 後でやる / 未着手 / 暫定 / 暫定住所 / 申し送り / 次セッション / 後続 PR / 保留 / TODO はどこ / まだ残っているか / 満期 / PROVISIONAL_UNTIL / 段を持たない項目 / 起票し忘れ | **ADR-109** (残しは宣言であって記憶ではない — 母集団と満期), `docs/DEFERRAL_LEDGER.md` (**宣言の正本** — id / 所在 / 満期条件 / ticket / lane), `scripts/check-deferrals.mjs` (**個数の問い所** — Q1 ratchet / Q2 満期切れ / Q3 ticket / Q4 逆向き。`pnpm test:deferrals`), `scripts/check-adr-status.mjs` (段を持たない **ADR** の個数 — 粒度が違う), ADR-102 (母集団の導出 = 分母), ADR-103 (退役した形の計数), ADR-100 (ratchet の形), `docs/STATE_LEDGER.md` §提案中の実体 (段を持つが未実装の状態・基数) |
 | 基数 / cardinality / 0 台 / N 台 / 存在しない / 複数ある / 実体の同一性 / どれを指すか / 空なのに通る / 不在が見えない | **PHILOSOPHY #31** (Zero Is a State That Does Not Look Like One), `docs/STATE_LEDGER.md` §基数列, ADR-090 (ロボット 0/1/N の先例 — 実装済), `docs/STATE_TRANSITIONS.md` §Robot roster, `src/domain/robotFrames.js` (`resolveRobots`/`selectRobot`/`robotCardinality` = 同一性と基数の唯一の解決点), `src/RobotRosterAuthority.test.js` (seed 経路の個数), `pnpm test:gsn` (空枝の検査) |
 | StateMachine class / FSM / editorStates / operation state constants / _opState | `src/core/StateMachine.js`, `src/core/editorStates.js`, ADR-039 |
 | cache / derived state / lifecycle / UNINIT / STALE / freshness | `docs/STATE_TRANSITIONS.md` § Internal Component State Machines |
