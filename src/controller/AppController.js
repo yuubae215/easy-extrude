@@ -94,6 +94,7 @@ import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
+import { SCREEN_CLAIM }               from '../view/ScreenClaim.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
 import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
 import { MeasurePlacementHandler }    from './handler/MeasurePlacementHandler.js'
@@ -3954,8 +3955,10 @@ export class AppController {
     this._openHome()
   }
 
-  _openHome()  { useUIStore.getState().actions.setHome({ status: 'open' }) }
-  _closeHome() { useUIStore.getState().actions.setHome(null) }
+  // Taking / releasing the stage is one call each (ADR-113). Release names the
+  // claim, so a late close cannot clear a claim the gallery has since taken.
+  _openHome()  { useUIStore.getState().actions.claimStage(SCREEN_CLAIM.LAUNCH_HOME) }
+  _closeHome() { useUIStore.getState().actions.releaseStage(SCREEN_CLAIM.LAUNCH_HOME) }
 
   /** Persist (or clear) the Blender-style "don't show on startup" preference. */
   _persistHomeFlag(value) {

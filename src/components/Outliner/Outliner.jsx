@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { IFC_CLASS_MAP } from '../../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP } from '../../domain/PlaceTypeRegistry.js'
 import { tourAnchor, tourVisible } from '../../view/TourMath.js'
+import { SCREEN_CLAIM, stageIs } from '../../view/ScreenClaim.js'
 import { activeGlow } from '../../view/ChromeMath.js'
 import { visibilityAffordance } from '../../view/OutlinerRowMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
@@ -362,7 +363,7 @@ export function Outliner() {
   const contextActive = useUIStore(s => s.context.active)
   const floorOpen     = useUIStore(floorIsOpen)
   const demoActive    = useUIStore(s => s.demo.active)
-  const galleryOpen   = useUIStore(s => s.templateGalleryOpen)
+  const galleryOpen   = useUIStore(s => stageIs(s.stage, SCREEN_CLAIM.CONTEXT_TEMPLATE_GALLERY))
   const reduced       = useReducedMotion()
   const pulseAdd = tourVisible(tour, { contextActive, demoActive, galleryOpen })
     && tourAnchor(tour) === 'outliner-add'

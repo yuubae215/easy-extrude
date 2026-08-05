@@ -1382,3 +1382,78 @@ test('Node Editor はファイル群から出て、BFF 未接続でも理由つ�
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+// ── ADR-113 — 押した回数と無関係に同じ所へ着く ────────────────────────────────
+//
+// **この 2 本が要る理由 (unit では構造的に見えない)。**
+// `OverflowMenuState` の unit は「閉じたら段を捨てる」を証明するが、出荷された
+// 欠陥の一段目は **DOM の側**にあった: React は行の onClick で起きた state 変化を
+// `document` の click リスナが走る前に flush するので、押された行は既に DOM から
+// 外れており、**切り離されたノードはどこにも含まれない** → 帰属の述語がどれだけ
+// 正しくても「外側 click」と読む。純粋関数の検査はこの層を定義上見ない。
+//
+// そして症状は **1 手では出ない** — `Export ›` を押した瞬間は「閉じた」にしか
+// 見えず、*次にもう一度開いたとき*に初めて違うものが出る。したがって
+// **同じ要求を 2 回通す**形で焼く (ADR-098 の e2e が 1 手で書かれていたために
+// 振動を出荷し ADR-101 で別途起票することになった教訓の適用)。
+
+test('⋯ の一段目は潜れ、どの閉じ方の後でも次は一段目 (ADR-113 D1 / D2)', async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 860 })
+  const errors = await boot(page)
+
+  const more = page.getByRole('button', { name: 'More actions' })
+  await more.click()
+
+  // 一段目 = 動詞。ここで押した行が「何も起きない」のが報告された症状。
+  const exportRow = page.getByRole('button', { name: /^Export/ })
+  await expect(exportRow).toBeVisible()
+  await exportRow.click()
+
+  // 二段目が実際に出ること (閉じてしまわないこと)。
+  await expect(page.getByRole('button', { name: 'Scene as JSON Ctrl+E' })).toBeVisible()
+
+  // 戻る → 一段目へ。
+  await page.getByRole('button', { name: /^Export/ }).first().click()
+  await expect(page.getByRole('button', { name: /^Import/ })).toBeVisible()
+
+  // 外側 click で閉じ、**もう一度開く** — ここが 1 手では見えない場所。
+  await page.mouse.click(210, 620)
+  await expect(page.getByRole('button', { name: /^Import/ })).toHaveCount(0)
+  await more.click()
+  await expect(page.getByRole('button', { name: /^Start/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Scene as JSON Ctrl+E' })).toHaveCount(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('画面を占める面は同時に 1 枚 — 起動ホームと New Project は入れ替わる (ADR-113 D3)', async ({ page }) => {
+  // boot() を使わない: 起動ホーム (stage の主張) が実際に立つ経路を通したいので、
+  // ee_home を skip しない (ADR-108 の Home テストと同じ理由)。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/')
+
+  const homeHeading = page.getByText('工程レイアウトを選んで始める')
+  await expect(homeHeading).toBeVisible()
+
+  // 起動ホームを閉じてから Unexamined → New Project (報告 1 行目の経路)。
+  // title で引く: ✕ ボタンのアクセシブル名は本文の「✕」なので name では引けない。
+  await page.locator('button[title="閉じる（既定のシーンで始める）"]').click()
+  await expect(homeHeading).toHaveCount(0)
+
+  await page.getByRole('button', { name: /^Unexamined/ }).click()
+  await expect(page.getByText('New Project')).toBeVisible()
+  // **背後に居ない**こと — 2 枚同時が表現不能になったことの目に見える帰結。
+  await expect(homeHeading).toHaveCount(0)
+
+  // 逆向き: New Project が立っている状態から起動ホームを主張すると、
+  // 積み重ならずに**入れ替わる** (stage は 1 欄なので)。
+  await page.locator('button[title="Close"]').click()
+  await expect(page.getByText('New Project')).toHaveCount(0)
+  await page.getByRole('button', { name: /^Start/ }).click()
+  await page.getByRole('button', { name: 'From a layout template' }).click()
+  await expect(homeHeading).toBeVisible()
+  await expect(page.getByText('New Project')).toHaveCount(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

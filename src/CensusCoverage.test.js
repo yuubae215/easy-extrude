@@ -190,6 +190,12 @@ const CENSUS_REGISTRY = [
        + '入口として宣言されたもの (HEADER_ENTRANCES) と、入口ではないと理由つきで宣言したもの '
        + 'に分割する。ヘッダに要素を足せばその日から母集団に入るので、'
        + '「表に足すまで数えられない」腐り方をしない' },
+  // ── 画面を占める面 (ADR-113) ──
+  { file: 'src/ScreenClaimCensus.test.js',   table: 'NOT_A_SCREEN_CLAIM',          kind: KIND.DERIVED_PARTITION,
+    why: "母集団 = src/components/** で position:'fixed' + inset:0 を同じ style に持つファイル (走査で導出)。"
+       + '面として宣言されたもの (CLAIM_DECLARATION の component) と、対象外と理由つきで宣言したものに '
+       + '分割する。数えるべきは在る面ではなく**枚数に入っていない面**で、全画面を描いた日から母集団に入る' },
+
   // ── 登録簿そのもの (自己適用) ──
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'

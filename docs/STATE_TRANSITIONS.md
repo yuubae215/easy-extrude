@@ -586,36 +586,59 @@ done
 
 ---
 
-### `home` — Launch / Home screen FSM (ADR-089)
+### `stage` — the screen claim (ADR-113, absorbing ADR-089's `home`)
 
-**Why this exists here**: Home touches the **boot flow** (a hard-to-reverse app
-entry) and toggles app-visible state (whether the launch overlay is up). It is
-modelled as a discriminated union replaced wholesale — the same流儀 as
-`tour` / `context.wizard` — so an illegal shape (e.g. "open" with no overlay) is
-unrepresentable. It is a small 2-state machine (§0 cheapest-lens: BPMN-style
-open→resolve, not CMMN); the **skip preference** is a persisted display setting
-(`localStorage.ee_home`), NOT an FSM state (§1.1 — settings/derived never smuggled
-into the state).
+**Why this exists here**: taking the whole screen touches the **boot flow** (a
+hard-to-reverse app entry) and decides what the user is looking at. Until
+ADR-113 the launch Home screen (`home`, ADR-089) and the New Project gallery
+(`templateGalleryOpen`, ADR-051) were **two independent fields at the same
+z-index 300**, so "how many full-screen claims are up" had no field at all and
+the winner of a tie was `UIShell.jsx`'s mount order — 原則 #31's "cardinality is
+a state that does not look like one". They are now **one slot**, which makes
+two-at-once unrepresentable rather than merely discouraged.
 
-**States** (stored in top-level `uiStore.home`)
+The **skip preference** remains a persisted display setting
+(`localStorage.ee_home`), NOT part of the state (§1.1 — settings/derived never
+smuggled into the state).
+
+**States** (stored in top-level `uiStore.stage`; claims declared in
+`src/view/ScreenClaim.js`)
 
 ```
-null (not shown: persisted ee_home='skip' flag at boot, or after resolve)
-  ──[boot, no ee_home flag — openHome()]───────────────→ { status:'open' }
-  ──[Header "Layout gallery" slot — openHome()]─────────→ { status:'open' }   (reopen after skip)
-open
-  ──[select layout card — onSelectLayoutTemplate(id)]──→ null   (+ compileLayout → importFromJson(clear) → land S-01)
-  ──[Empty Project — onStartEmptyProject()]────────────→ null   (close onto default boot scene → S-01)
-  ──[✕ close — onCloseHome()]──────────────────────────→ null   (close onto whatever scene is loaded)
+null (nothing claims the screen — the editor is visible)
+  ──[boot, no ee_home flag — claimStage(LAUNCH_HOME)]──────────→ { claim:'launch-home' }
+  ──[Start ▾ → From a layout template — onOpenHome()]──────────→ { claim:'launch-home' }   (reopen after skip)
+  ──[Unexamined / Start ▾ → New Project — openTemplateGallery()]→ { claim:'context-template-gallery' }
+{ claim:'launch-home' }
+  ──[select layout card — onSelectLayoutTemplate(id)]──────────→ null   (+ compileLayout → importFromJson(clear) → land S-01)
+  ──[Empty Project — onStartEmptyProject()]────────────────────→ null   (close onto default boot scene → S-01)
+  ──[✕ close — onCloseHome()]──────────────────────────────────→ null   (close onto whatever scene is loaded)
+  ──[openTemplateGallery()]────────────────────────────────────→ { claim:'context-template-gallery' }   (swap, never stack)
+{ claim:'context-template-gallery' }
+  ──[select / fork template — onSelectTemplate(id)]────────────→ null
+  ──[✕ or backdrop — onCloseTemplateGallery()]─────────────────→ null
+  ──[onOpenHome()]─────────────────────────────────────────────→ { claim:'launch-home' }   (swap, never stack)
 any
-  ──[toggle "起動時に表示しない" — onToggleHomeSkip(b)]→ (same state)   (persists ee_home; NOT a transition)
+  ──[toggle "起動時に表示しない" — onToggleHomeSkip(b)]────────→ (same state)   (persists ee_home; NOT a transition)
 ```
+
+The other two tiers are **not** in this slot and do not transition with it:
+`coach` (the mobile gesture hint, auto-dismissing) rides above the stage, and
+`dialog` (`uiStore.modal`) rides above both because it asks *about* whatever
+holds the stage. Each tier is 0..1 on its own; z-order between tiers is declared
+once in `tierZIndex()`, never chosen by a component.
 
 **Guards / invariants**
 
-- Sole writer: `AppController` (PHILOSOPHY #5). `HomeScreen` only reads `uiStore.home`
-  and fires `onSelectLayoutTemplate` / `onStartEmptyProject` / `onToggleHomeSkip` /
-  `onCloseHome` callbacks (same discipline as the tour / wizard panels).
+- Two writers, one each: `AppController` claims/releases `launch-home`,
+  `ContextController` claims/releases `context-template-gallery` — both through
+  the single pair `claimStage` / `releaseStage` (原則 #1 / #9).
+- **Release names its claim.** `releaseStage(LAUNCH_HOME)` is a no-op when the
+  gallery holds the stage, so a late close cannot clear a claim someone else has
+  taken since.
+- Components read `stageIs(stage, CLAIM)` and never their own boolean;
+  `HomeScreen` fires `onSelectLayoutTemplate` / `onStartEmptyProject` /
+  `onToggleHomeSkip` / `onCloseHome` (same discipline as the tour / wizard panels).
 - Layout load rides the **single authoritative path** `compileLayout` →
   `SceneService.importFromJson(scene, {clear:true})` (PHILOSOPHY #1) — Home adds no
   new load logic. Empty Project performs no scene replacement (keeps the default
@@ -625,6 +648,8 @@ any
   persists nowhere. Boot reads the flag once to decide the initial state.
 - Reopen affordance lives in a **fixed** header slot / ⋯ MoreMenu item so a skipped
   Home is never a dead end (PHILOSOPHY #15 / #11).
+- A claim that opens behind another is the silent no-op #11 forbids — which is
+  exactly what "open the gallery while Home is up" did before ADR-113.
 - The ADR-086 deterministic boot slice (no startup ReferenceError) holds on the Home
   path as well.
 

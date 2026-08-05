@@ -192,6 +192,51 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
 
 Export/Import hidden on mobile; replaced by `_moreMenuBtn` (⋯) dropdown. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. Map button hides its `<span>` text label on mobile (padding tightened to `4px`) — without this the N-panel icon is clipped on 375px viewports. Header has `overflow:hidden`. Mode dropdown (`_modeDropdownEl`) is appended to `document.body` with `position:fixed` and positioned via `getBoundingClientRect()` — if placed inside the header it gets clipped by `overflow:hidden`
 
+
+## Outside-Click Dismissal: One Predicate, and `pointerdown` (ADR-113 D1)
+
+A popup that escapes `overflow:hidden` by rendering `position:fixed` is **not a
+DOM descendant of its trigger**, so "did this click land inside me?" must be
+asked of the trigger *and* the surface. Ask only the trigger and every in-panel
+click reads as an outside click — invisible wherever selecting a row happens to
+close the menu anyway, and fatal wherever a row only changes state.
+
+- The predicate has ONE owner: `isInsideDropdown(target, { trigger, surface })`
+  in `src/view/DropdownContainment.js`. It **throws** if you pass only one of
+  the two fields, so the defective call shape cannot be written. Re-deriving it
+  (`ref.current.contains(e.target)`) is caught by `IDENTITY_RULES` in
+  `src/IdentityContainment.test.js` — that rule declares `scope: 'all'`, which
+  is what makes the guard scan `.jsx` (the default `js` scope would silently
+  never fire for a presentation-layer rule).
+- **Listen on `pointerdown`, not `click`.** React flushes the state change a
+  row's own `onClick` made *before* a `document` click listener runs, so the
+  clicked row can already be detached from the document — and a detached node is
+  inside nothing, so even a correct predicate reads "outside". `pointerdown`
+  asks while the target is still in the tree.
+- A menu with levels keeps the level **inside** its one state
+  (`src/view/OverflowMenuState.js`), never as a second field beside a boolean:
+  `{closed, verb:'export'}` must not be representable, and the level must be
+  decided when *opening* rather than reset when closing (closing paths multiply;
+  opening paths do not).
+
+## Full-Screen Overlays Do Not Choose Their Own z-index (ADR-113 D3)
+
+Any overlay that takes the whole screen (`position:'fixed'` + `inset:0`) is a
+declared **screen claim** in `src/view/ScreenClaim.js`, with a tier
+(`stage` / `coach` / `dialog`) and no z-index of its own — `tierZIndex(tier)` is
+the single owner of the order, the same discipline PHILOSOPHY #26 applies to
+screen edges. Two overlays that each pick the same literal have their winner
+decided by mount order, a fact written in neither file.
+
+- The `stage` tier is **one slot** (`uiStore.stage`), so two starting points
+  cannot be up at once. Write it only through `claimStage` / `releaseStage`;
+  release **names its claim**, so a late close cannot clear a claim someone else
+  has taken since.
+- `src/ScreenClaimCensus.test.js` derives its population by scanning
+  `src/components/**` and counts BOTH undeclared overlays and overlays that pick
+  their own z. Counting only the first is not enough: the original defect was in
+  the *order*, and every overlay already had a flag.
+
 ---
 
 ## Disabled-as-Quest: Locked Chrome Controls Explain Their Gate (ADR-065 Phase 3)

@@ -36,6 +36,7 @@
  */
 import * as THREE from 'three'
 import { useUIStore } from '../store/uiStore.js'
+import { SCREEN_CLAIM } from '../view/ScreenClaim.js'
 import { createApproveDecisionCommand } from '../command/ApproveDecisionCommand.js'
 import { createEditAdmissibleCommand } from '../command/EditAdmissibleCommand.js'
 import { createAnswerQuestionCommand } from '../command/AnswerQuestionCommand.js'
@@ -238,11 +239,17 @@ export class ContextController {
   // it handles active-overlay cleanup via `exit()` and needs no confirm dialog
   // (the gallery footer is the disclaimer, ADR-051 §7).
 
-  /** Open the starter-template picker modal. */
+  /**
+   * Open the starter-template picker modal.
+   *
+   * Taking the stage is ONE call (ADR-113) — whatever held it before (the launch
+   * Home screen) is released by the same write, so the gallery can never open
+   * *behind* another full-screen claim and appear to do nothing (原則 #11).
+   */
   openTemplateGallery() {
     const ui = useUIStore.getState().actions
     ui.setTemplateGalleryPreviews(this._templatePreviews())
-    ui.setTemplateGalleryOpen(true)
+    ui.claimStage(SCREEN_CLAIM.CONTEXT_TEMPLATE_GALLERY)
   }
 
   /**
@@ -267,9 +274,9 @@ export class ContextController {
     return previews
   }
 
-  /** Close the starter-template picker modal. */
+  /** Close the starter-template picker modal (releases the stage it holds). */
   closeTemplateGallery() {
-    useUIStore.getState().actions.setTemplateGalleryOpen(false)
+    useUIStore.getState().actions.releaseStage(SCREEN_CLAIM.CONTEXT_TEMPLATE_GALLERY)
   }
 
   /**

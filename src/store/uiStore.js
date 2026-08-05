@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { FLOOR_TAB, floorTabOrThrow } from '../view/FloorTabs.js'
 import { docIntakeTabOrThrow } from '../view/DocIntake.js'
+import { claimStage, releaseStage } from '../view/ScreenClaim.js'
 
 let _toastId = 0
 
@@ -140,15 +141,18 @@ export const useUIStore = create((set, get) => ({
   // (Widening 3); the progression itself persists nowhere.
   tour: null,
 
-  // ── Launch / Home screen FSM (ADR-089) ─────────────────────────────────────
-  // Discriminated union, replaced wholesale; sole writer AppController:
-  //   null                     — not shown (skipped via ee_home, or resolved)
-  //   { status:'open' }        — the launch overlay is up (HomeScreen.jsx)
-  // The skip preference is a persisted display SETTING (localStorage.ee_home),
-  // NOT an FSM state (§1.1 — settings never smuggled into the state). Selecting a
-  // layout card rides the single authoritative compileLayout → importFromJson
-  // (clear) path; the Empty card resolves to null without replacing the scene.
-  home: null,
+  // ── The STAGE claim — who owns the whole screen (ADR-113) ─────────────────
+  // ONE slot, so "two full-screen starting points at once" is unrepresentable:
+  //   null              — nothing claims the stage (the editor is visible)
+  //   { claim }         — that SCREEN_CLAIM owns it (view/ScreenClaim.js)
+  // This replaced two independent flags (`home` from ADR-089, `templateGalleryOpen`
+  // from ADR-051) that both rendered at z-index 300, so when both were set the
+  // winner was decided by mount order in UIShell.jsx — a fact written in neither
+  // component (ADR-113 §力学 2). Cardinality had no field of its own, which is
+  // exactly the shape 原則 #31 names.
+  // The Home skip preference is a persisted display SETTING (localStorage.ee_home),
+  // NOT part of this state (§1.1 — settings never smuggled into the state).
+  stage: null,
 
   // ── Context DSL demo (ADR-046/047) ─────────────────────────────────────────
   // Populated by ContextDemoController at demoStart; null-equivalent when inactive.
@@ -281,10 +285,8 @@ export const useUIStore = create((set, get) => ({
   },
 
   // ── Template gallery (ADR-051 Phase 2, Entry B) ────────────────────────────
-  // Open/closed flag for the starter-template picker modal (TemplateGallery.jsx).
-  // The catalog itself is static (TemplateCatalog.js); selecting an entry fires
-  // `onSelectTemplate(id)` which ContextController loads through ContextService.
-  templateGalleryOpen: false,
+  // Whether the picker is up is NOT a flag here — it is the `stage` claim
+  // (ADR-113). Only the catalog's derived previews live in this block.
   // ADR-062 Phase 5 — per-example structure previews for the gallery cards,
   // keyed by `source.file`. Derived by ContextController from the bundled docs
   // via canonicalForm → structurePreview (a fact projection, computed once);
@@ -408,9 +410,11 @@ export const useUIStore = create((set, get) => ({
     // AppController; transitions computed by the pure TourMath functions).
     setTour: (tour) => set({ tour }),
 
-    // ADR-089 — Home/Launch FSM state, replaced wholesale (sole writer
-    // AppController; the skip flag lives in localStorage, not here).
-    setHome: (home) => set({ home }),
+    // ADR-113 — the stage claim. ONE entry point for taking the screen and one
+    // for giving it back (原則 #1). `releaseStage` names WHICH claim is letting
+    // go, so a late close cannot clear a claim someone else has since taken.
+    claimStage:   (claim) => set({ stage: claimStage(claim) }),
+    releaseStage: (claim) => set(state => ({ stage: releaseStage(state.stage, claim) })),
 
     // ── Context DSL demo ─────────────────────────────────────────────────────
     demoStart: (payload) => set(state => ({
@@ -562,7 +566,6 @@ export const useUIStore = create((set, get) => ({
     contextSetRobots: (robots) => set(state => ({
       context: { ...state.context, robots },
     })),
-    setTemplateGalleryOpen: (val) => set({ templateGalleryOpen: val }),
     setTemplateGalleryPreviews: (previews) => set({ templateGalleryPreviews: previews }),
 
     // ADR-058 — read-only seed doc retained when a project is forked from an

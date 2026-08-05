@@ -214,7 +214,7 @@ const UNDECLARED_BASELINE = 31
  * 存在しないのと同じであり、数えなければ「満期を機械が読む」は行ごとに静かに
  * 空洞化する。上下どちらへ動いても fail するので、この数は記憶ではなく事実であり続ける。
  */
-const PROSE_EXPIRY_BASELINE = 6
+const PROSE_EXPIRY_BASELINE = 7
 
 /**
  * 登録簿の満期欄に置く機械可読な trigger。
