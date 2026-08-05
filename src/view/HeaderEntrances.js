@@ -238,7 +238,7 @@ export const START_ENTRY_BY_KIND = Object.freeze({
     label: 'Guided intake (wizard)', callback: 'onWizardStart', shortcut: null, requires: REQUIRES.CONTEXT_DOC,
     adr: 'ADR-063',
     why: '文書の中を埋める順序つきの器なので、文書が要る。器は ADR-106 (Phase 3) で '
-       + '`ContextLayer` のタブから `DocIntakeLayer` (**暫定住所**) へ移ったが、'
+       + '`ContextLayer` のタブから `DocIntakeLayer` (ADR-112 で**恒久住所**) へ移ったが、'
        + '**入口はここ 1 つのまま**である — 器が動いても入口は増えない、が両 ADR の接点。',
   }),
 })
@@ -265,14 +265,18 @@ export function startEntryFor(kind) {
 // ── 場 (ADR-106 が器を動かすまでの現住所) ──────────────────────────────────
 
 /**
- * `場を開く` の引数。ADR-106 (Phase 3) が器を右端 280px の縦ストリップから下部の
- * 展開パネルへ移した**後**の並び。この表が「Phase 3 で縮む」と予告していたとおり、
- * `grasp` は場を開かなくなった (住所は選んだロボットの隣 = N パネル — ADR-105 D5 /
- * ADR-106 D3) が、**入口としては残している**: 何も選んでいない状態から把持探索へ
- * 入る経路はここだけで、消せば原則 #16 が言う「移設ではなく無言の削除」になる。
- * したがって縮んだのは*行の数*ではなく**この行が意味すること**である — 分類の
- * 見直し (`open-floor` ではない動詞へ移すか) は入口の個数を動かす判断なので、
- * ADR-108 D2 の上界に当たる別の変更として起票する。
+ * `場を開く` の引数。**全行が下部の器を開く** (ADR-110 D1)。
+ *
+ * ADR-106 (Phase 3) が器を右端 280px の縦ストリップから下部の展開パネルへ移した
+ * とき、`grasp` 行は場を開かなくなったのに同じ動詞の引数として残った — 住所の
+ * 根拠が「かつて同じ器を開いていた」という**歴史**であって動詞ではない形で、
+ * ADR-108 D4 が `Nodes` について名指しした欠陥と同型である。ADR-110 でその行を
+ * 移設した (行き先は `RETIRED_FLOOR_TARGETS`)。
+ *
+ * したがってこの表の不変条件は「行が 3 つ」ではなく **場を開かない引数が 0 個**
+ * である (原則 #31 — 在る行を辿る数え方は今日の欠陥を素通りする)。問い所は
+ * `src/FloorContainerCensus.test.js` で、各行の callback から `ContextController`
+ * の呼び出し閉包を辿り、`contextStart(` に到達するかを数える。
  */
 export const FLOOR_TARGETS = Object.freeze([
   Object.freeze({ object: 'negotiate',     label: 'Negotiate',      callback: 'onContextNegotiate',   shortcut: null, requires: null,
@@ -281,9 +285,25 @@ export const FLOOR_TARGETS = Object.freeze([
     why: '許容領域を 3D で動かしながら交渉する (ADR-049 Phase 3)。' }),
   Object.freeze({ object: 'region-ghosts', label: 'Region ghosts',  callback: 'onContextRegionGhost', shortcut: null, requires: null,
     why: '未確定帯の表示 (ADR-050 §5.3)。ADR-107 で変数選択の 3D の姿にもなった。' }),
-  Object.freeze({ object: 'grasp',         label: 'Grasp search…',  callback: 'onOpenGrasp',          shortcut: null, requires: null,
-    why: '把持候補の探索 (ADR-057)。ADR-106 D3 の後、**パネルは場ではなく N パネルに開く** — '
-       + 'ここはその入口であって器ではない。選択が無い状態からの唯一の経路。' }),
+])
+
+/**
+ * **引っ越し先の台帳** (ADR-110 D1 — `RETIRED_FLOOR_TABS` と同じ形)。
+ *
+ * 行き先を名指ししない移設は無言の削除である (原則 #16)。消えた経路は「押しても
+ * 何も起きない」より発見が難しいので、**どこへ着いたか**を宣言として残し、
+ * 逆向きの検査 (`FloorContainerCensus`) が「行き先が実在するか」「その object が
+ * `FLOOR_TARGETS` に戻っていないか」を両方向に問う。
+ */
+export const RETIRED_FLOOR_TARGETS = Object.freeze([
+  Object.freeze({
+    object:  'grasp',
+    movedTo: 'src/components/NPanel/NPanel.jsx',
+    why: '把持探索は場の対象ではなく**主語の隣の検査**である (ADR-105 D5 / ADR-110)。'
+       + '選択が無いときの経路は消していない — N パネルの常設スロットが理由つき disabled で '
+       + '持つ (`view/EntityScopeChecks.js` の 2 種の 0)。主語の無い探索が構築できなく '
+       + 'なった分だけ、第二の選択面が生まれる余地も閉じた。',
+  }),
 ])
 
 // ── 作業面のトグル (D4 — Node Editor の住所) ───────────────────────────────

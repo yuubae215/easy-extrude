@@ -81,7 +81,24 @@ Dimensions / position → `LAYOUT_DESIGN.md`.
 | Header actions | **動詞ごとに 1 入口** (ADR-108): desktop = `Nodes` (作業面トグル) / `Start ▾` / `Export ▾` / `Import ▾` / 発見カウンタ / `Context ▾`、mobile = `⋯` が同じ 4 動詞を畳む。**対象は入口ではなく引数** — シーン JSON / サーバ / Context 文書は `Export ▾` `Import ▾` の中、レイアウトテンプレ / Context テンプレ / 物語 / クエスト / 誘導フォームは `Start ▾` の中。BFF 未接続でも**消えず**理由つき disabled (原則 #15 / #11) |
 
 #### [B] Outliner
-- Lists all objects in the scene
+- **Two SIDES, one dock** (ADR-111): `Scene Collection` (geometry — entities with a
+  body) and `Document` (semantic — the context document's shared design variables).
+  The switch is the title bar. Cardinality is always exactly 1 — a navigator
+  without a side does not exist — and the default is geometry (initial frequency).
+  - **Why two sides rather than one tree:** a shared variable is *selectable*
+    (ADR-107) but has no body. Mixing it into the geometry tree would change that
+    tree's meaning from "the structure of what exists" to "a list of what can be
+    selected" — two meanings on one widget (§1.1).
+  - Semantic rows are **windows**, not entrances: clicking one goes through the
+    same `onSelectVariable` window the floor's matrix header uses, so the five
+    selection verbs stay five (ADR-099 D1).
+  - The semantic side is **never removed** when a document is absent (原則 #15).
+    Its zero is declared in **two kinds** — "no context document yet" and "this
+    document declares no shared variables" — because the next move differs.
+  - Which side hosts which selectable kind is a declaration table
+    (`view/NavigatorSides.js`); an undeclared kind throws, and
+    `src/NavigatorAddressCensus.test.js` counts selectable kinds with no address (0).
+- Geometry side lists all objects in the scene
 - Each row: icon + name + badges + visibility toggle (eye) + delete
 - Active row: highlighted
 - CoordinateFrames displayed indented under their parent object

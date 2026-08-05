@@ -160,13 +160,14 @@ export class ContextController {
     // edit, undo, and redo uniformly (they all mutate the doc through the service).
     this._ctxService.on('contextChanged', () => this._reproject())
 
-    // The discovery aggregate is wired to the DOCUMENT, not to the overlay
-    // (ADR-105 D1). `_reproject()` above returns early unless the floor is open,
-    // which is exactly why the counters used to vanish outside it — the wiring
-    // that told you whether to go in only ran once you were in. These two edges
-    // are the "one extra wire" ADR-105 named as the cost of an honest zero.
-    this._ctxService.on('contextLoaded',  () => this._refreshDiscovery())
-    this._ctxService.on('contextChanged', () => this._refreshDiscovery())
+    // The document's read models (discovery aggregate + shared variables) are
+    // wired to the DOCUMENT, not to the overlay (ADR-105 D1 / ADR-111).
+    // `_reproject()` above returns early unless the floor is open, which is
+    // exactly why the counters used to vanish outside it — the wiring that told
+    // you whether to go in only ran once you were in. These two edges are the
+    // "one extra wire" ADR-105 named as the cost of an honest zero.
+    this._ctxService.on('contextLoaded',  () => this._refreshDocReadModels())
+    this._ctxService.on('contextChanged', () => this._refreshDocReadModels())
     // The selected variable's band is derived from the DOCUMENT too (ADR-107 D4):
     // an approval or a region edit moves the claims the band is drawn from. Wired
     // to the document edge rather than to the floor, for the same reason the
@@ -194,7 +195,7 @@ export class ContextController {
     registerCallback('onRemoveDocEntry',         (type, ref)  => this.removeDocEntry(type, ref))
     registerCallback('onIntakePreview',          (spec)       => this.previewIntake(spec))
     registerCallback('onAddNlFacts',             (facts)      => this.addNlFacts(facts))
-    // 文書の入口 (ADR-106 D3 — 暫定住所)。場のタブではないので、場の開閉とは
+    // 文書の入口 (ADR-106 D3 / 恒久住所は ADR-112)。場のタブではないので、場の開閉とは
     // 別の入口を持つ。
     registerCallback('onOpenDocIntake',          (tab)        => this.openDocIntake(tab))
     registerCallback('onCloseDocIntake',         ()           => this.closeDocIntake())
@@ -532,7 +533,7 @@ export class ContextController {
   // AUTHORITATIVE doc (the panel derives the same gaps for display from the
   // projected slice — one predicate, two projections).
 
-  // ── 文書の入口 (ADR-106 D3 — 暫定住所) ──────────────────────────────────────
+  // ── 文書の入口 (ADR-106 D3 / 恒久住所は ADR-112) ────────────────────────────
 
   /**
    * Open the document-intake container (guided wizard / expert form).
@@ -1495,7 +1496,9 @@ export class ContextController {
         ui.contextSetChecks(this._ctxService.projectChecks())
         const doc = this._ctxService.getDoc()
         ui.contextSetActors(doc?.actors ?? [])
-        ui.contextSetVars(doc?.variables ?? [])
+        // `contextSetVars` is NOT called here any more (ADR-111): its sole
+        // writer is `_refreshDocReadModels()`, on the document edge, because
+        // the navigator's semantic side reads it from outside the floor.
         ui.contextSetRequirements(doc?.requirements ?? [])
         // Refresh the whole-doc Why-tree overview — add/answer/edit all reshape it
         // (ADR-052 Phase 3; one re-projection path — PHILOSOPHY #5).
@@ -1525,20 +1528,31 @@ export class ContextController {
   }
 
   /**
-   * Re-derive the discovery aggregate (ADR-105 D1 / D4).
+   * Re-derive the read models that belong to the DOCUMENT rather than to the
+   * floor (ADR-105 D1 / D4, widened by ADR-111).
    *
-   * **The only writer** of `context.discovery` / `context.checksSummary`. Called
-   * from every path that can change the document — including the ones that never
-   * open the floor (adopt / import / drop), because the aggregate's whole job is
-   * to be readable *without* entering the floor. Before ADR-105 the counters only
-   * existed while `ctx.active`, i.e. the thing telling you whether you need to go
-   * in did not exist unless you had already gone in.
+   * **The only writer** of `context.discovery` / `context.checksSummary` /
+   * `context.variables`. Called from every path that can change the document —
+   * including the ones that never open the floor (adopt / import / drop),
+   * because these read models' whole job is to be readable *without* entering
+   * the floor. Before ADR-105 the counters only existed while `ctx.active`,
+   * i.e. the thing telling you whether you need to go in did not exist unless
+   * you had already gone in.
+   *
+   * **`variables` joined this set in ADR-111.** It used to be written only
+   * inside the `negotiate` branch of `_reproject()`, which was enough while its
+   * only reader was an IntakePanel dropdown *inside the floor*. The navigator's
+   * semantic side reads it from outside, so a floor-gated write would recreate
+   * the very cycle ADR-105 broke — you would have to open the floor to see what
+   * you can select without opening it. One writer, wired to the document edge.
    */
-  _refreshDiscovery() {
-    useUIStore.getState().actions.contextSetDiscovery(
+  _refreshDocReadModels() {
+    const ui = useUIStore.getState().actions
+    ui.contextSetDiscovery(
       this._ctxService.discoverySummary(),
       this._ctxService.checksSummary(),
     )
+    ui.contextSetVars(this._ctxService.getDoc()?.variables ?? [])
   }
 
   /** Resync widget regions to the canonical doc (after undo / redo of an edit). */

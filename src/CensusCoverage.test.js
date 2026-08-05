@@ -107,6 +107,18 @@ const CENSUS_REGISTRY = [
     why: '母集団 = SELECTION_KIND の枝。3D の姿を宣言する種と、宣言しない理由つきの '
        + '対象外 (empty) に分割する。枝を足して行を足さなければ落ちる' },
 
+  // ── 選択可能種の住所 (ADR-111) ──
+  { file: 'src/NavigatorAddressCensus.test.js', table: 'KINDS_WITHOUT_AN_ADDRESS', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = SELECTABLE_KINDS の枝。ナビゲータに住所を持つ種と、持たないと理由つきで '
+       + '宣言した種に分割する。今日は後者が空だが、空であることの宣言も宣言である — '
+       + '除外を書ける場所が無いと、次の人は住所表のほうを黙って歪める (原則 #31)' },
+
+  // ── 覆う範囲の規則 (ADR-112) ──
+  { file: 'src/DocIntakeAddressCensus.test.js', table: 'ROLES_WITHOUT_A_RULE', kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = SURFACE_ROLE の値。覆う規則を持つ役割と、持たないと理由つきで宣言した '
+       + '役割に分割する。3 つ目の役割が生まれた日に、規則を決めるまで落ちる — '
+       + '面の名前で書かれた規則が ADR-111 の意味側で表せなくなった、その再発を止める側' },
+
   // ── 可視性 (ADR-096) ──
   { file: 'src/VisibilityOwnership.test.js', table: 'OWNERSHIP_RULES',             kind: KIND.SHAPE_CENSUS,
     why: '2 軸の合成・各軸の書き込みの形。所有者の外の個数を src/** 全体で数える' },

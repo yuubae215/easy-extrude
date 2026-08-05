@@ -115,8 +115,18 @@ export function NPanel() {
         {/* Entity-scope validation, beside the thing it is about (ADR-105 D5).
             Availability follows the SELECTION — not `ctx.active`, not whether a
             document exists — so `place → see if it reaches → place again` closes
-            without a detour through the floor. */}
-        {nPanelData && <EntityChecks />}
+            without a detour through the floor.
+
+            PERMANENT slot, selection or not (ADR-110 D2 / 原則 #15). This is
+            where the header's retired `Context ▾ → Grasp search…` argument
+            landed: the path from "nothing selected" into grasp search was the
+            only one that did not require a subject, and removing it would have
+            been a silent deletion rather than a move (原則 #16). Disabled with
+            its reason instead — and because the entrance now sits behind a
+            selection, a grasp search WITHOUT a subject stopped being
+            constructible, which is what closes the door on a second selection
+            surface growing inside the panel (ADR-110 §力学 3). */}
+        <EntityChecks />
 
         {/* Grasp-search results, beside the robot they are about (ADR-105 D5 /
             ADR-106 D3). This was the `grasp` tab of the floor, which meant

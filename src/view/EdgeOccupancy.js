@@ -69,6 +69,25 @@ export function leftEdgeOffset({ isMobile }) {
 }
 
 /**
+ * 左端の**常設ドックを覆わない**一時オーバーレイの `left` (px) — ADR-112 D2。
+ *
+ * 一時オーバーレイは端の予算に参加しない (常設ではない) が、覆う相手が
+ * 「いま入力しているものを映す面」のときだけは端を空ける。その判断そのものは
+ * `view/DocIntake.js` の役割表が持ち、ここが答えるのは**空けるなら何 px か**
+ * だけである — 幅の literal がオーバーレイ側へ写ると、Outliner の幅が変わった日に
+ * 片方だけが直る (原則 #26 が端で禁じているのと同じ形)。
+ *
+ * mobile の Outliner はドロワーなので、覆う覆わない以前に端に居ない → 0。
+ *
+ * @param {{isMobile: boolean, clearLeftDock: boolean}} occupancy
+ * @returns {number}
+ */
+export function transientOverlayLeft({ isMobile, clearLeftDock }) {
+  if (isMobile || !clearLeftDock) return 0
+  return OUTLINER_WIDTH
+}
+
+/**
  * ヘッダ直下に張り付く要素の `top` (px)。
  * @returns {number}
  */

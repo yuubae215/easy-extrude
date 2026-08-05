@@ -558,7 +558,10 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
 
   // 症状 4 — selecting another entity does not take it back. The context axis
   // moves; the axis the user wrote does not.
-  const outliner = page.getByText('Scene Collection', { exact: true }).locator('..')
+  // ADR-111 made the title bar a SIDE SWITCH, so the panel is the switch's
+  // grandparent rather than its parent. Walk to the dock explicitly instead of
+  // counting `..` hops — the row we want lives on the geometry side.
+  const outliner = page.getByText('Scene Collection', { exact: true }).locator('../..')
   await outliner.getByText('Cube', { exact: true }).click()
   await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.contextual).toBe(null)
   const afterSelect = (await state()).find(o => o.name === 'tcp')
@@ -1084,12 +1087,18 @@ test('場に入らずに「未検証」と分かる — 0 件ではなく未検�
 
   // 3D 左上の KPI HUD も同じ判断を持つ。「✓ 全部パス」は**出ていない** —
   // 検査していないことと検査して通ったことは別の事実である。
+  // Scoped to the visible ones: ADR-110 made the N panel's Checks slot permanent,
+  // so its own `Unexamined` headline is in the DOM from boot — hidden, because
+  // the panel itself is (desktop `display:none` until toggled). "First in DOM
+  // order" stopped meaning "the HUD" the day a second declared zero appeared.
   const hud = page.getByText('Unexamined', { exact: true })
-  await expect(hud.first()).toBeVisible()
+  await expect(hud.locator('visible=true').first()).toBeVisible()
   await expect(page.getByText('All pass')).toHaveCount(0)
 
   // 0 は宣言され、出口が名指しされている (原則 #11 / #15)。
-  await expect(page.getByText(/Adopt a context document/)).toBeVisible()
+  // 同じ出口は N パネルの常設 Checks スロットにも在る (ADR-110) が、パネルが
+  // 閉じているあいだは hidden なので、可視のものへ絞る。
+  await expect(page.getByText(/Adopt a context document/).locator('visible=true').first()).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -1204,7 +1213,7 @@ test('移設された入力タブは新住所から到達できる — 消えた
   // スライダーは選んだものの隣 = N パネルに着く。
   await expect(page.getByRole('button', { name: /Commit as variables/ })).toBeVisible()
 
-  // Wizard / Intake → 文書の入口 (暫定住所。Phase 5 = ADR-108 が最終的な住所を決めた)。
+  // Wizard / Intake → 文書の入口 (ADR-112 が恒久住所として決着させた)。
   // 入口は ADR-108 の `Start ▾ → Guided intake (wizard)` ただ 1 つ — 動詞は「始める」で、
   // 誘導インテークはその**引数**である。ADR-106 が変えたのは器の側だけで、入口は増えない。
   await loadTemplateIntoNegotiate(page)
@@ -1212,7 +1221,9 @@ test('移設された入力タブは新住所から到達できる — 消えた
   await page.getByText('Guided intake (wizard)', { exact: true }).click()
   await expect(page.getByText('Document intake', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Expert form' })).toBeVisible()
-  await expect(page.getByText(/Provisional address/)).toBeVisible()
+  // 決着したので、画面の但し書きは**更新ではなく削除**された (ADR-112 D1)。
+  // 残っていれば「まだ残っている」という嘘を出し続けることになる。
+  await expect(page.getByText(/Provisional address/)).toHaveCount(0)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -1454,6 +1465,122 @@ test('画面を占める面は同時に 1 枚 — 起動ホームと New Project
   await page.getByRole('button', { name: 'From a layout template' }).click()
   await expect(homeHeading).toBeVisible()
   await expect(page.getByText('New Project')).toHaveCount(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+// ─── ADR-110 / ADR-111 / ADR-112: 住所を決め直した 3 本 ──────────────────────
+//
+// 3 本とも「機能を足した」のではなく **住所を決めた**判断なので、焼くのは
+// 「在るか」ではなく **どこに在るか / 何が無くなったか**である。
+// 静的な側 (census) が数えられるのは形までで、「押したら本当に届くか」
+// 「覆われていないか」はここでしか見えない — 境界は宣言であって推論ではない。
+
+test('把持探索は Context ▾ から消え、選択の隣に理由つきで在る (ADR-110 D1/D2)', async ({ page }) => {
+  // 移設の証拠は 2 つ揃って初めて成立する: 元の住所から**消えた**ことと、
+  // 新しい住所に**着いた**こと。片方だけなら、それは無言の削除か二重配置である。
+  const errors = await boot(page)
+
+  // ① 元の住所から消えた — `場を開く` の引数は全部 3 行とも器を開く。
+  await page.getByRole('button', { name: /Context/ }).click()
+  await expect(page.getByText('Negotiate', { exact: true })).toBeVisible()
+  await expect(page.getByText('Grasp search…', { exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+
+  // ② 新しい住所に着いた — スロットは主語が無くても**在る** (原則 #15) で、
+  // 押せない理由を運ぶので無言の no-op にはならない (原則 #11)。
+  //
+  // **この e2e が見ていない側 (宣言)**: 選択が完全に空のときの 2 種の 0
+  // (未選択 / ロボット 0 台) は、起動シーンが常に 1 つ選択済みで立ち上がるため
+  // ここからは到達できない。そちらは `FloorContainerCensus.test.js` が
+  // `graspEntryFor(null, …)` を直接通して焼いている — 境界は宣言であって推論ではない。
+  await page.keyboard.press('n')
+  const entry = page.getByRole('button', { name: /Grasp candidates/ })
+  await expect(entry).toBeVisible()
+  await expect(entry).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByText(/select a robot frame/i)).toBeVisible()
+
+  // ③ 主語を選べば開く — 経路は消えていない、1 手増えただけである。
+  await selectRow(page, 'robot_base')
+  await expect(page.getByRole('button', { name: /Grasp candidates/ })).not.toHaveAttribute('aria-disabled', 'true')
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+// **0 台の理由文は e2e から焼いていない (宣言)。** 起動シーンのロボットを UI から
+// 消すには確認モーダルを含む複数手が要り、その手数を焼くとこのテストの主語が
+// 「0 台の理由」ではなく「削除フロー」になる。2 種の 0 が別々の文言を出すことと、
+// 基数を渡さない呼びが throw することは `FloorContainerCensus.test.js` が
+// `graspEntryFor` を直接通して焼いている (原則 #20 — 狭く名指しした証拠のほうが通る)。
+
+test('文書が無いとき、意味側は「空」ではなく「文書がまだ無い」と言う (ADR-111 D4)', async ({ page }) => {
+  // 2 種の 0 のうち、e2e が到達できる側。「文書が無い」と「文書に変数が 0 個」は
+  // 次の一手が違うので、同じ「空」で賄うと片方に嘘の道案内を出す。
+  const errors = await boot(page)
+
+  // 意味側は文書が無くても**消えない** (原則 #15) — 消すと「文書を採る前は
+  // 意味の層が存在しない」という誤ったモデルを教えることになる。
+  const semantic = page.getByRole('button', { name: 'Document', exact: true })
+  await expect(semantic).toBeVisible()
+  await semantic.click()
+
+  await expect(page.getByText('No context document yet')).toBeVisible()
+  // 行き止まりにしない — 0 は出口を名指しする (原則 #11 / #16)。
+  await expect(page.getByRole('button', { name: /Start from a template/ })).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('場を閉じたまま、意味側から共有変数を選べる (ADR-111 の完了条件)', async ({ page }) => {
+  // ADR-111 が閉じた循環そのもの。ADR-107 の時点で変数を選ぶ窓は場の行列だけ
+  // だったので、**場に入らないと変数が触れない**状態が選択の側に残っていた。
+  const errors = await boot(page)
+  await loadRegionTemplateIntoMatrix(page)
+
+  // 場を閉じる。ここから先、行列の変数見出しは画面に無い。
+  await page.getByRole('button', { name: '✕' }).click()
+  await expect(page.getByRole('button', { name: 'Matrix' })).toHaveCount(0)
+  await expect(page.locator('[data-variable-header]')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Document', exact: true }).click()
+  const row = page.getByText('v_base_footprint', { exact: true })
+  await expect(row).toBeVisible()
+  await row.click()
+
+  const state = await page.evaluate(() => window.__easyExtrude.selectionState())
+  expect(state.kind, '意味側の行が選択を入れ替えていない (窓が繋がっていない)').toBe('variables')
+  expect(state.variables).toEqual(['v_base_footprint'])
+  expect(state.names, '変数を選んだのに実体も選ばれたまま (混在)').toEqual([])
+
+  // 種が入れ替わったことは右パネルにも出る — 無言でないこと (原則 #11)。
+  await page.keyboard.press('n')
+  await expect(page.getByText('Shared variable')).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('文書を入力しているあいだ、左のナビゲータは覆われない (ADR-112 D2)', async ({ page }) => {
+  // 覆う範囲の規則が**面の名前ではなく役割で**書かれていることの、画面側の証拠。
+  //
+  // 実装で分かったこと: 可否は「いま見せている面」ではなく「器が見せうる面」で
+  // 決まる。側を切り替えるスイッチ自体が覆われる側に住んでいるので、幾何側だから
+  // と覆うと意味側へ行く手段が消える — 規則が「覆ってよい」と言った瞬間に、
+  // 規則を発動させる手段が無くなる (原則 #16)。
+  const errors = await boot(page)
+  await loadTemplateIntoNegotiate(page)
+
+  await page.getByRole('button', { name: /Start/ }).click()
+  await page.getByText('Guided intake (wizard)', { exact: true }).click()
+  await expect(page.getByText('Document intake', { exact: true })).toBeVisible()
+
+  // 左のナビゲータは覆われない — 切替も、意味側の住人も、押せるままである。
+  const semantic = page.getByRole('button', { name: 'Document', exact: true })
+  await expect(semantic).toBeVisible()
+  await semantic.click()
+  await expect(page.getByRole('button', { name: 'Scene Collection' })).toBeVisible()
+
+  // フォームはまだ在る (空けたのであって、閉じたのではない)。
+  await expect(page.getByRole('button', { name: 'Expert form' })).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

@@ -74,7 +74,10 @@ const NOT_A_RENDERER = [
   { key: 'src/service/ContextService.js',
     why: '集約を組み立てる service glue。ドメインと描き手のあいだで、場を参照しない' },
   { key: 'src/controller/ContextController.js',
-    why: '唯一の書き手への配線 (_refreshDiscovery)。場の開閉とは別の辺 (contextLoaded / contextChanged) に繋いである' },
+    why: '唯一の書き手への配線 (_refreshDocReadModels)。場の開閉とは別の辺 (contextLoaded / contextChanged) に繋いである' },
+  { key: 'src/view/DocPresence.js',
+    why: '「文書を採ったか」を答える唯一の述語 (ADR-111)。集約の 1 欄を読むだけの純粋関数で、'
+       + '場も画面も知らない。ここに畳んだことで、同じ導出が 2 箇所に書かれる形が消えた (§1.1)' },
   // `src/store/uiStore.js` はここに**居ない**。初回実行でこの逆向き検査が空回りを
   // 検出した — ストアは集約を *読まない* (スライスを宣言し、値を受け取って代入する
   // だけ) ので母集団に入らず、除外の宣言は最初から空回りしていた。書き手としての
@@ -234,7 +237,11 @@ test('entity-scope の宣言表が、N パネルが描き分ける実体種を�
 test('未宣言の実体種では throw する — fall-through で既定を返さない', () => {
   assert.throws(() => graspEntryFor({ type: 'something-new' }), /未宣言の実体種/)
   // 選択が無いのは「種が無い」ことなので、throw ではなく理由つきの不可用 (#11)。
-  assert.deepEqual(graspEntryFor(null), { available: false, reason: 'Nothing is selected.' })
+  // 理由は 1 種ではない — シーンのロボットの基数が決める (ADR-110 D4 / ADR-090)。
+  // その基数を渡さない呼びだけが throw する: 既定へ倒すと 0 台の人に嘘が出る。
+  const blocked = graspEntryFor(null, { robotCardinality: 'single' })
+  assert.equal(blocked.available, false)
+  assert.ok(blocked.reason?.length > 0, '選択が無いときの不可用に理由が無い')
 })
 
 test('grasp の入口は宣言された役割で決まる — 名前では決まらない', () => {

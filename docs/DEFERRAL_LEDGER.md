@@ -42,9 +42,6 @@
 
 | id | 所在 | 満期 (条件) | ticket | lane |
 |---|---|---|---|---|
-| DEF-001 | `src/view/DocIntake.js` · `src/view/FloorTabs.js` · `src/store/uiStore.js` · `src/controller/ContextController.js` · `src/components/Doc/DocIntakeLayer.jsx` · `docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md` | 文書の入口の恒久住所が決まったとき (**満期=ADR-112**)。**満期は 1 度空振りしている** — 元は ADR-108 を指していた | ADR-112 / Phase 5.2 | ia |
-| DEF-002 | `src/view/HeaderEntrances.js` · `docs/adr/ADR-110-grasp-is-a-check-beside-its-subject-not-an-object-of-the-floor.md` | `FLOOR_TARGETS` の全行が下部の器を開くようになったとき (**満期=ADR-110**) | ADR-110 / Phase 5.1 | ia |
-| DEF-003 | `docs/ia-redesign/03-implementation-order.md` · `docs/adr/ADR-111-the-outliner-has-a-semantic-side.md` | Outliner の意味側 (v8 注釈②) が実装され、住所を持たない選択可能種が 0 個になったとき (**満期=ADR-111**) | ADR-111 / Phase 3.6 | ia |
 | DEF-004 | `docs/adr/ADR-060-grasp-contract-data-governance.md` | `Kinematics.js` の連鎖順が契約側 `jointSpace.joints` の順序と一致する契約として doc に名指しされたとき。**他の 4 項目は 2026-08-04 に完了/消滅を確認済み** | ADR-060 | contract |
 | DEF-005 | `docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md` | Phase 4 (実ソルバ差し替え) と pick-sequence 集計レポート UI が出たとき。収束仮説の検証も同段 | ADR-081 | core |
 | DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき | ADR-078 | contract |
@@ -66,12 +63,17 @@
 - **覆う粒度はファイル単位である。** 行を 1 つ足すとそのファイル内の以後の残しも
   「宣言済み」に数えられる。所在欄に行番号を書いても検査はファイルまでしか見ない —
   行番号は人が辿るためのもので、機械が数える鍵ではない (行番号は編集のたびにずれる)。
-- **散文の満期は、来たことを機械が知らない。** 現在 11 行中 **7 行** (DEF-004〜008 /
+- **散文の満期は、来たことを機械が知らない。** 現在 8 行中 **7 行** (DEF-004〜008 /
   010 / 011) の満期条件は ADR の採択に対応しないので `満期=ADR-NNN` を持たない。Q5 が
   この 7 を予算として縛るが、**縛るのは個数であって条件の真偽ではない** — 「Phase 4 が
   出たとき」が本当に来たかどうかは、今日も人が見るしかない。ここは埋めていない穴として
   宣言しておく (満期の機械化は 4/11 までしか届いていない)。
-  DEF-011 (2026-08-04 追加) が 7 行目である。満期は「読み取り専用の表示を押した先が
+  DEF-011 (2026-08-04 追加) が 7 行目である。**分母は 2026-08-05 に 11 → 8 へ下がった**
+  (DEF-001 / 002 / 003 の満期 `満期=ADR-112` / `=ADR-110` / `=ADR-111` が来て、3 行とも
+  片付いたので削除した)。機械可読な満期を持つ行が減ったのは*成功*であって後退ではない —
+  trigger は満期が来たら消える設計なので、残っているのは常に「まだ来ていない満期」である。
+  分子 7 が動かず分母だけ下がるのはそのためで、Q5 の予算は個数で縛る以上ここも
+  推論させず書いておく。満期は「読み取り専用の表示を押した先が
   シーンを置き換えることが押す前に分かる」ことで、**ADR の採択ではなく画面の状態**が
   条件なので trigger を書けない。ADR-113 を書けば「ADR-113 が Accepted になった日に
   満期」と主張することになるが、ADR-113 は構造の側だけを閉じており語彙は未着手のまま

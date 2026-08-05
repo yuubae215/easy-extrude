@@ -27,7 +27,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 30a4edf4-08e7-4c19-a9a4-cfb84f732d5c
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f) — 把持探索へ届くまでの経路そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形。e2e が『ロボットを選ぶと入口が enabled になり探索が seed される』を焼いた PR で solution として吊る"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f) — 把持探索へ届くまでの経路そのものだから。2026-08-05 に本 ADR は Accepted (実装済み) となり証拠は実測値になったが、吊り替えは事業木側の編集なので DEF-010 (ADR-094) と同じレーンで扱う"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -65,7 +65,7 @@ artifacts
 
             assumption FloorArgumentsWillBeCountedNotListed
             uuid 8840987a-e1b2-4b2e-8143-2eed4cc355da
-            summary "証拠の予定: FloorContainerCensus.test.js の母集団 (contextStart / contextEnd を呼ぶメソッドから導出する呼び出し閉包) をそのまま使い、FLOOR_TARGETS の各行の callback がその閉包に属することを問う。属さない行が 0 個。手書きの『場を開く callback リスト』は作らない — それは母集団を持たない表 (ADR-102 の place-list) になる"
+            summary "実測 (2026-08-05, pnpm test): FloorContainerCensus.test.js が ContextController の registerCallback 行から各 callback のメソッドを引き、その呼び出し閉包が ui.contextStart( に到達するかを問う。器を開かない引数 0 個。手書きの『場を開く callback リスト』は作らなかった (母集団は配線の構文から導出)"
             artifacts
             - "src/FloorContainerCensus.test.js"
 
@@ -77,7 +77,7 @@ artifacts
 
             assumption TheUnchangedBaselineIsTheProof
             uuid b5cf128d-8b11-4f73-9a52-12948e8892f0
-            summary "証拠の予定: HeaderEntranceCensus.test.js を**書き換えずに**通す。ADR-107 が SelectionOwnership.test.js の母集団を『作り直さずに通ること』を決定の検算に使ったのと同じ形 — 検査を書き換えねば通らない変更は、宣言した決定と違うことをした証拠である"
+            summary "実測 (2026-08-05): HeaderEntranceCensus.test.js は**1 行も書き換えずに**通った (desktop 7 / mobile 7)。ADR-107 が SelectionOwnership.test.js に使ったのと同じ形の検算で、案 C (新しい動詞を立てる) を選んでいれば ratchet の書き換えが要ったはずである"
 
         goal TheSubjectlessPathIsRelocatedNotDeleted
         uuid 6e202b00-8ad7-497e-8a19-9da961171005
@@ -87,6 +87,6 @@ artifacts
 
             assumption AvailabilityAndReasonComeFromOneReturnValue
             uuid 246aa007-1877-4e8a-9fcf-86a5b7a7fc6e
-            summary "証拠の予定: REQUIRES.ROBOT_SELECTED + REQUIREMENT_REASON の行 + availabilityOf の dispatch を同じコミットで足す — availabilityOf は未宣言の前提で throw するので、3 つ揃わなければ unit が落ちる (ADR-108 が既に置いた安全装置がそのまま効く)。e2e 2 本で (a) 選択なしで入口が理由つき disabled、(b) robot_base を選ぶと enabled → GraspSearchPanel が現れる、を焼く"
+            summary "実測 (2026-08-05): 住所は REQUIRES ではなく view/EntityScopeChecks.js になった (ADR-110 §実装で変わったこと — ヘッダから出た前提をヘッダの語彙に足すと空回りする宣言が 1 行できる)。判定と理由は同じ返り値から出る形のまま、0 の種は GRASP_BLOCKED_KIND の 2 種で未宣言の種は throw、基数を渡さない呼びも throw。unit は FloorContainerCensus.test.js、e2e は『把持探索は Context ▾ から消え、選択の隣に理由つきで在る』(消えたこと・disabled + 理由・ロボット選択で enabled の 3 点)。0 台の理由文は e2e から焼いていない — 削除フローが主語になるため unit 側に置いた (境界の宣言)"
             artifacts
             - "e2e/smoke.spec.js"

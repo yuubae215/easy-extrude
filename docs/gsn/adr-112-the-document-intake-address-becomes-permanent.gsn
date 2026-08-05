@@ -11,7 +11,7 @@ artifacts
 
     context Adr112Scope
     uuid 11caf9c7-3172-41f2-9f7b-402c28fb306e
-    summary "ADR-112 (Proposed 2026-08-04): ADR-106 D3 が置いた暫定住所 (DocIntakeLayer) を恒久として確定させ、覆う範囲の規則を面の名前から役割へ変える。入口 (START の GUIDED_INTAKE 行) は ADR-108 が決めたとおり不変で、ヘッダの入口の個数も動かない。本 PR で行うのは満期のポインタの張り替えだけで、宣言の畳み込み (PROVISIONAL_UNTIL の削除) は Accepted 後の実装段に属する"
+    summary "ADR-112 (Accepted・実装済み 2026-08-05): ADR-106 D3 が期限つきの留保として置いた住所 (DocIntakeLayer) を恒久として確定させ、覆う範囲の規則を面の名前から役割へ変えた。入口 (START の GUIDED_INTAKE 行) は ADR-108 が決めたとおり不変で、ヘッダの入口の個数も動かなかった。期限の宣言は更新ではなく削除 (repo 内 0 個)。実装で D2 の粒度が変わった — 可否は『いま見せている面』ではなく『器が見せうる面』"
     artifacts
     - "src/components/Doc/DocIntakeLayer.jsx"
 
@@ -30,7 +30,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 22a51849-b69e-4b25-8a2e-09d33d5d05f9
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を最後まで書き切れるかが、その先のすべての判定の前提だから)。保留理由: 本 ADR は Proposed で、決定の主要部 (覆う範囲の規則) は ADR-111 が入って初めて意味を持つ。入力中に意味側が覆われないことを焼く e2e が実在した PR で solution として吊る"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を最後まで書き切れるかが、その先のすべての判定の前提だから)。2026-08-05 に ADR-111 と同じ PR で実装され、e2e『文書を入力しているあいだ、左のナビゲータは覆われない』が焼いている。吊り替えは事業木側の編集なので DEF-010 (ADR-094) と同じレーンで扱う"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
@@ -68,7 +68,7 @@ artifacts
 
             assumption TheReverseCheckCountsTheLeftovers
             uuid ed9c1d7f-3ab7-4b7e-a89e-2dd13dd6c7c4
-            summary "証拠の予定: ADR-109 D4 の逆向き検査 (実在しない残しの宣言 = 0 個) がそのまま消し残しを数える。7 箇所は手で列挙せず語彙から導出する — 8 箇所目がどこかに在っても数え漏らさないため。本 PR の時点ではまだ畳まず、満期のポインタを ADR-108 から ADR-112 へ張り替えるにとどめる (Proposed の ADR で宣言を消すと、決着していないのに決着した顔をすることになる)"
+            summary "実測 (2026-08-05, pnpm test:deferrals): 期限の定数・画面の但し書き・guard のメッセージ・RETIRED_FLOOR_TABS の注記・台帳の欄をすべて畳み、src/ から当該の語彙が 0 個になった。箇所は手で列挙せず語彙から導出している。副作用として登録簿の DEF-001/002/003 が片付き、覆う粒度がファイル単位であるため宣言外の実測値が 31 → 71 へ上がった — 検査に合わせて散文を書き換えるのではなく実測値を焼いた (ADR-100 の ratchet と同じ姿勢)"
 
         goal TheCoverageRuleHasOneOwner
         uuid 8835e43c-19ea-4960-bb35-24ca193eeb6a

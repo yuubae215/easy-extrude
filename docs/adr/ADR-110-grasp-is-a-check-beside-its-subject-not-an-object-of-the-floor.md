@@ -1,6 +1,6 @@
 # 110. 把持探索は場の対象ではなく、主語の隣の検査である — 動詞を失った行の再分類
 
-- Status: Proposed (動詞を失った引数の再分類。実測の結果、入口の個数は動かない — D2 の ratchet は上げない)
+- Status: Accepted (実装済み 2026-08-05 — IA Phase 5.1。実測の結果、入口の個数は動かなかった: desktop 7 / mobile 7 の ratchet は**書き換えずに**通った)
 - Date: 2026-08-04
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: なし (ADR-105 D5 が決めた「把持は選択駆動で主語の隣」を
@@ -160,3 +160,46 @@ dispatch を**同じコミットで**足す (`availabilityOf` は未宣言の前
 - **原則 #2 (Type Is the Capability Contract):** 案 E を却下した理由は型論でもある —
   `START_KIND` と「シーンへの問い合わせ」を同じ enum に入れると、`startEntryFor` の
   返り値が「働き方の始め方」と「検査の起動」の 2 義になる。
+
+## 実装で変わったこと (2026-08-05)
+
+俯瞰と実装が食い違った点だけを記録する。食い違いのほうを残すのが規律で、
+黙って本文を書き換えると判断の履歴が消える (原則 #19)。
+
+### D4 の住所 — `REQUIRES` ではなく entity-scope の宣言表へ
+
+D4 は「`REQUIRES.ROBOT_SELECTED` + `REQUIREMENT_REASON` + `availabilityOf` の
+dispatch を同じコミットで足す」と書いていた。**足さなかった。**
+
+`REQUIRES` は**ヘッダの**入口が引く語彙であり、把持探索がヘッダから出た以上、
+そこに行を足すと「どの入口からも引かれない前提」が 1 行できる。それは
+`assertDeclarationsExist` が各所で落としている**空回りする宣言**そのもので、
+しかも今日は誰も数えていない場所に生まれる。
+
+代わりに、判定と理由が同じ返り値から出るという D2 の要件 (`availabilityOf` と
+**同じ形**) はそのままに、住所を `src/view/EntityScopeChecks.js` — 既に
+「この選択で把持探索が使えるか」を所有しているモジュール — に置いた。
+2 種の 0 は `GRASP_BLOCKED_KIND` + `GRASP_BLOCKED_REASON` の対で、未宣言の種は
+throw する。
+
+### 基数を渡さない呼びは throw する (D4 の「正直な限界」の実装形)
+
+「理由の分岐は実装時に 2 種として宣言する」を、*宣言し忘れられない*形にした:
+`graspEntryFor(null)` は `robotCardinality` が無いと **throw する**。既定を
+「ロボットは在る」に倒すと、0 台のシーンで「ロボットを選べ」という嘘が出る —
+それは ADR-090 が潰した「欠けた入力に既定値を与える」欠陥と同じ形である。
+
+### N パネルの Checks スロットが常設になった副作用
+
+`{nPanelData && <EntityChecks />}` を無条件描画に変えたので、選択が無くても
+`Unexamined` / `Adopt a context document.` が DOM に存在する (パネル自体が
+非表示なので hidden)。ADR-105 の e2e 2 本が「DOM 順で最初の一致」を可視要素と
+みなしていたため落ち、可視要素へ絞る形へ直した。**2 つ目の宣言された 0 が
+生まれた日に、「最初の一致」は「その一致」ではなくなる。**
+
+### 0 台の理由文は e2e から焼いていない (境界の宣言)
+
+起動シーンのロボットを UI から消すには確認モーダルを含む複数手が要り、それを
+焼くとテストの主語が「0 台の理由」ではなく「削除フロー」になる (原則 #20)。
+2 種の 0 が別々の文言を出すことと、基数を渡さない呼びが throw することは
+`src/FloorContainerCensus.test.js` が `graspEntryFor` を直接通して焼いている。

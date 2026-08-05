@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { FLOOR_TAB, floorTabOrThrow } from '../view/FloorTabs.js'
 import { docIntakeTabOrThrow } from '../view/DocIntake.js'
+import { NAVIGATOR_SIDE, navigatorSideOrThrow } from '../view/NavigatorSides.js'
 import { claimStage, releaseStage } from '../view/ScreenClaim.js'
 
 let _toastId = 0
@@ -125,6 +126,13 @@ export const useUIStore = create((set, get) => ({
   outlinerItems: [],
   outlinerActiveId: null,
   outlinerDrawerOpen: false,
+  // ADR-111 — which SIDE of the navigator is showing. The geometry side lists
+  // entities with a body; the semantic side lists the context document's shared
+  // variables, which are selectable (ADR-107) but have no body and therefore no
+  // home in the geometry tree. Cardinality is always exactly 1 — a navigator
+  // without a side does not exist — so this is a switch, never an absence.
+  // Sole writer `outlinerSetSide` (原則 #4), value域 guarded at the write.
+  outlinerSide: NAVIGATOR_SIDE.GEOMETRY,
 
   // ── Onboarding (mobile first-visit gesture hint) ───────────────────────────
   onboardingVisible: false,
@@ -179,7 +187,7 @@ export const useUIStore = create((set, get) => ({
     personaFilter: null,     // actorRef | null — persona projection highlight
   },
 
-  // ── 文書の入口 (ADR-106 D3 — 暫定住所) ──────────────────────────────────────
+  // ── 文書の入口 (ADR-106 D3 / 恒久住所は ADR-112) ────────────────────────────
   // `null` = 閉じている / `{ tab }` = 開いている。Wizard と Intake は「入力」で
   // あって「解消」ではないので場のタブではなく、最終的な住所は ADR-112 (Phase 5.2)
   // が決める。基数は 0..1 で、0 は既定値ではなく「まだ入口を開いていない」。
@@ -402,6 +410,10 @@ export const useUIStore = create((set, get) => ({
       outlinerItems: state.outlinerItems.map(i => i.id === id ? { ...i, parentId: newParentId ?? null } : i),
     })),
     outlinerSetDrawerOpen: (open) => set({ outlinerDrawerOpen: open }),
+    // The domain lives in ONE place (view/NavigatorSides.js) and is enforced at
+    // the write, exactly like `contextSetTab` / `setDocIntake` — a JSDoc union is
+    // prose, and prose cannot be counted (ADR-106 D5 の先例)。
+    outlinerSetSide: (side) => set({ outlinerSide: navigatorSideOrThrow(side) }),
 
     // ── Onboarding ───────────────────────────────────────────────────────────
     showOnboarding: () => set({ onboardingVisible: true }),
@@ -603,7 +615,15 @@ export const useUIStore = create((set, get) => ({
       // indistinguishable from a lifecycle-written one. If the document itself is
       // dropped, the aggregate transitions to `unexamined` through its one writer
       // — never by being blanked from a lifecycle reducer.
-      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], variables: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, agendaRows: [] },
+      //
+      // **`variables` joined that exemption in ADR-111.** It was cleared here
+      // while its only reader was a panel inside the floor, so "the floor closed"
+      // and "the document has no variables" were indistinguishable — harmless
+      // until the navigator's semantic side became a reader from OUTSIDE. Then
+      // closing the floor emptied the semantic side, which is the exact shape
+      // ADR-105 D4 named: a lifecycle reducer writing a derived fact it does not
+      // own. The e2e ("場を閉じたまま意味側から変数を選べる") is what caught it.
+      context: { ...state.context, active: false, mode: null, personaFilter: null, form: [], checks: [], requirements: [], provenance: null, whyTree: null, grasp: null, authorSeed: null, agendaRows: [] },
     })),
   },
 }))

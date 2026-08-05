@@ -31,7 +31,7 @@ import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
 import { iconFor } from './HeaderIcons.js'
 import { menuFor, availabilityOf, OVERFLOW_VERBS } from '../../view/HeaderEntrances.js'
-import { DISCOVERY_KIND } from '../../context/DiscoverySummary.js'
+import { documentAdopted } from '../../view/DocPresence.js'
 import { isInsideDropdown } from '../../view/DropdownContainment.js'
 import {
   CLOSED, isMenuOpen, toggleMenu, closeMenu, descendTo, ascend, verbOf,
@@ -157,7 +157,11 @@ function useAvailabilityFacts() {
   // second source drifts the moment it acquires its first reader. It acquired one
   // here, in the very next PR, which is the falsification ADR-106's GSN named:
   // the answer is not to bring the mirror back but to read the projection.
-  const contextLoaded = useUIStore(s => s.context.discovery.kind !== DISCOVERY_KIND.UNEXAMINED)
+  //
+  // The comparison itself moved to `documentAdopted` when ADR-111 gave it a
+  // second reader (the navigator's semantic side): one derivation written twice
+  // is a second source too, even when both copies happen to agree today (§1.1).
+  const contextLoaded = useUIStore(documentAdopted)
   // A coarse pointer has no quest tour (ADR-065 seeds it for fine pointers only).
   const finePointer = typeof window !== 'undefined' && window.matchMedia
     ? !window.matchMedia('(pointer: coarse)').matches
