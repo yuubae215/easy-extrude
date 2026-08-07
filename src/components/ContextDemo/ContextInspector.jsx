@@ -3,6 +3,7 @@ import { ConflictMatrix } from './ConflictMatrix.jsx'
 import { NegotiationClusterView } from './NegotiationClusterView.jsx'
 import { FeedbackDefs, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset, floorHeight } from '../../view/EdgeOccupancy.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 /**
  * ContextInspector — requirement tree panel for the Context DSL demo (ADR-047).
@@ -52,7 +53,7 @@ export function ContextInspector() {
   const setTab    = useUIStore(s => s.actions.demoSetTab)
   const setFilter = useUIStore(s => s.actions.demoSetPersonaFilter)
 
-  const isMobile      = window.innerWidth < 768
+  const isMobile      = isNarrowViewport()
   const isNegotiation = !!demo.conflictMatrix
   // Story/authoring inspector pairs with the 3D scene → desktop only. The
   // negotiation overlay is 3D-independent → allowed full-width on mobile.

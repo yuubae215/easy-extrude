@@ -1,4 +1,5 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 const COLOR_MAP = {
   above:    '#6366F1',
@@ -19,7 +20,8 @@ function getColor(type) {
   return COLOR_MAP[type] ?? SEMANTIC_COLOR[type] ?? '#94A3B8'
 }
 
-const isMobile = () => window.matchMedia('(pointer: coarse)').matches
+// レイアウトの寸法は**幅**の問い (ADR-114) — 入力の粗さで答えない
+const isMobile = () => isNarrowViewport()
 
 export function DragSuggestionTooltip() {
   const dragTooltip = useUIStore(s => s.dragTooltip)

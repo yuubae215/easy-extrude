@@ -10,6 +10,7 @@ import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING, rgba } from '../../theme/tokens.js'
 import { ROBOT_ROLE } from '../../domain/robotFrames.js'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
+import { useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
 import { floorIsOpen } from '../../view/FloorTabs.js'
 
 // ── Robot placement frames (ADR-084 §2, TF tree ADR-085) ─────────────────────
@@ -368,14 +369,8 @@ export function Outliner() {
   const pulseAdd = tourVisible(tour, { contextActive, demoActive, galleryOpen })
     && tourAnchor(tour) === 'outliner-add'
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const isMobile = useIsNarrowViewport()
   const [draggingId, setDraggingId] = useState(null)
-
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
-  }, [])
 
   const orderedItems = buildOrderedItems(items)
 

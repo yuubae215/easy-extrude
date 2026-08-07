@@ -9,6 +9,7 @@ import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
 import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance } from './CameraMath.js'
+import { orbitControlsTouches } from './CameraGestures.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 
 /**
@@ -55,8 +56,12 @@ export class SceneView {
     // Left button is reserved for object/face operations; right button orbits the camera
     this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
     // Touch: 1-finger orbits (AppController returns early for touch to let
-    // OrbitControls handle it); 2-finger dolly+rotate
-    this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE }
+    // OrbitControls handle it); 2-finger pinch dollies and 2-finger drag pans.
+    // The assignment is NOT written here — it is derived from the camera-DOF
+    // table (ADR-114 D2), because a degree of freedom with no gesture has no
+    // line of its own and so cannot be seen by reading this file. `pan` had
+    // none from the first commit until ADR-114.
+    this.controls.touches = orbitControlsTouches()
 
     // Prevent browser scroll/pan interference on the canvas
     this.renderer.domElement.style.touchAction = 'none'

@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { NPanelGeneric } from './NPanelGeneric.jsx'
 import { NPanelFrame }   from './NPanelFrame.jsx'
@@ -9,6 +8,7 @@ import { GraspSearchPanel } from '../Grasp/GraspSearchPanel.jsx'
 import { ParametricAssetPanel } from '../Context/ParametricAssetPanel.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 import { floorIsOpen } from '../../view/FloorTabs.js'
+import { useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
 
 /**
  * NPanel — the right dock: what you selected, and what you can do to it.
@@ -43,7 +43,7 @@ export function NPanel() {
   const grasp          = useUIStore(s => s.context.grasp)
   const assetViewer    = useUIStore(s => s.context.assetViewer)
   const floorOpen      = useUIStore(floorIsOpen)
-  const isMobile       = useIsMobile()
+  const isMobile       = useIsNarrowViewport()
 
   const bottom = bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.DOCK, floorOpen })
 
@@ -135,13 +135,6 @@ export function NPanel() {
   )
 }
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const handler = (e) => setIsMobile(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-  return isMobile
-}
+// `useIsMobile()` はここに在った (Header / MobileToolbar にも同じ実装のコピーが
+// 在った)。判定は `view/Viewport.js`、購読は `useIsNarrowViewport()` ただ 1 つ
+// (ADR-114 / §1.1)。

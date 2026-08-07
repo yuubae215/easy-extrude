@@ -16,7 +16,9 @@ import assert from 'node:assert/strict'
 import {
   leftEdgeOffset, belowHeaderOffset,
   BOTTOM_TIER, bottomEdgeOffset, floorHeight,
+  TOP_EDGE_OCCUPANTS, HEADER_METRICS, topEdgeWidth, topEdgeFits,
 } from './EdgeOccupancy.js'
+import { MIN_SUPPORTED_WIDTH } from './Viewport.js'
 
 test('未宣言の下端の段では throw する — 既定へ落ちない (原則 #31)', () => {
   assert.throws(() => bottomEdgeOffset({ isMobile: false, tier: 'somewhere-new' }),
@@ -104,4 +106,43 @@ test('左端と上端は場の開閉に反応しない (端ごとに所有者は
   assert.equal(leftEdgeOffset({ isMobile: false }), 188)   // Outliner 180 + 余白
   assert.equal(leftEdgeOffset({ isMobile: true }), 8)      // mobile はドロワー = 端が空く
   assert.equal(belowHeaderOffset(), 46)
+})
+
+// ─── 上端の**幅** (ADR-114 D1) ───────────────────────────────────────────────
+
+test('mobile ヘッダの住人は最小対応幅に収まる — 切り落とされる入口は 0 個', () => {
+  const { fits, width, overflowBy } = topEdgeFits({ viewportWidth: MIN_SUPPORTED_WIDTH })
+  assert.ok(fits,
+    `\nmobile ヘッダが宣言幅 ${width}px を要求し、最小対応幅 ${MIN_SUPPORTED_WIDTH}px を ${overflowBy}px 超えている。\n\n` +
+    '  ヘッダは overflow:hidden なので、超過分は**右端の入口から無言で消える** — DOM には\n' +
+    '  在り続けるので HeaderEntranceCensus は数え続け、緑のまま出荷される (ADR-114 の欠陥)。\n' +
+    '  直し方は 3 つのどれか: 住人の語を短くする / 入口を ⋯ へ畳んで TOP_EDGE_OCCUPANTS から\n' +
+    '  外す / 最小対応幅そのものを意図的に上げる (= 約束を下げる宣言)。\n' +
+    '  「入るはずだから」で予算を上げるのは禁止 — 予算は実測の上界である。\n')
+})
+
+test('数えるのは*在る入口*ではなく*入らなかった入口* — 予算は住人が 1 人増えれば必ず動く', () => {
+  // 母集団は宣言表なので、幅を書かずに住人を足すと throw する (原則 #31)。
+  assert.throws(() => topEdgeWidth({ keys: ['IconBtn:Something New'] }),
+    /未宣言の上端の住人/)
+  // 表に在る住人を 1 人足すと合計は必ず増える (予算が空回りしていない)。
+  const keys = Object.keys(TOP_EDGE_OCCUPANTS)
+  const all  = topEdgeWidth({ keys })
+  const less = topEdgeWidth({ keys: keys.slice(0, -1) })
+  assert.ok(all > less, '住人を減らしても合計が変わらない — 予算が入力を読んでいない')
+})
+
+test('狭レイアウトの寸法は広いレイアウトより詰まっている (詰めが実際に効いている)', () => {
+  assert.ok(HEADER_METRICS.gap.narrow < HEADER_METRICS.gap.wide)
+  assert.ok(HEADER_METRICS.iconPadX.narrow < HEADER_METRICS.iconPadX.wide)
+  assert.ok(topEdgeWidth({ narrow: true }) < topEdgeWidth({ narrow: false }),
+    '狭レイアウトの合計が広いレイアウトより小さくない — 詰めた寸法が計算に入っていない')
+})
+
+test('幅を宣言した住人はすべて理由を持つ (理由なしの数は次の人が動かせない)', () => {
+  for (const [key, decl] of Object.entries(TOP_EDGE_OCCUPANTS)) {
+    assert.ok(Number.isFinite(decl.minWidth) && decl.minWidth >= 0, `${key} の minWidth が数でない`)
+    assert.ok(decl.why && decl.why.length > 10,
+      `${key} が幅の理由を持たない — 由来の無い定数は、次に狭くする人が「削ってよい 4px」を判断できない`)
+  }
 })

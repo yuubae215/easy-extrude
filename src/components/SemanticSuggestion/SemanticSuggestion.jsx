@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 const SEMANTIC_VERB = {
   above:    { color: '#94A3B8', verb: 'is above' },
@@ -20,7 +21,8 @@ function getSemanticColor(type) {
   return SEMANTIC_VERB[type]?.color ?? SEMANTIC_COLOR[type] ?? '#94A3B8'
 }
 
-const isMobile = () => window.matchMedia('(pointer: coarse)').matches
+// レイアウトの寸法は**幅**の問い (ADR-114) — 入力の粗さで答えない
+const isMobile = () => isNarrowViewport()
 
 export function SemanticSuggestion() {
   const semanticSuggestion      = useUIStore(s => s.semanticSuggestion)

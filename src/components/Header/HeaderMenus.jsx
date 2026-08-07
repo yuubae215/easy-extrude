@@ -33,6 +33,7 @@ import { iconFor } from './HeaderIcons.js'
 import { menuFor, availabilityOf, OVERFLOW_VERBS } from '../../view/HeaderEntrances.js'
 import { DISCOVERY_KIND } from '../../context/DiscoverySummary.js'
 import { isInsideDropdown } from '../../view/DropdownContainment.js'
+import { HEADER_METRICS } from '../../view/EdgeOccupancy.js'
 import {
   CLOSED, isMenuOpen, toggleMenu, closeMenu, descendTo, ascend, verbOf,
 } from '../../view/OverflowMenuState.js'
@@ -275,7 +276,10 @@ export function MoreMenu() {
         aria-expanded={open}
         onClick={toggle}
         style={{
-          padding: '6px', background: 'transparent', border: 'none',
+          // 横 padding は上端の予算が持つ (原則 #26 / ADR-114) — `⋯` は狭レイアウト
+          // 専用の住人なので narrow 側の値を固定で読む。
+          padding: `6px ${HEADER_METRICS.iconPadX.narrow}px`,
+          background: 'transparent', border: 'none',
           color: '#c0c0c0', cursor: 'pointer', lineHeight: '1',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: '0', borderRadius: '6px', pointerEvents: 'auto',

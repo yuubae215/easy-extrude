@@ -111,6 +111,9 @@ import {
   findNearestSnapCandidate,
 } from './snap/SnapSystem.js'
 import { HitTestService } from './HitTestService.js'
+import { acceptDoubleTap } from '../view/TapGesture.js'
+import { TOUCH_DOF_ASSIGNMENT } from '../view/CameraGestures.js'
+import { isNarrowViewport, hasFinePointer } from '../view/Viewport.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -614,6 +617,17 @@ export class AppController {
     /** @type {number|null} pointerId of the active edit drag; null when idle */
     this._activeDragPointerId = null
 
+    // ── Double-tap evidence (ADR-114 D3) ──────────────────────────────────
+    // `dblclick` arrives AFTER both taps, carrying only the second one's
+    // position — so whether the two taps belonged together (same spot, no orbit
+    // in between) can only be answered from what was recorded at each
+    // `pointerdown`. Two slots, because at dblclick time the newest slot is
+    // tap 2 and the previous one is tap 1.
+    /** @type {{x:number, y:number, camera:string}|null} */
+    this._lastTap = null
+    /** @type {{x:number, y:number, camera:string}|null} */
+    this._prevTap = null
+
     // ── Long-press detection for touch Grab (object mode) ─────────────────
     // On touch, single-finger drag orbits the camera. A long press (≥ 400 ms
     // without significant movement) on a selected object triggers Grab mode.
@@ -739,29 +753,27 @@ export class AppController {
     })
 
     // ── Mobile drawer coordination ─────────────────────────────────────────
+    // Each handler moves DRAWERS ONLY and then re-derives the backdrop
+    // (ADR-114 D4). Writing `showBackdrop` / `hideBackdrop` beside a toggle is
+    // what made the backdrop a second source: `_toggleNPanel()` (the `N` key,
+    // and the outliner's own "close the other drawer" line) moved the drawer
+    // without it, so a drawer opened that way had no way out except the header
+    // button — which was itself off-screen (D1). Two fields that must move
+    // together get one writer (§1.1 / 原則 #4).
     uiView.onOutlinerToggle(() => {
       if (!outlinerView) return
       if (outlinerView.isDrawerOpen) {
         outlinerView.closeDrawer()
-        uiView.hideBackdrop()
       } else {
-        if (uiView.nPanelVisible) this._toggleNPanel()
+        if (uiView.nPanelVisible) uiView.toggleNPanel()
         outlinerView.openDrawer()
-        uiView.showBackdrop(() => { outlinerView.closeDrawer(); uiView.hideBackdrop() })
       }
+      this._syncDrawerBackdrop()
     })
 
     uiView.onNPanelToggle(() => {
-      if (outlinerView?.isDrawerOpen) {
-        outlinerView.closeDrawer()
-        uiView.hideBackdrop()
-      }
+      if (outlinerView?.isDrawerOpen) outlinerView.closeDrawer()
       this._toggleNPanel()
-      if (uiView.nPanelVisible) {
-        uiView.showBackdrop(() => { this._toggleNPanel(); uiView.hideBackdrop() })
-      } else {
-        uiView.hideBackdrop()
-      }
     })
 
     uiView.onUndoClick(() => {
@@ -904,6 +916,20 @@ export class AppController {
           return frustumForDistance(Math.max(c.position.distanceTo(t), 1e-3), c.fov)
         })(),
       }),
+      // Read-only touch-gesture snapshot (ADR-114 D2) — the E2E guard that the
+      // camera's degrees of freedom are all REACHABLE by touch. A unit test can
+      // only ask the declaration table; this reports what OrbitControls actually
+      // ended up holding, which is where `pan` went missing for the whole life
+      // of the app (a DOF with no gesture has no line to read).
+      touchGestures: () => {
+        const t = this._sceneView.controls.touches
+        const name = v => Object.keys(THREE.TOUCH).find(k => THREE.TOUCH[k] === v) ?? String(v)
+        return {
+          one: name(t.ONE),
+          two: name(t.TWO),
+          assignment: { ...TOUCH_DOF_ASSIGNMENT },
+        }
+      },
       // Read-only robot roster snapshot (ADR-090) — console debug aid and the
       // E2E guard for roster ⇄ skeleton reconciliation: which robots exist and
       // whether each one's arm is drawn. With N robots the per-robot keying is
@@ -1646,10 +1672,48 @@ export class AppController {
     this._commandStack.push(cmd)
   }
 
-  /** Toggles N panel visibility (gizmo offset follows via the store subscription) */
+  /**
+   * Toggles N panel visibility (gizmo offset follows via the store
+   * subscription). The **only** entry — every path that opens or closes the
+   * panel goes through here, so the backdrop cannot fall out of step with it
+   * (原則 #1 / ADR-114 D4).
+   */
   _toggleNPanel() {
     this._uiView.toggleNPanel()
+    this._syncDrawerBackdrop()
     this._updateNPanel()
+  }
+
+  /**
+   * Re-derives the drawer backdrop from **which drawer is open** — the sole
+   * writer of `backdropCallback` on the controller side (原則 #4).
+   *
+   * The backdrop is not an independent piece of state that callers remember to
+   * raise and lower; it is a function of the drawers. Deriving it also gives
+   * every open drawer a way out that does not depend on the header: tapping the
+   * dimmed scene closes whatever is open, however it was opened.
+   *
+   * Desktop has no drawers (the N panel is a docked panel and the Outliner is
+   * permanent), so the backdrop is always absent there.
+   */
+  _syncDrawerBackdrop() {
+    const outlinerOpen = !!this._outlinerView?.isDrawerOpen
+    const nPanelOpen   = this._uiView.nPanelVisible
+    if (!isNarrowViewport() || (!outlinerOpen && !nPanelOpen)) {
+      this._uiView.hideBackdrop()
+      return
+    }
+    // The outliner wins when both are somehow open: it is the one drawn over
+    // the wider area, so dismissing it first is what a tap on the dimmed
+    // remainder means.
+    if (outlinerOpen) {
+      this._uiView.showBackdrop(() => {
+        this._outlinerView.closeDrawer()
+        this._syncDrawerBackdrop()
+      })
+    } else {
+      this._uiView.showBackdrop(() => this._toggleNPanel())
+    }
   }
 
   /**
@@ -1668,7 +1732,7 @@ export class AppController {
    */
   _updateGizmoOffset() {
     if (!this._gizmoView) return
-    const mobile = window.innerWidth < 768
+    const mobile = isNarrowViewport()
     const s = useUIStore.getState()
     const nPanelOpen = !mobile && s.nPanelVisible                             // 200px
     const offset = 16 + (nPanelOpen ? 200 : 0)
@@ -1687,7 +1751,11 @@ export class AppController {
   _updateLinkNetworkEdges() {
     const s = useUIStore.getState()
     this._linkNetworkView?.setEdgeOffsets({
-      isMobile:  window.matchMedia('(pointer: coarse)').matches,
+      // `EdgeOccupancy` の `isMobile` は**レイアウトの幅**を意味する (ADR-114)。
+      // ここは長らく入力の粗さ (`pointer: coarse`) を渡しており、粗いポインタの
+      // 広いタブレットで「描かれていないモバイルツールバーの分だけ退く」、狭くした
+      // デスクトップ窓で「描かれているのに退かない」が起きていた。
+      isMobile:  isNarrowViewport(),
       floorOpen: floorIsOpen(s),
     })
   }
@@ -2011,10 +2079,39 @@ export class AppController {
   }
 
   /**
-   * Double-click a scene entity to select and frame it (ADR-068). Empty-space
-   * double-click frames the whole scene. Object mode only; the flight itself is
-   * spawned by `focusSelection`. (Registered handler must stay defined — the
-   * "Registered Window Handlers Must Stay Defined" contract.)
+   * A signature of the current camera pose. Two taps that straddle an orbit
+   * produce different signatures, which is how `_onDblClick` can tell "tapped
+   * twice" from "tapped, orbited, tapped" without watching the drag itself.
+   * @returns {string}
+   */
+  _cameraSignature() {
+    const cam = this._sceneView.camera
+    const tgt = this._sceneView.controls.target
+    const r = v => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`
+    return `${r(cam.position)}|${r(tgt)}`
+  }
+
+  /** Push one canvas press into the two-slot tap history (ADR-114 D3). */
+  _recordTap(e) {
+    this._prevTap = this._lastTap
+    this._lastTap = { x: e.clientX, y: e.clientY, camera: this._cameraSignature() }
+  }
+
+  /**
+   * Double-click a scene entity to select and frame it (ADR-068). Object mode
+   * only; the flight itself is spawned by `focusSelection`. (Registered handler
+   * must stay defined — the "Registered Window Handlers Must Stay Defined"
+   * contract.)
+   *
+   * **The browser's `dblclick` is a candidate, not a decision** (ADR-114 D3).
+   * On touch it groups two taps that were meant as two separate selections, and
+   * it fires just as happily when the pair straddles an orbit drag. Whether the
+   * pair is a deliberate double-tap is decided by the pure `acceptDoubleTap`
+   * predicate (原則 #25), fed from what was recorded at each `pointerdown`.
+   *
+   * Empty-space double-click no longer frames the whole scene when nothing is
+   * selected: that was the largest possible camera jump awarded to the least
+   * deliberate gesture.
    */
   _onDblClick(e) {
     if (e.target !== this._sceneView.renderer.domElement) return
@@ -2022,6 +2119,19 @@ export class AppController {
     this._hitTest.updateMouse(e)
     const hit = this._hitTest.hitAnyObject()?.obj ?? this._hitTest.hitAnyCoordinateFrame()?.obj
       ?? this._hitTest.hitRobotStage()?.obj
+
+    const verdict = acceptDoubleTap({
+      firstTap:  this._prevTap,
+      secondTap: { x: e.clientX, y: e.clientY },
+      // Both slots must exist to compare; a missing first tap means the pair did
+      // not both land on the canvas, so there is nothing to straddle.
+      cameraMovedBetween: !!(this._prevTap && this._lastTap
+        && this._prevTap.camera !== this._lastTap.camera),
+      hitSomething: !!hit,
+      hasSelection: this._objSelected,
+    })
+    if (!verdict.accept) return
+
     if (hit && hit.id !== this._scene.activeId) this._selMgr.selectOnly(hit.id)
     this.focusSelection()
   }
@@ -2416,7 +2526,7 @@ export class AppController {
     this._uiView.updateMode('edit', '2d-extrude')
     this._updateExtrudePhaseStatus()
     this._updateMobileToolbar()
-    if (window.matchMedia('(pointer: coarse)').matches) this._controls.enabled = false
+    if (!hasFinePointer()) this._controls.enabled = false
   }
 
   _applyExtrudePreview() {
@@ -2840,6 +2950,12 @@ export class AppController {
     // an up-to-date _mouse — calling _updateMouse here covers all of them.
     this._hitTest.updateMouse(e)
 
+    // Record this tap for the double-tap predicate (ADR-114 D3). Every canvas
+    // press is a candidate, and it must be recorded BEFORE the mode branches
+    // below return — a tap that started a grab is still the first half of a
+    // pair as far as the browser's dblclick synthesis is concerned.
+    this._recordTap(e)
+
     // ── Context DSL region authoring (ADR-049 Phase 3): drag handles ─────────
     if (this._demoCtrl.isAuthoring && this._demoCtrl.onAuthorPointerDown(e)) return
     if (this._ctxCtrl.isAuthoring && this._ctxCtrl.onAuthorPointerDown(e)) return
@@ -3248,7 +3364,7 @@ export class AppController {
     // Mobile: auto-start face extrude immediately after a face tap, so the
     // user can drag to set the distance without pressing the Extrude button.
     // (Only fires when a face was selected without Shift — not for multi-select.)
-    if (window.matchMedia('(pointer: coarse)').matches &&
+    if (!hasFinePointer() &&
         this._scene.editSubstate === '3d' &&
         this._editSelectMode === 'face' &&
         !e.shiftKey) {
@@ -3839,7 +3955,7 @@ export class AppController {
   _startTourIfNeeded() {
     useUIStore.getState().actions.registerCallback('onTourDismiss',  () => this._dismissTour())
     useUIStore.getState().actions.registerCallback('onTourRestart',  () => this._restartTour())
-    if (window.matchMedia('(pointer: coarse)').matches) return
+    if (!hasFinePointer()) return
     let flag = null
     try { flag = localStorage.getItem('ee_tour') } catch { /* storage denied */ }
     if (flag) return

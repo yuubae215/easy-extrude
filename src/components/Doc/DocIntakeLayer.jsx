@@ -5,6 +5,7 @@ import { IntakePanel } from '../Context/IntakePanel.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 import { DOC_INTAKE_TAB, DOC_INTAKE_TABS, PROVISIONAL_UNTIL } from '../../view/DocIntake.js'
 import { floorIsOpen } from '../../view/FloorTabs.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 /**
  * DocIntakeLayer — 文書の入口 (Wizard / Intake) の**暫定住所** (ADR-106 D3)。
@@ -26,7 +27,7 @@ export function DocIntakeLayer() {
 
   if (!docIntake) return null
 
-  const isMobile = window.innerWidth < 768
+  const isMobile = isNarrowViewport()
   const bottom   = bottomEdgeOffset({ isMobile, tier: BOTTOM_TIER.DOCK, floorOpen })
 
   return (

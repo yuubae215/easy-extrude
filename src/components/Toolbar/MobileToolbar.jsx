@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ToolbarButton } from './ToolbarButton.jsx'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
+import { useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
 
 /**
  * MobileToolbar — React replacement for UIView's native mobile toolbar.
@@ -17,7 +17,7 @@ import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 export function MobileToolbar() {
   const toolbar = useUIStore(s => s.toolbar)
   const pushToast = useUIStore(s => s.actions.pushToast)
-  const isMobile = useIsMobile()
+  const isMobile = useIsNarrowViewport()
 
   if (!isMobile) return null
 
@@ -69,15 +69,5 @@ export function MobileToolbar() {
   )
 }
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const handler = (e) => setIsMobile(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  return isMobile
-}
+// `useIsMobile()` はここに在った (Header / NPanel にも同じ実装のコピーが在った)。
+// 判定は `view/Viewport.js`、購読は `useIsNarrowViewport()` ただ 1 つ (ADR-114 / §1.1)。

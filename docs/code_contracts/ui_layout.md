@@ -192,6 +192,83 @@ On mobile, status text is shown in the footer info bar (`_infoEl`) instead of th
 
 Export/Import hidden on mobile; replaced by `_moreMenuBtn` (⋯) dropdown. `_headerStatusEl` uses `visibility:hidden` (not `display:none`) to remain a flex:1 spacer. Map button hides its `<span>` text label on mobile (padding tightened to `4px`) — without this the N-panel icon is clipped on 375px viewports. Header has `overflow:hidden`. Mode dropdown (`_modeDropdownEl`) is appended to `document.body` with `position:fixed` and positioned via `getBoundingClientRect()` — if placed inside the header it gets clipped by `overflow:hidden`
 
+> **この節の "Map button …" の一文は、ADR-114 が置き換えた形の記録である。** Map ボタンは
+> ADR-103 で退役し、**パッチと一緒に予算の担い手も消えた**。以下が現行の規則。
+
+
+## The Top Edge Has a WIDTH Budget, and It Is Declared (ADR-114 D1)
+
+**原則:** 画面端は共有資源であり (原則 #26)、上端は**高さだけでなく幅**も資源である。
+ヘッダは `overflow:hidden` を持つので、住人の合計幅がビューポートを超えた分は
+**右端の入口から無言で消える** (原則 #11 の最悪形 — DOM に在るので検査も census も緑)。
+
+**具体的な規則:**
+
+- 上端に住人を足す・寸法を変えるときは、`src/view/EdgeOccupancy.js` の
+  `TOP_EDGE_OCCUPANTS` に**占有幅と理由**を宣言する。未宣言の住人では `topEdgeWidth()`
+  が throw する (既定 0 で埋めない — 幅を書き忘れた入口は「予算を消費しない住人」として
+  合計に現れず、予算だけが緑になる)。
+- **寸法を component 側で決めない。** `padding` / `gap` は `HEADER_METRICS` から読む。
+  描画と予算が別々の数を持てば、予算は現実の写しでなくなる (§1.1)。
+- 合計は `MIN_SUPPORTED_WIDTH` (`src/view/Viewport.js`, 現在 320px) 以下。この定数を
+  上げるのは「対応の約束を下げる」意図的行為で、レビューに出る。
+- 狭レイアウトで削ってよいのは**語と桁**であって**入口と区別**ではない。
+  `Object Mode ▾` → `Obj ▾` は可、N トグルを `⋯` へ隠すのは不可 (原則 #15 — トグルは
+  自分の面の状態表示)。`DiscoveryCounters` の 3 数は**合算しない** (ADR-104 D4) —
+  桁を `9+` に固定するのは精度の宣言、3 を 1 に潰すのは区別の消滅で、別種の操作。
+- **機械側の問い所は 2 レーン**: `src/view/EdgeOccupancy.test.js` +
+  `src/HeaderEntranceCensus.test.js` が**宣言**を数え、`e2e/mobile-reach.spec.js` が
+  320px で**押せる箱の矩形**を数える。宣言はフォント・ロケール・拡大を知らず、e2e は
+  列挙した幅しか見ない — どちらか片方では閉じない。
+- **測るのは指が触れる箱。** e2e で矩形を測るときは `header.children` ではなく
+  `querySelectorAll('button')` を数える。`position:relative` のラッパは flex-shrink
+  できるので、中のボタンが画面外へ出てもラッパの矩形は viewport 内に留まる
+  (この検査の初版が実際にそれで負の対照を素通りさせた)。
+
+
+## Every Camera Degree of Freedom Has a Gesture (ADR-114 D2)
+
+**原則:** 割当を持たない自由度は**行を持たない**ので、割当表を読んでも不在が見えない。
+母集団は割当の側ではなく**自由度の側**に置く (原則 #31)。
+
+**具体的な規則:** カメラ操作のジェスチャは `src/view/CameraGestures.js` の
+`TOUCH_DOF_ASSIGNMENT` が唯一の宣言で、`CAMERA_DOF` (orbit / dolly / pan) に対して
+**全射**でなければならない。`SceneView` の `controls.touches` はそこからの*翻訳*
+(`orbitControlsTouches()`) であって第二の宣言ではない — 直値を書かない。
+`pan` はこの表が生まれるまで割当 0 個のまま出荷されていた。
+
+
+## A Browser Gesture Event Is a Candidate, Not a Decision (ADR-114 D3)
+
+**原則:** `dblclick` のような合成イベントは、ブラウザの閾値で作られる**候補**である。
+タッチでは離れた 2 タップもオービットを挟んだ 2 タップも同じ `dblclick` になる。
+
+**具体的な規則:** 受理するかは純粋述語 `src/view/TapGesture.js: acceptDoubleTap()` が
+決め、ハンドラにインライン early-return を並べない (原則 #25)。却下は必ず理由を返す
+(呼び手が握り潰してよいが、*なぜ*落としたかは常に言える — 原則 #11)。
+**フォールバックの被害を判定に含める**: 空振り (当たりも選択も無い) を受理すると
+`_focusSphere()` がシーン全体へ落ちるので、意図の最も薄いジェスチャが最大のカメラ
+跳躍を起こす。
+
+
+## A Drawer's Backdrop Is DERIVED From the Drawer (ADR-114 D4)
+
+**原則:** 必ず同時に動く 2 つの欄は、書き手を 1 つにする (§1.1 / 原則 #4)。
+
+**具体的な規則:** `backdropCallback` の書き手は `AppController._syncDrawerBackdrop()`
+ただ 1 つで、drawer の開閉状態から導出する。開閉の入口は `_toggleNPanel()` ただ 1 つ
+(原則 #1)。トグルの隣で `showBackdrop` / `hideBackdrop` を書かない — そうすると
+`N` キー経路のような別経路が開閉だけを動かし、**出口の無い drawer** ができる。
+
+
+## "Is This Narrow?" and "Is This Coarse?" Are Different Questions (ADR-114 D5)
+
+**具体的な規則:** レイアウトの寸法計算 (`EdgeOccupancy` の `isMobile` を含む) は
+`isNarrowViewport()` を読む。`hasFinePointer()` は hover 前提の affordance
+(原則 #13) とドラッグ精度の可否だけが読む。React 側の購読口は
+`useIsNarrowViewport()` ただ 1 つ (同じフックが 3 ファイルにコピーされていた)。
+粗いポインタの広いタブレットは狭くないし、狭くしたデスクトップ窓は粗くない。
+
 
 ## Outside-Click Dismissal: One Predicate, and `pointerdown` (ADR-113 D1)
 

@@ -2,8 +2,10 @@ import { useUIStore } from '../../store/uiStore.js'
 import { getInfoText } from '../../utils/infoBarText.js'
 import { enterMotion } from '../../view/ChromeMath.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
-const isMobile = () => window.matchMedia('(pointer: coarse)').matches
+// レイアウトの寸法は**幅**の問い (ADR-114) — 入力の粗さで答えない
+const isMobile = () => isNarrowViewport()
 
 export function InfoBar() {
   const mode        = useUIStore(s => s.mode)

@@ -28,6 +28,7 @@ import { enterMotion, exitMotion } from '../view/ChromeMath.js'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../view/EdgeOccupancy.js'
 import { floorIsOpen } from '../view/FloorTabs.js'
 import { COLOR, DURATION } from '../theme/tokens.js'
+import { isNarrowViewport } from '../view/Viewport.js'
 
 /**
  * React UI root — Phase 2d–2g + Phase 3 + Phase 4.
@@ -100,7 +101,7 @@ function ToastStack({ toasts }) {
   // Inspector) share one address (ADR-106 D2), so ONE predicate covers both —
   // and it lives in one place, or the fact acquires a copy per reader (§1.1).
   const floorOpen = useUIStore(floorIsOpen)
-  const isMobile  = window.innerWidth < 768
+  const isMobile  = isNarrowViewport()
 
   // Keep a toast mounted through its exit fade after it leaves the live list
   // (manual dismiss OR auto-expire), so it fades out instead of popping (ADR-068

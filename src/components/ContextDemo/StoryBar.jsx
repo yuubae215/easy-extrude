@@ -1,6 +1,7 @@
 import { useUIStore } from '../../store/uiStore.js'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 import { floorIsOpen } from '../../view/FloorTabs.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 /**
  * StoryBar — step navigation for the Context DSL demo (ADR-047).
@@ -18,7 +19,7 @@ export function StoryBar() {
   // else at that edge reads — one fact, one home (§1.1).
   const floorOpen = useUIStore(floorIsOpen)
 
-  const isMobile = window.innerWidth < 768
+  const isMobile = isNarrowViewport()
 
   const last     = demo.steps.length - 1
   const stepInfo = demo.steps[demo.step] ?? { title: '', narration: '' }

@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { ModeDropdown } from './ModeDropdown.jsx'
 import { COLOR } from '../../theme/tokens.js'
 import { tierAMotion, lockedStyle } from '../../view/ChromeMath.js'
 import { gateUndo, gateRedo } from '../../view/ChromeGates.js'
 import { useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
-import { useHoverPress } from '../Chrome/ChromePrimitives.jsx'
+import { useHoverPress, useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
+import { HEADER_METRICS } from '../../view/EdgeOccupancy.js'
 import { DiscoveryCounters } from '../Chrome/DiscoveryCounters.jsx'
 import { VerbMenu, MoreMenu } from './HeaderMenus.jsx'
 import { iconFor } from './HeaderIcons.js'
@@ -35,9 +35,21 @@ import {
  * Nothing here disappears with the BFF connection any more: `Nodes`, `Save`,
  * `Load` are shown with their reason when unavailable (原則 #15 / #11), so the
  * entrance count does not depend on the connection state.
+ *
+ * ## 入口は数えるだけでなく**届かなければならない** (ADR-114)
+ *
+ * `overflow:hidden` は下の popup が逃げる前提であって、**入口を切る許可ではない**。
+ * 住人の合計幅が最小対応幅を超えると、右端の入口 (N パネルのトグル) が 1px も
+ * 画面に出ないまま DOM には在り続け、census は 7 個を数えて緑を出す。したがって
+ * 寸法は自分で決めず `HEADER_METRICS` から読み、合計は `TOP_EDGE_OCCUPANTS` の
+ * 予算が持つ (原則 #26 — 端は共有資源で、占有量の計算は 1 箇所)。
+ *
+ * 狭レイアウトで落とすのは**文字ラベルだけ**で、入口そのものは落とさない
+ * (原則 #15)。落ちた語は `title` / `aria-label` に残るので、読み上げと長押しでは
+ * 同じことが言える。
  */
 export function Header() {
-  const isMobile = useIsMobile()
+  const narrow = useIsNarrowViewport()
 
   return (
     <header style={{
@@ -50,8 +62,8 @@ export function Header() {
       borderBottom:'1px solid #141414',
       display:     'flex',
       alignItems:  'center',
-      padding:     '0 8px',
-      gap:         '6px',
+      padding:     `0 ${HEADER_METRICS.padX}px`,
+      gap:         `${narrow ? HEADER_METRICS.gap.narrow : HEADER_METRICS.gap.wide}px`,
       zIndex:      '100',
       overflow:    'hidden',
       userSelect:  'none',
@@ -59,7 +71,7 @@ export function Header() {
       pointerEvents: 'auto',
       boxSizing:   'border-box',
     }}>
-      {isMobile ? <MobileHeaderContents /> : <DesktopHeaderContents />}
+      {narrow ? <MobileHeaderContents /> : <DesktopHeaderContents />}
     </header>
   )
 }
@@ -77,10 +89,10 @@ function MobileHeaderContents() {
   const gRedo = gateRedo(redoEnabled)
   return (
     <>
-      <IconBtn icon="hamburger" label="Toggle outliner"       onClick={() => callbacks.onOutlinerToggle?.()} />
-      <IconBtn icon="undo"      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border disabled={!gUndo.enabled} reason={gUndo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
-      <IconBtn icon="redo"      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border disabled={!gRedo.enabled} reason={gRedo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
-      <ModeDropdown />
+      <IconBtn icon="hamburger" label="Toggle outliner"       onClick={() => callbacks.onOutlinerToggle?.()} narrow />
+      <IconBtn icon="undo"      label="Undo"                  onClick={() => callbacks.onUndoClick?.()}      border narrow disabled={!gUndo.enabled} reason={gUndo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
+      <IconBtn icon="redo"      label="Redo"                  onClick={() => callbacks.onRedoClick?.()}      border narrow disabled={!gRedo.enabled} reason={gRedo.reason} onLockedTap={(r) => pushToast(r, 'info')} />
+      <ModeDropdown compact />
       {/* Invisible flex:1 spacer — keeps ⋯ and N right-aligned (matching UIView's visibility:hidden pattern) */}
       <div style={{ flex: '1', visibility: 'hidden' }} />
       {/* Compact on mobile: glyphs + numbers, no words. Present on BOTH layouts —
@@ -89,7 +101,7 @@ function MobileHeaderContents() {
           go looking (ADR-105 D1). */}
       <DiscoveryCounters compact />
       <MoreMenu />
-      <IconBtn icon="npanel" label="Toggle properties panel" onClick={() => callbacks.onNPanelToggle?.()} />
+      <IconBtn icon="npanel" label="Toggle properties panel" onClick={() => callbacks.onNPanelToggle?.()} narrow />
     </>
   )
 }
@@ -113,7 +125,7 @@ function DesktopHeaderContents() {
           readable without opening the floor, because its whole job is to tell you
           whether the floor needs opening. It sits next to Context ▾ (the floor's
           entrance) so the reading and the door are one glance apart. */}
-      <DiscoveryCounters />
+      <DiscoveryCounters compact />
       <VerbMenu verb={HEADER_VERB.OPEN_FLOOR} />
     </>
   )
@@ -165,9 +177,12 @@ function HeaderStatus() {
   )
 }
 
-function IconBtn({ icon, label, onClick, border = false, disabled = false, reason = null, onLockedTap = null }) {
+function IconBtn({ icon, label, onClick, border = false, disabled = false, reason = null, onLockedTap = null, narrow = false }) {
   const reduced = useReducedMotion()
   const { hovered, pressed, handlers } = useHoverPress()
+  // 横 padding は自分で決めない — 上端の幅は共有資源で、予算と描画は同じ数を読む
+  // (原則 #26 / ADR-114)。縦は端の資源ではないので従来どおり。
+  const padX = narrow ? HEADER_METRICS.iconPadX.narrow : HEADER_METRICS.iconPadX.wide
   // disabled-as-quest: the locked state is stylized (dashed border, legible
   // glyph) and a tap surfaces the gate reason — never a silent no-op (#11).
   function handleClick() {
@@ -185,7 +200,7 @@ function IconBtn({ icon, label, onClick, border = false, disabled = false, reaso
       onClick={handleClick}
       {...(disabled ? {} : handlers)}
       style={{
-        padding:      '5px 7px',
+        padding:      `5px ${padX}px`,
         background:   !disabled && hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
         border:       border ? '1px solid #3a3a3a' : 'none',
         borderRadius: '6px',
@@ -282,14 +297,8 @@ function SurfaceToggle({ surface }) {
 // ARGUMENT of a verb, never as a new entrance (ADR-108 D1/D2).
 
 // ── Hook ─────────────────────────────────────────────────────────────────
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const handler = (e) => setIsMobile(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-  return isMobile
-}
+//
+// `useIsMobile()` はここに在った。同じ実装が `NPanel` と `MobileToolbar` にも
+// コピーされており、さらに `UIShell` と `AppController` は購読を持たない生の
+// `window.innerWidth < 768` を書いていた。判定は `view/Viewport.js`、購読は
+// `Chrome/ChromePrimitives.jsx` の `useIsNarrowViewport()` ただ 1 つ (ADR-114 / §1.1)。
