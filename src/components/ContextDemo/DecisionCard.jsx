@@ -1,4 +1,5 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 /**
  * DecisionCard — the demo's centerpiece interaction (ADR-047).
@@ -26,7 +27,7 @@ export function DecisionCard() {
 
   const fact     = demo.facts.find(f => f.ref === decision.resolves)
   const approved = !!demo.approvedDecisions[decision.ref]
-  const isMobile = window.innerWidth < 768
+  const isMobile = isNarrowViewport()
 
   return (
     <div style={{

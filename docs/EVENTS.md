@@ -251,13 +251,35 @@ Prevents `_handleEditClick()` from firing erroneously on toolbar or UI panel cli
 | `Ctrl` + `rotate.active` | Cycle rotation step size (1°, 5°, 10°, 45°) |
 | Otherwise | Delegate to OrbitControls zoom |
 
-### dblclick (`_onDblClick`, ADR-068)
+### dblclick (`_onDblClick`, ADR-068 / **ADR-114 D3**)
+
+The browser event is a **candidate**; `TapGesture.acceptDoubleTap()` decides. Inputs come
+from the two-slot tap history recorded at each canvas `pointerdown` (`_recordTap`), because
+`dblclick` arrives after both taps and carries only the second one's position.
 
 | Condition | Action |
 |-----------|--------|
-| Object mode, hits an entity | Select it + `focusSelection()` — flies to frame it |
-| Object mode, empty space | `focusSelection()` — flies to frame the whole scene |
 | Not object mode / non-canvas target | No-op |
+| 2 taps > 24px apart (`DOUBLE_TAP_SLOP_PX`) | **Rejected** — two separate taps the browser grouped |
+| Camera pose changed between the taps | **Rejected** — an orbit drag was straddled, so this is not a double-tap |
+| No hit **and** nothing selected | **Rejected** — `_focusSphere()` would fall back to the WHOLE SCENE, the largest possible jump for the least deliberate gesture |
+| Accepted, hits an entity | Select it + `focusSelection()` — flies to frame it |
+| Accepted, empty space with a selection | `focusSelection()` — flies back to the selection |
+
+### Touch gestures — camera (`view/CameraGestures.js`, ADR-114 D2)
+
+The assignment is declared per **degree of freedom**, not per gesture: a DOF with no
+gesture has no line of its own, which is how `pan` stayed unreachable from the first
+commit until ADR-114. `SceneView.controls.touches` is a *translation* of this table.
+
+| Camera DOF | Touch gesture | OrbitControls |
+|-----------|---------------|---------------|
+| `orbit` | one-finger drag | `touches.ONE = TOUCH.ROTATE` |
+| `dolly` | two-finger pinch | `touches.TWO = TOUCH.DOLLY_PAN` |
+| `pan` | two-finger drag | ″ (same gesture — `DOLLY_PAN` switches continuously) |
+
+Two-finger *rotate* was given up for pan: one finger already orbits, so what was lost is
+a duplicate, and `DOLLY_ROTATE` left no fingers to assign pan to.
 
 ### contextmenu
 
@@ -400,7 +422,8 @@ Lift finger (pointerup, wasDragging=true) → _confirmFaceExtrude()
 | Load button | `click` | `SceneService.loadScene()` (BFF REST) |
 | Demo button (desktop) / ⋯ menu Demo item (mobile) | `click` | `callbacks.onContextDemoClick` → `ContextDemoController.enter()` (ADR-047) |
 | ⋯ menu (mobile) | `click` | Show dropdown with Export / Import / Demo |
-| N button (mobile) | `click` | Toggle N Panel drawer |
+| N button (mobile) | `click` | Toggle N Panel drawer via `_toggleNPanel()` — the **only** entry; the backdrop is derived from it, never written beside it (ADR-114 D4). Must be **inside the viewport at 320px** (`e2e/mobile-reach.spec.js`): it was clipped off-screen by `overflow:hidden` until ADR-114, present in the DOM and unpressable |
+| Backdrop (mobile, dimmed 3-D) | `click` | Close whichever drawer is open. Derived by `_syncDrawerBackdrop()`, so a drawer opened by ANY path (header button, `N` key, outliner coordination) has a way out |
 | ≡ hamburger (mobile) | `click` | Toggle Outliner drawer |
 
 ### Outliner

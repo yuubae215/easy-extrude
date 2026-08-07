@@ -14,6 +14,7 @@
  *   to the right of the object name. Pass null to hide the badge.
  */
 import { COLOR, rgba }    from '../theme/tokens.js'
+import { isNarrowViewport } from './Viewport.js'
 import { IFC_CLASS_MAP }    from '../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP } from '../domain/PlaceTypeRegistry.js'
 
@@ -140,7 +141,7 @@ export class OutlinerView {
 
   // ─── Mobile drawer ─────────────────────────────────────────────────────────
 
-  _isMobile() { return window.innerWidth < 768 }
+  _isMobile() { return isNarrowViewport() }
 
   _applyLayout() {
     if (this._isMobile()) {

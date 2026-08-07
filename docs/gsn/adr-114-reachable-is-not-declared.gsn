@@ -1,0 +1,132 @@
+GOALS adr114_reachable_is_not_declared
+
+goal TouchUsersReachEveryDeclaredControlAndDegreeOfFreedom
+uuid 3f2b7c14-9a6e-4d38-8b21-5c7e0a4f61d2
+summary "タッチ利用者が、カメラの 3 自由度と常設入口の全部に実際に届き、届いていない操作が無言で誤爆しない。『宣言されている』と『届く』が別の量であることを、機械が別々に数える"
+state UnderReview
+labels adr-114, mobile, principle-31, principle-26, principle-11, census, one-owner
+artifacts
+- "docs/adr/ADR-114-reachable-is-not-declared.md"
+
+    context Adr114Scope
+    uuid 8c1d4e29-7b35-4a16-9d82-2e6f3b105a77
+    summary "ADR-114 (Accepted 2026-08-06): 出所は設計の棚卸しではなくユーザーからの不具合報告 3 行 (N パネルしまえない / ダブルタップのズーム誤爆 / Pan できない)。上端の幅に予算を置き (D1)、カメラ自由度 → タッチジェスチャの割当表を置き (D2)、double-tap を純粋述語の判定下に置き (D3)、drawer の backdrop を導出にし (D4)、狭レイアウト述語を 1 つに畳む (D5)。ADR-108 の入口 ratchet・ADR-105 D1/D2 の集約・ADR-106 D6 の端の所有者・ADR-104 D4 の非合算は 1 つも変えない — 足すのはそれらが数えていなかった量だけ。ドメイン・契約・BFF・core/ は無関係"
+    artifacts
+    - "src/view/EdgeOccupancy.js"
+    - "src/view/CameraGestures.js"
+    - "src/view/TapGesture.js"
+    - "src/view/Viewport.js"
+
+    context TheSymptomsWereMeasuredNotAssumed
+    uuid b47a9f03-2e18-4c65-a3d7-91f0e28b2c56
+    summary "出発点の実測 (Playwright, 実機幅 320 / 375 / 393px、記憶からではない): mobile ヘッダは scrollWidth 438px を要求し clientWidth は 320〜393px。N パネルのトグルは x=398..430 で 393px 端末でも 1px も画面に無く、locator.tap() は 30 秒タイムアウトした。320px では ⋯ (x=362) も画面外。スクリーンショットでもヘッダ右端は ⋯ で切れており N が写っていない。pan は SceneView の touches に行そのものが無く、_focusSphere() は選択が空だとシーン全体へフォールバックする"
+
+    justification WhyPerSymptomFixesWereRejected
+    uuid 1a5d8e72-4c93-4b06-a1e7-83f2069d4b15
+    summary "却下案 A (症状ごとに 3 行で直す) への反証: 同じ症状は既に 1 度起きており、docs/code_contracts/ui_layout.md の 'Mobile Header Overflow' が『Map ボタンは mobile で文字ラベルを隠す — さもないと 375px で N パネルのアイコンが切れる』と書いていた。それは特定の住人に当てた 1 箇所のパッチだったので、ADR-103 が Map ボタンを退役させたときパッチごと消え、ADR-105 が 102px の集約を足した日に予算が破れた。原則 #26 が『呼び出し箇所ごとのパッチ』を禁じるのは、パッチが間違っているからではなく、パッチが自分の守っていた不変条件を持ち去るからである。3 行で直せば 3 度目が来る"
+
+    justification WhyFoldingTheToggleIntoTheOverflowWasRejected
+    uuid 6e0b91c7-5d24-4f83-9a16-2b7c4e50d839
+    summary "却下案 B (N トグルを ⋯ へ畳んで幅を空ける) への反証: トグルは自分の面の状態表示なので、メニューに隠すと 1 手と状態読みの両方を失う (原則 #15)。さらに決定的なのは、入口を 1 つ減らしても数えているものが変わらないこと — 次に住人が 1 人増えた日にまた右端が押し出される。畳み込みは一度きりの是正であって統治ではない (ADR-108 §却下案 A と同じ論法)"
+
+    justification WhyPrecisionWasTradedButNeverDistinction
+    uuid 9d3c62a8-1f47-4e59-bc03-748a1e93d907
+    summary "狭レイアウトで DiscoveryCounters の桁を 1 桁 + '9+' に固定した根拠と、その境界。ADR-104 D4 は 3 数の合算を禁じ、ADR-105 D2 は 3 数が別々の次の一手を持つと決めている — したがって狭さが削ってよいのは *数の桁* であって *数の個数* ではない。実測がこの線を強制した: 320px で 3 カウンタに割ける幅は 88px、'99+' 形は 104〜112px で入らず、'9+' 形は 83px で入る。副次的な利得として、最長文字列が 2 文字に固定されることで住人の占有幅が入力の大きさに依存しなくなる — 幅が入力に依存する住人は最悪形の予算を持てない"
+
+    assumption ThreeHundredTwentyIsTheRealFloor
+    uuid 4b8f1d56-3a72-49e0-9c14-6f5e2a83b704
+    summary "反証されうる仮説: 対応を約束する最小幅は 320px でよい (iPhone SE 第1世代 / Galaxy S9+ の CSS ピクセル幅)。反証されうる形は『320px 未満の実機・横向き・ブラウザ UI ぶんの目減り・ユーザー拡大で 320px 相当を下回る環境』で、そのとき予算は緑のまま画面が溢れる。この境界は推論ではなく宣言であり、MIN_SUPPORTED_WIDTH を上げるのは『約束を下げる』意図的行為としてレビューに出る。dogfooding で実機幅の分布が記録され始めたら見直すトリガ"
+    artifacts
+    - "src/view/Viewport.js"
+
+    assumption DeclaredWidthsTrackRenderedWidths
+    uuid 7c25a9e3-8b61-4d07-a538-1e94f3b6205c
+    summary "反証されうる仮説: TOP_EDGE_OCCUPANTS の宣言幅は実レンダリング幅の上界であり続ける。宣言はフォント・ロケール・ユーザー拡大を知らないので、CSS を触った誰かが表を更新しなければ静かにずれる。この仮説を守るために e2e が実測側を持つ (単体は表を、e2e は矩形を数える) が、e2e が見るのは列挙した 1 つの幅 (320px) だけなので、仮説は完全には閉じていない。宣言幅は実測から取り、根拠を why 欄に残してある"
+    artifacts
+    - "src/view/EdgeOccupancy.js"
+    - "e2e/mobile-reach.spec.js"
+
+    assumption BrowserDblclickSynthesisIsNotUnderTest
+    uuid 2f9e4a17-6c58-4b32-9d71-05a3e8c6413b
+    summary "反証された仮説 (俯瞰の時点で立てていた): double-tap の誤爆は e2e で再現・回帰できる。実装中に反証された — Playwright の合成タッチ (touchscreen.tap ×2) では dblclick が発火せず、click が detail:1 で 2 回出るだけだった。したがって TapGesture.test.js が示すのは述語の正しさのみで、ブラウザがいつ dblclick を合成するかは示さない。実機での確認 1 回が残る。これは仮定ではなく既知の穴として ADR §Lens notes に宣言してある (原則 #19 — 俯瞰と実装で前提が変わったら、食い違いのほうを残す)"
+    artifacts
+    - "src/view/TapGesture.test.js"
+
+    context BusinessTreeAttachPoint
+    uuid 5a6d3f81-9e24-4c70-b1a3-8f2e07d5946c
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 押せない入口と存在しない pan は、価値に到達する前の離脱点そのものだから。保留理由は ADR-108 / ADR-113 の同名 context と同じで、どの入口から入った人が価値に到達したかの測定手段が無い。dogfooding で入口ごとの到達が記録され始めた PR で solution として吊る"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    strategy ByCountingWhatIsAbsentRatherThanWhatIsPresent
+    uuid c8b41e70-2d95-4a63-8f16-93e5a7d20c14
+    summary "Argument by 不在の側に母集団を置く — 報告された 3 症状はどれも『在るものは数えられていたが、在らないものに欄が無かった』形をしている (入口は 7 個数えられていたが画面に入らなかった個数は誰も数えていない / 割当を持たない自由度は行を持たない / 判定を持たないジェスチャは条件を持たない)。したがって各問いで母集団を反対側 — 端の幅・自由度の集合・却下理由の集合 — に置き、未宣言では既定へ落とさず throw させる。加えて宣言と実測を別レーンで数える: 宣言は実測を見ないし、実測は列挙した点しか見ない"
+
+        goal NoDeclaredEntranceIsClippedOffTheNarrowestScreen
+        uuid e93a0b64-4f81-4d26-a5c7-71b8e4302f95
+        summary "最小対応幅で、押せる常設コントロールのうち画面外へ出たものが 0 個。ヘッダが住人を無言で切り落とさない"
+        state UnderReview
+        labels support-verified
+
+            solution TopEdgeBudgetIsDeclaredAndMeasured
+            uuid 0d7f5c82-4a13-4e96-b075-28f61a93c4b7
+            summary "node --test src/view/EdgeOccupancy.test.js / src/HeaderEntranceCensus.test.js — pass (1112/1112 全体)。宣言側: TOP_EDGE_OCCUPANTS の合計 (狭寸法) が MIN_SUPPORTED_WIDTH 以下、未宣言の住人で throw、母集団は Header.jsx の JSX から構文導出するので幅を書かずに入口を足せない。実測側: e2e/mobile-reach.spec.js を 320px + touch で走らせ、header 内の <button> の矩形が全部 viewport に入ることを焼く (実測 438px → 314px、画面外 2 個 → 0 個)。**負の対照実験を通してある**: ModeDropdown と DiscoveryCounters の compact を外すと画面外 3 個で落ちることを確認した。その過程で検査自体の欠陥も 1 つ出た — 初版は header.children (直接の子) を測っており、ModeDropdown のラッパ div は flex-shrink するので中のボタンが画面外へ出てもラッパは viewport 内に留まり、負の対照が緑を出した。querySelectorAll('button') へ変えて初めて落ちる。指が届くかを問うなら測るのは指が触れる箱でなければならない"
+            artifacts
+            - "src/view/EdgeOccupancy.js"
+            - "src/view/EdgeOccupancy.test.js"
+            - "src/HeaderEntranceCensus.test.js"
+            - "e2e/mobile-reach.spec.js"
+
+        goal EveryCameraDegreeOfFreedomHasAGesture
+        uuid 16a4d9f3-8c25-4b70-9e81-3d7b05f2c684
+        summary "タッチで触れないカメラ自由度が 0 個。割当は自由度の側の母集団に対して全射で、未宣言の自由度は既定へ落ちない"
+        state UnderReview
+        labels support-verified
+
+            solution AssignmentTableIsSurjectiveAndTheAppReadsIt
+            uuid a705c3e8-6b14-4f92-8d07-52e91b647a3d
+            summary "node --test src/view/CameraGestures.test.js — pass (6/6)。母集団を CAMERA_DOF (orbit / dolly / pan) に置いたので、割当を持たない自由度が 0 個であることを直接問える — 割当表を辿る数え方では pan は行を持たないので構造的に出てこない (出荷から今日まで、コードのどこにも『pan が無い』とは書かれていなかった)。OrbitControls への翻訳は表を実際に読んでから返すので、表が空になれば翻訳も落ちる (定数を返す実装なら表を壊しても緑のまま)。e2e/mobile-reach.spec.js が走っているアプリの touches.TWO === DOLLY_PAN を確認するので、表が正しくても SceneView が読んでいなければ落ちる"
+            artifacts
+            - "src/view/CameraGestures.js"
+            - "src/view/CameraGestures.test.js"
+            - "src/view/SceneView.js"
+
+        goal ADoubleTapIsJudgedNotAssumed
+        uuid d51c7f04-9a83-4e26-b71f-6c204a83f195
+        summary "ブラウザの dblclick が候補として扱われ、意図的な double-tap かどうかを名前付きの述語が決める。却下は必ず理由を持ち、空振りが最大のカメラ跳躍を起こさない"
+        state UnderReview
+        labels support-verified
+
+            solution PurePredicateBurnsTheMisfireTable
+            uuid f38e6b91-4c07-4a52-9d63-15b8072ce4a0
+            summary "node --test src/view/TapGesture.test.js — pass (9/9)。距離 (slop 24px 超で却下)・カメラ移動 (2 タップのあいだにオービットが挟まれば却下、距離より先に効く)・空振り (当たりも選択も無ければ却下 = _focusSphere のシーン全体フォールバックへ落ちない)・記録の不在 (1 回目が canvas 外なら距離を問わない — 『記録が無い』を距離 0 で埋めない) を表として焼き、却下枝が全部非空の理由を持つことも数える。述語を純粋にしたのでブラウザ無しで走る"
+            artifacts
+            - "src/view/TapGesture.js"
+            - "src/view/TapGesture.test.js"
+            - "src/controller/AppController.js"
+
+        goal AnOpenDrawerAlwaysHasAWayOut
+        uuid 7b209ed4-3f61-4a85-9c02-84d3e1a5730b
+        summary "どの経路で開いた drawer にも閉じる手段がある。開閉と backdrop が別々に書かれることで片方だけ動く状態が作れない"
+        state UnderReview
+        labels support-verified
+
+            solution BackdropIsDerivedFromTheDrawersNotWrittenBesideThem
+            uuid 3c9814ab-5d72-4e60-b183-06f7a25e9d18
+            summary "e2e/mobile-reach.spec.js — pass (4/4)。320px + touch で、N トグルを叩いて開き、もう一度叩いて**閉じる**ところまでを焼く (報告された症状そのものなので、開くだけの検査では足りない)。さらに暗転した 3D を叩いて閉じる経路も焼くので、ヘッダ経由でない出口が実在することが示される。実装側は _syncDrawerBackdrop() が backdropCallback の唯一の書き手、_toggleNPanel() が開閉の唯一の入口 (原則 #1 / #4) — 以前は N キー経路と outliner の『もう片方を閉じる』行が開閉だけを書いていたので、backdrop 無しの drawer が作れた"
+            artifacts
+            - "src/controller/AppController.js"
+            - "e2e/mobile-reach.spec.js"
+
+        goal OneQuestionAboutNarrownessHasOneAnswer
+        uuid 9f4e1b73-2a68-4d05-8c91-47b3e0a25d68
+        summary "『この画面は狭いレイアウトか』に答える実装が 1 つ。入力の粗さを問う述語とは名前で区別され、レイアウトの寸法計算に混入しない"
+        state UnderReview
+        labels support-exploring
+
+            assumption NoCallSiteReintroducesTheRawExpression
+            uuid 8a17d3f6-4b90-42e1-9c85-30e6b7f8a294
+            summary "証拠予定: 現在は grep で raw な window.innerWidth < 768 が src/ から消えていることを手で確認しているだけで、機械が問う場所が無い。次に狭レイアウト述語のコピーが 1 つでも戻った事例を踏んだら、IdentityContainment.test.js の IDENTITY_RULES へ『狭いか』の述語を登録して母集団を src/ 全体から導出させる (ADR-102 の方式)。今回登録を見送ったのは、pointer:coarse を読む正当な call site が 3 つ残っており、両者を構文だけで判別する規則がまだ書けていないため — 未宣言の 0 を作らないよう、ここに保留として残す"
+            artifacts
+            - "src/IdentityContainment.test.js"
+            - "src/view/Viewport.js"

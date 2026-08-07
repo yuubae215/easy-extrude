@@ -17,6 +17,7 @@
  */
 
 import * as THREE from 'three'
+import { isNarrowViewport } from '../../view/Viewport.js'
 import { CoordinateFrame }                      from '../../domain/CoordinateFrame.js'
 import { findOriginFrame }                      from '../../domain/originFrame.js'
 import { S_FRAME_PLACEMENT }                    from '../../core/editorStates.js'
@@ -133,7 +134,7 @@ export class FramePlacementHandler {
     }
     this._frameCursorGhost.visible = false
 
-    const mobile = window.innerWidth < 768
+    const mobile = isNarrowViewport()
     if (mobile) {
       ctrl._uiView.setStatus('Tap to place frame')
       ctrl._updateMobileToolbar()

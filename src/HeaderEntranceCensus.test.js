@@ -50,6 +50,8 @@ import {
   FLOOR_TARGETS, OVERFLOW_VERBS, menuFor,
   REQUIRES, requirementReason, availabilityOf,
 } from './view/HeaderEntrances.js'
+import { TOP_EDGE_OCCUPANTS, topEdgeFits } from './view/EdgeOccupancy.js'
+import { MIN_SUPPORTED_WIDTH } from './view/Viewport.js'
 
 const HEADER_FILE = 'src/components/Header/Header.jsx'
 
@@ -181,6 +183,34 @@ test('the header entrance count matches its declared bound — in both direction
     `\nmobile の常設入口が ${mobile.length} 個 (宣言された上界 ${MOBILE_ENTRANCE_BASELINE})。\n` +
     `  実測: ${mobile.join(', ')}\n\n` +
     '  デスクトップだけ数えると、モバイルに生えた入口が出てこない — 両方に上界がある。\n')
+})
+
+// ─── ADR-114 D1: 数えた入口は**画面に入る**か ────────────────────────────────
+
+test('mobile に描かれる住人は全員が上端の幅予算に載っている', () => {
+  // 入口の個数 (D2 の ratchet) と、入口が**届くか**は別の問いである。前者だけを
+  // 数えていたので、438px を要求するヘッダが 320〜393px の実機で右端 2 つを
+  // 切り落としたまま緑を出していた (ADR-114)。母集団は同じ JSX 由来のキー集合。
+  const keys = layoutKeys()[LAYOUT.MOBILE]
+  assertCoversPopulation({
+    what:       'mobile ヘッダの上端占有',
+    population: [...new Set(keys)],
+    declared:   Object.keys(TOP_EDGE_OCCUPANTS),
+    howDerived: `${HEADER_FILE} の MobileHeaderContents 直下の JSX 要素`,
+    onNew:      'src/view/EdgeOccupancy.js の TOP_EDGE_OCCUPANTS に幅を宣言すること。'
+              + '幅を持たない住人は予算に現れず、超過分は右端の入口から無言で消える (原則 #26 / #11)。',
+  })
+})
+
+test('mobile の住人が実際に要求する幅は最小対応幅に収まる (D1 の本体)', () => {
+  const keys = layoutKeys()[LAYOUT.MOBILE]
+  const { fits, width, overflowBy } = topEdgeFits({ viewportWidth: MIN_SUPPORTED_WIDTH, keys })
+  assert.ok(fits,
+    `\n実際に描かれている住人 (${keys.length} 個) が ${width}px を要求し、` +
+    `${MIN_SUPPORTED_WIDTH}px を ${overflowBy}px 超えている。\n` +
+    `  実測: ${keys.join(', ')}\n\n` +
+    '  EdgeOccupancy.test.js は**宣言表**を数え、こちらは**実際に描かれている行**を数える。\n' +
+    '  表から住人を消しただけで JSX に残っている場合、前者だけが緑になる。\n')
 })
 
 // ─── G3 (OneVerbHasOneEntrance): 動詞 → 入口の逆像は高々 1 ───────────────────

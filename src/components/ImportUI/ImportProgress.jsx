@@ -1,6 +1,8 @@
 import { useUIStore } from '../../store/uiStore.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
-const isMobile = () => window.matchMedia('(pointer: coarse)').matches
+// レイアウトの寸法は**幅**の問い (ADR-114) — 入力の粗さで答えない
+const isMobile = () => isNarrowViewport()
 
 export function ImportProgress() {
   const importProgress = useUIStore(s => s.importProgress)

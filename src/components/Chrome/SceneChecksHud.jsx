@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { COLOR, Z, rgba } from '../../theme/tokens.js'
 import { CHECKS_KIND, checksDeclaration } from '../../context/DiscoverySummary.js'
 import { leftEdgeOffset, belowHeaderOffset } from '../../view/EdgeOccupancy.js'
 import { ChecksPanel } from '../Context/ChecksPanel.jsx'
+import { useIsNarrowViewport } from './ChromePrimitives.jsx'
 
 /**
  * SceneChecksHud — scene-scope acceptance verdicts, on the 3-D view (ADR-105 D1 / D3).
@@ -58,7 +59,7 @@ const GLYPH = {
 export function SceneChecksHud() {
   const summary   = useUIStore(s => s.context.checksSummary)
   const callbacks = useUIStore(s => s.callbacks)
-  const isMobile  = useIsMobile()
+  const isMobile  = useIsNarrowViewport()
   // Expansion is presentation history, so it is component-local, never a store
   // field (ADR-062 §2). Only kinds that HAVE verdicts can expand — an
   // `unexamined` HUD has nothing to show, and offering an empty drawer is the
@@ -159,12 +160,6 @@ export function SceneChecksHud() {
   )
 }
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768)
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-  return isMobile
-}
+// `useIsMobile()` はここに在った — 判定は `view/Viewport.js`、購読は
+// `useIsNarrowViewport()` ただ 1 つ (ADR-114 / §1.1)。resize 購読ではなく
+// matchMedia なので、幅が閾値を跨いだときだけ再描画する。

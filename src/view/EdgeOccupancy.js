@@ -34,6 +34,30 @@
  * 「下端の占有量」は 1 つの数ではなく**段 (tier) の関数**になる。段は
  * `BOTTOM_TIER` に列挙し、**未宣言の段では throw する** (原則 #31 — fall-through は
  * 「宣言された既定」と「誰も考えなかった段」を区別不能にする)。
+ *
+ * ## 上端の**幅** (ADR-114) — 端は 2 次元の資源である
+ *
+ * 上端はこれまで**高さ (40px) だけ**が占有量として扱われていた。ヘッダの住人は
+ * 縦に積まれないので段は要らない — 代わりに**横に並ぶ**ので、上端の共有資源は幅
+ * である。そしてその幅には所有者が居なかった。
+ *
+ * 結果として起きたこと: `Header.jsx` は `overflow:hidden` を持つので、住人の合計幅が
+ * ビューポートを超えた瞬間、**右端の入口が無言で切り落とされる**。実測で mobile
+ * ヘッダは 438px を要求し、320〜393px のどの実機幅でも N パネルのトグルは 1px も
+ * 画面に無かった。DOM には在るので `HeaderEntranceCensus` は 7 個を数え続け、緑を
+ * 出す — 数えていたのは「在る入口」で、問題は「**入らなかった入口**」だった
+ * (原則 #31)。
+ *
+ * これは 2 度目である。`docs/code_contracts/ui_layout.md` の "Mobile Header Overflow"
+ * は「Map ボタンは mobile で文字ラベルを隠す — さもないと 375px で N パネルの
+ * アイコンが切れる」と書いていた。**特定の住人に当てた 1 箇所のパッチ**であって
+ * 端の予算ではなかったので、ADR-103 が Map ボタンを退役させた時点でパッチごと
+ * 消え、ADR-105 が 102px の集約を足したときには誰も残高を見ていなかった。
+ * 原則 #26 が禁じている「呼び出し箇所ごとのパッチ」の、退役による現れ方である。
+ *
+ * したがって幅も**宣言**にする: 住人ごとの占有幅を `TOP_EDGE_OCCUPANTS` に書き、
+ * 合計が `MIN_SUPPORTED_WIDTH` に収まることを機械が問う。住人が自分の padding や
+ * 文字列で幅を決め、誰も合計を見ない形には戻さない。
  */
 
 /** desktop の Outliner サイドバー幅 (常設・不透明・z:90)。 */
@@ -74,6 +98,87 @@ export function leftEdgeOffset({ isMobile }) {
  */
 export function belowHeaderOffset() {
   return HEADER_HEIGHT + 6
+}
+
+// ── 上端の幅 (ADR-114) ───────────────────────────────────────────────────────
+
+/**
+ * ヘッダ自身の寸法 — **描画側と予算側が同じここを読む**。
+ *
+ * `Header.jsx` がこの値を使わずに literal を書けば、宣言された予算と実際の幅が
+ * 静かにずれる。予算は現実の写しでなければ意味がない (§1.1)。
+ */
+export const HEADER_METRICS = Object.freeze({
+  /** 左右の内側余白 (片側)。 */
+  padX:      8,
+  /** 住人と住人のあいだ。狭いレイアウトでは詰める。 */
+  gap:       { narrow: 3, wide: 6 },
+  /** アイコンボタンの左右 padding (片側)。 */
+  iconPadX:  { narrow: 5, wide: 7 },
+})
+
+/**
+ * 上端 (mobile ヘッダ) の住人と、それぞれが**最小まで縮んだときの占有幅** (px)。
+ *
+ * キーは `HeaderEntranceCensus` が `Header.jsx` の JSX から導出するものと同じ形
+ * (`要素名` または `要素名:判別子`)。同じキー空間を使うので、入口を足して幅を
+ * 宣言し忘れた場合に検査が突き合わせられる — 幅の表を第二の入口台帳にしない。
+ *
+ * `minWidth` は**上限の見積り**であって実測ではない。実測との一致は e2e が問う
+ * (宣言はフォント・ロケール・ユーザー拡大を知らないため — この証拠が構造的に
+ * 見逃すものの宣言)。
+ */
+export const TOP_EDGE_OCCUPANTS = Object.freeze({
+  'IconBtn:Toggle outliner':          { minWidth: 28, why: 'アイコン 18px + padding 5px×2 (実測 28)' },
+  'IconBtn:Undo':                     { minWidth: 30, why: '同上 + border 1px×2 (実測 30)' },
+  'IconBtn:Redo':                     { minWidth: 30, why: '同上 + border 1px×2 (実測 30)' },
+  'ModeDropdown':                     { minWidth: 46, why: '狭レイアウトは短縮ラベル "Obj ▾" (実測 44)' },
+  'div':                              { minWidth: 0,  why: 'flex:1 の不可視スペーサ — 0 まで縮む' },
+  'DiscoveryCounters':                { minWidth: 88, why: '3 カウンタ × 最大 2 文字 ("9+") の最悪形 (実測 83)。'
+                                                         + '合算はしない (ADR-104 D4) ので、狭さが削るのは桁であって個数ではない' },
+  'MoreMenu':                         { minWidth: 30, why: '⋯ グリフのみ (実測 28)' },
+  'IconBtn:Toggle properties panel':  { minWidth: 28, why: 'アイコン 18px + padding 5px×2 (実測 28)' },
+})
+
+/**
+ * 宣言された住人が要求する上端の幅 (px)。
+ *
+ * @param {object} [opts]
+ * @param {string[]} [opts.keys]   数える住人 (既定 = 宣言された全員)
+ * @param {boolean}  [opts.narrow] 狭レイアウトの詰めた寸法で計算するか (既定 true)
+ * @returns {number}
+ */
+export function topEdgeWidth({ keys = Object.keys(TOP_EDGE_OCCUPANTS), narrow = true } = {}) {
+  const gap = narrow ? HEADER_METRICS.gap.narrow : HEADER_METRICS.gap.wide
+  let sum = HEADER_METRICS.padX * 2
+  keys.forEach((key, i) => {
+    const occupant = TOP_EDGE_OCCUPANTS[key]
+    if (!occupant) {
+      // 未宣言の住人では throw する (原則 #31)。既定 0 で埋めると、幅を宣言し
+      // 忘れた入口が「予算を消費しない住人」として合計に現れず、予算は緑のまま
+      // 画面だけが溢れる — それが ADR-114 が閉じた欠陥そのものである。
+      throw new Error(
+        `EdgeOccupancy: 未宣言の上端の住人 "${key}" — TOP_EDGE_OCCUPANTS に幅を足すこと。` +
+        'ヘッダは overflow:hidden なので、予算に載らない住人は右端の入口を無言で切り落とす (原則 #26 / #11)')
+    }
+    sum += occupant.minWidth
+    if (i > 0) sum += gap
+  })
+  return sum
+}
+
+/**
+ * 上端の住人は指定幅のビューポートに収まるか。
+ *
+ * @param {object} opts
+ * @param {number} opts.viewportWidth
+ * @param {string[]} [opts.keys]
+ * @param {boolean}  [opts.narrow]
+ * @returns {{fits: boolean, width: number, overflowBy: number}}
+ */
+export function topEdgeFits({ viewportWidth, keys, narrow }) {
+  const width = topEdgeWidth({ keys, narrow })
+  return { fits: width <= viewportWidth, width, overflowBy: Math.max(0, width - viewportWidth) }
 }
 
 // ── 下端 (ADR-106 D6) ────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CHROME_CSS } from '../../view/ChromeMath.js'
+import { isNarrowViewport, NARROW_MEDIA_QUERY } from '../../view/Viewport.js'
 
 /**
  * ChromePrimitives — the shared Tier A (affordance-motion) vocabulary for the
@@ -33,4 +34,24 @@ export function useHoverPress() {
     onPointerCancel: () => setPressed(false),
   }
   return { hovered, pressed, handlers }
+}
+
+/**
+ * 「この画面は狭いレイアウトか」— **React 側の唯一の購読口** (ADR-114)。
+ *
+ * 同じ実装が `Header` / `NPanel` / `MobileToolbar` に各自コピーされていた。
+ * 判定そのものは `view/Viewport.js` が持ち、ここはその購読だけを持つ
+ * (述語を 2 度書かない — §1.1)。
+ */
+export function useIsNarrowViewport() {
+  const [narrow, setNarrow] = useState(isNarrowViewport)
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_MEDIA_QUERY)
+    const handler = (e) => setNarrow(e.matches)
+    mq.addEventListener('change', handler)
+    // 購読を張るまでのあいだに幅が変わっていることがある (初期化は render 時)。
+    setNarrow(mq.matches)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return narrow
 }

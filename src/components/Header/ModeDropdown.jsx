@@ -6,8 +6,8 @@ import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 import { isInsideDropdown } from '../../view/DropdownContainment.js'
 
 const MODES = [
-  { label: 'Object Mode', value: 'object', hint: 'Tab' },
-  { label: 'Edit Mode',   value: 'edit',   hint: 'Tab' },
+  { label: 'Object Mode', value: 'object', hint: 'Tab', short: 'Obj' },
+  { label: 'Edit Mode',   value: 'edit',   hint: 'Tab', short: 'Edit' },
 ]
 
 /**
@@ -16,8 +16,16 @@ const MODES = [
  * The dropdown is rendered at document-level coordinates (position:fixed) to
  * escape the header's overflow:hidden — matching UIView's _modeDropdownEl pattern
  * (CODE_CONTRACTS "Mobile Header Overflow").
+ *
+ * `compact` (狭レイアウト, ADR-114): ラベルを短縮形にして 116px → 48px に落とす。
+ * **入口を消すのではなく語を短くする** (原則 #15) — 現在のモードは読めたままで、
+ * 完全な語は開いた listbox と `title` に在る。上端の幅は共有資源なので、削るのは
+ * 「一番幅を食っている住人の語」であって「一番奥の入口」ではない (右端を切るのが
+ * `overflow:hidden` の既定挙動で、それが ADR-114 の欠陥だった)。
+ *
+ * @param {{compact?: boolean}} props
  */
-export function ModeDropdown() {
+export function ModeDropdown({ compact = false }) {
   const mode      = useUIStore(s => s.mode)
   const callbacks = useUIStore(s => s.callbacks)
   const [open, setOpen]   = useState(false)
@@ -55,7 +63,8 @@ export function ModeDropdown() {
     callbacks.onModeChange?.(value)
   }
 
-  const modeLabel = MODES.find(m => m.value === mode)?.label ?? 'Object Mode'
+  const decl      = MODES.find(m => m.value === mode) ?? MODES[0]
+  const modeLabel = compact ? decl.short : decl.label
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -64,19 +73,22 @@ export function ModeDropdown() {
         onClick={handleToggle}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={decl.label}
+        title={compact ? decl.label : undefined}
         style={{
-          padding:     '4px 10px',
+          padding:     compact ? '4px 6px' : '4px 10px',
           background:  '#383838',
           border:      '1px solid #4a4a4a',
           borderRadius:'6px',
           color:       '#e0e0e0',
           cursor:      'pointer',
-          fontSize:    '13px',
+          fontSize:    compact ? '12px' : '13px',
           fontFamily:  'system-ui, -apple-system, sans-serif',
           display:     'flex',
           alignItems:  'center',
-          gap:         '6px',
+          gap:         compact ? '3px' : '6px',
           whiteSpace:  'nowrap',
+          flexShrink:  '0',
           pointerEvents: 'auto',
         }}
       >

@@ -10,6 +10,7 @@ import { CelebrationDefs, ContextCelebration } from '../Feedback/Celebration.jsx
 import { listDelta, settledRefs } from '../../view/FeedbackMath.js'
 import { FLOOR_TAB, FLOOR_TABS } from '../../view/FloorTabs.js'
 import { BOTTOM_TIER, bottomEdgeOffset, floorHeight } from '../../view/EdgeOccupancy.js'
+import { isNarrowViewport } from '../../view/Viewport.js'
 
 /**
  * ContextLayer — the floor: where claims are settled, and where the record of
@@ -83,7 +84,7 @@ export function ContextLayer() {
 
   if (!ctx.active) return null
 
-  const isMobile = window.innerWidth < 768
+  const isMobile = isNarrowViewport()
   const liveConflicts = liveConflictRefs.length
   // negotiate shows the resolution + record tabs (Questions only when the doc has
   // open ones); ghost shows matrix only (read-only persona filter); author has no
