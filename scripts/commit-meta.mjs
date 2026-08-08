@@ -14,7 +14,10 @@
 //
 // CLI:
 //   node scripts/commit-meta.mjs derive --transcript <path> [--rev HEAD]
-//       → トレーラ行を stdout に出す (hook が使う)
+//       → 既存コミットからトレーラ行を stdout に出す (PostToolUse の予備経路)
+//   node scripts/commit-meta.mjs derive --transcript <path> --message-file <f> [--amend]
+//       → **まだコミットになっていない**変更 (index + メッセージファイル) から出す。
+//         `prepare-commit-msg` が使う主経路 (ADR-116)。分類規則は上と同一の純粋関数。
 //   node scripts/commit-meta.mjs report [--since <date>] [--until <date>]
 //       → モデル × effort × タスク種別の集計 (Task-Class は未記録分を遡及導出)
 
@@ -189,6 +192,61 @@ export function detectsCommitPushChain(command) {
 }
 
 /**
+ * コミットメッセージファイル → subject。
+ *
+ * `prepare-commit-msg` の時点ではコミットオブジェクトがまだ無いので、subject は
+ * `git show` ではなく**メッセージファイル**から取る。エディタ経由だとテンプレの
+ * コメント行が先に来るため、`#` 行と空行を落として最初の実質行を採る。
+ *
+ * 既知の限界: `core.commentChar` を変えている環境では `#` 判定が外れる。その場合
+ * subject が空になり Task-Class は `other/...` に落ちるだけで、壊れはしない。
+ */
+export function subjectFromMessage(text) {
+  for (const line of String(text ?? '').split('\n')) {
+    const s = line.trim();
+    if (!s || s.startsWith('#')) continue;
+    return s;
+  }
+  return '';
+}
+
+/**
+ * セッション文脈マーカーの**書式の正本** (ADR-116)。
+ *
+ * PreToolUse (書き手) と `prepare-commit-msg` (読み手) が別々に書式を実装すると
+ * 同じ事実の第二の源になるので、組み立ても解釈もここに置く。
+ *
+ * マーカーが在ることは「いま Claude が commit を走らせている」ことの証拠であり、
+ * これが**人間のコミットに刻まないための唯一の判別**である (帰属 — ADR-092 §2)。
+ * 鮮度を要求するのは、古いマーカーが端末に残っていて後から人が打った commit を
+ * 巻き込むのを防ぐため。
+ */
+export function buildCommitContext({ transcript, amend, nowSec }) {
+  return [
+    `transcript=${transcript ?? ''}`,
+    `amend=${amend ? 1 : 0}`,
+    `ts=${Math.floor(nowSec)}`,
+  ].join('\n') + '\n';
+}
+
+export function parseCommitContext(text, { nowSec, maxAgeSec = 300 } = {}) {
+  const fields = new Map();
+  for (const line of String(text ?? '').split('\n')) {
+    const i = line.indexOf('=');
+    if (i > 0) fields.set(line.slice(0, i).trim(), line.slice(i + 1).trim());
+  }
+  const ts = Number(fields.get('ts'));
+  if (!Number.isFinite(ts)) return null;
+  const age = Math.floor(nowSec) - ts;
+  // 未来の刻印 (時計のずれ) も信用しない — 鮮度は絶対値で見る。
+  if (!(age >= -60 && age <= maxAgeSec)) return null;
+  return {
+    transcript: fields.get('transcript') || null,
+    amend: fields.get('amend') === '1',
+  };
+}
+
+/**
  * トレーラ行を組み立てる。
  *
  * model が読めなくても `unknown/unknown` を**宣言**する — hook が走った時点で
@@ -208,14 +266,52 @@ export function buildTrailers({ session, taskClass }) {
 const git = (args, cwd) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
+/** git の「空ツリー」— 初回コミットの diff 基準。 */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+/**
+ * まだコミットになっていない変更集合 (index) のパス。
+ *
+ * `prepare-commit-msg` はコミットオブジェクトの**前**に走るので `git show` が使えない。
+ * 基準は「これから出来るコミットの親」であって HEAD ではない — `--amend` のときの
+ * 親は `HEAD^` である。この 1 段のずれを取り違えると、amend のたびに Task-Class が
+ * 「今回 stage した差分だけ」に化ける (`--amend --no-edit` なら空になる)。
+ *
+ * amend かどうかは git からは判別できない (`--amend` も `-C` も source=commit)。
+ * ゆえにマーカー経由で**コマンドの意図**を運ぶ (ADR-116)。
+ */
+function stagedPaths(cwd, { amend }) {
+  const head = (() => {
+    try { return git(['rev-parse', '--verify', '--quiet', 'HEAD'], cwd).trim(); } catch { return ''; }
+  })();
+  let base;
+  if (!head) base = EMPTY_TREE;                       // 初回コミット
+  else if (!amend) base = 'HEAD';
+  else {
+    try { base = git(['rev-parse', '--verify', '--quiet', 'HEAD^1'], cwd).trim() || EMPTY_TREE; }
+    catch { base = EMPTY_TREE; }                      // root コミットの amend
+  }
+  return git(['diff', '--cached', '--name-only', base], cwd)
+    .split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
 function cmdDerive(argv) {
   const transcript = argFor(argv, '--transcript');
   const rev = argFor(argv, '--rev') ?? 'HEAD';
   const cwd = argFor(argv, '--repo') ?? process.cwd();
+  const messageFile = argFor(argv, '--message-file');
 
-  const subject = git(['show', '-s', '--format=%s', rev], cwd).trim();
-  const paths = git(['show', '--name-only', '--format=', rev], cwd)
-    .split('\n').map((s) => s.trim()).filter(Boolean);
+  // --message-file が在れば「これから出来るコミット」を、無ければ既存の rev を見る。
+  // 分類**規則**はどちらも同じ純粋関数 (deriveTaskClass) — 源は 1 つ (§1.1)。
+  let subject; let paths;
+  if (messageFile) {
+    subject = subjectFromMessage(readFileSync(messageFile, 'utf8'));
+    paths = stagedPaths(cwd, { amend: argv.includes('--amend') });
+  } else {
+    subject = git(['show', '-s', '--format=%s', rev], cwd).trim();
+    paths = git(['show', '--name-only', '--format=', rev], cwd)
+      .split('\n').map((s) => s.trim()).filter(Boolean);
+  }
 
   let session = null;
   if (transcript) {
@@ -322,6 +418,7 @@ if (isMain) {
   else if (sub === 'detect-chain') cmdDetectChain(rest);
   else {
     console.error('usage: commit-meta.mjs derive --transcript <path> [--rev HEAD] [--repo <dir>]');
+    console.error('       commit-meta.mjs derive --transcript <path> --message-file <f> [--amend] [--repo <dir>]');
     console.error('       commit-meta.mjs report [--since <date>] [--until <date>]');
     console.error('       commit-meta.mjs detect-chain --command <shell command>');
     process.exit(2);

@@ -1,6 +1,6 @@
 # 116. 観測トレーラはコミット生成時に刻む — amend の後追いをやめる
 
-- Status: **Proposed** (2026-08-08 起票。ADR-115 が欠測を数える側を閉じたので残るのは塞ぐ側。DEF-012 の満期がこの ADR)
+- Status: Accepted (実装済み 2026-08-08 — `.githooks/prepare-commit-msg` が主経路。`git commit && git push` の連鎖でも刻めることを再現ラボで確認。**実装で 1 点変わった**: 予備経路を消さず残した)
 - Date: 2026-08-08
 - Deciders: yuubae215, Claude
 - Supersedes / Superseded by: 採択されれば **ADR-092 §3 の書き込み機構**を置き換える
@@ -41,21 +41,69 @@ ADR-092 は git 自身の `prepare-commit-msg` hook を 2 つの理由で却下�
 - ガードが減る (公開済み判定・300 秒窓・merge/rebase 中・detached HEAD)。
   `prepare-commit-msg` は git がそれらを既に区別して呼ぶ。
 
-## 未決 (採択前に決めること)
+## 決めたこと (起票時の「未決」への答え)
 
-- `core.hooksPath` の設定を**どこが担保するか**。リモートセッションは毎回新しい
-  クローンなので、設定が落ちれば同じ無言の失敗が戻る。SessionStart hook が有力だが、
-  それ自体が新しい静かな失敗面になる — **だから ADR-115 の計数は塞いだ後も残す**
-  (計数が落ちたことを計数が示す)。
-- `prepare-commit-msg` 時点では HEAD がまだ動いていないので、`Task-Class` の
-  パス集合は index (`git diff --cached --name-only`) から取る。`--amend` /
-  merge / squash の各呼ばれ方 (`$2`) で母集団が変わるため、`deriveTaskClass` の
-  呼び出し側を分岐させる必要がある。
-- マーカーの「新しさ」の閾値。短すぎると長い commit で落ち、長すぎると人間の
-  コミットを巻き込む。
+- **`core.hooksPath` は SessionStart hook が張る** (`.claude/hooks/install-git-hooks.sh`)。
+  リモートセッションは毎回新しい clone なので、「毎回」に対応する事象はセッションの
+  開始しかない。**既に別の値が入っていれば何もしない** — `core.hooksPath` を張ると
+  `.git/hooks/` が丸ごと無効になるので、利用者の hook を奪ってはいけない。その場合は
+  黙って諦めず理由を出力する (原則 #11)。
+- **`Task-Class` の diff 基準は「これから出来るコミットの親」**。通常は `HEAD`、
+  `--amend` では `HEAD^`、初回コミットでは空ツリー。**`--amend` かどうかは git から
+  判別できない** (`--amend` も `-C` も `$2=commit`) ので、PreToolUse が
+  コマンド文字列から読み取った**意図**をマーカーで運ぶ。負の対照で確認済み:
+  基準を誤ると `--amend --no-edit` が `feat/none` に化ける (今回は `feat/docs+front`)。
+- **マーカーの鮮度は 300 秒、かつ使い切り** (刻んだら消す)。鮮度だけに頼ると窓の
+  あいだ人のコミットを巻き込むため。窓を広げれば帰属が壊れ、狭めれば刻み漏れが
+  増える — どちらに倒れても `pnpm test:trailers` が個数で見せる。
+
+## 実装で変わったこと
+
+**予備経路 (PostToolUse の amend) を消さずに残した。** 起票時は「ADR-092 §3 の機構を
+置き換える」と書いたが、`core.hooksPath` が張られていない clone では
+`prepare-commit-msg` が走らないので、消すとその場合に**何も刻まれず今より悪くなる**。
+予備経路は冪等 (既に同じ値が在れば no-op) なので二重刻印にはならない。主経路が
+死んだことは ADR-115 の計数が示す — 置き換えではなく**主経路の移動 + 予備の残置**が
+正しい形だった。
+
+連鎖の助言は消さずに**条件を狭めた**: `prepare-commit-msg` が張られていれば
+`commit && push` は無害なので、そこで警告するのは誤発動でしかない (核 §6 シグナル(b))。
+hook が張られていない clone でだけ出す。文面も「分けてください」から
+「この clone には hook が張られていません」へ変えた — 助言が指すべきは症状ではなく原因。
+
+## Consequences
+
+- **Evidence (§1.2):** スクラッチ repo (bare remote + clone + 同じ hook) で 4 形を実測:
+  (a) マーカーあり + `git commit && git push` を 1 コマンド → **刻印済** (ADR-115 が
+  数えた穴が閉じた)、(b) マーカー無し (人間のコミット) → **刻まない**、
+  (c) 600 秒前のマーカー → **刻まない**、(d) マーカーは使い切りなので同一呼び出しの
+  2 本目 → 刻まない (予備経路が拾う)。`pnpm test:commit-meta` 26 件 pass。
+- **残る欠測** (数える対象・塞いでいない): 1 つの Bash 呼び出しで 2 つ以上 commit した
+  ときの 2 本目以降 (予備経路が HEAD だけ拾う)、`core.hooksPath` を既に持つ clone。
+  どちらも `pnpm test:trailers` の母数に現れる。
+- **波及 (blast radius):** 新規 `.githooks/prepare-commit-msg` +
+  `.claude/hooks/install-git-hooks.sh` + `.claude/settings.json` の SessionStart。
+  `commit-meta.mjs` に純粋関数 3 つ (`subjectFromMessage` / `buildCommitContext` /
+  `parseCommitContext`) と `derive --message-file` 経路。`commit-trailers.sh` の
+  PreToolUse を書き換え。**`src/` は 1 行も触っていない。** `MISSING_BASELINE` は
+  14 のまま (過去の欠測は遡及して直らない)。
+
+## Lens notes
+
+- **§1.1 真実の源は一つ:** マーカーの書式は `buildCommitContext` /
+  `parseCommitContext` の対で 1 箇所。書き手 (PreToolUse・bash) と読み手
+  (`prepare-commit-msg`・bash) がそれぞれ `key=value` を実装すると第二の源になる
+   — どちらも node を呼んで同じ関数を通す。
+- **原則 #3 (純粋/副作用の分離):** 追加した 3 関数はすべて文字列 → 値。git も fs も
+  触らない。副作用は CLI と 2 つの shell hook だけ。
+- **ADR-092 の却下理由は間違っていなかった。** 当時の前提 (git hook は transcript を
+  知らない) は正しく、変わったのは**根拠を置く場所を分けられる**と気づいたこと。
+  PreToolUse は*刻めない*が*根拠は置ける* — 「刻む」と「根拠を持つ」を 1 つの
+  イベントで満たそうとしていたのが元の制約だった。
 
 ## References
 
-- ADR-092 (観測トレーラの導入 — §3 の機構を置き換える対象、§4 は ADR-115 が継承)
-- ADR-115 (欠測の計数 — この ADR が採択されても**残す**)
-- DEF-012 (`docs/DEFERRAL_LEDGER.md` — この ADR が満期)
+- ADR-092 (観測トレーラの導入 — §3 の**機構**をこの ADR が主経路から降ろした。
+  §4「塞げない穴は数える」は ADR-115 が継承)
+- ADR-115 (欠測の計数 — この ADR が採択されても**残す**。主経路が死んだことを示すのが計数)
+- ADR-100 (ratchet の形), ADR-102 (母集団の導出)

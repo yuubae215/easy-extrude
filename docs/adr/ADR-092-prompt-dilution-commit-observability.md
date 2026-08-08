@@ -3,7 +3,10 @@
 - Status: Accepted (実装済)
 - Date: 2026-07-25
 - Deciders: yuubae215, Claude (pairing)
-- Supersedes / Superseded by: なし
+- Supersedes / Superseded by: **§3 の書き込み機構は ADR-116 が主経路から降ろした**
+  (PostToolUse の `--amend` → `prepare-commit-msg`。予備経路としては残置)。
+  §4「塞げない穴は数える」は ADR-115 が検査として実装した — 本 ADR の決定は
+  正しく、欠けていたのは数を読む機械だった
 - 状態台帳: `docs/STATE_LEDGER.md` の「コミットの観測メタデータ」行 (基数 `0..1` —
   0 = 人間のコミット / 刻む隙間が無かったもの)。遷移の正本は
   `docs/STATE_TRANSITIONS.md` §Commit observation metadata
