@@ -48,6 +48,14 @@ import {
 } from './census/sources.js'
 import { assertCoversPopulation, assertDeclarationsExist } from './census/partition.js'
 import { FLOOR_TAB, FLOOR_TABS, RETIRED_FLOOR_TABS, floorTabOrThrow } from './view/FloorTabs.js'
+import { FLOOR_TARGETS, RETIRED_FLOOR_TARGETS } from './view/HeaderEntrances.js'
+import {
+  graspEntryFor, graspBlockedReason, DECLARED_GRASP_BLOCKED_KINDS,
+} from './view/EntityScopeChecks.js'
+import { ROBOT_CARDINALITY } from './domain/robotFrames.js'
+
+/** 場の入口の配線を持つファイル (母集団の導出元 — 手書きのメソッド名リストを持たない)。 */
+const CONTEXT_CONTROLLER = 'src/controller/ContextController.js'
 
 // ── 形の宣言 ────────────────────────────────────────────────────────────────
 
@@ -333,6 +341,105 @@ test('退役したタブは消えたのではなく着いている — 行き先
     onStale:      '移設先のファイルが存在しない = 機能が無言で到達不能になっている。'
                 + 'FloorTabs.RETIRED_FLOOR_TABS の行き先を実在する住所に直すこと',
   })
+})
+
+// ── 問い 6: 場を開かない引数は 0 個 (ADR-110) ───────────────────────────────
+
+/**
+ * 動詞 `open-floor` の引数のうち、**押しても下部の器が開かないもの**。
+ *
+ * ADR-106 が器を動かしたとき `grasp` 行はこの状態になった — 住所の根拠が
+ * 「かつて同じ器を開いていた」という歴史になり、`Context ▾` の見出しが約束した
+ * ことを 4 行目が果たさなくなった。ADR-108 D4 が `Nodes` について名指しした
+ * 欠陥と同型で、あちらは「表示条件の一致」、こちらは「歴史」である。
+ *
+ * **数えるのは行の数ではない。** 「引数が 3 つある」は在るものを辿る数え方で、
+ * 4 つ目が同じ理由で紛れ込んだ日に緑を出す (原則 #31)。数えるのは *器を開かない
+ * 引数の個数*で、母集団は `FLOOR_TARGETS` の callback から `ContextController` の
+ * **呼び出し閉包**を辿って導出する — 手で並べた「開く行の一覧」を持たない。
+ */
+function floorOpeningTargets() {
+  const source  = readFileSync(repoPath(CONTEXT_CONTROLLER), 'utf8')
+  const methods = methodsOf(source)
+  const flat    = stripCommentsFlat(source)
+  const opening = []
+  for (const target of FLOOR_TARGETS) {
+    // callback 名 → それが呼ぶメソッド (配線は registerCallback の 1 行だけ)。
+    // 配線は 1 行 (`registerCallback('x', () => this.y())`) なので行内で探す —
+    // 引数リストの `()` を跨がないために `[^\n]` で止める。
+    const wired = new RegExp(
+      `registerCallback\\(\\s*'${target.callback}'[^\\n]*?this\\.(\\w+)\\s*\\(`,
+    ).exec(flat)
+    assert.ok(wired,
+      `\n${target.callback} の配線が ${CONTEXT_CONTROLLER} に無い。\n` +
+      '  母集団は配線から導出するので、配線が別のファイルへ移ったならこの導出も同じ\n' +
+      '  コミットで移すこと (母集団が消えると検査は緑のまま黙る)。\n')
+    const reached = callClosure(methods, wired[1])
+    const opens = [...reached].some(name =>
+      /\bcontextStart\s*\(/.test(methods.get(name)?.body.join('\n') ?? ''))
+    if (opens) opening.push(target.object)
+  }
+  return opening
+}
+
+test('「場を開く」の引数のうち、器を開かないものが 0 個 (ADR-110 D1)', () => {
+  assertCoversPopulation({
+    what:       '動詞 open-floor の引数',
+    population: FLOOR_TARGETS.map(t => t.object),
+    declared:   floorOpeningTargets(),
+    howDerived: `${CONTEXT_CONTROLLER} で callback が配線されたメソッドの呼び出し閉包が `
+              + 'ui.contextStart( に到達するか',
+    onNew:      'その引数は「場を開く」を果たしていない。動詞と住所が一致していないので、'
+              + '引数として残すのではなく**移設**すること — 行き先を RETIRED_FLOOR_TARGETS に '
+              + '名指しし、経路そのものは消さない (原則 #16 — 行き先を名指ししない移設は無言の削除)。',
+  })
+})
+
+test('移設した引数は消えたのではなく着いている — 行き先が実在する (ADR-110 D1)', () => {
+  const files = new Set(SOURCES.map(s => s.file))
+  assertDeclarationsExist({
+    what:         'ADR-110 が名指しした移設先',
+    declarations: RETIRED_FLOOR_TARGETS.map(t => ({ key: t.movedTo, why: `${t.object}: ${t.why}` })),
+    exists:       key => files.has(key),
+    onStale:      '移設先のファイルが存在しない = 経路が無言で到達不能になっている。'
+                + 'HeaderEntrances.RETIRED_FLOOR_TARGETS の行き先を実在する住所に直すこと',
+  })
+})
+
+test('移設した引数が「場を開く」へ戻っていない (退役の腐敗は緑を出す)', () => {
+  // 逆向き。行き先を宣言しても、元の表に同じ object が生き残っていれば
+  // 何も移設されていない — そして両方の宣言が揃っているので緑に見える (ADR-103 §負債 3)。
+  const back = RETIRED_FLOOR_TARGETS
+    .map(t => t.object)
+    .filter(object => FLOOR_TARGETS.some(t => t.object === object))
+  assert.deepEqual(back, [],
+    `\n移設したはずの引数が FLOOR_TARGETS に在る: ${back.join(', ')}\n` +
+    '  移設の宣言と実体が食い違っている。どちらかが嘘なので、同じコミットで揃えること。\n')
+})
+
+test('選択が無いときの理由は 2 種に割れる — 0 台に「ロボットを選べ」と言わない (ADR-110 D4)', () => {
+  // ADR-110 の「正直な限界」が要求した分岐。1 文で両方を賄うと、ロボットが 0 台の
+  // 人には嘘になる (選ぶ対象そのものが無い — ADR-090 の 0 台問題)。
+  const noRobot   = graspEntryFor(null, { robotCardinality: ROBOT_CARDINALITY.NONE })
+  const noSelect  = graspEntryFor(null, { robotCardinality: ROBOT_CARDINALITY.SINGLE })
+  const noSelectN = graspEntryFor(null, { robotCardinality: ROBOT_CARDINALITY.MULTI })
+
+  assert.equal(noRobot.available, false)
+  assert.equal(noSelect.available, false)
+  assert.notEqual(noRobot.reason, noSelect.reason,
+    '0 台と未選択が同じ文言になっている — 1 つの「空」で 2 種の 0 を賄っている (原則 #31)')
+  assert.equal(noSelect.reason, noSelectN.reason,
+    '1 台と N 台で理由が違う — どちらも「選べば開く」なので同じ 0 の種である')
+
+  // 基数を渡さない呼びは throw する。既定へ倒すと、0 台のシーンで嘘が出る側へ
+  // 静かに落ちる (欠けた入力に既定値を与えない — ADR-090 の幽霊ロボット)。
+  assert.throws(() => graspEntryFor(null), /robotCardinality/)
+  assert.throws(() => graspBlockedReason('vibes'), /未宣言の不可用の種/)
+
+  // 宣言した 2 種がどちらも到達可能であること (逆向き — 宣言の空回りを落とす)。
+  const reachable = new Set([noRobot.reason, noSelect.reason])
+  assert.equal(reachable.size, DECLARED_GRASP_BLOCKED_KINDS.length,
+    '宣言された 0 の種のうち、到達できないものがある — 空回りする宣言は緑を出し続ける')
 })
 
 // ── 問い 5: 下端の所有者は 1 個 ─────────────────────────────────────────────

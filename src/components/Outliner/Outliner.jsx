@@ -12,6 +12,12 @@ import { ROBOT_ROLE } from '../../domain/robotFrames.js'
 import { BOTTOM_TIER, bottomEdgeOffset } from '../../view/EdgeOccupancy.js'
 import { useIsNarrowViewport } from '../Chrome/ChromePrimitives.jsx'
 import { floorIsOpen } from '../../view/FloorTabs.js'
+import { documentAdopted } from '../../view/DocPresence.js'
+import { SELECTION_KIND } from '../../domain/selection.js'
+import {
+  NAVIGATOR_SIDE, DECLARED_NAVIGATOR_SIDES, navigatorSideDeclaration,
+  semanticSideSummary, semanticSideDeclaration, SEMANTIC_SIDE_KIND,
+} from '../../view/NavigatorSides.js'
 
 // ── Robot placement frames (ADR-084 §2, TF tree ADR-085) ─────────────────────
 // A robot's placement lives in a PAIR of CoordinateFrames (the single source
@@ -351,6 +357,80 @@ function OutlinerRow({ item, depth, active, hasChildren, callbacks, draggingId, 
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
+// ── The semantic side (ADR-111) ──────────────────────────────────────────────
+//
+// The document's shared design variables. They are SELECTABLE (ADR-107) but have
+// no body, so they cannot live in the geometry tree without turning that tree
+// from "the structure of what exists" into "a list of what can be selected" —
+// two meanings on one widget (§1.1). They get their own side instead.
+//
+// Rows are WINDOWS, not entrances (ADR-111 D2 / ADR-099 D1): clicking one calls
+// the same `onSelectVariable` window the floor's matrix header already uses, and
+// that goes through `SelectionManager.selectOnly` like everything else. The five
+// verbs stay five — `SelectionOwnership.test.js` passes without being rebuilt,
+// which is the check ADR-107 used for exactly this claim.
+function SemanticSide({ summary, selectedRefs, callbacks }) {
+  // Throws on an undeclared kind — the two zeros must SAY which zero they are
+  // (原則 #31 / ADR-111 D4); one shared "empty" would misdirect one of them.
+  const decl = semanticSideDeclaration(summary)
+
+  if (summary.kind !== SEMANTIC_SIDE_KIND.VARIABLES) {
+    return (
+      <div style={{ padding: '10px 10px 8px', lineHeight: 1.5 }}>
+        <div style={{ color: COLOR.textPrimary, fontSize: 11, marginBottom: 4 }}>{decl.headline}</div>
+        <div style={{ color: COLOR.textSecondary, fontSize: 10 }}>{decl.detail}</div>
+        {decl.exit && (
+          <button
+            onClick={() => callbacks[decl.exitCallback]?.()}
+            style={{
+              marginTop: 6, padding: 0, background: 'transparent', border: 'none',
+              color: COLOR.infoTone, fontSize: 10, fontFamily: 'inherit',
+              cursor: 'pointer', textDecoration: 'underline dotted', textAlign: 'left',
+            }}
+          >
+            {decl.exit}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ padding: '6px 10px 2px', color: COLOR.textSecondary, fontSize: 10 }}>
+        {decl.headline}
+      </div>
+      {summary.rows.map(row => {
+        const active = selectedRefs.has(row.ref)
+        return (
+          <div
+            key={row.ref}
+            onClick={() => callbacks.onSelectVariable?.(row.ref)}
+            title={row.description ?? row.ref}
+            style={{
+              display: 'flex', alignItems: 'baseline', gap: 6,
+              padding: '3px 10px',
+              // Selection is painted with the ONE accent, exactly as the geometry
+              // rows are (ADR-100 — colour says state, not kind). A variable row
+              // and an entity row look selected the same way because they ARE the
+              // same selection (ADR-107), just of a different member kind.
+              background: active ? rgba(COLOR.accent, 0.18) : 'transparent',
+              color: active ? COLOR.accent : COLOR.textPrimary,
+              cursor: 'pointer',
+            }}
+          >
+            {/* A shared variable is a number under negotiation, not a body — so
+                it gets the constraint hue rather than an entity glyph. */}
+            <span style={{ color: COLOR.snapTone, fontSize: 11 }} aria-hidden>ƒ</span>
+            <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{row.ref}</span>
+            {row.unit && <span style={{ color: COLOR.textSecondary, fontSize: 10 }}>[{row.unit}]</span>}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 export function Outliner() {
   const items      = useUIStore(s => s.outlinerItems)
   const activeId   = useUIStore(s => s.outlinerActiveId)
@@ -366,6 +446,21 @@ export function Outliner() {
   const demoActive    = useUIStore(s => s.demo.active)
   const galleryOpen   = useUIStore(s => stageIs(s.stage, SCREEN_CLAIM.CONTEXT_TEMPLATE_GALLERY))
   const reduced       = useReducedMotion()
+
+  // ── The navigator's two sides (ADR-111) ──────────────────────────────────
+  const side      = useUIStore(s => s.outlinerSide)
+  const setSide   = useUIStore(s => s.actions.outlinerSetSide)
+  // "Is there a document?" has ONE authority (`ContextService.loaded`) and ONE
+  // derivation (`documentAdopted`) — the same predicate the header's `requires`
+  // gates read, so the two cannot disagree (原則 #25 / §1.1).
+  const docPresent = useUIStore(documentAdopted)
+  const variables  = useUIStore(s => s.context.variables)
+  // The DISPLAY COPY of the selection (ADR-107) — never the authority.
+  const selection  = useUIStore(s => s.selection)
+  const selectedRefs = selection.kind === SELECTION_KIND.VARIABLES
+    ? new Set(selection.members)
+    : new Set()
+  const semantic = semanticSideSummary({ docPresent, variables: docPresent ? variables : null })
   const pulseAdd = tourVisible(tour, { contextActive, demoActive, galleryOpen })
     && tourAnchor(tour) === 'outliner-add'
 
@@ -401,34 +496,61 @@ export function Outliner() {
       transform: translate,
       transition: isMobile ? 'transform 0.25s ease' : '',
     }}>
-      {/* Title bar */}
+      {/* Title bar — the side switch (ADR-111 D3).
+          A DISPLAY switch, not an entity state: cardinality is always exactly 1
+          (a navigator without a side does not exist), the transition has no
+          guard, and nothing is derived from it, so it stays under 核 §1.4's
+          threshold and gets a ledger row rather than a state machine.
+          Both sides are always present — the semantic side is NOT removed when
+          no document exists, because removing it would teach that the semantic
+          layer does not exist until you adopt one (原則 #15 / D4). */}
       <div style={{
-        padding: '5px 10px',
+        display: 'flex',
         background: '#2b2b2b',
         borderBottom: '1px solid #111',
-        fontSize: 11,
-        color: '#999',
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
         flexShrink: 0,
       }}>
-        Scene Collection
+        {DECLARED_NAVIGATOR_SIDES.map(id => {
+          const decl   = navigatorSideDeclaration(id)
+          const active = side === id
+          return (
+            <button
+              key={id}
+              onClick={() => setSide(id)}
+              title={decl.title}
+              aria-pressed={active}
+              style={{
+                flex: 1, padding: '5px 6px',
+                background: 'transparent', border: 'none',
+                borderBottom: `2px solid ${active ? COLOR.infoTone : 'transparent'}`,
+                color: active ? COLOR.textPrimary : COLOR.textSecondary,
+                fontSize: 10, fontFamily: 'inherit',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                cursor: 'pointer',
+              }}
+            >
+              {decl.label}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Object list */}
+      {/* Body — the residents of the current side */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {orderedItems.map(({ item, depth }) => (
-          <OutlinerRow
-            key={item.id}
-            item={item}
-            depth={depth}
-            active={item.id === activeId}
-            hasChildren={parentIds.has(item.id)}
-            callbacks={callbacks}
-            draggingId={draggingId}
-            setDraggingId={setDraggingId}
-          />
-        ))}
+        {side === NAVIGATOR_SIDE.GEOMETRY
+          ? orderedItems.map(({ item, depth }) => (
+            <OutlinerRow
+              key={item.id}
+              item={item}
+              depth={depth}
+              active={item.id === activeId}
+              hasChildren={parentIds.has(item.id)}
+              callbacks={callbacks}
+              draggingId={draggingId}
+              setDraggingId={setDraggingId}
+            />
+          ))
+          : <SemanticSide summary={semantic} selectedRefs={selectedRefs} callbacks={callbacks} />}
       </div>
 
       {/* Footer — Add button */}

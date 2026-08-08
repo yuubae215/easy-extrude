@@ -11,7 +11,7 @@ artifacts
 
     context Adr111Scope
     uuid 01fa9674-c66e-4e32-9d93-fd8e00cbee85
-    summary "ADR-111 (Proposed 2026-08-04): 左のナビゲータに幾何 ⇄ 意味の側を与え、意味側に文書の共有変数を並べる。v8 注釈② が仕様の正本。ADR-107 が広げた選択の要素の種に窓を 1 つ与えるだけで、選択モデル (ADR-099 の 5 verb) もドメインも契約も不変"
+    summary "ADR-111 (Accepted・実装済み 2026-08-05): 左のナビゲータに幾何 ⇄ 意味の側を与え、意味側に文書の共有変数を並べた。v8 注釈② が仕様の正本。ADR-107 が広げた選択の要素の種に窓を 1 つ与えるだけで、選択モデル (ADR-099 の 5 verb) もドメインも契約も不変 — SelectionOwnership.test.js は作り直さずに通った"
     artifacts
     - "src/components/Outliner/Outliner.jsx"
     - "docs/ia-redesign/easy-extrude-wireframe-v8.html"
@@ -30,7 +30,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 2aacd0c7-b10b-4ff7-8529-f17fe08bf63f
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を書いた人がその成果を辿れることが、文書を書く動機の源だから)。保留理由: 本 ADR は Proposed で証拠が全部未来形。意味側から変数を選べる e2e が実在した PR で solution として吊る"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を書いた人がその成果を辿れることが、文書を書く動機の源だから)。2026-08-05 に証拠は実測値になった (e2e『場を閉じたまま意味側から共有変数を選べる』) が、吊り替えは事業木側の編集なので DEF-010 (ADR-094) と同じレーンで扱う"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

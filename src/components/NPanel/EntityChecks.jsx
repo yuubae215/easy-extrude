@@ -42,13 +42,20 @@ export function EntityChecks() {
   const summary    = useUIStore(s => s.context.checksSummary)
   const callbacks  = useUIStore(s => s.callbacks)
   const pushToast  = useUIStore(s => s.actions.pushToast)
+  // The scene's robot roster (ADR-090) decides WHICH zero this is when nothing
+  // is selected — "pick a robot" and "there is no robot" are different facts and
+  // must not share one sentence (ADR-110 D4).
+  const robotCardinality = useUIStore(s => s.context.robots.cardinality)
 
-  const grasp = graspEntryFor(nPanelData)
+  const grasp = graspEntryFor(nPanelData, { robotCardinality })
   // Throws on an undeclared kind — same discipline as the HUD (原則 #31).
   const decl  = checksDeclaration(summary)
 
   return (
-    <Section title="Checks (this entity)">
+    // The slot is PERMANENT (原則 #15). With nothing selected the section is no
+    // longer "this entity", so the title says what it is actually about rather
+    // than naming an entity that is not there.
+    <Section title={nPanelData ? 'Checks (this entity)' : 'Checks'}>
       {/* ── Selection-driven, document-free (ADR-085 / D5) ───────────────── */}
       <button
         onClick={() => (grasp.available
