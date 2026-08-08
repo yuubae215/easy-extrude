@@ -61,8 +61,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
+      # fetch-depth: 0 は "Observation trailers" step の要件 (ADR-115)。既定の
+      # shallow clone だと母集団の境界コミット (hook を追加した commit) が履歴に
+      # 無く、母集団が空になる — そして**空の母集団は「全件 OK」と区別できない**。
+      # 検査側は境界を決定できなければ落ちるので、ここを浅くすると赤くなる
+      # (黙って無検査になるのではなく)。
+      - name: Checkout (full history for the trailer census)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # No submodule init needed: the neutral contract lives in-repo at
       # packages/grasp-contract (ADR-082). The robotics-wasm vendor
@@ -120,6 +127,17 @@ jobs:
       # (不在は辿れない, 原則 #31)、個数を数える形で gate に載せる。
       - name: Commit metadata derivation rules
         run: pnpm test:commit-meta
+
+      # 観測トレーラの**欠測の個数** (2026-08-08, ADR-115). ADR-092 §4 は
+      # 「塞げない穴は数える」と宣言し、取りこぼしは `report` の
+      # `with Model-Effort: N / 総数` として母数に現れる、と書いた。だが
+      # `report` を読む機械はどこにも居なかった — 印字される数と、その数を
+      # **読む検査が在ること**は別の事実で、後者が無いあいだに 14 コミットが
+      # 無言で母集団から落ちた (`git commit && git push` の連鎖)。欠測は
+      # コミット単位で起きるのに抑止はセッション単位 1 回だったので、一度その
+      # 形を採ったセッションは以降すべてを静かに落とす。ADR-109 D6 と同じ形。
+      - name: Observation trailers are counted, not just printed
+        run: pnpm test:trailers
 
       - name: Type check
         run: pnpm typecheck

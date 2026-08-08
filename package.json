@@ -25,6 +25,7 @@
     "test:adr": "node scripts/check-adr-status.mjs",
     "test:deferrals": "node scripts/check-deferrals.mjs",
     "test:commit-meta": "node --test scripts/commit-meta.test.mjs",
+    "test:trailers": "node --test scripts/check-commit-trailers.test.mjs && node scripts/check-commit-trailers.mjs",
     "metrics:commits": "node scripts/commit-meta.mjs report",
     "test:gsn": "python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py selftest && python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py lint docs/gsn/*.gsn",
     "test:wasm": "cargo test --manifest-path wasm-engine/Cargo.toml",
