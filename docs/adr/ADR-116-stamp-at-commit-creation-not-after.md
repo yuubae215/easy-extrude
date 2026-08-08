@@ -81,6 +81,33 @@ hook が張られていない clone でだけ出す。文面も「分けてく�
 - **残る欠測** (数える対象・塞いでいない): 1 つの Bash 呼び出しで 2 つ以上 commit した
   ときの 2 本目以降 (予備経路が HEAD だけ拾う)、`core.hooksPath` を既に持つ clone。
   どちらも `pnpm test:trailers` の母数に現れる。
+
+### 主経路は、死んでも計数からは見えない (実装当日に踏んだ)
+
+**ADR-115 の計数は結果を数えており、経路を数えていない。**書き手が 2 つある以上、
+予備が覆っているあいだ被覆率は 100% のままで、主経路が一度も動いていなくても緑が出る。
+
+実際に踏んだ。PreToolUse がマーカーを書く呼び出しは、モジュールのパスを **argv で**
+渡していた:
+
+```bash
+node -e 'import(process.argv[1]).then(...)' "$pre_meta" "$pre_transcript" "$pre_amend"
+```
+
+`commit-meta.mjs` の `isMain` 判定は `import.meta.url === file://${process.argv[1]}` なので
+**これが真になる**。ライブラリとして import したつもりの呼び出しで CLI が起動して
+usage を吐き、マーカーは一度も書かれなかった。主経路は最初から動いておらず、
+予備経路が全部拾っていたので**トレーラは正しく付いていた**。
+
+気づけたのは予備経路の副作用の告知 (「SHA が変わりました」) が毎コミット出ていたから
+であって、検査ではない。告知は人が読む文字列であって機械が読む信号ではない — これは
+ADR-109 D3 / ADR-115 力学 1 と**同じ形**である (宣言は在る、読む機械が無い)。
+
+修正は 2 つ: パスを **env で渡す** (argv だと `isMain` が誤爆し、JS 文字列リテラルへ
+埋め込むと引用の入れ子で壊れる — env はどちらの罠も踏まない)、そして
+**`scripts/prepare-commit-msg.test.mjs`** を足して *hook を実際に走らせる*。
+一時 repo に `core.hooksPath` を張り、連鎖・人間のコミット・古いマーカー・使い切り・
+`--amend` の基準・マージを 8 件で焼いた。今日のバグはこの層でしか捕まらない。
 - **波及 (blast radius):** 新規 `.githooks/prepare-commit-msg` +
   `.claude/hooks/install-git-hooks.sh` + `.claude/settings.json` の SessionStart。
   `commit-meta.mjs` に純粋関数 3 つ (`subjectFromMessage` / `buildCommitContext` /

@@ -53,7 +53,9 @@ const LAYER_RULES = [
   [/^(src|schema|examples|cli|public|e2e)\//, 'front'],
   [/^vendor\/grasp-contract/, 'contract'],
   [/^docs\//, 'docs'],
-  [/^(\.claude\/|CLAUDE\.md$)/, 'governance'],
+  // `.githooks/` は git 側の hook 置き場だが、住んでいるのは統治のコード
+  // (観測トレーラの主経路 — ADR-116)。`.claude/` と同じレイヤに落とす。
+  [/^(\.claude\/|\.githooks\/|CLAUDE\.md$)/, 'governance'],
   [/^(scripts|\.github|\.vscode|wasm-engine|robotics-wasm)\//, 'build'],
   [/^[^/]+\.(md|txt)$|^LICENSE$/, 'docs'],
   [/^[^/]+\.(json|yaml|yml|js|html|toml)$|^\.[^/]+$/, 'build'],

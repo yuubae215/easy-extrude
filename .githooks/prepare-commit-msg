@@ -46,15 +46,19 @@ meta_script="$repo/scripts/commit-meta.mjs"
 command -v node >/dev/null 2>&1 || exit 0
 
 # マーカーの解釈は commit-meta.mjs の純粋関数が正本 (書式の第二の源を作らない)。
-ctx="$(node -e '
-  import("'"$meta_script"'").then(async (m) => {
+#
+# モジュールのパスもマーカーのパスも **env で渡す**。argv で渡すと commit-meta.mjs の
+# `isMain` 判定が誤爆しうるし、パスをシェルから JS の文字列リテラルへ埋め込むと
+# 引用の入れ子で壊れる。env はどちらの罠も踏まない。
+ctx="$(CT_META="$meta_script" CT_MARKER="$marker" node -e '
+  import(process.env.CT_META).then(async (m) => {
     const fs = await import("node:fs");
-    const parsed = m.parseCommitContext(fs.readFileSync(process.argv[1], "utf8"),
+    const parsed = m.parseCommitContext(fs.readFileSync(process.env.CT_MARKER, "utf8"),
       { nowSec: Date.now() / 1000 });
     if (!parsed) process.exit(1);
     process.stdout.write(`${parsed.amend ? 1 : 0}\n${parsed.transcript ?? ""}\n`);
   }).catch(() => process.exit(1));
-' "$marker" 2>/dev/null)" || exit 0
+' 2>/dev/null)" || exit 0
 
 amend_flag="$(printf '%s' "$ctx" | sed -n '1p')"
 transcript="$(printf '%s' "$ctx" | sed -n '2p')"

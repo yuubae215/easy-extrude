@@ -74,15 +74,20 @@ if [ "$event" = "PreToolUse" ]; then
   printf '%s' "$cmd" | grep -q -- '--amend' && pre_amend=1
 
   # 書式の正本は commit-meta.mjs の buildCommitContext (第二の源を作らない)。
-  node -e '
-    import(process.argv[1]).then((m) => {
+  #
+  # モジュールのパスは **env で渡す** — `node -e '…' <path>` のように argv で渡すと、
+  # commit-meta.mjs 側の `isMain` 判定 (`import.meta.url === file://${argv[1]}`) が
+  # 真になり、ライブラリとして import したつもりが CLI が起動して usage を吐く。
+  # 初版はこれを踏み、マーカーが一度も書かれないまま予備経路だけが動いていた。
+  CT_META="$pre_meta" CT_TRANSCRIPT="$pre_transcript" CT_AMEND="$pre_amend" node -e '
+    import(process.env.CT_META).then((m) => {
       process.stdout.write(m.buildCommitContext({
-        transcript: process.argv[2] || null,
-        amend: process.argv[3] === "1",
+        transcript: process.env.CT_TRANSCRIPT || null,
+        amend: process.env.CT_AMEND === "1",
         nowSec: Date.now() / 1000,
       }));
     }).catch(() => process.exit(1));
-  ' "$pre_meta" "$pre_transcript" "$pre_amend" > "$pre_git_dir/claude-commit-context" 2>/dev/null \
+  ' > "$pre_git_dir/claude-commit-context" 2>/dev/null \
     || rm -f "$pre_git_dir/claude-commit-context" 2>/dev/null
 
   # --- 連鎖の助言は「git hook が入っていないとき」だけ --------------------------
