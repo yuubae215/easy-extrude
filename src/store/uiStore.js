@@ -277,6 +277,11 @@ export const useUIStore = create((set, get) => ({
     // `cardinality` names the 0 / 1 / N state so the panel can be honest about
     // zero instead of rendering an empty dropdown (原則 #31).
     robots: { list: [], selectedId: null, cardinality: 'none' },
+    // ADR-117 — DERIVED roster of graspable solids in the loaded layout:
+    //   { list: [{ ref, label }], selectedRef, cardinality:'none'|'single'|'multi' }
+    // The twin of `robots`: same 0/1/N discipline (原則 #31), same read-model
+    // rules (the layout DSL is the authority; nothing writes back here).
+    graspTargets: { list: [], selectedRef: null, cardinality: 'none' },
     // ADR-063 Phase 3 wizard FSM — sole writer ContextController via the pure
     // WizardCatalog transition functions; the panel only reads + fires callbacks.
     // null = inactive (the wizard tab shows its start screen). Shapes:
@@ -577,6 +582,11 @@ export const useUIStore = create((set, get) => ({
     // GraspController; the scene is the authority, this is the panel's read-model).
     contextSetRobots: (robots) => set(state => ({
       context: { ...state.context, robots },
+    })),
+    // ADR-117 — replace the derived grasp-target roster wholesale (sole writer
+    // GraspController; the layout DSL is the authority, this is the read-model).
+    contextSetGraspTargets: (graspTargets) => set(state => ({
+      context: { ...state.context, graspTargets },
     })),
     setTemplateGalleryPreviews: (previews) => set({ templateGalleryPreviews: previews }),
 

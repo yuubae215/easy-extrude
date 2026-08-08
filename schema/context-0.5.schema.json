@@ -5,62 +5,139 @@
   "description": "Public schema for Context DSL up to context/0.5 (ADR-046, ADR-049, ADR-053, ADR-104). This is the SHAPE contract: closed field sets + enum vocabularies. The MEANING contract (R1-R11: orphan-spec, conflicts, negotiation clusters, blocked acceptance, stated->derived promotion, role-KPI obligations, undeclared ownership, proposal/agenda integrity) stays in ContextValidator.js (ADR-064 Phase 2). Each context/0.x is a strict additive superset of the prior, so 0.1-0.5 docs all conform here; `version` is bound to SUPPORTED_VERSIONS by the drift test. Domain-open bags (Fact.attrs, constraint.properties, meta.baseline) are kept open on purpose, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "properties": {
     "version": {
       "description": "Context DSL version. Bound to SUPPORTED_VERSIONS.",
-      "enum": ["context/0.1", "context/0.2", "context/0.3", "context/0.4", "context/0.5"]
+      "enum": [
+        "context/0.1",
+        "context/0.2",
+        "context/0.3",
+        "context/0.4",
+        "context/0.5"
+      ]
     },
-    "meta": { "$ref": "#/$defs/meta" },
-    "actors": { "type": "array", "items": { "$ref": "#/$defs/actor" } },
-    "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
-    "given": { "type": "array", "items": { "$ref": "#/$defs/fact" } },
-    "intents": { "type": "array", "items": { "$ref": "#/$defs/intent" } },
-    "obligations": { "type": "array", "items": { "$ref": "#/$defs/obligation" } },
-    "variables": { "type": "array", "items": { "$ref": "#/$defs/variable" } },
-    "requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
-    "decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } },
+    "meta": {
+      "$ref": "#/$defs/meta"
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/actor"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "given": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fact"
+      }
+    },
+    "intents": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/intent"
+      }
+    },
+    "obligations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/obligation"
+      }
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/variable"
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/requirement"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decision"
+      }
+    },
     "proposals": {
       "description": "ADR-104 D3. What an edit gesture becomes when its author holds no key for the claim's owner: a stored diff plus a rationale. Cardinality 0..N — several proposals may stand against the same claim at once; approval carries the optimistic-locking guard (from === current value, U2) rather than last-write-wins.",
       "type": "array",
-      "items": { "$ref": "#/$defs/proposal" }
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
     },
     "agenda": {
       "description": "ADR-104 D4. TABLED CONFLICTS ONLY. Conflicts are re-derived by R6 on every validate and are never stored; proposals are agenda items by existing. The agenda a person reads is the union, assembled on demand by Agenda.projectAgenda() so neither side is stored twice.",
       "type": "array",
-      "items": { "$ref": "#/$defs/agendaItem" }
+      "items": {
+        "$ref": "#/$defs/agendaItem"
+      }
     },
-    "specification": { "$ref": "#/$defs/specification" },
-    "acceptance": { "type": "array", "items": { "$ref": "#/$defs/acceptance" } }
+    "specification": {
+      "$ref": "#/$defs/specification"
+    },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/acceptance"
+      }
+    }
   },
   "$defs": {
     "interval": {
       "type": "array",
       "description": "Closed numeric interval [lo, hi] (or a bound pair). Semantic ordering is checked in the validator.",
-      "items": { "type": "number" }
+      "items": {
+        "type": "number"
+      }
     },
     "ref": {
       "type": "object",
       "description": "A deferred value: a reference to a Fact/Decision/expression resolved at compile time. Bound leaf of the hydrated specification.layout.",
       "additionalProperties": false,
       "properties": {
-        "$fact": { "type": "string" },
-        "$decision": { "type": "string" },
-        "$expr": { "type": "string" }
+        "$fact": {
+          "type": "string"
+        },
+        "$decision": {
+          "type": "string"
+        },
+        "$expr": {
+          "type": "string"
+        }
       }
     },
     "numOrRef": {
       "oneOf": [
-        { "type": "number" },
-        { "$ref": "#/$defs/ref" }
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/ref"
+        }
       ]
     },
     "meta": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "description": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
         "baseline": {
           "description": "Baseline snapshot — domain-open on purpose (object or null)."
         }
@@ -69,37 +146,70 @@
     "actor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
+        "ref": {
+          "type": "string"
+        },
         "role": {
           "description": "Actor role. Bound to VALID_ROLES.",
-          "enum": ["developer", "maintainer", "endUser", "agent", "customer"]
+          "enum": [
+            "developer",
+            "maintainer",
+            "endUser",
+            "agent",
+            "customer"
+          ]
         },
-        "discipline": { "type": "string" }
+        "discipline": {
+          "type": "string"
+        }
       }
     },
     "source": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "by": { "type": "string" },
-        "kind": { "type": "string" },
-        "capturedAt": { "type": "string" }
+        "ref": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "capturedAt": {
+          "type": "string"
+        }
       }
     },
     "fact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "subject": { "type": "string" },
+        "ref": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
         "status": {
           "description": "Epistemic status. Bound to VALID_FACT_STATUS.",
-          "enum": ["measured", "asserted", "assumed", "unknown"]
+          "enum": [
+            "measured",
+            "asserted",
+            "assumed",
+            "unknown"
+          ]
         },
         "attrs": {
           "type": "object",
@@ -110,61 +220,121 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "interval": { "$ref": "#/$defs/interval" },
-            "unit": { "type": "string" }
+            "interval": {
+              "$ref": "#/$defs/interval"
+            },
+            "unit": {
+              "type": "string"
+            }
           }
         },
-        "evidence": { "type": "array" },
-        "note": { "type": "string" }
+        "evidence": {
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        }
       }
     },
     "intent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "verb": { "type": "string" },
-        "summary": { "type": "string" },
-        "parent": { "type": "string" },
-        "successCriteria": { "type": "string" },
-        "inputs": { "type": "object", "additionalProperties": true },
-        "outputs": { "type": "object", "additionalProperties": true }
+        "ref": {
+          "type": "string"
+        },
+        "verb": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "successCriteria": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": true
+        }
       }
     },
     "obligation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "deliverable": { "type": "string" },
-        "defectScope": { "type": "string" },
-        "responsible": { "type": "string" },
-        "dependsOn": { "type": "array", "items": { "type": "string" } }
+        "ref": {
+          "type": "string"
+        },
+        "deliverable": {
+          "type": "string"
+        },
+        "defectScope": {
+          "type": "string"
+        },
+        "responsible": {
+          "type": "string"
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "variable": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "description": { "type": "string" },
-        "unit": { "type": "string" },
-        "domain": { "$ref": "#/$defs/interval" },
+        "ref": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "domain": {
+          "$ref": "#/$defs/interval"
+        },
         "region": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "kind": {
               "description": "Region variable kind. Bound to VALID_REGION_KINDS.",
-              "enum": ["aabb"]
+              "enum": [
+                "aabb"
+              ]
             },
-            "axes": { "type": "array", "items": { "type": "string" } },
+            "axes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "domain": {
               "type": "object",
-              "additionalProperties": { "$ref": "#/$defs/interval" }
+              "additionalProperties": {
+                "$ref": "#/$defs/interval"
+              }
             }
           }
         }
@@ -174,17 +344,27 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "op": { "type": "string" },
-        "value": { "type": "number" }
+        "op": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        }
       }
     },
     "requirement": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "by": { "type": "string" },
+        "ref": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
         "owner": {
           "description": "ADR-104 D2. Who may write this claim: an actor ref, or \"none\" declaring that it belongs to nobody. Distinct from `by`, which is provenance (who said it) — inferring one from the other would fill a declared-zero with a default. The field's ABSENCE is the counted case: R10 raises an OpenQuestion instead of guessing (PHILOSOPHY #31).",
           "type": "string"
@@ -193,79 +373,149 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "name": { "type": "string" },
-            "expr": { "type": "string" },
-            "unit": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "expr": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string"
+            }
           }
         },
-        "criterion": { "$ref": "#/$defs/criterion" },
-        "constrains": { "type": "array", "items": { "type": "string" } },
+        "criterion": {
+          "$ref": "#/$defs/criterion"
+        },
+        "constrains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "admissible": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "source": {
               "description": "Admissible-region provenance. Bound to VALID_ADMISSIBLE_SOURCE.",
-              "enum": ["stated", "derived"]
+              "enum": [
+                "stated",
+                "derived"
+              ]
             },
-            "interval": { "$ref": "#/$defs/interval" },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            },
             "region": {
               "type": "object",
-              "additionalProperties": { "$ref": "#/$defs/interval" }
+              "additionalProperties": {
+                "$ref": "#/$defs/interval"
+              }
             },
-            "promotedFrom": { "type": "string" }
+            "promotedFrom": {
+              "type": "string"
+            }
           }
         },
         "negotiability": {
           "description": "Which side bends on conflict. Bound to VALID_NEGOTIABILITY.",
-          "enum": ["must", "should"]
+          "enum": [
+            "must",
+            "should"
+          ]
         },
-        "evidence": { "type": "array" },
-        "note": { "type": "string" }
+        "evidence": {
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        }
       }
     },
     "decision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
+        "ref": {
+          "type": "string"
+        },
         "decidedBy": {
           "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" } }
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           ]
         },
         "status": {
           "description": "Decision lifecycle. Bound to VALID_DECISION_STATUS.",
-          "enum": ["proposed", "agreed", "signed"]
+          "enum": [
+            "proposed",
+            "agreed",
+            "signed"
+          ]
         },
-        "rationale": { "type": "string" },
+        "rationale": {
+          "type": "string"
+        },
         "resolves": {
           "oneOf": [
-            { "type": "string" },
-            { "type": "array", "items": { "type": "string" } }
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           ]
         },
         "nominal": {
           "oneOf": [
-            { "type": "number" },
-            { "type": "array" },
-            { "type": "object", "additionalProperties": true }
+            {
+              "type": "number"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "object",
+              "additionalProperties": true
+            }
           ]
         },
         "nominals": {
           "type": "object",
-          "additionalProperties": { "type": "number" }
+          "additionalProperties": {
+            "type": "number"
+          }
         },
         "relaxes": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "requirement": { "type": "string" },
-            "oldCriterion": { "$ref": "#/$defs/criterion" },
-            "newCriterion": { "$ref": "#/$defs/criterion" },
-            "note": { "type": "string" }
+            "requirement": {
+              "type": "string"
+            },
+            "oldCriterion": {
+              "$ref": "#/$defs/criterion"
+            },
+            "newCriterion": {
+              "$ref": "#/$defs/criterion"
+            },
+            "note": {
+              "type": "string"
+            }
           }
         },
         "keyCardinalityAtDecision": {
@@ -275,85 +525,171 @@
         }
       }
     },
-
     "proposal": {
       "description": "ADR-104 D3 / U1 / U2. States and transitions: docs/STATE_TRANSITIONS.md §提案. There is deliberately no `stale` state — whether a proposal has gone stale is `from === current value`, derived on every read (U2).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "by", "target", "from", "to", "rationale", "state"],
+      "required": [
+        "ref",
+        "by",
+        "target",
+        "from",
+        "to",
+        "rationale",
+        "state"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "by": { "description": "The proposing actor.", "type": "string" },
-        "target": { "$ref": "#/$defs/claimTarget" },
-        "from": { "description": "The claim's value when the gesture started — the left side of the diff and the operand of the optimistic-locking guard." },
-        "to": { "description": "The wanted value. A proposal whose from equals its to cannot be built: the receipt would state nothing." },
-        "rationale": { "description": "Why. Lands verbatim in Decision.rationale on approval.", "type": "string" },
+        "ref": {
+          "type": "string"
+        },
+        "by": {
+          "description": "The proposing actor.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/claimTarget"
+        },
+        "from": {
+          "description": "The claim's value when the gesture started — the left side of the diff and the operand of the optimistic-locking guard."
+        },
+        "to": {
+          "description": "The wanted value. A proposal whose from equals its to cannot be built: the receipt would state nothing."
+        },
+        "rationale": {
+          "description": "Why. Lands verbatim in Decision.rationale on approval.",
+          "type": "string"
+        },
         "state": {
           "description": "Proposal lifecycle. Bound to VALID_PROPOSAL_STATE.",
-          "enum": ["proposed", "approved", "withdrawn"]
+          "enum": [
+            "proposed",
+            "approved",
+            "withdrawn"
+          ]
         },
         "decidedBy": {
           "description": "Held keys at approval — the intersection of the approver's keyring with the owner, never caller-supplied (U4).",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "keyCardinalityAtDecision": { "type": "integer", "minimum": 0 }
+        "keyCardinalityAtDecision": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
-
     "claimTarget": {
       "description": "What a proposal is about. `kind` is bound to TARGET_KIND in Ownership.js, where an undeclared kind throws rather than falling through to a default (PHILOSOPHY #31).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "ref"],
+      "required": [
+        "kind",
+        "ref"
+      ],
       "properties": {
-        "kind": { "enum": ["requirement.admissible", "requirement.criterion", "conflict"] },
-        "ref": { "type": "string" }
+        "kind": {
+          "enum": [
+            "requirement.admissible",
+            "requirement.criterion",
+            "conflict"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        }
       }
     },
-
     "agendaItem": {
       "description": "ADR-104 D4 / U3. A conflict somebody put on the floor. States and transitions: docs/STATE_TRANSITIONS.md §議題. A settled item that re-flares becomes a NEW item carrying `supersedes` — receipts stay an append-only line so 'what is the current conclusion' has exactly one answer.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "conflict", "by", "state"],
+      "required": [
+        "ref",
+        "conflict",
+        "by",
+        "state"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "conflict": { "description": "The R6 conflict ref this item tabled.", "type": "string" },
-        "by": { "description": "Who tabled it — the human act that starts the record.", "type": "string" },
+        "ref": {
+          "type": "string"
+        },
+        "conflict": {
+          "description": "The R6 conflict ref this item tabled.",
+          "type": "string"
+        },
+        "by": {
+          "description": "Who tabled it — the human act that starts the record.",
+          "type": "string"
+        },
         "state": {
           "description": "Agenda lifecycle. Bound to VALID_AGENDA_STATE. `closed_undecided` is a receipt too: not concluding is a conclusion.",
-          "enum": ["open", "settled", "closed_undecided"]
+          "enum": [
+            "open",
+            "settled",
+            "closed_undecided"
+          ]
         },
-        "supersedes": { "description": "The settled item this one re-opens (U3).", "type": "string" },
+        "supersedes": {
+          "description": "The settled item this one re-opens (U3).",
+          "type": "string"
+        },
         "decidedBy": {
           "description": "Every involved party's key at settlement (n-ary, same shape as ADR-049 invariant 8).",
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "keyCardinalityAtDecision": { "type": "integer", "minimum": 0 },
-        "closedBy": { "type": "string" },
-        "note": { "type": "string" }
+        "keyCardinalityAtDecision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "closedBy": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
       }
     },
     "specification": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "layout": { "$ref": "#/$defs/hydratedLayout" },
-        "trace": { "type": "array", "items": { "$ref": "#/$defs/trace" } }
+        "layout": {
+          "$ref": "#/$defs/hydratedLayout"
+        },
+        "trace": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/trace"
+          }
+        }
       }
     },
     "trace": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from", "to"],
+      "required": [
+        "from",
+        "to"
+      ],
       "properties": {
-        "from": { "type": "string" },
-        "to": { "type": "string" },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
         "kind": {
           "description": "TraceLink kind. Bound to VALID_TRACE_KINDS.",
-          "enum": ["derives", "satisfies", "constrains"]
+          "enum": [
+            "derives",
+            "satisfies",
+            "constrains"
+          ]
         }
       }
     },
@@ -362,52 +698,104 @@
       "description": "Layout DSL embedded in a Context doc, with scalar leaves optionally deferred as {$fact}/{$decision}/{$expr} refs (resolved by the compiler). The resolved form conforms to layout-1.0.schema.json.",
       "additionalProperties": false,
       "properties": {
-        "version": { "type": "string" },
+        "version": {
+          "type": "string"
+        },
         "meta": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "name": { "type": "string" },
-            "description": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            }
           }
         },
-        "strategy": { "type": "string" },
-        "strategyOptions": { "type": "object", "additionalProperties": true },
-        "entities": { "type": "array", "items": { "$ref": "#/$defs/hydratedEntity" } },
-        "constraints": { "type": "array", "items": { "$ref": "#/$defs/hydratedConstraint" } }
+        "strategy": {
+          "type": "string"
+        },
+        "strategyOptions": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hydratedEntity"
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hydratedConstraint"
+          }
+        }
       }
     },
     "hydratedVec": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "x": { "$ref": "#/$defs/numOrRef" },
-        "y": { "$ref": "#/$defs/numOrRef" },
-        "z": { "$ref": "#/$defs/numOrRef" }
+        "x": {
+          "$ref": "#/$defs/numOrRef"
+        },
+        "y": {
+          "$ref": "#/$defs/numOrRef"
+        },
+        "z": {
+          "$ref": "#/$defs/numOrRef"
+        }
       }
     },
     "hydratedEntity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "type"],
+      "required": [
+        "ref",
+        "type"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "type": { "type": "string" },
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "placeType": { "type": "string" },
-        "ifcClass": { "type": "string" },
-        "dimensions": { "$ref": "#/$defs/hydratedVec" },
-        "position": { "$ref": "#/$defs/hydratedVec" },
+        "ref": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "placeType": {
+          "type": "string"
+        },
+        "ifcClass": {
+          "type": "string"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/hydratedVec"
+        },
+        "position": {
+          "$ref": "#/$defs/hydratedVec"
+        },
         "frames": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "ref": { "type": "string" },
-              "name": { "type": "string" },
-              "translation": { "$ref": "#/$defs/hydratedVec" }
+              "ref": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "translation": {
+                "$ref": "#/$defs/hydratedVec"
+              }
             }
           }
         },
@@ -419,12 +807,32 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "x": { "$ref": "#/$defs/numOrRef" },
-                  "y": { "$ref": "#/$defs/numOrRef" }
+                  "x": {
+                    "$ref": "#/$defs/numOrRef"
+                  },
+                  "y": {
+                    "$ref": "#/$defs/numOrRef"
+                  }
                 }
               }
             },
-            { "$ref": "#/$defs/ref" }
+            {
+              "$ref": "#/$defs/ref"
+            }
+          ]
+        },
+        "rotation": {
+          "$ref": "#/$defs/hydratedQuat"
+        },
+        "parentRef": {
+          "description": "For a standalone CoordinateFrame, the ref of the entity it is a TF child of (e.g. tcp -> robot_base). Mirrors layout-1.0 `entity.parentRef`; when present, position/rotation are the LOCAL offset from that parent.",
+          "type": "string"
+        },
+        "robotRole": {
+          "description": "Declared role of a CoordinateFrame inside a robot's TF tree (ADR-090). Mirrors layout-1.0 `entity.robotRole`. Without it a context document cannot express a robot at all, which is why no bundled example declared one (ADR-117).",
+          "enum": [
+            "base",
+            "tcp"
           ]
         }
       }
@@ -432,37 +840,73 @@
     "hydratedConstraint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "target"],
+      "required": [
+        "source",
+        "target"
+      ],
       "properties": {
-        "source": { "type": "string" },
-        "target": { "type": "string" },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
         "jointType": {
           "oneOf": [
-            { "type": "null" },
-            { "type": "string" },
-            { "$ref": "#/$defs/ref" }
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/ref"
+            }
           ]
         },
-        "semanticType": { "type": "string" },
-        "properties": { "type": "object", "additionalProperties": true }
+        "semanticType": {
+          "type": "string"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": true
+        }
       }
     },
     "acceptance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref"],
+      "required": [
+        "ref"
+      ],
       "properties": {
-        "ref": { "type": "string" },
+        "ref": {
+          "type": "string"
+        },
         "mode": {
           "description": "Acceptance check mode. Bound to VALID_CHECK_MODES.",
-          "enum": ["static", "witnessed"]
+          "enum": [
+            "static",
+            "witnessed"
+          ]
         },
-        "evaluateAt": { "type": "string" },
-        "requires": { "type": "array", "items": { "type": "string" } },
+        "evaluateAt": {
+          "type": "string"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "predicate": {
           "oneOf": [
-            { "type": "string" },
-            { "$ref": "#/$defs/predicateObject" }
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/predicateObject"
+            }
           ]
         }
       }
@@ -471,18 +915,36 @@
       "type": "object",
       "description": "Structured acceptance predicate. `kind` is bound to VALID_PREDICATE_KINDS; which operand fields each kind consumes is the MEANING contract (PredicateEngine.js).",
       "additionalProperties": false,
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "properties": {
         "kind": {
-          "enum": ["no_overlap", "reach_covers", "swept_volume", "robot_reach", "collision_free"]
+          "enum": [
+            "no_overlap",
+            "reach_covers",
+            "swept_volume",
+            "robot_reach",
+            "collision_free"
+          ]
         },
-        "scope": { "type": "string" },
-        "clearance": { "type": "number" },
-        "marginMin": { "type": "number" },
-        "radius": { "type": "number" },
+        "scope": {
+          "type": "string"
+        },
+        "clearance": {
+          "type": "number"
+        },
+        "marginMin": {
+          "type": "number"
+        },
+        "radius": {
+          "type": "number"
+        },
         "within": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/interval" }
+          "additionalProperties": {
+            "$ref": "#/$defs/interval"
+          }
         },
         "boxes": {
           "type": "array",
@@ -490,10 +952,18 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "ref": { "type": "string" },
-              "x": { "$ref": "#/$defs/interval" },
-              "y": { "$ref": "#/$defs/interval" },
-              "z": { "$ref": "#/$defs/interval" }
+              "ref": {
+                "type": "string"
+              },
+              "x": {
+                "$ref": "#/$defs/interval"
+              },
+              "y": {
+                "$ref": "#/$defs/interval"
+              },
+              "z": {
+                "$ref": "#/$defs/interval"
+              }
             }
           }
         },
@@ -503,10 +973,18 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "ref": { "type": "string" },
-              "x": { "$ref": "#/$defs/interval" },
-              "y": { "$ref": "#/$defs/interval" },
-              "z": { "$ref": "#/$defs/interval" }
+              "ref": {
+                "type": "string"
+              },
+              "x": {
+                "$ref": "#/$defs/interval"
+              },
+              "y": {
+                "$ref": "#/$defs/interval"
+              },
+              "z": {
+                "$ref": "#/$defs/interval"
+              }
             }
           }
         },
@@ -516,9 +994,15 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "a": { "type": "string" },
-              "b": { "type": "string" },
-              "clearance": { "type": "number" }
+              "a": {
+                "type": "string"
+              },
+              "b": {
+                "type": "string"
+              },
+              "clearance": {
+                "type": "number"
+              }
             }
           }
         },
@@ -528,12 +1012,24 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "ref": { "type": "string" },
-              "x": { "type": "number" },
-              "y": { "type": "number" },
-              "z": { "type": "number" },
-              "reachable": { "type": "boolean" },
-              "margin": { "type": "number" }
+              "ref": {
+                "type": "string"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "margin": {
+                "type": "number"
+              }
             }
           }
         },
@@ -543,9 +1039,15 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "x": { "type": "number" },
-              "y": { "type": "number" },
-              "z": { "type": "number" }
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
             }
           }
         },
@@ -553,18 +1055,47 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "shape": { "type": "string" },
-            "radius": { "type": "number" },
+            "shape": {
+              "type": "string"
+            },
+            "radius": {
+              "type": "number"
+            },
             "center": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "x": { "type": "number" },
-                "y": { "type": "number" },
-                "z": { "type": "number" }
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "z": {
+                  "type": "number"
+                }
               }
             }
           }
+        }
+      }
+    },
+    "hydratedQuat": {
+      "description": "Rotation as x/y/z/w, mirroring layout-1.0 `quaternion` but allowing variable refs like the other hydrated geometry fields.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/numOrRef"
+        },
+        "y": {
+          "$ref": "#/$defs/numOrRef"
+        },
+        "z": {
+          "$ref": "#/$defs/numOrRef"
+        },
+        "w": {
+          "$ref": "#/$defs/numOrRef"
         }
       }
     }

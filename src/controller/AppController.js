@@ -118,6 +118,20 @@ import { isNarrowViewport, hasFinePointer } from '../view/Viewport.js'
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
 /**
+ * Whether this build serves fabricated grasp answers (ADR-117).
+ *
+ * Written as the bare `import.meta.env.VITE_GRASP_STUB` on purpose: Vite's
+ * define substitution matches that exact expression, so in a normal build the
+ * comparison folds to `false` at module scope and Rollup can prove the dynamic
+ * `import('../../mocks/…')` guarded by it is unreachable. Writing it with
+ * optional chaining (`import.meta.env?.…`) defeats the substitution, the branch
+ * survives as a live condition, and the entire stub ships as a lazy chunk in the
+ * production bundle — which is what happened on the first attempt, and what
+ * `mocks/graspStub/mocks-excluded-from-build.test.js` caught.
+ */
+const GRASP_STUB_ENABLED = import.meta.env.VITE_GRASP_STUB === '1'
+
+/**
  * Returns the set of valid link options for a given source/target entity pair.
  * Each option carries jointType (URDF kinematic), semanticType (domain annotation),
  * and a display label. Based on ADR-038 validation table.
@@ -3810,11 +3824,37 @@ export class AppController {
   // ── BFF + Node Editor initialisation (Phase B, ADR-017) ──────────────────
 
   /**
+   * The stubbed transport, when this build was made with `VITE_GRASP_STUB=1`
+   * (ADR-117); `undefined` otherwise, which leaves `BffClient` on the network.
+   *
+   * The scenario comes from `?graspStub=<name>`; resolving it (and refusing an
+   * undeclared one visibly rather than defaulting to `solve`) is the stub's own
+   * job, so none of that policy lives in `src/`.
+   *
+   * @returns {Promise<typeof fetch|undefined>}
+   */
+  async _graspStubTransport() {
+    if (!GRASP_STUB_ENABLED) return undefined
+    const { stubTransportForSearch } = await import('../../mocks/graspStub/index.js')
+    const { fetchImpl, scenario, error } = stubTransportForSearch(globalThis.location?.search ?? '')
+    if (error) console.error(`[grasp-stub] ${error}`)
+    else console.info(`[grasp-stub] serving scenario "${scenario}" — responses are fabricated, not solved`)
+    return fetchImpl
+  }
+
+  /**
    * Initialises BFF connection and opens the WebSocket Geometry Service channel.
    * Called asynchronously from start() — non-blocking; app works without BFF.
    */
   async _initBff() {
-    await this._service.connectBff()
+    // Grasp stub lane (ADR-117). `VITE_GRASP_STUB` is replaced at build time, so
+    // in a normal build this whole branch — and the `mocks/` tree behind the
+    // dynamic import — is statically unreachable and Rollup drops it
+    // (`mocks/graspStub/mocks-excluded-from-build.test.js` proves it stayed
+    // dropped). In a stub build it swaps the transport, and nothing downstream
+    // knows the difference: same BffClient, same routes, same status handling.
+    const fetchImpl = await this._graspStubTransport()
+    await this._service.connectBff('/api', { fetchImpl })
     if (!this._service.bffConnected) return
 
     // Open WebSocket geometry channel

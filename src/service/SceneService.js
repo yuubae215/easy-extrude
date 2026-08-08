@@ -277,8 +277,15 @@ export class SceneService extends EventEmitter {
    * Attempts to fetch a dev token; silently skips on network error.
    * @param {string} [baseUrl]  defaults to '/api'
    */
-  async connectBff(baseUrl = '/api') {
-    this._bff = new BffClient(baseUrl)
+  async connectBff(baseUrl = '/api', { fetchImpl } = {}) {
+    // Remember the transport, so the reconnect paths that call `connectBff()`
+    // with no arguments (GraspController, when it finds `bff` null) rebuild the
+    // SAME client rather than silently falling back to the network. One owner of
+    // "which transport this session speaks over" (§1.1) — without this, a stubbed
+    // static build would work until the first reconnect and then start failing
+    // against a BFF that is not there (ADR-117).
+    if (fetchImpl) this._fetchImpl = fetchImpl
+    this._bff = new BffClient(baseUrl, { fetchImpl: this._fetchImpl })
     try {
       await this._bff.fetchToken()
     } catch {
@@ -669,7 +676,7 @@ export class SceneService extends EventEmitter {
 
     // Filter out standalone CoordinateFrame entries — process them after their parents
     const nonFrames = parsed.objects.filter(o => o.type !== 'CoordinateFrame')
-    const frames    = parsed.objects.filter(o => o.type === 'CoordinateFrame')
+    const frames    = orderFramesParentFirst(parsed.objects.filter(o => o.type === 'CoordinateFrame'))
 
     let imported = 0
     let skipped  = 0
@@ -848,9 +855,18 @@ export class SceneService extends EventEmitter {
     }
 
     if (dto.type === 'CoordinateFrame') {
-      const newParentId = remapId(dto.parentId)
-      // Skip if parent is not present in the scene (e.g. ImportedMesh that was skipped)
-      if (!this._model.getObject(newParentId)) return null
+      // `parentId == null` means WORLD-PARENTED, not "parent missing" (ADR-117).
+      // Conflating the two dropped every root frame on import: a robot base is
+      // world-parented by construction (the TF tree is world → robot_base → tcp,
+      // ADR-084 §2 / ADR-085), so `getObject(null)` came back undefined and the
+      // base was skipped — silently, as a `skipped++` nobody reads. Its tcp child
+      // then lost its parent and was skipped too, so a layout that declared a
+      // robot produced a scene with none, and grasp reported "no robot in the
+      // scene" about a robot the document plainly declares.
+      const newParentId = dto.parentId == null ? null : remapId(dto.parentId)
+      // Only a frame that NAMES a parent the scene does not have is an orphan
+      // (e.g. a child of an ImportedMesh that was itself skipped).
+      if (newParentId !== null && !this._model.getObject(newParentId)) return null
       const { camera: cfCam = null, renderer: cfRnd = null, container: cfCnt = null } = viewContext
       const meshView = new CoordinateFrameView(this._threeScene, cfCam, cfRnd, cfCnt)
       const cfName   = dto.name ?? 'Frame'
@@ -3818,6 +3834,54 @@ export class SceneService extends EventEmitter {
 }
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
+
+/**
+ * Order CoordinateFrame DTOs so a frame always follows the frame it hangs from
+ * (ADR-117). Frames are reconstructed one at a time and a child is skipped when
+ * its parent is not in the scene yet, so import previously depended on the
+ * serialized array happening to list parents first. That held for the shapes in
+ * the repo and would have broken silently on the first document that did not —
+ * as a `skipped++`, which is the same invisible failure that dropped root frames.
+ *
+ * Frames whose parent is a non-frame (a Solid's Origin) or the world are ready
+ * immediately; the rest are emitted as their parents land. Anything still
+ * unplaced after the fixpoint (a cycle, or a parent that genuinely is not in the
+ * document) is appended unchanged, so the existing orphan guard makes that call
+ * rather than this ordering silently swallowing it.
+ *
+ * @param {{id: string, parentId?: string|null}[]} frames
+ * @returns {typeof frames} same objects, parent-before-child
+ */
+function orderFramesParentFirst(frames) {
+  const frameIds = new Set(frames.map(f => f.id))
+  const pending  = [...frames]
+  const placed   = new Set()
+  const ordered  = []
+
+  // Forward passes, so siblings keep their declared order — the import order of
+  // equals stays whatever the document said (a reversal here would be a second,
+  // invisible source of ordering).
+  let progressed = true
+  while (progressed && pending.length > 0) {
+    progressed = false
+    const stillPending = []
+    for (const f of pending) {
+      // Ready when its parent is not another frame in this batch (world, or an
+      // already-imported non-frame), or when that parent is already placed.
+      const parentIsPeer = f.parentId != null && frameIds.has(f.parentId)
+      if (!parentIsPeer || placed.has(f.parentId)) {
+        ordered.push(f)
+        placed.add(f.id)
+        progressed = true
+      } else {
+        stillPending.push(f)
+      }
+    }
+    pending.length = 0
+    pending.push(...stillPending)
+  }
+  return [...ordered, ...pending]
+}
 
 /**
  * Restores a deserialized frame's robot TF role (ADR-090), validating the value

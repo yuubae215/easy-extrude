@@ -40,8 +40,17 @@ jobs:
       - name: Type check
         run: pnpm typecheck
 
-      - name: Build
-        run: pnpm build
+      # Built in the STUB LANE (ADR-117). GitHub Pages is a static host with no
+      # BFF and no core API behind it, so an ordinary build ships a grasp panel
+      # whose Run button can only ever fail — the feature is unreachable for
+      # exactly the people a public URL is for. The stub answers locally so the
+      # walkthrough is reviewable end to end, and every stubbed screen carries a
+      # badge saying the numbers are fabricated (原則 #11), so a demo can never
+      # be mistaken for a measurement in docs/dogfooding/.
+      #
+      # The unit gate proves the same stub stays OUT of `pnpm build` (ci.yml).
+      - name: Build (grasp stub lane — static host has no backend)
+        run: pnpm build:stub
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

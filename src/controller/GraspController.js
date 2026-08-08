@@ -43,8 +43,12 @@
  * (ADR-059 §C: the ghost is a derived projection, not a new FSM).
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
-import { visionFromViewportCamera } from '../context/GraspDeclarationCatalog.js'
+import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclarationCatalog.js'
 import { resolveRobots, selectRobot, robotCardinality } from '../domain/robotFrames.js'
+import {
+  resolveGraspTargets, selectTarget, targetProjection,
+  surfaceSamplesFor, obstaclesExcluding,
+} from '../domain/graspTargets.js'
 
 /**
  * TemplateCatalog example id auto-loaded when grasp-search is opened with no
@@ -79,6 +83,16 @@ export class GraspController {
     this._selectedRobotId = null
     /** last published `context.robots` signature — change detection, not a source */
     this._robotsSignature = null
+    /**
+     * Which OBJECT this run is about (ADR-117). The twin of `_selectedRobotId`:
+     * the layout DSL owns the roster of graspable solids, this owns the pick, and
+     * it is only meaningful with N targets (`selectTarget` resolves 0/1 without
+     * it, so the panel shows no selector below two — 原則 #15).
+     * @type {string|null}
+     */
+    this._selectedTargetRef = null
+    /** last published `context.graspTargets` signature — change detection, not a source */
+    this._targetsSignature = null
 
     const { registerCallback } = store.getState().actions
     registerCallback('onOpenGrasp',          ()       => this.openGrasp())
@@ -87,6 +101,7 @@ export class GraspController {
     registerCallback('onHoverGraspCandidate',  (rank)  => this.hoverCandidate(rank))
     registerCallback('onCaptureViewportCamera', ()     => this.captureViewportCamera())
     registerCallback('onSelectRobot',          (id)    => this.selectRobot(id))
+    registerCallback('onSelectGraspTarget',    (ref)   => this.selectGraspTarget(ref))
     this.refreshRobots()
   }
 
@@ -154,6 +169,66 @@ export class GraspController {
     this.refreshRobots()
   }
 
+  // ── Grasp target roster + selection (ADR-117) ────────────────────────────────
+
+  /**
+   * The graspable solids of the LOADED LAYOUT, resolved through the domain's
+   * single resolution point (§1.1 — this controller never asks "is this entity
+   * graspable?" itself).
+   *
+   * The roster comes from the layout DSL, not the live scene, because the DSL is
+   * the canonical extraction point for everything this request declares
+   * (ADR-054/055: no scene reverse-compile). That means a solid dragged around in
+   * the viewport does not move its target samples until the doc is recompiled —
+   * the same asymmetry `robot.base` does NOT have (it resolves through
+   * `worldPoseOf`). Noted rather than silently split: closing it means deciding
+   * which side owns object geometry, which is an ADR, not a patch.
+   *
+   * @returns {import('../domain/graspTargets.js').GraspTarget[]}
+   */
+  _graspTargets() {
+    return resolveGraspTargets(this._loadedLayoutDsl()?.entities)
+  }
+
+  /**
+   * The object this run is about, or null when the cardinality forbids an answer
+   * (0 solids, or N with no explicit pick). Resolved here, decided in the domain
+   * (原則 #25).
+   * @returns {import('../domain/graspTargets.js').GraspTarget|null}
+   */
+  _selectedTarget() {
+    return selectTarget(this._graspTargets(), this._selectedTargetRef)
+  }
+
+  /**
+   * Publish the target roster as a DERIVED projection for the panel
+   * (`context.graspTargets` — sole writer, 原則 #4/#5). The layout DSL stays the
+   * authority; nothing writes back here (§1.1). A pick that no longer resolves
+   * (its solid left the layout) is dropped BEFORE resolving, so the ref we keep
+   * and the ref we publish can never disagree.
+   */
+  refreshGraspTargets() {
+    const targets = this._graspTargets()
+    if (this._selectedTargetRef && !targets.some(t => t.ref === this._selectedTargetRef)) {
+      this._selectedTargetRef = null
+    }
+    const projection = targetProjection(targets, this._selectedTargetRef)
+    const signature  = JSON.stringify(projection)
+    if (signature === this._targetsSignature) return
+    this._targetsSignature = signature
+    this._store.getState().actions.contextSetGraspTargets?.(projection)
+  }
+
+  /**
+   * Pick the object a grasp search is solved for (panel selector). Only the choice
+   * changes — the pick is an input to the NEXT run, never a re-run trigger.
+   * @param {string|null} ref  Layout DSL entity ref
+   */
+  selectGraspTarget(ref) {
+    this._selectedTargetRef = ref ?? null
+    this.refreshGraspTargets()
+  }
+
   // ── Entry: the grasp panel, beside the robot it is about (ADR-105 D5 / ADR-106 D3) ──
 
   /**
@@ -218,7 +293,8 @@ export class GraspController {
     }
 
     this._clearGhost()   // idle carries no candidate to ghost (ADR-059 §B-5)
-    this.refreshRobots() // the panel's selector reads a fresh roster on open
+    this.refreshRobots() // the panel's selectors read fresh rosters on open
+    this.refreshGraspTargets()
     const ui = this._store.getState().actions
     ui.contextSetGrasp({ status: 'idle', layout })
     // The seeded slice IS the panel's availability (NPanel renders it while
@@ -288,6 +364,26 @@ export class GraspController {
       return
     }
 
+    // Guard: a grasp is solved for a robot AND an object (ADR-117). Sending no
+    // `target` is what made every run through the UI dead-but-green: core/'s
+    // adapter defaults an absent target to zero surface samples, so
+    // `generate_candidates` yields nothing and the answer is always
+    // `candidatesGenerated: 0` — a number that looks like a legitimate verdict
+    // (原則 #31). Worse, the panel's 0-candidate copy then tells the user to fix
+    // the layout's geometry, which the request never carried. Stop with the real
+    // reason instead of shipping a search that cannot succeed (#11).
+    this.refreshGraspTargets()
+    const targetEntity = this._selectedTarget()
+    if (!targetEntity) {
+      const targets = this._graspTargets()
+      const reason = targets.length === 0
+        ? 'Nothing to pick up — this layout declares no solid with graspable geometry.'
+        : `${targets.length} graspable objects in the layout — pick which one to grasp.`
+      ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
+      ctrl._uiView.showToast(reason, { type: 'warn' })
+      return
+    }
+
     // Ensure a JWT'd BffClient (the routes are protected). connectBff fetches a dev
     // token and nulls _bff when the BFF itself is unreachable.
     let bff = ctrl._service.bff
@@ -301,7 +397,15 @@ export class GraspController {
       return
     }
 
-    const objectiveWeights = params.weights ?? { reach: 0.6, clearance: 0.4 }
+    // Default weights use core/'s REGISTERED objective names (ADR-117). The old
+    // `{ reach, clearance }` defaults matched nothing in the solver's registry,
+    // which drops unknown names without complaint — so every score came back
+    // empty and every candidate tied at 0.0.
+    const objectiveWeights = params.weights ?? {
+      [OBJECTIVE.REACH_MARGIN]:       0.6,
+      [OBJECTIVE.APPROACH_CLEARANCE]: 0.4,
+      [OBJECTIVE.GRASP_STABILITY]:    1.0,
+    }
     const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
     // Vision / grasp domain declarations (ADR-081 Decision 5): the panel's
     // domain cards pass parsed camera / gripper declarations, gap-checked by
@@ -320,6 +424,13 @@ export class GraspController {
         // multi-robot support. The gate above guarantees `base` is present, so
         // core/'s ghost-robot default is unreachable from here.
         robot,
+        // The object being grasped and the bodies around it (ADR-117). Both are
+        // DECLARATIONS derived from the same Layout DSL the rest of the request
+        // comes from — where the surface is, how big the other bodies are. Every
+        // judgement about them (can the gripper close on this sample, does the
+        // approach clip that body) stays solved in core/ behind the contract.
+        target:    { surfaceSamples: surfaceSamplesFor(targetEntity) },
+        obstacles: obstaclesExcluding(this._graspTargets(), targetEntity.ref),
         // Judgement params ride plan{} (ADR-084 §4) when the caller supplies
         // them; the front collects none today, so plan{} is normally omitted
         // and core/ uses its defaults (no invented values — kernel §5).

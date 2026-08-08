@@ -168,10 +168,17 @@ export class WsChannel {
 export class BffClient {
   /**
    * @param {string} [baseUrl]  defaults to '/api' (proxied by Vite in dev)
+   * @param {{ fetchImpl?: typeof fetch }} [deps]
+   *        `fetchImpl` — the transport. Injected rather than reaching for the
+   *        global so the grasp stub can serve a static, backend-free build
+   *        through this same client (ADR-117). The double returns real
+   *        `Response` objects, so every status-handling branch below is the one
+   *        that ships — the seam swaps the network, not the client.
    */
-  constructor(baseUrl = '/api') {
+  constructor(baseUrl = '/api', { fetchImpl } = {}) {
     this._base  = baseUrl
     this._token = null
+    this._fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args))
     /** @type {WsChannel|null} */
     this._ws    = null
   }
@@ -284,7 +291,7 @@ export class BffClient {
 
     let res
     try {
-      res = await fetch(url, { method: 'POST', headers, body: formData })
+      res = await this._fetch(url, { method: 'POST', headers, body: formData })
     } catch (err) {
       throw new BffUnavailableError(err)
     }
@@ -352,7 +359,7 @@ export class BffClient {
 
     let res
     try {
-      res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+      res = await this._fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
     } catch (err) {
       throw new BffUnavailableError(err)
     }
@@ -400,7 +407,7 @@ export class BffClient {
 
     let res
     try {
-      res = await fetch(url, {
+      res = await this._fetch(url, {
         method,
         headers,
         body: body != null ? JSON.stringify(body) : undefined,

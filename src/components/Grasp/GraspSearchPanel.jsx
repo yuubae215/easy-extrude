@@ -5,10 +5,10 @@ import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import {
   CAMERA_PRESETS, GRIPPER_PRESETS, matchingPresetId,
-  cameraDeclarationGaps, gripperDeclarationGaps,
+  cameraDeclarationGaps, gripperDeclarationGaps, OBJECTIVE,
 } from '../../context/GraspDeclarationCatalog.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
-import { DURATION, EASING } from '../../theme/tokens.js'
+import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
 /**
  * A `transition: width` for a data bar fill (ADR-068 polish) so the bar glides
@@ -52,6 +52,43 @@ function barTransition(reduced) {
  */
 
 const BORDER = '1px solid #3a3a3a'
+
+/**
+ * Whether this build serves fabricated grasp answers (ADR-117). Build-time
+ * constant, so a normal build renders nothing and the branch is dropped.
+ */
+const GRASP_STUB = import.meta.env.VITE_GRASP_STUB === '1'
+
+/**
+ * StubBadge — the label that keeps a demo from being mistaken for a measurement.
+ *
+ * `docs/dogfooding/` exists to collect values a practitioner actually obtained,
+ * and those records are the evidence under the GSN branch
+ * `DefaultsAreAcceptableToPractitioner`. A stubbed number recorded as a real one
+ * poisons exactly that evidence — and the person most likely to make the mistake
+ * is the reviewer who was handed a URL and never saw a terminal. So the fiction
+ * is stated on the screen where the numbers are read, not only in a console line
+ * or a devtools header (原則 #11: the reason travels with the thing).
+ */
+function StubBadge() {
+  if (!GRASP_STUB) return null
+  return (
+    <div style={{
+      marginTop: '8px', padding: '6px 8px', borderRadius: '4px',
+      // Declared roles, not fresh literals: "take care" already has a colour
+      // (ADR-100 — a near-duplicate of an existing tone is the defect that ADR
+      // was written about).
+      background: COLOR.surfaceSunken,
+      border: `1px solid ${COLOR.cautionTone}`,
+      color: COLOR.cautionTone,
+      fontSize: '10px', lineHeight: 1.5,
+    }}>
+      <strong>Stubbed results.</strong> This build answers grasp searches locally with a
+      coarse stand-in, so the UI can be reviewed without a backend. The ranking,
+      distances and scores are fabricated — do not record them as measured values.
+    </div>
+  )
+}
 
 // ── Domain-card form parsing (local, pure) ───────────────────────────────────
 //
@@ -98,6 +135,23 @@ function parseGripperForm(g) {
  * @param {{list: {id: string, label: string, hasTcp: boolean}[], selectedId: string|null}} robots
  * @returns {string[]}
  */
+/**
+ * Why Run cannot proceed on the OBJECT side (ADR-117) — the twin of
+ * `robotDeclarationGaps`. Returned as printed reasons, never as a bare disabled
+ * button (原則 #11). An unpicked target used to be no gap at all, which is
+ * precisely how the request went out with no geometry.
+ *
+ * @param {{list: {ref: string, label: string}[], selectedRef: string|null}} targets
+ * @returns {string[]}
+ */
+function targetDeclarationGaps(targets) {
+  const list = targets?.list ?? []
+  if (list.length === 0) return ['no graspable solid in this layout — nothing to pick up']
+  const selected = list.length === 1 ? list[0] : list.find(t => t.ref === targets?.selectedRef)
+  if (!selected) return [`${list.length} graspable objects — pick which one to grasp`]
+  return []
+}
+
 function robotDeclarationGaps(robots) {
   const list = robots?.list ?? []
   if (list.length === 0) return ['no robot in the scene — add one with Shift+A → Robot']
@@ -108,11 +162,13 @@ function robotDeclarationGaps(robots) {
 
 export function GraspSearchPanel() {
   const grasp     = useUIStore(s => s.context.grasp)
-  const robots    = useUIStore(s => s.context.robots)
+  const robots       = useUIStore(s => s.context.robots)
+  const graspTargets = useUIStore(s => s.context.graspTargets)
   const callbacks = useUIStore(s => s.callbacks)
 
   const [reach, setReach]         = useState(0.6)
   const [clearance, setClearance] = useState(0.4)
+  const [stability, setStability] = useState(1.0)
   const [topN, setTopN]           = useState(5)
   // Client-side sort key: 'total' or an objective name. Never re-runs the query
   // (a grasp request is invariant — ADR-057 §Rendering).
@@ -145,7 +201,8 @@ export function GraspSearchPanel() {
   // and no pick, there is no premise — so it is a submit gap like any missing
   // declaration, printed under a disabled Run rather than discovered by failing.
   const robotGaps  = robotDeclarationGaps(robots)
-  const gaps       = [...robotGaps, ...visionGaps, ...gripGaps]
+  const targetGaps = targetDeclarationGaps(graspTargets)
+  const gaps       = [...robotGaps, ...targetGaps, ...visionGaps, ...gripGaps]
 
   const applyCameraPreset = (p) => setVision(v => ({
     ...v,
@@ -176,7 +233,14 @@ export function GraspSearchPanel() {
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
   const run = () => callbacks.onRunGraspSearch?.({
-    weights:  { reach: Number(reach), clearance: Number(clearance) },
+    // Wire keys must be core/'s registered objective names — an unregistered key
+    // is dropped silently by the solver, which is how the sliders spent their
+    // whole life controlling nothing (ADR-117).
+    weights: {
+      [OBJECTIVE.REACH_MARGIN]:       Number(reach),
+      [OBJECTIVE.APPROACH_CLEARANCE]: Number(clearance),
+      [OBJECTIVE.GRASP_STABILITY]:    Number(stability),
+    },
     topN:     Number(topN),
     camera:   vision.enabled ? camParams : null,
     gripper:  grip.enabled ? gripParams : null,
@@ -254,6 +318,8 @@ export function GraspSearchPanel() {
             slot: it is always here, and reports 0 / 1 / N honestly instead of
             appearing only when several robots exist (原則 #15). */}
         <RobotPicker robots={robots} onSelect={(id) => callbacks.onSelectRobot?.(id)} />
+        {/* ADR-117 — the object side of the premise, beside the robot side. */}
+        <TargetPicker targets={graspTargets} onSelect={(ref) => callbacks.onSelectGraspTarget?.(ref)} />
         <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
           robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
@@ -262,6 +328,7 @@ export function GraspSearchPanel() {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <NumField label="reach weight"     value={reach}     step="0.1" onChange={setReach} />
           <NumField label="clearance weight" value={clearance} step="0.1" onChange={setClearance} />
+          <NumField label="stability weight" value={stability} step="0.1" onChange={setStability} />
         </div>
       </DomainCard>
 
@@ -305,6 +372,7 @@ export function GraspSearchPanel() {
       ))}
 
       <StatusLine grasp={grasp} />
+      <StubBadge />
 
       {/* Rejection funnel (contract v3 diagnostics) — instant "what happened"
           feedback, especially when the list is empty. Presentation only:
@@ -494,46 +562,101 @@ function Vec3Fields({ label, values, onChange }) {
  *            an arm nobody chose is the failure this whole ADR is about).
  */
 function RobotPicker({ robots, onSelect }) {
-  const list        = robots?.list ?? []
-  const cardinality = robots?.cardinality ?? 'none'
-  const selectedId  = robots?.selectedId ?? ''
-
-  const label = (
-    <span style={{ fontSize: '10px', color: '#889', minWidth: '38px' }}>robot</span>
-  )
-
+  const list = robots?.list ?? []
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-      {label}
-      {cardinality === 'none' && (
-        <span style={{ fontSize: '10px', color: '#caa' }}>
-          none in scene — add one with <code style={{ color: '#9ad' }}>Shift+A → Robot</code>
-        </span>
-      )}
-      {cardinality === 'single' && (
-        <span style={{ fontSize: '11px', color: '#cde' }}>
-          {list[0]?.label}
-          {list[0]?.hasTcp === false && (
-            <span style={{ color: '#caa' }}> (no tcp — wrist aim falls back to the approach axis)</span>
-          )}
-        </span>
-      )}
-      {cardinality === 'multi' && (
+    <PickerRow
+      label="robot"
+      cardinality={robots?.cardinality ?? 'none'}
+      value={robots?.selectedId ?? ''}
+      options={list.map(r => ({ value: r.id, label: r.label }))}
+      onSelect={onSelect}
+      none={<>none in scene — add one with <code style={PICKER.hint}>Shift+A → Robot</code></>}
+      single={<>
+        {list[0]?.label}
+        {list[0]?.hasTcp === false && (
+          <span style={PICKER.muted}> (no tcp — wrist aim falls back to the approach axis)</span>
+        )}
+      </>}
+    />
+  )
+}
+
+/**
+ * The shared shape of both premise pickers (ADR-117).
+ *
+ * The robot picker and the object picker ask the same question about the two
+ * halves of the same premise — "which one, of 0 / 1 / N?" — and the answer is
+ * rendered identically down to the placeholder wording. Writing the second one
+ * as a copy would have duplicated six colour literals along with the markup,
+ * which is what the ADR-100 ratchet objected to; sharing the row removes the
+ * duplication instead of declaring a budget for it.
+ */
+const PICKER = Object.freeze({
+  row:    { display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' },
+  label:  { fontSize: '10px', color: '#889', minWidth: '38px' },
+  muted:  { fontSize: '10px', color: '#caa' },
+  chosen: { fontSize: '11px', color: '#cde' },
+  hint:   { color: '#9ad' },
+  select: {
+    background: '#1f2530', color: '#dceaff', border: '1px solid #3a4a60',
+    borderRadius: '4px', fontSize: '11px', padding: '2px 4px', flex: 1,
+  },
+})
+
+/**
+ * One premise picker row, in the three shapes the cardinality allows:
+ *   none   — an honest empty state naming the way out, not a blank dropdown the
+ *            user can only stare at (原則 #11/#15).
+ *   single — the implied choice, read-only: there is nothing to decide.
+ *   multi  — a real <select>, unset until picked. No default: solving for a
+ *            subject nobody chose is the failure ADR-090 and ADR-117 are about.
+ */
+function PickerRow({ label, cardinality, value, options, onSelect, none, single }) {
+  return (
+    <div style={PICKER.row}>
+      <span style={PICKER.label}>{label}</span>
+      {cardinality === 'none'   && <span style={PICKER.muted}>{none}</span>}
+      {cardinality === 'single' && <span style={PICKER.chosen}>{single}</span>}
+      {cardinality === 'multi'  && (
         <select
-          value={selectedId}
+          value={value}
           onChange={(e) => onSelect(e.target.value || null)}
-          style={{
-            background: '#1f2530', color: '#dceaff', border: '1px solid #3a4a60',
-            borderRadius: '4px', fontSize: '11px', padding: '2px 4px', flex: 1,
-          }}
+          style={PICKER.select}
         >
-          <option value="">— pick one of {list.length} —</option>
-          {list.map(r => (
-            <option key={r.id} value={r.id}>{r.label}</option>
+          <option value="">— pick one of {options.length} —</option>
+          {options.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
       )}
     </div>
+  )
+}
+
+/**
+ * TargetPicker — WHICH OBJECT the search is about (ADR-117).
+ *
+ * Deliberately the same three shapes as RobotPicker, because it is the same
+ * question asked of the other half of the premise:
+ *   none   — the layout declares nothing graspable. An honest empty state, not a
+ *            dropdown with no options (原則 #11/#15).
+ *   single — the implied object's label, read-only: no choice to make.
+ *   multi  — a real <select>, unset until picked. No "first solid" default: on
+ *            the quick-start cell the first solid is the robot's own pedestal,
+ *            so a default would silently declare "grasp your own plinth".
+ */
+function TargetPicker({ targets, onSelect }) {
+  const list = targets?.list ?? []
+  return (
+    <PickerRow
+      label="object"
+      cardinality={targets?.cardinality ?? 'none'}
+      value={targets?.selectedRef ?? ''}
+      options={list.map(t => ({ value: t.ref, label: t.label }))}
+      onSelect={onSelect}
+      none="nothing graspable in this layout — add a solid to pick up"
+      single={list[0]?.label}
+    />
   )
 }
 
@@ -545,6 +668,10 @@ function StatusLine({ grasp }) {
     // ADR-090 Decision 4 — the gate that replaced silently solving for a ghost
     // robot. Carries its own reason, so the line never says just "failed".
     'no-robot':  { text: grasp?.reason ?? 'No robot to solve for.', color: '#caa' },
+    // ADR-117 — the twin gate. Before it, an absent target was not a state at
+    // all: the request simply went out without geometry and came back with a
+    // perfectly well-formed "0 candidates generated" (原則 #31).
+    'no-target': { text: grasp?.reason ?? 'No object to grasp.', color: '#caa' },
     'compiling': { text: 'Compiling layout on BFF…', color: '#cc9' },
     'solving':   { text: 'BFF compile OK — requesting grasp candidates…', color: '#9c9' },
     'results':   {

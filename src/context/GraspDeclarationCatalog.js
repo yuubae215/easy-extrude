@@ -28,6 +28,36 @@
 const round4 = (v) => Math.round(v * 1e4) / 1e4 + 0
 
 /**
+ * The objective names `core/`'s registry actually scores (ADR-117).
+ *
+ * These are WIRE KEYS, not labels. `graspSearch.objectiveWeights` is keyed by
+ * them and the response's `score.objectiveScores` comes back keyed by them —
+ * `core/`'s `evaluate_objectives` looks each requested name up in
+ * `OBJECTIVE_REGISTRY` and **silently skips the ones it does not know**
+ * (objectives.py: `if definition is None: continue`). That tolerance is
+ * deliberate on the solver's side (a newer DSL may ask for objectives an older
+ * engine lacks), but it means a misspelled weight is a silent no-op on the wire:
+ * the panel used to send `{ reach, clearance }`, none of which is registered, so
+ * every response carried `objectiveScores: {}` and `totalScore: 0.0` — five
+ * candidates tied at zero, ranked by nothing, with empty score bars. The sliders
+ * moved and the answer never changed (原則 #11).
+ *
+ * Naming them once here is what stops the two halves (the panel's sliders and the
+ * controller's default weights) from drifting apart again (§1.1).
+ */
+export const OBJECTIVE = Object.freeze({
+  /** How much reach envelope is left over at the grasp pose. */
+  REACH_MARGIN:       'reach_margin',
+  /** How far the approach path stays from the declared obstacles. */
+  APPROACH_CLEARANCE: 'approach_clearance',
+  /** How well the contact geometry holds the object. */
+  GRASP_STABILITY:    'grasp_stability',
+})
+
+/** Every objective name the wire may carry — the enumeration a census can count. */
+export const DECLARED_OBJECTIVES = Object.freeze(Object.values(OBJECTIVE))
+
+/**
  * Vision-camera presets (wire shape: `graspSearch.camera`). Units follow the
  * request geometry (metres in the bundled templates); angles are radians.
  * The first entry is the card's seed (selection-first premise).
