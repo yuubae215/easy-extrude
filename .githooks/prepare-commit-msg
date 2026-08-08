@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# .githooks/prepare-commit-msg — 観測トレーラを**コミット生成時に**刻む (ADR-116)
+#
+# ADR-092 は書き手を PostToolUse + `git commit --amend --only` に置いた。この形は
+# commit の**後**に走るので、`git commit && git push` と 1 コマンドに連鎖されると
+# 発火時点で既に公開済みで amend できない。ADR-115 が実測 14 件として数えた穴が
+# それである。ここはコミットオブジェクトが出来る**前**に走るので、push がいつ走ろうと
+# 関係ない。amend しないので SHA も動かない。
+#
+# ADR-092 が git hook を却下した 2 つの理由は、マーカー経由で両方解ける:
+#
+#   (a) 「transcript を知らない」→ Claude Code の PreToolUse が commit の**前**に
+#       `.git/claude-commit-context` へ transcript パスを置く。PreToolUse は刻めないが
+#       **刻むための根拠を置くこと**はできる。
+#   (b) 「人間のコミットにも付く」→ そのマーカーが**新しいとき**だけ刻む。人が自分の
+#       端末で打った commit にはマーカーが無いので何もしない (帰属は保たれる)。
+#
+# 規律 (ADR-092 から継承): 何が起きても壊さない。どこかが失敗したら黙って素通りし、
+# コミット自体は必ず成立させる。取りこぼしは `pnpm test:trailers` が数える。
+#
+# 配線: `git config core.hooksPath .githooks` — SessionStart hook
+#       (.claude/hooks/install-git-hooks.sh) が張る。
+
+set -uo pipefail
+
+MSG_FILE="${1:-}"
+MSG_SOURCE="${2:-}"
+
+[ -n "$MSG_FILE" ] || exit 0
+[ -f "$MSG_FILE" ] || exit 0
+
+# merge / squash は変更集合を持たない (or 分類の意味が無い) ので触らない。
+case "$MSG_SOURCE" in
+  merge|squash) exit 0 ;;
+esac
+
+repo="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -n "$repo" ] || exit 0
+
+git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+marker="$git_dir/claude-commit-context"
+[ -f "$marker" ] || exit 0   # ← 人間のコミットはここで抜ける (帰属)
+
+meta_script="$repo/scripts/commit-meta.mjs"
+[ -f "$meta_script" ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+
+# マーカーの解釈は commit-meta.mjs の純粋関数が正本 (書式の第二の源を作らない)。
+#
+# モジュールのパスもマーカーのパスも **env で渡す**。argv で渡すと commit-meta.mjs の
+# `isMain` 判定が誤爆しうるし、パスをシェルから JS の文字列リテラルへ埋め込むと
+# 引用の入れ子で壊れる。env はどちらの罠も踏まない。
+ctx="$(CT_META="$meta_script" CT_MARKER="$marker" node -e '
+  import(process.env.CT_META).then(async (m) => {
+    const fs = await import("node:fs");
+    const parsed = m.parseCommitContext(fs.readFileSync(process.env.CT_MARKER, "utf8"),
+      { nowSec: Date.now() / 1000 });
+    if (!parsed) process.exit(1);
+    process.stdout.write(`${parsed.amend ? 1 : 0}\n${parsed.transcript ?? ""}\n`);
+  }).catch(() => process.exit(1));
+' 2>/dev/null)" || exit 0
+
+amend_flag="$(printf '%s' "$ctx" | sed -n '1p')"
+transcript="$(printf '%s' "$ctx" | sed -n '2p')"
+
+derive_args=(derive --repo "$repo" --message-file "$MSG_FILE")
+[ -n "$transcript" ] && derive_args+=(--transcript "$transcript")
+[ "$amend_flag" = "1" ] && derive_args+=(--amend)
+
+trailers="$(node "$meta_script" "${derive_args[@]}" 2>/dev/null)" || exit 0
+[ -n "$trailers" ] || exit 0
+
+model_effort="$(printf '%s\n' "$trailers" | grep '^Model-Effort:' | head -1)"
+task_class="$(printf '%s\n' "$trailers" | grep '^Task-Class:' | head -1)"
+[ -n "$model_effort" ] && [ -n "$task_class" ] || exit 0
+
+# --if-exists replace: amend を跨いでも重複しない。
+new_msg="$(git interpret-trailers \
+  --if-exists replace \
+  --trailer "$model_effort" \
+  --trailer "$task_class" \
+  < "$MSG_FILE" 2>/dev/null)" || exit 0
+[ -n "$new_msg" ] || exit 0
+
+printf '%s\n' "$new_msg" > "$MSG_FILE" || exit 0
+
+# 使い切ったマーカーは消す。同じ端末で後から人が打つ commit を巻き込まないため
+# (鮮度だけに頼ると 300 秒の窓が残る)。Bash 呼び出しごとに PreToolUse が置き直すので、
+# commit が空で中断されても次の試行は刻まれる。
+rm -f "$marker" 2>/dev/null
+
+exit 0

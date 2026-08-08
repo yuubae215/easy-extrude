@@ -1,31 +1,37 @@
 #!/usr/bin/env bash
 # commit-trailers.sh
-# Claude Code PostToolUse hook (matcher: Bash)
+# Claude Code PreToolUse + PostToolUse hook (matcher: Bash)
 #
-# 直前の `git commit` が作ったコミットに、観測用トレーラを刻む:
+# 観測用トレーラの主経路は **`.githooks/prepare-commit-msg`** に移った (ADR-116)。
+# このファイルが持つのは、その両側の 2 つの役だけ:
+#
+#   PreToolUse  — 刻むための**根拠を置く** (`.git/claude-commit-context`)。
+#   PostToolUse — git hook が張られていない clone のための**予備経路** (amend)。
 #
 #   Model-Effort: claude-opus-5/high        ← transcript が根拠 (申告ではない)
-#   Task-Class:   feat/core+front            ← コミット自身から決定的に導出
+#   Task-Class:   feat/core+front            ← 変更集合から決定的に導出
 #
-# なぜ PostToolUse か:
-#   - PreToolUse は任意のシェル文字列を書き換えることになる (heredoc・&& 連鎖・
-#     引用の入れ子) — 壊し方が多すぎる。
-#   - git の prepare-commit-msg hook は transcript を知らないので model/effort を
-#     根拠づけられず、しかも**人間のコミットにもモデル名を付けてしまう**。
-#     PostToolUse は Claude が作ったコミットにだけ発火するので帰属が正しい。
+# なぜ主経路を移したか (ADR-092 §3 → ADR-116):
+#   PostToolUse は commit の**後**に走るので、`git commit && git push` と 1 コマンドに
+#   連鎖されると発火時点で既に公開済みで amend できない。ADR-092 §4 はこれを
+#   「塞げない穴」として正しく予告し、ADR-115 が実測 14 件として数えた。
+#   `prepare-commit-msg` はコミットオブジェクトが出来る**前**に走るので連鎖が
+#   無関係になり、amend しないので SHA も動かない。
 #
-# なぜ `--amend --only` か:
+#   ADR-092 が git hook を却下した 2 理由は、マーカー経由で両方解けた:
+#   「transcript を知らない」→ PreToolUse が置く。「人間のコミットにも付く」→
+#   マーカーが新しいときだけ刻む (人が自分の端末で打った commit には無い)。
+#
+# なぜ予備経路を残すか (ADR-116 の実装で変わった点):
+#   `core.hooksPath` が張られていない clone では prepare-commit-msg が走らない。
+#   主経路を消してしまうとその場合に**何も刻まれず**、今より悪くなる。予備経路は
+#   冪等 (既に同じ値が在れば何もしない) なので二重刻印にはならない。
+#
+# なぜ `--amend --only` か (予備経路):
 #   素の `--amend` は **index にある変更を巻き込む**。`--only` を付けると HEAD の
 #   tree のまま message だけ差し替わり、staged の変更はそのまま残る (実測確認済み)。
 #
-# 既知の穴 (塞げないので**数える**):
-#   `git commit -m x && git push` のように 1 コマンドへ連鎖されると刻めない。
-#   PostToolUse は push の**後**に発火し、公開済みコミットは amend できない。
-#   PreToolUse は commit の**前**なので対象コミットがまだ存在しない。両者の間に
-#   発火する hook は無い。そこで PreToolUse 側は連鎖を検出して**分けるよう促す**
-#   だけにし (助言・非ブロック)、取りこぼしは `commit-meta.mjs report` の
-#   「with Model-Effort」欄で母数として見えるようにしてある (原則 #31 —
-#   不在を推測させず、数えて宣言する)。
+# 取りこぼしは `pnpm test:trailers` が個数で数える (ADR-115 — 原則 #31)。
 #
 # 規律: 何が起きても壊さない。判定・導出のどこかが失敗したら黙って素通り。
 # 配線: .claude/settings.json の hooks.PreToolUse / hooks.PostToolUse (matcher "Bash")
@@ -38,23 +44,66 @@ read_json() { printf '%s' "$payload" | python3 -c "import sys,json; d=json.load(
 [ "$(read_json 'd.get("tool_name","")')" = "Bash" ] || exit 0
 event="$(read_json 'd.get("hook_event_name","")')"
 
-# --- PreToolUse: commit と push の連鎖を分けるよう促す (助言のみ) -------------
+# --- PreToolUse: 刻むための「根拠」を置く (ADR-116) ---------------------------
+# PreToolUse は commit の前なので**刻めない**が、刻むための根拠を置くことはできる。
+# `.git/claude-commit-context` に transcript パスと時刻を書き、コミット生成時に
+# 走る .githooks/prepare-commit-msg がそれを読む。マーカーの存在そのものが
+# 「いま Claude が commit を走らせている」証拠であり、人間のコミットに刻まない
+# ための唯一の判別になる (帰属 — ADR-092 §2)。
 if [ "$event" = "PreToolUse" ]; then
   cmd="$(read_json 'd.get("tool_input",{}).get("command","")')"
   session="$(read_json 'd.get("session_id","")')"
   pre_cwd="$(read_json 'd.get("cwd","")')"
+  pre_transcript="$(read_json 'd.get("transcript_path","")')"
   [ -n "$cmd" ] || exit 0
 
-  # 安い足切り (push を含まないコマンドで node を起動しない)。
-  printf '%s' "$cmd" | grep -q 'push' || exit 0
+  # 安い足切り (commit を含まないコマンドで node を起動しない)。
+  printf '%s' "$cmd" | grep -Eq 'git[^|;&]*commit' || exit 0
+  # dry-run は hook を走らせないので、マーカーを置くと古いまま残る。
+  printf '%s' "$cmd" | grep -Eq '\-\-dry-run' && exit 0
 
-  # 連鎖判定は **正規表現ではなく** トークン化して行う。素朴な grep は
-  # コミットメッセージ本文 (heredoc / 引用の中) の文字列で誤発火する —
-  # ADR-092 の導入コミット自身がそれを踏んだ。規則は
-  # scripts/commit-meta.mjs の純粋関数にあり、テストで固定してある。
   pre_repo="$(git -C "${pre_cwd:-$PWD}" rev-parse --show-toplevel 2>/dev/null)" || exit 0
-  [ -f "$pre_repo/scripts/commit-meta.mjs" ] || exit 0
-  [ "$(node "$pre_repo/scripts/commit-meta.mjs" detect-chain --command "$cmd" 2>/dev/null)" = "chained" ] || exit 0
+  pre_git_dir="$(git -C "$pre_repo" rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+  pre_meta="$pre_repo/scripts/commit-meta.mjs"
+  [ -f "$pre_meta" ] || exit 0
+
+  # `--amend` かどうかは git 側から判別できない (`--amend` も `-C` も source=commit)
+  # ので、コマンドの**意図**をここで写して運ぶ。Task-Class の diff 基準が 1 段ずれる
+  # (親が HEAD^ になる) のはこの情報が無いと決められない。
+  pre_amend=0
+  printf '%s' "$cmd" | grep -q -- '--amend' && pre_amend=1
+
+  # 書式の正本は commit-meta.mjs の buildCommitContext (第二の源を作らない)。
+  #
+  # モジュールのパスは **env で渡す** — `node -e '…' <path>` のように argv で渡すと、
+  # commit-meta.mjs 側の `isMain` 判定 (`import.meta.url === file://${argv[1]}`) が
+  # 真になり、ライブラリとして import したつもりが CLI が起動して usage を吐く。
+  # 初版はこれを踏み、マーカーが一度も書かれないまま予備経路だけが動いていた。
+  CT_META="$pre_meta" CT_TRANSCRIPT="$pre_transcript" CT_AMEND="$pre_amend" node -e '
+    import(process.env.CT_META).then((m) => {
+      process.stdout.write(m.buildCommitContext({
+        transcript: process.env.CT_TRANSCRIPT || null,
+        amend: process.env.CT_AMEND === "1",
+        nowSec: Date.now() / 1000,
+      }));
+    }).catch(() => process.exit(1));
+  ' > "$pre_git_dir/claude-commit-context" 2>/dev/null \
+    || rm -f "$pre_git_dir/claude-commit-context" 2>/dev/null
+
+  # --- 連鎖の助言は「git hook が入っていないとき」だけ --------------------------
+  # prepare-commit-msg が張られていれば `commit && push` は無害になった (刻印が
+  # push より前に済む) ので、そこで警告するのは誤発動でしかない (核 §6 シグナル(b))。
+  # 張られていないときだけ、予備経路 (PostToolUse の amend) の穴が生きている。
+  pre_hooks_path="$(git -C "$pre_repo" config --get core.hooksPath 2>/dev/null)"
+  case "$pre_hooks_path" in
+    '')  pre_hook_file="$pre_git_dir/hooks/prepare-commit-msg" ;;
+    /*)  pre_hook_file="$pre_hooks_path/prepare-commit-msg" ;;
+    *)   pre_hook_file="$pre_repo/$pre_hooks_path/prepare-commit-msg" ;;
+  esac
+  [ -x "$pre_hook_file" ] && exit 0
+
+  printf '%s' "$cmd" | grep -q 'push' || exit 0
+  [ "$(node "$pre_meta" detect-chain --command "$cmd" 2>/dev/null)" = "chained" ] || exit 0
 
   # 鬱陶しい誤発動は「レンズを殺す」ので 1 セッション 1 回だけ (核 §6 シグナル(b))。
   marker_dir="${TMPDIR:-/tmp}/cc-commit-trailers"
@@ -63,21 +112,23 @@ if [ "$event" = "PreToolUse" ]; then
   [ -e "$marker" ] && exit 0
   : > "$marker" 2>/dev/null || exit 0
 
-  python3 - <<'PY' 2>/dev/null || exit 0
+  python3 - <<'ADVISE' 2>/dev/null || exit 0
 import json
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "additionalContext": (
             "[commit-trailers hook — このセッションで 1 回だけ] "
-            "`git commit` と `git push` が 1 コマンドに連鎖しています。この形だと "
-            "観測トレーラ (Model-Effort / Task-Class) を刻む隙間が無く、"
-            "そのコミットは分析対象から静かに漏れます。"
-            "commit と push を別々の呼び出しに分けてください。"
+            "この clone には .githooks/prepare-commit-msg が張られていません "
+            "(`git config core.hooksPath .githooks`)。そのため観測トレーラは "
+            "PostToolUse の amend でしか刻めず、`git commit` と `git push` を "
+            "1 コマンドに連鎖させるとそのコミットは分析対象から静かに漏れます "
+            "(ADR-115 が数えた 14 件の形)。commit と push を別々の呼び出しに "
+            "分けてください。"
         ),
     },
 }))
-PY
+ADVISE
   exit 0
 fi
 

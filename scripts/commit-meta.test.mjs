@@ -17,6 +17,9 @@ import {
   stripHeredocs,
   tokenizeCommand,
   detectsCommitPushChain,
+  subjectFromMessage,
+  buildCommitContext,
+  parseCommitContext,
 } from './commit-meta.mjs';
 
 test('conventional type — scope 付き・破壊的変更・型なしを見分ける', () => {
@@ -194,6 +197,55 @@ test('stripHeredocs / tokenizeCommand の単体挙動', () => {
   ]);
   // 空の引用は 1 トークンとして残る (欠落させない)。
   assert.deepEqual(tokenizeCommand('git commit -m ""'), ['git', 'commit', '-m', '']);
+});
+
+// ── ADR-116: コミット生成時に刻むための 2 つの入力 ──────────────────────────
+
+test('メッセージファイルから subject を取る (テンプレのコメントと空行を飛ばす)', () => {
+  // `prepare-commit-msg` の時点ではコミットがまだ無いので subject の源はこれだけ。
+  assert.equal(subjectFromMessage('feat(x): a\n\nbody\n'), 'feat(x): a');
+  assert.equal(
+    subjectFromMessage('\n# Please enter the commit message\n#\nfix(y): b\n'),
+    'fix(y): b');
+  assert.equal(subjectFromMessage('# all comments\n#\n'), '', '実質行が無ければ空 — 推測しない');
+});
+
+test('セッション文脈マーカーは往復する (書き手と読み手で書式を分けない)', () => {
+  const now = 1_700_000_000;
+  const text = buildCommitContext({ transcript: '/tmp/t.jsonl', amend: true, nowSec: now });
+  assert.deepEqual(
+    parseCommitContext(text, { nowSec: now + 5 }),
+    { transcript: '/tmp/t.jsonl', amend: true });
+});
+
+test('古いマーカーは使わない — 人のコミットを巻き込まないため', () => {
+  // 鮮度がそのまま帰属の判別になる (ADR-116)。窓を広げると人が打った commit に
+  // モデル名が付き、狭めると刻み漏れが増える。個数は test:trailers が数える。
+  const now = 1_700_000_000;
+  const text = buildCommitContext({ transcript: '/tmp/t.jsonl', amend: false, nowSec: now });
+  assert.equal(parseCommitContext(text, { nowSec: now + 301 }), null);
+  assert.notEqual(parseCommitContext(text, { nowSec: now + 299 }), null);
+});
+
+test('未来に刻まれたマーカーも信用しない (時計のずれ)', () => {
+  const now = 1_700_000_000;
+  const text = buildCommitContext({ transcript: '/tmp/t.jsonl', amend: false, nowSec: now + 600 });
+  assert.equal(parseCommitContext(text, { nowSec: now }), null);
+});
+
+test('壊れたマーカーは null (捏造しない)', () => {
+  assert.equal(parseCommitContext('', { nowSec: 1 }), null);
+  assert.equal(parseCommitContext('garbage', { nowSec: 1 }), null);
+  assert.equal(parseCommitContext('transcript=/x\namend=0\n', { nowSec: 1 }), null, 'ts 欠落');
+});
+
+test('transcript が空でもマーカーとしては成立する (刻印は unknown へ落ちる)', () => {
+  // 「Claude が commit を走らせている」ことと「model が読める」ことは別の事実。
+  // 前者だけ確かなら刻む — 人間のコミットと区別可能に保つほうが優先 (ADR-092)。
+  const now = 1_700_000_000;
+  const parsed = parseCommitContext(
+    buildCommitContext({ transcript: null, amend: false, nowSec: now }), { nowSec: now });
+  assert.deepEqual(parsed, { transcript: null, amend: false });
 });
 
 test('トレーラ行は git interpret-trailers が読める key: value 形式', () => {
