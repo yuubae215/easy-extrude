@@ -28,7 +28,15 @@ from ..contract import (
 )
 from ..engine.feasibility import CollisionChecker, IkSolver
 from ..engine.pipeline import search
-from ..engine.types import Camera, Gripper, Obstacle, Robot, Vec3
+from ..engine.types import (
+    Camera,
+    GripperKind,
+    Obstacle,
+    ParallelJawGripper,
+    Robot,
+    SuctionGripper,
+    Vec3,
+)
 from .derivation import (
     build_request,
     order_by_topmost,
@@ -176,10 +184,20 @@ def _settings_from_wire(request: PickSequenceRequest) -> GraspSettings:
         )
     gripper = None
     if s.gripper is not None:
-        gripper = Gripper(
-            max_opening=s.gripper.max_opening,
-            finger_clearance=s.gripper.finger_clearance,
-        )
+        # kind 判別 (ADR-118)。既定へ倒さない — シーン層も同じ規律。
+        if s.gripper.kind == GripperKind.SUCTION.value:
+            gripper = SuctionGripper(
+                cup_diameter=s.gripper.cup_diameter,
+                **({} if s.gripper.seal_tilt_tolerance is None
+                   else {"seal_tilt_tolerance": s.gripper.seal_tilt_tolerance}),
+            )
+        elif s.gripper.kind == GripperKind.PARALLEL_JAW.value:
+            gripper = ParallelJawGripper(
+                max_opening=s.gripper.max_opening,
+                finger_clearance=s.gripper.finger_clearance,
+            )
+        else:
+            raise ValueError(f"未宣言のハンド種別 {s.gripper.kind!r} (ADR-118)")
     return GraspSettings(
         robot=robot,
         objective_weights=dict(s.objective_weights),

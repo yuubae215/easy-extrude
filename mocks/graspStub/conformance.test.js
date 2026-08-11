@@ -189,10 +189,25 @@ test('camera を宣言すると可視性が実際に効く (宣言が無視さ�
   assert.ok(blocked.diagnostics.occlusionNearestMiss > 0, '遮蔽の深さが測れたなら報告する')
 })
 
-test('gripper を宣言し、開口が足りなければ grasp 段で棄却され不足量が載る', () => {
-  const res = stubSolve(request({ gripper: { maxOpening: 0.001, fingerClearance: 0.0005 } }), CONTRACT_VERSION)
+test('平行ジョーの不足量は kind:"opening" として載る (契約 v5 / ADR-118)', () => {
+  const res = stubSolve(request({
+    gripper: { kind: 'parallelJaw', maxOpening: 0.001, fingerClearance: 0.0005 },
+  }), CONTRACT_VERSION)
   assert.ok(res.diagnostics.rejectedByGrasp > 0)
-  assert.ok(res.diagnostics.openingNearestMiss > 0)
+  assert.equal(res.diagnostics.graspNearestMiss.kind, 'opening')
+  assert.ok(res.diagnostics.graspNearestMiss.shortfall > 0)
+})
+
+test('吸引の不足量は kind:"sealPatch" — 開口として報告しない (ADR-118)', () => {
+  // 同じ「あと少し」でも量が違う。opening の欄に入れると、パネルは名前が嘘を
+  // ついているメーターを描くことになる。
+  const res = stubSolve(request({
+    gripper: { kind: 'suction', cupDiameter: 10_000 },
+  }), CONTRACT_VERSION)
+  assert.ok(res.diagnostics.rejectedByGrasp > 0)
+  assert.equal(res.diagnostics.graspNearestMiss.kind, 'sealPatch')
+  assert.ok(res.diagnostics.graspNearestMiss.shortfall > 0)
+  assertConforms(res, 'suction rejection')
 })
 
 // ── Reactivity: the whole reason for a solving stub rather than fixtures ─────

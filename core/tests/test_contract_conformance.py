@@ -68,7 +68,7 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
         returned=1,
         reach_nearest_miss=None,
         occlusion_nearest_miss=None,
-        opening_nearest_miss=None,
+        grasp_nearest_miss=None,
     )
     base.update(overrides)
     return SearchDiagnostics(**base)
@@ -147,7 +147,7 @@ def test_response_diagnostics_rejects_unknown_field():
             "returned": 0,
             "reachNearestMiss": None,
             "occlusionNearestMiss": None,
-            "openingNearestMiss": None,
+            "graspNearestMiss": None,
             "extraField": "not allowed",
         },
     }

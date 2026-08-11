@@ -429,7 +429,11 @@ export class GraspController {
         // comes from — where the surface is, how big the other bodies are. Every
         // judgement about them (can the gripper close on this sample, does the
         // approach clip that body) stays solved in core/ behind the contract.
-        target:    { surfaceSamples: surfaceSamplesFor(targetEntity) },
+        // Which FACES are sampled follows the declared hand (ADR-118): jaws close
+        // across opposed sides, a cup seals on the top. Sampling the wrong face is
+        // not a fidelity loss — core/ measures the object width from these very
+        // samples, so a top-only grid told the jaw gate the box was half as wide.
+        target:    { surfaceSamples: surfaceSamplesFor(targetEntity, params.gripper?.kind ?? null) },
         obstacles: obstaclesExcluding(this._graspTargets(), targetEntity.ref),
         // Judgement params ride plan{} (ADR-084 §4) when the caller supplies
         // them; the front collects none today, so plan{} is normally omitted

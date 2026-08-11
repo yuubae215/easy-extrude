@@ -55,9 +55,9 @@ export interface GraspSearchResponse {
      */
     occlusionNearestMiss: number | null;
     /**
-     * Smallest opening-width shortfall among grasp-rejected candidates (required width minus the gripper's max opening; same length unit as the request geometry). null when no grasp rejection has a measurable width shortfall (e.g. only contact-pair-missing rejections, or none at all).
+     * How close the best grasp-rejected candidate came, as a CLOSED KIND-DISCRIMINATED union (ADR-118, contract v5). Replaces v4 `openingNearestMiss`, whose name and unit assumed a parallel jaw: a suction cup misses by a seal-patch shortfall, not by an opening width, and reporting one as the other would have the client draw a meter labelled in the wrong quantity. null when no grasp rejection has a measurable miss (e.g. only contact-pair-missing rejections, or none at all), and always null when the request declares no gripper. `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.
      */
-    openingNearestMiss: number | null;
+    graspNearestMiss: null | OpeningMiss | SealPatchMiss;
   };
 }
 export interface PoseCandidate {
@@ -124,4 +124,24 @@ export interface ScoreBreakdown {
    * Weighted sum of the normalized objective scores.
    */
   totalScore: number;
+}
+/**
+ * Parallel jaw: the smallest amount by which the jaws failed to span the object.
+ */
+export interface OpeningMiss {
+  kind: "opening";
+  /**
+   * Required width minus the jaw max opening (same length unit as the request geometry).
+   */
+  shortfall: number;
+}
+/**
+ * Suction cup: the smallest amount by which the sealable flat patch fell short of the cup.
+ */
+export interface SealPatchMiss {
+  kind: "sealPatch";
+  /**
+   * Cup diameter minus the diameter of the flat-enough patch found at the contact point (same length unit as the request geometry).
+   */
+  shortfall: number;
 }

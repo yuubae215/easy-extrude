@@ -1,0 +1,102 @@
+GOALS adr118_a_hand_is_a_kind
+
+goal HandIsAKindAndTheFaceFollowsIt
+uuid f36a190a-4388-4c57-a454-d9e905b013d5
+summary "宣言されたハンドの種別ごとに、判定される量・サンプルされる面・報告される near-miss が一致し、種別を言わずに片方のハンドだけが正しく扱われる状態が構造的に存在しない"
+state UnderReview
+labels adr-118, contract-v5, grasp, suction, principle-31, principle-29, kind-union
+artifacts
+- "docs/adr/ADR-118-a-hand-is-a-kind-and-the-face-follows-it.md"
+
+    context Adr118Scope
+    uuid d3220f3f-59ea-4b6d-ae52-072c5ba870f2
+    summary "ADR-118 (Accepted 2026-08-11): 出所は「grasp の意味にエア吸引ハンドの想定も入れてください。ひとまずチャックと吸引ぐらいで」という 1 行の要件。gripper を kind 判別 union へ (D1)、openingNearestMiss を種別つき graspNearestMiss へ置換し contractVersion 4 から 5 へ (D2)、掴む面を kind から引く (D3)、core/ に naive 吸引ゲートを置く (D4)。ADR-090 のロボットゲートと ADR-078 のシーン層は 1 つも変えない"
+    artifacts
+    - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+    - "core/easy_extrude_core/engine/feasibility.py"
+    - "src/domain/graspTargets.js"
+
+    context TheWidthDefectWasMeasuredNotAssumed
+    uuid 9028ee73-1611-4330-bf80-fecd53f11e63
+    summary "出発点の実測: core/ の平行ジョーゲートは対象幅を「全表面サンプルを閉じ軸へ射影した広がり」として測る。ADR-117 の上面 3x3 グリッドは縁から内側へインセットされ局所座標で -d/4, 0, +d/4 に並ぶので射影の広がりは d/2 になる。幅 300mm の箱が 150mm として評価され、閉じられないハンドが通っていた。修正後の対向面サンプリングでは広がりが 300 (真値) になることを実行して確認した"
+    artifacts
+    - "src/domain/graspTargets.test.js"
+
+    justification WhyOptionalSiblingsWereRejected
+    uuid 71cdf16d-b302-4b97-98a3-de2b578da2e9
+    summary "却下案 A (maxOpening と cupDiameter を同じ平らな gripper オブジェクトに optional で同居) への反証: 開口 0 の吸引ハンド / カップ径を持つ平行ジョー という表現不能にすべき状態が表現可能になる。ADR-060 が response の pose に対して同じ理由で kind 判別 union を選んでおり、その統治を request 側へ写すのが一貫する"
+
+    justification WhyTheVersionWasBumpedInsteadOfStaging
+    uuid 97a5c75d-2e74-4569-82e2-aa76476aa907
+    summary "却下案 B (吸引では openingNearestMiss を null にして版を据え置く) への反証: あと何ミリで届いたかのメーターがチャックには在り吸引には無い差が理由なしに生まれる。原則 #11 は無言の欠落を禁じており、ここでは欠落そのものが仕様になる"
+    artifacts
+    - "packages/grasp-contract/contract-version.json"
+
+    justification WhyKindIsRequiredEvenThoughItBreaksCallers
+    uuid 8b0e4243-44c0-4199-96c1-2bc32b09a4f9
+    summary "kind を optional にして未宣言を parallelJaw へ倒す案への反証: 原則 #31 の fall-through そのもので、宣言された既定と誰も考えなかった種が区別できなくなる。実害は吸引を宣言したのに幅で判定されることで、応答が正しい形をしているぶん最も気づきにくい。in-repo に閉じた呼び手は同一 PR で更新できた"
+    artifacts
+    - "templates/bin-picking-thin-container/grasp-search.request.json"
+
+    assumption SuctionGateIsSampleDensityDependent
+    uuid e91d76f5-a5eb-4ed2-a2fc-1c6ba844fa3b
+    summary "反証されうる仮説: 点サンプル表現でシールパッチを測るのは実用上十分である。反証されうる形は、面は連続なのにサンプルが疎でパッチを過小評価し掴めるものを棄却すること。密度は宣言側の責任になるが、いまの 3x3 グリッドが吸引カップに対して十分かは実データで較正していない"
+    artifacts
+    - "core/easy_extrude_core/engine/feasibility.py"
+
+    assumption GraspStabilityMeaningStaysHandDependent
+    uuid 2c135ed2-1196-4519-8f6f-d6c879a9d3e1
+    summary "既知の穴 (この ADR では直していない): grasp_stability は進入ベクトルと法線の内積で、吸引にはほぼ正しい指標だがチャックには弱い代理でしかない。objective の意味が既にハンド種別依存だったことが露出しただけで、種別ごとに割る判断は ADR-121 へ送った"
+    artifacts
+    - "core/easy_extrude_core/engine/objectives.py"
+
+    assumption StubClaimMatchedStubImplementation
+    uuid 0e09446e-afec-44b2-9684-1adf3cf42403
+    summary "反証された仮説 (実装中に反証): grasp スタブは grasp レーンだけを差し替える。実際には /auth/token に答えるだけで bffConnected が真になり WebSocket ジオメトリチャネルと Node Editor の配線まで進んでいた。スタブレーンを有効にして全 e2e を通したとき初めて露見し、無関係な smoke 3 本が落ちた (フラグ無しでは通る)。_initBff をそこで止めて主張を実装の広さに揃えた"
+    artifacts
+    - "src/controller/AppController.js"
+    - "e2e/grasp-stub.spec.js"
+
+    context BusinessTreeAttachPoint
+    uuid babbd165-329c-463b-8982-2f56fb6bb752
+    summary "事業木 docs/gsn/profit-growth.gsn への接続は保留。接続予定先は grasp 判定の枝 (docs/gsn/adr-081-grasp-validation.gsn 経由)。保留理由は ADR-119 と 120 と 121 が未実装で把持判定の全体像がまだ動いている最中だから"
+    artifacts
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    strategy ByMakingTheKindDecideEveryDependentQuantity
+    uuid 42f7fc1b-e88e-4423-87ac-9c8f8b7ec66a
+    summary "種別に依存する 3 つの量 (どのチェッカが走るか / どの面をサンプルするか / どの kind で near-miss を報告するか) をすべて kind から 1 箇所ずつ引かせ、未宣言の kind ではどれも既定へ倒れないようにする。そのうえで契約の両端が同じ版に一致していることを別に示す"
+
+        goal UndeclaredKindsAreRefusedEverywhere
+        uuid 438e9415-7017-4dc2-9c38-d7c438a592bb
+        summary "未宣言のハンド種別は、契約と core/ の adapter とチェッカ選択と near-miss kind と面サンプリングとフロントの presets / gaps のどこでも既定へ倒れず throw する"
+
+            solution KindRefusalIsExecuted
+            uuid ae772e38-ebd7-4ee9-874a-575c1c519c17
+            summary "core/tests/test_engine.py の未宣言 kind テストと src/context/GraspDeclarationCatalog.test.js の gripperPresetsFor / gripperDeclarationGaps が、kind 欠落と未知 kind の両方で throw することを焼く。core 141 本 / front 1168 本すべて緑"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "src/context/GraspDeclarationCatalog.test.js"
+
+        goal EachHandIsMeasuredInItsOwnQuantity
+        uuid 2abd279c-bde4-4bd5-b935-c20711f6224f
+        summary "平行ジョーは開口幅で、吸引はシールパッチで判定され、near-miss もそれぞれの kind で報告される"
+
+            solution PerKindMeasurementIsExecuted
+            uuid 9f68a3fb-9aaa-49fa-a258-abd13e16303c
+            summary "core/tests/test_engine.py の吸引ゲート 2 本 (平坦パッチでシール / 大きすぎるカップで不足) と near-miss kind 2 本 (opening と sealPatch)、mocks/graspStub/conformance.test.js の同型 2 本。スタブは契約スキーマに対して検証され、検証器自身の否定対照も持つ"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "mocks/graspStub/conformance.test.js"
+
+        goal BothEndsAgreeOnContractV5
+        uuid be675658-e457-4fe3-ab58-4c03aa3574c7
+        summary "契約 v5 の request と response の双方に、BFF の導出型と core/ の pydantic バインディングが一致する"
+
+            solution ContractConformanceIsExecuted
+            uuid 1297ba3c-8242-4a70-a6d0-f2c787df59cf
+            summary "pnpm test:contract 23 本と core/tests/test_contract_conformance.py が緑。CI の contract-wall が response スキーマ変更に版上げを要求し、contract-version.json は同一 PR で 4 から 5 へ"
+            artifacts
+            - "server/test/grasp.contract.test.js"
+            - "core/tests/test_contract_conformance.py"
+

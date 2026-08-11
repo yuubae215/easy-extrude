@@ -30,6 +30,8 @@ from .types import (
     Camera,
     GraspCandidate,
     Gripper,
+    GripperKind,
+    SuctionGripper,
     Obstacle,
     Robot,
     TargetObject,
@@ -283,7 +285,7 @@ class GraspChecker(Protocol):
     wrench cone 等の高忠実度実装への差し替えは Protocol 内で閉じる (Phase 4)。
     """
 
-    def opening_miss(
+    def grasp_miss(
         self, candidate: GraspCandidate, gripper: Gripper, target: TargetObject
     ) -> float: ...
 
@@ -306,7 +308,7 @@ class NaiveParallelJawGraspChecker:
     # これ未満の射影広がりは「接触対なし」とみなす (数値ゼロ幅の退化ガード)。
     _MIN_WIDTH = 1e-9
 
-    def opening_miss(
+    def grasp_miss(
         self, candidate: GraspCandidate, gripper: Gripper, target: TargetObject
     ) -> float:
         if len(target.surface_samples) < 2:
@@ -322,16 +324,114 @@ class NaiveParallelJawGraspChecker:
         return max(0.0, required - gripper.max_opening)
 
 
+class NaiveSuctionGraspChecker:
+    """外部依存ゼロの素朴な吸引ゲート (ADR-118)。
+
+    判定 (naive 既定):
+    - 接触点 = 候補の把持点。接触法線 = その表面サンプルの外向き法線。
+    - カップ footprint = 接触点を中心とした半径 cup_diameter/2 の球内の表面サンプル。
+    - シール可否 = footprint 内の全サンプルの法線が、接触法線から
+      seal_tilt_tolerance 以内に収まっていること (段差・曲率の素朴な代理)。
+    - 不足量 = カップ径 − 実際にシールできた平坦パッチの直径。
+
+    平行ジョーの `opening_miss` と **測る量が違う** ことがこのクラスの存在理由で、
+    だからこそ near-miss も別 kind としてワイヤに載る (契約 v5)。近似の限界:
+    法線のみを見るので、法線が揃っていても穴の開いた面や多孔質の面は通してしまう
+    (材質・粗さは扱わない — 高忠実度実装への差し替えは Protocol 内で閉じる)。
+    **サンプル密度に依存する**: 面が連続でもサンプルが疎ならパッチを過小評価する。
+    これは点サンプル表現そのものの限界で、密度は宣言側 (フロントの面サンプリング) の
+    責任になる — ADR-118 が面の選び方を kind に従わせたのと同じ理由。
+    """
+
+    def grasp_miss(
+        self, candidate: GraspCandidate, gripper: SuctionGripper, target: TargetObject
+    ) -> float:
+        radius = gripper.cup_diameter / 2.0
+        if radius <= 0.0:
+            return math.inf
+        # 接触点と接触法線は候補が既に持っている (候補は表面サンプルから生成される)。
+        # 最近傍サンプルを引き直すと同じ事実の第二の源になる (§1.1)。
+        point = candidate.pose.position
+        contact_normal = candidate.surface_normal.normalized()
+        if contact_normal.norm() < _EPS:
+            return math.inf
+
+        # footprint 内で法線が揃っているサンプルの、接触点からの最大到達半径。
+        # 揃っていないサンプルに当たった時点でそこがパッチの縁になる。
+        sealed_radius = 0.0
+        blocked_radius = math.inf
+        for p, n in target.surface_samples:
+            d = (p - point).norm()
+            if d > radius:
+                continue
+            unit = n.normalized()
+            if unit.norm() < _EPS:
+                continue
+            cos = max(-1.0, min(1.0, unit.dot(contact_normal)))
+            if math.acos(cos) <= gripper.seal_tilt_tolerance:
+                sealed_radius = max(sealed_radius, d)
+            else:
+                blocked_radius = min(blocked_radius, d)
+
+        # パッチは **2 つの理由**で切れる: 平坦でないサンプルに当たったか (段差・曲率)、
+        # あるいは面がそこで終わっているか (カップが縁からはみ出す)。後者を忘れると、
+        # 小さな平面に巨大なカップを当てても「完全にシールした」と報告する。
+        patch_radius = min(sealed_radius, blocked_radius)
+        shortfall = gripper.cup_diameter - 2.0 * patch_radius
+        return max(0.0, shortfall)
+
+
+#: kind -> naive チェッカ。**未宣言の kind では KeyError ではなく明示的に throw する**
+#: (原則 #31 — fall-through は「宣言された既定」と「誰も考えなかった種」を区別不能にする)。
+_CHECKER_BY_KIND: dict[GripperKind, object] = {
+    GripperKind.PARALLEL_JAW: NaiveParallelJawGraspChecker(),
+    GripperKind.SUCTION: NaiveSuctionGraspChecker(),
+}
+
+
+def checker_for(gripper: Gripper):
+    """宣言されたハンドの種別に対応する naive チェッカ (ADR-118)。
+
+    種別ごとに測る量が違うので、ここが唯一の分岐点 (§1.1)。未宣言の種別は
+    平行ジョーへ倒さず throw する — 倒すと吸引を宣言したのに幅で判定される、という
+    最も気づきにくい嘘になる。
+    """
+    kind = getattr(gripper, "kind", None)
+    checker = _CHECKER_BY_KIND.get(kind)
+    if checker is None:
+        raise ValueError(
+            f"未宣言のハンド種別 {kind!r}: _CHECKER_BY_KIND に行を足すこと。"
+            f"既定へ倒すと、宣言と判定が食い違ったまま緑になる (ADR-118 / 原則 #31)"
+        )
+    return checker
+
+
 def graspable(
     candidate: GraspCandidate,
     gripper: Optional[Gripper],
     target: TargetObject,
-    checker: GraspChecker,
+    checker: Optional[object] = None,
 ) -> bool:
-    """注入チェッカでグリッパが対象を幾何的に掴めるか。
+    """宣言されたハンドが対象を幾何的に掴めるか (ADR-118 で kind 分岐)。
 
     gripper 未宣言 (None) はゲート無効 = 常に True (既存挙動を無言で変えない)。
+    checker を渡さなければ kind から naive 既定を引く。
     """
     if gripper is None:
         return True
-    return checker.opening_miss(candidate, gripper, target) <= 0.0
+    return grasp_miss(candidate, gripper, target, checker) <= 0.0
+
+
+def grasp_miss(
+    candidate: GraspCandidate,
+    gripper: Gripper,
+    target: TargetObject,
+    checker: Optional[object] = None,
+) -> float:
+    """種別に応じた「あとどれだけ足りないか」(ADR-118)。
+
+    平行ジョーなら開口幅の不足、吸引ならシールパッチの不足。**単位は同じ長さでも
+    意味が違う**ので、呼び出し側はこの値を kind と対にしてワイヤへ載せること。
+    """
+    c = checker if checker is not None else checker_for(gripper)
+    return c.grasp_miss(candidate, gripper, target)

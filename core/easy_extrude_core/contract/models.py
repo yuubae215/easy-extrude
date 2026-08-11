@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -98,6 +98,18 @@ class PoseCandidate(_ContractModel):
     score: ScoreBreakdown
 
 
+class GraspNearestMiss(_ContractModel):
+    """把持棄却の「あとどれだけ」を、量の種別つきで運ぶ (契約 v5, ADR-118)。
+
+    kind 判別の有界 union。`opening` は平行ジョーの開口不足、`sealPatch` は吸引の
+    シールパッチ不足で、どちらも長さだがユーザーに見せる文言もメーターの基準も違う。
+    枝を足すのは契約の版を上げる意図的行為 (ADR-060 の統治をそのまま適用)。
+    """
+
+    kind: Literal["opening", "sealPatch"]
+    shortfall: float = Field(ge=0.0)
+
+
 class SearchDiagnostics(_ContractModel):
     """探索全体の棄却ファネル + ドメイン別 near-miss (契約 v4, ADR-079/081)。
 
@@ -121,8 +133,11 @@ class SearchDiagnostics(_ContractModel):
     reach_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
     # 可視棄却候補の最小遮蔽量。測定可能な可視棄却が無ければ None (視野外のみ等)。
     occlusion_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
-    # 把持棄却候補の最小開口不足量。測定可能な把持棄却が無ければ None (接触対なし等)。
-    opening_nearest_miss: Optional[float] = Field(default=None, ge=0.0)
+    # 把持棄却候補の最小不足量を **種別つき** で運ぶ (契約 v5, ADR-118)。v4 の
+    # `opening_nearest_miss` は名前も単位も平行ジョー専用だったので、吸引の
+    # シールパッチ不足を同じ欄で報告すると、クライアントは違う量のメーターを描く。
+    # 測定可能な把持棄却が無ければ None (接触対なし等 / gripper 未宣言)。
+    grasp_nearest_miss: Optional[GraspNearestMiss] = None
 
 
 class GraspSearchResponse(_ContractModel):

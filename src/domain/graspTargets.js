@@ -39,6 +39,7 @@
  */
 
 import { VALID_ENTITY_TYPES } from '../layout/LayoutDslSchema.js'
+import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 
 /**
  * The graspable-target roster's cardinality, as a named state rather than a bare
@@ -202,50 +203,116 @@ export function selectTarget(targets, ref) {
 }
 
 /**
- * How many samples are taken across each axis of the graspable face. 3×3 minus
- * nothing = 9 points: enough that `core/`'s per-sample candidate generation has a
- * spread to rank (a single point yields a single candidate and an unrankable
- * "top-N"), few enough to stay legible in the funnel counts.
+ * How many samples are taken across each axis of a sampled face. 3×3 = 9 points:
+ * enough that `core/`'s per-sample candidate generation has a spread to rank (a
+ * single point yields a single candidate and an unrankable "top-N"), few enough
+ * to stay legible in the funnel counts.
  */
 const GRID = 3
 
 /**
- * Derive the wire-shaped `target.surfaceSamples` for one target: a grid over its
- * TOP face, each with the outward normal of that face, expressed in the world
- * frame.
+ * Which faces of the box a hand actually touches (ADR-118).
  *
- * The top face is the honest default for a declared box: it is the face a
- * top-mounted arm can reach without the sample itself being buried in the body,
- * and it is the face `core/`'s naive candidate generator turns into a
- * face-on approach (`approach = -normal`). Choosing the graspable face properly
- * (from the gripper's kinematics and the surrounding clutter) is a SOLVING
- * question and stays in `core/` — this only declares where the surface is.
+ * **This table is the fix for a real defect.** Before it, every request sampled
+ * the top face only, and `core/`'s parallel-jaw gate measures the object width as
+ * the spread of the surface samples projected onto the closing axis. A 3×3 grid
+ * inset from the rim spans `d/2`, not `d` — so a 300 mm box reported a 150 mm
+ * width and the gate passed jaws that physically cannot close on it. The gate was
+ * optimistic by exactly 2×, and nothing was wrong with the gate: the samples were
+ * describing a face the jaws never touch.
  *
- * Rotation is applied to the local offsets and to the normal, so a tilted solid
- * reports its actual face rather than an axis-aligned lie.
+ * A suction cup, by contrast, seals against the top — for it the old sampling was
+ * the right face all along. That is the whole point: the face to sample is a
+ * property of the HAND, not of the object, and leaving it unstated meant silently
+ * serving one hand and misleading the other.
+ *
+ * Values are unit local-axis pairs: which axis the face normal points along, and
+ * (for opposed faces) that they come in a pair the jaws close across.
+ */
+const FACES_BY_GRIPPER_KIND = Object.freeze({
+  // Jaws close across two opposed side faces (±X here — the closing axis the
+  // solver derives from the candidate's roll picks which pair actually matters,
+  // and sampling both gives it the full width to project).
+  [GRIPPER_KIND.PARALLEL_JAW]: Object.freeze(['+x', '-x']),
+  // A cup seals on one face, and the reachable one on a bin is the top.
+  [GRIPPER_KIND.SUCTION]: Object.freeze(['+z']),
+})
+
+/**
+ * The faces to sample for a declared hand kind. **Throws on an undeclared kind**
+ * (原則 #31): defaulting would resurrect exactly the defect above, where a hand
+ * silently got samples from a face it never touches.
+ *
+ * `null` (no gripper declared) is legal and means the grasp gate is vacuous, so
+ * the sampled face only has to be *plausible* — the top face is the one a reader
+ * expects to see ghosts on.
+ *
+ * @param {string|null|undefined} kind
+ * @returns {ReadonlyArray<string>}
+ */
+export function facesForGripperKind(kind) {
+  if (kind == null) return FACES_BY_GRIPPER_KIND[GRIPPER_KIND.SUCTION]
+  const faces = FACES_BY_GRIPPER_KIND[kind]
+  if (!faces) {
+    throw new Error(
+      `graspTargets: 未宣言のハンド種別 "${kind}"。FACES_BY_GRIPPER_KIND に行を足すこと ` +
+      `— 既定へ倒すと、触れもしない面のサンプルで把持ゲートが判定される (ADR-118)`,
+    )
+  }
+  return faces
+}
+
+/** Local-frame outward normal of a named face. */
+const FACE_NORMAL = Object.freeze({
+  '+x': Object.freeze({ x: 1, y: 0, z: 0 }),
+  '-x': Object.freeze({ x: -1, y: 0, z: 0 }),
+  '+z': Object.freeze({ x: 0, y: 0, z: 1 }),
+})
+
+/**
+ * Derive the wire-shaped `target.surfaceSamples` for one target: a grid over each
+ * face the declared hand actually touches, each sample carrying that face's
+ * outward normal, expressed in the world frame.
+ *
+ * Choosing WHICH face is a declaration (what the hand touches); deciding whether
+ * the grasp holds is `core/`'s. Rotation is applied to the local offsets and to
+ * the normals, so a tilted solid reports its actual faces rather than an
+ * axis-aligned lie.
  *
  * @param {GraspTarget} target
+ * @param {string|null} [gripperKind]  a `GRIPPER_KIND` value, or null when undeclared
  * @returns {{point:[number,number,number], normal:[number,number,number]}[]}
  */
-export function surfaceSamplesFor(target) {
+export function surfaceSamplesFor(target, gripperKind = null) {
   if (!target) return []
   const { position: p, dimensions: d, rotation: q } = target
-  const hz = d.z / 2
-  // Inset the grid so samples sit ON the face rather than exactly on its rim,
-  // where "is this point on the body" is ambiguous for any downstream check.
-  const stepX = d.x / (GRID + 1)
-  const stepY = d.y / (GRID + 1)
-  const normal = rotateVec3({ x: 0, y: 0, z: 1 }, q)
-
+  const half = { x: d.x / 2, y: d.y / 2, z: d.z / 2 }
   const samples = []
-  for (let i = 1; i <= GRID; i++) {
-    for (let j = 1; j <= GRID; j++) {
-      const local = { x: -d.x / 2 + stepX * i, y: -d.y / 2 + stepY * j, z: hz }
-      const world = rotateVec3(local, q)
-      samples.push({
-        point:  /** @type {[number,number,number]} */ ([p.x + world.x, p.y + world.y, p.z + world.z]),
-        normal: /** @type {[number,number,number]} */ ([normal.x, normal.y, normal.z]),
-      })
+
+  for (const face of facesForGripperKind(gripperKind)) {
+    const n = FACE_NORMAL[face]
+    const worldNormal = rotateVec3(n, q)
+    // The two in-plane axes of this face, and the fixed offset along its normal.
+    const inPlane = face === '+z' ? ['x', 'y'] : ['y', 'z']
+    const [uAxis, vAxis] = inPlane
+    const uStep = d[uAxis] / (GRID + 1)
+    const vStep = d[vAxis] / (GRID + 1)
+
+    for (let i = 1; i <= GRID; i++) {
+      for (let j = 1; j <= GRID; j++) {
+        const local = { x: 0, y: 0, z: 0 }
+        local[uAxis] = -half[uAxis] + uStep * i
+        local[vAxis] = -half[vAxis] + vStep * j
+        // Ride the face itself, at the full half-extent along its normal — this is
+        // the term the old top-only sampling never contributed for a jaw, and its
+        // absence is what halved the measured width.
+        local[face.endsWith('x') ? 'x' : 'z'] = n.x !== 0 ? n.x * half.x : n.z * half.z
+        const world = rotateVec3(local, q)
+        samples.push({
+          point:  /** @type {[number,number,number]} */ ([p.x + world.x, p.y + world.y, p.z + world.z]),
+          normal: /** @type {[number,number,number]} */ ([worldNormal.x, worldNormal.y, worldNormal.z]),
+        })
+      }
     }
   }
   return samples

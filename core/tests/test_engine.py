@@ -18,9 +18,11 @@ from easy_extrude_core.contract import (
 from easy_extrude_core.engine import (
     Camera,
     GraspCandidate,
-    Gripper,
+    ParallelJawGripper,
+    SuctionGripper,
     NaiveIkSolver,
     NaiveParallelJawGraspChecker,
+    NaiveSuctionGraspChecker,
     NaiveSightlineVisibilityChecker,
     NaiveSphereCollisionChecker,
     NormSpec,
@@ -529,11 +531,11 @@ def test_naive_grasp_checker_gates_on_projected_width():
         pre_grasp=Vec3(0, 0, 0.1),
         surface_normal=Vec3(0, 0, 1),
     )
-    wide = Gripper(max_opening=0.06, finger_clearance=0.01)
-    assert checker.opening_miss(top_down, wide, target) == 0.0
+    wide = ParallelJawGripper(max_opening=0.06, finger_clearance=0.01)
+    assert checker.grasp_miss(top_down, wide, target) == 0.0
     # 開口 0.035 < 0.03 + 0.01 -> 不足 0.005。
-    narrow = Gripper(max_opening=0.035, finger_clearance=0.01)
-    assert math.isclose(checker.opening_miss(top_down, narrow, target), 0.005)
+    narrow = ParallelJawGripper(max_opening=0.035, finger_clearance=0.01)
+    assert math.isclose(checker.grasp_miss(top_down, narrow, target), 0.005)
 
 
 def test_naive_grasp_checker_roll_rotates_closing_axis():
@@ -546,13 +548,13 @@ def test_naive_grasp_checker_roll_rotates_closing_axis():
         pre_grasp=Vec3(0, 0, 0.1),
         surface_normal=Vec3(0, 0, 1),
     )
-    gripper = Gripper(max_opening=0.045, finger_clearance=0.01)
-    assert math.isclose(checker.opening_miss(rolled, gripper, target), 0.005)
+    gripper = ParallelJawGripper(max_opening=0.045, finger_clearance=0.01)
+    assert math.isclose(checker.grasp_miss(rolled, gripper, target), 0.005)
 
 
 def test_naive_grasp_checker_degenerate_contact_pair_is_inf():
     checker = NaiveParallelJawGraspChecker()
-    gripper = Gripper(max_opening=1.0)
+    gripper = ParallelJawGripper(max_opening=1.0)
     cand = GraspCandidate(
         pose=Pose(position=Vec3(0, 0, 0), approach=Vec3(0, 0, -1), roll=0.0),
         pre_grasp=Vec3(0, 0, 0.1),
@@ -560,7 +562,7 @@ def test_naive_grasp_checker_degenerate_contact_pair_is_inf():
     )
     # サンプル 1 点以下 -> 接触対を定義できない -> inf (幅では測れない棄却)。
     single = TargetObject(surface_samples=((Vec3(0, 0, 0), Vec3(0, 0, 1)),))
-    assert checker.opening_miss(cand, gripper, single) == math.inf
+    assert checker.grasp_miss(cand, gripper, single) == math.inf
 
 
 def test_graspable_gate_off_without_gripper_declaration():
@@ -595,7 +597,7 @@ def test_search_report_without_declarations_keeps_new_stages_at_zero():
     assert d.rejected_by_visibility == 0
     assert d.rejected_by_grasp == 0
     assert d.occlusion_nearest_miss is None
-    assert d.opening_nearest_miss is None
+    assert d.grasp_nearest_miss is None
     assert _funnel_total(d) == d.candidates_generated
 
 
@@ -636,12 +638,12 @@ def test_search_report_counts_grasp_rejections_with_opening_miss():
     # 円弧サンプル (半径 1 の 0..90deg) の射影幅は閉じ軸によらず >= ~0.7。
     # 開口 0.5 では掴めない -> リーチ/IK を通った候補が全て把持段で落ちる。
     decl = _declaration_dict()
-    decl["gripper"] = {"maxOpening": 0.5, "fingerClearance": 0.0}
+    decl["gripper"] = {"kind": "parallelJaw", "maxOpening": 0.5, "fingerClearance": 0.0}
     d = search_report(_build_request(decl)).diagnostics
     assert d.rejected_by_grasp == 4
     assert d.feasible == 0
-    assert d.opening_nearest_miss is not None
-    assert d.opening_nearest_miss > 0.0
+    assert d.grasp_nearest_miss is not None
+    assert d.grasp_nearest_miss > 0.0
     assert _funnel_total(d) == d.candidates_generated
 
 
@@ -650,7 +652,7 @@ def test_search_report_five_stage_funnel_partitions_generated():
     # 絡み合うため、素直に「宣言全部乗せ + 障害物」で混成させ、恒等式と排他性を固定する。
     decl = _declaration_dict()
     decl["camera"] = {"position": [0.0, 0.0, 1.0]}
-    decl["gripper"] = {"maxOpening": 2.0, "fingerClearance": 0.0}
+    decl["gripper"] = {"kind": "parallelJaw", "maxOpening": 2.0, "fingerClearance": 0.0}
     decl["obstacles"] = [
         {"center": [0.5, 0.0, 0.5], "radius": 0.2},
         {"center": [0.9, 0.0, 0.0], "radius": 0.15},
@@ -671,12 +673,12 @@ def test_injected_visibility_and_grasp_checkers_override_naive():
             return math.inf
 
     class _NothingGraspable:
-        def opening_miss(self, candidate, gripper, target):
+        def grasp_miss(self, candidate, gripper, target):
             return math.inf
 
     decl = _declaration_dict()
     decl["camera"] = {"position": [0.0, 0.0, 1.0]}
-    decl["gripper"] = {"maxOpening": 2.0}
+    decl["gripper"] = {"kind": "parallelJaw", "maxOpening": 2.0}
     req = _build_request(decl)
     d_vis = search_report(req, visibility_checker=_NothingVisible()).diagnostics
     assert d_vis.rejected_by_visibility == d_vis.candidates_generated == 4
@@ -692,14 +694,84 @@ def test_problem_from_declaration_reads_camera_and_gripper():
         "viewAxis": [0.0, 0.0, -1.0],
         "fovHalfAngle": 0.5,
     }
-    decl["gripper"] = {"maxOpening": 0.08, "fingerClearance": 0.01}
+    decl["gripper"] = {"kind": "parallelJaw", "maxOpening": 0.08, "fingerClearance": 0.01}
     problem = problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
     assert problem.camera == Camera(
         position=Vec3(0.1, 0.2, 0.3), view_axis=Vec3(0.0, 0.0, -1.0), fov_half_angle=0.5
     )
-    assert problem.gripper == Gripper(max_opening=0.08, finger_clearance=0.01)
+    assert problem.gripper == ParallelJawGripper(max_opening=0.08, finger_clearance=0.01)
     # 未宣言なら None (ゲート無効)。
     bare = problem_from_declaration(
         GraspSearchDeclaration.model_validate(_declaration_dict())
     )
     assert bare.camera is None and bare.gripper is None
+
+
+# --- ADR-118: ハンドは種別で、測る量が違う ------------------------------------
+
+
+def test_unknown_gripper_kind_raises_instead_of_defaulting_to_jaw():
+    """未宣言の kind を平行ジョーへ倒さない (原則 #31)。
+
+    倒すと「吸引を宣言したのに幅で判定される」という、応答が正しい形をしているぶん
+    最も気づきにくい嘘になる。拒否のほうが安い。
+    """
+    decl = _declaration_dict()
+    decl["gripper"] = {"maxOpening": 0.5}  # kind 欠落
+    with pytest.raises(ValueError, match="未宣言のハンド種別"):
+        problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
+
+    decl["gripper"] = {"kind": "magnet", "maxOpening": 0.5}
+    with pytest.raises(ValueError, match="未宣言のハンド種別"):
+        problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
+
+
+def test_suction_seals_on_a_flat_patch_and_misses_on_a_small_one():
+    """吸引ゲートは幅ではなく平坦パッチを測る (ADR-118)。
+
+    同じ対象・同じ候補でも、カップがパッチより大きければ不足量が出る。平行ジョーの
+    `opening` とは違う量なので、ワイヤの near-miss kind も別になる。
+    """
+    # 平坦な上面 (法線はすべて +Z)。パッチ直径は 0.04。
+    samples = tuple(
+        (Vec3(x, 0.0, 0.0), Vec3(0.0, 0.0, 1.0)) for x in (-0.02, -0.01, 0.0, 0.01, 0.02)
+    )
+    target = TargetObject(surface_samples=samples)
+    candidate = GraspCandidate(
+        pose=Pose(position=Vec3(0.0, 0.0, 0.0), approach=Vec3(0.0, 0.0, -1.0), roll=0.0),
+        pre_grasp=Vec3(0.0, 0.0, 0.1),
+        surface_normal=Vec3(0.0, 0.0, 1.0),
+    )
+    checker = NaiveSuctionGraspChecker()
+
+    small_cup = SuctionGripper(cup_diameter=0.02)
+    assert checker.grasp_miss(candidate, small_cup, target) == 0.0
+
+    big_cup = SuctionGripper(cup_diameter=0.20)
+    assert checker.grasp_miss(candidate, big_cup, target) > 0.0
+
+
+def test_suction_miss_is_reported_as_sealPatch_not_opening():
+    """near-miss は種別つきで載る (契約 v5)。
+
+    v4 では `openingNearestMiss` 1 本しか無かったので、吸引の不足量を報告しようと
+    すると名前が嘘をつく欄に入れるしかなかった。
+    """
+    decl = _declaration_dict()
+    decl["gripper"] = {"kind": "suction", "cupDiameter": 50.0}
+    report = search_report(_build_request(decl))
+    d = report.diagnostics
+    if d.rejected_by_grasp > 0:
+        assert d.grasp_nearest_miss_kind == "sealPatch"
+        wire = report.response.diagnostics.grasp_nearest_miss
+        assert wire is not None and wire.kind == "sealPatch"
+
+
+def test_parallel_jaw_miss_is_still_reported_as_opening():
+    decl = _declaration_dict()
+    decl["gripper"] = {"kind": "parallelJaw", "maxOpening": 1e-6}
+    report = search_report(_build_request(decl))
+    d = report.diagnostics
+    assert d.rejected_by_grasp > 0
+    assert d.grasp_nearest_miss_kind == "opening"
+    assert report.response.diagnostics.grasp_nearest_miss.kind == "opening"

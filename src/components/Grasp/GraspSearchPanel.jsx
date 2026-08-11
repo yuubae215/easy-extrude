@@ -4,8 +4,9 @@ import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import {
-  CAMERA_PRESETS, GRIPPER_PRESETS, matchingPresetId,
+  CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
   cameraDeclarationGaps, gripperDeclarationGaps, OBJECTIVE,
+  GRIPPER_KIND, DECLARED_GRIPPER_KINDS,
 } from '../../context/GraspDeclarationCatalog.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
@@ -107,8 +108,19 @@ function parseCameraForm(v) {
   return cam
 }
 
+/**
+ * Parse the Grasped card into the wire's kind-discriminated hand declaration
+ * (ADR-118). The kind decides which fields even exist, so it is carried through
+ * rather than inferred — reading `maxOpening` off a suction form would be the
+ * flat-object shape the union exists to prevent.
+ */
 function parseGripperForm(g) {
-  const out = { maxOpening: parseNum(g.maxOpening) }
+  if (g.kind === GRIPPER_KIND.SUCTION) {
+    const out = { kind: GRIPPER_KIND.SUCTION, cupDiameter: parseNum(g.cupDiameter) }
+    if (!isBlank(g.sealTiltTolerance)) out.sealTiltTolerance = parseNum(g.sealTiltTolerance)
+    return out
+  }
+  const out = { kind: GRIPPER_KIND.PARALLEL_JAW, maxOpening: parseNum(g.maxOpening) }
   if (!isBlank(g.fingerClearance)) out.fingerClearance = parseNum(g.fingerClearance)
   return out
 }
@@ -184,11 +196,20 @@ export function GraspSearchPanel() {
     viewAxis:     CAMERA_PRESETS[0].params.viewAxis.map(String),
     fovHalfAngle: String(CAMERA_PRESETS[0].params.fovHalfAngle),
   }))
-  const [grip, setGrip] = useState(() => ({
-    enabled: false,
-    maxOpening:      String(GRIPPER_PRESETS[0].params.maxOpening),
-    fingerClearance: String(GRIPPER_PRESETS[0].params.fingerClearance),
-  }))
+  const [grip, setGrip] = useState(() => {
+    const jaw = gripperPresetsFor(GRIPPER_KIND.PARALLEL_JAW)[0].params
+    const cup = gripperPresetsFor(GRIPPER_KIND.SUCTION)[0].params
+    // Both kinds' fields are seeded so switching kind never lands on a blank form
+    // (selection-first premise, ADR-063); only the active kind's fields are read.
+    return {
+      enabled: false,
+      kind: GRIPPER_KIND.PARALLEL_JAW,
+      maxOpening:        String(jaw.maxOpening),
+      fingerClearance:   String(jaw.fingerClearance),
+      cupDiameter:       String(cup.cupDiameter),
+      sealTiltTolerance: String(cup.sealTiltTolerance),
+    }
+  })
   const [captureNote, setCaptureNote] = useState(null)
 
   const camParams  = useMemo(() => parseCameraForm(vision), [vision])
@@ -210,10 +231,21 @@ export function GraspSearchPanel() {
     viewAxis:     p.params.viewAxis.map(String),
     fovHalfAngle: String(p.params.fovHalfAngle),
   }))
+  // A preset carries its own kind (ADR-118), so applying one sets the kind too —
+  // otherwise picking a suction preset while the jaw kind is active would fill
+  // fields nothing reads.
   const applyGripperPreset = (p) => setGrip(g => ({
     ...g,
-    maxOpening:      String(p.params.maxOpening),
-    fingerClearance: String(p.params.fingerClearance),
+    kind: p.params.kind,
+    ...(p.params.kind === GRIPPER_KIND.SUCTION
+      ? {
+          cupDiameter:       String(p.params.cupDiameter),
+          sealTiltTolerance: String(p.params.sealTiltTolerance),
+        }
+      : {
+          maxOpening:      String(p.params.maxOpening),
+          fingerClearance: String(p.params.fingerClearance),
+        }),
   }))
 
   // "Use current view" (ADR-081 §5): the controller snapshots the active
@@ -338,16 +370,48 @@ export function GraspSearchPanel() {
         onToggle={(on) => setGrip(g => ({ ...g, enabled: on }))}
         offHint="no gripper declared — graspability passes everything"
       >
+        {/* The kind comes first: it decides which fields below even exist
+            (ADR-118). Not a dropdown of presets — the hand type is a different
+            question from which model of that hand. */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+          {DECLARED_GRIPPER_KINDS.map(k => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setGrip(g => ({ ...g, kind: k }))}
+              style={{
+                flex: 1, fontSize: '11px', padding: '3px 6px', borderRadius: '4px',
+                cursor: 'pointer',
+                background: grip.kind === k ? COLOR.accentSoft : COLOR.surfaceSunken,
+                color:      grip.kind === k ? COLOR.accent : '#bbb',
+                border: `1px solid ${grip.kind === k ? COLOR.accent : '#444'}`,
+              }}
+            >
+              {k === GRIPPER_KIND.SUCTION ? 'suction' : 'parallel jaw'}
+            </button>
+          ))}
+        </div>
         <PresetChips
-          presets={GRIPPER_PRESETS}
-          activeId={matchingPresetId(GRIPPER_PRESETS, gripParams)}
+          presets={gripperPresetsFor(grip.kind)}
+          activeId={matchingPresetId(gripperPresetsFor(grip.kind), gripParams)}
           onPick={applyGripperPreset}
         />
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <NumField label="max opening" value={grip.maxOpening} step="0.005"
-            onChange={(s) => setGrip(g => ({ ...g, maxOpening: s }))} />
-          <NumField label="finger clearance" value={grip.fingerClearance} step="0.005"
-            onChange={(s) => setGrip(g => ({ ...g, fingerClearance: s }))} />
+          {grip.kind === GRIPPER_KIND.SUCTION ? (
+            <>
+              <NumField label="cup diameter" value={grip.cupDiameter} step="0.005"
+                onChange={(s) => setGrip(g => ({ ...g, cupDiameter: s }))} />
+              <NumField label="seal tilt (rad)" value={grip.sealTiltTolerance} step="0.05"
+                onChange={(s) => setGrip(g => ({ ...g, sealTiltTolerance: s }))} />
+            </>
+          ) : (
+            <>
+              <NumField label="max opening" value={grip.maxOpening} step="0.005"
+                onChange={(s) => setGrip(g => ({ ...g, maxOpening: s }))} />
+              <NumField label="finger clearance" value={grip.fingerClearance} step="0.005"
+                onChange={(s) => setGrip(g => ({ ...g, fingerClearance: s }))} />
+            </>
+          )}
         </div>
       </DomainCard>
 
@@ -727,7 +791,16 @@ function DiagnosticsFunnel({ diagnostics, prev }) {
   const meters = [
     { key: 'reach',     miss: diagnostics.reachNearestMiss,     what: 'missed reach by' },
     { key: 'occlusion', miss: diagnostics.occlusionNearestMiss, what: 'occluded by' },
-    { key: 'opening',   miss: diagnostics.openingNearestMiss,   what: 'opening short by' },
+    // Contract v5 (ADR-118): the label comes from the wire's `kind`, so a suction
+    // seal shortfall is never printed as an "opening". Reporting one quantity under
+    // the other's name is the failure the union was added to prevent.
+    {
+      key:  'grasp',
+      miss: diagnostics.graspNearestMiss?.shortfall ?? null,
+      what: diagnostics.graspNearestMiss?.kind === 'sealPatch'
+        ? 'seal patch short by'
+        : 'opening short by',
+    },
   ].map(m => ({ ...m, closeness: nearMissCloseness(m.miss) }))
    .filter(m => m.closeness != null)
 

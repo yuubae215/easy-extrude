@@ -19,7 +19,7 @@ import { STUB_SCENARIO } from './scenarios.js'
 function funnel({
   generated, reach = 0, visibility = 0, ik = 0, interference = 0, grasp = 0,
   feasible = 0, returned = 0,
-  reachNearestMiss = null, occlusionNearestMiss = null, openingNearestMiss = null,
+  reachNearestMiss = null, occlusionNearestMiss = null, graspNearestMiss = null,
 }) {
   const sum = reach + visibility + ik + interference + grasp + feasible
   if (sum !== generated) {
@@ -40,7 +40,7 @@ function funnel({
     returned,
     reachNearestMiss,
     occlusionNearestMiss,
-    openingNearestMiss,
+    graspNearestMiss,
   }
 }
 
@@ -88,7 +88,8 @@ export function fixedResponse(scenario, contractVersion) {
         diagnostics: funnel({
           generated: 24, reach: 9, ik: 4, grasp: 3, visibility: 5, interference: 3,
           feasible: 0, returned: 0,
-          reachNearestMiss: 38.4, occlusionNearestMiss: 12.75, openingNearestMiss: 6.2,
+          reachNearestMiss: 38.4, occlusionNearestMiss: 12.75,
+          graspNearestMiss: { kind: 'opening', shortfall: 6.2 },
         }),
       }
 
@@ -103,7 +104,7 @@ export function fixedResponse(scenario, contractVersion) {
         diagnostics: funnel({
           generated: 18, reach: 7, ik: 4, grasp: 2, visibility: 3, interference: 1,
           feasible: 1, returned: 1,
-          reachNearestMiss: 5.1, occlusionNearestMiss: 2.4, openingNearestMiss: null,
+          reachNearestMiss: 5.1, occlusionNearestMiss: 2.4, graspNearestMiss: null,
         }),
       }
 

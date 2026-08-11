@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 
 # ゼロ長判定のしきい値。これ未満は数値的にゼロ扱いし、正規化等で退化として扱う。
 _EPS = 1e-12
@@ -228,19 +229,58 @@ class Camera:
     fov_half_angle: float | None = None
 
 
-@dataclass(frozen=True)
-class Gripper:
-    """グリッパ宣言 (ADR-081 「掴めるか」ドメインの入力)。
+class GripperKind(str, Enum):
+    """ハンドの種別 (ADR-118)。
 
-    - max_opening: 平行ジョーの最大開口幅。
+    平行ジョーと吸引カップは **測る量が違う** — 前者は閉じ軸方向の対象幅、後者は
+    接触点まわりにシールできる平坦パッチが在るか。同じ平らな dataclass に
+    `max_opening` と `cup_diameter` を同居させると「開口 0 の吸引ハンド」のような
+    表現不能にすべき状態が表現できてしまうので、枝ごとに別の型にする。
+
+    契約側 (`graspSearch.gripper`) の kind 判別 union と 1 対 1。
+    """
+
+    PARALLEL_JAW = "parallelJaw"
+    SUCTION = "suction"
+
+
+@dataclass(frozen=True)
+class ParallelJawGripper:
+    """平行ジョー宣言 (ADR-081 「掴めるか」ドメインの入力)。
+
+    - max_opening: 最大開口幅。
     - finger_clearance: 指が対象の脇へ進入するのに要する追加クリアランス
       (naive ゲートは max_opening >= 対象幅 + finger_clearance を課す)。
-
-    宣言は graspSearch open payload の `gripper` キー (camera と同じ統治)。
     """
 
     max_opening: float
     finger_clearance: float = 0.0
+
+    @property
+    def kind(self) -> GripperKind:
+        return GripperKind.PARALLEL_JAW
+
+
+@dataclass(frozen=True)
+class SuctionGripper:
+    """吸引カップ宣言 (ADR-118)。
+
+    - cup_diameter: カップ外径 = シールに要する平坦パッチの直径。
+    - seal_tilt_tolerance: カップ footprint 内の法線が接触法線からどれだけ振れても
+      シールするか (rad)。**未宣言のときに他のフィールドから推定しない** — 既定は
+      ソルバが持つ naive 値で、それは宣言された既定であって推論ではない。
+    """
+
+    cup_diameter: float
+    seal_tilt_tolerance: float = 0.35
+
+    @property
+    def kind(self) -> GripperKind:
+        return GripperKind.SUCTION
+
+
+#: ハンド宣言の union。新しい種別を足すのは契約の版を上げる意図的行為 (ADR-118)。
+Gripper = ParallelJawGripper | SuctionGripper
 
 
 @dataclass(frozen=True)

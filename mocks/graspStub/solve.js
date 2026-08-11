@@ -176,7 +176,7 @@ export function stubSolve(request, contractVersion) {
   }
   let reachNearestMiss     = null
   let occlusionNearestMiss = null
-  let openingNearestMiss   = null
+  let graspNearestMiss     = null   // { kind, shortfall } — contract v5 (ADR-118)
   const keepMin = (cur, v) => (cur == null || v < cur ? v : cur)
 
   const feasible = []
@@ -214,16 +214,39 @@ export function stubSolve(request, contractVersion) {
     // ── grasp gate (vacuously true with no gripper declared) ─────────────────
     // The "required opening" a parallel jaw needs is stood in for by the
     // clearance reference; the real gate searches contact pairs on the mesh.
-    let openingSlack = 1
+    // The hand kind decides WHICH quantity is measured (ADR-118) — a jaw misses by
+    // an opening shortfall, a cup by a seal-patch shortfall. Reporting one as the
+    // other is the failure the contract union exists to prevent, so the stub keeps
+    // the two apart too.
+    let graspSlack = 1
     if (gripper) {
-      const maxOpening = Number(gripper.maxOpening ?? 0)
-      const required   = clearanceReference
-      if (maxOpening < required) {
-        counts[STAGE.GRASP] += 1
-        openingNearestMiss = keepMin(openingNearestMiss, required - maxOpening)
-        continue
+      const required = clearanceReference
+      if (gripper.kind === 'suction') {
+        const cup = Number(gripper.cupDiameter ?? 0)
+        // Coarse stand-in for "is there a flat patch this big": the target's own
+        // sample spread around the contact point.
+        const patch = required * 2
+        if (cup > patch) {
+          counts[STAGE.GRASP] += 1
+          const shortfall = cup - patch
+          if (graspNearestMiss == null || shortfall < graspNearestMiss.shortfall) {
+            graspNearestMiss = { kind: 'sealPatch', shortfall }
+          }
+          continue
+        }
+        graspSlack = patch > 0 ? Math.min(1, (patch - cup) / patch) : 1
+      } else {
+        const maxOpening = Number(gripper.maxOpening ?? 0)
+        if (maxOpening < required) {
+          counts[STAGE.GRASP] += 1
+          const shortfall = required - maxOpening
+          if (graspNearestMiss == null || shortfall < graspNearestMiss.shortfall) {
+            graspNearestMiss = { kind: 'opening', shortfall }
+          }
+          continue
+        }
+        graspSlack = required > 0 ? Math.min(1, (maxOpening - required) / required) : 1
       }
-      openingSlack = required > 0 ? Math.min(1, (maxOpening - required) / required) : 1
     }
 
     // ── visibility (vacuously true with no camera declared) ──────────────────
@@ -267,7 +290,7 @@ export function stubSolve(request, contractVersion) {
       ? Math.min(1, minClearance / clearanceReference)
       : 1                                        // nothing declared nearby → unobstructed
     const scores = objectiveScores(weights, {
-      reachMargin, clearance, stability: openingSlack,
+      reachMargin, clearance, stability: graspSlack,
     })
     let totalScore = 0
     for (const [name, value] of Object.entries(scores)) {
@@ -301,7 +324,7 @@ export function stubSolve(request, contractVersion) {
       returned: candidates.length,
       reachNearestMiss,
       occlusionNearestMiss,
-      openingNearestMiss,
+      graspNearestMiss,
     },
   }
 }

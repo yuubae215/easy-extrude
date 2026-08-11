@@ -28,7 +28,7 @@ contractVersion (ADR-074):
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -116,10 +116,21 @@ class CameraWire(_ContractModel):
 
 
 class GripperWire(_ContractModel):
-    """グリッパ宣言 (ADR-081 「掴めるか」)。grasp-search 契約の gripper と同形。"""
+    """ハンド宣言 (ADR-081 「掴めるか」 / ADR-118 で kind 判別へ)。
 
-    max_opening: float = Field(ge=0.0)
+    grasp-search 契約の gripper と同形を保つ (この層はエンジン契約の **上** に乗る
+    ので、形が割れると 2 つの語彙を同期する仕事が生まれる — ADR-078 Decision 2)。
+    `kind` は既定を持たない: 未宣言のまま平行ジョーへ倒すと、吸引を宣言したつもりの
+    シーンが幅で判定される (原則 #31)。
+    """
+
+    kind: Literal["parallelJaw", "suction"]
+    # kind="parallelJaw" のとき読む。
+    max_opening: float = Field(default=0.0, ge=0.0)
     finger_clearance: float = Field(default=0.0, ge=0.0)
+    # kind="suction" のとき読む。
+    cup_diameter: float = Field(default=0.0, ge=0.0)
+    seal_tilt_tolerance: Optional[float] = Field(default=None, ge=0.0)
 
 
 class GraspSettingsWire(_ContractModel):

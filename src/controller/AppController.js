@@ -3857,6 +3857,18 @@ export class AppController {
     await this._service.connectBff('/api', { fetchImpl })
     if (!this._service.bffConnected) return
 
+    // The stub stands in for the GRASP lane only (ADR-118 §Consequences). It
+    // answers `/auth/token` so the grasp routes are reachable, and that alone is
+    // enough to make `bffConnected` true — which used to carry the app on into
+    // the WebSocket Geometry Service and the Node Editor, neither of which the
+    // stub serves. The result was a build that believed it had a full backend:
+    // three unrelated smoke tests failed under the stub lane and passed without
+    // it. Stopping here keeps the stub's claim as narrow as its implementation.
+    if (GRASP_STUB_ENABLED) {
+      console.info('[grasp-stub] BFF stubbed for grasp only — geometry channel and node editor stay off')
+      return
+    }
+
     // Open WebSocket geometry channel
     this._service.openGeometryChannel()
 

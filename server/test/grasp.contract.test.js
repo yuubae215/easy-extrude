@@ -96,7 +96,7 @@ test('valid response instance conforms to the response schema (both pose kinds)'
       returned: 2,
       reachNearestMiss: 0.03,
       occlusionNearestMiss: null,
-      openingNearestMiss: null,
+      graspNearestMiss: null,
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -133,7 +133,7 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
       returned: 0,
       reachNearestMiss: 0.12,
       occlusionNearestMiss: null,
-      openingNearestMiss: null,
+      graspNearestMiss: null,
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -162,7 +162,7 @@ test('diagnostics with a smuggled presentation field fails (additionalProperties
       returned: 0,
       reachNearestMiss: null,
       occlusionNearestMiss: null,
-      openingNearestMiss: null,
+      graspNearestMiss: null,
       meterColor: '#f00', // presentation is derived client-side, never on the wire
     },
   })
@@ -241,9 +241,9 @@ test('valid request is delegated and a conforming upstream response passes throu
         returned: 1,
         reachNearestMiss: null,
         occlusionNearestMiss: null,
-        openingNearestMiss: null,
+        graspNearestMiss: null,
       occlusionNearestMiss: null,
-      openingNearestMiss: null,
+      graspNearestMiss: null,
       },
     }))
   })
@@ -265,7 +265,7 @@ test('valid request is delegated and a conforming upstream response passes throu
       returned: 1,
       reachNearestMiss: null,
       occlusionNearestMiss: null,
-      openingNearestMiss: null,
+      graspNearestMiss: null,
     })
   } finally {
     upstream.close()
