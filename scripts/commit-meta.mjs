@@ -49,6 +49,12 @@ const LAYER_RULES = [
   [/^packages\/grasp-contract\//, 'contract'],
   [/^core\//, 'core'],
   [/^templates\//, 'core'],
+  // `mocks/` は `core/` の代役 (ADR-117/118): 粗いとはいえリーチ・可視性・干渉を
+  // *解く* ので、CLAUDE.md のスコープ境界ではバックエンド側の住人になる。
+  // `templates/` が受け入れフィクスチャとして core に落ちるのと同じ理由で、
+  // ここも core。front に落とすと「`src/` が解法を持たない」という統治語彙と
+  // 分析結果が食い違う。
+  [/^mocks\//, 'core'],
   [/^server\//, 'bff'],
   [/^(src|schema|examples|cli|public|e2e)\//, 'front'],
   [/^vendor\/grasp-contract/, 'contract'],
