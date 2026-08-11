@@ -87,17 +87,36 @@ export interface GraspSearchDeclaration {
     fovHalfAngle?: number;
   };
   /**
-   * Declares the parallel-jaw gripper for the 'can it be grasped' domain gate (ADR-081). Declaration only -- the geometric grasp gate itself is solved in core/. Optional: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true).
+   * Declares the hand for the 'can it be grasped' domain gate (ADR-081), as a CLOSED KIND-DISCRIMINATED UNION (ADR-118, same governance as the response's `pose`). A parallel jaw and a suction cup do not measure the same quantity -- one asks whether the jaws close across the object, the other whether a flat enough patch of the surface can be sealed -- so they are separate branches rather than optional siblings on one flat object. Flattening them would make 'a suction cup with a jaw opening' representable. Declaration only: the gate itself is solved in core/. Optional as a whole: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true). The only intentional growth point is adding a kind, which bumps contractVersion.
    */
-  gripper?: {
-    /**
-     * Maximum jaw opening width (same length unit as the request geometry).
-     */
-    maxOpening: number;
-    /**
-     * Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance).
-     */
-    fingerClearance?: number;
-  };
+  gripper?: GripperParallelJaw | GripperSuction;
   [k: string]: unknown;
+}
+/**
+ * Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis.
+ */
+export interface GripperParallelJaw {
+  kind: "parallelJaw";
+  /**
+   * Maximum jaw opening width (same length unit as the request geometry).
+   */
+  maxOpening: number;
+  /**
+   * Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance).
+   */
+  fingerClearance?: number;
+}
+/**
+ * Vacuum cup. The gate seals against a face, so the quantity that decides feasibility is whether a contiguous patch at least the cup diameter across is flat enough to seal -- width and finger clearance are meaningless here.
+ */
+export interface GripperSuction {
+  kind: "suction";
+  /**
+   * Cup outside diameter -- the patch the seal needs (same length unit as the request geometry).
+   */
+  cupDiameter: number;
+  /**
+   * How far a surface normal inside the cup footprint may deviate from the contact normal and still seal, in radians. Absent leaves the solver its own naive default; it is never inferred from the other fields.
+   */
+  sealTiltTolerance?: number;
 }

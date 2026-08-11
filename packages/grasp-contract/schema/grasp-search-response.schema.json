@@ -13,75 +13,165 @@
     "candidates": {
       "type": "array",
       "description": "Ranked candidates, rank ascending (1 = best). Not a single best pose.",
-      "items": { "$ref": "#/$defs/poseCandidate" }
+      "items": {
+        "$ref": "#/$defs/poseCandidate"
+      }
     },
     "diagnostics": {
       "type": "object",
       "additionalProperties": false,
       "description": "Solver-decided facts about the search as a whole (the rejection funnel), so a client can explain an empty or thin result. Contract v4 (ADR-081) widens the funnel to the three validation domains -- visible (Vision) / reachable (Path: reach, IK, interference) / graspable (Grasp). Invariant: candidatesGenerated = rejectedByReach + rejectedByVisibility + rejectedByIk + rejectedByInterference + rejectedByGrasp + feasible (stages are exclusive; the filter short-circuits in the engine's measured cheapest-first order: reach -> IK -> grasp -> visibility -> interference, which decides which single stage a multiply-infeasible candidate is attributed to). Requests that declare no camera / no gripper always report 0 for the corresponding rejection stage. Presentation (wording, colors, meters, ladder-risk mapping, suggestions) is derived client-side and never carried here.",
       "properties": {
-        "candidatesGenerated":    { "type": "integer", "minimum": 0 },
-        "rejectedByReach":        { "type": "integer", "minimum": 0 },
-        "rejectedByVisibility":   { "type": "integer", "minimum": 0,
-                                    "description": "Rejected because the declared camera cannot see the grasp point (occluded sightline or outside the field of view). Always 0 when the request declares no camera." },
-        "rejectedByIk":           { "type": "integer", "minimum": 0 },
-        "rejectedByInterference": { "type": "integer", "minimum": 0 },
-        "rejectedByGrasp":        { "type": "integer", "minimum": 0,
-                                    "description": "Rejected by the geometric grasp gate of the declared gripper (opening width / finger clearance / contact-pair existence). Always 0 when the request declares no gripper." },
-        "feasible":               { "type": "integer", "minimum": 0,
-                                    "description": "Candidates that passed all five checks (= scored)." },
-        "returned":               { "type": "integer", "minimum": 0,
-                                    "description": "Candidates actually included in candidates[] (= min(feasible, topN))." },
-        "reachNearestMiss":       { "type": ["number", "null"], "minimum": 0,
-                                    "description": "Smallest distance by which a reach-rejected candidate missed the reachable shell (same length unit as the request geometry). null when nothing was rejected by reach." },
-        "occlusionNearestMiss":   { "type": ["number", "null"], "minimum": 0,
-                                    "description": "Smallest occlusion depth among visibility-rejected candidates (how deep the most-blocking obstacle cuts the closest-to-visible sightline; same length unit as the request geometry). null when no visibility rejection has a measurable occlusion depth (e.g. only outside-FOV rejections, or none at all)." },
-        "openingNearestMiss":     { "type": ["number", "null"], "minimum": 0,
-                                    "description": "Smallest opening-width shortfall among grasp-rejected candidates (required width minus the gripper's max opening; same length unit as the request geometry). null when no grasp rejection has a measurable width shortfall (e.g. only contact-pair-missing rejections, or none at all)." }
+        "candidatesGenerated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejectedByReach": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejectedByVisibility": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rejected because the declared camera cannot see the grasp point (occluded sightline or outside the field of view). Always 0 when the request declares no camera."
+        },
+        "rejectedByIk": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejectedByInterference": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rejectedByGrasp": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rejected by the geometric grasp gate of the declared gripper (opening width / finger clearance / contact-pair existence). Always 0 when the request declares no gripper."
+        },
+        "feasible": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Candidates that passed all five checks (= scored)."
+        },
+        "returned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Candidates actually included in candidates[] (= min(feasible, topN))."
+        },
+        "reachNearestMiss": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Smallest distance by which a reach-rejected candidate missed the reachable shell (same length unit as the request geometry). null when nothing was rejected by reach."
+        },
+        "occlusionNearestMiss": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Smallest occlusion depth among visibility-rejected candidates (how deep the most-blocking obstacle cuts the closest-to-visible sightline; same length unit as the request geometry). null when no visibility rejection has a measurable occlusion depth (e.g. only outside-FOV rejections, or none at all)."
+        },
+        "graspNearestMiss": {
+          "description": "How close the best grasp-rejected candidate came, as a CLOSED KIND-DISCRIMINATED union (ADR-118, contract v5). Replaces v4 `openingNearestMiss`, whose name and unit assumed a parallel jaw: a suction cup misses by a seal-patch shortfall, not by an opening width, and reporting one as the other would have the client draw a meter labelled in the wrong quantity. null when no grasp rejection has a measurable miss (e.g. only contact-pair-missing rejections, or none at all), and always null when the request declares no gripper. `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/openingMiss"
+            },
+            {
+              "$ref": "#/$defs/sealPatchMiss"
+            }
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
+        }
       },
-      "required": ["candidatesGenerated", "rejectedByReach", "rejectedByVisibility",
-                   "rejectedByIk", "rejectedByInterference", "rejectedByGrasp",
-                   "feasible", "returned", "reachNearestMiss",
-                   "occlusionNearestMiss", "openingNearestMiss"]
+      "required": [
+        "candidatesGenerated",
+        "rejectedByReach",
+        "rejectedByVisibility",
+        "rejectedByIk",
+        "rejectedByInterference",
+        "rejectedByGrasp",
+        "feasible",
+        "returned",
+        "reachNearestMiss",
+        "occlusionNearestMiss",
+        "graspNearestMiss"
+      ]
     }
   },
-  "required": ["candidates", "diagnostics"],
+  "required": [
+    "candidates",
+    "diagnostics"
+  ],
   "$defs": {
     "poseCandidate": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "rank": { "type": "integer", "minimum": 1 },
-        "pose": { "$ref": "#/$defs/pose" },
-        "score": { "$ref": "#/$defs/scoreBreakdown" }
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pose": {
+          "$ref": "#/$defs/pose"
+        },
+        "score": {
+          "$ref": "#/$defs/scoreBreakdown"
+        }
       },
-      "required": ["rank", "score"]
+      "required": [
+        "rank",
+        "score"
+      ]
     },
     "pose": {
       "type": "object",
       "description": "The pose the solver *decided*, as a closed kind-discriminated union. Only solver-decided facts ride the wire; presentation (approach vector, ghost color, gripper-width display, animation) is derived client-side from the frame + convention and is NOT part of this contract. The only intentional growth point is adding a new kind (which bumps contractVersion). kind is the discriminator; each branch is closed (additionalProperties:false). 'optional' is not a design word here -- field presence is implied by kind.",
       "oneOf": [
-        { "$ref": "#/$defs/poseEndEffector" },
-        { "$ref": "#/$defs/poseJointSpace" }
+        {
+          "$ref": "#/$defs/poseEndEffector"
+        },
+        {
+          "$ref": "#/$defs/poseJointSpace"
+        }
       ],
-      "discriminator": { "propertyName": "kind" }
+      "discriminator": {
+        "propertyName": "kind"
+      }
     },
     "poseEndEffector": {
       "type": "object",
       "description": "End-effector (hand/tool) pose expressed in a base/world frame. Cartesian.",
       "additionalProperties": false,
       "properties": {
-        "kind": { "const": "endEffector" },
-        "frame": { "$ref": "#/$defs/cartesianFrame" }
+        "kind": {
+          "const": "endEffector"
+        },
+        "frame": {
+          "$ref": "#/$defs/cartesianFrame"
+        }
       },
-      "required": ["kind", "frame"]
+      "required": [
+        "kind",
+        "frame"
+      ]
     },
     "poseJointSpace": {
       "type": "object",
       "description": "Pose expressed in the joint space of a named kinematic chain.",
       "additionalProperties": false,
       "properties": {
-        "kind": { "const": "jointSpace" },
+        "kind": {
+          "const": "jointSpace"
+        },
         "chainRef": {
           "type": "string",
           "description": "Which kinematic chain (robot) the joint values belong to."
@@ -89,10 +179,16 @@
         "joints": {
           "type": "array",
           "description": "Joint values in chain order.",
-          "items": { "type": "number" }
+          "items": {
+            "type": "number"
+          }
         }
       },
-      "required": ["kind", "chainRef", "joints"]
+      "required": [
+        "kind",
+        "chainRef",
+        "joints"
+      ]
     },
     "cartesianFrame": {
       "type": "object",
@@ -102,34 +198,55 @@
         "position": {
           "type": "array",
           "description": "x, y, z.",
-          "items": { "type": "number" },
+          "items": {
+            "type": "number"
+          },
           "minItems": 3,
           "maxItems": 3
         },
         "orientation": {
           "type": "array",
           "description": "Quaternion x, y, z, w.",
-          "items": { "type": "number" },
+          "items": {
+            "type": "number"
+          },
           "minItems": 4,
           "maxItems": 4
         }
       },
-      "required": ["position", "orientation"]
+      "required": [
+        "position",
+        "orientation"
+      ]
     },
     "scoreBreakdown": {
       "type": "object",
       "description": "Per-candidate score breakdown explaining why a pose ranked where it did. Contract v4 (ADR-081): the five booleans mirror the domain-staged filter (visible = Vision domain, withinReach/ikSolvable/interferenceFree = Path domain, graspable = Grasp domain). A returned candidate passed every stage, so all five are true; `visible` / `graspable` are vacuously true when the request declared no camera / no gripper (the request itself carries which case applies).",
       "additionalProperties": false,
       "properties": {
-        "withinReach": { "type": "boolean" },
-        "visible": { "type": "boolean" },
-        "ikSolvable": { "type": "boolean" },
-        "interferenceFree": { "type": "boolean" },
-        "graspable": { "type": "boolean" },
+        "withinReach": {
+          "type": "boolean"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "ikSolvable": {
+          "type": "boolean"
+        },
+        "interferenceFree": {
+          "type": "boolean"
+        },
+        "graspable": {
+          "type": "boolean"
+        },
         "objectiveScores": {
           "type": "object",
           "description": "objective name -> normalized 0-1 value (absolute basis, so scores are comparable across requests).",
-          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
         },
         "totalScore": {
           "type": "number",
@@ -137,8 +254,52 @@
           "minimum": 0
         }
       },
-      "required": ["withinReach", "visible", "ikSolvable", "interferenceFree",
-                   "graspable", "totalScore"]
+      "required": [
+        "withinReach",
+        "visible",
+        "ikSolvable",
+        "interferenceFree",
+        "graspable",
+        "totalScore"
+      ]
+    },
+    "openingMiss": {
+      "type": "object",
+      "description": "Parallel jaw: the smallest amount by which the jaws failed to span the object.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "opening"
+        },
+        "shortfall": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Required width minus the jaw max opening (same length unit as the request geometry)."
+        }
+      },
+      "required": [
+        "kind",
+        "shortfall"
+      ]
+    },
+    "sealPatchMiss": {
+      "type": "object",
+      "description": "Suction cup: the smallest amount by which the sealable flat patch fell short of the cup.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sealPatch"
+        },
+        "shortfall": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cup diameter minus the diameter of the flat-enough patch found at the contact point (same length unit as the request geometry)."
+        }
+      },
+      "required": [
+        "kind",
+        "shortfall"
+      ]
     }
   }
 }

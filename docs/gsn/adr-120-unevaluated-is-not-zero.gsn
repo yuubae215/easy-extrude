@@ -1,0 +1,58 @@
+GOALS adr120_unevaluated_is_not_zero
+
+goal UnevaluatedObjectivesDoNotLookLikeZeroScores
+uuid 5342cb98-1d3f-4496-aa31-26ba8253b966
+summary "評価できなかった objective が 0 点として振る舞わず、リクエスト間のスコア比較可能性が宣言の有無で壊れない"
+state UnderReview
+labels adr-120, scoring, principle-31, principle-11, proposed
+artifacts
+- "docs/adr/ADR-120-unevaluated-is-not-zero.md"
+
+    context Adr120Scope
+    uuid 41d8ffff-0af6-4d9b-9f02-132293a91650
+    summary "ADR-120 (Proposed 2026-08-11, 未実装): 評価できなかった objective を分子からも分母からも外し (D1)、評価しなかったことは objectiveScores の鍵の不在が表し (D2)、クライアントはそれを「測っていない」として描く (D3)。閉じたスコア層に欄を足す案は却下 (ADR-060 の統治)"
+    artifacts
+    - "core/easy_extrude_core/engine/scoring.py"
+
+    context TheDefectIsAlreadyLive
+    uuid 1240533c-d75c-4e14-84c3-07555b5044c9
+    summary "実測: weighted_sum は weight_sum に全部の重みを足し、objective_scores に無い名前は分子に足さない。docstring は「寄与 0 (評価不能な objective)」と意図として書いているが、これは評価不能と 0 点を同じ数に潰している。reach_margin はリーチ範囲が未宣言だと常に 0 で、それは余裕ゼロではなく測っていないのに、同じ数として totalScore を押し下げている"
+    artifacts
+    - "core/easy_extrude_core/engine/scoring.py"
+
+    justification WhyNotAddAFieldForUnevaluatedNames
+    uuid 616fe9f3-b210-45eb-854b-f0d4ff5f2297
+    summary "却下案 (閉じたスコア層に「評価できなかった名前」の欄を足す) への反証: 版上げが要るうえ ADR-060 の「optional 兄弟を生やさない」に触れる。不在で表現できることに欄を作る理由がない"
+
+    assumption AllUnevaluatedCaseIsRare
+    uuid f5f03bb3-7ba7-42b1-8324-8a64aeca6ca5
+    summary "反証されうる仮説: 全部の objective が評価できないケースは稀なので、分母 0 の扱い (0 を返すか鍵ごと落とすか) は実装時に決めてよい。反証されうる形は、リーチも重心も未宣言な既定リクエストがまさにそれに当たること。どちらにせよ 0 点と区別できる形にすることが条件"
+
+    context BusinessTreeAttachPoint
+    uuid e512f8d5-81d9-486c-ab11-239efc630c43
+    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝"
+    artifacts
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    strategy ByRemovingTheUnevaluatedWeightFromTheDenominator
+    uuid 442760e2-0d68-4a8d-8c83-4d7f39d3be94
+    summary "評価できた objective の重みだけで加重平均を取り、評価しなかったことは鍵の不在で表す。これで宣言の有無がスコアの絶対値を動かさなくなる"
+
+        goal ScoresAreComparableAcrossRequests
+        uuid dd66cfce-5913-4567-a504-532a3666fff5
+        summary "同一候補のスコアが、無関係な objective の重み付けの有無によって変わらない"
+        labels support-exploring
+
+            assumption CoreNumericTestWillSettleIt
+            uuid 5980a52e-a07f-4040-9ae4-59c17053a44c
+            summary "未着手。決着させる検査は core/tests/test_engine.py で、同じ候補に対して評価不能な objective の重みを 1 つ足しても totalScore が変わらないこと。応答の数値が変わるのでスキーマ変更ではないが既存の数値テストは動く"
+
+        goal UnevaluatedIsDistinguishableFromZero
+        uuid a6ca345d-a2bb-49f7-9fb2-4343913e4abb
+        summary "評価しなかった objective は鍵ごと出ず、0.0 のスコアと区別できる"
+        labels support-exploring
+
+            assumption KeyAbsenceAssertionWillSettleIt
+            uuid d279910f-95c5-420b-8d29-7d181c4c0e84
+            summary "未着手。決着させる検査は値の比較ではなく鍵の不在を assert すること。値で比較すると 0 点と評価不能がまさに同じに見えるので、検査の書き方そのものがこの ADR の主張になる"
+

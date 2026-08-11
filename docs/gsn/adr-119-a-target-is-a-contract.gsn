@@ -1,0 +1,66 @@
+GOALS adr119_a_target_is_a_contract
+
+goal TargetIsUnderContractAndGraspLocationIsDeclarable
+uuid 651ab872-4929-4f60-b1b2-479ecf04ee71
+summary "探索の主役である掴む対象がワイヤ契約を持ち、両端で検証され、さらに「どこを掴むか」をユーザーが宣言でき、宣言していないことと宣言された「どこでもよい」が区別される"
+state UnderReview
+labels adr-119, contract, grasp, principle-29, principle-31, proposed
+artifacts
+- "docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md"
+
+    context Adr119Scope
+    uuid 3e25fa09-064b-4783-ac9a-86b875d55914
+    summary "ADR-119 (Proposed 2026-08-11, 未実装): target と obstacles をリクエストスキーマに宣言し (D1)、Layout DSL の Solid に任意の把持フィーチャを足して掴む場所を宣言可能にし (D2)、宣言があれば導出とマージせず宣言だけを使う (D3)。ADR-118 の面導出は宣言が無いときの既定として残る"
+    artifacts
+    - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+
+    context TheGapWasMeasuredNotAssumed
+    uuid d6c84351-f57b-492d-97d3-90a118b3393e
+    summary "実測: graspSearchDeclaration が宣言しているのは objectiveWeights / topN / plan / robot / camera / gripper の 6 つで additionalProperties は true。ADR-117 が載せた target と obstacles と sampling は隙間を素通りしている。つまり探索が成功するかを決めている当の欄が、契約を持たない唯一の欄だった"
+    artifacts
+    - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+
+    justification WhyDerivationAloneIsNotEnough
+    uuid 11ce12c0-7b42-4e7f-afc1-1637f25e273f
+    summary "却下案 (掴む場所は常に幾何から導出する) への反証: 把持点はワークの機能 (取っ手・平面・逃がし) に依存するので幾何から導けるとは限らない。導出だけにすると、ユーザーは「ここを掴んでほしい」を言う手段を持たない"
+
+    justification WhyDeclarationDoesNotMergeWithDerivation
+    uuid 6d78100d-5f7b-43df-8629-c7f7c581443e
+    summary "却下案 (宣言と導出をマージして候補を増やす) への反証: ユーザーが「ここ以外は掴むな」と言ったつもりの宣言が静かに広げられる。宣言が勝つ 1 方向にすることで、宣言の意味が縮まない"
+
+    assumption GraspFeatureVocabularyStartsMinimal
+    uuid a95e91e5-82f2-47d3-8693-7b105e8c3063
+    summary "反証されうる仮説: 面 + その上の領域という最小語彙で当面足りる。反証されうる形は、円筒の側面把持や取っ手のような、面と領域では表現できない形状が要求されること。点 1 つに縮退させないのは、把持が面積を要求する操作だから (吸引はカップ径、ジョーは指の幅)"
+
+    assumption DocumentOwnedGeometryStaysAcceptable
+    uuid 996f5afa-d716-47f5-b9a4-725dafef5ec6
+    summary "反証されうる仮説: 対象幾何が文書由来でシーン由来でないという ADR-117 の非対称を、掴む場所の宣言にも引き継いでよい。反証されうる形は、ビューポートで掴む場所を指したいという要求。そのとき所有者を決め直す別 ADR が要る"
+
+    context BusinessTreeAttachPoint
+    uuid 94d11632-5bb9-4617-acfa-52363614c61e
+    summary "事業木への接続は保留 (未実装のため証拠が全部未来形)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝。実装 PR でテストが実在した時点で solution として吊る"
+    artifacts
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    strategy ByGivingTheMainInputAContractThenAVoice
+    uuid b6256ab7-3f83-4128-8825-b2db4f59628a
+    summary "まず現在載せている形をそのまま宣言して両端で検証されるようにし、そのうえで宣言の語彙を足す。順序が逆だと、検証されない欄に語彙だけが増える"
+
+        goal TargetIsValidatedAtBothEnds
+        uuid 09551d83-26f0-4b90-b8bc-6721800f5472
+        summary "target と obstacles がリクエストスキーマに宣言され、BFF と core/ の双方が形を検証する。sampling は載せるか明示的に対象外と宣言するかの二状態のどちらかになる"
+        labels support-exploring
+
+            assumption ContractConformanceWillSettleIt
+            uuid 3a4e02e9-106d-42cb-8cea-fdc131476acc
+            summary "未着手。決着させる検査は pnpm test:contract の準拠テストに target を含めること、および core/tests/test_contract_conformance.py の同型。リクエスト側の追加なので contractVersion は上げない (ADR-083/084 の先例)"
+
+        goal UnstatedAndStatedAnywhereAreDistinguishable
+        uuid 9008e678-29b4-4e01-b1f6-205a7cf1f839
+        summary "掴む場所を宣言していないことと、宣言された「どこでもよい」が別の状態として区別され、導出に落ちたことは画面に出る"
+        labels support-exploring
+
+            assumption PureLayerTestWillSettleIt
+            uuid fce1e65e-f3d4-4fae-921c-8c9a50ab4a69
+            summary "未着手。決着させる検査は純粋層のテストで、2 つの状態が別の値を返すこと。原則 #31 の適用対象で、既定値で埋めると区別が消える"
+

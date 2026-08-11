@@ -5,7 +5,7 @@
  * SCOPE / GOVERNANCE (PHILOSOPHY #29, ADR-060): the wire carries only the
  * solver-decided aggregate facts (`candidatesGenerated`, per-stage rejection
  * counts, `feasible`, `returned`, and the per-domain near-misses
- * `reachNearestMiss` / `occlusionNearestMiss` / `openingNearestMiss`).
+ * `reachNearestMiss` / `occlusionNearestMiss` / `graspNearestMiss.shortfall`).
  * Everything in this module — stage ordering for display, the dominant-stage
  * pick, run-over-run deltas, the near-miss meter curve — is CLIENT-DERIVED
  * presentation. Nothing here re-implements or second-guesses the solver (no
@@ -118,7 +118,7 @@ export function funnelDelta(prev, cur) {
 
 /**
  * Near-miss meter fill (0..1) from a per-domain nearest-miss fact
- * (`reachNearestMiss` / `occlusionNearestMiss` / `openingNearestMiss`, ADR-081):
+ * (`reachNearestMiss` / `occlusionNearestMiss` / `graspNearestMiss.shortfall`, ADR-081/118):
  * 1 at miss 0 (touching the pass boundary), monotonically toward 0 as the miss
  * grows. This is a pure display curve `1 / (1 + miss)` over the wire fact — the
  * number itself (in the request's geometry length unit) is what the panel

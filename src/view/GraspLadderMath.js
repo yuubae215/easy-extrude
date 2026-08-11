@@ -74,7 +74,10 @@ export function domainKpis(d) {
     grasp: {
       rejected: d.rejectedByGrasp,
       rate: 1 - d.rejectedByGrasp / generated,
-      nearestMiss: miss(d.openingNearestMiss),
+      // Contract v5 (ADR-118): the grasp near-miss is kind-discriminated —
+      // `opening` for a jaw, `sealPatch` for a cup. The KPI only needs the
+      // magnitude; the kind is what the panel labels the meter with.
+      nearestMiss: miss(d.graspNearestMiss?.shortfall ?? null),
     },
   }
 }

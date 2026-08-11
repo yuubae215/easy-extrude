@@ -28,6 +28,36 @@
 const round4 = (v) => Math.round(v * 1e4) / 1e4 + 0
 
 /**
+ * The objective names `core/`'s registry actually scores (ADR-117).
+ *
+ * These are WIRE KEYS, not labels. `graspSearch.objectiveWeights` is keyed by
+ * them and the response's `score.objectiveScores` comes back keyed by them —
+ * `core/`'s `evaluate_objectives` looks each requested name up in
+ * `OBJECTIVE_REGISTRY` and **silently skips the ones it does not know**
+ * (objectives.py: `if definition is None: continue`). That tolerance is
+ * deliberate on the solver's side (a newer DSL may ask for objectives an older
+ * engine lacks), but it means a misspelled weight is a silent no-op on the wire:
+ * the panel used to send `{ reach, clearance }`, none of which is registered, so
+ * every response carried `objectiveScores: {}` and `totalScore: 0.0` — five
+ * candidates tied at zero, ranked by nothing, with empty score bars. The sliders
+ * moved and the answer never changed (原則 #11).
+ *
+ * Naming them once here is what stops the two halves (the panel's sliders and the
+ * controller's default weights) from drifting apart again (§1.1).
+ */
+export const OBJECTIVE = Object.freeze({
+  /** How much reach envelope is left over at the grasp pose. */
+  REACH_MARGIN:       'reach_margin',
+  /** How far the approach path stays from the declared obstacles. */
+  APPROACH_CLEARANCE: 'approach_clearance',
+  /** How well the contact geometry holds the object. */
+  GRASP_STABILITY:    'grasp_stability',
+})
+
+/** Every objective name the wire may carry — the enumeration a census can count. */
+export const DECLARED_OBJECTIVES = Object.freeze(Object.values(OBJECTIVE))
+
+/**
  * Vision-camera presets (wire shape: `graspSearch.camera`). Units follow the
  * request geometry (metres in the bundled templates); angles are radians.
  * The first entry is the card's seed (selection-first premise).
@@ -51,29 +81,95 @@ export const CAMERA_PRESETS = Object.freeze([
 ])
 
 /**
- * Parallel-jaw gripper presets (wire shape: `graspSearch.gripper`). Openings
- * span the common industrial range; clearance is the naive gate's finger
- * slide-in margin. The first entry is the card's seed.
+ * Hand kinds the contract can express (ADR-118). These are WIRE VALUES — the
+ * `kind` discriminator of `graspSearch.gripper`, matching `core/`'s GripperKind
+ * one for one.
+ *
+ * A parallel jaw and a suction cup do not measure the same thing: one asks
+ * whether the jaws close across the object, the other whether a flat enough
+ * patch can be sealed. They are separate branches rather than optional fields on
+ * one object, so "a suction cup with a jaw opening" stays unrepresentable.
  */
-export const GRIPPER_PRESETS = Object.freeze([
-  Object.freeze({
-    id: 'standard-60',
-    label: 'parallel 60 mm',
-    params: Object.freeze({ maxOpening: 0.06, fingerClearance: 0.01 }),
-  }),
-  Object.freeze({
-    id: 'wide-85',
-    label: 'parallel 85 mm',
-    params: Object.freeze({ maxOpening: 0.085, fingerClearance: 0.01 }),
-  }),
-  Object.freeze({
-    id: 'micro-30',
-    label: 'micro 30 mm',
-    params: Object.freeze({ maxOpening: 0.03, fingerClearance: 0.005 }),
-  }),
-])
+export const GRIPPER_KIND = Object.freeze({
+  PARALLEL_JAW: 'parallelJaw',
+  SUCTION:      'suction',
+})
 
+/** Every declared hand kind — the enumeration a census counts against. */
+export const DECLARED_GRIPPER_KINDS = Object.freeze(Object.values(GRIPPER_KIND))
+
+/**
+ * Presets per hand kind (wire shape: `graspSearch.gripper`). Units follow the
+ * request geometry; the first entry of each kind is that card's seed.
+ *
+ * Keyed by kind rather than flattened into one list because the *fields* differ
+ * — a flat list would need every preset to carry every field, which is the
+ * optional-sibling shape the union exists to prevent.
+ */
+export const GRIPPER_PRESETS_BY_KIND = Object.freeze({
+  [GRIPPER_KIND.PARALLEL_JAW]: Object.freeze([
+    Object.freeze({
+      id: 'standard-60',
+      label: 'parallel 60 mm',
+      params: Object.freeze({ kind: GRIPPER_KIND.PARALLEL_JAW, maxOpening: 0.06, fingerClearance: 0.01 }),
+    }),
+    Object.freeze({
+      id: 'wide-85',
+      label: 'parallel 85 mm',
+      params: Object.freeze({ kind: GRIPPER_KIND.PARALLEL_JAW, maxOpening: 0.085, fingerClearance: 0.01 }),
+    }),
+    Object.freeze({
+      id: 'micro-30',
+      label: 'micro 30 mm',
+      params: Object.freeze({ kind: GRIPPER_KIND.PARALLEL_JAW, maxOpening: 0.03, fingerClearance: 0.005 }),
+    }),
+  ]),
+  [GRIPPER_KIND.SUCTION]: Object.freeze([
+    Object.freeze({
+      id: 'cup-40',
+      label: 'suction ⌀40 mm',
+      params: Object.freeze({ kind: GRIPPER_KIND.SUCTION, cupDiameter: 0.04, sealTiltTolerance: 0.35 }),
+    }),
+    Object.freeze({
+      id: 'cup-20',
+      label: 'suction ⌀20 mm',
+      params: Object.freeze({ kind: GRIPPER_KIND.SUCTION, cupDiameter: 0.02, sealTiltTolerance: 0.35 }),
+    }),
+    Object.freeze({
+      id: 'cup-80',
+      label: 'suction ⌀80 mm',
+      params: Object.freeze({ kind: GRIPPER_KIND.SUCTION, cupDiameter: 0.08, sealTiltTolerance: 0.26 }),
+    }),
+  ]),
+})
+
+/**
+ * Presets for a declared kind. **Throws on an undeclared kind** rather than
+ * falling back to the jaw list (原則 #31 — a fall-through cannot be told apart
+ * from a declared default, and here it would silently offer jaw presets for a
+ * hand that has no jaws).
+ *
+ * @param {string} kind  a `GRIPPER_KIND` value
+ * @returns {ReadonlyArray<{id: string, label: string, params: object}>}
+ */
+export function gripperPresetsFor(kind) {
+  const presets = GRIPPER_PRESETS_BY_KIND[kind]
+  if (!presets) {
+    throw new Error(
+      `GraspDeclarationCatalog: 未宣言のハンド種別 "${kind}"。` +
+      `GRIPPER_PRESETS_BY_KIND に行を足すこと (宣言は ${DECLARED_GRIPPER_KINDS.join(' / ')})`,
+    )
+  }
+  return presets
+}
+
+// Declared as explicit type predicates rather than left to inference: the
+// callers narrow `unknown` wire values through them, and an inferred predicate
+// is a fragile thing to hang narrowing on (adding an unrelated export above was
+// enough to lose it).
+/** @type {(v: unknown) => v is number} */
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v)
+/** @type {(v: unknown) => v is number[]} */
 const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(isFiniteNumber)
 
 /**
@@ -134,22 +230,45 @@ export function cameraDeclarationGaps(cam) {
 }
 
 /**
- * Gap list for a parsed gripper declaration ([] = valid) — the grasp card's
- * submit predicate, same discipline as `cameraDeclarationGaps`.
+ * Gap list for a parsed hand declaration ([] = valid) — the Grasped card's submit
+ * predicate, same discipline as `cameraDeclarationGaps`.
  *
- * @param {{ maxOpening?: unknown, fingerClearance?: unknown }|null|undefined} g
+ * The parameter is the WIRE union (ADR-118), so the fields present depend on
+ * `kind`; the type is left open per-branch rather than intersected, because an
+ * intersection would say every hand has both an opening and a cup.
+ *
+ * @param {any} g  the wire union — see above
  * @returns {string[]}
  */
 export function gripperDeclarationGaps(g) {
   if (!g || typeof g !== 'object') return ['gripper declaration is empty']
+  // The kind decides which fields even exist, so it is checked first and never
+  // assumed — an unstated kind is a gap, not a parallel jaw (ADR-118 / 原則 #31).
+  if (!DECLARED_GRIPPER_KINDS.includes(/** @type {any} */ (g.kind))) {
+    return [`hand kind must be one of ${DECLARED_GRIPPER_KINDS.join(' / ')}`]
+  }
   const gaps = []
-  if (!isFiniteNumber(g.maxOpening) || g.maxOpening < 0) {
-    gaps.push('max opening must be a number ≥ 0 (geometry unit)')
+  if (g.kind === GRIPPER_KIND.PARALLEL_JAW) {
+    if (!isFiniteNumber(g.maxOpening) || g.maxOpening < 0) {
+      gaps.push('max opening must be a number ≥ 0 (geometry unit)')
+    }
+    if (g.fingerClearance != null && (!isFiniteNumber(g.fingerClearance) || g.fingerClearance < 0)) {
+      gaps.push('finger clearance must be a number ≥ 0 (geometry unit)')
+    }
+    return gaps
   }
-  if (g.fingerClearance != null && (!isFiniteNumber(g.fingerClearance) || g.fingerClearance < 0)) {
-    gaps.push('finger clearance must be a number ≥ 0 (geometry unit)')
+  if (g.kind === GRIPPER_KIND.SUCTION) {
+    if (!isFiniteNumber(g.cupDiameter) || g.cupDiameter <= 0) {
+      gaps.push('cup diameter must be a number > 0 (geometry unit)')
+    }
+    if (g.sealTiltTolerance != null && (!isFiniteNumber(g.sealTiltTolerance) || g.sealTiltTolerance < 0)) {
+      gaps.push('seal tilt tolerance must be a number ≥ 0 (radians)')
+    }
+    return gaps
   }
-  return gaps
+  // Unreachable while the guard above is the only entry — kept so adding a kind
+  // to the vocabulary without adding its gaps fails loudly instead of passing.
+  throw new Error(`gripperDeclarationGaps: 未宣言のハンド種別 "${g.kind}"`)
 }
 
 /**

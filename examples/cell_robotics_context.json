@@ -4,25 +4,38 @@
     "name": "ロボットセル — 測定器 KPI・受入チェック (ADR-053/062)",
     "baseline": null
   },
-
   "actors": [
-    { "ref": "robot_engineer",  "role": "developer" },
-    { "ref": "safety_reviewer", "role": "maintainer" }
+    {
+      "ref": "robot_engineer",
+      "role": "developer"
+    },
+    {
+      "ref": "safety_reviewer",
+      "role": "maintainer"
+    }
   ],
-
   "sources": [
-    { "ref": "src_teach_session", "kind": "utterance", "by": "robot_engineer", "capturedAt": "2026-07-05" }
+    {
+      "ref": "src_teach_session",
+      "kind": "utterance",
+      "by": "robot_engineer",
+      "capturedAt": "2026-07-05"
+    }
   ],
-
   "given": [
     {
       "ref": "f_robot",
       "subject": "6軸ロボット (可搬10kg)",
       "attrs": {
-        "reach": { "value": 850, "unit": "mm" }
+        "reach": {
+          "value": 850,
+          "unit": "mm"
+        }
       },
       "status": "asserted",
-      "evidence": ["src_teach_session"]
+      "evidence": [
+        "src_teach_session"
+      ]
     },
     {
       "ref": "f_gripper",
@@ -31,33 +44,50 @@
         "stroke": "unknown"
       },
       "status": "asserted",
-      "evidence": ["src_teach_session"],
+      "evidence": [
+        "src_teach_session"
+      ],
       "note": "ストローク未確認 — 確定するまで環境干渉チェック a_gripper_env は blocked"
     }
   ],
-
   "variables": [
     {
       "ref": "v_pick_standoff",
       "unit": "mm",
-      "domain": [0, 400],
+      "domain": [
+        0,
+        400
+      ],
       "description": "ピック点上方の接近スタンドオフ"
     }
   ],
-
   "requirements": [
     {
       "ref": "r_standoff",
       "by": "robot_engineer",
-      "kpi": { "name": "approachClearance", "expr": "v_pick_standoff - 45", "unit": "mm" },
-      "criterion": { "op": ">=", "value": 30 },
-      "constrains": ["v_pick_standoff"],
+      "kpi": {
+        "name": "approachClearance",
+        "expr": "v_pick_standoff - 45",
+        "unit": "mm"
+      },
+      "criterion": {
+        "op": ">=",
+        "value": 30
+      },
+      "constrains": [
+        "v_pick_standoff"
+      ],
       "negotiability": "must",
-      "admissible": { "interval": [75, 250], "source": "stated" },
+      "admissible": {
+        "interval": [
+          75,
+          250
+        ],
+        "source": "stated"
+      },
       "note": "工具半径45mm を差し引いた接近クリアランス。閉形単調 — derived へ昇格"
     }
   ],
-
   "specification": {
     "layout": {
       "version": "layout/1.0",
@@ -71,50 +101,139 @@
           "ref": "robot_pedestal",
           "type": "Solid",
           "name": "ロボット台座",
-          "dimensions": { "x": 220, "y": 220, "z": 400 },
-          "position": { "x": 0, "y": 0, "z": 200 }
+          "dimensions": {
+            "x": 220,
+            "y": 220,
+            "z": 400
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 200
+          }
+        },
+        {
+          "ref": "robot_base",
+          "type": "CoordinateFrame",
+          "name": "robot_base",
+          "robotRole": "base",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 400
+          }
+        },
+        {
+          "ref": "tcp",
+          "type": "CoordinateFrame",
+          "name": "tcp",
+          "robotRole": "tcp",
+          "parentRef": "robot_base",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 300
+          },
+          "rotation": {
+            "x": 0,
+            "y": 0.7071067811865476,
+            "z": 0,
+            "w": 0.7071067811865476
+          }
         },
         {
           "ref": "pick_table",
           "type": "Solid",
           "name": "ピックテーブル",
-          "dimensions": { "x": 300, "y": 300, "z": 350 },
-          "position": { "x": 600, "y": 0, "z": 175 }
+          "dimensions": {
+            "x": 300,
+            "y": 300,
+            "z": 350
+          },
+          "position": {
+            "x": 600,
+            "y": 0,
+            "z": 175
+          }
         },
         {
           "ref": "place_conveyor",
           "type": "Solid",
           "name": "プレースコンベア",
-          "dimensions": { "x": 400, "y": 250, "z": 300 },
-          "position": { "x": 0, "y": 700, "z": 150 }
+          "dimensions": {
+            "x": 400,
+            "y": 250,
+            "z": 300
+          },
+          "position": {
+            "x": 0,
+            "y": 700,
+            "z": 150
+          }
         },
         {
           "ref": "tcp_pick",
           "type": "AnnotatedPoint",
           "name": "TCP 教示点 pick",
           "placeType": "Anchor",
-          "position": { "x": 600, "y": 0, "z": 420 }
+          "position": {
+            "x": 600,
+            "y": 0,
+            "z": 420
+          }
         },
         {
           "ref": "tcp_place",
           "type": "AnnotatedPoint",
           "name": "TCP 教示点 place",
           "placeType": "Anchor",
-          "position": { "x": 0, "y": 700, "z": 380 }
+          "position": {
+            "x": 0,
+            "y": 700,
+            "z": 380
+          }
         }
       ],
       "constraints": []
     },
-
     "trace": [
-      { "from": "f_robot",    "to": "robot_pedestal", "kind": "derives" },
-      { "from": "f_robot",    "to": "pick_table",     "kind": "derives" },
-      { "from": "f_robot",    "to": "place_conveyor", "kind": "derives" },
-      { "from": "r_standoff", "to": "tcp_pick",       "kind": "constrains" },
-      { "from": "f_robot",    "to": "tcp_place",      "kind": "derives" }
+      {
+        "from": "f_robot",
+        "to": "robot_pedestal",
+        "kind": "derives"
+      },
+      {
+        "from": "f_robot",
+        "to": "pick_table",
+        "kind": "derives"
+      },
+      {
+        "from": "f_robot",
+        "to": "place_conveyor",
+        "kind": "derives"
+      },
+      {
+        "from": "r_standoff",
+        "to": "tcp_pick",
+        "kind": "constrains"
+      },
+      {
+        "from": "f_robot",
+        "to": "tcp_place",
+        "kind": "derives"
+      },
+      {
+        "from": "f_robot",
+        "to": "robot_base",
+        "kind": "derives"
+      },
+      {
+        "from": "f_robot",
+        "to": "tcp",
+        "kind": "derives"
+      }
     ]
   },
-
   "acceptance": [
     {
       "ref": "a_tcp_reach",
@@ -123,11 +242,21 @@
         "kind": "robot_reach",
         "marginMin": 25,
         "targets": [
-          { "ref": "tcp_pick",  "reachable": true, "margin": 132 },
-          { "ref": "tcp_place", "reachable": true, "margin": 31 }
+          {
+            "ref": "tcp_pick",
+            "reachable": true,
+            "margin": 132
+          },
+          {
+            "ref": "tcp_place",
+            "reachable": true,
+            "margin": 31
+          }
         ]
       },
-      "requires": ["f_robot.attrs.reach"]
+      "requires": [
+        "f_robot.attrs.reach"
+      ]
     },
     {
       "ref": "a_fence_clearance",
@@ -137,8 +266,16 @@
         "scope": "env",
         "clearance": 25,
         "contacts": [
-          { "a": "link2", "b": "fence",      "clearance": 96 },
-          { "a": "link3", "b": "pick_table", "clearance": 22 }
+          {
+            "a": "link2",
+            "b": "fence",
+            "clearance": 96
+          },
+          {
+            "a": "link3",
+            "b": "pick_table",
+            "clearance": 22
+          }
         ]
       },
       "requires": []
@@ -151,11 +288,21 @@
         "scope": "env",
         "clearance": 10,
         "contacts": [
-          { "a": "gripper", "b": "pick_table",     "clearance": 34 },
-          { "a": "gripper", "b": "place_conveyor", "clearance": 27 }
+          {
+            "a": "gripper",
+            "b": "pick_table",
+            "clearance": 34
+          },
+          {
+            "a": "gripper",
+            "b": "place_conveyor",
+            "clearance": 27
+          }
         ]
       },
-      "requires": ["f_gripper.attrs.stroke"]
+      "requires": [
+        "f_gripper.attrs.stroke"
+      ]
     }
   ]
 }

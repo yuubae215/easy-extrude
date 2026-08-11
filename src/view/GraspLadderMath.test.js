@@ -23,7 +23,7 @@ const CLEAN = Object.freeze({
   returned: 5,
   reachNearestMiss: null,
   occlusionNearestMiss: null,
-  openingNearestMiss: null,
+  graspNearestMiss: null,
 })
 
 /** Mixed run (invariant: 20 = 2+4+1+1+2+10). */
@@ -37,7 +37,7 @@ const MIXED = Object.freeze({
   feasible: 10,
   reachNearestMiss: 0.02,
   occlusionNearestMiss: 0.008,
-  openingNearestMiss: 0.012,
+  graspNearestMiss: { kind: 'opening', shortfall: 0.012 },
 })
 
 // ── domainKpis ────────────────────────────────────────────────────────────────

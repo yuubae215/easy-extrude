@@ -261,6 +261,10 @@ const ACCENT_NON_PAINTERS = [
   { key: 'src/components/NPanel/NPanelGeneric.jsx', why: 'keyboard focus ring on a numeric input' },
   { key: 'src/components/NPanel/npanelShared.jsx',  why: 'keyboard focus ring shared by the N-panel field primitives' },
   { key: 'src/components/Header/ModeDropdown.jsx',  why: 'the currently active MODE in the dropdown — a mode is not an entity' },
+  // ADR-118: which HAND KIND is declared (parallel jaw / suction). Like a mode,
+  // it is a property of the declaration being written, not of an entity in the
+  // scene — nothing in the viewport is selected by pressing it.
+  { key: 'src/components/Grasp/GraspSearchPanel.jsx', why: 'the declared hand kind in the Grasped card — a kind is not an entity' },
   { key: 'src/components/Onboarding/TourCard.jsx',  why: 'the onboarding step you are on (ADR-063 tour), paired with factTone for done steps' },
   { key: 'src/view/ChromeMath.js',                  why: 'the breathing glow that marks an affordance asking for attention (ADR-065/080) — an invitation, not a selection' },
   { key: 'src/components/ProjectionToggle/ProjectionToggle.jsx', why: 'the active PROJECTION (ADR-103) — a view setting, the same "what you are operating in" meaning as ModeDropdown, not an entity' },

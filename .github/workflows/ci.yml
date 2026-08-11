@@ -145,6 +145,13 @@ jobs:
       - name: Build (committed WASM artifacts)
         run: pnpm build
 
+      # The grasp stub must not ride along in an ordinary build (ADR-117). This
+      # runs AFTER the build because it measures dist/, not source: "it is behind
+      # a flag so it tree-shakes" is a claim about the bundler, and the first
+      # implementation of that claim was wrong while the app kept working.
+      - name: Grasp stub is absent from the normal build
+        run: pnpm test:stub
+
   # Backend judgement engine (core/ — ADR-075/076). A separate job from the
   # JS gate: different toolchain (Python via uv). Its contract-conformance
   # tests (pydantic ⇄ neutral JSON Schema binding) read the in-repo schema

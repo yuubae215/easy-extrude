@@ -127,7 +127,7 @@ def test_thin_container_domain_diagnostics_are_clean():
     assert d.rejected_by_visibility == 0
     assert d.rejected_by_grasp == 0
     assert d.occlusion_nearest_miss is None
-    assert d.opening_nearest_miss is None
+    assert d.grasp_nearest_miss is None
     assert d.feasible > 0
 
 

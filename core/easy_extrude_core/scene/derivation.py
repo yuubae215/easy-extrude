@@ -21,7 +21,13 @@ from collections.abc import Iterable, Sequence
 
 from ..contract import CONTRACT_VERSION, GraspSearchRequest
 from ..engine.feasibility import sightline_occlusion_miss
-from ..engine.types import Camera, Obstacle
+from ..engine.types import (
+    Camera,
+    GripperKind,
+    Obstacle,
+    ParallelJawGripper,
+    SuctionGripper,
+)
 from .types import Scene, SceneEntity
 from .settings import GraspSettings
 
@@ -167,10 +173,9 @@ def build_request(
             camera_wire["fovHalfAngle"] = settings.camera.fov_half_angle
         grasp_search["camera"] = camera_wire
     if settings.gripper is not None:
-        grasp_search["gripper"] = {
-            "maxOpening": settings.gripper.max_opening,
-            "fingerClearance": settings.gripper.finger_clearance,
-        }
+        # kind 判別 (ADR-118)。ここはドメイン型 -> ワイヤの写しなので、種別ごとに
+        # 出すキーが違う。既定へ倒す余地は無い (型が既に種別を持っている)。
+        grasp_search["gripper"] = _gripper_to_wire(settings.gripper)
     return GraspSearchRequest.model_validate(
         {
             "contractVersion": CONTRACT_VERSION,
@@ -178,3 +183,24 @@ def build_request(
             "graspSearch": grasp_search,
         }
     )
+
+
+def _gripper_to_wire(gripper) -> dict:
+    """ドメインのハンド型をワイヤの kind 判別 union へ (ADR-118, 純粋)。
+
+    種別ごとに出すキーが違う。未宣言の種別は **throw** する — 既定へ倒すと、
+    シーン層が組んだ request が宣言と食い違ったままエンジンへ渡る。
+    """
+    if isinstance(gripper, ParallelJawGripper):
+        return {
+            "kind": GripperKind.PARALLEL_JAW.value,
+            "maxOpening": gripper.max_opening,
+            "fingerClearance": gripper.finger_clearance,
+        }
+    if isinstance(gripper, SuctionGripper):
+        return {
+            "kind": GripperKind.SUCTION.value,
+            "cupDiameter": gripper.cup_diameter,
+            "sealTiltTolerance": gripper.seal_tilt_tolerance,
+        }
+    raise ValueError(f"未宣言のハンド種別 {type(gripper).__name__} (ADR-118)")

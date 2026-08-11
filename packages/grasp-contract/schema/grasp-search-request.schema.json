@@ -14,9 +14,14 @@
       "type": "string",
       "description": "Layout DSL schema version this declaration targets, e.g. 'layout/1.0'. References the public schema; not redefined here."
     },
-    "graspSearch": { "$ref": "#/$defs/graspSearchDeclaration" }
+    "graspSearch": {
+      "$ref": "#/$defs/graspSearchDeclaration"
+    }
   },
-  "required": ["layoutVersion", "graspSearch"],
+  "required": [
+    "layoutVersion",
+    "graspSearch"
+  ],
   "$defs": {
     "graspSearchDeclaration": {
       "type": "object",
@@ -26,7 +31,9 @@
         "objectiveWeights": {
           "type": "object",
           "description": "objective name -> weight. Keys correspond to score breakdown keys.",
-          "additionalProperties": { "type": "number" }
+          "additionalProperties": {
+            "type": "number"
+          }
         },
         "topN": {
           "type": "integer",
@@ -39,9 +46,18 @@
           "description": "Declares the 'can it be reached' (Plan) domain judgement parameters (ADR-081 Sense/Plan/Act axis, forward-wrapped by ADR-084 §4). These were formerly written directly on `robot.*`; they move here so a later `sense{}`/`act{}` split does not have to move them again. Declaration only -- reach/IK evaluation stays solved in core/. Reading precedence: when a key is present in both `plan` and the legacy `robot`, `plan` wins (backward-compat fallback in the core adapter).",
           "additionalProperties": false,
           "properties": {
-            "reachMin": { "type": "number", "minimum": 0 },
-            "reachMax": { "type": "number", "minimum": 0 },
-            "wristConeHalfAngle": { "type": "number", "minimum": 0 }
+            "reachMin": {
+              "type": "number",
+              "minimum": 0
+            },
+            "reachMax": {
+              "type": "number",
+              "minimum": 0
+            },
+            "wristConeHalfAngle": {
+              "type": "number",
+              "minimum": 0
+            }
           }
         },
         "robot": {
@@ -52,20 +68,33 @@
             "base": {
               "type": "array",
               "description": "[x, y, z] world-frame position of the robot base (ROS convention, Z up). Resolved from the `robot_base` CoordinateFrame entity (ADR-084 §2).",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 3,
               "maxItems": 3
             },
             "tcpOrientation": {
               "type": "array",
               "description": "[x, y, z, w] world-frame quaternion of the gripper (TCP) pose, resolved from the `tcp` CoordinateFrame entity (ADR-084 §3). Same axis order as the response `cartesianFrame.orientation`. When declared, the naive cone judgement measures the required approach against the TCP forward axis (+X rotated by this quaternion) instead of the base->candidate proxy axis; omitting it keeps the legacy proxy-axis behavior (no silent change).",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 4,
               "maxItems": 4
             },
-            "reachMin": { "type": "number", "minimum": 0 },
-            "reachMax": { "type": "number", "minimum": 0 },
-            "wristConeHalfAngle": { "type": "number", "minimum": 0 }
+            "reachMin": {
+              "type": "number",
+              "minimum": 0
+            },
+            "reachMax": {
+              "type": "number",
+              "minimum": 0
+            },
+            "wristConeHalfAngle": {
+              "type": "number",
+              "minimum": 0
+            }
           }
         },
         "camera": {
@@ -76,14 +105,18 @@
             "position": {
               "type": "array",
               "description": "[x, y, z] world-frame position of the camera's optical center.",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 3,
               "maxItems": 3
             },
             "viewAxis": {
               "type": "array",
               "description": "Optional viewing direction (need not be unit length; the solver normalizes). The field-of-view cone applies only when both viewAxis and fovHalfAngle are declared.",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 3,
               "maxItems": 3
             },
@@ -93,27 +126,73 @@
               "minimum": 0
             }
           },
-          "required": ["position"]
+          "required": [
+            "position"
+          ]
         },
         "gripper": {
-          "type": "object",
-          "description": "Declares the parallel-jaw gripper for the 'can it be grasped' domain gate (ADR-081). Declaration only -- the geometric grasp gate itself is solved in core/. Optional: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true).",
-          "additionalProperties": false,
-          "properties": {
-            "maxOpening": {
-              "type": "number",
-              "description": "Maximum jaw opening width (same length unit as the request geometry).",
-              "minimum": 0
+          "description": "Declares the hand for the 'can it be grasped' domain gate (ADR-081), as a CLOSED KIND-DISCRIMINATED UNION (ADR-118, same governance as the response's `pose`). A parallel jaw and a suction cup do not measure the same quantity -- one asks whether the jaws close across the object, the other whether a flat enough patch of the surface can be sealed -- so they are separate branches rather than optional siblings on one flat object. Flattening them would make 'a suction cup with a jaw opening' representable. Declaration only: the gate itself is solved in core/. Optional as a whole: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true). The only intentional growth point is adding a kind, which bumps contractVersion.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/gripperParallelJaw"
             },
-            "fingerClearance": {
-              "type": "number",
-              "description": "Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance).",
-              "minimum": 0
+            {
+              "$ref": "#/$defs/gripperSuction"
             }
-          },
-          "required": ["maxOpening"]
+          ],
+          "discriminator": {
+            "propertyName": "kind"
+          }
         }
       }
+    },
+    "gripperParallelJaw": {
+      "type": "object",
+      "description": "Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "parallelJaw"
+        },
+        "maxOpening": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum jaw opening width (same length unit as the request geometry)."
+        },
+        "fingerClearance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance)."
+        }
+      },
+      "required": [
+        "kind",
+        "maxOpening"
+      ]
+    },
+    "gripperSuction": {
+      "type": "object",
+      "description": "Vacuum cup. The gate seals against a face, so the quantity that decides feasibility is whether a contiguous patch at least the cup diameter across is flat enough to seal -- width and finger clearance are meaningless here.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "suction"
+        },
+        "cupDiameter": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cup outside diameter -- the patch the seal needs (same length unit as the request geometry)."
+        },
+        "sealTiltTolerance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "How far a surface normal inside the cup footprint may deviate from the contact normal and still seal, in radians. Absent leaves the solver its own naive default; it is never inferred from the other fields."
+        }
+      },
+      "required": [
+        "kind",
+        "cupDiameter"
+      ]
     }
   }
 }

@@ -19,7 +19,13 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # near-miss (occlusionNearestMiss/openingNearestMiss) へ拡張 (repo 内正本
 # packages/grasp-contract で同一 PR 版上げ, ADR-082)。リクエスト側の camera/gripper
 # 宣言は open payload (layoutVersion 統治) で版上げ対象外。
-CONTRACT_VERSION = 4
+# v5: ハンド宣言を kind 判別の有界 union へ (parallelJaw / suction) し、
+# diagnostics の `openingNearestMiss` を種別つきの `graspNearestMiss` へ置換
+# (ADR-118)。**閉じた層の必須フィールドの置換**なので版上げが要る — 吸引の
+# シールパッチ不足を "opening" の欄で報告すると、クライアントは名前が嘘をついている
+# 量でメーターを描く。リクエスト側の gripper は閉じたオブジェクトだったので
+# スキーマ更新は要るが、版上げを駆動しているのは response 側 (ADR-084 §4 の統治)。
+CONTRACT_VERSION = 5
 
 
 class ContractVersionMismatch(ValueError):

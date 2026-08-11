@@ -19,7 +19,7 @@ const D = Object.freeze({
   returned: 2,
   reachNearestMiss: 0.05,
   occlusionNearestMiss: 0.008,
-  openingNearestMiss: null,
+  graspNearestMiss: null,
 })
 
 // ── funnelStages ──────────────────────────────────────────────────────────────

@@ -1,0 +1,79 @@
+GOALS adr122_pickable_and_yield
+
+goal EachQuestionHasItsOwnDoorAndItsOwnPremise
+uuid c2437627-2204-4edc-ad9e-41703d52a0f0
+summary "「そもそも取れるか」「この配置で取れるか」「何個取れるか」「どれくらいの確率で取れるか」が、互いの入力にならない独立した問いとして立ち、どれかを塞ぐと別のものまで塞がる構造が無い"
+state UnderReview
+labels adr-122, grasp, scene-layer, adr-078, adr-090, principle-29, principle-24, proposed
+artifacts
+- "docs/adr/ADR-122-pickable-and-yield-are-two-questions.md"
+
+    context Adr122Scope
+    uuid e4ac6112-89a8-4edb-b5b2-80b6072a0541
+    summary "ADR-122 (Proposed 2026-08-11, 未実装): pickable を独立した問いとして立て (D1)、pick-sequence レーンに中立スキーマと入口を与え (D2)、配置は宣言せず集合から導出し (D3)、歩留まりは決定的レーンの外に置く (D4)。ADR-090 のロボットゲートは緩めない"
+    artifacts
+    - "core/easy_extrude_core/scene/orchestration.py"
+
+    context TwoQuestionsShareOneDoor
+    uuid 5586bfdd-f94a-467d-a00a-bc34abf76014
+    summary "実測: NaiveParallelJawGraspChecker と NaiveSuctionGraspChecker はロボットを一切要求しない。まさに形状 x ツールの問いである。ところが判定は per-candidate パイプラインの中でリーチと IK の後ろにいて、フロントは ADR-090 のゲートでロボット無しのリクエストを送れない。幽霊ロボットの穴を塞いだときに形状 x ツールの問いも一緒に塞がった"
+    artifacts
+    - "core/easy_extrude_core/engine/feasibility.py"
+
+    context TheYieldLaneExistsAndIsUnreachable
+    uuid 58c3386c-f6e4-42a1-ae1a-f04452836c09
+    summary "実測: core/easy_extrude_core/scene/ は属性とピック履歴から per-pick の target と obstacles を導出し、コアAPI は POST /pick-sequence を公開している。BFF にルートが無く、フロントにクライアントが無く、中立スキーマも無い (ADR-078 が public Layout DSL 正本待ちとして deferred)。src/ 全体で pick-sequence への参照は doc コメント 1 行だけ"
+    artifacts
+    - "core/easy_extrude_core/api/app.py"
+
+    justification WhyThePlacementAxesWereFolded
+    uuid 4facf67e-dfb2-4c1b-a61b-c9ef4f27a238
+    summary "一度採った二軸案 (姿勢の出所 authored/sensed x ピックが残りを乱すか independent/perturbing) を畳んだ理由: 崩れるかどうかは状態変化ではなく、ワーク同士が被って見えなくなることとピック時に互いに干渉することであり、どちらも論理的に配置された集合の組み合わせから導出できる。しかも既に導出されている (derive_obstacles と viewable_entities)。導出できるものを宣言すれば第二の源になる"
+    artifacts
+    - "core/easy_extrude_core/scene/derivation.py"
+
+    justification WhyProbabilityStaysOutOfTheSolver
+    uuid 8191ecd1-17e7-43a6-a9ac-c295ce95ff29
+    summary "却下案 (歩留まりを物理シミュレーションで求めてソルバに戻す) への反証: 高価なうえ、導出値を同じ計算の入力に戻す閉路になる (原則 #24)。実験計画 + 統計的計測のほうが安く、置き場所も既にある (ADR-081 の ConvergenceBySweetSpot と docs/dogfooding/)。独立した確率問題として置くことで個々の問題が疎になる"
+
+    assumption OperationalVocabularyGapIsBridgeable
+    uuid 53eb690a-61a6-4b65-b1e5-53e9a771e86c
+    summary "反証されうる仮説: 配置を宣言しない設計にしても、導出結果に名前を付けて見せれば「バラ積み」という運用の言葉は提示側で埋められる。反証されうる形は、ユーザーが入力として配置を選びたがること (導出が信用されない場合)。そのときは宣言と導出の関係を ADR-119 D3 と同じ形で決め直す"
+
+    context BusinessTreeAttachPoint
+    uuid 5b129bfe-25bd-4ba8-8037-d6e596be1466
+    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝と、歩留まりについては docs/dogfooding/ の証拠レーン"
+    artifacts
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    strategy BySeparatingThePremisesInsteadOfWideningOneEndpoint
+    uuid 5f28060e-dc2f-46a4-909b-decf421cd559
+    summary "既存のエンドポイントにモードを足すのではなく、前提の違う問いを別の入口に分ける。同じエンドポイントに 2 つの前提を同居させたことが、そもそも pickable が聞けなくなった原因だから"
+
+        goal PickableIsAskableWithoutARobot
+        uuid 3d64bfbd-21c2-4253-906a-a6af3e917156
+        summary "ワーク外形とツール形状だけで「そもそも取れるか」を聞ける経路があり、それは ADR-090 のロボットゲートを緩めることで実現されていない"
+        labels support-exploring
+
+            assumption PairedTestsWillSettleIt
+            uuid 76caa00b-9856-4e09-8ad1-34cc3f58039d
+            summary "未着手。決着させる検査は 2 本で対にする — ロボット宣言なしの pickable が 200 で返ること、かつ grasp-search はロボット無しで依然 no-robot で止まること。後者が無いと、ゲートを緩めて実現していないことを示せない"
+
+        goal TheYieldLaneIsUnderContractAndReachable
+        uuid b2c5ecb9-a10b-4884-b738-858ba30d0a44
+        summary "pick-sequence が中立スキーマを持ち、BFF と フロントから到達でき、両端で検証される"
+        labels support-exploring
+
+            assumption NeutralSchemaConformanceWillSettleIt
+            uuid 5fc94b51-576d-47eb-9bd9-06372debd7e0
+            summary "未着手。決着させる検査は中立スキーマに対する準拠テストを core と BFF の双方に置くこと。いまは片側 (core の pydantic) だけが契約を持っている状態で、原則 #29 の二状態のどちらでもない"
+
+        goal PlacementIsDerivedNotDeclared
+        uuid 29bf2424-3415-4d6f-ac95-cc118deecd0f
+        summary "遮蔽と相互干渉は集合から導出され、配置を表すラベルの欄が契約に存在しない"
+        labels support-exploring
+
+            assumption SchemaCensusWillSettleIt
+            uuid 1627aa28-9249-4c22-94ce-464fd1dc1d79
+            summary "未着手。決着させる検査は契約スキーマに配置ラベルの欄が無いことを数える census。「足さなかった」は不在なのでノードを持たず、在るものを辿る検査では出てこない (原則 #31)"
+

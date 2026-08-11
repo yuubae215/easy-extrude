@@ -15,7 +15,7 @@ from dataclasses import replace
 import pytest
 
 from easy_extrude_core.engine import pose_from_payload
-from easy_extrude_core.engine.types import Camera, Gripper, Obstacle, Robot, Vec3
+from easy_extrude_core.engine.types import Camera, ParallelJawGripper, Obstacle, Robot, Vec3
 from easy_extrude_core.scene import (
     EntityKind,
     GraspSettings,
@@ -303,7 +303,7 @@ def test_build_request_carries_camera_and_gripper_declarations():
     settings = replace(
         _settings(),
         camera=Camera(position=Vec3(0, 0, 0), view_axis=Vec3(0, 0, -1), fov_half_angle=0.6),
-        gripper=Gripper(max_opening=0.06, finger_clearance=0.01),
+        gripper=ParallelJawGripper(max_opening=0.06, finger_clearance=0.01),
     )
     req = build_request(_bin_scene(), "w_top", settings)
     data = req.grasp_search.model_dump(by_alias=True)
@@ -312,7 +312,11 @@ def test_build_request_carries_camera_and_gripper_declarations():
         "viewAxis": [0.0, 0.0, -1.0],
         "fovHalfAngle": 0.6,
     }
-    assert data["gripper"] == {"maxOpening": 0.06, "fingerClearance": 0.01}
+    assert data["gripper"] == {
+        "kind": "parallelJaw",
+        "maxOpening": 0.06,
+        "fingerClearance": 0.01,
+    }
     # 未宣言ならキーごと出さない (空 dict で意味を曖昧にしない)。
     bare = build_request(_bin_scene(), "w_top", _settings())
     bare_data = bare.grasp_search.model_dump(by_alias=True)

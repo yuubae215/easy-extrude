@@ -1,0 +1,75 @@
+GOALS adr121_centre_of_mass_is_declared
+
+goal CentreOfMassIsADeclaredFactNotASilentAssumption
+uuid 926c8e38-f6e5-47ed-8b06-c9d3a0c9ceb7
+summary "重心が把持判定に効くようになり、かつ推定値が実測値として振る舞う経路が存在しない — 仮定は仮定として運ばれ、不在は不在として扱われる"
+state UnderReview
+labels adr-121, grasp, suction, principle-31, adr-056-verb-boundary, proposed
+artifacts
+- "docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md"
+
+    context Adr121Scope
+    uuid 49b25b3b-ba24-4e75-8027-c85e23a696f0
+    summary "ADR-121 (Proposed 2026-08-11, 未実装): target.centerOfMass を kind 判別 union で足し (D1)、不在のとき図心へ倒さず重心依存の objective を評価しない (D2)、推定は propose レーンに置いてワイヤに乗せない (D3)、重心を使う判定は grasp_stability を変えずに新 objective として足す (D4)。ADR-120 が先に要る"
+    artifacts
+    - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+
+    context SuctionRaisedThePriority
+    uuid e54e89e3-52be-4cdd-8d94-437e88e687a2
+    summary "ADR-118 で吸引が入ったことで、重心は「あったほうがいい」から「無いと吸引の判定が成立しない」へ格上げされた。カップ軸から重心がずれているぶんがモーメントになり、シールを剥がす向きに働くため。いまの grasp_stability は進入ベクトルと法線の内積 = 正対度しか見ておらず、偏心した対象を端で掴む危うさは原理的に表現されていない"
+    artifacts
+    - "core/easy_extrude_core/engine/objectives.py"
+
+    justification WhyCentroidIsNotADefault
+    uuid 2cbbe285-7cb9-4c78-bcf7-ed4e67ba5de6
+    summary "却下案 (重心が無ければ均質仮定の図心を既定で入れる) への反証: 常に評価できるので分母問題は起きないが、実測と仮定の区別が kind だけになり、見落とされたときに静かに実測として扱われる。ADR-090 の「原点に立つ無限リーチの幽霊ロボット」と同じ形 — 仮定が値に化けて、画面が区別できなくなる。明示的に選ばれた仮定と誰も考えなかった不在を区別できることのほうを取る"
+
+    justification WhyGraspStabilityIsNotRewritten
+    uuid e3fbf69c-073a-44fe-a1a3-b1519ad00a2d
+    summary "却下案 (grasp_stability の意味を重心ベースに書き換える) への反証: 既存の応答値が黙って変わる。新しい objective として足せば、重み付けされたときだけ計算され、重心が無ければ ADR-120 の規則で自然に「評価していない」になる"
+
+    assumption EstimationStaysOffTheWire
+    uuid 6f564781-6726-4df2-8227-a90f1c1e3f8d
+    summary "反証されうる仮説: 材質や寸法や類似からの重心推定は propose レーンに閉じ込められる。反証されうる形は、推定の確からしさ自体を判定に使いたくなること (「この重心は 80% 確からしい」)。そうなった時点で確率がワイヤに乗り、ADR-122 D4 の「歩留まりは決定的レーンの外」と衝突する"
+
+    assumption HomogeneousCentroidIsOnlyTrivialForBoxes
+    uuid a943271a-a1c2-4eb2-b1bf-d4aa81c6d61f
+    summary "反証されうる仮説: 均質仮定の図心はいまの対象表現 (中心 + 寸法 + 回転) では中心そのもので自明。反証されうる形はメッシュ対象が来ること。そのとき図心計算が要る"
+
+    context BusinessTreeAttachPoint
+    uuid 8a6456b6-93e7-4863-a56f-baa1e06f3130
+    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝"
+    artifacts
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    strategy ByCarryingProvenanceWithTheValue
+    uuid 13c9d152-ff0c-4010-af79-a291011829ac
+    summary "値だけでなく出所 (measured / assumedHomogeneous) を kind として一緒に運び、出所ごと欠けている場合は評価そのものを行わない。推定は決定の前段に置き、契約の外に留める"
+
+        goal AbsentCentreOfMassNeverBecomesTheCentroid
+        uuid 5bce6be3-9a12-4033-9a89-14327932394c
+        summary "重心が宣言されていないとき、図心が代わりに使われることがなく、重心依存の objective は評価されない"
+        labels support-exploring
+
+            assumption KeyAbsenceTestWillSettleIt
+            uuid 11eea917-ce1b-4e04-9918-2be3f268a583
+            summary "未着手。決着させる検査は、重心なしのリクエストで com_offset の鍵が出ないこと。ADR-120 の鍵不在の規律にそのまま乗るので、120 が先に入っている必要がある"
+
+        goal ProvenanceIsVisibleToTheReader
+        uuid d08ab6a9-11ba-4e74-8a81-97e92a5cf8b0
+        summary "同じ点でも measured と assumedHomogeneous では画面の言うことが違う"
+        labels support-exploring
+
+            assumption PureLayerTestWillSettleIt
+            uuid ecef40f1-5609-4255-bac5-a6636c069b08
+            summary "未着手。決着させる検査は純粋層で、kind が違えば導出される提示が違うこと。dogfooding の記録が仮定由来の値を実測として拾わないことが実務上の目的"
+
+        goal EstimationIsAbsentFromTheContract
+        uuid 7789c748-d6f6-4633-ab1a-3e9b74baf7f3
+        summary "推定に由来する欄 (確からしさ・材質・類似度) が契約スキーマに存在しない"
+        labels support-exploring
+
+            assumption SchemaCensusWillSettleIt
+            uuid c8231a31-0852-449f-b588-5eb054733192
+            summary "未着手。決着させる検査は契約スキーマに対する census。動詞境界 (ADR-056/077) は散文では守られないので、機械が数える形にする"
+

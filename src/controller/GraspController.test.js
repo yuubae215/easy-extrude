@@ -12,7 +12,22 @@ import assert from 'node:assert/strict'
 import { GraspController } from './GraspController.js'
 import { BffUnavailableError } from '../service/BffClient.js'
 
-const LAYOUT = { version: 'layout/1.0', entities: [{}, {}] }
+/**
+ * Two entities, exactly one of them graspable (ADR-117). The entity COUNT (2) is
+ * what the layout-meta assertions read; the single Solid is what makes the target
+ * roster resolve to cardinality 'single', so these runs need no explicit pick.
+ * Before ADR-117 the fixture was `[{}, {}]` — two shapeless objects — which is
+ * exactly why nothing here noticed that the request carried no target geometry.
+ */
+const LAYOUT = {
+  version:  'layout/1.0',
+  entities: [
+    { ref: 'widget', type: 'Solid', name: 'Widget',
+      position: { x: 600, y: 0, z: 400 }, dimensions: { x: 60, y: 60, z: 40 } },
+    { ref: 'tcp_pick', type: 'AnnotatedPoint', name: 'TCP 教示点',
+      position: { x: 600, y: 0, z: 500 } },
+  ],
+}
 
 /**
  * A minimal fake uiStore mirroring the slice + actions GraspController touches.
@@ -191,7 +206,58 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   assert.equal(g.candidates.length, 2)
   assert.equal(g.selectedRank, null)
   assert.equal(g.compiledObjects, 3)
-  assert.deepEqual(g.request, { layoutVersion: 'layout/1.0', graspSearch: { objectiveWeights: { reach: 0.6, clearance: 0.4 }, topN: 5, robot: { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] } } })
+  assert.deepEqual(g.request.layoutVersion, 'layout/1.0')
+  assert.deepEqual(g.request.graspSearch.objectiveWeights, { reach: 0.6, clearance: 0.4 })
+  assert.equal(g.request.graspSearch.topN, 5)
+  assert.deepEqual(g.request.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
+  // ADR-117 — the object being grasped rides the request. This assertion is the
+  // regression itself: without `target.surfaceSamples`, core/ generates zero
+  // candidates and every run returns a well-formed, permanently empty answer.
+  assert.equal(g.request.graspSearch.target.surfaceSamples.length, 9)
+  for (const s of g.request.graspSearch.target.surfaceSamples) {
+    assert.deepEqual(s.normal, [0, 0, 1])
+    assert.equal(s.point[2], 420, 'top face of the 40-tall widget centred at z=400')
+  }
+  // The only Solid in the fixture is the target, so nothing is left to obstruct
+  // it — a DECLARED empty list, not an omitted key.
+  assert.deepEqual(g.request.graspSearch.obstacles, [])
+})
+
+test('掴む対象が宣言されていない layout では no-target で止まる (ADR-117)', async () => {
+  // 対象 0 個。以前はここで request がそのまま出て、core/ が候補 0 件の
+  // 「正しい形の答え」を返していた — 検査は緑、探索は死んでいる (ADR-116 と同型)。
+  const noSolids = { version: 'layout/1.0', entities: [
+    { ref: 'p', type: 'AnnotatedPoint', name: 'point', position: { x: 0, y: 0, z: 0 } },
+  ] }
+  const { gc, grasp } = setup({ bff: okBff, layoutDsl: noSolids })
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.equal(g.status, 'no-target')
+  assert.equal(g.targetCount, 0)
+  assert.match(g.reason, /no solid with graspable geometry/i)
+})
+
+test('掴める対象が N 個あって未選択なら no-target — 先頭へ既定で倒さない (ADR-117)', async () => {
+  const twoSolids = { version: 'layout/1.0', entities: [
+    { ref: 'pedestal', type: 'Solid', name: '台座',
+      position: { x: 0, y: 0, z: 200 }, dimensions: { x: 220, y: 220, z: 400 } },
+    { ref: 'widget', type: 'Solid', name: 'Widget',
+      position: { x: 600, y: 0, z: 400 }, dimensions: { x: 60, y: 60, z: 40 } },
+  ] }
+  const { gc, grasp } = setup({ bff: okBff, layoutDsl: twoSolids })
+  await gc.runGraspSearch({})
+  assert.equal(grasp().status, 'no-target')
+  assert.equal(grasp().targetCount, 2)
+
+  // 明示的に選べば通り、選んだものが対象として載る。
+  gc.selectGraspTarget('widget')
+  await gc.runGraspSearch({})
+  const g = grasp()
+  assert.equal(g.status, 'results')
+  assert.equal(g.request.graspSearch.target.surfaceSamples[0].point[2], 420)
+  // 選ばなかったほうの実体は障害物として宣言される (自分自身は除外される)。
+  assert.equal(g.request.graspSearch.obstacles.length, 1)
+  assert.deepEqual(g.request.graspSearch.obstacles[0].center, [0, 0, 200])
 })
 
 // ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────

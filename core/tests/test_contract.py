@@ -27,7 +27,7 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
         returned=1,
         reach_nearest_miss=None,
         occlusion_nearest_miss=None,
-        opening_nearest_miss=None,
+        grasp_nearest_miss=None,
     )
     base.update(overrides)
     return SearchDiagnostics(**base)

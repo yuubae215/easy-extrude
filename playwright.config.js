@@ -44,5 +44,10 @@ export default defineConfig({
     url: BASE,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // Forwarded so `VITE_GRASP_STUB=1 pnpm test:e2e` boots the dev server in the
+    // stub lane and `e2e/grasp-stub.spec.js` becomes runnable (ADR-117). Without
+    // the passthrough the spec would silently skip forever — a suite that can
+    // never run is indistinguishable from one that always passes.
+    env: { VITE_GRASP_STUB: process.env.VITE_GRASP_STUB ?? '' },
   },
 })

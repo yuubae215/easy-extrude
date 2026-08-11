@@ -43,6 +43,7 @@ from ..contract import SearchDiagnostics as SearchDiagnosticsWire
 from .candidates import generate_candidates
 from .feasibility import (
     CollisionChecker,
+    grasp_miss,
     GraspChecker,
     IkSolver,
     NaiveIkSolver,
@@ -60,6 +61,9 @@ from .pose_codec import pose_to_payload
 from .scoring import weighted_sum
 from .types import (
     Camera,
+    GripperKind,
+    ParallelJawGripper,
+    SuctionGripper,
     Gripper,
     Obstacle,
     Pose,
@@ -90,6 +94,34 @@ def _tuple_floats(raw: Any, default: tuple[float, ...]) -> tuple[float, ...]:
     if not raw:
         return default
     return tuple(float(x) for x in raw)
+
+
+def _gripper_from_wire(raw: dict[str, Any]) -> Gripper:
+    """ワイヤのハンド宣言をドメイン型へ (ADR-118)。
+
+    kind ごとに読むフィールドが違うので、ここが唯一の分岐点。未宣言 / 未知の kind は
+    既定へ倒さず ValueError を上げ、エンドポイント層が 400 に写す — 宣言と判定が
+    食い違ったまま 200 を返すより、拒否するほうが安い。
+    """
+    kind = raw.get("kind")
+    if kind == GripperKind.PARALLEL_JAW.value:
+        return ParallelJawGripper(
+            max_opening=float(raw.get("maxOpening", 0.0)),
+            finger_clearance=float(raw.get("fingerClearance", 0.0)),
+        )
+    if kind == GripperKind.SUCTION.value:
+        suction = SuctionGripper(cup_diameter=float(raw.get("cupDiameter", 0.0)))
+        tolerance = raw.get("sealTiltTolerance")
+        if tolerance is not None:
+            suction = SuctionGripper(
+                cup_diameter=suction.cup_diameter,
+                seal_tilt_tolerance=float(tolerance),
+            )
+        return suction
+    raise ValueError(
+        f"未宣言のハンド種別 {kind!r}: graspSearch.gripper.kind は "
+        f"{[k.value for k in GripperKind]} のいずれかであること (ADR-118)"
+    )
 
 
 def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
@@ -151,13 +183,13 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
             fov_half_angle=float(fov_raw) if fov_raw is not None else None,
         )
 
+    # ハンド宣言は kind 判別の union (ADR-118 / 契約 v5)。**kind 欠落や未知の kind を
+    # 平行ジョーへ倒さない** — 倒すと「吸引を宣言したのに幅で判定される」という、
+    # 応答が正しい形をしているぶん最も気づきにくい嘘になる (原則 #31)。
     gripper: Optional[Gripper] = None
     gripper_raw = data.get("gripper")
     if gripper_raw:
-        gripper = Gripper(
-            max_opening=float(gripper_raw.get("maxOpening", 0.0)),
-            finger_clearance=float(gripper_raw.get("fingerClearance", 0.0)),
-        )
+        gripper = _gripper_from_wire(gripper_raw)
 
     sampling = data.get("sampling") or {}
     return Problem(
@@ -176,6 +208,15 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
 
 
 # --- 診断 (ADR-079: 判定の証明) -------------------------------------------------
+
+
+#: ハンド種別 -> ワイヤの near-miss kind (ADR-118 / 契約 v5)。**未宣言の種別で
+#: KeyError を出す**のは意図的で、既定へ倒すと吸引の不足量が "opening" として
+#: 報告され、クライアントは間違った量のメーターを描く (原則 #31)。
+_MISS_KIND_BY_GRIPPER: dict[GripperKind, str] = {
+    GripperKind.PARALLEL_JAW: "opening",
+    GripperKind.SUCTION: "sealPatch",
+}
 
 
 @dataclass(frozen=True)
@@ -207,9 +248,11 @@ class SearchDiagnostics:
     # 可視棄却候補の最小遮蔽量 (最も浅く遮られた候補の食い込み深さ)。測定可能な
     # 可視棄却が無ければ None (視野外のみの棄却は遮蔽量では測れない — feasibility)。
     occlusion_nearest_miss: Optional[float]
-    # 把持棄却候補の最小開口不足量。測定可能な把持棄却が無ければ None
-    # (接触対なしの棄却は幅では測れない — feasibility)。
-    opening_nearest_miss: Optional[float]
+    # 把持棄却候補の最小不足量と、その **種別** (ADR-118 / 契約 v5)。平行ジョーなら
+    # 開口幅の不足、吸引ならシールパッチの不足で、長さは同じでも量が違う。測定可能な
+    # 把持棄却が無ければ None (接触対なしの棄却は幅では測れない — feasibility)。
+    grasp_nearest_miss: Optional[float]
+    grasp_nearest_miss_kind: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -251,9 +294,10 @@ def search_report(
         if visibility_checker is not None
         else NaiveSightlineVisibilityChecker()
     )
-    grip_checker = (
-        grasp_checker if grasp_checker is not None else NaiveParallelJawGraspChecker()
-    )
+    # 既定を平行ジョーに固定しない (ADR-118): 種別ごとに測る量が違うので、
+    # 注入が無ければ `grasp_miss` が宣言された kind から naive 既定を引く。
+    # ここで固定すると、吸引を宣言したのに幅で判定される嘘が静かに通る。
+    grip_checker = grasp_checker
 
     declaration = request.grasp_search
     problem = problem_from_declaration(declaration)
@@ -268,7 +312,8 @@ def search_report(
     rejected_by_grasp = 0
     reach_nearest_miss: Optional[float] = None
     occlusion_nearest_miss: Optional[float] = None
-    opening_nearest_miss: Optional[float] = None
+    grasp_nearest_miss: Optional[float] = None
+    grasp_nearest_miss_kind: Optional[str] = None
 
     # 通過候補を (total_score, pose, objective_scores) で集める。
     scored: list[tuple[float, Pose, dict[str, float]]] = []
@@ -286,15 +331,16 @@ def search_report(
             rejected_by_ik += 1
             continue
         if problem.gripper is not None:
-            opening = grip_checker.opening_miss(
-                candidate, problem.gripper, problem.target
+            miss = grasp_miss(
+                candidate, problem.gripper, problem.target, grip_checker
             )
-            if opening > 0.0:
+            if miss > 0.0:
                 rejected_by_grasp += 1
-                if math.isfinite(opening) and (
-                    opening_nearest_miss is None or opening < opening_nearest_miss
+                if math.isfinite(miss) and (
+                    grasp_nearest_miss is None or miss < grasp_nearest_miss
                 ):
-                    opening_nearest_miss = opening
+                    grasp_nearest_miss = miss
+                    grasp_nearest_miss_kind = _MISS_KIND_BY_GRIPPER[problem.gripper.kind]
                 continue
         if problem.camera is not None:
             occlusion = vis_checker.occlusion_miss(
@@ -350,7 +396,8 @@ def search_report(
         returned=len(candidates),
         reach_nearest_miss=reach_nearest_miss,
         occlusion_nearest_miss=occlusion_nearest_miss,
-        opening_nearest_miss=opening_nearest_miss,
+        grasp_nearest_miss=grasp_nearest_miss,
+        grasp_nearest_miss_kind=grasp_nearest_miss_kind,
     )
     diagnostics_wire = SearchDiagnosticsWire(
         candidates_generated=diagnostics.candidates_generated,
@@ -363,7 +410,13 @@ def search_report(
         returned=diagnostics.returned,
         reach_nearest_miss=diagnostics.reach_nearest_miss,
         occlusion_nearest_miss=diagnostics.occlusion_nearest_miss,
-        opening_nearest_miss=diagnostics.opening_nearest_miss,
+        grasp_nearest_miss=(
+            None if diagnostics.grasp_nearest_miss is None
+            else {
+                "kind": diagnostics.grasp_nearest_miss_kind,
+                "shortfall": diagnostics.grasp_nearest_miss,
+            }
+        ),
     )
     return SearchReport(
         response=GraspSearchResponse(candidates=candidates, diagnostics=diagnostics_wire),

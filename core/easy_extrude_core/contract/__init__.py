@@ -1,6 +1,7 @@
 """BFF <-> コアAPI 契約 (ADR-074)。型 + contractVersion ガードのみ。判定の実装は含まない。"""
 
 from .models import (
+    GraspNearestMiss,
     GraspSearchDeclaration,
     GraspSearchRequest,
     GraspSearchResponse,
@@ -37,6 +38,7 @@ from .version import (
 )
 
 __all__ = [
+    "GraspNearestMiss",
     "CONTRACT_VERSION",
     "ContractVersionMismatch",
     "check_contract_version",
