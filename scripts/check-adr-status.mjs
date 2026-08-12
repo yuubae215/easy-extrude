@@ -28,12 +28,13 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ADR_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'adr')
+const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url))
+const ADR_DIR = join(SCRIPTS_DIR, '..', 'docs', 'adr')
 
 // Status の文法は `scripts/adr-status.mjs` ただ 1 箇所 (§1.1)。2026-08-12 に
 // check-deferrals.mjs が同じ文法を*書き写して*いた (しかも 4 方言のうち 1 つしか
 // 読めない狭い写し) ことが分かったので、両者が同じモジュールを引く形へ直した。
-import { STATUS_VALUE, STATUS_ANY, statusValue } from './adr-status.mjs'
+import { TOKEN, STATUS_VALUE, STATUS_ANY, statusValue } from './adr-status.mjs'
 
 /** 状態・基数の語彙 (ADR-091 以降に台帳参照を求める判定用)。 */
 const STATE_VOCAB = /状態機械|ステートマシン|\bFSM\b|状態遷移|基数|cardinality|0 台|N 台/
@@ -182,6 +183,86 @@ for (const plan of PHASED_PLANS) {
       `    段の無い ADR は「順序の外」ではなく、誰も実装しない ADR になる (原則 #31)。`
     )
   }
+}
+
+// ── 索引と header の突き合わせ (2026-08-12 — ADR-124) ────────────────────────
+//
+// **なぜ必要か。** ADR-032 は header `Proposed` / 索引 `Accepted` / 実装 13 ファイルの
+// 三様ずれを 4 か月続けていた。どちらの読み方でも見えない — header だけ読めば
+// 「まだ提案中」で筋が通り、索引だけ読めば「採択済み」で筋が通る。**2 つを突き合わせる
+// 者が居なかった**だけである。ADR-123 で表形式の方言が読めるようになって初めて出た。
+//
+// 比較するのは **TOKEN 部分だけ**。注記 (実装済みの内訳など) は索引のほうが厚いのが
+// 正常で、そこまで一致を求めると索引が header の複製になる (§1.1 — 索引は導出物)。
+const INDEX = join(ADR_DIR, 'README.md')
+const indexStatuses = new Map()
+for (const line of readFileSync(INDEX, 'utf8').split('\n')) {
+  const m = /^\|\s*\[(ADR-\d{3})\]\([^)]*\)\s*\|[^|]*\|([^|]*)\|/.exec(line)
+  if (m) indexStatuses.set(m[1], m[2].trim())
+}
+
+/** @returns {string|null} 値から TOKEN 部分だけを取り出す (注記は捨てる)。 */
+const tokenOf = (value) => new RegExp(`^(${TOKEN})`).exec((value ?? '').replaceAll('*', '').trim())?.[1] ?? null
+
+if (indexStatuses.size === 0) {
+  errors.push(
+    `${INDEX}: 索引から ADR の行を 1 つも読めない。0 は達成ではなく導出の失敗である ` +
+    '(原則 #31)。表の書式が変わったならこのパーサを合わせること。')
+}
+
+for (const file of files) {
+  const id = file.slice(0, 7)
+  const headerValue = readFileSync(join(ADR_DIR, file), 'utf8')
+    .split('\n').map(statusValue).find(v => v !== null && v !== '')
+  const indexValue = indexStatuses.get(id)
+
+  if (indexValue === undefined) {
+    errors.push(
+      `${id}: 索引 (docs/adr/README.md) に行が無い。ADR を足したら索引も同じコミットで ` +
+      '更新すること — 索引に無い ADR は、索引を辿る読み方からは存在しない。')
+    continue
+  }
+  const h = tokenOf(headerValue)
+  const i = tokenOf(indexValue)
+  if (i === null) {
+    errors.push(
+      `${id}: 索引の Status が TOKEN で始まっていない ("${indexValue.slice(0, 60)}")。\n` +
+      '    索引も機械可読にすること (header と突き合わせられない値は、ずれても検出できない)。')
+  } else if (h !== null && h !== i) {
+    errors.push(
+      `${id}: header と索引の Status が食い違う — header "${h}" / 索引 "${i}"。\n` +
+      `    header: ${(headerValue ?? '').slice(0, 80)}\n` +
+      `    索引:   ${indexValue.slice(0, 80)}\n` +
+      '    どちらが実物に合っているかを**コードを見て**決めること。ADR-032 は 4 か月\n' +
+      '    この状態で、header だけ読んでも索引だけ読んでも筋が通っていた (ADR-124)。')
+  }
+}
+
+for (const id of indexStatuses.keys()) {
+  if (!known.has(id)) {
+    errors.push(`${INDEX}: 索引の ${id} に対応する ADR ファイルが docs/adr に無い。`)
+  }
+}
+
+// ── Status を読む文法が 1 つであること (2026-08-12 — ADR-124) ────────────────
+//
+// ADR-123 の実装中、check-deferrals.mjs が「同じ文法で読む」とコメントしながら
+// 実物は狭い写しを持っていた。写しは 4 方言のうち表形式を読めず、ADR がマップから
+// **丸ごと欠落**していた (欠落は「Status 不明」ではなく「その ADR は存在しない」
+// として現れる)。CODE_CONTRACTS に規則を書いたが、散文は誰も開かない (原則 #19 Q3) —
+// **数えるべきは在るパーサではなく、adr-status.mjs の外に在るパーサの個数**である。
+const STATUS_PARSER = /Status\s*\\s\*\s*\[:：\]|Status\s*\[:：\]|cells\[1\]\s*!==\s*'Status'/
+const parserOwners = readdirSync(SCRIPTS_DIR)
+  .filter(f => f.endsWith('.mjs') && f !== 'adr-status.mjs' && !f.endsWith('.test.mjs'))
+  .filter(f => STATUS_PARSER.test(readFileSync(join(SCRIPTS_DIR, f), 'utf8')))
+
+if (parserOwners.length > 0) {
+  errors.push(
+    `Status を自前でパースしているファイルが adr-status.mjs の外に ${parserOwners.length} 件 — ` +
+    `${parserOwners.join(', ')}\n` +
+    '    文法は scripts/adr-status.mjs ただ 1 箇所 (§1.1)。書き写すと、書いた人が知っている\n' +
+    '    方言しか読めない写しになる — 4 方言のうち表形式を落とした先例が ADR-123 で出た。\n' +
+    '    `import { adrStatuses, statusValue } from "./adr-status.mjs"` を使うこと。')
 }
 
 if (errors.length) {

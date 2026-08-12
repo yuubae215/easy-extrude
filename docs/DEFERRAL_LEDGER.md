@@ -24,11 +24,27 @@ ADR-109 D5 は「レーンが違う残しを表から外さない — 外した�
 #73 で **GitHub / ROADMAP / コードが三様に食い違っている**のを実測しており、Issues 側も
 独立にドリフトする。**その照合は今日も人がやる。** 埋めていない穴として置く。
 
-**この表は分母ではない。** 母集団は残しの*語彙* (`未着手` / `暫定` / `申し送り` /
+**この表は分母ではない。** 母集団は残しの*語彙* (`未着手` / `未実装` / `暫定` / `申し送り` /
 `後続 PR` / `次セッション` / `保留` / `引き受けなかった` / `PROVISIONAL_UNTIL` / `DECLARED_GAPS`) から
 `scripts/check-deferrals.mjs` が導出し、この表は「導出された母集団のうち**宣言された
 もの**」に限る。表を分母にしたら、それ自身が母集団を持たない表 (`place-list`) になり、
 「書き忘れた残し」が原理的に出てこなくなる (ADR-102)。
+
+## 残しは「残りの作業を宣言する節」に書く (ADR-124)
+
+`docs/**` では、**残りの作業を宣言する見出しの配下だけ**が母集団である
+(`## 残し` / `Deferred` / `Future Work` / `Out of scope` / `Open questions` /
+`引き受けなかったもの` など。キーワードは見出しの**先頭付近**に無ければならない —
+narrative の見出しに紛れ込んだ語は主題ではなく修飾である)。`src/` `scripts/` は全行。
+
+**なぜ絞ったか。** 2026-08-12 の実測で宣言外 99 件の内訳は **docs/adr 68 / docs その他 29 /
+src 1 / scripts 0** で、コードに残っている残しは **1 件**だった。残りは「残しについて
+*述べている*散文」で、**残しを片付けても減らず、残しについて考えるほど増える** —
+ratchet が「ドキュメント量」を測っていた。絞った結果 99 → 1 になり、**0 へ向かえる数**に
+戻った。初回実行で DEF-025 (`ADR-076 §Still deferred` に 5 か月在った) を掘り出している。
+
+**したがって規則になる: 残しを書くなら、残しの節に書くこと。** narrative に書いた残しは
+検査から見えない — これは交換条件であって事故ではない (反対側は Q3/Q4/Q6 が押さえる)。
 
 ## 更新規則 (必須)
 
@@ -72,7 +88,7 @@ ADR-109 D5 は「レーンが違う残しを表から外さない — 外した�
 | DEF-005 | `docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md` | Phase 4 (実ソルバ差し替え) と pick-sequence 集計レポート UI が出たとき。収束仮説の検証も同段 | ADR-081 | core |
 | DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき | ADR-078 | contract |
 | DEF-007 | `docs/adr/ADR-079-search-diagnostics-proof.md` | ファネル診断の wire 追加に BFF / UI が消費追従したとき (エンジン側は完了済み) | ADR-079 | contract |
-| DEF-008 | `src/DanglingSelfCallCensus.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
+| DEF-008 | `src/DanglingSelfCallCensus.test.js` · `src/CensusCoverage.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
 | DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
 | DEF-013 | `docs/adr/ADR-120-unevaluated-is-not-zero.md` · `core/easy_extrude_core/engine/scoring.py` | `weighted_sum` が**評価できた objective の重みだけ**で割るようになったとき (D1)。D2/D3 はスタブレーンとクライアントで実装済みで、残っているのは実ソルバの分母だけ。満期を機械が知る形は `core/tests/test_engine.py` に「評価不能な objective の重みを足しても totalScore が動かない」検査が入ること — 検査が在れば残しは無い。**2026-08-12 に文法が追いついたので trigger 化した**: 満期=GREP:core/tests/test_engine.py::評価不能 (条件は元から機械可読で、書く形が無かっただけ — ADR-123 D5) | ADR-120 | core |
@@ -85,6 +101,10 @@ ADR-109 D5 は「レーンが違う残しを表から外さない — 外した�
 | DEF-020 | `docs/adr/ADR-017-websocket-session-geometry-service.md` | ROADMAP §Phase S-4 自身が「**新 ADR は Phase S-3 / S-4 の着手前に作成する**」と宣言しているので、満期は実装ではなく**その ADR が起票されたとき**。`NodeEditorView.js` は Phase S-2 まで (OperationGraph は読み取りのみ、編集経路 0 件)。BFF Phase D 表と §Phase S-4 の**二重登録を畳んだ**もの — 条件つき退役は誰も実行しない | ADR-017 | app |
 | DEF-021 | `docs/ROADMAP.md` | **委譲行** (ADR-123 D2)。機能要望 14 件を GitHub Issues へ移すこと。移管が済んで §未移管 の節が消えたときが満期: 満期=GONE:docs/ROADMAP.md::未移管 。**覆うのは委譲の事実であって Issue の個数ではない** — 個数はネットワークの向こうで CI は数えない (限界宣言は §register は 2 本ある) | ADR-123 | issue |
 | DEF-022 | `docs/adr/ADR-044-5w1h-function-mapping.md` | ADR-044 の判断が閉じたとき (**満期=ADR-044**)。φ 準同型は 2 か月 Draft のまま。**実装は 1 行も無い** — `FunctionRegistry.js` / `FunctionMatcher.js` / `SpatialCommandParser` はどれも存在せず、`src/` の 5 ファイルは*言及*である (ADR-123 §力学 3)。ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた | ADR-044 | app |
+| DEF-023 | `docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md` | `.gsn` の母集団を問う装置ができたとき。木は 28 本あるが ADR-115/116/117 に無く、未実装の ADR-119/121/122 には在る — `pnpm test:gsn` は*在る木*の空枝を問うので**木が無いこと**は定義上見えない (原則 #31 の同型が原則 #31 の道具の側に居る)。装置を 1 つ増やす判断なので別 ADR | ADR-123 | app |
+| DEF-024 | `docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md` | コミット済み WASM 成果物の鮮度検査が入ったとき。`test:wasm` (cargo) と `test:robotics-wasm` は CI に無く、source を編集して再生成を忘れても緑になる。現在ズレてはいない (source・成果物とも #340 / 2026-07-22)。ADR-064 Phase 1 が意図的に決めた形なので違反ではないが、問う場所が無い。満期は CI が cargo を走らせ始めたとき: 満期=GREP:.github/workflows/ci.yml::cargo | ADR-064 | app |
+| DEF-025 | `docs/adr/ADR-076-core-api-endpoint-layer.md` | TS 側の HTTP 往復 conformance (BFF が中立 Schema に突き合わせる) が public 配線回で入ったとき。**2026-08-12 に Q1 の見出し絞り込み (ADR-124) が初回実行で見つけた** — `## Still deferred` 節に 5 か月在ったが、99 件の散文に埋もれて誰にも見えていなかった | ADR-076 | contract |
+| DEF-026 | `docs/adr/ADR-124-a-ratchet-that-counts-prose-measures-documentation.md` | **条件つき退役**「X が完成したら Y を削除」を検出する規則ができたとき。実例は ROADMAP §Phase S-4 が BFF Phase D 表について書いた退役指示で、誰も実行しないまま残った (DEF-020 で畳んだ)。語彙を足せば捕まるが、それは ADR-123 §力学 1 が「語彙を 1 語ずつ足す経路は届かない」と否定した手なので採らない。正しい形は「条件つき退役を書いたら登録簿の行にする」を Q3 側から強制することだと見ているが**未設計**。この行は Issues レーンの個数を CI が数えない件 (DEF-021 の限界宣言) も同じ節で覆う | ADR-124 | app |
 | DEF-011 | `docs/adr/ADR-113-one-claim-on-the-screen.md` | 2 つのギャラリー (起動ホーム = Layout DSL / New Project = Context DSL) の**語彙の作り分け**が済んだとき — 見出し・説明・破壊性の書き方が区別され、読み取り専用の表示 (`Unexamined`) の出口がシーン置き換えを伴うことが押す前に分かること。ADR-113 は**構造の側**だけを閉じた (2 枚同時が表現不能) ので、語彙は未着手 | ADR-113 | ia |
 
 ## 覆えていないもの (限界の宣言 — 推論させない)

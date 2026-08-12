@@ -1,0 +1,78 @@
+GOALS adr124_a_ratchet_that_counts_prose_measures_documentation
+
+goal GovernanceNumbersMeasureWorkNotWords
+uuid 67f4cc97-9e34-4626-b245-a9a1758f4d49
+summary "統治の数字が「片付ければ減る」量を測る。そして同じ失敗形が次に起きたとき、人の記憶ではなく機械が気づく"
+state UnderReview
+labels adr-124, deferral, ratchet, principle-31, principle-19-q3, census
+artifacts
+- "docs/adr/ADR-124-a-ratchet-that-counts-prose-measures-documentation.md"
+
+    context Adr124Scope
+    uuid deaaab7b-bd18-406d-8b0a-1b10f39bbf78
+    summary "ADR-124 (Accepted 2026-08-12・実装済み): ADR-109 の Q1 の**測り方**と、ADR-123 が塞ぎ残した再発経路を扱う。登録簿・問いの構成・ratchet の姿勢は変えない。src/ の挙動は 1 行も変えていない — 変わるのは scripts/ の 2 検査と docs、および Status ヘッダが実物と食い違っていた ADR 3 本 (007 / 009 / 036)"
+    artifacts
+    - "scripts/check-deferrals.mjs"
+    - "scripts/check-adr-status.mjs"
+
+    context WhatWasMeasured
+    uuid 6d098aa4-9ec0-4be2-a1f0-72e833a4f995
+    summary "実測 (散文の転記ではない): ADR-123 直後の宣言外 99 件の内訳は docs/adr 68 / docs その他 29 / **src 1** / scripts 0。コードに残っている残しは 1 件で、98 件は残しについて*述べている*文だった。つまりこの数は残しを片付けても減らず、残しについて考えるほど増える。加えて ADR-123 が観測した失敗形 7 つのうち機械に降りたのは 2 つ (Q6 と満期 trigger) だけで、残り 5 つは散文に置かれたまま出荷されていた — 散文に置いた規則は守られないと同じ ADR の中で書きながら"
+    artifacts
+    - "docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md"
+
+    context BusinessTreeAttachPoint
+    uuid 60cd1a66-a0e3-4842-ad5d-a0851dcbdb03
+    summary "**保留** — ADR-123 と同じ理由 (事業木には ADR-109 の枝が既に在り、本 ADR はその枝の測り方を直しただけで新しい価値経路を主張していない)。接続の満期条件も同じ: ROADMAP §未移管 の 14 件が Issues へ移り DEF-021 が畳まれたとき。**ただし本 ADR で接続の前提は一つ改善した** — 99 という数では「残しの総量」を吊っても意味がなかったが、1 になったことで量として読める数になった"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotAnExclusionList
+    uuid b1b8b380-fa7b-4f98-b0e7-18f68d231265
+    summary "却下案 B (散文を書いた文書を EXCLUDED に足す) への反証: 最も直接的だが、Yellow Cards の 1 例目がまさにこれを禁じている — 手書きの除外表は母集団を持たない表が一段下に生えたものである (ADR-102 の place-list)。しかも ADR を書くたびに除外表が伸びるので、伸び続けるものが数字から表へ移るだけで何も解決しない"
+
+    justification WhyNotCodeOnly
+    uuid 5bc49f01-a1df-4094-be62-2d613bc88da3
+    summary "却下案 C (src/ scripts/ だけ数える) への反証: 単純で 0 へ向かえるが、ADR-027 / 032 / 015 / 017 へ移設したばかりの宣言が全部見えなくなる。ADR-123 D1 が「残しの内容の正本は決定を所有する ADR」と決めた**直後に**その正本を母集団から外すことになり、移設の意味が消える"
+
+    justification WhyKeywordMustLeadTheHeading
+    uuid 51cdab86-67d1-4432-b131-2944d97d52de
+    summary "初版は「見出しのどこかにキーワードが含まれる」で判定し、ADR-110 の `### 力学 4 — 実測: これは入口の個数を動かさない (申し送りの前提の訂正)` のような narrative の見出しまで節を開いた。見出しが何について*書かれている*かは先頭が決める — 後ろに現れる語は主題ではなく修飾である。12 文字という閾値は実測で決めた (`## 残し — …` `## Future Work` `## 未移管 — …` は通り、上記は落ちる)"
+
+    assumption NarrativeDeferralsAreInvisible
+    uuid f470c6d6-8870-4d8c-87d4-e8708f43bd36
+    summary "反証されうる仮説 (交換条件として引き受けた): 残しは「残りの作業を宣言する節」に書かれる。narrative の中に本物の残しを書くとこの検査からは**見えない**。反証される形: 誰かが Context や Decision の本文に『これは後で』と書き、登録簿にも行を足さない。反対側からは Q3 / Q4 (登録簿の行が所在の実在を問う) と Q6 が押さえるが、どちらも「登録簿に行が在る」ことを前提にするので、行ごと無いものは通る"
+
+    assumption Q7SeesOneNotationOnly
+    uuid 8af5dc73-6381-4276-bc93-45cebca2d17e
+    summary "埋めていない穴の宣言 (推論させない): Q7 が捕まえるのは絵文字の優先度表**だけ**である。次の register が `[P1]` や `TODO(high)` や外部ツールへのリンクで生えたら見えない。記法の集合を先回りで網羅することはできない — できるならそもそも ROADMAP の 29 行は見えていた。これは一般解ではなく、観測された記法を 1 つ塞ぐものである。反証される形: 第三の register が別の記法で生え、また数か月見えない"
+
+    strategy ByFixingTheUnitThenMechanisingTheRest
+    uuid afa08944-37ec-4c9d-ba18-63c19c7e8f18
+    summary "Argument by 測る単位を直す + 散文に置いた規則を機械へ降ろす — まず Q1 が数える対象を文書構造で絞って「片付ければ減る量」に戻し、次に ADR-123 が散文に置いた失敗形 (別記法の register / 索引と header のずれ / 第二のパーサ) をそれぞれ検査にする。規則は書く瞬間に問われる場所を持たなければ守られない (原則 #19 Q3)"
+
+        goal TheRatchetCanReachZero
+        uuid 6ccb165b-a625-4e61-8723-3701c5792126
+        summary "Q1 が数えるのは残しであって、残しについての記述ではない。片付ければ減り、0 へ向かえる数である"
+        state UnderReview
+
+            solution NinetyNineBecameOneAndFoundARealDeferral
+            uuid 914da8fc-ef0b-4ed1-a097-c48502cd8bdf
+            summary "pnpm test:deferrals — 宣言外 **99 → 1**。docs/** を「残りの作業を宣言する見出し」の配下に絞り、キーワードは見出し先頭 12 文字以内を要求 (narrative の見出しを弾く)。**指標を直したら指標が仕事を始めた**: 初回実行で DEF-025 (`ADR-076 §Still deferred` の TS 側 HTTP 往復 conformance) を掘り出した — **5 か月**そこに在ったが 99 件の散文に埋もれて見えていなかった。残る 1 件は順序表がこの検査自身を*記述している*文で、既知の偽陽性として焼く (散文を書き換えて 0 にするのは検査に合わせて履歴を消す行為)。同時に Q7 が 2 つ目の記法 (`docs/validation/2026-03-22-phase-c.md` の P1〜P4 勧告表 6 行) を初回実行で発見し、凍結前に実体を確認して唯一のコード項目 P1 が `src/service/SceneService.js:373` に実装済みであることを確かめた"
+            artifacts
+            - "scripts/check-deferrals.mjs"
+            - "docs/DEFERRAL_LEDGER.md"
+            - "docs/adr/ADR-076-core-api-endpoint-layer.md"
+
+        goal DriftBetweenTwoCopiesIsDetected
+        uuid 7c1f2e64-3b7a-4d5e-9c8a-1e2f3a4b5c6d
+        summary "索引と header の Status のずれ、および Status 文法の書き写しが、人の記憶ではなく機械に見える。複製を消せないなら、ずれを検出する"
+        state UnderReview
+
+            solution ThreeMismatchesAndAMutationProof
+            uuid 2d3e4f50-6a7b-4c8d-9e0f-1a2b3c4d5e6f
+            summary "pnpm test:adr — 索引と header の TOKEN 比較で **実測 3 件の食い違い** (ADR-007 / 009 / 036) を検出し、実物に合わせて是正した。ADR-036 は header `Accepted` / 索引 `Partially Superseded by ADR-040` で、**ADR-040 §Supersedes が ADR-036 を名指ししている**ため索引が正しく header が古かった (どちらの読み方でも見えない — 突き合わせる者が居なかっただけ)。注記までは比較しない (索引が header の複製になる — §1.1)。加えて Status を自前パースするファイルが adr-status.mjs の外に 0 件であることを問う。**変異で確認済み**: ADR-091 の索引 Status を Accepted に書き換えると名指しで fail し復元で緑、`commit-meta.mjs` に Status パースの正規表現を 1 行足すと fail し復元で緑"
+            artifacts
+            - "scripts/check-adr-status.mjs"
+            - "scripts/adr-status.mjs"
+            - "docs/adr/README.md"
