@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Proposed |
+| **Status** | Accepted (実装済み — `FastenFrameCommand` / `MountAnnotationCommand` ほか 13 ファイル。2026-08-12 に header だけ `Proposed` のまま取り残されていたことが判明し是正: 索引は Accepted、ADR-035 は本 ADR を前提に Accepted 済みだった) |
 | **Date** | 2026-04-13 |
 | **References** | ADR-029, ADR-030, ADR-016, ADR-018, ADR-019, ADR-033 |
 
@@ -363,6 +363,25 @@ SceneService はトポロジカルソートで親から子の順に worldPose �
 - `fastened` / `aligned` の constraint-solver 実装（語彙は定義済み、実装は別フェーズ）
 - 多段マウント（Annotated\* → Annotated\*）— 将来の DAG 対応
 - broken-mount インジケータ — 将来拡張
+
+### 残し — 同一 Solid に複数 source CF (2026-08-12 移設)
+
+登録簿の **DEF-017** が指す先。`docs/ROADMAP.md` の frontend backlog (🟡 Medium) に
+在ったものを、決定を所有するこの ADR へ移した。
+
+**現象:** `_fastenedTransforms` のイテレーション順で**最後の拘束のみが満たされる**
+(last write wins)。複数拘束を同時に充足するには単純な逐次デルタ加算では足りず、
+**制約ソルバーが要る** — だから機能追加ではなく設計判断を伴う残しである
+(登録簿レーンであって Issues レーンではない)。
+
+**当面の緩和策:** UI 側で「1 Solid につき fastened source CF は 1 つまで」を
+validation で制限することを推奨。**この緩和策自体も未着手。**
+
+**満期条件:** 上の §Out of scope が挙げている `fastened` constraint-solver の実装が
+入ったとき。同じソルバーがこの問題も閉じるので、独立した満期を持たない。
+
+関連: ADR-035 (fastened チェーン伝播) · `docs/CODE_CONTRACTS.md`
+"Fastened Constraint Limitations" (2)
 
 ---
 

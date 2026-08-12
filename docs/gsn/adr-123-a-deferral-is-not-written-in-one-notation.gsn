@@ -1,0 +1,79 @@
+GOALS adr123_a_deferral_is_not_written_in_one_notation
+
+goal DeferralsAreCountedWhateverNotationTheyUse
+uuid e380f334-d93c-4728-a07e-20eb0bc2a7fa
+summary "残しの個数が、それが**どの記法で書かれていても**数えられる。語彙を持つ散文だけでなく、優先度表・英語の見出し・ADR の Status ヘッダのどれで宣言されていても母集団に入る"
+state UnderReview
+labels adr-123, deferral, principle-31, census, ratchet, notation
+artifacts
+- "docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md"
+
+    context Adr123Scope
+    uuid ca26369a-b6af-4f82-aeaf-c3f03d6d2c9e
+    summary "ADR-123 (Accepted 2026-08-12・実装済み): ADR-109 の**母集団の作り方だけ**を改める。登録簿・5 つの問い・ratchet の姿勢はそのままで、足すのは Q6 と満期 trigger の 3 形、外すのは Draft の除外である。src/ の挙動は 1 行も変えていない — 変わるのは docs / scripts と、Draft のまま取り残されていた ADR 3 本 (043 / 046 / 032) の Status ヘッダだけ"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"
+    - "docs/ROADMAP.md"
+
+    context TheFourMeasuredFailures
+    uuid 1ce67a27-7c9d-48e5-9709-c164daf37451
+    summary "実測 (散文の転記ではない): (1) docs/ROADMAP.md に生きた優先度行が **29 行**あり、残し語彙のヒットは **0 件** — 絵文字の優先度表と英語の Backlog という別の記法なので母集団に一行も入らなかった。ADR-003/015/023/024/035/036/038 がここへ明示的に委譲しており、ADR-015 の『Priority TBD after Phase C』は Phase C 完了 (2026-04-15) に満期が来て 4 か月誰も判定しなかった。(2) Draft 除外の根拠が 3 本中 2 本で偽 — ADR-043 は Phase 1〜4 実装済みで本文が自分で ✅ Implemented と書き、ADR-046 は src/context/ 一式 + ゴールデン 8/8。(3) 『Draft を参照する src/ ファイルの個数』は ADR-044 で偽陽性 — 5 ファイルは言及で、名指しされた FunctionRegistry.js / FunctionMatcher.js / SpatialCommandParser は 1 つも存在しない。(4) #73 で GitHub (closed/completed・閉じた PR 0 件) / ROADMAP (🟢 生きている) / コード (React 移行のついでに部分実装) が三様に食い違う"
+    artifacts
+    - "docs/ROADMAP.md"
+    - "docs/adr/ADR-015-bff-microservices-architecture.md"
+
+    context BusinessTreeAttachPoint
+    uuid 826446df-246c-4121-9754-d1191e5e2690
+    summary "**保留** — 事業木 (profit-growth.gsn) の DecidedValueDoesNotStallBeforeUsers へ吊るのが自然だが、ADR-109 の枝が既にそこに在り、本 ADR はその枝の**母集団を広げた**だけで新しい価値経路を主張していない。接続の満期条件: ROADMAP §未移管 の 14 件が Issues へ移り、DEF-021 が畳まれたとき — そのとき初めて『残しの総量』が 2 つの register を合わせて測れるようになり、ファネル障壁として意味のある量になる。今日接ぐと、母集団の外に 14 件を残したまま『測れている』と主張することになる"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotJustAddTheWordToTheVocabulary
+    uuid 2b2a8219-b7cb-40b1-81d9-af90bbd7dd98
+    summary "却下案 A (`未実装` を語彙に足して終える) への反証: それは 3 本の ADR を母集団に入れるが、ROADMAP の 29 行には**届かない** — あれは語彙の問題ではなく記法の問題で、絵文字の優先度表にはそもそも日本語の残し語彙が現れない。語彙を 1 語ずつ足す経路では原理的に到達できない。実際 `未実装` を足したときの増分と、ROADMAP を仕分けたときの増分は別の桁だった"
+
+    justification WhyNotOneRegister
+    uuid e3681534-a133-44c5-af0b-9318225fd76e
+    summary "却下案 B (register を登録簿 1 本に畳む) への反証: ADR-109 D5 の警告 (レーンが違う残しを表から外さない) に最も忠実だが、登録簿が 38 行の backlog になり『設計判断を伴う残しの索引』という設計意図から外れる。催促の速度が違うものを同じ表に入れると、速い側が遅い側のノイズになる。D5 の警告は**分けること**ではなく**黙って分けること**を禁じている、と読み、委譲行 DEF-021 で塞ぐ"
+
+    justification WhyCensusNotGate
+    uuid 1b0f5b0b-3165-46b9-bb67-1684839bacbb
+    summary "却下案 C (Draft ADR を参照するコードのマージを gate で拒否) への反証: 2 つある。(a) 実装して初めて設計が決まる探索的 MVP は実在し、ADR-046 がまさにそれだった — MVP を書いて初めて interval の確定方式が worst-case 自動解決ではなく Decision エンティティ経由だと決まった。gate が最初から在ったら **ADR-046 は書けなかった**。(b) 今回見つかった 2 件は実装先行ではなく **Status の上げ忘れ**なので、gate は 1 件も防げない。防げないものを禁止し、要るものを禁止する — 二重に外している"
+
+    assumption DeclarationTableStaysHonest
+    uuid 78879ba8-7bc5-4836-b9fe-8af2a971a60c
+    summary "反証されうる仮説: Q6 の宣言表 (DRAFT_WITH_IMPLEMENTATION) に『言及であって実装ではない』と書く判断は、人が正直に書く。検査は個数しか見ないので、雑に宣言すれば緑のまま意味を失う — ADR-100 の ratchet と同じ性質の脆さである。反証される形: Draft の ADR が実装ごと宣言表に隠れ、Status が上がらないまま出荷され続ける。緩和は逆向きの検査 (宣言したのに参照 0 なら落ちる) だけで、宣言の**中身**は誰も検査していない"
+
+    assumption IssuesLaneDriftsUnwatched
+    uuid 9008a674-1a4c-4d34-9043-52de8210afc9
+    summary "埋めていない穴の宣言 (推論させない): 委譲行 DEF-021 が覆うのは**委譲の事実**であって Issue の個数ではない。個数はネットワークの向こうに在り、CI はオフラインで走るので数えない。#73 が実測で示したとおり Issues 側は独立にドリフトする (closed/completed なのに閉じた PR が 0 件で、コードは部分実装)。反証される形: Issues レーンに移した機能要望が、登録簿からは『委譲済み』に見えたまま誰にも触られず数年生きる"
+
+    strategy ByFreezingTheSecondRegisterAndCountingTheExcluded
+    uuid 84a602af-24e6-430e-ad34-9231b318b2ce
+    summary "Argument by 第二の登録簿の凍結 + 除外の計数 — 別の記法で書かれた register (ROADMAP) を凍結して生きた残しを正本 (各 ADR) へ移し、register を 2 本に分けたことを委譲行で宣言し、除外していた Draft を母集団へ戻して『実装が先行している Draft の個数』を数える。数えるべきは在る行ではなく、**記法や除外によって覆えていない**個数である"
+
+        goal TheSecondRegisterIsClosed
+        uuid 1f3d4aa9-fbf8-427b-9fb2-44bac8294e8d
+        summary "別の記法で書かれた生きた残しが 0 件である。ROADMAP は凍結され、生きた 29 行は決定を所有する ADR 本文 (正本) と登録簿 (索引) へ移るか、Issues への委譲として 1 行で宣言される"
+        state UnderReview
+
+            solution TwentyNineRowsTriagedAndRelocated
+            uuid 70f8d60b-9e47-45bd-92eb-10077a41eb4e
+            summary "実測で仕分け済み: 4 行は現在のレイヤ写像と矛盾するので**廃止** (Frontend domain entities → cache-only 他 — CLAUDE.md の DDD Entity Core と衝突)、3 行は**二重登録**を畳み (Export OBJ/GLTF が 2 表に / Node Editor DAG が BFF Phase D と Phase S-4 に — ROADMAP 自身が書いた『条件つき退役』は誰も実行しなかった)、4 行は所有 ADR へ移して DEF-017〜020 に、14 件は機能要望として §未移管 + DEF-021。ROADMAP は EXCLUDED に**理由つきで**登録した — 数の上では何も変わらない (元から 0 件) が、外れていることが宣言になる"
+            artifacts
+            - "docs/ROADMAP.md"
+            - "scripts/check-deferrals.mjs"
+            - "docs/DEFERRAL_LEDGER.md"
+
+        goal DraftWithImplementationCannotStayGreen
+        uuid b86c90bb-2e60-4a32-9b9c-7e5a03540788
+        summary "Draft / Proposed の ADR が実装ディレクトリから参照されているとき、宣言が無ければ落ちる。逆に宣言したのに参照が 0 件でも落ちる (退役の腐敗は違反を見逃すのではなく緑を出す)"
+        state UnderReview
+
+            solution Q6CaughtThreeOnTheDayItWasWritten
+            uuid b6e7bdc2-dfd3-4dd3-a5f0-376fa505cfce
+            summary "pnpm test:deferrals Q6 — 書いた当日に 3 件を捕まえた。ADR-043 (3 ファイル) と ADR-046 (17 ファイル) は判断が閉じていたので Accepted へ昇格、ADR-044 は言及のみなので DRAFT_WITH_IMPLEMENTATION に理由つきで宣言。母集団は check-adr-status.mjs と**同じ文法**で導出する — この『同じ文法』は旧実装ではコメントに書いてあっただけで、実物は 4 方言のうち表形式を読めず ADR-027 / ADR-032 が欠落していた (Q3 が『実在するのに存在しない』と報告して露見)。文法を scripts/adr-status.mjs へ切り出した**直後に** ADR-032 の header Proposed / 索引 Accepted / 実装 13 ファイルという三様ずれが出た — 読めない方言はその ADR を検査の外に置く"
+            artifacts
+            - "scripts/check-deferrals.mjs"
+            - "scripts/adr-status.mjs"
+            - "docs/adr/ADR-032-geometric-host-binding.md"

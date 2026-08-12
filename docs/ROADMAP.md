@@ -1,4 +1,27 @@
-# Roadmap
+# Roadmap — 凍結アーカイブ (2026-08-12)
+
+> **この文書は凍結されている。追記しない。** `docs/SESSION_LOG.md` と同じ扱いで、
+> ここに書かれた残しは **当時の記録であって今日の残しではない** (ADR-123 D1)。
+>
+> **なぜ凍結したか。** この文書は「完了 phase の記録」と「生きた backlog」の二役を
+> 兼ねており、どちらの源でもないまま両方をドリフトさせていた (§1.1)。実測で、
+> 優先度マーカー付きの生きた行が **29 行**あり、そのすべてが
+> `scripts/check-deferrals.mjs` の母集団の**外**に在った — 残しの語彙ヒットが
+> **0 件**だったからである。29 行は絵文字の優先度表と英語の "Backlog" という
+> **別の記法**で書かれており、語彙を 1 語ずつ足す経路では永遠に届かなかった。
+>
+> **今日の残しはどこに在るか:**
+>
+> | 種類 | 置き場所 |
+> |---|---|
+> | 設計判断を伴う残し | `docs/DEFERRAL_LEDGER.md` (索引) + 決定を所有する ADR 本文 (正本) |
+> | 機能要望 | GitHub Issues (委譲は登録簿 DEF-021 が宣言。**移管はまだ済んでいない** — 下記 §未移管) |
+> | IA 再設計の段 | `docs/ia-redesign/03-implementation-order.md` |
+> | grasp レーンの段 | `docs/grasp/implementation-order.md` |
+>
+> 完了記録としての価値は残るので削除しない。**読むのは「何が終わったか」を調べる
+> ときだけ**で、「次に何をするか」には使わない (`docs/NAVIGATION.md` の案内も
+> 2026-08-12 に張り替えた)。
 
 ## Design Direction (2026-03-20, updated 2026-04-15)
 
@@ -500,19 +523,22 @@ Phases 1–4 are implemented (2026-04-05). See ADR-027 for full design and imple
 
 Phases A, B, C implemented (2026-03-21 to 2026-03-22). See ADR-015 and ADR-017 for details.
 
-> **Priority to be determined after Phase C completion.**
+> ~~**Priority to be determined after Phase C completion.**~~
+> **満期切れ (2026-08-12 決着)。** Phase C は **2026-04-15** に完了していた。この満期は
+> 4 か月間、誰にも判定されないまま過ぎていた — 母集団の外に在ったからである
+> (ADR-123 §力学 1)。決着は ADR-015 §Phase D の再評価に書いた。
 
-| Candidate Task | Original Phase | ADR |
-|---------------|----------------|-----|
-| STEP geometry persistence (SceneSerializer extension) | C→D | ADR-015 |
-| B-rep topology → graph | C | ADR-016 (open) |
-| Frontend domain entities → cache-only | C | ADR-015 |
-| GLTF / OBJ export (Geometry Service) | C | ADR-015 |
-| Node Editor — DAG topology editing UI | C | ADR-017 |
-| Delta-sync protocol (JSON Patch) | C | ADR-017 |
-| Remove all domain computation from frontend | D | ADR-015 |
-| Frontend unit tests — View / Controller only | D | ADR-015 |
-| Independent Geometry Service scaling | D | ADR-015 |
+| Candidate Task | Original Phase | 2026-08-12 の決着 |
+|---------------|----------------|------------------|
+| ~~Frontend domain entities → cache-only~~ | C | **廃止** — `CLAUDE.md` の「DDD Entity Core = 設計の中心は `src/domain/`」と矛盾 |
+| ~~Remove all domain computation from frontend~~ | D | **廃止** — 同上。`src/` は決定的 core (`SynonymQuotient`/`CanonicalForm`) を所有する |
+| ~~Frontend unit tests — View / Controller only~~ | D | **廃止** — 現在 `pnpm test` は `src/**/*.test.js` glob で domain・census テストが主力 |
+| ~~Independent Geometry Service scaling~~ | D | **廃止** — 3 層 monorepo (BFF + `core/` FastAPI) に置き換わり、契約は ADR-074/076/082 |
+| STEP geometry persistence (SceneSerializer extension) | C→D | 生きた残し → **DEF-019** |
+| B-rep topology → graph | C | 生きた残し → **DEF-019** |
+| GLTF / OBJ export (Geometry Service) | C | 生きた残し → **DEF-019** (frontend backlog の「Export (OBJ/GLTF)」と**同一項目**。二重登録を畳んだ) |
+| Node Editor — DAG topology editing UI | C | 生きた残し → **DEF-020** (§Phase S-4 と同一項目。条件つき退役が実行されないままだった) |
+| Delta-sync protocol (JSON Patch) | C | 生きた残し → **DEF-019** |
 
 ---
 
@@ -577,6 +603,44 @@ Bugs are also tracked on GitHub Issues #69–#73.
 | 🟢 Low | **C-3: CoordinateFrame TF tree visualizer** — Display parent–child frame relationships as arrows in 3D viewport | High | ADR-018, ADR-019 |
 
 ---
+
+## 未移管 — GitHub Issues への委譲待ち (2026-08-12)
+
+**この節は凍結の例外ではない。** 下の 14 項目は「設計判断を伴わない機能要望」なので
+`docs/DEFERRAL_LEDGER.md` ではなく GitHub Issues が register である (ADR-123 D2)。
+ただし Issue 化は**外向きの操作なので未着手**であり、移管が済むまでここに置く。
+登録簿の **DEF-021** がこの節を指しており、満期は tracking issue が作られたときである。
+
+| 元の節 | 項目 |
+|---|---|
+| frontend backlog | Multi-face extrude (Shift+click) |
+| frontend backlog | CoordinateFrame assembly-mate positioning (`matchedFrameId`) — **コードに存在せず未着手** |
+| frontend backlog | Node Editor — CoordinateFrame `translation`/`rotation` を編集可能パラメータに |
+| frontend backlog | Assembly groups (virtual TransformNode pivot) |
+| frontend backlog | Revolute / prismatic constraints in Node Editor |
+| Mobile UX Phase 3 | Axis constraint buttons (during Grab) |
+| Mobile UX Phase 3 | Snap mode toggle (during Grab) |
+| Mobile UX Phase 3 | Help drawer (gesture list / shortcuts) |
+| UX Polish | A-3: CoordinateFrame rotation arc guide |
+| UX Polish | B-3: Measure label tap |
+| UX Polish | C-1: Measure Panel |
+| UX Polish | C-2: Snap grid visualization |
+| UX Polish | C-3: CoordinateFrame TF tree visualizer |
+| UX Polish (bug) | Modal dialogs の a11y — **3 つの register が食い違っている**。下記参照 |
+
+### Modal a11y (#73) — register が三様に食い違った実例
+
+2026-08-12 の実測 (ADR-123 §力学 4):
+
+| register | 答え |
+|---|---|
+| GitHub Issues | `closed / completed` (2026-03-26)。**閉じた PR は 0 件** |
+| この文書 | 🟢 Low で生きている |
+| コード | **部分的に実装**。#73 が名指しした 3 箇所のうち `aria-haspopup` / `aria-expanded` / `role="option"` / `aria-selected` は在るが、指定された `UIView.js:46` ではなく `src/components/Header/ModeDropdown.jsx` に (React 移行のついで)。`UIView.js` の aria 属性は 0 件 |
+
+冒頭の「Bugs are **also** tracked on GitHub Issues #69–#73」という書き方が二重管理の
+自己申告であり、その通りにドリフトした。移管の際は **コードを見て実体を確かめてから**
+Issue を開き直すこと (どの register も権威ではない)。
 
 ## Completed phases
 

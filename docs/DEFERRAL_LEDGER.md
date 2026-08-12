@@ -7,6 +7,23 @@
 登録簿が持つのは **id / 所在 / 満期条件 / ticket / lane** の 5 列だけ。残しの*内容*の
 正本は元の ADR・コード・順序表のままで、ここは**索引**である。内容を写したら第二の源になる。
 
+## register は 2 本ある (ADR-123 D2)
+
+| register | 対象 | ticket |
+|---|---|---|
+| **この登録簿** | **設計判断を伴う残し** — 実装の前に決めることが残っているもの | ADR 番号か段 (必須) |
+| **GitHub Issues** | **機能要望** — 設計判断を伴わず、やるかどうかだけのもの | issue 番号 |
+
+ADR-109 D5 は「レーンが違う残しを表から外さない — 外した瞬間に母集団の外が
+再生産される」と警告している。**この警告は分けることではなく*黙って*分けることを
+禁じている**、と読む。よって Issues レーンの存在と現在の委譲対象は **DEF-021** が
+1 行で宣言する。
+
+**限界 (推論させない):** 委譲行が覆うのは*委譲の事実*であって *Issue の個数*ではない。
+個数はネットワークの向こうに在り、CI はオフラインで走るので数えない。実際 2026-08-12 に
+#73 で **GitHub / ROADMAP / コードが三様に食い違っている**のを実測しており、Issues 側も
+独立にドリフトする。**その照合は今日も人がやる。** 埋めていない穴として置く。
+
 **この表は分母ではない。** 母集団は残しの*語彙* (`未着手` / `暫定` / `申し送り` /
 `後続 PR` / `次セッション` / `保留` / `引き受けなかった` / `PROVISIONAL_UNTIL` / `DECLARED_GAPS`) から
 `scripts/check-deferrals.mjs` が導出し、この表は「導出された母集団のうち**宣言された
@@ -22,11 +39,20 @@
 - **満期は条件で書く。日付でも「次の段」でもない。** 満期を*他人の判断*に相乗りさせると
   空振りする — ADR-106 は満期を「Phase 5 が決める」に置き、Phase 5 は入口を決めて器の
   住所を決めなかったため、2026-08-03 に満期が無言で過ぎた (ADR-112 §力学 2)。
-- **満期の条件が「ある ADR の採択」に一致するなら、満期欄に `満期=ADR-NNN` と書く。**
-  これが**機械が読む唯一の形**であり、その ADR が `Accepted` になった日に Q2 が落ちる
-  (ADR-109 D6)。散文だけの満期は Q2 にとって存在しないのと同じなので、trigger を持たない
+- **満期が機械可読に書けるなら書く。trigger は 4 形ある** (ADR-123 D5 + 実装で足した
+  4 形目)。散文だけの満期は Q2 にとって存在しないのと同じなので、trigger を持たない
   行の個数は Q5 が ratchet で縛る — **書けないこと自体は正当**だが、黙って 0 件に
   見えることは許さない (原則 #31)。
+
+  | 形 | 満期の意味 |
+  |---|---|
+  | `満期=ADR-NNN` | その ADR が `Accepted` になったとき (ADR-109 D6) |
+  | `満期=PATH:<path>` | そのパスが**存在するようになった**とき |
+  | `満期=GREP:<path>::<regex>` | そのファイルにパターンが**現れた**とき |
+  | `満期=GONE:<path>::<regex>` | そのファイルからパターンが**消えた**とき |
+
+  正規表現に**リテラル空白と `|` は使えない** (この表の区切りとして食われる)。
+  `\s` は使えるので `DECLARED_GAPS\s*=\s*\[\]` のようには書ける。
   嘘の trigger を書かないこと: ADR-060 のように**とうに Accepted で、残っているのは
   追従**という行に `満期=ADR-060` を書けば「満期は去年過ぎた」と主張することになる。
   辿れない参照は空欄より悪い。
@@ -46,10 +72,19 @@
 | DEF-005 | `docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md` | Phase 4 (実ソルバ差し替え) と pick-sequence 集計レポート UI が出たとき。収束仮説の検証も同段 | ADR-081 | core |
 | DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき | ADR-078 | contract |
 | DEF-007 | `docs/adr/ADR-079-search-diagnostics-proof.md` | ファネル診断の wire 追加に BFF / UI が消費追従したとき (エンジン側は完了済み) | ADR-079 | contract |
-| DEF-008 | `src/DanglingSelfCallCensus.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う) | ADR-098 | app |
+| DEF-008 | `src/DanglingSelfCallCensus.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
 | DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
-| DEF-013 | `docs/adr/ADR-120-unevaluated-is-not-zero.md` · `core/easy_extrude_core/engine/scoring.py` | `weighted_sum` が**評価できた objective の重みだけ**で割るようになったとき (D1)。D2/D3 はスタブレーンとクライアントで実装済みで、残っているのは実ソルバの分母だけ。満期を機械が知る形は `core/tests/test_engine.py` に「評価不能な objective の重みを足しても totalScore が動かない」検査が入ること — 検査が在れば残しは無い | ADR-120 | core |
+| DEF-013 | `docs/adr/ADR-120-unevaluated-is-not-zero.md` · `core/easy_extrude_core/engine/scoring.py` | `weighted_sum` が**評価できた objective の重みだけ**で割るようになったとき (D1)。D2/D3 はスタブレーンとクライアントで実装済みで、残っているのは実ソルバの分母だけ。満期を機械が知る形は `core/tests/test_engine.py` に「評価不能な objective の重みを足しても totalScore が動かない」検査が入ること — 検査が在れば残しは無い。**2026-08-12 に文法が追いついたので trigger 化した**: 満期=GREP:core/tests/test_engine.py::評価不能 (条件は元から機械可読で、書く形が無かっただけ — ADR-123 D5) | ADR-120 | core |
+| DEF-014 | `docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md` | ADR-119 が Accepted になったとき (**満期=ADR-119**)。掴む対象の契約化 — `target`/`obstacles`/`sampling` が `additionalProperties:true` を素通りしている。**2026-08-11 起票、2026-08-12 に登録** (`未実装` が語彙に無かったので、それまで宣言済みにも宣言外にも数えられていなかった — ADR-123 D7) | ADR-119 | contract |
+| DEF-015 | `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
+| DEF-016 | `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
+| DEF-017 | `docs/adr/ADR-032-geometric-host-binding.md` | 同 ADR §Out of scope が挙げる `fastened` constraint-solver の実装が入ったとき (同じソルバーがこの問題も閉じるので独立した満期を持たない)。**2026-08-12 に `docs/ROADMAP.md` の frontend backlog 🟡 から移設** — 制約ソルバーを要する = 設計判断つきなので Issues レーンではない | ADR-032 | app |
+| DEF-018 | `docs/adr/ADR-027-wasm-geometry-engine.md` | Shared Wasm Memory: `+atomics,+bulk-memory,+mutable-globals` が **stable Rust** で通るようになったとき (**外部条件なので trigger を書けない**)。「remaining copy の除去」はこれにブロックされ独立の満期を持たない。`run_monte_carlo` / `build_boolean_union` は *candidate* であって決定ではないので**判断の未完了**側 (ADR-123 D3) | ADR-027 | app |
+| DEF-019 | `docs/adr/ADR-015-bff-microservices-architecture.md` | Geometry Service 側の 4 項目 (STEP 永続化 / B-rep→graph / GLTF・OBJ export / delta-sync) に着手が決まったとき。**2026-08-12 の Phase D 再評価で 9 項目中 4 項目を廃止した残り** — 「Priority TBD after Phase C」の満期は Phase C 完了 (2026-04-15) に到来しており、4 か月間誰も判定しなかった (ADR-123 §力学 1) | ADR-015 | app |
+| DEF-020 | `docs/adr/ADR-017-websocket-session-geometry-service.md` | ROADMAP §Phase S-4 自身が「**新 ADR は Phase S-3 / S-4 の着手前に作成する**」と宣言しているので、満期は実装ではなく**その ADR が起票されたとき**。`NodeEditorView.js` は Phase S-2 まで (OperationGraph は読み取りのみ、編集経路 0 件)。BFF Phase D 表と §Phase S-4 の**二重登録を畳んだ**もの — 条件つき退役は誰も実行しない | ADR-017 | app |
+| DEF-021 | `docs/ROADMAP.md` | **委譲行** (ADR-123 D2)。機能要望 14 件を GitHub Issues へ移すこと。移管が済んで §未移管 の節が消えたときが満期: 満期=GONE:docs/ROADMAP.md::未移管 。**覆うのは委譲の事実であって Issue の個数ではない** — 個数はネットワークの向こうで CI は数えない (限界宣言は §register は 2 本ある) | ADR-123 | issue |
+| DEF-022 | `docs/adr/ADR-044-5w1h-function-mapping.md` | ADR-044 の判断が閉じたとき (**満期=ADR-044**)。φ 準同型は 2 か月 Draft のまま。**実装は 1 行も無い** — `FunctionRegistry.js` / `FunctionMatcher.js` / `SpatialCommandParser` はどれも存在せず、`src/` の 5 ファイルは*言及*である (ADR-123 §力学 3)。ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた | ADR-044 | app |
 | DEF-011 | `docs/adr/ADR-113-one-claim-on-the-screen.md` | 2 つのギャラリー (起動ホーム = Layout DSL / New Project = Context DSL) の**語彙の作り分け**が済んだとき — 見出し・説明・破壊性の書き方が区別され、読み取り専用の表示 (`Unexamined`) の出口がシーン置き換えを伴うことが押す前に分かること。ADR-113 は**構造の側**だけを閉じた (2 枚同時が表現不能) ので、語彙は未着手 | ADR-113 | ia |
 
 ## 覆えていないもの (限界の宣言 — 推論させない)
@@ -57,10 +92,29 @@
 - **語彙を使わない残しは捕まらない。** 英語の `TODO` / `// later` / 何も書かずに残す —
   この検査は「**宣言する気のある残し**」に対しては完全だが、それ以外には無力である。
   語彙を足せば前 2 者は入る (`DEFERRAL_VOCAB` に行を足す = baseline が動く意図的な行為)。
-- **Draft の ADR (ADR-043 / 044 / 046) は行を持たない。** `Draft` は「残し」ではなく
-  「まだ決めていない決定」であり、満期の対象が異なる (実装の遅れではなく判断の未成熟)。
-  **これは推論ではなく宣言である** — 将来 Draft を残しとして扱うなら、行を足すのではなく
-  この段落を書き換えること。
+- ~~**Draft の ADR (ADR-043 / 044 / 046) は行を持たない。**~~ **2026-08-12 に撤回**
+  (ADR-123 D3)。この段落は「将来 Draft を残しとして扱うなら、行を足すのではなく
+  この段落を書き換えること」と自分で指定していたので、その指定どおりに書き換える。
+
+  **撤回の理由 — 除外の*根拠*が 3 本中 2 本で偽だった。** 除外は「`Draft` は残しでは
+  なく*まだ決めていない決定*であり、満期の対象が異なる (実装の遅れではなく判断の
+  未成熟)」を根拠にしていた。実測すると **ADR-043 は Phase 1〜4 すべて実装済み**
+  (本文の §Deferred が 3 項目とも自分で `✅ Implemented` と書いている)、**ADR-046 は
+  `src/context/` 一式 + ゴールデン 8/8** で、どちらも未成熟ではなかった。台帳が実物より
+  遅れていたのではなく、**実物が台帳を追い越していた**。ADR-103 の言う退役の腐敗と
+  同型で、除外の腐敗も違反を*見逃す*のではなく緑を出す。2 本は Accepted へ昇格した。
+
+  **新しい規則:** Draft / Proposed の ADR は残しの母集団に入り、行と満期を持つ
+  (DEF-022 = ADR-044 が現在の唯一の Draft)。ただし **満期は「実装が入ったとき」では
+  なく「判断が閉じたとき」で書く** — Draft の残しは実装の遅れではなく決定の未完了
+  だからである。ADR-109 のこの区別自体は正しく、偽だったのは*当てはめ*のほうだった。
+
+  **実装が先行している Draft は禁止しない — 数えて宣言させる** (Q6)。実装して初めて
+  設計が決まる探索的 MVP は実在し、ADR-046 がまさにそれだった (MVP を書いて初めて
+  interval の確定方式が Decision エンティティ経由だと決まった)。マージを止める gate に
+  していたら **ADR-046 は書けなかった**。しかも gate は今回の 2 件を 1 件も防げない —
+  どちらも実装先行ではなく **Status の上げ忘れ**である。宣言表は
+  `scripts/check-deferrals.mjs` の `DRAFT_WITH_IMPLEMENTATION`。
 - **言及と宣言を区別できない。** この検査は「ここに残しが在る」と「この文が残しについて
   **述べている**」を同じ 1 つの hit として数える。覆う粒度がファイル単位なので、
   片付けて行を消すと、その行が覆っていた散文 — 決着した残しを記述する文 — が母集団へ

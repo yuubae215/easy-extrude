@@ -3,6 +3,7 @@
 - Status: Proposed (未実装 — ADR-118 と同じ PR で起票。実装は `target` のスキーマ宣言 → 掴む場所の入力の順)
 - Date: 2026-08-11
 - Deciders: yuubae215, Claude
+- 段: **G-2** (`docs/grasp/implementation-order.md` — grasp レーンの順序表)。前提: なし (G-0 / G-1 と独立)
 - Supersedes / Superseded by: なし (ADR-117 が載せた `target` に契約を与え、掴む場所の宣言を足す)
 
 ## Context

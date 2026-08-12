@@ -3,6 +3,7 @@
 - Status: Proposed (未実装 — ADR-118 と同じ PR で起票)
 - Date: 2026-08-11
 - Deciders: yuubae215, Claude
+- 段: **G-3** (`docs/grasp/implementation-order.md` — grasp レーンの順序表)。前提: なし。D2 (pick-sequence の入口) は ADR-078 のシーン層に依存
 - Supersedes / Superseded by: なし (ADR-078 のシーン層に入口を与える。ADR-090 のゲートは緩めない)
 
 ## Context

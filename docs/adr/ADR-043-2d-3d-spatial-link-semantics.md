@@ -1,11 +1,22 @@
 # ADR-043 — 2D/3D Spatial Link Semantics: `bounded_by` and Clearance Evaluation
 
-**Status:** Draft
+**Status:** Accepted — Phase 1〜4 実装済み。2026-08-12 昇格 (下記 §Status の経緯)
 **Date:** 2026-05-21
 **Supersedes:** —
 **Related:** ADR-029, ADR-030, ADR-038, PHILOSOPHY #2, #5, #21
 
 ---
+
+## Status の経緯 (2026-08-12)
+
+Phase 1〜4 はすべて実装済みで、本文 §Deferred (Phase 5+) の 3 項目も自分で
+`✅ Implemented` と書いている。にもかかわらず **Status は `Draft` のまま 2 か月半
+放置されていた** — 判断は 2026-05-22 の Phase 4 実装で閉じていた。
+
+`docs/DEFERRAL_LEDGER.md` はこの ADR を「まだ決めていない決定 (判断の未成熟)」として
+残しの母集団から**明示的に除外**していたが、その根拠は偽だった。実物が台帳を追い越して
+いたのであって、未成熟だったのではない。以後この形は `pnpm test:deferrals` の
+**Q6** が数える (ADR-123 §力学 2 / D4)。
 
 ## Context
 

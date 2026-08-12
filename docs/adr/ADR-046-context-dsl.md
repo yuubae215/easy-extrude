@@ -1,12 +1,24 @@
-# ADR-046 (Draft) — Context DSL: 要件文脈の一級データ構造化と仕様への追跡可能コンパイル
+# ADR-046 — Context DSL: 要件文脈の一級データ構造化と仕様への追跡可能コンパイル
 
-**Status**: Draft (Proposed)
+**Status**: Accepted — `src/context/` 実装済み・ゴールデン 8/8。2026-08-12 昇格 (下記 §Status の経緯)
 **Date**: 2026-06-10
 **Updated**: 2026-06-11 — MVP 実装 (`src/context/`, ゴールデンテスト 8/8) を反映。interval の確定方式を worst-case 自動解決から **Decision エンティティ経由**に変更(§2.3 invariant 2、§7)。同日、可視化 PoC デモを ADR-047 として実装(`compileContext` の戻り値に `provenance[]` を追加 — additive)
 **Related**: ADR-044 (5W1H Function Mapping), ADR-045 (External Layout API), ADR-037 (Body Frame), ADR-030 (SpatialLink), ADR-047 (Context Demo Layer), ADR-049 (Requirement / Conflict モデル — 本 DSL の L2.5 拡張), ADR-050 (Context-First Project Model — 本 DSL を正準アーティファクト化), ADR-052 (5W1H ユビキタス言語 — L2/L5 を Why ルートに統合), ADR-051 (要件入力)
 **Implementation**: `src/context/` (Schema / Validator / Compiler), `examples/factory_context.json`, `pnpm test:context`
 
 ---
+
+## Status の経緯 (2026-08-12)
+
+判断は 2026-06-11 の MVP 反映で閉じていた (`src/context/` Schema / Validator / Compiler、
+ゴールデンテスト 8/8、`pnpm test:context`) が、**Status は `Draft (Proposed)` のまま
+2 か月放置されていた**。
+
+この ADR は **探索的 MVP が判断を閉じた実例**である — 実装して初めて interval の
+確定方式が worst-case 自動解決ではなく Decision エンティティ経由だと決まった
+(§2.3 invariant 2、§7)。だから「Draft の ADR を参照するコードのマージを拒否する」
+gate は採らない。**その gate が最初から在ったらこの ADR は書けなかった。**
+代わりに数えて宣言させる (ADR-123 D4 — `pnpm test:deferrals` の Q6)。
 
 ## 1. Context — なぜ layout/1.0 の上にもう一層必要か
 

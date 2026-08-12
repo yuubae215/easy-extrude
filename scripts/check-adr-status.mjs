@@ -30,37 +30,10 @@ import { fileURLToPath } from 'node:url'
 
 const ADR_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'adr')
 
-const TOKEN = String.raw`(?:Proposed|Draft|Accepted|Rejected|Deprecated|(?:Partially s|S)uperseded by ADR-\d{3})`
-/**
- * 値部分の文法。1 行完結で、TOKEN の後ろは「無し」「(注記)」「— 注記」「, 注記」。
- */
-const STATUS_VALUE = new RegExp(String.raw`^(${TOKEN})\s*(?:[（(].*|—.*|,.*)?$`)
-
-/** Status 行の所在検出 (値が壊れていても行そのものは見つけたい)。 */
-const STATUS_ANY = /^\s*(?:\|\s*)?[-*]?\s*\**\s*Status\s*\**\s*(?:[:：]|\|)/
-
-/**
- * 見出しの *装飾* を落として値だけ取り出す (純粋関数)。
- *
- * 91 本のヘッダは 4 方言に分かれている — `- Status: X` / `**Status:** X` /
- * `- **Status**: X` / 表形式 `| **Status** | X |` — が、**すべて機械可読**である。
- * ここで縛るのは *読めるかどうか* であって書式の統一ではない: 歴史文書 59 本の
- * 見出しを一括改稿するのは churn に対して得るものが無い (§5 過剰モデリング禁止)。
- * 統一が要るなら別の変更として行い、その時この関数を狭めればよい。
- *
- * @param {string} line
- * @returns {string|null} 値部分。Status 行として解釈できなければ null。
- */
-function statusValue(line) {
-  const s = line.replaceAll('**', '').trim()
-  if (s.startsWith('|')) {
-    const cells = s.split('|').map(c => c.trim())        // ['', 'Status', 'Accepted', '']
-    if (cells[1] !== 'Status') return null
-    return cells[2] ?? null
-  }
-  const m = /^[-*]?\s*Status\s*[:：]\s*(.*)$/.exec(s)
-  return m ? m[1].trim() : null
-}
+// Status の文法は `scripts/adr-status.mjs` ただ 1 箇所 (§1.1)。2026-08-12 に
+// check-deferrals.mjs が同じ文法を*書き写して*いた (しかも 4 方言のうち 1 つしか
+// 読めない狭い写し) ことが分かったので、両者が同じモジュールを引く形へ直した。
+import { STATUS_VALUE, STATUS_ANY, statusValue } from './adr-status.mjs'
 
 /** 状態・基数の語彙 (ADR-091 以降に台帳参照を求める判定用)。 */
 const STATE_VOCAB = /状態機械|ステートマシン|\bFSM\b|状態遷移|基数|cardinality|0 台|N 台/
@@ -99,6 +72,15 @@ const PHASED_PLANS = [
     /** この文字列を参照する ADR が母集団。順序表自身のディレクトリで導出する。 */
     belongs: 'docs/ia-redesign/',
     label: 'IA 再設計',
+  },
+  {
+    // 2026-08-12 追加 (ADR-123 §Consequences)。grasp レーンには段が無く、
+    // ADR-119 / 121 / 122 は「段を持たない ADR」の母集団の外に居た。しかし依存は
+    // 実在する (ADR-120 D1 → ADR-121) のに、その順序は ADR 本文の散文にしか
+    // 無かった — ADR-109 が名指しした「段を持たない項目は誰も実装しない」形である。
+    order: 'docs/grasp/implementation-order.md',
+    belongs: 'docs/grasp/',
+    label: 'grasp',
   },
 ]
 

@@ -11,7 +11,36 @@
 | **Phase A** | Express BFF skeleton; SQLite scene persistence; `TransformGraph` storage; `BffClient`; `SceneSerializer`; Vite proxy; pnpm workspace | ✅ 2026-03-21 |
 | **Phase B** | Geometry Service (DAG evaluator); WebSocket session (ADR-017); Node Editor UI prototype; STEP import (REST + WS); `BffClient.WsChannel` | ✅ 2026-03-21 |
 | **Phase C** | `ImportedMesh` thin-client entity + `ImportedMeshView`; `SceneService.createImportedMesh()` + `_applyGeometryUpdate()`; Outliner type icon; AppController guards; `fitCameraToSphere()`; unit conversion dialog | ✅ 2026-03-22 |
-| **Phase D** | Direction TBD after Phase C checkpoint — see ROADMAP §BFF Phase D | Pending |
+| **Phase D** | **再評価済み 2026-08-12** — 下記 §Phase D の再評価。9 項目中 4 項目を廃止、5 項目は生きた残し (DEF-019 / DEF-020) | 一部廃止・一部未着手 |
+
+---
+
+## Phase D の再評価 (2026-08-12 — ADR-123 §力学 1)
+
+「Direction TBD after Phase C checkpoint」と書かれた満期は、**Phase C が完了した
+2026-04-15 に到来していた**。4 か月間、誰も判定しなかった — 満期の宣言が
+`docs/ROADMAP.md` の中に在り、そこが残しの母集団の外だったからである。
+
+再評価の基準は現在の `CLAUDE.md` のレイヤ写像である。Phase D 構想は 2026-03-20 の
+「フロントを薄いクライアントにする」像に立っており、その像は 3 層 monorepo
+(フロント `src/` / 契約 `packages/grasp-contract` / バックエンド `server/` + `core/`)
+へ置き換わっている。
+
+### 廃止 (現在の憲法と矛盾する — 実装したら違反になる)
+
+| 項目 | 矛盾 |
+|---|---|
+| Frontend domain entities → cache-only | `CLAUDE.md` は **DDD Entity Core — 設計の中心は `src/domain/`** と宣言 |
+| Remove all domain computation from frontend | 同上。`src/` は決定的 core (`SynonymQuotient` / `CanonicalForm`) を**所有する**。解法だけが `core/` の責務であって、ドメインごと移すという話ではない |
+| Frontend unit tests — View / Controller only | 現在 `pnpm test` は `src/**/*.test.js` glob で、domain テストと census テスト (`PosePolicyOwnership` 他) が主力 |
+| Independent Geometry Service scaling | マイクロサービス像は BFF + `core/` FastAPI の 2 プロセスに置き換わり、契約は ADR-074 / 076 / 082 が定義済み |
+
+### 生きた残し (登録簿へ)
+
+| 項目 | 行 |
+|---|---|
+| STEP geometry persistence / B-rep topology → graph / GLTF・OBJ export / Delta-sync protocol (JSON Patch) | **DEF-019** — いずれも Geometry Service 側の未着手。ADR-016 / ADR-017 と共同所有 |
+| Node Editor — DAG topology editing UI | **DEF-020** — ROADMAP §Phase S-4 と**同一項目**だった。ROADMAP 自身が「S-4 が完成したら Phase D テーブルから削除」という**条件つき退役**を書いていたが、条件つき退役は誰も実行しない |
 
 ---
 
