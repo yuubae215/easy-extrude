@@ -147,3 +147,20 @@ test('未宣言のシナリオ名は既定へ倒れず、画面上で拒否さ�
   await expect(page.getByText(/Failed —/)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByText(/unknown scenario "emtpy"/)).toBeVisible()
 })
+
+test('S8 — 測っていない objective は 0 のバーではなく「測っていない」と出る (ADR-120)', async ({ page }) => {
+  // フロントはリーチ範囲 (plan{}) を集めていないので、`reach_margin` は
+  // **評価できない** objective である。これを 0 のバーで描くと「余裕ゼロ」に読め、
+  // 候補が実際より悪く見える。0 と未測定は画面上で別物でなければならない。
+  const errors = await reachGraspPanel(page, 'solve')
+  await pickAnObjectIfAsked(page)
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+
+  // 重み付けした名前は消えず (無言の省略をしない — 原則 #11)、測れなかったことが
+  // 言葉で出る。測れた objective のバーは今までどおり出ている。
+  await expect(page.getByText(/not measured: reach_margin/).first()).toBeVisible()
+  await expect(page.getByText('approach_clearance').first()).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

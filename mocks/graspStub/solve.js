@@ -127,6 +127,13 @@ function judgement(graspSearch) {
  * names. Only the objectives the request actually weights are returned, so an
  * unweighted objective does not appear in the breakdown — mirroring
  * `evaluate_objectives`, which returns only requested names.
+ *
+ * A weighted objective this stub COULD NOT EVALUATE (`null`) is left out too, so
+ * "not measured" is carried by the ABSENCE OF THE KEY rather than by a 0 that is
+ * indistinguishable from a genuinely bad score (ADR-120 D2). The stub reproduced
+ * the very defect ADR-120 names: with no reach envelope declared it reported
+ * `reach_margin: 0`, which reads as "no margin left" when it means "nobody
+ * measured".
  */
 function objectiveScores(weights, { reachMargin, clearance, stability }) {
   const all = {
@@ -136,9 +143,36 @@ function objectiveScores(weights, { reachMargin, clearance, stability }) {
   }
   const out = {}
   for (const name of Object.keys(weights ?? {})) {
-    if (name in all) out[name] = Math.max(0, Math.min(1, all[name]))
+    if (!(name in all)) continue
+    const value = all[name]
+    if (value == null) continue          // weighted, but not evaluable → no key
+    out[name] = Math.max(0, Math.min(1, value))
   }
   return out
+}
+
+/**
+ * Weighted average over the objectives that were ACTUALLY EVALUATED (ADR-120 D1).
+ *
+ * The unevaluated ones are out of the numerator AND the denominator, so weighting
+ * an objective this stub cannot compute does not drag the absolute score down —
+ * which is what makes `totalScore` comparable between runs, as the contract
+ * claims ("absolute basis, so scores are comparable across requests").
+ *
+ * Nothing evaluated at all → 0, and `objectiveScores` is then empty: the empty
+ * breakdown is what distinguishes it from a scored-but-bad candidate (a 0 with
+ * keys present). The stub's numbers are its own invention either way — what is
+ * held to the contract is this SHAPE, never the arithmetic (ADR-117).
+ */
+function totalScoreOf(scores, weights) {
+  let weighted   = 0
+  let weightSum  = 0
+  for (const [name, value] of Object.entries(scores)) {
+    const w = Number(weights?.[name] ?? 0)
+    weighted  += value * w
+    weightSum += w
+  }
+  return weightSum > 0 ? weighted / weightSum : 0
 }
 
 /**
@@ -283,19 +317,20 @@ export function stubSolve(request, contractVersion) {
 
     // ── survived every stage: score it ───────────────────────────────────────
     const span        = reachMax === Number.POSITIVE_INFINITY ? 0 : (reachMax - reachMin) / 2
+    // No declared envelope → the margin is NOT MEASURED, which is a different
+    // fact from "no margin left" (ADR-120). `null` travels as an absent key.
     const reachMargin = span > 0
       ? 1 - Math.abs(distance - (reachMin + span)) / span
-      : 0                                        // undeclared envelope → no margin to report
+      : null
+    // `1` here IS an evaluation, not a stand-in: nothing declared nearby means
+    // the approach is unobstructed, which the stub did measure.
     const clearance = Number.isFinite(minClearance) && clearanceReference > 0
       ? Math.min(1, minClearance / clearanceReference)
-      : 1                                        // nothing declared nearby → unobstructed
+      : 1
     const scores = objectiveScores(weights, {
       reachMargin, clearance, stability: graspSlack,
     })
-    let totalScore = 0
-    for (const [name, value] of Object.entries(scores)) {
-      totalScore += value * Number(weights[name] ?? 0)
-    }
+    const totalScore = totalScoreOf(scores, weights)
 
     feasible.push({
       pose: {

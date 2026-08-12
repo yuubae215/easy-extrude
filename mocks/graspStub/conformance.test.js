@@ -65,6 +65,11 @@ function request({ base = [0, 0, 400], samples, obstacles = [], camera, gripper,
   }
 }
 
+/** Same request, different objective weights — the one variable ADR-120 cares about. */
+function withWeights(req, weights) {
+  return { ...req, graspSearch: { ...req.graspSearch, objectiveWeights: weights } }
+}
+
 // ── The validator itself must be able to say "no" ────────────────────────────
 //
 // Every assertion below this block is worth exactly as much as the validator's
@@ -262,9 +267,11 @@ test('法線が退化したサンプルは generated に数えない (恒等式�
 // ── objectiveScores mirrors the request's weights ────────────────────────────
 
 test('重みを付けた objective だけがスコア内訳に現れる (core/ と同じ規律)', () => {
-  const req = request()
+  // リーチ範囲を宣言しているので reach_margin は「評価できた」側に居る。
+  const req = request({ plan: { reachMin: 0, reachMax: 1000 } })
   req.graspSearch.objectiveWeights = { reach_margin: 1.0 }
   const res = stubSolve(req, CONTRACT_VERSION)
+  assert.ok(res.candidates.length > 0, '前提: 候補が出ていること')
   for (const c of res.candidates) {
     assert.deepEqual(Object.keys(c.score.objectiveScores), ['reach_margin'])
   }
@@ -278,6 +285,61 @@ test('未登録の objective 名は無視される — core/ の寛容さを再�
     assert.deepEqual(c.score.objectiveScores, {})
     assert.equal(c.score.totalScore, 0)
   }
+})
+
+// ── 評価できなかった objective は 0 点ではない (ADR-120) ─────────────────────
+//
+// 値で比較すると「評価不能」と「0 点」はまさに同じに見える。だから検査は**鍵の不在**を
+// 問う — 検査の書き方そのものがこの ADR の主張である。
+
+test('リーチ範囲を宣言していなければ reach_margin は 0 ではなく鍵ごと出ない', () => {
+  const withoutEnvelope = stubSolve(request(), CONTRACT_VERSION)
+  assert.ok(withoutEnvelope.candidates.length > 0, '前提: 候補が出ていること')
+  for (const c of withoutEnvelope.candidates) {
+    assert.ok(!('reach_margin' in c.score.objectiveScores),
+      '未宣言のリーチ範囲は「余裕ゼロ」ではなく「測っていない」')
+  }
+  // 宣言すれば同じ鍵が現れる = 不在が欠陥ではなく事実であることの対照。
+  const withEnvelope = stubSolve(request({ plan: { reachMin: 0, reachMax: 1000 } }), CONTRACT_VERSION)
+  assert.ok(withEnvelope.candidates.every(c => 'reach_margin' in c.score.objectiveScores))
+})
+
+test('評価できない objective に重みを付けても totalScore は動かない (分母に入らない)', () => {
+  // 同じ候補・同じ評価可能な objective。違いは「評価できない objective の重み」だけ。
+  const base = { approach_clearance: 1.0 }
+  const withUnevaluable = { ...base, reach_margin: 9.0 }   // リーチ範囲は未宣言のまま
+
+  const a = stubSolve(withWeights(request(), base), CONTRACT_VERSION)
+  const b = stubSolve(withWeights(request(), withUnevaluable), CONTRACT_VERSION)
+
+  assert.ok(a.candidates.length > 0 && a.candidates.length === b.candidates.length)
+  a.candidates.forEach((c, i) => {
+    assert.equal(c.score.totalScore, b.candidates[i].score.totalScore,
+      '評価できなかった objective が分母に居座ると、無関係な重み付けでスコアが下がる')
+  })
+})
+
+test('評価できた objective の加重平均なので 0-1 に収まる (リクエスト間で比較可能)', () => {
+  const res = stubSolve(withWeights(
+    request({ plan: { reachMin: 0, reachMax: 1000 } }),
+    { reach_margin: 0.6, approach_clearance: 0.4, grasp_stability: 1.0 },
+  ), CONTRACT_VERSION)
+  assert.ok(res.candidates.length > 0)
+  for (const c of res.candidates) {
+    assert.ok(c.score.totalScore >= 0 && c.score.totalScore <= 1,
+      `加重平均なら 0-1: ${c.score.totalScore}`)
+  }
+  assertConforms(res, 'weighted average')
+})
+
+test('1 つも評価できなければ totalScore 0 だが、内訳が空であることが 0 点と区別する', () => {
+  const res = stubSolve(withWeights(request(), { reach_margin: 1.0 }), CONTRACT_VERSION)
+  assert.ok(res.candidates.length > 0)
+  for (const c of res.candidates) {
+    assert.deepEqual(c.score.objectiveScores, {}, '空の内訳 = 何も測れなかった')
+    assert.equal(c.score.totalScore, 0)
+  }
+  assertConforms(res, 'nothing evaluable')
 })
 
 // ── Version stamp ────────────────────────────────────────────────────────────

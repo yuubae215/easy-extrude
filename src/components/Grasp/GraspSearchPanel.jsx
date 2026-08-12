@@ -3,6 +3,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
+import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
   CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
   cameraDeclarationGaps, gripperDeclarationGaps, OBJECTIVE,
@@ -279,6 +280,9 @@ export function GraspSearchPanel() {
   })
 
   // Objective names present across the returned candidates (for sort buttons).
+  // Deliberately the RETURNED keys, not the requested ones: an objective nobody
+  // could evaluate has nothing to sort by (ADR-120 — it is named in the
+  // candidate's "not measured" line instead of offered as a dead chip).
   const objectiveKeys = useMemo(() => {
     if (status !== 'results') return []
     const keys = new Set()
@@ -287,6 +291,13 @@ export function GraspSearchPanel() {
     }
     return [...keys].sort()
   }, [status, grasp])
+
+  // The weights THIS RUN requested — the population every candidate's score rows
+  // are counted against (ADR-120 D3 / PHILOSOPHY #31). Read from the run's own
+  // record rather than the live sliders, which may have moved since Run.
+  const requestedWeights = status === 'results'
+    ? (grasp.request?.graspSearch?.objectiveWeights ?? null)
+    : null
 
   const sorted = useMemo(() => {
     if (status !== 'results') return []
@@ -468,6 +479,7 @@ export function GraspSearchPanel() {
             <Candidate
               key={c.rank ?? i}
               c={c}
+              requestedWeights={requestedWeights}
               selected={grasp.selectedRank === c.rank}
               onSelect={() => callbacks.onSelectGraspCandidate?.(c.rank)}
               onHover={(rank) => callbacks.onHoverGraspCandidate?.(rank)}
@@ -927,7 +939,7 @@ function NearMissMeter({ label, what, miss, closeness }) {
   )
 }
 
-function Candidate({ c, selected, onSelect, onHover }) {
+function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
   const sc = c.score ?? {}
   const chip = (label, ok) => (
     <span style={{
@@ -936,7 +948,12 @@ function Candidate({ c, selected, onSelect, onHover }) {
       border: `1px solid ${ok ? '#357035' : '#703535'}`,
     }}>{label}{ok ? ' ✓' : ' ✗'}</span>
   )
-  const objectiveScores = sc.objectiveScores ?? null
+  // Every objective the run ASKED FOR, marked with whether the solver could
+  // evaluate it (ADR-120). Absence of a key means "not measured", which is a
+  // different fact from a 0 score — so the row keeps its slot and says so
+  // (PHILOSOPHY #15 fixed slots, #11 no silent omission) instead of vanishing.
+  const objectives = objectiveRows(requestedWeights, sc.objectiveScores)
+  const notMeasured = unevaluatedNote(objectives)
   return (
     <div
       onClick={onSelect}
@@ -957,7 +974,7 @@ function Candidate({ c, selected, onSelect, onHover }) {
       {/* Five domain-stage chips (contract v4, ADR-081): visible/graspable are
           vacuously true when the request declared no camera/gripper; on legacy
           v3 payloads the two chips are simply absent (degrade, no guessing). */}
-      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: objectiveScores ? '6px' : 0 }}>
+      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: objectives ? '6px' : 0 }}>
         {chip('reach', sc.withinReach)}
         {typeof sc.visible === 'boolean' && chip('seen', sc.visible)}
         {chip('IK', sc.ikSolvable)}
@@ -965,10 +982,17 @@ function Candidate({ c, selected, onSelect, onHover }) {
         {typeof sc.graspable === 'boolean' && chip('grasp', sc.graspable)}
       </div>
       {/* objectiveScores bars — the order-explaining signal (ADR-057 G2). Absent on
-          legacy solvers → bars omitted, totalScore alone (degrade — §1.3). */}
-      {objectiveScores && Object.entries(objectiveScores).map(([k, v]) => (
-        <ObjectiveBar key={k} label={k} value={typeof v === 'number' ? v : 0} />
+          legacy solvers with no recorded request → nothing drawn (degrade — §1.3). */}
+      {objectives?.rows.map(r => (
+        r.evaluated
+          ? <ObjectiveBar key={r.name} label={r.name} value={r.value} />
+          : <ObjectiveUnmeasured key={r.name} label={r.name} />
       ))}
+      {notMeasured && (
+        <div style={{ fontSize: '9px', color: '#997', marginTop: '3px', marginLeft: '70px' }}>
+          {notMeasured}
+        </div>
+      )}
       <PoseFooter pose={c.pose} />
     </div>
   )
@@ -1000,6 +1024,31 @@ function PoseFooter({ pose }) {
   return (
     <div style={{ marginTop: '5px', fontSize: '10px', color: '#886' }}>
       spatial view unavailable (unrecognized pose shape)
+    </div>
+  )
+}
+
+/**
+ * The same row, for an objective the solver could NOT evaluate (ADR-120 D3).
+ *
+ * It keeps the label's slot and the track's width so the reader can see that the
+ * objective was asked for (PHILOSOPHY #15), but there is deliberately no filled
+ * bar and no number: a 0%-wide bar would read as "scored 0", which is exactly the
+ * confusion this ADR removes. The track is drawn empty and the value column says
+ * so in words.
+ */
+function ObjectiveUnmeasured({ label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+      <span style={{ width: '64px', fontSize: '9px', color: '#888', textAlign: 'right' }}>{label}</span>
+      <div style={{
+        // Tokens, not new literals: an empty track reports no state, so it takes
+        // the chrome ground and the chrome border (ADR-100 — a colour with
+        // nothing to report is neutral, and near-duplicates are the defect).
+        flex: 1, height: '7px', borderRadius: '4px', background: COLOR.surface,
+        border: `1px dashed ${COLOR.border}`, boxSizing: 'border-box',
+      }} />
+      <span style={{ width: '30px', fontSize: '9px', color: '#997' }}>n/m</span>
     </div>
   )
 }

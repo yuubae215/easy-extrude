@@ -934,6 +934,42 @@ The stage-1 spatial ghost translates the **typed** wire facts (`pose.kind:'endEf
 
 ---
 
+## An Unevaluated Objective Is Not a Zero Score — the Key's Absence Carries It, and the Population Is the REQUEST (ADR-120)
+
+`score.objectiveScores` is a map the solver fills with the objectives it could actually
+evaluate. "Could not evaluate" has **no field of its own** — adding one would grow an
+`optional` sibling on a closed layer, which ADR-060 forbids — so it is carried by the
+**absence of the key**, and every consumer has to be written for that. Contracts:
+
+- **A weighted objective with nothing to measure against emits NO key.** Both producers are
+  bound by this: `core/`'s `evaluate_objectives` and the stub's `objectiveScores()`
+  (`mocks/graspStub/solve.js`). Emitting `0` instead is the defect this ADR is named after —
+  the stub had it independently, with the intent (`// undeclared envelope → no margin to
+  report`) written in a comment right above the lie. **Do not clamp, default, or "helpfully"
+  fill** an unevaluable objective; that is `unexamined = clear` (ADR-105) in the score layer.
+- **`totalScore` is the weighted average over the EVALUATED objectives only** — unevaluated
+  weights leave both the numerator and the denominator, so weighting an objective the solver
+  cannot compute does not drag the absolute score down. Without this, the contract's claim
+  that scores are "comparable across requests" is false whenever a declaration is missing.
+  *(Held today by `mocks/graspStub/conformance.test.js`; `core/`'s `weighted_sum` still
+  divides by every weight — DEF-013.)*
+- **Nothing evaluated is not the same as scoring zero.** Both can produce `totalScore: 0`, so
+  the distinguishing fact is that `objectiveScores` is **empty**. Never re-derive "was this
+  scored" from the total.
+- **The presentation population is the REQUEST's weights, never the response's keys**
+  (PHILOSOPHY #31). Absence has no node, so enumerating what came back can never surface what
+  was not measured. The one derivation point is the pure `objectiveRows()` /
+  `unevaluatedNote()` (`src/view/GraspScoreMath.js`, THREE-free); it reads
+  `context.grasp.request.graspSearch.objectiveWeights` — **the run's own record, not the live
+  sliders**, which may have moved since Run. A value outside the contract's 0..1 is treated as
+  unevaluated rather than clamped (a malformed number is not a measurement).
+- **The row keeps its slot and says "not measured"** — an empty track (chrome ground + dashed
+  chrome border, tokens not new literals per ADR-100) plus a line naming what was not measured.
+  A 0%-wide bar reads as "scored 0"; a vanished row is a silent omission (#15, #11). Sort chips
+  stay derived from the RETURNED keys — there is nothing to sort by in an unmeasured objective.
+
+---
+
 ## Grasp Domain Declaration Cards: Presets Seed, Values Own, Gaps Gate; Capture Splits Pure/Side-Effect (ADR-081 Decision 5)
 
 The grasp panel's input is three domain declaration cards — Seen (camera) / Reached (robot
