@@ -1,0 +1,67 @@
+GOALS adr125_an_obligation_belongs_to_the_event_that_fires_it
+
+goal ConditionalRetirementIsAskedWhenItFires
+uuid a9f01176-cf9e-42ba-acf3-46f0de57965f
+summary "「A が起きたら B を消す」という約束が、A が起きた日に必ず問われる。義務は人の記憶ではなく、既に観測されている事象に紐づく"
+state UnderReview
+labels adr-125, retirement, adr-lifecycle, principle-32, principle-31
+artifacts
+- "docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md"
+
+    context Adr125Scope
+    uuid da3ad9f3-fa03-4eb0-b7fb-7986f1ae8c41
+    summary "ADR-125 (Accepted 2026-08-12・実装済み): ADR-124 の §引き受けなかったもの が名指しした「条件つき退役の検出」を設計する。ADR ヘッダに Retires: 欄を足し、pnpm test:adr が Status 遷移を発火事象として両方向を問う。**遡及しない** — ADR-125 以降のみ必須 (check-adr-status.mjs が台帳参照を ADR-091 以降にだけ効かせたのと同じ判断)。src/ の挙動は 1 行も変えていない"
+    artifacts
+    - "scripts/check-adr-status.mjs"
+    - "scripts/adr-status.mjs"
+    - ".claude/skills/adr/SKILL.md"
+
+    context FiveMeasuredRetirementRots
+    uuid 7c4c5070-444c-4418-98fa-fe517f4c8231
+    summary "実測 5 例・すべて無関係な文脈 (入力の住所 / ロードマップ / 投影 / 配色 / 契約): (1) `DocIntake.js` の PROVISIONAL_UNTIL は ADR-108 の採択で満期を迎えたが無言で過ぎ、写し 7 箇所が同時に古くなった。(2) ROADMAP §Phase S-4 の『S-4 が完成したら BFF Phase D 表から削除』は誰も実行せず、ADR-123 が畳むまで二重登録が残った。(3) ADR-103 の `DS_PENDING` は 3 リリース残り、手書きの RETIRED_MODE_SHAPES を作って初めて止まった。(4) ADR-100 の退役色も同様に手書き census が要った。(5) ADR-060 の 5 項目は 3 完了・1 消滅で、宣言だけが『まだ残っている』という嘘を出し続けた。**5 例すべてで義務は消される側に散文で書かれていた**"
+    artifacts
+    - "src/ProjectionAxisOwnership.test.js"
+    - "src/theme/tokens.test.js"
+
+    context BusinessTreeAttachPoint
+    uuid 531ea3fb-d685-45d9-8b16-4cc3f07ab25c
+    summary "**保留** — ADR-123 / ADR-124 と同じ理由 (事業木には ADR-109 の枝が既に在り、本 ADR はその枝の義務の置き場所を直したもので、新しい価値経路を主張していない)。接続の満期条件も同じ: ROADMAP §未移管 の 14 件が Issues へ移り DEF-021 が畳まれたとき"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotLexicalDetection
+    uuid a749b33d-97e8-40fe-8c8d-e335622965d4
+    summary "却下案 A (語彙で検出する) への反証 — **実測で決着した**。削除動詞 (削除|消す|外す|撤去|廃止|remove|delete|drop) × 条件マーカー (したら|ときに|when|once) の 2 要素で docs/ src/ scripts/ を走査すると 87 hit だが、サンプルのほぼ全部が偽陽性 (`Fired when` / メソッド名の `delete` / 散文の `removed`)。日本語と英語の両方で言い回しが無限にあるので原理的に届かない。ADR-124 が『語彙を 1 語ずつ足す経路は届かない』と書いた判断はここでも正しかった"
+
+    justification WhyNotOnlyMarkTheVictim
+    uuid 8cf09179-2e9c-4138-baba-623061eaa31f
+    summary "却下案 B (消される側にマーカーを置く = PROVISIONAL_UNTIL の一般化) への反証: それは既に存在し、既に効いている (Q2)。しかし**書く側が『これは暫定だ』と自覚したときにしか置かれない**。ROADMAP の表のセルに PROVISIONAL_UNTIL は書けないし、ADR-060 の 5 項目のような『追従が要る宣言』にも置き場所が無い。カバー範囲がコード内の暫定に限られる。共存はする — 役割が違う (あちらは『自分がいつまで生きてよいか』、こちらは『自分が何を殺すか』)"
+
+    justification WhyNotALedgerKindColumn
+    uuid 75ad0235-5c34-4619-a6a1-452a8f45c947
+    summary "却下案 D (登録簿に kind 列を足して退役も扱う) への反証: 満期の機構をそのまま使えるので安いが、**発火条件がやはり散文になる**(「Phase S-4 が完成したとき」)。採用案との差はそこで、Retires: では発火条件が **ADR の Status 遷移そのもの**であり、機械が既に読んでいる。ただし D4 で両者は接続する — 発火事象がまだ ADR として存在しないときは登録簿が受け、満期を『その ADR が起票されたとき』にする (DEF-020 が既にこの形)"
+
+    assumption AuthorMustNoticeTheRetirement
+    uuid e46a9663-ec90-4719-b4f2-7d2f849bd58b
+    summary "反証されうる仮説: ADR を書く人は、欄があれば『退役はあるか』を考える。**欄の存在は問いを立てるが、答えの正しさは検査できない** — 退役があるのに `Retires: なし` と書かれたら機械は通す。ADR-123 の Q6 宣言表と同じ性質の脆さで、機械が問えるのは欄の有無までである。反証される形: `Retires: なし` と書かれた ADR が実際には何かを置き換えており、その何かが数リリース残る。緩和は 2 か所で問うこと (SKILL.md のテンプレ = 書く瞬間 / CI = マージの瞬間) だけ"
+
+    assumption StageCompletionIsNotYetAnEvent
+    uuid 27d55859-08a6-4aa7-a4fb-4b8ebc83f2c9
+    summary "埋めていない穴の宣言 (推論させない): 今日の発火事象は **ADR の Status 遷移だけ**である。「Phase N が完了したら消す」は D4 の二段構え (登録簿 → 起票された ADR の Retires:) を通る必要があり、直接は書けない。理由は順序表の段に完了状態の機械可読な表現が無いこと (`- [x]` はあるが段の単位では読めない)。登録簿 DEF-027 として登録済み。反証される形: 段の完了に紐づく退役が二段構えを経ずに散文で書かれ、また残る"
+
+    strategy ByMovingTheObligationToTheObservedEvent
+    uuid 67d6cb27-da1a-4078-9da0-2c711f4a50f7
+    summary "Argument by 義務の移設 — 義務を「消される側」から「消す側 = ADR」へ移す。ADR の Status 遷移は既に機械が読んでいる (Q2 が満期判定に使っている) ので、そこに紐づけた義務は追加の観測装置なしに毎 PR 問われる。両方向を問うことで、履行漏れ (Accepted なのに在る) と宣言の腐敗 (未採択なのに無い) の両方を落とす"
+
+        goal RetirementObligationsCannotStayGreen
+        uuid 3fbd37cf-c458-43b8-a628-629076c02eda
+        summary "ADR が Accepted になった時点で、その ADR が退役させると宣言した番地は消えている。消えていなければ落ちる。逆に、まだ採択されていない ADR の退役宣言が指す先は実在する"
+        state UnderReview
+
+            solution RetiresFieldWithBidirectionalCheckAndSelfDemo
+            uuid 5e2d3d5d-9710-4f35-b306-55ff4a5c0e07
+            summary "pnpm test:adr — `Retires:` の解析 (文法は scripts/adr-status.mjs = Status と同じモジュール、第二のパーサを作らない) + 両方向の検査 + ADR-125 以降の欄の必須化。番地の語彙は登録簿の満期 trigger と同じ `PATH:` / `GREP:<path>::<regex>` で、repo 内の何かを指す書き方を統治全体で 1 つにした。**この ADR 自身が最初の保持者**で `GREP:docs/DEFERRAL_LEDGER.md::DEF-026` を退役させる — ADR-124 が『条件つき退役の検出は未設計』として登録した行が、設計した瞬間に消える。**変異で確認済み**: DEF-026 の行を登録簿へ戻すと『Accepted なのに退役させると宣言した GREP:… がまだ在る』で fail し、消すと緑。既存の手書き census (RETIRED_MODE_SHAPES / RETIRED_SELECTION_COLORS) は cutoff より前なので残すが、新しい ADR は手書きしなくてよい"
+            artifacts
+            - "scripts/check-adr-status.mjs"
+            - "scripts/adr-status.mjs"
+            - "docs/DEFERRAL_LEDGER.md"

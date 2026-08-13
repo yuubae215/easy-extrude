@@ -65,6 +65,28 @@ export function statusValue(line) {
 }
 
 /**
+ * `Retires:` 欄の値を取り出す (純粋関数)。Status と**同じ 4 方言**を受ける。
+ *
+ * この欄は「この ADR が Accepted になったら消えていなければならないもの」を書く
+ * (ADR-125)。番地の書き方は登録簿の満期 trigger と**同じ語彙**にする —
+ * `PATH:<path>` / `GREP:<path>::<regex>` — ので、repo 内の何かを指す書き方は
+ * 統治全体で 1 つになる。
+ *
+ * @param {string} line
+ * @returns {string|null} 値部分。Retires 行として解釈できなければ null。
+ */
+export function retiresValue(line) {
+  const s = line.replaceAll('**', '').trim()
+  if (s.startsWith('|')) {
+    const cells = s.split('|').map(c => c.trim())
+    if (cells[1] !== 'Retires') return null
+    return cells[2] ?? null
+  }
+  const m = /^[-*]?\s*Retires\s*[:：]\s*(.*)$/.exec(s)
+  return m ? m[1].trim() : null
+}
+
+/**
  * ADR ディレクトリ全体を読み、`'ADR-108' → Status 値` の対応を作る。
  *
  * 各ファイルで**最初に**解釈できた Status 行を採る (本文が Status について*述べる*

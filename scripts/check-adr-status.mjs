@@ -24,17 +24,18 @@
  * 使い方: pnpm test:adr   (CI の gate ジョブからも実行)
  */
 
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url))
+const ROOT_DIR = join(SCRIPTS_DIR, '..')
 const ADR_DIR = join(SCRIPTS_DIR, '..', 'docs', 'adr')
 
 // Status の文法は `scripts/adr-status.mjs` ただ 1 箇所 (§1.1)。2026-08-12 に
 // check-deferrals.mjs が同じ文法を*書き写して*いた (しかも 4 方言のうち 1 つしか
 // 読めない狭い写し) ことが分かったので、両者が同じモジュールを引く形へ直した。
-import { TOKEN, STATUS_VALUE, STATUS_ANY, statusValue } from './adr-status.mjs'
+import { TOKEN, STATUS_VALUE, STATUS_ANY, statusValue, retiresValue, adrStatuses } from './adr-status.mjs'
 
 /** 状態・基数の語彙 (ADR-091 以降に台帳参照を求める判定用)。 */
 const STATE_VOCAB = /状態機械|ステートマシン|\bFSM\b|状態遷移|基数|cardinality|0 台|N 台/
@@ -84,6 +85,9 @@ const PHASED_PLANS = [
     label: 'grasp',
   },
 ]
+
+/** Accepted 判定 (check-deferrals.mjs の Q2 と同じ形)。 */
+const ACCEPTED_RE = /^Accepted\b/
 
 const errors = []
 const files = readdirSync(ADR_DIR)
@@ -263,6 +267,94 @@ if (parserOwners.length > 0) {
     '    文法は scripts/adr-status.mjs ただ 1 箇所 (§1.1)。書き写すと、書いた人が知っている\n' +
     '    方言しか読めない写しになる — 4 方言のうち表形式を落とした先例が ADR-123 で出た。\n' +
     '    `import { adrStatuses, statusValue } from "./adr-status.mjs"` を使うこと。')
+}
+
+// ── 条件つき退役 (2026-08-12 — ADR-125) ──────────────────────────────────────
+//
+// **なぜ ADR の欄なのか。** 観測した条件つき退役はすべて「A が起きたら B を消す」の形で、
+// **A はほぼ常に ADR のライフサイクル事象**だった (ADR-108 が Accepted になったら仮の住所を
+// 畳む / Phase S-4 が完成したら BFF Phase D 表の行を消す / ADR-103 が実装されたら
+// `DS_PENDING` を消す)。にもかかわらず宣言は**消される側**の隣に散文で置かれ、
+// 条件が来た瞬間に誰もそこを読み返さなかった。
+//
+// だから義務を**原因の側**に移す。原因 = その ADR であり、ADR の Status 遷移は
+// **既に機械が読んでいる**。`Retires:` に書いた番地は、その ADR が Accepted になった
+// 日から「消えていること」を毎 PR 問われる。
+//
+// **この検査は新しい発明ではない。** 同じ検査は既に 2 回、手で書かれている —
+// `src/ProjectionAxisOwnership.test.js` の `RETIRED_MODE_SHAPES` (ADR-103) と
+// `src/theme/tokens.test.js` の `RETIRED_SELECTION_COLORS` (ADR-100)。仕組みは在るのに、
+// **思い出した人だけが書いていた**。欄にすれば思い出さなくても効く。
+//
+// 退役の腐敗は違反を*見逃す*のではなく**緑を出す** (ADR-103) ので、逆向きも問う:
+// まだ Accepted でない ADR の `Retires:` が指す先は**在らねばならない**
+// (もう無いなら、その宣言は嘘である)。
+const statuses = adrStatuses(ADR_DIR)
+const RETIRES_REQUIRED_FROM = 125
+const RETIRES_NONE = /^(なし|none|—|-)\b|^(なし|none|—|-)$/i
+const RETIRES_TARGET = /(PATH|GREP):([^\s：|`]+?)(?:::([^\s|`]+))?(?=[\s、,·]|$)/g
+
+for (const file of files) {
+  const id = file.slice(0, 7)
+  const num = Number(id.slice(4))
+  const text = readFileSync(join(ADR_DIR, file), 'utf8')
+  const value = text.split('\n').map(retiresValue).find(v => v !== null)
+
+  if (value === undefined || value === '') {
+    if (num >= RETIRES_REQUIRED_FROM) {
+      errors.push(
+        `${id}: \`Retires:\` 欄が無い。ADR-${RETIRES_REQUIRED_FROM} 以降は必須 (ADR-125)。\n` +
+        '    この ADR が Accepted になったとき **消えていなければならないもの** を書く:\n' +
+        '      - Retires: なし — <理由>\n' +
+        '      - Retires: GREP:src/store/uiStore.js::mapMode · PATH:src/view/OldThing.js\n' +
+        '    「消すものが無い」も**宣言**である (既定値で埋めない — 原則 #31)。\n' +
+        '    遡及はしない — 歴史 ADR の一括改稿は churn に対して得るものが無いので、\n' +
+        `    ADR-091 以降に台帳参照を効かせたのと同じ形で ${RETIRES_REQUIRED_FROM} 以降に切った。`)
+    }
+    continue
+  }
+  if (RETIRES_NONE.test(value)) continue
+
+  const targets = [...value.matchAll(RETIRES_TARGET)]
+  if (targets.length === 0) {
+    errors.push(
+      `${id}: \`Retires:\` の値が番地になっていない ("${value.slice(0, 70)}")。\n` +
+      '    `PATH:<path>` か `GREP:<path>::<regex>` で書くこと (登録簿の満期 trigger と同じ語彙)。\n' +
+      '    散文で書いた退役は、条件が来た日に誰も読み返さない — それがこの欄の存在理由である。')
+    continue
+  }
+
+  const isAccepted = ACCEPTED_RE.test(statuses.get(id) ?? '')
+  const isLive = /^(Proposed|Draft)\b/.test(statuses.get(id) ?? '')
+  if (!isAccepted && !isLive) continue   // Rejected / Superseded — 決定が効いていない
+
+  for (const [, kind, path, pattern] of targets) {
+    const abs = join(ROOT_DIR, path)
+    const exists = existsSync(abs)
+    let present = exists
+    if (kind === 'GREP') {
+      if (!pattern) {
+        errors.push(`${id}: \`Retires:\` の GREP に ::<regex> が無い ("${path}")。`)
+        continue
+      }
+      present = exists && new RegExp(pattern).test(readFileSync(abs, 'utf8'))
+    }
+
+    if (isAccepted && present) {
+      errors.push(
+        `${id} は Accepted なのに、退役させると宣言した ${kind}:${path}` +
+        `${pattern ? `::${pattern}` : ''} が**まだ在る**。\n` +
+        '    退役の腐敗は違反を*見逃す*のではなく緑を出す (ADR-103) — 消すか、\n' +
+        '    まだ消せない理由があるなら `docs/DEFERRAL_LEDGER.md` の行へ降ろして\n' +
+        '    `Retires:` からは外すこと (残しは残しとして数える)。')
+    }
+    if (isLive && !present) {
+      errors.push(
+        `${id} は ${statuses.get(id).split(/[（(—,]/)[0].trim()} なのに、退役させると宣言した ` +
+        `${kind}:${path} が**もう無い**。\n` +
+        '    宣言が実物より古い (退役は済んでいる)。Status を進めるか、行を消すこと。')
+    }
+  }
 }
 
 if (errors.length) {

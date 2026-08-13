@@ -903,6 +903,38 @@ which is the zero-shaped blind spot one level up: not a missing *item*, but a mi
 
 ---
 
+### 32. An Obligation Belongs to the Event That Fires It — Not to the Thing It Affects
+
+「A が起きたら B を消す / 変える」という約束は、**A の側に書く**。B の隣に書いた約束は、
+A が起きた日に誰も読み返さない。B は自分がいつ死ぬべきかを知っているが、**その時が
+来たことを知らない**。
+
+観測 (2026-08-12 の棚卸し、5 例・すべて無関係な文脈):
+
+| 約束の置き場所 (B の隣) | A | 結果 |
+|---|---|---|
+| `DocIntake.js` の `PROVISIONAL_UNTIL` | ADR-108 の採択 | 満期が無言で過ぎ、**写し 7 箇所**が同時に古くなった |
+| ROADMAP §Phase S-4 の表のセル | Phase S-4 の完成 | 誰も実行せず、二重登録が残った |
+| `DS_PENDING` の隣のコメント | ADR-103 の実装 | **3 リリース**残った |
+| 退役した選択色 | ADR-100 の実装 | 同上 |
+| ADR-060 の 5 項目 | upstream 実装 | 3 完了・1 消滅、**宣言だけが嘘を出し続けた** |
+
+**A はほぼ常に、既に観測されている事象である** — ADR の Status 遷移、段の完了、
+リリース。観測されている事象の側に義務を置けば、義務は**自動的に問われる**。
+観測されていない側 (B) に置けば、人の記憶が唯一の trigger になる。
+
+原則 #31 との違い: #31 は *数え方* の話 (不在には欄が無いので、在るものを辿る検査は
+素通りする)。#32 は **義務の置き場所** の話である。両方を破ると、履行されなかった
+義務が「数えられない」うえに「思い出されない」状態になる — これが退役の腐敗が
+**違反を見逃すのではなく緑を出す**理由である。
+
+**このリポジトリでの写像:** ADR ヘッダの `Retires:` 欄 (ADR-125 — ADR-125 以降必須、
+「なし」も宣言)。発火は Status 遷移で、`pnpm test:adr` が両方向を問う。発火事象が
+まだ ADR として存在しないときは `docs/DEFERRAL_LEDGER.md` の行が受け、満期を
+「その ADR が起票されたとき」にする (DEF-020 がその形)。
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
