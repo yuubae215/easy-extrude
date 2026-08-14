@@ -1,0 +1,56 @@
+GOALS adr127_a_known_structure_makes_a_closed_form
+
+goal IkSolvableIsADecidedFactNotAProxy
+uuid 595e0496-fd31-405a-9583-df0298fce826
+summary "ワイヤに載る ikSolvable が、手首コーンの代理判定ではなく、実際の運動学で決定された事実になる (宣言された機種について)"
+state UnderReview
+labels adr-127, grasp, core, principle-28, principle-29, principle-31
+artifacts
+- "docs/adr/ADR-127-a-known-structure-is-what-makes-a-closed-form-possible.md"
+
+    context WhyTheProxyWasTheWeakestClaimOnTheWire
+    uuid 23ac5227-27a2-46cf-97f5-da128db233ed
+    summary "NaiveIkSolver の可解判定は「リーチ球殻に入り、手首コーンの角度以内」で、関節限界も特異点も肘の姿勢も見ていない。それでも契約上 ikSolvable は「ソルバが決定した事実」として載る (原則 #29)。弱いことがワイヤからは読めないので、誤りは形が正しいぶん静かだった"
+    artifacts
+    - "core/easy_extrude_core/engine/feasibility.py"
+
+    justification WhyAClosedFormAndNotAnIterativeSolver
+    uuid 3e6975f7-2ec3-4187-a14b-1e11aaa197d1
+    summary "却下案 (数値反復 IK) への反証: 反復は「収束しなかった」という第3の状態を持ち込み、それは『解が無い』とも『解けた』とも違う。段階0 のワイヤには真偽値しか無いので、その状態は行き場が無く既定へ倒れる (原則 #31)。UR は構造が既知なので閉形式が在り、決定的で、収束失敗という状態が存在しない"
+
+    justification WhyDimensionsAndNotAModelName
+    uuid 8e530ad0-4c97-4f07-8017-d279379e493c
+    summary "却下案 (model: 'ur5e' の名前を運ぶ) への反証: 解く側に名前→寸法の対応表が要る。その表は宣言する側が既に持っている数の第二の源で、機種が増えるたび両側が育つ (§1.1)。kind は構造 (閉形式が在ること) を主張し、寸法は宣言側が運ぶ"
+
+    assumption TheFrontWillDeclareTheSameNumbersItDraws
+    uuid f412026f-1a9b-4757-8229-353f8afdb73d
+    summary "反証されうる仮説: フロントが送る 6 つの DH 長さは、フロントが骨格を描くのに使う URDF と同じ値である。反証されうる形は、URDF を更新して宣言を更新し忘れること — そのとき画面のロボットと解かれた関節は別のアームのものになる。引き受けた冗長なので、一致を検査へ落とすのが DEF-030 の一部"
+    artifacts
+    - "public/robot/skeleton_arm.urdf"
+
+    strategy ByGivingTheStructureAContractAndSolvingItInCore
+    uuid 8b6cb4f7-9c62-4299-9ae1-917729fbee2e
+    summary "構造を kind として契約に宣言させ、解法は core/ に閉じる。宣言があるときだけ切り替えるので、宣言しない呼び出しの答えは変わらない"
+
+        goal TheClosedFormIsCorrect
+        uuid ff0aaf05-961b-416f-9181-792e34825672
+        summary "解析解が返す関節配置は目標姿勢に到達し (健全性)、到達する配置を取りこぼさない (完全性)"
+
+            solution RoundTripAndRecoveryAreExecuted
+            uuid 23ec78c0-3fd7-41a7-986d-3f34559d11fc
+            summary "core/tests/test_ur_kinematics.py。IK は多対一なので IK(FK(q)) == q は求めず、商の上の fixpoint FK(IK(T)) == T を全解について焼く (原則 #28)。健全性 200 姿勢・最悪誤差 7.2e-14。完全性は別に問う (健全性だけなら 1 解しか返さない実装も緑)。FK 自身は DH から手計算した原点姿勢で IK と独立に固定 — **これが無いと両方が同じ思い込みで書かれたときに往復が緑を出す**。実際 θ3 の平面取り違えは真値 1.100 に対し 1.149 という「もっともらしい値」を出しており、目視では捕まらなかった。配線は search() を実際に走らせて焼く (ソルバ単体が正しくても読まれていなければ何も起きない — ADR-116)"
+            artifacts
+            - "core/tests/test_ur_kinematics.py"
+            - "core/easy_extrude_core/engine/ur_kinematics.py"
+
+        goal TheFlangeConventionMatchesWhatTheFrontDraws
+        uuid 8f2b1d40-6a37-4c58-b1e9-2d7c05a4f9b1
+        summary "候補 pose をフランジ姿勢へ写す規約 (FLANGE_Z_IS_APPROACH) が、フロントが骨格を描くときの規約と一致する"
+        labels support-exploring
+
+            assumption CrossCheckAgainstTheRenderedSkeletonWillSettleIt
+            uuid c4a7e918-52b3-4d6f-8a01-7b3e6f2c8d55
+            summary "未着手 (DEF-030)。**自己整合な誤った規約も往復検査を通る** — 候補→目標→IK→FK→目標 は規約を変えても閉じるので、この木の RoundTripAndRecovery はこの goal を支えない。決着させるのは、同じ関節値についてフロントの URDF FK と core/ の DH FK が同じフランジ姿勢を出すこと。満期=ADR-119 ではなく、フロントが kinematics を送る配線が入ったとき: 満期=GREP:src/controller/GraspController.js::kinematics"
+            artifacts
+            - "core/easy_extrude_core/engine/ur_solver.py"
+            - "docs/DEFERRAL_LEDGER.md"

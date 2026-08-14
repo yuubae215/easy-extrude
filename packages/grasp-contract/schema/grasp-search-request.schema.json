@@ -94,6 +94,18 @@
             "wristConeHalfAngle": {
               "type": "number",
               "minimum": 0
+            },
+            "kinematics": {
+              "type": "object",
+              "description": "Declares the arm's KINEMATIC STRUCTURE so core/ can solve real inverse kinematics instead of the wrist-cone proxy (ADR-127). A CLOSED KIND-DISCRIMINATED UNION, same governance as `gripper` (ADR-118): a closed-form solver exists only for a known structure, so the kind is what selects it -- arbitrary link parameters do not make an arm solvable in closed form. Optional: with no kinematics declared the naive cone judgement runs exactly as before, so omitting this changes nothing (ADR-084 §3 discipline -- behaviour changes only where a declaration appears). Adding a kind is the intentional growth point and bumps contractVersion.",
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/kinematicsUniversalRobots"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind"
+              }
             }
           }
         },
@@ -244,6 +256,46 @@
           }
         }
       }
+    },
+    "kinematicsUniversalRobots": {
+      "type": "object",
+      "description": "A Universal Robots-style 6-axis arm (UR3/UR5/UR10 and their e-series). The structure -- axes 2/3/4 parallel, an orthogonal wrist -- is what the kind asserts; the six lengths below are all that differs between models, so a model NAME is deliberately not part of the contract (a name would need a lookup table on the solving side, which is a second source for numbers the declaring side already holds).",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "universalRobots"
+        },
+        "dh": {
+          "type": "object",
+          "description": "The six standard-DH lengths, signs included (UR's a2/a3 are negative). Units follow the layout's own length unit, like every other length on this wire. All six are required: filling a missing one with a default would solve for a DIFFERENT ARM, and the answer would be indistinguishable from a correct one.",
+          "additionalProperties": false,
+          "properties": {
+            "d1": { "type": "number" },
+            "a2": { "type": "number" },
+            "a3": { "type": "number" },
+            "d4": { "type": "number" },
+            "d5": { "type": "number" },
+            "d6": { "type": "number" }
+          },
+          "required": ["d1", "a2", "a3", "d4", "d5", "d6"]
+        },
+        "jointLimits": {
+          "type": "array",
+          "description": "Per-joint [min, max] in radians, base to wrist. OPTIONAL, and its absence means the limits were NOT DECLARED -- not that the joints are free. The solver reports which poses are reachable within whatever was declared; it never invents a default envelope, because 'unlimited' and 'unstated' would then produce the same answer (原則 #31).",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "min": { "type": "number" },
+              "max": { "type": "number" }
+            },
+            "required": ["min", "max"]
+          }
+        }
+      },
+      "required": ["kind", "dh"]
     },
     "gripperParallelJaw": {
       "type": "object",

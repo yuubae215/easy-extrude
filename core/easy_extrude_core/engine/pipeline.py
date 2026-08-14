@@ -59,6 +59,7 @@ from .feasibility import (
 from .objectives import evaluate_objectives
 from .pose_codec import pose_to_payload
 from .scoring import weighted_sum
+from .ur_solver import ik_solver_from_declaration
 from .types import (
     Camera,
     GripperKind,
@@ -283,7 +284,16 @@ def search_report(
 
     注: contractVersion 検証はエンドポイント層の責務 (ADR-074/002)。ここでは行わない。
     """
-    solver = ik_solver if ik_solver is not None else NaiveIkSolver()
+    # IK ソルバの決め方は 3 段 (優先順): 注入 > 宣言された運動学 > 素朴既定。
+    # 宣言があるときだけ解析解へ切り替わるので、宣言しない呼び出しの答えは変わらない
+    # (ADR-127 / ADR-084 §3 と同じ「宣言した瞬間にだけ挙動が変わる」規律)。
+    if ik_solver is not None:
+        solver: IkSolver = ik_solver
+    else:
+        declared = ik_solver_from_declaration(
+            request.grasp_search.model_dump(by_alias=True)
+        )
+        solver = declared if declared is not None else NaiveIkSolver()
     checker = (
         collision_checker
         if collision_checker is not None

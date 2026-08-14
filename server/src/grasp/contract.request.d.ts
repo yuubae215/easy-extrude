@@ -62,6 +62,10 @@ export interface GraspSearchDeclaration {
     reachMin?: number;
     reachMax?: number;
     wristConeHalfAngle?: number;
+    /**
+     * Declares the arm's KINEMATIC STRUCTURE so core/ can solve real inverse kinematics instead of the wrist-cone proxy (ADR-127). A CLOSED KIND-DISCRIMINATED UNION, same governance as `gripper` (ADR-118): a closed-form solver exists only for a known structure, so the kind is what selects it -- arbitrary link parameters do not make an arm solvable in closed form. Optional: with no kinematics declared the naive cone judgement runs exactly as before, so omitting this changes nothing (ADR-084 §3 discipline -- behaviour changes only where a declaration appears). Adding a kind is the intentional growth point and bumps contractVersion.
+     */
+    kinematics?: KinematicsUniversalRobots;
   };
   /**
    * Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true).
@@ -152,6 +156,55 @@ export interface GraspSearchDeclaration {
     clearanceReference?: number;
   };
   [k: string]: unknown;
+}
+/**
+ * A Universal Robots-style 6-axis arm (UR3/UR5/UR10 and their e-series). The structure -- axes 2/3/4 parallel, an orthogonal wrist -- is what the kind asserts; the six lengths below are all that differs between models, so a model NAME is deliberately not part of the contract (a name would need a lookup table on the solving side, which is a second source for numbers the declaring side already holds).
+ */
+export interface KinematicsUniversalRobots {
+  kind: "universalRobots";
+  /**
+   * The six standard-DH lengths, signs included (UR's a2/a3 are negative). Units follow the layout's own length unit, like every other length on this wire. All six are required: filling a missing one with a default would solve for a DIFFERENT ARM, and the answer would be indistinguishable from a correct one.
+   */
+  dh: {
+    d1: number;
+    a2: number;
+    a3: number;
+    d4: number;
+    d5: number;
+    d6: number;
+  };
+  /**
+   * Per-joint [min, max] in radians, base to wrist. OPTIONAL, and its absence means the limits were NOT DECLARED -- not that the joints are free. The solver reports which poses are reachable within whatever was declared; it never invents a default envelope, because 'unlimited' and 'unstated' would then produce the same answer (原則 #31).
+   *
+   * @minItems 6
+   * @maxItems 6
+   */
+  jointLimits?: [
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    }
+  ];
 }
 /**
  * Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis.

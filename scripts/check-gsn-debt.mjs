@@ -127,7 +127,11 @@ const SUPPORT_LABELS = new Map([
  * ラベルを構造として読む本パーサが正しい。
  */
 // 2026-08-14: ADR-119 D1 (target の契約宣言 + 両端の準拠テスト) が決着し 30 → 29。
-const DEBT_BASELINE = 29
+// 同日 ADR-127 (UR の解析解 IK) が木を起こし +1 で 30。増えた 1 個は
+// `TheFlangeConventionMatchesWhatTheFrontDraws` — **core/ 内では原理的に決着しない**
+// 主張である (自己整合な誤った規約も往復検査を通る) ため、証拠はフロント配線と同時。
+// 満期は機械可読なので G3 の分子には乗らない。
+const DEBT_BASELINE = 30
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
