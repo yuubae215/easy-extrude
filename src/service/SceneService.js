@@ -3795,8 +3795,26 @@ export class SceneService extends EventEmitter {
    */
   declareExplicitVisible(obj, entry) {
     if (!obj) return
-    this._explicitVisible.set(obj, defaultExplicit(this._visibilityKindOf(obj, entry)))
+    const explicit = defaultExplicit(this._visibilityKindOf(obj, entry))
+    this._explicitVisible.set(obj, explicit)
     this.applyEntityVisibility(obj.id)
+    // ANNOUNCE it (原則 #18 / #32 — the obligation belongs to the event that
+    // fires it). The Outliner row seeds its eye from `isExplicitVisible` at
+    // `objectAdded`, and for a robot that is TOO EARLY: `addRobot` creates the
+    // base frame (emitting objectAdded) before it can stamp the robot role, so at
+    // seeding time the frame classifies as an ordinary CoordinateFrame — declared
+    // default `false`. The axis was then corrected here and the MESH followed,
+    // but nothing told the row, so a user-added robot's eye read "Show" while its
+    // arm was drawn. That is ADR-096's G1 ("the row never lies") violated on the
+    // add path; it stayed invisible because the boot seed was the robot everyone
+    // looked at and its default really was `false`. ADR-132 D5 removed that seed,
+    // which made the add path the ONLY path — the defect did not appear, it
+    // stopped being hidden.
+    //
+    // Emitted rather than fixed by reordering `addRobot`: the row must not depend
+    // on any caller remembering to refresh it after writing an axis (原則 #23 —
+    // a convention that N-1 sites keep is a convention that one site breaks).
+    this.emit('explicitVisibilityChanged', obj.id, explicit)
   }
 
   /** The entity ids the contextual axis currently claims (read-only view). */

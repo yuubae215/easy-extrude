@@ -292,6 +292,14 @@ export class AppController {
       outlinerView?.setRobotRole(id, role)
       this._invalidateRobotRoster()
     })
+    // An entity's `explicit` visibility axis was DECLARED at birth (ADR-096 §G1).
+    // The row seeds its eye at `objectAdded`, which for a robot base runs before
+    // the robot role exists — so the seed classified it as an ordinary frame and
+    // the row said "Show" over a drawn arm. The declaration now announces itself
+    // and the row follows the axis rather than a snapshot of it (ADR-132).
+    this._service.on('explicitVisibilityChanged', (id, visible) => {
+      outlinerView?.setObjectVisible(id, visible)
+    })
     // Update outliner hierarchy and N panel when a frame is re-parented (ADR-028)
     this._service.on('frameReparented', ({ id, newParentId }) => {
       outlinerView?.reparentObject(id, newParentId)

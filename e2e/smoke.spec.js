@@ -585,12 +585,32 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
     expect(o.drawn, `${o.name}: 行が語る値と描画が食い違う`).toBe(o.explicit || o.contextual !== null)
   }
 
+  // 症状 1 の鏡像 — **ユーザーが足したロボットの行も嘘をつかない** (ADR-132)。
+  // これは ADR-096 が閉じたはずの主張が、閉じていなかった経路である: `addRobot` は
+  // base フレームを作った時点で `objectAdded` を出すが、robotRole を刻むのはその
+  // 後なので、行が目を seed する瞬間そのフレームは**ただの CoordinateFrame**に
+  // 分類され、宣言された既定 `false` を拾っていた。軸はその直後に true へ直され
+  // メッシュも追従したが、**行に伝える経路が無かった**。結果、腕は描かれているのに
+  // 行の目は "Show" と言い続けていた。
+  //
+  // boot の seed が在ったあいだ誰も見なかったのは、皆が見ていたロボットが seed の
+  // ほうで、そちらの既定は本当に false だったから。D5 が seed を消して add 経路が
+  // **唯一の経路**になった日に見えた — 欠陥が生まれたのではなく、隠れ場所が無く
+  // なった。数えるのは行が語る値と描画の一致で、ここは「足した直後」を問う。
+  await addRobot(page)
+  const afterAdd = await state()
+  const addedBase = afterAdd.find(o => o.name === 'robot_base')
+  expect(addedBase.explicit, 'ユーザーが足したロボットは見える (原則 #11)').toBe(true)
+  const baseRow = outlinerRow(page, 'robot_base')
+  await baseRow.hover()
+  await expect(baseRow.locator('[aria-label="Hide"]'),
+    '行の目が「Show」= 隠れていると言っているのに腕は描かれている (ADR-096 G1 の破れ)').toBeVisible()
+
   // ADR-132 D5: the scene no longer seeds a robot, so the `tcp` frame 症状 2 is
   // about must be created first. It is added HERE, after the 症状 1/3 snapshot,
   // because 症状 1 is a claim about BOOT — and a user-added robot_base ships shown
   // by declaration (ADR-096 §Decision 3), so folding it into the boot count would
   // quietly change what that count means rather than test it.
-  await addRobot(page)
 
   // 症状 2 — ONE click on the tcp eye changes something. It used to send
   // "hide" to something already hidden: the input was consumed, nothing moved.
@@ -976,6 +996,7 @@ async function linkNetworkRows(page) {
 
 /** Cube → robot_base の Adjacent リンクを張り、LINK NETWORK パネルを開かせる。 */
 async function openLinkNetwork(page) {
+  await addRobot(page)                            // ADR-132 D5: boot holds no robot
   await selectRow(page, 'Cube')
   await page.keyboard.press('l')
   await selectRow(page, 'robot_base')             // link mode ではこれが「相手」
@@ -1184,6 +1205,7 @@ test('Robot を選ぶと N パネルから grasp へ 1 クリックで届く (AD
   // 閉じるか。ADR-085 が既に無フォームの入口を作ってあるので、これは新機能では
   // なく**入口の付け替え**である。
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: boot holds no robot
 
   await selectRow(page, 'robot_base')
   await page.keyboard.press('n')          // N パネルを開く (デスクトップの入口)
@@ -1191,13 +1213,15 @@ test('Robot を選ぶと N パネルから grasp へ 1 クリックで届く (AD
   await expect(grasp).toBeVisible()
   await grasp.click()
 
-  // 1 クリックで grasp のパネルまで到達する (starter は自動で採られる — ADR-085)。
-  // ADR-106 D3 でこの到達先は「場の Grasp タブ」から**選んだロボットの隣**へ移った
-  // ので、パネルを開くために場を開く必要は無くなった。**ただしこの経路は場が開く** —
-  // 文書を 1 つも持っていないので starter を採用するからで、文書の採用が場を開くのは
-  // ADR-051 のテンプレ導線の振る舞い (ADR-106 とは直交)。ここで焼くのは「1 クリックで
-  // 着くこと」であって「場が開かないこと」ではない — 後者を主張すると、この経路が
-  // 実際に何をしているかを検査が偽ることになる。
+  // 1 クリックで grasp のパネルまで到達する。ADR-106 D3 でこの到達先は「場の Grasp
+  // タブ」から**選んだロボットの隣**へ移った。
+  //
+  // **ADR-132 D4 でこの経路の意味が変わった。** かつてここは「文書を 1 つも持って
+  // いないので starter を採用する」経路で、上のコメントは「この経路は場が開く」と
+  // 断っていた — 文書の採用が場を開くのは ADR-051 の振る舞いだから、と。その採用は
+  // ユーザーが選んだものではなく、**シーンを消していた**。いまは何も採らずに、
+  // いま画面に在るものを探索する。「1 クリックで着く」という焼くべき主張は同じで、
+  // 着いた先が別の誰かのセルではなくなった。
   await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
