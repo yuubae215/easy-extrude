@@ -137,7 +137,11 @@ const SUPPORT_LABELS = new Map([
 // 予告したとおり**フロント配線と同時**に決着した (満期 trigger が実際に発火し、
 // G4 が「exploring を solution へ昇格させよ」と言ってきた)。ADR-128 自身の木は
 // 未支持 goal を 1 つも持たない (3 つとも solution が在る) ので +0。
-const DEBT_BASELINE = 28
+// 2026-08-14 (同日 4 度目): ADR-129 (Proposed・未実装) の木が **4 goal** を足して 32。
+// 起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結で、Proposed の ADR は
+// 定義上ほぼ全部の goal が exploring になる — この 4 件は「借金が増えた」のではなく
+// **借金が可視化された**ぶんである。4 件とも機械可読な満期を持つので分子 (G3) は動かない。
+const DEBT_BASELINE = 32
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

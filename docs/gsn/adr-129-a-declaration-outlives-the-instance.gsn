@@ -1,0 +1,131 @@
+GOALS adr129_a_declaration_outlives_the_instance
+
+goal ADeclarationLivesAndDiesWithTheThingItIsAbout
+uuid 26473986-8b11-4d92-a1ba-7c92e05c674d
+summary "ユーザーが宣言した事実 (どこに置くか・どう据え付けるか・どこを掴むか) が、宣言の対象になった実体と同じ寿命・同じ経路で生き死にし、実行時インスタンスに寄生して静かに消えることが無い"
+state UnderReview
+labels adr-129, adr-128, adr-117, adr-119, adr-127, grasp, front, contract, principle-31, principle-1, principle-28, proposed
+artifacts
+- "docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md"
+
+    context Adr129Scope
+    uuid f94c8291-956c-4932-947b-c15e95fcc05d
+    summary "ADR-129 (Proposed 2026-08-14, 未実装): 宣言の同一性は文書の実体 ref (D0)、記録は行為の側から取り導出物から推定しない (D0')、ジェスチャの確定は文書への書き込み (D1)、据付姿勢を契約に足す (D2)、掴む領域をパネルから書けるようにする (D3)、3 つで 1 つの MVP (D4)、後始末の検査は往復で書く (D5)、名前をまだ持たない主張は対象外ではなく残しとして開く (D6)。段 G-5"
+    artifacts
+    - "docs/grasp/implementation-order.md"
+
+    context TheGestureIsAnActAndTheActIsAClaim
+    uuid 7893d341-aff2-4743-ab3a-9b8b387b34c2
+    summary "このアプリの前提: 要求はまだ言葉になっていないから 3D で見せ、見せながら確定して合意する。語彙が先に在るなら 3D は要らず、テキストと数値入力で足りる。したがって 3D のジェスチャは既知の欄に値を入れる操作ではなく要求を述べる行為であり、述べられた瞬間に主張になる。主張は寿命と所有者を要求するが、今日それは名前も所有者も寿命も持たない場所 (SceneModel) に落ちて消える"
+    artifacts
+    - "src/service/ContextService.js"
+
+    context AGestureAlreadyBecameADeclarationOnceHere
+    uuid 6f21c0ba-9d43-4b2e-8c07-1a5f7e2d4b93
+    summary "実測: createEditAdmissibleCommand (ADR-104 力学 2) は領域ウィジェットのドラッグを stated な主張として文書へ書き戻す undoable な 1 コマンドとして既に動いている。3D のジェスチャが文書への宣言になる ことはこのリポジトリで既に一度成立しており、しかも書いているのは生の欄ではなく主張である。AddSolidCommand (実体の生成) には文書への経路が無い — 生成という行為も今日は残らない"
+    artifacts
+    - "docs/adr/ADR-104-ownership-proposal-and-the-receipt.md"
+    - "src/command/MoveCommand.js"
+
+    context TheTwoHalvesOfOneRequestReadDifferentSources
+    uuid b5966c81-012c-411d-ae0d-4a5e8a9ffab2
+    summary "実測: GraspController._graspTargets() は getCompiled().layoutDsl.entities を読み (文書由来)、_resolveRobotDeclaration() は SceneService.worldPoseOf() を読む (インスタンス由来)。同じ 1 つの request の 2 欄が別々の源を読んでいる。結果として、ビューポートでワークを動かして Run すると古い位置での正しい答えが返る — エラーでも警告でもなく、棄却ファネルにも出ない"
+    artifacts
+    - "src/controller/GraspController.js"
+    - "src/command/MoveCommand.js"
+
+    justification WhyNotReadTheSceneAtSearchTime
+    uuid e4f066bc-89eb-4c23-b9e8-f5f154653295
+    summary "却下案 A (resolveGraspTargets が worldPoseOf を読む) への反証: 呼び出し 1 箇所で最も安いが、後始末の観点では最悪である。(1) 探索の入力がエクスポートした文書から再現できず、docs/dogfooding/ の記録が そのセッションでのみ真 になる。(2) 閉じるのは 3 つのうち 1 つで、据付姿勢と領域には別々の手当てが要る = 同じ欠陥に 3 回対処する。(3) シーンが権威 を 1 か所だけ認めると、文書とシーンの二源が制度化される。宣言はインスタンスに残ったまま、読む側だけが増える"
+
+    justification WhyTheGestureAndNotANumericField
+    uuid 0704baa2-1674-4684-a7c7-53de1ace3fcf
+    summary "却下案 C (配置もパネルの数値欄で入力し、ADR-128 D1 の形をそのまま踏襲する) への反証: G / R という入力面が既に在るのにもう 1 つ入力面を作ることになり、同じ属性に書き手が 2 つできる (原則 #1)。ADR-128 D1 が禁じたのは 新しい 入力面を 3D に作ること (選択モデルとヒットテストへ波及するから) であって、既に在る入力面の書き込み先を決めることではない — 選択モデルにもヒットテストにも触れない"
+    artifacts
+    - "docs/adr/ADR-128-a-declaration-that-cannot-be-written-is-not-a-declaration.md"
+
+    justification WhyAllThreeLandTogether
+    uuid 9ceeea6e-319a-43c3-9824-c75992baaa9f
+    summary "分割を却下した理由: どれか 1 つが入った時点で 宣言の権威は文書 が半分だけ真になる。半分だけ真の規律は規律ではなく、それがまさに ADR-128 D4 が 1 行分しか適用されなかった今日の状態で、この ADR が存在する理由そのものである。3 つとも同じ doc-edit 経路・同じ undo・同じ export に載るので、MVP は機能 3 つではなく 書き込み面 1 つ である"
+
+    justification WhyTheVocabularyPremiseWasWithdrawn
+    uuid 2a4e90f1-6bf8-4174-b6e0-bd93c8c8b8e7
+    summary "この ADR の初稿への反証 (ユーザー指摘 2026-08-14): 初稿は 受け皿は既に在り、無いのは線だけ を判断の基礎に据えていた。事実としては正しいが、基礎に据えると規則が反転する — 受け皿の有無を境界にすると まだ名前の無い要求は書き戻せない が規則になり、要求を 3D で確定していくというこのアプリの前提そのものを禁じる。受け皿が在ったのは今回の 2 属性についての偶然で、常態は受け皿が無いほうである。誤りの形は ADR-102 が名指しした母集団を持たない表と同じ — 手元に在る 3 件を数えて一般規則を書こうとした"
+    artifacts
+    - "docs/adr/ADR-102-census-tables-need-a-denominator.md"
+
+    justification WhyTheBoundaryIsActNotInference
+    uuid 5c8e37d4-1b90-4a6f-b2e1-30f9a8c6d271
+    summary "D0' の根拠、および ADR-054 / ADR-055 との両立: 禁じられているのは導出物 (メッシュ) を読んでそれを生んだ行為を推定することであって、行為そのものをその場で記録することではない。前者は偽の源を作る (同じ形は複数の手順から生まれる) が、後者は源を源のまま写す。だから境界は 行為か推定か であり、語彙の有無ではない。押し出しをメッシュから逆算するのは今も禁止のまま、押し出しという行為の記録はこの禁止に当たらない"
+    artifacts
+    - "docs/adr/ADR-055-scene-layout-dsl-mutual.md"
+
+    assumption UnnamedClaimsNeedAPlaceBeforeTheyNeedAName
+    uuid 8b3f6e05-42ca-4d78-9e13-c5a70f14b8d6
+    summary "反証されうる仮説 (D6): 名前をまだ持たない主張 (押し出した量・なぜこの向きか・ここは触らせたくない) は、載せ場所を決める判断が済むまで MVP の外に置いてよい。反証されうる形は、配置の書き戻しを入れた直後に 動かした理由 を書きたくなること — 位置は書けるのに理由が書けない状態は、宣言の半分だけが生き残る形なので初稿の欠陥と同型である。そのとき DEF-034 の満期が前倒しで来る。件数を数えないのは欄が無いものは数えられないからで、数えるのは判断が未了である 1 件のほうである"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"
+
+    assumption RecompileOnCommitPreservesTransientState
+    uuid cd230787-b2cb-4476-8cb0-5bbe06a02e63
+    summary "反証されうる仮説: 確定ごとの再コンパイル + 再インポートを跨いで、選択・カメラ・ゴーストが保たれる。反証されうる形は、ドラッグ確定のたびに選択が飛ぶ / ゴーストが破棄される / カメラが初期化されること。保たれないならそれは 安くする 以前に正しくないので、速度の最適化と違って別段に送らず、この MVP の中で直す"
+    artifacts
+    - "src/service/ContextService.js"
+
+    context BusinessTreeAttachPoint
+    uuid 37c3d140-e8ca-4781-bacd-089aedc55a57
+    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝で、solution として吊るのは実装 PR の日。証拠が全部未来形のうちに接ぐと事業木の ToBeDeveloped を増やすだけで、木が 証拠実行可能 でなくなる"
+    artifacts
+    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+    strategy ByGivingEveryDeclarationTheSameKeyAndTheSameWritePath
+    uuid 2446e804-0a34-4a30-802d-dc9893b61f39
+    summary "宣言ごとに置き場所を決めるのではなく、宣言のキーを文書の ref ただ 1 つに定め、書き込み経路を ADR-128 が既に作った doc-edit 1 経路へ集約する。寿命は置き場所の帰結なので、置き場所を 1 つにすれば後始末は規律ではなく型の帰結になる"
+
+        goal PlacementSurvivesAReloadAndAnExport
+        uuid 552d6bef-067b-4b99-8006-3735769bbe30
+        summary "ビューポートで動かした配置と据付姿勢が文書に着き、エクスポート → 読み直しで同じ探索リクエストが出る。ドラッグ中の中間姿勢は書かれない"
+        labels support-exploring
+
+            assumption TheRoundTripTestWillSettleIt
+            uuid a4fc6751-0595-42b6-a2b7-01e605d88b51
+            summary "未着手。決着させるのは値の比較ではなく往復である — 宣言 → .ctx.json へ export → 読み直し → 同じ request が出る (原則 #28 の fixpoint)。値を比べる検査は たまたま今のセッションで一致する を緑にするので、この主張については何も言えない。負の対照として、実体を消したら宣言も消え、dangling ref は compileContext が throw することを同じ場所で問う。満期=GREP:src/context/DocBuilder.test.js::setEntityPose"
+            artifacts
+            - "src/context/DocBuilder.js"
+            - "src/controller/ContextController.js"
+
+        goal MountingOrientationIsOnTheWireOrItsAbsenceIsSpoken
+        uuid 208dc564-5fb3-428f-990b-bc8dc9712a0b
+        summary "傾けて据え付けたアームが契約で表現でき、宣言があるときだけ解が変わる。未宣言のときは恒等で解くこと自体は変えられないので、その仮定を画面が述べる"
+        labels support-exploring
+
+            assumption TheDeclaredAndUndeclaredPairWillSettleIt
+            uuid 4183042f-b733-4384-ab47-194a23e7f97c
+            summary "未着手。決着させる検査は対で書く — 姿勢を宣言すると IK 解が変わること、宣言しないと従来と 1 ビットも変わらないこと (ADR-084 §3: 宣言した瞬間にだけ挙動が変わる)。壊れた四元数は素朴判定へ落とさず throw することを別に問う (無言の格下げは嘘 — ADR-127 D3)。未宣言が 回転していない と読まれないことは値では示せないので、画面が仮定を述べているかを e2e 側で焼く。満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::baseOrientation"
+            artifacts
+            - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+            - "core/easy_extrude_core/engine/ur_solver.py"
+
+        goal TheRegionIsWritableWhereItIsRead
+        uuid a4939302-afc1-4dd1-9adc-943f70f79591
+        summary "掴む領域がパネルから書け、面の 2 軸のうちどちらが u かの名前は既存の決定者から表示されるだけで、画面が第二の源にならない"
+        labels support-exploring
+
+            assumption TheAxisNameIsReadNotRestatedWillSettleIt
+            uuid c7b1d5bf-70b6-4fee-a5c9-aad3a1389331
+            summary "未着手。決着させる検査は 2 本 — 領域を狭めるとワイヤに載るサンプル点が減ること (GraspSampleView が同じ関数から描くので絵と payload はずれない)、そして軸名がパネル内に書き写されておらず inPlaneAxesOrThrow から来ていること。後者を問わないと DEF-031 が先送りの理由に挙げた どちらが u か が画面側の第二の源として復活する。満期=GREP:src/components/Grasp/GraspSearchPanel.jsx::uMin"
+            artifacts
+            - "src/domain/graspFeature.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"
+
+        goal ThereIsExactlyOneWriterOfADeclaredPose
+        uuid 4c40d412-54b8-4071-877d-d907dc3cbd6d
+        summary "ref を持つ実体の姿勢を書く入口がちょうど 1 つで、MoveCommand / FrameRotateCommand と doc-edit 経路が同じ実体に二重に効いている状態が存在しない"
+        labels support-exploring
+
+            assumption TheEntranceCensusWillSettleIt
+            uuid 26e4d2a1-7a5f-4c3e-9f21-6d8b0c3f5e74
+            summary "未着手。数えるべきは在る経路ではなく 規則を持たない経路 なので、実装を読んでも見えない (ADR-097 が pose の入口で見つけた形)。母集団は姿勢を書きうる呼び出し閉包から導出し、ref を持つ実体に効く入口の個数がちょうど 1 であることを問う。MoveCommand は消えない (アドホック実体には要る) ので、消えたことではなく 用途で分かれたこと を釘付けする。満期=GREP:src/PosePolicyOwnership.test.js::DECLARED_POSE_WRITERS"
+            artifacts
+            - "src/PosePolicyOwnership.test.js"
+            - "src/command/MoveCommand.js"
