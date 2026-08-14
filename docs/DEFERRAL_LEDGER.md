@@ -50,7 +50,7 @@ ratchet が「ドキュメント量」を測っていた。絞った結果 99 �
 
 | 種類 | 正本 | 例 |
 |---|---|---|
-| **知識的な残し** — 主張はあるが証拠が無い | **GSN の未支持 goal** (`support-exploring` / `support-unexplored`) | DEF-013 / 014 / 015 / 016 |
+| **知識的な残し** — 主張はあるが証拠が無い | **GSN の未支持 goal** (`support-exploring` / `support-unexplored`) | DEF-014 / 015 / 016 |
 | **義務** — 雑務・移管・退役 | **この登録簿** / ADR の `Retires:` | DEF-021 (Issues 移管) / DEF-027 |
 
 知識的な残しの行は**内容を書かず GSN ノードを指す**。登録簿は ADR-109 が元々
@@ -106,7 +106,6 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-008 | `src/DanglingSelfCallCensus.test.js` · `src/CensusCoverage.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
 | DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
-| DEF-013 | `docs/gsn/adr-120-unevaluated-is-not-zero.gsn` · `docs/adr/ADR-120-unevaluated-is-not-zero.md` · `core/easy_extrude_core/engine/scoring.py` | `weighted_sum` が**評価できた objective の重みだけ**で割るようになったとき (D1)。D2/D3 はスタブレーンとクライアントで実装済みで、残っているのは実ソルバの分母だけ。満期を機械が知る形は `core/tests/test_engine.py` に「評価不能な objective の重みを足しても totalScore が動かない」検査が入ること — 検査が在れば残しは無い。**2026-08-12 に文法が追いついたので trigger 化した**: 満期=GREP:core/tests/test_engine.py::評価不能 (条件は元から機械可読で、書く形が無かっただけ — ADR-123 D5) | ADR-120 | core |
 | DEF-014 | `docs/gsn/adr-119-a-target-is-a-contract.gsn` · `docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md` | ADR-119 が Accepted になったとき (**満期=ADR-119**)。掴む対象の契約化 — `target`/`obstacles`/`sampling` が `additionalProperties:true` を素通りしている。**2026-08-11 起票、2026-08-12 に登録** (`未実装` が語彙に無かったので、それまで宣言済みにも宣言外にも数えられていなかった — ADR-123 D7) | ADR-119 | contract |
 | DEF-015 | `docs/gsn/adr-121-centre-of-mass-is-declared.gsn` · `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
 | DEF-016 | `docs/gsn/adr-122-pickable-and-yield-are-two-questions.gsn` · `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
@@ -162,14 +161,16 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 - **覆う粒度はファイル単位である。** 行を 1 つ足すとそのファイル内の以後の残しも
   「宣言済み」に数えられる。所在欄に行番号を書いても検査はファイルまでしか見ない —
   行番号は人が辿るためのもので、機械が数える鍵ではない (行番号は編集のたびにずれる)。
-- **散文の満期は、来たことを機械が知らない。** 現在 9 行中 **8 行** (DEF-004〜008 /
-  010 / 011 / 013) の満期条件は ADR の採択に対応しないので `満期=ADR-NNN` を持たない。Q5 が
-  この 8 を予算として縛るが、**縛るのは個数であって条件の真偽ではない** — 「Phase 4 が
+- **散文の満期は、来たことを機械が知らない。** 現在 8 行 (DEF-004〜008 /
+  010 / 011) の満期条件は ADR の採択に対応しないので `満期=ADR-NNN` を持たない。Q5 が
+  この予算を個数で縛るが、**縛るのは個数であって条件の真偽ではない** — 「Phase 4 が
   出たとき」が本当に来たかどうかは、今日も人が見るしかない。ここは埋めていない穴として
-  宣言しておく (満期の機械化は 4/11 までしか届いていない)。
-  DEF-013 (2026-08-12 追加) は **ADR-120 が既に Accepted** なので trigger を書けない行の
-  典型である — 残っているのは決定への追従で、`満期=ADR-120` を書けば「満期は起票日に
-  過ぎた」と主張することになる (DEF-004 と同じ形)。
+  宣言しておく。
+  DEF-013 (2026-08-12 追加 / **2026-08-14 決着**) は `GREP:` trigger が実際に発火した
+  **最初の例**である。満期は「`core/tests/test_engine.py` に『評価不能』を名前に持つ検査が
+  現れたとき」で、`weighted_sum` を直したコミットがその検査を同時に置いたので、満期の到来と
+  片付けが同じ commit に落ちた — **散文で書いていたら「実ソルバはまだか」を人が思い出す必要が
+  あった行**が、書く形を得た 2 日後に自分で閉じた (ADR-123 D5 の狙いどおり)。
   DEF-011 (2026-08-04 追加) が 7 行目である。DEF-012 (2026-08-08 追加) は同日中に満期を迎えて消えた —
   ADR-116 が Accepted・実装済みになったため。**登録から決着まで 1 日**で、
   機械可読な満期 (`満期=ADR-116`) が実際に発火した最初の例である。

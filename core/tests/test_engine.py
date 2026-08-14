@@ -189,8 +189,19 @@ def test_normspec_clamps_to_unit_interval():
     assert spec.normalize(-1.0) == 0.0
     assert spec.normalize(1.0) == 0.5
     assert spec.normalize(3.0) == 1.0
-    # 退化 (lo>=hi) はゼロ割りせず 0。
-    assert NormSpec(lo=1.0, hi=1.0).normalize(0.5) == 0.0
+
+
+def test_normspec_returns_none_when_the_absolute_basis_is_undeclared():
+    """絶対基準が無い = **評価不能**。0.0 (= 0 点) に潰さない (ADR-120 D2)。
+
+    かつてこの 2 つはどちらも 0.0 を返しており、「余裕がゼロ」と「測る基準が無い」が
+    同じ数になっていた。区別を運べるのは鍵の不在だけなので、ここで None を返すことが
+    その区別の起点になる。
+    """
+    # 退化 (lo>=hi): 基準の幅が無い。
+    assert NormSpec(lo=1.0, hi=1.0).normalize(0.5) is None
+    # 無限 (reachMax 未宣言 = inf): 上限が無いので比率が定義できない。
+    assert NormSpec(lo=0.0, hi=float("inf")).normalize(1.0) is None
 
 
 def test_grasp_stability_objective_is_one_when_head_on():
@@ -218,6 +229,32 @@ def test_evaluate_objectives_ignores_unknown_names():
     assert scores == {}
 
 
+def test_reach_margin_is_unevaluable_when_the_reach_envelope_is_undeclared():
+    """リーチ範囲を宣言しないリクエストでは reach_margin は **評価不能** — 鍵ごと出ない。
+
+    フロントは plan{} を集めないので、既定の実行では reachMax が未宣言 = inf になる。
+    かつてここは 0.0 を返し、「余裕ゼロ」として totalScore を押し下げていた (ADR-120)。
+    測れた objective は測れたまま — 欠けるのは基準を持たない軸だけである。
+    """
+    cand = _candidate_at(Vec3(1, 0, 0), Vec3(-1, 0, 0), Vec3(1, 0, 0))
+    names = ["reach_margin", "grasp_stability"]
+
+    undeclared = Problem(
+        robot=Robot(base=Vec3(0, 0, 0), reach_min=0.0, reach_max=float("inf")),
+        target=TargetObject(surface_samples=()),
+    )
+    scores = evaluate_objectives(cand, undeclared, names)
+    assert "reach_margin" not in scores
+    assert math.isclose(scores["grasp_stability"], 1.0, abs_tol=1e-9)
+
+    # 宣言すれば同じ候補・同じ式で鍵が現れる (欠落は基準の不在に由来する)。
+    declared = Problem(
+        robot=Robot(base=Vec3(0, 0, 0), reach_min=0.0, reach_max=2.0),
+        target=TargetObject(surface_samples=()),
+    )
+    assert "reach_margin" in evaluate_objectives(cand, declared, names)
+
+
 def test_weighted_sum_is_normalized_average():
     scores = {"a": 1.0, "b": 0.0}
     weights = {"a": 3.0, "b": 1.0}
@@ -225,6 +262,30 @@ def test_weighted_sum_is_normalized_average():
     assert math.isclose(weighted_sum(scores, weights), 0.75)
     # 重み総和 0 はゼロ割りせず 0。
     assert weighted_sum(scores, {}) == 0.0
+
+
+def test_weighted_sum_excludes_unevaluable_objectives_from_the_denominator():
+    """**評価不能**な objective に重みを付けても totalScore は動かない (ADR-120 D1)。
+
+    同じスコア表・同じ評価できた objective で、違いは「評価できなかった objective の
+    重み」だけ。分母に満額で居座っていた頃は、無関係な軸を宣言するほど総合スコアが
+    下がっていた = 「リクエスト間で比較可能」が宣言の仕方で壊れていた。
+    """
+    scores = {"a": 1.0, "b": 0.0}  # "c" は評価不能 = 鍵が無い
+    weights = {"a": 3.0, "b": 1.0}
+    base = weighted_sum(scores, weights)
+    assert math.isclose(base, 0.75)
+
+    # 評価できなかった軸にどれだけ重みを積んでも動かない。
+    assert math.isclose(weighted_sum(scores, {**weights, "c": 9.0}), base)
+    assert math.isclose(weighted_sum(scores, {**weights, "c": 1e6}), base)
+
+    # 0 点は依然として分母に入る (測れた上での 0 なので平均を薄める)。
+    assert weighted_sum({**scores, "c": 0.0}, {**weights, "c": 4.0}) < base
+
+    # 評価できたものが 1 つも無ければ 0.0。「全部 0 点」と同じ数だが、区別は
+    # objectiveScores が空であることが運ぶ (値ではなく鍵の有無が答える)。
+    assert weighted_sum({}, {"c": 1.0}) == 0.0
 
 
 # --- 候補生成 ----------------------------------------------------------------
@@ -305,6 +366,40 @@ def test_search_returns_ranked_top_n_conforming_to_contract():
 
     # 契約 (中立 JSON Schema) に wire 形が準拠すること。
     Draft202012Validator(load_response_schema()).validate(resp.model_dump(by_alias=True))
+
+
+def test_search_does_not_score_unevaluable_objectives_as_zero():
+    """パイプライン層でも **評価不能** は 0 点にならない (ADR-120 D1/D2 の実ソルバ側)。
+
+    単体の `weighted_sum` は算術しか示さない — 不完全な objectiveScores が実際に
+    パイプラインを流れてくることは示さない。ここはフロントの既定リクエスト (plan{} を
+    送らない = リーチ範囲が未宣言) を再現し、応答の鍵と totalScore の両方を見る。
+    """
+    decl = _declaration_dict()
+    # フロントの既定を再現: 判定パラメータを宣言しない。
+    decl["robot"] = {"base": [0.0, 0.0, 0.0]}
+
+    resp = search(_build_request(decl))
+    assert resp.candidates, "リーチ未宣言でも候補は出る (殻が無制限なので全部届く)"
+
+    for c in resp.candidates:
+        # 測れなかった軸は鍵ごと出ない — 0.0 として載らない。
+        assert "reach_margin" not in c.score.objective_scores
+        assert "grasp_stability" in c.score.objective_scores
+
+    # 測れなかった軸の重みを 10 倍にしても順位もスコアも動かない。
+    heavier = _declaration_dict()
+    heavier["robot"] = {"base": [0.0, 0.0, 0.0]}
+    heavier["objectiveWeights"] = {"grasp_stability": 1.0, "reach_margin": 5.0}
+    resp_heavier = search(_build_request(heavier))
+
+    assert [c.score.total_score for c in resp_heavier.candidates] == [
+        c.score.total_score for c in resp.candidates
+    ]
+    # 契約準拠は鍵が欠けても保たれる (objectiveScores は open な数値マップ)。
+    Draft202012Validator(load_response_schema()).validate(
+        resp.model_dump(by_alias=True)
+    )
 
 
 def test_search_excludes_out_of_reach_and_blocked_candidates():

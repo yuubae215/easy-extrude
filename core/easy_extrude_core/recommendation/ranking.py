@@ -23,17 +23,23 @@ DEFAULT_SIMILARITY_WEIGHTS: dict[str, float] = {"semantic": 0.7, "lexical": 0.3}
 
 
 def weighted_average(values: dict[str, float], weights: dict[str, float]) -> float:
-    """0-1 値の加重平均 (0-1)。重み総和で割り上限 1 を保つ (engine.scoring と同思想)。
+    """0-1 値の加重平均 (0-1)。**測れた重みだけで割る** (engine.scoring と同思想)。
 
-    weights に在って values に無いキーは寄与 0。重み総和 0 はゼロ割りを避けて 0。
+    weights に在って values に無いキーは **測れなかった信号** — 分子にも分母にも入れない
+    (ADR-120 D1 と同じ規律)。ここは propose レーンなので契約違反にはならないが、欠けた
+    信号を 0 として平均すると「その信号では似ていない」と「その信号が取れなかった」が
+    同じ順位に潰れ、similarity の絶対基準性 (ADR-077 §3) が候補ごとに揺れる。
+
+    測れた信号が 1 つも無ければ 0 (ゼロ割り回避)。
     """
     total = 0.0
     weight_sum = 0.0
     for name, w in weights.items():
-        weight_sum += w
         v = values.get(name)
-        if v is not None:
-            total += w * v
+        if v is None:
+            continue
+        weight_sum += w
+        total += w * v
     if weight_sum <= 0.0:
         return 0.0
     return total / weight_sum

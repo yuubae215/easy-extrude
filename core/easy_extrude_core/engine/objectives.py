@@ -7,13 +7,19 @@ ADR-075 / ADR-074 の不変条件: objective は **絶対基準** で 0-1 に正
 
 純粋関数のみ。各 objective は (raw 計算) -> (NormSpec で 0-1 化) の 2 段。raw の絶対上下限
 (NormSpec) は指標ごとに固定値として明示する (ADR-075 Open 論点「objective 正規化」)。
+
+**基準が未宣言なら評価しない (ADR-120 D2)。** 0-1 に写す絶対基準がリクエストに無いとき、
+その objective は「0 点」ではなく **評価不能**である。閉じたスコア層には「測れなかった」を
+書く欄が無い (ADR-060 — optional 兄弟を生やさない) ので、区別を運べるのは
+`objectiveScores` の **鍵の不在**だけ。よって評価不能な objective は鍵ごと出さない。
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional
 
 from .types import GraspCandidate, Problem, clamp, distance_point_to_segment
 
@@ -22,16 +28,24 @@ from .types import GraspCandidate, Problem, clamp, distance_point_to_segment
 class NormSpec:
     """raw 値を 0-1 に写す絶対基準。lo 以下で 0、hi 以上で 1、間は線形。
 
-    lo < hi を前提。退化 (lo>=hi) はゼロ割りを避けて 0 を返す (数値的安定性優先)。
+    **基準が無いときは値を返さない (None = 評価不能)。** span が有限かつ正でないのは
+    「この指標を 0-1 に写す絶対基準がリクエストに無い」という意味であって、「余裕が
+    ゼロ」ではない。かつてここは両方に 0.0 を返しており、リーチ範囲を宣言しない既定の
+    リクエストでは `reach_margin` が常に 0 = 「測っていない」が「0 点」として
+    `totalScore` を押し下げていた (ADR-120)。
+
+    2 つの退化はどちらも同じ意味を持つ:
+    - `span` が無限 (`reachMax` 未宣言 = `inf`) — 上限が無いので比率が定義できない。
+    - `span <= 0` (lo >= hi。`clearanceReference: 0` など) — 基準の幅が無い。
     """
 
     lo: float
     hi: float
 
-    def normalize(self, raw: float) -> float:
+    def normalize(self, raw: float) -> Optional[float]:
         span = self.hi - self.lo
-        if span <= 0.0:
-            return 0.0
+        if not math.isfinite(span) or span <= 0.0:
+            return None
         return clamp((raw - self.lo) / span, 0.0, 1.0)
 
 
@@ -116,8 +130,15 @@ def evaluate_objectives(
 ) -> dict[str, float]:
     """要求された objective 名について 0-1 正規化値を返す (純粋)。
 
-    未知の objective 名は無視する (DSL が将来 objective を増やしても素朴版は壊れない)。
-    返り値のキーは契約 ScoreBreakdown.objectiveScores にそのまま載る。
+    鍵が出ない理由は 2 つあり、どちらも「評価できなかった」に畳まれる (ADR-120 D2):
+
+    - 未知の objective 名 (DSL が将来 objective を増やしても素朴版は壊れない)。
+    - 絶対基準が未宣言で **評価不能** — 0.0 を入れない。入れると「0 点」と区別できず、
+      しかも `weighted_sum` の分母に満額で居座って totalScore を押し下げる。
+
+    返り値のキーは契約 ScoreBreakdown.objectiveScores にそのまま載る。要求した重みに
+    対して**どの鍵が欠けたか**が「測れなかった objective」を運ぶ唯一の情報なので、
+    呼び出し側は母集団を返り値ではなく **要求した重み** から取る (原則 #31)。
     """
     out: dict[str, float] = {}
     for name in names:
@@ -125,5 +146,8 @@ def evaluate_objectives(
         if definition is None:
             continue
         raw = definition.raw(candidate, problem)
-        out[name] = definition.spec_for(problem).normalize(raw)
+        score = definition.spec_for(problem).normalize(raw)
+        if score is None:
+            continue
+        out[name] = score
     return out
