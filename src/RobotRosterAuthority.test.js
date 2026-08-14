@@ -27,9 +27,6 @@ import { fileURLToPath } from 'node:url'
 const SRC_ROOT  = fileURLToPath(new URL('.', import.meta.url))
 const REPO_ROOT = join(SRC_ROOT, '..')
 
-/** seed を許された唯一の呼び出し元 (新規シーンを組み立てる boot 経路)。 */
-const SEED_OWNER = 'src/controller/AppController.js'
-
 /** 定義そのものを置くモジュール (呼び出し検査の対象外)。 */
 const DEFINITION = 'src/service/SceneService.js'
 
@@ -67,24 +64,32 @@ function seedCallSites() {
   return sites
 }
 
-test('ロボットを seed してよい経路はちょうど 1 つ (ADR-090 Decision 2)', () => {
+test('ロボットを seed する経路は 0 個 — 台数の権威は完全に scene にある (ADR-090 / ADR-132 D5)', () => {
   const sites   = seedCallSites()
   const seeding = sites.filter(s => s.seeds)
 
   assert.ok(sites.length >= 2, `ensureRobotFrames の呼び出しが見つからない (${sites.length} 件) — 検査が対象を失っている`)
 
+  // **ADR-132 で 1 → 0 になった。** ADR-090 は seed を boot 1 箇所へ絞ったが、その 1 箇所が
+  // 作るロボットは `explicit:false` (ADR-096 §Decision 3 —「1 本立つアームは雑然として
+  // 読める」) だった。両方とも正しく、**合わせると欠陥**である: シーンは基数 1 を保持し
+  // ながら基数 0 を提示していたので、見えない実体は「在る」と「無い」の区別を持たない
+  // (原則 #31 — 0 に見える 1)。0 台は ADR-090 が既に一級市民にした状態なので、boot も
+  // それに従う。ロボットは Shift+A ▸ Robot で生まれ、そちらは見える (原則 #11)。
   assert.deepEqual(
-    seeding.map(s => `${s.rel}:${s.line}`),
-    seeding.length === 1 && seeding[0].rel === SEED_OWNER ? [`${seeding[0].rel}:${seeding[0].line}`] : ['(exactly one call in ' + SEED_OWNER + ')'],
-    'seed:true を渡してよいのは新規シーンを組み立てる boot 経路 1 箇所だけ。\n' +
+    seeding.map(s => `${s.rel}:${s.line}`), [],
+    'ロボットを自動生成してよい経路は無い。\n' +
     `見つかった seed 呼び出し: ${seeding.map(s => `${s.rel}:${s.line}  ${s.text}`).join(' | ') || '(なし)'}\n` +
-    'シーン入口 (importFromJson / loadScene) で seed すると、台数の権威が scene から seed 規則へ戻り、\n' +
-    'ユーザーが削除した 0 台がテンプレ読込で黙って 1 台に復活する (ADR-090 §力学(4))。',
+    '入口で seed すると台数の権威が scene から seed 規則へ戻り、ユーザーが削除した 0 台が\n' +
+    '黙って 1 台に復活する (ADR-090 §力学(4))。boot で seed すると、見えないまま在る 1 台に\n' +
+    'なる — 基数 1 を基数 0 として提示する形 (ADR-132 D5)。どちらも scene を権威から外す。',
   )
 
-  const entrySeeds = sites.filter(s => s.seeds && s.rel === DEFINITION)
-  assert.deepEqual(
-    entrySeeds, [],
-    'シーン入口 (SceneService の importFromJson / loadScene) は upgrade のみ — seed してはならない。',
+  // 逆向き: upgrade の呼びは残っていること (規則が対象ごと消えていない = 非空虚)。
+  const upgrades = sites.filter(s => !s.seeds && s.rel === DEFINITION)
+  assert.ok(
+    upgrades.length >= 2,
+    'シーン入口 (importFromJson / loadScene) の upgrade 呼びが消えている — ' +
+    'seed を消したついでに legacy 昇格まで落ちると、古い .ctx.json のロボットが役割を失う。',
   )
 })

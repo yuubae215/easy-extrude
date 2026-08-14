@@ -857,21 +857,17 @@ export class AppController {
     // 1 m cube on the ground (base at z=0) instead.
     this._addObject()
     this._restStarterCube()
-    // Seed ONE robot for the fresh default scene (ADR-084 §2, `{ seed: true }`
-    // per ADR-090 Decision 2 — this is the ONLY caller that seeds; scene-entry
-    // paths upgrade without seeding, so a deleted robot stays deleted). The boot
-    // path builds the scene via _addObject(), not importFromJson(), so without
-    // this call a fresh start would have no robot at all — nothing in the
-    // Outliner to place via the CF gizmo / N-panel, and the grasp panel gated off
-    // on an empty roster. The skeleton itself is hidden by default (ADR-089
-    // follow-up): a lone arm standing 2.8 m off with nothing around it read as
-    // clutter on the empty scene. The frames stay (grasp needs them); the user
-    // reveals the arm via the base frame's Outliner eye (原則 #4 owner). That
-    // default is now DECLARED by the seed entry point itself (ADR-096 §Decision
-    // 3) — the `_hideRobotByDefault()` sweep that used to follow this line hid
-    // the base frame and missed `tcp`, which is why `tcp` sat there with an open
-    // eye and no axes drawn.
-    this._service.ensureRobotFrames({ seed: true })
+    // NO robot is seeded here (ADR-132 D5). This line used to ask the scene
+    // service to seed the boot scene's one robot, and that robot was created
+    // HIDDEN because "a lone arm standing 2.8 m off with nothing around it reads
+    // as clutter" (ADR-096 §Decision 3). Both halves of that were true and
+    // together they were the defect: the scene held cardinality **1** and
+    // presented cardinality **0**, so the arm was discoverable only by a user who
+    // already knew to look for a closed eye in the Outliner. ADR-090 made zero
+    // robots a first-class state everywhere else; boot is now consistent with it.
+    // The user adds one through Shift+A ▸ Robot, and THAT one is visible because
+    // they asked for it (原則 #11). Grasp search no longer needs a pre-existing
+    // robot to have something to say: it reports the empty roster as its reason.
     this.setMode('object')
     // The initial solid creation must not be undoable — the user has done nothing yet.
     this._commandStack.clear()
@@ -964,6 +960,28 @@ export class AppController {
         hasTcp: r.hasTcp,
         skeletonVisible: this._sceneView?.robotStages?.isVisible(r.id) ?? null,
       })),
+      // Read-only grasp-source snapshot (ADR-132) — the E2E guard for "a search
+      // is about what is on the screen". It reports the ENTITY SET beside the
+      // resolved sources because the two halves of this ADR are only checkable
+      // together: whether opening the entrance destroyed anything (the set), and
+      // whether the search can see a scene no document produced (the sources).
+      // Counting rows would not do — the defect replaced the scene wholesale, and
+      // a same-sized replacement reads as "nothing lost" (ADR-131: 消滅には状態が
+      // 無い, so compare the SET, not its size). `openGrasp` itself is exposed so
+      // the regression can press the button without depending on which panel the
+      // entrance currently lives in.
+      graspSource: () => {
+        const resolved = this._graspCtrl?._searchLayout?.() ?? null
+        return {
+          entities: [...this._scene.objects.values()].map(o => `${o.id}:${o.name}`).sort(),
+          robots:   this._robots().length,
+          geometrySource:    resolved?.geometrySource ?? null,
+          declarationSource: resolved?.declarationSource ?? null,
+          unconvertible:     resolved?.warnings?.length ?? null,
+        }
+      },
+      openGrasp: () => this._graspCtrl?.openGrasp(),
+      addRobot:  () => this._addRobot(),
       // Read-only visibility snapshot (ADR-096) — the E2E guard for the claim
       // this ADR rests on: what the row says and what is DRAWN never disagree.
       // Both axes plus the pixel are reported per entity, because the defect was

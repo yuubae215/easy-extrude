@@ -145,7 +145,13 @@ const SUPPORT_LABELS = new Map([
 // 往復・対照・入口の個数を焼いた検査が実在する) ので exploring から solution へ昇格した。
 // 下げるのも意図的な行為である — 債務を払ったのに baseline が古いままだと、
 // 「いま いくつ未支持か」が再び記憶の中の数になる (ADR-103)。
-const DEBT_BASELINE = 28
+// 2026-08-14 (同日 5 度目): 28 → 29。ADR-132 の木が 1 goal を足した
+// (`TheJoinIsExercisedOnMovedRealGeometry` — 文書を読み込んだ状態で Solid を動かし、
+// 掴む場所の宣言が動いた先に付いてくることを実機で通していない)。**ADR 本文が
+// 「この証拠が構造的に見逃すもの」として自分で名指しした限界**を、散文ではなく
+// 数えられる場所へ降ろしたぶんである — 散文の限界は誰も数えないので、宣言した
+// 瞬間から静かに消える。機械可読な満期 (GREP) を持つので分子 (G3) は動かない。
+const DEBT_BASELINE = 29
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

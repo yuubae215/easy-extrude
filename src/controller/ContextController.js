@@ -344,34 +344,28 @@ export class ContextController {
     this._loadThen(doc, () => this._startNegotiation())
   }
 
-  /**
-   * Load a starter example straight into negotiation for a one-click entry into a
-   * downstream overlay (grasp-search) — no gallery, no wizard, no forms. It is
-   * ADR-051's example-load path minus the picking step, exposed as an awaitable
-   * so the caller (GraspController.openGrasp when no context is loaded) can
-   * continue into its own tab once the derived scene exists and negotiation is
-   * active. Any active overlay is exited first (PHILOSOPHY #9 — dispose before
-   * replace). Returns false (with a toast) for an unknown / non-example id or a
-   * load failure, so the caller never opens a tab over a scene that never loaded.
+  /*
+   * The one-click starter loader lived here and is REMOVED (ADR-132 D4). Its name
+   * is deliberately not written anywhere in this repo's production code — a
+   * retired verb that is still greppable is one search away from being called
+   * again, which is the whole reason ADR-125 put退役 addresses in a machine-read
+   * field. `docs/adr/ADR-132-*.md` holds the name, in the past tense.
    *
-   * @param {string} id — TemplateCatalog example id
-   * @returns {Promise<boolean>} true once negotiation is active on the loaded example
+   * It loaded a starter example straight into negotiation so grasp-search had a
+   * one-click entry when no Context was loaded. The load goes through
+   * `_loadThen` → `loadContext` → `_projectScene({preserveUndeclared: false})` —
+   * a FULL scene clear, which is the right meaning when a user CHOOSES a document
+   * (ADR-131 D3) and the wrong one when the app chooses for them. Pressing "grasp
+   * search" over a hand-built scene destroyed it and replaced it with the
+   * starter's entities.
+   *
+   * The method is deleted rather than left unused: an unused destructive verb is
+   * one call site away from being a used one, and the next entrance that wants a
+   * "fast start" would find it by grep. Taking it out of the vocabulary is what
+   * makes the next one impossible to write by accident (the ADR-102 move).
+   * Explicit example loading still exists — through the gallery, where the user
+   * picks the document and the replacement is the thing they asked for.
    */
-  async quickStartExample(id) {
-    const meta = getTemplateMeta(id)
-    if (!meta || meta.source.kind !== 'example') {
-      this._ctrl._uiView.showToast(`Unknown starter: ${id}`, { type: 'warn' })
-      return false
-    }
-    if (this.isActive) this.exit()
-    const doc = TEMPLATE_DOCS[meta.source.file]
-    if (!doc) {
-      this._ctrl._uiView.showToast(`Starter definition not found: ${meta.source.file}`, { type: 'error' })
-      return false
-    }
-    await this._loadThen(doc, () => this._startNegotiation())
-    return this.isNegotiation
-  }
 
   /**
    * Fork an example as the starting point (ADR-058 — "fork & tweak"). The example

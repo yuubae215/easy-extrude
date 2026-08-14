@@ -15,6 +15,7 @@ import {
   DECLARABLE_FACES, GRASP_FEATURE_KIND, GRASP_FEATURE_STATE, inPlaneAxesOrThrow,
   graspFeatureGaps, graspFeatureSummary,
 } from '../../domain/graspFeature.js'
+import { sourceLabel } from '../../domain/searchGeometry.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
@@ -358,12 +359,27 @@ export function GraspSearchPanel() {
         so it is not on the undo stack.
       </div>
 
-      {/* Source layout */}
+      {/* Source layout — WHERE each half came from is shown, not inferred
+          (ADR-132 D3 / 原則 #31). "the document declares no grasp location here"
+          and "no document was consulted" produce identical targets; only this
+          line separates them. */}
       <div style={{ fontSize: '11px', color: '#bbb', marginBottom: '10px' }}>
         Source layout:{' '}
         <code style={{ color: '#9ad' }}>{grasp?.layout?.version ?? '—'}</code>
         {' · '}
         <span>{grasp?.layout?.entities ?? 0} entit{(grasp?.layout?.entities === 1) ? 'y' : 'ies'}</span>
+        {grasp?.layout?.geometrySource && (
+          <div style={{ color: '#888', fontSize: '10px', marginTop: '3px' }}>
+            geometry: <span style={{ color: '#9ad' }}>{sourceLabel(grasp.layout.geometrySource)}</span>
+            {' · '}
+            grasp locations: <span style={{ color: '#9ad' }}>{sourceLabel(grasp.layout.declarationSource)}</span>
+            {grasp.layout.unconvertible > 0 && (
+              <span style={{ color: COLOR.cautionTone }}>
+                {' · '}{grasp.layout.unconvertible} object(s) the search cannot express
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Three domain declaration cards (ADR-081 Decision 5): 見える / 届く /

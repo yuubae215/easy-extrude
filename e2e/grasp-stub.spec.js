@@ -47,9 +47,27 @@ async function selectRow(page, name) {
 /**
  * The fast path the whole exercise is about: cold boot → the grasp panel, with
  * no forms and no server. Leaves the panel open, ready to Run.
+ *
+ * **ADR-132 changed what "cold boot" gives you, and the path got shorter.** It used
+ * to lean on two things that are now gone: a robot the boot scene seeded (hidden —
+ * cardinality 1 presenting as 0, D5) and the entrance auto-loading `cell_robotics`
+ * when no document existed (which REPLACED the scene, D4). So the setup now builds
+ * the cell the way a user would — add a robot, add a second solid — and the search
+ * runs against that live scene with no document at all. That is the stronger
+ * version of the claim this file exists to pin: no backend AND no document.
+ *
+ * The second box matters: with one solid the target roster is `single` and resolves
+ * implicitly, so S2's "N objects, pick one" branch would never be entered and the
+ * scenario would pass while asserting nothing (原則 #31 — a guard that is never
+ * reached is not a guard).
  */
 async function reachGraspPanel(page, scenario) {
   const errors = await boot(page, scenario)
+  await page.locator('#canvas-container canvas').click()
+  await page.getByRole('button', { name: /\+ Add/ }).click()   // a second graspable solid
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Robot', { exact: true }).click()
   await selectRow(page, 'robot_base')
   await page.keyboard.press('n')
   await page.getByRole('button', { name: /Grasp candidates/ }).click()

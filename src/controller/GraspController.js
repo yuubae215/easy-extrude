@@ -8,11 +8,19 @@
  * (ADR-057 §H / ADR-047 §2.1): orbit / select / grab stay live underneath while
  * the user reads candidates.
  *
- * It consumes the canonical Layout DSL the loaded Context already derives —
- * `ContextService.getCompiled().layoutDsl`, the single extraction point (no scene
- * reverse-compile; scope boundary — ADR-054/ADR-055) — and reads / writes ONLY the
- * `context.grasp` uiStore slice. The grasp request is a **query** (geometry is
- * invariant), so it never touches the CommandStack (ADR-054).
+ * It consumes a Layout DSL resolved at ONE point (`domain/searchGeometry.js`) and
+ * reads / writes ONLY the `context.grasp` uiStore slice. The grasp request is a
+ * **query** (geometry is invariant), so it never touches the CommandStack (ADR-054).
+ *
+ * **Where that DSL comes from changed in ADR-132.** It used to be
+ * `ContextService.getCompiled().layoutDsl` and nothing else, on the reading that a
+ * scene reverse-compile was out of scope (ADR-054/055). That reading was too wide:
+ * ADR-055 BUILT the inverse (`decompileLayout`) and named the non-Context authoring
+ * path as its purpose — what it forbids is treating a derived scene as the source of
+ * the *document*, not asking the scene where the bodies are. So geometry now comes
+ * from the live scene (the same source the robot half always used) and the
+ * document's `graspFeature` declarations are joined onto it by `ref`. Two subjects,
+ * one source; declarations still owned by the document.
  *
  * The grasp panel lives as the `'grasp'` tab inside the production `ContextLayer`
  * (ADR-057 §B), so the entry is a tab selection — the old top-level
@@ -50,13 +58,7 @@ import {
   surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
 } from '../domain/graspTargets.js'
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
-
-/**
- * TemplateCatalog example id auto-loaded when grasp-search is opened with no
- * context (fast entry). A robot-cell starter (geometry + reach/gripper
- * declarations) so Run is immediately meaningful.
- */
-const GRASP_QUICKSTART_TEMPLATE_ID = 'cell_robotics'
+import { resolveSearchLayout } from '../domain/searchGeometry.js'
 
 export class GraspController {
   /**
@@ -98,7 +100,7 @@ export class GraspController {
     this._robotsSignature = null
     /**
      * Which OBJECT this run is about (ADR-117). The twin of `_selectedRobotId`:
-     * the layout DSL owns the roster of graspable solids, this owns the pick, and
+     * the SCENE owns the roster of graspable solids (ADR-132 D1), this owns the pick, and
      * it is only meaningful with N targets (`selectTarget` resolves 0/1 without
      * it, so the panel shows no selector below two — 原則 #15).
      * @type {string|null}
@@ -191,28 +193,40 @@ export class GraspController {
    * single resolution point (§1.1 — this controller never asks "is this entity
    * graspable?" itself).
    *
-   * The roster comes from the layout DSL, not the live scene, because the DSL is
-   * the canonical extraction point for everything this request declares
-   * (ADR-054/055: no scene reverse-compile). That means a solid dragged around in
-   * the viewport does not move its target samples until the doc is recompiled —
-   * the same asymmetry `robot.base` does NOT have (it resolves through
-   * `worldPoseOf`). Noted rather than silently split: closing it means deciding
-   * which side owns object geometry, which is an ADR, not a patch.
+   * The roster comes from the Layout DSL — which since ADR-132 D1 is derived from
+   * the LIVE SCENE, with the document's declarations joined onto it. This closes
+   * the asymmetry this comment used to describe and defer:
    *
+   * > the DSL is the canonical extraction point … a solid dragged around in the
+   * > viewport does not move its target samples until the doc is recompiled — the
+   * > same asymmetry `robot.base` does NOT have (it resolves through `worldPoseOf`).
+   * > Noted rather than silently split: closing it means deciding which side owns
+   * > object geometry, which is an ADR, not a patch.
+   *
+   * ADR-132 is that ADR, and the answer is *both, on different halves*: bodies are
+   * the scene's, `graspFeature` is the document's (`domain/searchGeometry.js`).
+   *
+   * The DSL is passed in wherever a caller already has one, so a single run
+   * resolves the scene exactly ONCE. Re-deriving per call would let the geometry
+   * shift underneath a request between its gate and its payload — the same
+   * "input read at two different times" shape ADR-101 removed from pose.
+   *
+   * @param {object|null} [dsl]
    * @returns {import('../domain/graspTargets.js').GraspTarget[]}
    */
-  _graspTargets() {
-    return resolveGraspTargets(this._loadedLayoutDsl()?.entities)
+  _graspTargets(dsl = this._loadedLayoutDsl()) {
+    return resolveGraspTargets(dsl?.entities)
   }
 
   /**
    * The object this run is about, or null when the cardinality forbids an answer
    * (0 solids, or N with no explicit pick). Resolved here, decided in the domain
    * (原則 #25).
+   * @param {import('../domain/graspTargets.js').GraspTarget[]} [targets]
    * @returns {import('../domain/graspTargets.js').GraspTarget|null}
    */
-  _selectedTarget() {
-    return selectTarget(this._graspTargets(), this._selectedTargetRef)
+  _selectedTarget(targets = this._graspTargets()) {
+    return selectTarget(targets, this._selectedTargetRef)
   }
 
   /**
@@ -221,9 +235,17 @@ export class GraspController {
    * authority; nothing writes back here (§1.1). A pick that no longer resolves
    * (its solid left the layout) is dropped BEFORE resolving, so the ref we keep
    * and the ref we publish can never disagree.
+   *
+   * Takes the already-resolved DSL when the caller has one (a run does), so the
+   * projection the panel shows and the payload the run sends come from ONE
+   * resolution of the scene rather than two (ADR-132 D1) — two resolutions is how
+   * a panel ends up describing geometry the request did not carry, which is the
+   * ADR-117 defect in a different costume.
+   *
+   * @param {object|null} [dsl]
    */
-  refreshGraspTargets() {
-    const targets = this._graspTargets()
+  refreshGraspTargets(dsl = this._loadedLayoutDsl()) {
+    const targets = this._graspTargets(dsl)
     if (this._selectedTargetRef && !targets.some(t => t.ref === this._selectedTargetRef)) {
       this._selectedTargetRef = null
     }
@@ -323,11 +345,22 @@ export class GraspController {
    * several. It lives in the N panel now, next to the selected robot, which is
    * what closes the `place → see if it reaches → place again` loop.
    *
-   * Fast entry (no forms): when NO context is loaded yet, rather than dead-ending
-   * with "go build one through New Project", auto-load a robot-cell starter and
-   * drop the user straight into grasp-search. The boot scene carries no context
-   * work to lose, and the example path needs no wizard forms — it collapses the
-   * old multi-form detour into a single click.
+   * **No longer auto-loads a starter example (ADR-132 D4).** This method used to
+   * treat "no context loaded" as "nothing to lose" and quietly load
+   * `cell_robotics`, which goes through `loadContext` — a FULL scene replacement
+   * (ADR-131 D3 keeps the full clear there, correctly, because loading a document
+   * IS a replacement). The premise was wrong: `loaded` is a fact about the
+   * DOCUMENT, and the user's work lives in the SCENE. Anyone who modelled a robot
+   * and an object without starting a Context lost all of it by pressing the button
+   * that was supposed to search it, and the starter's own entities (「TCP 教示点
+   * pick / place」) appeared in its place — a scene swap that read as a crash.
+   *
+   * The auto-load existed only because the search could not see a scene that no
+   * document had produced. D1 removed that constraint, so the branch is gone
+   * rather than guarded: a guarded destructive path is still a destructive path
+   * one condition away, and the starter loader on `ContextController` is deleted
+   * with it so the next entrance cannot reach for it (the ADR-102 move — take the
+   * verb out of the vocabulary, name included).
    */
   openGrasp() {
     // The entrance WRITES the subject (ADR-130 D2). Until it did, the gate above
@@ -336,14 +369,11 @@ export class GraspController {
     // picked in the Outliner. Two sources for one premise, and the one the run
     // consults was not the one the user was told to set (原則 #1 / §1.1).
     //
-    // Done BEFORE the quick-start branch so the order of the two effects is the
-    // same on both paths; the quick-start replaces the scene, so the id captured
-    // here is re-resolved by `refreshRobots` and dropped if it no longer exists.
+    // ADR-130 needed this to run before a branch that could replace the scene;
+    // ADR-132 D4 removed that branch, so there is only one path now. The order is
+    // still deliberate — `_openGraspPanel` publishes the roster projection, and it
+    // must publish the subject this line just adopted, not the previous one.
     this._adoptSelectionAsSubject()
-    if (!this._ctrl._ctxService.loaded) {
-      this._quickStartIntoGrasp()
-      return
-    }
     this._openGraspPanel()
   }
 
@@ -367,35 +397,18 @@ export class GraspController {
   }
 
   /**
-   * Load the grasp quick-start example, then open the grasp tab once negotiation
-   * is live. Kept off the synchronous path (loadContext is async). Falls back to
-   * the honest "no context" guidance when the injected ctxCtrl cannot load
-   * examples (the THREE-free unit lane passes a minimal stub).
-   */
-  _quickStartIntoGrasp() {
-    const ctxCtrl = this._ctrl._ctxCtrl
-    if (typeof ctxCtrl.quickStartExample !== 'function') {
-      this._ctrl._uiView.showToast(
-        'No context loaded. Start one from New Project or import a .ctx.json first.',
-        { type: 'warn' },
-      )
-      return
-    }
-    this._ctrl._uiView.showToast('Loading a robot-cell starter for grasp-search…', { type: 'info' })
-    Promise.resolve(ctxCtrl.quickStartExample(GRASP_QUICKSTART_TEMPLATE_ID))
-      .then(ok => { if (ok) this._openGraspPanel() })
-  }
-
-  /**
-   * Shared tail: guard on a renderable layout, then seed the idle FSM slice and
-   * surface the N panel that hosts it. Reached both directly (a context already
-   * loaded) and after the quick-start example finishes loading.
+   * Guard on a renderable layout, then seed the idle FSM slice and surface the N
+   * panel that hosts it.
+   *
+   * "Renderable" now means the LIVE SCENE has bodies (ADR-132 D1), so the guidance
+   * below fires only on a genuinely empty scene — not, as before, on every scene
+   * that happened to have no Context document behind it.
    */
   _openGraspPanel() {
     const layout = this._layoutMeta()
     if (!layout) {
       this._ctrl._uiView.showToast(
-        'This project has no renderable layout to search (load one with geometry).',
+        'Nothing to search — the scene is empty. Add a solid (Shift+A) or load a project first.',
         { type: 'warn' },
       )
       return
@@ -444,13 +457,23 @@ export class GraspController {
     // A new run invalidates the previous run's ghost (ADR-059 §B-5).
     this._clearGhost()
 
-    const dsl = this._loadedLayoutDsl()
+    // Resolve the search geometry ONCE for this run (ADR-132 D1). Every gate and
+    // the payload below read this same snapshot, so the scene cannot shift between
+    // "we checked there was a target" and "here is that target's geometry".
+    const resolved = this._searchLayout()
+    const dsl = resolved.dsl
     if (!dsl) {
       ui.contextSetGrasp({ status: 'no-layout' })
-      ctrl._uiView.showToast('Load a project with a layout first (Context ▾ → New Project)', { type: 'warn' })
+      ctrl._uiView.showToast('Nothing to search — the scene is empty. Add a solid (Shift+A) first.', { type: 'warn' })
       return
     }
-    const layout = { version: dsl.version, entities: (dsl.entities ?? []).length }
+    const layout = {
+      version:  dsl.version,
+      entities: (dsl.entities ?? []).length,
+      geometrySource:    resolved.geometrySource,
+      declarationSource: resolved.declarationSource,
+      unconvertible:     resolved.warnings.length,
+    }
 
     // Guard: a grasp is solved FOR a robot (ADR-090 Decision 4). With no robot in
     // the scene — or N robots and no explicit pick — there is no premise to solve
@@ -481,13 +504,13 @@ export class GraspController {
     // (原則 #31). Worse, the panel's 0-candidate copy then tells the user to fix
     // the layout's geometry, which the request never carried. Stop with the real
     // reason instead of shipping a search that cannot succeed (#11).
-    this.refreshGraspTargets()
-    const targetEntity = this._selectedTarget()
+    this.refreshGraspTargets(dsl)
+    const targets      = this._graspTargets(dsl)
+    const targetEntity = this._selectedTarget(targets)
     if (!targetEntity) {
-      const targets = this._graspTargets()
       const reason = targets.length === 0
-        ? 'Nothing to pick up — this layout declares no solid with graspable geometry.'
-        : `${targets.length} graspable objects in the layout — pick which one to grasp.`
+        ? 'Nothing to pick up — no solid in the scene has graspable geometry.'
+        : `${targets.length} graspable objects in the scene — pick which one to grasp.`
       ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
       ctrl._uiView.showToast(reason, { type: 'warn' })
       return
@@ -505,7 +528,7 @@ export class GraspController {
     const featureGaps = graspFeatureGaps(targetEntity.feature, params.gripper?.kind ?? null)
     if (featureGaps.length > 0) {
       const reason = featureGaps[0]
-      ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: this._graspTargets().length })
+      ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
       ctrl._uiView.showToast(reason, { type: 'warn' })
       return
     }
@@ -566,7 +589,7 @@ export class GraspController {
         // not a fidelity loss — core/ measures the object width from these very
         // samples, so a top-only grid told the jaw gate the box was half as wide.
         target:    { surfaceSamples: surfaceSamplesFor(targetEntity, params.gripper?.kind ?? null) },
-        obstacles: obstaclesExcluding(this._graspTargets(), targetEntity.ref),
+        obstacles: obstaclesExcluding(targets, targetEntity.ref),
         // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
         // these (ADR-128): until it did, `reach_margin` had no absolute basis and
         // came back permanently unmeasured — which ADR-120 correctly refuses to
@@ -835,15 +858,70 @@ export class GraspController {
     this._ctrl._uiView.showToast(`${label} failed: ${err.message}${hint}`, { type: 'error' })
   }
 
-  /** The Layout DSL the loaded Context derives, or null if none is renderable. */
-  _loadedLayoutDsl() {
-    const dsl = this._ctrl._ctxService.getCompiled()?.layoutDsl
-    return dsl && (dsl.entities ?? []).length > 0 ? dsl : null
+  /**
+   * WHAT this search is about, resolved through the domain's single resolution
+   * point (ADR-132 D1/D2 — `resolveSearchLayout`; this controller supplies the two
+   * inputs and decides nothing, 原則 #25).
+   *
+   * Geometry comes from the LIVE SCENE (ADR-055's φ⁻¹, wired here for the first
+   * time), so the request describes what is on the screen — the same source the
+   * robot half has always used. Declarations (`graspFeature`) come from the loaded
+   * document and are joined on by `ref`, because the scene does not carry them and
+   * dropping them would be "you declared and we ignored you" (ADR-119 D3).
+   *
+   * `_service.decompileToLayoutDsl` is called defensively: the THREE-free unit lane
+   * drives this controller with a fake service, and there the document IS the
+   * geometry — a named outcome (`SOURCE.DOCUMENT`), not a silent degrade.
+   *
+   * @returns {import('../domain/searchGeometry.js').SearchLayout}
+   */
+  _searchLayout() {
+    const service = this._ctrl._service
+    let sceneDsl = null
+    let warnings = []
+    if (typeof service?.decompileToLayoutDsl === 'function') {
+      try {
+        const out = service.decompileToLayoutDsl()
+        sceneDsl = out?.dsl ?? null
+        warnings = out?.warnings ?? []
+      } catch (err) {
+        // A scene the decompiler cannot express is a fact, not a crash: fall to
+        // the document and say what happened (原則 #11 — never a silent no-op).
+        console.warn('[GraspController] scene → Layout DSL failed; using the document', err)
+        sceneDsl = null
+      }
+    }
+    return resolveSearchLayout({
+      sceneDsl,
+      docDsl: this._ctrl._ctxService.getCompiled()?.layoutDsl ?? null,
+      warnings,
+    })
   }
 
-  /** Lightweight layout meta for the panel header (version + entity count). */
+  /** The Layout DSL this search is built from, or null when nothing is renderable. */
+  _loadedLayoutDsl() {
+    return this._searchLayout().dsl
+  }
+
+  /**
+   * Lightweight layout meta for the panel header: version + entity count, plus
+   * WHERE each half came from and what could not be expressed.
+   *
+   * The sources ride the header rather than staying an implementation detail
+   * because they are a state (原則 #31): "the document declares no grasp location
+   * here" and "no document was consulted" produce identical targets, and only the
+   * source distinguishes them. The warnings are the same rule applied to bodies —
+   * an ImportedMesh the user can see but the search cannot must be said out loud.
+   */
   _layoutMeta() {
-    const dsl = this._loadedLayoutDsl()
-    return dsl ? { version: dsl.version, entities: (dsl.entities ?? []).length } : null
+    const { dsl, geometrySource, declarationSource, warnings } = this._searchLayout()
+    if (!dsl) return null
+    return {
+      version:  dsl.version,
+      entities: (dsl.entities ?? []).length,
+      geometrySource,
+      declarationSource,
+      unconvertible: warnings.length,
+    }
   }
 }

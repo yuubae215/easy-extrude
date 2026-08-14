@@ -13,6 +13,20 @@ import { test, expect } from '@playwright/test'
 
 const deleteButtons = (page) => page.locator('[aria-label="Delete"]')
 
+/**
+ * Add one robot through the user's own entry (Shift+A ▸ Robot).
+ *
+ * The boot scene holds ZERO robots since ADR-132 D5 — it used to seed one, hidden,
+ * so the scene carried cardinality 1 while presenting cardinality 0. Tests that
+ * need a robot therefore create one the way a user does, which is also the only
+ * path that produces a VISIBLE robot (ADR-096 §Decision 3).
+ */
+async function addRobot(page) {
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Robot', { exact: true }).click()
+}
+
 async function boot(page) {
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -425,9 +439,16 @@ test('experience layer renders under prefers-reduced-motion (degraded, not dead)
 test('deleting the robot asks first, and a template load does not resurrect it (ADR-090)', async ({ page }) => {
   // The two defects ADR-090 measured, in one flow. Before: the ✕ took the robot
   // (and its tcp child) away with NO dialog and no toast (§力学(2)), and the very
-  // next scene entry re-seeded it because `ensureRobotFrames` "repaired" every
+  // next scene entry re-seeded it because the scene service "repaired" every
   // entry path — the seed rule outranked the user's scene (§力学(4)).
+  //
+  // ADR-132 D5 removed the boot seed, so the robot this test deletes is now one
+  // the USER adds. That is the stronger premise, not a weaker one: the point of
+  // ADR-090 is that the scene — not a rule — decides how many robots exist, and a
+  // robot the user created and then deleted is exactly the case the seed rule used
+  // to overrule.
   const errors = await boot(page)
+  await addRobot(page)
 
   const robotRow = page.getByText('robot_base', { exact: true }).locator('..')
   await robotRow.hover()
@@ -454,11 +475,12 @@ test('deleting the robot asks first, and a template load does not resurrect it (
 test('a second robot can be added and is a distinct entity (ADR-090 G1)', async ({ page }) => {
   const errors = await boot(page)
 
-  // Shift+A → Robot. The entry is unconditional (it is the way OUT of 0 robots),
-  // unlike "Coordinate Frame", which needs a selected parent.
-  await page.locator('#canvas-container canvas').click()
-  await page.keyboard.press('Shift+A')
-  await page.getByText('Robot', { exact: true }).click()
+  // Two robots, both user-added (ADR-132 D5 removed the boot seed — the scene
+  // starts at zero, which is the state ADR-090 made first-class). Shift+A → Robot
+  // is unconditional (it is the way OUT of 0 robots), unlike "Coordinate Frame",
+  // which needs a selected parent.
+  await addRobot(page)
+  await addRobot(page)
 
   // Two robots now: distinct rows, each wearing the ROBOT badge that is keyed off
   // the DECLARED role (a name-keyed badge would have missed this second base).
@@ -467,23 +489,25 @@ test('a second robot can be added and is a distinct entity (ADR-090 G1)', async 
   await expect(page.getByText('tcp_2', { exact: true }).first()).toBeVisible()
   expect(await page.getByText('ROBOT', { exact: true }).count()).toBe(4)
 
-  // One eye moves ONE arm (ADR-090): the boot robot ships hidden, the just-added
-  // one is drawn. A single shared RobotStage could not even express this — and the
-  // aria-label assertions below/above cannot see it, since they read the row, not
-  // the scene.
+  // Both are DRAWN — a robot the user asked for appears (ADR-096 §Decision 3 /
+  // 原則 #11). Before ADR-132 the first row here was the boot seed and shipped
+  // hidden; that asymmetry is gone, so the per-robot keying below is now tested by
+  // hiding one rather than by revealing the one that started hidden.
   const roster = await page.evaluate(() => window.__easyExtrude.robotState())
   expect(roster.map(r => r.label)).toEqual(['robot_base', 'robot_base_2'])
-  expect(roster.map(r => r.skeletonVisible)).toEqual([false, true])
+  expect(roster.map(r => r.skeletonVisible)).toEqual([true, true])
   expect(roster.every(r => r.hasTcp)).toBe(true)
 
-  // Revealing the first robot leaves the second one alone (per-robot keying).
+  // One eye moves ONE arm (ADR-090): hiding the first leaves the second drawn.
+  // A single shared RobotStage could not even express this — and the aria-label
+  // assertions below/above cannot see it, since they read the row, not the scene.
   const firstRow = page.getByText('robot_base', { exact: true }).locator('..')
   await firstRow.hover()
-  await firstRow.getByRole('button', { name: 'Show' }).click()
+  await firstRow.getByRole('button', { name: 'Hide' }).click()
   await expect
     .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState()))
       .map(r => r.skeletonVisible))
-    .toEqual([true, true])
+    .toEqual([false, true])
 
   // Undo removes the pair together (one command owns the base + tcp pairing).
   await page.locator('#canvas-container canvas').click()
