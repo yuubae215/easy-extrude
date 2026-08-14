@@ -114,6 +114,10 @@ class Quaternion:
         inv = 1.0 / n
         return Quaternion(self.x * inv, self.y * inv, self.z * inv, self.w * inv)
 
+    def conjugate(self) -> "Quaternion":
+        """共役 = 単位四元数における逆回転 (ADR-129 D2 がベース座標へ戻すのに使う)。"""
+        return Quaternion(-self.x, -self.y, -self.z, self.w)
+
     def rotate(self, v: Vec3) -> Vec3:
         """ベクトル v をこの回転で回した新しい Vec3 を返す (純粋)。
 
@@ -193,6 +197,11 @@ class Robot:
     - tcp_orientation: グリッパ (TCP) のワールド姿勢 (ADR-084)。宣言されると cone の
       基準軸が「TCP 前方 = +X を回したもの」になる。None なら後方互換フォールバック
       (base->把持点 方向を代理軸に使う旧挙動) — 宣言しない限り挙動を無言で変えない。
+    - base_orientation: ベース**据付**姿勢のワールド四元数 (ADR-129 D2)。宣言されると
+      解析解 IK が目標をベース座標系へ**逆回転して**から解くので、傾けて据え付けた
+      アームで答えが変わる。None は「直立」ではなく **述べていない** — core/ は向き
+      無しでは解けないので恒等で解くしかないが、その仮定はフロントが画面で述べる
+      (無言の既定にしない — 原則 #31)。
     """
 
     base: Vec3
@@ -200,6 +209,7 @@ class Robot:
     reach_max: float
     wrist_cone_half_angle: float = math.pi  # 既定は無制限 (どの向きでも可解)
     tcp_orientation: "Quaternion | None" = None
+    base_orientation: "Quaternion | None" = None
 
 
 @dataclass(frozen=True)

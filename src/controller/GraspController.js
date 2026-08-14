@@ -779,6 +779,12 @@ export class GraspController {
    * absent `base` is what the caller's gate reads as "not solvable" — it never
    * ships a robot-less request for core/ to fill with defaults.
    *
+   * `baseOrientation` (ADR-129 D2) rides along whenever the base frame resolves:
+   * the frame always HAS an orientation, so sending it is not an invention — it is
+   * the same fact `worldPoseOf` already resolves for the TCP. What stays undeclared
+   * is the case where the base frame itself does not resolve, and there the whole
+   * request is gated off anyway.
+   *
    * @param {import('../domain/robotFrames.js').Robot} robot
    * @returns {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }}
    */
@@ -789,11 +795,17 @@ export class GraspController {
     const basePose = service.worldPoseOf(robot.baseFrame.id)
     const tcpPose  = robot.tcpFrame ? service.worldPoseOf(robot.tcpFrame.id) : null
 
-    /** @type {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }} */
+    /** @type {{ base?: [number,number,number], baseOrientation?: [number,number,number,number],
+     *           tcpOrientation?: [number,number,number,number] }} */
     const declaration = {}
     if (basePose) {
       const p = basePose.position
       declaration.base = [p.x, p.y, p.z]
+      // 据付姿勢 (ADR-129 D2)。ベースフレームの**世界四元数**をそのまま載せる —
+      // これは `worldPoseOf` が毎フレーム解いているのと同じ解決で、ここで別の
+      // 合成を書くと第二の源になる (§1.1)。
+      const q = basePose.quaternion
+      if (q) declaration.baseOrientation = [q.x, q.y, q.z, q.w]
     }
     if (tcpPose) {
       const q = tcpPose.quaternion

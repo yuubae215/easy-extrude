@@ -217,6 +217,11 @@ export function GraspSearchPanel() {
       sealTiltTolerance: String(cup.sealTiltTolerance),
     }
   })
+  // 探索の**設定** (ハンド仕様 / カメラ / 重み) は今日ここ — React state — に住み、
+  // **キーを持たない**: リロードで消え、export に載らず、undo の外に居る。配置や
+  // 掴む場所と同じ形 (宣言がインスタンスに寄生する) の 4 例目で、ADR-129 の MVP には
+  // 入れていない = **未実装**。理由は語彙が無いからではなく、*どの実体に属するのか* が未決だから
+  // (ハンドはロボットの子か、独立した実体か、探索セッションの属性か)。**DEF-033**。
   const [captureNote, setCaptureNote] = useState(null)
   // The reach envelope (ADR-128). Seeded from the catalog's first preset like
   // every other declaration card, and OFF by default — an envelope nobody
@@ -413,6 +418,15 @@ export function GraspSearchPanel() {
           robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
           <span style={{ color: '#667' }}> — move / aim them in the viewport (G / R) or the N-panel</span>
+          {/* 据付姿勢の仮定を**述べる** (ADR-129 D2)。`jointLimits` の不在を「無限」と
+              読ませなかったのと同じ判断だが (ADR-127 D4)、違いは*仮定を消せない*こと —
+              向き無しでは解けないので core/ は恒等で解くしかなく、だから言うしかない。
+              言わなければ「直立と決めた」と「述べていない」が画面上で同じ顔になる。 */}
+          {!robots?.selectedId && (
+            <div style={{ color: '#caa', marginTop: '2px' }}>
+              no robot chosen — its mounting orientation cannot be read yet
+            </div>
+          )}
         </div>
         {/* The reach envelope (ADR-128 / ADR-120). Until this existed, the front
             declared no `plan{}` at all, so `reach_margin` had NO absolute basis

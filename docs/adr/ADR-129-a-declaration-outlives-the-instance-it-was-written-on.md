@@ -1,10 +1,10 @@
 # 129. 宣言は、それを書いたインスタンスより長生きする — 配置・据付姿勢・掴む領域を文書の実体 (ref) に預ける
 
-- Status: Proposed (未実装。**3 判断で 1 つの MVP** — 分割して出さない。採択 = 実装で段 G-5)
+- Status: Accepted (実装済み 2026-08-14 — D1/D2/D3 を 1 つの MVP として。段 G-5 完了)
 - Date: 2026-08-14
 - Deciders: yuubae215, Claude
-- Retires: GREP:docs/DEFERRAL_LEDGER.md::DEF-031 · GREP:docs/DEFERRAL_LEDGER.md::DEF-032 · GREP:docs/dogfooding/ux-scenarios.md::文書由来
-- 段: **G-5** (`docs/grasp/implementation-order.md`)。前提: G-2 / G-3 (ともに完了)
+- Retires: なし — 起票時に宣言した 3 つ (DEF-031 / DEF-032 / ux-scenarios の「対象の幾何は文書由来」) は実装と同じ PR で消した
+- 段: **G-5** (`docs/grasp/implementation-order.md`)。前提: G-2 / G-3 (ともに完了) + **ADR-131** (実装中に発見した前提 — 再生成が未宣言実体を消していた)
 - Supersedes / Superseded by: なし (ADR-128 D4「宣言の権威は文書」を、掴む場所**以外**の宣言へ広げる)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -326,6 +326,43 @@ D0′ を素直に伸ばすと「押し出した量」「なぜこの向きか�
 - `src/components/Grasp/GraspSearchPanel.jsx` · `src/domain/graspFeature.js` (領域入力)
 - `src/PosePolicyOwnership.test.js` (母集団 +1) · `docs/STATE_LEDGER.md` ·
   `docs/dogfooding/ux-scenarios.md` (§既知の限界の該当項を消す — `Retires:`)
+
+## 実装で分かったこと (2026-08-14)
+
+本文の想定が 3 つ動いた。**俯瞰と実装が食い違ったので、食い違いのほうを書く** (原則 #19)。
+
+### 1. 前提が 1 つ足りなかった — 再生成がシーンを全消ししていた (→ ADR-131)
+
+D1 の書き込み先を辿ると、doc-edit は `importFromJson({clear:true})` → `_clearScene()` を
+通り、**文書が作っていない実体を毎回消していた**。D1 はこれを「G / R の確定ごと」に
+起こすので、日常のジェスチャがデータを消すことになる。しかも D1 自身が
+「`ref` を持たない実体は欠落ではなく**状態**」と書いており、**この ADR の前提が
+今日は成り立っていなかった**。前提を ADR-131 として先に閉じてから D1 を入れた。
+
+「未検証」と宣言していたコスト (選択・カメラ・ゴースト) は**実測すると保たれていた** —
+保たれていなかったのは、ADR が挙げていなかった**実体そのもの**である。
+*挙げた 3 つが無事で、挙げなかった 1 つが壊れていた*。
+
+### 2. 書き込みの**順序**が振る舞いの一部だった
+
+`_clearScene` は `importFromJson` の最初の await より**前**に走るので同期的である。
+確定の途中で書き込むと、その後に続く後片付けが破棄済みの view を触って落ちた
+(`Cannot read properties of null (reading 'clearPivotDisplay')`)。分類
+(`declarablePoseIds`) と書き込み (`recordConfirmedPoses`) を分け、書き込みを confirm の
+**最後**に置いた。順序は検査でも焼いてある — コメントに書いただけの順序は、次に
+この関数を編集する人には見えない。
+
+### 3. D3 は「呼び出しだけ」で本当に済んだ
+
+DEF-031 が先送りの理由に挙げた「面の 2 軸のどちらが u か」の権威は
+`inPlaneAxesOrThrow` として実在し、パネルは名前を**表示するだけ**で済んだ。
+本文の読みが当たっていた数少ない箇所である。
+
+### 4. 混在した選択は undo が 2 つに割れる
+
+宣言済みのテーブルと素の箱を一緒に動かすと、doc-edit と `MoveCommand` の 2 エントリに
+なる。**畳まない**ことにした — 畳むとどちらかの種が undo を静かに失う。
+2 つの権威が在るぶんのコストを、隠さず払う。
 
 ## Lens notes
 
