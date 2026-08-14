@@ -805,7 +805,15 @@ async function selectRow(page, name) {
   await page.locator('[draggable]').filter({ hasText: name }).first().click()
 }
 
-/** robot_base をキューブの真上へ運び、その後の placement 行を返す。 */
+/**
+ * robot_base をキューブの真上へ運び、その後の placement 行を返す。
+ *
+ * ロボットは**呼び手が先に作る** (ADR-132 D5 でブートは 0 台)。ここで作らないのは、
+ * 呼び手の 1 本が運ぶ*前*の placement 行を読むからで、helper 側で作ると「作った直後」
+ * と「読んだ時点」がズレる。運ぶ相手が「起動時から在ったもの」から「ユーザーが置いた
+ * もの」に変わっただけで、ADR-098 が問う規則 (載る/載らないは種ではなく方針が決める)
+ * は同じである。
+ */
 async function carryRobotOverCube(page, { escapeAssist = false } = {}) {
   const rows  = await page.evaluate(() => window.__easyExtrude.placementState())
   const robot = rows.find(r => r.name === 'robot_base')
@@ -826,6 +834,7 @@ async function carryRobotOverCube(page, { escapeAssist = false } = {}) {
 
 test('ロボットもキューブと同じ規則で面に載る (ADR-098 G1/G2 — 当事者の報告に 1:1)', async ({ page }) => {
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   // 前提: 両者は同じ方針を宣言している。症状が方針の差でないことを先に固定する
   // — ここが違っていたら、以下の差は「正しく違う」であって欠陥ではない。
@@ -849,6 +858,7 @@ test('同じジェスチャで S を押すとロボットは載らない (ADR-09
   // 片方だけでは「ジェスチャがそもそも効いていない」可能性を排除できない
   // (ADR-097 の回帰が採った形)。逃げ道が効くことも同時に示す。
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   const { after } = await carryRobotOverCube(page, { escapeAssist: true })
   const robot = byName(after, 'robot_base')
@@ -864,6 +874,7 @@ test('free と宣言された CF は同じジェスチャで載らない (ADR-09
   // なので、キューブの真上へ運んでも天面へは吸い付かない (アームの先端は
   // 空中に在ってよい)。
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   const atBoot = await placementRows(page)
   const tcp  = byName(atBoot, 'tcp')
@@ -927,6 +938,7 @@ async function samplesUnderRepeatedRequest(page, name, { select = true, repeats 
 
 test('同じ要求を繰り返してもロボットの pose は変わらない (ADR-101 — 当事者の報告に 1:1)', async ({ page }) => {
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   const samples = await samplesUnderRepeatedRequest(page, 'robot_base')
   const zs = samples.map(s => Number(s.bottomZ.toFixed(6)))
@@ -1576,6 +1588,10 @@ test('把持探索は Context ▾ から消え、選択の隣に理由つきで�
   await expect(page.getByText(/select a robot frame/i)).toBeVisible()
 
   // ③ 主語を選べば開く — 経路は消えていない、1 手増えただけである。
+  // ADR-132 D5: ブートは 0 台なので、主語はまず**存在させる**。②の「主語が無い」は
+  // その前に問い終えているので、この追加は②の主張を弱めない (むしろ②が本物の
+  // 0 台状態を通るようになった — 以前は「ロボットは在るが選んでいない」だけだった)。
+  await addRobot(page)
   await selectRow(page, 'robot_base')
   await expect(page.getByRole('button', { name: /Grasp candidates/ })).not.toHaveAttribute('aria-disabled', 'true')
 
