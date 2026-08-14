@@ -230,7 +230,10 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   assert.deepEqual(g.request.layoutVersion, 'layout/1.0')
   assert.deepEqual(g.request.graspSearch.objectiveWeights, { reach: 0.6, clearance: 0.4 })
   assert.equal(g.request.graspSearch.topN, 5)
-  assert.deepEqual(g.request.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
+  // ADR-129 D2: 据付姿勢もワイヤに載る (ベースフレームは常に向きを持つので、
+  // 送ることは発明ではない — 同じ事実を worldPoseOf が TCP について既に解いている)。
+  assert.deepEqual(g.request.graspSearch.robot,
+    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1] })
   // ADR-117 — the object being grasped rides the request. This assertion is the
   // regression itself: without `target.surfaceSamples`, core/ generates zero
   // candidates and every run returns a well-formed, permanently empty answer.
@@ -519,7 +522,8 @@ test('camera and gripper declarations ride the request open payload verbatim', a
   await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera, gripper })
   assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
   assert.deepEqual(sent.graspSearch.gripper, gripper)
-  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
+  assert.deepEqual(sent.graspSearch.robot,
+    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1] })
 })
 
 // ── The declarations actually REACH the request (ADR-116's lesson) ───────────
@@ -732,7 +736,8 @@ test('the picked robot is the one solved for — its own base / tcp ride the wir
   await gc.runGraspSearch({})
   // The SECOND robot's geometry, and still the singular ADR-084 wire shape: no id,
   // no array — identity stayed on the front, so the contract never moved.
-  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 0, 0], tcpOrientation: [0, 0, 1, 0] })
+  assert.deepEqual(sent.graspSearch.robot,
+    { base: [-2, 0, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 1, 0] })
   assert.ok(!('robots' in sent.graspSearch))
   assert.ok(!('robotId' in sent.graspSearch.robot))
 })
@@ -776,7 +781,8 @@ test('a legacy world-parented tcp (parentId null) still resolves via the name fa
   gc._ctrl._scene = { objects }
   gc._ctrl._service.worldPoseOf = (id) => poseById[id] ?? null   // keep bff / connectBff
   await gc.runGraspSearch({})
-  assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
+  assert.deepEqual(sent.graspSearch.robot,
+    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1] })
 })
 
 test('an undeclared camera / gripper omits the key entirely (vacuously-true gate)', async () => {

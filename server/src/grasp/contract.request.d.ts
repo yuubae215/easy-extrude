@@ -42,7 +42,7 @@ export interface GraspSearchDeclaration {
     wristConeHalfAngle?: number;
   };
   /**
-   * Declares the resolved robot geometry (ADR-083/084). `base` and `tcpOrientation` are resolved from the Layout DSL CoordinateFrame entities on the front side (transformGraph composed to world pose) before being sent -- core/ never knows about entities. The judgement params (reach* /wristConeHalfAngle) moved to `plan{}` (ADR-084 §4); they are still accepted here as a backward-compat fallback. Reach/IK/cone evaluation itself stays solved in core/.
+   * Declares the resolved robot geometry (ADR-083/084). `base`, `baseOrientation` and `tcpOrientation` are resolved from the Layout DSL CoordinateFrame entities on the front side (transformGraph composed to world pose) before being sent -- core/ never knows about entities. The judgement params (reach* /wristConeHalfAngle) moved to `plan{}` (ADR-084 §4); they are still accepted here as a backward-compat fallback. Reach/IK/cone evaluation itself stays solved in core/.
    */
   robot?: {
     /**
@@ -52,6 +52,13 @@ export interface GraspSearchDeclaration {
      * @maxItems 3
      */
     base?: [number, number, number];
+    /**
+     * [x, y, z, w] world-frame quaternion of the robot BASE mount (ADR-129 D2). Optional: absent means the arm's mounting orientation was NOT STATED, which is not the same as 'mounted upright'. core/ can only solve with some orientation, so it keeps the identity when this is absent -- the front side is what says so on screen (an unspoken assumption must be spoken, not defaulted silently). When declared, core/ un-rotates the target into the base frame before solving, so a tilted pedestal changes the answer. A malformed quaternion is an ERROR, never a silent downgrade to identity (ADR-127 D3's rule).
+     *
+     * @minItems 4
+     * @maxItems 4
+     */
+    baseOrientation?: [number, number, number, number];
     /**
      * [x, y, z, w] world-frame quaternion of the gripper (TCP) pose, resolved from the `tcp` CoordinateFrame entity (ADR-084 §3). Same axis order as the response `cartesianFrame.orientation`. When declared, the naive cone judgement measures the required approach against the TCP forward axis (+X rotated by this quaternion) instead of the base->candidate proxy axis; omitting it keeps the legacy proxy-axis behavior (no silent change).
      *

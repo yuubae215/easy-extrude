@@ -44,7 +44,7 @@
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclarationCatalog.js'
-import { resolveRobots, selectRobot, robotCardinality } from '../domain/robotFrames.js'
+import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
   resolveGraspTargets, selectTarget, targetProjection,
   surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
@@ -330,11 +330,40 @@ export class GraspController {
    * old multi-form detour into a single click.
    */
   openGrasp() {
+    // The entrance WRITES the subject (ADR-130 D2). Until it did, the gate above
+    // the button demanded a robot selection and this method never read one: with
+    // N robots the panel then asked "which one?" about a robot the user had just
+    // picked in the Outliner. Two sources for one premise, and the one the run
+    // consults was not the one the user was told to set (原則 #1 / §1.1).
+    //
+    // Done BEFORE the quick-start branch so the order of the two effects is the
+    // same on both paths; the quick-start replaces the scene, so the id captured
+    // here is re-resolved by `refreshRobots` and dropped if it no longer exists.
+    this._adoptSelectionAsSubject()
     if (!this._ctrl._ctxService.loaded) {
       this._quickStartIntoGrasp()
       return
     }
     this._openGraspPanel()
+  }
+
+  /**
+   * Take the selected frame's robot as this search's subject, if the selection
+   * names one (ADR-130 D2).
+   *
+   * A selection that is NOT a robot frame leaves the current subject alone
+   * rather than clearing it: the entrance is only reachable from a robot
+   * selection or from an already-live search, and clearing on anything else
+   * would make "click the object you want to grasp" silently un-pick the robot —
+   * the very coupling this ADR removes.
+   *
+   * Which robot a frame belongs to is the domain's named predicate
+   * (`robotForFrameId`); this method only supplies the id (原則 #25).
+   */
+  _adoptSelectionAsSubject() {
+    const selectedId = this._ctrl._activeObj?.id ?? null
+    const robot = robotForFrameId(this._robots(), selectedId)
+    if (robot) this._selectedRobotId = robot.id
   }
 
   /**
@@ -750,6 +779,12 @@ export class GraspController {
    * absent `base` is what the caller's gate reads as "not solvable" — it never
    * ships a robot-less request for core/ to fill with defaults.
    *
+   * `baseOrientation` (ADR-129 D2) rides along whenever the base frame resolves:
+   * the frame always HAS an orientation, so sending it is not an invention — it is
+   * the same fact `worldPoseOf` already resolves for the TCP. What stays undeclared
+   * is the case where the base frame itself does not resolve, and there the whole
+   * request is gated off anyway.
+   *
    * @param {import('../domain/robotFrames.js').Robot} robot
    * @returns {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }}
    */
@@ -760,11 +795,17 @@ export class GraspController {
     const basePose = service.worldPoseOf(robot.baseFrame.id)
     const tcpPose  = robot.tcpFrame ? service.worldPoseOf(robot.tcpFrame.id) : null
 
-    /** @type {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }} */
+    /** @type {{ base?: [number,number,number], baseOrientation?: [number,number,number,number],
+     *           tcpOrientation?: [number,number,number,number] }} */
     const declaration = {}
     if (basePose) {
       const p = basePose.position
       declaration.base = [p.x, p.y, p.z]
+      // 据付姿勢 (ADR-129 D2)。ベースフレームの**世界四元数**をそのまま載せる —
+      // これは `worldPoseOf` が毎フレーム解いているのと同じ解決で、ここで別の
+      // 合成を書くと第二の源になる (§1.1)。
+      const q = basePose.quaternion
+      if (q) declaration.baseOrientation = [q.x, q.y, q.z, q.w]
     }
     if (tcpPose) {
       const q = tcpPose.quaternion

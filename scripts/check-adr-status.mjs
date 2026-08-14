@@ -291,7 +291,12 @@ if (parserOwners.length > 0) {
 // (もう無いなら、その宣言は嘘である)。
 const statuses = adrStatuses(ADR_DIR)
 const RETIRES_REQUIRED_FROM = 125
-const RETIRES_NONE = /^(なし|none|—|-)\b|^(なし|none|—|-)$/i
+// 「消すものが無い」の書き方。**理由つきを受ける** — この検査自身のエラーメッセージが
+// `Retires: なし — <理由>` を勧めているのに、`\b` 版はそれを弾いていた (2026-08-14 に
+// ADR-130 で発覚)。`\b` は `\w` の境界なので「なし」の直後が空白だと成立せず、
+// 受かるのは**裸の「なし」だけ**だった。案内した形が通らない検査は、案内のほうを
+// 信じた人にだけ落ちる — 語彙の正本は検査であるべきで、散文であってはならない (原則 #19)。
+const RETIRES_NONE = /^(なし|none|—|-)(?=[\s—,、。]|$)/i
 const RETIRES_TARGET = /(PATH|GREP):([^\s：|`]+?)(?:::([^\s|`]+))?(?=[\s、,·]|$)/g
 
 for (const file of files) {

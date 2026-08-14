@@ -2,7 +2,7 @@ import { useUIStore } from '../../store/uiStore.js'
 import { COLOR, rgba } from '../../theme/tokens.js'
 import { Section } from './npanelShared.jsx'
 import { CHECKS_KIND, checksDeclaration } from '../../context/DiscoverySummary.js'
-import { graspEntryFor } from '../../view/EntityScopeChecks.js'
+import { graspEntryFor, graspEntryRow } from '../../view/EntityScopeChecks.js'
 
 /**
  * EntityChecks — entity-scope validation, beside the selected entity (ADR-105 D5).
@@ -46,8 +46,18 @@ export function EntityChecks() {
   // is selected — "pick a robot" and "there is no robot" are different facts and
   // must not share one sentence (ADR-110 D4).
   const robotCardinality = useUIStore(s => s.context.robots.cardinality)
+  // A live search owns its own subject (ADR-130 D1). Read the slice that says a
+  // search IS open, and the subject it is about — without them this row keeps
+  // re-litigating "which robot" against a selection the run does not consult,
+  // and the walkthrough's own next step (choose the object) fires the gate.
+  const liveSearch   = useUIStore(s => s.context.grasp != null)
+  const subjectLabel = useUIStore(s =>
+    s.context.robots.list.find(r => r.id === s.context.robots.selectedId)?.label ?? null)
 
-  const grasp = graspEntryFor(nPanelData, { robotCardinality })
+  const grasp = graspEntryFor(nPanelData, { robotCardinality, liveSearch, subjectLabel })
+  // Throws on an undeclared kind — the row's behaviour is a table, not an `if`
+  // chain that can silently fall through to "blocked" (ADR-130 D3 / 原則 #31).
+  const row   = graspEntryRow(grasp)
   // Throws on an undeclared kind — same discipline as the HUD (原則 #31).
   const decl  = checksDeclaration(summary)
 
@@ -58,30 +68,33 @@ export function EntityChecks() {
     <Section title={nPanelData ? 'Checks (this entity)' : 'Checks'}>
       {/* ── Selection-driven, document-free (ADR-085 / D5) ───────────────── */}
       <button
-        onClick={() => (grasp.available
+        onClick={() => (row.press === 'open'
           ? callbacks.onOpenGrasp?.()
           // Blocked controls carry their reason — never a silent no-op (#11).
           : pushToast(grasp.reason, 'info'))}
-        title={grasp.available ? 'Run grasp-search for this robot (no forms)' : grasp.reason}
-        aria-disabled={!grasp.available || undefined}
+        title={row.pressable ? 'Run grasp-search for this robot (no forms)' : grasp.reason}
+        aria-disabled={!row.pressable || undefined}
         style={{
           width:        '100%',
           padding:      '4px 8px',
-          background:   grasp.available ? rgba(COLOR.infoTone, 0.14) : 'transparent',
-          border:       `1px solid ${grasp.available ? rgba(COLOR.infoTone, 0.47) : COLOR.border}`,
+          background:   row.pressable ? rgba(COLOR.infoTone, 0.14) : 'transparent',
+          border:       `1px solid ${row.pressable ? rgba(COLOR.infoTone, 0.47) : COLOR.border}`,
           borderRadius: '3px',
-          color:        grasp.available ? COLOR.textPrimary : COLOR.textSecondary,
+          color:        row.pressable ? COLOR.textPrimary : COLOR.textSecondary,
           fontSize:     '11px',
           fontFamily:   'inherit',
           textAlign:    'left',
-          cursor:       grasp.available ? 'pointer' : 'help',
+          cursor:       row.pressable ? 'pointer' : 'help',
         }}
       >
         ◇ Grasp candidates…
       </button>
-      {!grasp.available && (
+      {/* One caption slot, whatever the kind puts in it: a blocked reason, or
+          the live search's subject. The slot is fixed (原則 #15); what varies is
+          the sentence the declaration table hands over. */}
+      {row.caption && (
         <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '3px', lineHeight: '1.4' }}>
-          {grasp.reason}
+          {row.caption}
         </div>
       )}
 

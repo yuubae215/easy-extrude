@@ -1,0 +1,81 @@
+GOALS adr131_a_regeneration_swaps_the_projection
+
+goal ChangingOneDeclarationDoesNotDeleteWhatTheDocumentNeverMade
+uuid 8d41f7a2-6b95-4c30-a17e-2f60c8b3e951
+summary "文書の宣言を 1 つ書き換えることが、文書が作っていない実体 (Shift+A の箱・複製・輸入メッシュ・計測線) を消さない。宣言されていないことは欠落ではなく状態であり、状態であるからには宣言の書き換えごとに黙って消えてはならない"
+state UnderReview
+labels adr-131, adr-129, adr-128, adr-049, adr-097, front, principle-31, principle-1, accepted
+artifacts
+- "docs/adr/ADR-131-a-regeneration-swaps-the-projection-not-the-scene.md"
+
+    context FoundAsAPrerequisiteOfAdr129D1
+    uuid 3b7e0c94-5a21-4d68-9f13-6c8a2e50b7d4
+    summary "ADR-129 D1 (ジェスチャの確定は文書への書き込み) の実装前に書き込み先の経路を辿って見つかった。doc-edit は必ず applyContextDoc(regenerate:true) → importFromJson({clear:true}) → _clearScene() を通り、_clearScene は全 object と全 link を dispose する。戻るのは文書が宣言した実体だけなので、ref を持たない実体は doc-edit のたびに消えていた"
+    artifacts
+    - "docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md"
+    - "src/service/SceneService.js"
+
+    context TheMeasuredLoss
+    uuid 5f92a1c8-7d34-4b07-8e26-1a94d3f60b52
+    summary "実測 (2026-08-14, Playwright + ?graspStub=solve): cell_robotics を読み ピックテーブル を Shift+D で複製 (Outliner 12 行)、面チップで掴む場所を宣言すると 10 行に戻る — 複製が消える。エラーも警告も出ない。修正後は 12 行のまま。修正を一時的に外すと再び 10 行になるので、検査も実測も空回りしていない"
+    artifacts
+    - "src/DeclaredProjectionOwnership.test.js"
+
+    context WhyItStayedInvisible
+    uuid c60d8b37-4e19-42a5-b7f8-093e5a12c6d7
+    summary "削除は正当な削除とまったく同じイベント (objectRemoved) を出すので、ログを見ても消してよいものと消してはいけないものが区別できない。消滅には状態が無く、在るものを辿る検査は消えたものについて何も言わない (原則 #31)。加えて頻度: 今日 doc-edit を起こすのは掴む場所の宣言と合意の場の操作だけで、どれも稀。ADR-129 D1 はこれを G/R の確定ごとに起こす — 頻度が上がったから欠陥になるのではなく、頻度が低かったから見つからなかった"
+
+    context TheVerbCarriedTwoMeanings
+    uuid 9a15e4d6-2c78-4b93-8f05-7e63d0a24851
+    summary "「再生成」が 2 つの意味を持っていた: 文書を読み込む/破棄する (= 入れ替え。前の文書の周りに生えたものも去るのが正しい) と、宣言を 1 つ書き換える (= 投影の差し替え。文書が作ったものだけが対象)。1 つの動詞に 2 つの意味が乗っており、強いほうが既定だった"
+
+    justification WhyFootprintAndNotRef
+    uuid 7c38b052-9d46-4e21-a850-1b7f95e6c304
+    summary "却下案 A (ref を持つ実体だけ消す) への反証: ref を持つのは文書に書かれた実体だけで、そこから派生して生えたもの (Solid の Origin CF、ensureRobotFrames の upgrade) は持たない。ref で判定すると派生を「未宣言」として保存し、次の投影が同じ id を作って衝突する。母集団の取り方が間違っている — 投影が自分で作ったものを覚えれば、派生も自動的に投影の側に入る"
+
+    justification WhyNotStashAndRestore
+    uuid 1e74a935-8c62-40d7-b519-6f02c8d37a4e
+    summary "却下案 C (未宣言実体を退避して復元) への反証: 効果は同じだが退避先が第二の源になる (§1.1)。実体が 2 か所に居る瞬間が生まれ、その間にイベントが飛ぶと片方だけが更新される。却下案 D (差分適用) は方向としては正しいが、コンパイラ出力全体を差分で当てる設計が要り、ADR-129 の前提を閉じるには過大 (§5 過剰モデリング禁止)"
+
+    assumption UndoOfADocEditLeavesUndeclaredEntitiesAlone
+    uuid 4d80f2b6-3a57-49e1-8c04-92b5e7a13f60
+    summary "反証されうる仮説: doc-edit の undo は文書を戻して再投影するので、未宣言の実体は undo を跨いでも「ずっと在る」(消えて戻ってくるのではない) — これは一貫している (未宣言の実体は文書の履歴に載っていないので、載っていない物が文書の undo で動かないのは正しい)。反証されうる形は、ユーザーが undo に「画面を 1 手前の見た目へ戻す」を期待して、未宣言の実体が動かないことを不具合と読むこと"
+
+    strategy ByRememberingWhatTheProjectionItselfCreated
+    uuid 2f9c6d18-7b40-4e35-a962-0c8153b7e4d9
+    summary "実体ごとに「宣言されているか」を問い直すのではなく、投影が自分で作った id の集合 (footprint) を再生成のたびに採り直す。不変条件は footprint = 再生成直後の全 id ∖ 保存した id で、そこから 未宣言 = いま在るもの ∖ footprint が引き算 1 回で出る。判定の源が 1 つになり、実体ごとの述語が各所に散らない"
+
+        goal UndeclaredEntitiesSurviveADocEdit
+        uuid a37f5e02-6c91-4d84-b70e-58d2916c4f37
+        summary "文書の宣言を書き換えても、投影の外側の実体が 1 つも消えない"
+        labels support-verified
+
+            solution TheSurvivalCensusInBothLanes
+            uuid 6b4d0e91-7a35-42c8-9b06-e5127f38a0d4
+            summary "src/DeclaredProjectionOwnership.test.js (5 pass 2026-08-14) — 未宣言の実体を 2 つ足してから掴む場所を宣言し、両方が残ることと投影が全部戻ることを問う。fake は呼びを記録するだけでなく id の Map として実際にシーンを模す (何が残ったかを答えられない fake では、この主張は書けない)。空回りしていないことを確かめるため preserve を無効化して再実行し、2 件 fail することを確認した。実機でも 12 行 → 12 行 (修正前は 10 行)"
+            artifacts
+            - "src/DeclaredProjectionOwnership.test.js"
+            - "src/service/ContextService.js"
+
+        goal ThePreservationRuleDoesNotReachIntoTheProjection
+        uuid d94a1c76-3e58-42b0-8f61-7a25c0b839e2
+        summary "保存の規則が広がりすぎず、文書から消した実体はシーンからも消える。文書の読み込みは入れ替えなので未宣言も去る"
+        labels support-verified
+
+            solution TheReverseDirectionTest
+            uuid f052b83a-9c17-4e60-b428-13d76a95e0c8
+            summary "src/DeclaredProjectionOwnership.test.js — 文書から実体を 1 つ消して再生成するとシーンからも消えること、および loadContext では未宣言も消えることを問う。片方向だけだと、保存を広げすぎた実装 (何も消さない) が緑を出す。逆向きを同じファイルに置くのは ADR-102 の規律"
+            artifacts
+            - "src/DeclaredProjectionOwnership.test.js"
+
+        goal RegenerationHasExactlyOneEntrance
+        uuid 0e63d5a8-4b72-49f1-8c30-a71659be24d0
+        summary "再生成の呼びが 1 本に畳まれており、preserve を渡し忘れる第二の経路が存在しない"
+        labels support-verified
+
+            solution TheEntranceCountAndTheAccessorBinding
+            uuid 3a86c04f-5d19-4e73-b201-97e58d1cb6a2
+            summary "src/DeclaredProjectionOwnership.test.js — ContextService から importFromJson を直接呼ぶ箇所がちょうど 1 つ (_projectScene の中) であることを個数で問う。あわせて SceneService 側のアクセサ名 (get scene() / _clearScene(preserve)) との結合も問う: 名前が変われば _sceneObjectIds が空を返し、「未宣言 0 個」に退化して黙って全消しへ戻る — 読まない欄は無い欄と区別がつかない (原則 #31)"
+            artifacts
+            - "src/service/ContextService.js"
+            - "src/service/SceneService.js"

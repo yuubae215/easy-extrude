@@ -151,12 +151,21 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
     tcp_raw = robot_raw.get("tcpOrientation")
     tcp_orientation = Quaternion.from_list(tcp_raw) if tcp_raw is not None else None
 
+    # base_orientation (ADR-129 D2): 据付姿勢。None は「直立」ではなく **述べていない**。
+    # core/ は向き無しでは解けないので恒等で解くしかないが、その仮定を画面に出すのは
+    # フロントの責務 — ここで既定を作らない (原則 #31)。
+    base_rot_raw = robot_raw.get("baseOrientation")
+    base_orientation = (
+        Quaternion.from_list(base_rot_raw) if base_rot_raw is not None else None
+    )
+
     robot = Robot(
         base=_vec3(robot_raw.get("base"), Vec3(0.0, 0.0, 0.0)),
         reach_min=_judgement("reachMin", 0.0),
         reach_max=_judgement("reachMax", float("inf")),
         wrist_cone_half_angle=_judgement("wristConeHalfAngle", math.pi),
         tcp_orientation=tcp_orientation,
+        base_orientation=base_orientation,
     )
 
     target_raw = data.get("target") or {}

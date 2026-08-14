@@ -16,7 +16,7 @@ import random
 
 import pytest
 
-from easy_extrude_core.engine.types import GraspCandidate, Pose, Robot, Vec3
+from easy_extrude_core.engine.types import GraspCandidate, Pose, Quaternion, Robot, Vec3
 from easy_extrude_core.engine.ur_kinematics import (
     UrDhParameters,
     forward_kinematics,
@@ -314,3 +314,78 @@ def test_wrong_number_of_joint_limit_pairs_throws():
                 jointLimits=[{"min": -1.0, "max": 1.0}],
             )
         )
+
+
+# ── 据付姿勢 (ADR-129 D2) ─────────────────────────────────────────────────────
+
+
+def test_undeclared_base_orientation_changes_nothing():
+    """宣言が無ければ 1 ビットも変わらない (ADR-084 §3 / ADR-127 D3 の規律)。
+
+    対で書くのが要点 — 「宣言すると変わる」だけを焼くと、*常に*変わる実装
+    (未宣言のときも何かを回している) が緑を出す。
+    """
+    solver = UniversalRobotsIkSolver(dh=UR5E)
+    cand = _candidate(Vec3(0.4, 0.1, 0.3), Vec3(0.0, 0.0, -1.0))
+    upright = Robot(base=Vec3(0.0, 0.0, 0.0), reach_min=0.0, reach_max=float("inf"))
+    stated_identity = Robot(
+        base=Vec3(0.0, 0.0, 0.0), reach_min=0.0, reach_max=float("inf"),
+        base_orientation=Quaternion(0.0, 0.0, 0.0, 1.0),
+    )
+    assert solver.solve(cand, upright) == solver.solve(cand, stated_identity)
+
+
+def test_a_declared_base_orientation_changes_the_solution():
+    """傾けて据え付けたと宣言すると、同じ目標に対する解が変わる。"""
+    solver = UniversalRobotsIkSolver(dh=UR5E)
+    cand = _candidate(Vec3(0.4, 0.1, 0.3), Vec3(0.0, 0.0, -1.0))
+    upright = Robot(base=Vec3(0.0, 0.0, 0.0), reach_min=0.0, reach_max=float("inf"))
+    # +Z まわり 90 度 — ベースを 1/4 回転させて据え付けた宣言。
+    half = math.sqrt(0.5)
+    tilted = Robot(
+        base=Vec3(0.0, 0.0, 0.0), reach_min=0.0, reach_max=float("inf"),
+        base_orientation=Quaternion(0.0, 0.0, half, half),
+    )
+    a = solver.solve(cand, upright)
+    b = solver.solve(cand, tilted)
+    assert a is not None and b is not None
+    assert a.joints != b.joints, "据付姿勢を宣言したのに解が変わらない — 逆回転が効いていない"
+
+
+def test_a_degenerate_base_orientation_throws_rather_than_falling_back():
+    """壊れた四元数は恒等へ落とさず throw (ADR-127 D3 と同型)。
+
+    無言の格下げは「宣言したのに無視された」であり、しかも応答は候補 0 件という
+    *正しい形*で返るので最も気づきにくい嘘になる。
+    """
+    solver = UniversalRobotsIkSolver(dh=UR5E)
+    cand = _candidate(Vec3(0.4, 0.1, 0.3), Vec3(0.0, 0.0, -1.0))
+    broken = Robot(
+        base=Vec3(0.0, 0.0, 0.0), reach_min=0.0, reach_max=float("inf"),
+        base_orientation=Quaternion(0.0, 0.0, 0.0, 0.0),
+    )
+    with pytest.raises(ValueError, match="baseOrientation"):
+        solver.solve(cand, broken)
+
+
+def test_base_orientation_reaches_the_pipeline_from_the_wire():
+    """ワイヤの `baseOrientation` が実際に Robot まで届いている (配線を端から端で)。"""
+    from easy_extrude_core.engine.pipeline import problem_from_declaration
+    from easy_extrude_core.contract import GraspSearchDeclaration
+
+    half = math.sqrt(0.5)
+    decl = GraspSearchDeclaration.model_validate({
+        "robot": {"base": [0.0, 0.0, 0.0], "baseOrientation": [0.0, 0.0, half, half]},
+        "target": {"surfaceSamples": []},
+        "objectiveWeights": {"grasp_stability": 1.0},
+    })
+    problem = problem_from_declaration(decl)
+    assert problem.robot.base_orientation == Quaternion(0.0, 0.0, half, half)
+
+    # 負の対照: 宣言しなければ None のまま (既定を発明しない — 原則 #31)。
+    silent = GraspSearchDeclaration.model_validate({
+        "robot": {"base": [0.0, 0.0, 0.0]},
+        "target": {"surfaceSamples": []},
+        "objectiveWeights": {"grasp_stability": 1.0},
+    })
+    assert problem_from_declaration(silent).robot.base_orientation is None

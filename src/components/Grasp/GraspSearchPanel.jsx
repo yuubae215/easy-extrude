@@ -12,7 +12,7 @@ import {
 } from '../../context/GraspDeclarationCatalog.js'
 import { facesForGripperKind } from '../../domain/graspTargets.js'
 import {
-  DECLARABLE_FACES, GRASP_FEATURE_KIND, GRASP_FEATURE_STATE,
+  DECLARABLE_FACES, GRASP_FEATURE_KIND, GRASP_FEATURE_STATE, inPlaneAxesOrThrow,
   graspFeatureGaps, graspFeatureSummary,
 } from '../../domain/graspFeature.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
@@ -217,6 +217,11 @@ export function GraspSearchPanel() {
       sealTiltTolerance: String(cup.sealTiltTolerance),
     }
   })
+  // 探索の**設定** (ハンド仕様 / カメラ / 重み) は今日ここ — React state — に住み、
+  // **キーを持たない**: リロードで消え、export に載らず、undo の外に居る。配置や
+  // 掴む場所と同じ形 (宣言がインスタンスに寄生する) の 4 例目で、ADR-129 の MVP には
+  // 入れていない = **未実装**。理由は語彙が無いからではなく、*どの実体に属するのか* が未決だから
+  // (ハンドはロボットの子か、独立した実体か、探索セッションの属性か)。**DEF-033**。
   const [captureNote, setCaptureNote] = useState(null)
   // The reach envelope (ADR-128). Seeded from the catalog's first preset like
   // every other declaration card, and OFF by default — an envelope nobody
@@ -413,6 +418,15 @@ export function GraspSearchPanel() {
           robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
           <span style={{ color: '#667' }}> — move / aim them in the viewport (G / R) or the N-panel</span>
+          {/* 据付姿勢の仮定を**述べる** (ADR-129 D2)。`jointLimits` の不在を「無限」と
+              読ませなかったのと同じ判断だが (ADR-127 D4)、違いは*仮定を消せない*こと —
+              向き無しでは解けないので core/ は恒等で解くしかなく、だから言うしかない。
+              言わなければ「直立と決めた」と「述べていない」が画面上で同じ顔になる。 */}
+          {!robots?.selectedId && (
+            <div style={{ color: '#caa', marginTop: '2px' }}>
+              no robot chosen — its mounting orientation cannot be read yet
+            </div>
+          )}
         </div>
         {/* The reach envelope (ADR-128 / ADR-120). Until this existed, the front
             declared no `plan{}` at all, so `reach_margin` had NO absolute basis
@@ -863,18 +877,37 @@ function GraspLocationEditor({ targets, gripperKind, onSet }) {
       : { kind: GRASP_FEATURE_KIND.FACES, faces: next.map(f => ({ face: f })) })
   }
 
+  /** その面に宣言されている領域 (無ければ面全体 = null)。 */
+  const regionOf = (f, face) => {
+    if (f?.state !== GRASP_FEATURE_STATE.DECLARED_FACES) return null
+    return f.faces.find(x => x.face === face)?.region ?? null
+  }
+
+  /**
+   * 面の領域を書き換える。**面の宣言と同じ 1 つの doc-edit** を通る (原則 #1) —
+   * 領域だけの別経路を作ると、同じ宣言に書き手が 2 つできる。
+   * `null` = 面全体へ戻す = 鍵の削除 (「面全体」を値として書くのではない — ADR-128 D3)。
+   */
+  const setRegion = (face, region) => {
+    const faces = declaredFaces.map(f => {
+      const cur = regionOf(feature, f)
+      if (f !== face) return cur ? { face: f, region: cur } : { face: f }
+      return region ? { face: f, region } : { face: f }
+    })
+    onSet(ref, { kind: GRASP_FEATURE_KIND.FACES, faces })
+  }
+
   if (!ref) return null
 
   return (
     <div style={{ marginTop: '6px', marginBottom: '6px' }}>
       <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '3px' }}>where to grasp</div>
 
-      {/* 面までは書けるが、面上の**領域 (region) の入力欄は未実装** (DEF-031)。
-          スキーマ・ドメイン・検査は領域を完全に扱うので、`.ctx.json` / テンプレ側から
-          書いた領域はここで正しく解釈・表示・送信される — 書けないのは*このパネル*
-          だけである。先送りしたのは、面の 2 軸のどちらが u かを画面上で正しく
-          名指しする設計が要るため。ADR-128 自身の主題 (書けない宣言は宣言ではない)
-          の縮小版なので、忘れではなく段として宣言している。 */}
+      {/* 面と、面上の**領域 (region)** の両方がここから書ける (ADR-129 D3)。
+          どちらの軸が u かは `inPlaneAxesOrThrow` が既に決定的に持っているので、
+          画面はその名前を**表示するだけ** — 第二の源を作らない (DEF-031 が
+          先送りの理由に挙げた「どちらが u か」の権威は既に在り、要ったのは
+          呼び出しだけだった)。 */}
       <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '4px' }}>
         {DECLARABLE_FACES.map(face => (
           <FaceChip
@@ -885,6 +918,17 @@ function GraspLocationEditor({ targets, gripperKind, onSet }) {
           />
         ))}
       </div>
+
+      {/* 領域は宣言された面ごとに 1 つ。面を宣言していないときは出さない —
+          「どこでもよい」に領域は無く、空の欄は書ける気にさせるだけである。 */}
+      {declaredFaces.map(face => (
+        <FaceRegionEditor
+          key={face}
+          face={face}
+          region={regionOf(feature, face)}
+          onChange={(next) => setRegion(face, next)}
+        />
+      ))}
 
       <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
         <FaceChip
@@ -915,6 +959,97 @@ function GraspLocationEditor({ targets, gripperKind, onSet }) {
         <div key={i} style={{ fontSize: '10px', color: '#caa', marginTop: '2px' }}>· {g}</div>
       ))}
     </div>
+  )
+}
+
+/**
+ * FaceRegionEditor — 面の**どのあたり**を掴むか (ADR-129 D3 / DEF-031)。
+ *
+ * ## 軸の名前はここで決めない
+ *
+ * どちらの面内軸が u かは `inPlaneAxesOrThrow` が決定的に持っている。画面はその
+ * 名前を**表示するだけ**で、`+z なら u は x` のような対応表をここに書き写さない —
+ * 書き写した瞬間に第二の源になり、ドメイン側の軸割当を変えた日に画面だけが古い
+ * 名前で嘘をつく (§1.1)。DEF-031 は「どちらが u かを画面上で正しく名指しする設計が
+ * 要る」ことを先送りの理由に挙げたが、その権威は既に在り、要ったのは呼び出しだけだった。
+ *
+ * ## 値は面に対する割合であって、長さではない
+ *
+ * 0–1 の正規化なので、箱の寸法を変えても「面の右半分」は右半分のままである
+ * (ミリで書くと、リサイズした日に領域が黙って面からはみ出す — `readRegion` の
+ * doc がその理由を持っている)。
+ *
+ * ## 確認は 3D が担う — 新しい確認面を作らない
+ *
+ * 領域を狭めるとサンプル点が減るのが `GraspSampleView` にそのまま出る
+ * (ADR-128 D1 の「入力はパネル・確認は 3D」を継ぐ)。だからここに数字以外の
+ * プレビューを足さない。
+ */
+function FaceRegionEditor({ face, region, onChange }) {
+  const [uAxis, vAxis] = inPlaneAxesOrThrow(face)
+  const cur = region ?? { uMin: 0, uMax: 1, vMin: 0, vMax: 1 }
+  const narrowed = region != null
+
+  // 空欄は 0 ではない (Number('') === 0 の罠)。読めない値は書かず、その場に留める。
+  const edit = (key) => (e) => {
+    const v = e.target.value
+    if (v.trim() === '') return
+    const n = Number(v)
+    if (!Number.isFinite(n)) return
+    onChange({ ...cur, [key]: n })
+  }
+
+  return (
+    <div style={{ marginBottom: '4px', paddingLeft: '4px', borderLeft: `2px solid ${COLOR.border}` }}>
+      <div style={{ ...PICKER.label, minWidth: undefined, marginBottom: '2px' }}>
+        {face} region — u = {uAxis}, v = {vAxis} (0–1 of the face)
+      </div>
+      <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+        <RegionInput label={`${uAxis}min`} value={cur.uMin} onChange={edit('uMin')} />
+        <RegionInput label={`${uAxis}max`} value={cur.uMax} onChange={edit('uMax')} />
+        <RegionInput label={`${vAxis}min`} value={cur.vMin} onChange={edit('vMin')} />
+        <RegionInput label={`${vAxis}max`} value={cur.vMax} onChange={edit('vMax')} />
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          disabled={!narrowed}
+          title="この面ぜんぶに戻す (領域の鍵を消す)"
+          style={{
+            fontSize: '9px', padding: '2px 5px', borderRadius: '3px',
+            background: 'transparent',
+            color: COLOR.textSecondary,
+            opacity: narrowed ? 1 : 0.45,
+            border: `1px solid ${COLOR.border}`,
+            cursor: narrowed ? 'pointer' : 'default',
+          }}
+        >full face</button>
+      </div>
+      {/* 宣言されていないことを**述べる** — 空欄は「面全体」とも「言い忘れ」とも
+          読めるので、どちらであるかを画面が言う (原則 #31)。 */}
+      {!narrowed && (
+        <div style={{ ...PICKER.label, minWidth: undefined, marginTop: '2px' }}>
+          not narrowed — the whole face is sampled
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 領域 1 辺の数値欄 (0–1)。 */
+function RegionInput({ label, value, onChange }) {
+  return (
+    <label style={{ ...PICKER.label, display: 'flex', alignItems: 'center', gap: '2px', minWidth: undefined }}>
+      {label}
+      {/* 数値欄の見た目は premise picker と同じ器を使う (PICKER.select) —
+          同じ役割の入力に色を書き足すと、ADR-100 の ratchet が数える
+          「宣言の外にある色」が増える。器を共有すれば増えない。 */}
+      <input
+        type="number" step="0.05" min="0" max="1"
+        defaultValue={value}
+        onChange={onChange}
+        style={{ ...PICKER.select, flex: undefined, width: '42px', padding: '1px 2px' }}
+      />
+    </label>
   )
 }
 

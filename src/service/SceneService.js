@@ -662,8 +662,12 @@ export class SceneService extends EventEmitter {
    * @param {{ clear?: boolean }} [options]
    * @returns {{ imported: number, skipped: number }}
    */
-  async importFromJson(parsed, viewContext = {}, { clear = true } = {}) {
-    if (clear) this._clearScene()
+  async importFromJson(parsed, viewContext = {}, { clear = true, preserve = null } = {}) {
+    // `preserve` narrows the clear to the previous projection (ADR-131). Ids are
+    // still reused (the `clear` branch below), which is what keeps `_refToId`
+    // valid across a regeneration — the preserved entities carry generated ids
+    // that cannot collide with ref-derived ones.
+    if (clear) this._clearScene(preserve)
 
     // When merging, build an id-remap table so imported IDs never collide.
     // When clearing first, reuse original IDs (simpler undo story).
@@ -926,20 +930,61 @@ export class SceneService extends EventEmitter {
   }
 
   /** Disposes all objects and links, then resets the model (local). */
-  _clearScene() {
-    for (const [id, obj] of this._model.objects) {
-      obj.meshView.dispose(this._threeScene)
-      this.emit('objectRemoved', id, obj)
+  /**
+   * Tear the scene down, optionally KEEPING a declared set of entities
+   * (ADR-131).
+   *
+   * `preserve` exists because a context regeneration is a **projection swap**,
+   * not a scene wipe: the document owns the entities it projects and nothing
+   * else. Without it, every doc-edit destroyed entities the document never
+   * created — a box added with Shift+A, an imported mesh, a measure line — and
+   * did it silently, because deletion emits the same events an intentional
+   * delete does (原則 #31: the loss has no state of its own to notice).
+   *
+   * `preserve == null` keeps the wholesale behaviour (scene load / clear), which
+   * is the honest meaning there: nothing is being projected, everything goes.
+   *
+   * @param {Set<string>|null} [preserve] entity ids to keep, or null to clear all
+   */
+  _clearScene(preserve = null) {
+    if (!preserve || preserve.size === 0) {
+      for (const [id, obj] of this._model.objects) {
+        obj.meshView.dispose(this._threeScene)
+        this.emit('objectRemoved', id, obj)
+      }
+      for (const [id] of this._model.links) {
+        this._linkViews.get(id)?.dispose(this._threeScene)
+        this.emit('spatialLinkRemoved', id)
+      }
+      this._linkViews.clear()
+      this._worldPoseCache.clear()
+      this._mountLocalPositions.clear()
+      this._fixedJointTransforms.clear()
+      this._model = new SceneModel()
+      return
     }
-    for (const [id] of this._model.links) {
+
+    // Partial teardown: remove exactly what is NOT preserved, through the
+    // aggregate's own verbs so the mounts indices stay consistent (§1.1 — the
+    // model owns its bookkeeping; this method never touches the maps directly).
+    // A link survives only when BOTH endpoints do: a link with one end gone is
+    // not a weaker link, it is a broken one.
+    for (const [id, link] of [...this._model.links]) {
+      if (preserve.has(link.sourceId) && preserve.has(link.targetId)) continue
       this._linkViews.get(id)?.dispose(this._threeScene)
+      this._linkViews.delete(id)
+      this._model.removeLink(id)
       this.emit('spatialLinkRemoved', id)
     }
-    this._linkViews.clear()
-    this._worldPoseCache.clear()
-    this._mountLocalPositions.clear()
-    this._fixedJointTransforms.clear()
-    this._model = new SceneModel()
+    for (const [id, obj] of [...this._model.objects]) {
+      if (preserve.has(id)) continue
+      obj.meshView.dispose(this._threeScene)
+      this._model.removeObject(id)
+      this._worldPoseCache.delete(id)
+      this._mountLocalPositions.delete(id)
+      this._fixedJointTransforms.delete(id)
+      this.emit('objectRemoved', id, obj)
+    }
   }
 
   // ── Aggregate root access ──────────────────────────────────────────────────

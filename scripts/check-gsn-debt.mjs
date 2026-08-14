@@ -141,7 +141,11 @@ const SUPPORT_LABELS = new Map([
 // 起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結で、Proposed の ADR は
 // 定義上ほぼ全部の goal が exploring になる — この 4 件は「借金が増えた」のではなく
 // **借金が可視化された**ぶんである。4 件とも機械可読な満期を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 32
+// 2026-08-14: 32 → 28。ADR-129 の 4 goal に証拠が付いた (D1/D2/D3 が実装され、
+// 往復・対照・入口の個数を焼いた検査が実在する) ので exploring から solution へ昇格した。
+// 下げるのも意図的な行為である — 債務を払ったのに baseline が古いままだと、
+// 「いま いくつ未支持か」が再び記憶の中の数になる (ADR-103)。
+const DEBT_BASELINE = 28
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

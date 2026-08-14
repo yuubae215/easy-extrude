@@ -4,7 +4,7 @@ goal ADeclarationLivesAndDiesWithTheThingItIsAbout
 uuid 26473986-8b11-4d92-a1ba-7c92e05c674d
 summary "ユーザーが宣言した事実 (どこに置くか・どう据え付けるか・どこを掴むか) が、宣言の対象になった実体と同じ寿命・同じ経路で生き死にし、実行時インスタンスに寄生して静かに消えることが無い"
 state UnderReview
-labels adr-129, adr-128, adr-117, adr-119, adr-127, grasp, front, contract, principle-31, principle-1, principle-28, proposed
+labels adr-129, adr-128, adr-117, adr-119, adr-127, adr-131, grasp, front, contract, principle-31, principle-1, principle-28, accepted
 artifacts
 - "docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md"
 
@@ -85,11 +85,11 @@ artifacts
         goal PlacementSurvivesAReloadAndAnExport
         uuid 552d6bef-067b-4b99-8006-3735769bbe30
         summary "ビューポートで動かした配置と据付姿勢が文書に着き、エクスポート → 読み直しで同じ探索リクエストが出る。ドラッグ中の中間姿勢は書かれない"
-        labels support-exploring
+        labels support-verified
 
-            assumption TheRoundTripTestWillSettleIt
+            solution TheRoundTripAndTheNegativeControl
             uuid a4fc6751-0595-42b6-a2b7-01e605d88b51
-            summary "未着手。決着させるのは値の比較ではなく往復である — 宣言 → .ctx.json へ export → 読み直し → 同じ request が出る (原則 #28 の fixpoint)。値を比べる検査は たまたま今のセッションで一致する を緑にするので、この主張については何も言えない。負の対照として、実体を消したら宣言も消え、dangling ref は compileContext が throw することを同じ場所で問う。満期=GREP:src/context/DocBuilder.test.js::setEntityPose"
+            summary "src/DeclaredPoseOwnership.test.js (8 pass 2026-08-14) — 宣言 → 文字列化 → 解析 → **同じ探索入力**が出ることを問う (原則 #28 の fixpoint)。値の比較ではなく往復であることが要点で、負の対照として (a) 書き換える前の文書は古い位置のまま、(b) 述べていない向きは書かれない、(c) 文書に居ない ref には実体が生えない、を同じファイルで問う。実機でも Grab 確定で x 600 → 1020.88 が N パネルに出た"
             artifacts
             - "src/context/DocBuilder.js"
             - "src/controller/ContextController.js"
@@ -97,11 +97,11 @@ artifacts
         goal MountingOrientationIsOnTheWireOrItsAbsenceIsSpoken
         uuid 208dc564-5fb3-428f-990b-bc8dc9712a0b
         summary "傾けて据え付けたアームが契約で表現でき、宣言があるときだけ解が変わる。未宣言のときは恒等で解くこと自体は変えられないので、その仮定を画面が述べる"
-        labels support-exploring
+        labels support-verified
 
-            assumption TheDeclaredAndUndeclaredPairWillSettleIt
+            solution TheDeclaredAndUndeclaredPair
             uuid 4183042f-b733-4384-ab47-194a23e7f97c
-            summary "未着手。決着させる検査は対で書く — 姿勢を宣言すると IK 解が変わること、宣言しないと従来と 1 ビットも変わらないこと (ADR-084 §3: 宣言した瞬間にだけ挙動が変わる)。壊れた四元数は素朴判定へ落とさず throw することを別に問う (無言の格下げは嘘 — ADR-127 D3)。未宣言が 回転していない と読まれないことは値では示せないので、画面が仮定を述べているかを e2e 側で焼く。満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::baseOrientation"
+            summary "core/tests/test_ur_kinematics.py (171 pass 2026-08-14) — 対で書いた: 宣言すると解が変わり、**未宣言だと 1 ビットも変わらない**。後者を書かないと *常に* 何かを回している実装が緑を出す。壊れた四元数は恒等へ落とさず throw することを別に問い、ワイヤ → Robot の配線も端から端で焼いた (schema に足しただけで届いていない、が ADR-128 で 3 回起きた形)"
             artifacts
             - "packages/grasp-contract/schema/grasp-search-request.schema.json"
             - "core/easy_extrude_core/engine/ur_solver.py"
@@ -109,11 +109,11 @@ artifacts
         goal TheRegionIsWritableWhereItIsRead
         uuid a4939302-afc1-4dd1-9adc-943f70f79591
         summary "掴む領域がパネルから書け、面の 2 軸のうちどちらが u かの名前は既存の決定者から表示されるだけで、画面が第二の源にならない"
-        labels support-exploring
+        labels support-verified
 
-            assumption TheAxisNameIsReadNotRestatedWillSettleIt
+            solution TheAxisNameIsReadNotRestated
             uuid c7b1d5bf-70b6-4fee-a5c9-aad3a1389331
-            summary "未着手。決着させる検査は 2 本 — 領域を狭めるとワイヤに載るサンプル点が減ること (GraspSampleView が同じ関数から描くので絵と payload はずれない)、そして軸名がパネル内に書き写されておらず inPlaneAxesOrThrow から来ていること。後者を問わないと DEF-031 が先送りの理由に挙げた どちらが u か が画面側の第二の源として復活する。満期=GREP:src/components/Grasp/GraspSearchPanel.jsx::uMin"
+            summary "src/components/Grasp/GraspSearchPanel.jsx — 軸名は inPlaneAxesOrThrow から来る (対応表を画面に書き写さない)。実機で +z を宣言すると `u = x, v = y` と出て、xmin を 0.4 にすると要約が `declared: +z (whole face)` から `declared: +z (40%–100% × 0%–100%)` へ変わる。この要約は**文書由来の投影**を読んでいるので、領域が doc-edit を往復した証拠になる"
             artifacts
             - "src/domain/graspFeature.js"
             - "src/components/Grasp/GraspSearchPanel.jsx"
@@ -121,11 +121,11 @@ artifacts
         goal ThereIsExactlyOneWriterOfADeclaredPose
         uuid 4c40d412-54b8-4071-877d-d907dc3cbd6d
         summary "ref を持つ実体の姿勢を書く入口がちょうど 1 つで、MoveCommand / FrameRotateCommand と doc-edit 経路が同じ実体に二重に効いている状態が存在しない"
-        labels support-exploring
+        labels support-verified
 
-            assumption TheEntranceCensusWillSettleIt
+            solution TheEntranceCensusBothWays
             uuid 26e4d2a1-7a5f-4c3e-9f21-6d8b0c3f5e74
-            summary "未着手。数えるべきは在る経路ではなく 規則を持たない経路 なので、実装を読んでも見えない (ADR-097 が pose の入口で見つけた形)。母集団は姿勢を書きうる呼び出し閉包から導出し、ref を持つ実体に効く入口の個数がちょうど 1 であることを問う。MoveCommand は消えない (アドホック実体には要る) ので、消えたことではなく 用途で分かれたこと を釘付けする。満期=GREP:src/PosePolicyOwnership.test.js::DECLARED_POSE_WRITERS"
+            summary "src/DeclaredPoseOwnership.test.js — 文書の姿勢欄を書く行が setEntityPose の 2 行だけであること、宣言した入口が実在すること (逆向き)、確定ハンドラが**宣言済みを除いた集合**にだけ MoveCommand を作ること、そして**書き込みが後片付けより後に呼ばれること**を問う。最後の 1 本は実装で実際に落ちた形 (_clearScene は同期的に走る) で、コメントに書いた順序は次の編集者に見えない"
             artifacts
             - "src/PosePolicyOwnership.test.js"
             - "src/command/MoveCommand.js"

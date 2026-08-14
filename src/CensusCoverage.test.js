@@ -209,6 +209,22 @@ const CENSUS_REGISTRY = [
        + '分割する。数えるべきは在る面ではなく**枚数に入っていない面**で、全画面を描いた日から母集団に入る' },
 
   // ── 登録簿そのもの (自己適用) ──
+  // ── 宣言された姿勢 (ADR-129 D1 / D5) ──
+  { file: 'src/DeclaredPoseOwnership.test.js', table: 'DECLARED_POSE_WRITERS',    kind: KIND.DECLARED_EXCEPTION,
+    why: '宣言された姿勢を書く入口の宣言。数えるのは在る経路ではなく規則を持たない経路で、'
+       + 'ADR-097 が pose で見つけた形の続き。MoveCommand は消えないので、'
+       + '数えるのは「消えたこと」ではなく**用途で分かれたこと**である' },
+
+  // ── 探索の主語 (ADR-130) ──
+  { file: 'src/GraspSubjectOwnership.test.js', table: 'SELECTION_SHAPES',          kind: KIND.DERIVED_PARTITION,
+    why: '母集団 = DECLARED_NPANEL_KINDS + 「選択なし」。探索が生きている間に手順が通しうる '
+       + '選択の全種類で、阻止文が 0 個であることを問う。手で並べると 5 種目の日にここだけ '
+       + '古びるので、種は宣言表から導出する' },
+  { file: 'src/GraspSubjectOwnership.test.js', table: 'DECLARED_SUBJECT_WRITERS',  kind: KIND.DECLARED_EXCEPTION,
+    why: '探索の主語 (`_selectedRobotId`) を書く入口の宣言。個数を代入の構文から数え、'
+       + '3 つ目の書き手が生まれた日に落ちる。ADR-097 が pose の入口を数えた形の続きで、'
+       + '欠陥は「規則を持つ経路」ではなく**規則を持たない経路**だった' },
+
   { file: 'src/CensusCoverage.test.js',      table: 'CENSUS_REGISTRY',             kind: KIND.DERIVED_PARTITION,
     why: '登録簿も表であり、同じ問いを免れない。母集団 = census 形 test ファイルに現れる表の構文。'
        + 'ここに自分の行が無ければ「表を数える表」だけが数えられない状態になり、'

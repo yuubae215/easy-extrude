@@ -187,10 +187,23 @@ export class RotationHandler {
     this.apply()
     const s = this.state
 
+    // ADR-129 D1: a CONFIRMED rotation is a declaration too — "this is how it is
+    // mounted / aimed". Declared entities write it to the document through the
+    // one doc-edit path; ad-hoc ones keep the CommandStack. Same split, same
+    // reason as the grab confirm: by what the entity is, never by which code ran.
+    // 分類だけを先に取り、書き込みは confirm の最後で行う (ADR-129 D1) —
+    // 書き込みは再インポートを同期的に起こすので、途中で呼ぶと後片付けが
+    // 破棄済みの view を触る。
+    let declaredAim = new Set()
+    const declaredRotation = (obj) => {
+      declaredAim = ctrl._ctxCtrl?.declarablePoseIds?.([obj.id]) ?? new Set()
+      return declaredAim.size > 0
+    }
+
     if (ctrl._activeObj instanceof CoordinateFrame) {
       const frame = ctrl._activeObj
       const endQuat = frame.rotation.clone()
-      if (!endQuat.equals(s.startRot)) {
+      if (!endQuat.equals(s.startRot) && !declaredRotation(frame)) {
         const cmd = createFrameRotateCommand(
           frame, s.startRot.clone(), endQuat, ctrl._service,
           () => ctrl._updateNPanel(),
@@ -199,7 +212,7 @@ export class RotationHandler {
       }
     } else if (ctrl._activeObj instanceof Solid && s.startOrientation) {
       const solid = ctrl._activeObj
-      if (!solid.orientation.equals(s.startOrientation)) {
+      if (!solid.orientation.equals(s.startOrientation) && !declaredRotation(solid)) {
         const cmd = createSolidRotateCommand(
           solid,
           s.startOrientation.clone(), solid.orientation.clone(),
@@ -213,6 +226,9 @@ export class RotationHandler {
     // The rotate rebuilt the mesh under the selection — re-assert the highlight
     // through its owner rather than writing the flag here (原則 #4 / ADR-099).
     ctrl._selMgr.reassertHighlight()
+
+    // 宣言の書き込みは最後 (ADR-129 D1 — grab confirm と同じ理由)。
+    ctrl._ctxCtrl?.recordConfirmedPoses?.(declaredAim, 'Aim')
     this._resetState()
     ctrl._rotateSectorPreview.hide()
     ctrl._opState.send('CONFIRM')

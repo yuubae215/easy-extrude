@@ -31,7 +31,7 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from .types import GraspCandidate, Robot, Vec3
+from .types import GraspCandidate, Quaternion, Robot, Vec3
 from .feasibility import IkSolution
 from .ur_kinematics import (
     UrDhParameters,
@@ -115,19 +115,26 @@ class UniversalRobotsIkSolver:
         """解が在れば代表解を返す。無ければ None。
 
         `robot.base` はワールド上のベース位置なので、目標をベース座標へ移してから解く
-        (この運動学はベース原点系で定義されている)。**向きは扱わない** — ベースの
-        姿勢は契約に無く、無いものを既定で埋めない (原則 #31)。ベースが回転して据え
-        付けられる要件が出たら契約に足す判断が要る。
+        (この運動学はベース原点系で定義されている)。
+
+        据付**姿勢** (`robot.base_orientation`, ADR-129 D2) が宣言されていれば、並進を
+        戻したあとその逆回転で目標を戻す — 傾けて据え付けたアームで答えが変わる。
+        宣言が無いときは恒等のまま = 従来と 1 ビットも変わらない (ADR-084 §3 /
+        ADR-127 D3 の規律: **宣言した瞬間にだけ挙動が変わる**)。None は「直立」では
+        なく「述べていない」で、その区別を画面に出すのはフロントの責務である —
+        向き無しでは解けない以上、core/ は恒等で解くしかない (原則 #31)。
         """
         target = flange_target(candidate)
         if target is None:
             return None
         base = robot.base
-        # ベース並進ぶんだけ目標を戻す (回転は契約に無いので恒等)。
+        # ベース並進ぶんだけ目標を戻す。
         local = list(target)
         local[3] -= base.x
         local[7] -= base.y
         local[11] -= base.z
+        if robot.base_orientation is not None:
+            local = _unrotate_into_base(local, robot.base_orientation)
         solutions = inverse_kinematics(self.dh, tuple(local))
         if not solutions:
             return None
@@ -196,3 +203,34 @@ def ik_solver_from_declaration(declaration_data: dict) -> "UniversalRobotsIkSolv
             (float(pair["min"]), float(pair["max"])) for pair in limits_raw
         )
     return UniversalRobotsIkSolver(dh=dh, joint_limits=limits)
+
+
+def _unrotate_into_base(m: list[float], base_orientation: Quaternion) -> list[float]:
+    """ワールド並びの 4x4 (row-major) を、ベース据付姿勢の**逆回転**で戻す。
+
+    回転部の 3 本の列ベクトルと並進を同じ逆回転にかける。行列積を書かずに列ごとに
+    回すのは、`Quaternion.rotate` が既に安定形を持っており、ここで 2 つ目の回転
+    実装を作らないため (§1.1 — 同じ事実の第二の源を作らない)。
+
+    **壊れた四元数は恒等へ落とさず throw する** (ADR-127 D3 と同型)。無言の格下げは
+    「宣言したのに無視された」であり、応答は候補 0 件という*正しい形*で返るので
+    最も気づきにくい嘘になる。
+    """
+    if base_orientation.norm() < 1e-9:
+        raise ValueError(
+            "robot.baseOrientation が退化している (ノルム 0)。恒等へ落とさず拒否する — "
+            "宣言を無言で無視すると、答えは正しい形をしたまま間違う (ADR-129 D2 / ADR-127 D3)。"
+        )
+    inv = base_orientation.conjugate()
+    cols = [
+        inv.rotate(Vec3(m[0], m[4], m[8])),
+        inv.rotate(Vec3(m[1], m[5], m[9])),
+        inv.rotate(Vec3(m[2], m[6], m[10])),
+    ]
+    t = inv.rotate(Vec3(m[3], m[7], m[11]))
+    return [
+        cols[0].x, cols[1].x, cols[2].x, t.x,
+        cols[0].y, cols[1].y, cols[2].y, t.y,
+        cols[0].z, cols[1].z, cols[2].z, t.z,
+        0.0, 0.0, 0.0, 1.0,
+    ]
