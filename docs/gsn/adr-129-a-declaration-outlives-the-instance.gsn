@@ -10,16 +10,22 @@ artifacts
 
     context Adr129Scope
     uuid f94c8291-956c-4932-947b-c15e95fcc05d
-    summary "ADR-129 (Proposed 2026-08-14, 未実装): 宣言の同一性は文書の ref (D0)、ジェスチャの確定は文書への書き込み (D1)、据付姿勢を契約に足す (D2)、掴む領域をパネルから書けるようにする (D3)、3 つで 1 つの MVP (D4)、後始末の検査は往復で書く (D5)。段 G-5"
+    summary "ADR-129 (Proposed 2026-08-14, 未実装): 宣言の同一性は文書の実体 ref (D0)、記録は行為の側から取り導出物から推定しない (D0')、ジェスチャの確定は文書への書き込み (D1)、据付姿勢を契約に足す (D2)、掴む領域をパネルから書けるようにする (D3)、3 つで 1 つの MVP (D4)、後始末の検査は往復で書く (D5)、名前をまだ持たない主張は対象外ではなく残しとして開く (D6)。段 G-5"
     artifacts
     - "docs/grasp/implementation-order.md"
 
-    context TheVocabularyWasAlreadyThereAndOnlyTheLineWasMissing
+    context TheGestureIsAnActAndTheActIsAClaim
     uuid 7893d341-aff2-4743-ab3a-9b8b387b34c2
-    summary "実測 (2026-08-14): schema/context-0.5.schema.json の hydratedEntity は position も rotation も既に持ち、layout-1.0 も同じ。ContextService._refForSceneId は既にシーンのインスタンス id から文書の ref を返す。語彙も接続点も在って、無いのは入力面 (G / R) から語彙への線だけだった。だからこれは新しい能力の追加ではなく、書き込み先の付け替えである"
+    summary "このアプリの前提: 要求はまだ言葉になっていないから 3D で見せ、見せながら確定して合意する。語彙が先に在るなら 3D は要らず、テキストと数値入力で足りる。したがって 3D のジェスチャは既知の欄に値を入れる操作ではなく要求を述べる行為であり、述べられた瞬間に主張になる。主張は寿命と所有者を要求するが、今日それは名前も所有者も寿命も持たない場所 (SceneModel) に落ちて消える"
     artifacts
-    - "schema/context-0.5.schema.json"
     - "src/service/ContextService.js"
+
+    context AGestureAlreadyBecameADeclarationOnceHere
+    uuid 6f21c0ba-9d43-4b2e-8c07-1a5f7e2d4b93
+    summary "実測: createEditAdmissibleCommand (ADR-104 力学 2) は領域ウィジェットのドラッグを stated な主張として文書へ書き戻す undoable な 1 コマンドとして既に動いている。3D のジェスチャが文書への宣言になる ことはこのリポジトリで既に一度成立しており、しかも書いているのは生の欄ではなく主張である。AddSolidCommand (実体の生成) には文書への経路が無い — 生成という行為も今日は残らない"
+    artifacts
+    - "docs/adr/ADR-104-ownership-proposal-and-the-receipt.md"
+    - "src/command/MoveCommand.js"
 
     context TheTwoHalvesOfOneRequestReadDifferentSources
     uuid b5966c81-012c-411d-ae0d-4a5e8a9ffab2
@@ -42,9 +48,23 @@ artifacts
     uuid 9ceeea6e-319a-43c3-9824-c75992baaa9f
     summary "分割を却下した理由: どれか 1 つが入った時点で 宣言の権威は文書 が半分だけ真になる。半分だけ真の規律は規律ではなく、それがまさに ADR-128 D4 が 1 行分しか適用されなかった今日の状態で、この ADR が存在する理由そのものである。3 つとも同じ doc-edit 経路・同じ undo・同じ export に載るので、MVP は機能 3 つではなく 書き込み面 1 つ である"
 
-    justification WhyTheBoundaryIsVocabularyNotGesture
+    justification WhyTheVocabularyPremiseWasWithdrawn
     uuid 2a4e90f1-6bf8-4174-b6e0-bd93c8c8b8e7
-    summary "一般化 (すべてのシーン変更を文書へ書き戻す — 押し出し・ブーリアン・スケッチ) を却下した理由: それは ADR-054 / ADR-055 が禁じたシーンの逆コンパイルで、幾何の 生成手順 は文書の語彙に無い。書き戻すのは文書が既に語彙を持っている属性だけ (position / rotation) — 境界は語彙の有無であって、ジェスチャの種類ではない。この線を引かないと D1 は際限なく広がる"
+    summary "この ADR の初稿への反証 (ユーザー指摘 2026-08-14): 初稿は 受け皿は既に在り、無いのは線だけ を判断の基礎に据えていた。事実としては正しいが、基礎に据えると規則が反転する — 受け皿の有無を境界にすると まだ名前の無い要求は書き戻せない が規則になり、要求を 3D で確定していくというこのアプリの前提そのものを禁じる。受け皿が在ったのは今回の 2 属性についての偶然で、常態は受け皿が無いほうである。誤りの形は ADR-102 が名指しした母集団を持たない表と同じ — 手元に在る 3 件を数えて一般規則を書こうとした"
+    artifacts
+    - "docs/adr/ADR-102-census-tables-need-a-denominator.md"
+
+    justification WhyTheBoundaryIsActNotInference
+    uuid 5c8e37d4-1b90-4a6f-b2e1-30f9a8c6d271
+    summary "D0' の根拠、および ADR-054 / ADR-055 との両立: 禁じられているのは導出物 (メッシュ) を読んでそれを生んだ行為を推定することであって、行為そのものをその場で記録することではない。前者は偽の源を作る (同じ形は複数の手順から生まれる) が、後者は源を源のまま写す。だから境界は 行為か推定か であり、語彙の有無ではない。押し出しをメッシュから逆算するのは今も禁止のまま、押し出しという行為の記録はこの禁止に当たらない"
+    artifacts
+    - "docs/adr/ADR-055-scene-layout-dsl-mutual.md"
+
+    assumption UnnamedClaimsNeedAPlaceBeforeTheyNeedAName
+    uuid 8b3f6e05-42ca-4d78-9e13-c5a70f14b8d6
+    summary "反証されうる仮説 (D6): 名前をまだ持たない主張 (押し出した量・なぜこの向きか・ここは触らせたくない) は、載せ場所を決める判断が済むまで MVP の外に置いてよい。反証されうる形は、配置の書き戻しを入れた直後に 動かした理由 を書きたくなること — 位置は書けるのに理由が書けない状態は、宣言の半分だけが生き残る形なので初稿の欠陥と同型である。そのとき DEF-034 の満期が前倒しで来る。件数を数えないのは欄が無いものは数えられないからで、数えるのは判断が未了である 1 件のほうである"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"
 
     assumption RecompileOnCommitPreservesTransientState
     uuid cd230787-b2cb-4476-8cb0-5bbe06a02e63
