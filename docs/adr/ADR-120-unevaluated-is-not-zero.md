@@ -142,5 +142,6 @@ D1 は「評価できなかった objective を分母から外す」と書いて
 | 評価不能と 0 点が区別できる (画面) | `src/view/GraspScoreMath.test.js`「未評価は 0 点と別物」+ e2e S8 | ✅ |
 | 母集団が要求した重みである (不在を数えられる) | `GraspScoreMath.test.js`「要求した objective は全部行になる」 | ✅ |
 | 測れなかったことが無言の省略にならない | e2e S8 — 画面に `not measured: <名前>` が出ること | ✅ |
+| **不在が「出せないだけ」ではないと画面で示せる** (正の対照) | スタブシナリオ `reachDeclared` + e2e S9 — 同じ solve 経路に宣言つき request を通し、鍵の出現と断り書きの消滅を焼く。`conformance.test.js` が「候補数と棄却数が変わらない = 差は宣言だけ」を縛る | ✅ 2026-08-14 |
 
 論証木: `docs/gsn/adr-120-unevaluated-is-not-zero.gsn`

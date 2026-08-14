@@ -164,3 +164,21 @@ test('S8 — 測っていない objective は 0 のバーではなく「測っ�
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S9 — 宣言すれば同じ objective が測れる: 不在の正の対照 (ADR-120)', async ({ page }) => {
+  // S8 は「測れなかった」側しか見せない。**現れさせられない不在は証拠にならない** —
+  // このスタブがそもそも `reach_margin` を出せないだけ、と読めてしまうため。
+  // `reachDeclared` は同じ solve 経路にリーチ範囲を宣言した request を通すので、
+  // 差は宣言だけ。GitHub Pages にはフォームも curl も無いので、この 2 つの URL を
+  // 行き来することが唯一の対照になる (原則 #31 — 負の対照だけでは何も示さない)。
+  const errors = await reachGraspPanel(page, 'reachDeclared')
+  await pickAnObjectIfAsked(page)
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+
+  // 測れた側: バーが出て、「測っていない」の断り書きは消える。
+  await expect(page.getByText('reach_margin').first()).toBeVisible()
+  await expect(page.getByText(/not measured: reach_margin/)).toHaveCount(0)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

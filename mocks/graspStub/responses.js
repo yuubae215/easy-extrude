@@ -7,8 +7,32 @@
  * unusual, not malformed — and the conformance suite validates them against the
  * schema alongside the solved ones.
  */
-import { stubSolve } from './solve.js'
+import { stubSolve, envelopeCoveringSamples } from './solve.js'
 import { STUB_SCENARIO } from './scenarios.js'
+
+/**
+ * The request as `reachDeclared` sees it: the caller's own request with a reach
+ * envelope added under `plan{}` (the contract's declared home for judgement
+ * parameters — ADR-084 §4, and the key the front does not yet collect).
+ *
+ * Adding it to `plan{}` rather than special-casing the solver is what makes this
+ * a real control: `stubSolve` runs the SAME code path, reads the envelope
+ * through the SAME precedence rule, and the only difference between the two
+ * scenarios is that one request declares a basis and the other does not.
+ *
+ * A request with nothing to cover is passed through untouched — an envelope
+ * invented from no distances would be a guess, and the whole point is that a
+ * missing basis stays missing.
+ */
+function withDeclaredEnvelope(request) {
+  const graspSearch = request?.graspSearch ?? {}
+  const envelope = envelopeCoveringSamples(graspSearch)
+  if (!envelope) return request
+  return {
+    ...request,
+    graspSearch: { ...graspSearch, plan: { ...(graspSearch.plan ?? {}), ...envelope } },
+  }
+}
 
 /**
  * A funnel with the counts filled in. Callers pass only the stages they mean;
@@ -162,6 +186,9 @@ export function responseFor(scenario, request, contractVersion) {
   if (errorCase) return { status: errorCase.status, body: errorCase.body }
   if (scenario === STUB_SCENARIO.SOLVE) {
     return { status: 200, body: stubSolve(request, contractVersion) }
+  }
+  if (scenario === STUB_SCENARIO.REACH_DECLARED) {
+    return { status: 200, body: stubSolve(withDeclaredEnvelope(request), contractVersion) }
   }
   return { status: 200, body: fixedResponse(scenario, contractVersion) }
 }
