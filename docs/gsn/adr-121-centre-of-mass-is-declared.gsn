@@ -53,7 +53,7 @@ artifacts
 
             assumption KeyAbsenceTestWillSettleIt
             uuid 11eea917-ce1b-4e04-9918-2be3f268a583
-            summary "未着手。決着させる検査は、重心なしのリクエストで com_offset の鍵が出ないこと。ADR-120 の鍵不在の規律にそのまま乗るので、120 が先に入っている必要がある"
+            summary "未着手。決着させる検査は、重心なしのリクエストで com_offset の鍵が出ないこと。ADR-120 の鍵不在の規律にそのまま乗るので、120 が先に入っている必要がある。満期=GREP:core/tests/test_engine.py::com_offset (ADR-126 — 検査が現れた日に G4 が落ち、exploring を solution へ昇格させよと言う)"
 
         goal ProvenanceIsVisibleToTheReader
         uuid d08ab6a9-11ba-4e74-8a81-97e92a5cf8b0

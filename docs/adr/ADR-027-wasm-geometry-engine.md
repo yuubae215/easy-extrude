@@ -182,6 +182,21 @@ is never broken by Wasm unavailability; it simply runs slower.
 
 ## Future Work
 
+### 残し (2026-08-12 — `docs/ROADMAP.md` の凍結に伴い移設。正本はここ)
+
+登録簿の **DEF-018** が指す先。ROADMAP §Wasm Geometry Engine — remaining work に
+在ったものを、決定を所有するこの ADR へ移した (索引は登録簿、内容の正本は ADR)。
+
+| 項目 | 状態 | 満期条件 |
+|---|---|---|
+| Shared Wasm Memory | **未着手** | `RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals"` が **stable Rust** で通るようになったとき。現在 nightly 必須 — これは**外部条件なので機械可読な trigger を書けない** (Q5 の予算に載る) |
+| Remove the one remaining copy | **未着手** | 上の Shared Wasm Memory にブロックされている。単独では満期を持たない |
+| `run_monte_carlo(params)` — 都市/空間解析のシミュレーション | **保留** (判断が未完了) | 需要が具体化したとき。Phase 3 の *candidate* であって決定ではない |
+| `build_boolean_union(a, b)` — CSG union | **保留** (判断が未完了) | 同上。BFF 往復を置き換える価値が測れたとき |
+
+後半 2 つは「候補」であって決定ではないので、**実装の遅れではなく判断の未完了**である
+(ADR-123 D3 の区別)。前半 2 つは判断が閉じていて外部条件を待っている。
+
 ### Phase 4: COOP/COEP Headers (2026-04-05) ✅
 
 GitHub Pages does not support custom HTTP response headers, so a Service Worker

@@ -9,6 +9,7 @@
   集めていないので、既定の実行ではリーチ範囲が常に未宣言)。
 - Date: 2026-08-11 (D2/D3 実装 2026-08-12)
 - Deciders: yuubae215, Claude
+- 段: **G-0** (`docs/grasp/implementation-order.md` — grasp レーンの順序表)。D1 は G-1 (ADR-121) の前提
 - Supersedes / Superseded by: なし (ADR-105「未検証は問題なしではない」のスコア層版)
 
 ## Context

@@ -29,7 +29,7 @@
  * それを直すために作った成果物の中で再生産されていた — 満期を*書く欄*を作ったことと、
  * その欄を*読む機械*が在ることは別の事実である。Q5 はその差を数える。
  *
- * ## 5 つの問い
+ * ## 7 つの問い (Q6 / Q7 は ADR-123 / ADR-124 で追加)
  *
  *   Q1 RATCHET   — 登録簿に覆われていない残しの箇所数。**超えても下回っても** fail。
  *                  下回りも落とすのは、債務を払ったのに baseline が古いままだと
@@ -46,8 +46,19 @@
  *                  問わない。散文だけの満期は Q2 にとって存在しないのと同じであり、
  *                  数えなければ「満期を機械が読む」は行ごとに静かに空洞化する
  *                  (正当な非ゼロは 0 に見えない — 原則 #31)。
+ *   Q6 DRAFT     — Draft / Proposed の ADR に実装が先行している数。既定 0、非ゼロは
+ *                  `DRAFT_WITH_IMPLEMENTATION` に理由つきで宣言 (ADR-123 D4)。
+ *                  **gate ではなく census** — 実装して初めて設計が決まる探索的 MVP は
+ *                  実在する (ADR-046)。**検査は数え、宣言が分類する**。
+ *   Q7 NOTATION  — 別の記法で書かれた register が生えていない (ADR-124)。優先度表を
+ *                  持つ文書は既定 0、正当なものは `DECLARED_PRIORITY_TABLES` に宣言。
+ *                  ROADMAP は 29 行を持ちながら語彙ヒット 0 件で母集団の外に居た —
+ *                  **語彙を 1 語ずつ足す経路では記法の違いに届かない**。
  *
  * ## 母集団の作り方 (ここが要点)
+ *
+ * **`docs/**` は「残りの作業を宣言する見出し」の配下だけ** (ADR-124 — 詳細は
+ * collectHits の上)。`src/` `scripts/` は全行。
  *
  * **登録簿を分母にしない。** 分母は残しの*語彙*から導出する — 登録簿を母集団にすると、
  * それ自身が母集団を持たない表 (ADR-102 が語彙から消した `place-list`) になり、
@@ -60,6 +71,14 @@
  * `// later` と書けばどの語彙にも入らない。この検査は「**宣言する気のある残し**」に
  * 対しては完全だが、黙って残す残しは捕まえられない。ADR-109 §Consequences に同文。
  *
+ * 加えて **記法**にも依存する (ADR-124)。Q7 が塞ぐのは観測された 1 つの記法
+ * (絵文字の優先度表) だけで、次の register が `[P1]` や `TODO(high)` や外部ツールの
+ * リンクで生えたら見えない。記法の集合を先回りで網羅することはできない — できるなら
+ * そもそも ROADMAP の 29 行は見えていた。
+ *
+ * `docs/**` の節絞りには裏がある: **narrative の中に本物の残しを書くと見えない**。
+ * 交換条件として受け入れている (見えなくなる代わりに数が 0 へ向かえる)。
+ *
  * 使い方: pnpm test:deferrals   (CI の gate ジョブからも実行)
  *
  * @see docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md
@@ -69,6 +88,9 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { adrStatuses } from './adr-status.mjs'
+import { hasExpiryTrigger, evaluateTriggers, TRIGGER_HELP } from './expiry-trigger.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const LEDGER = 'docs/DEFERRAL_LEDGER.md'
@@ -89,7 +111,7 @@ const ORDER = 'docs/ia-redesign/03-implementation-order.md'
  * 「登録されていない」と「登録する必要が無い」が区別できなくなる (原則 #31)。
  */
 const DEFERRAL_VOCAB = [
-  '未着手', '暫定', '申し送り', '後続 PR', '次セッション', '保留',
+  '未着手', '未実装', '暫定', '申し送り', '後続 PR', '次セッション', '保留',
   '引き受けなかった', 'PROVISIONAL_UNTIL', 'DECLARED_GAPS',
 ]
 const VOCAB_RE = new RegExp(DEFERRAL_VOCAB.map(v => v.replace(/ /g, '\\s')).join('|'))
@@ -104,8 +126,20 @@ const VOCAB_RE = new RegExp(DEFERRAL_VOCAB.map(v => v.replace(/ /g, '\\s')).join
 const SCAN_DIRS = ['docs', 'src', 'scripts']
 const EXCLUDED = new Map([
   ['docs/SESSION_LOG.md', '凍結アーカイブ (追記しない — 当時の記録であって今日の残しではない)'],
+  ['docs/ROADMAP.md',
+   '凍結アーカイブ (ADR-123 D1)。生きた残しは決定を所有する ADR 本文へ移し、機能要望は '
+   + 'Issues へ委譲した。**数の上では何も変わらない** — 語彙ヒットは元から 0 件で、'
+   + '29 行が絵文字の優先度表という別の記法で書かれていたために母集団の外に在った。'
+   + '変わるのは外れていることが宣言になることである (黙って外れているあいだは'
+   + '「登録されていない」と「登録する必要が無い」が区別できない — 原則 #31)'],
   [LEDGER, '登録簿自身 (宣言の置き場所であって残しの所在ではない)'],
   ['scripts/check-deferrals.mjs', 'この検査自身 (語彙の定義がヒットする)'],
+  ['scripts/check-gsn-debt.mjs',
+   'GSN 側の同じ検査 (ADR-126)。docstring が未支持ゴールの**実例**として語彙を引用する — '
+   + 'check-deferrals.mjs 自身と同じ理由'],
+  ['scripts/expiry-trigger.mjs',
+   '満期 trigger の文法と評価器 (ADR-126 で切り出した — 検査自身と同じ理由。'
+   + 'docstring が trigger の書き方の**例**として語彙を引用する)'],
   ['docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md',
    '残しの語彙を定義する正本 (登録簿と同じ理由 — 語彙について述べる文は残しではない)'],
 ])
@@ -129,12 +163,61 @@ function collectFiles() {
   return out.sort()
 }
 
-/** @returns {{file: string, line: number, marker: string}[]} 語彙のヒット全件 */
+/**
+ * **残りの作業を宣言する見出し** (ADR-124)。
+ *
+ * `docs/**` では、この見出しの配下だけを数える。理由は実測にある — 2026-08-12 の
+ * 宣言外 99 件の内訳は **docs/adr 68 / docs その他 29 / src 1 / scripts 0** で、
+ * コードに残っている残しは **1 件**だった。残り 98 件は「残しについて*述べている*散文」
+ * であり、**残しを片付けても減らず、残しについて考えるほど増える**。ratchet が
+ * 「ドキュメント量」を測っていて、0 へ向かえない数になっていた。
+ *
+ * **除外リストで消さない** (Yellow Cards の 1 例目がまさにそれを禁じている — 手書きの
+ * 除外表は母集団を持たない表が一段下に生えたもの)。代わりに**文書構造で絞る**:
+ * 残しは「残りの作業を宣言する節」に書く、という規則にし、その節の下だけを数える。
+ * 見出しの文言から導出するので手書きの除外表にならず、副産物として「残しをどこに
+ * 書くか」が入口 1 つに定まる (原則 #1)。
+ *
+ * `src/` `scripts/` は全行数える — コードに narrative は無いので、節で絞る意味がない。
+ *
+ * **限界 (宣言する — 推論させない):** narrative の中に本物の残しを書くと**見えない**。
+ * これは交換条件であって事故ではない: 見えなくなる代わりに、数が 0 へ向かえるように
+ * なる。反対側からは Q3 / Q4 (登録簿の行が実在を問う) と Q6 が押さえる。
+ */
+const DEFERRAL_KEYWORD =
+  /(残し|未着手|引き受けなかった|申し送り|やらないこと|Deferred|Future Work|Out of scope|Open questions|未移管|Remaining|Backlog|TODO)/i
+
+/**
+ * キーワードは見出しの**先頭付近**に無ければならない。
+ *
+ * 初版は「見出しのどこかに含まれる」で判定し、ADR-110 の
+ * `### 力学 4 — 実測: これは入口の個数を動かさない (申し送りの前提の訂正)` のような
+ * **narrative の見出し**まで節を開いてしまった。見出しが何について*書かれている*かは
+ * 先頭が決める — 後ろに現れる語は主題ではなく修飾である。
+ */
+const HEADING_LEAD = 12
+const DEFERRAL_HEADING = (line) => {
+  const text = line.replace(/^#{1,6}\s*/, '').replaceAll('*', '').trim()
+  const m = DEFERRAL_KEYWORD.exec(text)
+  return m !== null && m.index < HEADING_LEAD
+}
+
+/**
+ * @returns {{file: string, line: number, marker: string}[]} 語彙のヒット全件
+ *
+ * `docs/**` は「残りの作業を宣言する見出し」の配下のみ。次の見出しが来たら節は閉じる
+ * (同レベル以上でなく**任意の**見出しで閉じる — 入れ子の小節も宣言の一部なら
+ * DEFERRAL_HEADING に一致するはずで、一致しないなら別の話題だからである)。
+ */
 function collectHits(files) {
   const hits = []
   for (const file of files) {
     const lines = readFileSync(join(ROOT, file), 'utf8').split('\n')
+    const scoped = /^docs\//.test(file)
+    let inDeferralSection = false
     lines.forEach((text, i) => {
+      if (scoped && /^#{1,6}\s/.test(text)) inDeferralSection = DEFERRAL_HEADING(text)
+      if (scoped && !inDeferralSection) return
       const m = VOCAB_RE.exec(text)
       if (m) hits.push({ file, line: i + 1, marker: m[0] })
     })
@@ -172,21 +255,10 @@ function pathsIn(where) {
 
 const ADR_DIR = join(ROOT, 'docs', 'adr')
 
-/** @returns {Map<string, string>} 'ADR-108' → Status の TOKEN 部分 */
-function adrStatuses() {
-  const map = new Map()
-  for (const file of readdirSync(ADR_DIR).filter(f => /^ADR-\d{3}.*\.md$/.test(f))) {
-    const text = readFileSync(join(ADR_DIR, file), 'utf8')
-    for (const raw of text.split('\n')) {
-      const s = raw.replaceAll('**', '').trim()
-      const m = /^[-*]?\s*Status\s*[:：]\s*(.*)$/.exec(s)
-      if (!m) continue
-      map.set(file.slice(0, 7), m[1].trim())
-      break
-    }
-  }
-  return map
-}
+// 文法は `scripts/adr-status.mjs` ただ 1 箇所 (§1.1)。ここに書き写していた旧実装は
+// 4 方言のうち表形式を読めず、ADR-027 / ADR-032 がマップから丸ごと欠落していた —
+// 「同じ文法で読む」と*コメントに書いてあること*と、実物がそうであることは別の
+// 事実である。詳細は adr-status.mjs の冒頭。
 
 // ── Q1 RATCHET ───────────────────────────────────────────────────────────────
 
@@ -209,8 +281,43 @@ function adrStatuses() {
  * なる) なので、**実測値をそのまま焼く**。ADR-100 の ratchet と同じ姿勢である:
  * 「宣言外は 0 であるべきだが今は N 件ある」を隠さない。この数を減らす正しい経路は、
  * 語彙の粒度か覆う粒度を上げる次の ADR であって、baseline の書き換えではない。
+ *
+ * **2026-08-12 (2 度動いた): 71 → 99 → 1。**
+ *
+ * まず ADR-123 で 71 → 99 に**上がった** — 語彙に `未実装` を足した分 (母集団を*広げる*
+ * 行為なので上がるのが正しい) と、決着を*記述する*散文が増えた分である。
+ *
+ * その後 ADR-124 で **99 → 1 に落ちた**。上げた直後に落としたのは、99 の内訳を測って
+ * この数が**指標として壊れている**と分かったからである: docs/adr 68 / docs その他 29 /
+ * **src 1** / scripts 0 — コードに残っている残しは 1 件で、残り 98 件は「残しについて
+ * *述べている*散文」だった。**残しを片付けても減らず、残しについて考えるほど増える**数、
+ * つまりドキュメント量の指標になっていた。走査を「残りの作業を宣言する見出し」の配下へ
+ * 絞ったことで、**0 へ向かえる数**に戻った (絞り方の詳細は collectHits の上)。
+ *
+ * 残る 1 件は `docs/ia-redesign/03-implementation-order.md` — Phase 6 の完了条件が
+ * この検査自身を*記述している*文で、見出しは残しの節なので節絞りでは落ちない。
+ * **既知の偽陽性として 1 を焼く** (散文を書き換えて 0 にするのは、検査に合わせて履歴を
+ * 消す行為なのでしない)。
+ *
+ * ↓ 以下は 99 だった当時の記録。上の経緯を読む助けとして残す。
+ *
+ * **71 → 99 (上がった)。ADR-123 の実装そのものが原因で、内訳は 2 つ。**
+ *
+ * (a) **語彙に `未実装` を足した。** これは母集団を*広げる*行為なので、上がるのが
+ *     正しい。ADR-119 / 121 / 122 は語彙ヒット 0 件で、宣言済みにも宣言外にも
+ *     数えられていなかった — 「登録されていない」ではなく「そもそも見えていない」
+ *     状態から、まず見える状態へ移した (そのうえで DEF-014〜016 として宣言した)。
+ *
+ * (b) **決着を*記述する*散文が増えた。** ADR-123 本文・登録簿の書き換え・各 ADR へ
+ *     移設した残しの宣言。2026-08-05 に記録した粒度の欠陥 (言及と宣言を区別できない)
+ *     の **2 例目**であり、下の失敗メッセージが「2 例目なら起票する」と指示している
+ *     とおり、**ADR-123 §Consequences で引き受けなかったものとして宣言した**
+ *     (Yellow Cards からの昇格判断は、この検査自身を作り直す次の ADR が持つ)。
+ *
+ * どちらも「新しい残しを黙って書いた」ではないが、**それを理由に数を下げない**。
+ * 実測値が事実であり、事実が動いた理由をここに書くのが ratchet の作法である。
  */
-const UNDECLARED_BASELINE = 71
+const UNDECLARED_BASELINE = 1
 
 /**
  * 満期欄に機械可読の trigger (`満期=ADR-NNN`) を持たない行の数。**実測値**。
@@ -224,17 +331,63 @@ const UNDECLARED_BASELINE = 71
  * よって trigger を**強制せず、持たない行を数える**。散文の満期は Q2 にとって
  * 存在しないのと同じであり、数えなければ「満期を機械が読む」は行ごとに静かに
  * 空洞化する。上下どちらへ動いても fail するので、この数は記憶ではなく事実であり続ける。
+ *
+ * **2026-08-12: 8 → 10。分子と分母の両方が動いたので、内訳を書いておく** (でないと
+ * 「悪化した」と読める)。登録簿は 9 → 18 行に増え、機械可読な満期は **1 → 8 件**に
+ * 増えた (DEF-008 に `GONE:` / DEF-013 に `GREP:` / DEF-014〜016・022 に `ADR-NNN` /
+ * DEF-021 に `GONE:`)。散文のみが 8 → 10 になったのは、ROADMAP から移設した
+ * DEF-017〜020 の 4 件が**どれも外部条件**だからである:
+ *
+ *   · DEF-017 fastened の複数 source — 「constraint-solver が入ったとき」
+ *   · DEF-018 Shared Wasm Memory   — 「**stable Rust** で atomics が通るとき」
+ *   · DEF-019 Geometry Service     — 「着手が決まったとき」
+ *   · DEF-020 Node Editor の DAG   — 「着手前 ADR が**起票**されたとき」(番号が未定)
+ *
+ * **2026-08-12 (2 度目): 12 → 13。** ADR-124 が足した DEF-026 (条件つき退役の検出) の
+ * 満期が「その規則ができたとき」で、規則そのものが未設計なので指す先が無い。
+ * **未設計のものを満期にすると trigger は書けない** — これも正当な散文である。
+ *
+ * 4 形の trigger をもってしても書けないものが在る、というのがこの 4 件の意味である。
+ * 割合では 1/9 → 8/18 へ改善しているが、Q5 は**個数**で縛ると決めた以上ここも
+ * 推論させず書いておく (原則 #31 — 正当な非ゼロは 0 に見えない)。
  */
-const PROSE_EXPIRY_BASELINE = 8
+const PROSE_EXPIRY_BASELINE = 13
 
 /**
- * 登録簿の満期欄に置く機械可読な trigger。
+ * 登録簿の満期欄に置く機械可読な trigger。**3 形**ある (ADR-123 D5)。
+ *
+ * | 形 | 満期の意味 |
+ * |---|---|
+ * | `満期=ADR-NNN`              | その ADR が `Accepted` になったとき |
+ * | `満期=PATH:<path>`          | そのパスが**存在するようになった**とき |
+ * | `満期=GREP:<path>::<regex>` | そのファイルにパターンが**現れた**とき |
+ * | `満期=GONE:<path>::<regex>` | そのファイルからパターンが**消えたとき** |
+ *
+ * **`GONE` は実装中に足りないと分かって足した 4 形目である** (ADR-123 D5 は 3 形で
+ * 書かれている)。DEF-008 の満期は「`DECLARED_GAPS` が空になったとき」で、当の
+ * `src/DanglingSelfCallCensus.test.js` 自身が「表が空になったら `DECLARED_GAPS` ごと
+ * 消す」と書いている — つまり満期は**出現ではなく消滅**だった。「残しが片付いたとき」
+ * という最も普通の満期の形が、出現を待つ 3 形では原理的に書けない。
+ *
+ * 正規表現に**リテラル空白と `|` を使えない**。登録簿は Markdown の表なので `|` は
+ * セル区切りとして食われ、空白は token の終わりとして食われる。`\s` と `[^x]` は
+ * 使えるので実用上は足りる (`DECLARED_GAPS\s*=\s*\[\]` は書ける)。
  *
  * **位置ではなく token で読む。** 満期欄の散文は履歴 (「元は ADR-108 を指していた」)
  * を含みうるので「最初に現れた ADR 番号」のような位置の規則は、散文を書き換えた日に
  * 黙って別の ADR を指し始める。token なら、trigger を動かす行為が編集として見える。
+ *
+ * **なぜ 2 形足したか。** DEF-013 の満期「`core/tests/test_engine.py` に検査が入ること」は
+ * 条件としては完全に機械可読なのに、*文法が無い*という理由だけで散文に落ちていた。
+ * 満期を**書く欄**を作ったことと、その欄を**読む機械**が在ることは別の事実である
+ * (ADR-109 D6) — 同じ形が、条件の *種類* の側にもう一度居た。
+ *
+ * 「nightly Rust が安定化したとき」のような外部条件は依然として書けない。Q5 の予算は
+ * その分だけ残る (書けないこと自体は正当。黙って 0 件に見えることを許さないだけ)。
  */
-const EXPIRY_TRIGGER = /満期=(ADR-\d{3})/
+// 文法と評価器は `scripts/expiry-trigger.mjs` ただ 1 箇所 (§1.1)。ここに書き写しかけて
+// 止めた — GSN 側にも満期が要ると分かった日 (ADR-126) に 2 本目の写しが生まれるところで、
+// それは ADR-123 §実装で分かったこと 2 で見つけたばかりの欠陥の再生産だった。
 
 const errors = []
 const ledger = parseLedger()
@@ -280,15 +433,18 @@ if (undeclared.length !== UNDECLARED_BASELINE) {
     '\n    ⚠ 増えた理由が「決着した残しを**記述する**散文」なら、それは残しではなく\n' +
     '      この検査の粒度の問題である (言及と宣言を区別できない)。その場合:\n' +
     '        · 散文を書き換えて数を下げない — 検査に合わせて履歴を消すことになる\n' +
-    '        · baseline を上げるのは正しいが、それは 1 例目に限る\n' +
-    '        · **2 例目なら起票する** — 累積器は docs/PHILOSOPHY.md の Yellow Cards 表\n' +
-    '          (候補: 「除外は数えられねばならない」)。1 例目は 2026-08-05 に記録済み\n' +
+    '        · baseline を上げるのは正しい。ただし理由をこの定数の docstring に書く\n' +
+    '        · **昇格の判定は「無関係な 2 つ目の文脈か」で行う** — 累積器は\n' +
+    '          docs/PHILOSOPHY.md の Yellow Cards 表 (候補: 「除外は数えられねばならない」)。\n' +
+    '          1 例目 2026-08-05 / 同じ文脈での再発 2026-08-12 (ADR-123) を記録済み。\n' +
+    '          同じ検査・同じ機構での再発は 2 例目に**数えない** — 数えると 1 つの欠陥が\n' +
+    '          それ自身で原則に昇格してしまう (CLAUDE.md Q2 は「2+ の無関係な文脈」)\n' +
     `    多い順:\n${worst}\n`)
 }
 
 // ── Q2 EXPIRY ────────────────────────────────────────────────────────────────
 
-const statuses = adrStatuses()
+const statuses = adrStatuses(ADR_DIR)
 const ACCEPTED = /^Accepted\b/
 
 // 満期の宣言は**コードに住む**。ADR は満期について*述べる*ので、散文の引用を満期の
@@ -322,33 +478,38 @@ for (const file of files.filter(f => /\.(js|jsx|mjs)$/.test(f))) {
 // 満期の宣言のもう一方の住所 — 登録簿の満期欄。コード側 (`PROVISIONAL_UNTIL`) だけを
 // 読んでいた初版は、満期を*書く欄*を作ったことと、その欄を*読む機械*が在ることを
 // 取り違えていた (ADR-109 D6)。
+/** 満期が来たときの共通の叱り方 (4 形で文面を分けない — 決着の仕方は同じ)。 */
+const expired = (row, what) =>
+  `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期が過ぎている — ${what}\n` +
+  '    満期の来た残しは**更新ではなく決着**で畳む — 片付いたなら行ごと消して\n' +
+  '    UNDECLARED_BASELINE を実測値へ下げ、片付いていないなら「なぜ trigger が\n' +
+  '    間違っていたか」を満期欄に書いて張り替える (延長は先送りであって決定ではない)。'
+
 for (const row of ledger ?? []) {
-  const t = EXPIRY_TRIGGER.exec(row.expiry ?? '')
-  if (!t) continue
-  const status = statuses.get(t[1])
-  if (status === undefined) {
-    errors.push(`Q2 EXPIRY: ${LEDGER} の ${row.id} の満期 trigger ${t[1]} が docs/adr に無い。`)
-  } else if (ACCEPTED.test(status)) {
-    errors.push(
-      `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期が過ぎている — ${t[1]} は Accepted。\n` +
-      `    ${t[1]}: ${status}\n` +
-      '    満期の来た残しは**更新ではなく決着**で畳む — 片付いたなら行ごと消して\n' +
-      '    UNDECLARED_BASELINE を実測値へ下げ、片付いていないなら「なぜ trigger が\n' +
-      '    間違っていたか」を満期欄に書いて張り替える (延長は先送りであって決定ではない)。')
+  for (const t of evaluateTriggers(row.expiry, { root: ROOT, statuses })) {
+    if (t.broken) {
+      errors.push(
+        `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期 trigger (${t.kind}) が壊れている — ${t.broken}。\n` +
+        '    満期が来ないのではなく、満期を判定する場所が消えている。張り替えること。')
+      continue
+    }
+    if (t.fired) errors.push(expired(row, `${t.kind}:${t.what}`))
   }
 }
 
 // ── Q5 REACH ─────────────────────────────────────────────────────────────────
 
-const proseExpiry = (ledger ?? []).filter(r => !EXPIRY_TRIGGER.test(r.expiry ?? ''))
+const proseExpiry = (ledger ?? []).filter(r => !hasExpiryTrigger(r.expiry))
 if (ledger !== null && proseExpiry.length !== PROSE_EXPIRY_BASELINE) {
   const dir = proseExpiry.length > PROSE_EXPIRY_BASELINE ? '増えた' : '減った'
   errors.push(
     `Q5 REACH: 機械が読める満期 trigger を持たない行が ${proseExpiry.length} 件 ` +
     `(baseline ${PROSE_EXPIRY_BASELINE} から ${dir}) — ${proseExpiry.map(r => r.id).join(', ')}\n` +
     (proseExpiry.length > PROSE_EXPIRY_BASELINE
-      ? '    満期欄に `満期=ADR-NNN` を書けるなら書くこと (その ADR が Accepted になった日に Q2 が落ちる)。\n' +
-        '    書けない満期 — ADR の採択に対応しない条件 — なら baseline を上げ、理由を登録簿に宣言すること。\n'
+      ? '    満期欄に trigger を書けるなら書くこと — 4 形ある (ADR-123 D5):\n' +
+        TRIGGER_HELP +
+        '    どれでも書けない満期 — 外部条件 (「nightly Rust が安定化したとき」等) — なら\n' +
+        '    baseline を上げ、理由を登録簿に宣言すること。\n'
       : '    trigger を足したなら baseline をこの実測値へ下げること。下回りも落とすのは、\n' +
         '    「機械が読めない満期がいくつ在るか」が再び記憶の中の数になるから (ADR-103)。\n'))
 }
@@ -401,6 +562,181 @@ for (const row of ledger ?? []) {
         `Q4 REVERSE: ${where} が指す ${p} に残しの語彙が 1 つも無く、未採択の ADR でもない。\n` +
         '    実装されたなら登録簿の行を消すこと — 完了した残しの宣言が居座ると、\n' +
         '    「まだ残っている」という嘘を誰も落とさないまま出し続ける (ADR-109 D4)。')
+    }
+  }
+}
+
+// ── Q7 NOTATION ──────────────────────────────────────────────────────────────
+
+/**
+ * **別の記法で書かれた register が生えていないか** (ADR-124)。
+ *
+ * ADR-123 力学 1 の再発防止。`docs/ROADMAP.md` は 29 行の生きた残しを持ちながら
+ * 残し語彙のヒットが 0 件で、母集団に一行も入っていなかった — **絵文字の優先度表**と
+ * 英語の "Backlog" という別の記法で書かれていたからである。語彙を 1 語ずつ足す経路では
+ * 原理的に届かない。
+ *
+ * だから語彙ではなく**記法そのもの**を数える。優先度マーカーを持つ文書は、それだけで
+ * 「順序づけられた未完了項目の表」= register である。既定は 0 で、正当なものは
+ * `DECLARED_PRIORITY_TABLES` に理由つきで宣言する。
+ *
+ * **数えるのは「表の行」であって「マーカーの出現」ではない。** 初版は文字列
+ * `🔴|🟡|🟢` を数え、**9 件を誤検出した** — ADR-032 の「frontend backlog (🟡 Medium) に
+ * 在ったものを移設」のような*言及*まで拾ったからである。**この検査を書く作業自身が、
+ * この検査が防ごうとしている「言及と宣言の混同」を再生産した** (ADR-123 §力学 3 が
+ * 3 度目)。賢い語彙ではなく**構造**で絞る: 表の行であり、かつ第 1 セルが実質
+ * マーカーだけであること。散文にマーカーを書いても落ちない。
+ *
+ * **限界 (宣言する — 推論させない):** 捕まえるのは**この記法**だけである。次の register が
+ * `[P1]` や `TODO(high)` や Notion のリンクで生えたら、この検査は見ない。記法の集合を
+ * 先回りで網羅することはできない (できるならそもそも力学 1 は起きていない)。
+ * これは「観測された記法を 1 つ塞ぐ」ものであって、一般解ではない。
+ */
+/** 表の行で、第 1 セルが実質 優先度マーカーだけ (`| 🟡 Medium |` / `| ~~🔴 High~~ |`)。 */
+const PRIORITY_ROW = /^\|\s*~{0,2}\s*[🔴🟡🟢][^|]{0,12}\|/
+const hasPriorityTable = (text) => text.split('\n').filter(l => PRIORITY_ROW.test(l)).length >= 2
+const DECLARED_PRIORITY_TABLES = new Map([
+  ['docs/ROADMAP.md',
+   '凍結アーカイブ (ADR-123 D1)。優先度表は**完了記録**として残っており、生きた残しは '
+   + '所有 ADR と登録簿へ移設済み。§未移管 の 14 件だけが Issues 移管待ちで、それは '
+   + 'DEF-021 が覆っている'],
+  ['docs/validation/2026-03-22-phase-c.md',
+   '**ある時点の観測**であって register ではない (validation レポートは 2026-03-22 の '
+   + 'BFF Phase C レビュー結果で、SESSION_LOG と同じ点の記録)。**Q7 が初回実行で見つけた '
+   + '2 つ目の記法** — P1〜P4 の勧告表 6 行を 5 か月間だれも見ていなかった。凍結する前に '
+   + '実体を確認した: 唯一のコード項目 P1 (`_applyGeometryUpdate` の objectId/positions '
+   + 'ガード) は `src/service/SceneService.js:373` に実装済み。残る 5 件は文書・A11Y の '
+   + 'P2/P3 で、生かすなら Issues レーンへ (この宣言は「見た」ことの記録であって '
+   + '「全部済んだ」の主張ではない)'],
+])
+
+for (const file of collectFiles().concat([...EXCLUDED.keys()])) {
+  const abs = join(ROOT, file)
+  if (!existsSync(abs) || !/\.md$/.test(file)) continue
+  const hit = hasPriorityTable(readFileSync(abs, 'utf8'))
+  const declared = DECLARED_PRIORITY_TABLES.has(file)
+  if (hit && !declared) {
+    errors.push(
+      `Q7 NOTATION: ${file} が優先度マーカーの**表**を持っている (行が 2 本以上)。\n` +
+      '    優先度マーカーを持つ文書は「順序づけられた未完了項目の表」= **第二の残し register**\n' +
+      '    である。ROADMAP がまさにこれで、29 行が語彙ヒット 0 件のまま母集団の外に居た\n' +
+      '    (ADR-123 §力学 1)。残しは登録簿か Issues のどちらかに置くこと。\n' +
+      '    完了記録として正当なら DECLARED_PRIORITY_TABLES に理由つきで宣言すること。')
+  }
+  if (!hit && declared) {
+    errors.push(
+      `Q7 NOTATION: ${file} は DECLARED_PRIORITY_TABLES に宣言されているのに優先度マーカーの\n` +
+      '    表が無い。宣言が実物より古い — 行を消すこと (ADR-103)。')
+  }
+}
+
+// ── Q6 DRAFT ─────────────────────────────────────────────────────────────────
+
+/**
+ * 実装が住むディレクトリ。**`docs/` を含めない** — ADR は互いを*参照*するので、
+ * docs を数えると「ADR が引用された」だけで実装が在ることになる。
+ */
+const IMPL_DIRS = ['src', 'core', 'server']
+const IMPL_EXT = /\.(js|jsx|mjs|ts|tsx|py)$/
+const IMPL_SKIP = new Set(['node_modules', '.venv', 'dist', '__pycache__', 'vendor'])
+
+/** @returns {string[]} 実装ファイル (repo 相対)。 */
+function collectImplFiles() {
+  const out = []
+  const walk = (rel) => {
+    const abs = join(ROOT, rel)
+    if (!existsSync(abs)) return
+    for (const name of readdirSync(abs)) {
+      if (name.startsWith('.') || IMPL_SKIP.has(name)) continue
+      const childRel = `${rel}/${name}`
+      if (statSync(join(ROOT, childRel)).isDirectory()) walk(childRel)
+      else if (IMPL_EXT.test(name)) out.push(childRel)
+    }
+  }
+  IMPL_DIRS.forEach(walk)
+  return out.sort()
+}
+
+/**
+ * **実装が先行している Draft / Proposed の宣言表** (ADR-123 D4)。
+ *
+ * 既定は 0 — Draft は「判断が閉じていない」という意味なので、実装が在るのは既定では
+ * 矛盾である。しかし**実在する正当な形が 1 つある**: 実装して初めて設計が決まる探索的
+ * MVP (ADR-046 の Context DSL がまさにそれで、MVP を書いて初めて interval の確定方式が
+ * worst-case 自動解決ではなく Decision エンティティ経由だと分かった)。
+ *
+ * **だから gate (マージ拒否) ではなく census にした。** gate が最初から在ったら
+ * ADR-046 は書けなかった。加えて gate は今回見つかった 2 件を 1 件も防げない —
+ * どちらも実装先行ではなく **Status の上げ忘れ**だからである。
+ *
+ * **検査は数え、この表が分類する。** 「ADR への言及」と「ADR の決定の実装」は grep で
+ * 区別できない (ADR-123 §力学 3 — ADR-044 は 5 ファイルから*言及*されるが φ 準同型の
+ * 実装は 1 行も無い)。より賢い正規表現で解こうとすると規則が ADR の数だけ要るので、
+ * 個数は機械が数え、判断は人が 1 度だけここに書く。
+ *
+ * 宣言欄が無いと人は Status を `Accepted` に倒して緑にし、**台帳に嘘が入って今より
+ * 悪化する**。逆向き (宣言したのに参照が 0) も落とす — 退役の腐敗は違反を*見逃す*の
+ * ではなく緑を出す (ADR-103)。
+ */
+const DRAFT_WITH_IMPLEMENTATION = [
+  { adr: 'ADR-044',
+    why: '**言及であって実装ではない。** `LayoutDslSchema.js` / `LayoutCompiler.js` / '
+       + '`ProvenanceTree.js` / `NlIntake.js` / `SynonymQuotient.js` が φ 準同型の *考え方* を '
+       + '引用しているだけで、ADR-044 が名指しした `src/service/FunctionRegistry.js` / '
+       + '`FunctionMatcher.js` / `SpatialCommandParser` は 1 つも存在しない。'
+       + 'ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた。'
+       + 'この行が消えるのは ADR-044 の判断が閉じたとき (DEF-017)' },
+]
+
+if (ledger !== null) {
+  const implFiles = collectImplFiles()
+  const declared = new Map(DRAFT_WITH_IMPLEMENTATION.map(d => [d.adr, d]))
+  const undecided = [...statuses.entries()]
+    .filter(([, s]) => /^(Draft|Proposed)\b/.test(s))
+    .map(([id]) => id)
+    .sort()
+
+  if (undecided.length === 0) {
+    errors.push(
+      'Q6 DRAFT: Draft / Proposed の ADR が 1 本も無い。0 は達成ではなく Status の\n' +
+      '    読み取りが壊れた可能性が高い (原則 #31 — 正当な 0 は宣言させる)。')
+  }
+
+  const refCount = new Map(undecided.map(id => [id, []]))
+  for (const file of implFiles) {
+    const text = readFileSync(join(ROOT, file), 'utf8')
+    for (const id of undecided) if (text.includes(id)) refCount.get(id).push(file)
+  }
+
+  for (const id of undecided) {
+    const refs = refCount.get(id)
+    const decl = declared.get(id)
+    if (refs.length > 0 && !decl) {
+      errors.push(
+        `Q6 DRAFT: ${id} は ${statuses.get(id).split(/[（(—,]/)[0].trim()} なのに ` +
+        `実装ディレクトリの ${refs.length} ファイルから参照されている。\n` +
+        `${refs.slice(0, 6).map(f => `      · ${f}`).join('\n')}\n` +
+        '    判断が閉じているなら Status を上げること (実装が台帳を追い越したまま放置すると、\n' +
+        '    「まだ決めていない」という嘘を出し続ける — ADR-123 §力学 2)。\n' +
+        '    参照が**言及であって実装ではない**なら、scripts/check-deferrals.mjs の\n' +
+        '    DRAFT_WITH_IMPLEMENTATION に理由つきで宣言すること。検査は数え、宣言が分類する。')
+    }
+    if (refs.length === 0 && decl) {
+      errors.push(
+        `Q6 DRAFT: ${id} は DRAFT_WITH_IMPLEMENTATION に宣言されているのに、実装ディレクトリ\n` +
+        '    からの参照が 0 件。宣言が実物より古い — 行を消すこと (ADR-103 — 退役の腐敗は\n' +
+        '    違反を見逃すのではなく緑を出す)。')
+    }
+  }
+
+  for (const d of DRAFT_WITH_IMPLEMENTATION) {
+    if (!statuses.has(d.adr)) {
+      errors.push(`Q6 DRAFT: DRAFT_WITH_IMPLEMENTATION の ${d.adr} が docs/adr に存在しない。`)
+    } else if (!/^(Draft|Proposed)\b/.test(statuses.get(d.adr))) {
+      errors.push(
+        `Q6 DRAFT: DRAFT_WITH_IMPLEMENTATION の ${d.adr} はもう Draft / Proposed ではない ` +
+        `(${statuses.get(d.adr).split(/[（(—,]/)[0].trim()})。\n` +
+        '    判断が閉じたので、この宣言は役目を終えている。行を消すこと。')
     }
   }
 }

@@ -3,6 +3,7 @@
 - Status: Proposed (未実装 — ADR-118 と同じ PR で起票。ADR-120 が先に要る)
 - Date: 2026-08-11
 - Deciders: yuubae215, Claude
+- 段: **G-1** (`docs/grasp/implementation-order.md` — grasp レーンの順序表)。前提: **G-0 (ADR-120 D1 = DEF-013)** — 重心不在で全候補が不当に低く見える状態を先に直す
 - Supersedes / Superseded by: なし (ADR-056/077 の動詞境界を重心へ、ADR-060 の kind union を request 側へ)
 
 ## Context

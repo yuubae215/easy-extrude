@@ -155,3 +155,23 @@ Full DAG editing (add/remove nodes and edges) is deferred to Phase C.
 - Multi-instance BFF session sharing (Redis pub/sub)
 - B-rep topology extraction from STEP and integration with OperationGraph
 - Node Editor editing of DAG topology (add/remove nodes and edges via UI)
+
+### 残し — Node Editor の DAG トポロジー編集 (2026-08-12 移設)
+
+登録簿の **DEF-020** が指す先。上の Open questions 最終行と、`docs/ROADMAP.md` の
+**2 箇所** (§BFF Phase D の「Node Editor — DAG topology editing UI」と §Phase S-4) に
+分かれて書かれていた**同一項目**を、ここへ畳んだ。
+
+**なぜ二重登録が残ったか。** ROADMAP §Phase S-4 は「Phase S-4 が完成したら
+『Node Editor — DAG topology editing UI』を BFF Phase D テーブルから削除し、この
+ロードマップ項目に統合」という **条件つき退役** を自分で書いていた。条件つき退役は
+誰も実行しない — 実行を促す機械が無いからである (ADR-103 と同型)。
+
+**現状 (2026-08-12 実測):** `src/view/NodeEditorView.js` (716 行) は **Phase S-2
+(SpatialLink topology editing) まで**。OperationGraph は WS `graph.snapshot` からの
+**読み取りのみ**で、`addEdge` / `removeEdge` に相当する編集経路は 0 件。**未着手。**
+
+**満期条件:** ROADMAP §Phase S-4 自身が「**新 ADR は Phase S-3 (拘束ソルバー設計)
+および Phase S-4 (統合グラフ編集 UI) の着手前に作成する**」と宣言している。よって
+満期は *実装* ではなく **その ADR が起票されたとき**である。段ではなく登録簿の行に
+するのはこのためで、新しいレーンの順序表は作らない (ADR-123 §Consequences)。

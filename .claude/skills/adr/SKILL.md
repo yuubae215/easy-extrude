@@ -67,6 +67,24 @@ ADR を新規に起こすときは、**同じ PR で `docs/gsn/<adr-slug>.gsn` �
 `Proposed → Accepted → (Superseded by ADR-NNNN | Deprecated)`
 新規作成時の既定は **Proposed**。ユーザが採択を明言したら Accepted。
 
+## `Retires:` — この ADR が殺すもの(ADR-125。**ADR-125 以降は必須**)
+
+**必ず問うこと: この決定が効いたとき、何が消えていなければならないか。**
+
+- 書式: `- Retires: なし — <理由>` または
+  `- Retires: PATH:<path> · GREP:<path>::<regex>`(番地は登録簿の満期 trigger と同じ語彙)。
+- **「消すものが無い」も宣言である**(既定値で埋めない — 原則 #31)。欄が無いと CI が落ちる。
+- 発火は **Status 遷移**で両方向を問う: `Accepted` なら指す先は**在ってはならず**、
+  `Proposed`/`Draft` なら**在らねばならない**(退役の腐敗は違反を見逃すのではなく緑を出す)。
+- **Accepted の時点で消せないものは退役ではなく残し。** `docs/DEFERRAL_LEDGER.md` の
+  行へ降ろし `Retires:` からは外す(`Retires:` は履行済みの義務の記録へ収束させる)。
+- 発火事象がまだ ADR として存在しない(「Phase N が完成したら」)ときは、登録簿の行にし
+  満期を「その ADR が起票されたとき」にする — 書く人が `Retires:` を書く(ADR-125 D4)。
+
+なぜ ADR 側なのか: 観測した条件つき退役 5 例はすべて義務が**消される側**に散文で
+書かれており、条件が来た日に誰もそこを読み返さなかった。**義務は、それを発火させる
+事象の側に置く**(原則 #32)。
+
 ## 表現(三位一体 / 核 §0)
 ADR は証明の文書化。テキストだけで書かない — 該当する側面があれば必ず添える:
 - 図: Context の位置づけ(層・グラフ上のどこか)や Decision が変える構造・遷移を
@@ -83,6 +101,7 @@ ADR は証明の文書化。テキストだけで書かない — 該当する�
 - Status: Proposed
 - Date: YYYY-MM-DD
 - Deciders: <names / roles>
+- Retires: <なし — 理由 / PATH:<path> · GREP:<path>::<regex>>
 - Supersedes / Superseded by: <ADR-XXXX / なし>
 
 ## Context — Goal と力学(§1.2 Goal)

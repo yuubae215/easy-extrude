@@ -903,6 +903,38 @@ which is the zero-shaped blind spot one level up: not a missing *item*, but a mi
 
 ---
 
+### 32. An Obligation Belongs to the Event That Fires It — Not to the Thing It Affects
+
+「A が起きたら B を消す / 変える」という約束は、**A の側に書く**。B の隣に書いた約束は、
+A が起きた日に誰も読み返さない。B は自分がいつ死ぬべきかを知っているが、**その時が
+来たことを知らない**。
+
+観測 (2026-08-12 の棚卸し、5 例・すべて無関係な文脈):
+
+| 約束の置き場所 (B の隣) | A | 結果 |
+|---|---|---|
+| `DocIntake.js` の `PROVISIONAL_UNTIL` | ADR-108 の採択 | 満期が無言で過ぎ、**写し 7 箇所**が同時に古くなった |
+| ROADMAP §Phase S-4 の表のセル | Phase S-4 の完成 | 誰も実行せず、二重登録が残った |
+| `DS_PENDING` の隣のコメント | ADR-103 の実装 | **3 リリース**残った |
+| 退役した選択色 | ADR-100 の実装 | 同上 |
+| ADR-060 の 5 項目 | upstream 実装 | 3 完了・1 消滅、**宣言だけが嘘を出し続けた** |
+
+**A はほぼ常に、既に観測されている事象である** — ADR の Status 遷移、段の完了、
+リリース。観測されている事象の側に義務を置けば、義務は**自動的に問われる**。
+観測されていない側 (B) に置けば、人の記憶が唯一の trigger になる。
+
+原則 #31 との違い: #31 は *数え方* の話 (不在には欄が無いので、在るものを辿る検査は
+素通りする)。#32 は **義務の置き場所** の話である。両方を破ると、履行されなかった
+義務が「数えられない」うえに「思い出されない」状態になる — これが退役の腐敗が
+**違反を見逃すのではなく緑を出す**理由である。
+
+**このリポジトリでの写像:** ADR ヘッダの `Retires:` 欄 (ADR-125 — ADR-125 以降必須、
+「なし」も宣言)。発火は Status 遷移で、`pnpm test:adr` が両方向を問う。発火事象が
+まだ ADR として存在しないときは `docs/DEFERRAL_LEDGER.md` の行が受け、満期を
+「その ADR が起票されたとき」にする (DEF-020 がその形)。
+
+---
+
 ## Yellow Cards — Pending Elevation
 
 Single-context violations that do not yet meet the 2+ threshold for a named principle.
@@ -920,7 +952,7 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | Overflow-escaping popups belong on body | 2026-05-01 · `UIView.js` · `_modeDropdownEl` was a child of the header (which has `overflow:hidden`); the dropdown was clipped below the header boundary and unselectable. Fixed by moving to `document.body` with `position:fixed` + `getBoundingClientRect()` positioning, matching the already-correct `_moreMenuDropdown` pattern. | Mobile Header Overflow |
 | Three.js helpers must match the actual geometry model, not an approximation | 2026-05-02 · `MeshView.js` · `THREE.BoxHelper` computes AABB; because `MeshView` bakes corner positions as world-space vertices with no mesh transform, the AABB diverges from the actual OBB after R-key rotation. After confirming rotation, the selection highlight appeared as an axis-aligned box larger than the solid, visually rotating independently. Fixed by replacing `BoxHelper` with `LineSegments+EdgesGeometry` kept in sync by `updateGeometry()`. | BoxHelper Forbidden for World-Space Baked Geometry |
 | Per-frame derived values must be computed before their consumers in the same frame | 2026-05-18 · `AppController.js` animation loop · `updateLabelPosition()` read `_group.position` before `_updateWorldPoses()` set it for the current frame, causing CF labels to lag one frame behind and appear to vibrate at startup. Fixed by moving `_updateWorldPoses()` to run before the per-object label loop. The failure mode is asymmetric: the bug is invisible when the scene is static (lag = 0 px); it only manifests when the cache is being populated (startup) or when the CF moves (drag). | CF Label Position Order |
-| An exemption must be countable — a hand-written exclusion list is the population-less table one level down | 2026-08-05 · `scripts/check-deferrals.mjs` · ADR-110/111/112 で残しを 3 件**片付けた**ところ、宣言外の残しが 31 → 71 へ*増えた*。覆う粒度がファイル単位なので、消した行が覆っていた散文 — 決着した残しを**記述する**文 — が母集団へ戻ったため。検査は「ここに残しが在る」と「この文が残しについて述べている」を区別できず、その唯一のレバーが `EXCLUDED` = 母集団を持たない手書きの 4 ファイル一覧 (原則 #31 / ADR-102 が語彙から消した `place-list` が、**未宣言のものを見つけるのが仕事の当の道具の中に**生き残っている)。今回は実測値を焼いた (履歴を書き換えない)。**2 例目で昇格** — 候補の解は「除外を導出せず行単位で宣言させ、宣言の個数を ratchet で縛る」(ADR-109 Q5 / ADR-100 の予算と同じ形。Status からの導出は不可 — ADR-060 のように *Accepted なのに生きている残し*を持つ行が実在し、Q4 が誤報する) | `pnpm test:deferrals` Q1 の失敗メッセージ (baseline を上げる瞬間に問われる — 憲法 Q3) |
+| An exemption must be countable — a hand-written exclusion list is the population-less table one level down | 2026-08-05 · `scripts/check-deferrals.mjs` · ADR-110/111/112 で残しを 3 件**片付けた**ところ、宣言外の残しが 31 → 71 へ*増えた*。覆う粒度がファイル単位なので、消した行が覆っていた散文 — 決着した残しを**記述する**文 — が母集団へ戻ったため。検査は「ここに残しが在る」と「この文が残しについて述べている」を区別できず、その唯一のレバーが `EXCLUDED` = 母集団を持たない手書きの 4 ファイル一覧 (原則 #31 / ADR-102 が語彙から消した `place-list` が、**未宣言のものを見つけるのが仕事の当の道具の中に**生き残っている)。今回は実測値を焼いた (履歴を書き換えない)。**2 例目で昇格** — 候補の解は「除外を導出せず行単位で宣言させ、宣言の個数を ratchet で縛る」(ADR-109 Q5 / ADR-100 の予算と同じ形。Status からの導出は不可 — ADR-060 のように *Accepted なのに生きている残し*を持つ行が実在し、Q4 が誤報する)　**再発 2026-08-12 (ADR-123)**: 同じ検査で 71 → 99。内訳の後半はまた「決着を*記述する*散文」(ADR-123 本文・登録簿の書き換え・各 ADR へ移設した宣言)。**ただし昇格しない** — Q2 が求めるのは「2 つの**無関係な**文脈」であって、これは同じファイル・同じ検査・同じ機構での再発である。同じ文脈での再発を 2 例目に数えると、1 つの欠陥がそれ自身で原則に昇格してしまう。昇格は無関係な 2 つ目が現れた日に判断する。 | `pnpm test:deferrals` Q1 の失敗メッセージ (baseline を上げる瞬間に問われる — 憲法 Q3) |
 | *(graduated to principle #24 — Derive Absolute State from Invariant Sources)* | | |
 | Rendering layer must match spatial role — scene objects use depthTest, overlays bypass it | 2026-05-21 · `Annotated{Region,Line,Point}View.js` · `depthTest: false` made Zones/Routes render over Solids regardless of depth; tempting because flat ground-plane objects are hard to see during authoring. Correct: `depthTest: true` + `polygonOffset`. **Recurrence (2026-06-12, same feature family — not yet a 2nd unrelated context)**: the `polygonOffset` fix itself bit back (slope-scaled factor composited the Zone fill over the opaque Anchor disc at glancing angles). Each layering hack traded one hidden assumption for another; the durable form is explicit ordering in one render queue (`transparent:true, opacity:1` + renderOrder) plus geometry that does not straddle the decal plane. | Annotation View Materials Must Use depthTest: true; Ground Markers Must Not Straddle Z=0 |
 | *(graduated to principle #28 — Mutual Means Round-Trip Up to a Normal Form; contexts: ADR-053 §1.1 + ADR-055)* | | |

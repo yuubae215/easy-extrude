@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Accepted |
+| **Status** | Partially superseded by ADR-040 (§"Known Limitation" の corner-baking のみ; R キー回転そのものは Accepted・実装済み。2026-08-12 に索引だけが正しく header が古いと判明し是正) |
 | **Date** | 2026-05-02 |
 | **References** | ADR-007, ADR-019, ADR-022, ADR-012 |
 
