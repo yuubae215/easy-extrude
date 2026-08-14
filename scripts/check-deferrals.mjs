@@ -686,15 +686,6 @@ const DRAFT_WITH_IMPLEMENTATION = [
        + '`FunctionMatcher.js` / `SpatialCommandParser` は 1 つも存在しない。'
        + 'ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた。'
        + 'この行が消えるのは ADR-044 の判断が閉じたとき (DEF-017)' },
-  { adr: 'ADR-119',
-    why: '**段階実装。D1 だけが入っている (2026-08-14)。** `target` / `obstacles` / '
-       + '`sampling` のスキーマ宣言と両端の準拠テスト (BFF + `core/`) は実装済みで、'
-       + 'ADR 本文が「実装は `target` のスキーマ宣言 → 掴む場所の入力の順」と'
-       + '**その順序自体を決定として**書いている。残る D2/D3 (Layout DSL の把持'
-       + 'フィーチャ、宣言が勝つ 1 方向) は未着手で、しかも ADR 自身が「UI が未設計」'
-       + 'と宣言している以上、判断は閉じていない。よって Status を `Accepted` へ'
-       + '倒すのは嘘になる。この行が消えるのは D2/D3 が入って ADR-119 が Accepted に'
-       + 'なったとき (DEF-014)' },
 ]
 
 if (ledger !== null) {

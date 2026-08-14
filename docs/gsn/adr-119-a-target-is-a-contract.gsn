@@ -3,7 +3,7 @@ GOALS adr119_a_target_is_a_contract
 goal TargetIsUnderContractAndGraspLocationIsDeclarable
 uuid 651ab872-4929-4f60-b1b2-479ecf04ee71
 summary "探索の主役である掴む対象がワイヤ契約を持ち、両端で検証され、さらに「どこを掴むか」をユーザーが宣言でき、宣言していないことと宣言された「どこでもよい」が区別される"
-state UnderReview
+state Approved
 labels adr-119, contract, grasp, principle-29, principle-31, proposed
 artifacts
 - "docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md"
@@ -66,10 +66,21 @@ artifacts
 
         goal UnstatedAndStatedAnywhereAreDistinguishable
         uuid 9008e678-29b4-4e01-b1f6-205a7cf1f839
-        summary "掴む場所を宣言していないことと、宣言された「どこでもよい」が別の状態として区別され、導出に落ちたことは画面に出る"
-        labels support-exploring
+        summary "掴む場所を宣言していないことと、宣言された「どこでもよい」が別の状態として区別され、導出に落ちたことは画面に出る。宣言があるときサンプルは宣言由来のみで、導出とマージされない"
+        labels support-verified
 
-            assumption PureLayerTestWillSettleIt
-            uuid fce1e65e-f3d4-4fae-921c-8c9a50ab4a69
-            summary "未着手。決着させる検査は純粋層のテストで、2 つの状態が別の値を返すこと。原則 #31 の適用対象で、既定値で埋めると区別が消える"
+            solution TheStateIsAssertedBecauseTheSamplesCannotBe
+            uuid 7a5c1e02-9d3b-4f61-8c7a-1f0b6d2e5a48
+            summary "D2/D3 実装 (2026-08-14, ADR-128)。src/domain/graspFeature.test.js が 4 状態 (derived / declared-anywhere / declared-faces / malformed) を焼く。**前 2 者は同じサンプルを出す**ので点群を比べる検査では区別の消滅が見えない — だから検査は状態名と画面に出る文について書き、同じテストでサンプルの一致も assert して「だから状態を見るしかない」を明示する。D3 側は逆に負の assert: 吸引の導出面 +z に対し -z を宣言し、+z のサンプルが 1 つも無いことを問う (「宣言した面が在る」という書き方はマージを通す)。文書への往復は DocBuilder.test.js が別に焼く — 純粋層は「宣言が画面から書けること」を構造的に見ない"
+            artifacts
+            - "src/domain/graspFeature.js"
+            - "src/domain/graspFeature.test.js"
+            - "src/context/DocBuilder.test.js"
+            - "docs/adr/ADR-128-a-declaration-that-cannot-be-written-is-not-a-declaration.md"
+
+            context TheDeclarationCanResurrectTheADR118Defect
+            uuid c3f81b46-2e07-4a95-b6d2-0d9a7e4c1f53
+            summary "D2/D3 実装中に判明。core/ は把持幅をサンプル点の広がりから測るので、平行ジョーで 1 面だけ宣言すると幅がほぼ 0 になり、閉じられないハンドがゲートを通る — ADR-118 が直した欠陥が、宣言という正面玄関から復活する。対向面を黙って足すのは D3 のマージ禁止に触れるので、gap として止めて理由を出す (ADR-128 D5)。宣言を足すという行為は、導出が守っていた不変条件を無効化しうる"
+            artifacts
+            - "src/controller/GraspController.test.js"
 

@@ -46,11 +46,12 @@ artifacts
         goal TheFlangeConventionMatchesWhatTheFrontDraws
         uuid 8f2b1d40-6a37-4c58-b1e9-2d7c05a4f9b1
         summary "候補 pose をフランジ姿勢へ写す規約 (FLANGE_Z_IS_APPROACH) が、フロントが骨格を描くときの規約と一致する"
-        labels support-exploring
+        labels support-verified
 
-            assumption CrossCheckAgainstTheRenderedSkeletonWillSettleIt
-            uuid c4a7e918-52b3-4d6f-8a01-7b3e6f2c8d55
-            summary "未着手 (DEF-030)。**自己整合な誤った規約も往復検査を通る** — 候補→目標→IK→FK→目標 は規約を変えても閉じるので、この木の RoundTripAndRecovery はこの goal を支えない。決着させるのは、同じ関節値についてフロントの URDF FK と core/ の DH FK が同じフランジ姿勢を出すこと。満期=ADR-119 ではなく、フロントが kinematics を送る配線が入ったとき: 満期=GREP:src/controller/GraspController.js::kinematics"
+            solution TheDrawnFlangeFaceIsReadBackAndAsserted
+            uuid 5e9d3b71-08c4-4a26-9f13-6c8b2a70de49
+            summary "2026-08-14 (ADR-128 D7、DEF-030 の 3 番目)。**自己整合な誤った規約も往復検査を通る** — 候補→目標→IK→FK→目標 は規約を変えても閉じるので、この木の RoundTripAndRecovery はこの goal を支えない。決着させられる外部の証人はアプリが *描く* 形だけなので、src/domain/robotKinematics.test.js が public/robot/skeleton_arm.urdf の wrist_3_link のフランジ面 visual を読み戻し、宣言軸 FLANGE_Z_IS_APPROACH (+Z) の上に在ることを assert する。フランジの絵を裏返した日にビルドが落ちる。同じファイルが 6 数の読み出しも焼く — URDF から導出するので写しが存在せず、読み出しが UR5e 公表値を再現することを釘付けする"
             artifacts
-            - "core/easy_extrude_core/engine/ur_solver.py"
-            - "docs/DEFERRAL_LEDGER.md"
+            - "src/domain/robotKinematics.js"
+            - "src/domain/robotKinematics.test.js"
+            - "public/robot/skeleton_arm.urdf"

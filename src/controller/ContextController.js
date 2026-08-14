@@ -56,6 +56,7 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
+  setEntityGraspFeature,
 } from '../context/DocBuilder.js'
 import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
 import { canonicalForm } from '../context/CanonicalForm.js'
@@ -473,11 +474,43 @@ export class ContextController {
     this._runDocEdit(beforeDoc, afterDoc, `Remove ${type} ${ref}`, `Could not remove ${type}`)
   }
 
-  /** Shared execute→push→refresh (or toast-on-throw) for edit / remove commands. */
+  /**
+   * Declare (or clear) WHERE a layout Solid should be grasped — ADR-119 D2 /
+   * ADR-128's write path.
+   *
+   * **Deliberately NOT guarded on `isNegotiation`**, unlike its neighbours above.
+   * The grasp panel left the negotiation floor in ADR-106 D3 ("can this robot
+   * pick this up" has ONE owner and does not belong in the room built for
+   * questions with several), so gating this on negotiation would put the panel's
+   * own control behind a mode the panel no longer lives in — a disabled input
+   * whose reason is un-showable is the silent no-op #11 forbids.
+   *
+   * It still routes through the SAME doc-edit command as every other doc
+   * mutation (原則 #1: one authoritative entry point), so the declaration is
+   * undoable, exportable, and recompiles the layout the grasp request reads.
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   * @param {object|null} feature  the declaration, or null to clear it back to
+   *        "nobody said" (which is NOT the same as declaring `anywhere`)
+   */
+  setGraspFeature(ref, feature) {
+    if (!ref || !this._ctxService.loaded) return
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = setEntityGraspFeature(beforeDoc, ref, feature)
+    const label = feature == null ? 'Clear grasp location' : 'Declare grasp location'
+    return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the grasp location')
+  }
+
+  /**
+   * Shared execute→push→refresh (or toast-on-throw) for edit / remove commands.
+   * Returns the settled promise so a caller that owns a DERIVED projection of the
+   * doc (the grasp panel's target roster) can refresh it after the recompile
+   * rather than guessing when the new layout exists (原則 #23).
+   */
   _runDocEdit(beforeDoc, afterDoc, label, failMsg) {
     const ctrl = this._ctrl
     const cmd = createDocEditCommand(this._ctxService, beforeDoc, afterDoc, label, this._viewContext())
-    Promise.resolve(cmd.execute())
+    return Promise.resolve(cmd.execute())
       .then(() => {
         ctrl._commandStack.push(cmd)   // post-hoc record (CODE_CONTRACTS push vs execute)
         ctrl._refreshUndoRedoState()
@@ -1598,6 +1631,10 @@ export class ContextController {
     // The grasp ghost's disposal boundary is still the floor's exit (ADR-059 §B-5,
     // PHILOSOPHY #9) — that one is a resource lifetime, not a visibility patch.
     ctrl._graspCtrl?.disposeGhost()
+    // Same boundary, same reason (原則 #9): the grasp-location overlay is a
+    // resource the grasp panel owns, and the context ending is when that panel's
+    // subject stops existing. Added in the same commit as its allocation.
+    ctrl._graspCtrl?.disposeSampleView()
     ui.contextEnd()
     this._mode = null
     this._provenanceSceneId = null

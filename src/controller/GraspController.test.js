@@ -49,6 +49,9 @@ function fakeStore() {
       // ADR-090 — the derived robot roster the panel reads (sole writer: the
       // controller under test, via refreshRobots()).
       contextSetRobots(robots) { state.context.robots = robots },
+      // ADR-117 / ADR-119 — the derived target roster, now carrying each target's
+      // resolved grasp-location declaration (same sole writer).
+      contextSetGraspTargets(t) { state.context.graspTargets = t },
     },
   }
   return { getState: () => state, _state: state }
@@ -131,11 +134,29 @@ function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation
 }
 
 /** Build a controller + fresh fake store; returns both. */
-function setup(opts = {}) {
+function setup(opts = {}, deps = {}) {
   const store = fakeStore()
   const ctrl  = makeCtrl(opts)
-  const gc    = new GraspController(ctrl, store)
+  const gc    = new GraspController(ctrl, store, deps)
   return { gc, ctrl, store, grasp: () => store.getState().context.grasp }
+}
+
+/** A BFF that records the request it was handed (the wiring assertions read it). */
+function recordingBff() {
+  const rec = { sent: null }
+  rec.bff = {
+    async compileLayout() { return { objects: [] } },
+    async graspSearch(req) { rec.sent = req; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  return rec
+}
+
+/** LAYOUT with a grasp-location declaration on the one graspable Solid. */
+function layoutWithFeature(graspFeature) {
+  return {
+    ...LAYOUT,
+    entities: LAYOUT.entities.map(e => (e.ref === 'widget' ? { ...e, graspFeature } : e)),
+  }
 }
 
 // ── openGrasp ────────────────────────────────────────────────────────────────
@@ -499,6 +520,142 @@ test('camera and gripper declarations ride the request open payload verbatim', a
   assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
   assert.deepEqual(sent.graspSearch.gripper, gripper)
   assert.deepEqual(sent.graspSearch.robot, { base: [-2, 2, 0], tcpOrientation: [0, 0, 0, 1] })
+})
+
+// ── The declarations actually REACH the request (ADR-116's lesson) ───────────
+//
+// Each of the three below was, before this change, a value that existed and was
+// never sent: a correct thing nobody read. That failure mode is invisible from
+// the producing side — the URDF is right, the panel field is right, the solver is
+// right — so the assertion has to be made at the WIRE, on the request the BFF
+// was actually handed.
+
+test('URDF 由来の運動学宣言が request に載る — ADR-127 の解析解が初めて画面に届く経路', async () => {
+  const kinematics = { kind: 'universalRobots', dh: { d1: 0.1625, a2: -0.425, a3: -0.3922, d4: 0.1333, d5: 0.0997, d6: 0.0996 } }
+  const rec = recordingBff()
+  const { gc } = setup({ bff: rec.bff }, { robotKinematics: kinematics })
+  await gc.runGraspSearch({})
+  assert.deepEqual(rec.sent.graspSearch.robot.kinematics, kinematics)
+  // ...and it rides ON the robot it describes, not beside it: the base pose and
+  // the structure are two facts about one arm.
+  assert.deepEqual(rec.sent.graspSearch.robot.base, [-2, 2, 0])
+})
+
+test('運動学の宣言が無ければ鍵ごと落とす — 素朴コーン判定のまま (ADR-127 D3)', async () => {
+  const rec = recordingBff()
+  const { gc } = setup({ bff: rec.bff })       // no robotKinematics injected
+  await gc.runGraspSearch({})
+  assert.equal('kinematics' in rec.sent.graspSearch.robot, false)
+})
+
+test('宣言されたリーチ範囲が plan{} で載り、未宣言なら鍵ごと落ちる (ADR-120 / 原則 #31)', async () => {
+  const rec  = recordingBff()
+  const plan = { reachMin: 0.2, reachMax: 0.85, wristConeHalfAngle: 1.05 }
+  const { gc } = setup({ bff: rec.bff })
+  await gc.runGraspSearch({ plan })
+  assert.deepEqual(rec.sent.graspSearch.plan, plan)
+
+  const rec2 = recordingBff()
+  const { gc: gc2 } = setup({ bff: rec2.bff })
+  await gc2.runGraspSearch({})
+  // Omitted, NOT zeroed: a declared-zero envelope and an undeclared one must not
+  // produce the same request, or `reach_margin` cannot tell "no margin" from
+  // "never measured".
+  assert.equal('plan' in rec2.sent.graspSearch, false)
+})
+
+// ── Where to grasp: the declaration reaches the wire, and wins (ADR-119 D2/D3) ─
+
+test('宣言された面だけが request のサンプルになる — 導出面と混ざらない (D3)', async () => {
+  const rec = recordingBff()
+  const { gc } = setup({
+    bff: rec.bff,
+    layoutDsl: layoutWithFeature({ kind: 'faces', faces: [{ face: '-z' }] }),
+  })
+  await gc.runGraspSearch({ gripper: { kind: 'suction', cupDiameter: 0.04 } })
+  const samples = rec.sent.graspSearch.target.surfaceSamples
+  assert.ok(samples.length > 0)
+  // Suction derives '+z'. Not one derived sample may appear — asserting only
+  // that the declared face is present would pass under a merge.
+  for (const s of samples) assert.equal(s.normal[2], -1)
+})
+
+test('宣言が無いときは導出のまま — 語彙を足しても既存の答えが動かない', async () => {
+  const withNothing = recordingBff()
+  const withAnywhere = recordingBff()
+  const a = setup({ bff: withNothing.bff })
+  const b = setup({ bff: withAnywhere.bff, layoutDsl: layoutWithFeature({ kind: 'anywhere' }) })
+  const gripper = { kind: 'suction', cupDiameter: 0.04 }
+  await a.gc.runGraspSearch({ gripper })
+  await b.gc.runGraspSearch({ gripper })
+  // Same samples on the wire — which is exactly why the DISTINCTION between the
+  // two states cannot be evidenced here and is evidenced in the pure layer
+  // (graspFeature.test.js) instead. Named so the omission is deliberate.
+  assert.deepEqual(
+    withAnywhere.sent.graspSearch.target.surfaceSamples,
+    withNothing.sent.graspSearch.target.surfaceSamples,
+  )
+})
+
+test('平行ジョーに 1 面だけの宣言は BFF へ行く前に止まり、理由が出る (ADR-118 の再演を防ぐ)', async () => {
+  let reached = 0
+  const bff = {
+    async compileLayout() { reached += 1; return { objects: [] } },
+    async graspSearch()   { reached += 1; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc, ctrl, grasp } = setup({
+    bff, layoutDsl: layoutWithFeature({ kind: 'faces', faces: [{ face: '+x' }] }),
+  })
+  await gc.runGraspSearch({ gripper: { kind: 'parallelJaw', maxOpening: 0.08 } })
+  assert.equal(reached, 0, '幅が測れない要求を投げてはならない')
+  assert.equal(grasp().status, 'no-target')
+  assert.match(grasp().reason, /opposed/)
+  assert.ok(ctrl._uiView.toasts.length > 0, '無言で止まるのが最悪の失敗 (原則 #11)')
+})
+
+test('読めない宣言は導出へ落ちず停止する — 「宣言したのに無視された」を作らない', async () => {
+  let reached = 0
+  const bff = {
+    async compileLayout() { reached += 1; return { objects: [] } },
+    async graspSearch()   { reached += 1; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const { gc, grasp } = setup({ bff, layoutDsl: layoutWithFeature({ kind: 'somewhere' }) })
+  await gc.runGraspSearch({})
+  assert.equal(reached, 0)
+  assert.equal(grasp().status, 'no-target')
+})
+
+test('setGraspFeature は文書編集の唯一の入口へ委譲し、投影を読み直す (§1.1)', async () => {
+  const { gc, ctrl, store } = setup({})
+  const calls = []
+  ctrl._ctxCtrl.setGraspFeature = (ref, feature) => {
+    calls.push({ ref, feature })
+    // The document is the authority: emulate the recompile the real doc-edit does.
+    ctrl._ctxService.getCompiled = () => ({ layoutDsl: layoutWithFeature(feature) })
+    return Promise.resolve()
+  }
+  gc.openGrasp()
+  await gc.setGraspFeature('widget', { kind: 'faces', faces: [{ face: '+y' }, { face: '-y' }] })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].ref, 'widget')
+  // The projection reflects what the DOCUMENT now says — not what we sent.
+  assert.equal(store.getState().context.graspTargets.feature.state, 'declared-faces')
+  assert.deepEqual(
+    store.getState().context.graspTargets.feature.faces.map(f => f.face),
+    ['+y', '-y'],
+  )
+})
+
+test('宣言を消すと「宣言していない」へ戻る — anywhere ではない', async () => {
+  const { gc, ctrl, store } = setup({ layoutDsl: layoutWithFeature({ kind: 'anywhere' }) })
+  ctrl._ctxCtrl.setGraspFeature = (ref, feature) => {
+    ctrl._ctxService.getCompiled = () => ({ layoutDsl: feature ? layoutWithFeature(feature) : LAYOUT })
+    return Promise.resolve()
+  }
+  gc.openGrasp()
+  assert.equal(store.getState().context.graspTargets.feature.state, 'declared-anywhere')
+  await gc.setGraspFeature('widget', null)
+  assert.equal(store.getState().context.graspTargets.feature.state, 'derived')
 })
 
 // ── 0 / 1 / N robots: the gate and the selection (ADR-090) ───────────────────

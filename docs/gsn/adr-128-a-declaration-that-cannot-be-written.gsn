@@ -1,0 +1,84 @@
+GOALS adr128_a_declaration_that_cannot_be_written
+
+goal DecidedFactsReachTheScreenAndSilenceIsVisible
+uuid b866d100-56ef-44fa-8906-8794d45834e3
+summary "ソルバが決定した事実が宣言の欠落によって画面に届かない状態が無くなり、掴む場所について「言っていない」と「どこでもよいと言った」が、ユーザーにも機械にも別物として見える"
+state UnderReview
+labels adr-128, adr-119, adr-127, adr-120, grasp, front, principle-11, principle-31
+artifacts
+- "docs/adr/ADR-128-a-declaration-that-cannot-be-written-is-not-a-declaration.md"
+
+    context ThreeBackendsWereCorrectAndUnreachable
+    uuid 8ed71b75-ce23-48dd-9536-37463116a471
+    summary "実測 (2026-08-14): 同じ形の欠陥が 3 つ同時に開いていた。(1) ADR-119 D2/D3 は「掴む場所を宣言できる」と決めたが宣言する手段が無かった (UI 未設計)。(2) ADR-127 の解析解 IK は core/ で実装済み・テスト済みだが、フロントが robot.kinematics を送らないので一度も走っていなかった (ADR 自身が「価値は届いていない」と書いていた)。(3) フロントが plan{} を集めないので reach_margin は永久に未評価で、そのすぐ下に reach weight スライダーが載っていた。3 つとも生産する側からは正しく見える — URDF は正しく、欄は正しく、ソルバは正しい"
+    artifacts
+    - "docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md"
+    - "docs/adr/ADR-127-a-known-structure-is-what-makes-a-closed-form-possible.md"
+    - "docs/DEFERRAL_LEDGER.md"
+
+    justification WhyThePanelAndNotTheViewportForInput
+    uuid ed665042-ba3a-47af-8b4f-8b9b6a85dd27
+    summary "却下案 (3D ビューで面を直接クリックして宣言する) への反証: 選択モデルを実体単位から面単位へ広げることになり、ヒットテストの優先順位 (原則 #22)・undo 経路・選択の権威 (ADR-099) まで波及する。ADR-119 が「別の判断」として明示的に切り離した線で、掴む場所を書けるようにするために越える必要が無い — 入力はチップで完全に表現でき、3D は確認として使える"
+
+    justification WhyDrawTheSamplesAndNotTheDeclaredFaces
+    uuid 959595d1-94ef-4373-9154-cba8c7f5f1e6
+    summary "却下案 (宣言された面をハイライトする) への反証: 意図の絵は payload とドリフトしうる。ADR-117 はまさにその形で壊れていた — パネルがリクエストに載っていない幾何を説明していた。ワイヤに載る点そのものを描けば、絵と payload が同一の関数から出るので原理的にずれない。副産物として導出グリッドも同じオーバーレイに出るので、沈黙が物に付いた絵になる"
+
+    justification WhyClearingDeletesTheKey
+    uuid d1dbaee3-a988-461b-ac0e-3400ba1fb472
+    summary "却下案 (clear が {kind:'anywhere'} を書く) への反証: ユーザーは二度と「何も言っていない」状態へ戻れず、パネルは本人がしていない選択を表示し続ける。0 を既定値で埋めないのと同じ形 (原則 #31) — 不在は書き込める値ではなく、鍵の削除でしか表現できない"
+
+    assumption FaceAndRegionVocabularyStaysSufficient
+    uuid 3c840179-a6ba-40be-8bbc-40cb7dc7ea22
+    summary "反証されうる仮説: 面 + その上の正規化矩形という語彙で当面足りる (ADR-119 の GraspFeatureVocabularyStartsMinimal を実装として引き継ぐ)。反証されうる形は、円筒側面・取っ手・逃がしのように面と矩形では表現できない形状が要求されること。そのとき kind を足す = 意図的な成長点"
+
+    assumption ChipsAreEnoughToPickTheIntendedFace
+    uuid 303157d2-c49a-4ef5-bad3-4dd1d75f9b4d
+    summary "反証されうる仮説: +x/-x/+y/-y/+z/-z のチップを押した人は、意図した面を押せている。反証されうる形は、カメラの向きと面名の対応が読めず取り違えること、u/v の向きが直感と逆であること、モバイル幅でチップが折り返して端が切れること (ADR-114 の形)。3D オーバーレイはこの穴を狭めるために足したが、オーバーレイ自身を焼く e2e レーンがまだ無い — DEF-031"
+    artifacts
+    - "src/view/GraspSampleView.js"
+
+    strategy ByDecidingTheInputSurfaceThenWiringEveryUnsentDeclaration
+    uuid 4279cfcd-4953-4cce-90b6-9bca92b82d8d
+    summary "まず掴む場所の入力面と語彙を決めて ADR-119 を閉じ、そのうえで「バックエンドは在るがフロントが宣言を送らない」欠陥をまとめて配線する。3 つとも配線先が GraspController.runGraspSearch の request 組み立て 1 箇所なので、1 つ直すときに残り 2 つが同じ視界に入る"
+
+        goal UnstatedAndStatedAnywhereAreDistinguishable
+        uuid 95f706c3-ff22-4cbe-95d8-54739d04685c
+        summary "掴む場所を宣言していないことと、宣言された「どこでもよい」が別の状態として区別され、導出に落ちたことは画面に出る。読めない宣言は導出へ落ちず第 4 の状態になる"
+
+            solution TheStateNamesAreAssertedBecauseTheSamplesCannotBe
+            uuid 391c6b93-3bbe-4337-ad2b-c3a0aeeefad9
+            summary "src/domain/graspFeature.test.js (19 本)。derived と declared-anywhere は *同じサンプル* を出すので、点群を比べる検査では区別の消滅が原理的に見えない — だから検査は状態名と画面に出る文について書き、同じテストでサンプルの一致も焼いて「だから状態を見るしかない」を明示している。malformed は第 4 の状態として立て、サンプル 0 かつ Run 停止であること (「解が無い」に化けないこと) を別に問う"
+            artifacts
+            - "src/domain/graspFeature.js"
+            - "src/domain/graspFeature.test.js"
+
+            solution TheDeclarationSurvivesInTheDocument
+            uuid e16d6a78-5b8d-4cf6-ba52-3da2c12beafc
+            summary "src/context/DocBuilder.test.js + src/controller/GraspController.test.js。純粋層は「宣言が画面から書けること」を構造的に見ないので、書き込み → 再コンパイル → resolveGraspTargets の往復を別に焼く。消去が鍵の削除であって anywhere の書き込みでないこと、存在しない ref で carrier 実体を捏造しないことも同じ場所で問う"
+            artifacts
+            - "src/context/DocBuilder.js"
+            - "src/controller/ContextController.js"
+
+        goal ADeclarationIsNeverSilentlyWidened
+        uuid fde08a5d-0f72-4cf7-9647-17596ad52d92
+        summary "宣言があるときサンプルは宣言由来のみで、導出集合とマージされない。マージが必要に見える場合 (平行ジョーに 1 面) は、黙って足さず gap として止める"
+
+            solution TheAbsenceOfDerivedFacesIsAsserted
+            uuid 801cab9a-b0a5-4bfe-9eb4-26aba307aa93
+            summary "graspFeature.test.js + GraspController.test.js。吸引の導出面は +z なので -z を宣言し、**+z のサンプルが 1 つも無い**ことを assert する — 「宣言した面が出ている」という書き方はマージを通してしまうので、検査の書き方そのものが主張になっている (ADR-120 の「鍵の不在を assert する」と同型)。平行ジョーに 1 面だけ宣言したときは BFF へ 1 度も到達しないことを回数で焼く: core/ は把持幅をサンプルの広がりから測るので、1 面の宣言は ADR-118 が直した欠陥を正面玄関から復活させる"
+            artifacts
+            - "src/domain/graspTargets.js"
+            - "src/controller/GraspController.test.js"
+
+        goal EveryDeclaredFactActuallyReachesTheWire
+        uuid 34722fb2-cda5-43e7-91f0-5a358c473c15
+        summary "運動学 (ADR-127) とリーチ範囲 (ADR-120) の宣言が実際に request に載り、未宣言のときは鍵ごと落ちる。運動学の 6 数は URDF から導出されるので、描く腕と解く腕が別物になりえない。フランジ規約はフロントの描画と照合される"
+
+            solution TheRequestHandedToTheBffIsRead
+            uuid 3a1f0e6c-7d24-4a5e-9c7f-2b0d5e8a4471
+            summary "src/controller/GraspController.test.js + src/domain/robotKinematics.test.js (11 本)。宣言が届いたことは生産側からは見えないので、BFF が実際に受け取った request の上で assert する (ADR-116 — ソルバ単体が正しくても読まれていなければ何も起きない)。6 数は URDF から読み出すので写しが存在せず、テストは読み出しが UR5e 公表値を再現することを釘付けする。kind は構造の主張なので、関節数・軸 2/3/4 の平行・手首の直交を 3 方向から崩して null に落ちることを問う。フランジ規約 (ADR-127 D6) は core/ 内では原理的に決着しない — 自己整合な誤った規約も往復を通る — ので、外部の証人として URDF の wrist_3_link のフランジ面が宣言軸 +Z に在ることを読み戻す。未宣言が 0 で埋まらないことは鍵の不在で焼く"
+            artifacts
+            - "src/domain/robotKinematics.js"
+            - "src/domain/robotKinematics.test.js"
+            - "src/view/robotSkeleton.js"
