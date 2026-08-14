@@ -56,8 +56,28 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
-  setEntityGraspFeature,
+  setEntityGraspFeature, setEntityPose,
 } from '../context/DocBuilder.js'
+import { declaredPoseOf, POSE_ENTITY_KIND } from '../domain/declaredPose.js'
+import { Solid }            from '../domain/Solid.js'
+import { CoordinateFrame }  from '../domain/CoordinateFrame.js'
+import { AnnotatedPoint }   from '../domain/AnnotatedPoint.js'
+
+/**
+ * シーン実体 → Layout DSL の種名 (ADR-129 D1)。
+ *
+ * `instanceof` の鎖はここ 1 本だけ。宣言表そのものは THREE 非依存の
+ * `domain/declaredPose.js` に住み (node の test runner が読めるように)、
+ * クラスとの結びつけだけをこちら側が持つ。未知のクラスは **null** を返し、
+ * 呼び手が「宣言できない種」として扱う — ここで既定の種へ倒すと、
+ * 姿勢の意味を取り違えたまま文書に書き込む。
+ */
+function poseKindOf(obj) {
+  if (obj instanceof Solid)           return POSE_ENTITY_KIND.SOLID
+  if (obj instanceof CoordinateFrame) return POSE_ENTITY_KIND.COORDINATE_FRAME
+  if (obj instanceof AnnotatedPoint)  return POSE_ENTITY_KIND.ANNOTATED_POINT
+  return null
+}
 import { getTemplateMeta, exampleFiles } from '../context/TemplateCatalog.js'
 import { canonicalForm } from '../context/CanonicalForm.js'
 import { structurePreview } from '../view/TemplatePreviewMath.js'
@@ -75,7 +95,6 @@ import { SELECTION_KIND, variableRef } from '../domain/selection.js'
 import { regionResolveTransitions } from '../view/RegionGhostMath.js'
 import { RegionResolveEffect } from '../view/RegionResolveEffect.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
-import { CoordinateFrame } from '../domain/CoordinateFrame.js'
 import { FLOOR_TAB } from '../view/FloorTabs.js'
 import { DOC_INTAKE_TAB } from '../view/DocIntake.js'
 import conflictContext from '../../examples/cell_conflict_context.json'
@@ -499,6 +518,84 @@ export class ContextController {
     const afterDoc  = setEntityGraspFeature(beforeDoc, ref, feature)
     const label = feature == null ? 'Clear grasp location' : 'Declare grasp location'
     return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the grasp location')
+  }
+
+  /**
+   * Record CONFIRMED poses as declarations on the document (ADR-129 D1).
+   *
+   * The single entry point for "the user put this here / aimed it this way"
+   * (原則 #1). A whole gesture — however many entities it moved — becomes **one**
+   * doc-edit, so undo returns the scene to the state before the gesture rather
+   * than unwinding it entity by entity.
+   *
+   * ## Only entities the document knows
+   *
+   * Callers hand over scene ids; this resolves each to its layout `ref` and
+   * silently skips the ones without. That is not a swallowed failure: an entity
+   * with no `ref` is not "missing a declaration", it is **not declared** — a
+   * state (ADR-131), and the writer for those is still the CommandStack's
+   * `MoveCommand` / `FrameRotateCommand`. The two paths are split by *what the
+   * entity is*, not by which code ran first.
+   *
+   * Returns `false` when nothing was declared, so the caller knows it still owns
+   * the undo record for that gesture. Never returns a promise-of-nothing: the
+   * decision must be readable synchronously at the call site, because the caller
+   * has to choose between two undo strategies right there (原則 #8 — the async
+   * part stays inside this layer).
+   *
+   * @param {Array<{id: string, position?: object, rotation?: object}>} poses
+   *        confirmed poses, in scene-entity terms
+   * @param {string} label  undo label for the whole gesture
+   * @returns {false|Promise} `false` = nothing was declared (caller keeps undo)
+   */
+  declarablePoseIds(ids) {
+    const out = new Set()
+    if (!this._ctxService.loaded) return out
+    for (const id of ids ?? []) {
+      if (!this._ctxService.refForSceneId(id)) continue
+      const obj = this._ctrl._scene.getObject(id)
+      // 宣言できない種 (Profile / MeasureLine / ImportedMesh …) は Layout DSL に
+      // 姿勢の欄を持たない。書けないので書かず、CommandStack 側に残す。
+      if (obj && poseKindOf(obj)) out.add(id)
+    }
+    return out
+  }
+
+  /**
+   * 実際に書く側 (ADR-129 D1)。`declarablePoseIds` と分けてあるのは**順序のため**で、
+   * 分類の都合ではない。
+   *
+   * 書き込みは再コンパイル → 再インポートを引き起こし、その `_clearScene` は
+   * **同期的に**走る (`importFromJson` の最初の await より前)。ジェスチャ確定の
+   * 途中で呼ぶと、その後に続く後片付け (`clearPivotDisplay` ほか) が、たったいま
+   * 破棄された view を触って落ちる — 実測で出た `Cannot read properties of null
+   * (reading 'clearPivotDisplay')` がそれである。
+   *
+   * だから呼び手は**ジェスチャの後片付けを終えてから**これを呼ぶ。分類 (どれを
+   * 文書に書くか) は先に要るが、書き込み自体は最後でよい。
+   *
+   * @param {Iterable<string>} ids  `declarablePoseIds` が返した id
+   * @param {string} label  undo ラベル
+   * @returns {Promise|null}
+   */
+  recordConfirmedPoses(ids, label) {
+    const list = [...(ids ?? [])]
+    if (list.length === 0 || !this._ctxService.loaded) return null
+    const beforeDoc = this._ctxService.getDoc()
+    let afterDoc = beforeDoc
+    let written = 0
+    for (const id of list) {
+      const ref = this._ctxService.refForSceneId(id)
+      const obj = this._ctrl._scene.getObject(id)
+      if (!ref || !obj) continue
+      // Throws on an entity kind nobody declared a read for — a fall-through
+      // would write a frame's LOCAL offset into a world-space field, and that
+      // error looks perfectly plausible as a number (原則 #31).
+      afterDoc = setEntityPose(afterDoc, ref, declaredPoseOf(poseKindOf(obj), obj))
+      written++
+    }
+    if (written === 0) return null
+    return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the placement')
   }
 
   /**

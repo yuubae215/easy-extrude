@@ -665,6 +665,22 @@ export class ContextService extends EventEmitter {
     return { ...withGaps, narrative: narrateProvenance(withGaps, opts) }
   }
 
+  /**
+   * Public read of the reverse map: **is this scene entity declared, and under
+   * what name?** (ADR-129 D1)
+   *
+   * Exposed because the write side needs the same answer the read side has had
+   * since ADR-047 — a pose write-back has to know whether the thing being moved
+   * is the document's or the session's. Kept as a delegation to the private
+   * reverse lookup so there is still exactly one implementation (§1.1).
+   *
+   * @param {string} sceneId
+   * @returns {string|null} layout ref, or null when the entity is undeclared
+   */
+  refForSceneId(sceneId) {
+    return this._refForSceneId(sceneId)
+  }
+
   /** Reverse `_refToId` (scene entity id → canonical layout ref). */
   _refForSceneId(sceneId) {
     for (const [ref, id] of this._refToId) if (id === sceneId) return ref

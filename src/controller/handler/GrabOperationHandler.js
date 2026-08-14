@@ -316,6 +316,11 @@ export class GrabOperationHandler {
     }
 
     // ── Record undo snapshot (ADR-022 Phase 1) ────────────────────────────
+    // Declared entities are classified here but WRITTEN at the end of confirm
+    // (ADR-129 D1): the doc write tears the scene down synchronously, and the
+    // teardown below still touches the views it would destroy.
+    let declaredPoseIds   = new Set()
+    let declaredPoseLabel = ''
     const endCornersMap = new Map()
     for (const id of ctrl._selectedIds) {
       const obj = ctrl._scene.getObject(id)
@@ -323,8 +328,31 @@ export class GrabOperationHandler {
     }
     if (endCornersMap.size > 0) {
       const label = endCornersMap.size === 1 ? 'Move' : `Move ${endCornersMap.size} objects`
-      const cmd = createMoveCommand(label, s.allStartCorners, endCornersMap, ctrl._scene, ctrl._service)
-      ctrl._commandStack.push(cmd)
+      // ADR-129 D1: a CONFIRMED grab is a declaration, not a scene tweak. For
+      // entities the document owns, the placement goes to the document through
+      // the one doc-edit path — writing it to the SceneModel instead is what made
+      // the placement die with the session while the entity outlived it.
+      //
+      // The intermediate poses of the drag are deliberately NOT written: a pose
+      // mid-gesture is not a statement, and writing them would grow the undo
+      // stack at 60fps.
+      //
+      // Undeclared entities keep the CommandStack path — for them the scene IS
+      // the authority, so nothing is being bypassed (原則 #1: the split is by
+      // what the entity is, and each kind still has exactly one writer).
+      declaredPoseIds = ctrl._ctxCtrl?.declarablePoseIds?.([...endCornersMap.keys()]) ?? new Set()
+      declaredPoseLabel = label
+
+      // A mixed selection is a real case (a declared table plus a scratch box
+      // moved together), so the undeclared half keeps its own undo record rather
+      // than riding on the doc-edit. Two entries for one gesture is the honest
+      // cost of two authorities; folding them would mean one of the two kinds
+      // silently loses its undo.
+      const undeclared = new Map([...endCornersMap].filter(([id]) => !declaredPoseIds.has(id)))
+      if (undeclared.size > 0) {
+        const cmd = createMoveCommand(label, s.allStartCorners, undeclared, ctrl._scene, ctrl._service)
+        ctrl._commandStack.push(cmd)
+      }
     }
 
     s.axis          = null
@@ -350,6 +378,13 @@ export class GrabOperationHandler {
     // ── Semantic inference (ADR-041) ─────────────────────────────────────
     // Suggest a SpatialLink when a single Solid lands near another object.
     ctrl._runSemanticInference()
+
+    // ── The declaration, LAST (ADR-129 D1) ───────────────────────────────
+    // The write recompiles and re-imports, and `_clearScene` runs synchronously
+    // inside that — so everything above would be operating on views this call
+    // destroys. Placing it here is not tidiness: running it earlier crashed on
+    // `clearPivotDisplay` with the meshView already gone.
+    ctrl._ctxCtrl?.recordConfirmedPoses?.(declaredPoseIds, declaredPoseLabel)
   }
 
   /**

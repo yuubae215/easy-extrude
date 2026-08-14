@@ -139,6 +139,55 @@ export function updateRequirement(doc, requirement) {
 }
 
 /**
+ * Write a CONFIRMED pose onto a layout entity (ADR-129 D1) — where the user put
+ * it, and how they aimed it.
+ *
+ * The only writer of `specification.layout.entities[].position` / `.rotation`
+ * from a gesture. It lives here, beside `setEntityGraspFeature`, because a
+ * placement is the same kind of fact as a grasp location: **a statement the user
+ * made about an entity**, whose lifetime must be the entity's own. Until this
+ * existed, G / R wrote to the SceneModel instance and the declaration died with
+ * the session — the scene said one thing and the exported document another, and
+ * a grasp search run afterwards answered correctly about the OLD position
+ * (ADR-129 §なぜ黙って壊れるか).
+ *
+ * A gesture is an ACT, and the act is the claim (ADR-129 D0′). This records the
+ * act; it never infers one from the rendered mesh — that would be the scene
+ * reverse-compile ADR-054/055 forbid. The boundary is act-vs-inference, not
+ * whether a field happened to exist.
+ *
+ * `position` / `rotation` are written only when GIVEN: a Grab confirms a
+ * position and says nothing about orientation, and writing an identity rotation
+ * there would turn "I did not aim it" into "I aimed it at zero" (原則 #31).
+ *
+ * A ref with no matching entity is a no-op clone — never an append. Inventing a
+ * carrier entity for a pose would fabricate geometry (原則 #11), the same reason
+ * `setEntityGraspFeature` refuses to.
+ *
+ * @param {object} doc
+ * @param {string} ref  Layout DSL entity ref
+ * @param {{position?: {x:number,y:number,z:number},
+ *          rotation?: {x:number,y:number,z:number,w:number}}} pose
+ * @returns {object} new doc
+ */
+export function setEntityPose(doc, ref, pose) {
+  const clone    = _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  if (pose?.position) {
+    const p = pose.position
+    entities[i].position = { x: p.x, y: p.y, z: p.z }
+  }
+  if (pose?.rotation) {
+    const q = pose.rotation
+    entities[i].rotation = { x: q.x, y: q.y, z: q.z, w: q.w }
+  }
+  return clone
+}
+
+/**
  * Set (or clear) WHERE a layout Solid should be grasped (ADR-119 D2 / ADR-128),
  * input-immutable like every builder here.
  *
