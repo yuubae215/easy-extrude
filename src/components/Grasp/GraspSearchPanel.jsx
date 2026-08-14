@@ -987,7 +987,7 @@ function FaceRegionEditor({ face, region, onChange }) {
 
   return (
     <div style={{ marginBottom: '4px', paddingLeft: '4px', borderLeft: `2px solid ${COLOR.border}` }}>
-      <div style={{ fontSize: '10px', color: '#889', marginBottom: '2px' }}>
+      <div style={{ ...PICKER.label, minWidth: undefined, marginBottom: '2px' }}>
         {face} region — u = {uAxis}, v = {vAxis} (0–1 of the face)
       </div>
       <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
@@ -1002,8 +1002,10 @@ function FaceRegionEditor({ face, region, onChange }) {
           title="この面ぜんぶに戻す (領域の鍵を消す)"
           style={{
             fontSize: '9px', padding: '2px 5px', borderRadius: '3px',
-            background: 'transparent', color: narrowed ? '#bbb' : '#666',
-            border: `1px solid ${narrowed ? '#444' : '#333'}`,
+            background: 'transparent',
+            color: COLOR.textSecondary,
+            opacity: narrowed ? 1 : 0.45,
+            border: `1px solid ${COLOR.border}`,
             cursor: narrowed ? 'pointer' : 'default',
           }}
         >full face</button>
@@ -1011,7 +1013,7 @@ function FaceRegionEditor({ face, region, onChange }) {
       {/* 宣言されていないことを**述べる** — 空欄は「面全体」とも「言い忘れ」とも
           読めるので、どちらであるかを画面が言う (原則 #31)。 */}
       {!narrowed && (
-        <div style={{ fontSize: '9px', color: '#889', marginTop: '2px' }}>
+        <div style={{ ...PICKER.label, minWidth: undefined, marginTop: '2px' }}>
           not narrowed — the whole face is sampled
         </div>
       )}
@@ -1022,17 +1024,16 @@ function FaceRegionEditor({ face, region, onChange }) {
 /** 領域 1 辺の数値欄 (0–1)。 */
 function RegionInput({ label, value, onChange }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '9px', color: '#889' }}>
+    <label style={{ ...PICKER.label, display: 'flex', alignItems: 'center', gap: '2px', minWidth: undefined }}>
       {label}
+      {/* 数値欄の見た目は premise picker と同じ器を使う (PICKER.select) —
+          同じ役割の入力に色を書き足すと、ADR-100 の ratchet が数える
+          「宣言の外にある色」が増える。器を共有すれば増えない。 */}
       <input
         type="number" step="0.05" min="0" max="1"
         defaultValue={value}
         onChange={onChange}
-        style={{
-          width: '42px', fontSize: '10px', padding: '1px 2px',
-          background: '#1f2530', color: '#dceaff',
-          border: '1px solid #3a4a60', borderRadius: '3px',
-        }}
+        style={{ ...PICKER.select, flex: undefined, width: '42px', padding: '1px 2px' }}
       />
     </label>
   )
