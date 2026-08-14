@@ -44,7 +44,7 @@
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
 import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclarationCatalog.js'
-import { resolveRobots, selectRobot, robotCardinality } from '../domain/robotFrames.js'
+import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
   resolveGraspTargets, selectTarget, targetProjection,
   surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
@@ -330,11 +330,40 @@ export class GraspController {
    * old multi-form detour into a single click.
    */
   openGrasp() {
+    // The entrance WRITES the subject (ADR-130 D2). Until it did, the gate above
+    // the button demanded a robot selection and this method never read one: with
+    // N robots the panel then asked "which one?" about a robot the user had just
+    // picked in the Outliner. Two sources for one premise, and the one the run
+    // consults was not the one the user was told to set (原則 #1 / §1.1).
+    //
+    // Done BEFORE the quick-start branch so the order of the two effects is the
+    // same on both paths; the quick-start replaces the scene, so the id captured
+    // here is re-resolved by `refreshRobots` and dropped if it no longer exists.
+    this._adoptSelectionAsSubject()
     if (!this._ctrl._ctxService.loaded) {
       this._quickStartIntoGrasp()
       return
     }
     this._openGraspPanel()
+  }
+
+  /**
+   * Take the selected frame's robot as this search's subject, if the selection
+   * names one (ADR-130 D2).
+   *
+   * A selection that is NOT a robot frame leaves the current subject alone
+   * rather than clearing it: the entrance is only reachable from a robot
+   * selection or from an already-live search, and clearing on anything else
+   * would make "click the object you want to grasp" silently un-pick the robot —
+   * the very coupling this ADR removes.
+   *
+   * Which robot a frame belongs to is the domain's named predicate
+   * (`robotForFrameId`); this method only supplies the id (原則 #25).
+   */
+  _adoptSelectionAsSubject() {
+    const selectedId = this._ctrl._activeObj?.id ?? null
+    const robot = robotForFrameId(this._robots(), selectedId)
+    if (robot) this._selectedRobotId = robot.id
   }
 
   /**

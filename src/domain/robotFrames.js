@@ -175,6 +175,26 @@ export function resolveRobots(objects) {
 }
 
 /**
+ * "The selected frame belongs to WHICH robot?" — the named predicate (原則 #25)
+ * behind ADR-130 D2, owned here for the same reason `resolveRobots` is: a robot's
+ * identity is an entity id, and re-deriving "is this the base or the tcp of that
+ * robot" at the call site is how a second robot silently breaks every caller.
+ *
+ * Both frames of the TF tree answer with the SAME robot — selecting `tcp` is
+ * selecting the robot, exactly as `EntityScopeChecks` already treats either role
+ * as a valid grasp subject.
+ *
+ * @param {Robot[]} robots
+ * @param {string|null|undefined} frameId — a scene entity id (base or tcp frame)
+ * @returns {Robot|null} the robot that frame belongs to, or null (not a robot frame)
+ */
+export function robotForFrameId(robots, frameId) {
+  if (!frameId) return null
+  return (robots ?? []).find(r =>
+    r.baseFrame?.id === frameId || r.tcpFrame?.id === frameId) ?? null
+}
+
+/**
  * The roster's cardinality state (0 / 1 / N).
  * @param {Robot[]} robots
  * @returns {'none'|'single'|'multi'}

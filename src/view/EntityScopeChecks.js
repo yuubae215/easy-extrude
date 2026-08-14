@@ -17,6 +17,32 @@
 import { isRobotRole, ROBOT_CARDINALITY } from '../domain/robotFrames.js'
 
 /**
+ * **The three shapes this row can take** (ADR-130 D3).
+ *
+ * Before this union the row had two: available / blocked. That was the whole
+ * defect — the row is an ENTRANCE, and once a search is already open the
+ * entrance question is not live any more, yet the row kept answering it against
+ * the viewport selection. Choosing what to grasp means selecting something that
+ * is not a robot, so the walkthrough's own next step made its own gate fire:
+ * "select a robot" appeared directly above a panel that already held one and
+ * would have run fine (原則 #11's mirror image — a false block is as bad as a
+ * silent no-op, and harder to argue with because it looks like diligence).
+ *
+ * Three kinds, not a boolean plus a nullable subject, because `LIVE` and a
+ * blocked `reason` must not be able to coexist: that combination IS the bug, and
+ * a union makes it unrepresentable rather than merely discouraged (原則 #2 /
+ * 核 §1.4 "make illegal states unrepresentable").
+ */
+export const GRASP_ENTRY_KIND = Object.freeze({
+  /** No search open, and the selection identifies a robot — the entrance works. */
+  OPEN:    'open',
+  /** No search open, and the selection cannot name a subject — reason attached. */
+  BLOCKED: 'blocked',
+  /** A search IS open. The subject lives in `context.robots`, not in the selection. */
+  LIVE:    'live',
+})
+
+/**
  * **選択が無いときの 0 の種** (ADR-110 D2 / D4 の「正直な限界」)。
  *
  * ADR-110 が把持探索をヘッダの `場を開く` から外し、選択の無い状態からの経路を
@@ -118,12 +144,33 @@ export const DECLARED_NPANEL_KINDS = Object.freeze(Object.keys(ENTITY_SCOPE_BY_K
  * 「ロボットを選べ」という嘘を出す。それは ADR-090 が潰した「原点に立つ無限リーチの
  * 幽霊ロボット」と同じ、*欠けた入力を既定値で埋める*欠陥である。
  *
+ * ## 探索が生きている間、この行は入口ではない (ADR-130 D3)
+ *
+ * `liveSearch` が真のとき、**選択は主語ではない** — 主語は `context.robots` が
+ * 持つ (ADR-130 D1)。掴む対象を選ぶには選択をロボットから外すしかないので、
+ * ここで選択を読み続けると、**手順そのものが自分のゲートを踏む**。返すのは
+ * `LIVE` で、理由の欄は**存在しない** (union なので「生きているのに阻止理由が
+ * 在る」を書けない)。
+ *
  * @param {{type?: string, robotRole?: string|null}|null} nPanelData
- * @param {{robotCardinality?: string}} [facts] 選択が無いときに**必須** —
- *   `ROBOT_CARDINALITY` の値 (`context.robots.cardinality`)
- * @returns {{available: boolean, reason: string|null}}
+ * @param {{robotCardinality?: string, liveSearch?: boolean, subjectLabel?: string|null}} [facts]
+ *   選択が無いときに `robotCardinality` が**必須** (`ROBOT_CARDINALITY` の値)。
+ *   `liveSearch` — 探索スライスが生きているか (`context.grasp != null`)。
+ *   `subjectLabel` — 生きている探索の主語の表示名 (未宣言なら null)。
+ * @returns {{kind: string, available: boolean, reason: string|null, subjectLabel?: string|null}}
  */
 export function graspEntryFor(nPanelData, facts) {
+  // A live search owns its own subject; the selection has no vote (ADR-130 D1/D3).
+  // Checked FIRST, before the selection is read at all — reading it and then
+  // discarding the answer would leave the old coupling one edit away.
+  if (facts?.liveSearch) {
+    return {
+      kind:         GRASP_ENTRY_KIND.LIVE,
+      available:    true,
+      reason:       null,
+      subjectLabel: facts.subjectLabel ?? null,
+    }
+  }
   if (!nPanelData) {
     const cardinality = facts?.robotCardinality
     if (!cardinality) {
@@ -133,12 +180,9 @@ export function graspEntryFor(nPanelData, facts) {
         '欠けた入力に既定を与える形は ADR-090 の幽霊ロボットと同じ欠陥 (原則 #31)。',
       )
     }
-    return {
-      available: false,
-      reason: graspBlockedReason(cardinality === ROBOT_CARDINALITY.NONE
-        ? GRASP_BLOCKED_KIND.NO_ROBOT
-        : GRASP_BLOCKED_KIND.NO_SELECTION),
-    }
+    return blocked(graspBlockedReason(cardinality === ROBOT_CARDINALITY.NONE
+      ? GRASP_BLOCKED_KIND.NO_ROBOT
+      : GRASP_BLOCKED_KIND.NO_SELECTION))
   }
   const decl = ENTITY_SCOPE_BY_KIND[nPanelData.type]
   if (!decl) {
@@ -147,10 +191,70 @@ export function graspEntryFor(nPanelData, facts) {
       '— fall-through は「宣言された既定」と「誰も考えなかった種」を区別不能にする (原則 #31)。',
     )
   }
-  if (decl.grasp === true)  return { available: true,  reason: null }
-  if (decl.grasp === false) return { available: false, reason: decl.why }
+  if (decl.grasp === true)  return open()
+  if (decl.grasp === false) return blocked(decl.why)
   // 'robot-role' — the declared role decides (never the name: it is not unique).
-  return isRobotRole(nPanelData.robotRole)
-    ? { available: true, reason: null }
-    : { available: false, reason: decl.why }
+  return isRobotRole(nPanelData.robotRole) ? open() : blocked(decl.why)
+}
+
+/**
+ * **宣言表** — 3 つの kind それぞれで、この行が画面上どう振る舞うか (ADR-130 D3)。
+ *
+ * `graspEntryFor` が union を返すだけでは、描く側が `available` だけ見て 2 分岐に
+ * 潰し直せる (今日までがその形だった)。kind ごとの振る舞いを表にして**未宣言の
+ * kind で throw** させることで、4 つ目の kind が生まれた日に描画が黙って
+ * fall-through しない (原則 #31 / ADR-096 の既定表規律)。
+ *
+ * `press` は押したときの意味であって実装ではない — 実装 (`onOpenGrasp` / toast) は
+ * 描画側が持つ。ここが持つのは「押せるか」と「何と書くか」だけ。
+ */
+const GRASP_ENTRY_ROW_BY_KIND = Object.freeze({
+  [GRASP_ENTRY_KIND.OPEN]: Object.freeze({
+    pressable: true,
+    press:     'open',
+    caption:   () => null,
+  }),
+  [GRASP_ENTRY_KIND.BLOCKED]: Object.freeze({
+    pressable: false,
+    press:     'explain',
+    caption:   (entry) => entry.reason,
+  }),
+  [GRASP_ENTRY_KIND.LIVE]: Object.freeze({
+    pressable: true,
+    press:     'open',
+    // 主語を**述べる**。未宣言 (N 台で未 pick) は「まだ言っていない」であって
+    // 「選択が悪い」ではないので、パネルの pick 行へ送る (原則 #31 / #11)。
+    caption:   (entry) => entry.subjectLabel
+      ? `searching for ${entry.subjectLabel} — pick the object below`
+      : 'this search has no subject yet — pick the robot below',
+  }),
+})
+
+/** 宣言表が覆っている kind (検査が母集団として引く)。 */
+export const DECLARED_GRASP_ENTRY_KINDS = Object.freeze(Object.keys(GRASP_ENTRY_ROW_BY_KIND))
+
+/**
+ * kind → 行の振る舞い + そのとき出す文。未宣言の kind で **throw**。
+ * @param {{kind: string, reason: string|null, subjectLabel?: string|null}} entry
+ * @returns {{pressable: boolean, press: string, caption: string|null}}
+ */
+export function graspEntryRow(entry) {
+  const decl = GRASP_ENTRY_ROW_BY_KIND[entry?.kind]
+  if (!decl) {
+    throw new Error(
+      `EntityChecks: 未宣言の入口の kind "${entry?.kind}"。GRASP_ENTRY_ROW_BY_KIND に行を足すこと ` +
+      '— fall-through は「押せない」と「誰も考えなかった状態」を区別不能にする (原則 #31 / ADR-130 D3)。',
+    )
+  }
+  return { pressable: decl.pressable, press: decl.press, caption: decl.caption(entry) }
+}
+
+/** The entrance is usable: a subject is identifiable from the selection. */
+function open() {
+  return { kind: GRASP_ENTRY_KIND.OPEN, available: true, reason: null }
+}
+
+/** The entrance is not usable, and says why — never a silent no-op (原則 #11). */
+function blocked(reason) {
+  return { kind: GRASP_ENTRY_KIND.BLOCKED, available: false, reason }
 }

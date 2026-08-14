@@ -1,0 +1,100 @@
+GOALS adr130_a_search_owns_its_subject
+
+goal ASearchOwnsItsSubjectAndNothingElseAnswersForIt
+uuid 3f5a1c88-2d47-4f61-9c2a-51b0e73d9a44
+summary "「この探索は誰についてか」を述べる場所がちょうど 1 つで、画面のどの部品もその 1 つを読む。手順を進めるという正常な操作が、自分自身のゲートを踏んで偽の阻止文を出す状態が無い"
+state UnderReview
+labels adr-130, adr-110, adr-105, adr-090, adr-129, grasp, front, principle-31, principle-1, principle-2, principle-11, accepted
+artifacts
+- "docs/adr/ADR-130-a-search-owns-its-subject-the-selection-does-not.md"
+
+    context TheWalkthroughStepsOnItsOwnGate
+    uuid 9c1e4d20-7b83-4a55-bc3e-0f2d6a41e5b7
+    summary "ユーザー報告 (2026-08-14) と再現: cell_robotics → Outliner で robot_base → n → Grasp candidates… → 掴む対象を選ぶ、の 5 手目で `Grasp candidates are solved for a robot; select a robot frame to run one.` が出る。掴む対象を選ぶには選択をロボットから外すしかないので、手順が自分の次の一歩で自分のゲートを踏む構造だった。Playwright + ?graspStub=solve で 2 クリックで再現する"
+    artifacts
+    - "docs/dogfooding/ux-scenarios.md"
+
+    context TwoSourcesAndTheRunReadsOnlyOne
+    uuid 1a7b6f39-4c02-4e18-9d5a-2b84c7e03f61
+    summary "実測: 入口の可用性 (EntityChecks → graspEntryFor) はビューポートの選択 (nPanelData.robotRole) を読み、実際に誰について解くか (runGraspSearch) はパネルの pick (_selectedRobotId → selectRobot) を読む。openGrasp() は選択を一切読んでいなかったので、入口が要求した宣言は入口を通った瞬間に捨てられていた。出た阻止文は嘘である — その下のパネルは robot_base を保持し Run は通る"
+    artifacts
+    - "src/controller/GraspController.js"
+    - "src/view/EntityScopeChecks.js"
+
+    context TheDefectIsInvisibleWithOneRobot
+    uuid 8e2c5b74-3f19-4a6d-9c07-6d5e1b830a2f
+    summary "selectRobot は 1 台なら選択と無関係に解決し、N 台なら null を返す (ADR-090 の正しい判断)。よって 1 台のシーンでは 2 つの源がたまたま一致し、欠陥はロボットが 2 台になった日に初めて見える — ADR-090 が同一性について閉じた「2 台目で全部同時に壊れる」形が、選択の側に残っていた。N 台では入口が「押せる」と言い、押した先のパネルが「どれか選べ」と言う"
+    artifacts
+    - "docs/adr/ADR-090-robot-identity-multi-robot-zero-robot-state.md"
+
+    justification WhyNotJustRemoveTheRow
+    uuid 5d3f8a16-9b47-42e0-8c1a-7f2e4c69b035
+    summary "却下案 A (EntityChecks から grasp の行を消す) への反証: 一番速いが、ADR-110 D2/D4 が「選択の無い状態からの経路をこの入口 1 つに畳んだ」判断を無言で取り消す。入口が消えると把持探索は選択済みの人だけのものになる。却下案 B (生きている間は黙って disabled) は原則 #11 が禁じる無言のボタンそのもので、しかも理由が「探索が開いているから」という、ユーザーから見て理解不能なものになる"
+    artifacts
+    - "docs/adr/ADR-110-grasp-is-a-check-beside-its-subject-not-an-object-of-the-floor.md"
+
+    justification WhyTheSelectionCannotBeTheSubject
+    uuid 6b90d4e2-1c85-4f37-a20d-3e7c519f84a6
+    summary "却下案 C (選択を主語にする) への反証: 選択は 1 つしか無いのに探索の主語は 2 つ (ロボットと対象) 要る。1 つの選択に 2 つの役を持たせると「いまの選択はどっちの役か」というモード変数が生まれ、それは ADR-103 が投影で潰した「3 つの軸を 1 変数に潰す」形の再生産である"
+    artifacts
+    - "docs/adr/ADR-103-map-is-a-viewpoint-not-a-mode.md"
+
+    justification WhyAUnionAndNotABooleanWithACaption
+    uuid 4c7e2b58-8a31-46f9-b5d2-0f1a63e8c927
+    summary "D3 の根拠: LIVE と BLOCKED は今日まで available:false に潰れていた 2 つの別状態で、潰れていたことがこの欠陥だった。boolean + nullable reason のままだと「探索が生きているのに阻止理由が在る」という組み合わせが書けてしまう — それはまさにこの欠陥なので、union にして表現不能にする (原則 #2 / 核 §1.4)。さらに union を返すだけでは描く側が available だけ見て 2 分岐へ潰し直せるので、kind ごとの振る舞いを宣言表にし、未宣言の kind で throw させる (ADR-096 の既定表規律)"
+
+    assumption ReEnteringTheEntranceWhileLiveIsUnderstood
+    uuid 2e8d1f43-7c96-4b0a-9e51-8b3f0c26d7a5
+    summary "反証されうる仮説: LIVE のとき入口ボタンを押せるままにし、押したら選択のロボットへ主語が移る、で理解される。反証されうる形は、ユーザーが「候補一覧へ戻る」つもりで押して主語が変わること — ボタンの文言 (◇ Grasp candidates…) は入口の語彙のままで、主語が変わることは caption からしか読めない。ADR-108「入口は動詞である」を LIVE 用の語彙へ広げるかは、この ADR では決めない"
+    artifacts
+    - "docs/adr/ADR-108-entrances-are-verbs-not-objects.md"
+
+    strategy ByCountingTheSentencesThatMustNotAppear
+    uuid 7a4b9c05-6e28-4d13-8f7a-1c5028e63b94
+    summary "主張は「出てはいけない文が出ない」なので、数えるのは在る文ではなく、手順が通しうる選択の全種類で出る阻止文の個数である。母集団は画面から採らずコードの宣言表 (DECLARED_NPANEL_KINDS) から導出し、そこに「選択なし」を足す — 在る文を辿る検査は定義上これを見ない (文は正しく実装され正しく表示されている。間違っているのは問いのほうである)"
+
+        goal NoFalseBlockAppearsWhileASearchIsLive
+        uuid b1c8e470-3d92-4a56-9f08-7e2d4b615c83
+        summary "探索が生きている間、手順が通しうるどの選択でも阻止文が 0 個であり、代わりに主語が述べられる"
+        labels support-verified
+
+            solution TheSelectionPopulationCensus
+            uuid d5f2a839-4b61-47c8-a03e-9c81e5730b42
+            summary "src/GraspSubjectOwnership.test.js — 母集団 = DECLARED_NPANEL_KINDS + 'none' から導出した SELECTION_SHAPES の全種類で、kind が LIVE かつ reason が null であることを問う (9 pass 2026-08-14)。加えて実機で確認: Playwright + ?graspStub=solve で対象を選んでも falseBlock 0 件、caption は `searching for robot_base — pick the object below`"
+            artifacts
+            - "src/GraspSubjectOwnership.test.js"
+
+        goal TheEntranceCarriesThePremiseItDemands
+        uuid c3a67e91-5f04-42b8-b71d-8e0a29c4f637
+        summary "入口が要求した選択が、入口を通った先で主語として実際に使われる。N 台のシーンでも Outliner の選択が効く"
+        labels support-verified
+
+            solution TheSubjectWriterCensusBothWays
+            uuid e9b40c26-7a13-4f85-9d2e-3c68015b7fa4
+            summary "src/GraspSubjectOwnership.test.js — `_selectedRobotId` への代入の個数が宣言された 4 つ (constructor / selectRobot / refreshRobots / _adoptSelectionAsSubject) と一致し、かつ宣言された 4 つがすべて実在することを両方向に問う。どちらか一方では足りない: 個数だけなら宣言が古びても緑、実在だけなら 5 つ目が生まれても緑 (ADR-102)"
+            artifacts
+            - "src/GraspSubjectOwnership.test.js"
+            - "src/domain/robotFrames.js"
+
+        goal TheRowsBehaviourIsDeclaredNotInferred
+        uuid f7d15b83-2c69-4e40-a95c-6b0e37d21958
+        summary "入口の 3 つの kind それぞれに描き方が宣言されており、4 つ目の kind が生まれた日に描画が黙って「押せない」へ fall-through しない"
+        labels support-verified
+
+            solution TheKindPartitionAndTheThrow
+            uuid a08e6f47-9d35-41b2-8c70-5f2b94e13d06
+            summary "src/GraspSubjectOwnership.test.js — 母集団 = GRASP_ENTRY_KIND の全枝が GRASP_ENTRY_ROW_BY_KIND に覆われていること (assertCoversPopulation)、未宣言の kind で graspEntryRow が throw すること、そして描く側が context.grasp と graspEntryRow を実際に読んでいること (読まない欄は無い欄と区別がつかない)"
+            artifacts
+            - "src/view/EntityScopeChecks.js"
+            - "src/components/NPanel/EntityChecks.jsx"
+
+        goal TheOldJudgementIsUnchangedWhereItStillApplies
+        uuid 24e9b731-8f56-40ac-9e13-7d0c58a4b26f
+        summary "探索が生きていないときの判断 (ADR-110 D4 の 2 種の 0、ADR-105 D5 の実体種ごとの宣言表、未宣言の種で throw) が 1 ビットも変わっていない"
+        labels support-verified
+
+            solution TheUnchangedGateTests
+            uuid 0c6a3d95-1e78-4b24-8a56-93f2e017b4d8
+            summary "src/DiscoveryOutsideTheFloor.test.js の既存 34 検査が無改変で通る (2026-08-14)。この ADR が限定したのは「探索が生きている間」だけで、入口としての判断そのものは触っていない"
+            artifacts
+            - "src/DiscoveryOutsideTheFloor.test.js"
