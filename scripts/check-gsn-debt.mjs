@@ -126,7 +126,8 @@ const SUPPORT_LABELS = new Map([
  * 宣言を区別できないという ADR-124 の欠陥が、その ADR を書いた本人の計測にも出た。
  * ラベルを構造として読む本パーサが正しい。
  */
-const DEBT_BASELINE = 30
+// 2026-08-14: ADR-119 D1 (target の契約宣言 + 両端の準拠テスト) が決着し 30 → 29。
+const DEBT_BASELINE = 29
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
@@ -135,7 +136,8 @@ const DEBT_BASELINE = 30
  * 「何が決着させるか」を名指しできても、それが repo 内のどの番地に現れるかは
  * 決まっていない段階が実在する。嘘の trigger を書くより、書けないことを数える。
  */
-const PROSE_DEBT_BASELINE = 26
+// 2026-08-14: 上と同じ 1 件。決着した goal の assumption は散文満期だったので分子も下がる。
+const PROSE_DEBT_BASELINE = 25
 
 const errors = []
 

@@ -1,6 +1,6 @@
 # 119. 掴む対象は契約であり、どこを掴むかは入力である — 無宣言の主役に契約を与える
 
-- Status: Proposed (未実装 — ADR-118 と同じ PR で起票。実装は `target` のスキーマ宣言 → 掴む場所の入力の順)
+- Status: Proposed (**D1 実装済み 2026-08-14 / D2・D3 未着手** — 本文が決めた順序の前半だけが入った。判断は未了 (D2 の UI が未設計) なので Status は上げない。実装先行は `DRAFT_WITH_IMPLEMENTATION` に宣言済み — 検査は数え、宣言が分類する (ADR-123 D4)。詳細は §D1 実装で分かったこと)
 - Date: 2026-08-11
 - Deciders: yuubae215, Claude
 - 段: **G-2** (`docs/grasp/implementation-order.md` — grasp レーンの順序表)。前提: なし (G-0 / G-1 と独立)
@@ -73,10 +73,35 @@ Layout DSL の Solid に**把持フィーチャ**を任意で持たせ、宣言�
 
 ### 検証 (証拠) — 未実装なので全部未来形
 
-| 主張 | 問い所 (予定) |
-|------|-------------|
-| `target` が両端で検証される | `pnpm test:contract` の準拠テストに target を含める |
-| 宣言が無いことと「どこでもよい」が区別される | 純粋層のテスト (2 状態が別の値を返す) |
-| 宣言が導出に静かに広げられない | 宣言ありのときサンプルが宣言由来のみであること |
+| 主張 | 問い所 | 状態 |
+|------|-------|------|
+| `target` が両端で検証される | `server/test/grasp.contract.test.js` に 7 本 (適合 1 / 拒否 5 / 宣言が open のまま 1) + `core/tests/test_contract_conformance.py` に 1 本 (適合 + 法線欠落の逆向き) | ✅ 2026-08-14 |
+| 宣言が無いことと「どこでもよい」が区別される | 純粋層のテスト (2 状態が別の値を返す) | ⬜ D2 |
+| 宣言が導出に静かに広げられない | 宣言ありのときサンプルが宣言由来のみであること | ⬜ D3 |
+
+### D1 実装で分かったこと (2026-08-14)
+
+**`sampling` は「対象外宣言」ではなく載せる方を選んだ。** ADR 本文は二択にしていたが、
+実測すると `core/` は既に `sampling` の 4 キーを読んでおり (`pipeline.py`)、
+`templates/bin-picking-thin-container` は既に送っている。対象外と宣言するのは
+事実に反する — 二状態のうち「載せる」しか成立しない。
+
+**宣言そのものは open のまま残した。** `graspSearchDeclaration` の
+`additionalProperties: true` はスキーマ自身が「Layout DSL が詳細を統治する」と
+書いている意図的な設計で、閉じると `layoutVersion` の統治をこのスキーマへ移すことに
+なる。D1 は「3 欄を宣言する」であって「封筒を閉じる」ではない。宣言した**各
+オブジェクトは閉じた** — そうしないと、宣言することで得るものが元の open payload と
+変わらない。この非対称そのものをテストで焼いた (`hardConstraints` は通り、
+`target.graspHint` は落ちる)。
+
+**3 本目の端が死んでいた (DEF-029)。** `packages/grasp-contract` は自前の
+conformance suite を持ち `package.json` に script も在るが、ルートからも CI からも
+呼ばれておらず、走らせると ajv strict でコンパイルすら通らない (response の
+`graspNearestMiss` の discriminator が oneOf 枝に `properties.kind` を持たない)。
+結果として `examples/grasp-search-request.json` の `gripper` が `kind` を欠いたまま
+v5 に取り残されているのを誰も見ていない。**宣言は在るが読む機械が無い** = ADR-115 と
+同型。直すには response スキーマを触る = 版上げを伴うので、次に意図して版を上げる回
+(ADR-122 D2) に相乗りさせる。この ADR が主張する「両端」は走っている 2 本で成立して
+おり、死んでいるのは 3 本目である。
 
 論証木: `docs/gsn/adr-119-a-target-is-a-contract.gsn`

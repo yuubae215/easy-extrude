@@ -1,5 +1,25 @@
 // Conformance tests for the easy-extrude wire contracts.
 //
+// ## この suite は現在 CI で走っていない (未着手 — 登録簿 DEF-029)
+//
+// `package.json` は `test` / `test:contract` script を持つが、ルートのどの script も
+// CI のどのジョブもこれを呼ばない。しかも今このファイルを実行すると **ajv strict が
+// スキーマをコンパイルできずに落ちる**: response 側の `diagnostics.graspNearestMiss`
+// が `discriminator` を持つのに oneOf の各枝が `properties.kind` を宣言していない
+// (ADR-118 で追加された形)。
+//
+// 直すには response スキーマを触ることになり、それは contractVersion を上げる意図的な
+// 行為である (ADR-082/084 §4 — CI の contract-wall が版上げ無しの response 変更を落とす)。
+// 型注釈のためだけに版を上げるとデプロイ調整イベントを空撃ちさせるので、次に**意図して**
+// 版を上げる回 (ADR-122 D2 の pick-sequence が最有力) に相乗りさせる。
+//
+// **その間これは死んだ検査である。** 現に `examples/grasp-search-request.json` の
+// `gripper` は `kind` を欠いたまま v5 に取り残されており (ADR-118 で必須になった)、
+// 誰もそれを見ていない。ADR-119 D1 が主張する「両端で検証される」は、走っている
+// BFF (`server/test/grasp.contract.test.js`) と `core/`
+// (`core/tests/test_contract_conformance.py`) の 2 本で成立している — 死んでいるのは
+// 3 本目のほうで、それを黙って持たないために DEF-029 が在る。
+//
 // The schema is the single source of truth; examples/ are the canonical wire
 // instances consumers copy from. Drift is detected at both ends:
 //   1. every example in examples/ validates against its schema,

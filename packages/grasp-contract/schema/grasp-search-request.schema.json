@@ -131,6 +131,7 @@
           ]
         },
         "gripper": {
+          "type": "object",
           "description": "Declares the hand for the 'can it be grasped' domain gate (ADR-081), as a CLOSED KIND-DISCRIMINATED UNION (ADR-118, same governance as the response's `pose`). A parallel jaw and a suction cup do not measure the same quantity -- one asks whether the jaws close across the object, the other whether a flat enough patch of the surface can be sealed -- so they are separate branches rather than optional siblings on one flat object. Flattening them would make 'a suction cup with a jaw opening' representable. Declaration only: the gate itself is solved in core/. Optional as a whole: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true). The only intentional growth point is adding a kind, which bumps contractVersion.",
           "oneOf": [
             {
@@ -142,6 +143,104 @@
           ],
           "discriminator": {
             "propertyName": "kind"
+          }
+        },
+        "target": {
+          "type": "object",
+          "description": "Declares the object being grasped -- the SUBJECT of the whole search (ADR-119 D1). Carried since ADR-117 but undeclared until now: it rode the open payload, so a malformed target produced a well-formed answer of zero candidates and nothing said why. Declaration only: which faces are worth sampling follows the declared hand (ADR-118) on the front, and every judgement about the samples (can the jaws close, does the approach clip) stays solved in core/. The geometry is DOCUMENT-derived (Layout DSL), not scene-derived -- an asymmetry with `robot` that ADR-119 names and does not yet resolve.",
+          "additionalProperties": false,
+          "properties": {
+            "surfaceSamples": {
+              "type": "array",
+              "description": "Candidate grasp points on the object's surface, each with the outward normal at that point. The solver measures the object's width from these very samples, so sampling the wrong face is not a fidelity loss but a wrong answer (ADR-118 D3).",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "point": {
+                    "type": "array",
+                    "description": "[x, y, z] world-frame position of the sample.",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "normal": {
+                    "type": "array",
+                    "description": "[x, y, z] outward surface normal at the sample. The face-on approach is its opposite.",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "point",
+                  "normal"
+                ]
+              }
+            }
+          }
+        },
+        "obstacles": {
+          "type": "array",
+          "description": "Bodies the approach must avoid, as bounding spheres (ADR-119 D1; carried since ADR-117). Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "center": {
+                "type": "array",
+                "description": "[x, y, z] world-frame centre of the bounding sphere.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "radius": {
+                "type": "number",
+                "description": "Bounding-sphere radius in the layout's own length unit (the contract never names the unit).",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "center",
+              "radius"
+            ]
+          }
+        },
+        "sampling": {
+          "type": "object",
+          "description": "Declares how the discrete candidate set is enumerated around each surface sample (ADR-075 stage 0). Every key is optional and core/ supplies its own default when one is absent -- an undeclared bound is left undeclared rather than guessed. Declared here rather than left to the open payload because core/ already reads it and the templates already send it: the alternative required by 原則 #29 would be an explicit out-of-scope declaration, and 'nobody wrote it down' is not one of the two allowed states.",
+          "additionalProperties": false,
+          "properties": {
+            "approachTiltAngles": {
+              "type": "array",
+              "description": "Tilt steps (radians) away from the straight face-on approach. Including 0 keeps the head-on candidate.",
+              "items": {
+                "type": "number"
+              }
+            },
+            "rollAngles": {
+              "type": "array",
+              "description": "Roll steps (radians) about the approach axis.",
+              "items": {
+                "type": "number"
+              }
+            },
+            "preGraspDistance": {
+              "type": "number",
+              "description": "Standoff from the grasp point back along the approach, in the layout's own length unit.",
+              "minimum": 0
+            },
+            "clearanceReference": {
+              "type": "number",
+              "description": "The clearance at which `approach_clearance` scores full marks -- the absolute basis that makes the objective comparable between requests. A declared 0 leaves the objective with no basis, so it is reported as NOT MEASURED rather than as a zero score (ADR-120).",
+              "minimum": 0
+            }
           }
         }
       }
