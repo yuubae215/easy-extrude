@@ -9,7 +9,7 @@
  * GSN 自体も hook にすれば良いのでは?」
  *
  * **半分は既にそうなっていた。** `docs/gsn/*.gsn` には `support-exploring` /
- * `support-unexplored` の goal が **31 個**あり、しかも中身が残しそのものだった:
+ * `support-unexplored` の goal が **30 個**あり、しかも中身が残しそのものだった:
  *
  * ```
  * goal AbsentCentreOfMassNeverBecomesTheCentroid
@@ -30,7 +30,7 @@
  *
  * つまり **「宣言された未支持」に満期が無い**。名指しした検査が実在するようになっても
  * 何も落ちない — **ADR-109 力学 1 (満期が無言で過ぎる) が GSN レーンでそのまま
- * 再生産されている**。しかも 31 個ある。個数を数える ratchet も無く、`report` モードの
+ * 再生産されている**。しかも 30 個ある。個数を数える ratchet も無く、`report` モードの
  * 集計は `pnpm test:gsn` が走らせないので**印字ですらない** (ADR-115)。
  *
  * ## 4 つの問い
@@ -39,7 +39,7 @@
  *                   (遡及しない — `Retires:` を ADR-125 以降に切ったのと同じ判断)。
  *                   cutoff 前の欠落は `DECLARED_TREELESS` に理由つきで宣言する。
  *   G2 DEBT       — 宣言された未支持 goal の個数を ratchet で縛る。**超えても下回っても**
- *                   fail。「宣言された未支持」に欄が無ければ、31 が 60 になっても
+ *                   fail。「宣言された未支持」に欄が無ければ、30 が 60 になっても
  *                   誰も気づかない (原則 #31 — 正当な非ゼロは 0 に見えない)。
  *   G3 REACH      — 満期 trigger を持たない未支持 goal の個数を ratchet で縛る。
  *                   Q5 と同じ形 — 「満期を書く欄が在る」ことと「その欄を読む機械が
@@ -106,7 +106,7 @@ const DECLARED_TREELESS = new Map([])
 /**
  * **support ラベルの種の宣言** — prefix で推論しない。
  *
- * 初版は `startsWith('support-')` で数え、**57 個**を報告した (実測は 31)。原因は
+ * 初版は `startsWith('support-')` で数え、**57 個**を報告した (実測は 30)。原因は
  * **第 3 のラベル `support-verified`** で、これは「支えが在る」= *逆の意味*である。
  * prefix は「support について何か言っている」しか意味せず、その符号を持たない。
  * 未宣言の種で throw する形にすれば、4 つ目のラベルが生まれた日に落ちる
@@ -168,7 +168,7 @@ function collectDeclaredUnsupported() {
               '    SUPPORT_LABELS に種と**符号** (supported / unsupported) を宣言すること — ' +
               'prefix は符号を持たない。\n' +
               '    実際 support-verified は「支えが在る」= 逆の意味で、prefix で数えた初版は ' +
-              '31 を 57 と報告した。')
+              '30 を 57 と報告した。')
           }
         }
         if (support.some(l => SUPPORT_LABELS.get(l) === 'unsupported')) {
