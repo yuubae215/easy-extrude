@@ -10,6 +10,7 @@
 
 import pytest
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 
 from contract_pkg import load_contract_json, load_request_schema, load_response_schema
 
@@ -42,6 +43,48 @@ def test_request_instance_conforms_to_schema():
     assert "layoutVersion" in wire and "graspSearch" in wire
     assert "topN" in wire["graspSearch"]
     Draft202012Validator(schema).validate(wire)
+
+
+def test_request_with_target_obstacles_sampling_conforms():
+    """探索の主役 (target / obstacles / sampling) が契約に適合する (ADR-119 D1)。
+
+    ADR-117 以来ワイヤに載っていたが宣言が無く、`graspSearchDeclaration` の open
+    payload を素通りしていた。素通りは「形が正しい」ではなく「誰も見ていない」なので、
+    壊れた target は候補 0 件という**正しい形の答え**になって何も赤くならなかった。
+
+    ここは `core/` 側の端。フロント→BFF 側は server/test/grasp.contract.test.js。
+    両端で同じスキーマを読むことが D1 の主張そのものなので、片端だけでは閉じない。
+    """
+    schema = load_request_schema()
+    # pydantic の宣言は extra="allow" (Layout DSL が詳細を持つ) なので、この 3 欄は
+    # 追加フィールドとして通る。契約が形を決めるのはスキーマ側であり、その形を
+    # 実際に検証するのがこのテスト。
+    req = GraspSearchRequest(
+        layout_version="layout/1.0",
+        grasp_search=GraspSearchDeclaration(
+            objective_weights={"grasp_stability": 1.0},
+            top_n=5,
+            target={"surfaceSamples": [{"point": [0, 0, 0.6], "normal": [0, 0, 1]}]},
+            obstacles=[{"center": [0.08, 0.05, 0.6], "radius": 0.025}],
+            sampling={
+                "approachTiltAngles": [0.0, 0.17],
+                "rollAngles": [0.0, 1.5708],
+                "preGraspDistance": 0.1,
+                "clearanceReference": 0.03,
+            },
+        ),
+    )
+    wire = req.model_dump(by_alias=True)
+    Draft202012Validator(schema).validate(wire)
+
+    # 逆向き: 法線を欠いたサンプルは進入方向が定義できないので拒否される。
+    # (正の対照だけでは「何を通しても通る」と区別できない — 原則 #31)
+    broken = wire | {
+        "graspSearch": wire["graspSearch"]
+        | {"target": {"surfaceSamples": [{"point": [0, 0, 0.6]}]}}
+    }
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schema).validate(broken)
 
 
 def _score() -> ScoreBreakdown:

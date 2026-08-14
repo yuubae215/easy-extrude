@@ -62,6 +62,10 @@ export interface GraspSearchDeclaration {
     reachMin?: number;
     reachMax?: number;
     wristConeHalfAngle?: number;
+    /**
+     * Declares the arm's KINEMATIC STRUCTURE so core/ can solve real inverse kinematics instead of the wrist-cone proxy (ADR-127). A CLOSED KIND-DISCRIMINATED UNION, same governance as `gripper` (ADR-118): a closed-form solver exists only for a known structure, so the kind is what selects it -- arbitrary link parameters do not make an arm solvable in closed form. Optional: with no kinematics declared the naive cone judgement runs exactly as before, so omitting this changes nothing (ADR-084 §3 discipline -- behaviour changes only where a declaration appears). Adding a kind is the intentional growth point and bumps contractVersion.
+     */
+    kinematics?: KinematicsUniversalRobots;
   };
   /**
    * Declares the vision camera for the 'can it be seen' domain gate (ADR-081). Like `robot`, this only declares -- visibility evaluation itself is solved in core/. Optional: with no camera declared the visibility stage passes everything (rejectedByVisibility stays 0 and `visible` is vacuously true).
@@ -90,7 +94,117 @@ export interface GraspSearchDeclaration {
    * Declares the hand for the 'can it be grasped' domain gate (ADR-081), as a CLOSED KIND-DISCRIMINATED UNION (ADR-118, same governance as the response's `pose`). A parallel jaw and a suction cup do not measure the same quantity -- one asks whether the jaws close across the object, the other whether a flat enough patch of the surface can be sealed -- so they are separate branches rather than optional siblings on one flat object. Flattening them would make 'a suction cup with a jaw opening' representable. Declaration only: the gate itself is solved in core/. Optional as a whole: with no gripper declared the grasp stage passes everything (rejectedByGrasp stays 0 and `graspable` is vacuously true). The only intentional growth point is adding a kind, which bumps contractVersion.
    */
   gripper?: GripperParallelJaw | GripperSuction;
+  /**
+   * Declares the object being grasped -- the SUBJECT of the whole search (ADR-119 D1). Carried since ADR-117 but undeclared until now: it rode the open payload, so a malformed target produced a well-formed answer of zero candidates and nothing said why. Declaration only: which faces are worth sampling follows the declared hand (ADR-118) on the front, and every judgement about the samples (can the jaws close, does the approach clip) stays solved in core/. The geometry is DOCUMENT-derived (Layout DSL), not scene-derived -- an asymmetry with `robot` that ADR-119 names and does not yet resolve.
+   */
+  target?: {
+    /**
+     * Candidate grasp points on the object's surface, each with the outward normal at that point. The solver measures the object's width from these very samples, so sampling the wrong face is not a fidelity loss but a wrong answer (ADR-118 D3).
+     */
+    surfaceSamples?: {
+      /**
+       * [x, y, z] world-frame position of the sample.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      point: [number, number, number];
+      /**
+       * [x, y, z] outward surface normal at the sample. The face-on approach is its opposite.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      normal: [number, number, number];
+    }[];
+  };
+  /**
+   * Bodies the approach must avoid, as bounding spheres (ADR-119 D1; carried since ADR-117). Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/.
+   */
+  obstacles?: {
+    /**
+     * [x, y, z] world-frame centre of the bounding sphere.
+     *
+     * @minItems 3
+     * @maxItems 3
+     */
+    center: [number, number, number];
+    /**
+     * Bounding-sphere radius in the layout's own length unit (the contract never names the unit).
+     */
+    radius: number;
+  }[];
+  /**
+   * Declares how the discrete candidate set is enumerated around each surface sample (ADR-075 stage 0). Every key is optional and core/ supplies its own default when one is absent -- an undeclared bound is left undeclared rather than guessed. Declared here rather than left to the open payload because core/ already reads it and the templates already send it: the alternative required by 原則 #29 would be an explicit out-of-scope declaration, and 'nobody wrote it down' is not one of the two allowed states.
+   */
+  sampling?: {
+    /**
+     * Tilt steps (radians) away from the straight face-on approach. Including 0 keeps the head-on candidate.
+     */
+    approachTiltAngles?: number[];
+    /**
+     * Roll steps (radians) about the approach axis.
+     */
+    rollAngles?: number[];
+    /**
+     * Standoff from the grasp point back along the approach, in the layout's own length unit.
+     */
+    preGraspDistance?: number;
+    /**
+     * The clearance at which `approach_clearance` scores full marks -- the absolute basis that makes the objective comparable between requests. A declared 0 leaves the objective with no basis, so it is reported as NOT MEASURED rather than as a zero score (ADR-120).
+     */
+    clearanceReference?: number;
+  };
   [k: string]: unknown;
+}
+/**
+ * A Universal Robots-style 6-axis arm (UR3/UR5/UR10 and their e-series). The structure -- axes 2/3/4 parallel, an orthogonal wrist -- is what the kind asserts; the six lengths below are all that differs between models, so a model NAME is deliberately not part of the contract (a name would need a lookup table on the solving side, which is a second source for numbers the declaring side already holds).
+ */
+export interface KinematicsUniversalRobots {
+  kind: "universalRobots";
+  /**
+   * The six standard-DH lengths, signs included (UR's a2/a3 are negative). Units follow the layout's own length unit, like every other length on this wire. All six are required: filling a missing one with a default would solve for a DIFFERENT ARM, and the answer would be indistinguishable from a correct one.
+   */
+  dh: {
+    d1: number;
+    a2: number;
+    a3: number;
+    d4: number;
+    d5: number;
+    d6: number;
+  };
+  /**
+   * Per-joint [min, max] in radians, base to wrist. OPTIONAL, and its absence means the limits were NOT DECLARED -- not that the joints are free. The solver reports which poses are reachable within whatever was declared; it never invents a default envelope, because 'unlimited' and 'unstated' would then produce the same answer (原則 #31).
+   *
+   * @minItems 6
+   * @maxItems 6
+   */
+  jointLimits?: [
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    },
+    {
+      min: number;
+      max: number;
+    }
+  ];
 }
 /**
  * Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis.

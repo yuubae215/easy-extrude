@@ -92,6 +92,26 @@ def test_weighted_average_is_normalized_and_handles_zero_weights():
     assert weighted_average({"a": 1.0}, {}) == 0.0
 
 
+def test_weighted_average_excludes_unmeasured_signals_from_the_denominator():
+    """取れなかった信号は分母に入らない (ADR-120 D1 と同じ規律を propose レーンへ)。
+
+    ここは真偽値を返さない propose レーンなので契約違反ではないが、欠けた信号を 0 として
+    平均すると「その信号では似ていない」と「その信号が取れなかった」が同じ順位に潰れ、
+    similarity の絶対基準性 (ADR-077 §3) が候補ごとに揺れる。engine.scoring と同じ
+    欠陥が独立に住んでいた 3 人目 — どちらも *意図* を docstring に書いていた。
+    """
+    values = {"semantic": 1.0, "lexical": 0.0}
+    weights = {"semantic": 0.7, "lexical": 0.3}
+    base = weighted_average(values, weights)
+
+    # 取れなかった信号にどれだけ重みを積んでも動かない。
+    assert weighted_average(values, {**weights, "structural": 5.0}) == base
+    # 測れた上での 0 は従来どおり分母に入る (平均を薄める)。
+    assert weighted_average({**values, "structural": 0.0}, {**weights, "structural": 5.0}) < base
+    # 1 つも取れなければ 0 (ゼロ割り回避)。
+    assert weighted_average({}, {"semantic": 1.0}) == 0.0
+
+
 def test_confidence_drops_without_structural_support():
     # 信号が完全一致でも、public 構造裏付けが無ければ確信度は頭打ち (= agreement/2)。
     supported = NormalizedSignals(

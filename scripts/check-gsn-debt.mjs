@@ -126,6 +126,11 @@ const SUPPORT_LABELS = new Map([
  * 宣言を区別できないという ADR-124 の欠陥が、その ADR を書いた本人の計測にも出た。
  * ラベルを構造として読む本パーサが正しい。
  */
+// 2026-08-14: ADR-119 D1 (target の契約宣言 + 両端の準拠テスト) が決着し 30 → 29。
+// 同日 ADR-127 (UR の解析解 IK) が木を起こし +1 で 30。増えた 1 個は
+// `TheFlangeConventionMatchesWhatTheFrontDraws` — **core/ 内では原理的に決着しない**
+// 主張である (自己整合な誤った規約も往復検査を通る) ため、証拠はフロント配線と同時。
+// 満期は機械可読なので G3 の分子には乗らない。
 const DEBT_BASELINE = 30
 
 /**
@@ -135,7 +140,8 @@ const DEBT_BASELINE = 30
  * 「何が決着させるか」を名指しできても、それが repo 内のどの番地に現れるかは
  * 決まっていない段階が実在する。嘘の trigger を書くより、書けないことを数える。
  */
-const PROSE_DEBT_BASELINE = 26
+// 2026-08-14: 上と同じ 1 件。決着した goal の assumption は散文満期だったので分子も下がる。
+const PROSE_DEBT_BASELINE = 25
 
 const errors = []
 

@@ -21,6 +21,17 @@
 export const STUB_SCENARIO = Object.freeze({
   /** Coarse geometric stand-in that reacts to the request (the default). */
   SOLVE: 'solve',
+  /**
+   * `solve`, but with a reach envelope declared for the request — the POSITIVE
+   * CONTROL for ADR-120.
+   *
+   * The front collects no `plan{}`, so every other scenario shows `reach_margin`
+   * as "not measured". An absence you cannot make appear is not evidence: it
+   * looks identical to a key the stub never emits. Flipping between this and
+   * `solve` is the same contrast §S9 gets locally from `curl`, made reachable
+   * from a URL — which is the only way a GitHub Pages reviewer can see it.
+   */
+  REACH_DECLARED: 'reachDeclared',
   /** Candidates were generated, none survived: the all-rejected funnel. */
   ALL_REJECTED: 'allRejected',
   /** Exactly one survivor — the "thin result" layout, easy to get wrong. */

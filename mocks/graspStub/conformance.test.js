@@ -319,6 +319,43 @@ test('評価できない objective に重みを付けても totalScore は動か
   })
 })
 
+test('reachDeclared は solve の正の対照になる — 違いは宣言だけで、候補は同じ', () => {
+  // GitHub Pages には plan{} のフォームも curl も無いので、この 2 シナリオを
+  // 行き来することだけが「不在は事実であって、鍵を出せないのではない」を
+  // 示す手段になる。対照が対照であるためには、**宣言以外が同じ**でなければ
+  // ならない — 候補が増減したら「測れるようになった」のか「別の問題を解いた」のか
+  // 読者が区別できなくなる。
+  const req = withWeights(request(), {
+    reach_margin: 0.6, approach_clearance: 0.4, grasp_stability: 1.0,
+  })
+  const off = responseFor(STUB_SCENARIO.SOLVE, req, CONTRACT_VERSION)
+  const on  = responseFor(STUB_SCENARIO.REACH_DECLARED, req, CONTRACT_VERSION)
+
+  assert.equal(off.status, 200)
+  assert.equal(on.status, 200)
+  assert.ok(on.body.candidates.length > 0, '対照が空では何も示せない')
+  assert.equal(on.body.candidates.length, off.body.candidates.length,
+    'リーチ段は何も棄却しない envelope なので候補数は変わらないはず')
+  assert.equal(on.body.diagnostics.rejectedByReach, 0,
+    '対照用の envelope が候補を落としていたら、差は宣言ではなく棄却になる')
+
+  // 鍵の有無だけが動く。
+  for (const c of off.body.candidates) {
+    assert.ok(!('reach_margin' in c.score.objectiveScores), 'solve 側は測っていない')
+  }
+  for (const c of on.body.candidates) {
+    assert.ok('reach_margin' in c.score.objectiveScores, 'reachDeclared 側は測れる')
+  }
+
+  // そして分母が変わるので総合スコアも動く — 「測っていない」が結果に効いている
+  // ことの証拠 (動かなければ、この対照は何も語っていない)。
+  const moved = off.body.candidates.some(
+    (c, i) => c.score.totalScore !== on.body.candidates[i].score.totalScore)
+  assert.ok(moved, '宣言してもスコアが 1 つも動かないなら、対照として成立していない')
+
+  assertConforms(on.body, 'reachDeclared')
+})
+
 test('評価できた objective の加重平均なので 0-1 に収まる (リクエスト間で比較可能)', () => {
   const res = stubSolve(withWeights(
     request({ plan: { reachMin: 0, reachMax: 1000 } }),

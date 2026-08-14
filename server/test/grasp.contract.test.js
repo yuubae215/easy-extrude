@@ -69,6 +69,77 @@ test('request with an unknown top-level field fails (additionalProperties:false)
   assert.equal(valid, false)
 })
 
+// ── target / obstacles / sampling: the subject of the search (ADR-119 D1) ─────
+//
+// Carried on the wire since ADR-117, but declared only now. Before this they
+// rode `graspSearchDeclaration`'s open payload, so a malformed target validated
+// happily and the answer came back as a well-formed zero-candidate result —
+// the worst failure shape, because 0 is a legitimate answer and nothing was red.
+
+const withTarget = (graspSearch) => ({
+  contractVersion: CONTRACT_VERSION,
+  layoutVersion: 'layout/1.0',
+  graspSearch: { objectiveWeights: { grasp_stability: 1.0 }, topN: 5, ...graspSearch },
+})
+
+test('request declaring target / obstacles / sampling conforms (ADR-119 D1)', () => {
+  const { valid, errors } = validateRequest(withTarget({
+    target: { surfaceSamples: [{ point: [0, 0, 0.6], normal: [0, 0, 1] }] },
+    obstacles: [{ center: [0.08, 0.05, 0.6], radius: 0.025 }],
+    sampling: {
+      approachTiltAngles: [0, 0.17], rollAngles: [0, 1.5708],
+      preGraspDistance: 0.1, clearanceReference: 0.03,
+    },
+  }))
+  assert.deepEqual({ valid, errors }, { valid: true, errors: [] })
+})
+
+test('a sample missing its normal is rejected — the approach would be undefined', () => {
+  const { valid } = validateRequest(withTarget({
+    target: { surfaceSamples: [{ point: [0, 0, 0.6] }] },
+  }))
+  assert.equal(valid, false)
+})
+
+test('a 2-component point is rejected — the wire carries 3D world positions', () => {
+  const { valid } = validateRequest(withTarget({
+    target: { surfaceSamples: [{ point: [0, 0], normal: [0, 0, 1] }] },
+  }))
+  assert.equal(valid, false)
+})
+
+test('a smuggled field on target is rejected (the object is closed)', () => {
+  // The declaration as a whole stays open (layoutVersion governs its detail),
+  // but each declared object is closed — otherwise declaring `target` would buy
+  // nothing over the open payload it came from.
+  const { valid } = validateRequest(withTarget({
+    target: { surfaceSamples: [], graspHint: 'the handle' },
+  }))
+  assert.equal(valid, false)
+})
+
+test('an obstacle without a radius is rejected — a sphere needs both', () => {
+  const { valid } = validateRequest(withTarget({
+    obstacles: [{ center: [0, 0, 0] }],
+  }))
+  assert.equal(valid, false)
+})
+
+test('a negative obstacle radius is rejected', () => {
+  const { valid } = validateRequest(withTarget({
+    obstacles: [{ center: [0, 0, 0], radius: -1 }],
+  }))
+  assert.equal(valid, false)
+})
+
+test('the declaration itself stays OPEN — layoutVersion owns its detail', () => {
+  // Deliberate asymmetry, not an oversight: closing `graspSearchDeclaration`
+  // would move the Layout DSL's governance into this schema (ADR-119 D1 declares
+  // the three known fields; it does not close the envelope they arrived in).
+  const { valid } = validateRequest(withTarget({ hardConstraints: { foo: 1 } }))
+  assert.equal(valid, true)
+})
+
 test('valid response instance conforms to the response schema (both pose kinds)', () => {
   const res = {
     contractVersion: CONTRACT_VERSION,

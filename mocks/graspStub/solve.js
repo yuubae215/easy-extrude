@@ -123,6 +123,40 @@ function judgement(graspSearch) {
 }
 
 /**
+ * A reach envelope that COVERS every declared sample, derived from the request.
+ *
+ * The point of this is the **positive control** for ADR-120. Everywhere else the
+ * front never declares a reach envelope, so `reach_margin` is always absent —
+ * and an absence you can never make appear is indistinguishable from a key this
+ * stub simply does not know how to emit. A reviewer on GitHub Pages has no
+ * `plan{}` form and no `curl`, so without this they can only ever see one half
+ * of the claim (原則 #31 — the negative control alone proves nothing).
+ *
+ * Derived, not constant: the stub is unit-agnostic (a millimetre layout and a
+ * metre layout must both work), so the bounds are scaled from the sample
+ * distances rather than hard-coded. The margin is deliberately generous on both
+ * sides so that the reach stage rejects NOTHING — the A/B must differ in the
+ * declaration alone, not in which candidates survived.
+ *
+ * @param {object} graspSearch  the request's `graspSearch` declaration
+ * @returns {{reachMin: number, reachMax: number}|null} null when there is
+ *   nothing to cover (no samples → no distances → no basis, and inventing one
+ *   would be the very guess this ADR is about)
+ */
+export function envelopeCoveringSamples(graspSearch) {
+  const base    = graspSearch?.robot?.base ?? [0, 0, 0]
+  const samples = graspSearch?.target?.surfaceSamples ?? []
+  const distances = samples
+    .map(s => norm(sub(s.point, base)))
+    .filter(d => Number.isFinite(d) && d > 0)
+  if (!distances.length) return null
+  return {
+    reachMin: Math.min(...distances) * 0.5,
+    reachMax: Math.max(...distances) * 1.5,
+  }
+}
+
+/**
  * The objective values this stand-in can produce, keyed by `core/`'s registered
  * names. Only the objectives the request actually weights are returned, so an
  * unweighted objective does not appear in the breakdown — mirroring

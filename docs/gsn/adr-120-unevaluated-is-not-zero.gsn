@@ -48,12 +48,20 @@ artifacts
             artifacts
             - "mocks/graspStub/conformance.test.js"
 
-            assumption RealSolverStillDividesByEveryWeight
-            uuid 95a0f425-4d0d-4308-912c-a0d9458fb940
-            summary "宣言された穴 (DEF-013): 同じ主張を実ソルバで示す検査はまだ無い。core/ の weighted_sum は評価できなかった objective の重みを分母に残したままなので、この枝はスタブレーンでしか支えられていない。決着させる検査は core/tests/test_engine.py で、同じ候補に対して評価不能な objective の重みを 1 つ足しても totalScore が変わらないこと。着手順がスタブ先行なのは、core/ を先に直してもスタブが reach_margin: 0 を載せ続けるかぎり画面で確認できないから"
+            solution InvarianceHoldsInTheRealSolverToo
+            uuid 3f0b41c6-2a4d-4f7e-9b8a-1d5c8e77a204
+            summary "DEF-013 決着 (2026-08-14)。core/tests/test_engine.py の 2 本: 単体 (評価不能な軸に 1e6 の重みを積んでも totalScore が動かない / 測れた上での 0 は従来どおり分母に入る) と、パイプライン層 (フロントの既定リクエスト = plan{} 無しを再現し、応答の全候補で reach_margin の鍵が無いこと・重みを 5 倍にしても totalScore と順位が一致すること)。単体だけにしないのは、算術は不完全な objectiveScores が実際に流れてくることを示さないから。core 146 本すべて緑"
             artifacts
+            - "core/tests/test_engine.py"
             - "core/easy_extrude_core/engine/scoring.py"
-            - "docs/DEFERRAL_LEDGER.md"
+
+            solution UnevaluableObjectivesNeverEnterTheDenominator
+            uuid b7d92e50-6c31-4a88-8f2e-0c9a3b1e5d47
+            summary "実装で分かったこと: D1 (分母から外す) だけでは主症状が消えなかった。core/ は reach_margin を **評価済みの 0.0** として返しており、鍵が在る以上 D1 の条件分岐に一度も入らない。基準側 (NormSpec) が「絶対基準が未宣言なら値を返さない」に変わって初めて鍵が消え、D1 が効く。同じ欠陥が recommendation/ranking.py の weighted_average にも独立に住んでいた (3 人目の生産者。propose レーンなので契約違反ではないが、規律は同型)"
+            artifacts
+            - "core/easy_extrude_core/engine/objectives.py"
+            - "core/easy_extrude_core/recommendation/ranking.py"
+            - "core/tests/test_recommendation.py"
 
         goal UnevaluatedIsDistinguishableFromZero
         uuid a6ca345d-a2bb-49f7-9fb2-4343913e4abb

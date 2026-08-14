@@ -49,11 +49,20 @@ artifacts
         goal TargetIsValidatedAtBothEnds
         uuid 09551d83-26f0-4b90-b8bc-6721800f5472
         summary "target と obstacles がリクエストスキーマに宣言され、BFF と core/ の双方が形を検証する。sampling は載せるか明示的に対象外と宣言するかの二状態のどちらかになる"
-        labels support-exploring
 
-            assumption ContractConformanceWillSettleIt
+            solution ContractConformanceIsExecutedAtBothEnds
             uuid 3a4e02e9-106d-42cb-8cea-fdc131476acc
-            summary "未着手。決着させる検査は pnpm test:contract の準拠テストに target を含めること、および core/tests/test_contract_conformance.py の同型。リクエスト側の追加なので contractVersion は上げない (ADR-083/084 の先例)"
+            summary "D1 実装 (2026-08-14)。target / obstacles / sampling をリクエストスキーマへ宣言し、各オブジェクトは閉じる (宣言そのものは open のまま — layoutVersion が詳細を統治する非対称は意図であり、閉じると Layout DSL の統治をこのスキーマへ移すことになる)。sampling は「対象外宣言」ではなく**載せる**方を選んだ: core/ が既に読み templates が既に送っているので、対象外は事実に反する。検証は両端で走る — server/test/grasp.contract.test.js に 7 本 (適合 1 / 拒否 5 / 宣言が open のままであること 1)、core/tests/test_contract_conformance.py に 1 本 (適合 + 法線欠落の逆向き)。BFF の導出型も同一 PR で再生成。contractVersion は 5 のまま (request 側の追加 — ADR-083/084 の先例)"
+            artifacts
+            - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+            - "server/test/grasp.contract.test.js"
+            - "core/tests/test_contract_conformance.py"
+
+            context TheThirdEndsSelfTestIsDead
+            uuid 8c1f2a76-5b90-4e13-a2d7-6f4b0e93c518
+            summary "D1 実装中に判明 (DEF-029)。packages/grasp-contract 自身の test/contract.test.mjs は package.json に script を持つのにルートからも CI からも呼ばれず、しかも ajv strict でコンパイルすら通らない (response の graspNearestMiss の discriminator が oneOf 枝に properties/kind を持たない — ADR-118 の追加時から)。そのため examples/grasp-search-request.json の gripper が kind を欠いたまま v5 に取り残されているのを誰も見ていない。直すには response スキーマを触る = 版上げを伴う意図的行為なので、この段では宣言に留める。この goal が主張する「両端」は BFF と core/ の 2 本で成立しており、死んでいるのは 3 本目である"
+            artifacts
+            - "docs/DEFERRAL_LEDGER.md"
 
         goal UnstatedAndStatedAnywhereAreDistinguishable
         uuid 9008e678-29b4-4e01-b1f6-205a7cf1f839
