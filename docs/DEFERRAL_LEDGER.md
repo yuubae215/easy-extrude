@@ -46,6 +46,21 @@ ratchet が「ドキュメント量」を測っていた。絞った結果 99 �
 **したがって規則になる: 残しを書くなら、残しの節に書くこと。** narrative に書いた残しは
 検査から見えない — これは交換条件であって事故ではない (反対側は Q3/Q4/Q6 が押さえる)。
 
+## 主張である残しは GSN に住む (ADR-126)
+
+| 種類 | 正本 | 例 |
+|---|---|---|
+| **知識的な残し** — 主張はあるが証拠が無い | **GSN の未支持 goal** (`support-exploring` / `support-unexplored`) | DEF-013 / 014 / 015 / 016 |
+| **義務** — 雑務・移管・退役 | **この登録簿** / ADR の `Retires:` | DEF-021 (Issues 移管) / DEF-027 |
+
+知識的な残しの行は**内容を書かず GSN ノードを指す**。登録簿は ADR-109 が元々
+「索引であって内容の正本ではない」と設計しており、その設計に戻すだけである。
+粒度も GSN のほうが正しい — DEF-015 は 1 行だが、ADR-121 の木には**3 つの別々の
+未支持ゴール**が在る。
+
+**個数と満期は `pnpm test:gsn-debt` が問う** (G1 母集団 / G2 個数 / G3 満期の機械可読性 /
+G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、別の問いである。
+
 ## 更新規則 (必須)
 
 - 残しを**書いたら**行を足す。`未着手` と書いて行を足さなければ Q1 の ratchet が上がる。
@@ -91,20 +106,20 @@ ratchet が「ドキュメント量」を測っていた。絞った結果 99 �
 | DEF-008 | `src/DanglingSelfCallCensus.test.js` · `src/CensusCoverage.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
 | DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
-| DEF-013 | `docs/adr/ADR-120-unevaluated-is-not-zero.md` · `core/easy_extrude_core/engine/scoring.py` | `weighted_sum` が**評価できた objective の重みだけ**で割るようになったとき (D1)。D2/D3 はスタブレーンとクライアントで実装済みで、残っているのは実ソルバの分母だけ。満期を機械が知る形は `core/tests/test_engine.py` に「評価不能な objective の重みを足しても totalScore が動かない」検査が入ること — 検査が在れば残しは無い。**2026-08-12 に文法が追いついたので trigger 化した**: 満期=GREP:core/tests/test_engine.py::評価不能 (条件は元から機械可読で、書く形が無かっただけ — ADR-123 D5) | ADR-120 | core |
-| DEF-014 | `docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md` | ADR-119 が Accepted になったとき (**満期=ADR-119**)。掴む対象の契約化 — `target`/`obstacles`/`sampling` が `additionalProperties:true` を素通りしている。**2026-08-11 起票、2026-08-12 に登録** (`未実装` が語彙に無かったので、それまで宣言済みにも宣言外にも数えられていなかった — ADR-123 D7) | ADR-119 | contract |
-| DEF-015 | `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
-| DEF-016 | `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
+| DEF-013 | `docs/gsn/adr-120-unevaluated-is-not-zero.gsn` · `docs/adr/ADR-120-unevaluated-is-not-zero.md` · `core/easy_extrude_core/engine/scoring.py` | `weighted_sum` が**評価できた objective の重みだけ**で割るようになったとき (D1)。D2/D3 はスタブレーンとクライアントで実装済みで、残っているのは実ソルバの分母だけ。満期を機械が知る形は `core/tests/test_engine.py` に「評価不能な objective の重みを足しても totalScore が動かない」検査が入ること — 検査が在れば残しは無い。**2026-08-12 に文法が追いついたので trigger 化した**: 満期=GREP:core/tests/test_engine.py::評価不能 (条件は元から機械可読で、書く形が無かっただけ — ADR-123 D5) | ADR-120 | core |
+| DEF-014 | `docs/gsn/adr-119-a-target-is-a-contract.gsn` · `docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md` | ADR-119 が Accepted になったとき (**満期=ADR-119**)。掴む対象の契約化 — `target`/`obstacles`/`sampling` が `additionalProperties:true` を素通りしている。**2026-08-11 起票、2026-08-12 に登録** (`未実装` が語彙に無かったので、それまで宣言済みにも宣言外にも数えられていなかった — ADR-123 D7) | ADR-119 | contract |
+| DEF-015 | `docs/gsn/adr-121-centre-of-mass-is-declared.gsn` · `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
+| DEF-016 | `docs/gsn/adr-122-pickable-and-yield-are-two-questions.gsn` · `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
 | DEF-017 | `docs/adr/ADR-032-geometric-host-binding.md` | 同 ADR §Out of scope が挙げる `fastened` constraint-solver の実装が入ったとき (同じソルバーがこの問題も閉じるので独立した満期を持たない)。**2026-08-12 に `docs/ROADMAP.md` の frontend backlog 🟡 から移設** — 制約ソルバーを要する = 設計判断つきなので Issues レーンではない | ADR-032 | app |
 | DEF-018 | `docs/adr/ADR-027-wasm-geometry-engine.md` | Shared Wasm Memory: `+atomics,+bulk-memory,+mutable-globals` が **stable Rust** で通るようになったとき (**外部条件なので trigger を書けない**)。「remaining copy の除去」はこれにブロックされ独立の満期を持たない。`run_monte_carlo` / `build_boolean_union` は *candidate* であって決定ではないので**判断の未完了**側 (ADR-123 D3) | ADR-027 | app |
 | DEF-019 | `docs/adr/ADR-015-bff-microservices-architecture.md` | Geometry Service 側の 4 項目 (STEP 永続化 / B-rep→graph / GLTF・OBJ export / delta-sync) に着手が決まったとき。**2026-08-12 の Phase D 再評価で 9 項目中 4 項目を廃止した残り** — 「Priority TBD after Phase C」の満期は Phase C 完了 (2026-04-15) に到来しており、4 か月間誰も判定しなかった (ADR-123 §力学 1) | ADR-015 | app |
 | DEF-020 | `docs/adr/ADR-017-websocket-session-geometry-service.md` | ROADMAP §Phase S-4 自身が「**新 ADR は Phase S-3 / S-4 の着手前に作成する**」と宣言しているので、満期は実装ではなく**その ADR が起票されたとき**。`NodeEditorView.js` は Phase S-2 まで (OperationGraph は読み取りのみ、編集経路 0 件)。BFF Phase D 表と §Phase S-4 の**二重登録を畳んだ**もの — 条件つき退役は誰も実行しない | ADR-017 | app |
 | DEF-021 | `docs/ROADMAP.md` · `docs/adr/ADR-124-a-ratchet-that-counts-prose-measures-documentation.md` | **委譲行** (ADR-123 D2)。機能要望 14 件を GitHub Issues へ移すこと。移管が済んで §未移管 の節が消えたときが満期: 満期=GONE:docs/ROADMAP.md::未移管 。**覆うのは委譲の事実であって Issue の個数ではない** — 個数はネットワークの向こうで CI は数えない (限界宣言は §register は 2 本ある) | ADR-123 | issue |
 | DEF-022 | `docs/adr/ADR-044-5w1h-function-mapping.md` | ADR-044 の判断が閉じたとき (**満期=ADR-044**)。φ 準同型は 2 か月 Draft のまま。**実装は 1 行も無い** — `FunctionRegistry.js` / `FunctionMatcher.js` / `SpatialCommandParser` はどれも存在せず、`src/` の 5 ファイルは*言及*である (ADR-123 §力学 3)。ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた | ADR-044 | app |
-| DEF-023 | `docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md` | `.gsn` の母集団を問う装置ができたとき。木は 28 本あるが ADR-115/116/117 に無く、未実装の ADR-119/121/122 には在る — `pnpm test:gsn` は*在る木*の空枝を問うので**木が無いこと**は定義上見えない (原則 #31 の同型が原則 #31 の道具の側に居る)。装置を 1 つ増やす判断なので別 ADR | ADR-123 | app |
 | DEF-024 | `docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md` | コミット済み WASM 成果物の鮮度検査が入ったとき。`test:wasm` (cargo) と `test:robotics-wasm` は CI に無く、source を編集して再生成を忘れても緑になる。現在ズレてはいない (source・成果物とも #340 / 2026-07-22)。ADR-064 Phase 1 が意図的に決めた形なので違反ではないが、問う場所が無い。満期は CI が cargo を走らせ始めたとき: 満期=GREP:.github/workflows/ci.yml::cargo | ADR-064 | app |
 | DEF-025 | `docs/adr/ADR-076-core-api-endpoint-layer.md` | TS 側の HTTP 往復 conformance (BFF が中立 Schema に突き合わせる) が public 配線回で入ったとき。**2026-08-12 に Q1 の見出し絞り込み (ADR-124) が初回実行で見つけた** — `## Still deferred` 節に 5 か月在ったが、99 件の散文に埋もれて誰にも見えていなかった | ADR-076 | contract |
 | DEF-027 | `docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md` | **段の完了**を退役の発火事象にできるようになったとき。今日の発火は ADR の Status 遷移だけなので、「Phase N が完了したら消す」は D4 の二段構え (登録簿 → 起票された ADR の `Retires:`) を通る。順序表の段に**完了状態の機械可読な表現が無い**のが理由 (`- [x]` はあるが段の単位では読めない)。段が発火事象になれば D4 の迂回は不要になる | ADR-125 | app |
+| DEF-028 | `docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md` | cutoff (ADR-126) より前で木を持たない **11 本**の ADR (ADR-015/017/027/032/044/060/064/076/078/079/091) に `.gsn` を書くか、`DECLARED_TREELESS` に「書かない」と理由つきで宣言したとき。それまでその 11 本に紐づく残しは GSN 側から見えず、登録簿が受け続ける (だから ADR-126 D1 は「登録簿を畳む」ではなく「役割を分ける」)。既存 26 個の exploring への満期の後付けも同段 — 今日は機構の実証として 1 個だけ付けた | ADR-126 | app |
 | DEF-011 | `docs/adr/ADR-113-one-claim-on-the-screen.md` | 2 つのギャラリー (起動ホーム = Layout DSL / New Project = Context DSL) の**語彙の作り分け**が済んだとき — 見出し・説明・破壊性の書き方が区別され、読み取り専用の表示 (`Unexamined`) の出口がシーン置き換えを伴うことが押す前に分かること。ADR-113 は**構造の側**だけを閉じた (2 枚同時が表現不能) ので、語彙は未着手 | ADR-113 | ia |
 
 ## 覆えていないもの (限界の宣言 — 推論させない)

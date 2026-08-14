@@ -90,6 +90,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { adrStatuses } from './adr-status.mjs'
+import { hasExpiryTrigger, evaluateTriggers, TRIGGER_HELP } from './expiry-trigger.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const LEDGER = 'docs/DEFERRAL_LEDGER.md'
@@ -133,6 +134,12 @@ const EXCLUDED = new Map([
    + '「登録されていない」と「登録する必要が無い」が区別できない — 原則 #31)'],
   [LEDGER, '登録簿自身 (宣言の置き場所であって残しの所在ではない)'],
   ['scripts/check-deferrals.mjs', 'この検査自身 (語彙の定義がヒットする)'],
+  ['scripts/check-gsn-debt.mjs',
+   'GSN 側の同じ検査 (ADR-126)。docstring が未支持ゴールの**実例**として語彙を引用する — '
+   + 'check-deferrals.mjs 自身と同じ理由'],
+  ['scripts/expiry-trigger.mjs',
+   '満期 trigger の文法と評価器 (ADR-126 で切り出した — 検査自身と同じ理由。'
+   + 'docstring が trigger の書き方の**例**として語彙を引用する)'],
   ['docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md',
    '残しの語彙を定義する正本 (登録簿と同じ理由 — 語彙について述べる文は残しではない)'],
 ])
@@ -378,17 +385,9 @@ const PROSE_EXPIRY_BASELINE = 13
  * 「nightly Rust が安定化したとき」のような外部条件は依然として書けない。Q5 の予算は
  * その分だけ残る (書けないこと自体は正当。黙って 0 件に見えることを許さないだけ)。
  */
-const EXPIRY_ADR = /満期=(ADR-\d{3})/
-const EXPIRY_PATH = /満期=PATH:([^\s|`]+)/
-const EXPIRY_GREP = /満期=GREP:([^\s:|`]+)::([^\s|`]+)/
-const EXPIRY_GONE = /満期=GONE:([^\s:|`]+)::([^\s|`]+)/
-
-/** @returns {boolean} 機械が読める満期 trigger を 1 つでも持つか。 */
-function hasExpiryTrigger(expiry) {
-  const s = expiry ?? ''
-  return EXPIRY_ADR.test(s) || EXPIRY_PATH.test(s) ||
-         EXPIRY_GREP.test(s) || EXPIRY_GONE.test(s)
-}
+// 文法と評価器は `scripts/expiry-trigger.mjs` ただ 1 箇所 (§1.1)。ここに書き写しかけて
+// 止めた — GSN 側にも満期が要ると分かった日 (ADR-126) に 2 本目の写しが生まれるところで、
+// それは ADR-123 §実装で分かったこと 2 で見つけたばかりの欠陥の再生産だった。
 
 const errors = []
 const ledger = parseLedger()
@@ -479,7 +478,7 @@ for (const file of files.filter(f => /\.(js|jsx|mjs)$/.test(f))) {
 // 満期の宣言のもう一方の住所 — 登録簿の満期欄。コード側 (`PROVISIONAL_UNTIL`) だけを
 // 読んでいた初版は、満期を*書く欄*を作ったことと、その欄を*読む機械*が在ることを
 // 取り違えていた (ADR-109 D6)。
-/** 満期が来たときの共通の叱り方 (3 形で文面を分けない — 決着の仕方は同じ)。 */
+/** 満期が来たときの共通の叱り方 (4 形で文面を分けない — 決着の仕方は同じ)。 */
 const expired = (row, what) =>
   `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期が過ぎている — ${what}\n` +
   '    満期の来た残しは**更新ではなく決着**で畳む — 片付いたなら行ごと消して\n' +
@@ -487,44 +486,14 @@ const expired = (row, what) =>
   '    間違っていたか」を満期欄に書いて張り替える (延長は先送りであって決定ではない)。'
 
 for (const row of ledger ?? []) {
-  const s = row.expiry ?? ''
-
-  const adr = EXPIRY_ADR.exec(s)
-  if (adr) {
-    const status = statuses.get(adr[1])
-    if (status === undefined) {
-      errors.push(`Q2 EXPIRY: ${LEDGER} の ${row.id} の満期 trigger ${adr[1]} が docs/adr に無い。`)
-    } else if (ACCEPTED.test(status)) {
-      errors.push(expired(row, `${adr[1]} は Accepted。\n    ${adr[1]}: ${status}`))
-    }
-  }
-
-  // `満期=PATH:` — そのパスが**現れた**ら満期 (不在が残しの証拠なので、Q4 とは逆向き)。
-  const p = EXPIRY_PATH.exec(s)
-  if (p && existsSync(join(ROOT, p[1]))) {
-    errors.push(expired(row, `${p[1]} が存在する。`))
-  }
-
-  // `満期=GREP:` — そのファイルにパターンが**現れた**ら満期。ファイルごと消えている
-  // 場合は満期ではなく **trigger が壊れている** ので、黙って通さず落とす
-  // (辿れない参照は空欄より悪い — Q3 と同じ理由)。
-  // `満期=GREP:` — そのファイルにパターンが**現れた**ら満期。
-  // `満期=GONE:` — そのファイルからパターンが**消えた**ら満期 (残しが片付いたとき)。
-  // どちらもファイルごと消えている場合は満期ではなく **trigger が壊れている** ので、
-  // 黙って通さず落とす (辿れない参照は空欄より悪い — Q3 と同じ理由)。
-  for (const [re, kind] of [[EXPIRY_GREP, 'GREP'], [EXPIRY_GONE, 'GONE']]) {
-    const m = re.exec(s)
-    if (!m) continue
-    const abs = join(ROOT, m[1])
-    if (!existsSync(abs)) {
+  for (const t of evaluateTriggers(row.expiry, { root: ROOT, statuses })) {
+    if (t.broken) {
       errors.push(
-        `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期 trigger (${kind}) が指す ${m[1]} が存在しない。\n` +
+        `Q2 EXPIRY: ${LEDGER} の ${row.id} の満期 trigger (${t.kind}) が壊れている — ${t.broken}。\n` +
         '    満期が来ないのではなく、満期を判定する場所が消えている。張り替えること。')
       continue
     }
-    const found = new RegExp(m[2]).test(readFileSync(abs, 'utf8'))
-    if (kind === 'GREP' && found) errors.push(expired(row, `${m[1]} に /${m[2]}/ が現れた。`))
-    if (kind === 'GONE' && !found) errors.push(expired(row, `${m[1]} から /${m[2]}/ が消えた。`))
+    if (t.fired) errors.push(expired(row, `${t.kind}:${t.what}`))
   }
 }
 
@@ -538,10 +507,7 @@ if (ledger !== null && proseExpiry.length !== PROSE_EXPIRY_BASELINE) {
     `(baseline ${PROSE_EXPIRY_BASELINE} から ${dir}) — ${proseExpiry.map(r => r.id).join(', ')}\n` +
     (proseExpiry.length > PROSE_EXPIRY_BASELINE
       ? '    満期欄に trigger を書けるなら書くこと — 4 形ある (ADR-123 D5):\n' +
-        '      · `満期=ADR-NNN`              その ADR が Accepted になったとき\n' +
-        '      · `満期=PATH:<path>`          そのパスが存在するようになったとき\n' +
-        '      · `満期=GREP:<path>::<regex>` そのファイルにパターンが現れたとき\n' +
-        '      · `満期=GONE:<path>::<regex>` そのファイルからパターンが消えたとき\n' +
+        TRIGGER_HELP +
         '    どれでも書けない満期 — 外部条件 (「nightly Rust が安定化したとき」等) — なら\n' +
         '    baseline を上げ、理由を登録簿に宣言すること。\n'
       : '    trigger を足したなら baseline をこの実測値へ下げること。下回りも落とすのは、\n' +

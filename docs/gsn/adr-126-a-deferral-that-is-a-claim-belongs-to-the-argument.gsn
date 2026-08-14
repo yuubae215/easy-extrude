@@ -1,0 +1,61 @@
+GOALS adr126_a_deferral_that_is_a_claim_belongs_to_the_argument
+
+goal MissingEvidenceIsStructuredCountedAndExpires
+uuid a0021548-06b7-4a5b-aa93-14b159e48e7d
+summary "「証拠が無い」という事実が散文ではなく構造として持たれ、個数が数えられ、証拠が現れた日に機械が言う"
+state UnderReview
+labels adr-126, gsn, deferral, principle-31, principle-32, ratchet
+artifacts
+- "docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md"
+
+    context Adr126Scope
+    uuid 28c673cd-9367-4b96-8f76-f8add3a041e1
+    summary "ADR-126 (Accepted 2026-08-12・実装済み): GSN の宣言された未支持ゴールに母集団・個数・満期を与える。gsn_tool.py (skill 側・可搬) は触らず、repo 固有の統治は scripts/check-gsn-debt.mjs に置く — 他の統治検査 (check-deferrals / check-adr-status / check-commit-trailers) と同じ場所。src/ の挙動は 1 行も変えていない"
+    artifacts
+    - "scripts/check-gsn-debt.mjs"
+    - "scripts/expiry-trigger.mjs"
+
+    context WhatTheToolAlreadyDoesAndDoesNot
+    uuid 523593fc-0e70-47ab-9f0b-5c15edb22284
+    summary "実測: gsn_tool.py の check_goal_support は支えが 0 で**未宣言**なら error にするが、宣言済み (support-exploring + 検査を名指しした assumption) なら永久に緑。check_artifacts が存在しない artifact を hard error にするのは solution の下だけで、assumption の下は意図的に warning (planned but not yet written は正当)。report モードは exploring/unexplored を集計するが pnpm test:gsn はそれを走らせないので印字ですらない。結果、宣言された未支持 30 個に満期が無く、個数を数える機械も無かった"
+    artifacts
+    - ".claude/skills/gsn-meta-framework/scripts/gsn_tool.py"
+
+    context BusinessTreeAttachPoint
+    uuid 6c89d77d-ce9f-41e2-bb75-3cc7b1fcfaa2
+    summary "**保留** — ADR-123 / 124 / 125 と同じ理由 (事業木には ADR-109 の枝が既に在る)。ただし本 ADR は接続の前提を一段進めた: 残しの総量が「登録簿の行数 + GSN の未支持ゴール数」として測れるようになったので、ファネル障壁として吊るときの量が意味を持つ。接続の満期条件は据え置き (ROADMAP §未移管 の 14 件が Issues へ移り DEF-021 が畳まれたとき)"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotMoveEverythingIntoGsn
+    uuid 251cf92b-a1c5-4b0b-bd2c-776c7f5213cf
+    summary "却下案 A (残しを全部 GSN へ寄せる) への反証: 2 つある。(a) 母集団の穴 — DEF 行 22 本のうち 11 本の ticket ADR に .gsn が無く、寄せた瞬間にそれらは定義上見えなくなる。(b) 義務は主張ではない — DEF-021 (14 件を Issues へ移す) や Retires: は『システムが妥当である理由』ではないので、assurance case に入れると論証木が『やること表』で汚れる。GSN の意味論は adequacy の議論であって backlog ではない"
+
+    justification WhyNotFoldGsnIntoTheLedger
+    uuid 730a8895-9b9e-4fff-ac05-9a39b03852d6
+    summary "却下案 B (登録簿に一本化し GSN は論証だけ) への反証: 既に GSN に構造として書かれている 30 個を散文へ写す作業になる。**構造から散文へ退化させる**ので方向が逆であり、ADR-123 / ADR-124 が散文と戦った理由そのものに反する。粒度も落ちる — DEF-015 は 1 行だが ADR-121 の木には 3 つの別々の未支持ゴールが在る"
+
+    assumption ClaimVersusChoreIsAHumanCall
+    uuid 7e335c60-aff4-4674-82ff-2f95a5e97f97
+    summary "反証されうる仮説: 『これは主張 (証拠が無い) か、義務 (やることが残っている) か』は書く人が正しく判断する。D1 の分類に機械的な判定は無い。誤って義務を GSN に入れれば論証木が汚れ、主張を登録簿に入れれば粒度が粗くなる。反証される形: GSN の未支持ゴールに『Issue を立てる』のような雑務が現れる、または登録簿に『証拠が無い』だけの行が増え続ける"
+
+    assumption PreCutoffTreesStayMissing
+    uuid 2833a02b-8965-4c78-ad47-dd766def71a5
+    summary "埋めていない穴の宣言 (推論させない): cutoff (ADR-126) より前で木を持たない ADR は 11 本あり、書いていない。その 11 本に紐づく残しは GSN 側からは見えないままで、登録簿が受け続ける — だから D1 は『登録簿を畳む』ではなく『役割を分ける』である。DECLARED_TREELESS は今日 0 件 (誰も『書かない』と判断していない) で、これは『判断していない』と『判断して不要とした』を区別するための空宣言である。反証される形: cutoff 前の ADR の残しが、登録簿にも GSN にも無いまま数か月生きる"
+
+    strategy ByCountingTheDeclaredZeroAndGivingItAnExpiry
+    uuid 3c1ba7e7-b89b-446e-9297-ac2e0a410591
+    summary "Argument by 宣言されたゼロを数える + 満期を持たせる — 未宣言のゼロは gsn_tool が既に落としているので、その隣で『宣言されたゼロ』の個数を ratchet で縛り、決着させる検査の番地を登録簿と同じ trigger 語彙で書かせ、番地に検査が現れた日に落とす。数えるべきは在る証拠ではなく、**証拠が無いと宣言された goal の個数と、その満期の機械可読性**である"
+
+        goal DeclaredUnsupportedGoalsAreBoundedAndExpire
+        uuid 8ea9b03f-44d2-473f-b0a1-6620d7692975
+        summary "宣言された未支持 goal の個数が baseline を超えても下回っても fail し、満期を迎えた goal が 0 件である"
+        state UnderReview
+
+            solution GsnDebtCheckIsGreenAtThirtyWithAFiringTrigger
+            uuid a53c94e4-814c-46fc-a329-607c6b0416e1
+            summary "pnpm test:gsn-debt — 木 31 本 / 宣言された未支持 30 個 (baseline 30) / うち exploring 27 個・満期が機械可読 1 個・散文のみ 26 個 (baseline 26) / 満期切れ 0 件。CI gate で毎 PR 走る。**変異で確認済み**: core/tests/test_engine.py に com_offset を含む検査を足すと G4 が ADR-121 の goal AbsentCentreOfMassNeverBecomesTheCentroid を名指しして fail し、戻すと緑 — 満期は実際に発火する。**実装で分かったこと**: support- prefix で数えてはいけない (第 3 のラベル support-verified は『支えが在る』= 逆の意味で、prefix 版は 30 を 57 と報告した)。prefix は符号を持たないので種を列挙し、未宣言の種で落とす形にした"
+            artifacts
+            - "scripts/check-gsn-debt.mjs"
+            - "docs/gsn/adr-121-centre-of-mass-is-declared.gsn"
+            - ".github/workflows/ci.yml"

@@ -109,6 +109,11 @@ jobs:
       - name: GSN trees have no undeclared empty branches
         run: pnpm test:gsn
 
+      # 上は「宣言していないゼロ」を落とす。こちらは **宣言されたゼロ** の個数と満期を
+      # 問う — 宣言済みの未支持ゴールは gsn_tool から見て永久に緑だった (ADR-126)。
+      - name: Declared-unsupported goals are counted and expire out loud
+        run: pnpm test:gsn-debt
+
       # 残し (deferral) の母集団・満期・ticket (2026-08-04, ADR-109). 「後でやる」は
       # 宣言されるが**欄を持たない** — status や mode は値を持つ欄なので状態として
       # 認識されるのに対し、まだやっていないことはそれ自体がノードを持たないため、
