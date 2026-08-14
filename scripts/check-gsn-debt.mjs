@@ -131,7 +131,13 @@ const SUPPORT_LABELS = new Map([
 // `TheFlangeConventionMatchesWhatTheFrontDraws` — **core/ 内では原理的に決着しない**
 // 主張である (自己整合な誤った規約も往復検査を通る) ため、証拠はフロント配線と同時。
 // 満期は機械可読なので G3 の分子には乗らない。
-const DEBT_BASELINE = 30
+// 2026-08-14 (同日 3 度目): ADR-128 が 2 件決着させて 30 → 28。ADR-119 の
+// `UnstatedAndStatedAnywhereAreDistinguishable` (D2/D3 の純粋層 + 文書往復) と、
+// ADR-127 の `TheFlangeConventionMatchesWhatTheFrontDraws` — 後者は上のコメントが
+// 予告したとおり**フロント配線と同時**に決着した (満期 trigger が実際に発火し、
+// G4 が「exploring を solution へ昇格させよ」と言ってきた)。ADR-128 自身の木は
+// 未支持 goal を 1 つも持たない (3 つとも solution が在る) ので +0。
+const DEBT_BASELINE = 28
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
@@ -141,7 +147,10 @@ const DEBT_BASELINE = 30
  * 決まっていない段階が実在する。嘘の trigger を書くより、書けないことを数える。
  */
 // 2026-08-14: 上と同じ 1 件。決着した goal の assumption は散文満期だったので分子も下がる。
-const PROSE_DEBT_BASELINE = 25
+// 2026-08-14 (同日 3 度目): ADR-128 の決着 2 件のうち、ADR-119 側の assumption は
+// 散文満期だったので 25 → 24。ADR-127 側は機械可読な満期を持っていたので分子には
+// もともと乗っておらず、ここは 1 しか下がらない。
+const PROSE_DEBT_BASELINE = 24
 
 const errors = []
 

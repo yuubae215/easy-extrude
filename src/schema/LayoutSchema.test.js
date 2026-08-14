@@ -29,6 +29,7 @@ import {
   VALID_JOINT_TYPES,
   VALID_SEMANTIC_TYPES,
 } from '../layout/LayoutDslSchema.js'
+import { DECLARED_FEATURE_KINDS, DECLARABLE_FACES } from '../domain/graspFeature.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
@@ -116,4 +117,76 @@ test('schema jointType enum matches VALID_JOINT_TYPES', () => {
 
 test('schema semanticType enum matches VALID_SEMANTIC_TYPES', () => {
   assert.deepEqual(schema.$defs.constraint.properties.semanticType.enum, VALID_SEMANTIC_TYPES)
+})
+
+// ── 4. graspFeature: the WHERE-to-grasp vocabulary (ADR-119 D2 / ADR-128) ────
+//
+// The shape contract's job here is to stop a declaration that means nothing from
+// looking like one that means something. Each negative below would otherwise
+// reach `resolveGraspFeature` and become a MALFORMED run — caught, but caught one
+// layer later and one document further from the author.
+
+const withFeature = (graspFeature) => ({
+  version: 'layout/1.0',
+  entities: [{ ref: 'a', type: 'Solid', name: 'A', graspFeature }],
+})
+
+test('graspFeature: kind anywhere is accepted', () => {
+  assert.equal(validate(withFeature({ kind: 'anywhere' })), true, JSON.stringify(validate.errors))
+})
+
+test('graspFeature: faces with an optional normalised region is accepted', () => {
+  assert.equal(validate(withFeature({
+    kind: 'faces',
+    faces: [{ face: '+x' }, { face: '-x', region: { uMin: 0.25, uMax: 0.75, vMin: 0, vMax: 1 } }],
+  })), true, JSON.stringify(validate.errors))
+})
+
+test('graspFeature: an undeclared kind is rejected', () => {
+  assert.equal(validate(withFeature({ kind: 'somewhere' })), false)
+})
+
+test('graspFeature: an empty faces list is rejected — it declares nowhere to grasp', () => {
+  assert.equal(validate(withFeature({ kind: 'faces', faces: [] })), false)
+})
+
+test('graspFeature: a face outside the six-face vocabulary is rejected', () => {
+  assert.equal(validate(withFeature({ kind: 'faces', faces: [{ face: 'top' }] })), false)
+})
+
+test('graspFeature: a region outside 0..1 is rejected — the region is normalised, not metric', () => {
+  assert.equal(validate(withFeature({
+    kind: 'faces', faces: [{ face: '+z', region: { uMin: 0, uMax: 1.4 } }],
+  })), false)
+})
+
+test('graspFeature: a smuggled field is rejected (the object is closed)', () => {
+  assert.equal(validate(withFeature({ kind: 'anywhere', preferredPoint: [0, 0, 1] })), false)
+})
+
+test('schema graspFeature kind enum matches DECLARED_FEATURE_KINDS', () => {
+  assert.deepEqual(
+    schema.$defs.graspFeature.properties.kind.enum,
+    [...DECLARED_FEATURE_KINDS],
+  )
+})
+
+test('schema graspFeature face enum matches DECLARABLE_FACES', () => {
+  assert.deepEqual(
+    schema.$defs.graspFeature.properties.faces.items.properties.face.enum,
+    [...DECLARABLE_FACES],
+  )
+})
+
+test('layout と context の両スキーマが同じ語彙を持つ — 片方だけ遅れる非対称を繰り返さない', () => {
+  // ADR-117 already paid for letting context-0.5 lag behind its layout twin, so
+  // the two vocabularies are bound to each other here rather than trusted to be
+  // updated together.
+  const ctx = readJson('schema/context-0.5.schema.json')
+  const ctxFeature = ctx.$defs.hydratedEntity.properties.graspFeature
+  assert.deepEqual(ctxFeature.properties.kind.enum, schema.$defs.graspFeature.properties.kind.enum)
+  assert.deepEqual(
+    ctxFeature.properties.faces.items.properties.face.enum,
+    schema.$defs.graspFeature.properties.faces.items.properties.face.enum,
+  )
 })

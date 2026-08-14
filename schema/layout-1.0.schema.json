@@ -114,6 +114,7 @@
           "description": "Declared role of a CoordinateFrame inside a robot's TF tree (ADR-090): 'base' = world-parented root (where the arm stands), 'tcp' = its tool-point child. This is what makes a robot identifiable as an ENTITY rather than by the magic name `robot_base`, so a scene can carry N robots. Absent = an ordinary frame belonging to no robot.",
           "enum": ["base", "tcp"]
         },
+        "graspFeature": { "$ref": "#/$defs/graspFeature" },
         "frames": {
           "type": "array",
           "items": { "$ref": "#/$defs/frame" }
@@ -122,6 +123,43 @@
           "type": "array",
           "items": { "$ref": "#/$defs/vec2" }
         }
+      }
+    },
+    "graspFeature": {
+      "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). OPTIONAL: with no graspFeature the front derives the faces from the declared hand (ADR-118) and the panel says so — absence is a state (\"nobody said\"), distinct from an explicit `anywhere` (\"I looked and chose not to narrow\"). A closed kind-discriminated union, same governance as `gripper` (ADR-118): the kind decides which fields exist. Declared faces are used VERBATIM and never merged with the derived set (ADR-119 D3), so a declaration cannot be silently widened.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "description": "`anywhere` = declared and deliberately not narrowed (samples follow the hand's derived faces). `faces` = grasp only on the listed faces.",
+          "enum": ["anywhere", "faces"]
+        },
+        "faces": {
+          "description": "Required when kind is `faces`: the box faces worth touching, named by their outward LOCAL axis. At least one — an empty list declares nowhere to grasp, which downstream is indistinguishable from an honest \"no feasible pose\" (原則 #31). A parallel jaw needs a pair of OPPOSED faces: the solver measures the opening from these very samples, so a single face reports almost no width (ADR-118).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["face"],
+            "properties": {
+              "face": { "enum": ["+x", "-x", "+y", "-y", "+z", "-z"] },
+              "region": { "$ref": "#/$defs/faceRegion" }
+            }
+          }
+        }
+      }
+    },
+    "faceRegion": {
+      "description": "A sub-region of one face, NORMALISED to 0..1 across that face's two in-plane axes (u,v), so it means the same fraction whatever the solid's size — a region in metres would stop covering the face the day the box is resized. Omitted = the whole face. A grasp needs AREA, so this is a rectangle and never a single point (a jaw needs finger width, a cup needs its diameter).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uMin": { "type": "number", "minimum": 0, "maximum": 1 },
+        "uMax": { "type": "number", "minimum": 0, "maximum": 1 },
+        "vMin": { "type": "number", "minimum": 0, "maximum": 1 },
+        "vMax": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "constraint": {

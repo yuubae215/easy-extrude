@@ -47,8 +47,9 @@ import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclaration
 import { resolveRobots, selectRobot, robotCardinality } from '../domain/robotFrames.js'
 import {
   resolveGraspTargets, selectTarget, targetProjection,
-  surfaceSamplesFor, obstaclesExcluding,
+  surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
 } from '../domain/graspTargets.js'
+import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
 
 /**
  * TemplateCatalog example id auto-loaded when grasp-search is opened with no
@@ -61,14 +62,26 @@ export class GraspController {
   /**
    * @param {import('./AppController.js').AppController} ctrl
    * @param {{ getState: () => any }} store  injected uiStore (useUIStore)
-   * @param {{ createGhostView?: () => import('../view/GraspGhostView.js').GraspGhostView }} [deps]
+   * @param {{ createGhostView?: () => import('../view/GraspGhostView.js').GraspGhostView,
+   *           robotKinematics?: object|null }} [deps]
    *        `createGhostView` — lazy GraspGhostView factory (THREE side; absent in
    *        the THREE-free test lane, where the ghost path degrades to a no-op).
+   *        `robotKinematics` — the `robot.kinematics` declaration derived from the
+   *        bundled URDF (ADR-127 / DEF-030). INJECTED rather than imported because
+   *        its source module reads the URDF through Vite's `?raw`, which the
+   *        THREE-free `node --test` lane cannot execute (ADR-088's browser-only
+   *        boundary). Absent ⇒ the key is omitted ⇒ ADR-127 D3's naive cone
+   *        judgement, exactly as before.
    */
   constructor(ctrl, store, deps = {}) {
     this._ctrl  = ctrl
     this._store = store
     this._createGhostView = deps.createGhostView ?? null
+    /** @type {object|null} URDF-derived kinematics declaration (ADR-127 D1) */
+    this._robotKinematics = deps.robotKinematics ?? null
+    this._createSampleView = deps.createSampleView ?? null
+    /** @type {object|null} sole-owned grasp-location overlay (ADR-128) */
+    this._sampleView = null
     /** @type {object|null} sole-owned spatial ghost (ADR-059) */
     this._ghost = null
     /** transient hovered rank (never in the grasp FSM slice — ADR-059 §C) */
@@ -102,6 +115,8 @@ export class GraspController {
     registerCallback('onCaptureViewportCamera', ()     => this.captureViewportCamera())
     registerCallback('onSelectRobot',          (id)    => this.selectRobot(id))
     registerCallback('onSelectGraspTarget',    (ref)   => this.selectGraspTarget(ref))
+    registerCallback('onSetGraspFeature',      (ref, feature) => this.setGraspFeature(ref, feature))
+    registerCallback('onPreviewGraspSamples',  (kind) => this.previewGraspSamples(kind))
     this.refreshRobots()
   }
 
@@ -227,6 +242,71 @@ export class GraspController {
   selectGraspTarget(ref) {
     this._selectedTargetRef = ref ?? null
     this.refreshGraspTargets()
+  }
+
+  /**
+   * Declare (or clear) WHERE the target should be grasped (ADR-119 D2 / ADR-128).
+   *
+   * The declaration belongs to the DOCUMENT, so this does not keep a copy: it
+   * hands the change to `ContextController.setGraspFeature` — the one doc-edit
+   * entry point (原則 #1) — and re-derives the roster projection once the
+   * recompile has produced a new Layout DSL. Reading the projection back out of
+   * the recompiled document rather than optimistically writing what we just sent
+   * is what keeps this a projection and not a second source (§1.1): if the edit
+   * fails, the panel shows what the document still says, not what we hoped.
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   * @param {object|null} feature  the declaration, or null to clear it
+   */
+  setGraspFeature(ref, feature) {
+    const ctxCtrl = this._ctrl._ctxCtrl
+    if (typeof ctxCtrl?.setGraspFeature !== 'function') return
+    return Promise.resolve(ctxCtrl.setGraspFeature(ref, feature))
+      .then(() => this.refreshGraspTargets())
+  }
+
+  /**
+   * Draw the points this run WOULD send, on the object itself (ADR-128).
+   *
+   * Driven by the panel because the hand kind lives in its form state, not in the
+   * document — the same reason `captureViewportCamera` is panel-initiated. The
+   * argument is that live kind, so the overlay answers "what would Run send right
+   * now", not "what did the last run send".
+   *
+   * Deliberately draws the SAMPLES rather than a highlight of the declared faces:
+   * a picture of the intent could drift from the payload, and a picture that
+   * drifts from the payload is how ADR-117 shipped a panel describing geometry
+   * the request never carried.
+   *
+   * @param {string|null} gripperKind  the panel's live hand kind, or null
+   */
+  previewGraspSamples(gripperKind = null) {
+    const target = this._selectedTarget()
+    if (!target || !this._createSampleView) { this._sampleView?.clear(); return }
+
+    let samples
+    try {
+      samples = surfaceSamplesFor(target, gripperKind ?? null)
+    } catch {
+      // An undeclared hand kind throws by design (ADR-118) — the panel's gap list
+      // already says so, and an overlay is not the place to learn it.
+      this._sampleView?.clear()
+      return
+    }
+    if (!this._sampleView) this._sampleView = this._createSampleView()
+    const d = target.dimensions
+    this._sampleView.show(samples, {
+      declared: target.feature?.state === GRASP_FEATURE_STATE.DECLARED_FACES,
+      extent:   Math.min(d.x, d.y, d.z),
+    })
+  }
+
+  /** Dispose the sample overlay (panel close / context end — 原則 #9). */
+  disposeSampleView() {
+    if (this._sampleView) {
+      this._sampleView.dispose()
+      this._sampleView = null
+    }
   }
 
   // ── Entry: the grasp panel, beside the robot it is about (ADR-105 D5 / ADR-106 D3) ──
@@ -384,6 +464,23 @@ export class GraspController {
       return
     }
 
+    // Guard: the WHERE-to-grasp declaration must be readable and usable by the
+    // declared hand (ADR-119 D2/D3, ADR-128). Two failures live here and both
+    // would otherwise come back as a well-formed `candidatesGenerated: 0`:
+    //   · an unreadable declaration — degrading it to the derived faces would be
+    //     "you declared and we ignored you", the exact lie D3 forbids;
+    //   · a single face under a parallel jaw — `core/` measures the opening from
+    //     these very samples, so one face reports almost no width and the gate
+    //     passes hands that cannot close (the ADR-118 defect, re-entered through
+    //     the declaration's front door).
+    const featureGaps = graspFeatureGaps(targetEntity.feature, params.gripper?.kind ?? null)
+    if (featureGaps.length > 0) {
+      const reason = featureGaps[0]
+      ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: this._graspTargets().length })
+      ctrl._uiView.showToast(reason, { type: 'warn' })
+      return
+    }
+
     // Ensure a JWT'd BffClient (the routes are protected). connectBff fetches a dev
     // token and nulls _bff when the BFF itself is unreachable.
     let bff = ctrl._service.bff
@@ -423,7 +520,13 @@ export class GraspController {
         // concern (ADR-090 Decision 3): the contract and core/ are untouched by
         // multi-robot support. The gate above guarantees `base` is present, so
         // core/'s ghost-robot default is unreachable from here.
-        robot,
+        // The arm's KINEMATIC STRUCTURE (ADR-127 D1, DEF-030). Merged into the
+        // resolved geometry rather than sent beside it because `kinematics` is a
+        // property of the same robot the base pose describes. Present only when
+        // the bundled URDF is UR-shaped; absent keeps ADR-127 D3's naive cone
+        // judgement, which is why wiring this changes answers only where a real
+        // structure is actually declared.
+        robot: this._robotKinematics ? { ...robot, kinematics: this._robotKinematics } : robot,
         // The object being grasped and the bodies around it (ADR-117). Both are
         // DECLARATIONS derived from the same Layout DSL the rest of the request
         // comes from — where the surface is, how big the other bodies are. Every
@@ -435,9 +538,14 @@ export class GraspController {
         // samples, so a top-only grid told the jaw gate the box was half as wide.
         target:    { surfaceSamples: surfaceSamplesFor(targetEntity, params.gripper?.kind ?? null) },
         obstacles: obstaclesExcluding(this._graspTargets(), targetEntity.ref),
-        // Judgement params ride plan{} (ADR-084 §4) when the caller supplies
-        // them; the front collects none today, so plan{} is normally omitted
-        // and core/ uses its defaults (no invented values — kernel §5).
+        // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
+        // these (ADR-128): until it did, `reach_margin` had no absolute basis and
+        // came back permanently unmeasured — which ADR-120 correctly refuses to
+        // draw as a zero score, so a weight slider sat on screen controlling an
+        // objective nothing could ever evaluate. An undeclared range still omits
+        // the key entirely: core/ keeps its own defaults and nothing is invented
+        // here (kernel §5), and "not declared" stays visibly different from
+        // "declared as zero margin" (原則 #31).
         ...(params.plan ? { plan: params.plan } : {}),
         ...(params.camera  ? { camera:  params.camera }  : {}),
         ...(params.gripper ? { gripper: params.gripper } : {}),

@@ -92,6 +92,8 @@ import { ContextDemoController }      from './ContextDemoController.js'
 import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
+import { GraspSampleView }            from '../view/GraspSampleView.js'
+import { ROBOT_KINEMATICS }           from '../view/robotSkeleton.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { SCREEN_CLAIM }               from '../view/ScreenClaim.js'
@@ -482,8 +484,14 @@ export class AppController {
     // UI→DSL→BFF→grasp-search walkthrough. The panel is the `'grasp'` tab inside
     // the negotiate overlay; the request is a query, not a doc mutation. The ghost
     // factory is injected so GraspController stays THREE-free in tests (ADR-059).
+    // `robotKinematics` is injected for the same reason as the ghost factory: its
+    // module reads the URDF through Vite `?raw`, which the node test lane cannot
+    // execute (ADR-088's browser-only boundary). This is the seat where the arm
+    // the app DRAWS becomes the arm the solver is TOLD about (ADR-127 / DEF-030).
     this._graspCtrl = new GraspController(this, useUIStore, {
       createGhostView: () => new GraspGhostView(this._sceneView.scene, document.body),
+      createSampleView: () => new GraspSampleView(this._sceneView.scene),
+      robotKinematics: ROBOT_KINEMATICS,
     })
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────

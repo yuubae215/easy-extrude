@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
 import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
@@ -8,7 +8,13 @@ import {
   CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
   cameraDeclarationGaps, gripperDeclarationGaps, OBJECTIVE,
   GRIPPER_KIND, DECLARED_GRIPPER_KINDS,
+  REACH_PRESETS, reachDeclarationGaps,
 } from '../../context/GraspDeclarationCatalog.js'
+import { facesForGripperKind } from '../../domain/graspTargets.js'
+import {
+  DECLARABLE_FACES, GRASP_FEATURE_KIND, GRASP_FEATURE_STATE,
+  graspFeatureGaps, graspFeatureSummary,
+} from '../../domain/graspFeature.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
@@ -212,9 +218,24 @@ export function GraspSearchPanel() {
     }
   })
   const [captureNote, setCaptureNote] = useState(null)
+  // The reach envelope (ADR-128). Seeded from the catalog's first preset like
+  // every other declaration card, and OFF by default — an envelope nobody
+  // declared must stay undeclared, because an invented one produces a
+  // `reach_margin` that looks measured and is not (ADR-120 / kernel §5).
+  const [reachDecl, setReachDecl] = useState(() => ({
+    enabled: false,
+    reachMin:           String(REACH_PRESETS[0].params.reachMin),
+    reachMax:           String(REACH_PRESETS[0].params.reachMax),
+    wristConeHalfAngle: String(REACH_PRESETS[0].params.wristConeHalfAngle),
+  }))
 
   const camParams  = useMemo(() => parseCameraForm(vision), [vision])
   const gripParams = useMemo(() => parseGripperForm(grip), [grip])
+  const planParams = useMemo(() => ({
+    reachMin:           parseNum(reachDecl.reachMin),
+    reachMax:           parseNum(reachDecl.reachMax),
+    wristConeHalfAngle: parseNum(reachDecl.wristConeHalfAngle),
+  }), [reachDecl])
   // The gap lists ARE the submit predicate (ADR-058 UX discipline): non-empty
   // disables Run and every reason is printed below the button.
   const visionGaps = vision.enabled ? cameraDeclarationGaps(camParams) : []
@@ -224,7 +245,13 @@ export function GraspSearchPanel() {
   // declaration, printed under a disabled Run rather than discovered by failing.
   const robotGaps  = robotDeclarationGaps(robots)
   const targetGaps = targetDeclarationGaps(graspTargets)
-  const gaps       = [...robotGaps, ...targetGaps, ...visionGaps, ...gripGaps]
+  const reachGaps  = reachDecl.enabled ? reachDeclarationGaps(planParams) : []
+  // WHERE-to-grasp gaps (ADR-119 D2/D3): an unreadable declaration, or a single
+  // face under a parallel jaw. Mirrors the controller's own gate exactly — a
+  // disabled Run that forbids a run the controller would allow (or the reverse)
+  // is the divergence 原則 #11 is about.
+  const featureGaps = graspFeatureGaps(graspTargets?.feature ?? null, grip.enabled ? grip.kind : null)
+  const gaps       = [...robotGaps, ...targetGaps, ...featureGaps, ...visionGaps, ...gripGaps, ...reachGaps]
 
   const applyCameraPreset = (p) => setVision(v => ({
     ...v,
@@ -263,6 +290,15 @@ export function GraspSearchPanel() {
     }))
   }
 
+  // Keep the viewport overlay showing what Run WOULD send (ADR-128). The hand
+  // kind lives in this form, so the panel is what knows when the answer changed —
+  // the controller cannot observe a local useState. Re-runs on the three inputs
+  // that move the samples: which object, what was declared about it, which hand.
+  const gripKindForSamples = grip.enabled ? grip.kind : null
+  useEffect(() => {
+    callbacks.onPreviewGraspSamples?.(gripKindForSamples)
+  }, [callbacks, gripKindForSamples, graspTargets?.selectedRef, graspTargets?.feature])
+
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
   const run = () => callbacks.onRunGraspSearch?.({
@@ -277,6 +313,8 @@ export function GraspSearchPanel() {
     topN:     Number(topN),
     camera:   vision.enabled ? camParams : null,
     gripper:  grip.enabled ? gripParams : null,
+    // Omitted, not zeroed, when undeclared (ADR-120 / 原則 #31).
+    plan:     reachDecl.enabled ? planParams : null,
   })
 
   // Objective names present across the returned candidates (for sort buttons).
@@ -363,11 +401,46 @@ export function GraspSearchPanel() {
         <RobotPicker robots={robots} onSelect={(id) => callbacks.onSelectRobot?.(id)} />
         {/* ADR-117 — the object side of the premise, beside the robot side. */}
         <TargetPicker targets={graspTargets} onSelect={(ref) => callbacks.onSelectGraspTarget?.(ref)} />
+        {/* ADR-119 D2/D3 — and WHERE on that object (ADR-128). Sits under the
+            object it is about, not in its own card: "which thing" and "where on
+            it" are two halves of one premise. */}
+        <GraspLocationEditor
+          targets={graspTargets}
+          gripperKind={grip.enabled ? grip.kind : null}
+          onSet={(ref, feature) => callbacks.onSetGraspFeature?.(ref, feature)}
+        />
         <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
           robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
           <span style={{ color: '#667' }}> — move / aim them in the viewport (G / R) or the N-panel</span>
         </div>
+        {/* The reach envelope (ADR-128 / ADR-120). Until this existed, the front
+            declared no `plan{}` at all, so `reach_margin` had NO absolute basis
+            and came back permanently unmeasured — while a "reach weight" slider
+            sat right below it, weighting an objective nothing could evaluate.
+            OFF by default, and off means the key is OMITTED: an undeclared
+            envelope stays visibly different from a declared zero (原則 #31). */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: '#aaa', margin: '4px 0' }}>
+          <input
+            type="checkbox"
+            checked={reachDecl.enabled}
+            onChange={e => setReachDecl(r => ({ ...r, enabled: e.target.checked }))}
+          />
+          declare reach envelope
+          {!reachDecl.enabled && (
+            <span style={{ color: '#778' }}>— undeclared, so reach margin is NOT MEASURED</span>
+          )}
+        </label>
+        {reachDecl.enabled && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+            <NumField label="reach min" value={reachDecl.reachMin} step="0.05"
+              onChange={(s) => setReachDecl(r => ({ ...r, reachMin: s }))} />
+            <NumField label="reach max" value={reachDecl.reachMax} step="0.05"
+              onChange={(s) => setReachDecl(r => ({ ...r, reachMax: s }))} />
+            <NumField label="wrist cone (rad)" value={reachDecl.wristConeHalfAngle} step="0.05"
+              onChange={(s) => setReachDecl(r => ({ ...r, wristConeHalfAngle: s }))} />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <NumField label="reach weight"     value={reach}     step="0.1" onChange={setReach} />
           <NumField label="clearance weight" value={clearance} step="0.1" onChange={setClearance} />
@@ -733,6 +806,136 @@ function TargetPicker({ targets, onSelect }) {
       none="nothing graspable in this layout — add a solid to pick up"
       single={list[0]?.label}
     />
+  )
+}
+
+/**
+ * GraspLocationEditor — WHERE on the object to grasp (ADR-119 D2/D3, ADR-128).
+ *
+ * ## Why this control exists at all
+ *
+ * Before it, where to grasp was 100% derived from the hand (ADR-118) and the
+ * user had no way to say "grasp it here" — but nothing on screen said the choice
+ * had been made for them. This block does two jobs, and the SECOND one is the
+ * reason the ADR was written: it prints what this run is actually sampling, so
+ * "I never said" is visible rather than invisible (原則 #31).
+ *
+ * ## Why declaring is not the same as clearing
+ *
+ * Three of the buttons are not variations of one another:
+ *   `anywhere`  — declared, deliberately not narrowed.
+ *   face chips  — declared and narrowed; the samples come from these faces ONLY,
+ *                 never unioned with the derived set (ADR-119 D3).
+ *   `clear`     — removes the declaration, back to "nobody said". A user who
+ *                 changed their mind must be able to reach that state again;
+ *                 without a clear, the only way back would be an undeclared-
+ *                 looking `anywhere`, which is a different statement.
+ *
+ * Writes go to the DOCUMENT through one undoable doc-edit (原則 #1), so a
+ * declaration survives reload and export — a run-local toggle would evaporate.
+ */
+function GraspLocationEditor({ targets, gripperKind, onSet }) {
+  const ref     = targets?.selectedRef ?? null
+  const feature = targets?.feature ?? null
+  // Faces the hand would sample on its own — the sentence's other half ("not
+  // declared — sampling +z"). Asking the domain rather than restating the table
+  // keeps ADR-118's answer in one place (§1.1).
+  const derived = useMemo(() => {
+    try { return [...facesForGripperKind(gripperKind ?? null)] } catch { return [] }
+  }, [gripperKind])
+
+  const declaredFaces = feature?.state === GRASP_FEATURE_STATE.DECLARED_FACES
+    ? feature.faces.map(f => f.face)
+    : []
+  const summary = graspFeatureSummary(feature, derived)
+  const gaps    = graspFeatureGaps(feature, gripperKind ?? null)
+
+  // Toggling a face rewrites the whole declaration (the document holds a value,
+  // not a diff). Removing the last face CLEARS rather than writing `faces: []` —
+  // an empty list would declare nowhere to grasp, which comes back as a
+  // well-formed zero-candidate answer (原則 #31).
+  const toggleFace = (face) => {
+    const next = declaredFaces.includes(face)
+      ? declaredFaces.filter(f => f !== face)
+      : [...declaredFaces, face]
+    onSet(ref, next.length === 0
+      ? null
+      : { kind: GRASP_FEATURE_KIND.FACES, faces: next.map(f => ({ face: f })) })
+  }
+
+  if (!ref) return null
+
+  return (
+    <div style={{ marginTop: '6px', marginBottom: '6px' }}>
+      <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '3px' }}>where to grasp</div>
+
+      {/* 面までは書けるが、面上の**領域 (region) の入力欄は未実装** (DEF-031)。
+          スキーマ・ドメイン・検査は領域を完全に扱うので、`.ctx.json` / テンプレ側から
+          書いた領域はここで正しく解釈・表示・送信される — 書けないのは*このパネル*
+          だけである。先送りしたのは、面の 2 軸のどちらが u かを画面上で正しく
+          名指しする設計が要るため。ADR-128 自身の主題 (書けない宣言は宣言ではない)
+          の縮小版なので、忘れではなく段として宣言している。 */}
+      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', marginBottom: '4px' }}>
+        {DECLARABLE_FACES.map(face => (
+          <FaceChip
+            key={face}
+            label={face}
+            active={declaredFaces.includes(face)}
+            onClick={() => toggleFace(face)}
+          />
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+        <FaceChip
+          label="anywhere"
+          active={feature?.state === GRASP_FEATURE_STATE.DECLARED_ANYWHERE}
+          onClick={() => onSet(ref, { kind: GRASP_FEATURE_KIND.ANYWHERE })}
+          grow
+        />
+        <FaceChip
+          label="clear"
+          active={false}
+          disabled={feature?.state === GRASP_FEATURE_STATE.DERIVED}
+          onClick={() => onSet(ref, null)}
+          grow
+        />
+      </div>
+
+      {/* The sentence that makes an unmade choice visible. Deliberately printed
+          in BOTH directions — a declaration is echoed back, and its absence is
+          stated rather than left blank (原則 #11/#31). */}
+      <div style={{
+        fontSize: '10px', lineHeight: 1.45,
+        color: feature?.state === GRASP_FEATURE_STATE.DERIVED ? '#889' : '#9ad',
+      }}>
+        {summary}
+      </div>
+      {gaps.map((g, i) => (
+        <div key={i} style={{ fontSize: '10px', color: '#caa', marginTop: '2px' }}>· {g}</div>
+      ))}
+    </div>
+  )
+}
+
+/** A small toggle chip — the face vocabulary and the two declaration verbs. */
+function FaceChip({ label, active, onClick, disabled, grow }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        flex: grow ? 1 : undefined,
+        fontSize: '10px', padding: '3px 6px', borderRadius: '4px',
+        cursor: disabled ? 'default' : 'pointer',
+        background: active ? COLOR.accentSoft : COLOR.surfaceSunken,
+        color: disabled ? '#666' : active ? COLOR.accent : '#bbb',
+        border: `1px solid ${active ? COLOR.accent : '#444'}`,
+      }}
+    >
+      {label}
+    </button>
   )
 }
 

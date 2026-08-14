@@ -138,6 +138,41 @@ export function updateRequirement(doc, requirement) {
   return clone
 }
 
+/**
+ * Set (or clear) WHERE a layout Solid should be grasped (ADR-119 D2 / ADR-128),
+ * input-immutable like every builder here.
+ *
+ * This is the only writer of `specification.layout.entities[].graspFeature`. It
+ * lives in the doc builder rather than in the grasp panel because the declaration
+ * belongs to the DOCUMENT, not to a run: the same statement must survive a reload,
+ * an export, and an undo, which a controller-held run parameter would not.
+ *
+ * `feature === null` CLEARS the declaration — and clearing is not the same as
+ * declaring `anywhere` (原則 #31). Deleting the key restores the "nobody said"
+ * state, which the panel then reports honestly instead of showing a phantom
+ * choice the user never made.
+ *
+ * A ref with no matching entity is a no-op clone, never a throw and never an
+ * append: unlike an actor, a grasp feature has no meaning without the solid it
+ * sits on, so inventing a carrier entity would fabricate geometry (PHILOSOPHY #11).
+ *
+ * @param {object} doc
+ * @param {string} ref  Layout DSL entity ref of the Solid
+ * @param {object|null} feature  `{kind:'anywhere'}` | `{kind:'faces', faces:[…]}` | null to clear
+ * @returns {object} new doc
+ */
+export function setEntityGraspFeature(doc, ref, feature) {
+  const clone   = _clone(doc)
+  const layout  = clone.specification?.layout
+  const entities = layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  if (feature == null) delete entities[i].graspFeature
+  else entities[i].graspFeature = feature
+  return clone
+}
+
 /** Entity kinds → their doc array key (mirrors SeedAnchor's map). */
 const KIND_ARRAY = {
   actor:       'actors',

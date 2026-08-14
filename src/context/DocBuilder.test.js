@@ -15,8 +15,10 @@ import {
   updateVariable,
   updateRequirement,
   removeDocEntry,
+  setEntityGraspFeature,
 } from './DocBuilder.js'
 import { CONTEXT_DSL_VERSION, SUPPORTED_VERSIONS } from './ContextDslSchema.js'
+import { resolveGraspTargets } from '../domain/graspTargets.js'
 
 // ── createBlankDoc ─────────────────────────────────────────────────────────────
 
@@ -315,5 +317,76 @@ describe('removeDocEntry', () => {
     const snap = JSON.parse(JSON.stringify(doc))
     removeDocEntry(doc, 'actor', 'a_x')
     assert.deepEqual(doc, snap)
+  })
+})
+
+// ── setEntityGraspFeature (ADR-119 D2 / ADR-128) ───────────────────────────────
+//
+// The pure grasp-feature layer proves the DECLARATION behaves; it structurally
+// cannot see whether a declaration made in the panel ever lands in the document.
+// That is what this block is for — the write path, end to end, in the medium the
+// declaration has to survive in (reload, export, undo).
+
+describe('setEntityGraspFeature', () => {
+  const docWithSolid = () => ({
+    ...createBlankDoc('cell'),
+    specification: {
+      layout: {
+        version: 'layout/1.0',
+        entities: [
+          { ref: 'widget', type: 'Solid', name: 'Widget',
+            position: { x: 0, y: 0, z: 0 }, dimensions: { x: 1, y: 1, z: 1 } },
+          { ref: 'pedestal', type: 'Solid', name: 'Pedestal',
+            position: { x: 0, y: 0, z: 0 }, dimensions: { x: 1, y: 1, z: 1 } },
+        ],
+      },
+    },
+  })
+
+  it('writes the declaration onto the named solid only', () => {
+    const feature = { kind: 'faces', faces: [{ face: '+x' }, { face: '-x' }] }
+    const next = setEntityGraspFeature(docWithSolid(), 'widget', feature)
+    const [widget, pedestal] = next.specification.layout.entities
+    assert.deepEqual(widget.graspFeature, feature)
+    assert.equal('graspFeature' in pedestal, false)
+  })
+
+  it('clearing DELETES the key rather than writing anywhere', () => {
+    // The distinction the whole ADR rests on: an absent key is "nobody said",
+    // and `{kind:'anywhere'}` is "I looked and chose not to narrow". If clearing
+    // wrote `anywhere`, a user could never get back to the first state and the
+    // panel would show a choice they never made (原則 #31).
+    let doc = setEntityGraspFeature(docWithSolid(), 'widget', { kind: 'anywhere' })
+    doc = setEntityGraspFeature(doc, 'widget', null)
+    assert.equal('graspFeature' in doc.specification.layout.entities[0], false)
+  })
+
+  it('is a safe no-op clone for a ref no entity carries — never appends a carrier', () => {
+    // Unlike an actor, a grasp feature has no meaning without the solid it sits
+    // on, so upsert semantics would fabricate geometry (PHILOSOPHY #11).
+    const doc  = docWithSolid()
+    const next = setEntityGraspFeature(doc, 'nothing_here', { kind: 'anywhere' })
+    assert.equal(next.specification.layout.entities.length, 2)
+    assert.notEqual(next, doc)
+  })
+
+  it('is a safe no-op clone for a doc with no layout at all', () => {
+    const doc = createBlankDoc('blank')
+    assert.doesNotThrow(() => setEntityGraspFeature(doc, 'widget', { kind: 'anywhere' }))
+  })
+
+  it('does not mutate the source doc', () => {
+    const doc  = docWithSolid()
+    const snap = JSON.parse(JSON.stringify(doc))
+    setEntityGraspFeature(doc, 'widget', { kind: 'anywhere' })
+    assert.deepEqual(doc, snap)
+  })
+
+  it('the written declaration is what the domain reads back — the round trip closes', () => {
+    const feature = { kind: 'faces', faces: [{ face: '+z', region: { uMin: 0.2, uMax: 0.8 } }] }
+    const doc = setEntityGraspFeature(docWithSolid(), 'widget', feature)
+    const [target] = resolveGraspTargets(doc.specification.layout.entities)
+    assert.equal(target.feature.state, 'declared-faces')
+    assert.deepEqual(target.feature.faces[0].region, { uMin: 0.2, uMax: 0.8, vMin: 0, vMax: 1 })
   })
 })

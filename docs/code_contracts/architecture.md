@@ -970,6 +970,45 @@ evaluate. "Could not evaluate" has **no field of its own** — adding one would 
 
 ---
 
+## A Declaration Can Invalidate an Invariant the Derivation Was Holding (ADR-128 / ADR-119 D2-D3)
+
+Adding a way for the user to STATE something that used to be DERIVED is not additive. The
+derivation knew things the user does not, and those things were quietly load-bearing.
+
+The instance this was learned on: `FACES_BY_GRIPPER_KIND` (ADR-118) knew *which faces a hand
+actually touches*, and `core/` measures a parallel jaw's opening as the spread of the
+surface samples along the closing axis. When ADR-119 D2 let a user declare "grasp it HERE",
+declaring **one** face became a completely natural thing to do — and it collapses the
+measured width to almost nothing, so the gate passes jaws that cannot close. **That is the
+exact defect ADR-118 fixed, re-entering through the front door**, and the request is
+well-formed the whole way.
+
+Contracts for any front-side vocabulary that overrides a derivation:
+
+- **Name what the derivation was guaranteeing, before shipping the override.** If you cannot
+  say it, the derivation is not understood well enough to be replaceable.
+- **Do not repair the declaration.** Silently unioning the declared faces with the derived
+  set is the widening ADR-119 D3 forbids: a user who said "here and nowhere else" would find
+  their statement enlarged. Refuse and print the reason instead (#11) — the single resolution
+  point is `graspFeatureGaps()` (`src/domain/graspFeature.js`), consulted by BOTH the panel's
+  submit predicate and the controller's run gate, or a disabled Run and an allowed run
+  disagree.
+- **Absent / declared-vacuous / declared-narrow / unreadable are FOUR states, not two.**
+  Absent falls back to the derivation and **says so on screen**; an explicit "anywhere" is a
+  different answer that happens to produce identical output; an unreadable declaration is
+  never degraded to the fallback ("declared and quietly ignored" is the same lie), and it
+  never samples anything, because zero samples come back as a well-formed
+  `candidatesGenerated: 0` (#31, and ADR-117's defect verbatim).
+- **Clearing deletes the key.** Writing the vacuous value instead makes the "nobody said"
+  state unreachable and shows the user a choice they never made.
+- **The evidence is about the STATE, not the output.** Absent and declared-vacuous emit the
+  same samples on purpose, so a test comparing outputs passes while the distinction is being
+  erased. Assert the state name and the on-screen sentence; assert the *absence* of derived
+  output to pin the no-merge rule (asserting the declared output is present passes under a
+  merge). 問い所 = `src/domain/graspFeature.test.js` / `src/controller/GraspController.test.js`.
+
+---
+
 ## Grasp Domain Declaration Cards: Presets Seed, Values Own, Gaps Gate; Capture Splits Pure/Side-Effect (ADR-081 Decision 5)
 
 The grasp panel's input is three domain declaration cards — Seen (camera) / Reached (robot

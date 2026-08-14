@@ -834,6 +834,57 @@
             "base",
             "tcp"
           ]
+        },
+        "graspFeature": {
+          "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). Mirrors layout-1.0 `entity.graspFeature` — added in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "anywhere",
+                "faces"
+              ]
+            },
+            "faces": {
+              "description": "Required when kind is `faces`: at least one box face, named by its outward LOCAL axis, each with an optional normalised region. A parallel jaw needs a pair of OPPOSED faces (the opening is measured from these samples — ADR-118).",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "face"
+                ],
+                "properties": {
+                  "face": {
+                    "enum": [
+                      "+x",
+                      "-x",
+                      "+y",
+                      "-y",
+                      "+z",
+                      "-z"
+                    ]
+                  },
+                  "region": {
+                    "description": "Sub-region of that face, normalised 0..1 across its two in-plane axes (u,v). Omitted = the whole face.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "uMin": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "uMax": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "vMin": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "vMax": { "type": "number", "minimum": 0, "maximum": 1 }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

@@ -106,7 +106,6 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-008 | `src/DanglingSelfCallCensus.test.js` · `src/CensusCoverage.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
 | DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
-| DEF-014 | `docs/gsn/adr-119-a-target-is-a-contract.gsn` · `docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md` | ADR-119 が Accepted になったとき (**満期=ADR-119**)。掴む対象の契約化 — `target`/`obstacles`/`sampling` が `additionalProperties:true` を素通りしている。**2026-08-11 起票、2026-08-12 に登録** (`未実装` が語彙に無かったので、それまで宣言済みにも宣言外にも数えられていなかった — ADR-123 D7) | ADR-119 | contract |
 | DEF-015 | `docs/gsn/adr-121-centre-of-mass-is-declared.gsn` · `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
 | DEF-016 | `docs/gsn/adr-122-pickable-and-yield-are-two-questions.gsn` · `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
 | DEF-017 | `docs/adr/ADR-032-geometric-host-binding.md` | 同 ADR §Out of scope が挙げる `fastened` constraint-solver の実装が入ったとき (同じソルバーがこの問題も閉じるので独立した満期を持たない)。**2026-08-12 に `docs/ROADMAP.md` の frontend backlog 🟡 から移設** — 制約ソルバーを要する = 設計判断つきなので Issues レーンではない | ADR-032 | app |
@@ -120,7 +119,8 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-027 | `docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md` | **段の完了**を退役の発火事象にできるようになったとき。今日の発火は ADR の Status 遷移だけなので、「Phase N が完了したら消す」は D4 の二段構え (登録簿 → 起票された ADR の `Retires:`) を通る。順序表の段に**完了状態の機械可読な表現が無い**のが理由 (`- [x]` はあるが段の単位では読めない)。段が発火事象になれば D4 の迂回は不要になる | ADR-125 | app |
 | DEF-028 | `docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md` | cutoff (ADR-126) より前で木を持たない **11 本**の ADR (ADR-015/017/027/032/044/060/064/076/078/079/091) に `.gsn` を書くか、`DECLARED_TREELESS` に「書かない」と理由つきで宣言したとき。それまでその 11 本に紐づく残しは GSN 側から見えず、登録簿が受け続ける (だから ADR-126 D1 は「登録簿を畳む」ではなく「役割を分ける」)。既存 26 個の exploring への満期の後付けも同段 — 今日は機構の実証として 1 個だけ付けた | ADR-126 | app |
 | DEF-029 | `packages/grasp-contract/test/contract.test.mjs` · `packages/grasp-contract/examples/grasp-search-request.json` | 次に **contractVersion を意図的に上げる回** (ADR-122 D2 の `pick-sequence` が最有力)。そのとき response スキーマを触るので、`graspNearestMiss` の oneOf 枝に `properties.kind` を足す (今日 ajv strict がコンパイルできない理由) のが**ただ乗り**になる。同時に stale な example の `gripper.kind` を直し、ルート script + CI へ繋ぐ。満期=GREP:packages/grasp-contract/contract-version.json::contractVersion"\s*:\s*6 。**2026-08-14 に ADR-119 D1 の実装中に発見** — package.json に `test` script が在るのにルートからも CI からも呼ばれず、しかも走らせるとコンパイルで落ちる。宣言は在るが**読む機械が無い** (ADR-115 と同型)。両端の検証自体は BFF と `core/` の 2 本で成立しており、死んでいるのは 3 本目 | ADR-122 | contract |
-| DEF-030 | `docs/gsn/adr-127-a-known-structure-makes-a-closed-form.gsn` · `docs/adr/ADR-127-a-known-structure-is-what-makes-a-closed-form-possible.md` · `core/easy_extrude_core/engine/ur_solver.py` | フロントが `robot.kinematics` を送る配線が入ったとき: 満期=GREP:src/controller/GraspController.js::kinematics 。**知識的な残しなので正本は GSN** (ADR-126 D1 — `TheFlangeConventionMatchesWhatTheFrontDraws` が未支持)。3 つが同じ配線に乗る: (1) 宣言を送ること (送るまで解析解は誰にも届かない — `core/` 側は宣言が無ければ素朴判定のまま)、(2) URDF の 6 数と送る 6 数の一致を検査へ落とすこと (§1.1 の引き受けた冗長)、(3) フランジ frame の規約がフロントの描画と一致することの照合 — **自己整合な誤った規約も往復検査を通る**ので `core/` 内では原理的に決着しない | ADR-127 | core |
+| DEF-031 | `docs/adr/ADR-128-a-declaration-that-cannot-be-written-is-not-a-declaration.md` · `src/components/Grasp/GraspSearchPanel.jsx` · `src/view/GraspSampleView.js` | 掴む場所の **領域 (region)** をパネルから書けるようになったとき: 満期=GREP:src/components/Grasp/GraspSearchPanel.jsx::uMin 。**ADR-128 が自分で作った残し**で、それは ADR-128 の主題そのもの (書けない宣言は宣言ではない) の**縮小版**である — スキーマ・ドメイン・検査は領域を完全に扱うのに、パネルが書けるのは面までで、領域は `.ctx.json` / テンプレ側からしか書けない。先送りしたのは面の 2 軸のどちらが u かを画面上で正しく名指しする設計が要り、それは 3D 確認の設計と一緒に決めるほうが安いから。同段で **3D オーバーレイ (`GraspSampleView`) 自身の検査**も要る。e2e S10 が「押したら文が変わり、消せる」までは焼いたので、残るのは**点が正しい面に出ているか** — S10 が assert しているのは文字列であって、ビューポートに出た点の位置ではない。チップを押した人が意図した面を押せたかは、宣言と実測が別レーンである以上 (ADR-114) そこからしか出てこない | ADR-128 | ia |
+| DEF-032 | `docs/adr/ADR-127-a-known-structure-is-what-makes-a-closed-form-possible.md` | 契約が据付姿勢を運ぶようになったとき: 満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::baseOrientation 。`robot.base` は**位置だけ**で、傾けて据え付けたアームを表現できない (無いものを既定で埋めていないのは正しいが、表現手段が無いこと自体は残しである)。**2026-08-14 に DEF-030 を片付けた副作用として発見** — 覆う粒度がファイル単位なので、この行は DEF-030 の行に**黙って相乗り**していた。片付けたとたん覆いが外れて Q1 に現れた。「1 つの残しを閉じると、同じファイルの別の残しが露出する」はファイル粒度の設計上の帰結で、**片付けが新しい宣言を要求する**という良い向きの副作用である | ADR-127 | contract |
 | DEF-011 | `docs/adr/ADR-113-one-claim-on-the-screen.md` | 2 つのギャラリー (起動ホーム = Layout DSL / New Project = Context DSL) の**語彙の作り分け**が済んだとき — 見出し・説明・破壊性の書き方が区別され、読み取り専用の表示 (`Unexamined`) の出口がシーン置き換えを伴うことが押す前に分かること。ADR-113 は**構造の側**だけを閉じた (2 枚同時が表現不能) ので、語彙は未着手 | ADR-113 | ia |
 
 ## 覆えていないもの (限界の宣言 — 推論させない)
@@ -173,6 +173,15 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
   現れたとき」で、`weighted_sum` を直したコミットがその検査を同時に置いたので、満期の到来と
   片付けが同じ commit に落ちた — **散文で書いていたら「実ソルバはまだか」を人が思い出す必要が
   あった行**が、書く形を得た 2 日後に自分で閉じた (ADR-123 D5 の狙いどおり)。
+  DEF-014 / DEF-030 (**ともに 2026-08-14 決着**、ADR-128) は満期の 2 つの形が同じ日に
+  発火した例である。DEF-014 は `満期=ADR-119` — ADR が Accepted になった瞬間に閉じる
+  型どおりの満期。DEF-030 は
+  `満期=GREP:src/controller/GraspController.js::kinematics` で、**フロントの配線が入った
+  瞬間**に発火した。後者が効いたのは、`core/` 側の実装だけでは決して来ない満期を
+  「フロントのこの行が現れたとき」と書けたからで、散文なら「フロント配線はまだか」を
+  人が思い出す必要があった。さらに GSN 側の G4 が同じ発火を独立に検出し、
+  「exploring を solution へ昇格させよ」と言ってきた — **登録簿と論証木が同じ事象を
+  別の角度から問うた**最初の例である (ADR-126 D1 の役割分担が働いた)。
   DEF-011 (2026-08-04 追加) が 7 行目である。DEF-012 (2026-08-08 追加) は同日中に満期を迎えて消えた —
   ADR-116 が Accepted・実装済みになったため。**登録から決着まで 1 日**で、
   機械可読な満期 (`満期=ADR-116`) が実際に発火した最初の例である。

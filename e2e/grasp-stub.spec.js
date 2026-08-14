@@ -182,3 +182,26 @@ test('S9 — 宣言すれば同じ objective が測れる: 不在の正の対照
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S10 — 掴む場所は「言っていない」が画面に出て、宣言すると文が変わる (ADR-128 / ADR-119 D2)', async ({ page }) => {
+  // 沈黙には欄が無い (原則 #31)。導出に落ちたことが画面に出ていなければ、ユーザーは
+  // 自分が「どこを掴むか」を一度も言っていないことに気づけない。宣言と沈黙が *同じ*
+  // サンプルを出す以上、区別を運ぶのはこの文だけなので、文そのものを焼く。
+  const errors = await reachGraspPanel(page, 'solve')
+  await pickAnObjectIfAsked(page)
+
+  // 既定 = 何も宣言していない。「導出に落ちた」と書いてあること。
+  await expect(page.getByText(/not declared — sampling/)).toBeVisible()
+
+  // 面を 1 つ宣言する → 文が「宣言した」側へ変わる。ここは文書への undo 可能な
+  // 書き込みを通るので、再コンパイルを待つぶんタイムアウトを取る。
+  await page.getByRole('button', { name: '+z', exact: true }).click()
+  await expect(page.getByText(/declared: \+z/)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/not declared — sampling/)).toHaveCount(0)
+
+  // 消すと「宣言していない」へ戻る — `anywhere` ではない (ADR-128 D3)。
+  await page.getByRole('button', { name: 'clear', exact: true }).click()
+  await expect(page.getByText(/not declared — sampling/)).toBeVisible({ timeout: 30_000 })
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

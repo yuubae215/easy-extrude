@@ -81,6 +81,67 @@ export const CAMERA_PRESETS = Object.freeze([
 ])
 
 /**
+ * Reach-envelope presets (wire shape: `graspSearch.plan` — ADR-084 §4).
+ *
+ * These exist because `reach_margin` needs an ABSOLUTE basis to be a score at
+ * all: with no declared envelope `core/` cannot normalise the margin, so it
+ * reports the objective as NOT MEASURED rather than as zero (ADR-120). The front
+ * declared no `plan{}` at all until ADR-128, which is why the panel's reach
+ * weight slider spent its life weighting something nothing could evaluate.
+ *
+ * They are a STARTING POINT behind an off-by-default toggle, never a default
+ * value: an envelope nobody declared must stay undeclared (kernel §5), because
+ * an invented one produces a margin that looks measured and is not.
+ *
+ * `radius` values are the arm's own length unit (metres in the bundled cell);
+ * the cone half-angle is radians.
+ */
+export const REACH_PRESETS = Object.freeze([
+  Object.freeze({
+    id: 'medium-arm',
+    label: 'medium arm (≈0.85)',
+    params: Object.freeze({ reachMin: 0.2, reachMax: 0.85, wristConeHalfAngle: 1.05 }),
+  }),
+  Object.freeze({
+    id: 'small-arm',
+    label: 'small arm (≈0.5)',
+    params: Object.freeze({ reachMin: 0.12, reachMax: 0.5, wristConeHalfAngle: 1.05 }),
+  }),
+  Object.freeze({
+    id: 'large-arm',
+    label: 'large arm (≈1.3)',
+    params: Object.freeze({ reachMin: 0.3, reachMax: 1.3, wristConeHalfAngle: 1.2 }),
+  }),
+])
+
+/**
+ * Why Run cannot proceed on the REACH-ENVELOPE side (ADR-128) — the sibling of
+ * `cameraDeclarationGaps` / `gripperDeclarationGaps`, and only consulted when the
+ * envelope is actually declared (an undeclared envelope is not a gap, it is a
+ * legitimate state that leaves `reach_margin` unmeasured).
+ *
+ * `reachMin >= reachMax` is rejected rather than silently swapped: a swapped pair
+ * would score every candidate against an envelope the user did not describe, and
+ * the answer would look exactly like a correct one.
+ *
+ * @param {{reachMin: number, reachMax: number, wristConeHalfAngle: number}} plan
+ * @returns {string[]}
+ */
+export function reachDeclarationGaps(plan) {
+  const gaps = []
+  const finite = (v) => typeof v === 'number' && Number.isFinite(v)
+  if (!finite(plan?.reachMin) || plan.reachMin < 0) gaps.push('reach min must be a number ≥ 0')
+  if (!finite(plan?.reachMax) || plan.reachMax <= 0) gaps.push('reach max must be a number > 0')
+  if (finite(plan?.reachMin) && finite(plan?.reachMax) && plan.reachMin >= plan.reachMax) {
+    gaps.push('reach min must be smaller than reach max (an empty envelope reaches nowhere)')
+  }
+  if (!finite(plan?.wristConeHalfAngle) || plan.wristConeHalfAngle <= 0) {
+    gaps.push('wrist cone half-angle must be a number > 0 (radians)')
+  }
+  return gaps
+}
+
+/**
  * Hand kinds the contract can express (ADR-118). These are WIRE VALUES — the
  * `kind` discriminator of `graspSearch.gripper`, matching `core/`'s GripperKind
  * one for one.
