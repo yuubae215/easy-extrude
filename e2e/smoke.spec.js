@@ -33,7 +33,7 @@ const deleteButtons = (page) => page.locator('[aria-label="Delete"]')
  * `robot_base_2`.
  */
 function outlinerRow(page, name) {
-  return page.locator('[draggable]').filter({ has: page.getByText(name, { exact: true }) }).first()
+  return page.locator('[draggable="true"]').filter({ has: page.getByText(name, { exact: true }) }).first()
 }
 
 async function addRobot(page) {
@@ -518,7 +518,7 @@ test('a second robot can be added and is a distinct entity (ADR-090 G1)', async 
   // assertions below/above cannot see it, since they read the row, not the scene.
   const firstRow = outlinerRow(page, 'robot_base')
   await firstRow.hover()
-  await firstRow.getByRole('button', { name: 'Hide' }).click()
+  await firstRow.locator('[aria-label="Hide"]').click()
   await expect
     .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState()))
       .map(r => r.skeletonVisible))
@@ -541,21 +541,26 @@ test('the Outliner eye round-trips an entity between hidden and shown (ADR-087)'
   // sending the same argument — the robot could be revealed once and then never
   // hidden again, with the click consumed and nothing happening (#11).
   const errors = await boot(page)
+  await addRobot(page)
 
-  // robot_base ships HIDDEN on the default scene (ADR-089 follow-up), so its
-  // eye offers the "Show" action and is visible without hover.
-  const row = page.getByText('robot_base', { exact: true }).locator('..')
-  const eye = row.getByRole('button').first()
-  await expect(eye).toHaveAttribute('aria-label', 'Show')
-
-  // Show → the eye flips to the "Hide" action …
+  // The robot the user just added ships SHOWN (ADR-096 §Decision 3 / 原則 #11).
+  // ADR-132 D5 removed the boot seed that used to ship HIDDEN, so this round trip
+  // now starts from the other end — which is the same claim, and the direction that
+  // actually regressed: the frozen flag made the SECOND toggle impossible, so a
+  // round trip has to cross the toggle twice whichever end it starts from.
+  const row = outlinerRow(page, 'robot_base')
   await row.hover()
-  await eye.click()
-  await expect(eye).toHaveAttribute('aria-label', 'Hide')
+  const eye = row.locator('[aria-label="Hide"]')
+  await expect(eye).toBeVisible()
 
-  // … and hiding again works, which the frozen flag made impossible.
+  // Hide → the eye flips to the "Show" action …
   await eye.click()
-  await expect(eye).toHaveAttribute('aria-label', 'Show')
+  await expect(row.locator('[aria-label="Show"]')).toBeVisible()
+
+  // … and showing again works, which the frozen flag made impossible.
+  await row.hover()
+  await row.locator('[aria-label="Show"]').click()
+  await expect(row.locator('[aria-label="Hide"]')).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -579,6 +584,13 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
   for (const o of atBoot) {
     expect(o.drawn, `${o.name}: 行が語る値と描画が食い違う`).toBe(o.explicit || o.contextual !== null)
   }
+
+  // ADR-132 D5: the scene no longer seeds a robot, so the `tcp` frame 症状 2 is
+  // about must be created first. It is added HERE, after the 症状 1/3 snapshot,
+  // because 症状 1 is a claim about BOOT — and a user-added robot_base ships shown
+  // by declaration (ADR-096 §Decision 3), so folding it into the boot count would
+  // quietly change what that count means rather than test it.
+  await addRobot(page)
 
   // 症状 2 — ONE click on the tcp eye changes something. It used to send
   // "hide" to something already hidden: the input was consumed, nothing moved.
