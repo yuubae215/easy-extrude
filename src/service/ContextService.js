@@ -100,6 +100,76 @@ export class ContextService extends EventEmitter {
     this._constraintToLinkId = new Map()
     /** @type {string[]} all derived SpatialLink ids */
     this._linkIds = []
+    /**
+     * **投影の footprint** — 直前の再生成がシーンに作った実体 id の集合 (ADR-131)。
+     *
+     * 「宣言されているか」を実体ごとに問い直すのではなく、**投影が自分で作ったものを
+     * 覚えておく**。前者は `ref` を持つ実体だけを見て、派生で生えたもの (Solid の
+     * Origin CF、`ensureRobotFrames` の upgrade) を数え落とす — 数え落としたぶんは
+     * 「未宣言」として保存され、次の投影が同じ id を作って衝突する。
+     *
+     * 不変条件: `footprint = 再生成直後の全 id \ 保存した id`。ここから
+     * 「未宣言 = いま在るもの ∖ footprint」が引き算 1 回で出る (§1.1 — 判定の源は
+     * 1 つで、実体ごとの述語を各所で書き直さない)。
+     * @type {Set<string>}
+     */
+    this._projectedIds = new Set()
+  }
+
+  /**
+   * この文書が投影して**いない**実体の id — 再生成を跨いで生き残るもの (ADR-131)。
+   *
+   * Shift+A で足した箱・複製・輸入メッシュ・計測線がここに入る。これらは欠落ではなく
+   * **状態**である (「この物は宣言されていない」)。状態であるからには、宣言を 1 つ
+   * 書き換えるたびに黙って消えてはならない。
+   *
+   * @returns {Set<string>}
+   */
+  /**
+   * シーンに**いま在る**実体 id — 保存判定の唯一の読み口 (§1.1)。
+   *
+   * `SceneService.scene` は集約 (`SceneModel`) を返す読み取り専用アクセサ。名前が
+   * 「scene の scene」で紛らわしいので、この 1 箇所に閉じて呼び出し側から隠す。
+   * 集約を持たない stub (THREE-free レーンの fake) では空 — stub のシーンには
+   * 実際に実体が 0 個なので、これは既定値ではなく**事実**である。
+   *
+   * この結合は `src/DeclaredProjectionOwnership.test.js` が問う (アクセサ名が
+   * 変わったら黙って「未宣言 0 個」に退化するため — 読まない欄は無い欄と同じ)。
+   * @returns {Iterable<string>}
+   */
+  _sceneObjectIds() {
+    return this._scene?.scene?.objects?.keys() ?? []
+  }
+
+  _undeclaredIds() {
+    const out = new Set()
+    for (const id of this._sceneObjectIds()) {
+      if (!this._projectedIds.has(id)) out.add(id)
+    }
+    return out
+  }
+
+  /**
+   * 再生成の唯一の入口 (原則 #1) — 投影を差し替え、footprint を採り直す。
+   *
+   * `loadContext` / `applyContextDoc` / `adoptDoc` が別々に `importFromJson` を
+   * 呼んでいると、保存の規則を持つ経路と持たない経路が生まれる。ADR-097 が pose で
+   * 見つけたのと同じ形 (欠陥は規則を持つ経路ではなく**持たない経路**) なので、
+   * 呼びを 1 本に畳む。
+   *
+   * @param {object} scene compileLayout 出力 (または空シーン)
+   * @param {object} viewContext
+   * @param {{preserveUndeclared?: boolean}} [opts]
+   *   `false` = 全消し (文書の読み込み・破棄。投影が無いので保存する意味も無い)
+   * @returns {Promise<object>} importFromJson の結果
+   */
+  async _projectScene(scene, viewContext, { preserveUndeclared = true } = {}) {
+    const preserve = preserveUndeclared ? this._undeclaredIds() : null
+    const result = await this._scene.importFromJson(scene, viewContext, { clear: true, preserve })
+    const live = new Set(this._sceneObjectIds())
+    for (const id of preserve ?? []) live.delete(id)
+    this._projectedIds = live
+    return result
   }
 
   // ── Freshness-owning accessors (PHILOSOPHY #23) ────────────────────────────
@@ -143,7 +213,9 @@ export class ContextService extends EventEmitter {
     const hasEntities = (compiled.layoutDsl.entities ?? []).length > 0
     const scene = hasEntities ? compileLayout(compiled.layoutDsl) : this._emptyScene()
 
-    const importResult = await this._scene.importFromJson(scene, viewContext, { clear: true })
+    // 文書を新しく読み込むのは投影の差し替えではなく**入れ替え**なので、
+    // 未宣言の実体も含めて全部消える (ADR-131 — 保存するのは再生成のときだけ)。
+    const importResult = await this._projectScene(scene, viewContext, { preserveUndeclared: false })
 
     this._doc             = doc
     this._validatorResult = validatorResult
@@ -190,7 +262,8 @@ export class ContextService extends EventEmitter {
     const prevConflicts = this._validatorResult?.conflicts ?? []
 
     if (regenerate) {
-      await this._scene.importFromJson(scene, viewContext, { clear: true })
+      // 再生成 = 投影の差し替え。文書が作っていない実体は残す (ADR-131)。
+      await this._projectScene(scene, viewContext)
       this._compiled = compiled
       if (compiled) {
         this._rebuildDerivation(compiled)
@@ -236,7 +309,7 @@ export class ContextService extends EventEmitter {
     }
 
     // Clear the scene without a layout compile step.
-    const importResult = await this._scene.importFromJson(this._emptyScene(), viewContext, { clear: true })
+    const importResult = await this._projectScene(this._emptyScene(), viewContext, { preserveUndeclared: false })
 
     this._doc             = doc
     this._validatorResult = validatorResult
