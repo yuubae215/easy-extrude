@@ -21,6 +21,21 @@ const deleteButtons = (page) => page.locator('[aria-label="Delete"]')
  * need a robot therefore create one the way a user does, which is also the only
  * path that produces a VISIBLE robot (ADR-096 §Decision 3).
  */
+/**
+ * The Outliner row for an entity, by EXACT name.
+ *
+ * `getByText(name).locator('..')` is not enough once the entity is SELECTED: the
+ * active-object header echoes the name, so the locator matches twice and Playwright
+ * refuses in strict mode. Adding a robot selects it, which is why this only started
+ * mattering when ADR-132 D5 made these tests create their own robot instead of
+ * inheriting a boot-seeded (and unselected) one. Scoping to the draggable rows keeps
+ * "the row" unambiguous, and `has:` with exact text keeps `robot_base` from matching
+ * `robot_base_2`.
+ */
+function outlinerRow(page, name) {
+  return page.locator('[draggable]').filter({ has: page.getByText(name, { exact: true }) }).first()
+}
+
 async function addRobot(page) {
   await page.locator('#canvas-container canvas').click()
   await page.keyboard.press('Shift+A')
@@ -450,7 +465,7 @@ test('deleting the robot asks first, and a template load does not resurrect it (
   const errors = await boot(page)
   await addRobot(page)
 
-  const robotRow = page.getByText('robot_base', { exact: true }).locator('..')
+  const robotRow = outlinerRow(page, 'robot_base')
   await robotRow.hover()
   await robotRow.locator('[aria-label="Delete"]').click()
 
@@ -501,7 +516,7 @@ test('a second robot can be added and is a distinct entity (ADR-090 G1)', async 
   // One eye moves ONE arm (ADR-090): hiding the first leaves the second drawn.
   // A single shared RobotStage could not even express this — and the aria-label
   // assertions below/above cannot see it, since they read the row, not the scene.
-  const firstRow = page.getByText('robot_base', { exact: true }).locator('..')
+  const firstRow = outlinerRow(page, 'robot_base')
   await firstRow.hover()
   await firstRow.getByRole('button', { name: 'Hide' }).click()
   await expect
