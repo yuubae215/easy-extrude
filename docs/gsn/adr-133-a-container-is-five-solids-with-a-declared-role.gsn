@@ -1,0 +1,100 @@
+GOALS adr133_a_container_is_five_solids_with_a_declared_role
+
+goal WorkpiecesGeneratedFromADeclaredContainerAreGraspSearchableWithoutHandPlacement
+uuid 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+summary "コンテナ + ワーク配置ポリシ (整列/ばら) を宣言すると、既存の単発 grasp-search リクエスト (1回に1対象を選ぶ現行フロー) がそのワークを対象・障害物として扱える。ワークを1個ずつ手で置く必要が無く、コンテナの壁も正しく障害物として働く"
+state UnderReview
+labels adr-133, adr-078, adr-122, adr-090, adr-060, principle-2, principle-1, app, core, contract
+
+    context ScopeExcludesBFFAndPickSequence
+    uuid 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+    summary "BFF の /pick-sequence ルート・クライアント配線 (ADR-122 D2 の残り)、複数ピックの逐次探索・最上面自動選択・ピック後の縮小ループ (core/scene/ 層) は本 ADR の対象外。ユーザー指示: 'BFF は後回し、GitHub Pages の静的ページで検証できる程度で'。GitHub Pages は BFF/core を持たない静的ホストで、grasp 検索は ADR-117 の stub lane が答える"
+    artifacts
+    - "docs/adr/ADR-133-a-container-is-five-solids-with-a-declared-role.md"
+    - "docs/adr/ADR-117-a-search-needs-an-object-and-a-demo-needs-no-backend.md"
+
+    context PriorArtLeftAsAnEditorHandoff
+    uuid 3c4d5e6f-7a8b-4c9d-0e1f-2a3b4c5d6e7f
+    summary "ADR-078 (Accepted) が core/ 側に bin-picking scene 層 (SceneEntity kind/persistence, derive_obstacles, POST /pick-sequence) を実装済みだが、'コンテナ/ワーク配置の UI/DSL 拡張はエディタ側への申し送り' として明示的に保留していた。ADR-122 (Proposed, 未実装) が D2/D3 として続きを設計したが未着手のまま。本 ADR はその申し送りのうち front-only で完結する部分を引き受ける"
+    artifacts
+    - "docs/adr/ADR-078-bin-picking-scene-entities.md"
+    - "docs/adr/ADR-122-pickable-and-yield-are-two-questions.md"
+
+    justification WhyNotAttributeOnASolid
+    uuid 4d5e6f7a-8b9c-4d0e-1f2a-3b4c5d6e7f8a
+    summary "却下案 B (Container を Solid+属性で表現し、壁は仮想的にしか存在しない) への反証: ユーザーが明示的に「コンテナは5つの直方体からなる」と定義し、壁を個別に選択・編集できることを求めた。robotRole の前例 (宣言された属性で型付けする、名前や geometry の推測では決めない) からも、壁を実体として持たない設計は外れる"
+
+    justification WhyBoxAndNotAABBForTheColliderChoice
+    uuid 5e6f7a8b-9c0d-4e1f-2a3b-4c5d6e7f8a9b
+    summary "却下案 (AABB=向き無視) への反証: scatter 配置のワークは全軸ランダム回転を選んでおり、AABB は回転したワークに対して過大/過小どちらの方向にもズレが大きい。OBB (向きつき) を選んだのはこの精度要求の直接の帰結"
+
+    strategy ByDecomposingTheContainerIntoDeclaredRoleSolidsAndExtendingObstacleDeclarationToBoxes
+    uuid 6f7a8b9c-0d1e-4f2a-3b4c-5d6e7f8a9b0c
+    summary "Container を Layout DSL 専用 entity type にし、コンパイル時に containerRole 宣言つき Solid (5枚の壁/底) と workpieces バッチ由来の N 個の Solid に展開する。front は幾何を declare するだけに留め (robotRole・graspFeature と同じ境界)、干渉の『解き方』は core/ のまま — obstacle 表現を sphere から box (kind 判別 union) に広げても contract の 'Declaration only: interference and occlusion are solved in core/' という境界は変えない"
+
+        goal ContainerCompilesToFiveRoleTaggedSolids
+        uuid 7a8b9c0d-1e2f-4a3b-4c5d-6e7f8a9b0c1d
+        summary "Container entity (innerDimensions/outerDimensions/position/rotation) が 1 bottom + 4 walls の Solid に決定的に展開され、各々 containerRole (bottom/wallXNeg/wallXPos/wallYNeg/wallYPos) + containerRef を持つ。壁厚は (outer-inner)/2 (X/Y) と outer.z-inner.z (底) から導出し、二重管理しない"
+        labels support-exploring
+
+            assumption CompilerTestWillPinTheVolumeIdentity
+            uuid 8b9c0d1e-2f3a-4b4c-5d6e-7f8a9b0c1d2e
+            summary "計画: src/context/ContainerCompiler.test.js が、壁5枚の合計体積が (outerDimensions - innerDimensions) の体積差と一致することを固定する。これが崩れれば壁厚導出の式が間違っている。ファイルが未着手なので満期=PATH:src/context/ContainerCompiler.test.js (ファイルが現れた時点で内容を見に行く。GREP へは実装 PR で張り替える)"
+
+        goal WorkpieceBatchCompilesToNSolidsUnderTwoPlacementPolicies
+        uuid 9c0d1e2f-3a4b-4c5d-6e7f-8a9b0c1d2e3f
+        summary "workpieces バッチ宣言 (dimensions/count/placement/seed/layers/spacing/rotation) が <containerRef>_wp_<i> の N 個の Solid に展開される。containerGrid は内寸から列/行/段を自動割付し決定的、scatter はシード固定の擬似乱数で XY をサンプリングしZオフセットで山積み風にする (重なり許容、実衝突回避はしない)。各ワークの向きは全軸ランダム回転 (scatter のみ)"
+        labels support-exploring
+
+            assumption CompilerTestWillPinScatterDeterminism
+            uuid 0d1e2f3a-4b5c-4d6e-7f8a-9b0c1d2e3f4a
+            summary "計画: 同じ ContainerCompiler.test.js が、同一シードで scatter を2回コンパイルすると同一の座標・回転列が出ること (round-trip) を固定する。乱数生成器の呼び出し順が非決定なら壊れる。ファイルが未着手なので満期=PATH:src/context/ContainerCompiler.test.js (GREP へは実装 PR で張り替える)"
+
+            assumption UnknownRotationValueThrows
+            uuid 1e2f3a4b-5c6d-4e7f-8a9b-0c1d2e3f4a5b
+            summary "計画: 同テストが rotation:'fullAxis' 以外の未知値を渡すと throw することを固定する (原則#31 — 既定値で埋めない)。まだ値は1つしか無いが、欄自体が正しく閉じていることを先に焼く。ファイルが未着手なので満期=PATH:src/context/ContainerCompiler.test.js (GREP へは実装 PR で張り替える)"
+
+        goal RoleTaggedWallsAreExcludedFromPickableTargetsButRemainObstacles
+        uuid 2f3a4b5c-6d7e-4f8a-9b0c-1d2e3f4a5b6c
+        summary "resolveGraspTargets() が containerRole を持つ Solid を pickable リストから除外する (CoordinateFrame が構築上除外されるのと同じ形の1分岐追加)。containerRole を持たない Solid (ワーク) は除外されず、既存ロジックのまま pickable になる"
+        labels support-exploring
+
+            assumption DomainTestWillPinTheExclusion
+            uuid 3a4b5c6d-7e8f-4a9b-0c1d-2e3f4a5b6c7d
+            summary "計画: src/domain/graspTargets.test.js に「containerRole ありの Solid は resolveGraspTargets の出力に現れない」ケースを追加する。満期=GREP:src/domain/graspTargets.test.js::containerRole solids are excluded from pickable targets"
+
+        goal ObstacleDeclarationExtendsToOrientedBoxesWithoutMovingWhoSolvesInterference
+        uuid 4b5c6d7e-8f9a-4b0c-1d2e-3f4a5b6c7d8e
+        summary "packages/grasp-contract の obstacles[] item が kind: sphere|box の判別 union になり (request側 optional 追加、contractVersion 不変)、core/ に NaiveOBBCollisionChecker (進入線分を箱ローカル座標系へ変換しAABB距離で判定) が追加される。src 側の obstacle 生成は Solid の position/dimensions/rotation をそのまま box 宣言に写すだけで、干渉判定のアルゴリズムそのものは core/ に閉じたまま"
+        labels support-exploring
+
+            justification DeclarationVsSolvingBoundaryIsUnchanged
+            uuid 5c6d7e8f-9a0b-4c1d-2e3f-4a5b6c7d8e9f
+            summary "この goal が front (src/) 側で実装されて良い根拠: grasp-search-request.schema.json の obstacles 記述が既に 'Declaration only: interference and occlusion are solved in core/' と明記している。box 表現への拡張は宣言する語彙が増えるだけで、誰が interference を判定するかという境界線自体は動かない。CLAUDE.md の AI ガード (IK/干渉/リーチ/安定性の解き方は core/ の責務) はこの境界が動いたときに発動する条項であり、本 goal はその境界を動かさないことを主張の一部にしている"
+
+            assumption CoreUnitTestWillPinKnownIntersectionCases
+            uuid 6d7e8f9a-0b1c-4d2e-3f4a-5b6c7d8e9f0a
+            summary "計画: core/tests/test_engine.py に NaiveOBBCollisionChecker のユニットテストを追加し、回転した箱に対する既知の交差/非交差ケース (軸整列・45度回転・境界接触) を固定する。GitHub Pages / stub lane はこの正しさを検証しない (ADR-117 の stub はスコア・距離を捏造する契約なので、幾何の正しさは pnpm test:core でしか見えない) — この限界は ADR 本文の検証節に明示済み。満期=GREP:core/tests/test_engine.py::NaiveOBBCollisionChecker"
+
+        goal ScatterOverlapIsAcceptedAsCosmeticNotPhysicallyResolved
+        uuid 7e8f9a0b-1c2d-4e3f-4a5b-6c7d8e9f0a1b
+        summary "scatter 配置でワーク同士が重なることは、Zオフセットで山積み風に見せるのみで実際の衝突回避は行わない設計として受け入れる。これは欠陥ではなく明示された制約 — grasp 候補が物理的に貫通したワークに対して生成されうることをデモ・検証用途の範囲として許容する"
+        labels support-exploring
+
+            assumption LimitationIsStatedNotHidden
+            uuid 8f9a0b1c-2d3e-4f4a-5b6c-7d8e9f0a1b2c
+            summary "計画: ADR-133 の Consequences 節 (書き込み済み) に加え、実装時に UI 側のヒント/ラベルに scatter の重なりが物理的に解決されていないことを明示する。原則#11 (無言の失敗禁止) と同じ規律を『無言の近似』にも適用する。満期=GREP:src/components/Grasp/GraspSearchPanel.jsx::cosmetic"
+
+    justification WhyNotAdvanceADR122ThisRound
+    uuid 9a0b1c2d-3e4f-4a5b-6c7d-8e9f0a1b2c3d
+    summary "却下案 D (pick-sequence の BFF 配線をこの ADR で前倒しする) への反証: ADR-122 の設計判断 (D2/D3 の実装順序) を追い越すことになり、DEF-006 (中立 wire スキーマ) という別の大きい残しを同時に開けてしまう。ユーザーが明示的に指定したスコープ (front-only, BFF後回し) を超えるため却下 (核§5 過剰モデリング禁止)"
+
+    context DeferredResidualRegisteredSeparately
+    uuid 0b1c2d3e-4f5a-4b6c-7d8e-9f0a1b2c3d4e
+    summary "OBB を超える厳密な半空間・薄板干渉は DEF-036 (docs/DEFERRAL_LEDGER.md) として新規登録した。ADR-078 が同項目を Still-deferred として持っていたが登録簿に行が無かったため、本 ADR が登録の機会として引き受けた"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f
+    summary "docs/gsn/profit-growth.gsn への接続は実装 PR で行う (テストが実在した時点で solution として吊る)。証拠が全部未来形の現時点で接ぐと ToBeDeveloped を増やすだけで木が検証不能になる。接続予定先: 事業木の 'grasp search が使われる場面を増やす' 系の goal (未特定 — 実装 PR 時に profit-growth.gsn を読み直して確定する)"
