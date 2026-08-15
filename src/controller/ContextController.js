@@ -97,10 +97,10 @@ import { RegionResolveEffect } from '../view/RegionResolveEffect.js'
 import { UncertaintyGhostView } from '../view/UncertaintyGhostView.js'
 import { FLOOR_TAB } from '../view/FloorTabs.js'
 import { DOC_INTAKE_TAB } from '../view/DocIntake.js'
-import conflictContext from '../../examples/cell_conflict_context.json'
-import regionContext from '../../examples/cell_region_context.json'
-import phase2Context from '../../examples/cell_phase2_context.json'
-import roboticsContext from '../../examples/cell_robotics_context.json'
+import conflictContext from '../../examples/cell_conflict_context.json' with { type: 'json' }
+import regionContext from '../../examples/cell_region_context.json' with { type: 'json' }
+import phase2Context from '../../examples/cell_phase2_context.json' with { type: 'json' }
+import roboticsContext from '../../examples/cell_robotics_context.json' with { type: 'json' }
 
 /**
  * Bundled example docs the template gallery (ADR-051 Phase 2) can seed from,
@@ -257,8 +257,9 @@ export class ContextController {
   // ── Template gallery (Phase 2 — Entry B, ADR-051 §3) ────────────────────────
   // "New Project" (the gallery) is the single create-new entry. Its blank card
   // (`selectTemplate('blank')`) replaces the former `newContext()` direct path —
-  // it handles active-overlay cleanup via `exit()` and needs no confirm dialog
-  // (the gallery footer is the disclaimer, ADR-051 §7).
+  // it handles active-overlay cleanup via `exit()`. Whether it needs a confirm
+  // dialog first depends on whether there is anything to lose (ADR-134) — see
+  // `selectTemplate`.
 
   /**
    * Open the starter-template picker modal.
@@ -301,12 +302,15 @@ export class ContextController {
   }
 
   /**
-   * Load a starter template by id and open the negotiate overlay. The gallery's
-   * footer already states the scene-replacement consequence (ADR-051 §7), so no
-   * second confirm dialog is shown. A blank template uses `adoptDoc` (no layout);
-   * an example template uses `loadContext` (regenerates the derived scene). Any
-   * active overlay is exited first so its widgets / ghosts are disposed cleanly
-   * (PHILOSOPHY #9) before the new doc replaces the scene.
+   * Load a starter template by id and open the negotiate overlay. Both branches
+   * below replace the scene (`_projectScene({preserveUndeclared:false})` →
+   * `_clearScene()`) and clear the undo stack (`AppController._onContextLoaded`) —
+   * undo cannot get the discarded work back. The gallery's footer states that
+   * consequence up front, but a footer note is not a gate: when the user has made
+   * at least one undoable edit since the last project-open boundary
+   * (`commandStack.canUndo`), an explicit confirm is required first (ADR-134). A
+   * fresh/unedited project has nothing to lose, so it proceeds with zero added
+   * friction, exactly as before.
    *
    * @param {string} id — TemplateCatalog entry id
    */
@@ -316,6 +320,28 @@ export class ContextController {
       this._ctrl._uiView.showToast(`Unknown template: ${id}`, { type: 'warn' })
       return
     }
+
+    if (this._ctrl._commandStack.canUndo) {
+      this._ctrl._uiView.showConfirmDialog(
+        `Replace the current scene with "${meta.name}"? Your unsaved changes will be lost.`,
+        (confirmed) => { if (confirmed) this._loadTemplate(meta) },
+        { title: 'Replace Scene', confirmLabel: 'Replace', danger: true },
+      )
+      return
+    }
+    this._loadTemplate(meta)
+  }
+
+  /**
+   * Performs the actual scene-replacing load for `selectTemplate` — split out so
+   * the ADR-134 confirm gate can defer it until the user has agreed (or skip the
+   * gate entirely when there's nothing to lose). Any active overlay is exited
+   * first so its widgets / ghosts are disposed cleanly (PHILOSOPHY #9) before the
+   * new doc replaces the scene. A blank template uses `adoptDoc` (no layout); an
+   * example template uses `loadContext` (regenerates the derived scene).
+   * @param {import('../context/TemplateCatalog.js').TemplateMeta} meta
+   */
+  _loadTemplate(meta) {
     this.closeTemplateGallery()
     if (this.isActive) this.exit()
 

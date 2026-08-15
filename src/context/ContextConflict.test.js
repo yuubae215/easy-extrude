@@ -195,7 +195,7 @@ test('trace.from may reference a requirement (kind: constrains)', () => {
 test('compileContext surfaces conflicts and negotiationClusters alongside layoutDsl', () => {
   const out = compileContext(loadScenario())
 
-  assert.equal(out.layoutDsl.entities[0].ref, 'robot_base_zone')
+  assert.equal(out.layoutDsl.entities[0].ref, 'robot_zone')
   assert.equal(out.conflicts.length, 1)
   assert.equal(out.conflicts[0].ref, 'conflict_v_camera_standoff')
   assert.equal(out.negotiationClusters.length, 1)

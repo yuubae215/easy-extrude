@@ -138,7 +138,7 @@ describe('round-trip — NL → doc (NlIntake) ⟷ doc → NL (narrator)', () =>
   })
 
   it('is deterministic / pure (same input → same prose)', () => {
-    const prov = recoverProvenance(cell, 'robot_base_zone')
+    const prov = recoverProvenance(cell, 'robot_zone')
     assert.equal(narrateProvenance(prov, { lang: 'ja' }), narrateProvenance(prov, { lang: 'ja' }))
   })
 })

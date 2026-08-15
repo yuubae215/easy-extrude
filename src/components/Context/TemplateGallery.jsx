@@ -10,7 +10,10 @@ import { SCREEN_CLAIM, SCREEN_TIER, stageIs, tierZIndex } from '../../view/Scree
  * `onSelectTemplate(id)`; ContextController resolves it to a canonical doc and
  * loads it through ContextService (the single authoritative load path — ADR-051
  * §2 / PHILOSOPHY #1). The footer states the scene-replacement consequence up
- * front (ADR-051 §7 transparency) so no second confirm dialog is needed.
+ * front, but that is disclosure, not a gate: when the current project has
+ * undoable edits at stake, `ContextController.selectTemplate` shows an explicit
+ * confirm dialog before replacing the scene (ADR-134); a fresh/unedited project
+ * loads immediately, same as before.
  *
  * Structure preview (ADR-062 Phase 5): each example card shows a Why/How/What
  * stacked bar + node counts + the doc-signature prefix, all derived from the

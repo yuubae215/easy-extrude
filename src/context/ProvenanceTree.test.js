@@ -89,8 +89,8 @@ describe('recoverProvenance — φ⁻¹ from a derived entity', () => {
     assert.ok(factRefs.includes('f_plate'), 'reaches the plate fact via trace + dependsOn')
   })
 
-  it('cell: robot_base_zone recovers the mech requirement (Why with admissible)', () => {
-    const p = recoverProvenance(cell, 'robot_base_zone')
+  it('cell: robot_zone recovers the mech requirement (Why with admissible)', () => {
+    const p = recoverProvenance(cell, 'robot_zone')
     assert.equal(p.found, true)
     const req = p.why.find(n => n.id === 'requirement:r_eoat_clearance')
     assert.ok(req, 'reaches r_eoat_clearance via trace')
@@ -147,7 +147,7 @@ describe('purity', () => {
   it('does not mutate the input document', () => {
     const snapshot = JSON.stringify(cell)
     buildWhyTree(cell)
-    recoverProvenance(cell, 'robot_base_zone')
+    recoverProvenance(cell, 'robot_zone')
     assert.equal(JSON.stringify(cell), snapshot)
   })
 
@@ -160,9 +160,9 @@ describe('purity', () => {
 
 describe('entityRefsConstrainedByVariable — φ⁻¹ の逆向き (ADR-107 D5)', () => {
   it('returns the entities a variable constrains (the chain a variable selection dims)', () => {
-    // `robot_base_zone` は trace で `r_eoat_clearance` に繋がり、その要求が
+    // `robot_zone` は trace で `r_eoat_clearance` に繋がり、その要求が
     // `v_robot_base_x` を制約している。選択の連鎖はこの到達関係そのもの。
-    assert.deepEqual(entityRefsConstrainedByVariable(cell, 'v_robot_base_x'), ['robot_base_zone'])
+    assert.deepEqual(entityRefsConstrainedByVariable(cell, 'v_robot_base_x'), ['robot_zone'])
   })
 
   it('is the inverse of the `variables` recoverProvenance surfaces (one relation, two directions)', () => {
