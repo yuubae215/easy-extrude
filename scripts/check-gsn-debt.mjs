@@ -151,7 +151,15 @@ const SUPPORT_LABELS = new Map([
 // 「この証拠が構造的に見逃すもの」として自分で名指しした限界**を、散文ではなく
 // 数えられる場所へ降ろしたぶんである — 散文の限界は誰も数えないので、宣言した
 // 瞬間から静かに消える。機械可読な満期 (GREP) を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 29
+// 2026-08-15: 29 → 34。ADR-133 (Proposed・未実装) の木が **5 goal** を足した
+// (ContainerCompilesToFiveRoleTaggedSolids / WorkpieceBatchCompilesToNSolidsUnderTwoPlacementPolicies /
+// RoleTaggedWallsAreExcludedFromPickableTargetsButRemainObstacles /
+// ObstacleDeclarationExtendsToOrientedBoxesWithoutMovingWhoSolvesInterference /
+// ScatterOverlapIsAcceptedAsCosmeticNotPhysicallyResolved)。ADR-129 の先例と同形:
+// 起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結で、Proposed の ADR は
+// 定義上ほぼ全部の goal が exploring になる — 借金が増えたのではなく可視化された
+// ぶんである。5 件とも機械可読な満期 (PATH/GREP) を持つので分子 (G3) は動かない。
+const DEBT_BASELINE = 34
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
