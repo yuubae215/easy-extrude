@@ -80,6 +80,14 @@ async function startFromContextTemplate(page) {
 async function loadTemplateIntoNegotiate(page) {
   await startFromContextTemplate(page)
   await page.getByRole('button', { name: 'Robot Cell — Simple' }).click()
+  // ADR-134: replacing the scene asks for confirmation first only when the
+  // current project has undoable edits at stake (`commandStack.canUndo`). Most
+  // callers boot fresh (nothing to lose, no dialog); a caller that has made an
+  // undoable edit first (e.g. deleting a robot) sees the "Replace Scene" confirm
+  // and must click through it — same helper handles both.
+  const replaceButton = page.locator('button:text-is("Replace")')
+  const asked = await replaceButton.waitFor({ state: 'visible', timeout: 2000 }).then(() => true).catch(() => false)
+  if (asked) await replaceButton.click()
   // ContextLayer negotiate header + its Matrix tab.
   await expect(page.getByText('Negotiate', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Matrix' })).toBeVisible()
