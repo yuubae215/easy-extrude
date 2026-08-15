@@ -45,6 +45,7 @@ import { Vertex } from '../graph/Vertex.js'
 import { Edge }   from '../graph/Edge.js'
 import { BffClient, BffUnavailableError, WsChannel } from './BffClient.js'
 import { serializeScene, base64ToF32, base64ToU32 } from './SceneSerializer.js'
+import { decompileLayout } from '../layout/LayoutDecompiler.js'
 import { ImportedMesh } from '../domain/ImportedMesh.js'
 import { ImportedMeshView } from '../view/ImportedMeshView.js'
 import { MeasureLine } from '../domain/MeasureLine.js'
@@ -3596,28 +3597,48 @@ export class SceneService extends EventEmitter {
    *    a world-parented sibling. Stamp the declared roles and re-home the tcp so
    *    the legacy name path is a one-time ramp, not the steady state.
    *
-   *  • **seed** (opt-in, `{ seed: true }`) — create one robot when the scene has
-   *    none. ONLY the fresh-boot scene passes this. The old behaviour (seed at
-   *    every entry) made the seed rule, not the scene, the authority on how many
-   *    robots exist: a user who deleted the robot got it back by merely loading a
-   *    template (ADR-090 §力学(4)), and zero robots could never be held. Import /
-   *    load paths therefore upgrade only — a layout with no robot stays at zero,
-   *    which is now a first-class state, and the grasp gate says so out loud
-   *    instead of solving against a ghost.
+   *  • ~~**seed**~~ — **RETIRED (ADR-132 D5).** `ensureRobotFrames({seed:true})`
+   *    used to create one robot when the scene had none, and only the fresh-boot
+   *    scene passed it. ADR-090 had already made zero robots a first-class state
+   *    for every OTHER entry; boot was the last place that still disagreed, and it
+   *    disagreed invisibly — the seeded arm's declared visibility default is
+   *    `false` (ADR-096 §Decision 3, "an arm standing alone reads as clutter"), so
+   *    the boot scene held **cardinality 1 while presenting cardinality 0**. A user
+   *    who cannot see it cannot distinguish it from the robot not being there, and
+   *    an entity nobody can find is worth less than one that was never created
+   *    (原則 #31 — the 0 that is really a 1). The Add ▸ Robot path creates a robot
+   *    the user can actually see, because they asked for it.
+   *
+   * The option is REMOVED rather than defaulted to false: a retired shape left in
+   * the signature goes green forever (ADR-103 — `DS_PENDING` sat in an enum for
+   * three releases after it was abolished), and `RobotRosterAuthority.test.js`
+   * now counts that it is gone rather than counting who passes it.
    *
    * The frames are ordinary serialized entities (§1.1): they ride Scene ⇄ Layout
    * DSL round-trip (ADR-055) and .ctx.json like any other CoordinateFrame.
-   *
-   * @param {{seed?: boolean}} [opts]
    */
-  ensureRobotFrames({ seed = false } = {}) {
+  ensureRobotFrames() {
     this._upgradeLegacyRobotFrames()
-    // The seed entry declares the hidden default (ADR-096 §Decision 3): an arm
-    // standing alone on an otherwise empty scene reads as clutter. This replaces
-    // the boot path's `_hideRobotByDefault()` sweep, which hid the base frame and
-    // silently missed `tcp` — a procedure that walks a list drops whatever the
-    // list forgot; a declared default cannot.
-    if (seed && this.getRobots().length === 0) this.addRobot({ entry: VISIBILITY_ENTRY.SEED })
+  }
+
+  /**
+   * The live scene as a Layout DSL — ADR-055's φ⁻¹ wired to a consumer (ADR-132 D1).
+   *
+   * `decompileLayout` has existed since ADR-055 with **no production caller**: the
+   * inverse was built, its fixpoint law was tested, and nothing ever asked it a
+   * question. Grasp search is that question — "what bodies are on the screen right
+   * now" — and the answer has to be the live scene, because that is already where
+   * the request's OTHER subject (the robot's base / tcp pose) comes from.
+   *
+   * Recovers the What/How geometry layer only. `graspFeature` and everything else
+   * documentary is NOT here and must not be invented here — the join happens at the
+   * one resolution point (`domain/searchGeometry.js`), which is also the only place
+   * that knows a document exists.
+   *
+   * @returns {{dsl: object, warnings: {id:string,type:string,reason:string}[]}}
+   */
+  decompileToLayoutDsl() {
+    return decompileLayout(serializeScene(this._model))
   }
 
   /**
@@ -3670,16 +3691,21 @@ export class SceneService extends EventEmitter {
    * stays at the base origin. _updateWorldPoses composes it through the base into
    * the world pose the marker renders at.
    *
-   * The `entry` decides the robot's visibility default and nothing else
-   * (ADR-096 §Decision 3): `'seed'` — the scene put it there, so it stays down;
-   * `'userAdded'` (the default here, because the Add menu and undo/redo are what
-   * call this without an argument) — the user asked for it, so it appears, since
-   * a gesture that produces nothing visible is the worst failure (原則 #11).
+   * Every robot born here is `userAdded` and therefore VISIBLE (ADR-096
+   * §Decision 3): a gesture that produces nothing visible is the worst failure
+   * (原則 #11). The `entry` parameter this method used to take is gone with the
+   * boot seed (ADR-132 D5) — it existed solely so the seed could ask for a HIDDEN
+   * robot, and a scene that holds an entity nobody can see is holding cardinality
+   * 1 while showing cardinality 0.
    *
-   * @param {{entry?: string}} [opts]
+   * `VISIBILITY_ENTRY.SEED` itself stays alive and still means what it meant: it
+   * is the entry `_explicitVisibleOf` assumes for a robot that arrived inside a
+   * LOADED scene (import / template), where the frames are furniture of someone
+   * else's cell rather than something the user just asked for.
+   *
    * @returns {import('../domain/robotFrames.js').Robot} the added robot
    */
-  addRobot({ entry = VISIBILITY_ENTRY.USER_ADDED } = {}) {
+  addRobot() {
     const existing = this.getRobots().length
     const objects  = [...this._model.objects.values()]
 
@@ -3687,7 +3713,7 @@ export class SceneService extends EventEmitter {
     this._setRobotRole(base, ROBOT_ROLE.BASE)
     // Declared AFTER the role is stamped: the role is what makes this a robot
     // base rather than an ordinary frame, and the kind decides the default.
-    this.declareExplicitVisible(base, entry)
+    this.declareExplicitVisible(base, VISIBILITY_ENTRY.USER_ADDED)
 
     const tcp = this.createCoordinateFrame(base.id, nextRobotTcpName(objects), null)
     if (tcp) {
@@ -3769,8 +3795,26 @@ export class SceneService extends EventEmitter {
    */
   declareExplicitVisible(obj, entry) {
     if (!obj) return
-    this._explicitVisible.set(obj, defaultExplicit(this._visibilityKindOf(obj, entry)))
+    const explicit = defaultExplicit(this._visibilityKindOf(obj, entry))
+    this._explicitVisible.set(obj, explicit)
     this.applyEntityVisibility(obj.id)
+    // ANNOUNCE it (原則 #18 / #32 — the obligation belongs to the event that
+    // fires it). The Outliner row seeds its eye from `isExplicitVisible` at
+    // `objectAdded`, and for a robot that is TOO EARLY: `addRobot` creates the
+    // base frame (emitting objectAdded) before it can stamp the robot role, so at
+    // seeding time the frame classifies as an ordinary CoordinateFrame — declared
+    // default `false`. The axis was then corrected here and the MESH followed,
+    // but nothing told the row, so a user-added robot's eye read "Show" while its
+    // arm was drawn. That is ADR-096's G1 ("the row never lies") violated on the
+    // add path; it stayed invisible because the boot seed was the robot everyone
+    // looked at and its default really was `false`. ADR-132 D5 removed that seed,
+    // which made the add path the ONLY path — the defect did not appear, it
+    // stopped being hidden.
+    //
+    // Emitted rather than fixed by reordering `addRobot`: the row must not depend
+    // on any caller remembering to refresh it after writing an axis (原則 #23 —
+    // a convention that N-1 sites keep is a convention that one site breaks).
+    this.emit('explicitVisibilityChanged', obj.id, explicit)
   }
 
   /** The entity ids the contextual axis currently claims (read-only view). */

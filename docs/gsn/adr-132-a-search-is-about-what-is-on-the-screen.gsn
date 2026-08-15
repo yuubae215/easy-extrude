@@ -1,0 +1,172 @@
+GOALS adr132_a_search_is_about_what_is_on_the_screen
+
+goal ASearchSolvesForWhatIsOnTheScreenAndItsEntranceDestroysNothing
+uuid 5c1f8a03-9d27-4e6b-a814-3b07f6d95e42
+summary "探索は「いま画面に在るもの」について解き、入口を開く行為はユーザーが選んでいない文書の採用ではない。2 つの主語 (どのロボットか / どの物か) が同じ源から来て、シーンに直接置いた実体も探索の対象になる"
+state UnderReview
+labels adr-132, adr-131, adr-129, adr-119, adr-115, adr-103, adr-090, adr-096, adr-055, front, principle-31, principle-11, principle-1, accepted
+artifacts
+- "docs/adr/ADR-132-a-search-is-about-what-is-on-the-screen.md"
+
+    context FoundByAUserPressingTheButton
+    uuid 7e40b91c-2a58-4d36-b0f7-6c295a13d8e0
+    summary "出所はユーザーの報告: 「grasp search をすると、急に画面が切替わって、tcp教示点ピック、tcp教示点プレースと出るんだけど、これは何？もともとロボットと把持する対象の関係性をモデリングしてたけどリセットされちゃう」。その 2 語は examples/cell_robotics_context.json の実体で、シーンが壊れたのではなく別の文書が読み込まれて入れ替わっていた。openGrasp が !ctxService.loaded を見て quickStartExample('cell_robotics') を呼び、それは loadContext → _projectScene({preserveUndeclared:false}) → _clearScene() を通る"
+    artifacts
+    - "src/controller/GraspController.js"
+    - "src/controller/ContextController.js"
+
+    context TheSecondHalfOfTheReport
+    uuid 2b96d4e7-5c31-42a8-9e70-8f14a0c5b3d9
+    summary "同じ報告の後半: 「ロボットが初期シーンに存在するけど非表示になっているのが違和感。初期シーンで見えなかったら気付かなくない？それだったら最初からヒエラルキーにも存在しないのと変わらないような気が」。boot は ensureRobotFrames({seed:true}) で 1 台作り、ADR-096 §Decision 3 がその 1 台の explicit 既定を false と宣言していた。どちらも単体では正しく、合わせるとシーンは基数 1 を保持しながら基数 0 を提示していた"
+    artifacts
+    - "src/view/VisibilityAxes.js"
+    - "src/controller/AppController.js"
+
+    context TwoSubjectsFromTwoSources
+    uuid 9d13c58f-4b70-4e92-a316-7c0b8e2d5f41
+    summary "力学の中心: 同じリクエストの 2 つの主語が別の源を持っていた。ロボットは live scene (resolveRobots + worldPoseOf)、掴む対象は文書 (ContextService.getCompiled().layoutDsl)。どちらを単独で読んでも欠陥は無く、食い違いは 2 つを並べたときにしか現れない。帰結は 2 つ — 文書の無いシーンは探索できない (だから入口に迂回が生えた)、ビューポートで動かした Solid のサンプルが動かない (ADR-129 の幾何側)"
+    artifacts
+    - "src/domain/graspTargets.js"
+    - "src/domain/robotFrames.js"
+
+    context TheInverseHadNoConsumer
+    uuid 4a72e6d1-8f39-4c05-b628-1e93d70a5c86
+    summary "decompileLayout (ADR-055) は scene → Layout DSL の φ⁻¹ で fixpoint law までテストされているのに、生産経路からの呼び出しは 0 件だった。機構が在ることと読む機械が在ることは別の事実で、後者が無いあいだ検査は緑ですらなく不在だった (ADR-115 と同型)"
+    artifacts
+    - "src/layout/LayoutDecompiler.js"
+
+    justification WhyLoadedIsNotTheQuestion
+    uuid 8c05b37a-6e24-49d1-b943-2f78a1d64e0b
+    summary "分岐が読んだ loaded は文書についての boolean で、失われたのはシーンの中身である。シーンは文書なしで N 個の実体を持てるが、未宣言実体の個数には欄が無い (原則 #31) ので、この分岐は一度も「失うものが在るか」を聞いていない。ADR-131 が applyContextDoc で同じ形を閉じ、母集団 (_undeclaredIds) まで作っておきながら入口には持ち込まれなかった。ADR-131 D3 の「全消しは意味の合う場面に残る」の意味は『ユーザーが別の文書を採ったとき』であり、ここはその動詞をユーザーが選んでいないのに借りていた"
+    artifacts
+    - "docs/adr/ADR-131-a-regeneration-swaps-the-projection-not-the-scene.md"
+
+    justification WhyNotTakeTheSceneWholesale
+    uuid 3f8b1e64-7d92-4a30-8c15-0b6e94a27d53
+    summary "却下案 E (シーンを丸ごと採り文書を見ない) への反証: graspFeature は文書にしか無い。DocBuilder が specification.layout.entities[].graspFeature に書き、シーンには載らない (decompile は What/How 幾何層のみを復元し Why/Context は復元しない — ADR-055 §Scope boundary)。丸ごと採ると宣言済みの掴む場所が全部消え、ADR-119 D3 が禁じた『宣言したのに無視した』になる。却下案 A (未宣言実体の個数で分岐) と B (確認ダイアログ) は破壊を止めるが源の非対称を残すので、文書の無いシーンは依然として探索できない"
+
+    justification WhyDeleteRatherThanGuard
+    uuid 6e27c94b-1a53-4d8f-b072-95e3018a7f6c
+    summary "quickStartExample をガードせず削除した理由: ガードされた破壊経路は条件 1 つで復活し、次に『速い開始』が欲しくなった入口は grep でそれを見つける。動詞を語彙から消すのが次の 1 つを書けなくする唯一の方法である (ADR-102 の手)。同じ理由で ensureRobotFrames の seed オプションと addRobot の entry 引数も不使用にせず削除した — 退役の腐敗は違反を見逃すのではなく緑を出す (ADR-103 の DS_PENDING)"
+
+    assumption TheDocumentIsNoLongerTheAuthorityOnSearchGeometry
+    uuid 1d64a082-3b95-47e6-a5c1-8f20e97b3c4d
+    summary "反証されうる仮説: 文書とシーンがずれているとき探索はシーンを信じる。ADR-054 の『Context が canonical』は文書とその投影については生きているが、探索の幾何はもう文書経由では取らない。反証されうる形は、ユーザーが『文書に書いた配置こそが意図であって、いじり途中のシーンは意図ではない』と読むこと — そのときは探索が下書きについて解いていることになる"
+    artifacts
+    - "docs/adr/ADR-054-ui-dsl-bff-grasp-walkthrough.md"
+
+    strategy ByGivingEachHalfOfTheGeometryItsOwnDeclaredSource
+    uuid 0a58f3d9-4c17-42b6-9e83-7b6120d54e8f
+    summary "幾何 (どこに・どれだけ・どう向いて) は live scene の decompile から、宣言 (graspFeature = どこを掴むか) は文書から ref で join する。1 つの源を選ぶのではなく、2 つの半分に別々の持ち主を宣言する — 半分ごとに持ち主が違うことこそが事実だからである。ref が Scene → DSL を往復することは ADR-055 の fixpoint law が保証しており、宣言をいま在る場所の物に付けることは ADR-129 (宣言はインスタンスより長生きする) をコードにした形でもある"
+
+        goal GeometryComesFromTheLiveScene
+        uuid c93e7b25-8d40-4a16-b57f-2e0184c9d637
+        summary "探索の幾何は live scene から来る。ビューポートで動かした物は、動かした場所で解かれる"
+        labels support-verified
+
+            solution TheSourceRuleInTheTHREEFreeLane
+            uuid 5b207ade-9c63-4f81-a304-6d19f8e572b1
+            summary "src/domain/searchGeometry.test.js (11 pass 2026-08-14) — 同じ ref を両側が持つ最小構成で、シーンの position 900 が文書の 600 に勝つことを問う。純粋モジュールなので THREE-free レーンが実際の規則を走らせる (stub ではない)。src/controller/GraspController.test.js (45 pass) が同じ主張を controller 経由で問う"
+            artifacts
+            - "src/domain/searchGeometry.test.js"
+            - "src/controller/GraspController.test.js"
+
+            solution TheInverseNowHasAConsumer
+            uuid e40c1856-7a29-4b93-8d51-93f7b2604aec
+            summary "src/SearchGeometryOwnership.test.js (3 pass 2026-08-14) — production から decompileLayout を呼ぶ箇所が 1 以上であることを問う。ADR-055 から ADR-132 までこの数は 0 だった。0 に戻ったら『探索はいま画面に在るものについて解く』は静かに空洞化するので、逆向きに数える"
+            artifacts
+            - "src/SearchGeometryOwnership.test.js"
+            - "src/service/SceneService.js"
+
+        goal DeclarationsSurviveTheJoin
+        uuid 8f3a5c71-2b46-40d9-a627-0c95e73b1d84
+        summary "文書に書かれた掴む場所の宣言は、幾何がシーンから来ても失われない (ADR-119 D3 の嘘を作らない)"
+        labels support-verified
+
+            solution TheJoinAndItsOrphanCensus
+            uuid 2d719b48-5f03-4e62-b195-7ac6083e1902
+            summary "src/domain/searchGeometry.test.js (11 pass 2026-08-14) — ref で join された graspFeature が生き延びること、シーンにしか居ない実体には宣言が捏造されないこと (未宣言は状態であって欠落ではない — ADR-129 D1)、入力 DSL が変異しないことを問う。孤児 (文書が宣言したのにシーンに実体が無い ref) は declarationJoinCensus が数える — 母集団は join の出力ではなく文書の宣言である。出てきたものを辿ると、失われた宣言は永久に 0 件に見える"
+            artifacts
+            - "src/domain/searchGeometry.test.js"
+            - "src/domain/searchGeometry.js"
+
+            assumption TheOrphanCensusIsCountedButNotShown
+            uuid 9a6d0f27-3e51-4b84-a069-1c74829e3b50
+            summary "反証されうる仮説: 孤児になった宣言を数えられれば足りる。今日 declarationJoinCensus に呼び手は居ない — ADR-115 の形 (宣言は在るが読む機械が無い) をこの ADR 自身が 1 つ作った。消費者を付けなかったのは出す場所 (パネルのどこに、どんな語で) が未決だからで、『対象外』ではなく まだ決めていない。DEF-035 が受ける"
+            artifacts
+            - "docs/DEFERRAL_LEDGER.md"
+
+        goal TheJoinIsExercisedOnMovedRealGeometry
+        uuid 7c14e3f9-6a82-4d05-b731-58e0926fd4a3
+        summary "文書を読み込んだ状態で Solid をビューポートで動かしたとき、宣言が動いた先の物に付いてくることを実機で確かめる — D2 の核心はここであり、今日そこを通した証拠は無い"
+        labels support-exploring
+
+            assumption TheUnitFixtureStandsInForTheRealRoundTrip
+            uuid 8a35c091-6b74-42e7-9d18-4f0273e5b1ca
+            summary "反証されうる仮説: 同じ ref を両側に持つ最小 fixture が実機の往復を代表する。実際に代表していない可能性が高いのは、ref の復元が id の prefix 剥がしに依存しており (LayoutDecompiler)、実機の id 生成規則と文書の ref がずれた瞬間に join は静かに 0 件になるからである — そのとき宣言は「無い」ように見え、対象は derived として通る。満期=GREP:e2e/grasp-scene-source.spec.js::declared (宣言付きのシーンを通す実機回帰が書かれた時点で、この goal は solution へ昇格する)"
+            artifacts
+            - "src/layout/LayoutDecompiler.js"
+            - "e2e/grasp-scene-source.spec.js"
+
+    strategy ByRemovingTheDestructiveVerbFromTheVocabulary
+    uuid 4e8215c6-9b37-42a0-8d64-0f19735ae2b8
+    summary "入口が破壊しないことを条件分岐で守るのではなく、破壊する動詞そのものをコードから消す。D1 で『文書が無いと探索できない』が消えたので quickStartExample の存在理由が消えており、ガードではなく削除が可能になった (順序が逆だと改悪になる — 探索できるようにする前に入口を消すと、ユーザーは何もできなくなる)"
+
+        goal TheEntranceLoadsNoDocumentNobodyAskedFor
+        uuid 6b90c4e3-7d18-4a25-93f0-2e5187a6d94c
+        summary "grasp search を開くことで、ユーザーが置いた実体が 1 つも消えない"
+        labels support-verified
+
+            solution TheSurvivalSetInBothLanes
+            uuid 3a5e8712-0c94-4d6b-8f21-79b0264e3a5d
+            summary "e2e/grasp-scene-source.spec.js (2 pass 2026-08-14) — ロボットを 1 台足してから openGrasp し、開く前後の実体を集合として比べて差が空であることを問う。個数ではなく集合で比べるのは、消滅には状態が無いから (ADR-131): 同数の別物に入れ替わった場合に個数比較は緑を出し、それがまさにこの欠陥の形である。単体側は src/controller/GraspController.test.js が『quickStartExample を呼んだら fail』として書く"
+            artifacts
+            - "e2e/grasp-scene-source.spec.js"
+            - "src/controller/GraspController.test.js"
+
+            solution TheNonVacuityCheck
+            uuid 1f7c60b9-4a28-43e5-b09d-8e5237014c26
+            summary "旧 openGrasp の分岐を一時的に戻して単体レーンを再実行し、2 件 fail することを確認した (2026-08-14)。検査が空回りしていないことの直接証拠。加えて退役検査の母集団側 — 変更前のコードには 6 箇所ヒットがあり、変更後は 0 件"
+
+        goal TheRetiredShapesAreGoneFromTheVocabulary
+        uuid 8d26b53f-1c74-4e09-a583-6b90148c2e7d
+        summary "quickStartExample / GRASP_QUICKSTART_TEMPLATE_ID / ensureRobotFrames({seed}) / addRobot({entry}) の 4 つがコードから消えている — 使われていないだけでは足りない"
+        labels support-verified
+
+            solution TheRetirementCensus
+            uuid 5c81b407-9e36-42d1-a740-3f2069b85d19
+            summary "src/SearchGeometryOwnership.test.js (3 pass 2026-08-14) — 退役した形を名前で列挙し、production コード (コメント除去済み) での出現個数 0 を問う。退役の腐敗は違反を見逃すのではなく緑を出す (ADR-103 の DS_PENDING が廃止後 3 リリース enum に残った) ので、消したこと自体を数える"
+            artifacts
+            - "src/SearchGeometryOwnership.test.js"
+
+    strategy ByMakingTheBootSceneAgreeWithItsOwnCardinality
+    uuid 7a34d0e5-2b91-4c68-a053-8f47196d2b30
+    summary "初期シーンが保持する台数と提示する台数を一致させる。可視性の既定を反転させるのではなく seed 自体をやめたのは、ADR-090 が 0 台を一級市民にした後で boot だけがそれに反対していたからである — 反対をやめれば既定の議論そのものが要らない。ROBOT_BASE_SEEDED の既定 false は残る (読み込んだシーンに入っていたロボットは他人のセルの家具であって、ユーザーがいま頼んだものではない)"
+
+        goal TheBootSceneHoldsZeroRobotsAndSaysSo
+        uuid 4b5817ca-3d29-40f7-9e16-2c60875f1a94
+        summary "起動時のロボット台数は 0。見えない 1 台を持たない — 見えない実体は「在る」と「無い」の区別を持たないので、基数 1 を基数 0 として提示することになる"
+        labels support-verified
+
+            solution TheSeedSiteCountAndTheLiveRoster
+            uuid 9e02b746-5c38-4a91-b6d0-71f4835e0c92
+            summary "src/RobotRosterAuthority.test.js (1 pass 2026-08-14) — seed する経路の個数 0 を問い、逆向きに upgrade の呼びが残っていること (規則が対象ごと消えていない) も問う。ADR-090 では 1 を問うていた同じ検査が、ADR-132 で 0 になった。実機は e2e/grasp-scene-source.spec.js が起動直後の getRobots().length === 0 を問う"
+            artifacts
+            - "src/RobotRosterAuthority.test.js"
+            - "e2e/grasp-scene-source.spec.js"
+
+    strategy ByShowingWhichSourceAnsweredEachHalf
+    uuid 2c7f4906-8b13-45de-a127-6e0592318f4b
+    summary "geometrySource / declarationSource を名前付きの値として返し、パネルに出す。「文書が何も宣言していない」と「文書を読んでいない」は同じ対象を生むので、源だけがこの 2 つを区別する — ADR-120 が閉じたスコア層で見つけたのと同じ、鍵の不在が運ぶ区別である"
+
+        goal TheSourceOfEachHalfIsVisibleNotInferred
+        uuid 6d1a93e8-4f07-42b5-9c81-05e73629d4af
+        summary "どちらの源が各半分に答えたかが画面に出ており、未宣言の源は既定へ倒れずに throw する"
+        labels support-verified
+
+            solution TheDeclaredLabelTableAndItsThrow
+            uuid 0b8d5f31-7c46-49a2-8e05-24917b3e6a08
+            summary "src/domain/searchGeometry.test.js — 母集団を SOURCE の全メンバーとして列挙し、各々が画面の語を持つことと、未宣言の源で throw することを問う (在るラベルを辿るのではなく覆うべき種を数える)。パネル側は GraspSearchPanel.jsx が sourceLabel を通して描く"
+            artifacts
+            - "src/domain/searchGeometry.test.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"

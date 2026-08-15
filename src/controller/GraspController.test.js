@@ -109,7 +109,16 @@ function fakeRobotScene() {
   }
 }
 
-function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true } = {}) {
+/**
+ * @param {object} opts
+ * @param {object|null} [opts.sceneDsl]  live-scene Layout DSL (ADR-132 D1). When
+ *   given, the fake SceneService exposes `decompileToLayoutDsl` and the controller
+ *   resolves geometry from it — the real production shape. When omitted, the fake
+ *   has no decompiler at all, which is the DECLARED `SOURCE.DOCUMENT` outcome
+ *   (`resolveSearchLayout`), not a silent degrade: the older tests below keep
+ *   asserting the document path on purpose.
+ */
+function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true, sceneDsl = null, sceneWarnings = [] } = {}) {
   const robot = robotScene ? fakeRobotScene() : { scene: undefined, service: {} }
   return {
     _uiView: {
@@ -120,6 +129,7 @@ function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation
     _service: {
       bff,
       ...robot.service,
+      ...(sceneDsl ? { decompileToLayoutDsl: () => ({ dsl: sceneDsl, warnings: sceneWarnings }) } : {}),
       async connectBff() { if (connectSets !== undefined) this.bff = connectSets },
     },
     _ctxService: {
@@ -165,7 +175,13 @@ test('openGrasp seeds idle + surfaces the N panel when a layout is renderable', 
   const { gc, store, grasp } = setup({})
   gc.openGrasp()
   assert.equal(grasp().status, 'idle')
-  assert.deepEqual(grasp().layout, { version: 'layout/1.0', entities: 2 })
+  // The meta carries WHERE each half came from (ADR-132 D3). This fake service has
+  // no decompiler, so the document is both halves — a named outcome, and the fact
+  // that it is named here is the point: a silent fallback would read identically.
+  assert.deepEqual(grasp().layout, {
+    version: 'layout/1.0', entities: 2,
+    geometrySource: 'document', declarationSource: 'document', unconvertible: 0,
+  })
   // The seeded slice IS the panel's availability; the entry only has to make its
   // host visible (ADR-106 D3). No floor tab is selected — the floor is not the host.
   assert.equal(store.getState().nPanelVisible, true)
@@ -191,30 +207,56 @@ test('openGrasp does NOT open the floor when a doc is loaded (ADR-106 D3)', () =
   assert.equal(grasp().status, 'idle')
 })
 
-test('openGrasp with no context auto-loads the starter and opens the panel (fast entry)', async () => {
-  const { gc, ctrl, store, grasp } = setup({ isNegotiation: false, loaded: false })
-  let requested = null
-  // Stub the ctxCtrl quick-start: mark negotiation live + a renderable layout,
-  // mirroring a real example load, and resolve true.
-  ctrl._ctxCtrl.quickStartExample = async (id) => {
-    requested = id
-    ctrl._ctxCtrl.isNegotiation = true
-    ctrl._ctxService.loaded = true          // a context now exists (layout renderable via getCompiled)
-    return true
-  }
+test('openGrasp with NO document searches the live scene, and loads nothing (ADR-132 D1/D4)', () => {
+  // The reported defect: a user modelled a robot and an object with no Context
+  // started, pressed grasp search, and the app loaded `cell_robotics` over the
+  // top of it — their scene gone, the starter's 「TCP 教示点 pick / place」 in its
+  // place. The entrance now reads the scene it was asked about.
+  const { gc, ctrl, store, grasp } = setup({ isNegotiation: false, loaded: false, layoutDsl: null, sceneDsl: LAYOUT })
+  // A quick-start the entrance could reach for, if it still reached: calling it
+  // fails the test. This is the assertion the old version of this file could not
+  // make, because the behaviour it asserted WAS the call.
+  let loadAttempts = 0
+  ctrl._ctxCtrl.quickStartExample = async () => { loadAttempts += 1; return true }
+
   gc.openGrasp()
-  await Promise.resolve(); await Promise.resolve()   // let the quick-start promise settle
-  assert.equal(requested, 'cell_robotics')
+
+  assert.equal(loadAttempts, 0, 'the entrance must not load a document nobody asked for')
   assert.equal(grasp().status, 'idle')
+  assert.equal(grasp().layout.geometrySource, 'scene')
+  assert.equal(grasp().layout.declarationSource, 'none', 'no document ⇒ "nobody declared", a state (原則 #31)')
   assert.equal(store.getState().nPanelVisible, true)
 })
 
-test('openGrasp with no context and no example loader falls back to honest guidance', () => {
-  const { gc, ctrl, store } = setup({ isNegotiation: false, loaded: false })
-  // Default fake ctxCtrl has no quickStartExample — the THREE-free minimal stub.
+test('openGrasp guides (no load) when the SCENE is empty, not merely undocumented', () => {
+  const { gc, ctrl, store, grasp } = setup({ isNegotiation: false, loaded: false, layoutDsl: null })
+  let loadAttempts = 0
+  ctrl._ctxCtrl.quickStartExample = async () => { loadAttempts += 1; return true }
   gc.openGrasp()
+  assert.equal(loadAttempts, 0)
+  assert.equal(grasp(), null)
   assert.equal(ctrl._uiView.toasts.at(-1).opt.type, 'warn')
   assert.equal(store.getState().nPanelVisible, false)
+})
+
+test('live geometry wins over the document, and the document keeps its declaration (ADR-132 D2)', () => {
+  // Same ref in both sources: the scene says where the body IS (it was moved),
+  // the document says where to GRASP it. Losing either half is a shipped defect —
+  // stale samples (ADR-129) or an ignored declaration (ADR-119 D3).
+  const moved = {
+    version: 'layout/1.0',
+    entities: [{ ref: 'widget', type: 'Solid', name: 'Widget',
+      position: { x: 900, y: 0, z: 400 }, dimensions: { x: 60, y: 60, z: 40 } }],
+  }
+  const declared = layoutWithFeature({ kind: 'faces', faces: [{ face: '+x' }, { face: '-x' }] })
+  const { gc, store } = setup({ loaded: true, layoutDsl: declared, sceneDsl: moved })
+  gc.openGrasp()
+  const targets = store.getState().context.graspTargets
+  assert.equal(targets.list.length, 1)
+  assert.equal(targets.feature.state, 'declared-faces', 'the document’s declaration survived the join')
+
+  const target = gc._selectedTarget()
+  assert.equal(target.position.x, 900, 'geometry came from the live scene, not the stale document')
 })
 
 // ── runGraspSearch: happy path ─────────────────────────────────────────────────
@@ -258,7 +300,7 @@ test('掴む対象が宣言されていない layout では no-target で止ま�
   const g = grasp()
   assert.equal(g.status, 'no-target')
   assert.equal(g.targetCount, 0)
-  assert.match(g.reason, /no solid with graspable geometry/i)
+  assert.match(g.reason, /no solid in the scene has graspable geometry/i)
 })
 
 test('掴める対象が N 個あって未選択なら no-target — 先頭へ既定で倒さない (ADR-117)', async () => {

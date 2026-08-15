@@ -13,6 +13,35 @@ import { test, expect } from '@playwright/test'
 
 const deleteButtons = (page) => page.locator('[aria-label="Delete"]')
 
+/**
+ * Add one robot through the user's own entry (Shift+A ▸ Robot).
+ *
+ * The boot scene holds ZERO robots since ADR-132 D5 — it used to seed one, hidden,
+ * so the scene carried cardinality 1 while presenting cardinality 0. Tests that
+ * need a robot therefore create one the way a user does, which is also the only
+ * path that produces a VISIBLE robot (ADR-096 §Decision 3).
+ */
+/**
+ * The Outliner row for an entity, by EXACT name.
+ *
+ * `getByText(name).locator('..')` is not enough once the entity is SELECTED: the
+ * active-object header echoes the name, so the locator matches twice and Playwright
+ * refuses in strict mode. Adding a robot selects it, which is why this only started
+ * mattering when ADR-132 D5 made these tests create their own robot instead of
+ * inheriting a boot-seeded (and unselected) one. Scoping to the draggable rows keeps
+ * "the row" unambiguous, and `has:` with exact text keeps `robot_base` from matching
+ * `robot_base_2`.
+ */
+function outlinerRow(page, name) {
+  return page.locator('[draggable="true"]').filter({ has: page.getByText(name, { exact: true }) }).first()
+}
+
+async function addRobot(page) {
+  await page.locator('#canvas-container canvas').click()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Robot', { exact: true }).click()
+}
+
 async function boot(page) {
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -425,11 +454,18 @@ test('experience layer renders under prefers-reduced-motion (degraded, not dead)
 test('deleting the robot asks first, and a template load does not resurrect it (ADR-090)', async ({ page }) => {
   // The two defects ADR-090 measured, in one flow. Before: the ✕ took the robot
   // (and its tcp child) away with NO dialog and no toast (§力学(2)), and the very
-  // next scene entry re-seeded it because `ensureRobotFrames` "repaired" every
+  // next scene entry re-seeded it because the scene service "repaired" every
   // entry path — the seed rule outranked the user's scene (§力学(4)).
+  //
+  // ADR-132 D5 removed the boot seed, so the robot this test deletes is now one
+  // the USER adds. That is the stronger premise, not a weaker one: the point of
+  // ADR-090 is that the scene — not a rule — decides how many robots exist, and a
+  // robot the user created and then deleted is exactly the case the seed rule used
+  // to overrule.
   const errors = await boot(page)
+  await addRobot(page)
 
-  const robotRow = page.getByText('robot_base', { exact: true }).locator('..')
+  const robotRow = outlinerRow(page, 'robot_base')
   await robotRow.hover()
   await robotRow.locator('[aria-label="Delete"]').click()
 
@@ -454,11 +490,12 @@ test('deleting the robot asks first, and a template load does not resurrect it (
 test('a second robot can be added and is a distinct entity (ADR-090 G1)', async ({ page }) => {
   const errors = await boot(page)
 
-  // Shift+A → Robot. The entry is unconditional (it is the way OUT of 0 robots),
-  // unlike "Coordinate Frame", which needs a selected parent.
-  await page.locator('#canvas-container canvas').click()
-  await page.keyboard.press('Shift+A')
-  await page.getByText('Robot', { exact: true }).click()
+  // Two robots, both user-added (ADR-132 D5 removed the boot seed — the scene
+  // starts at zero, which is the state ADR-090 made first-class). Shift+A → Robot
+  // is unconditional (it is the way OUT of 0 robots), unlike "Coordinate Frame",
+  // which needs a selected parent.
+  await addRobot(page)
+  await addRobot(page)
 
   // Two robots now: distinct rows, each wearing the ROBOT badge that is keyed off
   // the DECLARED role (a name-keyed badge would have missed this second base).
@@ -467,23 +504,25 @@ test('a second robot can be added and is a distinct entity (ADR-090 G1)', async 
   await expect(page.getByText('tcp_2', { exact: true }).first()).toBeVisible()
   expect(await page.getByText('ROBOT', { exact: true }).count()).toBe(4)
 
-  // One eye moves ONE arm (ADR-090): the boot robot ships hidden, the just-added
-  // one is drawn. A single shared RobotStage could not even express this — and the
-  // aria-label assertions below/above cannot see it, since they read the row, not
-  // the scene.
+  // Both are DRAWN — a robot the user asked for appears (ADR-096 §Decision 3 /
+  // 原則 #11). Before ADR-132 the first row here was the boot seed and shipped
+  // hidden; that asymmetry is gone, so the per-robot keying below is now tested by
+  // hiding one rather than by revealing the one that started hidden.
   const roster = await page.evaluate(() => window.__easyExtrude.robotState())
   expect(roster.map(r => r.label)).toEqual(['robot_base', 'robot_base_2'])
-  expect(roster.map(r => r.skeletonVisible)).toEqual([false, true])
+  expect(roster.map(r => r.skeletonVisible)).toEqual([true, true])
   expect(roster.every(r => r.hasTcp)).toBe(true)
 
-  // Revealing the first robot leaves the second one alone (per-robot keying).
-  const firstRow = page.getByText('robot_base', { exact: true }).locator('..')
+  // One eye moves ONE arm (ADR-090): hiding the first leaves the second drawn.
+  // A single shared RobotStage could not even express this — and the aria-label
+  // assertions below/above cannot see it, since they read the row, not the scene.
+  const firstRow = outlinerRow(page, 'robot_base')
   await firstRow.hover()
-  await firstRow.getByRole('button', { name: 'Show' }).click()
+  await firstRow.locator('[aria-label="Hide"]').click()
   await expect
     .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState()))
       .map(r => r.skeletonVisible))
-    .toEqual([true, true])
+    .toEqual([false, true])
 
   // Undo removes the pair together (one command owns the base + tcp pairing).
   await page.locator('#canvas-container canvas').click()
@@ -502,21 +541,26 @@ test('the Outliner eye round-trips an entity between hidden and shown (ADR-087)'
   // sending the same argument — the robot could be revealed once and then never
   // hidden again, with the click consumed and nothing happening (#11).
   const errors = await boot(page)
+  await addRobot(page)
 
-  // robot_base ships HIDDEN on the default scene (ADR-089 follow-up), so its
-  // eye offers the "Show" action and is visible without hover.
-  const row = page.getByText('robot_base', { exact: true }).locator('..')
-  const eye = row.getByRole('button').first()
-  await expect(eye).toHaveAttribute('aria-label', 'Show')
-
-  // Show → the eye flips to the "Hide" action …
+  // The robot the user just added ships SHOWN (ADR-096 §Decision 3 / 原則 #11).
+  // ADR-132 D5 removed the boot seed that used to ship HIDDEN, so this round trip
+  // now starts from the other end — which is the same claim, and the direction that
+  // actually regressed: the frozen flag made the SECOND toggle impossible, so a
+  // round trip has to cross the toggle twice whichever end it starts from.
+  const row = outlinerRow(page, 'robot_base')
   await row.hover()
-  await eye.click()
-  await expect(eye).toHaveAttribute('aria-label', 'Hide')
+  const eye = row.locator('[aria-label="Hide"]')
+  await expect(eye).toBeVisible()
 
-  // … and hiding again works, which the frozen flag made impossible.
+  // Hide → the eye flips to the "Show" action …
   await eye.click()
-  await expect(eye).toHaveAttribute('aria-label', 'Show')
+  await expect(row.locator('[aria-label="Show"]')).toBeVisible()
+
+  // … and showing again works, which the frozen flag made impossible.
+  await row.hover()
+  await row.locator('[aria-label="Show"]').click()
+  await expect(row.locator('[aria-label="Hide"]')).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
@@ -540,6 +584,33 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
   for (const o of atBoot) {
     expect(o.drawn, `${o.name}: 行が語る値と描画が食い違う`).toBe(o.explicit || o.contextual !== null)
   }
+
+  // 症状 1 の鏡像 — **ユーザーが足したロボットの行も嘘をつかない** (ADR-132)。
+  // これは ADR-096 が閉じたはずの主張が、閉じていなかった経路である: `addRobot` は
+  // base フレームを作った時点で `objectAdded` を出すが、robotRole を刻むのはその
+  // 後なので、行が目を seed する瞬間そのフレームは**ただの CoordinateFrame**に
+  // 分類され、宣言された既定 `false` を拾っていた。軸はその直後に true へ直され
+  // メッシュも追従したが、**行に伝える経路が無かった**。結果、腕は描かれているのに
+  // 行の目は "Show" と言い続けていた。
+  //
+  // boot の seed が在ったあいだ誰も見なかったのは、皆が見ていたロボットが seed の
+  // ほうで、そちらの既定は本当に false だったから。D5 が seed を消して add 経路が
+  // **唯一の経路**になった日に見えた — 欠陥が生まれたのではなく、隠れ場所が無く
+  // なった。数えるのは行が語る値と描画の一致で、ここは「足した直後」を問う。
+  await addRobot(page)
+  const afterAdd = await state()
+  const addedBase = afterAdd.find(o => o.name === 'robot_base')
+  expect(addedBase.explicit, 'ユーザーが足したロボットは見える (原則 #11)').toBe(true)
+  const baseRow = outlinerRow(page, 'robot_base')
+  await baseRow.hover()
+  await expect(baseRow.locator('[aria-label="Hide"]'),
+    '行の目が「Show」= 隠れていると言っているのに腕は描かれている (ADR-096 G1 の破れ)').toBeVisible()
+
+  // ADR-132 D5: the scene no longer seeds a robot, so the `tcp` frame 症状 2 is
+  // about must be created first. It is added HERE, after the 症状 1/3 snapshot,
+  // because 症状 1 is a claim about BOOT — and a user-added robot_base ships shown
+  // by declaration (ADR-096 §Decision 3), so folding it into the boot count would
+  // quietly change what that count means rather than test it.
 
   // 症状 2 — ONE click on the tcp eye changes something. It used to send
   // "hide" to something already hidden: the input was consumed, nothing moved.
@@ -734,7 +805,15 @@ async function selectRow(page, name) {
   await page.locator('[draggable]').filter({ hasText: name }).first().click()
 }
 
-/** robot_base をキューブの真上へ運び、その後の placement 行を返す。 */
+/**
+ * robot_base をキューブの真上へ運び、その後の placement 行を返す。
+ *
+ * ロボットは**呼び手が先に作る** (ADR-132 D5 でブートは 0 台)。ここで作らないのは、
+ * 呼び手の 1 本が運ぶ*前*の placement 行を読むからで、helper 側で作ると「作った直後」
+ * と「読んだ時点」がズレる。運ぶ相手が「起動時から在ったもの」から「ユーザーが置いた
+ * もの」に変わっただけで、ADR-098 が問う規則 (載る/載らないは種ではなく方針が決める)
+ * は同じである。
+ */
 async function carryRobotOverCube(page, { escapeAssist = false } = {}) {
   const rows  = await page.evaluate(() => window.__easyExtrude.placementState())
   const robot = rows.find(r => r.name === 'robot_base')
@@ -755,6 +834,7 @@ async function carryRobotOverCube(page, { escapeAssist = false } = {}) {
 
 test('ロボットもキューブと同じ規則で面に載る (ADR-098 G1/G2 — 当事者の報告に 1:1)', async ({ page }) => {
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   // 前提: 両者は同じ方針を宣言している。症状が方針の差でないことを先に固定する
   // — ここが違っていたら、以下の差は「正しく違う」であって欠陥ではない。
@@ -778,6 +858,7 @@ test('同じジェスチャで S を押すとロボットは載らない (ADR-09
   // 片方だけでは「ジェスチャがそもそも効いていない」可能性を排除できない
   // (ADR-097 の回帰が採った形)。逃げ道が効くことも同時に示す。
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   const { after } = await carryRobotOverCube(page, { escapeAssist: true })
   const robot = byName(after, 'robot_base')
@@ -793,6 +874,7 @@ test('free と宣言された CF は同じジェスチャで載らない (ADR-09
   // なので、キューブの真上へ運んでも天面へは吸い付かない (アームの先端は
   // 空中に在ってよい)。
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   const atBoot = await placementRows(page)
   const tcp  = byName(atBoot, 'tcp')
@@ -856,6 +938,7 @@ async function samplesUnderRepeatedRequest(page, name, { select = true, repeats 
 
 test('同じ要求を繰り返してもロボットの pose は変わらない (ADR-101 — 当事者の報告に 1:1)', async ({ page }) => {
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
 
   const samples = await samplesUnderRepeatedRequest(page, 'robot_base')
   const zs = samples.map(s => Number(s.bottomZ.toFixed(6)))
@@ -925,6 +1008,7 @@ async function linkNetworkRows(page) {
 
 /** Cube → robot_base の Adjacent リンクを張り、LINK NETWORK パネルを開かせる。 */
 async function openLinkNetwork(page) {
+  await addRobot(page)                            // ADR-132 D5: boot holds no robot
   await selectRow(page, 'Cube')
   await page.keyboard.press('l')
   await selectRow(page, 'robot_base')             // link mode ではこれが「相手」
@@ -1133,6 +1217,7 @@ test('Robot を選ぶと N パネルから grasp へ 1 クリックで届く (AD
   // 閉じるか。ADR-085 が既に無フォームの入口を作ってあるので、これは新機能では
   // なく**入口の付け替え**である。
   const errors = await boot(page)
+  await addRobot(page)                    // ADR-132 D5: boot holds no robot
 
   await selectRow(page, 'robot_base')
   await page.keyboard.press('n')          // N パネルを開く (デスクトップの入口)
@@ -1140,13 +1225,15 @@ test('Robot を選ぶと N パネルから grasp へ 1 クリックで届く (AD
   await expect(grasp).toBeVisible()
   await grasp.click()
 
-  // 1 クリックで grasp のパネルまで到達する (starter は自動で採られる — ADR-085)。
-  // ADR-106 D3 でこの到達先は「場の Grasp タブ」から**選んだロボットの隣**へ移った
-  // ので、パネルを開くために場を開く必要は無くなった。**ただしこの経路は場が開く** —
-  // 文書を 1 つも持っていないので starter を採用するからで、文書の採用が場を開くのは
-  // ADR-051 のテンプレ導線の振る舞い (ADR-106 とは直交)。ここで焼くのは「1 クリックで
-  // 着くこと」であって「場が開かないこと」ではない — 後者を主張すると、この経路が
-  // 実際に何をしているかを検査が偽ることになる。
+  // 1 クリックで grasp のパネルまで到達する。ADR-106 D3 でこの到達先は「場の Grasp
+  // タブ」から**選んだロボットの隣**へ移った。
+  //
+  // **ADR-132 D4 でこの経路の意味が変わった。** かつてここは「文書を 1 つも持って
+  // いないので starter を採用する」経路で、上のコメントは「この経路は場が開く」と
+  // 断っていた — 文書の採用が場を開くのは ADR-051 の振る舞いだから、と。その採用は
+  // ユーザーが選んだものではなく、**シーンを消していた**。いまは何も採らずに、
+  // いま画面に在るものを探索する。「1 クリックで着く」という焼くべき主張は同じで、
+  // 着いた先が別の誰かのセルではなくなった。
   await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
@@ -1501,6 +1588,10 @@ test('把持探索は Context ▾ から消え、選択の隣に理由つきで�
   await expect(page.getByText(/select a robot frame/i)).toBeVisible()
 
   // ③ 主語を選べば開く — 経路は消えていない、1 手増えただけである。
+  // ADR-132 D5: ブートは 0 台なので、主語はまず**存在させる**。②の「主語が無い」は
+  // その前に問い終えているので、この追加は②の主張を弱めない (むしろ②が本物の
+  // 0 台状態を通るようになった — 以前は「ロボットは在るが選んでいない」だけだった)。
+  await addRobot(page)
   await selectRow(page, 'robot_base')
   await expect(page.getByRole('button', { name: /Grasp candidates/ })).not.toHaveAttribute('aria-disabled', 'true')
 
