@@ -300,8 +300,8 @@ test('recoverProvenance joins the R6 Gap by variable (additive `gaps` field, ADR
   const svc = new ContextService(fakeScene())
   await svc.loadContext(conflict(), VC)
 
-  const sceneId = svc.getRefToId().get('robot_base_zone')
-  assert.ok(sceneId, 'robot_base_zone was compiled into the scene')
+  const sceneId = svc.getRefToId().get('robot_zone')
+  assert.ok(sceneId, 'robot_zone was compiled into the scene')
 
   const p = svc.recoverProvenance(sceneId)
   assert.equal(p.found, true)

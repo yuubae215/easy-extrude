@@ -125,7 +125,7 @@
       "strategy": "manual",
       "entities": [
         {
-          "ref": "robot_base_zone",
+          "ref": "robot_zone",
           "type": "AnnotatedRegion",
           "name": "ロボット基台設置許容ゾーン (メカ要求)",
           "description": "エンドエフェクタ体積要件から導かれた設置許容範囲",
@@ -142,7 +142,7 @@
     },
 
     "trace": [
-      { "from": "r_eoat_clearance", "to": "robot_base_zone", "kind": "constrains" }
+      { "from": "r_eoat_clearance", "to": "robot_zone", "kind": "constrains" }
     ]
   },
 
