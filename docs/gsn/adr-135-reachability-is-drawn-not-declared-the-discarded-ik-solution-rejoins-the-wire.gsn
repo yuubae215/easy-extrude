@@ -1,0 +1,79 @@
+GOALS adr135_reachability_is_drawn_not_declared_the_discarded_ik_solution_rejoins_the_wire
+
+goal ReachabilityIsShownAsThePosedArmNotOnlyABoolean
+uuid 0805bfa2-a6b6-4847-9c42-915a595b111f
+summary "把持候補・据付姿勢が実際にロボットの腕でリーチしていることを、ikSolvable の bool 一枚ではなく、その関節配置を取った腕の見た目として画面上で確認できる。到達不可の候補では関節解を捏造しない (rest poseのまま/非表示)。対象は既存の把持探索フロー(対象オブジェクトの表面候補)のみ — 対象なしの自由 TCP 姿勢チェックは明示的にスコープ外"
+state UnderReview
+labels adr-135, adr-127, adr-128, principle-29, principle-1, principle-4, app, ui, core
+
+    context RepresentativeSolutionIsAlreadyComputedAndDiscarded
+    uuid d00508cb-6311-4056-8c80-a84c08085ee3
+    summary "UniversalRobotsIkSolver.solve() (core/easy_extrude_core/engine/ur_solver.py:151) は UR の閉形式解析解から6関節の代表解を IkSolution(joints=tuple(best)) として既に計算している (ADR-127 D5 — 代表解は決定的に1つ、8解は出さない)。呼び出し側 ik_solvable() (feasibility.py:140-142) はその場で bool に握り潰して joints を捨てており、pipeline.py・契約 (ScoreBreakdown.ik_solvable: bool) もbool しか知らない"
+    artifacts
+    - "core/easy_extrude_core/engine/ur_solver.py"
+    - "core/easy_extrude_core/engine/feasibility.py"
+    - "core/easy_extrude_core/engine/pipeline.py"
+
+    context FrontendRenderingSeamWasDeliberatelyLeftOpenForThis
+    uuid 67f2ba2a-938f-43f5-992a-dba34d0e5119
+    summary "RobotStage.setJointValues(values) (src/view/RobotStage.js:71-76) の doc コメントは『Values come from outside this class (e.g. a future grasp-contract response)』と明記しており、まさにこの機能のために空けられていた継ぎ目。現状は _applyRestPose() (RobotStage.js:60-63) から固定値 ROBOT_REST_POSE を渡す1箇所でしか呼ばれていない"
+    artifacts
+    - "src/view/RobotStage.js"
+
+    context ObjectlessTeachPoseCheckHasNoExistingEntryPoint
+    uuid 1e5a78b3-3c2d-4335-a8c6-6dd31340b37f
+    summary "対象オブジェクトなしで自由に置いた TCP 姿勢だけを単体チェックする経路は存在しない。GraspController._graspTargets() (GraspController.js:591) が target.surfaceSamples を必須にしており、新設すれば新しい request 種別・BFF ルートという別の残しを開く。ユーザーはこのスコープを明示的に外し『把持候補のみでまず良い』を選んだ (2026-09-13 AskUserQuestion)"
+    artifacts
+    - "src/controller/GraspController.js"
+
+    justification WhyNotARealtimeJogTeachingFeature
+    uuid 6696857f-5743-424e-8da5-6571fdc38304
+    summary "却下案D (毎フレーム追従するリアルタイムティーチング) への反証: robotics-wasm (C++ KDL+ruckig) には現状 IK バインドが無く (bindings.cppに ChainIkSolverPos 系が未リンク)、想定される ComputeBackend の差し替え口 (ADR-053) も未配線のデッドコードで、実質新規サブシステムの立ち上げになる。ユーザーは『リアルタイムでなくてもいい、視覚的に確認したい』と要望を自ら絞った (2026-09-13)"
+
+    justification WhyNotASeparateSolutionOnlyEndpoint
+    uuid 89282642-7695-4919-9b2f-282d78496291
+    summary "却下案B (解専用の別エンドポイント/別フィールドを既存 ik_solvable と独立させる) への反証: 同じ候補について2回リクエストする形になり、候補のスコアと候補の解という2つの源に真実が分裂する (§1.1 違反)。1候補1レスポンスに同梱する方が単純"
+
+    strategy ByCarryingTheAlreadyComputedSolutionAcrossTheWireAndDrawingItAtTheExistingSeam
+    uuid 3997e1a0-2204-416b-9970-59d0557a1cc1
+    summary "新しい解法ロジックを一切追加せず、core/ が既に計算している代表解を (D1) 契約の閉kind union で運び、(D2) パイプラインが破棄せず持ち回り、(D3) RobotStage に唯一の新規描画入口を1つ作り、(D4) 既存の ADR-059 ghost hover/click-commit コールバックへ配線する。front/core の解く/描くの境界は一度も越えない"
+
+        goal ContractCarriesASolvedOrUnsolvedJointsUnion
+        uuid e23f84b7-f6dd-4532-9b47-2d8fc4ba3a45
+        summary "D1: grasp-search-response.schema.json の候補スコアに reachSolution を追加する — kind 判別の閉union ({kind:'solved', joints:number[6]} | {kind:'unsolved'})、additionalProperties:false、候補ごとに必ずどちらか一方を持つ (欄の省略は無い)。response 契約変更につき contractVersion を 5→6 に上げる (schema + contract-version.json を同一PR、ADR-082/084 §4)"
+        labels support-exploring
+
+            assumption ContractRoundTripTestsWillPinBothKinds
+            uuid e95ea882-cbc3-470c-85da-9efe821d4a2c
+            summary "core/tests/test_contract.py・test_contract_conformance.py に reachSolution の solved/unsolved 両ケースの往復テストを実装時に追加する計画。現時点では未実装 (Status: Proposed のADRであり本セッションではコードを書かない)"
+
+        goal CoreEnginePreservesTheSolutionInsteadOfDiscardingIt
+        uuid 598964e0-efc3-44ad-a57e-cfd0ef4ec3a2
+        summary "D2: feasibility.py / pipeline.py が IkSolution.joints を bool 判定の副産物として捨てず、契約出力まで持ち回る。実装 (ik_solvable を維持したまま隣で保持するか、solve() 呼び出しを一本化するか) は実装時に決める — 境界だけを本ADRで固定する"
+        labels support-exploring
+
+            assumption FkRoundTripCheckWillCatchSelfConsistentErrors
+            uuid f456036e-e001-436b-be58-5fbdc087f09a
+            summary "ADR-127実装時、肘の平面をx-zで解いて真値から約0.05radずれたが桁・符号とも妥当で値を見ても気づけず、捕まえたのはFK往復チェックだった (かつFK自身をDHから独立に固定していたから)。同じ罠を再発させないため、core/tests/test_engine.py に joints をFKへ通して元のcandidate poseへ往復することを確認するテストを実装時に追加する計画。未実装"
+
+        goal RobotStageHasASingleEntryDecidingWhichJointsToDraw
+        uuid 09a825af-eb9d-4859-86ff-a3bacef972ee
+        summary "D3: RobotStage.previewSolution(joints|null) を新設し、null→rest pose復帰・値あり→その関節配置、を1箇所で決める (原則#4、最後の書き込み勝ちの再発防止)。この入口はPosePolicyOwnership.test.jsが監視するSceneService発のpose決定閉包の対象外であることを本文で明示する (ビュー限定の一過性の演出であり、シーン実体のposeではない)。書き手が1つの間はcensus型の母集団監視の新設を見送る"
+        labels support-exploring
+
+            assumption ThreeCaseUnitTestWillPinTheEntryBehavior
+            uuid 064903e4-ae6f-4279-bed4-6d189a578fd2
+            summary "実装時に、null→rest pose / 値あり→その値 / 値あり→nullでrest poseに復帰、の3ケースを新規テストとしてRobotStage周りに追加する計画。未実装"
+
+        goal GraspSearchPanelWiresHoverAndCommitToThePreviewEntryWithoutStaleFrames
+        uuid 95f24f1b-4141-4be3-aeaa-2d3bd2332e87
+        summary "D4: ADR-059の既存hover-preview/click-commitコールバックの隣に、score.reachSolutionを見てRobotStage.previewSolution()を呼ぶ配線を足す。solvedならjoints、unsolvedまたはホバー解除ならnull。既存のikSolvableチップ表示は残す (置き換えではなく追加の確認手段)"
+        labels support-exploring
+
+            assumption RapidHoverTransitionSequenceTestWillCatchStaleFrames
+            uuid f8a1c2d3-4e5f-4061-8a7b-3c4d5e6f7081
+            summary "静的な単発ホバーの往復テストは、候補A→B→選択解除のように素早く連続で切り替えたときに古い解がレンダリングに残る競合 (ADR-098/101と同型の『1フレーム古い状態』) を見逃す。同じ要求を2回以上通す遷移シーケンス (A選択→B選択→選択解除を1テストにする) を実装時に追加する計画。未実装"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 55e6f1a2-9b3c-4d7e-8f01-2a3b4c5d6e7f
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は把持探索結果の信頼性検証 (デモ・現場検証で『本当にリーチするか』を確認する工数を削る) に効くもので、事業木側の対応する goal 名・uuid は未特定 — 次に事業木を読み直す機会に確定する"
