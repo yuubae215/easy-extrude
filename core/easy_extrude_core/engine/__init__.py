@@ -24,6 +24,7 @@ from .feasibility import (
     CollisionChecker,
     GraspChecker,
     IkSolution,
+    JointSolution,
     IkSolver,
     NaiveIkSolver,
     NaiveParallelJawGraspChecker,
@@ -46,6 +47,7 @@ from .pipeline import (
     SearchDiagnostics,
     SearchReport,
     problem_from_declaration,
+    reach_solution_of,
     search,
     search_report,
 )
@@ -71,6 +73,7 @@ from .types import (
 __all__ = [
     # 公開エントリ
     "search",
+    "reach_solution_of",
     "search_report",
     "problem_from_declaration",
     # 診断 (ADR-079: 判定の証明)
@@ -103,6 +106,7 @@ __all__ = [
     "graspable",
     "IkSolver",
     "IkSolution",
+    "JointSolution",
     "CollisionChecker",
     "VisibilityChecker",
     "GraspChecker",

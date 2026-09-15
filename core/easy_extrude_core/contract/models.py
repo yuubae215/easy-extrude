@@ -66,6 +66,40 @@ class GraspSearchRequest(_ContractModel):
     grasp_search: GraspSearchDeclaration
 
 
+class ReachSolutionSolved(_ContractModel):
+    """候補に届く**代表**関節配置 (契約 v6, ADR-135)。
+
+    解析解は最大 8 個あるが段階0 が問うのは可解性なので、ソルバが決定的に 1 つ選ぶ
+    (ADR-127 D5)。単位はラジアン、順序は宣言された `robot.kinematics` の鎖順
+    (ベース→フランジ) で **ちょうど 6**。
+    """
+
+    kind: Literal["solved"] = "solved"
+    # ワイヤ形は **list** (JSON の array)。エンジン側の `IkSolution.joints` は
+    # 不変な tuple だが、契約モデルはワイヤの形を持つのが仕事なのでここで写す —
+    # 準拠テストは model_dump() を JSON Schema に直接かけるため、tuple のままだと
+    # 「型は array」を満たさない。
+    joints: list[float] = Field(min_length=6, max_length=6)
+
+
+class ReachSolutionUndeclared(_ContractModel):
+    """関節配置を**誰も決めていない** (契約 v6, ADR-135)。
+
+    `robot.kinematics` 未宣言 = 手首コーン代理判定 (ADR-127 D3) が可解性だけを答えた
+    状態。クライアントは腕の姿勢を描いてはならない — 捏造した配置は「ソルバが決めた
+    事実」ではないので、ワイヤに載る他のすべてと性質が違う (ADR-060)。
+
+    **枝を持たせる理由** (原則 #31): 不在を「欄の省略」で示すと、未宣言と
+    「まだ実装していない生産者」が同じ形になる。正当な 0 は宣言させる。
+    """
+
+    kind: Literal["undeclared"] = "undeclared"
+
+
+# kind 判別の閉じた union。枝を足すのは契約の版を上げる意図的行為 (ADR-060 の統治)。
+ReachSolution = ReachSolutionSolved | ReachSolutionUndeclared
+
+
 class ScoreBreakdown(_ContractModel):
     """1 候補のスコア内訳 (ADR-074 / 契約 v4 でドメイン 5 段, ADR-081)。
 
@@ -85,6 +119,11 @@ class ScoreBreakdown(_ContractModel):
     objective_scores: dict[str, float] = Field(default_factory=dict)
     # 加重和の総合スコア (0-1 正規化値の重み付き和)。
     total_score: float = Field(ge=0.0)
+    # ソルバが決定した関節配置 (契約 v6, ADR-135)。kind 判別の閉じた union で、
+    # **必須**。判別しているのは到達可否ではなく「描ける関節ベクトルが在るか」で、
+    # 到達可否は上の `ik_solvable` が既に運んでいる (返る候補は短絡フィルタを
+    # 通っているので必ず True)。
+    reach_solution: ReachSolution = Field(discriminator="kind")
 
 
 class PoseCandidate(_ContractModel):

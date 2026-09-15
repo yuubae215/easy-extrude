@@ -72,15 +72,47 @@ def reach_miss(candidate: GraspCandidate, robot: Robot) -> float:
 # --- IK 可解性 (注入: Protocol + naive 既定) ---------------------------------
 
 
+# 閉形式が導出されている構造の関節数。可変のつまみではない (7 軸は「長い腕」ではなく
+# 別の腕であり、閉形式が存在しない)。
+_UR_JOINT_COUNT = 6
+
+
 @dataclass(frozen=True)
 class IkSolution:
-    """IK 解。段階0 は関節値の中身を契約境界に出さないため不透明でよい。
+    """IK が解けたことの**証人**。可解性だけを主張し、関節配置は主張しない。
 
-    `joints` は素朴版では占位 (naive ソルバは検証のためだけに 1 解を返す)。実ソルバに
-    差し替えると本物の関節値が入る。
+    `joints` は素朴版では占位 (naive ソルバは検証のためだけに 1 解を返す) — これは
+    描ける関節配置**ではない**。本物の関節配置を持つ解は下の `JointSolution` で、
+    区別は**型で**行う (原則 #2: 能力分岐はフラグや長さではなく型)。
+
+    かつてこの区別は要らなかった (関節値は契約境界に出なかった)。ADR-135 が
+    `joints` をワイヤに載せた瞬間、「占位の 1 個の数」と「6 関節の配置」を
+    取り違えると**捏造した腕**を描くことになったので、取り違えられない形にした。
     """
 
     joints: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class JointSolution(IkSolution):
+    """実際に描ける関節配置を伴う IK 解 (ADR-135)。
+
+    `IkSolution` の部分型なので `IkSolver` Protocol も既存の呼び出し側もそのまま動く。
+    契約に `reachSolution.kind = "solved"` として載せてよいのは**この型だけ**で、
+    判定は `isinstance` の 1 箇所 (`reach_solution_of`) が持つ。
+
+    関節数は**ちょうど 6**。足りない本数を 0 で埋めたりしない — 別機種の寸法で
+    解いた解が「解けた」と見分けがつかなくなるのと同じ失敗で、埋めた 0 は
+    「その関節は原点にある」という誰も決めていない主張になる (原則 #31)。
+    """
+
+    def __post_init__(self) -> None:
+        if len(self.joints) != _UR_JOINT_COUNT:
+            raise ValueError(
+                f"JointSolution には関節が {_UR_JOINT_COUNT} 本要る "
+                f"({len(self.joints)} 本が渡された) — 描ける関節配置でないものを "
+                "この型で包まない (ADR-135)"
+            )
 
 
 class IkSolver(Protocol):
@@ -138,7 +170,12 @@ class NaiveIkSolver:
 
 
 def ik_solvable(candidate: GraspCandidate, robot: Robot, solver: IkSolver) -> bool:
-    """注入ソルバで IK が解けるか (解の有無を bool に写すだけ)。"""
+    """注入ソルバで IK が解けるか。
+
+    **解そのものが要る呼び手はこれを呼ばない** — `solver.solve()` を直接呼んで
+    `IkSolution` を保持し、bool はその `is not None` から読む (ADR-135 D2)。
+    2 度解かせないための分業で、この関数は解を要らない呼び手のための便宜。
+    """
     return solver.solve(candidate, robot) is not None
 
 

@@ -25,7 +25,15 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # シールパッチ不足を "opening" の欄で報告すると、クライアントは名前が嘘をついている
 # 量でメーターを描く。リクエスト側の gripper は閉じたオブジェクトだったので
 # スキーマ更新は要るが、版上げを駆動しているのは response 側 (ADR-084 §4 の統治)。
-CONTRACT_VERSION = 5
+# v6: ScoreBreakdown に `reachSolution` を **必須**で追加 (ADR-135)。ソルバが既に
+# 決定している代表関節解を運ぶ — 今までは `ik_solvable()` が bool に握り潰して
+# その場で捨てていた。閉じた kind 判別 union (`solved` / `undeclared`) で、
+# 判別しているのは「到達可否」ではなく **描ける関節ベクトルが在るか**である:
+# 返る候補は短絡フィルタを通った = 必ず到達可能なので、到達不可の枝は原理的に
+# 存在しない。`undeclared` は「`robot.kinematics` が未宣言なので手首コーン代理
+# 判定が可解性だけを答えた」= 関節角は誰も決めていない、を**宣言**する枝
+# (欄の省略で示さない — 原則 #31)。**閉じた層への必須フィールド追加**なので版上げ。
+CONTRACT_VERSION = 6
 
 
 class ContractVersionMismatch(ValueError):

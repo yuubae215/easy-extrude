@@ -6,6 +6,9 @@ from .models import (
     GraspSearchRequest,
     GraspSearchResponse,
     PoseCandidate,
+    ReachSolution,
+    ReachSolutionSolved,
+    ReachSolutionUndeclared,
     ScoreBreakdown,
     SearchDiagnostics,
 )
@@ -46,6 +49,9 @@ __all__ = [
     "GraspSearchRequest",
     "GraspSearchResponse",
     "PoseCandidate",
+    "ReachSolution",
+    "ReachSolutionSolved",
+    "ReachSolutionUndeclared",
     "ScoreBreakdown",
     "SearchDiagnostics",
     # 推薦/類似レーン (ADR-077)

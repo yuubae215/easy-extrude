@@ -16,6 +16,8 @@ from contract_pkg import load_contract_json, load_request_schema, load_response_
 
 from easy_extrude_core.contract import (
     CONTRACT_VERSION,
+    ReachSolutionSolved,
+    ReachSolutionUndeclared,
     GraspSearchDeclaration,
     GraspSearchRequest,
     GraspSearchResponse,
@@ -87,7 +89,7 @@ def test_request_with_target_obstacles_sampling_conforms():
         Draft202012Validator(schema).validate(broken)
 
 
-def _score() -> ScoreBreakdown:
+def _score(reach_solution=None) -> ScoreBreakdown:
     return ScoreBreakdown(
         within_reach=True,
         visible=True,
@@ -96,6 +98,12 @@ def _score() -> ScoreBreakdown:
         graspable=True,
         objective_scores={"reach_margin": 0.8},
         total_score=0.8,
+        # 既定は solved (契約 v6, ADR-135)。既定を持たせるのは呼び出し側の便宜で、
+        # **両枝ともスキーマに通ることは下の専用テストが個別に焼く** — 既定だけを
+        # 通すと、使われていない枝が壊れても全部緑になる。
+        reach_solution=reach_solution or ReachSolutionSolved(
+            joints=(0.0, -1.0, 1.2, -1.8, -1.5708, 0.0)
+        ),
     )
 
 
@@ -243,3 +251,70 @@ def test_schema_rejects_unnormalized_objective_score():
     }
     with pytest.raises(Exception):
         Draft202012Validator(schema).validate(bad)
+
+
+# --- ADR-135: reachSolution の両枝がスキーマに通る -----------------------------
+
+
+def _response_with(score: ScoreBreakdown) -> dict:
+    resp = GraspSearchResponse(
+        candidates=[
+            PoseCandidate(
+                rank=1,
+                pose={
+                    "kind": "endEffector",
+                    "frame": {
+                        "position": [1.0, 2.0, 3.0],
+                        "orientation": [0.0, 0.0, 0.0, 1.0],
+                    },
+                },
+                score=score,
+            )
+        ],
+        diagnostics=_diagnostics(),
+    )
+    return resp.model_dump(by_alias=True)
+
+
+def test_reach_solution_solved_branch_conforms_to_schema():
+    wire = _response_with(_score())
+    rs = wire["candidates"][0]["score"]["reachSolution"]
+    assert rs["kind"] == "solved" and len(rs["joints"]) == 6
+    Draft202012Validator(load_response_schema()).validate(wire)
+
+
+def test_reach_solution_undeclared_branch_conforms_to_schema():
+    """未宣言の枝も**同じスキーマ**に通る。
+
+    既定 (solved) だけを焼くと、使われていない枝が壊れても全部緑になる — そして
+    `undeclared` こそ「robot.kinematics を送っていないクライアント」= 既定の
+    経路である。
+    """
+    wire = _response_with(_score(ReachSolutionUndeclared()))
+    rs = wire["candidates"][0]["score"]["reachSolution"]
+    assert rs == {"kind": "undeclared"}, "未宣言の枝に余計な欄が生えている"
+    Draft202012Validator(load_response_schema()).validate(wire)
+
+
+def test_reach_solution_is_required_by_the_schema():
+    """欄の省略は許さない (原則 #31)。
+
+    不在を「欄が無いこと」で示すと、`undeclared` という**宣言**と
+    「まだ実装していない生産者」が同じ形になり、区別が消える。
+    """
+    wire = _response_with(_score())
+    del wire["candidates"][0]["score"]["reachSolution"]
+    with pytest.raises(ValidationError):
+        Draft202012Validator(load_response_schema()).validate(wire)
+
+
+def test_schema_rejects_a_joint_vector_that_is_not_six_long():
+    """占位の解 (素朴ソルバの 1 個の角度) が `solved` として漏れたらスキーマで落ちる。
+
+    型側 (`JointSolution.__post_init__`) と契約側の二重の壁。どちらか一方だけだと、
+    もう一方を迂回する経路が将来生えたときに**捏造した腕**が出荷される。
+    """
+    wire = _response_with(_score())
+    wire["candidates"][0]["score"]["reachSolution"]["joints"] = [0.42]
+    with pytest.raises(ValidationError):
+        Draft202012Validator(load_response_schema()).validate(wire)

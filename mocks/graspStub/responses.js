@@ -81,6 +81,12 @@ function candidate(rank, totalScore, scores) {
       interferenceFree: true, graspable: true,
       objectiveScores: scores,
       totalScore,
+      // ADR-135: このスタブは IK を解かない (運動学を持たない) ので、関節配置は
+      // **誰も決めていない**。`undeclared` はその事実の宣言であって「到達不可」では
+      // ない。占位の値を `solved` として返すと、フロントは誰も決めていない腕を
+      // 描き、しかもそれは本物の解と見分けがつかない (ADR-120 と同じ形の欠陥が
+      // 生産者ごとに独立に住む)。
+      reachSolution: { kind: 'undeclared' },
     },
   }
 }
