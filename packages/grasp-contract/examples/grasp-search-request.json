@@ -1,5 +1,5 @@
 {
-  "contractVersion": 4,
+  "contractVersion": 6,
   "layoutVersion": "layout/1.0",
   "graspSearch": {
     "objectiveWeights": { "clearance": 0.6, "manipulability": 0.4 },
@@ -11,6 +11,6 @@
       "viewAxis": [0.0, 0.0, -1.0],
       "fovHalfAngle": 0.6
     },
-    "gripper": { "maxOpening": 0.08, "fingerClearance": 0.01 }
+    "gripper": { "kind": "parallelJaw", "maxOpening": 0.08, "fingerClearance": 0.01 }
   }
 }

@@ -218,7 +218,7 @@ const emptyByReach = {
     returned: 0,
     reachNearestMiss: 0.12,
     occlusionNearestMiss: null,
-    openingNearestMiss: null,
+    graspNearestMiss: null,
   },
 };
 test("empty result rejected by reach (numeric reachNearestMiss) conforms", () =>
@@ -238,7 +238,7 @@ const emptyByIk = {
     returned: 0,
     reachNearestMiss: null,
     occlusionNearestMiss: null,
-    openingNearestMiss: null,
+    graspNearestMiss: null,
   },
 };
 test("empty result with no reach rejections (null reachNearestMiss) conforms", () =>
@@ -285,7 +285,11 @@ for (const [label, d] of [
     // unmeasurable rejection: outside-FOV / missing contact pair), but they
     // must be null when their stage rejected nothing at all.
     if (d.rejectedByVisibility === 0) assert.equal(d.occlusionNearestMiss, null);
-    if (d.rejectedByGrasp === 0) assert.equal(d.openingNearestMiss, null);
+    // v5 (ADR-118) で `openingNearestMiss` は種別つきの `graspNearestMiss` へ
+    // 置き換わった。この行はその後も**古い名前を見ていた** — 契約から消えた鍵は
+    // 常に undefined なので、`== null` 系の比較なら永久に真を返す。退役した形を
+    // 検査に残すと違反を*見逃す*のではなく**緑を出す** (ADR-103)。
+    if (d.rejectedByGrasp === 0) assert.equal(d.graspNearestMiss, null);
   });
 }
 

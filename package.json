@@ -22,7 +22,7 @@
     "server:install": "pnpm --filter easy-extrude-bff install",
     "server:dev": "pnpm --filter easy-extrude-bff run dev",
     "server:start": "pnpm --filter easy-extrude-bff run start",
-    "test:contract": "pnpm --filter easy-extrude-bff run test:contract",
+    "test:contract": "pnpm --filter easy-extrude-bff run test:contract && pnpm --filter @easy-extrude/grasp-contract run test:contract",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"src/**/*.test.js\"",
     "test:adr": "node scripts/check-adr-status.mjs",

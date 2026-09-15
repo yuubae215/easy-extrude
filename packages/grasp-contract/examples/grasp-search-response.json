@@ -1,5 +1,5 @@
 {
-  "contractVersion": 4,
+  "contractVersion": 6,
   "candidates": [
     {
       "rank": 1,
@@ -17,7 +17,11 @@
         "interferenceFree": true,
         "graspable": true,
         "objectiveScores": { "clearance": 0.9, "manipulability": 0.7 },
-        "totalScore": 0.82
+        "totalScore": 0.82,
+        "reachSolution": {
+          "kind": "solved",
+          "joints": [0.0, -1.0, 1.2, -1.8, -1.5708, 0.0]
+        }
       }
     },
     {
@@ -33,7 +37,8 @@
         "ikSolvable": true,
         "interferenceFree": true,
         "graspable": true,
-        "totalScore": 0.55
+        "totalScore": 0.55,
+        "reachSolution": { "kind": "undeclared" }
       }
     }
   ],
@@ -48,6 +53,6 @@
     "returned": 2,
     "reachNearestMiss": 0.031,
     "occlusionNearestMiss": 0.008,
-    "openingNearestMiss": 0.012
+    "graspNearestMiss": { "kind": "opening", "shortfall": 0.012 }
   }
 }
