@@ -118,7 +118,6 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-025 | `docs/adr/ADR-076-core-api-endpoint-layer.md` | TS 側の HTTP 往復 conformance (BFF が中立 Schema に突き合わせる) が public 配線回で入ったとき。**2026-08-12 に Q1 の見出し絞り込み (ADR-124) が初回実行で見つけた** — `## Still deferred` 節に 5 か月在ったが、99 件の散文に埋もれて誰にも見えていなかった | ADR-076 | contract |
 | DEF-027 | `docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md` | **段の完了**を退役の発火事象にできるようになったとき。今日の発火は ADR の Status 遷移だけなので、「Phase N が完了したら消す」は D4 の二段構え (登録簿 → 起票された ADR の `Retires:`) を通る。順序表の段に**完了状態の機械可読な表現が無い**のが理由 (`- [x]` はあるが段の単位では読めない)。段が発火事象になれば D4 の迂回は不要になる | ADR-125 | app |
 | DEF-028 | `docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md` | cutoff (ADR-126) より前で木を持たない **11 本**の ADR (ADR-015/017/027/032/044/060/064/076/078/079/091) に `.gsn` を書くか、`DECLARED_TREELESS` に「書かない」と理由つきで宣言したとき。それまでその 11 本に紐づく残しは GSN 側から見えず、登録簿が受け続ける (だから ADR-126 D1 は「登録簿を畳む」ではなく「役割を分ける」)。既存 26 個の exploring への満期の後付けも同段 — 今日は機構の実証として 1 個だけ付けた | ADR-126 | app |
-| DEF-029 | `packages/grasp-contract/test/contract.test.mjs` · `packages/grasp-contract/examples/grasp-search-request.json` | 次に **contractVersion を意図的に上げる回** (ADR-122 D2 の `pick-sequence` が最有力)。そのとき response スキーマを触るので、`graspNearestMiss` の oneOf 枝に `properties.kind` を足す (今日 ajv strict がコンパイルできない理由) のが**ただ乗り**になる。同時に stale な example の `gripper.kind` を直し、ルート script + CI へ繋ぐ。満期=GREP:packages/grasp-contract/contract-version.json::contractVersion"\s*:\s*6 。**2026-08-14 に ADR-119 D1 の実装中に発見** — package.json に `test` script が在るのにルートからも CI からも呼ばれず、しかも走らせるとコンパイルで落ちる。宣言は在るが**読む機械が無い** (ADR-115 と同型)。両端の検証自体は BFF と `core/` の 2 本で成立しており、死んでいるのは 3 本目 | ADR-122 | contract |
 | DEF-033 | `src/components/Grasp/GraspSearchPanel.jsx` · `docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md` | 探索の設定 (ハンド仕様 / カメラ / 重み) が文書に住むようになったとき: 満期=GREP:schema/context-0.5.schema.json::gripper 。**ADR-129 が自分で見つけて切り出した 4 例目**で、同じ形 (宣言がインスタンスに寄生する) の残りである — これらは今日パネルの React state に住んでおり、**キーを持たない**: リロードで消え、export に載らず、undo の外に居る。`GraspController.previewGraspSamples` の doc コメントが「the hand kind lives in its form state, not in the document」と**正しく書いている**のが証拠で、書いた本人には見えていた事実が欄を持たないまま 3 日残った。ADR-129 の MVP に**入れない**理由は寿命の議論が違うからではなく、*どの実体に属するのか*が未決だから — ハンドはロボットの子か、独立した実体か、探索セッションの属性か。それは配置 (実体の属性であることが自明) と違って**新しい語彙を決める判断**で、ADR-129 の「語彙は既に在る、無いのは線だけ」という前提の外にある | ADR-129 | app |
 | DEF-034 | `docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md` | **名前をまだ持たない主張の載せ場所を決める ADR が起票されたとき** (満期はその ADR — ADR-125 D4 / DEF-020 と同じ二段構え)。ADR-129 D6。D0′ (記録は行為の側から取る) を素直に伸ばすと「押し出した量」「なぜこの向きか」「ここは触らせたくない」も記録対象になるが、**名前の付け方を決める判断がまだ無い** — 無名の主張は文書のどこに着くのか (実体の属性か独立した事実か)、3D はそれをどう見せるのか (見せなければ合意のしようがない — ADR-105)、名前は誰が与えるのか (既存の候補は合意の場 `proposeChange` / `approveProposal` — ADR-104)。**「対象外」と書かない**のが要点である: 原則 #29 の二状態でいえばこれは*契約あり*でも*明示的対象外*でもなく **まだ決めていない** で、対象外と書けば次にこの問いが来たとき「決着済み」に見える — ADR-129 の初稿が置いた「境界は語彙の有無」がまさにその形の嘘だった (ユーザー指摘で撤回: **語彙が先に在るなら 3D は要らない**。要求が言葉になっていないから 3D で見せて確定・合意する、というのがこのアプリの前提である)。**数えるのは主張の個数ではなく「判断が未了である」という 1 件** — 欄が無いものは数えられないので、個数を分母にしたら母集団を持たない表になる (ADR-102) | ADR-129 | app |
 | DEF-011 | `docs/adr/ADR-113-one-claim-on-the-screen.md` | 2 つのギャラリー (起動ホーム = Layout DSL / New Project = Context DSL) の**語彙の作り分け**が済んだとき — 見出し・説明・破壊性の書き方が区別され、読み取り専用の表示 (`Unexamined`) の出口がシーン置き換えを伴うことが押す前に分かること。ADR-113 は**構造の側**だけを閉じた (2 枚同時が表現不能) ので、語彙は未着手 | ADR-113 | ia |
@@ -184,6 +183,27 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
   人が思い出す必要があった。さらに GSN 側の G4 が同じ発火を独立に検出し、
   「exploring を solution へ昇格させよ」と言ってきた — **登録簿と論証木が同じ事象を
   別の角度から問うた**最初の例である (ADR-126 D1 の役割分担が働いた)。
+  DEF-029 (2026-08-14 追加 / **2026-09-15 決着**、ADR-135) は満期が
+  **他人の版上げに便乗する**形で書かれていた唯一の例である:
+  `満期=GREP:packages/grasp-contract/contract-version.json::contractVersion"\s*:\s*6`
+  — 「次に誰かが意図的に版を上げる回」を、その回にしか払えないコスト (response
+  スキーマを触る許可) ごと名指ししていた。実際に発火したのは ADR-135 の 5→6 で、
+  最有力と書いてあった ADR-122 の `pick-sequence` ではなかった — **満期は正しく、
+  予想した担い手だけが外れた**。この形が効いたのは、条件を「誰がやるか」ではなく
+  「何が起きたら」で書いたからである。
+  片付けた中身は 3 つとも登録時の予想どおりで、**しかも予想より腐っていた**:
+  (a) `graspNearestMiss` の `oneOf` に `{type:null}` 枝が discriminator と同居して
+  ajv strict がコンパイルできなかった件は、`null` を union の**外**へ出して決着
+  (`null` は kind ではない — 妥当な instance の集合は 1 つも変わらない)。
+  (b) examples 4 本は contractVersion 4 のまま = **2 度の版上げを素通り**しており、
+  request の `gripper` には ADR-118 が必須にした `kind` が無く、response の
+  diagnostics には ADR-118 が**廃止した** `openingNearestMiss` が残っていた。
+  (c) さらに test 自身の funnel 不変条件が `d.openingNearestMiss` を見ており、
+  契約から消えた鍵は常に `undefined` なので `== null` 系の比較は**永久に真**だった
+  — 退役した形を検査に残すと違反を*見逃す*のではなく**緑を出す** (ADR-103) の、
+  登録簿側での実例。ルート `test:contract` が両レーンを走らせるようになり
+  (CI は既にそれを呼んでいる)、この 3 本目は「宣言は在るが読む機械が無い」
+  (ADR-115 と同型) を脱した。
   DEF-011 (2026-08-04 追加) が 7 行目である。DEF-012 (2026-08-08 追加) は同日中に満期を迎えて消えた —
   ADR-116 が Accepted・実装済みになったため。**登録から決着まで 1 日**で、
   機械可読な満期 (`満期=ADR-116`) が実際に発火した最初の例である。

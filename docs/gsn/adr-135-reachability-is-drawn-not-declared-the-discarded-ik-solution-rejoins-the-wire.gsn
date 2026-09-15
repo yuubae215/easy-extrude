@@ -3,7 +3,7 @@ GOALS adr135_reachability_is_drawn_not_declared_the_discarded_ik_solution_rejoin
 goal ReachabilityIsShownAsThePosedArmNotOnlyABoolean
 uuid 0805bfa2-a6b6-4847-9c42-915a595b111f
 summary "把持候補・据付姿勢が実際にロボットの腕でリーチしていることを、ikSolvable の bool 一枚ではなく、その関節配置を取った腕の見た目として画面上で確認できる。到達不可の候補では関節解を捏造しない (rest poseのまま/非表示)。対象は既存の把持探索フロー(対象オブジェクトの表面候補)のみ — 対象なしの自由 TCP 姿勢チェックは明示的にスコープ外"
-state UnderReview
+state ToBeReviewed
 labels adr-135, adr-127, adr-128, principle-29, principle-1, principle-4, app, ui, core
 
     context RepresentativeSolutionIsAlreadyComputedAndDiscarded
@@ -41,38 +41,59 @@ labels adr-135, adr-127, adr-128, principle-29, principle-1, principle-4, app, u
         goal ContractCarriesASolvedOrUnsolvedJointsUnion
         uuid e23f84b7-f6dd-4532-9b47-2d8fc4ba3a45
         summary "D1: grasp-search-response.schema.json の候補スコアに reachSolution を追加する — kind 判別の閉union ({kind:'solved', joints:number[6]} | {kind:'unsolved'})、additionalProperties:false、候補ごとに必ずどちらか一方を持つ (欄の省略は無い)。response 契約変更につき contractVersion を 5→6 に上げる (schema + contract-version.json を同一PR、ADR-082/084 §4)"
-        labels support-exploring
+        labels support-verified
+        state ToBeReviewed
 
-            assumption ContractRoundTripTestsWillPinBothKinds
+            solution ContractRoundTripTestsPinBothKinds
             uuid e95ea882-cbc3-470c-85da-9efe821d4a2c
-            summary "core/tests/test_contract.py・test_contract_conformance.py に reachSolution の solved/unsolved 両ケースの往復テストを実装時に追加する計画。現時点では未実装 (Status: Proposed のADRであり本セッションではコードを書かない)"
+            summary "pnpm test:core — 179 passed @ 2026-09-15 / pnpm test:contract — 30 passed。両枝がスキーマに通ること (test_reach_solution_solved_branch_conforms_to_schema / _undeclared_branch_) に加え、**欄の必須性** (削ると落ちる) と **6 本でない関節ベクトルの拒否** を焼いた。実装時に枝名を unsolved → undeclared へ改訂 (IK で落ちた候補は短絡で candidates[] に載らないので「到達不可の候補」は構造的に存在しない — ADR-135 §実装時に判明した差分 1)"
+            artifacts
+            - "core/tests/test_contract_conformance.py"
+            - "core/tests/test_contract.py"
+            - "server/test/grasp.contract.test.js"
+            - "packages/grasp-contract/schema/grasp-search-response.schema.json"
 
         goal CoreEnginePreservesTheSolutionInsteadOfDiscardingIt
         uuid 598964e0-efc3-44ad-a57e-cfd0ef4ec3a2
         summary "D2: feasibility.py / pipeline.py が IkSolution.joints を bool 判定の副産物として捨てず、契約出力まで持ち回る。実装 (ik_solvable を維持したまま隣で保持するか、solve() 呼び出しを一本化するか) は実装時に決める — 境界だけを本ADRで固定する"
-        labels support-exploring
+        labels support-verified
+        state ToBeReviewed
 
-            assumption FkRoundTripCheckWillCatchSelfConsistentErrors
+            solution FkRoundTripCheckCatchesSelfConsistentErrors
             uuid f456036e-e001-436b-be58-5fbdc087f09a
-            summary "ADR-127実装時、肘の平面をx-zで解いて真値から約0.05radずれたが桁・符号とも妥当で値を見ても気づけず、捕まえたのはFK往復チェックだった (かつFK自身をDHから独立に固定していたから)。同じ罠を再発させないため、core/tests/test_engine.py に joints をFKへ通して元のcandidate poseへ往復することを確認するテストを実装時に追加する計画。未実装"
+            summary "cd core && uv run pytest tests/test_ur_kinematics.py -q — 28 passed @ 2026-09-15。往復させるのは**契約に載った値**であってソルバの出力ではない (test_carried_joints_survive_an_fk_round_trip_to_the_candidate_pose) — 運ぶ途中の並べ替え・取り違えは、ソルバ単体の往復テストなら緑のまま見逃す。加えて解が候補ごとに相異なることも問う (1 位の解を全候補へコピーするバグは、1 位だけで書いた往復テストを通る)。実装は ik_solvable() を呼ばず solver.solve() の解を保持する形にし、退役対象の docstring 一文は消滅 (ADR ヘッダ Retires: の番地が空になった = D2 達成の機械的証拠)"
+            artifacts
+            - "core/tests/test_ur_kinematics.py"
+            - "core/easy_extrude_core/engine/pipeline.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
 
         goal RobotStageHasASingleEntryDecidingWhichJointsToDraw
         uuid 09a825af-eb9d-4859-86ff-a3bacef972ee
         summary "D3: RobotStage.previewSolution(joints|null) を新設し、null→rest pose復帰・値あり→その関節配置、を1箇所で決める (原則#4、最後の書き込み勝ちの再発防止)。この入口はPosePolicyOwnership.test.jsが監視するSceneService発のpose決定閉包の対象外であることを本文で明示する (ビュー限定の一過性の演出であり、シーン実体のposeではない)。書き手が1つの間はcensus型の母集団監視の新設を見送る"
-        labels support-exploring
+        labels support-verified
+        state ToBeReviewed
 
-            assumption ThreeCaseUnitTestWillPinTheEntryBehavior
+            solution ThreeCaseUnitTestPinsTheEntryBehavior
             uuid 064903e4-ae6f-4279-bed4-6d189a578fd2
-            summary "実装時に、null→rest pose / 値あり→その値 / 値あり→nullでrest poseに復帰、の3ケースを新規テストとしてRobotStage周りに追加する計画。未実装"
+            summary "node --test src/domain/robotConfig.test.js — 10 passed @ 2026-09-15。3 ケース目 (値あり→null→復帰) が実際に欠陥を捕まえた: ROBOT_REST_POSE は曲がっている 4 関節しか列挙しておらず、そのまま渡すと shoulder_pan がプレビュー値のまま残る (**行を持たない 0** — 原則 #31)。入口は実装時に RobotStageSet 側へ上げた: RobotStage 単体は N=1 の設計で、主語が A→B に移ると A の腕に古い解が残る (ADR-093 と同型)。規則は純粋関数 previewAssignments() に降ろし N=2 で焼く — RobotStageSet は ?raw URDF を引くので node レーンで import できない"
+            artifacts
+            - "src/domain/robotConfig.test.js"
+            - "src/domain/robotConfig.js"
+            - "src/view/RobotStage.js"
+            - "src/view/RobotStageSet.js"
 
         goal GraspSearchPanelWiresHoverAndCommitToThePreviewEntryWithoutStaleFrames
         uuid 95f24f1b-4141-4be3-aeaa-2d3bd2332e87
         summary "D4: ADR-059の既存hover-preview/click-commitコールバックの隣に、score.reachSolutionを見てRobotStage.previewSolution()を呼ぶ配線を足す。solvedならjoints、unsolvedまたはホバー解除ならnull。既存のikSolvableチップ表示は残す (置き換えではなく追加の確認手段)"
-        labels support-exploring
+        labels support-verified
+        state ToBeReviewed
 
-            assumption RapidHoverTransitionSequenceTestWillCatchStaleFrames
+            solution RapidHoverTransitionSequenceTestCatchesStaleFrames
             uuid f8a1c2d3-4e5f-4061-8a7b-3c4d5e6f7081
-            summary "静的な単発ホバーの往復テストは、候補A→B→選択解除のように素早く連続で切り替えたときに古い解がレンダリングに残る競合 (ADR-098/101と同型の『1フレーム古い状態』) を見逃す。同じ要求を2回以上通す遷移シーケンス (A選択→B選択→選択解除を1テストにする) を実装時に追加する計画。未実装"
+            summary "node --test src/controller/GraspController.test.js — 51 passed @ 2026-09-15。A選択→Bホバー→ホバー解除を 1 テストで通し、3 回の書き込みが A→B→A であることを焼く (同じ要求を 2 回以上通さないと『1 フレーム古い状態』は出てこない — ADR-098/101)。配線先は panel ではなく GraspController._syncGhost() の**早期 return より手前** — 後ろに置くと ghost を描かない候補 (jointSpace/opaque) で腕だけ前の解のまま残り『解けない候補なのに腕は届いている』嘘の画面になる (これも 1 本のテストで焼いた)。退出時の rest は disposeGhost() 側 = 発火する事象の側 (原則 #32)"
+            artifacts
+            - "src/controller/GraspController.test.js"
+            - "src/controller/GraspController.js"
 
     context ConnectionToProfitTreeDeferred
     uuid 55e6f1a2-9b3c-4d7e-8f01-2a3b4c5d6e7f

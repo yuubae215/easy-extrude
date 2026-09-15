@@ -1,9 +1,13 @@
 # 135. Reachability is drawn, not declared — the discarded IK joint solution rejoins the wire
 
-- Status: Proposed
+- Status: Accepted (実装済み 2026-09-15)
 - Date: 2026-09-14
 - Deciders: yuubae215 (via `/whiteboard` session), Claude (pairing)
-- Retires: GREP:core/easy_extrude_core/engine/feasibility.py::解の有無を\sbool\sに写すだけ（`ik_solvable()` が `UniversalRobotsIkSolver.solve()` の代表解を保持せず bool 一枚に潰して捨てている、という現状のふるまいを表す docstring 自身。実装時にこの一文を消せない設計になっていたら D2 が未達）
+- Retires: GREP:core/easy_extrude_core/engine/feasibility.py::解の有無を\sbool\sに写すだけ
+  (`ik_solvable()` が `UniversalRobotsIkSolver.solve()` の代表解を保持せず bool 一枚に潰して
+  捨てている、という現状のふるまいを表す docstring 自身。実装時にこの一文を消せない設計に
+  なっていたら D2 が未達。番地の後ろに散文を続けると `check-adr-status` が番地として読めない
+  ので、理由は次行へ送る — 2026-09-15 の実装時に発覚し同時に修正した)
 - Supersedes / Superseded by: なし (ADR-127「UR の解析解 IK」・ADR-128「フロント配線」に連なる子 ADR。両者の Status・本文は変更しない)
 
 ## Context — Goal と力学 (§1.2 Goal)
@@ -184,8 +188,18 @@ ADR-059 の hover-preview / click-commit コールバック (`GraspSearchPanel.j
   明示しておく — 需要が戻れば却下案 C/D を再検討する別 ADR が要る。
 
 **検証(証拠):** 論証木は `docs/gsn/adr-135-reachability-is-drawn-not-declared-the-discarded-ik-solution-rejoins-the-wire.gsn`
-(goal ごとの支えの正本はそちら)。起票時点の証拠はすべて未来形であり、そう宣言する。
-実装時に閉じる予定の検査:
+(goal ごとの支えの正本はそちら)。**以下は 2026-09-15 の実装で実際に閉じた**
+(起票時は全て未来形だった):
+
+- `pnpm test:core` — 179 passed (新規 5 本: 代表解が契約境界まで生き残る /
+  未宣言なら占位値を載せない / **契約に載った値**の FK 往復 / 解が候補ごとに違う)
+- `pnpm test:contract` — 30/30 (両枝の適合 + 欄の必須性 + 6 本でない関節ベクトルの拒否)
+- `pnpm test` — 1293 passed (新規 16 本: `robotConfig.test.js` 10 /
+  `GraspController.test.js` 6)
+- `pnpm test:stub` — 33 passed (スタブも契約の生産者として更新)
+- `pnpm build` — ✓
+
+起票時に「実装時に閉じる予定」として挙げた検査:
 - core/: `IkSolution.joints` がパイプライン出力まで生き残ることのユニットテスト
   (`core/tests/test_engine.py`)。**FK 往復チェックを含める**(D2 参照 — ADR-127 の
   「自己整合な誤りは往復検査を通る」を再発させないため)。
@@ -201,6 +215,13 @@ ADR-059 の hover-preview / click-commit コールバック (`GraspSearchPanel.j
   同じ要求を 2 回以上通す遷移シーケンス(A 選択 → B 選択 → 選択解除、を 1 つの
   テストにする)をこの検証に含めることを実装時の必須項目として明記する。
 
+**状態台帳 (核 §1.4):** 本 ADR が足した状態と基数の行は `docs/STATE_LEDGER.md` の
+**「候補の関節配置 (`reachSolution`)」**と**「腕が描く関節配置 (骨格プレビュー)」**
+(表はそちらが正本 — ここに複製しない, §1.1)。どちらも 2 状態で遷移に guard も
+禁止遷移も無いため `docs/STATE_TRANSITIONS.md` の節は起こさない。**効いたのは
+状態数ではなく基数の欄**で、「preview を持つ stage は `0..1`、N は不正」と
+「rest map の鍵は関節を全部並べる」の 2 つが実装時の差分 2・3 の中身である。
+
 **波及(blast radius):**
 `core/easy_extrude_core/engine/feasibility.py` / `pipeline.py` / `contract/models.py` /
 `packages/grasp-contract/schema/grasp-search-response.schema.json` +
@@ -209,6 +230,79 @@ ADR-059 の hover-preview / click-commit コールバック (`GraspSearchPanel.j
 触らないと明示するもの: `resolveGraspTargets` / 候補生成ロジック本体 /
 `robot_base`・`tcp` CoordinateFrame の pose 機構(ADR-084/085 は不動) /
 `PosePolicyOwnership.test.js` の母集団定義 / `robotics-wasm` レーン全体。
+
+## 実装時に判明した差分 (2026-09-15)
+
+実装は起票時の D1〜D5 をそのまま通したわけではない。**俯瞰と実装が食い違ったら
+食い違いのほうを残す**(原則 #19 — 黙って本文を書き換えると判断の履歴が消える)。
+以下の 3 点は `/whiteboard` の再俯瞰でコードを読んだ時点で判明し、ユーザーの合意を
+得て決定を変えた。起票時の本文は上に残してある。
+
+### 差分 1 — `unsolved` 枝は、起票時の意味では**到達しない** (D1 の改訂)
+
+起票時の D1 は union を `solved | unsolved` とし、`unsolved` を「到達不可の候補」と
+読んでいた。しかし `pipeline.py` のドメイン段階フィルタは **IK で落ちた候補を
+`candidates[]` から捨てる**(短絡)。返ってくる候補は例外なく `ikSolvable: true` で、
+起票時の意味の `unsolved` は**構造的に発生しない**。
+
+第二の枝が実際に要る場面は別に在った: `robot.kinematics` が未宣言のとき、ソルバは
+`NaiveIkSolver` で、その `IkSolution.joints` は `(angle,)` = **占位の 1 個の数**
+(`feasibility.py`) であって 6 関節角ではない。これを `solved` として載せると
+フロントは**誰も決めていない腕**を描く — 本 ADR の Goal 後半「到達不可の候補では
+関節解を捏造しない」に真正面から違反する。
+
+そこで枝を **`undeclared`** に改めた。判別しているのは「到達可否」ではなく
+**描ける関節ベクトルが在るか**である。到達可否は従来どおり `ikSolvable` が運ぶ。
+`unsolved` という名前のままにすると、量の種別で名前が嘘をついた ADR-118
+(`openingNearestMiss`) と同じ形になる。台帳の既存行「腕の運動学の宣言 =
+`不在` / `universalRobots`、0 は正当」とそのまま一致する枝分けでもある。
+
+**型側にも同じ区別を置いた**(原則 #2): 占位解と本物の関節配置を長さやフラグで
+見分けるのではなく、`JointSolution(IkSolution)` という部分型を足し、契約に
+`solved` として載せてよいのはこの型だけにした。判定は `reach_solution_of()` の
+`isinstance` 1 箇所。
+
+### 差分 2 — D3 は N=1 で設計されていた (入口を `RobotStageSet` 側へ)
+
+`RobotStage` はロボット **1 台につき 1 個**(`RobotStageSet`, ADR-090)。
+`previewSolution` を `RobotStage` にだけ置くと、探索の主語 (`_selectedRobotId`,
+ADR-130) が A→B に移ったとき **A の腕に古い解が残る**。ADR-093 (「1 と N は別世界で、
+設計されていたのは片方だけだった」) と同型で、`1` と `N` は N=1 の fixture では
+区別できない。
+
+唯一の入口は `RobotStageSet.previewSolution(robotId, joints|null)` に置き、
+**名指し以外の全 stage を rest に戻す**のを同じ 1 メソッドが持つ。その規則自体は
+純粋関数 `previewAssignments()` に降ろし、**N=2 で焼いた**
+(`src/domain/robotConfig.test.js`) — `RobotStageSet` は `?raw` URDF を引くので
+node レーンで import できず、規則が散文に留まるのを避けるため (Q3)。
+
+### 差分 3 — 「rest へ戻す」は 4 関節しか戻せなかった
+
+`ROBOT_REST_POSE` は曲がっている **4 関節しか列挙していない**(`shoulder_pan` /
+`wrist_3` は省略され 0 として読まれる)。`setJointValues` は渡された鍵しか書かないので、
+6 関節のプレビュー後に `ROBOT_REST_POSE` を渡すと **`shoulder_pan` がプレビュー値の
+まま残る** — rest pose でもどの解でもない姿勢になる。
+
+これは**行を持たない 0** (原則 #31) の典型で、定数を読んでも見えない。
+`restPoseMap(jointNames)` が**列挙された全関節**を埋める形にし、検査は
+「値が rest と一致するか」ではなく**鍵の個数**を問う。起票時に「3 ケース目
+(値あり→null→復帰)」を必須と書いていたのが、まさにこれを捕まえた。
+
+### 差分 4 (小) — 配線先は panel ではなく controller
+
+D4 は `GraspSearchPanel.jsx` と書いていたが、パネルはコールバックを転送するだけで、
+「今どの候補を見せているか」を決めているのは `GraspController._syncGhost()`。
+原則 #4 に従い controller に置いた。さらに `_syncGhost` は早期 return を 2 本持つので、
+腕の更新は**その手前**に置いてある — 後ろに置くと ghost が描けない候補
+(jointSpace / opaque) で腕だけ前の解のまま残り、「解けない候補なのに腕は届いている」
+という嘘の画面になる。退出時の rest は `disposeGhost()` 側 (発火する事象の側 —
+原則 #32) に書いた。
+
+### 生産者は 2 つ居た
+
+`core/` だけでなく **開発スタブ (`mocks/graspStub/`) も契約の生産者**である
+(ADR-120 の「同じ欠陥は生産者 2 つに独立に居た」の再演)。スタブは IK を解かないので
+`undeclared` を返す — これが枝の意味が「到達不可」ではないことの実例にもなっている。
 
 ## Lens notes
 
