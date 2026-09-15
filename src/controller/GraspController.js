@@ -685,6 +685,11 @@ export class GraspController {
       this._ghost.dispose()
       this._ghost = null
     }
+    // The arm preview dies with the overlay (ADR-135). Written HERE, on the exit
+    // event, not next to the preview: the skeleton knows it should stop being
+    // posed, but not that the moment has come (原則 #32). The ghost is disposed,
+    // so nothing else will run and rest it.
+    this._syncArmPreview(null)
   }
 
   /**
@@ -699,6 +704,16 @@ export class GraspController {
 
     const rank = this._hoverRank ?? cur.selectedRank
     const candidate = rank == null ? null : (cur.candidates ?? []).find(c => c.rank === rank)
+
+    // ADR-135 D4 — BEFORE any early return below. The skeleton and the ghost
+    // answer different questions ("does the arm reach it" vs "where is the
+    // hand"), so a pose the ghost declines to draw (opaque / jointSpace /
+    // malformed) must still rest the arm rather than leave it in the previous
+    // candidate's solution. Returning early past this call is exactly the
+    // one-frame-stale bug of ADR-098/101: the input changes every hover, so a
+    // test that hovers once cannot see it.
+    this._syncArmPreview(candidate)
+
     const frame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
     if (!frame) { this._ghost?.clear(); return }
 
@@ -725,10 +740,39 @@ export class GraspController {
     this._ghost.setTargetGeometry(idx != null ? objs[idx].meshView.cuboid.geometry : null)
   }
 
+  /**
+   * Pose the SEARCH SUBJECT's arm into this candidate's solution, and rest every
+   * other arm (ADR-135 D4).
+   *
+   * Reads `score.reachSolution`, the closed kind union the solver decided
+   * (contract v6): `solved` hands over its six joint angles, `undeclared` hands
+   * over `null` — the request declared no `robot.kinematics`, so nobody computed
+   * a configuration and drawing one would invent it. No candidate (hover
+   * cleared, nothing selected) is `null` too.
+   *
+   * The subject is `selectRobot`'s answer, NOT the viewport selection: the arm
+   * that shows a solution must be the arm the search solved for (ADR-130).
+   *
+   * @param {object|null} candidate  the hovered-or-selected candidate, if any
+   */
+  _syncArmPreview(candidate) {
+    const stages = this._ctrl._sceneView?.robotStages
+    if (!stages) return              // THREE-free lane: no skeletons to pose
+    const reach = candidate?.score?.reachSolution
+    const joints = reach?.kind === 'solved' ? reach.joints : null
+    // `_selectedRobot()` is the ONE place the subject is resolved (原則 #25 /
+    // §1.1) — re-deriving `selectRobot(...)` here would be a second source that
+    // drifts the day the 0/1/N rule changes.
+    stages.previewSolution(this._selectedRobot()?.id ?? null, joints)
+  }
+
   /** Hide the ghost and drop the transient hover (state transitions out of results). */
   _clearGhost() {
     this._hoverRank = null
     this._ghost?.clear()
+    // Leaving `results` ends the preview too — the obligation belongs to the
+    // event that fires it (原則 #32), not to a later hover that may never come.
+    this._syncArmPreview(null)
   }
 
   /** Scene bounding radius (world-cap input — PHILOSOPHY #27 pair rule). */

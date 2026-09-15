@@ -1,8 +1,8 @@
 // @ts-nocheck
 import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
-import { ROBOT_REST_POSE } from '../domain/robotConfig.js'
-import { ROBOT_URDF_TEXT } from './robotSkeleton.js'
+import { jointValuesFor } from '../domain/robotConfig.js'
+import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 
 /**
  * RobotStage — loads and displays a fixed-pose robot-arm skeleton in the main
@@ -48,24 +48,38 @@ export class RobotStage {
     robot.rotation.x = 0
     this.robot = robot
     this._group.add(robot)
-    this._applyRestPose()
+    this.previewSolution(null)
   }
 
   /**
-   * Applies the shared rest pose (ADR-088). The angles live in ONE place —
-   * `ROBOT_REST_POSE` (domain/robotConfig) — and the tcp seed is DERIVED from
-   * this same pose via forward kinematics, so the two can no longer drift: the
-   * former "coupled pair, recompute the other" hand-discipline is now structural.
+   * **The one entry point deciding which joint configuration this arm draws**
+   * (ADR-135 D3, 原則 #4).
+   *
+   * Before ADR-135 the only writer was `_applyRestPose()`, always passing the
+   * same constant. Candidate previews would have made a second writer, and two
+   * writers of one visual fact race to last-write-wins. So the choice — rest or
+   * preview — is made HERE, in one place, and nothing else writes joints.
+   *
+   * @param {readonly number[] | null} joints  six angles (radians) in
+   *   `ROBOT_JOINT_NAMES` order, as carried by `reachSolution.kind === 'solved'`;
+   *   `null` to return to the rest pose. A `reachSolution` of kind `undeclared`
+   *   is `null` here too: nobody decided a configuration, so the arm must not be
+   *   posed into an invented one.
    */
-  _applyRestPose() {
+  previewSolution(joints) {
     if (!this.robot) return
-    this.setJointValues(ROBOT_REST_POSE)
+    // The decision is pure and lives in domain/robotConfig (原則 #3); this method
+    // only performs the write. Every non-drawable case (null, `undeclared`, a
+    // vector of the wrong length) comes back as the COMPLETE rest map, so the
+    // arm can never be left half-posed.
+    this.setJointValues(jointValuesFor(joints, ROBOT_JOINT_NAMES))
   }
 
   /**
-   * Applies a set of joint angles (radians) to the loaded robot. Values come
-   * from outside this class (e.g. a future grasp-contract response) — this
-   * method only renders them.
+   * Applies a set of joint angles (radians) to the loaded robot. INTERNAL helper
+   * of `previewSolution` — it writes exactly the joints it is handed, so calling
+   * it directly re-opens the second-writer hole ADR-135 D3 closed. The rendering
+   * seam itself is unchanged (this is still the only place joints reach THREE).
    * @param {Record<string, number>} values
    */
   setJointValues(values) {

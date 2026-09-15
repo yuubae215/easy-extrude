@@ -16,8 +16,9 @@
 
 import urdfText from '../../public/robot/skeleton_arm.urdf?raw'
 import { ROBOT_REST_POSE } from '../domain/robotConfig.js'
-import { deriveFlangeSeed } from '../robotics/UrdfChain.js'
+import { deriveFlangeSeed, parseUrdfChain } from '../robotics/UrdfChain.js'
 import { kinematicsDeclarationFromUrdf } from '../domain/robotKinematics.js'
+import { movableJoints } from '../robotics/Kinematics.js'
 
 /** The skeleton URDF as a bundled string (no runtime fetch). */
 export const ROBOT_URDF_TEXT = urdfText
@@ -44,3 +45,26 @@ export const TCP_LOCAL_SEED = deriveFlangeSeed(ROBOT_URDF_TEXT, ROBOT_REST_POSE)
  * @type {{kind: string, dh: object, jointLimits?: {min:number,max:number}[]}|null}
  */
 export const ROBOT_KINEMATICS = kinematicsDeclarationFromUrdf(ROBOT_URDF_TEXT)
+
+/**
+ * The movable joints' names in CHAIN ORDER (base → flange), read out of the very
+ * URDF that draws the arm (ADR-135 D3).
+ *
+ * **Why derived and not written down**: the wire carries `reachSolution.joints`
+ * as a bare array of six numbers, positionally. Turning that array back into
+ * `RobotStage.setJointValues`' `{name: value}` map needs an ORDER, and an order
+ * hand-copied here would be a second source that drifts the day someone reorders
+ * the URDF — silently, because a permuted arm still renders as *an* arm. Reading
+ * it from the same string `ROBOT_KINEMATICS` derives its six DH lengths from
+ * means the order the solver was told about and the order we draw back cannot
+ * disagree.
+ *
+ * Same list, same order the solver's `joints` are in: `kinematicsDeclarationFromUrdf`
+ * builds the DH parameters from `movableJoints(parseUrdfChain(...))`, and so does
+ * this.
+ *
+ * @type {readonly string[]}
+ */
+export const ROBOT_JOINT_NAMES = Object.freeze(
+  movableJoints(parseUrdfChain(ROBOT_URDF_TEXT)).map(j => j.name)
+)

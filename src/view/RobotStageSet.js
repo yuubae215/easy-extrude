@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { RobotStage } from './RobotStage.js'
+import { previewAssignments } from '../domain/robotConfig.js'
 
 /**
  * RobotStageSet — the N-robot seat for skeleton views (ADR-090).
@@ -76,6 +77,37 @@ export class RobotStageSet {
    */
   setPose(id, position, quaternion) {
     this._stages.get(id)?.setPose(position, quaternion)
+  }
+
+  /**
+   * **The one entry point deciding which arm is posed into a candidate's
+   * solution** (ADR-135 D3, extended to the N-robot seat).
+   *
+   * `RobotStage.previewSolution` alone would be the N=1 design. With a stage per
+   * robot, "preview candidate C" is not a fact about one arm but about the WHOLE
+   * SET: the search subject (`GraspController._selectedRobotId`, ADR-130) shows
+   * the solution, and **every other arm must be at rest**. Writing only the
+   * subject's stage leaves the previously-previewed arm frozen in a solution for
+   * a robot the search is no longer about — the same shape as ADR-093, where the
+   * design was written for one annotation and N were assumed to follow. Because
+   * `1` and `N` agree at N=1, a single-robot fixture cannot tell the two apart;
+   * `RobotStageSet.test.js` pins N=2 for that reason.
+   *
+   * Idempotent, so the caller may call it on every hover without diffing.
+   *
+   * @param {string|null} id  the robot whose arm shows the solution; `null`
+   *   rests every arm (no candidate hovered/selected, or no search subject)
+   * @param {readonly number[]|null} joints  six angles in chain order
+   *   (`reachSolution.kind === 'solved'`), or `null` for `undeclared` / cleared —
+   *   in which case the subject rests too, rather than being posed into an
+   *   invented configuration.
+   */
+  previewSolution(id, joints) {
+    // The rule (subject draws, everyone else rests) is pure and pinned at N=2 in
+    // `domain/robotConfig.test.js`; this loop only performs the writes.
+    for (const [stageId, payload] of previewAssignments(this._stages.keys(), id, joints)) {
+      this._stages.get(stageId)?.previewSolution(payload)
+    }
   }
 
   /**
