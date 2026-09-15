@@ -48,6 +48,7 @@ export const ROBOT_REST_POSE = Object.freeze({
  * @returns {Record<string, number>} name → angle, one entry per joint
  */
 export function restPoseMap(jointNames) {
+  /** @type {Record<string, number>} */
   const values = {}
   for (const name of jointNames) values[name] = ROBOT_REST_POSE[name] ?? 0
   return values
@@ -72,6 +73,7 @@ export function jointValuesFor(joints, jointNames) {
   if (!Array.isArray(joints) || joints.length !== jointNames.length) {
     return restPoseMap(jointNames)
   }
+  /** @type {Record<string, number>} */
   const values = {}
   jointNames.forEach((name, i) => { values[name] = joints[i] })
   return values
