@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .types import GraspCandidate, Quaternion, Robot, Vec3
-from .feasibility import IkSolution
+from .feasibility import IkSolution, JointSolution
 from .ur_kinematics import (
     UrDhParameters,
     forward_kinematics,
@@ -148,7 +148,9 @@ class UniversalRobotsIkSolver:
         # 順序ではなく量で選ぶのは、探索の入力が少し変わったときに代表解が飛ばない
         # ようにするため (同点は `inverse_kinematics` の決定的な順序が破る)。
         best = min(admissible, key=lambda q: (sum(abs(v) for v in q), q))
-        return IkSolution(joints=tuple(best))
+        # JointSolution = 「描ける 6 関節の配置」という型の主張 (ADR-135)。素朴ソルバの
+        # 占位 IkSolution と取り違えられない形にしてある。
+        return JointSolution(joints=tuple(best))
 
     def flange_pose_of(self, joints: "tuple[float, ...]") -> "tuple[float, ...]":
         """解の検算用 FK (ベース座標系)。テストと診断のための逆向き。"""

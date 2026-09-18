@@ -9,6 +9,10 @@
  * The pose the solver *decided*, as a closed kind-discriminated union. Only solver-decided facts ride the wire; presentation (approach vector, ghost color, gripper-width display, animation) is derived client-side from the frame + convention and is NOT part of this contract. The only intentional growth point is adding a new kind (which bumps contractVersion). kind is the discriminator; each branch is closed (additionalProperties:false). 'optional' is not a design word here -- field presence is implied by kind.
  */
 export type Pose = PoseEndEffector | PoseJointSpace;
+/**
+ * The JOINT CONFIGURATION the solver decided for this candidate, as a CLOSED KIND-DISCRIMINATED union (contract v6, ADR-135). A returned candidate always passed the IK stage (the filter short-circuits, so an IK-rejected candidate is never in candidates[]) -- what this union discriminates is therefore NOT reachable/unreachable, which `ikSolvable` already carries, but whether a DRAWABLE joint vector exists at all. It exists only when the request declared `robot.kinematics` and the closed-form solver ran; with no declaration the wrist-cone proxy judges reachability without producing joint angles, and there is nothing to draw. Required on every candidate: the absence of a joint configuration is DECLARED, never signalled by omitting the field (原則 #31). Presentation (how the arm is animated into the pose, ghost color, whether a preview is shown at all) is derived client-side and is NOT part of this contract (ADR-060).
+ */
+export type ReachSolution = ReachSolutionSolved | ReachSolutionUndeclared;
 
 /**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
@@ -106,7 +110,7 @@ export interface PoseJointSpace {
   joints: number[];
 }
 /**
- * Per-candidate score breakdown explaining why a pose ranked where it did. Contract v4 (ADR-081): the five booleans mirror the domain-staged filter (visible = Vision domain, withinReach/ikSolvable/interferenceFree = Path domain, graspable = Grasp domain). A returned candidate passed every stage, so all five are true; `visible` / `graspable` are vacuously true when the request declared no camera / no gripper (the request itself carries which case applies).
+ * Per-candidate score breakdown explaining why a pose ranked where it did. Contract v4 (ADR-081): the five booleans mirror the domain-staged filter (visible = Vision domain, withinReach/ikSolvable/interferenceFree = Path domain, graspable = Grasp domain). A returned candidate passed every stage, so all five are true; `visible` / `graspable` are vacuously true when the request declared no camera / no gripper (the request itself carries which case applies). Contract v6 (ADR-135) adds `reachSolution`: the joint configuration the solver decided, so a client can DRAW the reaching arm instead of only reading a boolean. `ikSolvable` stays -- the skeleton is an additional way to confirm reach, not a replacement for the flag.
  */
 export interface ScoreBreakdown {
   withinReach: boolean;
@@ -114,6 +118,7 @@ export interface ScoreBreakdown {
   ikSolvable: boolean;
   interferenceFree: boolean;
   graspable: boolean;
+  reachSolution: ReachSolution;
   /**
    * objective name -> normalized 0-1 value (absolute basis, so scores are comparable across requests).
    */
@@ -124,6 +129,25 @@ export interface ScoreBreakdown {
    * Weighted sum of the normalized objective scores.
    */
   totalScore: number;
+}
+/**
+ * A representative joint configuration that reaches this candidate's pose. One solution, not all of them: the closed form admits up to 8, and stage 0 asks only whether the pose is reachable, so the solver picks one deterministically (ADR-127 D5).
+ */
+export interface ReachSolutionSolved {
+  kind: "solved";
+  /**
+   * Joint angles in RADIANS, in the chain order of the declared `robot.kinematics` (base to flange). Exactly six -- the closed form is derived for that exact structure, so a different count is a different arm.
+   *
+   * @minItems 6
+   * @maxItems 6
+   */
+  joints: [number, number, number, number, number, number];
+}
+/**
+ * No joint configuration was determined for this candidate. The fact is the absence itself, not any one cause of it: typically the request declared no `robot.kinematics`, so reachability was judged by the wrist-cone proxy (ADR-127 D3) which produces no joint angles, but any producer that judges reach without solving joints reports this branch. The client MUST NOT draw an arm pose for this candidate -- inventing one would show a configuration no solver decided, which is exactly what ADR-135's goal forbids.
+ */
+export interface ReachSolutionUndeclared {
+  kind: "undeclared";
 }
 /**
  * Parallel jaw: the smallest amount by which the jaws failed to span the object.

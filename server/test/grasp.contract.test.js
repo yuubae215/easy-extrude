@@ -147,12 +147,12 @@ test('valid response instance conforms to the response schema (both pose kinds)'
       {
         rank: 1,
         pose: { kind: 'endEffector', frame: { position: [0.1, 0.2, 0.3], orientation: [0, 0, 0, 1] } },
-        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92 },
+        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } },
       },
       {
         rank: 2,
         pose: { kind: 'jointSpace', chainRef: 'arm_left', joints: [0, 0.5, -0.5, 0, 1.2, 0] },
-        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: false, graspable: true, totalScore: 0.41 },
+        score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: false, graspable: true, totalScore: 0.41, reachSolution: { kind: 'undeclared' } },
       },
     ],
     // v3 rejection funnel — invariant: generated = reach + ik + interference + feasible
@@ -213,7 +213,7 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
 test('pre-v3 response without diagnostics fails conformance (diagnostics is required)', () => {
   const { valid, errors } = validateResponse({
     contractVersion: CONTRACT_VERSION,
-    candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5 } }],
+    candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
   })
   assert.equal(valid, false)
   assert.match(errors.join(' '), /diagnostics/)
@@ -300,7 +300,7 @@ test('valid request is delegated and a conforming upstream response passes throu
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION,
-      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5 } }],
+      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
       diagnostics: {
         candidatesGenerated: 1,
         rejectedByReach: 0,
@@ -349,7 +349,7 @@ test('upstream version drift is rejected with 502', async () => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION + 7,
-      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5 } }],
+      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
     }))
   })
   process.env.GRASP_SEARCH_URL = `http://localhost:${upstream.address().port}`

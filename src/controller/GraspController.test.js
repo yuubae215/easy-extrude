@@ -876,3 +876,103 @@ test('captureViewportCamera returns null without a camera (THREE-free lane) — 
   const { gc } = setup({})
   assert.equal(gc.captureViewportCamera(), null)
 })
+
+// ── ADR-135: 到達可否を腕の形で示す (reachSolution → RobotStageSet) ─────────────
+
+/** THREE-free fake RobotStageSet recording every previewSolution call. */
+function fakeStages() {
+  return {
+    calls: [],
+    previewSolution(id, joints) { this.calls.push([id, joints]) },
+  }
+}
+
+const SOLVED_A = [0.1, -1.0, 1.2, -1.8, -1.5708, 0.0]
+const SOLVED_B = [0.9, -0.6, 0.4, -1.1, -1.5708, 0.3]
+
+const solved = (joints) => ({ kind: 'solved', joints })
+const UNDECLARED = { kind: 'undeclared' }
+
+/** ghostSetup + a fake stage set hung off `_sceneView` (the production seat). */
+function armSetup(candidates) {
+  const store = fakeStore()
+  const ctrl  = makeCtrl({})
+  const stages = fakeStages()
+  ctrl._sceneView = { robotStages: stages }
+  const gc = new GraspController(ctrl, store, { createGhostView: () => fakeGhost() })
+  store.getState().actions.contextSetGrasp({
+    status: 'results', layout: { version: 'x', entities: 1 }, request: {}, candidates, selectedRank: null,
+  })
+  return { gc, stages, store }
+}
+
+test('a solved candidate poses the subject arm with the joints the solver decided', () => {
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+  ])
+  gc.selectCandidate(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', SOLVED_A])
+})
+
+test('an undeclared candidate rests the arm instead of inventing a configuration', () => {
+  // `robot.kinematics` を送っていないクライアントの既定経路。到達可否の bool は
+  // true なので、bool だけを見て描くと**誰も決めていない腕**が出る。
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, ikSolvable: true, reachSolution: UNDECLARED } },
+  ])
+  gc.selectCandidate(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', null])
+})
+
+test('A → B → cleared: the arm never keeps a previous candidate solution', () => {
+  // ADR-135 が実装時の必須項目として名指しした遷移列。**同じ要求を 2 回以上通す**
+  // 形でなければ「1 フレーム古い状態」は出てこない (ADR-098/101 の e2e が数値
+  // Grab で書かれていたため緑のまま振動を出荷したのと同じ理由)。
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+    { rank: 2, pose: EE_POSE, score: { totalScore: 0.4, reachSolution: solved(SOLVED_B) } },
+  ])
+  gc.selectCandidate(1)
+  gc.hoverCandidate(2)
+  gc.hoverCandidate(null)
+
+  const joints = stages.calls.map(c => c[1])
+  assert.deepEqual(joints.at(-3), SOLVED_A, 'A を選んだ時点で A の解')
+  assert.deepEqual(joints.at(-2), SOLVED_B, 'B をホバーしたら B の解に**差し替わる**')
+  assert.deepEqual(joints.at(-1), SOLVED_A, 'ホバーを解いたら選択中の A へ戻る')
+})
+
+test('a candidate the ghost declines to draw still rests the arm (no early return past it)', () => {
+  // jointSpace の pose は capability gate で ghost を作らない。腕の更新がその
+  // 早期 return の**後ろ**にあると、前の候補の解が残って「解けない候補なのに
+  // 腕は届いている」という嘘の画面になる。
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+    { rank: 2, pose: JS_POSE, score: { totalScore: 0.4, reachSolution: UNDECLARED } },
+  ])
+  gc.selectCandidate(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', SOLVED_A])
+  gc.hoverCandidate(2)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', null],
+    'ghost を描かない候補で腕の更新が飛ばされている')
+})
+
+test('disposing the overlay rests the arm (the exit event owns the obligation)', () => {
+  // 原則 #32: 「overlay を出たらプレビューを消す」は**出る側**に書く。ghost は
+  // dispose され二度と走らないので、あとから腕を休める者は誰もいない。
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+  ])
+  gc.selectCandidate(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', SOLVED_A])
+  gc.disposeGhost()
+  assert.deepEqual(stages.calls.at(-1), ['f_base', null])
+})
+
+test('a score with no reachSolution at all rests the arm (old server, pre-v6)', () => {
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9 } },
+  ])
+  gc.selectCandidate(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', null])
+})

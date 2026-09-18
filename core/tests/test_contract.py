@@ -9,6 +9,7 @@ from easy_extrude_core.contract import (
     GraspSearchRequest,
     GraspSearchResponse,
     PoseCandidate,
+    ReachSolutionSolved,
     ScoreBreakdown,
     SearchDiagnostics,
     check_contract_version,
@@ -69,6 +70,9 @@ def test_response_roundtrip_top_n_with_breakdown():
                     graspable=True,
                     objective_scores={"reach_margin": 0.8},
                     total_score=0.8,
+                    reach_solution=ReachSolutionSolved(
+                        joints=(0.0, -1.0, 1.2, -1.8, -1.5708, 0.0)
+                    ),
                 ),
             )
         ],
@@ -79,3 +83,6 @@ def test_response_roundtrip_top_n_with_breakdown():
     assert reloaded.contract_version == CONTRACT_VERSION
     assert reloaded.candidates[0].rank == 1
     assert reloaded.candidates[0].score.ik_solvable is True
+    # 代表解が往復で失われない (ADR-135 — 「運ぶ途中で捨てる」が元の欠陥)。
+    assert reloaded.candidates[0].score.reach_solution.kind == "solved"
+    assert len(reloaded.candidates[0].score.reach_solution.joints) == 6

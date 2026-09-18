@@ -37,6 +37,9 @@ from ..contract import (
     GraspSearchRequest,
     GraspSearchResponse,
     PoseCandidate,
+    ReachSolution,
+    ReachSolutionSolved,
+    ReachSolutionUndeclared,
     ScoreBreakdown,
 )
 from ..contract import SearchDiagnostics as SearchDiagnosticsWire
@@ -45,14 +48,15 @@ from .feasibility import (
     CollisionChecker,
     grasp_miss,
     GraspChecker,
+    IkSolution,
     IkSolver,
+    JointSolution,
     NaiveIkSolver,
     NaiveParallelJawGraspChecker,
     NaiveSightlineVisibilityChecker,
     NaiveSphereCollisionChecker,
     VisibilityChecker,
     interference_free,
-    ik_solvable,
     reach_miss,
     within_reach,
 )
@@ -276,6 +280,21 @@ class SearchReport:
 # --- 探索本体 (副作用境界) -----------------------------------------------------
 
 
+def reach_solution_of(solution: IkSolution) -> ReachSolution:
+    """IK 解を契約の `reachSolution` union へ写す **ただ 1 箇所** (ADR-135 D1/D2)。
+
+    分岐は**型**で行う (原則 #2) — 関節の本数や「ソルバが何だったか」を呼び出し側で
+    数え直すと、占位の解を `solved` として載せる経路がそのぶん増える。占位を載せた
+    瞬間クライアントは**誰も決めていない腕の姿勢**を描くので、これは表示の乱れでは
+    なく契約違反 (ADR-060「ワイヤに載るのはソルバが決定した事実のみ」)。
+
+    純粋関数 (原則 #3)。
+    """
+    if isinstance(solution, JointSolution):
+        return ReachSolutionSolved(joints=list(solution.joints))
+    return ReachSolutionUndeclared()
+
+
 def search_report(
     request: GraspSearchRequest,
     *,
@@ -334,8 +353,8 @@ def search_report(
     grasp_nearest_miss: Optional[float] = None
     grasp_nearest_miss_kind: Optional[str] = None
 
-    # 通過候補を (total_score, pose, objective_scores) で集める。
-    scored: list[tuple[float, Pose, dict[str, float]]] = []
+    # 通過候補を (total_score, pose, objective_scores, ik_solution) で集める。
+    scored: list[tuple[float, Pose, dict[str, float], IkSolution]] = []
     for candidate in generate_candidates(problem):
         generated += 1
         # ドメイン段階フィルタ (並びの根拠はモジュール docstring)。各段で短絡するため
@@ -346,7 +365,10 @@ def search_report(
             if reach_nearest_miss is None or miss < reach_nearest_miss:
                 reach_nearest_miss = miss
             continue
-        if not ik_solvable(candidate, problem.robot, solver):
+        # ADR-135 D2: 解を**保持**する。ここで `ik_solvable()` を呼ぶと解は
+        # その場で bool に潰れて捨てられ、同じ解をもう一度解かせる羽目になる。
+        ik_solution = solver.solve(candidate, problem.robot)
+        if ik_solution is None:
             rejected_by_ik += 1
             continue
         if problem.gripper is not None:
@@ -377,7 +399,7 @@ def search_report(
             continue
         objective_scores = evaluate_objectives(candidate, problem, objective_names)
         total = weighted_sum(objective_scores, weights)
-        scored.append((total, candidate.pose, objective_scores))
+        scored.append((total, candidate.pose, objective_scores, ik_solution))
 
     # 総合スコア降順で並べ、rank 1.. を振り、上位N件を取る。
     # 同点は生成順 (決定的) を保つため安定ソート + key は score のみ。
@@ -400,9 +422,13 @@ def search_report(
                 graspable=True,
                 objective_scores=objective_scores,
                 total_score=total,
+                # 捨てずに運んできた代表解 (ADR-135)。`undeclared` は
+                # 「robot.kinematics 未宣言なので誰も関節を決めていない」の宣言で、
+                # 「到達不可」ではない (到達不可な候補はここに載らない)。
+                reach_solution=reach_solution_of(ik_solution),
             ),
         )
-        for i, (total, pose, objective_scores) in enumerate(top)
+        for i, (total, pose, objective_scores, ik_solution) in enumerate(top)
     ]
     diagnostics = SearchDiagnostics(
         candidates_generated=generated,

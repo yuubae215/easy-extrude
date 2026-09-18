@@ -389,3 +389,105 @@ def test_base_orientation_reaches_the_pipeline_from_the_wire():
         "objectiveWeights": {"grasp_stability": 1.0},
     })
     assert problem_from_declaration(silent).robot.base_orientation is None
+
+
+# --- ADR-135: 代表解は捨てられずに契約出力まで生き残る -------------------------
+
+
+def _reachable_declaration(with_kinematics: bool) -> dict:
+    """UR5e が実際に届く表面サンプルの宣言。`with_kinematics` で解析解の有無を切る。"""
+    decl = {
+        "robot": {"base": [0.0, 0.0, 0.0]},
+        "target": {
+            "surfaceSamples": [
+                {"point": [0.4, 0.0, 0.3], "normal": [0.0, 0.0, 1.0]},
+                {"point": [0.45, 0.05, 0.3], "normal": [0.0, 0.0, 1.0]},
+            ]
+        },
+        "objectiveWeights": {"grasp_stability": 1.0},
+        "topN": 5,
+    }
+    if with_kinematics:
+        decl["robot"] = dict(decl["robot"]) | {
+            "kinematics": {"kind": KINEMATICS_KIND_UNIVERSAL_ROBOTS, "dh": _DH_WIRE}
+        }
+    return decl
+
+
+def _run_search(declaration: dict):
+    from easy_extrude_core.contract import GraspSearchDeclaration, GraspSearchRequest
+    from easy_extrude_core.engine import search
+
+    return search(
+        GraspSearchRequest(
+            layout_version="layout/1.0",
+            grasp_search=GraspSearchDeclaration.model_validate(declaration),
+        )
+    )
+
+
+def test_declared_kinematics_carries_the_joints_to_the_contract_boundary():
+    """ADR-135 D2: 解析解の代表解が `reachSolution.kind="solved"` として応答に載る。
+
+    これが落ちるのは「計算はしたが契約に出る前に捨てられた」= ADR-135 が直した
+    まさにその欠陥の再発。
+    """
+    resp = _run_search(_reachable_declaration(with_kinematics=True))
+    assert resp.candidates, "解析解で候補が出る前提の fixture"
+    for c in resp.candidates:
+        assert c.score.reach_solution.kind == "solved"
+        assert len(c.score.reach_solution.joints) == 6
+
+
+def test_undeclared_kinematics_says_so_instead_of_shipping_placeholder_joints():
+    """宣言が無ければ `undeclared`。素朴ソルバの占位値 (1 個の角度) を
+    `solved` として載せてはならない — 描けば**誰も決めていない腕**になる。"""
+    resp = _run_search(_reachable_declaration(with_kinematics=False))
+    assert resp.candidates, "素朴判定で候補が出る前提の fixture"
+    for c in resp.candidates:
+        assert c.score.reach_solution.kind == "undeclared"
+        # 枝に joints という欄自体が無いこと (占位値の漏れ口を塞ぐ)。
+        assert not hasattr(c.score.reach_solution, "joints")
+        # 到達可否は従来どおり bool が運ぶ — union は到達可否を判別していない。
+        assert c.score.ik_solvable is True
+
+
+def test_carried_joints_survive_an_fk_round_trip_to_the_candidate_pose():
+    """運んだ関節値を FK に通すと、その候補が要求したフランジ姿勢へ戻る。
+
+    ADR-127 実装時の教訓の再演: 肘の平面を x-z で解いた誤りは桁も符号も妥当で、
+    **値を見ても気づけなかった**。捕まえたのは FK 往復で、かつ FK 自身を DH から
+    独立に固定していたから。ここで往復させるのは「ソルバの出力」ではなく
+    **契約に載った値**である — 運ぶ途中で並べ替え・単位変換・別候補との取り違えが
+    起きても、ソルバ単体の往復テストは緑のままそれを見逃す。
+    """
+    from easy_extrude_core.engine import pose_from_payload
+
+    resp = _run_search(_reachable_declaration(with_kinematics=True))
+    solver = UniversalRobotsIkSolver(dh=UR5E)
+    assert resp.candidates
+
+    for c in resp.candidates:
+        joints = c.score.reach_solution.joints
+        pose = pose_from_payload(c.pose)
+        # 契約の pose から候補を組み直し、その要求フランジ姿勢と FK を突き合わせる。
+        candidate = GraspCandidate(
+            pose=pose,
+            pre_grasp=pose.position - pose.approach.scaled(0.1),
+            surface_normal=pose.approach.scaled(-1.0),
+        )
+        assert _max_abs_diff(
+            solver.flange_pose_of(joints), flange_target(candidate)
+        ) < 1e-9, "契約に載った関節値が、その候補の姿勢へ戻らない"
+
+
+def test_the_joints_belong_to_their_own_candidate_not_to_rank_one():
+    """候補ごとに**別の**解が載る。
+
+    「1 位の解を全候補にコピーする」バグは、往復テストを 1 位だけで書くと通る
+    (1 位は必ず自分と整合する)。個数ではなく**相異なること**を問う。
+    """
+    resp = _run_search(_reachable_declaration(with_kinematics=True))
+    solved = [tuple(c.score.reach_solution.joints) for c in resp.candidates]
+    assert len(solved) >= 2, "2 候補以上出る前提の fixture"
+    assert len(set(solved)) > 1, "全候補が同じ関節値 — 解が候補ごとに運ばれていない"
