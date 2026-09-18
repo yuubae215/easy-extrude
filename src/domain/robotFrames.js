@@ -44,6 +44,8 @@
  * (THREE-free test lane) share the same definitions.
  */
 
+import { MM_PER_METER } from './worldUnits.js'
+
 /** @type {'robot_base'} */
 export const ROBOT_BASE_FRAME_NAME = 'robot_base'
 
@@ -264,13 +266,13 @@ export function nextRobotTcpName(objects) {
  * Default placement of a seeded / added robot's frames (ADR-084 §2, silent
  * auto-generation per ADR-073).
  *
- * The base keeps ADR-083's default WORLD position `[-2, 2, 0]` so existing
- * behaviour (and the skeleton's default pose) is unchanged — offset from the
- * origin so the arm does not spawn buried inside the origin-centred starter
- * cube. It stays world-parented (the same world frame the world gizmo and the
- * starter cube share). `ROBOT_ADD_OFFSET` shifts each ADDITIONAL robot along +Y
- * so a second arm does not spawn inside the first (ADR-090: N台 must be visibly
- * distinct on arrival).
+ * The base keeps ADR-083's default WORLD position, offset from the origin so
+ * the arm does not spawn buried inside the origin-centred starter cube — now
+ * expressed in mm (world-unit, ADR-136) rather than the pre-ADR-136 `[-2,2,0]`
+ * that silently meant meters. It stays world-parented (the same world frame
+ * the world gizmo and the starter cube share). `ROBOT_ADD_OFFSET` shifts each
+ * ADDITIONAL robot along +Y so a second arm does not spawn inside the first
+ * (ADR-090: N台 must be visibly distinct on arrival).
  *
  * The `tcp` frame's default LOCAL translation is NOT a constant here (ADR-088):
  * it is the UR5e flange (tool0) position at the shared rest pose, DERIVED by
@@ -283,13 +285,13 @@ export function nextRobotTcpName(objects) {
  */
 export const ROBOT_FRAME_DEFAULTS = Object.freeze({
   [ROBOT_BASE_FRAME_NAME]: Object.freeze({
-    position: Object.freeze({ x: -2, y: 2, z: 0 }),
+    position: Object.freeze({ x: -2 * MM_PER_METER, y: 2 * MM_PER_METER, z: 0 }),
     rotation: Object.freeze({ x: 0, y: 0, z: 0, w: 1 }),
   }),
 })
 
 /** World-space offset applied per already-present robot when adding another. */
-export const ROBOT_ADD_OFFSET = Object.freeze({ x: 0, y: -2, z: 0 })
+export const ROBOT_ADD_OFFSET = Object.freeze({ x: 0, y: -2 * MM_PER_METER, z: 0 })
 
 /**
  * Default world pose for the `n`-th robot added to a scene (n = robots already

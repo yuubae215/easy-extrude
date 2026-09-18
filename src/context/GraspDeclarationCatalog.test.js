@@ -118,9 +118,9 @@ test('gripperPresetsFor: 未宣言の種別は既定へ倒さず throw する (�
 /** Column-major identity matrixWorld: camera at origin looking down −Z (world). */
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
-test('capture: identity matrix → viewAxis (0,0,-1); position maps verbatim', () => {
+test('capture: identity matrix → viewAxis (0,0,-1); position converts mm scene to m wire (ADR-136)', () => {
   const snap = visionFromViewportCamera({
-    position: { x: 1, y: 2, z: 3 },
+    position: { x: 1000, y: 2000, z: 3000 },
     matrixWorldElements: IDENTITY,
     fovDeg: null,
   })
@@ -151,9 +151,9 @@ test('capture: malformed snapshots return null, never a guessed declaration (#11
   assert.equal(visionFromViewportCamera({ position: { x: 0, y: 0, z: 0 }, matrixWorldElements: zeroCol }), null)
 })
 
-test('capture: values round to 4 decimals for clean form display', () => {
+test('capture: values round to 4 decimals (0.1mm once converted to meters) for clean form display', () => {
   const snap = visionFromViewportCamera({
-    position: { x: 1.00004999, y: 0, z: 0 },
+    position: { x: 1000.04999, y: 0, z: 0 },
     matrixWorldElements: IDENTITY,
     fovDeg: 50,
   })

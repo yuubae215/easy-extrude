@@ -59,6 +59,7 @@ import {
 } from '../domain/graspTargets.js'
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
+import { mmToM, mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 
 export class GraspController {
   /**
@@ -588,8 +589,15 @@ export class GraspController {
         // across opposed sides, a cup seals on the top. Sampling the wrong face is
         // not a fidelity loss — core/ measures the object width from these very
         // samples, so a top-only grid told the jaw gate the box was half as wide.
-        target:    { surfaceSamples: surfaceSamplesFor(targetEntity, params.gripper?.kind ?? null) },
-        obstacles: obstaclesExcluding(targets, targetEntity.ref),
+        // Both are DOCUMENT-derived (mm, ADR-119) — converted to meters here, the
+        // same wire-boundary conversion `base` gets above (ADR-136). `normal` is
+        // a unit direction, not a length, so it rides unconverted.
+        target: {
+          surfaceSamples: surfaceSamplesFor(targetEntity, params.gripper?.kind ?? null)
+            .map(s => ({ point: mmPointToM(s.point), normal: s.normal })),
+        },
+        obstacles: obstaclesExcluding(targets, targetEntity.ref)
+          .map(o => ({ center: mmPointToM(o.center), radius: mmToM(o.radius) })),
         // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
         // these (ADR-128): until it did, `reach_margin` had no absolute basis and
         // came back permanently unmeasured — which ADR-120 correctly refuses to
@@ -714,7 +722,11 @@ export class GraspController {
     // test that hovers once cannot see it.
     this._syncArmPreview(candidate)
 
-    const frame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
+    const wireFrame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
+    // The wire's cartesianFrame.position is meters; the scene it gets placed in
+    // and compared against (below, and inside `showCandidate`) is mm (ADR-136).
+    // Converted once here so both consumers agree.
+    const frame = wireFrame ? { ...wireFrame, position: mPointToMM(wireFrame.position) } : null
     if (!frame) { this._ghost?.clear(); return }
 
     if (!this._ghost) {
@@ -867,7 +879,9 @@ export class GraspController {
     const declaration = {}
     if (basePose) {
       const p = basePose.position
-      declaration.base = [p.x, p.y, p.z]
+      // worldPoseOf() resolves the mm-scale scene (ADR-136); the wire's `base`
+      // is meters (matching `plan.reachMin/reachMax`), so it converts here, once.
+      declaration.base = mmPointToM([p.x, p.y, p.z])
       // 据付姿勢 (ADR-129 D2)。ベースフレームの**世界四元数**をそのまま載せる —
       // これは `worldPoseOf` が毎フレーム解いているのと同じ解決で、ここで別の
       // 合成を書くと第二の源になる (§1.1)。

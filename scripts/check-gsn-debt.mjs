@@ -159,7 +159,13 @@ const SUPPORT_LABELS = new Map([
 // 起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結で、Proposed の ADR は
 // 定義上ほぼ全部の goal が exploring になる — 借金が増えたのではなく可視化された
 // ぶんである。5 件とも機械可読な満期 (PATH/GREP) を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 34
+// 2026-09-18: 34 → 35。ADR-136 (Accepted・実装済み) の木が 1 goal を足した
+// (`RobotSkeletonAndDefaultAddedGeometryShareTheMmScale` — ロボット骨格の見た目の
+// スケールが Solid と一致することは、RobotStage が THREE.js/URDFLoader 依存で
+// node --test レーンに乗らないため自動テストで焼けず、pnpm dev の目視確認に委ねる)。
+// 機械可読な満期 (PATH:e2e/robot-scale-parity.spec.js — 将来 e2e が現れたら昇格判定)
+// を持つので分子 (G3) は動かない。
+const DEBT_BASELINE = 35
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

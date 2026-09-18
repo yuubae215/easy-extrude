@@ -166,7 +166,7 @@ test('added robots take the next free names', () => {
 test('the n-th robot is offset so it does not spawn inside the previous one', () => {
   const first  = robotBaseSeedPose(0)
   const second = robotBaseSeedPose(1)
-  assert.deepEqual(first.position, { x: -2, y: 2, z: 0 })     // ADR-083 default kept
+  assert.deepEqual(first.position, { x: -2000, y: 2000, z: 0 })  // ADR-083 default, mm (ADR-136)
   assert.notDeepEqual(second.position, first.position)
   assert.deepEqual(second.rotation, { x: 0, y: 0, z: 0, w: 1 })
 })
