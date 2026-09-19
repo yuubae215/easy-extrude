@@ -8,7 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
-import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance } from './CameraMath.js'
+import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance, BOOT_VIEW_DIRECTION } from './CameraMath.js'
 import { orbitControlsTouches } from './CameraGestures.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 
@@ -38,9 +38,15 @@ export class SceneView {
     // Backdrop/fog ownership is delegated to the ambient stage (ADR-067):
     // SceneStage sets `scene.background` (gradient) and `scene.fog` itself.
 
+    // Only the DIRECTION is authored here. Distance and clip planes belong to
+    // framing (`fitCameraToSphere`, driven by AppController._frameScene at boot
+    // — ADR-137): they are scene-scale facts, and the constructor does not know
+    // the scene's scale. The 0.1/100 pair below is likewise a placeholder that
+    // `clipPlanesFor` replaces on the first frame-the-scene call.
     this.camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
     this.camera.up.set(0, 0, 1)           // ROS convention: +Z is up
-    this.camera.position.set(6, -4, 3)    // front (+X), right (-Y), above (+Z)
+    const d = BOOT_VIEW_DIRECTION
+    this.camera.position.set(d.x, d.y, d.z)
     this.camera.lookAt(0, 0, 0)
 
     // The orthographic camera is a DERIVED VIEW of the perspective camera, never

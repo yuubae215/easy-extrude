@@ -152,6 +152,12 @@ flowchart LR
 
 実装後の実測: `pnpm test` 1157 本中 1147 green(fail 10 はいずれも本 ADR 実装前から存在する
 環境依存の失敗 — `git stash` で同一 10 本が再現し、本変更による新規失敗は 0)。
+
+> **訂正 (ADR-137, 2026-09-19):** この行は実態と合っていない。依存をインストールした環境で
+> 同じコミットを測り直すと **1293 本中 1293 green・fail 0** である。当時の 10 件は import 段階の
+> 失敗で、サブテストが登録されないぶん総数も 1157 に減っていたと見られる —「本 ADR 実装前から
+> 存在する既存の失敗」として記録された事実は実在しない。書き換えではなく追記で残す(原則 #19:
+> 判断の履歴を消さない)。
 `pnpm test:adr` 136 本すべて OK。`pnpm test:gsn` / `pnpm test:gsn-debt` green
 (`DEBT_BASELINE` 34→35、理由は `scripts/check-gsn-debt.mjs` の同日付コメントに記録)。
 
@@ -161,7 +167,18 @@ flowchart LR
 
 グラフ / 層 + 契約レンズ(§1.3): この決定が動かすノードは正確に 4 つ
 (`RobotStage`・`robotSkeleton.js`・`GraspController`・`GraspDeclarationCatalog`)
-に閉じており、Solid・Layout DSL・`packages/grasp-contract` のスキーマ構造そのもの
+に閉じており、
+
+> **訂正 (ADR-137, 2026-09-19):** この枚挙は**母集団を取り違えている**。4 つは*変換点*としては
+> 正しいが、単位の決定が動かすのは変換点ではなく **world-unit で書かれたあらゆる定数の意味**で
+> ある。変換を必要としない 3 つ(`AppController._restStarterCube` の重心 `z=0.5`、
+> `SceneView` の `camera.position.set(6,-4,3)` と `far=100`)は定義上この枚挙に現れず、
+> 結果として**起動直後の画面に何も描かれなくなった** — カメラが 100mm キューブの内側に入り、
+> ロボットは far 平面の外に出た。原則 #31: 母集団を「在る変換」で定義した瞬間、消費者は外へ落ちる。
+> 正しい母集団は「world-unit スケールの事実を**消費している**箇所」で、これは変換点を真に含む。
+> 詳細と修正は ADR-137。
+
+Solid・Layout DSL・`packages/grasp-contract` のスキーマ構造そのもの
 (フィールド追加・削除)には触れない — 単位という「フィールドの意味」だけを固定する
 決定であり、`contractVersion` は上げない(ADR-083/084 の先例: request 側の意味論的
 明確化は構造変更ではない)。

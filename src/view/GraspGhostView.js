@@ -34,6 +34,7 @@ import {
   revealFrame, mixHex, NEUTRAL_GLYPH_COLOR,
 } from './GraspGhostMath.js'
 import { prefersReducedMotion } from '../theme/motion.js'
+import { MM_PER_METER } from '../domain/worldUnits.js'
 
 /**
  * Base frame the contract's `cartesianFrame` is *assumed* to be expressed in.
@@ -45,7 +46,17 @@ import { prefersReducedMotion } from '../theme/motion.js'
 export const FRAME_CONVENTION = 'world' /* assumed — upstream leaves the base frame unspecified */
 
 const GLYPH_TARGET_PX   = 40    // on-screen glyph size the scale loop aims for
-const GLYPH_MIN_WORLD   = 0.05  // never collapse below this world size
+/**
+ * Lower bound of the glyph's WORLD size (PHILOSOPHY #27's pair rule needs the
+ * world term to be a world quantity). It means 50mm — the same physical size it
+ * meant when it was written `0.05` against a metre-era scene. ADR-136 made the
+ * world-unit mm and did not reach this line, leaving a floor of 0.05mm: a bound
+ * that can never bind is indistinguishable from one that was removed, so it
+ * reported green while guarding nothing (ADR-137; cf. ADR-103 on retired shapes
+ * that keep passing). Spelled against the unit authority so the next unit
+ * decision cannot silently skip it.
+ */
+const GLYPH_MIN_WORLD   = MM_PER_METER * 0.05
 const HOVER_OPACITY     = 0.4   // candidate row hover = preview (ADR-059 §B-3)
 const SELECT_OPACITY    = 0.9   // click select = committed ghost
 const FADE_MS           = 150
