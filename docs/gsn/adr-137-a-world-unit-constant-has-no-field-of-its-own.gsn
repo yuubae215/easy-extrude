@@ -1,0 +1,74 @@
+GOALS adr137_scale_dependent_quantities_declare_their_unit
+
+goal ScaleDependentQuantitiesDeclareTheirOwnUnit
+uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6071
+summary "尺度に依存する量 (カメラのクリップ面・既定 pose・グリッド幅・スナップ閾値・接地許容・既定形状の寸法) が、自分の単位と根拠を自分で名乗る。そして『名乗っていない量の個数』が毎 PR 数えられる — 在る定数を辿るのではなく、消費点 (sink) にリテラルが直接届いている箇所を数える (原則 #31)"
+state UnderReview
+labels adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, app
+
+    context MeterAssumingAuthoritiesCoexistedWithMillimeterContent
+    uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6072
+    summary "ADR-136 は『mm は既に Solid/Layout DSL の規約で、そちらは無変更』と書いたが、それは Layout DSL 経由で入る内容についてだけ真だった。エディタ native の経路は一貫してメートル前提で、repo 内に 1 unit = 1 m を明記した権威が複数在る: SceneView.js:111 『the 20-unit grid is sized for meter-scale scenes』、placement.js:62 『接地判定の許容 (1 mm)』= 0.001、SceneService.js:2671 『1 mm』= 0.001、FaceExtrudeHandler.js:21 『world units』= 0.15、AppController.js:1141 『a 1 m cube』。ADR-136 は対のうち Add 側だけを mm へ動かし、view/判定側を動かさなかった"
+    artifacts
+    - "src/view/SceneView.js"
+    - "src/domain/placement.js"
+    - "src/service/SceneService.js"
+    - "src/controller/handler/FaceExtrudeHandler.js"
+    - "src/controller/AppController.js"
+
+    context ADR136CountedTheRoboticsBoundariesNotTheConstants
+    uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6073
+    summary "ADR-136 の『変換点はちょうど 4 箇所』は正しい — ただしそれは『ロボティクスがシーン境界を跨ぐ点』の個数であって『world-unit を単位に持つ定数』の個数ではない。裸の数値リテラルは型でも命名でも単位を名乗らないので、在るもの (変換点) を辿る数え方では定義上出てこない。この ADR は ADR-136 を覆さず、その一段上の母集団の取り違えに答える"
+    artifacts
+    - "docs/adr/ADR-136-world-unit-is-millimeters-robotics-converts-at-the-wire.md"
+
+    context TheGreenLaneWasMeasuredWithoutDependencies
+    uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6074
+    summary "ADR-136 の実測『pnpm test 1157 本中 1147 green / fail 10 は環境依存』は node_modules 不在下の値だった。依存を入れて測り直すと 1293/1293 green になり、差分 136 本は three/ajv/typescript を要求するファイル = まさに ADR-136 が触った view 層。落ちたのではなく母集団から静かに外れていた。緑は『その形の証拠が見える範囲で通った』以上を意味しない — D5 (問い所を散文に置かない) が要る実測上の理由"
+
+    justification WhyNotBrandedWorldUnitTypes
+    uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6075
+    summary "却下案 B (world-unit を branded type / newtype で型に載せる) への反証: 原則 #21 (座標空間を静的に区別する) と同じ最も強い手だが、JS に newtype が無く THREE.Vector3 全域に及ぶので blast radius が view 層全体になる。今日の問題は『数えられないこと』であって『混ざること』ではないので過大 (核 §5 過剰モデリング禁止)。ただし D4 の sink 表が手書きである限界が耐えられなくなった日が、この案へ差し替えるトリガである"
+
+    strategy ByClosingScaleDependentQuantitiesToThreeDeclaredKinds
+    uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6076
+    summary "尺度依存量の種を 3 つに閉じ、第四の種 (裸の定数) を数える。D1 三種 = 画面空間 (*_PX) / シーン由来 (radius を引数に取る関数) / 宣言された物理長 (mm(…) 経由)。D2 worldUnits.js に mm(n) を足し単位を呼び出し側の構文へ乗せる (MM_PER_METER/mmToM/mToMM はワイヤ変換の権威として不変)。D3 boot も既存の 1 つの導出 (focusPose/clipPlanesFor, ADR-068) を通し、SceneView の 0.1/100・(6,-4,3)・GridHelper(20,20) を種類ごと消す。D4 sink の構文から母集団を導出する ratchet census。D5 問い所を検査に降ろす (散文ではなく)"
+
+        goal ADR136WireConversionsRemainIntact
+        uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6077
+        summary "この決定は ADR-136 の 4 変換点 (RobotStage の URDF scale・robotSkeleton の TCP_LOCAL_SEED・GraspController の送受信・GraspDeclarationCatalog の viewport capture) を覆さない。単位の権威 worldUnits.js は保たれ、既存の変換テストが無改訂で緑であることがその境界の証拠になる"
+        labels support-verified
+
+            solution ExistingConversionTestsPassUnmodified
+            uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6078
+            summary "依存導入後の測り直しで pnpm test = 1293/1293 green。ADR-136 の変換を固定する src/controller/GraspController.test.js (robot.base が [-2,2,0] メートル / 受信 position が ×1000) と src/context/GraspDeclarationCatalog.test.js (visionFromViewportCamera が mm→m) を含み、いずれも無改訂で通る。pnpm typecheck / test:adr (136 本) / test:gsn-debt / test:deferrals も green"
+            artifacts
+            - "src/controller/GraspController.test.js"
+            - "src/context/GraspDeclarationCatalog.test.js"
+            - "src/domain/worldUnits.js"
+
+        goal UndeclaredScaleDependentQuantitiesAreCounted
+        uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6079
+        summary "三種 (画面 px / シーン由来 / 宣言された mm) のどれでもない量の個数が、ratchet のベースラインとして定数に焼かれ、超えても下回っても fail する。母集団は在る定数ではなく sink の構文 (camera.near/far への代入・camera.position.set・scale.setScalar・GridHelper・fitCameraToSphere の radius 実引数・world 座標と比較される閾値) から導出する"
+        labels support-exploring
+
+            assumption CensusRatchetNotYetWritten
+            uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607a
+            summary "本 ADR は Proposed で、実装は別スコープ (ユーザーが『新 ADR の部分は ADR 作成まで』と範囲を切った)。D4 の census はまだ存在しない。満期=PATH:src/WorldUnitCensus.test.js — そのファイルが現れ src/census/sources.js に登録された時点で本 goal を support-verified へ昇格させる"
+
+            assumption SinkTableIsHandwrittenOneLevelUp
+            uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607b
+            summary "反証されうる前提: D4 は個々の定数の母集団を sink から導出するが、sink の一覧そのものは手書きである。新しい view が独自に near を書けば、その sink が表へ登録されるまで census は見ない — ADR-102 が名指しした place-list の形が一段上に残る。今日これを導出へ広げないのは、sink の導出が却下案 B (world 座標を型で持つ) そのものだから。この前提が崩れた日 (登録漏れの sink が実害を出した日) が Option B のトリガである"
+
+        goal BootFramingGoesThroughTheOneDerivation
+        uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607c
+        summary "起動直後の既定シーンが、シーン尺度に関わらず画面に写る。boot は定数ではなく既定シーンの bounding sphere から framing を導出し (fitCameraToSphere → focusPose/clipPlanesFor/_updateGridScale)、BootReveal の着地先も導出になる。retune ではなく定数を種類ごと消すので、明日 m 系アセットを読んでも同じ欠陥へ戻らない"
+        labels support-exploring
+
+            assumption BootFramingRegressionMeasuredButNotYetGuarded
+            uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607d
+            summary "欠陥は実測済み: 同一操作列の前後スクリーンショット (c1c9a3e vs 28e6d6c) で、前は starter cube が接地して framing され、後は画面に何も写らない (カメラ距離 √61 ≈ 7.81 < cube 半幅 25 ⟹ カメラが内側、far = 100 で可視域も打ち切り)。しかし見た目は node --test レーンが構造的に見えないので、決着させる検査は e2e である。満期=PATH:e2e/boot-framing.spec.js — そのファイルが現れたら本 goal を support-verified へ昇格させる。ADR-136 の GSN が満期に置いた e2e/robot-scale-parity.spec.js と同じ穴を boot 側で塞ぐもので、両者は独立に満期を持つ"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607e
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は『起動直後にアプリが使える状態で立ち上がる』という体験側の正しさに効くが、事業木側の対応する goal 名・uuid は未特定 — ADR-136 の同名 context と同じ扱いで、次に事業木を読み直す機会に確定する。保留は忘却ではないのでここに残す"

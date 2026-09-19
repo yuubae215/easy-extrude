@@ -165,7 +165,18 @@ const SUPPORT_LABELS = new Map([
 // node --test レーンに乗らないため自動テストで焼けず、pnpm dev の目視確認に委ねる)。
 // 機械可読な満期 (PATH:e2e/robot-scale-parity.spec.js — 将来 e2e が現れたら昇格判定)
 // を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 35
+// 2026-09-19: 35 → 37。ADR-137 (Proposed・未実装) の木が 2 goal を足した
+// (`UndeclaredScaleDependentQuantitiesAreCounted` — 三種のどれでもない尺度依存量を
+// 数える ratchet census がまだ無い / `BootFramingGoesThroughTheOneDerivation` —
+// 起動直後の framing が導出を通ることは見た目の事実なので node --test レーンが
+// 構造的に見えず、決着は e2e)。ADR-133 の先例と同形で、起票と同時に木を起こす規律
+// (adr skill §GSN 併設) の帰結 — Proposed の ADR は定義上ほぼ全部の goal が
+// exploring になる。**この 2 件は ADR-136 のレビューで実測された欠陥**であって
+// 予測ではない (前後スクリーンショットと 1293/1293 green の測り直し) — 借金が
+// 増えたのではなく、散文にしか無かった限界が数えられる場所へ降りたぶんである。
+// 2 件とも機械可読な満期 (PATH:src/WorldUnitCensus.test.js ·
+// PATH:e2e/boot-framing.spec.js) を持つので分子 (G3) は動かない。
+const DEBT_BASELINE = 37
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
