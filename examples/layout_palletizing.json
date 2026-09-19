@@ -36,20 +36,21 @@
       ]
     },
     {
-      "ref": "palletizer_robot",
-      "type": "Solid",
-      "name": "パレタイジングロボット",
-      "description": "ペデスタル天面に締結する高可搬6軸ロボット。",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 300, "y": 300, "z": 700 },
-      "position": { "x": 0, "y": 0, "z": 1050 },
-      "frames": [
-        {
-          "ref": "robot_base",
-          "name": "ロボットベース (取付基準面)",
-          "translation": { "x": 0, "y": 0, "z": -350 }
-        }
-      ]
+      "ref": "robot_base",
+      "type": "CoordinateFrame",
+      "name": "robot_base",
+      "description": "パレタイジングロボットの TF ベース。ペデスタル天面 (robot_mount) にボルト締結。",
+      "robotRole": "base",
+      "position": { "x": 0, "y": 0, "z": 700 }
+    },
+    {
+      "ref": "robot_tcp",
+      "type": "CoordinateFrame",
+      "name": "tcp",
+      "description": "パレタイジングロボットの TCP。既定レストポーズでのフランジ位置 (Shift+A で追加するロボットと同じ既定値)。",
+      "robotRole": "tcp",
+      "parentRef": "robot_base",
+      "position": { "x": -716.58, "y": -133.30, "z": 345.56 }
     },
     {
       "ref": "pallet",

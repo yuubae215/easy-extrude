@@ -60,20 +60,21 @@
       ]
     },
     {
-      "ref": "arm_robot",
-      "type": "Solid",
-      "name": "単腕ロボット",
-      "description": "ペデスタル天面にボルト締結する6軸ロボット。",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 220, "y": 220, "z": 500 },
-      "position": { "x": -120, "y": 0, "z": 1170 },
-      "frames": [
-        {
-          "ref": "robot_base",
-          "name": "ロボットベース (取付基準面)",
-          "translation": { "x": 0, "y": 0, "z": -250 }
-        }
-      ]
+      "ref": "robot_base",
+      "type": "CoordinateFrame",
+      "name": "robot_base",
+      "description": "単腕ロボットの TF ベース。ペデスタル天面 (robot_mount) にボルト締結。",
+      "robotRole": "base",
+      "position": { "x": -120, "y": 0, "z": 920 }
+    },
+    {
+      "ref": "robot_tcp",
+      "type": "CoordinateFrame",
+      "name": "tcp",
+      "description": "単腕ロボットの TCP。既定レストポーズでのフランジ位置 (Shift+A で追加するロボットと同じ既定値)。",
+      "robotRole": "tcp",
+      "parentRef": "robot_base",
+      "position": { "x": -716.58, "y": -133.30, "z": 345.56 }
     },
     {
       "ref": "part_bin",

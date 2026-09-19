@@ -217,24 +217,25 @@
           ]
         },
         {
-          "ref": "robot",
-          "type": "Solid",
-          "name": "産業用ロボット",
-          "description": "作業台上のベースプレートにボルト締結。ベースプレート天面 (z=830) を基準に搭載。",
-          "ifcClass": "IfcTransportElement",
-          "dimensions": { "x": 220, "y": 220, "z": 520 },
+          "ref": "robot_base",
+          "type": "CoordinateFrame",
+          "name": "robot_base",
+          "description": "産業用ロボットの TF ベース。ベースプレート天面 (z=830, robot_mount) にボルト締結。",
+          "robotRole": "base",
           "position": {
             "x": 2650,
             "y": 0,
-            "z": { "$expr": "f_bench.attrs.height.value + f_plate.attrs.thickness.value + 520 / 2" }
-          },
-          "frames": [
-            {
-              "ref": "robot_base",
-              "name": "ロボットベース (取付基準面)",
-              "translation": { "x": 0, "y": 0, "z": { "$expr": "0 - 520 / 2" } }
-            }
-          ]
+            "z": { "$expr": "f_bench.attrs.height.value + f_plate.attrs.thickness.value" }
+          }
+        },
+        {
+          "ref": "robot_tcp",
+          "type": "CoordinateFrame",
+          "name": "tcp",
+          "description": "産業用ロボットの TCP。既定レストポーズでのフランジ位置 (Shift+A で追加するロボットと同じ既定値)。",
+          "robotRole": "tcp",
+          "parentRef": "robot_base",
+          "position": { "x": -716.58, "y": -133.30, "z": 345.56 }
         },
         {
           "ref": "container_a",
@@ -313,7 +314,8 @@
       { "from": "f_bench",            "to": "workbench",    "kind": "derives" },
       { "from": "o_baseplate_design", "to": "base_plate",   "kind": "satisfies" },
       { "from": "f_plate",            "to": "base_plate",   "kind": "constrains" },
-      { "from": "o_robot_select",     "to": "robot",        "kind": "satisfies" },
+      { "from": "o_robot_select",     "to": "robot_base",   "kind": "satisfies" },
+      { "from": "o_robot_select",     "to": "robot_tcp",    "kind": "satisfies" },
       { "from": "g_depal",            "to": "container_a",  "kind": "constrains" },
       { "from": "g_depal",            "to": "container_b",  "kind": "constrains" },
       { "from": "o_baseplate_design", "to": "constraint:base_plate→workbench",       "kind": "satisfies" },

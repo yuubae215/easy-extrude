@@ -57,9 +57,13 @@ test('auto-Origin CFs are folded away; user frames reappear under their Solid', 
   const scene = compileLayout(factoryLayout)
   const { dsl } = decompileLayout(scene)
 
-  // No CoordinateFrame entity is emitted for the auto-generated Origins.
+  // No CoordinateFrame entity is emitted for the auto-generated Origins — the
+  // only ones that survive are the standalone, world-parented robot TF pair
+  // (robot_base / tcp, ADR-084 §2), never a folded Solid-child frame.
   const cfEntities = dsl.entities.filter(e => e.type === 'CoordinateFrame')
-  assert.equal(cfEntities.length, 0)
+  assert.deepEqual(cfEntities.map(e => e.ref).sort(), ['robot_base', 'robot_tcp'])
+  assert.equal(cfEntities.find(e => e.ref === 'robot_base').robotRole, 'base')
+  assert.equal(cfEntities.find(e => e.ref === 'robot_tcp').robotRole, 'tcp')
 
   const workbench = dsl.entities.find(e => e.ref === 'workbench')
   assert.deepEqual(workbench.dimensions, { x: 500, y: 300, z: 800 })

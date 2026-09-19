@@ -60,20 +60,21 @@
       ]
     },
     {
-      "ref": "robot",
-      "type": "Solid",
-      "name": "産業用ロボット",
-      "description": "作業台上のベースプレートにボルト締結。ベースプレート天面 (z=830) を基準に搭載。",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 220, "y": 220, "z": 520 },
-      "position": { "x": 2650, "y": 0, "z": 1090 },
-      "frames": [
-        {
-          "ref": "robot_base",
-          "name": "ロボットベース (取付基準面)",
-          "translation": { "x": 0, "y": 0, "z": -260 }
-        }
-      ]
+      "ref": "robot_base",
+      "type": "CoordinateFrame",
+      "name": "robot_base",
+      "description": "産業用ロボットの TF ベース。ベースプレート天面 (z=830, robot_mount) にボルト締結。",
+      "robotRole": "base",
+      "position": { "x": 2650, "y": 0, "z": 830 }
+    },
+    {
+      "ref": "robot_tcp",
+      "type": "CoordinateFrame",
+      "name": "tcp",
+      "description": "産業用ロボットの TCP。既定レストポーズでのフランジ位置 (Shift+A で追加するロボットと同じ既定値)。",
+      "robotRole": "tcp",
+      "parentRef": "robot_base",
+      "position": { "x": -716.58, "y": -133.30, "z": 345.56 }
     },
     {
       "ref": "container_a",
