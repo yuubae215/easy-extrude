@@ -159,7 +159,30 @@ const SUPPORT_LABELS = new Map([
 // 起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結で、Proposed の ADR は
 // 定義上ほぼ全部の goal が exploring になる — 借金が増えたのではなく可視化された
 // ぶんである。5 件とも機械可読な満期 (PATH/GREP) を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 34
+// 2026-09-18: 34 → 35。ADR-136 (Accepted・実装済み) の木が 1 goal を足した
+// (`RobotSkeletonAndDefaultAddedGeometryShareTheMmScale` — ロボット骨格の見た目の
+// スケールが Solid と一致することは、RobotStage が THREE.js/URDFLoader 依存で
+// node --test レーンに乗らないため自動テストで焼けず、pnpm dev の目視確認に委ねる)。
+// 機械可読な満期 (PATH:e2e/robot-scale-parity.spec.js — 将来 e2e が現れたら昇格判定)
+// を持つので分子 (G3) は動かない。
+//
+// 2026-09-19: 35 → 34。その満期が ADR-137 で到来した — G4 EXPIRY が
+// `PATH:e2e/robot-scale-parity.spec.js` の実在を検知して fail し、goal を
+// support-verified へ昇格させた。**満期が実際に発火して借金が減った初めての例**で、
+// ADR-126 が作った仕組みが印字ではなく機械であることの実測でもある。同時にこれは
+// 「手動確認に委ねる」と宣言した借金の典型的な末路の記録でもあり — その目視確認は
+// 一度も実行されず、見た目の主張は見た目を見ないレーンで緑のまま ADR-137 の欠陥
+// (起動直後に何も描かれない) を出荷しかけた。
+//
+// 2026-09-19: 34 → 35。同じ PR で ADR-137 の木が exploring を 1 つ足した
+// (`TheOpeningShotIsPreservedNotReinvented` — 開幕ショットの画角が従来と同じである
+// ことの根拠が、逆算値とカメラ距離の一致 + main 対比のスクリーンショット目視だけで、
+// e2e は frustum 内在しか見ないため『霧で沈む』『黒いマテリアル』の類を原理的に
+// 通過する)。満期は機械可読 (PATH:e2e/boot-visual-regression.spec.js) なので分子
+// (G3) は動かない。差引きゼロだが**両方向を宣言する** — 昇格 1 件と新規 1 件が
+// 相殺して 34 のままなら、動きが 2 つあったこと自体が見えなくなる (ratchet が
+// 超えても下回っても fail する理由と同じ)。
+const DEBT_BASELINE = 35
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

@@ -1,0 +1,109 @@
+GOALS adr137_the_boot_view_is_framed_not_hard_coded
+
+goal EveryWorldUnitConsumerAgreesWithTheUnitDecision
+uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f01
+summary "ADR-136 が world-unit を mm と決めたあと、その決定が world-unit スケールの事実を消費するすべての箇所へ届いている — 変換を必要とする箇所だけでなく、変換を必要としないがスケールを前提に書かれた定数 (起動カメラ姿勢・クリップ面・既定キューブの接地・オーバーレイの世界下限) も含めて。判定基準は『起動直後およびロボット追加直後に、シーンが持つ実体の個数と画面が提示する個数が一致する』"
+state UnderReview
+labels adr-137, adr-136, adr-090, adr-096, adr-126, principle-31, principle-11, principle-1, app
+
+    context ADR136ConvertedAllFiveBoundariesAndTheScreenStillWentBlank
+    uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f02
+    summary "ADR-136 の 5 つの変換点はレビューで 1 つずつ確認して正しい (方向・対象ともに) — セルテンプレを読み込んだ状態で Add ▸ Robot すれば骨格は mm 系ペデスタルと同縮尺で描かれる。にもかかわらず起動直後のビューポートは空で、Outliner は 'Cube · selected' と表示していた。カメラが 100mm キューブの内側 (原点から 7.81mm) に居て far 平面が 100mm だったため"
+    artifacts
+    - "docs/adr/ADR-136-world-unit-is-millimeters-robotics-converts-at-the-wire.md"
+    - "src/view/SceneView.js"
+    - "src/controller/AppController.js"
+
+    context ThePopulationWasDefinedAsConversionsNotConsumers
+    uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f03
+    summary "ADR-136 の Lens notes は『この決定が動かすノードは正確に 4 つ』と枚挙し、その枚挙自体は変換点として正しい。しかし単位の決定が動かすのは変換点ではなく **world-unit で書かれたあらゆる定数の意味** で、取り残された 3 つ (重心 z=0.5 / camera.position.set(6,-4,3) / far=100) はどれも変換を必要としないため定義上その枚挙に現れない。原則 #31 — 母集団を『在る変換』で定義した瞬間、消費者は外へ落ちる"
+
+    context TheRuleExistedButBootPredatedIt
+    uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f04
+    summary "docs/CODE_CONTRACTS.md の『Ground Grid Scales With Scene Radius』は既に "Any new 'frame the scene' entry point must route through fitCameraToSphere" と書いていた。テンプレ読み込み・文書採用・STEP インポートは全部通っている。通っていない入口は起動ひとつ — 『新しい入口は』と書かれた規則は既存の入口を一度も問わないため"
+    artifacts
+    - "docs/CODE_CONTRACTS.md"
+
+    justification WhyNotJustRewriteTheThreeConstantsInMillimetres
+    uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f05
+    summary "却下案 A (3 定数を mm へ書き換える) への反証: 症状は最小差分で消えるが、SceneView のカメラ定数は『世界の大きさ』の第三の源として残り、次に単位や既定サイズが動いた日にまた取り残される。ADR-136 が踏んだ穴を同じ形で 1 回浅くするだけで、母集団の定義は訂正されない"
+
+    strategy ByRoutingBootThroughFramingAndGivingEachFactOneOwner
+    uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f06
+    summary "D1 既定サイズの事実に権威を与える (CuboidModel.DEFAULT_HALF_EXTENT を export し、_restStarterCube は寸法を触らず置くだけにする — 書き手 3 人を 1 人へ)。D2 起動を _frameScene 経由の fitCameraToSphere 入口にし、開幕ショットの画角は『引く margin』ではなく『フレーミングする球の半径』(BOOT_VIEW_RADIUS=300mm) で保つ — カメラ・grid・fog が同じ 1 つの数から導出されるため。D3 Add ▸ Robot も同じ入口を通す (2828mm 先に生えるものが 100mm の視界と 100mm の far に収まらない)。D4 見た目の主張を焼く e2e を起こし、値ではなく個数 (solidsOutsideView) を測る"
+
+        goal TheBootSceneShowsWhatItHolds
+        uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f07
+        summary "起動直後、シーンが持つ Solid の個数と、カメラ frustum の内側に在る Solid の個数が一致する (solidsOutsideView === 0)。かつ起動キューブは地面に接している (minSolidZ === 0) — 沈んでもいないし浮いてもいない"
+        labels support-verified
+
+            solution E2EMeasuresTheBootSceneAndFailsOnThePreFixCode
+            uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f08
+            summary "e2e/robot-scale-parity.spec.js の第 1 ケース: solids===1 / solidsOutsideView===0 / |minSolidZ|<0.5 / distToTarget>100 を assert。**落ちることを確認済み** — 計測 (worldScale/worldSpan) だけを修正前のコードへ移植した worktree で同 spec を走らせると minSolidZ が 24.5 を返して fail する。落ちない検査は何も守らないので、この反証実験を証拠の一部として記録する"
+            artifacts
+            - "e2e/robot-scale-parity.spec.js"
+            - "src/controller/AppController.js"
+            - "src/model/CuboidModel.js"
+
+        goal AnAddedRobotIsOnTheScreenNotMerelyInTheScene
+        uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f09
+        summary "Add ▸ Robot したロボットは、2828mm 先の既定シードに生えても画面に在る — far 平面がそこまで伸び、視界がそれを含む。基数 1 を基数 0 として提示しない (ADR-090/096 が 2 度名指しした形、原則 #11)"
+        labels support-verified
+
+            solution E2EMeasuresFarPlaneAndSkeletonScaleAfterAdd
+            uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f0a
+            summary "e2e/robot-scale-parity.spec.js の第 2 ケース: 追加前 skeletons===0 (ADR-132 D5)、追加後 skeletons===1、骨格 world bbox 高さ ∈ (100, 10000) (実測 574mm)、camera.far > 2800 (実測 13344mm)。修正前のコードでは far===100 で fail する"
+            artifacts
+            - "e2e/robot-scale-parity.spec.js"
+            - "src/view/RobotStage.js"
+            - "src/view/RobotStageSet.js"
+
+        goal TheSizeOfADefaultSolidHasExactlyOneWriter
+        uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f0b
+        summary "『既定 Solid の大きさ』という 1 つの事実の書き手が 1 人である (CuboidModel.DEFAULT_HALF_EXTENT)。ADR-136 の時点では 3 人 (createInitialCorners / SceneService の stagger / AppController._restStarterCube) いて、2 人に届いた改訂が 3 人目に届かなかったのが接地バグの直接原因"
+        labels support-verified
+
+            solution RestStarterCubeNoLongerResizes
+            uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f0c
+            summary "_restStarterCube() は localCorners を写像せず、setPose の並進に DEFAULT_HALF_EXTENT を渡すだけになった (『接地』が半径から導出される)。ADR ヘッダの Retires: GREP:src/controller/AppController.js::multiplyScalar\\(0\\.5\\) が、この形が戻ってこないことを Status 遷移で問う (ADR-125)。pnpm test 1293/1293 green"
+            artifacts
+            - "src/model/CuboidModel.js"
+            - "src/controller/AppController.js"
+
+        goal ClaimsAboutWhatIsSeenArePutToALaneThatSees
+        uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f0d
+        summary "見た目についての主張が、見た目を見るレーンで問われる。ADR-136 は 5 主張のうち 4 つを node --test で焼き、5 つ目 (骨格のスケール) だけを『手動確認』の散文に置いた — その確認は実行されず、全レーン green のまま起動画面が真っ黒になった。可視化 (GSN の借金として宣言する) は実行ではない"
+        labels support-verified
+
+            solution TheDeferredE2ELaneNowExistsAndTheDebtExpired
+            uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f0e
+            summary "ADR-136 が満期として名指しした PATH:e2e/robot-scale-parity.spec.js を実装した結果、check-gsn-debt の G4 EXPIRY が発火して fail し、adr-136 の木の RobotSkeletonAndDefaultAddedGeometryShareTheMmScale を support-verified へ昇格させた。DEBT_BASELINE 35 → 34 — ADR-126 の満期機構が実際に発火して借金を減らした最初の例で、この仕組みが印字ではなく機械であることの実測でもある"
+            artifacts
+            - "scripts/check-gsn-debt.mjs"
+            - "docs/gsn/adr-136-world-unit-is-millimeters.gsn"
+            - "e2e/robot-scale-parity.spec.js"
+
+        goal RetiredMetreEraShapesStayRetired
+        uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f0f
+        summary "メートル時代の 3 つの形 (multiplyScalar(0.5) による起動キューブの縮小 / camera.position.set(6,-4,3) / GLYPH_MIN_WORLD=0.05) が消えたまま戻らない。退役の腐敗は違反を見逃すのではなく緑を出すので、消したこと自体を数える (ADR-103)"
+        labels support-verified
+
+            solution AdrHeaderRetiresIsCheckedByStatusTransition
+            uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f10
+            summary "本 ADR の Retires: 欄が 3 つの GREP 番地を持ち、Status=Accepted なので pnpm test:adr が『指す先が在ってはならない』側を問う (ADR-125 の双方向発火)。green"
+            artifacts
+            - "docs/adr/ADR-137-the-boot-view-is-framed-not-hard-coded.md"
+            - "scripts/check-adr-status.mjs"
+
+        goal TheOpeningShotIsPreservedNotReinvented
+        uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f11
+        summary "起動時にフレーミングを通しても、開幕ショットの画角はこのアプリが従来持っていたものと同じである — カメラだけでなく grid のスケールと fog の濃度も含めて。『視界の大きさ』を表す数が 1 つ (BOOT_VIEW_RADIUS) なので三者が同じ話をする"
+        labels support-exploring
+
+            assumption OpeningShotParityCheckedByScreenshotComparisonOnly
+            uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f12
+            summary "現状の根拠は (a) 逆算値と実測カメラ距離の一致 (780mm) と (b) main 対比のスクリーンショット目視で、自動レーンでは焼いていない。e2e は frustum 内在しか見ないので『霧で沈む』『真っ黒なマテリアル』の類は原理的に通過する (ADR-137 の『この証拠が構造的に見逃すもの』で宣言済み)。決着させる検査は起動直後のビューポートの視覚回帰 (スクリーンショット比較) で、満期=PATH:e2e/boot-visual-regression.spec.js — そのファイルが現れたら本 goal を support-verified へ昇格させる"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f13
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は『開いた瞬間に何かが見えている』という初回体験に効くもので、事業木側では ByDirectManipulationTrust 近傍が候補だが goal 名・uuid は未特定 — 次に事業木を読み直す機会に確定する"

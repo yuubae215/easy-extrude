@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
 import { jointValuesFor } from '../domain/robotConfig.js'
 import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
+import { MM_PER_METER } from '../domain/worldUnits.js'
 
 /**
  * RobotStage — loads and displays a fixed-pose robot-arm skeleton in the main
@@ -33,7 +34,7 @@ export class RobotStage {
     this.robot = null
 
     this._group = new THREE.Group()
-    const [x, y, z] = opts.position ?? [-2, 2, 0]
+    const [x, y, z] = opts.position ?? [-2 * MM_PER_METER, 2 * MM_PER_METER, 0]
     this._group.position.set(x, y, z)
     scene.add(this._group)
 
@@ -46,6 +47,12 @@ export class RobotStage {
     // already agree — URDFLoader instantiates links in URDF-native axes
     // with no reframing needed (see URDFLoader.js header comment).
     robot.rotation.x = 0
+    // The URDF is ROS/URDF-standard meters; `_group`'s world transform (driven by
+    // the robot_base CoordinateFrame, ADR-084 §2) is mm (ADR-136). Scaling the
+    // URDF root converts every joint origin/link length in the chain at once —
+    // Three.js composes this scale into worldPoseOf() results automatically, so
+    // base/tcp world positions come out mm-consistent with the rest of the scene.
+    robot.scale.setScalar(MM_PER_METER)
     this.robot = robot
     this._group.add(robot)
     this.previewSolution(null)
@@ -95,6 +102,26 @@ export class RobotStage {
 
   /** Whether the skeleton is currently drawn (read-only accessor for the owner). */
   get visible() { return this._group.visible }
+
+  /**
+   * World-space size of the loaded skeleton's bounding box, in world units
+   * (mm — ADR-136), or null before the URDF resolves.
+   *
+   * Read-only measurement, exposed for the E2E scale-parity guard (ADR-137).
+   * The claim "the URDF's metres became world millimetres" is only observable
+   * once THREE has composed `robot.scale` into a real matrix, which no
+   * `node --test` lane does — so it was left as a prose "manual check" that
+   * nobody ran, and the metre-era boot camera shipped on top of it. A number
+   * the browser can read turns that claim into an executable one.
+   * @returns {{x:number,y:number,z:number}|null}
+   */
+  worldSpan() {
+    if (!this.robot) return null
+    const box = new THREE.Box3().setFromObject(this._group)
+    if (box.isEmpty()) return null
+    const size = box.getSize(new THREE.Vector3())
+    return { x: size.x, y: size.y, z: size.z }
+  }
 
   /**
    * First raycast intersection against the visible skeleton, or null. The

@@ -24,7 +24,9 @@
  * Pure and THREE-free: runs in the bare `node --test` lane (test:context).
  */
 
-/** Round to 0.1 mm so captured values read cleanly in the form fields (+0 normalises -0). */
+import { mmToM } from '../domain/worldUnits.js'
+
+/** Round to 1e-4 (0.1mm once converted to meters) so captured values read cleanly in the form fields (+0 normalises -0). */
 const round4 = (v) => Math.round(v * 1e4) / 1e4 + 0
 
 /**
@@ -363,8 +365,10 @@ export function visionFromViewportCamera(snap) {
   const len = Math.hypot(dx, dy, dz)
   if (!(len > 0)) return null
   const fov = snap.fovDeg
+  // `p` is the live viewport camera's world position — mm (ADR-136); the wire's
+  // `camera.position` is meters, matching the panel's own manually-typed values.
   return {
-    position: [round4(p.x), round4(p.y), round4(p.z)],
+    position: [round4(mmToM(p.x)), round4(mmToM(p.y)), round4(mmToM(p.z))],
     viewAxis: [round4(dx / len), round4(dy / len), round4(dz / len)],
     fovHalfAngle: isFiniteNumber(fov) && fov > 0 ? round4((fov * Math.PI / 180) / 2) : null,
   }

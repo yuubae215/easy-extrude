@@ -19,6 +19,7 @@ import { ROBOT_REST_POSE } from '../domain/robotConfig.js'
 import { deriveFlangeSeed, parseUrdfChain } from '../robotics/UrdfChain.js'
 import { kinematicsDeclarationFromUrdf } from '../domain/robotKinematics.js'
 import { movableJoints } from '../robotics/Kinematics.js'
+import { mToMM } from '../domain/worldUnits.js'
 
 /** The skeleton URDF as a bundled string (no runtime fetch). */
 export const ROBOT_URDF_TEXT = urdfText
@@ -28,9 +29,16 @@ export const ROBOT_URDF_TEXT = urdfText
  * the shared rest pose, DERIVED — replacing ADR-084's hand-copied
  * `(-0.717,-0.133,0.346)` constant. Fed to `SceneService` (ensureRobotFrames) so
  * the tool point seeds at the skeleton's hand from the same source that draws it.
+ * The URDF's forward kinematics is in meters (ROS standard); this local CF
+ * translation lives in the mm-scale scene (ADR-136), so it is converted once here.
  * @type {{ x:number, y:number, z:number }}
  */
-export const TCP_LOCAL_SEED = deriveFlangeSeed(ROBOT_URDF_TEXT, ROBOT_REST_POSE)
+const _flangeSeedMeters = deriveFlangeSeed(ROBOT_URDF_TEXT, ROBOT_REST_POSE)
+export const TCP_LOCAL_SEED = {
+  x: mToMM(_flangeSeedMeters.x),
+  y: mToMM(_flangeSeedMeters.y),
+  z: mToMM(_flangeSeedMeters.z),
+}
 
 /**
  * The wire-shaped `robot.kinematics` declaration for this skeleton (ADR-127 /

@@ -1,0 +1,71 @@
+GOALS adr136_world_unit_is_millimeters
+
+goal WorldUnitIsConsistentAcrossSceneAndWire
+uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5061
+summary "同じ Three.js world 座標系の中で、Solid/Layout DSL(mm の生数値)とロボット/URDF/grasp-contract(メートル前提)が無変換で同居していた。世界座標系の 1 unit が指す物理量を、シーン中のどの実体についても一致させる — 見た目のスケールだけでなく、grasp-search の距離判定(reach envelope・target/obstacle との距離)が物理的に正しい値で core/ に届くようにする"
+state UnderReview
+labels adr-136, adr-119, adr-084, principle-1, principle-3, app
+
+    context TwoUnconciliatedConventionsSharedOneCoordinateSpace
+    uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5062
+    summary "Solid/Layout DSL(`examples/`・`templates/`・`LayoutCompiler.js`)は寸法・位置の mm 数値をそのまま world-unit に使う。ロボット骨格(`public/robot/skeleton_arm.urdf`、ROS標準のメートル)と grasp-contract(`plan.reachMin/reachMax`・`robot.base` 例値・`core/tests/data/grasp-req.json`)はメートル前提。`GraspController._resolveRobotDeclaration()` は mm 系の `worldPoseOf()` 結果をそのまま `robot.base` に、`surfaceSamplesFor`/`obstaclesExcluding` の mm 系出力をそのまま `target`/`obstacles` に乗せていた"
+    artifacts
+    - "public/robot/skeleton_arm.urdf"
+    - "packages/grasp-contract/examples/grasp-search-request.json"
+    - "src/controller/GraspController.js"
+    - "src/layout/LayoutCompiler.js"
+
+    context ADR119LeftThisAsymmetryUnresolved
+    uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5063
+    summary "ADR-119 は『対象幾何が文書由来でシーン由来でない』非対称を名指しし『どちらが所有するかは別 ADR』と保留していた。本 ADR がその別 ADR にあたり、実害(reach 判定が mm/m 混在で意味を失う)を解消する"
+    artifacts
+    - "docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md"
+
+    justification WhyNotWorldUnitEqualsMeters
+    uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5064
+    summary "却下案 B(world-unit=m にして Solid/Layout DSL 側で mm→m 変換)への反証: 変換点が LayoutCompiler の 1 関数に閉じない — 3D エディタでの直接寸法入力、当事者が既に保存している可能性のある scene-JSON など、変換点を列挙しきれない境界が複数ある。1 箇所でも取りこぼすと同じ症状(1000倍ズレ)が別の場所で再発する。対して Option A の変換点はロボティクス境界の 4 箇所に閉じ、枚挙可能"
+
+    strategy ByConvertingOnlyAtTheFourRoboticsBoundaries
+    uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5065
+    summary "world-unit=mm を単一の正とし、新設 src/domain/worldUnits.js (MM_PER_METER/mmToM/mToMM) を軸に、ロボティクスがシーン境界を跨ぐ 4 箇所にだけ変換を集約する: (1) RobotStage 構築時に URDF ルートへ scale.setScalar(1000)、(2) robotSkeleton.js の TCP_LOCAL_SEED を ×1000、(3) GraspController 送信側で robot.base/target.surfaceSamples[].point/obstacles[].center,.radius (+ GraspDeclarationCatalog.visionFromViewportCamera) を ÷1000、(4) GraspController 受信側で候補姿勢の position を ×1000 してから ghost/最近傍判定へ渡す。ドメイン層 (graspTargets.js・GraspGhostMath.js) は単位を知らないまま純粋"
+
+        goal OutgoingRobotAndTargetGeometryReachCoreInMeters
+        uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5066
+        summary "grasp-search リクエストの robot.base・target.surfaceSamples[].point・obstacles[].center/radius が、mm 系シーン値からメートルへ変換されてワイヤに乗る。plan.*/camera.*/gripper.*(ユーザー直接入力、無次元の orientation/normal)は無変換のまま"
+        labels support-verified
+
+            solution GraspControllerTestPinsTheOutgoingConversion
+            uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5067
+            summary "src/controller/GraspController.test.js: worldPoseOf の fake が mm 系の値 ({x:-2000,y:2000,z:0} 等) を返すようになり、request.graspSearch.robot.base はメートルの [-2,2,0] のまま維持される。widget/pedestal の mm 系 dimensions から作られる surfaceSamples[0].point[2] は 0.42、obstacles[0].center は [0,0,0.2] へ (旧: 420 / [0,0,200])。pnpm test で green"
+            artifacts
+            - "src/controller/GraspController.js"
+            - "src/controller/GraspController.test.js"
+            - "src/domain/worldUnits.js"
+
+        goal IncomingCandidatePositionsConvertBackToMillimeters
+        uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5068
+        summary "grasp-search 応答の cartesianFrame.position (メートル) は、GraspGhostView.showCandidate() / nearestTargetIndex() に渡る前に mm へ変換される。往路 (mm→m) と復路 (m→mm) が同じ境界に対で存在する (原則 #9 対称)"
+        labels support-verified
+
+            solution GraspControllerTestPinsTheIncomingConversion
+            uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5069
+            summary "src/controller/GraspController.test.js: EE_POSE の frame.position ([1,2,3] メートル、応答を模した wire fixture) を持つ候補を選択すると、fakeGhost.showCandidate に渡る spec.frame.position は [1000,2000,3000] (mm) になることを assert する"
+            artifacts
+            - "src/controller/GraspController.js"
+            - "src/controller/GraspController.test.js"
+
+        goal RobotSkeletonAndDefaultAddedGeometryShareTheMmScale
+        uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f506a
+        summary "RobotStage が描く URDF 骨格 (実物 UR5e、リーチ ≒850mm) と、Add で足す既定キューブ (100mm 角)・既定ロボットオフセット (2000mm) が、mm 系シーンの中で order-of-magnitude が一致する。ユーザー報告の起点 (ロボットとペデスタルの見た目のサイズが全然違う / Add のキューブが小さすぎる) が解消される"
+        labels support-verified
+
+            solution E2EScaleParityMeasuresTheSkeletonInTheBrowser
+            uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f506b
+            summary "ADR-137 で満期到来 (PATH:e2e/robot-scale-parity.spec.js が実在)。e2e/robot-scale-parity.spec.js が `window.__easyExtrude.worldScale()` 越しに実測する: Add ▸ Robot 後の骨格の world bounding box 高さが 100〜10000 world-unit (実測 574mm — UR5e が rest pose で畳まれた高さ) に入ること。**この木が『手動確認に委ねる』と宣言したまま誰も実行しなかったのが ADR-137 の欠陥の温床だった** — 同じ spec が起動直後のキューブの接地と視界内在も測るので、見た目に関する主張が見た目を見ないレーンで緑を出すことはもう無い"
+            artifacts
+            - "e2e/robot-scale-parity.spec.js"
+            - "src/view/RobotStage.js"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f506c
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は grasp-search 機能の正しさ (距離判定が単位の食い違いで壊れない) に効くもので、事業木側の対応する goal 名・uuid は未特定 — 次に事業木を読み直す機会に確定する"

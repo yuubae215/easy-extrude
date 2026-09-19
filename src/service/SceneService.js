@@ -2233,7 +2233,9 @@ export class SceneService extends EventEmitter {
 
     const positions = createInitialCorners()
     if (idx > 0) {
-      const step = idx * 0.5
+      // Stagger by a quarter of the default cube's full extent (100mm — ADR-136)
+      // so successive additions do not stack exactly on top of each other.
+      const step = idx * 25
       positions.forEach(c => { c.x += step; c.y += step })
     }
 

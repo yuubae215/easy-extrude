@@ -93,9 +93,12 @@ const okBff = {
  * payload is deterministic in this THREE-free lane. tcpOrientation is the tcp's
  * world quaternion — here identity, matching the default base + local-identity.
  */
+// Positions here are mm (world-units, ADR-136) — GraspController converts to
+// meters before they reach the wire, so the expected `base:[-2,2,0]` assertions
+// below stay in meters unchanged.
 const ROBOT_POSES = {
-  robot_base: { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
-  tcp:        { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+  robot_base: { position: { x: -2000, y: 2000, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+  tcp:        { position: { x: -2000, y: 2000, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
 }
 function fakeRobotScene() {
   const objects = new Map([
@@ -282,7 +285,7 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   assert.equal(g.request.graspSearch.target.surfaceSamples.length, 9)
   for (const s of g.request.graspSearch.target.surfaceSamples) {
     assert.deepEqual(s.normal, [0, 0, 1])
-    assert.equal(s.point[2], 420, 'top face of the 40-tall widget centred at z=400')
+    assert.equal(s.point[2], 0.42, 'top face of the 40-tall widget centred at z=400, mm scene → m wire')
   }
   // The only Solid in the fixture is the target, so nothing is left to obstruct
   // it — a DECLARED empty list, not an omitted key.
@@ -320,10 +323,11 @@ test('掴める対象が N 個あって未選択なら no-target — 先頭へ�
   await gc.runGraspSearch({})
   const g = grasp()
   assert.equal(g.status, 'results')
-  assert.equal(g.request.graspSearch.target.surfaceSamples[0].point[2], 420)
+  // Scene dims/positions are mm; the wire's target/obstacles are meters (ADR-136).
+  assert.equal(g.request.graspSearch.target.surfaceSamples[0].point[2], 0.42)
   // 選ばなかったほうの実体は障害物として宣言される (自分自身は除外される)。
   assert.equal(g.request.graspSearch.obstacles.length, 1)
-  assert.deepEqual(g.request.graspSearch.obstacles[0].center, [0, 0, 200])
+  assert.deepEqual(g.request.graspSearch.obstacles[0].center, [0, 0, 0.2])
 })
 
 // ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────
@@ -510,7 +514,7 @@ function ghostSetup(candidates) {
   return { gc, store, ghosts, grasp: () => store.getState().context.grasp }
 }
 
-test('selecting a gated endEffector candidate shows a select-mode ghost with the typed frame', () => {
+test('selecting a gated endEffector candidate shows a select-mode ghost with the typed frame, converted to the mm scene (ADR-136)', () => {
   const { gc, ghosts } = ghostSetup([{ rank: 1, pose: EE_POSE, score: { totalScore: 0.9 } }])
   gc.selectCandidate(1)
   assert.equal(ghosts.length, 1)
@@ -518,7 +522,9 @@ test('selecting a gated endEffector candidate shows a select-mode ghost with the
   assert.ok(show)
   assert.equal(show[1].mode, 'select')
   assert.equal(show[1].rank, 1)
-  assert.deepEqual(show[1].frame, { position: [1, 2, 3], orientation: [0, 0, 0, 1] })
+  // EE_POSE.frame.position is [1,2,3] meters, straight off the wire; the ghost
+  // is placed in the mm-scale scene, so it arrives ×1000.
+  assert.deepEqual(show[1].frame, { position: [1000, 2000, 3000], orientation: [0, 0, 0, 1] })
 })
 
 test('selecting a jointSpace candidate never constructs a ghost (capability gate — no heuristics)', () => {
@@ -730,11 +736,12 @@ function fakeTwoRobotScene() {
     ['g_base', { id: 'g_base', name: 'robot_base_2', parentId: null,    robotRole: 'base' }],
     ['g_tcp',  { id: 'g_tcp',  name: 'tcp_2',        parentId: 'g_base', robotRole: 'tcp' }],
   ])
+  // mm (world-units, ADR-136) — see ROBOT_POSES above.
   const poseById = {
-    f_base: { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
-    f_tcp:  { position: { x: -2, y: 2, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
-    g_base: { position: { x: -2, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
-    g_tcp:  { position: { x: -2, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 1, w: 0 } },
+    f_base: { position: { x: -2000, y: 2000, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+    f_tcp:  { position: { x: -2000, y: 2000, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+    g_base: { position: { x: -2000, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
+    g_tcp:  { position: { x: -2000, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 1, w: 0 } },
   }
   return { objects, worldPoseOf: (id) => poseById[id] ?? null }
 }
@@ -849,7 +856,7 @@ test('captureViewportCamera snapshots the active camera as a wire declaration', 
   let updated = 0
   ctrl._sceneView = {
     activeCamera: {
-      position: { x: 1, y: -2, z: 3 },
+      position: { x: 1000, y: -2000, z: 3000 },   // mm (scene, ADR-136)
       matrixWorld: { elements: CAM_IDENTITY },
       fov: 60,
       updateMatrixWorld() { updated += 1 },
@@ -857,7 +864,7 @@ test('captureViewportCamera snapshots the active camera as a wire declaration', 
   }
   const snap = gc.captureViewportCamera()
   assert.equal(updated, 1)                       // fresh matrix, not a stale frame
-  assert.deepEqual(snap.position, [1, -2, 3])
+  assert.deepEqual(snap.position, [1, -2, 3])     // wire is meters
   assert.deepEqual(snap.viewAxis, [0, 0, -1])
   assert.ok(Math.abs(snap.fovHalfAngle - Math.PI / 6) < 1e-3)
 })
