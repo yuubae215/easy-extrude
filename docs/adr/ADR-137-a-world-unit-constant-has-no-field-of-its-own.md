@@ -1,6 +1,6 @@
 # 137. 尺度に依存する量は自分の単位を名乗る — world-unit を持つ定数の個数を数える
 
-- Status: Proposed
+- Status: Accepted (実装済み 2026-09-19)
 - Date: 2026-09-19
 - Deciders: yuubae215, Claude
 - Retires: GREP:src/view/SceneView.js::0\.1,\s*100 · GREP:src/view/SceneView.js::position\.set\(6,\s*-4,\s*3\) · GREP:src/controller/handler/FaceExtrudeHandler.js::SNAP_THRESHOLD\s*=\s*0\.15 · GREP:src/domain/placement.js::SUPPORT_TOLERANCE\s*=\s*0\.001
@@ -198,8 +198,51 @@ commit された** — 散文は書く瞬間に問われない。この ADR の�
 | boot の framing が既存の 1 つの導出を通る | `src/view/CameraMath.test.js` + `SceneView` の boot 経路テスト (D3) |
 | ADR-136 の 4 変換点が壊れない | 既存 `src/controller/GraspController.test.js` / `src/context/GraspDeclarationCatalog.test.js` が無改訂で green |
 
-**本 ADR 起票時点で上記はすべて未来形である** (Status = Proposed)。実装は別スコープ。
-goal ごとの支えの正本は `docs/gsn/adr-137-a-world-unit-constant-has-no-field-of-its-own.gsn`。
+**実装後の実測** (すべて実行済み。goal ごとの支えの正本は
+`docs/gsn/adr-137-a-world-unit-constant-has-no-field-of-its-own.gsn`):
+
+- `pnpm test` **1295 / 1295 green** (census 2 本を含む) · `pnpm typecheck` · `pnpm build`
+  (3.90s) · `pnpm test:contract` 30/30 · `pnpm test:adr` 137 本 · `pnpm test:gsn` ·
+  `pnpm test:gsn-debt` · `pnpm test:deferrals`。
+- `pnpm test:e2e` **58 passed / 10 skipped / 0 failed** (skip は `VITE_GRASP_STUB` レーン)。
+- **検査が噛むことを実測した** (落ちない検査は不在と同じ — ADR-115):
+  - census: `camera.near = 0.1` / `camera.far = 100` を再注入すると 2 箇所を報告して fail。
+  - e2e: ADR-136 時点の `SceneView` へ戻すと `distance 7.81 < sceneRadius 43.30` で fail。
+  - e2e: `_frameStarterScene()` だけを外すと `coverage 0.051 < 0.3` で fail。
+
+## 実装時に判明した差分 (俯瞰と食い違った点 — 原則 #19)
+
+1. **D4 の sink 表は、初回実行が自分の誤りを出した。** 最初の版は `.scale.setScalar(…)`
+   を world 空間の sink に数え、`AnnotatedRegionView` / `CoordinateFrameView` /
+   `RippleEffect` / `SelectPulse` の 8 箇所を「単位を名乗っていない」と報告した。
+   しかし `.scale` は**比率**であって長さではない — 無次元なのでどの単位系でも同じ値
+   であり、単位の欄を持たないのが正しい。category error は表のほうだった。**母集団を
+   導出させた初回の実行でしか気づけない種類の誤り**で、ADR-102 が記録した 3 例と同じ形。
+2. **e2e の下限 0.05 は「写っている」を問えていなかった。** 初版の
+   `coverage > 0.05` は `_frameStarterScene()` を外しても**通った** — 宣言された seed
+   半径 (500mm) だけで 50mm の starter は coverage ≈ 0.058 になり、「見えなくはない点」が
+   下限を跨いでいた。D3 は 2 つの半分 (導出された seed / 実シーンへの再フィット) から
+   成り、0.05 は前者しか問えない。下限を **0.3** へ上げて両方に噛むようにした。
+   *検証の形そのものが主張である* (ADR-120 と同じ教訓)。
+3. **boot の framing にヘッドルームを入れようとして、撤回した。** 導出をそのまま通すと
+   `coverage ≈ 0.67` で地面がほぼ写らないので、`ContextController` の先例
+   (`radius * 1.6`) に倣って呼び出し側でヘッドルームを宣言した。**smoke の
+   grab/stack テストが落ちた** — カメラを引くと固定 px のドラッグが対応する world 距離が
+   変わり、100 px の sweep がもう相手のキューブを横切らなくなる。ヘッドルームは装飾で、
+   決定は「boot も同じ 1 つの導出を通す」(D3) のほうなので、装飾を捨てた。撤回の理由は
+   コードにコメントとして残した — 次に「もう少し引きたい」と思った人が同じ罠を踏む。
+   **D3 が「定数を retune せず種類ごと消す」と言っている以上、framing に自分の係数を
+   足すのは同じ過ちの小さい版である。**
+4. **`SNAP_THRESHOLD` は 150mm ではなく 15mm にした。** 「0.15 を絶対 0.15 m と読む」と
+   既定キューブ (100mm) より大きい snap になる。その読み自体もシーン内容には一度も
+   成り立っていなかった (Layout DSL は元から mm)。ユーザーが実際に体験していたのは
+   「既定オブジェクトの 15%」なので、それを保存した。
+5. **`checkGroundClearance` の既定値は `SUPPORT_TOLERANCE` を引くようにした。** doc が
+   既に「matches the stack-snap rest tolerance」と書いていたのに数値が写しで置かれて
+   おり、**同じ事実が 2 箇所** (§1.1) だった。片方だけが ADR-136 で再検討されなかった
+   のが 1 µm 化の経路そのもの。
+6. **`placement.test.js` の fixture 1 本を mm へ揃えた。** テスト名は「1 mm 許容」と
+   言いながら値は `0.0005` / `0.002` とメートル読みで書かれていた。名前のほうが意図。
 
 レビュー時に取得済みの実測 (この ADR の Context を支える証拠):
 - `pnpm test` = 1293 / 1293 green (依存導入後)。ADR-136 実測時の「1157 中 1147」は

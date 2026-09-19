@@ -176,7 +176,14 @@ const SUPPORT_LABELS = new Map([
 // 増えたのではなく、散文にしか無かった限界が数えられる場所へ降りたぶんである。
 // 2 件とも機械可読な満期 (PATH:src/WorldUnitCensus.test.js ·
 // PATH:e2e/boot-framing.spec.js) を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 37
+// 2026-09-19 (同日 2 度目): 37 → 35。ADR-137 の 2 goal に証拠が付いた
+// (`UndeclaredScaleDependentQuantitiesAreCounted` ← src/WorldUnitCensus.test.js /
+// `BootFramingGoesThroughTheOneDerivation` ← e2e/boot-framing.spec.js)。同日に上げて
+// 同日に下げたのは、ADR を起票した PR と実装した PR が同じセッションで連続したため
+// であって、借金が往復したわけではない — **上げ下げの両方が記録として要る**
+// (下げないと「今いくつ未支持か」が再び記憶の中の数になる — ADR-103)。
+// 2 件とも満期 (PATH:…) が実在するファイルになったので分子 (G3) も 10 → 8 へ戻る。
+const DEBT_BASELINE = 35
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

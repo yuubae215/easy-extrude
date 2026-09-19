@@ -58,9 +58,18 @@ import { AnnotatedLine }   from './AnnotatedLine.js'
 import { AnnotatedRegion } from './AnnotatedRegion.js'
 import { CoordinateFrame } from './CoordinateFrame.js'
 import { isRobotBaseFrame } from './robotFrames.js'
+import { mm } from './worldUnits.js'
 
-/** 接地判定の許容 (1 mm) — stack snap の rest tolerance と同じ値。 */
-export const SUPPORT_TOLERANCE = 0.001
+/**
+ * 接地判定の許容 — **1 mm** (ADR-137 D1/D2「宣言された物理長」)。
+ *
+ * この定数は元から「1 mm」と書かれていたが、値は `0.001` だった — つまり
+ * **1 world-unit = 1 m** を前提にしていた。ADR-136 が world-unit を mm へ寄せた
+ * あと、この許容は 1 µm を意味してしまい、接地・積み重ねの判定が実質「完全一致」
+ * になっていた (mm 系の corner はわずかな回転で 1 µm を超える)。意図した物理量は
+ * 変えず、単位だけを `mm()` で名乗らせる。
+ */
+export const SUPPORT_TOLERANCE = mm(1)
 
 /** 配置方針の語彙 (ADR-097 §Decision 1)。 */
 export const PLACEMENT = Object.freeze({

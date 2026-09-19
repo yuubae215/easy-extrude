@@ -69,6 +69,7 @@ import { SpatialLinkView, LINK_TYPE_COLORS } from '../view/SpatialLinkView.js'
 import { RotateSectorPreview }        from '../view/RotateSectorPreview.js'
 import { MotionGovernor }             from '../view/MotionGovernor.js'
 import { BootReveal }                 from '../view/BootReveal.js'
+import { mm }                        from '../domain/worldUnits.js'
 import { CameraFlight }               from '../view/CameraFlight.js'
 import { frustumForDistance }         from '../view/CameraMath.js'
 import { createLandingEffect }        from '../view/LandingEffects.js'
@@ -190,6 +191,16 @@ function _computeLinkOptions(source, target) {
 
   return options
 }
+
+/**
+ * The scene size framed when there is nothing to frame — **1 m** (ADR-137 D1/D2
+ * 「宣言された物理長」). Used by the empty-layout and empty-scene branches of the
+ * framing paths. It was a bare `10`, which meant 10 metres when written and
+ * 10 millimetres after ADR-136 moved the world-unit — the same silent 1000×
+ * reinterpretation this ADR exists to make countable.
+ */
+const EMPTY_SCENE_RADIUS = mm(1000)
+
 
 export class AppController {
   /**
@@ -865,6 +876,13 @@ export class AppController {
     // 1 m cube on the ground (base at z=0) instead.
     this._addObject()
     this._restStarterCube()
+    // ADR-137 D3 — frame the scene we just built, through the ONE derivation
+    // (ADR-068) every other framing uses. Before this, boot kept SceneView's
+    // constructor seed forever: nothing ever re-framed the starter solid, so the
+    // camera stayed at whatever scale the constructor's literals happened to
+    // mean. `start()` spawns BootReveal AFTER this, so the fly-in still lands on
+    // the (now derived) boot pose, and `_updateGridScale` rides the same call.
+    this._frameStarterScene()
     // NO robot is seeded here (ADR-132 D5). This line used to ask the scene
     // service to seed the boot scene's one robot, and that robot was created
     // HIDDEN because "a lone arm standing 2.8 m off with nothing around it reads
@@ -942,6 +960,33 @@ export class AppController {
           return frustumForDistance(Math.max(c.position.distanceTo(t), 1e-3), c.fov)
         })(),
       }),
+      // Read-only BOOT-FRAMING snapshot (ADR-137 D5) — the E2E guard that the
+      // default scene is actually ON SCREEN.
+      //
+      // No node --test lane can see framing: the defect this ADR closes (the
+      // camera sitting INSIDE the starter cube, the far plane at 100 mm) lived
+      // entirely in THREE-dependent view code and shipped with every unit lane
+      // green — 1293/1293. What makes a check possible here is reporting
+      // RELATIONS rather than constants, so the assertion keeps its meaning if
+      // the scene scale or the default sizes ever change again.
+      framingState: () => {
+        const c = this._sceneView.camera, t = this._sceneView.controls.target
+        const box = new THREE.Box3()
+        for (const obj of this._scene.objects.values()) {
+          for (const p of obj.corners ?? []) box.expandByPoint(p)
+        }
+        const empty = box.isEmpty()
+        const sceneRadius = empty ? 0 : box.getSize(new THREE.Vector3()).length() / 2
+        const distance = c.position.distanceTo(t)
+        const worldHeight = frustumForDistance(Math.max(distance, 1e-3), c.fov)
+        return {
+          empty, sceneRadius, distance, near: c.near, far: c.far,
+          // How much of the viewport's vertical extent the scene's bounding
+          // sphere spans at the orbit target. 1.0 = exactly fills the height;
+          // ≫ 1 means the camera is buried in the content, ≈ 0 means a dot.
+          coverage: sceneRadius > 0 ? (2 * sceneRadius) / worldHeight : 0,
+        }
+      },
       // Read-only touch-gesture snapshot (ADR-114 D2) — the E2E guard that the
       // camera's degrees of freedom are all REACHABLE by touch. A unit test can
       // only ask the declaration table; this reports what OrbitControls actually
@@ -1126,22 +1171,60 @@ export class AppController {
   }
 
   /**
-   * One-time tidy of the boot starter cube (ADR-089 follow-up). The default
-   * Solid is a 2 m cube centred on the origin (localCorners ±1), so half of it
-   * sinks below the ground plane and it reads as oversized. Shrink it to a
-   * modest 1 m cube and rest its base on z=0 through the aggregate `setPose`
-   * API (§1.1 — no direct field pokes). No-op when the active object is not a
-   * Solid (defensive; the boot path always adds one first).
+   * One-time tidy of the boot starter cube (ADR-089 follow-up): the default Add
+   * Solid is centred on the origin, so half of it sinks below the ground plane
+   * and it reads as oversized. Halve it and rest its base on z=0 through the
+   * aggregate `setPose` API (§1.1 — no direct field pokes). No-op when the
+   * active object is not a Solid (defensive; the boot path always adds one).
+   *
+   * **The resting height is DERIVED from the halved geometry** (ADR-137). It
+   * used to be the literal `0.5`, correct only while `createInitialCorners()`
+   * returned ±1: when ADR-136 rescaled the default cube to ±50 mm this method
+   * kept lifting it by 0.5 mm, so the 50 mm starter sank 24.5 mm underground —
+   * re-creating the exact defect ADR-089 fixed, at 1/40th the magnitude and
+   * below the threshold where anyone would look. A constant that must agree
+   * with another module's constant is a second source (§1.1); deriving it means
+   * the next change to the default size cannot desynchronise the two.
    */
   _restStarterCube() {
     const solid = this._activeObj
     if (!(solid instanceof Solid)) return
-    // Halve the ±1 localCorners → a 1 m cube; centroid at z=0.5 rests the base
-    // on the ground plane. Orientation stays identity.
+    // Halve the default Add cube, then lift it by its own half-height so the
+    // base sits exactly on z=0. Orientation stays identity.
     const local = solid.localCorners.map(c => c.clone().multiplyScalar(0.5))
-    solid.setPose(new THREE.Vector3(0, 0, 0.5), solid.orientation, local)
+    const halfHeight = Math.max(...local.map(c => c.z))
+    solid.setPose(new THREE.Vector3(0, 0, halfHeight), solid.orientation, local)
     solid.meshView.updateGeometry(solid.corners)
     solid.meshView.updateBoxHelper?.()
+  }
+
+  /**
+   * Frame the boot starter scene (ADR-137 D3) — the boot-time counterpart of
+   * `_frameLayoutDsl`. Uses the scene's own bounding sphere so the framing is
+   * scene-derived, never a constant; falls back to the declared empty-scene
+   * radius when the starter solid is somehow absent.
+   */
+  _frameStarterScene() {
+    const box = new THREE.Box3()
+    for (const obj of this._scene.objects.values()) {
+      for (const c of obj.corners ?? []) box.expandByPoint(c)
+    }
+    if (box.isEmpty()) {
+      this._sceneView.fitCameraToSphere(new THREE.Vector3(), EMPTY_SCENE_RADIUS)
+      return
+    }
+    const center = box.getCenter(new THREE.Vector3())
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-6)
+    // No headroom multiplier: boot gets exactly what "frame the scene" gives
+    // everywhere else. A `radius * 1.6` was tried (the precedent is
+    // `ContextController`, which asks for that when it frames a loaded context)
+    // because the plain derivation puts the starter close enough that little
+    // ground plane is in shot. It was reverted: moving the camera back changes
+    // what a fixed screen-pixel drag maps to in world space, and the smoke
+    // suite's grab/stack test sweeps a hard-coded 100 px expecting to cross the
+    // other cube — it stopped crossing. The extra room was polish; the shared
+    // derivation is the decision (ADR-137 D3), so the polish went.
+    this._sceneView.fitCameraToSphere(center, radius)
   }
 
   // ─── Active-object accessors ──────────────────────────────────────────────
@@ -2366,7 +2449,7 @@ export class AppController {
         for (const v of e.vertices) box.expandByPoint(new THREE.Vector3(v.x ?? 0, v.y ?? 0, v.z ?? 0))
       }
     }
-    if (box.isEmpty()) { this._sceneView.fitCameraToSphere(new THREE.Vector3(), 10); return }
+    if (box.isEmpty()) { this._sceneView.fitCameraToSphere(new THREE.Vector3(), EMPTY_SCENE_RADIUS); return }
     const center = box.getCenter(new THREE.Vector3())
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1)
     this._sceneView.fitCameraToSphere(center, radius)

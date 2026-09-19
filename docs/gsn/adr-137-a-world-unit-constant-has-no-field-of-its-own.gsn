@@ -3,7 +3,7 @@ GOALS adr137_scale_dependent_quantities_declare_their_unit
 goal ScaleDependentQuantitiesDeclareTheirOwnUnit
 uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6071
 summary "尺度に依存する量 (カメラのクリップ面・既定 pose・グリッド幅・スナップ閾値・接地許容・既定形状の寸法) が、自分の単位と根拠を自分で名乗る。そして『名乗っていない量の個数』が毎 PR 数えられる — 在る定数を辿るのではなく、消費点 (sink) にリテラルが直接届いている箇所を数える (原則 #31)"
-state UnderReview
+state Approved
 labels adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, app
 
     context MeterAssumingAuthoritiesCoexistedWithMillimeterContent
@@ -50,11 +50,15 @@ labels adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, 
         goal UndeclaredScaleDependentQuantitiesAreCounted
         uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6079
         summary "三種 (画面 px / シーン由来 / 宣言された mm) のどれでもない量の個数が、ratchet のベースラインとして定数に焼かれ、超えても下回っても fail する。母集団は在る定数ではなく sink の構文 (camera.near/far への代入・camera.position.set・scale.setScalar・GridHelper・fitCameraToSphere の radius 実引数・world 座標と比較される閾値) から導出する"
-        labels support-exploring
+        labels support-verified
 
-            assumption CensusRatchetNotYetWritten
+            solution CensusRatchetCountsSinksAndBites
             uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607a
-            summary "本 ADR は Proposed で、実装は別スコープ (ユーザーが『新 ADR の部分は ADR 作成まで』と範囲を切った)。D4 の census はまだ存在しない。満期=PATH:src/WorldUnitCensus.test.js — そのファイルが現れ src/census/sources.js に登録された時点で本 goal を support-verified へ昇格させる"
+            summary "src/WorldUnitCensus.test.js: WORLD_SPACE_SINKS (camera near/far への代入・camera.position.set・GridHelper・fitCameraToSphere の radius 実引数) を src/** 全体へ当て、三種のいずれも名乗らない引数の個数が 0 (UNDECLARED_BASELINE) であることを問う。RETIRED は退役した 4 形の出現数が 0 であることを数える (ADR-103 — 退役の腐敗は緑を出す)。src/CensusCoverage.test.js の CENSUS_REGISTRY に 3 表とも登録済み。**検査が噛むことを実測**: camera.near = 0.1 / camera.far = 100 を再注入すると 2 箇所を報告して fail する。pnpm test 1295/1295 green"
+            artifacts
+            - "src/WorldUnitCensus.test.js"
+            - "src/CensusCoverage.test.js"
+            - "src/domain/worldUnits.js"
 
             assumption SinkTableIsHandwrittenOneLevelUp
             uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607b
@@ -63,11 +67,16 @@ labels adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, 
         goal BootFramingGoesThroughTheOneDerivation
         uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607c
         summary "起動直後の既定シーンが、シーン尺度に関わらず画面に写る。boot は定数ではなく既定シーンの bounding sphere から framing を導出し (fitCameraToSphere → focusPose/clipPlanesFor/_updateGridScale)、BootReveal の着地先も導出になる。retune ではなく定数を種類ごと消すので、明日 m 系アセットを読んでも同じ欠陥へ戻らない"
-        labels support-exploring
+        labels support-verified
 
-            assumption BootFramingRegressionMeasuredButNotYetGuarded
+            solution BootFramingIsGuardedByRelationsNotConstants
             uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607d
-            summary "欠陥は実測済み: 同一操作列の前後スクリーンショット (c1c9a3e vs 28e6d6c) で、前は starter cube が接地して framing され、後は画面に何も写らない (カメラ距離 √61 ≈ 7.81 < cube 半幅 25 ⟹ カメラが内側、far = 100 で可視域も打ち切り)。しかし見た目は node --test レーンが構造的に見えないので、決着させる検査は e2e である。満期=PATH:e2e/boot-framing.spec.js — そのファイルが現れたら本 goal を support-verified へ昇格させる。ADR-136 の GSN が満期に置いた e2e/robot-scale-parity.spec.js と同じ穴を boot 側で塞ぐもので、両者は独立に満期を持つ"
+            summary "e2e/boot-framing.spec.js: framingState() (AppController が露出する読み取り専用スナップショット) から distance > sceneRadius / far > distance + sceneRadius / near < distance − sceneRadius / 0.3 < coverage < 1.5 を問う。**定数ではなく関係**なので尺度が変わっても意味を保つ。**検査が噛むことを実測**: ADR-136 時点の SceneView へ戻すと distance 7.81 < sceneRadius 43.30 で fail、_frameStarterScene() だけを外すと coverage 0.051 < 0.3 で fail。初版の下限 0.05 は後者を通してしまっていたので 0.3 へ上げた — 検証の形そのものが主張である。pnpm test:e2e 58 passed / 10 skipped / 0 failed"
+            artifacts
+            - "e2e/boot-framing.spec.js"
+            - "src/view/SceneView.js"
+            - "src/controller/AppController.js"
+            - "src/view/CameraMath.js"
 
     context ConnectionToProfitTreeDeferred
     uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607e
