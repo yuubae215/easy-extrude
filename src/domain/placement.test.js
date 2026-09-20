@@ -188,8 +188,12 @@ test('支持の導出: 地面 / 実体 / 浮遊 (null) の 3 値', () => {
 })
 
 test('支持の導出は 1 mm 許容の内側では成立する', () => {
-  assert.deepEqual(supportUnder({ bottomZ: 0.0005, surfaceZ: 0 }), { kind: 'ground' })
-  assert.equal(supportUnder({ bottomZ: 0.002, surfaceZ: 0 }), null)
+  // 値は world-unit = mm (ADR-136/137)。この fixture は 0.0005 / 0.002 と書かれて
+  // おり、`SUPPORT_TOLERANCE` を 0.001 と読む = **1 world-unit = 1 m** を前提に
+  // していた — テスト名は「1 mm」と言っているのに、値はメートル読みだった。
+  // 名前のほうが意図なので、値を mm へ揃える (0.5 mm は内側、2 mm は外側)。
+  assert.deepEqual(supportUnder({ bottomZ: 0.5, surfaceZ: 0 }), { kind: 'ground' })
+  assert.equal(supportUnder({ bottomZ: 2, surfaceZ: 0 }), null)
 })
 
 // ── dragPlaneNormalFor — G2 ────────────────────────────────────────────────

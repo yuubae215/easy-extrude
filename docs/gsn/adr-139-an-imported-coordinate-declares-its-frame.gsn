@@ -1,0 +1,81 @@
+GOALS adr139_imported_coordinates_declare_their_frame
+
+goal ImportedCoordinatesDeclareTheirFrameBeforeEnteringTheWorld
+uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8091
+summary "座標の集まりは、それがどの frame の値か (単位・利き手・up 軸・forward 軸) を自分で宣言してから世界に入る。宣言されていない frame は既定で埋めず、可視な理由とともに拒まれる — 『ROS だと宣言された』と『誰も考えなかった』を区別可能にする (原則 #31 / Yellow Card『必須入力の欠落に既定値を与えない』)"
+state UnderReview
+labels adr-139, adr-138, adr-137, adr-136, adr-115, adr-120, adr-018, principle-21, principle-31, principle-11, principle-28, app
+
+    context FourIndependentAxesOnlyOneOfWhichIsClosed
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8092
+    summary "world 規約の壊れ方は 4 軸あり互いに独立: 単位 (mm/m/inch)・利き手 (right/left = 鏡像)・up 軸 (+Z up の ROS/CAD か +Y up の glTF/OBJ/DCC)・forward 軸。ADR-136/138 は 1 軸目 (単位) を閉じたが、独立なので残り 3 軸は無傷で残っている。ADR-138 の却下案 B が言う『型』は単位ブランドのことで、当事者が報告した失敗 (右手系左手系・上が +Z か +Y か) を 1 つも捕まえない"
+    artifacts
+    - "docs/adr/ADR-136-world-unit-is-millimeters-robotics-converts-at-the-wire.md"
+    - "docs/adr/ADR-138-scale-dependent-quantities-declare-their-kind.md"
+
+    context TheWorldConventionLivesOnlyInProseWithNoMachineReadingIt
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8093
+    summary "実測: この repo の world 規約の唯一の正本は CLAUDE.md の 1 行 (『ROS world frame (+X forward, +Y left, +Z up). Right-handed.』) で、読む機械が 1 つも無い。schema/layout-1.0 の top-level は version/meta/strategy/strategyOptions/entities/constraints、schema/scene-1.3 は version/objects/links/transformGraph/operationGraph (required: version, objects) — どちらにも frame も unit も無い。SceneService._applyGeometryUpdate はサーバ (STEP 変換) 由来の生 positions を無変換・無宣言で BufferGeometry へ書き initCorners で AABB を作る。ADR-115 と同じ形 — 宣言は在るが読む機械が無い"
+    artifacts
+    - "CLAUDE.md"
+    - "schema/scene-1.3.schema.json"
+    - "schema/layout-1.0.schema.json"
+    - "src/service/SceneService.js"
+
+    context Principle21IsDeclaredAndNeverInstantiatedOnThisAxis
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8094
+    summary "原則 #21『座標空間は型・API 形状で静的に区別する。命名規約やレビューに頼らない』は .claude/rules/10-principles.md に在るが、§このリポジトリでの写像 に行を持つのは #1 #2 #14 #18 #19 #24 #30 #31 #32 で **#21 の行は無い**。Local ⇄ World の親子は CoordinateFrame 実体 (ADR-018/037) が持つが、World そのものの規約 (利き手・up・単位) は型でも API 形状でも区別されていない。宣言されていて一度も具体化されていない原則は、違反を見逃すのではなく『守られていることになっている』(ADR-103 の退役の腐敗と同じ効き方)"
+    artifacts
+    - ".claude/rules/10-principles.md"
+
+    justification WhyATypeAloneCannotCarryThis
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8095
+    summary "却下案 B (型引数つきの点型 / phantom type だけで持つ) への反証: frame は**実行時の事実**である — どのファイルをどのツールが書いたかをコンパイル時の型は知りえない。さらにこの repo は GeometryEngine / SceneView / AppController が @ts-nocheck で、ingress の大半が checkJs の外に在る。型が守れるのは『変換を通したかどうか』だけで、『正しい frame を宣言したかどうか』は型に書けない。ゆえにブランドは主たる防御ではなく追加の網として縮めて併用し、決定の重心は『宣言を必須入力にし既定を与えない』側に置く"
+
+    justification WhyNotFoldPlacementIntoTheFrame
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8096
+    summary "Frame を 4 欄に閉じ、原点オフセットや非一様スケールを表現できないようにしたのは意図的である。それらは CoordinateFrame 実体 (ADR-018/037) の仕事で、**規約と配置は別の事実**。混ぜると『どちらが持ち主か』が再び曖昧になり、§1.1 の真実の源が 2 つになる"
+
+    strategy ByMakingTheFrameAClosedValueAndTheDeclarationMandatory
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8097
+    summary "D1 Frame を 4 欄 (handedness/up/forward/mmPerUnit) の閉じた値にし、WORLD をその 1 インスタンスとして src/domain/worldFrame.js に置く (CLAUDE.md は名指しするだけ — 核 §1.1)。D2 toWorld(frame) は純粋関数で、up ∥ forward や 利き手と det の符号が食い違う frame は構築時に throw する。D3 ingress (_applyGeometryUpdate / parseImportJson / LayoutCompiler) は frame を必須入力として受け、宣言なき入力は既定に落とさず取り込みを止めて理由を画面に出す (原則 #11)。D4 egress も frame を刻む (我々の出力は次のツールの宣言なき入力) — 公開スキーマの版上げ行為。D5 検証はキラルな fixture で行う"
+
+        goal ContradictoryFramesCannotBeConstructed
+        uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8098
+        summary "up と forward が平行、または宣言した利き手が基底の行列式の符号と食い違う frame は、構築時に throw する。『+Y up にしたのに forward を +Y のままにした』という実際に起きるほうの間違いがここで止まる。既定値に落とさないのは原則 #31 (未宣言の種で throw する EXPLICIT_DEFAULTS / PLACEMENT_BY_KIND と同じ手)"
+        labels support-exploring
+
+            assumption FrameWellFormednessNotYetImplemented
+            uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8099
+            summary "本 ADR は Proposed で実装は別スコープ (当事者が『先行して ADR を書いてもいい』と範囲を切った)。満期=PATH:src/domain/worldFrame.test.js — そのファイルが現れ、up ∥ forward と利き手・det 不一致の 2 つが throw することを焼いた時点で support-verified へ昇格させる"
+
+        goal HandednessErrorsAreDetectableByTheTestItself
+        uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b809a
+        summary "det(toWorld(f)) < 0 ⟺ f.handedness ≠ WORLD.handedness を assert し、往復 toWorld(WORLD←f) ∘ toWorld(f←WORLD) = I を**キラルな fixture** (3 軸の長さが全て異なる L 字等) で焼く。立方体や球で書くと鏡像写像でも一致するので、対称な fixture は自分が裏返ったことを知らない — 検査の書き方そのものが主張である (ADR-120 と同型)"
+        labels support-exploring
+
+            assumption ChiralFixtureIsTheLoadBearingChoiceAndIsUntested
+            uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b809b
+            summary "反証されうる前提: キラルな fixture でなければ利き手バグは緑を出す、という主張自体がまだ実測されていない。実装時には**対称 fixture では通ってしまうこと**も併せて示す (通らない検査を書いたと主張するだけでは ADR-115 の形になる)。満期=PATH:src/domain/worldFrame.test.js"
+
+        goal UndeclaredIngressIsRefusedNotDefaulted
+        uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b809c
+        summary "frame を宣言しない入力は無言で通らない。既定 (『宣言が無ければ ROS』) を置かないのは、それが『ROS だと宣言された』と『誰も考えなかった』を区別不能にするから — PHILOSOPHY の Yellow Card『必須入力の欠落に既定値を与えない』(幽霊ロボットの先例) そのもの。宣言なき ingress の個数を数える census を置き baseline 0 とする (母集団は ingress の構文から導出 — ADR-137 D4 と同じ手)"
+        labels support-exploring
+
+            assumption IngressCensusAndTheRefusalSurfaceAreNotYetBuilt
+            uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b809d
+            summary "満期=PATH:src/FrameDeclarationCensus.test.js — そのファイルが現れ src/census/sources.js に登録された時点で昇格。拒否が**画面に出る**こと (原則 #11 — 無言の no-op を禁じる) は e2e 側で、こちらは実装時に入口の形が決まってから満期を切る"
+
+        goal ExportStampsTheFrameItWrote
+        uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b809e
+        summary "scene / layout / geometry payload に frame ブロックを足す。刻まずに出すと D3 を自分のファイルに対してすら満たせない (往復した瞬間に宣言が消える) — 我々の出力は次のツールの『宣言なき入力』である。公開スキーマの変更なので scene-1.4 / layout-1.1 としてスキーマと版を同一 PR で上げる意図的な版上げ行為"
+        labels support-exploring
+
+            assumption LegacyFileMigrationIsDeclaredUndecided
+            uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b809f
+            summary "既存ファイルは frame 未宣言なので移行の扱いが要る。本 ADR は『旧版は読めるが、読んだ時点で frame を人に尋ねる』と提案するに留め、UI の形は決めていない — ここを今決めると画面設計を先取りする。**『対象外』とは書かない**: 原則 #29 の二状態でいえば契約ありでも明示的対象外でもなく **まだ決めていない** (DEF-034/035 と同じ扱い)。満期=PATH:schema/scene-1.4.schema.json"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b80a0
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は外部ツール連携の信頼性 (取り込んだ形が意図どおりに置かれる) に効くが、事業木側の対応する goal 名・uuid は未特定 — ADR-136/138 の同名 context と同じ扱いで、次に事業木を読み直す機会に確定する。保留は忘却ではないのでここに残す"

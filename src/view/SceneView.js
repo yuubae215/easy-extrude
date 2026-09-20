@@ -8,7 +8,17 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
-import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance, BOOT_VIEW_DIRECTION } from './CameraMath.js'
+import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance, BOOT_VIEW_DIRECTION, BOOT_VIEW_RADIUS } from './CameraMath.js'
+import { mm } from '../domain/worldUnits.js'
+
+/**
+ * Ground-grid base geometry: a **20 mm** span in 20 cells at scale 1
+ * (ADR-138 D1/D2). `_updateGridScale(radius)` multiplies this by a power of ten
+ * to suit the scene, so the span is scale-derived at runtime — but the base
+ * number is a world-unit length and now says so.
+ */
+const GRID_BASE_SPAN = mm(20)
+const GRID_DIVISIONS = 20
 import { orbitControlsTouches } from './CameraGestures.js'
 import { COLOR, hexNumber } from '../theme/tokens.js'
 
@@ -41,9 +51,19 @@ export class SceneView {
     // Only the DIRECTION is authored here. Distance and clip planes belong to
     // framing (`fitCameraToSphere`, driven by AppController._frameScene at boot
     // — ADR-137): they are scene-scale facts, and the constructor does not know
-    // the scene's scale. The 0.1/100 pair below is likewise a placeholder that
-    // `clipPlanesFor` replaces on the first frame-the-scene call.
-    this.camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100)
+    // the scene's scale.
+    //
+    // The seed clip planes are DERIVED from `BOOT_VIEW_RADIUS` through the same
+    // `clipPlanesFor` the first frame-the-scene call uses (ADR-138 D1/D3). They
+    // were a bare `0.1, 100` pair, declared *in prose* as "a placeholder that
+    // clipPlanesFor replaces" — true, and still a metre-era literal meaning
+    // 0.1mm / 100mm until that first call. Prose is not asked at the moment of
+    // writing; `src/WorldUnitCensus.test.js` is, and it found this pair on its
+    // first run against ADR-137's code.
+    const seedPose = computeFocusPose({ x: 0, y: 0, z: 0 }, BOOT_VIEW_RADIUS, BOOT_VIEW_DIRECTION, 60)
+    const seedClip = clipPlanesFor(BOOT_VIEW_RADIUS, seedPose.dist, 0)
+    this.camera = new THREE.PerspectiveCamera(
+      60, innerWidth / innerHeight, seedClip.near, seedClip.far)
     this.camera.up.set(0, 0, 1)           // ROS convention: +Z is up
     const d = BOOT_VIEW_DIRECTION
     this.camera.position.set(d.x, d.y, d.z)
@@ -106,7 +126,8 @@ export class SceneView {
 
   _setupGrid() {
     // GridHelper is in XZ plane by default; rotate 90deg around X to put it in XY plane (Z=0 ground)
-    this._grid = new THREE.GridHelper(20, 20, hexNumber(COLOR.gridMajor), hexNumber(COLOR.gridMinor))
+    this._grid = new THREE.GridHelper(
+      GRID_BASE_SPAN, GRID_DIVISIONS, hexNumber(COLOR.gridMajor), hexNumber(COLOR.gridMinor))
     this._grid.rotation.x = Math.PI / 2
     this._grid.material.transparent = true
     this._grid.material.opacity = 0.4

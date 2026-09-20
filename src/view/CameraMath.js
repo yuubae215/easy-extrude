@@ -10,6 +10,7 @@
  * so a "frame the scene" jump and a "frame the selection" flight can never
  * drift apart (核 §1.1 single source). Everything is deterministic.
  */
+import { mm } from '../domain/worldUnits.js'
 
 import { MM_PER_METER } from '../domain/worldUnits.js'
 
@@ -96,8 +97,12 @@ export function focusPose(center, radius, dir, fovDeg, margin = 1.3) {
   }
 }
 
-/** Absolute near-plane floor (world units) so tiny scenes keep a small near. */
-const NEAR_FLOOR = 0.01
+/**
+ * Absolute near-plane floor — **0.01 mm** (ADR-137 D1/D2「宣言された物理長」), so
+ * tiny scenes keep a small near. The value is unchanged; what is new is that it
+ * names its unit instead of being a bare world-unit literal.
+ */
+const NEAR_FLOOR = mm(0.01)
 
 /**
  * Clip planes that frame a bounding sphere at camera distance `dist`, sharing

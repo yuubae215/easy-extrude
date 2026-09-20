@@ -131,6 +131,22 @@ const CENSUS_REGISTRY = [
   { file: 'src/DanglingSelfCallCensus.test.js', table: 'DECLARED_GAPS',            kind: KIND.DECLARED_EXCEPTION,
     why: '実在する欠落の宣言。埋めたら宣言も消す (逆向き)。母集団側は走査が導出する' },
 
+  // ── 尺度依存量の単位 (ADR-137) ──
+  { file: 'src/WorldUnitCensus.test.js',     table: 'WORLD_SPACE_SINKS',           kind: KIND.SHAPE_CENSUS,
+    why: 'world 空間の量を受け取る呼び出しの形を並べ、単位を名乗らないリテラルが届いている '
+       + '個数を src/** 全体で数える。数えるのは*定数*ではなく sink — 「宣言されていない '
+       + '定数」はどの定数リストにも載らないので、母集団は受け取る側からしか導出できない' },
+
+  { file: 'src/WorldUnitCensus.test.js',     table: 'DECLARED_KINDS',              kind: KIND.SHAPE_CENSUS,
+    why: '同じ src/** 走査の**許される形**の側 (三種 = 画面 px / シーン由来 / 宣言された mm)。'
+       + '禁じられた形を並べる WORLD_SPACE_SINKS と対で 1 つの母集団 (走査範囲) を分割し、'
+       + 'どちらも名乗らない引数の個数が 0 であることを数える' },
+
+  { file: 'src/WorldUnitCensus.test.js',     table: 'RETIRED',                     kind: KIND.SHAPE_CENSUS,
+    why: '退役した meter-scale 定数の形。src/** 全体での出現数が 0 であることを数える — '
+       + '退役の腐敗は違反を*見逃す*のではなく緑を出す (ADR-103) ので、消したこと自体を '
+       + '数える。ADR-137 の `Retires:` 欄と同じ 4 番地を src/** 側から問う対' },
+
   // ── 色 (ADR-100 / ADR-102) ──
   { file: 'src/theme/tokens.test.js',        table: 'SELECTION_PAINTERS',          kind: KIND.DERIVED_PARTITION,
     why: '母集団 = COLOR.accent を引くファイル。描き手か「別の意味」かに分割する' },

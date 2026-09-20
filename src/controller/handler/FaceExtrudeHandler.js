@@ -17,9 +17,30 @@ import { S_FACE_EXTRUDE }           from '../../core/editorStates.js'
 import { computeOutwardFaceNormal, collectSnapTargets } from '../../model/CuboidModel.js'
 import { ExtrudeFrontView }         from '../../view/ExtrudeFrontView.js'
 import { prefersReducedMotion }     from '../../theme/motion.js'
+import { mm }                       from '../../domain/worldUnits.js'
 
-// Snap distance threshold in world units.
-const SNAP_THRESHOLD = 0.15
+/**
+ * Face-extrude snap radius — **15 mm** (ADR-137 D1/D2「宣言された物理長」).
+ *
+ * How far the pointer-driven extrude distance may sit from a target's aligned
+ * distance and still snap to it. Compared against a WORLD distance along the
+ * face normal (`|snappedDist - rawDist|`), so it carries a unit and must declare
+ * it — before ADR-137 it was a bare `0.15` labelled only "world units".
+ *
+ * **Why 15 and not 150.** The old `0.15` was authored when the boot cube was
+ * `±1` and its own comment called that "a 1 m cube", i.e. 15% of the default
+ * object. Reading `0.15` as an absolute 0.15 m would give 150 mm — larger than
+ * the whole 100 mm default cube, so every drag would snap. But that reading was
+ * never coherent for the scene content either: Layout DSL geometry has always
+ * been mm, so for those objects the threshold was 0.15 mm and snapping was
+ * already dead. What users actually experienced when this worked was "15% of the
+ * default object", and that is what is preserved here.
+ *
+ * Not screen-space (`*_PX`, the kind `SnapSystem` / `GrabOperationHandler` use):
+ * that would be the better long-term shape, but it needs the projection at this
+ * call site, which this ADR does not undertake.
+ */
+const SNAP_THRESHOLD = mm(15)
 
 export class FaceExtrudeHandler {
   /**

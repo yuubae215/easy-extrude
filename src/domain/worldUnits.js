@@ -35,3 +35,23 @@ export function mmPointToM([x, y, z]) {
 export function mPointToMM([x, y, z]) {
   return [mToMM(x), mToMM(y), mToMM(z)]
 }
+
+/**
+ * A length written as an ABSOLUTE PHYSICAL QUANTITY, in millimetres (ADR-137 D2).
+ *
+ * This is a DECLARATION, not a conversion: `mm(1)` is `1` and always was. What it
+ * adds is that the unit rides the CALL SITE's syntax, so the next person cannot
+ * write a scale-bearing threshold without choosing a unit. ADR-136's `mmToM` /
+ * `mToMM` convert between two conventions at a boundary; `mm()` converts nothing
+ * and marks a number that was already in world-units as deliberately absolute.
+ *
+ * ADR-137 D1 closes scale-dependent quantities to exactly three declared kinds —
+ * screen-space (`*_PX`, invariant to scene scale), scene-derived (a function of
+ * the scene's bounding radius), and an absolute physical length (this). A bare
+ * literal reaching a world-space sink is the fourth kind, which does not exist;
+ * `src/WorldUnitCensus.test.js` counts the ones that are none of the three.
+ *
+ * @param {number} millimetres
+ * @returns {number} the same number, in world-units
+ */
+export function mm(millimetres) { return millimetres }

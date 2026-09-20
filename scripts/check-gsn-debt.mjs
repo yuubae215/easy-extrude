@@ -182,7 +182,43 @@ const SUPPORT_LABELS = new Map([
 // (G3) は動かない。差引きゼロだが**両方向を宣言する** — 昇格 1 件と新規 1 件が
 // 相殺して 34 のままなら、動きが 2 つあったこと自体が見えなくなる (ratchet が
 // 超えても下回っても fail する理由と同じ)。
-const DEBT_BASELINE = 35
+// 2026-09-19: 35 → 37。ADR-137 (Proposed・未実装) の木が 2 goal を足した
+// (`UndeclaredScaleDependentQuantitiesAreCounted` — 三種のどれでもない尺度依存量を
+// 数える ratchet census がまだ無い / `BootFramingGoesThroughTheOneDerivation` —
+// 起動直後の framing が導出を通ることは見た目の事実なので node --test レーンが
+// 構造的に見えず、決着は e2e)。ADR-133 の先例と同形で、起票と同時に木を起こす規律
+// (adr skill §GSN 併設) の帰結 — Proposed の ADR は定義上ほぼ全部の goal が
+// exploring になる。**この 2 件は ADR-136 のレビューで実測された欠陥**であって
+// 予測ではない (前後スクリーンショットと 1293/1293 green の測り直し) — 借金が
+// 増えたのではなく、散文にしか無かった限界が数えられる場所へ降りたぶんである。
+// 2 件とも機械可読な満期 (PATH:src/WorldUnitCensus.test.js ·
+// PATH:e2e/boot-framing.spec.js) を持つので分子 (G3) は動かない。
+// 2026-09-19 (同日 2 度目): 37 → 35。ADR-137 の 2 goal に証拠が付いた
+// (`UndeclaredScaleDependentQuantitiesAreCounted` ← src/WorldUnitCensus.test.js /
+// `BootFramingGoesThroughTheOneDerivation` ← e2e/boot-framing.spec.js)。同日に上げて
+// 同日に下げたのは、ADR を起票した PR と実装した PR が同じセッションで連続したため
+// であって、借金が往復したわけではない — **上げ下げの両方が記録として要る**
+// (下げないと「今いくつ未支持か」が再び記憶の中の数になる — ADR-103)。
+// 2 件とも満期 (PATH:…) が実在するファイルになったので分子 (G3) も 10 → 8 へ戻る。
+// 2026-09-20: 35 → 39。ADR-139 (Proposed・未実装) の木が 4 goal を足した
+// (ContradictoryFramesCannotBeConstructed / HandednessErrorsAreDetectableByTheTestItself /
+// UndeclaredIngressIsRefusedNotDefaulted / ExportStampsTheFrameItWrote)。ADR-133 / ADR-137
+// 初版と同形で、起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結 — Proposed の
+// ADR は定義上ほぼ全部の goal が exploring になる。4 件とも機械可読な満期 (PATH:…) を
+// 持つので分子 (G3) は動かない。**うち 1 件は「まだ決めていない」を運ぶ**
+// (LegacyFileMigrationIsDeclaredUndecided — 既存ファイルの移行 UI を今決めると画面設計を
+// 先取りするので、対象外とは書かずに未決として数える。DEF-034/035 と同じ扱い)。
+// 2026-09-20: 35 → 39。ADR-137 と**並行に別セッションで書かれた** ADR-138 / ADR-139 が
+// main へ合流したぶん。ADR-138 の 3 goal はすべて support-verified (実装込みなので
+// 借金を増やさない) で、増えた 4 件は ADR-139 (Proposed・未実装) の木である
+// (ContradictoryFramesCannotBeConstructed / HandednessErrorsAreDetectableByTheTestItself /
+// UndeclaredIngressIsRefusedNotDefaulted / ExportStampsTheFrameItWrote)。起票と同時に
+// 木を起こす規律 (adr skill §GSN 併設) の帰結で、Proposed の ADR は定義上ほぼ全部の
+// goal が exploring になる。4 件とも機械可読な満期 (PATH:…) を持つので分子 (G3) は
+// 動かない。**うち 1 件は「まだ決めていない」を運ぶ** (LegacyFileMigrationIsDeclaredUndecided
+// — 既存ファイルの移行 UI を今決めると画面設計を先取りするので、対象外とは書かずに
+// 未決として数える。DEF-034/035 と同じ扱い)。
+const DEBT_BASELINE = 39
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
