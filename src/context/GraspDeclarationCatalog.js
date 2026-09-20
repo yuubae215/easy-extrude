@@ -83,38 +83,43 @@ export const CAMERA_PRESETS = Object.freeze([
 ])
 
 /**
- * Reach-envelope presets (wire shape: `graspSearch.plan` — ADR-084 §4).
+ * Reach-envelope rows to offer (wire shape: `graspSearch.plan` — ADR-084 §4).
  *
- * These exist because `reach_margin` needs an ABSOLUTE basis to be a score at
- * all: with no declared envelope `core/` cannot normalise the margin, so it
- * reports the objective as NOT MEASURED rather than as zero (ADR-120). The front
- * declared no `plan{}` at all until ADR-128, which is why the panel's reach
- * weight slider spent its life weighting something nothing could evaluate.
+ * The envelope exists because `reach_margin` needs an ABSOLUTE basis to be a
+ * score at all: with no declared envelope `core/` cannot normalise the margin,
+ * so it reports the objective as NOT MEASURED rather than as zero (ADR-120). The
+ * front declared no `plan{}` at all until ADR-128, which is why the panel's
+ * reach weight slider spent its life weighting something nothing could evaluate.
  *
- * They are a STARTING POINT behind an off-by-default toggle, never a default
- * value: an envelope nobody declared must stay undeclared (kernel §5), because
- * an invented one produces a margin that looks measured and is not.
+ * **ADR-141 changed where the numbers come from.** This used to be a fixed
+ * catalog of three arms — "small (≈0.5)", "medium (≈0.85)", "large (≈1.3)" —
+ * none of which was connected to the skeleton on screen. Two of them described
+ * robots this app has never shipped, and picking one silently scored the search
+ * against an arm the user was not looking at (`RETIRED_REACH_PRESETS` counts
+ * them). Now there is exactly one row and it is **the arm in the scene**: the
+ * envelope is derived from the drawn URDF and passed in, so the offer cannot
+ * describe a different robot than the viewport does.
  *
- * `radius` values are the arm's own length unit (metres in the bundled cell);
- * the cone half-angle is radians.
+ * `envelope` may be null — no robot, or a bundled URDF that no longer agrees
+ * with its declared model. The honest answer is then NO row rather than a
+ * plausible one (kernel §5), because an invented envelope produces a margin that
+ * looks measured and is not.
+ *
+ * Values are metres (the robotics wire's unit — ADR-136); the cone half-angle is
+ * radians.
+ *
+ * @param {{reachMin: number, reachMax: number, wristConeHalfAngle: number}|null|undefined} envelope
+ * @param {string} [label]  the model's display name, e.g. 'UR5e (6-axis)'
+ * @returns {ReadonlyArray<{id: string, label: string, params: object}>}
  */
-export const REACH_PRESETS = Object.freeze([
-  Object.freeze({
-    id: 'medium-arm',
-    label: 'medium arm (≈0.85)',
-    params: Object.freeze({ reachMin: 0.2, reachMax: 0.85, wristConeHalfAngle: 1.05 }),
-  }),
-  Object.freeze({
-    id: 'small-arm',
-    label: 'small arm (≈0.5)',
-    params: Object.freeze({ reachMin: 0.12, reachMax: 0.5, wristConeHalfAngle: 1.05 }),
-  }),
-  Object.freeze({
-    id: 'large-arm',
-    label: 'large arm (≈1.3)',
-    params: Object.freeze({ reachMin: 0.3, reachMax: 1.3, wristConeHalfAngle: 1.2 }),
-  }),
-])
+export function reachPresetsFor(envelope, label = 'the arm in the scene') {
+  if (!envelope) return Object.freeze([])
+  return Object.freeze([Object.freeze({
+    id:     'scene-arm',
+    label:  `${label} (≈${envelope.reachMax})`,
+    params: Object.freeze({ ...envelope }),
+  })])
+}
 
 /**
  * Why Run cannot proceed on the REACH-ENVELOPE side (ADR-128) — the sibling of

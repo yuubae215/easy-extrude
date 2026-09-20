@@ -94,7 +94,8 @@ import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { GraspSampleView }            from '../view/GraspSampleView.js'
-import { ROBOT_KINEMATICS }           from '../view/robotSkeleton.js'
+import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
+import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
 import { SCREEN_CLAIM }               from '../view/ScreenClaim.js'
@@ -501,6 +502,14 @@ export class AppController {
       createGhostView: () => new GraspGhostView(this._sceneView.scene, document.body),
       createSampleView: () => new GraspSampleView(this._sceneView.scene),
       robotKinematics: ROBOT_KINEMATICS,
+      // The same seat, for the same reason, one fact wider (ADR-141): WHICH ARM
+      // the app draws. The reach envelope rides with it so the panel can no
+      // longer offer an envelope belonging to a robot that is not on screen.
+      robotModel: {
+        id:    SHIPPED_ROBOT_MODEL_ID,
+        label: ROBOT_MODEL_LABEL,
+        reach: ROBOT_REACH_ENVELOPE,
+      },
     })
 
     // ── Sketch drawing state (Edit Mode · 2D) ──────────────────────────────
