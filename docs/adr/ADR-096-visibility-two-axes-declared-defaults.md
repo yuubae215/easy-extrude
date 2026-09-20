@@ -200,6 +200,10 @@ CF 軸へ適用する**のが本 ADR の骨子。
 
 ## References
 
+- **ADR-142 (選んだシーンは「他人のセル」ではない)** — 本 ADR §Decision 3 の
+  `ROBOT_BASE_SEEDED` 既定 `false` を `true` へ改める後継 ADR。根拠だった
+  「空のブートシーンに腕 1 本はノイズ」(ADR-089) は ADR-132 D5 でブート seed
+  経路自体が消えたことで前提を失っている
 - ADR-087 (CF 接地オブジェクトモデル + ロボット可視性を Outliner へ) — 「eye が唯一の所有者」の宣言。本 ADR はそれが CF 軸について未完だった部分を閉じる
 - ADR-094 (LINK NETWORK を TF ツリーへ回帰) — `forceHidden × collapsed` の直交 2 軸 + 合成 1 箇所という、本 ADR が横展開する形の先例
 - ADR-090 (ロボットの同一性を名前から実体へ) — `seed` 由来と `addRobot()` 由来の区別、および基数 N の fixture

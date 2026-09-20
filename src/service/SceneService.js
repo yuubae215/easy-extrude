@@ -3608,13 +3608,15 @@ export class SceneService extends EventEmitter {
    *    used to create one robot when the scene had none, and only the fresh-boot
    *    scene passed it. ADR-090 had already made zero robots a first-class state
    *    for every OTHER entry; boot was the last place that still disagreed, and it
-   *    disagreed invisibly — the seeded arm's declared visibility default is
-   *    `false` (ADR-096 §Decision 3, "an arm standing alone reads as clutter"), so
-   *    the boot scene held **cardinality 1 while presenting cardinality 0**. A user
-   *    who cannot see it cannot distinguish it from the robot not being there, and
-   *    an entity nobody can find is worth less than one that was never created
-   *    (原則 #31 — the 0 that is really a 1). The Add ▸ Robot path creates a robot
-   *    the user can actually see, because they asked for it.
+   *    disagreed invisibly — the seeded arm's declared visibility default was
+   *    `false` at the time (ADR-096 §Decision 3, "an arm standing alone reads as
+   *    clutter"), so the boot scene held **cardinality 1 while presenting
+   *    cardinality 0**. A user who cannot see it cannot distinguish it from the
+   *    robot not being there, and an entity nobody can find is worth less than
+   *    one that was never created (原則 #31 — the 0 that is really a 1). The
+   *    Add ▸ Robot path creates a robot the user can actually see, because they
+   *    asked for it. (This retirement is *why* `VISIBILITY_ENTRY.SEED` no longer
+   *    means "boot" by the time ADR-142 revisits its default — see below.)
    *
    * The option is REMOVED rather than defaulted to false: a retired shape left in
    * the signature goes green forever (ADR-103 — `DS_PENDING` sat in an enum for
@@ -3707,8 +3709,13 @@ export class SceneService extends EventEmitter {
    *
    * `VISIBILITY_ENTRY.SEED` itself stays alive and still means what it meant: it
    * is the entry `_explicitVisibleOf` assumes for a robot that arrived inside a
-   * LOADED scene (import / template), where the frames are furniture of someone
-   * else's cell rather than something the user just asked for.
+   * LOADED scene (import / template). It used to default to hidden on the
+   * theory that those frames are furniture of someone else's cell rather than
+   * something the user just asked for — but ADR-142 points out that loading
+   * THAT scene, with THAT robot in it, is itself something the user just asked
+   * for, so `ROBOT_BASE_SEEDED`'s declared default is `true` too now
+   * (`VisibilityAxes.EXPLICIT_DEFAULTS`). The entry split survives for the day
+   * a reason to diverge the two defaults again shows up.
    *
    * @returns {import('../domain/robotFrames.js').Robot} the added robot
    */

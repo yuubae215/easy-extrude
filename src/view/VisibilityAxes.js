@@ -31,12 +31,18 @@
  * without deciding its visibility default is a test failure, not a silent
  * `true`.
  *
- * `robot_base` carries two rows, keyed by the ENTRY POINT it was born through
- * rather than by its kind: a robot seeded onto the empty boot scene stays down
- * (an arm standing alone reads as clutter — ADR-089 follow-up), while a robot
- * the user just asked for must appear (原則 #11). That distinction already
- * exists in the domain (`ensureRobotFrames({seed:true})` vs `addRobot()`,
- * ADR-090) — this table only hangs a default on it.
+ * `robot_base` still carries two rows, keyed by the ENTRY POINT it was born
+ * through rather than by its kind — the distinction already exists in the
+ * domain (`addRobot()` vs a robot arriving inside a loaded scene, ADR-090) —
+ * but as of ADR-142 both rows default to visible. The original split (a
+ * boot-seeded arm stays down because "an arm standing alone reads as clutter",
+ * ADR-089 follow-up) lost its premise when ADR-132 D5 removed the boot seed
+ * path: `SEED` today means "arrived inside a Home template or an imported
+ * .ctx.json", never an empty scene, and hiding a robot the user just picked a
+ * scene FOR reproduces the same silent no-op ADR-096 removes (原則 #11). The
+ * two rows are kept apart in the table (not collapsed into one kind) so a
+ * future reason to diverge them again has somewhere to land without
+ * reinventing the entry split.
  *
  * Pure module: no THREE, no DOM, no domain imports. The `instanceof` narrowing
  * that produces `isFrame` / `isRobotBase` belongs to the caller (原則 #2 — the
@@ -44,6 +50,8 @@
  *
  * @see docs/adr/ADR-096-visibility-two-axes-declared-defaults.md
  * @see docs/gsn/adr-096-visibility-two-axes.gsn
+ * @see docs/adr/ADR-142-a-picked-scene-is-not-someone-elses-furniture.md
+ * @see docs/gsn/adr-142-a-picked-scene-is-not-someone-elses-furniture.gsn
  */
 
 /**
@@ -96,8 +104,13 @@ export const EXPLICIT_DEFAULTS = Object.freeze({
   // Axes everywhere is noise; ADR-087's "select a Solid → its grounding CF
   // appears" is precisely the contextual axis doing this job instead.
   [VISIBILITY_KIND.COORDINATE_FRAME]:  false,
-  // An arm standing alone on an empty scene reads as clutter (ADR-089 follow-up).
-  [VISIBILITY_KIND.ROBOT_BASE_SEEDED]: false,
+  // Was `false` ("an arm standing alone on an empty scene reads as clutter",
+  // ADR-089 follow-up) until ADR-142. That premise no longer applies: ADR-132
+  // D5 removed the boot seed path entirely, so this kind is reached only by a
+  // robot arriving inside a LOADED scene (a Home template or an imported
+  // .ctx.json) — a scene the user picked BECAUSE it has a robot. Hiding it
+  // reproduces the same silent no-op ADR-096 exists to remove (原則 #11).
+  [VISIBILITY_KIND.ROBOT_BASE_SEEDED]: true,
   // The user just asked for it — nothing appearing would be a silent no-op (#11).
   [VISIBILITY_KIND.ROBOT_BASE_ADDED]:  true,
 })

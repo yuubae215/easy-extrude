@@ -1,0 +1,76 @@
+GOALS adr142_a_picked_scene_is_not_someone_elses_furniture
+
+goal PickingASceneWithARobotShowsTheRobot
+uuid 36eb692a-7bf7-49fc-9940-2ab74b479db1
+summary "ユーザーが Home のロボット入りテンプレート(または .ctx.json import)を選んだ直後、ロボットが 3D ビューに描画される。選ぶという行為そのものが『これを見たい』の表明であり、選んだのに何も起きないのは原則 #11 が禁じる無言の失敗の別形である"
+state UnderReview
+labels adr-142, adr-096, adr-132, principle-11, principle-24, principle-31, app
+
+    context TheDefaultOutlivedItsOwnPremise
+    uuid 36eb692a-7bf7-49fc-9940-2ab74b479db2
+    summary "ROBOT_BASE_SEEDED の既定 false (ADR-096 §Decision 3) は『空のブートシーンに腕 1 本はノイズ』(ADR-089 follow-up) を根拠にしていた。2026-08-14 の ADR-132 Decision 5 がブートの robot seed 経路そのものを廃止したため、今日 VISIBILITY_ENTRY.SEED はテンプレート読み込みと import だけを指す。前提(空シーン)は消えたが、既定値 false だけがコードに残っていた"
+    artifacts
+    - "src/view/VisibilityAxes.js"
+    - "docs/adr/ADR-096-visibility-two-axes-declared-defaults.md"
+    - "docs/adr/ADR-132-a-search-is-about-what-is-on-the-screen.md"
+
+    context TheOutlinerEyeAlreadyWorks
+    uuid 36eb692a-7bf7-49fc-9940-2ab74b479db3
+    summary "この欠陥は ADR-096 の合成やトグル機構のバグではない — Outliner の目を手動で開けばロボットは正しく描画される(_setObjectVisible → robotStages.setVisible が機能している)。問題は既定値そのものであって、合成や書き手の経路ではない"
+    artifacts
+    - "src/controller/AppController.js"
+
+    justification WhyNotJustAddDiscoveryHints
+    uuid 36eb692a-7bf7-49fc-9940-2ab74b479db4
+    summary "却下案 C (トーストや案内で『Outliner で表示できます』と示すだけ) への反証: 発見可能性を上げても、選んだ瞬間に何も見えないという体験そのものは変わらない。原則 #11 が問題にしているのは『気づけるか』ではなく『入力の結果何も起きないこと』自体である"
+
+    justification WhyNotSplitTemplateFromImport
+    uuid 36eb692a-7bf7-49fc-9940-2ab74b479db5
+    summary "却下案 B (テンプレートだけ既定 true、import は現状維持) への反証: VISIBILITY_ENTRY を 2 値のまま保てなくなり、しかも import で開くシーンもユーザーが能動的に選んだ結果である点でテンプレートと変わらない。区別する理由が無い非対称を作るだけになる"
+
+    strategy ByFlippingOneDeclaredDefaultCell
+    uuid 36eb692a-7bf7-49fc-9940-2ab74b479db6
+    summary "EXPLICIT_DEFAULTS[ROBOT_BASE_SEEDED] を false から true へ変更する。ADR-096 が確立した『既定は種ではなく入口で宣言する』という形自体は変えず、入口の意味が ADR-132 で変わったことに既定の値だけを追随させる。ROBOT_BASE_ADDED と値が同じになっても kind は畳まない — 将来また入口ごとに既定を分ける要求が来たときの分岐点を残す"
+
+        goal ADeclaredKindStillThrowsWhenUndeclared
+        uuid 36eb692a-7bf7-49fc-9940-2ab74b479db7
+        summary "defaultExplicit() は未宣言の kind に対して今後も throw し続ける。既定値を書き換える変更が、既定値で埋める/推論する規律そのものを緩めていないことの確認"
+        labels support-verified
+
+            solution ExistingThrowTestUnchanged
+            uuid 36eb692a-7bf7-49fc-9940-2ab74b479db8
+            summary "src/view/VisibilityAxes.test.js の 'an undeclared kind throws instead of reading as hidden' はそのまま green。EXPLICIT_DEFAULTS の行数と VISIBILITY_KIND の個数が一致する検査 (原則 #31 の個数検査) も無改変で通る"
+            artifacts
+            - "src/view/VisibilityAxes.test.js"
+
+        goal SeededRobotBaseAndTcpDefaultToVisible
+        uuid 36eb692a-7bf7-49fc-9940-2ab74b479db9
+        summary "テンプレート/import 由来の robot_base と tcp は、ユーザーが一度も目を触っていない状態でも explicit=true として描画される。addRobot() 由来のロボットと既定が一致する"
+        labels support-verified
+
+            solution DefaultAssertionFlippedInVisibilityAxesTest
+            uuid 36eb692a-7bf7-49fc-9940-2ab74b479dba
+            summary "src/view/VisibilityAxes.test.js: defaultExplicit(VISIBILITY_KIND.ROBOT_BASE_SEEDED) === true に更新。旧テスト 'ブート seed のロボット 1 台は base も tcp も伏せる'(ADR-132 D5 でブートが 0 台になった今、前提を持たない主張だった)は 'テンプレート/import 由来の robot_base と tcp は既定で表示される' へ置き換え、shown.length が 0 ではなく列挙した kind の個数と一致することを主張する"
+            artifacts
+            - "src/view/VisibilityAxes.js"
+            - "src/view/VisibilityAxes.test.js"
+
+        goal BootStillShowsZeroRobots
+        uuid 36eb692a-7bf7-49fc-9940-2ab74b479dbb
+        summary "既定値の変更後も、ブート直後のシーンは引き続きロボットを 0 台持つ(ADR-132 D5 は本 ADR で覆さない)。本 ADR は『見せるかどうか』ではなく『存在するときにどちらの既定を使うか』だけを変えるので、空シーンの見え方に影響しない"
+        labels support-verified
+
+            solution BootRegressionInSmokeSpecUnaffected
+            uuid 36eb692a-7bf7-49fc-9940-2ab74b479dbc
+            summary "e2e/smoke.spec.js の 'the row never lies' テストにある atBoot 直後の framesShown 0 件アサーションは無改変のまま green(ロボットが 0 台なので既定表のどのセルも参照されない)"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+        goal ThePointerActuallySeesTheRobotAfterPickingATemplate
+        uuid 36eb692a-7bf7-49fc-9940-2ab74b479dbd
+        summary "実際のブラウザで、Home 画面からロボット入りテンプレート(例: layout_pick_place_cell.json)を選ぶと、Outliner の目を一度も触らずにロボットの骨格が 3D ビューに描画される"
+        labels support-exploring
+
+            assumption NoExistingE2ECoversTemplateSelection
+            uuid 36eb692a-7bf7-49fc-9940-2ab74b479dbe
+            summary "e2e/ にはテンプレート選択(_selectLayoutTemplate 経路)を通る既存テストが無い(調査済み: layoutTemplate/onSelectLayoutTemplate で検索して 0 件)。証拠予定: e2e/smoke.spec.js または新規ファイルに、Home からテンプレートを選び window.__easyExtrude.visibilityState() で robot_base.drawn === true を確認する回帰を足す。満期=PATH:e2e/smoke.spec.js"
