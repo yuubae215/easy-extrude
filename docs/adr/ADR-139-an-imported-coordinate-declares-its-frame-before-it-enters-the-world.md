@@ -1,10 +1,10 @@
-# 138. 外から来た座標は自分の frame を宣言してから世界に入る — 単位・利き手・up 軸を 1 つの値にし、既定で埋めない
+# 139. 外から来た座標は自分の frame を宣言してから世界に入る — 単位・利き手・up 軸を 1 つの値にし、既定で埋めない
 
 - Status: Proposed
 - Date: 2026-09-20
 - Deciders: yuubae215, Claude
 - Retires: GREP:CLAUDE.md::\+X\s*forward,\s*\+Y\s*left,\s*\+Z\s*up · GREP:src/service/SceneService.js::_applyGeometryUpdate\(\{\s*objectId,\s*positionsB64
-- Supersedes / Superseded by: なし (ADR-136/137 を覆さない — あれは *単位* 1 軸の話で、
+- Supersedes / Superseded by: なし (ADR-136/138 を覆さない — あれは *単位* 1 軸の話で、
   本 ADR はそれを含む 4 軸の話。ADR-018/037 の CoordinateFrame 実体も覆さない —
   あれは Local ⇄ World の**親子**の話で、World そのものの**規約**には触れていない)
 
@@ -21,13 +21,13 @@ ADR-137 は却下案 B を「world 座標を型で持つ」と一行で書いた
 
 | 軸 | 取りうる値 | 間違えると |
 |----|-----------|-----------|
-| 単位 | mm / m / inch | 1000 倍・25.4 倍のズレ (ADR-136/137 が扱った軸) |
+| 単位 | mm / m / inch | 1000 倍・25.4 倍のズレ (ADR-136/138 が扱った軸) |
 | 利き手 | right / left | **鏡像**になる。左右が入れ替わり、回転の符号が反転する |
 | up 軸 | +Z up (ROS/CAD) / +Y up (glTF・OBJ・多くの DCC) | 90° 転ぶ |
 | forward 軸 | +X / −Z / … | 方位が変わる |
 
 4 軸が独立ということは、**単位を直しても残り 3 つは無傷で残る**ということである。
-ADR-136/137 は 1 軸目を閉じたが、残り 3 軸には今日も欄が無い。
+ADR-136/138 は 1 軸目を閉じたが、残り 3 軸には今日も欄が無い。
 
 ### 力学 2 — この repo の world 規約は「散文にしか無い」
 
@@ -74,7 +74,7 @@ Local ⇄ World の親子は `CoordinateFrame` 実体 (ADR-018/037) が持って
 
 ## Options considered
 
-- **A: 単位だけをブランドする** (`Millimetres` / `Metres`)。ADR-137 Option B の原形。
+- **A: 単位だけをブランドする** (`Millimetres` / `Metres`)。ADR-138 Option B の原形。
   tradeoff: 4 軸のうち 1 軸しか覆わない。利き手・up 軸は無傷で通る — **当事者が
   報告した失敗のほうが残る**。却下。
 - **B: 型引数つきの点型** (`Point<WorldZUpRightMM>` 等、phantom type)。
@@ -106,7 +106,7 @@ Local ⇄ World の親子は `CoordinateFrame` 実体 (ADR-018/037) が持って
 mmPerUnit:1}` (ROS REP-103) を置き、**`CLAUDE.md` はこの定数を名指しするだけにする**
 (核 §1.1 — 表を複製しない)。規約が散文から値へ移る = 読む機械を持てるようになる。
 
-`mmPerUnit` が ADR-136/137 との接続点: 単位は 4 軸のうちの 1 つとして `Frame` に
+`mmPerUnit` が ADR-136/138 との接続点: 単位は 4 軸のうちの 1 つとして `Frame` に
 吸収され、`mm()` は「world-unit で書かれた絶対長の宣言」として残る (役割が違う)。
 
 ### D2 — `toWorld(frame)` は純粋関数。矛盾した frame は throw する
@@ -225,7 +225,7 @@ det(toWorld(f)) < 0  ⟺  f.handedness ≠ WORLD.handedness   (鏡像が起き�
 
 **本 ADR 起票時点で上記はすべて未来形である** (Status = Proposed、実装は別スコープ)。
 goal ごとの支えの正本は
-`docs/gsn/adr-138-an-imported-coordinate-declares-its-frame.gsn`。
+`docs/gsn/adr-139-an-imported-coordinate-declares-its-frame.gsn`。
 
 ### 波及(blast radius)
 

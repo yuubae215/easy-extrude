@@ -1,17 +1,17 @@
-GOALS adr138_imported_coordinates_declare_their_frame
+GOALS adr139_imported_coordinates_declare_their_frame
 
 goal ImportedCoordinatesDeclareTheirFrameBeforeEnteringTheWorld
 uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8091
 summary "座標の集まりは、それがどの frame の値か (単位・利き手・up 軸・forward 軸) を自分で宣言してから世界に入る。宣言されていない frame は既定で埋めず、可視な理由とともに拒まれる — 『ROS だと宣言された』と『誰も考えなかった』を区別可能にする (原則 #31 / Yellow Card『必須入力の欠落に既定値を与えない』)"
 state UnderReview
-labels adr-138, adr-136, adr-137, adr-115, adr-120, adr-018, principle-21, principle-31, principle-11, principle-28, app
+labels adr-139, adr-138, adr-137, adr-136, adr-115, adr-120, adr-018, principle-21, principle-31, principle-11, principle-28, app
 
     context FourIndependentAxesOnlyOneOfWhichIsClosed
     uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8092
-    summary "world 規約の壊れ方は 4 軸あり互いに独立: 単位 (mm/m/inch)・利き手 (right/left = 鏡像)・up 軸 (+Z up の ROS/CAD か +Y up の glTF/OBJ/DCC)・forward 軸。ADR-136/137 は 1 軸目 (単位) を閉じたが、独立なので残り 3 軸は無傷で残っている。ADR-137 の却下案 B が言う『型』は単位ブランドのことで、当事者が報告した失敗 (右手系左手系・上が +Z か +Y か) を 1 つも捕まえない"
+    summary "world 規約の壊れ方は 4 軸あり互いに独立: 単位 (mm/m/inch)・利き手 (right/left = 鏡像)・up 軸 (+Z up の ROS/CAD か +Y up の glTF/OBJ/DCC)・forward 軸。ADR-136/138 は 1 軸目 (単位) を閉じたが、独立なので残り 3 軸は無傷で残っている。ADR-138 の却下案 B が言う『型』は単位ブランドのことで、当事者が報告した失敗 (右手系左手系・上が +Z か +Y か) を 1 つも捕まえない"
     artifacts
     - "docs/adr/ADR-136-world-unit-is-millimeters-robotics-converts-at-the-wire.md"
-    - "docs/adr/ADR-137-a-world-unit-constant-has-no-field-of-its-own.md"
+    - "docs/adr/ADR-138-scale-dependent-quantities-declare-their-kind.md"
 
     context TheWorldConventionLivesOnlyInProseWithNoMachineReadingIt
     uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8093
@@ -78,4 +78,4 @@ labels adr-138, adr-136, adr-137, adr-115, adr-120, adr-018, principle-21, princ
 
     context ConnectionToProfitTreeDeferred
     uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b80a0
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は外部ツール連携の信頼性 (取り込んだ形が意図どおりに置かれる) に効くが、事業木側の対応する goal 名・uuid は未特定 — ADR-136/137 の同名 context と同じ扱いで、次に事業木を読み直す機会に確定する。保留は忘却ではないのでここに残す"
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は外部ツール連携の信頼性 (取り込んだ形が意図どおりに置かれる) に効くが、事業木側の対応する goal 名・uuid は未特定 — ADR-136/138 の同名 context と同じ扱いで、次に事業木を読み直す機会に確定する。保留は忘却ではないのでここに残す"

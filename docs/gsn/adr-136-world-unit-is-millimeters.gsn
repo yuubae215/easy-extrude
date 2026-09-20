@@ -57,11 +57,14 @@ labels adr-136, adr-119, adr-084, principle-1, principle-3, app
         goal RobotSkeletonAndDefaultAddedGeometryShareTheMmScale
         uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f506a
         summary "RobotStage が描く URDF 骨格 (実物 UR5e、リーチ ≒850mm) と、Add で足す既定キューブ (100mm 角)・既定ロボットオフセット (2000mm) が、mm 系シーンの中で order-of-magnitude が一致する。ユーザー報告の起点 (ロボットとペデスタルの見た目のサイズが全然違う / Add のキューブが小さすぎる) が解消される"
-        labels support-exploring
+        labels support-verified
 
-            assumption VisualScaleParityCheckedManuallyNotByAutomatedTest
+            solution E2EScaleParityMeasuresTheSkeletonInTheBrowser
             uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f506b
-            summary "RobotStage は THREE.js/URDFLoader に依存するため node --test レーン (test:context) の対象外で、見た目のスケール一致は自動テストではなく pnpm dev での目視確認に委ねる。決着させる検査はロボット骨格とペデスタルの bounding box 比を assert する e2e (Playwright) ケース (未着手)。満期=PATH:e2e/robot-scale-parity.spec.js — そのファイルが現れたら本 goal を support-verified へ昇格させる"
+            summary "ADR-137 で満期到来 (PATH:e2e/robot-scale-parity.spec.js が実在)。e2e/robot-scale-parity.spec.js が `window.__easyExtrude.worldScale()` 越しに実測する: Add ▸ Robot 後の骨格の world bounding box 高さが 100〜10000 world-unit (実測 574mm — UR5e が rest pose で畳まれた高さ) に入ること。**この木が『手動確認に委ねる』と宣言したまま誰も実行しなかったのが ADR-137 の欠陥の温床だった** — 同じ spec が起動直後のキューブの接地と視界内在も測るので、見た目に関する主張が見た目を見ないレーンで緑を出すことはもう無い"
+            artifacts
+            - "e2e/robot-scale-parity.spec.js"
+            - "src/view/RobotStage.js"
 
     context ConnectionToProfitTreeDeferred
     uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f506c

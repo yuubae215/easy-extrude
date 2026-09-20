@@ -1,10 +1,10 @@
-GOALS adr137_scale_dependent_quantities_declare_their_unit
+GOALS adr138_scale_dependent_quantities_declare_their_kind
 
 goal ScaleDependentQuantitiesDeclareTheirOwnUnit
 uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6071
 summary "尺度に依存する量 (カメラのクリップ面・既定 pose・グリッド幅・スナップ閾値・接地許容・既定形状の寸法) が、自分の単位と根拠を自分で名乗る。そして『名乗っていない量の個数』が毎 PR 数えられる — 在る定数を辿るのではなく、消費点 (sink) にリテラルが直接届いている箇所を数える (原則 #31)"
 state Approved
-labels adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, app
+labels adr-138, adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, app
 
     context MeterAssumingAuthoritiesCoexistedWithMillimeterContent
     uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a6072
@@ -64,19 +64,19 @@ labels adr-137, adr-136, adr-100, adr-102, adr-068, principle-31, principle-27, 
             uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607b
             summary "反証されうる前提: D4 は個々の定数の母集団を sink から導出するが、sink の一覧そのものは手書きである。新しい view が独自に near を書けば、その sink が表へ登録されるまで census は見ない — ADR-102 が名指しした place-list の形が一段上に残る。今日これを導出へ広げないのは、sink の導出が却下案 B (world 座標を型で持つ) そのものだから。この前提が崩れた日 (登録漏れの sink が実害を出した日) が Option B のトリガである"
 
-        goal BootFramingGoesThroughTheOneDerivation
+        goal TheThreeRemainingConsumersAreDeclared
         uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607c
-        summary "起動直後の既定シーンが、シーン尺度に関わらず画面に写る。boot は定数ではなく既定シーンの bounding sphere から framing を導出し (fitCameraToSphere → focusPose/clipPlanesFor/_updateGridScale)、BootReveal の着地先も導出になる。retune ではなく定数を種類ごと消すので、明日 m 系アセットを読んでも同じ欠陥へ戻らない"
+        summary "ADR-137 が届かなかった 3 つの消費点 (placement.js の接地許容 1 µm / SceneService の同じ値の写し / FaceExtrudeHandler の 0.15 mm スナップ) が三種の語彙で宣言される。3 つともコメントが『1 mm』『world units』と書きながら値がメートル読みで、単位を名乗る欄が無いので書いた本人の理解がコメントにしか残っていなかった"
         labels support-verified
 
-            solution BootFramingIsGuardedByRelationsNotConstants
+            solution RemainingConsumersConvertedAndPinned
             uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607d
-            summary "e2e/boot-framing.spec.js: framingState() (AppController が露出する読み取り専用スナップショット) から distance > sceneRadius / far > distance + sceneRadius / near < distance − sceneRadius / 0.3 < coverage < 1.5 を問う。**定数ではなく関係**なので尺度が変わっても意味を保つ。**検査が噛むことを実測**: ADR-136 時点の SceneView へ戻すと distance 7.81 < sceneRadius 43.30 で fail、_frameStarterScene() だけを外すと coverage 0.051 < 0.3 で fail。初版の下限 0.05 は後者を通してしまっていたので 0.3 へ上げた — 検証の形そのものが主張である。pnpm test:e2e 58 passed / 10 skipped / 0 failed"
+            summary "SUPPORT_TOLERANCE = mm(1) / checkGroundClearance は写しをやめて SUPPORT_TOLERANCE を引く (§1.1 — 写しの片方だけが ADR-136 で再検討されなかったのが 1 µm 化の経路) / SNAP_THRESHOLD = mm(15)。src/domain/placement.test.js の fixture はテスト名が『1 mm 許容』と言いながら値が 0.0005/0.002 とメートル読みだったので名前のほうを正として mm へ訂正。pnpm test green。**ADR-137 の boot framing 実装には触れていない** — 並行実装の衝突では先に main へ入ったほうを土台にし、相手の決定を後から塗り潰さない"
             artifacts
-            - "e2e/boot-framing.spec.js"
-            - "src/view/SceneView.js"
-            - "src/controller/AppController.js"
-            - "src/view/CameraMath.js"
+            - "src/domain/placement.js"
+            - "src/service/SceneService.js"
+            - "src/controller/handler/FaceExtrudeHandler.js"
+            - "src/domain/placement.test.js"
 
     context ConnectionToProfitTreeDeferred
     uuid 7c4d9e21-5a3b-4e8f-b1c6-2d3e4f5a607e

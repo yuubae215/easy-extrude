@@ -1,6 +1,6 @@
 /**
  * WorldUnitCensus.test.js — 「単位を名乗っていない尺度依存量」の個数を数える
- * (ADR-137 D4 / 原則 #31)
+ * (ADR-138 D4 / 原則 #31)
  *
  * ## この検査が答える問い
  *
@@ -123,24 +123,30 @@ function scanUndeclared() {
   return found
 }
 
-test('world 空間の sink に、単位を名乗らないリテラルが届いていない (ADR-137 D4)', () => {
+test('world 空間の sink に、単位を名乗らないリテラルが届いていない (ADR-138 D4)', () => {
   const undeclared = scanUndeclared()
   assert.equal(undeclared.length, UNDECLARED_BASELINE,
     `単位を名乗らない尺度依存量が ${undeclared.length} 箇所ある (baseline ${UNDECLARED_BASELINE})。\n` +
     undeclared.map(u => `  ${u.file}  [${u.sink}]  → ${u.arg}`).join('\n') +
-    '\n\n三種のいずれかとして宣言すること (ADR-137 D1):\n' +
+    '\n\n三種のいずれかとして宣言すること (ADR-138 D1):\n' +
     '  画面空間 = *_PX / シーン由来 = radius から導出 / 物理長 = mm(…)\n' +
     'retune ではなく種を選ぶ — 数値を今日の尺度に合わせ直すのは、明日別の尺度の\n' +
     'アセットを読んだ日に同じ欠陥へ戻る (ADR-136 がそうなった)。')
 })
 
-test('退役した meter-scale 定数が復活していない (ADR-137 Retires)', () => {
+test('退役した meter-scale 定数が復活していない (ADR-138 Retires)', () => {
   // 退役の腐敗は違反を*見逃す*のではなく**緑を出す** (ADR-103) ので、消したこと
   // 自体を数える。ADR-137 の `Retires:` 欄と同じ 4 番地 — `pnpm test:adr` は ADR が
   // Accepted であることを問い、ここは src/** 側から同じ形の不在を問う。
+  // ADR-137 (boot framing) と ADR-138 (三種の語彙) が退役させた形の合併。
+  // **この表の上 2 行は ADR-137 のもの**で、うち clip 定数のほうは ADR-137 の時点で
+  // 消えておらず (散文で「placeholder」と宣言されたまま残っていた)、この census の
+  // main に対する初回実行が見つけた — 人が数え直す方式の取りこぼしが、機械に
+  // 変えた初日に 1 件出たことの記録である。
   const RETIRED = [
     { pattern: /0\.1,\s*100/,                     was: 'SceneView のカメラ clip 定数 (near 0.1 / far 100 = 100 mm)' },
     { pattern: /position\.set\(6,\s*-4,\s*3\)/,   was: 'SceneView のカメラ既定 pose (原点から 7.81 mm)' },
+    { pattern: /GridHelper\(20,\s*20/,            was: '地面グリッドの裸の基底幅 (20 = メートル時代の 20 m)' },
     { pattern: /SNAP_THRESHOLD\s*=\s*0\.15/,      was: '面押し出しスナップ半径 (0.15 mm = 事実上無効)' },
     { pattern: /SUPPORT_TOLERANCE\s*=\s*0\.001/,  was: '接地判定の許容 (0.001 mm = 1 µm)' },
   ]

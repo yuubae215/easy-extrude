@@ -8,53 +8,19 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
 import { TCP_LOCAL_SEED } from './robotSkeleton.js'
-import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance } from './CameraMath.js'
-import { orbitControlsTouches } from './CameraGestures.js'
-import { COLOR, hexNumber } from '../theme/tokens.js'
+import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance, BOOT_VIEW_DIRECTION, BOOT_VIEW_RADIUS } from './CameraMath.js'
 import { mm } from '../domain/worldUnits.js'
-
-/** The perspective vertical FOV, in degrees. Unitless — not a scale-bearing value. */
-const FOV_DEG = 60
-
-/**
- * The scene size the camera frames before any content exists — **500 mm**
- * (ADR-137 D1/D2「宣言された物理長」).
- *
- * SceneView is constructed before the boot starter solid is added, so *some*
- * pose has to exist. What ADR-137 D3 removes is not the existence of a starting
- * frame but its being three bare literals: this class shipped a hand-written
- * near/far pair and a hand-written camera position, authored when the world-unit
- * was effectively a metre. After ADR-136 moved the world-unit to mm, that far
- * plane clipped at 100 mm and the camera sat 7.81 mm from the origin — INSIDE
- * the 50 mm starter cube. (The retired forms are spelled out once, in ADR-137's
- * `Retires:` field and `src/WorldUnitCensus.test.js`; repeating them here would
- * make "is it gone?" unanswerable by grep.)
- *
- * Retuning those numbers would only be right for today's scene scale. Instead
- * the seed frame is DERIVED: a declared physical scene size run through the same
- * `focusPose` / `clipPlanesFor` derivation (ADR-068) that every later "frame the
- * scene" uses. `AppController` re-fits to the real boot scene as soon as the
- * starter solid exists, so this seed is only ever the first frame.
- */
-const BOOT_SEED_RADIUS = mm(500)
-
-/**
- * The classic 3/4 orbital DIRECTION the boot framing keeps (front +X, right -Y,
- * above +Z). A direction is unitless — `focusPose` normalises it and derives the
- * distance from the radius — so this is deliberately not a `mm()` value. It is
- * the one part of the old hand-written camera position that carried no scale, and
- * it is preserved to the bit so `BootReveal`'s flight still lands on the same view.
- */
-const BOOT_VIEW_DIR = Object.freeze({ x: 6, y: -4, z: 3 })
 
 /**
  * Ground-grid base geometry: a **20 mm** span in 20 cells at scale 1
- * (ADR-137 D1/D2). `_updateGridScale(radius)` multiplies this by a power of ten
+ * (ADR-138 D1/D2). `_updateGridScale(radius)` multiplies this by a power of ten
  * to suit the scene, so the span is scale-derived at runtime — but the base
- * number itself is a world-unit length and now says so.
+ * number is a world-unit length and now says so.
  */
 const GRID_BASE_SPAN = mm(20)
 const GRID_DIVISIONS = 20
+import { orbitControlsTouches } from './CameraGestures.js'
+import { COLOR, hexNumber } from '../theme/tokens.js'
 
 /**
  * The projection axis (ADR-103). Two values, cardinality exactly 1 — there is no
@@ -82,16 +48,26 @@ export class SceneView {
     // Backdrop/fog ownership is delegated to the ambient stage (ADR-067):
     // SceneStage sets `scene.background` (gradient) and `scene.fog` itself.
 
-    // ADR-137 D3 — the seed frame is DERIVED, not three bare literals. Same
-    // derivation (ADR-068) as every later framing, applied to a declared scene
-    // size; only the orbital direction is carried over verbatim.
-    const seed = computeFocusPose({ x: 0, y: 0, z: 0 }, BOOT_SEED_RADIUS, BOOT_VIEW_DIR, FOV_DEG)
-    const seedClip = clipPlanesFor(BOOT_SEED_RADIUS, seed.dist, 0)
+    // Only the DIRECTION is authored here. Distance and clip planes belong to
+    // framing (`fitCameraToSphere`, driven by AppController._frameScene at boot
+    // — ADR-137): they are scene-scale facts, and the constructor does not know
+    // the scene's scale.
+    //
+    // The seed clip planes are DERIVED from `BOOT_VIEW_RADIUS` through the same
+    // `clipPlanesFor` the first frame-the-scene call uses (ADR-138 D1/D3). They
+    // were a bare `0.1, 100` pair, declared *in prose* as "a placeholder that
+    // clipPlanesFor replaces" — true, and still a metre-era literal meaning
+    // 0.1mm / 100mm until that first call. Prose is not asked at the moment of
+    // writing; `src/WorldUnitCensus.test.js` is, and it found this pair on its
+    // first run against ADR-137's code.
+    const seedPose = computeFocusPose({ x: 0, y: 0, z: 0 }, BOOT_VIEW_RADIUS, BOOT_VIEW_DIRECTION, 60)
+    const seedClip = clipPlanesFor(BOOT_VIEW_RADIUS, seedPose.dist, 0)
     this.camera = new THREE.PerspectiveCamera(
-      FOV_DEG, innerWidth / innerHeight, seedClip.near, seedClip.far)
+      60, innerWidth / innerHeight, seedClip.near, seedClip.far)
     this.camera.up.set(0, 0, 1)           // ROS convention: +Z is up
-    this.camera.position.set(seed.position.x, seed.position.y, seed.position.z)
-    this.camera.lookAt(seed.target.x, seed.target.y, seed.target.z)
+    const d = BOOT_VIEW_DIRECTION
+    this.camera.position.set(d.x, d.y, d.z)
+    this.camera.lookAt(0, 0, 0)
 
     // The orthographic camera is a DERIVED VIEW of the perspective camera, never
     // a second pose source (原則 #24 / §1.1). It is created lazily on the first
@@ -160,9 +136,8 @@ export class SceneView {
 
   /**
    * Rescales the ground grid to stay visible at the given scene scale.
-   * The base grid spans `GRID_BASE_SPAN` (20 mm) at scale 1; in a larger scene
-   * (radius in the thousands) it would shrink to a sub-pixel dot without this
-   * rescale (PHILOSOPHY #27).
+   * The 20-unit grid is sized for meter-scale scenes; in an mm-scale scene
+   * (radius in the thousands) it shrinks to a sub-pixel dot (PHILOSOPHY #27).
    * Picks a power-of-10 cell size so grid lines stay on round world coordinates:
    * scale 1 for radius ≤ 10 (default look preserved), ×10 per decade above.
    * @param {number} radius  scene bounding-sphere radius (world units)

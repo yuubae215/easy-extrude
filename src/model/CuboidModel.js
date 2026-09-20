@@ -30,8 +30,15 @@ export const FACES = [
  * Half-extent of the default Add cube, in world-units (mm — ADR-136): a 100mm
  * cube, sized to sit next to mm-scale Solid/Layout DSL content rather than
  * rendering as a sub-pixel dot (CODE_CONTRACTS "mm-scale scenes").
+ *
+ * EXPORTED because it is the ONE authority for "how big is a default solid"
+ * (§1.1). Every consumer of that fact derives from it — the corner factory
+ * below, the boot starter's ground rest (`AppController._restStarterCube`) and
+ * the multi-add stagger (`SceneService`). ADR-136 converted two of those three
+ * and left the third writing a metre-era `0.5`, which sank the starter cube
+ * 24.5mm below the ground plane: a size fact with three writers has no owner.
  */
-const DEFAULT_HALF_EXTENT = 50
+export const DEFAULT_HALF_EXTENT = 50
 
 /** Pure factory that creates the initial corner array */
 export function createInitialCorners() {
