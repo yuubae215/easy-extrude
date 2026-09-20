@@ -24,6 +24,7 @@ import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { CONTEXTUAL }        from '../view/VisibilityAxes.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
 import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
+import { CLICK_TARGET_KIND } from '../domain/clickTarget.js'
 import { Face }            from '../graph/Face.js'
 import { ICONS }           from '../view/UIView.js'
 import { NodeEditorView }  from '../view/NodeEditorView.js'
@@ -2014,70 +2015,6 @@ export class AppController {
     this._outlinerView.setFrameUnreferenced(frameId, !hasLinks)
   }
 
-  /**
-   * Hit-tests all scene entities for SpatialLink target selection.
-   * Returns the hit entity, or null if nothing was hit.
-   * Checks cuboid geometry first, then falls back to bounding-box for
-   * non-geometry entities (AnnotatedLine/Region/Point, MeasureLine, CoordinateFrame).
-   * @returns {{ obj: object }|null}
-   */
-  _hitAnyEntityForLink() {
-    // Step 0: prioritise CoordinateFrame hits — CFs are rendered on top of Solids,
-    // so the cuboid raycast (step 1) would return the parent Solid instead of the CF.
-    const cfHit = this._hitTest.hitAnyCoordinateFrame()
-    if (cfHit && cfHit.obj.id !== this._spatialLinkMode.sourceId) {
-      return cfHit
-    }
-
-    // Step 1: cuboid-based raycast (same as _hitAnyObject but excludes source)
-    const cuboidHit = this._hitTest.hitAnyObject()
-    if (cuboidHit && cuboidHit.obj.id !== this._spatialLinkMode.sourceId) {
-      return cuboidHit
-    }
-
-    // Step 2: bounding-box check for non-cuboid entities
-    this._raycaster.setFromCamera(this._mouse, this._camera)
-    const ray = this._raycaster.ray
-    const pt  = new THREE.Vector3()
-
-    let nearestDist = Infinity
-    let nearestObj  = null
-
-    for (const obj of this._scene.objects.values()) {
-      if (obj.id === this._spatialLinkMode.sourceId) continue
-      if (obj.meshView?.cuboid?.visible) continue  // already checked in step 1
-
-      let box = null
-
-      if (obj instanceof CoordinateFrame) {
-        const wp = this._service.worldPoseOf(obj.id)?.position
-        if (wp) {
-          box = new THREE.Box3(
-            wp.clone().subScalar(0.4),
-            wp.clone().addScalar(0.4),
-          )
-        }
-      } else if (obj.corners && obj.corners.length > 0) {
-        box = new THREE.Box3()
-        for (const c of obj.corners) box.expandByPoint(c)
-        box.expandByScalar(0.4)
-      }
-
-      if (!box) continue
-
-      const hitPt = ray.intersectBox(box, pt)
-      if (hitPt) {
-        const dist = ray.origin.distanceTo(hitPt)
-        if (dist < nearestDist) {
-          nearestDist = dist
-          nearestObj  = obj
-        }
-      }
-    }
-
-    return nearestObj ? { obj: nearestObj } : null
-  }
-
   // ─── Event binding ─────────────────────────────────────────────────────────
   _bindEvents() {
     // Store bound references so dispose() can remove them.
@@ -2094,18 +2031,9 @@ export class AppController {
         if (e.target !== this._sceneView.renderer.domElement) return
         if (this._scene.selectionMode !== 'object') return
         this._hitTest.updateMouse(e)
-        // PHILOSOPHY #22 — same hit-priority logic as _onPointerDown:
-        // CF beats its own parent Solid; unrelated CF does not shadow a Solid.
-        const cfResult    = this._hitTest.hitAnyCoordinateFrame()
-        const solidResult = this._hitTest.hitAnyObject()
-        let result
-        if (cfResult && solidResult) {
-          result = this._hitTest.isCfDescendantOf(cfResult.obj, solidResult.obj.id) ? cfResult : solidResult
-        } else {
-          result = cfResult ?? solidResult
-        }
-        if (!result) result = this._hitTest.hitAnyAnnotation()
-        if (!result) result = this._hitTest.hitRobotStage()   // robot skeleton → robot_base
+        // PHILOSOPHY #22 — resolved in ONE place (ADR-140). This handler used to
+        // hold its own copy of the priority chain.
+        const result = this._hitTest.resolveClickTarget()
         if (!result) return
         const { obj } = result
         // Right-clicking something already selected keeps the whole selection
@@ -2165,8 +2093,11 @@ export class AppController {
     if (e.target !== this._sceneView.renderer.domElement) return
     if (this._scene.selectionMode !== 'object') return
     this._hitTest.updateMouse(e)
-    const hit = this._hitTest.hitAnyObject()?.obj ?? this._hitTest.hitAnyCoordinateFrame()?.obj
-      ?? this._hitTest.hitRobotStage()?.obj
+    // The same resolution every other pointer gesture uses (ADR-140). The copy
+    // that lived here resolved Solid BEFORE CoordinateFrame and skipped the
+    // annotation fallback entirely, so a double-click could land on a different
+    // entity than the single click that opened it.
+    const hit = this._hitTest.resolveClickTarget()?.obj ?? null
 
     const verdict = acceptDoubleTap({
       firstTap:  this._prevTap,
@@ -2808,13 +2739,19 @@ export class AppController {
         this._updateNPanel()
         return
       }
-      const hit = this._hitTest.hitAnyObject()
+      // What a click HERE would select — the same resolution the click itself
+      // uses (ADR-140), so the cursor cannot promise a selection the click will
+      // not make. The copy that lived here asked three of the four hit tests and
+      // left out CoordinateFrame, so hovering a frame gizmo showed the default
+      // cursor while clicking it selected the frame.
+      const target = this._hitTest.resolveClickTarget()
       // Hover affordance (ADR-068, Tier A) — desktop pointers only; touch has
       // no hover (PHILOSOPHY #13), so a coarse pointer never warms a body.
-      if (e.pointerType !== 'touch') this._setHoveredEntity(hit?.obj ?? null)
-      this._uiView.setCursor(
-        (hit || this._hitTest.hitAnyAnnotation() || this._hitTest.hitRobotStage()) ? 'pointer' : 'default',
-      )
+      // Only a SOLID warms: the warm material is a Solid-mesh affordance, and a
+      // frame or skeleton winning the click means no body is the target.
+      const hoverBody = target?.kind === CLICK_TARGET_KIND.SOLID ? target.obj : null
+      if (e.pointerType !== 'touch') this._setHoveredEntity(hoverBody)
+      this._uiView.setCursor(target ? 'pointer' : 'default')
       return
     }
 
@@ -3211,30 +3148,13 @@ export class AppController {
     }
 
     if (this._scene.selectionMode === 'object') {
-      // PHILOSOPHY #22 — Narrower Scope Wins in Hit-Testing:
-      // Run scene hit tests first so we know what the user is actually targeting.
-      // A CF should beat its own parent Solid when both are in the same screen region.
-      // However a CF belonging to a *different* Solid must NOT intercept clicks on
-      // the target Solid — the bounding-box fallback in _hitAnyCoordinateFrame()
-      // creates a 0.4-unit false-positive zone that would otherwise block Solid selection.
-      const cfResult    = this._hitTest.hitAnyCoordinateFrame()
-      const solidResult = this._hitTest.hitAnyObject()
-      let result
-      if (cfResult && solidResult) {
-        // Both hit: prefer CF only when it is a descendant of the found Solid
-        // (PHILOSOPHY #22 applies to child→parent, not to cross-Solid relationships).
-        result = this._hitTest.isCfDescendantOf(cfResult.obj, solidResult.obj.id)
-          ? cfResult
-          : solidResult
-      } else {
-        result = cfResult ?? solidResult
-      }
-      if (!result) result = this._hitTest.hitAnyAnnotation()
-      // Lowest priority: a click on the robot skeleton selects its robot_base
-      // proxy (ADR-084 §2) — the skeleton is a view-only decoration, so this is
-      // how "select the robot in the viewport" works. Below every real entity so
-      // it never shadows a smaller/closer target (PHILOSOPHY #22).
-      if (!result) result = this._hitTest.hitRobotStage()
+      // PHILOSOPHY #22 — Narrower Scope Wins in Hit-Testing, decided in ONE
+      // place (ADR-140): scope rank first (frame < body < annotation), and
+      // within a rank the NEARER hit wins. A click on the robot skeleton
+      // resolves to its `robot_base` proxy (ADR-084 §2) because the skeleton is
+      // a view-only decoration; it is ranked as a body alongside solids, so the
+      // pedestal it stands on no longer wins merely by being a Solid.
+      const result = this._hitTest.resolveClickTarget()
 
       // If TC already claimed this pointer (gizmo fired dragging-changed synchronously
       if (result) {
