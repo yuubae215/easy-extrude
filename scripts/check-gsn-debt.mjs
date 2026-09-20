@@ -239,6 +239,12 @@ const SUPPORT_LABELS = new Map([
 // なので、分子 (G3) は 2 件ぶん増える。**実装済みの ADR が借金を増やすのは正常である** —
 // 増えないのは「証拠が届かない範囲を宣言しなかった」ときだけで、それは借金が無いのでは
 // なく数えていないだけ (原則 #31)。
+// 2026-09-20 (4 度目): 43 → 44。ADR-142 (Accepted・実装済み) の木が 1 goal を足した。
+//   - ThePointerActuallySeesTheRobotAfterPickingATemplate (ADR-142, exploring・満期あり)
+//     — 純粋な既定値の反転 (defaultExplicit) は unit で焼いた。「実際のブラウザで
+//     テンプレートを選ぶとロボットが描かれる」ことは、テンプレート選択 (_selectLayoutTemplate)
+//     を通る e2e が repo に 1 本も無い (調査済み) ため、まだ人が見るしかない。
+// 満期は機械可読 (PATH:e2e/smoke.spec.js) なので分子 (G3) は動かない。
 const DEBT_BASELINE = 43
 
 /**

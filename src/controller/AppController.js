@@ -4258,10 +4258,12 @@ export class AppController {
     this._refreshUndoRedoState()
     this._selMgr.clearSelection()
     // A template's robot arrives through the scene, not through the user's Add
-    // menu, so it carries the seeded default and stays down (ADR-096 §Decision
-    // 3) — a template's own robot Solid isn't shadowed by the orphan UR5e
-    // decoration. The explicit `_hideRobotByDefault()` sweep this replaces is
-    // gone: the default is declared, not swept.
+    // menu, so it carries the seeded (`ROBOT_BASE_SEEDED`) default rather than
+    // the added one — but both declare `true` as of ADR-142: picking a
+    // template BECAUSE it has a robot and then not seeing that robot is the
+    // same silent no-op ADR-096 exists to remove (原則 #11). The explicit
+    // `_hideRobotByDefault()` sweep this replaces stays gone: the default is
+    // declared, not swept.
     this._frameLayoutDsl(dsl)
     return true
   }

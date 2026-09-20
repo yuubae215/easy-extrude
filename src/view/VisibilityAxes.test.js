@@ -1,5 +1,5 @@
 /**
- * VisibilityAxes.test.js — the machine-side asking point for ADR-096.
+ * VisibilityAxes.test.js — the machine-side asking point for ADR-096 / ADR-142.
  *
  * Three things are asked here, and each maps to one of the four symptoms the
  * ADR opens with:
@@ -12,8 +12,13 @@
  *     counting rows — not by walking the rows that happen to exist (原則 #31:
  *     a missing row has no node to visit, so walking *what is there* always
  *     passes). An undeclared kind must throw, never read as `false`.
- *  3. `robot_base`'s default is keyed by the ENTRY POINT, not by the kind, so
- *     boot-seeded and user-added robots differ (ADR-096 §Decision 3).
+ *  3. `robot_base`'s default is keyed by the ENTRY POINT, not by the kind —
+ *     `visibilityKindOf` still splits `SEED` from `USER_ADDED` into two kinds
+ *     (ADR-090), but as of ADR-142 both kinds declare the SAME default
+ *     (`true`): the boot-seed path that used to justify a lower default for
+ *     `SEED` was removed in ADR-132 D5, so `SEED` today only means "arrived
+ *     inside a loaded scene (Home template / .ctx.json import)", and hiding
+ *     that reproduces the silent no-op ADR-096 removes (原則 #11).
  *
  * Run with:  node --test src/view/VisibilityAxes.test.js
  */
@@ -90,14 +95,14 @@ test('an undeclared kind throws instead of reading as hidden', () => {
   )
 })
 
-test('the declared defaults are the ones ADR-096 §Decision 3 states', () => {
+test('the declared defaults are the ones ADR-096 §Decision 3 / ADR-142 state', () => {
   assert.equal(defaultExplicit(VISIBILITY_KIND.GEOMETRY),          true)
   assert.equal(defaultExplicit(VISIBILITY_KIND.COORDINATE_FRAME),  false)
-  assert.equal(defaultExplicit(VISIBILITY_KIND.ROBOT_BASE_SEEDED), false)
+  assert.equal(defaultExplicit(VISIBILITY_KIND.ROBOT_BASE_SEEDED), true)
   assert.equal(defaultExplicit(VISIBILITY_KIND.ROBOT_BASE_ADDED),  true)
 })
 
-// ── 3. The default is keyed by entry point, not by kind ──────────────────────
+// ── 3. The entry point still decides the KIND, even where the default agrees ─
 
 test('visibilityKindOf splits robot_base by the entry point it was born through', () => {
   const seeded = visibilityKindOf({ isFrame: true, isRobotBase: true, entry: VISIBILITY_ENTRY.SEED })
@@ -106,8 +111,12 @@ test('visibilityKindOf splits robot_base by the entry point it was born through'
   assert.equal(seeded, VISIBILITY_KIND.ROBOT_BASE_SEEDED)
   assert.equal(added,  VISIBILITY_KIND.ROBOT_BASE_ADDED)
   assert.notEqual(
+    seeded, added,
+    '入口は今も別の kind へ分岐する (ADR-090) — ADR-142 で既定の値が揃っただけで、区別できる経路そのものは残る',
+  )
+  assert.equal(
     defaultExplicit(seeded), defaultExplicit(added),
-    'ブート seed のロボットと、ユーザーが今足したロボットは既定が違う (ADR-096 §Decision 3)',
+    'テンプレート/import 由来のロボットと、ユーザーが今足したロボットは既定が揃っている (ADR-142)',
   )
 })
 
@@ -121,17 +130,17 @@ test('visibilityKindOf: non-frames are geometry, frames default to the CF kind',
     'ユーザーが足した普通の CF も軸は既定で伏せる — 出るのは選択の文脈軸のほう')
 })
 
-test('ブート seed のロボット 1 台は base も tcp も伏せる — 伏せる単位が揃う (症状 3)', () => {
+test('テンプレート/import 由来のロボット 1 台は base だけ見える — tcp は CF の既定に従う (ADR-142)', () => {
   // 「ロボット 1 台」を構成する CF の種を**列挙**して、explicit が真のものを数える。
-  // 手続き (_hideRobotByDefault) は base だけを回って tcp を取りこぼしていた —
-  // 在るものを辿る形の失敗。種を列挙して個数を検査する形なら漏れようがない (原則 #31)。
-  const seededRobotFrames = [
-    visibilityKindOf({ isFrame: true, isRobotBase: true, entry: VISIBILITY_ENTRY.SEED }), // base
-    visibilityKindOf({ isFrame: true, isRobotBase: false }),                              // tcp
-  ]
-  const shown = seededRobotFrames.filter(defaultExplicit)
-  assert.equal(shown.length, 0,
-    `ブート直後に explicit が真の CF が ${shown.length} 個ある — 1 台のロボットは丸ごと伏せる`)
+  // base (ROBOT_BASE_SEEDED) は ADR-142 で既定 true。tcp は robot_base とは別の
+  // COORDINATE_FRAME kind (既定 false — 選択で開く文脈表示が既定の担当) のままで、
+  // 本 ADR は robot_base の既定だけを動かす。種を列挙して個数を検査する形なら、
+  // どちらの既定が動いてどちらが動いていないかを取りこぼさない (原則 #31)。
+  const base = visibilityKindOf({ isFrame: true, isRobotBase: true, entry: VISIBILITY_ENTRY.SEED })
+  const tcp  = visibilityKindOf({ isFrame: true, isRobotBase: false })
+
+  assert.equal(defaultExplicit(base), true,  'テンプレート/import 由来の base は既定で見える')
+  assert.equal(defaultExplicit(tcp),  false, 'tcp は CF の既定 (選択の文脈表示が既定) のまま')
 })
 
 test('ユーザーが足したロボットは base が現れる — 何も起きない Add は最悪の失敗 (原則 #11)', () => {
