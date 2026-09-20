@@ -69,8 +69,17 @@ labels adr-142, adr-096, adr-132, principle-11, principle-24, principle-31, app
         goal ThePointerActuallySeesTheRobotAfterPickingATemplate
         uuid 36eb692a-7bf7-49fc-9940-2ab74b479dbd
         summary "実際のブラウザで、Home 画面からロボット入りテンプレート(例: layout_pick_place_cell.json)を選ぶと、Outliner の目を一度も触らずにロボットの骨格が 3D ビューに描画される"
-        labels support-exploring
+        labels support-verified
 
-            assumption NoExistingE2ECoversTemplateSelection
-            uuid 36eb692a-7bf7-49fc-9940-2ab74b479dbe
-            summary "e2e/ にはテンプレート選択(_selectLayoutTemplate 経路)を通る既存テストが無い(調査済み: layoutTemplate/onSelectLayoutTemplate で検索して 0 件)。証拠予定: e2e/smoke.spec.js または新規ファイルに、Home からテンプレートを選び window.__easyExtrude.visibilityState() で robot_base.drawn === true を確認する回帰を足す。満期=PATH:e2e/smoke.spec.js"
+            context TheEarlierAssumptionAboutE2ECoverageWasWrong
+            uuid d9968273-22ae-49bf-876f-ff01d9325bde
+            summary "初版はここに assumption NoExistingE2ECoversTemplateSelection を置き『テンプレート選択を通る e2e が 0 件 (layoutTemplate / onSelectLayoutTemplate で検索)』と書いていた。実際には e2e/smoke.spec.js の『launch Home screen loads a process-layout template (ADR-089)』が _selectLayoutTemplate を通っている — カードを日本語表示名でクリックするので、英語の識別子を grep する調べ方では原理的に出てこなかった。借金の判断自体は正しかった (その既存テストはロボットの可視性を一切主張しない) が、根拠として挙げた事実は誤りだったので、書き換えずに記録として残す (原則 #19)"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+            solution E2ERegressionOnTheTemplatePickPath
+            uuid 476d8b5f-3a32-47b4-ba7a-5fdf3e9a33d3
+            summary "e2e/smoke.spec.js の回帰『選んだシーンのロボットは目を触らずに描かれ、行と画素は読み込んだシーンでも一致する』が、Home からピック&プレイスセルを選び robotState()[0].skeletonVisible === true を目を触らずに主張する。実ブラウザで検証したところ骨格は既定反転だけで描かれたが、同じロボットの robot_base フレームが explicit=true / drawn=false になっており、import が合成を呼ばない別欠陥を露出させた — ADR-143 として起票し同じ PR で修正した"
+            artifacts
+            - "e2e/smoke.spec.js"
+            - "docs/adr/ADR-143-a-declared-default-must-reach-the-loaded-scene.md"

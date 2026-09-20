@@ -1,0 +1,67 @@
+GOALS adr143_a_declared_default_must_reach_the_loaded_scene
+
+goal ADeclaredDefaultReachesThePixel
+uuid c5c65b0b-0a1e-4266-8147-765433ff3f77
+summary "実体が『表示』と宣言されている (EXPLICIT_DEFAULTS の既定、またはユーザーの eye) なら、その実体は実際に描かれている。ADR-096 G1 の不変条件が、ブートのシーンだけでなく **読み込んだシーン (テンプレート / .ctx.json import)** でも成立する"
+state UnderReview
+labels adr-143, adr-096, adr-142, principle-4, principle-11, principle-31, app
+
+    context TheCompositionHadFourCallersNotFive
+    uuid 20736dec-9030-40b7-9457-e7fe39261bde
+    summary "SceneService.applyEntityVisibility() は ADR-096 が定めた唯一の合成点で、reattachObject / setExplicitVisible / declareExplicitVisible / setContextualFrames の 4 経路から呼ばれる。importFromJson だけが呼ばず addObject + emit('objectAdded') で終わっていた。CoordinateFrameView は構築時 _group.visible = false ('hidden until explicitly shown') なので、読み込まれた CF の画素は種が何を宣言していても伏せられたままになる"
+    artifacts
+    - "src/service/SceneService.js"
+    - "src/view/CoordinateFrameView.js"
+
+    context ADR142BrokeTheCoincidenceThatHidThis
+    uuid ef9fbd4a-e8cc-4ba7-89b5-310c409215ba
+    summary "ADR-142 以前、import で到達しうる種の宣言はすべて false 側だった (COORDINATE_FRAME: false / ROBOT_BASE_SEEDED: false。GEOMETRY: true の Solid は meshView が可視で構築される)。つまり『一度も合成していない』と『合成して非表示になった』が同じ画面を出しており、欠陥は値の偶然の一致に隠れていた。ADR-142 が ROBOT_BASE_SEEDED を true へ倒した瞬間に観測可能になった — ADR-142 が欠陥を作ったのではなく隠れ場所を無くした (ADR-132 D5 と同型)"
+    artifacts
+    - "docs/adr/ADR-142-a-picked-scene-is-not-someone-elses-furniture.md"
+
+    justification WhyNotHookAddObjectItself
+    uuid 9d6eed95-025c-49eb-ae31-ff09ff2fdd38
+    summary "却下案 C (addObject 自身が合成を呼ぶ) への反証: addObject はコマンド・undo・内部再構築からも呼ばれ、親も pose も robotRole もまだ確定していない途中状態で合成が走る。ADR-096 が reattachObject を専用の入口にしたのは、まさにその途中状態を避けるためだった。合成点は 1 箇所のままでも『いつ呼ぶか』の判断が生成点ごとに散る"
+
+    justification WhyNotFlipTheViewConstructor
+    uuid 2101263d-fdf6-4236-a777-ae68a8ba28cb
+    summary "却下案 D (CoordinateFrameView を可視で構築する) への反証: 症状は消えるが、宣言された既定を view のコンストラクタという第二の源へ複製することになる (§1.1)。COORDINATE_FRAME: false を宣言した種まで一瞬描かれてちらつく"
+
+    strategy BySweepingTheModelOnceAtTheEndOfImport
+    uuid c62226cc-1270-4d99-bb5e-93921230ab3d
+    summary "importFromJson() の末尾 (_adoptBelowGradeIntent の後・return の直前) で、モデル上の全実体を applyEntityVisibility へ通す。末尾なのは実体が全部揃っているからで、とくに ensureRobotFrames() が robotRole を刻む前に合成すると robot_base がただの CF として COORDINATE_FRAME: false を拾う。母集団を『取り込んだ id』ではなくモデル全体にするのは、_ensureOriginFrames / ensureRobotFrames が後から CF を作るため — 生成点ごとに義務を負わせると取りこぼしが静かに再発する (原則 #32 の逆)"
+
+        goal TheRobotBaseOfAPickedTemplateIsActuallyDrawn
+        uuid 4b4efe8a-ac2d-4072-9a90-3a1f36a5f2ef
+        summary "Home のピック&プレイスセルを選んだ直後、robot_base は explicit=true と宣言され、かつ drawn=true である。目を一度も触らずに腕 (RobotStage) も描かれている — ADR-142 の Goal が画面まで到達する"
+        labels support-verified
+
+            solution E2ERegressionRedBeforeGreenAfter
+            uuid 720c2ebd-051d-4395-adc6-ee77c475b079
+            summary "e2e/smoke.spec.js の回帰『選んだシーンのロボットは目を触らずに描かれ、行と画素は読み込んだシーンでも一致する』。修正前の実行は robot_base(explicit=true, drawn=false) を挙げて赤、修正後は緑 — 両方向を実行して確認済み。skeletonVisible === true も同じテストが問う"
+            artifacts
+            - "e2e/smoke.spec.js"
+            - "src/service/SceneService.js"
+
+        goal ThePopulationOfTheInvariantNowCoversTheImportPath
+        uuid 08048fe7-2152-4634-95dc-1f330b937ff8
+        summary "『行が語る値と描画が一致する』という不変条件は、ブートのシーン (既存の the row never lies) と **読み込んだシーン** の両方を母集団に持つ。検査が在ったのに欠陥が出なかったのは母集団が import を通らなかったからであり、数えるべきは違反ではなく検査が覆えていない経路のほうだった (原則 #31 の母集団版)"
+        labels support-verified
+
+            solution BothPopulationsAssertedInSmokeSpec
+            uuid 603fb67c-cf88-4ff1-a007-6823ef87c2cc
+            summary "e2e/smoke.spec.js は同じ述語 (drawn === explicit || contextual !== null) を 2 つの母集団に対して主張する: 既存テストが atBoot、新規テストがテンプレート読み込み後の全実体。新規側は観測できた実体数に下限を課してから違反を数えるので、母集団が痩せたこと自体でも落ちる"
+            artifacts
+            - "e2e/smoke.spec.js"
+
+        goal TheCompositionIsStillWrittenInExactlyOnePlace
+        uuid 8c251800-d148-4e81-a98a-a4455ba2b1de
+        summary "本 ADR が増やすのは applyEntityVisibility の *呼び出し元* であって、ピクセルを書く場所ではない。合成そのもの・EXPLICIT_DEFAULTS の値・defaultExplicit の throw・軸の書き手はいずれも無改変で、原則 #4 は保たれる"
+        labels support-verified
+
+            solution VisibilityOwnershipAndAxesTestsUnchangedAndGreen
+            uuid c4ea1486-16d1-4f13-b66a-cc9d4f8a6f2b
+            summary "src/VisibilityOwnership.test.js (ピクセルを書く入口の個数) と src/view/VisibilityAxes.test.js (既定表と throw) はどちらも無改変のまま緑。src/ の単体 1334 件・schema 65 件・context 564 件も全て緑で、diff は SceneService の 1 ループと e2e 1 本に閉じている"
+            artifacts
+            - "src/VisibilityOwnership.test.js"
+            - "src/view/VisibilityAxes.test.js"

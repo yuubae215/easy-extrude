@@ -650,6 +650,47 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('選んだシーンのロボットは目を触らずに描かれ、行と画素は読み込んだシーンでも一致する (ADR-142 / ADR-143)', async ({ page }) => {
+  // boot() は使わない — それは ee_home を skip するので Home が開かず、この回帰が
+  // 問う入口 (`_selectLayoutTemplate`) そのものを通らない。上の「the row never
+  // lies」が同じ不変条件をブートで問うているのに import の欠陥がそこに出なかった
+  // のは、まさにブートの母集団が import を一度も通らないからである (原則 #31 —
+  // 数えるべきは違反ではなく、検査が覆えていない母集団のほう)。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/')
+  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click()
+  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+
+  // ADR-142 の Goal — ロボットが主役のシーンを選んだのだから、Outliner の目を
+  // 一度も触らずに腕が描かれること。骨格は robot_base の `explicit` 軸に従う
+  // (AppController._syncRobotStage) ので、宣言された既定が届いていなければ落ちる。
+  await expect.poll(
+    async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length,
+  ).toBe(1)
+  const robots = await page.evaluate(() => window.__easyExtrude.robotState())
+  expect(robots[0].skeletonVisible,
+    '選んだシーンのロボットが描かれていない — 選択の結果が何も起きない (原則 #11)').toBe(true)
+
+  // ADR-143 — 行が語る値と描画の一致を、**読み込んだシーン**という別の母集団へ。
+  // import は addObject しか呼んでおらず合成 (applyEntityVisibility) に届かない
+  // ため、既定 true を宣言した robot_base は「行は表示・画素は非表示」になっていた。
+  const vis = await page.evaluate(() => window.__easyExtrude.visibilityState())
+  const observable = vis.filter(o => o.drawn !== null)
+  // 除外の個数を宣言する: 注釈系の meshView は group も cuboid も持たないので
+  // visibilityState は drawn を読めない。黙って filter すると「違反 0 件」と
+  // 「そもそも数個しか見ていない」が同じ緑になる (原則 #31)。
+  expect(observable.length, '描画を観測できた実体が少なすぎる — 検査が母集団を失っている')
+    .toBeGreaterThan(vis.length / 2)
+  const disagreeing = observable.filter(o => o.drawn !== (o.explicit || o.contextual !== null))
+  expect(disagreeing.map(o => `${o.name}(explicit=${o.explicit}, drawn=${o.drawn})`),
+    '読み込んだシーンで行が語る値と描画が食い違う (ADR-096 症状 1)').toEqual([])
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+
 // ── ADR-097: 接地は実体の状態であってジェスチャの副作用ではない ────────────────
 //
 // 当事者の報告に 1:1 対応する回帰。症状はすべて「入口ごとに実装していた」ことの

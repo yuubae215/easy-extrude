@@ -245,7 +245,7 @@ const SUPPORT_LABELS = new Map([
 //     テンプレートを選ぶとロボットが描かれる」ことは、テンプレート選択 (_selectLayoutTemplate)
 //     を通る e2e が repo に 1 本も無い (調査済み) ため、まだ人が見るしかない。
 // 満期は機械可読 (PATH:e2e/smoke.spec.js) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 44
+const DEBT_BASELINE = 43
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
