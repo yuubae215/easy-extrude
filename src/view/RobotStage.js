@@ -104,6 +104,26 @@ export class RobotStage {
   get visible() { return this._group.visible }
 
   /**
+   * World-space size of the loaded skeleton's bounding box, in world units
+   * (mm — ADR-136), or null before the URDF resolves.
+   *
+   * Read-only measurement, exposed for the E2E scale-parity guard (ADR-137).
+   * The claim "the URDF's metres became world millimetres" is only observable
+   * once THREE has composed `robot.scale` into a real matrix, which no
+   * `node --test` lane does — so it was left as a prose "manual check" that
+   * nobody ran, and the metre-era boot camera shipped on top of it. A number
+   * the browser can read turns that claim into an executable one.
+   * @returns {{x:number,y:number,z:number}|null}
+   */
+  worldSpan() {
+    if (!this.robot) return null
+    const box = new THREE.Box3().setFromObject(this._group)
+    if (box.isEmpty()) return null
+    const size = box.getSize(new THREE.Vector3())
+    return { x: size.x, y: size.y, z: size.z }
+  }
+
+  /**
    * First raycast intersection against the visible skeleton, or null. The
    * skeleton is a view-only decoration (not a scene entity), so it is invisible
    * to the entity raycasts; this lets the controller treat a click on the arm as

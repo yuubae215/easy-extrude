@@ -124,6 +124,20 @@ export class RobotStageSet {
   has(id) { return this._stages.has(id) }
 
   /**
+   * World-space bounding-box size of every live skeleton, keyed by robot id
+   * (ADR-137 scale-parity guard — see `RobotStage.worldSpan`). Skeletons whose
+   * URDF has not resolved yet report `null` rather than being omitted: a
+   * missing key and an unloaded arm are different facts (原則 #31).
+   * @returns {Record<string, {x:number,y:number,z:number}|null>}
+   */
+  worldSpans() {
+    /** @type {Record<string, {x:number,y:number,z:number}|null>} */
+    const out = {}
+    for (const [id, stage] of this._stages) out[id] = stage.worldSpan()
+    return out
+  }
+
+  /**
    * Whether one robot's skeleton is currently drawn; null when it has no stage.
    * Read-only — the visibility OWNER is the base frame's Outliner eye (ADR-087);
    * this exists so tests and the console can observe what was actually applied.

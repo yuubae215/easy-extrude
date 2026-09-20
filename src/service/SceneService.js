@@ -2668,11 +2668,16 @@ export class SceneService extends EventEmitter {
    * (CoordinateFrame, SpatialLink) are skipped.
    *
    * @param {Iterable<string>} selectedIds
-   * @param {number} [tolerance=0.001]  1 mm — matches the stack-snap rest tolerance
+   * @param {number} [tolerance=SUPPORT_TOLERANCE]  the stack-snap rest tolerance
+   *   (1 mm). It is not re-written here: the doc already said "matches the
+   *   stack-snap rest tolerance", and a second copy of that number is a second
+   *   source (§1.1) — which is exactly how this one silently became 1 µm when
+   *   ADR-136 moved the world-unit to mm and only one of the two copies was
+   *   reconsidered. Now there is one (ADR-137 D1).
    * @returns {{ belowGrade: boolean, lowestZ: number, suggestedLift: number }}
    *   suggestedLift is the +Z delta that would rest the lowest point on grade.
    */
-  checkGroundClearance(selectedIds, tolerance = 0.001) {
+  checkGroundClearance(selectedIds, tolerance = SUPPORT_TOLERANCE) {
     let lowestZ = Infinity
     for (const id of selectedIds) {
       const obj = this._model.getObject(id)
