@@ -1,0 +1,110 @@
+GOALS adr140_a_click_resolves_by_depth
+
+goal WhatYouClickIsWhatIsInFront
+uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140001
+summary "見えているものをクリックしたら、見えている通りの一番手前のものが選ばれる。ロボットの骨格だけがこの規律の例外になっている状態を無くす — 同梱の pick-and-place セルでは腕がペデスタルの上・作業台の手前に立つので、『腕をクリックすると家具が選ばれる』が日常的に踏まれていた"
+state UnderReview
+labels adr-140, adr-084, adr-090, adr-102, principle-22, principle-31, principle-1, app
+
+    context TheSolutionWasAlreadyThereTheConditionWasNot
+    uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140002
+    summary "依頼は解の形 (『本体クリックでも base フレーム選択とみなして』) で来たが、その解は ADR-084 §2 以来ずっと在った (HitTestService.hitRobotStage() が骨格のヒットを robot_base 実体へ解決する)。欠けていたのは識別ではなく、その経路に到達する条件である。したがって本 ADR は識別の拡張ではなく、ヒットテストの優先順位を距離ベースに正す決定である"
+    artifacts
+    - "src/controller/HitTestService.js"
+    - "docs/adr/ADR-084-tcp-oriented-ik-entity-grounded-geometry.md"
+
+    context ThreeCopiesHadAlreadyDrifted
+    uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140003
+    summary "PHILOSOPHY #22 は 3 つのポインタハンドラに写しで実装されていた (_onPointerDown · contextmenu · _onDblClick)。_onDblClick の写しには CF-descendant 例外も annotation フォールバックも無く、ダブルクリックは直前のシングルクリックと別の実体を解決しうる。どの写しも単体では正しく読めるので、食い違いは 3 つを同じ視野に入れたときだけ見え、そうする場所は repo のどこにも無かった"
+    artifacts
+    - "src/controller/AppController.js"
+
+    justification WhyNotSimplyPutTheRobotFirst
+    uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140004
+    summary "却下案 A (hitRobotStage() を Solid より前に呼ぶ) への反証: 無条件の勝敗を逆向きにするだけである。骨格はシーン最大の体積なので、今度は腕の手前にある小さな実体が選べなくなる — PHILOSOPHY #22 の直接の違反であり、症状を反対側へ移すにすぎない。却下案 B (骨格のヒットボックスを縮める) は規則ではなく調整で、どこまで縮めれば十分かに答えが無い"
+
+    justification WhyTheRuleMustLeaveTheHandler
+    uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140005
+    summary "規則がハンドラの中に居たことが、3 年間テストを 1 本も持てなかった理由である — 問うにはカメラとレンダラとポインタが要った。純粋関数へ出すことは整理ではなく、規則を問える場所へ移す行為である (原則 #3)"
+
+    strategy ByRankingScopeThenBreakingTiesByDepth
+    uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140006
+    summary "候補に scope rank を与え (frame 0 < {solid, robot} 1 < annotation 2)、同 rank 内は距離で決める。solid と robot が同 rank であることが決定の本体 — ロボットの腕はシーンの中の body であって格下の何かではなく、rank の共有だけが 2 つを固定の勝者ではなく距離比較へ送る。決定は純粋関数 chooseClickTarget()、候補の収集は HitTestService.resolveClickTarget() が持ち、4 ジェスチャすべてがそこを通る"
+
+        goal TheRobotWinsWhenTheRobotIsInFront
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140007
+        summary "腕が手前にあり Solid が奥にあるとき、腕 (= その robot_base 実体) が選ばれる。逆に Solid が手前なら Solid が選ばれる。距離が比較に入ることそのものが主張である"
+        labels support-verified
+
+            solution ClickTargetTestPinsBothDirections
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140008
+            summary "src/domain/clickTarget.test.js: 腕 2 / 床 40 で腕が勝ち、ペデスタル 3 / 腕 9 でペデスタルが勝つ。候補配列の順を入れ替えても答えが変わらないことも別ケースで焼く (ADR-140 以前の規則は順序そのものだった)。node --test で 16/16 green"
+            artifacts
+            - "src/domain/clickTarget.js"
+            - "src/domain/clickTarget.test.js"
+
+        goal AnExactTieIsDecidedByADeclaredOrderNotByArrayPosition
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140009
+        summary "距離が完全に同値のとき、勝者は候補を集めた順ではなく宣言された種の順 (CLICK_KIND_TIE_ORDER) で決まる。集め方の形が答えを左右してはならない"
+        labels support-verified
+
+            solution TieOrderWasAddedBecauseTheTestFailedFirst
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c14000a
+            summary "この goal の検査は初版で落ちた — nearest() が先頭優先だったため、同値のとき配列順が答えを決めていた。宣言された種順を足して green。検査が設計を 1 つ直した実例であり、緑のまま出荷していれば『順序が答えを決める』という ADR-140 以前の性質が 1 箇所だけ生き残っていた"
+            artifacts
+            - "src/domain/clickTarget.js"
+            - "src/domain/clickTarget.test.js"
+
+        goal AnUndeclaredKindCannotSilentlyTakeARank
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c14000b
+        summary "CLICK_SCOPE_RANK に無い kind は throw する。しかも勝敗より先に throw する — 『最も近いときだけ未知の種に気づく』規則は、自分のテストを通って現場で落ちる (原則 #31)"
+        labels support-verified
+
+            solution ThrowIsAssertedFromTheLosingPositionToo
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c14000c
+            summary "src/domain/clickTarget.test.js: 未知の種を距離 999 (必ず負ける位置) に置いた候補集合でも throw することを assert する。負ける位置でのみ通る規則は、検査の書き方そのものが主張になる箇所 (ADR-120 と同型)"
+            artifacts
+            - "src/domain/clickTarget.js"
+            - "src/domain/clickTarget.test.js"
+
+        goal ThePriorityIsDecidedInExactlyOnePlace
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c14000d
+        summary "所有者 (HitTestService) の外で、複数のヒットテストを突き合わせている箇所が 0 個である。母集団は手で並べず resolveClickTarget の本体から構文で導出するので、5 つ目の候補が足された日に表へ足すのを忘れても母集団に入る (ADR-102)"
+        labels support-verified
+
+            solution OwnershipCensusFoundADeadFourthCopyOnItsFirstRun
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c14000e
+            summary "src/ClickTargetOwnership.test.js: 6/6 green。初回実行が 2 件を報告した — (1) 死んでいた 4 つ目の写し AppController._hitAnyEntityForLink() (呼び出し元は 3 箇所とも service 側を使っており誰からも呼ばれていない。*在る呼び出し*を辿る読み方では定義上出てこない)、(2) 母集団に hitFace を含めたことによる誤検知 = 検査の側で原則 #31 を踏んだ 1 例で、正しい母集団は『HitTestService の hit* を全部』ではなく『決定点が突き合わせている候補』だった。退役した形を _onPointerDown へ再注入すると 6 本中 3 本が fail することを実測済み"
+            artifacts
+            - "src/ClickTargetOwnership.test.js"
+            - "src/controller/HitTestService.js"
+
+        goal TheCursorDoesNotPromiseWhatTheClickWillNotDo
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c14000f
+        summary "hover のカーソル判定が、クリックと同じ解決を通る。ADR-140 以前は 4 つのヒットテストのうち 3 つしか見ておらず CoordinateFrame を落としていたので、CF ギズモの上では既定カーソルが出るのにクリックすると CF が選ばれていた (原則 #11 の一種 — 提示と挙動の不一致)"
+        labels support-verified
+
+            solution FourGesturesGoThroughOneEntrance
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140010
+            summary "src/ClickTargetOwnership.test.js が AppController 内の resolveClickTarget 呼び出しを 4 箇所以上 (pointerdown / contextmenu / dblclick / hover) 数える。数えるのは*通っている入口*ではなく**通っていないジェスチャ**で、通っているものを辿る読み方では次に足されるジェスチャは定義上出てこない"
+            artifacts
+            - "src/ClickTargetOwnership.test.js"
+            - "src/controller/AppController.js"
+
+        goal ThePointerActuallySelectsTheArmInTheRunningApp
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140011
+        summary "実際のブラウザで、pick-and-place テンプレートのロボット本体をクリックすると N パネルが robotRole:base のフレームを示し、Grasp Candidates が押せる。上の 5 goal はすべて純粋な決定に対する検査であり、候補を集める側 (RobotStage.raycast が返す距離が本当に骨格表面までの距離か) は一切問うていない"
+        labels support-exploring
+
+            assumption E2EWillMeasureCountsNotPixels
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140012
+            summary "証拠予定: e2e/click-target.spec.js。ただし素朴な形 (『ロボットの上のピクセルをクリックする』) はカメラ姿勢とビューポート寸法に依存し、ADR-098 が踏んだ『緑のまま欠陥を出荷する』形に近い — 画面座標に依存する証拠は、座標が変わった日に主張の意味が変わる。正しい形は ADR-137 の worldScale() と同じく**値ではなく個数**を報告する read-only スナップショット (hitTestState()) を足すことで、それは新しい観測窓を要する。満期=PATH:e2e/click-target.spec.js"
+
+        goal TheFallbackHitBoxesAreTheRightSizeOnScreen
+        uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140013
+        summary "CF の bounding-box フォールバック (±0.4 world-unit) と annotation の padding (0.3 world-unit) が、画面上で妥当なタップ領域になっている"
+        labels support-unexplored
+
+            assumption TheseAreProbablyADR136Casualties
+            uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140014
+            summary "ADR-136 以後、world-unit は mm なので ±0.4 world-unit は **±0.4 mm** を意味する。ADR-138 の WorldUnitCensus が数える sink の一種である可能性が高いが、本 ADR はヒットテストの**優先順位**を決める決定であって候補の**当たり判定の広さ**を決める決定ではないので、スコープ外として宣言する (blast radius を広げない)。ADR-138 の census に当てるか、別 ADR を起票するかは未決 — 未決であることを数える"

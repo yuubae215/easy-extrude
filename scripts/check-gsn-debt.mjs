@@ -218,7 +218,28 @@ const SUPPORT_LABELS = new Map([
 // 動かない。**うち 1 件は「まだ決めていない」を運ぶ** (LegacyFileMigrationIsDeclaredUndecided
 // — 既存ファイルの移行 UI を今決めると画面設計を先取りするので、対象外とは書かずに
 // 未決として数える。DEF-034/035 と同じ扱い)。
-const DEBT_BASELINE = 39
+// 2026-09-20 (3 度目): 39 → 43。ADR-140 / ADR-141 の木が 2 本ずつ足した。**4 件とも
+// 実装は済んでいる** (両 ADR とも Accepted) 点が上の 2 回と違う — 増えたのは
+// 「実装が未着手だから未支持」ではなく、**この形の証拠では原理的に届かない主張**を
+// 隠さず宣言したぶんである:
+//   - ThePointerActuallySelectsTheArmInTheRunningApp (ADR-140, exploring・満期あり)
+//     — 純粋な決定は 16 本の検査で焼いたが、候補を*集める*側 (RobotStage.raycast の
+//     距離) は問うていない。「実際にクリックして選べる」は人が画面で見るしかない。
+//   - TheFallbackHitBoxesAreTheRightSizeOnScreen (ADR-140, unexplored・満期なし)
+//     — ADR-136 以後 ±0.4 world-unit は ±0.4 mm を意味する。優先順位の決定であって
+//     当たり判定の広さの決定ではないのでスコープ外にしたが、**対象外とは書かずに
+//     未決として数える** (ADR-138 の census に当てるか別 ADR かが未決)。
+//   - DeclaringADifferentArmIsAllowedButNeverSilent (ADR-141, exploring・満期あり)
+//     — 純粋側 (reachDisagreements) は焼いたが、それが*画面に出る*ことは焼いていない。
+//     パネルの分岐は JSX + zustand に住み node --test レーンから構築できない。
+//   - TheWholeEnvelopeIsTraceableNotJustItsMaximum (ADR-141, unexplored・満期なし)
+//     — 帯の検査は reachMax しか縛らない。reachMin / wristConeHalfAngle は実質的に
+//     宣言されただけの数で、reachProvenance はこの 2 つを指していない。
+// 満期を持つのは 2 件 (PATH:e2e/click-target.spec.js / PATH:e2e/reach-declaration.spec.js)
+// なので、分子 (G3) は 2 件ぶん増える。**実装済みの ADR が借金を増やすのは正常である** —
+// 増えないのは「証拠が届かない範囲を宣言しなかった」ときだけで、それは借金が無いのでは
+// なく数えていないだけ (原則 #31)。
+const DEBT_BASELINE = 43
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
