@@ -74,6 +74,7 @@
 - #14: OrbitControls
 - #24: pose を計算する側の入力 = セグメント開始の写し + 要求 delta。禁じられた形 (live プローブ / `_worldPoseCache`) の個数を問う所 = `src/PosePolicyOwnership.test.js` の `POSE_COMPUTING_METHODS` × `LIVE_PROBES` (ADR-101)
 - #18: `objectRemoved`/`objectAdded`
+- #22: `CLICK_SCOPE_RANK` / `chooseClickTarget()` (rank → 奥行き) — 問い所 = `src/ClickTargetOwnership.test.js` (優先順位を決める場所の個数。ADR-140。**宣言されていて一度も具体化されていない原則**は、違反を見逃すのではなく「守られていることになっている」 — 原則の行が無いあいだ、3 つの写しは #22 を名乗りながら距離を一度も見ていなかった)
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`
 - #32: ADR ヘッダの `Retires:` 欄 (ADR-125 — ADR-125 以降必須、「なし」も宣言)。発火は Status 遷移で `pnpm test:adr` が両方向を問う (Accepted なら在ってはならず、Proposed/Draft なら在らねばならない)。発火事象がまだ ADR として無いときは `docs/DEFERRAL_LEDGER.md` が受け、満期を「その ADR が起票されたとき」にする (DEF-020)。手書きの先例 = `RETIRED_MODE_SHAPES` (ADR-103) / `RETIRED_SELECTION_COLORS` (ADR-100) — 仕組みは在ったが**思い出した人だけが書いていた**

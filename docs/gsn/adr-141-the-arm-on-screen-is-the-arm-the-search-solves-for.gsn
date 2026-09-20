@@ -1,0 +1,117 @@
+GOALS adr141_the_arm_on_screen_is_the_arm_the_search_solves_for
+
+goal TheDrawnArmAndTheSolvedArmAreOneMachine
+uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141001
+summary "ユーザーが見ている腕と、ソルバが解いている腕が、同じ 1 台である。違う腕を宣言することは許されてよいが、違うことが黙っていられない — 出所は当事者の『Add で追加できるロボットモデルに統一してほしい』"
+state UnderReview
+labels adr-141, adr-127, adr-128, adr-120, adr-136, adr-137, adr-138, principle-1, principle-31, principle-11, app
+
+    context FiveAuthorsForOneFact
+    uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141002
+    summary "『どの腕か』を語る源が 5 つあり、互いを見ていなかった: (1) public/robot/skeleton_arm.urdf = 画面が描く UR5e、(2) GraspDeclarationCatalog.REACH_PRESETS の 3 本 (うち 2 本はこのアプリが一度も出荷したことのない腕)、(3)(4) examples の f_robot.attrs.reach = 850mm、(5) templates/ の reachMin 0.4 / reachMax 0.95。UR5e を置いて画面で UR5e を見ながら『large arm (≈1.3)』を宣言でき、reach_margin は画面の腕より 50cm 長い腕に対して採点される"
+    artifacts
+    - "public/robot/skeleton_arm.urdf"
+    - "src/context/GraspDeclarationCatalog.js"
+    - "examples/cell_region_context.json"
+
+    context NoPlaceHeldBothFactsInView
+    uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141003
+    summary "REACH_PRESETS は src/context/ に、URDF は public/ に、DH の導出は src/domain/robotKinematics.js に居る。どのファイルを開いても片方しか見えないので、食い違いは 2 つを同時に見たときだけ見えるのに、そうする場所が repo に存在しなかった。成果物は文書の行ではなく検査でなければならない (核 §1.2 Q3)"
+
+    justification WhyTheEnvelopeIsDeclaredAndNotDerived
+    uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141004
+    summary "却下案 A (包絡を URDF から完全に導出する) への反証: 『この腕はどこまで働けるか』はメーカーがハードウェアで測った数字で URDF には書かれていない。無理に計算すると『どの定義の最大か』(フランジまで? 手首中心まで? 基準は base 原点?) を暗黙に選ぶことになる。実測で UR5e の公称 850mm は |a2|+|a3| = 817 でも +d5+d6 = 1017 でもなく、素朴な導出のどれとも一致しない — 導出値を正とすると、公称値と食い違ったときにどちらが嘘かを判定する手段が無い"
+
+    justification WhyDeclaringIsNotEnoughEither
+    uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141005
+    summary "自己整合的な間違いは往復テストを必ず通るので、宣言をそれ自身のループの外側にある何かへ縛る必要がある (ADR-127 が FLANGE_APPROACH_AXIS で採った判断と同じ形)。ここでの『外側の何か』は画面が実際に描いている URDF の DH である"
+
+    context ReachSolvingStaysInCore
+    uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141006
+    summary "この決定は到達可否を一度も判定しない。答えるのは『この腕はどれだけ長いか』だけで、腕自身の幾何から読み、どの対象も判定しない。ある把持点が包絡の内側かは reach solving であり、従来どおり契約の向こうの core/ に留まる (CLAUDE.md の層規律 — フロントは宣言し、バックエンドが解く)"
+
+    strategy ByOneDeclaredRowPinnedToADerivedBand
+    uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141007
+    summary "src/domain/robotModel.js に出荷モデルの行 (id/label/urdf/reach/reachProvenance) を置き、包絡は DECLARATION のまま、描く URDF の DH から導出した帯 [|a2|+|a3|, |a2|+|a3|+d5+d6] の中に無ければ build を落とす。提示は固定 3 行から『シーンに居る腕』0〜1 行へ変え、包絡は robotSkeleton.js が描いている URDF から導出して ROBOT_KINEMATICS と同じ注入路でパネルへ届く"
+
+        goal TheDeclaredEnvelopeFitsTheDrawnChain
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141008
+        summary "出荷モデルの宣言された reachMax が、画面が描く URDF の DH から導出した帯の中に在る。URDF を別機種へ差し替えると build が落ちる — ADR-141 以前は静かに 2 台の腕になった"
+        labels support-verified
+
+            solution RobotModelTestMeetsBothFactsInOnePlace
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141009
+            summary "src/domain/robotModel.test.js: 12/12 green。skeleton_arm.urdf を (Vite の ?raw を介さず) 読み、readUrKinematics で DH を得て reachDisagreements(宣言, dh) が空であることを assert する。帯の実測は [817, 1017] mm、宣言は 850 mm。この 2 つの事実が出会う場所は repo 内でここだけである"
+            artifacts
+            - "src/domain/robotModel.js"
+            - "src/domain/robotModel.test.js"
+            - "public/robot/skeleton_arm.urdf"
+
+        goal AnArmOutsideTheBandIsReportedAsADifferentRobot
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d14100a
+        summary "退役した 2 本 (≈0.5 / ≈1.3) はどちらも帯の外に在り、『別のロボットである』と機械が言える。同時に、比較するものが無いとき (ロボット 0 台 / UR 型でない chain) は警告を捏造しない — 未宣言と間違いは違う状態である (ADR-120)"
+        labels support-verified
+
+            solution BothDirectionsAndTheEmptyCaseAreAsserted
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d14100b
+            summary "src/domain/robotModel.test.js: 0.5 と 1.3 の両方で『different robot』が 1 件返り、reach=null / dh=null のどちらでも 0 件が返る。未宣言の model id では robotModelById が throw する (既定で UR5e を返すのは元の欠陥そのもの — 原則 #31)"
+            artifacts
+            - "src/domain/robotModel.js"
+            - "src/domain/robotModel.test.js"
+
+        goal ThePanelOffersTheArmInTheSceneOrNothing
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d14100c
+        summary "reach カードが提示する行は『シーンに居る腕』1 行だけで、ロボット 0 台なら 0 行である。置かれていないロボットの包絡を提示するのは ADR-120 が禁じる発明された既定にあたる"
+        labels support-verified
+
+            solution PresetsAreBuiltFromTheInjectedEnvelope
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d14100d
+            summary "reachPresetsFor(envelope, label) は envelope が null なら空配列を返す。包絡は robotSkeleton.js の ROBOT_REACH_ENVELOPE (1 つの URDF の 4 人目の消費者) から AppController の注入席 → GraspController.refreshRobots() の projection.model → uiStore の context.robots → パネル、と 1 本の経路で届く。pnpm test 1334/1334 green"
+            artifacts
+            - "src/context/GraspDeclarationCatalog.js"
+            - "src/view/robotSkeleton.js"
+            - "src/controller/GraspController.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"
+
+        goal DeclaringADifferentArmIsAllowedButNeverSilent
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d14100e
+        summary "数値の手編集は塞がず Run も止めないが、シーンの腕との食い違いはカードに出る (原則 #11)。種の自動投入は touched フラグで止める — 空欄と『ユーザーが意図した 0.5』は違う状態であり (原則 #31)、埋めてよいのは前者だけ。宣言を黙って書き戻すのは、そもそも 2 つの腕が食い違った原因と同じ操作である"
+        labels support-exploring
+
+            assumption TheWarningIsNotYetAskedByAnyTest
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d14100f
+            summary "警告文と touched の分岐はパネルの React state に住み、node --test レーンから構築できない (GraspSearchPanel は JSX + zustand)。今日これを問うている検査は無い — 純粋側 (reachDisagreements) は焼かれているが、それが画面に出ることは焼かれていない。証拠予定: パネルの純粋半分を切り出すか e2e。満期=PATH:e2e/reach-declaration.spec.js"
+
+        goal TheSampleScenesSpeakOfTheSameArm
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141010
+        summary "examples/*.json が語る reach 宣言が、Add が挿す腕と同じ 1 台である。数えるのは*在る宣言*ではなく**一致していない宣言の個数**で、新しい example が 1.3m の腕を宣言した日に、表へ足すのを忘れても母集団に入る"
+        labels support-verified
+
+            solution AgreementCensusCountsDisagreementsAndDeclaresItsExclusions
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141011
+            summary "src/RobotModelAgreement.test.js: 4/4 green。examples の 2 件 (850mm) が出荷モデルと一致。単位は宣言必須 (単位の無い数は比較できない)。templates/ は対象外であることを DECLARED_EXCLUSIONS に理由つきで宣言して数える — CLAUDE.md がフロントの examples と明示的に分けている受け入れフィクスチャで、0.4/0.95 は意図的に別の腕である。噛むことを実測済み (cell_region_context.json を 1300mm にすると fail)"
+            artifacts
+            - "src/RobotModelAgreement.test.js"
+            - "examples/cell_region_context.json"
+            - "examples/cell_robotics_context.json"
+
+        goal TheCardinalityOfShippedModelsIsAskedNotAssumed
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141012
+        summary "SHIPPED_ROBOT_MODEL_ID が定数でいられるのは出荷モデルの基数がちょうど 1 だからで、2 つ目が入った瞬間に検査が落ちて『model はロースタではなくロボット実体の属性へ』という判断を強制する。基数が 1 から N へ動くことは状態であり、状態に見えない (原則 #31)"
+        labels support-verified
+
+            solution TheCountIsPinnedToOne
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141013
+            summary "src/RobotModelAgreement.test.js が Object.keys(ROBOT_MODELS).length === 1 を assert し、失敗メッセージが次の一手 (実体の属性へ移す) を名指しする。ADR-093 の『1 と N は別世界で、設計されていたのは片方だけだった』と同型の予防"
+            artifacts
+            - "src/domain/robotModel.js"
+            - "src/RobotModelAgreement.test.js"
+
+        goal TheWholeEnvelopeIsTraceableNotJustItsMaximum
+        uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141014
+        summary "reachMin と wristConeHalfAngle にも、reachMax と同じだけの出所がある"
+        labels support-unexplored
+
+            assumption OnlyReachMaxHasProvenanceToday
+            uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141015
+            summary "帯の検査は reachMax しか縛っていない。reachMin = 0.2 と wristConeHalfAngle = 1.05 は『min < max』『> 0』以上の根拠を持たず、reachProvenance はデータシートの到達半径だけを指していてこの 2 つを指していない。実質的に宣言されただけの数であることを隠さず数える。さらに上位の穴として、警告は**数値が違うこと**しか見ないので『同じ数値だが別の腕』(偶然 850mm の別機種) は通る — 機種の同一性はワイヤにも画面にも欄を持たない"

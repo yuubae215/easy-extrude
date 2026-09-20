@@ -82,6 +82,14 @@ export class GraspController {
     this._createGhostView = deps.createGhostView ?? null
     /** @type {object|null} URDF-derived kinematics declaration (ADR-127 D1) */
     this._robotKinematics = deps.robotKinematics ?? null
+    /**
+     * WHICH ARM the scene draws (ADR-141) — `{id, label, reach}` or null.
+     * INJECTED for the same reason `robotKinematics` is: it is derived from the
+     * URDF that only the browser-side module may import (ADR-088). Absent ⇒ the
+     * panel offers no envelope row, which is the honest state, not a fallback.
+     * @type {{id: string, label: string, reach: object|null}|null}
+     */
+    this._robotModel = deps.robotModel ?? null
     this._createSampleView = deps.createSampleView ?? null
     /** @type {object|null} sole-owned grasp-location overlay (ADR-128) */
     this._sampleView = null
@@ -167,6 +175,14 @@ export class GraspController {
       list:        robots.map(r => ({ id: r.id, label: r.label, hasTcp: r.hasTcp })),
       selectedId:  selected?.id ?? null,
       cardinality: robotCardinality(robots),
+      // WHICH ARM these are (ADR-141). Every robot in the scene is drawn from
+      // the one bundled URDF, so the model is a property of the roster rather
+      // than of each row; the envelope rides with it so the panel's reach card
+      // describes the arm on screen instead of a catalog entry. Null when the
+      // roster is empty — with no robot there is no arm to describe, and an
+      // envelope offered for a robot nobody placed is exactly the invented
+      // default ADR-120 forbids.
+      model:       robots.length ? this._robotModel : null,
     }
     // Publish only on an actual change: this is called from every entity
     // lifecycle event, and a bulk removal (scene clear / reload) would otherwise

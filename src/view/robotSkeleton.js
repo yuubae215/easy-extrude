@@ -20,6 +20,7 @@ import { deriveFlangeSeed, parseUrdfChain } from '../robotics/UrdfChain.js'
 import { kinematicsDeclarationFromUrdf } from '../domain/robotKinematics.js'
 import { movableJoints } from '../robotics/Kinematics.js'
 import { mToMM } from '../domain/worldUnits.js'
+import { reachEnvelopeFor, robotModelById, SHIPPED_ROBOT_MODEL_ID } from '../domain/robotModel.js'
 
 /** The skeleton URDF as a bundled string (no runtime fetch). */
 export const ROBOT_URDF_TEXT = urdfText
@@ -76,3 +77,25 @@ export const ROBOT_KINEMATICS = kinematicsDeclarationFromUrdf(ROBOT_URDF_TEXT)
 export const ROBOT_JOINT_NAMES = Object.freeze(
   movableJoints(parseUrdfChain(ROBOT_URDF_TEXT)).map(j => j.name)
 )
+
+/**
+ * The reach envelope of the arm this module draws (ADR-141) — the FOURTH
+ * consumer of the one URDF, after the render path, the tcp seed and
+ * `ROBOT_KINEMATICS`.
+ *
+ * Before ADR-141 the envelope was picked from a catalog of three hand-written
+ * arms that had no connection to the skeleton on screen, so "declare reach
+ * envelope" could describe a robot the user was not looking at. Deriving it here
+ * means the arm that is drawn, the arm the solver is told about, and the arm the
+ * envelope describes are the same arm by construction.
+ *
+ * `null` when the bundled URDF no longer agrees with the shipped model's
+ * declared envelope — an undeclared envelope is a legitimate state, a wrong one
+ * is not (ADR-120).
+ *
+ * @type {{reachMin: number, reachMax: number, wristConeHalfAngle: number}|null}
+ */
+export const ROBOT_REACH_ENVELOPE = reachEnvelopeFor(ROBOT_KINEMATICS)
+
+/** Which shipped model the drawn skeleton is (ADR-141) — a label for the panel. */
+export const ROBOT_MODEL_LABEL = robotModelById(SHIPPED_ROBOT_MODEL_ID).label

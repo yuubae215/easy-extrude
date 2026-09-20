@@ -273,10 +273,15 @@ export const useUIStore = create((set, get) => ({
     // panel's selector. Sole writer GraspController.refreshRobots() (原則 #4);
     // the SCENE stays the authority on which robots exist (§1.1 — nothing writes
     // back through here). Shape:
-    //   { list: [{ id, label, hasTcp }], selectedId, cardinality:'none'|'single'|'multi' }
+    //   { list: [{ id, label, hasTcp }], selectedId, cardinality:'none'|'single'|'multi',
+    //     model:{ id, label, reach }|null }
     // `cardinality` names the 0 / 1 / N state so the panel can be honest about
     // zero instead of rendering an empty dropdown (原則 #31).
-    robots: { list: [], selectedId: null, cardinality: 'none' },
+    // `model` (ADR-141) is WHICH ARM these robots are — the shipped URDF's own
+    // label and the reach envelope DERIVED from it, so the panel's reach card
+    // cannot offer an envelope belonging to a robot that is not on screen. null
+    // with an empty roster: with no robot there is no arm to describe.
+    robots: { list: [], selectedId: null, cardinality: 'none', model: null },
     // ADR-117 — DERIVED roster of graspable solids in the loaded layout:
     //   { list: [{ ref, label }], selectedRef, cardinality:'none'|'single'|'multi' }
     // The twin of `robots`: same 0/1/N discipline (原則 #31), same read-model

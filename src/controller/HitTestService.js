@@ -14,6 +14,7 @@ import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { toNDC }           from '../model/CuboidModel.js'
+import { CLICK_TARGET_KIND, chooseClickTarget } from '../domain/clickTarget.js'
 
 export class HitTestService {
   /**
@@ -46,7 +47,8 @@ export class HitTestService {
   /**
    * Hits any visible annotation entity (AnnotatedLine/Region/Point) using a
    * bounding-box raycast. Called as a fallback when hitAnyObject() misses.
-   * @returns {{ obj: object }|null}
+   * Reports `distance` so the one resolution point can compare it (ADR-140).
+   * @returns {{ obj: object, distance: number }|null}
    */
   hitAnyAnnotation() {
     const { _ctrl: ctrl } = this
@@ -78,14 +80,15 @@ export class HitTestService {
       }
     }
 
-    return nearestObj ? { obj: nearestObj } : null
+    return nearestObj ? { obj: nearestObj, distance: nearestDist } : null
   }
 
   /**
    * Hits any visible CoordinateFrame by raycasting against its axis meshes and
    * origin sphere, with a bounding-box fallback to enlarge the tap area on mobile.
-   * Called FIRST in _onPointerDown before cuboid hit-testing (PHILOSOPHY #22).
-   * @returns {{ obj: object }|null}
+   * Ranked narrowest in `resolveClickTarget` (PHILOSOPHY #22); `distance` is
+   * reported because that rule breaks same-rank ties by depth (ADR-140).
+   * @returns {{ obj: object, distance: number }|null}
    */
   hitAnyCoordinateFrame() {
     const { _ctrl: ctrl } = this
@@ -117,7 +120,7 @@ export class HitTestService {
       }
     }
 
-    return nearestObj ? { obj: nearestObj } : null
+    return nearestObj ? { obj: nearestObj, distance: nearestDist } : null
   }
 
   /**
@@ -142,10 +145,14 @@ export class HitTestService {
    * base CoordinateFrame proxy — the entity that drives that skeleton's
    * pose (ADR-084 §2). The skeleton itself is a view-only decoration absent from
    * `scene.objects`, so without this a click on the arm/body selects nothing.
-   * Used as a LOW-priority fallback in _onPointerDown (after CF / Solid /
-   * annotation), so the base gizmo and any overlapping entity still win
-   * (PHILOSOPHY #22 — the large skeleton volume must not shadow smaller targets).
-   * @returns {{ obj: object }|null}
+   *
+   * Ranked as a BODY, alongside solids (ADR-140): an arm is a thing in the scene,
+   * not a lesser one, so a solid beats it only by being nearer. It used to be a
+   * last-resort fallback consulted solely when nothing else was hit anywhere
+   * along the ray, which is why clicking the arm in a cell selected the pedestal
+   * under it. `distance` is what makes the comparison possible — `RobotStageSet`
+   * always had it and this method used to drop it on the floor.
+   * @returns {{ obj: object, distance: number }|null}
    */
   hitRobotStage() {
     const { _ctrl: ctrl } = this
@@ -159,7 +166,41 @@ export class HitTestService {
     // The old single-stage path scanned for "the" robot_base and would have
     // returned the first robot no matter which arm the pointer was on.
     const obj = ctrl._scene.getObject(hit.id)
-    return obj ? { obj } : null
+    return obj ? { obj, distance: hit.hit.distance } : null
+  }
+
+  /**
+   * THE resolution point (§1.1) for "which entity did that click mean?".
+   *
+   * Every pointer gesture that selects by pointing goes through here —
+   * `_onPointerDown`, the `contextmenu` long-press, and `_onDblClick` — so the
+   * three of them can no longer disagree about what is under the cursor. They
+   * used to hold three hand-written copies of the priority chain, and the
+   * double-click copy had already drifted out of step (no CF-descendant
+   * exception, no annotation fallback).
+   *
+   * This method does the impure half only: aim the ray, collect what it hit.
+   * The decision itself is `chooseClickTarget` — a pure function, which is what
+   * lets the rule be tested without a camera or a renderer (原則 #3).
+   *
+   * @returns {{ obj: object, hit?: object, distance: number, kind: string }|null}
+   */
+  resolveClickTarget() {
+    // Each raycast runs exactly once — they are the expensive half of a pointer
+    // event, and every one of them walks the whole scene.
+    const frame      = this.hitAnyCoordinateFrame()
+    const solid      = this.hitAnyObject()
+    const robot      = this.hitRobotStage()
+    const annotation = this.hitAnyAnnotation()
+
+    const candidates = [
+      frame      && { kind: CLICK_TARGET_KIND.FRAME,      obj: frame.obj,      distance: frame.distance },
+      solid      && { kind: CLICK_TARGET_KIND.SOLID,      obj: solid.obj,      distance: solid.hit?.distance, hit: solid.hit },
+      robot      && { kind: CLICK_TARGET_KIND.ROBOT,      obj: robot.obj,      distance: robot.distance },
+      annotation && { kind: CLICK_TARGET_KIND.ANNOTATION, obj: annotation.obj, distance: annotation.distance },
+    ]
+    return chooseClickTarget(candidates, (frameObj, bodyObj) =>
+      this.isCfDescendantOf(frameObj, bodyObj.id))
   }
 
   /** Hits only the active object's mesh. */

@@ -8,7 +8,7 @@ import {
   CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
   cameraDeclarationGaps, gripperDeclarationGaps, OBJECTIVE,
   GRIPPER_KIND, DECLARED_GRIPPER_KINDS,
-  REACH_PRESETS, reachDeclarationGaps,
+  reachPresetsFor, reachDeclarationGaps,
 } from '../../context/GraspDeclarationCatalog.js'
 import { facesForGripperKind } from '../../domain/graspTargets.js'
 import {
@@ -228,12 +228,41 @@ export function GraspSearchPanel() {
   // every other declaration card, and OFF by default — an envelope nobody
   // declared must stay undeclared, because an invented one produces a
   // `reach_margin` that looks measured and is not (ADR-120 / kernel §5).
+  // ADR-141: the envelope on offer is THE ARM IN THE SCENE, derived from the
+  // URDF the viewport draws — not one of three hand-written arms, two of which
+  // this app never shipped. `null` (no robot, or a URDF that stopped agreeing
+  // with its model) means no row: the card then has nothing to seed from and
+  // stays undeclared, which is the honest state (ADR-120).
+  const reachPresets = useMemo(
+    () => reachPresetsFor(robots?.model?.reach, robots?.model?.label),
+    [robots?.model?.reach, robots?.model?.label])
+  const sceneArmReach = reachPresets[0]?.params ?? null
   const [reachDecl, setReachDecl] = useState(() => ({
     enabled: false,
-    reachMin:           String(REACH_PRESETS[0].params.reachMin),
-    reachMax:           String(REACH_PRESETS[0].params.reachMax),
-    wristConeHalfAngle: String(REACH_PRESETS[0].params.wristConeHalfAngle),
+    reachMin:           '',
+    reachMax:           '',
+    wristConeHalfAngle: '',
   }))
+  // Seed (and re-seed) from the arm once one is in the scene, but never
+  // overwrite numbers the user has edited: the card is a DECLARATION, and
+  // silently rewriting a declaration is how the two arms got to disagree in the
+  // first place. `touched` is what separates "not filled in yet" from "the user
+  // meant this" — a blank field and a deliberate 0.5 are different states
+  // (原則 #31), and only the first may be filled in for them.
+  const [reachTouched, setReachTouched] = useState(false)
+  useEffect(() => {
+    if (reachTouched || !sceneArmReach) return
+    setReachDecl(r => ({
+      ...r,
+      reachMin:           String(sceneArmReach.reachMin),
+      reachMax:           String(sceneArmReach.reachMax),
+      wristConeHalfAngle: String(sceneArmReach.wristConeHalfAngle),
+    }))
+  }, [reachTouched, sceneArmReach])
+  const editReach = (patch) => {
+    setReachTouched(true)
+    setReachDecl(r => ({ ...r, ...patch }))
+  }
 
   const camParams  = useMemo(() => parseCameraForm(vision), [vision])
   const gripParams = useMemo(() => parseGripperForm(grip), [grip])
@@ -252,6 +281,17 @@ export function GraspSearchPanel() {
   const robotGaps  = robotDeclarationGaps(robots)
   const targetGaps = targetDeclarationGaps(graspTargets)
   const reachGaps  = reachDecl.enabled ? reachDeclarationGaps(planParams) : []
+  // Not a GAP (it does not block Run — declaring other hardware is legitimate),
+  // a VISIBLE disagreement. The arm on screen is the reference because it is the
+  // only arm the user can actually see.
+  const reachMismatch = useMemo(() => {
+    if (!sceneArmReach || !Number.isFinite(planParams.reachMax)) return null
+    const same = planParams.reachMax === sceneArmReach.reachMax
+      && planParams.reachMin === sceneArmReach.reachMin
+    return same ? null
+      : `declared envelope ${planParams.reachMin}–${planParams.reachMax} m is not the arm in the ` +
+        `scene (${robots?.model?.label ?? 'the robot'}: ${sceneArmReach.reachMin}–${sceneArmReach.reachMax} m)`
+  }, [planParams, sceneArmReach, robots?.model?.label])
   // WHERE-to-grasp gaps (ADR-119 D2/D3): an unreadable declaration, or a single
   // face under a parallel jaw. Mirrors the controller's own gate exactly — a
   // disabled Run that forbids a run the controller would allow (or the reverse)
@@ -464,11 +504,20 @@ export function GraspSearchPanel() {
         {reachDecl.enabled && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
             <NumField label="reach min" value={reachDecl.reachMin} step="0.05"
-              onChange={(s) => setReachDecl(r => ({ ...r, reachMin: s }))} />
+              onChange={(s) => editReach({ reachMin: s })} />
             <NumField label="reach max" value={reachDecl.reachMax} step="0.05"
-              onChange={(s) => setReachDecl(r => ({ ...r, reachMax: s }))} />
+              onChange={(s) => editReach({ reachMax: s })} />
             <NumField label="wrist cone (rad)" value={reachDecl.wristConeHalfAngle} step="0.05"
-              onChange={(s) => setReachDecl(r => ({ ...r, wristConeHalfAngle: s }))} />
+              onChange={(s) => editReach({ wristConeHalfAngle: s })} />
+          </div>
+        )}
+        {/* ADR-141 — declaring a DIFFERENT arm than the one on screen is allowed
+            (the user may be modelling hardware we do not ship) but it is never
+            silent: before, the screen showed a UR5e while the search scored
+            against an arm 50 cm longer and nothing said so (原則 #11). */}
+        {reachDecl.enabled && reachMismatch && (
+          <div style={{ fontSize: '10px', color: COLOR.cautionTone, margin: '2px 0 6px' }}>
+            ⚠ {reachMismatch}
           </div>
         )}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
