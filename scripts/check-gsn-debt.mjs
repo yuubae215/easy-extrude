@@ -183,7 +183,15 @@ const SUPPORT_LABELS = new Map([
 // であって、借金が往復したわけではない — **上げ下げの両方が記録として要る**
 // (下げないと「今いくつ未支持か」が再び記憶の中の数になる — ADR-103)。
 // 2 件とも満期 (PATH:…) が実在するファイルになったので分子 (G3) も 10 → 8 へ戻る。
-const DEBT_BASELINE = 35
+// 2026-09-20: 35 → 39。ADR-138 (Proposed・未実装) の木が 4 goal を足した
+// (ContradictoryFramesCannotBeConstructed / HandednessErrorsAreDetectableByTheTestItself /
+// UndeclaredIngressIsRefusedNotDefaulted / ExportStampsTheFrameItWrote)。ADR-133 / ADR-137
+// 初版と同形で、起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結 — Proposed の
+// ADR は定義上ほぼ全部の goal が exploring になる。4 件とも機械可読な満期 (PATH:…) を
+// 持つので分子 (G3) は動かない。**うち 1 件は「まだ決めていない」を運ぶ**
+// (LegacyFileMigrationIsDeclaredUndecided — 既存ファイルの移行 UI を今決めると画面設計を
+// 先取りするので、対象外とは書かずに未決として数える。DEF-034/035 と同じ扱い)。
+const DEBT_BASELINE = 39
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
