@@ -252,7 +252,7 @@ test('S11 — core/ が居なくても腕は動き、かつ「解いた腕」を
     .toBeGreaterThan(0)
 
   // 画面側の名乗り: 行は「ワイヤに解は無い」と言い、近似であることを述べる。
-  await expect(page.getByText(/unverified client approximation/).first()).toBeVisible()
+  await expect(page.getByText(/solved by this\s+browser and checked against nothing/).first()).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

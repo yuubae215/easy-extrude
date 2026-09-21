@@ -110,6 +110,7 @@ lane — 動詞境界 ADR-056/077)」と促すこと。lane は真偽値 (等価
 
 | Topic | Read first |
 |-------|-----------|
+| 使っている計算・式・アルゴリズム | `docs/ALGORITHMS.md` (置き場所の表 + 運動学・干渉・gauge の式) |
 | philosophy / 原則 #N | `docs/PHILOSOPHY.md` (正本; 常時 load のダイジェストは `.claude/rules/10-principles.md`) |
 | architecture / design / why | `docs/ARCHITECTURE.md` → `docs/adr/README.md` (`/adr <topic>` で検索) |
 | state machine / mode / FSM | `docs/STATE_LEDGER.md` (台帳=索引) → `docs/STATE_TRANSITIONS.md` (図の正本), ADR-008/039 |

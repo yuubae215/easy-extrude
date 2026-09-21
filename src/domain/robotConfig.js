@@ -96,7 +96,7 @@ export function jointValuesFor(joints, jointNames) {
  * @param {{kind?: string}|null|undefined} reachSolution  the wire's closed union
  * @returns {boolean}
  */
-export function needsApproximatePreview(reachSolution) {
+export function needsClientSolvedPreview(reachSolution) {
   return !!reachSolution && reachSolution.kind !== 'solved'
 }
 
@@ -106,7 +106,7 @@ export function needsApproximatePreview(reachSolution) {
  *
  * Two DIFFERENT facts reach this function in two DIFFERENT shapes, and that is
  * the point: `reachSolution` is the contract's `{kind:'solved', joints}`, the
- * approximation is the client's `{origin:'clientApproximate', joints}`. Neither
+ * client's answer is `{origin:'clientAnalytic', joints}`. Neither
  * can be mistaken for the other by a reader or by a validator, and the payload
  * that comes out names which one it is so the view can draw an unverified
  * approximation as unverified (never a second writer — the visual difference is
@@ -115,17 +115,23 @@ export function needsApproximatePreview(reachSolution) {
  * @param {{kind?: string, joints?: readonly number[]}|null|undefined} reachSolution
  * @param {{origin?: string, joints?: readonly number[]}|null|undefined} approximation
  *   the client's answer, or null when it declined (beyond tolerance / no chain) —
- *   and it must be null whenever `needsApproximatePreview` is false, which is the
+ *   and it must be null whenever `needsClientSolvedPreview` is false, which is the
  *   caller's half of the gate.
- * @returns {{authority: 'solved'|'approximate', joints: readonly number[]}|null}
- *   `null` = this arm rests (nobody decided and nobody could approximate)
+ * @returns {{authority: 'solved'|'unverified', joints: readonly number[]}|null}
+ *   `null` = this arm rests (nobody decided and the client could not solve one)
+ *
+ * **`unverified` は `approximate` の改名ではなく意味の訂正である** (ADR-147):
+ * クライアントが解くようになったのは閉形式なので、**姿勢そのものは厳密**
+ * (共有フィクスチャで 1e-9 以内)。厳密でないのは姿勢ではなく**誰も検証していない**
+ * という一点 — 干渉・可視性・把持性・スコアはどれも `core/` しか答えられない。
+ * `approximate` のままにすると「粗い」という**間違った限界**を名乗り続ける。
  */
 export function previewPayloadFor(reachSolution, approximation = null) {
   if (reachSolution?.kind === 'solved') {
     return { authority: 'solved', joints: reachSolution.joints ?? null }
   }
-  if (needsApproximatePreview(reachSolution) && Array.isArray(approximation?.joints)) {
-    return { authority: 'approximate', joints: approximation.joints }
+  if (needsClientSolvedPreview(reachSolution) && Array.isArray(approximation?.joints)) {
+    return { authority: 'unverified', joints: approximation.joints }
   }
   return null
 }

@@ -97,7 +97,7 @@ export class RobotStageSet {
    *
    * @param {string|null} id  the robot whose arm shows the solution; `null`
    *   rests every arm (no candidate hovered/selected, or no search subject)
-   * @param {{authority: 'solved'|'approximate', joints: readonly number[]}|null}
+   * @param {{authority: 'solved'|'unverified', joints: readonly number[]}|null}
    *   preview  what the subject draws and on whose authority — the contract's
    *   solved configuration, or the client's unverified approximation of a
    *   candidate `core/` left `undeclared` (ADR-144 D4 widened this argument

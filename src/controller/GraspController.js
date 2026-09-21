@@ -60,15 +60,18 @@ import {
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
 import { mmToM, mmPointToM, mPointToMM } from '../domain/worldUnits.js'
-import { needsApproximatePreview, previewPayloadFor } from '../domain/robotConfig.js'
-import { approximateJointsFor, toBaseFrame } from '../robotics/ApproximateReachPreview.js'
+import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
+import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
+import {
+  CLIENT_ANALYTIC, dhFromDeclaration, inverseKinematics, representativeSolution,
+} from '../robotics/urKinematics.js'
 
 export class GraspController {
   /**
    * @param {import('./AppController.js').AppController} ctrl
    * @param {{ getState: () => any }} store  injected uiStore (useUIStore)
    * @param {{ createGhostView?: () => import('../view/GraspGhostView.js').GraspGhostView,
-   *           robotKinematics?: object|null, robotChain?: object|null }} [deps]
+   *           robotKinematics?: object|null }} [deps]
    *        `createGhostView` — lazy GraspGhostView factory (THREE side; absent in
    *        the THREE-free test lane, where the ghost path degrades to a no-op).
    *        `robotKinematics` — the `robot.kinematics` declaration derived from the
@@ -93,15 +96,20 @@ export class GraspController {
      */
     this._robotModel = deps.robotModel ?? null
     /**
-     * The FK chain of the arm the app DRAWS (ADR-144 D1) — the input to the
-     * client's approximate preview, injected for the same reason
-     * `robotKinematics` is (its source module reads the URDF through Vite's
-     * `?raw`). Absent ⇒ no approximation is attempted and an `undeclared`
-     * candidate rests the arm exactly as it did before ADR-144: the fallback of
-     * a missing instrument is *nothing*, never a guess.
+     * The DH lengths and joint limits the client solves with, DERIVED from the
+     * very declaration the request carries (ADR-147).
+     *
+     * Derived, never injected separately: the arm the client draws a preview for
+     * has to be the arm the search was asked about (ADR-141), and the only way to
+     * guarantee that is to read one declaration. `null` when nothing was declared
+     * — then no preview is attempted and the arm rests, exactly as before.
+     * A MALFORMED declaration throws rather than degrading to null: "I declared
+     * kinematics and silently got none" is the lie 原則 #11 forbids.
      * @type {object|null}
      */
-    this._robotChain = deps.robotChain ?? null
+    this._robotDh = dhFromDeclaration(this._robotKinematics)
+    /** @type {{min:number,max:number}[]|null} declared limits, or null = not asked */
+    this._robotJointLimits = this._robotKinematics?.jointLimits ?? null
     this._createSampleView = deps.createSampleView ?? null
     /** @type {object|null} sole-owned grasp-location overlay (ADR-128) */
     this._sampleView = null
@@ -809,43 +817,56 @@ export class GraspController {
     // ADR-144 D3: the gate is the wire fact `core/` already decided, read through
     // the one named predicate. Nothing here asks "are we on GitHub Pages" — that
     // environment is simply where `undeclared` is permanent.
-    const approximation = needsApproximatePreview(reach)
-      ? this._approximateArmPose(candidate, robotEntity)
+    const clientSolved = needsClientSolvedPreview(reach)
+      ? this._clientSolvedArmPose(candidate, robotEntity)
       : null
-    stages.previewSolution(robotEntity?.id ?? null, previewPayloadFor(reach, approximation))
+    stages.previewSolution(robotEntity?.id ?? null, previewPayloadFor(reach, clientSolved))
   }
 
   /**
-   * The client's own, NON-AUTHORITATIVE guess at where the arm would be for a
-   * candidate `core/` returned without a joint configuration (ADR-144 D1).
+   * The client's own, NON-AUTHORITATIVE joint configuration for a candidate
+   * `core/` returned without one (ADR-147, replacing ADR-144's sampling search).
    *
-   * No solving happens in `src/`: this only converts the candidate's wire pose
-   * into the robot's base frame and hands it to the FK-sampling instrument
-   * ADR-053 already blessed. The frame conversion reuses
-   * `_resolveRobotDeclaration` — the same resolution the request itself was built
-   * from, so the pose the sampler aims at and the pose the solver was asked about
-   * are the same pose (§1.1).
+   * **The pose is exact, the verdict is not.** This runs the same closed-form UR
+   * solution `core/` runs — same 8 branches, same representative rule — so the
+   * hand lands where the candidate says, orientation included. What is missing is
+   * everything that is not kinematics: interference, visibility, graspability and
+   * the score are `core/`'s alone, which is why the result is drawn as an
+   * unverified ghost rather than as an answer.
    *
-   * Returns `null` for every case where the answer would be invented: no chain
-   * injected, no robot, no resolvable base, an unrenderable pose, or a sampled
-   * hand that misses by more than the declared tolerance.
+   * The joint limits come from the same declaration the request was built from,
+   * so an arm that cannot legally reach the pose yields `null` rather than a
+   * configuration nobody would allow.
+   *
+   * Returns `null` for every case where the answer would be invented: no declared
+   * UR kinematics, no robot, no resolvable base, an unrenderable pose, a pose the
+   * arm cannot reach, or no solution inside the declared limits.
    *
    * @param {object|null} candidate
    * @param {object|null} robotEntity  the search subject
-   * @returns {{origin: string, joints: number[], toleranceMm: number, errorMm: number}|null}
+   * @returns {{origin: string, joints: number[], branches: number}|null}
    */
-  _approximateArmPose(candidate, robotEntity) {
-    if (!this._robotChain || !robotEntity) return null
+  _clientSolvedArmPose(candidate, robotEntity) {
+    if (!robotEntity) return null
+    const dh = this._robotDh
+    if (!dh) return null                       // 運動学が宣言されていない = 解かない
     const wireFrame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
     if (!wireFrame) return null
     const declaration = this._resolveRobotDeclaration(robotEntity)
     if (!declaration.base) return null
-    // Wire meters in, URDF meters out — no unit boundary is crossed here, only a
-    // frame one (the chain walks from the base, the candidate is in world).
-    return approximateJointsFor(
-      this._robotChain,
-      toBaseFrame(wireFrame.position, declaration.base, declaration.baseOrientation),
+    // ワイヤの候補 frame をフランジ目標へ写し、ベース座標系へ戻す — `core/` の
+    // `UniversalRobotsIkSolver.solve` と同じ手順を同じ gauge で踏む (§1.1 の写し)。
+    const target = flangeTargetInBaseFrame(
+      wireFrame, declaration.base, declaration.baseOrientation,
     )
+    if (!target) return null
+    // **最大 8 解**。代表の選び方 (関節総移動量最小) は ADR-127 D5 と同じ規則で、
+    // 違う代表を選ぶと画面の腕と探索が解いた腕が「どちらも正しい解」でありながら
+    // 別物になる (ADR-141 の再演)。
+    const branches = inverseKinematics(dh, target)
+    const joints = representativeSolution(branches, this._robotJointLimits ?? null)
+    if (!joints) return null
+    return { origin: CLIENT_ANALYTIC, joints, branches: branches.length }
   }
 
   /** Hide the ghost and drop the transient hover (state transitions out of results). */

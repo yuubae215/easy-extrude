@@ -670,3 +670,119 @@ def test_the_chain_agrees_with_the_fixture_at_its_last_element():
         assert _origin(chain[-1]) == pytest.approx(
             tuple(case["tcp"]), abs=float(fixture["tolerance"])
         )
+
+
+# --- 逆運動学の導出準拠 (ADR-147 / ADR-146 D3) --------------------------------
+#
+# こちらは **core/ が源**である (FK のフィクスチャは URDF を解く JS が源だったのと
+# 向きが逆 — それぞれの*源*が違う側に住んでいるため: FK の源は画面に出る URDF、
+# IK の源は探索が解く core/)。したがってこのテストが問うのは「JS が再現できるか」
+# ではなく、**生成器が今の core/ とずれていないか**である。
+#
+# フィクスチャが古いまま JS 側だけが緑になる状態を防ぐ: 生成器を走らせ忘れたまま
+# core/ の IK を変えると、JS は「古い core/」に準拠したまま緑を出し続ける。
+
+_IK_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "fixtures/cross-language/ur5e-inverse-kinematics.json"
+)
+
+
+def _ik_fixture() -> dict:
+    return json.loads(_IK_FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_the_inverse_kinematics_fixture_is_present_and_exercises_all_branches():
+    """フィクスチャの不在・退化は「一致している」ではなく「問うていない」。
+
+    「最大 8 解」を主張するのに 1 解しか出ない姿勢ばかりなら、分岐を 1 本しか
+    通らない実装でも緑になる。分岐の網羅を**数で宣言**しておく。
+    """
+    fixture = _ik_fixture()
+    assert fixture["subject"] == "ur5e-inverse-kinematics"
+    counts = [len(c["solutions"]) for c in fixture["cases"]]
+    assert len(counts) >= 12
+    assert 8 in counts, "8 解が出る姿勢が 1 つも無い"
+    assert min(counts) >= 2, "解が 1 本以下の姿勢は分岐を問えない"
+
+
+def test_the_fixture_still_matches_what_core_computes_today():
+    """生成器を走らせ忘れたまま core/ の IK を変えていないか。
+
+    これを問わないと、フィクスチャは**古い core/** を固定したまま残り、JS 側は
+    その古い答えに準拠して緑を出し続ける — 準拠テストが在るのに、準拠先が
+    現実から切り離される (ADR-115 の「宣言は在るが読む機械が無い」の変種で、
+    ここでは *読む機械は在るが読んでいる数が古い*)。
+    """
+    fixture = _ik_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    tolerance = float(fixture["tolerance"])
+    for case in fixture["cases"]:
+        target = tuple(float(v) for v in case["target"])
+        solutions = inverse_kinematics(dh, target)
+        assert len(solutions) == len(case["solutions"])
+        for got, want in zip(solutions, case["solutions"]):
+            assert got == pytest.approx(tuple(want), abs=tolerance)
+
+
+def test_every_fixture_solution_round_trips_through_forward_kinematics():
+    """FK∘IK = 恒等 (原則 #28 の商の上の fixpoint)。
+
+    フィクスチャとの一致は「両方が同じ間違いをしている」でも緑になるので、
+    **フィクスチャを使わない独立な性質**を別に問う。
+    """
+    fixture = _ik_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    for case in fixture["cases"]:
+        target = tuple(float(v) for v in case["target"])
+        for q in case["solutions"]:
+            assert forward_kinematics(dh, tuple(q)) == pytest.approx(target, abs=1e-9)
+
+
+# --- gauge の導出準拠 (ADR-147 / ADR-146 D3) ----------------------------------
+#
+# 規約 (FRAME_CONVENTION の +Z=-approach / FLANGE_Z_IS_APPROACH の +Z=+approach) を
+# 宣言しているのは core/ なので、ここが問うのは「JS が再現できるか」ではなく
+# **生成器が今の core/ とずれていないか**である。ずれたまま JS だけが緑になると、
+# 準拠テストは在るのに準拠先が現実から切り離される。
+
+_GAUGE_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "fixtures/cross-language/ur5e-candidate-to-flange.json"
+)
+
+
+def test_the_gauge_fixture_still_matches_what_core_computes_today():
+    from easy_extrude_core.engine.candidates import GraspCandidate
+    from easy_extrude_core.engine.pose_codec import pose_from_payload
+    from easy_extrude_core.engine.ur_solver import flange_target
+
+    fixture = json.loads(_GAUGE_FIXTURE.read_text(encoding="utf-8"))
+    tolerance = float(fixture["tolerance"])
+    assert len(fixture["cases"]) >= 12
+    for case in fixture["cases"]:
+        pose = pose_from_payload(case["posePayload"])
+        candidate = GraspCandidate(
+            pose=pose,
+            pre_grasp=pose.position - pose.approach.scaled(0.1),
+            surface_normal=pose.approach.scaled(-1.0),
+        )
+        assert flange_target(candidate) == pytest.approx(
+            tuple(case["flangeTarget"]), abs=tolerance
+        )
+
+
+def test_the_gauge_fixture_exercises_both_reference_axis_branches():
+    """基準軸の選び方は z 成分の大きさで切り替わる (|z| < 0.9 か否か)。
+
+    片側だけのフィクスチャでは分岐が 1 本しか通らず、もう一方を取り違えた実装でも
+    緑になる。**通っていることを数で宣言する** (原則 #31 — 数えない不在は素通りする)。
+    """
+    from easy_extrude_core.engine.pose_codec import pose_from_payload
+
+    fixture = json.loads(_GAUGE_FIXTURE.read_text(encoding="utf-8"))
+    zs = [
+        abs(pose_from_payload(c["posePayload"]).approach.z) for c in fixture["cases"]
+    ]
+    assert any(z >= 0.9 for z in zs), "|z| >= 0.9 の姿勢が無い"
+    assert any(z < 0.9 for z in zs), "|z| < 0.9 の姿勢が無い"

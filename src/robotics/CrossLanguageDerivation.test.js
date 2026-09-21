@@ -24,6 +24,12 @@ import path from 'node:path'
 
 import { parseUrdfChain } from './UrdfChain.js'
 import { forwardKinematics, movableJoints } from './Kinematics.js'
+import {
+  forwardKinematics as urForwardKinematics,
+  inverseKinematics,
+  representativeSolution,
+} from './urKinematics.js'
+import { flangeTarget, poseFromFrame } from './graspPoseGauge.js'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
 const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')
@@ -43,7 +49,30 @@ const CROSS_LANGUAGE_DERIVATIONS = [
   {
     subject: 'ur5e-forward-kinematics',
     fixture: 'fixtures/cross-language/ur5e-forward-kinematics.json',
+    // 源は**画面に出る腕**。ずれたときに直すべきは DH の導出のほうである。
     source: 'public/robot/skeleton_arm.urdf',
+    consumers: [
+      'src/robotics/CrossLanguageDerivation.test.js',
+      'core/tests/test_ur_kinematics.py',
+    ],
+  },
+  {
+    subject: 'ur5e-inverse-kinematics',
+    fixture: 'fixtures/cross-language/ur5e-inverse-kinematics.json',
+    // 源は**探索が解く側**。逆運動学の権威は core/ で、JS はそれを再現する立場。
+    // FK と源の向きが逆なのは、それぞれの*源*が違う側に住んでいるからである。
+    source: 'core/easy_extrude_core/engine/ur_kinematics.py',
+    consumers: [
+      'src/robotics/CrossLanguageDerivation.test.js',
+      'core/tests/test_ur_kinematics.py',
+    ],
+  },
+  {
+    subject: 'ur5e-candidate-to-flange',
+    fixture: 'fixtures/cross-language/ur5e-candidate-to-flange.json',
+    // 源は**規約を宣言している側**。FRAME_CONVENTION も FLANGE_Z_IS_APPROACH も
+    // 導出できない取り決めなので、写しが写しであり続けるかだけを問う。
+    source: 'core/easy_extrude_core/engine/pose_codec.py',
     consumers: [
       'src/robotics/CrossLanguageDerivation.test.js',
       'core/tests/test_ur_kinematics.py',
@@ -52,7 +81,7 @@ const CROSS_LANGUAGE_DERIVATIONS = [
 ]
 
 /** 宣言された複製の個数。増減は意図的な行為であること (ratchet — ADR-100 の形)。 */
-const DECLARED_DERIVATION_COUNT = 1
+const DECLARED_DERIVATION_COUNT = 3
 
 describe('cross-language derivations (ADR-146 D3)', () => {
   test('宣言された複製の個数が予算どおり', () => {
@@ -118,4 +147,188 @@ describe('ur5e-forward-kinematics: JS 側がフィクスチャの数を再現す
     assert.ok(xs.size >= fixture.cases.length - 1, '配置が実質的に重複している')
     assert.ok(fixture.cases.length >= 12, '配置が少なすぎる')
   })
+})
+
+
+describe('ur5e-inverse-kinematics: JS 側が core/ の 8 解をそのまま再現する', () => {
+  const fixture = JSON.parse(
+    read('fixtures/cross-language/ur5e-inverse-kinematics.json'),
+  )
+  const dh = fixture.dh
+  const tol = fixture.tolerance
+
+  /**
+   * 手首特異点 (sin θ5 ≈ 0) の判定閾値と、そこに落ちる姿勢の**個数の予算**。
+   *
+   * 特異点では θ6 が定まらない — 実装は 0 を宣言的に選ぶが、その選択は θ1..θ4 の
+   * 端数を通じて別の関節へ吸収される。つまり**関節ベクトルは一意でない**ので、
+   * 2 つの実装がビット単位で一致する道理がない。実測 (24 姿勢): 特異でない 23 件は
+   * 関節値が 1.4e-10 以内、特異な 1 件だけが 3.0e-8 ずれ、しかし**姿勢は 2.2e-15**。
+   *
+   * ここで許容差を一律に緩めると、特異でないところで起きた本物のずれまで通って
+   * しまう。だから緩めるのではなく**特異な姿勢を名指しして数える** — 予算を超えても
+   * 下回っても落ちるので、フィクスチャが静かに特異点だらけになることもない。
+   */
+  const WRIST_SINGULAR = 1e-7
+  const SINGULAR_CASE_BUDGET = 1
+
+  const isSingular = solutions =>
+    solutions.some(q => Math.abs(Math.sin(q[4])) < WRIST_SINGULAR)
+
+  test('特異な姿勢の個数が予算どおり (緩めるのではなく数える)', () => {
+    const singular = fixture.cases.filter(c => isSingular(c.solutions)).length
+    assert.equal(singular, SINGULAR_CASE_BUDGET)
+  })
+
+  test(`${fixture.cases.length} 姿勢すべてで**解の個数と順序**が一致する`, () => {
+    // 個数だけでなく**順序**を問う。順序は契約の一部で、代表解の再現性がそこに
+    // 乗っている — 並べ替えて比べると、順序が違う実装でも緑になってしまう。
+    for (const { target, solutions } of fixture.cases) {
+      const got = inverseKinematics(dh, target)
+      assert.equal(got.length, solutions.length, '解の個数')
+      if (isSingular(solutions)) continue   // 関節値は一意でない (上の注釈)
+      for (const [i, want] of solutions.entries()) {
+        for (const [j, w] of want.entries()) {
+          assert.ok(Math.abs(got[i][j] - w) <= tol,
+            `解 ${i} の関節 ${j}: ${got[i][j]} vs ${w}`)
+        }
+      }
+    }
+  })
+
+  test('**姿勢**は特異点でも一致する — 一致を主張すべき量はこちら', () => {
+    // 関節値を飛ばした特異な姿勢について、何も主張しないまま終わらせない。
+    // 関節ベクトルが一意でなくても、**その解が実現するフランジ姿勢**は一意であり、
+    // 2 つの実装はそこで一致していなければならない。実測の最大差は 1.1e-12。
+    let worst = 0
+    let checkedSingular = 0
+    for (const { target, solutions } of fixture.cases) {
+      const got = inverseKinematics(dh, target)
+      if (isSingular(solutions)) checkedSingular += 1
+      for (const [i, want] of solutions.entries()) {
+        const fromJs = urForwardKinematics(dh, got[i])
+        const fromPy = urForwardKinematics(dh, want)
+        for (let k = 0; k < 16; k++) {
+          worst = Math.max(worst, Math.abs(fromJs[k] - fromPy[k]))
+        }
+      }
+    }
+    assert.equal(checkedSingular, SINGULAR_CASE_BUDGET,
+      '特異な姿勢がこの検査を素通りしていないこと')
+    assert.ok(worst <= 1e-9, `姿勢の最大差 ${worst}`)
+  })
+
+  test('8 解が出る姿勢が実際に含まれている (フィクスチャが退化していない)', () => {
+    // 「最大 8 解」を主張するのに 1 解しか出ない姿勢ばかりのフィクスチャでは、
+    // 分岐を 1 本しか通らない実装でも緑になる。分岐の網羅を数で宣言しておく。
+    const counts = fixture.cases.map(c => c.solutions.length)
+    assert.ok(counts.includes(8), '8 解の姿勢が 1 つも無い')
+    assert.ok(Math.min(...counts) >= 2, '解が 1 本以下の姿勢は分岐を問えない')
+  })
+
+  test('全解を FK に通すと元の目標姿勢に戻る (FK∘IK = 恒等)', () => {
+    // 原則 #28: 多対一なので `IK(FK(q)) == q` は求めない。求めてよい同一性は
+    // **商の上の fixpoint** で、それが `FK(IK(T)) == T`。フィクスチャとの一致は
+    // 「Python と同じ間違いをしている」でも緑になるので、こちらを別に問う。
+    for (const { target } of fixture.cases) {
+      for (const q of inverseKinematics(dh, target)) {
+        const back = urForwardKinematics(dh, q)
+        for (let i = 0; i < 16; i++) {
+          assert.ok(Math.abs(back[i] - target[i]) <= 1e-9,
+            `FK(IK(T)) が T に戻らない: 要素 ${i}`)
+        }
+      }
+    }
+  })
+
+  test('代表解の選び方が core/ と一致する (関節総移動量最小)', () => {
+    // 違う代表を選ぶと、画面の腕と探索が解いた腕が**どちらも正しい解**でありながら
+    // 別物になる (ADR-141 の再演)。値ではなく「フィクスチャの解集合から同じ 1 本を
+    // 選ぶか」を問うので、解集合が変わっても規則の一致だけが残る。
+    for (const { solutions } of fixture.cases) {
+      if (solutions.length === 0) continue
+      const chosen = representativeSolution(solutions)
+      const travels = solutions.map(q => q.reduce((s, v) => s + Math.abs(v), 0))
+      const best = Math.min(...travels)
+      const chosenTravel = chosen.reduce((s, v) => s + Math.abs(v), 0)
+      assert.ok(Math.abs(chosenTravel - best) <= 1e-12,
+        `総移動量 ${chosenTravel} が最小 ${best} でない`)
+    }
+  })
+
+  test('届かない姿勢は空配列 — 「解けなかった」ではなく「解が無い」', () => {
+    // 閉形式に収束失敗という状態は存在しない。空を null や例外と混ぜない。
+    const far = [1, 0, 0, 5, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    assert.deepEqual(inverseKinematics(dh, far), [])
+    assert.equal(representativeSolution([]), null)
+  })
+
+  test('宣言された関節限界の外の解は代表になれない (限界の不在は検査の不在)', () => {
+    const { solutions } = fixture.cases.find(c => c.solutions.length >= 4)
+    // 限界なし = 検査していない → 何かが選ばれる。
+    assert.ok(representativeSolution(solutions, null) !== null)
+    // すべてを弾く限界 → null (「一番近いもの」へ倒さない)。
+    const impossible = Array.from({ length: 6 }, () => ({ min: 10, max: 11 }))
+    assert.equal(representativeSolution(solutions, impossible), null)
+  })
+})
+
+
+describe('ur5e-candidate-to-flange: 2 つの gauge が core/ の写しであり続ける', () => {
+  const fixture = JSON.parse(
+    read('fixtures/cross-language/ur5e-candidate-to-flange.json'),
+  )
+  const tol = fixture.tolerance
+
+  test(`${fixture.cases.length} 姿勢すべてでフランジ目標が一致する`, () => {
+    let worst = 0
+    for (const { posePayload, flangeTarget: want } of fixture.cases) {
+      const got = flangeTarget(poseFromFrame(posePayload.frame))
+      assert.ok(got, 'フランジ目標が作れない')
+      for (let i = 0; i < 16; i++) worst = Math.max(worst, Math.abs(got[i] - want[i]))
+    }
+    assert.ok(worst <= tol, `最大差 ${worst}`)
+  })
+
+  test('gauge の**両方の分岐**がフィクスチャに含まれている', () => {
+    // 基準軸の選び方は候補 frame の z 成分の大きさで切り替わる (|z| < 0.9 か否か)。
+    // 片側だけのフィクスチャでは分岐が 1 本しか通らず、もう一方を取り違えた実装でも
+    // 緑になる — だから「通っていること」を数で宣言する。
+    const zs = fixture.cases.map(c => Math.abs(c.posePayload.frame.orientation[2] * 0 + zAxisOf(c)))
+    assert.ok(zs.some(z => z >= 0.9), '|z| >= 0.9 の姿勢が無い')
+    assert.ok(zs.some(z => z < 0.9), '|z| < 0.9 の姿勢が無い')
+  })
+
+  test('ワイヤの四元数を 180° 回すだけでは**一致しない** (楽な近道の否定)', () => {
+    // 2 つの gauge は「+Z が approach か −approach か」だけの違いに見えるが、
+    // どちらも basisFromZ(z) で x/y を張り直しており、参照軸の選び方が z の成分で
+    // 切り替わるので符号違いにならない。近道が効かないことを**測って**示す —
+    // 効かない理由を散文にだけ書くと、次の人が同じ近道を試す。
+    let anyDiffers = false
+    for (const { posePayload, flangeTarget: want } of fixture.cases) {
+      const cols = quaternionColumnsOf(posePayload.frame.orientation)
+      // 候補 frame の軸をそのまま使い、z だけ反転した「素朴な近道」。
+      const naive = [
+        cols[0][0], cols[1][0], -cols[2][0], posePayload.frame.position[0],
+        cols[0][1], cols[1][1], -cols[2][1], posePayload.frame.position[1],
+        cols[0][2], cols[1][2], -cols[2][2], posePayload.frame.position[2],
+        0, 0, 0, 1,
+      ]
+      if (naive.some((v, i) => Math.abs(v - want[i]) > 1e-6)) anyDiffers = true
+    }
+    assert.ok(anyDiffers, '近道が全姿勢で一致してしまう = この gauge 復元は不要のはず')
+  })
+
+  function zAxisOf(c) {
+    const cols = quaternionColumnsOf(c.posePayload.frame.orientation)
+    return cols[2][2]
+  }
+  function quaternionColumnsOf(q) {
+    const [x, y, z, w] = q
+    return [
+      [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)],
+      [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)],
+      [2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)],
+    ]
+  }
 })

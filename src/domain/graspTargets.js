@@ -470,6 +470,15 @@ function box(center, half, q) {
  * The interior is open at the TOP — a lid is a different body, and a tray that
  * declared one would be a closed box, not a tray.
  *
+ * ## これは障害物の粒度だけで、シーングラフではない (DEF-041)
+ *
+ * ADR-133 D1 は Layout DSL に `Container` entity type を足し、D2 は壁を**個別に選択
+ * できる Solid** として Outliner に出す設計だった。今日**未実装**なのはそちらで、
+ * ここが割るのは *core/ へ送る障害物*に限られる。既存 Solid の `innerDimensions` で
+ * 代替したのは、要求が干渉判定の粒度であって新しい実体種別ではなく、entity type を
+ * 増やすと Outliner・選択・コンパイラ・ギャラリーへ波及するから — 壁を個別選択させる
+ * かどうかは **UI 側の別の判断**である。
+ *
  * @param {GraspTarget} t
  * @param {{x:number,y:number,z:number}} inner  inner (cavity) full extents
  * @returns {WireObstacle[]}
