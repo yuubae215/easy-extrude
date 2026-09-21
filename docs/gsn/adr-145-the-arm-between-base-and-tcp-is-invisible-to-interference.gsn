@@ -3,7 +3,7 @@ GOALS adr145_the_arm_between_base_and_tcp_is_invisible_to_interference
 goal TheChosenJointConfigurationDoesNotIntersectSurroundingStructures
 uuid a5514417-8ab4-4bae-894f-8ae1a9180c67
 summary "ロボットが選ぶ関節配置が、把持探索の設計時検証において周辺構造物 (自身のペデスタル含む) と実際に干渉しないことを保証できる。解でなく性質: '8解を出す' '干渉判定を足す' は解の形であり、持ち上げた性質がこれ"
-state Reviewed
+state Approved
 labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, principle-2, principle-31, core
 
     context CoordinateConventionIsNotTheCause
@@ -40,7 +40,7 @@ labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, princi
         uuid 417c0652-122a-4c3f-8963-b770517ddec1
         summary "D1: ur_kinematics.py に forward_kinematics_chain(dh, joints) -> tuple[Mat4,...] を新設する。DH変換の累積積の各段 (各関節原点のワールド変換) を返す。既存forward_kinematics (フランジ最終変換のみ) はこの関数の最終要素を返す薄いラッパへリファクタするか独立実装のまま残すかは実装時に決める"
         labels support-verified
-        state Reviewed
+        state Approved
 
             solution ChainFixedByHandComputedOriginsAndAConfigurationFreeInvariant
             uuid 42acb186-38dc-43ac-a9f3-1391bb0f56aa
@@ -53,7 +53,7 @@ labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, princi
         uuid 87b1c9d2-3e4f-4a5b-9c6d-7e8f9a0b1c2d
         summary "D2: feasibility.py に NaiveArmSweepCollisionChecker を新設する。各リンク区間を線分とみなし、既存の distance_point_to_segment (TCP進入経路チェックと同じ幾何プリミティブ、第二の源を作らない) をリンクごとに呼んで障害物 (球/OBB) と照合する。1本でも交差すれば干渉ありとする"
         labels support-verified
-        state Reviewed
+        state Approved
 
             solution TemplatePinsTheDifferenceWithAZeroControl
             uuid 1f2e3d4c-5b6a-4798-8d9e-0a1b2c3d4e5f
@@ -67,7 +67,7 @@ labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, princi
         uuid 2a3b4c5d-6e7f-4809-9e0f-1a2b3c4d5e6f
         summary "D3: CollisionChecker.in_collision() に関節解の引数を追加する (in_collision(candidate, obstacles, joints=None))。core/内部のProtocol境界でありワイヤに出ないためcontractVersion不変。既存NaiveSphereCollisionChecker/OBB版は新引数を無視してよく後方互換を保つ"
         labels support-verified
-        state Reviewed
+        state Approved
 
             solution SignatureWidenedAndTheOneBrokenCallerWasFixedNotAbsorbed
             uuid 3b4c5d6e-7f80-491a-af10-2b3c4d5e6f70
@@ -80,7 +80,7 @@ labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, princi
         uuid 4c5d6e7f-8091-4a2b-b021-3c4d5e6f7081
         summary "D4: robot.kinematics未宣言時のIkSolution (占位1数) はJointSolutionでないため型で分岐し (isinstance, 原則#2)、腕スイープを起動せず既存TCP経路のみの判定にフォールバックする。ADR-127 D3と同じ『宣言した瞬間にだけ挙動が変わる』規律の踏襲"
         labels support-verified
-        state Reviewed
+        state Approved
 
             solution TheArmStageDoesNotStartAtAllWhenNothingDeclaredIt
             uuid 5d6e7f80-91a2-4b3c-9132-4d5e6f708192

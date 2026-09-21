@@ -4,6 +4,21 @@
  * Pure computation: no I/O, no Three.js, no DOM (PHILOSOPHY #3), and no `three`
  * import, so it loads under bare `node --test` like the rest of `src/robotics/`.
  *
+ * ## なぜ今もサンプリング探索なのか (ADR-146 D6 / DEF-040)
+ *
+ * ADR-144 は UR の解析解 IK を JS に持つ案を **§1.1 (同じ計算の源が 2 つに割れる)** で
+ * 退けた。ADR-146 はその判定を 3 軸 (アイデア / 重さ / 公知の閉形式) へ置き換え、
+ * 公知の閉形式は「**導出として**置くなら front 可」とした — 解析解 IK は探索でも
+ * アイデアでもないので、**却下案 B は ADR-146 の下では理由を失っている**。
+ *
+ * それでも JS 側の解析解 IK は **未実装**のまま残す。移植は「この近似プレビュー
+ * (サンプリング探索・位置のみ一致・姿勢は自由なまま) を退役させるか」という別の判断を
+ * 含み、それは置き場所の規則とは違う問いだからである。満期と理由は DEF-040。
+ *
+ * **理由が差し替わったことと結論が維持されることは別の事実**なので両方書いてある —
+ * 理由だけ書き換えて結論を黙って残すと、次に読む人は「まだ §1.1 で禁じられている」と
+ * 読み、同じ議論をもう一度やり直す (ADR-144 は Accepted の当日にそれが起きた)。
+ *
  * ## What this is, and what it is deliberately not
  *
  * `core/`'s `UniversalRobotsIkSolver` is the ONE place a joint configuration is

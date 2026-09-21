@@ -11,7 +11,9 @@ IK は多対一の写像なので `IK(FK(q)) == q` は**成り立たない** (�
 そこで**元の q が解集合に含まれること**も別に問う — 健全性と完全性の両方を焼く。
 """
 
+import json
 import math
+import pathlib
 import random
 
 import pytest
@@ -592,3 +594,79 @@ def test_first_link_origin_does_not_depend_on_any_joint():
 def test_chain_rejects_wrong_joint_count():
     with pytest.raises(ValueError):
         forward_kinematics_chain(UR5E, (0.0, 0.0, 0.0))
+
+
+# --- 言語をまたぐ導出の準拠 (ADR-146 D3) --------------------------------------
+#
+# 画面に出る腕は `public/robot/skeleton_arm.urdf` そのもので、front はそれを
+# **四元数で**解く。`core/` はその URDF から**導出された** DH を**行列で**解く。
+# 同じ腕についての同じ問いに、2 つの実装が別々に答えている。
+#
+# ADR-144 はこの形 (同じ計算の源が 2 つ) を §1.1 違反として UR 解析解の JS 移植を
+# 却下した。ADR-146 はその禁止を「公知の閉形式は置いてよい、**ただし導出として**」へ
+# 置き換えたが、置き換えた瞬間に §1.1 を守る仕事が人の注意へ移る。移したままに
+# しないための機械がここ + `src/robotics/CrossLanguageDerivation.test.js` である。
+#
+# **両側が同じファイルの同じ数を読むこと**が要点 — 片側だけが読む数は対照にならず、
+# 単なる回帰テストであって「2 つの実装が一致している」を一度も言わない。
+# フィクスチャは生成物 (`node scripts/gen-cross-language-fk.mjs`)、源は URDF ただ 1 つ。
+
+_FK_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "fixtures/cross-language/ur5e-forward-kinematics.json"
+)
+
+
+def _fk_fixture() -> dict:
+    return json.loads(_FK_FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_the_cross_language_fixture_is_present_and_declares_ur5e():
+    """フィクスチャの不在は「一致している」ではなく「問うていない」。
+
+    ファイルが消えた日に下のテストが**静かに 0 件走る**のを防ぐ (原則 #31 —
+    数えない不在は検査を素通りする)。
+    """
+    fixture = _fk_fixture()
+    assert fixture["subject"] == "ur5e-forward-kinematics"
+    assert len(fixture["cases"]) >= 12
+    assert set(fixture["dh"]) == set(_DH_KEYS_FOR_FIXTURE)
+
+
+_DH_KEYS_FOR_FIXTURE = ("d1", "a2", "a3", "d4", "d5", "d6")
+
+
+def test_dh_forward_kinematics_reproduces_the_urdf_derived_fixture():
+    """URDF を四元数で解いた JS の答えを、導出された DH を行列で解いた core が再現する。
+
+    この 2 つがずれた日に起きるのは表示の乱れではない: **探索が干渉ありと判定して
+    棄却した腕と、画面に描かれている腕が別物になる** (ADR-145 の腕スイープは
+    まさにこの DH から腕リンクを組む)。ADR-141 が「画面の腕と探索が解く腕を同じ
+    1 台にする」と決めたことの、一段深いところでの同じ主張である。
+    """
+    fixture = _fk_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    tolerance = float(fixture["tolerance"])
+    worst = 0.0
+    for case in fixture["cases"]:
+        t = forward_kinematics(dh, tuple(float(v) for v in case["joints"]))
+        for got, want in zip((t[3], t[7], t[11]), case["tcp"]):
+            worst = max(worst, abs(got - want))
+    assert worst <= tolerance, f"最大差 {worst} > 許容 {tolerance}"
+
+
+def test_the_chain_agrees_with_the_fixture_at_its_last_element():
+    """ADR-145 の腕リンクを組むチェーンも、同じ数に着地する。
+
+    腕スイープが使うのは `forward_kinematics_chain` であって
+    `forward_kinematics` ではない。ラッパにした以上同じ値になるはずだが、
+    **「はず」は主張なので問う** — ここが外れると、干渉判定が見る腕だけが
+    画面の腕から静かにずれる。
+    """
+    fixture = _fk_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    for case in fixture["cases"]:
+        chain = forward_kinematics_chain(dh, tuple(float(v) for v in case["joints"]))
+        assert _origin(chain[-1]) == pytest.approx(
+            tuple(case["tcp"]), abs=float(fixture["tolerance"])
+        )
