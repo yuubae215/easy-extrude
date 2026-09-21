@@ -97,15 +97,18 @@ export class RobotStageSet {
    *
    * @param {string|null} id  the robot whose arm shows the solution; `null`
    *   rests every arm (no candidate hovered/selected, or no search subject)
-   * @param {readonly number[]|null} joints  six angles in chain order
-   *   (`reachSolution.kind === 'solved'`), or `null` for `undeclared` / cleared —
-   *   in which case the subject rests too, rather than being posed into an
-   *   invented configuration.
+   * @param {{authority: 'solved'|'approximate', joints: readonly number[]}|null}
+   *   preview  what the subject draws and on whose authority — the contract's
+   *   solved configuration, or the client's unverified approximation of a
+   *   candidate `core/` left `undeclared` (ADR-144 D4 widened this argument
+   *   rather than adding a second entry point, so the number of writers is
+   *   unchanged). `null` rests the subject too, rather than posing it into a
+   *   configuration nobody produced.
    */
-  previewSolution(id, joints) {
+  previewSolution(id, preview) {
     // The rule (subject draws, everyone else rests) is pure and pinned at N=2 in
     // `domain/robotConfig.test.js`; this loop only performs the writes.
-    for (const [stageId, payload] of previewAssignments(this._stages.keys(), id, joints)) {
+    for (const [stageId, payload] of previewAssignments(this._stages.keys(), id, preview)) {
       this._stages.get(stageId)?.previewSolution(payload)
     }
   }
@@ -134,6 +137,21 @@ export class RobotStageSet {
     /** @type {Record<string, {x:number,y:number,z:number}|null>} */
     const out = {}
     for (const [id, stage] of this._stages) out[id] = stage.worldSpan()
+    return out
+  }
+
+  /**
+   * What every live skeleton is drawing right now, keyed by robot id (ADR-144).
+   * Read-only observation surface for the browser lane — see
+   * `RobotStage.previewState`. Stages whose URDF has not resolved report `null`
+   * rather than being omitted: a missing key and an unloaded arm are different
+   * facts (原則 #31), the same rule `worldSpans()` follows.
+   * @returns {Record<string, {unverified: boolean, joints: Record<string, number>}|null>}
+   */
+  previewStates() {
+    /** @type {Record<string, object|null>} */
+    const out = {}
+    for (const [id, stage] of this._stages) out[id] = stage.previewState()
     return out
   }
 

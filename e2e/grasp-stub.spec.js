@@ -201,6 +201,87 @@ test('S9 — 宣言すれば同じ objective が測れる: 不在の正の対照
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('S11 — core/ が居なくても腕は動き、かつ「解いた腕」を名乗らない (ADR-144)', async ({ page }) => {
+  // ADR-144 の Goal そのもの。スタブは IK を解かないので `reachSolution` は常に
+  // `undeclared` — ADR-135 の配線だけでは、GitHub Pages の腕は永久に rest のまま
+  // だった。ここで問うのは 2 つで、**どちらか片方では足りない**:
+  //   (a) 腕が実際に動いたか (動かないなら Goal 未達)
+  //   (b) 動いた腕が「未検証」と名乗っているか (名乗らないなら、権威の無い近似が
+  //       権威のふりをしている = ADR-144 が払うと決めたコストの踏み倒し)
+  // 関節角は THREE に書かれた**後**の値を読み戻す (RobotStage.previewState) ので、
+  // 「渡したつもり」では緑にならない。
+  // **どのシーンで問うかがこの検査の半分である。** `reachGraspPanel` が組む場面は
+  // ロボットを Shift+A で足すので、台座は既定の原点から 2.8 m (ADR-083) に立つ。
+  // UR5e の到達は 0.9 m なので、そこでは近似は正直に「無い」を返し腕は rest の
+  // まま — それは欠陥ではなく仕様 (原則 #11) だが、Goal の証拠にはならない。
+  // だから Home の単腕ピック&プレイスセル (台座と対象が同じセルの中にある実在の
+  // 配置) で問う。**届かない場合の rest は S11b が別に焼く。**
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click()
+  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length)
+    .toBe(1)
+
+  await selectRow(page, 'robot_base')
+  await page.keyboard.press('n')
+  await page.getByRole('button', { name: /Grasp candidates/ }).click()
+  await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
+  await pickAnObjectIfAsked(page)
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+
+  const snapshot = () => page.evaluate(() => window.__easyExtrude.armPreview())
+  const before = await snapshot()
+  const ids = Object.keys(before)
+  expect(ids.length, '腕が 1 台も観測できていない — 母集団が痩せたこと自体で落とす').toBe(1)
+  expect(before[ids[0]].unverified, '何も選んでいないのに未検証の腕が出ている').toBe(false)
+
+  // 候補を選ぶ = 探索の主語の腕がその候補の配置を取る。
+  await page.getByText(/^#1$/).click()
+
+  await expect.poll(async () => (await snapshot())[ids[0]].unverified,
+    { timeout: 10_000 }).toBe(true)
+  const after = await snapshot()
+  const moved = Object.keys(after[ids[0]].joints)
+    .filter(name => Math.abs(after[ids[0]].joints[name] - before[ids[0]].joints[name]) > 1e-6)
+  expect(moved.length, `腕が rest のまま動いていない: ${JSON.stringify(after[ids[0]].joints)}`)
+    .toBeGreaterThan(0)
+
+  // 画面側の名乗り: 行は「ワイヤに解は無い」と言い、近似であることを述べる。
+  await expect(page.getByText(/unverified client approximation/).first()).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
+test('S11b — 腕が届かない配置では、近似は出さず rest のまま (ADR-144 / 原則 #11)', async ({ page }) => {
+  // S11 の対照。ここでは台座が既定位置 (原点から 2.8 m) に立つので、対象は
+  // 0.9 m の腕の作業領域の外にある。**近い配置は存在する**ので、「一番近いもの」を
+  // 出す実装ならここで腕が動いてしまう — 動かないことが主張であり、S11 だけでは
+  // この区別は焼けない (常に何か出す実装も S11 なら緑になる)。
+  const errors = await reachGraspPanel(page, 'solve')
+  await pickAnObjectIfAsked(page)
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+
+  const snapshot = () => page.evaluate(() => window.__easyExtrude.armPreview())
+  const before = await snapshot()
+  const ids = Object.keys(before)
+  expect(ids.length).toBe(1)
+  await page.getByText(/^#1$/).click()
+  await page.waitForTimeout(500)
+
+  const after = await snapshot()
+  expect(after[ids[0]].unverified, '届かない候補に未検証の腕が出ている').toBe(false)
+  expect(after[ids[0]].joints, '届かない候補で腕が動いた — 一番近い配置を出している')
+    .toEqual(before[ids[0]].joints)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('S10 — 掴む場所は「言っていない」が画面に出て、宣言すると文が変わる (ADR-128 / ADR-119 D2)', async ({ page }) => {
   // 沈黙には欄が無い (原則 #31)。導出に落ちたことが画面に出ていなければ、ユーザーは
   // 自分が「どこを掴むか」を一度も言っていないことに気づけない。宣言と沈黙が *同じ*

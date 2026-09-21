@@ -96,7 +96,7 @@ import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { GraspSampleView }            from '../view/GraspSampleView.js'
-import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
+import { ROBOT_CHAIN, ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
@@ -504,6 +504,10 @@ export class AppController {
       createGhostView: () => new GraspGhostView(this._sceneView.scene, document.body),
       createSampleView: () => new GraspSampleView(this._sceneView.scene),
       robotKinematics: ROBOT_KINEMATICS,
+      // The same seat again (ADR-144): the FK chain of the arm on screen, so a
+      // candidate `core/` left `undeclared` can still be previewed — as an
+      // explicitly unverified approximation, never as a solution.
+      robotChain: ROBOT_CHAIN,
       // The same seat, for the same reason, one fact wider (ADR-141): WHICH ARM
       // the app draws. The reach envelope rides with it so the panel can no
       // longer offer an envelope belonging to a robot that is not on screen.
@@ -975,6 +979,19 @@ export class AppController {
        * `minSolidZ` is here for the same reason: "the starter cube rests ON the
        * ground" is a claim about a number nobody prints.
        */
+      /**
+       * Read-only ARM PREVIEW snapshot (ADR-144): what each skeleton is posed
+       * into right now, and whether it is being drawn as the client's unverified
+       * approximation rather than a solver's solution.
+       *
+       * Exists because the Goal of ADR-144 — "on GitHub Pages the arm moves, and
+       * it never pretends to be a solved answer" — is a claim about pixels in a
+       * browser with no `core/` behind it. No unit lane can execute it: the
+       * whole point is the stub's `undeclared`, the URDF and THREE meeting in
+       * one place. `authority` is reported as a flag ON THE STAGE, read back
+       * after the write, so the check cannot pass on intent alone.
+       */
+      armPreview: () => this._sceneView.robotStages?.previewStates?.() ?? {},
       worldScale: () => {
         const cam = this._sceneView.camera
         cam.updateMatrixWorld()

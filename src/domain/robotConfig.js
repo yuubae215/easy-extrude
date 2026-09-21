@@ -80,6 +80,57 @@ export function jointValuesFor(joints, jointNames) {
 }
 
 /**
+ * Whether the CLIENT may look for an approximate configuration for this
+ * candidate — the ONE gate ADR-144 D3 allows, named once so the controller and
+ * `previewPayloadFor` cannot drift apart (原則 #25).
+ *
+ * The gate is the existing wire fact and nothing else: `core/` either DECIDED a
+ * configuration (`solved`) or it did not. No "are we on GitHub Pages" flag is
+ * invented — GH Pages is simply an environment where this is permanently true,
+ * and a local run against a robot whose kinematics were never declared lands on
+ * the same branch for the same reason (§1.1 — one source for one fact).
+ *
+ * `null`/`undefined` (no candidate hovered or selected, hover cleared) is NOT a
+ * licence to approximate: there is no pose to approximate toward.
+ *
+ * @param {{kind?: string}|null|undefined} reachSolution  the wire's closed union
+ * @returns {boolean}
+ */
+export function needsApproximatePreview(reachSolution) {
+  return !!reachSolution && reachSolution.kind !== 'solved'
+}
+
+/**
+ * What the subject's arm draws, and ON WHOSE AUTHORITY — the pure core of
+ * ADR-144 D2/D4.
+ *
+ * Two DIFFERENT facts reach this function in two DIFFERENT shapes, and that is
+ * the point: `reachSolution` is the contract's `{kind:'solved', joints}`, the
+ * approximation is the client's `{origin:'clientApproximate', joints}`. Neither
+ * can be mistaken for the other by a reader or by a validator, and the payload
+ * that comes out names which one it is so the view can draw an unverified
+ * approximation as unverified (never a second writer — the visual difference is
+ * applied by the single entry point, 原則 #4).
+ *
+ * @param {{kind?: string, joints?: readonly number[]}|null|undefined} reachSolution
+ * @param {{origin?: string, joints?: readonly number[]}|null|undefined} approximation
+ *   the client's answer, or null when it declined (beyond tolerance / no chain) —
+ *   and it must be null whenever `needsApproximatePreview` is false, which is the
+ *   caller's half of the gate.
+ * @returns {{authority: 'solved'|'approximate', joints: readonly number[]}|null}
+ *   `null` = this arm rests (nobody decided and nobody could approximate)
+ */
+export function previewPayloadFor(reachSolution, approximation = null) {
+  if (reachSolution?.kind === 'solved') {
+    return { authority: 'solved', joints: reachSolution.joints ?? null }
+  }
+  if (needsApproximatePreview(reachSolution) && Array.isArray(approximation?.joints)) {
+    return { authority: 'approximate', joints: approximation.joints }
+  }
+  return null
+}
+
+/**
  * Which joint payload each robot's skeleton should draw, given the search
  * subject (ADR-135 D3, the N-robot half).
  *
@@ -96,9 +147,11 @@ export function jointValuesFor(joints, jointNames) {
  *
  * @param {Iterable<string>} stageIds  every robot with a skeleton
  * @param {string|null} subjectId  the robot the search is about, or null
- * @param {readonly number[]|null} joints  the subject's solution, or null
- * @returns {Array<[string, readonly number[]|null]>} id → what that arm draws
+ * @param {{authority: string, joints: readonly number[]}|null} payload  what the
+ *   subject draws and on whose authority (`previewPayloadFor`), or null for rest
+ * @returns {Array<[string, {authority: string, joints: readonly number[]}|null]>}
+ *   id → what that arm draws
  */
-export function previewAssignments(stageIds, subjectId, joints) {
-  return [...stageIds].map(id => [id, id === subjectId ? joints ?? null : null])
+export function previewAssignments(stageIds, subjectId, payload) {
+  return [...stageIds].map(id => [id, id === subjectId ? payload ?? null : null])
 }

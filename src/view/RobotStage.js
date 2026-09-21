@@ -6,6 +6,14 @@ import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
 
 /**
+ * How much of its own opacity the skeleton keeps while it draws a CLIENT
+ * APPROXIMATION rather than a solver's solution (ADR-144 D4). Low enough that
+ * "this is not a verified answer" reads at a glance, high enough that the
+ * silhouette is still legible — the preview has to be useful to be worth drawing.
+ */
+const UNVERIFIED_OPACITY = 0.38
+
+/**
  * RobotStage — loads and displays a fixed-pose robot-arm skeleton in the main
  * viewport, for visually verifying grasp-search (`core/`) output against the
  * voxel scene. Purely decorative/read-only: this class only *renders* a pose,
@@ -55,6 +63,25 @@ export class RobotStage {
     robot.scale.setScalar(MM_PER_METER)
     this.robot = robot
     this._group.add(robot)
+
+    // Own every material outright (ADR-144 D4). URDF `<material name=…>` entries
+    // are shared by name, and with a stage per robot (ADR-090) a shared instance
+    // would make ONE arm's unverified look appear on ANOTHER arm that never got a
+    // preview — the ADR-093 shape again, invisible at N=1. Cloning per mesh makes
+    // "this stage's look" a fact this stage alone can write. The opacity each
+    // material started with is remembered so restoring is exact, not assumed 1.
+    /** @type {Array<[THREE.Material, number]>} */
+    this._materials = []
+    robot.traverse(child => {
+      if (!child.material) return
+      const list = Array.isArray(child.material) ? child.material : [child.material]
+      const owned = list.map(m => m.clone())
+      child.material = Array.isArray(child.material) ? owned : owned[0]
+      for (const m of owned) this._materials.push([m, m.opacity ?? 1])
+    })
+    /** @type {boolean} whether the skeleton currently draws an unverified pose */
+    this._unverified = false
+
     this.previewSolution(null)
   }
 
@@ -67,19 +94,48 @@ export class RobotStage {
    * writers of one visual fact race to last-write-wins. So the choice — rest or
    * preview — is made HERE, in one place, and nothing else writes joints.
    *
-   * @param {readonly number[] | null} joints  six angles (radians) in
-   *   `ROBOT_JOINT_NAMES` order, as carried by `reachSolution.kind === 'solved'`;
-   *   `null` to return to the rest pose. A `reachSolution` of kind `undeclared`
-   *   is `null` here too: nobody decided a configuration, so the arm must not be
-   *   posed into an invented one.
+   * @param {{authority: 'solved'|'approximate', joints: readonly number[]}|null}
+   *   preview  what to draw and ON WHOSE AUTHORITY (`previewPayloadFor`):
+   *   `solved` carries the six angles `reachSolution.kind === 'solved'` decided
+   *   in `core/`; `approximate` carries the client's FK-sampled stand-in for a
+   *   candidate nobody solved (ADR-144), which is drawn as an unverified ghost;
+   *   `null` returns to the rest pose. A candidate with no solution AND no usable
+   *   approximation is `null` here too — the arm must never be posed into a
+   *   configuration neither a solver nor the sampler actually produced.
    */
-  previewSolution(joints) {
+  previewSolution(preview) {
     if (!this.robot) return
     // The decision is pure and lives in domain/robotConfig (原則 #3); this method
     // only performs the write. Every non-drawable case (null, `undeclared`, a
     // vector of the wrong length) comes back as the COMPLETE rest map, so the
     // arm can never be left half-posed.
-    this.setJointValues(jointValuesFor(joints, ROBOT_JOINT_NAMES))
+    this.setJointValues(jointValuesFor(preview?.joints ?? null, ROBOT_JOINT_NAMES))
+    // ADR-144 D4: the SAME method that decided which configuration to draw also
+    // decides how it looks. An approximation drawn solid is indistinguishable
+    // from a solution, which is the one failure mode ADR-144 accepts a cost to
+    // avoid; a second owner for the material would race this write (原則 #4).
+    this._setUnverifiedLook(preview?.authority === 'approximate')
+  }
+
+  /**
+   * Draw the skeleton as an unverified ghost (translucent) or as itself.
+   * INTERNAL to `previewSolution` — the authority that picked the joints is the
+   * only thing allowed to pick the look.
+   *
+   * Deliberately no new colour: a hue would need a token (ADR-100) and would say
+   * something specific, while translucency says the one true thing — this arm is
+   * less solid a claim than a solved one.
+   * @param {boolean} unverified
+   */
+  _setUnverifiedLook(unverified) {
+    if (this._unverified === unverified) return
+    this._unverified = unverified
+    for (const [material, opacity] of this._materials) {
+      material.transparent = unverified || opacity < 1
+      material.opacity = unverified ? opacity * UNVERIFIED_OPACITY : opacity
+      material.depthWrite = !unverified
+      material.needsUpdate = true
+    }
   }
 
   /**
@@ -102,6 +158,31 @@ export class RobotStage {
 
   /** Whether the skeleton is currently drawn (read-only accessor for the owner). */
   get visible() { return this._group.visible }
+
+  /**
+   * Read-only snapshot of WHAT THIS ARM IS DRAWING (ADR-144) — the angles read
+   * back out of the loaded robot, plus whether they are being shown as an
+   * unverified approximation.
+   *
+   * Read back from `robot.joints[…].angle`, not from what `previewSolution` was
+   * handed: the claim ADR-144 has to answer for is "the arm on GitHub Pages
+   * actually moves", and a snapshot of the intended values would be green even
+   * if nothing reached THREE. The unit lane cannot see this (no `three`, no
+   * URDF), so this is the only surface where the claim is executable — the same
+   * reason `worldSpan()` exists for ADR-137.
+   *
+   * @returns {{unverified: boolean, joints: Record<string, number>}|null}
+   */
+  previewState() {
+    if (!this.robot) return null
+    /** @type {Record<string, number>} */
+    const joints = {}
+    for (const name of ROBOT_JOINT_NAMES) {
+      const joint = this.robot.joints?.[name]
+      if (joint) joints[name] = joint.angle
+    }
+    return { unverified: this._unverified, joints }
+  }
 
   /**
    * World-space size of the loaded skeleton's bounding box, in world units
@@ -163,6 +244,7 @@ export class RobotStage {
         }
       })
     }
+    this._materials = []
     this._scene.remove(this._group)
     this.robot = null
   }
