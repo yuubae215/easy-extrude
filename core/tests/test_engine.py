@@ -5,6 +5,7 @@
 """
 
 import math
+import random
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -16,6 +17,11 @@ from easy_extrude_core.contract import (
     GraspSearchRequest,
 )
 from easy_extrude_core.engine.feasibility import JointSolution
+from easy_extrude_core.engine.types import (
+    BoxObstacle,
+    distance_point_to_box,
+    distance_segment_to_box,
+)
 from easy_extrude_core.engine.ur_kinematics import UrDhParameters
 from easy_extrude_core.engine.ur_solver import UniversalRobotsIkSolver
 from easy_extrude_core.engine import (
@@ -28,7 +34,7 @@ from easy_extrude_core.engine import (
     NaiveSuctionGraspChecker,
     NaiveSightlineVisibilityChecker,
     NaiveArmSweepCollisionChecker,
-    NaiveSphereCollisionChecker,
+    NaivePathCollisionChecker,
     NormSpec,
     arm_link_segments,
     Obstacle,
@@ -173,7 +179,7 @@ def test_no_tcp_orientation_uses_legacy_proxy_axis():
 
 
 def test_naive_collision_blocks_approach_path():
-    checker = NaiveSphereCollisionChecker()
+    checker = NaivePathCollisionChecker()
     # 把持点 (1,0,0)、プリグラスプ (0.5,0,0)。経路上 (0.7,0,0) に半径0.1の球 -> 衝突。
     blocked = GraspCandidate(
         pose=Pose(position=Vec3(1.0, 0, 0), approach=Vec3(1, 0, 0), roll=0.0),
@@ -243,7 +249,7 @@ def test_arm_sweep_rejects_the_elbow_that_dives_into_the_pedestal():
     solution = solver.solve(candidate, _CELL_ROBOT)
     assert isinstance(solution, JointSolution)
 
-    tcp_only = NaiveSphereCollisionChecker()
+    tcp_only = NaivePathCollisionChecker()
     sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=tcp_only)
     obstacles = (_PEDESTAL,)
 
@@ -260,7 +266,7 @@ def test_arm_sweep_accepts_when_no_link_reaches_the_obstacle():
     solver = UniversalRobotsIkSolver(dh=_UR5E)
     candidate = _supply_bin_candidate()
     solution = solver.solve(candidate, _CELL_ROBOT)
-    sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=NaiveSphereCollisionChecker())
+    sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=NaivePathCollisionChecker())
     far = (Obstacle(center=Vec3(0.0, 9.0, 0.0), radius=0.1),)
     assert interference_free(
         candidate, far, sweep, solution=solution, robot=_CELL_ROBOT
@@ -280,7 +286,7 @@ def test_arm_sweep_is_bit_identical_when_kinematics_is_not_declared():
 
     assert arm_link_segments(_UR5E, placeholder, _CELL_ROBOT) == ()
 
-    tcp_only = NaiveSphereCollisionChecker()
+    tcp_only = NaivePathCollisionChecker()
     sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=tcp_only)
     obstacles = (_PEDESTAL,)
     assert sweep.in_collision(
@@ -328,6 +334,136 @@ def test_arm_link_segments_follow_the_declared_base_orientation():
         assert t.x == pytest.approx(-u.x, abs=1e-12)
         assert t.y == pytest.approx(-u.y, abs=1e-12)
         assert t.z == pytest.approx(u.z, abs=1e-12)
+
+
+# --- 箱 (OBB) 障害物 (ADR-133 D5) --------------------------------------------
+
+
+def _box(cx, cy, cz, hx, hy, hz, orientation=None):
+    return BoxObstacle(
+        center=Vec3(cx, cy, cz),
+        half_extents=Vec3(hx, hy, hz),
+        orientation=orientation,
+    )
+
+
+def test_point_to_box_is_zero_inside_and_exact_on_faces_edges_and_corners():
+    """面・辺・頂点の 3 領域を別々に固定する。
+
+    手で場合分けを書く実装は**どれか 1 つを落としても「それらしい」値**を出す
+    (辺だけ面として測る等)。3 領域を名指しで焼くのは、落ちた領域が名前で分かる
+    ようにするため。
+    """
+    b = _box(0, 0, 0, 1, 2, 3)
+    inside = [(0, 0, 0), (0.9, 1.9, 2.9), (-1, 0, 0)]
+    for p in inside:
+        assert distance_point_to_box(Vec3(*p), b.center, b.half_extents, None) == 0.0
+    # 面: 1 軸だけはみ出す
+    assert distance_point_to_box(Vec3(3, 0, 0), b.center, b.half_extents, None) == pytest.approx(2.0)
+    # 辺: 2 軸がはみ出す
+    assert distance_point_to_box(Vec3(4, 6, 0), b.center, b.half_extents, None) == pytest.approx(5.0)
+    # 頂点: 3 軸がはみ出す
+    assert distance_point_to_box(Vec3(2, 4, 6), b.center, b.half_extents, None) == pytest.approx(
+        math.sqrt(1 + 4 + 9)
+    )
+
+
+def test_a_rotated_box_is_the_same_box_seen_from_a_turned_frame():
+    """回転は距離を保つ — 箱を回して点も同じだけ回せば距離は不変。
+
+    これが OBB を「AABB + 逆回転」で解いてよい根拠であり、回転を扱う**第二の幾何**を
+    書かない理由でもある。値ではなく**性質**を焼くので、どの角度でも成り立つ。
+    """
+    half = Vec3(1.0, 2.0, 3.0)
+    for angle in (0.3, 1.1, -2.0, math.pi / 2):
+        # z 軸まわりの回転四元数。
+        q = Quaternion(0.0, 0.0, math.sin(angle / 2), math.cos(angle / 2))
+        for p in (Vec3(5, 0, 0), Vec3(0, 7, 1), Vec3(-3, -4, 9)):
+            plain = distance_point_to_box(p, Vec3(0, 0, 0), half, None)
+            turned = distance_point_to_box(q.rotate(p), Vec3(0, 0, 0), half, q)
+            assert turned == pytest.approx(plain, abs=1e-12)
+
+
+def test_segment_to_box_finds_contact_that_endpoint_sampling_would_miss():
+    """**両端は遠いのに途中で掠める**線分を捕まえる。
+
+    端点だけ見る実装、あるいは粗く刻んでサンプルする実装は、この線分を「当たらない」
+    と答える。黄金分割探索が単峰性に乗っているので刻み幅の概念が無く、細い接触でも
+    落ちない — これが探索を使った理由そのもの。
+    """
+    b = _box(0, 0, 0, 0.05, 5.0, 5.0)  # 薄くて縦に長い衝立
+    a, c = Vec3(-3.0, 0.0, 0.0), Vec3(3.0, 0.0, 0.0)
+    assert Vec3(-3.0, 0, 0).distance_to(b.center) > 2.0  # 端点は遠い
+    assert b.surface_distance_to_segment(a, c) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_segment_to_box_matches_a_brute_force_scan_on_random_cases():
+    """粗い総当たり走査を上界として使う (探索が最小を取り逃していないことの対照)。
+
+    総当たりは**必ず探索以上**の値になるはずで、下回ったら探索が最小を見つけて
+    いない。同値を求めず不等式で問うのは、走査が刻み幅ぶん粗いのが当然だから。
+    """
+    rnd = random.Random(133)
+    for _ in range(60):
+        b = _box(
+            rnd.uniform(-2, 2), rnd.uniform(-2, 2), rnd.uniform(-2, 2),
+            rnd.uniform(0.1, 1.5), rnd.uniform(0.1, 1.5), rnd.uniform(0.1, 1.5),
+        )
+        a = Vec3(rnd.uniform(-4, 4), rnd.uniform(-4, 4), rnd.uniform(-4, 4))
+        c = Vec3(rnd.uniform(-4, 4), rnd.uniform(-4, 4), rnd.uniform(-4, 4))
+        searched = distance_segment_to_box(a, c, b.center, b.half_extents, None)
+        scanned = min(
+            distance_point_to_box(
+                a + (c - a).scaled(i / 400.0), b.center, b.half_extents, None
+            )
+            for i in range(401)
+        )
+        assert searched <= scanned + 1e-9
+        assert searched >= scanned - 0.05  # 走査の刻みぶんだけ甘い
+
+
+def test_a_box_pedestal_no_longer_swallows_the_robot_base():
+    """ADR-145 が測った 2.5mm の余裕が、箱にすると**据付面そのもの**になる。
+
+    外接球ではベースが障害物の内側に居た (0.060 < 0.2205)。箱ならベースは上面に
+    載るだけで、距離はちょうど 0 = 接触。これが「粗すぎる」の具体的な中身である。
+    """
+    sphere_pedestal = _PEDESTAL
+    box_pedestal = _box(-0.120, 0.0, 0.860, 0.150, 0.150, 0.060)
+    base = _CELL_BASE
+
+    # 球: ベースは内側 (符号つき距離が負)。
+    assert sphere_pedestal.surface_distance_to_segment(base, base) < 0.0
+    # 箱: ベースは上面ちょうど (z=0.920 = 0.860+0.060)。
+    assert box_pedestal.surface_distance_to_segment(base, base) == pytest.approx(0.0, abs=1e-9)
+    # 肩原点 (ベース + 0.1625) は箱から 162.5mm 離れる — 球では 2.5mm だった。
+    shoulder = Vec3(base.x, base.y, base.z + 0.1625)
+    assert box_pedestal.surface_distance_to_segment(shoulder, shoulder) == pytest.approx(
+        0.1625, abs=1e-9
+    )
+    assert sphere_pedestal.surface_distance_to_segment(shoulder, shoulder) < 0.003
+
+
+def test_the_wire_rejects_an_obstacle_that_declares_no_shape():
+    """形を述べない障害物は**球へ倒さず拒否**する (原則 #31)。
+
+    倒すと「箱を宣言したのに外接球で判定された」が、候補が減っただけの正しい形で
+    通る。どの段で何が起きたかは誰にも見えない。
+    """
+    from easy_extrude_core.engine.pipeline import _obstacle_from_wire
+
+    with pytest.raises(ValueError, match="未宣言の障害物種別"):
+        _obstacle_from_wire({"center": [0, 0, 0]})
+    with pytest.raises(ValueError, match="未宣言の障害物種別"):
+        _obstacle_from_wire({"kind": "capsule", "center": [0, 0, 0]})
+    with pytest.raises(ValueError, match="halfExtents"):
+        _obstacle_from_wire({"kind": "box", "center": [0, 0, 0]})
+    # 古い送信者 (kind 無し + radius) は球として通る — 名前のついた 1 分岐。
+    legacy = _obstacle_from_wire({"center": [0, 0, 0], "radius": 0.5})
+    assert isinstance(legacy, Obstacle)
+    assert _obstacle_from_wire(
+        {"kind": "box", "center": [0, 0, 0], "halfExtents": [1, 2, 3]}
+    ).half_extents == Vec3(1.0, 2.0, 3.0)
 
 
 # --- objective 正規化 / スコア ------------------------------------------------

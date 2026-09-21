@@ -72,6 +72,72 @@ function segmentPointDistance(a, b, p) {
 }
 
 /**
+ * Signed distance from a segment to an obstacle's SURFACE (negative = the segment
+ * passes through it). The stub's one answer to "how close is this body", shared by
+ * the occlusion and approach-path checks (ADR-133 D5).
+ *
+ * The stub is a SECOND PRODUCER of the same judgement `core/` makes (ADR-120: the
+ * same defect lived in both producers, independently). So it must not quietly read
+ * a box as a sphere — an unknown shape THROWS rather than being approximated, the
+ * same rule `_obstacle_from_wire` follows in core (原則 #31).
+ */
+function surfaceDistance(a, b, o) {
+  const kind = o.kind ?? (o.radius !== undefined ? 'sphere' : undefined)
+  if (kind === 'sphere') return segmentPointDistance(a, b, o.center) - o.radius
+  if (kind === 'box') return segmentBoxDistance(a, b, o)
+  throw new Error(
+    `graspStub: 未宣言の障害物種別 ${JSON.stringify(o.kind)} — ` +
+    '球へ倒すと「箱を宣言したのに外接球で判定された」が、候補が減っただけの正しい形で通る',
+  )
+}
+
+/** Inverse-rotate a world vector into a box's own frame (conjugate quaternion). */
+function intoBoxFrame(v, q) {
+  if (!q) return v
+  const [x, y, z, w] = q
+  const c = [-x, -y, -z, w]
+  return quatRotate(c, v)
+}
+
+function quatRotate(q, v) {
+  const [x, y, z, w] = q
+  const t = [2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])]
+  return [
+    v[0] + w * t[0] + (y * t[2] - z * t[1]),
+    v[1] + w * t[1] + (z * t[0] - x * t[2]),
+    v[2] + w * t[2] + (x * t[1] - y * t[0]),
+  ]
+}
+
+/** Point → OBB distance (0 inside): back into the box frame, then an AABB. */
+function pointBoxDistance(p, o) {
+  const l = intoBoxFrame(sub(p, o.center), o.orientation)
+  const d = [0, 1, 2].map(i => Math.max(Math.abs(l[i]) - o.halfExtents[i], 0))
+  return Math.hypot(d[0], d[1], d[2])
+}
+
+/**
+ * Segment → OBB distance by golden-section search.
+ *
+ * Distance to a convex set is CONVEX along the segment, so the search is unimodal
+ * and cannot settle on a false minimum. Sampling at a fixed step would miss a
+ * contact thinner than the step; writing the 26 face/edge/vertex branches by hand
+ * would produce plausible-looking numbers when one branch is wrong.
+ */
+const GOLDEN = (Math.sqrt(5) - 1) / 2
+function segmentBoxDistance(a, b, o) {
+  const at = t => pointBoxDistance(add(a, scale(sub(b, a), t)), o)
+  let lo = 0, hi = 1
+  let c = hi - GOLDEN * (hi - lo), d = lo + GOLDEN * (hi - lo)
+  let fc = at(c), fd = at(d)
+  for (let i = 0; i < 48; i++) {
+    if (fc < fd) { hi = d; d = c; fd = fc; c = hi - GOLDEN * (hi - lo); fc = at(c) }
+    else         { lo = c; c = d; fc = fd; d = lo + GOLDEN * (hi - lo); fd = at(d) }
+  }
+  return Math.min(fc, fd, at(0), at(1))
+}
+
+/**
  * Quaternion → forward (+X) axis, matching the contract's TCP convention.
  */
 function forwardAxis(q) {
@@ -328,10 +394,10 @@ export function stubSolve(request, contractVersion) {
         rejected = true                          // outside the field of view: no depth to report
       } else {
         for (const o of obstacles) {
-          const d = segmentPointDistance(eye, point, o.center)
-          if (d < o.radius) {
+          const d = surfaceDistance(eye, point, o)
+          if (d < 0) {
             rejected = true
-            occlusionNearestMiss = keepMin(occlusionNearestMiss, o.radius - d)
+            occlusionNearestMiss = keepMin(occlusionNearestMiss, -d)
             break
           }
         }
@@ -343,9 +409,9 @@ export function stubSolve(request, contractVersion) {
     let minClearance = Number.POSITIVE_INFINITY
     let blocked = false
     for (const o of obstacles) {
-      const d = segmentPointDistance(preGrasp, point, o.center)
-      if (d < o.radius) { blocked = true; break }
-      minClearance = Math.min(minClearance, d - o.radius)
+      const d = surfaceDistance(preGrasp, point, o)
+      if (d < 0) { blocked = true; break }
+      minClearance = Math.min(minClearance, d)
     }
     if (blocked) { counts[STAGE.INTERFERENCE] += 1; continue }
 

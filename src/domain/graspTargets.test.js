@@ -184,12 +184,125 @@ test('掴む対象は自分自身の障害物にならない', () => {
   assert.equal(obstacles.some(o => o.center[0] === 600 && o.center[1] === 0), false)
 })
 
-test('境界球は箱を覆う (対角の半分) — 甘い側ではなく安全側へ丸める', () => {
+test('障害物は箱で出る — 宣言された寸法と姿勢がそのまま渡る (ADR-133 D5)', () => {
   const targets = resolveGraspTargets(CELL)
   const [pedestal] = obstaclesExcluding(targets, 'pick_table')
-  const expected = Math.sqrt(220 * 220 + 220 * 220 + 400 * 400) / 2
-  assert.ok(Math.abs(pedestal.radius - expected) < 1e-9)
-  assert.ok(pedestal.radius > 400 / 2, '最長辺の半分より小さい球は箱を覆えない')
+  assert.equal(pedestal.kind, 'box')
+  assert.deepEqual(pedestal.halfExtents, [110, 110, 200])
+  assert.deepEqual(pedestal.orientation, [0, 0, 0, 1])
+  // かつてここは外接球で、半径は対角の半分 = 最長辺の半分より大きかった。
+  // その「安全側の丸め」が腕を自分の台の内側から生やしていた (ADR-145 の実測)。
+  const oldSphereRadius = Math.sqrt(220 * 220 + 220 * 220 + 400 * 400) / 2
+  assert.ok(oldSphereRadius > 200, '前提: 旧表現は最長半辺より大きかった')
+  assert.ok(Math.max(...pedestal.halfExtents) < oldSphereRadius)
+})
+
+test('回した箱は回った姿勢で出る — 軸平行へ丸めない', () => {
+  const q = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }   // z 90°
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    solid('turned', '回った箱', [100, 0, 0], [40, 10, 10], q),
+  ])
+  const [turned] = obstaclesExcluding(targets, 'a')
+  assert.deepEqual(turned.halfExtents, [20, 5, 5])
+  assert.deepEqual(turned.orientation, [q.x, q.y, q.z, q.w])
+})
+
+// ── 空洞の実体 = 5 枚 (ADR-133 D2) ───────────────────────────────────────────
+
+/** 内寸を宣言した Solid = トレー。 */
+const hollow = (ref, pos, outer, inner, rotation) => ({
+  ...solid(ref, ref, pos, outer, rotation),
+  innerDimensions: { x: inner[0], y: inner[1], z: inner[2] },
+})
+
+test('内寸を宣言した実体は 5 枚 (床 + 壁 4) になる', () => {
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    hollow('tray', [0, 0, 100], [200, 100, 60], [180, 80, 50]),
+  ])
+  const boxes = obstaclesExcluding(targets, 'a')
+  assert.equal(boxes.length, 5, 'トレーは 1 つの塊ではなく殻である')
+  assert.ok(boxes.every(b => b.kind === 'box'))
+})
+
+test('空洞の内側は**空いている** — 腕が中へ入れることが 5 枚に割る理由', () => {
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    hollow('tray', [0, 0, 100], [200, 100, 60], [180, 80, 50]),
+  ])
+  const boxes = obstaclesExcluding(targets, 'a')
+  // 空洞の中心: 床厚 = 60-50 = 10 なので、底面 z=70 から 10 上がって z=80 が空洞の底。
+  // 空洞中心は z = 80 + 25 = 105。
+  const inside = [0, 0, 105]
+  for (const b of boxes) {
+    const d = Math.max(
+      Math.abs(inside[0] - b.center[0]) - b.halfExtents[0],
+      Math.abs(inside[1] - b.center[1]) - b.halfExtents[1],
+      Math.abs(inside[2] - b.center[2]) - b.halfExtents[2],
+    )
+    assert.ok(d > 0, `空洞の中心が箱の内側にある: ${JSON.stringify(b)}`)
+  }
+})
+
+test('1 つの箱として扱うと中身が詰まる — 5 枚に割る前後の差を対照で焼く', () => {
+  // 同じ寸法で内寸を宣言しなければ 1 枚で、その 1 枚は空洞の中心を飲み込む。
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    solid('solidTray', 'solid', [0, 0, 100], [200, 100, 60]),
+  ])
+  const [one] = obstaclesExcluding(targets, 'a')
+  const inside = [0, 0, 105]
+  const d = Math.max(
+    Math.abs(inside[0] - one.center[0]) - one.halfExtents[0],
+    Math.abs(inside[1] - one.center[1]) - one.halfExtents[1],
+    Math.abs(inside[2] - one.center[2]) - one.halfExtents[2],
+  )
+  assert.ok(d < 0, '対照: 内寸を宣言しなければ同じ点は箱の内側 = 取り出せない')
+})
+
+test('壁は互いに重ならない — 同じ体積を二度数えない', () => {
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    hollow('tray', [0, 0, 0], [200, 100, 60], [180, 80, 50]),
+  ])
+  const walls = obstaclesExcluding(targets, 'a').slice(1)   // 床を除く 4 枚
+  const overlaps = (p, q) =>
+    Math.abs(p.center[0] - q.center[0]) < p.halfExtents[0] + q.halfExtents[0] - 1e-9 &&
+    Math.abs(p.center[1] - q.center[1]) < p.halfExtents[1] + q.halfExtents[1] - 1e-9 &&
+    Math.abs(p.center[2] - q.center[2]) < p.halfExtents[2] + q.halfExtents[2] - 1e-9
+  for (let i = 0; i < walls.length; i++) {
+    for (let j = i + 1; j < walls.length; j++) {
+      assert.ok(!overlaps(walls[i], walls[j]), `壁 ${i} と ${j} が重なっている`)
+    }
+  }
+})
+
+test('内寸が外寸以上なら壁が無い — 0 厚の壁 4 枚で囲われたふりをしない', () => {
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    hollow('bad', [0, 0, 0], [100, 100, 100], [100, 100, 100]),
+  ])
+  const boxes = obstaclesExcluding(targets, 'a')
+  assert.equal(boxes.length, 1, '宣言の誤りを 5 枚の殻として通さない')
+})
+
+test('回したトレーは壁も一緒に回る — 局所オフセットを姿勢で回す', () => {
+  const q = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }   // z 90°
+  const targets = resolveGraspTargets([
+    solid('a', 'A', [0, 0, 0], [10, 10, 10]),
+    hollow('tray', [0, 0, 0], [200, 100, 60], [180, 80, 50], q),
+  ])
+  const boxes = obstaclesExcluding(targets, 'a')
+  assert.equal(boxes.length, 5)
+  assert.ok(boxes.every(b => b.orientation[2] === q.z && b.orientation[3] === q.w))
+  // z 90° 回すと ±X 壁はワールドの ±Y 方向へ移る。回していなければ x=±95 に居た。
+  const xWalls = boxes.filter(b => Math.abs(b.halfExtents[0] - 5) < 1e-9)
+  assert.equal(xWalls.length, 2)
+  for (const w of xWalls) {
+    assert.ok(Math.abs(w.center[0]) < 1e-9, '回転後も x に留まっている = 回していない')
+    assert.ok(Math.abs(Math.abs(w.center[1]) - 95) < 1e-9)
+  }
 })
 
 test('対象が 1 つだけなら障害物は 0 件 — 宣言された 0 であって欠落ではない', () => {

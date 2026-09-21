@@ -87,7 +87,7 @@ def _raw_approach_clearance(candidate: GraspCandidate, problem: Problem) -> floa
         # 障害物が無ければクリアランスは基準上限 (満点) でよい。
         return problem.clearance_reference
     return min(
-        distance_point_to_segment(obs.center, a, b) - obs.radius
+        obs.surface_distance_to_segment(a, b)
         for obs in problem.obstacles
     )
 

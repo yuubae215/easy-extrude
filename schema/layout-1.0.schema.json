@@ -5,25 +5,42 @@
   "description": "Public schema for Layout DSL v1.0 (ADR-045, ADR-055). This is the SHAPE contract: it fixes the closed set of fields and the enum vocabularies. Cross-reference resolution, ref uniqueness, and other MEANING checks stay in LayoutValidator.js (ADR-064 Phase 2). additionalProperties:false makes an unknown field a rejection, mirroring the grasp-contract discipline (PHILOSOPHY #29).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "entities"],
+  "required": [
+    "version",
+    "entities"
+  ],
   "properties": {
     "version": {
       "const": "layout/1.0",
       "description": "Layout DSL version. Bound to LAYOUT_DSL_VERSION by the drift test."
     },
-    "meta": { "$ref": "#/$defs/meta" },
+    "meta": {
+      "$ref": "#/$defs/meta"
+    },
     "strategy": {
       "description": "Placement strategy for unpositioned entities. Bound to VALID_STRATEGIES.",
-      "enum": ["linear", "grid", "stack", "radial", "manual"]
+      "enum": [
+        "linear",
+        "grid",
+        "stack",
+        "radial",
+        "manual"
+      ]
     },
-    "strategyOptions": { "$ref": "#/$defs/strategyOptions" },
+    "strategyOptions": {
+      "$ref": "#/$defs/strategyOptions"
+    },
     "entities": {
       "type": "array",
-      "items": { "$ref": "#/$defs/entity" }
+      "items": {
+        "$ref": "#/$defs/entity"
+      }
     },
     "constraints": {
       "type": "array",
-      "items": { "$ref": "#/$defs/constraint" }
+      "items": {
+        "$ref": "#/$defs/constraint"
+      }
     }
   },
   "$defs": {
@@ -31,8 +48,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "description": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
       }
     },
     "strategyOptions": {
@@ -41,87 +62,168 @@
       "properties": {
         "axis": {
           "description": "Axis token for linear/radial strategies. Bound to VALID_AXES.",
-          "enum": ["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
+          "enum": [
+            "+X",
+            "-X",
+            "+Y",
+            "-Y",
+            "+Z",
+            "-Z"
+          ]
         },
-        "spacing": { "type": "number" },
-        "cols": { "type": "integer" },
-        "baseZ": { "type": "number" }
+        "spacing": {
+          "type": "number"
+        },
+        "cols": {
+          "type": "integer"
+        },
+        "baseZ": {
+          "type": "number"
+        }
       }
     },
     "vec3": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "z": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
       }
     },
     "vec2": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
       }
     },
     "quaternion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["x", "y", "z", "w"],
+      "required": [
+        "x",
+        "y",
+        "z",
+        "w"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "z": { "type": "number" },
-        "w": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        }
       }
     },
     "frame": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "name"],
+      "required": [
+        "ref",
+        "name"
+      ],
       "properties": {
-        "ref": { "type": "string" },
-        "name": { "type": "string" },
-        "translation": { "$ref": "#/$defs/vec3" }
+        "ref": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "translation": {
+          "$ref": "#/$defs/vec3"
+        }
       }
     },
     "entity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "type", "name"],
+      "required": [
+        "ref",
+        "type",
+        "name"
+      ],
       "properties": {
-        "ref": { "type": "string" },
+        "ref": {
+          "type": "string"
+        },
         "type": {
           "description": "Entity type expressible in Layout DSL. Bound to VALID_ENTITY_TYPES.",
           "enum": [
-            "Solid", "CoordinateFrame",
-            "AnnotatedLine", "AnnotatedRegion", "AnnotatedPoint"
+            "Solid",
+            "CoordinateFrame",
+            "AnnotatedLine",
+            "AnnotatedRegion",
+            "AnnotatedPoint"
           ]
         },
-        "name": { "type": "string" },
-        "description": { "type": "string" },
-        "placeType": { "type": "string" },
-        "ifcClass": { "type": "string" },
-        "dimensions": { "$ref": "#/$defs/vec3" },
-        "rotation": { "$ref": "#/$defs/quaternion" },
-        "position": { "$ref": "#/$defs/vec3" },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "placeType": {
+          "type": "string"
+        },
+        "ifcClass": {
+          "type": "string"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/quaternion"
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
         "parentRef": {
           "description": "For a standalone CoordinateFrame, the ref of another entity it is a TF child of (e.g. tcp → robot_base). When present, `position`/`rotation` are the LOCAL offset from that parent; when absent, they are the world pose (world-parented root). Robot TF tree world → robot_base → tcp (ADR-084 §2 revised).",
           "type": "string"
         },
         "robotRole": {
           "description": "Declared role of a CoordinateFrame inside a robot's TF tree (ADR-090): 'base' = world-parented root (where the arm stands), 'tcp' = its tool-point child. This is what makes a robot identifiable as an ENTITY rather than by the magic name `robot_base`, so a scene can carry N robots. Absent = an ordinary frame belonging to no robot.",
-          "enum": ["base", "tcp"]
+          "enum": [
+            "base",
+            "tcp"
+          ]
         },
-        "graspFeature": { "$ref": "#/$defs/graspFeature" },
+        "graspFeature": {
+          "$ref": "#/$defs/graspFeature"
+        },
         "frames": {
           "type": "array",
-          "items": { "$ref": "#/$defs/frame" }
+          "items": {
+            "$ref": "#/$defs/frame"
+          }
         },
         "vertices": {
           "type": "array",
-          "items": { "$ref": "#/$defs/vec2" }
+          "items": {
+            "$ref": "#/$defs/vec2"
+          }
+        },
+        "innerDimensions": {
+          "$ref": "#/$defs/vec3",
+          "description": "Inner (cavity) full extents of a HOLLOW body such as a tray, bin or tote (ADR-133 D1). Wall and floor thicknesses are DERIVED from this and `dimensions` -- (outer-inner)/2 per horizontal axis, outer.z-inner.z for the floor -- rather than declared, so the two cannot disagree (§1.1). Absent means the body is solid; it is never defaulted to zero, which would make \"no cavity declared\" and \"a cavity of zero size\" the same value (原則 #31). The cavity is open at the top: a lid is a separate body."
         }
       }
     },
@@ -129,11 +231,16 @@
       "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). OPTIONAL: with no graspFeature the front derives the faces from the declared hand (ADR-118) and the panel says so — absence is a state (\"nobody said\"), distinct from an explicit `anywhere` (\"I looked and chose not to narrow\"). A closed kind-discriminated union, same governance as `gripper` (ADR-118): the kind decides which fields exist. Declared faces are used VERBATIM and never merged with the derived set (ADR-119 D3), so a declaration cannot be silently widened.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "properties": {
         "kind": {
           "description": "`anywhere` = declared and deliberately not narrowed (samples follow the hand's derived faces). `faces` = grasp only on the listed faces.",
-          "enum": ["anywhere", "faces"]
+          "enum": [
+            "anywhere",
+            "faces"
+          ]
         },
         "faces": {
           "description": "Required when kind is `faces`: the box faces worth touching, named by their outward LOCAL axis. At least one — an empty list declares nowhere to grasp, which downstream is indistinguishable from an honest \"no feasible pose\" (原則 #31). A parallel jaw needs a pair of OPPOSED faces: the solver measures the opening from these very samples, so a single face reports almost no width (ADR-118).",
@@ -142,10 +249,23 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["face"],
+            "required": [
+              "face"
+            ],
             "properties": {
-              "face": { "enum": ["+x", "-x", "+y", "-y", "+z", "-z"] },
-              "region": { "$ref": "#/$defs/faceRegion" }
+              "face": {
+                "enum": [
+                  "+x",
+                  "-x",
+                  "+y",
+                  "-y",
+                  "+z",
+                  "-z"
+                ]
+              },
+              "region": {
+                "$ref": "#/$defs/faceRegion"
+              }
             }
           }
         }
@@ -156,32 +276,74 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "uMin": { "type": "number", "minimum": 0, "maximum": 1 },
-        "uMax": { "type": "number", "minimum": 0, "maximum": 1 },
-        "vMin": { "type": "number", "minimum": 0, "maximum": 1 },
-        "vMax": { "type": "number", "minimum": 0, "maximum": 1 }
+        "uMin": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "uMax": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "vMin": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "vMax": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
     "constraint": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "target", "semanticType"],
+      "required": [
+        "source",
+        "target",
+        "semanticType"
+      ],
       "properties": {
-        "source": { "type": "string" },
-        "target": { "type": "string" },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
         "jointType": {
           "description": "URDF kinematic joint type, or null for a topological-only link. Bound to VALID_JOINT_TYPES.",
           "oneOf": [
-            { "type": "null" },
-            { "enum": ["fixed", "revolute", "continuous", "prismatic", "floating", "planar"] }
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "fixed",
+                "revolute",
+                "continuous",
+                "prismatic",
+                "floating",
+                "planar"
+              ]
+            }
           ]
         },
         "semanticType": {
           "description": "Domain semantic type. Bound to VALID_SEMANTIC_TYPES.",
           "enum": [
-            "fastened", "mounts", "aligned",
-            "contains", "adjacent", "above", "connects",
-            "references", "represents", "bounded_by"
+            "fastened",
+            "mounts",
+            "aligned",
+            "contains",
+            "adjacent",
+            "above",
+            "connects",
+            "references",
+            "represents",
+            "bounded_by"
           ]
         },
         "properties": {

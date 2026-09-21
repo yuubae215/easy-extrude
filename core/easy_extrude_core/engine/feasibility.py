@@ -205,11 +205,15 @@ class CollisionChecker(Protocol):
     ) -> bool: ...
 
 
-class NaiveSphereCollisionChecker:
-    """外部依存ゼロの素朴な干渉既定実装 (球障害物)。
+class NaivePathCollisionChecker:
+    """外部依存ゼロの素朴な干渉既定実装 (進入経路 vs **宣言された形**)。
 
-    進入経路 (pre_grasp -> 把持点) の線分と各障害物球の最短距離が球半径 + probe_radius を
+    進入経路 (pre_grasp -> 把持点) の線分と各障害物の**表面**との距離が probe_radius を
     下回れば衝突とみなす。probe_radius はグリッパ太さの素朴な余裕代。
+
+    **形を知らない** (ADR-133 D5): 球か箱かは `surface_distance_to_segment` が答える
+    ので、このクラスに `radius` も `kind` の分岐も現れない。形が増えたとき
+    ここを直し忘れる余地が無いのが、半径を自分で引き算していた頃との違いである。
 
     **腕は見ない。** base と TCP の間のリンクは `NaiveArmSweepCollisionChecker` の
     担当で、このクラスは `solution` / `robot` を受け取っても使わない (ADR-145 D3 の
@@ -230,8 +234,7 @@ class NaiveSphereCollisionChecker:
         a = candidate.pre_grasp
         b = candidate.pose.position
         for obs in obstacles:
-            d = distance_point_to_segment(obs.center, a, b)
-            if d <= obs.radius + self.probe_radius + _EPS:
+            if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
                 return True
         return False
 
@@ -293,9 +296,10 @@ class NaiveArmSweepCollisionChecker:
 
     **この近似が何でないか** (宣言しておく — ADR-144 §4 と同じ規律):
     リンクは**太さゼロの線分**で、`probe_radius` を腕にも同じ余裕代として当てる。
-    自己干渉 (腕どうし・腕とハンド) は見ない。障害物が球である以上、据付台のように
-    **ベースを内側に含む外接球**は先頭リンクを常に飲み込む (だから
-    `_JOINT_INDEPENDENT_LINKS` を外す)。厳密な箱/半空間は DEF-036 の担当。
+    自己干渉 (腕どうし・腕とハンド) は見ない。据付台のように**ベースを内側に含む**障害物は先頭リンクを常に飲み込むので
+    `_JOINT_INDEPENDENT_LINKS` を外す — 外接球ではこれが常に起きた。箱 (ADR-133 D5)
+    なら据付面で接するだけになるが、接触は接触なので除外は形に依らず要る。
+    厳密な半空間 (薄板) は DEF-036 の担当。
     """
 
     dh: UrDhParameters
@@ -316,8 +320,7 @@ class NaiveArmSweepCollisionChecker:
             return True
         for a, b in arm_link_segments(self.dh, solution, robot):
             for obs in obstacles:
-                d = distance_point_to_segment(obs.center, a, b)
-                if d <= obs.radius + self.probe_radius + _EPS:
+                if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
                     return True
         return False
 
@@ -384,7 +387,8 @@ def sightline_occlusion_miss(
     # 視線遮蔽: 最も深く食い込む球の食い込み量 (radius - 視線までの距離)。
     deepest = 0.0
     for obs in obstacles:
-        depth = obs.radius - distance_point_to_segment(obs.center, eye, point)
+        # 表面までの符号つき距離の**符号を返す** = 食い込み量。球・箱で同じ 1 つの量。
+        depth = -obs.surface_distance_to_segment(eye, point)
         if depth > deepest:
             deepest = depth
     return deepest

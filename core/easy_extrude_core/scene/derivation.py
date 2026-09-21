@@ -151,9 +151,9 @@ def build_request(
                 for (p, n) in target.surface_samples
             ],
         },
-        "obstacles": [
-            {"center": o.center.as_list(), "radius": o.radius} for o in obstacles
-        ],
+        # 形ごとの型が自分の形を書く (原則 #17) — ここで radius を読むと箱が
+        # 来た日にそこだけ球として書き出される。
+        "obstacles": [o.as_wire() for o in obstacles],
         "sampling": {
             "approachTiltAngles": list(settings.approach_tilt_angles),
             "rollAngles": list(settings.roll_angles),
