@@ -245,7 +245,16 @@ const SUPPORT_LABELS = new Map([
 //     テンプレートを選ぶとロボットが描かれる」ことは、テンプレート選択 (_selectLayoutTemplate)
 //     を通る e2e が repo に 1 本も無い (調査済み) ため、まだ人が見るしかない。
 // 満期は機械可読 (PATH:e2e/smoke.spec.js) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 43
+// 2026-09-21: 43 → 47。ADR-144 (Proposed・未実装) の木が 4 goal を足した
+// (ApproximateSearchReusesExistingFkSamplingWithNoNewSolverEquations /
+// ClientApproximationIsStructurallyDistinctFromTheWireReachSolution /
+// GateIsTheExistingUndeclaredFactNotANewEnvironmentFlag /
+// SinglePreviewEntryPointIsExtendedNotDuplicated)。ADR-129/133/137/139 の先例と同形で、
+// 起票と同時に木を起こす規律 (adr skill §GSN 併設) の帰結 — Proposed の ADR は定義上
+// ほぼ全部の goal が exploring になる。4 件とも機械可読な満期 (PATH:src/robotics/
+// ApproximateReachPreview.test.js · GREP:src/controller/GraspController.test.js ·
+// GREP:src/domain/robotConfig.test.js) を持つので分子 (G3) は動かない。
+const DEBT_BASELINE = 47
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

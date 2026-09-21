@@ -1,0 +1,86 @@
+GOALS adr144_an_approximate_preview_is_not_a_second_solver
+
+goal ArmPreviewWorksWithoutABackendWithoutClaimingAuthority
+uuid 7c1e4a2b-9f3d-4e6a-8b1c-2d5f6a7b8c9d
+summary "GitHub Pages(core/ 不在の静的ホスティング)でも、grasp-search の候補を選んだときに腕がおおよそどんな配置になるか確認できる。ただしそれが実際に到達可能な解であるという主張は一切しない — 権威の無い近似は権威のふりをしてはならない"
+state ToBeReviewed
+labels adr-144, adr-135, adr-053, principle-1, principle-2, principle-4, principle-11, principle-29, app, ui
+
+    context GithubPagesDeployIsPermanentlyOnTheUndeclaredBranch
+    uuid 1a2b3c4d-5e6f-4708-8192-a3b4c5d6e7f8
+    summary "GitHub Pages のデプロイ (.github/workflows/deploy.yml:53) は VITE_GRASP_STUB=1 で pnpm build:stub を使う。静的ホスティングは core/ (Python の IK ソルバ) を動かせないため、mocks/graspStub/solve.js:375 は意図的に常に reachSolution:{kind:'undeclared'} を返す。これは環境の欠陥ではなくトポロジ上の必然"
+    artifacts
+    - ".github/workflows/deploy.yml"
+    - "mocks/graspStub/solve.js"
+    - "mocks/graspStub/responses.js"
+
+    context Adr053AlreadyPermitsAnFkSamplingMeasurementInstrumentClientSide
+    uuid 2b3c4d5e-6f70-4819-9a3b-4c5d6e7f8091
+    summary "ADR-053 §3/§10.1 は『ブラウザ worker / 純-JS が初期形、GitHub Pages 単体で検証できる』として FK サンプリング (src/robotics/Kinematics.js: sampleConfigs/forwardKinematics) をすでに front 側の測定器として許容している。ただし §7.1/§10.1/§11.5 で毎フェーズ『IK ソルバ(KDL)は使わない』『IK/特異点Jacobian/可動ソルバは非目標』と繰り返し明記しており、許されているのは到達点群への最近傍判定(boolean/margin)であって関節配置を解くことではない"
+    artifacts
+    - "docs/adr/ADR-053-robotics-kpi-methods.md"
+    - "src/robotics/Kinematics.js"
+
+    context Adr135OwnsTheAuthoritativeSolvedPathUnchanged
+    uuid 3c4d5e6f-7081-492a-ab4c-5d6e7f809142
+    summary "ADR-135 が確定した GraspController._syncArmPreview() / RobotStageSet.previewSolution() の唯一入口は、reachSolution.kind==='solved' のときのみ core/ 決定の関節角を渡す。この経路と reachSolution の契約(kind判別union、contractVersion v6)は本ADRで一切変更しない"
+    artifacts
+    - "src/controller/GraspController.js"
+    - "src/view/RobotStageSet.js"
+    - "docs/adr/ADR-135-reachability-is-drawn-not-declared-the-discarded-ik-solution-rejoins-the-wire.md"
+
+    justification WhyNotPortTheAnalyticSolverToTheClient
+    uuid 4d5e6f70-8192-4a3b-bc5d-6e7f80914253
+    summary "却下案B(UniversalRobotsIkSolver の解析的IKをJSへ移植)への反証: 同じ計算をPythonとJSの2箇所に書くことになり真実の源が分裂する(§1.1違反)。CLAUDE.mdのAIガードが名指しする『IKの解き方をsrc/に書く』その形そのものであり、境界の例外化では正当化できない"
+
+    justification WhyNotHostCoreExternally
+    uuid 5e6f7081-92a3-4b4c-cd6e-7f8091425364
+    summary "却下案C(core/+BFFを外部ホスティングしGitHub Pagesから叩く)への反証: 3層構成を正しく満たす最善解だが常時稼働インフラの運用コストが発生し、『静的サイトだけで完結する』というGitHub Pages選定の前提から外れるデプロイ位相の決定であり、本ADRのGoal(ゼロ追加インフラでの近似確認)とはスコープが異なる。排他ではないため将来別ADRで検討可"
+
+    strategy ByReusingFkSamplingAsATypeSeparatedNonAuthoritativeFallback
+    uuid 6f708192-a3b4-4c5d-de7f-809142536475
+    summary "新しい解法を書かず(D1)ADR-053のFKサンプリングを関節ベクトル探索に転用し、契約のreachSolutionとは型で分離した近似結果(D2)を、core/が未決定(kind!=='solved')のときだけ(D3)、唯一の既存入口RobotStageSet.previewSolutionの引数拡張として(D4)配線する。UR解析解のJS移植・契約変更はどちらも行わない(D5)"
+
+        goal ApproximateSearchReusesExistingFkSamplingWithNoNewSolverEquations
+        uuid 70819243-b4c5-4d6e-ef80-91425364758a
+        summary "D1: sampleConfigs/forwardKinematics(既存・ADR-053実装済み)で候補のエンドエフェクタframeに最も近いFK結果を持つ配置を探す。方程式を立てて解くソルバは新設しない。許容誤差を超えたら配置なし(null)を返す(近いだけの誤った配置を出さない)"
+        labels support-exploring
+        state ToBeReviewed
+
+            assumption PlannedToleranceRejectionTest
+            uuid 81924364-c5d6-4e7f-f091-4253647586ab
+            summary "実装時に、探索結果が許容誤差(toleranceMm)を超えた場合はnull(rest継続)を返すことをユニットテストで焼く予定 — 原則#11(無言の失敗禁止)の裏返しとして、一番近いだけの誤配置を出さないことを機械的に保証する。満期=PATH:src/robotics/ApproximateReachPreview.test.js"
+
+        goal ClientApproximationIsStructurallyDistinctFromTheWireReachSolution
+        uuid 92436475-d6e7-4f80-a142-536475869bcd
+        summary "D2: 近似結果は{origin:'clientApproximate', joints, toleranceMm}|nullという、契約のreachSolution({kind:'solved'|'undeclared'})とは別の判別子・別の形で表す。契約(packages/grasp-contract)には一切追加せず、core/にも送らない"
+        labels support-exploring
+        state ToBeReviewed
+
+            assumption PlannedAjvSchemaRejectionTest
+            uuid a3647586-e7f8-4091-b253-647586970cde
+            summary "実装時に、近似結果オブジェクトをreachSolutionのajvスキーマに通すとinvalidになることをテストで焼く予定 — 『別の名前を使った』という主張だけでなく、実際にスキーマが構造的に拒否することを機械的証拠にする。満期=PATH:src/robotics/ApproximateReachPreview.test.js"
+
+        goal GateIsTheExistingUndeclaredFactNotANewEnvironmentFlag
+        uuid b4758697-f809-4142-c364-758697081def
+        summary "D3: 『GitHub Pagesかどうか』を検出する第二の信号は作らず、reachSolution.kind!=='solved'という既存の唯一の事実だけをゲートに使う(§1.1 — 同じ事実の第二の源を作らない)。ローカルのUR形状でないロボットでも同じ枝に自然に乗る一般化"
+        labels support-exploring
+        state ToBeReviewed
+
+            assumption PlannedGateUnitTest
+            uuid c5869708-091a-4253-d475-869708192e4f
+            summary "実装時に、reachSolution.kind==='solved'のとき近似探索が一切呼ばれないことをユニットテストで焼く予定。満期=GREP:src/controller/GraspController.test.js::approximate.*never.*invoked.*solved"
+
+        goal SinglePreviewEntryPointIsExtendedNotDuplicated
+        uuid d6970819-1a2b-4364-e586-970819243f5a
+        summary "D4: RobotStageSet.previewSolution(robotId, joints|null)を削除・複製せず、第二引数を{authority:'solved'|'approximate', joints}|nullへ拡張する。視覚差(破線・色・キャプション)の書き手もこのメソッド1箇所のまま(原則#4は不動)"
+        labels support-exploring
+        state ToBeReviewed
+
+            assumption PlannedSoleWriterRegressionCheck
+            uuid e7081924-2b3c-4475-f697-08192435460b
+            summary "実装時に、引数拡張後もRobotStageSet.previewSolutionが唯一の書き手であることを確認する予定(ADR-135 D3が確立した性質を壊していないことのテスト)。満期=GREP:src/domain/robotConfig.test.js::authority"
+
+    context ConnectionToProfitTreeDeferred
+    uuid f8192435-3c4d-4586-a708-1924354675c1
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本goalはGitHub Pagesデモの信頼性(『腕が動かないのはバグに見える』という誤解の解消)に効くもので、事業木側の対応するgoal名・uuidは未特定 — 次に事業木を読み直す機会に確定する"
