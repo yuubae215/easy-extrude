@@ -20,6 +20,7 @@ from easy_extrude_core.engine.types import GraspCandidate, Pose, Quaternion, Rob
 from easy_extrude_core.engine.ur_kinematics import (
     UrDhParameters,
     forward_kinematics,
+    forward_kinematics_chain,
     inverse_kinematics,
     within_joint_limits,
 )
@@ -491,3 +492,103 @@ def test_the_joints_belong_to_their_own_candidate_not_to_rank_one():
     solved = [tuple(c.score.reach_solution.joints) for c in resp.candidates]
     assert len(solved) >= 2, "2 候補以上出る前提の fixture"
     assert len(set(solved)) > 1, "全候補が同じ関節値 — 解が候補ごとに運ばれていない"
+
+
+#: 不変量を問うための配置サンプル。固定の seed で並べるのは、落ちた日に同じ配置を
+#: そのまま再現できるようにするため (乱数で緑になったり赤になったりさせない)。
+_SAMPLE_JOINTS = tuple(
+    tuple(random.Random(1145 + k).uniform(-math.pi, math.pi) for _ in range(6))
+    for k in range(24)
+) + ((0.0,) * 6, (math.pi,) * 6, (math.pi / 2, 0.0, 0.0, 0.0, 0.0, 0.0))
+
+
+# --- FK チェーン (ADR-145 D1) -------------------------------------------------
+#
+# 中間関節原点の期待値は **DH のコードを走らせずに手で積んだ**値 (ADR-127 の教訓:
+# 肘の 2 リンク問題を誤った平面で解いても桁と符号は妥当に見えるので、値を眺めても
+# 気づけない。捕まえたのは FK 往復で、かつ FK 自身を DH から独立に固定していたから)。
+#
+# 全関節 0 での手計算 (standard DH, α = [π/2,0,0,π/2,−π/2,0]):
+#   O0 = (0,0,0)                      ベース原点
+#   O1 = (0, 0, d1)                   Tz(d1) のみ
+#   O2 = O1 + a2·x1,  x1 = (1,0,0)    -> (a2, 0, d1)
+#   O3 = O2 + a3·x2,  x2 = (1,0,0)    -> (a2+a3, 0, d1)
+#   O4 = O3 + d4·z3,  z3 = (0,−1,0)   -> (a2+a3, −d4, d1)
+#   O5 = O4 + d5·z4,  z4 = (0,0,−1)   -> (a2+a3, −d4, d1−d5)
+#   O6 = O5 + d6·z5,  z5 = (0,−1,0)   -> (a2+a3, −d4−d6, d1−d5)
+_HAND_COMPUTED_ORIGINS_AT_ZERO = (
+    (0.0, 0.0, 0.0),
+    (0.0, 0.0, 0.1625),
+    (-0.425, 0.0, 0.1625),
+    (-0.425 - 0.3922, 0.0, 0.1625),
+    (-0.425 - 0.3922, -0.1333, 0.1625),
+    (-0.425 - 0.3922, -0.1333, 0.1625 - 0.0997),
+    (-0.425 - 0.3922, -0.1333 - 0.0996, 0.1625 - 0.0997),
+)
+
+
+def _origin(m):
+    return (m[3], m[7], m[11])
+
+
+def test_chain_origins_at_zero_match_the_hand_computed_values():
+    chain = forward_kinematics_chain(UR5E, (0.0,) * 6)
+    assert len(chain) == 7  # ベース原点 + 6 関節
+    for i, (got, want) in enumerate(zip(chain, _HAND_COMPUTED_ORIGINS_AT_ZERO)):
+        assert _origin(got) == pytest.approx(want, abs=1e-12), f"関節 {i} の原点"
+
+
+def test_chain_first_element_is_the_identity_base_frame():
+    """要素 0 はベース原点 (恒等)。線分の起点がここに在ることが腕の連結の前提。"""
+    chain = forward_kinematics_chain(UR5E, (0.3, -0.4, 0.5, -0.6, 0.7, -0.8))
+    assert chain[0] == pytest.approx(
+        (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+        abs=1e-15,
+    )
+
+
+def test_chain_last_element_is_exactly_forward_kinematics():
+    """`forward_kinematics` はこのチェーンの最終要素 — 計算の源は 1 つ (§1.1)。
+
+    独立実装のままにしていたら、途中段と最終段が別々にずれても両方「もっともらしい」
+    値を出す。ラッパにしたことをここで焼く。
+    """
+    for q in ((0.0,) * 6, (0.2, -0.8, 1.0, -0.3, 0.7, 0.1), (1.1,) * 6):
+        assert forward_kinematics_chain(UR5E, q)[-1] == pytest.approx(
+            forward_kinematics(UR5E, q), abs=1e-15
+        )
+
+
+def test_chain_preserves_the_declared_link_lengths_in_every_configuration():
+    """隣り合う原点の距離は DH の長さそのもの — 姿勢に依らない剛体の不変量。
+
+    値の表 (上) は 1 配置しか固定しないので、**他の配置では何も主張していない**。
+    こちらは全配置で成り立つ量を問うので、累積積の順序を取り違えた実装を落とす。
+    """
+    expected = (
+        UR5E.d1, abs(UR5E.a2), abs(UR5E.a3), UR5E.d4, UR5E.d5, UR5E.d6,
+    )
+    for q in _SAMPLE_JOINTS:
+        chain = forward_kinematics_chain(UR5E, q)
+        for i, want in enumerate(expected):
+            a, b = _origin(chain[i]), _origin(chain[i + 1])
+            got = math.dist(a, b)
+            assert got == pytest.approx(want, abs=1e-12), f"リンク {i + 1} の長さ"
+
+
+def test_first_link_origin_does_not_depend_on_any_joint():
+    """ベース -> 関節 1 の区間は**どの配置でも同じ場所**に在る。
+
+    `feasibility._JOINT_INDEPENDENT_LINKS` が干渉判定からこの 1 本を外す根拠が
+    これ。「定数なので候補を区別できない」が成り立たなくなったら除外は見逃しに
+    変わるので、除外の側ではなく**この不変量の側**を焼く。
+    """
+    for q in _SAMPLE_JOINTS:
+        assert _origin(forward_kinematics_chain(UR5E, q)[1]) == pytest.approx(
+            (0.0, 0.0, UR5E.d1), abs=1e-12
+        )
+
+
+def test_chain_rejects_wrong_joint_count():
+    with pytest.raises(ValueError):
+        forward_kinematics_chain(UR5E, (0.0, 0.0, 0.0))

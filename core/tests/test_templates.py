@@ -149,3 +149,76 @@ def test_camera_moved_to_wall_side_drops_visibility_l3_risk():
     # 遮蔽量は測定可能 (壁リム球の食い込み) -> occlusion near-miss が立つ。
     assert d.occlusion_nearest_miss is not None
     assert d.occlusion_nearest_miss > 0.0
+
+
+# --- 単腕ペデスタルセル (ADR-145 の受け入れフィクスチャ) ----------------------
+
+_PEDESTAL_TEMPLATE = (
+    _REPO_ROOT / "templates" / "single-arm-pedestal-cell" / "grasp-search.request.json"
+)
+
+
+def _load_pedestal_request(*, declare_kinematics: bool = True) -> GraspSearchRequest:
+    raw = json.loads(_PEDESTAL_TEMPLATE.read_text(encoding="utf-8"))
+    if not declare_kinematics:
+        # 対照: 宣言を外すと腕スイープは起動しない (ADR-145 D4)。
+        raw["graspSearch"]["robot"].pop("kinematics")
+    return GraspSearchRequest.model_validate(raw)
+
+
+def test_pedestal_template_rejects_the_arm_that_dives_into_its_own_plinth():
+    """ADR-145: 腕リンクの FK スイープだけが出せる棄却を受け入れ値として固定する。
+
+    **対照 (宣言なし) が 0 であることが主張の本体** — TCP 進入経路は一度も
+    ペデスタルに触れないので、宣言ありの 10 件は腕を見たからこそ出た差である。
+    対照が無いと「常に棄却する壊れたチェッカ」でも宣言あり側は緑になる。
+    """
+    declared = pipeline.search_report(_load_pedestal_request()).diagnostics
+    control = pipeline.search_report(
+        _load_pedestal_request(declare_kinematics=False)
+    ).diagnostics
+
+    assert declared.candidates_generated == control.candidates_generated == 36
+    assert control.rejected_by_interference == 0
+    assert declared.rejected_by_interference == 10
+    assert declared.feasible == 26
+    assert control.feasible == 36
+
+
+def test_pedestal_template_still_returns_usable_candidates():
+    """腕を見るようになっても**全滅しない** — 棄却が多すぎる実装はここで落ちる。
+
+    「厳しくすれば安全」ではない: 全候補を棄却する干渉判定は症状を消すが、
+    同時に機能も消す。通過が残ることを同じ受け入れ値で押さえる。
+    """
+    resp = pipeline.search_report(_load_pedestal_request()).response
+    assert len(resp.candidates) == 5
+    for c in resp.candidates:
+        assert c.score.interference_free
+        assert c.score.ik_solvable
+    ranks = [c.rank for c in resp.candidates]
+    assert ranks == list(range(1, len(resp.candidates) + 1))
+
+
+def test_pedestal_template_funnel_identity_holds_with_the_arm_stage():
+    """ファネル恒等式は腕リンクが増えても不変 (生成 = Σ棄却 + 通過)。"""
+    for declare in (True, False):
+        d = pipeline.search_report(
+            _load_pedestal_request(declare_kinematics=declare)
+        ).diagnostics
+        rejected = (
+            d.rejected_by_reach
+            + d.rejected_by_visibility
+            + d.rejected_by_ik
+            + d.rejected_by_interference
+            + d.rejected_by_grasp
+        )
+        assert d.candidates_generated == rejected + d.feasible
+
+
+def test_pedestal_template_response_conforms_to_the_contract():
+    """契約は不変 (ADR-145 は response schema を 1 バイトも変えない)。"""
+    resp = pipeline.search_report(_load_pedestal_request()).response
+    Draft202012Validator(load_response_schema()).validate(
+        json.loads(resp.model_dump_json(by_alias=True))
+    )

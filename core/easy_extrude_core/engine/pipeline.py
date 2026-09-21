@@ -53,6 +53,7 @@ from .feasibility import (
     JointSolution,
     NaiveIkSolver,
     NaiveParallelJawGraspChecker,
+    NaiveArmSweepCollisionChecker,
     NaiveSightlineVisibilityChecker,
     NaiveSphereCollisionChecker,
     VisibilityChecker,
@@ -63,7 +64,7 @@ from .feasibility import (
 from .objectives import evaluate_objectives
 from .pose_codec import pose_to_payload
 from .scoring import weighted_sum
-from .ur_solver import ik_solver_from_declaration
+from .ur_solver import UniversalRobotsIkSolver, ik_solver_from_declaration
 from .types import (
     Camera,
     GripperKind,
@@ -322,11 +323,19 @@ def search_report(
             request.grasp_search.model_dump(by_alias=True)
         )
         solver = declared if declared is not None else NaiveIkSolver()
-    checker = (
-        collision_checker
-        if collision_checker is not None
-        else NaiveSphereCollisionChecker()
-    )
+    # 干渉チェッカも 3 段 (優先順): 注入 > 宣言された運動学で腕を見る版 > 素朴既定。
+    # **分岐は型で行う** (原則 #2) — 「DH を持っていそうか」を getattr で嗅ぐと、
+    # 別の解析解ソルバが来た日に黙って腕を見なくなる。
+    if collision_checker is not None:
+        checker: CollisionChecker = collision_checker
+    elif isinstance(solver, UniversalRobotsIkSolver):
+        # ADR-145: 腕リンクの FK スイープを既存の進入経路判定に**足す** (置き換えない)。
+        # 運動学を宣言したリクエストでだけ有効になるので、既存テンプレの答えは不変。
+        checker = NaiveArmSweepCollisionChecker(
+            dh=solver.dh, inner=NaiveSphereCollisionChecker()
+        )
+    else:
+        checker = NaiveSphereCollisionChecker()
     vis_checker = (
         visibility_checker
         if visibility_checker is not None
@@ -394,7 +403,15 @@ def search_report(
                 ):
                     occlusion_nearest_miss = occlusion
                 continue
-        if not interference_free(candidate, problem.obstacles, checker):
+        # ADR-135 D2 で保持した解をそのまま渡す (解き直さない)。腕を見ないチェッカは
+        # 無視し、見るチェッカだけが `JointSolution` のときに腕を再構成する。
+        if not interference_free(
+            candidate,
+            problem.obstacles,
+            checker,
+            solution=ik_solution,
+            robot=problem.robot,
+        ):
             rejected_by_interference += 1
             continue
         objective_scores = evaluate_objectives(candidate, problem, objective_names)

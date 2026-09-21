@@ -15,6 +15,9 @@ from easy_extrude_core.contract import (
     GraspSearchDeclaration,
     GraspSearchRequest,
 )
+from easy_extrude_core.engine.feasibility import JointSolution
+from easy_extrude_core.engine.ur_kinematics import UrDhParameters
+from easy_extrude_core.engine.ur_solver import UniversalRobotsIkSolver
 from easy_extrude_core.engine import (
     Camera,
     GraspCandidate,
@@ -24,8 +27,10 @@ from easy_extrude_core.engine import (
     NaiveParallelJawGraspChecker,
     NaiveSuctionGraspChecker,
     NaiveSightlineVisibilityChecker,
+    NaiveArmSweepCollisionChecker,
     NaiveSphereCollisionChecker,
     NormSpec,
+    arm_link_segments,
     Obstacle,
     Pose,
     Problem,
@@ -179,6 +184,150 @@ def test_naive_collision_blocks_approach_path():
     far = (Obstacle(center=Vec3(0.7, 5.0, 0.0), radius=0.1),)
     assert interference_free(blocked, near, checker) is False
     assert interference_free(blocked, far, checker) is True
+
+
+# --- 腕リンクの FK スイープ (ADR-145) ----------------------------------------
+#
+# 実数は `examples/layout_pick_place_cell.json` (単腕ピック&プレイスセル) をワイヤ単位
+# (m) に直したもの。障害物は front の `obstaclesExcluding` と同じ**外接球** (箱の対角
+# 半分) で作る — ここを箱で書くと、front が実際に送る形とは別のものを検査してしまう。
+
+_UR5E = UrDhParameters(d1=0.1625, a2=-0.425, a3=-0.3922, d4=0.1333, d5=0.0997, d6=0.0996)
+
+
+def _bounding_sphere_mm(center_mm, size_mm):
+    cx, cy, cz = center_mm
+    sx, sy, sz = size_mm
+    return Obstacle(
+        center=Vec3(cx / 1000.0, cy / 1000.0, cz / 1000.0),
+        radius=math.sqrt(sx * sx + sy * sy + sz * sz) / 2.0 / 1000.0,
+    )
+
+
+#: ロボットが載っているペデスタル (300x300x120 @ z=860mm)。
+_PEDESTAL = _bounding_sphere_mm((-120, 0, 860), (300, 300, 120))
+#: ベースはペデスタル上面 (z=920mm) に据わる。
+_CELL_BASE = Vec3(-0.120, 0.0, 0.920)
+_CELL_ROBOT = Robot(base=_CELL_BASE, reach_min=0.0, reach_max=0.95)
+
+
+def _supply_bin_candidate():
+    """供給ビン上面の把持点 (上から進入)。報告された症状の入力そのもの。"""
+    grip = Vec3(0.200, 0.150, 0.950)
+    approach = Vec3(0.0, 0.0, -1.0)
+    return GraspCandidate(
+        pose=Pose(position=grip, approach=approach, roll=0.0),
+        pre_grasp=grip - approach.scaled(0.1),
+        surface_normal=Vec3(0, 0, 1),
+    )
+
+
+def test_the_pedestal_bounding_sphere_contains_the_robot_base():
+    """除外規則が要る理由を**数で**固定する (これが成り立つ限り先頭リンクは常に衝突)。
+
+    この assert が落ちる日は、障害物表現が変わった日 (DEF-036 の箱/半空間) である。
+    そのとき `_JOINT_INDEPENDENT_LINKS` の除外は「必要な回避」から「見逃し」へ意味が
+    変わるので、除外を消す判断をここで問われる。
+    """
+    assert _CELL_BASE.distance_to(_PEDESTAL.center) < _PEDESTAL.radius
+
+
+def test_arm_sweep_rejects_the_elbow_that_dives_into_the_pedestal():
+    """報告された症状: 把持点はペデスタルから離れているのに上腕が台にめり込む。
+
+    **TCP 経路だけを見るチェッカは同じ候補を通す**ことを同じテストで主張する —
+    対照が無いと「常に True を返す壊れたチェッカ」でも緑になる。
+    """
+    solver = UniversalRobotsIkSolver(dh=_UR5E)
+    candidate = _supply_bin_candidate()
+    solution = solver.solve(candidate, _CELL_ROBOT)
+    assert isinstance(solution, JointSolution)
+
+    tcp_only = NaiveSphereCollisionChecker()
+    sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=tcp_only)
+    obstacles = (_PEDESTAL,)
+
+    assert interference_free(
+        candidate, obstacles, tcp_only, solution=solution, robot=_CELL_ROBOT
+    ) is True
+    assert interference_free(
+        candidate, obstacles, sweep, solution=solution, robot=_CELL_ROBOT
+    ) is False
+
+
+def test_arm_sweep_accepts_when_no_link_reaches_the_obstacle():
+    """健全性: 腕から遠い障害物では通る (全部棄却する実装を落とす負の対照の対)。"""
+    solver = UniversalRobotsIkSolver(dh=_UR5E)
+    candidate = _supply_bin_candidate()
+    solution = solver.solve(candidate, _CELL_ROBOT)
+    sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=NaiveSphereCollisionChecker())
+    far = (Obstacle(center=Vec3(0.0, 9.0, 0.0), radius=0.1),)
+    assert interference_free(
+        candidate, far, sweep, solution=solution, robot=_CELL_ROBOT
+    ) is True
+
+
+def test_arm_sweep_is_bit_identical_when_kinematics_is_not_declared():
+    """ADR-145 D4: 占位解 (`IkSolution` だが `JointSolution` でない) では腕を見ない。
+
+    `NaiveIkSolver` が返すのは 1 個の数であって 6 関節の配置ではない。埋めて描けば
+    誰も決めていない腕を判定にかけることになるので、**腕の段そのものが起動しない**
+    ことを問う。「腕が当たらなかった」ではなく「腕を見ていない」が正しい状態。
+    """
+    candidate = _supply_bin_candidate()
+    placeholder = NaiveIkSolver().solve(candidate, _CELL_ROBOT)
+    assert placeholder is not None and not isinstance(placeholder, JointSolution)
+
+    assert arm_link_segments(_UR5E, placeholder, _CELL_ROBOT) == ()
+
+    tcp_only = NaiveSphereCollisionChecker()
+    sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=tcp_only)
+    obstacles = (_PEDESTAL,)
+    assert sweep.in_collision(
+        candidate, obstacles, solution=placeholder, robot=_CELL_ROBOT
+    ) == tcp_only.in_collision(
+        candidate, obstacles, solution=placeholder, robot=_CELL_ROBOT
+    )
+
+
+def test_arm_link_segments_skips_only_the_joint_independent_link():
+    """返るのは 5 本 (6 リンク中、配置に依存しない先頭 1 本を除く)。
+
+    本数を数えるのは、除外が 1 本から静かに増えると**見逃しが増える**のに結果は
+    「干渉なし」という正しい形で返るため (原則 #31 — 数えない不在は検査を素通りする)。
+    """
+    solver = UniversalRobotsIkSolver(dh=_UR5E)
+    solution = solver.solve(_supply_bin_candidate(), _CELL_ROBOT)
+    segments = arm_link_segments(_UR5E, solution, _CELL_ROBOT)
+    assert len(segments) == 5
+    # 連結していること (前の終点 == 次の始点) — 途切れた腕は間を見ない。
+    for (_a, b), (c, _d) in zip(segments, segments[1:]):
+        assert b == c
+
+
+def test_arm_link_segments_follow_the_declared_base_orientation():
+    """据付姿勢 (ADR-129 D2) を宣言したら腕もその姿勢で建つ。
+
+    IK は目標をベース座標へ**逆回転して**解くので、描く側だけ恒等のままだと
+    「解いた腕」と「判定する腕」が食い違う。同じ仮定を使っていることを焼く。
+    """
+    solver = UniversalRobotsIkSolver(dh=_UR5E)
+    solution = solver.solve(_supply_bin_candidate(), _CELL_ROBOT)
+    upright = arm_link_segments(_UR5E, solution, _CELL_ROBOT)
+    # z 軸まわり 180 度。
+    turned_robot = Robot(
+        base=_CELL_BASE, reach_min=0.0, reach_max=0.95,
+        base_orientation=Quaternion(0.0, 0.0, 1.0, 0.0),
+    )
+    turned = arm_link_segments(_UR5E, solution, turned_robot)
+    assert len(turned) == len(upright)
+    for (ua, _ub), (ta, _tb) in zip(upright, turned):
+        # ベースからの相対ベクトルが x/y 反転している。
+        u = ua - _CELL_BASE
+        t = ta - _CELL_BASE
+        assert t.x == pytest.approx(-u.x, abs=1e-12)
+        assert t.y == pytest.approx(-u.y, abs=1e-12)
+        assert t.z == pytest.approx(u.z, abs=1e-12)
 
 
 # --- objective 正規化 / スコア ------------------------------------------------

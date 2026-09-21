@@ -1,0 +1,182 @@
+{
+  "contractVersion": 6,
+  "layoutVersion": "layout/1.0",
+  "graspSearch": {
+    "robot": {
+      "base": [
+        -0.12,
+        0.0,
+        0.92
+      ],
+      "kinematics": {
+        "kind": "universalRobots",
+        "dh": {
+          "d1": 0.1625,
+          "a2": -0.425,
+          "a3": -0.3922,
+          "d4": 0.1333,
+          "d5": 0.0997,
+          "d6": 0.0996
+        }
+      }
+    },
+    "plan": {
+      "reachMin": 0.0,
+      "reachMax": 0.95,
+      "wristConeHalfAngle": 3.14159265
+    },
+    "gripper": {
+      "kind": "parallelJaw",
+      "maxOpening": 0.16,
+      "fingerClearance": 0.01
+    },
+    "target": {
+      "surfaceSamples": [
+        {
+          "point": [
+            0.14,
+            0.105,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.14,
+            0.15,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.14,
+            0.195,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.2,
+            0.105,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.2,
+            0.15,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.2,
+            0.195,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.26,
+            0.105,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.26,
+            0.15,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "point": [
+            0.26,
+            0.195,
+            0.95
+          ],
+          "normal": [
+            0,
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    "obstacles": [
+      {
+        "center": [
+          -0.12,
+          0.0,
+          0.86
+        ],
+        "radius": 0.220454
+      },
+      {
+        "center": [
+          0.2,
+          -0.15,
+          0.82
+        ],
+        "radius": 0.147139
+      }
+    ],
+    "sampling": {
+      "approachTiltAngles": [
+        0,
+        0.35
+      ],
+      "rollAngles": [
+        0,
+        1.5708
+      ],
+      "preGraspDistance": 0.08,
+      "clearanceReference": 0.05
+    },
+    "objectiveWeights": {
+      "grasp_stability": 1.0,
+      "approach_clearance": 0.7,
+      "reach_margin": 0.3
+    },
+    "topN": 5
+  }
+}

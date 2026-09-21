@@ -101,12 +101,23 @@ def mat_inverse_rigid(m: Mat4) -> Mat4:
     )
 
 
-def forward_kinematics(dh: UrDhParameters, joints: "tuple[float, ...]") -> Mat4:
-    """関節角 6 つ -> ベースからフランジまでの同次変換 (純粋)。
+def forward_kinematics_chain(
+    dh: UrDhParameters, joints: "tuple[float, ...]"
+) -> "tuple[Mat4, ...]":
+    """関節角 6 つ -> **累積積の各段** = ベース原点と各関節原点の同次変換 7 個 (純粋)。
 
-    逆解の**正しさの物差し**でもある: IK が返した解を FK に通せば元の目標姿勢に戻る。
-    多対一の写像なので `IK(FK(q)) == q` は成り立たない (解は最大 8 個) が、
-    `FK(IK(T)) == T` は全解について成り立つ — 原則 #28 の商・正規形の形。
+    `forward_kinematics` がフランジ (最終段) だけを返すのに対し、こちらは途中の段も
+    返す。要素 0 は恒等 (ベース原点)、要素 i (1..6) は関節 i までの累積 `T_0..i`。
+    隣り合う 2 段の並進ぶんを結べば **リンク 1 本の線分近似**になる — これが
+    ADR-145 の干渉判定が腕の実ジオメトリを見るための唯一の入口である。
+
+    **標準 DH の frame i はリンク i の「終わり」に在る**ので、ここで返る原点は
+    物理的な関節の中心と厳密には一致しない (a_i / d_i のオフセットぶんずれる)。
+    線分近似がそもそも近似である以上これは誤差の一部であり、**正確な腕の体積が
+    要るなら線分ではなくリンクのメッシュを持つ**しかない (ADR-145 の限界として宣言)。
+
+    `forward_kinematics` はこの関数の最終要素であり、**計算の源はここ 1 つ**
+    (§1.1 — 同じ累積積を 2 か所に書かない)。
     """
     if len(joints) != 6:
         raise ValueError(f"UR は 6 軸: 関節値が {len(joints)} 個ある")
@@ -116,10 +127,25 @@ def forward_kinematics(dh: UrDhParameters, joints: "tuple[float, ...]") -> Mat4:
         0.0, 0.0, 1.0, 0.0,
         0.0, 0.0, 0.0, 1.0,
     )
+    chain = [t]
     d, a = dh.d, dh.a
     for i in range(6):
         t = mat_multiply(t, dh_transform(joints[i], d[i], a[i], _ALPHA[i]))
-    return t
+        chain.append(t)
+    return tuple(chain)
+
+
+def forward_kinematics(dh: UrDhParameters, joints: "tuple[float, ...]") -> Mat4:
+    """関節角 6 つ -> ベースからフランジまでの同次変換 (純粋)。
+
+    逆解の**正しさの物差し**でもある: IK が返した解を FK に通せば元の目標姿勢に戻る。
+    多対一の写像なので `IK(FK(q)) == q` は成り立たない (解は最大 8 個) が、
+    `FK(IK(T)) == T` は全解について成り立つ — 原則 #28 の商・正規形の形。
+
+    `forward_kinematics_chain` の最終要素を返す薄いラッパ (ADR-145 D1)。独立実装に
+    しないのは、途中段と最終段で**別々にずれる**余地を残さないため (§1.1)。
+    """
+    return forward_kinematics_chain(dh, joints)[-1]
 
 
 def _clamp_unit(x: float) -> float:
