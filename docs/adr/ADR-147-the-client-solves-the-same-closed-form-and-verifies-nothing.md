@@ -172,6 +172,25 @@ z 成分で切り替わるため)。復元は (approach, roll) まで戻して�
    *この PR が「粗い判定は正しい形の嘘を返す」と何度も書いた、まさにその形を自分で
    踏んだ*ので記録しておく。
 
+**3. スタブが 2 か月以上、契約と違う gauge を喋っていた — 読む機械が現れるまで。**
+`mocks/graspStub/` の `frame.orientation` は「**+X** を approach に向ける」四元数で、
+契約の FRAME_CONVENTION (**+Z = −approach**) とは別物だった。さらに `frame.position`
+には**把持点ではなく pre-grasp** が載っていた。復元すると approach は `[0,0,−1]` の
+はずが `[−1,0,0]` — *完全に違う向き*である。
+
+**conformance も e2e も緑だった。** スキーマは形しか見ない (`[x,y,z,w]` であれば通る) し、
+読み手が `frame.position` しか使っていなかったからである: ゴーストは位置だけで描け、
+ADR-144 の近似も位置しか合わせていなかったので、**四元数は誰にも読まれないまま
+間違っていられた**。ADR-147 でクライアントが姿勢まで解いた瞬間に、間違った approach
+から IK を解くことになって表に出た。
+
+これは ADR-115 (「宣言は在るが読む機械が無い」) の一般化である:
+**契約に載っている値でも、読む機械が無いあいだは何であってもよい。**
+`mocks/graspStub/conformance.test.js` に**意味**を問う検査を足した — 復元した approach
+がスタブの意図した approach と向かい合うか、位置が把持点か。「単位ベクトルである」
+では足りない (間違った gauge で復元した approach も単位ベクトルなので、形だけ見る
+検査は両方を通す)。負の対照で確認済み: 旧実装に戻すと両方とも落ちる。
+
 **波及 (blast radius):** 新設 `src/robotics/urKinematics.js` ·
 `src/robotics/graspPoseGauge.js` · `scripts/gen-cross-language-ik.py` ·
 `scripts/gen-cross-language-gauge.py` · フィクスチャ 2 本。
@@ -180,9 +199,9 @@ z 成分で切り替わるため)。復元は (approach, roll) まで戻して�
 `src/controller/GraspController.js` (`_clientSolvedArmPose`、`robotChain` 注入の削除) ·
 `src/controller/AppController.js` · `src/view/RobotStage.js` / `RobotStageSet.js` (文言) ·
 `src/components/Grasp/GraspSearchPanel.jsx` (キャプション) · `e2e/grasp-stub.spec.js` ·
-`core/tests/test_ur_kinematics.py` (準拠の消費者)。
+`core/tests/test_ur_kinematics.py` (準拠の消費者) · **`mocks/graspStub/solve.js`** (gauge と位置の訂正) · `mocks/graspStub/conformance.test.js` (意味を問う検査)。
 **触っていない**: `packages/grasp-contract` (`contractVersion=6` 据え置き) · `server/` ·
-`core/` の実装コード · `mocks/graspStub/` · ADR-144 の D2/D3/D4 · ADR-127 D5 の規則。
+`core/` の実装コード · ADR-144 の D2/D3/D4 · ADR-127 D5 の規則。
 
 **状態台帳 (核 §1.4):** `docs/STATE_LEDGER.md` の「腕が描く関節配置」行の権威サブ次元を
 `solved`/`approximate` → `solved`/`unverified` へ更新し、「言語をまたぐ導出の個数」行の

@@ -146,25 +146,58 @@ function forwardAxis(q) {
 }
 
 /**
- * Build the identity quaternion that points the tool along `approach`.
- * Presentation derives the visible gripper pose from this; it is a plausible
- * orientation, not a solved wrist configuration.
+ * Build the candidate frame's quaternion from `approach`, in the contract's
+ * FRAME_CONVENTION: **+Z = −approach**, +X a deterministic reference axis turned
+ * by roll (the stub has no roll, so roll = 0).
+ *
+ * ## これは 2026-09-21 に直した本物のズレである (ADR-147)
+ *
+ * 以前ここは「**+X** を approach に向ける」四元数を返しており、`core/` の
+ * `pose_codec.py` (+Z = −approach) とは**別の gauge** だった。誰も気づかなかったのは、
+ * 読み手が `frame.position` しか使っていなかったから — ゴーストは位置だけで描け、
+ * ADR-144 の近似も位置しか合わせていなかったので、**四元数は誰にも読まれないまま
+ * 間違っていられた**。ADR-147 でクライアントが姿勢まで解くようになった瞬間に、
+ * 間違った approach から IK を解くことになって表に出た。
+ *
+ * ADR-120 が記録した形そのもの (同じ欠陥が生産者ごとに独立に住む) で、しかも今回は
+ * **読む機械が現れるまで存在しなかった**: 規約の一致を問う検査が無ければ、
+ * 契約に載っている値でも誰も読まないあいだは何であってもよい。
+ * `conformance.test.js` がその検査を引き受ける。
  */
-function orientationFor(approach) {
-  const f = [1, 0, 0]
-  const d = dot(f, approach)
-  if (d > 1 - 1e-9)  return [0, 0, 0, 1]
-  if (d < -1 + 1e-9) return [0, 0, 1, 0]
-  const axis = [
-    f[1] * approach[2] - f[2] * approach[1],
-    f[2] * approach[0] - f[0] * approach[2],
-    f[0] * approach[1] - f[1] * approach[0],
-  ]
-  const u = unit(axis)
-  if (!u) return [0, 0, 0, 1]
-  const angle = Math.acos(Math.max(-1, Math.min(1, d)))
-  const s = Math.sin(angle / 2)
-  return [u[0] * s, u[1] * s, u[2] * s, Math.cos(angle / 2)]
+function candidateFrameOrientation(approach) {
+  const z = scale(approach, -1)                 // FRAME_CONVENTION: +Z = −approach
+  // `pose_codec._basis_from_z` と同じ参照選択 (閾値 0.9 も同値 — gauge を共有する)。
+  const ref = Math.abs(z[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]
+  const bx = unit(cross(ref, z))
+  if (!bx) return [0, 0, 0, 1]
+  const by = cross(z, bx)
+  return quaternionFromColumns(bx, by, z)       // roll = 0 なので bx がそのまま +X
+}
+
+const cross = (a, b) => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+]
+
+/** 回転行列の 3 列 → 四元数 [x,y,z,w] (`pose_codec._matrix_to_quaternion` と同じ). */
+function quaternionFromColumns(x, y, z) {
+  const m = [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]]
+  const tr = m[0][0] + m[1][1] + m[2][2]
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1) * 2
+    return [(m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s, 0.25 * s]
+  }
+  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2
+    return [0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s, (m[2][1] - m[1][2]) / s]
+  }
+  if (m[1][1] > m[2][2]) {
+    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2
+    return [(m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s, (m[0][2] - m[2][0]) / s]
+  }
+  const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2
+  return [(m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s, (m[1][0] - m[0][1]) / s]
 }
 
 /**
@@ -435,7 +468,11 @@ export function stubSolve(request, contractVersion) {
     feasible.push({
       pose: {
         kind:  'endEffector',
-        frame: { position: preGrasp, orientation: orientationFor(approach) },
+        // **把持点**であって pre-grasp ではない (`core/` の `pose_to_payload` は
+        // `pose.position` を載せる)。以前ここは `preGrasp` を載せており、進入距離
+        // ぶんずれた位置をゴーストが描いていた — 位置しか読まれないあいだは
+        // 「それらしい」ので気づけなかった、四元数と同じ形のズレである。
+        frame: { position: point, orientation: candidateFrameOrientation(approach) },
       },
       score: {
         withinReach: true, visible: true, ikSolvable: true,
