@@ -269,7 +269,11 @@ const SUPPORT_LABELS = new Map([
 // (adr skill §GSN 併設: 起票と同時に木を起こす規律は無条件)。4 件とも機械可読な満期
 // (GREP:core/easy_extrude_core/engine/ur_kinematics.py・feasibility.py・
 // core/tests/test_engine.py) を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 47
+// 2026-09-21 (同日・実装後): 47 → 43。ADR-145 を実装し、上の 4 goal がすべて
+// support-verified になった。ADR-144 のときと**同じ日に同じ振れ方**をしたので記録して
+// おく — 起票と実装が同日に並ぶと baseline は上がって下がるが、上がったまま忘れられた
+// 日があれば「宣言された未支持」は静かに増える。下げるのを忘れないための痕跡がこの行。
+const DEBT_BASELINE = 43
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
