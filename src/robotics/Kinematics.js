@@ -174,12 +174,46 @@ function linspace(lo, hi, n) {
 }
 
 /**
+ * Per-joint sample counts for a grid: one number applies to every joint, an
+ * array names them one by one.
+ *
+ * The array form exists because a joint that cannot move the TCP (the wrist roll
+ * whose axis runs through the flange) contributes nothing but multiplies the grid
+ * — ADR-144's approximate preview gives such a joint ONE sample instead of `n`.
+ * A mismatched array throws rather than being padded: a missing count would be
+ * read as "somebody chose 1 for this joint", which is the invented default
+ * 原則 #31 forbids.
+ *
+ * @param {number|readonly number[]} samples
+ * @param {number} jointCount  how many movable joints the chain has
+ * @returns {number[]} one count per movable joint
+ */
+function perJointCounts(samples, jointCount) {
+  if (Array.isArray(samples)) {
+    if (samples.length !== jointCount) {
+      throw new MalformedChain(`samples[] has ${samples.length} entries for ${jointCount} movable joints`)
+    }
+  }
+  const counts = Array.isArray(samples) ? [...samples] : new Array(jointCount).fill(samples)
+  for (const n of counts) {
+    if (!Number.isInteger(n) || n < 1) throw new MalformedChain(`sample count must be a positive integer, got ${n}`)
+  }
+  return counts
+}
+
+/**
  * Cartesian product of per-joint sampled values → an array of `q` vectors.
  * Throws `MalformedChain` if the grid would exceed `maxConfigs` (bounded cost).
+ *
+ * @param {object} chain
+ * @param {number|readonly number[]} [samples]  one count for every joint, or one
+ *   per movable joint in chain order (see `perJointCounts`)
+ * @param {number} [maxConfigs]
  */
 export function sampleConfigs(chain, samples = 5, maxConfigs = MAX_SAMPLE_CONFIGS) {
   const movable = movableJoints(chain)
-  const axes = movable.map(j => linspace(jointSpan(j)[0], jointSpan(j)[1], samples))
+  const counts = perJointCounts(samples, movable.length)
+  const axes = movable.map((j, i) => linspace(jointSpan(j)[0], jointSpan(j)[1], counts[i]))
   const total = axes.reduce((n, a) => n * a.length, 1)
   if (total > maxConfigs) {
     throw new MalformedChain(`FK sample grid ${total} exceeds maxConfigs ${maxConfigs} (lower samples or joint count)`)

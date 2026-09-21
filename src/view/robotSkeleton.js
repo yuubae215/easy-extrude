@@ -42,6 +42,21 @@ export const TCP_LOCAL_SEED = {
 }
 
 /**
+ * The FK chain of the drawn skeleton (ADR-144) — the FIFTH consumer of the one
+ * URDF, after the render path, the tcp seed, `ROBOT_KINEMATICS` and the reach
+ * envelope.
+ *
+ * It feeds the client's approximate arm preview, which needs to measure where
+ * THIS arm's hand lands for a given joint vector. Deriving it from the same
+ * string the other four read means the arm the approximation describes cannot be
+ * a different arm from the one on screen — the ADR-141 lesson, applied to the
+ * one consumer that came after it.
+ *
+ * @type {{joints: Array<object>}}
+ */
+export const ROBOT_CHAIN = parseUrdfChain(ROBOT_URDF_TEXT)
+
+/**
  * The wire-shaped `robot.kinematics` declaration for this skeleton (ADR-127 /
  * DEF-030), DERIVED from the very string `RobotStage` parses to draw the arm.
  *

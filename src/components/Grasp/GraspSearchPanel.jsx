@@ -1397,6 +1397,35 @@ function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
         </div>
       )}
       <PoseFooter pose={c.pose} />
+      <ArmPreviewFooter reachSolution={sc.reachSolution} />
+    </div>
+  )
+}
+
+/**
+ * Who decided the arm this row poses — the wire fact, stated (ADR-144 D2/D4).
+ *
+ * The row says what the CONTRACT carries, never what the client managed to find:
+ * `solved` is `core/`'s configuration, anything else means nobody solved one and
+ * whatever arm appears is the client's unverified FK-sampled approximation —
+ * which is also why it appears translucent. Phrasing it as "any arm shown"
+ * rather than "the arm shown" keeps it true in the case where the approximation
+ * finds nothing within tolerance and the skeleton stays at rest (PHILOSOPHY #11:
+ * the caption may not promise a preview the sampler may decline to produce).
+ */
+function ArmPreviewFooter({ reachSolution }) {
+  if (!reachSolution) return null
+  if (reachSolution.kind === 'solved') {
+    return (
+      <div style={{ marginTop: '3px', fontSize: '10px', color: '#7a9' }}>
+        arm: solver's joint solution
+      </div>
+    )
+  }
+  return (
+    <div style={{ marginTop: '3px', fontSize: '10px', color: '#886' }}>
+      arm: no joint solution on the wire — any arm shown is an unverified client
+      approximation (position only)
     </div>
   )
 }

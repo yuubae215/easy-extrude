@@ -1,6 +1,6 @@
 # 144. クライアントの腕プレビューは「未決定の埋め合わせ」であって「もう一つの解法」ではない
 
-- Status: Proposed
+- Status: Accepted (実装済み 2026-09-21)
 - Date: 2026-09-21
 - Deciders: yuubae215, Claude (pairing)
 - Retires: なし — 純粋加法的な追加。ADR-135 が確定した `reachSolution` 判定・IK チップ表示・
@@ -150,28 +150,79 @@ ADR-053 がすでに許容し実装済みの「測定器」の**出力を変え�
   要る(ただし書き手の数は増えない — D4)。
 
 **検証(証拠):** 論証木は `docs/gsn/adr-144-an-approximate-preview-is-not-a-second-solver.gsn`
-(goal ごとの支えの正本はそちら)。本 ADR は Proposed であり、以下は実装 PR で閉じる予定の
-検証(現時点では全て未来形):
+(goal ごとの支えの正本はそちら)。起票時に「実装 PR で閉じる」と宣言した 5 つは、実装コミットで
+以下のとおり閉じた(実行結果は PR 本文に転記):
 
-- `reachSolution.kind === 'solved'` のとき近似探索が一切呼ばれないことのユニットテスト(D3)。
-- 近似結果の形が契約の `reachSolution` スキーマに対して ajv 上 invalid になることのテスト
-  (D2 の型分離が構造的に効いていることの機械的証拠 — 「別の名前を使った」という主張だけでは
-  弱く、実際にスキーマが拒否することを焼く)。
-- 許容誤差を超えたら `null`(rest のまま)になることのテスト(原則 #11 のフォールバック禁止)。
-- `RobotStageSet.previewSolution` が引数拡張後も唯一の書き手であることの確認(ADR-135 D3 の
-  性質が壊れていないこと)。
-- `pnpm test:contract` が無改変で green のまま(D2 — 契約に一切触れていないことの証拠)。
+- D3 のゲート — `solved` のとき近似探索が**一度も呼ばれない**ことを
+  `src/controller/GraspController.test.js` が焼く。「呼ばれなかった」は出力に痕跡を残さない
+  (どちらの枝でも payload は在る)ので、在るものではなく **鎖が触られた回数**を数える
+  (`countingChain` の Proxy — 原則 #31)。
+- D2 の型分離 — `src/robotics/ApproximateReachPreview.test.js` が契約の
+  `grasp-search-response.schema.json#/$defs/reachSolution` を ajv で compile し、近似結果が
+  **invalid** になることを焼く。同じ validator が `solved` / `undeclared` を **valid** と
+  するところまで同じテストで主張する(全部拒否する壊れた validator でも緑になるのを防ぐ
+  = 負の対照だけでは何も示さない)。
+- 原則 #11 — 許容誤差を超えたら `null`(ユニット)、および **実ブラウザで腕が rest のまま**
+  (e2e S11b)。S11b は S11 の対照で、「常に一番近いものを出す」実装は S11 では緑になり
+  S11b でだけ落ちる。
+- ADR-135 D3 の不変 — `RobotStageSet.previewSolution` は今も唯一の書き手(引数が広がっただけ)。
+  `previewAssignments` / `jointValuesFor` の N=2 テストは無改変で緑。
+- 契約不変 — `pnpm test:contract` 緑 (`contractVersion=6` のまま)。`packages/grasp-contract` ·
+  `core/` · `server/` · `mocks/graspStub/` はいずれも 1 行も変えていない。
 
-**波及(blast radius):** 新設: FK サンプリングを転用する純粋モジュール(`src/robotics/`
-配下、THREE-free)。変更: `src/controller/GraspController.js`(`_syncArmPreview` に
-`undeclared` 枝を追加)、`src/view/RobotStageSet.js`(`previewSolution` の引数形状拡張と
-`authority` に応じた視覚出し分け)。**触らない**: `packages/grasp-contract/*`・`core/*`・
-`server/*`・`mocks/graspStub/*`(スタブは `undeclared` を返し続ける — 正直さを変えない)。
+## 実装で分かったこと(起票時の前提との差分 — 原則 #19)
+
+**1. D1 は「最近傍サンプル 1 回」では Goal を満たさない。** 6 関節・限界 ±2π の格子では、
+1 回の総当たりの最近傍は数百 mm 外す(実測: 4 サンプル/関節で中央値 175mm)。そのまま許容誤差に
+かけると常に `null` = 腕は永久に動かない。実装は同じ格子を**窓を半分ずつ狭めながら再サンプル**
+する多スタート版にした(8 スタート × 12 ラウンド)。**新しい方程式は 1 行も足していない** —
+`sampleConfigs` + `forwardKinematics` を繰り返し呼ぶだけで、D1 の「測定器の出力を変える」
+範囲に留まる。実測は 100 点の到達可能点に対し 98% が 1mm 以内・1 回あたり約 57ms。
+
+**2. 手を動かせない関節は格子から外す。** UR の `wrist_3` は軸がフランジを通るので位置を
+1mm も変えない。それでも格子を 4 倍にするため、**測って**(`positionInfluentialJoints` —
+固定の 4 配置で各関節を小突いて TCP を見る)1 サンプルに畳む。手書きの除外リストにしなかったのは
+別の URDF が来た日に黙って嘘になるから(§1.1)。このために `sampleConfigs` に**関節ごとの
+サンプル数**(配列形)を足した — 長さが合わない配列は throw(埋めた 1 は「誰かが 1 を選んだ」に
+見える = 原則 #31)。
+
+**3. 巻き上がった等価解は巻き戻して返す。** 限界 ±2π なので格子は手首が 6.1 rad 回った配置を
+拾う。−0.2 rad と同じ物理回転・同じ手の位置だが、画面では誰も言っていない主張に見える。
+返す前に(−π, π] へ書き直す — **探索ではなく表記の正規化**で、FK が変わっていないことは
+「宣言した `errorMm` と返り値を FK に通した実測が一致する」形で焼いてある。
+
+**4. 一致させているのは手の位置だけで、姿勢は見ていない。** 6 自由度を位置 3 拘束に当てるので
+手首の向きは自由に残る。これは精度の不足ではなく**この近似が何でないか**の宣言であり、
+ゴースト表示(半透明)と行のキャプションが必要な理由そのもの。契約の `reachSolution` が
+姿勢まで含む解であるのと非対称であることを、ここに明示しておく。
+
+**5. 既定のシーンでは、そもそも腕が対象に届かない。** Shift+A で足したロボットは原点から
+2.8m に立ち(ADR-083)、UR5e の到達は 0.9m。だから既定シーンでは近似は正直に `null` を返し、
+腕は rest のままになる — **仕様どおりだが Goal の証拠にはならない**。e2e S11 は Home の
+単腕ピック&プレイスセル(台座と対象が同じセルに在る実配置)で問い、既定シーン側は S11b が
+「動かないこと」を焼く。**近似が使えるのは腕が実際に届くセルに限る**という限界は、ADR の
+Goal 文の暗黙の前提だったものをここで明示に変えたもの。
+
+**6. 証拠の面を 1 つ足した。** 「GitHub Pages で腕が動く」は画素の主張なのでユニットレーンでは
+原理的に問えない(THREE も URDF も `?raw` も無い)。`window.__easyExtrude.armPreview()` が
+各 stage の**書き込んだ後の関節角と unverified フラグ**を読み戻す(ADR-137 の `worldSpan()` と
+同じ手)。「渡したつもり」では緑にならない。
+
+**波及(blast radius):** 新設: `src/robotics/ApproximateReachPreview.js`(THREE-free の純粋
+モジュール)。変更: `src/robotics/Kinematics.js`(`sampleConfigs` に関節ごとのサンプル数 —
+加法的)、`src/domain/robotConfig.js`(`needsApproximatePreview` / `previewPayloadFor`)、
+`src/controller/GraspController.js`(`_syncArmPreview` の `undeclared` 枝と鎖の注入)、
+`src/view/RobotStage.js` / `RobotStageSet.js`(`previewSolution` の引数形状と未検証表示・
+読み戻し用スナップショット)、`src/view/robotSkeleton.js`(`ROBOT_CHAIN` = 同じ URDF の
+5 人目の消費者)、`src/controller/AppController.js`(注入と `armPreview()`)、
+`src/components/Grasp/GraspSearchPanel.jsx`(行のキャプション)。**触っていない**:
+`packages/grasp-contract/*`・`core/*`・`server/*`・`mocks/graspStub/*`(スタブは
+`undeclared` を返し続ける — 正直さを変えない)。
 
 **状態台帳(核 §1.4):** 実装コミットで `docs/STATE_LEDGER.md` の「腕が描く関節配置
-(骨格プレビュー)」行を更新する必要がある(ADR-135 が確定した `rest`/`preview` の 2 値に、
-`preview` 側の権威サブ次元 `solved`/`approximate` が乗る形になる見込み)。ADR のみの本セッション
-では台帳は編集しない(核 §4 — 状態の権威更新はコードと同じコミットで行う)。
+(骨格プレビュー)」行を更新した — ADR-135 の `rest`/`preview` 2 値の `preview` 側に権威
+サブ次元 `solved`/`approximate` が乗り、`approximate` を持つ stage の基数は `0..1`
+(主語の腕だけ、しかも届くときだけ)。
 
 ## Lens notes
 

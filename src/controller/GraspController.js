@@ -60,13 +60,15 @@ import {
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
 import { mmToM, mmPointToM, mPointToMM } from '../domain/worldUnits.js'
+import { needsApproximatePreview, previewPayloadFor } from '../domain/robotConfig.js'
+import { approximateJointsFor, toBaseFrame } from '../robotics/ApproximateReachPreview.js'
 
 export class GraspController {
   /**
    * @param {import('./AppController.js').AppController} ctrl
    * @param {{ getState: () => any }} store  injected uiStore (useUIStore)
    * @param {{ createGhostView?: () => import('../view/GraspGhostView.js').GraspGhostView,
-   *           robotKinematics?: object|null }} [deps]
+   *           robotKinematics?: object|null, robotChain?: object|null }} [deps]
    *        `createGhostView` — lazy GraspGhostView factory (THREE side; absent in
    *        the THREE-free test lane, where the ghost path degrades to a no-op).
    *        `robotKinematics` — the `robot.kinematics` declaration derived from the
@@ -90,6 +92,16 @@ export class GraspController {
      * @type {{id: string, label: string, reach: object|null}|null}
      */
     this._robotModel = deps.robotModel ?? null
+    /**
+     * The FK chain of the arm the app DRAWS (ADR-144 D1) — the input to the
+     * client's approximate preview, injected for the same reason
+     * `robotKinematics` is (its source module reads the URDF through Vite's
+     * `?raw`). Absent ⇒ no approximation is attempted and an `undeclared`
+     * candidate rests the arm exactly as it did before ADR-144: the fallback of
+     * a missing instrument is *nothing*, never a guess.
+     * @type {object|null}
+     */
+    this._robotChain = deps.robotChain ?? null
     this._createSampleView = deps.createSampleView ?? null
     /** @type {object|null} sole-owned grasp-location overlay (ADR-128) */
     this._sampleView = null
@@ -773,10 +785,13 @@ export class GraspController {
    * other arm (ADR-135 D4).
    *
    * Reads `score.reachSolution`, the closed kind union the solver decided
-   * (contract v6): `solved` hands over its six joint angles, `undeclared` hands
-   * over `null` — the request declared no `robot.kinematics`, so nobody computed
-   * a configuration and drawing one would invent it. No candidate (hover
-   * cleared, nothing selected) is `null` too.
+   * (contract v6): `solved` hands over its six joint angles. `undeclared` means
+   * nobody computed a configuration — since ADR-144 the CLIENT may then offer an
+   * FK-sampled approximation, handed over as a payload that says `approximate`
+   * so the view can draw it as the unverified thing it is. When even that finds
+   * nothing within tolerance the answer stays `null`, and so it is for no
+   * candidate at all (hover cleared, nothing selected): the arm rests rather than
+   * being posed into a configuration nobody produced.
    *
    * The subject is `selectRobot`'s answer, NOT the viewport selection: the arm
    * that shows a solution must be the arm the search solved for (ADR-130).
@@ -787,11 +802,50 @@ export class GraspController {
     const stages = this._ctrl._sceneView?.robotStages
     if (!stages) return              // THREE-free lane: no skeletons to pose
     const reach = candidate?.score?.reachSolution
-    const joints = reach?.kind === 'solved' ? reach.joints : null
     // `_selectedRobot()` is the ONE place the subject is resolved (原則 #25 /
     // §1.1) — re-deriving `selectRobot(...)` here would be a second source that
     // drifts the day the 0/1/N rule changes.
-    stages.previewSolution(this._selectedRobot()?.id ?? null, joints)
+    const robotEntity = this._selectedRobot()
+    // ADR-144 D3: the gate is the wire fact `core/` already decided, read through
+    // the one named predicate. Nothing here asks "are we on GitHub Pages" — that
+    // environment is simply where `undeclared` is permanent.
+    const approximation = needsApproximatePreview(reach)
+      ? this._approximateArmPose(candidate, robotEntity)
+      : null
+    stages.previewSolution(robotEntity?.id ?? null, previewPayloadFor(reach, approximation))
+  }
+
+  /**
+   * The client's own, NON-AUTHORITATIVE guess at where the arm would be for a
+   * candidate `core/` returned without a joint configuration (ADR-144 D1).
+   *
+   * No solving happens in `src/`: this only converts the candidate's wire pose
+   * into the robot's base frame and hands it to the FK-sampling instrument
+   * ADR-053 already blessed. The frame conversion reuses
+   * `_resolveRobotDeclaration` — the same resolution the request itself was built
+   * from, so the pose the sampler aims at and the pose the solver was asked about
+   * are the same pose (§1.1).
+   *
+   * Returns `null` for every case where the answer would be invented: no chain
+   * injected, no robot, no resolvable base, an unrenderable pose, or a sampled
+   * hand that misses by more than the declared tolerance.
+   *
+   * @param {object|null} candidate
+   * @param {object|null} robotEntity  the search subject
+   * @returns {{origin: string, joints: number[], toleranceMm: number, errorMm: number}|null}
+   */
+  _approximateArmPose(candidate, robotEntity) {
+    if (!this._robotChain || !robotEntity) return null
+    const wireFrame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
+    if (!wireFrame) return null
+    const declaration = this._resolveRobotDeclaration(robotEntity)
+    if (!declaration.base) return null
+    // Wire meters in, URDF meters out — no unit boundary is crossed here, only a
+    // frame one (the chain walks from the base, the candidate is in world).
+    return approximateJointsFor(
+      this._robotChain,
+      toBaseFrame(wireFrame.position, declaration.base, declaration.baseOrientation),
+    )
   }
 
   /** Hide the ghost and drop the transient hover (state transitions out of results). */

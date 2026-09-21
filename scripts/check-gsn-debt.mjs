@@ -254,7 +254,13 @@ const SUPPORT_LABELS = new Map([
 // ほぼ全部の goal が exploring になる。4 件とも機械可読な満期 (PATH:src/robotics/
 // ApproximateReachPreview.test.js · GREP:src/controller/GraspController.test.js ·
 // GREP:src/domain/robotConfig.test.js) を持つので分子 (G3) は動かない。
-const DEBT_BASELINE = 47
+// 2026-09-21 (同日・実装後): 47 → 43。ADR-144 を実装し、上の 4 goal がすべて
+// support-verified になった (満期は 4 件とも実在する検査として現れた: ユニット 2 本 +
+// e2e S11/S11b + ajv 準拠)。**下回りも落とすのがこの定数の規律** — 払った借金を
+// baseline に残すと、次に増えたとき「増えた」が見えなくなる (ADR-103)。同じ木は
+// 支えつきの goal を 1 つ足している (画素側の TheArmActuallyMovesOnAStaticHost…) が、
+// 支えがあるので未支持の数には乗らない。分子 (G3) は 4 件とも機械可読だったので不変。
+const DEBT_BASELINE = 43
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

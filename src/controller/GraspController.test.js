@@ -9,7 +9,14 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { parseUrdfChain } from '../robotics/UrdfChain.js'
+import { forwardKinematics } from '../robotics/Kinematics.js'
 import { GraspController } from './GraspController.js'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
 import { BffUnavailableError } from '../service/BffClient.js'
 
 /**
@@ -890,9 +897,12 @@ test('captureViewportCamera returns null without a camera (THREE-free lane) — 
 function fakeStages() {
   return {
     calls: [],
-    previewSolution(id, joints) { this.calls.push([id, joints]) },
+    previewSolution(id, preview) { this.calls.push([id, preview]) },
   }
 }
+
+/** The payload shape ADR-144 D4 widened the entry point to (authority + joints). */
+const drawn = (joints) => ({ authority: 'solved', joints })
 
 const SOLVED_A = [0.1, -1.0, 1.2, -1.8, -1.5708, 0.0]
 const SOLVED_B = [0.9, -0.6, 0.4, -1.1, -1.5708, 0.3]
@@ -901,12 +911,12 @@ const solved = (joints) => ({ kind: 'solved', joints })
 const UNDECLARED = { kind: 'undeclared' }
 
 /** ghostSetup + a fake stage set hung off `_sceneView` (the production seat). */
-function armSetup(candidates) {
+function armSetup(candidates, deps = {}) {
   const store = fakeStore()
   const ctrl  = makeCtrl({})
   const stages = fakeStages()
   ctrl._sceneView = { robotStages: stages }
-  const gc = new GraspController(ctrl, store, { createGhostView: () => fakeGhost() })
+  const gc = new GraspController(ctrl, store, { createGhostView: () => fakeGhost(), ...deps })
   store.getState().actions.contextSetGrasp({
     status: 'results', layout: { version: 'x', entities: 1 }, request: {}, candidates, selectedRank: null,
   })
@@ -918,7 +928,7 @@ test('a solved candidate poses the subject arm with the joints the solver decide
     { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
   ])
   gc.selectCandidate(1)
-  assert.deepEqual(stages.calls.at(-1), ['f_base', SOLVED_A])
+  assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(SOLVED_A)])
 })
 
 test('an undeclared candidate rests the arm instead of inventing a configuration', () => {
@@ -943,10 +953,10 @@ test('A → B → cleared: the arm never keeps a previous candidate solution', (
   gc.hoverCandidate(2)
   gc.hoverCandidate(null)
 
-  const joints = stages.calls.map(c => c[1])
-  assert.deepEqual(joints.at(-3), SOLVED_A, 'A を選んだ時点で A の解')
-  assert.deepEqual(joints.at(-2), SOLVED_B, 'B をホバーしたら B の解に**差し替わる**')
-  assert.deepEqual(joints.at(-1), SOLVED_A, 'ホバーを解いたら選択中の A へ戻る')
+  const drawnAt = stages.calls.map(c => c[1])
+  assert.deepEqual(drawnAt.at(-3), drawn(SOLVED_A), 'A を選んだ時点で A の解')
+  assert.deepEqual(drawnAt.at(-2), drawn(SOLVED_B), 'B をホバーしたら B の解に**差し替わる**')
+  assert.deepEqual(drawnAt.at(-1), drawn(SOLVED_A), 'ホバーを解いたら選択中の A へ戻る')
 })
 
 test('a candidate the ghost declines to draw still rests the arm (no early return past it)', () => {
@@ -958,7 +968,7 @@ test('a candidate the ghost declines to draw still rests the arm (no early retur
     { rank: 2, pose: JS_POSE, score: { totalScore: 0.4, reachSolution: UNDECLARED } },
   ])
   gc.selectCandidate(1)
-  assert.deepEqual(stages.calls.at(-1), ['f_base', SOLVED_A])
+  assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(SOLVED_A)])
   gc.hoverCandidate(2)
   assert.deepEqual(stages.calls.at(-1), ['f_base', null],
     'ghost を描かない候補で腕の更新が飛ばされている')
@@ -971,7 +981,7 @@ test('disposing the overlay rests the arm (the exit event owns the obligation)',
     { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
   ])
   gc.selectCandidate(1)
-  assert.deepEqual(stages.calls.at(-1), ['f_base', SOLVED_A])
+  assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(SOLVED_A)])
   gc.disposeGhost()
   assert.deepEqual(stages.calls.at(-1), ['f_base', null])
 })
@@ -979,6 +989,82 @@ test('disposing the overlay rests the arm (the exit event owns the obligation)',
 test('a score with no reachSolution at all rests the arm (old server, pre-v6)', () => {
   const { gc, stages } = armSetup([
     { rank: 1, pose: EE_POSE, score: { totalScore: 0.9 } },
+  ])
+  gc.selectCandidate(1)
+  assert.deepEqual(stages.calls.at(-1), ['f_base', null])
+})
+
+// ── ADR-144: core/ が決めていないときだけ、クライアントが近似を描く ─────────────
+
+/**
+ * 本物の FK 鎖を、**触られたかどうか数える** ラッパで包む。
+ *
+ * D3 の主張は「solved のときは近似探索が*走らない*」で、走らなかったことは
+ * 出力に痕跡を残さない (どちらの場合も payload は在る) — 在るものを辿る検査では
+ * 原理的に見えないので、*呼ばれた回数* のほうを数える (原則 #31)。
+ */
+function countingChain() {
+  const real = parseUrdfChain(readFileSync(join(HERE, '..', '..', 'public', 'robot', 'skeleton_arm.urdf'), 'utf8'))
+  const counter = { reads: 0 }
+  counter.chain = new Proxy(real, {
+    get(target, prop, recv) {
+      if (prop === 'joints') counter.reads += 1
+      return Reflect.get(target, prop, recv)
+    },
+  })
+  return counter
+}
+
+/** A world pose (meters) the fixture robot at (-2,2,0) m can actually reach. */
+function reachablePose(q) {
+  const chain = parseUrdfChain(readFileSync(join(HERE, '..', '..', 'public', 'robot', 'skeleton_arm.urdf'), 'utf8'))
+  const p = forwardKinematics(chain, q).position
+  return { kind: 'endEffector', frame: { position: [-2 + p.x, 2 + p.y, p.z], orientation: [0, 0, 0, 1] } }
+}
+
+test('undeclared + 鎖が在る: 腕はクライアントの近似を描き、権威が approximate と名乗る', () => {
+  const chain = countingChain()
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: reachablePose([0.4, -1.1, 1.3, -1.2, -1.5, 0.2]),
+      score: { totalScore: 0.9, ikSolvable: true, reachSolution: UNDECLARED } },
+  ], { robotChain: chain.chain })
+  gc.selectCandidate(1)
+
+  const [id, preview] = stages.calls.at(-1)
+  assert.equal(id, 'f_base')
+  assert.equal(preview.authority, 'approximate', '近似は solved を名乗らない')
+  assert.equal(preview.joints.length, 6)
+})
+
+test('solved のときは近似探索が一度も呼ばれない — ゲートは既存の事実ひとつ (ADR-144 D3)', () => {
+  const chain = countingChain()
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: reachablePose([0.4, -1.1, 1.3, -1.2, -1.5, 0.2]),
+      score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+  ], { robotChain: chain.chain })
+  gc.selectCandidate(1)
+
+  assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(SOLVED_A)])
+  assert.equal(chain.reads, 0, 'core/ が決めた候補でクライアントが探索を始めている')
+})
+
+test('届かない候補は近似も出さない — 鎖が在っても rest のまま (原則 #11)', () => {
+  // EE_POSE は (1,2,3) m。台座 (-2,2,0) m から 3.7 m 先で、0.9 m の腕には
+  // どうやっても届かない。「一番近い配置」を出さないことがここの主張。
+  const chain = countingChain()
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: UNDECLARED } },
+  ], { robotChain: chain.chain })
+  gc.selectCandidate(1)
+
+  assert.deepEqual(stages.calls.at(-1), ['f_base', null])
+  assert.ok(chain.reads > 0, '探索自体は走っていること (何もせず null を返したのではない)')
+})
+
+test('鎖が注入されていないレーンは ADR-135 のまま — 近似は既定で生えない', () => {
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: reachablePose([0.4, -1.1, 1.3, -1.2, -1.5, 0.2]),
+      score: { totalScore: 0.9, reachSolution: UNDECLARED } },
   ])
   gc.selectCandidate(1)
   assert.deepEqual(stages.calls.at(-1), ['f_base', null])

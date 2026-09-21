@@ -3,7 +3,7 @@ GOALS adr144_an_approximate_preview_is_not_a_second_solver
 goal ArmPreviewWorksWithoutABackendWithoutClaimingAuthority
 uuid 7c1e4a2b-9f3d-4e6a-8b1c-2d5f6a7b8c9d
 summary "GitHub Pages(core/ 不在の静的ホスティング)でも、grasp-search の候補を選んだときに腕がおおよそどんな配置になるか確認できる。ただしそれが実際に到達可能な解であるという主張は一切しない — 権威の無い近似は権威のふりをしてはならない"
-state ToBeReviewed
+state UnderReview
 labels adr-144, adr-135, adr-053, principle-1, principle-2, principle-4, principle-11, principle-29, app, ui
 
     context GithubPagesDeployIsPermanentlyOnTheUndeclaredBranch
@@ -44,42 +44,66 @@ labels adr-144, adr-135, adr-053, principle-1, principle-2, principle-4, princip
         goal ApproximateSearchReusesExistingFkSamplingWithNoNewSolverEquations
         uuid 70819243-b4c5-4d6e-ef80-91425364758a
         summary "D1: sampleConfigs/forwardKinematics(既存・ADR-053実装済み)で候補のエンドエフェクタframeに最も近いFK結果を持つ配置を探す。方程式を立てて解くソルバは新設しない。許容誤差を超えたら配置なし(null)を返す(近いだけの誤った配置を出さない)"
-        labels support-exploring
-        state ToBeReviewed
+        labels support-verified
 
-            assumption PlannedToleranceRejectionTest
+            solution ToleranceRejectionBurnedInTwoLanes
             uuid 81924364-c5d6-4e7f-f091-4253647586ab
-            summary "実装時に、探索結果が許容誤差(toleranceMm)を超えた場合はnull(rest継続)を返すことをユニットテストで焼く予定 — 原則#11(無言の失敗禁止)の裏返しとして、一番近いだけの誤配置を出さないことを機械的に保証する。満期=PATH:src/robotics/ApproximateReachPreview.test.js"
+            summary "許容誤差を超えたら null であることを 2 つの面で焼いた。ユニット: src/robotics/ApproximateReachPreview.test.js が 10m 上空 (到達不能) と許容誤差 1e-9mm (到達可能だが基準が厳しい) の両方で null を主張する。実ブラウザ: e2e/grasp-stub.spec.js S11b が既定シーン (腕から 2.8m の対象) で関節角が rest から 1 つも動かないことを主張する — S11 の対照であり、『常に一番近い配置を出す』実装は S11 では緑になり S11b でだけ落ちる。実装は起票時の『最近傍サンプル1回』から窓を狭める多スタート再サンプルへ変えた (方程式は足さず sampleConfigs/forwardKinematics の反復のみ): 1回では中央値175mm外れて常に null になり Goal に届かなかったため。実測 98%/100点が1mm以内・57ms"
+            artifacts
+            - "src/robotics/ApproximateReachPreview.js"
+            - "src/robotics/ApproximateReachPreview.test.js"
+            - "e2e/grasp-stub.spec.js"
 
         goal ClientApproximationIsStructurallyDistinctFromTheWireReachSolution
         uuid 92436475-d6e7-4f80-a142-536475869bcd
         summary "D2: 近似結果は{origin:'clientApproximate', joints, toleranceMm}|nullという、契約のreachSolution({kind:'solved'|'undeclared'})とは別の判別子・別の形で表す。契約(packages/grasp-contract)には一切追加せず、core/にも送らない"
-        labels support-exploring
-        state ToBeReviewed
+        labels support-verified
 
-            assumption PlannedAjvSchemaRejectionTest
+            solution AjvRejectsTheClientShapeAndAcceptsTheWireOne
             uuid a3647586-e7f8-4091-b253-647586970cde
-            summary "実装時に、近似結果オブジェクトをreachSolutionのajvスキーマに通すとinvalidになることをテストで焼く予定 — 『別の名前を使った』という主張だけでなく、実際にスキーマが構造的に拒否することを機械的証拠にする。満期=PATH:src/robotics/ApproximateReachPreview.test.js"
+            summary "src/robotics/ApproximateReachPreview.test.js が packages/grasp-contract/schema/grasp-search-response.schema.json の #/$defs/reachSolution を ajv2020 で compile し、近似結果 {origin:'clientApproximate',…} が invalid になることを主張する。同じ validator が {kind:'solved',joints} と {kind:'undeclared'} を valid とすることも同じテストで主張する — 負の対照だけでは『壊れた validator が全部拒否している』と区別できない。契約側は 1 行も変えておらず pnpm test:contract は contractVersion=6 のまま緑"
+            artifacts
+            - "src/robotics/ApproximateReachPreview.test.js"
+            - "packages/grasp-contract/schema/grasp-search-response.schema.json"
 
         goal GateIsTheExistingUndeclaredFactNotANewEnvironmentFlag
         uuid b4758697-f809-4142-c364-758697081def
         summary "D3: 『GitHub Pagesかどうか』を検出する第二の信号は作らず、reachSolution.kind!=='solved'という既存の唯一の事実だけをゲートに使う(§1.1 — 同じ事実の第二の源を作らない)。ローカルのUR形状でないロボットでも同じ枝に自然に乗る一般化"
-        labels support-exploring
-        state ToBeReviewed
+        labels support-verified
 
-            assumption PlannedGateUnitTest
+            solution GateCountedByTouchesNotByOutput
             uuid c5869708-091a-4253-d475-869708192e4f
-            summary "実装時に、reachSolution.kind==='solved'のとき近似探索が一切呼ばれないことをユニットテストで焼く予定。満期=GREP:src/controller/GraspController.test.js::approximate.*never.*invoked.*solved"
+            summary "src/controller/GraspController.test.js が FK 鎖を Proxy で包んで『触られた回数』を数える。solved の候補を選んだとき reads===0 (近似探索が一度も始まらない)、undeclared のときは reads>0。**呼ばれなかったことは出力に痕跡を残さない** (どちらの枝でも payload は在る) ので、在るものを辿る検査では原理的に見えない — 数えるのは呼び出しのほう (原則 #31)。ゲートの述語は domain/robotConfig.js: needsApproximatePreview ただ 1 つで、環境フラグは新設していない"
+            artifacts
+            - "src/controller/GraspController.test.js"
+            - "src/domain/robotConfig.js"
 
         goal SinglePreviewEntryPointIsExtendedNotDuplicated
         uuid d6970819-1a2b-4364-e586-970819243f5a
         summary "D4: RobotStageSet.previewSolution(robotId, joints|null)を削除・複製せず、第二引数を{authority:'solved'|'approximate', joints}|nullへ拡張する。視覚差(破線・色・キャプション)の書き手もこのメソッド1箇所のまま(原則#4は不動)"
-        labels support-exploring
-        state ToBeReviewed
+        labels support-verified
 
-            assumption PlannedSoleWriterRegressionCheck
+            solution OneWriterStillOneWriterAndTheLookRidesWithIt
             uuid e7081924-2b3c-4475-f697-08192435460b
-            summary "実装時に、引数拡張後もRobotStageSet.previewSolutionが唯一の書き手であることを確認する予定(ADR-135 D3が確立した性質を壊していないことのテスト)。満期=GREP:src/domain/robotConfig.test.js::authority"
+            summary "書き手は増えていない: RobotStage.previewSolution が関節角と『未検証の見え方』(半透明) の両方を書く 1 箇所のままで、既存の N=2 テスト (src/domain/robotConfig.test.js: previewAssignments / jointValuesFor) は無改変で緑。権威つき payload が N 台の割り当てを素通りして主語の腕にだけ届くことを同ファイルが N=2 で焼く。材質は stage ごとに clone して所有する — URDF の <material name=…> は名前で共有されるので、共有インスタンスのままだと 1 台の未検証表示が別の腕に出る (ADR-093 の形で N=1 では見えない)。起票時に『破線・色』と書いた視覚差は**半透明のみ**で実装した: 新しい hex を足すと ADR-100 の語彙に無い色が 1 つ増えるうえ、透明度のほうが『solved より弱い主張』をそのまま意味する。行のキャプションは GraspSearchPanel が**ワイヤの事実**から出す (近似が見つかったかではなく『ワイヤに解が無い』と言うので、近似が null でも嘘にならない)"
+            artifacts
+            - "src/view/RobotStage.js"
+            - "src/view/RobotStageSet.js"
+            - "src/domain/robotConfig.test.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"
+
+        goal TheArmActuallyMovesOnAStaticHostAndSaysItIsUnverified
+        uuid 0a1b2c3d-4e5f-4061-9273-84a5b6c7d8e9
+        summary "Goal そのものの画素側: core/ が居ないビルドで候補を選ぶと腕が実際に動き、かつ『解いた腕』を名乗らない。ユニットレーンでは原理的に問えない (THREE も URDF の ?raw も無い) ので、証拠は実ブラウザにしか置けない"
+        labels support-verified
+
+            solution E2EReadsBackWhatWasWrittenToThree
+            uuid 1b2c3d4e-5f60-4172-a384-95b6c7d8e9fa
+            summary "e2e/grasp-stub.spec.js S11 (VITE_GRASP_STUB=1) が Home の単腕ピック&プレイスセルを読み込み、候補 #1 を選んだあと window.__easyExtrude.armPreview() を読む: 関節角が rest から動いており、unverified===true、行に『unverified client approximation』が出ている。関節角は**THREE に書かれた後の robot.joints[…].angle を読み戻す** (RobotStage.previewState) ので『渡したつもり』では緑にならない。実行結果: S11 / S11b とも緑 (chromium)。既定シーンを使わないのは、そこでは腕が 2.8m 先の対象に届かず正直に null になるためで、その場合は S11b が『動かないこと』を焼く"
+            artifacts
+            - "e2e/grasp-stub.spec.js"
+            - "src/view/RobotStage.js"
+            - "src/controller/AppController.js"
 
     context ConnectionToProfitTreeDeferred
     uuid f8192435-3c4d-4586-a708-1924354675c1
