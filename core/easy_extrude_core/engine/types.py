@@ -212,12 +212,145 @@ class Robot:
     base_orientation: "Quaternion | None" = None
 
 
+def distance_point_to_box(
+    p: Vec3, center: Vec3, half_extents: Vec3, orientation: "Quaternion | None"
+) -> float:
+    """点 p と**向きつき直方体 (OBB)** の最短距離 (箱の内側なら 0.0, 純粋)。
+
+    点を箱のローカル系へ戻し (逆回転 + 並進)、軸平行箱 (AABB) への距離に落とす。
+    OBB の最短距離が AABB の最短距離と**同じ計算になる**のは、剛体変換が距離を
+    保つからである — 回転を扱う第二の幾何を書かずに済む (§1.1)。
+
+    内側を 0.0 にするのは「めり込み量」を測らないという宣言である。干渉判定は
+    「触れているか」しか問わないのでこれで足り、侵入深さが要る日が来たら
+    **負値を返す別の関数**を足す (同じ関数の意味を広げると、0.0 が「表面上」と
+    「深く貫通」の両方を指すようになる)。
+    """
+    local = p - center
+    if orientation is not None:
+        local = orientation.conjugate().rotate(local)
+    dx = max(abs(local.x) - half_extents.x, 0.0)
+    dy = max(abs(local.y) - half_extents.y, 0.0)
+    dz = max(abs(local.z) - half_extents.z, 0.0)
+    return math.hypot(dx, dy, dz)
+
+
+# 線分 vs 箱の最短距離を求める黄金分割探索の回数。点-凸集合の距離は線分の
+# パラメータ t について**凸**なので、単峰探索が大域最小へ収束することが保証される
+# (これが『サンプリングして一番近いところ』と違う点 — 刻み幅より細い接触を
+# 見落とさない)。48 回で区間は 0.618^48 ≈ 1e-10 倍になり、mm 精度には十分。
+_SEGMENT_BOX_ITERATIONS = 48
+_INV_PHI = (math.sqrt(5.0) - 1.0) / 2.0
+
+
+def distance_segment_to_box(
+    a: Vec3,
+    b: Vec3,
+    center: Vec3,
+    half_extents: Vec3,
+    orientation: "Quaternion | None",
+) -> float:
+    """線分 ab と OBB の最短距離 (純粋)。球の `distance_point_to_segment` の箱版。
+
+    閉形式を書かずに黄金分割探索を使うのは、**点と凸集合の距離が線分パラメータ t に
+    ついて凸**だからである (凸集合への距離関数は凸、凸関数の線分への制限も凸)。
+    したがって単峰で、探索は局所解に嵌まらない。箱-線分の場合分けを手で書くと
+    辺・面・頂点で 26 通りの分岐になり、**どれか 1 つを落としても「それらしい」値が
+    出る** — ADR-127 が肘の平面を取り違えたときと同じ見つけにくさなので、分岐の
+    正しさではなく凸性という**性質**に乗せる。
+    """
+    def at(t: float) -> float:
+        p = a + (b - a).scaled(t)
+        return distance_point_to_box(p, center, half_extents, orientation)
+
+    lo, hi = 0.0, 1.0
+    c = hi - _INV_PHI * (hi - lo)
+    d = lo + _INV_PHI * (hi - lo)
+    fc, fd = at(c), at(d)
+    for _ in range(_SEGMENT_BOX_ITERATIONS):
+        if fc < fd:
+            hi, d, fd = d, c, fc
+            c = hi - _INV_PHI * (hi - lo)
+            fc = at(c)
+        else:
+            lo, c, fc = c, d, fd
+            d = lo + _INV_PHI * (hi - lo)
+            fd = at(d)
+    return min(fc, fd, at(0.0), at(1.0))
+
+
 @dataclass(frozen=True)
 class Obstacle:
-    """素朴な障害物 (球)。段階0 は球近似のみ。最も高コストな干渉判定を安く保つため。"""
+    """球の障害物。**形ごとの型で分ける** (原則 #2) — `kind` フラグで分岐しない。
+
+    `surface_distance_to_segment` が形をまたぐ唯一の問い方である (原則 #17 — 多態的に
+    呼ばれるメソッドは全実装型に存在させる)。呼び出し側が `radius` を読んで自分で
+    引き算していた頃は、形が増えるたびに**引き算の場所すべて**を直す必要があり、
+    直し忘れは「干渉なし」という正しい形の答えになって現れた。
+    """
 
     center: Vec3
     radius: float
+
+    def surface_distance_to_segment(self, a: Vec3, b: Vec3) -> float:
+        """線分 ab と**表面**の符号つき距離。負なら線分は内部を通っている。
+
+        符号つきにするのは、干渉 (<= 0 か) と可視性の遮蔽**深さ** (-値) と
+        approach clearance (余裕量) が**同じ 1 つの量**から導けるため — 同じ幾何を
+        3 か所で別々に書かない (§1.1)。
+        """
+        return distance_point_to_segment(self.center, a, b) - self.radius
+
+    def as_wire(self) -> dict:
+        """ワイヤ形へ戻す (ADR-078 の scene 層が導出結果を request に載せ直す)。
+
+        **形ごとの型が自分の形を書く** (原則 #17) — 呼び出し側が `radius` を読んで
+        dict を組むと、箱が来た日にそこだけ球として書き出され、判定は正しい形の
+        答えを返したまま間違う。
+        """
+        return {"kind": "sphere", "center": self.center.as_list(), "radius": self.radius}
+
+
+@dataclass(frozen=True)
+class BoxObstacle:
+    """向きつき直方体 (OBB) の障害物 (ADR-133 D5)。
+
+    外接球は**保守的すぎて使いものにならない**ことが ADR-145 の実測で分かった:
+    ペデスタル (300×300×120) の外接球は半径 220.5mm になり、その中に**ロボット自身の
+    ベース**が入る。箱なら据付面で接するだけになり、腕がどこまで台に近づけるかを
+    幾何どおりに問える。
+
+    `orientation` が None なのは「軸平行」ではなく **述べていない** — ただしこの型では
+    両者が一致する (回転を宣言しない箱は世界軸に平行であるほかない)。区別が要るのは
+    *姿勢を持ちうる実体*の場合で、ここは幾何そのものなので恒等で解いてよい。
+    """
+
+    center: Vec3
+    half_extents: Vec3
+    orientation: "Quaternion | None" = None
+
+    def surface_distance_to_segment(self, a: Vec3, b: Vec3) -> float:
+        """線分 ab と箱の表面の距離 (内部は 0.0)。
+
+        **球と違って負値を返さない。** `distance_point_to_box` が内側を 0.0 に畳む
+        ためで、これは「箱に対する遮蔽深さは測っていない」という宣言である
+        (可視性の near-miss は箱障害物では 0 深さの接触として現れる — 測れないものを
+        測ったことにしない)。
+        """
+        return distance_segment_to_box(
+            a, b, self.center, self.half_extents, self.orientation
+        )
+
+    def as_wire(self) -> dict:
+        """ワイヤ形へ戻す。`orientation` は宣言されたときだけ載せる。"""
+        wire = {
+            "kind": "box",
+            "center": self.center.as_list(),
+            "halfExtents": self.half_extents.as_list(),
+        }
+        if self.orientation is not None:
+            wire["orientation"] = self.orientation.as_list()
+        return wire
 
 
 @dataclass(frozen=True)

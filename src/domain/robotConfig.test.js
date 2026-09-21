@@ -20,7 +20,7 @@ import assert from 'node:assert/strict'
 import {
   ROBOT_REST_POSE,
   jointValuesFor,
-  needsApproximatePreview,
+  needsClientSolvedPreview,
   previewAssignments,
   previewPayloadFor,
   restPoseMap,
@@ -123,18 +123,18 @@ test('every stage gets an assignment — none is skipped', () => {
 // --- 誰が決めた腕なのか (ADR-144 D2/D3/D4) ------------------------------------
 
 const APPROXIMATION = Object.freeze({
-  origin: 'clientApproximate', joints: [0.1, -1.2, 1.0, -1.3, -1.5, 0], toleranceMm: 10, errorMm: 0.4,
+  origin: 'clientAnalytic', joints: [0.1, -1.2, 1.0, -1.3, -1.5, 0], toleranceMm: 10, errorMm: 0.4,
 })
 
 test('solved は contract の解をそのまま描き、近似には一切触れない', () => {
   const payload = previewPayloadFor({ kind: 'solved', joints: SOLVED }, APPROXIMATION)
   assert.deepEqual(payload, { authority: 'solved', joints: SOLVED })
-  assert.equal(needsApproximatePreview({ kind: 'solved', joints: SOLVED }), false)
+  assert.equal(needsClientSolvedPreview({ kind: 'solved', joints: SOLVED }), false)
 })
 
 test('undeclared + 近似あり = approximate と名乗る payload', () => {
   const payload = previewPayloadFor({ kind: 'undeclared' }, APPROXIMATION)
-  assert.deepEqual(payload, { authority: 'approximate', joints: APPROXIMATION.joints })
+  assert.deepEqual(payload, { authority: 'unverified', joints: APPROXIMATION.joints })
   // 名乗りは 2 値であって、`kind` の写しではない — 契約の判別子を再利用すると
   // 「近似を solved として送り返す」が 1 行の書き間違いで書けてしまう。
   assert.equal('kind' in payload, false)
@@ -142,12 +142,12 @@ test('undeclared + 近似あり = approximate と名乗る payload', () => {
 
 test('undeclared + 近似なし (許容誤差を超えた / 鎖が無い) は rest', () => {
   assert.equal(previewPayloadFor({ kind: 'undeclared' }, null), null)
-  assert.equal(previewPayloadFor({ kind: 'undeclared' }, { origin: 'clientApproximate', joints: null }), null)
+  assert.equal(previewPayloadFor({ kind: 'undeclared' }, { origin: 'clientAnalytic', joints: null }), null)
 })
 
 test('候補が無いときは近似の出番も無い — 近似すべき pose が存在しない', () => {
-  assert.equal(needsApproximatePreview(null), false)
-  assert.equal(needsApproximatePreview(undefined), false)
+  assert.equal(needsClientSolvedPreview(null), false)
+  assert.equal(needsClientSolvedPreview(undefined), false)
   assert.equal(previewPayloadFor(null, APPROXIMATION), null)
   // v6 以前のサーバ (reachSolution 欄そのものが無い) も同じ: 欄の不在は
   // 「近似してよい」という宣言ではない。
@@ -157,6 +157,6 @@ test('候補が無いときは近似の出番も無い — 近似すべき pose 
 test('権威は N 台の割り当てを素通りする — 主語の腕だけが近似を受け取る (N=2)', () => {
   const payload = previewPayloadFor({ kind: 'undeclared' }, APPROXIMATION)
   const got = new Map(previewAssignments(['r1', 'r2'], 'r2', payload))
-  assert.deepEqual(got.get('r2'), { authority: 'approximate', joints: APPROXIMATION.joints })
+  assert.deepEqual(got.get('r2'), { authority: 'unverified', joints: APPROXIMATION.joints })
   assert.equal(got.get('r1'), null, '近似でも「主語以外は rest」は変わらない')
 })

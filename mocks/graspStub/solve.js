@@ -72,6 +72,72 @@ function segmentPointDistance(a, b, p) {
 }
 
 /**
+ * Signed distance from a segment to an obstacle's SURFACE (negative = the segment
+ * passes through it). The stub's one answer to "how close is this body", shared by
+ * the occlusion and approach-path checks (ADR-133 D5).
+ *
+ * The stub is a SECOND PRODUCER of the same judgement `core/` makes (ADR-120: the
+ * same defect lived in both producers, independently). So it must not quietly read
+ * a box as a sphere — an unknown shape THROWS rather than being approximated, the
+ * same rule `_obstacle_from_wire` follows in core (原則 #31).
+ */
+function surfaceDistance(a, b, o) {
+  const kind = o.kind ?? (o.radius !== undefined ? 'sphere' : undefined)
+  if (kind === 'sphere') return segmentPointDistance(a, b, o.center) - o.radius
+  if (kind === 'box') return segmentBoxDistance(a, b, o)
+  throw new Error(
+    `graspStub: 未宣言の障害物種別 ${JSON.stringify(o.kind)} — ` +
+    '球へ倒すと「箱を宣言したのに外接球で判定された」が、候補が減っただけの正しい形で通る',
+  )
+}
+
+/** Inverse-rotate a world vector into a box's own frame (conjugate quaternion). */
+function intoBoxFrame(v, q) {
+  if (!q) return v
+  const [x, y, z, w] = q
+  const c = [-x, -y, -z, w]
+  return quatRotate(c, v)
+}
+
+function quatRotate(q, v) {
+  const [x, y, z, w] = q
+  const t = [2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])]
+  return [
+    v[0] + w * t[0] + (y * t[2] - z * t[1]),
+    v[1] + w * t[1] + (z * t[0] - x * t[2]),
+    v[2] + w * t[2] + (x * t[1] - y * t[0]),
+  ]
+}
+
+/** Point → OBB distance (0 inside): back into the box frame, then an AABB. */
+function pointBoxDistance(p, o) {
+  const l = intoBoxFrame(sub(p, o.center), o.orientation)
+  const d = [0, 1, 2].map(i => Math.max(Math.abs(l[i]) - o.halfExtents[i], 0))
+  return Math.hypot(d[0], d[1], d[2])
+}
+
+/**
+ * Segment → OBB distance by golden-section search.
+ *
+ * Distance to a convex set is CONVEX along the segment, so the search is unimodal
+ * and cannot settle on a false minimum. Sampling at a fixed step would miss a
+ * contact thinner than the step; writing the 26 face/edge/vertex branches by hand
+ * would produce plausible-looking numbers when one branch is wrong.
+ */
+const GOLDEN = (Math.sqrt(5) - 1) / 2
+function segmentBoxDistance(a, b, o) {
+  const at = t => pointBoxDistance(add(a, scale(sub(b, a), t)), o)
+  let lo = 0, hi = 1
+  let c = hi - GOLDEN * (hi - lo), d = lo + GOLDEN * (hi - lo)
+  let fc = at(c), fd = at(d)
+  for (let i = 0; i < 48; i++) {
+    if (fc < fd) { hi = d; d = c; fd = fc; c = hi - GOLDEN * (hi - lo); fc = at(c) }
+    else         { lo = c; c = d; fc = fd; d = lo + GOLDEN * (hi - lo); fd = at(d) }
+  }
+  return Math.min(fc, fd, at(0), at(1))
+}
+
+/**
  * Quaternion → forward (+X) axis, matching the contract's TCP convention.
  */
 function forwardAxis(q) {
@@ -80,25 +146,58 @@ function forwardAxis(q) {
 }
 
 /**
- * Build the identity quaternion that points the tool along `approach`.
- * Presentation derives the visible gripper pose from this; it is a plausible
- * orientation, not a solved wrist configuration.
+ * Build the candidate frame's quaternion from `approach`, in the contract's
+ * FRAME_CONVENTION: **+Z = −approach**, +X a deterministic reference axis turned
+ * by roll (the stub has no roll, so roll = 0).
+ *
+ * ## これは 2026-09-21 に直した本物のズレである (ADR-147)
+ *
+ * 以前ここは「**+X** を approach に向ける」四元数を返しており、`core/` の
+ * `pose_codec.py` (+Z = −approach) とは**別の gauge** だった。誰も気づかなかったのは、
+ * 読み手が `frame.position` しか使っていなかったから — ゴーストは位置だけで描け、
+ * ADR-144 の近似も位置しか合わせていなかったので、**四元数は誰にも読まれないまま
+ * 間違っていられた**。ADR-147 でクライアントが姿勢まで解くようになった瞬間に、
+ * 間違った approach から IK を解くことになって表に出た。
+ *
+ * ADR-120 が記録した形そのもの (同じ欠陥が生産者ごとに独立に住む) で、しかも今回は
+ * **読む機械が現れるまで存在しなかった**: 規約の一致を問う検査が無ければ、
+ * 契約に載っている値でも誰も読まないあいだは何であってもよい。
+ * `conformance.test.js` がその検査を引き受ける。
  */
-function orientationFor(approach) {
-  const f = [1, 0, 0]
-  const d = dot(f, approach)
-  if (d > 1 - 1e-9)  return [0, 0, 0, 1]
-  if (d < -1 + 1e-9) return [0, 0, 1, 0]
-  const axis = [
-    f[1] * approach[2] - f[2] * approach[1],
-    f[2] * approach[0] - f[0] * approach[2],
-    f[0] * approach[1] - f[1] * approach[0],
-  ]
-  const u = unit(axis)
-  if (!u) return [0, 0, 0, 1]
-  const angle = Math.acos(Math.max(-1, Math.min(1, d)))
-  const s = Math.sin(angle / 2)
-  return [u[0] * s, u[1] * s, u[2] * s, Math.cos(angle / 2)]
+function candidateFrameOrientation(approach) {
+  const z = scale(approach, -1)                 // FRAME_CONVENTION: +Z = −approach
+  // `pose_codec._basis_from_z` と同じ参照選択 (閾値 0.9 も同値 — gauge を共有する)。
+  const ref = Math.abs(z[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]
+  const bx = unit(cross(ref, z))
+  if (!bx) return [0, 0, 0, 1]
+  const by = cross(z, bx)
+  return quaternionFromColumns(bx, by, z)       // roll = 0 なので bx がそのまま +X
+}
+
+const cross = (a, b) => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+]
+
+/** 回転行列の 3 列 → 四元数 [x,y,z,w] (`pose_codec._matrix_to_quaternion` と同じ). */
+function quaternionFromColumns(x, y, z) {
+  const m = [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]]
+  const tr = m[0][0] + m[1][1] + m[2][2]
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1) * 2
+    return [(m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s, 0.25 * s]
+  }
+  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2
+    return [0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s, (m[2][1] - m[1][2]) / s]
+  }
+  if (m[1][1] > m[2][2]) {
+    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2
+    return [(m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s, (m[0][2] - m[2][0]) / s]
+  }
+  const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2
+  return [(m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s, (m[1][0] - m[0][1]) / s]
 }
 
 /**
@@ -328,10 +427,10 @@ export function stubSolve(request, contractVersion) {
         rejected = true                          // outside the field of view: no depth to report
       } else {
         for (const o of obstacles) {
-          const d = segmentPointDistance(eye, point, o.center)
-          if (d < o.radius) {
+          const d = surfaceDistance(eye, point, o)
+          if (d < 0) {
             rejected = true
-            occlusionNearestMiss = keepMin(occlusionNearestMiss, o.radius - d)
+            occlusionNearestMiss = keepMin(occlusionNearestMiss, -d)
             break
           }
         }
@@ -343,9 +442,9 @@ export function stubSolve(request, contractVersion) {
     let minClearance = Number.POSITIVE_INFINITY
     let blocked = false
     for (const o of obstacles) {
-      const d = segmentPointDistance(preGrasp, point, o.center)
-      if (d < o.radius) { blocked = true; break }
-      minClearance = Math.min(minClearance, d - o.radius)
+      const d = surfaceDistance(preGrasp, point, o)
+      if (d < 0) { blocked = true; break }
+      minClearance = Math.min(minClearance, d)
     }
     if (blocked) { counts[STAGE.INTERFERENCE] += 1; continue }
 
@@ -369,7 +468,11 @@ export function stubSolve(request, contractVersion) {
     feasible.push({
       pose: {
         kind:  'endEffector',
-        frame: { position: preGrasp, orientation: orientationFor(approach) },
+        // **把持点**であって pre-grasp ではない (`core/` の `pose_to_payload` は
+        // `pose.position` を載せる)。以前ここは `preGrasp` を載せており、進入距離
+        // ぶんずれた位置をゴーストが描いていた — 位置しか読まれないあいだは
+        // 「それらしい」ので気づけなかった、四元数と同じ形のズレである。
+        frame: { position: point, orientation: candidateFrameOrientation(approach) },
       },
       score: {
         withinReach: true, visible: true, ikSolvable: true,

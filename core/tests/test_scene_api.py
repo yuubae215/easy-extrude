@@ -151,7 +151,10 @@ def test_injected_collision_checker_overrides_naive_at_boundary():
     # 全候補を衝突扱いにする checker を注入 -> どのワークも feasible でなくなり、ピック 0 件
     # (naive 既定なら 3 件取れる)。配線点が効くことの確認。
     class _AlwaysCollides:
-        def in_collision(self, candidate, obstacles) -> bool:
+        # ADR-145 で Protocol に `solution` / `robot` (キーワード専用・既定 None) が
+        # 増えた。腕を見ない実装は無視してよいが、**受け取る宣言は要る** — ここを
+        # 黙って許すと「腕を見るはずのチェッカが見ていない」が同じ形で通る。
+        def in_collision(self, candidate, obstacles, *, solution=None, robot=None) -> bool:
             return True
 
     resp = _client(collision_checker=_AlwaysCollides()).post(

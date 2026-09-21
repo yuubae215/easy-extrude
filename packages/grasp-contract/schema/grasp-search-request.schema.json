@@ -77,7 +77,9 @@
             "baseOrientation": {
               "type": "array",
               "description": "[x, y, z, w] world-frame quaternion of the robot BASE mount (ADR-129 D2). Optional: absent means the arm's mounting orientation was NOT STATED, which is not the same as 'mounted upright'. core/ can only solve with some orientation, so it keeps the identity when this is absent -- the front side is what says so on screen (an unspoken assumption must be spoken, not defaulted silently). When declared, core/ un-rotates the target into the base frame before solving, so a tilted pedestal changes the answer. A malformed quaternion is an ERROR, never a silent downgrade to identity (ADR-127 D3's rule).",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 4,
               "maxItems": 4
             },
@@ -205,29 +207,82 @@
         },
         "obstacles": {
           "type": "array",
-          "description": "Bodies the approach must avoid, as bounding spheres (ADR-119 D1; carried since ADR-117). Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/.",
+          "description": "Bodies the approach and the arm must avoid (ADR-119 D1; carried since ADR-117; box form added by ADR-133 D5). A kind-discriminated union: a sphere carries `radius`, a box carries `halfExtents` and an optional `orientation`. Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/. The bounding-sphere form is retained because it is what pre-ADR-133 senders emit; it is DELIBERATELY not the fallback for an undeclared shape -- a payload that declares neither `radius` nor `halfExtents` is rejected rather than guessed (原則 #31).",
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "center": {
-                "type": "array",
-                "description": "[x, y, z] world-frame centre of the bounding sphere.",
-                "items": {
-                  "type": "number"
+            "oneOf": [
+              {
+                "type": "object",
+                "title": "sphereObstacle",
+                "description": "A bounding sphere. `kind` may be omitted for compatibility with senders written before ADR-133; when present it must be \"sphere\".",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "sphere"
+                  },
+                  "center": {
+                    "type": "array",
+                    "description": "[x, y, z] world-frame centre.",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "radius": {
+                    "type": "number",
+                    "description": "Bounding-sphere radius in the layout's own length unit (the contract never names the unit).",
+                    "minimum": 0
+                  }
                 },
-                "minItems": 3,
-                "maxItems": 3
+                "required": [
+                  "center",
+                  "radius"
+                ]
               },
-              "radius": {
-                "type": "number",
-                "description": "Bounding-sphere radius in the layout's own length unit (the contract never names the unit).",
-                "minimum": 0
+              {
+                "type": "object",
+                "title": "boxObstacle",
+                "description": "An oriented bounding box (OBB). `kind` is REQUIRED here: a box is the newer form, so an unlabelled one would be indistinguishable from a sender that simply forgot to declare a shape.",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "box"
+                  },
+                  "center": {
+                    "type": "array",
+                    "description": "[x, y, z] world-frame centre.",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "halfExtents": {
+                    "type": "array",
+                    "description": "[x, y, z] half-sizes along the box's OWN axes, in the layout's length unit.",
+                    "items": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "orientation": {
+                    "type": "array",
+                    "description": "[x, y, z, w] world rotation of the box's own axes. Absent means axis-aligned -- for a bare geometric box the two coincide, unlike an entity's pose where 'undeclared' and 'upright' must stay distinguishable (ADR-129 D2).",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 4,
+                    "maxItems": 4
+                  }
+                },
+                "required": [
+                  "kind",
+                  "center",
+                  "halfExtents"
+                ]
               }
-            },
-            "required": [
-              "center",
-              "radius"
             ]
           }
         },
@@ -277,14 +332,33 @@
           "description": "The six standard-DH lengths, signs included (UR's a2/a3 are negative). Units follow the layout's own length unit, like every other length on this wire. All six are required: filling a missing one with a default would solve for a DIFFERENT ARM, and the answer would be indistinguishable from a correct one.",
           "additionalProperties": false,
           "properties": {
-            "d1": { "type": "number" },
-            "a2": { "type": "number" },
-            "a3": { "type": "number" },
-            "d4": { "type": "number" },
-            "d5": { "type": "number" },
-            "d6": { "type": "number" }
+            "d1": {
+              "type": "number"
+            },
+            "a2": {
+              "type": "number"
+            },
+            "a3": {
+              "type": "number"
+            },
+            "d4": {
+              "type": "number"
+            },
+            "d5": {
+              "type": "number"
+            },
+            "d6": {
+              "type": "number"
+            }
           },
-          "required": ["d1", "a2", "a3", "d4", "d5", "d6"]
+          "required": [
+            "d1",
+            "a2",
+            "a3",
+            "d4",
+            "d5",
+            "d6"
+          ]
         },
         "jointLimits": {
           "type": "array",
@@ -295,14 +369,24 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "min": { "type": "number" },
-              "max": { "type": "number" }
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              }
             },
-            "required": ["min", "max"]
+            "required": [
+              "min",
+              "max"
+            ]
           }
         }
       },
-      "required": ["kind", "dh"]
+      "required": [
+        "kind",
+        "dh"
+      ]
     },
     "gripperParallelJaw": {
       "type": "object",

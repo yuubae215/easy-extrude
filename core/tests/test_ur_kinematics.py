@@ -11,7 +11,9 @@ IK は多対一の写像なので `IK(FK(q)) == q` は**成り立たない** (�
 そこで**元の q が解集合に含まれること**も別に問う — 健全性と完全性の両方を焼く。
 """
 
+import json
 import math
+import pathlib
 import random
 
 import pytest
@@ -20,6 +22,7 @@ from easy_extrude_core.engine.types import GraspCandidate, Pose, Quaternion, Rob
 from easy_extrude_core.engine.ur_kinematics import (
     UrDhParameters,
     forward_kinematics,
+    forward_kinematics_chain,
     inverse_kinematics,
     within_joint_limits,
 )
@@ -491,3 +494,295 @@ def test_the_joints_belong_to_their_own_candidate_not_to_rank_one():
     solved = [tuple(c.score.reach_solution.joints) for c in resp.candidates]
     assert len(solved) >= 2, "2 候補以上出る前提の fixture"
     assert len(set(solved)) > 1, "全候補が同じ関節値 — 解が候補ごとに運ばれていない"
+
+
+#: 不変量を問うための配置サンプル。固定の seed で並べるのは、落ちた日に同じ配置を
+#: そのまま再現できるようにするため (乱数で緑になったり赤になったりさせない)。
+_SAMPLE_JOINTS = tuple(
+    tuple(random.Random(1145 + k).uniform(-math.pi, math.pi) for _ in range(6))
+    for k in range(24)
+) + ((0.0,) * 6, (math.pi,) * 6, (math.pi / 2, 0.0, 0.0, 0.0, 0.0, 0.0))
+
+
+# --- FK チェーン (ADR-145 D1) -------------------------------------------------
+#
+# 中間関節原点の期待値は **DH のコードを走らせずに手で積んだ**値 (ADR-127 の教訓:
+# 肘の 2 リンク問題を誤った平面で解いても桁と符号は妥当に見えるので、値を眺めても
+# 気づけない。捕まえたのは FK 往復で、かつ FK 自身を DH から独立に固定していたから)。
+#
+# 全関節 0 での手計算 (standard DH, α = [π/2,0,0,π/2,−π/2,0]):
+#   O0 = (0,0,0)                      ベース原点
+#   O1 = (0, 0, d1)                   Tz(d1) のみ
+#   O2 = O1 + a2·x1,  x1 = (1,0,0)    -> (a2, 0, d1)
+#   O3 = O2 + a3·x2,  x2 = (1,0,0)    -> (a2+a3, 0, d1)
+#   O4 = O3 + d4·z3,  z3 = (0,−1,0)   -> (a2+a3, −d4, d1)
+#   O5 = O4 + d5·z4,  z4 = (0,0,−1)   -> (a2+a3, −d4, d1−d5)
+#   O6 = O5 + d6·z5,  z5 = (0,−1,0)   -> (a2+a3, −d4−d6, d1−d5)
+_HAND_COMPUTED_ORIGINS_AT_ZERO = (
+    (0.0, 0.0, 0.0),
+    (0.0, 0.0, 0.1625),
+    (-0.425, 0.0, 0.1625),
+    (-0.425 - 0.3922, 0.0, 0.1625),
+    (-0.425 - 0.3922, -0.1333, 0.1625),
+    (-0.425 - 0.3922, -0.1333, 0.1625 - 0.0997),
+    (-0.425 - 0.3922, -0.1333 - 0.0996, 0.1625 - 0.0997),
+)
+
+
+def _origin(m):
+    return (m[3], m[7], m[11])
+
+
+def test_chain_origins_at_zero_match_the_hand_computed_values():
+    chain = forward_kinematics_chain(UR5E, (0.0,) * 6)
+    assert len(chain) == 7  # ベース原点 + 6 関節
+    for i, (got, want) in enumerate(zip(chain, _HAND_COMPUTED_ORIGINS_AT_ZERO)):
+        assert _origin(got) == pytest.approx(want, abs=1e-12), f"関節 {i} の原点"
+
+
+def test_chain_first_element_is_the_identity_base_frame():
+    """要素 0 はベース原点 (恒等)。線分の起点がここに在ることが腕の連結の前提。"""
+    chain = forward_kinematics_chain(UR5E, (0.3, -0.4, 0.5, -0.6, 0.7, -0.8))
+    assert chain[0] == pytest.approx(
+        (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+        abs=1e-15,
+    )
+
+
+def test_chain_last_element_is_exactly_forward_kinematics():
+    """`forward_kinematics` はこのチェーンの最終要素 — 計算の源は 1 つ (§1.1)。
+
+    独立実装のままにしていたら、途中段と最終段が別々にずれても両方「もっともらしい」
+    値を出す。ラッパにしたことをここで焼く。
+    """
+    for q in ((0.0,) * 6, (0.2, -0.8, 1.0, -0.3, 0.7, 0.1), (1.1,) * 6):
+        assert forward_kinematics_chain(UR5E, q)[-1] == pytest.approx(
+            forward_kinematics(UR5E, q), abs=1e-15
+        )
+
+
+def test_chain_preserves_the_declared_link_lengths_in_every_configuration():
+    """隣り合う原点の距離は DH の長さそのもの — 姿勢に依らない剛体の不変量。
+
+    値の表 (上) は 1 配置しか固定しないので、**他の配置では何も主張していない**。
+    こちらは全配置で成り立つ量を問うので、累積積の順序を取り違えた実装を落とす。
+    """
+    expected = (
+        UR5E.d1, abs(UR5E.a2), abs(UR5E.a3), UR5E.d4, UR5E.d5, UR5E.d6,
+    )
+    for q in _SAMPLE_JOINTS:
+        chain = forward_kinematics_chain(UR5E, q)
+        for i, want in enumerate(expected):
+            a, b = _origin(chain[i]), _origin(chain[i + 1])
+            got = math.dist(a, b)
+            assert got == pytest.approx(want, abs=1e-12), f"リンク {i + 1} の長さ"
+
+
+def test_first_link_origin_does_not_depend_on_any_joint():
+    """ベース -> 関節 1 の区間は**どの配置でも同じ場所**に在る。
+
+    `feasibility._JOINT_INDEPENDENT_LINKS` が干渉判定からこの 1 本を外す根拠が
+    これ。「定数なので候補を区別できない」が成り立たなくなったら除外は見逃しに
+    変わるので、除外の側ではなく**この不変量の側**を焼く。
+    """
+    for q in _SAMPLE_JOINTS:
+        assert _origin(forward_kinematics_chain(UR5E, q)[1]) == pytest.approx(
+            (0.0, 0.0, UR5E.d1), abs=1e-12
+        )
+
+
+def test_chain_rejects_wrong_joint_count():
+    with pytest.raises(ValueError):
+        forward_kinematics_chain(UR5E, (0.0, 0.0, 0.0))
+
+
+# --- 言語をまたぐ導出の準拠 (ADR-146 D3) --------------------------------------
+#
+# 画面に出る腕は `public/robot/skeleton_arm.urdf` そのもので、front はそれを
+# **四元数で**解く。`core/` はその URDF から**導出された** DH を**行列で**解く。
+# 同じ腕についての同じ問いに、2 つの実装が別々に答えている。
+#
+# ADR-144 はこの形 (同じ計算の源が 2 つ) を §1.1 違反として UR 解析解の JS 移植を
+# 却下した。ADR-146 はその禁止を「公知の閉形式は置いてよい、**ただし導出として**」へ
+# 置き換えたが、置き換えた瞬間に §1.1 を守る仕事が人の注意へ移る。移したままに
+# しないための機械がここ + `src/robotics/CrossLanguageDerivation.test.js` である。
+#
+# **両側が同じファイルの同じ数を読むこと**が要点 — 片側だけが読む数は対照にならず、
+# 単なる回帰テストであって「2 つの実装が一致している」を一度も言わない。
+# フィクスチャは生成物 (`node scripts/gen-cross-language-fk.mjs`)、源は URDF ただ 1 つ。
+
+_FK_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "fixtures/cross-language/ur5e-forward-kinematics.json"
+)
+
+
+def _fk_fixture() -> dict:
+    return json.loads(_FK_FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_the_cross_language_fixture_is_present_and_declares_ur5e():
+    """フィクスチャの不在は「一致している」ではなく「問うていない」。
+
+    ファイルが消えた日に下のテストが**静かに 0 件走る**のを防ぐ (原則 #31 —
+    数えない不在は検査を素通りする)。
+    """
+    fixture = _fk_fixture()
+    assert fixture["subject"] == "ur5e-forward-kinematics"
+    assert len(fixture["cases"]) >= 12
+    assert set(fixture["dh"]) == set(_DH_KEYS_FOR_FIXTURE)
+
+
+_DH_KEYS_FOR_FIXTURE = ("d1", "a2", "a3", "d4", "d5", "d6")
+
+
+def test_dh_forward_kinematics_reproduces_the_urdf_derived_fixture():
+    """URDF を四元数で解いた JS の答えを、導出された DH を行列で解いた core が再現する。
+
+    この 2 つがずれた日に起きるのは表示の乱れではない: **探索が干渉ありと判定して
+    棄却した腕と、画面に描かれている腕が別物になる** (ADR-145 の腕スイープは
+    まさにこの DH から腕リンクを組む)。ADR-141 が「画面の腕と探索が解く腕を同じ
+    1 台にする」と決めたことの、一段深いところでの同じ主張である。
+    """
+    fixture = _fk_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    tolerance = float(fixture["tolerance"])
+    worst = 0.0
+    for case in fixture["cases"]:
+        t = forward_kinematics(dh, tuple(float(v) for v in case["joints"]))
+        for got, want in zip((t[3], t[7], t[11]), case["tcp"]):
+            worst = max(worst, abs(got - want))
+    assert worst <= tolerance, f"最大差 {worst} > 許容 {tolerance}"
+
+
+def test_the_chain_agrees_with_the_fixture_at_its_last_element():
+    """ADR-145 の腕リンクを組むチェーンも、同じ数に着地する。
+
+    腕スイープが使うのは `forward_kinematics_chain` であって
+    `forward_kinematics` ではない。ラッパにした以上同じ値になるはずだが、
+    **「はず」は主張なので問う** — ここが外れると、干渉判定が見る腕だけが
+    画面の腕から静かにずれる。
+    """
+    fixture = _fk_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    for case in fixture["cases"]:
+        chain = forward_kinematics_chain(dh, tuple(float(v) for v in case["joints"]))
+        assert _origin(chain[-1]) == pytest.approx(
+            tuple(case["tcp"]), abs=float(fixture["tolerance"])
+        )
+
+
+# --- 逆運動学の導出準拠 (ADR-147 / ADR-146 D3) --------------------------------
+#
+# こちらは **core/ が源**である (FK のフィクスチャは URDF を解く JS が源だったのと
+# 向きが逆 — それぞれの*源*が違う側に住んでいるため: FK の源は画面に出る URDF、
+# IK の源は探索が解く core/)。したがってこのテストが問うのは「JS が再現できるか」
+# ではなく、**生成器が今の core/ とずれていないか**である。
+#
+# フィクスチャが古いまま JS 側だけが緑になる状態を防ぐ: 生成器を走らせ忘れたまま
+# core/ の IK を変えると、JS は「古い core/」に準拠したまま緑を出し続ける。
+
+_IK_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "fixtures/cross-language/ur5e-inverse-kinematics.json"
+)
+
+
+def _ik_fixture() -> dict:
+    return json.loads(_IK_FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_the_inverse_kinematics_fixture_is_present_and_exercises_all_branches():
+    """フィクスチャの不在・退化は「一致している」ではなく「問うていない」。
+
+    「最大 8 解」を主張するのに 1 解しか出ない姿勢ばかりなら、分岐を 1 本しか
+    通らない実装でも緑になる。分岐の網羅を**数で宣言**しておく。
+    """
+    fixture = _ik_fixture()
+    assert fixture["subject"] == "ur5e-inverse-kinematics"
+    counts = [len(c["solutions"]) for c in fixture["cases"]]
+    assert len(counts) >= 12
+    assert 8 in counts, "8 解が出る姿勢が 1 つも無い"
+    assert min(counts) >= 2, "解が 1 本以下の姿勢は分岐を問えない"
+
+
+def test_the_fixture_still_matches_what_core_computes_today():
+    """生成器を走らせ忘れたまま core/ の IK を変えていないか。
+
+    これを問わないと、フィクスチャは**古い core/** を固定したまま残り、JS 側は
+    その古い答えに準拠して緑を出し続ける — 準拠テストが在るのに、準拠先が
+    現実から切り離される (ADR-115 の「宣言は在るが読む機械が無い」の変種で、
+    ここでは *読む機械は在るが読んでいる数が古い*)。
+    """
+    fixture = _ik_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    tolerance = float(fixture["tolerance"])
+    for case in fixture["cases"]:
+        target = tuple(float(v) for v in case["target"])
+        solutions = inverse_kinematics(dh, target)
+        assert len(solutions) == len(case["solutions"])
+        for got, want in zip(solutions, case["solutions"]):
+            assert got == pytest.approx(tuple(want), abs=tolerance)
+
+
+def test_every_fixture_solution_round_trips_through_forward_kinematics():
+    """FK∘IK = 恒等 (原則 #28 の商の上の fixpoint)。
+
+    フィクスチャとの一致は「両方が同じ間違いをしている」でも緑になるので、
+    **フィクスチャを使わない独立な性質**を別に問う。
+    """
+    fixture = _ik_fixture()
+    dh = UrDhParameters(**{k: float(fixture["dh"][k]) for k in _DH_KEYS_FOR_FIXTURE})
+    for case in fixture["cases"]:
+        target = tuple(float(v) for v in case["target"])
+        for q in case["solutions"]:
+            assert forward_kinematics(dh, tuple(q)) == pytest.approx(target, abs=1e-9)
+
+
+# --- gauge の導出準拠 (ADR-147 / ADR-146 D3) ----------------------------------
+#
+# 規約 (FRAME_CONVENTION の +Z=-approach / FLANGE_Z_IS_APPROACH の +Z=+approach) を
+# 宣言しているのは core/ なので、ここが問うのは「JS が再現できるか」ではなく
+# **生成器が今の core/ とずれていないか**である。ずれたまま JS だけが緑になると、
+# 準拠テストは在るのに準拠先が現実から切り離される。
+
+_GAUGE_FIXTURE = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "fixtures/cross-language/ur5e-candidate-to-flange.json"
+)
+
+
+def test_the_gauge_fixture_still_matches_what_core_computes_today():
+    from easy_extrude_core.engine.candidates import GraspCandidate
+    from easy_extrude_core.engine.pose_codec import pose_from_payload
+    from easy_extrude_core.engine.ur_solver import flange_target
+
+    fixture = json.loads(_GAUGE_FIXTURE.read_text(encoding="utf-8"))
+    tolerance = float(fixture["tolerance"])
+    assert len(fixture["cases"]) >= 12
+    for case in fixture["cases"]:
+        pose = pose_from_payload(case["posePayload"])
+        candidate = GraspCandidate(
+            pose=pose,
+            pre_grasp=pose.position - pose.approach.scaled(0.1),
+            surface_normal=pose.approach.scaled(-1.0),
+        )
+        assert flange_target(candidate) == pytest.approx(
+            tuple(case["flangeTarget"]), abs=tolerance
+        )
+
+
+def test_the_gauge_fixture_exercises_both_reference_axis_branches():
+    """基準軸の選び方は z 成分の大きさで切り替わる (|z| < 0.9 か否か)。
+
+    片側だけのフィクスチャでは分岐が 1 本しか通らず、もう一方を取り違えた実装でも
+    緑になる。**通っていることを数で宣言する** (原則 #31 — 数えない不在は素通りする)。
+    """
+    from easy_extrude_core.engine.pose_codec import pose_from_payload
+
+    fixture = json.loads(_GAUGE_FIXTURE.read_text(encoding="utf-8"))
+    zs = [
+        abs(pose_from_payload(c["posePayload"]).approach.z) for c in fixture["cases"]
+    ]
+    assert any(z >= 0.9 for z in zs), "|z| >= 0.9 の姿勢が無い"
+    assert any(z < 0.9 for z in zs), "|z| < 0.9 の姿勢が無い"

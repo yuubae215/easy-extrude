@@ -1407,11 +1407,22 @@ function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
  *
  * The row says what the CONTRACT carries, never what the client managed to find:
  * `solved` is `core/`'s configuration, anything else means nobody solved one and
- * whatever arm appears is the client's unverified FK-sampled approximation —
- * which is also why it appears translucent. Phrasing it as "any arm shown"
- * rather than "the arm shown" keeps it true in the case where the approximation
- * finds nothing within tolerance and the skeleton stays at rest (PHILOSOPHY #11:
- * the caption may not promise a preview the sampler may decline to produce).
+ * whatever arm appears was solved by the client alone — which is why it appears
+ * translucent.
+ *
+ * **The wording changed with ADR-147 and the change matters.** It used to say
+ * "approximation (position only)", which was true of the sampling search it
+ * described. The client now runs the same closed form `core/` runs, so the pose
+ * is exact, orientation included — calling it approximate would understate it in
+ * the wrong direction and invite someone to "improve" a number that is already
+ * machine-precise. What is actually missing is every judgement that is not
+ * kinematics: interference, visibility, graspability, score. The caption names
+ * THAT.
+ *
+ * Phrasing it as "any arm shown" rather than "the arm shown" keeps it true in the
+ * case where the pose is out of reach and the skeleton stays at rest
+ * (PHILOSOPHY #11: the caption may not promise a preview the solver may decline
+ * to produce).
  */
 function ArmPreviewFooter({ reachSolution }) {
   if (!reachSolution) return null
@@ -1424,8 +1435,8 @@ function ArmPreviewFooter({ reachSolution }) {
   }
   return (
     <div style={{ marginTop: '3px', fontSize: '10px', color: '#886' }}>
-      arm: no joint solution on the wire — any arm shown is an unverified client
-      approximation (position only)
+      arm: no joint solution on the wire — any arm shown is solved by this
+      browser and checked against nothing (no interference or visibility)
     </div>
   )
 }

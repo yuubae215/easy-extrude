@@ -12,8 +12,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { parseUrdfChain } from '../robotics/UrdfChain.js'
-import { forwardKinematics } from '../robotics/Kinematics.js'
+import { basisFromZ, flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
+import { forwardKinematics as urForwardKinematics } from '../robotics/urKinematics.js'
+import { renderableEndEffectorFrame } from '../view/GraspGhostMath.js'
 import { GraspController } from './GraspController.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -1003,67 +1004,136 @@ test('a score with no reachSolution at all rests the arm (old server, pre-v6)', 
  * 出力に痕跡を残さない (どちらの場合も payload は在る) — 在るものを辿る検査では
  * 原理的に見えないので、*呼ばれた回数* のほうを数える (原則 #31)。
  */
-function countingChain() {
-  const real = parseUrdfChain(readFileSync(join(HERE, '..', '..', 'public', 'robot', 'skeleton_arm.urdf'), 'utf8'))
-  const counter = { reads: 0 }
-  counter.chain = new Proxy(real, {
-    get(target, prop, recv) {
-      if (prop === 'joints') counter.reads += 1
-      return Reflect.get(target, prop, recv)
-    },
-  })
+/**
+ * ワイヤの候補 frame を (position, approach, roll) から組む — `pose_codec` の
+ * FRAME_CONVENTION (+Z = −approach) と同じ向き。
+ *
+ * **テスト専用の encode である。** 製品コードが要るのは decode (ワイヤ → フランジ
+ * 目標) だけなので、encode を `src/` に置くと誰も使わない 3 つ目の gauge が増える。
+ * ここで `basisFromZ` を共有しているので、規約そのものの源は 1 つのまま。
+ */
+function wireFrameFor(position, approach, roll) {
+  const z = [-approach[0], -approach[1], -approach[2]]
+  const [bx, by] = basisFromZ(z)
+  const c = Math.cos(roll), s = Math.sin(roll)
+  const x = [bx[0] * c + by[0] * s, bx[1] * c + by[1] * s, bx[2] * c + by[2] * s]
+  const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]]
+  return { kind: 'endEffector', frame: { position, orientation: quatFromColumns(x, y, z) } }
+}
+
+function quatFromColumns(x, y, z) {
+  const m = [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]]
+  const tr = m[0][0] + m[1][1] + m[2][2]
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1) * 2
+    return [(m[2][1] - m[1][2]) / s, (m[0][2] - m[2][0]) / s, (m[1][0] - m[0][1]) / s, 0.25 * s]
+  }
+  if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+    const s = Math.sqrt(1 + m[0][0] - m[1][1] - m[2][2]) * 2
+    return [0.25 * s, (m[0][1] + m[1][0]) / s, (m[0][2] + m[2][0]) / s, (m[2][1] - m[1][2]) / s]
+  }
+  if (m[1][1] > m[2][2]) {
+    const s = Math.sqrt(1 + m[1][1] - m[0][0] - m[2][2]) * 2
+    return [(m[0][1] + m[1][0]) / s, 0.25 * s, (m[1][2] + m[2][1]) / s, (m[0][2] - m[2][0]) / s]
+  }
+  const s = Math.sqrt(1 + m[2][2] - m[0][0] - m[1][1]) * 2
+  return [(m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s, (m[1][0] - m[0][1]) / s]
+}
+
+/** 台座 (-2, 2, 0) m の腕が実際に届く世界姿勢 (真下から進入)。 */
+function reachableWirePose(localOffset, roll = 0) {
+  return wireFrameFor(
+    [-2 + localOffset[0], 2 + localOffset[1], localOffset[2]], [0, 0, -1], roll,
+  )
+}
+
+/** 宣言そのもの — 製品と同じ 1 つの源から DH と限界を読ませる (ADR-147)。 */
+const UR5E_DECLARATION = {
+  kind: 'universalRobots',
+  dh: JSON.parse(readFileSync(
+    join(HERE, '..', '..', 'fixtures', 'cross-language', 'ur5e-forward-kinematics.json'), 'utf8',
+  )).dh,
+}
+
+/**
+ * `_clientSolvedArmPose` が**呼ばれた回数**を数える。
+ *
+ * ADR-144 が残した規律をそのまま引き継ぐ: 「呼ばれなかった」は出力に痕跡を残さない
+ * (どちらの枝でも payload は在る) ので、在るものを辿る検査では原理的に見えない。
+ * 数えるのは呼び出しのほう (原則 #31)。
+ */
+function countingSolve(gc) {
+  const counter = { calls: 0 }
+  const real = gc._clientSolvedArmPose.bind(gc)
+  gc._clientSolvedArmPose = (...args) => { counter.calls += 1; return real(...args) }
   return counter
 }
 
-/** A world pose (meters) the fixture robot at (-2,2,0) m can actually reach. */
-function reachablePose(q) {
-  const chain = parseUrdfChain(readFileSync(join(HERE, '..', '..', 'public', 'robot', 'skeleton_arm.urdf'), 'utf8'))
-  const p = forwardKinematics(chain, q).position
-  return { kind: 'endEffector', frame: { position: [-2 + p.x, 2 + p.y, p.z], orientation: [0, 0, 0, 1] } }
-}
-
-test('undeclared + 鎖が在る: 腕はクライアントの近似を描き、権威が approximate と名乗る', () => {
-  const chain = countingChain()
+test('undeclared + 運動学の宣言が在る: 腕はクライアントの解を描き、権威は unverified', () => {
   const { gc, stages } = armSetup([
-    { rank: 1, pose: reachablePose([0.4, -1.1, 1.3, -1.2, -1.5, 0.2]),
+    { rank: 1, pose: reachableWirePose([0.4, 0.0, 0.2]),
       score: { totalScore: 0.9, ikSolvable: true, reachSolution: UNDECLARED } },
-  ], { robotChain: chain.chain })
+  ], { robotKinematics: UR5E_DECLARATION })
   gc.selectCandidate(1)
 
   const [id, preview] = stages.calls.at(-1)
   assert.equal(id, 'f_base')
-  assert.equal(preview.authority, 'approximate', '近似は solved を名乗らない')
+  // `solved` を名乗らないことが要点。`unverified` は「粗い」ではなく
+  // 「**誰も検証していない**」— 姿勢そのものは閉形式なので厳密である (ADR-147)。
+  assert.equal(preview.authority, 'unverified')
   assert.equal(preview.joints.length, 6)
 })
 
-test('solved のときは近似探索が一度も呼ばれない — ゲートは既存の事実ひとつ (ADR-144 D3)', () => {
-  const chain = countingChain()
+test('クライアントの解は候補の姿勢を**厳密に**実現する (近似ではない)', () => {
+  // ADR-144 の近似は許容差 10mm の位置合わせで、姿勢は一致させていなかった。
+  // 閉形式にした以上、位置も姿勢も機械精度で一致する — そこが変わったことを焼く。
+  const pose = reachableWirePose([0.3, 0.2, 0.3], 0.5)
   const { gc, stages } = armSetup([
-    { rank: 1, pose: reachablePose([0.4, -1.1, 1.3, -1.2, -1.5, 0.2]),
+    { rank: 1, pose, score: { totalScore: 0.9, reachSolution: UNDECLARED } },
+  ], { robotKinematics: UR5E_DECLARATION })
+  gc.selectCandidate(1)
+
+  const [, preview] = stages.calls.at(-1)
+  assert.ok(preview, '届く姿勢で解が出ない')
+  assert.equal(preview.authority, 'unverified')
+
+  const target = flangeTargetInBaseFrame(
+    renderableEndEffectorFrame(pose), [-2, 2, 0], null,
+  )
+  const back = urForwardKinematics(UR5E_DECLARATION.dh, preview.joints)
+  for (let i = 0; i < 16; i++) {
+    assert.ok(Math.abs(back[i] - target[i]) < 1e-9, `姿勢の要素 ${i} が一致しない`)
+  }
+})
+
+test('solved のときはクライアントが一度も解かない — ゲートは既存の事実ひとつ (ADR-144 D3)', () => {
+  const { gc, stages } = armSetup([
+    { rank: 1, pose: reachableWirePose([0.4, 0.0, 0.2]),
       score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
-  ], { robotChain: chain.chain })
+  ], { robotKinematics: UR5E_DECLARATION })
+  const counter = countingSolve(gc)
   gc.selectCandidate(1)
 
   assert.deepEqual(stages.calls.at(-1), ['f_base', drawn(SOLVED_A)])
-  assert.equal(chain.reads, 0, 'core/ が決めた候補でクライアントが探索を始めている')
+  assert.equal(counter.calls, 0, 'core/ が決めた候補でクライアントが解き始めている')
 })
 
-test('届かない候補は近似も出さない — 鎖が在っても rest のまま (原則 #11)', () => {
+test('届かない候補は解が無い — 宣言が在っても rest のまま (原則 #11)', () => {
   // EE_POSE は (1,2,3) m。台座 (-2,2,0) m から 3.7 m 先で、0.9 m の腕には
   // どうやっても届かない。「一番近い配置」を出さないことがここの主張。
-  const chain = countingChain()
   const { gc, stages } = armSetup([
     { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: UNDECLARED } },
-  ], { robotChain: chain.chain })
+  ], { robotKinematics: UR5E_DECLARATION })
+  const counter = countingSolve(gc)
   gc.selectCandidate(1)
 
   assert.deepEqual(stages.calls.at(-1), ['f_base', null])
-  assert.ok(chain.reads > 0, '探索自体は走っていること (何もせず null を返したのではない)')
+  assert.equal(counter.calls, 1, '解こうとした上で「無い」と答えていること')
 })
 
-test('鎖が注入されていないレーンは ADR-135 のまま — 近似は既定で生えない', () => {
+test('運動学が宣言されていないレーンは ADR-135 のまま — 解は既定で生えない', () => {
   const { gc, stages } = armSetup([
-    { rank: 1, pose: reachablePose([0.4, -1.1, 1.3, -1.2, -1.5, 0.2]),
+    { rank: 1, pose: reachableWirePose([0.4, 0.0, 0.2]),
       score: { totalScore: 0.9, reachSolution: UNDECLARED } },
   ])
   gc.selectCandidate(1)

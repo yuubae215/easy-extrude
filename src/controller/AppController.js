@@ -96,7 +96,7 @@ import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { GraspSampleView }            from '../view/GraspSampleView.js'
-import { ROBOT_CHAIN, ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
+import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
@@ -507,7 +507,6 @@ export class AppController {
       // The same seat again (ADR-144): the FK chain of the arm on screen, so a
       // candidate `core/` left `undeclared` can still be previewed — as an
       // explicitly unverified approximation, never as a solution.
-      robotChain: ROBOT_CHAIN,
       // The same seat, for the same reason, one fact wider (ADR-141): WHICH ARM
       // the app draws. The reach envelope rides with it so the panel can no
       // longer offer an envelope belonging to a robot that is not on screen.

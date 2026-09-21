@@ -260,7 +260,25 @@ const SUPPORT_LABELS = new Map([
 // baseline に残すと、次に増えたとき「増えた」が見えなくなる (ADR-103)。同じ木は
 // 支えつきの goal を 1 つ足している (画素側の TheArmActuallyMovesOnAStaticHost…) が、
 // 支えがあるので未支持の数には乗らない。分子 (G3) は 4 件とも機械可読だったので不変。
-const DEBT_BASELINE = 43
+// 2026-09-21 (同日・別ADR): 43 → 47。ADR-145 (Proposed・未実装) の木が 4 goal を足した
+// (ForwardKinematicsChainReturnsEachJointOriginNotOnlyTheFlange /
+// NaiveArmSweepCollisionCheckerDetectsPedestalIntrusion /
+// ProtocolExtensionKeepsTheWireAndExistingCheckersUnchanged /
+// UndeclaredKinematicsFallsBackToPathOnlyCheckingWithoutSilentBehaviorChange)。
+// ADR-144 と同じ先例 — Proposed の ADR は定義上ほぼ全部の goal が exploring になる
+// (adr skill §GSN 併設: 起票と同時に木を起こす規律は無条件)。4 件とも機械可読な満期
+// (GREP:core/easy_extrude_core/engine/ur_kinematics.py・feasibility.py・
+// core/tests/test_engine.py) を持つので分子 (G3) は動かない。
+// 2026-09-21 (同日・実装後): 47 → 43。ADR-145 を実装し、上の 4 goal がすべて
+// support-verified になった。ADR-144 のときと**同じ日に同じ振れ方**をしたので記録して
+// おく — 起票と実装が同日に並ぶと baseline は上がって下がるが、上がったまま忘れられた
+// 日があれば「宣言された未支持」は静かに増える。下げるのを忘れないための痕跡がこの行。
+// 2026-09-21 (同日・3 件目): 43 → 44。ADR-146 が支えの無い goal を **1 つ意図的に**
+// 足した — D1 アイデア軸 (「コスト関数・重み・ランキングは core/ のみ」) は
+// **コードの構文から導出できない**ので機械に降ろせていない。降ろせないものを
+// support-verified と名乗らせるほうが害が大きいので、未支持のまま宣言して数える
+// (ADR-146 の最も弱い辺。DEF-039 と同じ番地で満期を持つ)。
+const DEBT_BASELINE = 44
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

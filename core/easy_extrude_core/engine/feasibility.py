@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 
 from .pose_codec import frame_axes
+from .ur_kinematics import UrDhParameters, forward_kinematics_chain
 from .types import (
     Camera,
     GraspCandidate,
@@ -183,36 +184,144 @@ def ik_solvable(candidate: GraspCandidate, robot: Robot, solver: IkSolver) -> bo
 
 
 class CollisionChecker(Protocol):
-    """干渉チェッカの注入境界。進入経路が障害物と衝突するなら True。
+    """干渉チェッカの注入境界。腕または進入経路が障害物と衝突するなら True。
 
     最もコストが高い判定なので安い順フィルタの最後段に置く前提。形状表現 (球/メッシュ等)
     は実装側の責務。
+
+    `solution` / `robot` は **腕そのもの**を見るチェッカ (ADR-145) のための入力で、
+    キーワード専用・既定 None。TCP 進入経路しか見ない実装は無視してよい (後方互換)。
+    この Protocol は `core/` の内部境界でワイヤに出ないので、引数が増えても
+    `contractVersion` は動かない (ADR-145 D3)。
     """
 
     def in_collision(
-        self, candidate: GraspCandidate, obstacles: tuple[Obstacle, ...]
+        self,
+        candidate: GraspCandidate,
+        obstacles: tuple[Obstacle, ...],
+        *,
+        solution: "Optional[IkSolution]" = None,
+        robot: "Optional[Robot]" = None,
     ) -> bool: ...
 
 
-class NaiveSphereCollisionChecker:
-    """外部依存ゼロの素朴な干渉既定実装 (球障害物)。
+class NaivePathCollisionChecker:
+    """外部依存ゼロの素朴な干渉既定実装 (進入経路 vs **宣言された形**)。
 
-    進入経路 (pre_grasp -> 把持点) の線分と各障害物球の最短距離が球半径 + probe_radius を
+    進入経路 (pre_grasp -> 把持点) の線分と各障害物の**表面**との距離が probe_radius を
     下回れば衝突とみなす。probe_radius はグリッパ太さの素朴な余裕代。
+
+    **形を知らない** (ADR-133 D5): 球か箱かは `surface_distance_to_segment` が答える
+    ので、このクラスに `radius` も `kind` の分岐も現れない。形が増えたとき
+    ここを直し忘れる余地が無いのが、半径を自分で引き算していた頃との違いである。
+
+    **腕は見ない。** base と TCP の間のリンクは `NaiveArmSweepCollisionChecker` の
+    担当で、このクラスは `solution` / `robot` を受け取っても使わない (ADR-145 D3 の
+    後方互換: 既存実装は新引数を無視してよい)。
     """
 
     def __init__(self, probe_radius: float = 0.0) -> None:
         self.probe_radius = probe_radius
 
     def in_collision(
-        self, candidate: GraspCandidate, obstacles: tuple[Obstacle, ...]
+        self,
+        candidate: GraspCandidate,
+        obstacles: tuple[Obstacle, ...],
+        *,
+        solution: "Optional[IkSolution]" = None,
+        robot: "Optional[Robot]" = None,
     ) -> bool:
         a = candidate.pre_grasp
         b = candidate.pose.position
         for obs in obstacles:
-            d = distance_point_to_segment(obs.center, a, b)
-            if d <= obs.radius + self.probe_radius + _EPS:
+            if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
                 return True
+        return False
+
+
+# 腕リンクの線分近似のうち **関節角に依存しない先頭 1 本** (ベース原点 -> 関節 1 原点)。
+# DH では frame1 の原点は base から +Z に d1 だけ上がった点で、θ1 はその軸まわりの
+# 回転なので**どの配置でも同じ場所に在る**。すなわちこの区間は候補を区別する力を
+# 一切持たない一方、ロボットが自分の据付台 (ペデスタル) の外接球の中から生えている
+# 以上ほぼ常に「衝突」と答える。**定数を判定に混ぜると全候補が棄却される**ので
+# 除外する — これは干渉の見逃しではなく、「自分の台に据え付けられている」という
+# 配置に依存しない事実を判定から外す操作である (ADR-145 実装時の追加, 本文 D2 の外)。
+_JOINT_INDEPENDENT_LINKS = 1
+
+
+def arm_link_segments(
+    dh: UrDhParameters,
+    solution: "Optional[IkSolution]",
+    robot: "Optional[Robot]",
+) -> "tuple[tuple[Vec3, Vec3], ...]":
+    """関節解 -> **ワールド座標**の腕リンク線分列 (純粋, ADR-145 D1/D2)。
+
+    描ける関節配置が無いときは**空タプル**を返す。分岐は型で行う (原則 #2) —
+    `NaiveIkSolver` が返す占位の `IkSolution` は 1 個の数であって 6 関節の配置では
+    ないので、腕のジオメトリを再構成できない。埋めて描くと**誰も決めていない腕**を
+    判定にかけることになる (ADR-135 と同じ理由)。空 = 「腕を見ていない」であって
+    「腕が障害物に触れていない」ではない (原則 #31)。
+
+    `forward_kinematics_chain` はベース座標系を返すので、据付並進 (`robot.base`) と
+    据付姿勢 (`robot.base_orientation`, ADR-129 D2) でワールドへ戻す。据付姿勢が
+    未宣言なら恒等 — `UniversalRobotsIkSolver.solve` が目標をベース座標へ戻すときと
+    **同じ仮定**を使う (ここで別の既定を作ると、解いた腕と描く腕がずれる)。
+    """
+    if not isinstance(solution, JointSolution) or robot is None:
+        return ()
+    chain = forward_kinematics_chain(dh, solution.joints)
+    origins: list[Vec3] = []
+    for m in chain:
+        local = Vec3(m[3], m[7], m[11])
+        if robot.base_orientation is not None:
+            local = robot.base_orientation.rotate(local)
+        origins.append(robot.base + local)
+    return tuple(
+        (origins[i], origins[i + 1])
+        for i in range(_JOINT_INDEPENDENT_LINKS, len(origins) - 1)
+    )
+
+
+@dataclass(frozen=True)
+class NaiveArmSweepCollisionChecker:
+    """腕リンクの FK スイープを既存の干渉判定に足す合成チェッカ (ADR-145 D2)。
+
+    **進入経路の判定は自分で書かず `inner` に委譲する** — 同じ「線分 vs 障害物」を
+    2 か所に書かないため (§1.1)。自分が足すのは `arm_link_segments` が返すリンク
+    線分ぶんだけで、距離計算はどちらも `distance_point_to_segment` の 1 実装を通る。
+
+    `robot.kinematics` が宣言されていないリクエストでは `arm_link_segments` が空を
+    返すので、判定は `inner` と 1 ビットも変わらない (ADR-145 D4 — 宣言した瞬間に
+    だけ挙動が変わる)。
+
+    **この近似が何でないか** (宣言しておく — ADR-144 §4 と同じ規律):
+    リンクは**太さゼロの線分**で、`probe_radius` を腕にも同じ余裕代として当てる。
+    自己干渉 (腕どうし・腕とハンド) は見ない。据付台のように**ベースを内側に含む**障害物は先頭リンクを常に飲み込むので
+    `_JOINT_INDEPENDENT_LINKS` を外す — 外接球ではこれが常に起きた。箱 (ADR-133 D5)
+    なら据付面で接するだけになるが、接触は接触なので除外は形に依らず要る。
+    厳密な半空間 (薄板) は DEF-036 の担当。
+    """
+
+    dh: UrDhParameters
+    inner: CollisionChecker
+    probe_radius: float = 0.0
+
+    def in_collision(
+        self,
+        candidate: GraspCandidate,
+        obstacles: tuple[Obstacle, ...],
+        *,
+        solution: "Optional[IkSolution]" = None,
+        robot: "Optional[Robot]" = None,
+    ) -> bool:
+        if self.inner.in_collision(
+            candidate, obstacles, solution=solution, robot=robot
+        ):
+            return True
+        for a, b in arm_link_segments(self.dh, solution, robot):
+            for obs in obstacles:
+                if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
+                    return True
         return False
 
 
@@ -220,9 +329,19 @@ def interference_free(
     candidate: GraspCandidate,
     obstacles: tuple[Obstacle, ...],
     checker: CollisionChecker,
+    *,
+    solution: "Optional[IkSolution]" = None,
+    robot: "Optional[Robot]" = None,
 ) -> bool:
-    """衝突しないなら True (注入チェッカの否定)。"""
-    return not checker.in_collision(candidate, obstacles)
+    """衝突しないなら True (注入チェッカの否定)。
+
+    `solution` / `robot` は腕を見るチェッカ (ADR-145) への受け渡し。**ここで
+    `isinstance` を書かない** — 型で分岐するのは `arm_link_segments` の 1 箇所
+    だけにする (判定点を増やすと、占位解を腕として扱う経路がそのぶん増える)。
+    """
+    return not checker.in_collision(
+        candidate, obstacles, solution=solution, robot=robot
+    )
 
 
 # --- 可視性 (見えるか: 注入 Protocol + naive 既定, ADR-081) -------------------
@@ -268,7 +387,8 @@ def sightline_occlusion_miss(
     # 視線遮蔽: 最も深く食い込む球の食い込み量 (radius - 視線までの距離)。
     deepest = 0.0
     for obs in obstacles:
-        depth = obs.radius - distance_point_to_segment(obs.center, eye, point)
+        # 表面までの符号つき距離の**符号を返す** = 食い込み量。球・箱で同じ 1 つの量。
+        depth = -obs.surface_distance_to_segment(eye, point)
         if depth > deepest:
             deepest = depth
     return deepest

@@ -53,8 +53,9 @@ from .feasibility import (
     JointSolution,
     NaiveIkSolver,
     NaiveParallelJawGraspChecker,
+    NaiveArmSweepCollisionChecker,
     NaiveSightlineVisibilityChecker,
-    NaiveSphereCollisionChecker,
+    NaivePathCollisionChecker,
     VisibilityChecker,
     interference_free,
     reach_miss,
@@ -63,13 +64,14 @@ from .feasibility import (
 from .objectives import evaluate_objectives
 from .pose_codec import pose_to_payload
 from .scoring import weighted_sum
-from .ur_solver import ik_solver_from_declaration
+from .ur_solver import UniversalRobotsIkSolver, ik_solver_from_declaration
 from .types import (
     Camera,
     GripperKind,
     ParallelJawGripper,
     SuctionGripper,
     Gripper,
+    BoxObstacle,
     Obstacle,
     Pose,
     Problem,
@@ -129,6 +131,56 @@ def _gripper_from_wire(raw: dict[str, Any]) -> Gripper:
     )
 
 
+#: 障害物の形 -> ドメイン型 (ADR-133 D5)。**未宣言の kind で throw する**
+#: (ADR-118 の `_CHECKER_BY_KIND` と同じ規律)。倒す先を持たないのは、球へ倒すと
+#: 「箱を宣言したのに外接球で判定された」が最も気づきにくい形で通るため —
+#: 応答は候補が減った正しい形で返り、どの段で何が起きたかは誰にも見えない。
+_OBSTACLE_KINDS = ("sphere", "box")
+
+#: `kind` を持たない item は **ADR-133 以前の送信者**である。これは fall-through では
+#: なく**名前のついた 1 つの分岐**で、球の必須キー `radius` が在ることを同時に要求する
+#: (「形を述べていない」と「古い形式で述べた」を区別する)。新しい形を足すときこの
+#: 行を読むことになるので、次の人は互換の対象が何だったかを知ったうえで判断できる。
+_UNDECLARED_KIND_IS_LEGACY_SPHERE = True
+
+
+def _obstacle_from_wire(raw: dict[str, Any]):
+    """ワイヤの障害物 1 件をドメインの形へ (ADR-133 D5)。
+
+    分岐は `kind` ただ 1 つ。**幾何キー (`radius` / `halfExtents`) から形を推測しない** —
+    推測すると宣言と判定がずれたとき、どちらが正なのかを決める場所が無くなる (§1.1)。
+    """
+    kind = raw.get("kind")
+    if kind is None and _UNDECLARED_KIND_IS_LEGACY_SPHERE and "radius" in raw:
+        kind = "sphere"
+    if kind == "sphere":
+        return Obstacle(
+            center=_vec3(raw.get("center")), radius=float(raw.get("radius", 0.0))
+        )
+    if kind == "box":
+        half = raw.get("halfExtents")
+        if half is None:
+            raise ValueError(
+                "box 障害物には halfExtents が要る (既定値で埋めない — "
+                "寸法を述べていない箱は、点にも無限大にも読めてしまう)"
+            )
+        orientation_raw = raw.get("orientation")
+        return BoxObstacle(
+            center=_vec3(raw.get("center")),
+            half_extents=_vec3(half),
+            orientation=(
+                Quaternion.from_list(orientation_raw)
+                if orientation_raw is not None
+                else None
+            ),
+        )
+    raise ValueError(
+        f"未宣言の障害物種別 {kind!r}: kind は {_OBSTACLE_KINDS} のいずれかであること "
+        f"(ADR-133 D5 / 原則 #31 — 球へ倒すと「箱を宣言したのに外接球で判定された」が "
+        f"候補が減っただけの正しい形で通る)"
+    )
+
+
 def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
     """graspSearch 宣言 (open payload) からドメイン Problem を構築する。
 
@@ -178,11 +230,9 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
         samples.append((_vec3(s.get("point")), _vec3(s.get("normal"))))
     target = TargetObject(surface_samples=tuple(samples))
 
-    obstacles: list[Obstacle] = []
+    obstacles: list[Any] = []
     for o in data.get("obstacles", []) or []:
-        obstacles.append(
-            Obstacle(center=_vec3(o.get("center")), radius=float(o.get("radius", 0.0)))
-        )
+        obstacles.append(_obstacle_from_wire(o))
 
     # camera / gripper 宣言 (ADR-081)。open payload の既知キーを寛容に読む。
     # 未宣言 (None) は該当ゲート無効 = 既存挙動 (robot/sampling と同じ規律)。
@@ -322,11 +372,19 @@ def search_report(
             request.grasp_search.model_dump(by_alias=True)
         )
         solver = declared if declared is not None else NaiveIkSolver()
-    checker = (
-        collision_checker
-        if collision_checker is not None
-        else NaiveSphereCollisionChecker()
-    )
+    # 干渉チェッカも 3 段 (優先順): 注入 > 宣言された運動学で腕を見る版 > 素朴既定。
+    # **分岐は型で行う** (原則 #2) — 「DH を持っていそうか」を getattr で嗅ぐと、
+    # 別の解析解ソルバが来た日に黙って腕を見なくなる。
+    if collision_checker is not None:
+        checker: CollisionChecker = collision_checker
+    elif isinstance(solver, UniversalRobotsIkSolver):
+        # ADR-145: 腕リンクの FK スイープを既存の進入経路判定に**足す** (置き換えない)。
+        # 運動学を宣言したリクエストでだけ有効になるので、既存テンプレの答えは不変。
+        checker = NaiveArmSweepCollisionChecker(
+            dh=solver.dh, inner=NaivePathCollisionChecker()
+        )
+    else:
+        checker = NaivePathCollisionChecker()
     vis_checker = (
         visibility_checker
         if visibility_checker is not None
@@ -394,7 +452,15 @@ def search_report(
                 ):
                     occlusion_nearest_miss = occlusion
                 continue
-        if not interference_free(candidate, problem.obstacles, checker):
+        # ADR-135 D2 で保持した解をそのまま渡す (解き直さない)。腕を見ないチェッカは
+        # 無視し、見るチェッカだけが `JointSolution` のときに腕を再構成する。
+        if not interference_free(
+            candidate,
+            problem.obstacles,
+            checker,
+            solution=ik_solution,
+            robot=problem.robot,
+        ):
             rejected_by_interference += 1
             continue
         objective_scores = evaluate_objectives(candidate, problem, objective_names)

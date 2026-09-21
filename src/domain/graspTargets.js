@@ -82,6 +82,10 @@ const IDENTITY_Q = Object.freeze({ x: 0, y: 0, z: 0, w: 1 })
  * @property {{x:number,y:number,z:number}} position   world-frame CENTER of the box
  * @property {{x:number,y:number,z:number}} dimensions full extents (not half)
  * @property {{x:number,y:number,z:number,w:number}} rotation world-frame quaternion
+ * @property {{x:number,y:number,z:number}} [innerDimensions] cavity full extents when
+ *           the body is HOLLOW (ADR-133 D1). Absent means solid — never `{0,0,0}`,
+ *           which would make "no cavity declared" and "a cavity of zero size" the
+ *           same value (原則 #31).
  * @property {{state:string, faces:{face:string,region:object}[], errors:string[]}} feature
  *           resolved grasp-location declaration (ADR-119 D2) — ALWAYS present, and
  *           `state:'derived'` is a real answer ("nobody said"), never a missing one
@@ -174,6 +178,13 @@ export function resolveGraspTargets(entities) {
       position:   { x: e.position.x, y: e.position.y, z: e.position.z },
       dimensions: { x: dx, y: dy, z: dz },
       rotation:   rotationOf(e),
+      // 空洞の内寸 (ADR-133 D1)。宣言が無ければ `undefined` = **中身の詰まった
+      // 立体**。`{0,0,0}` で埋めないのは、「空洞を宣言していない」と「空洞の大きさが
+      // ゼロ」を区別できなくするため (原則 #31)。この一語だけがトレーを 1 つの箱と
+      // 5 枚の壁に分ける。
+      innerDimensions: isVec3(e.innerDimensions) ? {
+        x: e.innerDimensions.x, y: e.innerDimensions.y, z: e.innerDimensions.z,
+      } : undefined,
       // Where the user said to grasp it, resolved through the ONE resolution
       // point (ADR-119 D2). Resolved eagerly rather than left as a raw field so
       // no consumer downstream is tempted to read `e.graspFeature` itself.
@@ -357,31 +368,156 @@ export function surfaceSamplesFor(target, gripperKind = null) {
 
 /**
  * Derive the wire-shaped `obstacles` for a run: every OTHER graspable body in the
- * layout, as a bounding sphere.
+ * layout, as an ORIENTED BOX (ADR-133 D5).
  *
- * A bounding sphere (half the box diagonal) is deliberately CONSERVATIVE — it
- * over-covers the corners, so the interference stage can reject a candidate that
- * a exact-box check would pass. That direction is the safe one for a declaration:
- * it never claims a path is clear when it might not be. The exact swept-body test
- * is `core/`'s to make; this only says where the bodies are and how big.
+ * ## Why this stopped being a bounding sphere
+ *
+ * The sphere form (half the box diagonal) was chosen as "deliberately
+ * conservative": it over-covers the corners, so it can only ever reject a
+ * candidate an exact test would pass, never the reverse. That argument is sound
+ * for the APPROACH PATH, and it was the only consumer when it was written.
+ *
+ * ADR-145 gave the obstacles a second consumer — the arm's own links — and there
+ * the same conservatism stops being safe and becomes useless. Measured on the
+ * single-arm cell: the pedestal (300x300x120) has a bounding-sphere radius of
+ * 220.5mm, and the robot's own base sits 60mm from its centre. **The robot grows
+ * out of the inside of its own obstacle.** Every arm configuration collides, so
+ * either the whole check is discarded or the first link is excluded by hand; the
+ * shoulder origin cleared that sphere by 2.5mm, which is not a margin, it is a
+ * coincidence. As a box the same pedestal is simply a surface the base rests on.
+ *
+ * An entity already declares everything an exact box needs — centre, full extents
+ * and a world quaternion — so this is not an approximation being refined. It is
+ * the declaration being passed through instead of being thrown away.
  *
  * The target itself is excluded — an object cannot be its own obstacle, and
  * including it would reject every candidate that touches the thing being picked.
  *
  * @param {GraspTarget[]} targets
  * @param {string|null} excludeRef  ref of the target being grasped
- * @returns {{center:[number,number,number], radius:number}[]}
+ * @returns {WireObstacle[]}
  */
 export function obstaclesExcluding(targets, excludeRef) {
   return (targets ?? [])
     .filter(t => t.ref !== excludeRef)
-    .map(t => {
-      const { x, y, z } = t.dimensions
-      return {
-        center: /** @type {[number,number,number]} */ ([t.position.x, t.position.y, t.position.z]),
-        radius: Math.sqrt(x * x + y * y + z * z) / 2,
-      }
-    })
+    .flatMap(t => boxesForBody(t))
+}
+
+/**
+ * @typedef {{kind:'box', center:[number,number,number],
+ *            halfExtents:[number,number,number],
+ *            orientation:[number,number,number,number]}} WireObstacle
+ */
+
+/**
+ * One body → the boxes that stand for it on the wire.
+ *
+ * A plain solid is one box. A body that declares `innerDimensions` is HOLLOW and
+ * becomes its walls instead (ADR-133 D2) — see `hollowBodyBoxes`.
+ *
+ * @param {GraspTarget} t
+ * @returns {WireObstacle[]}
+ */
+export function boxesForBody(t) {
+  const inner = t.innerDimensions
+  if (isVec3(inner)) return hollowBodyBoxes(t, inner)
+  return [box(t.position, halved(t.dimensions), t.rotation)]
+}
+
+/** @param {{x:number,y:number,z:number}} d */
+function halved(d) {
+  return { x: d.x / 2, y: d.y / 2, z: d.z / 2 }
+}
+
+/**
+ * Build one wire box. Local offsets are rotated by the body's own quaternion, so
+ * the walls of a turned tray turn with it rather than staying axis-aligned.
+ *
+ * @param {{x:number,y:number,z:number}} center
+ * @param {{x:number,y:number,z:number}} half
+ * @param {{x:number,y:number,z:number,w:number}} q
+ * @returns {WireObstacle}
+ */
+function box(center, half, q) {
+  return {
+    kind: 'box',
+    center: /** @type {[number,number,number]} */ ([center.x, center.y, center.z]),
+    halfExtents: /** @type {[number,number,number]} */ ([half.x, half.y, half.z]),
+    orientation: /** @type {[number,number,number,number]} */ ([q.x, q.y, q.z, q.w]),
+  }
+}
+
+/**
+ * A hollow body (tray, bin, tote) → **five boxes**: one floor and four walls
+ * (ADR-133 D2).
+ *
+ * ## Why five and not one
+ *
+ * One box for a tray claims the tray is solid, so nothing can ever be picked out
+ * of it: every candidate that reaches inside is rejected, and the funnel says
+ * "interference" for what is actually the normal way to use a tray. The interior
+ * has to be empty for the arm to be allowed in, and the only way to say that with
+ * convex boxes is to name the shell.
+ *
+ * ## Why the thicknesses are derived and not declared
+ *
+ * Wall thickness is `(outer − inner)/2` per horizontal axis and the floor is
+ * `outer.z − inner.z` (ADR-133 D1). Declaring both the inner size and the
+ * thickness would let them disagree; one of the two has to be the derived one
+ * (§1.1), and the measured quantities a person actually has are the inner and
+ * outer sizes.
+ *
+ * The interior is open at the TOP — a lid is a different body, and a tray that
+ * declared one would be a closed box, not a tray.
+ *
+ * ## これは障害物の粒度だけで、シーングラフではない (DEF-041)
+ *
+ * ADR-133 D1 は Layout DSL に `Container` entity type を足し、D2 は壁を**個別に選択
+ * できる Solid** として Outliner に出す設計だった。今日**未実装**なのはそちらで、
+ * ここが割るのは *core/ へ送る障害物*に限られる。既存 Solid の `innerDimensions` で
+ * 代替したのは、要求が干渉判定の粒度であって新しい実体種別ではなく、entity type を
+ * 増やすと Outliner・選択・コンパイラ・ギャラリーへ波及するから — 壁を個別選択させる
+ * かどうかは **UI 側の別の判断**である。
+ *
+ * @param {GraspTarget} t
+ * @param {{x:number,y:number,z:number}} inner  inner (cavity) full extents
+ * @returns {WireObstacle[]}
+ */
+export function hollowBodyBoxes(t, inner) {
+  const outer = t.dimensions
+  const q = t.rotation
+  const ho = halved(outer)
+  const hi = halved(inner)
+  // 厚み (導出): 水平は両側に等分、床は下側にだけ付く。
+  const wallX = ho.x - hi.x
+  const wallY = ho.y - hi.y
+  const floor = outer.z - inner.z
+  // 内寸が外寸以上 = 壁が無い。これは「薄い壁」ではなく**宣言の誤り**なので、
+  // 0 厚の壁を 4 枚置いて「囲われている」ふりをせず、中身の無い箱として扱う
+  // (原則 #11 の裏返し — 黙って意味の違うものを返さない)。
+  if (wallX <= 0 || wallY <= 0 || floor <= 0) {
+    return [box(t.position, ho, q)]
+  }
+  const cavityCenterZ = -ho.z + floor + hi.z   // 空洞の中心 (ローカル)
+  /** @param {{x:number,y:number,z:number}} local */
+  const placed = (local, half) => {
+    const w = rotateVec3(local, q)
+    return box(
+      { x: t.position.x + w.x, y: t.position.y + w.y, z: t.position.z + w.z },
+      half,
+      q,
+    )
+  }
+  return [
+    // 床: 外寸いっぱいの板。
+    placed({ x: 0, y: 0, z: -ho.z + floor / 2 }, { x: ho.x, y: ho.y, z: floor / 2 }),
+    // 壁 ±X: 空洞の高さぶんだけ立つ。
+    placed({ x: -(hi.x + wallX / 2), y: 0, z: cavityCenterZ }, { x: wallX / 2, y: ho.y, z: hi.z }),
+    placed({ x: +(hi.x + wallX / 2), y: 0, z: cavityCenterZ }, { x: wallX / 2, y: ho.y, z: hi.z }),
+    // 壁 ±Y: X 壁と重ならないよう内寸幅に収める (二重に数えない)。
+    placed({ x: 0, y: -(hi.y + wallY / 2), z: cavityCenterZ }, { x: hi.x, y: wallY / 2, z: hi.z }),
+    placed({ x: 0, y: +(hi.y + wallY / 2), z: cavityCenterZ }, { x: hi.x, y: wallY / 2, z: hi.z }),
+  ]
 }
 
 /**

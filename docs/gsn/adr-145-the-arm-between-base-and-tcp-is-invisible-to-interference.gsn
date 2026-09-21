@@ -1,0 +1,100 @@
+GOALS adr145_the_arm_between_base_and_tcp_is_invisible_to_interference
+
+goal TheChosenJointConfigurationDoesNotIntersectSurroundingStructures
+uuid a5514417-8ab4-4bae-894f-8ae1a9180c67
+summary "ロボットが選ぶ関節配置が、把持探索の設計時検証において周辺構造物 (自身のペデスタル含む) と実際に干渉しないことを保証できる。解でなく性質: '8解を出す' '干渉判定を足す' は解の形であり、持ち上げた性質がこれ"
+state Approved
+labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, principle-2, principle-31, core
+
+    context CoordinateConventionIsNotTheCause
+    uuid 4589389b-d199-4f7a-a819-d27f43c25db5
+    summary "診断で除外: SceneView.js:67 が camera.up.set(0,0,1) 'ROS convention: +Z is up' を明示し、URDFはROS/URDF標準どおりm・Z-upのまま読み込む (RobotStageの一様×1000スケールのみ、軸入れ替え無し、ADR-136)。front (feasibility.py:137コメント) とcoreが同じ+X前方・+Z上の規約を共有している"
+    artifacts
+    - "src/view/SceneView.js"
+    - "src/view/RobotStage.js"
+    - "core/easy_extrude_core/engine/feasibility.py"
+
+    context OnlyOneOfEightAnalyticSolutionsEverReachesTheWire
+    uuid 82a13198-56fd-412a-ba2a-48fe42c55659
+    summary "UniversalRobotsIkSolver.solve() はUR閉形式解析解 (Hawkins 2013) で最大8解を内部計算するが、ADR-127 D5 が『段階0は可解性のみ問うので8解を出さない』と決め関節総移動量最小の代表解1つ (JointSolution) だけを返す。ADR-135もこの1解構造を維持したまま実装済み"
+    artifacts
+    - "core/easy_extrude_core/engine/ur_solver.py"
+    - "core/easy_extrude_core/engine/feasibility.py"
+
+    context InterferenceCheckerNeverReceivesTheJointSolutionOrArmGeometry
+    uuid d10586f7-80f5-4f98-819c-d4e391af39bc
+    summary "NaiveSphereCollisionChecker/OBB版 (ADR-133 D5) の in_collision(candidate, obstacles) は candidate.pre_grasp -> candidate.pose.position の線分1本のみを障害物と照合し、IkSolution.joints を一切受け取らない。robot_pedestal は examples/layout_pick_place_cell.json で fixture/static障害物として正しく宣言済みだが、供給ビンの把持点はペデスタルから離れており進入経路もそこを通らないため、肘・前腕の回り込み区間はどの入力にも現れない。8解のどれを選んでも判定結果は変わらない (判定が関節配置を見ていないため)"
+    artifacts
+    - "core/easy_extrude_core/engine/feasibility.py"
+    - "examples/layout_pick_place_cell.json"
+
+    justification WhyNotJustReopeningAdr127D5Alone
+    uuid 4a8421f9-3461-482c-b801-62a6139d3501
+    summary "8解を公開する変更 (却下案の逆) だけでは症状は直らない: 干渉判定自体が関節配置を見ていないので、どの解を選んでも同じ (誤った) 判定結果になる。まず干渉判定に腕ジオメトリを入力させることが前提条件"
+
+    strategy ByAddingAnArmLinkSweepToTheExistingCollisionCheckerWithoutChangingTheWire
+    uuid d54460af-7d35-441a-b32e-76bc9a257793
+    summary "現行の代表1解 (JointSolution) のまま、base->shoulder->elbow->wrist1->wrist2->wrist3->tcp の各リンクを線分近似し、既存のTCP進入経路チェックと同じ障害物リストに対して照合する新規CollisionChecker実装を足す。response契約 (reachSolution) は不変、front/coreの境界も一度も越えない"
+
+        goal ForwardKinematicsChainReturnsEachJointOriginNotOnlyTheFlange
+        uuid 417c0652-122a-4c3f-8963-b770517ddec1
+        summary "D1: ur_kinematics.py に forward_kinematics_chain(dh, joints) -> tuple[Mat4,...] を新設する。DH変換の累積積の各段 (各関節原点のワールド変換) を返す。既存forward_kinematics (フランジ最終変換のみ) はこの関数の最終要素を返す薄いラッパへリファクタするか独立実装のまま残すかは実装時に決める"
+        labels support-verified
+        state Approved
+
+            solution ChainFixedByHandComputedOriginsAndAConfigurationFreeInvariant
+            uuid 42acb186-38dc-43ac-a9f3-1391bb0f56aa
+            summary "実装: forward_kinematics_chain は 7 要素 (ベース原点 + 6 関節原点) を返し、forward_kinematics はその最終要素を返す薄いラッパになった (計算の源は 1 つ — 独立実装のままなら途中段と最終段が別々にずれても両方もっともらしい)。証拠は 2 面: (a) 全関節 0 での 7 原点を **DH のコードを走らせずに手で積んだ**値と照合 (_HAND_COMPUTED_ORIGINS_AT_ZERO — ADR-127 の教訓の再演防止)。(b) **1 配置の値表は他の配置について何も主張しない**ので、27 配置 (固定 seed + 端点) で『隣り合う原点の距離 == DH の長さ』という姿勢に依らない剛体の不変量を問う = 累積積の順序を取り違えた実装を落とす。さらに test_first_link_origin_does_not_depend_on_any_joint が (0,0,d1) 固定を焼く — これは D2 の除外規則が立つ土台なので、除外の側ではなく不変量の側を焼いた。pnpm test:core 195 passed"
+            artifacts
+            - "core/easy_extrude_core/engine/ur_kinematics.py"
+            - "core/tests/test_ur_kinematics.py"
+
+        goal NaiveArmSweepCollisionCheckerDetectsPedestalIntrusion
+        uuid 87b1c9d2-3e4f-4a5b-9c6d-7e8f9a0b1c2d
+        summary "D2: feasibility.py に NaiveArmSweepCollisionChecker を新設する。各リンク区間を線分とみなし、既存の distance_point_to_segment (TCP進入経路チェックと同じ幾何プリミティブ、第二の源を作らない) をリンクごとに呼んで障害物 (球/OBB) と照合する。1本でも交差すれば干渉ありとする"
+        labels support-verified
+        state Approved
+
+            solution TemplatePinsTheDifferenceWithAZeroControl
+            uuid 1f2e3d4c-5b6a-4798-8d9e-0a1b2c3d4e5f
+            summary "実装: NaiveArmSweepCollisionChecker は進入経路の判定を inner へ**委譲**し (同じ線分-障害物を 2 か所に書かない)、自分が足すのはリンク線分ぶんだけ。templates/single-arm-pedestal-cell が examples/layout_pick_place_cell.json の実数 (mm→m) で症状を再現し、受け入れ値は 36 生成 / **10 干渉棄却** / 26 通過。**同じテストが宣言を外した対照を並べ、そちらの棄却が 0 であることを主張する** — TCP 進入経路は一度も台に触れないので、10 件は腕を見たからこそ出た差である。対照が無いと『常に棄却する壊れたチェッカ』でも宣言あり側は緑になる。棄却された代表解の実測は上腕 (肩→肘) が z=0.718 まで降りる = ペデスタル上面 (z=0.92) より 200mm 下 = 報告された症状そのもの。**起票時に無かった規律を実装で足した**: 障害物は箱の外接球 (front の obstaclesExcluding) なのでペデスタルの球 (r=0.2205) はロボットのベース (0.060 の位置) を内側に含む。全リンクを素朴に照合すると全候補が棄却されるため、θ1 の回転軸そのもので配置に依存しないベース→関節1 の区間を外した (_JOINT_INDEPENDENT_LINKS)。余裕は実測 2.5mm しかなく、これは腕スイープではなく**外接球という表現の限界** (DEF-036)"
+            artifacts
+            - "core/easy_extrude_core/engine/feasibility.py"
+            - "templates/single-arm-pedestal-cell/grasp-search.request.json"
+            - "core/tests/test_templates.py"
+
+        goal ProtocolExtensionKeepsTheWireAndExistingCheckersUnchanged
+        uuid 2a3b4c5d-6e7f-4809-9e0f-1a2b3c4d5e6f
+        summary "D3: CollisionChecker.in_collision() に関節解の引数を追加する (in_collision(candidate, obstacles, joints=None))。core/内部のProtocol境界でありワイヤに出ないためcontractVersion不変。既存NaiveSphereCollisionChecker/OBB版は新引数を無視してよく後方互換を保つ"
+        labels support-verified
+        state Approved
+
+            solution SignatureWidenedAndTheOneBrokenCallerWasFixedNotAbsorbed
+            uuid 3b4c5d6e-7f80-491a-af10-2b3c4d5e6f70
+            summary "実装: in_collision に solution / robot (キーワード専用・既定 None) を足した。**引数名は本文の joints ではなく solution** — 渡すのは数の列ではなく IK 解そのもので、腕を再構成してよいかは isinstance(solution, JointSolution) という型の問いである (joints という名前は『6 個の数』を期待させ、占位解の 1 個の数を詰める経路を誘う = ADR-135 がまさに防いだ取り違え)。契約は 1 バイトも変えておらず contractVersion=6 のまま、test_templates の conformance が response schema への準拠を焼く。**本文の『既存実装は新引数を無視してよい』は成り立たなかった**: test_scene_api.py の注入ダブルは 2 引数で書かれており落ちる。interference_free 側で引数の有無を嗅いで吸収する手は採らなかった — 吸収すると『腕を見るはずのチェッカが実は見ていない』が同じ形で静かに通るため、ダブル側に受け取る宣言を足した。既存 179 件は 1 件も書き換えていない"
+            artifacts
+            - "core/easy_extrude_core/engine/feasibility.py"
+            - "core/tests/test_scene_api.py"
+
+        goal UndeclaredKinematicsFallsBackToPathOnlyCheckingWithoutSilentBehaviorChange
+        uuid 4c5d6e7f-8091-4a2b-b021-3c4d5e6f7081
+        summary "D4: robot.kinematics未宣言時のIkSolution (占位1数) はJointSolutionでないため型で分岐し (isinstance, 原則#2)、腕スイープを起動せず既存TCP経路のみの判定にフォールバックする。ADR-127 D3と同じ『宣言した瞬間にだけ挙動が変わる』規律の踏襲"
+        labels support-verified
+        state Approved
+
+            solution TheArmStageDoesNotStartAtAllWhenNothingDeclaredIt
+            uuid 5d6e7f80-91a2-4b3c-9132-4d5e6f708192
+            summary "実装: 型で分岐する場所は arm_link_segments ただ 1 つで、JointSolution でなければ**空タプル**を返す (空 = 『腕を見ていない』であって『腕が触れていない』ではない — 原則 #31)。test_arm_sweep_is_bit_identical_when_kinematics_is_not_declared が、占位解では segments == () かつ合成チェッカの答えが inner と**同一**であることを問う。テンプレ側は対照の棄却が 0 で同じ事実を別の面から言う。最も強い証拠は**既存 179 件が 1 件も書き換わらずに緑のまま**であること — 宣言が無ければ挙動が 1 ビットも変わらない、が回帰そのものになっている (179 → 195、増えた 16 件はすべて新規)"
+            artifacts
+            - "core/easy_extrude_core/engine/feasibility.py"
+            - "core/tests/test_engine.py"
+
+    context OptionBIsDeferredNotRejected
+    uuid 6e7f8091-a2b3-4c4d-a243-5e6f70819203
+    summary "干渉なしになるまで代替解(最大8解)を探索するモード (ADR-127 D5の再開) は、A (本ADR) の実装・実測を経てから必要性を判断する。docs/DEFERRAL_LEDGER.md に DEF-037 として登録 (満期 = 本ADRがAcceptedになりAが実装された後、実運用で『代表解が常に干渉して候補が失われる』ケースが確認された時点)"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"
+
+    context ConnectionToProfitTreeDeferred
+    uuid 7f809213-b3c4-4d5e-b354-6f708192a3b4
+    summary "docs/gsn/profit-growth.gsn への接続は保留する。本goalは実機干渉によるレイアウト出戻り (ADR-081の階梯 L4/L5 相当) を設計時に潰す価値に効くが、事業木側の対応するgoal名・uuidは未特定 — 次に事業木を読み直す機会に確定する"

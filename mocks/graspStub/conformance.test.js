@@ -404,3 +404,55 @@ test('エラーシナリオは実際に BFF が出しうる status を使う (40
   const statuses = Object.values(ERROR_RESPONSES).map(e => e.status).sort()
   assert.deepEqual(statuses, [400, 502, 503])
 })
+
+// ── pose gauge: the stub speaks the contract's convention, not its own ───────
+//
+// **2026-09-21 に本物のズレを 2 つ見つけて直した** (ADR-147):
+//   1. `frame.orientation` は「+X を approach に向ける」四元数だった。契約の
+//      FRAME_CONVENTION は **+Z = −approach** (`core/engine/pose_codec.py`)。
+//   2. `frame.position` は **pre-grasp** を載せていた。`core/` の `pose_to_payload`
+//      が載せるのは**把持点**。
+//
+// どちらも 2 か月以上そこに在り、conformance も e2e も緑だった。理由は単純で、
+// **読み手が位置しか使っていなかった**から — ゴーストは位置だけで描け、ADR-144 の
+// 近似も位置しか合わせていなかったので、四元数は誰にも読まれないまま間違って
+// いられた。ADR-147 でクライアントが姿勢まで解いた瞬間に表に出た。
+//
+// 教訓は ADR-115 の一般化である: **契約に載っている値でも、読む機械が無いあいだは
+// 何であってもよい。** スキーマは形しか見ないので `[x,y,z,w]` であれば通る。
+// だからここで**意味**を問う — 復元した approach が、スタブが意図した approach か。
+test('スタブの pose は契約の gauge で復元できる — 形ではなく**意味**を問う', async () => {
+  const { poseFromFrame } = await import('../../src/robotics/graspPoseGauge.js')
+
+  const req = request()
+  const response = stubSolve(req, CONTRACT_VERSION)
+  assert.ok(response.candidates.length > 0, '前提: 候補が出ること')
+  const samples = req.graspSearch.target.surfaceSamples
+
+  for (const c of response.candidates) {
+    assert.equal(c.pose.kind, 'endEffector')
+    const pose = poseFromFrame(c.pose.frame)
+
+    // 表面サンプルのどれかの法線と向かい合っているはず (approach = −normal)。
+    // **「単位ベクトルである」では足りない** — 間違った gauge で復元した approach も
+    // 単位ベクトルなので、形だけ見る検査は両方を通してしまう。
+    const normals = samples.map(s => s.normal)
+    const opposesSomeNormal = normals.some(n => {
+      const len = Math.hypot(...n)
+      const dotp = (pose.approach[0] * n[0] + pose.approach[1] * n[1] + pose.approach[2] * n[2]) / len
+      return Math.abs(dotp + 1) < 1e-6           // approach·n̂ == −1
+    })
+    assert.ok(opposesSomeNormal,
+      `復元した approach ${JSON.stringify(pose.approach)} がどの法線とも向かい合っていない`)
+
+    // 位置は**把持点** = 表面サンプルのどれか。pre-grasp を載せていた頃は、
+    // 進入距離ぶん離れた点になるのでここで落ちる。
+    const points = samples.map(s => s.point)
+    const isASamplePoint = points.some(p =>
+      Math.hypot(p[0] - c.pose.frame.position[0],
+                 p[1] - c.pose.frame.position[1],
+                 p[2] - c.pose.frame.position[2]) < 1e-9)
+    assert.ok(isASamplePoint,
+      `frame.position ${JSON.stringify(c.pose.frame.position)} が把持点ではない`)
+  }
+})

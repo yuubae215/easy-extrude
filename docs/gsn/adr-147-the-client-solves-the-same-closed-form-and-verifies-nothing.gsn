@@ -1,0 +1,74 @@
+GOALS adr147_the_client_solves_the_same_closed_form_and_verifies_nothing
+
+goal ThePreviewedPoseIsExactlyTheCandidatePoseAndNothingElseIsClaimed
+uuid ff0ce2a2-1d79-4ab6-8045-66ef0b855d62
+summary "core/ が居ない環境で腕を見たとき、見えている姿勢が候補の姿勢であると信じてよい。そしてそれ以上は何も信じてはいけないことが画面から分かる。解でなく性質: '解析解を移植する' は解の形で、持ち上げた性質がこれ"
+state Approved
+labels adr-147, adr-144, adr-127, adr-135, adr-141, adr-146, principle-2, principle-11, principle-28, principle-31, app, core
+
+    context Adr144ChoseSamplingBecauseTheConstraintWasDifferentThen
+    uuid bcd0ccce-b918-47f9-93a9-4aae35fbe455
+    summary "ADR-144 は却下案B (UR解析解のJS移植) を §1.1 で退け『新しい方程式を1行も書かない』を制約にしてFKサンプリングへ迂回した。その制約下では多スタート再サンプルが最善で、実際よく効いた (100点中98%が1mm以内)。変わったのは制約のほう: ADR-146 が §1.1 の禁止対象を*複製*から*源が2つになること*へ精密化し、公知の閉形式は共有フィクスチャの準拠テストを同じPRで置くなら src/ に置いてよいとした"
+    artifacts
+    - "docs/adr/ADR-144-an-approximate-preview-is-not-a-second-solver.md"
+    - "docs/adr/ADR-146-a-closed-form-may-be-copied-an-idea-may-not.md"
+
+    context TheMeasuredGapWasNotPrecisionButOrientation
+    uuid 50c74be5-22c2-4e7a-9af1-c7b4fb286663
+    summary "実装前に測った差: 解の個数 1 vs 最大8、位置は許容差10mm vs 機械精度、コストは57ms vs 反復なし。しかし本質は姿勢の行 — 近似は6自由度を位置3拘束に当てるので手首は誰も言っていない向きを向いており、それをゴースト表示で辛うじて正当化していた。当事者の条件『8解出るならいいよ』は現状が満たしていない"
+
+    justification WhyNotKeepSamplingForNonUrArms
+    uuid 17d7d8eb-cba4-4e43-bb81-bd91c3eca562
+    summary "両方持つと『画面の腕を決める計算』が2つになる (§1.1)。しかも分岐の片側は出荷機種 (ur5e ちょうど1つ — ADR-141) では一度も通らないので、腐っても緑のまま (ADR-103 の退役の腐敗は違反を見逃すのではなく緑を出す)。UR 以外でプレビューが出ないことは既定値ではなく宣言された 0 として受け入れる"
+
+    strategy ByCopyingTheClosedFormAsADerivationAndNamingWhatIsStillUnverified
+    uuid d3cc850a-3abc-4645-a6de-5c6f8ad0e95d
+    summary "core/ の閉形式と2つの gauge を src/ へ写し、共有フィクスチャ3本 (FK / IK / gauge) の準拠テストで源が1つであり続けることを機械に問わせる。そのうえで権威の名前を approximate から unverified へ訂正し、欠けているのが精度ではなく検証であることを画面に述べさせる"
+
+        goal TheClientReproducesAllEightBranchesAndTheSameRepresentative
+        uuid 806e1208-64cc-4cb6-a7d5-7cd479e1e6cc
+        summary "D1/D3: src/robotics/urKinematics.js が core/ と同じ閉形式で最大8解を同じ順序で返し、代表解 (関節総移動量最小、ADR-127 D5) も同じ規則で選ぶ。違う代表を選ぶと画面の腕と探索が解いた腕が*どちらも正しい解*でありながら別物になる (ADR-141 の一段深いところでの同じ欠陥)"
+        labels support-verified
+        state Approved
+
+            solution EightBranchesMatchInCountAndOrderAndFkRoundTripsIndependently
+            uuid d39a49ec-3006-477c-959b-f7bc3ea84ee3
+            summary "fixtures/cross-language/ur5e-inverse-kinematics.json の 24 姿勢 (解の個数 4/6/8 を含む — 8 解の姿勢が在ることを別 assert で焼く。1 解しか出ない姿勢ばかりなら分岐を1本しか通らない実装でも緑になる) について、**個数と順序**が一致する。順序は契約の一部で代表解の再現性がそこに乗っているので、並べ替えて比べない。フィクスチャとの一致は『両方が同じ間違いをしている』でも緑になるので、**FK∘IK = 恒等** (原則 #28 の商の上の fixpoint) を両言語で別に問う。**手首特異点は緩めずに数える**: |sin θ5|≈0 では θ6 が定まらず関節ベクトルが一意でないので、実測 24 姿勢のうち特異な 1 件だけが 3.0e-8 ずれる (特異でない 23 件は 1.4e-10 以内)。許容差を一律に緩めると特異でないところの本物のずれまで通るため、SINGULAR_CASE_BUDGET=1 として個数を固定し、**姿勢は特異点でも 1e-9 で一致すること**を別に問う (関節値を飛ばしたケースについて何も主張しないまま終わらせない)。実行: pnpm test 1372 passed / pnpm test:core 209 passed"
+            artifacts
+            - "src/robotics/urKinematics.js"
+            - "fixtures/cross-language/ur5e-inverse-kinematics.json"
+            - "src/robotics/CrossLanguageDerivation.test.js"
+            - "core/tests/test_ur_kinematics.py"
+
+        goal TheTwoGaugesAreCopiedFaithfullyAndTheShortcutIsProvedWrong
+        uuid 96fb48a6-31b3-4b27-912c-7623cce31422
+        summary "D2: 候補 frame (+Z=-approach, FRAME_CONVENTION) とフランジ目標 (+Z=+approach, FLANGE_Z_IS_APPROACH) は導出できない取り決めで、180° 回すだけでは一致しない — どちらも basisFromZ(z) で張り直しており参照軸が z 成分で切り替わるため。復元は (approach, roll) まで戻してから張り直す往復でしか正しくならない"
+        labels support-verified
+        state Approved
+
+            solution BothBranchesAreExercisedAndTheNaiveShortcutIsMeasuredToDiffer
+            uuid 07464de0-e4a7-48d0-bc35-ced01a2cc929
+            summary "fixtures/cross-language/ur5e-candidate-to-flange.json の 24 姿勢で 1e-9 以内に一致。**基準軸の両分岐** (|z| >= 0.9 と < 0.9) が含まれていることを両言語で assert する — 片側だけのフィクスチャでは分岐が1本しか通らず、もう一方を取り違えた実装でも緑になる。さらに『素朴な近道』(候補 frame の軸の z だけ反転) を実際に計算し、**差が出ることを焼く** — 効かない理由を散文にだけ書くと次の人が同じ近道を試すので、否定を検査にする。実装中に別の形で同じ罠を踏んだ: base を wire 形の配列ではなく {x,y,z} で読んだため行列が NaN で埋まり、NaN は比較でどの枝にも入らないので**解が 0 本という正しい形の答え**になって現れた。形の違う入力は計算せず throw する"
+            artifacts
+            - "src/robotics/graspPoseGauge.js"
+            - "fixtures/cross-language/ur5e-candidate-to-flange.json"
+            - "scripts/gen-cross-language-gauge.py"
+
+        goal TheScreenSaysWhatIsMissingWhichIsVerificationNotPrecision
+        uuid 75ee3577-4944-4291-8250-3d6a962595d3
+        summary "D4: 権威を approximate から unverified へ訂正する。改名ではなく意味の訂正 — 値は粗くないどころか機械精度で、欠けているのは検証 (干渉・可視性・把持性・スコアは core/ しか答えられない)。approximate のままだと間違った限界を名乗り続け、次の人が既に機械精度の数を『改善』しに行く"
+        labels support-verified
+        state Approved
+
+            solution ThePreviewIsBurnedExactAndTheGateIsCountedNotObserved
+            uuid 5f1e4c7a-9b62-4d38-a0c1-2e3f4a5b6c7d
+            summary "src/controller/GraspController.test.js が、undeclared な候補のプレビューについて **FK を 1e-9 で照合**する (近似だった頃は許容差 10mm・姿勢不問だったので、この assert は当時なら落ちた)。ADR-144 D3 のゲートは**呼び出し回数**で問い続ける — 『呼ばれなかった』は出力に痕跡を残さない (どちらの枝でも payload は在る) ので、在るものを辿る検査では原理的に見えない (原則 #31): solved なら 0 回、届かない候補なら 1 回 (解こうとした上で『無い』と答えている = 何もせず null を返したのではない)。キャプションは『approximation (position only)』から『solved by this browser and checked against nothing』へ変え、e2e がその文言を読む"
+            artifacts
+            - "src/controller/GraspController.js"
+            - "src/controller/GraspController.test.js"
+            - "src/components/Grasp/GraspSearchPanel.jsx"
+            - "e2e/grasp-stub.spec.js"
+
+    context ClientSideInterferenceIsNotDecidedEitherWay
+    uuid 4a8b3c2d-1e0f-4958-b7a6-8c9d0e1f2a3b
+    summary "3軸で判定すると干渉はアイデアでも重くもなく、置いてよい側に入りうる。しかし『腕が当たるか』を述べ始めた瞬間プレビューは*予測*から*判定*へ変わり、core/ の答えと食い違ったときどちらが正なのかを決める場所が無い。本ADRの Goal の外なのでやらないが、**『対象外』とは書かない** — 原則 #29 の二状態でいえば契約ありでも明示的対象外でもなく『まだ決めていない』(ADR-129 D6 / DEF-034 と同じ扱い)"

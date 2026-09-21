@@ -1,0 +1,73 @@
+GOALS adr146_a_closed_form_may_be_copied_an_idea_may_not
+
+goal PlacementIsDecidedFromThePropertiesOfTheComputationNotFromAListOfTopics
+uuid f14a08ab-c787-4fd5-8595-ba3bb12449a8
+summary "ある計算をフロントに置いてよいかが、その計算の性質から判定でき、判定した人が変わっても同じ答えになる。解でなく性質: '探索はバックエンド' 'IK は core/ のみ' はどちらも解の形 (前者は軸が 1 本足りず、後者は話題の列挙) であり、持ち上げた性質がこれ"
+state Approved
+labels adr-146, adr-144, adr-053, adr-060, adr-102, adr-115, adr-141, adr-145, principle-1, principle-19, principle-29, principle-31, app, core
+
+    context TheGuardWasAListOfTopicsAndListsDoNotGeneralise
+    uuid 47b22762-2a73-46b8-8f7e-29d97429c51d
+    summary "CLAUDE.md の AI ガードは『制約の解法 (IK / 干渉 / リーチ / 安定性の解き方) を src/ に書くな』という話題の列挙だった。穴は3つ: (a) 列挙に無い計算が来た日に何も答えない — ADR-145 が足した forward_kinematics_chain は4つのどれでもない。(b) 列挙に在る計算でも理由が違えば答えが違う — ADR-053 は FK サンプリングによる到達判定を front に許しており、実際に効いていた規則は列挙ではなく『権威ある判定か、非権威の測定器か』だった。(c) 理由を説明できないので当たるたびに議論が振り出しに戻る"
+    artifacts
+    - "CLAUDE.md"
+    - "docs/adr/ADR-053-robotics-kpi-methods.md"
+
+    context TheRuleFailedWithinOneDayOfBeingAccepted
+    uuid a5296fa1-9277-4908-b456-ec71a8635b5b
+    summary "ADR-144 は 2026-09-21 に Accepted になり、同じ日に当事者が逆向きの規則 ('一意な解が出るものはクライアントでもできるように') を述べた。1日ももたなかったのは規則が判定可能な形で書かれていなかったからで、これが本ADRの起票事由そのものである (当事者の言葉: 'この境界の判断は毎回迷われるため、どこかに記録しておいてほしい')"
+    artifacts
+    - "docs/adr/ADR-144-an-approximate-preview-is-not-a-second-solver.md"
+
+    justification WhySection11ForbidsSourcesNotCopies
+    uuid 8c6d0498-74eb-4037-8183-fd643a68b488
+    summary "ADR-144 は却下案B (UR解析解のJS移植) を §1.1 で退けたが、§1.1 が禁じているのは『同じ事実が二箇所に書ける構造』であって『同じ計算が二つの実行環境に在ること』ではない。この repo は既に複製を導出として許す機構を持つ — BFF は schema から型を導出し pnpm test:contract が準拠を焼く。禁じるべきは複製ではなく源が2つになることで、源が1つであり続けることを機械が問うなら二つ目は源ではなく導出である"
+
+    strategy ByThreeOrderedAxesWithTheOnlyMechanisableOneLoweredIntoACheck
+    uuid 38a603ff-9c94-4523-80ad-d5ce94c9e571
+    summary "アイデア (競争上の知) → 重さ (探索・組合せ) → 一意性 (公知の閉形式) の順に問い、最初に真になった軸が置き場所を決める。3軸のうち機械へ降ろせるのは一意性軸の条件 (導出であること) だけなので、そこを降ろし、降ろせなかったことを数える"
+
+        goal TheIdeaAxisTakesPrecedenceOverBeingUniqueAndCheap
+        uuid 75663d6e-7f88-464e-adb5-25a928dadee2
+        summary "D1/D4: コスト関数・重み・ランキング・キュレーションされた判断知は core/ のみ。一意で軽くてもアイデアなら出さない。却下案C (当事者の最初の言葉どおり『探索か一意か』の1軸だけ) がこの軸を持たず、加重スコアの重み (ADR-076) は一意で軽いがまさに隠したい知なので front へ出てしまう。当事者自身が2度目の発言で『アイデアはサーバ側に隠す』と足したのがこの穴の修正で、本ADRはそれを軸の優先順位として固定した"
+        labels support-exploring
+        state ToBeReviewed
+
+            assumption TheIdeaAxisIsJudgedByPeopleAndCannotBeGrepped
+            uuid 4b2dcd8b-058a-4313-b5cb-26f0a693f8ac
+            summary "この goal は支えを持たない — 『アイデアか』はコードの構文から導出できず、機械に降ろせていない。コスト関数が front に現れても共有フィクスチャを持たないので登録簿に載らず、載らないものは数えられない (原則 #31)。本ADRの最も弱い辺であり、隠さず宣言する。満期=GREP:src/robotics/CrossLanguageDerivation.test.js::DERIVED_DERIVATION_POPULATION (DEF-039 と同じ番地 — 母集団を構文から導出する方法が見つかれば両方が同時に閉じる)"
+
+        goal APublishedClosedFormMayLiveOnTheClientAsADerivation
+        uuid 76ca7f00-8420-4b91-94d4-1278f6c6bf24
+        summary "D3: 公知の閉形式・一般ロジック (順運動学・DH変換・幾何プリミティブ・単位変換・正規形) は src/ 可。ただし第二の源ではなく導出として = 共有フィクスチャの準拠テストを同じ PR で置くこと。BFF が schema から型を導出するのと同じ形"
+        labels support-verified
+        state Approved
+
+            solution BothLanguagesReadTheSameNumbersAndAOneMillimetreNudgeBreaksIt
+            uuid 64dd2a38-731b-43a2-b86e-449514183168
+            summary "実装: fixtures/cross-language/ur5e-forward-kinematics.json を両言語が読む。24 配置について、URDF を**四元数で**解く JS の FK と、その URDF から**導出された** DH を**行列で**解く Python の FK が一致する (最大差 < 1e-9)。**この複製は ADR-146 以前から在り、今日まで正しかったが、正しいことを誰も問うていなかった** — 登録簿自体が無かったので個数は 0 として振る舞っていた。検査が空振りでないことは負の対照で示す: フィクスチャの a3 を **1mm** 動かすと Python 側 2 件が fail し、報告された最大差 0.001000 は与えた摂動そのもの。フィクスチャ自身の退化 (全配置が同じ点) も別 assert で落とす — 全部 0 のフィクスチャでも一致検査は緑になるため。実行結果: pnpm test:core 198 passed / node --test src/robotics/CrossLanguageDerivation.test.js 6 passed"
+            artifacts
+            - "fixtures/cross-language/ur5e-forward-kinematics.json"
+            - "scripts/gen-cross-language-fk.mjs"
+            - "src/robotics/CrossLanguageDerivation.test.js"
+            - "core/tests/test_ur_kinematics.py"
+
+        goal TheRuleIsAskedByAMachineNotOnlyByProse
+        uuid b7d76599-bd7f-4d23-866b-3efb527d1e15
+        summary "D5: 規則は CLAUDE.md の AI ガードを書き換えて置き (列挙を残したまま足すと源が2つになるので Retires: に載せた)、降ろせる部分を機械へ降ろす。宣言されたフィクスチャの実在・両言語の消費者が実際にそれを読んでいること・複製の個数 (ratchet) を問う"
+        labels support-verified
+        state Approved
+
+            solution ConsumersAreCheckedByReadingThemNotByTrustingTheTable
+            uuid 8b7e069e-8097-40f6-a39f-fb0b5736ee8d
+            summary "実装: CROSS_LANGUAGE_DERIVATIONS は各行について (1) フィクスチャと源の実在、(2) **両言語の消費者がそのパスを本文に持つこと**、(3) 個数 == DECLARED_DERIVATION_COUNT (超えても下回っても落とす — 下回りを許すと『消した』と『書き忘れた』が区別できなくなる、ADR-103) を問う。(2) が要点で、**宣言したことと読む機械が在ることは別の事実** (ADR-115) — 宣言だけ数えると消費者を消した日に表は緑のまま嘘になる。実際この検査は書いた直後に Python 側の消費者が未着手であることを検出して落ちた (= 空振りでない証拠)。CLAUDE.md 側は pnpm test:adr の Retires 検査が担保し、退役させると宣言した一文が本当に消えていることを問う — 初稿は trigger に `/` を含めたため regex が最初のスラッシュで切れて `IK` だけの検査へ退化しており、それも検出されて張り替えた (退役の腐敗は違反を見逃すのではなく**緑を出す** = ADR-103 が trigger の書き方そのものにも効いた)"
+            artifacts
+            - "src/robotics/CrossLanguageDerivation.test.js"
+            - "CLAUDE.md"
+            - "scripts/check-adr-status.mjs"
+
+    context ThePopulationOfTheRegisterIsHumanMemory
+    uuid 9e64a003-c9c9-4c27-aaaf-efdd9111a2ef
+    summary "登録簿の母集団は人が維持する。『同じ計算が2言語に在る』はコードの構文から導出できない (grep できる形を持たない) ので、検査が捕まえるのは宣言された行の腐りであって宣言されなかった複製ではない — ADR-102 の『母集団を持たない表』に最も近い形である。塞げない穴は数える側に倒し DEF-039 として登録した。登録簿を分母にしないのが要点で、そうすると表自身が place-list になる"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"

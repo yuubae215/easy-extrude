@@ -94,10 +94,10 @@ export class RobotStage {
    * writers of one visual fact race to last-write-wins. So the choice — rest or
    * preview — is made HERE, in one place, and nothing else writes joints.
    *
-   * @param {{authority: 'solved'|'approximate', joints: readonly number[]}|null}
+   * @param {{authority: 'solved'|'unverified', joints: readonly number[]}|null}
    *   preview  what to draw and ON WHOSE AUTHORITY (`previewPayloadFor`):
    *   `solved` carries the six angles `reachSolution.kind === 'solved'` decided
-   *   in `core/`; `approximate` carries the client's FK-sampled stand-in for a
+   *   in `core/`; `unverified` carries the configuration the client solved for a
    *   candidate nobody solved (ADR-144), which is drawn as an unverified ghost;
    *   `null` returns to the rest pose. A candidate with no solution AND no usable
    *   approximation is `null` here too — the arm must never be posed into a
@@ -114,7 +114,7 @@ export class RobotStage {
     // decides how it looks. An approximation drawn solid is indistinguishable
     // from a solution, which is the one failure mode ADR-144 accepts a cost to
     // avoid; a second owner for the material would race this write (原則 #4).
-    this._setUnverifiedLook(preview?.authority === 'approximate')
+    this._setUnverifiedLook(preview?.authority === 'unverified')
   }
 
   /**

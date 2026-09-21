@@ -1,6 +1,6 @@
 # 133. A container is five solids with a declared role, not a new primitive
 
-- Status: Proposed
+- Status: Accepted (**D5 と D2 の障害物側を実装 2026-09-21。D1 / D3 / D4 は未実装 — DEF-041**)
 - Date: 2026-08-15
 - Deciders: yuubae215 (via `/whiteboard` session)
 - Retires: なし — 既存の sphere obstacle 表現 (`kind` を足すだけ)・既存の `robotRole` パターン・ADR-078 の `core/` scene 層 (`derive_obstacles` / `POST /pick-sequence`) はいずれも変更せず、後者は今回の実装スコープにも入らない (触らない対象として明示)。ADR-078 の "Still deferred: 箱/半空間障害物の厳密干渉" は OBB 近似までを本 ADR が引き受け、完全な半空間 (薄板) 干渉は DEF-036 として切り出す (退役ではなく残しなので Retires の対象外)。
@@ -210,3 +210,58 @@ workpieces 配置ポリシ (`containerGrid`/`scatter` の 2 値, 権威=Containe
 - **様態**: Container 展開もワーク展開も BPMN 的な決定的パイプライン (宣言→コンパイル→
   シーン) で、CMMN 的な裁量処理ではない。scatter の「乱数」もシード固定なので決定的
   (同じ入力から同じ出力 — 原則 #6 の変換規律と両立)。
+
+
+## 実装で分かったこと (2026-09-21 — D5 と D2 の障害物側だけ, 原則 #19)
+
+**着手の出所:** 当事者の「干渉ロジックって粗すぎない？球近似でしょ？**トレーとかの
+5 つの直方体ぐらいの粒度**にしたいのだけれど」。本 ADR は 2026-08-15 の起票から
+**1 行も実装されていなかった** (`containerRole` も `Container` も grep で 0 件)。
+
+**1. D5 の動機が起票時より強くなっていた。** 起票時の理由は「scatter ワークの全軸
+ランダム回転に対し AABB は緩すぎる」だったが、ADR-145 が障害物に**第二の消費者
+(腕のリンク)** を与えたことで、外接球は*緩い*では済まなくなった。実測: ペデスタル
+(300×300×120) の外接球は半径 220.5mm で、**ロボット自身のベースが中心から 60mm** の
+位置に入る — ロボットが自分の障害物の内側から生えている状態で、腕スイープは全候補を
+棄却する。箱なら据付面で接するだけ (肩の余裕は 2.5mm → 162.5mm)。
+
+**2. `kind` の分岐は実装したが、形の推測はしない。** `radius` か `halfExtents` かで
+形を当てることもできたが、それをすると宣言と判定がずれたときにどちらが正なのかを
+決める場所が無くなる (§1.1)。`kind` ただ 1 つで分岐し、**形を述べない item は球へ
+倒さず拒否**する。ADR-133 以前の送信者 (kind 無し + radius) は
+`_UNDECLARED_KIND_IS_LEGACY_SPHERE` という**名前のついた 1 分岐**で受ける — これは
+fall-through ではなく、次に形を足す人が読むことになる行である。
+
+**3. 線分 vs OBB に閉形式を書かなかった。** 面・辺・頂点で 26 通りの分岐になり、
+**どれか 1 つを落としても「それらしい」値が出る** (ADR-127 の肘と同じ見つけにくさ)。
+点と凸集合の距離が線分パラメータについて**凸**であることに乗せ、黄金分割探索で
+単峰性から大域最小を取る。刻み幅を持たないので、刻みより細い接触も落とさない。
+
+**4. `radius` を読んで引き算していた 5 箇所を 1 つの問いに畳んだ。**
+`surface_distance_to_segment(a, b)` (符号つき) から、干渉 (`<= probe_radius` か)・
+遮蔽**深さ** (`−値`)・approach clearance (余裕量) の 3 つすべてを導く (原則 #17)。
+呼び出し側が半径を引いていた頃は、形が増えるたびに**引き算の場所すべて**を直す必要が
+あり、直し忘れは「干渉なし」という正しい形の答えになって現れた。
+`NaiveSphereCollisionChecker` は形を知らなくなったので `NaivePathCollisionChecker` へ改名。
+
+**5. D1 の形を変えた — `Container` entity type ではなく `innerDimensions` 属性。**
+本文 D1 は Layout DSL に `Container` という新しい entity type を足す設計だったが、
+実装したのは**既存の Solid に `innerDimensions` を足す**形である。理由は、当事者の
+要求が*干渉判定の粒度*であって*新しい実体種別*ではなく、entity type を増やすと
+Outliner・選択・コンパイラ・ギャラリーへ波及するため (D2 の「壁を個別に選択できる
+Solid にする」という**UI 側の決定**は、障害物の粒度とは別の判断である)。
+**宣言が無ければ中身の詰まった立体**で、`{0,0,0}` では埋めない — 「空洞を宣言して
+いない」と「空洞の大きさがゼロ」を区別できなくするため (原則 #31)。
+
+**6. 内寸が外寸以上なら 5 枚にしない。** 厚さ 0 の壁 4 枚で「囲われている」ふりを
+せず、中身の詰まった 1 つの箱として扱う。宣言の誤りを、意味の違うものとして黙って
+通さない (原則 #11 の裏返し)。
+
+**未実装 (DEF-041):** D1 の `Container` entity type そのもの、D2 の**壁を個別選択できる
+Solid として Outliner に出す**側、D3 の `workpieces` バッチ展開、D4 の `containerRole`
+除外フィルタ。今日実装したのは**障害物として 5 枚に割る**ところまでで、シーングラフは
+一度も触っていない。
+
+**検証:** `pnpm test:core` 204 passed / `pnpm test` 1372 passed / `test:contract` green
+(`contractVersion=6` 据え置き — request 側の追加)。`templates/bin-picking-thin-container`
+の導出ピンが `kind: "sphere"` の追加を検出して落ちたので再ピンした。

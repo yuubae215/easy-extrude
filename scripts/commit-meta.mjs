@@ -55,6 +55,12 @@ const LAYER_RULES = [
   // ここも core。front に落とすと「`src/` が解法を持たない」という統治語彙と
   // 分析結果が食い違う。
   [/^mocks\//, 'core'],
+  // `fixtures/cross-language/` は front と core の**両方**が読む (ADR-146 D3 —
+  // それが存在理由)。どちらか一方へ落とすと「このコミットがどのレイヤに触れたか」が
+  // 嘘になるので、統治へ落とす: このファイル群はフロントのコードでもバックエンドの
+  // コードでもなく、CLAUDE.md の規則 (源を 2 つにしない) を**問うための道具**であり、
+  // `.claude/` や `.githooks/` と同じ住人である。
+  [/^fixtures\//, 'governance'],
   [/^server\//, 'bff'],
   [/^(src|schema|examples|cli|public|e2e)\//, 'front'],
   [/^vendor\/grasp-contract/, 'contract'],
