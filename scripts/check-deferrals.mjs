@@ -363,8 +363,15 @@ const UNDECLARED_BASELINE = 4
  * である — 番号が未定なので `満期=ADR-NNN` が書けない。ADR-125 D4 の二段構え
  * (登録簿 → 起票された ADR の `Retires:`) をここでも通す。**先に決めてから番号を
  * 埋めることはできない**: 番号は起票の結果であって前提ではない。
+ *
+ * **2026-09-22: 14 → 15。** ADR-149 D5 が足した DEF-042 (disposal 計測の実装可否) の
+ * 満期は「**それを決める ADR が起票されたとき**」で、DEF-020/034 と同じ外部条件の形
+ * (実装するかどうか自体が renderer を露出する設計コストを伴う別判断で、機械可読な
+ * 出現/消滅のどちらでもない)。ADR-148 の GSN が非公式に置いていた GONE trigger
+ * (`Console-level for now` 行の消滅) が ADR-149 の `Retires:` で到来したので、無視も
+ * 投機実装もせず散文の残しとして登録した (原則 #32 — 発火事象の側で問う)。
  */
-const PROSE_EXPIRY_BASELINE = 14
+const PROSE_EXPIRY_BASELINE = 15
 
 /**
  * 登録簿の満期欄に置く機械可読な trigger。**3 形**ある (ADR-123 D5)。

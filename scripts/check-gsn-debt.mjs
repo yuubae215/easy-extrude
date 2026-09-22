@@ -286,7 +286,17 @@ const SUPPORT_LABELS = new Map([
 // support-verified と名乗らせずに未支持のまま宣言して数える (原則 #29 の二状態 —
 // 「対象外」とは書かない)。満期は機械可読: AppController.js の
 // "Console-level for now" が消えたとき = UI トグルが付き往復が常用操作になる日。
-const DEBT_BASELINE = 45
+// 2026-09-22: 45 → 47。ADR-149 がその満期を実際に到来させた (Retires: で件の行を
+// 消した) — が、到来したのは「往復が常用操作になる前提条件」であって「disposal 計測の
+// 証拠が実在するようになった」ではないため、ADR-148 側の goal は support-verified へは
+// 昇格させず、旧 assumption の文面だけを事実 (満期到来・証拠は依然として無い) に合わせて
+// 更新した。あわせて ADR-149 自身が支えの無い goal を **2 つ** 意図的に足した —
+// (1) UI トグルの失敗経路 (route abort による e2e) はこの PR で見送り (満期は機械可読:
+// PATH:e2e/robot-appearance-failure.spec.js)、(2) 上記の disposal 計測をどう引き継ぐかの
+// 判断そのもの (DEF-042、番号未定の ADR が起票されるまで機械可読な満期を持てない)。
+// 45 → 47 の内訳は 47(+2, ADR-149 の新規未支持 2 件) であり、ADR-148 側は goal 数も
+// support ラベルも変えていない (assumption の文面更新のみ)。
+const DEBT_BASELINE = 47
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
@@ -299,7 +309,15 @@ const DEBT_BASELINE = 45
 // 2026-08-14 (同日 3 度目): ADR-128 の決着 2 件のうち、ADR-119 側の assumption は
 // 散文満期だったので 25 → 24。ADR-127 側は機械可読な満期を持っていたので分子には
 // もともと乗っておらず、ここは 1 しか下がらない。
-const PROSE_DEBT_BASELINE = 24
+// 2026-09-22: 24 → 26。ADR-148 の DisposalCountWouldNeedARendererLevelProbe は
+// 機械可読な満期を使い切った (発火・決着済みではなく、前提条件だけが成立) ので、
+// 次の判断先 (DEF-042 — 番号未定の ADR が起票されるまで trigger を書けない) へ
+// 散文のまま引き継ぎ、分子に残る (+1)。ADR-149 自身の
+// TheFiredADR148TriggerIsRegisteredNotSilentlyDropped も同じ理由で機械可読な
+// 満期を持てない (+1)。もう一方の新規 exploring goal
+// (AFailedLoadIsShownAndRolledBackRatherThanSilent) は
+// PATH:e2e/robot-appearance-failure.spec.js を持つので分子には乗らない。
+const PROSE_DEBT_BASELINE = 26
 
 const errors = []
 

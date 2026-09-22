@@ -843,6 +843,25 @@ export class AppController {
       this._uiView.setProjection(kind)
     })
 
+    // ── Robot appearance (realistic UR5e mesh / lightweight skeleton, ADR-149) ─
+    // `RobotStageSet.setRenderStyle()` is the one writer of the fact (ADR-148);
+    // this callback only mirrors it into the chrome. It writes the display
+    // copy OPTIMISTICALLY on click — same optimism `setRenderStyle` itself
+    // uses internally before awaiting the mesh fetch — and corrects it back to
+    // whatever `RobotStageSet` actually settled on if the load is rejected
+    // (every stage's fetch failed), surfacing the failure as a toast rather
+    // than leaving the button silently wrong (原則 #11).
+    uiView.onRobotAppearanceChange(style => {
+      this._uiView.setRobotAppearance(style)
+      this._sceneView.robotStages.setRenderStyle(style).catch(err => {
+        console.error(`AppController: could not switch robot appearance to "${style}".`, err)
+        this._uiView.showToast(
+          `Could not load the ${style} robot appearance — kept the previous one.`,
+          { type: 'error' })
+        this._uiView.setRobotAppearance(this._sceneView.robotStages.renderStyle)
+      })
+    })
+
     // Robot skeleton visibility (ADR-087): the former header toggle is gone —
     // the skeleton is the geometry of the `robot_base` entity, so its
     // show/hide is owned by that entity's Outliner eye, routed through
@@ -933,10 +952,12 @@ export class AppController {
       setRole:     (role) => RoleService.setRole(role),
       getRole:     ()     => RoleService.getRole(),
       demoContext: ()     => this._demoCtrl.enter(),
-      // Swaps every robot's drawn geometry between the bundled primitive
-      // skeleton ('skeleton', default) and Universal Robots' own visual
-      // meshes ('realistic', fetched lazily — RobotStage.setRenderStyle).
-      // Console-level for now; a persistent UI control is future work.
+      // Swaps every robot's drawn geometry between Universal Robots' own
+      // visual meshes ('realistic', default — ADR-149) and the bundled
+      // primitive skeleton ('skeleton', fetched lazily on the way back —
+      // RobotStage.setRenderStyle). Kept for debugging/e2e alongside the
+      // persistent `RobotAppearanceToggle` UI control (ADR-149), which drives
+      // the SAME writer through AppController.onRobotAppearanceChange.
       // Rejects (rather than resolving either way) when the meshes could not
       // be loaded, so the caller can tell a switch from a kept-old-style.
       setRobotAppearance: (style) => this._sceneView.robotStages.setRenderStyle(style),
