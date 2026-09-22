@@ -127,6 +127,19 @@ export class RobotStageSet {
   has(id) { return this._stages.has(id) }
 
   /**
+   * Swaps drawn geometry (bundled skeleton ↔ Universal Robots' own visual
+   * meshes) on EVERY live stage — a console/debug-level convenience
+   * (`window.__easyExtrude.setRobotAppearance`, ADR-141's "which arm" axis is
+   * untouched by this; see `RobotStage.setRenderStyle`). Per-stage async
+   * supersession is each `RobotStage`'s own concern, not duplicated here.
+   * @param {'skeleton'|'realistic'} style
+   * @returns {Promise<void>}
+   */
+  async setRenderStyle(style) {
+    await Promise.all([...this._stages.values()].map(stage => stage.setRenderStyle(style)))
+  }
+
+  /**
    * World-space bounding-box size of every live skeleton, keyed by robot id
    * (ADR-137 scale-parity guard — see `RobotStage.worldSpan`). Skeletons whose
    * URDF has not resolved yet report `null` rather than being omitted: a

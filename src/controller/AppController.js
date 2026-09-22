@@ -933,6 +933,11 @@ export class AppController {
       setRole:     (role) => RoleService.setRole(role),
       getRole:     ()     => RoleService.getRole(),
       demoContext: ()     => this._demoCtrl.enter(),
+      // Swaps every robot's drawn geometry between the bundled primitive
+      // skeleton ('skeleton', default) and Universal Robots' own visual
+      // meshes ('realistic', fetched lazily — RobotStage.setRenderStyle).
+      // Console-level for now; a persistent UI control is future work.
+      setRobotAppearance: (style) => this._sceneView.robotStages.setRenderStyle(style),
       // Read-only camera snapshot (position / orbit target / up). Console debug
       // aid and the E2E regression guard for the Map Mode camera-reset contract
       // (ADR-072: exit must return the perspective camera to its pre-map pose,
