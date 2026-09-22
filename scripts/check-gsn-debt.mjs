@@ -278,7 +278,15 @@ const SUPPORT_LABELS = new Map([
 // **コードの構文から導出できない**ので機械に降ろせていない。降ろせないものを
 // support-verified と名乗らせるほうが害が大きいので、未支持のまま宣言して数える
 // (ADR-146 の最も弱い辺。DEF-039 と同じ番地で満期を持つ)。
-const DEBT_BASELINE = 44
+// 2026-09-22: 44 → 45。ADR-148 が支えの無い goal を **1 つ意図的に** 足した —
+// 描画スタイルを往復切替したときに geometry/material が実際に解放されたかは、
+// **どのレーンも数えていない**。`RobotStage._disposeTree` は書いたが、解放の
+// *個数* を問うには renderer の `info.memory` を露出させる判断が要り、この PR の
+// 範囲を超える。e2e の往復は「壊れていないこと」を示すだけで解放は示さないので、
+// support-verified と名乗らせずに未支持のまま宣言して数える (原則 #29 の二状態 —
+// 「対象外」とは書かない)。満期は機械可読: AppController.js の
+// "Console-level for now" が消えたとき = UI トグルが付き往復が常用操作になる日。
+const DEBT_BASELINE = 45
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

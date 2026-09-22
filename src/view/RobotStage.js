@@ -4,6 +4,10 @@ import URDFLoader from 'urdf-loader'
 import { jointValuesFor } from '../domain/robotConfig.js'
 import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
+import {
+  ROBOT_RENDER_STYLE, realisticPackages, realisticUrdfUrl, REALISTIC_BASE_YAW_CORRECTION,
+  assertRenderStyle, isRedundantStyleRequest, settledStyle,
+} from './robotVisualStyle.js'
 
 /**
  * How much of its own opacity the skeleton keeps while it draws a CLIENT
@@ -31,6 +35,13 @@ const UNVERIFIED_OPACITY = 0.38
  * Universal Robots UR5e link transforms (recognizable UR silhouette), drawn
  * from primitive <geometry> (cylinder) bones — no external mesh assets, so
  * URDFLoader needs no `packages` mapping or mesh loader override.
+ *
+ * A stage can also draw Universal Robots' own visual meshes for this SAME
+ * chain (`setRenderStyle('realistic')`, `robotVisualStyle.js`) — a second
+ * GEOMETRY for the one UR5e this app has, not a second arm (ADR-141's "which
+ * arm" axis, `ROBOT_MODELS`, is untouched). That asset is ~9 MB and fetched
+ * lazily, so the constructor never awaits it — every stage boots into the
+ * bundled skeleton exactly as before this capability existed.
  */
 export class RobotStage {
   /**
@@ -46,11 +57,73 @@ export class RobotStage {
     this._group.position.set(x, y, z)
     scene.add(this._group)
 
+    /** @type {'skeleton'|'realistic'} which geometry is currently drawn (原則 #4 — this field's only writer is `setRenderStyle`) */
+    this._renderStyle = ROBOT_RENDER_STYLE.SKELETON
+    /**
+     * @type {'skeleton'|'realistic'|null} the style an in-flight load is
+     * heading for, or `null` when nothing is in flight. SEPARATE FROM
+     * `_renderStyle` on purpose: while a realistic load is in the air the
+     * stage HAS the skeleton but IS HEADING FOR realistic, and only the
+     * second fact can answer "is this new request redundant?" (ADR-148 D1).
+     */
+    this._pendingStyle = null
+    // Monotonic token invalidating an in-flight `setRenderStyle('realistic')`
+    // fetch that a LATER call (or `dispose()`) has superseded — the async
+    // mesh load must not clobber a stage that has since moved on (原則 #24).
+    this._styleLoadToken = 0
+    /** @type {boolean} whether the skeleton currently draws an unverified pose */
+    this._unverified = false
+    /** @type {Array<[THREE.Material, number]>} materials this stage owns (cloned per attach) */
+    this._materials = []
+
+    this._attachRobot(this._buildSkeletonRobot())
+    this.previewSolution(null)
+  }
+
+  /** Parses the bundled primitive-geometry skeleton. Synchronous, no network (ADR-088 §1.1). */
+  _buildSkeletonRobot() {
     // Parse the SAME bundled URDF string the tcp seed is derived from
     // (ROBOT_URDF_TEXT, ADR-088 §1.1) — one source drives both the drawn flange
     // and the seed, and no runtime fetch is needed. `parse` is synchronous.
-    const loader = new URDFLoader()
-    const robot = loader.parse(ROBOT_URDF_TEXT)
+    return new URDFLoader().parse(ROBOT_URDF_TEXT)
+  }
+
+  /**
+   * Fetches Universal Robots' own visual meshes for the SAME chain
+   * (`robotVisualStyle.js`). The only async load path this class has —
+   * isolated here so the sync skeleton path above is unaffected (原則 #8).
+   * @returns {Promise<import('three').Object3D>}
+   */
+  async _loadRealisticRobot() {
+    const manager = new THREE.LoadingManager()
+    const loaded = new Promise((resolve, reject) => {
+      manager.onLoad = resolve
+      manager.onError = (url) => reject(new Error(`RobotStage: failed to load "${url}"`))
+    })
+    const loader = new URDFLoader(manager)
+    loader.packages = realisticPackages()
+    const text = await fetch(realisticUrdfUrl()).then(r => {
+      if (!r.ok) throw new Error(`RobotStage: failed to fetch realistic URDF (${r.status})`)
+      return r.text()
+    })
+    const robot = loader.parse(text)
+    // Cancel the official URDF's own base_link → base_link_inertia yaw
+    // (REALISTIC_BASE_YAW_CORRECTION) so this root ends up in the SAME frame
+    // convention as skeleton_arm.urdf's — and therefore the TCP marker
+    // (derived solely from the skeleton) still lands on the drawn flange.
+    robot.rotation.z = REALISTIC_BASE_YAW_CORRECTION
+    await loaded   // wait for every referenced mesh, not just the URDF text
+    return robot
+  }
+
+  /**
+   * Wires a freshly parsed `URDFRobot` into this stage: world-unit scale,
+   * axis alignment, group attachment, and per-stage material ownership. The
+   * ONE place both the constructor and `setRenderStyle` attach a robot, so
+   * the two paths cannot drift (e.g. one forgetting to clone materials).
+   * @param {import('three').Object3D} robot
+   */
+  _attachRobot(robot) {
     // ROS (+Z up) and THREE.js world (+Z up here, per SceneView.camera.up)
     // already agree — URDFLoader instantiates links in URDF-native axes
     // with no reframing needed (see URDFLoader.js header comment).
@@ -70,7 +143,6 @@ export class RobotStage {
     // preview — the ADR-093 shape again, invisible at N=1. Cloning per mesh makes
     // "this stage's look" a fact this stage alone can write. The opacity each
     // material started with is remembered so restoring is exact, not assumed 1.
-    /** @type {Array<[THREE.Material, number]>} */
     this._materials = []
     robot.traverse(child => {
       if (!child.material) return
@@ -79,10 +151,114 @@ export class RobotStage {
       child.material = Array.isArray(child.material) ? owned : owned[0]
       for (const m of owned) this._materials.push([m, m.opacity ?? 1])
     })
-    /** @type {boolean} whether the skeleton currently draws an unverified pose */
-    this._unverified = false
+  }
 
-    this.previewSolution(null)
+  /** Which geometry this stage currently DRAWS — read-only (原則 #4: the only writer is `setRenderStyle`). */
+  get renderStyle() { return this._renderStyle }
+
+  /**
+   * Which geometry this stage is HEADING FOR — the pending request while a
+   * realistic load is in the air, else the drawn one. Distinct from
+   * `renderStyle` because the swap is asynchronous; a caller asking "did my
+   * request take?" must read this, not the drawn style (ADR-148 D1).
+   * @returns {'skeleton'|'realistic'}
+   */
+  get settledRenderStyle() { return settledStyle(this._renderStyle, this._pendingStyle) }
+
+  /**
+   * Swaps the drawn geometry between the bundled primitive skeleton and
+   * Universal Robots' own visual meshes for the SAME UR5e chain (view-layer
+   * only — joints/kinematics are unaffected either way, and both URDFs are
+   * asserted to share them in `RobotVisualStyleAgreement.test.js`).
+   *
+   * IDEMPOTENT AGAINST THE SETTLED STYLE, NOT THE DRAWN ONE (ADR-148 D1). A
+   * request is a no-op only when the stage is already HEADING FOR that style.
+   * Comparing against the drawn style instead turned the request that must
+   * CANCEL an in-flight load into an early return that never bumped the
+   * supersession token, so the losing request's geometry landed and stayed —
+   * the rule is pure and lives in `domain/robotVisualStyle.js` (原則 #3), and
+   * this method only performs the write.
+   *
+   * ASYNC LIFECYCLE: switching to `'realistic'` fetches ~9 MB of COLLADA
+   * meshes lazily. If this stage is disposed, or `setRenderStyle` is called
+   * again, before that fetch resolves, the stale result is DROPPED and its
+   * geometry disposed on the spot — the request that fired later (or the
+   * dispose) wins (原則 #24/#32), so a slow background load can never clobber
+   * whatever the arm is showing by the time it lands.
+   *
+   * FAILURE IS REPORTED, NOT SWALLOWED (原則 #11). A failed fetch leaves the
+   * arm showing whatever it drew before the call — a background asset failing
+   * to load must not blank an already-visible arm — but the returned promise
+   * REJECTS, so the caller can tell "switched" from "kept the old one". The
+   * earlier shape resolved successfully either way, which left the only fact
+   * distinguishing them in a `console.error` nothing can read back.
+   *
+   * @param {'skeleton'|'realistic'} style
+   * @returns {Promise<void>} REJECTS when the geometry could not be loaded, and
+   *   also for a style outside the declared vocabulary — this is an `async`
+   *   method, so `assertRenderStyle`'s throw surfaces as a rejection, never as
+   *   a synchronous one. Callers must handle the promise to see either.
+   */
+  async setRenderStyle(style) {
+    assertRenderStyle(style)   // no fall-through to the default (原則 #31)
+    if (isRedundantStyleRequest(style, this._renderStyle, this._pendingStyle)) return
+    const token = ++this._styleLoadToken
+    this._pendingStyle = style
+    let robot
+    try {
+      robot = style === ROBOT_RENDER_STYLE.REALISTIC
+        ? await this._loadRealisticRobot()
+        : this._buildSkeletonRobot()
+    } catch (err) {
+      // Only the request still in flight may clear the pending marker; a later
+      // one has already replaced it and is the stage's current intent.
+      if (token === this._styleLoadToken) this._pendingStyle = null
+      throw err
+    }
+    if (token !== this._styleLoadToken || !this.robot) {
+      // Superseded or disposed while the meshes were in the air. Dispose what
+      // was loaded here rather than leaving it to GC — every load in this
+      // class has its release in this class (原則 #9).
+      RobotStage._disposeTree(robot)
+      return
+    }
+    this._pendingStyle = null
+
+    const priorJoints = this.previewState()?.joints ?? null
+    const wasUnverified = this._unverified
+
+    RobotStage._disposeTree(this.robot)
+    this._group.remove(this.robot)
+
+    this._attachRobot(robot)
+    this._renderStyle = style
+    // Carry the pose/look this stage was already showing onto the new
+    // geometry — a style swap must not reset a mid-preview arm to rest.
+    // `_attachRobot` just cloned fresh materials at their native opacity, so
+    // `_unverified` must be reset to match BEFORE calling `_setUnverifiedLook`
+    // — otherwise its no-redundant-work guard (`_unverified === unverified`)
+    // sees the old flag, believes the new materials already carry the old
+    // look, and never actually writes them.
+    if (priorJoints) this.setJointValues(priorJoints)
+    this._unverified = false
+    this._setUnverifiedLook(wasUnverified)
+  }
+
+  /**
+   * Releases every geometry/material under an Object3D. The ONE place this
+   * class frees loaded geometry, so the three paths that need it (style swap,
+   * superseded load, `dispose()`) cannot drift apart (原則 #9).
+   * @param {import('three').Object3D|null} root
+   */
+  static _disposeTree(root) {
+    if (!root) return
+    root.traverse(child => {
+      if (child.geometry) child.geometry.dispose()
+      if (child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material]
+        for (const m of materials) m.dispose()
+      }
+    })
   }
 
   /**
@@ -235,15 +411,13 @@ export class RobotStage {
 
   /** Symmetric teardown (#9): every scene.add above has its remove+dispose here. */
   dispose() {
-    if (this.robot) {
-      this.robot.traverse((child) => {
-        if (child.geometry) child.geometry.dispose()
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
-          for (const m of materials) m.dispose()
-        }
-      })
-    }
+    // Invalidate any in-flight style load before dropping the robot: the load
+    // checks BOTH the token and `this.robot`, and bumping the token here means
+    // a landing load disposes its own geometry (the `_disposeTree` in
+    // `setRenderStyle`'s superseded branch) instead of relying on GC.
+    this._styleLoadToken++
+    this._pendingStyle = null
+    RobotStage._disposeTree(this.robot)
     this._materials = []
     this._scene.remove(this._group)
     this.robot = null
