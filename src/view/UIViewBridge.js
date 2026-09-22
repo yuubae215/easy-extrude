@@ -230,6 +230,18 @@ export class UIViewBridge {
     useUIStore.getState().actions.setProjection(kind)
   }
 
+  /**
+   * Reflects the robot's render style into the chrome (ADR-149). The
+   * AUTHORITY is `RobotStageSet._renderStyle`; this is the display copy,
+   * written on the one path that also writes the authority
+   * (AppController.onRobotAppearanceChange), both optimistically on request
+   * and again on any failure's rollback.
+   * @param {'skeleton'|'realistic'} style
+   */
+  setRobotAppearance(style) {
+    useUIStore.getState().actions.setRobotAppearance(style)
+  }
+
   // ── Onboarding ────────────────────────────────────────────────────────────
 
   showOnboardingIfNeeded() {
@@ -271,6 +283,10 @@ export class UIViewBridge {
 
   onProjectionChange(cb) {
     useUIStore.getState().actions.registerCallback('onProjectionChange', cb)
+  }
+
+  onRobotAppearanceChange(cb) {
+    useUIStore.getState().actions.registerCallback('onRobotAppearanceChange', cb)
   }
 
   onNodeEditorToggle(cb) {

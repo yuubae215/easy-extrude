@@ -41,13 +41,34 @@ async function addRobot(page) {
   await page.getByText('Robot', { exact: true }).click()
 }
 
-test('boot declares the bundled skeleton — the zero-network default, with 0 arms', async ({ page }) => {
+test('boot declares the realistic UR5e mesh — the first-look default, with 0 arms', async ({ page }) => {
   await boot(page)
   const a = await appearance(page)
   // Cardinality 0 is legitimate and the declaration still exists: this is the
   // case a fan-out over live stages cannot express at all (原則 #31).
-  expect(a.declared).toBe('skeleton')
+  // Default flipped skeleton → realistic in ADR-149 so the first look shows
+  // the real UR5e mesh with no user action; `skeleton` is now the explicit
+  // lightweight opt-out reached via `RobotAppearanceToggle`.
+  expect(a.declared).toBe('realistic')
   expect(Object.keys(a.drawn)).toHaveLength(0)
+})
+
+test('the RobotAppearanceToggle switches realistic ⇄ skeleton, round trip (ADR-149)', async ({ page }) => {
+  await boot(page)
+  await addRobot(page)
+  await expect.poll(async () => (await drawnStyles(page)).length).toBe(1)
+  // Default is realistic (ADR-149), so the toggle boots showing "REAL".
+  await expect(page.getByText('REAL', { exact: true })).toBeVisible()
+
+  await page.getByText('REAL', { exact: true }).click()
+  await expect.poll(async () => (await appearance(page)).declared, { timeout: 30_000 }).toBe('skeleton')
+  expect(await drawnStyles(page)).toEqual(['skeleton'])
+  await expect(page.getByText('LITE', { exact: true })).toBeVisible()
+
+  await page.getByText('LITE', { exact: true }).click()
+  await expect.poll(async () => (await appearance(page)).declared, { timeout: 30_000 }).toBe('realistic')
+  expect(await drawnStyles(page)).toEqual(['realistic'])
+  await expect(page.getByText('REAL', { exact: true })).toBeVisible()
 })
 
 test('switching styles moves the arm AND the declaration together', async ({ page }) => {

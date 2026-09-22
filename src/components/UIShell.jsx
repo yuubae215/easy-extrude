@@ -7,6 +7,7 @@ import { ExtrusionLabel } from './ExtrusionLabel/ExtrusionLabel.jsx'
 import { InfoBar } from './InfoBar/InfoBar.jsx'
 import { ModalLayer } from './Modal/ModalLayer.jsx'
 import { ProjectionToggle } from './ProjectionToggle/ProjectionToggle.jsx'
+import { RobotAppearanceToggle } from './RobotAppearanceToggle/RobotAppearanceToggle.jsx'
 import { ContextMenu } from './ContextMenu/ContextMenu.jsx'
 import { AddMenu } from './AddMenu/AddMenu.jsx'
 import { LinkTypePicker } from './LinkTypePicker/LinkTypePicker.jsx'
@@ -43,6 +44,7 @@ import { isNarrowViewport } from '../view/Viewport.js'
  * 7. InfoBar: bottom keyboard-hints bar (desktop) / status bar (mobile)
  * 8. ModalLayer: RenameDialog, ConfirmDialog, ImportModal
  * 9. ProjectionToggle: ortho/perspective switch under the world gizmo (ADR-103)
+ * 9a. RobotAppearanceToggle: realistic/lightweight UR5e mesh switch under ProjectionToggle (ADR-149)
  * 9b. SceneChecksHud: scene-scope acceptance verdicts, outside the floor (ADR-105)
  * 10. ContextMenu: long-press / right-click context menu
  * 12. AddMenu: Shift+A add object menu
@@ -74,6 +76,7 @@ export function UIShell() {
       <InfoBar />
       <ModalLayer />
       <ProjectionToggle />
+      <RobotAppearanceToggle />
       <SceneChecksHud />
       <ContextMenu />
       <AddMenu />

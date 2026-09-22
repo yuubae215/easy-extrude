@@ -9,10 +9,15 @@
  * @module domain/robotVisualStyle
  */
 
-/** The two geometries a stage can draw for the app's one UR5e. Closed vocabulary (原則 #31). */
+/**
+ * The two geometries a stage can draw for the app's one UR5e. Closed vocabulary
+ * (原則 #31). Which one `RobotStageSet` declares as the SCENE'S default lives at
+ * `RobotStageSet._renderStyle`'s initializer, not here (原則 #1.1 — this module
+ * only names the values, it does not choose between them).
+ */
 export const ROBOT_RENDER_STYLE = Object.freeze({
-  SKELETON:  'skeleton',   // primitive-<geometry> bones, bundled, zero network (default)
-  REALISTIC: 'realistic',  // Universal Robots' own visual meshes, fetched on demand
+  SKELETON:  'skeleton',   // primitive-<geometry> bones, bundled, zero network — the explicit lightweight opt-out (`RobotAppearanceToggle`, ADR-149)
+  REALISTIC: 'realistic',  // Universal Robots' own visual meshes, fetched on demand — the scene's default since ADR-149
 })
 
 /** `public/`-relative directory the realistic assets live under. */

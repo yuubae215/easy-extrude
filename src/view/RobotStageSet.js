@@ -42,8 +42,15 @@ export class RobotStageSet {
      * Legitimate at 0 stages: the declaration survives an empty scene and the
      * next stage created adopts it, which is exactly the case a fan-out
      * cannot express.
+     *
+     * Default is REALISTIC (ADR-149): the first look at the app shows the
+     * real UR5e mesh with no user action. `RobotAppearanceToggle` gives an
+     * always-reachable way back to the zero-network `skeleton` for users who
+     * want it — this class's OWNERSHIP of the declaration (this field, this
+     * setter) is unchanged, only the initial value and the number of callers
+     * that can reach `setRenderStyle` moved.
      */
-    this._renderStyle = ROBOT_RENDER_STYLE.SKELETON
+    this._renderStyle = ROBOT_RENDER_STYLE.REALISTIC
   }
 
   /** Number of live skeletons (the view-side cardinality). */
@@ -77,9 +84,10 @@ export class RobotStageSet {
       // The obligation "a new stage draws the style this scene declared" lives
       // HERE, on the event that creates the stage, not next to the declaration
       // (原則 #32). A `RobotStage` boots into the bundled skeleton by design
-      // (zero network); adopting the scene's style is the set's business.
-      // Idempotent when the declaration IS the skeleton, so no second place
-      // encodes which style is the default.
+      // (zero network); adopting the scene's style is the set's business — no
+      // second place encodes which style is the default (ADR-149: the
+      // default is REALISTIC, so this call fetches the ~9 MB mesh for every
+      // newly created stage unless the scene has switched to skeleton).
       stage.setRenderStyle(this._renderStyle).catch(err => console.error(
         `RobotStageSet.sync: "${id}" could not adopt the scene's "${this._renderStyle}" style.`, err))
       changed = true

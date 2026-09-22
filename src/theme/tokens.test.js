@@ -272,6 +272,7 @@ const ACCENT_NON_PAINTERS = [
   { key: 'src/components/Onboarding/TourCard.jsx',  why: 'the onboarding step you are on (ADR-063 tour), paired with factTone for done steps' },
   { key: 'src/view/ChromeMath.js',                  why: 'the breathing glow that marks an affordance asking for attention (ADR-065/080) — an invitation, not a selection' },
   { key: 'src/components/ProjectionToggle/ProjectionToggle.jsx', why: 'the active PROJECTION (ADR-103) — a view setting, the same "what you are operating in" meaning as ModeDropdown, not an entity' },
+  { key: 'src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx', why: 'the active robot RENDER STYLE (ADR-149) — a view setting parked next to ProjectionToggle, the same "what you are operating in" meaning, not an entity' },
 ]
 
 /**
@@ -373,7 +374,11 @@ const DECLARED_VOCABULARIES = {
  * React panels are where most of the colour lives. Counting it is not a
  * regression against the ADR; NOT counting it would have been.
  */
-const UNDECLARED_OCCURRENCE_BASELINE = 773
+// 2026-09-22: 773 → 775. `RobotAppearanceToggle.jsx` (ADR-149) copies
+// ProjectionToggle's own `#4a4a4a`/`#3a3a3a` border literals verbatim (same
+// hover/idle border meaning, same file-local styling — not new theme intent),
+// so distinct hues do not move, only occurrences (+2).
+const UNDECLARED_OCCURRENCE_BASELINE = 775
 const UNDECLARED_DISTINCT_BASELINE   = 203
 
 const HEX_LITERAL = /#[0-9a-fA-F]{6}\b|\b0x[0-9a-fA-F]{6}\b/g

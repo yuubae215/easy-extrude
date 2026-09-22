@@ -94,6 +94,15 @@ export const useUIStore = create((set, get) => ({
   // 呼び出し箇所ごとにパッチを当てない。
   gizmoRightOffset: 16,
 
+  // ── ロボットの描画スタイル (ADR-149) ────────────────────────────────────────
+  // 'realistic' | 'skeleton' — 権威は `view/RobotStageSet._renderStyle`
+  // (ADR-148)。ここは AppController の onRobotAppearanceChange 経由でだけ書く
+  // *表示用の写し* であって第二の源ではない (原則 #4)。`RobotStageSet` 自身が
+  // 要求時に楽観更新してから非同期ロードするので、この写しも同じ楽観更新を行い
+  // 全滅時だけ実測へ書き戻す (AppController 側)。既定は RobotStageSet の既定と
+  // 一致させ 'realistic'。
+  robotAppearance: 'realistic',
+
   // ── Context Menu ──────────────────────────────────────────────────────────
   // { x, y, items: [{label, onClick, danger?}] } | null
   contextMenu: null,
@@ -359,6 +368,7 @@ export const useUIStore = create((set, get) => ({
     }),
 
     setProjection: (kind) => set({ projection: kind }),
+    setRobotAppearance: (style) => set({ robotAppearance: style }),
 
     setGizmoRightOffset: (px) => set({ gizmoRightOffset: px }),
 

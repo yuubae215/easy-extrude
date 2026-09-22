@@ -1,0 +1,89 @@
+GOALS adr149_the_first_look_is_realistic_lightweight_is_a_standing_choice
+
+goal TheFirstLookIsRealisticAndLightweightStaysOneClickAway
+uuid 987809f8-ca64-4937-8cca-21b605461b48
+summary "初見でシーンにロボットを追加すると Universal Robots 純正の実写メッシュ (realistic) が既定で描かれ、帯域/パフォーマンスを優先したい利用者は常設 UI トグル 1 クリックで skeleton (ゼロネットワークの骨組み) へ確実に戻せる。解でなく性質: 'デフォルトを反転する' 'ボタンを足す' はどちらも解の形で、持ち上げた性質がこれ"
+state Approved
+labels adr-149, adr-148, adr-103, adr-090, adr-109, adr-125, principle-4, principle-11, principle-16, principle-26, principle-31, app, view
+
+    context TheStyleAxisShippedButOnlyAConsoleCouldReachIt
+    uuid 80eb4b8c-0c75-47dc-871c-c8c8939a91ca
+    summary "957b06b (実メッシュ追加) と ADR-148 (どちらの腕を描くかの権威 — RobotStageSet._renderStyle) は完成し全レーン green だった。到達経路は window.__easyExtrude.setRobotAppearance() というブラウザコンソール API 1 本のみで、AppController.js 自身が 'Console-level for now; a persistent UI control is future work.' と明言していた — 実装済みの機能が UI から発見不能だった"
+    artifacts
+    - "docs/adr/ADR-148-the-scene-not-the-stage-owns-which-arm-is-drawn.md"
+    - "src/domain/robotVisualStyle.js"
+
+    context TheZeroNetworkRationaleForSkeletonIsWhatGetsReversed
+    uuid 901c4286-d01e-45ea-a06f-7147ddd07d58
+    summary "skeleton が既定だった理由は robotVisualStyle.js の docstring が明記する '~9 MB を遅延 fetch' を避けるゼロネットワーク優先。既定を realistic へ反転すると、ロボット追加のたびにこの fetch が既定で走る — 反転そのものではなく、反転後にこの理由を持つ利用者へ戻す経路が要る、というのがこの ADR の核心の力学"
+
+    justification WhyADefaultFlipAloneDoesNotSettleTheGoal
+    uuid 85959700-3b6c-4352-8a83-de813e5bfb6f
+    summary "却下案 B (既定は skeleton のまま realistic へのトグルだけ追加)。これは 'コンソールでしか実写を見られない' を 'UI でも実写を見られる' に変えるだけで、ユーザーが要求した '初見で実写' を満たさない。却下案 C (現状維持) は原則 #16 の発見可能性違反をそのまま残す。既定の反転と、反転後に軽量側へ戻す常設経路は、どちらか一方では Goal を満たさない — 両方揃って初めて閉じる"
+
+    strategy ByFlippingTheInitialValueAndAddingAStandingTwoStateToggle
+    uuid 481203d7-f62f-4a66-9669-081a0fd8eed0
+    summary "RobotStageSet._renderStyle の初期値だけを REALISTIC へ変え (書き手は ADR-148 のまま 1 箇所 — 原則 #4)、ProjectionToggle (ADR-103) と同型の常設 2 状態トグルを新設して realistic ⇄ skeleton の両方向を UI から到達可能にする。楽観更新と失敗時ロールバックは RobotStageSet.setRenderStyle() の既存実装にそのまま乗せ、AppController は成否を showToast で提示する (原則 #11)"
+
+        goal TheSceneDeclaresRealisticWithZeroUserAction
+        uuid 57f00fe6-415c-4035-a098-95eebb8920ea
+        summary "D1: 起動直後、ロボットが 1 台も無くても RobotStageSet の宣言 (robotAppearance().declared) は 'realistic' である。RobotStage 自身の ctor 既定 (ゼロネットワークのブート状態) は skeleton のまま変えていないので、'stage 自身の起動状態' と 'シーンが宣言する既定' という 2 つの事実は混同していない (ADR-148 D1 の分離を維持)"
+        labels support-verified
+        state Approved
+
+            solution BootDeclaresRealisticWithNoArmsPresent
+            uuid d3485e33-496c-4b58-816e-f97b9910f28c
+            summary "e2e/robot-appearance.spec.js の起動テストを更新: appearance().declared === 'realistic' かつ drawn のキー数が 0 (基数 0 でも宣言は在る — 原則 #31、ADR-148 と同じ主張の値だけが変わる)"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/view/RobotStageSet.js"
+
+        goal TheToggleReachesBothStylesInARoundTrip
+        uuid c6643b9a-6791-4555-bbf5-4c16e1c9f7ad
+        summary "D2: RobotAppearanceToggle を 1 回クリックすると宣言・描画とも skeleton へ、もう 1 回クリックすると realistic へ戻る。片道ボタン (軽量化のみ) にしなかったのは、それだと realistic へ戻る経路が再び UI から消え、この ADR が閉じようとした欠陥 (発見不能) を半分だけ再生産するため"
+        labels support-verified
+        state Approved
+
+            solution ToggleClickRoundTripsBothTheStoreAndTheDeclaration
+            uuid ae2ca780-8d86-4282-a32e-bbbc80cfa864
+            summary "新規 e2e: ロボットを追加 → RobotAppearanceToggle をクリック (skeleton へ) → drawn/declared が 'skeleton' → 再クリック (realistic へ) → 'realistic' に戻ることを window.__easyExtrude.robotAppearance() で焼く。ProjectionToggle 側の既存パターン (uiStore 経由の aria-pressed 反映) を流用するので、UI 層の新しい状態機械は増えない"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx"
+
+        goal AFailedLoadIsShownAndRolledBackRatherThanSilent
+        uuid d1270ca6-4ee8-41ee-9aa5-18c11c4c069e
+        summary "D3: realistic への切替リクエストが (オフライン等で) 全滅したとき、ユーザーには失敗が toast で提示され、UI トグルの表示は RobotStageSet がロールバックした実際の宣言値に追従する — resolved promise の無言成功にも、据え置きだけの無言失敗にもしない (原則 #11)。これは RobotStageSet.setRenderStyle() 自体の reject 契約 (ADR-148 D4) に AppController が新しく乗る経路であり、まだブラウザでの往復検証を書いていない"
+        labels support-exploring
+        state ToBeDeveloped
+
+            assumption FailureToastPathNeedsAExpiryTriggerAndARouteAbortedE2e
+            uuid f2f92066-3588-4c6a-b89f-5413d45b8484
+            summary "証拠予定: Playwright の page.route() で realistic URDF/メッシュの fetch を全て abort し、トグルクリック後に showToast の error トーストが現れ、appearance().declared が skeleton のまま (または元の値のまま) 据え置かれることを焼く。この PR では見送った — ProjectionToggle 系の既存 e2e に route abort の前例が無く、新しいテストユーティリティの判断を要するため。満期=PATH:e2e/robot-appearance-failure.spec.js (このファイルが作られたとき)"
+
+        goal BothEntryPointsConvergeOnTheSameSingleWriter
+        uuid aac8eb1a-d611-4e6b-a506-f78b8fee0d77
+        summary "D4: UI トグルとコンソール API (window.__easyExtrude.setRobotAppearance) は独立した書き手ではなく、どちらも RobotStageSet.setRenderStyle() という唯一の書き手 (原則 #4、ADR-148 由来) に収束する。コンソール API を削除しない判断 (e2e が依存) は、書き手を増やさない限り正当"
+        labels support-verified
+        state Approved
+
+            solution ConsoleDrivenAndUiDrivenRoundTripsLandOnTheSameSettledStyle
+            uuid fe26022d-5e2a-4b23-bcb7-f969a7a7eb6d
+            summary "既存の e2e (コンソール API 経由の往復 — 'two requests back to back' 等) と新規の e2e (UI トグル経由の往復) を両方 green のまま維持することが、2 つの入口が同じ状態機械に収束している間接証拠になる。どちらか一方だけを直して他方を壊すコミットがあれば、収束が壊れたことをこの 2 本が別々に検出する"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/controller/AppController.js"
+
+    goal TheFiredADR148TriggerIsRegisteredNotSilentlyDropped
+    uuid 812f2cf4-fcab-436e-a970-deb40dc37376
+    summary "ADR-148 の GSN が 'Console-level for now' 行の消滅を disposal 計測 investigate の非公式な満期に置いていた。本 ADR がその行を Retires するので満期は到来している。到来した満期を無視せず、投機的な実装をせず、正式な残しとして登録するのが原則 #32 (義務は発火事象の側) の実践"
+    labels support-exploring
+    state ToBeDeveloped
+
+        context TheGoneTriggerLivedOnlyAsProseInsideADR148sGsn
+        uuid 6e2ea335-2f8f-44ae-8474-71bd0c08c121
+        summary "docs/gsn/adr-148-....gsn の TheWriteItselfStillNeedsABrowserAndWeSaySo (assumption DisposalCountWouldNeedARendererLevelProbe) が非公式に置いた条件: '満期の番地をコメント行の消滅に置いたのは、後者だけが機械に読めるため'。しかしこの満期は docs/DEFERRAL_LEDGER.md の機械可読な行としては登録されていなかった — check-deferrals.mjs の語彙 (日本語) にも check-adr-status.mjs の Retires 検査 (ADR-125 以降のみ強制) にも掛かっていなかったため、CI は無言でこの満期を見過ごせる状態だった"
+
+        assumption DisposalCountInvestigationIsNowTrackedAsDEF042
+        uuid 2eecc840-269b-4b10-9442-2187301b4fa7
+        summary "証拠予定: docs/DEFERRAL_LEDGER.md の DEF-042 が WebGLRenderer.info.memory.geometries を往復切替の前後で読む投機の要否を正式に登録した (ticket ADR-149, lane app)。'常設 UI トグルが付いて往復切替が常用操作になった' という発火条件は本 ADR で満たされたが、計測を実装するかどうか自体はさらに別の判断 (プローブを露出する設計コスト) を要するため、DEF-042 の満期は機械可読な trigger を持たない散文のままにした (scripts/check-deferrals.mjs の PROSE_EXPIRY_BASELINE を実測へ更新)"
