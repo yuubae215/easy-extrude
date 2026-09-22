@@ -43,3 +43,76 @@ export const REALISTIC_ASSET_DIR = 'robot/ur5e_visual'
  * the arm 180° off from its own TCP marker again.
  */
 export const REALISTIC_BASE_YAW_CORRECTION = Math.PI
+
+/**
+ * Throws for a style nobody declared, rather than falling through to the
+ * default (原則 #31 — a fall-through default makes "the declared default" and
+ * "a kind nobody thought about" indistinguishable; the same shape as
+ * `EXPLICIT_DEFAULTS` / `PLACEMENT_BY_KIND` / `SUPPORT_SURFACE_BY_KIND`).
+ *
+ * Before this existed, `RobotStage.setRenderStyle` branched on
+ * `style === REALISTIC ? … : buildSkeleton()`, so a typo (`'realstic'`) drew
+ * the SKELETON and then recorded `_renderStyle = 'realstic'` — a stage
+ * claiming a style that is not in the vocabulary, silently.
+ *
+ * `unknown` on purpose: this IS the boundary check, so it has to be callable
+ * with whatever a console/UI/test actually hands it — narrowing the parameter
+ * to the very union it exists to establish would make the typo case
+ * untypecheckable at every real call site.
+ *
+ * @param {unknown} style
+ * @returns {'skeleton'|'realistic'}
+ */
+export function assertRenderStyle(style) {
+  const declared = /** @type {string[]} */ (Object.values(ROBOT_RENDER_STYLE))
+  if (typeof style !== 'string' || !declared.includes(style)) {
+    throw new Error(
+      `robotVisualStyle: undeclared render style ${JSON.stringify(style)} ` +
+      `(declared: ${declared.join(' | ')})`)
+  }
+  return /** @type {'skeleton'|'realistic'} */ (style)
+}
+
+/**
+ * The style a stage will be SHOWING once everything already asked of it has
+ * landed: the pending request when a load is in flight, otherwise whatever is
+ * committed. `pending` is `null` when nothing is in flight.
+ *
+ * Exists because switching to `realistic` is asynchronous (~9 MB of meshes),
+ * so "the style this stage has" and "the style this stage is heading for" are
+ * two different facts and only the second one can answer "is this request
+ * redundant?".
+ *
+ * @param {'skeleton'|'realistic'} committed
+ * @param {'skeleton'|'realistic'|null} pending
+ */
+export function settledStyle(committed, pending) {
+  return pending ?? committed
+}
+
+/**
+ * Is this request asking for the style the stage is ALREADY heading for?
+ *
+ * The one rule this function exists to keep correct: compare the request to
+ * the SETTLED style, never to the committed one. Comparing against the
+ * committed style makes a no-op out of the request that is supposed to CANCEL
+ * an in-flight load —
+ *
+ *   skeleton → setRenderStyle('realistic')  // in flight, nothing committed yet
+ *             → setRenderStyle('skeleton')  // 'skeleton' === committed ⇒ returns
+ *                                           // early WITHOUT bumping the
+ *                                           // supersession token …
+ *             → the realistic load lands and wins
+ *
+ * — so the arm ends up in the style of the request that LOST. A single
+ * request per check is green either way (the two readings agree whenever
+ * nothing is in flight), which is why this is pinned as a pure rule here and
+ * as a two-request e2e rather than left inside the async method (ADR-148).
+ *
+ * @param {'skeleton'|'realistic'} requested
+ * @param {'skeleton'|'realistic'} committed
+ * @param {'skeleton'|'realistic'|null} pending
+ */
+export function isRedundantStyleRequest(requested, committed, pending) {
+  return requested === settledStyle(committed, pending)
+}

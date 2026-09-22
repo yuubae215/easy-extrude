@@ -1,0 +1,94 @@
+GOALS adr148_the_scene_not_the_stage_owns_which_arm_is_drawn
+
+goal EveryArmOnScreenDrawsTheStyleThisSceneDeclared
+uuid a73d4c42-3476-4247-b865-ffd2fb7bd62d
+summary "このシーンが描く腕の見た目は 1 つに決まっており、画面に在るどの腕もそれを描いている。解でなく性質: 'stage にスタイルを配る' は解の形で、持ち上げた性質がこれ。基数 0 (腕が居なくても宣言は在る)・1・N (全台一致) のすべてで成り立つことを含む"
+state Approved
+labels adr-148, adr-090, adr-141, adr-143, adr-114, adr-137, principle-3, principle-4, principle-9, principle-11, principle-24, principle-31, principle-32, app, view
+
+    context TheStyleAxisItselfShippedGreenInTwoCommits
+    uuid 89963c18-c8d9-41d1-98c1-43051b61d7e6
+    summary "957b06b (UR5e 実メッシュを描画スタイルとして追加) と 6483b09 (180° ズレ修正) は全 CI レーン green で着地していた — ユニット 1386 件・e2e 59 件・統治レーン 8 本。本 ADR が扱うのはその上に残っていた 2 つの欠陥で、スタイル軸そのもの (ROBOT_RENDER_STYLE) も、両スタイルの関節原点が数値一致するという主張 (RobotVisualStyleAgreement.test.js) も、そのまま生きている"
+    artifacts
+    - "docs/adr/ADR-148-the-scene-not-the-stage-owns-which-arm-is-drawn.md"
+    - "src/RobotVisualStyleAgreement.test.js"
+
+    context WhichArmIsUntouchedOnlyHowItIsDrawn
+    uuid ac8ebe0c-c927-4ebe-90c2-4075b64196e6
+    summary "ADR-141 の『どの腕か』軸 (ROBOT_MODELS はちょうど 1 行、SHIPPED_ROBOT_MODEL_ID が定数でいられる根拠) には一切触れていない。運動学・TCP seed・reach 包絡の源も skeleton_arm.urdf のまま (ADR-088)。契約 (packages/grasp-contract / server/ / core/) は 1 バイトも変えていない — これは view 層だけの判断"
+
+    justification WhyTheConsoleOnlyEntryPointIsNotAReasonToWait
+    uuid b470b628-a1e1-47af-971b-7a703d6d0ce1
+    summary "却下案 D (現状維持 — コンソール限定機能なので実害が小さい)。D2 (最後の要求が負ける) は将来の UI トグルで*普通に起きる操作* (連打) であり、入口がコンソールであることは欠陥を軽くしない。むしろ『一時的だから統治しない』は次の UI 追加で必ず表面化する。却下案 C (AppController が sync 後に配り直す) は権威を view の外へ漏らし、ADR-143 が閉じた『誰かが配り忘れる』形へ戻る"
+
+    assumption BothStylesRemainTheSameArm
+    uuid a617f0c8-0dba-4f9d-a8e8-9672918d976e
+    summary "反証されうる前提: realistic URDF (Universal Robots 純正、無改変) の 6 関節原点が skeleton_arm.urdf と数値一致し続けること。上流が base_link-base_link_inertia の rpy を変えれば REALISTIC_BASE_YAW_CORRECTION は嘘になり、腕は自分の TCP マーカーから 180° ズレる。この前提は RobotVisualStyleAgreement.test.js が固定値ごと assert しているので、崩れたら緑では通らない"
+
+    strategy ByGivingTheSetTheAuthorityAndComparingAgainstWhatIsSettled
+    uuid 70fcc725-b8b0-4a7b-ac84-f762f213e109
+    summary "基数 N の問い (このシーンはどちらのスタイルか) に RobotStageSet が唯一の書き手として答え、義務 (新しい stage が宣言を採る) を発火事象である sync() の stage 生成の側に置く。あわせて、非同期であるがゆえに分かれる 2 つの事実 — 描いているスタイルと向かっているスタイル — を分離し、冪等判定を後者と比べる。そのうえで、この欠陥を緑にしていた証拠の形そのもの (読み戻しの不在・1 回きりの確認) を直す"
+
+        goal TheSceneKeepsADeclarationThatOutlivesAnyFanOut
+        uuid c14daf32-7b38-4628-8081-67811d4f1ea9
+        summary "D1: RobotStageSet._renderStyle がこのシーンの描画スタイルの唯一の書き手 (原則 #4) で、sync() が作った stage はその場で宣言を採る (原則 #32 — 義務は発火事象の側)。fan-out だけでは基数 0 のシーン (腕が 1 台も居ないが宣言は在る) も、切替後に追加された腕も表現できない"
+        labels support-verified
+        state Approved
+
+            solution AddingARobotAfterTheSwitchYieldsTwoMatchingArms
+            uuid 6c1432f2-149b-4b1d-8413-ac984d599412
+            summary "e2e/robot-appearance.spec.js が N=2 で焼く: setRobotAppearance('realistic') のあと Add ▸ Robot して drawn が ['realistic','realistic'] になること。N=2 が最小の識別力を持つ大きさで、N=1 では fan-out と宣言が必ず一致するため 1 台の fixture では区別不能 (ADR-093『1 と N は別世界』と同型)。修正前の実測は ['realistic','skeleton']。基数 0 は別テストで焼く (腕 0 台でも declared === 'skeleton' が在る)。**負の対照**: 読み戻しを入れたまま sync() の 1 行だけを戻すとこのテストだけが落ちる"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/view/RobotStageSet.js"
+
+        goal TheRequestThatFiredLastIsTheOneThatWins
+        uuid 4a6ac8d8-4840-4a87-a19e-1be23335fb50
+        summary "D2: 冪等ガードは *確定済み* ではなく *settled* (pending ?? committed) と比べる。確定済みと比べると、飛行中の load を打ち消すはずの要求が『もう描いている』と誤判定され、supersession トークン (原則 #24) を上げずに early return するので、負けたはずの要求の geometry が着地して居座る"
+        labels support-verified
+        state Approved
+
+            solution TheRuleIsPureAndPinnedTwiceOnceWithoutABrowser
+            uuid 19553551-22e0-444c-b1b7-4d801acafcf9
+            summary "判断は settledStyle / isRedundantStyleRequest として domain/robotVisualStyle.js に在り (原則 #3 — メソッドは書き込みだけを行う)、src/domain/robotVisualStyle.test.js が 7 件でブラウザ無しに問う。**要求を 2 回通す形でしか現れない**ので、1 要求の検査と 2 要求の検査を別に書いている (1 回なら確定と要求中は必ず一致するため、1 回きりの確認はこの欠陥に対して原理的に無力 — /whiteboard §5 が ADR-098→101 の先例として名指しする形)。e2e 側は await せずに realistic → skeleton を連射し、最後の要求が勝つこと、かつ 3 秒後も居座られていないことを焼く。修正前の実測は ['realistic'] (要求は skeleton だった)"
+            artifacts
+            - "src/domain/robotVisualStyle.test.js"
+            - "e2e/robot-appearance.spec.js"
+            - "src/view/RobotStage.js"
+
+        goal AnUndeclaredStyleIsRefusedRatherThanDrawnAsTheDefault
+        uuid 7720a732-12d3-4335-bad2-64230af4282d
+        summary "D3: 旧実装は style === REALISTIC ? load : buildSkeleton() の三項演算子だったので、タイポ ('realstic') は skeleton を描いたうえでタイポを _renderStyle に記録していた — 『宣言された既定』と『誰も考えなかった種』が区別不能 (原則 #31)。assertRenderStyle が語彙外を拒否する"
+        labels support-verified
+        state Approved
+
+            solution TheThrowIsPinnedOnSevenNonMembersAndOnTheLiveSurface
+            uuid c391fccc-fb38-4d8d-b422-4748bf5306d4
+            summary "robotVisualStyle.test.js が 'realstic' / 'Realistic' / '' / null / undefined / 0 / {} の 7 つで throw を焼き、語彙が ['skeleton','realistic'] ちょうどであることを別に assert する (EXPLICIT_DEFAULTS / PLACEMENT_BY_KIND / SUPPORT_SURFACE_BY_KIND と同じ形)。e2e 側は realistic を描いている状態でタイポを投げ、**描画も宣言も変わらない**ことを焼く。async メソッドなので throw は reject として現れる — 同期 throw を期待した最初の assert が落ちたので契約のほうを実態へ直した (『呼び手は見逃せない』は変わらない)"
+            artifacts
+            - "src/domain/robotVisualStyle.test.js"
+            - "e2e/robot-appearance.spec.js"
+
+        goal WhatIsDeclaredAndWhatIsDrawnAreCountedSeparately
+        uuid f469922d-7459-4d27-80a8-a655f4dd8f70
+        summary "D4/D5: 失敗は resolved promise ではなく reject で報告し (原則 #11 — 旧実装は console.error だけで、呼び手に『切り替わった』と『失敗して据え置いた』の区別が無かった)、robotAppearance() が {declared, drawn} を **2 レーン**で返す。1 つにまとめない — この欠陥は 2 つが食い違っていたことそのものであり、意図のスナップショットなら両方とも緑になる (ADR-114『宣言と実測は別レーンで数える』、ADR-137 worldSpan / ADR-144 armPreview と同じ手)"
+        labels support-verified
+        state Approved
+
+            solution TheNegativeControlShowsTheTestsAimAtTheDefectNotTheAccessor
+            uuid 933edd5e-edb0-40bf-83d0-f60b75197971
+            summary "読み戻し robotAppearance() を入れたまま D1/D2 の修正 2 行だけを戻すと、**ちょうど 3 番と 4 番が落ち、他の 3 本は通る** — テストが新しいアクセサの存在ではなく欠陥そのものを射ていることの証拠 (アクセサごと戻すと 5 本すべてが落ち、何も区別できない)。全レーン実測: pnpm test 1393 passed / typecheck / build / test:e2e 64 passed 12 skipped / test:stub 35 / test:contract (contractVersion=6 据え置き) / test:adr / test:gsn / test:gsn-debt / test:deferrals / test:commit-meta / test:trailers"
+            artifacts
+            - "src/controller/AppController.js"
+            - "e2e/robot-appearance.spec.js"
+            - "docs/adr/ADR-148-the-scene-not-the-stage-owns-which-arm-is-drawn.md"
+
+        goal TheWriteItselfStillNeedsABrowserAndWeSaySo
+        uuid 0fd0a7f4-0e5b-4b3a-9c73-4e3a0c8a18d1
+        summary "純粋部分を引き出したので node --test の見える範囲は広がったが 0 にはなっていない: material の再 clone・pose の引き継ぎ・group への付け替え・_disposeTree による解放 (D6) は依然としてブラウザでしか実行されない。e2e は往復切替でそれらが壊れていないことを間接に示すだけで、解放されたかどうかは**どのレーンも数えていない**。対象外ではなく、まだ決めていない (原則 #29 の二状態)"
+        labels support-exploring
+        state ToBeDeveloped
+
+            assumption DisposalCountWouldNeedARendererLevelProbe
+            uuid 2b6d0c4e-4c0a-4b4e-8f7e-9d4a7f2b1c30
+            summary "証拠予定: THREE の WebGLRenderer.info.memory.geometries を往復切替の前後で読めば『解放された個数』が測れる。既存の worldScale() / armPreview() と同じ console 読み戻しの形で足せるが、renderer を露出させる判断が要るのでこの PR では見送った。満期=GONE:src/controller/AppController.js::Console-level for now — その行が消えるときが『描画スタイルに UI トグルが付いた』瞬間であり、往復切替が常用操作になってはじめて解放の取りこぼしが積む。満期の番地を『いつか UI が付いたら』という散文ではなくコメント行の消滅に置いたのは、後者だけが機械に読めるため (原則 #31 / ADR-109 D3)"

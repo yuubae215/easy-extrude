@@ -6,6 +6,7 @@ import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
 import {
   ROBOT_RENDER_STYLE, realisticPackages, realisticUrdfUrl, REALISTIC_BASE_YAW_CORRECTION,
+  assertRenderStyle, isRedundantStyleRequest, settledStyle,
 } from './robotVisualStyle.js'
 
 /**
@@ -58,6 +59,14 @@ export class RobotStage {
 
     /** @type {'skeleton'|'realistic'} which geometry is currently drawn (原則 #4 — this field's only writer is `setRenderStyle`) */
     this._renderStyle = ROBOT_RENDER_STYLE.SKELETON
+    /**
+     * @type {'skeleton'|'realistic'|null} the style an in-flight load is
+     * heading for, or `null` when nothing is in flight. SEPARATE FROM
+     * `_renderStyle` on purpose: while a realistic load is in the air the
+     * stage HAS the skeleton but IS HEADING FOR realistic, and only the
+     * second fact can answer "is this new request redundant?" (ADR-148 D1).
+     */
+    this._pendingStyle = null
     // Monotonic token invalidating an in-flight `setRenderStyle('realistic')`
     // fetch that a LATER call (or `dispose()`) has superseded — the async
     // mesh load must not clobber a stage that has since moved on (原則 #24).
@@ -144,52 +153,81 @@ export class RobotStage {
     })
   }
 
-  /** Which geometry this stage currently draws — read-only (原則 #4: the only writer is `setRenderStyle`). */
+  /** Which geometry this stage currently DRAWS — read-only (原則 #4: the only writer is `setRenderStyle`). */
   get renderStyle() { return this._renderStyle }
+
+  /**
+   * Which geometry this stage is HEADING FOR — the pending request while a
+   * realistic load is in the air, else the drawn one. Distinct from
+   * `renderStyle` because the swap is asynchronous; a caller asking "did my
+   * request take?" must read this, not the drawn style (ADR-148 D1).
+   * @returns {'skeleton'|'realistic'}
+   */
+  get settledRenderStyle() { return settledStyle(this._renderStyle, this._pendingStyle) }
 
   /**
    * Swaps the drawn geometry between the bundled primitive skeleton and
    * Universal Robots' own visual meshes for the SAME UR5e chain (view-layer
    * only — joints/kinematics are unaffected either way, and both URDFs are
    * asserted to share them in `RobotVisualStyleAgreement.test.js`).
-   * Idempotent; a style already showing is a no-op.
+   *
+   * IDEMPOTENT AGAINST THE SETTLED STYLE, NOT THE DRAWN ONE (ADR-148 D1). A
+   * request is a no-op only when the stage is already HEADING FOR that style.
+   * Comparing against the drawn style instead turned the request that must
+   * CANCEL an in-flight load into an early return that never bumped the
+   * supersession token, so the losing request's geometry landed and stayed —
+   * the rule is pure and lives in `domain/robotVisualStyle.js` (原則 #3), and
+   * this method only performs the write.
    *
    * ASYNC LIFECYCLE: switching to `'realistic'` fetches ~9 MB of COLLADA
    * meshes lazily. If this stage is disposed, or `setRenderStyle` is called
-   * again, before that fetch resolves, the stale result is DROPPED — the
-   * request that fired later (or the dispose) wins (原則 #24/#32), so a slow
-   * background load can never clobber whatever the arm is showing by the
-   * time it lands. A failed fetch leaves the arm showing whatever it drew
-   * before the call, rather than going blank (原則 #11 read the other way:
-   * a background asset failing to load must not blank an already-visible arm).
+   * again, before that fetch resolves, the stale result is DROPPED and its
+   * geometry disposed on the spot — the request that fired later (or the
+   * dispose) wins (原則 #24/#32), so a slow background load can never clobber
+   * whatever the arm is showing by the time it lands.
+   *
+   * FAILURE IS REPORTED, NOT SWALLOWED (原則 #11). A failed fetch leaves the
+   * arm showing whatever it drew before the call — a background asset failing
+   * to load must not blank an already-visible arm — but the returned promise
+   * REJECTS, so the caller can tell "switched" from "kept the old one". The
+   * earlier shape resolved successfully either way, which left the only fact
+   * distinguishing them in a `console.error` nothing can read back.
    *
    * @param {'skeleton'|'realistic'} style
-   * @returns {Promise<void>}
+   * @returns {Promise<void>} REJECTS when the geometry could not be loaded, and
+   *   also for a style outside the declared vocabulary — this is an `async`
+   *   method, so `assertRenderStyle`'s throw surfaces as a rejection, never as
+   *   a synchronous one. Callers must handle the promise to see either.
    */
   async setRenderStyle(style) {
-    if (style === this._renderStyle) return
+    assertRenderStyle(style)   // no fall-through to the default (原則 #31)
+    if (isRedundantStyleRequest(style, this._renderStyle, this._pendingStyle)) return
     const token = ++this._styleLoadToken
+    this._pendingStyle = style
     let robot
     try {
       robot = style === ROBOT_RENDER_STYLE.REALISTIC
         ? await this._loadRealisticRobot()
         : this._buildSkeletonRobot()
     } catch (err) {
-      console.error('RobotStage.setRenderStyle: load failed, keeping the previous style.', err)
+      // Only the request still in flight may clear the pending marker; a later
+      // one has already replaced it and is the stage's current intent.
+      if (token === this._styleLoadToken) this._pendingStyle = null
+      throw err
+    }
+    if (token !== this._styleLoadToken || !this.robot) {
+      // Superseded or disposed while the meshes were in the air. Dispose what
+      // was loaded here rather than leaving it to GC — every load in this
+      // class has its release in this class (原則 #9).
+      RobotStage._disposeTree(robot)
       return
     }
-    if (token !== this._styleLoadToken || !this.robot) return   // superseded or disposed meanwhile
+    this._pendingStyle = null
 
     const priorJoints = this.previewState()?.joints ?? null
     const wasUnverified = this._unverified
 
-    this.robot.traverse(child => {
-      if (child.geometry) child.geometry.dispose()
-      if (child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material]
-        for (const m of materials) m.dispose()
-      }
-    })
+    RobotStage._disposeTree(this.robot)
     this._group.remove(this.robot)
 
     this._attachRobot(robot)
@@ -204,6 +242,23 @@ export class RobotStage {
     if (priorJoints) this.setJointValues(priorJoints)
     this._unverified = false
     this._setUnverifiedLook(wasUnverified)
+  }
+
+  /**
+   * Releases every geometry/material under an Object3D. The ONE place this
+   * class frees loaded geometry, so the three paths that need it (style swap,
+   * superseded load, `dispose()`) cannot drift apart (原則 #9).
+   * @param {import('three').Object3D|null} root
+   */
+  static _disposeTree(root) {
+    if (!root) return
+    root.traverse(child => {
+      if (child.geometry) child.geometry.dispose()
+      if (child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material]
+        for (const m of materials) m.dispose()
+      }
+    })
   }
 
   /**
@@ -356,15 +411,13 @@ export class RobotStage {
 
   /** Symmetric teardown (#9): every scene.add above has its remove+dispose here. */
   dispose() {
-    if (this.robot) {
-      this.robot.traverse((child) => {
-        if (child.geometry) child.geometry.dispose()
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
-          for (const m of materials) m.dispose()
-        }
-      })
-    }
+    // Invalidate any in-flight style load before dropping the robot: the load
+    // checks BOTH the token and `this.robot`, and bumping the token here means
+    // a landing load disposes its own geometry (the `_disposeTree` in
+    // `setRenderStyle`'s superseded branch) instead of relying on GC.
+    this._styleLoadToken++
+    this._pendingStyle = null
+    RobotStage._disposeTree(this.robot)
     this._materials = []
     this._scene.remove(this._group)
     this.robot = null

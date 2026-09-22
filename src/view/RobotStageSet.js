@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { RobotStage } from './RobotStage.js'
 import { previewAssignments } from '../domain/robotConfig.js'
+import { ROBOT_RENDER_STYLE, assertRenderStyle } from '../domain/robotVisualStyle.js'
 
 /**
  * RobotStageSet — the N-robot seat for skeleton views (ADR-090).
@@ -28,6 +29,21 @@ export class RobotStageSet {
     this._scene = threeScene
     /** @type {Map<string, RobotStage>} robot id → its skeleton view */
     this._stages = new Map()
+    /**
+     * @type {'skeleton'|'realistic'} THE STYLE THIS SCENE DRAWS — the one
+     * authority for a fact that belongs to the SET, not to any one stage
+     * (ADR-148 D2). Each `RobotStage` owns "which style I draw" at cardinality
+     * 1; nothing owned "which style the scene draws" at cardinality N, so
+     * `setRenderStyle` was a fan-out over whichever stages happened to be
+     * alive at the time and a robot added afterwards booted into the default
+     * — two arms of the same UR5e, drawn differently, with no field saying
+     * which was right (原則 #31: N has no column of its own).
+     *
+     * Legitimate at 0 stages: the declaration survives an empty scene and the
+     * next stage created adopts it, which is exactly the case a fan-out
+     * cannot express.
+     */
+    this._renderStyle = ROBOT_RENDER_STYLE.SKELETON
   }
 
   /** Number of live skeletons (the view-side cardinality). */
@@ -56,7 +72,16 @@ export class RobotStageSet {
 
     for (const id of wanted) {
       if (this._stages.has(id)) continue
-      this._stages.set(id, new RobotStage(this._scene))
+      const stage = new RobotStage(this._scene)
+      this._stages.set(id, stage)
+      // The obligation "a new stage draws the style this scene declared" lives
+      // HERE, on the event that creates the stage, not next to the declaration
+      // (原則 #32). A `RobotStage` boots into the bundled skeleton by design
+      // (zero network); adopting the scene's style is the set's business.
+      // Idempotent when the declaration IS the skeleton, so no second place
+      // encodes which style is the default.
+      stage.setRenderStyle(this._renderStyle).catch(err => console.error(
+        `RobotStageSet.sync: "${id}" could not adopt the scene's "${this._renderStyle}" style.`, err))
       changed = true
     }
     for (const [id, stage] of [...this._stages]) {
@@ -126,17 +151,61 @@ export class RobotStageSet {
   /** @param {string} id @returns {boolean} */
   has(id) { return this._stages.has(id) }
 
+  /** The style this scene DECLARES (原則 #4 — only `setRenderStyle` writes it). */
+  get renderStyle() { return this._renderStyle }
+
   /**
-   * Swaps drawn geometry (bundled skeleton ↔ Universal Robots' own visual
-   * meshes) on EVERY live stage — a console/debug-level convenience
-   * (`window.__easyExtrude.setRobotAppearance`, ADR-141's "which arm" axis is
-   * untouched by this; see `RobotStage.setRenderStyle`). Per-stage async
-   * supersession is each `RobotStage`'s own concern, not duplicated here.
+   * What each live stage is actually HEADING FOR, keyed by robot id — read
+   * back off the stages, not off the declaration.
+   *
+   * Exists because the defect ADR-148 closes was precisely "declared and drawn
+   * disagree, and nothing prints either number". A snapshot of the intent
+   * would have been green while the scene showed two different arms, so the
+   * declaration and the measurement are kept as SEPARATE lanes (ADR-114).
+   * @returns {Record<string, 'skeleton'|'realistic'>}
+   */
+  renderStyles() {
+    /** @type {Record<string, 'skeleton'|'realistic'>} */
+    const out = {}
+    for (const [id, stage] of this._stages) out[id] = stage.settledRenderStyle
+    return out
+  }
+
+  /**
+   * Declare which geometry this scene draws (bundled skeleton ↔ Universal
+   * Robots' own visual meshes) and apply it to every live stage.
+   * `window.__easyExtrude.setRobotAppearance` is the console entry point;
+   * ADR-141's "which arm" axis is untouched by this (see
+   * `RobotStage.setRenderStyle`).
+   *
+   * The DECLARATION is written first and outlives the fan-out, so a robot
+   * added later adopts it in `sync()` rather than booting into the default
+   * (ADR-148 D2). Per-stage async supersession stays each `RobotStage`'s own
+   * concern and is not duplicated here.
+   *
+   * FAILURE: rejects if any stage could not switch (原則 #11 — the caller is
+   * told). When NO stage switched, the declaration is rolled back too: a scene
+   * claiming a style that not one arm draws is the same "declared ≠ drawn"
+   * defect in a different place. A partial failure keeps the declaration, so
+   * the next stage created retries it.
+   *
    * @param {'skeleton'|'realistic'} style
-   * @returns {Promise<void>}
+   * @returns {Promise<void>} REJECTS when at least one stage failed to switch,
+   *   and also for a style outside the declared vocabulary (an `async` method
+   *   surfaces `assertRenderStyle`'s throw as a rejection, not a synchronous
+   *   one). An undeclared style rejects BEFORE the declaration is written, so
+   *   a typo cannot become the scene's recorded style.
    */
   async setRenderStyle(style) {
-    await Promise.all([...this._stages.values()].map(stage => stage.setRenderStyle(style)))
+    assertRenderStyle(style)   // no fall-through to the default (原則 #31)
+    const previous = this._renderStyle
+    this._renderStyle = style
+    const results = await Promise.allSettled(
+      [...this._stages.values()].map(stage => stage.setRenderStyle(style)))
+    const failed = results.filter(r => r.status === 'rejected')
+    if (failed.length === 0) return
+    if (failed.length === results.length) this._renderStyle = previous
+    throw failed[0].reason
   }
 
   /**

@@ -937,7 +937,25 @@ export class AppController {
       // skeleton ('skeleton', default) and Universal Robots' own visual
       // meshes ('realistic', fetched lazily — RobotStage.setRenderStyle).
       // Console-level for now; a persistent UI control is future work.
+      // Rejects (rather than resolving either way) when the meshes could not
+      // be loaded, so the caller can tell a switch from a kept-old-style.
       setRobotAppearance: (style) => this._sceneView.robotStages.setRenderStyle(style),
+      /**
+       * Read-only APPEARANCE snapshot (ADR-148) — what the scene DECLARES it
+       * draws, and what each arm is actually heading for.
+       *
+       * Two lanes, not one, because the defect this closes was the two
+       * disagreeing: a robot added after a style switch booted into the
+       * bundled skeleton, so `declared: 'realistic'` sat next to an arm
+       * drawing the skeleton and no field anywhere printed either number.
+       * The unit lanes cannot see this at all — `RobotStage` needs a DOM to
+       * parse its URDF — so this accessor is the only surface on which the
+       * claim is executable (the same reason `armPreview` / `worldSpan` exist).
+       */
+      robotAppearance: () => ({
+        declared: this._sceneView.robotStages?.renderStyle ?? null,
+        drawn:    this._sceneView.robotStages?.renderStyles?.() ?? {},
+      }),
       // Read-only camera snapshot (position / orbit target / up). Console debug
       // aid and the E2E regression guard for the Map Mode camera-reset contract
       // (ADR-072: exit must return the perspective camera to its pre-map pose,

@@ -26,7 +26,14 @@
  * `robotSkeleton.js` follows for its own browser-only import (ADR-088 §header).
  */
 
-export { ROBOT_RENDER_STYLE, REALISTIC_BASE_YAW_CORRECTION } from '../domain/robotVisualStyle.js'
+export {
+  ROBOT_RENDER_STYLE, REALISTIC_BASE_YAW_CORRECTION,
+  // The pure decisions behind the swap (ADR-148): the vocabulary guard and the
+  // "is this request redundant?" rule. Re-exported so `RobotStage` has ONE
+  // import for this concern, while the rules themselves stay in the domain
+  // module where `node --test` can reach them (`robotVisualStyle.test.js`).
+  assertRenderStyle, isRedundantStyleRequest, settledStyle,
+} from '../domain/robotVisualStyle.js'
 import { REALISTIC_ASSET_DIR } from '../domain/robotVisualStyle.js'
 
 /**
