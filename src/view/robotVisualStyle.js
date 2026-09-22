@@ -1,8 +1,10 @@
 // @ts-nocheck
 /**
- * robotVisualStyle — WHICH GEOMETRY a `RobotStage` draws for the one UR5e
- * kinematic chain this app has (view-layer only; never a second source of
- * kinematics).
+ * robotVisualStyle (view) — resolves the pure facts in `domain/robotVisualStyle.js`
+ * against Vite's runtime `BASE_URL`. Split from the domain module the same way
+ * `view/robotSkeleton.js` is split from `domain/robotModel.js`: the pure facts
+ * (closed vocabulary, the yaw correction) stay importable by `node --test`;
+ * only the URL-building here needs a browser.
  *
  * `RobotStage` always derives its joints from `ROBOT_URDF_TEXT`
  * (`robotSkeleton.js`, ADR-088) — that does not change here. `REALISTIC`
@@ -24,13 +26,8 @@
  * `robotSkeleton.js` follows for its own browser-only import (ADR-088 §header).
  */
 
-/** The two geometries a stage can draw for the app's one UR5e. Closed vocabulary (原則 #31). */
-export const ROBOT_RENDER_STYLE = Object.freeze({
-  SKELETON:  'skeleton',   // primitive-<geometry> bones, bundled, zero network (default)
-  REALISTIC: 'realistic',  // Universal Robots' own visual meshes, fetched on demand
-})
-
-const REALISTIC_ASSET_DIR = 'robot/ur5e_visual'
+export { ROBOT_RENDER_STYLE, REALISTIC_BASE_YAW_CORRECTION } from '../domain/robotVisualStyle.js'
+import { REALISTIC_ASSET_DIR } from '../domain/robotVisualStyle.js'
 
 /**
  * Resolves a `public/`-relative path against Vite's configured base

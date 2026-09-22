@@ -4,7 +4,9 @@ import URDFLoader from 'urdf-loader'
 import { jointValuesFor } from '../domain/robotConfig.js'
 import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
-import { ROBOT_RENDER_STYLE, realisticPackages, realisticUrdfUrl } from './robotVisualStyle.js'
+import {
+  ROBOT_RENDER_STYLE, realisticPackages, realisticUrdfUrl, REALISTIC_BASE_YAW_CORRECTION,
+} from './robotVisualStyle.js'
 
 /**
  * How much of its own opacity the skeleton keeps while it draws a CLIENT
@@ -96,6 +98,11 @@ export class RobotStage {
       return r.text()
     })
     const robot = loader.parse(text)
+    // Cancel the official URDF's own base_link → base_link_inertia yaw
+    // (REALISTIC_BASE_YAW_CORRECTION) so this root ends up in the SAME frame
+    // convention as skeleton_arm.urdf's — and therefore the TCP marker
+    // (derived solely from the skeleton) still lands on the drawn flange.
+    robot.rotation.z = REALISTIC_BASE_YAW_CORRECTION
     await loaded   // wait for every referenced mesh, not just the URDF text
     return robot
   }

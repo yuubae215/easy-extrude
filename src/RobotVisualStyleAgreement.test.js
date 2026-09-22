@@ -17,14 +17,27 @@
  * frames) that are not part of the movable chain. So the six movable joints
  * are compared by NAME with a small local extraction instead of widening that
  * parser's contract for a one-off check.
+ *
+ * PER-JOINT agreement is necessary but was NOT sufficient: the official file
+ * also roots its movable chain through an extra FIXED joint,
+ * `base_link-base_link_inertia` (rpy `0 0 π`), that `skeleton_arm.urdf` does
+ * not have (`domain/robotVisualStyle.js: REALISTIC_BASE_YAW_CORRECTION`'s
+ * docstring). Six matching RELATIVE joint origins say nothing about that
+ * shared root, so the tests below also run actual forward kinematics on both
+ * chains (with `RobotStage`'s correction applied to the realistic one) and
+ * assert the resulting flange POSE agrees — the same class of check ADR-146's
+ * cross-language fixtures run, aimed at the one fact this file exists to keep
+ * loud: "the TCP marker lands where the drawn arm's flange actually is."
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { parseUrdfChain } from './robotics/UrdfChain.js'
-import { movableJoints } from './robotics/Kinematics.js'
+import { parseUrdfChain, restPoseToQ } from './robotics/UrdfChain.js'
+import { movableJoints, forwardKinematics } from './robotics/Kinematics.js'
+import { REALISTIC_BASE_YAW_CORRECTION } from './domain/robotVisualStyle.js'
+import { ROBOT_REST_POSE } from './domain/robotConfig.js'
 
 const path = (rel) => fileURLToPath(new URL(rel, import.meta.url))
 
@@ -84,6 +97,52 @@ for (const joint of SKELETON_JOINTS) {
     if (joint.axis) assertClose(real.axis ?? [0, 0, 0], joint.axis, `${joint.name} axis`)
   })
 }
+
+test('REALISTIC_BASE_YAW_CORRECTION still matches the fixed joint it exists to cancel', () => {
+  const baseFixed = namedJoint(REALISTIC_URDF, 'base_link-base_link_inertia')
+  assertClose(baseFixed.origin.xyz, [0, 0, 0], 'base_link-base_link_inertia xyz')
+  assert.ok(Math.abs(baseFixed.origin.rpy[2] - REALISTIC_BASE_YAW_CORRECTION) < 1e-6,
+    `base_link-base_link_inertia rpy.z (${baseFixed.origin.rpy[2]}) no longer matches ` +
+    `REALISTIC_BASE_YAW_CORRECTION (${REALISTIC_BASE_YAW_CORRECTION}) — RobotStage's ` +
+    'correction needs updating, not just this constant')
+})
+
+test("with the yaw correction applied, the realistic chain's flange pose agrees with the skeleton's (forward kinematics)", () => {
+  const skeletonChain = { joints: SKELETON_JOINTS }
+  const skeletonFk = forwardKinematics(skeletonChain, restPoseToQ(skeletonChain, ROBOT_REST_POSE))
+
+  // Independently reconstructed from the REALISTIC file's own declared values
+  // (not copied from SKELETON_JOINTS) — this is what actually loads at
+  // runtime: RobotStage's yaw correction, then the file's own fixed root
+  // joint, then its own six movable joints.
+  const baseFixed = namedJoint(REALISTIC_URDF, 'base_link-base_link_inertia')
+  const realisticChain = {
+    joints: [
+      { name: 'yaw_correction', type: 'fixed',
+        origin: { xyz: [0, 0, 0], rpy: [0, 0, REALISTIC_BASE_YAW_CORRECTION] } },
+      { name: 'base_link-base_link_inertia', type: 'fixed', origin: baseFixed.origin },
+      ...SKELETON_JOINTS.map(j => {
+        const real = namedJoint(REALISTIC_URDF, j.name)
+        return { name: j.name, type: j.type, axis: real.axis ?? undefined, origin: real.origin }
+      }),
+    ],
+  }
+  const realisticFk = forwardKinematics(realisticChain, restPoseToQ(realisticChain, ROBOT_REST_POSE))
+
+  assertClose(
+    [realisticFk.position.x, realisticFk.position.y, realisticFk.position.z],
+    [skeletonFk.position.x, skeletonFk.position.y, skeletonFk.position.z],
+    'flange position (this is what the TCP marker sits at)')
+
+  // Quaternions double-cover SO(3): q and -q are the SAME rotation, so compare
+  // via |dot product| rather than raw components (both signs are correct).
+  const dot = realisticFk.quaternion.x * skeletonFk.quaternion.x
+    + realisticFk.quaternion.y * skeletonFk.quaternion.y
+    + realisticFk.quaternion.z * skeletonFk.quaternion.z
+    + realisticFk.quaternion.w * skeletonFk.quaternion.w
+  assert.ok(Math.abs(Math.abs(dot) - 1) < 1e-6,
+    `flange orientation mismatch (|dot|=${Math.abs(dot)}, expected ≈1)`)
+})
 
 test('every VISUAL mesh the realistic URDF references actually ships in public/robot/ur5e_visual', () => {
   // Collision meshes are deliberately not shipped (NOTICE.md) — urdf-loader's
