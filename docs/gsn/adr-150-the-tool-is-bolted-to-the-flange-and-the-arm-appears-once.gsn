@@ -1,0 +1,138 @@
+GOALS adr150_the_tool_is_bolted_to_the_flange_and_the_arm_appears_once
+
+goal TheArmAppearsOnceAndCarriesTheToolItWasSolvedWith
+uuid 3c57c600-03d4-4091-a5ce-93d50ec6f020
+summary "画面の腕は常にシーンが宣言したスタイルだけで現れ (途中で別の形を見せない)、2 つのスタイルは同じシルエットを持ち、腕のフランジには解いたのと同じツールが剛体で付いていて、その先端が TCP・その閉じ軸が把持ゲートの測る軸に一致する。解でなく性質: 'キャッシュする' 'ツールを描く' はどちらも解の形"
+state Approved
+labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, principle-4, principle-5, principle-11, principle-15, principle-31, app, core, view
+
+    context ThreeReportsFromTheDogfooder
+    uuid 5f9d3d50-0e49-40e9-8a63-6db6aad2d947
+    summary "当事者の /whiteboard 依頼 (2026-09-23): (1) スポーン直後 skeleton が見え ~1 秒後に実写へ切り替わる、(2) 関節構造の見た目が違う (DH は同じはず)、(3) ピック検証でツールがフランジに付いていない。合意: ツール長 150mm、吸引でも TCP は同じ。4 点目 (単体/トレー内のピック検証の分割) は別 PR (DEF-043)"
+    artifacts
+    - "docs/adr/ADR-150-the-tool-is-bolted-to-the-flange-and-the-arm-appears-once.md"
+
+    justification WhyTheToolLivesOnRobotNotOnGripper
+    uuid f0e07c9f-3f36-465b-bd8b-164b639fda59
+    summary "却下案 gripper.toolLength: 把持性ゲートのカードは既定 OFF で gripper 自体が省かれるので、既定の探索にツールが載らない — 'ゲートを切るとツールが外れる' は物理的に誤り。却下案 '表示だけ直す': IK はフランジ = 把持点のままなので指が把持点を 150mm 突き抜け、見た目を直して嘘を増やす"
+
+    strategy ByOneSharedAssetOneToolDeclarationAndAFixedMount
+    uuid 9483defc-0cc9-4cee-a5f5-a45c344ec8f8
+    summary "実写メッシュを 1 つの共有資産 (状態機械 idle/loading/ready/failed) にして stage は clone、宣言スタイルが着地するまで腕を隠す。ツール長は robot.toolLength として 1 つの経路 (_resolveRobotDeclaration) から core/ とクライアント IK に渡し、同じ定数で wrist_3_link に描く。フランジ gauge は候補 frame の x 軸まわり 180° の固定取付けに正す"
+
+        goal AFreshArmNeverShowsTheSkeletonFirst
+        uuid ae4b3c42-9de9-4663-9a03-5d662d695beb
+        summary "D1/D2: 実写が宣言されたシーンでスポーンした腕は、メッシュが着地するまで非表示 (null) で、skeleton を 1 フレームも見せない。2 台目は共有資産の clone で即時"
+        labels support-verified
+        state Approved
+
+            solution HeldResponseSampledEveryFrame
+            uuid 96f20d4d-c143-4abb-8bcd-60e81b553f46
+            summary "e2e 'a spawned arm never shows the skeleton before its realistic first look': URDF 応答をスポーン後まで保留し、requestAnimationFrame ごとに robotAppearance().shown を標本化。1 台目・2 台目とも 'skeleton' を含まない。負の対照: 隠す規則を無効化すると shown が [\"skeleton\"] で落ちる。保留しない版は無効化しても緑だった (先読みが先に着く) ので保留する形にした"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/view/RobotStage.js"
+
+            solution OneLoadForNRequestsPure
+            uuid b45f28a4-d3ca-485f-8d90-56e887943941
+            summary "src/domain/robotVisualStyle.test.js: 遷移表 (禁止遷移は throw)、同時 3 要求で load 1 回、ready 後の要求で再 load 無し、失敗は非 sticky (次の要求で再試行)"
+            artifacts
+            - "src/domain/robotVisualStyle.test.js"
+            - "src/domain/robotVisualStyle.js"
+
+        goal AFailedLoadShowsTheSkeletonAndSaysSo
+        uuid 103bc7da-f88d-46d1-a576-d16d2567df83
+        summary "D2/D3: メッシュが取れないとき腕は不可視のまま残らず skeleton が見え、error toast が出て、loading 表示が消える (原則 #11)。読み込み中は RobotAppearanceToggle の固定スロットが LOADING… を出す (原則 #15)"
+        labels support-verified
+        state Approved
+
+            solution RouteFulfilled404
+            uuid 566985ff-fe9d-4cec-8f94-e4232adfc5eb
+            summary "e2e 'when the mesh cannot load…': URDF を 404 にして shown が 'skeleton'、toast 'Could not load the realistic robot mesh' が見え、appearance().loading が false に戻る。保留中は LOADING… と loading=true を同じ初見 e2e が焼く"
+            artifacts
+            - "e2e/robot-appearance.spec.js"
+            - "src/controller/AppController.js"
+            - "src/components/RobotAppearanceToggle/RobotAppearanceToggle.jsx"
+
+        goal BothStylesDrawTheSameSilhouette
+        uuid 99969a7e-abd0-40f9-9274-bb8db2ebb722
+        summary "D6: skeleton の上腕・前腕の骨は UR 純正メッシュと同じ平面 (z=0.138 / 0.007) にあり、肩オフセットを手首で一気に立ち上げない。関節原点は不変"
+        labels support-verified
+        state Approved
+
+            solution BonePlaneAgreement
+            uuid 5d14fedc-f744-4a28-95d2-d30a5d4a8e05
+            summary "src/RobotVisualStyleAgreement.test.js に 2 本: 骨 (−X 方向の visual) の z が ur5e.urdf の visual origin z と一致。負の対照: 旧 skeleton_arm.urdf で 2 件落ち、関節原点の既存 11 本は通る (原点の一致はシルエットの一致を含意しない)"
+            artifacts
+            - "src/RobotVisualStyleAgreement.test.js"
+            - "public/robot/skeleton_arm.urdf"
+
+        goal TheSolvedArmHoldsTheToolItShows
+        uuid c0eb8456-2cc7-4fe3-8bde-4eeab043c836
+        summary "D4: core/ はフランジを TCP から approach の逆向きに toolLength 戻して解き、フランジ→TCP 区間を腕リンクと同じ干渉の問いにかける。クライアントの閉形式も同じ長さで解き、RobotStage は同じ定数で wrist_3_link にツールを描く (指先 = z=L)"
+        labels support-verified
+        state Approved
+
+            solution ToolTipLandsOnTheCandidate
+            uuid 4e8048d4-c93b-4918-acf2-da3e3e498a38
+            summary "core/tests/test_ur_kinematics.py: FK(解) のフランジ + L·z = 候補位置 (< 1e-9)、フランジと候補の距離 = L。GraspController.test.js: クライアント解のツール先端が候補位置に機械精度で一致"
+            artifacts
+            - "core/tests/test_ur_kinematics.py"
+            - "src/controller/GraspController.test.js"
+
+            solution ToolSegmentIsSwept
+            uuid 151bb910-287b-49cd-8b20-aeb90ce0d613
+            summary "core/tests/test_engine.py: ツール区間にだけ触れる障害物 (把持点の真上 0.13m、r=0.01) は toolLength=0.15 で棄却、対照 L=0 は通す。宣言は solver と sweep に同じ長さで渡る、負は拒否。contract: robot.toolLength を受理・負を拒否 (contractVersion=6)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "packages/grasp-contract/test/contract.test.mjs"
+
+            solution DrawnToolMatchesTheDeclaredOne
+            uuid e8db6fc0-4d13-4750-8687-bb2efd661765
+            summary "src/domain/robotTool.test.js: 指先 = z=TOOL_LENGTH_M、何もフランジ面の後ろや TCP の先に描かない、ジョーは ±X、wrist_3_link の frame = DH フランジ frame (姿勢込み — FK フィクスチャは位置しか見ていなかった)"
+            artifacts
+            - "src/domain/robotTool.test.js"
+            - "src/view/RobotStage.js"
+
+            solution OneHandOnScreen
+            uuid c049ea6e-7a95-413f-8422-de026f9fff81
+            summary "GraspController.test.js: 腕が候補を持ち (posed) かつ見えているときだけゴーストはハンドを描かない。解無し・目 OFF ではグリフが描く (手が 0 個にならない)。solved→unsolved→solved で毎回追従 (同じ要求を 2 回以上通す形)"
+            artifacts
+            - "src/controller/GraspController.test.js"
+            - "src/view/GraspGhostView.js"
+
+        goal TheJawAxisIsFixedToTheFlange
+        uuid 63d84b29-56f0-4ceb-b337-998b605b75c6
+        summary "D5: 平行ジョーの閉じ軸 (候補 frame の x) はフランジ座標で動かない — フランジ = 候補 frame を自身の x 軸まわりに 180° 回した固定の取付け。旧 gauge では閉じ軸が roll の 2 倍で回っていた (roll 0/45/90/180° でなす角 180/90/0/180°)"
+        labels support-verified
+        state Approved
+
+            solution FixtureIsAFixedMount
+            uuid a835fbb3-490a-4b7b-825a-c63379809de9
+            summary "CrossLanguageDerivation.test.js: フィクスチャ全 24 件でフランジ目標 = 候補 frame の (x, −y, −z) + L 戻し (最大差 < 1e-9)。toolLength を無視した写しは一致しない。core/ 側は生成器と今日の flange_target の一致を test_ur_kinematics.py が問う"
+            artifacts
+            - "src/robotics/CrossLanguageDerivation.test.js"
+            - "fixtures/cross-language/ur5e-candidate-to-flange.json"
+            - "scripts/gen-cross-language-gauge.py"
+
+            context TheRepresentativeBranchMovedWithTheta6
+            uuid d7a6db93-03fe-4d24-9392-dcc99cfb7673
+            summary "変わるのは各枝の θ6 だけだが、代表解の選び方 (関節総移動量最小, ADR-127 D5) は θ6 を含む和なので、ペデスタルテンプレートで 36 中 18 候補の代表の枝が変わり、干渉棄却は 10 → 4 (7 件が台へ潜る枝から外れ 1 件が入った)。旧値は誤った x 軸に対して測った θ6 が代表を決めていた数。ADR-145 の腕スイープの test は潜る枝を名指しで選ぶ形に直した"
+            artifacts
+            - "core/tests/test_templates.py"
+            - "core/tests/test_engine.py"
+            - "templates/single-arm-pedestal-cell/README.md"
+
+    goal WhatThisDidNotDoIsCounted
+    uuid 7e53ab3d-b06e-4939-a02f-e6351a5e7ed2
+    summary "ADR-150 が触れなかった 2 つの残しは登録簿の行として数えられ、満期は機械が読める"
+    labels support-exploring
+    state ToBeDeveloped
+
+        assumption PickVerificationSplitIsDEF043
+        uuid 0f575eda-8785-4c2b-b5d9-750dcd7fef3d
+        summary "証拠予定: DEF-043 — 単体ワーク / トレー内の全ワークのピック検証の分割。core/ の /pick-sequence (ADR-078) を契約・BFF・UI まで配線する別 PR (新 response 契約 = 版上げ)。満期=PATH:packages/grasp-contract/schema/pick-sequence-response.schema.json"
+
+        assumption TcpSeedStaysAtTheFlangeDEF044
+        uuid 6067a6a1-586a-4176-ba56-015675a03cc8
+        summary "証拠予定: DEF-044 — シーンの tcp フレームの seed はフランジ位置のまま (休止姿勢で TCP マーカーはツール先端の 150mm 手前)。満期=GREP:src/view/robotSkeleton.js::TOOL_LENGTH_M"

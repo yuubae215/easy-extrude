@@ -35,6 +35,11 @@ export const ROBOT_URDF_TEXT = urdfText
  * @type {{ x:number, y:number, z:number }}
  */
 const _flangeSeedMeters = deriveFlangeSeed(ROBOT_URDF_TEXT, ROBOT_REST_POSE)
+// The seed is the FLANGE, not the tool tip. Since ADR-150 the arm carries a
+// 150 mm tool and IK solves for its tip, so at rest the scene's tcp marker stands
+// one tool length short of the drawn fingertips. Moving the seed is 保留
+// (DEF-044): it would change the seed's derivation, every saved scene's tcp, and
+// what `tcpOrientation` means (ADR-084 §3).
 export const TCP_LOCAL_SEED = {
   x: mToMM(_flangeSeedMeters.x),
   y: mToMM(_flangeSeedMeters.y),

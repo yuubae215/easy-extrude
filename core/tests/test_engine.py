@@ -244,10 +244,8 @@ def test_arm_sweep_rejects_the_elbow_that_dives_into_the_pedestal():
     **TCP 経路だけを見るチェッカは同じ候補を通す**ことを同じテストで主張する —
     対照が無いと「常に True を返す壊れたチェッカ」でも緑になる。
     """
-    solver = UniversalRobotsIkSolver(dh=_UR5E)
     candidate = _supply_bin_candidate()
-    solution = solver.solve(candidate, _CELL_ROBOT)
-    assert isinstance(solution, JointSolution)
+    solution = _diving_branch(candidate)
 
     tcp_only = NaivePathCollisionChecker()
     sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=tcp_only)
@@ -259,6 +257,31 @@ def test_arm_sweep_rejects_the_elbow_that_dives_into_the_pedestal():
     assert interference_free(
         candidate, obstacles, sweep, solution=solution, robot=_CELL_ROBOT
     ) is False
+
+
+def _diving_branch(candidate) -> JointSolution:
+    """8 解のうち**上腕がペデスタル上面より下へ潜る**枝を明示的に選ぶ。
+
+    ADR-145 の初版はこれを代表解 (関節総移動量最小) に任せていたが、代表の選び方は
+    θ6 を含む和なので、ADR-150 D5 がフランジの x 軸 (= θ6) を正したとき**代表が
+    潜らない枝へ移った** — 検査したい性質 (「潜る腕を捕まえる」) と無関係な理由で
+    前提が崩れた。ここでは潜る枝を名指しで取り、代表の選び方から切り離す。
+    """
+    from easy_extrude_core.engine.ur_kinematics import (
+        forward_kinematics_chain, inverse_kinematics,
+    )
+    from easy_extrude_core.engine.ur_solver import flange_target
+
+    local = list(flange_target(candidate))
+    local[3] -= _CELL_BASE.x
+    local[7] -= _CELL_BASE.y
+    local[11] -= _CELL_BASE.z
+    top = 0.920  # ペデスタル上面 (world z) = ベースの高さ
+    for q in inverse_kinematics(_UR5E, tuple(local)):
+        elbow_z = _CELL_BASE.z + forward_kinematics_chain(_UR5E, q)[2][11]
+        if elbow_z < top - 0.1:
+            return JointSolution(joints=tuple(q))
+    raise AssertionError("潜る枝が 1 本も無い — フィクスチャの前提が変わった")
 
 
 def test_arm_sweep_accepts_when_no_link_reaches_the_obstacle():
@@ -1155,3 +1178,60 @@ def test_parallel_jaw_miss_is_still_reported_as_opening():
     assert d.rejected_by_grasp > 0
     assert d.grasp_nearest_miss_kind == "opening"
     assert report.response.diagnostics.grasp_nearest_miss.kind == "opening"
+
+
+# --- ツールはフランジに剛体で付いている (ADR-150 D4) -----------------------------
+
+
+def test_the_tool_segment_is_checked_like_any_other_link():
+    """フランジ -> TCP の区間にだけ触れる障害物は、ツール長を宣言したときだけ当たる。
+
+    障害物は把持点の真上 0.13m (進入経路 = 真上 0.1m までの線分からは 0.02m 離れ、
+    フランジ = 真上 0.15m からも 0.02m 離れている)。**当たるのはツールそのもの**で、
+    ツールを持たない腕 (tool_length=0 = ADR-150 以前) は同じ候補を通す — 対照が無いと
+    「常に True を返す」実装でも緑になる。
+    """
+    tool = 0.15
+    candidate = _supply_bin_candidate()
+    grip = candidate.pose.position
+    beside_the_tool = (Obstacle(center=grip + Vec3(0.0, 0.0, 0.13), radius=0.01),)
+
+    with_tool = UniversalRobotsIkSolver(dh=_UR5E, tool_length=tool)
+    solution = with_tool.solve(candidate, _CELL_ROBOT)
+    assert isinstance(solution, JointSolution)
+    sweep = NaiveArmSweepCollisionChecker(
+        dh=_UR5E, inner=NaivePathCollisionChecker(), tool_length=tool
+    )
+    assert interference_free(
+        candidate, beside_the_tool, sweep, solution=solution, robot=_CELL_ROBOT
+    ) is False
+
+    bare = UniversalRobotsIkSolver(dh=_UR5E)
+    bare_solution = bare.solve(candidate, _CELL_ROBOT)
+    bare_sweep = NaiveArmSweepCollisionChecker(dh=_UR5E, inner=NaivePathCollisionChecker())
+    assert interference_free(
+        candidate, beside_the_tool, bare_sweep, solution=bare_solution, robot=_CELL_ROBOT
+    ) is True
+
+
+def test_the_pipeline_hands_the_declared_tool_length_to_both_solver_and_sweep():
+    """解いたツールと判定するツールが同じ長さ (宣言は 1 つ — §1.1)。"""
+    from easy_extrude_core.engine.ur_solver import ik_solver_from_declaration
+
+    declaration = {
+        "robot": {
+            "kinematics": {
+                "kind": "universalRobots",
+                "dh": {"d1": 0.1625, "a2": -0.425, "a3": -0.3922,
+                       "d4": 0.1333, "d5": 0.0997, "d6": 0.0996},
+            },
+            "toolLength": 0.15,
+        },
+    }
+    # gripper を宣言しない (把持性ゲートを切った) 探索でもツールは付いている。
+    assert ik_solver_from_declaration(declaration).tool_length == 0.15
+    del declaration["robot"]["toolLength"]
+    assert ik_solver_from_declaration(declaration).tool_length == 0.0
+    declaration["robot"]["toolLength"] = -0.01
+    with pytest.raises(ValueError):
+        ik_solver_from_declaration(declaration)

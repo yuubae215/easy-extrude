@@ -282,12 +282,29 @@ describe('ur5e-candidate-to-flange: 2 つの gauge が core/ の写しであり�
 
   test(`${fixture.cases.length} 姿勢すべてでフランジ目標が一致する`, () => {
     let worst = 0
-    for (const { posePayload, flangeTarget: want } of fixture.cases) {
-      const got = flangeTarget(poseFromFrame(posePayload.frame))
+    for (const { posePayload, toolLength, flangeTarget: want } of fixture.cases) {
+      const got = flangeTarget(poseFromFrame(posePayload.frame), toolLength)
       assert.ok(got, 'フランジ目標が作れない')
       for (let i = 0; i < 16; i++) worst = Math.max(worst, Math.abs(got[i] - want[i]))
     }
     assert.ok(worst <= tol, `最大差 ${worst}`)
+  })
+
+  test('toolLength が全ケースで明示され、0 と非 0 の両方を通る (ADR-150 D4)', () => {
+    // 欠けたキーを 0 と読むと「0 を宣言した」と「書き忘れた」が区別できない。
+    // 0 だけでは toolLength を無視する写しでも緑になる (原則 #31)。
+    assert.ok(fixture.cases.every(c => typeof c.toolLength === 'number'), 'toolLength の無いケースがある')
+    assert.ok(fixture.cases.some(c => c.toolLength === 0))
+    assert.ok(fixture.cases.some(c => c.toolLength > 0))
+  })
+
+  test('toolLength を無視した写しは**一致しない** (負の対照)', () => {
+    const withTool = fixture.cases.filter(c => c.toolLength > 0)
+    const ignored = withTool.filter(({ posePayload, flangeTarget: want }) => {
+      const got = flangeTarget(poseFromFrame(posePayload.frame))
+      return [3, 7, 11].every(i => Math.abs(got[i] - want[i]) <= tol)
+    })
+    assert.equal(ignored.length, 0)
   })
 
   test('gauge の**両方の分岐**がフィクスチャに含まれている', () => {
@@ -299,24 +316,24 @@ describe('ur5e-candidate-to-flange: 2 つの gauge が core/ の写しであり�
     assert.ok(zs.some(z => z < 0.9), '|z| < 0.9 の姿勢が無い')
   })
 
-  test('ワイヤの四元数を 180° 回すだけでは**一致しない** (楽な近道の否定)', () => {
-    // 2 つの gauge は「+Z が approach か −approach か」だけの違いに見えるが、
-    // どちらも basisFromZ(z) で x/y を張り直しており、参照軸の選び方が z の成分で
-    // 切り替わるので符号違いにならない。近道が効かないことを**測って**示す —
-    // 効かない理由を散文にだけ書くと、次の人が同じ近道を試す。
-    let anyDiffers = false
-    for (const { posePayload, flangeTarget: want } of fixture.cases) {
-      const cols = quaternionColumnsOf(posePayload.frame.orientation)
-      // 候補 frame の軸をそのまま使い、z だけ反転した「素朴な近道」。
-      const naive = [
-        cols[0][0], cols[1][0], -cols[2][0], posePayload.frame.position[0],
-        cols[0][1], cols[1][1], -cols[2][1], posePayload.frame.position[1],
-        cols[0][2], cols[1][2], -cols[2][2], posePayload.frame.position[2],
+  test('フランジ = 候補 frame を x 軸まわりに 180° 回した**固定の取付け** (ADR-150 D5)', () => {
+    // ツールは剛体なので、閉じ軸 (候補 frame の x) はフランジに対して動かない。
+    // すなわち x はそのまま、y と z が反転し、原点は TCP から approach の逆向きに
+    // toolLength だけ戻る。ADR-147 はこの近道が「一致しない」ことを焼いていたが、
+    // それは張り直しの欠陥 (閉じ軸が roll の 2 倍で回る) を観察していた。
+    let worst = 0
+    for (const { posePayload, toolLength, flangeTarget: want } of fixture.cases) {
+      const [cx, cy, cz] = quaternionColumnsOf(posePayload.frame.orientation)
+      const t = posePayload.frame.position
+      const mounted = [
+        cx[0], -cy[0], -cz[0], t[0] + cz[0] * toolLength,
+        cx[1], -cy[1], -cz[1], t[1] + cz[1] * toolLength,
+        cx[2], -cy[2], -cz[2], t[2] + cz[2] * toolLength,
         0, 0, 0, 1,
       ]
-      if (naive.some((v, i) => Math.abs(v - want[i]) > 1e-6)) anyDiffers = true
+      for (let i = 0; i < 16; i++) worst = Math.max(worst, Math.abs(mounted[i] - want[i]))
     }
-    assert.ok(anyDiffers, '近道が全姿勢で一致してしまう = この gauge 復元は不要のはず')
+    assert.ok(worst < 1e-9, `固定の取付けから最大 ${worst} ずれている`)
   })
 
   function zAxisOf(c) {

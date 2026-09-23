@@ -242,6 +242,16 @@ export class UIViewBridge {
     useUIStore.getState().actions.setRobotAppearance(style)
   }
 
+  /**
+   * Mirrors `RobotStageSet`'s `loading` event into the chrome (ADR-150 D3) —
+   * the arm is hidden while its first look loads, so something on screen has
+   * to say why there is no arm yet (原則 #11).
+   * @param {boolean} loading
+   */
+  setRobotAppearanceLoading(loading) {
+    useUIStore.getState().actions.setRobotAppearanceLoading(loading)
+  }
+
   // ── Onboarding ────────────────────────────────────────────────────────────
 
   showOnboardingIfNeeded() {

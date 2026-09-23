@@ -170,8 +170,14 @@ def test_pedestal_template_rejects_the_arm_that_dives_into_its_own_plinth():
     """ADR-145: 腕リンクの FK スイープだけが出せる棄却を受け入れ値として固定する。
 
     **対照 (宣言なし) が 0 であることが主張の本体** — TCP 進入経路は一度も
-    ペデスタルに触れないので、宣言ありの 10 件は腕を見たからこそ出た差である。
+    ペデスタルに触れないので、宣言ありの棄却は腕を見たからこそ出た差である。
     対照が無いと「常に棄却する壊れたチェッカ」でも宣言あり側は緑になる。
+
+    **10 → 4 (ADR-150 D5)**: フランジ x 軸の gauge を正すと θ6 が変わり、θ6 を含む
+    代表解の選び方 (関節総移動量最小, ADR-127 D5) が 36 候補中 18 で別の枝を選ぶ。
+    判定が反転したのは 8 件 — 7 件は上腕が台へ潜る枝 (肩 +115°前後) から潜らない枝
+    (−125°前後) へ、1 件は逆向き。旧 gauge の θ6 は誤った x 軸に対して測られていた
+    ので、10 は「どの枝を代表にするか」を無意味な θ6 が決めていた数である。
     """
     declared = pipeline.search_report(_load_pedestal_request()).diagnostics
     control = pipeline.search_report(
@@ -180,8 +186,8 @@ def test_pedestal_template_rejects_the_arm_that_dives_into_its_own_plinth():
 
     assert declared.candidates_generated == control.candidates_generated == 36
     assert control.rejected_by_interference == 0
-    assert declared.rejected_by_interference == 10
-    assert declared.feasible == 26
+    assert declared.rejected_by_interference == 4
+    assert declared.feasible == 32
     assert control.feasible == 36
 
 

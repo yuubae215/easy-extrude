@@ -121,3 +121,78 @@ export function settledStyle(committed, pending) {
 export function isRedundantStyleRequest(requested, committed, pending) {
   return requested === settledStyle(committed, pending)
 }
+
+/**
+ * Lifecycle of the ONE shared realistic asset (ADR-150 D1). Closed vocabulary.
+ * Before ADR-150 every `RobotStage` fetched and parsed its own ~9 MB copy, so
+ * each spawned arm spent a second as a skeleton before swapping — the asset had
+ * no identity of its own, only N private loads. It now has exactly one, and
+ * four states (§1.4 threshold → `docs/STATE_TRANSITIONS.md` §Realistic asset).
+ */
+export const ASSET_STATE = Object.freeze({
+  IDLE:    'idle',     // nobody has asked yet — legal, and costs no network
+  LOADING: 'loading',  // exactly one fetch in flight, shared by every requester
+  READY:   'ready',    // parsed template cached; every later request is synchronous-in-effect
+  FAILED:  'failed',   // the last fetch failed; the NEXT request retries (it is not sticky)
+})
+
+/**
+ * The asset's transition table. An event not listed for a state THROWS instead
+ * of being ignored — `resolve` while `idle` means a load nobody started landed,
+ * which is a bug to surface, not a no-op to swallow (原則 #11 / #31).
+ */
+const ASSET_TRANSITIONS = Object.freeze({
+  [ASSET_STATE.IDLE]:    { request: ASSET_STATE.LOADING },
+  [ASSET_STATE.LOADING]: { resolve: ASSET_STATE.READY, reject: ASSET_STATE.FAILED },
+  [ASSET_STATE.READY]:   {},
+  [ASSET_STATE.FAILED]:  { request: ASSET_STATE.LOADING },
+})
+
+/**
+ * @param {string} state  one of ASSET_STATE
+ * @param {'request'|'resolve'|'reject'} event
+ * @returns {string} the next state
+ */
+export function nextAssetState(state, event) {
+  const row = ASSET_TRANSITIONS[state]
+  if (!row) throw new Error(`robotVisualStyle: undeclared asset state ${JSON.stringify(state)}`)
+  const next = row[event]
+  if (!next) throw new Error(`robotVisualStyle: illegal asset transition ${state} --${event}-->`)
+  return next
+}
+
+/**
+ * One load shared by every requester (ADR-150 D1). `load` runs at most once per
+ * `loading` episode however many stages ask — N arms, one fetch. A failure is
+ * not cached: the next `request()` retries, so one bad network moment does not
+ * condemn every arm spawned afterwards to the skeleton.
+ *
+ * Pure of THREE / DOM on purpose: the claim "N requests, 1 fetch" is exactly the
+ * one the browser-only `RobotStage` could never be asked about under `node
+ * --test` (ADR-148 §なぜ緑だったか). Here it can.
+ *
+ * @template T
+ * @param {() => Promise<T>} load
+ * @returns {{ request: () => Promise<T>, readonly state: string }}
+ */
+export function createSharedAsset(load) {
+  /** @type {string} one of ASSET_STATE */
+  let state = ASSET_STATE.IDLE
+  /** @type {Promise<T>|null} */
+  let inFlight = null
+  /** @type {T|undefined} */
+  let value
+  return {
+    get state() { return state },
+    request() {
+      if (state === ASSET_STATE.READY) return Promise.resolve(/** @type {T} */ (value))
+      if (state === ASSET_STATE.LOADING) return /** @type {Promise<T>} */ (inFlight)
+      state = nextAssetState(state, 'request')
+      inFlight = Promise.resolve().then(load).then(
+        v => { value = v; state = nextAssetState(state, 'resolve'); inFlight = null; return v },
+        err => { state = nextAssetState(state, 'reject'); inFlight = null; throw err },
+      )
+      return inFlight
+    },
+  }
+}

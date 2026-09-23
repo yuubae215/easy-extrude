@@ -5,9 +5,11 @@ import { jointValuesFor } from '../domain/robotConfig.js'
 import { ROBOT_JOINT_NAMES, ROBOT_URDF_TEXT } from './robotSkeleton.js'
 import { MM_PER_METER } from '../domain/worldUnits.js'
 import {
-  ROBOT_RENDER_STYLE, realisticPackages, realisticUrdfUrl, REALISTIC_BASE_YAW_CORRECTION,
-  assertRenderStyle, isRedundantStyleRequest, settledStyle,
+  ROBOT_RENDER_STYLE, assertRenderStyle, isRedundantStyleRequest, settledStyle,
 } from './robotVisualStyle.js'
+import { instantiateRealisticRobot } from './realisticRobotAsset.js'
+import { TOOL_LENGTH_M, toolParts } from '../domain/robotTool.js'
+import { COLOR } from '../theme/tokens.js'
 
 /**
  * How much of its own opacity the skeleton keeps while it draws a CLIENT
@@ -40,13 +42,24 @@ const UNVERIFIED_OPACITY = 0.38
  * chain (`setRenderStyle('realistic')`, `robotVisualStyle.js`) — a second
  * GEOMETRY for the one UR5e this app has, not a second arm (ADR-141's "which
  * arm" axis, `ROBOT_MODELS`, is untouched). That asset is ~9 MB and fetched
- * lazily, so the constructor never awaits it — every stage boots into the
- * bundled skeleton exactly as before this capability existed.
+ * lazily, so the constructor never awaits it — every stage boots holding the
+ * bundled skeleton.
+ *
+ * FIRST LOOK (ADR-150 D2): a stage told at construction that its scene
+ * declares another style keeps that skeleton BUILT (so every accessor —
+ * `previewState`, `worldSpan`, joints — works from frame one) but HIDDEN until
+ * the declared style has been drawn once. Showing the skeleton meanwhile is
+ * what made every spawn flash one arm and then another. If the declared style
+ * cannot be loaded, the skeleton is revealed instead and the rejection reaches
+ * the owner (RobotStageSet → toast), so the arm never silently stays invisible
+ * (原則 #11).
  */
 export class RobotStage {
   /**
    * @param {THREE.Scene} scene
-   * @param {{position?: [number, number, number]}} [opts]
+   * @param {{position?: [number, number, number], declaredStyle?: 'skeleton'|'realistic'}} [opts]
+   *   `declaredStyle` — the style the owning scene declares; anything other
+   *   than the skeleton keeps the arm hidden until that style lands (ADR-150).
    */
   constructor(scene, opts = {}) {
     this._scene = scene
@@ -75,6 +88,12 @@ export class RobotStage {
     this._unverified = false
     /** @type {Array<[THREE.Material, number]>} materials this stage owns (cloned per attach) */
     this._materials = []
+    /**
+     * @type {boolean} true until this stage has drawn the style its scene
+     * declared (ADR-150 D2). Only `_endFirstLook` clears it, once, for good.
+     */
+    this._awaitingFirstLook =
+      assertRenderStyle(opts.declaredStyle ?? ROBOT_RENDER_STYLE.SKELETON) !== ROBOT_RENDER_STYLE.SKELETON
 
     this._attachRobot(this._buildSkeletonRobot())
     this.previewSolution(null)
@@ -86,34 +105,6 @@ export class RobotStage {
     // (ROBOT_URDF_TEXT, ADR-088 §1.1) — one source drives both the drawn flange
     // and the seed, and no runtime fetch is needed. `parse` is synchronous.
     return new URDFLoader().parse(ROBOT_URDF_TEXT)
-  }
-
-  /**
-   * Fetches Universal Robots' own visual meshes for the SAME chain
-   * (`robotVisualStyle.js`). The only async load path this class has —
-   * isolated here so the sync skeleton path above is unaffected (原則 #8).
-   * @returns {Promise<import('three').Object3D>}
-   */
-  async _loadRealisticRobot() {
-    const manager = new THREE.LoadingManager()
-    const loaded = new Promise((resolve, reject) => {
-      manager.onLoad = resolve
-      manager.onError = (url) => reject(new Error(`RobotStage: failed to load "${url}"`))
-    })
-    const loader = new URDFLoader(manager)
-    loader.packages = realisticPackages()
-    const text = await fetch(realisticUrdfUrl()).then(r => {
-      if (!r.ok) throw new Error(`RobotStage: failed to fetch realistic URDF (${r.status})`)
-      return r.text()
-    })
-    const robot = loader.parse(text)
-    // Cancel the official URDF's own base_link → base_link_inertia yaw
-    // (REALISTIC_BASE_YAW_CORRECTION) so this root ends up in the SAME frame
-    // convention as skeleton_arm.urdf's — and therefore the TCP marker
-    // (derived solely from the skeleton) still lands on the drawn flange.
-    robot.rotation.z = REALISTIC_BASE_YAW_CORRECTION
-    await loaded   // wait for every referenced mesh, not just the URDF text
-    return robot
   }
 
   /**
@@ -134,6 +125,10 @@ export class RobotStage {
     // Three.js composes this scale into worldPoseOf() results automatically, so
     // base/tcp world positions come out mm-consistent with the rest of the scene.
     robot.scale.setScalar(MM_PER_METER)
+    // Hidden while the first look is pending (ADR-150 D2). The GROUP's
+    // visibility belongs to the Outliner eye (`setVisible`, 原則 #4); the robot
+    // node's belongs to this stage alone, so the two never write one flag.
+    robot.visible = !this._awaitingFirstLook
     this.robot = robot
     this._group.add(robot)
 
@@ -151,6 +146,69 @@ export class RobotStage {
       child.material = Array.isArray(child.material) ? owned : owned[0]
       for (const m of owned) this._materials.push([m, m.opacity ?? 1])
     })
+    this._attachTool(robot)
+  }
+
+  /** The URDF link the tool is bolted to — the DH flange frame (asserted in `robotTool.test.js`). */
+  static TOOL_LINK = 'wrist_3_link'
+
+  /**
+   * Bolt the tool onto this robot's flange (ADR-150 D4). The tool is a child of
+   * `wrist_3_link`, so it moves with the wrist by construction — the only way
+   * a drawn tool can be "attached" rather than placed next to the arm. Its
+   * length is `TOOL_LENGTH_M`, the SAME number the grasp request declares as
+   * `robot.toolLength`, so the drawn fingertips end where the solver put the TCP.
+   *
+   * Rebuilt on every attach (a style swap brings a new URDF tree) and owned by
+   * this stage: its meshes are flagged `stageOwned` so `_disposeTree` frees them
+   * even under a realistic clone whose other geometry is shared (原則 #9), and
+   * its materials join `_materials` so the unverified look reaches the tool too
+   * (原則 #4 — one owner of this arm's look).
+   * @param {import('three').Object3D} robot
+   */
+  _attachTool(robot) {
+    const link = robot.links?.[RobotStage.TOOL_LINK]
+    if (!link) {
+      // Never a silent tool-less arm (原則 #31): both URDFs this app ships have
+      // the link, so its absence is a broken asset, not a legitimate 0.
+      throw new Error(`RobotStage: no "${RobotStage.TOOL_LINK}" to mount the tool on`)
+    }
+    const tool = new THREE.Group()
+    tool.name = 'tool'
+    const color = { body: COLOR.surfaceRaised, palm: COLOR.surfaceRaised, finger: COLOR.entityDefault }
+    for (const part of toolParts(TOOL_LENGTH_M)) {
+      const geometry = part.shape === 'cylinder'
+        ? new THREE.CylinderGeometry(part.size[0], part.size[0], part.size[1], 24)
+        : new THREE.BoxGeometry(part.size[0], part.size[1], part.size[2])
+      // THREE's cylinder runs along +Y; the tool runs along the flange +Z.
+      if (part.shape === 'cylinder') geometry.rotateX(Math.PI / 2)
+      const material = new THREE.MeshStandardMaterial({ color: color[part.part], roughness: 0.6, metalness: 0.2 })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(...part.center)
+      mesh.userData.stageOwned = true
+      tool.add(mesh)
+      this._materials.push([material, 1])
+    }
+    link.add(tool)
+  }
+
+  /** Whether this stage is still waiting to draw its scene's declared style for the first time (ADR-150). */
+  get awaitingFirstLook() { return this._awaitingFirstLook }
+
+  /**
+   * The style the viewer can SEE on this arm right now — `null` while it is
+   * hidden awaiting its first look. The third lane beside `renderStyle`
+   * (committed) and `settledRenderStyle` (heading for): the spawn flash ADR-150
+   * removes was visible in none of those two, because both were right.
+   * @returns {'skeleton'|'realistic'|null}
+   */
+  get shownStyle() { return this.robot?.visible ? this._renderStyle : null }
+
+  /** Reveal the arm, once — whatever it is now drawing is its first look. */
+  _endFirstLook() {
+    if (!this._awaitingFirstLook) return
+    this._awaitingFirstLook = false
+    if (this.robot) this.robot.visible = true
   }
 
   /** Which geometry this stage currently DRAWS — read-only (原則 #4: the only writer is `setRenderStyle`). */
@@ -207,12 +265,17 @@ export class RobotStage {
     let robot
     try {
       robot = style === ROBOT_RENDER_STYLE.REALISTIC
-        ? await this._loadRealisticRobot()
+        ? await instantiateRealisticRobot()
         : this._buildSkeletonRobot()
     } catch (err) {
       // Only the request still in flight may clear the pending marker; a later
       // one has already replaced it and is the stage's current intent.
-      if (token === this._styleLoadToken) this._pendingStyle = null
+      if (token === this._styleLoadToken) {
+        this._pendingStyle = null
+        // The declared style is not coming: show what we have rather than an
+        // invisible arm. The rejection below is what tells the user (原則 #11).
+        this._endFirstLook()
+      }
       throw err
     }
     if (token !== this._styleLoadToken || !this.robot) {
@@ -242,6 +305,7 @@ export class RobotStage {
     if (priorJoints) this.setJointValues(priorJoints)
     this._unverified = false
     this._setUnverifiedLook(wasUnverified)
+    this._endFirstLook()
   }
 
   /**
@@ -252,8 +316,13 @@ export class RobotStage {
    */
   static _disposeTree(root) {
     if (!root) return
+    // A realistic clone draws the shared template's geometry (ADR-150 D1): its
+    // materials are this stage's own (cloned in `_attachRobot`), its geometry is
+    // not — releasing it would blank every other arm drawing the same mesh.
+    const ownsGeometry = !root.userData?.sharedGeometry
     root.traverse(child => {
-      if (child.geometry) child.geometry.dispose()
+      // The tool (ADR-150 D4) is this stage's own even on a shared-geometry clone.
+      if (child.geometry && (ownsGeometry || child.userData?.stageOwned)) child.geometry.dispose()
       if (child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material]
         for (const m of materials) m.dispose()
@@ -391,7 +460,7 @@ export class RobotStage {
    * @returns {THREE.Intersection|null}
    */
   raycast(raycaster) {
-    if (!this._group.visible || !this.robot) return null
+    if (!this._group.visible || !this.robot?.visible) return null
     const hits = raycaster.intersectObject(this._group, true)
     return hits.length ? hits[0] : null
   }

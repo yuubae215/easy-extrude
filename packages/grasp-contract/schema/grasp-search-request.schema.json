@@ -92,6 +92,11 @@
               "minItems": 4,
               "maxItems": 4
             },
+            "toolLength": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Distance from the robot flange (tool0) to the TCP along the flange +Z axis -- how far the mounted tool sticks out of the wrist (same length unit as the request geometry). The candidate position is the TCP, so the declared kinematic solver places the FLANGE this far back along the approach, and the arm sweep checks the flange->TCP segment against obstacles like any other link (ADR-150). A property of the tool mount, not of the hand kind: it is declared whether or not the `gripper` graspability gate is. Absent means 0 -- the flange IS the TCP, exactly the pre-ADR-150 answer (behaviour changes only where a declaration appears, ADR-084 §3). Optional request-side addition, so contractVersion is unchanged (ADR-083/084)."
+            },
             "reachMin": {
               "type": "number",
               "minimum": 0

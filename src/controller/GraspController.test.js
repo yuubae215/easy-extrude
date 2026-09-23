@@ -16,6 +16,7 @@ import { basisFromZ, flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.
 import { forwardKinematics as urForwardKinematics } from '../robotics/urKinematics.js'
 import { renderableEndEffectorFrame } from '../view/GraspGhostMath.js'
 import { GraspController } from './GraspController.js'
+import { TOOL_LENGTH_M } from '../domain/robotTool.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 import { BffUnavailableError } from '../service/BffClient.js'
@@ -286,7 +287,7 @@ test('runGraspSearch lands in results with the candidates (and selectedRank null
   // ADR-129 D2: 据付姿勢もワイヤに載る (ベースフレームは常に向きを持つので、
   // 送ることは発明ではない — 同じ事実を worldPoseOf が TCP について既に解いている)。
   assert.deepEqual(g.request.graspSearch.robot,
-    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1] })
+    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1], toolLength: TOOL_LENGTH_M })
   // ADR-117 — the object being grasped rides the request. This assertion is the
   // regression itself: without `target.surfaceSamples`, core/ generates zero
   // candidates and every run returns a well-formed, permanently empty answer.
@@ -500,6 +501,7 @@ function fakeGhost() {
     setTargetGeometry(g) { this.calls.push(['target', g]) },
     setWorldCap(cap)     { this.calls.push(['cap', cap]) },
     clear()              { this.calls.push(['clear']) },
+    setHandOnArm(onArm)  { this.calls.push(['handOnArm', onArm]) },
     tick(...args)        { this.calls.push(['tick', args]) },
     dispose()            { this.calls.push(['dispose']) },
   }
@@ -579,7 +581,7 @@ test('camera and gripper declarations ride the request open payload verbatim', a
   assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
   assert.deepEqual(sent.graspSearch.gripper, gripper)
   assert.deepEqual(sent.graspSearch.robot,
-    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1] })
+    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1], toolLength: TOOL_LENGTH_M })
 })
 
 // ── The declarations actually REACH the request (ADR-116's lesson) ───────────
@@ -794,7 +796,7 @@ test('the picked robot is the one solved for — its own base / tcp ride the wir
   // The SECOND robot's geometry, and still the singular ADR-084 wire shape: no id,
   // no array — identity stayed on the front, so the contract never moved.
   assert.deepEqual(sent.graspSearch.robot,
-    { base: [-2, 0, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 1, 0] })
+    { base: [-2, 0, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 1, 0], toolLength: TOOL_LENGTH_M })
   assert.ok(!('robots' in sent.graspSearch))
   assert.ok(!('robotId' in sent.graspSearch.robot))
 })
@@ -839,7 +841,7 @@ test('a legacy world-parented tcp (parentId null) still resolves via the name fa
   gc._ctrl._service.worldPoseOf = (id) => poseById[id] ?? null   // keep bff / connectBff
   await gc.runGraspSearch({})
   assert.deepEqual(sent.graspSearch.robot,
-    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1] })
+    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1], toolLength: TOOL_LENGTH_M })
 })
 
 test('an undeclared camera / gripper omits the key entirely (vacuously-true gate)', async () => {
@@ -898,7 +900,9 @@ test('captureViewportCamera returns null without a camera (THREE-free lane) — 
 function fakeStages() {
   return {
     calls: [],
+    hidden: new Set(),
     previewSolution(id, preview) { this.calls.push([id, preview]) },
+    isVisible(id) { return !this.hidden.has(id) },
   }
 }
 
@@ -917,12 +921,59 @@ function armSetup(candidates, deps = {}) {
   const ctrl  = makeCtrl({})
   const stages = fakeStages()
   ctrl._sceneView = { robotStages: stages }
-  const gc = new GraspController(ctrl, store, { createGhostView: () => fakeGhost(), ...deps })
+  const ghosts = []
+  const gc = new GraspController(ctrl, store, {
+    createGhostView: () => { const g = fakeGhost(); ghosts.push(g); return g }, ...deps,
+  })
   store.getState().actions.contextSetGrasp({
     status: 'results', layout: { version: 'x', entities: 1 }, request: {}, candidates, selectedRank: null,
   })
-  return { gc, stages, store }
+  return { gc, stages, store, ghosts }
 }
+
+// ── ADR-150 D4: the hand is the tool on the flange, not a floating glyph ─────
+
+const handOnArm = (ghosts) => ghosts.at(-1).calls.filter(c => c[0] === 'handOnArm').at(-1)?.[1]
+
+test('a posed, visible arm holds the hand — the ghost stops drawing its own gripper', () => {
+  const { gc, ghosts } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+  ])
+  gc.selectCandidate(1)
+  assert.equal(handOnArm(ghosts), true)
+})
+
+test('no arm solution → the ghost keeps its gripper (never zero hands on screen)', () => {
+  const { gc, ghosts } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, ikSolvable: true, reachSolution: UNDECLARED } },
+  ])
+  gc.selectCandidate(1)
+  assert.equal(handOnArm(ghosts), false)
+})
+
+test('a solved arm whose eye is OFF does not hold the hand — the glyph draws it', () => {
+  const { gc, ghosts, stages } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+  ])
+  stages.hidden.add('f_base')
+  gc.selectCandidate(1)
+  assert.equal(handOnArm(ghosts), false)
+})
+
+test('solved → unsolved → solved: the hand follows every change, not just the first', () => {
+  // Two requests at least (ADR-098/101): a flag written once is green for the
+  // first candidate even when it never updates afterwards.
+  const { gc, ghosts } = armSetup([
+    { rank: 1, pose: EE_POSE, score: { totalScore: 0.9, reachSolution: solved(SOLVED_A) } },
+    { rank: 2, pose: EE_POSE, score: { totalScore: 0.4, ikSolvable: true, reachSolution: UNDECLARED } },
+  ])
+  gc.selectCandidate(1)
+  assert.equal(handOnArm(ghosts), true)
+  gc.hoverCandidate(2)
+  assert.equal(handOnArm(ghosts), false)
+  gc.hoverCandidate(null)
+  assert.equal(handOnArm(ghosts), true)
+})
 
 test('a solved candidate poses the subject arm with the joints the solver decided', () => {
   const { gc, stages } = armSetup([
@@ -1097,12 +1148,21 @@ test('クライアントの解は候補の姿勢を**厳密に**実現する (�
   assert.ok(preview, '届く姿勢で解が出ない')
   assert.equal(preview.authority, 'unverified')
 
+  // ADR-150 D4: the candidate is the TCP; the flange stops TOOL_LENGTH_M short.
   const target = flangeTargetInBaseFrame(
-    renderableEndEffectorFrame(pose), [-2, 2, 0], null,
+    renderableEndEffectorFrame(pose), [-2, 2, 0], null, TOOL_LENGTH_M,
   )
   const back = urForwardKinematics(UR5E_DECLARATION.dh, preview.joints)
   for (let i = 0; i < 16; i++) {
     assert.ok(Math.abs(back[i] - target[i]) < 1e-9, `姿勢の要素 ${i} が一致しない`)
+  }
+  // …and the TOOL TIP (flange origin + L · flange +Z) is exactly on the
+  // candidate position, both in the base frame (base [-2,2,0], unrotated).
+  const base = [-2, 2, 0]
+  const want = renderableEndEffectorFrame(pose).position
+  for (const [k, [t, z]] of [[3, 2], [7, 6], [11, 10]].entries()) {
+    const tip = back[t] + back[z] * TOOL_LENGTH_M
+    assert.ok(Math.abs(tip - (want[k] - base[k])) < 1e-9, `ツール先端の成分 ${k} が候補に一致しない`)
   }
 })
 

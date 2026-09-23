@@ -153,3 +153,80 @@ test('an undeclared style is refused, not silently drawn as the skeleton', async
   expect(a.declared).toBe('realistic')
   expect(Object.values(a.drawn)).toEqual(['realistic'])
 })
+
+/**
+ * ADR-150 — the spawn flash. Before it, every Add ▸ Robot drew the SKELETON
+ * for the ~1 s the realistic mesh took to load, then swapped. `drawn` could not
+ * see that: it reports the style each arm is HEADING FOR, which was
+ * 'realistic' during exactly the frames the skeleton was on screen. So this
+ * samples `shown` — what is actually visible — on EVERY animation frame from
+ * the click until the arm is realistic.
+ *
+ * Spawned twice on purpose: the first spawn can be rescued by the boot-time
+ * prefetch alone, the second is only instant if the asset is SHARED (one
+ * fetch, cloned per arm) rather than loaded again per stage.
+ */
+async function framesUntilRealistic(page, index) {
+  return page.evaluate((i) => new Promise((resolve, reject) => {
+    const seen = []
+    const started = performance.now()
+    const tick = () => {
+      const shown = Object.values(window.__easyExtrude.robotAppearance().shown)
+      const style = shown.length > i ? shown[i] : 'absent'
+      seen.push(style)
+      if (style === 'realistic') return resolve(seen)
+      if (performance.now() - started > 30_000) return reject(new Error(`never realistic: ${seen.slice(-5)}`))
+      requestAnimationFrame(tick)
+    }
+    tick()
+  }), index)
+}
+
+test('a spawned arm never shows the skeleton before its realistic first look (ADR-150)', async ({ page }) => {
+  // HOLD the mesh until the arm has been spawned. Left alone, the boot
+  // prefetch lands before the click on any fast server and the flash cannot
+  // happen whether or not the arm is hidden — the first version of this test
+  // was green with the hide rule disabled (a delay did not help either: boot
+  // itself outlasts it). Holding the response is the only way to put the
+  // spawn inside the load, which is where the dogfooder saw the flash.
+  let release
+  const gate = new Promise(r => { release = r })
+  await page.route('**/robot/ur5e_visual/urdf/ur5e.urdf', async route => {
+    await gate
+    await route.continue()
+  })
+  const errors = await boot(page)
+
+  const first = framesUntilRealistic(page, 0)
+  await addRobot(page)
+  await expect.poll(async () => Object.keys((await appearance(page)).shown).length).toBe(1)
+  // The load is still held: the arm exists, is hidden, and the chrome says why.
+  await page.waitForTimeout(500)
+  expect(Object.values((await appearance(page)).shown)).toEqual([null])
+  expect((await appearance(page)).loading).toBe(true)
+  await expect(page.getByText('LOADING…', { exact: true })).toBeVisible()
+  release()
+  const seenFirst = await first
+  expect(seenFirst, `arm #1 frames: ${[...new Set(seenFirst)].join(' → ')}`).not.toContain('skeleton')
+
+  // Second spawn: only instant if the asset is SHARED, not fetched per stage.
+  const second = framesUntilRealistic(page, 1)
+  await addRobot(page)
+  const seenSecond = await second
+  expect(seenSecond, `arm #2 frames: ${[...new Set(seenSecond)].join(' → ')}`).not.toContain('skeleton')
+
+  expect(Object.values((await appearance(page)).shown)).toEqual(['realistic', 'realistic'])
+  await expect.poll(async () => (await appearance(page)).loading).toBe(false)
+  expect(errors).toEqual([])
+})
+
+test('when the mesh cannot load, the arm is shown as the skeleton and the user is told (ADR-150)', async ({ page }) => {
+  await page.route('**/robot/ur5e_visual/urdf/ur5e.urdf', route => route.fulfill({ status: 404, body: '' }))
+  await boot(page)
+  await addRobot(page)
+  // Never an invisible arm: the fallback is the skeleton, visibly.
+  await expect.poll(async () => Object.values((await appearance(page)).shown).join(),
+    { timeout: 30_000 }).toBe('skeleton')
+  await expect(page.getByText(/Could not load the realistic robot mesh/)).toBeVisible()
+  await expect.poll(async () => (await appearance(page)).loading).toBe(false)
+})

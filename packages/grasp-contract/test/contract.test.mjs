@@ -416,6 +416,20 @@ test("grasp-search request rejects a gripper without maxOpening (required)", () 
   });
 });
 
+// ADR-150: the flange->TCP length rides on `robot` (a CLOSED object), so the
+// schema must name it — and a tool growing backwards into the wrist is a
+// declaration error, not a shape to solve.
+test("grasp-search request accepts robot.toolLength and rejects a negative one", () => {
+  const example = examples["grasp-search-request"];
+  const withTool = (toolLength) => ({
+    ...example,
+    graspSearch: { ...example.graspSearch, robot: { ...example.graspSearch.robot, toolLength } },
+  });
+  accepts("grasp-search-request", withTool(0.15));
+  accepts("grasp-search-request", withTool(0));
+  rejects("grasp-search-request", withTool(-0.01));
+});
+
 test("recommendation request without requirement.text is rejected", () => {
   const example = examples["recommendation-request"];
   rejects("recommendation-request", {

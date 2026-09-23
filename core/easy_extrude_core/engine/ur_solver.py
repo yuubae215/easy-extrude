@@ -9,13 +9,20 @@
 
 ## フランジ frame の規約 (declared, not derived)
 
-**フランジの +Z が approach と同じ向き**、+X は `pose_codec` と同じ決定的な基準軸を
-roll だけ回したもの。UR の `tool0` が +Z をツール方向に取る慣例に合わせている。
+**フランジの +Z が approach と同じ向き** (UR の `tool0` が +Z をツール方向に取る慣例)、
+**+X は候補 frame の +X そのもの** (= 平行ジョーの閉じ軸 — `pose_codec.frame_axes`)。
+すなわちフランジは候補 frame を**自身の x 軸まわりに 180° 回した固定の取付け**
+(x はそのまま、y と z が反転) である (ADR-150 D5)。
 
-これは*導出できない*規約である — `pose_codec` の候補 frame は「+Z = −approach」という
-別の gauge を使っており (契約に出る四元数はそちら)、両者は 180° 違う。どちらが
-「正しい」かはワイヤの外の取り決めなので、ここでは**宣言し、名前を付け、検査で焼く**。
-`FLANGE_Z_IS_APPROACH` がその宣言で、規約を変えるならこの定数の意味ごと変える。
+ADR-150 以前は +X を「`basis_from_z(+approach)` を roll だけ回したもの」として
+**張り直して**いた。候補 frame は `basis_from_z(−approach)` から張るので、閉じ軸は
+フランジ座標で `(−cos 2r, sin 2r)` — **roll の 2 倍で回っていた**。フランジに剛体で
+付いたツールの閉じ軸は動かないので、これでは解いた手首 (θ6) と判定したジョーの
+向きが一致しない。フランジ +Z・並進・腕リンクは変わらず、動くのは θ6 だけ。
+
+これは*導出できない*規約である — どちらが「正しい」かはワイヤの外の取り決めなので、
+ここでは**宣言し、名前を付け、検査で焼く**。`FLANGE_Z_IS_APPROACH` がその宣言で、
+規約を変えるならこの定数の意味ごと変える。
 
 ## 関節限界
 
@@ -33,6 +40,7 @@ from typing import Optional
 
 from .types import GraspCandidate, Quaternion, Robot, Vec3
 from .feasibility import IkSolution, JointSolution
+from .pose_codec import frame_axes
 from .ur_kinematics import (
     UrDhParameters,
     forward_kinematics,
@@ -45,8 +53,6 @@ from .ur_kinematics import (
 FLANGE_Z_IS_APPROACH = True
 
 _EPS = 1e-12
-# `pose_codec._basis_from_z` と同じ参照選択の閾値 — gauge を共有するため同値にする。
-_PARALLEL = 0.9
 
 
 def _cross(a: Vec3, b: Vec3) -> Vec3:
@@ -57,35 +63,35 @@ def _cross(a: Vec3, b: Vec3) -> Vec3:
     )
 
 
-def _basis_from_z(z: Vec3) -> "tuple[Vec3, Vec3]":
-    """z から決定論的に基準 x/y を張る (`pose_codec._basis_from_z` と同じ規則)。
-
-    同じ規則を使うのは roll の起点を 2 つ持たないため。ここが食い違うと、契約に出る
-    四元数と IK が解いた姿勢が roll だけずれるが、**どちらも「もっともらしい」ので
-    画面では気づけない**。
-    """
-    ref = Vec3(0.0, 0.0, 1.0) if abs(z.z) < _PARALLEL else Vec3(1.0, 0.0, 0.0)
-    bx = _cross(ref, z).normalized()
-    by = _cross(z, bx)
-    return bx, by
-
-
-def flange_target(candidate: GraspCandidate) -> "tuple[float, ...] | None":
+def flange_target(
+    candidate: GraspCandidate, tool_length: float = 0.0
+) -> "tuple[float, ...] | None":
     """候補の (position, approach, roll) をフランジの目標同次変換へ写す (純粋)。
 
     退化 (approach がゼロ長) は None — 目標が定義できないことを解の不在と混ぜない。
+
+    **候補の position は TCP (ツール先端) であってフランジではない** (ADR-150 D4)。
+    ツールはフランジの +Z (= approach) 方向へ `tool_length` だけ伸びて剛体で付いて
+    いるので、フランジは TCP から approach の逆向きに `tool_length` だけ戻った点に
+    置く。`tool_length = 0` は ADR-150 以前の「フランジ = TCP」と 1 ビットも変わらない
+    (宣言した瞬間にだけ挙動が変わる — ADR-084 §3)。
     """
+    if tool_length < 0.0:
+        raise ValueError(f"tool_length は 0 以上 (受け取った: {tool_length})")
     approach = candidate.pose.approach
     if approach.norm() < _EPS:
         return None
     z = approach.normalized()
-    bx, by = _basis_from_z(z)
-    roll = candidate.pose.roll
-    c, s = math.cos(roll), math.sin(roll)
-    # roll は z 軸まわり。x = bx cos + by sin、y = z × x (右手系)。
-    x = Vec3(bx.x * c + by.x * s, bx.y * c + by.y * s, bx.z * c + by.z * s)
+    # x = 候補 frame の x (閉じ軸) — ツールは剛体なので閉じ軸はフランジに固定される
+    # (ADR-150 D5)。y = z × x で右手系 (= 候補 frame の −y)。
+    x = frame_axes(candidate.pose)[0]
     y = _cross(z, x)
-    p = candidate.pose.position
+    tcp = candidate.pose.position
+    p = Vec3(
+        tcp.x - z.x * tool_length,
+        tcp.y - z.y * tool_length,
+        tcp.z - z.z * tool_length,
+    )
     return (
         x.x, y.x, z.x, p.x,
         x.y, y.y, z.y, p.y,
@@ -108,6 +114,9 @@ class UniversalRobotsIkSolver:
     # 目標姿勢と解の一致を確かめる許容差。解析解なので機械精度で一致するが、
     # 退化姿勢での取りこぼしを検査するために閾値を持つ (信じずに確かめる)。
     tolerance: float = 1e-6
+    # フランジ (tool0) から TCP までの長さ、フランジ +Z 方向 (ADR-150 D4)。
+    # 宣言元は `robot.toolLength`。0 = 「フランジ = TCP」(従来と同一)。
+    tool_length: float = 0.0
 
     def solve(
         self, candidate: GraspCandidate, robot: Robot
@@ -124,7 +133,7 @@ class UniversalRobotsIkSolver:
         なく「述べていない」で、その区別を画面に出すのはフロントの責務である —
         向き無しでは解けない以上、core/ は恒等で解くしかない (原則 #31)。
         """
-        target = flange_target(candidate)
+        target = flange_target(candidate, self.tool_length)
         if target is None:
             return None
         base = robot.base
@@ -204,7 +213,33 @@ def ik_solver_from_declaration(declaration_data: dict) -> "UniversalRobotsIkSolv
         limits = tuple(
             (float(pair["min"]), float(pair["max"])) for pair in limits_raw
         )
-    return UniversalRobotsIkSolver(dh=dh, joint_limits=limits)
+    return UniversalRobotsIkSolver(
+        dh=dh, joint_limits=limits,
+        tool_length=tool_length_from_declaration(declaration_data),
+    )
+
+
+def tool_length_from_declaration(declaration_data: dict) -> float:
+    """`robot.toolLength` (ADR-150 D4) を読む。未宣言は 0 = フランジ = TCP。
+
+    ハンド (`gripper`) ではなくロボット側に置くのは、ツール長が**取付け**の事実で
+    あって把持性ゲートの入力ではないから — `gripper` を宣言しない (ゲートを切った)
+    探索でもツールはフランジに付いている。
+
+    未宣言を 0 とするのは推論ではなく**後方互換の宣言**である: ADR-150 以前の
+    送信者はツール長を述べておらず、その答えは「フランジ = TCP」で解かれていた。
+    ここで別の既定 (「典型的なグリッパ長」) を入れると、述べていない送信者の答えが
+    無言で変わる。フロントは常に明示的に宣言する (`GraspDeclarationCatalog`)。
+    負の長さは throw — 反対向きに生えたツールは宣言の誤りであって解ける形ではない。
+    """
+    robot = declaration_data.get("robot") or {}
+    raw = robot.get("toolLength")
+    if raw is None:
+        return 0.0
+    length = float(raw)
+    if length < 0.0 or not math.isfinite(length):
+        raise ValueError(f"robot.toolLength は 0 以上の有限数 (受け取った: {raw!r})")
+    return length
 
 
 def _unrotate_into_base(m: list[float], base_orientation: Quaternion) -> list[float]:

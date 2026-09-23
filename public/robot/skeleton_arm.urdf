@@ -73,15 +73,22 @@
     <limit lower="-6.2832" upper="6.2832" effort="150" velocity="3.14"/>
   </joint>
 
-  <!-- upper_arm_link: horizontal shoulder knuckle + bone spanning a2 along -X -->
+  <!-- upper_arm_link: horizontal shoulder knuckle + bone spanning a2 along -X.
+       The bone sits 0.138 out along the lift axis (+Z here), exactly where
+       Universal Robots' own upperarm mesh sits (ur5e.urdf visual origin
+       z=0.138) — the UR shoulder offset is split between shoulder and elbow,
+       NOT drawn all at the wrist. The joint ORIGINS are untouched (DH is
+       identical either way); only where the bones are drawn moves, so both
+       render styles show the same silhouette (asserted in
+       src/RobotVisualStyleAgreement.test.js). -->
   <link name="upper_arm_link">
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.058" length="0.13"/></geometry>
+      <origin xyz="0 0 0.085" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.058" length="0.21"/></geometry>
       <material name="joint_dark"/>
     </visual>
     <visual>
-      <origin xyz="-0.2125 0 0" rpy="0 1.570796327 0"/>
+      <origin xyz="-0.2125 0 0.138" rpy="0 1.570796327 0"/>
       <geometry><cylinder radius="0.05" length="0.425"/></geometry>
       <material name="link_blue"/>
     </visual>
@@ -95,22 +102,24 @@
     <limit lower="-3.1416" upper="3.1416" effort="150" velocity="3.14"/>
   </joint>
 
-  <!-- forearm_link: elbow knuckle + bone spanning a3 along -X, plus the d4
-       wrist-plane offset that rises in +Z toward wrist_1 -->
+  <!-- forearm_link: elbow knuckle spanning from the upper arm's plane
+       (z=0.138) back to the forearm's (z=0.007), bone spanning a3 along -X at
+       z=0.007 (UR forearm mesh visual origin), then the short rise to the d4
+       wrist plane (z=0.1333) at wrist_1 -->
   <link name="forearm_link">
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.046" length="0.11"/></geometry>
+      <origin xyz="0 0 0.0725" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.046" length="0.225"/></geometry>
       <material name="joint_dark"/>
     </visual>
     <visual>
-      <origin xyz="-0.1961 0 0" rpy="0 1.570796327 0"/>
+      <origin xyz="-0.1961 0 0.007" rpy="0 1.570796327 0"/>
       <geometry><cylinder radius="0.04" length="0.3922"/></geometry>
       <material name="link_blue"/>
     </visual>
     <visual>
-      <origin xyz="-0.3922 0 0.06665" rpy="0 0 0"/>
-      <geometry><cylinder radius="0.038" length="0.1333"/></geometry>
+      <origin xyz="-0.3922 0 0.07015" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.038" length="0.1263"/></geometry>
       <material name="link_blue"/>
     </visual>
   </link>

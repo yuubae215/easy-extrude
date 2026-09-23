@@ -296,7 +296,12 @@ const SUPPORT_LABELS = new Map([
 // 判断そのもの (DEF-042、番号未定の ADR が起票されるまで機械可読な満期を持てない)。
 // 45 → 47 の内訳は 47(+2, ADR-149 の新規未支持 2 件) であり、ADR-148 側は goal 数も
 // support ラベルも変えていない (assumption の文面更新のみ)。
-const DEBT_BASELINE = 47
+// 2026-09-23: 47 → 48。ADR-150 が支えの無い goal を **1 つ意図的に** 足した —
+// `WhatThisDidNotDoIsCounted`: 当事者依頼のうち触れなかった 2 つ (単体/トレー内の
+// ピック検証の分割 = DEF-043、シーンの tcp フレームの seed がフランジのまま = DEF-044)。
+// どちらも登録簿の行で満期は機械可読 (PATH:pick-sequence-response.schema.json /
+// GREP:robotSkeleton.js::TOOL_LENGTH_M)。ADR-150 の他の 5 goal はすべて support-verified。
+const DEBT_BASELINE = 48
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

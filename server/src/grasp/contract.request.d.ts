@@ -66,6 +66,10 @@ export interface GraspSearchDeclaration {
      * @maxItems 4
      */
     tcpOrientation?: [number, number, number, number];
+    /**
+     * Distance from the robot flange (tool0) to the TCP along the flange +Z axis -- how far the mounted tool sticks out of the wrist (same length unit as the request geometry). The candidate position is the TCP, so the declared kinematic solver places the FLANGE this far back along the approach, and the arm sweep checks the flange->TCP segment against obstacles like any other link (ADR-150). A property of the tool mount, not of the hand kind: it is declared whether or not the `gripper` graspability gate is. Absent means 0 -- the flange IS the TCP, exactly the pre-ADR-150 answer (behaviour changes only where a declaration appears, ADR-084 §3). Optional request-side addition, so contractVersion is unchanged (ADR-083/084).
+     */
+    toolLength?: number;
     reachMin?: number;
     reachMax?: number;
     wristConeHalfAngle?: number;
@@ -126,21 +130,9 @@ export interface GraspSearchDeclaration {
     }[];
   };
   /**
-   * Bodies the approach must avoid, as bounding spheres (ADR-119 D1; carried since ADR-117). Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/.
+   * Bodies the approach and the arm must avoid (ADR-119 D1; carried since ADR-117; box form added by ADR-133 D5). A kind-discriminated union: a sphere carries `radius`, a box carries `halfExtents` and an optional `orientation`. Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/. The bounding-sphere form is retained because it is what pre-ADR-133 senders emit; it is DELIBERATELY not the fallback for an undeclared shape -- a payload that declares neither `radius` nor `halfExtents` is rejected rather than guessed (原則 #31).
    */
-  obstacles?: {
-    /**
-     * [x, y, z] world-frame centre of the bounding sphere.
-     *
-     * @minItems 3
-     * @maxItems 3
-     */
-    center: [number, number, number];
-    /**
-     * Bounding-sphere radius in the layout's own length unit (the contract never names the unit).
-     */
-    radius: number;
-  }[];
+  obstacles?: (SphereObstacle | BoxObstacle)[];
   /**
    * Declares how the discrete candidate set is enumerated around each surface sample (ADR-075 stage 0). Every key is optional and core/ supplies its own default when one is absent -- an undeclared bound is left undeclared rather than guessed. Declared here rather than left to the open payload because core/ already reads it and the templates already send it: the alternative required by 原則 #29 would be an explicit out-of-scope declaration, and 'nobody wrote it down' is not one of the two allowed states.
    */
@@ -240,4 +232,48 @@ export interface GripperSuction {
    * How far a surface normal inside the cup footprint may deviate from the contact normal and still seal, in radians. Absent leaves the solver its own naive default; it is never inferred from the other fields.
    */
   sealTiltTolerance?: number;
+}
+/**
+ * A bounding sphere. `kind` may be omitted for compatibility with senders written before ADR-133; when present it must be "sphere".
+ */
+export interface SphereObstacle {
+  kind?: "sphere";
+  /**
+   * [x, y, z] world-frame centre.
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  center: [number, number, number];
+  /**
+   * Bounding-sphere radius in the layout's own length unit (the contract never names the unit).
+   */
+  radius: number;
+}
+/**
+ * An oriented bounding box (OBB). `kind` is REQUIRED here: a box is the newer form, so an unlabelled one would be indistinguishable from a sender that simply forgot to declare a shape.
+ */
+export interface BoxObstacle {
+  kind: "box";
+  /**
+   * [x, y, z] world-frame centre.
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  center: [number, number, number];
+  /**
+   * [x, y, z] half-sizes along the box's OWN axes, in the layout's length unit.
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  halfExtents: [number, number, number];
+  /**
+   * [x, y, z, w] world rotation of the box's own axes. Absent means axis-aligned -- for a bare geometric box the two coincide, unlike an entity's pose where 'undeclared' and 'upright' must stay distinguishable (ADR-129 D2).
+   *
+   * @minItems 4
+   * @maxItems 4
+   */
+  orientation?: [number, number, number, number];
 }

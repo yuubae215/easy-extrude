@@ -62,6 +62,7 @@ import { resolveSearchLayout } from '../domain/searchGeometry.js'
 import { mmToM, mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
+import { TOOL_LENGTH_M } from '../domain/robotTool.js'
 import {
   CLIENT_ANALYTIC, dhFromDeclaration, inverseKinematics, representativeSolution,
 } from '../robotics/urKinematics.js'
@@ -756,7 +757,7 @@ export class GraspController {
     // candidate's solution. Returning early past this call is exactly the
     // one-frame-stale bug of ADR-098/101: the input changes every hover, so a
     // test that hovers once cannot see it.
-    this._syncArmPreview(candidate)
+    const armHoldsTool = this._syncArmPreview(candidate)
 
     const wireFrame = candidate ? renderableEndEffectorFrame(candidate.pose) : null
     // The wire's cartesianFrame.position is meters; the scene it gets placed in
@@ -775,6 +776,12 @@ export class GraspController {
     const radius = this._sceneRadius()
     this._ghost.setWorldCap(radius > 0 ? radius * 0.5 : Infinity)
     this._ghost.showCandidate({ frame, score: candidate.score, mode, rank })
+    // ADR-150 D4: when the arm is posed into this candidate, the tool bolted to
+    // its flange IS the hand — its fingertips end at this TCP. Drawing the
+    // glyph's own screen-sized gripper on top would show two hands, one of them
+    // attached to nothing (the dogfooder's report). The approach arrow and the
+    // target outline stay: they say where and how, the arm says with what.
+    this._ghost.setHandOnArm(armHoldsTool)
 
     // Grasped-target outline: nearest scene solid to the TCP (display-only
     // proximity — permitted by "Centroid Is Validation-Only" for display).
@@ -805,10 +812,12 @@ export class GraspController {
    * that shows a solution must be the arm the search solved for (ADR-130).
    *
    * @param {object|null} candidate  the hovered-or-selected candidate, if any
+   * @returns {boolean} whether a VISIBLE arm now holds this candidate's pose —
+   *   i.e. whether the tool on its flange is showing the hand (ADR-150 D4)
    */
   _syncArmPreview(candidate) {
     const stages = this._ctrl._sceneView?.robotStages
-    if (!stages) return              // THREE-free lane: no skeletons to pose
+    if (!stages) return false        // THREE-free lane: no skeletons to pose
     const reach = candidate?.score?.reachSolution
     // `_selectedRobot()` is the ONE place the subject is resolved (原則 #25 /
     // §1.1) — re-deriving `selectRobot(...)` here would be a second source that
@@ -820,7 +829,9 @@ export class GraspController {
     const clientSolved = needsClientSolvedPreview(reach)
       ? this._clientSolvedArmPose(candidate, robotEntity)
       : null
-    stages.previewSolution(robotEntity?.id ?? null, previewPayloadFor(reach, clientSolved))
+    const payload = previewPayloadFor(reach, clientSolved)
+    stages.previewSolution(robotEntity?.id ?? null, payload)
+    return payload != null && robotEntity != null && stages.isVisible?.(robotEntity.id) === true
   }
 
   /**
@@ -857,7 +868,7 @@ export class GraspController {
     // ワイヤの候補 frame をフランジ目標へ写し、ベース座標系へ戻す — `core/` の
     // `UniversalRobotsIkSolver.solve` と同じ手順を同じ gauge で踏む (§1.1 の写し)。
     const target = flangeTargetInBaseFrame(
-      wireFrame, declaration.base, declaration.baseOrientation,
+      wireFrame, declaration.base, declaration.baseOrientation, declaration.toolLength ?? 0,
     )
     if (!target) return null
     // **最大 8 解**。代表の選び方 (関節総移動量最小) は ADR-127 D5 と同じ規則で、
@@ -956,7 +967,9 @@ export class GraspController {
    * request is gated off anyway.
    *
    * @param {import('../domain/robotFrames.js').Robot} robot
-   * @returns {{ base?: [number,number,number], tcpOrientation?: [number,number,number,number] }}
+   * @returns {{ base?: [number,number,number], baseOrientation?: [number,number,number,number],
+   *            tcpOrientation?: [number,number,number,number],
+   *            toolLength?: number }}
    */
   _resolveRobotDeclaration(robot) {
     const service = this._ctrl._service
@@ -983,6 +996,12 @@ export class GraspController {
       const q = tcpPose.quaternion
       declaration.tcpOrientation = [q.x, q.y, q.z, q.w]
     }
+    // The tool bolted to this arm's flange (ADR-150 D4). Declared here, on the
+    // ONE path both the request and the client-side closed form read, so the
+    // solved tool and the previewed tool cannot have different lengths (§1.1).
+    // Declared for every resolved robot, gripper gate on or off — switching the
+    // graspability gate off does not unbolt the tool.
+    if (basePose) declaration.toolLength = TOOL_LENGTH_M
     return declaration
   }
 

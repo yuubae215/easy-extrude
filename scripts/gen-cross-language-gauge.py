@@ -43,6 +43,11 @@ approaches = [
 while len(approaches) < 24:
     approaches.append(unit())
 
+# ツール長 (ADR-150 D4) は**全ケースで明示**する — 欠けたキーを 0 と読ませると、
+# 「0 を宣言した」と「書き忘れた」が区別できない (原則 #31)。0 と非 0 の両方を通す:
+# 0 だけでは tool_length を無視する写しでも緑になる。
+TOOL_LENGTHS = (0.0, 0.15)
+
 cases = []
 for i, approach in enumerate(approaches):
     roll = rnd.uniform(-math.pi, math.pi) if i >= 4 else (i * math.pi / 4)
@@ -53,12 +58,15 @@ for i, approach in enumerate(approaches):
         pre_grasp=position - approach.scaled(0.1),
         surface_normal=approach.scaled(-1.0),
     )
+    tool_length = TOOL_LENGTHS[i % 2] if i < 8 else rnd.uniform(0.0, 0.3)
     cases.append(
         {
             # ワイヤに載る形そのもの (JS が読むのはこれ)。
             "posePayload": pose_to_payload(pose),
+            # robot.toolLength (ADR-150)。候補 position は TCP、フランジはここだけ戻る。
+            "toolLength": tool_length,
             # 同じ pose から core/ が作るフランジ目標 (JS が再現すべき数)。
-            "flangeTarget": [float(v) for v in flange_target(candidate)],
+            "flangeTarget": [float(v) for v in flange_target(candidate, tool_length)],
         }
     )
 
