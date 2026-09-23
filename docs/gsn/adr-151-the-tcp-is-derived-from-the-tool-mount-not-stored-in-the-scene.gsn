@@ -16,7 +16,7 @@ labels adr-151, adr-150, adr-084, adr-085, adr-088, adr-090, adr-135, principle-
 
     context TheDogfooderSawTheLabelLeaveTheArm
     uuid 59c2460f-7597-45c0-8f41-4992badf1b25
-    summary "当事者の指摘: ADR-150 のスクリーンショットで tcp のラベルとロボットゴーストの tcp が離れている。原因は (1) tcp が休止姿勢に固定された実体でプレビューに追従しない、(2) 休止でも seed がフランジのまま 150mm ずれる (DEF-044)。本セッションは起票のみと指示された"
+    summary "当事者の指摘: ADR-150 のスクリーンショットで tcp のラベルとロボットゴーストの tcp が離れている。原因は (1) tcp の親が robot_base で、辺 base→tcp に休止姿勢の FK が静的変換として焼き込まれている (腕の 6 関節の辺が木に無い) ためプレビューに追従しない、(2) 休止でも seed がフランジのまま 150mm ずれる (DEF-044)。TF の語彙では: 保存すべきは辺 tool0→tcp (ツールの取付け) だけで、導出値を辺に保存したことが第二の源。本セッションは起票のみと指示された"
 
     justification WhyNotMakeTheStoredFrameTheSource
     uuid 3c3ccc7f-aaf2-47db-a454-d42d5fa8c7d5
