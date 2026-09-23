@@ -50,6 +50,17 @@ async function placeUserFrame(page) {
   await outliner.getByText('Cube', { exact: true }).click()
   const canvas = page.locator('#canvas-container canvas')
   await canvas.hover()
+  // Frame the Cube first: the placement click lands at the canvas centre, and a
+  // scene that already holds a robot is framed around both, so the centre can
+  // miss the Cube (placement then cancels — the pick needs the parent's surface).
+  const camBefore = await page.evaluate(() => JSON.stringify(window.__easyExtrude.cameraState()))
+  await page.keyboard.press('f')
+  await expect.poll(async () => {
+    const a = await page.evaluate(() => JSON.stringify(window.__easyExtrude.cameraState()))
+    await page.waitForTimeout(200)
+    const b = await page.evaluate(() => JSON.stringify(window.__easyExtrude.cameraState()))
+    return a === b && a !== camBefore
+  }, { message: 'F did not settle the camera on the Cube' }).toBe(true)
   await page.keyboard.press('Shift+A')
   await page.getByText('Coordinate Frame', { exact: true }).click()
   await canvas.click()
@@ -662,12 +673,11 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
   await expect.poll(async () => (await state()).find(o => o.name === frameName)?.explicit).toBe(true)
 
   // 症状 4 — selecting another entity does not take it back. The context axis
-  // moves; the axis the user wrote does not.
-  // ADR-111 made the title bar a SIDE SWITCH, so the panel is the switch's
-  // grandparent rather than its parent. Walk to the dock explicitly instead of
-  // counting `..` hops — the row we want lives on the geometry side.
-  const outliner = page.getByText('Scene Collection', { exact: true }).locator('../..')
-  await outliner.getByText('Cube', { exact: true }).click()
+  // moves; the axis the user wrote does not. The other entity must be UNRELATED
+  // to the frame: the placed frame belongs to the Cube, so selecting the Cube
+  // dims it by design (ADR-087 — a Solid's frames appear with it), which is the
+  // context axis working, not the defect. The robot is unrelated.
+  await outlinerRow(page, 'robot_base').click()
   await expect.poll(async () => (await state()).find(o => o.name === frameName)?.contextual).toBe(null)
   const afterSelect = (await state()).find(o => o.name === frameName)
   expect(afterSelect.explicit, 'eye で開けた軸が選択変更で落ちている').toBe(true)
