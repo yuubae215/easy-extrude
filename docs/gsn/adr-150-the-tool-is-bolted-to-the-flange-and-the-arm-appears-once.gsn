@@ -8,7 +8,7 @@ labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, p
 
     context ThreeReportsFromTheDogfooder
     uuid 5f9d3d50-0e49-40e9-8a63-6db6aad2d947
-    summary "当事者の /whiteboard 依頼 (2026-09-23): (1) スポーン直後 skeleton が見え ~1 秒後に実写へ切り替わる、(2) 関節構造の見た目が違う (DH は同じはず)、(3) ピック検証でツールがフランジに付いていない。合意: ツール長 150mm、吸引でも TCP は同じ。4 点目 (単体/トレー内のピック検証の分割) は別 PR (DEF-043)"
+    summary "当事者の /whiteboard 依頼 (2026-09-23): (1) スポーン直後 skeleton が見え ~1 秒後に実写へ切り替わる、(2) 関節構造の見た目が違う (DH は同じはず)、(3) ピック検証でツールがフランジに付いていない。合意: ツール長 150mm、吸引でも TCP は同じ。4 点目 (単体/トレー内のピック検証の分割) は別 PR で案 B (DEF-043)"
     artifacts
     - "docs/adr/ADR-150-the-tool-is-bolted-to-the-flange-and-the-arm-appears-once.md"
 
@@ -131,7 +131,7 @@ labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, p
 
         assumption PickVerificationSplitIsDEF043
         uuid 0f575eda-8785-4c2b-b5d9-750dcd7fef3d
-        summary "証拠予定: DEF-043 — 単体ワーク / トレー内の全ワークのピック検証の分割。core/ の /pick-sequence (ADR-078) を契約・BFF・UI まで配線する別 PR (新 response 契約 = 版上げ)。満期=PATH:packages/grasp-contract/schema/pick-sequence-response.schema.json"
+        summary "証拠予定: DEF-043 — 単体ワーク / トレー内の全ワークのピック検証の分割。当事者の決定 (2026-09-23): フロントは案 B まで (ワークごとに /grasp-search を投げ、順序は答えない)、トレー検証はバックエンド接続時だけ開放。/pick-sequence を契約まで配線する案 A は採らない。満期=GREP:src/controller/GraspController.js::runTrayVerification"
 
         assumption TcpSeedStaysAtTheFlangeDEF044
         uuid 6067a6a1-586a-4176-ba56-015675a03cc8

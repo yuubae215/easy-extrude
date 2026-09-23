@@ -115,7 +115,7 @@ flowchart LR
 
 ## 残し (Deferred)
 
-- **ピック検証を「単体ワーク」と「トレー内の全ワーク」に分ける** (当事者依頼の 4 点目) — 合意どおり別 PR。`core/` の `/pick-sequence` (ADR-078) を契約・BFF・UI まで配線する案で、新しい response 契約 = contractVersion の版上げを伴う。→ **DEF-043**。
+- **ピック検証を「単体ワーク」と「トレー内の全ワーク」に分ける** (当事者依頼の 4 点目) — 別 PR。**当事者の決定 (2026-09-23): フロントは案 B まで** = ワークごとに既存の `/grasp-search` を投げて「今取れるか」を並べ、順序は答えない。トレー検証は**バックエンド接続時だけ**開放する。`/pick-sequence` を契約まで配線する案 A は採らない。→ **DEF-043**。
 - **シーンの `tcp` CoordinateFrame はフランジ位置に seed されたまま** (ADR-088 の `TCP_LOCAL_SEED`)。ツール先端へ動かすと seed の導出・既存シーン・`tcpOrientation` の意味に波及するので本 ADR では触れていない。→ **DEF-044**。
 
 ## Lens notes
