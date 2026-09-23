@@ -8,15 +8,15 @@
  *
  * WHY (ADR-088 §1.1): the URDF is the single authority for the arm's
  * kinematics. Bundling it once and having BOTH the render path (`RobotStage`
- * parses `ROBOT_URDF_TEXT`) and the seed path (`TCP_LOCAL_SEED` = its forward
- * kinematics at the shared rest pose) read that one string means the drawn
- * flange and the tcp seed can never disagree. No runtime fetch; the file rides
- * the bundle.
+ * parses `ROBOT_URDF_TEXT`) and the scene's TF composition (`FLANGE_REST_POSE`
+ * = its forward kinematics at the shared rest pose) read that one string means
+ * the drawn flange and the flange the scene composes the tcp through can never
+ * disagree. No runtime fetch; the file rides the bundle.
  */
 
 import urdfText from '../../public/robot/skeleton_arm.urdf?raw'
 import { ROBOT_REST_POSE } from '../domain/robotConfig.js'
-import { deriveFlangeSeed, parseUrdfChain } from '../robotics/UrdfChain.js'
+import { deriveFlangeRestPose, parseUrdfChain } from '../robotics/UrdfChain.js'
 import { kinematicsDeclarationFromUrdf } from '../domain/robotKinematics.js'
 import { movableJoints } from '../robotics/Kinematics.js'
 import { mToMM } from '../domain/worldUnits.js'
@@ -26,29 +26,26 @@ import { reachEnvelopeFor, robotModelById, SHIPPED_ROBOT_MODEL_ID } from '../dom
 export const ROBOT_URDF_TEXT = urdfText
 
 /**
- * The tcp frame's default LOCAL translation: the URDF flange (tool0) position at
- * the shared rest pose, DERIVED — replacing ADR-084's hand-copied
- * `(-0.717,-0.133,0.346)` constant. Fed to `SceneService` (ensureRobotFrames) so
- * the tool point seeds at the skeleton's hand from the same source that draws it.
- * The URDF's forward kinematics is in meters (ROS standard); this local CF
- * translation lives in the mm-scale scene (ADR-136), so it is converted once here.
- * @type {{ x:number, y:number, z:number }}
+ * The flange (tool0) pose at the shared rest pose, in the robot BASE frame —
+ * DERIVED from the bundled URDF (ADR-151, replacing ADR-088's position-only tcp
+ * seed). Injected into `SceneService`, which composes each robot's tcp world pose
+ * as base ∘ this ∘ tool mount: the scene tree has no arm-joint edges, so this is
+ * the one place their rest-pose composition enters it — as a derivation, never
+ * as a stored value. Position converted once from the URDF's meters to the
+ * mm-scale scene (ADR-136).
+ * @type {{ position: {x:number,y:number,z:number}, quaternion: {x:number,y:number,z:number,w:number} }}
  */
-const _flangeSeedMeters = deriveFlangeSeed(ROBOT_URDF_TEXT, ROBOT_REST_POSE)
-// The seed is the FLANGE, not the tool tip. Since ADR-150 the arm carries a
-// 150 mm tool and IK solves for its tip, so at rest the scene's tcp marker stands
-// one tool length short of the drawn fingertips. Moving the seed is 保留
-// (DEF-044 — the ledger row names the decision that retires this seed: the TCP
-// becomes a marker derived from the tool mount on the arm, not a stored frame).
-export const TCP_LOCAL_SEED = {
-  x: mToMM(_flangeSeedMeters.x),
-  y: mToMM(_flangeSeedMeters.y),
-  z: mToMM(_flangeSeedMeters.z),
-}
+export const FLANGE_REST_POSE = (() => {
+  const { position, quaternion } = deriveFlangeRestPose(ROBOT_URDF_TEXT, ROBOT_REST_POSE)
+  return Object.freeze({
+    position:   Object.freeze({ x: mToMM(position.x), y: mToMM(position.y), z: mToMM(position.z) }),
+    quaternion: Object.freeze({ ...quaternion }),
+  })
+})()
 
 /**
  * The FK chain of the drawn skeleton (ADR-144) — the FIFTH consumer of the one
- * URDF, after the render path, the tcp seed, `ROBOT_KINEMATICS` and the reach
+ * URDF, after the render path, the flange rest pose, `ROBOT_KINEMATICS` and the reach
  * envelope.
  *
  * It feeds the client's approximate arm preview, which needs to measure where
@@ -65,7 +62,7 @@ export const ROBOT_CHAIN = parseUrdfChain(ROBOT_URDF_TEXT)
  * The wire-shaped `robot.kinematics` declaration for this skeleton (ADR-127 /
  * DEF-030), DERIVED from the very string `RobotStage` parses to draw the arm.
  *
- * The third consumer of the one URDF, joining the render path and the tcp seed:
+ * The third consumer of the one URDF, joining the render path and the flange rest pose:
  * what the solver is told about the arm and what the user sees on screen cannot
  * be different arms, because there is only one set of numbers. `null` when the
  * bundled URDF stops being UR-shaped — which keeps ADR-127 D3's safe default
@@ -100,7 +97,7 @@ export const ROBOT_JOINT_NAMES = Object.freeze(
 
 /**
  * The reach envelope of the arm this module draws (ADR-141) — the FOURTH
- * consumer of the one URDF, after the render path, the tcp seed and
+ * consumer of the one URDF, after the render path, the flange rest pose and
  * `ROBOT_KINEMATICS`.
  *
  * Before ADR-141 the envelope was picked from a catalog of three hand-written

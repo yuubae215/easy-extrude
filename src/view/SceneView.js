@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { SceneStage } from './SceneStage.js'
 import { RobotStageSet } from './RobotStageSet.js'
-import { TCP_LOCAL_SEED } from './robotSkeleton.js'
+import { FLANGE_REST_POSE } from './robotSkeleton.js'
 import { focusPose as computeFocusPose, clipPlanesFor, frustumForDistance, BOOT_VIEW_DIRECTION, BOOT_VIEW_RADIUS } from './CameraMath.js'
 import { mm } from '../domain/worldUnits.js'
 
@@ -109,10 +109,11 @@ export class SceneView {
     // reconciled from the roster by AppController._syncRobotStage; a robot-less
     // scene simply draws none (ADR: see RobotStage.js / RobotStageSet.js).
     this.robotStages = new RobotStageSet(this.scene)
-    // The tcp default seed, DERIVED from the same bundled URDF the skeleton is
-    // drawn from (ADR-088). Handed to SceneService via AppController so the tool
-    // point seeds at the rendered flange — one source, no drift.
-    this.robotTcpSeed = TCP_LOCAL_SEED
+    // The flange pose at rest, DERIVED from the same bundled URDF the skeleton is
+    // drawn from (ADR-088/151). Handed to SceneService via AppController so the
+    // scene composes each tcp (= its tool mount) through the drawn flange — one
+    // source, no drift.
+    this.robotFlangeRestPose = FLANGE_REST_POSE
 
     window.addEventListener('resize', () => this._onResize())
   }

@@ -21,6 +21,7 @@ import {
   isRobotBaseFrame, isRobotTcpFrame, resolveRobots, selectRobot, robotCardinality,
   nextRobotBaseName, nextRobotTcpName, robotBaseSeedPose, Robot,
   ROBOT_ROLE, ROBOT_CARDINALITY, ROBOT_BASE_FRAME_NAME, TCP_FRAME_NAME,
+  TCP_MOUNTED_ON, isTcpMountedOn, isFlangeMountedTcp, isLegacyBaseRelativeTcp,
 } from './robotFrames.js'
 
 // ── Identity: the declared role, with the legacy name as a ramp ───────────────
@@ -174,4 +175,30 @@ test('the n-th robot is offset so it does not spawn inside the previous one', ()
 test('a Robot aggregate is frozen — its identity cannot be reassigned', () => {
   const r = new Robot({ id: 'b', name: 'robot_base' }, null)
   assert.throws(() => { r.baseFrame = { id: 'x' } }, TypeError)
+})
+
+// ── ADR-151: what a tcp's transform is measured from ─────────────────────────
+
+test('a tcp is EITHER flange-mounted OR the legacy base-relative shape — never both, never neither', () => {
+  // Enumerate the kinds and count, rather than walking whatever resolves (原則 #31):
+  // every tcp must land in exactly one of the two, and a non-tcp in neither.
+  const kinds = [
+    { obj: { robotRole: 'tcp', mountedOn: 'flange' }, flange: true,  legacy: false },
+    { obj: { robotRole: 'tcp' },                      flange: false, legacy: true  },
+    { obj: { robotRole: 'tcp', mountedOn: 'wrist' },  flange: false, legacy: true  },   // unknown ≠ a mount
+    { obj: { name: TCP_FRAME_NAME },                  flange: false, legacy: true  },   // pre-ADR-090 name path
+    { obj: { robotRole: 'base', mountedOn: 'flange' }, flange: false, legacy: false },  // not a tcp at all
+    { obj: { name: 'user_frame' },                    flange: false, legacy: false },
+    { obj: null,                                      flange: false, legacy: false },
+  ]
+  for (const k of kinds) {
+    assert.equal(isFlangeMountedTcp(k.obj), k.flange, JSON.stringify(k.obj))
+    assert.equal(isLegacyBaseRelativeTcp(k.obj), k.legacy, JSON.stringify(k.obj))
+  }
+})
+
+test('the mount vocabulary has exactly one member — the tool mount is the only edge a tcp stores', () => {
+  assert.deepEqual(Object.values(TCP_MOUNTED_ON), ['flange'])
+  assert.equal(isTcpMountedOn('flange'), true)
+  for (const v of [null, undefined, '', 'base', 'Flange']) assert.equal(isTcpMountedOn(v), false)
 })

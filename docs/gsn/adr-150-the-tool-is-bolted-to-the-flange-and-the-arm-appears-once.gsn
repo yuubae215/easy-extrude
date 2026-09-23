@@ -125,7 +125,7 @@ labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, p
 
     goal WhatThisDidNotDoIsCounted
     uuid 7e53ab3d-b06e-4939-a02f-e6351a5e7ed2
-    summary "ADR-150 が触れなかった 2 つの残しは登録簿の行として数えられ、満期は機械が読める"
+    summary "ADR-150 が触れなかった残しは登録簿の行として数えられ、満期は機械が読める (2 つのうち DEF-044 は ADR-151 で消化、DEF-043 が残る)"
     labels support-exploring
     state ToBeDeveloped
 
@@ -133,6 +133,6 @@ labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, p
         uuid 0f575eda-8785-4c2b-b5d9-750dcd7fef3d
         summary "証拠予定: DEF-043 — 単体ワーク / トレー内の全ワークのピック検証の分割。当事者の決定 (2026-09-23): フロントは案 B まで (ワークごとに /grasp-search を投げ、順序は答えない)、トレー検証はバックエンド接続時だけ開放。/pick-sequence を契約まで配線する案 A は採らない。満期=GREP:src/controller/GraspController.js::runTrayVerification"
 
-        assumption TcpSeedStaysAtTheFlangeDEF044
+        context TcpSeedDEF044ResolvedByADR151
         uuid 6067a6a1-586a-4176-ba56-015675a03cc8
-        summary "証拠予定: DEF-044 — シーンの tcp フレームの seed はフランジ位置のまま (休止姿勢で TCP マーカーはツール先端の 150mm 手前)。満期=GREP:src/view/robotSkeleton.js::TOOL_LENGTH_M"
+        summary "DEF-044 (シーンの tcp の seed がフランジ位置のまま) は 2026-09-23 に ADR-151 の実装で消化し、登録簿から行を消した: tcp は取付け tool0 → tcp を保存し、印は腕のツール先端に描かれる。証拠は docs/gsn/adr-151-…gsn の TheMarkerRidesOnTheToolTipInEveryPose。残る残しは DEF-043 の 1 つ"

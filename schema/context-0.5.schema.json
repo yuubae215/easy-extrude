@@ -835,6 +835,12 @@
             "tcp"
           ]
         },
+        "mountedOn": {
+          "description": "ADR-151: what a robot tcp's `position`/`rotation` are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp) — the end effector's own fact and the interface the robot and its end effector share; the world pose is derived (base ∘ flange-at-rest ∘ mount), never stored. Absent on a pre-ADR-151 tcp, whose base-relative value the importer replaces with the default mount and announces (the entity and every relation to it survive). Mirrors layout-1.0 `entity.mountedOn`.",
+          "enum": [
+            "flange"
+          ]
+        },
         "graspFeature": {
           "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). Mirrors layout-1.0 `entity.graspFeature` — added in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`.",
           "type": "object",

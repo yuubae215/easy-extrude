@@ -8,7 +8,7 @@ import {
   ROBOT_RENDER_STYLE, assertRenderStyle, isRedundantStyleRequest, settledStyle,
 } from './robotVisualStyle.js'
 import { instantiateRealisticRobot } from './realisticRobotAsset.js'
-import { TOOL_LENGTH_M, toolParts } from '../domain/robotTool.js'
+import { axialToolLengthM, tcpMarkerPose, toolParts } from '../domain/robotTool.js'
 import { COLOR } from '../theme/tokens.js'
 
 /**
@@ -18,6 +18,20 @@ import { COLOR } from '../theme/tokens.js'
  * silhouette is still legible — the preview has to be useful to be worth drawing.
  */
 const UNVERIFIED_OPACITY = 0.38
+
+/**
+ * Value equality of two tool mounts (mm / quaternion), so the per-frame sync
+ * rebuilds nothing while the mount is unchanged.
+ * @param {{translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null} a
+ * @param {{translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null} b
+ */
+function sameToolMount(a, b) {
+  if (a === b) return true
+  if (!a || !b) return false
+  const t = a.translation, u = b.translation, q = a.rotation, r = b.rotation
+  return t.x === u.x && t.y === u.y && t.z === u.z &&
+    q.x === r.x && q.y === r.y && q.z === r.z && q.w === r.w
+}
 
 /**
  * RobotStage — loads and displays a fixed-pose robot-arm skeleton in the main
@@ -57,13 +71,24 @@ const UNVERIFIED_OPACITY = 0.38
 export class RobotStage {
   /**
    * @param {THREE.Scene} scene
-   * @param {{position?: [number, number, number], declaredStyle?: 'skeleton'|'realistic'}} [opts]
+   * @param {{position?: [number, number, number], declaredStyle?: 'skeleton'|'realistic',
+   *   toolMount?: {translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null}} [opts]
    *   `declaredStyle` — the style the owning scene declares; anything other
    *   than the skeleton keeps the arm hidden until that style lands (ADR-150).
+   *   `toolMount` — the robot's tool mount (`tool0 → tcp`, mm) if already known;
+   *   the owner keeps it current through `setToolMount` (ADR-151).
    */
   constructor(scene, opts = {}) {
     this._scene = scene
     this.robot = null
+    /**
+     * The tool mount this arm draws its tool and TCP marker from (ADR-151), or
+     * null when the robot declares none. Only `setToolMount` writes it after
+     * construction (原則 #4).
+     */
+    this._toolMount = opts.toolMount ?? null
+    /** @type {THREE.Group|null} the tool + TCP marker currently on `wrist_3_link` */
+    this._toolGroup = null
 
     this._group = new THREE.Group()
     const [x, y, z] = opts.position ?? [-2 * MM_PER_METER, 2 * MM_PER_METER, 0]
@@ -153,17 +178,26 @@ export class RobotStage {
   static TOOL_LINK = 'wrist_3_link'
 
   /**
-   * Bolt the tool onto this robot's flange (ADR-150 D4). The tool is a child of
-   * `wrist_3_link`, so it moves with the wrist by construction — the only way
-   * a drawn tool can be "attached" rather than placed next to the arm. Its
-   * length is `TOOL_LENGTH_M`, the SAME number the grasp request declares as
-   * `robot.toolLength`, so the drawn fingertips end where the solver put the TCP.
+   * Bolt the tool — and the TCP marker — onto this robot's flange (ADR-150 D4,
+   * ADR-151 D2). Both are children of `wrist_3_link`, so they move with the
+   * wrist by construction: the only way a drawn tool can be "attached" rather
+   * than placed next to the arm, and the only way the TCP marker can stand at
+   * the tool tip in EVERY pose (rest, preview, either style) without code that
+   * compares or synchronises anything. Both are built from the robot's own tool
+   * mount — the same `tool0 → tcp` edge the grasp request declares as
+   * `robot.toolLength` — so what the viewer sees is the tool that was solved.
    *
-   * Rebuilt on every attach (a style swap brings a new URDF tree) and owned by
-   * this stage: its meshes are flagged `stageOwned` so `_disposeTree` frees them
-   * even under a realistic clone whose other geometry is shared (原則 #9), and
-   * its materials join `_materials` so the unverified look reaches the tool too
-   * (原則 #4 — one owner of this arm's look).
+   *   - no mount (the robot has no tcp) → no tool and no marker: the interface is
+   *     undeclared, and a drawn default would claim a tool nobody declared;
+   *   - a mount straight along +Z → the tool body AND the marker at its tip;
+   *   - any other mount → the marker only (stage 1 cannot say what such a tool
+   *     looks like, and grasp search refuses it with a reason).
+   *
+   * Rebuilt on every attach (a style swap brings a new URDF tree) and on every
+   * mount change, and owned by this stage: its meshes are flagged `stageOwned`
+   * so `_disposeTree` frees them even under a realistic clone whose other
+   * geometry is shared (原則 #9), and its materials join `_materials` so the
+   * unverified look reaches the tool too (原則 #4 — one owner of this arm's look).
    * @param {import('three').Object3D} robot
    */
   _attachTool(robot) {
@@ -175,21 +209,159 @@ export class RobotStage {
     }
     const tool = new THREE.Group()
     tool.name = 'tool'
-    const color = { body: COLOR.surfaceRaised, palm: COLOR.surfaceRaised, finger: COLOR.entityDefault }
-    for (const part of toolParts(TOOL_LENGTH_M)) {
-      const geometry = part.shape === 'cylinder'
-        ? new THREE.CylinderGeometry(part.size[0], part.size[0], part.size[1], 24)
-        : new THREE.BoxGeometry(part.size[0], part.size[1], part.size[2])
-      // THREE's cylinder runs along +Y; the tool runs along the flange +Z.
-      if (part.shape === 'cylinder') geometry.rotateX(Math.PI / 2)
-      const material = new THREE.MeshStandardMaterial({ color: color[part.part], roughness: 0.6, metalness: 0.2 })
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.position.set(...part.center)
-      mesh.userData.stageOwned = true
-      tool.add(mesh)
-      this._materials.push([material, 1])
+    /** @type {THREE.Material[]} */
+    const owned = []
+    const toolLength = axialToolLengthM(this._toolMount)
+    if (toolLength !== null) {
+      const color = { body: COLOR.surfaceRaised, palm: COLOR.surfaceRaised, finger: COLOR.entityDefault }
+      for (const part of toolParts(toolLength)) {
+        const geometry = part.shape === 'cylinder'
+          ? new THREE.CylinderGeometry(part.size[0], part.size[0], part.size[1], 24)
+          : new THREE.BoxGeometry(part.size[0], part.size[1], part.size[2])
+        // THREE's cylinder runs along +Y; the tool runs along the flange +Z.
+        if (part.shape === 'cylinder') geometry.rotateX(Math.PI / 2)
+        const material = new THREE.MeshStandardMaterial({ color: color[part.part], roughness: 0.6, metalness: 0.2 })
+        const mesh = new THREE.Mesh(geometry, material)
+        mesh.position.set(...part.center)
+        mesh.userData.stageOwned = true
+        tool.add(mesh)
+        owned.push(material)
+      }
     }
+    const marker = RobotStage._buildTcpMarker(tcpMarkerPose(this._toolMount), owned)
+    if (marker) tool.add(marker)
+    for (const m of owned) this._materials.push([m, m.opacity ?? 1])
     link.add(tool)
+    this._toolGroup = tool
+  }
+
+  /**
+   * The TCP marker (ADR-151 D2): a REP-103 axis triad plus a `tcp` label, at the
+   * mount's pose in the flange frame. World-sized (decision b) — it is part of
+   * the arm, so it scales with the tool on screen. Pure construction: every
+   * material it creates is appended to `owned` for the caller to govern.
+   * @param {ReturnType<typeof tcpMarkerPose>} pose
+   * @param {THREE.Material[]} owned
+   * @returns {THREE.Group|null}
+   */
+  static _buildTcpMarker(pose, owned) {
+    if (!pose) return null
+    const marker = new THREE.Group()
+    marker.name = 'tcpMarker'
+    marker.position.set(...pose.position)
+    marker.quaternion.set(pose.quaternion.x, pose.quaternion.y, pose.quaternion.z, pose.quaternion.w)
+    const L = pose.axisLength
+    const radius = L * 0.04
+    const axes = [
+      { color: COLOR.axisX, rotate: g => g.rotateZ(-Math.PI / 2) },   // +Y → +X
+      { color: COLOR.axisY, rotate: () => {} },                        // +Y
+      { color: COLOR.axisZ, rotate: g => g.rotateX(Math.PI / 2) },    // +Y → +Z
+    ]
+    for (const { color, rotate } of axes) {
+      const geometry = new THREE.CylinderGeometry(radius, radius, L, 12)
+      geometry.translate(0, L / 2, 0)
+      rotate(geometry)
+      const material = new THREE.MeshBasicMaterial({ color })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.userData.stageOwned = true
+      marker.add(mesh)
+      owned.push(material)
+    }
+    const label = RobotStage._buildLabel('tcp', L * 0.5)
+    if (label) {
+      label.position.set(0, 0, L * 1.35)
+      marker.add(label)
+      owned.push(label.material)
+    }
+    return marker
+  }
+
+  /**
+   * A world-sized text sprite. Returns null where there is no canvas to draw on
+   * (never in the browser this class runs in) rather than throwing mid-attach.
+   * @param {string} text
+   * @param {number} height  world height of the text, in the parent's units
+   * @returns {THREE.Sprite|null}
+   */
+  static _buildLabel(text, height) {
+    if (typeof document === 'undefined') return null
+    const canvas = document.createElement('canvas')
+    canvas.width = 128
+    canvas.height = 64
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.font = 'bold 44px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = COLOR.textPrimary
+    ctx.fillText(text, 64, 34)
+    const texture = new THREE.CanvasTexture(canvas)
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+    const sprite = new THREE.Sprite(material)
+    sprite.scale.set(height * 2, height, 1)
+    sprite.userData.stageOwned = true
+    sprite.userData.ownedTexture = texture
+    return sprite
+  }
+
+  /**
+   * Adopt the robot's tool mount (ADR-151) — the ONE writer of `_toolMount`
+   * after construction, called by the owner every frame from the scene's tcp
+   * frame. Idempotent by value: an unchanged mount rebuilds nothing. A changed
+   * one replaces the tool + marker, carrying the current look onto them.
+   * @param {{translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null} mount  mm
+   */
+  setToolMount(mount) {
+    if (sameToolMount(this._toolMount, mount)) return
+    this._toolMount = mount ? { translation: { ...mount.translation }, rotation: { ...mount.rotation } } : null
+    if (!this.robot) return
+    this._detachTool()
+    const before = this._materials.length
+    this._attachTool(this.robot)
+    // Only the NEW materials need the current look; the arm's already carry it.
+    if (this._unverified) {
+      for (const [material, opacity] of this._materials.slice(before)) {
+        material.transparent = true
+        material.opacity = opacity * UNVERIFIED_OPACITY
+        material.depthWrite = false
+        material.needsUpdate = true
+      }
+    }
+  }
+
+  /** Removes and frees the current tool + marker (the release paired with `_attachTool`, 原則 #9). */
+  _detachTool() {
+    const tool = this._toolGroup
+    if (!tool) return
+    const released = new Set()
+    tool.traverse(child => {
+      child.geometry?.dispose()
+      child.userData?.ownedTexture?.dispose()
+      if (child.material) {
+        for (const m of Array.isArray(child.material) ? child.material : [child.material]) {
+          m.dispose()
+          released.add(m)
+        }
+      }
+    })
+    tool.parent?.remove(tool)
+    this._materials = this._materials.filter(([m]) => !released.has(m))
+    this._toolGroup = null
+  }
+
+  /**
+   * World position of the TCP marker, or null when none is drawn — read-only,
+   * for the e2e that asks whether the marker rides the tool tip in every pose
+   * (ADR-151). Read from the composed matrix, not from the mount: the claim is
+   * about what THREE actually drew, which no unit lane can see.
+   * @returns {{x:number,y:number,z:number}|null}
+   */
+  tcpMarkerWorldPosition() {
+    const marker = this._toolGroup?.getObjectByName('tcpMarker')
+    if (!marker) return null
+    this._group.updateWorldMatrix(true, true)
+    const p = marker.getWorldPosition(new THREE.Vector3())
+    return { x: p.x, y: p.y, z: p.z }
   }
 
   /** Whether this stage is still waiting to draw its scene's declared style for the first time (ADR-150). */
@@ -323,6 +495,7 @@ export class RobotStage {
     root.traverse(child => {
       // The tool (ADR-150 D4) is this stage's own even on a shared-geometry clone.
       if (child.geometry && (ownsGeometry || child.userData?.stageOwned)) child.geometry.dispose()
+      child.userData?.ownedTexture?.dispose()
       if (child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material]
         for (const m of materials) m.dispose()

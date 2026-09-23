@@ -28,6 +28,7 @@ import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { SpatialLink }     from '../domain/SpatialLink.js'
 import { isOriginFrame }   from '../domain/originFrame.js'
+import { toolMountEditBlockedReason } from '../domain/robotTool.js'
 
 const OPEN = Object.freeze({ enabled: true, reason: null })
 const locked = (reason) => ({ enabled: false, reason })
@@ -68,10 +69,25 @@ export function gateDelete(obj) {
 }
 
 /**
- * Move/Rotate/Delete availability for a selected CoordinateFrame: the
- * auto-created Origin frame is pinned to its Solid (ADR-037).
+ * Move/Rotate availability for a selected CoordinateFrame: the auto-created
+ * Origin frame is pinned to its Solid (ADR-037), and a flange-mounted tcp's
+ * transform is the tool mount, not editable yet (ADR-151 stage 1).
  */
 export function gateFrameTransform(frame) {
+  if (!frame) return locked('Select a frame first')
+  if (isOriginFrame(frame)) return locked('The Origin frame is fixed to its Solid')
+  const mountLocked = toolMountEditBlockedReason(frame)   // ADR-151: the tcp is the tool mount
+  if (mountLocked) return locked(mountLocked)
+  return OPEN
+}
+
+/**
+ * Delete availability for a selected CoordinateFrame. Narrower than
+ * `gateFrameTransform`: a tcp's MOUNT cannot be edited yet (ADR-151 stage 1),
+ * but the tcp itself can be removed — a robot with no tcp is a declared state
+ * (its gripper interface is undeclared, and grasp search says so).
+ */
+export function gateFrameDelete(frame) {
   if (!frame) return locked('Select a frame first')
   if (isOriginFrame(frame)) return locked('The Origin frame is fixed to its Solid')
   return OPEN

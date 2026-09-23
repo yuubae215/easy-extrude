@@ -24,6 +24,8 @@ import { MeasureLine }       from '../domain/MeasureLine.js'
 import { CoordinateFrame }   from '../domain/CoordinateFrame.js'
 import { CONTEXTUAL }        from '../view/VisibilityAxes.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
+import { isFlangeMountedTcp, isRobotTcpFrame, isLegacyBaseRelativeTcp } from '../domain/robotFrames.js'
+import { DEFAULT_TOOL_MOUNT, toolMountEditBlockedReason, toolMountOf } from '../domain/robotTool.js'
 import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
 import { CLICK_TARGET_KIND } from '../domain/clickTarget.js'
 import { Face }            from '../graph/Face.js'
@@ -100,6 +102,8 @@ import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../vi
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
 import { useUIStore }                 from '../store/uiStore.js'
+import { renderableEndEffectorFrame } from '../view/GraspGhostMath.js'
+import { mPointToMM } from '../domain/worldUnits.js'
 import { SCREEN_CLAIM }               from '../view/ScreenClaim.js'
 import { RotationHandler }            from './handler/RotationHandler.js'
 import { GrabOperationHandler }       from './handler/GrabOperationHandler.js'
@@ -215,10 +219,10 @@ export class AppController {
     this._rotateSectorPreview = new RotateSectorPreview(sceneView.scene)
 
     // ── Application service (owns SceneModel aggregate root) ─────────────
-    // Inject the DERIVED tcp seed (URDF flange FK at the shared rest pose,
-    // ADR-088) from the view that renders the skeleton, so the tool point seeds
-    // at the drawn flange from one source instead of a hand-copied constant.
-    this._service = new SceneService(sceneView.scene, { tcpSeed: sceneView.robotTcpSeed })
+    // Inject the DERIVED flange rest pose (URDF FK at the shared rest pose,
+    // ADR-088/151) from the view that renders the skeleton, so the scene composes
+    // each tcp — stored as its tool mount — through the drawn flange.
+    this._service = new SceneService(sceneView.scene, { flangeRestPose: sceneView.robotFlangeRestPose })
     this._service.setViewContext({
       camera:    sceneView.camera,
       renderer:  sceneView.renderer,
@@ -295,6 +299,17 @@ export class AppController {
     this._service.on('robotRoleChanged', (id, role) => {
       outlinerView?.setRobotRole(id, role)
       this._invalidateRobotRoster()
+    })
+    // A loaded scene carried pre-ADR-151 tcp frames (base-relative rest poses,
+    // which never decided anything) and the upgrade replaced them with the
+    // default tool mount. The entities and their relations survive; the values
+    // did not — say so rather than changing them silently (原則 #11).
+    this._service.on('robotTcpMountReset', (count) => {
+      this._uiView.showToast(
+        `${count} TCP frame${count > 1 ? 's' : ''} from an older file ${count > 1 ? 'were' : 'was'} reset to the default tool mount ` +
+        `(tool0 → tcp, +Z ${DEFAULT_TOOL_MOUNT.translation.z} mm). The old value was a base-relative rest pose, not a tool mount.`,
+        { type: 'warn' },
+      )
     })
     // An entity's `explicit` visibility axis was DECLARED at birth (ADR-096 §G1).
     // The row seeds its eye at `objectAdded`, which for a robot base runs before
@@ -705,6 +720,8 @@ export class AppController {
           this._uiView.showToast('Origin frames cannot be re-parented', { type: 'warn' })
           return
         }
+        const mountBlocked = toolMountEditBlockedReason(frame)
+        if (mountBlocked) { this._uiView.showToast(mountBlocked, { type: 'warn' }); return }
         const cmd = createReparentFrameCommand(frameId, targetId, this._service)
         if (!this._service.reparentFrame(frameId, targetId)) {
           this._uiView.showToast('Cannot re-parent: invalid target or cycle detected', { type: 'warn' })
@@ -718,6 +735,8 @@ export class AppController {
     uiView.onFrameParentChange((newParentId) => {
       const obj = this._activeObj
       if (!(obj instanceof CoordinateFrame) || isOriginFrame(obj)) return
+      const mountBlocked = toolMountEditBlockedReason(obj)
+      if (mountBlocked) { this._uiView.showToast(mountBlocked, { type: 'warn' }); return }
       const cmd = createReparentFrameCommand(obj.id, newParentId, this._service)
       if (!this._service.reparentFrame(obj.id, newParentId)) {
         this._uiView.showToast('Cannot re-parent: invalid target or cycle detected', { type: 'warn' })
@@ -754,6 +773,8 @@ export class AppController {
     uiView.onFramePositionChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || isOriginFrame(frame)) return
+      const mountBlocked = toolMountEditBlockedReason(frame)
+      if (mountBlocked) { this._uiView.showToast(mountBlocked, { type: 'warn' }); this._updateNPanel(); return }
       // translation is already in parent-local space (ROS TF) — set directly
       frame.translation[axis] = val
       this._service.invalidateWorldPose(frame.id)
@@ -763,6 +784,8 @@ export class AppController {
     uiView.onFrameRotationChange((axis, val) => {
       const frame = this._activeObj
       if (!(frame instanceof CoordinateFrame) || isOriginFrame(frame)) return
+      const mountBlocked = toolMountEditBlockedReason(frame)
+      if (mountBlocked) { this._uiView.showToast(mountBlocked, { type: 'warn' }); this._updateNPanel(); return }
       if (this._rotateHandler.isFastenedRotationBlocked(frame)) return
       // rotation is already in parent-local space (ROS TF) — edit directly
       const localEuler = new THREE.Euler().setFromQuaternion(frame.rotation, 'ZYX')
@@ -1107,6 +1130,40 @@ export class AppController {
       // the whole point (one eye must move ONE arm), and a stage created after
       // its eye was already closed must adopt that state; neither is visible to
       // aria-label assertions, and the controller/view layers are outside checkJs.
+      /**
+       * Read-only TCP snapshot (ADR-151) — the e2e surface for "the TCP has one
+       * source and every depiction points at it". Per robot: the stored mount,
+       * the scene's composed tcp (base ∘ flange-at-rest ∘ mount), and where the
+       * ARM actually drew its marker (read off THREE's matrices, so intent alone
+       * cannot pass). Plus the census the unit lane cannot run (SceneService does
+       * not construct under node): every tcp-role frame, and how many are still
+       * in the pre-ADR-151 base-relative shape — counted over the enumerated
+       * role, not over what happens to resolve into a robot (原則 #31).
+       */
+      tcpState: () => {
+        const mm = (v) => (v ? { x: v.x, y: v.y, z: v.z } : null)
+        const frames = [...this._scene.objects.values()]
+          .filter(o => o instanceof CoordinateFrame && isRobotTcpFrame(o))
+        const cur = useUIStore.getState().context.grasp
+        const rank = cur?.status === 'results' ? cur.selectedRank : null
+        const cand = rank == null ? null : (cur.candidates ?? []).find(c => c.rank === rank)
+        const wire = cand ? renderableEndEffectorFrame(cand.pose) : null
+        return {
+          robots: this._robots().map(r => ({
+            id:        r.id,
+            tcpId:     r.tcpFrame?.id ?? null,
+            mountedOn: r.tcpFrame?.mountedOn ?? null,
+            mount:     toolMountOf(r),
+            sceneTcp:  r.tcpFrame ? mm(this._service.worldPoseOf(r.tcpFrame.id)?.position) : null,
+            marker:    this._sceneView?.robotStages?.tcpMarkerWorldPosition(r.id) ?? null,
+          })),
+          tcpFrames:  frames.length,
+          legacyTcpFrames: frames.filter(isLegacyBaseRelativeTcp).length,
+          selectedCandidateTcp: wire
+            ? (([x, y, z]) => ({ x, y, z }))(mPointToMM(wire.position))
+            : null,
+        }
+      },
       robotState: () => this._robots().map(r => ({
         id: r.id,
         label: r.label,
@@ -1135,6 +1192,10 @@ export class AppController {
       },
       openGrasp: () => this._graspCtrl?.openGrasp(),
       addRobot:  () => this._addRobot(),
+      // Load a Layout DSL through the same path a Home template takes — so an
+      // e2e can hand the app a file written BEFORE a format change (ADR-151's
+      // base-relative tcp) and watch the scene-entry upgrade meet it.
+      loadLayout: (dsl) => this._loadLayoutTemplateDsl(dsl),
       // Read-only visibility snapshot (ADR-096) — the E2E guard for the claim
       // this ADR rests on: what the row says and what is DRAWN never disagree.
       // Both axes plus the pixel are reported per entity, because the defect was
@@ -1148,7 +1209,12 @@ export class AppController {
         isFrame:    o instanceof CoordinateFrame,
         explicit:   this._service.isExplicitVisible(o.id),
         contextual: this._service.contextualVisibilityOf(o.id),
-        drawn:      o.meshView?.group?.visible ?? o.meshView?.cuboid?.visible ?? null,
+        // A flange-mounted tcp's pixels are its arm's marker (ADR-151), not its
+        // own frame view — report THOSE, or the probe would call an honest row a liar.
+        drawn:      isFlangeMountedTcp(o)
+          ? (this._sceneView?.robotStages?.isVisible(o.parentId) === true &&
+             this._sceneView.robotStages.tcpMarkerWorldPosition(o.parentId) !== null)
+          : (o.meshView?.group?.visible ?? o.meshView?.cuboid?.visible ?? null),
       })),
       // Read-only selection snapshot (ADR-099) — the E2E guard for the round
       // trip. It reports the CARDINALITY next to the set, because the defect
@@ -1245,6 +1311,10 @@ export class AppController {
     for (const robot of robots) {
       const pose = this._service.worldPoseOf(robot.baseFrame.id)
       if (pose) stages.setPose(robot.id, pose.position, pose.quaternion)
+      // The tool and the TCP marker are drawn from the robot's tool mount — the
+      // tcp frame's stored transform (ADR-151). null = the interface is not
+      // declared (no tcp): the arm draws no tool rather than a default one.
+      stages.setToolMount(robot.id, toolMountOf(robot))
     }
   }
 
@@ -1818,6 +1888,13 @@ export class AppController {
   }
 
   _setObjectVisible(id, visible) {
+    // A flange-mounted tcp has no pixels of its own: its marker is part of the
+    // arm and follows the ROBOT's eye (ADR-151). Writing its axis would move a
+    // flag that changes nothing on screen — say where the switch is instead.
+    if (isFlangeMountedTcp(this._scene.getObject(id))) {
+      this._uiView.showToast('The TCP is drawn with its arm — toggle the robot to show or hide it.', { type: 'warn' })
+      return
+    }
     // The eye writes ONE axis — `explicit`, "always show this" (ADR-096). It no
     // longer paints: SceneService composes it with the selection-owned
     // `contextual` axis and is the only thing that touches a mesh view. Writing

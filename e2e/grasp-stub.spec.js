@@ -282,6 +282,77 @@ test('S11b — 腕が届かない配置では、近似は出さず rest のま�
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
+test('S12 — TCP の印は腕と一緒にプレビュー姿勢へ行き、候補の点に立つ (ADR-151 D2)', async ({ page }) => {
+  // 当事者の報告「tcp のラベルとロボットゴーストの tcp が離れている」への 1:1 の回帰。
+  // 以前の印はシーンの tcp 実体で、辺 robot_base → tcp に休止姿勢の FK を焼き込んで
+  // いたので、腕が候補の姿勢を取っても動かなかった。いまの印は腕の wrist_3_link の子で、
+  // 取付け (tool0 → tcp) に立つ — だから候補を解いた腕なら、印はその候補の点に居る。
+  //
+  // **同じ要求を 2 回通す** (#1 → #2 → #1)。入力が毎回変わる検査は 1 フレーム古い状態を
+  // 読む欠陥を隠す (ADR-098 → ADR-101)。最後に探索をやり直して rest へ戻ることも問う。
+  // 読むのは THREE が合成した行列から取った印の世界位置 (tcpState) で、意図では緑にならない。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await expect(page.getByText('工程レイアウトを選んで始める')).toBeVisible()
+  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click()
+  await expect(page.getByText('工程レイアウトを選んで始める')).not.toBeVisible()
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length)
+    .toBe(1)
+  await selectRow(page, 'robot_base')
+  await page.keyboard.press('n')
+  await page.getByRole('button', { name: /Grasp candidates/ }).click()
+  await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
+  // The part bin, by name — not "the first option": the first is the whole
+  // worktable, whose candidates stand beside the pedestal where no UR5e pose
+  // exists, and a check whose arm never moves asks nothing (see `posed` below).
+  await page.locator('select').filter({ hasText: /pick one of/ }).first().selectOption('part_bin')
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+
+  const tcp = () => page.evaluate(() => window.__easyExtrude.tcpState())
+  const arm = () => page.evaluate(() => window.__easyExtrude.armPreview())
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
+  const TOL_MM = 1   // the client's closed form realises the candidate pose exactly (ADR-147)
+
+  const rest = (await tcp()).robots[0]
+  expect(dist(rest.marker, rest.sceneTcp), '休止姿勢で印とシーンの tcp が離れている').toBeLessThan(TOL_MM)
+
+  let posed = 0
+  for (const rank of [1, 2, 1]) {
+    await page.getByText(new RegExp(`^#${rank}$`)).click()
+    await expect.poll(async () => (await tcp()).selectedCandidateTcp !== null).toBe(true)
+    const ids = Object.keys(await arm())
+    // Whether THIS candidate poses the arm is the client solver's answer, not ours.
+    // Posed → the marker must be on the candidate; rested → it must be at rest.
+    await page.waitForTimeout(300)
+    const unverified = (await arm())[ids[0]].unverified
+    if (unverified) {
+      posed++
+      await expect.poll(async () => {
+        const s = await tcp()
+        return dist(s.robots[0].marker, s.selectedCandidateTcp)
+      }, { message: `#${rank}: 腕は候補を取ったのに印が候補の点に居ない` }).toBeLessThan(TOL_MM)
+    } else {
+      const s = await tcp()
+      expect(dist(s.robots[0].marker, s.robots[0].sceneTcp), `#${rank}: 腕は rest なのに印が rest に居ない`)
+        .toBeLessThan(TOL_MM)
+    }
+  }
+  expect(posed, '腕が一度も候補を取らなかった — この検査は何も問えていない (母集団 0)').toBeGreaterThanOrEqual(2)
+
+  // A new run clears the preview (ADR-059 §B-5): the arm rests, and the marker with it.
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+  await expect.poll(async () => {
+    const s = (await tcp()).robots[0]
+    return dist(s.marker, s.sceneTcp)
+  }, { message: '探索をやり直しても印が rest に戻らない' }).toBeLessThan(TOL_MM)
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
+
 test('S10 — 掴む場所は「言っていない」が画面に出て、宣言すると文が変わる (ADR-128 / ADR-119 D2)', async ({ page }) => {
   // 沈黙には欄が無い (原則 #31)。導出に落ちたことが画面に出ていなければ、ユーザーは
   // 自分が「どこを掴むか」を一度も言っていないことに気づけない。宣言と沈黙が *同じ*

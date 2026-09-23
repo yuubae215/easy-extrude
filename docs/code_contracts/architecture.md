@@ -1133,3 +1133,20 @@ The desktop onboarding tour (`uiStore.tour`, quest card + anchor pulse) is the o
   `GraspController._resolveRobotDeclaration` と `HitTestService.hitRobotStage` は
   2026-07-25 にこの述語へ寄せた。
 - **射程外**: `*.test.js` の fixture (述語に食わせるデータであって規則の再実装ではない)。
+
+## A Robot's TCP Stores Only the Tool Mount; Its World Pose Is Derived (ADR-151)
+
+**Rule.** A robot `tcp` frame declared `mountedOn:'flange'` stores exactly one fact: the tool mount `tool0 → tcp` (translation mm + rotation, in the FLANGE frame). It is the interface the robot (IK target) and the gripper (grasp point) share, so it stays a named entity that Context relations can point at. Everything else about it is derived:
+
+- world pose = base ∘ `FLANGE_REST_POSE` (URDF FK at rest, injected) ∘ mount — composed ONLY in `SceneService._throughFlange`;
+- `robot.toolLength` / `robot.tcpOrientation` on the wire — from `toolMountOf(robot)` and that world pose (`GraspController._resolveRobotDeclaration`);
+- the drawn tool and TCP marker — `RobotStage._attachTool`, children of `wrist_3_link`, from the same mount (`RobotStageSet.setToolMount`, synced per frame).
+
+**Do / don't.**
+- Ask `isFlangeMountedTcp` / `isLegacyBaseRelativeTcp` / `isTcpMountedOn` (`domain/robotFrames.js`); never compare `mountedOn` inline — `src/IdentityContainment.test.js` fails the build.
+- A tcp WITHOUT `mountedOn` is the pre-ADR-151 shape (base-relative rest pose). Only `_upgradeLegacyRobotFrames` reads it: it resets the value to `DEFAULT_TOOL_MOUNT`, keeps the entity/id/relations, and emits `robotTcpMountReset(count)` (toasted). Do not convert the old value.
+- Stage 1 (DEF-045): every hand-edit entrance (grab, drag, R, N-panel fields, re-parent, mobile toolbar) asks `toolMountEditBlockedReason` and shows its reason; a non-axial mount or a robot with no tcp stops grasp search via `toolMountGap` — never `?? TOOL_LENGTH_M` / `?? 0`.
+- The tcp frame view is never drawn (`applyEntityVisibility`); its `explicit` axis is derived from the robot base, and `setExplicitVisible` announces the derived change so the row follows the arm.
+
+**Why.** Before ADR-151 the `robot_base → tcp` edge held the rest-pose forward kinematics — a derived value stored as an edge — so the scene's TCP stood still while the previewed arm moved, and sat 150 mm short of the tool tip at rest. See `docs/adr/ADR-151-the-tcp-is-derived-from-the-tool-mount-not-stored-in-the-scene.md`; e2e evidence `e2e/tcp-mount.spec.js` + `e2e/grasp-stub.spec.js` S12.
+

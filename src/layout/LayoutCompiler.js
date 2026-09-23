@@ -296,6 +296,9 @@ function generateObjects(entities, refMap, positions) {
         //     `rotation` are the LOCAL offset from the referenced parent;
         //     _updateWorldPoses composes the parent chain to derive the world
         //     pose (identical machinery as a Solid's child frames).
+        //   • A robot tcp with `mountedOn:'flange'` (ADR-151) is the exception:
+        //     its `position` + `rotation` are the TOOL MOUNT (`tool0 → tcp`), and
+        //     the scene composes them through the robot's flange at rest.
         const id       = refMap.get(entity.ref)
         const parentId = entity.parentRef ? (refMap.get(entity.parentRef) ?? null) : null
         const pos = entity.position ?? entity.translation ?? { x: 0, y: 0, z: 0 }
@@ -309,6 +312,9 @@ function generateObjects(entities, refMap, positions) {
           // for an ordinary frame; a legacy DSL that names a robot without the
           // role still resolves through the name path in domain/robotFrames.js.
           robotRole:   entity.robotRole ?? null,
+          // ADR-151: a tcp's `position` / `rotation` are the tool mount
+          // (`tool0 → tcp`) when this says 'flange'.
+          mountedOn:   entity.mountedOn ?? null,
           translation: { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 },
           rotation:    entity.rotation ?? IDENTITY_QUATERNION,
         })

@@ -169,6 +169,27 @@ export class RobotStageSet {
   }
 
   /**
+   * Hand one robot's tool mount (`tool0 → tcp`, ADR-151) to its stage, which
+   * draws the tool and the TCP marker from it. Keyed by robot id like `setPose`,
+   * so with N robots each arm carries its own tool. Idempotent per stage.
+   * @param {string} id
+   * @param {{translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null} mount
+   */
+  setToolMount(id, mount) {
+    this._stages.get(id)?.setToolMount(mount)
+  }
+
+  /**
+   * World position of one robot's TCP marker, or null (no such robot / no
+   * mount) — read-only, for the e2e that checks the marker rides the tool tip.
+   * @param {string} id
+   * @returns {{x:number,y:number,z:number}|null}
+   */
+  tcpMarkerWorldPosition(id) {
+    return this._stages.get(id)?.tcpMarkerWorldPosition() ?? null
+  }
+
+  /**
    * **The one entry point deciding which arm is posed into a candidate's
    * solution** (ADR-135 D3, extended to the N-robot seat).
    *

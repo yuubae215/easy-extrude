@@ -16,7 +16,9 @@ import { basisFromZ, flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.
 import { forwardKinematics as urForwardKinematics } from '../robotics/urKinematics.js'
 import { renderableEndEffectorFrame } from '../view/GraspGhostMath.js'
 import { GraspController } from './GraspController.js'
-import { TOOL_LENGTH_M } from '../domain/robotTool.js'
+import {
+  TOOL_LENGTH_M, DEFAULT_TOOL_MOUNT, TOOL_MOUNT_UNDECLARED_REASON, TOOL_MOUNT_NOT_AXIAL_REASON,
+} from '../domain/robotTool.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 import { BffUnavailableError } from '../service/BffClient.js'
@@ -109,10 +111,21 @@ const ROBOT_POSES = {
   robot_base: { position: { x: -2000, y: 2000, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
   tcp:        { position: { x: -2000, y: 2000, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } },
 }
+/**
+ * A tcp as ADR-151 stores it: the tool mount (`tool0 → tcp`, mm), declared as
+ * measured from the flange. Fresh objects per call so a test can bend one.
+ */
+function mountFields(mount = DEFAULT_TOOL_MOUNT) {
+  return {
+    mountedOn:   'flange',
+    translation: { ...mount.translation },
+    rotation:    { ...mount.rotation },
+  }
+}
 function fakeRobotScene() {
   const objects = new Map([
     ['f_base', { id: 'f_base', name: 'robot_base', parentId: null }],
-    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: 'f_base' }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: 'f_base', ...mountFields() }],
   ])
   const poseById = { f_base: ROBOT_POSES.robot_base, f_tcp: ROBOT_POSES.tcp }
   return {
@@ -742,9 +755,9 @@ test('a robot-less scene lands in no-robot and never reaches the BFF (ADR-090 De
 function fakeTwoRobotScene() {
   const objects = new Map([
     ['f_base', { id: 'f_base', name: 'robot_base',   parentId: null,    robotRole: 'base' }],
-    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',          parentId: 'f_base', robotRole: 'tcp' }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',          parentId: 'f_base', robotRole: 'tcp', ...mountFields() }],
     ['g_base', { id: 'g_base', name: 'robot_base_2', parentId: null,    robotRole: 'base' }],
-    ['g_tcp',  { id: 'g_tcp',  name: 'tcp_2',        parentId: 'g_base', robotRole: 'tcp' }],
+    ['g_tcp',  { id: 'g_tcp',  name: 'tcp_2',        parentId: 'g_base', robotRole: 'tcp', ...mountFields() }],
   ])
   // mm (world-units, ADR-136) — see ROBOT_POSES above.
   const poseById = {
@@ -824,24 +837,63 @@ test('refreshRobots publishes the roster as a labelled read-model', () => {
   assert.deepEqual(robots.list, [{ id: 'f_base', label: 'robot_base', hasTcp: true }])
 })
 
-test('a legacy world-parented tcp (parentId null) still resolves via the name fallback', async () => {
+test('a pre-ADR-151 tcp (no mount declared) never reaches the wire — the upgrade is what makes it usable', async () => {
   let sent = null
   const bff = {
     async compileLayout() { return { objects: [] } },
     async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
   }
-  // Robot scene where tcp predates the TF-tree revision — still world-parented.
+  // A tcp that predates both the TF-tree revision (world-parented) and ADR-151
+  // (its transform is a base-relative rest pose, not a tool mount). The robot
+  // still RESOLVES through the legacy name path — but its tool length cannot be
+  // read off a value that was never a mount, so the request is refused rather
+  // than sent with an invented 150 mm (原則 #31). In the app the scene-entry
+  // upgrade has already replaced it by the time anyone searches.
   const objects = new Map([
     ['f_base', { id: 'f_base', name: 'robot_base', parentId: null }],
     ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: null }],
   ])
   const poseById = { f_base: ROBOT_POSES.robot_base, f_tcp: ROBOT_POSES.tcp }
-  const { gc } = setup({ bff, robotScene: false })
+  const { gc, grasp } = setup({ bff, robotScene: false })
   gc._ctrl._scene = { objects }
   gc._ctrl._service.worldPoseOf = (id) => poseById[id] ?? null   // keep bff / connectBff
   await gc.runGraspSearch({})
-  assert.deepEqual(sent.graspSearch.robot,
-    { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1], toolLength: TOOL_LENGTH_M })
+  assert.equal(sent, null)
+  assert.equal(grasp().status, 'no-robot')
+  assert.equal(grasp().reason, TOOL_MOUNT_UNDECLARED_REASON)
+})
+
+test('the tool length on the wire IS the robot\'s own mount, not the default (ADR-151 D1)', async () => {
+  const rec = recordingBff()
+  const { gc } = setup({ bff: rec.bff })
+  const tcp = gc._ctrl._scene.objects.get('f_tcp')
+  tcp.translation.z = 212.5          // a 212.5 mm tool, declared on the tcp
+  await gc.runGraspSearch({})
+  assert.equal(rec.sent.graspSearch.robot.toolLength, 0.2125)
+})
+
+test('a robot with no tcp is refused with a reason — no default tool is sent (ADR-151 D7)', async () => {
+  const rec = recordingBff()
+  const { gc, grasp } = setup({ bff: rec.bff })
+  gc._ctrl._scene.objects.delete('f_tcp')
+  await gc.runGraspSearch({})
+  assert.equal(rec.sent, null)
+  assert.equal(grasp().status, 'no-robot')
+  assert.equal(grasp().reason, TOOL_MOUNT_UNDECLARED_REASON)
+})
+
+test('a mount that is not straight along the flange +Z is refused until stage 2 (DEF-045)', async () => {
+  for (const bend of [
+    (t) => { t.translation.x = 30 },                                  // offset TCP
+    (t) => { t.rotation.z = Math.SQRT1_2; t.rotation.w = Math.SQRT1_2 },  // rotated TCP
+  ]) {
+    const rec = recordingBff()
+    const { gc, grasp } = setup({ bff: rec.bff })
+    bend(gc._ctrl._scene.objects.get('f_tcp'))
+    await gc.runGraspSearch({})
+    assert.equal(rec.sent, null)
+    assert.equal(grasp().reason, TOOL_MOUNT_NOT_AXIAL_REASON)
+  }
 })
 
 test('an undeclared camera / gripper omits the key entirely (vacuously-true gate)', async () => {

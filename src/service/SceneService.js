@@ -57,9 +57,11 @@ import {
   visibilityKindOf, defaultExplicit, composeVisibility,
 } from '../view/VisibilityAxes.js'
 import {
-  ROBOT_ROLE, Robot, isRobotRole, isRobotBaseFrame,
+  ROBOT_ROLE, TCP_MOUNTED_ON, Robot, isRobotRole, isRobotBaseFrame, isTcpMountedOn,
+  isFlangeMountedTcp, isLegacyBaseRelativeTcp,
   resolveRobots, robotBaseSeedPose, nextRobotBaseName, nextRobotTcpName,
 } from '../domain/robotFrames.js'
+import { DEFAULT_TOOL_MOUNT, toolMountEditBlockedReason } from '../domain/robotTool.js'
 import {
   ORIGIN_FRAME_NAME, isOriginFrame, isOriginFrameName, findOriginFrame,
 } from '../domain/originFrame.js'
@@ -130,22 +132,34 @@ function _xyPointInPolygon(px, py, poly) {
   return inside
 }
 
+/**
+ * The flange pose used when no arm model is injected (headless / node tests):
+ * the flange coincides with the base. Declared rather than defaulted inline so
+ * "no arm" is a named answer, not an accident of `?? identity` (原則 #31).
+ */
+const NO_ARM_FLANGE_POSE = Object.freeze({
+  position:   Object.freeze({ x: 0, y: 0, z: 0 }),
+  quaternion: Object.freeze({ x: 0, y: 0, z: 0, w: 1 }),
+})
+
 export class SceneService extends EventEmitter {
   /**
    * @param {import('three').Scene} threeScene  Three.js scene used for MeshView creation/disposal
-   * @param {{ tcpSeed?: {x:number,y:number,z:number}|null }} [opts]  ADR-088: the
-   *   tcp frame's default LOCAL translation, DERIVED from the URDF flange FK at the
-   *   shared rest pose and injected by the browser composition root (AppController
-   *   ← view/robotSkeleton.js). Absent in headless/test contexts (no skeleton is
-   *   rendered), where tcp then seeds at the base origin — the correct "no arm"
-   *   default. Never a hand-copied constant (§1.1).
+   * @param {{ flangeRestPose?: {position:{x:number,y:number,z:number},
+   *   quaternion:{x:number,y:number,z:number,w:number}}|null }} [opts]  ADR-151: the
+   *   flange (tool0) pose at the shared rest pose in the robot BASE frame (mm),
+   *   DERIVED from the URDF FK and injected by the browser composition root
+   *   (AppController ← view/robotSkeleton.js). Each robot's tcp stores only its
+   *   tool mount (`tool0 → tcp`), and `_updateWorldPoses` composes it through this
+   *   pose. Absent in headless/test contexts, where no arm is drawn: the flange is
+   *   then DECLARED to coincide with the base (`NO_ARM_FLANGE_POSE`) — the same
+   *   "no arm" answer the pre-ADR-151 seed gave. Never a hand-copied constant.
    */
   constructor(threeScene, opts = {}) {
     super()
     this._threeScene = threeScene
     this._model      = new SceneModel()
-    /** @type {{x:number,y:number,z:number}|null} */
-    this._tcpSeed    = opts.tcpSeed ?? null
+    this._flangeRestPose = opts.flangeRestPose ?? NO_ARM_FLANGE_POSE
     /** @type {BffClient|null} */
     this._bff        = null
     /** Server-assigned scene id when synced with the BFF. */
@@ -1041,7 +1055,8 @@ export class SceneService extends EventEmitter {
     if (!parent) return new Quaternion()
     if (parent instanceof CoordinateFrame) {
       const cached = this._worldPoseCache.get(parent.id)
-      return cached ? cached.quaternion.clone() : new Quaternion()
+      if (!cached) return new Quaternion()
+      return this._throughFlange(frame, parent, cached.position.clone(), cached.quaternion.clone()).quaternion
     }
     // Solid parent
     return parent.orientation.clone()
@@ -1059,11 +1074,42 @@ export class SceneService extends EventEmitter {
     if (!parent) return new Vector3()
     if (parent instanceof CoordinateFrame) {
       const cached = this._worldPoseCache.get(parent.id)
-      return cached ? cached.position.clone() : new Vector3()
+      if (!cached) return new Vector3()
+      return this._throughFlange(frame, parent, cached.position.clone(), cached.quaternion.clone()).position
     }
     // Solid parent: ADR-040 _position is the authoritative exact centroid (PHILOSOPHY #24).
     // Never use avg(corners) — FP rounding accumulates each frame and causes slow divergence.
     return parent._position.clone()
+  }
+
+  /**
+   * The frame a child's stored transform is measured FROM, given its parent's
+   * world pose (ADR-151). For every frame but one that is the parent itself. A
+   * flange-mounted tcp stores the TOOL MOUNT (`tool0 → tcp`), so it is measured
+   * from its robot's flange: base ∘ flange-at-rest. The arm's joint edges are not
+   * in the scene tree, and their rest-pose composition enters it here and only
+   * here — derived from the injected URDF pose on every call, never stored.
+   *
+   * Pure over its arguments (returns new objects; mutates nothing it is handed
+   * beyond the clones the callers pass in).
+   *
+   * @param {CoordinateFrame} frame
+   * @param {object} parent
+   * @param {import('three').Vector3} parentWorldPos
+   * @param {import('three').Quaternion} parentWorldQuat
+   * @returns {{position: import('three').Vector3, quaternion: import('three').Quaternion}}
+   */
+  _throughFlange(frame, parent, parentWorldPos, parentWorldQuat) {
+    if (!isFlangeMountedTcp(frame) || !isRobotBaseFrame(parent)) {
+      return { position: parentWorldPos, quaternion: parentWorldQuat }
+    }
+    const f = this._flangeRestPose
+    const offset = new Vector3(f.position.x, f.position.y, f.position.z).applyQuaternion(parentWorldQuat)
+    const flangeQuat = new Quaternion(f.quaternion.x, f.quaternion.y, f.quaternion.z, f.quaternion.w)
+    return {
+      position:   parentWorldPos.clone().add(offset),
+      quaternion: parentWorldQuat.clone().multiply(flangeQuat),
+    }
   }
 
   /**
@@ -1120,8 +1166,10 @@ export class SceneService extends EventEmitter {
       if (parent instanceof CoordinateFrame) {
         const cached = this._worldPoseCache.get(parent.id)
         if (!cached) continue               // parent not yet resolved (shouldn't happen after sort)
-        parentWorldPos  = cached.position.clone()
-        parentWorldQuat = cached.quaternion.clone()
+        // A flange-mounted tcp is measured from the flange, not the base (ADR-151).
+        const from = this._throughFlange(frame, parent, cached.position.clone(), cached.quaternion.clone())
+        parentWorldPos  = from.position
+        parentWorldQuat = from.quaternion
       } else {
         // Solid parent: ADR-040 _position is the authoritative exact centroid (PHILOSOPHY #24).
         // Clone so that downstream applyQuaternion / add calls never mutate the Solid's own Vector3.
@@ -2116,6 +2164,9 @@ export class SceneService extends EventEmitter {
     const frame = this._model.getObject(frameId)
     if (!(frame instanceof CoordinateFrame)) return false
     if (isOriginFrame(frame)) return false
+    // The tool mount is measured from its robot's flange (ADR-151): moving the
+    // tcp under another parent would re-read the mount against a different frame.
+    if (this.toolMountEditBlockedReason(frame)) return false
 
     const newParent = this._model.getObject(newParentId)
     if (!newParent) return false
@@ -2645,6 +2696,8 @@ export class SceneService extends EventEmitter {
    */
   checkMoveGuardrail(selectedIds) {
     for (const id of selectedIds) {
+      const mountBlocked = this.toolMountEditBlockedReason(this._model.getObject(id))
+      if (mountBlocked) return { blocked: true, message: mountBlocked }
       for (const link of this.getLinksOf(id)) {
         const peerId = link.sourceId === id ? link.targetId : link.sourceId
         if (selectedIds.has(peerId)) continue
@@ -2675,6 +2728,17 @@ export class SceneService extends EventEmitter {
       }
     }
     return { blocked: false, message: '' }
+  }
+
+  /**
+   * Why this entity's transform cannot be edited by hand, or null (ADR-151) —
+   * delegates to the one predicate in `domain/robotTool.js` so service-side
+   * entrances (guardrail, re-parent) and the controller ask the same question.
+   * @param {object|null|undefined} obj
+   * @returns {string|null}
+   */
+  toolMountEditBlockedReason(obj) {
+    return toolMountEditBlockedReason(obj)
   }
 
   /**
@@ -3671,35 +3735,49 @@ export class SceneService extends EventEmitter {
   }
 
   /**
-   * One-time migration of pre-ADR-090 / pre-ADR-085 robot frames: stamp the
-   * declared `robotRole` onto the frames the legacy name path resolves, and
-   * re-home a world-parented `tcp` under its base.
+   * One-time migration of pre-ADR-090 / pre-ADR-085 / pre-ADR-151 robot frames:
+   * stamp the declared `robotRole` onto the frames the legacy name path resolves,
+   * re-home a world-parented `tcp` under its base, and replace a base-relative
+   * tcp transform with the tool mount.
+   *
+   * The ADR-151 step: before it, a tcp's stored transform was `robot_base → tcp`
+   * — the rest-pose forward kinematics baked in as an edge (a derived value
+   * stored as a fact). It is NOT converted: it never decided anything (`core/`
+   * reads `tcpOrientation` only for an arm with no declared kinematics, and every
+   * shipped arm declares them), and converting an arbitrary base-relative value
+   * would manufacture an offset/rotated mount nobody declared. It is replaced by
+   * `DEFAULT_TOOL_MOUNT` — the entity, its id, its name and every relation
+   * pointing at it survive — and the count is announced (`robotTcpMountReset`),
+   * never silent (原則 #11).
    *
    * Resolution comes from `getRobots()` — which understands both the declared
    * role and the legacy names — so this method never asks "is this robot_base?"
    * itself (§1.1: the identity rule has one owner).
    */
   _upgradeLegacyRobotFrames() {
+    let reset = 0
     for (const robot of this.getRobots()) {
       const base = robot.baseFrame
       const tcp  = robot.tcpFrame
       this._setRobotRole(base, ROBOT_ROLE.BASE)
       if (!tcp) continue
       this._setRobotRole(tcp, ROBOT_ROLE.TCP)
-      if (tcp.parentId === null && tcp.id !== base.id) {
-        // Lossless upgrade of a legacy scene (tcp saved as a world-parented frame
-        // before the TF-tree revision): re-home it under its base while
-        // preserving its current world pose (reparentFrame back-derives the local
-        // translation/rotation from the world-pose cache).
-        //
-        // This runs on scene-entry paths BEFORE the outer _updateWorldPoses() pass
-        // (importFromJson / loadScene), so the cache would otherwise be stale and
-        // collapse a moved tcp onto the base. Refresh it first so the world pose is
-        // truly preserved.
-        this._updateWorldPoses()
-        this.reparentFrame(tcp.id, base.id)
-      }
+      if (!isLegacyBaseRelativeTcp(tcp)) continue
+      // Legacy scene (tcp saved as a world-parented frame before the TF-tree
+      // revision, ADR-085): re-home it under its base through the one re-parent
+      // entry, so `frameReparented` reaches the Outliner (原則 #1/#18). Its pose
+      // is replaced just below, so the world pose reparentFrame preserves does
+      // not matter — and it must run BEFORE `mountedOn` is set, after which
+      // re-parenting a tcp is refused.
+      if (tcp.parentId === null && tcp.id !== base.id) this.reparentFrame(tcp.id, base.id)
+      tcp.mountedOn = TCP_MOUNTED_ON.FLANGE
+      tcp.translation.set(DEFAULT_TOOL_MOUNT.translation.x, DEFAULT_TOOL_MOUNT.translation.y, DEFAULT_TOOL_MOUNT.translation.z)
+      tcp.rotation.set(DEFAULT_TOOL_MOUNT.rotation.x, DEFAULT_TOOL_MOUNT.rotation.y, DEFAULT_TOOL_MOUNT.rotation.z, DEFAULT_TOOL_MOUNT.rotation.w)
+      this._announceTcpAxisOf(tcp)
+      reset++
     }
+    if (reset > 0) this.emit('robotTcpMountReset', reset)
+    return reset
   }
 
   /**
@@ -3710,15 +3788,10 @@ export class SceneService extends EventEmitter {
    *
    * The base lands at the ADR-083 default pose, offset per robot already present
    * so a second arm does not spawn inside the first. The tcp is a CHILD of the
-   * base (TF tree world → base → tcp, ADR-084 §2 revised): the tool point is
-   * expressed in the robot's own frame, so moving/rotating the base carries it
-   * along. createCoordinateFrame seeds it at local (0,0,0); it is then placed at
-   * the skeleton's flange (tool0) so the tool point defaults to the arm's HAND,
-   * not buried in the base. That flange position is the injected `_tcpSeed` —
-   * DERIVED from the URDF FK at the shared rest pose (ADR-088), never a
-   * hand-copied constant. When absent (headless/test, no skeleton drawn), tcp
-   * stays at the base origin. _updateWorldPoses composes it through the base into
-   * the world pose the marker renders at.
+   * base in the scene (that pairs it with its robot) and stores the TOOL MOUNT
+   * (`tool0 → tcp`, ADR-151): `_updateWorldPoses` composes it through the flange
+   * at rest, so the tool point defaults to the tip of the drawn tool, not the
+   * flange (the pre-ADR-151 seed stood 150 mm short) and not the base.
    *
    * Every robot born here is `userAdded` and therefore VISIBLE (ADR-096
    * §Decision 3): a gesture that produces nothing visible is the worst failure
@@ -3752,7 +3825,16 @@ export class SceneService extends EventEmitter {
     const tcp = this.createCoordinateFrame(base.id, nextRobotTcpName(objects), null)
     if (tcp) {
       this._setRobotRole(tcp, ROBOT_ROLE.TCP)
-      if (this._tcpSeed) tcp.translation.set(this._tcpSeed.x, this._tcpSeed.y, this._tcpSeed.z)
+      // The tcp is the robot/gripper interface: its transform is the TOOL MOUNT
+      // (`tool0 → tcp`), measured from the flange (ADR-151).
+      tcp.mountedOn = TCP_MOUNTED_ON.FLANGE
+      const m = DEFAULT_TOOL_MOUNT
+      tcp.translation.set(m.translation.x, m.translation.y, m.translation.z)
+      tcp.rotation.set(m.rotation.x, m.rotation.y, m.rotation.z, m.rotation.w)
+      this.applyEntityVisibility(tcp.id)
+      // Its row seeded at `objectAdded`, before the mount existed — as an
+      // ordinary frame. Announce the derived axis (the ADR-132 shape again).
+      this._announceTcpAxisOf(tcp)
     }
 
     return new Robot(base, tcp ?? null)
@@ -3811,6 +3893,24 @@ export class SceneService extends EventEmitter {
     if (!obj) return
     this._explicitVisible.set(obj, visible)
     this.applyEntityVisibility(id)
+    // A robot's tcp derives its axis from the base (ADR-151): announce the
+    // derived change so the tcp row follows the arm rather than a snapshot.
+    this._announceTcpAxisOf(obj)
+  }
+
+  /**
+   * Emit `explicitVisibilityChanged` for every flange-mounted tcp whose derived
+   * axis reads through `frame` — the frame itself if it is one, else its tcp
+   * children. The obligation belongs to the write that changes the answer
+   * (原則 #32), not to whoever remembers to refresh the row.
+   * @param {object|null|undefined} frame
+   */
+  _announceTcpAxisOf(frame) {
+    if (!frame) return
+    const tcps = isFlangeMountedTcp(frame)
+      ? [frame]
+      : [...this._model.objects.values()].filter(o => o.parentId === frame.id && isFlangeMountedTcp(o))
+    for (const tcp of tcps) this.emit('explicitVisibilityChanged', tcp.id, this._explicitVisibleOf(tcp))
   }
 
   /**
@@ -3913,6 +4013,17 @@ export class SceneService extends EventEmitter {
       return
     }
 
+    // A flange-mounted tcp is drawn by its ARM (RobotStage — the marker rides
+    // the tool on `wrist_3_link`, in every pose), never by its own frame view:
+    // the frame view can only stand at the rest-pose composition, so drawing it
+    // too puts two TCPs on screen the moment the arm previews a candidate — the
+    // defect ADR-151 exists to remove. One owner of the TCP's pixels (原則 #4).
+    if (isFlangeMountedTcp(obj)) {
+      obj.meshView.applyVisibility(composeVisibility({ explicit: false, contextual: null }))
+      obj.meshView.hideConnection()
+      return
+    }
+
     obj.meshView.applyVisibility(composed)
     // The dashed line to the parent's origin follows the frame it belongs to.
     // A world-parented root (robot_base) has no parent to draw to — the segment
@@ -3934,6 +4045,14 @@ export class SceneService extends EventEmitter {
    * @returns {boolean}
    */
   _explicitVisibleOf(obj) {
+    // A flange-mounted tcp has no pixels of its own — its marker is part of its
+    // arm (ADR-151), and the arm follows the ROBOT's axis. So the tcp's axis is
+    // DERIVED from its base's rather than stored: a row that said "hidden" over
+    // a drawn marker would be ADR-096 G1 broken again.
+    if (isFlangeMountedTcp(obj)) {
+      const base = this._model.getObject(obj.parentId)
+      return base ? this._explicitVisibleOf(base) : false
+    }
     if (this._explicitVisible.has(obj)) return this._explicitVisible.get(obj)
     return defaultExplicit(this._visibilityKindOf(obj, VISIBILITY_ENTRY.SEED))
   }
@@ -4007,7 +4126,7 @@ function orderFramesParentFirst(frames) {
 }
 
 /**
- * Restores a deserialized frame's robot TF role (ADR-090), validating the value
+ * Restores a deserialized frame's robot TF role (ADR-090) and tcp mount (ADR-151), validating the value
  * against the declared vocabulary — an unknown / missing key leaves it null, so
  * pre-ADR-090 saves load as ordinary frames and the legacy name path in
  * `robotFrames.js` picks the single robot up. Pure (mutates only its argument).
@@ -4017,6 +4136,10 @@ function orderFramesParentFirst(frames) {
  */
 function _restoreRobotRole(frame, dto) {
   if (isRobotRole(dto.robotRole)) frame.robotRole = dto.robotRole
+  // ADR-151: what the tcp's transform is measured from. Absent / unknown stays
+  // null — the pre-ADR-151 shape the scene-entry upgrade replaces, never a
+  // silently assumed mount (原則 #31).
+  if (isTcpMountedOn(dto.mountedOn)) frame.mountedOn = dto.mountedOn
 }
 
 /**

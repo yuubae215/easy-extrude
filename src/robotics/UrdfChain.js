@@ -156,17 +156,25 @@ export function restPoseToQ(chain, restPose = {}) {
 }
 
 /**
- * DERIVE the tcp flange seed: the base-frame position of the tool flange (the
- * last link's origin) at the given rest pose, by forward kinematics of the URDF.
- * This is the single-source replacement for ADR-084's hand-copied
- * `ROBOT_FRAME_DEFAULTS[tcp]` constant (ADR-088).
+ * DERIVE the flange (tool0) pose at the given rest pose, in the base frame, by
+ * forward kinematics of the URDF — position AND orientation (ADR-151).
+ *
+ * Replaces ADR-088's position-only `deriveFlangeSeed`: that seed was baked into
+ * the scene as the `robot_base → tcp` edge, i.e. a DERIVED value stored as an
+ * edge. Since ADR-151 the scene stores only the tool mount (`tool0 → tcp`) and
+ * composes the tcp's world pose through this flange pose, which therefore needs
+ * its orientation too — the mount is expressed in the flange frame.
  *
  * @param {string} urdfText
  * @param {Record<string, number>} restPose  { jointName: angle(rad) }
- * @returns {{ x:number, y:number, z:number }}  base-frame flange position
+ * @returns {{ position: {x:number,y:number,z:number}, quaternion: {x:number,y:number,z:number,w:number} }}
+ *   base-frame flange pose, METERS (URDF units)
  */
-export function deriveFlangeSeed(urdfText, restPose) {
+export function deriveFlangeRestPose(urdfText, restPose) {
   const chain = parseUrdfChain(urdfText)
-  const { position } = forwardKinematics(chain, restPoseToQ(chain, restPose))
-  return { x: position.x, y: position.y, z: position.z }
+  const { position, quaternion } = forwardKinematics(chain, restPoseToQ(chain, restPose))
+  return {
+    position:   { x: position.x, y: position.y, z: position.z },
+    quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+  }
 }

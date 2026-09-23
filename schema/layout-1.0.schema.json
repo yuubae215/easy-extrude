@@ -206,6 +206,12 @@
             "tcp"
           ]
         },
+        "mountedOn": {
+          "description": "ADR-151: what a robot tcp's `position`/`rotation` are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp) — the end effector's own fact and the interface the robot and its end effector share; the world pose is derived (base ∘ flange-at-rest ∘ mount), never stored. Absent on a pre-ADR-151 tcp, whose base-relative value the importer replaces with the default mount and announces (the entity and every relation to it survive).",
+          "enum": [
+            "flange"
+          ]
+        },
         "graspFeature": {
           "$ref": "#/$defs/graspFeature"
         },

@@ -232,10 +232,11 @@
           "ref": "robot_tcp",
           "type": "CoordinateFrame",
           "name": "tcp",
-          "description": "産業用ロボットの TCP。既定レストポーズでのフランジ位置 (Shift+A で追加するロボットと同じ既定値)。",
+          "description": "産業用ロボットの TCP — ロボットとグリッパが共有するインタフェース。position はツールの取付け (tool0 → tcp、フランジ座標系) で、既定のグリッパはフランジ +Z に 150 mm (Shift+A で追加するロボットと同じ既定値)。世界での位置は腕の姿勢から導出される (ADR-151)。",
           "robotRole": "tcp",
           "parentRef": "robot_base",
-          "position": { "x": -716.58, "y": -133.30, "z": 345.56 }
+          "mountedOn": "flange",
+          "position": { "x": 0, "y": 0, "z": 150 }
         },
         {
           "ref": "container_a",

@@ -110,7 +110,18 @@ UR5e: `d1=0.1625, a2=−0.425, a3=−0.3922, d4=0.1333, d5=0.0997, d6=0.0996`。
 
 $$x_f = x_c,\qquad z_f = a = -z_c,\qquad y_f = z_f \times x_f = -y_c,\qquad p_f = p_{tcp} - L\,a .$$
 
-L は `robot.toolLength` (未宣言 = 0 = ADR-150 以前の「フランジ = TCP」)。
+L は `robot.toolLength` (未宣言 = 0 = ADR-150 以前の「フランジ = TCP」)。フロントは L を
+**そのロボットの tcp の取付け** `tool0 → tcp` の +Z 長から導出する (ADR-151 — `axialToolLengthM`)。
+取付けが +Z 方向でない (オフセット・回転つき) ときは上の式が成り立たないので、第一段では
+探索を理由つきで止める。一般形 $p_f = T_{tcp}\,T_{mount}^{-1}$ は第二段 (DEF-045)。
+
+シーンでの tcp の世界姿勢は、腕の関節の辺がシーンの木に無いので休止姿勢で合成する:
+
+$$T_{tcp}^{world} = T_{base}^{world}\;\cdot\;T_{tool0}^{base}(q_{rest})\;\cdot\;T_{tcp}^{tool0}$$
+
+中央の項は URDF の順運動学 (`deriveFlangeRestPose` → `FLANGE_REST_POSE`、導出であって保存しない)、
+右の項が保存される唯一の辺 (取付け)。画面の印は同じ右の項を `wrist_3_link` の子として置くので、
+プレビュー姿勢 $q$ でも $T_{base}\cdot T_{tool0}^{base}(q)\cdot T_{tcp}^{tool0}$ に構成上立つ。
 
 ADR-147 はフランジの x を `basisFromZ(+a)` から**張り直して**おり、閉じ軸がフランジ座標で
 $(-\cos 2r,\ \sin 2r)$ — roll の 2 倍で回っていた。当時「180° 回せばよい、ではない」と

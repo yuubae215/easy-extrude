@@ -66,6 +66,12 @@ round-trip (ADR-055) に関わる非自明・不可逆(スキーマ追加)な判
 
 ### 1. ロボット TF ツリー world → robot_base → tcp(ADR-084 §2 改訂)
 
+> **Superseded by ADR-151 (2026-09-23) — この節の「tcp の変換の意味」のみ**: `tcp` の
+> translation/rotation は base 相対ではなく**ツールの取付け `tool0 → tcp`** (フランジ座標系、
+> `mountedOn:'flange'`)。世界姿勢は base ∘ 休止姿勢のフランジ (URDF FK) ∘ 取付けで導出する。
+> tcp が base の子であること・ロール・基数は不変。
+
+
 - `robot_base`: world 親(root)のまま。既定 world 位置 `[-2,2,0]`(原点中心の初期
   キューブに埋まらない逃げ)を維持 — world gizmo と同じ world 座標系にいる事実は
   従来どおり成立。

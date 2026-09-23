@@ -3,7 +3,7 @@
 - Status: Accepted (実装済)
 - Date: 2026-07-23
 - Deciders: yuubae215, Claude
-- Supersedes / Superseded by: なし（ADR-084 §2 / ADR-085 の tcp seed 実装を精緻化）
+- Supersedes / Superseded by: なし（ADR-084 §2 / ADR-085 の tcp seed 実装を精緻化）。**tcp seed (`TCP_LOCAL_SEED`) は Superseded by ADR-151** — seed は退役し、URDF FK は休止姿勢のフランジ姿勢 `FLANGE_REST_POSE` としてシーンの TF 合成に導出で入る (「源は URDF に一本化」という本 ADR の原則はそのまま引き継がれる)
 
 ## Context — Goal と力学（§1.2 Goal）
 

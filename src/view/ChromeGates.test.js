@@ -2,8 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   gateGrab, gateEdit, gateStack, gateDelete,
-  gateFrameTransform, gateExtrudeRect, gateUndo, gateRedo,
+  gateFrameTransform, gateFrameDelete, gateExtrudeRect, gateUndo, gateRedo,
 } from './ChromeGates.js'
+import { TOOL_MOUNT_EDIT_DEFERRED_REASON } from '../domain/robotTool.js'
 import { Solid }           from '../domain/Solid.js'
 import { ImportedMesh }    from '../domain/ImportedMesh.js'
 import { MeasureLine }     from '../domain/MeasureLine.js'
@@ -72,4 +73,18 @@ test('extrude / undo / redo gates phrase the unmet condition as the next step', 
   assert.match(gateExtrudeRect(false).reason, /rectangle/)
   assert.match(gateUndo(false).reason, /undo/i)
   assert.match(gateRedo(false).reason, /redo/i)
+})
+
+test('a flange-mounted tcp cannot be moved or rotated yet, and says why (ADR-151 stage 1)', () => {
+  const tcp = fake(CoordinateFrame, { name: 'tcp', robotRole: 'tcp', mountedOn: 'flange' })
+  const g = gateFrameTransform(tcp)
+  assert.equal(g.enabled, false)
+  assert.equal(g.reason, TOOL_MOUNT_EDIT_DEFERRED_REASON)
+})
+
+test('…but it can be deleted: a robot with no tcp is a declared state, not a forbidden one', () => {
+  const tcp = fake(CoordinateFrame, { name: 'tcp', robotRole: 'tcp', mountedOn: 'flange' })
+  assert.equal(gateFrameDelete(tcp).enabled, true)
+  assert.equal(gateFrameDelete(frame('Origin')).enabled, false)
+  assert.match(gateFrameDelete(null).reason, /Select a frame/)
 })

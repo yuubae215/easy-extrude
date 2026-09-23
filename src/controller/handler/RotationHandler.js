@@ -124,6 +124,11 @@ export class RotationHandler {
         ctrl._uiView.showToast(`This frame was declared by a ${obj.declaredBy}. Switch to that role to edit it.`, { type: 'warn' })
         return
       }
+      const mountBlocked = ctrl._service.toolMountEditBlockedReason(obj)   // ADR-151
+      if (mountBlocked) {
+        ctrl._uiView.showToast(mountBlocked, { type: 'warn' })
+        return
+      }
       if (this.isFastenedRotationBlocked(obj)) return
     } else {
       if (ctrl._service.hasFastenedChild(obj.id)) {
