@@ -286,3 +286,33 @@ test('unconvertible scene entities are reported, never silently dropped', () => 
 test('decompileLayout throws on a non-object scene', () => {
   assert.throws(() => decompileLayout(null), /non-null object/)
 })
+
+test('the tool mount declaration round-trips — a saved mount is not re-read as a legacy tcp (ADR-151)', () => {
+  // If `mountedOn` were dropped in either direction, the reloaded tcp would look
+  // like the pre-ADR-151 base-relative shape and the scene-entry upgrade would
+  // reset the user's mount to the default — silently losing it on every save.
+  const dsl0 = {
+    version: 'layout/1.0',
+    strategy: 'manual',
+    entities: [
+      { ref: 'box', type: 'Solid', name: 'Box',
+        dimensions: { x: 100, y: 100, z: 100 }, position: { x: 0, y: 0, z: 50 } },
+      { ref: 'rb', type: 'CoordinateFrame', name: 'robot_base', robotRole: 'base',
+        position: { x: -2000, y: 2000, z: 0 } },
+      { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp', parentRef: 'rb', robotRole: 'tcp',
+        mountedOn: 'flange', position: { x: 0, y: 0, z: 180 } },
+      { ref: 'cf', type: 'CoordinateFrame', name: 'station', position: { x: 1, y: 0, z: 0 } },
+    ],
+  }
+  const scene1 = compileLayout(dsl0)
+  assert.deepEqual(
+    scene1.objects.filter(o => o.type === 'CoordinateFrame' && o.name !== 'Origin').map(o => [o.name, o.mountedOn ?? null]),
+    [['robot_base', null], ['tcp', 'flange'], ['station', null]],
+  )
+  const { dsl } = decompileLayout(scene1)
+  assert.equal(dsl.entities.find(e => e.ref === 'tcp').mountedOn, 'flange')
+  // Declared, never defaulted: frames that are not a mounted tcp carry no key.
+  assert.ok(!('mountedOn' in dsl.entities.find(e => e.ref === 'cf')))
+  assert.equal(validateLayoutDsl(dsl).valid, true, validateLayoutDsl(dsl).errors.join('\n'))
+  assert.deepEqual(compileLayout(dsl), scene1)
+})

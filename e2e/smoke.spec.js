@@ -36,6 +36,31 @@ function outlinerRow(page, name) {
   return page.locator('[draggable="true"]').filter({ has: page.getByText(name, { exact: true }) }).first()
 }
 
+/**
+ * Place an ordinary CoordinateFrame through the user's own entry (select the
+ * Cube → Shift+A ▸ Coordinate Frame → click the canvas), and return its name.
+ * The name is read off the scene rather than assumed, so a change to the
+ * auto-naming rule cannot make the caller look up a row that does not exist.
+ */
+async function placeUserFrame(page) {
+  const names = async () => new Set((await page.evaluate(() => window.__easyExtrude.visibilityState()))
+    .filter(o => o.isFrame).map(o => o.name))
+  const before = await names()
+  const outliner = page.getByText('Scene Collection', { exact: true }).locator('../..')
+  await outliner.getByText('Cube', { exact: true }).click()
+  const canvas = page.locator('#canvas-container canvas')
+  await canvas.hover()
+  await page.keyboard.press('Shift+A')
+  await page.getByText('Coordinate Frame', { exact: true }).click()
+  await canvas.click()
+  let added = []
+  await expect.poll(async () => {
+    added = [...(await names())].filter(n => !before.has(n))
+    return added.length
+  }, { message: 'Coordinate Frame を置いたのにフレームが増えていない' }).toBe(1)
+  return added[0]
+}
+
 async function addRobot(page) {
   await page.locator('#canvas-container canvas').click()
   await page.keyboard.press('Shift+A')
@@ -614,26 +639,27 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
   await expect(baseRow.locator('[aria-label="Hide"]'),
     '行の目が「Show」= 隠れていると言っているのに腕は描かれている (ADR-096 G1 の破れ)').toBeVisible()
 
-  // ADR-132 D5: the scene no longer seeds a robot, so the `tcp` frame 症状 2 is
-  // about must be created first. It is added HERE, after the 症状 1/3 snapshot,
-  // because 症状 1 is a claim about BOOT — and a user-added robot_base ships shown
-  // by declaration (ADR-096 §Decision 3), so folding it into the boot count would
-  // quietly change what that count means rather than test it.
+  // 症状 2/4 は**ユーザーが置いた普通の CF** に問う。以前はここで `tcp` を使って
+  // いたが、ADR-151 で tcp は「腕が描く、ロボットとグリッパの共有点」になり、
+  // 自分の画素も自分の目も持たない (行は腕の目を映し、クリックは腕の目へ案内する
+  // — e2e/tcp-mount.spec.js)。症状が問うているのは「目を持つ CF の 2 本の軸」で
+  // あって tcp という名前ではないので、目を持つ CF をユーザーの入口で作って問う。
+  const frameName = await placeUserFrame(page)
 
-  // 症状 2 — ONE click on the tcp eye changes something. It used to send
+  // 症状 2 — ONE click on the frame's eye changes something. It used to send
   // "hide" to something already hidden: the input was consumed, nothing moved.
-  // Scoped to the Outliner row: once tcp is drawn it also owns a floating 3D
-  // label with the same text, so a bare text lookup stops being unique.
-  const tcpRow = page.locator('[draggable="true"]').filter({ hasText: 'tcp' }).first()
-  await tcpRow.click()                      // select it → the CONTEXT draws it …
-  await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.drawn).toBe(true)
-  await tcpRow.hover()
-  const tcpEye = tcpRow.getByRole('button').first()
+  // Scoped to the Outliner row: once the frame is drawn it also owns a floating
+  // 3D label with the same text, so a bare text lookup stops being unique.
+  const frameRow = outlinerRow(page, frameName)
+  await frameRow.click()                    // select it → the CONTEXT draws it …
+  await expect.poll(async () => (await state()).find(o => o.name === frameName)?.drawn).toBe(true)
+  await frameRow.hover()
+  const frameEye = frameRow.getByRole('button').first()
   // … while the eye still reads "Show", because the eye is the persistent axis,
   // not the pixel. One click must move that axis.
-  await expect(tcpEye).toHaveAttribute('aria-label', 'Show')
-  await tcpEye.click()
-  await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.explicit).toBe(true)
+  await expect(frameEye).toHaveAttribute('aria-label', 'Show')
+  await frameEye.click()
+  await expect.poll(async () => (await state()).find(o => o.name === frameName)?.explicit).toBe(true)
 
   // 症状 4 — selecting another entity does not take it back. The context axis
   // moves; the axis the user wrote does not.
@@ -642,8 +668,8 @@ test('the row never lies: no CF ships shown, one click reveals, and the selectio
   // counting `..` hops — the row we want lives on the geometry side.
   const outliner = page.getByText('Scene Collection', { exact: true }).locator('../..')
   await outliner.getByText('Cube', { exact: true }).click()
-  await expect.poll(async () => (await state()).find(o => o.name === 'tcp')?.contextual).toBe(null)
-  const afterSelect = (await state()).find(o => o.name === 'tcp')
+  await expect.poll(async () => (await state()).find(o => o.name === frameName)?.contextual).toBe(null)
+  const afterSelect = (await state()).find(o => o.name === frameName)
   expect(afterSelect.explicit, 'eye で開けた軸が選択変更で落ちている').toBe(true)
   expect(afterSelect.drawn, '別の実体を選んだ瞬間に軸が消えている (症状 4)').toBe(true)
 
@@ -919,24 +945,27 @@ test('同じジェスチャで S を押すとロボットは載らない (ADR-09
 })
 
 test('free と宣言された CF は同じジェスチャで載らない (ADR-098 — 逆向きの回帰)', async ({ page }) => {
-  // 「全部に効かせた」ことと「方針どおりに効いた」ことを区別する。tcp は free
-  // なので、キューブの真上へ運んでも天面へは吸い付かない (アームの先端は
-  // 空中に在ってよい)。
+  // 「全部に効かせた」ことと「方針どおりに効いた」ことを区別する。ユーザー CF は
+  // free なので、キューブの真上に持ち上げてから水平に動かしても、天面へは吸い付か
+  // ない (空中に在ってよい)。以前はこれを tcp で問うていたが、ADR-151 で tcp は
+  // ツールの取付けで決まり手では動かせなくなった — 問うているのは方針であって
+  // tcp ではないので、free な CF をユーザーの入口で置いて問う。
   const errors = await boot(page)
-  await addRobot(page)                    // ADR-132 D5: ブートは 0 台
+  const frameName = await placeUserFrame(page)
 
-  const atBoot = await placementRows(page)
-  const tcp  = byName(atBoot, 'tcp')
-  const cube = byName(atBoot, 'Cube')
-  expect(tcp.placement, 'tcp の方針').toBe('free')
+  const placed = byName(await placementRows(page), frameName)
+  expect(placed.placement, 'ユーザー CF の方針').toBe('free')
 
-  const z0 = tcp.bottomZ
-  await selectRow(page, 'tcp')
-  await numericGrab(page, 'x', cube.footprint.x - tcp.footprint.x)
-  await numericGrab(page, 'y', cube.footprint.y - tcp.footprint.y)
+  await selectRow(page, frameName)
+  // Z は補助を通らない軸 (ADR-097) — まず天面より上へ持ち上げて、補助が吸い付ける
+  // 高さを作る。次の X は補助を通る軸なので、ここで吸い付けば方針が無視されている。
+  await numericGrab(page, 'z', 500)
+  const lifted = byName(await placementRows(page), frameName)
+  await numericGrab(page, 'x', 10)
 
-  const moved = byName(await placementRows(page), 'tcp')
-  expect(moved.bottomZ, 'free な CF が支持面へ吸い付いた (方針が無視されている)').toBeCloseTo(z0, 3)
+  const moved = byName(await placementRows(page), frameName)
+  expect(lifted.bottomZ - placed.bottomZ, '持ち上げが効いていない (前提が崩れている)').toBeGreaterThan(1)
+  expect(moved.bottomZ, 'free な CF が支持面へ吸い付いた (方針が無視されている)').toBeCloseTo(lifted.bottomZ, 3)
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

@@ -4,17 +4,22 @@
  *
  * A robot's placement geometry is a first-class part of the scene: a PAIR of
  * CoordinateFrame entities carries the single source of truth (§1.1) that
- * grasp-search declares against. They form the canonical robotics TF tree
- * world → base → tcp:
+ * grasp-search declares against. They form the robotics TF tree
+ * world → base → (arm joints) → tool0 → tcp:
  *
- *   role 'base' — world-parented (root). Position only (where the arm stands).
- *     Orientation is not used by reach evaluation.
- *   role 'tcp'  — a CHILD of the base frame (the tool point is expressed in the
- *     robot's own frame, so moving/rotating the base carries the TCP with it).
- *     Its *world* quaternion (composed through the base by
- *     SceneService._updateWorldPoses) becomes `robot.tcpOrientation` on the wire
- *     and drives the wrist-cone reference axis in core/ (ADR-084 §3). Its
- *     translation/rotation are stored LOCAL to the base.
+ *   role 'base' — world-parented (root). Where the arm stands (the edge
+ *     `world → base`).
+ *   role 'tcp'  — the interface the robot and the gripper SHARE (ADR-151). Its
+ *     stored translation/rotation are the TOOL MOUNT `tool0 → tcp` (declared
+ *     with `mountedOn: 'flange'`) — the gripper's own fact, and the only edge
+ *     between base and tcp that is stored. The arm's joint edges are not in the
+ *     scene tree (they live in the URDF `RobotStage` draws), so the scene
+ *     composes the tcp's world pose as base ∘ flange-at-rest ∘ mount; its world
+ *     quaternion becomes `robot.tcpOrientation` on the wire. It is still the base
+ *     frame's child in the scene (`parentId`) — that is what pairs it with its
+ *     robot. Before ADR-151 the stored transform was the rest-pose forward
+ *     kinematics baked into `base → tcp` (a derived value stored as an edge);
+ *     `isLegacyBaseRelativeTcp` names that shape for the one upgrade that reads it.
  *
  * ## Identity is the entity, not the name (ADR-090 Decision 1)
  *
@@ -61,6 +66,50 @@ export const TCP_FRAME_NAME = 'tcp'
  * (原則 #2 — the tag never leaks into caller-side dispatch).
  */
 export const ROBOT_ROLE = Object.freeze({ BASE: 'base', TCP: 'tcp' })
+
+/**
+ * What a robot TCP frame's stored transform is measured FROM (ADR-151). The
+ * vocabulary has one member on purpose: the tool mount (`tool0 → tcp`) is the
+ * only edge a TCP frame may store. A tcp WITHOUT this declaration is the
+ * pre-ADR-151 shape (its transform was the rest-pose forward kinematics baked
+ * in as `robot_base → tcp`), which the scene-entry upgrade replaces — never a
+ * second legitimate meaning (原則 #31: absent is "undeclared", not a default).
+ */
+export const TCP_MOUNTED_ON = Object.freeze({ FLANGE: 'flange' })
+
+/**
+ * True when `value` is a mount this vocabulary defines — the deserializers'
+ * guard, so what counts as a mount is decided here and not re-listed per reader.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isTcpMountedOn(value) {
+  return value === TCP_MOUNTED_ON.FLANGE
+}
+
+/**
+ * True when `obj` is a robot TCP frame whose stored transform IS the tool mount
+ * (`tool0 → tcp`, ADR-151) — the interface the robot and the gripper share.
+ * Its world pose is derived (base ∘ flange-at-rest ∘ mount) and it is drawn by
+ * the arm, never by its own frame view.
+ * @param {{name?: string, robotRole?: string|null, mountedOn?: string|null}|null|undefined} obj
+ * @returns {boolean}
+ */
+export function isFlangeMountedTcp(obj) {
+  return isRobotTcpFrame(obj) && obj.mountedOn === TCP_MOUNTED_ON.FLANGE
+}
+
+/**
+ * True when `obj` is a robot TCP frame still in the pre-ADR-151 shape — its
+ * transform is the base-relative rest pose rather than the tool mount. The
+ * scene-entry upgrade (`SceneService._upgradeLegacyRobotFrames`) is its only
+ * reader.
+ * @param {{name?: string, robotRole?: string|null, mountedOn?: string|null}|null|undefined} obj
+ * @returns {boolean}
+ */
+export function isLegacyBaseRelativeTcp(obj) {
+  return isRobotTcpFrame(obj) && !isTcpMountedOn(obj.mountedOn)
+}
 
 /**
  * The roster's cardinality, as a named state rather than a bare count
@@ -125,8 +174,9 @@ export function isRobotTcpFrame(obj) {
  *
  * Holds entity references only; poses are read through SceneService
  * (`worldPoseOf`), keeping this class pure and THREE-free. `tcpFrame` may be null
- * for a malformed / half-deleted pair: that is a real state, and the grasp gate
- * reports it rather than inventing an orientation (原則 #11).
+ * (the tcp was deleted, or a loaded scene never declared one): that is a real
+ * state — the robot/gripper interface is UNDECLARED — and the grasp gate reports
+ * it rather than inventing a tool mount (ADR-151 D7, 原則 #11/#31).
  */
 export class Robot {
   /**
@@ -274,14 +324,11 @@ export function nextRobotTcpName(objects) {
  * ADDITIONAL robot along +Y so a second arm does not spawn inside the first
  * (ADR-090: N台 must be visibly distinct on arrival).
  *
- * The `tcp` frame's default LOCAL translation is NOT a constant here (ADR-088):
- * it is the UR5e flange (tool0) position at the shared rest pose, DERIVED by
- * forward kinematics of `public/robot/skeleton_arm.urdf` and injected into
- * `SceneService` (see `view/robotSkeleton.js` → `TCP_LOCAL_SEED`). The flange
- * fact has one authority — the URDF + `ROBOT_REST_POSE` — so it cannot silently
- * drift from a hand-copied number when either input changes. (The tcp seed's
- * orientation stays identity, keeping the `tcpOrientation` wire contract
- * unchanged until the user re-aims it through the CF edit UI.)
+ * The `tcp` frame's default transform is not here: it is the tool mount, whose
+ * default lives with the tool (`domain/robotTool.js` → `DEFAULT_TOOL_MOUNT`,
+ * ADR-151). The flange it is measured from is DERIVED from the URDF at the rest
+ * pose and injected into `SceneService` (`view/robotSkeleton.js` →
+ * `FLANGE_REST_POSE`) — never stored in the scene.
  */
 export const ROBOT_FRAME_DEFAULTS = Object.freeze({
   [ROBOT_BASE_FRAME_NAME]: Object.freeze({

@@ -126,6 +126,19 @@ export class CoordinateFrame {
     this.robotRole = null
 
     /**
+     * What a robot tcp's stored transform is measured FROM (ADR-151). `'flange'`
+     * declares that `translation` / `rotation` ARE the tool mount (`tool0 → tcp`)
+     * — the gripper's fact, and the interface the robot and the gripper share.
+     * null on every other frame, and on a pre-ADR-151 tcp (whose transform was
+     * the base-relative rest pose; the scene-entry upgrade replaces it).
+     *
+     * Only `domain/robotFrames.js` interprets the value (`isFlangeMountedTcp`).
+     * Serialized with the frame (scene JSON + Layout DSL + context DSL).
+     * @type {'flange' | null}
+     */
+    this.mountedOn = null
+
+    /**
      * Declared intent to sit below grade (ADR-097 §Decision 6 / G3).
      *
      * Only meaningful for frames whose declared placement is `grounded` — today

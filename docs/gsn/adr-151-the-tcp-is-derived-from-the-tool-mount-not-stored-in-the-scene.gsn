@@ -2,13 +2,13 @@ GOALS adr151_the_tcp_is_derived_from_the_tool_mount_not_stored_in_the_scene
 
 goal TheTcpHasOneSourceAndEveryDepictionPointsAtIt
 uuid 0db58fac-cd4c-45c3-92c4-3dfd0446e8aa
-summary "「TCP はどこか」の源が 1 つ (ツールの取付け) であり、画面の TCP の印・探索に渡る tcpOrientation・腕が持つツール先端が、休止でもプレビューでも常に同じ点を指す。解でなく性質: '印を動かす' '実体を消す' は解の形"
-state ToBeDeveloped
-labels adr-151, adr-150, adr-084, adr-085, adr-088, adr-090, adr-135, principle-4, principle-11, principle-31, kernel-1-1, app, view
+summary "「TCP はどこか」の源が 1 つ (ツールの取付け tool0 → tcp) であり、画面の TCP の印・探索に渡る toolLength / tcpOrientation・腕が持つツール先端が、休止でもプレビューでも常に同じ点を指す。tcp はロボットとグリッパが共有するインタフェースとして名前で参照でき続ける。解でなく性質: '印を動かす' '実体を消す' は解の形"
+state Approved
+labels adr-151, adr-150, adr-084, adr-085, adr-088, adr-090, adr-096, adr-135, principle-4, principle-11, principle-19, principle-31, kernel-1-1, app, view
 
     context ThreeSourcesOfOneFact
     uuid eb09c361-6c39-4a28-9e90-6d09208dc249
-    summary "2026-09-23 観察: TCP の事実が tcp CoordinateFrame (保存, 休止姿勢のフランジ = TCP_LOCAL_SEED)・TOOL_LENGTH_M (ADR-150)・腕の FK + ツールの 3 か所に書ける。tcp 実体がワイヤに運ぶ tcpOrientation は NaiveIkSolver (運動学未宣言時) しか読まず、出荷モデルは常に UR 運動学を宣言するので何も決めていない"
+    summary "2026-09-23 観察: TCP の事実が tcp CoordinateFrame (保存, 辺 robot_base → tcp に休止姿勢のフランジ = TCP_LOCAL_SEED を焼き込み)・TOOL_LENGTH_M (ADR-150)・腕の FK + ツールの 3 か所に書けた。tcp 実体がワイヤに運ぶ tcpOrientation は NaiveIkSolver (運動学未宣言時) しか読まず、出荷モデルは常に UR 運動学を宣言するので何も決めていなかった"
     artifacts
     - "src/view/robotSkeleton.js"
     - "src/domain/robotFrames.js"
@@ -16,42 +16,108 @@ labels adr-151, adr-150, adr-084, adr-085, adr-088, adr-090, adr-135, principle-
 
     context TheDogfooderSawTheLabelLeaveTheArm
     uuid 59c2460f-7597-45c0-8f41-4992badf1b25
-    summary "当事者の指摘: ADR-150 のスクリーンショットで tcp のラベルとロボットゴーストの tcp が離れている。原因は (1) tcp の親が robot_base で、辺 base→tcp に休止姿勢の FK が静的変換として焼き込まれている (腕の 6 関節の辺が木に無い) ためプレビューに追従しない、(2) 休止でも seed がフランジのまま 150mm ずれる (DEF-044)。TF の語彙では: 保存すべきは辺 tool0→tcp (ツールの取付け) だけで、導出値を辺に保存したことが第二の源。本セッションは起票のみと指示された"
+    summary "当事者の指摘: ADR-150 のスクリーンショットで tcp のラベルとロボットゴーストの tcp が離れている。原因は (1) 辺 base→tcp に休止姿勢の FK が静的変換として焼き込まれ (腕の 6 関節の辺が木に無い) プレビューに追従しない、(2) 休止でも seed がフランジのまま 150mm ずれる (DEF-044)"
+
+    context TheDecisionWasRevisedBeforeImplementation
+    uuid 495cd08c-ac4e-4f54-ba60-4f1bb9484eec
+    summary "実装前の /whiteboard で当事者が 3 点を指摘し、起票時の案 A (tcp を退役、源 = TOOL_LENGTH_M) を A′ へ改訂: (a) TOOL_LENGTH_M は姿勢を持たない — オフセット・アライメントの要る TCP がある、(b) tcp を消すとグリッパの情報を保存できない、(c) tool0 はロボットのもの・tcp はロボットとグリッパの共有点でインタフェース定義として残す。tool0 → tcp は機種に依らない (俯瞰で Claude が書いた『機種が保存されていないので違う TCP が復元される』は導出値 base→tcp との混同で撤回)"
+    artifacts
+    - "docs/adr/ADR-151-the-tcp-is-derived-from-the-tool-mount-not-stored-in-the-scene.md"
 
     justification WhyNotMakeTheStoredFrameTheSource
     uuid 3c3ccc7f-aaf2-47db-a454-d42d5fa8c7d5
-    summary "却下 B (tcp 実体を源にツール長を導出): tcp は休止姿勢の実体なのでプレビュー中のずれが残り、直すにはプレビューの関節角で実体を書く = 表示が保存データを書く逆流。却下 C (読み取り専用で残す): 保存される限り読み込んだ値は第二の源。却下 D (seed だけ直す): 源は 3 つのまま"
+    summary "却下 A (起票時の採用 — tcp 退役 + TOOL_LENGTH_M): 姿勢を表せない源に畳むと 6 自由度化で源をもう一度移し、共有点が Context から消える。却下 B (base 相対の tcp を源にツール長を導出): プレビュー中のずれが残り、直すにはプレビューの関節角で実体を書く = 表示が保存データを書く逆流。却下 C (読み取り専用で残す): 保存される限り読み込んだ値は第二の源。却下 D (seed だけ直す): 源は 3 つのまま"
 
-    strategy ByDrawingTheTcpOnTheArmAndRetiringTheStoredFrame
+    strategy ByStoringOnlyTheMountEdgeAndDrawingTheTcpOnTheArm
     uuid 0598ff59-be51-4805-9f91-691e5e1ba019
-    summary "TCP の印を RobotStage が wrist_3_link の子 (ツール先端) に描き、tcp CoordinateFrame を生成・保存しない。既存の tcp は読み込み時に取り除いて件数を警告し、tcpOrientation は休止 FK ∘ 取付けから導出する (契約不変)"
+    summary "tcp の保存する変換を取付け tool0 → tcp (6 自由度, mountedOn:'flange') に変え、世界姿勢は SceneService._throughFlange が base ∘ FLANGE_REST_POSE ∘ 取付けで導出。印は RobotStage が wrist_3_link の子として取付けに描き、tcp のフレームビューは描かない。ワイヤの toolLength / tcpOrientation は同じ取付けから (toolMountOf)。旧形式は値だけ既定の取付けへ置換して件数を警告。第一段は +Z 以外と手編集を理由つきで拒否 (DEF-045)"
 
         goal TheMarkerRidesOnTheToolTipInEveryPose
         uuid 0a97dec3-0264-4dca-b771-fdf4ca5a0a43
-        summary "D2: 候補を選んで腕がプレビュー姿勢を取ると、TCP の印の世界位置 = 候補の位置。候補を替えても選択を解いても毎回追従する"
-        labels support-exploring
-        state ToBeDeveloped
+        summary "D3: 腕の印は、休止・両スタイル・ロボットを動かした後・候補のプレビュー姿勢のどれでも、シーンが合成した tcp (休止時) または候補の TCP (プレビュー時) に立つ。候補を替えても戻しても毎回追従する"
+        labels support-verified
+        state Approved
 
-            assumption MarkerFollowsE2eWithTwoRequests
-            uuid b86e3f81-a9f3-4231-bea9-0afeb034a897
-            summary "証拠予定: e2e で候補 #1 → #2 → 選択解除と同じ要求を 2 回以上通し、各時点で印の世界位置と候補位置 (または休止のツール先端) の一致を読み戻す。満期=GREP:src/view/RobotStage.js::_attachTcpMarker"
+            solution TwoIndependentPathsAgreeAtRest
+            uuid 4f1c6e01-bf25-4390-b588-b8c49c188a35
+            summary "e2e/tcp-mount.spec.js: 印の世界位置 (URDFLoader の木から THREE が合成) とシーンの tcp (純粋な URDF FK ∘ 取付け) が 0.5mm 以内で一致 — 追加直後、skeleton/realistic/skeleton の切替ごと、ロボットを x+300 で 2 回動かすごと。負の対照: 印をフランジに置く突然変異で 150mm の乖離として落ちる"
+            artifacts
+            - "e2e/tcp-mount.spec.js"
+            - "src/view/RobotStage.js"
+            - "src/service/SceneService.js"
 
-        goal NoStoredTcpFrameSurvives
+            solution MarkerFollowsThePreviewTwice
+            uuid 82fa6e9e-56e2-4215-a35b-b55301b9eeca
+            summary "e2e/grasp-stub.spec.js S12 (VITE_GRASP_STUB=1): 単腕ピック&プレイスセル・供給ビンで #1 → #2 → #1 と同じ要求を 2 回通し、腕が候補を取るたび印 = 候補の TCP (1mm 以内、posed ≥ 2 を要求)。探索のやり直しで rest に戻る。負の対照: 印を wrist_3_link ではなく腕の根に付ける突然変異で落ちる"
+            artifacts
+            - "e2e/grasp-stub.spec.js"
+
+            solution MarkerIsTheFingertipPure
+            uuid 74a6144a-5280-4a89-95d4-132fd0b3ab5d
+            summary "src/domain/robotTool.test.js: tcpMarkerPose(取付け) の位置 = toolParts の指先 z (機械精度)、回転した取付けは回転したまま描かれる、大きさは取付けの長さの 0.4 倍 (世界固定 — 当事者決定 b)"
+            artifacts
+            - "src/domain/robotTool.test.js"
+            - "src/domain/robotTool.js"
+
+        goal TheMountIsTheOnlyStoredFactAndItSurvives
         uuid 7caf3808-e71f-4208-8e95-4479c58b3eb1
-        summary "D3/D4: シーンに robotRole:'tcp' の実体が 0 個。既存シーン・Layout DSL・.ctx.json の tcp は読み込み時に取り除かれ、取り除いた件数が警告として提示される (無言で消さない)"
-        labels support-exploring
-        state ToBeDeveloped
+        summary "D1/D2/D4: tcp ロールの実体は取付け (mountedOn:'flange') だけを保存し、定常状態で base 相対の旧形式は 0 個。旧形式の読み込みは値だけを既定の取付けに置き換え、件数 (1/N) を警告として出す (0 件は無言)。宣言済みの取付けは保存・読み込みで失われない"
+        labels support-verified
+        state Approved
 
-            assumption CensusCountsTcpFramesByKind
-            uuid b833ae6e-7e4e-4380-ae8a-01ce6aa5789b
-            summary "証拠予定: 種類を列挙して robotRole:'tcp' の個数が 0 であることを問う census と、移行警告の件数を問う unit。サンプル 5 本 (examples/*) は同じ PR で書き換える。満期=GREP:src/view/RobotStage.js::_attachTcpMarker"
+            solution CensusAndMigrationE2e
+            uuid 65c30295-0621-42b9-8c54-27f49e4e62b2
+            summary "e2e/tcp-mount.spec.js: tcp ロールの実体を列挙して tcpFrames=N・legacyTcpFrames=0 を問う (追加直後 / 旧形式 1 件・2 件の読み込み後)。toast '1 TCP frame … was reset' / '2 TCP frames … were reset'。現行形式 (z=180) の読み込みでは値が保たれ toast が出ない"
+            artifacts
+            - "e2e/tcp-mount.spec.js"
+            - "src/service/SceneService.js"
 
-        goal TheWireOrientationIsDerivedNotStored
+            solution MountRoundTripsAndIsInterpretedOnce
+            uuid 90a111a0-3c4b-4d7f-aa05-af19f9286990
+            summary "LayoutDecompiler.test.js: mountedOn が Layout DSL ⇄ Scene を往復し、他のフレームにはキーが出ない (既定で埋めない)。robotFrames.test.js: tcp の 2 形 (flange / 旧形式) を種類で列挙して網羅。IdentityContainment.test.js: mountedOn の値比較は robotFrames.js だけ"
+            artifacts
+            - "src/layout/LayoutDecompiler.test.js"
+            - "src/domain/robotFrames.test.js"
+            - "src/IdentityContainment.test.js"
+
+        goal TheWireIsDerivedFromTheMount
         uuid 58ca47b9-ff6f-4d8a-abe1-6f1cce9fc0dc
-        summary "D5: robot.tcpOrientation は休止姿勢の FK ∘ ツールの取付けの世界姿勢から導出され、契約 (request/response) と contractVersion は不変"
+        summary "D5/D7: robot.toolLength はそのロボット自身の取付けから導出され、tcpOrientation は base ∘ 休止フランジ ∘ 取付けの世界姿勢。tcp が無い・+Z 以外の取付け・旧形式のままでは要求を送らず理由を出す (150mm や 0 を補わない)。契約と contractVersion は不変"
+        labels support-verified
+        state Approved
+
+            solution DeclarationFollowsTheMount
+            uuid 1181d106-8f3d-410a-af42-d4847c41d3ea
+            summary "GraspController.test.js: tcp の z=212.5mm → toolLength 0.2125、tcp 削除 → TOOL_MOUNT_UNDECLARED_REASON で送らない、x オフセット / z 回転 → TOOL_MOUNT_NOT_AXIAL_REASON で送らない、旧形式 tcp → 送らない。robotTool.test.js: toolMountGap の 3 種"
+            artifacts
+            - "src/controller/GraspController.test.js"
+            - "src/domain/robotTool.test.js"
+
+            solution ContractUntouched
+            uuid a8b63916-5e3d-426a-8a55-04d5657e8eed
+            summary "pnpm test:contract が contractVersion=6 のまま green (request/response スキーマの差分 0)"
+            artifacts
+            - "packages/grasp-contract/contract-version.json"
+
+        goal EveryEditEntranceSaysWhy
+        uuid 995b5d25-5be7-4777-9fed-1f5020978c3e
+        summary "D3/D6: 取付けの手編集は第一段では開けないが、無言で拒否しない — grab / R / N パネル / 再親子化 / モバイルのツールバーが同じ述語の理由を出す。tcp の目は押すとロボットの目へ案内し、tcp 行の目はロボットの目を映す (行が非表示と言いながら印が見える、を作らない — ADR-096 G1)"
+        labels support-verified
+        state Approved
+
+            solution RefusalsAndRowMirrorE2e
+            uuid 9f9e15cb-1030-416c-a3d2-d23ee79bfaf5
+            summary "e2e/tcp-mount.spec.js: tcp を選んで g / r → 'Editing the mount is not supported yet' が見え取付けは不変。tcp の目 → 'drawn with its arm'。ロボットの目で隠す/出すと tcp 行の explicit と drawn が一緒に動く。ChromeGates.test.js: gateFrameTransform は理由つきで閉じ、gateFrameDelete は開く"
+            artifacts
+            - "e2e/tcp-mount.spec.js"
+            - "src/view/ChromeGates.test.js"
+
+        goal TheSixDofMountReachesTheSolver
+        uuid e149ca64-decd-4c93-ae4f-ef3dc05a9c0c
+        summary "DEF-045 (第二段): 取付けの 6 自由度がワイヤ (request の robot) と core/ (フランジ目標 = T_tcp · T_mount⁻¹、フランジ→TCP の干渉スイープ) とクライアントの閉形式に通り、第一段の +Z 制限と編集拒否が外れる"
         labels support-exploring
         state ToBeDeveloped
 
-            assumption DerivedOrientationUnitTest
-            uuid 1634e5e0-5fe8-4d52-930c-772ee6abd7c3
-            summary "証拠予定: GraspController.test.js で送られる tcpOrientation = 休止 FK ∘ 取付けの姿勢 (機械精度)。pnpm test:contract が contractVersion=6 のまま green。満期=GREP:src/view/RobotStage.js::_attachTcpMarker"
+            assumption SixDofMountLandsWithTheContract
+            uuid 2439b604-35da-4a40-ad9a-b0bb43425303
+            summary "証拠予定: request スキーマに toolMount が足され (optional — contractVersion 不変)、core/tests が非軸方向の取付けでツール先端 = 候補を問い、tcp-mount.spec.js の拒否テストが編集の往復テストに置き換わる。満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::toolMount"

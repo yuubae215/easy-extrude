@@ -55,6 +55,11 @@
   > tcp が追従する (TCP はロボット座標系で表現される点、という直感に一致)。cone 基準軸を
   > TCP 姿勢由来にする本 ADR §3 の狙いはむしろ強化される (回転した base が基準軸を回す)。
   > 関節/キネマティクスを持たない点は不変。詳細は ADR-085。
+  >
+  > **Superseded by ADR-151 (2026-09-23) — この節の「tcp の変換の意味」のみ**: `tcp` の
+  > translation/rotation は base 相対ではなく**ツールの取付け `tool0 → tcp`** (フランジ座標系、
+  > `mountedOn:'flange'`)。世界姿勢は base ∘ 休止姿勢のフランジ (URDF FK) ∘ 取付けで導出する。
+  > tcp が base の子であること・ロール・基数は不変。
 
 Robot ボタン脇の Header X/Y 入力 (ADR-083 実装分) は撤去し、ロボット位置編集は
 既存の CoordinateFrame N-panel 編集 UI に統合する。`uiStore.robotBase` state も

@@ -138,6 +138,10 @@
           "description": "Declared role inside a robot's TF tree (ADR-090): 'base' | 'tcp' | null. Robot identity is the entity carrying this role, not the frame's name, so a scene can hold N robots.",
           "enum": ["base", "tcp", null]
         },
+        "mountedOn": {
+          "description": "ADR-151: what a robot tcp's translation/rotation are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp), the interface the robot and its end effector share; the scene composes the tcp's world pose as base ∘ flange-at-rest ∘ mount. null/absent on every other frame, and on a pre-ADR-151 tcp (base-relative rest pose), which the scene-entry upgrade replaces with the default mount and announces.",
+          "enum": ["flange", null]
+        },
         "translation": { "$ref": "#/$defs/vec3" },
         "rotation": { "$ref": "#/$defs/quaternion" }
       }

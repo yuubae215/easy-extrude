@@ -62,7 +62,7 @@ import { resolveSearchLayout } from '../domain/searchGeometry.js'
 import { mmToM, mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
-import { TOOL_LENGTH_M } from '../domain/robotTool.js'
+import { axialToolLengthM, toolMountOf, toolMountGap } from '../domain/robotTool.js'
 import {
   CLIENT_ANALYTIC, dhFromDeclaration, inverseKinematics, representativeSolution,
 } from '../robotics/urKinematics.js'
@@ -534,6 +534,19 @@ export class GraspController {
       return
     }
 
+    // Guard: the robot/gripper interface must be declared (ADR-151 D7). The tool
+    // length is derived from the robot's tcp — its tool mount — so a robot with
+    // no tcp has no tool to solve for, and a mount that is not straight along
+    // the flange +Z cannot be said on the wire yet (stage 1). Filling in 150 mm
+    // or 0 here would make "declared" and "nobody thought about it" the same
+    // number (原則 #31); stop with the reason instead (#11).
+    const mountGap = toolMountGap(robotEntity)
+    if (mountGap) {
+      ui.contextSetGrasp({ status: 'no-robot', layout, reason: mountGap, robotCount: this._robots().length })
+      ctrl._uiView.showToast(mountGap, { type: 'warn' })
+      return
+    }
+
     // Guard: a grasp is solved for a robot AND an object (ADR-117). Sending no
     // `target` is what made every run through the UI dead-but-green: core/'s
     // adapter defaults an absent target to zero surface samples, so
@@ -865,10 +878,13 @@ export class GraspController {
     if (!wireFrame) return null
     const declaration = this._resolveRobotDeclaration(robotEntity)
     if (!declaration.base) return null
+    // No declared tool mount → no TCP to put on the candidate (ADR-151 D7). Never
+    // `?? 0`: that would silently solve for the FLANGE, a tool nobody declared.
+    if (declaration.toolLength === undefined) return null
     // ワイヤの候補 frame をフランジ目標へ写し、ベース座標系へ戻す — `core/` の
     // `UniversalRobotsIkSolver.solve` と同じ手順を同じ gauge で踏む (§1.1 の写し)。
     const target = flangeTargetInBaseFrame(
-      wireFrame, declaration.base, declaration.baseOrientation, declaration.toolLength ?? 0,
+      wireFrame, declaration.base, declaration.baseOrientation, declaration.toolLength,
     )
     if (!target) return null
     // **最大 8 解**。代表の選び方 (関節総移動量最小) は ADR-127 D5 と同じ規則で、
@@ -992,16 +1008,23 @@ export class GraspController {
       const q = basePose.quaternion
       if (q) declaration.baseOrientation = [q.x, q.y, q.z, q.w]
     }
+    // The TCP's world orientation. Since ADR-151 the tcp stores only the tool
+    // mount (`tool0 → tcp`) and `worldPoseOf` composes it as base ∘ flange-at-rest
+    // ∘ mount — so this is DERIVED from the mount, not read off a stored pose.
     if (tcpPose) {
       const q = tcpPose.quaternion
       declaration.tcpOrientation = [q.x, q.y, q.z, q.w]
     }
-    // The tool bolted to this arm's flange (ADR-150 D4). Declared here, on the
-    // ONE path both the request and the client-side closed form read, so the
-    // solved tool and the previewed tool cannot have different lengths (§1.1).
-    // Declared for every resolved robot, gripper gate on or off — switching the
-    // graspability gate off does not unbolt the tool.
-    if (basePose) declaration.toolLength = TOOL_LENGTH_M
+    // The tool bolted to this arm's flange (ADR-150 D4), read from the robot's
+    // OWN mount (ADR-151) on the ONE path both the request and the client-side
+    // closed form read, so the solved tool and the previewed tool cannot have
+    // different lengths (§1.1). Declared gripper gate on or off — switching the
+    // graspability gate off does not unbolt the tool. Absent when there is no
+    // tcp (the interface is undeclared) or the mount is not straight along +Z
+    // (stage 1): the gate in `runGraspSearch` refuses both with a reason rather
+    // than sending a length nobody declared.
+    const toolLength = axialToolLengthM(toolMountOf(robot))
+    if (basePose && toolLength !== null) declaration.toolLength = toolLength
     return declaration
   }
 

@@ -22,7 +22,7 @@ import { getCentroid }     from '../model/CuboidModel.js'
 import { ICONS }           from '../view/UIView.js'
 import {
   gateGrab, gateEdit, gateStack, gateDelete,
-  gateFrameTransform, gateExtrudeRect,
+  gateFrameTransform, gateFrameDelete, gateExtrudeRect,
 } from '../view/ChromeGates.js'
 import { createDeleteSpatialLinkCommand }     from '../command/DeleteSpatialLinkCommand.js'
 import { createCreateCoordinateFrameCommand } from '../command/CreateCoordinateFrameCommand.js'
@@ -309,12 +309,13 @@ export class UIStateManager {
       if (hasObj && ctrl._activeObj instanceof CoordinateFrame) {
         // disabled-as-quest (ADR-065 named rule 5): the disable flag and the
         // rendered reason both come from ONE gate-predicate return value.
-        const gFrame = gateFrameTransform(ctrl._activeObj)
+        const gFrame  = gateFrameTransform(ctrl._activeObj)
+        const gDelete = gateFrameDelete(ctrl._activeObj)
         ctrl._uiView.setMobileToolbar([
           { icon: ICONS.frame,  label: 'Add Frame', onClick: () => ctrl._promptAddFrame(ctrl._scene.activeId) },
           { icon: ICONS.grab,   label: 'Move',      onClick: () => ctrl._grabHandler.start(),                                              disabled: !gFrame.enabled, reason: gFrame.reason },
           { spacer: true },
-          { icon: ICONS.delete, label: 'Delete',    onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: gFrame.enabled, disabled: !gFrame.enabled, reason: gFrame.reason },
+          { icon: ICONS.delete, label: 'Delete',    onClick: () => ctrl._deleteObject(ctrl._scene.activeId), danger: gDelete.enabled, disabled: !gDelete.enabled, reason: gDelete.reason },
           { icon: ICONS.rotate, label: 'Rotate',    onClick: () => ctrl._rotateHandler.start(true),                                              disabled: !gFrame.enabled, reason: gFrame.reason },
         ])
         return

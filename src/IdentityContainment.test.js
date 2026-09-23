@@ -61,6 +61,17 @@ const IDENTITY_RULES = [
     why: 'ロール値の解釈が散ると、語彙を増やしたときに更新漏れの箇所が黙って古い判定を続ける (ADR-090 Decision 1)',
   },
   {
+    // ADR-151。tcp の変換が「何から測られているか」(= ツールの取付けか、旧形式の
+    // base 相対か) は、読み込み時の移行・世界姿勢の合成・把持の宣言・描画の
+    // 4 経路が問う。値の比較を呼び出し側で書き直すと、語彙を足した日に 1 経路だけ
+    // 旧形式を取付けとして読み続け、黙ってずれた TCP を探索へ送る。
+    name: 'tcp の取付けの解釈 (mountedOn の値比較)',
+    owners: ['src/domain/robotFrames.js'],
+    use: "isFlangeMountedTcp(obj) / isLegacyBaseRelativeTcp(obj) / isTcpMountedOn(v)  — import from 'src/domain/robotFrames.js'",
+    all: [/mountedOn/, /[!=]==\s*(TCP_MOUNTED_ON\.|['"`]flange['"`])/],
+    why: '取付けの判定が散ると、旧形式の base 相対の値を取付けとして読む経路が 1 つ残り、ツール先端ではない点へ IK を解く (ADR-151 の欠陥の再演)',
+  },
+  {
     // ADR-094 §波及 が先行 PR として名指しした未移行分。ADR-090 が robot_base に対して
     // 閉じた欠陥 (同一性を呼び出し側で再導出する) が、Origin CF では 16 箇所 / 10 ファイルに
     // 残っていた。robot 規則と違い `all` が 1 本なのは、この名前には**正当な住所が

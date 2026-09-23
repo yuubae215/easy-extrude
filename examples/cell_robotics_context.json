@@ -129,16 +129,11 @@
           "name": "tcp",
           "robotRole": "tcp",
           "parentRef": "robot_base",
+          "mountedOn": "flange",
           "position": {
             "x": 0,
             "y": 0,
-            "z": 300
-          },
-          "rotation": {
-            "x": 0,
-            "y": 0.7071067811865476,
-            "z": 0,
-            "w": 0.7071067811865476
+            "z": 150
           }
         },
         {

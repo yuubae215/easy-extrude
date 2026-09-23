@@ -940,11 +940,19 @@ is consumed; target entity fields are never written by `_updateFastenedFrames()`
 ### 各ロボットの TF ロール (`CoordinateFrame.robotRole`)
 
 ```
-world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:'tcp', parentId=base.id)
+world ──▶ base (robotRole:'base', parentId=null) ──▶ tcp (robotRole:'tcp', parentId=base.id,
+                                                          mountedOn:'flange')
+          保存する辺: world → base (据付け) と tool0 → tcp (取付け = tcp の translation/rotation)
+          導出する合成: tcp_world = base ∘ FLANGE_REST_POSE (URDF FK) ∘ 取付け   (ADR-151)
 ```
 
-- 1 台につき base ちょうど 1、tcp は `0..1` (tcp 不在も正当 — `tcpOrientation` を
-  省いた要求は core/ が代替軸へフォールバックする。ADR-084 §3)。
+- 1 台につき base ちょうど 1、tcp は `0..1`。tcp 0 個は正当で、意味は ADR-151 で
+  「ロボットとグリッパの接点 (取付け) が未宣言」に確定した — 把持探索は理由つきで
+  止まり (既定のツール長で埋めない)、腕はツールも印も描かない。
+- **tcp の取付けの形** (`mountedOn`): `flange` / 未宣言 (ADR-151 以前の base 相対) の 2 状態で、
+  遷移は未宣言 → flange の一方向のみ、シーン入口の `_upgradeLegacyRobotFrames` だけが
+  起こす (値は既定の取付けへ置換・件数を `robotTcpMountReset` で警告)。2 状態・一方向なので
+  図は起こさない (台帳の行 `tcp の取付けの形` が累積器)。
 - 書き手は `SceneService._setRobotRole()` の 1 箇所で、`robotRoleChanged` を発行する
   (Outliner の ROBOT バッジと grasp パネルの roster は購読側 — 原則 #5/#18)。
 - レガシー経路: role 欄を持たない scene / DSL は名前 (`robot_base` + `parentId===null`)

@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-import { parseUrdfChain, restPoseToQ, deriveFlangeSeed, MalformedUrdf } from './UrdfChain.js'
+import { parseUrdfChain, restPoseToQ, deriveFlangeRestPose, MalformedUrdf } from './UrdfChain.js'
 import { forwardKinematics } from './Kinematics.js'
 import { ROBOT_REST_POSE } from '../domain/robotConfig.js'
 
@@ -44,8 +44,8 @@ test('restPoseToQ maps named angles to an ordered q vector (absent joints = 0)',
   assert.deepEqual(restPoseToQ(chain, ROBOT_REST_POSE), [0, -1.0, 1.2, -1.8, -1.5708, 0])
 })
 
-test('derived flange seed reproduces ADR-084 hand-copied constant (regression baseline)', () => {
-  const seed = deriveFlangeSeed(URDF, ROBOT_REST_POSE)
+test('derived flange rest position reproduces ADR-084 hand-copied constant (regression baseline)', () => {
+  const seed = deriveFlangeRestPose(URDF, ROBOT_REST_POSE).position
   // The old constant was (-0.717, -0.133, 0.346), read off the real urdf-loader
   // render — matched here to 3dp straight from the URDF FK.
   assert.ok(Math.abs(seed.x - (-0.717)) < 5e-4, `x=${seed.x}`)
@@ -53,13 +53,13 @@ test('derived flange seed reproduces ADR-084 hand-copied constant (regression ba
   assert.ok(Math.abs(seed.z - 0.346) < 5e-4, `z=${seed.z}`)
 })
 
-test('the seed FOLLOWS the rest pose — no hand-copied constant survives (ADR-088)', () => {
+test('the flange rest pose FOLLOWS the rest pose — no hand-copied constant survives (ADR-088)', () => {
   // A different rest pose must move the seed. If a constant were still the source
   // of truth this would keep returning the old flange position.
   const restA = ROBOT_REST_POSE
   const restB = { ...ROBOT_REST_POSE, shoulder_pan_joint: Math.PI / 2 }
-  const seedA = deriveFlangeSeed(URDF, restA)
-  const seedB = deriveFlangeSeed(URDF, restB)
+  const seedA = deriveFlangeRestPose(URDF, restA).position
+  const seedB = deriveFlangeRestPose(URDF, restB).position
   assert.notDeepEqual(seedB, seedA)
   // pan is the base yaw: it rotates the (x,y) flange offset about world +Z, so a
   // 90° pan must swap the base-frame x/y roughly (x→y, y→-x), z unchanged.
@@ -67,10 +67,13 @@ test('the seed FOLLOWS the rest pose — no hand-copied constant survives (ADR-0
   assert.ok(Math.abs(seedB.x - (-seedA.y)) < 1e-9 && Math.abs(seedB.y - seedA.x) < 1e-9, 'x/y rotate 90°')
 })
 
-test('the seed derivation equals a straight FK call (no hidden transform)', () => {
+test('the flange rest pose equals a straight FK call, orientation included (no hidden transform)', () => {
   const chain = parseUrdfChain(URDF)
-  const { position } = forwardKinematics(chain, restPoseToQ(chain, ROBOT_REST_POSE))
-  assert.deepEqual(deriveFlangeSeed(URDF, ROBOT_REST_POSE), { x: position.x, y: position.y, z: position.z })
+  const { position, quaternion } = forwardKinematics(chain, restPoseToQ(chain, ROBOT_REST_POSE))
+  assert.deepEqual(deriveFlangeRestPose(URDF, ROBOT_REST_POSE), {
+    position:   { x: position.x, y: position.y, z: position.z },
+    quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+  })
 })
 
 test('rejects malformed / empty URDF input (no silent 0,0,0)', () => {

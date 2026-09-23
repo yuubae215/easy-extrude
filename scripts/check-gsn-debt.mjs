@@ -305,7 +305,11 @@ const SUPPORT_LABELS = new Map([
 // 3 goal を足した (TCP の印がツール先端に追従 / tcp 実体 0 個 + 移行警告 / tcpOrientation の
 // 導出)。ADR-144/145 の先例どおり、実装して support-verified に上がった日に下げる。
 // 3 つとも満期は機械可読 (GREP:src/view/RobotStage.js::_attachTcpMarker)。
-const DEBT_BASELINE = 51
+// 2026-09-23 (ADR-151 実装): 51 → 49。起票時の 3 goal (印の追従 / 保存された tcp /
+// ワイヤの導出) が e2e・unit の solution で支えられて verified になり、第二段 (DEF-045 —
+// 取付けの 6 自由度をワイヤと core/ へ) の goal が 1 つ exploring として増えた (差し引き −2)。
+// 満期は機械可読 (GREP:…grasp-search-request.schema.json::toolMount)。
+const DEBT_BASELINE = 49
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
