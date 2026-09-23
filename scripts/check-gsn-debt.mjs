@@ -301,7 +301,11 @@ const SUPPORT_LABELS = new Map([
 // ピック検証の分割 = DEF-043、シーンの tcp フレームの seed がフランジのまま = DEF-044)。
 // どちらも登録簿の行で満期は機械可読 (PATH:pick-sequence-response.schema.json /
 // GREP:robotSkeleton.js::TOOL_LENGTH_M)。ADR-150 の他の 5 goal はすべて support-verified。
-const DEBT_BASELINE = 48
+// 2026-09-23 (同日・別ADR): 48 → 51。ADR-151 (Proposed・起票のみ — 当事者の指示) の木が
+// 3 goal を足した (TCP の印がツール先端に追従 / tcp 実体 0 個 + 移行警告 / tcpOrientation の
+// 導出)。ADR-144/145 の先例どおり、実装して support-verified に上がった日に下げる。
+// 3 つとも満期は機械可読 (GREP:src/view/RobotStage.js::_attachTcpMarker)。
+const DEBT_BASELINE = 51
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
