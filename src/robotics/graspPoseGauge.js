@@ -13,11 +13,15 @@
  * | 候補 frame (ワイヤ) | **−approach** | `core/engine/pose_codec.py` の FRAME_CONVENTION |
  * | フランジ目標 (IK の入力) | **+approach** | `core/engine/ur_solver.py` の `FLANGE_Z_IS_APPROACH` |
  *
- * 180° 違うと言えれば楽だが**そうではない**: どちらも `basisFromZ(z)` で基準 x/y を
- * 張り直しており、`basisFromZ(−a)` は `basisFromZ(a)` の符号違いにならない
- * (参照軸の選び方が z の成分で切り替わるため)。だから「ワイヤの四元数を 180° 回す」
- * では**もっともらしいがずれた**姿勢になる。復元は (approach, roll) まで戻してから
- * 張り直す、という往復でしか正しくならない。
+ * **フランジ = 候補 frame を自身の x 軸まわりに 180° 回したもの** (x はそのまま、
+ * y と z が反転) — ツールがフランジに剛体で付いている、という事実の式である
+ * (ADR-150 D5)。候補 frame の x は平行ジョーの閉じ軸 (`core/` の把持ゲートが幅を
+ * 測る軸) なので、それがフランジに対して動かないことが「固定されている」の意味。
+ *
+ * ADR-147 はここを「180° 回すだけでは一致しない」と書いていた。当時はフランジの x を
+ * `basisFromZ(+approach)` から**張り直して**いたので、それは正しい観察だった — ただし
+ * 観察されていたのは**張り直しの欠陥**で、閉じ軸はフランジ座標で roll の 2 倍で回って
+ * いた (手首 θ6 と判定したジョーの向きが一致しない)。
  *
  * ## これは導出であって第二の源ではない
  *
@@ -94,21 +98,35 @@ export function poseFromFrame(frame) {
  * (position, approach, roll) → **フランジの目標同次変換** (row-major 4x4)。
  *
  * `core/` の `ur_solver.flange_target` と同じ: フランジの +Z が approach と同じ向き
- * (UR の `tool0` が +Z をツール方向に取る慣例)、+X は同じ基準軸を roll だけ回したもの。
+ * (UR の `tool0` が +Z をツール方向に取る慣例)、+X は**候補 frame の +X そのもの**
+ * (= 閉じ軸)。フランジ = 候補 frame を自身の x 軸まわりに 180° 回した固定の取付け。
  *
  * 退化 (approach がゼロ長) は **null** — 目標が定義できないことを「解が無い」と
  * 混ぜない。
  *
+ * **pose.position は TCP (ツール先端)** で、フランジはそこから approach の逆向きに
+ * `toolLength` だけ戻る (ADR-150 D4 — `core/` の `flange_target` と同じ)。0 は
+ * 「フランジ = TCP」で、ADR-150 以前の答えそのもの。
+ *
+ * @param {{position:number[], approach:number[], roll:number}} pose
+ * @param {number} [toolLength=0]  フランジ (tool0) → TCP の長さ (フランジ +Z 方向)
  * @returns {number[]|null}
  */
-export function flangeTarget(pose) {
+export function flangeTarget(pose, toolLength = 0) {
+  if (!(toolLength >= 0) || !Number.isFinite(toolLength)) {
+    throw new Error(`toolLength は 0 以上の有限数 (受け取った: ${toolLength})`)
+  }
   const z = normalized(pose.approach)
   if (Math.hypot(z[0], z[1], z[2]) < EPS) return null
-  const [bx, by] = basisFromZ(z)
+  // x = 候補 frame の x (平行ジョーの閉じ軸)。候補 frame は +Z = −approach から張る
+  // ので basisFromZ(−z) を roll だけ回したもの — `core/` の `frame_axes` と同じ。
+  // ツールは剛体なので閉じ軸はフランジに固定される (ADR-150 D5)。
+  const [bx, by] = basisFromZ(scale(z, -1))
   const c = Math.cos(pose.roll), s = Math.sin(pose.roll)
   const x = [bx[0] * c + by[0] * s, bx[1] * c + by[1] * s, bx[2] * c + by[2] * s]
   const y = cross(z, x)
-  const p = pose.position
+  const tcp = pose.position
+  const p = [tcp[0] - z[0] * toolLength, tcp[1] - z[1] * toolLength, tcp[2] - z[2] * toolLength]
   return [
     x[0], y[0], z[0], p[0],
     x[1], y[1], z[1], p[1],
@@ -133,16 +151,17 @@ export function flangeTarget(pose) {
  * @param {{position:number[], orientation:number[]}} frame  ワイヤの候補 frame
  * @param {number[]} base                        ベース位置 [x,y,z] (world)
  * @param {number[]|null} baseOrientation        据付姿勢 [x,y,z,w]、未宣言なら null
+ * @param {number} [toolLength=0]                フランジ → TCP の長さ (ADR-150 D4)
  * @returns {number[]|null}
  */
-export function flangeTargetInBaseFrame(frame, base, baseOrientation = null) {
+export function flangeTargetInBaseFrame(frame, base, baseOrientation = null, toolLength = 0) {
   if (!Array.isArray(base) || base.length !== 3 || !base.every(Number.isFinite)) {
     throw new Error(
       `base は有限数 3 つの配列で渡す (受け取った: ${JSON.stringify(base)}) — ` +
       'オブジェクト形と取り違えると行列が NaN で埋まり、解が 0 本という正しい形の嘘になる',
     )
   }
-  const world = flangeTarget(poseFromFrame(frame))
+  const world = flangeTarget(poseFromFrame(frame), toolLength)
   if (!world) return null
   const m = world.slice()
   m[3] -= base[0]

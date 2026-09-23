@@ -102,6 +102,9 @@ export const useUIStore = create((set, get) => ({
   // 全滅時だけ実測へ書き戻す (AppController 側)。既定は RobotStageSet の既定と
   // 一致させ 'realistic'。
   robotAppearance: 'realistic',
+  // 実写メッシュの読み込み中か (ADR-150 D3)。権威は `RobotStageSet` の
+  // `loading` イベントで、ここはその表示用の写し。AppController の購読だけが書く。
+  robotAppearanceLoading: false,
 
   // ── Context Menu ──────────────────────────────────────────────────────────
   // { x, y, items: [{label, onClick, danger?}] } | null
@@ -369,6 +372,7 @@ export const useUIStore = create((set, get) => ({
 
     setProjection: (kind) => set({ projection: kind }),
     setRobotAppearance: (style) => set({ robotAppearance: style }),
+    setRobotAppearanceLoading: (loading) => set({ robotAppearanceLoading: loading }),
 
     setGizmoRightOffset: (px) => set({ gizmoRightOffset: px }),
 

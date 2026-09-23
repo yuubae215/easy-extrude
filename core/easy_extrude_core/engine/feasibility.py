@@ -253,6 +253,7 @@ def arm_link_segments(
     dh: UrDhParameters,
     solution: "Optional[IkSolution]",
     robot: "Optional[Robot]",
+    tool_length: float = 0.0,
 ) -> "tuple[tuple[Vec3, Vec3], ...]":
     """関節解 -> **ワールド座標**の腕リンク線分列 (純粋, ADR-145 D1/D2)。
 
@@ -266,20 +267,28 @@ def arm_link_segments(
     据付姿勢 (`robot.base_orientation`, ADR-129 D2) でワールドへ戻す。据付姿勢が
     未宣言なら恒等 — `UniversalRobotsIkSolver.solve` が目標をベース座標へ戻すときと
     **同じ仮定**を使う (ここで別の既定を作ると、解いた腕と描く腕がずれる)。
+
+    `tool_length > 0` なら**ツール区間** (フランジ -> TCP、フランジ +Z 方向) を最後に
+    足す (ADR-150 D4)。ツールは腕に剛体で付いた体積なので、腕と同じ問いにかける —
+    隣のワークやトレーの壁にツールが刺さる候補は、フランジが無事でも棄却される。
     """
     if not isinstance(solution, JointSolution) or robot is None:
         return ()
     chain = forward_kinematics_chain(dh, solution.joints)
-    origins: list[Vec3] = []
-    for m in chain:
-        local = Vec3(m[3], m[7], m[11])
-        if robot.base_orientation is not None:
-            local = robot.base_orientation.rotate(local)
-        origins.append(robot.base + local)
-    return tuple(
+
+    def to_world(v: Vec3) -> Vec3:
+        return robot.base_orientation.rotate(v) if robot.base_orientation is not None else v
+
+    origins: list[Vec3] = [robot.base + to_world(Vec3(m[3], m[7], m[11])) for m in chain]
+    segments = [
         (origins[i], origins[i + 1])
         for i in range(_JOINT_INDEPENDENT_LINKS, len(origins) - 1)
-    )
+    ]
+    if tool_length > 0.0:
+        flange = chain[-1]
+        z = to_world(Vec3(flange[2], flange[6], flange[10]))
+        segments.append((origins[-1], origins[-1] + z.scaled(tool_length)))
+    return tuple(segments)
 
 
 @dataclass(frozen=True)
@@ -305,6 +314,9 @@ class NaiveArmSweepCollisionChecker:
     dh: UrDhParameters
     inner: CollisionChecker
     probe_radius: float = 0.0
+    # フランジに付いたツールの長さ (ADR-150 D4)。IK ソルバと同じ宣言から渡す —
+    # 解いたツールと判定するツールが別の長さを持たないように。
+    tool_length: float = 0.0
 
     def in_collision(
         self,
@@ -318,7 +330,7 @@ class NaiveArmSweepCollisionChecker:
             candidate, obstacles, solution=solution, robot=robot
         ):
             return True
-        for a, b in arm_link_segments(self.dh, solution, robot):
+        for a, b in arm_link_segments(self.dh, solution, robot, self.tool_length):
             for obs in obstacles:
                 if obs.surface_distance_to_segment(a, b) <= self.probe_radius + _EPS:
                     return True

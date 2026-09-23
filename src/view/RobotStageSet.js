@@ -2,6 +2,7 @@
 import { RobotStage } from './RobotStage.js'
 import { previewAssignments } from '../domain/robotConfig.js'
 import { ROBOT_RENDER_STYLE, assertRenderStyle } from '../domain/robotVisualStyle.js'
+import { prefetchRealisticRobot } from './realisticRobotAsset.js'
 
 /**
  * RobotStageSet — the N-robot seat for skeleton views (ADR-090).
@@ -51,6 +52,56 @@ export class RobotStageSet {
      * that can reach `setRenderStyle` moved.
      */
     this._renderStyle = ROBOT_RENDER_STYLE.REALISTIC
+    /** @type {number} style loads in flight across all stages (ADR-150 D3) */
+    this._loadsInFlight = 0
+    /** @type {Set<(event: RobotStageSetEvent) => void>} */
+    this._listeners = new Set()
+    // Start the one shared mesh load now, not on the first spawn (ADR-150 D1):
+    // by the time an arm is added, the asset is usually `ready` and the first
+    // look costs a clone, not a fetch.
+    if (this._renderStyle === ROBOT_RENDER_STYLE.REALISTIC) prefetchRealisticRobot()
+  }
+
+  /**
+   * @typedef {{type: 'loading', loading: boolean}
+   *         | {type: 'adoptFailed', id: string, style: string, error: unknown}} RobotStageSetEvent
+   */
+
+  /**
+   * Subscribe to this set's load lifecycle (原則 #5 — the chrome listens, it
+   * does not poll the set). `loading` fires on the 0→1 and 1→0 edges of "a
+   * style load is in flight somewhere"; `adoptFailed` fires when a NEW stage
+   * could not adopt the scene's style (its skeleton is shown instead — the
+   * listener is how the user hears about it, 原則 #11).
+   * @param {(event: RobotStageSetEvent) => void} listener
+   * @returns {() => void} unsubscribe
+   */
+  subscribe(listener) {
+    this._listeners.add(listener)
+    return () => this._listeners.delete(listener)
+  }
+
+  _emit(event) {
+    for (const listener of this._listeners) listener(event)
+  }
+
+  /** Whether any style load is in flight (read-only mirror of the `loading` event). */
+  get loading() { return this._loadsInFlight > 0 }
+
+  /**
+   * Count a stage's style load in and out of flight. The ONE place the
+   * counter moves, so the 0→1 / 1→0 edges cannot be double-counted.
+   * @template T
+   * @param {Promise<T>} promise
+   * @returns {Promise<T>}
+   */
+  _track(promise) {
+    if (this._loadsInFlight++ === 0) this._emit({ type: 'loading', loading: true })
+    const settle = () => {
+      if (--this._loadsInFlight === 0) this._emit({ type: 'loading', loading: false })
+    }
+    promise.then(settle, settle)
+    return promise
   }
 
   /** Number of live skeletons (the view-side cardinality). */
@@ -79,7 +130,9 @@ export class RobotStageSet {
 
     for (const id of wanted) {
       if (this._stages.has(id)) continue
-      const stage = new RobotStage(this._scene)
+      // The stage is told the scene's style AT BIRTH (ADR-150 D2), so it can
+      // stay hidden until that style lands instead of flashing the skeleton.
+      const stage = new RobotStage(this._scene, { declaredStyle: this._renderStyle })
       this._stages.set(id, stage)
       // The obligation "a new stage draws the style this scene declared" lives
       // HERE, on the event that creates the stage, not next to the declaration
@@ -88,8 +141,11 @@ export class RobotStageSet {
       // second place encodes which style is the default (ADR-149: the
       // default is REALISTIC, so this call fetches the ~9 MB mesh for every
       // newly created stage unless the scene has switched to skeleton).
-      stage.setRenderStyle(this._renderStyle).catch(err => console.error(
-        `RobotStageSet.sync: "${id}" could not adopt the scene's "${this._renderStyle}" style.`, err))
+      const style = this._renderStyle
+      this._track(stage.setRenderStyle(style)).catch(error => {
+        console.error(`RobotStageSet.sync: "${id}" could not adopt the scene's "${style}" style.`, error)
+        this._emit({ type: 'adoptFailed', id, style, error })
+      })
       changed = true
     }
     for (const [id, stage] of [...this._stages]) {
@@ -209,7 +265,7 @@ export class RobotStageSet {
     const previous = this._renderStyle
     this._renderStyle = style
     const results = await Promise.allSettled(
-      [...this._stages.values()].map(stage => stage.setRenderStyle(style)))
+      [...this._stages.values()].map(stage => this._track(stage.setRenderStyle(style))))
     const failed = results.filter(r => r.status === 'rejected')
     if (failed.length === 0) return
     if (failed.length === results.length) this._renderStyle = previous
@@ -275,8 +331,25 @@ export class RobotStageSet {
     return best
   }
 
+  /**
+   * What the viewer SEES on each arm, keyed by robot id (`null` = hidden while
+   * its first look loads). See `RobotStage.shownStyle` (ADR-150).
+   * @returns {Record<string, 'skeleton'|'realistic'|null>}
+   */
+  shownStyles() {
+    const out = {}
+    for (const [id, stage] of this._stages) out[id] = stage.shownStyle
+    return out
+  }
+
+  /** Ids whose arm is still hidden waiting for its first look (ADR-150; e2e observation surface). */
+  awaitingFirstLook() {
+    return [...this._stages].filter(([, stage]) => stage.awaitingFirstLook).map(([id]) => id)
+  }
+
   /** Symmetric teardown of every stage created by sync() (原則 #9). */
   dispose() {
+    this._listeners.clear()
     for (const stage of this._stages.values()) stage.dispose()
     this._stages.clear()
   }

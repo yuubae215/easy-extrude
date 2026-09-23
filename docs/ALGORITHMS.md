@@ -23,7 +23,7 @@
 | 候補生成 | 表面サンプル × 傾き × ロールの離散列挙 | `core/…/engine/candidates.py` | core のみ |
 | リーチ判定 | 球殻 `[reach_min, reach_max]` の距離比較 | `core/…/engine/feasibility.py: within_reach` | core のみ |
 | 干渉 (進入経路) | 線分 vs 障害物の表面距離 | `core/…/engine/feasibility.py: NaivePathCollisionChecker` | core のみ |
-| 干渉 (腕リンク) | FK チェーンの各リンクを線分近似 | `core/…/engine/feasibility.py: NaiveArmSweepCollisionChecker` | core のみ |
+| 干渉 (腕リンク + ツール) | FK チェーンの各リンクを線分近似 + フランジ→TCP のツール区間 (ADR-150) | `core/…/engine/feasibility.py: NaiveArmSweepCollisionChecker` | core のみ |
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
 | 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口 | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
 | 把持性 (吸引) | カップ footprint 内の法線の揃い | `core/…/engine/feasibility.py: NaiveSuctionGraspChecker` | core のみ |
@@ -96,20 +96,28 @@ UR5e: `d1=0.1625, a2=−0.425, a3=−0.3922, d4=0.1333, d5=0.0997, d6=0.0996`。
 > **残し**: 「干渉しない解が見つかるまで 8 解を順に試す」モードは未実装 (DEF-037)。
 > 今日は代表解が干渉すれば候補は単に棄却される。
 
-### 2.5 2 つの gauge (ADR-147)
+### 2.5 2 つの gauge と固定の取付け (ADR-147 → ADR-150 D5)
 
 契約に載る候補 frame と IK が解くフランジ目標は**同じ向きではない**:
 
-| | +Z 軸 | 宣言 |
-|---|---|---|
-| 候補 frame (ワイヤ) | **−approach** | `pose_codec.py` の FRAME_CONVENTION |
-| フランジ目標 (IK 入力) | **+approach** | `ur_solver.py` の `FLANGE_Z_IS_APPROACH` |
+| | +Z 軸 | +X 軸 | 原点 | 宣言 |
+|---|---|---|---|---|
+| 候補 frame (ワイヤ) | **−approach** | 閉じ軸 (`basisFromZ(−a)` を roll) | TCP | `pose_codec.py` の FRAME_CONVENTION |
+| フランジ目標 (IK 入力) | **+approach** | **候補 frame の +X そのもの** | TCP − L·a | `ur_solver.py` の `FLANGE_Z_IS_APPROACH` |
 
-**「180° 回せばよい」ではない。** どちらも `basisFromZ(z)` で基準 x/y を張り直しており、
-参照軸の選び方が z の成分で切り替わる (`|z| < 0.9` か否か) ため、
-`basisFromZ(−a)` は `basisFromZ(a)` の符号違いにならない。復元は (approach, roll) まで
-戻してから張り直す往復でしか正しくならない。**近道が効かないことは測って焼いてある**
-(`CrossLanguageDerivation.test.js` の「楽な近道の否定」)。
+すなわち**フランジ = 候補 frame を自身の x 軸まわりに 180° 回し、approach の逆向きに
+ツール長 L だけ戻したもの** — ツールがフランジに剛体で付いている、という事実の式:
+
+$$x_f = x_c,\qquad z_f = a = -z_c,\qquad y_f = z_f \times x_f = -y_c,\qquad p_f = p_{tcp} - L\,a .$$
+
+L は `robot.toolLength` (未宣言 = 0 = ADR-150 以前の「フランジ = TCP」)。
+
+ADR-147 はフランジの x を `basisFromZ(+a)` から**張り直して**おり、閉じ軸がフランジ座標で
+$(-\cos 2r,\ \sin 2r)$ — roll の 2 倍で回っていた。当時「180° 回せばよい、ではない」と
+焼いていたのはその張り直しの帰結だった。いまは**近道そのものが規約**で、
+`CrossLanguageDerivation.test.js` が全フィクスチャで「固定の取付け」を問う。
+θ6 だけが変わるが、代表解 (関節総移動量最小) は θ6 を含む和なので**代表の枝が変わる
+候補がある** (ペデスタルテンプレートで 36 中 18)。
 
 ---
 

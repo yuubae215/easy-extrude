@@ -381,7 +381,8 @@ def search_report(
         # ADR-145: 腕リンクの FK スイープを既存の進入経路判定に**足す** (置き換えない)。
         # 運動学を宣言したリクエストでだけ有効になるので、既存テンプレの答えは不変。
         checker = NaiveArmSweepCollisionChecker(
-            dh=solver.dh, inner=NaivePathCollisionChecker()
+            dh=solver.dh, inner=NaivePathCollisionChecker(),
+            tool_length=solver.tool_length,
         )
     else:
         checker = NaivePathCollisionChecker()

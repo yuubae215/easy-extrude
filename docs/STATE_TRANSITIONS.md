@@ -1178,6 +1178,46 @@ stateDiagram-v2
 
 ---
 
+## Realistic asset — idle / loading / ready / failed (ADR-150 D1)
+
+**4 状態 = §1.4 の閾値を跨ぐ**ので、クラスより先にここへ起こした。実体は
+「UR5e 純正メッシュの解析済みテンプレート」で、**アプリ全体でちょうど 0 か 1**
+(0 = まだ誰も要求していない)。ADR-150 以前はこの実体そのものが無く、stage ごとに
+私的な load が N 本走っていた — 基数に権威が無かった (原則 #31)。
+
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> loading : request() — 先読み (RobotStageSet 生成時) か最初の stage
+    loading --> ready : resolve — 全メッシュ着地
+    loading --> failed : reject — URDF / メッシュの取得失敗
+    failed --> loading : request() — 次の要求で再試行 (失敗は sticky にしない)
+```
+
+- **禁止遷移は throw** (`nextAssetState`): `idle --resolve-->` は「誰も始めていない
+  load が着地した」= バグであって無視してよい no-op ではない。`ready` から出る辺は無い
+  (キャッシュは解放しない、が宣言された挙動)。
+- `loading` 中の要求は**同じ Promise**を受け取る — N 台同時スポーンでも fetch は 1 本。
+- 純粋な記述は `src/domain/robotVisualStyle.js` (`ASSET_STATE` / `nextAssetState` /
+  `createSharedAsset`)、問い所は `robotVisualStyle.test.js`。
+
+### 腕の初見 — 待機 / 表示済み (ADR-150 D2)
+
+stage 1 個ぶん、2 状態・一方向。閾値未満だが**記録する**。
+
+```mermaid
+stateDiagram-v2
+    [*] --> 待機 : 宣言スタイル ≠ skeleton
+    [*] --> 表示済み : 宣言スタイル = skeleton
+    待機 --> 表示済み : 宣言スタイル着地 / load 失敗 (skeleton を見せて reject)
+```
+
+`待機` の間も skeleton は**構築済み・非表示**で、アクセサ (`previewState` /
+`worldSpan`) は初フレームから動く。可視性の書き手は 2 つの**別の**ノードに分かれる:
+group = Outliner の目 (`setVisible`)、robot ノード = この初見 (`_endFirstLook`)。
+
+---
+
 ## Related ADRs
 
 - **ADR-002**: Two-step Sketch → Extrude workflow

@@ -767,9 +767,21 @@ def test_the_gauge_fixture_still_matches_what_core_computes_today():
             pre_grasp=pose.position - pose.approach.scaled(0.1),
             surface_normal=pose.approach.scaled(-1.0),
         )
-        assert flange_target(candidate) == pytest.approx(
+        assert flange_target(candidate, case["toolLength"]) == pytest.approx(
             tuple(case["flangeTarget"]), abs=tolerance
         )
+
+
+def test_the_gauge_fixture_declares_a_tool_length_on_every_case_zero_and_not():
+    """ADR-150 D4: 全ケースが `toolLength` を**明示**し、0 と非 0 の両方を含む。
+
+    欠けたキーを 0 と読むと「0 を宣言した」と「書き忘れた」が区別できず、0 だけの
+    フィクスチャでは tool_length を無視する写しでも緑になる (原則 #31)。
+    """
+    fixture = json.loads(_GAUGE_FIXTURE.read_text(encoding="utf-8"))
+    lengths = [c["toolLength"] for c in fixture["cases"]]
+    assert any(length == 0.0 for length in lengths)
+    assert any(length > 0.0 for length in lengths)
 
 
 def test_the_gauge_fixture_exercises_both_reference_axis_branches():
@@ -786,3 +798,23 @@ def test_the_gauge_fixture_exercises_both_reference_axis_branches():
     ]
     assert any(z >= 0.9 for z in zs), "|z| >= 0.9 の姿勢が無い"
     assert any(z < 0.9 for z in zs), "|z| < 0.9 の姿勢が無い"
+
+
+def test_with_a_tool_the_flange_stops_short_and_the_tool_tip_lands_on_the_candidate():
+    """ADR-150 D4: 候補 position は **TCP**。フランジは approach の逆向きに tool だけ戻る。
+
+    FK(解) のフランジ原点 + tool * フランジ +Z = 候補 position。ツール長を無視した
+    解 (フランジ = 候補) とは tool だけ離れていることも同時に問う — 同じ点に着くなら
+    宣言が効いていない。
+    """
+    tool = 0.15
+    robot = Robot(base=Vec3(0, 0, 0), reach_min=0.0, reach_max=10.0)
+    candidate = _candidate(Vec3(0.4, 0.1, 0.3), Vec3(0, 0, -1))
+
+    solution = UniversalRobotsIkSolver(dh=UR5E, tool_length=tool).solve(candidate, robot)
+    assert solution is not None
+    m = forward_kinematics(UR5E, solution.joints)
+    tip = (m[3] + m[2] * tool, m[7] + m[6] * tool, m[11] + m[10] * tool)
+    p = candidate.pose.position
+    assert max(abs(tip[0] - p.x), abs(tip[1] - p.y), abs(tip[2] - p.z)) < 1e-9
+    assert abs(math.dist((m[3], m[7], m[11]), (p.x, p.y, p.z)) - tool) < 1e-9

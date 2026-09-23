@@ -35,6 +35,14 @@ import { COLOR, Z, rgba } from '../../theme/tokens.js'
  * `onRobotAppearanceChange` wiring.
  */
 
+/**
+ * While the scene's mesh is loading, a newly spawned arm is HIDDEN rather than
+ * drawn as the skeleton first (ADR-150 D2). This pill is the fixed slot that
+ * says so (原則 #15 — same position, different content), so an empty base is
+ * never an unexplained absence (原則 #11).
+ */
+const LOADING = { short: 'LOADING…', title: 'Loading the realistic UR5e mesh…' }
+
 const LABEL = {
   realistic: { short: 'REAL', title: 'Realistic UR5e mesh — switch to lightweight skeleton' },
   skeleton:  { short: 'LITE', title: 'Lightweight skeleton — switch to realistic UR5e mesh' },
@@ -44,18 +52,21 @@ export function RobotAppearanceToggle() {
   const appearance = useUIStore(s => s.robotAppearance)
   const callbacks   = useUIStore(s => s.callbacks)
   const offset      = useUIStore(s => s.gizmoRightOffset)
+  const loading     = useUIStore(s => s.robotAppearanceLoading)
   const reduced     = useReducedMotion()
   const [hovered, setHovered] = useState(false)
   const [pressed, setPressed] = useState(false)
 
   const isLite = appearance === 'skeleton'
-  const label  = LABEL[appearance] ?? LABEL.realistic
+  const label  = loading ? LOADING : (LABEL[appearance] ?? LABEL.realistic)
 
   return (
     <button
       title={label.title}
       aria-label={label.title}
       aria-pressed={isLite}
+      aria-busy={loading}
+      data-loading={loading ? 'true' : 'false'}
       onClick={() => callbacks.onRobotAppearanceChange?.(isLite ? 'realistic' : 'skeleton')}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => { setHovered(false); setPressed(false) }}

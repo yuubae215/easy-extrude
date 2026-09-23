@@ -159,3 +159,34 @@ test('provenance is declared, not silent (Apache-2.0 source)', () => {
   assert.ok(existsSync(`${REALISTIC_DIR}/LICENSE.txt`))
   assert.ok(existsSync(`${REALISTIC_DIR}/NOTICE.md`))
 })
+
+/**
+ * Agreeing joint ORIGINS is not agreeing SILHOUETTES. The UR shoulder offset
+ * (d4 = 0.1333) is a sum the kinematics never splits, but the real arm splits
+ * it: the upper arm runs 0.138 out along the lift axis and the forearm comes
+ * back to 0.007, leaving only a short rise at the wrist. The skeleton used to
+ * draw both bones on the joint plane (z=0) and the whole offset at wrist_1 —
+ * same DH, visibly different arm, and every joint-origin test above stayed
+ * green. So the PLANE each long bone is drawn on is asked here, against the
+ * plane the official mesh is placed on.
+ */
+function linkVisualOrigins(urdfText, linkName) {
+  const block = urdfText.match(new RegExp(`<link\\s+name="${linkName}"\\s*>([\\s\\S]*?)</link>`))
+  assert.ok(block, `no <link name="${linkName}">`)
+  return [...block[1].matchAll(/<visual>([\s\S]*?)<\/visual>/g)].map(([, v]) => {
+    const tag = v.match(/<origin\b[^>]*>/)
+    return tag ? { xyz: attrNums(tag[0], 'xyz'), rpy: attrNums(tag[0], 'rpy') } : null
+  })
+}
+
+for (const link of ['upper_arm_link', 'forearm_link']) {
+  test(`the skeleton draws ${link}'s long bone on the same plane as the UR mesh`, () => {
+    const [meshOrigin] = linkVisualOrigins(REALISTIC_URDF, link)
+    // The long bone is the one laid along -X (rpy pitch = π/2); knuckles run along +Z.
+    const bone = linkVisualOrigins(SKELETON_URDF, link)
+      .find(o => o && Math.abs(o.rpy[1] - Math.PI / 2) < 1e-6)
+    assert.ok(bone, `${link} has no -X bone in the skeleton`)
+    assert.ok(Math.abs(bone.xyz[2] - meshOrigin.xyz[2]) < 1e-6,
+      `${link}: skeleton bone plane z=${bone.xyz[2]} vs UR mesh z=${meshOrigin.xyz[2]}`)
+  })
+}

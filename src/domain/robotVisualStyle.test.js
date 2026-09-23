@@ -17,6 +17,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  ASSET_STATE, nextAssetState, createSharedAsset,
   ROBOT_RENDER_STYLE, assertRenderStyle, settledStyle, isRedundantStyleRequest,
 } from './robotVisualStyle.js'
 
@@ -78,4 +79,48 @@ test('the same request twice in a row settles on the second one, both orders', (
     assert.equal(settledStyle(committed, pending), b,
       `after requesting ${a} then ${b}, the stage must be heading for ${b}`)
   }
+})
+
+// ── The shared realistic asset (ADR-150 D1) ─────────────────────────────────
+
+test('asset transitions: only the declared edges exist', () => {
+  assert.equal(nextAssetState(ASSET_STATE.IDLE, 'request'), ASSET_STATE.LOADING)
+  assert.equal(nextAssetState(ASSET_STATE.LOADING, 'resolve'), ASSET_STATE.READY)
+  assert.equal(nextAssetState(ASSET_STATE.LOADING, 'reject'), ASSET_STATE.FAILED)
+  assert.equal(nextAssetState(ASSET_STATE.FAILED, 'request'), ASSET_STATE.LOADING)
+  assert.throws(() => nextAssetState(ASSET_STATE.IDLE, 'resolve'), /illegal/)
+  assert.throws(() => nextAssetState(ASSET_STATE.READY, 'request'), /illegal/)
+  assert.throws(() => nextAssetState('warming', 'request'), /undeclared/)
+})
+
+test('N stages asking at once share ONE load (the spawn flash ADR-150 removes)', async () => {
+  let calls = 0
+  const asset = createSharedAsset(async () => { calls++; return { template: true } })
+  assert.equal(asset.state, ASSET_STATE.IDLE)
+  const results = await Promise.all([asset.request(), asset.request(), asset.request()])
+  assert.equal(calls, 1)
+  assert.ok(results.every(r => r === results[0]))
+  assert.equal(asset.state, ASSET_STATE.READY)
+})
+
+test('a stage spawned AFTER the asset is ready does not load again (the second-spawn case)', async () => {
+  let calls = 0
+  const asset = createSharedAsset(async () => { calls++; return 'mesh' })
+  await asset.request()
+  await asset.request()
+  assert.equal(calls, 1)
+})
+
+test('a failed load is not sticky: the next request retries', async () => {
+  let calls = 0
+  const asset = createSharedAsset(async () => {
+    calls++
+    if (calls === 1) throw new Error('network')
+    return 'mesh'
+  })
+  await assert.rejects(asset.request(), /network/)
+  assert.equal(asset.state, ASSET_STATE.FAILED)
+  assert.equal(await asset.request(), 'mesh')
+  assert.equal(calls, 2)
+  assert.equal(asset.state, ASSET_STATE.READY)
 })

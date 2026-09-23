@@ -862,6 +862,22 @@ export class AppController {
       })
     })
 
+    // ── Robot mesh loading (ADR-150 D3) ─────────────────────────────────────
+    // A newly spawned arm stays hidden until the scene's declared style has
+    // loaded (no skeleton flash). The set announces the load and any failure;
+    // this only relays them to the chrome (原則 #5 — subscribe, don't poll).
+    // A failed adoption leaves that arm drawn as the skeleton, and says so.
+    this._sceneView.robotStages.subscribe(event => {
+      if (event.type === 'loading') {
+        this._uiView.setRobotAppearanceLoading(event.loading)
+      } else if (event.type === 'adoptFailed') {
+        this._uiView.showToast(
+          `Could not load the ${event.style} robot mesh — showing the lightweight skeleton instead.`,
+          { type: 'error' })
+      }
+    })
+    this._uiView.setRobotAppearanceLoading(this._sceneView.robotStages.loading)
+
     // Robot skeleton visibility (ADR-087): the former header toggle is gone —
     // the skeleton is the geometry of the `robot_base` entity, so its
     // show/hide is owned by that entity's Outliner eye, routed through
@@ -976,6 +992,12 @@ export class AppController {
       robotAppearance: () => ({
         declared: this._sceneView.robotStages?.renderStyle ?? null,
         drawn:    this._sceneView.robotStages?.renderStyles?.() ?? {},
+        // ADR-150: what is actually on screen per arm (`null` = hidden while
+        // its first look loads) and whether a load is in flight. `drawn` is
+        // the style each arm is HEADING FOR, so it was 'realistic' during the
+        // very frames the skeleton flashed — this lane is the one that sees it.
+        shown:    this._sceneView.robotStages?.shownStyles?.() ?? {},
+        loading:  this._sceneView.robotStages?.loading ?? false,
       }),
       // Read-only camera snapshot (position / orbit target / up). Console debug
       // aid and the E2E regression guard for the Map Mode camera-reset contract

@@ -95,15 +95,21 @@ export class GraspGhostView {
       color: 0xffffff, transparent: true, opacity: 0, dashSize: 0.08, gapSize: 0.05,
     })
 
+    // The hand (palm + fingers + their outlines) is its own group so that ONE
+    // flag decides whether it is drawn (原則 #4): hidden when the arm's own
+    // tool is showing the hand at this TCP (ADR-150 D4 — `setHandOnArm`).
+    this._hand = new THREE.Group()
+    this._glyph.add(this._hand)
+
     const palm = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.16, 0.16), this._fillMat)
     palm.position.set(0, 0, 0.45)
-    this._glyph.add(palm)
+    this._hand.add(palm)
 
     this._fingers = []
     for (const side of [-1, 1]) {
       const finger = new THREE.Mesh(fingerGeometry(), this._fillMat)
       finger.position.set(side * 0.34, 0, 0.13)
-      this._glyph.add(finger)
+      this._hand.add(finger)
       this._fingers.push({ mesh: finger, side })
     }
 
@@ -116,7 +122,7 @@ export class GraspGhostView {
       dashedLine.computeLineDistances()
       for (const line of [solidLine, dashedLine]) {
         line.position.copy(mesh.position)
-        this._glyph.add(line)
+        this._hand.add(line)
       }
       this._glyphEdges.push({ solidLine, dashedLine })
       this._disposables.push({ geometry: eg })
@@ -227,6 +233,17 @@ export class GraspGhostView {
     this._targetLine = new THREE.LineSegments(eg, this._targetMat)
     this._targetLine.renderOrder = 3
     this._scene.add(this._targetLine)
+  }
+
+  /**
+   * Whether the arm's own flange-mounted tool is showing the hand for this
+   * candidate (ADR-150 D4). When it is, the glyph draws only the approach arrow
+   * — a second, screen-sized gripper at the same TCP would be the floating,
+   * unattached hand the dogfooder reported. The one writer of `_hand.visible`.
+   * @param {boolean} onArm
+   */
+  setHandOnArm(onArm) {
+    this._hand.visible = !onArm
   }
 
   /** Hide the ghost (kept alive for the next hover — cheap show/hide cycle). */
