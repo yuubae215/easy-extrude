@@ -1,0 +1,83 @@
+GOALS adr152_how_to_grasp_and_what_grasps_are_declarations_and_each_is_seen
+
+goal DeclaredGraspReachesJudgementAndPictureAlike
+uuid aafac012-7615-4d88-af96-385fe85f7d92
+summary "ユーザーが「どこを・どの向きで・どの深さまで」「どんな形の手で」掴むかを宣言でき、その宣言が探索の判定と画面の絵の両方へ同じ値で届き、走らせる前に 3D で確かめられる。解でなく性質: 'OBB で干渉' 'プレビューを描く' は解の形"
+state ToBeDeveloped
+labels adr-152, adr-060, adr-083, adr-084, adr-117, adr-118, adr-119, adr-128, adr-146, adr-150, adr-151, principle-11, principle-29, principle-31, kernel-1-1, app, core, contract, view
+
+    context TheDrawnHandIsNotTheJudgedHand
+    uuid ae51f31e-060c-47c1-b33c-03bc4cc98f45
+    summary "2026-09-25 実測: toolParts は toolLength の割合 (0.21·L 等) から筐体・パーム・爪を描くが、core/ の干渉は flange→TCP の太さ 0 の線分 1 本 (arm_link_segments)。見えている爪がトレー壁を貫通しても『取れる』が返る — 画面がリクエストに載っていない幾何を説明している (ADR-117 と同型)"
+    artifacts
+    - "src/domain/robotTool.js"
+    - "core/easy_extrude_core/engine/feasibility.py"
+
+    context TheFaceMeansTwoThings
+    uuid 9b16b235-8afd-498b-8d28-964b5faa26b2
+    summary "2026-09-25 実測: candidates.py はサンプル点を TCP の着地点・進入を法線の逆向きとする (面 = 進入面) が、ADR-118 / graspFeature スキーマはジョーの ±x を接触面として説明している。把持幅はサンプルの広がりを閉じ軸に射影して測るので、測っているのは進入面の広がり。直方体では同じ数になりやすく表に出なかった"
+    artifacts
+    - "core/easy_extrude_core/engine/candidates.py"
+    - "src/domain/graspTargets.js"
+
+    context OnlyOneFieldWasEverSeen
+    uuid 6e4c10ef-2243-49b1-9a63-484683ba9868
+    summary "ADR-128 D1 の『入力はパネル、確認は 3D、描くのはワイヤの値』は掴む場所のサンプル点 1 欄にだけ実装された。領域の矩形・開口・カップ径・取付け長は数字の欄として存在するだけ (当事者指摘 2026-09-25『設定しただけで、どう設定されたか視覚的に確認する手段が無い』)"
+    artifacts
+    - "src/view/GraspSampleView.js"
+
+    context BusinessTreeConnectionDeferred
+    uuid e105f531-8e59-421a-b6f1-b4b7a11647ad
+    summary "事業木 docs/gsn/profit-growth.gsn への接続は実装 PR で行う (証拠が全部未来形のうちに接ぐと事業木の ToBeDeveloped を増やすだけ)。接続予定先は ADR-128 / ADR-150 の木が吊られている grasp 系 goal"
+
+    justification WhyNotMeshOrPoseOrLineOnly
+    uuid 68cf6205-e8e2-49ed-ba87-dfa6432fb11e
+    summary "却下 B (形は描画だけ、判定は線分): 見える爪が判定されない欠陥を宣言つきで固定する。C (STL メッシュ): 契約に非閉の巨大 payload + core/ にメッシュ干渉の重さ — 要求は箱/円筒 + 爪で言え、body.kind を足す拡張点として残す。F (接触面・進入面の 2 語彙): ADR-128 の 4 状態が 8 になる。G (6 自由度姿勢を直接): ユーザーが書くのは『上から・左右を・20mm』で四元数ではない。I (結果ゴーストで確認): 0 件のとき確認材料が無い"
+
+    strategy ByDeclaringShapeAndApproachAndDrawingEveryWireField
+    uuid 2c3a694a-3b59-48f1-9c48-d5597f481f04
+    summary "D1 gripper.body/fingers/cupHeight (源は tcp 実体の hand、取付けと形の矛盾は停止、未宣言は線分のまま描く)。D2 graspFeature.approach (閉じ軸・深さ) を世界座標に解決し target.approach / target.box で送る。D3 core/ が手の OBB を把持姿勢 + 進入線分上で干渉判定。D4 欄 ↔ 3D 確認の対応表 CONFIRMATION_BY_FIELD。D5 request optional のみ"
+
+        goal TheHandDrawnIsTheHandJudged
+        uuid 8eac6137-0e20-4b46-9f6b-27392e36f375
+        summary "D1/D3: 腕の手・プレビューの手・ワイヤの gripper 寸法が tcp の hand ただ 1 つから導出され、爪先の z が一致する。形が宣言されていれば爪・筐体の貫通する候補は棄却され、未宣言なら線分で判定し線分で描く"
+        labels support-exploring
+        state ToBeDeveloped
+
+            assumption HandSharesOneSourcePlanned
+            uuid 405d944a-4b4c-4e87-b09e-27a2c31b0a34
+            summary "証拠予定: robotTool.test.js — toolParts(hand) の爪先 z = body.length + fingers.length、割合の式が 0 個 (Retires の GREP が消える)、取付けが爪の範囲外 / カップ面とずれる形で理由つき停止。core/tests — トレー壁を爪が貫通する候補が棄却され (負の対照: body/fingers を外すと通る)、形なしリクエストの結果が変更前と一致。満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::\"fingers\""
+
+        goal HowToGraspIsSayableAndMeasuredRight
+        uuid e26adc7d-e298-4193-b7e0-23bf73091834
+        summary "D2: 『上から降りて・x を挟み・上面から 20mm 下』が宣言でき、閉じ軸の宣言があれば把持幅は対象 box の閉じ軸方向の厚みで測られ、深さが TCP→パームの距離を超える候補は把持性で棄却される。approach の無い宣言・導出の答えは 1 ビットも動かない"
+        labels support-exploring
+        state ToBeDeveloped
+
+            assumption ApproachDeclarationPlanned
+            uuid 983296dd-7563-44c0-b7f7-85d449ee888b
+            summary "証拠予定: graspFeature.test.js — closing が進入面法線と平行なら malformed、faces 以外に approach があれば malformed。core/tests — closingAxis 宣言で幅 = box 厚み (進入面の広がりと異なる数の fixture で焼く)、ロールが 0/π の 2 通り、depth 超過で rejectedByGrasp。回帰: approach 無しの既存テンプレ結果が不変。満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::closingAxis"
+
+            assumption DerivedWidthStaysMisread
+            uuid ac572abb-30c6-4f4b-b4ec-b2aefe2f8a97
+            summary "前提: 導出 (未宣言・anywhere) の把持幅の読み違いは正さない (既存の答えが動くため)。実装 PR で DEFERRAL_LEDGER に行を起こし満期を置く — この前提が崩れたら HowToGraspIsSayableAndMeasuredRight の『動かない』の主張ごと見直す。満期=GREP:docs/DEFERRAL_LEDGER.md::ADR-152"
+
+        goal EveryDeclaredFieldIsSeenBeforeRunning
+        uuid 39e1f472-006d-44f1-bebc-9cd5a59b0d05
+        summary "D4: 把持に関わる宣言欄のすべてに、ワイヤに載る値から描く 3D の確認が 1 つあり、走らせる前に見える (領域の矩形・進入矢印・深さ面・開いた爪・静的な手のプレビュー・カップの円)。確認は判定をしない (当たりの色を持たない)"
+        labels support-exploring
+        state ToBeDeveloped
+
+            assumption ConfirmationCensusPlanned
+            uuid f96e9925-7a92-4bbf-981f-1f69fc85dd63
+            summary "証拠予定: src/view/GraspDeclarationConfirmation.test.js — gripper / graspFeature の宣言欄をスキーマから列挙し CONFIRMATION_BY_FIELD に行の無い欄が 0、未登録欄で throw。プレビュー姿勢がワイヤの target.approach / gripper と同じ数から作られることを純粋関数で問う。e2e で宣言 → 確認の絵が出ることを 1 本 (DEF-031 の穴を狭める)。満期=PATH:src/view/GraspDeclarationConfirmation.test.js"
+
+        goal TheContractGrowsOnlyOnTheRequestSide
+        uuid 895d8588-5628-4c6f-b51b-35b599037bcf
+        summary "D5: 追加はすべて request の optional で response は不変、contractVersion は 6 のまま。BFF の導出型・core/ の pydantic・両端の準拠テストが同じ PR で動く"
+        labels support-exploring
+        state ToBeDeveloped
+
+            assumption ContractConformancePlanned
+            uuid 211c4be0-fca4-4a22-a76a-504575248a84
+            summary "証拠予定: pnpm test:contract が contractVersion=6 のまま green (response スキーマ差分 0)。server/test/grasp.contract.test.js と core/tests/test_contract_conformance.py に body/fingers/approach/box の適合 + 拒否 (未知の body.kind、負の寸法、closingAxis の長さ違い)。満期=GREP:server/test/grasp.contract.test.js::closingAxis"

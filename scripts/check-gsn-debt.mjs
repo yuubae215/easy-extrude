@@ -309,7 +309,12 @@ const SUPPORT_LABELS = new Map([
 // ワイヤの導出) が e2e・unit の solution で支えられて verified になり、第二段 (DEF-045 —
 // 取付けの 6 自由度をワイヤと core/ へ) の goal が 1 つ exploring として増えた (差し引き −2)。
 // 満期は機械可読 (GREP:…grasp-search-request.schema.json::toolMount)。
-const DEBT_BASELINE = 49
+// 2026-09-25: 49 → 53。ADR-152 (Proposed・起票のみ — 当事者の指示「まず ADR をかためる」) の
+// 木が 4 goal を足した (手の形 = 判定の形 / どう掴むかの宣言と幅の測り方 / 全宣言欄の 3D
+// 確認 / request のみの契約追加)。ADR-144/145/151 の先例どおり、実装して support-verified に
+// 上がった日に下げる。4 つとも満期は機械可読 (GREP:grasp-search-request.schema.json::closingAxis
+// ほか) なので分子 (G3) は動かない。
+const DEBT_BASELINE = 53
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
