@@ -1,6 +1,6 @@
 # 152. 把持仕様と把持戦略を語彙にし、手の形を判定に通し、宣言はすべて 3D で確かめられる
 
-- Status: Proposed
+- Status: Proposed (**決定は当事者合意済み 2026-09-26** — 手の寸法の源を tcp 実体に / 3D の確認は当たりを色で言わない / 導出の把持幅は今回直さない / 深さは mm / contractVersion 6 → 7 / `faces` は自動移行して退役。起票セッションは ADR までとし、実装は別 PR。Accepted への遷移は実装 PR で `Retires:` の 2 番地が消えたとき — `pnpm test:adr` が Accepted に消滅を要求するため、合意だけでは上げない)
 - Date: 2026-09-25 (改稿 2026-09-26 — 当事者のレビューで「把持仕様」「把持戦略」の語彙と「+x ってどこ?」の確認を追加)
 - Deciders: yuubae215 (要求: 掴む場所の「どう」とグリッパ形状の宣言を 1 PR で / 「設定しただけで、どう設定されたか視覚的に確認する手段が無い」/ 「ワーク把持仕様と把持戦略があるよね、そのための語彙は必要」/ 「+x と言ってもそれってどこ?ってなる、その確認はすごく重要」), Claude (起票)
 - Retires: GREP:src/domain/robotTool.js::0\.21 \* L · GREP:src/domain/graspFeature.js::FACES:\s+'faces'
