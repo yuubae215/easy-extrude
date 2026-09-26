@@ -933,6 +933,44 @@ A が起きた日に誰も読み返さない。B は自分がいつ死ぬべき�
 まだ ADR として存在しないときは `docs/DEFERRAL_LEDGER.md` の行が受け、満期を
 「その ADR が起票されたとき」にする (DEF-020 がその形)。
 
+### 33. Vocabulary Before Mechanism — 言えないことは作れない。語彙の充足から設計を始める
+
+変更の最初の成果物は**機構 (アルゴリズム・判定・画面) ではなく語彙**である。
+使う人が言いたい文を集め、**その文が今の語で言えるか**を先に問う。言えない文が在る
+うちは、どれほど正確な機構を積んでも、使う人はそれを**宣言できない** — 機構は
+「誰も言えないこと」を正しく計算するだけになる。
+
+語彙を問うときの 4 つの検査 (順に):
+
+1. **1 語 1 事実** — 1 つの語が 2 つの事実を運んでいないか。運んでいれば割る
+   (ubiquitous language = 一概念一名、核 §1.1 ドメイン)。兼務は計算の側ではなく
+   **読み違い**として現れ、しかも数がたまたま合う場面では何年も表に出ない。
+2. **束ねに名前** — 事実の組み合わせが繰り返し一緒に語られるなら、その束に名前を
+   与える (その束の N 個・順序・関係を言う場所がそこで初めて生まれる)。
+3. **関係にも語** — 束どうしの関係 (優先・代替・フォールバック) は束の中に数値で
+   散らさず、別の語で言う。順位を各要素の数値に持たせると同順位が表現できてしまう。
+4. **語は指す先で確かめられる** — 宣言の語 (局所軸名・略号) が**実物のどこを指すか**を、
+   走らせる前に確かめる手段を語と一緒に設計する。確かめられない語は、宣言した人にも
+   意味が分からない。
+
+**語彙が既に在るかどうかも、この順で問う。** 在るなら無いのは線だけで、語彙を足しては
+いけない (ADR-129「語彙は既に在る、無いのは線だけ」— 第二の源になる)。無いなら、
+それは*新しい語彙を決める判断*であって線の問題ではない (DEF-033 はここを取り違えて
+3 例目まで残った)。
+
+観測 (無関係な 3 文脈):
+
+| 文脈 | 欠けていた語彙 | 現れ方 |
+|---|---|---|
+| ADR-152 (把持) | 「面」が進入面と接触面を兼ね (検査 1)、「上から降りて左右を挟んで 20 mm 下」の束 = 把持仕様にも、「ダメなら吸う」の関係 = 把持戦略にも名前が無かった (2・3)。`+x` が物体のどこかは描かれていなかった (4) | 把持幅が爪の挟む厚みではなく進入面の広がりで測られていた — 直方体では数がたまたま合うので表に出なかった |
+| ADR-118 (ハンド種別) | 平行ジョーと吸引は**測る量が違う**のに 1 つの平らなハンドで語られていた (検査 1) | 「開口を持つ吸引カップ」が表現でき、吸引の不足量が "opening" の欄で報告された |
+| ADR-129 / DEF-033 (宣言の寿命) | 配置は「語彙は在る、線が無い」だったが、ハンドは「どの実体に属するか」の語彙が無かった — 同じ残しとして扱った | ハンドだけが 3 例目まで React state に残り、ADR-152 が tcp 実体という語を与えて決着 |
+
+**このリポジトリでの写像:** 書く瞬間に問われる場所は `/whiteboard` の §0「語彙の充足」
+(`.claude/commands/whiteboard.md`)。語彙の正本は Layout / Context DSL と契約の JSON Schema で、
+「語 → 確かめる絵」の対応は `CONFIRMATION_BY_FIELD` がスキーマを母集団にして数える
+(`src/view/GraspDeclarationConfirmation.test.js` — 検査 4 の機械版)。
+
 ---
 
 ## Yellow Cards — Pending Elevation
@@ -1010,3 +1048,4 @@ principle once 2+ contexts exist (remove the row); remove stale rows made imposs
 | 29 | Rigor on the Wire, Play in the Client | Contracts | Grasp Contract Is Derived Never Defined; BffClient Contract-Error Envelope (ADR-054); Grasp score-first (ADR-057); contract governance (ADR-060); client-derived ghost (ADR-059); shared feedback primitives (ADR-062) |
 | 30 | Motion Tier — 動きは事実・能力・歓びを担う (delight tier 2026-07-12) | Design | MotionGovernor single owner (ADR-065 Phase 1); CommandStack landing effects (ADR-065 Phase 2); reduced-motion static cue (ADR-064 Phase 4) |
 | 31 | Zero Is a State That Does Not Look Like One (2026-07-25) | Design | State Ledger cardinality column (核 §1.4); GSN support cardinality (`pnpm test:gsn`); absent required declaration rejected not defaulted (ADR-090); animation phase derived from entity identity so 1-of-N is represented, not inferred (ADR-093, `MapVisualMath.test.js`); **count what is NOT declared** — undeclared colour literals ratcheted, selection painters enumerated by kind (ADR-100, `src/theme/tokens.test.js`); **an unevaluated measurement has no field**, so its population is what was REQUESTED, not what came back (ADR-120, `src/view/GraspScoreMath.js` — enumerating the response's keys can never surface the key that is missing) |
+| 33 | Vocabulary Before Mechanism — 言えないことは作れない (2026-09-26) | Design | `/whiteboard` §0 語彙の充足; CONFIRMATION_BY_FIELD census (ADR-152 D6); gripper kind union (ADR-118); grasp spec / strategy vocabulary (ADR-152 D1) |

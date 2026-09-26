@@ -23,6 +23,7 @@
 5. **Events, Not References** — 表示・入力層はドメインイベントを購読する。モデルへの逆参照・ポーリング禁止。
 6. **Transformations Return New Instances** — 変換動詞は新実体を返し、源を変異しない (undo/redo が自然に成立する)。
 25. **Guard Logic in Named Predicates** — ドメイン前提条件は名前付きの述語 (サービス層) に集約。ハンドラ内のインライン早期 return は host 環境の回避策にのみ許可。
+33. **Vocabulary Before Mechanism** — 最初の成果物は機構ではなく語彙。使う人が言いたい文が今の語で言えるかを先に問う: (1) 1 語 1 事実 (兼務は割る) (2) 繰り返し一緒に語られる事実の束に名前 (3) 束どうしの関係 (優先・代替) にも語 — 要素の数値に散らさない (4) 語が実物のどこを指すかを走らせる前に確かめる手段を語と一緒に設計する。語彙が既に在るなら足さない (無いのは線だけ)。
 30. **Motion Tier** — 動きは Fact (結果の証明) / Affordance (操作可能性) / Delight (歓び) のいずれかを実装前に宣言。役割を偽る動きと無統治 (所有者・予算・削減経路なし) の動きだけが不採用。motion 削減設定の読み取り境界は一箇所。
 
 ## Concurrency
@@ -76,6 +77,7 @@
 - #18: `objectRemoved`/`objectAdded`
 - #22: `CLICK_SCOPE_RANK` / `chooseClickTarget()` (rank → 奥行き) — 問い所 = `src/ClickTargetOwnership.test.js` (優先順位を決める場所の個数。ADR-140。**宣言されていて一度も具体化されていない原則**は、違反を見逃すのではなく「守られていることになっている」 — 原則の行が無いあいだ、3 つの写しは #22 を名乗りながら距離を一度も見ていなかった)
 - #19: ルール台帳 = `docs/CODE_CONTRACTS.md` (+ `docs/code_contracts/*.md`)、原則集 = `docs/PHILOSOPHY.md`
+- #33: 書く瞬間の問い所 = `/whiteboard` §0「語彙の充足」。検査 4 (語 → 確かめる絵) の機械版 = `CONFIRMATION_BY_FIELD` (`src/view/GraspDeclarationConfirmation.test.js` — 母集団はスキーマ)。先例 = ADR-152 (面が進入面と接触面を兼ねていた / 把持仕様・把持戦略に名前が無かった / `+x` が物体のどこか見えなかった)
 - #30: motion 削減境界 = `src/theme/motion.js`、transient 所有者 = `MotionGovernor`
 - #32: ADR ヘッダの `Retires:` 欄 (ADR-125 — ADR-125 以降必須、「なし」も宣言)。発火は Status 遷移で `pnpm test:adr` が両方向を問う (Accepted なら在ってはならず、Proposed/Draft なら在らねばならない)。発火事象がまだ ADR として無いときは `docs/DEFERRAL_LEDGER.md` が受け、満期を「その ADR が起票されたとき」にする (DEF-020)。手書きの先例 = `RETIRED_MODE_SHAPES` (ADR-103) / `RETIRED_SELECTION_COLORS` (ADR-100) — 仕組みは在ったが**思い出した人だけが書いていた**
 - #31 (GSN 側): **宣言された未支持ゴールの個数** = `scripts/check-gsn-debt.mjs` (ADR-126)。`pnpm test:gsn` が問うのは*未宣言*のゼロだけで、**宣言済みの未支持は永久に緑**だった — 満期も個数も無く、`report` の集計は走らせていないので印字ですらなかった。数えるときは `support-` prefix ではなく**種を列挙**する (`support-verified` は逆の意味で、prefix 版は 30 を 57 と報告した — prefix は符号を持たない)
