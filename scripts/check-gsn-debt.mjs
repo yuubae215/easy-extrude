@@ -314,7 +314,11 @@ const SUPPORT_LABELS = new Map([
 // 確認 / request のみの契約追加)。ADR-144/145/151 の先例どおり、実装して support-verified に
 // 上がった日に下げる。4 つとも満期は機械可読 (GREP:grasp-search-request.schema.json::closingAxis
 // ほか) なので分子 (G3) は動かない。
-const DEBT_BASELINE = 53
+// 2026-09-26: 53 → 55。ADR-152 を当事者レビューで改稿 (把持仕様・把持戦略の語彙と
+// 「+x ってどこ?」の確認を追加、response 版上げを決定) し、木が 2 goal 増えた
+// (GraspSpecsAndStrategyAreSayable / PlusXIsSeenOnTheObject — 旧 HowToGraspIs… を
+// 語彙と判定の 2 つに割った差し引き)。6 つとも満期は機械可読なので分子 (G3) は動かない。
+const DEBT_BASELINE = 55
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
