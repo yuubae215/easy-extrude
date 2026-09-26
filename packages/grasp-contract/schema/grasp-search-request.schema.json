@@ -173,7 +173,7 @@
         },
         "target": {
           "type": "object",
-          "description": "Declares the object being grasped -- the SUBJECT of the whole search (ADR-119 D1). Carried since ADR-117 but undeclared until now: it rode the open payload, so a malformed target produced a well-formed answer of zero candidates and nothing said why. Declaration only: which faces are worth sampling follows the declared hand (ADR-118) on the front, and every judgement about the samples (can the jaws close, does the approach clip) stays solved in core/. The geometry is DOCUMENT-derived (Layout DSL), not scene-derived -- an asymmetry with `robot` that ADR-119 names and does not yet resolve.",
+          "description": "Declares the object being grasped -- the SUBJECT of the whole search (ADR-119 D1). Carried since ADR-117 but undeclared until now: it rode the open payload, so a malformed target produced a well-formed answer of zero candidates and nothing said why. Declaration only: which faces are worth sampling follows the declared hand (ADR-118) on the front, and every judgement about the samples (can the jaws close, does the approach clip) stays solved in core/. The geometry is DOCUMENT-derived (Layout DSL), not scene-derived -- an asymmetry with `robot` that ADR-119 names and does not yet resolve. ADR-152 D4 adds named grasp specs (`graspSpecs`), how to use them (`strategy`) and the target's own box (`box`). With specs, `surfaceSamples` is sent only for `strategy.fallback: derived`.",
           "additionalProperties": false,
           "properties": {
             "surfaceSamples": {
@@ -207,6 +207,55 @@
                   "normal"
                 ]
               }
+            },
+            "graspSpecs": {
+              "type": "array",
+              "description": "Named grasp specs in priority order (ADR-152 D4). Absent or empty = no spec declared: candidates come from `surfaceSamples` exactly as before.",
+              "items": {
+                "$ref": "#/$defs/graspSpec"
+              }
+            },
+            "strategy": {
+              "$ref": "#/$defs/graspStrategy"
+            },
+            "box": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The target itself as an oriented box (ADR-152 D4/D5). Used ONLY to measure a declared closing axis's width and nothing else -- the target still never obstructs its own grasp.",
+              "properties": {
+                "center": {
+                  "type": "array",
+                  "description": "[x, y, z] world-frame centre.",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "halfExtents": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "[x, y, z] half-sizes along the box's own axes."
+                },
+                "orientation": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "[x, y, z, w] world rotation of the box's own axes. Absent = axis-aligned."
+                }
+              },
+              "required": [
+                "center",
+                "halfExtents"
+              ]
             }
           }
         },
@@ -395,7 +444,7 @@
     },
     "gripperParallelJaw": {
       "type": "object",
-      "description": "Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis.",
+      "description": "Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis. ADR-152 D3: `body` + `fingers` declare the hand's SHAPE, judged for interference by core/. Both or neither -- a hand with a housing and no fingers (or the reverse) is not a shape core/ can place. Undeclared keeps the flange->TCP segment judgement (ADR-150). The mount must agree with the shape: body.length <= robot.toolLength <= body.length + fingers.length, else the request is rejected (400) rather than one of the two being corrected.",
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -410,16 +459,30 @@
           "type": "number",
           "minimum": 0,
           "description": "Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance)."
+        },
+        "body": {
+          "$ref": "#/$defs/handBody"
+        },
+        "fingers": {
+          "$ref": "#/$defs/handFingers"
         }
       },
       "required": [
         "kind",
         "maxOpening"
-      ]
+      ],
+      "dependentRequired": {
+        "body": [
+          "fingers"
+        ],
+        "fingers": [
+          "body"
+        ]
+      }
     },
     "gripperSuction": {
       "type": "object",
-      "description": "Vacuum cup. The gate seals against a face, so the quantity that decides feasibility is whether a contiguous patch at least the cup diameter across is flat enough to seal -- width and finger clearance are meaningless here.",
+      "description": "Vacuum cup. The gate seals against a face, so the quantity that decides feasibility is whether a contiguous patch at least the cup diameter across is flat enough to seal -- width and finger clearance are meaningless here. ADR-152 D3: `body` + `cupHeight` declare the hand's SHAPE (both or neither); the cup's radius is `cupDiameter`/2.",
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -434,11 +497,206 @@
           "type": "number",
           "minimum": 0,
           "description": "How far a surface normal inside the cup footprint may deviate from the contact normal and still seal, in radians. Absent leaves the solver its own naive default; it is never inferred from the other fields."
+        },
+        "body": {
+          "$ref": "#/$defs/handBody"
+        },
+        "cupHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Height of the cup below the housing, along the flange +Z (ADR-152 D3). The cup face is the TCP: robot.toolLength = body.length + cupHeight (relative tolerance 1e-6), else 400."
         }
       },
       "required": [
         "kind",
         "cupDiameter"
+      ],
+      "dependentRequired": {
+        "body": [
+          "cupHeight"
+        ],
+        "cupHeight": [
+          "body"
+        ]
+      }
+    },
+    "handBody": {
+      "type": "object",
+      "description": "The gripper housing, in the FLANGE frame (ADR-152 D3, ADR-150 D5: +Z out of the flange face, jaws close along +/-X). It rises from the flange face (z = 0) to z = its length. A CLOSED kind-discriminated union, same governance as `obstacles`: a mesh enters only as a new kind. core/ judges it as an OBB (a cylinder by its circumscribed box -- conservative: a false 'hits' is possible, a false 'clear' is not).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/handBodyCylinder"
+        },
+        {
+          "$ref": "#/$defs/handBodyBox"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "kind"
+      }
+    },
+    "handBodyCylinder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cylinder"
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Radius about the flange Z axis (same length unit as the request geometry)."
+        },
+        "length": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Length along the flange +Z, from the flange face to the palm."
+        }
+      },
+      "required": [
+        "kind",
+        "radius",
+        "length"
+      ]
+    },
+    "handBodyBox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "box"
+        },
+        "size": {
+          "type": "array",
+          "description": "[x, y, z] full extents in the flange frame; z is the length from the flange face to the palm.",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "kind",
+        "size"
+      ]
+    },
+    "handFingers": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One jaw finger (ADR-152 D3), in the flange frame: thickness along X, width along Y, length along Z from the palm (z = body length) toward the TCP. The two fingers stand OPEN, their inner faces `maxOpening` apart -- a finger approaching the part is open.",
+      "properties": {
+        "length": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "thickness": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "length",
+        "thickness",
+        "width"
+      ]
+    },
+    "graspSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One named way to grasp this workpiece (ADR-152 D1/D4), resolved on the front from the Layout DSL `graspFeature.specs[i]`: the approach face's samples (the region grid, in the world frame), and the three facts one 'face' could not hold -- which axis the jaws close on, how deep the TCP goes, how far the approach may tilt. Only specs the declared hand can use are sent. Declaration only: whether the jaws close, whether the hand hits anything, which spec's candidates are returned is solved in core/.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The spec's name. Echoed on each candidate as `graspSpecId` and in `diagnostics.graspSpecs`."
+        },
+        "samples": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Grid points on the approach face inside the declared region. Each is where the TCP axis passes the face; the approach is the opposite of its normal.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "point": {
+                "type": "array",
+                "description": "[x, y, z] world-frame position of the sample.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "normal": {
+                "type": "array",
+                "description": "[x, y, z] outward surface normal at the sample. The face-on approach is its opposite.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "required": [
+              "point",
+              "normal"
+            ]
+          }
+        },
+        "closingAxis": {
+          "type": "array",
+          "description": "World-frame unit vector the jaws close along (the object's local closing axis, rotated). Absent = every declared roll is tried (the pre-ADR-152 behaviour). Present = the roll is fixed to the two that put the flange X on this axis, and the width is measured as the target box's thickness along it.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "depth": {
+          "type": "number",
+          "minimum": 0,
+          "description": "How far past the approach face the TCP goes, along the approach (same length unit as the request geometry). Absent = 0, on the face."
+        },
+        "tiltTolerance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Largest tilt (radians) from the face-on approach this spec admits: only `sampling.approachTiltAngles` within it are used (the head-on 0 always is). Absent = every declared tilt."
+        }
+      },
+      "required": [
+        "id",
+        "samples"
+      ]
+    },
+    "graspStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How the specs are used (ADR-152 D1). The ORDER of `graspSpecs` is the priority; no spec carries a numeric priority (two specs at one rank would then be representable).",
+      "properties": {
+        "order": {
+          "enum": [
+            "priority",
+            "score"
+          ],
+          "description": "priority: return only the candidates of the first spec (in array order) that has any feasible one. score: mix every spec's candidates by score."
+        },
+        "fallback": {
+          "enum": [
+            "none",
+            "derived"
+          ],
+          "description": "none: no spec feasible -> zero candidates. derived: only then, search `surfaceSamples` (the hand-derived faces, ADR-118)."
+        }
+      },
+      "required": [
+        "order",
+        "fallback"
       ]
     }
   }

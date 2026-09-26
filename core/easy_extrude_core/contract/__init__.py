@@ -2,6 +2,7 @@
 
 from .models import (
     GraspNearestMiss,
+    GraspSpecDiagnostics,
     GraspSearchDeclaration,
     GraspSearchRequest,
     GraspSearchResponse,
@@ -42,6 +43,7 @@ from .version import (
 
 __all__ = [
     "GraspNearestMiss",
+    "GraspSpecDiagnostics",
     "CONTRACT_VERSION",
     "ContractVersionMismatch",
     "check_contract_version",

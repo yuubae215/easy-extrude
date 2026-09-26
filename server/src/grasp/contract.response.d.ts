@@ -13,6 +13,10 @@ export type Pose = PoseEndEffector | PoseJointSpace;
  * The JOINT CONFIGURATION the solver decided for this candidate, as a CLOSED KIND-DISCRIMINATED union (contract v6, ADR-135). A returned candidate always passed the IK stage (the filter short-circuits, so an IK-rejected candidate is never in candidates[]) -- what this union discriminates is therefore NOT reachable/unreachable, which `ikSolvable` already carries, but whether a DRAWABLE joint vector exists at all. It exists only when the request declared `robot.kinematics` and the closed-form solver ran; with no declaration the wrist-cone proxy judges reachability without producing joint angles, and there is nothing to draw. Required on every candidate: the absence of a joint configuration is DECLARED, never signalled by omitting the field (原則 #31). Presentation (how the arm is animated into the pose, ghost color, whether a preview is shown at all) is derived client-side and is NOT part of this contract (ADR-060).
  */
 export type ReachSolution = ReachSolutionSolved | ReachSolutionUndeclared;
+/**
+ * The measured miss of the best grasp-rejected candidate, as a CLOSED KIND-DISCRIMINATED union (ADR-118). `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.
+ */
+export type GraspMiss = OpeningMiss | SealPatchMiss;
 
 /**
  * grasp-search service -> BFF output. Top-N ranking with score breakdown. Wire form uses camelCase.
@@ -47,7 +51,7 @@ export interface GraspSearchResponse {
      */
     feasible: number;
     /**
-     * Candidates actually included in candidates[] (= min(feasible, topN)).
+     * Candidates actually included in candidates[] (= min(feasible among the set the strategy returns, topN)). Without grasp specs, or under `score` order, that set is every feasible candidate; under `priority` it is only the first spec with a feasible candidate (ADR-152 D5).
      */
     returned: number;
     /**
@@ -59,15 +63,27 @@ export interface GraspSearchResponse {
      */
     occlusionNearestMiss: number | null;
     /**
-     * How close the best grasp-rejected candidate came, as a CLOSED KIND-DISCRIMINATED union (ADR-118, contract v5). Replaces v4 `openingNearestMiss`, whose name and unit assumed a parallel jaw: a suction cup misses by a seal-patch shortfall, not by an opening width, and reporting one as the other would have the client draw a meter labelled in the wrong quantity. null when no grasp rejection has a measurable miss (e.g. only contact-pair-missing rejections, or none at all), and always null when the request declares no gripper. `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional.
+     * How close the best grasp-rejected candidate came, as a CLOSED KIND-DISCRIMINATED union (ADR-118, contract v5). Replaces v4 `openingNearestMiss`, whose name and unit assumed a parallel jaw: a suction cup misses by a seal-patch shortfall, not by an opening width, and reporting one as the other would have the client draw a meter labelled in the wrong quantity. null when no grasp rejection has a measurable miss (e.g. only contact-pair-missing rejections, or none at all), and always null when the request declares no gripper. `kind` is the discriminator and each branch is closed -- field presence is implied by kind, never optional. STRUCTURE (DEF-029, 2026-09-15): the `null` case sits OUTSIDE the discriminated union rather than as a third branch beside the two kinds. Semantically identical -- exactly the same instances validate -- but `null` was never a `kind`, and expressing it as one made the schema uncompilable under ajv strict (`discriminator` requires `type: object`, which a nullable union cannot declare). That is why this package's own test lane could not run.
      */
-    graspNearestMiss: null | OpeningMiss | SealPatchMiss;
+    graspNearestMiss: null | GraspMiss;
+    /**
+     * Per declared grasp spec, in request order, how many candidates it generated and how many passed every stage (ADR-152 D4, contract v7). EVERY sent spec has a row, including the ones whose candidates the strategy did not return -- a spec that was not returned and a spec that had nothing are different facts (原則 #31). Empty when the request sent no spec. Per-stage rejections per spec are not carried (deferred).
+     */
+    graspSpecs: {
+      id: string;
+      candidatesGenerated: number;
+      feasible: number;
+    }[];
   };
 }
 export interface PoseCandidate {
   rank: number;
   pose?: Pose;
   score: ScoreBreakdown;
+  /**
+   * Which declared grasp spec (request `target.graspSpecs[].id`) produced this candidate, or null when it came from the derived `surfaceSamples` (ADR-152 D4, contract v7). REQUIRED and nullable rather than optional: a closed layer grows no optional siblings (ADR-060), and 'no spec' is a stated fact, not an omitted one. A client does not reverse-engineer the spec from the pose -- under `score` order 'not in the top N' and 'had no candidate' would be indistinguishable.
+   */
+  graspSpecId: string | null;
 }
 /**
  * End-effector (hand/tool) pose expressed in a base/world frame. Cartesian.

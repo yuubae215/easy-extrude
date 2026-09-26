@@ -318,7 +318,14 @@ function totalScoreOf(scores, weights) {
 export function stubSolve(request, contractVersion) {
   const gs        = request?.graspSearch ?? {}
   const base      = gs.robot?.base ?? [0, 0, 0]
-  const samples   = gs.target?.surfaceSamples ?? []
+  const derivedSamples = gs.target?.surfaceSamples ?? []
+  // ADR-152 (contract v7): named grasp specs in priority order. The stub honours
+  // WHICH spec a candidate came from, the strategy and the depth — the shape of
+  // the answer the UI reads — and nothing about the hand's shape (no OBBs here;
+  // the numbers stay this file's invention, ADR-117).
+  const specs     = Array.isArray(gs.target?.graspSpecs) ? gs.target.graspSpecs : []
+  const strategy  = gs.target?.strategy ?? { order: 'priority', fallback: 'none' }
+  const samples   = specs.length ? specs.flatMap(sp => sp.samples ?? []) : derivedSamples
   const obstacles = gs.obstacles ?? []
   const camera    = gs.camera  ?? null
   const gripper   = gs.gripper ?? null
@@ -346,19 +353,23 @@ export function stubSolve(request, contractVersion) {
   let graspNearestMiss     = null   // { kind, shortfall } — contract v5 (ADR-118)
   const keepMin = (cur, v) => (cur == null || v < cur ? v : cur)
 
-  const feasible = []
   // Counted rather than assumed to equal `samples.length`: a degenerate sample
   // generates no candidate, and folding it into the total would break the
   // funnel identity the UI derives every bar width from.
   let generated = 0
 
-  for (const sample of samples) {
-    const point   = sample.point
+  /** One group of samples (a spec, or the derived set) → its feasible candidates. */
+  const evaluateGroup = (groupSamples, graspSpecId, depth) => {
+  const feasible = []
+  for (const sample of groupSamples) {
+    const surface = sample.point
     const outward = unit(sample.normal)
     if (!outward) continue                       // a normal-less sample defines no approach
     generated += 1
     const approach = scale(outward, -1)          // face-on: approach opposes the normal
-    const preGrasp = add(point, scale(outward, preGraspDistance))
+    const preGrasp = add(surface, scale(outward, preGraspDistance))
+    // ADR-152 D5: the TCP goes `depth` past the face along the approach.
+    const point    = depth > 0 ? add(surface, scale(approach, depth)) : surface
     const distance = norm(sub(point, base))
 
     // ── reach ────────────────────────────────────────────────────────────────
@@ -466,6 +477,7 @@ export function stubSolve(request, contractVersion) {
     const totalScore = totalScoreOf(scores, weights)
 
     feasible.push({
+      graspSpecId,
       pose: {
         kind:  'endEffector',
         // **把持点**であって pre-grasp ではない (`core/` の `pose_to_payload` は
@@ -489,8 +501,34 @@ export function stubSolve(request, contractVersion) {
     })
   }
 
-  feasible.sort((a, b) => b.score.totalScore - a.score.totalScore)
-  const candidates = feasible.slice(0, topN).map((c, i) => ({ rank: i + 1, ...c }))
+  return feasible
+  }
+
+  // Strategy (ADR-152 D5): every spec is evaluated so each gets its row — a spec
+  // the strategy did not return and a spec that had nothing are different facts.
+  const graspSpecs = []
+  let returnable
+  let feasibleTotal
+  if (specs.length) {
+    const perSpec = specs.map(sp => {
+      const before = generated
+      const found  = evaluateGroup(sp.samples ?? [], sp.id, Number(sp.depth ?? 0))
+      graspSpecs.push({ id: sp.id, candidatesGenerated: generated - before, feasible: found.length })
+      return found
+    })
+    feasibleTotal = perSpec.reduce((n, f) => n + f.length, 0)
+    returnable = strategy.order === 'score' ? perSpec.flat() : (perSpec.find(f => f.length) ?? [])
+    if (feasibleTotal === 0 && strategy.fallback === 'derived') {
+      returnable = evaluateGroup(derivedSamples, null, 0)
+      feasibleTotal = returnable.length
+    }
+  } else {
+    returnable = evaluateGroup(derivedSamples, null, 0)
+    feasibleTotal = returnable.length
+  }
+
+  returnable.sort((a, b) => b.score.totalScore - a.score.totalScore)
+  const candidates = returnable.slice(0, topN).map((c, i) => ({ rank: i + 1, ...c }))
 
   return {
     contractVersion,
@@ -498,11 +536,12 @@ export function stubSolve(request, contractVersion) {
     diagnostics: {
       candidatesGenerated: generated,
       ...counts,
-      feasible: feasible.length,
+      feasible: feasibleTotal,
       returned: candidates.length,
       reachNearestMiss,
       occlusionNearestMiss,
       graspNearestMiss,
+      graspSpecs,
     },
   }
 }

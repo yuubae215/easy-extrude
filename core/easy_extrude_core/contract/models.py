@@ -135,6 +135,11 @@ class PoseCandidate(_ContractModel):
     # 演出 (接近ベクトル・色など) はワイヤに載せずクライアントが frame + 規約から導出する。
     pose: dict[str, Any] = Field(default_factory=dict)
     score: ScoreBreakdown
+    # どの把持仕様 (request `target.graspSpecs[].id`) から生まれた候補か (契約 v7,
+    # ADR-152 D4)。None = 導出サンプル (`surfaceSamples`) 由来。**必須の nullable** —
+    # 閉じた層に optional 兄弟を生やさない (ADR-060)。既定値を持たせないのは、
+    # 生産者が書き忘れた候補を「仕様なし」に黙って倒さないため (原則 #31)。
+    grasp_spec_id: Optional[str]
 
 
 class GraspNearestMiss(_ContractModel):
@@ -147,6 +152,18 @@ class GraspNearestMiss(_ContractModel):
 
     kind: Literal["opening", "sealPatch"]
     shortfall: float = Field(ge=0.0)
+
+
+class GraspSpecDiagnostics(_ContractModel):
+    """把持仕様 1 つぶんの結果 (契約 v7, ADR-152 D4)。
+
+    戦略が候補を返さなかった仕様も行を持つ — 「返さなかった」と「無かった」は別の事実
+    (原則 #31)。段ごとの棄却内訳を仕様ごとに割るのは残し。
+    """
+
+    id: str = Field(min_length=1)
+    candidates_generated: int = Field(ge=0)
+    feasible: int = Field(ge=0)
 
 
 class SearchDiagnostics(_ContractModel):
@@ -177,6 +194,9 @@ class SearchDiagnostics(_ContractModel):
     # シールパッチ不足を同じ欄で報告すると、クライアントは違う量のメーターを描く。
     # 測定可能な把持棄却が無ければ None (接触対なし等 / gripper 未宣言)。
     grasp_nearest_miss: Optional[GraspNearestMiss] = None
+    # 送られた把持仕様ごとの生成数・通過数を、リクエストの順で**全仕様ぶん** (契約 v7,
+    # ADR-152 D4)。仕様を送らなければ空配列。必須 — 既定値を持たせない。
+    grasp_specs: list[GraspSpecDiagnostics]
 
 
 class GraspSearchResponse(_ContractModel):

@@ -456,3 +456,35 @@ test('スタブの pose は契約の gauge で復元できる — 形ではな�
       `frame.position ${JSON.stringify(c.pose.frame.position)} が把持点ではない`)
   }
 })
+
+// ── ADR-152 (contract v7): grasp specs + strategy ────────────────────────────
+// The stub is a second producer of `graspSpecId` / `diagnostics.graspSpecs`, so it
+// is held to the same shape claims core/ is: every sent spec gets a row, priority
+// returns only the first spec with anything feasible, score mixes, and the funnel
+// identity still holds across all of them.
+test('ADR-152: grasp specs — priority returns the first feasible spec, every spec has a row', () => {
+  const top  = { id: 'top',  samples: [{ point: [300, 0, 100], normal: [0, 0, 1] }] }
+  const side = { id: 'side', samples: [{ point: [350, 0, 50], normal: [1, 0, 0] }], depth: 10 }
+  const solve = (strategy) => stubSolve({
+    layoutVersion: 'layout/1.0',
+    graspSearch: {
+      objectiveWeights: { grasp_stability: 1 },
+      topN: 5,
+      robot: { base: [0, 0, 400] },
+      target: { graspSpecs: [top, side], strategy },
+    },
+  }, CONTRACT_VERSION)
+
+  const priority = solve({ order: 'priority', fallback: 'none' })
+  assertConforms(priority, 'priority')
+  assert.deepEqual(priority.candidates.map(c => c.graspSpecId), ['top'])
+  assert.deepEqual(priority.diagnostics.graspSpecs.map(r => r.id), ['top', 'side'])
+  assert.equal(priority.diagnostics.graspSpecs[1].feasible, 1)
+
+  const score = solve({ order: 'score', fallback: 'none' })
+  assertConforms(score, 'score')
+  assert.deepEqual(new Set(score.candidates.map(c => c.graspSpecId)), new Set(['top', 'side']))
+  const d = score.diagnostics
+  assert.equal(d.candidatesGenerated,
+    d.rejectedByReach + d.rejectedByVisibility + d.rejectedByIk + d.rejectedByInterference + d.rejectedByGrasp + d.feasible)
+})

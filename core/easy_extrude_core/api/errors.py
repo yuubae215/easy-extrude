@@ -21,6 +21,7 @@ from pydantic import BaseModel
 class ErrorCode:
     CONTRACT_VERSION_MISMATCH = "contract_version_mismatch"  # 400
     VALIDATION_ERROR = "validation_error"  # 422 (形が契約スキーマに合わない)
+    INVALID_DECLARATION = "invalid_declaration"  # 400 (形は合うが宣言が解けない — ADR-152)
     UNAUTHORIZED = "unauthorized"  # 401 (BFF 以外からの直叩き)
     PAYLOAD_TOO_LARGE = "payload_too_large"  # 413
     REQUEST_TIMEOUT = "request_timeout"  # 504

@@ -42,6 +42,7 @@ from ..contract import (
 )
 from ..engine import (
     CollisionChecker,
+    DeclarationError,
     IkSolver,
     search,
 )
@@ -153,6 +154,15 @@ def create_app(
                 expected=exc.expected,
                 received=exc.received,
             ),
+        )
+
+    @app.exception_handler(DeclarationError)
+    async def _on_declaration_error(_: Request, exc: DeclarationError):
+        # 400: 形は契約に合うが宣言が解けない (取付けと手の形の矛盾など — ADR-152 D3)。
+        # 送り手が直せる誤りなので理由をそのまま返す (500 の中立 message とは違う)。
+        return JSONResponse(
+            status_code=400,
+            content=error_payload(ErrorCode.INVALID_DECLARATION, str(exc)),
         )
 
     @app.exception_handler(RequestValidationError)

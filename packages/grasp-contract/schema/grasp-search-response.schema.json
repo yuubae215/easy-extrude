@@ -56,7 +56,7 @@
         "returned": {
           "type": "integer",
           "minimum": 0,
-          "description": "Candidates actually included in candidates[] (= min(feasible, topN))."
+          "description": "Candidates actually included in candidates[] (= min(feasible among the set the strategy returns, topN)). Without grasp specs, or under `score` order, that set is every feasible candidate; under `priority` it is only the first spec with a feasible candidate (ADR-152 D5)."
         },
         "reachNearestMiss": {
           "type": [
@@ -84,6 +84,33 @@
               "$ref": "#/$defs/graspMiss"
             }
           ]
+        },
+        "graspSpecs": {
+          "type": "array",
+          "description": "Per declared grasp spec, in request order, how many candidates it generated and how many passed every stage (ADR-152 D4, contract v7). EVERY sent spec has a row, including the ones whose candidates the strategy did not return -- a spec that was not returned and a spec that had nothing are different facts (原則 #31). Empty when the request sent no spec. Per-stage rejections per spec are not carried (deferred).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "candidatesGenerated": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "feasible": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "candidatesGenerated",
+              "feasible"
+            ]
+          }
         }
       },
       "required": [
@@ -97,7 +124,8 @@
         "returned",
         "reachNearestMiss",
         "occlusionNearestMiss",
-        "graspNearestMiss"
+        "graspNearestMiss",
+        "graspSpecs"
       ]
     }
   },
@@ -119,11 +147,19 @@
         },
         "score": {
           "$ref": "#/$defs/scoreBreakdown"
+        },
+        "graspSpecId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Which declared grasp spec (request `target.graspSpecs[].id`) produced this candidate, or null when it came from the derived `surfaceSamples` (ADR-152 D4, contract v7). REQUIRED and nullable rather than optional: a closed layer grows no optional siblings (ADR-060), and 'no spec' is a stated fact, not an omitted one. A client does not reverse-engineer the spec from the pose -- under `score` order 'not in the top N' and 'had no candidate' would be indistinguishable."
         }
       },
       "required": [
         "rank",
-        "score"
+        "score",
+        "graspSpecId"
       ]
     },
     "pose": {

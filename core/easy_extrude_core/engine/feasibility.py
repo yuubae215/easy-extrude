@@ -32,6 +32,8 @@ from .types import (
     GraspCandidate,
     Gripper,
     GripperKind,
+    HandShape,
+    Obb,
     SuctionGripper,
     Obstacle,
     Robot,
@@ -466,6 +468,7 @@ class NaiveParallelJawGraspChecker:
     - 閉じ軸 = end-effector frame の x 軸 (approach と roll から pose_codec の
       FRAME_CONVENTION gauge で導出 — 規約の第二の源を作らない)。
     - 対象幅 = 対象の全表面サンプル点を閉じ軸へ射影した広がり (max - min)。
+      ADR-152: 閉じ軸を宣言した仕様の候補では、対象 box の閉じ方向の厚み。
       凸対象では両端のサンプル対が対向接触面 (antipodal 対) の素朴な代理になる。
       サンプルが 1 点以下 / 広がりゼロなら接触対を定義できない -> inf (棄却)。
     - 開口ゲート: max_opening >= 対象幅 + finger_clearance。不足量 = 超過分。
@@ -480,13 +483,20 @@ class NaiveParallelJawGraspChecker:
     def grasp_miss(
         self, candidate: GraspCandidate, gripper: Gripper, target: TargetObject
     ) -> float:
-        if len(target.surface_samples) < 2:
-            return math.inf
         closing_axis, _y, _z = frame_axes(candidate.pose)
         if closing_axis.norm() < _EPS:
             return math.inf
-        projections = [p.dot(closing_axis) for (p, _n) in target.surface_samples]
-        width = max(projections) - min(projections)
+        if candidate.closing_axis is not None and target.box is not None:
+            # ADR-152 D5: 閉じ軸が宣言されていれば、幅は**対象 box の閉じ方向の厚み**。
+            # サンプルの広がりは進入面の広がりであって爪が挟む厚みではない (ADR-152 §2)。
+            # 傾いた進入でも実際に爪が閉じるのは frame x なので、その方向の厚みを測る。
+            width = 2.0 * target.box.extent_along(closing_axis)
+        else:
+            samples = target.samples_for(candidate)
+            if len(samples) < 2:
+                return math.inf
+            projections = [p.dot(closing_axis) for (p, _n) in samples]
+            width = max(projections) - min(projections)
         if width < self._MIN_WIDTH:
             return math.inf
         required = width + gripper.finger_clearance
@@ -529,7 +539,7 @@ class NaiveSuctionGraspChecker:
         # 揃っていないサンプルに当たった時点でそこがパッチの縁になる。
         sealed_radius = 0.0
         blocked_radius = math.inf
-        for p, n in target.surface_samples:
+        for p, n in target.samples_for(candidate):
             d = (p - point).norm()
             if d > radius:
                 continue
@@ -604,3 +614,108 @@ def grasp_miss(
     """
     c = checker if checker is not None else checker_for(gripper)
     return c.grasp_miss(candidate, gripper, target)
+
+
+# --- 手の形 (ADR-152 D3/D5) ---------------------------------------------------
+
+
+def palm_depth_miss(
+    candidate: GraspCandidate, gripper: Optional[Gripper], tool_length: float
+) -> float:
+    """深さのゲート: パームが進入面より下へ潜る量 (潜らなければ 0.0, 純粋)。
+
+    TCP はフランジから `tool_length`、パームはフランジから `shape.palm_z`。TCP を
+    面から `depth` 奥へ入れると、パームは面から `depth − (tool_length − palm_z)` 奥に
+    来る。正ならパームが物体にめり込む = 掴めない (rejectedByGrasp)。
+    形が未宣言なら測れない — 0.0 (従来どおり判定しない。形を推測しない)。
+    爪先が底を突き抜けるかは、床・トレー底との干渉として手の干渉判定が見る。
+    """
+    shape = getattr(gripper, "shape", None) if gripper is not None else None
+    if shape is None or candidate.depth <= 0.0:
+        return 0.0
+    return max(0.0, candidate.depth - (tool_length - shape.palm_z))
+
+
+def flange_frame(candidate: GraspCandidate, tcp: Vec3, tool_length: float) -> "tuple[Vec3, tuple[Vec3, Vec3, Vec3]]":
+    """TCP がこの点に在るときのフランジ原点と軸 (x, y, z) — 世界座標 (純粋)。
+
+    `ur_solver.flange_target` と同じ規約 (ADR-150 D5): z = approach、x = 候補 frame の
+    x (閉じ軸)、y = z × x。フランジは TCP から approach の逆向きに tool_length。
+    """
+    z = candidate.pose.approach.normalized()
+    x = frame_axes(candidate.pose)[0]
+    y = z.cross(x)
+    return tcp - z.scaled(tool_length), (x, y, z)
+
+
+def hand_obbs(
+    candidate: GraspCandidate, shape: HandShape, tool_length: float, tcp: Vec3
+) -> "tuple[Obb, ...]":
+    """宣言された手の部品を、TCP がこの点に在る姿勢で世界の OBB に置く (純粋)。"""
+    origin, (x, y, z) = flange_frame(candidate, tcp, tool_length)
+    out = []
+    for part in shape.parts:
+        c = part.center
+        out.append(Obb(
+            center=origin + x.scaled(c.x) + y.scaled(c.y) + z.scaled(c.z),
+            axes=(x, y, z),
+            half=part.half,
+        ))
+    return tuple(out)
+
+
+# 進入線分 (プリグラスプ → 把持) 上で手を置いて調べる点の数 (端点を含む)。
+# 離散化なので、刻みより薄い障害物は間をすり抜けうる (ADR-152 Consequences)。
+HAND_PATH_STEPS = 6
+
+
+@dataclass(frozen=True)
+class NaiveHandCollisionChecker:
+    """宣言された手の形 (筐体 + 爪 / カップ) を障害物と交差判定する合成チェッカ (ADR-152 D5)。
+
+    **腕や進入線分の判定は自分で書かず `inner` に委譲する** (ADR-145 の合成と同じ形)。
+    自分が足すのは、把持姿勢と進入線分上の `HAND_PATH_STEPS` 点で手の OBB が
+    障害物に触れるか、だけ。対象そのものは障害物に含まれない (対象は自分の把持を
+    妨げない) ので、対象を挟む爪は当たらない — 当たるのは隣のワーク・トレーの壁・床。
+
+    形が未宣言のリクエストではこのチェッカは組まれず、判定は従来と 1 ビットも
+    変わらない (宣言した瞬間にだけ挙動が変わる — ADR-084 §3)。
+    """
+
+    inner: CollisionChecker
+    shape: HandShape
+    tool_length: float
+    path_steps: int = HAND_PATH_STEPS
+
+    def in_collision(
+        self,
+        candidate: GraspCandidate,
+        obstacles: tuple[Obstacle, ...],
+        *,
+        solution: "Optional[IkSolution]" = None,
+        robot: "Optional[Robot]" = None,
+    ) -> bool:
+        if self.inner.in_collision(candidate, obstacles, solution=solution, robot=robot):
+            return True
+        return hand_collides(candidate, self.shape, self.tool_length, obstacles, self.path_steps)
+
+
+def hand_collides(
+    candidate: GraspCandidate,
+    shape: HandShape,
+    tool_length: float,
+    obstacles: tuple[Obstacle, ...],
+    path_steps: int = HAND_PATH_STEPS,
+) -> bool:
+    """進入線分上の各点 (端点を含む) で手の部品が障害物に触れるか (純粋)。"""
+    a = candidate.pre_grasp
+    b = candidate.pose.position
+    steps = max(2, path_steps)
+    for i in range(steps):
+        t = i / (steps - 1)
+        tcp = a + (b - a).scaled(t)
+        for part in hand_obbs(candidate, shape, tool_length, tcp):
+            for obs in obstacles:
+                if obs.intersects_obb(part):
+                    return True
+    return False

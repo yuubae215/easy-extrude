@@ -15,7 +15,8 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator
 
-from .types import Vec3, Pose, GraspCandidate, Problem
+from .pose_codec import roll_aligning_x
+from .types import Vec3, Pose, GraspCandidate, GraspSpec, Problem
 
 _EPS = 1e-12
 
@@ -92,4 +93,63 @@ def generate_candidates(problem: Problem) -> Iterator[GraspCandidate]:
                     pose=Pose(position=point, approach=approach, roll=roll),
                     pre_grasp=pre_grasp,
                     surface_normal=n_unit,
+                )
+
+
+def tilts_within(tilts: tuple[float, ...], tolerance: "float | None") -> tuple[float, ...]:
+    """許容傾き以内の傾きの刻み (純粋, ADR-152 D5)。
+
+    未宣言 (None) は刻みをそのまま使う。宣言があって刻みが 1 つも残らないとき、
+    正対 (0) だけを使う — 0 はどの許容傾きの内側にも在るので、宣言の意味を越えない。
+    空にすると「仕様は在るのに候補 0」という、宣言の誤りと見分けのつかない答えになる。
+    """
+    if tolerance is None:
+        return tilts
+    kept = tuple(t for t in tilts if abs(t) <= tolerance + _EPS)
+    return kept if kept else (0.0,)
+
+
+def generate_spec_candidates(problem: Problem, spec: GraspSpec) -> Iterator[GraspCandidate]:
+    """把持仕様 1 つから離散候補を列挙する純粋ジェネレータ (ADR-152 D5)。
+
+    `generate_candidates` と同じ直積 (サンプル, 傾け, ロール) を、仕様の 3 事実で絞る:
+    - 傾け: `tilt_tolerance` 以内だけ (`tilts_within`)。
+    - ロール: `closing_axis` があれば frame x をその軸に合わせる 2 通り (r, r+π) だけ。
+      合わせられない (進入軸と平行な) 傾けではその傾けの候補を作らない。
+    - 位置: TCP = サンプル点から進入方向へ `depth` 進めた点。プリグラスプは面の外
+      (サンプル点から後退) に置く — 深さぶん奥から後退すると、浅いプリグラスプ距離では
+      進入の始点が物体の中に入る。
+
+    宣言が何も無い仕様 (閉じ軸・深さ・許容傾きなし) は `generate_candidates` と
+    同じ候補を同じ順で作る — 旧 `faces` 宣言の移行が答えを動かさない根拠。
+    """
+    pre_d = problem.pre_grasp_distance
+    tilts = tilts_within(problem.approach_tilt_angles, spec.tilt_tolerance)
+    for point, normal in spec.samples:
+        n_unit = normal.normalized()
+        base_approach = n_unit.scaled(-1.0)
+        if base_approach.norm() < _EPS:
+            continue
+        tilt_axis = _perpendicular_unit(base_approach)
+        for tilt in tilts:
+            approach = _rotate_about_axis(base_approach, tilt_axis, tilt).normalized()
+            if approach.norm() < _EPS:
+                continue
+            if spec.closing_axis is not None:
+                r0 = roll_aligning_x(approach, spec.closing_axis)
+                if r0 is None:
+                    continue
+                rolls: tuple[float, ...] = (r0, r0 + math.pi)
+            else:
+                rolls = problem.roll_angles
+            pre_grasp = point - approach.scaled(pre_d)
+            tcp = point + approach.scaled(spec.depth) if spec.depth > 0.0 else point
+            for roll in rolls:
+                yield GraspCandidate(
+                    pose=Pose(position=tcp, approach=approach, roll=roll),
+                    pre_grasp=pre_grasp,
+                    surface_normal=n_unit,
+                    spec_id=spec.id,
+                    closing_axis=spec.closing_axis,
+                    depth=spec.depth,
                 )

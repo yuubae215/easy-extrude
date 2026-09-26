@@ -44,6 +44,7 @@ function funnel({
   generated, reach = 0, visibility = 0, ik = 0, interference = 0, grasp = 0,
   feasible = 0, returned = 0,
   reachNearestMiss = null, occlusionNearestMiss = null, graspNearestMiss = null,
+  graspSpecs = [],
 }) {
   const sum = reach + visibility + ik + interference + grasp + feasible
   if (sum !== generated) {
@@ -65,6 +66,8 @@ function funnel({
     reachNearestMiss,
     occlusionNearestMiss,
     graspNearestMiss,
+    // ADR-152 (v7): the fixed scenarios send no grasp spec — a stated empty table.
+    graspSpecs,
   }
 }
 
@@ -72,6 +75,7 @@ function funnel({
 function candidate(rank, totalScore, scores) {
   return {
     rank,
+    graspSpecId: null,
     pose: {
       kind: 'endEffector',
       frame: { position: [600, 0, 480], orientation: [0, 0.7071067811865476, 0, 0.7071067811865476] },
