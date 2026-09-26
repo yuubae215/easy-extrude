@@ -27,7 +27,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 30a4edf4-08e7-4c19-a9a4-cfb84f732d5c
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f) — 把持探索へ届くまでの経路そのものだから。2026-08-05 に本 ADR は Accepted (実装済み) となり証拠は実測値になったが、吊り替えは事業木側の編集なので DEF-010 (ADR-094) と同じレーンで扱う"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f) — 把持探索へ届くまでの経路そのものだから。2026-08-05 に本 ADR は Accepted (実装済み) となり証拠は実測値になったが、吊り替えは事業木側の編集なので 登録簿 DEF-051 で扱う (2026-09-26 まで「DEF-010 (ADR-094) と同じレーン」と書いていたが、DEF-010 は ADR-094 自身の接続で満期を迎えており、この木の接続は一度も行を持っていなかった)"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

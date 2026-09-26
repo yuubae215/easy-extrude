@@ -130,8 +130,10 @@ ADR-075 で段階0 判定エンジン (`core/easy_extrude_core/engine/`) を実�
   現状は client 向けレイテンシ上限のみ。実測で予算超過が常態化したら着手 (聞かれていない
   最適化を先に入れない規律)。
 - レート制限 / メトリクス (件数・レイテンシ分布) の本格化。現状はログのみ。
-- TS 側の HTTP 往復 conformance (BFF が中立 Schema に突き合わせる) は public 配線回で追加
-  (公開配線タイミングの申し送り事項)。
+- ~~TS 側の HTTP 往復 conformance (BFF が中立 Schema に突き合わせる) は public 配線回で追加
+  (公開配線タイミングの申し送り事項)。~~ **完了** (2026-09-26 の DEF 棚卸しで確認):
+  `server/test/grasp.contract.test.js` が stub upstream を実際に立て、`/api/grasp/search` の
+  往復で準拠応答の素通し・版ズレ 502・非準拠応答 502 を検査している。登録簿 DEF-025 は削除。
 
 ## Consequences
 

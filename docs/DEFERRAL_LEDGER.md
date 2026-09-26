@@ -99,13 +99,11 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 
 | id | 所在 | 満期 (条件) | ticket | lane |
 |---|---|---|---|---|
-| DEF-004 | `docs/adr/ADR-060-grasp-contract-data-governance.md` | `Kinematics.js` の連鎖順が契約側 `jointSpace.joints` の順序と一致する契約として doc に名指しされたとき。**他の 4 項目は 2026-08-04 に完了/消滅を確認済み** | ADR-060 | contract |
+| DEF-004 | `docs/adr/ADR-060-grasp-contract-data-governance.md` | `Kinematics.js` の連鎖順が契約側 `jointSpace.joints` の順序と一致する契約として doc に名指しされたとき: 満期=GREP:docs/code_contracts/architecture.md::jointSpace\.joints 。**2026-09-26 の DEF 棚卸しで trigger 化** — 名指しの置き場は運動学の契約が既に住む `architecture.md` (現在 `jointSpace.joints` の出現 0 件)。**他の 4 項目は 2026-08-04 に完了/消滅を確認済み** | ADR-060 | contract |
 | DEF-005 | `docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md` | Phase 4 (実ソルバ差し替え) と pick-sequence 集計レポート UI が出たとき。収束仮説の検証も同段 | ADR-081 | core |
-| DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき | ADR-078 | contract |
-| DEF-007 | `docs/adr/ADR-079-search-diagnostics-proof.md` | ファネル診断の wire 追加に BFF / UI が消費追従したとき (エンジン側は完了済み) | ADR-079 | contract |
+| DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき: 満期=PATH:packages/grasp-contract/schema/pick-sequence-request.schema.json 。**2026-09-26 の DEF 棚卸しで trigger 化** — 3 手の最初 (中立 Schema の出現) で発火させる。発火した時点で conformance と BFF 配線が残っていれば、行を消さず満期をその次の手へ書き換える | ADR-078 | contract |
 | DEF-008 | `src/DanglingSelfCallCensus.test.js` · `src/CensusCoverage.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
-| DEF-010 | `docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md` | 事業木への接続が保留されている `.gsn` の枝が solution として吊られたとき | ADR-094 | app |
 | DEF-015 | `docs/gsn/adr-121-centre-of-mass-is-declared.gsn` · `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
 | DEF-016 | `docs/gsn/adr-122-pickable-and-yield-are-two-questions.gsn` · `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
 | DEF-017 | `docs/adr/ADR-032-geometric-host-binding.md` | 同 ADR §Out of scope が挙げる `fastened` constraint-solver の実装が入ったとき (同じソルバーがこの問題も閉じるので独立した満期を持たない)。**2026-08-12 に `docs/ROADMAP.md` の frontend backlog 🟡 から移設** — 制約ソルバーを要する = 設計判断つきなので Issues レーンではない | ADR-032 | app |
@@ -115,7 +113,6 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-021 | `docs/ROADMAP.md` · `docs/adr/ADR-124-a-ratchet-that-counts-prose-measures-documentation.md` | **委譲行** (ADR-123 D2)。機能要望 14 件を GitHub Issues へ移すこと。移管が済んで §未移管 の節が消えたときが満期: 満期=GONE:docs/ROADMAP.md::未移管 。**覆うのは委譲の事実であって Issue の個数ではない** — 個数はネットワークの向こうで CI は数えない (限界宣言は §register は 2 本ある) | ADR-123 | issue |
 | DEF-022 | `docs/adr/ADR-044-5w1h-function-mapping.md` | ADR-044 の判断が閉じたとき (**満期=ADR-044**)。φ 準同型は 2 か月 Draft のまま。**実装は 1 行も無い** — `FunctionRegistry.js` / `FunctionMatcher.js` / `SpatialCommandParser` はどれも存在せず、`src/` の 5 ファイルは*言及*である (ADR-123 §力学 3)。ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた | ADR-044 | app |
 | DEF-024 | `docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md` | コミット済み WASM 成果物の鮮度検査が入ったとき。`test:wasm` (cargo) と `test:robotics-wasm` は CI に無く、source を編集して再生成を忘れても緑になる。現在ズレてはいない (source・成果物とも #340 / 2026-07-22)。ADR-064 Phase 1 が意図的に決めた形なので違反ではないが、問う場所が無い。満期は CI が cargo を走らせ始めたとき: 満期=GREP:.github/workflows/ci.yml::cargo | ADR-064 | app |
-| DEF-025 | `docs/adr/ADR-076-core-api-endpoint-layer.md` | TS 側の HTTP 往復 conformance (BFF が中立 Schema に突き合わせる) が public 配線回で入ったとき。**2026-08-12 に Q1 の見出し絞り込み (ADR-124) が初回実行で見つけた** — `## Still deferred` 節に 5 か月在ったが、99 件の散文に埋もれて誰にも見えていなかった | ADR-076 | contract |
 | DEF-027 | `docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md` | **段の完了**を退役の発火事象にできるようになったとき。今日の発火は ADR の Status 遷移だけなので、「Phase N が完了したら消す」は D4 の二段構え (登録簿 → 起票された ADR の `Retires:`) を通る。順序表の段に**完了状態の機械可読な表現が無い**のが理由 (`- [x]` はあるが段の単位では読めない)。段が発火事象になれば D4 の迂回は不要になる | ADR-125 | app |
 | DEF-028 | `docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md` | cutoff (ADR-126) より前で木を持たない **11 本**の ADR (ADR-015/017/027/032/044/060/064/076/078/079/091) に `.gsn` を書くか、`DECLARED_TREELESS` に「書かない」と理由つきで宣言したとき。それまでその 11 本に紐づく残しは GSN 側から見えず、登録簿が受け続ける (だから ADR-126 D1 は「登録簿を畳む」ではなく「役割を分ける」)。既存 26 個の exploring への満期の後付けも同段 — 今日は機構の実証として 1 個だけ付けた | ADR-126 | app |
 | DEF-033 | `src/components/Grasp/GraspSearchPanel.jsx` · `docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md` | **カメラと重み**が文書に住むようになったとき: 満期=GREP:schema/context-0.5.schema.json::objectiveWeights 。**2026-09-26 に ADR-152 D3 が半分を決着**: 「ハンドはどの実体に属するか」の答えは *ロボットの tcp 実体* (ロボットとグリッパの接点 — ADR-151) で、`hand` は scene JSON / Layout DSL / context DSL に往復し、文書が知る tcp では文書へ宣言される。旧満期 `GREP:…::gripper` はその決着で発火したが、**trigger が間違っていた**: 「gripper」の語は手の宣言と一緒に schema へ入るので、手だけが住んだ時点で 3 つ (手 / カメラ / 重み) が全部片付いたように読める。残る 2 つ (カメラ・重み) は今日もパネルの React state で、*どの実体に属するか* (カメラはシーンの実体か探索セッションの属性か) が未決のまま — 満期はその語が文書のスキーマに現れたとき | ADR-129 | app |
@@ -133,6 +130,10 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-046 | `docs/adr/ADR-152-how-to-grasp-and-what-grasps-are-declarations-and-each-is-seen.md` · `core/easy_extrude_core/engine/feasibility.py` | 導出 (仕様なし・`anywhere`) の把持幅も対象 box から測るようになったとき: 満期=GREP:core/easy_extrude_core/engine/feasibility.py::derivedWidthFromBox 。ADR-152 §2 の読み違い (把持幅が爪の挟む厚みではなく進入面の広がりで測られる) は**閉じ軸を宣言した仕様でだけ**正した — 導出の答えを直すと既存の答えが動くので、当事者合意 (2026-09-26「導出の把持幅は今回直さない」) で別判断にした。直すときは既存テンプレの答えが動くことを受け入れる判断が要る | ADR-152 | core |
 | DEF-047 | `docs/adr/ADR-152-how-to-grasp-and-what-grasps-are-declarations-and-each-is-seen.md` · `src/controller/GraspController.js` | 3D で面をクリックして進入面を入力する経路が決まったとき: 満期=GREP:src/controller/GraspController.js::pickGraspFace 。ADR-152 D2 は「+x ってどこ?」をラベル・添え字・ホバーの塗りで**答える**が、入力はパネルのチップのまま (ADR-128 D1 の線)。面単位のクリックは選択の所有者 (ADR-099 — 実体単位) を面単位へ広げる別判断で、**「対象外」とは書かない — まだ決めていない** | ADR-152 | app |
 | DEF-048 | `docs/adr/ADR-152-how-to-grasp-and-what-grasps-are-declarations-and-each-is-seen.md` · `packages/grasp-contract/schema/grasp-search-response.schema.json` | 仕様ごとの**段別**棄却内訳 (どの仕様がリーチで・どれが干渉で落ちたか) を返すと決めたとき: 満期=GREP:packages/grasp-contract/schema/grasp-search-response.schema.json::rejectedByStage 。v7 の `diagnostics.graspSpecs` は生成数と通過数だけ — 段の内訳を割ると response の閉層が太り、版上げを伴う。当事者の要求 (どの仕様が使われたか / 使われなかったか) は今の 2 数で答えられる | ADR-152 | contract |
+| DEF-050 | `docs/adr/ADR-076-core-api-endpoint-layer.md` | 同 ADR §Still deferred の残り 3 項目 (内部認証の強化と本番ホスティング先 / 実行時間ガードの厳密化 / レート制限・メトリクス) のどれかに着手が決まったとき。**2026-09-26 の DEF 棚卸しで登録** — 同じ節の 4 項目目 (HTTP 往復 conformance) を DEF-025 として決着・削除したら、ファイル単位で覆われていた残り 3 項目が Q1 の母集団へ戻った。5 か月間 DEF-025 の行の*ついでに*覆われていただけで、行を持ったことは一度も無かった。満期は外部条件 (公開ホスティングの確定・実測で予算超過が常態化) なので trigger を書けない | ADR-076 | core |
+| DEF-051 | `docs/gsn/adr-110-grasp-is-a-check-beside-its-subject.gsn` | この木の top goal `MenuHeadingsKeepTheirPromise` が事業木 (`docs/gsn/profit-growth.gsn` の UsersReachGraspValue) に吊られたとき: 満期=GREP:docs/gsn/profit-growth.gsn::MenuHeadingsKeepTheirPromise 。**2026-09-26 の DEF 棚卸しで登録** — 木は接続の保留を「DEF-010 (ADR-094) と同じレーン」と書いていたが、DEF-010 は ADR-094 の木*だけ*を指す行で、ADR-094 は 2026-07-26 に自分で接続して満期を迎えていた。相乗り先の行が満期で消えると、相乗りした残しは無言で母集団の外へ出る (原則 #32 — 義務は相乗り先ではなく自分の行に書く)。接続は事業木側の編集で、吊る証拠の選別 (ADR-099 の木が示す「機械で閉じた到達性だけを吊らない」) を伴う | ADR-110 | app |
+| DEF-052 | `docs/gsn/adr-111-the-outliner-has-a-semantic-side.gsn` | この木の top goal `EverySelectableKindLivesInSomeNavigator` が事業木 (`docs/gsn/profit-growth.gsn` の RevenueMaximized 配下) に吊られたとき: 満期=GREP:docs/gsn/profit-growth.gsn::EverySelectableKindLivesInSomeNavigator 。**2026-09-26 の DEF 棚卸しで登録** — 木は接続の保留を「DEF-010 (ADR-094) と同じレーン」と書いていたが、DEF-010 は ADR-094 の木*だけ*を指す行で、ADR-094 は 2026-07-26 に自分で接続して満期を迎えていた。相乗り先の行が満期で消えると、相乗りした残しは無言で母集団の外へ出る (原則 #32 — 義務は相乗り先ではなく自分の行に書く)。接続は事業木側の編集で、吊る証拠の選別 (ADR-099 の木が示す「機械で閉じた到達性だけを吊らない」) を伴う | ADR-111 | app |
+| DEF-053 | `docs/gsn/adr-112-the-document-intake-address-becomes-permanent.gsn` | この木の top goal `WhatYouTypeIsEchoedWhereYouCanSeeIt` が事業木 (`docs/gsn/profit-growth.gsn` の RevenueMaximized 配下) に吊られたとき: 満期=GREP:docs/gsn/profit-growth.gsn::WhatYouTypeIsEchoedWhereYouCanSeeIt 。**2026-09-26 の DEF 棚卸しで登録** — 木は接続の保留を「DEF-010 (ADR-094) と同じレーン」と書いていたが、DEF-010 は ADR-094 の木*だけ*を指す行で、ADR-094 は 2026-07-26 に自分で接続して満期を迎えていた。相乗り先の行が満期で消えると、相乗りした残しは無言で母集団の外へ出る (原則 #32 — 義務は相乗り先ではなく自分の行に書く)。接続は事業木側の編集で、吊る証拠の選別 (ADR-099 の木が示す「機械で閉じた到達性だけを吊らない」) を伴う | ADR-112 | app |
 | DEF-049 | `src/controller/GraspController.js` | 文書を採用していないシーンで把持仕様を宣言できる経路が決まったとき: 満期=GREP:src/controller/GraspController.js::declareWithoutDocument 。把持の宣言は文書が持ち主 (ADR-119 / ADR-132 D2 — 幾何はシーン、宣言は文書)。文書が無いと書く場所が無く、以前は押下が**無言で消えていた** (2026-09-26 に stub e2e S10 が base でも赤いことで発見 — stub レーンは CI で走らないので誰も見ていなかった)。ADR-152 の実装で理由を出すようにしたが、宣言そのものを可能にするには「シーンだけの実体に宣言を持たせるか / 文書を暗黙に起こすか」の判断が要る (ADR-132 D4 が暗黙の文書ロードを退役させた経緯と衝突するので別判断) | ADR-152 | app |
 
 ## 覆えていないもの (限界の宣言 — 推論させない)
@@ -175,11 +176,19 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 - **覆う粒度はファイル単位である。** 行を 1 つ足すとそのファイル内の以後の残しも
   「宣言済み」に数えられる。所在欄に行番号を書いても検査はファイルまでしか見ない —
   行番号は人が辿るためのもので、機械が数える鍵ではない (行番号は編集のたびにずれる)。
-- **散文の満期は、来たことを機械が知らない。** 現在 8 行 (DEF-004〜008 /
-  010 / 011) の満期条件は ADR の採択に対応しないので `満期=ADR-NNN` を持たない。Q5 が
+- **散文の満期は、来たことを機械が知らない。** 散文のみの行の現在数は Q5 が印字する
+  (`PROSE_EXPIRY_BASELINE` — ここに数を写すと第二の源になる。この段落は初稿で「現在 8 行」と
+  書いており、実数が 15 になっても直されていなかった)。Q5 は
   この予算を個数で縛るが、**縛るのは個数であって条件の真偽ではない** — 「Phase 4 が
   出たとき」が本当に来たかどうかは、今日も人が見るしかない。ここは埋めていない穴として
   宣言しておく。
+  **2026-09-26 の棚卸しがその穴の実測である**: 散文 15 行を実物と突き合わせたら
+  DEF-007 / 010 / 025 の 3 行 (= 20%) は満期が**既に来ていた** — うち DEF-010 は
+  `.gsn` 自身が 2026-07-26 に「接続済み」と書いており、2 か月、登録簿だけが知らなかった。
+  `pnpm test:deferrals` の「満期切れ 0 件」はこの間ずっと緑で、散文の行については
+  何も言っていなかった。人が見るしかない以上、見る機会は**散文の行を足す瞬間**
+  (= 他の散文の行も目に入る瞬間) に置くのが最も安い。問われる場所は `pnpm test:deferrals`
+  Q5 の失敗メッセージ — baseline を上げようとする瞬間に既存行の確認を求める (憲法 Q3)。
   DEF-013 (2026-08-12 追加 / **2026-08-14 決着**) は `GREP:` trigger が実際に発火した
   **最初の例**である。満期は「`core/tests/test_engine.py` に『評価不能』を名前に持つ検査が
   現れたとき」で、`weighted_sum` を直したコミットがその検査を同時に置いたので、満期の到来と

@@ -3,7 +3,9 @@
 - Status: Accepted
 - 実施記録: エンジンのファネル収集 + reach near-miss + wire 露出まで
   完了。上流 contract は v3 に版上げ済み、core は emit 追従済み = producer 側は完結。
-  残るは BFF/UI 側の消費追従。
+  BFF/UI 側の消費追従も完了 (2026-09-26 の DEF 棚卸しで確認 — BFF は `server/src/grasp/contract.response.d.ts`
+  の導出型で `diagnostics` を通し、UI は `GraspSearchPanel.jsx` の `DiagnosticsFunnel` +
+  `src/view/GraspFunnelMath.js` で消費する)。登録簿 DEF-007 はこれで満期、削除。
   実装: `core/easy_extrude_core/engine/pipeline.py` (search_report) + `feasibility.py` (reach_miss)
   + `contract/models.py` (SearchDiagnostics wire, contractVersion=3)
 - Date: 2026-07-04
@@ -88,7 +90,7 @@ naive 実装にしか意味のある値を返せない (実ソルバは「解な
 - 契約の実改変は上流 `easy-extrude-contract` のみ (統治の再確認)。応答トップレベルに
   閉じた `diagnostics` オブジェクトが追加され contractVersion 2 -> 3 に版上げ済み。
 - 適用順序 (先例と同じ): **契約 repo で版上げ (完了) -> core (producer) が emit 追従
-  (完了) -> BFF/UI (consumer) が消費追従 (未着手)**。逆順は additionalProperties:false で
+  (完了) -> BFF/UI (consumer) が消費追従 (完了 — 冒頭の実施記録)**。逆順は additionalProperties:false で
   即壊れるため守った。
 - コア側は `contract/models.py` に wire 型 `SearchDiagnostics` を追加し `GraspSearchResponse`
   の必須フィールドにした。ドメイン型 (engine の `SearchDiagnostics`, 同名だが別モジュール) から

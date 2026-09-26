@@ -30,7 +30,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 2aacd0c7-b10b-4ff7-8529-f17fe08bf63f
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を書いた人がその成果を辿れることが、文書を書く動機の源だから)。2026-08-05 に証拠は実測値になった (e2e『場を閉じたまま意味側から共有変数を選べる』) が、吊り替えは事業木側の編集なので DEF-010 (ADR-094) と同じレーンで扱う"
+    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を書いた人がその成果を辿れることが、文書を書く動機の源だから)。2026-08-05 に証拠は実測値になった (e2e『場を閉じたまま意味側から共有変数を選べる』) が、吊り替えは事業木側の編集なので 登録簿 DEF-052 で扱う (2026-09-26 まで「DEF-010 (ADR-094) と同じレーン」と書いていたが、DEF-010 は ADR-094 自身の接続で満期を迎えており、この木の接続は一度も行を持っていなかった)"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
