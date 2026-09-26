@@ -29,6 +29,7 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
         reach_nearest_miss=None,
         occlusion_nearest_miss=None,
         grasp_nearest_miss=None,
+        grasp_specs=[],
     )
     base.update(overrides)
     return SearchDiagnostics(**base)
@@ -60,6 +61,7 @@ def test_response_roundtrip_top_n_with_breakdown():
     resp = GraspSearchResponse(
         candidates=[
             PoseCandidate(
+                grasp_spec_id=None,
                 rank=1,
                 pose={"joints": [0.0, 0.1, 0.2]},
                 score=ScoreBreakdown(

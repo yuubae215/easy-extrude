@@ -58,10 +58,12 @@ import {
 } from '../view/VisibilityAxes.js'
 import {
   ROBOT_ROLE, TCP_MOUNTED_ON, Robot, isRobotRole, isRobotBaseFrame, isTcpMountedOn,
-  isFlangeMountedTcp, isLegacyBaseRelativeTcp,
+  isFlangeMountedTcp, isLegacyBaseRelativeTcp, isRobotTcpFrame,
   resolveRobots, robotBaseSeedPose, nextRobotBaseName, nextRobotTcpName,
 } from '../domain/robotFrames.js'
 import { DEFAULT_TOOL_MOUNT, toolMountEditBlockedReason } from '../domain/robotTool.js'
+import { DEFAULT_HAND_BY_KIND } from '../domain/robotHand.js'
+import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
   ORIGIN_FRAME_NAME, isOriginFrame, isOriginFrameName, findOriginFrame,
 } from '../domain/originFrame.js'
@@ -3754,6 +3756,28 @@ export class SceneService extends EventEmitter {
    * role and the legacy names — so this method never asks "is this robot_base?"
    * itself (§1.1: the identity rule has one owner).
    */
+  /**
+   * Declare (or clear) what a robot grasps with — **the one entry** that writes a
+   * tcp's `hand` (ADR-152 D3, 原則 #1). The grasp panel, undo/redo and nothing else
+   * go through here; the arm's drawn tool re-reads it on the next sync and the
+   * grasp panel's roster is re-published from `tcpHandChanged`.
+   *
+   * Refuses anything that is not a flange-mounted robot tcp (returns false): a
+   * hand on an ordinary frame would be a declaration nothing reads.
+   * `hand === null` clears it back to UNDECLARED — not to a default.
+   *
+   * @param {string} frameId
+   * @param {object|null} hand  mm, the `robotHand` shape (validated by readers, stored as given)
+   * @returns {boolean} whether it was written
+   */
+  setTcpHand(frameId, hand) {
+    const frame = this._model.objects.get(frameId)
+    if (!isFlangeMountedTcp(frame)) return false
+    frame.hand = hand == null ? null : JSON.parse(JSON.stringify(hand))
+    this.emit('tcpHandChanged', frameId)
+    return true
+  }
+
   _upgradeLegacyRobotFrames() {
     let reset = 0
     for (const robot of this.getRobots()) {
@@ -3831,6 +3855,10 @@ export class SceneService extends EventEmitter {
       const m = DEFAULT_TOOL_MOUNT
       tcp.translation.set(m.translation.x, m.translation.y, m.translation.z)
       tcp.rotation.set(m.rotation.x, m.rotation.y, m.rotation.z, m.rotation.w)
+      // …and it carries a hand (ADR-152 D3): a DECLARED default in numbers (mm),
+      // agreeing with the default mount — so a new robot's drawn gripper is the
+      // gripper the search judges. A deep copy: the default table is frozen.
+      tcp.hand = JSON.parse(JSON.stringify(DEFAULT_HAND_BY_KIND[GRIPPER_KIND.PARALLEL_JAW]))
       this.applyEntityVisibility(tcp.id)
       // Its row seeded at `objectAdded`, before the mount existed — as an
       // ordinary frame. Announce the derived axis (the ADR-132 shape again).
@@ -4140,6 +4168,12 @@ function _restoreRobotRole(frame, dto) {
   // null — the pre-ADR-151 shape the scene-entry upgrade replaces, never a
   // silently assumed mount (原則 #31).
   if (isTcpMountedOn(dto.mountedOn)) frame.mountedOn = dto.mountedOn
+  // ADR-152 D3: the hand is restored AS STORED — a malformed one stays malformed
+  // (the panel says why) rather than being dropped to "undeclared", and an absent
+  // one stays absent (never a default filled in on read — 原則 #31).
+  if (dto.hand != null && isRobotTcpFrame(frame)) {
+    frame.hand = JSON.parse(JSON.stringify(dto.hand))
+  }
 }
 
 /**

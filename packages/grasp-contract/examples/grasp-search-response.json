@@ -1,8 +1,9 @@
 {
-  "contractVersion": 6,
+  "contractVersion": 7,
   "candidates": [
     {
       "rank": 1,
+      "graspSpecId": null,
       "pose": {
         "kind": "endEffector",
         "frame": {
@@ -26,6 +27,7 @@
     },
     {
       "rank": 2,
+      "graspSpecId": null,
       "pose": {
         "kind": "jointSpace",
         "chainRef": "ur5e/arm",
@@ -53,6 +55,7 @@
     "returned": 2,
     "reachNearestMiss": 0.031,
     "occlusionNearestMiss": 0.008,
-    "graspNearestMiss": { "kind": "opening", "shortfall": 0.012 }
+    "graspNearestMiss": { "kind": "opening", "shortfall": 0.012 },
+    "graspSpecs": []
   }
 }

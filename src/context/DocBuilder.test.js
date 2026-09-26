@@ -16,6 +16,7 @@ import {
   updateRequirement,
   removeDocEntry,
   setEntityGraspFeature,
+  setEntityHand,
 } from './DocBuilder.js'
 import { CONTEXT_DSL_VERSION, SUPPORTED_VERSIONS } from './ContextDslSchema.js'
 import { resolveGraspTargets } from '../domain/graspTargets.js'
@@ -383,10 +384,37 @@ describe('setEntityGraspFeature', () => {
   })
 
   it('the written declaration is what the domain reads back — the round trip closes', () => {
-    const feature = { kind: 'faces', faces: [{ face: '+z', region: { uMin: 0.2, uMax: 0.8 } }] }
+    const feature = {
+      kind: 'specs',
+      specs: [{ name: 'top', hand: 'suction', approach: { from: '+z', region: { uMin: 0.2, uMax: 0.8 } } }],
+      strategy: { order: 'priority', fallback: 'none' },
+    }
     const doc = setEntityGraspFeature(docWithSolid(), 'widget', feature)
     const [target] = resolveGraspTargets(doc.specification.layout.entities)
-    assert.equal(target.feature.state, 'declared-faces')
-    assert.deepEqual(target.feature.faces[0].region, { uMin: 0.2, uMax: 0.8, vMin: 0, vMax: 1 })
+    assert.equal(target.feature.state, 'declared-specs')
+    assert.deepEqual(target.feature.specs[0].approach.region, { uMin: 0.2, uMax: 0.8, vMin: 0, vMax: 1 })
+    assert.equal(target.feature.strategyDeclared, true)
+  })
+})
+
+describe('setEntityHand (ADR-152 D3)', () => {
+  const docWithTcp = () => ({
+    ...createBlankDoc('hand'),
+    specification: { layout: { version: 'layout/1.0', entities: [
+      { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp', robotRole: 'tcp', mountedOn: 'flange' },
+    ] } },
+  })
+  it('writes the hand to the tcp entity and clearing deletes the key (undeclared, not a default)', () => {
+    const hand = { kind: 'suction', cupDiameter: 40 }
+    const doc = setEntityHand(docWithTcp(), 'tcp', hand)
+    assert.deepEqual(doc.specification.layout.entities[0].hand, hand)
+    const cleared = setEntityHand(doc, 'tcp', null)
+    assert.ok(!('hand' in cleared.specification.layout.entities[0]))
+  })
+  it('is input-immutable and a no-op clone for an unknown ref', () => {
+    const doc = docWithTcp()
+    const snap = JSON.parse(JSON.stringify(doc))
+    setEntityHand(doc, 'nope', { kind: 'suction', cupDiameter: 40 })
+    assert.deepEqual(doc, snap)
   })
 })

@@ -22,8 +22,11 @@ ADR-146 は「**公知の閉形式・一般ロジックはクライアントに�
 | subject | 源 | 消費者 (JS) | 消費者 (Python) |
 |---|---|---|---|
 | `ur5e-forward-kinematics` | `public/robot/skeleton_arm.urdf` | `src/robotics/CrossLanguageDerivation.test.js` | `core/tests/test_ur_kinematics.py` |
+| `ur5e-inverse-kinematics` | `core/easy_extrude_core/engine/ur_kinematics.py` | `src/robotics/CrossLanguageDerivation.test.js` | `core/tests/test_ur_kinematics.py` |
+| `ur5e-candidate-to-flange` | `core/easy_extrude_core/engine/pose_codec.py` | `src/robotics/CrossLanguageDerivation.test.js` | `core/tests/test_ur_kinematics.py` |
+| `hand-parts-in-flange` (ADR-152) | `core/easy_extrude_core/engine/pipeline.py` | `src/robotics/CrossLanguageDerivation.test.js` | `core/tests/test_grasp_specs.py` |
 
-**個数 = 1。** 表の行の個数は `src/robotics/CrossLanguageDerivation.test.js` の
+**個数 = 4。** 表の行の個数は `src/robotics/CrossLanguageDerivation.test.js` の
 `CROSS_LANGUAGE_DERIVATIONS` が宣言し、各行のフィクスチャの実在と両消費者がそれを
 **実際に読んでいること**を同テストが問う。
 

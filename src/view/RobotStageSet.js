@@ -175,8 +175,8 @@ export class RobotStageSet {
    * @param {string} id
    * @param {{translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null} mount
    */
-  setToolMount(id, mount) {
-    this._stages.get(id)?.setToolMount(mount)
+  setToolMount(id, mount, hand = null) {
+    this._stages.get(id)?.setToolMount(mount, hand)
   }
 
   /**

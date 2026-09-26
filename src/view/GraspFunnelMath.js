@@ -132,3 +132,29 @@ export function nearMissCloseness(miss) {
   if (typeof miss !== 'number' || !Number.isFinite(miss) || miss < 0) return null
   return 1 / (1 + miss)
 }
+
+/**
+ * Per-spec results (contract v7, ADR-152 D4): every spec the run sent, in its
+ * priority order, with what the solver generated and passed for it — and how many
+ * of its candidates the strategy actually returned. The last number is DERIVED
+ * from `candidates[].graspSpecId` (a count, not a guess from poses): under
+ * `priority` a spec can have feasible candidates and still return none, and that
+ * must read differently from a spec that had nothing (原則 #31).
+ *
+ * `null` when the run sent no spec (the wire's empty table) or the diagnostics
+ * predate v7 — nothing to show, rather than an empty table that looks like "0".
+ *
+ * @param {{graspSpecs?: {id:string, candidatesGenerated:number, feasible:number}[]}|null} diagnostics
+ * @param {{graspSpecId?: string|null}[]} candidates
+ * @returns {{id:string, generated:number, feasible:number, returned:number}[]|null}
+ */
+export function specResultRows(diagnostics, candidates = []) {
+  const rows = diagnostics?.graspSpecs
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return rows.map(r => ({
+    id: r.id,
+    generated: r.candidatesGenerated,
+    feasible: r.feasible,
+    returned: candidates.filter(c => c.graspSpecId === r.id).length,
+  }))
+}

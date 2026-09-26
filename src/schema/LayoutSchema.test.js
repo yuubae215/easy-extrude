@@ -29,7 +29,10 @@ import {
   VALID_JOINT_TYPES,
   VALID_SEMANTIC_TYPES,
 } from '../layout/LayoutDslSchema.js'
-import { DECLARED_FEATURE_KINDS, DECLARABLE_FACES } from '../domain/graspFeature.js'
+import {
+  DECLARED_FEATURE_KINDS, DECLARABLE_FACES, LEGACY_FACE_LIST_KIND, SPEC_HANDS, CLOSING_AXES,
+  STRATEGY_ORDER, STRATEGY_FALLBACK,
+} from '../domain/graspFeature.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
@@ -135,7 +138,37 @@ test('graspFeature: kind anywhere is accepted', () => {
   assert.equal(validate(withFeature({ kind: 'anywhere' })), true, JSON.stringify(validate.errors))
 })
 
-test('graspFeature: faces with an optional normalised region is accepted', () => {
+const spec = (over = {}) => ({ name: 'top pinch', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'y', depth: 20, ...over })
+
+test('graspFeature: specs + strategy are accepted (ADR-152 D1)', () => {
+  assert.equal(validate(withFeature({
+    kind: 'specs',
+    specs: [
+      spec({ approach: { from: '+z', region: { uMin: 0.3, uMax: 0.7, vMin: 0.2, vMax: 0.8 }, tiltTolerance: 0.2 } }),
+      { name: 'top suck', hand: 'suction', approach: { from: '+z' } },
+    ],
+    strategy: { order: 'priority', fallback: 'none' },
+  })), true, JSON.stringify(validate.errors))
+})
+
+test('graspFeature: an empty spec list, a spec without a hand, a numeric priority are rejected', () => {
+  assert.equal(validate(withFeature({ kind: 'specs', specs: [] })), false)
+  assert.equal(validate(withFeature({ kind: 'specs', specs: [{ name: 'a', approach: { from: '+z' } }] })), false)
+  assert.equal(validate(withFeature({ kind: 'specs', specs: [spec({ priority: 3 })] })), false)
+  assert.equal(validate(withFeature({ kind: 'specs', specs: [spec({ depth: -1 })] })), false)
+  assert.equal(validate(withFeature({ kind: 'specs', specs: [spec()], strategy: { order: 'priority' } })), false)
+})
+
+test('schema graspSpec / graspStrategy enums match the domain vocabulary', () => {
+  const d = schema.$defs
+  assert.deepEqual(d.graspSpec.properties.hand.enum, [...SPEC_HANDS])
+  assert.deepEqual(d.graspSpec.properties.closing.enum, [...CLOSING_AXES])
+  assert.deepEqual(d.graspSpec.properties.approach.properties.from.enum, [...DECLARABLE_FACES])
+  assert.deepEqual(d.graspStrategy.properties.order.enum, Object.values(STRATEGY_ORDER))
+  assert.deepEqual(d.graspStrategy.properties.fallback.enum, Object.values(STRATEGY_FALLBACK))
+})
+
+test('graspFeature: the legacy face list is still READ (migrated on load) — old documents stay valid', () => {
   assert.equal(validate(withFeature({
     kind: 'faces',
     faces: [{ face: '+x' }, { face: '-x', region: { uMin: 0.25, uMax: 0.75, vMin: 0, vMax: 1 } }],
@@ -164,10 +197,10 @@ test('graspFeature: a smuggled field is rejected (the object is closed)', () => 
   assert.equal(validate(withFeature({ kind: 'anywhere', preferredPoint: [0, 0, 1] })), false)
 })
 
-test('schema graspFeature kind enum matches DECLARED_FEATURE_KINDS', () => {
+test('schema graspFeature kind enum = DECLARED_FEATURE_KINDS + the read-only legacy kind', () => {
   assert.deepEqual(
     schema.$defs.graspFeature.properties.kind.enum,
-    [...DECLARED_FEATURE_KINDS],
+    [...DECLARED_FEATURE_KINDS, LEGACY_FACE_LIST_KIND],
   )
 })
 
@@ -185,6 +218,11 @@ test('layout と context の両スキーマが同じ語彙を持つ — 片方�
   const ctx = readJson('schema/context-0.5.schema.json')
   const ctxFeature = ctx.$defs.hydratedEntity.properties.graspFeature
   assert.deepEqual(ctxFeature.properties.kind.enum, schema.$defs.graspFeature.properties.kind.enum)
+  const ctxSpec = ctxFeature.properties.specs.items
+  assert.deepEqual(Object.keys(ctxSpec.properties), Object.keys(schema.$defs.graspSpec.properties))
+  assert.deepEqual(ctxSpec.properties.hand.enum, schema.$defs.graspSpec.properties.hand.enum)
+  assert.deepEqual(ctxSpec.properties.closing.enum, schema.$defs.graspSpec.properties.closing.enum)
+  assert.deepEqual(ctxFeature.properties.strategy.properties, schema.$defs.graspStrategy.properties)
   assert.deepEqual(
     ctxFeature.properties.faces.items.properties.face.enum,
     schema.$defs.graspFeature.properties.faces.items.properties.face.enum,

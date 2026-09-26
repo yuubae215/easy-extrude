@@ -21,7 +21,8 @@
  *   declared-anywhere  — the user looked and decided not to narrow. Same samples
  *                        as `derived`, deliberately NOT the same state: one is an
  *                        answer, the other is a silence.
- *   declared-faces     — 1..6 faces, each with an optional region on it.
+ *   declared-specs     — 1..N named grasp specs + a strategy (ADR-152 D1; a
+ *                        legacy face list is migrated into this state).
  *   malformed          — a declaration exists but cannot be read. Never degraded
  *                        to `derived`: "declared and quietly ignored" is exactly
  *                        the lie D3 forbids, and it would come back as a
@@ -29,9 +30,10 @@
  *
  * ## Declaration wins, one direction (ADR-119 D3)
  *
- * When faces are declared, samples come from THOSE faces only. They are never
+ * When specs are declared, candidates come from THOSE specs only. They are never
  * merged with the derived set: a user who declared "here and nowhere else" would
- * find their statement silently widened.
+ * find their statement silently widened. The one exception is the one the user
+ * declares — `strategy.fallback: 'derived'`.
  *
  * ## What this module does NOT do (scope boundary — CLAUDE.md)
  *
@@ -44,32 +46,81 @@
  */
 
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
+import { rotateVec3 } from './rotateVec3.js'
 
 /**
  * The declaration's kind — a closed, kind-discriminated union, same governance as
  * `gripper` (ADR-118) and `robot.kinematics` (ADR-127). The kind decides which
  * fields even exist, so it is carried rather than inferred (原則 #2).
+ *
+ * ADR-152 D1 replaced the face list with named GRASP SPECS: a "face" had been
+ * doing two jobs (where the hand comes from, and what the jaws touch), and the
+ * commonest instruction on a shop floor — "come down from the top, pinch the
+ * sides, 20 mm below the top face" — could not be said with it. The old list is
+ * still READ (see `LEGACY_FACE_LIST_KIND`) and migrated on the way in; nothing
+ * writes it.
  */
 export const GRASP_FEATURE_KIND = Object.freeze({
   ANYWHERE: 'anywhere',
-  FACES:    'faces',
+  SPECS:    'specs',
 })
 
 /** Every kind a document may declare — the population an unknown kind is measured against. */
 export const DECLARED_FEATURE_KINDS = Object.freeze(Object.values(GRASP_FEATURE_KIND))
 
 /**
+ * The pre-ADR-152 face-list kind. READ ONLY: a document that still says it is
+ * migrated to specs by `resolveGraspFeature` (lossless — same samples, same
+ * answer) and the migration is counted and reported. It is deliberately not in
+ * `DECLARED_FEATURE_KINDS`: listing it there would make it a thing one may write,
+ * i.e. a second way to say "grasp only here" (§1.1).
+ */
+export const LEGACY_FACE_LIST_KIND = 'faces'
+
+/**
  * The resolved STATE of one target's grasp-location declaration. Four values, and
  * the reason there are four rather than two is the whole ADR: silence, an explicit
  * "anywhere", a narrowed declaration, and a broken one must each be
  * distinguishable — collapsing any pair of them hides a real difference behind an
- * identical-looking answer (原則 #31).
+ * identical-looking answer (原則 #31). ADR-152 renamed the third and added none.
  */
 export const GRASP_FEATURE_STATE = Object.freeze({
   DERIVED:           'derived',
   DECLARED_ANYWHERE: 'declared-anywhere',
-  DECLARED_FACES:    'declared-faces',
+  DECLARED_SPECS:    'declared-specs',
   MALFORMED:         'malformed',
+})
+
+/** Which hand a spec is written for (the wire's gripper kinds). */
+export const SPEC_HANDS = Object.freeze(Object.values(GRIPPER_KIND))
+
+/** The jaws' closing axes — a LOCAL axis of the object. */
+export const CLOSING_AXES = Object.freeze(['x', 'y', 'z'])
+
+/**
+ * How the specs are used (ADR-152 D1). The ORDER of the spec list is the
+ * priority, so no spec carries a number — "two specs at rank 3" stays
+ * unrepresentable.
+ */
+export const STRATEGY_ORDER = Object.freeze({ PRIORITY: 'priority', SCORE: 'score' })
+export const STRATEGY_FALLBACK = Object.freeze({ NONE: 'none', DERIVED: 'derived' })
+
+/**
+ * What an omitted strategy means — the same default ADR-119 D3 chose ("the
+ * declaration wins": try in order, never quietly widen). Carried alongside
+ * `strategyDeclared: false` so the panel can say "(default)" instead of passing
+ * the default off as something the user said (原則 #31).
+ */
+export const DEFAULT_STRATEGY = Object.freeze({
+  order: STRATEGY_ORDER.PRIORITY, fallback: STRATEGY_FALLBACK.NONE,
+})
+
+/**
+ * The strategy a migrated face list gets: every face's samples mixed and ranked
+ * by score, nothing derived — exactly what the face list used to mean.
+ */
+const MIGRATED_STRATEGY = Object.freeze({
+  order: STRATEGY_ORDER.SCORE, fallback: STRATEGY_FALLBACK.NONE,
 })
 
 /**
@@ -142,6 +193,73 @@ export function inPlaneAxesOrThrow(face) {
   return IN_PLANE_AXES[faceAxisOrThrow(face)]
 }
 
+/**
+ * The world word for each world axis direction — ROS REP-103 (CLAUDE.md: +X
+ * forward, +Y left, +Z up). These are the words a person uses for the cell, which
+ * is exactly why they are NOT the declaration's vocabulary: an object turned 90°
+ * about Z would take its "front" with it (ADR-152 案 L).
+ */
+const WORLD_WORDS = Object.freeze([
+  Object.freeze({ axis: Object.freeze({ x:  1, y:  0, z:  0 }), word: 'front' }),
+  Object.freeze({ axis: Object.freeze({ x: -1, y:  0, z:  0 }), word: 'back' }),
+  Object.freeze({ axis: Object.freeze({ x:  0, y:  1, z:  0 }), word: 'left' }),
+  Object.freeze({ axis: Object.freeze({ x:  0, y: -1, z:  0 }), word: 'right' }),
+  Object.freeze({ axis: Object.freeze({ x:  0, y:  0, z:  1 }), word: 'top' }),
+  Object.freeze({ axis: Object.freeze({ x:  0, y:  0, z: -1 }), word: 'bottom' }),
+])
+
+/** Beyond this angle from every world axis a face is "tilted", not "top" (ADR-152 D2). */
+export const FACE_WORD_MAX_ANGLE = 30 * Math.PI / 180
+
+/** The word for a face that points along no world axis (never a false "top"). */
+export const TILTED_WORD = 'tilted'
+
+/**
+ * "+x — where is that?" answered in the words of the cell (ADR-152 D2).
+ *
+ * The declaration stays in LOCAL axes (it turns with the object — the reason 案 L
+ * was rejected); this DERIVES, for the object's current rotation, which way that
+ * local face points in the world and names it: `+z · top`, `+x · left` (after a
+ * 90° turn about Z). A face more than 30° from every world axis is `tilted` — a
+ * made-up "top" on a tipped box is the lie this word exists to prevent.
+ *
+ * Derived, never stored: turn the object and the word changes while the
+ * declaration does not. Pure (no THREE) — the panel chip and the 3D label read it.
+ *
+ * @param {string} face  a DECLARABLE_FACES value (throws otherwise — 原則 #31)
+ * @param {{x:number,y:number,z:number,w:number}|null|undefined} rotation  the object's world rotation
+ * @returns {{face: string, word: string, worldNormal: {x:number,y:number,z:number}, label: string}}
+ */
+export function faceWorldWord(face, rotation) {
+  const n = faceNormalOrThrow(face)
+  const q = rotation ?? { x: 0, y: 0, z: 0, w: 1 }
+  const w = rotateVec3(n, q)
+  const len = Math.hypot(w.x, w.y, w.z) || 1
+  const unit = { x: w.x / len, y: w.y / len, z: w.z / len }
+  let best = null
+  let bestDot = -Infinity
+  for (const cand of WORLD_WORDS) {
+    const d = cand.axis.x * unit.x + cand.axis.y * unit.y + cand.axis.z * unit.z
+    if (d > bestDot) { bestDot = d; best = cand }
+  }
+  const angle = Math.acos(Math.max(-1, Math.min(1, bestDot)))
+  const word = angle > FACE_WORD_MAX_ANGLE ? TILTED_WORD : best.word
+  return { face, word, worldNormal: unit, label: `${face} · ${word}` }
+}
+
+/**
+ * The two CONTACT faces a closing axis implies (ADR-152: derived, never declared)
+ * — what the jaws touch, as distinct from where the hand comes from.
+ * @param {'x'|'y'|'z'} axis
+ * @returns {[string, string]}
+ */
+export function contactFacesOf(axis) {
+  if (!CLOSING_AXES.includes(axis)) {
+    throw new Error(`graspFeature: 未宣言の閉じ軸 "${axis}" — CLOSING_AXES は ${CLOSING_AXES.join(' / ')}`)
+  }
+  return [`+${axis}`, `-${axis}`]
+}
+
 /** True when `a` and `b` are opposed faces of the box (what jaws close across). */
 export function facesAreOpposed(a, b) {
   return OPPOSITE_FACE[a] === b
@@ -191,35 +309,99 @@ function readRegion(raw, where) {
  * hand-written `.ctx.json` typo must not take down the grasp panel. The broken
  * case comes back as `MALFORMED` with printable reasons instead (原則 #11).
  *
+ * A legacy face list (`kind: 'faces'`) is migrated here, on read (ADR-152 D1):
+ * each face becomes one spec approaching from that face over its region, with no
+ * closing axis, depth or tilt tolerance (= the old candidate set), and the
+ * strategy is `score` / `none` (= the old union ranked by score). The migrated
+ * specs carry `hand: null` — "whatever hand is declared", which is what a face
+ * list meant, having no hand of its own. `migratedFaces` counts them so the panel
+ * can say so (the ADR-151 legacy-tcp etiquette).
+ *
  * @param {any} entity  a Layout DSL entity (or anything, including null)
- * @returns {{ state: string, faces: {face: string, region: {uMin:number,uMax:number,vMin:number,vMax:number}}[],
- *             errors: string[] }}
+ * @returns {ResolvedGraspFeature}
  */
 export function resolveGraspFeature(entity) {
   const raw = entity?.graspFeature
-  if (raw === undefined || raw === null) {
-    return { state: GRASP_FEATURE_STATE.DERIVED, faces: [], errors: [] }
-  }
+  if (raw === undefined || raw === null) return resolved(GRASP_FEATURE_STATE.DERIVED)
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     return malformed(['graspFeature must be an object'])
   }
-  if (raw.kind === GRASP_FEATURE_KIND.ANYWHERE) {
-    return { state: GRASP_FEATURE_STATE.DECLARED_ANYWHERE, faces: [], errors: [] }
-  }
-  if (raw.kind !== GRASP_FEATURE_KIND.FACES) {
+  if (raw.kind === GRASP_FEATURE_KIND.ANYWHERE) return resolved(GRASP_FEATURE_STATE.DECLARED_ANYWHERE)
+  if (raw.kind === LEGACY_FACE_LIST_KIND) return migrateFaceList(raw)
+  if (raw.kind !== GRASP_FEATURE_KIND.SPECS) {
     return malformed([
       `graspFeature.kind "${raw.kind}" is not declared — use one of: ${DECLARED_FEATURE_KINDS.join(' / ')}`,
     ])
   }
 
-  if (!Array.isArray(raw.faces) || raw.faces.length === 0) {
-    // The zero that does not look like a state (原則 #31): an empty faces[] is a
-    // declaration that names nowhere, and its consequence downstream would be
-    // zero surface samples — i.e. `candidatesGenerated: 0`, a well-formed answer.
-    return malformed(['graspFeature.faces must list at least one face (an empty list declares nowhere to grasp)'])
+  if (!Array.isArray(raw.specs) || raw.specs.length === 0) {
+    // The zero that does not look like a state (原則 #31): an empty spec list
+    // names no way to grasp, and downstream it would be `candidatesGenerated: 0`.
+    return malformed(['graspFeature.specs must list at least one grasp spec (an empty list declares no way to grasp)'])
   }
 
-  const faces  = []
+  const specs  = []
+  const errors = []
+  const names  = new Set()
+  for (const [i, item] of raw.specs.entries()) {
+    const { spec, errors: specErrors } = readSpec(item, `graspFeature.specs[${i}]`)
+    if (specErrors.length) { errors.push(...specErrors); continue }
+    if (names.has(spec.name)) {
+      errors.push(`graspFeature.specs[${i}]: name "${spec.name}" is used twice — a result could not say which spec it came from`)
+      continue
+    }
+    names.add(spec.name)
+    specs.push(spec)
+  }
+  const { strategy, declared, errors: strategyErrors } = readStrategy(raw.strategy)
+  errors.push(...strategyErrors)
+  if (errors.length) return malformed(errors)
+  return resolved(GRASP_FEATURE_STATE.DECLARED_SPECS, { specs, strategy, strategyDeclared: declared })
+}
+
+/**
+ * @typedef {object} ResolvedGraspSpec
+ * @property {string} name
+ * @property {string|null} hand   a SPEC_HANDS value, or null = migrated (any hand)
+ * @property {{from: string, region: {uMin:number,uMax:number,vMin:number,vMax:number},
+ *             tiltTolerance: number|null}} approach
+ * @property {'x'|'y'|'z'|null} closing   null = every roll (not declared)
+ * @property {number} depth      Layout length unit (mm); 0 when not declared
+ * @property {boolean} depthDeclared
+ */
+
+/**
+ * @typedef {object} ResolvedGraspFeature
+ * @property {string} state
+ * @property {ResolvedGraspSpec[]} specs
+ * @property {{order: string, fallback: string}} strategy
+ * @property {boolean} strategyDeclared
+ * @property {number} migratedFaces  how many legacy faces were migrated into specs (0 = none)
+ * @property {string[]} errors
+ */
+
+function resolved(state, extra = {}) {
+  return {
+    state,
+    specs: [],
+    strategy: DEFAULT_STRATEGY,
+    strategyDeclared: false,
+    migratedFaces: 0,
+    errors: [],
+    ...extra,
+  }
+}
+
+function malformed(errors) {
+  return resolved(GRASP_FEATURE_STATE.MALFORMED, { errors })
+}
+
+/** The pre-ADR-152 face list → specs (lossless — see `resolveGraspFeature`). */
+function migrateFaceList(raw) {
+  if (!Array.isArray(raw.faces) || raw.faces.length === 0) {
+    return malformed(['graspFeature.faces must list at least one face (an empty list declares nowhere to grasp)'])
+  }
+  const specs  = []
   const errors = []
   const seen   = new Set()
   for (const [i, item] of raw.faces.entries()) {
@@ -236,15 +418,105 @@ export function resolveGraspFeature(entity) {
     seen.add(face)
     const { region, errors: regionErrors } = readRegion(typeof item === 'string' ? null : item?.region, where)
     if (regionErrors.length) { errors.push(...regionErrors); continue }
-    faces.push({ face, region })
+    specs.push(Object.freeze({
+      name: face, hand: null,
+      approach: Object.freeze({ from: face, region, tiltTolerance: null }),
+      closing: null, depth: 0, depthDeclared: false,
+    }))
   }
-
   if (errors.length) return malformed(errors)
-  return { state: GRASP_FEATURE_STATE.DECLARED_FACES, faces, errors: [] }
+  return resolved(GRASP_FEATURE_STATE.DECLARED_SPECS, {
+    specs, strategy: MIGRATED_STRATEGY, strategyDeclared: true, migratedFaces: specs.length,
+  })
 }
 
-function malformed(errors) {
-  return { state: GRASP_FEATURE_STATE.MALFORMED, faces: [], errors }
+/** One spec of `graspFeature.specs` → `{ spec, errors }` (ADR-152 D1). */
+function readSpec(item, where) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return { spec: null, errors: [`${where}: a grasp spec must be an object`] }
+  }
+  const errors = []
+  const name = item.name
+  if (typeof name !== 'string' || name.trim() === '') errors.push(`${where}: name is required (the result is reported per spec by name)`)
+  if (!SPEC_HANDS.includes(item.hand)) errors.push(`${where}: hand must be one of ${SPEC_HANDS.join(' / ')}`)
+  const approach = item.approach
+  const from = approach?.from
+  if (!DECLARABLE_FACES.includes(from)) {
+    errors.push(`${where}: approach.from "${from}" is not one of ${DECLARABLE_FACES.join(' / ')}`)
+  }
+  const { region, errors: regionErrors } = readRegion(approach?.region, `${where}.approach`)
+  errors.push(...regionErrors)
+  const tilt = approach?.tiltTolerance
+  if (tilt !== undefined && tilt !== null && (!isFiniteNumber(tilt) || tilt < 0)) {
+    errors.push(`${where}: approach.tiltTolerance must be a number ≥ 0 (radians)`)
+  }
+
+  const closing = item.closing ?? null
+  const depth   = item.depth
+  if (closing !== null && !CLOSING_AXES.includes(closing)) {
+    errors.push(`${where}: closing must be one of ${CLOSING_AXES.join(' / ')}`)
+  }
+  if (depth !== undefined && depth !== null && (!isFiniteNumber(depth) || depth < 0)) {
+    errors.push(`${where}: depth must be a number ≥ 0 (mm)`)
+  }
+  if (item.hand === GRIPPER_KIND.SUCTION) {
+    // A cup has no jaws to close and seals ON the face — a closing axis or a depth
+    // would be carried to the wire and mean nothing (原則 #11: consumed, no effect).
+    if (closing !== null) errors.push(`${where}: a suction spec cannot declare closing (a cup has no jaws)`)
+    if (depth !== undefined && depth !== null) errors.push(`${where}: a suction spec cannot declare depth (a cup seals on the face)`)
+  }
+  if (closing !== null && DECLARABLE_FACES.includes(from) && FACE_AXIS[from] === closing) {
+    errors.push(
+      `${where}: closing "${closing}" is the approach axis of ${from} — ` +
+      'the jaws would close along the direction the hand comes from',
+    )
+  }
+  if (errors.length) return { spec: null, errors }
+  return {
+    spec: Object.freeze({
+      name: name.trim(),
+      hand: item.hand,
+      approach: Object.freeze({ from, region, tiltTolerance: isFiniteNumber(tilt) ? tilt : null }),
+      closing,
+      depth: isFiniteNumber(depth) ? depth : 0,
+      depthDeclared: isFiniteNumber(depth),
+    }),
+    errors: [],
+  }
+}
+
+/** `graspFeature.strategy` → `{ strategy, declared, errors }`. Omitted = the default, marked as such. */
+function readStrategy(raw) {
+  if (raw === undefined || raw === null) return { strategy: DEFAULT_STRATEGY, declared: false, errors: [] }
+  const errors = []
+  const orders = Object.values(STRATEGY_ORDER)
+  const fallbacks = Object.values(STRATEGY_FALLBACK)
+  if (!orders.includes(raw.order)) errors.push(`graspFeature.strategy.order must be one of ${orders.join(' / ')}`)
+  if (!fallbacks.includes(raw.fallback)) errors.push(`graspFeature.strategy.fallback must be one of ${fallbacks.join(' / ')}`)
+  if (errors.length) return { strategy: DEFAULT_STRATEGY, declared: false, errors }
+  return { strategy: Object.freeze({ order: raw.order, fallback: raw.fallback }), declared: true, errors: [] }
+}
+
+/**
+ * Can this spec be used with the declared hand? (ADR-152 D1) A jaw spec under a
+ * cup is not MALFORMED — it is a perfectly good statement about the part that
+ * this hand cannot act on — so it is excluded from the run WITH A REASON rather
+ * than failing the document. A migrated spec (`hand: null`) and an undeclared
+ * hand (`handKind == null`, the gate switched off) match everything.
+ *
+ * @param {ResolvedGraspSpec} spec
+ * @param {string|null|undefined} handKind
+ * @returns {{usable: boolean, reason: string|null}}
+ */
+export function specUsability(spec, handKind) {
+  if (spec.hand == null || handKind == null || spec.hand === handKind) return { usable: true, reason: null }
+  return { usable: false, reason: `${spec.name}: the declared hand (${handKind}) cannot use a ${spec.hand} spec` }
+}
+
+/** The specs a run with this hand sends, in priority order. */
+export function usableSpecs(resolvedFeature, handKind) {
+  if (resolvedFeature?.state !== GRASP_FEATURE_STATE.DECLARED_SPECS) return []
+  return resolvedFeature.specs.filter(s => specUsability(s, handKind).usable)
 }
 
 /**
@@ -252,39 +524,45 @@ function malformed(errors) {
  * `targetDeclarationGaps` / `gripperDeclarationGaps`, returned as printable
  * reasons rather than a bare disabled button (原則 #11).
  *
- * ## The jaw rule is a real defect, not a formality
+ * Three stops:
+ *   - an unreadable declaration (never degraded to `derived`);
+ *   - every spec excluded by the hand (ADR-152 D1: stop, do not fall to
+ *     `fallback: derived` silently — the user asked for these specs);
+ *   - the ADR-118 defect re-entered through the front door: a jaw spec with no
+ *     closing axis has its opening measured from the spread of the specs'
+ *     samples, so unless those samples include an OPPOSED pair of faces the
+ *     measured width collapses and the gate passes everything. Declaring a
+ *     closing axis fixes it properly (the width is then the box's thickness).
  *
- * ADR-118 fixed a gate that passed jaws which physically cannot close: `core/`
- * measures the object's width as the spread of the surface samples projected onto
- * the closing axis, so top-only sampling reported half the true width. A
- * DECLARATION can resurrect exactly that defect through the front door — declare
- * one face for a parallel jaw and the measured "width" collapses to the width of
- * that one face's sample grid, i.e. nearly nothing, and the gate passes
- * everything. So a jaw needs an OPPOSED PAIR, and saying so out loud beats
- * quietly adding the opposite face (which would be the merge D3 forbids).
- *
- * Any opposed pair counts, not specifically ±X: declaring "close across the top
- * and bottom" is a legitimate thing to mean, and the derived set is only a
- * default.
- *
- * @param {{state: string, faces: {face:string}[], errors: string[]}} resolved  from `resolveGraspFeature`
+ * @param {ResolvedGraspFeature} resolvedFeature  from `resolveGraspFeature`
  * @param {string|null|undefined} gripperKind  a `GRIPPER_KIND` value, or null when undeclared
  * @returns {string[]}
  */
-export function graspFeatureGaps(resolved, gripperKind) {
-  if (!resolved) return []
-  if (resolved.state === GRASP_FEATURE_STATE.MALFORMED) {
-    return resolved.errors.map(e => `grasp location declaration is unreadable — ${e}`)
+export function graspFeatureGaps(resolvedFeature, gripperKind) {
+  if (!resolvedFeature) return []
+  if (resolvedFeature.state === GRASP_FEATURE_STATE.MALFORMED) {
+    return resolvedFeature.errors.map(e => `grasp location declaration is unreadable — ${e}`)
   }
-  if (resolved.state !== GRASP_FEATURE_STATE.DECLARED_FACES) return []
+  if (resolvedFeature.state !== GRASP_FEATURE_STATE.DECLARED_SPECS) return []
+
+  const usable = usableSpecs(resolvedFeature, gripperKind)
+  if (usable.length === 0) {
+    return [
+      `no grasp spec can be used by the declared hand (${gripperKind}) — ` +
+      resolvedFeature.specs.map(s => specUsability(s, gripperKind).reason).join('; '),
+    ]
+  }
   if (gripperKind !== GRIPPER_KIND.PARALLEL_JAW) return []
 
-  const faces = resolved.faces.map(f => f.face)
+  const unclosed = usable.filter(s => s.closing === null)
+  if (unclosed.length === 0) return []
+  const faces = usable.map(s => s.approach.from)
   const hasPair = faces.some(a => faces.some(b => facesAreOpposed(a, b)))
   if (hasPair) return []
   return [
-    `parallel jaw needs a pair of opposed faces, but only ${faces.join(' / ')} ${faces.length === 1 ? 'is' : 'are'} declared ` +
-    `— the solver measures the opening from these samples, so one face reports almost no width (ADR-118)`,
+    `parallel jaw: ${unclosed.map(s => s.name).join(' / ')} declare${unclosed.length === 1 ? 's' : ''} no closing axis, ` +
+    `and the specs approach only ${[...new Set(faces)].join(' / ')} — the solver would measure the opening from one face ` +
+    'and report almost no width (ADR-118). Declare a closing axis (or an opposed pair of faces).',
   ]
 }
 
@@ -293,19 +571,16 @@ export function graspFeatureGaps(resolved, gripperKind) {
  * that lets a user notice they never chose (ADR-119 D2 「導出に落ちたことは画面に
  * 出す」). Pure, so the panel and any future caption read the same words.
  *
- * @param {{state: string, faces: {face:string, region?: any}[]}} resolved
+ * @param {ResolvedGraspFeature} resolvedFeature
  * @param {ReadonlyArray<string>} derivedFaces  what ADR-118 would sample for the declared hand
  * @returns {string}
  */
-export function graspFeatureSummary(resolved, derivedFaces = []) {
-  switch (resolved?.state) {
-    case GRASP_FEATURE_STATE.DECLARED_FACES: {
-      const parts = resolved.faces.map(f => (
-        f.region === FULL_REGION || isFullRegion(f.region)
-          ? `${f.face} (whole face)`
-          : `${f.face} (${pct(f.region.uMin)}–${pct(f.region.uMax)} × ${pct(f.region.vMin)}–${pct(f.region.vMax)})`
-      ))
-      return `declared: ${parts.join(', ')}`
+export function graspFeatureSummary(resolvedFeature, derivedFaces = []) {
+  switch (resolvedFeature?.state) {
+    case GRASP_FEATURE_STATE.DECLARED_SPECS: {
+      const n = resolvedFeature.specs.length
+      const names = resolvedFeature.specs.map(s => s.name).join(', ')
+      return `declared: ${n} grasp spec${n === 1 ? '' : 's'} (${names}) — ${strategySummary(resolvedFeature)}`
     }
     case GRASP_FEATURE_STATE.DECLARED_ANYWHERE:
       return `declared: anywhere — sampling ${derivedFaces.join(' / ') || 'the derived faces'}`
@@ -316,9 +591,93 @@ export function graspFeatureSummary(resolved, derivedFaces = []) {
   }
 }
 
+/**
+ * The strategy in words, saying when it was NOT declared (ADR-152 D1 — an omitted
+ * strategy is shown as the default it is, not passed off as a choice).
+ */
+export function strategySummary(resolvedFeature) {
+  const st = resolvedFeature?.strategy ?? DEFAULT_STRATEGY
+  const order = st.order === STRATEGY_ORDER.SCORE ? 'best score across specs' : 'in priority order'
+  const fallback = st.fallback === STRATEGY_FALLBACK.DERIVED ? 'fall back to the derived faces' : 'no fallback'
+  return `${order} · ${fallback}${resolvedFeature?.strategyDeclared ? '' : ' (default)'}`
+}
+
+/** Region in words ("whole face" or "20–80% × 0–50%"). */
+export function regionSummary(r) {
+  return isFullRegion(r)
+    ? 'whole face'
+    : `${pct(r.uMin)}–${pct(r.uMax)} × ${pct(r.vMin)}–${pct(r.vMax)}`
+}
+
 /** True when a region covers the whole face (the value an omitted region means). */
 export function isFullRegion(r) {
   return !!r && r.uMin === 0 && r.uMax === 1 && r.vMin === 0 && r.vMax === 1
 }
 
 const pct = (t) => `${Math.round(t * 100)}%`
+
+// ── Writing back (ADR-152 D1: the only shape ever written is `specs`) ─────────
+
+/**
+ * One resolved spec → its Layout DSL form. Omitted facts stay omitted (an
+ * undeclared depth is not written as 0; a whole-face region is not written as a
+ * region — ADR-128 D3), so reading the written form back gives the same spec.
+ *
+ * A migrated spec (`hand: null`) is stamped with the hand the user is editing
+ * under: the face list it came from had no hand of its own, and writing `null`
+ * would be a document that no longer validates.
+ *
+ * @param {ResolvedGraspSpec} spec
+ * @param {string|null} handKind  the declared hand, used only for a migrated spec
+ * @returns {object}
+ */
+export function specToDsl(spec, handKind) {
+  const hand = spec.hand ?? handKind ?? GRIPPER_KIND.PARALLEL_JAW
+  const approach = { from: spec.approach.from }
+  if (!isFullRegion(spec.approach.region)) approach.region = { ...spec.approach.region }
+  if (spec.approach.tiltTolerance !== null) approach.tiltTolerance = spec.approach.tiltTolerance
+  const out = { name: spec.name, hand, approach }
+  if (hand !== GRIPPER_KIND.SUCTION) {
+    if (spec.closing) out.closing = spec.closing
+    if (spec.depthDeclared) out.depth = spec.depth
+  }
+  return out
+}
+
+/**
+ * A whole declaration → its Layout DSL form (`kind: 'specs'`). The strategy is
+ * written only when it was declared (or migrated — the migration's `score` is a
+ * real statement about the old face list's meaning, not a default).
+ *
+ * @param {ResolvedGraspSpec[]} specs
+ * @param {{order:string, fallback:string}} strategy
+ * @param {boolean} strategyDeclared
+ * @param {string|null} handKind
+ * @returns {object|null}  null when there is no spec left (= clear, never `specs: []`)
+ */
+export function featureToDsl(specs, strategy, strategyDeclared, handKind) {
+  if (!specs.length) return null
+  const out = { kind: GRASP_FEATURE_KIND.SPECS, specs: specs.map(s => specToDsl(s, handKind)) }
+  if (strategyDeclared) out.strategy = { order: strategy.order, fallback: strategy.fallback }
+  return out
+}
+
+/**
+ * A fresh spec for the "+ spec" button: a name not yet used, the declared hand,
+ * from the top. A jaw spec starts with NO closing axis and NO depth — the user
+ * has not said them, and the panel shows them as not declared (原則 #31).
+ * @param {ResolvedGraspSpec[]} existing
+ * @param {string|null} handKind
+ * @returns {ResolvedGraspSpec}
+ */
+export function newSpec(existing, handKind) {
+  const used = new Set(existing.map(s => s.name))
+  let i = existing.length + 1
+  while (used.has(`spec ${i}`)) i++
+  return {
+    name: `spec ${i}`,
+    hand: handKind ?? GRIPPER_KIND.PARALLEL_JAW,
+    approach: { from: '+z', region: FULL_REGION, tiltTolerance: null },
+    closing: null, depth: 0, depthDeclared: false,
+  }
+}

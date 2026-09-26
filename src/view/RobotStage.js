@@ -34,6 +34,19 @@ function sameToolMount(a, b) {
 }
 
 /**
+ * Value equality of two declared hands (ADR-152 D3) — plain JSON data, so a
+ * structural compare is exact. Lets the per-frame sync skip the rebuild while the
+ * hand is unchanged, like `sameToolMount`.
+ * @param {object|null} a
+ * @param {object|null} b
+ */
+function sameHand(a, b) {
+  if (a === b) return true
+  if (!a || !b) return false
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/**
  * RobotStage — loads and displays a fixed-pose robot-arm skeleton in the main
  * viewport, for visually verifying grasp-search (`core/`) output against the
  * voxel scene. Purely decorative/read-only: this class only *renders* a pose,
@@ -87,6 +100,12 @@ export class RobotStage {
      * construction (原則 #4).
      */
     this._toolMount = opts.toolMount ?? null
+    /**
+     * The declared hand (ADR-152 D3, mm) the tool is drawn from, or null when
+     * undeclared (then the tool is the flange→TCP rod core/ judges). Written only
+     * by `setToolMount` after construction (原則 #4).
+     */
+    this._hand = opts.hand ?? null
     /** @type {THREE.Group|null} the tool + TCP marker currently on `wrist_3_link` */
     this._toolGroup = null
 
@@ -213,8 +232,8 @@ export class RobotStage {
     const owned = []
     const toolLength = axialToolLengthM(this._toolMount)
     if (toolLength !== null) {
-      const color = { body: COLOR.surfaceRaised, palm: COLOR.surfaceRaised, finger: COLOR.entityDefault }
-      for (const part of toolParts(toolLength)) {
+      const color = { body: COLOR.surfaceRaised, finger: COLOR.entityDefault, cup: COLOR.entityDefault, rod: COLOR.surfaceRaised }
+      for (const part of toolParts(this._hand, toolLength)) {
         const geometry = part.shape === 'cylinder'
           ? new THREE.CylinderGeometry(part.size[0], part.size[0], part.size[1], 24)
           : new THREE.BoxGeometry(part.size[0], part.size[1], part.size[2])
@@ -311,9 +330,12 @@ export class RobotStage {
    * one replaces the tool + marker, carrying the current look onto them.
    * @param {{translation:{x:number,y:number,z:number}, rotation:{x:number,y:number,z:number,w:number}}|null} mount  mm
    */
-  setToolMount(mount) {
-    if (sameToolMount(this._toolMount, mount)) return
+  setToolMount(mount, hand = null) {
+    // The drawn tool depends on TWO facts since ADR-152 D3: where it is mounted
+    // (the TCP marker, the rod's length) and what the hand is (its shape).
+    if (sameToolMount(this._toolMount, mount) && sameHand(this._hand, hand)) return
     this._toolMount = mount ? { translation: { ...mount.translation }, rotation: { ...mount.rotation } } : null
+    this._hand = hand ? JSON.parse(JSON.stringify(hand)) : null
     if (!this.robot) return
     this._detachTool()
     const before = this._materials.length

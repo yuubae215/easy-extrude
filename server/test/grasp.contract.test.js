@@ -146,11 +146,13 @@ test('valid response instance conforms to the response schema (both pose kinds)'
     candidates: [
       {
         rank: 1,
+        graspSpecId: 'top-pinch',
         pose: { kind: 'endEffector', frame: { position: [0.1, 0.2, 0.3], orientation: [0, 0, 0, 1] } },
         score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.92, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } },
       },
       {
         rank: 2,
+        graspSpecId: null,
         pose: { kind: 'jointSpace', chainRef: 'arm_left', joints: [0, 0.5, -0.5, 0, 1.2, 0] },
         score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: false, graspable: true, totalScore: 0.41, reachSolution: { kind: 'undeclared' } },
       },
@@ -168,6 +170,8 @@ test('valid response instance conforms to the response schema (both pose kinds)'
       reachNearestMiss: 0.03,
       occlusionNearestMiss: null,
       graspNearestMiss: null,
+      // v7 (ADR-152): per declared grasp spec, every one sent.
+      graspSpecs: [{ id: 'top-pinch', candidatesGenerated: 3, feasible: 1 }],
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -205,6 +209,7 @@ test('zero-candidate response conforms — the funnel explains the emptiness', (
       reachNearestMiss: 0.12,
       occlusionNearestMiss: null,
       graspNearestMiss: null,
+      graspSpecs: [],
     },
   }
   assert.deepEqual(validateResponse(res), { valid: true, errors: [] })
@@ -300,7 +305,7 @@ test('valid request is delegated and a conforming upstream response passes throu
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
       contractVersion: CONTRACT_VERSION,
-      candidates: [{ rank: 1, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
+      candidates: [{ rank: 1, graspSpecId: null, score: { withinReach: true, visible: true, ikSolvable: true, interferenceFree: true, graspable: true, totalScore: 0.5, reachSolution: { kind: 'solved', joints: [0, -1, 1.2, -1.8, -1.5708, 0] } } }],
       diagnostics: {
         candidatesGenerated: 1,
         rejectedByReach: 0,
@@ -313,8 +318,7 @@ test('valid request is delegated and a conforming upstream response passes throu
         reachNearestMiss: null,
         occlusionNearestMiss: null,
         graspNearestMiss: null,
-      occlusionNearestMiss: null,
-      graspNearestMiss: null,
+        graspSpecs: [],
       },
     }))
   })
@@ -337,6 +341,7 @@ test('valid request is delegated and a conforming upstream response passes throu
       reachNearestMiss: null,
       occlusionNearestMiss: null,
       graspNearestMiss: null,
+      graspSpecs: [],
     })
   } finally {
     upstream.close()

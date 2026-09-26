@@ -20,12 +20,17 @@
 | 順運動学 (DH) | `T_i = Rz(θ)·Tz(d)·Tx(a)·Rx(α)` の累積積 | `core/…/engine/ur_kinematics.py: forward_kinematics_chain` / `src/robotics/urKinematics.js` | 両方 (導出) |
 | 逆運動学 (UR) | 閉形式・最大 8 解 (Hawkins 2013) | `core/…/engine/ur_kinematics.py: inverse_kinematics` / `src/robotics/urKinematics.js` | 両方 (導出) |
 | 候補 frame ⇄ フランジ gauge | 宣言された 2 つの規約 | `core/…/engine/pose_codec.py` + `ur_solver.py` / `src/robotics/graspPoseGauge.js` | 両方 (導出) |
-| 候補生成 | 表面サンプル × 傾き × ロールの離散列挙 | `core/…/engine/candidates.py` | core のみ |
+| 候補生成 | 表面サンプル × 傾き × ロールの離散列挙。把持仕様では許容傾きで刻みを絞り、閉じ軸でロールを 2 通りに、TCP を深さぶん進める (ADR-152 D5) | `core/…/engine/candidates.py` (`generate_candidates` / `generate_spec_candidates`) | core のみ |
+| 閉じ軸 → ロール | 閉じ軸を進入に直交な面へ射影し `_basis_from_z` と同じ gauge で `atan2` | `core/…/engine/pose_codec.py: roll_aligning_x` | core のみ |
+| 手の干渉 (形) | 筐体 + 開いた爪 / カップを flange 座標の OBB に置き、進入線分上 6 点で障害物と分離軸判定 (15 軸) (ADR-152 D5) | `core/…/engine/feasibility.py: NaiveHandCollisionChecker` / `types.py: obb_overlap` | core のみ |
+| 面の世界向きの語 | 局所面の法線を物体の四元数で回し、最も近い世界軸 (ROS: 前/後/左/右/上/下)、30° 超は `tilted` (ADR-152 D2) | `src/domain/graspFeature.js: faceWorldWord` | front (公知の閉形式・表示) |
+| 宣言の確認の絵 | 面領域の角・深さ面・爪の断面・手のプレビューを局所 → 世界へ置く (判定しない) | `src/view/GraspDeclarationMath.js` | front (公知の閉形式・表示) |
 | リーチ判定 | 球殻 `[reach_min, reach_max]` の距離比較 | `core/…/engine/feasibility.py: within_reach` | core のみ |
 | 干渉 (進入経路) | 線分 vs 障害物の表面距離 | `core/…/engine/feasibility.py: NaivePathCollisionChecker` | core のみ |
 | 干渉 (腕リンク + ツール) | FK チェーンの各リンクを線分近似 + フランジ→TCP のツール区間 (ADR-150) | `core/…/engine/feasibility.py: NaiveArmSweepCollisionChecker` | core のみ |
 | 可視性 | カメラ→把持点の線分遮蔽 + 視野円錐 | `core/…/engine/feasibility.py: sightline_occlusion_miss` | core のみ |
-| 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口 | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
+| 把持性 (平行ジョー) | 閉じ軸への射影幅 vs 開口。閉じ軸を宣言した仕様では対象 box の閉じ方向の厚み `2·Σ hᵢ·|aᵢ·x|` (ADR-152) | `core/…/engine/feasibility.py: NaiveParallelJawGraspChecker` | core のみ |
+| 深さのゲート | `depth − (toolLength − palm_z) > 0` なら把持性で棄却 (パームが面の下へ潜る) | `core/…/engine/feasibility.py: palm_depth_miss` | core のみ |
 | 把持性 (吸引) | カップ footprint 内の法線の揃い | `core/…/engine/feasibility.py: NaiveSuctionGraspChecker` | core のみ |
 | スコア | 正規化 objective の加重和 | `core/…/engine/scoring.py` + `objectives.py` | **core のみ (アイデア)** |
 | 推薦 (propose) | embedding 類似度 | `core/recommendation/` | **core のみ (アイデア)** |
@@ -182,6 +187,33 @@ docstring にコスト実測とともに書いてある。
 **`JointSolution` を持たない候補では腕を見ない** (型で分岐、原則 #2)。素朴ソルバが返す
 占位解は 1 個の数であって 6 関節の配置ではないので、腕のジオメトリを再構成できない。
 返るのは**空タプル**で、空は「腕が触れていない」ではなく**「腕を見ていない」**。
+
+### 3.2b 手の形 (ADR-152 D3/D5)
+
+フランジ座標 (ADR-150 D5: `z = approach`, `x` = 候補 frame の x = 閉じ軸, `y = z × x`) で
+手の部品を**軸平行箱**として持つ。円筒の筐体は外接箱 (保守側 — 偽の「当たる」は出うるが
+偽の「取れる」は出さない)。
+
+```
+flange(TCP) = TCP − z·toolLength
+body   : center (0, 0, L_b/2),              half (r, r, L_b/2)   (円筒) | size/2 (箱)
+finger : center (±(w_open/2 + t/2), 0, L_b + L_f/2), half (t/2, w/2, L_f/2)
+cup    : center (0, 0, L_b + h/2),           half (d/2, d/2, h/2)
+```
+
+爪は**開いた状態** (内面間 = `maxOpening`) に置く — 進入中の爪は開いている。プリグラスプ →
+把持の線分上 `HAND_PATH_STEPS = 6` 点 (端点を含む) で各部品を置き、障害物と交差判定する
+(球: OBB 上の最近点との距離 ≤ r、箱: 分離軸定理 — 面法線 6 + 辺の外積 9、平行な辺は飛ばす、
+接触は当たり)。**離散化なので、刻みより薄い障害物は間をすり抜けうる。**
+
+形と取付けは別の事実で、互いに導出しない。矛盾の検査だけを置く:
+
+```
+ジョー:  L_b ≤ toolLength ≤ L_b + L_f        吸引:  toolLength = L_b + h   (相対許容 1e-6)
+```
+
+外れていればフロントのゲートが理由を出して止め、`core/` も `DeclarationError` → 400
+`invalid_declaration` で拒否する。
 
 ### 3.3 near-miss (ADR-079 / ADR-081)
 

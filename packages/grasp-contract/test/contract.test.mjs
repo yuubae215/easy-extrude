@@ -107,7 +107,12 @@ const score = response.candidates[0].score;
 // pose-union cases below carry a valid funnel and every rejection isolates the
 // pose/score violation under test -- not a missing diagnostics block.
 const diagnostics = response.diagnostics;
-const withDiag = (candidates) => ({ candidates, diagnostics });
+// v7 (ADR-152): every candidate says which grasp spec produced it (null = the
+// derived samples) — filled in here so each case below still isolates ONE violation.
+const withDiag = (candidates) => ({
+  candidates: candidates.map((c) => ("graspSpecId" in c ? c : { graspSpecId: null, ...c })),
+  diagnostics,
+});
 
 test("endEffector pose conforms on its own", () =>
   accepts("grasp-search-response", withDiag([{ rank: 1, pose: endEffectorPose, score }])));
@@ -219,6 +224,7 @@ const emptyByReach = {
     reachNearestMiss: 0.12,
     occlusionNearestMiss: null,
     graspNearestMiss: null,
+    graspSpecs: [],
   },
 };
 test("empty result rejected by reach (numeric reachNearestMiss) conforms", () =>
@@ -239,6 +245,7 @@ const emptyByIk = {
     reachNearestMiss: null,
     occlusionNearestMiss: null,
     graspNearestMiss: null,
+    graspSpecs: [],
   },
 };
 test("empty result with no reach rejections (null reachNearestMiss) conforms", () =>
@@ -428,6 +435,68 @@ test("grasp-search request accepts robot.toolLength and rejects a negative one",
   accepts("grasp-search-request", withTool(0.15));
   accepts("grasp-search-request", withTool(0));
   rejects("grasp-search-request", withTool(-0.01));
+});
+
+// --- ADR-152 (contract v7): grasp specs, strategy, hand shape ---------------
+test("response: a candidate without graspSpecId is rejected (required, nullable — not optional)", () => {
+  const { graspSpecId, ...bare } = response.candidates[0];
+  rejects("grasp-search-response", { candidates: [bare], diagnostics });
+});
+
+test("response: graspSpecId names a spec, and diagnostics.graspSpecs counts every sent spec", () => {
+  accepts("grasp-search-response", {
+    candidates: [{ ...response.candidates[0], graspSpecId: "top-pinch" }],
+    diagnostics: {
+      ...diagnostics,
+      graspSpecs: [
+        { id: "top-pinch", candidatesGenerated: 6, feasible: 2 },
+        { id: "top-suck", candidatesGenerated: 2, feasible: 0 },
+      ],
+    },
+  });
+});
+
+test("response: diagnostics without graspSpecs is rejected, and a spec row is closed", () => {
+  const { graspSpecs, ...rest } = diagnostics;
+  rejects("grasp-search-response", { candidates: [], diagnostics: rest });
+  rejects("grasp-search-response", {
+    candidates: [],
+    diagnostics: { ...diagnostics, graspSpecs: [{ id: "a", candidatesGenerated: 1, feasible: 0, colour: "red" }] },
+  });
+});
+
+test("request: target carries named specs, a strategy and the target box", () => {
+  const example = examples["grasp-search-request"];
+  const spec = {
+    id: "top-pinch",
+    samples: [{ point: [0, 0, 0.1], normal: [0, 0, 1] }],
+    closingAxis: [1, 0, 0],
+    depth: 0.02,
+    tiltTolerance: 0.2,
+  };
+  const withTarget = (target) => ({ ...example, graspSearch: { ...example.graspSearch, target } });
+  accepts("grasp-search-request", withTarget({
+    graspSpecs: [spec, { id: "top-suck", samples: spec.samples }],
+    strategy: { order: "priority", fallback: "none" },
+    box: { center: [0, 0, 0.05], halfExtents: [0.05, 0.03, 0.05], orientation: [0, 0, 0, 1] },
+  }));
+  rejects("grasp-search-request", withTarget({ graspSpecs: [{ ...spec, samples: [] }] }));
+  rejects("grasp-search-request", withTarget({ graspSpecs: [{ ...spec, priority: 3 }] }));
+  rejects("grasp-search-request", withTarget({ strategy: { order: "random", fallback: "none" } }));
+});
+
+test("request: the hand's shape is closed, and body/fingers come together", () => {
+  const example = examples["grasp-search-request"];
+  const withGripper = (gripper) => ({ ...example, graspSearch: { ...example.graspSearch, gripper } });
+  const body = { kind: "cylinder", radius: 0.035, length: 0.07 };
+  const fingers = { length: 0.05, thickness: 0.008, width: 0.02 };
+  accepts("grasp-search-request", withGripper({ kind: "parallelJaw", maxOpening: 0.06, body, fingers }));
+  accepts("grasp-search-request", withGripper({ kind: "parallelJaw", maxOpening: 0.06, body: { kind: "box", size: [0.09, 0.05, 0.07] }, fingers }));
+  rejects("grasp-search-request", withGripper({ kind: "parallelJaw", maxOpening: 0.06, body }));
+  rejects("grasp-search-request", withGripper({ kind: "parallelJaw", maxOpening: 0.06, body: { kind: "mesh", url: "x.stl" }, fingers }));
+  accepts("grasp-search-request", withGripper({ kind: "suction", cupDiameter: 0.04, body, cupHeight: 0.02 }));
+  rejects("grasp-search-request", withGripper({ kind: "suction", cupDiameter: 0.04, cupHeight: 0.02 }));
+  rejects("grasp-search-request", withGripper({ kind: "suction", cupDiameter: 0.04, body, cupHeight: 0.02, fingers }));
 });
 
 test("recommendation request without requirement.text is rejected", () => {

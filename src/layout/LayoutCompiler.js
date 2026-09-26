@@ -315,6 +315,8 @@ function generateObjects(entities, refMap, positions) {
           // ADR-151: a tcp's `position` / `rotation` are the tool mount
           // (`tool0 → tcp`) when this says 'flange'.
           mountedOn:   entity.mountedOn ?? null,
+          // ADR-152 D3: the tcp's hand (kind + gate params + shape, mm).
+          hand:        entity.hand ?? null,
           translation: { x: pos.x ?? 0, y: pos.y ?? 0, z: pos.z ?? 0 },
           rotation:    entity.rotation ?? IDENTITY_QUATERNION,
         })

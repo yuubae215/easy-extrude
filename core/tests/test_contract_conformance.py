@@ -120,6 +120,7 @@ def _diagnostics(**overrides) -> SearchDiagnostics:
         reach_nearest_miss=None,
         occlusion_nearest_miss=None,
         grasp_nearest_miss=None,
+        grasp_specs=[],
     )
     base.update(overrides)
     return SearchDiagnostics(**base)
@@ -131,6 +132,7 @@ def test_response_end_effector_pose_conforms_to_schema():
     resp = GraspSearchResponse(
         candidates=[
             PoseCandidate(
+                grasp_spec_id=None,
                 rank=1,
                 pose={
                     "kind": "endEffector",
@@ -156,6 +158,7 @@ def test_response_joint_space_pose_conforms_to_schema():
     resp = GraspSearchResponse(
         candidates=[
             PoseCandidate(
+                grasp_spec_id=None,
                 rank=1,
                 pose={"kind": "jointSpace", "chainRef": "robot0", "joints": [0.0, 0.1, 0.2]},
                 score=_score(),
@@ -260,6 +263,7 @@ def _response_with(score: ScoreBreakdown) -> dict:
     resp = GraspSearchResponse(
         candidates=[
             PoseCandidate(
+                grasp_spec_id=None,
                 rank=1,
                 pose={
                     "kind": "endEffector",

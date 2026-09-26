@@ -316,3 +316,28 @@ test('the tool mount declaration round-trips — a saved mount is not re-read as
   assert.equal(validateLayoutDsl(dsl).valid, true, validateLayoutDsl(dsl).errors.join('\n'))
   assert.deepEqual(compileLayout(dsl), scene1)
 })
+
+test('the tcp hand round-trips Layout DSL → scene → DSL, and an undeclared hand stays absent (ADR-152 D3)', () => {
+  const hand = {
+    kind: 'parallelJaw', maxOpening: 60, fingerClearance: 10,
+    body: { kind: 'cylinder', radius: 32, length: 78 },
+    fingers: { length: 72, thickness: 12, width: 21 },
+  }
+  const dsl0 = {
+    version: 'layout/1.0',
+    strategy: 'manual',
+    entities: [
+      { ref: 'rb', type: 'CoordinateFrame', name: 'robot_base', robotRole: 'base', position: { x: 0, y: 0, z: 0 } },
+      { ref: 'tcp', type: 'CoordinateFrame', name: 'tcp', parentRef: 'rb', robotRole: 'tcp',
+        mountedOn: 'flange', position: { x: 0, y: 0, z: 150 }, hand },
+      { ref: 'tcp2', type: 'CoordinateFrame', name: 'tcp2', parentRef: 'rb', robotRole: 'tcp',
+        mountedOn: 'flange', position: { x: 0, y: 0, z: 150 } },
+    ],
+  }
+  assert.equal(validateLayoutDsl(dsl0).valid, true, validateLayoutDsl(dsl0).errors.join('\n'))
+  const scene1 = compileLayout(dsl0)
+  const { dsl } = decompileLayout(scene1)
+  assert.deepEqual(dsl.entities.find(e => e.ref === 'tcp').hand, hand)
+  assert.ok(!('hand' in dsl.entities.find(e => e.ref === 'tcp2')), 'undeclared is not filled in with a default')
+  assert.deepEqual(compileLayout(dsl), scene1)
+})

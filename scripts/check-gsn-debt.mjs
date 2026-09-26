@@ -318,7 +318,11 @@ const SUPPORT_LABELS = new Map([
 // 「+x ってどこ?」の確認を追加、response 版上げを決定) し、木が 2 goal 増えた
 // (GraspSpecsAndStrategyAreSayable / PlusXIsSeenOnTheObject — 旧 HowToGraspIs… を
 // 語彙と判定の 2 つに割った差し引き)。6 つとも満期は機械可読なので分子 (G3) は動かない。
-const DEBT_BASELINE = 55
+// 2026-09-26 (同日・実装): 55 → 49。ADR-152 を実装し 6 goal がすべて support-verified に
+// 上がった (証拠: graspFeature / robotHand / robotTool / GraspDeclarationConfirmation の
+// node --test、core/tests/test_grasp_specs.py、test:contract v7、e2e/grasp-declaration.spec.js)。
+// 6 つとも満期は機械可読だったので分子 (G3) は動かない。
+const DEBT_BASELINE = 49
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。

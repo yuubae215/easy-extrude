@@ -19,6 +19,7 @@ import { GraspController } from './GraspController.js'
 import {
   TOOL_LENGTH_M, DEFAULT_TOOL_MOUNT, TOOL_MOUNT_UNDECLARED_REASON, TOOL_MOUNT_NOT_AXIAL_REASON,
 } from '../domain/robotTool.js'
+import { DEFAULT_HAND_BY_KIND, wireGripperFromHand } from '../domain/robotHand.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 import { BffUnavailableError } from '../service/BffClient.js'
@@ -122,10 +123,14 @@ function mountFields(mount = DEFAULT_TOOL_MOUNT) {
     rotation:    { ...mount.rotation },
   }
 }
-function fakeRobotScene() {
+/** The shipped default hands (mm) — declared on the tcp, the source (ADR-152 D3). */
+const JAW_HAND = DEFAULT_HAND_BY_KIND.parallelJaw
+const CUP_HAND = DEFAULT_HAND_BY_KIND.suction
+
+function fakeRobotScene(hand = undefined) {
   const objects = new Map([
     ['f_base', { id: 'f_base', name: 'robot_base', parentId: null }],
-    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: 'f_base', ...mountFields() }],
+    ['f_tcp',  { id: 'f_tcp',  name: 'tcp',        parentId: 'f_base', ...mountFields(), ...(hand ? { hand } : {}) }],
   ])
   const poseById = { f_base: ROBOT_POSES.robot_base, f_tcp: ROBOT_POSES.tcp }
   return {
@@ -143,8 +148,8 @@ function fakeRobotScene() {
  *   (`resolveSearchLayout`), not a silent degrade: the older tests below keep
  *   asserting the document path on purpose.
  */
-function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true, sceneDsl = null, sceneWarnings = [] } = {}) {
-  const robot = robotScene ? fakeRobotScene() : { scene: undefined, service: {} }
+function makeCtrl({ bff = null, layoutDsl = LAYOUT, loaded = true, isNegotiation = true, connectSets = undefined, robotScene = true, sceneDsl = null, sceneWarnings = [], robotHand = undefined } = {}) {
+  const robot = robotScene ? fakeRobotScene(robotHand) : { scene: undefined, service: {} }
   return {
     _uiView: {
       toasts: [],
@@ -278,7 +283,8 @@ test('live geometry wins over the document, and the document keeps its declarati
   gc.openGrasp()
   const targets = store.getState().context.graspTargets
   assert.equal(targets.list.length, 1)
-  assert.equal(targets.feature.state, 'declared-faces', 'the document’s declaration survived the join')
+  // A legacy face list is read and migrated (ADR-152 D1) — still the document's.
+  assert.equal(targets.feature.state, 'declared-specs', 'the document’s declaration survived the join')
 
   const target = gc._selectedTarget()
   assert.equal(target.position.x, 900, 'geometry came from the live scene, not the stale document')
@@ -350,6 +356,15 @@ test('掴める対象が N 個あって未選択なら no-target — 先頭へ�
   // 選ばなかったほうの実体は障害物として宣言される (自分自身は除外される)。
   assert.equal(g.request.graspSearch.obstacles.length, 1)
   assert.deepEqual(g.request.graspSearch.obstacles[0].center, [0, 0, 0.2])
+  // The obstacle keeps its SHAPE on the wire (ADR-133 D5). Until ADR-152 this
+  // mapping read every box as a sphere and sent `radius: NaN` (→ JSON null), so
+  // core/ never saw a single declared shape — and the hand's interference check
+  // (ADR-152 D5) would have had nothing to hit. Values, not presence: a NaN
+  // passes `'halfExtents' in o`.
+  const [obs] = g.request.graspSearch.obstacles
+  assert.equal(obs.kind, 'box')
+  assert.ok(!('radius' in obs), 'a box is not a sphere')
+  assert.ok(obs.halfExtents.every(Number.isFinite) && obs.halfExtents.every(v => v > 0), JSON.stringify(obs))
 })
 
 // ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────
@@ -581,18 +596,19 @@ test('a new run and disposeGhost clean up the ghost (PHILOSOPHY #9)', async () =
 
 // ── Domain declarations: camera / gripper ride the request (ADR-081 Dec. 5) ────
 
-test('camera and gripper declarations ride the request open payload verbatim', async () => {
+test('camera rides verbatim; the gripper is DERIVED from the tcp hand (ADR-152 D3)', async () => {
   let sent = null
   const bff = {
     async compileLayout() { return { objects: [] } },
     async graspSearch(req) { sent = req; return { candidates: [], diagnostics: DIAG_OK } },
   }
-  const { gc } = setup({ bff })
+  const { gc } = setup({ bff, robotHand: JAW_HAND })
   const camera  = { position: [0, 0, 1.2], viewAxis: [0, 0, -1], fovHalfAngle: 0.6 }
-  const gripper = { maxOpening: 0.06, fingerClearance: 0.01 }
-  await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera, gripper })
+  // A `gripper` param is not a source any more — the hand on the tcp is.
+  await gc.runGraspSearch({ weights: { reach: 1 }, topN: 3, camera, gripper: { kind: 'suction', cupDiameter: 9 } })
   assert.deepEqual(sent.graspSearch.camera, camera)     // declaration only — no reshaping
-  assert.deepEqual(sent.graspSearch.gripper, gripper)
+  assert.deepEqual(sent.graspSearch.gripper, wireGripperFromHand(JAW_HAND))
+  assert.equal(sent.graspSearch.gripper.fingers.length + sent.graspSearch.gripper.body.length, TOOL_LENGTH_M)
   assert.deepEqual(sent.graspSearch.robot,
     { base: [-2, 2, 0], baseOrientation: [0, 0, 0, 1], tcpOrientation: [0, 0, 0, 1], toolLength: TOOL_LENGTH_M })
 })
@@ -641,28 +657,59 @@ test('宣言されたリーチ範囲が plan{} で載り、未宣言なら鍵ご
 
 // ── Where to grasp: the declaration reaches the wire, and wins (ADR-119 D2/D3) ─
 
-test('宣言された面だけが request のサンプルになる — 導出面と混ざらない (D3)', async () => {
+test('宣言された仕様だけが request に載る — 導出面と混ざらない (D3 / ADR-152 D4)', async () => {
   const rec = recordingBff()
   const { gc } = setup({
     bff: rec.bff,
-    layoutDsl: layoutWithFeature({ kind: 'faces', faces: [{ face: '-z' }] }),
+    robotHand: CUP_HAND,
+    layoutDsl: layoutWithFeature({
+      kind: 'specs',
+      specs: [
+        { name: 'under', hand: 'suction', approach: { from: '-z' } },
+        { name: 'pinch', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'x', depth: 20 },
+      ],
+    }),
   })
-  await gc.runGraspSearch({ gripper: { kind: 'suction', cupDiameter: 0.04 } })
-  const samples = rec.sent.graspSearch.target.surfaceSamples
-  assert.ok(samples.length > 0)
-  // Suction derives '+z'. Not one derived sample may appear — asserting only
-  // that the declared face is present would pass under a merge.
-  for (const s of samples) assert.equal(s.normal[2], -1)
+  await gc.runGraspSearch({})
+  const target = rec.sent.graspSearch.target
+  // Suction derives '+z'; with specs declared and no `fallback: derived`, the
+  // derived samples are not sent at all — asserting only that the declared face
+  // is present would pass under a merge.
+  assert.equal(target.surfaceSamples, undefined)
+  // Only the spec this hand can use rides, in order; the jaw spec is excluded.
+  assert.deepEqual(target.graspSpecs.map(s => s.id), ['under'])
+  for (const s of target.graspSpecs[0].samples) assert.equal(s.normal[2], -1)
+  assert.deepEqual(target.strategy, { order: 'priority', fallback: 'none' })
+  assert.ok(target.box && target.box.halfExtents.length === 3, 'the target box rides for the closing-axis width')
+})
+
+test('ジョーの仕様は閉じ軸を世界で、深さを m で送る (ADR-152 D4 — 単位変換は 1 箇所)', async () => {
+  const rec = recordingBff()
+  const { gc } = setup({
+    bff: rec.bff,
+    layoutDsl: layoutWithFeature({
+      kind: 'specs',
+      specs: [{ name: 'pinch', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'y', depth: 20 }],
+      strategy: { order: 'score', fallback: 'derived' },
+    }),
+    robotHand: JAW_HAND,
+  })
+  await gc.runGraspSearch({})
+  const target = rec.sent.graspSearch.target
+  const [spec] = target.graspSpecs
+  assert.deepEqual(spec.closingAxis.map(v => Math.round(v * 1e9) / 1e9), [0, 1, 0])
+  assert.equal(spec.depth, 0.02)
+  // A declared fallback carries the derived samples too.
+  assert.ok(target.surfaceSamples.length > 0)
 })
 
 test('宣言が無いときは導出のまま — 語彙を足しても既存の答えが動かない', async () => {
   const withNothing = recordingBff()
   const withAnywhere = recordingBff()
-  const a = setup({ bff: withNothing.bff })
-  const b = setup({ bff: withAnywhere.bff, layoutDsl: layoutWithFeature({ kind: 'anywhere' }) })
-  const gripper = { kind: 'suction', cupDiameter: 0.04 }
-  await a.gc.runGraspSearch({ gripper })
-  await b.gc.runGraspSearch({ gripper })
+  const a = setup({ bff: withNothing.bff, robotHand: CUP_HAND })
+  const b = setup({ bff: withAnywhere.bff, robotHand: CUP_HAND, layoutDsl: layoutWithFeature({ kind: 'anywhere' }) })
+  await a.gc.runGraspSearch({})
+  await b.gc.runGraspSearch({})
   // Same samples on the wire — which is exactly why the DISTINCTION between the
   // two states cannot be evidenced here and is evidenced in the pure layer
   // (graspFeature.test.js) instead. Named so the omission is deliberate.
@@ -679,12 +726,12 @@ test('平行ジョーに 1 面だけの宣言は BFF へ行く前に止まり、
     async graspSearch()   { reached += 1; return { candidates: [], diagnostics: DIAG_OK } },
   }
   const { gc, ctrl, grasp } = setup({
-    bff, layoutDsl: layoutWithFeature({ kind: 'faces', faces: [{ face: '+x' }] }),
+    bff, robotHand: JAW_HAND, layoutDsl: layoutWithFeature({ kind: 'faces', faces: [{ face: '+x' }] }),
   })
-  await gc.runGraspSearch({ gripper: { kind: 'parallelJaw', maxOpening: 0.08 } })
+  await gc.runGraspSearch({})
   assert.equal(reached, 0, '幅が測れない要求を投げてはならない')
   assert.equal(grasp().status, 'no-target')
-  assert.match(grasp().reason, /opposed/)
+  assert.match(grasp().reason, /closing axis/)
   assert.ok(ctrl._uiView.toasts.length > 0, '無言で止まるのが最悪の失敗 (原則 #11)')
 })
 
@@ -710,14 +757,17 @@ test('setGraspFeature は文書編集の唯一の入口へ委譲し、投影を�
     return Promise.resolve()
   }
   gc.openGrasp()
-  await gc.setGraspFeature('widget', { kind: 'faces', faces: [{ face: '+y' }, { face: '-y' }] })
+  await gc.setGraspFeature('widget', {
+    kind: 'specs',
+    specs: [{ name: 'side', hand: 'parallelJaw', approach: { from: '+y' }, closing: 'x' }],
+  })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].ref, 'widget')
   // The projection reflects what the DOCUMENT now says — not what we sent.
-  assert.equal(store.getState().context.graspTargets.feature.state, 'declared-faces')
+  assert.equal(store.getState().context.graspTargets.feature.state, 'declared-specs')
   assert.deepEqual(
-    store.getState().context.graspTargets.feature.faces.map(f => f.face),
-    ['+y', '-y'],
+    store.getState().context.graspTargets.feature.specs.map(sp => [sp.name, sp.approach.from, sp.closing]),
+    [['side', '+y', 'x']],
   )
 })
 
@@ -1250,4 +1300,59 @@ test('運動学が宣言されていないレーンは ADR-135 のまま — 解
   ])
   gc.selectCandidate(1)
   assert.deepEqual(stages.calls.at(-1), ['f_base', null])
+})
+
+// ── ADR-152 D3: the hand is the tcp's, and a contradiction stops the search ────
+
+test('手と取付けが矛盾すると BFF へ行く前に止まり、理由が出る (直さない)', async () => {
+  let reached = 0
+  const bff = {
+    async compileLayout() { reached += 1; return { objects: [] } },
+    async graspSearch()   { reached += 1; return { candidates: [], diagnostics: DIAG_OK } },
+  }
+  const shortFingers = { ...JAW_HAND, fingers: { ...JAW_HAND.fingers, length: 30 } }  // tip 108 < mount 150
+  const { gc, ctrl, grasp } = setup({ bff, robotHand: shortFingers })
+  await gc.runGraspSearch({})
+  assert.equal(reached, 0)
+  assert.equal(grasp().status, 'no-robot')
+  assert.match(grasp().reason, /off the fingers/)
+  assert.ok(ctrl._uiView.toasts.length > 0)
+})
+
+test('読めない手は無視せず止まる — 「宣言したのに無かった」を作らない', async () => {
+  const { gc, grasp } = setup({ bff: recordingBff().bff, robotHand: { kind: 'parallelJaw' } })
+  await gc.runGraspSearch({})
+  assert.equal(grasp().status, 'no-robot')
+  assert.match(grasp().reason, /cannot be read/)
+})
+
+test('ロボット投影は選んだロボットの手を運ぶ — パネルは写しを持たない', () => {
+  const { gc, store } = setup({ robotHand: JAW_HAND })
+  gc.refreshRobots()
+  const p = store.getState().context.robots
+  assert.equal(p.hand.state, 'declared')
+  assert.deepEqual(p.hand.hand, JAW_HAND)
+  assert.equal(p.hand.mountGap, null)
+})
+
+test('setRobotHand は唯一の書き手へ委譲し、1 つの undo 記録になる', () => {
+  const { gc, ctrl } = setup({ robotHand: JAW_HAND })
+  const writes = []
+  const pushed = []
+  ctrl._service.setTcpHand = (id, hand) => { writes.push({ id, hand }); ctrl._scene.objects.get(id).hand = hand; return true }
+  ctrl._commandStack = { push: (c) => pushed.push(c) }
+  assert.equal(gc.setRobotHand(null, CUP_HAND), true)
+  assert.deepEqual(writes, [{ id: 'f_tcp', hand: CUP_HAND }])
+  assert.equal(pushed.length, 1)
+  pushed[0].undo()
+  assert.deepEqual(writes[1], { id: 'f_tcp', hand: JAW_HAND }, 'undo restores the hand that was there')
+})
+
+test('文書が無いとき把持仕様の編集は黙って消えず、理由が出る (原則 #11 / DEF-049)', async () => {
+  const { gc, ctrl } = setup({ loaded: false })
+  let wrote = 0
+  ctrl._ctxCtrl.setGraspFeature = () => { wrote += 1 }
+  await gc.setGraspFeature('widget', { kind: 'anywhere' })
+  assert.equal(wrote, 0)
+  assert.ok(ctrl._uiView.toasts.some(t => /context document/.test(t.msg)))
 })

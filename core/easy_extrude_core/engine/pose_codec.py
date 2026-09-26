@@ -128,6 +128,24 @@ def frame_axes(pose: Pose) -> tuple[Vec3, Vec3, Vec3]:
     return x, y, z
 
 
+def roll_aligning_x(approach: Vec3, axis: Vec3) -> "float | None":
+    """frame の x 軸 (= 閉じ軸, ADR-150 D5) を `axis` に合わせるロール角 (純粋, ADR-152 D5)。
+
+    `axis` を進入軸に直交する平面へ射影し、`frame_axes` と**同じ gauge** (`_basis_from_z`)
+    で角度を読む — ロールの規約を 2 箇所に書かない。`axis` が進入軸とほぼ平行なら
+    None (その進入では爪がその軸で閉じられない = 候補を作らない)。
+    もう 1 通り (x = −axis) はこの値 + π。
+    """
+    z = approach.normalized().scaled(-1.0)
+    if z.norm() < 1e-12:
+        return None
+    perp = axis - z.scaled(axis.dot(z))
+    if perp.norm() < 1e-6:
+        return None
+    bx, by = _basis_from_z(z)
+    return math.atan2(perp.dot(by), perp.dot(bx))
+
+
 def pose_to_payload(pose: Pose) -> dict[str, Any]:
     """Pose を契約 v2 の pose union (endEffector 枝) に写す。
 

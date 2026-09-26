@@ -33,7 +33,15 @@ contractVersion は public スキーマの `version: "layout/x.y"` とは別系�
 # 存在しない。`undeclared` は「`robot.kinematics` が未宣言なので手首コーン代理
 # 判定が可解性だけを答えた」= 関節角は誰も決めていない、を**宣言**する枝
 # (欄の省略で示さない — 原則 #31)。**閉じた層への必須フィールド追加**なので版上げ。
-CONTRACT_VERSION = 6
+# v7: 把持仕様 (ADR-152 D4)。PoseCandidate に **必須 nullable** の `graspSpecId`
+# (どの仕様の候補か / null = 導出サンプル由来)、diagnostics に **必須**の
+# `graspSpecs` (仕様ごとの生成数・通過数、返さなかった仕様も含め全仕様ぶん)。
+# クライアントが候補の姿勢から仕様を逆算するのは脆い導出で、`score` 戦略では
+# 「上位に居ない」と「候補が無い」を区別できない — ソルバが決定した事実なので
+# ワイヤに載せる。閉じた層への必須追加なので版上げ。request 側の
+# `target.graspSpecs/strategy/box` と `gripper.body/fingers/cupHeight` は
+# optional 追加 (ADR-083/084) だが同じ PR で入る。
+CONTRACT_VERSION = 7
 
 
 class ContractVersionMismatch(ValueError):

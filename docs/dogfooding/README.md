@@ -49,6 +49,13 @@ curl -s -X POST http://127.0.0.1:3001/api/grasp/search \
   --data @templates/bin-picking-thin-container/grasp-search.request.json
 ```
 
+## フロントだけで触る (スタブ — バックエンド無し)
+
+`pnpm dev:stub` (または GitHub Pages) は `core/` の代わりに粗いスタブ (`mocks/graspStub/`) が
+答える。語彙・3D の確認・ワイヤは本物、判定は**向きだけ**が本物 (数値は違う)。
+ADR-152 (把持仕様・戦略・手の形) の評価手順は
+[`2026-09-26-adr-152-front-only.md`](2026-09-26-adr-152-front-only.md)。
+
 ## 探索の進め方（1 セッション = 1 記録ファイル）
 
 1. `pnpm dev:stack` で起動し、ブラウザで Home → Context → grasp-search を通す。

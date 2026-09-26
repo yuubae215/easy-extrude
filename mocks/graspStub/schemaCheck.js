@@ -30,7 +30,7 @@ const ANNOTATIONS = new Set([
 /** Constraint keywords this validator understands. */
 const SUPPORTED = new Set([
   'type', 'properties', 'required', 'additionalProperties', 'items',
-  'minimum', 'maximum', 'minItems', 'maxItems', 'const', 'enum', 'oneOf', '$ref', '$defs',
+  'minimum', 'maximum', 'minItems', 'minLength', 'maxItems', 'const', 'enum', 'oneOf', '$ref', '$defs',
 ])
 
 /**
@@ -107,6 +107,10 @@ export function validate(value, schema, root, path = '', errors = []) {
     if (schema.maximum !== undefined && value > schema.maximum) {
       errors.push(`${path}: ${value} > maximum ${schema.maximum}`)
     }
+  }
+
+  if (typeof value === 'string' && schema.minLength !== undefined && value.length < schema.minLength) {
+    errors.push(`${path}: string shorter than minLength ${schema.minLength}`)
   }
 
   if (Array.isArray(value)) {

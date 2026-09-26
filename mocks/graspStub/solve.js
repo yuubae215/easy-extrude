@@ -200,6 +200,19 @@ function quaternionFromColumns(x, y, z) {
   return [(m[0][2] + m[2][0]) / s, (m[1][2] + m[2][1]) / s, 0.25 * s, (m[1][0] - m[0][1]) / s]
 }
 
+/** Housing length along the flange +Z (a cylinder's length, a box's z size). */
+function bodyLengthOf(body) {
+  if (!body) return 0
+  return body.kind === 'cylinder' ? Number(body.length) : Number(body.size?.[2] ?? 0)
+}
+
+/** Half-thickness of an OBB along a world direction (Σ hᵢ·|axisᵢ·d|). */
+function boxExtentAlong(box, dir) {
+  const q = box.orientation ?? [0, 0, 0, 1]
+  const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(e => quatRotate(q, e))
+  return axes.reduce((s, ax, i) => s + box.halfExtents[i] * Math.abs(dot(ax, dir)), 0)
+}
+
 /**
  * Read the judgement parameters, honouring the contract's precedence: `plan{}`
  * wins over the legacy `robot.*` fallback (ADR-084 §4). An undeclared bound is
@@ -318,7 +331,16 @@ function totalScoreOf(scores, weights) {
 export function stubSolve(request, contractVersion) {
   const gs        = request?.graspSearch ?? {}
   const base      = gs.robot?.base ?? [0, 0, 0]
-  const samples   = gs.target?.surfaceSamples ?? []
+  const derivedSamples = gs.target?.surfaceSamples ?? []
+  // ADR-152 (contract v7): named grasp specs in priority order. The stub honours
+  // WHICH spec a candidate came from, the strategy and the depth — the shape of
+  // the answer the UI reads — and nothing about the hand's shape (no OBBs here;
+  // the numbers stay this file's invention, ADR-117).
+  const specs     = Array.isArray(gs.target?.graspSpecs) ? gs.target.graspSpecs : []
+  const strategy  = gs.target?.strategy ?? { order: 'priority', fallback: 'none' }
+  const targetBox = gs.target?.box ?? null
+  const toolLength = Number(gs.robot?.toolLength ?? 0)
+  const samples   = specs.length ? specs.flatMap(sp => sp.samples ?? []) : derivedSamples
   const obstacles = gs.obstacles ?? []
   const camera    = gs.camera  ?? null
   const gripper   = gs.gripper ?? null
@@ -346,19 +368,26 @@ export function stubSolve(request, contractVersion) {
   let graspNearestMiss     = null   // { kind, shortfall } — contract v5 (ADR-118)
   const keepMin = (cur, v) => (cur == null || v < cur ? v : cur)
 
-  const feasible = []
   // Counted rather than assumed to equal `samples.length`: a degenerate sample
   // generates no candidate, and folding it into the total would break the
   // funnel identity the UI derives every bar width from.
   let generated = 0
 
-  for (const sample of samples) {
-    const point   = sample.point
+  /** One group of samples (a spec, or the derived set) → its feasible candidates. */
+  const evaluateGroup = (groupSamples, spec) => {
+  const graspSpecId = spec?.id ?? null
+  const depth = Number(spec?.depth ?? 0)
+  const closingAxis = spec?.closingAxis ? unit(spec.closingAxis) : null
+  const feasible = []
+  for (const sample of groupSamples) {
+    const surface = sample.point
     const outward = unit(sample.normal)
     if (!outward) continue                       // a normal-less sample defines no approach
     generated += 1
     const approach = scale(outward, -1)          // face-on: approach opposes the normal
-    const preGrasp = add(point, scale(outward, preGraspDistance))
+    const preGrasp = add(surface, scale(outward, preGraspDistance))
+    // ADR-152 D5: the TCP goes `depth` past the face along the approach.
+    const point    = depth > 0 ? add(surface, scale(approach, depth)) : surface
     const distance = norm(sub(point, base))
 
     // ── reach ────────────────────────────────────────────────────────────────
@@ -404,15 +433,28 @@ export function stubSolve(request, contractVersion) {
         graspSlack = patch > 0 ? Math.min(1, (patch - cup) / patch) : 1
       } else {
         const maxOpening = Number(gripper.maxOpening ?? 0)
-        if (maxOpening < required) {
+        // ADR-152 D5 (coarse copy): past the palm is not a grasp — the palm would
+        // sink below the approach face. Counted as a grasp rejection with no
+        // measurable opening miss, as core/ does.
+        if (depth > 0 && gripper.body && depth > toolLength - bodyLengthOf(gripper.body)) {
           counts[STAGE.GRASP] += 1
-          const shortfall = required - maxOpening
+          continue
+        }
+        // A declared closing axis measures the width as the TARGET BOX's thickness
+        // along it (ADR-152 §2) — the part the jaws actually straddle — instead of
+        // this stub's scene-scale stand-in.
+        const width = closingAxis && targetBox
+          ? 2 * boxExtentAlong(targetBox, closingAxis) + Number(gripper.fingerClearance ?? 0)
+          : required
+        if (maxOpening < width) {
+          counts[STAGE.GRASP] += 1
+          const shortfall = width - maxOpening
           if (graspNearestMiss == null || shortfall < graspNearestMiss.shortfall) {
             graspNearestMiss = { kind: 'opening', shortfall }
           }
           continue
         }
-        graspSlack = required > 0 ? Math.min(1, (maxOpening - required) / required) : 1
+        graspSlack = width > 0 ? Math.min(1, (maxOpening - width) / width) : 1
       }
     }
 
@@ -446,6 +488,24 @@ export function stubSolve(request, contractVersion) {
       if (d < 0) { blocked = true; break }
       minClearance = Math.min(minClearance, d)
     }
+    // ADR-152 D5 (coarse copy): the declared FINGERS, open, straddling the TCP
+    // along the closing axis — each one a segment down its centreline, blocked
+    // when an obstacle comes within half its thickness. core/ places the whole
+    // hand as boxes along the approach; the stub checks the fingers at the grasp
+    // pose only. Coarse on purpose: what it must not do is call a finger that
+    // stands in a tray wall "clear".
+    if (!blocked && gripper?.fingers && closingAxis && gripper.kind !== 'suction') {
+      const f = gripper.fingers
+      const off = Number(gripper.maxOpening ?? 0) / 2 + f.thickness / 2
+      const palm = bodyLengthOf(gripper.body)
+      const tip = add(point, scale(approach, palm + f.length - toolLength))
+      const base = sub(tip, scale(approach, f.length))
+      for (const sign of [-1, 1]) {
+        const a = add(base, scale(closingAxis, sign * off))
+        const b = add(tip, scale(closingAxis, sign * off))
+        if (obstacles.some(o => surfaceDistance(a, b, o) < f.thickness / 2)) { blocked = true; break }
+      }
+    }
     if (blocked) { counts[STAGE.INTERFERENCE] += 1; continue }
 
     // ── survived every stage: score it ───────────────────────────────────────
@@ -466,6 +526,7 @@ export function stubSolve(request, contractVersion) {
     const totalScore = totalScoreOf(scores, weights)
 
     feasible.push({
+      graspSpecId,
       pose: {
         kind:  'endEffector',
         // **把持点**であって pre-grasp ではない (`core/` の `pose_to_payload` は
@@ -489,8 +550,34 @@ export function stubSolve(request, contractVersion) {
     })
   }
 
-  feasible.sort((a, b) => b.score.totalScore - a.score.totalScore)
-  const candidates = feasible.slice(0, topN).map((c, i) => ({ rank: i + 1, ...c }))
+  return feasible
+  }
+
+  // Strategy (ADR-152 D5): every spec is evaluated so each gets its row — a spec
+  // the strategy did not return and a spec that had nothing are different facts.
+  const graspSpecs = []
+  let returnable
+  let feasibleTotal
+  if (specs.length) {
+    const perSpec = specs.map(sp => {
+      const before = generated
+      const found  = evaluateGroup(sp.samples ?? [], sp)
+      graspSpecs.push({ id: sp.id, candidatesGenerated: generated - before, feasible: found.length })
+      return found
+    })
+    feasibleTotal = perSpec.reduce((n, f) => n + f.length, 0)
+    returnable = strategy.order === 'score' ? perSpec.flat() : (perSpec.find(f => f.length) ?? [])
+    if (feasibleTotal === 0 && strategy.fallback === 'derived') {
+      returnable = evaluateGroup(derivedSamples, null)
+      feasibleTotal = returnable.length
+    }
+  } else {
+    returnable = evaluateGroup(derivedSamples, null)
+    feasibleTotal = returnable.length
+  }
+
+  returnable.sort((a, b) => b.score.totalScore - a.score.totalScore)
+  const candidates = returnable.slice(0, topN).map((c, i) => ({ rank: i + 1, ...c }))
 
   return {
     contractVersion,
@@ -498,11 +585,12 @@ export function stubSolve(request, contractVersion) {
     diagnostics: {
       candidatesGenerated: generated,
       ...counts,
-      feasible: feasible.length,
+      feasible: feasibleTotal,
       returned: candidates.length,
       reachNearestMiss,
       occlusionNearestMiss,
       graspNearestMiss,
+      graspSpecs,
     },
   }
 }

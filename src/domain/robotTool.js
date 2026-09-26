@@ -34,6 +34,8 @@
  */
 
 import { mToMM, mmToM } from './worldUnits.js'
+import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
+import { hasShape, bodyLength, HAND_BODY_KIND } from './robotHand.js'
 import { isFlangeMountedTcp } from './robotFrames.js'
 
 /**
@@ -98,38 +100,72 @@ export const TOOL_MOUNT_NOT_AXIAL_REASON =
   'The TCP is offset or rotated from the flange axis. Grasp search supports only a tool mounted straight along the flange +Z for now.'
 
 /**
+ * @typedef {{part: 'body'|'finger'|'cup'|'rod', shape: 'cylinder'|'box',
+ *   size: number[], center: [number, number, number]}} ToolPart
+ */
+
+/**
+ * Radius of the rod drawn for a hand whose SHAPE is not declared (m). The rod is
+ * what core/ judges in that case — the flange→TCP segment (ADR-150) — so the arm
+ * shows it rather than a gripper nobody declared (ADR-152 D3: a shape that is not
+ * judged is not drawn). Thin but visible; it is a drawing of a line.
+ */
+export const UNDECLARED_HAND_ROD_RADIUS_M = 0.004
+
+/**
  * The drawn tool, as pure primitive specs in the FLANGE frame (`wrist_3_link`,
  * meters: +Z out of the flange face, jaws closing along ±X — the candidate
  * frame's x, which ADR-150 D5 fixed to the flange). `RobotStage` turns these
  * into meshes; nothing here knows THREE.
  *
- * Every dimension is a fraction of `toolLength`, so the one claim that matters
- * holds by construction and is asserted by `robotTool.test.js`: **the fingertips
- * end exactly at z = toolLength, the TCP the solver was given.** A tool drawn a
- * few centimetres shorter than the one solved would put the jaws visibly above
- * the part while the search says they close on it.
+ * **Drawn from the declared hand (ADR-152 D3), the same numbers the wire's
+ * `gripper` carries** — so the housing and fingers on screen are the ones core/
+ * tests for interference. The fingers stand OPEN, inner faces `maxOpening`
+ * apart, as they are while approaching. With no shape declared the tool is a
+ * rod from the flange to the TCP: exactly the segment core/ then judges.
  *
- * @param {number} toolLength  meters, > 0
- * @returns {Array<{part: 'body'|'palm'|'finger', shape: 'cylinder'|'box',
- *   size: number[], center: [number, number, number]}>}
+ * (Until ADR-152 every dimension was a FRACTION of the tool length — the housing
+ * was `0.4 · L`, the palm `0.6 · L` wide — so the drawn hand was a function of the
+ * mount and matched nothing the solver knew.)
+ *
+ * @param {object|null} hand  a resolved hand (mm), or null when undeclared
+ * @param {number} toolLength  meters, > 0 — the mount (only the rod uses it)
+ * @returns {ToolPart[]}
  *   cylinder size = [radius, length] along +Z; box size = [x, y, z].
  */
-export function toolParts(toolLength) {
+export function toolParts(hand, toolLength) {
   if (!(toolLength > 0) || !Number.isFinite(toolLength)) {
     throw new Error(`robotTool: toolLength must be a finite number > 0 (got ${toolLength})`)
   }
-  const L = toolLength
-  const bodyLen = 0.4 * L
-  const palmLen = 0.12 * L
-  const fingerLen = L - bodyLen - palmLen
-  const palmZ = bodyLen + palmLen / 2
-  const fingerZ = bodyLen + palmLen + fingerLen / 2
-  return [
-    { part: 'body',   shape: 'cylinder', size: [0.21 * L, bodyLen],                center: [0, 0, bodyLen / 2] },
-    { part: 'palm',   shape: 'box',      size: [0.6 * L, 0.2 * L, palmLen],       center: [0, 0, palmZ] },
-    { part: 'finger', shape: 'box',      size: [0.08 * L, 0.14 * L, fingerLen],   center: [-0.2 * L, 0, fingerZ] },
-    { part: 'finger', shape: 'box',      size: [0.08 * L, 0.14 * L, fingerLen],   center: [0.2 * L, 0, fingerZ] },
+  if (!hasShape(hand)) {
+    /** @type {ToolPart} */
+    const rod = { part: 'rod', shape: 'cylinder', size: [UNDECLARED_HAND_ROD_RADIUS_M, toolLength], center: [0, 0, toolLength / 2] }
+    return [rod]
+  }
+  const b = hand.body
+  const palm = mmToM(bodyLength(b))
+  /** @type {ToolPart} */
+  const body = b.kind === HAND_BODY_KIND.CYLINDER
+    ? { part: 'body', shape: 'cylinder', size: [mmToM(b.radius), palm], center: [0, 0, palm / 2] }
+    : { part: 'body', shape: 'box', size: b.size.map(mmToM), center: [0, 0, palm / 2] }
+  if (hand.kind === GRIPPER_KIND.SUCTION) {
+    const h = mmToM(hand.cupHeight)
+    /** @type {ToolPart} */
+    const cup = { part: 'cup', shape: 'cylinder', size: [mmToM(hand.cupDiameter) / 2, h], center: [0, 0, palm + h / 2] }
+    return [body, cup]
+  }
+  const f = hand.fingers
+  const t = mmToM(f.thickness)
+  const len = mmToM(f.length)
+  const x = mmToM(hand.maxOpening) / 2 + t / 2
+  const size = [t, mmToM(f.width), len]
+  const z = palm + len / 2
+  /** @type {ToolPart[]} */
+  const fingers = [
+    { part: 'finger', shape: 'box', size, center: [-x, 0, z] },
+    { part: 'finger', shape: 'box', size, center: [x, 0, z] },
   ]
+  return [body, ...fingers]
 }
 
 /**

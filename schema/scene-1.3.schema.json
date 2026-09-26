@@ -142,6 +142,113 @@
           "description": "ADR-151: what a robot tcp's translation/rotation are measured from. 'flange' = they ARE the tool mount (tool0 -> tcp), the interface the robot and its end effector share; the scene composes the tcp's world pose as base ∘ flange-at-rest ∘ mount. null/absent on every other frame, and on a pre-ADR-151 tcp (base-relative rest pose), which the scene-entry upgrade replaces with the default mount and announces.",
           "enum": ["flange", null]
         },
+        "hand": {
+          "description": "ADR-152 D3: WHAT a robot grasps with — only on a robot tcp (`robotRole: tcp`, `mountedOn: flange`), the interface the robot and its end effector share. The hand's kind, its grasp-gate parameters and, optionally, its SHAPE (a housing + two fingers, or a housing + a cup), in the Layout length unit (mm) in the FLANGE frame (+Z out of the flange face, jaws closing along ±X). The wire `gripper`, the arm's drawn tool and the hand preview are all derived from this one declaration. null/absent = the hand is UNDECLARED (never filled in with a default on read). The shape is optional; when declared it must agree with the tool mount (jaw: body length ≤ mount ≤ body + finger length; cup: mount = body length + cupHeight) or the search stops with the reason. Structural validity per kind (body+fingers / body+cupHeight together) is checked by the front's resolver, which reports a malformed hand rather than dropping it.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "parallelJaw",
+                "suction"
+              ]
+            },
+            "maxOpening": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Jaw: maximum opening (mm). The fingers are drawn and judged OPEN at this width."
+            },
+            "fingerClearance": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Jaw: extra clearance the fingers need beside the part (mm)."
+            },
+            "cupDiameter": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Cup: outside diameter (mm)."
+            },
+            "sealTiltTolerance": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Cup: seal tilt tolerance (radians)."
+            },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "description": "The housing from the flange face to the palm: a cylinder (radius, length) or a box (size [x, y, z], z = length).",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "cylinder",
+                    "box"
+                  ]
+                },
+                "radius": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Cylinder radius (mm)."
+                },
+                "length": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Cylinder length along the flange +Z (mm)."
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "Box full extents [x, y, z] (mm)."
+                }
+              }
+            },
+            "fingers": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "length",
+                "thickness",
+                "width"
+              ],
+              "description": "Jaw: one finger — thickness along X, width along Y, length along Z from the palm (mm).",
+              "properties": {
+                "length": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                },
+                "thickness": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                },
+                "width": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                }
+              }
+            },
+            "cupHeight": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Cup: height below the housing along the flange +Z (mm). The cup face is the TCP."
+            }
+          }
+        },
         "translation": { "$ref": "#/$defs/vec3" },
         "rotation": { "$ref": "#/$defs/quaternion" }
       }

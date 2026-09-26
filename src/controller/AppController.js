@@ -26,6 +26,7 @@ import { CONTEXTUAL }        from '../view/VisibilityAxes.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
 import { isFlangeMountedTcp, isRobotTcpFrame, isLegacyBaseRelativeTcp } from '../domain/robotFrames.js'
 import { DEFAULT_TOOL_MOUNT, toolMountEditBlockedReason, toolMountOf } from '../domain/robotTool.js'
+import { handOf } from '../domain/robotHand.js'
 import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
 import { CLICK_TARGET_KIND } from '../domain/clickTarget.js'
 import { Face }            from '../graph/Face.js'
@@ -98,6 +99,7 @@ import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { GraspSampleView }            from '../view/GraspSampleView.js'
+import { GraspDeclarationView }       from '../view/GraspDeclarationView.js'
 import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
@@ -335,6 +337,8 @@ export class AppController {
       // invalidates: guessing "not a frame" would silently keep a stale roster.
       if (!obj || obj instanceof CoordinateFrame) this._invalidateRobotRoster()
     })
+    // ADR-152 D3: a tcp's hand changed — the grasp panel's roster carries it.
+    this._service.on('tcpHandChanged', () => this._graspCtrl?.refreshRobots())
     this._service.on('objectRenamed', (id, nm)  => {
       outlinerView?.setObjectName(id, nm)
       // A rename only changes a robot's LABEL now (identity is the entity id —
@@ -518,6 +522,7 @@ export class AppController {
     this._graspCtrl = new GraspController(this, useUIStore, {
       createGhostView: () => new GraspGhostView(this._sceneView.scene, document.body),
       createSampleView: () => new GraspSampleView(this._sceneView.scene),
+      createDeclarationView: () => new GraspDeclarationView(this._sceneView.scene),
       robotKinematics: ROBOT_KINEMATICS,
       // The same seat again (ADR-144): the FK chain of the arm on screen, so a
       // candidate `core/` left `undeclared` can still be previewed — as an
@@ -1191,6 +1196,10 @@ export class AppController {
         }
       },
       openGrasp: () => this._graspCtrl?.openGrasp(),
+      // Read-only: the grasp declaration picture on screen (ADR-152 D2/D6) — face
+      // labels with their world words, whether a face is painted, which of the
+      // focused spec's pictures are drawn. The e2e guard for "+x — where is that?".
+      graspDeclaration: () => this._graspCtrl?.declarationSnapshot() ?? null,
       addRobot:  () => this._addRobot(),
       // Load a Layout DSL through the same path a Home template takes — so an
       // e2e can hand the app a file written BEFORE a format change (ADR-151's
@@ -1314,7 +1323,9 @@ export class AppController {
       // The tool and the TCP marker are drawn from the robot's tool mount — the
       // tcp frame's stored transform (ADR-151). null = the interface is not
       // declared (no tcp): the arm draws no tool rather than a default one.
-      stages.setToolMount(robot.id, toolMountOf(robot))
+      // ADR-152 D3: and from its declared HAND — the housing and fingers drawn are
+      // the ones the request's `gripper` carries (null = undeclared → a rod).
+      stages.setToolMount(robot.id, toolMountOf(robot), handOf(robot).hand)
     }
   }
 

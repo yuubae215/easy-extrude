@@ -6,6 +6,11 @@
  */
 
 /**
+ * The gripper housing, in the FLANGE frame (ADR-152 D3, ADR-150 D5: +Z out of the flange face, jaws close along +/-X). It rises from the flange face (z = 0) to z = its length. A CLOSED kind-discriminated union, same governance as `obstacles`: a mesh enters only as a new kind. core/ judges it as an OBB (a cylinder by its circumscribed box -- conservative: a false 'hits' is possible, a false 'clear' is not).
+ */
+export type HandBody = HandBodyCylinder | HandBodyBox;
+
+/**
  * BFF -> grasp-search service input. Wire form uses camelCase.
  */
 export interface GraspSearchRequest {
@@ -106,7 +111,7 @@ export interface GraspSearchDeclaration {
    */
   gripper?: GripperParallelJaw | GripperSuction;
   /**
-   * Declares the object being grasped -- the SUBJECT of the whole search (ADR-119 D1). Carried since ADR-117 but undeclared until now: it rode the open payload, so a malformed target produced a well-formed answer of zero candidates and nothing said why. Declaration only: which faces are worth sampling follows the declared hand (ADR-118) on the front, and every judgement about the samples (can the jaws close, does the approach clip) stays solved in core/. The geometry is DOCUMENT-derived (Layout DSL), not scene-derived -- an asymmetry with `robot` that ADR-119 names and does not yet resolve.
+   * Declares the object being grasped -- the SUBJECT of the whole search (ADR-119 D1). Carried since ADR-117 but undeclared until now: it rode the open payload, so a malformed target produced a well-formed answer of zero candidates and nothing said why. Declaration only: which faces are worth sampling follows the declared hand (ADR-118) on the front, and every judgement about the samples (can the jaws close, does the approach clip) stays solved in core/. The geometry is DOCUMENT-derived (Layout DSL), not scene-derived -- an asymmetry with `robot` that ADR-119 names and does not yet resolve. ADR-152 D4 adds named grasp specs (`graspSpecs`), how to use them (`strategy`) and the target's own box (`box`). With specs, `surfaceSamples` is sent only for `strategy.fallback: derived`.
    */
   target?: {
     /**
@@ -128,6 +133,37 @@ export interface GraspSearchDeclaration {
        */
       normal: [number, number, number];
     }[];
+    /**
+     * Named grasp specs in priority order (ADR-152 D4). Absent or empty = no spec declared: candidates come from `surfaceSamples` exactly as before.
+     */
+    graspSpecs?: GraspSpec[];
+    strategy?: GraspStrategy;
+    /**
+     * The target itself as an oriented box (ADR-152 D4/D5). Used ONLY to measure a declared closing axis's width and nothing else -- the target still never obstructs its own grasp.
+     */
+    box?: {
+      /**
+       * [x, y, z] world-frame centre.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      center: [number, number, number];
+      /**
+       * [x, y, z] half-sizes along the box's own axes.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      halfExtents: [number, number, number];
+      /**
+       * [x, y, z, w] world rotation of the box's own axes. Absent = axis-aligned.
+       *
+       * @minItems 4
+       * @maxItems 4
+       */
+      orientation?: [number, number, number, number];
+    };
   };
   /**
    * Bodies the approach and the arm must avoid (ADR-119 D1; carried since ADR-117; box form added by ADR-133 D5). A kind-discriminated union: a sphere carries `radius`, a box carries `halfExtents` and an optional `orientation`. Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/. The bounding-sphere form is retained because it is what pre-ADR-133 senders emit; it is DELIBERATELY not the fallback for an undeclared shape -- a payload that declares neither `radius` nor `halfExtents` is rejected rather than guessed (原則 #31).
@@ -206,7 +242,7 @@ export interface KinematicsUniversalRobots {
   ];
 }
 /**
- * Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis.
+ * Two-finger parallel jaw. The gate closes across the object, so the quantity that decides feasibility is the object width along the closing axis. ADR-152 D3: `body` + `fingers` declare the hand's SHAPE, judged for interference by core/. Both or neither -- a hand with a housing and no fingers (or the reverse) is not a shape core/ can place. Undeclared keeps the flange->TCP segment judgement (ADR-150). The mount must agree with the shape: body.length <= robot.toolLength <= body.length + fingers.length, else the request is rejected (400) rather than one of the two being corrected.
  */
 export interface GripperParallelJaw {
   kind: "parallelJaw";
@@ -218,9 +254,40 @@ export interface GripperParallelJaw {
    * Extra clearance the fingers need to slide in beside the target (the naive gate requires maxOpening >= target width + fingerClearance).
    */
   fingerClearance?: number;
+  body?: HandBody;
+  fingers?: HandFingers;
+}
+export interface HandBodyCylinder {
+  kind: "cylinder";
+  /**
+   * Radius about the flange Z axis (same length unit as the request geometry).
+   */
+  radius: number;
+  /**
+   * Length along the flange +Z, from the flange face to the palm.
+   */
+  length: number;
+}
+export interface HandBodyBox {
+  kind: "box";
+  /**
+   * [x, y, z] full extents in the flange frame; z is the length from the flange face to the palm.
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  size: [number, number, number];
 }
 /**
- * Vacuum cup. The gate seals against a face, so the quantity that decides feasibility is whether a contiguous patch at least the cup diameter across is flat enough to seal -- width and finger clearance are meaningless here.
+ * One jaw finger (ADR-152 D3), in the flange frame: thickness along X, width along Y, length along Z from the palm (z = body length) toward the TCP. The two fingers stand OPEN, their inner faces `maxOpening` apart -- a finger approaching the part is open.
+ */
+export interface HandFingers {
+  length: number;
+  thickness: number;
+  width: number;
+}
+/**
+ * Vacuum cup. The gate seals against a face, so the quantity that decides feasibility is whether a contiguous patch at least the cup diameter across is flat enough to seal -- width and finger clearance are meaningless here. ADR-152 D3: `body` + `cupHeight` declare the hand's SHAPE (both or neither); the cup's radius is `cupDiameter`/2.
  */
 export interface GripperSuction {
   kind: "suction";
@@ -232,6 +299,87 @@ export interface GripperSuction {
    * How far a surface normal inside the cup footprint may deviate from the contact normal and still seal, in radians. Absent leaves the solver its own naive default; it is never inferred from the other fields.
    */
   sealTiltTolerance?: number;
+  body?: HandBody;
+  /**
+   * Height of the cup below the housing, along the flange +Z (ADR-152 D3). The cup face is the TCP: robot.toolLength = body.length + cupHeight (relative tolerance 1e-6), else 400.
+   */
+  cupHeight?: number;
+}
+/**
+ * One named way to grasp this workpiece (ADR-152 D1/D4), resolved on the front from the Layout DSL `graspFeature.specs[i]`: the approach face's samples (the region grid, in the world frame), and the three facts one 'face' could not hold -- which axis the jaws close on, how deep the TCP goes, how far the approach may tilt. Only specs the declared hand can use are sent. Declaration only: whether the jaws close, whether the hand hits anything, which spec's candidates are returned is solved in core/.
+ */
+export interface GraspSpec {
+  /**
+   * The spec's name. Echoed on each candidate as `graspSpecId` and in `diagnostics.graspSpecs`.
+   */
+  id: string;
+  /**
+   * Grid points on the approach face inside the declared region. Each is where the TCP axis passes the face; the approach is the opposite of its normal.
+   *
+   * @minItems 1
+   */
+  samples: [
+    {
+      /**
+       * [x, y, z] world-frame position of the sample.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      point: [number, number, number];
+      /**
+       * [x, y, z] outward surface normal at the sample. The face-on approach is its opposite.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      normal: [number, number, number];
+    },
+    ...{
+      /**
+       * [x, y, z] world-frame position of the sample.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      point: [number, number, number];
+      /**
+       * [x, y, z] outward surface normal at the sample. The face-on approach is its opposite.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      normal: [number, number, number];
+    }[]
+  ];
+  /**
+   * World-frame unit vector the jaws close along (the object's local closing axis, rotated). Absent = every declared roll is tried (the pre-ADR-152 behaviour). Present = the roll is fixed to the two that put the flange X on this axis, and the width is measured as the target box's thickness along it.
+   *
+   * @minItems 3
+   * @maxItems 3
+   */
+  closingAxis?: [number, number, number];
+  /**
+   * How far past the approach face the TCP goes, along the approach (same length unit as the request geometry). Absent = 0, on the face.
+   */
+  depth?: number;
+  /**
+   * Largest tilt (radians) from the face-on approach this spec admits: only `sampling.approachTiltAngles` within it are used (the head-on 0 always is). Absent = every declared tilt.
+   */
+  tiltTolerance?: number;
+}
+/**
+ * How the specs are used (ADR-152 D1). The ORDER of `graspSpecs` is the priority; no spec carries a numeric priority (two specs at one rank would then be representable).
+ */
+export interface GraspStrategy {
+  /**
+   * priority: return only the candidates of the first spec (in array order) that has any feasible one. score: mix every spec's candidates by score.
+   */
+  order: "priority" | "score";
+  /**
+   * none: no spec feasible -> zero candidates. derived: only then, search `surfaceSamples` (the hand-derived faces, ADR-118).
+   */
+  fallback: "none" | "derived";
 }
 /**
  * A bounding sphere. `kind` may be omitted for compatibility with senders written before ADR-133; when present it must be "sphere".

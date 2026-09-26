@@ -204,6 +204,8 @@ export function decompileLayout(sceneJson) {
         if (o.robotRole) entity.robotRole = o.robotRole
         // ADR-151: the tcp's position/rotation are the tool mount (tool0 → tcp).
         if (o.mountedOn) entity.mountedOn = o.mountedOn
+        // ADR-152 D3: what the robot grasps with — the tcp's hand.
+        if (o.hand) entity.hand = o.hand
         entities.push(entity)
         break
       }

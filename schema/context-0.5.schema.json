@@ -841,8 +841,112 @@
             "flange"
           ]
         },
+        "hand": {
+          "description": "ADR-152 D3: WHAT a robot grasps with — only on a robot tcp (`robotRole: tcp`, `mountedOn: flange`), the interface the robot and its end effector share. The hand's kind, its grasp-gate parameters and, optionally, its SHAPE (a housing + two fingers, or a housing + a cup), in the Layout length unit (mm) in the FLANGE frame (+Z out of the flange face, jaws closing along ±X). The wire `gripper`, the arm's drawn tool and the hand preview are all derived from this one declaration. Absent = the hand is UNDECLARED (never filled in with a default on read). The shape is optional; when declared it must agree with the tool mount (jaw: body length ≤ mount ≤ body + finger length; cup: mount = body length + cupHeight) or the search stops with the reason. Structural validity per kind (body+fingers / body+cupHeight together) is checked by the front's resolver, which reports a malformed hand rather than dropping it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "parallelJaw",
+                "suction"
+              ]
+            },
+            "maxOpening": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Jaw: maximum opening (mm). The fingers are drawn and judged OPEN at this width."
+            },
+            "fingerClearance": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Jaw: extra clearance the fingers need beside the part (mm)."
+            },
+            "cupDiameter": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Cup: outside diameter (mm)."
+            },
+            "sealTiltTolerance": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Cup: seal tilt tolerance (radians)."
+            },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "description": "The housing from the flange face to the palm: a cylinder (radius, length) or a box (size [x, y, z], z = length).",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "cylinder",
+                    "box"
+                  ]
+                },
+                "radius": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Cylinder radius (mm)."
+                },
+                "length": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Cylinder length along the flange +Z (mm)."
+                },
+                "size": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "Box full extents [x, y, z] (mm)."
+                }
+              }
+            },
+            "fingers": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "length",
+                "thickness",
+                "width"
+              ],
+              "description": "Jaw: one finger — thickness along X, width along Y, length along Z from the palm (mm).",
+              "properties": {
+                "length": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                },
+                "thickness": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                },
+                "width": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "mm"
+                }
+              }
+            },
+            "cupHeight": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Cup: height below the housing along the flange +Z (mm). The cup face is the TCP."
+            }
+          }
+        },
         "graspFeature": {
-          "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). Mirrors layout-1.0 `entity.graspFeature` — added in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`.",
+          "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). Mirrors layout-1.0 `entity.graspFeature` — changed in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`. `faces` is the legacy face list, read and migrated to specs, never written.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -852,8 +956,127 @@
             "kind": {
               "enum": [
                 "anywhere",
+                "specs",
                 "faces"
               ]
+            },
+            "specs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "description": "One named way to grasp this workpiece (ADR-152 D1) — a GRASP SPEC. Bundles the facts one 'face' could not hold: where the hand comes from (`approach.from` — the APPROACH face, whose outward normal the hand travels against), over which part of it (`approach.region`), how far it may tilt (`approach.tiltTolerance`), which LOCAL axis the jaws close on (`closing`; the two CONTACT faces are derived from it, never declared), and how deep the TCP goes below the approach face (`depth`, mm). The spec list's ORDER is its priority. Declaration only — whether the jaws close, whether the hand hits anything, which spec's candidates come back is solved in core/.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "hand",
+                  "approach"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Unique within the list. Results are reported per spec by this name."
+                  },
+                  "hand": {
+                    "enum": [
+                      "parallelJaw",
+                      "suction"
+                    ],
+                    "description": "Which hand this spec is written for. A spec the declared hand cannot use is not an error — it is excluded from the run with a reason; when every spec is excluded the run stops (it never falls back silently)."
+                  },
+                  "approach": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "from"
+                    ],
+                    "properties": {
+                      "from": {
+                        "enum": [
+                          "+x",
+                          "-x",
+                          "+y",
+                          "-y",
+                          "+z",
+                          "-z"
+                        ],
+                        "description": "The APPROACH face, by its outward LOCAL axis (turns with the object)."
+                      },
+                      "region": {
+                        "description": "Sub-region of that face, normalised 0..1 across its two in-plane axes (u,v). Omitted = the whole face.",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "uMin": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "uMax": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "vMin": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "vMax": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "tiltTolerance": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Largest tilt (radians) from the face-on approach. Omitted = every declared sampling tilt."
+                      }
+                    }
+                  },
+                  "closing": {
+                    "enum": [
+                      "x",
+                      "y",
+                      "z"
+                    ],
+                    "description": "Jaws only: the LOCAL axis the jaws close along. Must not be the approach axis. Omitted = every roll is tried and the width is measured from the samples (the pre-ADR-152 behaviour)."
+                  },
+                  "depth": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Jaws only: how far below the approach face the TCP goes, in the Layout length unit (mm). Omitted = 0, on the face."
+                  }
+                }
+              }
+            },
+            "strategy": {
+              "description": "How this workpiece's specs are used (ADR-152 D1) — a GRASP STRATEGY. 0 or 1 per Solid. Omitted = `priority` / `none`, and the panel SAYS it was omitted (a default is not a choice the user made — 原則 #31).",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "order",
+                "fallback"
+              ],
+              "properties": {
+                "order": {
+                  "enum": [
+                    "priority",
+                    "score"
+                  ],
+                  "description": "priority: return only the candidates of the first spec (in list order) that has any. score: mix every spec's candidates by score."
+                },
+                "fallback": {
+                  "enum": [
+                    "none",
+                    "derived"
+                  ],
+                  "description": "none: no spec feasible → no candidate. derived: only then, search the faces the hand derives (ADR-118)."
+                }
+              }
             },
             "faces": {
               "description": "Required when kind is `faces`: at least one box face, named by its outward LOCAL axis, each with an optional normalised region. A parallel jaw needs a pair of OPPOSED faces (the opening is measured from these samples — ADR-118).",
@@ -881,10 +1104,26 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "uMin": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "uMax": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "vMin": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "vMax": { "type": "number", "minimum": 0, "maximum": 1 }
+                      "uMin": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "uMax": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "vMin": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "vMax": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
                     }
                   }
                 }

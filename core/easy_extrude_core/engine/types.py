@@ -17,6 +17,15 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 
+class DeclarationError(ValueError):
+    """宣言そのものが解けない形をしている (ADR-152 D3/D4)。エンドポイントが 400 に写す。
+
+    `ValueError` の部分型なので既存の呼び出し側はそのまま動く。型を分けるのは、
+    エンジン内部の想定外 (500) と、送り手が直せる宣言の誤り (400) を**型で**分ける
+    ため (原則 #2) — メッセージ文字列で見分けない。
+    """
+
+
 # ゼロ長判定のしきい値。これ未満は数値的にゼロ扱いし、正規化等で退化として扱う。
 _EPS = 1e-12
 
@@ -178,11 +187,19 @@ class GraspCandidate:
 
     pre_grasp は進入経路の始点 (干渉判定で把持点へ向かう線分の端点)。surface_normal は
     把持点での外向き法線 (安定把持 objective が使う)。
+
+    ADR-152 D5: 把持仕様から生まれた候補は `spec_id` を持つ (導出サンプル由来は None)。
+    `closing_axis` は仕様が閉じ軸を宣言したときだけ在り、把持幅を対象 box の厚みで
+    測る合図になる。`depth` は進入面から TCP までの深さ (position は既に深さぶん
+    進めた TCP) で、パームが面の下へ潜るかの判定に使う。
     """
 
     pose: Pose
     pre_grasp: Vec3
     surface_normal: Vec3
+    spec_id: "str | None" = None
+    closing_axis: "Vec3 | None" = None
+    depth: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -279,6 +296,64 @@ def distance_segment_to_box(
     return min(fc, fd, at(0.0), at(1.0))
 
 
+def quaternion_axes(q: "Quaternion | None") -> "tuple[Vec3, Vec3, Vec3]":
+    """四元数の回す世界軸 (x, y, z)。None は恒等 (幾何の箱は述べなければ軸平行)。"""
+    if q is None:
+        return (Vec3(1.0, 0.0, 0.0), Vec3(0.0, 1.0, 0.0), Vec3(0.0, 0.0, 1.0))
+    return (
+        q.rotate(Vec3(1.0, 0.0, 0.0)),
+        q.rotate(Vec3(0.0, 1.0, 0.0)),
+        q.rotate(Vec3(0.0, 0.0, 1.0)),
+    )
+
+
+@dataclass(frozen=True)
+class Obb:
+    """世界座標の向きつき直方体 — 中心・3 本の単位軸・半寸法 (ADR-152 D5)。
+
+    手の部品 (筐体・爪) を障害物と交差判定するための形。障害物の `BoxObstacle` は
+    四元数で向きを持つが、手はフランジの軸 (候補から導出) で直接張るので、四元数へ
+    往復させずに軸のまま持つ (往復は誤差と gauge の第二の源を増やすだけ)。
+    """
+
+    center: Vec3
+    axes: "tuple[Vec3, Vec3, Vec3]"
+    half: Vec3
+
+    def half_list(self) -> "tuple[float, float, float]":
+        return (self.half.x, self.half.y, self.half.z)
+
+    def extent_along(self, direction: Vec3) -> float:
+        """方向 (単位) への射影の半幅 — 分離軸判定と把持幅の共有量。"""
+        h = self.half_list()
+        return sum(h[i] * abs(self.axes[i].dot(direction)) for i in range(3))
+
+
+_SAT_EPS = 1e-9
+
+
+def obb_overlap(a: Obb, b: Obb) -> bool:
+    """2 つの OBB が交わる (接触を含む) か — 分離軸定理 (15 軸, 純粋)。
+
+    面法線 6 本 + 辺の外積 9 本のどれかで射影区間が離れていれば交わらない。
+    外積が退化 (平行な辺) した軸は情報を持たないので飛ばす — 面法線の 6 本が
+    その場合を既に覆っている。接触 (ギャップ 0) は**交わる**側に倒す:
+    干渉判定は既存の線分判定と同じく「触れていれば当たり」(保守側)。
+    """
+    d = b.center - a.center
+    axes: list[Vec3] = list(a.axes) + list(b.axes)
+    for u in a.axes:
+        for v in b.axes:
+            c = u.cross(v)
+            if c.norm() > 1e-6:
+                axes.append(c.normalized())
+    for axis in axes:
+        gap = abs(d.dot(axis)) - a.extent_along(axis) - b.extent_along(axis)
+        if gap > _SAT_EPS:
+            return False
+    return True
+
+
 @dataclass(frozen=True)
 class Obstacle:
     """球の障害物。**形ごとの型で分ける** (原則 #2) — `kind` フラグで分岐しない。
@@ -300,6 +375,19 @@ class Obstacle:
         3 か所で別々に書かない (§1.1)。
         """
         return distance_point_to_segment(self.center, a, b) - self.radius
+
+    def intersects_obb(self, box: "Obb") -> bool:
+        """手の部品 (OBB) がこの球に触れるか (ADR-152 D5 — 形ごとの型が自分で答える)。
+
+        球の中心を OBB の軸へ射影して半寸法でクランプした点が OBB 上の最近点。
+        """
+        rel = self.center - box.center
+        h = box.half_list()
+        closest = box.center
+        for i in range(3):
+            t = clamp(rel.dot(box.axes[i]), -h[i], h[i])
+            closest = closest + box.axes[i].scaled(t)
+        return closest.distance_to(self.center) <= self.radius + _EPS
 
     def as_wire(self) -> dict:
         """ワイヤ形へ戻す (ADR-078 の scene 層が導出結果を request に載せ直す)。
@@ -340,6 +428,17 @@ class BoxObstacle:
         return distance_segment_to_box(
             a, b, self.center, self.half_extents, self.orientation
         )
+
+    def as_obb(self) -> "Obb":
+        return Obb(
+            center=self.center,
+            axes=quaternion_axes(self.orientation),
+            half=self.half_extents,
+        )
+
+    def intersects_obb(self, box: "Obb") -> bool:
+        """手の部品 (OBB) がこの箱に触れるか (ADR-152 D5, 分離軸定理)。"""
+        return obb_overlap(self.as_obb(), box)
 
     def as_wire(self) -> dict:
         """ワイヤ形へ戻す。`orientation` は宣言されたときだけ載せる。"""
@@ -388,6 +487,31 @@ class GripperKind(str, Enum):
 
 
 @dataclass(frozen=True)
+class HandPart:
+    """手の部品 1 つ — **フランジ座標**の軸平行箱 (中心 + 半寸法, ADR-152 D3)。
+
+    フランジ座標は ADR-150 D5: +Z がフランジ面から外向き、ジョーは ±X に閉じる。
+    円筒の筐体は外接箱で持つ (保守側 — 偽の「当たる」は出うるが偽の「取れる」は出さない)。
+    """
+
+    name: str
+    center: Vec3
+    half: Vec3
+
+
+@dataclass(frozen=True)
+class HandShape:
+    """宣言された手の形 (ADR-152 D3)。`palm_z` = 筐体の長さ (フランジ面からパームまで)。
+
+    ワイヤの `gripper.body/fingers/cupHeight` から adapter が組む。未宣言は None
+    (= 従来どおりフランジ→TCP の線分で判定) で、既定の形では埋めない (原則 #31)。
+    """
+
+    parts: "tuple[HandPart, ...]"
+    palm_z: float
+
+
+@dataclass(frozen=True)
 class ParallelJawGripper:
     """平行ジョー宣言 (ADR-081 「掴めるか」ドメインの入力)。
 
@@ -398,6 +522,7 @@ class ParallelJawGripper:
 
     max_opening: float
     finger_clearance: float = 0.0
+    shape: "HandShape | None" = None
 
     @property
     def kind(self) -> GripperKind:
@@ -416,6 +541,7 @@ class SuctionGripper:
 
     cup_diameter: float
     seal_tilt_tolerance: float = 0.35
+    shape: "HandShape | None" = None
 
     @property
     def kind(self) -> GripperKind:
@@ -427,14 +553,60 @@ Gripper = ParallelJawGripper | SuctionGripper
 
 
 @dataclass(frozen=True)
+class GraspSpec:
+    """把持仕様 1 つ (ADR-152 D1/D4) — フロントが局所 → 世界へ解決済みの形で届く。
+
+    - samples: 進入面の領域格子 (点 + 外向き法線)。進入 = 法線の逆向き。
+    - closing_axis: 世界座標の閉じ軸 (単位)。None = ロール総当たり (従来と同じ)。
+    - depth: 進入面から TCP までの深さ。0 = 面上。
+    - tilt_tolerance: 進入方向からの傾きの上限 (rad)。None = sampling の刻みを全部。
+    """
+
+    id: str
+    samples: "tuple[tuple[Vec3, Vec3], ...]"
+    closing_axis: "Vec3 | None" = None
+    depth: float = 0.0
+    tilt_tolerance: "float | None" = None
+
+
+class StrategyOrder(str, Enum):
+    """仕様群の使い方 (ADR-152 D1)。順位は仕様の**並び順**そのもの。"""
+
+    PRIORITY = "priority"  # 候補を持つ最初の仕様の候補だけを返す
+    SCORE = "score"        # 全仕様の候補をスコア順に混ぜる
+
+
+class StrategyFallback(str, Enum):
+    NONE = "none"        # どの仕様にも候補が無ければ 0 件
+    DERIVED = "derived"  # そのときだけ surfaceSamples (ADR-118 の導出) で探す
+
+
+@dataclass(frozen=True)
+class GraspStrategy:
+    order: StrategyOrder = StrategyOrder.PRIORITY
+    fallback: StrategyFallback = StrategyFallback.NONE
+
+
+@dataclass(frozen=True)
 class TargetObject:
     """把持対象。表面サンプル (点 + 外向き法線) の集合として与える。
 
     候補生成はこのサンプルごとに approach / roll を刻んで離散候補を作る。サンプリング
     密度は呼び出し側の責務 (DSL 宣言由来) で、エンジンは与えられた点をそのまま使う。
+
+    ADR-152: `spec_samples` は送られた全仕様のサンプルの和 (導出 — 閉じ軸を宣言しない
+    仕様の把持幅・吸引のパッチはこの和で測る。旧 `faces` 宣言の移行先が以前と同じ
+    答えを返すのはこのため)。`box` は対象そのものの OBB で、閉じ軸の幅を測るためだけに
+    使い、障害物にはしない。
     """
 
     surface_samples: tuple[tuple[Vec3, Vec3], ...]  # (point, outward_normal)
+    spec_samples: tuple[tuple[Vec3, Vec3], ...] = ()
+    box: "Obb | None" = None
+
+    def samples_for(self, candidate: "GraspCandidate") -> tuple[tuple[Vec3, Vec3], ...]:
+        """この候補の幅・パッチを測る母集団 — 仕様由来なら仕様の和、導出なら導出。"""
+        return self.spec_samples if candidate.spec_id is not None else self.surface_samples
 
 
 @dataclass(frozen=True)
@@ -459,6 +631,12 @@ class Problem:
     # (既存挙動を無言で変えない — ADR-084 のフォールバック規律と同じ)。
     camera: Camera | None = None
     gripper: Gripper | None = None
+
+    # 把持仕様と戦略 (ADR-152)。空 = 仕様なし = 従来どおり surface_samples で探す。
+    grasp_specs: "tuple[GraspSpec, ...]" = ()
+    strategy: GraspStrategy = field(default_factory=GraspStrategy)
+    # フランジ→TCP (robot.toolLength, ADR-150)。手の形を置く位置と深さのゲートが使う。
+    tool_length: float = 0.0
 
     # objective の正規化で参照する絶対基準の追加パラメータ (objectives.py が使う)。
     # 進入経路クリアランスを 0-1 化する基準距離 (これ以上離れていれば満点)。

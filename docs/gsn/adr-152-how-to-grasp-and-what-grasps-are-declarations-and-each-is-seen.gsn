@@ -3,7 +3,7 @@ GOALS adr152_how_to_grasp_and_what_grasps_are_declarations_and_each_is_seen
 goal DeclaredGraspReachesJudgementAndPictureAlike
 uuid 5b0e8f0a-1f6e-4c47-9a58-1f2d63e2a152
 summary "ユーザーがワークごとに『どこを・どちらから・どの軸で挟んで・どの深さまで』掴むか (把持仕様) を名前つきで N 個、その使い方 (把持戦略) を、そして手の形を宣言でき、その宣言が探索の判定と画面の絵の両方へ同じ値で届き、宣言した語 (+x) が物体のどこを指すかを走らせる前に 3D で確かめられる。解でなく性質: 'OBB で干渉' 'ラベルを描く' は解の形"
-state ToBeDeveloped
+state Approved
 labels adr-152, adr-060, adr-074, adr-082, adr-083, adr-084, adr-099, adr-117, adr-118, adr-119, adr-128, adr-146, adr-150, adr-151, principle-11, principle-29, principle-31, kernel-1-1, app, core, contract, view
 
     context TheDrawnHandIsNotTheJudgedHand
@@ -28,7 +28,7 @@ labels adr-152, adr-060, adr-074, adr-082, adr-083, adr-084, adr-099, adr-117, a
 
     context BusinessTreeConnectionDeferred
     uuid 37b5f3c9-934a-4668-beec-f0ad0d23f879
-    summary "事業木 docs/gsn/profit-growth.gsn への接続は実装 PR で行う (証拠が全部未来形のうちに接ぐと事業木の ToBeDeveloped を増やすだけ)。接続予定先は ADR-128 / ADR-150 の木が吊られている grasp 系 goal"
+    summary "事業木 docs/gsn/profit-growth.gsn への接続は起票時『実装 PR で ADR-128 / ADR-150 の木が吊られている grasp 系 goal へ』と予定したが、実装時 (2026-09-26) に確かめると**その枝は事業木に無い** — ADR-128 / ADR-150 / ADR-151 の木はどれも吊られていない。自然な吊り先は UsersReachGraspValue (価値の出口に到達できる) だが、そこは『初見ユーザがドメイン知識なしに到達する』主張で、把持仕様・手の形の宣言は熟練者側の語彙なので寄与の向きが違う。grasp 系の木をまとめて吊る枝を起こすのは事業木の設計判断として別に行う (この木単独では決めない)"
 
     justification WhyNotTheCheaperOrRicherShapes
     uuid 15132ff3-87f3-4be5-b2d4-dd91c2cd1951
@@ -41,63 +41,115 @@ labels adr-152, adr-060, adr-074, adr-082, adr-083, adr-084, adr-099, adr-117, a
         goal GraspSpecsAndStrategyAreSayable
         uuid c890ef35-55ec-46d0-9362-6ac18a65c6e9
         summary "D1: 『上から側面挟み (+z から、x で閉じ、20mm 下)』『上面吸着』を名前つきの仕様として並べ、順序 = 優先順位、戦略 priority|score と fallback none|derived を宣言できる。仕様の不正は malformed、手と不一致の仕様は理由つきで除外、全除外で停止。旧 faces は同じサンプル集合を作る仕様へ無損失で移行し件数を警告"
-        labels support-exploring
-        state ToBeDeveloped
+        labels support-verified
+        state Approved
 
-            assumption SpecVocabularyPlanned
-            uuid adb8f1b6-8a85-4605-bfed-5f67c52655fd
-            summary "証拠予定: graspFeature.test.js — 不正 5 種 (closing = from 軸 / 吸引に closing・depth / 名前重複 / 空 specs) が malformed、手と不一致の除外理由、旧 faces 移行前後で surfaceSamples が一致、戦略の省略が『既定』として区別。DocBuilder.test.js — specs の書き込み → 再コンパイル往復。満期=GREP:schema/layout-1.0.schema.json::\"specs\""
+            solution SpecVocabularyPure
+            uuid ba623d4d-3333-4c64-9df4-c4ad4d57b7a5
+            summary "node --test src/domain/graspFeature.test.js (37/37): 上から x で挟む 20mm + 上面吸着が 2 仕様 + 戦略で言える、不正 5 種 (closing = 進入軸 / 吸引に closing / 吸引に depth / 名前重複 / 空 specs) がすべて malformed で理由つき、手と不一致の仕様は理由つき除外・全除外で停止、旧 faces は同じサンプルを作る仕様へ移行し件数を数える、戦略の省略は strategyDeclared:false で (default) と言われる、解決 → DSL → 解決が不動点で faces を書く経路が無い"
+            artifacts
+            - "src/domain/graspFeature.test.js"
+            - "src/domain/graspFeature.js"
+            solution SpecVocabularyRoundTrips
+            uuid 278d24ed-d8da-4145-bc4e-a846835985de
+            summary "node --test src/schema/LayoutSchema.test.js + src/context/DocBuilder.test.js + src/controller/GraspController.test.js: layout / context 両スキーマが graspSpec / graspStrategy を同じ語彙で持ち (旧 faces は読み専用)、specs の書き込み → 再コンパイルで declared-specs が読み戻り、ワイヤには手の使える仕様だけが優先順で載る"
+            artifacts
+            - "src/schema/LayoutSchema.test.js"
+            - "src/context/DocBuilder.test.js"
+            - "src/controller/GraspController.test.js"
 
         goal PlusXIsSeenOnTheObject
         uuid 2b1589e3-c3fc-4761-8051-372cb2ef4d46
         summary "D2: 把持パネルを開いているあいだ、対象の 6 面に +X〜−Z のラベルと局所軸の三脚が出て、チップには局所面の法線をいまの世界姿勢で回した向き (+z · 上 / 30° 超は · 斜め) が添えられ、ホバーでその面が塗られる。進入面と接触面は塗り分ける。添え字は導出で保存されない"
-        labels support-exploring
-        state ToBeDeveloped
+        labels support-verified
+        state Approved
 
-            assumption FaceWordingPlanned
-            uuid 8b6d30b7-f1c1-45cd-93bc-1b67ea846c24
-            summary "証拠予定: 面の世界向きの語を返す純粋関数のテスト (無回転で +x·前 / z まわり 90° 回転で +x·左 / 30° 超で ·斜め)、e2e で面ラベルが 6 個出てチップのホバーで該当面が塗られる。満期=GREP:src/domain/graspFeature.js::faceWorldWord"
+            solution FaceWordPure
+            uuid 152c51ac-f574-4543-88c9-9cb6cef44d50
+            summary "node --test src/domain/graspFeature.test.js + src/domain/graspTargets.test.js: faceWorldWord が無回転で +x · front / z まわり 90° で +x · left / 40° 傾けた +z は tilted (25° は top)、projection の faceWords が物体の回転に付いて変わる (保存しない)"
+            artifacts
+            - "src/domain/graspFeature.test.js"
+            - "src/domain/graspTargets.test.js"
+            solution FaceLabelsAndHoverE2e
+            uuid 4ca05671-e81d-4c48-b2ac-275402a32c88
+            summary "e2e/grasp-declaration.spec.js (playwright, 実アプリ): cell_robotics に仕様を宣言して focus すると面ラベル 6 個 (+z · top / +x · front を含む) と、領域・矢印・接触面 2 枚・閉じ矢印・深さ面・爪・手のプレビューが描かれ、面チップのホバーでその面が塗られ離すと消える。負の対照: hoverGraspFace を無効化する突然変異で落ちることを確認済み"
+            artifacts
+            - "e2e/grasp-declaration.spec.js"
+            - "src/view/GraspDeclarationView.js"
 
         goal TheHandDrawnIsTheHandJudged
         uuid 022d2a53-756e-42a3-911e-8eecf2ed52d9
         summary "D3/D5: 腕の手・プレビューの手・ワイヤの gripper 寸法が tcp の hand ただ 1 つから導出され、爪先の z が一致する。形が宣言されていれば爪・筐体の貫通する候補は棄却され、未宣言なら線分で判定し線分で描く"
-        labels support-exploring
-        state ToBeDeveloped
+        labels support-verified
+        state Approved
 
-            assumption HandSharesOneSourcePlanned
-            uuid 090b9260-c117-4661-9891-2e337f75639b
-            summary "証拠予定: robotTool.test.js — toolParts(hand) の爪先 z = body.length + fingers.length、割合の式が 0 個 (Retires の GREP が消える)、取付けが爪の範囲外 / カップ面とずれる形で理由つき停止。core/tests — トレー壁を爪が貫通する候補が棄却 (負の対照: 形なしでは通る)。満期=GREP:packages/grasp-contract/schema/grasp-search-request.schema.json::\"fingers\""
+            solution HandOneSourcePure
+            uuid 7966cde1-cf90-440c-8d53-5c7e96bf7ca2
+            summary "node --test src/domain/robotTool.test.js + src/domain/robotHand.test.js: toolParts(hand) の爪先 z = body.length + fingers.length、爪の内面間 = maxOpening、割合の式 0 個 (同じ手を 2 つの取付けで描いて寸法不変)、形の未宣言は棒 1 本、取付けが爪の外 / カップ面とずれると理由つき、ワイヤの gripper と描く爪先が同じ点 (m)"
+            artifacts
+            - "src/domain/robotTool.test.js"
+            - "src/domain/robotHand.test.js"
+            - "src/domain/robotHand.js"
+            solution FingerThroughWallRejected
+            uuid ce090931-caab-4608-b2bf-b2c00d5228fe
+            summary "cd core && uv run pytest tests/test_grasp_specs.py: 開いた爪がトレー壁を貫通する候補 6 件が rejectedByInterference、負の対照として形なし (線分) では 6 件とも通る。取付けと形の矛盾は DeclarationError → API 400 invalid_declaration"
+            artifacts
+            - "core/tests/test_grasp_specs.py"
+            - "core/easy_extrude_core/engine/feasibility.py"
 
         goal HowToGraspIsJudgedRight
         uuid 743b8950-00ee-4ea4-8d8b-df0d22b3782c
         summary "D5: 閉じ軸の宣言があれば幅は対象 box の閉じ軸方向の厚み、ロールは 0/π、深さが TCP→パームを超えれば把持性で棄却、許容傾きが傾きの刻みを絞る。priority は候補を持つ最初の仕様だけ、score は混ぜる。仕様ごとの diagnostics は返さなかった仕様も含め全仕様ぶん。仕様なしの答えは 1 ビットも動かない"
-        labels support-exploring
-        state ToBeDeveloped
+        labels support-verified
+        state Approved
 
-            assumption SpecJudgementPlanned
-            uuid 2cd81f6f-fee5-4fde-8af8-a87df3cdb725
-            summary "証拠予定: core/tests — 幅 = box 厚み (進入面の広がりと異なる数の fixture で焼く)、depth 超過で rejectedByGrasp、priority と score で返る候補集合の違い、diagnostics.graspSpecs の長さ = 送った仕様数、既存テンプレ (仕様なし) の結果が変更前と一致。満期=GREP:core/easy_extrude_core/engine/candidates.py::closing_axis"
+            solution SpecJudgementCore
+            uuid 446b1365-d026-440a-a301-40a024ee435f
+            summary "cd core && uv run pytest tests/test_grasp_specs.py (19 件): 閉じ軸 x で幅 = box の x 厚み 0.10 > 開口 0.08 → 全棄却・opening 0.02 不足 (負の対照: 閉じ軸なしは上面格子の広がりで通る)、depth 0.04 > TCP→パーム 0.03 で rejectedByGrasp、閉じ軸でロールが 2 通り (pose_codec を往復しても x は同じ軸)、priority は最初に候補を持つ仕様だけ・score は混ぜる、diagnostics.graspSpecs は返さなかった仕様も含め全仕様ぶん、fallback derived は全仕様 0 件のときだけ"
+            artifacts
+            - "core/tests/test_grasp_specs.py"
+            - "core/easy_extrude_core/engine/candidates.py"
+            - "core/easy_extrude_core/engine/pipeline.py"
+            solution NoSpecAnswerUnmoved
+            uuid edf04635-3eb2-4cf4-a8e2-dbeef1109c23
+            summary "cd core && uv run pytest: 既存 213 件 (テンプレの往復を含む) が変更なしで緑、何も絞らない仕様は同じサンプルの surfaceSamples と候補・スコア・ファネルが一致 (旧 faces の移行が答えを動かさない)"
+            artifacts
+            - "core/tests/test_templates.py"
+            - "core/tests/test_grasp_specs.py"
 
             assumption DerivedWidthStaysMisread
             uuid 6c3877ab-d037-43ee-bd07-03d65c216b1c
-            summary "前提: 導出 (未宣言・anywhere) の把持幅の読み違いは正さない (既存の答えが動くため)。実装 PR で DEFERRAL_LEDGER に行を起こし満期を置く — この前提が崩れたら『動かない』の主張ごと見直す。満期=GREP:docs/DEFERRAL_LEDGER.md::ADR-152"
+            summary "前提: 導出 (未宣言・anywhere) の把持幅の読み違いは正さない (既存の答えが動くため)。実装 PR で DEFERRAL_LEDGER に行を起こし満期を置く — この前提が崩れたら『動かない』の主張ごと見直す。満期=GREP:core/easy_extrude_core/engine/feasibility.py::derivedWidthFromBox (DEF-046)"
 
         goal EveryDeclaredFieldIsSeenBeforeRunning
         uuid a57da92d-d618-41c4-bfbe-e92030fb4375
         summary "D6: 仕様・戦略・手の宣言欄のすべてに、ワイヤに載る値から描く確認が 1 つあり、走らせる前に見える (領域の矩形・進入矢印と許容傾きの円錐・接触面の縞・深さ面・開いた爪・カップの円・手のプレビュー・優先順の番号)。N 仕様のときは選んだ 1 つを描く。確認は判定をしない"
-        labels support-exploring
-        state ToBeDeveloped
+        labels support-verified
+        state Approved
 
-            assumption ConfirmationCensusPlanned
-            uuid 3bc7f374-ead2-477d-9fe0-61ad043c3a3f
-            summary "証拠予定: src/view/GraspDeclarationConfirmation.test.js — 宣言欄をスキーマから列挙し CONFIRMATION_BY_FIELD に行の無い欄が 0、未登録欄で throw。プレビュー姿勢がワイヤの target.graspSpecs[i] / gripper と同じ数から作られることを純粋関数で問う。e2e で宣言 → 確認の絵が出ることを 1 本 (DEF-031 の穴を狭める)。満期=PATH:src/view/GraspDeclarationConfirmation.test.js"
+            solution ConfirmationCensus
+            uuid f5adf4e1-e9c8-4218-8cd1-11d7f8bce489
+            summary "node --test src/view/GraspDeclarationConfirmation.test.js (11/11): 宣言欄をスキーマ (graspSpec / graspStrategy / tcp の hand) から列挙し CONFIRMATION_BY_FIELD に行の無い欄 0・スキーマに無い行 0・未登録は throw、表が絵を名指す行は代表の宣言で実際にその絵が出る、領域の輪郭は送るサンプルを囲み、爪の断面は内面間 = maxOpening、プレビューの爪先は深さ面の中心 (TCP)"
+            artifacts
+            - "src/view/GraspDeclarationConfirmation.test.js"
+            - "src/view/GraspDeclarationMath.js"
+            solution ConfirmationOnScreen
+            uuid f87061fa-94b6-4fb3-b09d-d06112fe6734
+            summary "e2e/grasp-declaration.spec.js: 実アプリで focus した 1 仕様の絵が出る (上の FaceLabelsAndHoverE2e と同じ実行)"
+            artifacts
+            - "e2e/grasp-declaration.spec.js"
 
         goal TheContractBumpIsDeliberate
         uuid 7b762945-6dbc-4549-9367-c230a5c5102e
         summary "D4: request の追加は optional、response は候補の必須 nullable graspSpecId と diagnostics の必須 graspSpecs で閉じたまま広がり、contractVersion は 7。Schema・version・BFF 導出型・core/ pydantic・スタブ・両端の準拠テストが同じ PR で動き contract-wall が緑"
-        labels support-exploring
-        state ToBeDeveloped
+        labels support-verified
+        state Approved
 
-            assumption ContractV7Planned
-            uuid 43849b53-d670-4172-959c-78f479a87d04
-            summary "証拠予定: pnpm test:contract (v7) と CI contract-wall が緑、server/test/grasp.contract.test.js と core/tests/test_contract_conformance.py と mocks/graspStub/conformance.test.js に graspSpecs / strategy / box / body / fingers / graspSpecId の適合 + 拒否 (未知の body.kind、負の寸法、closingAxis の長さ違い、graspSpecId 欠落)。満期=GREP:packages/grasp-contract/contract-version.json::contractVersion.:.7"
+            solution ContractV7Green
+            uuid 1c88aa13-3aaf-49da-b129-dee52a3e1c02
+            summary "pnpm test:contract (contractVersion=7, all green) + server/test/grasp.contract.test.js 30/30 + pnpm test:stub 35/35 + core/tests/test_contract_conformance.py: graspSpecId 欠落・graspSpecs 欠落・閉じた行への密輸・未知の body.kind・body だけの手・仕様の numeric priority が拒否され、適合例が通る。Schema・contract-version.json・examples・BFF 導出型・pydantic・スタブが同じ PR"
+            artifacts
+            - "packages/grasp-contract/test/contract.test.mjs"
+            - "server/test/grasp.contract.test.js"
+            - "mocks/graspStub/conformance.test.js"
+            - "core/tests/test_contract_conformance.py"
