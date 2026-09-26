@@ -61,6 +61,7 @@ import {
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
 import { wireTargetFor, wireObstacle } from '../domain/graspWire.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
+import { declarationPicture } from '../view/GraspDeclarationMath.js'
 import { mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
@@ -118,6 +119,12 @@ export class GraspController {
     this._createSampleView = deps.createSampleView ?? null
     /** @type {object|null} sole-owned grasp-location overlay (ADR-128) */
     this._sampleView = null
+    this._createDeclarationView = deps.createDeclarationView ?? null
+    /** @type {object|null} sole-owned declaration picture (ADR-152 D2/D6) */
+    this._declView = null
+    /** focused spec index / hovered face chip — view inputs, never FSM state */
+    this._focusedSpec = null
+    this._hoverFace = null
     /** @type {object|null} sole-owned spatial ghost (ADR-059) */
     this._ghost = null
     /** transient hovered rank (never in the grasp FSM slice — ADR-059 §C) */
@@ -154,6 +161,8 @@ export class GraspController {
     registerCallback('onSetGraspFeature',      (ref, feature) => this.setGraspFeature(ref, feature))
     registerCallback('onPreviewGraspSamples',  () => this.previewGraspSamples())
     registerCallback('onSetRobotHand',         (id, hand) => this.setRobotHand(id, hand))
+    registerCallback('onFocusGraspSpec',       (i) => this.focusGraspSpec(i))
+    registerCallback('onHoverGraspFace',       (face) => this.hoverGraspFace(face))
     this.refreshRobots()
   }
 
@@ -255,8 +264,17 @@ export class GraspController {
     const robots = this._robots()
     const robot = robotId ? robots.find(r => r.id === robotId) : this._selectedRobot()
     const tcp = robot?.tcpFrame ?? null
+    if (!tcp) return false
+    // A tcp the DOCUMENT knows is declared there (one doc-edit, undoable), or the
+    // next document edit would recompile it away (ADR-129's split, by what the
+    // entity is). Only a scene-only tcp is written straight to the scene.
+    const declared = this._ctrl._ctxCtrl?.declareTcpHand?.(tcp.id, hand) ?? null
+    if (declared) {
+      Promise.resolve(declared).then(() => this.refreshRobots())
+      return true
+    }
     const service = this._ctrl._service
-    if (!tcp || typeof service?.setTcpHand !== 'function') return false
+    if (typeof service?.setTcpHand !== 'function') return false
     const before = tcp.hand ?? null
     if (!service.setTcpHand(tcp.id, hand)) return false
     this._ctrl._commandStack?.push(createSetTcpHandCommand(tcp.id, before, hand, service))
@@ -415,13 +433,64 @@ export class GraspController {
       declared: target.feature?.state === GRASP_FEATURE_STATE.DECLARED_SPECS,
       extent:   Math.min(d.x, d.y, d.z),
     })
+    this._showDeclaration()
   }
 
-  /** Dispose the sample overlay (panel close / context end — 原則 #9). */
+  /**
+   * Which spec the panel is editing (ADR-152 D6: 3D draws the ONE focused spec;
+   * N arrows at once bury the words). A view input, not FSM state (ADR-059 §C).
+   * @param {number|null} index
+   */
+  focusGraspSpec(index) {
+    this._focusedSpec = Number.isInteger(index) ? index : null
+    this._showDeclaration()
+  }
+
+  /**
+   * The face chip under the pointer (ADR-152 D2 "指す前に光る") — painted on
+   * the object so "+x" is answered before anything is run.
+   * @param {string|null} face
+   */
+  hoverGraspFace(face) {
+    this._hoverFace = face ?? null
+    this._showDeclaration()
+  }
+
+  /**
+   * Redraw the declaration picture from the RESOLVED values (the ones the
+   * request is built from — ADR-128 D1): the selected target and its specs, the
+   * search subject's hand and mount. Pure picture in `GraspDeclarationMath`;
+   * this only chooses the inputs and hands them to the sole-owned view.
+   */
+  _showDeclaration() {
+    const target = this._selectedTarget()
+    if (!target || !this._createDeclarationView) { this._declView?.clear(); return }
+    const robot = this._selectedRobot()
+    const hand = handOf(robot).hand
+    const mount = toolMountOf(robot)
+    const toolLengthMm = mount && axialToolLengthM(mount) !== null ? mount.translation.z : null
+    const specs = target.feature?.specs ?? []
+    const spec = this._focusedSpec != null ? (specs[this._focusedSpec] ?? null) : null
+    let picture
+    try {
+      picture = declarationPicture({ target, spec, specs, hand, toolLengthMm, hoverFace: this._hoverFace ?? null })
+    } catch {
+      this._declView?.clear()
+      return
+    }
+    if (!this._declView) this._declView = this._createDeclarationView()
+    this._declView.show(picture)
+  }
+
+  /** Dispose the sample and declaration overlays (panel close / context end — 原則 #9). */
   disposeSampleView() {
     if (this._sampleView) {
       this._sampleView.dispose()
       this._sampleView = null
+    }
+    if (this._declView) {
+      this._declView.dispose()
+      this._declView = null
     }
   }
 

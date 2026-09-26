@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useUIStore } from '../../store/uiStore.js'
 import { renderableEndEffectorFrame } from '../../view/GraspGhostMath.js'
-import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from '../../view/GraspFunnelMath.js'
+import { funnelStages, dominantStage, funnelDelta, nearMissCloseness, specResultRows } from '../../view/GraspFunnelMath.js'
 import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
@@ -307,7 +307,9 @@ export function GraspSearchPanel() {
   // that move the samples: which object, what was declared about it, which hand.
   useEffect(() => {
     callbacks.onPreviewGraspSamples?.()
-  }, [callbacks, handKind, graspTargets?.selectedRef, graspTargets?.feature])
+    // The hand (its shape and the mount) changes the declaration picture too —
+    // the preview hand and the finger sections are drawn from it (ADR-152 D6).
+  }, [callbacks, handKind, handProj, graspTargets?.selectedRef, graspTargets?.feature])
 
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
@@ -529,6 +531,9 @@ export function GraspSearchPanel() {
           everything below derives from the wire facts via GraspFunnelMath. */}
       {status === 'results' && (
         <DiagnosticsFunnel diagnostics={grasp.diagnostics} prev={grasp.prevDiagnostics} />
+      )}
+      {status === 'results' && (
+        <SpecResults rows={specResultRows(grasp.diagnostics, grasp.candidates ?? [])} />
       )}
 
       {/* Sort controls + candidates */}
@@ -1359,6 +1364,28 @@ function StatusLine({ grasp }) {
 
 const STAGE_LABELS = { reach: 'reach', ik: 'IK', grasp: 'grasp', visibility: 'visible', interference: 'clearance' }
 
+/**
+ * Per-spec results (ADR-152 D4/D6 — the strategy's confirmation): each spec in
+ * priority order with `returned / feasible / generated`. A spec with feasible
+ * candidates that returned none (priority order, an earlier spec won) reads
+ * differently from one that had nothing — both are shown, never folded away.
+ */
+function SpecResults({ rows }) {
+  if (!rows) return null
+  return (
+    <div style={{ marginTop: '8px', fontSize: '10px', color: COLOR.textSecondary }}>
+      <div style={{ marginBottom: '2px' }}>by grasp spec (returned / feasible / generated)</div>
+      {rows.map((r, i) => (
+        <div key={r.id} style={{ display: 'flex', gap: '6px' }}>
+          <span style={{ minWidth: '14px' }}>{i + 1}</span>
+          <span style={{ flex: 1, color: r.returned > 0 ? COLOR.infoTone : COLOR.textSecondary }}>{r.id}</span>
+          <span>{r.returned} / {r.feasible} / {r.generated}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function DiagnosticsFunnel({ diagnostics, prev }) {
   const funnel = funnelStages(diagnostics)
   if (!funnel) return null   // legacy / absent diagnostics → degrade silently
@@ -1552,6 +1579,11 @@ function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
         <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#e8e8e8' }}>#{c.rank}</span>
+        {/* Which grasp spec produced it (contract v7) — a wire fact, not a guess
+            from the pose. null = the derived faces (fallback / no spec). */}
+        {c.graspSpecId != null && (
+          <span style={{ fontSize: '10px', color: COLOR.infoTone }}>via {c.graspSpecId}</span>
+        )}
         <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9ad' }}>
           score {typeof sc.totalScore === 'number' ? sc.totalScore.toFixed(3) : '—'}
         </span>

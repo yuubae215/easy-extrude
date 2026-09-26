@@ -5,7 +5,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { funnelStages, dominantStage, funnelDelta, nearMissCloseness } from './GraspFunnelMath.js'
+import { funnelStages, dominantStage, funnelDelta, nearMissCloseness, specResultRows } from './GraspFunnelMath.js'
 
 /** A conforming v4 fixture (invariant: 12 = 4 + 2 + 1 + 1 + 1 + 3). */
 const D = Object.freeze({
@@ -110,4 +110,18 @@ test('nearMissCloseness: 1 at zero miss, monotone toward 0, null on null/invalid
   assert.equal(nearMissCloseness(undefined), null)
   assert.equal(nearMissCloseness(-1), null)
   assert.equal(nearMissCloseness(NaN), null)
+})
+
+test('仕様ごとの結果: 返さなかった仕様と候補が無かった仕様が別の行になる (ADR-152 D4)', () => {
+  const rows = specResultRows(
+    { graspSpecs: [
+      { id: 'top pinch', candidatesGenerated: 18, feasible: 4 },
+      { id: 'top suck', candidatesGenerated: 9, feasible: 3 },
+      { id: 'side', candidatesGenerated: 9, feasible: 0 },
+    ] },
+    [{ graspSpecId: 'top pinch' }, { graspSpecId: 'top pinch' }],
+  )
+  assert.deepEqual(rows.map(r => [r.id, r.feasible, r.returned]), [['top pinch', 4, 2], ['top suck', 3, 0], ['side', 0, 0]])
+  assert.equal(specResultRows({ graspSpecs: [] }, []), null)
+  assert.equal(specResultRows({}, []), null, 'pre-v7 diagnostics: nothing to show')
 })

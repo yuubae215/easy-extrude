@@ -56,7 +56,7 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
-  setEntityGraspFeature, setEntityPose,
+  setEntityGraspFeature, setEntityPose, setEntityHand,
 } from '../context/DocBuilder.js'
 import { declaredPoseOf, POSE_ENTITY_KIND } from '../domain/declaredPose.js'
 import { Solid }            from '../domain/Solid.js'
@@ -538,6 +538,26 @@ export class ContextController {
     const afterDoc  = setEntityGraspFeature(beforeDoc, ref, feature)
     const label = feature == null ? 'Clear grasp location' : 'Declare grasp location'
     return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the grasp location')
+  }
+
+  /**
+   * Declare (or clear) a document-known tcp's hand on the DOCUMENT (ADR-152 D3)
+   * — one undoable doc-edit. Returns `null` when the document does not know this
+   * entity (no context, or a scene-only tcp): the caller then writes the scene
+   * through `SceneService.setTcpHand` and owns that undo record (the ADR-129
+   * split — by what the entity is, decided synchronously at the call site).
+   *
+   * @param {string} frameId  scene id of the tcp
+   * @param {object|null} hand  mm; null = undeclared
+   * @returns {Promise|null}
+   */
+  declareTcpHand(frameId, hand) {
+    if (!this._ctxService.loaded) return null
+    const ref = this._ctxService.refForSceneId(frameId)
+    if (!ref) return null
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = setEntityHand(beforeDoc, ref, hand)
+    return this._runDocEdit(beforeDoc, afterDoc, hand == null ? 'Clear hand' : 'Set hand', 'Could not save the hand')
   }
 
   /**

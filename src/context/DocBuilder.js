@@ -224,6 +224,33 @@ export function setEntityGraspFeature(doc, ref, feature) {
   return clone
 }
 
+/**
+ * Set (or clear) WHAT a robot grasps with — the `hand` of a tcp entity in the
+ * document's layout (ADR-152 D3), input-immutable. The document-side writer, for
+ * a tcp the document KNOWS (a scene-only tcp is written by
+ * `SceneService.setTcpHand` instead — the ADR-129 split, by what the entity is).
+ * Without it, the next document edit recompiles the scene from a layout that has
+ * no hand and the user's hand silently disappears.
+ *
+ * `hand === null` deletes the key (UNDECLARED — never a default). A ref with no
+ * matching entity is a no-op clone.
+ *
+ * @param {object} doc
+ * @param {string} ref  Layout DSL entity ref of the tcp CoordinateFrame
+ * @param {object|null} hand  mm
+ * @returns {object} new doc
+ */
+export function setEntityHand(doc, ref, hand) {
+  const clone    = _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  if (hand == null) delete entities[i].hand
+  else entities[i].hand = JSON.parse(JSON.stringify(hand))
+  return clone
+}
+
 /** Entity kinds → their doc array key (mirrors SeedAnchor's map). */
 const KIND_ARRAY = {
   actor:       'actors',

@@ -99,6 +99,7 @@ import { ContextController }          from './ContextController.js'
 import { GraspController }            from './GraspController.js'
 import { GraspGhostView }             from '../view/GraspGhostView.js'
 import { GraspSampleView }            from '../view/GraspSampleView.js'
+import { GraspDeclarationView }       from '../view/GraspDeclarationView.js'
 import { ROBOT_KINEMATICS, ROBOT_REACH_ENVELOPE, ROBOT_MODEL_LABEL } from '../view/robotSkeleton.js'
 import { SHIPPED_ROBOT_MODEL_ID }     from '../domain/robotModel.js'
 import { ContextService }             from '../service/ContextService.js'
@@ -521,6 +522,7 @@ export class AppController {
     this._graspCtrl = new GraspController(this, useUIStore, {
       createGhostView: () => new GraspGhostView(this._sceneView.scene, document.body),
       createSampleView: () => new GraspSampleView(this._sceneView.scene),
+      createDeclarationView: () => new GraspDeclarationView(this._sceneView.scene),
       robotKinematics: ROBOT_KINEMATICS,
       // The same seat again (ADR-144): the FK chain of the arm on screen, so a
       // candidate `core/` left `undeclared` can still be previewed — as an
