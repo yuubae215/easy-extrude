@@ -1,0 +1,170 @@
+{
+  "$comment": "ADR-152 D3/D5 / ADR-146 D3。手の部品 (筐体・開いた爪・カップ) のフランジ座標の中心と半寸法 (m)。core/ が判定に使う形そのもの。生成物であって手書きしない — 再生成は cd core && uv run python ../scripts/gen-cross-language-hand.py",
+  "subject": "hand-parts-in-flange",
+  "source": "core/easy_extrude_core/engine/pipeline.py",
+  "tolerance": 1e-12,
+  "cases": [
+    {
+      "gripper": {
+        "kind": "parallelJaw",
+        "maxOpening": 0.06,
+        "fingerClearance": 0.01,
+        "body": {
+          "kind": "cylinder",
+          "radius": 0.032,
+          "length": 0.078
+        },
+        "fingers": {
+          "length": 0.072,
+          "thickness": 0.012,
+          "width": 0.021
+        }
+      },
+      "palmZ": 0.078,
+      "parts": [
+        {
+          "name": "body",
+          "center": [
+            0.0,
+            0.0,
+            0.039
+          ],
+          "half": [
+            0.032,
+            0.032,
+            0.039
+          ]
+        },
+        {
+          "name": "finger",
+          "center": [
+            -0.036,
+            0.0,
+            0.11399999999999999
+          ],
+          "half": [
+            0.006,
+            0.0105,
+            0.036
+          ]
+        },
+        {
+          "name": "finger",
+          "center": [
+            0.036,
+            0.0,
+            0.11399999999999999
+          ],
+          "half": [
+            0.006,
+            0.0105,
+            0.036
+          ]
+        }
+      ]
+    },
+    {
+      "gripper": {
+        "kind": "parallelJaw",
+        "maxOpening": 0.085,
+        "body": {
+          "kind": "box",
+          "size": [
+            0.09,
+            0.05,
+            0.07
+          ]
+        },
+        "fingers": {
+          "length": 0.05,
+          "thickness": 0.008,
+          "width": 0.02
+        }
+      },
+      "palmZ": 0.07,
+      "parts": [
+        {
+          "name": "body",
+          "center": [
+            0.0,
+            0.0,
+            0.035
+          ],
+          "half": [
+            0.045,
+            0.025,
+            0.035
+          ]
+        },
+        {
+          "name": "finger",
+          "center": [
+            -0.0465,
+            0.0,
+            0.095
+          ],
+          "half": [
+            0.004,
+            0.01,
+            0.025
+          ]
+        },
+        {
+          "name": "finger",
+          "center": [
+            0.0465,
+            0.0,
+            0.095
+          ],
+          "half": [
+            0.004,
+            0.01,
+            0.025
+          ]
+        }
+      ]
+    },
+    {
+      "gripper": {
+        "kind": "suction",
+        "cupDiameter": 0.04,
+        "sealTiltTolerance": 0.35,
+        "body": {
+          "kind": "cylinder",
+          "radius": 0.032,
+          "length": 0.13
+        },
+        "cupHeight": 0.02
+      },
+      "palmZ": 0.13,
+      "parts": [
+        {
+          "name": "body",
+          "center": [
+            0.0,
+            0.0,
+            0.065
+          ],
+          "half": [
+            0.032,
+            0.032,
+            0.065
+          ]
+        },
+        {
+          "name": "cup",
+          "center": [
+            0.0,
+            0.0,
+            0.14
+          ],
+          "half": [
+            0.02,
+            0.02,
+            0.01
+          ]
+        }
+      ]
+    }
+  ]
+}

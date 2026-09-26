@@ -30,6 +30,8 @@ import {
   representativeSolution,
 } from './urKinematics.js'
 import { flangeTarget, poseFromFrame } from './graspPoseGauge.js'
+import { toolParts } from '../domain/robotTool.js'
+import { mToMM } from '../domain/worldUnits.js'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
 const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')
@@ -78,10 +80,21 @@ const CROSS_LANGUAGE_DERIVATIONS = [
       'core/tests/test_ur_kinematics.py',
     ],
   },
+  {
+    subject: 'hand-parts-in-flange',
+    fixture: 'fixtures/cross-language/hand-parts-in-flange.json',
+    // 源は**判定する側** (ADR-152 D3/D5)。描く手 (`toolParts`) が判定する手の写しで
+    // あり続けるかを問う — ずれると「見えている爪が判定されている爪」が黙って崩れる。
+    source: 'core/easy_extrude_core/engine/pipeline.py',
+    consumers: [
+      'src/robotics/CrossLanguageDerivation.test.js',
+      'core/tests/test_grasp_specs.py',
+    ],
+  },
 ]
 
 /** 宣言された複製の個数。増減は意図的な行為であること (ratchet — ADR-100 の形)。 */
-const DECLARED_DERIVATION_COUNT = 3
+const DECLARED_DERIVATION_COUNT = 4
 
 describe('cross-language derivations (ADR-146 D3)', () => {
   test('宣言された複製の個数が予算どおり', () => {
@@ -347,5 +360,36 @@ describe('ur5e-candidate-to-flange: 2 つの gauge が core/ の写しであり�
       [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)],
       [2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)],
     ]
+  }
+})
+
+describe('hand-parts-in-flange: 描く手 (toolParts) が判定する手 (core/) を再現する (ADR-152)', () => {
+  const fixture = JSON.parse(read('fixtures/cross-language/hand-parts-in-flange.json'))
+  /** ワイヤの gripper (m) → フロントの hand (mm)。角度は変換しない。 */
+  const handOfWire = (g) => {
+    const mm = (v) => mToMM(v)
+    const body = g.body.kind === 'cylinder'
+      ? { kind: 'cylinder', radius: mm(g.body.radius), length: mm(g.body.length) }
+      : { kind: 'box', size: g.body.size.map(mm) }
+    return g.kind === 'parallelJaw'
+      ? { kind: g.kind, maxOpening: mm(g.maxOpening), body,
+          fingers: { length: mm(g.fingers.length), thickness: mm(g.fingers.thickness), width: mm(g.fingers.width) } }
+      : { kind: g.kind, cupDiameter: mm(g.cupDiameter), body, cupHeight: mm(g.cupHeight) }
+  }
+  for (const [i, c] of fixture.cases.entries()) {
+    test(`case ${i} (${c.gripper.kind}, ${c.gripper.body.kind}): 部品の名前・中心・半寸法が一致する`, () => {
+      // toolLength は棒 (形なし) にしか効かないので、爪先の値を渡しておく。
+      const parts = toolParts(handOfWire(c.gripper), 0.15)
+      assert.deepEqual(parts.map(p => p.part), c.parts.map(p => p.name))
+      // 1 mm = 1e-3 m の往復で生じる丸め (mm → m) を許す。数の形は同じ閉形式。
+      const tol = 1e-12 + 1e-15 * 1000
+      for (const [j, p] of parts.entries()) {
+        const half = p.shape === 'cylinder' ? [p.size[0], p.size[0], p.size[1] / 2] : p.size.map(v => v / 2)
+        for (let k = 0; k < 3; k++) {
+          assert.ok(Math.abs(p.center[k] - c.parts[j].center[k]) <= tol, `${p.part} center[${k}]: ${p.center[k]} vs ${c.parts[j].center[k]}`)
+          assert.ok(Math.abs(half[k] - c.parts[j].half[k]) <= tol, `${p.part} half[${k}]: ${half[k]} vs ${c.parts[j].half[k]}`)
+        }
+      }
+    })
   }
 })

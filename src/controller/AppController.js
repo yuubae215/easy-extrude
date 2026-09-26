@@ -1196,6 +1196,10 @@ export class AppController {
         }
       },
       openGrasp: () => this._graspCtrl?.openGrasp(),
+      // Read-only: the grasp declaration picture on screen (ADR-152 D2/D6) — face
+      // labels with their world words, whether a face is painted, which of the
+      // focused spec's pictures are drawn. The e2e guard for "+x — where is that?".
+      graspDeclaration: () => this._graspCtrl?.declarationSnapshot() ?? null,
       addRobot:  () => this._addRobot(),
       // Load a Layout DSL through the same path a Home template takes — so an
       // e2e can hand the app a file written BEFORE a format change (ADR-151's

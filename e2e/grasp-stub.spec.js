@@ -76,6 +76,21 @@ async function reachGraspPanel(page, scenario) {
 }
 
 /** Pick the first real option when the layout offers several graspable objects. */
+/**
+ * Take the robot's hand back to UNDECLARED through the Grasped card (ADR-152 D3).
+ * A new robot is born with a declared default hand (a 60 mm jaw), so the grasp
+ * gate is ON by default — and a 60 mm jaw honestly cannot close on the 1 m
+ * default cube. Scenarios whose premise is "no gripper declared" (objective
+ * presentation, arm preview) state that premise here instead of relying on the
+ * old default, which was the panel's form switched off.
+ */
+async function undeclareHand(page) {
+  const toggle = page.getByText('Grasped', { exact: true }).locator('..').getByRole('checkbox')
+  await expect(toggle).toBeChecked()
+  await toggle.uncheck()
+  await expect(page.getByText(/no hand declared on this robot's tcp/)).toBeVisible()
+}
+
 async function pickAnObjectIfAsked(page) {
   const picker = page.locator('select').filter({ hasText: /pick one of/ })
   if (await picker.count() === 0) return null
@@ -172,6 +187,7 @@ test('S8 — 測っていない objective は 0 のバーではなく「測っ�
   // 候補が実際より悪く見える。0 と未測定は画面上で別物でなければならない。
   const errors = await reachGraspPanel(page, 'solve')
   await pickAnObjectIfAsked(page)
+  await undeclareHand(page)
   await page.getByRole('button', { name: /Run grasp search/ }).click()
   await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
 
@@ -191,6 +207,7 @@ test('S9 — 宣言すれば同じ objective が測れる: 不在の正の対照
   // 行き来することが唯一の対照になる (原則 #31 — 負の対照だけでは何も示さない)。
   const errors = await reachGraspPanel(page, 'reachDeclared')
   await pickAnObjectIfAsked(page)
+  await undeclareHand(page)
   await page.getByRole('button', { name: /Run grasp search/ }).click()
   await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
 
@@ -264,6 +281,7 @@ test('S11b — 腕が届かない配置では、近似は出さず rest のま�
   // この区別は焼けない (常に何か出す実装も S11 なら緑になる)。
   const errors = await reachGraspPanel(page, 'solve')
   await pickAnObjectIfAsked(page)
+  await undeclareHand(page)
   await page.getByRole('button', { name: /Run grasp search/ }).click()
   await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
 
@@ -353,7 +371,7 @@ test('S12 — TCP の印は腕と一緒にプレビュー姿勢へ行き、候�
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
 
-test('S10 — 掴む場所は「言っていない」が画面に出て、宣言すると文が変わる (ADR-128 / ADR-119 D2)', async ({ page }) => {
+test('S10 — 掴む場所は「言っていない」が画面に出て、文書が無ければ宣言できない理由が出る (ADR-128 / ADR-119 D2 / 原則 #11)', async ({ page }) => {
   // 沈黙には欄が無い (原則 #31)。導出に落ちたことが画面に出ていなければ、ユーザーは
   // 自分が「どこを掴むか」を一度も言っていないことに気づけない。宣言と沈黙が *同じ*
   // サンプルを出す以上、区別を運ぶのはこの文だけなので、文そのものを焼く。
@@ -363,15 +381,12 @@ test('S10 — 掴む場所は「言っていない」が画面に出て、宣言
   // 既定 = 何も宣言していない。「導出に落ちた」と書いてあること。
   await expect(page.getByText(/not declared — sampling/)).toBeVisible()
 
-  // 面を 1 つ宣言する → 文が「宣言した」側へ変わる。ここは文書への undo 可能な
-  // 書き込みを通るので、再コンパイルを待つぶんタイムアウトを取る。
-  await page.getByRole('button', { name: '+z', exact: true }).click()
-  await expect(page.getByText(/declared: \+z/)).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText(/not declared — sampling/)).toHaveCount(0)
-
-  // 消すと「宣言していない」へ戻る — `anywhere` ではない (ADR-128 D3)。
-  await page.getByRole('button', { name: 'clear', exact: true }).click()
-  await expect(page.getByText(/not declared — sampling/)).toBeVisible({ timeout: 30_000 })
+  // 把持仕様の宣言は**文書**に書かれる (ADR-119)。このシナリオは文書を採用していない
+  // ので書く場所が無い — 以前はこの押下が何も起こさず消えていた (原則 #11)。いまは
+  // 理由が出て、宣言していない状態が保たれる。文書無しで宣言できる経路は DEF-049。
+  await page.getByRole('button', { name: '+ grasp spec', exact: true }).click()
+  await expect(page.getByText(/Grasp specs are saved in a context document/)).toBeVisible()
+  await expect(page.getByText(/not declared — sampling/)).toBeVisible()
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })

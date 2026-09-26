@@ -356,6 +356,15 @@ test('掴める対象が N 個あって未選択なら no-target — 先頭へ�
   // 選ばなかったほうの実体は障害物として宣言される (自分自身は除外される)。
   assert.equal(g.request.graspSearch.obstacles.length, 1)
   assert.deepEqual(g.request.graspSearch.obstacles[0].center, [0, 0, 0.2])
+  // The obstacle keeps its SHAPE on the wire (ADR-133 D5). Until ADR-152 this
+  // mapping read every box as a sphere and sent `radius: NaN` (→ JSON null), so
+  // core/ never saw a single declared shape — and the hand's interference check
+  // (ADR-152 D5) would have had nothing to hit. Values, not presence: a NaN
+  // passes `'halfExtents' in o`.
+  const [obs] = g.request.graspSearch.obstacles
+  assert.equal(obs.kind, 'box')
+  assert.ok(!('radius' in obs), 'a box is not a sphere')
+  assert.ok(obs.halfExtents.every(Number.isFinite) && obs.halfExtents.every(v => v > 0), JSON.stringify(obs))
 })
 
 // ── runGraspSearch: contract-v3 diagnostics (rejection funnel) ─────────────────
@@ -1337,4 +1346,13 @@ test('setRobotHand は唯一の書き手へ委譲し、1 つの undo 記録に�
   assert.equal(pushed.length, 1)
   pushed[0].undo()
   assert.deepEqual(writes[1], { id: 'f_tcp', hand: JAW_HAND }, 'undo restores the hand that was there')
+})
+
+test('文書が無いとき把持仕様の編集は黙って消えず、理由が出る (原則 #11 / DEF-049)', async () => {
+  const { gc, ctrl } = setup({ loaded: false })
+  let wrote = 0
+  ctrl._ctxCtrl.setGraspFeature = () => { wrote += 1 }
+  await gc.setGraspFeature('widget', { kind: 'anywhere' })
+  assert.equal(wrote, 0)
+  assert.ok(ctrl._uiView.toasts.some(t => /context document/.test(t.msg)))
 })

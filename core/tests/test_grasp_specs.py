@@ -380,3 +380,30 @@ def test_generate_candidates_is_unchanged_for_the_derived_samples():
     ).grasp_search)
     assert all(c.spec_id is None and c.depth == 0.0 for c in generate_candidates(problem))
     assert Vec3(0, 0, 0).norm() == 0
+
+
+# --- 言語をまたぐ導出 (ADR-146 D3): 描く手と判定する手が同じ閉形式 --------------------
+
+def test_hand_parts_match_the_cross_language_fixture():
+    """fixtures/cross-language/hand-parts-in-flange.json の数を core/ が再現する。
+
+    同じファイルを src/robotics/CrossLanguageDerivation.test.js が JS の `toolParts` で
+    読む — 片側だけが読む数は「2 つの実装が一致している」を一度も言わない。
+    """
+    import json
+    import pathlib
+
+    from easy_extrude_core.engine.pipeline import _gripper_from_wire
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    fixture = json.loads(
+        (root / "fixtures/cross-language/hand-parts-in-flange.json").read_text()
+    )
+    tol = fixture["tolerance"]
+    for case in fixture["cases"]:
+        shape = _gripper_from_wire(case["gripper"]).shape
+        assert shape.palm_z == pytest.approx(case["palmZ"], abs=tol)
+        assert [p.name for p in shape.parts] == [p["name"] for p in case["parts"]]
+        for got, want in zip(shape.parts, case["parts"]):
+            assert got.center.as_list() == pytest.approx(want["center"], abs=tol)
+            assert got.half.as_list() == pytest.approx(want["half"], abs=tol)
