@@ -53,13 +53,23 @@ async function placeUserFrame(page) {
   // Frame the Cube first: the placement click lands at the canvas centre, and a
   // scene that already holds a robot is framed around both, so the centre can
   // miss the Cube (placement then cancels — the pick needs the parent's surface).
-  const camBefore = await page.evaluate(() => JSON.stringify(window.__easyExtrude.cameraState()))
+  //
+  // "Settled" is judged with a tolerance, not string equality: the damped orbit
+  // controls keep nudging the camera by ~1e-12 mm every frame long after the
+  // motion has visibly ended, so two exact snapshots 200 ms apart matched only
+  // when a sample happened to land between updates (PR #412 CI flake).
+  const cam = () => page.evaluate(() => {
+    const s = window.__easyExtrude.cameraState()
+    return [s.position.x, s.position.y, s.position.z, s.target.x, s.target.y, s.target.z]
+  })
+  const maxDiff = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])))
+  const camBefore = await cam()
   await page.keyboard.press('f')
   await expect.poll(async () => {
-    const a = await page.evaluate(() => JSON.stringify(window.__easyExtrude.cameraState()))
+    const a = await cam()
     await page.waitForTimeout(200)
-    const b = await page.evaluate(() => JSON.stringify(window.__easyExtrude.cameraState()))
-    return a === b && a !== camBefore
+    const b = await cam()
+    return maxDiff(a, b) < 1e-3 && maxDiff(b, camBefore) > 1
   }, { message: 'F did not settle the camera on the Cube' }).toBe(true)
   await page.keyboard.press('Shift+A')
   await page.getByText('Coordinate Frame', { exact: true }).click()
