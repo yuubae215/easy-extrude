@@ -488,3 +488,45 @@ test('ADR-152: grasp specs — priority returns the first feasible spec, every s
   assert.equal(d.candidatesGenerated,
     d.rejectedByReach + d.rejectedByVisibility + d.rejectedByIk + d.rejectedByInterference + d.rejectedByGrasp + d.feasible)
 })
+
+// ── ADR-152 D5 (coarse copy): the stub honours what a spec DECLARES ────────────
+// Front-only evaluation (GitHub Pages / `pnpm dev:stub`) must not answer "feasible"
+// to a spec core/ would reject: a declared closing axis measures the TARGET BOX's
+// thickness, a depth past the palm is not a grasp, and a declared finger standing
+// in an obstacle is interference. Coarse, but never "clear" where core/ says no.
+test('ADR-152: closing-axis width, depth gate and finger interference in the stub', () => {
+  const top = [0.35, 0.40, 0.45].map(x => ({ point: [x, 0, 0.41], normal: [0, 0, 1] }))
+  const hand = {
+    kind: 'parallelJaw', maxOpening: 0.06, fingerClearance: 0.01,
+    body: { kind: 'cylinder', radius: 0.032, length: 0.078 },
+    fingers: { length: 0.072, thickness: 0.012, width: 0.021 },
+  }
+  const table = { kind: 'box', center: [0.4, 0, 0.175], halfExtents: [0.15, 0.15, 0.175] }
+  const solve = (spec) => stubSolve({
+    layoutVersion: 'layout/1.0',
+    graspSearch: {
+      objectiveWeights: { grasp_stability: 1 }, topN: 10,
+      robot: { base: [0, 0, 0], toolLength: 0.15 },
+      gripper: hand,
+      obstacles: [table],
+      target: {
+        graspSpecs: [{ id: 's', samples: top, ...spec }],
+        box: { center: [0.4, 0, 0.38], halfExtents: [0.04, 0.02, 0.03] },
+      },
+    },
+  }, CONTRACT_VERSION)
+
+  const acrossX = solve({ closingAxis: [1, 0, 0], depth: 0.02 })   // 80 + 10 > 60
+  assertConforms(acrossX, 'acrossX')
+  assert.equal(acrossX.diagnostics.rejectedByGrasp, 3)
+  assert.ok(Math.abs(acrossX.diagnostics.graspNearestMiss.shortfall - 0.03) < 1e-9)
+
+  const acrossY = solve({ closingAxis: [0, 1, 0], depth: 0.02 })   // 40 + 10 ≤ 60
+  assert.equal(acrossY.diagnostics.feasible, 3)
+
+  const pastPalm = solve({ closingAxis: [0, 1, 0], depth: 0.08 })   // > 150 − 78
+  assert.equal(pastPalm.diagnostics.rejectedByGrasp, 3)
+
+  const intoTable = solve({ closingAxis: [0, 1, 0], depth: 0.07 })  // fingertips below the table top
+  assert.equal(intoTable.diagnostics.rejectedByInterference, 3)
+})

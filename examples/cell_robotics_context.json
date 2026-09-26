@@ -152,6 +152,21 @@
           }
         },
         {
+          "ref": "workpiece",
+          "type": "Solid",
+          "name": "ワーク",
+          "dimensions": {
+            "x": 80,
+            "y": 40,
+            "z": 60
+          },
+          "position": {
+            "x": 600,
+            "y": 0,
+            "z": 380
+          }
+        },
+        {
           "ref": "place_conveyor",
           "type": "Solid",
           "name": "プレースコンベア",
@@ -200,6 +215,11 @@
       {
         "from": "f_robot",
         "to": "pick_table",
+        "kind": "derives"
+      },
+      {
+        "from": "f_robot",
+        "to": "workpiece",
         "kind": "derives"
       },
       {

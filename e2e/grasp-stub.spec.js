@@ -390,3 +390,59 @@ test('S10 — 掴む場所は「言っていない」が画面に出て、文書
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S13 — フロントだけで ADR-152 を評価できる: 仕様・戦略・手の形が答えを分ける (スタブ)', async ({ page }) => {
+  // バックエンド無し (GitHub Pages と同じレーン) で、宣言の違いが答えの違いになることを
+  // 焼く。cell_robotics のワーク (80×40×60 mm) に 3 つの仕様を並べる:
+  //   across x — x で挟む: 80 + clearance 10 > 開口 60 → 把持性で落ちる
+  //   across y — y で挟む: 40 + 10 ≤ 60 → 取れる (priority なのでこれだけが返る)
+  //   too deep — 深さ 70 mm: 開いた爪の先がテーブルの天面より下 → 干渉で落ちる
+  // スタブの判定は粗い写しだが、core/ が「取れない」と言う宣言を「取れる」とは言わない。
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.addInitScript(() => { try { localStorage.setItem('ee_home', 'skip') } catch { /* denied */ } })
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await expect.poll(() => page.evaluate(() => typeof window.__easyExtrude?.openGrasp === 'function')).toBe(true)
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/easy-extrude/src/store/uiStore.js')
+    window.__ui = useUIStore
+    await useUIStore.getState().callbacks.onForkTemplate('cell_robotics')
+  })
+  await expect.poll(() => page.evaluate(() => window.__easyExtrude.graspSource().robots)).toBe(1)
+  const cb = (name, ...args) => page.evaluate(([n, a]) => window.__ui.getState().callbacks[n](...a), [name, args])
+
+  await page.evaluate(() => window.__easyExtrude.openGrasp())
+  await cb('onSelectGraspTarget', 'workpiece')
+  await cb('onSetRobotHand', null, {
+    kind: 'parallelJaw', maxOpening: 60, fingerClearance: 10,
+    body: { kind: 'cylinder', radius: 32, length: 78 },
+    fingers: { length: 72, thickness: 12, width: 21 },
+  })
+  await expect.poll(() => page.evaluate(() => window.__ui.getState().context.robots?.hand?.state)).toBe('declared')
+  await cb('onSetGraspFeature', 'workpiece', {
+    kind: 'specs',
+    specs: [
+      { name: 'across x', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'x', depth: 20 },
+      { name: 'across y', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'y', depth: 20 },
+      { name: 'too deep', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'y', depth: 70 },
+    ],
+  })
+  await expect.poll(() => page.evaluate(() => window.__ui.getState().context.graspTargets?.feature?.state)).toBe('declared-specs')
+
+  await page.getByRole('button', { name: /Run grasp search/ }).click()
+  await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
+
+  const g = await page.evaluate(() => window.__ui.getState().context.grasp)
+  const rows = Object.fromEntries(g.diagnostics.graspSpecs.map(r => [r.id, r]))
+  expect(rows['across x'].feasible, 'x across an 80 mm part with a 60 mm opening').toBe(0)
+  expect(rows['across y'].feasible).toBeGreaterThan(0)
+  expect(rows['too deep'].feasible, 'fingers below the table top').toBe(0)
+  expect(g.diagnostics.rejectedByGrasp).toBeGreaterThan(0)
+  expect(g.diagnostics.rejectedByInterference).toBeGreaterThan(0)
+  expect(new Set(g.candidates.map(c => c.graspSpecId))).toEqual(new Set(['across y']))
+  // The panel says it too: per-spec rows and "via <spec>" on each candidate.
+  await expect(page.getByText(/by grasp spec/)).toBeVisible()
+  await expect(page.getByText('via across y').first()).toBeVisible()
+
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})
