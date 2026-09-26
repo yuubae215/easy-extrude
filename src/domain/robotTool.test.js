@@ -11,6 +11,8 @@ import {
   toolMountEditBlockedReason, TOOL_MOUNT_UNDECLARED_REASON, TOOL_MOUNT_NOT_AXIAL_REASON,
   TOOL_MOUNT_EDIT_DEFERRED_REASON,
 } from './robotTool.js'
+import { DEFAULT_HAND_BY_KIND } from './robotHand.js'
+import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import { parseUrdfChain } from '../robotics/UrdfChain.js'
 import { forwardKinematics } from '../robotics/Kinematics.js'
 import { forwardKinematics as dhForwardKinematics } from '../robotics/urKinematics.js'
@@ -19,29 +21,59 @@ test('the declared tool length is the agreed 150 mm (both hand kinds share it)',
   assert.equal(TOOL_LENGTH_M, 0.15)
 })
 
-test('the drawn fingertips end exactly at the TCP the solver was given', () => {
-  const tips = toolParts(TOOL_LENGTH_M)
+const JAW = DEFAULT_HAND_BY_KIND[GRIPPER_KIND.PARALLEL_JAW]
+const CUP = DEFAULT_HAND_BY_KIND[GRIPPER_KIND.SUCTION]
+
+test('爪先の z = body.length + fingers.length — 描く手は宣言した手 (ADR-152 D3)', () => {
+  const tips = toolParts(JAW, TOOL_LENGTH_M)
     .filter(p => p.part === 'finger')
     .map(p => p.center[2] + p.size[2] / 2)
   assert.equal(tips.length, 2)
-  for (const tip of tips) assert.ok(Math.abs(tip - TOOL_LENGTH_M) < 1e-12, `tip at ${tip}`)
-  // …and nothing is drawn behind the flange face or beyond the TCP.
-  for (const p of toolParts(TOOL_LENGTH_M)) {
+  const declared = (JAW.body.length + JAW.fingers.length) / 1000
+  for (const tip of tips) assert.ok(Math.abs(tip - declared) < 1e-12, `tip at ${tip}`)
+  // The shipped default agrees with the shipped mount: the fingertips end AT the TCP.
+  assert.ok(Math.abs(declared - TOOL_LENGTH_M) < 1e-12)
+  for (const p of toolParts(JAW, TOOL_LENGTH_M)) {
     const half = p.shape === 'cylinder' ? p.size[1] / 2 : p.size[2] / 2
-    assert.ok(p.center[2] - half >= -1e-12 && p.center[2] + half <= TOOL_LENGTH_M + 1e-12, p.part)
+    assert.ok(p.center[2] - half >= -1e-12, `${p.part} is drawn behind the flange face`)
   }
 })
 
-test('the jaws straddle ±X — the closing axis the jaw gate measures (ADR-150 D5)', () => {
-  const xs = toolParts(TOOL_LENGTH_M).filter(p => p.part === 'finger').map(p => p.center[0]).sort()
-  assert.ok(xs[0] < 0 && xs[1] > 0)
-  assert.equal(xs[0], -xs[1])
+test('爪は開口の位置に立つ — 内面間 = maxOpening (進入中の爪は開いている)', () => {
+  const [a, b] = toolParts(JAW, TOOL_LENGTH_M).filter(p => p.part === 'finger').sort((p, q) => p.center[0] - q.center[0])
+  const inner = (b.center[0] - b.size[0] / 2) - (a.center[0] + a.size[0] / 2)
+  assert.ok(Math.abs(inner - JAW.maxOpening / 1000) < 1e-12)
+  assert.equal(a.center[0], -b.center[0], 'the jaws straddle ±X (ADR-150 D5)')
+})
+
+test('吸引はカップ面が TCP に来る — 筐体 + カップの高さ', () => {
+  const parts = toolParts(CUP, TOOL_LENGTH_M)
+  const cup = parts.find(p => p.part === 'cup')
+  assert.ok(Math.abs(cup.center[2] + cup.size[1] / 2 - TOOL_LENGTH_M) < 1e-12)
+  assert.equal(cup.size[0], CUP.cupDiameter / 2000)
+})
+
+test('形の未宣言は線分 (棒) で描く — 判定されない形を描かない', () => {
+  for (const hand of [null, { kind: GRIPPER_KIND.PARALLEL_JAW, maxOpening: 60 }]) {
+    const parts = toolParts(hand, TOOL_LENGTH_M)
+    assert.deepEqual(parts.map(p => p.part), ['rod'])
+    assert.ok(Math.abs(parts[0].center[2] * 2 - TOOL_LENGTH_M) < 1e-12)
+  }
+})
+
+test('割合の式は 0 個 — 手の寸法は取付けの長さから導かない', () => {
+  const src = fs.readFileSync(new URL('./robotTool.js', import.meta.url), 'utf8')
+  assert.equal((src.match(/\d\.\d+ \* L\b/g) ?? []).length, 0)
+  // Same hand, two mounts: the drawn housing and fingers do not change size.
+  const short = toolParts(JAW, 0.1).filter(p => p.part !== 'rod')
+  const long  = toolParts(JAW, 0.3).filter(p => p.part !== 'rod')
+  assert.deepEqual(short, long)
 })
 
 test('a non-positive tool length is refused, not drawn as nothing', () => {
-  assert.throws(() => toolParts(0))
-  assert.throws(() => toolParts(-0.1))
-  assert.throws(() => toolParts(NaN))
+  assert.throws(() => toolParts(JAW, 0))
+  assert.throws(() => toolParts(null, -0.1))
+  assert.throws(() => toolParts(null, NaN))
 })
 
 test('the link the tool is drawn on (wrist_3_link) IS the DH flange frame, orientation included', () => {
@@ -117,10 +149,11 @@ test('toolMountOf is a snapshot — the caller cannot write the tcp through it',
 
 test('the TCP marker stands exactly where the drawn fingertips end (ADR-151 D2)', () => {
   // The claim the dogfooder's screenshot broke: the TCP label and the tool tip
-  // were different points. Both are now read off ONE mount, so this asks that
-  // the two readers agree, in the flange frame the arm draws them in.
+  // were different points. Since ADR-152 the fingertips come from the HAND and
+  // the marker from the MOUNT — two facts; for the shipped default they agree,
+  // and where they would not, `handMountGap` stops the search (robotHand.test).
   const pose = tcpMarkerPose(DEFAULT_TOOL_MOUNT)
-  const tips = toolParts(axialToolLengthM(DEFAULT_TOOL_MOUNT))
+  const tips = toolParts(JAW, axialToolLengthM(DEFAULT_TOOL_MOUNT))
     .filter(p => p.part === 'finger').map(p => p.center[2] + p.size[2] / 2)
   for (const tip of tips) assert.ok(Math.abs(tip - pose.position[2]) < 1e-12)
   assert.deepEqual(pose.position.slice(0, 2), [0, 0])

@@ -65,6 +65,8 @@ import { mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
 import { axialToolLengthM, toolMountOf, toolMountGap } from '../domain/robotTool.js'
+import { handOf, handMountGap, wireGripperFromHand, HAND_STATE } from '../domain/robotHand.js'
+import { createSetTcpHandCommand } from '../command/SetTcpHandCommand.js'
 import {
   CLIENT_ANALYTIC, dhFromDeclaration, inverseKinematics, representativeSolution,
 } from '../robotics/urKinematics.js'
@@ -150,7 +152,8 @@ export class GraspController {
     registerCallback('onSelectRobot',          (id)    => this.selectRobot(id))
     registerCallback('onSelectGraspTarget',    (ref)   => this.selectGraspTarget(ref))
     registerCallback('onSetGraspFeature',      (ref, feature) => this.setGraspFeature(ref, feature))
-    registerCallback('onPreviewGraspSamples',  (kind) => this.previewGraspSamples(kind))
+    registerCallback('onPreviewGraspSamples',  () => this.previewGraspSamples())
+    registerCallback('onSetRobotHand',         (id, hand) => this.setRobotHand(id, hand))
     this.refreshRobots()
   }
 
@@ -196,6 +199,10 @@ export class GraspController {
     const selected = selectRobot(robots, this._selectedRobotId)
     const projection = {
       list:        robots.map(r => ({ id: r.id, label: r.label, hasTcp: r.hasTcp })),
+      // What the SELECTED robot grasps with (ADR-152 D3) — resolved from its tcp,
+      // with the contradiction against its mount (if any) already worded. The
+      // Grasped card is a view of this; it holds no copy (§1.1).
+      hand:        selected ? this._handProjection(selected) : null,
       selectedId:  selected?.id ?? null,
       cardinality: robotCardinality(robots),
       // WHICH ARM these are (ADR-141). Every robot in the scene is drawn from
@@ -214,6 +221,47 @@ export class GraspController {
     if (signature === this._robotsSignature) return
     this._robotsSignature = signature
     this._store.getState().actions.contextSetRobots?.(projection)
+  }
+
+  /**
+   * The panel's read-model of a robot's hand: its resolved state, the hand (mm),
+   * the reasons it is unreadable, and the mount contradiction (ADR-152 D3).
+   * @param {import('../domain/robotFrames.js').Robot} robot
+   */
+  _handProjection(robot) {
+    const r = handOf(robot)
+    const mount = toolMountOf(robot)
+    const lengthMm = mount ? (axialToolLengthM(mount) === null ? null : mount.translation.z) : null
+    return {
+      state: r.state,
+      hand: r.hand,
+      errors: r.errors,
+      mountGap: r.hand ? handMountGap(r.hand, lengthMm) : null,
+      toolLengthMm: lengthMm,
+    }
+  }
+
+  /**
+   * Declare (or clear) what the SELECTED robot grasps with (ADR-152 D3). The
+   * hand belongs to the robot's tcp, so this goes through the scene's one writer
+   * (`SceneService.setTcpHand`) as ONE undoable command, and the panel re-reads
+   * the roster from the `tcpHandChanged` event — nothing here keeps a copy.
+   *
+   * @param {string|null} robotId  null = the search subject
+   * @param {object|null} hand  mm; null clears it back to undeclared
+   * @returns {boolean} whether it was written
+   */
+  setRobotHand(robotId, hand) {
+    const robots = this._robots()
+    const robot = robotId ? robots.find(r => r.id === robotId) : this._selectedRobot()
+    const tcp = robot?.tcpFrame ?? null
+    const service = this._ctrl._service
+    if (!tcp || typeof service?.setTcpHand !== 'function') return false
+    const before = tcp.hand ?? null
+    if (!service.setTcpHand(tcp.id, hand)) return false
+    this._ctrl._commandStack?.push(createSetTcpHandCommand(tcp.id, before, hand, service))
+    this.refreshRobots()
+    return true
   }
 
   /**
@@ -330,19 +378,20 @@ export class GraspController {
   /**
    * Draw the points this run WOULD send, on the object itself (ADR-128).
    *
-   * Driven by the panel because the hand kind lives in its form state, not in the
-   * document — the same reason `captureViewportCamera` is panel-initiated. The
-   * argument is that live kind, so the overlay answers "what would Run send right
-   * now", not "what did the last run send".
+   * Driven by the panel (it knows when the object, its declaration or the hand
+   * changed). The hand kind is read from the search subject's tcp (ADR-152 D3),
+   * so the overlay answers "what would Run send right now".
    *
    * Deliberately draws the SAMPLES rather than a highlight of the declared faces:
    * a picture of the intent could drift from the payload, and a picture that
    * drifts from the payload is how ADR-117 shipped a panel describing geometry
    * the request never carried.
    *
-   * @param {string|null} gripperKind  the panel's live hand kind, or null
    */
-  previewGraspSamples(gripperKind = null) {
+  previewGraspSamples() {
+    // The hand kind is the search subject's declared hand (ADR-152 D3) — the
+    // same source the request reads, not a panel form value.
+    const gripperKind = handOf(this._selectedRobot()).hand?.kind ?? null
     const target = this._selectedTarget()
     if (!target || !this._createSampleView) { this._sampleView?.clear(); return }
 
@@ -554,6 +603,24 @@ export class GraspController {
       return
     }
 
+    // Guard: the robot's HAND (ADR-152 D3). It is read from the tcp — the one
+    // source the drawn tool also reads — never from the panel's form. Undeclared
+    // is a legitimate state (no gripper rides; the grasp gate passes everything,
+    // and the arm draws the bare rod core/ then judges). Unreadable, or
+    // contradicting the mount, stops here with the reason (原則 #11) — correcting
+    // either fact would hide which one was meant.
+    const handProj = this._handProjection(robotEntity)
+    const handGap = handProj.state === HAND_STATE.MALFORMED
+      ? `The hand declared on "${robotEntity.label}" cannot be read — ${handProj.errors[0]}`
+      : handProj.mountGap
+    if (handGap) {
+      ui.contextSetGrasp({ status: 'no-robot', layout, reason: handGap, robotCount: this._robots().length })
+      ctrl._uiView.showToast(handGap, { type: 'warn' })
+      return
+    }
+    const hand = handProj.hand
+    const gripperKind = hand?.kind ?? null
+
     // Guard: a grasp is solved for a robot AND an object (ADR-117). Sending no
     // `target` is what made every run through the UI dead-but-green: core/'s
     // adapter defaults an absent target to zero surface samples, so
@@ -583,7 +650,7 @@ export class GraspController {
     //     these very samples, so one face reports almost no width and the gate
     //     passes hands that cannot close (the ADR-118 defect, re-entered through
     //     the declaration's front door).
-    const featureGaps = graspFeatureGaps(targetEntity.feature, params.gripper?.kind ?? null)
+    const featureGaps = graspFeatureGaps(targetEntity.feature, gripperKind)
     if (featureGaps.length > 0) {
       const reason = featureGaps[0]
       ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
@@ -654,7 +721,7 @@ export class GraspController {
         // the object's own box — and the derived samples ride only for a declared
         // `fallback: 'derived'`. One wire-shaping function for all of it
         // (`graspWire.js`), so the units are converted in exactly one place.
-        target: wireTargetFor(targetEntity, params.gripper?.kind ?? null),
+        target: wireTargetFor(targetEntity, gripperKind),
         // Obstacles are BOXES since ADR-133 D5. This line used to map them as
         // spheres (`radius: mmToM(o.radius)` of a box = NaN), so every obstacle
         // reached core/ without a shape — the hand shape judged against them
@@ -670,7 +737,9 @@ export class GraspController {
         // "declared as zero margin" (原則 #31).
         ...(params.plan ? { plan: params.plan } : {}),
         ...(params.camera  ? { camera:  params.camera }  : {}),
-        ...(params.gripper ? { gripper: params.gripper } : {}),
+        // The hand, derived from the tcp's declaration (ADR-152 D3): kind + gate
+        // params + shape, mm → m. Absent when undeclared (vacuously-true gate).
+        ...(hand ? { gripper: wireGripperFromHand(hand) } : {}),
       },
     }
 

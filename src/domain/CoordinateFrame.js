@@ -139,6 +139,20 @@ export class CoordinateFrame {
     this.mountedOn = null
 
     /**
+     * WHAT the robot grasps with (ADR-152 D3) — only on a robot tcp: the hand's
+     * kind, its gate parameters and optionally its shape (housing + fingers /
+     * cup), in the scene's units (mm). The tcp is the robot/gripper interface
+     * (ADR-151), so the gripper's other fact lives here beside the mount.
+     *
+     * null = UNDECLARED (a pre-ADR-152 scene) — never filled in on read.
+     * Only `domain/robotHand.js` interprets it (`resolveHand`). Serialized with the
+     * frame (scene JSON + Layout DSL + context DSL). Written only through
+     * `SceneService.setTcpHand` (原則 #1).
+     * @type {object | null}
+     */
+    this.hand = null
+
+    /**
      * Declared intent to sit below grade (ADR-097 §Decision 6 / G3).
      *
      * Only meaningful for frames whose declared placement is `grounded` — today

@@ -154,6 +154,9 @@ export function serializeScene(scene) {
         // reloaded tcp would read as the pre-ADR-151 base-relative shape and be
         // reset to the default mount — the user's mount would not survive a save.
         mountedOn:  obj.mountedOn ?? null,
+        // What the robot grasps with (ADR-152 D3). Without it a reloaded tcp
+        // would read as "no hand declared" and the grasp gate would lose it.
+        hand:       obj.hand ?? null,
         translation: {
           x: obj.translation.x,
           y: obj.translation.y,

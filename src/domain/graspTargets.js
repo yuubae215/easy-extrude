@@ -88,7 +88,7 @@ const IDENTITY_Q = Object.freeze({ x: 0, y: 0, z: 0, w: 1 })
  *           the body is HOLLOW (ADR-133 D1). Absent means solid — never `{0,0,0}`,
  *           which would make "no cavity declared" and "a cavity of zero size" the
  *           same value (原則 #31).
- * @property {{state:string, faces:{face:string,region:object}[], errors:string[]}} feature
+ * @property {import('./graspFeature.js').ResolvedGraspFeature} feature
  *           resolved grasp-location declaration (ADR-119 D2) — ALWAYS present, and
  *           `state:'derived'` is a real answer ("nobody said"), never a missing one
  */
@@ -579,7 +579,7 @@ export function hollowBodyBoxes(t, inner) {
  * @param {GraspTarget[]} targets
  * @param {string|null} selectedRef
  * @returns {{list:{ref:string,label:string,feature:object}[], selectedRef:string|null,
- *            cardinality:string, feature:object|null}}
+ *            cardinality:string, feature:object|null, faceWords:Record<string,string>|null}}
  */
 export function targetProjection(targets, selectedRef) {
   const list     = targets ?? []

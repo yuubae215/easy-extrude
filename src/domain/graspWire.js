@@ -21,9 +21,10 @@ const wireSample = (s) => ({ point: mmPointToM(s.point), normal: s.normal })
 
 /** A box's centre and half-extents are lengths; its orientation is not. */
 function wireBox(b) {
+  const [hx, hy, hz] = b.halfExtents
   return {
     center: mmPointToM(b.center),
-    halfExtents: mmPointToM(b.halfExtents),
+    halfExtents: mmPointToM([hx, hy, hz]),
     orientation: b.orientation,
   }
 }
@@ -33,7 +34,7 @@ function wireBox(b) {
  * shape this file does not know THROWS rather than being guessed (原則 #31) —
  * the pre-ADR-152 mapping read every box as a sphere and sent `radius: NaN`.
  *
- * @param {{kind:string, center:number[], halfExtents?:number[], orientation?:number[], radius?:number}} o  mm
+ * @param {{kind:string, center:[number,number,number], halfExtents?:number[], orientation?:number[], radius?:number}} o  mm
  * @returns {object} wire obstacle, m
  */
 export function wireObstacle(o) {

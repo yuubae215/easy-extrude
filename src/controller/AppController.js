@@ -26,6 +26,7 @@ import { CONTEXTUAL }        from '../view/VisibilityAxes.js'
 import { isOriginFrame, isOriginFrameName } from '../domain/originFrame.js'
 import { isFlangeMountedTcp, isRobotTcpFrame, isLegacyBaseRelativeTcp } from '../domain/robotFrames.js'
 import { DEFAULT_TOOL_MOUNT, toolMountEditBlockedReason, toolMountOf } from '../domain/robotTool.js'
+import { handOf } from '../domain/robotHand.js'
 import { resolveDragPlaneNormal } from './dragPlaneNormal.js'
 import { CLICK_TARGET_KIND } from '../domain/clickTarget.js'
 import { Face }            from '../graph/Face.js'
@@ -335,6 +336,8 @@ export class AppController {
       // invalidates: guessing "not a frame" would silently keep a stale roster.
       if (!obj || obj instanceof CoordinateFrame) this._invalidateRobotRoster()
     })
+    // ADR-152 D3: a tcp's hand changed — the grasp panel's roster carries it.
+    this._service.on('tcpHandChanged', () => this._graspCtrl?.refreshRobots())
     this._service.on('objectRenamed', (id, nm)  => {
       outlinerView?.setObjectName(id, nm)
       // A rename only changes a robot's LABEL now (identity is the entity id —
@@ -1314,7 +1317,9 @@ export class AppController {
       // The tool and the TCP marker are drawn from the robot's tool mount — the
       // tcp frame's stored transform (ADR-151). null = the interface is not
       // declared (no tcp): the arm draws no tool rather than a default one.
-      stages.setToolMount(robot.id, toolMountOf(robot))
+      // ADR-152 D3: and from its declared HAND — the housing and fingers drawn are
+      // the ones the request's `gripper` carries (null = undeclared → a rod).
+      stages.setToolMount(robot.id, toolMountOf(robot), handOf(robot).hand)
     }
   }
 

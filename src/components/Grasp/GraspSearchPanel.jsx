@@ -6,7 +6,7 @@ import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
   CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
-  cameraDeclarationGaps, gripperDeclarationGaps, OBJECTIVE,
+  cameraDeclarationGaps, OBJECTIVE,
   GRIPPER_KIND, DECLARED_GRIPPER_KINDS,
   reachPresetsFor, reachDeclarationGaps,
 } from '../../context/GraspDeclarationCatalog.js'
@@ -17,6 +17,8 @@ import {
   CLOSING_AXES, FULL_REGION, isFullRegion, specUsability, featureToDsl, newSpec, contactFacesOf,
 } from '../../domain/graspFeature.js'
 import { sourceLabel } from '../../domain/searchGeometry.js'
+import { defaultHandFor, HAND_BODY_KIND, wireGripperFromHand } from '../../domain/robotHand.js'
+import { mToMM } from '../../domain/worldUnits.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
@@ -118,23 +120,6 @@ function parseCameraForm(v) {
 }
 
 /**
- * Parse the Grasped card into the wire's kind-discriminated hand declaration
- * (ADR-118). The kind decides which fields even exist, so it is carried through
- * rather than inferred — reading `maxOpening` off a suction form would be the
- * flat-object shape the union exists to prevent.
- */
-function parseGripperForm(g) {
-  if (g.kind === GRIPPER_KIND.SUCTION) {
-    const out = { kind: GRIPPER_KIND.SUCTION, cupDiameter: parseNum(g.cupDiameter) }
-    if (!isBlank(g.sealTiltTolerance)) out.sealTiltTolerance = parseNum(g.sealTiltTolerance)
-    return out
-  }
-  const out = { kind: GRIPPER_KIND.PARALLEL_JAW, maxOpening: parseNum(g.maxOpening) }
-  if (!isBlank(g.fingerClearance)) out.fingerClearance = parseNum(g.fingerClearance)
-  return out
-}
-
-/**
  * Submit gaps contributed by the robot roster (ADR-090) — pure, mirroring the
  * camera / gripper gap predicates. Reads the DERIVED `context.robots` read-model
  * (authority: the scene, via GraspController.refreshRobots):
@@ -205,20 +190,13 @@ export function GraspSearchPanel() {
     viewAxis:     CAMERA_PRESETS[0].params.viewAxis.map(String),
     fovHalfAngle: String(CAMERA_PRESETS[0].params.fovHalfAngle),
   }))
-  const [grip, setGrip] = useState(() => {
-    const jaw = gripperPresetsFor(GRIPPER_KIND.PARALLEL_JAW)[0].params
-    const cup = gripperPresetsFor(GRIPPER_KIND.SUCTION)[0].params
-    // Both kinds' fields are seeded so switching kind never lands on a blank form
-    // (selection-first premise, ADR-063); only the active kind's fields are read.
-    return {
-      enabled: false,
-      kind: GRIPPER_KIND.PARALLEL_JAW,
-      maxOpening:        String(jaw.maxOpening),
-      fingerClearance:   String(jaw.fingerClearance),
-      cupDiameter:       String(cup.cupDiameter),
-      sealTiltTolerance: String(cup.sealTiltTolerance),
-    }
-  })
+  // The HAND is not form state any more (ADR-152 D3): it is declared on the
+  // search subject's tcp and arrives in the roster projection. This card is a
+  // view of it; every edit goes to the scene through one undoable command.
+  const handProj = robots?.hand ?? null
+  const hand     = handProj?.hand ?? null
+  const handKind = hand?.kind ?? null
+  const setHand  = (next) => callbacks.onSetRobotHand?.(null, next)
   // 探索の**設定** (ハンド仕様 / カメラ / 重み) は今日ここ — React state — に住み、
   // **キーを持たない**: リロードで消え、export に載らず、undo の外に居る。配置や
   // 掴む場所と同じ形 (宣言がインスタンスに寄生する) の 4 例目で、ADR-129 の MVP には
@@ -266,7 +244,6 @@ export function GraspSearchPanel() {
   }
 
   const camParams  = useMemo(() => parseCameraForm(vision), [vision])
-  const gripParams = useMemo(() => parseGripperForm(grip), [grip])
   const planParams = useMemo(() => ({
     reachMin:           parseNum(reachDecl.reachMin),
     reachMax:           parseNum(reachDecl.reachMax),
@@ -275,7 +252,11 @@ export function GraspSearchPanel() {
   // The gap lists ARE the submit predicate (ADR-058 UX discipline): non-empty
   // disables Run and every reason is printed below the button.
   const visionGaps = vision.enabled ? cameraDeclarationGaps(camParams) : []
-  const gripGaps   = grip.enabled ? gripperDeclarationGaps(gripParams) : []
+  // The hand's own gaps mirror the controller's gate: unreadable, or contradicting
+  // the tool mount (ADR-152 D3). An UNDECLARED hand is not a gap — it is a state.
+  const gripGaps   = handProj?.state === 'malformed'
+    ? handProj.errors.map(e => `hand: ${e}`)
+    : handProj?.mountGap ? [handProj.mountGap] : []
   // A grasp is solved FOR a robot (ADR-090): with none in the scene, or several
   // and no pick, there is no premise — so it is a submit gap like any missing
   // declaration, printed under a disabled Run rather than discovered by failing.
@@ -297,7 +278,7 @@ export function GraspSearchPanel() {
   // face under a parallel jaw. Mirrors the controller's own gate exactly — a
   // disabled Run that forbids a run the controller would allow (or the reverse)
   // is the divergence 原則 #11 is about.
-  const featureGaps = graspFeatureGaps(graspTargets?.feature ?? null, grip.enabled ? grip.kind : null)
+  const featureGaps = graspFeatureGaps(graspTargets?.feature ?? null, handKind)
   const gaps       = [...robotGaps, ...targetGaps, ...featureGaps, ...visionGaps, ...gripGaps, ...reachGaps]
 
   const applyCameraPreset = (p) => setVision(v => ({
@@ -306,23 +287,6 @@ export function GraspSearchPanel() {
     viewAxis:     p.params.viewAxis.map(String),
     fovHalfAngle: String(p.params.fovHalfAngle),
   }))
-  // A preset carries its own kind (ADR-118), so applying one sets the kind too —
-  // otherwise picking a suction preset while the jaw kind is active would fill
-  // fields nothing reads.
-  const applyGripperPreset = (p) => setGrip(g => ({
-    ...g,
-    kind: p.params.kind,
-    ...(p.params.kind === GRIPPER_KIND.SUCTION
-      ? {
-          cupDiameter:       String(p.params.cupDiameter),
-          sealTiltTolerance: String(p.params.sealTiltTolerance),
-        }
-      : {
-          maxOpening:      String(p.params.maxOpening),
-          fingerClearance: String(p.params.fingerClearance),
-        }),
-  }))
-
   // "Use current view" (ADR-081 §5): the controller snapshots the active
   // viewport camera; a null (no camera) is reported, never silently ignored.
   const captureCamera = () => {
@@ -341,10 +305,9 @@ export function GraspSearchPanel() {
   // kind lives in this form, so the panel is what knows when the answer changed —
   // the controller cannot observe a local useState. Re-runs on the three inputs
   // that move the samples: which object, what was declared about it, which hand.
-  const gripKindForSamples = grip.enabled ? grip.kind : null
   useEffect(() => {
-    callbacks.onPreviewGraspSamples?.(gripKindForSamples)
-  }, [callbacks, gripKindForSamples, graspTargets?.selectedRef, graspTargets?.feature])
+    callbacks.onPreviewGraspSamples?.()
+  }, [callbacks, handKind, graspTargets?.selectedRef, graspTargets?.feature])
 
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
@@ -359,7 +322,6 @@ export function GraspSearchPanel() {
     },
     topN:     Number(topN),
     camera:   vision.enabled ? camParams : null,
-    gripper:  grip.enabled ? gripParams : null,
     // Omitted, not zeroed, when undeclared (ADR-120 / 原則 #31).
     plan:     reachDecl.enabled ? planParams : null,
   })
@@ -468,7 +430,7 @@ export function GraspSearchPanel() {
             it" are two halves of one premise. */}
         <GraspSpecEditor
           targets={graspTargets}
-          gripperKind={grip.enabled ? grip.kind : null}
+          gripperKind={handKind}
           onSet={(ref, feature) => callbacks.onSetGraspFeature?.(ref, feature)}
           onFocusSpec={callbacks.onFocusGraspSpec}
           onHoverFace={callbacks.onHoverGraspFace}
@@ -532,53 +494,11 @@ export function GraspSearchPanel() {
 
       <DomainCard
         title="Grasped" domain="grasp"
-        enabled={grip.enabled}
-        onToggle={(on) => setGrip(g => ({ ...g, enabled: on }))}
-        offHint="no gripper declared — graspability passes everything"
+        enabled={handProj?.state === 'declared' || handProj?.state === 'malformed'}
+        onToggle={(on) => setHand(on ? defaultHandFor(GRIPPER_KIND.PARALLEL_JAW) : null)}
+        offHint="no hand declared on this robot's tcp — graspability passes everything, and the arm draws a bare flange→TCP rod (what is judged)"
       >
-        {/* The kind comes first: it decides which fields below even exist
-            (ADR-118). Not a dropdown of presets — the hand type is a different
-            question from which model of that hand. */}
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
-          {DECLARED_GRIPPER_KINDS.map(k => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setGrip(g => ({ ...g, kind: k }))}
-              style={{
-                flex: 1, fontSize: '11px', padding: '3px 6px', borderRadius: '4px',
-                cursor: 'pointer',
-                background: grip.kind === k ? COLOR.accentSoft : COLOR.surfaceSunken,
-                color:      grip.kind === k ? COLOR.accent : '#bbb',
-                border: `1px solid ${grip.kind === k ? COLOR.accent : '#444'}`,
-              }}
-            >
-              {k === GRIPPER_KIND.SUCTION ? 'suction' : 'parallel jaw'}
-            </button>
-          ))}
-        </div>
-        <PresetChips
-          presets={gripperPresetsFor(grip.kind)}
-          activeId={matchingPresetId(gripperPresetsFor(grip.kind), gripParams)}
-          onPick={applyGripperPreset}
-        />
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {grip.kind === GRIPPER_KIND.SUCTION ? (
-            <>
-              <NumField label="cup diameter" value={grip.cupDiameter} step="0.005"
-                onChange={(s) => setGrip(g => ({ ...g, cupDiameter: s }))} />
-              <NumField label="seal tilt (rad)" value={grip.sealTiltTolerance} step="0.05"
-                onChange={(s) => setGrip(g => ({ ...g, sealTiltTolerance: s }))} />
-            </>
-          ) : (
-            <>
-              <NumField label="max opening" value={grip.maxOpening} step="0.005"
-                onChange={(s) => setGrip(g => ({ ...g, maxOpening: s }))} />
-              <NumField label="finger clearance" value={grip.fingerClearance} step="0.005"
-                onChange={(s) => setGrip(g => ({ ...g, fingerClearance: s }))} />
-            </>
-          )}
-        </div>
+        <HandEditor handProj={handProj} onSet={setHand} />
       </DomainCard>
 
       <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginTop: '2px' }}>
@@ -659,6 +579,146 @@ export function GraspSearchPanel() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * HandEditor — what the robot grasps with, read from and written to its tcp
+ * (ADR-152 D3). Kind first (it decides which fields exist — ADR-118); then the
+ * gate parameters; then the SHAPE the arm draws and core/ judges. Lengths are mm
+ * (the scene's unit); a field commits on blur as ONE undoable edit, never per
+ * keystroke. Contradictions with the tool mount are printed, not corrected.
+ */
+function HandEditor({ handProj, onSet }) {
+  const hand = handProj?.hand ?? null
+  if (!handProj || handProj.state === 'undeclared') return null
+  if (!hand) {
+    return (
+      <div style={{ fontSize: '10px', color: COLOR.cautionTone }}>
+        {(handProj.errors ?? []).map((e, i) => <div key={i}>· {e}</div>)}
+        <FaceChip label="replace with the default parallel jaw" active={false}
+          onClick={() => onSet(defaultHandFor(GRIPPER_KIND.PARALLEL_JAW))} grow />
+      </div>
+    )
+  }
+  const jaw = hand.kind === GRIPPER_KIND.PARALLEL_JAW
+  const put = (patch) => onSet({ ...hand, ...patch })
+  const presets = gripperPresetsFor(hand.kind)
+  // Presets are wire values (m); the hand is mm. Compare and apply through the
+  // one conversion — `wireGripperFromHand` — rather than a second table.
+  const wire = wireGripperFromHand(hand)
+  const applyPreset = (p) => put(jaw
+    ? { maxOpening: mToMM(p.params.maxOpening), fingerClearance: mToMM(p.params.fingerClearance) }
+    : { cupDiameter: mToMM(p.params.cupDiameter), sealTiltTolerance: p.params.sealTiltTolerance })
+  const body = hand.body ?? null
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+        {DECLARED_GRIPPER_KINDS.map(k => (
+          <FaceChip key={k} label={k === GRIPPER_KIND.SUCTION ? 'suction' : 'parallel jaw'}
+            active={hand.kind === k} grow
+            onClick={() => { if (hand.kind !== k) onSet(defaultHandFor(k)) }} />
+        ))}
+      </div>
+      <PresetChips presets={presets} activeId={matchingPresetId(presets, wire)} onPick={applyPreset} />
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+        {jaw ? (
+          <>
+            <CommitField label="max opening (mm)" value={hand.maxOpening} onCommit={(v) => put({ maxOpening: v })} />
+            <CommitField label="finger clearance (mm)" value={hand.fingerClearance} onCommit={(v) => put({ fingerClearance: v })} />
+          </>
+        ) : (
+          <>
+            <CommitField label="cup diameter (mm)" value={hand.cupDiameter} onCommit={(v) => put({ cupDiameter: v })} />
+            <CommitField label="seal tilt (rad)" value={hand.sealTiltTolerance} step="0.05" onCommit={(v) => put({ sealTiltTolerance: v })} />
+          </>
+        )}
+      </div>
+
+      <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }}>
+        shape {body ? '' : '— not declared: judged and drawn as the flange→TCP rod'}
+      </div>
+      {body ? (
+        <>
+          <div style={{ display: 'flex', gap: '3px', marginBottom: '4px' }}>
+            {Object.values(HAND_BODY_KIND).map(k => (
+              <FaceChip key={k} label={`housing: ${k}`} active={body.kind === k}
+                onClick={() => {
+                  if (body.kind === k) return
+                  const len = body.kind === HAND_BODY_KIND.CYLINDER ? body.length : body.size[2]
+                  put({ body: k === HAND_BODY_KIND.CYLINDER
+                    ? { kind: k, radius: 32, length: len }
+                    : { kind: k, size: [64, 64, len] } })
+                }} />
+            ))}
+            <FaceChip label="remove shape" active={false}
+              onClick={() => { const { body: _b, fingers: _f, cupHeight: _c, ...rest } = hand; onSet(rest) }} />
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {body.kind === HAND_BODY_KIND.CYLINDER ? (
+              <>
+                <CommitField label="housing radius" value={body.radius} onCommit={(v) => put({ body: { ...body, radius: v } })} />
+                <CommitField label="housing length" value={body.length} onCommit={(v) => put({ body: { ...body, length: v } })} />
+              </>
+            ) : (
+              ['x', 'y', 'z (length)'].map((axis, i) => (
+                <CommitField key={axis} label={`housing ${axis}`} value={body.size[i]}
+                  onCommit={(v) => put({ body: { ...body, size: body.size.map((w, j) => (j === i ? v : w)) } })} />
+              ))
+            )}
+            {jaw ? (
+              ['length', 'thickness', 'width'].map(k => (
+                <CommitField key={k} label={`finger ${k}`} value={hand.fingers[k]}
+                  onCommit={(v) => put({ fingers: { ...hand.fingers, [k]: v } })} />
+              ))
+            ) : (
+              <CommitField label="cup height" value={hand.cupHeight} onCommit={(v) => put({ cupHeight: v })} />
+            )}
+          </div>
+        </>
+      ) : (
+        <FaceChip label="declare the default shape" active={false}
+          onClick={() => { const d = defaultHandFor(hand.kind); put(jaw ? { body: d.body, fingers: d.fingers } : { body: d.body, cupHeight: d.cupHeight }) }} />
+      )}
+      {handProj.toolLengthMm != null && (
+        <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginTop: '4px' }}>
+          TCP {handProj.toolLengthMm} mm from the flange (the tool mount — set by the tcp)
+        </div>
+      )}
+      {handProj.mountGap && (
+        <div style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '2px' }}>· {handProj.mountGap}</div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A number field that commits on blur / Enter (one undoable edit per change,
+ * not per keystroke). A blank or unreadable entry is not written — it reverts
+ * (Number('') === 0 is not a value the user typed).
+ */
+function CommitField({ label, value, onCommit, step = '1' }) {
+  const [text, setText] = useState(value == null ? '' : String(value))
+  useEffect(() => { setText(value == null ? '' : String(value)) }, [value])
+  const commit = () => {
+    const n = Number(text)
+    if (text.trim() === '' || !Number.isFinite(n) || n < 0) { setText(value == null ? '' : String(value)); return }
+    if (n !== value) onCommit(n)
+  }
+  return (
+    <label style={{ fontSize: '10px', color: COLOR.textSecondary, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+      {label}
+      <input
+        type="number" value={text} step={step} min="0"
+        onChange={e => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') commit() }}
+        style={{
+          width: '64px', padding: '4px 6px', borderRadius: '4px',
+          border: `1px solid ${COLOR.border}`, background: COLOR.surfaceSunken, color: COLOR.textPrimary, fontSize: '12px',
+        }}
+      />
+    </label>
   )
 }
 
@@ -962,10 +1022,10 @@ function GraspSpecEditor({ targets, gripperKind, onSet, onFocusSpec, onHoverFace
 
   return (
     <div style={{ marginTop: '6px', marginBottom: '6px' }}>
-      <div style={{ fontSize: '10px', color: '#aaa', marginBottom: '3px' }}>how to grasp</div>
+      <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }}>how to grasp</div>
 
       {feature?.migratedFaces > 0 && (
-        <div style={{ fontSize: '10px', color: '#caa', marginBottom: '3px' }}>
+        <div style={{ fontSize: '10px', color: COLOR.cautionTone, marginBottom: '3px' }}>
           · migrated {feature.migratedFaces} legacy face declaration{feature.migratedFaces === 1 ? '' : 's'} to grasp specs
           (same samples, ranked by score) — the next edit saves them as specs
         </div>
@@ -986,7 +1046,7 @@ function GraspSpecEditor({ targets, gripperKind, onSet, onFocusSpec, onHoverFace
             <FaceChip label="↑" active={false} disabled={i === 0} onClick={() => move(i, -1)} />
             <FaceChip label="↓" active={false} disabled={i === specsNow.length - 1} onClick={() => move(i, 1)} />
             <FaceChip label="×" active={false} onClick={() => { write(specsNow.filter((_, j) => j !== i)); setFocused(0) }} />
-            {!usable.usable && <span title={usable.reason} style={{ fontSize: '9px', color: '#caa' }}>unused</span>}
+            {!usable.usable && <span title={usable.reason} style={{ fontSize: '9px', color: COLOR.cautionTone }}>unused</span>}
           </div>
         )
       })}
@@ -1041,15 +1101,15 @@ function GraspSpecEditor({ targets, gripperKind, onSet, onFocusSpec, onHoverFace
 
       <div style={{
         fontSize: '10px', lineHeight: 1.45,
-        color: feature?.state === GRASP_FEATURE_STATE.DERIVED ? '#889' : '#9ad',
+        color: feature?.state === GRASP_FEATURE_STATE.DERIVED ? COLOR.textSecondary : COLOR.infoTone,
       }}>
         {summary}
       </div>
       {specsNow.map(sp => specUsability(sp, gripperKind ?? null)).filter(u => !u.usable).map((u, i) => (
-        <div key={`u${i}`} style={{ fontSize: '10px', color: '#caa', marginTop: '2px' }}>· excluded — {u.reason}</div>
+        <div key={`u${i}`} style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '2px' }}>· excluded — {u.reason}</div>
       ))}
       {gaps.map((g, i) => (
-        <div key={i} style={{ fontSize: '10px', color: '#caa', marginTop: '2px' }}>· {g}</div>
+        <div key={i} style={{ fontSize: '10px', color: COLOR.cautionTone, marginTop: '2px' }}>· {g}</div>
       ))}
     </div>
   )
