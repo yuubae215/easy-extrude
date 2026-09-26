@@ -842,7 +842,7 @@
           ]
         },
         "graspFeature": {
-          "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). Mirrors layout-1.0 `entity.graspFeature` — added in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`.",
+          "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). Mirrors layout-1.0 `entity.graspFeature` — changed in the SAME change, because ADR-117 already paid for letting this schema lag behind its layout twin. A closed kind-discriminated union; absence means the front derives the faces from the declared hand (ADR-118) and says so, which is a different state from an explicit `anywhere`. `faces` is the legacy face list, read and migrated to specs, never written.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -852,8 +852,127 @@
             "kind": {
               "enum": [
                 "anywhere",
+                "specs",
                 "faces"
               ]
+            },
+            "specs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "description": "One named way to grasp this workpiece (ADR-152 D1) — a GRASP SPEC. Bundles the facts one 'face' could not hold: where the hand comes from (`approach.from` — the APPROACH face, whose outward normal the hand travels against), over which part of it (`approach.region`), how far it may tilt (`approach.tiltTolerance`), which LOCAL axis the jaws close on (`closing`; the two CONTACT faces are derived from it, never declared), and how deep the TCP goes below the approach face (`depth`, mm). The spec list's ORDER is its priority. Declaration only — whether the jaws close, whether the hand hits anything, which spec's candidates come back is solved in core/.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "hand",
+                  "approach"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Unique within the list. Results are reported per spec by this name."
+                  },
+                  "hand": {
+                    "enum": [
+                      "parallelJaw",
+                      "suction"
+                    ],
+                    "description": "Which hand this spec is written for. A spec the declared hand cannot use is not an error — it is excluded from the run with a reason; when every spec is excluded the run stops (it never falls back silently)."
+                  },
+                  "approach": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "from"
+                    ],
+                    "properties": {
+                      "from": {
+                        "enum": [
+                          "+x",
+                          "-x",
+                          "+y",
+                          "-y",
+                          "+z",
+                          "-z"
+                        ],
+                        "description": "The APPROACH face, by its outward LOCAL axis (turns with the object)."
+                      },
+                      "region": {
+                        "description": "Sub-region of that face, normalised 0..1 across its two in-plane axes (u,v). Omitted = the whole face.",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "uMin": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "uMax": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "vMin": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "vMax": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "tiltTolerance": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Largest tilt (radians) from the face-on approach. Omitted = every declared sampling tilt."
+                      }
+                    }
+                  },
+                  "closing": {
+                    "enum": [
+                      "x",
+                      "y",
+                      "z"
+                    ],
+                    "description": "Jaws only: the LOCAL axis the jaws close along. Must not be the approach axis. Omitted = every roll is tried and the width is measured from the samples (the pre-ADR-152 behaviour)."
+                  },
+                  "depth": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Jaws only: how far below the approach face the TCP goes, in the Layout length unit (mm). Omitted = 0, on the face."
+                  }
+                }
+              }
+            },
+            "strategy": {
+              "description": "How this workpiece's specs are used (ADR-152 D1) — a GRASP STRATEGY. 0 or 1 per Solid. Omitted = `priority` / `none`, and the panel SAYS it was omitted (a default is not a choice the user made — 原則 #31).",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "order",
+                "fallback"
+              ],
+              "properties": {
+                "order": {
+                  "enum": [
+                    "priority",
+                    "score"
+                  ],
+                  "description": "priority: return only the candidates of the first spec (in list order) that has any. score: mix every spec's candidates by score."
+                },
+                "fallback": {
+                  "enum": [
+                    "none",
+                    "derived"
+                  ],
+                  "description": "none: no spec feasible → no candidate. derived: only then, search the faces the hand derives (ADR-118)."
+                }
+              }
             },
             "faces": {
               "description": "Required when kind is `faces`: at least one box face, named by its outward LOCAL axis, each with an optional normalised region. A parallel jaw needs a pair of OPPOSED faces (the opening is measured from these samples — ADR-118).",
@@ -881,10 +1000,26 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "uMin": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "uMax": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "vMin": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "vMax": { "type": "number", "minimum": 0, "maximum": 1 }
+                      "uMin": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "uMax": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "vMin": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "vMax": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
                     }
                   }
                 }

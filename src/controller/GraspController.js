@@ -56,10 +56,12 @@ import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '.
 import {
   resolveGraspTargets, selectTarget, targetProjection,
   surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
+  graspSpecsFor, sendsDerivedSamples,
 } from '../domain/graspTargets.js'
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
+import { wireTargetFor, wireObstacle } from '../domain/graspWire.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
-import { mmToM, mmPointToM, mPointToMM } from '../domain/worldUnits.js'
+import { mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
 import { axialToolLengthM, toolMountOf, toolMountGap } from '../domain/robotTool.js'
@@ -346,7 +348,12 @@ export class GraspController {
 
     let samples
     try {
-      samples = surfaceSamplesFor(target, gripperKind ?? null)
+      // What Run would send: every usable spec's approach grid, plus the derived
+      // faces only when they ride too (ADR-152 D1 — `sendsDerivedSamples`).
+      samples = [
+        ...graspSpecsFor(target, gripperKind ?? null).flatMap(sp => sp.samples),
+        ...(sendsDerivedSamples(target.feature) ? surfaceSamplesFor(target, gripperKind ?? null) : []),
+      ]
     } catch {
       // An undeclared hand kind throws by design (ADR-118) — the panel's gap list
       // already says so, and an overlay is not the place to learn it.
@@ -356,7 +363,7 @@ export class GraspController {
     if (!this._sampleView) this._sampleView = this._createSampleView()
     const d = target.dimensions
     this._sampleView.show(samples, {
-      declared: target.feature?.state === GRASP_FEATURE_STATE.DECLARED_FACES,
+      declared: target.feature?.state === GRASP_FEATURE_STATE.DECLARED_SPECS,
       extent:   Math.min(d.x, d.y, d.z),
     })
   }
@@ -642,12 +649,17 @@ export class GraspController {
         // Both are DOCUMENT-derived (mm, ADR-119) — converted to meters here, the
         // same wire-boundary conversion `base` gets above (ADR-136). `normal` is
         // a unit direction, not a length, so it rides unconverted.
-        target: {
-          surfaceSamples: surfaceSamplesFor(targetEntity, params.gripper?.kind ?? null)
-            .map(s => ({ point: mmPointToM(s.point), normal: s.normal })),
-        },
-        obstacles: obstaclesExcluding(targets, targetEntity.ref)
-          .map(o => ({ center: mmPointToM(o.center), radius: mmToM(o.radius) })),
+        // ADR-152 D4: with grasp specs declared the target also carries them (in
+        // priority order, only those the declared hand can use), the strategy, and
+        // the object's own box — and the derived samples ride only for a declared
+        // `fallback: 'derived'`. One wire-shaping function for all of it
+        // (`graspWire.js`), so the units are converted in exactly one place.
+        target: wireTargetFor(targetEntity, params.gripper?.kind ?? null),
+        // Obstacles are BOXES since ADR-133 D5. This line used to map them as
+        // spheres (`radius: mmToM(o.radius)` of a box = NaN), so every obstacle
+        // reached core/ without a shape — the hand shape judged against them
+        // (ADR-152 D5) would have had nothing to hit.
+        obstacles: obstaclesExcluding(targets, targetEntity.ref).map(wireObstacle),
         // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
         // these (ADR-128): until it did, `reach_margin` had no absolute basis and
         // came back permanently unmeasured — which ADR-120 correctly refuses to

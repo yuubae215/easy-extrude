@@ -39,10 +39,12 @@
  */
 
 import { VALID_ENTITY_TYPES } from '../layout/LayoutDslSchema.js'
+import { rotateVec3 } from './rotateVec3.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
-  resolveGraspFeature, faceNormalOrThrow, inPlaneAxesOrThrow,
-  GRASP_FEATURE_STATE, FULL_REGION,
+  resolveGraspFeature, faceNormalOrThrow, inPlaneAxesOrThrow, usableSpecs,
+  faceWorldWord, DECLARABLE_FACES,
+  GRASP_FEATURE_STATE, FULL_REGION, STRATEGY_FALLBACK,
 } from './graspFeature.js'
 
 /**
@@ -125,28 +127,9 @@ function rotationOf(entity) {
   return { ...IDENTITY_Q }
 }
 
-/**
- * Rotate a vector by a quaternion (pure; the standard
- * v + 2q_w(q_v × v) + 2(q_v × (q_v × v)) form, no matrix allocation).
- *
- * This is coordinate math on a declared pose, not a kinematic solution — the same
- * arithmetic the view layer already does to place a mesh.
- *
- * @param {{x:number,y:number,z:number}} v
- * @param {{x:number,y:number,z:number,w:number}} q
- * @returns {{x:number,y:number,z:number}}
- */
-export function rotateVec3(v, q) {
-  // t = 2 * (q_v × v)
-  const tx = 2 * (q.y * v.z - q.z * v.y)
-  const ty = 2 * (q.z * v.x - q.x * v.z)
-  const tz = 2 * (q.x * v.y - q.y * v.x)
-  return {
-    x: v.x + q.w * tx + (q.y * tz - q.z * ty),
-    y: v.y + q.w * ty + (q.z * tx - q.x * tz),
-    z: v.z + q.w * tz + (q.x * ty - q.y * tx),
-  }
-}
+// `rotateVec3` moved to its own module so graspFeature.js (the face-word
+// derivation, ADR-152 D2) can use the same one without an import cycle (§1.1).
+export { rotateVec3 }
 
 /**
  * The single resolution point for "which entities can be picked up" (§1.1).
@@ -285,46 +268,91 @@ export function facesForGripperKind(kind) {
 }
 
 /**
- * Which faces (and which region of each) this run actually samples — the ONE
- * place ADR-119 D3's "declaration wins, one direction" is implemented.
- *
- * A declared face list is used **verbatim**: it is never unioned with the derived
- * set, because a user who declared "here and nowhere else" would otherwise find
- * their statement quietly widened back to the default. `declared-anywhere` and
- * `derived` both fall to ADR-118's hand-driven derivation — same samples, and
- * deliberately still different STATES upstream (one is an answer, the other a
- * silence — the caller reports which, 原則 #31).
+ * Which faces the DERIVED sampling (ADR-118) covers for this run — the faces the
+ * hand touches, whole. Used when nothing narrows the search (`derived`,
+ * `declared-anywhere`) and, under declared specs, only as the declared
+ * `fallback: 'derived'` (ADR-152 D1).
  *
  * `malformed` samples NOTHING and says so by returning an empty plan: the submit
  * gate (`graspFeatureGaps`) blocks the run before it can be mistaken for "the
  * solver found no pose".
  *
- * @param {{state:string, faces:{face:string,region:object}[]}|null|undefined} feature
+ * @param {{state:string}|null|undefined} feature
  * @param {string|null} gripperKind
  * @returns {{face: string, region: {uMin:number,uMax:number,vMin:number,vMax:number}}[]}
  */
 export function samplingPlanFor(feature, gripperKind = null) {
   const state = feature?.state ?? GRASP_FEATURE_STATE.DERIVED
   if (state === GRASP_FEATURE_STATE.MALFORMED) return []
-  if (state === GRASP_FEATURE_STATE.DECLARED_FACES) {
-    return feature.faces.map(f => ({ face: f.face, region: f.region ?? FULL_REGION }))
-  }
   return facesForGripperKind(gripperKind).map(face => ({ face, region: FULL_REGION }))
 }
 
 /**
+ * Does a run with this declaration send the derived `surfaceSamples` at all?
+ * Always, unless specs are declared — then only for `fallback: 'derived'`
+ * (ADR-152 D1: a declaration is never silently widened; the one widening is the
+ * one the user declares).
+ * @param {{state:string, strategy?:{fallback:string}}|null|undefined} feature
+ * @returns {boolean}
+ */
+export function sendsDerivedSamples(feature) {
+  const state = feature?.state ?? GRASP_FEATURE_STATE.DERIVED
+  if (state === GRASP_FEATURE_STATE.MALFORMED) return false
+  if (state !== GRASP_FEATURE_STATE.DECLARED_SPECS) return true
+  return feature.strategy?.fallback === STRATEGY_FALLBACK.DERIVED
+}
+
+/**
+ * The grid of one face region, in the WORLD frame (mm), each sample carrying the
+ * face's outward world normal. The one sampler: the derived faces and every spec's
+ * approach region go through it, so a full region reproduces the pre-ADR-119 set
+ * exactly and a migrated face list reproduces its old samples exactly.
+ *
+ * @param {GraspTarget} target
+ * @param {string} face
+ * @param {{uMin:number,uMax:number,vMin:number,vMax:number}} region
+ * @returns {{point:[number,number,number], normal:[number,number,number]}[]}
+ */
+export function faceRegionSamples(target, face, region) {
+  const { position: p, dimensions: d, rotation: q } = target
+  const half = { x: d.x / 2, y: d.y / 2, z: d.z / 2 }
+  const n = faceNormalOrThrow(face)
+  const worldNormal = rotateVec3(n, q)
+  const [uAxis, vAxis] = inPlaneAxesOrThrow(face)
+  const nAxis = n.x !== 0 ? 'x' : n.y !== 0 ? 'y' : 'z'
+  const samples = []
+  for (let i = 1; i <= GRID; i++) {
+    for (let j = 1; j <= GRID; j++) {
+      // Normalised position inside the declared region: the same i/(GRID+1)
+      // fractions the whole-face grid used, remapped into [uMin,uMax].
+      const u = region.uMin + (region.uMax - region.uMin) * (i / (GRID + 1))
+      const v = region.vMin + (region.vMax - region.vMin) * (j / (GRID + 1))
+      const local = { x: 0, y: 0, z: 0 }
+      local[uAxis] = -half[uAxis] + d[uAxis] * u
+      local[vAxis] = -half[vAxis] + d[vAxis] * v
+      // Ride the face itself, at the full half-extent along its normal — this is
+      // the term the old top-only sampling never contributed for a jaw, and its
+      // absence is what halved the measured width.
+      local[nAxis] = n[nAxis] * half[nAxis]
+      const world = rotateVec3(local, q)
+      samples.push({
+        point:  /** @type {[number,number,number]} */ ([p.x + world.x, p.y + world.y, p.z + world.z]),
+        normal: /** @type {[number,number,number]} */ ([worldNormal.x, worldNormal.y, worldNormal.z]),
+      })
+    }
+  }
+  return samples
+}
+
+/**
  * Derive the wire-shaped `target.surfaceSamples` for one target: a grid over each
- * face this run samples (declared, or derived from the hand — `samplingPlanFor`),
- * each sample carrying that face's outward normal, expressed in the world frame.
+ * face the DERIVED plan covers (`samplingPlanFor`), each sample carrying that
+ * face's outward normal, expressed in the world frame.
  *
- * Choosing WHICH face is a declaration (what the hand touches, or what the user
- * said); deciding whether the grasp holds is `core/`'s. Rotation is applied to the
- * local offsets and to the normals, so a tilted solid reports its actual faces
- * rather than an axis-aligned lie.
- *
- * The grid runs at the same fractions inside a declared REGION as it does across a
- * whole face, so a full region reproduces the pre-ADR-119 sample set exactly —
- * adding the vocabulary does not move anyone's existing answers.
+ * Choosing WHICH face is a declaration (what the hand touches); deciding whether
+ * the grasp holds is `core/`'s. Rotation is applied to the local offsets and to
+ * the normals, so a tilted solid reports its actual faces rather than an
+ * axis-aligned lie.
  *
  * @param {GraspTarget} target
  * @param {string|null} [gripperKind]  a `GRIPPER_KIND` value, or null when undeclared
@@ -332,38 +360,56 @@ export function samplingPlanFor(feature, gripperKind = null) {
  */
 export function surfaceSamplesFor(target, gripperKind = null) {
   if (!target) return []
-  const { position: p, dimensions: d, rotation: q } = target
-  const half = { x: d.x / 2, y: d.y / 2, z: d.z / 2 }
-  const samples = []
+  return samplingPlanFor(target.feature, gripperKind)
+    .flatMap(({ face, region }) => faceRegionSamples(target, face, region))
+}
 
-  for (const { face, region } of samplingPlanFor(target.feature, gripperKind)) {
-    const n = faceNormalOrThrow(face)
-    const worldNormal = rotateVec3(n, q)
-    const [uAxis, vAxis] = inPlaneAxesOrThrow(face)
-    const nAxis = n.x !== 0 ? 'x' : n.y !== 0 ? 'y' : 'z'
-
-    for (let i = 1; i <= GRID; i++) {
-      for (let j = 1; j <= GRID; j++) {
-        // Normalised position inside the declared region: the same i/(GRID+1)
-        // fractions the whole-face grid used, remapped into [uMin,uMax].
-        const u = region.uMin + (region.uMax - region.uMin) * (i / (GRID + 1))
-        const v = region.vMin + (region.vMax - region.vMin) * (j / (GRID + 1))
-        const local = { x: 0, y: 0, z: 0 }
-        local[uAxis] = -half[uAxis] + d[uAxis] * u
-        local[vAxis] = -half[vAxis] + d[vAxis] * v
-        // Ride the face itself, at the full half-extent along its normal — this is
-        // the term the old top-only sampling never contributed for a jaw, and its
-        // absence is what halved the measured width.
-        local[nAxis] = n[nAxis] * half[nAxis]
-        const world = rotateVec3(local, q)
-        samples.push({
-          point:  /** @type {[number,number,number]} */ ([p.x + world.x, p.y + world.y, p.z + world.z]),
-          normal: /** @type {[number,number,number]} */ ([worldNormal.x, worldNormal.y, worldNormal.z]),
-        })
-      }
+/**
+ * The wire-shaped `target.graspSpecs` for one target and the declared hand
+ * (ADR-152 D4), in priority order, only the specs this hand can use
+ * (`usableSpecs`). Everything is resolved from the object's LOCAL declaration to
+ * the WORLD frame here — the approach region's grid, the closing axis rotated by
+ * the object's pose — so `core/` never learns about local axes. Lengths stay in
+ * the scene unit (mm); the controller converts at the wire (ADR-136).
+ *
+ * Absent facts stay absent: no closing axis → no `closingAxis` key (the solver
+ * then tries every roll, as before); depth 0 is sent only when DECLARED.
+ *
+ * @param {GraspTarget} target
+ * @param {string|null} gripperKind
+ * @returns {{id:string, samples:object[], closingAxis?:[number,number,number], depth?:number, tiltTolerance?:number}[]}
+ */
+export function graspSpecsFor(target, gripperKind = null) {
+  if (!target) return []
+  return usableSpecs(target.feature, gripperKind).map(spec => {
+    const wire = {
+      id: spec.name,
+      samples: faceRegionSamples(target, spec.approach.from, spec.approach.region),
     }
-  }
-  return samples
+    if (spec.closing) {
+      const a = { x: 0, y: 0, z: 0 }
+      a[spec.closing] = 1
+      const w = rotateVec3(a, target.rotation)
+      wire.closingAxis = /** @type {[number,number,number]} */ ([w.x, w.y, w.z])
+    }
+    if (spec.depthDeclared) wire.depth = spec.depth
+    if (spec.approach.tiltTolerance !== null) wire.tiltTolerance = spec.approach.tiltTolerance
+    return wire
+  })
+}
+
+/**
+ * The target itself as a wire box (ADR-152 D4) — centre and half-extents in the
+ * scene unit (mm), its world rotation. Sent so `core/` can measure a declared
+ * closing axis's width as the object's THICKNESS; it never becomes an obstacle.
+ * Same shape as an obstacle box minus `kind` — the contract's `target.box` is
+ * one box by definition and carries no discriminator.
+ * @param {GraspTarget} target
+ * @returns {{center:[number,number,number], halfExtents:[number,number,number], orientation:[number,number,number,number]}}
+ */
+export function targetBoxFor(target) {
+  const { kind: _kind, ...rest } = box(target.position, halved(target.dimensions), target.rotation)
+  return rest
 }
 
 /**
@@ -546,5 +592,12 @@ export function targetProjection(targets, selectedRef) {
     // grasp" block does not re-run the "which one" question (原則 #25 — resolved
     // once, here).
     feature:     selected?.feature ?? null,
+    // "+x — where is that?" for the SELECTED object as it stands now (ADR-152 D2):
+    // face → world word ('top', 'left', 'tilted'). Derived from its rotation on
+    // every refresh, never stored — turn the object and the words change while
+    // the declaration does not.
+    faceWords:   selected
+      ? Object.fromEntries(DECLARABLE_FACES.map(f => [f, faceWorldWord(f, selected.rotation).word]))
+      : null,
   }
 }

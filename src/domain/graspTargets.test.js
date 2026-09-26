@@ -331,6 +331,18 @@ test('対象 0 個の projection は空リストと none を運ぶ (掴む場所
   // (= derived) ではない。0 台のときに derived を運ぶと、掴む対象が無いのに
   // 「上面全体から探します」と読める行が出る (原則 #31 の 0 の顔)。
   assert.deepEqual(p, {
-    list: [], selectedRef: null, cardinality: TARGET_CARDINALITY.NONE, feature: null,
+    list: [], selectedRef: null, cardinality: TARGET_CARDINALITY.NONE, feature: null, faceWords: null,
   })
+})
+
+test('選んだ対象の面の世界向きが projection に乗り、回転に付いて変わる (ADR-152 D2)', () => {
+  const box = (rotation) => ({
+    ref: 'b', type: 'Solid', name: 'B',
+    position: { x: 0, y: 0, z: 0 }, dimensions: { x: 1, y: 1, z: 1 }, rotation,
+  })
+  const upright = targetProjection(resolveGraspTargets([box(undefined)]), null)
+  assert.equal(upright.faceWords['+x'], 'front')
+  const turned = targetProjection(resolveGraspTargets([box({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })]), null)
+  assert.equal(turned.faceWords['+x'], 'left')
+  assert.equal(turned.faceWords['+z'], 'top')
 })

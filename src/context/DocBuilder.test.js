@@ -383,10 +383,15 @@ describe('setEntityGraspFeature', () => {
   })
 
   it('the written declaration is what the domain reads back — the round trip closes', () => {
-    const feature = { kind: 'faces', faces: [{ face: '+z', region: { uMin: 0.2, uMax: 0.8 } }] }
+    const feature = {
+      kind: 'specs',
+      specs: [{ name: 'top', hand: 'suction', approach: { from: '+z', region: { uMin: 0.2, uMax: 0.8 } } }],
+      strategy: { order: 'priority', fallback: 'none' },
+    }
     const doc = setEntityGraspFeature(docWithSolid(), 'widget', feature)
     const [target] = resolveGraspTargets(doc.specification.layout.entities)
-    assert.equal(target.feature.state, 'declared-faces')
-    assert.deepEqual(target.feature.faces[0].region, { uMin: 0.2, uMax: 0.8, vMin: 0, vMax: 1 })
+    assert.equal(target.feature.state, 'declared-specs')
+    assert.deepEqual(target.feature.specs[0].approach.region, { uMin: 0.2, uMax: 0.8, vMin: 0, vMax: 1 })
+    assert.equal(target.feature.strategyDeclared, true)
   })
 })

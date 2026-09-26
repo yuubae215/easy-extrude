@@ -278,7 +278,8 @@ test('live geometry wins over the document, and the document keeps its declarati
   gc.openGrasp()
   const targets = store.getState().context.graspTargets
   assert.equal(targets.list.length, 1)
-  assert.equal(targets.feature.state, 'declared-faces', 'the document’s declaration survived the join')
+  // A legacy face list is read and migrated (ADR-152 D1) — still the document's.
+  assert.equal(targets.feature.state, 'declared-specs', 'the document’s declaration survived the join')
 
   const target = gc._selectedTarget()
   assert.equal(target.position.x, 900, 'geometry came from the live scene, not the stale document')
@@ -641,18 +642,48 @@ test('宣言されたリーチ範囲が plan{} で載り、未宣言なら鍵ご
 
 // ── Where to grasp: the declaration reaches the wire, and wins (ADR-119 D2/D3) ─
 
-test('宣言された面だけが request のサンプルになる — 導出面と混ざらない (D3)', async () => {
+test('宣言された仕様だけが request に載る — 導出面と混ざらない (D3 / ADR-152 D4)', async () => {
   const rec = recordingBff()
   const { gc } = setup({
     bff: rec.bff,
-    layoutDsl: layoutWithFeature({ kind: 'faces', faces: [{ face: '-z' }] }),
+    layoutDsl: layoutWithFeature({
+      kind: 'specs',
+      specs: [
+        { name: 'under', hand: 'suction', approach: { from: '-z' } },
+        { name: 'pinch', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'x', depth: 20 },
+      ],
+    }),
   })
   await gc.runGraspSearch({ gripper: { kind: 'suction', cupDiameter: 0.04 } })
-  const samples = rec.sent.graspSearch.target.surfaceSamples
-  assert.ok(samples.length > 0)
-  // Suction derives '+z'. Not one derived sample may appear — asserting only
-  // that the declared face is present would pass under a merge.
-  for (const s of samples) assert.equal(s.normal[2], -1)
+  const target = rec.sent.graspSearch.target
+  // Suction derives '+z'; with specs declared and no `fallback: derived`, the
+  // derived samples are not sent at all — asserting only that the declared face
+  // is present would pass under a merge.
+  assert.equal(target.surfaceSamples, undefined)
+  // Only the spec this hand can use rides, in order; the jaw spec is excluded.
+  assert.deepEqual(target.graspSpecs.map(s => s.id), ['under'])
+  for (const s of target.graspSpecs[0].samples) assert.equal(s.normal[2], -1)
+  assert.deepEqual(target.strategy, { order: 'priority', fallback: 'none' })
+  assert.ok(target.box && target.box.halfExtents.length === 3, 'the target box rides for the closing-axis width')
+})
+
+test('ジョーの仕様は閉じ軸を世界で、深さを m で送る (ADR-152 D4 — 単位変換は 1 箇所)', async () => {
+  const rec = recordingBff()
+  const { gc } = setup({
+    bff: rec.bff,
+    layoutDsl: layoutWithFeature({
+      kind: 'specs',
+      specs: [{ name: 'pinch', hand: 'parallelJaw', approach: { from: '+z' }, closing: 'y', depth: 20 }],
+      strategy: { order: 'score', fallback: 'derived' },
+    }),
+  })
+  await gc.runGraspSearch({ gripper: { kind: 'parallelJaw', maxOpening: 0.08 } })
+  const target = rec.sent.graspSearch.target
+  const [spec] = target.graspSpecs
+  assert.deepEqual(spec.closingAxis.map(v => Math.round(v * 1e9) / 1e9), [0, 1, 0])
+  assert.equal(spec.depth, 0.02)
+  // A declared fallback carries the derived samples too.
+  assert.ok(target.surfaceSamples.length > 0)
 })
 
 test('宣言が無いときは導出のまま — 語彙を足しても既存の答えが動かない', async () => {
@@ -710,14 +741,17 @@ test('setGraspFeature は文書編集の唯一の入口へ委譲し、投影を�
     return Promise.resolve()
   }
   gc.openGrasp()
-  await gc.setGraspFeature('widget', { kind: 'faces', faces: [{ face: '+y' }, { face: '-y' }] })
+  await gc.setGraspFeature('widget', {
+    kind: 'specs',
+    specs: [{ name: 'side', hand: 'parallelJaw', approach: { from: '+y' }, closing: 'x' }],
+  })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].ref, 'widget')
   // The projection reflects what the DOCUMENT now says — not what we sent.
-  assert.equal(store.getState().context.graspTargets.feature.state, 'declared-faces')
+  assert.equal(store.getState().context.graspTargets.feature.state, 'declared-specs')
   assert.deepEqual(
-    store.getState().context.graspTargets.feature.faces.map(f => f.face),
-    ['+y', '-y'],
+    store.getState().context.graspTargets.feature.specs.map(sp => [sp.name, sp.approach.from, sp.closing]),
+    [['side', '+y', 'x']],
   )
 })
 

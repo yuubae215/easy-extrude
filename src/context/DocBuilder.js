@@ -207,7 +207,9 @@ export function setEntityPose(doc, ref, pose) {
  *
  * @param {object} doc
  * @param {string} ref  Layout DSL entity ref of the Solid
- * @param {object|null} feature  `{kind:'anywhere'}` | `{kind:'faces', faces:[…]}` | null to clear
+ * @param {object|null} feature  `{kind:'anywhere'}` | `{kind:'specs', specs:[…], strategy?}` | null to clear
+ *   (ADR-152 D1: the writer never writes the legacy `faces` kind — it is read and
+ *   migrated by `resolveGraspFeature`, and the panel writes specs back)
  * @returns {object} new doc
  */
 export function setEntityGraspFeature(doc, ref, feature) {

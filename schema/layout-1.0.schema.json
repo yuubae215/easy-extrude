@@ -234,7 +234,7 @@
       }
     },
     "graspFeature": {
-      "description": "Declares WHERE on a Solid it should be grasped (ADR-119 D2 / ADR-128). OPTIONAL: with no graspFeature the front derives the faces from the declared hand (ADR-118) and the panel says so — absence is a state (\"nobody said\"), distinct from an explicit `anywhere` (\"I looked and chose not to narrow\"). A closed kind-discriminated union, same governance as `gripper` (ADR-118): the kind decides which fields exist. Declared faces are used VERBATIM and never merged with the derived set (ADR-119 D3), so a declaration cannot be silently widened.",
+      "description": "Declares HOW a Solid should be grasped (ADR-119 D2 / ADR-128 / ADR-152 D1). OPTIONAL: with no graspFeature the front derives the faces from the declared hand (ADR-118) and the panel says so — absence is a state (\"nobody said\"), distinct from an explicit `anywhere` (\"I looked and chose not to narrow\"). A closed kind-discriminated union, same governance as `gripper` (ADR-118): the kind decides which fields exist. Declared specs are used VERBATIM and never merged with the derived set (ADR-119 D3) unless the strategy itself declares `fallback: derived`.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -242,14 +242,26 @@
       ],
       "properties": {
         "kind": {
-          "description": "`anywhere` = declared and deliberately not narrowed (samples follow the hand's derived faces). `faces` = grasp only on the listed faces.",
+          "description": "`anywhere` = declared and deliberately not narrowed (samples follow the hand's derived faces). `specs` = grasp only as the listed grasp specs say, used as `strategy` says. `faces` is the pre-ADR-152 face list: still READ and migrated to specs on load (each face → one spec approaching from it, strategy `score`/`none` — the same answer), never written.",
           "enum": [
             "anywhere",
+            "specs",
             "faces"
           ]
         },
+        "specs": {
+          "description": "Required when kind is `specs`: at least one grasp spec, in priority order.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/graspSpec"
+          }
+        },
+        "strategy": {
+          "$ref": "#/$defs/graspStrategy"
+        },
         "faces": {
-          "description": "Required when kind is `faces`: the box faces worth touching, named by their outward LOCAL axis. At least one — an empty list declares nowhere to grasp, which downstream is indistinguishable from an honest \"no feasible pose\" (原則 #31). A parallel jaw needs a pair of OPPOSED faces: the solver measures the opening from these very samples, so a single face reports almost no width (ADR-118).",
+          "description": "LEGACY (kind `faces`, pre-ADR-152): read and migrated to specs, never written. At least one face, each with an optional normalised region.",
           "type": "array",
           "minItems": 1,
           "items": {
@@ -274,6 +286,96 @@
               }
             }
           }
+        }
+      }
+    },
+    "graspSpec": {
+      "description": "One named way to grasp this workpiece (ADR-152 D1) — a GRASP SPEC. Bundles the facts one 'face' could not hold: where the hand comes from (`approach.from` — the APPROACH face, whose outward normal the hand travels against), over which part of it (`approach.region`), how far it may tilt (`approach.tiltTolerance`), which LOCAL axis the jaws close on (`closing`; the two CONTACT faces are derived from it, never declared), and how deep the TCP goes below the approach face (`depth`, mm). The spec list's ORDER is its priority. Declaration only — whether the jaws close, whether the hand hits anything, which spec's candidates come back is solved in core/.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "hand",
+        "approach"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the list. Results are reported per spec by this name."
+        },
+        "hand": {
+          "enum": [
+            "parallelJaw",
+            "suction"
+          ],
+          "description": "Which hand this spec is written for. A spec the declared hand cannot use is not an error — it is excluded from the run with a reason; when every spec is excluded the run stops (it never falls back silently)."
+        },
+        "approach": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from"
+          ],
+          "properties": {
+            "from": {
+              "enum": [
+                "+x",
+                "-x",
+                "+y",
+                "-y",
+                "+z",
+                "-z"
+              ],
+              "description": "The APPROACH face, by its outward LOCAL axis (turns with the object)."
+            },
+            "region": {
+              "$ref": "#/$defs/faceRegion"
+            },
+            "tiltTolerance": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Largest tilt (radians) from the face-on approach. Omitted = every declared sampling tilt."
+            }
+          }
+        },
+        "closing": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "description": "Jaws only: the LOCAL axis the jaws close along. Must not be the approach axis. Omitted = every roll is tried and the width is measured from the samples (the pre-ADR-152 behaviour)."
+        },
+        "depth": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Jaws only: how far below the approach face the TCP goes, in the Layout length unit (mm). Omitted = 0, on the face."
+        }
+      }
+    },
+    "graspStrategy": {
+      "description": "How this workpiece's specs are used (ADR-152 D1) — a GRASP STRATEGY. 0 or 1 per Solid. Omitted = `priority` / `none`, and the panel SAYS it was omitted (a default is not a choice the user made — 原則 #31).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "fallback"
+      ],
+      "properties": {
+        "order": {
+          "enum": [
+            "priority",
+            "score"
+          ],
+          "description": "priority: return only the candidates of the first spec (in list order) that has any. score: mix every spec's candidates by score."
+        },
+        "fallback": {
+          "enum": [
+            "none",
+            "derived"
+          ],
+          "description": "none: no spec feasible → no candidate. derived: only then, search the faces the hand derives (ADR-118)."
         }
       }
     },
