@@ -4,7 +4,7 @@ goal WhatYouTypeIsEchoedWhereYouCanSeeIt
 uuid 9084d313-bd71-40f5-9a74-c5ebdfd2b7f5
 summary "文書を書いている最中に、いま書いたものがどう効いたかが見えている。そして暫定であることの宣言が、決着によって畳まれる (満期切れのまま生き続けない)"
 state UnderReview
-labels adr-112, ia-phase-5-2, doc-intake, provisional-address, principle-26
+labels adr-112, ia-phase-5-2, doc-intake, provisional-address, principle-26, term-p-reach, change-intake
 artifacts
 - "docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md"
 - "src/view/DocIntake.js"
@@ -30,7 +30,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 22a51849-b69e-4b25-8a2e-09d33d5d05f9
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の RevenueMaximized 配下 (文脈文書を最後まで書き切れるかが、その先のすべての判定の前提だから)。2026-08-05 に ADR-111 と同じ PR で実装され、e2e『文書を入力しているあいだ、左のナビゲータは覆われない』が焼いている。吊り替えは事業木側の編集なので 登録簿 DEF-053 で扱う (2026-09-26 まで「DEF-010 (ADR-094) と同じレーン」と書いていたが、DEF-010 は ADR-094 自身の接続で満期を迎えており、この木の接続は一度も行を持っていなかった)"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal WhatIsTypedIsSeenWhileTyping の下に solution Adr112Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

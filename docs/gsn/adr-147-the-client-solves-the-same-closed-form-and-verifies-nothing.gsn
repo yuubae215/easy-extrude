@@ -4,7 +4,7 @@ goal ThePreviewedPoseIsExactlyTheCandidatePoseAndNothingElseIsClaimed
 uuid ff0ce2a2-1d79-4ab6-8045-66ef0b855d62
 summary "core/ が居ない環境で腕を見たとき、見えている姿勢が候補の姿勢であると信じてよい。そしてそれ以上は何も信じてはいけないことが画面から分かる。解でなく性質: '解析解を移植する' は解の形で、持ち上げた性質がこれ"
 state Approved
-labels adr-147, adr-144, adr-127, adr-135, adr-141, adr-146, principle-2, principle-11, principle-28, principle-31, app, core
+labels adr-147, adr-144, adr-127, adr-135, adr-141, adr-146, principle-2, principle-11, principle-28, principle-31, app, core, term-q, change-depiction-parity
 
     context Adr144ChoseSamplingBecauseTheConstraintWasDifferentThen
     uuid bcd0ccce-b918-47f9-93a9-4aae35fbe455

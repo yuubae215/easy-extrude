@@ -4,7 +4,7 @@ goal ADeclaredDefaultReachesThePixel
 uuid c5c65b0b-0a1e-4266-8147-765433ff3f77
 summary "実体が『表示』と宣言されている (EXPLICIT_DEFAULTS の既定、またはユーザーの eye) なら、その実体は実際に描かれている。ADR-096 G1 の不変条件が、ブートのシーンだけでなく **読み込んだシーン (テンプレート / .ctx.json import)** でも成立する"
 state UnderReview
-labels adr-143, adr-096, adr-142, principle-4, principle-11, principle-31, app
+labels adr-143, adr-096, adr-142, principle-4, principle-11, principle-31, app, term-p-reach, change-first-view
 
     context TheCompositionHadFourCallersNotFive
     uuid 20736dec-9030-40b7-9457-e7fe39261bde

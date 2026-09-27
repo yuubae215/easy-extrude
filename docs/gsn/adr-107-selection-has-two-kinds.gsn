@@ -4,7 +4,7 @@ goal AllZonesSpeakOfTheSameSelection
 uuid 81db89c7-cac6-4606-bf05-01e49339dc62
 summary "選んだものについて全ゾーンが同じことを語る。選べるものが『3D に姿を持つ実体』だけでなくなっても、選択の入口は 1 つのままで、種の混在は書けず、どの種を選んでも 3D が無言にならない"
 state UnderReview
-labels adr-107, selection, ia-redesign, principle-2, principle-11, principle-31, kind-union
+labels adr-107, selection, ia-redesign, principle-2, principle-11, principle-31, kind-union, term-p-operate, change-selection
 artifacts
 - "docs/adr/ADR-107-selection-has-two-kinds.md"
 - "docs/ia-redesign/02-grouping-criteria.md"
@@ -28,7 +28,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 9a3b143c-c2ba-4b0e-b88d-072e8f4fdf0e
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (uuid d17c02f9-f551-4d7b-a927-0636126d4dfb、ByDirectManipulationTrust 配下) — 選んだものと画面が語るものが食い違わないことは直接操作への信頼そのものだから。保留理由が変わった (解消ではない): 証拠は未来形でなくなり (実装済み・e2e 2 本が緑)、窓も今日の器の中に実在する。それでも吊らないのは、この goal が主張する「選んだものと画面が語るものが食い違わない」の効き目が出るのは**場と N パネルが同時に見える**ときであり、それは ADR-106 の器の移動が前提だから — 今つなぐと、まだ誰も同時に見ていない画面についての主張を親へ渡すことになる。ADR-106 の実装 PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal SelectionAndViewpointArePredictable の下に solution Adr107Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

@@ -4,7 +4,7 @@ goal TheArmAppearsOnceAndCarriesTheToolItWasSolvedWith
 uuid 3c57c600-03d4-4091-a5ce-93d50ec6f020
 summary "画面の腕は常にシーンが宣言したスタイルだけで現れ (途中で別の形を見せない)、2 つのスタイルは同じシルエットを持ち、腕のフランジには解いたのと同じツールが剛体で付いていて、その先端が TCP・その閉じ軸が把持ゲートの測る軸に一致する。解でなく性質: 'キャッシュする' 'ツールを描く' はどちらも解の形"
 state Approved
-labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, principle-4, principle-5, principle-11, principle-15, principle-31, app, core, view
+labels adr-150, adr-149, adr-148, adr-147, adr-145, adr-127, adr-083, adr-084, principle-4, principle-5, principle-11, principle-15, principle-31, app, core, view, term-q, change-depiction-parity
 
     context ThreeReportsFromTheDogfooder
     uuid 5f9d3d50-0e49-40e9-8a63-6db6aad2d947

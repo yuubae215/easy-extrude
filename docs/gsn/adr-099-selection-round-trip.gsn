@@ -4,7 +4,7 @@ goal SelectionIsOneFactSeenThroughEveryWindow
 uuid 8db2216c-7071-473f-8fdb-e3d3b5cfa7cb
 summary "パネルとビューポートが『1 つの選択』の 2 つの窓になる。どちらから触っても同じ事実が動き、両方が同じように追従し、選択という決定はその結果が見えるところまでを含む (選べたのに画面が沈黙する、が構造的に表現不能になる)"
 state UnderReview
-labels adr-099, selection, link-network
+labels adr-099, selection, link-network, term-p-operate, change-selection
 artifacts
 - "docs/adr/ADR-099-selection-round-trip-one-entry.md"
 - "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
@@ -24,7 +24,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 2d9676de-9cd3-4d24-b7ec-4294b25d753a
-    summary "事業木への接続は**まだ実施していない** (起票時の保留を継続)。証拠は未来形でなくなったので接続の前提は満たしたが、接続予定先 MobileStructureViewIsReadable (uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e) が問うのは『モバイルで構造ビューが読めるか』であり、往復の到達性はその必要条件にすぎない。当事者の dogfooding (往復が自然か = 主観) が 1 回でも入った時点で solution として吊る — 機械で閉じた到達性だけを事業木へ吊ると、読めるかどうかを問うていない証拠が読める根拠として並ぶ"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal SelectionAndViewpointArePredictable の下に solution Adr099Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

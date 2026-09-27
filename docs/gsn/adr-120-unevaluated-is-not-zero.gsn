@@ -4,7 +4,7 @@ goal UnevaluatedObjectivesDoNotLookLikeZeroScores
 uuid 5342cb98-1d3f-4496-aa31-26ba8253b966
 summary "評価できなかった objective が 0 点として振る舞わず、リクエスト間のスコア比較可能性が宣言の有無で壊れない"
 state UnderReview
-labels adr-120, scoring, principle-31, principle-11, partially-implemented
+labels adr-120, scoring, principle-31, principle-11, partially-implemented, term-l-blind, change-diagnosis
 artifacts
 - "docs/adr/ADR-120-unevaluated-is-not-zero.md"
 
@@ -30,7 +30,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid e512f8d5-81d9-486c-ab11-239efc630c43
-    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal ARejectionPointsAtTheSpecToChange の下に solution Adr120Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/adr-081-grasp-validation.gsn"
 

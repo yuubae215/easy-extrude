@@ -4,7 +4,7 @@ goal EntranceCountIsIndependentOfObjectCount
 uuid b340f294-9a64-451b-ad9e-19398c861816
 summary "入口の個数が、対象の種類が増えても増えない。ユーザーは「どれを押すのか」ではなく「何をしたいのか」で選べ、かつ 01-inventory の 48 行すべてがどこかのグループに属している"
 state UnderReview
-labels adr-108, ia-phase-5, entrances, principle-31, bounded-growth, census
+labels adr-108, ia-phase-5, entrances, principle-31, bounded-growth, census, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-108-entrances-are-verbs-not-objects.md"
 - "docs/ia-redesign/02-grouping-criteria.md"
@@ -26,7 +26,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 22301551-60b7-4b97-8785-1c0f801f1b05
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 初手で 5 つの入口から正しい 1 つを当てさせることが、価値に到達するまでの離脱点そのものだから。保留理由: 本 ADR は Proposed で証拠が全部未来形であり、かつ『どの入口から入った人が価値に到達したか』の測定手段が無い。dogfooding で入口ごとの到達が記録され始めた PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal EveryEntranceLeadsWhereItSays の下に solution Adr108Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

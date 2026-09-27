@@ -4,7 +4,7 @@ goal TargetIsUnderContractAndGraspLocationIsDeclarable
 uuid 651ab872-4929-4f60-b1b2-479ecf04ee71
 summary "探索の主役である掴む対象がワイヤ契約を持ち、両端で検証され、さらに「どこを掴むか」をユーザーが宣言でき、宣言していないことと宣言された「どこでもよい」が区別される"
 state Approved
-labels adr-119, contract, grasp, principle-29, principle-31, proposed
+labels adr-119, contract, grasp, principle-29, principle-31, proposed, term-l-hidden, change-declaration
 artifacts
 - "docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md"
 
@@ -38,7 +38,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 94d11632-5bb9-4617-acfa-52363614c61e
-    summary "事業木への接続は保留 (未実装のため証拠が全部未来形)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝。実装 PR でテストが実在した時点で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal CoupledSpecsAreDeclaredInOnePlace の下に solution Adr119Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/adr-081-grasp-validation.gsn"
 

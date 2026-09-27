@@ -4,7 +4,7 @@ goal LinkNetworkStaysReadableAsTheSceneGrows
 uuid df83f3f6-5a60-47a8-a4bb-d0a35d1646ba
 summary "220px 幅の LINK NETWORK パネルで、シーンの実体が増えてもノードのラベルが読め続け、TF 深さが辺を目で辿らずに分かる — 『情報が増えるほど読めなくなる』方向の設計をやめる"
 state ToBeDeveloped
-labels adr-095, link-network
+labels adr-095, link-network, term-p-operate, change-presentation
 artifacts
 - "docs/adr/ADR-095-link-network-indented-outline-tree.md"
 - "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"

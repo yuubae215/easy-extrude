@@ -4,7 +4,7 @@ goal ADeclarationLivesAndDiesWithTheThingItIsAbout
 uuid 26473986-8b11-4d92-a1ba-7c92e05c674d
 summary "ユーザーが宣言した事実 (どこに置くか・どう据え付けるか・どこを掴むか) が、宣言の対象になった実体と同じ寿命・同じ経路で生き死にし、実行時インスタンスに寄生して静かに消えることが無い"
 state UnderReview
-labels adr-129, adr-128, adr-117, adr-119, adr-127, adr-131, grasp, front, contract, principle-31, principle-1, principle-28, accepted
+labels adr-129, adr-128, adr-117, adr-119, adr-127, adr-131, grasp, front, contract, principle-31, principle-1, principle-28, accepted, term-t-modify, change-declaration-lifecycle
 artifacts
 - "docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md"
 
@@ -74,7 +74,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 37c3d140-e8ca-4781-bacd-089aedc55a57
-    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝で、solution として吊るのは実装 PR の日。証拠が全部未来形のうちに接ぐと事業木の ToBeDeveloped を増やすだけで、木が 証拠実行可能 でなくなる"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal ChangingOneSpecKeepsTheRestIntact の下に solution Adr129Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/adr-081-grasp-validation.gsn"
 

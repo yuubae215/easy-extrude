@@ -4,7 +4,7 @@ goal AppPredictsRework
 uuid 6deb3ff1-eb2a-40a6-aafb-c74f631a39c2
 summary "easy-extrude の grasp-search 通し検証は、設定完了後に運用フォールバック階梯 L4 以上へ戻るリスクを設計時に顕在化できる"
 state ToBeDeveloped
-labels adr-081, grasp-search
+labels adr-081, grasp-search, term-l-hidden, change-judgement-scope
 artifacts
 - "docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md"
 

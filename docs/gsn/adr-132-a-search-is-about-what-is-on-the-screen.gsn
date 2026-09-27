@@ -4,7 +4,7 @@ goal ASearchSolvesForWhatIsOnTheScreenAndItsEntranceDestroysNothing
 uuid 5c1f8a03-9d27-4e6b-a814-3b07f6d95e42
 summary "探索は「いま画面に在るもの」について解き、入口を開く行為はユーザーが選んでいない文書の採用ではない。2 つの主語 (どのロボットか / どの物か) が同じ源から来て、シーンに直接置いた実体も探索の対象になる"
 state UnderReview
-labels adr-132, adr-131, adr-129, adr-119, adr-115, adr-103, adr-090, adr-096, adr-055, front, principle-31, principle-11, principle-1, accepted
+labels adr-132, adr-131, adr-129, adr-119, adr-115, adr-103, adr-090, adr-096, adr-055, front, principle-31, principle-11, principle-1, accepted, term-q, change-depiction-parity
 artifacts
 - "docs/adr/ADR-132-a-search-is-about-what-is-on-the-screen.md"
 

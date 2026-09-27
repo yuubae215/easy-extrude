@@ -4,7 +4,7 @@ goal EveryWorldUnitConsumerAgreesWithTheUnitDecision
 uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f01
 summary "ADR-136 が world-unit を mm と決めたあと、その決定が world-unit スケールの事実を消費するすべての箇所へ届いている — 変換を必要とする箇所だけでなく、変換を必要としないがスケールを前提に書かれた定数 (起動カメラ姿勢・クリップ面・既定キューブの接地・オーバーレイの世界下限) も含めて。判定基準は『起動直後およびロボット追加直後に、シーンが持つ実体の個数と画面が提示する個数が一致する』"
 state UnderReview
-labels adr-137, adr-136, adr-090, adr-096, adr-126, principle-31, principle-11, principle-1, app
+labels adr-137, adr-136, adr-090, adr-096, adr-126, principle-31, principle-11, principle-1, app, term-q, change-quantity
 
     context ADR136ConvertedAllFiveBoundariesAndTheScreenStillWentBlank
     uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f02
@@ -106,4 +106,4 @@ labels adr-137, adr-136, adr-090, adr-096, adr-126, principle-31, principle-11, 
 
     context ConnectionToProfitTreeDeferred
     uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f13
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は『開いた瞬間に何かが見えている』という初回体験に効くもので、事業木側では ByDirectManipulationTrust 近傍が候補だが goal 名・uuid は未特定 — 次に事業木を読み直す機会に確定する"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal QuantitiesCannotSilentlyDisagreeInUnitOrFrame の下に solution Adr137Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"

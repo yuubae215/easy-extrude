@@ -4,7 +4,7 @@ goal ReachabilityIsShownAsThePosedArmNotOnlyABoolean
 uuid 0805bfa2-a6b6-4847-9c42-915a595b111f
 summary "把持候補・据付姿勢が実際にロボットの腕でリーチしていることを、ikSolvable の bool 一枚ではなく、その関節配置を取った腕の見た目として画面上で確認できる。到達不可の候補では関節解を捏造しない (rest poseのまま/非表示)。対象は既存の把持探索フロー(対象オブジェクトの表面候補)のみ — 対象なしの自由 TCP 姿勢チェックは明示的にスコープ外"
 state ToBeReviewed
-labels adr-135, adr-127, adr-128, principle-29, principle-1, principle-4, app, ui, core
+labels adr-135, adr-127, adr-128, principle-29, principle-1, principle-4, app, ui, core, term-l-blind, change-diagnosis
 
     context RepresentativeSolutionIsAlreadyComputedAndDiscarded
     uuid d00508cb-6311-4056-8c80-a84c08085ee3
@@ -97,4 +97,4 @@ labels adr-135, adr-127, adr-128, principle-29, principle-1, principle-4, app, u
 
     context ConnectionToProfitTreeDeferred
     uuid 55e6f1a2-9b3c-4d7e-8f01-2a3b4c5d6e7f
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は把持探索結果の信頼性検証 (デモ・現場検証で『本当にリーチするか』を確認する工数を削る) に効くもので、事業木側の対応する goal 名・uuid は未特定 — 次に事業木を読み直す機会に確定する"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal ARejectionPointsAtTheSpecToChange の下に solution Adr135Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"

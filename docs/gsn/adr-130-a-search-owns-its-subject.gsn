@@ -4,7 +4,7 @@ goal ASearchOwnsItsSubjectAndNothingElseAnswersForIt
 uuid 3f5a1c88-2d47-4f61-9c2a-51b0e73d9a44
 summary "「この探索は誰についてか」を述べる場所がちょうど 1 つで、画面のどの部品もその 1 つを読む。手順を進めるという正常な操作が、自分自身のゲートを踏んで偽の阻止文を出す状態が無い"
 state UnderReview
-labels adr-130, adr-110, adr-105, adr-090, adr-129, grasp, front, principle-31, principle-1, principle-2, principle-11, accepted
+labels adr-130, adr-110, adr-105, adr-090, adr-129, grasp, front, principle-31, principle-1, principle-2, principle-11, accepted, term-l-hidden, change-judgement-scope
 artifacts
 - "docs/adr/ADR-130-a-search-owns-its-subject-the-selection-does-not.md"
 

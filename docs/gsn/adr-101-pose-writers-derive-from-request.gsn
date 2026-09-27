@@ -4,7 +4,7 @@ goal SameRequestProducesSamePose
 uuid 303c76ad-ddcb-4f4f-bc38-15eac97a9278
 summary "ドラッグ 1 セグメントの中で pose は要求 (ポインタ位置 / 打った数値) の関数であり、直前のフレームの結果の関数ではない。同じ要求を何度通しても同じ pose になり、実体種によって『測るときの新しさ』が変わらない"
 state UnderReview
-labels adr-101, placement, stacking, freshness
+labels adr-101, placement, stacking, freshness, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-101-pose-writers-derive-from-request-not-rendered-state.md"
 - "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"
@@ -29,7 +29,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 07ecfece-2015-4eda-a0df-80c6d36db887
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) で、ADR-097/098 と同じ goal に効く追加証拠になる。保留理由: 当該 goal は ToBeReviewed のまま (当事者の実利用待ち) であり、振動が止まったことが『動かしやすくなった』へどれだけ効くかは dogfooding でしか分からない。当事者が Grab を実際に触った記録が出た時点で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal PlacementIsPredictable の下に solution Adr101Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

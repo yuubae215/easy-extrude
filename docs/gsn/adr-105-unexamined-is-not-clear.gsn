@@ -4,7 +4,7 @@ goal UnexaminedNeverReadsAsClear
 uuid 35632e1e-3d56-4879-97f5-83a054aa2e22
 summary "「まだ検証していない」が「問題が無い」と同じ見え方をしない。かつ、場に入る必要があるかは場に入らずに分かる。発見の集約は場の開閉・文書の有無と独立に存在し、そこに出る 0 は必ず 3 種のいずれかとして宣言されている"
 state UnderReview
-labels adr-105, discovery, principle-31, zero-state, ia-phase-2
+labels adr-105, discovery, principle-31, zero-state, ia-phase-2, term-p-operate, change-presentation
 artifacts
 - "docs/adr/ADR-105-unexamined-is-not-clear.md"
 - "docs/ia-redesign/03-implementation-order.md"
@@ -25,7 +25,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid e607f755-fcca-461d-b2e6-5954f5c89b66
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal ReworkCostMinimized (uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16、strategy ByCostDrivers 配下) — 食い違いの発見が場の往復を待たずに起きれば、不確実性が実装前に消費され手戻りが減る、というのが 02-grouping-criteria.md の shift-left の主張そのものだから。保留理由は 1 つに減った: (a) は解消した (実装済みで証拠は実在する) が、(b) ReworkCostMinimized 自身が support-unexplored (手戻り量の測定手段が未設定) なのは変わらないので、今つなぐと未測定の枝に実装済みの枝を吊ることになり、親の主張は 1 mm も強くならない。手戻りの測定が始まった PR で solution として吊る — 接続を急がないことが記録の一部である"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal ScreenSaysWhatIsTrue の下に solution Adr105Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

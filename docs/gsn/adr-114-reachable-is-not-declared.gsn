@@ -4,7 +4,7 @@ goal TouchUsersReachEveryDeclaredControlAndDegreeOfFreedom
 uuid 3f2b7c14-9a6e-4d38-8b21-5c7e0a4f61d2
 summary "タッチ利用者が、カメラの 3 自由度と常設入口の全部に実際に届き、届いていない操作が無言で誤爆しない。『宣言されている』と『届く』が別の量であることを、機械が別々に数える"
 state UnderReview
-labels adr-114, mobile, principle-31, principle-26, principle-11, census, one-owner
+labels adr-114, mobile, principle-31, principle-26, principle-11, census, one-owner, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-114-reachable-is-not-declared.md"
 
@@ -54,7 +54,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 5a6d3f81-9e24-4c70-b1a3-8f2e07d5946c
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 押せない入口と存在しない pan は、価値に到達する前の離脱点そのものだから。保留理由は ADR-108 / ADR-113 の同名 context と同じで、どの入口から入った人が価値に到達したかの測定手段が無い。dogfooding で入口ごとの到達が記録され始めた PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal EveryEntranceLeadsWhereItSays の下に solution Adr114Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

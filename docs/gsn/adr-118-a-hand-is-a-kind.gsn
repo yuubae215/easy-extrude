@@ -4,7 +4,7 @@ goal HandIsAKindAndTheFaceFollowsIt
 uuid f36a190a-4388-4c57-a454-d9e905b013d5
 summary "宣言されたハンドの種別ごとに、判定される量・サンプルされる面・報告される near-miss が一致し、種別を言わずに片方のハンドだけが正しく扱われる状態が構造的に存在しない"
 state UnderReview
-labels adr-118, contract-v5, grasp, suction, principle-31, principle-29, kind-union
+labels adr-118, contract-v5, grasp, suction, principle-31, principle-29, kind-union, term-q, change-judgement-correctness
 artifacts
 - "docs/adr/ADR-118-a-hand-is-a-kind-and-the-face-follows-it.md"
 
@@ -59,7 +59,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid babbd165-329c-463b-8982-2f56fb6bb752
-    summary "事業木 docs/gsn/profit-growth.gsn への接続は保留。接続予定先は grasp 判定の枝 (docs/gsn/adr-081-grasp-validation.gsn 経由)。保留理由は ADR-119 と 120 と 121 が未実装で把持判定の全体像がまだ動いている最中だから"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal VerdictsAreDecidedFactsNotProxies の下に solution Adr118Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/adr-081-grasp-validation.gsn"
 

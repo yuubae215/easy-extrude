@@ -4,7 +4,7 @@ goal PickingASceneWithARobotShowsTheRobot
 uuid 36eb692a-7bf7-49fc-9940-2ab74b479db1
 summary "ユーザーが Home のロボット入りテンプレート(または .ctx.json import)を選んだ直後、ロボットが 3D ビューに描画される。選ぶという行為そのものが『これを見たい』の表明であり、選んだのに何も起きないのは原則 #11 が禁じる無言の失敗の別形である"
 state UnderReview
-labels adr-142, adr-096, adr-132, principle-11, principle-24, principle-31, app
+labels adr-142, adr-096, adr-132, principle-11, principle-24, principle-31, app, term-p-reach, change-first-view
 
     context TheDefaultOutlivedItsOwnPremise
     uuid 36eb692a-7bf7-49fc-9940-2ab74b479db2

@@ -4,7 +4,7 @@ goal WhatRestsOnWhatIsADurableFact
 uuid f1eadaa1-e40e-4a3b-8495-cbf13e8b22e8
 summary "『この実体は何の上に載っているか』がシーンの持続する事実になり、どの入力経路 (自由 Grab / 軸拘束 / クイックドラッグ / 数値入力 / import / undo / 毎フレームの制約解決) を通っても壊れない。かつ接地している実体は接地面に沿って素直に動かせる"
 state UnderReview
-labels adr-097, placement, grounding
+labels adr-097, placement, grounding, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-097-support-is-entity-state-not-gesture-side-effect.md"
 - "docs/adr/ADR-071-placement-defaults.md"

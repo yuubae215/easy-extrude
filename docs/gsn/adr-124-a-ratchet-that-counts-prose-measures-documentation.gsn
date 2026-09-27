@@ -4,7 +4,7 @@ goal GovernanceNumbersMeasureWorkNotWords
 uuid 67f4cc97-9e34-4626-b245-a9a1758f4d49
 summary "統治の数字が「片付ければ減る」量を測る。そして同じ失敗形が次に起きたとき、人の記憶ではなく機械が気づく"
 state UnderReview
-labels adr-124, deferral, ratchet, principle-31, principle-19-q3, census
+labels adr-124, deferral, ratchet, principle-31, principle-19-q3, census, term-delivery, change-governance
 artifacts
 - "docs/adr/ADR-124-a-ratchet-that-counts-prose-measures-documentation.md"
 
@@ -23,7 +23,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 60cd1a66-a0e3-4842-ad5d-a0851dcbdb03
-    summary "**保留** — ADR-123 と同じ理由 (事業木には ADR-109 の枝が既に在り、本 ADR はその枝の測り方を直しただけで新しい価値経路を主張していない)。接続の満期条件も同じ: ROADMAP §未移管 の 14 件が Issues へ移り DEF-021 が畳まれたとき。**ただし本 ADR で接続の前提は一つ改善した** — 99 という数では「残しの総量」を吊っても意味がなかったが、1 になったことで量として読める数になった"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal DecidedValueDoesNotStallBeforeUsers の下に solution Adr124Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 
