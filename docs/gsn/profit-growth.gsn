@@ -421,6 +421,12 @@ labels meta-goal, term-profit
                     artifacts
                     - "docs/gsn/adr-126-a-deferral-that-is-a-claim-belongs-to-the-argument.gsn"
 
+                    solution Adr154Tree
+                    uuid 3cf19a01-383b-494c-8c83-07654b1db942
+                    summary "ADR-154 の論証木 (top goal EveryDeferralStallsExactlyOneTerm) を吊る。登録簿の各行が ticket → 木 → 吊り先の項と導出され、帰属しない行が数えられる — d の分母を『何件』から『どの項の価値が何件止まっているか』へ細かくする (pnpm test:deferrals Q8)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ"
+                    artifacts
+                    - "docs/gsn/adr-154-a-deferral-stalls-exactly-one-term.gsn"
+
                 goal ValuePerDecisionIsRealised
                 uuid eee83d10-98aa-44bb-b92c-50168570d8c4
                 summary "V = q · ΔC_spec − (1 − q) · C_miss: 1 回の仕様決めで利用者が得る価値は、従来の決め方より安く決まった分 (ΔC_spec) を、判定が現実と一致する率 (q) で割り引いたもの。誤判定は価値 0 ではなく負 (現場の出戻り C_miss) なので、速さだけでも正しさだけでも V は立たない"

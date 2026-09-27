@@ -93,6 +93,7 @@ import { fileURLToPath } from 'node:url'
 
 import { adrStatuses } from './adr-status.mjs'
 import { hasExpiryTrigger, evaluateTriggers, TRIGGER_HELP } from './expiry-trigger.mjs'
+import { BUSINESS_TREE, TAG, collectHungTrees, collectHangSites, topGoalLabels } from './gsn-attribution.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const GSN_DIR = join(ROOT, 'docs', 'gsn')
@@ -539,28 +540,7 @@ for (const g of exploring) {
 
 // ── G5 ATTRIBUTION (ADR-153) ─────────────────────────────────────────────────
 
-/** 事業木。ここに solution として吊られた木だけが「帰属した投資」である。 */
-const BUSINESS_TREE = 'profit-growth.gsn'
-
-/**
- * @returns {Map<string, number>} `docs/gsn/<file>` → 事業木の **solution** の
- *   artifacts に現れた回数。context / assumption からの参照は数えない —
- *   それは「接続予定」の散文であって帰属ではない。
- */
-function collectHungTrees() {
-  const hung = new Map()
-  const path = join(GSN_DIR, BUSINESS_TREE)
-  if (!existsSync(path)) return hung
-  let kind = null
-  for (const raw of readFileSync(path, 'utf8').split('\n')) {
-    const text = raw.trim()
-    const node = /^(goal|strategy|solution|context|assumption|justification)\s+\S+/.exec(text)
-    if (node) { kind = node[1]; continue }
-    const art = /^-\s+"docs\/gsn\/([^"]+\.gsn)"$/.exec(text)
-    if (art && kind === 'solution') hung.set(art[1], (hung.get(art[1]) ?? 0) + 1)
-  }
-  return hung
-}
+// 帰属の読み手は scripts/gsn-attribution.mjs ただ 1 箇所 (ADR-154 — 登録簿 Q8 と共有)。
 
 const hungTrees = collectHungTrees()
 const adrTrees = trees.filter(t => /^adr-\d{3}-/.test(t)).sort()
@@ -585,66 +565,6 @@ if (doubleHung.length > 0) {
 }
 
 // ── G6 CATEGORY (ADR-153 D5) ─────────────────────────────────────────────────
-
-const TAG = (labels, prefix) => labels.filter(l => l.startsWith(prefix)).map(l => l.slice(prefix.length))
-
-/** 木の top goal の labels。 */
-function topGoalLabels(file) {
-  const lines = readFileSync(join(GSN_DIR, file), 'utf8').split('\n')
-  let inTop = false
-  for (const raw of lines) {
-    if (/^goal\s+\S+/.test(raw)) { if (inTop) break; inTop = true; continue }
-    if (inTop && raw.trim() === '') break
-    const m = /^labels\s+(.*)$/.exec(raw)
-    if (inTop && m) return m[1].split(',').map(x => x.trim())
-  }
-  return []
-}
-
-/**
- * 事業木を走査し、木ごとに「吊った場所」の項と受け入れる変更の種類を返す。
- * 項・admits は祖先 goal のうち最も近い宣言を継ぐ (項の goal の下の小分けは項を継ぐ)。
- */
-function collectHangSites() {
-  const sites = new Map()
-  const terms = new Set()
-  const kinds = new Set()
-  const path = join(GSN_DIR, BUSINESS_TREE)
-  if (!existsSync(path)) return { sites, terms, kinds }
-  /** @type {{indent: number, kind: string, ident: string, labels: string[]}[]} */
-  const stack = []
-  let current = null
-  for (const raw of readFileSync(path, 'utf8').split('\n')) {
-    const indent = raw.length - raw.trimStart().length
-    const text = raw.trim()
-    const node = /^(goal|strategy|solution|context|assumption|justification)\s+(\S+)/.exec(text)
-    if (node) {
-      while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop()
-      current = { indent, kind: node[1], ident: node[2], labels: [] }
-      stack.push(current)
-      continue
-    }
-    const labels = /^labels\s+(.*)$/.exec(text)
-    if (labels && current) {
-      current.labels.push(...labels[1].split(',').map(x => x.trim()))
-      for (const t of TAG(current.labels, 'term-')) terms.add(t)
-      for (const k of TAG(current.labels, 'admits-')) kinds.add(k)
-      continue
-    }
-    const art = /^-\s+"docs\/gsn\/([^"]+\.gsn)"$/.exec(text)
-    if (art && current?.kind === 'solution') {
-      const goals = stack.filter(n => n.kind === 'goal').reverse()
-      const termGoal = goals.find(g => TAG(g.labels, 'term-').length > 0)
-      const admitGoal = goals.find(g => TAG(g.labels, 'admits-').length > 0)
-      sites.set(art[1], {
-        goal: goals[0]?.ident,
-        term: termGoal ? TAG(termGoal.labels, 'term-') : [],
-        admits: admitGoal ? TAG(admitGoal.labels, 'admits-') : [],
-      })
-    }
-  }
-  return { sites, terms, kinds }
-}
 
 const { sites, terms: businessTerms, kinds: businessKinds } = collectHangSites()
 const categoryErrors = []

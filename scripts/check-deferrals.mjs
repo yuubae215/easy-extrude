@@ -29,7 +29,7 @@
  * それを直すために作った成果物の中で再生産されていた — 満期を*書く欄*を作ったことと、
  * その欄を*読む機械*が在ることは別の事実である。Q5 はその差を数える。
  *
- * ## 7 つの問い (Q6 / Q7 は ADR-123 / ADR-124 で追加)
+ * ## 8 つの問い (Q6 / Q7 は ADR-123 / ADR-124、Q8 は ADR-154 で追加)
  *
  *   Q1 RATCHET   — 登録簿に覆われていない残しの箇所数。**超えても下回っても** fail。
  *                  下回りも落とすのは、債務を払ったのに baseline が古いままだと
@@ -54,6 +54,11 @@
  *                  持つ文書は既定 0、正当なものは `DECLARED_PRIORITY_TABLES` に宣言。
  *                  ROADMAP は 29 行を持ちながら語彙ヒット 0 件で母集団の外に居た —
  *                  **語彙を 1 語ずつ足す経路では記法の違いに届かない**。
+ *   Q8 ATTRIBUTION — 登録簿の各行が利益の式の**ちょうど 1 項**に帰属する (ADR-154)。
+ *                  帰属は ticket → 木 → 事業木の吊り先の項と**導出**する (列を足さない)。
+ *                  帰属なしは ratchet (木の無い cutoff 前 ADR = DEF-028 の配下)、2 項以上は fail。
+ *                  残し全体は既に項 `d` の分母として事業木に吊られている (ADR-109 の木) —
+ *                  欠けていたのは**1 行ずつの**帰属で、どの項の価値が止まっているかが言えなかった。
  *
  * ## 母集団の作り方 (ここが要点)
  *
@@ -91,6 +96,7 @@ import { fileURLToPath } from 'node:url'
 
 import { adrStatuses } from './adr-status.mjs'
 import { hasExpiryTrigger, evaluateTriggers, TRIGGER_HELP } from './expiry-trigger.mjs'
+import { collectHangSites, treeOfAdr } from './gsn-attribution.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const LEDGER = 'docs/DEFERRAL_LEDGER.md'
@@ -601,6 +607,65 @@ for (const row of ledger ?? []) {
   }
 }
 
+// ── Q8 ATTRIBUTION (ADR-154) ──────────────────────────────────────────────────
+
+/**
+ * **利益の式のどの項にも帰属していない行の予算** — 超えても下回っても fail。
+ *
+ * 行の帰属は**新しい列ではなく導出**である: ticket の ADR → その木 (`adr-NNN-*.gsn`)
+ * → 事業木で吊られた項 (G5 が木 1 本 = 吊り 1 回を保証する)。ticket は既に在る列で、
+ * そこに「goal」列を並べると同じ事実を 2 か所に書くことになる (§1.1 / ADR-129)。
+ *
+ * 帰属しない行が正当に存在するのは、ticket の ADR が cutoff (ADR-126) より前で木を
+ * 持たないときだけ — その 11 本の木を書く義務は **DEF-028** が持つ。2026-09-27 の実測は
+ * DEF-004 / 006 / 009 / 017 / 018 / 019 / 020 / 022 / 024 / 050 の **10 行**
+ * (ticket = ADR-060 / 078 / 091 / 032 / 027 / 015 / 017 / 044 / 064 / 076)。
+ * DEF-028 の木が 1 本書かれるたびにこの数が下がり、baseline を下げる PR が
+ * 「どの残しがどの項に移ったか」を記録する。
+ *
+ * **2 項以上**は予算ではなく不正 — 1 行の残しが 2 つの項を同時に滞留させると
+ * 読むと、滞留が二重計上される (G5 が木について禁じた形の、行の側の鏡像)。
+ */
+const UNATTRIBUTED_BASELINE = 10
+
+/** @returns {{terms: string[], trees: string[]}} 行の帰属 (導出) */
+function attributionOf(row, sites) {
+  const trees = [...new Set([...row.ticket.matchAll(/ADR-(\d{3})/g)].map(m => treeOfAdr(m[1])))]
+    .filter(Boolean)
+  const terms = [...new Set(trees.flatMap(t => sites.get(t)?.term ?? []))]
+  return { terms, trees }
+}
+
+const stallByTerm = new Map()
+const unattributed = []
+if (ledger !== null) {
+  const { sites } = collectHangSites()
+  for (const row of ledger) {
+    const { terms, trees } = attributionOf(row, sites)
+    if (terms.length === 0) { unattributed.push(row.id); continue }
+    if (terms.length > 1) {
+      errors.push(
+        `Q8 ATTRIBUTION: ${row.id} の ticket が ${terms.length} つの項に帰属する ` +
+        `(${trees.map((t, i) => `${t} → term-${sites.get(t)?.term}`).join(' / ')})。\n` +
+        '    1 行の残しは 1 つの項の滞留として数える — 行を項ごとに割るか、ticket を主たる 1 本に絞ること。')
+      continue
+    }
+    stallByTerm.set(terms[0], [...(stallByTerm.get(terms[0]) ?? []), row.id])
+  }
+  if (unattributed.length !== UNATTRIBUTED_BASELINE) {
+    const dir = unattributed.length > UNATTRIBUTED_BASELINE ? '増えた' : '減った'
+    errors.push(
+      `Q8 ATTRIBUTION: 利益の式のどの項にも帰属していない行が ${unattributed.length} 件 ` +
+      `(baseline ${UNATTRIBUTED_BASELINE} から ${dir}) — ${unattributed.join(', ')}\n` +
+      (unattributed.length > UNATTRIBUTED_BASELINE
+        ? '    ticket の ADR が木を持たないか、木が事業木に吊られていない。帰属は ticket → 木 → 吊り先の項\n' +
+          '    と導出される (列を足さない)。木のある ADR を ticket にするか、その ADR の木を書く (DEF-028)。\n' +
+          '    baseline を上げるのは「cutoff 前の木の無い ADR に新しい残しが生まれた」ときだけ。'
+        : '    木が書かれたか行が片付いた — UNATTRIBUTED_BASELINE を実測値へ下げること\n' +
+          '    (古い baseline は「今いくつ帰属していないか」を再び記憶の中の数にする — ADR-103)。'))
+  }
+}
+
 // ── Q7 NOTATION ──────────────────────────────────────────────────────────────
 
 /**
@@ -788,4 +853,8 @@ console.error(
   `check-deferrals: OK — 宣言済み ${ledger.length} 件 / 宣言外 ${undeclared.length} 箇所 ` +
   `(baseline ${UNDECLARED_BASELINE}) / 満期切れ 0 件 / ` +
   `満期が機械可読 ${ledger.length - proseExpiry.length} 件・散文のみ ${proseExpiry.length} 件 ` +
-  `(baseline ${PROSE_EXPIRY_BASELINE})`)
+  `(baseline ${PROSE_EXPIRY_BASELINE}) / 項に帰属 ${ledger.length - unattributed.length} 件・` +
+  `帰属なし ${unattributed.length} 件 (baseline ${UNATTRIBUTED_BASELINE})\n` +
+  '  項ごとの滞留 (ADR-154): ' +
+  [...stallByTerm].sort((a, b) => b[1].length - a[1].length)
+    .map(([t, ids]) => `${t} ${ids.length}`).join(' · '))
