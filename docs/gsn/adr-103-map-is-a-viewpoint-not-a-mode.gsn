@@ -4,7 +4,7 @@ goal ViewpointIsNotAMode
 uuid 9edad865-ebc4-4599-8aad-339090f6b581
 summary "トップレベルモードの権威が一つになり、しかも『edit のまま歪みのない真上から見る』が失われない。カメラの向き・投影方式・描画ツールはモードと直交する軸として、それぞれ唯一の所有者を持つ"
 state UnderReview
-labels adr-103, mode, projection, retirement, census
+labels adr-103, mode, projection, retirement, census, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-103-map-is-a-viewpoint-not-a-mode.md"
 - "docs/STATE_LEDGER.md"

@@ -4,7 +4,7 @@ goal TargetIsUnderContractAndGraspLocationIsDeclarable
 uuid 651ab872-4929-4f60-b1b2-479ecf04ee71
 summary "探索の主役である掴む対象がワイヤ契約を持ち、両端で検証され、さらに「どこを掴むか」をユーザーが宣言でき、宣言していないことと宣言された「どこでもよい」が区別される"
 state Approved
-labels adr-119, contract, grasp, principle-29, principle-31, proposed
+labels adr-119, contract, grasp, principle-29, principle-31, proposed, term-l-hidden, change-declaration
 artifacts
 - "docs/adr/ADR-119-a-target-is-a-contract-and-where-to-grasp-is-an-input.md"
 

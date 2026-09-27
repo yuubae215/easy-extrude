@@ -1,6 +1,6 @@
 # 153. 投資はすべて利益の式の 1 項に吊る — 事業木を式から導出し、吊られていない木を数える
 
-- Status: Accepted (**2026-09-27 実装** — 事業木 `profit-growth.gsn` を利益の式から導出し直し、ADR の木 58 本をすべてちょうど 1 項に吊った。`check-gsn-debt` G5 が吊られていない木・二重に吊られた木の個数を問う)
+- Status: Accepted (**2026-09-27 実装** — 事業木 `profit-growth.gsn` を利益の式から導出し直し、ADR の木 58 本をすべてちょうど 1 項に吊った。`check-gsn-debt` G5 が吊られていない木・二重に吊られた木の個数を、G6 が吊り先の項と木の申告 (項・変更の種類) の一致を問う)
 - Date: 2026-09-27
 - Deciders: yuubae215 (要求: 「grasp のゴールに、お互いに依存関係のある仕様決めに対して何度もループせずに効率的に評価できる、を追加」/「メタゴールから要素分解し、必要なゴールを算出。算出の指針は算数の問題のように文章・図・式の三位一体」/「個別で木ができているものはすべて接続する。事業的な goal が無いのに実行していることになり、投資対効果が測れない」), Claude (起票・実装)
 - Retires: GREP:docs/DEFERRAL_LEDGER.md::\| DEF-05[123] \| · GREP:.claude/skills/adr/SKILL.md::事業木への接続は保留してよい
@@ -96,7 +96,7 @@ flowchart TD
   R --> D["d: 決着した価値が滞留しない (5)"]
   R --> V["V = q·ΔC_spec − (1−q)·C_miss"]
   U --> PR["p_reach: UsersReachGraspValue<br/>初見 (3) / 入口 (4) / 入力の反響 (2)<br/>+ ADR-091 の訂正起点"]
-  U --> PO["p_operate: OtherAdoptionBranchesCovered<br/>構造が読める (2) / 画面が真を語る (2)<br/>配置 (4) / 選択と視点 (6)"]
+  U --> PO["p_operate: OtherAdoptionBranchesCovered<br/>構造が読める (2) / 画面が真を語る (3)<br/>配置 (3) / 選択と視点 (6)"]
   V --> S["ΔC_spec: CoupledSpecsEvaluatedWithoutLooping<br/>K = 1 + L_hidden + L_blind"]
   V --> Q["q: VerdictIsTrustworthy"]
   S --> Sa["(a) 同時に宣言できる (4)"]
@@ -135,12 +135,60 @@ flowchart TD
 `ToBeDeveloped` を増やすだけ」) は solution で吊る形では成り立たない — solution は goal を増やさない。
 吊り先の項が事業木に無いときは、**項を足す** (式を 1 段分解する) のが正攻法で、木を吊らずに置くことではない。
 
+### D5 — 吊り先の妥当性を「独立した 2 つの申告の一致」で問う (`check-gsn-debt` G6)
+
+G5 は「ちょうど 1 回」しか問わないので、誤った項に吊っても緑になる。項の選び方の妥当性を
+機械に問わせるため、**2 つの別々の問いに別々に答えさせ、答えが噛み合うかを見る**:
+
+| 申告する側 | 問い | タグ |
+|---|---|---|
+| 事業木の goal | 自分はどの項か / どんな種類の変更なら動かせるか | `term-*` (1 個) + `admits-*` (1 個以上) |
+| ADR の木の top goal | 自分はどの項を動かすか / 自分は何を変えたか | `term-*` (1 個) + `change-*` (1 個) |
+
+「どの項に効くか」は解釈で揺れるが、「何を変えたか (入口・画面の語り・宣言の語彙・判定の範囲・
+絵と判定の一致・単位・統治の道具 …)」は ADR の Decision からほぼ一意に読める。後者を前者と
+独立に書かせ、**項の goal が受け入れる種類の表** (`admits-*`) と突き合わせる。
+
+```
+一致  ⇔  term(木) = term(吊り先の最も近い祖先 goal)  ∧  change(木) ∈ admits(吊り先の最も近い祖先 goal)
+```
+
+項と種類の語彙は事業木のタグから導く (スクリプトに表を持たない — §1.1)。事業木に無い項・種類を
+木が名乗ったら落ちる (原則 #31: 未宣言の種を既定で通さない)。
+
+| 項 (term-) | 受け入れる変更の種類 (admits-) |
+|---|---|
+| p-reach | entrance / first-view / intake |
+| p-operate | presentation / manipulation / selection |
+| delivery | governance |
+| l-hidden | declaration / judgement-scope |
+| l-blind | diagnosis |
+| t-modify | declaration-lifecycle |
+| t-eval | performance |
+| q | depiction-parity / quantity / judgement-correctness |
+| c-rework | governance / boundary |
+| c-support | safety |
+| c-run | performance |
+| roi | governance |
+
+(この表の正本は `profit-growth.gsn` の各 goal の labels。ここは読むための写し。)
+
+**当てた結果:** 2 本が起票時の予定先と食い違った — ADR-102 (変えたのは census という統治の道具 =
+governance。予定先 PlacementIsPredictable = p-operate は governance を受けない → C_rework へ) と
+ADR-105 (変えたのは画面の語り = presentation。予定先 ReworkCostMinimized = c-rework は presentation を
+受けない → ScreenSaysWhatIsTrue へ)。どちらも副次的な寄与は木の側に残る。
+
+**限界:** 2 つの申告を同じ人が同時に書けば一致させられる。問えるのは「吊った場所」と
+「何を変えたか」が食い違う形だけで、admits の表そのものの妥当性は人の判断である
+(広げるときは理由をその goal の summary に書く)。
+
 ## Consequences — Evidence と tradeoff(§1.2 Evidence)
 
 論証木: [`docs/gsn/adr-153-every-investment-hangs-on-one-term-of-the-profit-formula.gsn`](../gsn/adr-153-every-investment-hangs-on-one-term-of-the-profit-formula.gsn)
 (goal ごとの支えの正本は `.gsn` 側)。
 
 - 事業木に吊られた木: **5 / 57 → 58 / 58** (ADR-153 自身の木を含む)。二重計上 0。
+- 項と変更の種類が吊り先と一致: **58 / 58** (項 18・種類 17)。負の対照: 102 と 105 の吊り先を入れ替えると、両方が項と種類の両方で落ちる。
 - 決着した残し: DEF-051 / 052 / 053 (110〜112 の木の事業木接続) — 各行の満期
   `GREP:docs/gsn/profit-growth.gsn::<top goal>` が発火したので行を削除した。
 - 事業木の fan-out 1 の警告 2 件 (`ByScreenBandwidthBarriers` / `ByDirectManipulationTrust`) は、
@@ -155,8 +203,9 @@ flowchart TD
   (`pnpm test:deferrals` の滞留件数) だけである。ROI の分子は依然として出ない —
   `EveryTermIsMeasured` (未探索) と `BusinessTargetsUnset` (数値目標の未設定) が別々の欠落として持つ。
   `K₀ / K₁` は dogfooding 記録から取れる見込み (`LoopCountIsNotYetMeasured`)。
-- **主たる寄与先の正しさ。** G5 が問うのは「ちょうど 1 回」だけで、誤った項に吊っても緑になる
-  (`PrimaryTermIsAJudgement`)。反証は項ごとの測定が入ったときに起きる。
+- **主たる寄与先の正しさ (部分的)。** G6 は「吊り先」と「何を変えたか」の食い違いを落とすが、
+  2 つの申告を同じ人が揃えて書けば通る。admits の表の妥当性も人の判断 (`PrimaryTermIsAJudgement`)。
+  反証は項ごとの測定が入ったときに起きる。
 - **価格・導入形態・CAD/PLC 接続・信頼性の証明** の採用障壁は、依然として
   `AdoptionBranchesUnexplored` が未展開として宣言している。
 - **`C_run` と `t_e`** は同じ計測 (テンプレごとの応答時間) を共有できる可能性があるが、未探索のまま。

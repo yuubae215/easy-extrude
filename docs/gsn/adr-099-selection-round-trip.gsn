@@ -4,7 +4,7 @@ goal SelectionIsOneFactSeenThroughEveryWindow
 uuid 8db2216c-7071-473f-8fdb-e3d3b5cfa7cb
 summary "パネルとビューポートが『1 つの選択』の 2 つの窓になる。どちらから触っても同じ事実が動き、両方が同じように追従し、選択という決定はその結果が見えるところまでを含む (選べたのに画面が沈黙する、が構造的に表現不能になる)"
 state UnderReview
-labels adr-099, selection, link-network
+labels adr-099, selection, link-network, term-p-operate, change-selection
 artifacts
 - "docs/adr/ADR-099-selection-round-trip-one-entry.md"
 - "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"

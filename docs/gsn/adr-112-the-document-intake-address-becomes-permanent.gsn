@@ -4,7 +4,7 @@ goal WhatYouTypeIsEchoedWhereYouCanSeeIt
 uuid 9084d313-bd71-40f5-9a74-c5ebdfd2b7f5
 summary "文書を書いている最中に、いま書いたものがどう効いたかが見えている。そして暫定であることの宣言が、決着によって畳まれる (満期切れのまま生き続けない)"
 state UnderReview
-labels adr-112, ia-phase-5-2, doc-intake, provisional-address, principle-26
+labels adr-112, ia-phase-5-2, doc-intake, provisional-address, principle-26, term-p-reach, change-intake
 artifacts
 - "docs/adr/ADR-112-the-document-intake-address-becomes-permanent.md"
 - "src/view/DocIntake.js"

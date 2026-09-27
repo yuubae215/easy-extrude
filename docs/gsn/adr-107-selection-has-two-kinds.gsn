@@ -4,7 +4,7 @@ goal AllZonesSpeakOfTheSameSelection
 uuid 81db89c7-cac6-4606-bf05-01e49339dc62
 summary "選んだものについて全ゾーンが同じことを語る。選べるものが『3D に姿を持つ実体』だけでなくなっても、選択の入口は 1 つのままで、種の混在は書けず、どの種を選んでも 3D が無言にならない"
 state UnderReview
-labels adr-107, selection, ia-redesign, principle-2, principle-11, principle-31, kind-union
+labels adr-107, selection, ia-redesign, principle-2, principle-11, principle-31, kind-union, term-p-operate, change-selection
 artifacts
 - "docs/adr/ADR-107-selection-has-two-kinds.md"
 - "docs/ia-redesign/02-grouping-criteria.md"

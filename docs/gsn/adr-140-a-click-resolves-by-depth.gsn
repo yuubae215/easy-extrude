@@ -4,7 +4,7 @@ goal WhatYouClickIsWhatIsInFront
 uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140001
 summary "見えているものをクリックしたら、見えている通りの一番手前のものが選ばれる。ロボットの骨格だけがこの規律の例外になっている状態を無くす — 同梱の pick-and-place セルでは腕がペデスタルの上・作業台の手前に立つので、『腕をクリックすると家具が選ばれる』が日常的に踏まれていた"
 state UnderReview
-labels adr-140, adr-084, adr-090, adr-102, principle-22, principle-31, principle-1, app
+labels adr-140, adr-084, adr-090, adr-102, principle-22, principle-31, principle-1, app, term-p-operate, change-selection
 
     context TheSolutionWasAlreadyThereTheConditionWasNot
     uuid c1a44f10-1b70-4e01-9a2d-6f0b7c140002

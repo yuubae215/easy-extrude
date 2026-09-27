@@ -4,7 +4,7 @@ goal SaturationIsSpentOnStateNotOnDefaults
 uuid 868df6e7-8299-415f-9c2b-538fdad3041c
 summary "画面の彩度が状態にだけ配られ、既定には配られない。何も起きていないときの画面は落ち着いており、色が付いているものには意味がある。1 つの意味には 1 つの色が対応し、色の語彙は宣言され、宣言の外の色が増えない"
 state UnderReview
-labels adr-100, color, design-tokens
+labels adr-100, color, design-tokens, term-p-operate, change-presentation
 artifacts
 - "docs/adr/ADR-100-color-says-state-not-kind.md"
 - "src/theme/tokens.js"

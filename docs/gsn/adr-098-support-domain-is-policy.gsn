@@ -4,7 +4,7 @@ goal WhatCanRestOnWhatIsAPolicyConsequence
 uuid 7844f644-a4b0-4390-818a-ef2b39cbd08f
 summary "『この実体は何の上に載れるか』が配置方針の帰結として決まり、実体種で分岐しない。ロボットもマップ注釈もキューブと同じ規則で面に載り、grounded という 1 語が種によって違う意味を持たない"
 state UnderReview
-labels adr-098, placement, stacking
+labels adr-098, placement, stacking, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"
 - "docs/adr/ADR-097-support-is-entity-state-not-gesture-side-effect.md"

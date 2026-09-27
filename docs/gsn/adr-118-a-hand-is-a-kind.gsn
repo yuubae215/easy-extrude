@@ -4,7 +4,7 @@ goal HandIsAKindAndTheFaceFollowsIt
 uuid f36a190a-4388-4c57-a454-d9e905b013d5
 summary "宣言されたハンドの種別ごとに、判定される量・サンプルされる面・報告される near-miss が一致し、種別を言わずに片方のハンドだけが正しく扱われる状態が構造的に存在しない"
 state UnderReview
-labels adr-118, contract-v5, grasp, suction, principle-31, principle-29, kind-union
+labels adr-118, contract-v5, grasp, suction, principle-31, principle-29, kind-union, term-q, change-judgement-correctness
 artifacts
 - "docs/adr/ADR-118-a-hand-is-a-kind-and-the-face-follows-it.md"
 

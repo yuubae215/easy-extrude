@@ -4,7 +4,7 @@ goal EveryArmOnScreenDrawsTheStyleThisSceneDeclared
 uuid a73d4c42-3476-4247-b865-ffd2fb7bd62d
 summary "このシーンが描く腕の見た目は 1 つに決まっており、画面に在るどの腕もそれを描いている。解でなく性質: 'stage にスタイルを配る' は解の形で、持ち上げた性質がこれ。基数 0 (腕が居なくても宣言は在る)・1・N (全台一致) のすべてで成り立つことを含む"
 state Approved
-labels adr-148, adr-090, adr-141, adr-143, adr-114, adr-137, principle-3, principle-4, principle-9, principle-11, principle-24, principle-31, principle-32, app, view
+labels adr-148, adr-090, adr-141, adr-143, adr-114, adr-137, principle-3, principle-4, principle-9, principle-11, principle-24, principle-31, principle-32, app, view, term-q, change-depiction-parity
 
     context TheStyleAxisItselfShippedGreenInTwoCommits
     uuid 89963c18-c8d9-41d1-98c1-43051b61d7e6

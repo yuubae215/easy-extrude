@@ -4,7 +4,7 @@ goal MissingEvidenceIsStructuredCountedAndExpires
 uuid a0021548-06b7-4a5b-aa93-14b159e48e7d
 summary "「証拠が無い」という事実が散文ではなく構造として持たれ、個数が数えられ、証拠が現れた日に機械が言う"
 state UnderReview
-labels adr-126, gsn, deferral, principle-31, principle-32, ratchet
+labels adr-126, gsn, deferral, principle-31, principle-32, ratchet, term-delivery, change-governance
 artifacts
 - "docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md"
 

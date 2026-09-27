@@ -4,7 +4,7 @@ goal ADeclarationLivesAndDiesWithTheThingItIsAbout
 uuid 26473986-8b11-4d92-a1ba-7c92e05c674d
 summary "ユーザーが宣言した事実 (どこに置くか・どう据え付けるか・どこを掴むか) が、宣言の対象になった実体と同じ寿命・同じ経路で生き死にし、実行時インスタンスに寄生して静かに消えることが無い"
 state UnderReview
-labels adr-129, adr-128, adr-117, adr-119, adr-127, adr-131, grasp, front, contract, principle-31, principle-1, principle-28, accepted
+labels adr-129, adr-128, adr-117, adr-119, adr-127, adr-131, grasp, front, contract, principle-31, principle-1, principle-28, accepted, term-t-modify, change-declaration-lifecycle
 artifacts
 - "docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md"
 

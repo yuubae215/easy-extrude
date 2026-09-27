@@ -4,7 +4,7 @@ goal LinkNetworkAnswersBothAtAGlance
 uuid 20f0f9ee-738b-469f-9e68-4381f294688f
 summary "モバイルの 220x160px の LINK NETWORK パネルで、『この座標系は TF ツリーのどこにいるか』と『この実体はどの制約で誰と結ばれているか』に、視線を移さず同時に答えられる"
 state ToBeReviewed
-labels adr-094, link-network
+labels adr-094, link-network, term-p-operate, change-presentation
 artifacts
 - "docs/adr/ADR-094-link-network-tf-tree-fused-origin-node.md"
 - "docs/adr/ADR-048-link-network-layered-layout.md"

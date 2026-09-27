@@ -4,7 +4,7 @@ goal EveryWorldUnitConsumerAgreesWithTheUnitDecision
 uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f01
 summary "ADR-136 が world-unit を mm と決めたあと、その決定が world-unit スケールの事実を消費するすべての箇所へ届いている — 変換を必要とする箇所だけでなく、変換を必要としないがスケールを前提に書かれた定数 (起動カメラ姿勢・クリップ面・既定キューブの接地・オーバーレイの世界下限) も含めて。判定基準は『起動直後およびロボット追加直後に、シーンが持つ実体の個数と画面が提示する個数が一致する』"
 state UnderReview
-labels adr-137, adr-136, adr-090, adr-096, adr-126, principle-31, principle-11, principle-1, app
+labels adr-137, adr-136, adr-090, adr-096, adr-126, principle-31, principle-11, principle-1, app, term-q, change-quantity
 
     context ADR136ConvertedAllFiveBoundariesAndTheScreenStillWentBlank
     uuid 7c4d9b20-5e31-4a82-9f60-2b7c8d1e4f02

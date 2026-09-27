@@ -4,7 +4,7 @@ goal TheTcpHasOneSourceAndEveryDepictionPointsAtIt
 uuid 0db58fac-cd4c-45c3-92c4-3dfd0446e8aa
 summary "「TCP はどこか」の源が 1 つ (ツールの取付け tool0 → tcp) であり、画面の TCP の印・探索に渡る toolLength / tcpOrientation・腕が持つツール先端が、休止でもプレビューでも常に同じ点を指す。tcp はロボットとグリッパが共有するインタフェースとして名前で参照でき続ける。解でなく性質: '印を動かす' '実体を消す' は解の形"
 state Approved
-labels adr-151, adr-150, adr-084, adr-085, adr-088, adr-090, adr-096, adr-135, principle-4, principle-11, principle-19, principle-31, kernel-1-1, app, view
+labels adr-151, adr-150, adr-084, adr-085, adr-088, adr-090, adr-096, adr-135, principle-4, principle-11, principle-19, principle-31, kernel-1-1, app, view, term-q, change-depiction-parity
 
     context ThreeSourcesOfOneFact
     uuid eb09c361-6c39-4a28-9e90-6d09208dc249

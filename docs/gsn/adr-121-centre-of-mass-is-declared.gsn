@@ -4,7 +4,7 @@ goal CentreOfMassIsADeclaredFactNotASilentAssumption
 uuid 926c8e38-f6e5-47ed-8b06-c9d3a0c9ceb7
 summary "重心が把持判定に効くようになり、かつ推定値が実測値として振る舞う経路が存在しない — 仮定は仮定として運ばれ、不在は不在として扱われる"
 state UnderReview
-labels adr-121, grasp, suction, principle-31, adr-056-verb-boundary, proposed
+labels adr-121, grasp, suction, principle-31, adr-056-verb-boundary, proposed, term-q, change-judgement-correctness
 artifacts
 - "docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md"
 

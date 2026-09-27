@@ -4,7 +4,7 @@ goal EveryInvestmentHangsOnOneTermOfTheProfitFormula
 uuid c2670927-e16c-4211-8961-19572c8b4b8b
 summary "開発投資 (ADR とその論証木) はすべて、利益の式のちょうど 1 項に帰属しており、帰属していない投資と二重に帰属した投資が機械に見える。事業木の goal は話題ではなく式の項から導出されているので、項を持たない goal も、吊り先を持たない木も生まれない。解でなく性質: 『事業木に接続する』『grasp の枝を足す』は解の形"
 state UnderReview
-labels adr-153, adr-109, adr-126, principle-31, principle-32, kernel-1-2, kernel-0, gsn
+labels adr-153, adr-109, adr-126, principle-31, principle-32, kernel-1-2, kernel-0, gsn, term-roi, change-governance
 artifacts
 - "docs/adr/ADR-153-every-investment-hangs-on-one-term-of-the-profit-formula.md"
 
@@ -32,11 +32,11 @@ artifacts
 
     assumption PrimaryTermIsAJudgement
     uuid 8bf99eb1-2cfc-4e02-a11e-368a12acfd5f
-    summary "反証されうる前提: 主たる寄与先の項の選択は人の判断であり、機械 (G5) が問うのは『ちょうど 1 回』だけ。誤った項に吊っても緑になる。反証される形: 項ごとの測定が入ったとき、吊った木の Δx_i が 0 なのに別の項が動いている"
+    summary "反証されうる前提: 主たる寄与先の項の選択は人の判断である。G5 は『ちょうど 1 回』だけを、G6 は『吊った場所』と『何を変えたか』の食い違いだけを問う — 2 つの申告を同じ人が揃えて書けば通り、admits の表そのものの妥当性も人の判断。反証される形: 項ごとの測定が入ったとき、吊った木の Δx_i が 0 なのに別の項が動いている"
 
     strategy ByDerivingGoalsFromTheFormulaAndCountingTheUnhung
     uuid 21210fcf-93f6-4953-9a4d-23823b0da560
-    summary "D1 事業木の goal を利益の式の項から導出する (文章・図・式の三位一体 — 式が枝の数を決め、図が構造を、文章が各項の意味を持つ)。D2 全 ADR の木をちょうど 1 つの項の goal に solution として吊る。D3 吊られていない木・二重に吊られた木の個数を check-gsn-debt G5 が問う。D4 adr skill の『接続は保留してよい』を『起票と同じ PR で吊る』に改める"
+    summary "D1 事業木の goal を利益の式の項から導出する (文章・図・式の三位一体 — 式が枝の数を決め、図が構造を、文章が各項の意味を持つ)。D2 全 ADR の木をちょうど 1 つの項の goal に solution として吊る。D3 吊られていない木・二重に吊られた木の個数を check-gsn-debt G5 が問う。D4 adr skill の『接続は保留してよい』を『起票と同じ PR で吊る』に改める。D5 吊り先の妥当性を、事業木の goal (term-* + admits-*) と木の top goal (term-* + change-*) の独立した 2 つの申告の一致として check-gsn-debt G6 が問う"
 
         goal EveryBusinessGoalIsATermOfTheFormula
         uuid 407407e3-ef78-4360-bb72-0b0080fcb4bd
@@ -59,6 +59,19 @@ artifacts
             solution AttributionCensusGreen
             uuid bcaac102-176f-42d3-95b8-92992da6e2f4
             summary "pnpm test:gsn-debt (CI gate) — 木 59 本 / 宣言された未支持 49 個 (baseline 49) / 満期切れ 0 件 / 事業木に吊られた木 58/58 本 (2026-09-27)。負の対照: 事業木を 2026-09-26 の版に戻すと G5 が 53 本の未接続で fail し (木の側の context からの参照は数えないので 109 も未接続に数えられる)、1 本の木を 2 か所に吊ると二重計上で fail する (2026-09-27 に手で確認)"
+            artifacts
+            - "scripts/check-gsn-debt.mjs"
+            - "docs/gsn/profit-growth.gsn"
+
+        goal WhereItHangsAgreesWithWhatItChanged
+        uuid 8d5b5f4e-718f-4c2e-a984-582632727d10
+        summary "D5: 木が名乗る項 (term-*) が吊り先の項と一致し、木が名乗る変更の種類 (change-*) が吊り先の goal の受け入れる種類 (admits-*) に含まれる。語彙は事業木のタグから導き、事業木に無い項・種類を名乗る木は落ちる"
+        state UnderReview
+        labels support-verified
+
+            solution CategoryCensusGreen
+            uuid 9ecc860a-626d-492e-ae95-cf655f47f677
+            summary "pnpm test:gsn-debt (CI gate) — 2026-09-27 実測: 項と種類が一致 58/58 本 (項 18 · 種類 17)。カテゴリを当てた段階で ADR-102 (governance を p-operate に吊っていた) と ADR-105 (presentation を c-rework に吊っていた) の 2 本が起票時の予定先と食い違ったので移した。負の対照: 2 本の吊り先を入れ替えると 4 件 (項 2・種類 2) で fail、木の term- を吊り先と違う項に書き換えると fail、事業木に無い change- を名乗ると fail (2026-09-27 に手で確認)"
             artifacts
             - "scripts/check-gsn-debt.mjs"
             - "docs/gsn/profit-growth.gsn"

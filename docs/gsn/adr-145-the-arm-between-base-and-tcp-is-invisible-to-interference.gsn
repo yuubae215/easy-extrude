@@ -4,7 +4,7 @@ goal TheChosenJointConfigurationDoesNotIntersectSurroundingStructures
 uuid a5514417-8ab4-4bae-894f-8ae1a9180c67
 summary "ロボットが選ぶ関節配置が、把持探索の設計時検証において周辺構造物 (自身のペデスタル含む) と実際に干渉しないことを保証できる。解でなく性質: '8解を出す' '干渉判定を足す' は解の形であり、持ち上げた性質がこれ"
 state Approved
-labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, principle-2, principle-31, core
+labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, principle-2, principle-31, core, term-q, change-judgement-correctness
 
     context CoordinateConventionIsNotTheCause
     uuid 4589389b-d199-4f7a-a819-d27f43c25db5

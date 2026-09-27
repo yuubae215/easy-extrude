@@ -4,7 +4,7 @@ goal EachQuestionHasItsOwnDoorAndItsOwnPremise
 uuid c2437627-2204-4edc-ad9e-41703d52a0f0
 summary "「そもそも取れるか」「この配置で取れるか」「何個取れるか」「どれくらいの確率で取れるか」が、互いの入力にならない独立した問いとして立ち、どれかを塞ぐと別のものまで塞がる構造が無い"
 state UnderReview
-labels adr-122, grasp, scene-layer, adr-078, adr-090, principle-29, principle-24, proposed
+labels adr-122, grasp, scene-layer, adr-078, adr-090, principle-29, principle-24, proposed, term-l-hidden, change-judgement-scope
 artifacts
 - "docs/adr/ADR-122-pickable-and-yield-are-two-questions.md"
 

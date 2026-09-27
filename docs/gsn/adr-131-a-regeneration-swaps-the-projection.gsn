@@ -4,7 +4,7 @@ goal ChangingOneDeclarationDoesNotDeleteWhatTheDocumentNeverMade
 uuid 8d41f7a2-6b95-4c30-a17e-2f60c8b3e951
 summary "文書の宣言を 1 つ書き換えることが、文書が作っていない実体 (Shift+A の箱・複製・輸入メッシュ・計測線) を消さない。宣言されていないことは欠落ではなく状態であり、状態であるからには宣言の書き換えごとに黙って消えてはならない"
 state UnderReview
-labels adr-131, adr-129, adr-128, adr-049, adr-097, front, principle-31, principle-1, accepted
+labels adr-131, adr-129, adr-128, adr-049, adr-097, front, principle-31, principle-1, accepted, term-t-modify, change-declaration-lifecycle
 artifacts
 - "docs/adr/ADR-131-a-regeneration-swaps-the-projection-not-the-scene.md"
 

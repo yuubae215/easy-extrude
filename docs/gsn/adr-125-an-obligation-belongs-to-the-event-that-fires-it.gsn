@@ -4,7 +4,7 @@ goal ConditionalRetirementIsAskedWhenItFires
 uuid a9f01176-cf9e-42ba-acf3-46f0de57965f
 summary "「A が起きたら B を消す」という約束が、A が起きた日に必ず問われる。義務は人の記憶ではなく、既に観測されている事象に紐づく"
 state UnderReview
-labels adr-125, retirement, adr-lifecycle, principle-32, principle-31
+labels adr-125, retirement, adr-lifecycle, principle-32, principle-31, term-delivery, change-governance
 artifacts
 - "docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md"
 

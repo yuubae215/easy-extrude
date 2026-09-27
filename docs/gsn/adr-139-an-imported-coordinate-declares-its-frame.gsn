@@ -4,7 +4,7 @@ goal ImportedCoordinatesDeclareTheirFrameBeforeEnteringTheWorld
 uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8091
 summary "座標の集まりは、それがどの frame の値か (単位・利き手・up 軸・forward 軸) を自分で宣言してから世界に入る。宣言されていない frame は既定で埋めず、可視な理由とともに拒まれる — 『ROS だと宣言された』と『誰も考えなかった』を区別可能にする (原則 #31 / Yellow Card『必須入力の欠落に既定値を与えない』)"
 state UnderReview
-labels adr-139, adr-138, adr-137, adr-136, adr-115, adr-120, adr-018, principle-21, principle-31, principle-11, principle-28, app
+labels adr-139, adr-138, adr-137, adr-136, adr-115, adr-120, adr-018, principle-21, principle-31, principle-11, principle-28, app, term-q, change-quantity
 
     context FourIndependentAxesOnlyOneOfWhichIsClosed
     uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b8092

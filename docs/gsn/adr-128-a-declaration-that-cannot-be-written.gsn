@@ -4,7 +4,7 @@ goal DecidedFactsReachTheScreenAndSilenceIsVisible
 uuid b866d100-56ef-44fa-8906-8794d45834e3
 summary "ソルバが決定した事実が宣言の欠落によって画面に届かない状態が無くなり、掴む場所について「言っていない」と「どこでもよいと言った」が、ユーザーにも機械にも別物として見える"
 state UnderReview
-labels adr-128, adr-119, adr-127, adr-120, grasp, front, principle-11, principle-31
+labels adr-128, adr-119, adr-127, adr-120, grasp, front, principle-11, principle-31, term-l-hidden, change-declaration
 artifacts
 - "docs/adr/ADR-128-a-declaration-that-cannot-be-written-is-not-a-declaration.md"
 

@@ -4,7 +4,7 @@ goal DeclaredGraspReachesJudgementAndPictureAlike
 uuid 5b0e8f0a-1f6e-4c47-9a58-1f2d63e2a152
 summary "ユーザーがワークごとに『どこを・どちらから・どの軸で挟んで・どの深さまで』掴むか (把持仕様) を名前つきで N 個、その使い方 (把持戦略) を、そして手の形を宣言でき、その宣言が探索の判定と画面の絵の両方へ同じ値で届き、宣言した語 (+x) が物体のどこを指すかを走らせる前に 3D で確かめられる。解でなく性質: 'OBB で干渉' 'ラベルを描く' は解の形"
 state Approved
-labels adr-152, adr-060, adr-074, adr-082, adr-083, adr-084, adr-099, adr-117, adr-118, adr-119, adr-128, adr-146, adr-150, adr-151, principle-11, principle-29, principle-31, kernel-1-1, app, core, contract, view
+labels adr-152, adr-060, adr-074, adr-082, adr-083, adr-084, adr-099, adr-117, adr-118, adr-119, adr-128, adr-146, adr-150, adr-151, principle-11, principle-29, principle-31, kernel-1-1, app, core, contract, view, term-l-hidden, change-declaration
 
     context TheDrawnHandIsNotTheJudgedHand
     uuid 03ce885a-30d7-40c5-ba87-82e24ba42a09

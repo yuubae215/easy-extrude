@@ -4,7 +4,7 @@ goal TheDrawnArmAndTheSolvedArmAreOneMachine
 uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141001
 summary "ユーザーが見ている腕と、ソルバが解いている腕が、同じ 1 台である。違う腕を宣言することは許されてよいが、違うことが黙っていられない — 出所は当事者の『Add で追加できるロボットモデルに統一してほしい』"
 state UnderReview
-labels adr-141, adr-127, adr-128, adr-120, adr-136, adr-137, adr-138, principle-1, principle-31, principle-11, app
+labels adr-141, adr-127, adr-128, adr-120, adr-136, adr-137, adr-138, principle-1, principle-31, principle-11, app, term-q, change-depiction-parity
 
     context FiveAuthorsForOneFact
     uuid d2b55f20-2c81-4f12-8b3e-7a1c8d141002

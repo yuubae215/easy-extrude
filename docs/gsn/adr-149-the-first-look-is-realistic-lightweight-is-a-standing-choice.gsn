@@ -4,7 +4,7 @@ goal TheFirstLookIsRealisticAndLightweightStaysOneClickAway
 uuid 987809f8-ca64-4937-8cca-21b605461b48
 summary "初見でシーンにロボットを追加すると Universal Robots 純正の実写メッシュ (realistic) が既定で描かれ、帯域/パフォーマンスを優先したい利用者は常設 UI トグル 1 クリックで skeleton (ゼロネットワークの骨組み) へ確実に戻せる。解でなく性質: 'デフォルトを反転する' 'ボタンを足す' はどちらも解の形で、持ち上げた性質がこれ"
 state Approved
-labels adr-149, adr-148, adr-103, adr-090, adr-109, adr-125, principle-4, principle-11, principle-16, principle-26, principle-31, app, view
+labels adr-149, adr-148, adr-103, adr-090, adr-109, adr-125, principle-4, principle-11, principle-16, principle-26, principle-31, app, view, term-p-reach, change-first-view
 
     context TheStyleAxisShippedButOnlyAConsoleCouldReachIt
     uuid 80eb4b8c-0c75-47dc-871c-c8c8939a91ca

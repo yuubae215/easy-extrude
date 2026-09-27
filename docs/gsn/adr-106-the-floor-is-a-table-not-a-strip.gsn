@@ -4,7 +4,7 @@ goal SubjectAndFloorAreVisibleTogether
 uuid 331a0d20-04d6-4a9d-9a70-5cddb2e89eb1
 summary "交渉している対象を見ながら交渉できる。場が開いている間も、選んだ実体の詳細 (N パネル)・関係グラフ (LINK NETWORK)・ギズモ・投影トグルは消えず被されもしない。かつ各ゾーンの責務が一言で言え、次に機能を足す人が住所を議論せずに決められる"
 state UnderReview
-labels adr-106, ia-phase-3, screen-edge, principle-26, principle-31, container-shape
+labels adr-106, ia-phase-3, screen-edge, principle-26, principle-31, container-shape, term-p-reach, change-intake
 artifacts
 - "docs/adr/ADR-106-the-floor-is-a-table-not-a-strip.md"
 - "docs/ia-redesign/03-implementation-order.md"

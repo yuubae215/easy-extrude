@@ -4,7 +4,7 @@ goal WhatTheUiSaysIsWhatIsDrawn
 uuid 8a2e249b-c6c1-40ea-be50-9b1356c2b3bd
 summary "Outliner の行が語る可視性と、実際にビューポートへ描かれているものが常に一致し、eye を 1 回押すと必ず何かが変わる — 『目が開いているのに何も見えない』『押しても何も起きない』が構造的に表現不能になる"
 state UnderReview
-labels adr-096, visibility, outliner
+labels adr-096, visibility, outliner, term-p-operate, change-presentation
 artifacts
 - "docs/adr/ADR-096-visibility-two-axes-declared-defaults.md"
 - "docs/adr/ADR-087-cf-grounded-object-model-robot-visibility-outliner.md"

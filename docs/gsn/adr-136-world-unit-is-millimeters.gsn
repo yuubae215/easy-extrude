@@ -4,7 +4,7 @@ goal WorldUnitIsConsistentAcrossSceneAndWire
 uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5061
 summary "同じ Three.js world 座標系の中で、Solid/Layout DSL(mm の生数値)とロボット/URDF/grasp-contract(メートル前提)が無変換で同居していた。世界座標系の 1 unit が指す物理量を、シーン中のどの実体についても一致させる — 見た目のスケールだけでなく、grasp-search の距離判定(reach envelope・target/obstacle との距離)が物理的に正しい値で core/ に届くようにする"
 state UnderReview
-labels adr-136, adr-119, adr-084, principle-1, principle-3, app
+labels adr-136, adr-119, adr-084, principle-1, principle-3, app, term-q, change-quantity
 
     context TwoUnconciliatedConventionsSharedOneCoordinateSpace
     uuid 8a1e2f10-4b2c-4d7e-9a3f-1c2d3e4f5062

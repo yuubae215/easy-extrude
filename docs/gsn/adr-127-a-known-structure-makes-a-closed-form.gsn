@@ -4,7 +4,7 @@ goal IkSolvableIsADecidedFactNotAProxy
 uuid 595e0496-fd31-405a-9583-df0298fce826
 summary "ワイヤに載る ikSolvable が、手首コーンの代理判定ではなく、実際の運動学で決定された事実になる (宣言された機種について)"
 state UnderReview
-labels adr-127, grasp, core, principle-28, principle-29, principle-31
+labels adr-127, grasp, core, principle-28, principle-29, principle-31, term-q, change-judgement-correctness
 artifacts
 - "docs/adr/ADR-127-a-known-structure-is-what-makes-a-closed-form-possible.md"
 

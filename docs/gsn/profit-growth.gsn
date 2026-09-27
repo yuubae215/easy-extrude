@@ -4,7 +4,7 @@ goal ProfitGrows
 uuid e04d9c0c-05a8-40fa-a5bc-a2b5de079dde
 summary "easy-extrude 事業は、対象期間内で投下開発費を上回る利益を継続的に拡大している"
 state ToBeDeveloped
-labels meta-goal
+labels meta-goal, term-profit
 
     context ProfitScope
     uuid 2fac7d7f-f104-40dd-aaeb-0744955d761c
@@ -19,7 +19,7 @@ labels meta-goal
 
     context ProfitFormula
     uuid 1dae5ff9-17a0-452f-8d05-8bfe6d433cea
-    summary "利益の式 (ADR-153 で導出。各 goal はこの式のちょうど 1 項に対応し、項を持たない goal は足さない): Π = R − C ／ R = U · d · V ／ U = N · p_reach · p_operate ／ V = q · ΔC_spec − (1 − q) · C_miss ／ ΔC_spec = K₀ · (t_e0 + t_m0) − K₁ · (t_e1 + t_m1)、K = 1 + L_hidden + L_blind ／ C = C_rework + C_support + C_run。記号: N 流入 / p_reach 判定結果まで到達する率 / p_operate 画面を読み操作を信じて使い続ける率 / d 決着した設計が利用者まで届く率 / q 判定が現実と一致する率 / C_miss 誤判定が現場で起こす出戻りの費用 / K 1 つの仕様決めに要する評価ループ回数 (添字 0 = 従来の決め方、1 = このツール) / L_hidden 他の仕様を固めた後に見つかった依存が強いるループ / L_blind 不合格のあとどの仕様を変えるかを探すループ / t_e 1 回の評価時間 / t_m 仕様を 1 つ変えて再評価に掛けるまでの手間"
+    summary "利益の式 (ADR-153 で導出。各 goal はこの式のちょうど 1 項に対応し、項を持たない goal は足さない): Π = R − C ／ R = U · d · V ／ U = N · p_reach · p_operate ／ V = q · ΔC_spec − (1 − q) · C_miss ／ ΔC_spec = K₀ · (t_e0 + t_m0) − K₁ · (t_e1 + t_m1)、K = 1 + L_hidden + L_blind ／ C = C_rework + C_support + C_run。記号: N 流入 / p_reach 判定結果まで到達する率 / p_operate 画面を読み操作を信じて使い続ける率 / d 決着した設計が利用者まで届く率 / q 判定が現実と一致する率 / C_miss 誤判定が現場で起こす出戻りの費用 / K 1 つの仕様決めに要する評価ループ回数 (添字 0 = 従来の決め方、1 = このツール) / L_hidden 他の仕様を固めた後に見つかった依存が強いるループ / L_blind 不合格のあとどの仕様を変えるかを探すループ / t_e 1 回の評価時間 / t_m 仕様を 1 つ変えて再評価に掛けるまでの手間。goal のタグ (ADR-153 D5): Π=term-profit / R=term-revenue / U=term-users / p_reach=term-p-reach / p_operate=term-p-operate / d=term-delivery / V=term-value / ΔC_spec=term-dc-spec / L_hidden=term-l-hidden / L_blind=term-l-blind / t_m=term-t-modify / t_e=term-t-eval / q=term-q / C=term-cost / C_rework=term-c-rework / C_support=term-c-support / C_run=term-c-run / ROI の成立条件=term-roi。各項の goal は受け入れる変更の種類を admits-* で名乗り、木は term-* と change-* を 1 つずつ名乗る"
     artifacts
     - "docs/adr/ADR-153-every-investment-hangs-on-one-term-of-the-profit-formula.md"
 
@@ -39,7 +39,7 @@ labels meta-goal
         uuid 38eab2aa-ac07-4bdd-aa06-49ddc7a78a81
         summary "対象セグメントにおいて売上が最大化されている"
         state ToBeDeveloped
-        labels meta-goal
+        labels meta-goal, term-revenue
 
             strategy ByUsersDeliveryAndValuePerDecision
             uuid 911a4492-bd4a-40d1-bf89-a700db0c92ea
@@ -49,7 +49,7 @@ labels meta-goal
                 uuid 3c699312-61d2-4eb9-b0c2-1fa1cfd610bd
                 summary "U = N · p_reach · p_operate: 流入した利用者が判定結果まで到達し (p_reach)、画面を読めて操作を信じられるので使い続ける (p_operate)"
                 state ToBeDeveloped
-                labels meta-goal
+                labels meta-goal, term-users
 
                     strategy ByAdoptionFunnel
                     uuid 011e8259-7e02-4a77-a840-3e68a931960b
@@ -59,7 +59,7 @@ labels meta-goal
                         uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f
                         summary "新規ユーザは、ドメイン知識の事前想起なしにコンテキストを成立させ、grasp-search の判定結果 (価値の出口) に到達できる"
                         state ToBeDeveloped
-                        labels adr-091
+                        labels adr-091, term-p-reach, admits-entrance, admits-first-view, admits-intake
                         groups context-intake
 
                             context Adr091Scope
@@ -243,6 +243,7 @@ labels meta-goal
                         uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e
                         summary "コンテキスト入力以外の採用障壁 (画面の可読性・価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
                         state ToBeDeveloped
+                        labels term-p-operate, admits-presentation, admits-manipulation, admits-selection
 
                             assumption AdoptionBranchesUnexplored
                             uuid d126c790-2083-480a-a074-851c18e6ad4b
@@ -291,6 +292,12 @@ labels meta-goal
                                     artifacts
                                     - "docs/gsn/adr-100-color-says-state.gsn"
 
+                                    solution Adr105Tree
+                                    uuid cc3d78fd-1eb9-482c-ba8e-311d61568bba
+                                    summary "ADR-105 の論証木 (top goal UnexaminedNeverReadsAsClear) を吊る。『まだ検証していない』が『問題が無い』と同じ見え方をしない。変わったのは画面の語り (change-presentation) で、C_rework の goal は presentation を受けない — 2026-09-27 に ADR-153 D5 のカテゴリ (change-) を当てると起票時の予定先 ReworkCostMinimized との不一致を出したので、画面が真を語る (p_operate) へ移した。誤った安心による手戻りの減少は副次的な寄与として木の側に残る。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-105-unexamined-is-not-clear.gsn"
+
                             strategy ByDirectManipulationTrust
                             uuid 84c5ee34-d94e-47eb-8d8d-acbcdc3445b5
                             summary "Argument by 『触った結果が予測どおりか』という採用障壁の除去。読めること (ByScreenBandwidthBarriers) と信じられることは別の障壁で、後者は当事者の言葉では『すごく動かしづらい』『なぜか突き抜ける』として届いた。直接操作が予測を裏切る画面は、機能が揃っていても使われない — 動かすこと (PlacementIsPredictable) と選ぶこと・見る向きを変えること (SelectionAndViewpointArePredictable) の 2 つ"
@@ -322,12 +329,6 @@ labels meta-goal
                                     summary "ADR-101 の論証木 (top goal SameRequestProducesSamePose) を吊る。同じ要求 (ポインタ位置 / 打った数値) は同じ pose になり、直前フレームの結果に依存しない (起票時の予定先どおり)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
                                     artifacts
                                     - "docs/gsn/adr-101-pose-writers-derive-from-request.gsn"
-
-                                    solution Adr102Tree
-                                    uuid 1d39b97b-9acc-4166-86a2-6cae752525dc
-                                    summary "ADR-102 の論証木 (top goal CensusToolsDoNotSilentlyGoStale) を吊る。配置の入口を数える census 自体が古びない — ADR-097/098 の予測可能性を守る道具の鮮度 (起票時の予定先どおり)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
-                                    artifacts
-                                    - "docs/gsn/adr-102-census-tables-need-a-denominator.gsn"
 
                                 goal SelectionAndViewpointArePredictable
                                 uuid bcecad1d-2a02-4e3c-ae15-bdd95b1d7d3d
@@ -374,7 +375,7 @@ labels meta-goal
                 uuid 3e4c73e9-c818-4b37-aae2-8e099839b640
                 summary "d (決着した設計が利用者まで届く率): 設計として決着した価値が、実装されないまま滞留する量が測定されており、増え続けない。ファネルの障壁は『ユーザが到達できない』側だけでなく『価値がユーザまで出てこない』側にも在る — R = U · d · V の積の 1 項なので、滞留は売上を直接削る"
                 state UnderReview
-                labels adr-109, principle-31
+                labels adr-109, principle-31, term-delivery, admits-governance
                 groups deferral-governance
 
                     context DeferralStallIsAFunnelBarrier
@@ -424,7 +425,7 @@ labels meta-goal
                 uuid eee83d10-98aa-44bb-b92c-50168570d8c4
                 summary "V = q · ΔC_spec − (1 − q) · C_miss: 1 回の仕様決めで利用者が得る価値は、従来の決め方より安く決まった分 (ΔC_spec) を、判定が現実と一致する率 (q) で割り引いたもの。誤判定は価値 0 ではなく負 (現場の出戻り C_miss) なので、速さだけでも正しさだけでも V は立たない"
                 state ToBeDeveloped
-                labels meta-goal
+                labels meta-goal, term-value
 
                     strategy BySpeedOfDecidingAndCorrectnessOfTheVerdict
                     uuid 88f03a74-146b-4ca4-9b42-240231404784
@@ -434,6 +435,7 @@ labels meta-goal
                         uuid d40bb8cc-a904-4796-a309-30b9f777b984
                         summary "互いに依存する仕様 (ロボット機種と据付位置・ツールと手の形・把持仕様と把持戦略・コンテナとワーク配置・障害物・カメラ) を決めるとき、何度もループせずに効率的に評価できる。式: ΔC_spec = K₀ · (t_e0 + t_m0) − K₁ · (t_e1 + t_m1) を大きくする = ループ回数 K₁ を下げ、1 回の評価 t_e1 と 1 回の修正 t_m1 を軽くする。K = 1 + L_hidden + L_blind なので、下げる手段は L_hidden (後から見つかる依存) と L_blind (何を変えるか探す) の 2 つに分かれる"
                         state UnderReview
+                        labels term-dc-spec
 
                             context SpecsAreCoupled
                             uuid d7828e2a-66ad-4621-97f1-cb0a2ba8ba49
@@ -453,6 +455,7 @@ labels meta-goal
                                 uuid 70bea13d-8b72-40c2-8182-ac8d6e332d8f
                                 summary "(a) L_hidden: 互いに依存する仕様 (対象・掴み方・手の形・コンテナとワーク) を 1 つの文書に同時に宣言でき、宣言した事実が判定まで届く。宣言できない仕様は評価の外で決められ、後から依存が見つかる"
                                 state UnderReview
+                                labels term-l-hidden, admits-declaration, admits-judgement-scope
 
                                     solution Adr119Tree
                                     uuid fc37bc91-e962-410d-8dbb-759e6ccbdc54
@@ -482,6 +485,7 @@ labels meta-goal
                                 uuid 5286f3f3-0817-4f70-b284-e8546f4b5c50
                                 summary "(b) L_hidden: 1 回の評価がリーチ・IK・把持性・可視性・干渉を同時に判定し、どの問いも他の問いを塞がない。ドメインごとに別々に評価すると、あるドメインで決めた仕様が別のドメインで覆る"
                                 state UnderReview
+                                labels term-l-hidden, admits-declaration, admits-judgement-scope
 
                                     solution Adr081Tree
                                     uuid af1c74ee-8c93-4166-bbe8-95b0f3bcf9d9
@@ -505,6 +509,7 @@ labels meta-goal
                                 uuid 77065a4f-e469-41cf-9be8-98557107a320
                                 summary "(c) L_blind: 不合格や低い点のとき、どのドメインで・どの仕様のせいで落ちたかが見え、反復間の結果を比べられる。理由の無い不合格は、人に仕様を当て推量で動かさせる"
                                 state UnderReview
+                                labels term-l-blind, admits-diagnosis
 
                                     solution Adr120Tree
                                     uuid 9855847e-e729-4dd4-8b2e-bd61c000e424
@@ -522,6 +527,7 @@ labels meta-goal
                                 uuid cbecf16a-35a6-4528-b044-ab7f4465d0f5
                                 summary "(d) t_m: 仕様を 1 つ変えて再評価に掛けるとき、他の宣言や文書が作っていない実体が壊れない。1 つ変えるたびに周りを作り直す必要があると、1 ループの手間が膨らむ"
                                 state UnderReview
+                                labels term-t-modify, admits-declaration-lifecycle
 
                                     solution Adr129Tree
                                     uuid 8f21cba6-399b-4257-be63-a545f6a01928
@@ -539,7 +545,7 @@ labels meta-goal
                                 uuid ffa3c4c9-45c9-4219-a95d-9f5a760d5fe2
                                 summary "(e) t_e: 1 回の評価が、利用者が仕様を変えては試す思考のループの中に収まる時間で返る。t_e が長いと利用者は評価を待たずに勘で決め、K を減らした効果が失われる"
                                 state ToBeDeveloped
-                                labels support-unexplored
+                                labels support-unexplored, term-t-eval, admits-performance
 
                                     assumption TurnaroundIsNotYetMeasured
                                     uuid 32570919-e7cb-4db7-93f9-4ec55d4b138b
@@ -549,6 +555,7 @@ labels meta-goal
                         uuid c51bf368-11e5-437c-9709-cfeab77d61c1
                         summary "q: 判定が現実と一致し、利用者はそれを信じてよい。画面に描かれた腕・手・対象が判定されたものと同じで、単位や座標系の食い違いで判定が静かに壊れず、判定が代理ではなく決定された事実である。誤判定は現場の出戻り C_miss になるので、q は V の符号を決める"
                         state UnderReview
+                        labels term-q, admits-depiction-parity, admits-quantity, admits-judgement-correctness
 
                             strategy ByClosingEachGapBetweenVerdictAndReality
                             uuid 43280497-2037-4f2d-be47-5245e9b4fa1f
@@ -663,7 +670,7 @@ labels meta-goal
         uuid 942a60a6-889d-448c-8682-0212e9c70623
         summary "同一の品質・信頼性水準を保ったまま経費が最小化されている"
         state ToBeDeveloped
-        labels meta-goal
+        labels meta-goal, term-cost
 
             strategy ByCostDrivers
             uuid 58977951-4a26-4a09-b86e-677c1fe5c218
@@ -673,16 +680,11 @@ labels meta-goal
                 uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16
                 summary "C_rework: 仕様の不確実性が実装前に消費され、実装後の手戻りが最小化されている。支えは 2 本入ったが手戻り量そのものは未測定 (ReworkEvidenceUnset)"
                 state ToBeDeveloped
+                labels term-c-rework, admits-governance, admits-boundary
 
                     assumption ReworkEvidenceUnset
                     uuid 877510c8-c8a6-4437-855c-402a6577753b
                     summary "プレースホルダ: ADR・GSN・状態台帳による事前の不確実性消費は既に運用中だが、手戻り量の測定は未着手。ADR-091 の『訂正されない既定値』リスクはこの枝にも接続する (既定のまま提出された doc は後工程の手戻りになる)"
-
-                    solution Adr105Tree
-                    uuid cc3d78fd-1eb9-482c-ba8e-311d61568bba
-                    summary "ADR-105 の論証木 (top goal UnexaminedNeverReadsAsClear) を吊る。『まだ検証していない』が『問題が無い』と同じ見え方をしない — 誤った安心で進んだ後工程の手戻りを防ぐ (起票時の予定先どおり)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
-                    artifacts
-                    - "docs/gsn/adr-105-unexamined-is-not-clear.gsn"
 
                     solution Adr146Tree
                     uuid 56213b57-b2c2-4db5-9bce-1532e9277329
@@ -690,10 +692,17 @@ labels meta-goal
                     artifacts
                     - "docs/gsn/adr-146-a-closed-form-may-be-copied-an-idea-may-not.gsn"
 
+                    solution Adr102Tree
+                    uuid 1d39b97b-9acc-4166-86a2-6cae752525dc
+                    summary "ADR-102 の論証木 (top goal CensusToolsDoNotSilentlyGoStale) を吊る。配置の入口を数える census 自体が古びない。変わったのは統治の道具 (change-governance) で、p_operate の goal は governance を受けない — 2026-09-27 に ADR-153 D5 のカテゴリ (change-) を当てると起票時の予定先 PlacementIsPredictable との不一致を出したので、検査が静かに緑のまま古びて後から直す手戻り (C_rework) へ移した。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-102-census-tables-need-a-denominator.gsn"
+
                 goal SupportCostMinimized
                 uuid 3bf47205-f6df-4673-aa5f-74523c6a02fb
                 summary "C_support: ユーザが自力で価値に到達でき、取り返しのつかない操作を黙って受けないため、問い合わせ由来のサポート工数が最小化されている。支えは 1 本入ったが問い合わせ量は未測定 (SupportEvidenceUnset)"
                 state ToBeDeveloped
+                labels term-c-support, admits-safety
 
                     assumption SupportEvidenceUnset
                     uuid 2eac608c-aed7-4fc4-b5bf-25a865236ecf
@@ -709,7 +718,7 @@ labels meta-goal
                 uuid 9a307994-630b-4ddb-ba6b-a907ed96b23c
                 summary "C_run: 実行時コスト (計算・ホスティング・外部 API) が最小化されている"
                 state ToBeDeveloped
-                labels support-unexplored
+                labels support-unexplored, term-c-run, admits-performance
 
                     assumption RunCostEvidenceUnset
                     uuid 81ec7eee-7bc6-4096-8207-66aa438e1519
@@ -723,6 +732,7 @@ labels meta-goal
         uuid d7725e24-a076-41f0-b4a7-8fc8b04aca03
         summary "ADR の論証木はすべて、事業木のちょうど 1 つの項 (goal) に solution として吊られている。吊られていない木は事業的な goal が無いまま実行された投資であり、ROI の分母にしか現れない"
         state UnderReview
+        labels term-roi, admits-governance
 
             solution Adr153Tree
             uuid 2ad61600-e472-468c-bc6e-0581c91c412c
@@ -734,7 +744,7 @@ labels meta-goal
         uuid f3a0a25f-cae6-4c54-9a68-4c6543a752b9
         summary "式の各項 (N, p_reach, p_operate, d, q, C_miss, K, t_e, t_m, C_rework, C_support, C_run) が測られ、値と測定期間を持つ。測られていない項に吊った投資は、帰属は分かっても効果の大きさが分からない"
         state ToBeDeveloped
-        labels support-unexplored
+        labels support-unexplored, term-roi, admits-governance
 
             assumption OnlyTheDeferralTermIsMeasured
             uuid 2564e3b4-849f-4e45-b028-7f26ff51909e

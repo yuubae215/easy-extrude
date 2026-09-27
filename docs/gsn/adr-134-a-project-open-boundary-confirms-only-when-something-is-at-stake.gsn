@@ -4,7 +4,7 @@ goal TemplateSelectionNeverDiscardsUndoableWorkWithoutExplicitConsent
 uuid 3d3262f4-6fc2-4e3d-affe-89f963225ce8
 summary "Template Gallery でテンプレートを選ぶと現在のシーンが破棄される (undo 不能)。この破棄は、失うもの (undo 可能な編集) が実在するときに限りユーザーが明示的に同意した上で起きる。失うものが無ければ確認は要求しない"
 state UnderReview
-labels adr-134, adr-051, principle-11, principle-1, app, ui
+labels adr-134, adr-051, principle-11, principle-1, app, ui, term-c-support, change-safety
 
     context DiscardIsUnconditionalAndUndoIsCleared
     uuid 88d59774-f010-4458-98fc-acdc4f04d06a

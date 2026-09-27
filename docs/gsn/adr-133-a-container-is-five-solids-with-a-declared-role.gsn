@@ -4,7 +4,7 @@ goal WorkpiecesGeneratedFromADeclaredContainerAreGraspSearchableWithoutHandPlace
 uuid 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
 summary "コンテナ + ワーク配置ポリシ (整列/ばら) を宣言すると、既存の単発 grasp-search リクエスト (1回に1対象を選ぶ現行フロー) がそのワークを対象・障害物として扱える。ワークを1個ずつ手で置く必要が無く、コンテナの壁も正しく障害物として働く"
 state UnderReview
-labels adr-133, adr-078, adr-122, adr-090, adr-060, principle-2, principle-1, app, core, contract
+labels adr-133, adr-078, adr-122, adr-090, adr-060, principle-2, principle-1, app, core, contract, term-l-hidden, change-declaration
 
     context ScopeExcludesBFFAndPickSequence
     uuid 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e

@@ -55,6 +55,9 @@ ADR を新規に起こすときは、**同じ PR で `docs/gsn/<adr-slug>.gsn` �
   副次的な寄与は木の側の `context` に書く)。吊り先の項が無いときは木を吊らずに置くのではなく、
   式を 1 段分解して項を足す。`pnpm test:gsn-debt` の G5 が吊られていない木・二重に吊られた木を落とす
   (2026-09-26 までは「保留してよい」とし、57 本中 52 本が吊られないまま溜まった)。
+  木の top goal の `labels` には **`term-<項>` と `change-<変更の種類>` を 1 つずつ**書く。G6 が
+  吊り先の goal の `term-*` / `admits-*` と突き合わせる (語彙は事業木のタグが正本 — 例: 画面の語りを
+  変えた ADR は `change-presentation` で、`admits-presentation` を持つ p_operate 系の goal にしか吊れない)。
 - ADR 本文の「検証(証拠)」節から `.gsn` を名指しする。**goal ごとの支えの正本は `.gsn`
   側**で、ADR は入口だけを持つ(第二の源にしない — 核 §1.1)。
 - 作成は gsn-meta-framework(様式は `references/dsl-output.md`)、鮮度更新は gsn-maintain。

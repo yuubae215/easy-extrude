@@ -4,7 +4,7 @@ goal SameRequestProducesSamePose
 uuid 303c76ad-ddcb-4f4f-bc38-15eac97a9278
 summary "ドラッグ 1 セグメントの中で pose は要求 (ポインタ位置 / 打った数値) の関数であり、直前のフレームの結果の関数ではない。同じ要求を何度通しても同じ pose になり、実体種によって『測るときの新しさ』が変わらない"
 state UnderReview
-labels adr-101, placement, stacking, freshness
+labels adr-101, placement, stacking, freshness, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-101-pose-writers-derive-from-request-not-rendered-state.md"
 - "docs/adr/ADR-098-support-domain-is-policy-not-kind.md"

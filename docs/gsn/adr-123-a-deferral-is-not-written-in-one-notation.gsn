@@ -4,7 +4,7 @@ goal DeferralsAreCountedWhateverNotationTheyUse
 uuid e380f334-d93c-4728-a07e-20eb0bc2a7fa
 summary "残しの個数が、それが**どの記法で書かれていても**数えられる。語彙を持つ散文だけでなく、優先度表・英語の見出し・ADR の Status ヘッダのどれで宣言されていても母集団に入る"
 state UnderReview
-labels adr-123, deferral, principle-31, census, ratchet, notation
+labels adr-123, deferral, principle-31, census, ratchet, notation, term-delivery, change-governance
 artifacts
 - "docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md"
 

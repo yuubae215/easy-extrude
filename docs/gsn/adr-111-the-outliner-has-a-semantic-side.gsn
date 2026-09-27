@@ -4,7 +4,7 @@ goal EverySelectableKindLivesInSomeNavigator
 uuid 59aa57be-58d3-42d7-b53f-3854f41d3b8b
 summary "選べるものは、どれかのナビゲータに載っている。左を見れば『このシーンで何が選べるか』が尽くされていて、選択の種が増えてもそれが崩れない"
 state UnderReview
-labels adr-111, ia-phase-3-6, outliner, selection, principle-31
+labels adr-111, ia-phase-3-6, outliner, selection, principle-31, term-p-operate, change-selection
 artifacts
 - "docs/adr/ADR-111-the-outliner-has-a-semantic-side.md"
 - "docs/adr/ADR-107-selection-has-two-kinds.md"

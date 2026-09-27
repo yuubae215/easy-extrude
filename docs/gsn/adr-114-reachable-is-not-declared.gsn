@@ -4,7 +4,7 @@ goal TouchUsersReachEveryDeclaredControlAndDegreeOfFreedom
 uuid 3f2b7c14-9a6e-4d38-8b21-5c7e0a4f61d2
 summary "タッチ利用者が、カメラの 3 自由度と常設入口の全部に実際に届き、届いていない操作が無言で誤爆しない。『宣言されている』と『届く』が別の量であることを、機械が別々に数える"
 state UnderReview
-labels adr-114, mobile, principle-31, principle-26, principle-11, census, one-owner
+labels adr-114, mobile, principle-31, principle-26, principle-11, census, one-owner, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-114-reachable-is-not-declared.md"
 

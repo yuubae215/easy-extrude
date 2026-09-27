@@ -4,7 +4,7 @@ goal ArmPreviewWorksWithoutABackendWithoutClaimingAuthority
 uuid 7c1e4a2b-9f3d-4e6a-8b1c-2d5f6a7b8c9d
 summary "GitHub Pages(core/ 不在の静的ホスティング)でも、grasp-search の候補を選んだときに腕がおおよそどんな配置になるか確認できる。ただしそれが実際に到達可能な解であるという主張は一切しない — 権威の無い近似は権威のふりをしてはならない"
 state UnderReview
-labels adr-144, adr-135, adr-053, principle-1, principle-2, principle-4, principle-11, principle-29, app, ui
+labels adr-144, adr-135, adr-053, principle-1, principle-2, principle-4, principle-11, principle-29, app, ui, term-q, change-depiction-parity
 
     context GithubPagesDeployIsPermanentlyOnTheUndeclaredBranch
     uuid 1a2b3c4d-5e6f-4708-8192-a3b4c5d6e7f8

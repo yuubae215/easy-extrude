@@ -4,7 +4,7 @@ goal GovernanceNumbersMeasureWorkNotWords
 uuid 67f4cc97-9e34-4626-b245-a9a1758f4d49
 summary "統治の数字が「片付ければ減る」量を測る。そして同じ失敗形が次に起きたとき、人の記憶ではなく機械が気づく"
 state UnderReview
-labels adr-124, deferral, ratchet, principle-31, principle-19-q3, census
+labels adr-124, deferral, ratchet, principle-31, principle-19-q3, census, term-delivery, change-governance
 artifacts
 - "docs/adr/ADR-124-a-ratchet-that-counts-prose-measures-documentation.md"
 

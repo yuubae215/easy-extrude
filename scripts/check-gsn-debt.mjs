@@ -53,6 +53,16 @@
  *                   「接続は保留」は数えない — 2026-09-26 に 57 本中 52 本がその形で
  *                   吊られておらず、どの検査も緑だった (原則 #31: 数えるのは在る接続
  *                   ではなく**吊られていない木の個数**。母集団は docs/gsn の構文から導く)。
+ *   G6 CATEGORY   — 吊り先が妥当か、を**独立した 2 つの申告の一致**として問う (ADR-153 D5)。
+ *                   木の top goal は自分が動かす項 `term-*` と変更の種類 `change-*` を
+ *                   1 つずつ名乗り、事業木の goal は自分の項 `term-*` と受け入れる変更の
+ *                   種類 `admits-*` を名乗る。吊った場所の項 (祖先で最も近い term-) と
+ *                   木の項が一致し、木の変更の種類が吊った場所の admits- に含まれること。
+ *                   語彙は事業木から導く — 事業木に無い項・種類を木が名乗ったら throw 相当
+ *                   (原則 #31: 未宣言の種を既定で通さない)。**限界:** 2 つの申告を同じ人が
+ *                   同時に書けば一致させられる。問えるのは「吊った場所」と「何を変えたか」が
+ *                   食い違う形 — 2026-09-27 にカテゴリを当てた段階で 102 / 105 の 2 本が見つかった
+ *                   (予定先どおりに吊ると、どちらも項と種類の両方で落ちる)。
  *
  * ## 満期の書き方
  *
@@ -574,6 +584,108 @@ if (doubleHung.length > 0) {
     doubleHung.map(t => `      docs/gsn/${t} (${hungTrees.get(t)} 回)`).join('\n') + '\n')
 }
 
+// ── G6 CATEGORY (ADR-153 D5) ─────────────────────────────────────────────────
+
+const TAG = (labels, prefix) => labels.filter(l => l.startsWith(prefix)).map(l => l.slice(prefix.length))
+
+/** 木の top goal の labels。 */
+function topGoalLabels(file) {
+  const lines = readFileSync(join(GSN_DIR, file), 'utf8').split('\n')
+  let inTop = false
+  for (const raw of lines) {
+    if (/^goal\s+\S+/.test(raw)) { if (inTop) break; inTop = true; continue }
+    if (inTop && raw.trim() === '') break
+    const m = /^labels\s+(.*)$/.exec(raw)
+    if (inTop && m) return m[1].split(',').map(x => x.trim())
+  }
+  return []
+}
+
+/**
+ * 事業木を走査し、木ごとに「吊った場所」の項と受け入れる変更の種類を返す。
+ * 項・admits は祖先 goal のうち最も近い宣言を継ぐ (項の goal の下の小分けは項を継ぐ)。
+ */
+function collectHangSites() {
+  const sites = new Map()
+  const terms = new Set()
+  const kinds = new Set()
+  const path = join(GSN_DIR, BUSINESS_TREE)
+  if (!existsSync(path)) return { sites, terms, kinds }
+  /** @type {{indent: number, kind: string, ident: string, labels: string[]}[]} */
+  const stack = []
+  let current = null
+  for (const raw of readFileSync(path, 'utf8').split('\n')) {
+    const indent = raw.length - raw.trimStart().length
+    const text = raw.trim()
+    const node = /^(goal|strategy|solution|context|assumption|justification)\s+(\S+)/.exec(text)
+    if (node) {
+      while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop()
+      current = { indent, kind: node[1], ident: node[2], labels: [] }
+      stack.push(current)
+      continue
+    }
+    const labels = /^labels\s+(.*)$/.exec(text)
+    if (labels && current) {
+      current.labels.push(...labels[1].split(',').map(x => x.trim()))
+      for (const t of TAG(current.labels, 'term-')) terms.add(t)
+      for (const k of TAG(current.labels, 'admits-')) kinds.add(k)
+      continue
+    }
+    const art = /^-\s+"docs\/gsn\/([^"]+\.gsn)"$/.exec(text)
+    if (art && current?.kind === 'solution') {
+      const goals = stack.filter(n => n.kind === 'goal').reverse()
+      const termGoal = goals.find(g => TAG(g.labels, 'term-').length > 0)
+      const admitGoal = goals.find(g => TAG(g.labels, 'admits-').length > 0)
+      sites.set(art[1], {
+        goal: goals[0]?.ident,
+        term: termGoal ? TAG(termGoal.labels, 'term-') : [],
+        admits: admitGoal ? TAG(admitGoal.labels, 'admits-') : [],
+      })
+    }
+  }
+  return { sites, terms, kinds }
+}
+
+const { sites, terms: businessTerms, kinds: businessKinds } = collectHangSites()
+const categoryErrors = []
+for (const tree of adrTrees) {
+  const labels = topGoalLabels(tree)
+  const term = TAG(labels, 'term-')
+  const change = TAG(labels, 'change-')
+  const where = `docs/gsn/${tree}`
+  if (term.length !== 1 || change.length !== 1) {
+    categoryErrors.push(`${where}: top goal が term-* を ${term.length} 個・change-* を ${change.length} 個持つ (それぞれちょうど 1 個)`)
+    continue
+  }
+  if (!businessTerms.has(term[0])) {
+    categoryErrors.push(`${where}: term-${term[0]} は事業木に無い項 (未宣言の種を既定で通さない)`)
+    continue
+  }
+  if (!businessKinds.has(change[0])) {
+    categoryErrors.push(`${where}: change-${change[0]} はどの項も受け入れていない種類 (事業木の admits- に無い)`)
+    continue
+  }
+  const site = sites.get(tree)
+  if (!site) continue // 未接続は G5 が数える
+  if (site.term.length !== 1) {
+    categoryErrors.push(`${where}: 吊り先 ${site.goal} から項が 1 つに決まらない (祖先の term- = [${site.term}])`)
+    continue
+  }
+  if (site.term[0] !== term[0]) {
+    categoryErrors.push(`${where}: 木は term-${term[0]} を名乗るが、吊り先 ${site.goal} の項は term-${site.term[0]}`)
+  }
+  if (!site.admits.includes(change[0])) {
+    categoryErrors.push(`${where}: change-${change[0]} を吊り先 ${site.goal} は受け入れない (admits: ${site.admits.join(' / ') || 'なし'})`)
+  }
+}
+if (categoryErrors.length > 0) {
+  errors.push(
+    `G6 CATEGORY: 吊り先と木の申告が食い違う木が ${categoryErrors.length} 本。\n` +
+    '    どちらかの判断が誤っている — 吊り先を移すか、木の term-/change- を直すか、\n' +
+    '    事業木の goal の admits- を広げるか (広げるなら理由をその goal の summary に書く)。\n' +
+    categoryErrors.map(e => `      ${e}`).join('\n') + '\n')
+}
+
 // ── 出力 ─────────────────────────────────────────────────────────────────────
 
 if (errors.length > 0) {
@@ -587,4 +699,6 @@ console.error(
   `(baseline ${DEBT_BASELINE}) / うち exploring ${exploring.length} 個 · ` +
   `満期が機械可読 ${exploring.length - proseOnly.length} 個・散文のみ ${proseOnly.length} 個 ` +
   `(baseline ${PROSE_DEBT_BASELINE}) / 満期切れ 0 件 / ` +
-  `事業木に吊られた木 ${adrTrees.length - unhung.length}/${adrTrees.length} 本`)
+  `事業木に吊られた木 ${adrTrees.length - unhung.length}/${adrTrees.length} 本 · ` +
+  `項と種類が一致 ${adrTrees.length - categoryErrors.length}/${adrTrees.length} 本 ` +
+  `(項 ${businessTerms.size} · 種類 ${businessKinds.size})`)

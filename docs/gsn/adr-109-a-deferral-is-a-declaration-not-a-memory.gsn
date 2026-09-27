@@ -4,7 +4,7 @@ goal DeferralsSurviveOnlyAsCountedDeclarations
 uuid cc556cd0-d2d9-40fb-99e0-687774ebe22b
 summary "「後でやる」と書かれたものが、書かれた事実だけで消えない。残しの個数がいつでも数えられ、満期の過ぎた残しと、もう残っていない残しが機械に見える"
 state UnderReview
-labels adr-109, deferral, principle-31, census, ratchet
+labels adr-109, deferral, principle-31, census, ratchet, term-delivery, change-governance
 artifacts
 - "docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md"
 

@@ -4,7 +4,7 @@ goal MenuHeadingsKeepTheirPromise
 uuid d08b3248-d577-4125-8bca-35f0c5653539
 summary "メニューの見出しが約束したことと、その中の項目がすることが一致している。そして『何も選んでいない状態から把持を調べたい』人が、行き先を名指しされた経路でそこへ着く"
 state UnderReview
-labels adr-110, ia-phase-5-1, entrances, verbs, principle-16
+labels adr-110, ia-phase-5-1, entrances, verbs, principle-16, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-110-grasp-is-a-check-beside-its-subject-not-an-object-of-the-floor.md"
 - "src/view/HeaderEntrances.js"

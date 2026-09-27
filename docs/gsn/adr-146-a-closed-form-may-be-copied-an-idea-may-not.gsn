@@ -4,7 +4,7 @@ goal PlacementIsDecidedFromThePropertiesOfTheComputationNotFromAListOfTopics
 uuid f14a08ab-c787-4fd5-8595-ba3bb12449a8
 summary "ある計算をフロントに置いてよいかが、その計算の性質から判定でき、判定した人が変わっても同じ答えになる。解でなく性質: '探索はバックエンド' 'IK は core/ のみ' はどちらも解の形 (前者は軸が 1 本足りず、後者は話題の列挙) であり、持ち上げた性質がこれ"
 state Approved
-labels adr-146, adr-144, adr-053, adr-060, adr-102, adr-115, adr-141, adr-145, principle-1, principle-19, principle-29, principle-31, app, core
+labels adr-146, adr-144, adr-053, adr-060, adr-102, adr-115, adr-141, adr-145, principle-1, principle-19, principle-29, principle-31, app, core, term-c-rework, change-boundary
 
     context TheGuardWasAListOfTopicsAndListsDoNotGeneralise
     uuid 47b22762-2a73-46b8-8f7e-29d97429c51d

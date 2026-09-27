@@ -4,7 +4,7 @@ goal PressingAnEntranceLandsWhereItSays
 uuid e40cf716-fcb4-46db-b406-180b67abed4e
 summary "入口を押したら、その入口が名指しした先へ、押した回数と無関係に同じように着く。画面を占める面が 2 枚立ちうるとき、勝者が宣言から読める (マウント順のような、どのファイルにも書かれていない事実が決めない)"
 state UnderReview
-labels adr-113, ia-phase-5-3, principle-31, principle-11, one-owner, census
+labels adr-113, ia-phase-5-3, principle-31, principle-11, one-owner, census, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-113-one-claim-on-the-screen.md"
 - "docs/ia-redesign/03-implementation-order.md"

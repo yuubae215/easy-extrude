@@ -4,7 +4,7 @@ goal EntranceCountIsIndependentOfObjectCount
 uuid b340f294-9a64-451b-ad9e-19398c861816
 summary "入口の個数が、対象の種類が増えても増えない。ユーザーは「どれを押すのか」ではなく「何をしたいのか」で選べ、かつ 01-inventory の 48 行すべてがどこかのグループに属している"
 state UnderReview
-labels adr-108, ia-phase-5, entrances, principle-31, bounded-growth, census
+labels adr-108, ia-phase-5, entrances, principle-31, bounded-growth, census, term-p-reach, change-entrance
 artifacts
 - "docs/adr/ADR-108-entrances-are-verbs-not-objects.md"
 - "docs/ia-redesign/02-grouping-criteria.md"

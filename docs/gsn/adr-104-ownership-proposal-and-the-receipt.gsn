@@ -4,7 +4,7 @@ goal NobodyRewritesSomeoneElsesClaimSilently
 uuid 6e147dff-189e-4f5f-9bbc-410081088569
 summary "他人の主張が無言で書き換わらない。かつ、そのためにモードが 1 つも増えない。記録は人が行為した瞬間にだけ始まり、導出できる事実 (衝突・提案の陳腐化) は保存されない"
 state UnderReview
-labels adr-104, ownership, proposal, receipt, principle-31
+labels adr-104, ownership, proposal, receipt, principle-31, term-p-operate, change-manipulation
 artifacts
 - "docs/adr/ADR-104-ownership-proposal-and-the-receipt.md"
 - "src/OwnershipProposalCensus.test.js"
