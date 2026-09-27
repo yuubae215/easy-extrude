@@ -24,7 +24,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 826446df-246c-4121-9754-d1191e5e2690
-    summary "**保留** — 事業木 (profit-growth.gsn) の DecidedValueDoesNotStallBeforeUsers へ吊るのが自然だが、ADR-109 の枝が既にそこに在り、本 ADR はその枝の**母集団を広げた**だけで新しい価値経路を主張していない。接続の満期条件: ROADMAP §未移管 の 14 件が Issues へ移り、DEF-021 が畳まれたとき — そのとき初めて『残しの総量』が 2 つの register を合わせて測れるようになり、ファネル障壁として意味のある量になる。今日接ぐと、母集団の外に 14 件を残したまま『測れている』と主張することになる"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal DecidedValueDoesNotStallBeforeUsers の下に solution Adr123Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

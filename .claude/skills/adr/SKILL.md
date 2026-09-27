@@ -48,10 +48,13 @@ ADR を新規に起こすときは、**同じ PR で `docs/gsn/<adr-slug>.gsn` �
   反証されうる前提は `assumption`、前提が崩れたら論拠ごと失効する運用実態は `context`。
 - 支えの無い goal は `support-exploring`(証拠予定を名指しした `assumption` を 1 つ以上持つ)
   か `support-unexplored` を**宣言必須**。`pnpm test:gsn` が未宣言の 0 を落とす。
-- **事業木への接続は保留してよい。** `docs/gsn/profit-growth.gsn` へ接ぐのは実装 PR で、
-  テストが実在した時点で `solution` として吊る。証拠が全部未来形のうちに接ぐと事業木の
-  `ToBeDeveloped` を増やすだけで、木が「証拠実行可能」でなくなる。**接続予定先の
-  goal 名 + uuid と保留理由は `context` に書いて残す** — 保留は忘却ではない。
+- **事業木へは起票と同じ PR で吊る (ADR-153)。** `docs/gsn/profit-growth.gsn` の、この ADR が
+  動かす利益の式の項 (context `ProfitFormula`) の goal の下に `solution Adr<NNN>Tree` を 1 つ足し、
+  `artifacts` に木のパスを書く。Proposed でも吊る — solution は goal を増やさないので事業木の
+  `ToBeDeveloped` は増えず、成熟度は木の側の state が持つ。**ちょうど 1 回**(主たる寄与先 1 つ。
+  副次的な寄与は木の側の `context` に書く)。吊り先の項が無いときは木を吊らずに置くのではなく、
+  式を 1 段分解して項を足す。`pnpm test:gsn-debt` の G5 が吊られていない木・二重に吊られた木を落とす
+  (2026-09-26 までは「保留してよい」とし、57 本中 52 本が吊られないまま溜まった)。
 - ADR 本文の「検証(証拠)」節から `.gsn` を名指しする。**goal ごとの支えの正本は `.gsn`
   側**で、ADR は入口だけを持つ(第二の源にしない — 核 §1.1)。
 - 作成は gsn-meta-framework(様式は `references/dsl-output.md`)、鮮度更新は gsn-maintain。

@@ -107,4 +107,4 @@ labels adr-144, adr-135, adr-053, principle-1, principle-2, principle-4, princip
 
     context ConnectionToProfitTreeDeferred
     uuid f8192435-3c4d-4586-a708-1924354675c1
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本goalはGitHub Pagesデモの信頼性(『腕が動かないのはバグに見える』という誤解の解消)に効くもので、事業木側の対応するgoal名・uuidは未特定 — 次に事業木を読み直す機会に確定する"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal TheJudgedMachineIsTheDrawnMachine の下に solution Adr144Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"

@@ -97,4 +97,4 @@ labels adr-145, adr-081, adr-127, adr-133, adr-135, adr-136, principle-1, princi
 
     context ConnectionToProfitTreeDeferred
     uuid 7f809213-b3c4-4d5e-b354-6f708192a3b4
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本goalは実機干渉によるレイアウト出戻り (ADR-081の階梯 L4/L5 相当) を設計時に潰す価値に効くが、事業木側の対応するgoal名・uuidは未特定 — 次に事業木を読み直す機会に確定する"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal VerdictsAreDecidedFactsNotProxies の下に solution Adr145Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"

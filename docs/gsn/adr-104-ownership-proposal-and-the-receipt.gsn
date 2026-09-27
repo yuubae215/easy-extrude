@@ -25,7 +25,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 1003323b-09a7-48bc-95d5-f9b3220f7d2b
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal 群のうち ByDirectManipulationTrust 配下 — 提案が『動かそうとしたことが消えない』を保証するので直接操作の信頼に効く。保留理由: 本 ADR の受益が観測できるのは当事者が 2 人以上いる案件であり、1 人プロジェクトでは D5 のとおり証憑が増えないのが正しい姿である。複数当事者の dogfooding が回った PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal SelectionAndViewpointArePredictable の下に solution Adr104Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

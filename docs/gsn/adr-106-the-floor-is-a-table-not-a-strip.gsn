@@ -31,7 +31,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 3c01651b-6e47-4297-87df-fd9448f53237
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 『置く → 届くか見る → 置き直す』のループが器の排他で切れていることが、価値に到達するまでの往復回数を直接押し上げるから。保留理由が 2 つ: (a) 本 ADR は Proposed で証拠が全部未来形、(b) 到達までの往復回数を測る手段がまだ無く、今つなぐと未測定の枝に未実装の枝を吊ることになる。dogfooding (docs/dogfooding/README.md) で往復が記録され始めた PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal WhatIsTypedIsSeenWhileTyping の下に solution Adr106Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

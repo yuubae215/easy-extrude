@@ -1,0 +1,64 @@
+GOALS adr153_every_investment_hangs_on_one_term_of_the_profit_formula
+
+goal EveryInvestmentHangsOnOneTermOfTheProfitFormula
+uuid c2670927-e16c-4211-8961-19572c8b4b8b
+summary "開発投資 (ADR とその論証木) はすべて、利益の式のちょうど 1 項に帰属しており、帰属していない投資と二重に帰属した投資が機械に見える。事業木の goal は話題ではなく式の項から導出されているので、項を持たない goal も、吊り先を持たない木も生まれない。解でなく性質: 『事業木に接続する』『grasp の枝を足す』は解の形"
+state UnderReview
+labels adr-153, adr-109, adr-126, principle-31, principle-32, kernel-1-2, kernel-0, gsn
+artifacts
+- "docs/adr/ADR-153-every-investment-hangs-on-one-term-of-the-profit-formula.md"
+
+    context FiveOfFiftySevenWereHung
+    uuid 5b00ae42-8dc6-4c51-a101-a6d892cb059c
+    summary "2026-09-26 実測 (gsn-maintain 棚卸し): ADR の木 57 本のうち事業木に吊られていたのは 5 本 (094 / 095 / 097 / 098 / 109)。35 本は木の側に『接続は保留』の context を持ち (台帳に満期の行を持つのは 110〜112 の 3 本だけ)、17 本は事業木に一切触れていなかった。pnpm test:gsn も test:gsn-debt も緑 — 吊られていないことを数える機械が無かった"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    context TheValueTermHadNoBranch
+    uuid eb52e94b-6d1b-48eb-87e7-8844ed4c5f14
+    summary "吊られなかった主因は事業木の側にあった: 売上の枝は採用ファネル (到達・操作) だけを持ち、『1 回の仕様決めで利用者が得る価値』そのもの (判定が速く・正しく出ること) に goal が無かった。grasp 系の木 (081, 118〜152 の大半) は吊り先を持てず、ADR-152 の木は『その枝は事業木に無い』と自分で記録していた"
+    artifacts
+    - "docs/gsn/adr-152-how-to-grasp-and-what-grasps-are-declarations-and-each-is-seen.gsn"
+
+    context FormulaLivesInTheBusinessTree
+    uuid fb782ed2-02c9-4a02-92e2-3797863ef72b
+    summary "式の正本は profit-growth.gsn の context ProfitFormula (Π = R − C, R = U · d · V, U = N · p_reach · p_operate, V = q · ΔC_spec − (1 − q) · C_miss, ΔC_spec = K₀(t_e0 + t_m0) − K₁(t_e1 + t_m1), K = 1 + L_hidden + L_blind, C = C_rework + C_support + C_run)。ADR-153 本文は導出の筋と図を持ち、この木は写しを持たない"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyTermsNotTopics
+    uuid 1f653523-31d4-424e-96ea-9cdf725ebd48
+    summary "却下 A (話題で枝を切る — UI / grasp / 統治): 話題は項を持たないので ΔΠ_i を式で書けず ROI が出ない。却下 B (1 本の木を複数の項に吊る): 寄与の二重計上で ΣΔΠ_i が Π を超える。却下 C (吊り先を木の側に書く): 35 本の『保留』がまさにこの形で溜まった — 接続の正本は事業木側に 1 つ (§1.1)。却下 D (Proposed の木は吊らない): 旧 adr skill の『保留してよい』が生んだ状態で、solution は goal を増やさないので吊っても事業木の ToBeDeveloped は増えない"
+
+    assumption PrimaryTermIsAJudgement
+    uuid 8bf99eb1-2cfc-4e02-a11e-368a12acfd5f
+    summary "反証されうる前提: 主たる寄与先の項の選択は人の判断であり、機械 (G5) が問うのは『ちょうど 1 回』だけ。誤った項に吊っても緑になる。反証される形: 項ごとの測定が入ったとき、吊った木の Δx_i が 0 なのに別の項が動いている"
+
+    strategy ByDerivingGoalsFromTheFormulaAndCountingTheUnhung
+    uuid 21210fcf-93f6-4953-9a4d-23823b0da560
+    summary "D1 事業木の goal を利益の式の項から導出する (文章・図・式の三位一体 — 式が枝の数を決め、図が構造を、文章が各項の意味を持つ)。D2 全 ADR の木をちょうど 1 つの項の goal に solution として吊る。D3 吊られていない木・二重に吊られた木の個数を check-gsn-debt G5 が問う。D4 adr skill の『接続は保留してよい』を『起票と同じ PR で吊る』に改める"
+
+        goal EveryBusinessGoalIsATermOfTheFormula
+        uuid 407407e3-ef78-4360-bb72-0b0080fcb4bd
+        summary "D1: 事業木の各 goal は式の 1 項 (または項の和・積の因子) を summary で名指しし、各 strategy はその項の分解 (和なら全項、積なら全因子) を子 goal に持つ。『相互依存する仕様を何度もループせずに効率的に評価できる』は ΔC_spec の項として置かれ、K = 1 + L_hidden + L_blind と t_e・t_m から 5 つの子 goal が導出される"
+        state UnderReview
+        labels support-verified
+
+            solution BusinessTreeLintsClean
+            uuid 74168469-e713-4b1a-96de-1e1dba62e902
+            summary "python3 .claude/skills/gsn-meta-framework/scripts/gsn_tool.py lint docs/gsn/profit-growth.gsn — 134 entities, 0 error(s), 0 warning(s) (2026-09-27, 旧版は 50 entities で fan-out 1 の警告 2 件)。旧版で fan-out 1 の警告を出していた ByScreenBandwidthBarriers / ByDirectManipulationTrust は、項の分解として 2 goal ずつ持つようになった (2026-09-27)"
+            artifacts
+            - "docs/gsn/profit-growth.gsn"
+
+        goal EveryTreeIsHungExactlyOnce
+        uuid 34391bf0-96f4-4452-8182-1f44a8f61bcf
+        summary "D2 / D3: docs/gsn/adr-*.gsn はすべて、事業木の solution の artifacts にちょうど 1 回現れる。0 回も 2 回以上も fail し、木の側の『保留』の散文は数えない"
+        state UnderReview
+        labels support-verified
+
+            solution AttributionCensusGreen
+            uuid bcaac102-176f-42d3-95b8-92992da6e2f4
+            summary "pnpm test:gsn-debt (CI gate) — 木 59 本 / 宣言された未支持 49 個 (baseline 49) / 満期切れ 0 件 / 事業木に吊られた木 58/58 本 (2026-09-27)。負の対照: 事業木を 2026-09-26 の版に戻すと G5 が 53 本の未接続で fail し (木の側の context からの参照は数えないので 109 も未接続に数えられる)、1 本の木を 2 か所に吊ると二重計上で fail する (2026-09-27 に手で確認)"
+            artifacts
+            - "scripts/check-gsn-debt.mjs"
+            - "docs/gsn/profit-growth.gsn"

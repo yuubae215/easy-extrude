@@ -68,4 +68,4 @@ labels adr-134, adr-051, principle-11, principle-1, app, ui
 
     context ConnectionToProfitTreeDeferred
     uuid 7c1a2b3c-4d5e-4f60-8a1b-2c3d4e5f6077
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は UX の信頼性 (undo 不能な破壊を防ぐ) に効くもので、事業木側の対応する goal 名・uuid は未特定 — 次に事業木を読み直す機会に確定する"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal SupportCostMinimized の下に solution Adr134Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"

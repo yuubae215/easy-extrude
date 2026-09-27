@@ -49,7 +49,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 4d5ae071-5432-4ff8-811b-a3439b3bd0e4
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal UsersReachGraspValue (uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f、RevenueMaximized 配下) — 押しても何も起きない入口は価値に到達する前の離脱点そのものだから。保留理由: ADR-108 の同名 context と同じで、どの入口から入った人が価値に到達したかの測定手段が無い。dogfooding で入口ごとの到達が記録され始めた PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal EveryEntranceLeadsWhereItSays の下に solution Adr113Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

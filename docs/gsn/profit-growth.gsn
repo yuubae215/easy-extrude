@@ -17,13 +17,23 @@ labels meta-goal
     - ".claude/rules/00-kernel.md"
     - "docs/adr/README.md"
 
+    context ProfitFormula
+    uuid 1dae5ff9-17a0-452f-8d05-8bfe6d433cea
+    summary "利益の式 (ADR-153 で導出。各 goal はこの式のちょうど 1 項に対応し、項を持たない goal は足さない): Π = R − C ／ R = U · d · V ／ U = N · p_reach · p_operate ／ V = q · ΔC_spec − (1 − q) · C_miss ／ ΔC_spec = K₀ · (t_e0 + t_m0) − K₁ · (t_e1 + t_m1)、K = 1 + L_hidden + L_blind ／ C = C_rework + C_support + C_run。記号: N 流入 / p_reach 判定結果まで到達する率 / p_operate 画面を読み操作を信じて使い続ける率 / d 決着した設計が利用者まで届く率 / q 判定が現実と一致する率 / C_miss 誤判定が現場で起こす出戻りの費用 / K 1 つの仕様決めに要する評価ループ回数 (添字 0 = 従来の決め方、1 = このツール) / L_hidden 他の仕様を固めた後に見つかった依存が強いるループ / L_blind 不合格のあとどの仕様を変えるかを探すループ / t_e 1 回の評価時間 / t_m 仕様を 1 つ変えて再評価に掛けるまでの手間"
+    artifacts
+    - "docs/adr/ADR-153-every-investment-hangs-on-one-term-of-the-profit-formula.md"
+
+    context ReturnOnInvestmentRule
+    uuid 7f41fd51-3240-42e4-b3a3-29ef223ef938
+    summary "投資対効果: ROI_i = ΔΠ_i / I_i、ΔΠ_i ≈ (∂Π/∂x_i) · Δx_i。ADR の論証木 i は吊られた項 x_i にだけ寄与を帰属させる (主たる寄与先 1 つ — ByRevenueAndCost の規約。副次的な寄与は木の側の context に書く)。I_i (投下した開発) は木ごとに分かるが、Δx_i は項の測定が無い限り出ない — 分子の欠落は EveryTermIsMeasured が未探索として持ち続ける"
+
     assumption BusinessTargetsUnset
     uuid d2b9244d-44b4-4c5a-920f-ca5fc16648f6
     summary "プレースホルダ: 売上・経費・利益の数値目標と測定期間は未設定。設定されるまで上位 2 ゴールは方向性のみを与え、真偽としては判定できない"
 
     strategy ByRevenueAndCost
     uuid a2cb7e61-0c57-46aa-aab1-e728452a46a4
-    summary "Argument by 利益の恒等分解 (売上最大化 × 経費最小化) — 網羅的だが排他的ではない: 両方に効く枝が在りうるので、枝は主たる寄与先に吊り、副次的な寄与は justification/assumption で名指しする"
+    summary "Argument by 利益の恒等分解 Π = R − C (売上最大化 × 経費最小化) — 網羅的だが排他的ではない: 両方に効く枝が在りうるので、枝は主たる寄与先に吊り、副次的な寄与は justification/assumption で名指しする"
 
         goal RevenueMaximized
         uuid 38eab2aa-ac07-4bdd-aa06-49ddc7a78a81
@@ -31,13 +41,338 @@ labels meta-goal
         state ToBeDeveloped
         labels meta-goal
 
-            strategy ByAdoptionFunnel
-            uuid 011e8259-7e02-4a77-a840-3e68a931960b
-            summary "Argument by 採用ファネルの通過障壁の除去 — 売上はユーザが価値に到達した回数の関数であり、到達前に脱落させる障壁が売上の上限を決める"
+            strategy ByUsersDeliveryAndValuePerDecision
+            uuid 911a4492-bd4a-40d1-bf89-a700db0c92ea
+            summary "Argument by 売上の積分解 R = U · d · V — 価値に到達して使い続ける利用者の数 (U)、決着した設計が利用者まで届く率 (d)、1 回の仕様決めで利用者が得る価値 (V)。積なのでどれか 1 項が 0 なら売上は 0: 3 項すべてに枝が要る。旧版はファネル (U と d) だけを持ち V に枝が無かったため、判定そのものの価値を主張する木 (grasp 系) が吊り先を持てなかった"
+
+                goal UsersReachAndKeepUsingTheVerdict
+                uuid 3c699312-61d2-4eb9-b0c2-1fa1cfd610bd
+                summary "U = N · p_reach · p_operate: 流入した利用者が判定結果まで到達し (p_reach)、画面を読めて操作を信じられるので使い続ける (p_operate)"
+                state ToBeDeveloped
+                labels meta-goal
+
+                    strategy ByAdoptionFunnel
+                    uuid 011e8259-7e02-4a77-a840-3e68a931960b
+                    summary "Argument by 採用ファネルの通過障壁の除去 — U = N · p_reach · p_operate。到達前に脱落させる障壁 (p_reach) と、到達後に使うのをやめさせる障壁 (p_operate) が U の上限を決める"
+
+                        goal UsersReachGraspValue
+                        uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f
+                        summary "新規ユーザは、ドメイン知識の事前想起なしにコンテキストを成立させ、grasp-search の判定結果 (価値の出口) に到達できる"
+                        state ToBeDeveloped
+                        labels adr-091
+                        groups context-intake
+
+                            context Adr091Scope
+                            uuid 94026b75-efe6-41f2-b732-30b1c874a82f
+                            summary "ADR-091 (Proposed): 入力の起点を白紙からの生成ではなく既定値入り完成文書の訂正にする / ref をシステム所有にする。ADR-051→058→063 で摩擦・手本・想起を順に下げたのに同じ痛みが 3 度報告された、という観測地点から出発する"
+                            artifacts
+                            - "docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md"
+                            - "docs/adr/ADR-063-selection-first-intake-wizard.md"
+
+                            justification WhyCorrectionOverCreation
+                            uuid ab2801a3-afe0-4700-907a-02ccf3db22fb
+                            summary "訂正を選ぶ根拠: 生成は想起を要し、選択は判断を要するが、訂正は提示された値との照合だけで済む — 事前知識ゼロで実行できる唯一の入力行為。ADR-058 が fork & tweak として既に発見していた性質を、例外パスから既定パスへ移す"
+
+                            strategy ByCorrectionOnlyIntake
+                            uuid 7b3addd2-feef-4ae3-bf5a-444f686db52d
+                            summary "Argument by 訂正のみで到達できることの成立条件 (ADR-091 §1-§4 の 4 条件の充足)"
+
+                                goal DefaultsAreAcceptableToPractitioner
+                                uuid b31dae22-eb0a-40dd-ba92-ca87bc9ccce3
+                                summary "既定文書の初期値は、実際に grasp-search を通した当事者が『訂正せずに通してよい』と判断する値になっている"
+                                state ToBeDeveloped
+                                groups dogfooding
+
+                                    assumption DefaultsFromDogfooding
+                                    uuid dc61ccd1-2708-433c-9da9-79fde7699a3b
+                                    summary "H: 既定値は机上では決まらず、当事者が実際に通した記録からしか得られない (一意の最適解は存在しない — ADR-081 ConvergenceBySweetSpot と同じ立場の小さな一例)。証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の『獲得した値』表が埋まり、createDefaultCellDoc() の中身として引用されること"
+
+                                    solution DogfoodingRunbook
+                                    uuid 91ff7980-a66e-4afa-8c52-d56ffd276db6
+                                    summary "docs/dogfooding/README.md — 探索の起動手順 (pnpm dev:stack) と記録様式が固定済み。これは『探索が実施可能である』ことの証拠であって『既定値が妥当である』ことの証拠ではない (値の欄はまだ空)"
+                                    artifacts
+                                    - "docs/dogfooding/README.md"
+                                    - "docs/dogfooding/2026-07-25-context-defaults.md"
+
+                                goal ZeroInputArtifactExists
+                                uuid 23970575-7cb6-46aa-8287-247e36d4b358
+                                summary "0 入力の時点で妥当な成果物が存在する: validator がエラー 0 で通り、checks が非空の結果を返し、3D が描画されている"
+                                state ToBeDeveloped
+                                labels support-exploring
+
+                                    assumption ZeroInputPlanned
+                                    uuid f78e8ea9-b6a5-4573-a7df-c93041989cff
+                                    summary "証拠予定: DocBuilder.test.js に、createDefaultCellDoc() が ContextValidator でエラー 0 かつ actors/variables/requirements いずれも非空であることを固定 (ADR-091 §1)"
+
+                                goal PristineResidueIsVisible
+                                uuid 61514d04-2b09-46d9-8efc-559a33ad45ed
+                                summary "訂正されていない既定値の残余が件数として可視であり、既定のまま提出できる静かな失敗が告知される"
+                                state ToBeDeveloped
+                                labels support-exploring
+
+                                    assumption PristineCountPlanned
+                                    uuid 781e07f8-9711-4e8a-98fa-4a8f63e4dfca
+                                    summary "証拠予定: IntakeAssist に pristineCount を追加し、全欄未訂正で総欄数・1 欄訂正で −1 を固定。review 段と Checks への表示 (ADR-091 §3 / 原則 #11)"
+
+                                goal IdentityNotUserAuthored
+                                uuid b79c4165-5663-4006-bc22-7416f548986d
+                                summary "doc 内の同一性 (ref) の命名がユーザに要求されず、採番の単一所有者から鋳造される"
+                                state ToBeDeveloped
+                                labels support-exploring
+
+                                    assumption MintRefPlanned
+                                    uuid fb7b5107-73ab-4662-baf9-d09c593bbc5f
+                                    summary "証拠予定: mintRef の決定性・一意性の property テストと、suggestRef を呼んでいること (採番の単一源) の参照同一性テスト (ADR-091 §4 / §1.1)"
+
+                            strategy ByFeedbackLoop
+                            uuid f5a1aae8-d932-4c58-9cc6-9bbd9fa42f68
+                            summary "Argument by フィードバック反映ループの成立 — 既定値が 1 回の設計では当たらない前提を受け入れ、当たるまで回る機構の存在自体を主張する"
+
+                                goal EnvironmentIsReproducible
+                                uuid 6e1768f9-6607-46ee-8113-4be2614b6f38
+                                summary "当事者は自分の手でフルスタック (コアAPI → BFF → フロント) を起動し、grasp-search を通した探索を再現できる"
+                                state ToBeReviewed
+                                groups dogfooding
+
+                                    solution StackBootEvidence
+                                    uuid 1c956ca9-6b77-4f45-999e-5b3914b9ceeb
+                                    summary "実行検証 2026-07-25 (アプリコード状態 = d310545、起動スクリプトは本コミットで追加): pnpm install → cd core && uv sync --extra dev --extra serve → pnpm dev:stack で 3 プロセスが起動し全ポート応答 (コアAPI 127.0.0.1:4001 / BFF 3001 / vite 5173)。露出版 pnpm dev:stack:host も同様に検証済み (vite Network バインドあり)。経路の通しは curl -X POST localhost:3001/api/grasp/search --data @templates/bin-picking-thin-container/grasp-search.request.json が contractVersion 4 の候補 5 件 (rank 1 = 5 判定すべて true, totalScore 0.9593) を返すことで確認"
+                                    artifacts
+                                    - "package.json"
+                                    - "docs/dogfooding/README.md"
+                                    - "templates/bin-picking-thin-container/grasp-search.request.json"
+
+                                    solution SuiteGreenEvidence
+                                    uuid 071aa289-d1ab-4e73-9970-33f34ab8b2b3
+                                    summary "実行検証 @ d310545: pnpm test:core 137 passed / pnpm test:contract 23 tests 23 pass / pnpm test:context 474 tests 474 pass / pnpm test:adr 91 本 OK — 探索の出発点が既知の緑であり、探索中に出た不具合を既存の壊れと切り分けられる"
+
+                                goal FeedbackIsCaptured
+                                uuid 9c3a827f-683a-4c02-bf38-2664af6e1870
+                                summary "探索中の詰まりと獲得値が、後続セッションと突き合わせ可能な固定様式で記録される"
+                                state ToBeDeveloped
+                                labels support-exploring
+
+                                    assumption FeedbackLedgerPlanned
+                                    uuid 22e5b511-8137-4c83-9397-a2b494d0c87e
+                                    summary "証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の 4 節 (環境 / 獲得した値 / 詰まり / 判定結果) が実際に埋まること。様式は固定済みだが、記録は当事者の探索後にしか存在しない"
+
+                                goal IterationUpdatesTheDefault
+                                uuid f10648c6-15b4-408a-9d54-0bf6f4b008ff
+                                summary "記録された詰まりと獲得値が、次イテレーションで既定文書と ADR-091 の改稿に反映される"
+                                state ToBeDeveloped
+                                labels support-exploring
+
+                                    assumption IterationPlanned
+                                    uuid df5b25c2-28e7-4e31-9cc9-9955f2edbc75
+                                    summary "証拠予定: 探索記録の『ADR-091 に返す修正』節 → ADR-091 の改稿 (または Accepted 化) → createDefaultCellDoc() の値差分、の 3 点が同一の記録から辿れること"
+
+                            strategy ByRemovingDeadEndsBeforeTheVerdict
+                            uuid aeaacdd0-22b1-413a-bb1c-3dab46e4fcc5
+                            summary "Argument by 判定結果に着くまでの行き止まりの除去 — p_reach は経路上の各段の通過率の積なので、初見 → 入口 → 入力 のどの段で落ちても 0 に近づく。ADR-091 の 2 本 (入力の起点を訂正に) とは別に、既に実装された木が塞いだ行き止まりをここに吊る"
+
+                                goal FirstLookShowsAUsableScene
+                                uuid 9a2cf08a-2ed5-4d88-afb4-a017244b84bd
+                                summary "開いた直後・テンプレートを選んだ直後に、使えるシーン (ロボットと対象) が画面に描かれている。見えないものは試されないので、初見で何も描かれない画面は価値の手前の離脱点である"
+                                state UnderReview
+
+                                    solution Adr142Tree
+                                    uuid 5a191f9c-2676-417a-b1a0-8fa861e53eec
+                                    summary "ADR-142 の論証木 (top goal PickingASceneWithARobotShowsTheRobot) を吊る。テンプレートを選んだ直後にロボットが描かれない状態を消した — 選ぶことは見たいことの表明。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-142-a-picked-scene-is-not-someone-elses-furniture.gsn"
+
+                                    solution Adr143Tree
+                                    uuid f84ccdff-c3ba-4ce4-8e2f-2c2fc7098c08
+                                    summary "ADR-143 の論証木 (top goal ADeclaredDefaultReachesThePixel) を吊る。宣言された既定 (表示) が読み込んだシーンでも画素に届く。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-143-a-declared-default-must-reach-the-loaded-scene.gsn"
+
+                                    solution Adr149Tree
+                                    uuid 6bbf2eb1-a8d6-47e1-a4ad-33bd801abccc
+                                    summary "ADR-149 の論証木 (top goal TheFirstLookIsRealisticAndLightweightStaysOneClickAway) を吊る。初見で実機に見える腕が描かれ、軽量表示は常設トグル 1 クリック — 第一印象が判断の材料になる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-149-the-first-look-is-realistic-lightweight-is-a-standing-choice.gsn"
+
+                                goal EveryEntranceLeadsWhereItSays
+                                uuid b977d432-293e-4bb2-bcde-aad2e6a4fc6a
+                                summary "入口を押したら名指しした先へ着き、入口の数は対象の種類で増えず、タッチでも全部に届く。押しても何も起きない入口・画面外に消えた入口は、到達の手前で利用者を落とす"
+                                state UnderReview
+
+                                    solution Adr108Tree
+                                    uuid f5230905-a220-4dfe-bd6d-2e7e68f1bcf0
+                                    summary "ADR-108 の論証木 (top goal EntranceCountIsIndependentOfObjectCount) を吊る。入口の数が対象の種類で増えず、何をしたいかで選べる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-108-entrances-are-verbs-not-objects.gsn"
+
+                                    solution Adr110Tree
+                                    uuid c1c86663-b3ed-4161-b085-372f54c19499
+                                    summary "ADR-110 の論証木 (top goal MenuHeadingsKeepTheirPromise) を吊る。何も選んでいない状態から把持を調べたい人が名指しされた経路で把持に着く (起票時の予定先 UsersReachGraspValue の配下 — DEF-051 を決着)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-110-grasp-is-a-check-beside-its-subject.gsn"
+
+                                    solution Adr113Tree
+                                    uuid 51e5ba97-8542-4f06-92ff-c6cba6bfe726
+                                    summary "ADR-113 の論証木 (top goal PressingAnEntranceLandsWhereItSays) を吊る。入口を押した回数と無関係に、名指しした先へ同じように着く。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-113-one-claim-on-the-screen.gsn"
+
+                                    solution Adr114Tree
+                                    uuid 98a0c61c-b300-4566-8e2d-77727b51a337
+                                    summary "ADR-114 の論証木 (top goal TouchUsersReachEveryDeclaredControlAndDegreeOfFreedom) を吊る。タッチ利用者が宣言された入口とカメラの自由度に実際に届く (当事者は主にモバイル)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-114-reachable-is-not-declared.gsn"
+
+                                goal WhatIsTypedIsSeenWhileTyping
+                                uuid 52ade257-1a95-4815-a88e-9120cab8f47b
+                                summary "文書を入力しているあいだ、入力している対象とその入力がどう効いたかが同時に見えている。書いた結果が見えない入力は最後まで書き切られず、判定に着かない"
+                                state UnderReview
+
+                                    solution Adr106Tree
+                                    uuid fa5ec54b-a6a8-43b7-ba76-a408a826e60c
+                                    summary "ADR-106 の論証木 (top goal SubjectAndFloorAreVisibleTogether) を吊る。交渉している対象を見ながら交渉できる — 場が開いても N パネル・LINK NETWORK・ギズモが消えない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-106-the-floor-is-a-table-not-a-strip.gsn"
+
+                                    solution Adr112Tree
+                                    uuid f5d3a624-8810-4bab-87ab-b479bfe61e05
+                                    summary "ADR-112 の論証木 (top goal WhatYouTypeIsEchoedWhereYouCanSeeIt) を吊る。書いたものがどう効いたかが書いている最中に見える (起票時の予定先 RevenueMaximized 配下 — DEF-053 を決着)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-112-the-document-intake-address-becomes-permanent.gsn"
+
+                        goal OtherAdoptionBranchesCovered
+                        uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e
+                        summary "コンテキスト入力以外の採用障壁 (画面の可読性・価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
+                        state ToBeDeveloped
+
+                            assumption AdoptionBranchesUnexplored
+                            uuid d126c790-2083-480a-a074-851c18e6ad4b
+                            summary "既知の欠落 (縮小した): 本 goal の下は可読性 (ByScreenBandwidthBarriers) と操作の信頼 (ByDirectManipulationTrust) の 2 本が埋まっているが、価格・導入形態・CAD/PLC 接続・信頼性の証明は依然として未展開である。この assumption は『この decomposition が何を省いたか』を明示し続けるために残す (false rigour 対策) — 枝が入ったことで goal 全体が閉じたと読ませない"
+
+                            strategy ByScreenBandwidthBarriers
+                            uuid 3a8d1c60-9b47-4e52-8f13-6c0a5d2e97b4
+                            summary "Argument by 『画面が構造と状態を正しく読ませるか』という採用障壁の除去 — 狭い画面で構造が読めること (MobileStructureViewIsReadable) と、画面が語ることが描かれていることと一致すること (ScreenSaysWhatIsTrue) の 2 つ"
+
+                                goal MobileStructureViewIsReadable
+                                uuid 9e5a3f21-4c7d-4b8e-a2f6-1d3c8b7e0a45
+                                summary "モバイルで唯一の常設構造ビュー (LINK NETWORK パネル) が、TF ツリー上の位置と制約の相手を同時に読ませる。当事者はモバイルで見ていることが多く Outliner はドロワー・NodeEditor はほぼ未使用なので、この 220x160px が構造理解の全帯域である — 読めないことは採用障壁そのもの"
+                                state ToBeReviewed
+                                groups adr-094, adr-095
+
+                                    solution LinkNetworkTfTreeRegression
+                                    uuid 7f2c6b48-3e91-4a5d-9c07-52b8d1e4f6a3
+                                    summary "ADR-094 実装 (Accepted): 融合ノードで無情報な行を消し (行 3->2、SVG 160->152px)、木辺を骨格へ、凡例 2 行。証拠は node --test src/view/LinkNetworkLayout.test.js 27/27 pass と 390px 実測記録。詳細な論証木は adr-094-link-network-tf-tree.gsn (top goal は当事者の実利用待ちで ToBeReviewed — 融合で Origin CF を単独選択できなくなる件は仮説のまま)"
+                                    artifacts
+                                    - "docs/gsn/adr-094-link-network-tf-tree.gsn"
+                                    - "src/view/LinkNetworkLayout.test.js"
+                                    - "docs/dogfooding/2026-07-26-link-network-tf-tree.md"
+
+                                    solution LinkNetworkIndentedOutline
+                                    uuid 4d1b8e07-2a5f-4c93-b6e1-8f0a3c7d2b19
+                                    summary "ADR-095 実装 (Accepted): 幾何割当を『深さ→y / 兄弟→x』から『ノード順→y / 深さ→x』へ入れ替え、denseMode を廃止。390px / Solid 12 個の実測で実体ラベルが 0 個から 24 個になった (before は凡例 2 行以外に文字が無く点 24 個だけ) — 『この 220x160px が構造理解の全帯域』というこの goal の前提に対し、その帯域が実運用規模で 0 だったことの是正。証拠は node --test src/view/LinkNetworkLayout.test.js 39/39 pass と 390px before/after 実測。詳細は adr-095-link-network-indented-outline.gsn"
+                                    artifacts
+                                    - "docs/gsn/adr-095-link-network-indented-outline.gsn"
+                                    - "src/view/LinkNetworkLayout.test.js"
+                                    - "docs/dogfooding/2026-07-26-link-network-indented-outline.md"
+
+                                goal ScreenSaysWhatIsTrue
+                                uuid 8d481452-c13d-41e7-84b2-335b4aa831bd
+                                summary "画面の語り (行の目・色) が、実際に描かれている状態と一致している。目が開いているのに何も見えない・何も起きていないのに色が付いている画面は、読めても信じられない"
+                                state UnderReview
+
+                                    solution Adr096Tree
+                                    uuid 8d6b95d2-eab6-46e5-9262-9205ccb7e0d5
+                                    summary "ADR-096 の論証木 (top goal WhatTheUiSaysIsWhatIsDrawn) を吊る。Outliner の行が語る可視性と描画が常に一致し、eye を押すと必ず何かが変わる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-096-visibility-two-axes.gsn"
+
+                                    solution Adr100Tree
+                                    uuid dc12c971-eaa1-4387-a487-c6b6e7b2085c
+                                    summary "ADR-100 の論証木 (top goal SaturationIsSpentOnStateNotOnDefaults) を吊る。彩度は状態にだけ配られ、色が付いているものには意味がある。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-100-color-says-state.gsn"
+
+                            strategy ByDirectManipulationTrust
+                            uuid 84c5ee34-d94e-47eb-8d8d-acbcdc3445b5
+                            summary "Argument by 『触った結果が予測どおりか』という採用障壁の除去。読めること (ByScreenBandwidthBarriers) と信じられることは別の障壁で、後者は当事者の言葉では『すごく動かしづらい』『なぜか突き抜ける』として届いた。直接操作が予測を裏切る画面は、機能が揃っていても使われない — 動かすこと (PlacementIsPredictable) と選ぶこと・見る向きを変えること (SelectionAndViewpointArePredictable) の 2 つ"
+
+                                goal PlacementIsPredictable
+                                uuid d17c02f9-f551-4d7b-a927-0636126d4dfb
+                                summary "実体を動かしたとき、どの入力経路を通っても『何の上に載っているか』が壊れない。床を抜けるか抜けないかがジェスチャの種類・実体の種類・カメラの向きによって変わらず、床下は事故ではなく宣言として起きる"
+                                state ToBeReviewed
+                                groups adr-097
+
+                                    solution PlacementPolicyAtOneEntry
+                                    uuid 2b754e6c-7a01-4555-a145-64867d56425c
+                                    summary "ADR-097 実装 (Accepted): 接地をジェスチャの副作用から実体の状態へ移し、配置方針 (supported / grounded / free) を種ごとに宣言して pose 書き込みの入口 1 箇所で強制した。当事者が報告した 5 症状はすべて『経路ごとに実装していた』ことの直接の結果で、実装中に個数検査が入口をさらに 2 つ (N パネル数値入力・タッチ再グラブ) 見つけた。証拠は node --test src/domain/placement.test.js 16/16 + src/PosePolicyOwnership.test.js 5/5 + playwright 21/21 (症状回帰は差分ペアで、同じジェスチャが宣言の有無だけで床下へ行くか止まるかが分かれる)。『動かしやすくなったか』は主観なので当事者の実利用待ちで ToBeReviewed。詳細は adr-097-support-as-entity-state.gsn"
+                                    artifacts
+                                    - "docs/gsn/adr-097-support-as-entity-state.gsn"
+                                    - "src/domain/placement.test.js"
+                                    - "src/PosePolicyOwnership.test.js"
+
+                                    solution SupportDomainIsPolicyNotKind
+                                    uuid 5e8b1d47-9c02-4f36-b1a8-7d3e0c4a6f19
+                                    summary "ADR-098 実装 (Accepted): ADR-097 が剥がし残した種の門を閉じた。stack assist の instanceof Solid が 2 枚残っていたため方針語 grounded が種によって 2 つの意味を持っており (Solid = 床を割らない かつ 面に載る / robot_base = 床を割らない だけ)、当事者の『キューブはスタックするのにロボットはスタックしない』はその現れだった。適用可否を方針の述語へ、支持プローブを方針表の隣の宣言へ移し、種分岐は 4 箇所 (起票時の見積もりは 2 箇所) すべて撤去。証拠は node --test src/domain/placement.test.js 31/31 + src/PosePolicyOwnership.test.js 8/8 + playwright 24/24 (症状回帰は差分ペアで、同じ数値 Grab が S の有無だけで載るか載らないかに分かれる)。両検査とも変異を入れて空回りしていないことを確認済み。『ロボットが箱の上に立つことが grasp として意味を持つか』は当事者の実利用待ちなので、この goal は ToBeReviewed のまま。詳細は adr-098-support-domain-is-policy.gsn"
+                                    artifacts
+                                    - "docs/gsn/adr-098-support-domain-is-policy.gsn"
+                                    - "src/domain/placement.js"
+                                    - "e2e/smoke.spec.js"
+
+                                    solution Adr101Tree
+                                    uuid 1d220d49-d8a9-4b31-bbb5-922479396c44
+                                    summary "ADR-101 の論証木 (top goal SameRequestProducesSamePose) を吊る。同じ要求 (ポインタ位置 / 打った数値) は同じ pose になり、直前フレームの結果に依存しない (起票時の予定先どおり)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-101-pose-writers-derive-from-request.gsn"
+
+                                    solution Adr102Tree
+                                    uuid 1d39b97b-9acc-4166-86a2-6cae752525dc
+                                    summary "ADR-102 の論証木 (top goal CensusToolsDoNotSilentlyGoStale) を吊る。配置の入口を数える census 自体が古びない — ADR-097/098 の予測可能性を守る道具の鮮度 (起票時の予定先どおり)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-102-census-tables-need-a-denominator.gsn"
+
+                                goal SelectionAndViewpointArePredictable
+                                uuid bcecad1d-2a02-4e3c-ae15-bdd95b1d7d3d
+                                summary "何を選んだか・どこから見ているかが、どの窓から触っても 1 つの事実として動き、見えている一番手前のものが選ばれ、他人の主張や編集が無言で消えない。選択が窓ごとに違う画面では、操作の結果を予測できない"
+                                state UnderReview
+
+                                    solution Adr099Tree
+                                    uuid fd6efb6f-64b5-4634-8740-db50475826c5
+                                    summary "ADR-099 の論証木 (top goal SelectionIsOneFactSeenThroughEveryWindow) を吊る。パネルとビューポートが 1 つの選択の 2 つの窓になる (起票時の予定先 MobileStructureViewIsReadable より、選択の予測可能性のほうが主たる寄与先)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-099-selection-round-trip.gsn"
+
+                                    solution Adr103Tree
+                                    uuid ebc20ed1-2285-4756-9b1e-cac35b8b5553
+                                    summary "ADR-103 の論証木 (top goal ViewpointIsNotAMode) を吊る。視点はモードではない — 真上から見ても編集が失われない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-103-map-is-a-viewpoint-not-a-mode.gsn"
+
+                                    solution Adr104Tree
+                                    uuid 8897c478-9651-47a5-9b2a-c56a622f5592
+                                    summary "ADR-104 の論証木 (top goal NobodyRewritesSomeoneElsesClaimSilently) を吊る。他人の主張が無言で書き換わらない — 動かそうとしたことが消えない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-104-ownership-proposal-and-the-receipt.gsn"
+
+                                    solution Adr107Tree
+                                    uuid 00c8ba49-081f-496c-93e8-8848260a7354
+                                    summary "ADR-107 の論証木 (top goal AllZonesSpeakOfTheSameSelection) を吊る。選べる種が増えても入口は 1 つで、全ゾーンが同じ選択を語る。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-107-selection-has-two-kinds.gsn"
+
+                                    solution Adr111Tree
+                                    uuid 0aebfd09-b398-43e4-b043-652e710ea1f4
+                                    summary "ADR-111 の論証木 (top goal EverySelectableKindLivesInSomeNavigator) を吊る。選べるものは必ずどれかのナビゲータに載っている (起票時の予定先 RevenueMaximized 配下 — DEF-052 を決着)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-111-the-outliner-has-a-semantic-side.gsn"
+
+                                    solution Adr140Tree
+                                    uuid d90c40fa-5043-4cd4-9771-c51c5e22082c
+                                    summary "ADR-140 の論証木 (top goal WhatYouClickIsWhatIsInFront) を吊る。見えている一番手前のものがクリックで選ばれ、ロボットの骨格も例外にならない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-140-a-click-resolves-by-depth.gsn"
 
                 goal DecidedValueDoesNotStallBeforeUsers
                 uuid 3e4c73e9-c818-4b37-aae2-8e099839b640
-                summary "設計として決着した価値が、実装されないまま滞留する量が測定されており、増え続けない。ファネルの障壁は『ユーザが到達できない』側だけでなく『価値がユーザまで出てこない』側にも在る"
+                summary "d (決着した設計が利用者まで届く率): 設計として決着した価値が、実装されないまま滞留する量が測定されており、増え続けない。ファネルの障壁は『ユーザが到達できない』側だけでなく『価値がユーザまで出てこない』側にも在る — R = U · d · V の積の 1 項なので、滞留は売上を直接削る"
                 state UnderReview
                 labels adr-109, principle-31
                 groups deferral-governance
@@ -51,186 +386,278 @@ labels meta-goal
 
                     solution DeferralCountIsMeasuredEveryPR
                     uuid 78cc9db5-61da-436f-8711-8dd789a1c7b1
-                    summary "pnpm test:deferrals (CI gate) — 宣言済み 10 件 / 宣言外 31 箇所 (baseline 31) / 満期切れ 0 件 / 満期が機械可読 4 件・散文のみ 6 件 (baseline 6)。滞留量が毎 PR で数値として出るので、『増え続けない』が意図ではなく ratchet で担保される。**これは滞留の量が測れる証拠であって、滞留が少ないことの証拠ではない** — baseline 31 は今日の実測値であり、目標値ではない"
+                    summary "ADR-109 の論証木 (top goal DeferralsSurviveOnlyAsCountedDeclarations) を吊る。pnpm test:deferrals (CI gate) — 2026-09-27 実測: 宣言済み 34 件 / 宣言外 4 箇所 / 満期切れ 0 件 / 満期が機械可読 23 件・散文のみ 11 件。滞留量が毎 PR で数値として出るので、『増え続けない』が意図ではなく ratchet で担保される。**これは滞留の量が測れる証拠であって、滞留が少ないことの証拠ではない** — 数値は今日の実測値であり、目標値ではない"
                     artifacts
                     - "scripts/check-deferrals.mjs"
                     - "docs/DEFERRAL_LEDGER.md"
+                    - "docs/gsn/adr-109-a-deferral-is-a-declaration-not-a-memory.gsn"
 
                     assumption StallVolumeIsNotYetTiedToRevenue
                     uuid 6825a0d6-cdd5-4ac2-8f05-f4f9a87526f0
                     summary "反証されうる仮説: 残しの滞留量の減少は売上に寄与する。今日あるのは滞留量の**測定**だけで、滞留 1 件あたりの売上影響は測っていない (BusinessTargetsUnset が未設定である以上、上位ゴールと同じく方向性のみ)。反証される形: 滞留が減っても採用が動かない / 滞留の大半が当事者に見えない内部規律の項目である — 実際 10 件中 6 件は core・contract レーンでユーザに直接は見えない"
 
-                goal UsersReachGraspValue
-                uuid c7f89ffb-e8eb-4aa8-aa0b-9f1773b8126f
-                summary "新規ユーザは、ドメイン知識の事前想起なしにコンテキストを成立させ、grasp-search の判定結果 (価値の出口) に到達できる"
-                state ToBeDeveloped
-                labels adr-091
-                groups context-intake
-
-                    context Adr091Scope
-                    uuid 94026b75-efe6-41f2-b732-30b1c874a82f
-                    summary "ADR-091 (Proposed): 入力の起点を白紙からの生成ではなく既定値入り完成文書の訂正にする / ref をシステム所有にする。ADR-051→058→063 で摩擦・手本・想起を順に下げたのに同じ痛みが 3 度報告された、という観測地点から出発する"
+                    solution Adr123Tree
+                    uuid 252d276c-e6c0-4092-acc0-94fed6d07ee2
+                    summary "ADR-123 の論証木 (top goal DeferralsAreCountedWhateverNotationTheyUse) を吊る。残しがどの記法 (散文・優先度表・英語の見出し・Status ヘッダ) で書かれても数えられる — d の分母の取りこぼしを塞ぐ。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
                     artifacts
-                    - "docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md"
-                    - "docs/adr/ADR-063-selection-first-intake-wizard.md"
+                    - "docs/gsn/adr-123-a-deferral-is-not-written-in-one-notation.gsn"
 
-                    justification WhyCorrectionOverCreation
-                    uuid ab2801a3-afe0-4700-907a-02ccf3db22fb
-                    summary "訂正を選ぶ根拠: 生成は想起を要し、選択は判断を要するが、訂正は提示された値との照合だけで済む — 事前知識ゼロで実行できる唯一の入力行為。ADR-058 が fork & tweak として既に発見していた性質を、例外パスから既定パスへ移す"
+                    solution Adr124Tree
+                    uuid 18ddb015-6319-407c-9c3c-d0af9820a77f
+                    summary "ADR-124 の論証木 (top goal GovernanceNumbersMeasureWorkNotWords) を吊る。統治の数字が『片付ければ減る』量を測る — d の測り方の訂正。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-124-a-ratchet-that-counts-prose-measures-documentation.gsn"
 
-                    strategy ByCorrectionOnlyIntake
-                    uuid 7b3addd2-feef-4ae3-bf5a-444f686db52d
-                    summary "Argument by 訂正のみで到達できることの成立条件 (ADR-091 §1-§4 の 4 条件の充足)"
+                    solution Adr125Tree
+                    uuid 270dcb36-41c8-47e3-8816-e28bb7576231
+                    summary "ADR-125 の論証木 (top goal ConditionalRetirementIsAskedWhenItFires) を吊る。『A が起きたら B を消す』が A の日に問われる — 決着したものが滞留に見え続けない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-125-an-obligation-belongs-to-the-event-that-fires-it.gsn"
 
-                        goal DefaultsAreAcceptableToPractitioner
-                        uuid b31dae22-eb0a-40dd-ba92-ca87bc9ccce3
-                        summary "既定文書の初期値は、実際に grasp-search を通した当事者が『訂正せずに通してよい』と判断する値になっている"
-                        state ToBeDeveloped
-                        groups dogfooding
+                    solution Adr126Tree
+                    uuid 6dc8b9fc-116a-4fd9-a316-99c516705d62
+                    summary "ADR-126 の論証木 (top goal MissingEvidenceIsStructuredCountedAndExpires) を吊る。証拠の無い主張が GSN の構造として数えられ満期を持つ — 論証木の側の滞留も d に入る。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-126-a-deferral-that-is-a-claim-belongs-to-the-argument.gsn"
 
-                            assumption DefaultsFromDogfooding
-                            uuid dc61ccd1-2708-433c-9da9-79fde7699a3b
-                            summary "H: 既定値は机上では決まらず、当事者が実際に通した記録からしか得られない (一意の最適解は存在しない — ADR-081 ConvergenceBySweetSpot と同じ立場の小さな一例)。証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の『獲得した値』表が埋まり、createDefaultCellDoc() の中身として引用されること"
-
-                            solution DogfoodingRunbook
-                            uuid 91ff7980-a66e-4afa-8c52-d56ffd276db6
-                            summary "docs/dogfooding/README.md — 探索の起動手順 (pnpm dev:stack) と記録様式が固定済み。これは『探索が実施可能である』ことの証拠であって『既定値が妥当である』ことの証拠ではない (値の欄はまだ空)"
-                            artifacts
-                            - "docs/dogfooding/README.md"
-                            - "docs/dogfooding/2026-07-25-context-defaults.md"
-
-                        goal ZeroInputArtifactExists
-                        uuid 23970575-7cb6-46aa-8287-247e36d4b358
-                        summary "0 入力の時点で妥当な成果物が存在する: validator がエラー 0 で通り、checks が非空の結果を返し、3D が描画されている"
-                        state ToBeDeveloped
-                        labels support-exploring
-
-                            assumption ZeroInputPlanned
-                            uuid f78e8ea9-b6a5-4573-a7df-c93041989cff
-                            summary "証拠予定: DocBuilder.test.js に、createDefaultCellDoc() が ContextValidator でエラー 0 かつ actors/variables/requirements いずれも非空であることを固定 (ADR-091 §1)"
-
-                        goal PristineResidueIsVisible
-                        uuid 61514d04-2b09-46d9-8efc-559a33ad45ed
-                        summary "訂正されていない既定値の残余が件数として可視であり、既定のまま提出できる静かな失敗が告知される"
-                        state ToBeDeveloped
-                        labels support-exploring
-
-                            assumption PristineCountPlanned
-                            uuid 781e07f8-9711-4e8a-98fa-4a8f63e4dfca
-                            summary "証拠予定: IntakeAssist に pristineCount を追加し、全欄未訂正で総欄数・1 欄訂正で −1 を固定。review 段と Checks への表示 (ADR-091 §3 / 原則 #11)"
-
-                        goal IdentityNotUserAuthored
-                        uuid b79c4165-5663-4006-bc22-7416f548986d
-                        summary "doc 内の同一性 (ref) の命名がユーザに要求されず、採番の単一所有者から鋳造される"
-                        state ToBeDeveloped
-                        labels support-exploring
-
-                            assumption MintRefPlanned
-                            uuid fb7b5107-73ab-4662-baf9-d09c593bbc5f
-                            summary "証拠予定: mintRef の決定性・一意性の property テストと、suggestRef を呼んでいること (採番の単一源) の参照同一性テスト (ADR-091 §4 / §1.1)"
-
-                    strategy ByFeedbackLoop
-                    uuid f5a1aae8-d932-4c58-9cc6-9bbd9fa42f68
-                    summary "Argument by フィードバック反映ループの成立 — 既定値が 1 回の設計では当たらない前提を受け入れ、当たるまで回る機構の存在自体を主張する"
-
-                        goal EnvironmentIsReproducible
-                        uuid 6e1768f9-6607-46ee-8113-4be2614b6f38
-                        summary "当事者は自分の手でフルスタック (コアAPI → BFF → フロント) を起動し、grasp-search を通した探索を再現できる"
-                        state ToBeReviewed
-                        groups dogfooding
-
-                            solution StackBootEvidence
-                            uuid 1c956ca9-6b77-4f45-999e-5b3914b9ceeb
-                            summary "実行検証 2026-07-25 (アプリコード状態 = d310545、起動スクリプトは本コミットで追加): pnpm install → cd core && uv sync --extra dev --extra serve → pnpm dev:stack で 3 プロセスが起動し全ポート応答 (コアAPI 127.0.0.1:4001 / BFF 3001 / vite 5173)。露出版 pnpm dev:stack:host も同様に検証済み (vite Network バインドあり)。経路の通しは curl -X POST localhost:3001/api/grasp/search --data @templates/bin-picking-thin-container/grasp-search.request.json が contractVersion 4 の候補 5 件 (rank 1 = 5 判定すべて true, totalScore 0.9593) を返すことで確認"
-                            artifacts
-                            - "package.json"
-                            - "docs/dogfooding/README.md"
-                            - "templates/bin-picking-thin-container/grasp-search.request.json"
-
-                            solution SuiteGreenEvidence
-                            uuid 071aa289-d1ab-4e73-9970-33f34ab8b2b3
-                            summary "実行検証 @ d310545: pnpm test:core 137 passed / pnpm test:contract 23 tests 23 pass / pnpm test:context 474 tests 474 pass / pnpm test:adr 91 本 OK — 探索の出発点が既知の緑であり、探索中に出た不具合を既存の壊れと切り分けられる"
-
-                        goal FeedbackIsCaptured
-                        uuid 9c3a827f-683a-4c02-bf38-2664af6e1870
-                        summary "探索中の詰まりと獲得値が、後続セッションと突き合わせ可能な固定様式で記録される"
-                        state ToBeDeveloped
-                        labels support-exploring
-
-                            assumption FeedbackLedgerPlanned
-                            uuid 22e5b511-8137-4c83-9397-a2b494d0c87e
-                            summary "証拠予定: docs/dogfooding/2026-07-25-context-defaults.md の 4 節 (環境 / 獲得した値 / 詰まり / 判定結果) が実際に埋まること。様式は固定済みだが、記録は当事者の探索後にしか存在しない"
-
-                        goal IterationUpdatesTheDefault
-                        uuid f10648c6-15b4-408a-9d54-0bf6f4b008ff
-                        summary "記録された詰まりと獲得値が、次イテレーションで既定文書と ADR-091 の改稿に反映される"
-                        state ToBeDeveloped
-                        labels support-exploring
-
-                            assumption IterationPlanned
-                            uuid df5b25c2-28e7-4e31-9cc9-9955f2edbc75
-                            summary "証拠予定: 探索記録の『ADR-091 に返す修正』節 → ADR-091 の改稿 (または Accepted 化) → createDefaultCellDoc() の値差分、の 3 点が同一の記録から辿れること"
-
-                goal OtherAdoptionBranchesCovered
-                uuid b8912337-6f34-4ed4-8cf7-87e2beacc70e
-                summary "コンテキスト入力以外の採用障壁 (画面の可読性・価格・導入形態・既存 CAD/PLC 資産との接続・信頼性の証明) も同様に除去されている"
+                goal ValuePerDecisionIsRealised
+                uuid eee83d10-98aa-44bb-b92c-50168570d8c4
+                summary "V = q · ΔC_spec − (1 − q) · C_miss: 1 回の仕様決めで利用者が得る価値は、従来の決め方より安く決まった分 (ΔC_spec) を、判定が現実と一致する率 (q) で割り引いたもの。誤判定は価値 0 ではなく負 (現場の出戻り C_miss) なので、速さだけでも正しさだけでも V は立たない"
                 state ToBeDeveloped
+                labels meta-goal
 
-                    assumption AdoptionBranchesUnexplored
-                    uuid d126c790-2083-480a-a074-851c18e6ad4b
-                    summary "既知の欠落 (縮小した): 本 goal の下は可読性の枝が 1 本だけ埋まっており、価格・導入形態・CAD/PLC 接続・信頼性の証明は依然として未展開である。この assumption は『この decomposition が何を省いたか』を明示し続けるために残す (false rigour 対策) — 枝が 1 本入ったことで goal 全体が閉じたと読ませない"
+                    strategy BySpeedOfDecidingAndCorrectnessOfTheVerdict
+                    uuid 88f03a74-146b-4ca4-9b42-240231404784
+                    summary "Argument by V の 2 因子 — ΔC_spec (仕様決めが安くなる: CoupledSpecsEvaluatedWithoutLooping) と q (判定を信じてよい: VerdictIsTrustworthy)。積と差の形なので片方だけ上げても V は上がりきらない"
 
-                    strategy ByScreenBandwidthBarriers
-                    uuid 3a8d1c60-9b47-4e52-8f13-6c0a5d2e97b4
-                    summary "Argument by 『主戦場の画面が構造を読ませられるか』という採用障壁の除去。fan-out が 1 本しか無いのは網羅したからではなく、この goal で展開済みの枝が 1 本だけだからである (残りの障壁は assumption AdoptionBranchesUnexplored が宣言している)"
+                        goal CoupledSpecsEvaluatedWithoutLooping
+                        uuid d40bb8cc-a904-4796-a309-30b9f777b984
+                        summary "互いに依存する仕様 (ロボット機種と据付位置・ツールと手の形・把持仕様と把持戦略・コンテナとワーク配置・障害物・カメラ) を決めるとき、何度もループせずに効率的に評価できる。式: ΔC_spec = K₀ · (t_e0 + t_m0) − K₁ · (t_e1 + t_m1) を大きくする = ループ回数 K₁ を下げ、1 回の評価 t_e1 と 1 回の修正 t_m1 を軽くする。K = 1 + L_hidden + L_blind なので、下げる手段は L_hidden (後から見つかる依存) と L_blind (何を変えるか探す) の 2 つに分かれる"
+                        state UnderReview
 
-                        goal MobileStructureViewIsReadable
-                        uuid 9e5a3f21-4c7d-4b8e-a2f6-1d3c8b7e0a45
-                        summary "モバイルで唯一の常設構造ビュー (LINK NETWORK パネル) が、TF ツリー上の位置と制約の相手を同時に読ませる。当事者はモバイルで見ていることが多く Outliner はドロワー・NodeEditor はほぼ未使用なので、この 220x160px が構造理解の全帯域である — 読めないことは採用障壁そのもの"
-                        state ToBeReviewed
-                        groups adr-094, adr-095
-
-                            solution LinkNetworkTfTreeRegression
-                            uuid 7f2c6b48-3e91-4a5d-9c07-52b8d1e4f6a3
-                            summary "ADR-094 実装 (Accepted): 融合ノードで無情報な行を消し (行 3->2、SVG 160->152px)、木辺を骨格へ、凡例 2 行。証拠は node --test src/view/LinkNetworkLayout.test.js 27/27 pass と 390px 実測記録。詳細な論証木は adr-094-link-network-tf-tree.gsn (top goal は当事者の実利用待ちで ToBeReviewed — 融合で Origin CF を単独選択できなくなる件は仮説のまま)"
+                            context SpecsAreCoupled
+                            uuid d7828e2a-66ad-4621-97f1-cb0a2ba8ba49
+                            summary "依存の実例 (この木が名指す仕様どうしの辺): 把持仕様の進入方向 ↔ ロボットの据付位置 (リーチ・IK) ↔ コンテナの壁 (干渉) ↔ 手の形 (干渉・把持幅) ↔ カメラの位置 (可視性)。1 つずつ順に決めると、後の仕様で前の仕様が覆り (例: 壁に当たらない進入方向にしたら届かない)、そのたびにループが 1 回増える — これが L_hidden"
                             artifacts
-                            - "docs/gsn/adr-094-link-network-tf-tree.gsn"
-                            - "src/view/LinkNetworkLayout.test.js"
-                            - "docs/dogfooding/2026-07-26-link-network-tf-tree.md"
+                            - "docs/adr/ADR-081-domain-staged-validation-fallback-ladder-kpi.md"
 
-                            solution LinkNetworkIndentedOutline
-                            uuid 4d1b8e07-2a5f-4c93-b6e1-8f0a3c7d2b19
-                            summary "ADR-095 実装 (Accepted): 幾何割当を『深さ→y / 兄弟→x』から『ノード順→y / 深さ→x』へ入れ替え、denseMode を廃止。390px / Solid 12 個の実測で実体ラベルが 0 個から 24 個になった (before は凡例 2 行以外に文字が無く点 24 個だけ) — 『この 220x160px が構造理解の全帯域』というこの goal の前提に対し、その帯域が実運用規模で 0 だったことの是正。証拠は node --test src/view/LinkNetworkLayout.test.js 39/39 pass と 390px before/after 実測。詳細は adr-095-link-network-indented-outline.gsn"
-                            artifacts
-                            - "docs/gsn/adr-095-link-network-indented-outline.gsn"
-                            - "src/view/LinkNetworkLayout.test.js"
-                            - "docs/dogfooding/2026-07-26-link-network-indented-outline.md"
+                            assumption LoopCountIsNotYetMeasured
+                            uuid 6b71e18b-039f-4448-9e39-d283a5ec7d72
+                            summary "反証されうる仮説: 依存を同時に宣言し全ドメインを 1 回で判定すれば K₁ は K₀ より小さくなる。K₀ / K₁ はまだ測っていない — 測り方の候補は docs/dogfooding の記録に『1 つの仕様決めに要した評価回数と、そのたびに変えた仕様』を残すこと。反証される形: 1 回で全部判定しても、不合格のたびに人が複数の仕様を当て推量で動かし K₁ が減らない (L_blind が支配的)"
 
-                    strategy ByDirectManipulationTrust
-                    uuid 84c5ee34-d94e-47eb-8d8d-acbcdc3445b5
-                    summary "Argument by 『触った結果が予測どおりか』という採用障壁の除去。読めること (ByScreenBandwidthBarriers) と信じられることは別の障壁で、後者は当事者の言葉では『すごく動かしづらい』『なぜか突き抜ける』として届いた。直接操作が予測を裏切る画面は、機能が揃っていても使われない — 障壁の位置が理解ではなく操作にある枝"
+                            strategy ByRemovingEachSourceOfLoops
+                            uuid 9b552cbd-375a-486f-b59f-30b685877b44
+                            summary "Argument by K = 1 + L_hidden + L_blind と t_e・t_m の項ごとの除去 — L_hidden は (a) 依存する仕様を 1 か所に同時に宣言でき (b) 1 回の評価が全ドメインを同時に判定することで、依存が 1 回目の評価で全部見えるようにして消す。L_blind は (c) 不合格がどの仕様を変えればよいかを指すことで消す。t_m は (d) 1 つ変えても他の宣言が壊れないことで、t_e は (e) 1 回の評価がループの中に収まる速さであることで軽くする"
 
-                        goal PlacementIsPredictable
-                        uuid d17c02f9-f551-4d7b-a927-0636126d4dfb
-                        summary "実体を動かしたとき、どの入力経路を通っても『何の上に載っているか』が壊れない。床を抜けるか抜けないかがジェスチャの種類・実体の種類・カメラの向きによって変わらず、床下は事故ではなく宣言として起きる"
-                        state ToBeReviewed
-                        groups adr-097
+                                goal CoupledSpecsAreDeclaredInOnePlace
+                                uuid 70bea13d-8b72-40c2-8182-ac8d6e332d8f
+                                summary "(a) L_hidden: 互いに依存する仕様 (対象・掴み方・手の形・コンテナとワーク) を 1 つの文書に同時に宣言でき、宣言した事実が判定まで届く。宣言できない仕様は評価の外で決められ、後から依存が見つかる"
+                                state UnderReview
 
-                            solution PlacementPolicyAtOneEntry
-                            uuid 2b754e6c-7a01-4555-a145-64867d56425c
-                            summary "ADR-097 実装 (Accepted): 接地をジェスチャの副作用から実体の状態へ移し、配置方針 (supported / grounded / free) を種ごとに宣言して pose 書き込みの入口 1 箇所で強制した。当事者が報告した 5 症状はすべて『経路ごとに実装していた』ことの直接の結果で、実装中に個数検査が入口をさらに 2 つ (N パネル数値入力・タッチ再グラブ) 見つけた。証拠は node --test src/domain/placement.test.js 16/16 + src/PosePolicyOwnership.test.js 5/5 + playwright 21/21 (症状回帰は差分ペアで、同じジェスチャが宣言の有無だけで床下へ行くか止まるかが分かれる)。『動かしやすくなったか』は主観なので当事者の実利用待ちで ToBeReviewed。詳細は adr-097-support-as-entity-state.gsn"
-                            artifacts
-                            - "docs/gsn/adr-097-support-as-entity-state.gsn"
-                            - "src/domain/placement.test.js"
-                            - "src/PosePolicyOwnership.test.js"
+                                    solution Adr119Tree
+                                    uuid fc37bc91-e962-410d-8dbb-759e6ccbdc54
+                                    summary "ADR-119 の論証木 (top goal TargetIsUnderContractAndGraspLocationIsDeclarable) を吊る。掴む対象が契約を持ち、どこを掴むかを宣言でき、宣言していないことと『どこでもよい』が区別される。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-119-a-target-is-a-contract.gsn"
 
-                            solution SupportDomainIsPolicyNotKind
-                            uuid 5e8b1d47-9c02-4f36-b1a8-7d3e0c4a6f19
-                            summary "ADR-098 実装 (Accepted): ADR-097 が剥がし残した種の門を閉じた。stack assist の instanceof Solid が 2 枚残っていたため方針語 grounded が種によって 2 つの意味を持っており (Solid = 床を割らない かつ 面に載る / robot_base = 床を割らない だけ)、当事者の『キューブはスタックするのにロボットはスタックしない』はその現れだった。適用可否を方針の述語へ、支持プローブを方針表の隣の宣言へ移し、種分岐は 4 箇所 (起票時の見積もりは 2 箇所) すべて撤去。証拠は node --test src/domain/placement.test.js 31/31 + src/PosePolicyOwnership.test.js 8/8 + playwright 24/24 (症状回帰は差分ペアで、同じ数値 Grab が S の有無だけで載るか載らないかに分かれる)。両検査とも変異を入れて空回りしていないことを確認済み。『ロボットが箱の上に立つことが grasp として意味を持つか』は当事者の実利用待ちなので、この goal は ToBeReviewed のまま。詳細は adr-098-support-domain-is-policy.gsn"
-                            artifacts
-                            - "docs/gsn/adr-098-support-domain-is-policy.gsn"
-                            - "src/domain/placement.js"
-                            - "e2e/smoke.spec.js"
+                                    solution Adr128Tree
+                                    uuid 447dead7-1c8f-42b5-97b1-1c91bd8173e3
+                                    summary "ADR-128 の論証木 (top goal DecidedFactsReachTheScreenAndSilenceIsVisible) を吊る。書けない宣言は宣言ではない — 掴む場所の宣言が書けて、決定された事実が画面に届く。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-128-a-declaration-that-cannot-be-written.gsn"
+
+                                    solution Adr133Tree
+                                    uuid 3dc6e477-2d86-47ac-b222-57422b1e7e44
+                                    summary "ADR-133 の論証木 (top goal WorkpiecesGeneratedFromADeclaredContainerAreGraspSearchableWithoutHandPlacement) を吊る。コンテナとワーク配置を宣言すれば、ワークを 1 個ずつ手で置かずに対象・障害物として探索できる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-133-a-container-is-five-solids-with-a-declared-role.gsn"
+
+                                    solution Adr152Tree
+                                    uuid 657f2e5f-5e80-46c8-92f4-39c67b933f09
+                                    summary "ADR-152 の論証木 (top goal DeclaredGraspReachesJudgementAndPictureAlike) を吊る。把持仕様・把持戦略・手の形を同じ文書で宣言でき、判定と絵に同じ値で届く。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-152-how-to-grasp-and-what-grasps-are-declarations-and-each-is-seen.gsn"
+
+                                goal OneRequestJudgesEveryDomainTogether
+                                uuid 5286f3f3-0817-4f70-b284-e8546f4b5c50
+                                summary "(b) L_hidden: 1 回の評価がリーチ・IK・把持性・可視性・干渉を同時に判定し、どの問いも他の問いを塞がない。ドメインごとに別々に評価すると、あるドメインで決めた仕様が別のドメインで覆る"
+                                state UnderReview
+
+                                    solution Adr081Tree
+                                    uuid af1c74ee-8c93-4166-bbe8-95b0f3bcf9d9
+                                    summary "ADR-081 の論証木 (top goal AppPredictsRework) を吊る。段階フィルタ (リーチ / IK / 把持性 / 可視性 / 干渉) を 1 回の通し検証で掛け、運用フォールバック階梯 L4 以上への出戻りを設計時に顕在化する。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-081-grasp-validation.gsn"
+
+                                    solution Adr122Tree
+                                    uuid bc9deeeb-62ef-4b08-a802-8729594dc3b3
+                                    summary "ADR-122 の論証木 (top goal EachQuestionHasItsOwnDoorAndItsOwnPremise) を吊る。『取れるか』『この配置で取れるか』『何個』『どれくらいの確率で』が独立した問いとして立ち、1 つを塞いでも他が塞がらない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-122-pickable-and-yield-are-two-questions.gsn"
+
+                                    solution Adr130Tree
+                                    uuid 4c8597bc-9f45-436b-ab58-518b42e92ff8
+                                    summary "ADR-130 の論証木 (top goal ASearchOwnsItsSubjectAndNothingElseAnswersForIt) を吊る。この探索が誰についてかの源が 1 つで、手順を進める操作が自分のゲートを踏んで偽の阻止文を出さない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-130-a-search-owns-its-subject.gsn"
+
+                                goal ARejectionPointsAtTheSpecToChange
+                                uuid 77065a4f-e469-41cf-9be8-98557107a320
+                                summary "(c) L_blind: 不合格や低い点のとき、どのドメインで・どの仕様のせいで落ちたかが見え、反復間の結果を比べられる。理由の無い不合格は、人に仕様を当て推量で動かさせる"
+                                state UnderReview
+
+                                    solution Adr120Tree
+                                    uuid 9855847e-e729-4dd4-8b2e-bd61c000e424
+                                    summary "ADR-120 の論証木 (top goal UnevaluatedObjectivesDoNotLookLikeZeroScores) を吊る。評価できなかった objective が 0 点に見えず、反復どうしのスコア比較が宣言の有無で壊れない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-120-unevaluated-is-not-zero.gsn"
+
+                                    solution Adr135Tree
+                                    uuid 64778e38-8836-4973-9963-c37fe5cd6f60
+                                    summary "ADR-135 の論証木 (top goal ReachabilityIsShownAsThePosedArmNotOnlyABoolean) を吊る。到達可否が腕の姿勢として描かれ、届かないとき何を動かせばよいかが見える。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-135-reachability-is-drawn-not-declared-the-discarded-ik-solution-rejoins-the-wire.gsn"
+
+                                goal ChangingOneSpecKeepsTheRestIntact
+                                uuid cbecf16a-35a6-4528-b044-ab7f4465d0f5
+                                summary "(d) t_m: 仕様を 1 つ変えて再評価に掛けるとき、他の宣言や文書が作っていない実体が壊れない。1 つ変えるたびに周りを作り直す必要があると、1 ループの手間が膨らむ"
+                                state UnderReview
+
+                                    solution Adr129Tree
+                                    uuid 8f21cba6-399b-4257-be63-a545f6a01928
+                                    summary "ADR-129 の論証木 (top goal ADeclarationLivesAndDiesWithTheThingItIsAbout) を吊る。宣言 (どこに置くか・どう据え付けるか・どこを掴むか) が対象の実体と同じ寿命で生き死にし、再生成で静かに消えない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-129-a-declaration-outlives-the-instance.gsn"
+
+                                    solution Adr131Tree
+                                    uuid ef94b4a9-ab68-4416-a13b-26e86281b8f5
+                                    summary "ADR-131 の論証木 (top goal ChangingOneDeclarationDoesNotDeleteWhatTheDocumentNeverMade) を吊る。文書の宣言を 1 つ書き換えても、文書が作っていない実体 (手で足した箱・複製・計測線) が消えない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-131-a-regeneration-swaps-the-projection.gsn"
+
+                                goal EvaluationTurnaroundStaysInsideTheLoop
+                                uuid ffa3c4c9-45c9-4219-a95d-9f5a760d5fe2
+                                summary "(e) t_e: 1 回の評価が、利用者が仕様を変えては試す思考のループの中に収まる時間で返る。t_e が長いと利用者は評価を待たずに勘で決め、K を減らした効果が失われる"
+                                state ToBeDeveloped
+                                labels support-unexplored
+
+                                    assumption TurnaroundIsNotYetMeasured
+                                    uuid 32570919-e7cb-4db7-93f9-4ec55d4b138b
+                                    summary "未探索: コアAPI は全探索方式 (ADR-075) で候補数に対し線形という構造の知識と、『数千候補までは一瞬』という段階 0 の観測だけがある。何を測れば決着するか (テンプレごとの応答時間の bench か、dogfooding 記録の待ち時間か) をまだ決めていない — RunCostMinimized と同じ計測を共有できる可能性がある"
+
+                        goal VerdictIsTrustworthy
+                        uuid c51bf368-11e5-437c-9709-cfeab77d61c1
+                        summary "q: 判定が現実と一致し、利用者はそれを信じてよい。画面に描かれた腕・手・対象が判定されたものと同じで、単位や座標系の食い違いで判定が静かに壊れず、判定が代理ではなく決定された事実である。誤判定は現場の出戻り C_miss になるので、q は V の符号を決める"
+                        state UnderReview
+
+                            strategy ByClosingEachGapBetweenVerdictAndReality
+                            uuid 43280497-2037-4f2d-be47-5245e9b4fa1f
+                            summary "Argument by 判定と現実の間にあるずれの種類ごとの除去 — 絵と判定のずれ (見ている機械と解いている機械が違う)、量のずれ (単位・座標系)、判定そのもののずれ (代理判定・判定されない部分) の 3 種"
+
+                                goal TheJudgedMachineIsTheDrawnMachine
+                                uuid 4a04c4b4-b9db-461b-b4f2-6f4fc1f5bf41
+                                summary "画面に描かれた腕・ツール・TCP・シーンと、ソルバが解いているものが同じ 1 つであり、そうでないときは黙っていない。バックエンド無しのプレビューは、それ以上を主張しない"
+                                state UnderReview
+
+                                    solution Adr132Tree
+                                    uuid 565c5e19-a7c8-4524-80b1-e118a134e1ea
+                                    summary "ADR-132 の論証木 (top goal ASearchSolvesForWhatIsOnTheScreenAndItsEntranceDestroysNothing) を吊る。探索は画面に在るものについて解き、入口を開く行為が選んでいない文書を採用しない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-132-a-search-is-about-what-is-on-the-screen.gsn"
+
+                                    solution Adr141Tree
+                                    uuid a73ff71c-2f9e-435d-82ff-96b5babd41d8
+                                    summary "ADR-141 の論証木 (top goal TheDrawnArmAndTheSolvedArmAreOneMachine) を吊る。見ている腕と解いている腕が同じ 1 台で、違う腕の宣言は許されるが黙っていられない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-141-the-arm-on-screen-is-the-arm-the-search-solves-for.gsn"
+
+                                    solution Adr144Tree
+                                    uuid 2d07176c-e2aa-4c40-8c91-d06e7d5e5af5
+                                    summary "ADR-144 の論証木 (top goal ArmPreviewWorksWithoutABackendWithoutClaimingAuthority) を吊る。バックエンド無し (GitHub Pages) でも腕の配置を確認でき、それが到達可能な解だとは主張しない。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-144-an-approximate-preview-is-not-a-second-solver.gsn"
+
+                                    solution Adr147Tree
+                                    uuid 4e96d31f-99c5-4e75-8c3b-15277fda9c67
+                                    summary "ADR-147 の論証木 (top goal ThePreviewedPoseIsExactlyTheCandidatePoseAndNothingElseIsClaimed) を吊る。プレビューの姿勢は候補の姿勢そのもので、それ以上は何も主張しないことが画面から分かる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-147-the-client-solves-the-same-closed-form-and-verifies-nothing.gsn"
+
+                                    solution Adr148Tree
+                                    uuid 4cd8321a-e6b4-4c4d-b503-150137ee0e0f
+                                    summary "ADR-148 の論証木 (top goal EveryArmOnScreenDrawsTheStyleThisSceneDeclared) を吊る。シーンが宣言した腕の見た目が 1 つに決まり、画面のどの腕もそれを描く。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-148-the-scene-not-the-stage-owns-which-arm-is-drawn.gsn"
+
+                                    solution Adr150Tree
+                                    uuid b529f9c4-baed-469c-b146-b41c1cd898a5
+                                    summary "ADR-150 の論証木 (top goal TheArmAppearsOnceAndCarriesTheToolItWasSolvedWith) を吊る。腕は宣言したスタイルだけで一度だけ現れ、フランジには解いたのと同じツールが付いている。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-150-the-tool-is-bolted-to-the-flange-and-the-arm-appears-once.gsn"
+
+                                    solution Adr151Tree
+                                    uuid 9ab237d3-52ab-4621-bc4d-1a613c6d6a7f
+                                    summary "ADR-151 の論証木 (top goal TheTcpHasOneSourceAndEveryDepictionPointsAtIt) を吊る。TCP の源が 1 つ (tool0 → tcp) で、画面の印・探索に渡る値・ツール先端が常に同じ点を指す。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-151-the-tcp-is-derived-from-the-tool-mount-not-stored-in-the-scene.gsn"
+
+                                goal QuantitiesCannotSilentlyDisagreeInUnitOrFrame
+                                uuid 44f1eb35-70f7-4a7d-af3b-32bf95343149
+                                summary "同じ世界の中の量が、単位 (mm / m) と座標系 (利き手・up・forward) で食い違わない。食い違いは判定を静かに壊す — 距離が 1000 倍ずれても判定は何かを返す"
+                                state UnderReview
+
+                                    solution Adr136Tree
+                                    uuid bc7d8d17-991b-478a-a4dc-7c27c56da3fa
+                                    summary "ADR-136 の論証木 (top goal WorldUnitIsConsistentAcrossSceneAndWire) を吊る。world の 1 unit が指す物理量を全実体で mm に統一した。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-136-world-unit-is-millimeters.gsn"
+
+                                    solution Adr137Tree
+                                    uuid aa820bb6-a044-4486-b48c-ef09973d2de5
+                                    summary "ADR-137 の論証木 (top goal EveryWorldUnitConsumerAgreesWithTheUnitDecision) を吊る。単位の決定が world-unit を消費する全箇所へ届いている。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-137-the-boot-view-is-framed-not-hard-coded.gsn"
+
+                                    solution Adr138Tree
+                                    uuid d5bde39a-bf8e-4725-a93c-271763491aaf
+                                    summary "ADR-138 の論証木 (top goal ScaleDependentQuantitiesDeclareTheirOwnUnit) を吊る。尺度に依存する量が自分の単位と根拠を名乗り、名乗っていない量が数えられる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-138-scale-dependent-quantities-declare-their-kind.gsn"
+
+                                    solution Adr139Tree
+                                    uuid a35d5635-941c-4ec1-943e-57532e74bb58
+                                    summary "ADR-139 の論証木 (top goal ImportedCoordinatesDeclareTheirFrameBeforeEnteringTheWorld) を吊る。取り込む座標が frame を宣言してから世界に入り、未宣言は既定で埋めず理由つきで拒む (ADR は Proposed — 吊り先は決まっていても主張はまだ未来形)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-139-an-imported-coordinate-declares-its-frame.gsn"
+
+                                goal VerdictsAreDecidedFactsNotProxies
+                                uuid 404d448d-713a-4670-bd6d-469001cb0cd6
+                                summary "ワイヤに載る判定 (届く・解ける・干渉しない・掴める) が、代理の近似ではなく実際の運動学・幾何・宣言された量で決定された事実であり、判定されない部分 (腕の区間・重心の不在) が静かに合格に化けない"
+                                state UnderReview
+
+                                    solution Adr118Tree
+                                    uuid e30f234e-5ee5-4639-aca2-cdf6a55eb6f5
+                                    summary "ADR-118 の論証木 (top goal HandIsAKindAndTheFaceFollowsIt) を吊る。宣言されたハンドの種別ごとに、判定量・サンプル面・near-miss が一致する。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-118-a-hand-is-a-kind.gsn"
+
+                                    solution Adr121Tree
+                                    uuid f82ba531-bf42-4189-acc7-a808e789f74b
+                                    summary "ADR-121 の論証木 (top goal CentreOfMassIsADeclaredFactNotASilentAssumption) を吊る。重心が宣言された事実として判定に効き、推定値が実測値として振る舞わない (ADR は Proposed)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-121-centre-of-mass-is-declared.gsn"
+
+                                    solution Adr127Tree
+                                    uuid 626ced3a-bc07-4f87-9ced-cedfb2b5723f
+                                    summary "ADR-127 の論証木 (top goal IkSolvableIsADecidedFactNotAProxy) を吊る。ikSolvable が手首コーンの代理ではなく、宣言された機種の運動学で決定された事実になる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-127-a-known-structure-makes-a-closed-form.gsn"
+
+                                    solution Adr145Tree
+                                    uuid ad984a73-0465-41c1-b95d-a6d2773fde6b
+                                    summary "ADR-145 の論証木 (top goal TheChosenJointConfigurationDoesNotIntersectSurroundingStructures) を吊る。選ばれる関節配置が周辺構造物 (自身のペデスタル含む) と干渉しないことを、腕の区間まで含めて判定する。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-145-the-arm-between-base-and-tcp-is-invisible-to-interference.gsn"
 
         goal CostMinimized
         uuid 942a60a6-889d-448c-8682-0212e9c70623
@@ -240,34 +667,75 @@ labels meta-goal
 
             strategy ByCostDrivers
             uuid 58977951-4a26-4a09-b86e-677c1fe5c218
-            summary "Argument by 経費ドライバの分解 (手戻り / サポート / 運用)"
+            summary "Argument by 経費ドライバの分解 C = C_rework + C_support + C_run (手戻り / サポート / 運用)"
 
                 goal ReworkCostMinimized
                 uuid 643777b9-810e-4b15-bc5a-c6e0714a9d16
-                summary "仕様の不確実性が実装前に消費され、実装後の手戻りが最小化されている"
+                summary "C_rework: 仕様の不確実性が実装前に消費され、実装後の手戻りが最小化されている。支えは 2 本入ったが手戻り量そのものは未測定 (ReworkEvidenceUnset)"
                 state ToBeDeveloped
-                labels support-unexplored
 
                     assumption ReworkEvidenceUnset
                     uuid 877510c8-c8a6-4437-855c-402a6577753b
                     summary "プレースホルダ: ADR・GSN・状態台帳による事前の不確実性消費は既に運用中だが、手戻り量の測定は未着手。ADR-091 の『訂正されない既定値』リスクはこの枝にも接続する (既定のまま提出された doc は後工程の手戻りになる)"
 
+                    solution Adr105Tree
+                    uuid cc3d78fd-1eb9-482c-ba8e-311d61568bba
+                    summary "ADR-105 の論証木 (top goal UnexaminedNeverReadsAsClear) を吊る。『まだ検証していない』が『問題が無い』と同じ見え方をしない — 誤った安心で進んだ後工程の手戻りを防ぐ (起票時の予定先どおり)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-105-unexamined-is-not-clear.gsn"
+
+                    solution Adr146Tree
+                    uuid 56213b57-b2c2-4db5-9bce-1532e9277329
+                    summary "ADR-146 の論証木 (top goal PlacementIsDecidedFromThePropertiesOfTheComputationNotFromAListOfTopics) を吊る。計算を front に置いてよいかを計算の性質から判定する — 境界違反を後から core へ作り直す手戻りを防ぐ。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-146-a-closed-form-may-be-copied-an-idea-may-not.gsn"
+
                 goal SupportCostMinimized
                 uuid 3bf47205-f6df-4673-aa5f-74523c6a02fb
-                summary "ユーザが自力で価値に到達できるため、問い合わせ由来のサポート工数が最小化されている"
+                summary "C_support: ユーザが自力で価値に到達でき、取り返しのつかない操作を黙って受けないため、問い合わせ由来のサポート工数が最小化されている。支えは 1 本入ったが問い合わせ量は未測定 (SupportEvidenceUnset)"
                 state ToBeDeveloped
-                labels support-unexplored
 
                     assumption SupportEvidenceUnset
                     uuid 2eac608c-aed7-4fc4-b5bf-25a865236ecf
                     summary "プレースホルダ: UsersReachGraspValue と同じ改善が経費側にも効く (入力できないユーザは問い合わせに来る) — 枝は売上側に吊ったが寄与は両側。測定手段は未設定"
 
+                    solution Adr134Tree
+                    uuid 1193c803-7251-40b1-b3b1-b05219e1622d
+                    summary "ADR-134 の論証木 (top goal TemplateSelectionNeverDiscardsUndoableWorkWithoutExplicitConsent) を吊る。undo 不能な破棄 (テンプレート選択でシーンを捨てる) は、失うものが在るときに明示の同意の上でだけ起きる — 『作業が消えた』問い合わせの源を断つ。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                    artifacts
+                    - "docs/gsn/adr-134-a-project-open-boundary-confirms-only-when-something-is-at-stake.gsn"
+
                 goal RunCostMinimized
                 uuid 9a307994-630b-4ddb-ba6b-a907ed96b23c
-                summary "実行時コスト (計算・ホスティング・外部 API) が最小化されている"
+                summary "C_run: 実行時コスト (計算・ホスティング・外部 API) が最小化されている"
                 state ToBeDeveloped
                 labels support-unexplored
 
                     assumption RunCostEvidenceUnset
                     uuid 81ec7eee-7bc6-4096-8207-66aa438e1519
                     summary "プレースホルダ: コアAPI は全探索方式 (ADR-075) で候補数に対し線形。『数千候補までは一瞬』という段階0 の観測はあるが、コスト測定は未着手"
+
+    strategy ByAttributingEachInvestmentToOneTermAndMeasuringIt
+    uuid 1bd9618d-4fc8-4b42-a779-21f135af91e9
+    summary "Argument by ROI_i = ΔΠ_i / I_i の成立条件 — 分子 ΔΠ_i ≈ (∂Π/∂x_i) · Δx_i を出すには、(1) 投資 i がどの項 x_i に効くかが一意に決まっていて (2) その項 x_i が測られている必要がある。どちらが欠けても投資対効果は測れない"
+
+        goal EveryInvestmentIsAttributedToOneTerm
+        uuid d7725e24-a076-41f0-b4a7-8fc8b04aca03
+        summary "ADR の論証木はすべて、事業木のちょうど 1 つの項 (goal) に solution として吊られている。吊られていない木は事業的な goal が無いまま実行された投資であり、ROI の分母にしか現れない"
+        state UnderReview
+
+            solution Adr153Tree
+            uuid 2ad61600-e472-468c-bc6e-0581c91c412c
+            summary "ADR-153 の論証木 (top goal EveryInvestmentHangsOnOneTermOfTheProfitFormula) を吊る。事業木を利益の式から導出し、全木の接続を check-gsn-debt G5 が個数で問う。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+            artifacts
+            - "docs/gsn/adr-153-every-investment-hangs-on-one-term-of-the-profit-formula.gsn"
+
+        goal EveryTermIsMeasured
+        uuid f3a0a25f-cae6-4c54-9a68-4c6543a752b9
+        summary "式の各項 (N, p_reach, p_operate, d, q, C_miss, K, t_e, t_m, C_rework, C_support, C_run) が測られ、値と測定期間を持つ。測られていない項に吊った投資は、帰属は分かっても効果の大きさが分からない"
+        state ToBeDeveloped
+        labels support-unexplored
+
+            assumption OnlyTheDeferralTermIsMeasured
+            uuid 2564e3b4-849f-4e45-b028-7f26ff51909e
+            summary "未探索: 今日数値として毎 PR で出ている項は d の分母 (pnpm test:deferrals の滞留件数) だけで、それも売上への換算は無い (StallVolumeIsNotYetTiedToRevenue)。K と t_e は dogfooding 記録から、p_reach は起動からの到達の計測から取れる見込みだが、何をどこで測るかはまだ決めていない — BusinessTargetsUnset (数値目標の未設定) とは別の欠落: 目標が決まっても実測が無ければ比べられない"

@@ -46,6 +46,13 @@
  *                   在る」ことは別の事実である (ADR-109 D6)。
  *   G4 EXPIRY     — 満期の来た未支持 goal が 0 件。名指しした検査が実在するように
  *                   なったら落ちる = 「exploring を solution へ昇格させよ」。
+ *   G5 ATTRIBUTION — ADR の木はすべて、事業木 `profit-growth.gsn` の solution から
+ *                   **ちょうど 1 回**吊られている (ADR-153)。0 回 = 事業的な goal が
+ *                   無いまま実行された投資、2 回以上 = 寄与の二重計上。どちらも
+ *                   ROI_i = ΔΠ_i / I_i の分子を出せなくする。木の側に書いた
+ *                   「接続は保留」は数えない — 2026-09-26 に 57 本中 52 本がその形で
+ *                   吊られておらず、どの検査も緑だった (原則 #31: 数えるのは在る接続
+ *                   ではなく**吊られていない木の個数**。母集団は docs/gsn の構文から導く)。
  *
  * ## 満期の書き方
  *
@@ -520,6 +527,53 @@ for (const g of exploring) {
   }
 }
 
+// ── G5 ATTRIBUTION (ADR-153) ─────────────────────────────────────────────────
+
+/** 事業木。ここに solution として吊られた木だけが「帰属した投資」である。 */
+const BUSINESS_TREE = 'profit-growth.gsn'
+
+/**
+ * @returns {Map<string, number>} `docs/gsn/<file>` → 事業木の **solution** の
+ *   artifacts に現れた回数。context / assumption からの参照は数えない —
+ *   それは「接続予定」の散文であって帰属ではない。
+ */
+function collectHungTrees() {
+  const hung = new Map()
+  const path = join(GSN_DIR, BUSINESS_TREE)
+  if (!existsSync(path)) return hung
+  let kind = null
+  for (const raw of readFileSync(path, 'utf8').split('\n')) {
+    const text = raw.trim()
+    const node = /^(goal|strategy|solution|context|assumption|justification)\s+\S+/.exec(text)
+    if (node) { kind = node[1]; continue }
+    const art = /^-\s+"docs\/gsn\/([^"]+\.gsn)"$/.exec(text)
+    if (art && kind === 'solution') hung.set(art[1], (hung.get(art[1]) ?? 0) + 1)
+  }
+  return hung
+}
+
+const hungTrees = collectHungTrees()
+const adrTrees = trees.filter(t => /^adr-\d{3}-/.test(t)).sort()
+if (!trees.includes(BUSINESS_TREE)) {
+  errors.push(`G5 ATTRIBUTION: docs/gsn/${BUSINESS_TREE} が無い — 投資を帰属させる先が消えている。`)
+}
+const unhung = adrTrees.filter(t => !hungTrees.has(t))
+const doubleHung = adrTrees.filter(t => (hungTrees.get(t) ?? 0) > 1)
+if (unhung.length > 0) {
+  errors.push(
+    `G5 ATTRIBUTION: 事業木に吊られていない木が ${unhung.length} 本 — 事業的な goal が無いまま実行された投資。\n` +
+    '    docs/gsn/profit-growth.gsn の、この木が動かす項 (ProfitFormula のどれか) の goal の下に\n' +
+    '    solution を 1 つ足し、artifacts に木のパスを書くこと。ADR が Proposed でも吊ってよい\n' +
+    '    (solution は goal を増やさない — 木の側の state が成熟度を持つ)。\n' +
+    unhung.map(t => `      docs/gsn/${t}`).join('\n') + '\n')
+}
+if (doubleHung.length > 0) {
+  errors.push(
+    `G5 ATTRIBUTION: 事業木に 2 回以上吊られた木が ${doubleHung.length} 本 — 寄与の二重計上。\n` +
+    '    主たる寄与先 1 つに吊り、副次的な寄与は木の側の context に書くこと (ByRevenueAndCost の規約)。\n' +
+    doubleHung.map(t => `      docs/gsn/${t} (${hungTrees.get(t)} 回)`).join('\n') + '\n')
+}
+
 // ── 出力 ─────────────────────────────────────────────────────────────────────
 
 if (errors.length > 0) {
@@ -532,4 +586,5 @@ console.error(
   `check-gsn-debt: OK — 木 ${trees.length} 本 / 宣言された未支持 ${unsupported.length} 個 ` +
   `(baseline ${DEBT_BASELINE}) / うち exploring ${exploring.length} 個 · ` +
   `満期が機械可読 ${exploring.length - proseOnly.length} 個・散文のみ ${proseOnly.length} 個 ` +
-  `(baseline ${PROSE_DEBT_BASELINE}) / 満期切れ 0 件`)
+  `(baseline ${PROSE_DEBT_BASELINE}) / 満期切れ 0 件 / ` +
+  `事業木に吊られた木 ${adrTrees.length - unhung.length}/${adrTrees.length} 本`)

@@ -42,7 +42,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid 5b129bfe-25bd-4ba8-8037-d6e596be1466
-    summary "事業木への接続は保留 (未実装)。接続予定先は docs/gsn/adr-081-grasp-validation.gsn 経由の grasp 判定の枝と、歩留まりについては docs/dogfooding/ の証拠レーン"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal OneRequestJudgesEveryDomainTogether の下に solution Adr122Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/adr-081-grasp-validation.gsn"
 

@@ -32,7 +32,7 @@ artifacts
 
     context BusinessTreeAttachPoint
     uuid b9acd2be-4c6c-4673-a0dc-95eacdc6101c
-    summary "事業木への接続は保留する。接続予定先は profit-growth.gsn の goal PlacementIsPredictable (strategy ByDirectManipulationTrust 配下) — 本 ADR が直した highestSurfaceAt の種の門は『計測線の上には載らないが、新しい種の上にも載らない』を誰も決めずに決めていたので、配置の予測可能性へ効く。保留理由: 本 ADR の一次的な受益者は開発の規律であって当事者の操作感ではなく、支持面の宣言化が体感に出るのは新しい実体種を足したときである。その種が実際に足された PR で solution として吊る"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal PlacementIsPredictable の下に solution Adr102Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
     artifacts
     - "docs/gsn/profit-growth.gsn"
 

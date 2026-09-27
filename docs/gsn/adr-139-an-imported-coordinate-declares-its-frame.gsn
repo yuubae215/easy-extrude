@@ -78,4 +78,4 @@ labels adr-139, adr-138, adr-137, adr-136, adr-115, adr-120, adr-018, principle-
 
     context ConnectionToProfitTreeDeferred
     uuid 9f2a7b41-6c5d-4a8e-b3f7-4e5f6a7b80a0
-    summary "docs/gsn/profit-growth.gsn への接続は保留する。本 goal は外部ツール連携の信頼性 (取り込んだ形が意図どおりに置かれる) に効くが、事業木側の対応する goal 名・uuid は未特定 — ADR-136/138 の同名 context と同じ扱いで、次に事業木を読み直す機会に確定する。保留は忘却ではないのでここに残す"
+    summary "事業木へ接続済み (2026-09-27, ADR-153): profit-growth.gsn の goal QuantitiesCannotSilentlyDisagreeInUnitOrFrame の下に solution Adr139Tree としてこの木を吊った — 寄与する項と、起票時の予定先と違う場合の理由は solution の summary 側に書いた (接続の正本は事業木側に 1 つ — §1.1)。起票時の『保留』の記述は git 履歴に残る"
