@@ -1,0 +1,68 @@
+GOALS adr154_a_deferral_stalls_exactly_one_term
+
+goal EveryDeferralStallsExactlyOneTerm
+uuid a047ce03-2667-4176-8940-772f64695da6
+summary "宣言された残しは 1 行ずつ、利益の式のちょうど 1 項に帰属していることが機械に見え、帰属していない行は個数として数えられる"
+state UnderReview
+labels adr-154, adr-153, adr-109, adr-126, principle-31, principle-33, gsn, deferral, term-delivery, change-governance
+artifacts
+- "docs/adr/ADR-154-a-deferral-stalls-exactly-one-term.md"
+
+    context WholeWasHungRowsWereNot
+    uuid 5034c1cc-512f-420a-aacc-4bad2dd7f4a3
+    summary "実測 (2026-09-27, 登録簿 34 行): 残し全体は ADR-109 の木として項 d の分母に吊られていた。1 行ずつは ticket の ADR → adr-NNN-*.gsn → 吊り先の項と人がファイル名を辿れば 24 行が届き、10 行は ticket の ADR が木を持たず届かない。どちらの経路も辿る機械が無かった"
+    artifacts
+    - "docs/DEFERRAL_LEDGER.md"
+    - "docs/gsn/profit-growth.gsn"
+
+    context BusinessTreeAttachPoint
+    uuid b3ee14e6-6b54-4a45-a85f-fdde0bdf427e
+    summary "事業木へ起票と同じ PR で接続 (ADR-153 D4): profit-growth.gsn の goal DecidedValueDoesNotStallBeforeUsers (term-delivery) の下に solution Adr154Tree として吊った。変えたのは統治の道具 (change-governance) で、d の測り方を『何件』から『どの項が何件』へ細かくする"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotAGoalColumn
+    uuid 36eabcff-74bd-4131-b16d-bd88a8791e6b
+    summary "却下案 A (登録簿に goal 列を足す) への反証: ticket が既に木を決め、木は G5 で項をちょうど 1 つ決める。列を足すと同じ事実を 2 か所に書き、ticket を直して goal 列を直し忘れる日が来る (§1.1 / ADR-129)。語彙は充足しており、無かったのは線だけ (原則 #33)"
+
+    justification WhyNotWriteTheTenTreesNow
+    uuid d8e9e67f-b048-45de-b1c7-81b4caf6187d
+    summary "却下案 C (木の無い 10 本の ADR の木も今回書く) への反証: 044 / 091 のように判断が閉じていない ADR を含み、急いで書いた論証は弱い木を増やすだけ。数えることと木を書くことは別の義務で、後者は DEF-028 が既に持つ"
+
+    assumption TicketIsTheRightAttribution
+    uuid 6698c227-447e-4ee2-8d67-af3e864c5f16
+    summary "反証されうる仮説: 残しの帰属先は ticket の ADR の木の項で正しい。残しの中身がその項に本当に効くかは問えない (ticket を書いた人の判断に依存 — G6 の限界と同型)。反証されるのは項ごとの測定が入り、ある残しの決着が ticket の項ではなく別の項を動かしたと観測されたとき"
+
+    assumption PreCutoffRowsStayUnattributed
+    uuid 43378c5c-fbe0-490e-94f0-66699f91cc35
+    summary "埋めていない穴の宣言 (推論させない): 帰属なしの 10 行 (DEF-004 / 006 / 009 / 017 / 018 / 019 / 020 / 022 / 024 / 050) は ticket の ADR が cutoff 前で木を持たない。木を書く義務は DEF-028 が持ち、Q8 の baseline は木が 1 本書かれるたびに下がる"
+
+    strategy ByDerivingFromTheTicketAndCountingTheRest
+    uuid e0bc7752-f577-46f2-bdac-9c3b5de7b1b1
+    summary "Argument by 導出 + 個数 — 帰属を ticket → 木 → 吊り先の項と導出し (列を足さない)、帰属なしを ratchet、2 項以上を fail にする。事業木の読み手は 1 か所に寄せる"
+
+        goal EachRowIsAttributedOrCounted
+        uuid d91489f0-6d4c-484b-bef5-fd990f0566ff
+        summary "D1 / D2: 登録簿の各行は 1 項に帰属するか、帰属なしとして数えられる。帰属なしの個数は baseline を超えても下回っても fail し、2 項以上に帰属する行は fail する"
+        state UnderReview
+        labels support-verified
+
+            solution Q8AttributionGreenWithNegativeControls
+            uuid b770cfa1-98f0-4d17-8287-191279b61172
+            summary "pnpm test:deferrals (CI gate) — 項に帰属 24 件・帰属なし 10 件 (baseline 10)、項ごとの滞留 l-hidden 8 · q 6 · delivery 3 · t-modify 2 · p-reach 2 · p-operate 1 · c-rework 1 · roi 1 (2026-09-27)。負の対照: DEF-005 の ticket を木の無い ADR-060 にすると 11 件で fail、ADR-081 · ADR-109 (l-hidden と delivery) にすると 2 項で fail (2026-09-27 に手で確認)"
+            artifacts
+            - "scripts/check-deferrals.mjs"
+            - "docs/DEFERRAL_LEDGER.md"
+
+        goal AttributionHasOneReader
+        uuid a3370870-6a89-4343-96c1-26e6b85cb7ec
+        summary "D3: 事業木の走査と ADR ↔ 木の同一性 (ファイル名の接頭辞) は scripts/gsn-attribution.mjs ただ 1 か所にあり、G5 / G6 と Q8 がそれを import する"
+        state UnderReview
+        labels support-verified
+
+            solution GsnDebtUnchangedAfterExtraction
+            uuid 07eab8ef-ea75-405a-a710-1e4f67b3711c
+            summary "pnpm test:gsn-debt — 切り出しの前後で出力が同一 (事業木に吊られた木 58/58 → 59/59 は本 ADR の木を足した分)。grep で collectHangSites / collectHungTrees の定義が scripts/gsn-attribution.mjs にしか無いことを確認 (2026-09-27)"
+            artifacts
+            - "scripts/gsn-attribution.mjs"
+            - "scripts/check-gsn-debt.mjs"

@@ -61,6 +61,18 @@ ratchet が「ドキュメント量」を測っていた。絞った結果 99 �
 **個数と満期は `pnpm test:gsn-debt` が問う** (G1 母集団 / G2 個数 / G3 満期の機械可読性 /
 G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、別の問いである。
 
+## 1 行ずつ、利益の式の 1 項に帰属する (ADR-154)
+
+残し**全体**は ADR-109 の木として項 `d` (`DecidedValueDoesNotStallBeforeUsers`) の分母に吊られている。
+**1 行ずつ**の帰属は列を持たず、**ticket から導出する**: ticket の ADR → その木 (`adr-NNN-*.gsn`) →
+事業木で木を吊った項 (ADR-153 G5 が木 1 本 = 吊り 1 回を保証する)。`goal` 列は足さない —
+ticket と同じ事実の第二の源になる。
+
+`pnpm test:deferrals` **Q8** が問う: 帰属なしの行は ratchet (`UNATTRIBUTED_BASELINE`)、
+2 項以上に帰属する行は fail。項ごとの滞留件数も同じコマンドが印字する (ここに数を写さない)。
+帰属なしが正当なのは ticket の ADR が cutoff 前で木を持たないときだけで、その木を書く義務は
+**DEF-028** が持つ。**ticket を選ぶことは、その残しがどの項の価値を止めているかを選ぶこと**である。
+
 ## 更新規則 (必須)
 
 - 残しを**書いたら**行を足す。`未着手` と書いて行を足さなければ Q1 の ratchet が上がる。
@@ -114,7 +126,7 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 | DEF-022 | `docs/adr/ADR-044-5w1h-function-mapping.md` | ADR-044 の判断が閉じたとき (**満期=ADR-044**)。φ 準同型は 2 か月 Draft のまま。**実装は 1 行も無い** — `FunctionRegistry.js` / `FunctionMatcher.js` / `SpatialCommandParser` はどれも存在せず、`src/` の 5 ファイルは*言及*である (ADR-123 §力学 3)。ADR-052 が φ を 5W1H 語彙全体へ一般化した結果、引用だけが増えた | ADR-044 | app |
 | DEF-024 | `docs/adr/ADR-123-a-deferral-is-not-written-in-one-notation.md` | コミット済み WASM 成果物の鮮度検査が入ったとき。`test:wasm` (cargo) と `test:robotics-wasm` は CI に無く、source を編集して再生成を忘れても緑になる。現在ズレてはいない (source・成果物とも #340 / 2026-07-22)。ADR-064 Phase 1 が意図的に決めた形なので違反ではないが、問う場所が無い。満期は CI が cargo を走らせ始めたとき: 満期=GREP:.github/workflows/ci.yml::cargo | ADR-064 | app |
 | DEF-027 | `docs/adr/ADR-125-an-obligation-belongs-to-the-event-that-fires-it.md` | **段の完了**を退役の発火事象にできるようになったとき。今日の発火は ADR の Status 遷移だけなので、「Phase N が完了したら消す」は D4 の二段構え (登録簿 → 起票された ADR の `Retires:`) を通る。順序表の段に**完了状態の機械可読な表現が無い**のが理由 (`- [x]` はあるが段の単位では読めない)。段が発火事象になれば D4 の迂回は不要になる | ADR-125 | app |
-| DEF-028 | `docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md` | cutoff (ADR-126) より前で木を持たない **11 本**の ADR (ADR-015/017/027/032/044/060/064/076/078/079/091) に `.gsn` を書くか、`DECLARED_TREELESS` に「書かない」と理由つきで宣言したとき。それまでその 11 本に紐づく残しは GSN 側から見えず、登録簿が受け続ける (だから ADR-126 D1 は「登録簿を畳む」ではなく「役割を分ける」)。既存 26 個の exploring への満期の後付けも同段 — 今日は機構の実証として 1 個だけ付けた | ADR-126 | app |
+| DEF-028 | `docs/adr/ADR-126-a-deferral-that-is-a-claim-belongs-to-the-argument.md` | cutoff (ADR-126) より前で木を持たない **11 本**の ADR (ADR-015/017/027/032/044/060/064/076/078/079/091) に `.gsn` を書くか、`DECLARED_TREELESS` に「書かない」と理由つきで宣言したとき。それまでその 11 本に紐づく残しは GSN 側から見えず、登録簿が受け続ける (だから ADR-126 D1 は「登録簿を畳む」ではなく「役割を分ける」)。**見えない行の個数は 2026-09-27 から `pnpm test:deferrals` Q8 が数える** (ADR-154 — 利益の式のどの項にも帰属しない行。木が 1 本書かれるたびに `UNATTRIBUTED_BASELINE` が下がる)。既存 26 個の exploring への満期の後付けも同段 — 今日は機構の実証として 1 個だけ付けた | ADR-126 | app |
 | DEF-033 | `src/components/Grasp/GraspSearchPanel.jsx` · `docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md` | **カメラと重み**が文書に住むようになったとき: 満期=GREP:schema/context-0.5.schema.json::objectiveWeights 。**2026-09-26 に ADR-152 D3 が半分を決着**: 「ハンドはどの実体に属するか」の答えは *ロボットの tcp 実体* (ロボットとグリッパの接点 — ADR-151) で、`hand` は scene JSON / Layout DSL / context DSL に往復し、文書が知る tcp では文書へ宣言される。旧満期 `GREP:…::gripper` はその決着で発火したが、**trigger が間違っていた**: 「gripper」の語は手の宣言と一緒に schema へ入るので、手だけが住んだ時点で 3 つ (手 / カメラ / 重み) が全部片付いたように読める。残る 2 つ (カメラ・重み) は今日もパネルの React state で、*どの実体に属するか* (カメラはシーンの実体か探索セッションの属性か) が未決のまま — 満期はその語が文書のスキーマに現れたとき | ADR-129 | app |
 | DEF-034 | `docs/adr/ADR-129-a-declaration-outlives-the-instance-it-was-written-on.md` | **名前をまだ持たない主張の載せ場所を決める ADR が起票されたとき** (満期はその ADR — ADR-125 D4 / DEF-020 と同じ二段構え)。ADR-129 D6。D0′ (記録は行為の側から取る) を素直に伸ばすと「押し出した量」「なぜこの向きか」「ここは触らせたくない」も記録対象になるが、**名前の付け方を決める判断がまだ無い** — 無名の主張は文書のどこに着くのか (実体の属性か独立した事実か)、3D はそれをどう見せるのか (見せなければ合意のしようがない — ADR-105)、名前は誰が与えるのか (既存の候補は合意の場 `proposeChange` / `approveProposal` — ADR-104)。**「対象外」と書かない**のが要点である: 原則 #29 の二状態でいえばこれは*契約あり*でも*明示的対象外*でもなく **まだ決めていない** で、対象外と書けば次にこの問いが来たとき「決着済み」に見える — ADR-129 の初稿が置いた「境界は語彙の有無」がまさにその形の嘘だった (ユーザー指摘で撤回: **語彙が先に在るなら 3D は要らない**。要求が言葉になっていないから 3D で見せて確定・合意する、というのがこのアプリの前提である)。**数えるのは主張の個数ではなく「判断が未了である」という 1 件** — 欄が無いものは数えられないので、個数を分母にしたら母集団を持たない表になる (ADR-102) | ADR-129 | app |
 | DEF-011 | `docs/adr/ADR-113-one-claim-on-the-screen.md` | 2 つのギャラリー (起動ホーム = Layout DSL / New Project = Context DSL) の**語彙の作り分け**が済んだとき — 見出し・説明・破壊性の書き方が区別され、読み取り専用の表示 (`Unexamined`) の出口がシーン置き換えを伴うことが押す前に分かること。ADR-113 は**構造の側**だけを閉じた (2 枚同時が表現不能) ので、語彙は未着手 | ADR-113 | ia |
@@ -238,7 +250,7 @@ G4 満期切れ)。`pnpm test:gsn` が問うのは**未宣言のゼロ**で、�
 
 ---
 
-**問い所:** `pnpm test:deferrals` (`scripts/check-deferrals.mjs` の 5 つの問い —
+**問い所:** `pnpm test:deferrals` (`scripts/check-deferrals.mjs` の 8 つの問い —
 Q1 ratchet / Q2 満期 (コード側 `PROVISIONAL_UNTIL` + 登録簿の `満期=ADR-NNN`) /
-Q3 ticket / Q4 逆向き / Q5 満期の機械可読性)。**CI の gate ジョブで毎 PR 走る。**
+Q3 ticket / Q4 逆向き / Q5 満期の機械可読性 / Q6 Draft / Q7 記法 / Q8 項への帰属)。**CI の gate ジョブで毎 PR 走る。**
 **正本:** `docs/adr/ADR-109-a-deferral-is-a-declaration-not-a-memory.md`
