@@ -87,6 +87,19 @@ export function axialToolLengthM(mount) {
 }
 
 /**
+ * A robot's axial tool length in the SCENE unit (mm), or null when it has no
+ * flange-mounted tcp or the mount is not straight along +Z — the one reading
+ * the grasp overlays share (the declaration's hand preview and the sample
+ * lines, ADR-155 D3), so they cannot disagree about how long the tool is.
+ * @param {{tcpFrame?: object|null}|null|undefined} robot
+ * @returns {number|null}
+ */
+export function axialToolLengthMm(robot) {
+  const mount = toolMountOf(robot)
+  return axialToolLengthM(mount) === null ? null : mount.translation.z
+}
+
+/**
  * Why a flange-mounted TCP cannot be moved, rotated or re-parented by hand
  * (ADR-151 stage 1). The mount is the gripper's geometry, and editing it is only
  * worth offering once every reader can take a full 6-DOF mount (stage 2).

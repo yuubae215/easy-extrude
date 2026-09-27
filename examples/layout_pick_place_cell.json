@@ -13,10 +13,22 @@
       "description": "このセルが占有する床面積",
       "placeType": "Zone",
       "vertices": [
-        { "x": -700, "y": -800 },
-        { "x": 1200, "y": -800 },
-        { "x": 1200, "y":  800 },
-        { "x": -700, "y":  800 }
+        {
+          "x": -700,
+          "y": -800
+        },
+        {
+          "x": 1200,
+          "y": -800
+        },
+        {
+          "x": 1200,
+          "y": 800
+        },
+        {
+          "x": -700,
+          "y": 800
+        }
       ]
     },
     {
@@ -25,7 +37,11 @@
       "name": "電源インレット (100V)",
       "description": "床置きコンセント。セル電源の給電点。",
       "placeType": "Anchor",
-      "position": { "x": -500, "y": -600, "z": 0 }
+      "position": {
+        "x": -500,
+        "y": -600,
+        "z": 0
+      }
     },
     {
       "ref": "worktable",
@@ -33,13 +49,25 @@
       "name": "作業台",
       "description": "高さ800mm、天面600×500mm。",
       "ifcClass": "IfcFurniture",
-      "dimensions": { "x": 600, "y": 500, "z": 800 },
-      "position": { "x": 0, "y": 0, "z": 400 },
+      "dimensions": {
+        "x": 600,
+        "y": 500,
+        "z": 800
+      },
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 400
+      },
       "frames": [
         {
           "ref": "worktable_top",
           "name": "作業台天面中心",
-          "translation": { "x": 0, "y": 0, "z": 400 }
+          "translation": {
+            "x": 0,
+            "y": 0,
+            "z": 400
+          }
         }
       ]
     },
@@ -49,13 +77,25 @@
       "name": "ロボットペデスタル",
       "description": "作業台天面に固定するロボット架台。",
       "ifcClass": "IfcElementComponent",
-      "dimensions": { "x": 300, "y": 300, "z": 120 },
-      "position": { "x": -120, "y": 0, "z": 860 },
+      "dimensions": {
+        "x": 300,
+        "y": 300,
+        "z": 120
+      },
+      "position": {
+        "x": -120,
+        "y": 0,
+        "z": 860
+      },
       "frames": [
         {
           "ref": "robot_mount",
           "name": "ロボット取付面",
-          "translation": { "x": 0, "y": 0, "z": 60 }
+          "translation": {
+            "x": 0,
+            "y": 0,
+            "z": 60
+          }
         }
       ]
     },
@@ -65,7 +105,11 @@
       "name": "robot_base",
       "description": "単腕ロボットの TF ベース。ペデスタル天面 (robot_mount) にボルト締結。",
       "robotRole": "base",
-      "position": { "x": -120, "y": 0, "z": 920 }
+      "position": {
+        "x": -120,
+        "y": 0,
+        "z": 920
+      }
     },
     {
       "ref": "robot_tcp",
@@ -75,25 +119,230 @@
       "robotRole": "tcp",
       "parentRef": "robot_base",
       "mountedOn": "flange",
-      "position": { "x": 0, "y": 0, "z": 150 }
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 150
+      }
     },
     {
-      "ref": "part_bin",
+      "ref": "part_bin_floor",
       "type": "Solid",
-      "name": "供給ビン (バラ積みワーク)",
-      "description": "作業台天面の右手前。取り出し対象のワークを収容。",
+      "name": "供給ビン 底板",
+      "description": "作業台天面の右手前。取り出し対象のワークを収容。供給ビンを床 1 + 壁 4 の 5 つの直方体で組む (ADR-155 D2): 1 個の箱にすると中身の詰まった立体になり、中のワークと重なり、取りに入る手はすべて干渉になる。外寸 200×150×150 mm、底板 10 mm、壁 8 mm。",
       "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 200, "y": 150, "z": 150 },
-      "position": { "x": 200, "y": 150, "z": 875 }
+      "dimensions": {
+        "x": 200,
+        "y": 150,
+        "z": 10
+      },
+      "position": {
+        "x": 200,
+        "y": 150,
+        "z": 805
+      }
     },
     {
-      "ref": "output_tray",
+      "ref": "part_bin_wall_px",
       "type": "Solid",
-      "name": "排出トレイ",
-      "description": "作業台天面の右奥。整列配置の載せ替え先。",
+      "name": "供給ビン 側板 +X",
       "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 250, "y": 150, "z": 40 },
-      "position": { "x": 200, "y": -150, "z": 820 }
+      "dimensions": {
+        "x": 8,
+        "y": 150,
+        "z": 140
+      },
+      "position": {
+        "x": 296,
+        "y": 150,
+        "z": 880
+      }
+    },
+    {
+      "ref": "part_bin_wall_nx",
+      "type": "Solid",
+      "name": "供給ビン 側板 −X",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 8,
+        "y": 150,
+        "z": 140
+      },
+      "position": {
+        "x": 104,
+        "y": 150,
+        "z": 880
+      }
+    },
+    {
+      "ref": "part_bin_wall_py",
+      "type": "Solid",
+      "name": "供給ビン 側板 +Y",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 184,
+        "y": 8,
+        "z": 140
+      },
+      "position": {
+        "x": 200,
+        "y": 221,
+        "z": 880
+      }
+    },
+    {
+      "ref": "part_bin_wall_ny",
+      "type": "Solid",
+      "name": "供給ビン 側板 −Y",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 184,
+        "y": 8,
+        "z": 140
+      },
+      "position": {
+        "x": 200,
+        "y": 79,
+        "z": 880
+      }
+    },
+    {
+      "ref": "work_1",
+      "type": "Solid",
+      "name": "ワーク 1",
+      "description": "供給ビンの底に平置き。ビンの縁 (z=950) から上面 (z=835) まで 115 mm 沈んでいる — ツール長 150 mm に対してフランジが縁の上に何 mm 残るかが、この深さで決まる。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": {
+        "x": 60,
+        "y": 40,
+        "z": 25
+      },
+      "position": {
+        "x": 150,
+        "y": 115,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "work_2",
+      "type": "Solid",
+      "name": "ワーク 2",
+      "description": "供給ビンの底に平置き (+Y 壁寄り)。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": {
+        "x": 60,
+        "y": 40,
+        "z": 25
+      },
+      "position": {
+        "x": 230,
+        "y": 190,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "work_3",
+      "type": "Solid",
+      "name": "ワーク 3",
+      "description": "供給ビンの底に 30° 回って平置き (バラ積み)。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": {
+        "x": 60,
+        "y": 40,
+        "z": 25
+      },
+      "position": {
+        "x": 240,
+        "y": 125,
+        "z": 822.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0.258819,
+        "w": 0.965926
+      }
+    },
+    {
+      "ref": "output_tray_floor",
+      "type": "Solid",
+      "name": "排出トレイ 底板",
+      "description": "作業台天面の右奥。整列配置の載せ替え先。排出トレイを床 1 + 壁 4 の 5 つの直方体で組む (ADR-155 D2): 1 個の箱にすると中身の詰まった立体になり、中のワークと重なり、取りに入る手はすべて干渉になる。外寸 250×150×40 mm、底板 5 mm、壁 5 mm。",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 250,
+        "y": 150,
+        "z": 5
+      },
+      "position": {
+        "x": 200,
+        "y": -150,
+        "z": 802.5
+      }
+    },
+    {
+      "ref": "output_tray_wall_px",
+      "type": "Solid",
+      "name": "排出トレイ 側板 +X",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 5,
+        "y": 150,
+        "z": 35
+      },
+      "position": {
+        "x": 322.5,
+        "y": -150,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "output_tray_wall_nx",
+      "type": "Solid",
+      "name": "排出トレイ 側板 −X",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 5,
+        "y": 150,
+        "z": 35
+      },
+      "position": {
+        "x": 77.5,
+        "y": -150,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "output_tray_wall_py",
+      "type": "Solid",
+      "name": "排出トレイ 側板 +Y",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 240,
+        "y": 5,
+        "z": 35
+      },
+      "position": {
+        "x": 200,
+        "y": -77.5,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "output_tray_wall_ny",
+      "type": "Solid",
+      "name": "排出トレイ 側板 −Y",
+      "ifcClass": "IfcTransportElement",
+      "dimensions": {
+        "x": 240,
+        "y": 5,
+        "z": 35
+      },
+      "position": {
+        "x": 200,
+        "y": -222.5,
+        "z": 822.5
+      }
     }
   ],
   "constraints": [
@@ -102,28 +351,135 @@
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
-      "properties": { "note": "ペデスタルを作業台天面にボルト固定" }
+      "properties": {
+        "note": "ペデスタルを作業台天面にボルト固定"
+      }
     },
     {
       "source": "robot_base",
       "target": "robot_mount",
       "jointType": "fixed",
       "semanticType": "fastened",
-      "properties": { "note": "ロボットをペデスタルに締結" }
+      "properties": {
+        "note": "ロボットをペデスタルに締結"
+      }
     },
     {
-      "source": "part_bin",
+      "source": "part_bin_floor",
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
-      "properties": { "note": "供給ビンを天面に設置" }
+      "properties": {
+        "note": "供給ビンの底板を天面に設置"
+      }
     },
     {
-      "source": "output_tray",
+      "source": "part_bin_wall_px",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "part_bin_wall_nx",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "part_bin_wall_py",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "part_bin_wall_ny",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "work_1",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "ワークはビンの底に置かれる"
+      }
+    },
+    {
+      "source": "work_2",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "ワークはビンの底に置かれる"
+      }
+    },
+    {
+      "source": "work_3",
+      "target": "part_bin_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "ワークはビンの底に置かれる"
+      }
+    },
+    {
+      "source": "output_tray_floor",
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
-      "properties": { "note": "排出トレイを天面に設置" }
+      "properties": {
+        "note": "排出トレイの底板を天面に設置"
+      }
+    },
+    {
+      "source": "output_tray_wall_px",
+      "target": "output_tray_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "output_tray_wall_nx",
+      "target": "output_tray_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "output_tray_wall_py",
+      "target": "output_tray_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
+    },
+    {
+      "source": "output_tray_wall_ny",
+      "target": "output_tray_floor",
+      "jointType": null,
+      "semanticType": "above",
+      "properties": {
+        "note": "側板は底板の上に立つ"
+      }
     },
     {
       "source": "power_inlet",

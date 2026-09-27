@@ -4473,6 +4473,7 @@ export class AppController {
       this._service._updateWorldPoses()
       this._syncRobotStage()   // robot skeleton follows the robot_base CF (ADR-084 §2)
       this._sceneView.render()
+      this._sceneView.robotStages?.updateLabelPositions(this._sceneView.activeCamera)
       if (this._gizmoView) this._gizmoView.update()
       for (const obj of this._scene.objects.values()) {
         if (obj instanceof MeasureLine)     obj.meshView.updateLabelPosition()

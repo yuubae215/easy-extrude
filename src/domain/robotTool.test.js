@@ -7,7 +7,7 @@ import fs from 'node:fs'
 
 import {
   TOOL_LENGTH_M, toolParts,
-  DEFAULT_TOOL_MOUNT, axialToolLengthM, toolMountOf, toolMountGap, tcpMarkerPose,
+  DEFAULT_TOOL_MOUNT, axialToolLengthM, axialToolLengthMm, toolMountOf, toolMountGap, tcpMarkerPose,
   toolMountEditBlockedReason, TOOL_MOUNT_UNDECLARED_REASON, TOOL_MOUNT_NOT_AXIAL_REASON,
   TOOL_MOUNT_EDIT_DEFERRED_REASON,
 } from './robotTool.js'
@@ -138,6 +138,14 @@ test('toolMountGap names each of its gaps — 0 tcp, a non-axial tcp, and none (
   const bent = tcpWith({ translation: { x: 0, y: 20, z: 150 }, rotation: DEFAULT_TOOL_MOUNT.rotation })
   assert.equal(toolMountGap({ tcpFrame: bent }), TOOL_MOUNT_NOT_AXIAL_REASON)
   assert.equal(toolMountGap({ tcpFrame: tcpWith(DEFAULT_TOOL_MOUNT) }), null)
+})
+
+test('axialToolLengthMm: the mount in mm, null for no tcp or a bent mount (ADR-155 D3)', () => {
+  assert.equal(axialToolLengthMm({ tcpFrame: tcpWith(DEFAULT_TOOL_MOUNT) }), 150)
+  assert.equal(axialToolLengthMm({ tcpFrame: null }), null)
+  assert.equal(axialToolLengthMm(null), null)
+  const bent = tcpWith({ translation: { x: 0, y: 20, z: 150 }, rotation: DEFAULT_TOOL_MOUNT.rotation })
+  assert.equal(axialToolLengthMm({ tcpFrame: bent }), null)
 })
 
 test('toolMountOf is a snapshot — the caller cannot write the tcp through it', () => {

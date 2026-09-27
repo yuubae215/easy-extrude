@@ -322,10 +322,12 @@ test('S12 — TCP の印は腕と一緒にプレビュー姿勢へ行き、候�
   await page.keyboard.press('n')
   await page.getByRole('button', { name: /Grasp candidates/ }).click()
   await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
-  // The part bin, by name — not "the first option": the first is the whole
-  // worktable, whose candidates stand beside the pedestal where no UR5e pose
-  // exists, and a check whose arm never moves asks nothing (see `posed` below).
-  await page.locator('select').filter({ hasText: /pick one of/ }).first().selectOption('part_bin')
+  // A workpiece in the part bin, by name — not "the first option": the first is
+  // the whole worktable, whose candidates stand beside the pedestal where no
+  // UR5e pose exists, and a check whose arm never moves asks nothing (see
+  // `posed` below). Since ADR-155 D2 the bin is five solids with parts inside,
+  // so the thing to pick is a part, not the bin.
+  await page.locator('select').filter({ hasText: /pick one of/ }).first().selectOption('work_1')
   await page.getByRole('button', { name: /Run grasp search/ }).click()
   await expect(page.getByText(/Done —/)).toBeVisible({ timeout: 30_000 })
 
@@ -336,6 +338,13 @@ test('S12 — TCP の印は腕と一緒にプレビュー姿勢へ行き、候�
 
   const rest = (await tcp()).robots[0]
   expect(dist(rest.marker, rest.sceneTcp), '休止姿勢で印とシーンの tcp が離れている').toBeLessThan(TOL_MM)
+
+  // ADR-155 D1: the marker's NAME is the shared screen-space label, not a
+  // world-sized sprite — the same element (and so the same px size) as every
+  // other name in the scene. Exactly one per arm (原則 #31: count, not "some").
+  const tcpLabel = page.locator('.ee-entity-label', { hasText: /^tcp$/ })
+  await expect(tcpLabel).toHaveCount(1)
+  await expect(tcpLabel).toBeVisible()
 
   let posed = 0
   for (const rank of [1, 2, 1]) {

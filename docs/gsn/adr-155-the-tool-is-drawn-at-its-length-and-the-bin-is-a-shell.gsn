@@ -1,0 +1,90 @@
+GOALS adr155_the_tool_is_drawn_at_its_length_and_the_bin_is_a_shell
+
+goal DepthToolAndPartReadBeforeRun
+uuid d57c4e1c-7373-47a5-b967-84c97cbe3d45
+summary "ビンの底のワークを狙うとき、ツール長・ビンの深さ・ワークの高さの関係が探索を走らせる前に画面で読める。探索は実際に掴むもの (ワーク) について解き、画面の容器と判定の容器は同じ形をしている。画面の名札はどれも同じ仕組みで同じ大きさに読める"
+state Approved
+labels adr-155, adr-151, adr-128, adr-133, adr-070, principle-27, principle-31, principle-33, principle-9, app, view, term-q, change-depiction-parity
+artifacts
+- "docs/adr/ADR-155-the-tool-is-drawn-at-its-length-and-the-bin-is-a-shell.md"
+
+    context TheDogfooderSawTwoPicturesDisagreeWithFacts
+    uuid 8983f983-050f-4413-9538-c381aa8a57ce
+    summary "2026-09-27 の /whiteboard: (1) TCP の名札が world 寸法のスプライト (文字高 30mm) で、他の名札 (EntityLabel, 画面 px) と大きさも見た目も違った — ADR-151 で印を腕へ移したとき EntityLabel から外れ、決定 b (軸の棒の world 固定) に相乗りしていた。(2) サンプルの part_bin が詰まった箱 1 個でワークが無く、サンプル点がビンの蓋の上に出て、線は長さに意味の無い法線 (半径 × 3) だった"
+    artifacts
+    - "src/view/RobotStage.js"
+    - "src/view/GraspSampleView.js"
+    - "examples/layout_pick_place_cell.json"
+
+    context BusinessTreeAttachPoint
+    uuid a01b77db-bf20-4a7b-b954-8ced56ea4776
+    summary "事業木へ起票と同じ PR で接続 (ADR-153 D4): profit-growth.gsn の goal TheJudgedMachineIsTheDrawnMachine (term-q) の下に solution Adr155Tree として吊った。変えたのは描写と判定の一致 (change-depiction-parity) — 画面の容器 = 判定の容器、画面のツール = 取付けの長さ"
+    artifacts
+    - "docs/gsn/profit-growth.gsn"
+
+    justification WhyNotInnerDimensionsForTheSample
+    uuid e9d4a700-57d5-4f27-a885-9d43ee183d3c
+    summary "却下 D2-A (既存の innerDimensions をサンプルに宣言): 障害物は 5 箱に割れるが、シーングラフは詰まった箱 1 個のまま描かれる (DEF-041)。中のワークは箱に埋もれて見えず、画面と判定の形が食い違う — それはこの ADR の Goal の否定そのもの。当事者の要求も '5 つの直方体で' だった"
+
+    justification WhyNotJudgeTheClearanceInTheFront
+    uuid 8e51c019-d700-49b2-8b09-ddaa6f0b5e02
+    summary "却下 D3-C (縁との余裕を数値化・当たりを色分け): '当たるか' はアイデア (§AI 向けガード軸 1 — core/ のみ)。front が色で答えれば第二の判定になり、core/ の答えと食い違ったとき画面がどちらを言っているか分からなくなる。front が描くのは宣言された長さの閉形式 (軸 3) だけ"
+
+    justification WhyNotASizeAttenuationFlag
+    uuid e6f7e0e3-d597-45ce-8810-f9b2d32c7276
+    summary "却下 D1-B (スプライトを sizeAttenuation:false に): 大きさは画面一定になるが見た目は別物のまま、名札を描く仕組みが 2 つ残る (§1.1)。EntityLabel の冒頭が宣言する 'one label mechanism' の 4 つ目の消費者にするのが筋"
+
+    assumption WallsAsTargetsAreTolerable
+    uuid c207acdb-691c-48fb-8d8c-5e9c324d653f
+    summary "反証されうる前提: 側板・底板が把持対象の候補に並んでも実害は無い — N 個の対象は明示選択が要り既定で先頭を選ばない (ADR-117)。反証されるのは、当事者が候補一覧の長さで対象を選べないと報告したとき。そのときは ADR-133 D4 (容器ロールの除外) を DEF-041 から起こす"
+
+    assumption StraightInDepthZeroIsTheCaseWorthDrawing
+    uuid 25f6eca4-1324-4f66-903f-33a4f17bb1c6
+    summary "反証されうる前提: 線 = 直進進入・深さ 0 のツールで、関係 (フランジ vs 縁) を読むのに足りる。傾いた進入・平行ジョーの把持深さ・手首は描かない (ADR 本文で宣言)。反証されるのは、core/ の答え (棄却の内訳) が線の絵と逆を言う事例が観測されたとき"
+
+    strategy ByOneLabelMechanismAShellAndALineThatIsTheTool
+    uuid 23748231-be2e-491d-8d6a-53d22660cc82
+    summary "Argument by 既存の語への寄せ: 名札は EntityLabel (注入した factory、印と対で生滅)、容器は 5 Solid (画面・Outliner・障害物が同じ 5 枚)、線は純粋関数 sampleLines がツール長から導出 (取付けが無ければ法線に戻り、ツールを発明しない)"
+
+        goal TheTcpNameIsTheSharedLabel
+        uuid eeeca8b4-acb1-4814-8fba-ed9e27e41481
+        summary "D1: TCP の名札は EntityLabel の DOM 札 (ee-entity-label) として腕 1 本につき 1 個出て、印を解放する 3 経路 (工具の付け替え・スタイル切替・dispose) で解放される。world スプライトの名札は 0 個"
+        state Approved
+        labels support-verified
+
+            solution S12CountsTheTcpLabel
+            uuid 4e76ebdc-3744-4852-b154-f944f8f36c93
+            summary "e2e/grasp-stub.spec.js S12 (VITE_GRASP_STUB=1): 単腕ピック&プレイスセルで .ee-entity-label の 'tcp' がちょうど 1 個・可視。同じ検査の中で印は候補の TCP に 2 回追従する (ADR-151 の既存主張も緑のまま)。2026-09-27 実行: grasp-stub 14/14 pass"
+            artifacts
+            - "e2e/grasp-stub.spec.js"
+            - "src/view/RobotStage.js"
+            - "src/view/RobotStageSet.js"
+
+        goal TheSampleCellPicksAPartOutOfAShell
+        uuid db986e28-e8ec-46df-b547-9dcd4afc161a
+        summary "D2: サンプルの供給ビンと排出トレイは底板 1 + 側板 4 の 5 Solid で、ワーク 3 個がビンの底に重ならずに置かれる。スキーマに適合し、ワークを対象にした探索で腕が候補の姿勢を取る"
+        state Approved
+        labels support-verified
+
+            solution SchemaAndPickFromTheBin
+            uuid d49e8503-3434-4365-a2b3-26e0ce76a3ee
+            summary "node schema/tools/validate.mjs layout-1.0 examples/layout_pick_place_cell.json → ok。e2e S12 が work_1 を対象に Run し、腕が候補の姿勢を 2 回以上取る (posed ≥ 2)。実体の AABB 重なり検査 (回転を含む) で重なり 0 (2026-09-27、手で実行)。LayoutTemplateRobotUsability.test.js が同じ文書でロボット 1 台を解決"
+            artifacts
+            - "examples/layout_pick_place_cell.json"
+            - "e2e/grasp-stub.spec.js"
+            - "src/layout/LayoutTemplateRobotUsability.test.js"
+
+        goal TheSampleLineIsTheTool
+        uuid 0b9d948c-395c-4c5c-9338-75c363e0fb61
+        summary "D3: 軸方向の取付けが宣言されていれば、各サンプルの線は点 → 点 + 法線 × ツール長 で、端にフランジ点が 1 個ずつ。未宣言 (null・0・負・NaN) なら短い法線に戻りフランジ点は 0 個。ツール長は仕様の手プレビューと同じ 1 関数から読む"
+        state Approved
+        labels support-verified
+
+            solution SampleLinesPure
+            uuid 7e32fabf-bf92-458a-947d-87f9100edf4f
+            summary "src/view/GraspSampleMath.test.js: ビン底のワーク上面 z=835 + L=150 → フランジ z=985 (縁 950 の 35mm 上)、側面は法線方向に立つ、未宣言の 5 値で法線 + フランジ 0 個、9 点 → 9 線分 + 9 フランジ。src/domain/robotTool.test.js: axialToolLengthMm は既定で 150、tcp 無し・曲がった取付けで null。pnpm test 1489+ 全 pass (2026-09-27)"
+            artifacts
+            - "src/view/GraspSampleMath.test.js"
+            - "src/view/GraspSampleMath.js"
+            - "src/domain/robotTool.test.js"
+            - "src/controller/GraspController.js"

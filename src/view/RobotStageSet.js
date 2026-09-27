@@ -25,9 +25,15 @@ import { prefetchRealisticRobot } from './realisticRobotAsset.js'
  * never construct a `RobotStage` themselves.
  */
 export class RobotStageSet {
-  /** @param {import('three').Scene} threeScene */
-  constructor(threeScene) {
+  /**
+   * @param {import('three').Scene} threeScene
+   * @param {{createLabel?: () => import('./EntityLabel.js').EntityLabel}} [opts]
+   *   `createLabel` — the shared screen-space label factory each stage names its
+   *   TCP marker with (ADR-155 D1). Absent (unit lanes) → stages draw no label.
+   */
+  constructor(threeScene, opts = {}) {
     this._scene = threeScene
+    this._createLabel = opts.createLabel ?? null
     /** @type {Map<string, RobotStage>} robot id → its skeleton view */
     this._stages = new Map()
     /**
@@ -132,7 +138,7 @@ export class RobotStageSet {
       if (this._stages.has(id)) continue
       // The stage is told the scene's style AT BIRTH (ADR-150 D2), so it can
       // stay hidden until that style lands instead of flashing the skeleton.
-      const stage = new RobotStage(this._scene, { declaredStyle: this._renderStyle })
+      const stage = new RobotStage(this._scene, { declaredStyle: this._renderStyle, createLabel: this._createLabel })
       this._stages.set(id, stage)
       // The obligation "a new stage draws the style this scene declared" lives
       // HERE, on the event that creates the stage, not next to the declaration
@@ -177,6 +183,16 @@ export class RobotStageSet {
    */
   setToolMount(id, mount, hand = null) {
     this._stages.get(id)?.setToolMount(mount, hand)
+  }
+
+  /**
+   * Move every arm's TCP label onto its marker's screen point (ADR-155 D1).
+   * Called once per frame after `setPose` / `setToolMount`, like the entity
+   * labels (`updateLabelPosition(activeCamera)`).
+   * @param {import('three').Camera} camera
+   */
+  updateLabelPositions(camera) {
+    for (const stage of this._stages.values()) stage.updateLabelPosition(camera)
   }
 
   /**
