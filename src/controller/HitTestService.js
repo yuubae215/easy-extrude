@@ -15,6 +15,7 @@ import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
 import { toNDC }           from '../model/CuboidModel.js'
 import { CLICK_TARGET_KIND, chooseClickTarget } from '../domain/clickTarget.js'
+import { isContainer } from '../domain/hollowBody.js'
 
 export class HitTestService {
   /**
@@ -214,6 +215,9 @@ export class HitTestService {
 
   /** Returns the hit face on the active solid, or null. */
   hitFace() {
+    // A tray's mesh is its shell (ADR-155 D2): triangle → face index does not map
+    // to the body's six faces, so there is no face to extrude. Edit Mode says why.
+    if (isContainer(this._ctrl._activeObj)) return null
     const hit = this.hitActiveSolid()
     if (!hit) return null
     const fi   = Math.floor(hit.face.a / 4)

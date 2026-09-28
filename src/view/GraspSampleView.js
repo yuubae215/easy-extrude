@@ -37,13 +37,14 @@
  */
 import * as THREE from 'three'
 import { COLOR } from '../theme/tokens.js'
+import { sampleLines } from './GraspSampleMath.js'
 
 /** Marker radius as a fraction of the sampled body's smallest half-extent. */
 const MARKER_FRACTION = 0.16
 /** Never draw a marker smaller than this in world units (legibility floor). */
 const MARKER_MIN = 0.004
-/** Normal whisker length, as a multiple of the marker radius. */
-const WHISKER = 3
+/** Flange dot radius, as a fraction of the sample marker radius. */
+const FLANGE_FRACTION = 0.6
 
 export class GraspSampleView {
   /** @param {THREE.Scene} scene */
@@ -73,6 +74,12 @@ export class GraspSampleView {
     this._lineMat = new THREE.LineBasicMaterial({
       color: new THREE.Color(COLOR.infoTone), transparent: true, opacity: 0.45,
     })
+    // The flange end of a tool line (ADR-155 D3). `surfaceRaised` is the token
+    // the arm's own tool housing is drawn in (RobotStage) — the dot IS the same
+    // object's other end, so it wears the same declared colour.
+    this._flangeMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(COLOR.surfaceRaised), transparent: true, opacity: 0.9, depthWrite: false,
+    })
 
     /** @type {THREE.BufferGeometry[]} per-render geometries, cleared on each show */
     this._geometries = []
@@ -85,9 +92,13 @@ export class GraspSampleView {
    * @param {{declared: boolean, extent: number}} opts
    *        `declared` — whether these came from the user's declaration (colour);
    *        `extent`   — the sampled body's smallest full extent, the world-space
-   *                     input of the 原則 #27 size pair.
+   *                     input of the 原則 #27 size pair;
+   *        `toolLengthMm` — the search subject's axial tool mount (TCP → flange),
+   *                     or null. When given, each line IS the tool for a
+   *                     straight-in approach and ends in a flange dot
+   *                     (ADR-155 D3 — `GraspSampleMath.sampleLines`).
    */
-  show(samples, { declared = false, extent = 0 } = {}) {
+  show(samples, { declared = false, extent = 0, toolLengthMm = null } = {}) {
     this._clearGeometry()
     if (!samples || samples.length === 0) { this._group.visible = false; return }
 
@@ -101,23 +112,30 @@ export class GraspSampleView {
     // a panel the user is actively typing in.
     const dots = new THREE.InstancedMesh(sphere, mat, samples.length)
     const m = new THREE.Matrix4()
-    const linePoints = []
     for (const [i, s] of samples.entries()) {
       const [x, y, z] = s.point
       dots.setMatrixAt(i, m.makeTranslation(x, y, z))
-      const [nx, ny, nz] = s.normal ?? [0, 0, 0]
-      const L = radius * WHISKER
-      // The outward normal is the fact `core/` derives the approach from, so it
-      // is drawn rather than implied: a face declared with an inward normal
-      // would otherwise look identical to a correct one.
-      linePoints.push(x, y, z, x + nx * L, y + ny * L, z + nz * L)
     }
     dots.instanceMatrix.needsUpdate = true
     this._group.add(dots)
     this._rendered = [dots]
 
+    // The line is the tool (TCP → flange) when a length is declared, else the
+    // outward normal — the fact `core/` derives the approach from, drawn so a
+    // face declared with an inward normal cannot look like a correct one.
+    const { positions, flanges } = sampleLines(samples, { radius, toolLengthMm })
+    if (flanges.length > 0) {
+      const flangeDot = new THREE.SphereGeometry(radius * FLANGE_FRACTION, 8, 6)
+      this._geometries.push(flangeDot)
+      const ends = new THREE.InstancedMesh(flangeDot, this._flangeMat, flanges.length)
+      for (const [i, [x, y, z]] of flanges.entries()) ends.setMatrixAt(i, m.makeTranslation(x, y, z))
+      ends.instanceMatrix.needsUpdate = true
+      this._group.add(ends)
+      this._rendered.push(ends)
+    }
+
     const lineGeo = new THREE.BufferGeometry()
-    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePoints, 3))
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     this._geometries.push(lineGeo)
     const lines = new THREE.LineSegments(lineGeo, this._lineMat)
     this._group.add(lines)
@@ -147,5 +165,6 @@ export class GraspSampleView {
     this._declaredMat.dispose()
     this._derivedMat.dispose()
     this._lineMat.dispose()
+    this._flangeMat.dispose()
   }
 }

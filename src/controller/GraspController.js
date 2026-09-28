@@ -54,7 +54,7 @@ import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGho
 import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclarationCatalog.js'
 import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
-  resolveGraspTargets, selectTarget, targetProjection,
+  resolveGraspTargets, resolveBodies, selectTarget, targetProjection,
   surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
   graspSpecsFor, sendsDerivedSamples,
 } from '../domain/graspTargets.js'
@@ -65,7 +65,7 @@ import { declarationPicture } from '../view/GraspDeclarationMath.js'
 import { mmPointToM, mPointToMM } from '../domain/worldUnits.js'
 import { needsClientSolvedPreview, previewPayloadFor } from '../domain/robotConfig.js'
 import { flangeTargetInBaseFrame } from '../robotics/graspPoseGauge.js'
-import { axialToolLengthM, toolMountOf, toolMountGap } from '../domain/robotTool.js'
+import { axialToolLengthM, axialToolLengthMm, toolMountOf, toolMountGap } from '../domain/robotTool.js'
 import { handOf, handMountGap, wireGripperFromHand, HAND_STATE } from '../domain/robotHand.js'
 import { createSetTcpHandCommand } from '../command/SetTcpHandCommand.js'
 import {
@@ -444,6 +444,9 @@ export class GraspController {
     this._sampleView.show(samples, {
       declared: target.feature?.state === GRASP_FEATURE_STATE.DECLARED_SPECS,
       extent:   Math.min(d.x, d.y, d.z),
+      // The line on each sample is the subject's tool, so the flange's height
+      // against a bin's rim is visible before Run (ADR-155 D3).
+      toolLengthMm: axialToolLengthMm(this._selectedRobot()),
     })
     this._showDeclaration()
   }
@@ -481,8 +484,7 @@ export class GraspController {
     if (!target || !this._createDeclarationView) { this._declView?.clear(); return }
     const robot = this._selectedRobot()
     const hand = handOf(robot).hand
-    const mount = toolMountOf(robot)
-    const toolLengthMm = mount && axialToolLengthM(mount) !== null ? mount.translation.z : null
+    const toolLengthMm = axialToolLengthMm(robot)
     const specs = target.feature?.specs ?? []
     const spec = this._focusedSpec != null ? (specs[this._focusedSpec] ?? null) : null
     let picture
@@ -825,7 +827,9 @@ export class GraspController {
         // spheres (`radius: mmToM(o.radius)` of a box = NaN), so every obstacle
         // reached core/ without a shape — the hand shape judged against them
         // (ADR-152 D5) would have had nothing to hit.
-        obstacles: obstaclesExcluding(targets, targetEntity.ref).map(wireObstacle),
+        // Obstacles come from every BODY, containers included — the pick list
+        // (`targets`) leaves trays out, the walls must still stop the hand (ADR-155 D2).
+        obstacles: obstaclesExcluding(resolveBodies(dsl?.entities), targetEntity.ref).map(wireObstacle),
         // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
         // these (ADR-128): until it did, `reach_margin` had no absolute basis and
         // came back permanently unmeasured — which ADR-120 correctly refuses to

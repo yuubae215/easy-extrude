@@ -58,6 +58,15 @@ export class Solid {
      * @type {boolean}
      */
     this.belowGradeIntent = false
+    /**
+     * Inner (cavity) full extents in the BODY frame, mm — a tray / bin / tote
+     * (ADR-133 D1, ADR-155 D2). `null` = a solid body: not declared, never filled
+     * with `{0,0,0}` (原則 #31 — "no cavity" and "a cavity of size zero" must not
+     * look alike). Written only by `SceneService.setInnerDimensions()`, which
+     * validates it against the outer size (`hollowBody.hollowBodyGap`).
+     * @type {{x:number,y:number,z:number}|null}
+     */
+    this.innerDimensions = null
     /** @type {import('../graph/Vertex.js').Vertex[]} */
     this.vertices    = vertices
 

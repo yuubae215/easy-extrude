@@ -90,6 +90,9 @@ export class RobotStage {
    *   than the skeleton keeps the arm hidden until that style lands (ADR-150).
    *   `toolMount` — the robot's tool mount (`tool0 → tcp`, mm) if already known;
    *   the owner keeps it current through `setToolMount` (ADR-151).
+   *   `createLabel` — factory for the TCP marker's name label: the app's ONE
+   *   screen-space label mechanism (`EntityLabel`, ADR-070), injected so this
+   *   class stays free of the renderer/DOM (ADR-155 D1). Absent → no label.
    */
   constructor(scene, opts = {}) {
     this._scene = scene
@@ -108,6 +111,22 @@ export class RobotStage {
     this._hand = opts.hand ?? null
     /** @type {THREE.Group|null} the tool + TCP marker currently on `wrist_3_link` */
     this._toolGroup = null
+    /** @type {(() => import('./EntityLabel.js').EntityLabel)|null} */
+    this._createLabel = opts.createLabel ?? null
+    /**
+     * The TCP marker's label (ADR-155 D1), or null when no marker is drawn.
+     * Born in `_attachTool` with the marker and released in `_detachTool` with
+     * it (原則 #9) — the label cannot outlive the thing it names.
+     * @type {import('./EntityLabel.js').EntityLabel|null}
+     */
+    this._tcpLabel = null
+    /**
+     * The tcp ENTITY's name — what the label says (ADR-155). Not the literal
+     * 'tcp': the entity has a name, a second robot's is `tcp_2`, and a rename
+     * must reach the screen. Only `setTcpName` writes it (原則 #4).
+     * @type {string|null}
+     */
+    this._tcpName = null
 
     this._group = new THREE.Group()
     const [x, y, z] = opts.position ?? [-2 * MM_PER_METER, 2 * MM_PER_METER, 0]
@@ -248,17 +267,26 @@ export class RobotStage {
       }
     }
     const marker = RobotStage._buildTcpMarker(tcpMarkerPose(this._toolMount), owned)
-    if (marker) tool.add(marker)
+    if (marker) {
+      tool.add(marker)
+      if (this._createLabel) {
+        this._tcpLabel = this._createLabel()
+        if (this._tcpName) this._tcpLabel.setText(this._tcpName)
+      }
+    }
     for (const m of owned) this._materials.push([m, m.opacity ?? 1])
     link.add(tool)
     this._toolGroup = tool
   }
 
   /**
-   * The TCP marker (ADR-151 D2): a REP-103 axis triad plus a `tcp` label, at the
-   * mount's pose in the flange frame. World-sized (decision b) — it is part of
-   * the arm, so it scales with the tool on screen. Pure construction: every
-   * material it creates is appended to `owned` for the caller to govern.
+   * The TCP marker (ADR-151 D2): a REP-103 axis triad at the mount's pose in the
+   * flange frame. World-sized (decision b) — it is part of the arm, so it scales
+   * with the tool on screen. Its `tcp` NAME is not part of it: text is an
+   * overlay, drawn at a constant screen size by the shared `EntityLabel` like
+   * every other name in the scene (ADR-155 D1 — decision b was about the axes,
+   * and the label had only ridden along). Pure construction: every material it
+   * creates is appended to `owned` for the caller to govern.
    * @param {ReturnType<typeof tcpMarkerPose>} pose
    * @param {THREE.Material[]} owned
    * @returns {THREE.Group|null}
@@ -286,41 +314,7 @@ export class RobotStage {
       marker.add(mesh)
       owned.push(material)
     }
-    const label = RobotStage._buildLabel('tcp', L * 0.5)
-    if (label) {
-      label.position.set(0, 0, L * 1.35)
-      marker.add(label)
-      owned.push(label.material)
-    }
     return marker
-  }
-
-  /**
-   * A world-sized text sprite. Returns null where there is no canvas to draw on
-   * (never in the browser this class runs in) rather than throwing mid-attach.
-   * @param {string} text
-   * @param {number} height  world height of the text, in the parent's units
-   * @returns {THREE.Sprite|null}
-   */
-  static _buildLabel(text, height) {
-    if (typeof document === 'undefined') return null
-    const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 64
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.font = 'bold 44px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillStyle = COLOR.textPrimary
-    ctx.fillText(text, 64, 34)
-    const texture = new THREE.CanvasTexture(canvas)
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
-    const sprite = new THREE.Sprite(material)
-    sprite.scale.set(height * 2, height, 1)
-    sprite.userData.stageOwned = true
-    sprite.userData.ownedTexture = texture
-    return sprite
   }
 
   /**
@@ -353,12 +347,13 @@ export class RobotStage {
 
   /** Removes and frees the current tool + marker (the release paired with `_attachTool`, 原則 #9). */
   _detachTool() {
+    this._tcpLabel?.dispose()
+    this._tcpLabel = null
     const tool = this._toolGroup
     if (!tool) return
     const released = new Set()
     tool.traverse(child => {
       child.geometry?.dispose()
-      child.userData?.ownedTexture?.dispose()
       if (child.material) {
         for (const m of Array.isArray(child.material) ? child.material : [child.material]) {
           m.dispose()
@@ -384,6 +379,34 @@ export class RobotStage {
     this._group.updateWorldMatrix(true, true)
     const p = marker.getWorldPosition(new THREE.Vector3())
     return { x: p.x, y: p.y, z: p.z }
+  }
+
+  /**
+   * The name the TCP label shows — the tcp entity's own name (ADR-155). Cheap
+   * when unchanged, so the owner may call it every frame.
+   * @param {string|null} name
+   */
+  setTcpName(name) {
+    if (this._tcpName === name) return
+    this._tcpName = name
+    if (name) this._tcpLabel?.setText(name)
+  }
+
+  /**
+   * Move the TCP label onto the marker's projected screen point (ADR-155 D1).
+   * Call once per frame after the arm's pose is set. The label is wanted only
+   * while the marker itself can be seen — a hidden arm, or one still awaiting
+   * its first look, names nothing.
+   * @param {THREE.Camera} camera  `SceneView.activeCamera` (CODE_CONTRACTS §1)
+   */
+  updateLabelPosition(camera) {
+    const label = this._tcpLabel
+    if (!label) return
+    const shown = this._group.visible && !!this.robot?.visible
+    label.setWanted(shown)
+    if (!shown) return
+    const p = this.tcpMarkerWorldPosition()
+    if (p) label.updatePosition(camera, new THREE.Vector3(p.x, p.y, p.z))
   }
 
   /** Whether this stage is still waiting to draw its scene's declared style for the first time (ADR-150). */
@@ -484,6 +507,10 @@ export class RobotStage {
     const priorJoints = this.previewState()?.joints ?? null
     const wasUnverified = this._unverified
 
+    // The old tree's tool goes with it; its label is not in the tree (a DOM
+    // overlay), so release it here or the new attach would leave two (原則 #9).
+    this._tcpLabel?.dispose()
+    this._tcpLabel = null
     RobotStage._disposeTree(this.robot)
     this._group.remove(this.robot)
 
@@ -517,7 +544,6 @@ export class RobotStage {
     root.traverse(child => {
       // The tool (ADR-150 D4) is this stage's own even on a shared-geometry clone.
       if (child.geometry && (ownsGeometry || child.userData?.stageOwned)) child.geometry.dispose()
-      child.userData?.ownedTexture?.dispose()
       if (child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material]
         for (const m of materials) m.dispose()
@@ -681,6 +707,8 @@ export class RobotStage {
     // `setRenderStyle`'s superseded branch) instead of relying on GC.
     this._styleLoadToken++
     this._pendingStyle = null
+    this._tcpLabel?.dispose()
+    this._tcpLabel = null
     RobotStage._disposeTree(this.robot)
     this._materials = []
     this._scene.remove(this._group)

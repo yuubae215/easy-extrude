@@ -59,6 +59,26 @@ export const DEFAULT_TOOL_MOUNT = Object.freeze({
   rotation:    Object.freeze({ x: 0, y: 0, z: 0, w: 1 }),
 })
 
+/**
+ * Where the flange is for a TCP approaching along `approachDir` with an axial
+ * tool of length `toolLengthMm`: `TCP − approachDir · L` — the same rule `core/`
+ * uses to place the flange (see `axialToolLengthM`). The ONE copy on the front:
+ * the hand preview (`GraspDeclarationMath.handPreview`) and the sample lines
+ * (`GraspSampleMath.sampleLines`) both call it, so the two overlays cannot put
+ * the flange in two places (ADR-155).
+ * @param {number[]} tcp          [x, y, z]
+ * @param {number[]} approachDir  unit [x, y, z], pointing INTO the part
+ * @param {number} toolLengthMm
+ * @returns {[number, number, number]}
+ */
+export function flangeOf(tcp, approachDir, toolLengthMm) {
+  return [
+    tcp[0] - approachDir[0] * toolLengthMm,
+    tcp[1] - approachDir[1] * toolLengthMm,
+    tcp[2] - approachDir[2] * toolLengthMm,
+  ]
+}
+
 /** Tolerance for "this mount is straight along +Z" (mm for offsets, unitless for the quaternion). */
 const AXIAL_EPS = 1e-6
 
@@ -84,6 +104,19 @@ export function axialToolLengthM(mount) {
   if (Math.abs(q.x) > AXIAL_EPS || Math.abs(q.y) > AXIAL_EPS || Math.abs(q.z) > AXIAL_EPS ||
       Math.abs(Math.abs(q.w) - 1) > AXIAL_EPS) return null
   return mmToM(t.z)
+}
+
+/**
+ * A robot's axial tool length in the SCENE unit (mm), or null when it has no
+ * flange-mounted tcp or the mount is not straight along +Z — the one reading
+ * the grasp overlays share (the declaration's hand preview and the sample
+ * lines, ADR-155 D3), so they cannot disagree about how long the tool is.
+ * @param {{tcpFrame?: object|null}|null|undefined} robot
+ * @returns {number|null}
+ */
+export function axialToolLengthMm(robot) {
+  const mount = toolMountOf(robot)
+  return axialToolLengthM(mount) === null ? null : mount.translation.z
 }
 
 /**

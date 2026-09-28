@@ -14,6 +14,8 @@ import assert from 'node:assert/strict'
 import {
   TARGET_CARDINALITY,
   resolveGraspTargets,
+  resolveBodies,
+  isContainer,
   targetCardinality,
   selectTarget,
   surfaceSamplesFor,
@@ -21,6 +23,7 @@ import {
   targetProjection,
   rotateVec3,
 } from './graspTargets.js'
+import { shellParts } from './hollowBody.js'
 
 /** A Layout DSL Solid entity. */
 const solid = (ref, name, pos, dim, rotation) => ({
@@ -217,7 +220,7 @@ const hollow = (ref, pos, outer, inner, rotation) => ({
 })
 
 test('内寸を宣言した実体は 5 枚 (床 + 壁 4) になる', () => {
-  const targets = resolveGraspTargets([
+  const targets = resolveBodies([
     solid('a', 'A', [0, 0, 0], [10, 10, 10]),
     hollow('tray', [0, 0, 100], [200, 100, 60], [180, 80, 50]),
   ])
@@ -227,7 +230,7 @@ test('内寸を宣言した実体は 5 枚 (床 + 壁 4) になる', () => {
 })
 
 test('空洞の内側は**空いている** — 腕が中へ入れることが 5 枚に割る理由', () => {
-  const targets = resolveGraspTargets([
+  const targets = resolveBodies([
     solid('a', 'A', [0, 0, 0], [10, 10, 10]),
     hollow('tray', [0, 0, 100], [200, 100, 60], [180, 80, 50]),
   ])
@@ -247,7 +250,7 @@ test('空洞の内側は**空いている** — 腕が中へ入れることが 5
 
 test('1 つの箱として扱うと中身が詰まる — 5 枚に割る前後の差を対照で焼く', () => {
   // 同じ寸法で内寸を宣言しなければ 1 枚で、その 1 枚は空洞の中心を飲み込む。
-  const targets = resolveGraspTargets([
+  const targets = resolveBodies([
     solid('a', 'A', [0, 0, 0], [10, 10, 10]),
     solid('solidTray', 'solid', [0, 0, 100], [200, 100, 60]),
   ])
@@ -262,7 +265,7 @@ test('1 つの箱として扱うと中身が詰まる — 5 枚に割る前後�
 })
 
 test('壁は互いに重ならない — 同じ体積を二度数えない', () => {
-  const targets = resolveGraspTargets([
+  const targets = resolveBodies([
     solid('a', 'A', [0, 0, 0], [10, 10, 10]),
     hollow('tray', [0, 0, 0], [200, 100, 60], [180, 80, 50]),
   ])
@@ -279,7 +282,7 @@ test('壁は互いに重ならない — 同じ体積を二度数えない', () 
 })
 
 test('内寸が外寸以上なら壁が無い — 0 厚の壁 4 枚で囲われたふりをしない', () => {
-  const targets = resolveGraspTargets([
+  const targets = resolveBodies([
     solid('a', 'A', [0, 0, 0], [10, 10, 10]),
     hollow('bad', [0, 0, 0], [100, 100, 100], [100, 100, 100]),
   ])
@@ -289,7 +292,7 @@ test('内寸が外寸以上なら壁が無い — 0 厚の壁 4 枚で囲われ�
 
 test('回したトレーは壁も一緒に回る — 局所オフセットを姿勢で回す', () => {
   const q = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }   // z 90°
-  const targets = resolveGraspTargets([
+  const targets = resolveBodies([
     solid('a', 'A', [0, 0, 0], [10, 10, 10]),
     hollow('tray', [0, 0, 0], [200, 100, 60], [180, 80, 50], q),
   ])
@@ -302,6 +305,29 @@ test('回したトレーは壁も一緒に回る — 局所オフセットを姿
   for (const w of xWalls) {
     assert.ok(Math.abs(w.center[0]) < 1e-9, '回転後も x に留まっている = 回していない')
     assert.ok(Math.abs(Math.abs(w.center[1]) - 95) < 1e-9)
+  }
+})
+
+test('容器は掴む対象に並ばず、障害物には残る (ADR-155 D2 / ADR-133 D4)', () => {
+  const entities = [
+    solid('work', 'ワーク', [0, 0, 100], [60, 40, 25]),
+    hollow('tray', [0, 0, 100], [200, 100, 60], [180, 80, 50]),
+  ]
+  assert.deepEqual(resolveGraspTargets(entities).map(t => t.ref), ['work'])
+  assert.equal(isContainer(resolveBodies(entities)[1]), true)
+  assert.equal(obstaclesExcluding(resolveBodies(entities), 'work').length, 5, 'トレーの 5 枚は障害物に残る')
+})
+
+test('障害物の殻と画面の殻は同じ関数 — shellParts を回して置いたものと一致する', () => {
+  const q = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }
+  const [tray] = resolveBodies([hollow('tray', [10, 20, 30], [200, 100, 60], [180, 80, 50], q)])
+  const boxes = obstaclesExcluding([tray], null)
+  const parts = shellParts(tray.dimensions, tray.innerDimensions)
+  assert.equal(boxes.length, parts.length)
+  for (const [i, p] of parts.entries()) {
+    const w = rotateVec3(p.center, q)
+    assert.deepEqual(boxes[i].center.map(v => +v.toFixed(9)), [10 + w.x, 20 + w.y, 30 + w.z].map(v => +v.toFixed(9)))
+    assert.deepEqual(boxes[i].halfExtents, [p.half.x, p.half.y, p.half.z])
   }
 })
 

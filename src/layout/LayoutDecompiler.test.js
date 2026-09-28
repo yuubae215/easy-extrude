@@ -341,3 +341,43 @@ test('the tcp hand round-trips Layout DSL → scene → DSL, and an undeclared h
   assert.ok(!('hand' in dsl.entities.find(e => e.ref === 'tcp2')), 'undeclared is not filled in with a default')
   assert.deepEqual(compileLayout(dsl), scene1)
 })
+
+// ── A tray is one body: outer + inner survive the round trip (ADR-155 D2) ───────
+
+const TRAY_DSL = {
+  version: 'layout/1.0',
+  meta: { name: 'tray' },
+  strategy: 'manual',
+  entities: [
+    {
+      ref: 'bin', type: 'Solid', name: 'bin',
+      dimensions: { x: 200, y: 150, z: 150 }, innerDimensions: { x: 184, y: 134, z: 140 },
+      position: { x: 0, y: 0, z: 75 },
+    },
+    { ref: 'box', type: 'Solid', name: 'box', dimensions: { x: 10, y: 10, z: 10 }, position: { x: 500, y: 0, z: 5 } },
+  ],
+  constraints: [],
+}
+
+test('innerDimensions rides compile → scene → decompile, and a solid body gets no key (原則 #31)', () => {
+  const scene = compileLayout(TRAY_DSL)
+  assert.deepEqual(scene.objects.find(o => o.name === 'bin').innerDimensions, { x: 184, y: 134, z: 140 })
+  assert.equal('innerDimensions' in scene.objects.find(o => o.name === 'box'), false)
+  const { dsl: back } = decompileLayout(scene)
+  assert.deepEqual(back.entities.find(e => e.ref === 'bin').innerDimensions, { x: 184, y: 134, z: 140 })
+  assert.equal('innerDimensions' in back.entities.find(e => e.ref === 'box'), false)
+})
+
+test('the validator refuses a cavity that does not fit, and a tray with W < D (ADR-155 D4)', () => {
+  const withBin = bin => ({ ...TRAY_DSL, entities: [{ ...TRAY_DSL.entities[0], ...bin }] })
+  assert.equal(validateLayoutDsl(TRAY_DSL).valid, true)
+  const tooBig = validateLayoutDsl(withBin({ innerDimensions: { x: 200, y: 134, z: 140 } }))
+  assert.equal(tooBig.valid, false)
+  assert.match(tooBig.errors.join('\n'), /inner W/)
+  const turned = validateLayoutDsl(withBin({ dimensions: { x: 150, y: 200, z: 150 }, innerDimensions: { x: 134, y: 184, z: 140 } }))
+  assert.equal(turned.valid, false)
+  assert.match(turned.errors.join('\n'), /W ≥ D/)
+  // A plain Solid with W < D is fine — the normal form is a TRAY rule.
+  const plain = validateLayoutDsl({ ...TRAY_DSL, entities: [TRAY_DSL.entities[1], { ...TRAY_DSL.entities[1], ref: 'tall', dimensions: { x: 10, y: 50, z: 10 } }] })
+  assert.equal(plain.valid, true)
+})

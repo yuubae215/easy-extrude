@@ -13,10 +13,22 @@
       "description": "このセルが占有する床面積",
       "placeType": "Zone",
       "vertices": [
-        { "x": -700, "y": -800 },
-        { "x": 1200, "y": -800 },
-        { "x": 1200, "y":  800 },
-        { "x": -700, "y":  800 }
+        {
+          "x": -700,
+          "y": -800
+        },
+        {
+          "x": 1200,
+          "y": -800
+        },
+        {
+          "x": 1200,
+          "y": 800
+        },
+        {
+          "x": -700,
+          "y": 800
+        }
       ]
     },
     {
@@ -25,7 +37,11 @@
       "name": "電源インレット (100V)",
       "description": "床置きコンセント。セル電源の給電点。",
       "placeType": "Anchor",
-      "position": { "x": -500, "y": -600, "z": 0 }
+      "position": {
+        "x": -500,
+        "y": -600,
+        "z": 0
+      }
     },
     {
       "ref": "worktable",
@@ -33,13 +49,25 @@
       "name": "作業台",
       "description": "高さ800mm、天面600×500mm。",
       "ifcClass": "IfcFurniture",
-      "dimensions": { "x": 600, "y": 500, "z": 800 },
-      "position": { "x": 0, "y": 0, "z": 400 },
+      "dimensions": {
+        "x": 600,
+        "y": 500,
+        "z": 800
+      },
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 400
+      },
       "frames": [
         {
           "ref": "worktable_top",
           "name": "作業台天面中心",
-          "translation": { "x": 0, "y": 0, "z": 400 }
+          "translation": {
+            "x": 0,
+            "y": 0,
+            "z": 400
+          }
         }
       ]
     },
@@ -49,13 +77,25 @@
       "name": "ロボットペデスタル",
       "description": "作業台天面に固定するロボット架台。",
       "ifcClass": "IfcElementComponent",
-      "dimensions": { "x": 300, "y": 300, "z": 120 },
-      "position": { "x": -120, "y": 0, "z": 860 },
+      "dimensions": {
+        "x": 300,
+        "y": 300,
+        "z": 120
+      },
+      "position": {
+        "x": -120,
+        "y": 0,
+        "z": 860
+      },
       "frames": [
         {
           "ref": "robot_mount",
           "name": "ロボット取付面",
-          "translation": { "x": 0, "y": 0, "z": 60 }
+          "translation": {
+            "x": 0,
+            "y": 0,
+            "z": 60
+          }
         }
       ]
     },
@@ -65,7 +105,11 @@
       "name": "robot_base",
       "description": "単腕ロボットの TF ベース。ペデスタル天面 (robot_mount) にボルト締結。",
       "robotRole": "base",
-      "position": { "x": -120, "y": 0, "z": 920 }
+      "position": {
+        "x": -120,
+        "y": 0,
+        "z": 920
+      }
     },
     {
       "ref": "robot_tcp",
@@ -75,25 +119,123 @@
       "robotRole": "tcp",
       "parentRef": "robot_base",
       "mountedOn": "flange",
-      "position": { "x": 0, "y": 0, "z": 150 }
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 150
+      }
     },
     {
       "ref": "part_bin",
       "type": "Solid",
       "name": "供給ビン (バラ積みワーク)",
-      "description": "作業台天面の右手前。取り出し対象のワークを収容。",
+      "description": "作業台天面の右手前。取り出し対象のワークを収容する、上の開いた容器 (外寸 dimensions・内寸 innerDimensions — 壁厚と底厚は導出、ADR-155)。",
       "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 200, "y": 150, "z": 150 },
-      "position": { "x": 200, "y": 150, "z": 875 }
+      "dimensions": {
+        "x": 200,
+        "y": 150,
+        "z": 150
+      },
+      "innerDimensions": {
+        "x": 184,
+        "y": 134,
+        "z": 140
+      },
+      "position": {
+        "x": 200,
+        "y": 150,
+        "z": 875
+      },
+      "frames": [
+        {
+          "ref": "part_bin_floor",
+          "name": "供給ビン 内底面中心",
+          "translation": {
+            "x": 0,
+            "y": 0,
+            "z": -65
+          }
+        }
+      ]
+    },
+    {
+      "ref": "work_1",
+      "type": "Solid",
+      "name": "ワーク 1",
+      "description": "供給ビンの底に平置き。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": {
+        "x": 60,
+        "y": 40,
+        "z": 25
+      },
+      "position": {
+        "x": 150,
+        "y": 115,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "work_2",
+      "type": "Solid",
+      "name": "ワーク 2",
+      "description": "供給ビンの底に平置き (+Y 壁寄り)。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": {
+        "x": 60,
+        "y": 40,
+        "z": 25
+      },
+      "position": {
+        "x": 230,
+        "y": 190,
+        "z": 822.5
+      }
+    },
+    {
+      "ref": "work_3",
+      "type": "Solid",
+      "name": "ワーク 3",
+      "description": "供給ビンの底に 30° 回って平置き (バラ積み)。",
+      "ifcClass": "IfcElementComponent",
+      "dimensions": {
+        "x": 60,
+        "y": 40,
+        "z": 25
+      },
+      "position": {
+        "x": 240,
+        "y": 125,
+        "z": 822.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0.258819,
+        "w": 0.965926
+      }
     },
     {
       "ref": "output_tray",
       "type": "Solid",
       "name": "排出トレイ",
-      "description": "作業台天面の右奥。整列配置の載せ替え先。",
+      "description": "作業台天面の右奥。整列配置の載せ替え先となる、上の開いた容器 (外寸・内寸 — ADR-155)。",
       "ifcClass": "IfcTransportElement",
-      "dimensions": { "x": 250, "y": 150, "z": 40 },
-      "position": { "x": 200, "y": -150, "z": 820 }
+      "dimensions": {
+        "x": 250,
+        "y": 150,
+        "z": 40
+      },
+      "innerDimensions": {
+        "x": 240,
+        "y": 140,
+        "z": 35
+      },
+      "position": {
+        "x": 200,
+        "y": -150,
+        "z": 820
+      }
     }
   ],
   "constraints": [
@@ -102,28 +244,63 @@
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
-      "properties": { "note": "ペデスタルを作業台天面にボルト固定" }
+      "properties": {
+        "note": "ペデスタルを作業台天面にボルト固定"
+      }
     },
     {
       "source": "robot_base",
       "target": "robot_mount",
       "jointType": "fixed",
       "semanticType": "fastened",
-      "properties": { "note": "ロボットをペデスタルに締結" }
+      "properties": {
+        "note": "ロボットをペデスタルに締結"
+      }
     },
     {
       "source": "part_bin",
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
-      "properties": { "note": "供給ビンを天面に設置" }
+      "properties": {
+        "note": "供給ビンを天面に設置"
+      }
     },
     {
       "source": "output_tray",
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
-      "properties": { "note": "排出トレイを天面に設置" }
+      "properties": {
+        "note": "排出トレイを天面に設置"
+      }
+    },
+    {
+      "source": "work_1_origin",
+      "target": "part_bin_floor",
+      "jointType": "fixed",
+      "semanticType": "fastened",
+      "properties": {
+        "note": "ワークはビンの子 — ビンの内底面に拘束され、ビンと一緒に動く (ADR-155 D2。robot_base → robot_mount と同じ語)"
+      }
+    },
+    {
+      "source": "work_2_origin",
+      "target": "part_bin_floor",
+      "jointType": "fixed",
+      "semanticType": "fastened",
+      "properties": {
+        "note": "ワークはビンの子 — ビンの内底面に拘束され、ビンと一緒に動く (ADR-155 D2。robot_base → robot_mount と同じ語)"
+      }
+    },
+    {
+      "source": "work_3_origin",
+      "target": "part_bin_floor",
+      "jointType": "fixed",
+      "semanticType": "fastened",
+      "properties": {
+        "note": "ワークはビンの子 — ビンの内底面に拘束され、ビンと一緒に動く (ADR-155 D2。robot_base → robot_mount と同じ語)"
+      }
     },
     {
       "source": "power_inlet",

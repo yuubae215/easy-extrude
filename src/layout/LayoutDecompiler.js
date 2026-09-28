@@ -33,6 +33,7 @@
 
 import { LAYOUT_DSL_VERSION } from './LayoutDslSchema.js'
 import { isOriginFrame } from '../domain/originFrame.js'
+import { sizeOfCorners } from '../domain/hollowBody.js'
 
 const IDENTITY_QUATERNION = { x: 0, y: 0, z: 0, w: 1 }
 
@@ -60,14 +61,8 @@ function isIdentityQuat(q) {
 
 /** Recover full dimensions from the 8 body-frame corner vectors (max − min per axis). */
 function dimsFromCorners(corners) {
-  const xs = corners.map(c => c.x)
-  const ys = corners.map(c => c.y)
-  const zs = corners.map(c => c.z)
-  return {
-    x: Math.max(...xs) - Math.min(...xs),
-    y: Math.max(...ys) - Math.min(...ys),
-    z: Math.max(...zs) - Math.min(...zs),
-  }
+  // The one corners → size reading (ADR-155 D2) — shared with the cavity check.
+  return sizeOfCorners(corners)
 }
 
 function vec(v) {
@@ -161,6 +156,7 @@ export function decompileLayout(sceneJson) {
         if (o.description) entity.description = o.description
         if (o.ifcClass != null) entity.ifcClass = o.ifcClass
         entity.dimensions = dimsFromCorners(o.localCorners ?? [])
+        if (o.innerDimensions) entity.innerDimensions = vec(o.innerDimensions)
         entity.position   = vec(o.position ?? { x: 0, y: 0, z: 0 })
         if (!isIdentityQuat(o.orientation)) entity.rotation = quat(o.orientation)
 

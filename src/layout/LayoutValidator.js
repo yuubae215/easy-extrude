@@ -14,6 +14,7 @@ import {
   VALID_JOINT_TYPES,
   VALID_SEMANTIC_TYPES,
 } from './LayoutDslSchema.js'
+import { hollowBodyGap, trayNormalFormGap } from '../domain/hollowBody.js'
 
 export function validateLayoutDsl(dsl) {
   const errors = []
@@ -78,6 +79,18 @@ export function validateLayoutDsl(dsl) {
             typeof d.z !== 'number' || d.z <= 0) {
           errors.push(`entities[${i}].dimensions must have positive x, y, z numbers`)
         }
+      }
+
+      // A tray (ADR-133 D1 / ADR-155 D2/D4): the cavity must fit inside the outer
+      // size, and a tray declares W ≥ D (long side on local +x) — its normal form,
+      // so one tray has one spelling and ±x always names the short ends.
+      if (entity.innerDimensions !== undefined && entity.innerDimensions !== null) {
+        const outer = entity.dimensions
+        const gap = outer ? hollowBodyGap(outer, entity.innerDimensions)
+          : 'a tray needs "dimensions" (outer size) to go with "innerDimensions"'
+        if (gap) errors.push(`entities[${i}] (Solid "${entity.ref}") innerDimensions: ${gap}`)
+        const form = outer ? trayNormalFormGap(outer) : null
+        if (form) errors.push(`entities[${i}] (Solid "${entity.ref}") dimensions: ${form}`)
       }
 
       // Optional rotation (ADR-055, additive within layout/1.0): body orientation

@@ -614,6 +614,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-151-the-tcp-is-derived-from-the-tool-mount-not-stored-in-the-scene.gsn"
 
+                                    solution Adr155Tree
+                                    uuid 2719660b-1667-491f-a0ae-5123af0be1a1
+                                    summary "ADR-155 の論証木 (top goal DepthToolAndPartReadBeforeRun) を吊る。ツール長・ビンの深さ・ワークの高さの関係が Run の前に画面で読め、容器は外寸 + 内寸の 1 実体で画面と判定が同じ殻を導出し、名札は 1 つの仕組みで実体の名前を出す。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-155-the-tool-is-drawn-at-its-length-and-the-bin-is-a-shell.gsn"
+
                                 goal QuantitiesCannotSilentlyDisagreeInUnitOrFrame
                                 uuid 44f1eb35-70f7-4a7d-af3b-32bf95343149
                                 summary "同じ世界の中の量が、単位 (mm / m) と座標系 (利き手・up・forward) で食い違わない。食い違いは判定を静かに壊す — 距離が 1000 倍ずれても判定は何かを返す"
