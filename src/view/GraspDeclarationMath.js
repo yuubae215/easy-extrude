@@ -28,7 +28,7 @@ import {
   DECLARABLE_FACES, faceNormalOrThrow, inPlaneAxesOrThrow, faceWorldWord, contactFacesOf,
 } from '../domain/graspFeature.js'
 import { rotateVec3 } from '../domain/rotateVec3.js'
-import { toolParts } from '../domain/robotTool.js'
+import { toolParts, flangeOf } from '../domain/robotTool.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import { mmToM, mToMM } from '../domain/worldUnits.js'
 
@@ -224,7 +224,7 @@ export function handPreview(tcp, approachDir, xAxis, hand, toolLengthMm) {
   const z = approachDir
   const x = xAxis
   const y = cross(z, x)
-  const flange = sub(tcp, scale(z, toolLengthMm))
+  const flange = flangeOf(tcp, z, toolLengthMm)
   return toolParts(hand, mmToM(toolLengthMm)).map(p => {
     const c = p.center.map(mToMM)
     return {

@@ -455,3 +455,56 @@ test('S13 — フロントだけで ADR-152 を評価できる: 仕様・戦略�
 
   expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
 })
+
+test('S14 — 供給ビンは 1 つの殻で、ワークはその子 (ADR-155 D2)', async ({ page }) => {
+  // 以前のサンプルは 5 枚の Solid を手で並べ、ワークを世界座標で置いていた — 容器の名前が
+  // 消え、ビンを動かすとワークが置き去りになった。いまは 1 実体 (外寸 + 内寸) で、画面の殻と
+  // 障害物は同じ関数 (hollowBody.shellParts) から出る。ここで焼くのは画面側の 3 つ:
+  //   (1) ワークは殻の床に載る (支え = part_bin、底 = 内底面 z 810) — 殻の空洞が本当に空いている
+  //   (2) 容器は把持対象の一覧に並ばない (ADR-133 D4)
+  //   (3) ビンを動かすとワークが同じだけ動く (fixed / fastened — robot_base と同じ語)
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/easy-extrude/?graspStub=solve')
+  await page.getByText('単腕ピック&プレイスセル', { exact: true }).click({ timeout: 20_000 })
+  await expect.poll(async () => (await page.evaluate(() => window.__easyExtrude.robotState())).length).toBe(1)
+
+  const bodies = async () => Object.fromEntries((await page.evaluate(() => window.__easyExtrude.placementState()))
+    .filter(o => /^(ワーク \d|供給ビン \(|排出トレイ)/.test(o.name))
+    .map(o => [o.name, { bottomZ: o.bottomZ, support: o.support?.id ?? null, fp: o.footprint }]))
+  const works = ['ワーク 1', 'ワーク 2', 'ワーク 3']
+  await expect.poll(async () => Object.keys(await bodies()).length).toBe(5)
+  const before = await bodies()
+  for (const w of works) {
+    expect(before[w].support, `${w} が殻の床に載っていない`).toBe('solid_part_bin')
+    expect(Math.abs(before[w].bottomZ - 810), `${w} の底が内底面に無い`).toBeLessThan(0.5)
+  }
+
+  await selectRow(page, 'robot_base')
+  await page.keyboard.press('n')
+  await page.getByRole('button', { name: /Grasp candidates/ }).click()
+  await expect(page.getByRole('button', { name: /Run grasp search/ })).toBeVisible({ timeout: 30_000 })
+  const options = await page.locator('select').filter({ hasText: /pick one of/ }).first()
+    .locator('option').evaluateAll(os => os.map(o => o.value).filter(Boolean))
+  expect(options).toEqual(expect.arrayContaining(['work_1', 'work_2', 'work_3']))
+  expect(options, '容器が把持対象に並んでいる').not.toContain('part_bin')
+  expect(options).not.toContain('output_tray')
+
+  await page.keyboard.press('Escape')
+  await selectRow(page, '供給ビン')
+  const box = await page.locator('canvas').first().boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.keyboard.press('g')
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, { steps: 8 })
+  await page.mouse.down(); await page.mouse.up()
+  await expect.poll(async () => (await bodies())['供給ビン (バラ積みワーク)'].fp.x, { message: 'ビンが動いていない — この検査は何も問えていない' })
+    .not.toBe(before['供給ビン (バラ積みワーク)'].fp.x)
+  const after = await bodies()
+  const bin = k => [after[k].fp.x - before[k].fp.x, after[k].fp.y - before[k].fp.y]
+  const [dx, dy] = bin('供給ビン (バラ積みワーク)')
+  for (const w of works) {
+    const [wx, wy] = bin(w)
+    expect(Math.hypot(wx - dx, wy - dy), `${w} がビンと一緒に動いていない`).toBeLessThan(0.5)
+  }
+  expect(errors, `unexpected page errors: ${errors.join(' | ')}`).toEqual([])
+})

@@ -116,6 +116,8 @@ export function serializeScene(scene) {
         position:    { x: obj._position.x,   y: obj._position.y,   z: obj._position.z },
         orientation: { x: obj.orientation.x,  y: obj.orientation.y,  z: obj.orientation.z,  w: obj.orientation.w },
         localCorners: obj.localCorners.map(lc => ({ x: lc.x, y: lc.y, z: lc.z })),
+        // Absent key = a solid body (ADR-155 D2) — not written as null/zero.
+        ...(obj.innerDimensions ? { innerDimensions: { ...obj.innerDimensions } } : {}),
       })
     } else if (obj instanceof Profile) {
       const sr = obj.sketchRect

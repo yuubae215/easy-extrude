@@ -1,6 +1,6 @@
 # 133. A container is five solids with a declared role, not a new primitive
 
-- Status: Accepted (**D5 と D2 の障害物側を実装 2026-09-21。D1 / D3 / D4 は未実装 — DEF-041**)
+- Status: Accepted (**D5 と D2 の障害物側を実装 2026-09-21。D2 の画面側 (1 実体の殻として描く) と D4 (容器を掴む対象から除く) を ADR-155 で実装 2026-09-28。D1 / D3 は未実装 — DEF-041**)
 - Date: 2026-08-15
 - Deciders: yuubae215 (via `/whiteboard` session)
 - Retires: なし — 既存の sphere obstacle 表現 (`kind` を足すだけ)・既存の `robotRole` パターン・ADR-078 の `core/` scene 層 (`derive_obstacles` / `POST /pick-sequence`) はいずれも変更せず、後者は今回の実装スコープにも入らない (触らない対象として明示)。ADR-078 の "Still deferred: 箱/半空間障害物の厳密干渉" は OBB 近似までを本 ADR が引き受け、完全な半空間 (薄板) 干渉は DEF-036 として切り出す (退役ではなく残しなので Retires の対象外)。

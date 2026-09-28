@@ -30,6 +30,8 @@
  * @module view/GraspSampleMath
  */
 
+import { flangeOf } from '../domain/robotTool.js'
+
 /** Normal whisker length, as a multiple of the marker radius (no tool declared). */
 export const WHISKER = 3
 
@@ -51,7 +53,9 @@ export function sampleLines(samples, { radius, toolLengthMm = null }) {
   for (const s of samples ?? []) {
     const [x, y, z] = s.point
     const [nx, ny, nz] = s.normal ?? [0, 0, 0]
-    const end = [x + nx * L, y + ny * L, z + nz * L]
+    // The approach is −normal; the flange is the one rule `flangeOf` (shared with
+    // the hand preview). Without a tool the same rule draws the short whisker.
+    const end = flangeOf([x, y, z], [-nx, -ny, -nz], L)
     positions.push(x, y, z, ...end)
     if (tool) flanges.push(end)
   }

@@ -126,91 +126,43 @@
       }
     },
     {
-      "ref": "part_bin_floor",
+      "ref": "part_bin",
       "type": "Solid",
-      "name": "供給ビン 底板",
-      "description": "作業台天面の右手前。取り出し対象のワークを収容。供給ビンを床 1 + 壁 4 の 5 つの直方体で組む (ADR-155 D2): 1 個の箱にすると中身の詰まった立体になり、中のワークと重なり、取りに入る手はすべて干渉になる。外寸 200×150×150 mm、底板 10 mm、壁 8 mm。",
+      "name": "供給ビン (バラ積みワーク)",
+      "description": "作業台天面の右手前。取り出し対象のワークを収容する、上の開いた容器 (外寸 dimensions・内寸 innerDimensions — 壁厚と底厚は導出、ADR-155)。",
       "ifcClass": "IfcTransportElement",
       "dimensions": {
         "x": 200,
         "y": 150,
-        "z": 10
+        "z": 150
       },
-      "position": {
-        "x": 200,
-        "y": 150,
-        "z": 805
-      }
-    },
-    {
-      "ref": "part_bin_wall_px",
-      "type": "Solid",
-      "name": "供給ビン 側板 +X",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
-        "x": 8,
-        "y": 150,
-        "z": 140
-      },
-      "position": {
-        "x": 296,
-        "y": 150,
-        "z": 880
-      }
-    },
-    {
-      "ref": "part_bin_wall_nx",
-      "type": "Solid",
-      "name": "供給ビン 側板 −X",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
-        "x": 8,
-        "y": 150,
-        "z": 140
-      },
-      "position": {
-        "x": 104,
-        "y": 150,
-        "z": 880
-      }
-    },
-    {
-      "ref": "part_bin_wall_py",
-      "type": "Solid",
-      "name": "供給ビン 側板 +Y",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
+      "innerDimensions": {
         "x": 184,
-        "y": 8,
+        "y": 134,
         "z": 140
       },
       "position": {
         "x": 200,
-        "y": 221,
-        "z": 880
-      }
-    },
-    {
-      "ref": "part_bin_wall_ny",
-      "type": "Solid",
-      "name": "供給ビン 側板 −Y",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
-        "x": 184,
-        "y": 8,
-        "z": 140
+        "y": 150,
+        "z": 875
       },
-      "position": {
-        "x": 200,
-        "y": 79,
-        "z": 880
-      }
+      "frames": [
+        {
+          "ref": "part_bin_floor",
+          "name": "供給ビン 内底面中心",
+          "translation": {
+            "x": 0,
+            "y": 0,
+            "z": -65
+          }
+        }
+      ]
     },
     {
       "ref": "work_1",
       "type": "Solid",
       "name": "ワーク 1",
-      "description": "供給ビンの底に平置き。ビンの縁 (z=950) から上面 (z=835) まで 115 mm 沈んでいる — ツール長 150 mm に対してフランジが縁の上に何 mm 残るかが、この深さで決まる。",
+      "description": "供給ビンの底に平置き。",
       "ifcClass": "IfcElementComponent",
       "dimensions": {
         "x": 60,
@@ -264,84 +216,25 @@
       }
     },
     {
-      "ref": "output_tray_floor",
+      "ref": "output_tray",
       "type": "Solid",
-      "name": "排出トレイ 底板",
-      "description": "作業台天面の右奥。整列配置の載せ替え先。排出トレイを床 1 + 壁 4 の 5 つの直方体で組む (ADR-155 D2): 1 個の箱にすると中身の詰まった立体になり、中のワークと重なり、取りに入る手はすべて干渉になる。外寸 250×150×40 mm、底板 5 mm、壁 5 mm。",
+      "name": "排出トレイ",
+      "description": "作業台天面の右奥。整列配置の載せ替え先となる、上の開いた容器 (外寸・内寸 — ADR-155)。",
       "ifcClass": "IfcTransportElement",
       "dimensions": {
         "x": 250,
         "y": 150,
-        "z": 5
+        "z": 40
       },
-      "position": {
-        "x": 200,
-        "y": -150,
-        "z": 802.5
-      }
-    },
-    {
-      "ref": "output_tray_wall_px",
-      "type": "Solid",
-      "name": "排出トレイ 側板 +X",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
-        "x": 5,
-        "y": 150,
-        "z": 35
-      },
-      "position": {
-        "x": 322.5,
-        "y": -150,
-        "z": 822.5
-      }
-    },
-    {
-      "ref": "output_tray_wall_nx",
-      "type": "Solid",
-      "name": "排出トレイ 側板 −X",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
-        "x": 5,
-        "y": 150,
-        "z": 35
-      },
-      "position": {
-        "x": 77.5,
-        "y": -150,
-        "z": 822.5
-      }
-    },
-    {
-      "ref": "output_tray_wall_py",
-      "type": "Solid",
-      "name": "排出トレイ 側板 +Y",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
+      "innerDimensions": {
         "x": 240,
-        "y": 5,
+        "y": 140,
         "z": 35
       },
       "position": {
         "x": 200,
-        "y": -77.5,
-        "z": 822.5
-      }
-    },
-    {
-      "ref": "output_tray_wall_ny",
-      "type": "Solid",
-      "name": "排出トレイ 側板 −Y",
-      "ifcClass": "IfcTransportElement",
-      "dimensions": {
-        "x": 240,
-        "y": 5,
-        "z": 35
-      },
-      "position": {
-        "x": 200,
-        "y": -222.5,
-        "z": 822.5
+        "y": -150,
+        "z": 820
       }
     }
   ],
@@ -365,120 +258,48 @@
       }
     },
     {
-      "source": "part_bin_floor",
+      "source": "part_bin",
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
       "properties": {
-        "note": "供給ビンの底板を天面に設置"
+        "note": "供給ビンを天面に設置"
       }
     },
     {
-      "source": "part_bin_wall_px",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "側板は底板の上に立つ"
-      }
-    },
-    {
-      "source": "part_bin_wall_nx",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "側板は底板の上に立つ"
-      }
-    },
-    {
-      "source": "part_bin_wall_py",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "側板は底板の上に立つ"
-      }
-    },
-    {
-      "source": "part_bin_wall_ny",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "側板は底板の上に立つ"
-      }
-    },
-    {
-      "source": "work_1",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "ワークはビンの底に置かれる"
-      }
-    },
-    {
-      "source": "work_2",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "ワークはビンの底に置かれる"
-      }
-    },
-    {
-      "source": "work_3",
-      "target": "part_bin_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "ワークはビンの底に置かれる"
-      }
-    },
-    {
-      "source": "output_tray_floor",
+      "source": "output_tray",
       "target": "worktable",
       "jointType": null,
       "semanticType": "above",
       "properties": {
-        "note": "排出トレイの底板を天面に設置"
+        "note": "排出トレイを天面に設置"
       }
     },
     {
-      "source": "output_tray_wall_px",
-      "target": "output_tray_floor",
-      "jointType": null,
-      "semanticType": "above",
+      "source": "work_1_origin",
+      "target": "part_bin_floor",
+      "jointType": "fixed",
+      "semanticType": "fastened",
       "properties": {
-        "note": "側板は底板の上に立つ"
+        "note": "ワークはビンの子 — ビンの内底面に拘束され、ビンと一緒に動く (ADR-155 D2。robot_base → robot_mount と同じ語)"
       }
     },
     {
-      "source": "output_tray_wall_nx",
-      "target": "output_tray_floor",
-      "jointType": null,
-      "semanticType": "above",
+      "source": "work_2_origin",
+      "target": "part_bin_floor",
+      "jointType": "fixed",
+      "semanticType": "fastened",
       "properties": {
-        "note": "側板は底板の上に立つ"
+        "note": "ワークはビンの子 — ビンの内底面に拘束され、ビンと一緒に動く (ADR-155 D2。robot_base → robot_mount と同じ語)"
       }
     },
     {
-      "source": "output_tray_wall_py",
-      "target": "output_tray_floor",
-      "jointType": null,
-      "semanticType": "above",
+      "source": "work_3_origin",
+      "target": "part_bin_floor",
+      "jointType": "fixed",
+      "semanticType": "fastened",
       "properties": {
-        "note": "側板は底板の上に立つ"
-      }
-    },
-    {
-      "source": "output_tray_wall_ny",
-      "target": "output_tray_floor",
-      "jointType": null,
-      "semanticType": "above",
-      "properties": {
-        "note": "側板は底板の上に立つ"
+        "note": "ワークはビンの子 — ビンの内底面に拘束され、ビンと一緒に動く (ADR-155 D2。robot_base → robot_mount と同じ語)"
       }
     },
     {

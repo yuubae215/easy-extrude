@@ -54,7 +54,7 @@ import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGho
 import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclarationCatalog.js'
 import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
-  resolveGraspTargets, selectTarget, targetProjection,
+  resolveGraspTargets, resolveBodies, selectTarget, targetProjection,
   surfaceSamplesFor, obstaclesExcluding, facesForGripperKind,
   graspSpecsFor, sendsDerivedSamples,
 } from '../domain/graspTargets.js'
@@ -827,7 +827,9 @@ export class GraspController {
         // spheres (`radius: mmToM(o.radius)` of a box = NaN), so every obstacle
         // reached core/ without a shape — the hand shape judged against them
         // (ADR-152 D5) would have had nothing to hit.
-        obstacles: obstaclesExcluding(targets, targetEntity.ref).map(wireObstacle),
+        // Obstacles come from every BODY, containers included — the pick list
+        // (`targets`) leaves trays out, the walls must still stop the hand (ADR-155 D2).
+        obstacles: obstaclesExcluding(resolveBodies(dsl?.entities), targetEntity.ref).map(wireObstacle),
         // Reach judgement params ride plan{} (ADR-084 §4). The panel now COLLECTS
         // these (ADR-128): until it did, `reach_margin` had no absolute basis and
         // came back permanently unmeasured — which ADR-120 correctly refuses to

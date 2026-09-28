@@ -616,7 +616,7 @@ labels meta-goal, term-profit
 
                                     solution Adr155Tree
                                     uuid 2719660b-1667-491f-a0ae-5123af0be1a1
-                                    summary "ADR-155 の論証木 (top goal DepthToolAndPartReadBeforeRun) を吊る。ツール長・ビンの深さ・ワークの高さの関係が Run の前に画面で読め、画面の容器と判定の容器が同じ 5 枚で、名札は 1 つの仕組みで出る。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    summary "ADR-155 の論証木 (top goal DepthToolAndPartReadBeforeRun) を吊る。ツール長・ビンの深さ・ワークの高さの関係が Run の前に画面で読め、容器は外寸 + 内寸の 1 実体で画面と判定が同じ殻を導出し、名札は 1 つの仕組みで実体の名前を出す。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
                                     artifacts
                                     - "docs/gsn/adr-155-the-tool-is-drawn-at-its-length-and-the-bin-is-a-shell.gsn"
 

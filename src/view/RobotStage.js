@@ -120,6 +120,13 @@ export class RobotStage {
      * @type {import('./EntityLabel.js').EntityLabel|null}
      */
     this._tcpLabel = null
+    /**
+     * The tcp ENTITY's name — what the label says (ADR-155). Not the literal
+     * 'tcp': the entity has a name, a second robot's is `tcp_2`, and a rename
+     * must reach the screen. Only `setTcpName` writes it (原則 #4).
+     * @type {string|null}
+     */
+    this._tcpName = null
 
     this._group = new THREE.Group()
     const [x, y, z] = opts.position ?? [-2 * MM_PER_METER, 2 * MM_PER_METER, 0]
@@ -264,7 +271,7 @@ export class RobotStage {
       tool.add(marker)
       if (this._createLabel) {
         this._tcpLabel = this._createLabel()
-        this._tcpLabel.setText('tcp')
+        if (this._tcpName) this._tcpLabel.setText(this._tcpName)
       }
     }
     for (const m of owned) this._materials.push([m, m.opacity ?? 1])
@@ -372,6 +379,17 @@ export class RobotStage {
     this._group.updateWorldMatrix(true, true)
     const p = marker.getWorldPosition(new THREE.Vector3())
     return { x: p.x, y: p.y, z: p.z }
+  }
+
+  /**
+   * The name the TCP label shows — the tcp entity's own name (ADR-155). Cheap
+   * when unchanged, so the owner may call it every frame.
+   * @param {string|null} name
+   */
+  setTcpName(name) {
+    if (this._tcpName === name) return
+    this._tcpName = name
+    if (name) this._tcpLabel?.setText(name)
   }
 
   /**

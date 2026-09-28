@@ -186,6 +186,16 @@ export class RobotStageSet {
   }
 
   /**
+   * What one robot's TCP label says — its tcp entity's name (ADR-155). Keyed by
+   * robot id like `setToolMount`; idempotent per stage.
+   * @param {string} id
+   * @param {string|null} name
+   */
+  setTcpName(id, name) {
+    this._stages.get(id)?.setTcpName(name)
+  }
+
+  /**
    * Move every arm's TCP label onto its marker's screen point (ADR-155 D1).
    * Called once per frame after `setPose` / `setToolMount`, like the entity
    * labels (`updateLabelPosition(activeCamera)`).

@@ -326,6 +326,8 @@ export class UIViewBridge {
       type: 'generic',
       centroid: { x: centroid.x, y: centroid.y, z: centroid.z },
       dimensions: { x: dimensions.x, y: dimensions.y, z: dimensions.z },
+      bodySize:             options.bodySize            ?? null,
+      innerSize:            options.innerSize           ?? null,
       name, description,
       locationEditable:     options.locationEditable    ?? false,
       showIfcClass:         options.showIfcClass        ?? false,

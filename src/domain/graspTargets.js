@@ -39,6 +39,7 @@
  */
 
 import { VALID_ENTITY_TYPES } from '../layout/LayoutDslSchema.js'
+import { hollowBodyGap, shellParts, isContainer } from './hollowBody.js'
 import { rotateVec3 } from './rotateVec3.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
@@ -132,9 +133,11 @@ function rotationOf(entity) {
 export { rotateVec3 }
 
 /**
- * The single resolution point for "which entities can be picked up" (§1.1).
+ * The single resolution point for "which entities are BODIES" (§1.1) — the
+ * obstacle population, and (minus containers) the pick population
+ * (`resolveGraspTargets`).
  *
- * A graspable target is a Layout DSL `Solid` with a complete finite position and
+ * A body is a Layout DSL `Solid` with a complete finite position and
  * a strictly positive extent on every axis — a body with a surface. Entities that
  * fail either test are not silently repaired to a default box; they are simply
  * not targets (a zero-extent "solid" has no surface to sample, and inventing one
@@ -146,7 +149,7 @@ export { rotateVec3 }
  * @param {Array<any>|null|undefined} entities  Layout DSL `entities`
  * @returns {GraspTarget[]} in declaration order (deterministic — the picker's order)
  */
-export function resolveGraspTargets(entities) {
+export function resolveBodies(entities) {
   if (!Array.isArray(entities)) return []
   const targets = []
   for (const e of entities) {
@@ -175,6 +178,17 @@ export function resolveGraspTargets(entities) {
     })
   }
   return targets
+}
+
+/**
+ * The things a grasp can be FOR: every body except containers (`isContainer`).
+ * The pick list, the cardinality and `selectTarget` read this; the OBSTACLES read
+ * `resolveBodies`, so a tray is never picked and never forgotten (ADR-155 D2).
+ * @param {Array<any>|null|undefined} entities  Layout DSL `entities`
+ * @returns {GraspTarget[]}
+ */
+export function resolveGraspTargets(entities) {
+  return resolveBodies(entities).filter(b => !isContainer(b))
 }
 
 /**
@@ -530,41 +544,20 @@ function box(center, half, q) {
  * @returns {WireObstacle[]}
  */
 export function hollowBodyBoxes(t, inner) {
-  const outer = t.dimensions
-  const q = t.rotation
-  const ho = halved(outer)
-  const hi = halved(inner)
-  // 厚み (導出): 水平は両側に等分、床は下側にだけ付く。
-  const wallX = ho.x - hi.x
-  const wallY = ho.y - hi.y
-  const floor = outer.z - inner.z
-  // 内寸が外寸以上 = 壁が無い。これは「薄い壁」ではなく**宣言の誤り**なので、
-  // 0 厚の壁を 4 枚置いて「囲われている」ふりをせず、中身の無い箱として扱う
-  // (原則 #11 の裏返し — 黙って意味の違うものを返さない)。
-  if (wallX <= 0 || wallY <= 0 || floor <= 0) {
-    return [box(t.position, ho, q)]
-  }
-  const cavityCenterZ = -ho.z + floor + hi.z   // 空洞の中心 (ローカル)
-  /** @param {{x:number,y:number,z:number}} local */
-  const placed = (local, half) => {
-    const w = rotateVec3(local, q)
-    return box(
-      { x: t.position.x + w.x, y: t.position.y + w.y, z: t.position.z + w.z },
-      half,
-      q,
-    )
-  }
-  return [
-    // 床: 外寸いっぱいの板。
-    placed({ x: 0, y: 0, z: -ho.z + floor / 2 }, { x: ho.x, y: ho.y, z: floor / 2 }),
-    // 壁 ±X: 空洞の高さぶんだけ立つ。
-    placed({ x: -(hi.x + wallX / 2), y: 0, z: cavityCenterZ }, { x: wallX / 2, y: ho.y, z: hi.z }),
-    placed({ x: +(hi.x + wallX / 2), y: 0, z: cavityCenterZ }, { x: wallX / 2, y: ho.y, z: hi.z }),
-    // 壁 ±Y: X 壁と重ならないよう内寸幅に収める (二重に数えない)。
-    placed({ x: 0, y: -(hi.y + wallY / 2), z: cavityCenterZ }, { x: hi.x, y: wallY / 2, z: hi.z }),
-    placed({ x: 0, y: +(hi.y + wallY / 2), z: cavityCenterZ }, { x: hi.x, y: wallY / 2, z: hi.z }),
-  ]
+  // 内寸が外寸以上 = 壁が無い。宣言の誤りで、文書の入口 (LayoutValidator) が拒否する。
+  // シーン JSON など検証を通らない経路で届いたときだけここに来るので、0 厚の壁を
+  // 4 枚置いて「囲われている」ふりをせず、中身の詰まった箱として扱う (ADR-133)。
+  if (hollowBodyGap(t.dimensions, inner)) return [box(t.position, halved(t.dimensions), t.rotation)]
+  // 殻の形は hollowBody.shellParts ただ 1 か所 — 画面の殻 (MeshView) と同じ関数 (ADR-155 D2)。
+  return shellParts(t.dimensions, inner).map(({ center, half }) => {
+    const w = rotateVec3(center, t.rotation)
+    return box({ x: t.position.x + w.x, y: t.position.y + w.y, z: t.position.z + w.z }, half, t.rotation)
+  })
 }
+
+// `isContainer` lives with the shell (hollowBody.js) — re-exported here so the
+// grasp vocabulary stays importable from one module.
+export { isContainer }
 
 /**
  * The DERIVED read-model the panel's target picker consumes — the same shape and

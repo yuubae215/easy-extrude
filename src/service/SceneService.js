@@ -23,6 +23,7 @@
  *   'objectRemoved'             (id: string)
  *   'objectRenamed'             (id: string, name: string)
  *   'objectIfcClassChanged'     (id: string, ifcClass: string|null)
+ *   'innerDimensionsRejected'   (id: string, reason: string, name: string) — a tray's cavity did not fit its outer size (ADR-155 D2)
  *   'objectPlaceTypeChanged'    (id: string, placeType: string|null)
  *   'activeChanged'             (id: string|null)
  *   'spatialLinkAdded'          (link: SpatialLink)
@@ -78,6 +79,7 @@ import { SpatialLinkView } from '../view/SpatialLinkView.js'
 import { RoleService } from './RoleService.js'
 import { constraintSolver } from './ConstraintSolver.js'
 import { getIFCClassEntry } from '../domain/IFCClassRegistry.js'
+import { hollowBodyGap, sizeOfCorners } from '../domain/hollowBody.js'
 import {
   PLACEMENT, SUPPORT_TOLERANCE,
   placementOf, hasGroundInvariant, resolvePlacementDelta, supportUnder,
@@ -562,6 +564,7 @@ export class SceneService extends EventEmitter {
         }
         solid.description = dto.description ?? ''
         solid.ifcClass    = dto.ifcClass    ?? null
+        if (dto.innerDimensions) this.setInnerDimensions(solid, dto.innerDimensions)
         this._syncIdentityVisuals(solid)
         // Geometry is rebuilt asynchronously by batchRebuildSolids() after all
         // entities are created — see loadScene() / importFromJson().
@@ -842,6 +845,7 @@ export class SceneService extends EventEmitter {
       }
       solid.description = dto.description ?? ''
       solid.ifcClass    = dto.ifcClass    ?? null
+      if (dto.innerDimensions) this.setInnerDimensions(solid, dto.innerDimensions)
       this._syncIdentityVisuals(solid)
       // Geometry is rebuilt asynchronously by batchRebuildSolids() — see importFromJson().
       return solid
@@ -3450,6 +3454,34 @@ export class SceneService extends EventEmitter {
   }
 
   /**
+   * THE writer of a Solid's cavity (ADR-155 D2, 原則 #4): validates it against the
+   * body's outer size and hands the shell to the view, so the drawn tray and the
+   * obstacles `core/` receives come from one declaration. A declaration
+   * `hollowBodyGap` rejects is NOT applied and is reported (原則 #11) — the body
+   * stays solid rather than drawing walls of thickness zero.
+   * @param {Solid} solid
+   * @param {{x:number,y:number,z:number}|null} inner  mm, body frame; null clears
+   * @returns {string|null} the reason it was refused, or null when applied
+   */
+  setInnerDimensions(solid, inner) {
+    if (!inner) {
+      solid.innerDimensions = null
+      solid.meshView?.setShell?.(null)
+      return null
+    }
+    const outer = sizeOfCorners(solid.localCorners)
+    const gap = hollowBodyGap(outer, inner)
+    if (gap) {
+      console.warn(`SceneService.setInnerDimensions: "${solid.name}" stays solid — ${gap}`)
+      this.emit('innerDimensionsRejected', solid.id, gap, solid.name)
+      return gap
+    }
+    solid.innerDimensions = { x: inner.x, y: inner.y, z: inner.z }
+    solid.meshView?.setShell?.({ outer, inner: solid.innerDimensions })
+    return null
+  }
+
+  /**
    * Duplicates a Solid, giving it new ids and a slight XY offset.
    * No-ops if id is unknown or refers to a non-Solid.
    * Emits: 'objectAdded'
@@ -3473,6 +3505,8 @@ export class SceneService extends EventEmitter {
     })
 
     const solid = new Solid(newId, newName, vertices, this._newMeshView())
+    // A copy of a tray is a tray (ADR-155 D2) — the cavity is part of the body.
+    if (src.innerDimensions) this.setInnerDimensions(solid, src.innerDimensions)
     solid.meshView.updateGeometry(solid.corners)
     this._syncIdentityVisuals(solid)
     this._model.addObject(solid)

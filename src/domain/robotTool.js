@@ -59,6 +59,26 @@ export const DEFAULT_TOOL_MOUNT = Object.freeze({
   rotation:    Object.freeze({ x: 0, y: 0, z: 0, w: 1 }),
 })
 
+/**
+ * Where the flange is for a TCP approaching along `approachDir` with an axial
+ * tool of length `toolLengthMm`: `TCP − approachDir · L` — the same rule `core/`
+ * uses to place the flange (see `axialToolLengthM`). The ONE copy on the front:
+ * the hand preview (`GraspDeclarationMath.handPreview`) and the sample lines
+ * (`GraspSampleMath.sampleLines`) both call it, so the two overlays cannot put
+ * the flange in two places (ADR-155).
+ * @param {number[]} tcp          [x, y, z]
+ * @param {number[]} approachDir  unit [x, y, z], pointing INTO the part
+ * @param {number} toolLengthMm
+ * @returns {[number, number, number]}
+ */
+export function flangeOf(tcp, approachDir, toolLengthMm) {
+  return [
+    tcp[0] - approachDir[0] * toolLengthMm,
+    tcp[1] - approachDir[1] * toolLengthMm,
+    tcp[2] - approachDir[2] * toolLengthMm,
+  ]
+}
+
 /** Tolerance for "this mount is straight along +Z" (mm for offsets, unitless for the quaternion). */
 const AXIAL_EPS = 1e-6
 

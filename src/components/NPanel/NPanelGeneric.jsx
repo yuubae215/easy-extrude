@@ -5,10 +5,11 @@ import { IFC_CLASSES } from '../../domain/IFCClassRegistry.js'
 import { PLACE_TYPE_MAP, getPlaceTypesByGeometry } from '../../domain/PlaceTypeRegistry.js'
 import { Section, NumRow, EditRow, NameInput, AXIS_COLORS, LINK_COLORS } from './npanelShared.jsx'
 import { isNarrowViewport } from '../../view/Viewport.js'
+import { DIMENSION_WORDS } from '../../domain/hollowBody.js'
 
 export function NPanelGeneric({ data }) {
   const {
-    centroid, dimensions, name, description,
+    centroid, dimensions, bodySize, innerSize, name, description,
     locationEditable,
     showIfcClass, ifcClass,
     showPlaceType, placeType, placeTypeGeometry,
@@ -45,12 +46,30 @@ export function NPanelGeneric({ data }) {
         )}
       </Section>
 
-      {/* Dimensions */}
-      <Section title="Dimensions">
-        <NumRow axis="X" color={AXIS_COLORS.X} value={dimensions.x} />
-        <NumRow axis="Y" color={AXIS_COLORS.Y} value={dimensions.y} />
-        <NumRow axis="Z" color={AXIS_COLORS.Z} value={dimensions.z} />
-      </Section>
+      {/* Dimensions — a Solid reads its BODY size as W/D/H (local +x/+y/+z,
+          ADR-155 D4); a tray adds its cavity. Others keep the world box. */}
+      {bodySize ? (
+        <>
+          <Section title={innerSize ? 'Outer size (W × D × H)' : 'Size (W × D × H)'}>
+            {DIMENSION_WORDS.map(({ word, axis }) => (
+              <NumRow key={word} axis={word} color={AXIS_COLORS[axis.toUpperCase()]} value={bodySize[axis]} />
+            ))}
+          </Section>
+          {innerSize && (
+            <Section title="Inner size (W × D × H)">
+              {DIMENSION_WORDS.map(({ word, axis }) => (
+                <NumRow key={word} axis={word} color={AXIS_COLORS[axis.toUpperCase()]} value={innerSize[axis]} />
+              ))}
+            </Section>
+          )}
+        </>
+      ) : (
+        <Section title="Dimensions">
+          <NumRow axis="X" color={AXIS_COLORS.X} value={dimensions.x} />
+          <NumRow axis="Y" color={AXIS_COLORS.Y} value={dimensions.y} />
+          <NumRow axis="Z" color={AXIS_COLORS.Z} value={dimensions.z} />
+        </Section>
+      )}
 
       {/* IFC Class */}
       {showIfcClass && (

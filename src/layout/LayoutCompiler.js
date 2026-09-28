@@ -206,6 +206,10 @@ function generateObjects(entities, refMap, positions) {
             ? { x: entity.rotation.x, y: entity.rotation.y, z: entity.rotation.z, w: entity.rotation.w }
             : IDENTITY_QUATERNION,
           localCorners: generateLocalCorners(dims),
+          // A tray's cavity (ADR-133 D1) rides to the scene as-is; absent = solid.
+          ...(entity.innerDimensions
+            ? { innerDimensions: { x: entity.innerDimensions.x, y: entity.innerDimensions.y, z: entity.innerDimensions.z } }
+            : {}),
         })
 
         // Auto-generated Origin CoordinateFrame (ADR-037)

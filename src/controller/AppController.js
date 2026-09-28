@@ -126,6 +126,7 @@ import { HitTestService } from './HitTestService.js'
 import { acceptDoubleTap } from '../view/TapGesture.js'
 import { TOUCH_DOF_ASSIGNMENT } from '../view/CameraGestures.js'
 import { isNarrowViewport, hasFinePointer } from '../view/Viewport.js'
+import { isContainer, CONTAINER_EDIT_DEFERRED_REASON } from '../domain/hollowBody.js'
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -357,6 +358,11 @@ export class AppController {
       outlinerView?.setActive(id)
       // Onboarding tour: the committed selection is a tour fact (ADR-065 Phase 6).
       this._updateTour()
+    })
+    // A tray whose cavity does not fit its outer size stays solid — say so (原則 #11).
+    // Fires during load, before the body is in the model — so the name rides the event.
+    this._service.on('innerDimensionsRejected', (id, reason, name) => {
+      this._uiView.showToast(`"${name}" is drawn solid: its cavity is invalid — ${reason}`, { type: 'warn' })
     })
     this._service.on('objectIfcClassChanged', (id, ifcClass) => {
       outlinerView?.setObjectIfcClass(id, ifcClass)
@@ -1326,6 +1332,9 @@ export class AppController {
       // ADR-152 D3: and from its declared HAND — the housing and fingers drawn are
       // the ones the request's `gripper` carries (null = undeclared → a rod).
       stages.setToolMount(robot.id, toolMountOf(robot), handOf(robot).hand)
+      // The TCP label names the tcp ENTITY (ADR-155): `tcp_2` on a second arm, and
+      // a rename reaches the screen — not a literal 'tcp' on every arm.
+      stages.setTcpName(robot.id, robot.tcpFrame?.name ?? null)
     }
   }
 
@@ -2613,6 +2622,12 @@ export class AppController {
       this._activeObj instanceof SpatialLink
     )) {
       this._uiView.showToast('Edit Mode is not available for this object type')
+      return
+    }
+    if (mode === 'edit' && isContainer(this._activeObj)) {
+      // Its faces are the shell's, not the body's six — resizing a tray means
+      // editing outer and inner together, which nothing decides yet (DEF-055).
+      this._uiView.showToast(CONTAINER_EDIT_DEFERRED_REASON, { type: 'warn' })
       return
     }
     if (mode === 'edit' && !this._activeObj) {

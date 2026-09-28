@@ -14,6 +14,8 @@
  */
 import * as THREE from 'three'
 import { buildGeometry, buildFaceHighlightPositions } from '../model/CuboidModel.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { shellCornerSets } from '../domain/hollowBody.js'
 import { geometryEngine } from '../service/GeometryEngine.js'
 import { EntityLabel } from './EntityLabel.js'
 import { COLOR, hexNumber, dim } from '../theme/tokens.js'
@@ -63,6 +65,14 @@ export class MeshView {
     this.cuboidMat = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.3, metalness: 0.3, side: THREE.DoubleSide })
     this.cuboid = new THREE.Mesh(new THREE.BufferGeometry(), this.cuboidMat)
     scene.add(this.cuboid)
+    /**
+     * The tray shell this body draws instead of a full box, or null (ADR-155 D2).
+     * Only `setShell` writes it (原則 #4); the owner is `SceneService.setInnerDimensions`.
+     * @type {{outer:{x:number,y:number,z:number}, inner:{x:number,y:number,z:number}}|null}
+     */
+    this._shell = null
+    /** @type {import('three').Vector3[]|null} last corners drawn — re-drawn when the shell changes */
+    this._lastCorners = null
 
     // ── Floating name/class label (ADR-070 決定1) ─────────────────────────
     // Staged disclosure: shown while selected or hovered (never always-on —
@@ -312,9 +322,37 @@ export class MeshView {
     scene.add(this._selFaceMesh)
   }
 
+  /**
+   * Draw this body as a tray shell (floor + 4 walls) or, with null, as a full box
+   * (ADR-155 D2). The shell is `hollowBody.shellCornerSets` of the SAME corners
+   * every other path passes in, so move / rotate / load carry it with no second
+   * transform, and the cuboid mesh itself — the one every raycast (pick, support,
+   * snap) reads — has an empty cavity: a part inside the tray can be clicked and
+   * rest on the floor.
+   * @param {{outer:{x:number,y:number,z:number}, inner:{x:number,y:number,z:number}}|null} shell
+   */
+  setShell(shell) {
+    this._shell = shell ? { outer: { ...shell.outer }, inner: { ...shell.inner } } : null
+    if (this._lastCorners) this.updateGeometry(this._lastCorners)
+  }
+
+  /** Whether this body is drawn as a tray shell (read-only, for pickers that map face indices). */
+  get hasShell() { return this._shell !== null }
+
+  /** The body geometry for `corners`: one box, or the shell's five merged (ADR-155 D2). */
+  _bodyGeometry(corners) {
+    if (!this._shell) return buildGeometry(corners)
+    const parts = shellCornerSets(corners, this._shell.outer, this._shell.inner)
+      .map(set => buildGeometry(set.map(c => new THREE.Vector3(c.x, c.y, c.z))))
+    const merged = mergeGeometries(parts)
+    for (const g of parts) g.dispose()
+    return merged
+  }
+
   /** Rebuilds geometry from the corner array and applies it to the mesh */
   updateGeometry(corners) {
-    const newGeo = buildGeometry(corners)
+    this._lastCorners = corners
+    const newGeo = this._bodyGeometry(corners)
     this.cuboid.geometry.dispose()
     this.cuboid.geometry = newGeo
     const edgesGeo = new THREE.EdgesGeometry(newGeo, 1)
@@ -354,6 +392,9 @@ export class MeshView {
    * @returns {Promise<void>}
    */
   async rebuildGeometry(corners) {
+    // The shell is five boxes the worker does not know; draw it on the sync path.
+    if (this._shell) { this.updateGeometry(corners); return }
+    this._lastCorners = corners
     const { positions, normals, indices } = await geometryEngine.computeCuboid(corners)
     const newGeo = new THREE.BufferGeometry()
     newGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))

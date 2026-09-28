@@ -17,6 +17,7 @@ import { isOriginFrame } from '../domain/originFrame.js'
 import { AnnotatedLine }   from '../domain/AnnotatedLine.js'
 import { AnnotatedRegion } from '../domain/AnnotatedRegion.js'
 import { AnnotatedPoint }  from '../domain/AnnotatedPoint.js'
+import { sizeOfCorners } from '../domain/hollowBody.js'
 import { SpatialLink }     from '../domain/SpatialLink.js'
 import { getCentroid }     from '../model/CuboidModel.js'
 import { ICONS }           from '../view/UIView.js'
@@ -170,6 +171,10 @@ export class UIStateManager {
     }
 
     ctrl._uiView.updateNPanel(centroid, dims, obj.name, obj.description ?? '', {
+      // A Solid's own size in its BODY frame, read as W/D/H (ADR-155 D4) — the
+      // world box above is not W/D/H once the body is turned. A tray adds its cavity.
+      bodySize:  obj instanceof Solid ? sizeOfCorners(obj.localCorners) : null,
+      innerSize: obj instanceof Solid ? (obj.innerDimensions ?? null) : null,
       locationEditable,
       showIfcClass,
       ifcClass: showIfcClass ? (obj.ifcClass ?? null) : undefined,
