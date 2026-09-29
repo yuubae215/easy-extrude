@@ -666,6 +666,12 @@ labels meta-goal, term-profit
                                     artifacts
                                     - "docs/gsn/adr-121-centre-of-mass-is-declared.gsn"
 
+                                    solution Adr156Tree
+                                    uuid 2c9e4b71-5d3a-4f8e-b6a0-7e1d9c3f5a24
+                                    summary "ADR-156 の論証木 (top goal SuctionHoldScoreReadsInPhysicalTerms) を吊る。吸着の候補のスコアが、宣言された質量・重心・保持力から静力学で決まり、外れる位置は 0・この組で最良の位置は 1 になる (ADR は Proposed)。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"
+                                    artifacts
+                                    - "docs/gsn/adr-156-suction-hold-is-scored-from-declared-mass-and-hold.gsn"
+
                                     solution Adr127Tree
                                     uuid 626ced3a-bc07-4f87-9ced-cedfb2b5723f
                                     summary "ADR-127 の論証木 (top goal IkSolvableIsADecidedFactNotAProxy) を吊る。ikSolvable が手首コーンの代理ではなく、宣言された機種の運動学で決定された事実になる。この木の goal ごとの証拠と鮮度の正本は木の側 — ここは寄与する項だけを持つ (ADR-153 D2: 1 本の木は事業木にちょうど 1 回吊られ、投資はその項へ帰属する)"

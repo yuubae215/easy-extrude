@@ -340,7 +340,13 @@ const SUPPORT_LABELS = new Map([
 // 上がった (証拠: graspFeature / robotHand / robotTool / GraspDeclarationConfirmation の
 // node --test、core/tests/test_grasp_specs.py、test:contract v7、e2e/grasp-declaration.spec.js)。
 // 6 つとも満期は機械可読だったので分子 (G3) は動かない。
-const DEBT_BASELINE = 49
+// 2026-09-29: 49 → 52。ADR-156 (Proposed・起票のみ — 当事者の指示「今回は ADR だけで」) の
+// 木が 3 goal を足した (最良 1 点・外れる 0 点 / 欠けた入力は採点しない / 長さ単位が消える)。
+// ADR-151/152 の先例どおり、実装して support-verified に上がった日に下げる。3 つとも満期は
+// 機械可読 (GREP:core/tests/test_engine.py::suction_hold) なので分子 (G3) は動かない。
+// 同日 (当事者レビュー): 52 → 53。ADR-156 D6「外れる候補は落とさず、札は 0 点から導出」の
+// goal を 1 つ足した。満期は機械可読 (GREP:src/view/GraspScoreMath.test.js::suction_hold)。
+const DEBT_BASELINE = 53
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
