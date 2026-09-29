@@ -10,7 +10,7 @@ artifacts
 
     context Adr156Scope
     uuid 44aa3694-75e1-480c-9f22-c3629005fb69
-    summary "ADR-156 (Proposed 2026-09-29, 未実装・ADR だけの回): target.mass と gripper.suction.hold {force, friction} を request の optional 追加として足し (D1)、めくれとすべりの静力学で利用率 u を出し (D2)、u = 1 を 0 点・u_best = (m g0 / F) min(1, 1/μ) を 1 点に正規化し (D3)、入力が 1 つでも欠ければ鍵を出さず (D4)、objective 名を suction_hold とする (D5)。前提は ADR-121 の target.centerOfMass"
+    summary "ADR-156 (Proposed 2026-09-29, 未実装・ADR だけの回): target.mass と gripper.suction.hold {force, friction} を request の optional 追加として足し (D1)、めくれとすべりの静力学で利用率 u を出し (D2)、u = 1 を 0 点・u_best = (m g0 / F) min(1, 1/μ) を 1 点に正規化し (D3)、入力が 1 つでも欠ければ鍵を出さず (D4)、objective 名を suction_hold とする (D5)。当事者レビューで、外れる候補は落とさず「外れる」札をクライアントが 0 点から導出すること (D6)、計算は core/ だけに置くこと (D7) を決めた。前提は ADR-121 の target.centerOfMass"
     artifacts
     - "packages/grasp-contract/schema/grasp-search-request.schema.json"
     - "core/easy_extrude_core/engine/objectives.py"
@@ -30,6 +30,14 @@ artifacts
     justification WhyNoShapeCoefficient
     uuid 0aa0ff36-1d6b-4224-b5ea-70071c14a0f9
     summary "却下案 (めくれの項に形状係数 k を置いて調整する) への反証: カップの縁まわりのつり合いから係数 1 が出るので、つまみを置く理由が無い。係数を置けば閉形式ではなくアイデアになり、その値を決める責任の所在が生まれる"
+
+    justification WhyFallingCandidatesAreNotDropped
+    uuid 8d2f6a1c-3b7e-4e9a-a5c1-6f0b2d4e8a73
+    summary "却下案 (u ≥ 1 の候補を feasibility のゲートで落とす) への反証: 落とした位置は理由を持たずに画面から消え、なぜ駄目かが読めなくなる。しかも feasibility の段と graspNearestMiss の kind が増える response の版上げになる。score = 0 ⇔ u ≥ 1 なので「外れる」はスコアから導出でき、落とさなくても事実は失われない (当事者レビュー 2026-09-29)"
+
+    justification WhyNotAlsoInTheFront
+    uuid 1e7c4b9d-2a6f-4d3b-8c5e-9f1a3b7d2c64
+    summary "却下案 (静荷重の u だけを公知の閉形式として src/ でも計算する) への反証: 出せるのは u (外れる / 持つ) までで、スコアの両端の置き方はアイデアなので出せない。源を 2 つにしない準拠テストの仕組みまで含むので、フロントだけの構成で見せたくなった日に別 ADR とする (当事者レビュー 2026-09-29 で A を選択)"
 
     assumption RigidCupStaticsIsCloseEnough
     uuid 0ba2b47f-6f0a-4c30-a674-b686b9a1e13f
@@ -77,3 +85,12 @@ artifacts
             assumption UnitInvarianceTestWillSettleIt
             uuid 6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e
             summary "未着手。決着させる検査は、同じ候補を長さ単位だけ変えて 2 回評価し u が一致すること。ADR-136 (world unit = mm) の下でスコアが単位に静かに依存しないことを機械が問う。満期=GREP:core/tests/test_engine.py::suction_hold"
+
+        goal FallingIsSeenWithoutBeingDropped
+        uuid 4c8e2a6f-1d3b-4f7a-9e5c-7b2d8f4a1c39
+        summary "u ≥ 1 の候補は候補集合に残り、クライアントは suction_hold が 0 のときだけ「外れる」札を出す。0 より大きいときと鍵が無いとき (測っていない) は札を出さず、契約に欄は足されない"
+        labels support-exploring
+
+            assumption DerivationTestWillSettleIt
+            uuid 9a3d7c1e-5f2b-4a8d-b6e4-2c9f1a7d3e58
+            summary "未着手。決着させる検査は src/view/GraspScoreMath.test.js の 3 分岐 (値 0 → 札あり / 値 > 0 → 札なし / 鍵なし → 札なし) と、core で u ≥ 1 の候補が候補集合に残ること。満期=GREP:src/view/GraspScoreMath.test.js::suction_hold"
