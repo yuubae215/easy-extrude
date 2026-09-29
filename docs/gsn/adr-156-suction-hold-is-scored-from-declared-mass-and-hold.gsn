@@ -1,0 +1,79 @@
+GOALS adr156_suction_hold_is_scored_from_declared_mass_and_hold
+
+goal SuctionHoldScoreReadsInPhysicalTerms
+uuid 54abba72-8e02-4d5b-ad9f-df3a0c8a8ab3
+summary "吸着ハンドの候補ごとに、その位置で吸ったとき対象が外れないかがスコアに現れる。外れる位置は 0、この対象とこのハンドの組で物理的に最良の位置は 1 で、値は宣言された質量・重心・保持力だけから決まり、欠けた量は推測で埋めない"
+state UnderReview
+labels adr-156, adr-121, adr-120, adr-075, grasp, suction, principle-31, principle-33, proposed, term-q, change-judgement-correctness
+artifacts
+- "docs/adr/ADR-156-suction-hold-is-scored-from-declared-mass-and-hold.md"
+
+    context Adr156Scope
+    uuid 44aa3694-75e1-480c-9f22-c3629005fb69
+    summary "ADR-156 (Proposed 2026-09-29, 未実装・ADR だけの回): target.mass と gripper.suction.hold {force, friction} を request の optional 追加として足し (D1)、めくれとすべりの静力学で利用率 u を出し (D2)、u = 1 を 0 点・u_best = (m g0 / F) min(1, 1/μ) を 1 点に正規化し (D3)、入力が 1 つでも欠ければ鍵を出さず (D4)、objective 名を suction_hold とする (D5)。前提は ADR-121 の target.centerOfMass"
+    artifacts
+    - "packages/grasp-contract/schema/grasp-search-request.schema.json"
+    - "core/easy_extrude_core/engine/objectives.py"
+
+    context RequirementCameFromTheOwner
+    uuid 90d800fd-bb3f-4316-9ab1-1ebb461c5da2
+    summary "要件は当事者の言葉で 2 回出た: 「絶対掴めない場所と、重心を安定させて掴める場所を最大・最小にして正規化する」「質量と吸着力も入力に持って、完全版で」。前者の「最大・最小」は候補集合の min/max とも物理の両端とも読めるが、どちらの場所も物理の言葉で語られているので後者で読んだ"
+
+    justification WhyNotCandidateSetNormalization
+    uuid eefefa71-d6ad-48a5-80dc-d03f4746f17a
+    summary "却下案 (その回の候補の min/max で正規化) への反証: ADR-075 が禁止している相対正規化で、候補集合が変わると基準が動き、別のリクエストのスコアと比べられなくなる。物理の両端 (u = 1 と u_best) はどちらも問題の条件だけで決まるので、reach_margin がリーチ範囲で割るのと同じ絶対基準になる"
+
+    justification WhyNotGeometryOnly
+    uuid 394b8e93-4c49-4a7c-a42d-042c03bbdecd
+    summary "却下案 (質量に依存しない幾何だけの版) への反証: 偏心と傾きから相対的な良し悪しは出るが、「絶対に掴めない」の閾値が引けない。当事者が完全版を明言した。A の式は質量と保持力を消去すると幾何版に退化するので、幾何版は失われない"
+
+    justification WhyNoShapeCoefficient
+    uuid 0aa0ff36-1d6b-4224-b5ea-70071c14a0f9
+    summary "却下案 (めくれの項に形状係数 k を置いて調整する) への反証: カップの縁まわりのつり合いから係数 1 が出るので、つまみを置く理由が無い。係数を置けば閉形式ではなくアイデアになり、その値を決める責任の所在が生まれる"
+
+    assumption RigidCupStaticsIsCloseEnough
+    uuid 0ba2b47f-6f0a-4c30-a674-b686b9a1e13f
+    summary "反証されうる仮説: 剛体カップの静的つり合い (縁を支点にしためくれ・押し付け力に比例するすべり) で、順位を決めるのに十分な近さの保持判定が出る。反証されうる形は、ベローズや柔らかいパッドで、スコア 1 付近の候補が実際には外れること。そのとき高忠実度の模型に _raw_suction_hold の中で差し替える (契約は 0-1 のままで変わらない)"
+
+    assumption FrictionBelongsToTheHandForNow
+    uuid 729c63fa-74c7-479d-b480-d15eb1525541
+    summary "反証されうる仮説: 摩擦係数は本当はパッドと対象面の組の性質だが、1 リクエスト 1 ハンド 1 対象なのでハンド側 (gripper.suction.hold.friction) に置いて足りる。反証されうる形は、1 回の探索で複数の対象 (ADR-078 の bin-picking) を扱うこと。そのとき対象側へ移すか組の表を持つ"
+
+    assumption ScoreIsNotAProbability
+    uuid 767603c2-705e-4a6e-b953-b16d8df9ccb8
+    summary "反証されうる仮説: 利用者はスコアを成功確率として読まない。反証されうる形は、dogfooding で「0.8 だから 8 割掴める」と読まれること。そのとき較正 (成功・失敗の記録からスコアを確率へ写す) が要るが、確率を契約に載せると ADR-122 D4 (歩留まりは決定的レーンの外) と衝突する"
+
+    context BusinessTreeAttachPoint
+    uuid 160491e3-798b-4720-839b-7e8bd439ba6d
+    summary "事業木へ接続済み (2026-09-29, ADR-153): profit-growth.gsn の goal VerdictsAreDecidedFactsNotProxies の下に solution Adr156Tree としてこの木を吊った。ADR-121 の木と同じ吊り先で、判定が代理 (正対度) ではなく宣言された量で決まる事実になることに寄与する"
+
+    strategy ByScoringTheWorstFailureModeBetweenPhysicalEnds
+    uuid fb2c3844-9990-411c-b356-0adbb892a541
+    summary "吸着の 2 つの破壊様式 (めくれ・すべり) の静力学で利用率を出して悪いほうを取り、正規化の両端を物理から解析的に出す。入力が欠けたら評価せず、評価できて保持できる位置が無いなら 0 点として出す"
+
+        goal HeldBestIsOneAndFallingIsZero
+        uuid d7c80da5-4265-4093-b157-54e3cd116ace
+        summary "重心がカップの軸上にあり法線が重力に沿う候補は 1 点、利用率が 1 以上の候補は 0 点で、候補集合を変えても同じ候補のスコアは変わらない"
+        labels support-exploring
+
+            assumption BoundaryTestWillSettleIt
+            uuid 07bd5c90-4093-442a-bfdb-740c5ffc6c9d
+            summary "未着手。決着させる検査は core の境界値テスト (重心の真上 = 1、外れる位置 = 0、別の候補集合に混ぜても同値)。満期=GREP:core/tests/test_engine.py::suction_hold (ADR-126 — 検査が現れた日に G4 が落ち、exploring を solution へ昇格させよと言う)"
+
+        goal MissingInputIsNeverScored
+        uuid e9423322-897a-489b-8aae-0188af90b354
+        summary "質量・重心・保持力のどれかが欠けているとき、またはハンドが平行ジョーのとき、suction_hold の鍵は出ず、0 点にも図心にも化けない。一方で、評価できて保持できる位置が 1 つも無い (u_best ≥ 1) ときは鍵が出て 0 点になり、評価不能と区別される"
+        labels support-exploring
+
+            assumption KeyAbsencePerKindWillSettleIt
+            uuid 3f1c7d2e-8a4b-4c6d-9e0f-1a2b3c4d5e6f
+            summary "未着手。決着させる検査は、欠けた種 (mass / centerOfMass / hold / parallelJaw) を列挙して、それぞれで鍵が無いことを値ではなく鍵の不在で assert すること (ADR-120)。加えて弱いハンドで鍵が在り値が 0 であること。満期=GREP:core/tests/test_engine.py::suction_hold"
+
+        goal LengthUnitCancelsOut
+        uuid 5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d
+        summary "利用率 u は長さの比しか含まず、同じ幾何を mm で与えても m で与えても同じ値になる。質量 (kg)・重力加速度 (m/s²)・保持力 (N) の単位だけがそろっていればよい"
+        labels support-exploring
+
+            assumption UnitInvarianceTestWillSettleIt
+            uuid 6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e
+            summary "未着手。決着させる検査は、同じ候補を長さ単位だけ変えて 2 回評価し u が一致すること。ADR-136 (world unit = mm) の下でスコアが単位に静かに依存しないことを機械が問う。満期=GREP:core/tests/test_engine.py::suction_hold"
