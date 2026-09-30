@@ -56,8 +56,10 @@ function registeredObjectives() {
   assert.ok(braceStart !== -1 && braceEnd > braceStart,
     'could not delimit the OBJECTIVE_REGISTRY literal — update this census.')
   const body = src.slice(braceStart, braceEnd)
-  // Keys are top-level `"name": ObjectiveDef(` entries.
-  return [...body.matchAll(/^\s{4}"([a-z_]+)":\s*ObjectiveDef\(/gm)].map(m => m[1])
+  // Keys are top-level `"name": ObjectiveDef(` / `ScoredObjectiveDef(` entries —
+  // both definition types (ADR-156 added the second; a census that matched only
+  // the first would have reported `suction_hold` as unregistered).
+  return [...body.matchAll(/^\s{4}"([a-z_]+)":\s*(?:Scored)?ObjectiveDef\(/gm)].map(m => m[1])
 }
 
 test('母集団そのものが空でないこと — 0 件の照合は緑に見えるが検査ではない', () => {

@@ -3,14 +3,14 @@ GOALS adr156_suction_hold_is_scored_from_declared_mass_and_hold
 goal SuctionHoldScoreReadsInPhysicalTerms
 uuid 54abba72-8e02-4d5b-ad9f-df3a0c8a8ab3
 summary "吸着ハンドの候補ごとに、その位置で吸ったとき対象が外れないかがスコアに現れる。外れる位置は 0、この対象とこのハンドの組で物理的に最良の位置は 1 で、値は宣言された質量・重心・保持力だけから決まり、欠けた量は推測で埋めない"
-state UnderReview
-labels adr-156, adr-121, adr-120, adr-075, grasp, suction, principle-31, principle-33, proposed, term-q, change-judgement-correctness
+state Approved
+labels adr-156, adr-121, adr-120, adr-075, grasp, suction, principle-31, principle-33, implemented, term-q, change-judgement-correctness
 artifacts
 - "docs/adr/ADR-156-suction-hold-is-scored-from-declared-mass-and-hold.md"
 
     context Adr156Scope
     uuid 44aa3694-75e1-480c-9f22-c3629005fb69
-    summary "ADR-156 (Proposed 2026-09-29, 未実装・ADR だけの回): target.mass と gripper.suction.hold {force, friction} を request の optional 追加として足し (D1)、めくれとすべりの静力学で利用率 u を出し (D2)、u = 1 を 0 点・u_best = (m g0 / F) min(1, 1/μ) を 1 点に正規化し (D3)、入力が 1 つでも欠ければ鍵を出さず (D4)、objective 名を suction_hold とする (D5)。当事者レビューで、外れる候補は落とさず「外れる」札をクライアントが 0 点から導出すること (D6)、計算は core/ だけに置くこと (D7) を決めた。前提は ADR-121 の target.centerOfMass"
+    summary "ADR-156 (Proposed 2026-09-29 → Accepted 2026-09-30, ADR-121 と同じ PR で実装): target.mass と gripper.suction.hold {force, friction} を request の optional 追加として足し (D1)、めくれとすべりの静力学で利用率 u を出し (D2)、u = 1 を 0 点・u_best = (m g0 / F) min(1, 1/μ) を 1 点に正規化し (D3)、入力が 1 つでも欠ければ鍵を出さず (D4)、objective 名を suction_hold とする (D5)。当事者レビューで、外れる候補は落とさず「外れる」札をクライアントが 0 点から導出すること (D6)、計算は core/ だけに置くこと (D7) を決めた。前提は ADR-121 の target.centerOfMass"
     artifacts
     - "packages/grasp-contract/schema/grasp-search-request.schema.json"
     - "core/easy_extrude_core/engine/objectives.py"
@@ -62,35 +62,47 @@ artifacts
         goal HeldBestIsOneAndFallingIsZero
         uuid d7c80da5-4265-4093-b157-54e3cd116ace
         summary "重心がカップの軸上にあり法線が重力に沿う候補は 1 点、利用率が 1 以上の候補は 0 点で、候補集合を変えても同じ候補のスコアは変わらない"
-        labels support-exploring
+        labels support-verified
 
-            assumption BoundaryTestWillSettleIt
-            uuid 07bd5c90-4093-442a-bfdb-740c5ffc6c9d
-            summary "未着手。決着させる検査は core の境界値テスト (重心の真上 = 1、外れる位置 = 0、別の候補集合に混ぜても同値)。満期=GREP:core/tests/test_engine.py::suction_hold (ADR-126 — 検査が現れた日に G4 が落ち、exploring を solution へ昇格させよと言う)"
+            solution BoundaryValuesAreExecuted
+            uuid 7a348e0b-82ae-417e-a4a4-f5850338ce97
+            summary "core/tests/test_engine.py の suction_hold 群: 重心の真上で 1 点 / 重心から 0.1 m 横を ⌀20 mm で吸うとめくれが支配して 0 点 / 間は偏心に単調 / 500 例の乱択で score == 0 ⇔ u ≥ 1 / 500 例で u ≥ u_best (引き剥がす向き) / 候補集合を 3×3 と 9×9 の格子で変えても共有点の値が一致 (ADR-075 の絶対基準)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "core/easy_extrude_core/engine/objectives.py"
 
         goal MissingInputIsNeverScored
         uuid e9423322-897a-489b-8aae-0188af90b354
         summary "質量・重心・保持力のどれかが欠けているとき、またはハンドが平行ジョーのとき、suction_hold の鍵は出ず、0 点にも図心にも化けない。一方で、評価できて保持できる位置が 1 つも無い (u_best ≥ 1) ときは鍵が出て 0 点になり、評価不能と区別される"
-        labels support-exploring
+        labels support-verified
 
-            assumption KeyAbsencePerKindWillSettleIt
-            uuid 3f1c7d2e-8a4b-4c6d-9e0f-1a2b3c4d5e6f
-            summary "未着手。決着させる検査は、欠けた種 (mass / centerOfMass / hold / parallelJaw) を列挙して、それぞれで鍵が無いことを値ではなく鍵の不在で assert すること (ADR-120)。加えて弱いハンドで鍵が在り値が 0 であること。満期=GREP:core/tests/test_engine.py::suction_hold"
+            solution KeyAbsenceIsAssertedPerKind
+            uuid a9b4ba31-1ab0-4d5e-b822-53a6c4ac9323
+            summary "test_suction_hold_key_is_absent_for_each_missing_input を欠ける種 (mass / centerOfMass / hold / parallelJaw / noGripper) で parametrize し、鍵の不在を assert (ほかの objective が巻き添えにならないことも)。test_suction_hold_weak_hand_is_scored_zero_not_unevaluated が u_best ≥ 1 で鍵が在り 0 であることを焼く。壊れた宣言 (未知の出所・point なし・mass 0・hold の片方・force 0) は既定に倒さず DeclarationError (= 400 invalid_declaration)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "core/easy_extrude_core/engine/pipeline.py"
 
         goal LengthUnitCancelsOut
         uuid 5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d
         summary "利用率 u は長さの比しか含まず、同じ幾何を mm で与えても m で与えても同じ値になる。質量 (kg)・重力加速度 (m/s²)・保持力 (N) の単位だけがそろっていればよい"
-        labels support-exploring
+        labels support-verified
 
-            assumption UnitInvarianceTestWillSettleIt
-            uuid 6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e
-            summary "未着手。決着させる検査は、同じ候補を長さ単位だけ変えて 2 回評価し u が一致すること。ADR-136 (world unit = mm) の下でスコアが単位に静かに依存しないことを機械が問う。満期=GREP:core/tests/test_engine.py::suction_hold"
+            solution UnitInvarianceIsExecuted
+            uuid 61fd5f0a-9fb4-4628-bd57-d86f431412b5
+            summary "test_suction_hold_is_the_same_whatever_the_length_unit — 傾いた法線・偏心した重心で同じ幾何を m と mm で与え、u と u_best が相対 1e-12 で一致"
+            artifacts
+            - "core/tests/test_engine.py"
 
         goal FallingIsSeenWithoutBeingDropped
         uuid 4c8e2a6f-1d3b-4f7a-9e5c-7b2d8f4a1c39
         summary "u ≥ 1 の候補は候補集合に残り、クライアントは suction_hold が 0 のときだけ「外れる」札を出す。0 より大きいときと鍵が無いとき (測っていない) は札を出さず、契約に欄は足されない"
-        labels support-exploring
+        labels support-verified
 
-            assumption DerivationTestWillSettleIt
-            uuid 9a3d7c1e-5f2b-4a8d-b6e4-2c9f1a7d3e58
-            summary "未着手。決着させる検査は src/view/GraspScoreMath.test.js の 3 分岐 (値 0 → 札あり / 値 > 0 → 札なし / 鍵なし → 札なし) と、core で u ≥ 1 の候補が候補集合に残ること。満期=GREP:src/view/GraspScoreMath.test.js::suction_hold"
+            solution FallingIsDerivedAndKept
+            uuid 4dbea63d-68de-4744-8f1e-b94462e065b9
+            summary "core: test_suction_hold_falling_candidates_stay_in_the_set — 9×9 格子の 81 点がすべて候補に残り、0 点の候補が居て、最大は 1 点 (応答は契約スキーマに準拠)。front: src/view/GraspScoreMath.test.js の suction_hold 3 分岐 (0 → falls / 0 より大 → なし / 鍵なし → なし) と、VERDICT_AT_ZERO に無い objective は 0 でも札を持たないこと。契約に欄は足していない (response スキーマ未変更・contractVersion=7 のまま)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "src/view/GraspScoreMath.test.js"
+            - "src/view/GraspScoreMath.js"

@@ -71,8 +71,16 @@ import { execFileSync } from 'node:child_process'
  *   claude/link-network-layout-physics-...   1
  *   claude/adr-unimplemented-design-97b30n   1
  *   claude/unimplemented-adr-design-vsar1k   1
+ *
+ * 2026-09-30: 14 → 15。ccr-967e6835-uk58z8 (ADR-121 + ADR-156) の 1 件は**意図的な欠測**
+ * である。フックは刻んだが、そのセッションの実行環境に「push するコミットにモデル ID を
+ * 入れない」という上位の規約があり、`Model-Effort` の値はモデル ID を含むので外した。
+ * `Task-Class` だけ残すと Q3 (片翼) になり「transcript が読めない」という別の原因に
+ * 見えるので、両方外して欠測として数える (当事者判断 — PR #418)。原因は `git commit &&
+ * git push` の連鎖ではなく**規約の衝突**で、内訳の他の行とは種類が違う。衝突が繰り返す
+ * なら、モデル ID を含まない書式を認める検査の改訂 (ADR) が次の手になる。
  */
-export const MISSING_BASELINE = 14
+export const MISSING_BASELINE = 15
 
 /** Q3/Q4 は「在ってはならない」ので予算はゼロ。 */
 export const DEGRADED_BASELINE = 0

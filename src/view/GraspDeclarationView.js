@@ -51,6 +51,11 @@ export class GraspDeclarationView {
       axisX:    line(COLOR.axisX, 0.9),
       axisY:    line(COLOR.axisY, 0.9),
       axisZ:    line(COLOR.axisZ, 0.9),
+      // Centre of mass (ADR-121): drawn THROUGH the body (it sits inside it).
+      // Measured = solid; assumed = wireframe — an assumption is never drawn
+      // like a measurement.
+      comSolid:  basic(COLOR.infoTone, 0.9, { depthTest: false }),
+      comHollow: basic(COLOR.infoTone, 0.9, { depthTest: false, wireframe: true }),
     }
     /** per-render disposables */
     this._owned = []
@@ -72,6 +77,16 @@ export class GraspDeclarationView {
 
     if (pic.hover) this._quad(pic.hover, this._mat.hover)
     for (const outline of pic.otherApproaches) this._loop(outline, this._mat.faint)
+
+    const com = pic.centerOfMass
+    if (com) {
+      const g = new THREE.SphereGeometry(com.radius, 16, 12)
+      const mesh = new THREE.Mesh(g, com.solid ? this._mat.comSolid : this._mat.comHollow)
+      mesh.position.set(...com.point)
+      mesh.renderOrder = 10
+      this._add(mesh, g)
+      this._label(com.caption, com.point.map((v, i) => i === 2 ? v + com.radius * 3 : v), labelHeight * 0.8)
+    }
 
     const f = pic.focused
     if (f) {

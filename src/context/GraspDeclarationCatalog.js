@@ -54,10 +54,57 @@ export const OBJECTIVE = Object.freeze({
   APPROACH_CLEARANCE: 'approach_clearance',
   /** How well the contact geometry holds the object. */
   GRASP_STABILITY:    'grasp_stability',
+  /**
+   * Whether a suction cup holds the object's weight there (ADR-156): 0 = it
+   * falls, 1 = the best this object and this hand can do. Needs the declared
+   * mass, centre of mass and hold — any missing, and it is "not measured".
+   */
+  SUCTION_HOLD:       'suction_hold',
 })
 
 /** Every objective name the wire may carry — the enumeration a census can count. */
 export const DECLARED_OBJECTIVES = Object.freeze(Object.values(OBJECTIVE))
+
+/**
+ * Which objectives a run asks for, per hand kind — the ONE place both the panel's
+ * sliders and the controller's default read (§1.1). `suction_hold` is asked for
+ * only under a suction hand: under jaws it can never be evaluated (ADR-156 D4),
+ * so asking would plant a permanent "not measured" row. An undeclared hand
+ * (`null`) is a declared row too, never a fall-through (原則 #31).
+ */
+export const OBJECTIVES_BY_HAND_KIND = Object.freeze({
+  parallelJaw: Object.freeze([OBJECTIVE.REACH_MARGIN, OBJECTIVE.APPROACH_CLEARANCE, OBJECTIVE.GRASP_STABILITY]),
+  suction:     Object.freeze([OBJECTIVE.REACH_MARGIN, OBJECTIVE.APPROACH_CLEARANCE, OBJECTIVE.GRASP_STABILITY, OBJECTIVE.SUCTION_HOLD]),
+  none:        Object.freeze([OBJECTIVE.REACH_MARGIN, OBJECTIVE.APPROACH_CLEARANCE, OBJECTIVE.GRASP_STABILITY]),
+})
+
+/** Default weight per objective (the panel's slider seeds). */
+export const DEFAULT_OBJECTIVE_WEIGHT = Object.freeze({
+  [OBJECTIVE.REACH_MARGIN]:       0.6,
+  [OBJECTIVE.APPROACH_CLEARANCE]: 0.4,
+  [OBJECTIVE.GRASP_STABILITY]:    1.0,
+  [OBJECTIVE.SUCTION_HOLD]:       1.0,
+})
+
+/**
+ * The objectives a run asks for under a hand kind. Throws on an undeclared kind.
+ * @param {string|null} gripperKind
+ * @returns {ReadonlyArray<string>}
+ */
+export function objectivesForHand(gripperKind) {
+  const row = OBJECTIVES_BY_HAND_KIND[gripperKind ?? 'none']
+  if (!row) throw new Error(`GraspDeclarationCatalog: 未宣言のハンド種別 "${gripperKind}" — OBJECTIVES_BY_HAND_KIND に行を足すこと`)
+  return row
+}
+
+/**
+ * Default `objectiveWeights` for a hand kind.
+ * @param {string|null} gripperKind
+ * @returns {Record<string, number>}
+ */
+export function defaultObjectiveWeights(gripperKind) {
+  return Object.fromEntries(objectivesForHand(gripperKind).map(o => [o, DEFAULT_OBJECTIVE_WEIGHT[o]]))
+}
 
 /**
  * Vision-camera presets (wire shape: `graspSearch.camera`). Units follow the

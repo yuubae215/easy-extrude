@@ -153,11 +153,22 @@ function declarationsByRef(docDsl) {
   const out = new Map()
   for (const e of docDsl?.entities ?? []) {
     if (!e || typeof e.ref !== 'string') continue
-    if (e.graspFeature == null) continue
-    out.set(e.ref, e.graspFeature)
+    const declared = {}
+    for (const key of DECLARATION_KEYS) if (e[key] != null) declared[key] = e[key]
+    if (Object.keys(declared).length === 0) continue
+    out.set(e.ref, declared)
   }
   return out
 }
+
+/**
+ * The document-owned declaration fields of a Solid — joined onto the live body by
+ * `ref`, never read from the scene (the scene does not carry them). `mass` and
+ * `centerOfMass` (ADR-121 / ADR-156) are declarations about the SAME object as
+ * `graspFeature` and ride the same join; listing them here is what keeps a new
+ * declaration from silently falling off between the document and the request.
+ */
+export const DECLARATION_KEYS = Object.freeze(['graspFeature', 'mass', 'centerOfMass'])
 
 /**
  * THE resolution point for "what geometry is this search about" (§1.1).
@@ -203,10 +214,10 @@ export function resolveSearchLayout({ sceneDsl = null, docDsl = null, warnings =
 
   const declared = declarationsByRef(docDsl)
   const entities = sceneDsl.entities.map((e) => {
-    const feature = e && typeof e.ref === 'string' ? declared.get(e.ref) : undefined
+    const fields = e && typeof e.ref === 'string' ? declared.get(e.ref) : undefined
     // Non-mutating: the decompiled DSL is an input, and a join that wrote through
     // to it would make the scene's projection a second source (§1.1 / 原則 #6).
-    return feature === undefined ? e : { ...e, graspFeature: feature }
+    return fields === undefined ? e : { ...e, ...fields }
   })
 
   return {

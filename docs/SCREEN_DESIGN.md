@@ -883,8 +883,13 @@ reports the roster's cardinality honestly — `none` names the way out ("add one
 Robot"), `single` shows the implied robot read-only, `multi` is a `<select>` that starts UNSET
 ("— pick one of N —") so no arm is solved for by default (`onSelectRobot`); then a note that
 placement follows that robot's `base` / `tcp` CoordinateFrame entities — edited via the CF gizmo /
-N-panel, not a header input (ADR-084 §2) — + reach / clearance objective weights), **Grasped** (gripper: preset chips, max opening / finger
-clearance). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
+N-panel, not a header input (ADR-084 §2) — + the **object card** under the grasp-location editor
+(ADR-121 / ADR-156: mass kg, centre of mass `not declared` / `assumed (centroid)` / measured x y z in the
+object frame mm, each a document declaration with a clear chip; under a suction hand it lists what
+suction hold still needs — "suction hold NOT MEASURED — needs …") + reach / clearance / stability /
+**hold** objective weights (the hold slot is fixed and disabled unless the hand is a cup)), **Grasped** (gripper: preset chips, max opening / finger
+clearance; a cup adds its **hold** bundle — force N + pad friction μ, declared together or not at all).
+A candidate's `suction_hold` bar at exactly 0 carries a **falls** tag (derived — ADR-156 D6). The Seen / Grasped cards have a `declare` toggle; off keeps the card slot and states
 the vacuously-true consequence (PHILOSOPHY #15/#11). Presets come from the pure
 `GraspDeclarationCatalog` (fork & tweak — the active chip is derived by value equality, editing
 forks to "custom"); each enabled card's gap list disables **Run** and prints its reasons — and the

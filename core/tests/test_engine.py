@@ -1235,3 +1235,243 @@ def test_the_pipeline_hands_the_declared_tool_length_to_both_solver_and_sweep():
     declaration["robot"]["toolLength"] = -0.01
     with pytest.raises(ValueError):
         ik_solver_from_declaration(declaration)
+
+
+# --- 吸着の保持 suction_hold (ADR-156) + 宣言された重心 (ADR-121) -------------------
+
+from easy_extrude_core.engine import (  # noqa: E402
+    CenterOfMass,
+    CenterOfMassKind,
+    SuctionHold,
+)
+from easy_extrude_core.engine.objectives import (  # noqa: E402
+    STANDARD_GRAVITY,
+    suction_hold_score,
+    suction_utilisation,
+)
+from easy_extrude_core.engine.types import DeclarationError  # noqa: E402
+
+_DOWN_APPROACH = Vec3(0.0, 0.0, -1.0)
+_UP = Vec3(0.0, 0.0, 1.0)
+
+
+def _suction_problem(*, mass=1.0, com=Vec3(0.8, 0.0, 0.0), force=30.0, friction=0.5,
+                     cup=0.02, com_kind=CenterOfMassKind.MEASURED) -> Problem:
+    return Problem(
+        robot=Robot(base=Vec3(0.0, 0.0, 0.0), reach_min=0.0, reach_max=2.0),
+        target=TargetObject(
+            surface_samples=(),
+            mass=mass,
+            center_of_mass=None if com is None else CenterOfMass(kind=com_kind, point=com),
+        ),
+        gripper=SuctionGripper(
+            cup_diameter=cup,
+            hold=None if force is None else SuctionHold(force=force, friction=friction),
+        ),
+    )
+
+
+def _top_candidate(x: float, y: float = 0.0, z: float = 0.05) -> GraspCandidate:
+    return _candidate_at(Vec3(x, y, z), _DOWN_APPROACH, _UP)
+
+
+def test_suction_hold_is_one_right_above_the_centre_of_mass():
+    """重心の真上・法線が重力に沿う候補 = この組で物理的に最良 = 1 点 (ADR-156 D3)。"""
+    problem = _suction_problem()
+    scores = evaluate_objectives(_top_candidate(0.8), problem, ["suction_hold"])
+    assert scores["suction_hold"] == pytest.approx(1.0)
+
+
+def test_suction_hold_is_zero_where_the_moment_peels_the_cup():
+    """重心から 0.1 m 横を 0.02 m のカップで吸う: M_peel/r が保持力を超えて外れる = 0 点。"""
+    problem = _suction_problem()
+    u = suction_utilisation(
+        contact=Vec3(0.9, 0.0, 0.05), normal=_UP, center_of_mass=Vec3(0.8, 0.0, 0.0),
+        mass=1.0, cup_radius=0.01, force=30.0, friction=0.5,
+    )
+    assert u.u >= 1.0 and u.peel > u.slip, "めくれが支配する形であること"
+    scores = evaluate_objectives(_top_candidate(0.9), problem, ["suction_hold"])
+    assert scores["suction_hold"] == 0.0
+
+
+def test_suction_hold_lies_between_the_ends_and_falls_with_offset():
+    """両端の間は単調: 重心から離れるほど下がり、外れるまでは 0 より大きい。"""
+    problem = _suction_problem(force=200.0)
+    values = [
+        evaluate_objectives(_top_candidate(0.8 + dx), problem, ["suction_hold"])["suction_hold"]
+        for dx in (0.0, 0.02, 0.05, 0.1)
+    ]
+    assert values[0] == pytest.approx(1.0)
+    assert all(a > b for a, b in zip(values, values[1:])), values
+    assert values[-1] > 0.0
+
+
+def test_suction_hold_zero_iff_utilisation_reaches_one():
+    """D6: score == 0 ⇔ u ≥ 1 — クライアントが「外れる」を 0 点から導出してよい根拠。"""
+    rng = random.Random(156)
+    for _ in range(500):
+        m = rng.uniform(0.05, 5.0)
+        f = rng.uniform(1.0, 200.0)
+        mu = rng.uniform(0.1, 2.0)
+        n = Vec3(rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)).normalized()
+        if n.norm() == 0.0:
+            continue
+        u = suction_utilisation(
+            contact=Vec3(0.0, 0.0, 0.0), normal=n,
+            center_of_mass=Vec3(rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1)),
+            mass=m, cup_radius=rng.uniform(0.005, 0.05), force=f, friction=mu,
+        )
+        assert (suction_hold_score(u) == 0.0) == (u.u >= 1.0 or u.u_best >= 1.0)
+        if u.u_best < 1.0:
+            assert (suction_hold_score(u) == 0.0) == (u.u >= 1.0)
+
+
+def test_suction_hold_best_is_a_lower_bound_for_every_pulling_pose():
+    """u_best は引き剥がす向き (F_n ≥ 0) のすべての姿勢の下限 (D3 の不等式)。"""
+    rng = random.Random(121)
+    for _ in range(500):
+        n = Vec3(rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(0, 1)).normalized()
+        if n.norm() == 0.0:
+            continue
+        u = suction_utilisation(
+            contact=Vec3(0.0, 0.0, 0.0), normal=n,
+            center_of_mass=Vec3(rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.0)),
+            mass=1.0, cup_radius=0.02, force=50.0, friction=rng.uniform(0.1, 2.0),
+        )
+        assert u.u >= u.u_best - 1e-12
+
+
+@pytest.mark.parametrize("missing", ["mass", "centerOfMass", "hold", "parallelJaw", "noGripper"])
+def test_suction_hold_key_is_absent_for_each_missing_input(missing):
+    """D4 の欠ける種を列挙し、それぞれで鍵が**無い**ことを assert する (値ではなく鍵の不在 — ADR-120)。
+
+    重心が無いとき図心で代用しない (ADR-121 D2): 図心で代用すればこの候補 (重心の真上) は 1 点になる。
+    """
+    problem = _suction_problem()
+    if missing == "mass":
+        problem = _suction_problem(mass=None)
+    elif missing == "centerOfMass":
+        problem = _suction_problem(com=None)
+    elif missing == "hold":
+        problem = _suction_problem(force=None)
+    elif missing == "parallelJaw":
+        problem = Problem(robot=problem.robot, target=problem.target,
+                          gripper=ParallelJawGripper(max_opening=0.1))
+    elif missing == "noGripper":
+        problem = Problem(robot=problem.robot, target=problem.target, gripper=None)
+    scores = evaluate_objectives(_top_candidate(0.8), problem, ["suction_hold", "grasp_stability"])
+    assert "suction_hold" not in scores
+    assert "grasp_stability" in scores, "ほかの objective は巻き添えにならない"
+
+
+def test_suction_hold_weak_hand_is_scored_zero_not_unevaluated():
+    """u_best ≥ 1 (どこでも外れる) は「測っていない」ではなく決定された 0 点 (D3)。"""
+    problem = _suction_problem(mass=10.0, force=50.0)  # m g0 ≈ 98 N > 50 N
+    scores = evaluate_objectives(_top_candidate(0.8), problem, ["suction_hold"])
+    assert "suction_hold" in scores
+    assert scores["suction_hold"] == 0.0
+
+
+def test_suction_hold_is_the_same_whatever_the_length_unit():
+    """長さは M_peel / r の比でしか現れない — mm で与えても m で与えても u は同じ。"""
+    common = dict(normal=Vec3(0.3, 0.0, 1.0), mass=0.7, force=40.0, friction=0.6)
+    in_m = suction_utilisation(contact=Vec3(0.83, 0.01, 0.05), center_of_mass=Vec3(0.8, 0.0, 0.0),
+                               cup_radius=0.015, **common)
+    in_mm = suction_utilisation(contact=Vec3(830.0, 10.0, 50.0), center_of_mass=Vec3(800.0, 0.0, 0.0),
+                                cup_radius=15.0, **common)
+    assert in_mm.u == pytest.approx(in_m.u, rel=1e-12)
+    assert in_mm.u_best == pytest.approx(in_m.u_best, rel=1e-12)
+
+
+def test_suction_hold_provenance_does_not_change_the_judgement():
+    """kind は出所を運ぶだけ。同じ点なら measured と assumedHomogeneous で値は同じ (ADR-121 D1)。"""
+    a = _suction_problem(com_kind=CenterOfMassKind.MEASURED, force=200.0)
+    b = _suction_problem(com_kind=CenterOfMassKind.ASSUMED_HOMOGENEOUS, force=200.0)
+    c = _top_candidate(0.83)
+    assert evaluate_objectives(c, a, ["suction_hold"]) == evaluate_objectives(c, b, ["suction_hold"])
+
+
+def _suction_top_face_decl(half_cells: int, **target_extra) -> dict:
+    """上面 (法線 +z) の格子 — 1/128 m 刻みで ⌀2/128 のカップがどの点でもシールできる密度。
+
+    座標は 2 進で厳密に表せる値にする (0.75 + i/128)。10 進の 0.01 刻みだと隣の点までの
+    距離がカップ半径をわずかに超え、シールのゲートが 1e-18 の不足で候補を落とす。
+    """
+    step = 1.0 / 128.0
+    samples = [
+        {"point": [0.75 + i * step, j * step, 0.0625], "normal": [0.0, 0.0, 1.0]}
+        for i in range(-half_cells, half_cells + 1)
+        for j in range(-half_cells, half_cells + 1)
+    ]
+    return {
+        "robot": {"base": [0.0, 0.0, 0.0]},
+        "plan": {"reachMin": 0.0, "reachMax": 2.0},
+        "target": {
+            "surfaceSamples": samples,
+            "mass": 1.0,
+            "centerOfMass": {"kind": "measured", "point": [0.75, 0.0, 0.0]},
+            **target_extra,
+        },
+        "gripper": {"kind": "suction", "cupDiameter": 2.0 / 128.0, "hold": {"force": 30.0, "friction": 0.5}},
+        "obstacles": [],
+        "sampling": {"approachTiltAngles": [0.0], "rollAngles": [0.0], "preGraspDistance": 0.1},
+        "objectiveWeights": {"suction_hold": 1.0},
+        "topN": 1000,
+    }
+
+
+def _suction_hold_by_position(resp) -> dict:
+    out = {}
+    for c in resp.candidates:
+        pos = tuple(round(v, 6) for v in c.pose["frame"]["position"])
+        out[pos] = c.score.objective_scores.get("suction_hold")
+    return out
+
+
+def test_suction_hold_is_independent_of_the_candidate_set():
+    """同じ候補を別の候補集合に混ぜても同じ値 (ADR-075 の絶対基準 — min/max 正規化の否定)。"""
+    small = _suction_hold_by_position(search(_build_request(_suction_top_face_decl(1))))
+    large = _suction_hold_by_position(search(_build_request(_suction_top_face_decl(4))))
+    shared = set(small) & set(large)
+    assert len(shared) >= 5
+    for pos in shared:
+        assert small[pos] == pytest.approx(large[pos]), pos
+
+
+def test_suction_hold_falling_candidates_stay_in_the_set():
+    """D6: u ≥ 1 の候補は落とされず、0 点として候補集合に残る。"""
+    resp = search(_build_request(_suction_top_face_decl(4)))
+    scores = _suction_hold_by_position(resp)
+    assert len(scores) == 81, "格子の全点が候補に残る (保持はゲートではない)"
+    assert any(v == 0.0 for v in scores.values()), "外れる候補が 0 点で居る"
+    assert max(scores.values()) == pytest.approx(1.0), "重心の真上が 1 点"
+    Draft202012Validator(load_response_schema()).validate(resp.model_dump(by_alias=True))
+
+
+def test_suction_hold_wire_declarations_reach_the_domain():
+    """ワイヤ → ドメインの変換 (adapter) が 3 つの宣言を運ぶ。"""
+    problem = problem_from_declaration(GraspSearchDeclaration.model_validate(_suction_top_face_decl(0)))
+    assert problem.target.mass == 1.0
+    assert problem.target.center_of_mass == CenterOfMass(
+        kind=CenterOfMassKind.MEASURED, point=Vec3(0.75, 0.0, 0.0))
+    assert problem.gripper.hold == SuctionHold(force=30.0, friction=0.5)
+
+
+@pytest.mark.parametrize("bad", [
+    {"target": {"centerOfMass": {"kind": "estimated", "point": [0, 0, 0]}}},
+    {"target": {"centerOfMass": {"kind": "measured"}}},
+    {"target": {"mass": 0.0}},
+    {"gripper": {"kind": "suction", "cupDiameter": 0.02, "hold": {"force": 30.0}}},
+    {"gripper": {"kind": "suction", "cupDiameter": 0.02, "hold": {"force": 0.0, "friction": 0.5}}},
+])
+def test_suction_hold_malformed_declarations_are_refused_not_defaulted(bad):
+    """壊れた宣言は既定の出所・既定値に倒さず DeclarationError (= 400 invalid_declaration)。"""
+    decl = _suction_top_face_decl(0)
+    for key, patch in bad.items():
+        decl[key] = {**decl[key], **patch}
+    with pytest.raises(DeclarationError):
+        problem_from_declaration(GraspSearchDeclaration.model_validate(decl))
+
+
+def test_suction_hold_gravity_constant_is_standard():
+    assert STANDARD_GRAVITY == 9.80665

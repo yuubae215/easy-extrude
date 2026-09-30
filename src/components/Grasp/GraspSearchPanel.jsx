@@ -6,7 +6,7 @@ import { domainKpis, ladderRisks } from '../../view/GraspLadderMath.js'
 import { objectiveRows, unevaluatedNote } from '../../view/GraspScoreMath.js'
 import {
   CAMERA_PRESETS, matchingPresetId, gripperPresetsFor,
-  cameraDeclarationGaps, OBJECTIVE,
+  cameraDeclarationGaps, OBJECTIVE, objectivesForHand, DEFAULT_OBJECTIVE_WEIGHT,
   GRIPPER_KIND, DECLARED_GRIPPER_KINDS,
   reachPresetsFor, reachDeclarationGaps,
 } from '../../context/GraspDeclarationCatalog.js'
@@ -19,6 +19,8 @@ import {
 import { sourceLabel } from '../../domain/searchGeometry.js'
 import { defaultHandFor, HAND_BODY_KIND, wireGripperFromHand } from '../../domain/robotHand.js'
 import { mToMM } from '../../domain/worldUnits.js'
+import { CENTER_OF_MASS_KIND, MASS_DECLARATION_STATE, suctionHoldMissing } from '../../domain/targetMass.js'
+import { centerOfMassPresentation } from '../../view/GraspDeclarationMath.js'
 import { DeltaChip, useReducedMotion } from '../Feedback/FeedbackPrimitives.jsx'
 import { COLOR, DURATION, EASING } from '../../theme/tokens.js'
 
@@ -175,6 +177,7 @@ export function GraspSearchPanel() {
   const [reach, setReach]         = useState(0.6)
   const [clearance, setClearance] = useState(0.4)
   const [stability, setStability] = useState(1.0)
+  const [holdWeight, setHoldWeight] = useState(DEFAULT_OBJECTIVE_WEIGHT[OBJECTIVE.SUCTION_HOLD])
   const [topN, setTopN]           = useState(5)
   // Client-side sort key: 'total' or an objective name. Never re-runs the query
   // (a grasp request is invariant — ADR-057 §Rendering).
@@ -309,7 +312,7 @@ export function GraspSearchPanel() {
     callbacks.onPreviewGraspSamples?.()
     // The hand (its shape and the mount) changes the declaration picture too —
     // the preview hand and the finger sections are drawn from it (ADR-152 D6).
-  }, [callbacks, handKind, handProj, graspTargets?.selectedRef, graspTargets?.feature])
+  }, [callbacks, handKind, handProj, graspTargets?.selectedRef, graspTargets?.feature, graspTargets?.massProperties])
 
   const status   = grasp?.status ?? 'idle'
   const busy     = status === 'compiling' || status === 'solving'
@@ -317,11 +320,14 @@ export function GraspSearchPanel() {
     // Wire keys must be core/'s registered objective names — an unregistered key
     // is dropped silently by the solver, which is how the sliders spent their
     // whole life controlling nothing (ADR-117).
-    weights: {
-      [OBJECTIVE.REACH_MARGIN]:       Number(reach),
-      [OBJECTIVE.APPROACH_CLEARANCE]: Number(clearance),
-      [OBJECTIVE.GRASP_STABILITY]:    Number(stability),
-    },
+    // Which objectives are asked for follows the hand (`objectivesForHand` —
+    // `suction_hold` only under a cup, ADR-156 D4); the values are the sliders.
+    weights: Object.fromEntries(objectivesForHand(handKind).map(o => [o, Number({
+      [OBJECTIVE.REACH_MARGIN]:       reach,
+      [OBJECTIVE.APPROACH_CLEARANCE]: clearance,
+      [OBJECTIVE.GRASP_STABILITY]:    stability,
+      [OBJECTIVE.SUCTION_HOLD]:       holdWeight,
+    }[o])])),
     topN:     Number(topN),
     camera:   vision.enabled ? camParams : null,
     // Omitted, not zeroed, when undeclared (ADR-120 / 原則 #31).
@@ -437,6 +443,13 @@ export function GraspSearchPanel() {
           onFocusSpec={callbacks.onFocusGraspSpec}
           onHoverFace={callbacks.onHoverGraspFace}
         />
+        {/* ADR-121 / ADR-156 — what that object WEIGHS and where. Declarations
+            on the document, like the grasp location above. */}
+        <MassEditor
+          targets={graspTargets}
+          hand={hand}
+          onSet={(ref, key, value) => callbacks.onSetMassDeclaration?.(ref, key, value)}
+        />
         <div style={{ fontSize: '10px', color: '#889', marginBottom: '5px' }}>
           robot placement follows its <code style={{ color: '#9ad' }}>base</code> /{' '}
           <code style={{ color: '#9ad' }}>tcp</code> frames
@@ -491,6 +504,11 @@ export function GraspSearchPanel() {
           <NumField label="reach weight"     value={reach}     step="0.1" onChange={setReach} />
           <NumField label="clearance weight" value={clearance} step="0.1" onChange={setClearance} />
           <NumField label="stability weight" value={stability} step="0.1" onChange={setStability} />
+          {/* Fixed slot (原則 #15): always here, disabled unless a cup is declared —
+              under jaws suction_hold cannot be evaluated and is not asked for. */}
+          <NumField label="hold weight" value={holdWeight} step="0.1" onChange={setHoldWeight}
+            disabled={handKind !== GRIPPER_KIND.SUCTION}
+            title={handKind !== GRIPPER_KIND.SUCTION ? 'suction hold is scored only for a suction hand' : undefined} />
         </div>
       </DomainCard>
 
@@ -639,6 +657,10 @@ function HandEditor({ handProj, onSet }) {
           </>
         )}
       </div>
+      {!jaw && <HoldEditor hold={hand.hold ?? null} onSet={(hold) => {
+        const { hold: _h, ...rest } = hand
+        onSet(hold ? { ...rest, hold } : rest)
+      }} />}
 
       <div style={{ fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }}>
         shape {body ? '' : '— not declared: judged and drawn as the flange→TCP rod'}
@@ -702,12 +724,12 @@ function HandEditor({ handProj, onSet }) {
  * not per keystroke). A blank or unreadable entry is not written — it reverts
  * (Number('') === 0 is not a value the user typed).
  */
-function CommitField({ label, value, onCommit, step = '1' }) {
+function CommitField({ label, value, onCommit, step = '1', allowNegative = false }) {
   const [text, setText] = useState(value == null ? '' : String(value))
   useEffect(() => { setText(value == null ? '' : String(value)) }, [value])
   const commit = () => {
     const n = Number(text)
-    if (text.trim() === '' || !Number.isFinite(n) || n < 0) { setText(value == null ? '' : String(value)); return }
+    if (text.trim() === '' || !Number.isFinite(n) || (!allowNegative && n < 0)) { setText(value == null ? '' : String(value)); return }
     if (n !== value) onCommit(n)
   }
   return (
@@ -727,12 +749,12 @@ function CommitField({ label, value, onCommit, step = '1' }) {
   )
 }
 
-function NumField({ label, value, onChange, step, min }) {
+function NumField({ label, value, onChange, step, min, disabled = false, title }) {
   return (
-    <label style={{ fontSize: '10px', color: '#aaa', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+    <label title={title} style={{ fontSize: '10px', color: disabled ? '#666' : '#aaa', display: 'flex', flexDirection: 'column', gap: '3px' }}>
       {label}
       <input
-        type="number" value={value} step={step} min={min}
+        type="number" value={value} step={step} min={min} disabled={disabled}
         onChange={e => onChange(e.target.value)}
         style={{
           width: '64px', padding: '4px 6px', borderRadius: '4px',
@@ -1602,7 +1624,7 @@ function Candidate({ c, requestedWeights, selected, onSelect, onHover }) {
           legacy solvers with no recorded request → nothing drawn (degrade — §1.3). */}
       {objectives?.rows.map(r => (
         r.evaluated
-          ? <ObjectiveBar key={r.name} label={r.name} value={r.value} />
+          ? <ObjectiveBar key={r.name} label={r.name} value={r.value} verdict={r.verdict} />
           : <ObjectiveUnmeasured key={r.name} label={r.name} />
       ))}
       {notMeasured && (
@@ -1710,7 +1732,7 @@ function ObjectiveUnmeasured({ label }) {
   )
 }
 
-function ObjectiveBar({ label, value }) {
+function ObjectiveBar({ label, value, verdict = null }) {
   const reduced = useReducedMotion()
   const pct = Math.max(0, Math.min(1, value)) * 100
   return (
@@ -1720,6 +1742,135 @@ function ObjectiveBar({ label, value }) {
         <div style={{ width: `${pct}%`, height: '100%', background: '#3a7bd5', transition: barTransition(reduced) }} />
       </div>
       <span style={{ width: '30px', fontSize: '9px', color: '#9ad' }}>{value.toFixed(2)}</span>
+      {/* A decided fact derived from the 0 (ADR-156 D6) — the candidate is kept
+          so WHY it is bad stays readable. */}
+      {verdict === 'falls' && (
+        <span data-verdict="falls" title="the object falls off the cup here (utilisation ≥ 1)"
+          style={{ fontSize: '9px', color: COLOR.cautionTone, border: `1px solid ${COLOR.cautionTone}`, borderRadius: '3px', padding: '0 3px' }}>
+          falls
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * HoldEditor — the cup's holding capability (ADR-156 D1), ONE bundle: force (N)
+ * and friction are declared together or not at all. Undeclared is a state and is
+ * never filled in: until both are typed, nothing is written and suction hold
+ * reads "not measured".
+ */
+function HoldEditor({ hold, onSet }) {
+  const [draft, setDraft] = useState({ force: '', friction: '' })
+  if (hold) {
+    return (
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '6px' }}>
+        <CommitField label="hold force (N)" value={hold.force} step="1" onCommit={(v) => v > 0 && onSet({ ...hold, force: v })} />
+        <CommitField label="pad friction μ" value={hold.friction} step="0.05" onCommit={(v) => v > 0 && onSet({ ...hold, friction: v })} />
+        <FaceChip label="clear hold" active={false} onClick={() => onSet(null)} />
+      </div>
+    )
+  }
+  const f = Number(draft.force), mu = Number(draft.friction)
+  const ready = draft.force !== '' && draft.friction !== '' && f > 0 && mu > 0
+  return (
+    <div style={{ marginBottom: '6px' }}>
+      <div style={{ fontSize: '10px', color: '#778', marginBottom: '3px' }}>
+        hold — not declared: suction hold is NOT MEASURED (never a default)
+      </div>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <NumField label="hold force (N)" value={draft.force} step="1" min="0" onChange={(v) => setDraft(d => ({ ...d, force: v }))} />
+        <NumField label="pad friction μ" value={draft.friction} step="0.05" min="0" onChange={(v) => setDraft(d => ({ ...d, friction: v }))} />
+        <FaceChip label="declare hold" active={false} disabled={!ready}
+          onClick={() => ready && onSet({ force: f, friction: mu })} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * MassEditor — what the SELECTED object weighs and where that weight sits
+ * (ADR-121 / ADR-156). Both are declarations on the document. Absent stays
+ * absent: no mass is guessed, and the centre of mass is never the centroid unless
+ * the user CHOOSES "assumed (centroid)" — which is then drawn and labelled as an
+ * assumption. States the missing inputs for suction hold instead of a silent gap.
+ */
+function MassEditor({ targets, hand, onSet }) {
+  const ref = targets?.selectedRef ?? null
+  const mp = targets?.massProperties ?? null
+  const [draft, setDraft] = useState({ mass: '', x: '', y: '', z: '' })
+  if (!ref || !mp) return null
+  const mass = mp.mass
+  const com = mp.centerOfMass
+  const missing = hand?.kind === GRIPPER_KIND.SUCTION ? suctionHoldMissing({ hand, massProperties: mp }) : []
+  const measuredReady = ['x', 'y', 'z'].every(k => draft[k] !== '' && Number.isFinite(Number(draft[k])))
+  const massReady = draft.mass !== '' && Number(draft.mass) > 0
+  const label = { fontSize: '10px', color: COLOR.textSecondary, marginBottom: '3px' }
+  return (
+    <div data-testid="mass-editor" style={{ margin: '6px 0', padding: '6px', border: `1px solid ${COLOR.border}`, borderRadius: '4px' }}>
+      <div style={label}>
+        mass {mass.state === MASS_DECLARATION_STATE.UNDECLARED && '— not declared'}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '6px' }}>
+        {mass.state === MASS_DECLARATION_STATE.DECLARED ? (
+          <>
+            <CommitField label="mass (kg)" value={mass.kg} step="0.1" onCommit={(v) => v > 0 && onSet(ref, 'mass', v)} />
+            <FaceChip label="clear mass" active={false} onClick={() => onSet(ref, 'mass', null)} />
+          </>
+        ) : (
+          <>
+            <NumField label="mass (kg)" value={draft.mass} step="0.1" min="0" onChange={(v) => setDraft(d => ({ ...d, mass: v }))} />
+            <FaceChip label="declare mass" active={false} disabled={!massReady}
+              onClick={() => massReady && onSet(ref, 'mass', Number(draft.mass))} />
+          </>
+        )}
+      </div>
+
+      <div style={label}>
+        centre of mass{' '}
+        {com.state === MASS_DECLARATION_STATE.DECLARED
+          ? <span style={{ color: '#9ad' }}>— {centerOfMassPresentation(com.kind).caption}</span>
+          : com.state === MASS_DECLARATION_STATE.UNDECLARED ? '— not declared (not the centroid)' : ''}
+      </div>
+      <div style={{ display: 'flex', gap: '3px', marginBottom: '4px', flexWrap: 'wrap' }}>
+        <FaceChip label="not declared" active={com.state === MASS_DECLARATION_STATE.UNDECLARED}
+          onClick={() => onSet(ref, 'centerOfMass', null)} />
+        <FaceChip label="assumed (centroid)" active={com.kind === CENTER_OF_MASS_KIND.ASSUMED_HOMOGENEOUS}
+          onClick={() => onSet(ref, 'centerOfMass', { kind: CENTER_OF_MASS_KIND.ASSUMED_HOMOGENEOUS })} />
+      </div>
+      <div style={{ fontSize: '10px', color: '#778', marginBottom: '3px' }}>
+        measured — object frame, mm (origin = its centre)
+      </div>
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        {com.kind === CENTER_OF_MASS_KIND.MEASURED
+          ? ['x', 'y', 'z'].map((k, i) => (
+            <CommitField key={k} label={k} value={com.local[k]} allowNegative
+              onCommit={(v) => {
+                const p = [com.local.x, com.local.y, com.local.z]
+                p[i] = v
+                onSet(ref, 'centerOfMass', { kind: CENTER_OF_MASS_KIND.MEASURED, point: p })
+              }} />
+          ))
+          : (
+            <>
+              {['x', 'y', 'z'].map(k => (
+                <NumField key={k} label={k} value={draft[k]} step="1" onChange={(v) => setDraft(d => ({ ...d, [k]: v }))} />
+              ))}
+              <FaceChip label="declare measured" active={false} disabled={!measuredReady}
+                onClick={() => measuredReady && onSet(ref, 'centerOfMass', {
+                  kind: CENTER_OF_MASS_KIND.MEASURED, point: ['x', 'y', 'z'].map(k => Number(draft[k])),
+                })} />
+            </>
+          )}
+      </div>
+      {[...mass.errors, ...com.errors].map((e, i) => (
+        <div key={i} style={{ fontSize: '10px', color: COLOR.cautionTone }}>· {e}</div>
+      ))}
+      {missing.length > 0 && (
+        <div data-testid="suction-hold-missing" style={{ fontSize: '10px', color: '#778', marginTop: '4px' }}>
+          suction hold NOT MEASURED — needs {missing.join(', ')}
+        </div>
+      )}
     </div>
   )
 }

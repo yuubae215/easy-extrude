@@ -16,7 +16,7 @@ from jsonschema import Draft202012Validator
 from easy_extrude_core.api import ApiSettings, create_app
 from easy_extrude_core.contract import CONTRACT_VERSION
 
-from contract_pkg import load_response_schema
+from contract_pkg import load_request_schema, load_response_schema
 
 
 def _declaration() -> dict:
@@ -240,3 +240,41 @@ def test_settings_from_env_defaults_when_unset():
     settings = ApiSettings.from_env({})
     assert settings.internal_token is None
     assert settings.auth_enabled is False
+
+
+# --- ADR-121 / ADR-156: 宣言された重さが HTTP を通って採点に届く ------------------
+
+
+def _suction_body(**gripper_extra) -> dict:
+    decl = _declaration()
+    # 上面 (法線 +z) の格子 — 2 進で厳密な刻み (test_engine の格子と同じ理由)。
+    step = 1.0 / 128.0
+    decl["target"] = {
+        "surfaceSamples": [
+            {"point": [0.75 + i * step, j * step, 0.0625], "normal": [0.0, 0.0, 1.0]}
+            for i in range(-2, 3) for j in range(-2, 3)
+        ],
+        "mass": 1.0,
+        "centerOfMass": {"kind": "assumedHomogeneous", "point": [0.75, 0.0, 0.0]},
+    }
+    decl["gripper"] = {"kind": "suction", "cupDiameter": 2.0 / 128.0,
+                       "hold": {"force": 30.0, "friction": 0.5}, **gripper_extra}
+    decl["objectiveWeights"] = {"suction_hold": 1.0}
+    decl["topN"] = 50
+    return _request_body(graspSearch=decl)
+
+
+def test_suction_hold_rides_the_http_round_trip():
+    body = _suction_body()
+    Draft202012Validator(load_request_schema()).validate(body)  # 契約に準拠した request
+    resp = _client().post("/grasp-search", json=body)
+    assert resp.status_code == 200
+    scores = [c["score"]["objectiveScores"]["suction_hold"] for c in resp.json()["candidates"]]
+    assert len(scores) == 25 and max(scores) == 1.0 and min(scores) < 1.0
+
+
+def test_a_half_declared_hold_is_400_invalid_declaration():
+    body = _suction_body(hold={"force": 30.0})
+    resp = _client().post("/grasp-search", json=body)
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "invalid_declaration"

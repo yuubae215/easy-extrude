@@ -224,6 +224,39 @@ export function setEntityGraspFeature(doc, ref, feature) {
   return clone
 }
 
+/** The mass declarations of a Solid (ADR-121 / ADR-156) — the keys this writer owns. */
+export const MASS_DECLARATION_KEYS = Object.freeze(['mass', 'centerOfMass'])
+
+/**
+ * Set (or clear) what a layout Solid WEIGHS (`mass`, kg) or WHERE that weight
+ * sits (`centerOfMass`) — ADR-121 / ADR-156, input-immutable. The only writer of
+ * these two keys, beside `setEntityGraspFeature` for the same reason: they are
+ * declarations about the object that must survive a reload, an export and an undo.
+ *
+ * `value === null` DELETES the key — undeclared, never a default (ADR-121 D2: an
+ * absent centre of mass is not the centroid). A ref with no entity is a no-op
+ * clone. An unknown key throws — a new declaration is added here on purpose.
+ *
+ * @param {object} doc
+ * @param {string} ref  Layout DSL entity ref of the Solid
+ * @param {'mass'|'centerOfMass'} key
+ * @param {number|object|null} value
+ * @returns {object} new doc
+ */
+export function setEntityMassDeclaration(doc, ref, key, value) {
+  if (!MASS_DECLARATION_KEYS.includes(key)) {
+    throw new Error(`DocBuilder: 未宣言の質量宣言 "${key}" — MASS_DECLARATION_KEYS に足すこと`)
+  }
+  const clone   = _clone(doc)
+  const entities = clone.specification?.layout?.entities
+  if (!Array.isArray(entities)) return clone
+  const i = entities.findIndex(e => e?.ref === ref)
+  if (i === -1) return clone
+  if (value == null) delete entities[i][key]
+  else entities[i][key] = JSON.parse(JSON.stringify(value))
+  return clone
+}
+
 /**
  * Set (or clear) WHAT a robot grasps with — the `hand` of a tcp entity in the
  * document's layout (ADR-152 D3), input-immutable. The document-side writer, for

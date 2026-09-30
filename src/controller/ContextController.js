@@ -56,7 +56,7 @@ import { applyQuestionAnswer } from '../context/FormApplication.js'
 import {
   createBlankDoc, addActor, addFact, addVariable, addRequirement,
   updateActor, updateVariable, updateRequirement, removeDocEntry,
-  setEntityGraspFeature, setEntityPose, setEntityHand,
+  setEntityGraspFeature, setEntityPose, setEntityHand, setEntityMassDeclaration,
 } from '../context/DocBuilder.js'
 import { declaredPoseOf, POSE_ENTITY_KIND } from '../domain/declaredPose.js'
 import { Solid }            from '../domain/Solid.js'
@@ -538,6 +538,24 @@ export class ContextController {
     const afterDoc  = setEntityGraspFeature(beforeDoc, ref, feature)
     const label = feature == null ? 'Clear grasp location' : 'Declare grasp location'
     return this._runDocEdit(beforeDoc, afterDoc, label, 'Could not save the grasp location')
+  }
+
+  /**
+   * Declare (or clear) a Solid's `mass` or `centerOfMass` (ADR-121 / ADR-156) —
+   * the same one doc-edit entry point as `setGraspFeature`, for the same reasons
+   * (undoable, exportable, not gated on negotiation).
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   * @param {'mass'|'centerOfMass'} key
+   * @param {number|object|null} value  null clears it back to undeclared
+   */
+  setMassDeclaration(ref, key, value) {
+    if (!ref || !this._ctxService.loaded) return
+    const beforeDoc = this._ctxService.getDoc()
+    const afterDoc  = setEntityMassDeclaration(beforeDoc, ref, key, value)
+    const what = key === 'mass' ? 'mass' : 'centre of mass'
+    const label = value == null ? `Clear ${what}` : `Declare ${what}`
+    return this._runDocEdit(beforeDoc, afterDoc, label, `Could not save the ${what}`)
   }
 
   /**

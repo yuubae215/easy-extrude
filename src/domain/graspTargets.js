@@ -41,6 +41,7 @@
 import { VALID_ENTITY_TYPES } from '../layout/LayoutDslSchema.js'
 import { hollowBodyGap, shellParts, isContainer } from './hollowBody.js'
 import { rotateVec3 } from './rotateVec3.js'
+import { resolveMassProperties } from './targetMass.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import {
   resolveGraspFeature, faceNormalOrThrow, inPlaneAxesOrThrow, usableSpecs,
@@ -92,6 +93,10 @@ const IDENTITY_Q = Object.freeze({ x: 0, y: 0, z: 0, w: 1 })
  * @property {import('./graspFeature.js').ResolvedGraspFeature} feature
  *           resolved grasp-location declaration (ADR-119 D2) — ALWAYS present, and
  *           `state:'derived'` is a real answer ("nobody said"), never a missing one
+ * @property {{mass: import('./targetMass.js').ResolvedMass,
+ *             centerOfMass: import('./targetMass.js').ResolvedCenterOfMass}} massProperties
+ *           what it weighs and where (ADR-121 / ADR-156) — ALWAYS present, each part
+ *           carrying its own state (`undeclared` is an answer, never the centroid)
  */
 
 /**
@@ -175,6 +180,9 @@ export function resolveBodies(entities) {
       // point (ADR-119 D2). Resolved eagerly rather than left as a raw field so
       // no consumer downstream is tempted to read `e.graspFeature` itself.
       feature:    resolveGraspFeature(e),
+      // What it weighs and where (ADR-121 / ADR-156) — resolved at the same one
+      // point for the same reason. Undeclared stays undeclared (never the centroid).
+      massProperties: resolveMassProperties(e),
     })
   }
   return targets
@@ -572,7 +580,8 @@ export { isContainer }
  * @param {GraspTarget[]} targets
  * @param {string|null} selectedRef
  * @returns {{list:{ref:string,label:string,feature:object}[], selectedRef:string|null,
- *            cardinality:string, feature:object|null, faceWords:Record<string,string>|null}}
+ *            cardinality:string, feature:object|null, faceWords:Record<string,string>|null,
+ *            massProperties:object|null}}
  */
 export function targetProjection(targets, selectedRef) {
   const list     = targets ?? []
@@ -585,6 +594,9 @@ export function targetProjection(targets, selectedRef) {
     // grasp" block does not re-run the "which one" question (原則 #25 — resolved
     // once, here).
     feature:     selected?.feature ?? null,
+    // What the SELECTED object weighs and where (ADR-121 / ADR-156), resolved —
+    // the panel renders states, it does not re-read the raw fields.
+    massProperties: selected?.massProperties ?? null,
     // "+x — where is that?" for the SELECTED object as it stands now (ADR-152 D2):
     // face → world word ('top', 'left', 'tilted'). Derived from its rotation on
     // every refresh, never stored — turn the object and the words change while

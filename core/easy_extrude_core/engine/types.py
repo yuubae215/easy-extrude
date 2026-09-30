@@ -530,6 +530,21 @@ class ParallelJawGripper:
 
 
 @dataclass(frozen=True)
+class SuctionHold:
+    """吸着ハンドの保持能力の束 (ADR-156 D1 — 原則 #33-2)。
+
+    - force: 使う人が採った保持力 (N)。安全率はソルバが持たない — 持つと宣言した値と
+      判定に使った値の 2 つの源ができる。
+    - friction: パッドと対象面の静止摩擦係数 (無次元)。
+
+    束の中ではどちらも必須。「保持力だけ宣言した」状態は表現できない。
+    """
+
+    force: float
+    friction: float
+
+
+@dataclass(frozen=True)
 class SuctionGripper:
     """吸引カップ宣言 (ADR-118)。
 
@@ -542,6 +557,8 @@ class SuctionGripper:
     cup_diameter: float
     seal_tilt_tolerance: float = 0.35
     shape: "HandShape | None" = None
+    # 保持能力 (ADR-156)。None = 未宣言 = `suction_hold` を評価しない (既定で埋めない)。
+    hold: "SuctionHold | None" = None
 
     @property
     def kind(self) -> GripperKind:
@@ -587,6 +604,25 @@ class GraspStrategy:
     fallback: StrategyFallback = StrategyFallback.NONE
 
 
+class CenterOfMassKind(str, Enum):
+    """重心の出所 (ADR-121 D1)。契約の `target.centerOfMass.kind` と 1 対 1。
+
+    値と一緒に出所を運ぶための型で、判定はどちらの kind でも同じ点を使う。区別は
+    読む人のため — 仮定が実測に化けないこと (ADR-121 D2)。
+    """
+
+    MEASURED = "measured"
+    ASSUMED_HOMOGENEOUS = "assumedHomogeneous"
+
+
+@dataclass(frozen=True)
+class CenterOfMass:
+    """宣言された重心 (world 座標)。不在は None で表し、図心に倒さない (ADR-121 D2)。"""
+
+    kind: CenterOfMassKind
+    point: Vec3
+
+
 @dataclass(frozen=True)
 class TargetObject:
     """把持対象。表面サンプル (点 + 外向き法線) の集合として与える。
@@ -603,6 +639,9 @@ class TargetObject:
     surface_samples: tuple[tuple[Vec3, Vec3], ...]  # (point, outward_normal)
     spec_samples: tuple[tuple[Vec3, Vec3], ...] = ()
     box: "Obb | None" = None
+    # 宣言された量 (ADR-121 / ADR-156)。None = 誰も述べていない — 既定で埋めない。
+    mass: "float | None" = None  # kg
+    center_of_mass: "CenterOfMass | None" = None
 
     def samples_for(self, candidate: "GraspCandidate") -> tuple[tuple[Vec3, Vec3], ...]:
         """この候補の幅・パッチを測る母集団 — 仕様由来なら仕様の和、導出なら導出。"""

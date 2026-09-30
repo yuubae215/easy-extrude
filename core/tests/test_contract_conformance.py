@@ -322,3 +322,50 @@ def test_schema_rejects_a_joint_vector_that_is_not_six_long():
     wire["candidates"][0]["score"]["reachSolution"]["joints"] = [0.42]
     with pytest.raises(ValidationError):
         Draft202012Validator(load_response_schema()).validate(wire)
+
+
+# --- ADR-121 D3: 推定はワイヤに乗らない (census) ----------------------------------
+
+#: 推定・提案の語彙 (ADR-056/077 の propose 側)。契約の欄名・kind の値にこれらが現れたら、
+#: 提案が決定の顔をしてワイヤに乗ったということ。語を足すのはこの表 1 か所。
+_ESTIMATION_VOCABULARY = (
+    "estimat", "guess", "infer", "confiden", "probab", "likelih",
+    "similar", "material", "density",
+)
+#: 語彙に当たるが推定ではない既存の欄 (理由つきで宣言 — 原則 #31 の予算)。今は 0 個。
+_NOT_ESTIMATION: frozenset = frozenset()
+
+
+def _schema_words(node, out):
+    """スキーマ中の欄名と const 値 (kind の値) をすべて集める。"""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "properties" and isinstance(value, dict):
+                out.update(value.keys())
+            if key == "const" and isinstance(value, str):
+                out.add(value)
+            _schema_words(value, out)
+    elif isinstance(node, list):
+        for item in node:
+            _schema_words(item, out)
+    return out
+
+
+@pytest.mark.parametrize("loader", [load_request_schema, load_response_schema])
+def test_contract_carries_no_estimation_field(loader):
+    words = _schema_words(loader(), set())
+    assert len(words) > 20, "母集団が空ではないこと"
+    leaked = sorted(
+        w for w in words - _NOT_ESTIMATION
+        if any(v in w.lower() for v in _ESTIMATION_VOCABULARY)
+    )
+    assert leaked == [], f"推定由来の欄が契約に居る (ADR-121 D3): {leaked}"
+
+
+def test_centre_of_mass_provenance_is_a_closed_union():
+    """重心の出所は measured / assumedHomogeneous の 2 つだけ (ADR-121 D1)。"""
+    union = load_request_schema()["$defs"]["centerOfMass"]["oneOf"]
+    assert sorted(b["properties"]["kind"]["const"] for b in union) == ["assumedHomogeneous", "measured"]
+    for branch in union:
+        assert branch["additionalProperties"] is False
+        assert set(branch["required"]) == {"kind", "point"}

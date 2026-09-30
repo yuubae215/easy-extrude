@@ -246,6 +246,16 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "description": "Cup: height below the housing along the flange +Z (mm). The cup face is the TCP."
+            },
+            "hold": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "ADR-156 D1: the suction cup's holding capability as ONE bundle -- `force` (N, the value the declarer TOOK, safety factor included by them) and `friction` (static coefficient pad↔object face). Both or the bundle is absent. Absent = the suction hold is not scored (never a default).",
+              "properties": {
+                "force": { "type": "number", "exclusiveMinimum": 0, "description": "N" },
+                "friction": { "type": "number", "exclusiveMinimum": 0, "description": "dimensionless" }
+              },
+              "required": ["force", "friction"]
             }
           }
         },

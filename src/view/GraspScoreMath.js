@@ -35,7 +35,29 @@
  *                                weight — surfaced, never dropped)
  * @property {boolean} evaluated  whether the solver returned a value for it
  * @property {number|null} value  the normalized 0..1 value, or null when unevaluated
+ * @property {string|null} verdict a decided fact derived from the value (`VERDICT_AT_ZERO`),
+ *                                or null — never set for an unevaluated row
  */
+
+/**
+ * Objectives whose 0 is not "worst on a scale" but a DECIDED physical fact, and
+ * the fact's word. `suction_hold`: `score === 0 ⇔ u ≥ 1` (ADR-156 D6), i.e. the
+ * object falls off the cup there. The contract carries no such field (ADR-060 —
+ * presentation is derived in the client); the candidate is kept, not dropped, so
+ * WHY it is bad stays readable.
+ *
+ * Only exactly 0 is the fact. An absent key is "not measured" and gets no verdict
+ * — telling the reader "it falls" when nobody declared the mass would be the
+ * ghost-robot shape (ADR-121 D2).
+ */
+export const VERDICT_AT_ZERO = Object.freeze({
+  suction_hold: 'falls',
+})
+
+/** The verdict a row carries, or null. */
+function verdictOf(name, evaluated, value) {
+  return evaluated && value === 0 && Object.hasOwn(VERDICT_AT_ZERO, name) ? VERDICT_AT_ZERO[name] : null
+}
 
 /** True for a finite number in the contract's normalized 0..1 range. */
 function isNormalized(v) {
@@ -82,6 +104,7 @@ export function objectiveRows(objectiveWeights, objectiveScores) {
       weight:    isWeight(w) ? w : null,
       evaluated,
       value:     evaluated ? value : null,
+      verdict:   verdictOf(name, evaluated, value),
     })
   }
 
@@ -90,7 +113,7 @@ export function objectiveRows(objectiveWeights, objectiveScores) {
   // between what the front asked for and what the solver scores.
   for (const [name, value] of Object.entries(scores ?? {})) {
     if (seen.has(name) || !isNormalized(value)) continue
-    rows.push({ name, weight: null, evaluated: true, value })
+    rows.push({ name, weight: null, evaluated: true, value, verdict: verdictOf(name, true, value) })
   }
 
   return {

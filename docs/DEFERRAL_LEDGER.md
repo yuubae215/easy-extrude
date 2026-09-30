@@ -116,8 +116,6 @@ ticket と同じ事実の第二の源になる。
 | DEF-006 | `docs/adr/ADR-078-bin-picking-scene-entities.md` · `docs/adr/ADR-077-recommendation-similarity-lane.md` | `contract/scene_models.py` (pydantic) が暫定正本でなくなったとき = 正本 JSON Schema 追加 → conformance → BFF 配線が済んだとき: 満期=PATH:packages/grasp-contract/schema/pick-sequence-request.schema.json 。**2026-09-26 の DEF 棚卸しで trigger 化** — 3 手の最初 (中立 Schema の出現) で発火させる。発火した時点で conformance と BFF 配線が残っていれば、行を消さず満期をその次の手へ書き換える | ADR-078 | contract |
 | DEF-008 | `src/DanglingSelfCallCensus.test.js` · `src/CensusCoverage.test.js` | `DECLARED_GAPS` が空になったとき (`_saveScene` / `_loadScene` / `_triggerStepImport` / `_confirmPivotSelect` の 4 件 — いずれも「メソッドを 1 本足す」ではなく機能の設計判断を伴う)。当のファイルが「表が空になったら `DECLARED_GAPS` ごと消す」と書いているので満期は**消滅**で、満期=GONE:src/DanglingSelfCallCensus.test.js::DECLARED_GAPS | ADR-098 | app |
 | DEF-009 | `docs/adr/ADR-091-default-doc-first-intake-system-owned-refs.md` | ADR-091 が Accepted になり実装されたとき (**満期=ADR-091**)。**現在 `src/` からの参照 0 件**で、段も持たない (IA レーンの外なので段の検査の母集団に入らない) | ADR-091 | app |
-| DEF-015 | `docs/gsn/adr-121-centre-of-mass-is-declared.gsn` · `docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md` | ADR-121 が Accepted になったとき (**満期=ADR-121**)。**DEF-013 (ADR-120 D1) が先** — 重心不在で全候補が不当に低く見える状態を先に直さないと、`com_offset` を足しても意味が読めない | ADR-121 | core |
-| DEF-056 | `docs/gsn/adr-156-suction-hold-is-scored-from-declared-mass-and-hold.gsn` · `docs/adr/ADR-156-suction-hold-is-scored-from-declared-mass-and-hold.md` | ADR-156 が Accepted になったとき (**満期=ADR-156**)。**DEF-015 (ADR-121) が先** — `suction_hold` は宣言された重心が無いと評価できない。`target.mass` と `gripper.suction.hold` の request 追加 + `core/` の `suction_hold` objective | ADR-156 | core |
 | DEF-016 | `docs/gsn/adr-122-pickable-and-yield-are-two-questions.gsn` · `docs/adr/ADR-122-pickable-and-yield-are-two-questions.md` | ADR-122 が Accepted になったとき (**満期=ADR-122**)。pickable と歩留まりの分離 + `POST /pick-sequence` への入口。DEF-014 / DEF-015 とは独立 | ADR-122 | core |
 | DEF-017 | `docs/adr/ADR-032-geometric-host-binding.md` | 同 ADR §Out of scope が挙げる `fastened` constraint-solver の実装が入ったとき (同じソルバーがこの問題も閉じるので独立した満期を持たない)。**2026-08-12 に `docs/ROADMAP.md` の frontend backlog 🟡 から移設** — 制約ソルバーを要する = 設計判断つきなので Issues レーンではない | ADR-032 | app |
 | DEF-018 | `docs/adr/ADR-027-wasm-geometry-engine.md` | Shared Wasm Memory: `+atomics,+bulk-memory,+mutable-globals` が **stable Rust** で通るようになったとき (**外部条件なので trigger を書けない**)。「remaining copy の除去」はこれにブロックされ独立の満期を持たない。`run_monte_carlo` / `build_boolean_union` は *candidate* であって決定ではないので**判断の未完了**側 (ADR-123 D3) | ADR-027 | app |
@@ -215,6 +213,10 @@ ticket と同じ事実の第二の源になる。
   人が思い出す必要があった。さらに GSN 側の G4 が同じ発火を独立に検出し、
   「exploring を solution へ昇格させよ」と言ってきた — **登録簿と論証木が同じ事象を
   別の角度から問うた**最初の例である (ADR-126 D1 の役割分担が働いた)。
+  DEF-015 / DEF-056 (**ともに 2026-09-30 決着**、ADR-121 / ADR-156) は `満期=ADR-NNN` の
+  2 行が 1 つの PR で閉じた例である。DEF-056 は「DEF-015 が先」と書いていたが、前提は
+  *順序*であって*別の回*ではなく、同じ PR で G-1 → G-1b の順に入れれば足りた。GSN 側では
+  ADR-156 の 4 goal の `GREP:` 満期が G4 で先に発火し、昇格を求めた。
   DEF-029 (2026-08-14 追加 / **2026-09-15 決着**、ADR-135) は満期が
   **他人の版上げに便乗する**形で書かれていた唯一の例である:
   `満期=GREP:packages/grasp-contract/contract-version.json::contractVersion"\s*:\s*6`

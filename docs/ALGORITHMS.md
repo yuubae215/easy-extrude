@@ -33,6 +33,8 @@
 | 深さのゲート | `depth − (toolLength − palm_z) > 0` なら把持性で棄却 (パームが面の下へ潜る) | `core/…/engine/feasibility.py: palm_depth_miss` | core のみ |
 | 把持性 (吸引) | カップ footprint 内の法線の揃い | `core/…/engine/feasibility.py: NaiveSuctionGraspChecker` | core のみ |
 | スコア | 正規化 objective の加重和 | `core/…/engine/scoring.py` + `objectives.py` | **core のみ (アイデア)** |
+| 吸着の保持 (`suction_hold`) | めくれ・すべりの静力学で利用率 u、物理の両端 (u = 1 → 0 点, u_best → 1 点) で正規化 (ADR-156) — §3.4 | `core/…/engine/objectives.py: suction_utilisation / suction_hold_score` | **core のみ (アイデア — ADR-156 D7)** |
+| 重心の世界座標 | 物体座標の宣言点を物体の姿勢で回して位置を足す。`assumedHomogeneous` は箱の中心 (ADR-121) | `src/domain/targetMass.js: centerOfMassWorld` | front (公知の閉形式・宣言の写像) |
 | 推薦 (propose) | embedding 類似度 | `core/recommendation/` | **core のみ (アイデア)** |
 
 **両方 (導出)** の行だけが `src/` に写しを持つ。その 3 行は ADR-146 D3 の条件
@@ -224,6 +226,35 @@ cup    : center (0, 0, L_b + h/2),           half (d/2, d/2, h/2)
 > **測らなかった objective には欄が無い** (ADR-120)。閉じたスコア層に optional 兄弟を
 > 生やせないので、区別を運ぶのは**鍵の不在**だけ。0 点と評価不能は値で比べるとまさに
 > 同じ数に見える。
+
+### 3.4 吸着の保持 `suction_hold` (ADR-156 — 式の正本はここ)
+
+記号: 接触点 p (= TCP − depth·approach)、外向き法線 n (単位)、カップ半径 r = `cupDiameter`/2、
+重心 c (ADR-121 の宣言点)、質量 m、g₀ = 9.80665 m/s²、重力 **W** = m g₀ (0, 0, −1) (ROS world)、
+保持力 F = `hold.force` (N)、パッドの摩擦係数 μ = `hold.friction`。
+
+```
+F_n    = −W · n                              引き剥がす力 (負 = 押し付け)
+F_t    = | W − (W · n) n |                    面に沿う力
+M_peel = | τ − (τ · n) n |,  τ = (c − p) × W  カップをめくるモーメント
+
+u_peel = ( F_n + M_peel / r ) / F             めくれ: 縁を支点に M_peel ≤ (F − F_n) r
+u_slip = ( F_n + F_t / μ   ) / F              すべり: F_t ≤ μ (F − F_n)
+u      = max(u_peel, u_slip)                  u < 1 ⇔ 外れない
+
+u_best = (m g₀ / F) · min(1, 1/μ)             引き剥がす向き (F_n ≥ 0) の全姿勢での u の下限
+score  = 0                          (u_best ≥ 1 — どこでも外れる。評価不能ではない)
+       = clamp((1 − u)/(1 − u_best), 0, 1)   (それ以外)
+```
+
+- 長さは `M_peel / r` の比でしか現れないので u は長さ単位に依らない (mm でも m でも同値 — テストで焼いてある)。
+- `score == 0 ⇔ u ≥ 1`。クライアントはここから「外れる」札を導出する (`GraspScoreMath.VERDICT_AT_ZERO`)。
+- 下限の導出: `u ≥ u_slip ≥ (m g₀/F)(cos θ + sin θ / μ)` (θ = 重力と −n の角) で、右辺は [0, π/2] で上に凸なので最小は端点。
+  **実装で分かった限界:** μ > 1 のとき下限は θ = π/2 (側面を吸う) 側で、等号には重心が接触面上にあること
+  (M_peel = 0) が要る — 厚い物体では到達できない下限になりうる。そのとき上面の最良位置は 1 点に届かない
+  (`1/μ < 1` のぶん低い)。スコアは「この組で物理的に可能な範囲のどこにいるか」の保守側の読みになる。
+- 入力が 1 つでも欠ける (質量・重心・`hold`・吸着ハンドでない・カップ径 0) と鍵を出さない (ADR-156 D4)。
+- 剛体カップ・静荷重の近似。n まわりのねじりと搬送加速度は数えない (ADR-156 D8)。
 
 ---
 

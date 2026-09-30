@@ -942,6 +942,27 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "description": "Cup: height below the housing along the flange +Z (mm). The cup face is the TCP."
+            },
+            "hold": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "ADR-156 D1: the suction cup's holding capability as ONE bundle -- `force` (N, the value the declarer TOOK, safety factor included by them) and `friction` (static coefficient pad↔object face). Both or the bundle is absent. Absent = the suction hold is not scored (never a default).",
+              "properties": {
+                "force": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "N"
+                },
+                "friction": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "dimensionless"
+                }
+              },
+              "required": [
+                "force",
+                "friction"
+              ]
             }
           }
         },
@@ -1130,6 +1151,50 @@
               }
             }
           }
+        },
+        "mass": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "ADR-156 D1: the object's mass in kg -- a value somebody TOOK (measured, drawing, catalogue), never an estimate. Absent = objectives that need it are not scored (never defaulted)."
+        },
+        "centerOfMass": {
+          "description": "ADR-121 D1: the object's centre of mass WITH its provenance. `measured`: `point` in the object's OWN frame (origin = its centre, its own axes), mm. `assumedHomogeneous`: an explicitly chosen assumption; the point is the centroid, derived by the front and never stored. Absent is NOT the centroid (ADR-121 D2): objectives that need it are not scored. Estimates from material / size / similarity are proposals and never stored here (ADR-121 D3).",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "measured"
+                },
+                "point": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "[x, y, z] in the object frame, mm"
+                }
+              },
+              "required": [
+                "kind",
+                "point"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "assumedHomogeneous"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            }
+          ]
         }
       }
     },

@@ -1,6 +1,6 @@
 # 121. 重心は宣言された事実であり、推定は別レーンである — 仮定を値に化けさせない
 
-- Status: Proposed (未実装 — ADR-118 と同じ PR で起票。ADR-120 が先に要る)
+- Status: Accepted (**2026-09-30 実装** — ADR-156 と同じ PR。ADR-120 は 2026-08-14 に完了済み)
 - Date: 2026-08-11
 - Deciders: yuubae215, Claude
 - 段: **G-1** (`docs/grasp/implementation-order.md` — grasp レーンの順序表)。前提: **G-0 (ADR-120 D1 = DEF-013)** — 重心不在で全候補が不当に低く見える状態を先に直す
@@ -77,12 +77,26 @@ ADR-090 の「原点に立つ無限リーチの幽霊ロボット」と同じ形
   図心 = 中心で自明だが、メッシュが来たら別の計算が要る。
 - 推定レーンそのものは、この ADR では作らない (置き場所を名指しするだけ)。
 
-### 検証 (証拠) — 未実装
+### 検証 (証拠) — 2026-09-30 実装
 
-| 主張 | 問い所 (予定) |
+| 主張 | 問い所 |
 |------|-------------|
-| 不在が図心へ倒れない | 重心なしのリクエストで `com_offset` の鍵が**出ない**こと |
-| 仮定と実測が区別される | 同じ点でも `kind` が違えば表示が違うこと (純粋層) |
-| 推定がワイヤに乗らない | 契約スキーマに推定由来の欄が無いこと (census) |
+| 不在が図心へ倒れない | `core/tests/test_engine.py::test_suction_hold_key_is_absent_for_each_missing_input[centerOfMass]` (重心の真上の候補で鍵が**出ない**) + `src/domain/targetMass.test.js` (未宣言はワイヤに鍵ごと出ない) |
+| 仮定と実測が区別される | `src/view/GraspDeclarationConfirmation.test.js` — 同じ点でも kind が違えば caption と中実/中空が違う |
+| 推定がワイヤに乗らない | `core/tests/test_contract_conformance.py::test_contract_carries_no_estimation_field` (request / response 両方の欄名・kind 値の census) |
+
+## 実装記録 (2026-09-30)
+
+- **ワイヤ** `target.centerOfMass` = `{kind: measured | assumedHomogeneous, point}` (world・ワイヤの
+  長さ単位)。request の optional 追加なので contractVersion=7 のまま。
+- **文書では物体座標 (mm)。** 当事者の選択 (2026-09-30): `measured` の `point` は Solid の中心を原点、
+  その軸を軸とする局所座標で、物体を動かすと重心が付いてくる。世界座標への写像は
+  `src/domain/targetMass.js: centerOfMassWorld` の 1 か所で、保存しない。
+- **`assumedHomogeneous` は文書に点を持たない。** 図心 (箱の中心) はフロントが導出してワイヤに載せる
+  (D3「均質仮定の図心は決定的 core で足りる」)。保存すると寸法とずれうる第二の源になる。
+- **重心を使う objective は吸引について `suction_hold` (ADR-156)。** D4 の `com_offset` は作っていない。
+- **3D の確かめ** — 宣言の絵に重心の印を足した (実測 = 中実 / 仮定 = 中空 + 語)。未宣言なら描かない。
+  `CONFIRMATION_BY_FIELD` の母集団に Solid の `mass` / `centerOfMass` を加えた (原則 #33-4)。
+- 残し: DEF-015 は決着。推定レーン (D3) そのものは作っていない — 置き場所を名指ししたまま。
 
 論証木: `docs/gsn/adr-121-centre-of-mass-is-declared.gsn`

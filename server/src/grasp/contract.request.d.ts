@@ -9,6 +9,30 @@
  * The gripper housing, in the FLANGE frame (ADR-152 D3, ADR-150 D5: +Z out of the flange face, jaws close along +/-X). It rises from the flange face (z = 0) to z = its length. A CLOSED kind-discriminated union, same governance as `obstacles`: a mesh enters only as a new kind. core/ judges it as an OBB (a cylinder by its circumscribed box -- conservative: a false 'hits' is possible, a false 'clear' is not).
  */
 export type HandBody = HandBodyCylinder | HandBodyBox;
+/**
+ * The target's centre of mass WITH its provenance (ADR-121 D1) -- a bounded kind-discriminated union, so an assumption rides as an assumption. Absent is NOT the centroid (ADR-121 D2): objectives that need it are not evaluated. Estimates (from material, size, similarity) are proposals and never ride here (ADR-121 D3).
+ */
+export type CenterOfMass =
+  | {
+      kind: "measured";
+      /**
+       * [x, y, z] world-frame position, in the request's length unit.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      point: [number, number, number];
+    }
+  | {
+      kind: "assumedHomogeneous";
+      /**
+       * [x, y, z] world-frame position, in the request's length unit.
+       *
+       * @minItems 3
+       * @maxItems 3
+       */
+      point: [number, number, number];
+    };
 
 /**
  * BFF -> grasp-search service input. Wire form uses camelCase.
@@ -164,6 +188,11 @@ export interface GraspSearchDeclaration {
        */
       orientation?: [number, number, number, number];
     };
+    /**
+     * The target's mass in kg -- a value somebody TOOK (measured, drawing, catalogue), never an estimate (ADR-156 D1). Absent = objectives that need it are not evaluated (their key is absent -- ADR-120); it is never defaulted.
+     */
+    mass?: number;
+    centerOfMass?: CenterOfMass;
   };
   /**
    * Bodies the approach and the arm must avoid (ADR-119 D1; carried since ADR-117; box form added by ADR-133 D5). A kind-discriminated union: a sphere carries `radius`, a box carries `halfExtents` and an optional `orientation`. Derived on the front from the same Layout DSL as `target`, with the target itself excluded -- an object cannot obstruct its own grasp. Declaration only: interference and occlusion are solved in core/. The bounding-sphere form is retained because it is what pre-ADR-133 senders emit; it is DELIBERATELY not the fallback for an undeclared shape -- a payload that declares neither `radius` nor `halfExtents` is rejected rather than guessed (原則 #31).
@@ -304,6 +333,19 @@ export interface GripperSuction {
    * Height of the cup below the housing, along the flange +Z (ADR-152 D3). The cup face is the TCP: robot.toolLength = body.length + cupHeight (relative tolerance 1e-6), else 400.
    */
   cupHeight?: number;
+  /**
+   * The cup's holding capability as ONE bundle (ADR-156 D1): both members are required inside it so 'force without friction' cannot be said. Absent = `suction_hold` is not evaluated (key absent -- ADR-120).
+   */
+  hold?: {
+    /**
+     * Holding force in N the declarer TOOK (a catalogue value times whatever safety factor they choose). The solver applies no safety factor of its own.
+     */
+    force: number;
+    /**
+     * Static friction coefficient between the pad and the target face (dimensionless).
+     */
+    friction: number;
+  };
 }
 /**
  * One named way to grasp this workpiece (ADR-152 D1/D4), resolved on the front from the Layout DSL `graspFeature.specs[i]`: the approach face's samples (the region grid, in the world frame), and the three facts one 'face' could not hold -- which axis the jaws close on, how deep the TCP goes, how far the approach may tilt. Only specs the declared hand can use are sent. Declaration only: whether the jaws close, whether the hand hits anything, which spec's candidates are returned is solved in core/.
