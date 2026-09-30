@@ -81,7 +81,7 @@ test('要求の記録が無い応答は、返ってきた鍵だけを評価済�
   // 旧い応答 / 記録の無い実行: 何が要求されたか分からないので「測っていない」とは
   // 言えない。言えないことを言わないのが degrade (推測しない)。
   const summary = objectiveRows(null, { reach_margin: 0.3 })
-  assert.deepEqual(summary.rows, [{ name: 'reach_margin', weight: null, evaluated: true, value: 0.3 }])
+  assert.deepEqual(summary.rows, [{ name: 'reach_margin', weight: null, evaluated: true, value: 0.3, verdict: null }])
   assert.equal(summary.unevaluated, 0)
 })
 
@@ -106,4 +106,21 @@ test('全部測れていれば注記は出ない (無い事実を語らない)',
   }))
   assert.equal(note, null)
   assert.equal(unevaluatedNote(null), null)
+})
+
+// ── ADR-156 D6: 「外れる」はクライアントが 0 点から導出する ─────────────────────
+
+test('suction_hold: 値 0 → 外れる札 / 0 より大 → 札なし / 鍵なし (測っていない) → 札なし', () => {
+  const W = { suction_hold: 1.0, grasp_stability: 1.0 }
+  const rowOf = (scores) => objectiveRows(W, scores).rows.find(r => r.name === 'suction_hold')
+  assert.equal(rowOf({ suction_hold: 0, grasp_stability: 0.9 }).verdict, 'falls')
+  assert.equal(rowOf({ suction_hold: 1e-9, grasp_stability: 0.9 }).verdict, null)
+  const absent = rowOf({ grasp_stability: 0.9 })
+  assert.equal(absent.evaluated, false)
+  assert.equal(absent.verdict, null, 'not measured is not "falls" (ADR-121 D2)')
+})
+
+test('0 点でも VERDICT_AT_ZERO に無い objective は札を持たない — 0 は尺度の最低であって事実ではない', () => {
+  const row = objectiveRows({ reach_margin: 1 }, { reach_margin: 0 }).rows[0]
+  assert.equal(row.verdict, null)
 })

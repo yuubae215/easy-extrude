@@ -74,9 +74,12 @@ from .ur_solver import (
 )
 from .types import (
     Camera,
+    CenterOfMass,
+    CenterOfMassKind,
     GripperKind,
     ParallelJawGripper,
     SuctionGripper,
+    SuctionHold,
     Gripper,
     GraspSpec,
     GraspStrategy,
@@ -137,16 +140,61 @@ def _gripper_from_wire(raw: dict[str, Any]) -> Gripper:
     if kind == GripperKind.SUCTION.value:
         cup = float(raw.get("cupDiameter", 0.0))
         shape = _suction_shape_from_wire(raw, cup)
+        hold = _hold_from_wire(raw.get("hold"))
         tolerance = raw.get("sealTiltTolerance")
         if tolerance is not None:
             return SuctionGripper(
                 cup_diameter=cup, seal_tilt_tolerance=float(tolerance), shape=shape,
+                hold=hold,
             )
-        return SuctionGripper(cup_diameter=cup, shape=shape)
+        return SuctionGripper(cup_diameter=cup, shape=shape, hold=hold)
     raise ValueError(
         f"未宣言のハンド種別 {kind!r}: graspSearch.gripper.kind は "
         f"{[k.value for k in GripperKind]} のいずれかであること (ADR-118)"
     )
+
+
+def _hold_from_wire(raw: Any) -> Optional[SuctionHold]:
+    """`gripper.hold` (ADR-156 D1)。不在は None = 未宣言 (既定で埋めない)。
+
+    束の中の 2 つは必須かつ正。片方だけ・0 以下は宣言の誤りとして 400 にする —
+    0 N の保持力で u を割れば無限大になり、「外れる」と「宣言が壊れている」が同じ 0 点に潰れる。
+    """
+    if raw is None:
+        return None
+    force, friction = raw.get("force"), raw.get("friction")
+    if force is None or friction is None:
+        raise DeclarationError("gripper.hold は force と friction を両方宣言する (ADR-156 D1)")
+    if not (float(force) > 0.0 and float(friction) > 0.0):
+        raise DeclarationError("gripper.hold の force と friction は正であること (ADR-156 D1)")
+    return SuctionHold(force=float(force), friction=float(friction))
+
+
+def _mass_from_wire(raw: Any) -> Optional[float]:
+    """`target.mass` (kg, ADR-156 D1)。不在は None — 0 や既定値に倒さない。"""
+    if raw is None:
+        return None
+    if not float(raw) > 0.0:
+        raise DeclarationError("target.mass は正であること (kg — ADR-156 D1)")
+    return float(raw)
+
+
+def _center_of_mass_from_wire(raw: Any) -> Optional[CenterOfMass]:
+    """`target.centerOfMass` (ADR-121 D1)。不在は None で、**図心へ倒さない** (D2)。
+
+    kind は閉じた union。未知の kind は既定の出所に倒さず 400 — 倒すと仮定が実測に化ける。
+    """
+    if raw is None:
+        return None
+    kind = raw.get("kind")
+    kinds = [k.value for k in CenterOfMassKind]
+    if kind not in kinds:
+        raise DeclarationError(
+            f"未宣言の重心の出所 {kind!r}: target.centerOfMass.kind は {kinds} のいずれか (ADR-121 D1)"
+        )
+    if raw.get("point") is None:
+        raise DeclarationError("target.centerOfMass には point が要る (ADR-121 D1)")
+    return CenterOfMass(kind=CenterOfMassKind(kind), point=_vec3(raw["point"]))
 
 
 def _body_part_from_wire(body: dict[str, Any]) -> HandPart:
@@ -403,6 +451,8 @@ def problem_from_declaration(declaration: GraspSearchDeclaration) -> Problem:
         # 閉じ軸なしの仕様の幅・パッチを測る母集団 = 全仕様のサンプルの和 (導出)。
         spec_samples=tuple(smp for spec in grasp_specs for smp in spec.samples),
         box=_target_box_from_wire(target_raw.get("box")),
+        mass=_mass_from_wire(target_raw.get("mass")),
+        center_of_mass=_center_of_mass_from_wire(target_raw.get("centerOfMass")),
     )
 
     obstacles: list[Any] = []

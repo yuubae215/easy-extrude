@@ -100,6 +100,21 @@ function readBody(body, errors) {
 }
 
 /**
+ * The cup's holding capability (ADR-156 D1) — ONE bundle `{force (N), friction}`,
+ * both required inside it so "force but no friction" cannot be said. Absent is
+ * UNDECLARED and stays so: no default hold is ever filled in, because a default
+ * would score every suction candidate as if somebody had measured the hand.
+ */
+function readHold(hold, errors) {
+  if (hold === undefined || hold === null) return null
+  if (!isPos(hold.force) || !isPos(hold.friction)) {
+    errors.push('hand.hold needs force > 0 (N) and friction > 0 together')
+    return null
+  }
+  return { force: hold.force, friction: hold.friction }
+}
+
+/**
  * **The single resolution point** for "which hand does this tcp carry" (§1.1).
  * Never throws on stored content — a broken hand comes back MALFORMED with
  * reasons (原則 #11).
@@ -133,9 +148,11 @@ export function resolveHand(raw) {
     if (raw.sealTiltTolerance != null && !isNonNeg(raw.sealTiltTolerance)) errors.push('hand.sealTiltTolerance must be a number ≥ 0 (rad)')
     if (raw.cupHeight != null && !isPos(raw.cupHeight)) errors.push('hand.cupHeight must be a number > 0 (mm)')
     if ((body === null) !== (raw.cupHeight == null)) errors.push('hand: declare body and cupHeight together (or neither)')
+    const hold = readHold(raw.hold, errors)
     hand = { kind: raw.kind, cupDiameter: raw.cupDiameter,
       ...(raw.sealTiltTolerance != null ? { sealTiltTolerance: raw.sealTiltTolerance } : {}),
-      ...(body ? { body } : {}), ...(raw.cupHeight != null ? { cupHeight: raw.cupHeight } : {}) }
+      ...(body ? { body } : {}), ...(raw.cupHeight != null ? { cupHeight: raw.cupHeight } : {}),
+      ...(hold ? { hold } : {}) }
   }
   if (errors.length) return { state: HAND_STATE.MALFORMED, hand: null, errors }
   return { state: HAND_STATE.DECLARED, hand, errors: [] }
@@ -225,6 +242,8 @@ export function wireGripperFromHand(hand) {
     cupDiameter: mmToM(hand.cupDiameter),
     ...(hand.sealTiltTolerance != null ? { sealTiltTolerance: hand.sealTiltTolerance } : {}),
     ...(body ? { body, cupHeight: mmToM(hand.cupHeight) } : {}),
+    // N and a ratio — no length in either, so nothing to convert (ADR-156 D2).
+    ...(hand.hold ? { hold: { force: hand.hold.force, friction: hand.hold.friction } } : {}),
   }
 }
 

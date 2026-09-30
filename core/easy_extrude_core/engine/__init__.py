@@ -57,11 +57,14 @@ from .pose_codec import frame_axes, pose_from_payload, pose_to_payload
 from .scoring import weighted_sum
 from .types import (
     Camera,
+    CenterOfMass,
+    CenterOfMassKind,
     GraspCandidate,
     Gripper,
     GripperKind,
     ParallelJawGripper,
     SuctionGripper,
+    SuctionHold,
     BoxObstacle,
     DeclarationError,
     Obstacle,
@@ -98,6 +101,9 @@ __all__ = [
     "Camera",
     "Gripper",
     "SuctionGripper",
+    "SuctionHold",
+    "CenterOfMass",
+    "CenterOfMassKind",
     "ParallelJawGripper",
     "GripperKind",
     # 候補生成 (純粋)

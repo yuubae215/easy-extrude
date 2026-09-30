@@ -21,7 +21,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from .types import GraspCandidate, Problem, clamp, distance_point_to_segment
+from .types import (
+    GraspCandidate,
+    Problem,
+    SuctionGripper,
+    Vec3,
+    clamp,
+    distance_point_to_segment,
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,102 @@ def _raw_approach_clearance(candidate: GraspCandidate, problem: Problem) -> floa
     )
 
 
+# --- 吸着の保持 (ADR-156) — 静力学の利用率と、物理の両端での正規化 ----------------
+
+#: 標準重力 (m/s²)。質量 (kg) と保持力 (N) の単位をそろえるためだけに使う。
+STANDARD_GRAVITY = 9.80665
+#: 重力方向 (ROS world frame: +Z up)。
+_DOWN = Vec3(0.0, 0.0, -1.0)
+
+
+@dataclass(frozen=True)
+class SuctionUtilisation:
+    """1 候補の吸着の利用率 (ADR-156 D2/D3)。u < 1 ⇔ 外れない。
+
+    - peel / slip: めくれ・すべりそれぞれの利用率。
+    - u: 悪いほう (max)。
+    - u_best: この対象とこのハンドの組で物理的に可能な最良 (引き剥がす向きの姿勢での下限)。
+      候補に依存しない — ADR-075 の絶対基準。
+    """
+
+    peel: float
+    slip: float
+    u_best: float
+
+    @property
+    def u(self) -> float:
+        return max(self.peel, self.slip)
+
+
+def suction_utilisation(
+    contact: Vec3,
+    normal: Vec3,
+    center_of_mass: Vec3,
+    mass: float,
+    cup_radius: float,
+    force: float,
+    friction: float,
+) -> SuctionUtilisation:
+    """剛体カップの静的つり合いから利用率を出す (純粋)。式の正本は docs/ALGORITHMS.md §吸着の保持。
+
+    長さはどの単位でもよい — 長さは M_peel / r の比でしか現れないので u から消える。
+    質量 (kg)・g₀ (m/s²)・保持力 (N) の単位だけがそろっていればよい。
+    """
+    n = normal.normalized()
+    weight = _DOWN.scaled(mass * STANDARD_GRAVITY)
+    f_n = -weight.dot(n)                              # 引き剥がす力 (正 = 離れる向き)
+    tangential = weight - n.scaled(weight.dot(n))
+    torque = (center_of_mass - contact).cross(weight)
+    m_peel = (torque - n.scaled(torque.dot(n))).norm()
+    peel = (f_n + m_peel / cup_radius) / force
+    slip = (f_n + tangential.norm() / friction) / force
+    u_best = (mass * STANDARD_GRAVITY / force) * min(1.0, 1.0 / friction)
+    return SuctionUtilisation(peel=peel, slip=slip, u_best=u_best)
+
+
+def suction_hold_score(u: SuctionUtilisation) -> float:
+    """u = 1 を 0 点、u = u_best を 1 点に写す (ADR-156 D3)。
+
+    **u_best ≥ 1 は評価不能ではなく全候補 0 点。** `NormSpec` に渡すと幅が 0 以下で
+    None (評価不能) になり、「このハンドではどこでも外れる」という決定された事実が
+    「測っていない」に化ける。だから NormSpec を通さずここで分ける。
+    `score == 0 ⇔ u ≥ 1` が成り立つ (D6 — クライアントはここから「外れる」を導出する)。
+    """
+    if u.u_best >= 1.0:
+        return 0.0
+    return clamp((1.0 - u.u) / (1.0 - u.u_best), 0.0, 1.0)
+
+
+def _suction_hold(candidate: GraspCandidate, problem: Problem) -> Optional[float]:
+    """`suction_hold` (ADR-156)。入力が 1 つでも欠ければ None = 鍵を出さない (D4)。
+
+    欠ける種の列挙 (原則 #31): 吸着ハンドでない (平行ジョー / ハンド未宣言) ·
+    `gripper.hold` · `target.mass` · `target.centerOfMass`。どれも 0 点にも図心にも倒さない。
+    カップ径が 0 の宣言も、めくれに抗う腕の長さが無く比が定義できないので評価しない。
+    """
+    gripper = problem.gripper
+    if not isinstance(gripper, SuctionGripper) or gripper.hold is None:
+        return None
+    target = problem.target
+    if target.mass is None or target.center_of_mass is None:
+        return None
+    radius = gripper.cup_diameter / 2.0
+    if not radius > 0.0:
+        return None
+    # 接触点 = TCP から進入方向へ depth 戻した面上の点 (candidates.py の逆)。
+    contact = candidate.pose.position - candidate.pose.approach.normalized().scaled(candidate.depth)
+    u = suction_utilisation(
+        contact=contact,
+        normal=candidate.surface_normal,
+        center_of_mass=target.center_of_mass.point,
+        mass=target.mass,
+        cup_radius=radius,
+        force=gripper.hold.force,
+        friction=gripper.hold.friction,
+    )
+    return suction_hold_score(u)
+
+
 @dataclass(frozen=True)
 class ObjectiveDef:
     """objective 1 種の定義 = raw 計算 + 絶対基準 NormSpec。"""
@@ -100,11 +203,24 @@ class ObjectiveDef:
     spec_for: Callable[[Problem], NormSpec]
 
 
+@dataclass(frozen=True)
+class ScoredObjectiveDef:
+    """0-1 を直接返す objective (ADR-156)。None = 評価不能 (鍵を出さない)。
+
+    `ObjectiveDef` の 2 段 (raw → NormSpec) に乗らないものの型。`suction_hold` は
+    両端が物理から候補ごとではなく問題ごとに決まり、しかも「幅が無い」が評価不能では
+    なく決定された 0 点を意味するので、NormSpec の退化規則 (ADR-120) をそのまま使えない。
+    能力の違いは型で分ける (原則 #2)。
+    """
+
+    score: Callable[[GraspCandidate, Problem], Optional[float]]
+
+
 # 組み込み objective レジストリ。キーは DSL 宣言の objectiveWeights / 契約の
 # objectiveScores のキーと一致する。NormSpec は problem パラメータから引く (基準が
 # 問題サイズに依存する指標があるため。ただし「その回の候補集合」には依存しない =
 # 絶対基準は保つ)。
-OBJECTIVE_REGISTRY: dict[str, ObjectiveDef] = {
+OBJECTIVE_REGISTRY: "dict[str, ObjectiveDef | ScoredObjectiveDef]" = {
     "reach_margin": ObjectiveDef(
         raw=_raw_reach_margin,
         # 余裕の絶対上限 = 到達域の半幅 (中央で最大余裕)。
@@ -122,6 +238,8 @@ OBJECTIVE_REGISTRY: dict[str, ObjectiveDef] = {
         # clearance_reference 以上離れていれば満点。絶対基準 (問題が与える固定値)。
         spec_for=lambda p: NormSpec(lo=0.0, hi=max(p.clearance_reference, 0.0)),
     ),
+    # 外れる (u ≥ 1) = 0、この対象とハンドの組で最良 (u_best) = 1 (ADR-156)。
+    "suction_hold": ScoredObjectiveDef(score=_suction_hold),
 }
 
 
@@ -145,8 +263,10 @@ def evaluate_objectives(
         definition = OBJECTIVE_REGISTRY.get(name)
         if definition is None:
             continue
-        raw = definition.raw(candidate, problem)
-        score = definition.spec_for(problem).normalize(raw)
+        if isinstance(definition, ScoredObjectiveDef):
+            score = definition.score(candidate, problem)
+        else:
+            score = definition.spec_for(problem).normalize(definition.raw(candidate, problem))
         if score is None:
             continue
         out[name] = score

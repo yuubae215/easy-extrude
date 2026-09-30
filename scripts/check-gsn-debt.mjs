@@ -346,7 +346,11 @@ const SUPPORT_LABELS = new Map([
 // 機械可読 (GREP:core/tests/test_engine.py::suction_hold) なので分子 (G3) は動かない。
 // 同日 (当事者レビュー): 52 → 53。ADR-156 D6「外れる候補は落とさず、札は 0 点から導出」の
 // goal を 1 つ足した。満期は機械可読 (GREP:src/view/GraspScoreMath.test.js::suction_hold)。
-const DEBT_BASELINE = 53
+// 2026-09-30: 53 → 46。ADR-121 (3 goal) と ADR-156 (4 goal) を同じ PR で実装し、7 goal が
+// すべて support-verified に上がった (証拠: core/tests/test_engine.py の suction_hold 群、
+// test_contract_conformance.py の推定 census、GraspScoreMath / GraspDeclarationConfirmation /
+// targetMass の node --test)。ADR-156 の 4 つは機械可読な満期が G4 で発火して昇格を求めた。
+const DEBT_BASELINE = 46
 
 /**
  * G3 — 満期 trigger を持たない exploring goal の個数 (実測値)。
@@ -367,7 +371,10 @@ const DEBT_BASELINE = 53
 // 満期を持てない (+1)。もう一方の新規 exploring goal
 // (AFailedLoadIsShownAndRolledBackRatherThanSilent) は
 // PATH:e2e/robot-appearance-failure.spec.js を持つので分子には乗らない。
-const PROSE_DEBT_BASELINE = 26
+// 2026-09-30: 26 → 24。ADR-121 の PureLayerTestWillSettleIt / SchemaCensusWillSettleIt は
+// 散文満期だった (番地を書けていなかった) ので、実装で決着して分子から 2 つ抜けた。
+// 3 つ目 (KeyAbsenceTestWillSettleIt) は GREP 満期を持っていたので分子には乗っていない。
+const PROSE_DEBT_BASELINE = 24
 
 const errors = []
 

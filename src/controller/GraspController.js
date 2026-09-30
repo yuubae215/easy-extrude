@@ -51,7 +51,7 @@
  * (ADR-059 §C: the ghost is a derived projection, not a new FSM).
  */
 import { renderableEndEffectorFrame, nearestTargetIndex } from '../view/GraspGhostMath.js'
-import { visionFromViewportCamera, OBJECTIVE } from '../context/GraspDeclarationCatalog.js'
+import { visionFromViewportCamera, defaultObjectiveWeights } from '../context/GraspDeclarationCatalog.js'
 import { resolveRobots, selectRobot, robotCardinality, robotForFrameId } from '../domain/robotFrames.js'
 import {
   resolveGraspTargets, resolveBodies, selectTarget, targetProjection,
@@ -59,6 +59,7 @@ import {
   graspSpecsFor, sendsDerivedSamples,
 } from '../domain/graspTargets.js'
 import { graspFeatureGaps, GRASP_FEATURE_STATE } from '../domain/graspFeature.js'
+import { massDeclarationGaps } from '../domain/targetMass.js'
 import { wireTargetFor, wireObstacle } from '../domain/graspWire.js'
 import { resolveSearchLayout } from '../domain/searchGeometry.js'
 import { declarationPicture } from '../view/GraspDeclarationMath.js'
@@ -163,6 +164,7 @@ export class GraspController {
     registerCallback('onSelectRobot',          (id)    => this.selectRobot(id))
     registerCallback('onSelectGraspTarget',    (ref)   => this.selectGraspTarget(ref))
     registerCallback('onSetGraspFeature',      (ref, feature) => this.setGraspFeature(ref, feature))
+    registerCallback('onSetMassDeclaration',   (ref, key, value) => this.setMassDeclaration(ref, key, value))
     registerCallback('onPreviewGraspSamples',  () => this.previewGraspSamples())
     registerCallback('onSetRobotHand',         (id, hand) => this.setRobotHand(id, hand))
     registerCallback('onFocusGraspSpec',       (i) => this.focusGraspSpec(i))
@@ -402,6 +404,26 @@ export class GraspController {
       return
     }
     return Promise.resolve(ctxCtrl.setGraspFeature(ref, feature))
+      .then(() => this.refreshGraspTargets())
+  }
+
+  /**
+   * Declare (or clear) what the target weighs / where its weight sits
+   * (ADR-121 / ADR-156). Same path as `setGraspFeature`: the document owns it,
+   * this keeps no copy and re-derives the roster after the recompile.
+   *
+   * @param {string} ref  Layout DSL entity ref of the Solid
+   * @param {'mass'|'centerOfMass'} key
+   * @param {number|object|null} value  null clears it (undeclared — never a default)
+   */
+  setMassDeclaration(ref, key, value) {
+    const ctxCtrl = this._ctrl._ctxCtrl
+    if (typeof ctxCtrl?.setMassDeclaration !== 'function') return
+    if (this._ctrl._ctxService && !this._ctrl._ctxService.loaded) {
+      this._ctrl._uiView.showToast(GRASP_DECLARATION_NEEDS_DOCUMENT, { type: 'warn' })
+      return
+    }
+    return Promise.resolve(ctxCtrl.setMassDeclaration(ref, key, value))
       .then(() => this.refreshGraspTargets())
   }
 
@@ -759,6 +781,17 @@ export class GraspController {
       return
     }
 
+    // Guard: what the object weighs and where (ADR-121 / ADR-156). Undeclared is a
+    // state — nothing rides and `suction_hold` reads "not measured". Unreadable
+    // stops here: dropping it would look exactly like undeclared (原則 #11).
+    const massGaps = massDeclarationGaps(targetEntity)
+    if (massGaps.length > 0) {
+      const reason = `The object "${targetEntity.label}": ${massGaps[0]}`
+      ui.contextSetGrasp({ status: 'no-target', layout, reason, targetCount: targets.length })
+      ctrl._uiView.showToast(reason, { type: 'warn' })
+      return
+    }
+
     // Ensure a JWT'd BffClient (the routes are protected). connectBff fetches a dev
     // token and nulls _bff when the BFF itself is unreachable.
     let bff = ctrl._service.bff
@@ -776,11 +809,7 @@ export class GraspController {
     // `{ reach, clearance }` defaults matched nothing in the solver's registry,
     // which drops unknown names without complaint — so every score came back
     // empty and every candidate tied at 0.0.
-    const objectiveWeights = params.weights ?? {
-      [OBJECTIVE.REACH_MARGIN]:       0.6,
-      [OBJECTIVE.APPROACH_CLEARANCE]: 0.4,
-      [OBJECTIVE.GRASP_STABILITY]:    1.0,
-    }
+    const objectiveWeights = params.weights ?? defaultObjectiveWeights(gripperKind)
     const topN = Number.isFinite(params.topN) && params.topN > 0 ? Math.floor(params.topN) : 5
     // Vision / grasp domain declarations (ADR-081 Decision 5): the panel's
     // domain cards pass parsed camera / gripper declarations, gap-checked by

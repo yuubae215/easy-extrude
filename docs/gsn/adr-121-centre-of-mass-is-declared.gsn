@@ -3,14 +3,14 @@ GOALS adr121_centre_of_mass_is_declared
 goal CentreOfMassIsADeclaredFactNotASilentAssumption
 uuid 926c8e38-f6e5-47ed-8b06-c9d3a0c9ceb7
 summary "重心が把持判定に効くようになり、かつ推定値が実測値として振る舞う経路が存在しない — 仮定は仮定として運ばれ、不在は不在として扱われる"
-state UnderReview
-labels adr-121, grasp, suction, principle-31, adr-056-verb-boundary, proposed, term-q, change-judgement-correctness
+state Approved
+labels adr-121, grasp, suction, principle-31, adr-056-verb-boundary, implemented, term-q, change-judgement-correctness
 artifacts
 - "docs/adr/ADR-121-centre-of-mass-is-declared-estimation-is-a-lane.md"
 
     context Adr121Scope
     uuid 49b25b3b-ba24-4e75-8027-c85e23a696f0
-    summary "ADR-121 (Proposed 2026-08-11, 未実装): target.centerOfMass を kind 判別 union で足し (D1)、不在のとき図心へ倒さず重心依存の objective を評価しない (D2)、推定は propose レーンに置いてワイヤに乗せない (D3)、重心を使う判定は grasp_stability を変えずに新 objective として足す (D4)。ADR-120 が先に要る"
+    summary "ADR-121 (Proposed 2026-08-11 → Accepted 2026-09-30, ADR-156 と同じ PR で実装): target.centerOfMass を kind 判別 union で足し (D1)、不在のとき図心へ倒さず重心依存の objective を評価しない (D2)、推定は propose レーンに置いてワイヤに乗せない (D3)、重心を使う判定は grasp_stability を変えずに新 objective として足す (D4)。ADR-120 が先に要る"
     artifacts
     - "packages/grasp-contract/schema/grasp-search-request.schema.json"
 
@@ -49,27 +49,35 @@ artifacts
         goal AbsentCentreOfMassNeverBecomesTheCentroid
         uuid 5bce6be3-9a12-4033-9a89-14327932394c
         summary "重心が宣言されていないとき、図心が代わりに使われることがなく、重心依存の objective は評価されない"
-        labels support-exploring
+        labels support-verified
 
-            assumption KeyAbsenceTestWillSettleIt
-            uuid 11eea917-ce1b-4e04-9918-2be3f268a583
-            summary "未着手。決着させる検査は、重心なしのリクエストで com_offset の鍵が出ないこと。ADR-120 の鍵不在の規律にそのまま乗るので、120 が先に入っている必要がある。吸引については ADR-156 D5 が objective 名を suction_hold に具体化した (com_offset は測る量より狭い名前だった)。満期=GREP:core/tests/test_engine.py::suction_hold (ADR-126 — 検査が現れた日に G4 が落ち、exploring を solution へ昇格させよと言う)"
+            solution AbsentCentreOfMassIsKeyAbsence
+            uuid fff57612-7b8f-46d2-bbb6-607ed3aff570
+            summary "2026-09-30 実装。core/tests/test_engine.py::test_suction_hold_key_is_absent_for_each_missing_input[centerOfMass] — 重心の真上の候補 (図心で代用すれば 1 点になる形) で suction_hold の鍵が無いことを、値ではなく鍵の不在で assert する (ADR-120)。front 側は src/domain/targetMass.test.js「未宣言は未宣言のまま」— 未宣言の重心はワイヤに鍵ごと出ず、centerOfMassWorld も null (図心を返さない)"
+            artifacts
+            - "core/tests/test_engine.py"
+            - "src/domain/targetMass.test.js"
 
         goal ProvenanceIsVisibleToTheReader
         uuid d08ab6a9-11ba-4e74-8a81-97e92a5cf8b0
         summary "同じ点でも measured と assumedHomogeneous では画面の言うことが違う"
-        labels support-exploring
+        labels support-verified
 
-            assumption PureLayerTestWillSettleIt
-            uuid ecef40f1-5609-4255-bac5-a6636c069b08
-            summary "未着手。決着させる検査は純粋層で、kind が違えば導出される提示が違うこと。dogfooding の記録が仮定由来の値を実測として拾わないことが実務上の目的"
+            solution ProvenanceChangesThePicture
+            uuid ae8a956b-c711-42f7-9a71-c363cb598429
+            summary "src/view/GraspDeclarationConfirmation.test.js「同じ点でも measured と assumedHomogeneous は違う絵と語になる」— 同じ世界点で caption と solid (中実 / 中空) が違う。提示表 CENTER_OF_MASS_PRESENTATION は宣言された kind をちょうど覆い、未宣言の kind で throw する。判定側では出所は値を変えない (core test_suction_hold_provenance_does_not_change_the_judgement) — 区別は読む人のため"
+            artifacts
+            - "src/view/GraspDeclarationConfirmation.test.js"
+            - "src/view/GraspDeclarationMath.js"
 
         goal EstimationIsAbsentFromTheContract
         uuid 7789c748-d6f6-4633-ab1a-3e9b74baf7f3
         summary "推定に由来する欄 (確からしさ・材質・類似度) が契約スキーマに存在しない"
-        labels support-exploring
+        labels support-verified
 
-            assumption SchemaCensusWillSettleIt
-            uuid c8231a31-0852-449f-b588-5eb054733192
-            summary "未着手。決着させる検査は契約スキーマに対する census。動詞境界 (ADR-056/077) は散文では守られないので、機械が数える形にする"
+            solution ContractCensusFindsNoEstimationField
+            uuid aa21d589-c6e3-4ff6-9d5e-fafea8bdab87
+            summary "core/tests/test_contract_conformance.py::test_contract_carries_no_estimation_field — request / response 両スキーマの欄名と const 値を全部集め、推定の語彙 (estimat / guess / infer / confiden / probab / likelih / similar / material / density) に当たるものが 0 個。初版は nearest も語彙に入れて occlusionNearestMiss (決定された事実) に当たった — 語彙は推定の語に限る。重心の出所が閉じた 2 値であることも別に焼いた"
+            artifacts
+            - "core/tests/test_contract_conformance.py"
 

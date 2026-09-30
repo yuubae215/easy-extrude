@@ -45,10 +45,18 @@ function handDef() {
   return found
 }
 
+// The target's own declarations (ADR-121 / ADR-156) — the Solid fields that are
+// DECLARATIONS rather than geometry. Taken from the schema by name, so a field
+// retired from the schema drops out and fails the stale-row test below.
+const solidDeclarations = ['mass', 'centerOfMass']
+  .filter(k => k in (schema.$defs.entity.properties ?? {}))
+  .map(k => `target.${k}`)
+
 const population = [
   ...fieldsOf('graspSpec', schema.$defs.graspSpec),
   ...fieldsOf('graspStrategy', schema.$defs.graspStrategy),
   ...fieldsOf('hand', handDef()),
+  ...solidDeclarations,
 ]
 
 test('宣言の欄のうち確認の絵を持たないものは 0 個 (母集団はスキーマ)', () => {
@@ -73,6 +81,8 @@ const [target] = resolveGraspTargets([{
   ref: 'box', type: 'Solid', name: 'Box',
   position: { x: 500, y: 0, z: 30 }, dimensions: { x: 100, y: 40, z: 60 },
   rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 },
+  mass: 0.4,
+  centerOfMass: { kind: 'measured', point: [10, 0, -5] },
   graspFeature: {
     kind: 'specs',
     specs: [
@@ -154,4 +164,36 @@ test('表が絵を名指す行は、代表の宣言で実際にその絵が出�
     assert.ok(has(jawPic, row.picture) || has(cupPic, row.picture), `${field} → ${row.picture} is never drawn`)
   }
   assert.equal(jawPic.hover.length, 4, 'the hovered face is painted')
+})
+
+// ── ADR-121: 重心は出所ごと見える (仮定を実測と同じ絵にしない) ───────────────────
+
+import { CENTER_OF_MASS_PRESENTATION } from './GraspDeclarationMath.js'
+import { DECLARED_CENTER_OF_MASS_KINDS } from '../domain/targetMass.js'
+
+const withCom = (centerOfMass) => resolveGraspTargets([{
+  ref: 'b', type: 'Solid', name: 'B', position: { x: 500, y: 0, z: 30 }, dimensions: { x: 100, y: 40, z: 60 },
+  rotation: { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }, ...(centerOfMass ? { centerOfMass } : {}),
+}])[0]
+
+test('重心の印は物体の姿勢で世界へ運ばれる (局所 +x 10mm → z まわり 90° で世界 +y)', () => {
+  const pic = declarationPicture({ target: withCom({ kind: 'measured', point: [10, 0, 0] }) })
+  const [x, y, z] = pic.centerOfMass.point
+  assert.ok(Math.abs(x - 500) < 1e-9 && Math.abs(y - 10) < 1e-9 && Math.abs(z - 30) < 1e-9, `${pic.centerOfMass.point}`)
+})
+
+test('同じ点でも measured と assumedHomogeneous は違う絵と語になる', () => {
+  const measured = declarationPicture({ target: withCom({ kind: 'measured', point: [0, 0, 0] }) }).centerOfMass
+  const assumed  = declarationPicture({ target: withCom({ kind: 'assumedHomogeneous' }) }).centerOfMass
+  assert.deepEqual(measured.point, assumed.point, 'the centroid and a measured centre can coincide')
+  assert.notEqual(measured.caption, assumed.caption)
+  assert.notEqual(measured.solid, assumed.solid)
+})
+
+test('重心が未宣言なら印を描かない — 図心に「念のため」描かない (ADR-121 D2)', () => {
+  assert.equal(declarationPicture({ target: withCom(null) }).centerOfMass, null)
+})
+
+test('出所の提示表は宣言された kind をちょうど覆う', () => {
+  assert.deepEqual(Object.keys(CENTER_OF_MASS_PRESENTATION).sort(), [...DECLARED_CENTER_OF_MASS_KINDS].sort())
 })

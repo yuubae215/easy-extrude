@@ -31,6 +31,7 @@ import { rotateVec3 } from '../domain/rotateVec3.js'
 import { toolParts, flangeOf } from '../domain/robotTool.js'
 import { GRIPPER_KIND } from '../context/GraspDeclarationCatalog.js'
 import { mmToM, mToMM } from '../domain/worldUnits.js'
+import { CENTER_OF_MASS_KIND, centerOfMassWorld } from '../domain/targetMass.js'
 
 const v3 = (o) => [o.x, o.y, o.z]
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -117,8 +118,39 @@ export function declarationPicture({ target, spec = null, specs = [], hand = nul
 
   return {
     extent, faceLabels, triad, hover, otherApproaches,
+    centerOfMass: centerOfMassPicture(target, extent),
     focused: spec ? focusedPicture(target, spec, hand, toolLengthMm, extent) : null,
   }
+}
+
+/**
+ * How each centre-of-mass provenance is SHOWN (ADR-121 D1 — "is this measured or
+ * assumed?" must be answerable on screen). Keyed by kind; an undeclared kind
+ * throws (原則 #31). `solid: false` draws the marker hollow — an assumption is
+ * never drawn like a measurement.
+ */
+export const CENTER_OF_MASS_PRESENTATION = Object.freeze({
+  [CENTER_OF_MASS_KIND.MEASURED]:            Object.freeze({ caption: 'CoM · measured',            solid: true }),
+  [CENTER_OF_MASS_KIND.ASSUMED_HOMOGENEOUS]: Object.freeze({ caption: 'CoM · assumed (centroid)', solid: false }),
+})
+
+/** The presentation of a provenance. Throws on an undeclared kind. */
+export function centerOfMassPresentation(kind) {
+  const p = CENTER_OF_MASS_PRESENTATION[kind]
+  if (!p) throw new Error(`GraspDeclarationMath: 未宣言の重心の出所 "${kind}" — CENTER_OF_MASS_PRESENTATION に行を足すこと`)
+  return p
+}
+
+/**
+ * The centre of mass marker: world point (mm, derived from the object's pose on
+ * every call), size, and the provenance's presentation. Null when undeclared —
+ * nothing is drawn at the centroid "just in case" (ADR-121 D2).
+ */
+function centerOfMassPicture(target, extent) {
+  const world = centerOfMassWorld(target)
+  if (!world) return null
+  const kind = target.massProperties.centerOfMass.kind
+  return { point: v3(world), kind, radius: extent * 0.04, ...centerOfMassPresentation(kind) }
 }
 
 /** The five facts of one spec (+ the hand on it), as primitives. */
@@ -266,6 +298,9 @@ export const CONFIRMATION_BY_FIELD = Object.freeze({
   'hand.body':                       { picture: 'preview',     where: 'the housing on the arm and in the preview' },
   'hand.fingers':                    { picture: 'preview',     where: 'the fingers on the arm and in the preview' },
   'hand.cupHeight':                  { picture: 'preview',     where: 'the cup on the arm and in the preview' },
+  'hand.hold':                       { picture: 'panel',       where: 'the hand card (force N, friction) — a capability, not a place' },
+  'target.mass':                     { picture: 'panel',       where: 'the object card (kg) — a quantity, not a place' },
+  'target.centerOfMass':             { picture: 'centerOfMass', where: 'a marker at the point, solid = measured / hollow = assumed, captioned' },
 })
 
 /** Where a field is confirmed. **Throws on an unregistered field** (原則 #31). */

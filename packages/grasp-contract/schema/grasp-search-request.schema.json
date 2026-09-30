@@ -256,6 +256,14 @@
                 "center",
                 "halfExtents"
               ]
+            },
+            "mass": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "The target's mass in kg -- a value somebody TOOK (measured, drawing, catalogue), never an estimate (ADR-156 D1). Absent = objectives that need it are not evaluated (their key is absent -- ADR-120); it is never defaulted."
+            },
+            "centerOfMass": {
+              "$ref": "#/$defs/centerOfMass"
             }
           }
         },
@@ -505,6 +513,27 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "description": "Height of the cup below the housing, along the flange +Z (ADR-152 D3). The cup face is the TCP: robot.toolLength = body.length + cupHeight (relative tolerance 1e-6), else 400."
+        },
+        "hold": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The cup's holding capability as ONE bundle (ADR-156 D1): both members are required inside it so 'force without friction' cannot be said. Absent = `suction_hold` is not evaluated (key absent -- ADR-120).",
+          "properties": {
+            "force": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Holding force in N the declarer TOOK (a catalogue value times whatever safety factor they choose). The solver applies no safety factor of its own."
+            },
+            "friction": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Static friction coefficient between the pad and the target face (dimensionless)."
+            }
+          },
+          "required": [
+            "force",
+            "friction"
+          ]
         }
       },
       "required": [
@@ -697,6 +726,57 @@
       "required": [
         "order",
         "fallback"
+      ]
+    },
+    "centerOfMass": {
+      "description": "The target's centre of mass WITH its provenance (ADR-121 D1) -- a bounded kind-discriminated union, so an assumption rides as an assumption. Absent is NOT the centroid (ADR-121 D2): objectives that need it are not evaluated. Estimates (from material, size, similarity) are proposals and never ride here (ADR-121 D3).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Measured or CAD-derived -- trusted as is.",
+          "properties": {
+            "kind": {
+              "const": "measured"
+            },
+            "point": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3,
+              "description": "[x, y, z] world-frame position, in the request's length unit."
+            }
+          },
+          "required": [
+            "kind",
+            "point"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Explicitly CHOSEN homogeneous assumption: the point is the geometric centroid, derived by the declarer.",
+          "properties": {
+            "kind": {
+              "const": "assumedHomogeneous"
+            },
+            "point": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3,
+              "description": "[x, y, z] world-frame position, in the request's length unit."
+            }
+          },
+          "required": [
+            "kind",
+            "point"
+          ]
+        }
       ]
     }
   }
